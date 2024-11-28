@@ -83,7 +83,6 @@ const (
 	streamAllocatorSignalEstimate
 	streamAllocatorSignalPeriodicPing
 	streamAllocatorSignalSendProbe
-	// RAJA-REMOVE streamAllocatorSignalProbeClusterDone
 	streamAllocatorSignalResume
 	streamAllocatorSignalSetAllowPause
 	streamAllocatorSignalSetChannelCapacity
@@ -107,10 +106,6 @@ func (s streamAllocatorSignal) String() string {
 		return "PERIODIC_PING"
 	case streamAllocatorSignalSendProbe:
 		return "SEND_PROBE"
-		/* RAJA-REMOVE
-		case streamAllocatorSignalProbeClusterDone:
-			return "PROBE_CLUSTER_DONE"
-		*/
 	case streamAllocatorSignalResume:
 		return "RESUME"
 	case streamAllocatorSignalSetAllowPause:
@@ -184,10 +179,7 @@ type StreamAllocator struct {
 
 	onStreamStateChange func(update *StreamStateUpdate) error
 
-	// RAJA-REMOVE bwe                    bwe.BWE
 	sendSideBWEInterceptor cc.BandwidthEstimator
-
-	// RAJA-REMOVE pacer pacer.Pacer
 
 	enabled    bool
 	allowPause bool
@@ -244,7 +236,6 @@ func NewStreamAllocator(params StreamAllocatorParams, enabled bool, allowPause b
 
 	s.params.BWE.SetBWEListener(s)
 	s.params.Pacer.SetPacerProbeObserverListener(s)
-	// RAJA-REMOVE s.probeController.SetBWE(bwe)
 
 	s.resetState()
 
@@ -270,32 +261,12 @@ func (s *StreamAllocator) OnStreamStateChange(f func(update *StreamStateUpdate) 
 	s.onStreamStateChange = f
 }
 
-/* RAJA-REMOVE
-func (s *StreamAllocator) SetBWE(bwe bwe.BWE) {
-	if bwe != nil {
-		bwe.SetBWEListener(s)
-	}
-	s.bwe = bwe
-	s.probeController.SetBWE(bwe)
-}
-*/
-
 func (s *StreamAllocator) SetSendSideBWEInterceptor(sendSideBWEInterceptor cc.BandwidthEstimator) {
 	if sendSideBWEInterceptor != nil {
 		sendSideBWEInterceptor.OnTargetBitrateChange(s.onTargetBitrateChange)
 	}
 	s.sendSideBWEInterceptor = sendSideBWEInterceptor
 }
-
-/* RAJA-REMOVE
-func (s *StreamAllocator) SetPacer(pacer pacer.Pacer) {
-	if pacer != nil {
-		pacer.SetPacerProbeObserverListener(s)
-	}
-	s.pacer = pacer
-	s.probeController.SetPacer(pacer)
-}
-*/
 
 type AddTrackParams struct {
 	Source      livekit.TrackSource
@@ -323,12 +294,7 @@ func (s *StreamAllocator) AddTrack(downTrack *sfu.DownTrack, params AddTrackPara
 	}
 
 	downTrack.SetStreamAllocatorListener(s)
-	/* RAJA-TODO
-	if s.prober.IsRunning() {
-		// STREAM-ALLOCATOR-TODO: this can be changed to adapt to probe rate
-		downTrack.SetStreamAllocatorReportInterval(50 * time.Millisecond)
-	}
-	*/
+	downTrack.SetProbeClusterId(s.prober.GetActiveClusterId())
 
 	s.maybePostEventAllocateTrack(downTrack)
 }
@@ -545,13 +511,6 @@ func (s *StreamAllocator) OnResume(downTrack *sfu.DownTrack) {
 	})
 }
 
-/* RAJA-REMOVE
-// called by a video DownTrack to report packet send
-func (s *StreamAllocator) OnPacketsSent(downTrack *sfu.DownTrack, size int) {
-	s.prober.PacketsSent(size)
-}
-*/
-
 /* STREAM-ALLOCATOR-DATA
 // called by a video DownTrack when it processes NACKs
 func (s *StreamAllocator) OnNACK(downTrack *sfu.DownTrack, nackInfos []sfu.NackInfo) {
@@ -581,34 +540,8 @@ func (s *StreamAllocator) OnSendProbe(bytesToSend int) {
 	})
 }
 
-/* RAJA-REMOVE
-// called when prober finishes a probe cluster, could be called when prober is reset which stops an active cluster
-// RAJA-TODO: this should be replaced by callback from pacer
-func (s *StreamAllocator) OnProbeClusterDone(info ccutils.ProbeClusterInfo) {
-	s.postEvent(Event{
-		Signal: streamAllocatorSignalProbeClusterDone,
-		Data:   info,
-	})
-}
-*/
-
-/* RAJA-REMOVE
-// called when prober active state changes
-func (s *StreamAllocator) OnActiveChanged(isActive bool) {
-	for _, t := range s.getTracks() {
-		if isActive {
-			// STREAM-ALLOCATOR-TODO: this can be changed to adapt to probe rate
-			t.DownTrack().SetStreamAllocatorReportInterval(50 * time.Millisecond)
-		} else {
-			t.DownTrack().ClearStreamAllocatorReportInterval()
-		}
-	}
-}
-*/
-
 // called when probe cluster changes
 func (s *StreamAllocator) OnProbeClusterSwitch(probeClusterId ccutils.ProbeClusterId, desiredBytes int) {
-	s.params.Logger.Infow("stream allocator starting probe cluster", "pci", probeClusterId, "desiredBytes", desiredBytes) // REMOVE
 	s.params.Pacer.StartProbeCluster(probeClusterId, desiredBytes)
 
 	for _, t := range s.getTracks() {
@@ -700,10 +633,6 @@ func (s *StreamAllocator) postEvent(event Event) {
 			event.handleSignalPeriodicPing(event)
 		case streamAllocatorSignalSendProbe:
 			event.handleSignalSendProbe(event)
-			/* RAJA-REMOVE
-			case streamAllocatorSignalProbeClusterDone:
-				event.handleSignalProbeClusterDone(event)
-			*/
 		case streamAllocatorSignalResume:
 			event.handleSignalResume(event)
 		case streamAllocatorSignalSetAllowPause:
@@ -804,21 +733,7 @@ func (s *StreamAllocator) handleSignalSendProbe(event Event) {
 			break
 		}
 	}
-
-	/* RAJA-REMOVE
-	// RAJA-TODO: change this to not report here and let pacer/bwe modules report back when desired bytes have passed through
-	if bytesSent != 0 {
-		s.prober.ProbeSent(bytesSent)
-	}
-	*/
 }
-
-/* RAJA-REMOVE
-func (s *StreamAllocator) handleSignalProbeClusterDone(event Event) {
-	info, _ := event.Data.(ccutils.ProbeClusterInfo)
-	s.probeController.ProbeClusterDone(info)
-}
-*/
 
 func (s *StreamAllocator) handleSignalResume(event Event) {
 	s.videoTracksMu.Lock()
@@ -932,8 +847,6 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 
 func (s *StreamAllocator) handleSignalPacerProbeObserverClusterComplete(event Event) {
 	probeClusterId, _ := event.Data.(ccutils.ProbeClusterId)
-	s.params.Logger.Infow("pacer indicating cluster done", "pci", probeClusterId) // RAJA-REMOVE
-	// RAJA-TODO: maybe avoid translating this info
 	s.probeController.ProbeClusterDone(probeClusterId)
 }
 

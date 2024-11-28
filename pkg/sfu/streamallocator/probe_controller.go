@@ -40,7 +40,6 @@ type ProbeControllerConfig struct {
 	MinBps                 int64         `yaml:"min_bps,omitempty"`
 	MinDuration            time.Duration `yaml:"min_duration,omitempty"`
 	MaxDuration            time.Duration `yaml:"max_duration,omitempty"`
-	DurationOverflowFactor float64       `yaml:"duration_overflow_factor,omitempty"`
 	DurationIncreaseFactor float64       `yaml:"duration_increase_factor,omitempty"`
 }
 
@@ -59,7 +58,6 @@ var (
 		MinBps:                 200_000,
 		MinDuration:            200 * time.Millisecond,
 		MaxDuration:            20 * time.Second,
-		DurationOverflowFactor: 1.25,
 		DurationIncreaseFactor: 1.5,
 	}
 )
@@ -77,9 +75,7 @@ type ProbeControllerParams struct {
 type ProbeController struct {
 	params ProbeControllerParams
 
-	lock sync.RWMutex
-	// RAJA-REMOVE	bwe                       bwe.BWE
-	// RAJA-REMOVEpacer                     pacer.Pacer
+	lock                      sync.RWMutex
 	probeInterval             time.Duration
 	lastProbeStartTime        time.Time
 	probeGoalBps              int64
@@ -101,22 +97,6 @@ func NewProbeController(params ProbeControllerParams) *ProbeController {
 	p.Reset()
 	return p
 }
-
-/* RAJA-REMOVE
-func (p *ProbeController) SetBWE(bwe bwe.BWE) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	p.bwe = bwe
-}
-
-func (p *ProbeController) SetPacer(pacer pacer.Pacer) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	p.pacer = pacer
-}
-*/
 
 func (p *ProbeController) Reset() {
 	p.lock.Lock()
@@ -250,7 +230,6 @@ func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUs
 		int(p.probeGoalBps),
 		int(expectedBandwidthUsage),
 		p.probeDuration,
-		time.Duration(float64(p.probeDuration.Milliseconds())*p.params.Config.DurationOverflowFactor)*time.Millisecond,
 	)
 
 	p.pollProbe(p.probeClusterId, expectedBandwidthUsage)
@@ -353,7 +332,6 @@ func (p *ProbeController) increaseProbeDurationLocked() {
 }
 
 func (p *ProbeController) StopProbe() {
-	p.params.Logger.Infow("stopping probe cluster id", "pci", p.probeClusterId) // REMOVE
 	p.params.Prober.Reset(p.params.Pacer.EndProbeCluster(p.probeClusterId))
 }
 

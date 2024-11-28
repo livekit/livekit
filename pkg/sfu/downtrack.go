@@ -191,11 +191,6 @@ type DownTrackStreamAllocatorListener interface {
 	// stream resumed
 	OnResume(dt *DownTrack)
 
-	/* RAJA-REMOVE
-	// packet(s) sent
-	OnPacketsSent(dt *DownTrack, size int)
-	*/
-
 	/* STREAM-ALLOCATOR-DATA
 	// NACKs received
 	OnNACK(dt *DownTrack, nackInfos []NackInfo)
@@ -296,8 +291,6 @@ type DownTrack struct {
 
 	streamAllocatorLock     sync.RWMutex
 	streamAllocatorListener DownTrackStreamAllocatorListener
-	// RAJA-REMOVE streamAllocatorReportGeneration int
-	// RAJA-REMOVE streamAllocatorBytesCounter     atomic.Uint32
 	/* STREAM-ALLOCATOR-DATA
 	bytesSent                       atomic.Uint32
 	bytesRetransmitted              atomic.Uint32
@@ -630,52 +623,6 @@ func (d *DownTrack) getStreamAllocatorListener() DownTrackStreamAllocatorListene
 
 	return d.streamAllocatorListener
 }
-
-/* RAJA-REMOVE
-func (d *DownTrack) SetStreamAllocatorReportInterval(interval time.Duration) {
-	d.ClearStreamAllocatorReportInterval()
-
-	if interval == 0 {
-		return
-	}
-
-	d.streamAllocatorLock.Lock()
-	d.streamAllocatorBytesCounter.Store(0)
-
-	d.streamAllocatorReportGeneration++
-	gen := d.streamAllocatorReportGeneration
-	d.streamAllocatorLock.Unlock()
-
-	go func(generation int) {
-		timer := time.NewTimer(interval)
-		for {
-			<-timer.C
-
-			d.streamAllocatorLock.Lock()
-			if generation != d.streamAllocatorReportGeneration {
-				d.streamAllocatorLock.Unlock()
-				return
-			}
-
-			sal := d.streamAllocatorListener
-			bytes := d.streamAllocatorBytesCounter.Swap(0)
-			d.streamAllocatorLock.Unlock()
-
-			if sal != nil {
-				sal.OnPacketsSent(d, int(bytes))
-			}
-
-			timer.Reset(interval)
-		}
-	}(gen)
-}
-
-func (d *DownTrack) ClearStreamAllocatorReportInterval() {
-	d.streamAllocatorLock.Lock()
-	d.streamAllocatorReportGeneration++
-	d.streamAllocatorLock.Unlock()
-}
-*/
 
 func (d *DownTrack) SetProbeClusterId(probeClusterId ccutils.ProbeClusterId) {
 	d.probeClusterId.Store(uint32(probeClusterId))
@@ -1247,8 +1194,6 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	if onCloseHandler := d.getOnCloseHandler(); onCloseHandler != nil {
 		onCloseHandler(!flush)
 	}
-
-	// RAJA-REMOVE d.ClearStreamAllocatorReportInterval()
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
@@ -2264,9 +2209,6 @@ type updateStatsParams struct {
 
 func (d *DownTrack) updateStats(params updateStatsParams) {
 	if !params.disableCounter {
-		// STREAM-ALLOCATOR-TODO: remove this stream allocator bytes counter once stream allocator changes fully to pull bytes counter
-		// RAJA-REMOVE size := uint32(params.headerSize + params.payloadSize)
-		// RAJA-REMOVE d.streamAllocatorBytesCounter.Add(size)
 		/* STREAM-ALLOCATOR-DATA
 		if params.isRTX {
 			d.bytesRetransmitted.Add(size)

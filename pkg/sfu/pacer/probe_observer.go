@@ -72,7 +72,6 @@ func (po *ProbeObserver) StartProbeCluster(probeClusterId ccutils.ProbeClusterId
 	po.isActiveClusterDone = false
 
 	po.isInProbe.Store(true)
-	po.logger.Infow("po starting probe cluster", "pci", probeClusterId) // REMOVE
 }
 
 func (po *ProbeObserver) EndProbeCluster(probeClusterId ccutils.ProbeClusterId) ccutils.ProbeClusterInfo {
@@ -115,37 +114,6 @@ func (po *ProbeObserver) EndProbeCluster(probeClusterId ccutils.ProbeClusterId) 
 
 	return clusterInfo
 }
-
-/* RAJA-REMOVE
-func (po *ProbeObserver) AbortProbeCluster(probeClusterId ccutils.ProbeClusterId) {
-	if !po.isInProbe.Load() {
-		// probe not active
-		po.logger.Warnw(
-			"ignoring abort of a probe cluster when not active", nil,
-			"probeClusterId", probeClusterId,
-		)
-		return
-	}
-
-	po.lock.Lock()
-	defer po.lock.Unlock()
-
-	if po.activeProbeClusterId != probeClusterId {
-		// probe not active
-		po.logger.Warnw(
-			"ignoring abort of a probe cluster of a non-active one", nil,
-			"probeClusterId", probeClusterId,
-			"active", po.activeProbeClusterId,
-		)
-		return
-	}
-	po.activeProbeClusterId = ccutils.ProbeClusterIdInvalid
-
-	po.isInProbe.Store(false)
-
-	// RAJA-TODO: have to send a report of the aborted probe
-}
-*/
 
 func (po *ProbeObserver) RecordPacket(size int, isRTX bool, probeClusterId ccutils.ProbeClusterId, isProbe bool) {
 	if !po.isInProbe.Load() {

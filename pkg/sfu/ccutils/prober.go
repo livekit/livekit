@@ -121,7 +121,6 @@ package ccutils
 
 import (
 	"fmt"
-	"math"
 	"sync"
 	"time"
 
@@ -134,9 +133,7 @@ import (
 
 type ProberListener interface {
 	OnSendProbe(bytesToSend int)
-	// RAJA-REMOVE OnProbeClusterDone(info ProbeClusterInfo)
 	OnProbeClusterSwitch(probeClusterId ProbeClusterId, desiredBytes int)
-	// RAJA-REMOVE OnActiveChanged(isActive bool)
 }
 
 type ProberParams struct {
@@ -152,8 +149,6 @@ type Prober struct {
 	clustersMu    sync.RWMutex
 	clusters      deque.Deque[*Cluster]
 	activeCluster *Cluster
-	// RAJA-REMOVE activeStateQueue          []bool
-	// RAJA-REMOVE activeStateQueueInProcess atomic.Bool
 }
 
 func NewProber(params ProberParams) *Prober {
@@ -172,42 +167,26 @@ func (p *Prober) IsRunning() bool {
 }
 
 func (p *Prober) Reset(info ProbeClusterInfo) {
-	// RAJA-TODO reset := false
-	// RAJA-TODO var info ProbeClusterInfo
-
 	p.clustersMu.Lock()
+	defer p.clustersMu.Unlock()
+
+	p.clustersMu.Unlock()
 	if p.activeCluster != nil {
 		if p.activeCluster.Id() == info.ProbeClusterId {
 			p.activeCluster.MarkCompleted(info)
 			p.params.Logger.Debugw("prober: resetting active cluster", "cluster", p.activeCluster)
 		}
-		// RAJA-TODO reset = true
-		// RAJA-TODO info = p.activeCluster.GetInfo()
 	}
 
 	p.clusters.Clear()
 	p.activeCluster = nil
-
-	// RAJA-REMOVE p.activeStateQueue = append(p.activeStateQueue, false)
-	p.clustersMu.Unlock()
-
-	/* RAJA-TODO: maybe need a listener method to notify reset??
-	if reset {
-		if p.params.Listener != nil {
-			p.params.Listener.OnProbeClusterDone(info)
-		}
-	}
-	*/
-
-	// RAJA-REMOVE p.processActiveStateQueue()
 }
 
 func (p *Prober) AddCluster(
 	mode ProbeClusterMode,
 	desiredRateBps int,
 	expectedRateBps int,
-	minDuration time.Duration,
-	maxDuration time.Duration,
+	duration time.Duration,
 ) ProbeClusterId {
 	if desiredRateBps <= 0 {
 		return ProbeClusterIdInvalid
@@ -219,8 +198,7 @@ func (p *Prober) AddCluster(
 		mode,
 		desiredRateBps,
 		expectedRateBps,
-		minDuration,
-		maxDuration,
+		duration,
 		p.params.Listener,
 	)
 	p.params.Logger.Debugw("cluster added", "cluster", cluster)
@@ -243,25 +221,16 @@ func (p *Prober) ClusterDone(info ProbeClusterInfo) {
 	}
 }
 
-/* RAJA-REMOVE
-func (p *Prober) PacketsSent(size int) {
-	cluster := p.getFrontCluster()
-	if cluster == nil {
-		return
+func (p *Prober) GetActiveClusterId() ProbeClusterId {
+	p.clustersMu.RLock()
+	defer p.clustersMu.RUnlock()
+
+	if p.activeCluster != nil {
+		return p.activeCluster.Id()
 	}
 
-	cluster.PacketsSent(size)
+	return ProbeClusterIdInvalid
 }
-
-func (p *Prober) ProbeSent(size int) {
-	cluster := p.getFrontCluster()
-	if cluster == nil {
-		return
-	}
-
-	cluster.ProbeSent(size)
-}
-*/
 
 func (p *Prober) getFrontCluster() *Cluster {
 	p.clustersMu.Lock()
@@ -297,14 +266,7 @@ func (p *Prober) popFrontCluster(cluster *Cluster) {
 		p.activeCluster = nil
 	}
 
-	/* RAJA-REMOVE
-	if p.clusters.Len() == 0 {
-		p.activeStateQueue = append(p.activeStateQueue, false)
-	}
-	*/
 	p.clustersMu.Unlock()
-
-	// RAJA-REMOVE p.processActiveStateQueue()
 }
 
 func (p *Prober) pushBackClusterAndMaybeStart(cluster *Cluster) {
@@ -312,41 +274,10 @@ func (p *Prober) pushBackClusterAndMaybeStart(cluster *Cluster) {
 	p.clusters.PushBack(cluster)
 
 	if p.clusters.Len() == 1 {
-		// RAJA-REMOVE p.activeStateQueue = append(p.activeStateQueue, true)
-
 		go p.run()
 	}
 	p.clustersMu.Unlock()
-
-	// RAJA-REMOVE p.processActiveStateQueue()
 }
-
-/* RAJA-REMOVE
-func (p *Prober) processActiveStateQueue() {
-	if p.activeStateQueueInProcess.Swap(true) {
-		// processing queue
-		return
-	}
-
-	for {
-		p.clustersMu.Lock()
-		if len(p.activeStateQueue) == 0 {
-			p.clustersMu.Unlock()
-			break
-		}
-
-		isActive := p.activeStateQueue[0]
-		p.activeStateQueue = p.activeStateQueue[1:]
-		p.clustersMu.Unlock()
-
-		if p.params.Listener != nil {
-			p.params.Listener.OnActiveChanged(isActive)
-		}
-	}
-
-	p.activeStateQueueInProcess.Store(false)
-}
-*/
 
 func (p *Prober) run() {
 	cluster := p.getFrontCluster()
@@ -366,23 +297,6 @@ func (p *Prober) run() {
 		}
 
 		cluster.Process()
-
-		/* RAJA-REMOVE
-		if cluster.IsFinished() {
-			p.params.Logger.Debugw("cluster finished", "cluster", cluster.String())
-
-			if p.params.Listener != nil {
-				p.params.Listener.OnProbeClusterDone(cluster.GetInfo())
-			}
-
-			p.popFrontCluster(cluster)
-		}
-
-		cluster := p.getFrontCluster()
-		if cluster == nil {
-			return
-		}
-		*/
 
 		timer.Reset(cluster.GetSleepDuration())
 	}
@@ -460,14 +374,14 @@ func (p ProbeClusterInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
 // ---------------------------------------------------------------------------
 
 type clusterBucket struct {
-	desiredNumProbes   int
-	desiredBytes       int
-	desiredElapsedTime time.Duration
-	sleepDuration      time.Duration
+	desiredNumProbes int
+	desiredBytes     int
+	sleepDuration    time.Duration
 }
 
 func (c clusterBucket) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddInt("desiredNumProbes", c.desiredNumProbes)
+	e.AddInt("desiredBytes", c.desiredBytes)
 	e.AddDuration("sleepDuration", c.sleepDuration)
 	return nil
 }
@@ -483,17 +397,11 @@ type Cluster struct {
 	expectedRateBps int
 	listener        ProberListener
 	desiredBytes    int
-	minDuration     time.Duration
-	maxDuration     time.Duration // RAJA-REMOVE
+	duration        time.Duration
 
 	buckets   []clusterBucket
 	bucketIdx int
 
-	// RAJA-REMOVE - START
-	bytesSentProbe    int
-	bytesSentNonProbe int
-	startTime         time.Time
-	// RAJA-REMOVE - END
 	numProbesSent    int
 	isComplete       bool
 	probeClusterInfo ProbeClusterInfo
@@ -504,8 +412,7 @@ func newCluster(
 	mode ProbeClusterMode,
 	desiredRateBps int,
 	expectedRateBps int,
-	minDuration time.Duration,
-	maxDuration time.Duration,
+	duration time.Duration,
 	listener ProberListener,
 ) *Cluster {
 	c := &Cluster{
@@ -514,18 +421,17 @@ func newCluster(
 		desiredRateBps:  desiredRateBps,
 		expectedRateBps: expectedRateBps,
 		listener:        listener,
-		minDuration:     minDuration,
-		maxDuration:     maxDuration,
+		duration:        duration,
 	}
-	c.initBuckets(desiredRateBps, expectedRateBps, minDuration)
+	c.initBuckets(desiredRateBps, expectedRateBps, duration)
 	c.desiredBytes = c.buckets[len(c.buckets)-1].desiredBytes
 	return c
 }
 
-func (c *Cluster) initBuckets(desiredRateBps int, expectedRateBps int, minDuration time.Duration) {
+func (c *Cluster) initBuckets(desiredRateBps int, expectedRateBps int, duration time.Duration) {
 	// split into granular buckets
 	// NOTE: splitting even if mode is unitform
-	numBuckets := int((minDuration.Milliseconds() + cBucketDuration.Milliseconds() - 1) / cBucketDuration.Milliseconds())
+	numBuckets := int((duration.Milliseconds() + cBucketDuration.Milliseconds() - 1) / cBucketDuration.Milliseconds())
 	if numBuckets < 1 {
 		numBuckets = 1
 	}
@@ -535,7 +441,6 @@ func (c *Cluster) initBuckets(desiredRateBps int, expectedRateBps int, minDurati
 
 	runningNumProbes := 0
 	runningDesiredBytes := 0
-	runningDesiredElapsedTime := time.Duration(0)
 
 	c.buckets = make([]clusterBucket, 0, numBuckets)
 	for bucketIdx := 0; bucketIdx < numBuckets; bucketIdx++ {
@@ -550,35 +455,25 @@ func (c *Cluster) initBuckets(desiredRateBps int, expectedRateBps int, minDurati
 		}
 		bucketProbeRateBytesPerSec := (bucketProbeRateBps + 7) / 8
 
-		// pace based on bytes per probe
-		numProbesPerSec := (bucketProbeRateBytesPerSec + cBytesPerProbe - 1) / cBytesPerProbe
-		sleepDurationMicroSeconds := int(float64(1_000_000)/float64(numProbesPerSec) + 0.5)
+		runningDesiredBytes += (((bucketProbeRateBytesPerSec + expectedRateBytesPerSec) * int(cBucketDuration.Milliseconds())) + 999) / 1000
+		numProbesNeeded := (runningDesiredBytes + cBytesPerProbe - 1) / cBytesPerProbe
 
-		numProbesInBucket := int(math.Round(float64(numProbesPerSec)*cBucketDuration.Seconds() + 0.5))
-		if numProbesInBucket < 1 {
+		numProbesInBucket := numProbesNeeded - runningNumProbes
+		if numProbesInBucket <= 0 {
 			numProbesInBucket = 1
 		}
 		runningNumProbes += numProbesInBucket
 
-		runningDesiredBytes += (((bucketProbeRateBytesPerSec + expectedRateBytesPerSec) * int(cBucketDuration.Milliseconds())) + 999) / 1000 // RAJA-REMOVE
-		runningDesiredElapsedTime += cBucketDuration
+		sleepDurationMicroSeconds := int(float64(cBucketDuration.Microseconds())/float64(numProbesInBucket) + 0.5)
 
 		c.buckets = append(c.buckets, clusterBucket{
-			desiredNumProbes:   runningNumProbes,
-			desiredBytes:       runningDesiredBytes,
-			desiredElapsedTime: runningDesiredElapsedTime,
-			sleepDuration:      time.Duration(sleepDurationMicroSeconds) * time.Microsecond,
+			desiredNumProbes: runningNumProbes,
+			sleepDuration:    time.Duration(sleepDurationMicroSeconds) * time.Microsecond,
 		})
 	}
 }
 
 func (c *Cluster) Start() {
-	c.lock.Lock()
-	if c.startTime.IsZero() {
-		c.startTime = time.Now()
-	}
-	c.lock.Unlock()
-
 	if c.listener != nil {
 		c.listener.OnProbeClusterSwitch(c.id, c.desiredBytes)
 	}
@@ -595,42 +490,6 @@ func (c *Cluster) Id() ProbeClusterId {
 	return c.id
 }
 
-/* RAJA-REMOVE
-func (c *Cluster) PacketsSent(size int) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	c.bytesSentNonProbe += size
-}
-
-func (c *Cluster) ProbeSent(size int) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	c.bytesSentProbe += size
-}
-*/
-
-// RAJA-REMOVE
-func (c *Cluster) IsFinished() bool {
-	c.lock.RLock()
-	defer c.lock.RUnlock()
-
-	// if already past deadline, end the cluster
-	timeElapsed := time.Since(c.startTime)
-	if timeElapsed > c.maxDuration {
-		return true
-	}
-
-	// do not end cluster until minDuration elapses even if rate is achieved.
-	// Ensures that the next cluster (if any) does not start early.
-	if (c.bytesSentProbe+c.bytesSentNonProbe) >= c.desiredBytes && timeElapsed >= c.minDuration {
-		return true
-	}
-
-	return false
-}
-
 func (c *Cluster) MarkCompleted(info ProbeClusterInfo) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -639,52 +498,8 @@ func (c *Cluster) MarkCompleted(info ProbeClusterInfo) {
 	c.probeClusterInfo = info
 }
 
-/* RAJA-REMOVE
-func (c *Cluster) GetInfo() ProbeClusterInfo {
-	c.lock.RLock()
-	defer c.lock.RUnlock()
-
-	return ProbeClusterInfo{
-		ProbeClusterId: c.id,
-		// RAJA-TODO BytesSent: c.bytesSentProbe + c.bytesSentNonProbe,
-		// RAJA-TODO Duration:  time.Since(c.startTime),
-	}
-}
-*/
-
-// RAJA-TODO simplify this, this should just be sending x-amount of data, so probably don't even need to call this API, can just send standard amount?
 func (c *Cluster) Process() {
 	c.lock.Lock()
-	/* RAJA-REMOVE
-	timeElapsed := time.Since(c.startTime)
-
-	// Calculate number of probe bytes that should have been sent since start.
-	// Overall goal is to send desired number of probe bytes in minDuration.
-	// However, it is possible that timeElapsed is more than minDuration due
-	// to scheduling variance. When overshooting time budget, use a capped
-	// short fall if there is a grace period given.
-	bytesShortFall := c.buckets[c.bucketIdx].desiredBytes - c.bytesSentProbe - c.bytesSentNonProbe
-	if bytesShortFall < 0 {
-		bytesShortFall = 0
-	}
-	// cap short fall to limit to 5 packets in an iteration
-	// 275 bytes per packet (255 max RTP padding payload + 20 bytes RTP header)
-	if bytesShortFall > (275 * 5) {
-		bytesShortFall = 275 * 5
-	}
-	// round up to packet size
-	bytesShortFall = ((bytesShortFall + 274) / 275) * 275
-
-	// move to next bucket if necessary
-	if timeElapsed > c.buckets[c.bucketIdx].desiredElapsedTime {
-		c.bucketIdx++
-		// stay in the last bucket till desired number of bytes are sent
-		if c.bucketIdx >= len(c.buckets) {
-			c.bucketIdx = len(c.buckets) - 1
-		}
-	}
-	*/
-
 	if c.isComplete {
 		c.lock.Unlock()
 		return
@@ -707,26 +522,6 @@ func (c *Cluster) Process() {
 	// STREAM-ALLOCATOR-TODO look at adapting sleep time based on how many bytes and how much time is left
 }
 
-/* RAJA-REMOVE - clean up
-func (c *Cluster) String() string {
-	activeTimeMs := int64(0)
-	if !c.startTime.IsZero() {
-		activeTimeMs = time.Since(c.startTime).Milliseconds()
-	}
-
-	return fmt.Sprintf("id: %d, mode: %s, bytes: desired %d / probe %d / non-probe %d / remaining: %d, time(ms): active %d / min %d / max %d",
-		c.id,
-		c.mode,
-		c.desiredBytes,
-		c.bytesSentProbe,
-		c.bytesSentNonProbe,
-		c.desiredBytes-c.bytesSentProbe-c.bytesSentNonProbe,
-		activeTimeMs,
-		c.minDuration.Milliseconds(),
-		c.maxDuration.Milliseconds())
-}
-*/
-
 func (c *Cluster) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	if c != nil {
 		e.AddUint32("id", uint32(c.id))
@@ -734,7 +529,7 @@ func (c *Cluster) MarshalLogObject(e zapcore.ObjectEncoder) error {
 		e.AddInt("desiredRateBps", c.desiredRateBps)
 		e.AddInt("expectedRateBps", c.expectedRateBps)
 		e.AddInt("desiredBytes", c.desiredBytes)
-		e.AddDuration("minDuration", c.minDuration)
+		e.AddDuration("duration", c.duration)
 		e.AddArray("buckets", logger.ObjectSlice(c.buckets))
 		e.AddInt("bucketIdx", c.bucketIdx)
 		e.AddInt("numProbesSent", c.numProbesSent)
