@@ -227,6 +227,7 @@ func (r *RemoteBWE) updateCongestionState(state bwe.CongestionState, reason chan
 		"to", state,
 		"reason", reason,
 		"committedChannelCapacity", r.committedChannelCapacity,
+		"channel", r.channelObserver,
 	)
 
 	if state != r.congestionState {
