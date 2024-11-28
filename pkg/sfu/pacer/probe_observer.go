@@ -77,10 +77,12 @@ func (po *ProbeObserver) StartProbeCluster(probeClusterId ccutils.ProbeClusterId
 func (po *ProbeObserver) EndProbeCluster(probeClusterId ccutils.ProbeClusterId) ccutils.ProbeClusterInfo {
 	if !po.isInProbe.Load() {
 		// probe not active
-		po.logger.Warnw(
-			"ignoring end of a probe cluster when not active", nil,
-			"probeClusterId", probeClusterId,
-		)
+		if probeClusterId != ccutils.ProbeClusterIdInvalid {
+			po.logger.Warnw(
+				"ignoring end of a probe cluster when not active", nil,
+				"probeClusterId", probeClusterId,
+			)
+		}
 		return ccutils.ProbeClusterInfoInvalid
 	}
 
@@ -150,8 +152,8 @@ func (po *ProbeObserver) RecordPacket(size int, isRTX bool, probeClusterId ccuti
 	}
 
 	po.lock.Lock()
-
 	if probeClusterId != po.activeProbeClusterId || po.isActiveClusterDone {
+		po.lock.Unlock()
 		return
 	}
 

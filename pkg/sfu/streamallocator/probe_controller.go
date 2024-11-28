@@ -355,6 +355,7 @@ func (p *ProbeController) increaseProbeDurationLocked() {
 func (p *ProbeController) StopProbe() {
 	info := ccutils.ProbeClusterInfoInvalid
 	if p.pacer != nil {
+		p.params.Logger.Infow("stopping probe cluster id", "pci", p.probeClusterId) // REMOVE
 		info = p.pacer.EndProbeCluster(p.probeClusterId)
 	}
 	p.params.Prober.Reset(info)
