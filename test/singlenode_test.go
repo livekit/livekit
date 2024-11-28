@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/pion/sdp/v3"
-	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 	"github.com/thoas/go-funk"
 	"github.com/twitchtv/twirp"

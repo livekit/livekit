@@ -21,7 +21,7 @@ import (
 
 	"github.com/pion/interceptor"
 	"github.com/pion/rtp"
-	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v4"
 )
 
 // Do a fuzzy find for a codec in the list of codecs

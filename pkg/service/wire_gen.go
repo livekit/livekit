@@ -22,7 +22,7 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 	"github.com/livekit/psrpc"
-	"github.com/pion/turn/v2"
+	"github.com/pion/turn/v4"
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
 	"gopkg.in/yaml.v3"

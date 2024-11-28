@@ -20,7 +20,7 @@ import (
 	"strings"
 
 	"github.com/pion/sdp/v3"
-	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v4"
 
 	"github.com/livekit/protocol/livekit"
 	lksdp "github.com/livekit/protocol/sdp"
