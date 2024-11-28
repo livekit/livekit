@@ -78,8 +78,8 @@ func (po *ProbeObserver) EndProbeCluster(probeClusterId ccutils.ProbeClusterId) 
 	if !po.isInProbe.Load() {
 		// probe not active
 		if probeClusterId != ccutils.ProbeClusterIdInvalid {
-			po.logger.Warnw(
-				"ignoring end of a probe cluster when not active", nil,
+			po.logger.Debugw(
+				"ignoring end of a probe cluster when not active",
 				"probeClusterId", probeClusterId,
 			)
 		}
