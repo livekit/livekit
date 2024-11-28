@@ -279,6 +279,8 @@ func (r *RemoteBWE) ProbingEnd(isNotFailing bool, isGoalReached bool) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
+	r.isInProbe = false
+
 	highestEstimateInProbe := r.channelObserver.GetHighestEstimate()
 
 	//
