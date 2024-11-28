@@ -121,6 +121,7 @@ package ccutils
 
 import (
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -551,7 +552,7 @@ func (c *Cluster) initBuckets(desiredRateBps int, expectedRateBps int, minDurati
 		numProbesPerSec := (bucketProbeRateBytesPerSec + cBytesPerProbe - 1) / cBytesPerProbe
 		sleepDurationMicroSeconds := int(float64(1_000_000)/float64(numProbesPerSec) + 0.5)
 
-		numProbesInBucket := int(float64(numProbesPerSec)*cBucketDuration.Seconds() + 0.5)
+		numProbesInBucket := int(math.Round(float64(numProbesPerSec)*cBucketDuration.Seconds() + 0.5))
 		if numProbesInBucket < 1 {
 			numProbesInBucket = 1
 		}

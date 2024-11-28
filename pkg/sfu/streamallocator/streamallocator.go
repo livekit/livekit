@@ -600,6 +600,7 @@ func (s *StreamAllocator) OnActiveChanged(isActive bool) {
 
 // called when probe cluster changes
 func (s *StreamAllocator) OnProbeClusterSwitch(probeClusterId ccutils.ProbeClusterId, desiredBytes int) {
+	s.params.Logger.Infow("stream allocator starting probe cluster", "pci", probeClusterId, "desiredBytes", desiredBytes) // REMOVE
 	if s.pacer != nil {
 		s.pacer.StartProbeCluster(probeClusterId, desiredBytes)
 	}

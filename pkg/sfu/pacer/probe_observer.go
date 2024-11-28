@@ -72,6 +72,7 @@ func (po *ProbeObserver) StartProbeCluster(probeClusterId ccutils.ProbeClusterId
 	po.isActiveClusterDone = false
 
 	po.isInProbe.Store(true)
+	po.logger.Infow("po starting probe cluster", "pci", probeClusterId) // REMOVE
 }
 
 func (po *ProbeObserver) EndProbeCluster(probeClusterId ccutils.ProbeClusterId) ccutils.ProbeClusterInfo {
