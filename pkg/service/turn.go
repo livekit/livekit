@@ -23,7 +23,7 @@ import (
 	"strings"
 
 	"github.com/jxskiss/base62"
-	"github.com/pion/turn/v2"
+	"github.com/pion/turn/v4"
 	"github.com/pkg/errors"
 
 	"github.com/livekit/protocol/auth"

@@ -23,7 +23,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/sctp"
 	"github.com/pion/sdp/v3"
-	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v4"
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"

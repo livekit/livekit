@@ -27,7 +27,7 @@ import (
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/pion/rtcp"
 	"github.com/pion/sdp/v3"
-	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v4"
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
@@ -1458,6 +1458,10 @@ func (h AnyTransportHandler) OnFailed(_isShortLived bool, _ici *types.ICEConnect
 	h.p.onAnyTransportFailed()
 }
 
+func (h AnyTransportHandler) OnClosed() {
+	h.p.onAnyTransportClosed()
+}
+
 func (h AnyTransportHandler) OnNegotiationFailed() {
 	h.p.onAnyTransportNegotiationFailed()
 }
@@ -2014,6 +2018,10 @@ func (p *ParticipantImpl) onAnyTransportFailed() {
 
 	// detect when participant has actually left.
 	p.setupDisconnectTimer()
+}
+
+func (p *ParticipantImpl) onAnyTransportClosed() {
+	_ = p.Close(false, types.ParticipantCloseReasonPeerConnectionDisconnected, false)
 }
 
 // subscriberRTCPWorker sends SenderReports periodically when the participant is subscribed to

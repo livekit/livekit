@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/frostbyte73/core"
-	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/types/known/timestamppb"
 

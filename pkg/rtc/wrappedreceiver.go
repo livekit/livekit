@@ -19,7 +19,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 

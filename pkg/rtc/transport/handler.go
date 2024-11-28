@@ -17,7 +17,7 @@ package transport
 import (
 	"errors"
 
-	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v4"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
@@ -38,6 +38,7 @@ type Handler interface {
 	OnInitialConnected()
 	OnFullyEstablished()
 	OnFailed(isShortLived bool, iceConnectionInfo *types.ICEConnectionInfo)
+	OnClosed()
 	OnTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver)
 	OnDataPacket(kind livekit.DataPacket_Kind, data []byte)
 	OnDataSendError(err error)

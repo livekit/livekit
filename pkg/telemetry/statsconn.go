@@ -17,7 +17,7 @@ package telemetry
 import (
 	"net"
 
-	"github.com/pion/turn/v2"
+	"github.com/pion/turn/v4"
 
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
