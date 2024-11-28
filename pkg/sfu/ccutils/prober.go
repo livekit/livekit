@@ -438,8 +438,9 @@ func (c *Cluster) initBuckets(desiredRateBps int, expectedRateBps int, duration 
 	expectedRateBytesPerSec := (expectedRateBps + 7) / 8
 	baseProbeRateBps := (desiredRateBps - expectedRateBps + numBuckets - 1) / numBuckets
 
-	runningNumProbes := 0
 	runningDesiredBytes := 0
+	runningExpectedBytes := 0
+	runningNumProbes := 0
 
 	c.buckets = make([]clusterBucket, 0, numBuckets)
 	for bucketIdx := 0; bucketIdx < numBuckets; bucketIdx++ {
@@ -455,7 +456,8 @@ func (c *Cluster) initBuckets(desiredRateBps int, expectedRateBps int, duration 
 		bucketProbeRateBytesPerSec := (bucketProbeRateBps + 7) / 8
 
 		runningDesiredBytes += (((bucketProbeRateBytesPerSec + expectedRateBytesPerSec) * int(cBucketDuration.Milliseconds())) + 999) / 1000
-		numProbesNeeded := (runningDesiredBytes + cBytesPerProbe - 1) / cBytesPerProbe
+		runningExpectedBytes += ((expectedRateBytesPerSec * int(cBucketDuration.Milliseconds())) + 999) / 1000
+		numProbesNeeded := ((runningDesiredBytes - runningExpectedBytes) + cBytesPerProbe - 1) / cBytesPerProbe
 
 		numProbesInBucket := numProbesNeeded - runningNumProbes
 		if numProbesInBucket <= 0 {
