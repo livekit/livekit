@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pion/webrtc/v3/pkg/rtcerr"
+	"github.com/pion/webrtc/v4/pkg/rtcerr"
 	"go.uber.org/atomic"
 	"golang.org/x/exp/maps"
 

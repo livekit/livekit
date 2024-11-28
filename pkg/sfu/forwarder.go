@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/pion/rtp"
-	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v4"
 	"go.uber.org/zap/zapcore"
 
 	"github.com/livekit/mediatransportutil"

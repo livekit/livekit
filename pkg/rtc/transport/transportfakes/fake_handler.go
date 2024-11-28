@@ -8,7 +8,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/protocol/livekit"
-	webrtc "github.com/pion/webrtc/v3"
+	webrtc "github.com/pion/webrtc/v4"
 )
 
 type FakeHandler struct {
@@ -22,6 +22,10 @@ type FakeHandler struct {
 	}
 	onAnswerReturnsOnCall map[int]struct {
 		result1 error
+	}
+	OnClosedStub        func()
+	onClosedMutex       sync.RWMutex
+	onClosedArgsForCall []struct {
 	}
 	OnDataPacketStub        func(livekit.DataPacket_Kind, []byte)
 	onDataPacketMutex       sync.RWMutex
@@ -160,6 +164,30 @@ func (fake *FakeHandler) OnAnswerReturnsOnCall(i int, result1 error) {
 	fake.onAnswerReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
+}
+
+func (fake *FakeHandler) OnClosed() {
+	fake.onClosedMutex.Lock()
+	fake.onClosedArgsForCall = append(fake.onClosedArgsForCall, struct {
+	}{})
+	stub := fake.OnClosedStub
+	fake.recordInvocation("OnClosed", []interface{}{})
+	fake.onClosedMutex.Unlock()
+	if stub != nil {
+		fake.OnClosedStub()
+	}
+}
+
+func (fake *FakeHandler) OnClosedCallCount() int {
+	fake.onClosedMutex.RLock()
+	defer fake.onClosedMutex.RUnlock()
+	return len(fake.onClosedArgsForCall)
+}
+
+func (fake *FakeHandler) OnClosedCalls(stub func()) {
+	fake.onClosedMutex.Lock()
+	defer fake.onClosedMutex.Unlock()
+	fake.OnClosedStub = stub
 }
 
 func (fake *FakeHandler) OnDataPacket(arg1 livekit.DataPacket_Kind, arg2 []byte) {
@@ -591,6 +619,8 @@ func (fake *FakeHandler) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.onAnswerMutex.RLock()
 	defer fake.onAnswerMutex.RUnlock()
+	fake.onClosedMutex.RLock()
+	defer fake.onClosedMutex.RUnlock()
 	fake.onDataPacketMutex.RLock()
 	defer fake.onDataPacketMutex.RUnlock()
 	fake.onDataSendErrorMutex.RLock()

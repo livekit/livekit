@@ -101,6 +101,10 @@ func (c ClientInfo) SupportErrorResponse() bool {
 	return c.SupportTrackSubscribedEvent()
 }
 
+func (c ClientInfo) SupportSctpZeroChecksum() bool {
+	return !(c.isGo() && c.compareVersion("2.1.3") <= 0)
+}
+
 // compareVersion compares a semver against the current client SDK version
 // returning 1 if current version is greater than version
 // 0 if they are the same, and -1 if it's an earlier version

@@ -21,8 +21,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/pion/ice/v2"
-	"github.com/pion/webrtc/v3"
+	"github.com/pion/ice/v4"
+	"github.com/pion/webrtc/v4"
 	"golang.org/x/exp/slices"
 
 	"github.com/livekit/protocol/livekit"

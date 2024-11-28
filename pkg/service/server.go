@@ -27,7 +27,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/pion/turn/v2"
+	"github.com/pion/turn/v4"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
 	"github.com/twitchtv/twirp"

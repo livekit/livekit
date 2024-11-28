@@ -22,8 +22,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pion/dtls/v2/pkg/crypto/elliptic"
-	"github.com/pion/ice/v2"
+	"github.com/pion/dtls/v3/pkg/crypto/elliptic"
+	"github.com/pion/ice/v4"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/cc"
 	"github.com/pion/interceptor/pkg/gcc"
@@ -31,7 +31,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/sctp"
 	"github.com/pion/sdp/v3"
-	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v4"
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
 	"go.uber.org/zap/zapcore"
@@ -188,8 +188,6 @@ type PCTransport struct {
 
 	firstOfferReceived      bool
 	firstOfferNoDataChannel bool
-	remoteICEIsLite         *bool
-	localICEIsLite          *bool
 	reliableDC              *webrtc.DataChannel
 	reliableDCOpened        bool
 	lossyDC                 *webrtc.DataChannel
@@ -650,9 +648,9 @@ func (t *PCTransport) setConnectedAt(at time.Time) bool {
 	return true
 }
 
-func (t *PCTransport) onICEGatheringStateChange(state webrtc.ICEGathererState) {
+func (t *PCTransport) onICEGatheringStateChange(state webrtc.ICEGatheringState) {
 	t.params.Logger.Debugw("ice gathering state change", "state", state.String())
-	if state != webrtc.ICEGathererStateComplete {
+	if state != webrtc.ICEGatheringStateComplete {
 		return
 	}
 
@@ -706,6 +704,11 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 	case webrtc.PeerConnectionStateFailed:
 		t.clearConnTimer()
 		t.handleConnectionFailed(false)
+	case webrtc.PeerConnectionStateClosed:
+		// peerconnection closed by client
+		if !t.isClosed.Load() {
+			t.params.Handler.OnClosed()
+		}
 	}
 }
 
