@@ -88,7 +88,7 @@ const (
 	jobsQueueMinSize  = 2048
 
 	telemetryStatsUpdateInterval         = time.Second * 30
-	telemetryNonMediaStatsUpdateInterval = time.Minute * 5
+	telemetryNonMediaStatsUpdateInterval = time.Second * 30
 )
 
 type telemetryService struct {
