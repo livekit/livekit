@@ -20,6 +20,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
+	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -76,6 +77,7 @@ type ProbeController struct {
 
 	lock                      sync.RWMutex
 	bwe                       bwe.BWE
+	pacer                     pacer.Pacer
 	probeInterval             time.Duration
 	lastProbeStartTime        time.Time
 	probeGoalBps              int64
@@ -103,6 +105,13 @@ func (p *ProbeController) SetBWE(bwe bwe.BWE) {
 	defer p.lock.Unlock()
 
 	p.bwe = bwe
+}
+
+func (p *ProbeController) SetPacer(pacer pacer.Pacer) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	p.pacer = pacer
 }
 
 func (p *ProbeController) Reset() {
@@ -224,7 +233,7 @@ func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUs
 	}
 	p.probeGoalBps = expectedBandwidthUsage + desiredIncreaseBps
 
-	p.doneProbeClusterInfo = ccutils.ProbeClusterInfo{ProbeClusterId: ccutils.ProbeClusterIdInvalid}
+	p.doneProbeClusterInfo = ccutils.ProbeClusterInfoInvalid
 	p.abortedProbeClusterId = ccutils.ProbeClusterIdInvalid
 	p.goalReachedProbeClusterId = ccutils.ProbeClusterIdInvalid
 
@@ -316,7 +325,7 @@ func (p *ProbeController) pollProbe(probeClusterId ccutils.ProbeClusterId, expec
 
 func (p *ProbeController) clearProbeLocked() {
 	p.probeClusterId = ccutils.ProbeClusterIdInvalid
-	p.doneProbeClusterInfo = ccutils.ProbeClusterInfo{ProbeClusterId: ccutils.ProbeClusterIdInvalid}
+	p.doneProbeClusterInfo = ccutils.ProbeClusterInfoInvalid
 	p.abortedProbeClusterId = ccutils.ProbeClusterIdInvalid
 	p.goalReachedProbeClusterId = ccutils.ProbeClusterIdInvalid
 }
@@ -344,7 +353,11 @@ func (p *ProbeController) increaseProbeDurationLocked() {
 }
 
 func (p *ProbeController) StopProbe() {
-	p.params.Prober.Reset()
+	info := ccutils.ProbeClusterInfoInvalid
+	if p.pacer != nil {
+		info = p.pacer.EndProbeCluster(p.probeClusterId)
+	}
+	p.params.Prober.Reset(info)
 }
 
 func (p *ProbeController) AbortProbe() {

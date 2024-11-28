@@ -74,14 +74,14 @@ func (po *ProbeObserver) StartProbeCluster(probeClusterId ccutils.ProbeClusterId
 	po.isInProbe.Store(true)
 }
 
-func (po *ProbeObserver) EndProbeCluster(probeClusterId ccutils.ProbeClusterId) (ccutils.ProbeClusterInfo, bool) {
+func (po *ProbeObserver) EndProbeCluster(probeClusterId ccutils.ProbeClusterId) ccutils.ProbeClusterInfo {
 	if !po.isInProbe.Load() {
 		// probe not active
 		po.logger.Warnw(
 			"ignoring end of a probe cluster when not active", nil,
 			"probeClusterId", probeClusterId,
 		)
-		return ccutils.ProbeClusterInfo{}, false
+		return ccutils.ProbeClusterInfoInvalid
 	}
 
 	po.lock.Lock()
@@ -94,7 +94,7 @@ func (po *ProbeObserver) EndProbeCluster(probeClusterId ccutils.ProbeClusterId) 
 			"probeClusterId", probeClusterId,
 			"active", po.activeProbeClusterId,
 		)
-		return ccutils.ProbeClusterInfo{}, false
+		return ccutils.ProbeClusterInfoInvalid
 	}
 
 	clusterInfo := ccutils.ProbeClusterInfo{
@@ -110,7 +110,7 @@ func (po *ProbeObserver) EndProbeCluster(probeClusterId ccutils.ProbeClusterId) 
 	po.activeProbeClusterId = ccutils.ProbeClusterIdInvalid
 	po.isInProbe.Store(false)
 
-	return clusterInfo, true
+	return clusterInfo
 }
 
 /* RAJA-REMOVE

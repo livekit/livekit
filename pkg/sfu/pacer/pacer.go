@@ -46,7 +46,7 @@ type Pacer interface {
 
 	SetPacerProbeObserverListener(listener PacerProbeObserverListener)
 	StartProbeCluster(probeClusterId ccutils.ProbeClusterId, desiredBytes int)
-	EndProbeCluster(probeClusterId ccutils.ProbeClusterId) (ccutils.ProbeClusterInfo, bool)
+	EndProbeCluster(probeClusterId ccutils.ProbeClusterId) ccutils.ProbeClusterInfo
 }
 
 type PacerProbeObserverListener interface {

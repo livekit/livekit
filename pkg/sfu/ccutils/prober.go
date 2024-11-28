@@ -126,6 +126,7 @@ import (
 
 	"github.com/gammazero/deque"
 	"go.uber.org/atomic"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/livekit/protocol/logger"
 )
@@ -169,13 +170,16 @@ func (p *Prober) IsRunning() bool {
 	return p.clusters.Len() > 0
 }
 
-func (p *Prober) Reset() {
+func (p *Prober) Reset(info ProbeClusterInfo) {
 	// RAJA-TODO reset := false
 	// RAJA-TODO var info ProbeClusterInfo
 
 	p.clustersMu.Lock()
 	if p.activeCluster != nil {
-		p.params.Logger.Debugw("prober: resetting active cluster", "cluster", p.activeCluster.String())
+		if p.activeCluster.Id() == info.ProbeClusterId {
+			p.activeCluster.MarkCompleted(info)
+		}
+		p.params.Logger.Debugw("prober: resetting active cluster", "cluster", p.activeCluster)
 		// RAJA-TODO reset = true
 		// RAJA-TODO info = p.activeCluster.GetInfo()
 	}
@@ -218,7 +222,7 @@ func (p *Prober) AddCluster(
 		maxDuration,
 		p.params.Listener,
 	)
-	p.params.Logger.Debugw("cluster added", "cluster", cluster.String())
+	p.params.Logger.Debugw("cluster added", "cluster", cluster)
 
 	p.pushBackClusterAndMaybeStart(cluster)
 
@@ -232,8 +236,7 @@ func (p *Prober) ClusterDone(info ProbeClusterInfo) {
 	}
 
 	if cluster.Id() == info.ProbeClusterId {
-		// RAJA-TODO: pass in completed info
-		cluster.MarkCompleted()
+		cluster.MarkCompleted(info)
 	}
 }
 
@@ -426,12 +429,29 @@ type ProbeClusterInfo struct {
 	BytesNonProbeRTX     int
 }
 
+var (
+	ProbeClusterInfoInvalid = ProbeClusterInfo{ProbeClusterId: ProbeClusterIdInvalid}
+)
+
 func (p ProbeClusterInfo) Bytes() int {
 	return p.BytesProbe + p.BytesNonProbePrimary + p.BytesNonProbeRTX
 }
 
 func (p ProbeClusterInfo) Duration() time.Duration {
 	return time.Duration(p.EndTime - p.StartTime)
+}
+
+func (p ProbeClusterInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddUint32("ProbeClusterId", uint32(p.ProbeClusterId))
+	e.AddInt("DesiredBytes", p.DesiredBytes)
+	e.AddTime("StartTime", time.Unix(0, p.StartTime))
+	e.AddTime("EndTime", time.Unix(0, p.EndTime))
+	e.AddDuration("Duration", p.Duration())
+	e.AddInt("BytesProbe", p.BytesProbe)
+	e.AddInt("BytesNonProbePrimary", p.BytesNonProbePrimary)
+	e.AddInt("BytesNonProbeRTX", p.BytesNonProbeRTX)
+	e.AddInt("Bytes", p.Bytes())
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -443,6 +463,14 @@ type clusterBucket struct {
 	sleepDuration      time.Duration
 }
 
+func (c clusterBucket) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddInt("desiredNumProbes", c.desiredNumProbes)
+	e.AddDuration("sleepDuration", c.sleepDuration)
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+
 type Cluster struct {
 	lock sync.RWMutex
 
@@ -451,7 +479,7 @@ type Cluster struct {
 	listener     ProberListener
 	desiredBytes int
 	minDuration  time.Duration
-	maxDuration  time.Duration
+	maxDuration  time.Duration // RAJA-REMOVE
 
 	buckets   []clusterBucket
 	bucketIdx int
@@ -461,8 +489,9 @@ type Cluster struct {
 	bytesSentNonProbe int
 	startTime         time.Time
 	// RAJA-REMOVE - END
-	numProbesSent int
-	isComplete    bool
+	numProbesSent    int
+	isComplete       bool
+	probeClusterInfo ProbeClusterInfo
 }
 
 func newCluster(
@@ -595,13 +624,15 @@ func (c *Cluster) IsFinished() bool {
 	return false
 }
 
-func (c *Cluster) MarkCompleted() {
+func (c *Cluster) MarkCompleted(info ProbeClusterInfo) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
 	c.isComplete = true
+	c.probeClusterInfo = info
 }
 
+/* RAJA-REMOVE
 func (c *Cluster) GetInfo() ProbeClusterInfo {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
@@ -612,6 +643,7 @@ func (c *Cluster) GetInfo() ProbeClusterInfo {
 		// RAJA-TODO Duration:  time.Since(c.startTime),
 	}
 }
+*/
 
 // RAJA-TODO simplify this, this should just be sending x-amount of data, so probably don't even need to call this API, can just send standard amount?
 func (c *Cluster) Process() {
@@ -668,6 +700,7 @@ func (c *Cluster) Process() {
 	// STREAM-ALLOCATOR-TODO look at adapting sleep time based on how many bytes and how much time is left
 }
 
+/* RAJA-REMOVE - clean up
 func (c *Cluster) String() string {
 	activeTimeMs := int64(0)
 	if !c.startTime.IsZero() {
@@ -684,6 +717,22 @@ func (c *Cluster) String() string {
 		activeTimeMs,
 		c.minDuration.Milliseconds(),
 		c.maxDuration.Milliseconds())
+}
+*/
+
+func (c *Cluster) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if c != nil {
+		e.AddUint32("id", uint32(c.id))
+		e.AddString("mode", c.mode.String())
+		e.AddInt("desiredBytes", c.desiredBytes)
+		e.AddDuration("minDuration", c.minDuration)
+		e.AddArray("buckets", logger.ObjectSlice(c.buckets))
+		e.AddInt("bucketIdx", c.bucketIdx)
+		e.AddInt("numProbesSent", c.numProbesSent)
+		e.AddBool("isComplete", c.isComplete)
+		e.AddObject("probeClusterInfo", c.probeClusterInfo)
+	}
+	return nil
 }
 
 // ----------------------------------------------------------------------
