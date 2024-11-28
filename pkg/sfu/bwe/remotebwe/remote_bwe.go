@@ -106,6 +106,7 @@ func (r *RemoteBWE) Reset() {
 	defer r.lock.Unlock()
 
 	r.channelObserver = r.newChannelObserverNonProbe()
+	r.isInProbe = false
 }
 
 func (r *RemoteBWE) Stop() {
