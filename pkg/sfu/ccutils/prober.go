@@ -132,8 +132,8 @@ import (
 
 type ProberListener interface {
 	OnSendProbe(bytesToSend int)
-	OnProbeClusterDone(info ProbeClusterInfo)
-	OnProbeClusterSwitch(probeClusterId ProbeClusterId)
+	// RAJA-REMOVE OnProbeClusterDone(info ProbeClusterInfo)
+	OnProbeClusterSwitch(probeClusterId ProbeClusterId, desiredBytes int)
 	// RAJA-REMOVE OnActiveChanged(isActive bool)
 }
 
@@ -170,14 +170,14 @@ func (p *Prober) IsRunning() bool {
 }
 
 func (p *Prober) Reset() {
-	reset := false
-	var info ProbeClusterInfo
+	// RAJA-TODO reset := false
+	// RAJA-TODO var info ProbeClusterInfo
 
 	p.clustersMu.Lock()
 	if p.activeCluster != nil {
 		p.params.Logger.Debugw("prober: resetting active cluster", "cluster", p.activeCluster.String())
-		reset = true
-		info = p.activeCluster.GetInfo()
+		// RAJA-TODO reset = true
+		// RAJA-TODO info = p.activeCluster.GetInfo()
 	}
 
 	p.clusters.Clear()
@@ -186,16 +186,24 @@ func (p *Prober) Reset() {
 	// RAJA-REMOVE p.activeStateQueue = append(p.activeStateQueue, false)
 	p.clustersMu.Unlock()
 
+	/* RAJA-TODO: maybe need a listener method to notify reset??
 	if reset {
 		if p.params.Listener != nil {
 			p.params.Listener.OnProbeClusterDone(info)
 		}
 	}
+	*/
 
 	// RAJA-REMOVE p.processActiveStateQueue()
 }
 
-func (p *Prober) AddCluster(mode ProbeClusterMode, desiredRateBps int, expectedRateBps int, minDuration time.Duration, maxDuration time.Duration) ProbeClusterId {
+func (p *Prober) AddCluster(
+	mode ProbeClusterMode,
+	desiredRateBps int,
+	expectedRateBps int,
+	minDuration time.Duration,
+	maxDuration time.Duration,
+) ProbeClusterId {
 	if desiredRateBps <= 0 {
 		return ProbeClusterIdInvalid
 	}
@@ -217,6 +225,7 @@ func (p *Prober) AddCluster(mode ProbeClusterMode, desiredRateBps int, expectedR
 	return clusterId
 }
 
+/* RAJA-REMOVE
 func (p *Prober) PacketsSent(size int) {
 	cluster := p.getActiveCluster()
 	if cluster == nil {
@@ -234,6 +243,7 @@ func (p *Prober) ProbeSent(size int) {
 
 	cluster.ProbeSent(size)
 }
+*/
 
 func (p *Prober) getActiveCluster() *Cluster {
 	p.clustersMu.Lock()
@@ -343,10 +353,13 @@ func (p *Prober) run() {
 		if cluster.IsFinished() {
 			p.params.Logger.Debugw("cluster finished", "cluster", cluster.String())
 
+			/* RAJA_TODO
 			if p.params.Listener != nil {
 				p.params.Listener.OnProbeClusterDone(cluster.GetInfo())
 			}
+			*/
 
+			// RAJA-TODO: this pop should happen on external notification of cluster done
 			p.popFrontCluster(cluster)
 		}
 
@@ -488,10 +501,13 @@ func (c *Cluster) initBuckets(desiredRateBps int, expectedRateBps int, minDurati
 
 func (c *Cluster) Start() {
 	c.lock.Lock()
-	defer c.lock.Unlock()
-
 	if c.startTime.IsZero() {
 		c.startTime = time.Now()
+	}
+	c.lock.Unlock()
+
+	if c.listener != nil {
+		c.listener.OnProbeClusterSwitch(c.id, c.desiredBytes)
 	}
 }
 
@@ -546,7 +562,7 @@ func (c *Cluster) GetInfo() ProbeClusterInfo {
 	}
 }
 
-// simplify this, this should just be sending x-amount of data, so probably don't even need to call this API, can just send standard amount?
+// RAJA-TODO simplify this, this should just be sending x-amount of data, so probably don't even need to call this API, can just send standard amount?
 func (c *Cluster) Process() {
 	c.lock.RLock()
 	timeElapsed := time.Since(c.startTime)

@@ -191,8 +191,10 @@ type DownTrackStreamAllocatorListener interface {
 	// stream resumed
 	OnResume(dt *DownTrack)
 
+	/* RAJA-REMOVE
 	// packet(s) sent
 	OnPacketsSent(dt *DownTrack, size int)
+	*/
 
 	/* STREAM-ALLOCATOR-DATA
 	// NACKs received
@@ -292,10 +294,10 @@ type DownTrack struct {
 
 	activePaddingOnMuteUpTrack atomic.Bool
 
-	streamAllocatorLock             sync.RWMutex
-	streamAllocatorListener         DownTrackStreamAllocatorListener
-	streamAllocatorReportGeneration int
-	streamAllocatorBytesCounter     atomic.Uint32
+	streamAllocatorLock     sync.RWMutex
+	streamAllocatorListener DownTrackStreamAllocatorListener
+	// RAJA-REMOVE streamAllocatorReportGeneration int
+	// RAJA-REMOVE streamAllocatorBytesCounter     atomic.Uint32
 	/* STREAM-ALLOCATOR-DATA
 	bytesSent                       atomic.Uint32
 	bytesRetransmitted              atomic.Uint32
@@ -629,6 +631,7 @@ func (d *DownTrack) getStreamAllocatorListener() DownTrackStreamAllocatorListene
 	return d.streamAllocatorListener
 }
 
+/* RAJA-REMOVE
 func (d *DownTrack) SetStreamAllocatorReportInterval(interval time.Duration) {
 	d.ClearStreamAllocatorReportInterval()
 
@@ -672,6 +675,7 @@ func (d *DownTrack) ClearStreamAllocatorReportInterval() {
 	d.streamAllocatorReportGeneration++
 	d.streamAllocatorLock.Unlock()
 }
+*/
 
 func (d *DownTrack) SetProbeClusterId(probeClusterId ccutils.ProbeClusterId) {
 	d.probeClusterId.Store(uint32(probeClusterId))
@@ -1244,7 +1248,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		onCloseHandler(!flush)
 	}
 
-	d.ClearStreamAllocatorReportInterval()
+	// RAJA-REMOVE d.ClearStreamAllocatorReportInterval()
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
@@ -2261,8 +2265,8 @@ type updateStatsParams struct {
 func (d *DownTrack) updateStats(params updateStatsParams) {
 	if !params.disableCounter {
 		// STREAM-ALLOCATOR-TODO: remove this stream allocator bytes counter once stream allocator changes fully to pull bytes counter
-		size := uint32(params.headerSize + params.payloadSize)
-		d.streamAllocatorBytesCounter.Add(size)
+		// RAJA-REMOVE size := uint32(params.headerSize + params.payloadSize)
+		// RAJA-REMOVE d.streamAllocatorBytesCounter.Add(size)
 		/* STREAM-ALLOCATOR-DATA
 		if params.isRTX {
 			d.bytesRetransmitted.Add(size)

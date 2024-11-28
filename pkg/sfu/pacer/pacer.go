@@ -43,6 +43,25 @@ type Pacer interface {
 
 	SetInterval(interval time.Duration)
 	SetBitrate(bitrate int)
+
+	SetPacerProbeObserverListener(listener PacerProbeObserverListener)
+	StartProbeCluster(probeClusterId ccutils.ProbeClusterId, desiredBytes int)
+	EndProbeCluster(probeClusterId ccutils.ProbeClusterId)
+	AbortProbeCluster(probeClusterId ccutils.ProbeClusterId)
+}
+
+type PacerProbeObserverClusterInfo struct {
+	ProbeClusterId       ccutils.ProbeClusterId
+	DesiredBytes         int
+	StartTime            int64
+	EndTime              int64
+	BytesProbe           int
+	BytesNonProbePrimary int
+	BytesNonProbeRTX     int
+}
+
+type PacerProbeObserverListener interface {
+	OnPacerProbeObserverClusterComplete(info PacerProbeObserverClusterInfo)
 }
 
 // ------------------------------------------------

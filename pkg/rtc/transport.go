@@ -476,6 +476,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 			t.pacer = pacer.NewPassThrough(params.Logger, nil)
 		}
 		t.streamAllocator.SetBWE(t.bwe)
+		t.streamAllocator.SetPacer(t.pacer)
 	}
 
 	if err := t.createPeerConnection(); err != nil {
