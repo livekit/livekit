@@ -138,8 +138,8 @@ func (p *ProbeController) ProbeClusterDone(probeClusterId ccutils.ProbeClusterId
 		if p.pacer != nil {
 			p.doneProbeClusterInfo = p.pacer.EndProbeCluster(probeClusterId)
 		}
+		p.params.Prober.ClusterDone(p.doneProbeClusterInfo)
 	}
-	// RAJA-TODO pass this on to the prober so that it can close out the cluster
 }
 
 func (p *ProbeController) MaybeFinalizeProbe(

@@ -179,8 +179,8 @@ func (p *Prober) Reset(info ProbeClusterInfo) {
 	if p.activeCluster != nil {
 		if p.activeCluster.Id() == info.ProbeClusterId {
 			p.activeCluster.MarkCompleted(info)
+			p.params.Logger.Debugw("prober: resetting active cluster", "cluster", p.activeCluster)
 		}
-		p.params.Logger.Debugw("prober: resetting active cluster", "cluster", p.activeCluster)
 		// RAJA-TODO reset = true
 		// RAJA-TODO info = p.activeCluster.GetInfo()
 	}
@@ -231,19 +231,21 @@ func (p *Prober) AddCluster(
 }
 
 func (p *Prober) ClusterDone(info ProbeClusterInfo) {
-	cluster := p.getActiveCluster()
+	cluster := p.getFrontCluster()
 	if cluster == nil {
 		return
 	}
 
 	if cluster.Id() == info.ProbeClusterId {
 		cluster.MarkCompleted(info)
+		p.params.Logger.Debugw("cluster done", "cluster", cluster)
+		p.popFrontCluster(cluster)
 	}
 }
 
 /* RAJA-REMOVE
 func (p *Prober) PacketsSent(size int) {
-	cluster := p.getActiveCluster()
+	cluster := p.getFrontCluster()
 	if cluster == nil {
 		return
 	}
@@ -252,7 +254,7 @@ func (p *Prober) PacketsSent(size int) {
 }
 
 func (p *Prober) ProbeSent(size int) {
-	cluster := p.getActiveCluster()
+	cluster := p.getFrontCluster()
 	if cluster == nil {
 		return
 	}
@@ -261,7 +263,7 @@ func (p *Prober) ProbeSent(size int) {
 }
 */
 
-func (p *Prober) getActiveCluster() *Cluster {
+func (p *Prober) getFrontCluster() *Cluster {
 	p.clustersMu.Lock()
 	defer p.clustersMu.Unlock()
 
@@ -347,7 +349,7 @@ func (p *Prober) processActiveStateQueue() {
 */
 
 func (p *Prober) run() {
-	cluster := p.getActiveCluster()
+	cluster := p.getFrontCluster()
 	if cluster == nil {
 		return
 	}
@@ -358,7 +360,7 @@ func (p *Prober) run() {
 		<-timer.C
 
 		// wake up and check for probes to send
-		cluster = p.getActiveCluster()
+		cluster = p.getFrontCluster()
 		if cluster == nil {
 			return
 		}
@@ -376,7 +378,7 @@ func (p *Prober) run() {
 			p.popFrontCluster(cluster)
 		}
 
-		cluster := p.getActiveCluster()
+		cluster := p.getFrontCluster()
 		if cluster == nil {
 			return
 		}
