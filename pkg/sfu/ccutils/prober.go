@@ -49,7 +49,7 @@
 //     are paused (could be due to downstream bandwidth
 //     constraints or the corresponding upstream tracks may
 //     have paused due to upstream bandwidth constraints).
-//     Another issue is not being to have tight control on
+//     Another issue is not being able to have tight control on
 //     probing window boundary as the packet forwarding path
 //     may not have a packet to forward. But, it should not
 //     be a major concern as long as some stream(s) is/are
@@ -225,6 +225,18 @@ func (p *Prober) AddCluster(
 	return clusterId
 }
 
+func (p *Prober) ClusterDone(info ProbeClusterInfo) {
+	cluster := p.getActiveCluster()
+	if cluster == nil {
+		return
+	}
+
+	if cluster.Id() == info.ProbeClusterId {
+		// RAJA-TODO: pass in completed info
+		cluster.MarkCompleted()
+	}
+}
+
 /* RAJA-REMOVE
 func (p *Prober) PacketsSent(size int) {
 	cluster := p.getActiveCluster()
@@ -349,17 +361,14 @@ func (p *Prober) run() {
 
 		cluster.Process()
 
-		// RAJA-TODO: this should be notified from outside
+		/* RAJA-REMOVE
 		if cluster.IsFinished() {
 			p.params.Logger.Debugw("cluster finished", "cluster", cluster.String())
 
-			/* RAJA_TODO
 			if p.params.Listener != nil {
 				p.params.Listener.OnProbeClusterDone(cluster.GetInfo())
 			}
-			*/
 
-			// RAJA-TODO: this pop should happen on external notification of cluster done
 			p.popFrontCluster(cluster)
 		}
 
@@ -367,6 +376,7 @@ func (p *Prober) run() {
 		if cluster == nil {
 			return
 		}
+		*/
 
 		timer.Reset(cluster.GetSleepDuration())
 	}
@@ -380,7 +390,7 @@ const (
 	ProbeClusterIdInvalid ProbeClusterId = 0
 
 	cBucketDuration  = 100 * time.Millisecond
-	cBytesPerProbe   = 1000
+	cBytesPerProbe   = 1100 // padding only packets are 255 bytes max + 20 byte header = 4 packets per probe
 	cMinProbeRateBps = 10000
 )
 
@@ -407,12 +417,27 @@ func (p ProbeClusterMode) String() string {
 // ---------------------------------------------------------------------------
 
 type ProbeClusterInfo struct {
-	Id        ProbeClusterId
-	BytesSent int
-	Duration  time.Duration
+	ProbeClusterId       ProbeClusterId
+	DesiredBytes         int
+	StartTime            int64
+	EndTime              int64
+	BytesProbe           int
+	BytesNonProbePrimary int
+	BytesNonProbeRTX     int
 }
 
+func (p ProbeClusterInfo) Bytes() int {
+	return p.BytesProbe + p.BytesNonProbePrimary + p.BytesNonProbeRTX
+}
+
+func (p ProbeClusterInfo) Duration() time.Duration {
+	return time.Duration(p.EndTime - p.StartTime)
+}
+
+// ---------------------------------------------------------------------------
+
 type clusterBucket struct {
+	desiredNumProbes   int
 	desiredBytes       int
 	desiredElapsedTime time.Duration
 	sleepDuration      time.Duration
@@ -431,9 +456,13 @@ type Cluster struct {
 	buckets   []clusterBucket
 	bucketIdx int
 
+	// RAJA-REMOVE - START
 	bytesSentProbe    int
 	bytesSentNonProbe int
 	startTime         time.Time
+	// RAJA-REMOVE - END
+	numProbesSent int
+	isComplete    bool
 }
 
 func newCluster(
@@ -468,6 +497,7 @@ func (c *Cluster) initBuckets(desiredRateBps int, expectedRateBps int, minDurati
 	expectedRateBytesPerSec := (expectedRateBps + 7) / 8
 	baseProbeRateBps := (desiredRateBps - expectedRateBps + numBuckets - 1) / numBuckets
 
+	runningNumProbes := 0
 	runningDesiredBytes := 0
 	runningDesiredElapsedTime := time.Duration(0)
 
@@ -488,10 +518,17 @@ func (c *Cluster) initBuckets(desiredRateBps int, expectedRateBps int, minDurati
 		numProbesPerSec := (bucketProbeRateBytesPerSec + cBytesPerProbe - 1) / cBytesPerProbe
 		sleepDurationMicroSeconds := int(float64(1_000_000)/float64(numProbesPerSec) + 0.5)
 
-		runningDesiredBytes += (((bucketProbeRateBytesPerSec + expectedRateBytesPerSec) * int(cBucketDuration.Milliseconds())) + 999) / 1000
+		numProbesInBucket := int(float64(numProbesPerSec)*cBucketDuration.Seconds() + 0.5)
+		if numProbesInBucket < 1 {
+			numProbesInBucket = 1
+		}
+		runningNumProbes += numProbesInBucket
+
+		runningDesiredBytes += (((bucketProbeRateBytesPerSec + expectedRateBytesPerSec) * int(cBucketDuration.Milliseconds())) + 999) / 1000 // RAJA-REMOVE
 		runningDesiredElapsedTime += cBucketDuration
 
 		c.buckets = append(c.buckets, clusterBucket{
+			desiredNumProbes:   runningNumProbes,
 			desiredBytes:       runningDesiredBytes,
 			desiredElapsedTime: runningDesiredElapsedTime,
 			sleepDuration:      time.Duration(sleepDurationMicroSeconds) * time.Microsecond,
@@ -518,6 +555,11 @@ func (c *Cluster) GetSleepDuration() time.Duration {
 	return c.buckets[c.bucketIdx].sleepDuration
 }
 
+func (c *Cluster) Id() ProbeClusterId {
+	return c.id
+}
+
+/* RAJA-REMOVE
 func (c *Cluster) PacketsSent(size int) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -531,7 +573,9 @@ func (c *Cluster) ProbeSent(size int) {
 
 	c.bytesSentProbe += size
 }
+*/
 
+// RAJA-REMOVE
 func (c *Cluster) IsFinished() bool {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
@@ -551,20 +595,28 @@ func (c *Cluster) IsFinished() bool {
 	return false
 }
 
+func (c *Cluster) MarkCompleted() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.isComplete = true
+}
+
 func (c *Cluster) GetInfo() ProbeClusterInfo {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 
 	return ProbeClusterInfo{
-		Id:        c.id,
-		BytesSent: c.bytesSentProbe + c.bytesSentNonProbe,
-		Duration:  time.Since(c.startTime),
+		ProbeClusterId: c.id,
+		// RAJA-TODO BytesSent: c.bytesSentProbe + c.bytesSentNonProbe,
+		// RAJA-TODO Duration:  time.Since(c.startTime),
 	}
 }
 
 // RAJA-TODO simplify this, this should just be sending x-amount of data, so probably don't even need to call this API, can just send standard amount?
 func (c *Cluster) Process() {
-	c.lock.RLock()
+	c.lock.Lock()
+	/* RAJA-REMOVE
 	timeElapsed := time.Since(c.startTime)
 
 	// Calculate number of probe bytes that should have been sent since start.
@@ -592,10 +644,25 @@ func (c *Cluster) Process() {
 			c.bucketIdx = len(c.buckets) - 1
 		}
 	}
-	c.lock.RUnlock()
+	*/
 
-	if bytesShortFall > 0 && c.listener != nil {
-		c.listener.OnSendProbe(bytesShortFall)
+	if c.isComplete {
+		c.lock.Unlock()
+		return
+	}
+
+	c.numProbesSent++
+	if c.numProbesSent >= c.buckets[c.bucketIdx].desiredNumProbes {
+		c.bucketIdx++
+		// stay in the last bucket till desired number of bytes are sent
+		if c.bucketIdx >= len(c.buckets) {
+			c.bucketIdx = len(c.buckets) - 1
+		}
+	}
+	c.lock.Unlock()
+
+	if c.listener != nil {
+		c.listener.OnSendProbe(cBytesPerProbe)
 	}
 
 	// STREAM-ALLOCATOR-TODO look at adapting sleep time based on how many bytes and how much time is left

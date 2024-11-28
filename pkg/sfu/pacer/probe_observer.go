@@ -74,14 +74,14 @@ func (po *ProbeObserver) StartProbeCluster(probeClusterId ccutils.ProbeClusterId
 	po.isInProbe.Store(true)
 }
 
-func (po *ProbeObserver) EndProbeCluster(probeClusterId ccutils.ProbeClusterId) {
+func (po *ProbeObserver) EndProbeCluster(probeClusterId ccutils.ProbeClusterId) (ccutils.ProbeClusterInfo, bool) {
 	if !po.isInProbe.Load() {
 		// probe not active
 		po.logger.Warnw(
 			"ignoring end of a probe cluster when not active", nil,
 			"probeClusterId", probeClusterId,
 		)
-		return
+		return ccutils.ProbeClusterInfo{}, false
 	}
 
 	po.lock.Lock()
@@ -94,13 +94,26 @@ func (po *ProbeObserver) EndProbeCluster(probeClusterId ccutils.ProbeClusterId) 
 			"probeClusterId", probeClusterId,
 			"active", po.activeProbeClusterId,
 		)
-		return
+		return ccutils.ProbeClusterInfo{}, false
 	}
-	po.activeProbeClusterId = ccutils.ProbeClusterIdInvalid
 
+	clusterInfo := ccutils.ProbeClusterInfo{
+		ProbeClusterId:       po.activeProbeClusterId,
+		DesiredBytes:         po.desiredProbeClusterBytes,
+		StartTime:            po.clusterStartTime,
+		EndTime:              mono.UnixNano(),
+		BytesProbe:           po.bytesProbe,
+		BytesNonProbePrimary: po.bytesNonProbePrimary,
+		BytesNonProbeRTX:     po.bytesNonProbeRTX,
+	}
+
+	po.activeProbeClusterId = ccutils.ProbeClusterIdInvalid
 	po.isInProbe.Store(false)
+
+	return clusterInfo, true
 }
 
+/* RAJA-REMOVE
 func (po *ProbeObserver) AbortProbeCluster(probeClusterId ccutils.ProbeClusterId) {
 	if !po.isInProbe.Load() {
 		// probe not active
@@ -129,6 +142,7 @@ func (po *ProbeObserver) AbortProbeCluster(probeClusterId ccutils.ProbeClusterId
 
 	// RAJA-TODO: have to send a report of the aborted probe
 }
+*/
 
 func (po *ProbeObserver) RecordPacket(size int, isRTX bool, probeClusterId ccutils.ProbeClusterId, isProbe bool) {
 	if !po.isInProbe.Load() {
@@ -152,12 +166,12 @@ func (po *ProbeObserver) RecordPacket(size int, isRTX bool, probeClusterId ccuti
 	}
 
 	notify := false
-	var clusterInfo PacerProbeObserverClusterInfo
+	var clusterInfo ccutils.ProbeClusterInfo
 	if !po.isActiveClusterDone && po.bytesProbe+po.bytesNonProbePrimary+po.bytesNonProbeRTX >= po.desiredProbeClusterBytes {
 		po.isActiveClusterDone = true
 
 		notify = true
-		clusterInfo = PacerProbeObserverClusterInfo{
+		clusterInfo = ccutils.ProbeClusterInfo{
 			ProbeClusterId:       po.activeProbeClusterId,
 			DesiredBytes:         po.desiredProbeClusterBytes,
 			StartTime:            po.clusterStartTime,

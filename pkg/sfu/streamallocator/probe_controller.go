@@ -122,11 +122,12 @@ func (p *ProbeController) ProbeClusterDone(info ccutils.ProbeClusterInfo) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if p.probeClusterId != info.Id {
-		p.params.Logger.Debugw("not expected probe cluster", "probeClusterId", p.probeClusterId, "resetProbeClusterId", info.Id)
+	if p.probeClusterId != info.ProbeClusterId {
+		p.params.Logger.Debugw("not expected probe cluster", "probeClusterId", p.probeClusterId, "resetProbeClusterId", info.ProbeClusterId)
 	} else {
 		p.doneProbeClusterInfo = info
 	}
+	// RAJA-TODO pass this on to the prober so that it can close out the cluster
 }
 
 func (p *ProbeController) MaybeFinalizeProbe(
@@ -149,14 +150,14 @@ func (p *ProbeController) MaybeFinalizeProbe(
 
 	if (isComplete || p.abortedProbeClusterId != ccutils.ProbeClusterIdInvalid) &&
 		p.probeEndTime.IsZero() &&
-		p.doneProbeClusterInfo.Id != ccutils.ProbeClusterIdInvalid && p.doneProbeClusterInfo.Id == p.probeClusterId {
+		p.doneProbeClusterInfo.ProbeClusterId != ccutils.ProbeClusterIdInvalid && p.doneProbeClusterInfo.ProbeClusterId == p.probeClusterId {
 		// ensure any queueing due to probing is flushed
 		// STREAM-ALLOCATOR-TODO: ProbeControllerConfig.SettleWait should actually be a certain number of RTTs.
 		expectedDuration := float64(0.0)
 		if lowestEstimate != 0 {
-			expectedDuration = float64(p.doneProbeClusterInfo.BytesSent*8*1000) / float64(lowestEstimate)
+			expectedDuration = float64(p.doneProbeClusterInfo.Bytes()*8*1000) / float64(lowestEstimate)
 		}
-		queueTime := expectedDuration - float64(p.doneProbeClusterInfo.Duration.Milliseconds())
+		queueTime := expectedDuration - float64(p.doneProbeClusterInfo.Duration().Milliseconds())
 		if queueTime < 0.0 {
 			queueTime = 0.0
 		}
@@ -164,7 +165,7 @@ func (p *ProbeController) MaybeFinalizeProbe(
 		if queueWait > p.params.Config.SettleWaitMax {
 			queueWait = p.params.Config.SettleWaitMax
 		}
-		p.probeEndTime = p.lastProbeStartTime.Add(queueWait + p.doneProbeClusterInfo.Duration)
+		p.probeEndTime = p.lastProbeStartTime.Add(queueWait + p.doneProbeClusterInfo.Duration())
 		p.params.Logger.Debugw(
 			"setting probe end time",
 			"probeClusterId", p.probeClusterId,
@@ -223,7 +224,7 @@ func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUs
 	}
 	p.probeGoalBps = expectedBandwidthUsage + desiredIncreaseBps
 
-	p.doneProbeClusterInfo = ccutils.ProbeClusterInfo{Id: ccutils.ProbeClusterIdInvalid}
+	p.doneProbeClusterInfo = ccutils.ProbeClusterInfo{ProbeClusterId: ccutils.ProbeClusterIdInvalid}
 	p.abortedProbeClusterId = ccutils.ProbeClusterIdInvalid
 	p.goalReachedProbeClusterId = ccutils.ProbeClusterIdInvalid
 
@@ -315,7 +316,7 @@ func (p *ProbeController) pollProbe(probeClusterId ccutils.ProbeClusterId, expec
 
 func (p *ProbeController) clearProbeLocked() {
 	p.probeClusterId = ccutils.ProbeClusterIdInvalid
-	p.doneProbeClusterInfo = ccutils.ProbeClusterInfo{Id: ccutils.ProbeClusterIdInvalid}
+	p.doneProbeClusterInfo = ccutils.ProbeClusterInfo{ProbeClusterId: ccutils.ProbeClusterIdInvalid}
 	p.abortedProbeClusterId = ccutils.ProbeClusterIdInvalid
 	p.goalReachedProbeClusterId = ccutils.ProbeClusterIdInvalid
 }
