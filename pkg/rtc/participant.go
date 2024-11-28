@@ -1911,6 +1911,23 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		if payload.RpcAck == nil {
 			return
 		}
+	case *livekit.DataPacket_StreamHeader:
+		if payload.StreamHeader == nil {
+			return
+		}
+		if p.IsAgent() && dp.ParticipantIdentity != "" && string(p.params.Identity) != dp.ParticipantIdentity {
+			switch contentHeader := payload.StreamHeader.ContentHeader.(type) {
+			case *livekit.DataStream_Header_TextHeader:
+				contentHeader.TextHeader.Generated = true
+				overrideSenderIdentity = false
+			default:
+				overrideSenderIdentity = true
+			}
+		}
+	case *livekit.DataPacket_StreamChunk:
+		if payload.StreamChunk == nil {
+			return
+		}
 	default:
 		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
 	}
