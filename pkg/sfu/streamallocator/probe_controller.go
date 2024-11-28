@@ -69,15 +69,17 @@ var (
 type ProbeControllerParams struct {
 	Config ProbeControllerConfig
 	Prober *ccutils.Prober
+	BWE    bwe.BWE
+	Pacer  pacer.Pacer
 	Logger logger.Logger
 }
 
 type ProbeController struct {
 	params ProbeControllerParams
 
-	lock                      sync.RWMutex
-	bwe                       bwe.BWE
-	pacer                     pacer.Pacer
+	lock sync.RWMutex
+	// RAJA-REMOVE	bwe                       bwe.BWE
+	// RAJA-REMOVEpacer                     pacer.Pacer
 	probeInterval             time.Duration
 	lastProbeStartTime        time.Time
 	probeGoalBps              int64
@@ -100,6 +102,7 @@ func NewProbeController(params ProbeControllerParams) *ProbeController {
 	return p
 }
 
+/* RAJA-REMOVE
 func (p *ProbeController) SetBWE(bwe bwe.BWE) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -113,6 +116,7 @@ func (p *ProbeController) SetPacer(pacer pacer.Pacer) {
 
 	p.pacer = pacer
 }
+*/
 
 func (p *ProbeController) Reset() {
 	p.lock.Lock()
@@ -134,10 +138,7 @@ func (p *ProbeController) ProbeClusterDone(probeClusterId ccutils.ProbeClusterId
 	if p.probeClusterId != probeClusterId {
 		p.params.Logger.Debugw("not expected probe cluster", "probeClusterId", p.probeClusterId, "resetProbeClusterId", probeClusterId)
 	} else {
-		p.doneProbeClusterInfo = ccutils.ProbeClusterInfoInvalid
-		if p.pacer != nil {
-			p.doneProbeClusterInfo = p.pacer.EndProbeCluster(probeClusterId)
-		}
+		p.doneProbeClusterInfo = p.params.Pacer.EndProbeCluster(probeClusterId)
 		p.params.Prober.ClusterDone(p.doneProbeClusterInfo)
 	}
 }
@@ -258,11 +259,7 @@ func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUs
 }
 
 func (p *ProbeController) pollProbe(probeClusterId ccutils.ProbeClusterId, expectedBandwidthUsage int64) {
-	if p.bwe == nil {
-		return
-	}
-
-	p.bwe.ProbingStart(expectedBandwidthUsage)
+	p.params.BWE.ProbingStart(expectedBandwidthUsage)
 
 	go func() {
 		for {
@@ -274,7 +271,7 @@ func (p *ProbeController) pollProbe(probeClusterId ccutils.ProbeClusterId, expec
 
 			done := false
 
-			_, trend, _, highestEstimate := p.bwe.GetProbeStatus()
+			_, trend, _, highestEstimate := p.params.BWE.GetProbeStatus()
 			if !p.probeTrendObserved && trend != bwe.ChannelTrendNeutral {
 				p.probeTrendObserved = true
 			}
@@ -356,12 +353,8 @@ func (p *ProbeController) increaseProbeDurationLocked() {
 }
 
 func (p *ProbeController) StopProbe() {
-	info := ccutils.ProbeClusterInfoInvalid
-	if p.pacer != nil {
-		p.params.Logger.Infow("stopping probe cluster id", "pci", p.probeClusterId) // REMOVE
-		info = p.pacer.EndProbeCluster(p.probeClusterId)
-	}
-	p.params.Prober.Reset(info)
+	p.params.Logger.Infow("stopping probe cluster id", "pci", p.probeClusterId) // REMOVE
+	p.params.Prober.Reset(p.params.Pacer.EndProbeCluster(p.probeClusterId))
 }
 
 func (p *ProbeController) AbortProbe() {
