@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/bep/debounce"
-	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
