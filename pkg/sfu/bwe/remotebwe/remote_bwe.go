@@ -201,7 +201,7 @@ func (r *RemoteBWE) estimateAvailableChannelCapacity(reason channelCongestionRea
 		"channel", r.channelObserver,
 	)
 	if estimateToCommit > commitThreshold {
-		ulgr.Debugw("remote bwe: channel congestion detected, skipping above commit threshold  channel capacity update")
+		ulgr.Debugw("remote bwe: channel congestion detected, skipping above commit threshold channel capacity update")
 		return false
 	}
 
@@ -227,7 +227,6 @@ func (r *RemoteBWE) updateCongestionState(state bwe.CongestionState, reason chan
 		"to", state,
 		"reason", reason,
 		"committedChannelCapacity", r.committedChannelCapacity,
-		"channel", r.channelObserver,
 	)
 
 	if state != r.congestionState {
@@ -295,7 +294,7 @@ func (r *RemoteBWE) ProbingEnd(isNotFailing bool, isGoalReached bool) {
 	// the send side is in full control of bandwidth estimation.
 	//
 	r.params.Logger.Debugw(
-		"probe done",
+		"remote bwe: probe done",
 		"isNotFailing", isNotFailing,
 		"isGoalReached", isGoalReached,
 		"committedEstimate", r.committedChannelCapacity,
