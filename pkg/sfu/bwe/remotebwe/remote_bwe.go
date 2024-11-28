@@ -24,10 +24,6 @@ import (
 	"github.com/livekit/protocol/utils/mono"
 )
 
-const (
-	ChannelCapacityInfinity = 100 * 1000 * 1000 // 100 Mbps
-)
-
 // ---------------------------------------------------------------------------
 
 type RemoteBWEConfig struct {
