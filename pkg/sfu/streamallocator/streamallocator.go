@@ -282,6 +282,7 @@ func (s *StreamAllocator) SetPacer(pacer pacer.Pacer) {
 		pacer.SetPacerProbeObserverListener(s)
 	}
 	s.pacer = pacer
+	s.probeController.SetPacer(pacer)
 }
 
 type AddTrackParams struct {

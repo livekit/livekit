@@ -474,12 +474,14 @@ func (c clusterBucket) MarshalLogObject(e zapcore.ObjectEncoder) error {
 type Cluster struct {
 	lock sync.RWMutex
 
-	id           ProbeClusterId
-	mode         ProbeClusterMode
-	listener     ProberListener
-	desiredBytes int
-	minDuration  time.Duration
-	maxDuration  time.Duration // RAJA-REMOVE
+	id              ProbeClusterId
+	mode            ProbeClusterMode
+	desiredRateBps  int
+	expectedRateBps int
+	listener        ProberListener
+	desiredBytes    int
+	minDuration     time.Duration
+	maxDuration     time.Duration // RAJA-REMOVE
 
 	buckets   []clusterBucket
 	bucketIdx int
@@ -504,11 +506,13 @@ func newCluster(
 	listener ProberListener,
 ) *Cluster {
 	c := &Cluster{
-		id:          id,
-		mode:        mode,
-		listener:    listener,
-		minDuration: minDuration,
-		maxDuration: maxDuration,
+		id:              id,
+		mode:            mode,
+		desiredRateBps:  desiredRateBps,
+		expectedRateBps: expectedRateBps,
+		listener:        listener,
+		minDuration:     minDuration,
+		maxDuration:     maxDuration,
 	}
 	c.initBuckets(desiredRateBps, expectedRateBps, minDuration)
 	c.desiredBytes = c.buckets[len(c.buckets)-1].desiredBytes
@@ -724,6 +728,8 @@ func (c *Cluster) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	if c != nil {
 		e.AddUint32("id", uint32(c.id))
 		e.AddString("mode", c.mode.String())
+		e.AddInt("desiredRateBps", c.desiredRateBps)
+		e.AddInt("expectedRateBps", c.expectedRateBps)
 		e.AddInt("desiredBytes", c.desiredBytes)
 		e.AddDuration("minDuration", c.minDuration)
 		e.AddArray("buckets", logger.ObjectSlice(c.buckets))
