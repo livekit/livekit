@@ -166,16 +166,18 @@ func (p *ProbeController) UpdateRTT(rtt uint32) {
 	}
 }
 
-func (p *ProbeController) MaybeProbe(availableBandwidthBps int64, probeGoalDeltaBps int64, expectedBandwidthUsage int64) {
+func (p *ProbeController) MaybeInitiateProbe(availableBandwidthBps int64, probeGoalDeltaBps int64, expectedBandwidthUsage int64) (ccutils.ProbeClusterGoal, bool) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
 	if p.state != ProbeControllerStateNone {
 		// already probing or in probe hangover, don't start a new one
-		return
+		return ccutils.ProbeClusterGoal{}, false
 	}
 
-	p.setState(ProbeControllerStateProbing)
+	if mono.Now().Before(p.nextProbeEarliestAt) {
+		return ccutils.ProbeClusterGoal{}, false
+	}
 
 	// overshoot a bit to account for noise (in measurement/estimate etc)
 	desiredIncreaseBps := (probeGoalDeltaBps * p.params.Config.OveragePct) / 100
@@ -184,33 +186,42 @@ func (p *ProbeController) MaybeProbe(availableBandwidthBps int64, probeGoalDelta
 	}
 	probeGoalBps := expectedBandwidthUsage + desiredIncreaseBps // RAJA-REMOVE probeGoalBps struct field
 
-	p.pci = p.params.Prober.AddCluster(
-		ccutils.ProbeClusterModeUniform,
-		ccutils.ProbeClusterGoal{
-			AvailableBandwidthBps: int(availableBandwidthBps),
-			ExpectedUsageBps:      int(expectedBandwidthUsage),
-			DesiredBps:            int(probeGoalBps),
-			Duration:              p.probeDuration,
-		},
-	)
-	p.params.Logger.Debugw(
-		"probe controller: starting probe",
-		"probeClusterInfo", p.pci,
-	)
+	return ccutils.ProbeClusterGoal{
+		AvailableBandwidthBps: int(availableBandwidthBps),
+		ExpectedUsageBps:      int(expectedBandwidthUsage),
+		DesiredBps:            int(probeGoalBps),
+		Duration:              p.probeDuration,
+	}, true
+}
+
+func (p *ProbeController) ProbeClusterStarting(pci ccutils.ProbeClusterInfo) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	if p.state != ProbeControllerStateNone {
+		p.params.Logger.Warnw("unexpected probe controller state", nil, "state", p.state)
+	}
+
+	p.setState(ProbeControllerStateProbing)
+	p.pci = pci
 }
 
 func (p *ProbeController) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if p.pci.Id != pci.Id {
-		p.params.Logger.Debugw("not expected probe cluster", "expectedId", p.pci.Id, "doneId", pci.Id)
-	} else {
-		p.pci.Result = pci.Result
-		p.params.Prober.ClusterDone(pci)
-
-		p.setState(ProbeControllerStateHangover)
+	if p.state != ProbeControllerStateProbing {
+		p.params.Logger.Warnw("unexpected probe controller state", nil, "state", p.state)
 	}
+
+	if p.pci.Id != pci.Id {
+		p.params.Logger.Warnw("not expected probe cluster", nil, "expectedId", p.pci.Id, "doneId", pci.Id)
+	}
+
+	p.pci.Result = pci.Result
+	p.params.Prober.ClusterDone(pci)
+
+	p.setState(ProbeControllerStateHangover)
 }
 
 func (p *ProbeController) MaybeFinalizeProbe() bool {

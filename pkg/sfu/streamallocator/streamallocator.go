@@ -82,14 +82,15 @@ const (
 	streamAllocatorSignalAdjustState
 	streamAllocatorSignalEstimate
 	streamAllocatorSignalPeriodicPing
+	streamAllocatorSignalProbeClusterSwitch
 	streamAllocatorSignalSendProbe
+	streamAllocatorSignalPacerProbeObserverClusterComplete
 	streamAllocatorSignalResume
 	streamAllocatorSignalSetAllowPause
 	streamAllocatorSignalSetChannelCapacity
 	// STREAM-ALLOCATOR-DATA streamAllocatorSignalNACK
 	// STREAM-ALLOCATOR-DATA streamAllocatorSignalRTCPReceiverReport
 	streamAllocatorSignalCongestionStateChange
-	streamAllocatorSignalPacerProbeObserverClusterComplete
 )
 
 func (s streamAllocatorSignal) String() string {
@@ -104,8 +105,12 @@ func (s streamAllocatorSignal) String() string {
 		return "ESTIMATE"
 	case streamAllocatorSignalPeriodicPing:
 		return "PERIODIC_PING"
+	case streamAllocatorSignalProbeClusterSwitch:
+		return "PROBE_CLUSTER_SWITCH"
 	case streamAllocatorSignalSendProbe:
 		return "SEND_PROBE"
+	case streamAllocatorSignalPacerProbeObserverClusterComplete:
+		return "PACER_PROBE_OBSERVER_CLUSTER_COMPLETE"
 	case streamAllocatorSignalResume:
 		return "RESUME"
 	case streamAllocatorSignalSetAllowPause:
@@ -120,8 +125,6 @@ func (s streamAllocatorSignal) String() string {
 		*/
 	case streamAllocatorSignalCongestionStateChange:
 		return "CONGESTION_STATE_CHANGE"
-	case streamAllocatorSignalPacerProbeObserverClusterComplete:
-		return "PACER_PROBE_OBSERVER_CLUSTER_COMPLETE"
 	default:
 		return fmt.Sprintf("%d", int(s))
 	}
@@ -532,22 +535,20 @@ func (s *StreamAllocator) OnRTCPReceiverReport(downTrack *sfu.DownTrack, rr rtcp
 }
 */
 
+// called when probe cluster changes
+func (s *StreamAllocator) OnProbeClusterSwitch(pci ccutils.ProbeClusterInfo) {
+	s.postEvent(Event{
+		Signal: streamAllocatorSignalProbeClusterSwitch,
+		Data:   pci,
+	})
+}
+
 // called when prober wants to send packet(s)
 func (s *StreamAllocator) OnSendProbe(bytesToSend int) {
 	s.postEvent(Event{
 		Signal: streamAllocatorSignalSendProbe,
 		Data:   bytesToSend,
 	})
-}
-
-// called when probe cluster changes
-func (s *StreamAllocator) OnProbeClusterSwitch(pci ccutils.ProbeClusterInfo) {
-	s.params.Pacer.StartProbeCluster(pci)
-	s.params.BWE.ProbeClusterStarting(pci)
-
-	for _, t := range s.getTracks() {
-		t.DownTrack().SetProbeClusterId(pci.Id)
-	}
 }
 
 // called when pacer probe observer observes a cluster completion
@@ -632,8 +633,12 @@ func (s *StreamAllocator) postEvent(event Event) {
 			event.handleSignalEstimate(event)
 		case streamAllocatorSignalPeriodicPing:
 			event.handleSignalPeriodicPing(event)
+		case streamAllocatorSignalProbeClusterSwitch:
+			event.handleSignalProbeClusterSwitch(event)
 		case streamAllocatorSignalSendProbe:
 			event.handleSignalSendProbe(event)
+		case streamAllocatorSignalPacerProbeObserverClusterComplete:
+			event.handleSignalPacerProbeObserverClusterComplete(event)
 		case streamAllocatorSignalResume:
 			event.handleSignalResume(event)
 		case streamAllocatorSignalSetAllowPause:
@@ -648,8 +653,6 @@ func (s *StreamAllocator) postEvent(event Event) {
 			*/
 		case streamAllocatorSignalCongestionStateChange:
 			s.handleSignalCongestionStateChange(event)
-		case streamAllocatorSignalPacerProbeObserverClusterComplete:
-			event.handleSignalPacerProbeObserverClusterComplete(event)
 		}
 	}, event)
 }
@@ -721,6 +724,18 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 	*/
 }
 
+func (s *StreamAllocator) handleSignalProbeClusterSwitch(event Event) {
+	pci := event.Data.(ccutils.ProbeClusterInfo)
+	s.probeController.ProbeClusterStarting(pci)
+	s.params.BWE.ProbeClusterStarting(pci)
+
+	s.params.Pacer.StartProbeCluster(pci)
+
+	for _, t := range s.getTracks() {
+		t.DownTrack().SetProbeClusterId(pci.Id)
+	}
+}
+
 func (s *StreamAllocator) handleSignalSendProbe(event Event) {
 	bytesToSend := event.Data.(int)
 	if bytesToSend <= 0 {
@@ -736,6 +751,13 @@ func (s *StreamAllocator) handleSignalSendProbe(event Event) {
 			break
 		}
 	}
+}
+
+func (s *StreamAllocator) handleSignalPacerProbeObserverClusterComplete(event Event) {
+	probeClusterId, _ := event.Data.(ccutils.ProbeClusterId)
+	pci := s.params.Pacer.EndProbeCluster(probeClusterId)
+	s.probeController.ProbeClusterDone(pci)
+	s.params.BWE.ProbeClusterDone(pci)
 }
 
 func (s *StreamAllocator) handleSignalResume(event Event) {
@@ -846,15 +868,6 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 	}
 
 	s.congestionState = cscd.congestionState
-}
-
-func (s *StreamAllocator) handleSignalPacerProbeObserverClusterComplete(event Event) {
-	/* RAJA-TODO
-	probeClusterId, _ := event.Data.(ccutils.ProbeClusterId)
-	pci := s.params.Pacer.EndProbeCluster(probeClusterId)
-	s.probeController.ProbeClusterDone(pci)
-	s.params.BWE.ProbeClusterDone(pci)
-	*/
 }
 
 func (s *StreamAllocator) setState(state streamAllocatorState) {
@@ -1337,7 +1350,14 @@ func (s *StreamAllocator) maybeProbeWithPadding() {
 		}
 
 		// RAJA-REMOVE s.initProbe(transition.BandwidthDelta)
-		s.probeController.MaybeProbe(s.committedChannelCapacity, transition.BandwidthDelta, s.getExpectedBandwidthUsage())
+		pcg, ok := s.probeController.MaybeInitiateProbe(s.committedChannelCapacity, transition.BandwidthDelta, s.getExpectedBandwidthUsage())
+		if ok {
+			pci := s.prober.AddCluster(ccutils.ProbeClusterModeUniform, pcg)
+			s.params.Logger.Debugw(
+				"stream allocator: starting probe",
+				"probeClusterInfo", pci,
+			)
+		}
 		break
 	}
 }

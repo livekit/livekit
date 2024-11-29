@@ -134,8 +134,8 @@ import (
 )
 
 type ProberListener interface {
-	OnSendProbe(bytesToSend int)
 	OnProbeClusterSwitch(info ProbeClusterInfo)
+	OnSendProbe(bytesToSend int)
 }
 
 type ProberParams struct {
