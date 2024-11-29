@@ -20,6 +20,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
+	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -39,7 +40,6 @@ type ProbeControllerConfig struct {
 	MinBps                 int64         `yaml:"min_bps,omitempty"`
 	MinDuration            time.Duration `yaml:"min_duration,omitempty"`
 	MaxDuration            time.Duration `yaml:"max_duration,omitempty"`
-	DurationOverflowFactor float64       `yaml:"duration_overflow_factor,omitempty"`
 	DurationIncreaseFactor float64       `yaml:"duration_increase_factor,omitempty"`
 }
 
@@ -58,7 +58,6 @@ var (
 		MinBps:                 200_000,
 		MinDuration:            200 * time.Millisecond,
 		MaxDuration:            20 * time.Second,
-		DurationOverflowFactor: 1.25,
 		DurationIncreaseFactor: 1.5,
 	}
 )
@@ -68,6 +67,8 @@ var (
 type ProbeControllerParams struct {
 	Config ProbeControllerConfig
 	Prober *ccutils.Prober
+	BWE    bwe.BWE
+	Pacer  pacer.Pacer
 	Logger logger.Logger
 }
 
@@ -75,7 +76,6 @@ type ProbeController struct {
 	params ProbeControllerParams
 
 	lock                      sync.RWMutex
-	bwe                       bwe.BWE
 	probeInterval             time.Duration
 	lastProbeStartTime        time.Time
 	probeGoalBps              int64
@@ -98,13 +98,6 @@ func NewProbeController(params ProbeControllerParams) *ProbeController {
 	return p
 }
 
-func (p *ProbeController) SetBWE(bwe bwe.BWE) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	p.bwe = bwe
-}
-
 func (p *ProbeController) Reset() {
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -118,14 +111,15 @@ func (p *ProbeController) Reset() {
 	p.clearProbeLocked()
 }
 
-func (p *ProbeController) ProbeClusterDone(info ccutils.ProbeClusterInfo) {
+func (p *ProbeController) ProbeClusterDone(probeClusterId ccutils.ProbeClusterId) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if p.probeClusterId != info.Id {
-		p.params.Logger.Debugw("not expected probe cluster", "probeClusterId", p.probeClusterId, "resetProbeClusterId", info.Id)
+	if p.probeClusterId != probeClusterId {
+		p.params.Logger.Debugw("not expected probe cluster", "probeClusterId", p.probeClusterId, "resetProbeClusterId", probeClusterId)
 	} else {
-		p.doneProbeClusterInfo = info
+		p.doneProbeClusterInfo = p.params.Pacer.EndProbeCluster(probeClusterId)
+		p.params.Prober.ClusterDone(p.doneProbeClusterInfo)
 	}
 }
 
@@ -149,14 +143,14 @@ func (p *ProbeController) MaybeFinalizeProbe(
 
 	if (isComplete || p.abortedProbeClusterId != ccutils.ProbeClusterIdInvalid) &&
 		p.probeEndTime.IsZero() &&
-		p.doneProbeClusterInfo.Id != ccutils.ProbeClusterIdInvalid && p.doneProbeClusterInfo.Id == p.probeClusterId {
+		p.doneProbeClusterInfo.ProbeClusterId != ccutils.ProbeClusterIdInvalid && p.doneProbeClusterInfo.ProbeClusterId == p.probeClusterId {
 		// ensure any queueing due to probing is flushed
 		// STREAM-ALLOCATOR-TODO: ProbeControllerConfig.SettleWait should actually be a certain number of RTTs.
 		expectedDuration := float64(0.0)
 		if lowestEstimate != 0 {
-			expectedDuration = float64(p.doneProbeClusterInfo.BytesSent*8*1000) / float64(lowestEstimate)
+			expectedDuration = float64(p.doneProbeClusterInfo.Bytes()*8*1000) / float64(lowestEstimate)
 		}
-		queueTime := expectedDuration - float64(p.doneProbeClusterInfo.Duration.Milliseconds())
+		queueTime := expectedDuration - float64(p.doneProbeClusterInfo.Duration().Milliseconds())
 		if queueTime < 0.0 {
 			queueTime = 0.0
 		}
@@ -164,7 +158,7 @@ func (p *ProbeController) MaybeFinalizeProbe(
 		if queueWait > p.params.Config.SettleWaitMax {
 			queueWait = p.params.Config.SettleWaitMax
 		}
-		p.probeEndTime = p.lastProbeStartTime.Add(queueWait + p.doneProbeClusterInfo.Duration)
+		p.probeEndTime = p.lastProbeStartTime.Add(queueWait + p.doneProbeClusterInfo.Duration())
 		p.params.Logger.Debugw(
 			"setting probe end time",
 			"probeClusterId", p.probeClusterId,
@@ -223,7 +217,7 @@ func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUs
 	}
 	p.probeGoalBps = expectedBandwidthUsage + desiredIncreaseBps
 
-	p.doneProbeClusterInfo = ccutils.ProbeClusterInfo{Id: ccutils.ProbeClusterIdInvalid}
+	p.doneProbeClusterInfo = ccutils.ProbeClusterInfoInvalid
 	p.abortedProbeClusterId = ccutils.ProbeClusterIdInvalid
 	p.goalReachedProbeClusterId = ccutils.ProbeClusterIdInvalid
 
@@ -236,7 +230,6 @@ func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUs
 		int(p.probeGoalBps),
 		int(expectedBandwidthUsage),
 		p.probeDuration,
-		time.Duration(float64(p.probeDuration.Milliseconds())*p.params.Config.DurationOverflowFactor)*time.Millisecond,
 	)
 
 	p.pollProbe(p.probeClusterId, expectedBandwidthUsage)
@@ -245,11 +238,7 @@ func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUs
 }
 
 func (p *ProbeController) pollProbe(probeClusterId ccutils.ProbeClusterId, expectedBandwidthUsage int64) {
-	if p.bwe == nil {
-		return
-	}
-
-	p.bwe.ProbingStart(expectedBandwidthUsage)
+	p.params.BWE.ProbingStart(expectedBandwidthUsage)
 
 	go func() {
 		for {
@@ -261,7 +250,7 @@ func (p *ProbeController) pollProbe(probeClusterId ccutils.ProbeClusterId, expec
 
 			done := false
 
-			_, trend, _, highestEstimate := p.bwe.GetProbeStatus()
+			_, trend, _, highestEstimate := p.params.BWE.GetProbeStatus()
 			if !p.probeTrendObserved && trend != bwe.ChannelTrendNeutral {
 				p.probeTrendObserved = true
 			}
@@ -315,7 +304,7 @@ func (p *ProbeController) pollProbe(probeClusterId ccutils.ProbeClusterId, expec
 
 func (p *ProbeController) clearProbeLocked() {
 	p.probeClusterId = ccutils.ProbeClusterIdInvalid
-	p.doneProbeClusterInfo = ccutils.ProbeClusterInfo{Id: ccutils.ProbeClusterIdInvalid}
+	p.doneProbeClusterInfo = ccutils.ProbeClusterInfoInvalid
 	p.abortedProbeClusterId = ccutils.ProbeClusterIdInvalid
 	p.goalReachedProbeClusterId = ccutils.ProbeClusterIdInvalid
 }
@@ -343,7 +332,7 @@ func (p *ProbeController) increaseProbeDurationLocked() {
 }
 
 func (p *ProbeController) StopProbe() {
-	p.params.Prober.Reset()
+	p.params.Prober.Reset(p.params.Pacer.EndProbeCluster(p.probeClusterId))
 }
 
 func (p *ProbeController) AbortProbe() {

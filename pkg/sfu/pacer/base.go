@@ -29,12 +29,15 @@ type Base struct {
 	logger logger.Logger
 
 	bwe bwe.BWE
+
+	*ProbeObserver
 }
 
 func NewBase(logger logger.Logger, bwe bwe.BWE) *Base {
 	return &Base{
-		logger: logger,
-		bwe:    bwe,
+		logger:        logger,
+		bwe:           bwe,
+		ProbeObserver: NewProbeObserver(logger),
 	}
 }
 
@@ -84,10 +87,11 @@ func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 		}
 	}
 
+	packetSize := p.HeaderSize + len(p.Payload)
 	if p.TransportWideExtID != 0 && b.bwe != nil {
 		twccSN := b.bwe.RecordPacketSendAndGetSequenceNumber(
 			sendingAt.UnixMicro(),
-			p.Header.MarshalSize()+len(p.Payload),
+			packetSize,
 			p.IsRTX,
 		)
 		twccExt := rtp.TransportCCExtension{
@@ -103,6 +107,7 @@ func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 		}
 	}
 
+	b.ProbeObserver.RecordPacket(packetSize, p.IsRTX, p.ProbeClusterId, p.IsProbe)
 	return nil
 }
 

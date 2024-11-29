@@ -32,6 +32,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
+	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/utils"
 )
 
@@ -82,13 +83,13 @@ const (
 	streamAllocatorSignalEstimate
 	streamAllocatorSignalPeriodicPing
 	streamAllocatorSignalSendProbe
-	streamAllocatorSignalProbeClusterDone
 	streamAllocatorSignalResume
 	streamAllocatorSignalSetAllowPause
 	streamAllocatorSignalSetChannelCapacity
 	// STREAM-ALLOCATOR-DATA streamAllocatorSignalNACK
 	// STREAM-ALLOCATOR-DATA streamAllocatorSignalRTCPReceiverReport
 	streamAllocatorSignalCongestionStateChange
+	streamAllocatorSignalPacerProbeObserverClusterComplete
 )
 
 func (s streamAllocatorSignal) String() string {
@@ -105,8 +106,6 @@ func (s streamAllocatorSignal) String() string {
 		return "PERIODIC_PING"
 	case streamAllocatorSignalSendProbe:
 		return "SEND_PROBE"
-	case streamAllocatorSignalProbeClusterDone:
-		return "PROBE_CLUSTER_DONE"
 	case streamAllocatorSignalResume:
 		return "RESUME"
 	case streamAllocatorSignalSetAllowPause:
@@ -121,6 +120,8 @@ func (s streamAllocatorSignal) String() string {
 		*/
 	case streamAllocatorSignalCongestionStateChange:
 		return "CONGESTION_STATE_CHANGE"
+	case streamAllocatorSignalPacerProbeObserverClusterComplete:
+		return "PACER_PROBE_OBSERVER_CLUSTER_COMPLETE"
 	default:
 		return fmt.Sprintf("%d", int(s))
 	}
@@ -168,6 +169,8 @@ var (
 
 type StreamAllocatorParams struct {
 	Config StreamAllocatorConfig
+	BWE    bwe.BWE
+	Pacer  pacer.Pacer
 	Logger logger.Logger
 }
 
@@ -176,7 +179,6 @@ type StreamAllocator struct {
 
 	onStreamStateChange func(update *StreamStateUpdate) error
 
-	bwe                    bwe.BWE
 	sendSideBWEInterceptor cc.BandwidthEstimator
 
 	enabled    bool
@@ -227,8 +229,13 @@ func NewStreamAllocator(params StreamAllocatorParams, enabled bool, allowPause b
 	s.probeController = NewProbeController(ProbeControllerParams{
 		Config: s.params.Config.ProbeController,
 		Prober: s.prober,
+		BWE:    s.params.BWE,
+		Pacer:  s.params.Pacer,
 		Logger: params.Logger,
 	})
+
+	s.params.BWE.SetBWEListener(s)
+	s.params.Pacer.SetPacerProbeObserverListener(s)
 
 	s.resetState()
 
@@ -252,14 +259,6 @@ func (s *StreamAllocator) Stop() {
 
 func (s *StreamAllocator) OnStreamStateChange(f func(update *StreamStateUpdate) error) {
 	s.onStreamStateChange = f
-}
-
-func (s *StreamAllocator) SetBWE(bwe bwe.BWE) {
-	if bwe != nil {
-		bwe.SetBWEListener(s)
-	}
-	s.bwe = bwe
-	s.probeController.SetBWE(bwe)
 }
 
 func (s *StreamAllocator) SetSendSideBWEInterceptor(sendSideBWEInterceptor cc.BandwidthEstimator) {
@@ -295,10 +294,7 @@ func (s *StreamAllocator) AddTrack(downTrack *sfu.DownTrack, params AddTrackPara
 	}
 
 	downTrack.SetStreamAllocatorListener(s)
-	if s.prober.IsRunning() {
-		// STREAM-ALLOCATOR-TODO: this can be changed to adapt to probe rate
-		downTrack.SetStreamAllocatorReportInterval(50 * time.Millisecond)
-	}
+	downTrack.SetProbeClusterId(s.prober.GetActiveClusterId())
 
 	s.maybePostEventAllocateTrack(downTrack)
 }
@@ -346,9 +342,7 @@ func (s *StreamAllocator) SetChannelCapacity(channelCapacity int64) {
 }
 
 func (s *StreamAllocator) resetState() {
-	if s.bwe != nil {
-		s.bwe.Reset()
-	}
+	s.params.BWE.Reset()
 	s.probeController.Reset()
 
 	s.state = streamAllocatorStateStable
@@ -440,9 +434,7 @@ func (s *StreamAllocator) OnTransportCCFeedback(downTrack *sfu.DownTrack, fb *rt
 		s.sendSideBWEInterceptor.WriteRTCP([]rtcp.Packet{fb}, nil)
 	}
 
-	if s.bwe != nil {
-		s.bwe.HandleTWCCFeedback(fb)
-	}
+	s.params.BWE.HandleTWCCFeedback(fb)
 }
 
 // called when target bitrate changes (send side bandwidth estimation)
@@ -463,10 +455,7 @@ type congestionStateChangeData struct {
 func (s *StreamAllocator) OnCongestionStateChange(congestionState bwe.CongestionState, estimatedAvailableChannelCapacity int64) {
 	s.postEvent(Event{
 		Signal: streamAllocatorSignalCongestionStateChange,
-		Data: congestionStateChangeData{
-			congestionState:                   congestionState,
-			estimatedAvailableChannelCapacity: estimatedAvailableChannelCapacity,
-		},
+		Data:   congestionStateChangeData{congestionState, estimatedAvailableChannelCapacity},
 	})
 }
 
@@ -522,11 +511,6 @@ func (s *StreamAllocator) OnResume(downTrack *sfu.DownTrack) {
 	})
 }
 
-// called by a video DownTrack to report packet send
-func (s *StreamAllocator) OnPacketsSent(downTrack *sfu.DownTrack, size int) {
-	s.prober.PacketsSent(size)
-}
-
 /* STREAM-ALLOCATOR-DATA
 // called by a video DownTrack when it processes NACKs
 func (s *StreamAllocator) OnNACK(downTrack *sfu.DownTrack, nackInfos []sfu.NackInfo) {
@@ -556,24 +540,21 @@ func (s *StreamAllocator) OnSendProbe(bytesToSend int) {
 	})
 }
 
-// called when prober finishes a probe cluster, could be called when prober is reset which stops an active cluster
-func (s *StreamAllocator) OnProbeClusterDone(info ccutils.ProbeClusterInfo) {
-	s.postEvent(Event{
-		Signal: streamAllocatorSignalProbeClusterDone,
-		Data:   info,
-	})
+// called when probe cluster changes
+func (s *StreamAllocator) OnProbeClusterSwitch(probeClusterId ccutils.ProbeClusterId, desiredBytes int) {
+	s.params.Pacer.StartProbeCluster(probeClusterId, desiredBytes)
+
+	for _, t := range s.getTracks() {
+		t.DownTrack().SetProbeClusterId(probeClusterId)
+	}
 }
 
-// called when prober active state changes
-func (s *StreamAllocator) OnActiveChanged(isActive bool) {
-	for _, t := range s.getTracks() {
-		if isActive {
-			// STREAM-ALLOCATOR-TODO: this can be changed to adapt to probe rate
-			t.DownTrack().SetStreamAllocatorReportInterval(50 * time.Millisecond)
-		} else {
-			t.DownTrack().ClearStreamAllocatorReportInterval()
-		}
-	}
+// called when pacer probe observer observes a cluster completion
+func (s *StreamAllocator) OnPacerProbeObserverClusterComplete(probeClusterId ccutils.ProbeClusterId) {
+	s.postEvent(Event{
+		Signal: streamAllocatorSignalPacerProbeObserverClusterComplete,
+		Data:   probeClusterId,
+	})
 }
 
 // called to check if track should participate in BWE
@@ -652,8 +633,6 @@ func (s *StreamAllocator) postEvent(event Event) {
 			event.handleSignalPeriodicPing(event)
 		case streamAllocatorSignalSendProbe:
 			event.handleSignalSendProbe(event)
-		case streamAllocatorSignalProbeClusterDone:
-			event.handleSignalProbeClusterDone(event)
 		case streamAllocatorSignalResume:
 			event.handleSignalResume(event)
 		case streamAllocatorSignalSetAllowPause:
@@ -668,6 +647,8 @@ func (s *StreamAllocator) postEvent(event Event) {
 			*/
 		case streamAllocatorSignalCongestionStateChange:
 			s.handleSignalCongestionStateChange(event)
+		case streamAllocatorSignalPacerProbeObserverClusterComplete:
+			event.handleSignalPacerProbeObserverClusterComplete(event)
 		}
 	}, event)
 }
@@ -705,29 +686,25 @@ func (s *StreamAllocator) handleSignalEstimate(event Event) {
 	// always update NACKs
 	packetDelta, repeatedNackDelta := s.getNackDelta()
 
-	if s.bwe != nil {
-		s.bwe.HandleREMB(
-			receivedEstimate,
-			s.probeController.DoesProbeNeedFinalize(), // waiting for goal reached OR aborted probe to finalize
-			s.getExpectedBandwidthUsage(),
-			packetDelta,
-			repeatedNackDelta,
-		)
-	}
+	s.params.BWE.HandleREMB(
+		receivedEstimate,
+		s.probeController.DoesProbeNeedFinalize(), // waiting for goal reached OR aborted probe to finalize
+		s.getExpectedBandwidthUsage(),
+		packetDelta,
+		repeatedNackDelta,
+	)
 }
 
 func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 	// finalize probe if necessary
-	if s.bwe != nil {
-		isValidSignal, trend, lowestEstimate, highestEstimate := s.bwe.GetProbeStatus()
-		isHandled, isNotFailing, isGoalReached := s.probeController.MaybeFinalizeProbe(
-			isValidSignal,
-			trend,
-			lowestEstimate,
-		)
-		if isHandled {
-			s.onProbeDone(isNotFailing, isGoalReached, highestEstimate)
-		}
+	isValidSignal, trend, lowestEstimate, highestEstimate := s.params.BWE.GetProbeStatus()
+	isHandled, isNotFailing, isGoalReached := s.probeController.MaybeFinalizeProbe(
+		isValidSignal,
+		trend,
+		lowestEstimate,
+	)
+	if isHandled {
+		s.onProbeDone(isNotFailing, isGoalReached, highestEstimate)
 	}
 
 	// probe if necessary and timing is right
@@ -756,15 +733,6 @@ func (s *StreamAllocator) handleSignalSendProbe(event Event) {
 			break
 		}
 	}
-
-	if bytesSent != 0 {
-		s.prober.ProbeSent(bytesSent)
-	}
-}
-
-func (s *StreamAllocator) handleSignalProbeClusterDone(event Event) {
-	info, _ := event.Data.(ccutils.ProbeClusterInfo)
-	s.probeController.ProbeClusterDone(info)
 }
 
 func (s *StreamAllocator) handleSignalResume(event Event) {
@@ -877,6 +845,11 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 	s.congestionState = cscd.congestionState
 }
 
+func (s *StreamAllocator) handleSignalPacerProbeObserverClusterComplete(event Event) {
+	probeClusterId, _ := event.Data.(ccutils.ProbeClusterId)
+	s.probeController.ProbeClusterDone(probeClusterId)
+}
+
 func (s *StreamAllocator) setState(state streamAllocatorState) {
 	if s.state == state {
 		return
@@ -889,14 +862,12 @@ func (s *StreamAllocator) setState(state streamAllocatorState) {
 	s.probeController.Reset()
 
 	// a fresh start after state transition to get clean data
-	if s.bwe != nil {
-		// BWE-TODO: ssbwe maybe should not reset like this as it might have useful state across
-		// BWE-TODO: state changes in this module, actually even remotebwe should also manage it
-		// BWE-TODO: internally, Reset should probably only be used if all managed tracks go away
-		// BWE-TODO: and we can get a clean start, mimicking existing behaviour till this can be
-		// BWE-TODO: evaluated more.
-		s.bwe.Reset()
-	}
+	// BWE-TODO: ssbwe maybe should not reset like this as it might have useful state across
+	// BWE-TODO: state changes in this module, actually even remotebwe should also manage it
+	// BWE-TODO: internally, Reset should probably only be used if all managed tracks go away
+	// BWE-TODO: and we can get a clean start, mimicking existing behaviour till this can be
+	// BWE-TODO: evaluated more.
+	s.params.BWE.Reset()
 }
 
 func (s *StreamAllocator) adjustState() {
@@ -1066,9 +1037,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 }
 
 func (s *StreamAllocator) onProbeDone(isNotFailing bool, isGoalReached bool, highestEstimate int64) {
-	if s.bwe != nil {
-		s.bwe.ProbingEnd(isNotFailing, isGoalReached)
-	}
+	s.params.BWE.ProbingEnd(isNotFailing, isGoalReached)
 
 	if !isNotFailing {
 		return

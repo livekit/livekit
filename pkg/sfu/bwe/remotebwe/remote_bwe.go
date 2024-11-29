@@ -24,10 +24,6 @@ import (
 	"github.com/livekit/protocol/utils/mono"
 )
 
-const (
-	ChannelCapacityInfinity = 100 * 1000 * 1000 // 100 Mbps
-)
-
 // ---------------------------------------------------------------------------
 
 type RemoteBWEConfig struct {
@@ -110,6 +106,7 @@ func (r *RemoteBWE) Reset() {
 	defer r.lock.Unlock()
 
 	r.channelObserver = r.newChannelObserverNonProbe()
+	r.isInProbe = false
 }
 
 func (r *RemoteBWE) Stop() {
@@ -205,7 +202,7 @@ func (r *RemoteBWE) estimateAvailableChannelCapacity(reason channelCongestionRea
 		"channel", r.channelObserver,
 	)
 	if estimateToCommit > commitThreshold {
-		ulgr.Debugw("remote bwe: channel congestion detected, skipping above commit threshold  channel capacity update")
+		ulgr.Debugw("remote bwe: channel congestion detected, skipping above commit threshold channel capacity update")
 		return false
 	}
 
@@ -298,7 +295,7 @@ func (r *RemoteBWE) ProbingEnd(isNotFailing bool, isGoalReached bool) {
 	// the send side is in full control of bandwidth estimation.
 	//
 	r.params.Logger.Debugw(
-		"probe done",
+		"remote bwe: probe done",
 		"isNotFailing", isNotFailing,
 		"isGoalReached", isGoalReached,
 		"committedEstimate", r.committedChannelCapacity,
@@ -306,6 +303,7 @@ func (r *RemoteBWE) ProbingEnd(isNotFailing bool, isGoalReached bool) {
 		"channel", r.channelObserver,
 	)
 	r.channelObserver = r.newChannelObserverNonProbe()
+	r.isInProbe = false
 	if !isNotFailing {
 		return
 	}

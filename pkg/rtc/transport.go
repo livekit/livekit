@@ -452,13 +452,6 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		lastNegotiate:            time.Now(),
 	}
 	if params.IsSendSide {
-		t.streamAllocator = streamallocator.NewStreamAllocator(streamallocator.StreamAllocatorParams{
-			Config: params.CongestionControlConfig.StreamAllocator,
-			Logger: params.Logger.WithComponent(utils.ComponentCongestionControl),
-		}, params.CongestionControlConfig.Enabled, params.CongestionControlConfig.AllowPause)
-		t.streamAllocator.OnStreamStateChange(params.Handler.OnStreamStateChange)
-		t.streamAllocator.Start()
-
 		if params.CongestionControlConfig.UseSendSideBWE || params.UseSendSideBWE {
 			params.Logger.Infow("using send side BWE")
 			t.bwe = sendsidebwe.NewSendSideBWE(sendsidebwe.SendSideBWEParams{
@@ -473,7 +466,15 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 			})
 			t.pacer = pacer.NewPassThrough(params.Logger, nil)
 		}
-		t.streamAllocator.SetBWE(t.bwe)
+
+		t.streamAllocator = streamallocator.NewStreamAllocator(streamallocator.StreamAllocatorParams{
+			Config: params.CongestionControlConfig.StreamAllocator,
+			BWE:    t.bwe,
+			Pacer:  t.pacer,
+			Logger: params.Logger.WithComponent(utils.ComponentCongestionControl),
+		}, params.CongestionControlConfig.Enabled, params.CongestionControlConfig.AllowPause)
+		t.streamAllocator.OnStreamStateChange(params.Handler.OnStreamStateChange)
+		t.streamAllocator.Start()
 	}
 
 	if err := t.createPeerConnection(); err != nil {
