@@ -20,6 +20,7 @@ import (
 
 	"github.com/frostbyte73/core"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
+	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/mono"
 )
@@ -65,8 +66,8 @@ type RemoteBWE struct {
 
 	lastReceivedEstimate       int64
 	lastExpectedBandwidthUsage int64
-	isInProbe                  bool
-	committedChannelCapacity   int64
+	// RAJA-REMOVE isInProbe                  bool
+	committedChannelCapacity int64
 
 	channelObserver *channelObserver
 
@@ -106,7 +107,7 @@ func (r *RemoteBWE) Reset() {
 	defer r.lock.Unlock()
 
 	r.channelObserver = r.newChannelObserverNonProbe()
-	r.isInProbe = false
+	// RAJA-REMOVE r.isInProbe = false
 }
 
 func (r *RemoteBWE) Stop() {
@@ -115,7 +116,7 @@ func (r *RemoteBWE) Stop() {
 
 func (r *RemoteBWE) HandleREMB(
 	receivedEstimate int64,
-	isProbeFinalizing bool,
+	_isProbeFinalizing bool, // RAJA-REMOVE
 	expectedBandwidthUsage int64,
 	sentPackets uint32,
 	repeatedNacks uint32,
@@ -124,19 +125,10 @@ func (r *RemoteBWE) HandleREMB(
 	r.lastReceivedEstimate = receivedEstimate
 	r.lastExpectedBandwidthUsage = expectedBandwidthUsage
 
-	if !isProbeFinalizing {
-		r.channelObserver.AddEstimate(r.lastReceivedEstimate)
-		r.channelObserver.AddNack(sentPackets, repeatedNacks)
-	}
+	r.channelObserver.AddEstimate(r.lastReceivedEstimate)
+	r.channelObserver.AddNack(sentPackets, repeatedNacks)
 
-	var (
-		shouldNotify             bool
-		state                    bwe.CongestionState
-		committedChannelCapacity int64
-	)
-	if !r.isInProbe {
-		shouldNotify, state, committedChannelCapacity = r.congestionDetectionStateMachine()
-	}
+	shouldNotify, state, committedChannelCapacity := r.congestionDetectionStateMachine()
 	r.lock.Unlock()
 
 	if shouldNotify {
@@ -252,17 +244,16 @@ func (r *RemoteBWE) newChannelObserverNonProbe() *channelObserver {
 	)
 }
 
-func (r *RemoteBWE) ProbingStart(expectedBandwidthUsage int64) {
+func (r *RemoteBWE) ProbeClusterStarting(pci ccutils.ProbeClusterInfo) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	r.isInProbe = true
-	r.lastExpectedBandwidthUsage = expectedBandwidthUsage
+	r.lastExpectedBandwidthUsage = int64(pci.Goal.ExpectedUsageBps)
 
 	r.params.Logger.Debugw(
 		"remote bwe: starting probe",
 		"lastReceived", r.lastReceivedEstimate,
-		"expectedBandwidthUsage", expectedBandwidthUsage,
+		"expectedBandwidthUsage", r.lastExpectedBandwidthUsage,
 		"channel", r.channelObserver,
 	)
 
@@ -276,7 +267,7 @@ func (r *RemoteBWE) ProbingStart(expectedBandwidthUsage int64) {
 	r.channelObserver.SeedEstimate(r.lastReceivedEstimate)
 }
 
-func (r *RemoteBWE) ProbingEnd(isNotFailing bool, isGoalReached bool) {
+func (r *RemoteBWE) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -294,6 +285,7 @@ func (r *RemoteBWE) ProbingEnd(isNotFailing bool, isGoalReached bool) {
 	// NOTE: With TWCC, it is possible to reset bandwidth estimation to clean state as
 	// the send side is in full control of bandwidth estimation.
 	//
+	/* RAJA-TODO
 	r.params.Logger.Debugw(
 		"remote bwe: probe done",
 		"isNotFailing", isNotFailing,
@@ -302,17 +294,21 @@ func (r *RemoteBWE) ProbingEnd(isNotFailing bool, isGoalReached bool) {
 		"highestEstimate", highestEstimateInProbe,
 		"channel", r.channelObserver,
 	)
+	*/
 	r.channelObserver = r.newChannelObserverNonProbe()
-	r.isInProbe = false
+	// RAJA-REMOVE r.isInProbe = false
+	/* RAJA-TODO
 	if !isNotFailing {
 		return
 	}
+	*/
 
 	if highestEstimateInProbe > r.committedChannelCapacity {
 		r.committedChannelCapacity = highestEstimateInProbe
 	}
 }
 
+/* RAJA-REMOVE
 func (r *RemoteBWE) GetProbeStatus() (bool, bwe.ChannelTrend, int64, int64) {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
@@ -327,6 +323,7 @@ func (r *RemoteBWE) GetProbeStatus() (bool, bwe.ChannelTrend, int64, int64) {
 		r.channelObserver.GetLowestEstimate(),
 		r.channelObserver.GetHighestEstimate()
 }
+*/
 
 func (r *RemoteBWE) worker() {
 	ticker := time.NewTicker(r.params.Config.PeriodicCheckInterval)
@@ -345,13 +342,8 @@ func (r *RemoteBWE) worker() {
 			}
 
 		case <-ticker.C:
-			var (
-				shouldNotify             bool
-				state                    bwe.CongestionState
-				committedChannelCapacity int64
-			)
 			r.lock.Lock()
-			shouldNotify, state, committedChannelCapacity = r.congestionDetectionStateMachine()
+			shouldNotify, state, committedChannelCapacity := r.congestionDetectionStateMachine()
 			r.lock.Unlock()
 
 			if shouldNotify {

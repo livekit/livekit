@@ -189,7 +189,7 @@ type StreamAllocator struct {
 
 	probeController *ProbeController
 
-	prober *ccutils.Prober
+	prober *ccutils.Prober // RAJA-TODO: maybe this should be inside probe controller???
 
 	// STREAM-ALLOCATOR-DATA rateMonitor     *RateMonitor
 
@@ -254,7 +254,7 @@ func (s *StreamAllocator) Stop() {
 
 	// wait for eventsQueue to be done
 	<-s.eventsQueue.Stop()
-	s.probeController.StopProbe()
+	// RAJA-TODO s.probeController.StopProbe()
 }
 
 func (s *StreamAllocator) OnStreamStateChange(f func(update *StreamStateUpdate) error) {
@@ -343,7 +343,7 @@ func (s *StreamAllocator) SetChannelCapacity(channelCapacity int64) {
 
 func (s *StreamAllocator) resetState() {
 	s.params.BWE.Reset()
-	s.probeController.Reset()
+	// RAJA-TODO s.probeController.Reset()
 
 	s.state = streamAllocatorStateStable
 }
@@ -541,11 +541,12 @@ func (s *StreamAllocator) OnSendProbe(bytesToSend int) {
 }
 
 // called when probe cluster changes
-func (s *StreamAllocator) OnProbeClusterSwitch(probeClusterId ccutils.ProbeClusterId, desiredBytes int) {
-	s.params.Pacer.StartProbeCluster(probeClusterId, desiredBytes)
+func (s *StreamAllocator) OnProbeClusterSwitch(pci ccutils.ProbeClusterInfo) {
+	s.params.Pacer.StartProbeCluster(pci)
+	s.params.BWE.ProbeClusterStarting(pci)
 
 	for _, t := range s.getTracks() {
-		t.DownTrack().SetProbeClusterId(probeClusterId)
+		t.DownTrack().SetProbeClusterId(pci.Id)
 	}
 }
 
@@ -688,7 +689,7 @@ func (s *StreamAllocator) handleSignalEstimate(event Event) {
 
 	s.params.BWE.HandleREMB(
 		receivedEstimate,
-		s.probeController.DoesProbeNeedFinalize(), // waiting for goal reached OR aborted probe to finalize
+		false, // RAJA-TODO s.probeController.DoesProbeNeedFinalize(), // waiting for goal reached OR aborted probe to finalize
 		s.getExpectedBandwidthUsage(),
 		packetDelta,
 		repeatedNackDelta,
@@ -696,6 +697,7 @@ func (s *StreamAllocator) handleSignalEstimate(event Event) {
 }
 
 func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
+	/* RAJA-TODO
 	// finalize probe if necessary
 	isValidSignal, trend, lowestEstimate, highestEstimate := s.params.BWE.GetProbeStatus()
 	isHandled, isNotFailing, isGoalReached := s.probeController.MaybeFinalizeProbe(
@@ -706,6 +708,7 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 	if isHandled {
 		s.onProbeDone(isNotFailing, isGoalReached, highestEstimate)
 	}
+	*/
 
 	// probe if necessary and timing is right
 	if s.state == streamAllocatorStateDeficient {
@@ -791,7 +794,7 @@ func (s *StreamAllocator) handleSignalRTCPReceiverReport(event Event) {
 func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 	cscd := event.Data.(congestionStateChangeData)
 	if cscd.congestionState != bwe.CongestionStateNone {
-		s.probeController.AbortProbe()
+		// RAJA-TODO s.probeController.AbortProbe()
 	}
 
 	if cscd.congestionState == bwe.CongestionStateEarlyWarning ||
@@ -837,7 +840,7 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 		// BWE-TODO: a couple of things to consider
 		// BWE-TODO:    1. Make ProbeController be owned by BWE modules?
 		// BWE-TODO:    2. Add an interface method to BWE to check if probe controller should be reset?
-		s.probeController.Reset()
+		// RAJA-TODO s.probeController.Reset()
 
 		s.allocateAllTracks()
 	}
@@ -846,8 +849,12 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 }
 
 func (s *StreamAllocator) handleSignalPacerProbeObserverClusterComplete(event Event) {
+	/* RAJA-TODO
 	probeClusterId, _ := event.Data.(ccutils.ProbeClusterId)
-	s.probeController.ProbeClusterDone(probeClusterId)
+	pci := s.params.Pacer.EndProbeCluster(probeClusterId)
+	s.probeController.ProbeClusterDone(pci)
+	s.params.BWE.ProbeClusterDone(pci)
+	*/
 }
 
 func (s *StreamAllocator) setState(state streamAllocatorState) {
@@ -859,7 +866,7 @@ func (s *StreamAllocator) setState(state streamAllocatorState) {
 	s.state = state
 
 	// reset probe to enforce a delay after state change before probing
-	s.probeController.Reset()
+	// RAJA-TODO s.probeController.Reset()
 
 	// a fresh start after state transition to get clean data
 	// BWE-TODO: ssbwe maybe should not reset like this as it might have useful state across
@@ -883,7 +890,7 @@ func (s *StreamAllocator) adjustState() {
 
 func (s *StreamAllocator) allocateTrack(track *Track) {
 	// abort any probe that may be running when a track specific change needs allocation
-	s.probeController.AbortProbe()
+	// RAJA-TODO s.probeController.AbortProbe()
 
 	// if not deficient, free pass allocate track
 	if !s.enabled || s.state == streamAllocatorStateStable || !track.IsManaged() {
@@ -1037,7 +1044,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 }
 
 func (s *StreamAllocator) onProbeDone(isNotFailing bool, isGoalReached bool, highestEstimate int64) {
-	s.params.BWE.ProbingEnd(isNotFailing, isGoalReached)
+	// RAJA-TODO s.params.BWE.ProbingEnd(isNotFailing, isGoalReached)
 
 	if !isNotFailing {
 		return
@@ -1268,6 +1275,7 @@ func (s *StreamAllocator) getNackDelta() (uint32, uint32) {
 	return aggPacketDelta, aggRepeatedNackDelta
 }
 
+/* RAJA-REMOVE
 func (s *StreamAllocator) initProbe(probeGoalDeltaBps int64) {
 	expectedBandwidthUsage := s.getExpectedBandwidthUsage()
 	probeClusterId, probeGoalBps := s.probeController.InitProbe(probeGoalDeltaBps, expectedBandwidthUsage)
@@ -1280,6 +1288,7 @@ func (s *StreamAllocator) initProbe(probeGoalDeltaBps int64) {
 		"goalBps", probeGoalBps,
 	)
 }
+*/
 
 func (s *StreamAllocator) maybeProbe() {
 	if s.overriddenChannelCapacity > 0 {
@@ -1287,9 +1296,11 @@ func (s *StreamAllocator) maybeProbe() {
 		return
 	}
 
+	/* RAJA-TODO
 	if s.congestionState != bwe.CongestionStateNone || !s.probeController.CanProbe() {
 		return
 	}
+	*/
 
 	switch s.params.Config.ProbeMode {
 	case ProbeModeMedia:
@@ -1312,7 +1323,7 @@ func (s *StreamAllocator) maybeProbeWithMedia() {
 		updateStreamStateChange(track, allocation, update)
 		s.maybeSendUpdate(update)
 
-		s.probeController.Reset()
+		// RAJA-TODO s.probeController.Reset()
 		break
 	}
 }
@@ -1325,7 +1336,8 @@ func (s *StreamAllocator) maybeProbeWithPadding() {
 			continue
 		}
 
-		s.initProbe(transition.BandwidthDelta)
+		// RAJA-REMOVE s.initProbe(transition.BandwidthDelta)
+		s.probeController.MaybeProbe(s.committedChannelCapacity, transition.BandwidthDelta, s.getExpectedBandwidthUsage())
 		break
 	}
 }

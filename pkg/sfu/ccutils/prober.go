@@ -130,11 +130,12 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils/mono"
 )
 
 type ProberListener interface {
 	OnSendProbe(bytesToSend int)
-	OnProbeClusterSwitch(probeClusterId ProbeClusterId, desiredBytes int)
+	OnProbeClusterSwitch(info ProbeClusterInfo)
 }
 
 type ProberParams struct {
@@ -171,8 +172,8 @@ func (p *Prober) Reset(info ProbeClusterInfo) {
 	p.clustersMu.Lock()
 	defer p.clustersMu.Unlock()
 
-	if p.activeCluster != nil && p.activeCluster.Id() == info.ProbeClusterId {
-		p.activeCluster.MarkCompleted(info)
+	if p.activeCluster != nil && p.activeCluster.Id() == info.Id {
+		p.activeCluster.MarkCompleted(info.Result)
 		p.params.Logger.Debugw("prober: resetting active cluster", "cluster", p.activeCluster)
 	}
 
@@ -180,30 +181,18 @@ func (p *Prober) Reset(info ProbeClusterInfo) {
 	p.activeCluster = nil
 }
 
-func (p *Prober) AddCluster(
-	mode ProbeClusterMode,
-	desiredRateBps int,
-	expectedRateBps int,
-	duration time.Duration,
-) ProbeClusterId {
-	if desiredRateBps <= 0 {
-		return ProbeClusterIdInvalid
+func (p *Prober) AddCluster(mode ProbeClusterMode, pcg ProbeClusterGoal) ProbeClusterInfo {
+	if pcg.DesiredBps <= 0 {
+		return ProbeClusterInfoInvalid
 	}
 
 	clusterId := ProbeClusterId(p.clusterId.Inc())
-	cluster := newCluster(
-		clusterId,
-		mode,
-		desiredRateBps,
-		expectedRateBps,
-		duration,
-		p.params.Listener,
-	)
+	cluster := newCluster(clusterId, mode, pcg, p.params.Listener)
 	p.params.Logger.Debugw("cluster added", "cluster", cluster)
 
 	p.pushBackClusterAndMaybeStart(cluster)
 
-	return clusterId
+	return cluster.Info()
 }
 
 func (p *Prober) ClusterDone(info ProbeClusterInfo) {
@@ -212,8 +201,8 @@ func (p *Prober) ClusterDone(info ProbeClusterInfo) {
 		return
 	}
 
-	if cluster.Id() == info.ProbeClusterId {
-		cluster.MarkCompleted(info)
+	if cluster.Id() == info.Id {
+		cluster.MarkCompleted(info.Result)
 		p.params.Logger.Debugw("cluster done", "cluster", cluster)
 		p.popFrontCluster(cluster)
 	}
@@ -329,9 +318,24 @@ func (p ProbeClusterMode) String() string {
 
 // ---------------------------------------------------------------------------
 
-type ProbeClusterInfo struct {
-	ProbeClusterId       ProbeClusterId
-	DesiredBytes         int
+type ProbeClusterGoal struct {
+	AvailableBandwidthBps int
+	ExpectedUsageBps      int
+	DesiredBps            int
+	Duration              time.Duration
+	DesiredBytes          int
+}
+
+func (p ProbeClusterGoal) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddInt("AvailableBandwidthBps", p.AvailableBandwidthBps)
+	e.AddInt("ExpectedUsageBps", p.ExpectedUsageBps)
+	e.AddInt("DesiredBps", p.DesiredBps)
+	e.AddDuration("Duration", p.Duration)
+	e.AddInt("DesiredBytes", p.DesiredBytes)
+	return nil
+}
+
+type ProbeClusterResult struct {
 	StartTime            int64
 	EndTime              int64
 	BytesProbe           int
@@ -339,21 +343,15 @@ type ProbeClusterInfo struct {
 	BytesNonProbeRTX     int
 }
 
-var (
-	ProbeClusterInfoInvalid = ProbeClusterInfo{ProbeClusterId: ProbeClusterIdInvalid}
-)
-
-func (p ProbeClusterInfo) Bytes() int {
+func (p ProbeClusterResult) Bytes() int {
 	return p.BytesProbe + p.BytesNonProbePrimary + p.BytesNonProbeRTX
 }
 
-func (p ProbeClusterInfo) Duration() time.Duration {
+func (p ProbeClusterResult) Duration() time.Duration {
 	return time.Duration(p.EndTime - p.StartTime)
 }
 
-func (p ProbeClusterInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
-	e.AddUint32("ProbeClusterId", uint32(p.ProbeClusterId))
-	e.AddInt("DesiredBytes", p.DesiredBytes)
+func (p ProbeClusterResult) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddTime("StartTime", time.Unix(0, p.StartTime))
 	e.AddTime("EndTime", time.Unix(0, p.EndTime))
 	e.AddDuration("Duration", p.Duration())
@@ -364,18 +362,22 @@ func (p ProbeClusterInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	return nil
 }
 
-// ---------------------------------------------------------------------------
-
-type clusterBucket struct {
-	desiredNumProbes int
-	desiredBytes     int
-	sleepDuration    time.Duration
+type ProbeClusterInfo struct {
+	Id        ProbeClusterId
+	CreatedAt time.Time
+	Goal      ProbeClusterGoal
+	Result    ProbeClusterResult
 }
 
-func (c clusterBucket) MarshalLogObject(e zapcore.ObjectEncoder) error {
-	e.AddInt("desiredNumProbes", c.desiredNumProbes)
-	e.AddInt("desiredBytes", c.desiredBytes)
-	e.AddDuration("sleepDuration", c.sleepDuration)
+var (
+	ProbeClusterInfoInvalid = ProbeClusterInfo{Id: ProbeClusterIdInvalid}
+)
+
+func (p ProbeClusterInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddUint32("Id", uint32(p.Id))
+	e.AddTime("CreatedAt", p.CreatedAt)
+	e.AddObject("Goal", p.Goal)
+	e.AddObject("Result", p.Result)
 	return nil
 }
 
@@ -384,42 +386,32 @@ func (c clusterBucket) MarshalLogObject(e zapcore.ObjectEncoder) error {
 type Cluster struct {
 	lock sync.RWMutex
 
-	id              ProbeClusterId
-	mode            ProbeClusterMode
-	desiredRateBps  int
-	expectedRateBps int
-	duration        time.Duration
-	listener        ProberListener
+	info     ProbeClusterInfo
+	mode     ProbeClusterMode
+	listener ProberListener
 
 	probeSleeps []time.Duration
 	probeIdx    int
 
-	isComplete       bool
-	probeClusterInfo ProbeClusterInfo
+	isComplete bool
 }
 
-func newCluster(
-	id ProbeClusterId,
-	mode ProbeClusterMode,
-	desiredRateBps int,
-	expectedRateBps int,
-	duration time.Duration,
-	listener ProberListener,
-) *Cluster {
+func newCluster(id ProbeClusterId, mode ProbeClusterMode, pcg ProbeClusterGoal, listener ProberListener) *Cluster {
 	c := &Cluster{
-		id:              id,
-		mode:            mode,
-		desiredRateBps:  desiredRateBps,
-		expectedRateBps: expectedRateBps,
-		duration:        duration,
-		listener:        listener,
+		mode: mode,
+		info: ProbeClusterInfo{
+			Id:        id,
+			CreatedAt: mono.Now(),
+			Goal:      pcg,
+		},
+		listener: listener,
 	}
 	c.initProbes()
 	return c
 }
 
 func (c *Cluster) initProbes() {
-	numProbeBytes := int(math.Round(float64(c.desiredRateBps-c.expectedRateBps)*c.duration.Seconds()/8 + 0.5))
+	numProbeBytes := int(math.Round(float64(c.info.Goal.DesiredBps-c.info.Goal.ExpectedUsageBps)*c.info.Goal.Duration.Seconds()/8 + 0.5))
 	numProbes := (numProbeBytes + cBytesPerProbe - 1) / cBytesPerProbe
 	if numProbes < 1 {
 		numProbes = 1
@@ -428,36 +420,45 @@ func (c *Cluster) initProbes() {
 	c.probeSleeps = make([]time.Duration, numProbes)
 	switch c.mode {
 	case ProbeClusterModeUniform:
-		interval := c.duration / time.Duration(numProbes)
+		interval := c.info.Goal.Duration / time.Duration(numProbes)
 		for i := 0; i < numProbes; i++ {
 			c.probeSleeps[i] = interval
 		}
 
 	case ProbeClusterModeLinearChirp:
 		numIntervals := numProbes * (numProbes + 1) / 2
-		interval := c.duration / time.Duration(numIntervals)
+		interval := c.info.Goal.Duration / time.Duration(numIntervals)
 		for i := 0; i < numProbes; i++ {
 			c.probeSleeps[i] = time.Duration(numProbes-i) * interval
 		}
 	}
+
+	c.info.Goal.DesiredBytes = int(math.Round(float64(c.info.Goal.DesiredBps)*c.info.Goal.Duration.Seconds()/8 + 0.5))
 }
 
 func (c *Cluster) Start() {
 	if c.listener != nil {
-		c.listener.OnProbeClusterSwitch(c.id, int(math.Round(float64(c.desiredRateBps)*c.duration.Seconds()/8+0.5)))
+		c.listener.OnProbeClusterSwitch(c.info)
 	}
 }
 
 func (c *Cluster) Id() ProbeClusterId {
-	return c.id
+	return c.info.Id
 }
 
-func (c *Cluster) MarkCompleted(info ProbeClusterInfo) {
+func (c *Cluster) Info() ProbeClusterInfo {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+
+	return c.info
+}
+
+func (c *Cluster) MarkCompleted(result ProbeClusterResult) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
 	c.isComplete = true
-	c.probeClusterInfo = info
+	c.info.Result = result
 }
 
 func (c *Cluster) Process() time.Duration {
@@ -484,16 +485,12 @@ func (c *Cluster) Process() time.Duration {
 
 func (c *Cluster) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	if c != nil {
-		e.AddUint32("id", uint32(c.id))
 		e.AddString("mode", c.mode.String())
-		e.AddInt("desiredRateBps", c.desiredRateBps)
-		e.AddInt("expectedRateBps", c.expectedRateBps)
-		e.AddDuration("duration", c.duration)
+		e.AddObject("info", c.info)
 		e.AddInt("numProbes", len(c.probeSleeps))
 		e.AddArray("probeSleeps", logger.DurationSlice(c.probeSleeps))
 		e.AddInt("probeIdx", c.probeIdx)
 		e.AddBool("isComplete", c.isComplete)
-		e.AddObject("probeClusterInfo", c.probeClusterInfo)
 	}
 	return nil
 }

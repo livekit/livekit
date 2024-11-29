@@ -17,6 +17,7 @@ package bwe
 import (
 	"fmt"
 
+	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/pion/rtcp"
 )
 
@@ -51,6 +52,7 @@ func (c CongestionState) String() string {
 
 // ------------------------------------------------
 
+// RAJA-TODO: maybe this can be internal to remote_bwe???
 type ChannelTrend int
 
 const (
@@ -94,9 +96,9 @@ type BWE interface {
 
 	HandleTWCCFeedback(report *rtcp.TransportLayerCC)
 
-	ProbingStart(expectedBandwidthUsage int64)
-	ProbingEnd(isNotFailing bool, isGoalReached bool)
-	GetProbeStatus() (isValidSignal bool, trend ChannelTrend, lowestEstimate int64, highestEstimate int64)
+	ProbeClusterStarting(pci ccutils.ProbeClusterInfo)
+	ProbeClusterDone(pci ccutils.ProbeClusterInfo)
+	GetProbeStatus() (isValidSignal bool, trend ChannelTrend, lowestEstimate int64, highestEstimate int64) // RAJA-REMOVE
 }
 
 // ------------------------------------------------

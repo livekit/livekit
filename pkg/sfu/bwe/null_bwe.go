@@ -15,6 +15,7 @@
 package bwe
 
 import (
+	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/pion/rtcp"
 )
 
@@ -42,10 +43,11 @@ func (n *NullBWE) HandleREMB(
 
 func (n *NullBWE) HandleTWCCFeedback(_report *rtcp.TransportLayerCC) {}
 
-func (n *NullBWE) ProbingStart(_expectedBandwidthUsage int64) {}
+func (n *NullBWE) ProbeClusterStarting(_pci ccutils.ProbeClusterInfo) {}
 
-func (n *NullBWE) ProbingEnd(_isNotFailing bool, _isGoalReached bool) {}
+func (n *NullBWE) ProbeClusterDone(_pci ccutils.ProbeClusterInfo) {}
 
+// RAJA-REMOVE
 func (n *NullBWE) GetProbeStatus() (bool, ChannelTrend, int64, int64) {
 	return false, ChannelTrendNeutral, 0, 0
 }
