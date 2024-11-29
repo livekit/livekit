@@ -289,6 +289,7 @@ func (p *Prober) run() {
 		sleepDuration := cluster.Process()
 		if sleepDuration == 0 {
 			p.popFrontCluster(cluster)
+			continue
 		}
 
 		ticker.Reset(sleepDuration)
