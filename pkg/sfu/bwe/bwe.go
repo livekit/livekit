@@ -17,6 +17,7 @@ package bwe
 import (
 	"fmt"
 
+	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/pion/rtcp"
 )
 
@@ -51,29 +52,6 @@ func (c CongestionState) String() string {
 
 // ------------------------------------------------
 
-type ChannelTrend int
-
-const (
-	ChannelTrendNeutral ChannelTrend = iota
-	ChannelTrendClearing
-	ChannelTrendCongesting
-)
-
-func (c ChannelTrend) String() string {
-	switch c {
-	case ChannelTrendNeutral:
-		return "NEUTRAL"
-	case ChannelTrendClearing:
-		return "CLEARING"
-	case ChannelTrendCongesting:
-		return "CONGESTING"
-	default:
-		return fmt.Sprintf("%d", int(c))
-	}
-}
-
-// ------------------------------------------------
-
 type BWE interface {
 	SetBWEListener(bweListner BWEListener)
 
@@ -83,7 +61,6 @@ type BWE interface {
 
 	HandleREMB(
 		receivedEstimate int64,
-		isProbeFinalizing bool,
 		expectedBandwidthUsage int64,
 		sentPackets uint32,
 		repeatedNacks uint32,
@@ -94,9 +71,8 @@ type BWE interface {
 
 	HandleTWCCFeedback(report *rtcp.TransportLayerCC)
 
-	ProbingStart(expectedBandwidthUsage int64)
-	ProbingEnd(isNotFailing bool, isGoalReached bool)
-	GetProbeStatus() (isValidSignal bool, trend ChannelTrend, lowestEstimate int64, highestEstimate int64)
+	ProbeClusterStarting(pci ccutils.ProbeClusterInfo)
+	ProbeClusterDone(pci ccutils.ProbeClusterInfo) (bool, int64)
 }
 
 // ------------------------------------------------

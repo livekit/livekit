@@ -45,7 +45,7 @@ type Pacer interface {
 	SetBitrate(bitrate int)
 
 	SetPacerProbeObserverListener(listener PacerProbeObserverListener)
-	StartProbeCluster(probeClusterId ccutils.ProbeClusterId, desiredBytes int)
+	StartProbeCluster(pci ccutils.ProbeClusterInfo)
 	EndProbeCluster(probeClusterId ccutils.ProbeClusterId) ccutils.ProbeClusterInfo
 }
 

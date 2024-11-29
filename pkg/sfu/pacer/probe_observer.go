@@ -30,14 +30,8 @@ type ProbeObserver struct {
 
 	isInProbe atomic.Bool
 
-	lock                     sync.Mutex
-	clusterStartTime         int64
-	activeProbeClusterId     ccutils.ProbeClusterId
-	desiredProbeClusterBytes int
-	bytesNonProbePrimary     int
-	bytesNonProbeRTX         int
-	bytesProbe               int
-	isActiveClusterDone      bool
+	lock sync.Mutex
+	pci  ccutils.ProbeClusterInfo
 }
 
 func NewProbeObserver(logger logger.Logger) *ProbeObserver {
@@ -50,12 +44,11 @@ func (po *ProbeObserver) SetPacerProbeObserverListener(listener PacerProbeObserv
 	po.listener = listener
 }
 
-func (po *ProbeObserver) StartProbeCluster(probeClusterId ccutils.ProbeClusterId, desiredBytes int) {
+func (po *ProbeObserver) StartProbeCluster(pci ccutils.ProbeClusterInfo) {
 	if po.isInProbe.Load() {
 		po.logger.Warnw(
 			"ignoring start of a new probe cluster when already active", nil,
-			"probeClusterId", probeClusterId,
-			"desiredBytes", desiredBytes,
+			"probeClusterInfo", pci,
 		)
 		return
 	}
@@ -63,13 +56,10 @@ func (po *ProbeObserver) StartProbeCluster(probeClusterId ccutils.ProbeClusterId
 	po.lock.Lock()
 	defer po.lock.Unlock()
 
-	po.clusterStartTime = mono.UnixNano()
-	po.activeProbeClusterId = probeClusterId
-	po.desiredProbeClusterBytes = desiredBytes
-	po.bytesNonProbePrimary = 0
-	po.bytesNonProbeRTX = 0
-	po.bytesProbe = 0
-	po.isActiveClusterDone = false
+	po.pci = pci
+	po.pci.Result = ccutils.ProbeClusterResult{
+		StartTime: mono.UnixNano(),
+	}
 
 	po.isInProbe.Store(true)
 }
@@ -89,30 +79,23 @@ func (po *ProbeObserver) EndProbeCluster(probeClusterId ccutils.ProbeClusterId) 
 	po.lock.Lock()
 	defer po.lock.Unlock()
 
-	if po.activeProbeClusterId != probeClusterId {
+	if po.pci.Id != probeClusterId {
 		// probe cluster id not active
 		po.logger.Warnw(
 			"ignoring end of a probe cluster of a non-active one", nil,
 			"probeClusterId", probeClusterId,
-			"active", po.activeProbeClusterId,
+			"active", po.pci.Id,
 		)
 		return ccutils.ProbeClusterInfoInvalid
 	}
 
-	clusterInfo := ccutils.ProbeClusterInfo{
-		ProbeClusterId:       po.activeProbeClusterId,
-		DesiredBytes:         po.desiredProbeClusterBytes,
-		StartTime:            po.clusterStartTime,
-		EndTime:              mono.UnixNano(),
-		BytesProbe:           po.bytesProbe,
-		BytesNonProbePrimary: po.bytesNonProbePrimary,
-		BytesNonProbeRTX:     po.bytesNonProbeRTX,
+	if po.pci.Result.EndTime == 0 {
+		po.pci.Result.EndTime = mono.UnixNano()
 	}
 
-	po.activeProbeClusterId = ccutils.ProbeClusterIdInvalid
 	po.isInProbe.Store(false)
 
-	return clusterInfo
+	return po.pci
 }
 
 func (po *ProbeObserver) RecordPacket(size int, isRTX bool, probeClusterId ccutils.ProbeClusterId, isProbe bool) {
@@ -121,28 +104,29 @@ func (po *ProbeObserver) RecordPacket(size int, isRTX bool, probeClusterId ccuti
 	}
 
 	po.lock.Lock()
-	if probeClusterId != po.activeProbeClusterId || po.isActiveClusterDone {
+	if probeClusterId != po.pci.Id || po.pci.Result.EndTime != 0 {
 		po.lock.Unlock()
 		return
 	}
 
 	if isProbe {
-		po.bytesProbe += size
+		po.pci.Result.BytesProbe += size
 	} else {
 		if isRTX {
-			po.bytesNonProbeRTX += size
+			po.pci.Result.BytesNonProbeRTX += size
 		} else {
-			po.bytesNonProbePrimary += size
+			po.pci.Result.BytesNonProbePrimary += size
 		}
 	}
 
 	notify := false
 	var clusterId ccutils.ProbeClusterId
-	if !po.isActiveClusterDone && po.bytesProbe+po.bytesNonProbePrimary+po.bytesNonProbeRTX >= po.desiredProbeClusterBytes {
-		po.isActiveClusterDone = true
+	if po.pci.Result.EndTime == 0 && po.pci.Result.Bytes() >= po.pci.Goal.DesiredBytes {
+		po.pci.Result.EndTime = mono.UnixNano()
+		po.pci.Result.IsCompleted = true
 
 		notify = true
-		clusterId = po.activeProbeClusterId
+		clusterId = po.pci.Id
 	}
 	po.lock.Unlock()
 

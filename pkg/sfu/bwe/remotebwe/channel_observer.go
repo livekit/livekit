@@ -18,13 +18,34 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/protocol/logger"
 )
 
 // ------------------------------------------------
 
+type channelTrend int
+
+const (
+	channelTrendNeutral channelTrend = iota
+	channelTrendClearing
+	channelTrendCongesting
+)
+
+func (c channelTrend) String() string {
+	switch c {
+	case channelTrendNeutral:
+		return "NEUTRAL"
+	case channelTrendClearing:
+		return "CLEARING"
+	case channelTrendCongesting:
+		return "CONGESTING"
+	default:
+		return fmt.Sprintf("%d", int(c))
+	}
+}
+
+// ------------------------------------------------
 type channelCongestionReason int
 
 const (
@@ -149,23 +170,23 @@ func (c *channelObserver) GetNackHistory() []string {
 }
 */
 
-func (c *channelObserver) GetTrend() (bwe.ChannelTrend, channelCongestionReason) {
+func (c *channelObserver) GetTrend() (channelTrend, channelCongestionReason) {
 	estimateDirection := c.estimateTrend.GetDirection()
 
 	switch {
 	case estimateDirection == ccutils.TrendDirectionDownward:
 		c.logger.Debugw("remote bwe: channel observer: estimate is trending downward", "channel", c)
-		return bwe.ChannelTrendCongesting, channelCongestionReasonEstimate
+		return channelTrendCongesting, channelCongestionReasonEstimate
 
 	case c.nackTracker.IsTriggered():
 		c.logger.Debugw("remote bwe: channel observer: high rate of repeated NACKs", "channel", c)
-		return bwe.ChannelTrendCongesting, channelCongestionReasonLoss
+		return channelTrendCongesting, channelCongestionReasonLoss
 
 	case estimateDirection == ccutils.TrendDirectionUpward:
-		return bwe.ChannelTrendClearing, channelCongestionReasonNone
+		return channelTrendClearing, channelCongestionReasonNone
 	}
 
-	return bwe.ChannelTrendNeutral, channelCongestionReasonNone
+	return channelTrendNeutral, channelCongestionReasonNone
 }
 
 func (c *channelObserver) String() string {

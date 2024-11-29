@@ -15,6 +15,7 @@
 package bwe
 
 import (
+	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/pion/rtcp"
 )
 
@@ -33,7 +34,6 @@ func (n *NullBWE) RecordPacketSendAndGetSequenceNumber(_atMicro int64, _size int
 
 func (n *NullBWE) HandleREMB(
 	_receivedEstimate int64,
-	_isProbeFinalizing bool,
 	_expectedBandwidthUsage int64,
 	_sentPackets uint32,
 	_repeatedNacks uint32,
@@ -42,12 +42,10 @@ func (n *NullBWE) HandleREMB(
 
 func (n *NullBWE) HandleTWCCFeedback(_report *rtcp.TransportLayerCC) {}
 
-func (n *NullBWE) ProbingStart(_expectedBandwidthUsage int64) {}
+func (n *NullBWE) ProbeClusterStarting(_pci ccutils.ProbeClusterInfo) {}
 
-func (n *NullBWE) ProbingEnd(_isNotFailing bool, _isGoalReached bool) {}
-
-func (n *NullBWE) GetProbeStatus() (bool, ChannelTrend, int64, int64) {
-	return false, ChannelTrendNeutral, 0, 0
+func (n *NullBWE) ProbeClusterDone(_pci ccutils.ProbeClusterInfo) (bool, int64) {
+	return false, 0
 }
 
 // ------------------------------------------------
