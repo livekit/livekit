@@ -285,6 +285,10 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	// https://github.com/pion/dtls/pull/474
 	se.SetDTLSEllipticCurves(elliptic.X25519, elliptic.P384, elliptic.P256)
 
+	// Disable close by dtls to avoid peerconnection close too early in migration
+	// https://github.com/pion/webrtc/pull/2961
+	se.DisableCloseByDTLS(true)
+
 	//
 	// Disable SRTP replay protection (https://datatracker.ietf.org/doc/html/rfc3711#page-15).
 	// Needed due to lack of RTX stream support in Pion.
@@ -705,11 +709,6 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 	case webrtc.PeerConnectionStateFailed:
 		t.clearConnTimer()
 		t.handleConnectionFailed(false)
-	case webrtc.PeerConnectionStateClosed:
-		// peerconnection closed by client
-		if !t.isClosed.Load() {
-			t.params.Handler.OnClosed()
-		}
 	}
 }
 

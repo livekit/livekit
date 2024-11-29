@@ -38,7 +38,6 @@ type Handler interface {
 	OnInitialConnected()
 	OnFullyEstablished()
 	OnFailed(isShortLived bool, iceConnectionInfo *types.ICEConnectionInfo)
-	OnClosed()
 	OnTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver)
 	OnDataPacket(kind livekit.DataPacket_Kind, data []byte)
 	OnDataSendError(err error)
