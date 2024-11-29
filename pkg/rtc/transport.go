@@ -468,10 +468,11 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		}
 
 		t.streamAllocator = streamallocator.NewStreamAllocator(streamallocator.StreamAllocatorParams{
-			Config: params.CongestionControlConfig.StreamAllocator,
-			BWE:    t.bwe,
-			Pacer:  t.pacer,
-			Logger: params.Logger.WithComponent(utils.ComponentCongestionControl),
+			Config:    params.CongestionControlConfig.StreamAllocator,
+			BWE:       t.bwe,
+			Pacer:     t.pacer,
+			RTTGetter: t.GetRTT,
+			Logger:    params.Logger.WithComponent(utils.ComponentCongestionControl),
 		}, params.CongestionControlConfig.Enabled, params.CongestionControlConfig.AllowPause)
 		t.streamAllocator.OnStreamStateChange(params.Handler.OnStreamStateChange)
 		t.streamAllocator.Start()

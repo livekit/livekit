@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	cDefaultRTT         = 70
+	cDefaultRTT         = float64(0.070) // 70 ms
 	cRTTSmoothingFactor = float64(0.5)
 )
 
@@ -65,10 +65,9 @@ type ProbeControllerConfig struct {
 	SettleWaitMin    time.Duration `yaml:"settle_wait_min,omitempty"`
 	SettleWaitMax    time.Duration `yaml:"settle_wait_max,omitempty"`
 
-	TrendWait time.Duration `yaml:"trend_wait,omitempty"` // RAJA-REMOVE
+	OveragePct int64 `yaml:"overage_pct,omitempty"`
+	MinBps     int64 `yaml:"min_bps,omitempty"`
 
-	OveragePct             int64         `yaml:"overage_pct,omitempty"`
-	MinBps                 int64         `yaml:"min_bps,omitempty"`
 	MinDuration            time.Duration `yaml:"min_duration,omitempty"`
 	MaxDuration            time.Duration `yaml:"max_duration,omitempty"`
 	DurationIncreaseFactor float64       `yaml:"duration_increase_factor,omitempty"`
@@ -84,10 +83,9 @@ var (
 		SettleWaitMin:    500 * time.Millisecond,
 		SettleWaitMax:    10 * time.Second,
 
-		TrendWait: 2 * time.Second,
+		OveragePct: 120,
+		MinBps:     200_000,
 
-		OveragePct:             120,
-		MinBps:                 200_000,
 		MinDuration:            200 * time.Millisecond,
 		MaxDuration:            20 * time.Second,
 		DurationIncreaseFactor: 1.5,
@@ -107,23 +105,17 @@ type ProbeControllerParams struct {
 type ProbeController struct {
 	params ProbeControllerParams
 
-	lock            sync.RWMutex
+	lock sync.RWMutex
+
 	state           ProbeControllerState
 	stateSwitchedAt time.Time
 
-	nextProbeEarliestAt time.Time
-	pci                 ccutils.ProbeClusterInfo
-	rtt                 uint32
+	pci ccutils.ProbeClusterInfo
+	rtt float64
+
 	probeInterval       time.Duration
-	lastProbeStartTime  time.Time
-	probeGoalBps        int64
-	// RAJA-REMOVE probeClusterId            ccutils.ProbeClusterId
-	doneProbeClusterInfo      ccutils.ProbeClusterInfo
-	abortedProbeClusterId     ccutils.ProbeClusterId
-	goalReachedProbeClusterId ccutils.ProbeClusterId
-	probeTrendObserved        bool
-	probeEndTime              time.Time
-	probeDuration             time.Duration
+	probeDuration       time.Duration
+	nextProbeEarliestAt time.Time
 }
 
 func NewProbeController(params ProbeControllerParams) *ProbeController {
@@ -137,38 +129,38 @@ func NewProbeController(params ProbeControllerParams) *ProbeController {
 }
 
 func (p *ProbeController) Reset() {
-	/* RAJA-TODO
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	p.setState(ProbeControllerStateNone)
-
-	p.lastProbeStartTime = mono.Now() // RAJA-TODO: is this variable needed?
-
-	p.resetProbeIntervalLocked()
-	p.resetProbeDurationLocked()
-
-	p.StopProbe()
-	p.clearProbeLocked()
-	*/
+	p.state = ProbeControllerStateNone
+	p.stateSwitchedAt = mono.Now()
+	p.pci = ccutils.ProbeClusterInfoInvalid
+	p.probeInterval = p.params.Config.BaseInterval
+	p.probeDuration = p.params.Config.MinDuration
 }
 
-// RAJA-TODO: need to set this
-func (p *ProbeController) UpdateRTT(rtt uint32) {
+func (p *ProbeController) UpdateRTT(rtt float64) {
 	if rtt == 0 {
 		p.rtt = cDefaultRTT
 	} else {
 		if p.rtt == 0 {
 			p.rtt = rtt
 		} else {
-			p.rtt = uint32(cRTTSmoothingFactor*float64(rtt) + (1.0-cRTTSmoothingFactor)*float64(p.rtt))
+			p.rtt = cRTTSmoothingFactor*rtt + (1.0-cRTTSmoothingFactor)*p.rtt
 		}
 	}
 }
 
+func (p *ProbeController) CanProbe() bool {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	return p.state == ProbeControllerStateNone && mono.Now().After(p.nextProbeEarliestAt)
+}
+
 func (p *ProbeController) MaybeInitiateProbe(availableBandwidthBps int64, probeGoalDeltaBps int64, expectedBandwidthUsage int64) (ccutils.ProbeClusterGoal, bool) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
+	p.lock.RLock()
+	defer p.lock.RUnlock()
 
 	if p.state != ProbeControllerStateNone {
 		// already probing or in probe hangover, don't start a new one
@@ -184,12 +176,10 @@ func (p *ProbeController) MaybeInitiateProbe(availableBandwidthBps int64, probeG
 	if desiredIncreaseBps < p.params.Config.MinBps {
 		desiredIncreaseBps = p.params.Config.MinBps
 	}
-	probeGoalBps := expectedBandwidthUsage + desiredIncreaseBps // RAJA-REMOVE probeGoalBps struct field
-
 	return ccutils.ProbeClusterGoal{
 		AvailableBandwidthBps: int(availableBandwidthBps),
 		ExpectedUsageBps:      int(expectedBandwidthUsage),
-		DesiredBps:            int(probeGoalBps),
+		DesiredBps:            int(expectedBandwidthUsage + desiredIncreaseBps),
 		Duration:              p.probeDuration,
 	}, true
 }
@@ -224,15 +214,15 @@ func (p *ProbeController) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
 	p.setState(ProbeControllerStateHangover)
 }
 
-func (p *ProbeController) MaybeFinalizeProbe() bool {
+func (p *ProbeController) MaybeFinalizeProbe() (ccutils.ProbeClusterInfo, bool) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
 	if p.state != ProbeControllerStateHangover {
-		return false
+		return ccutils.ProbeClusterInfoInvalid, false
 	}
 
-	settleWait := time.Duration(p.params.Config.SettleWaitNumRTT*p.rtt) * time.Millisecond
+	settleWait := time.Duration(float64(p.params.Config.SettleWaitNumRTT) * p.rtt * float64(time.Second))
 	if settleWait < p.params.Config.SettleWaitMin {
 		settleWait = p.params.Config.SettleWaitMin
 	}
@@ -240,254 +230,51 @@ func (p *ProbeController) MaybeFinalizeProbe() bool {
 		settleWait = p.params.Config.SettleWaitMax
 	}
 	if time.Since(p.stateSwitchedAt) < settleWait {
-		return false
+		return ccutils.ProbeClusterInfoInvalid, false
 	}
 
 	p.setState(ProbeControllerStateNone)
-	return true
+	return p.pci, true
 }
 
-/* RAJA-REMOVE
-func (p *ProbeController) MaybeFinalizeProbe(
-	isComplete bool,
-	trend bwe.ChannelTrend,
-	lowestEstimate int64,
-) (isHandled bool, isNotFailing bool, isGoalReached bool) {
-	// RAJA-TODO: this should just wait for hangover to get over
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	if !p.isInProbeLocked() {
-		return false, false, false
-	}
-
-	if p.goalReachedProbeClusterId != ccutils.ProbeClusterIdInvalid {
-		// finalise goal reached probe cluster
-		p.finalizeProbeLocked(bwe.ChannelTrendNeutral)
-		return true, true, true
-	}
-
-	if (isComplete || p.abortedProbeClusterId != ccutils.ProbeClusterIdInvalid) &&
-		p.probeEndTime.IsZero() &&
-		p.doneProbeClusterInfo.Id != ccutils.ProbeClusterIdInvalid && p.doneProbeClusterInfo.Id == p.probeClusterId {
-		// ensure any queueing due to probing is flushed
-		// STREAM-ALLOCATOR-TODO: ProbeControllerConfig.SettleWait should actually be a certain number of RTTs.
-		expectedDuration := float64(0.0)
-		if lowestEstimate != 0 {
-			expectedDuration = float64(p.doneProbeClusterInfo.Result.Bytes()*8*1000) / float64(lowestEstimate)
+func (p *ProbeController) ProbeCongestionSignal(isCongestionClearing bool) {
+	if !isCongestionClearing {
+		// wait longer till next probe
+		p.probeInterval = time.Duration(p.probeInterval.Seconds()*p.params.Config.BackoffFactor) * time.Second
+		if p.probeInterval > p.params.Config.MaxInterval {
+			p.probeInterval = p.params.Config.MaxInterval
 		}
-		queueTime := expectedDuration - float64(p.doneProbeClusterInfo.Result.Duration().Milliseconds())
-		if queueTime < 0.0 {
-			queueTime = 0.0
+
+		// revert back to starting with shortest probe
+		p.probeDuration = p.params.Config.MinDuration
+	} else {
+		// probe can be started again after minimal interval as previous congestion signal indicated congestion clearing
+		p.probeInterval = p.params.Config.BaseInterval
+
+		// can do longer probe after a good probe
+		p.probeDuration = time.Duration(float64(p.probeDuration.Milliseconds())*p.params.Config.DurationIncreaseFactor) * time.Millisecond
+		if p.probeDuration > p.params.Config.MaxDuration {
+			p.probeDuration = p.params.Config.MaxDuration
 		}
-		queueWait := (time.Duration(queueTime) * time.Millisecond) + p.params.Config.SettleWait
-		if queueWait > p.params.Config.SettleWaitMax {
-			queueWait = p.params.Config.SettleWaitMax
-		}
-		p.probeEndTime = p.lastProbeStartTime.Add(queueWait + p.doneProbeClusterInfo.Result.Duration())
-		p.params.Logger.Debugw(
-			"setting probe end time",
-			"probeClusterId", p.probeClusterId,
-			"expectedDuration", expectedDuration,
-			"queueTime", queueTime,
-			"queueWait", queueWait,
-			"probeEndTime", p.probeEndTime,
-		)
 	}
 
-	if !p.probeEndTime.IsZero() && time.Now().After(p.probeEndTime) {
-		// finalize aborted or non-failing but non-goal-reached probe cluster
-		return true, p.finalizeProbeLocked(trend), false
+	if p.pci.CreatedAt.IsZero() {
+		p.nextProbeEarliestAt = mono.Now().Add(p.probeInterval)
+	} else {
+		p.nextProbeEarliestAt = p.pci.CreatedAt.Add(p.probeInterval)
 	}
-
-	return false, false, false
 }
 
-func (p *ProbeController) DoesProbeNeedFinalize() bool {
+func (p *ProbeController) GetActiveProbeClusterId() ccutils.ProbeClusterId {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
-	return p.abortedProbeClusterId != ccutils.ProbeClusterIdInvalid || p.goalReachedProbeClusterId != ccutils.ProbeClusterIdInvalid
-}
-
-func (p *ProbeController) finalizeProbeLocked(trend bwe.ChannelTrend) (isNotFailing bool) {
-	aborted := p.probeClusterId == p.abortedProbeClusterId
-
-	p.clearProbeLocked()
-
-	if aborted || trend == bwe.ChannelTrendCongesting {
-		// failed probe, backoff and restart with shorter probes
-		p.backoffProbeIntervalLocked()
-		p.resetProbeDurationLocked()
-		return false
+	if p.state == ProbeControllerStateNone {
+		return ccutils.ProbeClusterIdInvalid
 	}
 
-	// reset probe interval and increase probe duration on a upward trending probe
-	p.resetProbeIntervalLocked()
-	if trend == bwe.ChannelTrendClearing {
-		p.increaseProbeDurationLocked()
-	}
-	return true
+	return p.pci.Id
 }
-
-// RAJA-TODO: maybe call this MaybeProbe?
-func (p *ProbeController) InitProbe(probeGoalDeltaBps int64, expectedBandwidthUsage int64) (ccutils.ProbeClusterId, int64) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	p.clearProbeLocked()
-
-	p.lastProbeStartTime = time.Now()
-
-	// overshoot a bit to account for noise (in measurement/estimate etc)
-	desiredIncreaseBps := (probeGoalDeltaBps * p.params.Config.OveragePct) / 100
-	if desiredIncreaseBps < p.params.Config.MinBps {
-		desiredIncreaseBps = p.params.Config.MinBps
-	}
-	p.probeGoalBps = expectedBandwidthUsage + desiredIncreaseBps // RAJA-REMOVE probeGoalBps struct field
-
-	p.probeClusterId = p.params.Prober.AddCluster(
-		ccutils.ProbeClusterModeUniform,
-		ccutils.ProbeClusterGoal{
-			DesiredBps:       int(p.probeGoalBps),
-			ExpectedUsageBps: int(expectedBandwidthUsage),
-			Duration:         p.probeDuration,
-		},
-	)
-
-	p.pollProbe(p.probeClusterId, expectedBandwidthUsage)
-
-	return p.probeClusterId, p.probeGoalBps
-}
-
-func (p *ProbeController) pollProbe(probeClusterId ccutils.ProbeClusterId, expectedBandwidthUsage int64) {
-	p.params.BWE.ProbingStart(expectedBandwidthUsage)
-
-	go func() {
-		for {
-			p.lock.Lock()
-			if p.probeClusterId != probeClusterId {
-				p.lock.Unlock()
-				return
-			}
-
-			done := false
-
-			_, trend, _, highestEstimate := p.params.BWE.GetProbeStatus()
-			if !p.probeTrendObserved && trend != bwe.ChannelTrendNeutral {
-				p.probeTrendObserved = true
-			}
-
-			switch {
-			case trend == bwe.ChannelTrendCongesting:
-				// stop immediately if the probe is congesting channel more
-				p.params.Logger.Infow(
-					"stream allocator: probe: aborting, channel is congesting",
-					"cluster", probeClusterId,
-				)
-				p.abortProbeLocked()
-				done = true
-				break
-
-			case highestEstimate > p.probeGoalBps:
-				// reached goal, stop probing
-				p.params.Logger.Infow(
-					"stream allocator: probe: stopping, goal reached",
-					"cluster", probeClusterId,
-					"goal", p.probeGoalBps,
-					"highestEstimate", highestEstimate,
-				)
-				p.goalReachedProbeClusterId = p.probeClusterId
-				p.StopProbe()
-				done = true
-				break
-
-			case !p.probeTrendObserved && time.Since(p.lastProbeStartTime) > p.params.Config.TrendWait:
-				//
-				// More of a safety net.
-				// In rare cases, the estimate gets stuck. Prevent from probe running amok
-				// STREAM-ALLOCATOR-TODO: Need more testing here to ensure that probe does not cause a lot of damage
-				//
-				p.params.Logger.Infow("stream allocator: probe: aborting, no trend", "cluster", probeClusterId)
-				p.abortProbeLocked()
-				done = true
-				break
-			}
-			p.lock.Unlock()
-
-			if done {
-				return
-			}
-
-			// BWE-TODO: do not hard code sleep time
-			time.Sleep(50 * time.Millisecond)
-		}
-	}()
-}
-*/
-
-/* RAJA-TODO
-func (p *ProbeController) clearProbeLocked() {
-	p.probeClusterId = ccutils.ProbeClusterIdInvalid
-	p.abortedProbeClusterId = ccutils.ProbeClusterIdInvalid
-	p.goalReachedProbeClusterId = ccutils.ProbeClusterIdInvalid
-
-	p.doneProbeClusterInfo = ccutils.ProbeClusterInfoInvalid
-
-	p.probeTrendObserved = false
-
-	p.probeEndTime = time.Time{}
-}
-
-func (p *ProbeController) backoffProbeIntervalLocked() {
-	p.probeInterval = time.Duration(p.probeInterval.Seconds()*p.params.Config.BackoffFactor) * time.Second
-	if p.probeInterval > p.params.Config.MaxInterval {
-		p.probeInterval = p.params.Config.MaxInterval
-	}
-}
-
-func (p *ProbeController) resetProbeIntervalLocked() {
-	p.probeInterval = p.params.Config.BaseInterval
-}
-
-func (p *ProbeController) resetProbeDurationLocked() {
-	p.probeDuration = p.params.Config.MinDuration
-}
-
-func (p *ProbeController) increaseProbeDurationLocked() {
-	p.probeDuration = time.Duration(float64(p.probeDuration.Milliseconds())*p.params.Config.DurationIncreaseFactor) * time.Millisecond
-	if p.probeDuration > p.params.Config.MaxDuration {
-		p.probeDuration = p.params.Config.MaxDuration
-	}
-}
-
-func (p *ProbeController) StopProbe() {
-	p.params.Prober.Reset(p.params.Pacer.EndProbeCluster(p.probeClusterId))
-}
-
-func (p *ProbeController) AbortProbe() {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	p.abortProbeLocked()
-}
-
-func (p *ProbeController) abortProbeLocked() {
-	p.abortedProbeClusterId = p.probeClusterId
-	p.StopProbe()
-}
-
-func (p *ProbeController) isInProbeLocked() bool {
-	return p.probeClusterId != ccutils.ProbeClusterIdInvalid
-}
-
-func (p *ProbeController) CanProbe() bool {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	return time.Since(p.lastProbeStartTime) >= p.probeInterval && p.probeClusterId == ccutils.ProbeClusterIdInvalid
-}
-*/
 
 func (p *ProbeController) setState(state ProbeControllerState) {
 	if state == p.state {

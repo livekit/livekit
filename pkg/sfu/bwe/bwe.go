@@ -52,30 +52,6 @@ func (c CongestionState) String() string {
 
 // ------------------------------------------------
 
-// RAJA-TODO: maybe this can be internal to remote_bwe???
-type ChannelTrend int
-
-const (
-	ChannelTrendNeutral ChannelTrend = iota
-	ChannelTrendClearing
-	ChannelTrendCongesting
-)
-
-func (c ChannelTrend) String() string {
-	switch c {
-	case ChannelTrendNeutral:
-		return "NEUTRAL"
-	case ChannelTrendClearing:
-		return "CLEARING"
-	case ChannelTrendCongesting:
-		return "CONGESTING"
-	default:
-		return fmt.Sprintf("%d", int(c))
-	}
-}
-
-// ------------------------------------------------
-
 type BWE interface {
 	SetBWEListener(bweListner BWEListener)
 
@@ -85,7 +61,6 @@ type BWE interface {
 
 	HandleREMB(
 		receivedEstimate int64,
-		isProbeFinalizing bool,
 		expectedBandwidthUsage int64,
 		sentPackets uint32,
 		repeatedNacks uint32,
@@ -97,8 +72,7 @@ type BWE interface {
 	HandleTWCCFeedback(report *rtcp.TransportLayerCC)
 
 	ProbeClusterStarting(pci ccutils.ProbeClusterInfo)
-	ProbeClusterDone(pci ccutils.ProbeClusterInfo)
-	GetProbeStatus() (isValidSignal bool, trend ChannelTrend, lowestEstimate int64, highestEstimate int64) // RAJA-REMOVE
+	ProbeClusterDone(pci ccutils.ProbeClusterInfo) (bool, int64)
 }
 
 // ------------------------------------------------

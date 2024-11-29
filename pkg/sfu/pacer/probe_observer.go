@@ -123,6 +123,7 @@ func (po *ProbeObserver) RecordPacket(size int, isRTX bool, probeClusterId ccuti
 	var clusterId ccutils.ProbeClusterId
 	if po.pci.Result.EndTime == 0 && po.pci.Result.Bytes() >= po.pci.Goal.DesiredBytes {
 		po.pci.Result.EndTime = mono.UnixNano()
+		po.pci.Result.IsCompleted = true
 
 		notify = true
 		clusterId = po.pci.Id

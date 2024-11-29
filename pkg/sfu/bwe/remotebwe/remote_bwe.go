@@ -66,8 +66,7 @@ type RemoteBWE struct {
 
 	lastReceivedEstimate       int64
 	lastExpectedBandwidthUsage int64
-	// RAJA-REMOVE isInProbe                  bool
-	committedChannelCapacity int64
+	committedChannelCapacity   int64
 
 	channelObserver *channelObserver
 
@@ -107,7 +106,7 @@ func (r *RemoteBWE) Reset() {
 	defer r.lock.Unlock()
 
 	r.channelObserver = r.newChannelObserverNonProbe()
-	// RAJA-REMOVE r.isInProbe = false
+	r.updateCongestionState(bwe.CongestionStateNone, channelCongestionReasonNone)
 }
 
 func (r *RemoteBWE) Stop() {
@@ -116,7 +115,6 @@ func (r *RemoteBWE) Stop() {
 
 func (r *RemoteBWE) HandleREMB(
 	receivedEstimate int64,
-	_isProbeFinalizing bool, // RAJA-REMOVE
 	expectedBandwidthUsage int64,
 	sentPackets uint32,
 	repeatedNacks uint32,
@@ -144,14 +142,14 @@ func (r *RemoteBWE) congestionDetectionStateMachine() (bool, bwe.CongestionState
 	trend, reason := r.channelObserver.GetTrend()
 	switch r.congestionState {
 	case bwe.CongestionStateNone:
-		if trend == bwe.ChannelTrendCongesting {
+		if trend == channelTrendCongesting {
 			if r.estimateAvailableChannelCapacity(reason) {
 				newState = bwe.CongestionStateCongested
 			}
 		}
 
 	case bwe.CongestionStateCongested:
-		if trend == bwe.ChannelTrendCongesting {
+		if trend == channelTrendCongesting {
 			if r.estimateAvailableChannelCapacity(reason) {
 				// update state sa this needs to reset switch time to wait for congestion min duration again
 				update = true
@@ -267,63 +265,22 @@ func (r *RemoteBWE) ProbeClusterStarting(pci ccutils.ProbeClusterInfo) {
 	r.channelObserver.SeedEstimate(r.lastReceivedEstimate)
 }
 
-func (r *RemoteBWE) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
+func (r *RemoteBWE) ProbeClusterDone(_pci ccutils.ProbeClusterInfo) (bool, int64) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	highestEstimateInProbe := r.channelObserver.GetHighestEstimate()
-
-	//
-	// Reset estimator at the end of a probe irrespective of probe result to get fresh readings.
-	// With a failed probe, the latest estimate could be lower than committed estimate.
-	// As bandwidth estimator (remote in REMB case, local in TWCC case) holds state,
-	// subsequent estimates could start from the lower point. That should not trigger a
-	// downward trend and get latched to committed estimate as that would trigger a re-allocation.
-	// With fresh readings, as long as the trend is not going downward, it will not get latched.
-	//
-	// BWE-TODO: clean up this comment after implementing probing in TWCC case
-	// NOTE: With TWCC, it is possible to reset bandwidth estimation to clean state as
-	// the send side is in full control of bandwidth estimation.
-	//
-	/* RAJA-TODO
-	r.params.Logger.Debugw(
-		"remote bwe: probe done",
-		"isNotFailing", isNotFailing,
-		"isGoalReached", isGoalReached,
-		"committedEstimate", r.committedChannelCapacity,
-		"highestEstimate", highestEstimateInProbe,
-		"channel", r.channelObserver,
-	)
-	*/
+	// switch to a non-probe channel observer on probe end
+	pco := r.channelObserver
 	r.channelObserver = r.newChannelObserverNonProbe()
-	// RAJA-REMOVE r.isInProbe = false
-	/* RAJA-TODO
-	if !isNotFailing {
-		return
-	}
-	*/
 
-	if highestEstimateInProbe > r.committedChannelCapacity {
-		r.committedChannelCapacity = highestEstimateInProbe
+	if !pco.HasEnoughEstimateSamples() {
+		// cannot decide success/failure without enough data
+		return false, pco.GetHighestEstimate()
 	}
+
+	trend, _ := pco.GetTrend()
+	return trend == channelTrendClearing, pco.GetHighestEstimate()
 }
-
-/* RAJA-REMOVE
-func (r *RemoteBWE) GetProbeStatus() (bool, bwe.ChannelTrend, int64, int64) {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
-
-	if !r.isInProbe {
-		return false, bwe.ChannelTrendNeutral, 0, 0
-	}
-
-	trend, _ := r.channelObserver.GetTrend()
-	return r.channelObserver.HasEnoughEstimateSamples(),
-		trend,
-		r.channelObserver.GetLowestEstimate(),
-		r.channelObserver.GetHighestEstimate()
-}
-*/
 
 func (r *RemoteBWE) worker() {
 	ticker := time.NewTicker(r.params.Config.PeriodicCheckInterval)

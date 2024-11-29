@@ -341,6 +341,7 @@ type ProbeClusterResult struct {
 	BytesProbe           int
 	BytesNonProbePrimary int
 	BytesNonProbeRTX     int
+	IsCompleted          bool
 }
 
 func (p ProbeClusterResult) Bytes() int {
@@ -359,6 +360,7 @@ func (p ProbeClusterResult) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddInt("BytesNonProbePrimary", p.BytesNonProbePrimary)
 	e.AddInt("BytesNonProbeRTX", p.BytesNonProbeRTX)
 	e.AddInt("Bytes", p.Bytes())
+	e.AddBool("IsCompleted", p.IsCompleted)
 	return nil
 }
 
