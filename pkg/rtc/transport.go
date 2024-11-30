@@ -808,16 +808,6 @@ func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal, params types.AddTra
 		return
 	}
 
-	for _, transceiver := range t.pc.GetTransceivers() {
-		t.params.Logger.Debugw(
-			"DBG, add track transceiver",
-			"mid", transceiver.Mid(),
-			"hasReceiver", transceiver.Receiver() != nil,
-			"hasSender", transceiver.Sender() != nil,
-			"direction", transceiver.Direction(),
-		) // REMOVE
-	}
-
 	configureAudioTransceiver(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
 	return
 }
@@ -1098,13 +1088,11 @@ func (t *PCTransport) GetAnswer() (webrtc.SessionDescription, error) {
 	if prd == nil || prd.Type != webrtc.SDPTypeOffer {
 		return webrtc.SessionDescription{}, ErrNoRemoteDescription
 	}
-	t.params.Logger.Debugw("DBG, pendingRemoteDescription", "pendingRemoteDescription", prd) // REMOVE
 
 	answer, err := t.pc.CreateAnswer(nil)
 	if err != nil {
 		return webrtc.SessionDescription{}, err
 	}
-	t.params.Logger.Debugw("DBG, answer", "answer", answer) // REMOVE
 
 	if err = t.pc.SetLocalDescription(answer); err != nil {
 		return webrtc.SessionDescription{}, err
@@ -1114,16 +1102,6 @@ func (t *PCTransport) GetAnswer() (webrtc.SessionDescription, error) {
 	<-webrtc.GatheringCompletePromise(t.pc)
 
 	cld := t.pc.CurrentLocalDescription()
-	t.params.Logger.Debugw("DBG, currentLocalDescription", "currentLocalDescription", cld) // REMOVE
-	for _, transceiver := range t.pc.GetTransceivers() {
-		t.params.Logger.Debugw(
-			"DBG, transceiver",
-			"mid", transceiver.Mid(),
-			"hasReceiver", transceiver.Receiver() != nil,
-			"hasSender", transceiver.Sender() != nil,
-			"direction", transceiver.Direction(),
-		) // REMOVE
-	}
 
 	// add local candidates to ICE connection details
 	parsed, err := cld.Unmarshal()

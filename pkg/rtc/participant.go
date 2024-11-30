@@ -912,7 +912,6 @@ func (p *ParticipantImpl) GetAnswer() (webrtc.SessionDescription, error) {
 		return answer, err
 	}
 
-	p.pubLogger.Debugw("got answer", "transport", livekit.SignalTarget_PUBLISHER, "answer", answer)
 	answer = p.configurePublisherAnswer(answer)
 	p.pubLogger.Debugw("returning answer", "transport", livekit.SignalTarget_PUBLISHER, "answer", answer)
 	return answer, nil
