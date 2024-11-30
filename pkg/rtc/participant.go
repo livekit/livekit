@@ -2955,6 +2955,10 @@ func (p *ParticipantImpl) SupportsSyncStreamID() bool {
 }
 
 func (p *ParticipantImpl) SupportsTransceiverReuse() bool {
+	if p.params.UseOneShotSignallingMode {
+		return p.ProtocolVersion().SupportsTransceiverReuse()
+	}
+
 	return p.ProtocolVersion().SupportsTransceiverReuse() && !p.SupportsSyncStreamID()
 }
 
