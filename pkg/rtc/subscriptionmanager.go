@@ -645,6 +645,7 @@ func (m *SubscriptionManager) subscribeSynchronous(trackID livekit.TrackID) erro
 		m.subscriptions[trackID] = sub
 	}
 	m.lock.Unlock()
+	sub.setDesired(true)
 
 	subTrack, err := track.AddSubscriber(m.params.Participant)
 	if err != nil && !errors.Is(err, errAlreadySubscribed) {
