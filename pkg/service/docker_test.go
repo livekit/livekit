@@ -59,11 +59,11 @@ func waitTCPPort(t testing.TB, addr string) {
 	}
 }
 
-var redisLast uint32
+var redisLast atomic.Uint32
 
 func runRedis(t testing.TB) string {
 	c, err := Docker.RunWithOptions(&dockertest.RunOptions{
-		Name:       fmt.Sprintf("lktest-redis-%d", atomic.AddUint32(&redisLast, 1)),
+		Name:       fmt.Sprintf("lktest-redis-%d", redisLast.Inc()),
 		Repository: "redis", Tag: "latest",
 	})
 	if err != nil {
