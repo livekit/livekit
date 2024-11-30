@@ -809,7 +809,13 @@ func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal, params types.AddTra
 	}
 
 	for _, transceiver := range t.pc.GetTransceivers() {
-		t.params.Logger.Debugw("DBG, add track transceiver", "mid", transceiver.Mid(), "hasReceiver", transceiver.Receiver() != nil, "hasSender", transceiver.Sender() != nil) // REMOVE
+		t.params.Logger.Debugw(
+			"DBG, add track transceiver",
+			"mid", transceiver.Mid(),
+			"hasReceiver", transceiver.Receiver() != nil,
+			"hasSender", transceiver.Sender() != nil,
+			"direction", transceiver.Direction(),
+		) // REMOVE
 	}
 
 	configureAudioTransceiver(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
@@ -1110,7 +1116,13 @@ func (t *PCTransport) GetAnswer() (webrtc.SessionDescription, error) {
 	cld := t.pc.CurrentLocalDescription()
 	t.params.Logger.Debugw("DBG, currentLocalDescription", "currentLocalDescription", cld) // REMOVE
 	for _, transceiver := range t.pc.GetTransceivers() {
-		t.params.Logger.Debugw("DBG, transceiver", "mid", transceiver.Mid(), "hasReceiver", transceiver.Receiver() != nil, "hasSender", transceiver.Sender() != nil) // REMOVE
+		t.params.Logger.Debugw(
+			"DBG, transceiver",
+			"mid", transceiver.Mid(),
+			"hasReceiver", transceiver.Receiver() != nil,
+			"hasSender", transceiver.Sender() != nil,
+			"direction", transceiver.Direction(),
+		) // REMOVE
 	}
 
 	// add local candidates to ICE connection details
