@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"time"
 
+	"go.uber.org/zap/zapcore"
+
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/protocol/logger"
 )
@@ -175,11 +177,9 @@ func (c *channelObserver) GetTrend() (channelTrend, channelCongestionReason) {
 
 	switch {
 	case estimateDirection == ccutils.TrendDirectionDownward:
-		c.logger.Debugw("remote bwe: channel observer: estimate is trending downward", "channel", c)
 		return channelTrendCongesting, channelCongestionReasonEstimate
 
 	case c.nackTracker.IsTriggered():
-		c.logger.Debugw("remote bwe: channel observer: high rate of repeated NACKs", "channel", c)
 		return channelTrendCongesting, channelCongestionReasonLoss
 
 	case estimateDirection == ccutils.TrendDirectionUpward:
@@ -189,8 +189,19 @@ func (c *channelObserver) GetTrend() (channelTrend, channelCongestionReason) {
 	return channelTrendNeutral, channelCongestionReasonNone
 }
 
-func (c *channelObserver) String() string {
-	return fmt.Sprintf("name: %s, estimate: {%v}, nack {%v}", c.params.Name, c.estimateTrend, c.nackTracker)
+func (c *channelObserver) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if c == nil {
+		return nil
+	}
+
+	e.AddString("name", c.params.Name)
+	e.AddString("estimate", c.estimateTrend.String())
+	e.AddObject("nack", c.nackTracker)
+
+	channelTrend, channelCongestionReason := c.GetTrend()
+	e.AddString("channelTrend", channelTrend.String())
+	e.AddString("channelCongestionReason", channelCongestionReason.String())
+	return nil
 }
 
 // ------------------------------------------------

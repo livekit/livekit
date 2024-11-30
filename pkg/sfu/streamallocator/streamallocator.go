@@ -228,6 +228,7 @@ func NewStreamAllocator(params StreamAllocatorParams, enabled bool, allowPause b
 			MinSize: 64,
 			Logger:  params.Logger,
 		}),
+		lastRTTTime: time.Now().Add(-cRTTPullInterval),
 	}
 
 	s.prober = ccutils.NewProber(ccutils.ProberParams{
@@ -700,6 +701,11 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 	// finalize any probe that may have finished/aborted
 	if pci, ok := s.probeController.MaybeFinalizeProbe(); ok {
 		isCongestionClearing, channelCapacity := s.params.BWE.ProbeClusterDone(pci)
+		s.params.Logger.Debugw(
+			"stream allocator: probe result",
+			"isCongestionClearing", isCongestionClearing,
+			"channelCapacity", channelCapacity,
+		)
 		if isCongestionClearing {
 			if channelCapacity > s.committedChannelCapacity {
 				s.committedChannelCapacity = channelCapacity
@@ -765,7 +771,6 @@ func (s *StreamAllocator) handleSignalPacerProbeObserverClusterComplete(event Ev
 	probeClusterId, _ := event.Data.(ccutils.ProbeClusterId)
 	pci := s.params.Pacer.EndProbeCluster(probeClusterId)
 	s.probeController.ProbeClusterDone(pci)
-	s.params.BWE.ProbeClusterDone(pci)
 }
 
 func (s *StreamAllocator) handleSignalResume(event Event) {
@@ -849,7 +854,7 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 	}
 
 	if cscd.congestionState == bwe.CongestionStateCongested {
-		if s.probeController.GetActiveProbeClusterId() == ccutils.ProbeClusterIdInvalid {
+		if s.probeController.GetActiveProbeClusterId() != ccutils.ProbeClusterIdInvalid {
 			s.params.Logger.Infow(
 				"stream allocator: channel congestion detected, not updating channel capacity in active probe",
 				"old(bps)", s.committedChannelCapacity,

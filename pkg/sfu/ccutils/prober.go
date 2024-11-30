@@ -352,6 +352,10 @@ func (p ProbeClusterResult) Duration() time.Duration {
 	return time.Duration(p.EndTime - p.StartTime)
 }
 
+func (p ProbeClusterResult) Bitrate() float64 {
+	return float64(p.Bytes()*8) / p.Duration().Seconds()
+}
+
 func (p ProbeClusterResult) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddTime("StartTime", time.Unix(0, p.StartTime))
 	e.AddTime("EndTime", time.Unix(0, p.EndTime))
@@ -360,6 +364,7 @@ func (p ProbeClusterResult) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddInt("BytesNonProbePrimary", p.BytesNonProbePrimary)
 	e.AddInt("BytesNonProbeRTX", p.BytesNonProbeRTX)
 	e.AddInt("Bytes", p.Bytes())
+	e.AddFloat64("Bitrate", p.Bitrate())
 	e.AddBool("IsCompleted", p.IsCompleted)
 	return nil
 }
@@ -470,11 +475,11 @@ func (c *Cluster) Process() time.Duration {
 		return 0
 	}
 
-	sleepDuration := c.probeSleeps[c.probeIdx]
+	sleepDuration := c.probeSleeps[c.probeIdx%len(c.probeSleeps)]
 	c.probeIdx++
 	if c.probeIdx >= len(c.probeSleeps) {
-		// stay in the last bucket till desired number of bytes are sent
-		c.probeIdx = len(c.probeSleeps) - 1
+		// when overflowing, back off to ensure probe finishes, but not overshoot too much
+		sleepDuration *= time.Duration(c.probeIdx/len(c.probeSleeps) + 1)
 	}
 	c.lock.Unlock()
 
