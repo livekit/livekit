@@ -309,6 +309,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	//   but it is not detrimental to set this, needs clean up when participants modes are separated out better.
 	subTrack.SetNeedsNegotiation(!replacedTrack)
 	subTrack.SetRTPSender(sender)
+
 	// it is possible that subscribed track is closed before subscription manager sets
 	// the `OnClose` callback. That handler in subscription manager removes the track
 	// from the peer connection.
