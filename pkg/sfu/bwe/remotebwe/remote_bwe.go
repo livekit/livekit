@@ -140,6 +140,10 @@ func (r *RemoteBWE) congestionDetectionStateMachine() (bool, bwe.CongestionState
 	newState := r.congestionState
 	update := false
 	trend, reason := r.channelObserver.GetTrend()
+	if trend == channelTrendCongesting {
+		r.params.Logger.Debugw("remote bwe, channel congesting", "channel", r.channelObserver)
+	}
+
 	switch r.congestionState {
 	case bwe.CongestionStateNone:
 		if trend == channelTrendCongesting {
@@ -151,7 +155,7 @@ func (r *RemoteBWE) congestionDetectionStateMachine() (bool, bwe.CongestionState
 	case bwe.CongestionStateCongested:
 		if trend == channelTrendCongesting {
 			if r.estimateAvailableChannelCapacity(reason) {
-				// update state sa this needs to reset switch time to wait for congestion min duration again
+				// update state as this needs to reset switch time to wait for congestion min duration again
 				update = true
 			}
 		} else if time.Since(r.congestionStateSwitchedAt) >= r.params.Config.CongestedMinDuration {
@@ -273,13 +277,24 @@ func (r *RemoteBWE) ProbeClusterDone(_pci ccutils.ProbeClusterInfo) (bool, int64
 	pco := r.channelObserver
 	r.channelObserver = r.newChannelObserverNonProbe()
 
+	r.params.Logger.Debugw(
+		"remote bwe: probe done",
+		"lastReceived", r.lastReceivedEstimate,
+		"expectedBandwidthUsage", r.lastExpectedBandwidthUsage,
+		"channel", pco,
+	)
+
 	if !pco.HasEnoughEstimateSamples() {
 		// cannot decide success/failure without enough data
-		return false, pco.GetHighestEstimate()
+		return false, r.committedChannelCapacity
 	}
 
 	trend, _ := pco.GetTrend()
-	return trend == channelTrendClearing, pco.GetHighestEstimate()
+	highestEstimate := pco.GetHighestEstimate()
+	if trend == channelTrendClearing && highestEstimate > r.committedChannelCapacity {
+		r.committedChannelCapacity = highestEstimate
+	}
+	return trend == channelTrendClearing, r.committedChannelCapacity
 }
 
 func (r *RemoteBWE) worker() {

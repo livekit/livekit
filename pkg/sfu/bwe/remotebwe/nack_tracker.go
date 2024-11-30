@@ -15,8 +15,9 @@
 package remotebwe
 
 import (
-	"fmt"
 	"time"
+
+	"go.uber.org/zap/zapcore"
 
 	"github.com/livekit/protocol/logger"
 )
@@ -116,15 +117,24 @@ func (n *nackTracker) IsTriggered() bool {
 	return false
 }
 
-func (n *nackTracker) String() string {
-	window := ""
-	if !n.windowStartTime.IsZero() {
-		now := time.Now()
-		elapsed := now.Sub(n.windowStartTime).Seconds()
-		window = fmt.Sprintf("t: %+v|%+v|%.2fs", n.windowStartTime.Format(time.UnixDate), now.Format(time.UnixDate), elapsed)
+func (n *nackTracker) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if n == nil {
+		return nil
 	}
-	return fmt.Sprintf("n: %s, %s, p: %d, rn: %d, rn/p: %.2f", n.params.Name, window, n.packets, n.repeatedNacks, n.GetRatio())
+
+	e.AddString("name", n.params.Name)
+	if n.windowStartTime.IsZero() {
+		e.AddString("window", "inactive")
+	} else {
+	e.AddTime("windowStartTime", n.windowStartTime)
+	e.AddDuration("windowDuration", time.Since(n.windowStartTime))
+	e.AddUint32("packets", n.packets)
+	e.AddUint32("repeatedNacks", n.repeatedNacks)
+	e.AddFloat64("nackRatio", n.GetRatio())
 }
+	return nil
+}
+
 
 /* REMOTE-BWE-DATA
 func (n *nackTracker) GetHistory() []string {

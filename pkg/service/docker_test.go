@@ -19,8 +19,9 @@ import (
 	"log"
 	"net"
 	"os"
-	"sync/atomic"
 	"testing"
+
+	"go.uber.org/atomic"
 
 	"github.com/ory/dockertest/v3"
 )

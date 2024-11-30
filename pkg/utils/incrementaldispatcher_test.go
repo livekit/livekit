@@ -19,9 +19,10 @@ package utils_test
 import (
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
+
+	"go.uber.org/atomic"
 
 	"github.com/stretchr/testify/require"
 

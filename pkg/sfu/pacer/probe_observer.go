@@ -16,7 +16,9 @@ package pacer
 
 import (
 	"sync"
-	"sync/atomic"
+	"time"
+
+	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/protocol/logger"
@@ -121,7 +123,7 @@ func (po *ProbeObserver) RecordPacket(size int, isRTX bool, probeClusterId ccuti
 
 	notify := false
 	var clusterId ccutils.ProbeClusterId
-	if po.pci.Result.EndTime == 0 && po.pci.Result.Bytes() >= po.pci.Goal.DesiredBytes {
+	if po.pci.Result.EndTime == 0 && ((po.pci.Result.Bytes() >= po.pci.Goal.DesiredBytes) && time.Duration(mono.UnixNano() - po.pci.Result.StartTime) >= po.pci.Goal.Duration) {
 		po.pci.Result.EndTime = mono.UnixNano()
 		po.pci.Result.IsCompleted = true
 
