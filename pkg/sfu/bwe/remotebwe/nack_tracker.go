@@ -126,15 +126,14 @@ func (n *nackTracker) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	if n.windowStartTime.IsZero() {
 		e.AddString("window", "inactive")
 	} else {
-	e.AddTime("windowStartTime", n.windowStartTime)
-	e.AddDuration("windowDuration", time.Since(n.windowStartTime))
-	e.AddUint32("packets", n.packets)
-	e.AddUint32("repeatedNacks", n.repeatedNacks)
-	e.AddFloat64("nackRatio", n.GetRatio())
-}
+		e.AddTime("windowStartTime", n.windowStartTime)
+		e.AddDuration("windowDuration", time.Since(n.windowStartTime))
+		e.AddUint32("packets", n.packets)
+		e.AddUint32("repeatedNacks", n.repeatedNacks)
+		e.AddFloat64("nackRatio", n.GetRatio())
+	}
 	return nil
 }
-
 
 /* REMOTE-BWE-DATA
 func (n *nackTracker) GetHistory() []string {

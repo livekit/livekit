@@ -353,7 +353,7 @@ func (p ProbeClusterResult) Duration() time.Duration {
 }
 
 func (p ProbeClusterResult) Bitrate() float64 {
-	return float64(p.Bytes() * 8) / p.Duration().Seconds()
+	return float64(p.Bytes()*8) / p.Duration().Seconds()
 }
 
 func (p ProbeClusterResult) MarshalLogObject(e zapcore.ObjectEncoder) error {
@@ -475,11 +475,11 @@ func (c *Cluster) Process() time.Duration {
 		return 0
 	}
 
-	sleepDuration := c.probeSleeps[c.probeIdx % len(c.probeSleeps)]
+	sleepDuration := c.probeSleeps[c.probeIdx%len(c.probeSleeps)]
 	c.probeIdx++
 	if c.probeIdx >= len(c.probeSleeps) {
 		// when overflowing, back off to ensure probe finishes, but not overshoot too much
-		sleepDuration *= time.Duration(c.probeIdx / len(c.probeSleeps) + 1)
+		sleepDuration *= time.Duration(c.probeIdx/len(c.probeSleeps) + 1)
 	}
 	c.lock.Unlock()
 
