@@ -90,7 +90,10 @@ func (s *SendSideBWE) SetBWEListener(bweListener bwe.BWEListener) {
 }
 
 func (s *SendSideBWE) Reset() {
-	s.congestionDetector.Reset()
+	s.congestionDetector = newCongestionDetector(congestionDetectorParams{
+		Config: s.params.Config.CongestionDetector,
+		Logger: s.params.Logger,
+	})
 }
 
 func (s *SendSideBWE) Stop() {
@@ -99,6 +102,10 @@ func (s *SendSideBWE) Stop() {
 
 func (s *SendSideBWE) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 	s.congestionDetector.HandleTWCCFeedback(report)
+}
+
+func (s *SendSideBWE) CongestionState() bwe.CongestionState {
+	return s.congestionDetector.CongestionState()
 }
 
 // ------------------------------------------------

@@ -42,6 +42,10 @@ func (n *NullBWE) HandleREMB(
 
 func (n *NullBWE) HandleTWCCFeedback(_report *rtcp.TransportLayerCC) {}
 
+func (n *NullBWE) CongestionState() CongestionState {
+	return CongestionStateNone
+}
+
 func (n *NullBWE) ProbeClusterStarting(_pci ccutils.ProbeClusterInfo) {}
 
 func (n *NullBWE) ProbeClusterDone(_pci ccutils.ProbeClusterInfo) (bool, int64) {

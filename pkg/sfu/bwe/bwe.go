@@ -71,6 +71,8 @@ type BWE interface {
 
 	HandleTWCCFeedback(report *rtcp.TransportLayerCC)
 
+	CongestionState() CongestionState
+
 	ProbeClusterStarting(pci ccutils.ProbeClusterInfo)
 	ProbeClusterDone(pci ccutils.ProbeClusterInfo) (bool, int64)
 }

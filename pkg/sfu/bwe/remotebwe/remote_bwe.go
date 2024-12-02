@@ -136,6 +136,13 @@ func (r *RemoteBWE) HandleREMB(
 	}
 }
 
+func (r *RemoteBWE) CongestionState() bwe.CongestionState {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return r.congestionState
+}
+
 func (r *RemoteBWE) congestionDetectionStateMachine() (bool, bwe.CongestionState, int64) {
 	newState := r.congestionState
 	update := false
