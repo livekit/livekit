@@ -203,9 +203,8 @@ type StreamAllocator struct {
 	isAllocateAllPending bool
 	rembTrackingSSRC     uint32
 
-	state           streamAllocatorState
-	congestionState bwe.CongestionState
-	isHolding       bool
+	state     streamAllocatorState
+	isHolding bool
 
 	eventsQueue *utils.TypedOpsQueue[Event]
 
@@ -220,9 +219,8 @@ func NewStreamAllocator(params StreamAllocatorParams, enabled bool, allowPause b
 		enabled:    enabled,
 		allowPause: allowPause,
 		// STREAM-ALLOCATOR-DATA rateMonitor: NewRateMonitor(),
-		videoTracks:     make(map[livekit.TrackID]*Track),
-		state:           streamAllocatorStateStable,
-		congestionState: bwe.CongestionStateNone,
+		videoTracks: make(map[livekit.TrackID]*Track),
+		state:       streamAllocatorStateStable,
 		eventsQueue: utils.NewTypedOpsQueue[Event](utils.OpsQueueParams{
 			Name:    "stream-allocator",
 			MinSize: 64,
@@ -881,8 +879,6 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 			s.allocateAllTracks()
 		}
 	}
-
-	s.congestionState = cscd.congestionState
 }
 
 func (s *StreamAllocator) setState(state streamAllocatorState) {
@@ -1302,7 +1298,7 @@ func (s *StreamAllocator) maybeProbe() {
 		return
 	}
 
-	if s.congestionState != bwe.CongestionStateNone || !s.probeController.CanProbe() {
+	if s.params.BWE.CongestionState() != bwe.CongestionStateNone || !s.probeController.CanProbe() {
 		return
 	}
 

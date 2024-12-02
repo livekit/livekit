@@ -331,20 +331,14 @@ func newCongestionDetector(params congestionDetectorParams) *congestionDetector 
 		twccFeedback:                      newTWCCFeedback(twccFeedbackParams{Logger: params.Logger}),
 		wake:                              make(chan struct{}, 1),
 		estimatedAvailableChannelCapacity: 100_000_000,
+		congestionState:                   bwe.CongestionStateNone,
+		congestionStateSwitchedAt:         mono.Now(),
 	}
 
 	c.feedbackReports.SetMinCapacity(3)
 
 	go c.worker()
 	return c
-}
-
-func (c *congestionDetector) Reset() {
-	// SSBWE-TODO
-	//  1. may be clear all packet groups?
-	//  2. reset congestion state to none
-	//  3. reset estimate to 100 Mbps
-	//  4. reset packet_tracker?? maybe only the probe state??
 }
 
 func (c *congestionDetector) Stop() {
@@ -375,6 +369,13 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 	case c.wake <- struct{}{}:
 	default:
 	}
+}
+
+func (c *congestionDetector) CongestionState() bwe.CongestionState {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+
+	return c.congestionState
 }
 
 func (c *congestionDetector) prunePacketGroups() {
