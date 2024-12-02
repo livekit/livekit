@@ -1067,8 +1067,8 @@ func (s *StreamAllocator) maybeStopProbe() {
 	activeProbeClusterId := s.probeController.GetActiveProbeClusterId()
 	if activeProbeClusterId != ccutils.ProbeClusterIdInvalid {
 		pci := s.params.Pacer.EndProbeCluster(activeProbeClusterId)
-		s.prober.Reset(pci)
 		s.probeController.ProbeClusterDone(pci)
+		s.prober.Reset(pci)
 	}
 }
 
