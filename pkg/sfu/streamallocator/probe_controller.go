@@ -137,6 +137,7 @@ func (p *ProbeController) Reset() {
 	p.pci = ccutils.ProbeClusterInfoInvalid
 	p.probeInterval = p.params.Config.BaseInterval
 	p.probeDuration = p.params.Config.MinDuration
+	p.nextProbeEarliestAt = mono.Now()
 }
 
 func (p *ProbeController) UpdateRTT(rtt float64) {
