@@ -19,9 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
-	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/mono"
 )
@@ -96,9 +94,6 @@ var (
 
 type ProbeControllerParams struct {
 	Config ProbeControllerConfig
-	Prober *ccutils.Prober
-	BWE    bwe.BWE
-	Pacer  pacer.Pacer
 	Logger logger.Logger
 }
 
@@ -201,18 +196,10 @@ func (p *ProbeController) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if p.state != ProbeControllerStateProbing {
-		p.params.Logger.Warnw("unexpected probe controller state", nil, "state", p.state)
+	if p.pci.Id == pci.Id {
+		p.pci.Result = pci.Result
+		p.setState(ProbeControllerStateHangover)
 	}
-
-	if p.pci.Id != pci.Id {
-		p.params.Logger.Warnw("not expected probe cluster", nil, "expectedId", p.pci.Id, "doneId", pci.Id)
-	}
-
-	p.pci.Result = pci.Result
-	p.params.Prober.ClusterDone(pci)
-
-	p.setState(ProbeControllerStateHangover)
 }
 
 func (p *ProbeController) MaybeFinalizeProbe() (ccutils.ProbeClusterInfo, bool) {

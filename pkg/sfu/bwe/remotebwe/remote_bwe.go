@@ -278,7 +278,7 @@ func (r *RemoteBWE) newChannelObserver() {
 			},
 			r.params.Logger,
 		)
-		r.channelObserver.SeedEstimate(r.lastReceivedEstimate)
+		r.channelObserver.SeedEstimate(r.committedChannelCapacity)
 	} else {
 		r.channelObserver = newChannelObserver(
 			channelObserverParams{
@@ -321,6 +321,7 @@ func (r *RemoteBWE) ProbeClusterDone(_pci ccutils.ProbeClusterInfo) (bool, int64
 		"lastReceived", r.lastReceivedEstimate,
 		"expectedBandwidthUsage", r.lastExpectedBandwidthUsage,
 		"channel", pco,
+		"isSignalValid", pco.HasEnoughEstimateSamples(),
 	)
 
 	if !pco.HasEnoughEstimateSamples() {

@@ -236,9 +236,6 @@ func NewStreamAllocator(params StreamAllocatorParams, enabled bool, allowPause b
 
 	s.probeController = NewProbeController(ProbeControllerParams{
 		Config: s.params.Config.ProbeController,
-		Prober: s.prober,
-		BWE:    s.params.BWE,
-		Pacer:  s.params.Pacer,
 		Logger: params.Logger,
 	})
 
@@ -769,6 +766,7 @@ func (s *StreamAllocator) handleSignalPacerProbeObserverClusterComplete(event Ev
 	probeClusterId, _ := event.Data.(ccutils.ProbeClusterId)
 	pci := s.params.Pacer.EndProbeCluster(probeClusterId)
 	s.probeController.ProbeClusterDone(pci)
+	s.prober.ClusterDone(pci)
 }
 
 func (s *StreamAllocator) handleSignalResume(event Event) {
@@ -1069,8 +1067,8 @@ func (s *StreamAllocator) maybeStopProbe() {
 	activeProbeClusterId := s.probeController.GetActiveProbeClusterId()
 	if activeProbeClusterId != ccutils.ProbeClusterIdInvalid {
 		pci := s.params.Pacer.EndProbeCluster(activeProbeClusterId)
-		s.prober.Reset(pci)
 		s.probeController.ProbeClusterDone(pci)
+		s.prober.Reset(pci)
 	}
 }
 
