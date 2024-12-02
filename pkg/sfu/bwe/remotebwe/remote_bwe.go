@@ -336,21 +336,36 @@ func (r *RemoteBWE) ProbeClusterDone(_pci ccutils.ProbeClusterInfo) (bool, int64
 	return trend == channelTrendClearing, r.committedChannelCapacity
 }
 
+func (r *RemoteBWE) getCheckInterval() time.Duration {
+	r.lock.RLock()
+	state := r.congestionState
+	r.lock.RUnlock()
+
+	switch state {
+	case bwe.CongestionStateCongested:
+		if r.params.Config.PeriodicCheckIntervalCongested != 0 {
+			return r.params.Config.PeriodicCheckIntervalCongested
+		}
+
+		return DefaultRemoteBWEConfig.PeriodicCheckIntervalCongested
+
+	default:
+		if r.params.Config.PeriodicCheckInterval != 0 {
+			return r.params.Config.PeriodicCheckInterval
+		}
+
+		return DefaultRemoteBWEConfig.PeriodicCheckInterval
+	}
+}
+
 func (r *RemoteBWE) worker() {
-	ticker := time.NewTicker(r.params.Config.PeriodicCheckInterval)
+	ticker := time.NewTicker(r.getCheckInterval())
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-r.wake:
-			r.lock.RLock()
-			state := r.congestionState
-			r.lock.RUnlock()
-			if state == bwe.CongestionStateCongested {
-				ticker.Reset(r.params.Config.PeriodicCheckIntervalCongested)
-			} else {
-				ticker.Reset(r.params.Config.PeriodicCheckInterval)
-			}
+			ticker.Reset(r.getCheckInterval())
 
 		case <-ticker.C:
 			r.lock.Lock()
