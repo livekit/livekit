@@ -695,13 +695,13 @@ func (s *StreamAllocator) handleSignalEstimate(event Event) {
 func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 	// finalize any probe that may have finished/aborted
 	if pci, ok := s.probeController.MaybeFinalizeProbe(); ok {
-		isCongestionClearing, channelCapacity := s.params.BWE.ProbeClusterDone(pci)
+		isCongesting, channelCapacity := s.params.BWE.ProbeClusterDone(pci)
 		s.params.Logger.Debugw(
 			"stream allocator: probe result",
-			"isCongestionClearing", isCongestionClearing,
+			"isCongesting", isCongesting,
 			"channelCapacity", channelCapacity,
 		)
-		if isCongestionClearing {
+		if !isCongesting {
 			if channelCapacity > s.committedChannelCapacity {
 				s.committedChannelCapacity = channelCapacity
 			}
@@ -709,7 +709,7 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 			s.maybeBoostDeficientTracks()
 		}
 
-		s.probeController.ProbeCongestionSignal(isCongestionClearing)
+		s.probeController.ProbeCongestionSignal(isCongesting)
 	}
 
 	// probe if necessary and timing is right

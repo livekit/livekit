@@ -225,8 +225,8 @@ func (p *ProbeController) MaybeFinalizeProbe() (ccutils.ProbeClusterInfo, bool) 
 	return p.pci, true
 }
 
-func (p *ProbeController) ProbeCongestionSignal(isCongestionClearing bool) {
-	if !isCongestionClearing {
+func (p *ProbeController) ProbeCongestionSignal(isCongesting bool) {
+	if isCongesting {
 		// wait longer till next probe
 		p.probeInterval = time.Duration(p.probeInterval.Seconds()*p.params.Config.BackoffFactor) * time.Second
 		if p.probeInterval > p.params.Config.MaxInterval {
