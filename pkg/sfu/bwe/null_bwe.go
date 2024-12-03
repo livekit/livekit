@@ -48,8 +48,8 @@ func (n *NullBWE) CongestionState() CongestionState {
 
 func (n *NullBWE) ProbeClusterStarting(_pci ccutils.ProbeClusterInfo) {}
 
-func (n *NullBWE) ProbeClusterDone(_pci ccutils.ProbeClusterInfo) (bool, int64) {
-	return false, 0
+func (n *NullBWE) ProbeClusterDone(_pci ccutils.ProbeClusterInfo) (ProbeSignal, int64) {
+	return ProbeSignalInconclusive, 0
 }
 
 // ------------------------------------------------

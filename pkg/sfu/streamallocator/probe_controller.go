@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/mono"
@@ -225,8 +226,8 @@ func (p *ProbeController) MaybeFinalizeProbe() (ccutils.ProbeClusterInfo, bool) 
 	return p.pci, true
 }
 
-func (p *ProbeController) ProbeCongestionSignal(isCongesting bool) {
-	if isCongesting {
+func (p *ProbeController) ProbeSignal(probeSignal bwe.ProbeSignal) {
+	if probeSignal == bwe.ProbeSignalCongesting {
 		// wait longer till next probe
 		p.probeInterval = time.Duration(p.probeInterval.Seconds()*p.params.Config.BackoffFactor) * time.Second
 		if p.probeInterval > p.params.Config.MaxInterval {
