@@ -271,13 +271,15 @@ func (r *RemoteBWE) ProbeClusterStarting(pci ccutils.ProbeClusterInfo) {
 	r.newChannelObserver()
 }
 
-func (r *RemoteBWE) ProbeClusterDone(_pci ccutils.ProbeClusterInfo) (bool, int64) {
+func (r *RemoteBWE) ProbeClusterDone(_pci ccutils.ProbeClusterInfo) (bwe.ProbeSignal, int64) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
 	// switch to a non-probe channel observer on probe end,
 	// reset congestion state to get a fresh trend
 	pco := r.channelObserver
+	probeCongestionState := r.congestionState
+
 	r.isInProbe = false
 	r.congestionState = bwe.CongestionStateNone
 	r.newChannelObserver()
@@ -290,17 +292,20 @@ func (r *RemoteBWE) ProbeClusterDone(_pci ccutils.ProbeClusterInfo) (bool, int64
 		"isSignalValid", pco.HasEnoughEstimateSamples(),
 	)
 
-	if !pco.HasEnoughEstimateSamples() {
-		// cannot decide success/failure without enough data
-		return false, r.committedChannelCapacity
+	if probeCongestionState != bwe.CongestionStateNone {
+		return bwe.ProbeSignalCongesting, r.committedChannelCapacity
 	}
 
 	trend, _ := pco.GetTrend()
+	if !pco.HasEnoughEstimateSamples() || trend == channelTrendNeutral {
+		return bwe.ProbeSignalInconclusive, r.committedChannelCapacity
+	}
+
 	highestEstimate := pco.GetHighestEstimate()
-	if trend != channelTrendCongesting && highestEstimate > r.committedChannelCapacity {
+	if highestEstimate > r.committedChannelCapacity {
 		r.committedChannelCapacity = highestEstimate
 	}
-	return trend == channelTrendCongesting, r.committedChannelCapacity
+	return bwe.ProbeSignalClearing, r.committedChannelCapacity
 }
 
 func (r *RemoteBWE) newChannelObserver() {

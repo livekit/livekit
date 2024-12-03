@@ -52,6 +52,29 @@ func (c CongestionState) String() string {
 
 // ------------------------------------------------
 
+type ProbeSignal int
+
+const (
+	ProbeSignalInconclusive ProbeSignal = iota
+	ProbeSignalCongesting
+	ProbeSignalClearing
+)
+
+func (p ProbeSignal) String() string {
+	switch p {
+	case ProbeSignalInconclusive:
+		return "INCONCLUSIVE"
+	case ProbeSignalCongesting:
+		return "CONGESTING"
+	case ProbeSignalClearing:
+		return "CLEARING"
+	default:
+		return fmt.Sprintf("%d", int(p))
+	}
+}
+
+// ------------------------------------------------
+
 type BWE interface {
 	SetBWEListener(bweListner BWEListener)
 
@@ -74,7 +97,7 @@ type BWE interface {
 	CongestionState() CongestionState
 
 	ProbeClusterStarting(pci ccutils.ProbeClusterInfo)
-	ProbeClusterDone(pci ccutils.ProbeClusterInfo) (bool, int64)
+	ProbeClusterDone(pci ccutils.ProbeClusterInfo) (ProbeSignal, int64)
 }
 
 // ------------------------------------------------
