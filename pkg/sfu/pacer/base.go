@@ -93,6 +93,8 @@ func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 			sendingAt.UnixMicro(),
 			packetSize,
 			p.IsRTX,
+			p.ProbeClusterId,
+			p.IsProbe,
 		)
 		twccExt := rtp.TransportCCExtension{
 			TransportSequence: twccSN,

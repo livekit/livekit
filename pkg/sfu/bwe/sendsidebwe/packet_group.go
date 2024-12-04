@@ -80,35 +80,41 @@ func (s stat) MarshalLogObject(e zapcore.ObjectEncoder) error {
 type classStat struct {
 	primary stat
 	rtx     stat
+	probe   stat
 }
 
-func (c *classStat) add(size int, isRTX bool) {
+func (c *classStat) add(size int, isRTX bool, isProbe bool) {
 	if isRTX {
 		c.rtx.add(size)
+	} else if isProbe {
+		c.probe.add(size)
 	} else {
 		c.primary.add(size)
 	}
 }
 
-func (c *classStat) remove(size int, isRTX bool) {
+func (c *classStat) remove(size int, isRTX bool, isProbe bool) {
 	if isRTX {
 		c.rtx.remove(size)
+	} else if isProbe {
+		c.probe.remove(size)
 	} else {
 		c.primary.remove(size)
 	}
 }
 
 func (c *classStat) numPackets() int {
-	return c.primary.getNumPackets() + c.rtx.getNumPackets()
+	return c.primary.getNumPackets() + c.rtx.getNumPackets() + c.probe.getNumPackets()
 }
 
 func (c *classStat) numBytes() int {
-	return c.primary.getNumBytes() + c.rtx.getNumBytes()
+	return c.primary.getNumBytes() + c.rtx.getNumBytes() + c.probe.getNumBytes()
 }
 
 func (c classStat) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddObject("primary", c.primary)
 	e.AddObject("rtx", c.rtx)
+	e.AddObject("probe", c.probe)
 	return nil
 }
 
@@ -175,11 +181,11 @@ func (p *packetGroup) Add(pi *packetInfo, sendDelta, recvDelta int64, isLost boo
 	}
 	p.maxRecvTime = max(p.maxRecvTime, pi.recvTime)
 
-	p.acked.add(int(pi.size), pi.isRTX)
+	p.acked.add(int(pi.size), pi.isRTX, pi.isProbe)
 	if p.snBitmap.IsSet(pi.sequenceNumber - p.minSequenceNumber) {
 		// an earlier packet reported as lost has been received
 		p.snBitmap.Clear(pi.sequenceNumber - p.minSequenceNumber)
-		p.lost.remove(int(pi.size), pi.isRTX)
+		p.lost.remove(int(pi.size), pi.isRTX, pi.isProbe)
 	}
 
 	// note that out-of-order deliveries will amplify the queueing delay.
@@ -212,7 +218,7 @@ func (p *packetGroup) lostPacket(pi *packetInfo) error {
 	p.maxSequenceNumber = max(p.maxSequenceNumber, pi.sequenceNumber)
 	p.snBitmap.Set(pi.sequenceNumber - p.minSequenceNumber)
 
-	p.lost.add(int(pi.size), pi.isRTX)
+	p.lost.add(int(pi.size), pi.isRTX, pi.isProbe)
 	return nil
 }
 

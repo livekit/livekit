@@ -28,7 +28,13 @@ func (n *NullBWE) Reset() {}
 
 func (n *NullBWE) Stop() {}
 
-func (n *NullBWE) RecordPacketSendAndGetSequenceNumber(_atMicro int64, _size int, _isRTX bool) uint16 {
+func (n *NullBWE) RecordPacketSendAndGetSequenceNumber(
+	_atMicro int64,
+	_size int,
+	_isRTX bool,
+	_probeClusterId ccutils.ProbeClusterId,
+	_isProbe bool,
+) uint16 {
 	return 0
 }
 

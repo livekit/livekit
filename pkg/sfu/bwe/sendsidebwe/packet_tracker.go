@@ -18,6 +18,7 @@ import (
 	"math/rand"
 	"sync"
 
+	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/mono"
 )
@@ -49,8 +50,13 @@ func newPacketTracker(params packetTrackerParams) *packetTracker {
 	}
 }
 
-// SSBWE-TODO: this potentially needs to take isProbe as argument?
-func (p *packetTracker) RecordPacketSendAndGetSequenceNumber(atMicro int64, size int, isRTX bool) uint16 {
+func (p *packetTracker) RecordPacketSendAndGetSequenceNumber(
+	atMicro int64,
+	size int,
+	isRTX bool,
+	probeClusterId ccutils.ProbeClusterId,
+	isProbe bool,
+) uint16 {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -59,11 +65,14 @@ func (p *packetTracker) RecordPacketSendAndGetSequenceNumber(atMicro int64, size
 	}
 
 	pi := p.getPacketInfo(uint16(p.sequenceNumber))
-	pi.sequenceNumber = p.sequenceNumber
-	pi.sendTime = atMicro - p.baseSendTime
-	pi.recvTime = 0
-	pi.size = uint16(size)
-	pi.isRTX = isRTX
+	*pi = packetInfo{
+		sequenceNumber: p.sequenceNumber,
+		sendTime:       atMicro - p.baseSendTime,
+		size:           uint16(size),
+		isRTX:          isRTX,
+		probeClusterId: probeClusterId,
+		isProbe:        isProbe,
+	}
 	// SSBWE-REMOVE p.params.Logger.Infow("packet sent", "packetInfo", pi) // SSBWE-REMOVE
 
 	p.sequenceNumber++
