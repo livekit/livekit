@@ -90,7 +90,13 @@ type BWE interface {
 	)
 
 	// TWCC sequence number
-	RecordPacketSendAndGetSequenceNumber(atMicro int64, size int, isRTX bool) uint16
+	RecordPacketSendAndGetSequenceNumber(
+		atMicro int64,
+		size int,
+		isRTX bool,
+		probeClusterId ccutils.ProbeClusterId,
+		isProbe bool,
+	) uint16
 
 	HandleTWCCFeedback(report *rtcp.TransportLayerCC)
 
