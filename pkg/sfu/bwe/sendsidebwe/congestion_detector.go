@@ -463,7 +463,7 @@ func (c *congestionDetector) CanProbe() bool {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	return c.probeRegulator.CanProbe()
+	return c.congestionState == bwe.CongestionStateNone && c.probePacketGroup == nil && c.probeRegulator.CanProbe()
 }
 
 func (c *congestionDetector) ProbeDuration() time.Duration {
@@ -514,7 +514,7 @@ func (c *congestionDetector) ProbeClusterFinalize() (ccutils.ProbeSignal, int64,
 
 	isSignalValid := c.params.Config.ProbeSignal.IsValid(pci)
 	c.params.Logger.Debugw(
-		"send side bwe: probe done",
+		"send side bwe: probe finalized",
 		"isSignalValid", isSignalValid,
 		"probeClusterInfo", pci,
 		"probePacketGroup", c.probePacketGroup,

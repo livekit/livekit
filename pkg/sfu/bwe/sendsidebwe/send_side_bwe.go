@@ -103,6 +103,16 @@ func (s *SendSideBWE) Stop() {
 	s.congestionDetector.Stop()
 }
 
+func (s *SendSideBWE) RecordPacketSendAndGetSequenceNumber(
+	atMicro int64,
+	size int,
+	isRTX bool,
+	probeClusterId ccutils.ProbeClusterId,
+	isProbe bool,
+) uint16 {
+	return s.congestionDetector.RecordPacketSendAndGetSequenceNumber(atMicro, size, isRTX, probeClusterId, isProbe)
+}
+
 func (s *SendSideBWE) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 	s.congestionDetector.HandleTWCCFeedback(report)
 }

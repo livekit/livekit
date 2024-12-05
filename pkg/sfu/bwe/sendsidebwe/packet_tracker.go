@@ -76,7 +76,7 @@ func (p *packetTracker) RecordPacketSendAndGetSequenceNumber(
 		probeClusterId: probeClusterId,
 		isProbe:        isProbe,
 	}
-	// SSBWE-REMOVE p.params.Logger.Infow("send side bwe: packet sent", "packetInfo", pi) // SSBWE-REMOVE
+	//p.params.Logger.Infow("send side bwe: packet sent", "packetInfo", pi) // SSBWE-REMOVE
 
 	p.sequenceNumber++
 

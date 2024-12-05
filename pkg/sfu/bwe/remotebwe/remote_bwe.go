@@ -260,7 +260,7 @@ func (r *RemoteBWE) CanProbe() bool {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	return r.probeController.CanProbe()
+	return r.congestionState == bwe.CongestionStateNone && r.probeController.CanProbe()
 }
 
 func (r *RemoteBWE) ProbeDuration() time.Duration {
@@ -312,7 +312,7 @@ func (r *RemoteBWE) ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool) {
 	r.newChannelObserver()
 
 	r.params.Logger.Debugw(
-		"remote bwe: probe done",
+		"remote bwe: probe finalized",
 		"lastReceived", r.lastReceivedEstimate,
 		"expectedBandwidthUsage", r.lastExpectedBandwidthUsage,
 		"channel", pco,
