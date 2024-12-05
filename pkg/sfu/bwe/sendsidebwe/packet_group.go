@@ -42,14 +42,6 @@ var (
 		MinPackets:        20,
 		MaxWindowDuration: 500 * time.Millisecond,
 	}
-
-	/* RAJA-REMOVE
-	// large numbers to treat a probe packet group as one
-	DefaultPacketGroupConfigProbe = PacketGroupConfig{
-		MinPackets:        16384,
-		MaxWindowDuration: time.Minute,
-	}
-	*/
 )
 
 // -------------------------------------------------------------

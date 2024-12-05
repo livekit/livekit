@@ -12,11 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package streamallocator
+package remotebwe
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
@@ -25,28 +24,23 @@ import (
 	"github.com/livekit/protocol/utils/mono"
 )
 
-const (
-	cDefaultRTT         = float64(0.070) // 70 ms
-	cRTTSmoothingFactor = float64(0.5)
-)
-
 // ---------------------------------------------------------------------------
 
-type ProbeControllerState int
+type probeControllerState int
 
 const (
-	ProbeControllerStateNone ProbeControllerState = iota
-	ProbeControllerStateProbing
-	ProbeControllerStateHangover
+	probeControllerStateNone probeControllerState = iota
+	probeControllerStateProbing
+	probeControllerStateHangover
 )
 
-func (p ProbeControllerState) String() string {
+func (p probeControllerState) String() string {
 	switch p {
-	case ProbeControllerStateNone:
+	case probeControllerStateNone:
 		return "NONE"
-	case ProbeControllerStateProbing:
+	case probeControllerStateProbing:
 		return "PROBING"
-	case ProbeControllerStateHangover:
+	case probeControllerStateHangover:
 		return "HANGOVER"
 	default:
 		return fmt.Sprintf("%d", int(p))
@@ -64,9 +58,6 @@ type ProbeControllerConfig struct {
 	SettleWaitMin    time.Duration `yaml:"settle_wait_min,omitempty"`
 	SettleWaitMax    time.Duration `yaml:"settle_wait_max,omitempty"`
 
-	OveragePct int64 `yaml:"overage_pct,omitempty"`
-	MinBps     int64 `yaml:"min_bps,omitempty"`
-
 	MinDuration            time.Duration `yaml:"min_duration,omitempty"`
 	MaxDuration            time.Duration `yaml:"max_duration,omitempty"`
 	DurationIncreaseFactor float64       `yaml:"duration_increase_factor,omitempty"`
@@ -82,9 +73,6 @@ var (
 		SettleWaitMin:    500 * time.Millisecond,
 		SettleWaitMax:    10 * time.Second,
 
-		OveragePct: 120,
-		MinBps:     200_000,
-
 		MinDuration:            200 * time.Millisecond,
 		MaxDuration:            20 * time.Second,
 		DurationIncreaseFactor: 1.5,
@@ -93,17 +81,15 @@ var (
 
 // ---------------------------------------------------------------------------
 
-type ProbeControllerParams struct {
+type probeControllerParams struct {
 	Config ProbeControllerConfig
 	Logger logger.Logger
 }
 
-type ProbeController struct {
-	params ProbeControllerParams
+type probeController struct {
+	params probeControllerParams
 
-	lock sync.RWMutex
-
-	state           ProbeControllerState
+	state           probeControllerState
 	stateSwitchedAt time.Time
 
 	pci ccutils.ProbeClusterInfo
@@ -114,101 +100,64 @@ type ProbeController struct {
 	nextProbeEarliestAt time.Time
 }
 
-func NewProbeController(params ProbeControllerParams) *ProbeController {
-	p := &ProbeController{
-		params: params,
-		rtt:    cDefaultRTT,
+func newProbeController(params probeControllerParams) *probeController {
+	return &probeController{
+		params:              params,
+		state:               probeControllerStateNone,
+		stateSwitchedAt:     mono.Now(),
+		pci:                 ccutils.ProbeClusterInfoInvalid,
+		rtt:                 bwe.DefaultRTT,
+		probeInterval:       params.Config.BaseInterval,
+		probeDuration:       params.Config.MinDuration,
+		nextProbeEarliestAt: mono.Now(),
 	}
-
-	p.Reset()
-	return p
 }
 
-func (p *ProbeController) Reset() {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	p.state = ProbeControllerStateNone
-	p.stateSwitchedAt = mono.Now()
-	p.pci = ccutils.ProbeClusterInfoInvalid
-	p.probeInterval = p.params.Config.BaseInterval
-	p.probeDuration = p.params.Config.MinDuration
-	p.nextProbeEarliestAt = mono.Now()
-}
-
-func (p *ProbeController) UpdateRTT(rtt float64) {
+func (p *probeController) UpdateRTT(rtt float64) {
 	if rtt == 0 {
-		p.rtt = cDefaultRTT
+		p.rtt = bwe.DefaultRTT
 	} else {
 		if p.rtt == 0 {
 			p.rtt = rtt
 		} else {
-			p.rtt = cRTTSmoothingFactor*rtt + (1.0-cRTTSmoothingFactor)*p.rtt
+			p.rtt = bwe.RTTSmoothingFactor*rtt + (1.0-bwe.RTTSmoothingFactor)*p.rtt
 		}
 	}
 }
 
-func (p *ProbeController) CanProbe() bool {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	return p.state == ProbeControllerStateNone && mono.Now().After(p.nextProbeEarliestAt)
+func (p *probeController) CanProbe() bool {
+	return p.state == probeControllerStateNone && mono.Now().After(p.nextProbeEarliestAt)
 }
 
-func (p *ProbeController) MaybeInitiateProbe(availableBandwidthBps int64, probeGoalDeltaBps int64, expectedBandwidthUsage int64) (ccutils.ProbeClusterGoal, bool) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	if p.state != ProbeControllerStateNone {
-		// already probing or in probe hangover, don't start a new one
-		return ccutils.ProbeClusterGoal{}, false
-	}
-
-	if mono.Now().Before(p.nextProbeEarliestAt) {
-		return ccutils.ProbeClusterGoal{}, false
-	}
-
-	// overshoot a bit to account for noise (in measurement/estimate etc)
-	desiredIncreaseBps := (probeGoalDeltaBps * p.params.Config.OveragePct) / 100
-	if desiredIncreaseBps < p.params.Config.MinBps {
-		desiredIncreaseBps = p.params.Config.MinBps
-	}
-	return ccutils.ProbeClusterGoal{
-		AvailableBandwidthBps: int(availableBandwidthBps),
-		ExpectedUsageBps:      int(expectedBandwidthUsage),
-		DesiredBps:            int(expectedBandwidthUsage + desiredIncreaseBps),
-		Duration:              p.probeDuration,
-	}, true
+func (p *probeController) IsInProbe() bool {
+	return p.state != probeControllerStateNone
 }
 
-func (p *ProbeController) ProbeClusterStarting(pci ccutils.ProbeClusterInfo) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
+func (p *probeController) ProbeDuration() time.Duration {
+	return p.probeDuration
+}
 
-	if p.state != ProbeControllerStateNone {
+func (p *probeController) ProbeClusterStarting(pci ccutils.ProbeClusterInfo) {
+	if p.state != probeControllerStateNone {
 		p.params.Logger.Warnw("unexpected probe controller state", nil, "state", p.state)
 	}
 
-	p.setState(ProbeControllerStateProbing)
+	p.setState(probeControllerStateProbing)
 	p.pci = pci
 }
 
-func (p *ProbeController) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	if p.pci.Id == pci.Id {
-		p.pci.Result = pci.Result
-		p.setState(ProbeControllerStateHangover)
+func (p *probeController) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
+	if p.pci.Id != pci.Id {
+		return
 	}
+
+	p.pci.Result = pci.Result
+	p.setState(probeControllerStateHangover)
 }
 
-func (p *ProbeController) MaybeFinalizeProbe() (ccutils.ProbeClusterInfo, bool) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	if p.state != ProbeControllerStateHangover {
-		return ccutils.ProbeClusterInfoInvalid, false
+func (p *probeController) MaybeFinalizeProbe() (ccutils.ProbeClusterInfo, bool, error) {
+	if p.state != probeControllerStateHangover {
+		return ccutils.ProbeClusterInfoInvalid, false, bwe.ErrProbeClusterStateMismatch
 	}
 
 	settleWait := time.Duration(float64(p.params.Config.SettleWaitNumRTT) * p.rtt * float64(time.Second))
@@ -219,14 +168,14 @@ func (p *ProbeController) MaybeFinalizeProbe() (ccutils.ProbeClusterInfo, bool) 
 		settleWait = p.params.Config.SettleWaitMax
 	}
 	if time.Since(p.stateSwitchedAt) < settleWait {
-		return ccutils.ProbeClusterInfoInvalid, false
+		return ccutils.ProbeClusterInfoInvalid, false, nil
 	}
 
-	p.setState(ProbeControllerStateNone)
-	return p.pci, true
+	p.setState(probeControllerStateNone)
+	return p.pci, true, nil
 }
 
-func (p *ProbeController) ProbeSignal(probeSignal bwe.ProbeSignal) {
+func (p *probeController) ProbeSignal(probeSignal bwe.ProbeSignal) {
 	if probeSignal == bwe.ProbeSignalCongesting {
 		// wait longer till next probe
 		p.probeInterval = time.Duration(p.probeInterval.Seconds()*p.params.Config.BackoffFactor) * time.Second
@@ -254,18 +203,7 @@ func (p *ProbeController) ProbeSignal(probeSignal bwe.ProbeSignal) {
 	}
 }
 
-func (p *ProbeController) GetActiveProbeClusterId() ccutils.ProbeClusterId {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	if p.state == ProbeControllerStateNone {
-		return ccutils.ProbeClusterIdInvalid
-	}
-
-	return p.pci.Id
-}
-
-func (p *ProbeController) setState(state ProbeControllerState) {
+func (p *probeController) setState(state probeControllerState) {
 	if state == p.state {
 		return
 	}

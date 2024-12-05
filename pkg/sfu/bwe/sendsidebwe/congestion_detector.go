@@ -371,13 +371,6 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 	}
 }
 
-func (c *congestionDetector) CongestionState() bwe.CongestionState {
-	c.lock.RLock()
-	defer c.lock.RUnlock()
-
-	return c.congestionState
-}
-
 func (c *congestionDetector) ProbeClusterStarting(pci ccutils.ProbeClusterInfo) {
 	/* RAJA-TODO
 	r.lock.Lock()
@@ -397,7 +390,7 @@ func (c *congestionDetector) ProbeClusterStarting(pci ccutils.ProbeClusterInfo) 
 	*/
 }
 
-func (c *congestionDetector) ProbeClusterDone(_pci ccutils.ProbeClusterInfo) (bwe.ProbeSignal, int64, error) {
+func (c *congestionDetector) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
 	/* RAjA-TODO
 	r.lock.Lock()
 	defer r.lock.Unlock()
@@ -434,7 +427,6 @@ func (c *congestionDetector) ProbeClusterDone(_pci ccutils.ProbeClusterInfo) (bw
 	}
 	return bwe.ProbeSignalClearing, r.committedChannelCapacity
 	*/
-	return bwe.ProbeSignalClearing, 0, nil
 }
 
 func (c *congestionDetector) prunePacketGroups() {

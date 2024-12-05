@@ -105,16 +105,12 @@ func (s *SendSideBWE) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 	s.congestionDetector.HandleTWCCFeedback(report)
 }
 
-func (s *SendSideBWE) CongestionState() bwe.CongestionState {
-	return s.congestionDetector.CongestionState()
-}
-
 func (s *SendSideBWE) ProbeClusterStarting(pci ccutils.ProbeClusterInfo) {
 	s.congestionDetector.ProbeClusterStarting(pci)
 }
 
-func (s *SendSideBWE) ProbeClusterDone(pci ccutils.ProbeClusterInfo) (bwe.ProbeSignal, int64, error) {
-	return s.congestionDetector.ProbeClusterDone(pci)
+func (s *SendSideBWE) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
+	s.congestionDetector.ProbeClusterDone(pci)
 }
 
 // ------------------------------------------------

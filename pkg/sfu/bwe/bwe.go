@@ -17,9 +17,17 @@ package bwe
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/pion/rtcp"
+)
+
+// ------------------------------------------------
+
+const (
+	DefaultRTT         = float64(0.070) // 70 ms
+	RTTSmoothingFactor = float64(0.5)
 )
 
 // ------------------------------------------------
@@ -77,7 +85,7 @@ func (p ProbeSignal) String() string {
 // ------------------------------------------------
 
 var (
-	ErrProbeClusterMismatch = errors.New("mismatched probe cluster id")
+	ErrProbeClusterStateMismatch = errors.New("mismatched probe cluster state")
 )
 
 type BWE interface {
@@ -105,10 +113,13 @@ type BWE interface {
 
 	HandleTWCCFeedback(report *rtcp.TransportLayerCC)
 
-	CongestionState() CongestionState
+	UpdateRTT(rtt float64)
 
+	CanProbe() bool
+	ProbeDuration() time.Duration
 	ProbeClusterStarting(pci ccutils.ProbeClusterInfo)
-	ProbeClusterDone(pci ccutils.ProbeClusterInfo) (ProbeSignal, int64, error)
+	ProbeClusterDone(pci ccutils.ProbeClusterInfo)
+	ProbeClusterFinalize() (ProbeSignal, int64, bool, error)
 }
 
 // ------------------------------------------------
