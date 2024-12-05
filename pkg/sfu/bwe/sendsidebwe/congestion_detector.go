@@ -378,6 +378,65 @@ func (c *congestionDetector) CongestionState() bwe.CongestionState {
 	return c.congestionState
 }
 
+func (c *congestionDetector) ProbeClusterStarting(pci ccutils.ProbeClusterInfo) {
+	/* RAJA-TODO
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	r.lastExpectedBandwidthUsage = int64(pci.Goal.ExpectedUsageBps)
+
+	r.params.Logger.Debugw(
+		"remote bwe: starting probe",
+		"lastReceived", r.lastReceivedEstimate,
+		"expectedBandwidthUsage", r.lastExpectedBandwidthUsage,
+		"channel", r.channelObserver,
+	)
+
+	r.isInProbe = true
+	r.newChannelObserver()
+	*/
+}
+
+func (c *congestionDetector) ProbeClusterDone(_pci ccutils.ProbeClusterInfo) (bwe.ProbeSignal, int64, error) {
+	/* RAjA-TODO
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	// switch to a non-probe channel observer on probe end,
+	// reset congestion state to get a fresh trend
+	pco := r.channelObserver
+	probeCongestionState := r.congestionState
+
+	r.isInProbe = false
+	r.congestionState = bwe.CongestionStateNone
+	r.newChannelObserver()
+
+	r.params.Logger.Debugw(
+		"remote bwe: probe done",
+		"lastReceived", r.lastReceivedEstimate,
+		"expectedBandwidthUsage", r.lastExpectedBandwidthUsage,
+		"channel", pco,
+		"isSignalValid", pco.HasEnoughEstimateSamples(),
+	)
+
+	if probeCongestionState != bwe.CongestionStateNone {
+		return bwe.ProbeSignalCongesting, r.committedChannelCapacity
+	}
+
+	trend, _ := pco.GetTrend()
+	if !pco.HasEnoughEstimateSamples() || trend == channelTrendNeutral {
+		return bwe.ProbeSignalInconclusive, r.committedChannelCapacity
+	}
+
+	highestEstimate := pco.GetHighestEstimate()
+	if highestEstimate > r.committedChannelCapacity {
+		r.committedChannelCapacity = highestEstimate
+	}
+	return bwe.ProbeSignalClearing, r.committedChannelCapacity
+	*/
+	return bwe.ProbeSignalClearing, 0, nil
+}
+
 func (c *congestionDetector) prunePacketGroups() {
 	if len(c.packetGroups) == 0 {
 		return
@@ -673,7 +732,9 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 			)
 			c.packetGroups = append(c.packetGroups, pg)
 
-			pg.Add(pi, sendDelta, recvDelta, isLost)
+			if err = pg.Add(pi, sendDelta, recvDelta, isLost); err != nil {
+				c.params.Logger.Warnw("could not add packet to new packet group", err, "packetInfo", pi, "packetGroup", pg)
+			}
 			return
 		}
 
@@ -683,7 +744,7 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 			if err := opg.Add(pi, sendDelta, recvDelta, isLost); err == nil {
 				return
 			} else if err == errGroupFinalized {
-				c.params.Logger.Infow("unpected finalized group", "packetInfo", pi, "packetGroup", opg)
+				c.params.Logger.Infow("unexpected finalized group", "packetInfo", pi, "packetGroup", opg)
 			}
 		}
 	}

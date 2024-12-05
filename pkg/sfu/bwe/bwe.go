@@ -15,6 +15,7 @@
 package bwe
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
@@ -75,6 +76,10 @@ func (p ProbeSignal) String() string {
 
 // ------------------------------------------------
 
+var (
+	ErrProbeClusterMismatch = errors.New("mismatched probe cluster id")
+)
+
 type BWE interface {
 	SetBWEListener(bweListner BWEListener)
 
@@ -103,7 +108,7 @@ type BWE interface {
 	CongestionState() CongestionState
 
 	ProbeClusterStarting(pci ccutils.ProbeClusterInfo)
-	ProbeClusterDone(pci ccutils.ProbeClusterInfo) (ProbeSignal, int64)
+	ProbeClusterDone(pci ccutils.ProbeClusterInfo) (ProbeSignal, int64, error)
 }
 
 // ------------------------------------------------

@@ -41,6 +41,9 @@ type packetTracker struct {
 
 	baseRecvTime int64
 	piLastRecv   *packetInfo
+
+	probeClusterId         ccutils.ProbeClusterId
+	probeMaxSequenceNumber uint64
 }
 
 func newPacketTracker(params packetTrackerParams) *packetTracker {
@@ -80,6 +83,10 @@ func (p *packetTracker) RecordPacketSendAndGetSequenceNumber(
 	// extreme case of wrap around before receiving any feedback
 	if pi == p.piLastRecv {
 		p.piLastRecv = nil
+	}
+
+	if p.probeClusterId != ccutils.ProbeClusterIdInvalid && pi.sequenceNumber > p.probeMaxSequenceNumber {
+		p.probeMaxSequenceNumber = pi.sequenceNumber
 	}
 
 	return uint16(pi.sequenceNumber)
@@ -136,4 +143,26 @@ func (p *packetTracker) getPacketInfoExisting(sn uint16) *packetInfo {
 	}
 
 	return nil
+}
+
+func (p *packetTracker) ProbeClusterStarting(probeClusterId ccutils.ProbeClusterId) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	p.probeClusterId = probeClusterId
+}
+
+func (p *packetTracker) ProbeClusterDone(probeClusterId ccutils.ProbeClusterId) (uint64, bool) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	if p.probeClusterId == probeClusterId {
+		p.probeClusterId = ccutils.ProbeClusterIdInvalid
+		probeMaxSequenceNumber := p.probeMaxSequenceNumber
+		p.probeMaxSequenceNumber = 0
+
+		return probeMaxSequenceNumber, probeMaxSequenceNumber != 0
+	}
+
+	return 0, false
 }

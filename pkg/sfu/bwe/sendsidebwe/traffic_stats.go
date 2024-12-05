@@ -112,10 +112,10 @@ func (ts *trafficStats) WeightedLoss() float64 {
 	pps := totalPackets * 1e6 / float64(ts.Duration())
 
 	// Log10 is used to give higher weight for the same loss ratio at higher packet rates,
-	// for e.g. with a penalty factor of 0.25
-	//    - 10% loss at 20 pps = 0.1 * log10(20) * 0.25 = 0.032
-	//    - 10% loss at 100 pps = 0.1 * log10(100) * 0.25 = 0.05
-	//    - 10% loss at 1000 pps = 0.1 * log10(1000) * 0.25 = 0.075
+	// for e.g.
+	//    - 10% loss at 20 pps = 0.1 * log10(20) = 0.130
+	//    - 10% loss at 100 pps = 0.1 * log10(100) = 0.2
+	//    - 10% loss at 1000 pps = 0.1 * log10(1000) = 0.3
 	return lossRatio * math.Log10(pps)
 }
 

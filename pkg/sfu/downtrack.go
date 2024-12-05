@@ -628,6 +628,10 @@ func (d *DownTrack) SetProbeClusterId(probeClusterId ccutils.ProbeClusterId) {
 	d.probeClusterId.Store(uint32(probeClusterId))
 }
 
+func (d *DownTrack) SwapProbeClusterId(match ccutils.ProbeClusterId, swap ccutils.ProbeClusterId) {
+	d.probeClusterId.CompareAndSwap(uint32(match), uint32(swap))
+}
+
 // ID is the unique identifier for this Track. This should be unique for the
 // stream, but doesn't have to globally unique. A common example would be 'audio' or 'video'
 // and StreamID would be 'desktop' or 'webcam'

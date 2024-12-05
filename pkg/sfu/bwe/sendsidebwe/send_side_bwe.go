@@ -16,6 +16,7 @@ package sendsidebwe
 
 import (
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
+	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtcp"
 )
@@ -106,6 +107,14 @@ func (s *SendSideBWE) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 
 func (s *SendSideBWE) CongestionState() bwe.CongestionState {
 	return s.congestionDetector.CongestionState()
+}
+
+func (s *SendSideBWE) ProbeClusterStarting(pci ccutils.ProbeClusterInfo) {
+	s.congestionDetector.ProbeClusterStarting(pci)
+}
+
+func (s *SendSideBWE) ProbeClusterDone(pci ccutils.ProbeClusterInfo) (bwe.ProbeSignal, int64, error) {
+	return s.congestionDetector.ProbeClusterDone(pci)
 }
 
 // ------------------------------------------------

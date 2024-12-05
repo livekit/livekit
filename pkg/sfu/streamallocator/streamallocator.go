@@ -695,21 +695,24 @@ func (s *StreamAllocator) handleSignalEstimate(event Event) {
 func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 	// finalize any probe that may have finished/aborted
 	if pci, ok := s.probeController.MaybeFinalizeProbe(); ok {
-		probeSignal, channelCapacity := s.params.BWE.ProbeClusterDone(pci)
-		s.params.Logger.Debugw(
-			"stream allocator: probe result",
-			"probeSignal", probeSignal,
-			"channelCapacity", channelCapacity,
-		)
-		if probeSignal != bwe.ProbeSignalCongesting {
-			if channelCapacity > s.committedChannelCapacity {
-				s.committedChannelCapacity = channelCapacity
+		if probeSignal, channelCapacity, err := s.params.BWE.ProbeClusterDone(pci); err != nil {
+			s.params.Logger.Warnw("stream allocator: probe result failed", err, "probeClusterInfo", pci)
+		} else {
+			s.params.Logger.Debugw(
+				"stream allocator: probe result",
+				"probeSignal", probeSignal,
+				"channelCapacity", channelCapacity,
+			)
+			if probeSignal != bwe.ProbeSignalCongesting {
+				if channelCapacity > s.committedChannelCapacity {
+					s.committedChannelCapacity = channelCapacity
+				}
+
+				s.maybeBoostDeficientTracks()
 			}
 
-			s.maybeBoostDeficientTracks()
+			s.probeController.ProbeSignal(probeSignal)
 		}
-
-		s.probeController.ProbeSignal(probeSignal)
 	}
 
 	// probe if necessary and timing is right
@@ -765,6 +768,11 @@ func (s *StreamAllocator) handleSignalSendProbe(event Event) {
 func (s *StreamAllocator) handleSignalPacerProbeObserverClusterComplete(event Event) {
 	probeClusterId, _ := event.Data.(ccutils.ProbeClusterId)
 	pci := s.params.Pacer.EndProbeCluster(probeClusterId)
+
+	for _, t := range s.getTracks() {
+		t.DownTrack().SwapProbeClusterId(pci.Id, ccutils.ProbeClusterIdInvalid)
+	}
+
 	s.probeController.ProbeClusterDone(pci)
 	s.prober.ClusterDone(pci)
 }
@@ -887,7 +895,7 @@ func (s *StreamAllocator) setState(state streamAllocatorState) {
 	s.params.Logger.Infow("stream allocator: state change", "from", s.state, "to", state)
 	s.state = state
 
-	// restart everything when when state is stable
+	// restart everything when state is STABLE
 	if state == streamAllocatorStateStable {
 		s.maybeStopProbe()
 
