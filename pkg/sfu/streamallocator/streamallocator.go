@@ -706,7 +706,7 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 
 		s.activeProbeClusterId = ccutils.ProbeClusterIdInvalid
 
-		if probeSignal != bwe.ProbeSignalCongesting {
+		if probeSignal != ccutils.ProbeSignalCongesting {
 			if channelCapacity > s.committedChannelCapacity {
 				s.committedChannelCapacity = channelCapacity
 			}

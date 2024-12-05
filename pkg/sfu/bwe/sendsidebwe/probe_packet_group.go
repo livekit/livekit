@@ -19,48 +19,102 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils/mono"
 	"go.uber.org/zap/zapcore"
 )
 
 // -------------------------------------------------------------
 
+type ProbePacketGroupConfig struct {
+	PacketGroup PacketGroupConfig `yaml:"packet_group,omitempty"`
+
+	SettleWaitNumRTT uint32        `yaml:"settle_wait_num_rtt,omitempty"`
+	SettleWaitMin    time.Duration `yaml:"settle_wait_min,omitempty"`
+	SettleWaitMax    time.Duration `yaml:"settle_wait_max,omitempty"`
+}
+
 var (
 	// large numbers to treat a probe packet group as one
-	DefaultPacketGroupConfigProbe = PacketGroupConfig{
-		MinPackets:        16384,
-		MaxWindowDuration: time.Minute,
+	DefaultPacketGroupConfigProbe = ProbePacketGroupConfig{
+		PacketGroup: PacketGroupConfig{
+			MinPackets:        16384,
+			MaxWindowDuration: time.Minute,
+		},
+		SettleWaitNumRTT: 10,
+		SettleWaitMin:    500 * time.Millisecond,
+		SettleWaitMax:    10 * time.Second,
 	}
 )
 
 // -------------------------------------------------------------
 
 type probePacketGroupParams struct {
-	ProbeClusterInfo ccutils.ProbeClusterInfo
-	Config           PacketGroupConfig
-	WeightedLoss     WeightedLossConfig
-	Logger           logger.Logger
+	Config       ProbePacketGroupConfig
+	WeightedLoss WeightedLossConfig
+	Logger       logger.Logger
 }
 
 type probePacketGroup struct {
 	params probePacketGroupParams
+	pci    ccutils.ProbeClusterInfo
 	*packetGroup
+	maxSequenceNumber uint64
+	doneAt            time.Time
 }
 
-func newProbePacketGroup(params probePacketGroupParams) *probePacketGroup {
+func newProbePacketGroup(params probePacketGroupParams, pci ccutils.ProbeClusterInfo) *probePacketGroup {
 	return &probePacketGroup{
 		params: params,
-		packetGroup: newPacketGroup(packetGroupParams{
-			Config:       params.Config,
-			WeightedLoss: params.WeightedLoss,
-			Logger:       params.Logger,
-		}, 0),
+		pci:    pci,
+		packetGroup: newPacketGroup(
+			packetGroupParams{
+				Config:       params.Config.PacketGroup,
+				WeightedLoss: params.WeightedLoss,
+				Logger:       params.Logger,
+			},
+			0,
+		),
 	}
+}
+
+func (p *probePacketGroup) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
+	if p.pci.Id != pci.Id {
+		return
+	}
+
+	p.pci.Result = pci.Result
+	p.doneAt = mono.Now()
+}
+
+func (p *probePacketGroup) MaybeFinalizeProbe(maxSequenceNumber uint64, rtt float64) (ccutils.ProbeClusterInfo, bool) {
+	if p.doneAt.IsZero() {
+		return ccutils.ProbeClusterInfoInvalid, false
+	}
+
+	if maxSequenceNumber != 0 && p.maxSequenceNumber >= maxSequenceNumber {
+		return p.pci, true
+	}
+
+	settleWait := time.Duration(float64(p.params.Config.SettleWaitNumRTT) * rtt * float64(time.Second))
+	if settleWait < p.params.Config.SettleWaitMin {
+		settleWait = p.params.Config.SettleWaitMin
+	}
+	if settleWait > p.params.Config.SettleWaitMax {
+		settleWait = p.params.Config.SettleWaitMax
+	}
+	if time.Since(p.doneAt) < settleWait {
+		return ccutils.ProbeClusterInfoInvalid, false
+	}
+
+	return p.pci, true
 }
 
 func (p *probePacketGroup) Add(pi *packetInfo, sendDelta, recvDelta int64, isLost bool) error {
-	if pi.probeClusterId != p.params.ProbeClusterInfo.Id {
+	if !p.doneAt.IsZero() || pi.probeClusterId != p.pci.Id {
 		return nil
 	}
+
+	p.maxSequenceNumber = max(p.maxSequenceNumber, pi.sequenceNumber)
 
 	return p.packetGroup.Add(pi, sendDelta, recvDelta, isLost)
 }
@@ -70,7 +124,9 @@ func (p *probePacketGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 		return nil
 	}
 
-	e.AddObject("probeClusterInfo", p.params.ProbeClusterInfo)
+	e.AddObject("pci", p.pci)
 	e.AddObject("packetGroup", p.packetGroup)
+	e.AddUint64("maxSequenceNumber", p.maxSequenceNumber)
+	e.AddTime("doneAt", p.doneAt)
 	return nil
 }

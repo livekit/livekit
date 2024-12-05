@@ -50,32 +50,20 @@ func (p probeControllerState) String() string {
 // ------------------------------------------------
 
 type ProbeControllerConfig struct {
-	BaseInterval  time.Duration `yaml:"base_interval,omitempty"`
-	BackoffFactor float64       `yaml:"backoff_factor,omitempty"`
-	MaxInterval   time.Duration `yaml:"max_interval,omitempty"`
+	ProbeRegulator ccutils.ProbeRegulatorConfig `yaml:"probe_regulator,omitempty"`
 
 	SettleWaitNumRTT uint32        `yaml:"settle_wait_num_rtt,omitempty"`
 	SettleWaitMin    time.Duration `yaml:"settle_wait_min,omitempty"`
 	SettleWaitMax    time.Duration `yaml:"settle_wait_max,omitempty"`
-
-	MinDuration            time.Duration `yaml:"min_duration,omitempty"`
-	MaxDuration            time.Duration `yaml:"max_duration,omitempty"`
-	DurationIncreaseFactor float64       `yaml:"duration_increase_factor,omitempty"`
 }
 
 var (
 	DefaultProbeControllerConfig = ProbeControllerConfig{
-		BaseInterval:  3 * time.Second,
-		BackoffFactor: 1.5,
-		MaxInterval:   2 * time.Minute,
+		ProbeRegulator: ccutils.DefaultProbeRegulatorConfig,
 
 		SettleWaitNumRTT: 10,
 		SettleWaitMin:    500 * time.Millisecond,
 		SettleWaitMax:    10 * time.Second,
-
-		MinDuration:            200 * time.Millisecond,
-		MaxDuration:            20 * time.Second,
-		DurationIncreaseFactor: 1.5,
 	}
 )
 
@@ -95,21 +83,22 @@ type probeController struct {
 	pci ccutils.ProbeClusterInfo
 	rtt float64
 
-	probeInterval       time.Duration
-	probeDuration       time.Duration
-	nextProbeEarliestAt time.Time
+	*ccutils.ProbeRegulator
 }
 
 func newProbeController(params probeControllerParams) *probeController {
 	return &probeController{
-		params:              params,
-		state:               probeControllerStateNone,
-		stateSwitchedAt:     mono.Now(),
-		pci:                 ccutils.ProbeClusterInfoInvalid,
-		rtt:                 bwe.DefaultRTT,
-		probeInterval:       params.Config.BaseInterval,
-		probeDuration:       params.Config.MinDuration,
-		nextProbeEarliestAt: mono.Now(),
+		params:          params,
+		state:           probeControllerStateNone,
+		stateSwitchedAt: mono.Now(),
+		pci:             ccutils.ProbeClusterInfoInvalid,
+		rtt:             bwe.DefaultRTT,
+		ProbeRegulator: ccutils.NewProbeRegulator(
+			ccutils.ProbeRegulatorParams{
+				Config: params.Config.ProbeRegulator,
+				Logger: params.Logger,
+			},
+		),
 	}
 }
 
@@ -126,15 +115,11 @@ func (p *probeController) UpdateRTT(rtt float64) {
 }
 
 func (p *probeController) CanProbe() bool {
-	return p.state == probeControllerStateNone && mono.Now().After(p.nextProbeEarliestAt)
+	return p.state == probeControllerStateNone && p.ProbeRegulator.CanProbe()
 }
 
 func (p *probeController) IsInProbe() bool {
 	return p.state != probeControllerStateNone
-}
-
-func (p *probeController) ProbeDuration() time.Duration {
-	return p.probeDuration
 }
 
 func (p *probeController) ProbeClusterStarting(pci ccutils.ProbeClusterInfo) {
@@ -173,34 +158,6 @@ func (p *probeController) MaybeFinalizeProbe() (ccutils.ProbeClusterInfo, bool, 
 
 	p.setState(probeControllerStateNone)
 	return p.pci, true, nil
-}
-
-func (p *probeController) ProbeSignal(probeSignal bwe.ProbeSignal) {
-	if probeSignal == bwe.ProbeSignalCongesting {
-		// wait longer till next probe
-		p.probeInterval = time.Duration(p.probeInterval.Seconds()*p.params.Config.BackoffFactor) * time.Second
-		if p.probeInterval > p.params.Config.MaxInterval {
-			p.probeInterval = p.params.Config.MaxInterval
-		}
-
-		// revert back to starting with shortest probe
-		p.probeDuration = p.params.Config.MinDuration
-	} else {
-		// probe can be started again after minimal interval as previous congestion signal indicated congestion clearing
-		p.probeInterval = p.params.Config.BaseInterval
-
-		// can do longer probe after a good probe
-		p.probeDuration = time.Duration(float64(p.probeDuration.Milliseconds())*p.params.Config.DurationIncreaseFactor) * time.Millisecond
-		if p.probeDuration > p.params.Config.MaxDuration {
-			p.probeDuration = p.params.Config.MaxDuration
-		}
-	}
-
-	if p.pci.CreatedAt.IsZero() {
-		p.nextProbeEarliestAt = mono.Now().Add(p.probeInterval)
-	} else {
-		p.nextProbeEarliestAt = p.pci.CreatedAt.Add(p.probeInterval)
-	}
 }
 
 func (p *probeController) setState(state probeControllerState) {

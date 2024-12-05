@@ -61,29 +61,6 @@ func (c CongestionState) String() string {
 
 // ------------------------------------------------
 
-type ProbeSignal int
-
-const (
-	ProbeSignalInconclusive ProbeSignal = iota
-	ProbeSignalCongesting
-	ProbeSignalClearing
-)
-
-func (p ProbeSignal) String() string {
-	switch p {
-	case ProbeSignalInconclusive:
-		return "INCONCLUSIVE"
-	case ProbeSignalCongesting:
-		return "CONGESTING"
-	case ProbeSignalClearing:
-		return "CLEARING"
-	default:
-		return fmt.Sprintf("%d", int(p))
-	}
-}
-
-// ------------------------------------------------
-
 var (
 	ErrProbeClusterStateMismatch = errors.New("mismatched probe cluster state")
 )
@@ -119,7 +96,7 @@ type BWE interface {
 	ProbeDuration() time.Duration
 	ProbeClusterStarting(pci ccutils.ProbeClusterInfo)
 	ProbeClusterDone(pci ccutils.ProbeClusterInfo)
-	ProbeClusterFinalize() (ProbeSignal, int64, bool, error)
+	ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool, error)
 }
 
 // ------------------------------------------------

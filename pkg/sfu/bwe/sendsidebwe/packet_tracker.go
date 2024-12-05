@@ -76,7 +76,7 @@ func (p *packetTracker) RecordPacketSendAndGetSequenceNumber(
 		probeClusterId: probeClusterId,
 		isProbe:        isProbe,
 	}
-	// SSBWE-REMOVE p.params.Logger.Infow("packet sent", "packetInfo", pi) // SSBWE-REMOVE
+	// SSBWE-REMOVE p.params.Logger.Infow("send side bwe: packet sent", "packetInfo", pi) // SSBWE-REMOVE
 
 	p.sequenceNumber++
 
@@ -85,7 +85,7 @@ func (p *packetTracker) RecordPacketSendAndGetSequenceNumber(
 		p.piLastRecv = nil
 	}
 
-	if p.probeClusterId != ccutils.ProbeClusterIdInvalid && pi.sequenceNumber > p.probeMaxSequenceNumber {
+	if p.probeClusterId != ccutils.ProbeClusterIdInvalid && p.probeClusterId == pi.probeClusterId && pi.sequenceNumber > p.probeMaxSequenceNumber {
 		p.probeMaxSequenceNumber = pi.sequenceNumber
 	}
 
@@ -152,17 +152,18 @@ func (p *packetTracker) ProbeClusterStarting(probeClusterId ccutils.ProbeCluster
 	p.probeClusterId = probeClusterId
 }
 
-func (p *packetTracker) ProbeClusterDone(probeClusterId ccutils.ProbeClusterId) (uint64, bool) {
+func (p *packetTracker) ProbeClusterDone(probeClusterId ccutils.ProbeClusterId) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
 	if p.probeClusterId == probeClusterId {
 		p.probeClusterId = ccutils.ProbeClusterIdInvalid
-		probeMaxSequenceNumber := p.probeMaxSequenceNumber
-		p.probeMaxSequenceNumber = 0
-
-		return probeMaxSequenceNumber, probeMaxSequenceNumber != 0
 	}
+}
 
-	return 0, false
+func (p *packetTracker) ProbeMaxSequenceNumber() uint64 {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	return p.probeMaxSequenceNumber
 }

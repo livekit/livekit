@@ -294,13 +294,13 @@ func (r *RemoteBWE) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
 	r.probeController.ProbeClusterDone(pci)
 }
 
-func (r *RemoteBWE) ProbeClusterFinalize() (bwe.ProbeSignal, int64, bool, error) {
+func (r *RemoteBWE) ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool, error) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
 	pci, isFinalized, err := r.probeController.MaybeFinalizeProbe()
 	if err != nil || !isFinalized {
-		return bwe.ProbeSignalInconclusive, 0, isFinalized, err
+		return ccutils.ProbeSignalInconclusive, 0, isFinalized, err
 	}
 
 	// switch to a non-probe channel observer on probe end,
@@ -320,11 +320,11 @@ func (r *RemoteBWE) ProbeClusterFinalize() (bwe.ProbeSignal, int64, bool, error)
 		"probeClusterInfo", pci,
 	)
 
-	probeSignal := bwe.ProbeSignalClearing
+	probeSignal := ccutils.ProbeSignalClearing
 	if probeCongestionState != bwe.CongestionStateNone {
-		probeSignal = bwe.ProbeSignalCongesting
+		probeSignal = ccutils.ProbeSignalCongesting
 	} else if trend, _ := pco.GetTrend(); !pco.HasEnoughEstimateSamples() || trend == channelTrendNeutral {
-		probeSignal = bwe.ProbeSignalInconclusive
+		probeSignal = ccutils.ProbeSignalInconclusive
 	} else {
 		highestEstimate := pco.GetHighestEstimate()
 		if highestEstimate > r.committedChannelCapacity {
@@ -332,7 +332,7 @@ func (r *RemoteBWE) ProbeClusterFinalize() (bwe.ProbeSignal, int64, bool, error)
 		}
 	}
 
-	r.probeController.ProbeSignal(probeSignal)
+	r.probeController.ProbeSignal(probeSignal, pci.CreatedAt)
 	return probeSignal, r.committedChannelCapacity, true, nil
 }
 

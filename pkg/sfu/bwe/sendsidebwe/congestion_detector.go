@@ -234,6 +234,9 @@ type CongestionDetectorConfig struct {
 	PacketGroup       PacketGroupConfig `yaml:"packet_group,omitempty"`
 	PacketGroupMaxAge time.Duration     `yaml:"packet_group_max_age,omitempty"`
 
+	ProbePacketGroup ProbePacketGroupConfig       `yaml:"probe_packet_group,omitempty"`
+	ProbeRegulator   ccutils.ProbeRegulatorConfig `yaml:"probe_regulator,omitempty"`
+
 	JQRMinDelay time.Duration `yaml:"jqr_min_delay,omitempty"`
 	DQRMaxDelay time.Duration `yaml:"dqr_max_delay,omitempty"`
 
@@ -270,6 +273,8 @@ var (
 	DefaultCongestionDetectorConfig = CongestionDetectorConfig{
 		PacketGroup:                      DefaultPacketGroupConfig,
 		PacketGroupMaxAge:                15 * time.Second,
+		ProbePacketGroup:                 DefaultPacketGroupConfigProbe,
+		ProbeRegulator:                   ccutils.DefaultProbeRegulatorConfig,
 		JQRMinDelay:                      15 * time.Millisecond,
 		DQRMaxDelay:                      5 * time.Millisecond,
 		WeightedLoss:                     defaultWeightedLossConfig,
@@ -307,10 +312,15 @@ type congestionDetector struct {
 	lock            sync.RWMutex
 	feedbackReports deque.Deque[feedbackReport]
 
+	rtt float64
+
 	*packetTracker
 	twccFeedback *twccFeedback
 
 	packetGroups []*packetGroup
+
+	probePacketGroup *probePacketGroup
+	probeRegulator   *ccutils.ProbeRegulator
 
 	wake chan struct{}
 	stop core.Fuse
@@ -326,9 +336,14 @@ type congestionDetector struct {
 
 func newCongestionDetector(params congestionDetectorParams) *congestionDetector {
 	c := &congestionDetector{
-		params:                            params,
-		packetTracker:                     newPacketTracker(packetTrackerParams{Logger: params.Logger}),
-		twccFeedback:                      newTWCCFeedback(twccFeedbackParams{Logger: params.Logger}),
+		params:        params,
+		rtt:           bwe.DefaultRTT,
+		packetTracker: newPacketTracker(packetTrackerParams{Logger: params.Logger}),
+		twccFeedback:  newTWCCFeedback(twccFeedbackParams{Logger: params.Logger}),
+		probeRegulator: ccutils.NewProbeRegulator(ccutils.ProbeRegulatorParams{
+			Config: params.Config.ProbeRegulator,
+			Logger: params.Logger,
+		}),
 		wake:                              make(chan struct{}, 1),
 		estimatedAvailableChannelCapacity: 100_000_000,
 		congestionState:                   bwe.CongestionStateNone,
@@ -371,62 +386,94 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 	}
 }
 
+func (c *congestionDetector) UpdateRTT(rtt float64) {
+	if rtt == 0 {
+		c.rtt = bwe.DefaultRTT
+	} else {
+		if c.rtt == 0 {
+			c.rtt = rtt
+		} else {
+			c.rtt = bwe.RTTSmoothingFactor*rtt + (1.0-bwe.RTTSmoothingFactor)*c.rtt
+		}
+	}
+}
+
+func (c *congestionDetector) CanProbe() bool {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	return c.probeRegulator.CanProbe()
+}
+
+func (c *congestionDetector) ProbeDuration() time.Duration {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	return c.probeRegulator.ProbeDuration()
+}
+
 func (c *congestionDetector) ProbeClusterStarting(pci ccutils.ProbeClusterInfo) {
-	/* RAJA-TODO
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	c.lock.Lock()
+	defer c.lock.Unlock()
 
-	r.lastExpectedBandwidthUsage = int64(pci.Goal.ExpectedUsageBps)
-
-	r.params.Logger.Debugw(
-		"remote bwe: starting probe",
-		"lastReceived", r.lastReceivedEstimate,
-		"expectedBandwidthUsage", r.lastExpectedBandwidthUsage,
-		"channel", r.channelObserver,
+	c.probePacketGroup = newProbePacketGroup(
+		probePacketGroupParams{
+			Config:       c.params.Config.ProbePacketGroup,
+			WeightedLoss: c.params.Config.WeightedLoss,
+			Logger:       c.params.Logger,
+		},
+		pci,
 	)
 
-	r.isInProbe = true
-	r.newChannelObserver()
-	*/
+	c.packetTracker.ProbeClusterStarting(pci.Id)
 }
 
 func (c *congestionDetector) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
-	/* RAjA-TODO
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	c.lock.Lock()
+	defer c.lock.Unlock()
 
-	// switch to a non-probe channel observer on probe end,
-	// reset congestion state to get a fresh trend
-	pco := r.channelObserver
-	probeCongestionState := r.congestionState
+	c.packetTracker.ProbeClusterDone(pci.Id)
+	if c.probePacketGroup != nil {
+		c.probePacketGroup.ProbeClusterDone(pci)
+	}
+}
 
-	r.isInProbe = false
-	r.congestionState = bwe.CongestionStateNone
-	r.newChannelObserver()
+func (c *congestionDetector) ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool, error) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
 
-	r.params.Logger.Debugw(
-		"remote bwe: probe done",
-		"lastReceived", r.lastReceivedEstimate,
-		"expectedBandwidthUsage", r.lastExpectedBandwidthUsage,
-		"channel", pco,
-		"isSignalValid", pco.HasEnoughEstimateSamples(),
+	if c.probePacketGroup == nil {
+		return ccutils.ProbeSignalInconclusive, 0, false, bwe.ErrProbeClusterStateMismatch
+	}
+
+	pci, isFinalized := c.probePacketGroup.MaybeFinalizeProbe(c.packetTracker.ProbeMaxSequenceNumber(), c.rtt)
+	if !isFinalized {
+		return ccutils.ProbeSignalInconclusive, 0, isFinalized, nil
+	}
+
+	c.params.Logger.Debugw(
+		"send side bwe: probe done",
+		// RAJA-TODO "isSignalValid", pco.HasEnoughEstimateSamples(),
+		"probeClusterInfo", pci,
 	)
 
+	probeSignal := ccutils.ProbeSignalClearing
+	/* RAJA-TODO
 	if probeCongestionState != bwe.CongestionStateNone {
-		return bwe.ProbeSignalCongesting, r.committedChannelCapacity
+		probeSignal = bwe.ProbeSignalCongesting
+	} else if trend, _ := pco.GetTrend(); !pco.HasEnoughEstimateSamples() || trend == channelTrendNeutral {
+		probeSignal = bwe.ProbeSignalInconclusive
+	} else {
+		highestEstimate := pco.GetHighestEstimate()
+		if highestEstimate > r.committedChannelCapacity {
+			r.committedChannelCapacity = highestEstimate
+		}
 	}
-
-	trend, _ := pco.GetTrend()
-	if !pco.HasEnoughEstimateSamples() || trend == channelTrendNeutral {
-		return bwe.ProbeSignalInconclusive, r.committedChannelCapacity
-	}
-
-	highestEstimate := pco.GetHighestEstimate()
-	if highestEstimate > r.committedChannelCapacity {
-		r.committedChannelCapacity = highestEstimate
-	}
-	return bwe.ProbeSignalClearing, r.committedChannelCapacity
 	*/
+
+	c.probeRegulator.ProbeSignal(probeSignal, pci.CreatedAt)
+	c.probePacketGroup = nil
+	return probeSignal, c.estimatedAvailableChannelCapacity, true, nil
 }
 
 func (c *congestionDetector) prunePacketGroups() {
@@ -509,7 +556,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() {
 	switch state {
 	case bwe.CongestionStateNone:
 		if congestedTriggered {
-			c.params.Logger.Warnw("invalid congested state transition", nil, "from", state, "reason", congestedReason)
+			c.params.Logger.Warnw("send side bwe: invalid congested state transition", nil, "from", state, "reason", congestedReason)
 		}
 		if earlyWarningTriggered {
 			newState = bwe.CongestionStateEarlyWarning
@@ -526,7 +573,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() {
 
 	case bwe.CongestionStateEarlyWarningHangover:
 		if congestedTriggered {
-			c.params.Logger.Warnw("invalid congested state transition", nil, "from", state, "reason", congestedReason)
+			c.params.Logger.Warnw("send side bwe: invalid congested state transition", nil, "from", state, "reason", congestedReason)
 		}
 		if earlyWarningTriggered {
 			newState = bwe.CongestionStateEarlyWarning
@@ -542,7 +589,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() {
 
 	case bwe.CongestionStateCongestedHangover:
 		if congestedTriggered {
-			c.params.Logger.Warnw("invalid congested state transition", nil, "from", state, "reason", congestedReason)
+			c.params.Logger.Warnw("send side bwe: invalid congested state transition", nil, "from", state, "reason", congestedReason)
 		}
 		if earlyWarningTriggered {
 			newState = bwe.CongestionStateEarlyWarning
@@ -594,7 +641,7 @@ func (c *congestionDetector) updateCTRTrend(pg *packetGroup) {
 		return
 	}
 
-	c.params.Logger.Infow("captured traffic ratio is trending downward", "channel", c.congestedCTRTrend)
+	c.params.Logger.Infow("send side bwe: captured traffic ratio is trending downward", "channel", c.congestedCTRTrend)
 
 	if bweListener := c.getBWEListener(); bweListener != nil {
 		bweListener.OnCongestionStateChange(c.congestionState, c.estimatedAvailableChannelCapacity)
@@ -630,7 +677,7 @@ func (c *congestionDetector) estimateAvailableChannelCapacity() {
 
 	if agg.Duration() < c.params.Config.RateMeasurementWindowDurationMin.Microseconds() {
 		c.params.Logger.Infow(
-			"not enough data to estimate available channel capacity",
+			"send side bwe: not enough data to estimate available channel capacity",
 			"duration", agg.Duration(),
 			"numGroups", len(c.packetGroups),
 			"oldestUsed", max(0, idx),
@@ -643,7 +690,7 @@ func (c *congestionDetector) estimateAvailableChannelCapacity() {
 
 func (c *congestionDetector) updateCongestionState(state bwe.CongestionState, reason string, oldestContributingGroup int) {
 	c.params.Logger.Infow(
-		"congestion state change",
+		"send side bwe: congestion state change",
 		"from", c.congestionState,
 		"to", state,
 		"reason", reason,
@@ -680,7 +727,7 @@ func (c *congestionDetector) updateCongestionState(state bwe.CongestionState, re
 func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 	recvRefTime, isOutOfOrder := c.twccFeedback.ProcessReport(fbr.report, fbr.at)
 	if isOutOfOrder {
-		c.params.Logger.Infow("received out-of-order feedback report")
+		c.params.Logger.Infow("send side bwe: received out-of-order feedback report")
 	}
 
 	if len(c.packetGroups) == 0 {
@@ -701,6 +748,10 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 	trackPacketGroup := func(pi *packetInfo, sendDelta, recvDelta int64, isLost bool) {
 		if pi == nil {
 			return
+		}
+
+		if c.probePacketGroup != nil {
+			c.probePacketGroup.Add(pi, sendDelta, recvDelta, isLost)
 		}
 
 		err := pg.Add(pi, sendDelta, recvDelta, isLost)
@@ -725,7 +776,7 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 			c.packetGroups = append(c.packetGroups, pg)
 
 			if err = pg.Add(pi, sendDelta, recvDelta, isLost); err != nil {
-				c.params.Logger.Warnw("could not add packet to new packet group", err, "packetInfo", pi, "packetGroup", pg)
+				c.params.Logger.Warnw("send side bwe: could not add packet to new packet group", err, "packetInfo", pi, "packetGroup", pg)
 			}
 			return
 		}
@@ -736,7 +787,7 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 			if err := opg.Add(pi, sendDelta, recvDelta, isLost); err == nil {
 				return
 			} else if err == errGroupFinalized {
-				c.params.Logger.Infow("unexpected finalized group", "packetInfo", pi, "packetGroup", opg)
+				c.params.Logger.Infow("send side bwe: unexpected finalized group", "packetInfo", pi, "packetGroup", opg)
 			}
 		}
 	}
