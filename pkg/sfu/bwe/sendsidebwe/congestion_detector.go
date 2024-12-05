@@ -64,8 +64,8 @@ var (
 // -------------------------------------------------------------------------------
 
 type ProbeSignalConfig struct {
-	MinBytesRatio    float64 `yaml:"min_bytes_ratio,imitempty"`
-	MinDurationRatio float64 `yaml:"min_duration_ratio,imitempty"`
+	MinBytesRatio    float64 `yaml:"min_bytes_ratio,omitempty"`
+	MinDurationRatio float64 `yaml:"min_duration_ratio,omitempty"`
 
 	JQRMinDelay time.Duration `yaml:"jqr_min_delay,omitempty"`
 	DQRMaxDelay time.Duration `yaml:"dqr_max_delay,omitempty"`
