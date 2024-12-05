@@ -694,26 +694,26 @@ func (s *StreamAllocator) handleSignalEstimate(event Event) {
 
 func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 	// finalize any probe that may have finished/aborted
-	if s.activeProbeClusterId !=  ccutils.ProbeClusterIdInvalid {
-	if probeSignal, channelCapacity, isFinalized := s.params.BWE.ProbeClusterFinalize(); isFinalized {
-		s.params.Logger.Debugw(
-			"stream allocator: probe result",
-			"probeClusterId", s.activeProbeClusterId,
-			"probeSignal", probeSignal,
-			"channelCapacity", channelCapacity,
-		)
+	if s.activeProbeClusterId != ccutils.ProbeClusterIdInvalid {
+		if probeSignal, channelCapacity, isFinalized := s.params.BWE.ProbeClusterFinalize(); isFinalized {
+			s.params.Logger.Debugw(
+				"stream allocator: probe result",
+				"probeClusterId", s.activeProbeClusterId,
+				"probeSignal", probeSignal,
+				"channelCapacity", channelCapacity,
+			)
 
-		s.activeProbeClusterId = ccutils.ProbeClusterIdInvalid
+			s.activeProbeClusterId = ccutils.ProbeClusterIdInvalid
 
-		if probeSignal != ccutils.ProbeSignalCongesting {
-			if channelCapacity > s.committedChannelCapacity {
-				s.committedChannelCapacity = channelCapacity
+			if probeSignal != ccutils.ProbeSignalCongesting {
+				if channelCapacity > s.committedChannelCapacity {
+					s.committedChannelCapacity = channelCapacity
+				}
+
+				s.maybeBoostDeficientTracks()
 			}
-
-			s.maybeBoostDeficientTracks()
 		}
 	}
-}
 
 	// probe if necessary and timing is right
 	if s.state == streamAllocatorStateDeficient {
