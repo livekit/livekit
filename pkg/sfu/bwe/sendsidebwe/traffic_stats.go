@@ -53,6 +53,7 @@ type trafficStats struct {
 	ackedPackets int
 	ackedBytes   int
 	lostPackets  int
+	lostBytes    int
 }
 
 func newTrafficStats(params trafficStatsParams) *trafficStats {
@@ -73,6 +74,11 @@ func (ts *trafficStats) Merge(rhs *trafficStats) {
 	ts.ackedPackets += rhs.ackedPackets
 	ts.ackedBytes += rhs.ackedBytes
 	ts.lostPackets += rhs.lostPackets
+	ts.lostBytes += rhs.lostBytes
+}
+
+func (ts *trafficStats) NumBytes() int {
+	return ts.ackedBytes + ts.lostBytes
 }
 
 func (ts *trafficStats) Duration() int64 {

@@ -63,6 +63,58 @@ var (
 
 // -------------------------------------------------------------------------------
 
+type ProbeSignalConfig struct {
+	MinBytesRatio    float64 `yaml:"min_bytes_ratio,imitempty"`
+	MinDurationRatio float64 `yaml:"min_duration_ratio,imitempty"`
+
+	JQRMinDelay time.Duration `yaml:"jqr_min_delay,omitempty"`
+	DQRMaxDelay time.Duration `yaml:"dqr_max_delay,omitempty"`
+
+	WeightedLoss      WeightedLossConfig `yaml:"weighted_loss,omitempty"`
+	CongestionMinLoss float64            `yaml:"congestion_min_loss,omitempty"`
+}
+
+func (p ProbeSignalConfig) IsValid(pci ccutils.ProbeClusterInfo) bool {
+	return pci.Result.Bytes() > int(p.MinBytesRatio*float64(pci.Goal.DesiredBytes)) && pci.Result.Duration() > time.Duration(p.MinDurationRatio*float64(pci.Goal.Duration))
+}
+
+func (p ProbeSignalConfig) ProbeSignal(ppg *probePacketGroup) (ccutils.ProbeSignal, int64) {
+	ts := newTrafficStats(trafficStatsParams{
+		Config: p.WeightedLoss,
+	})
+	ts.Merge(ppg.Traffic())
+
+	pqd := ppg.PropagatedQueuingDelay()
+	if pqd > p.JQRMinDelay.Microseconds() {
+		return ccutils.ProbeSignalCongesting, ts.AcknowledgedBitrate()
+	}
+
+	if ts.WeightedLoss() > p.CongestionMinLoss {
+		return ccutils.ProbeSignalCongesting, ts.AcknowledgedBitrate()
+	}
+
+	if pqd < p.DQRMaxDelay.Microseconds() {
+		return ccutils.ProbeSignalClearing, ts.AcknowledgedBitrate()
+	}
+
+	return ccutils.ProbeSignalInconclusive, ts.AcknowledgedBitrate()
+}
+
+var (
+	DefaultProbeSignalConfig = ProbeSignalConfig{
+		MinBytesRatio:    0.5,
+		MinDurationRatio: 0.5,
+
+		JQRMinDelay: 15 * time.Millisecond,
+		DQRMaxDelay: 5 * time.Millisecond,
+
+		WeightedLoss:      defaultWeightedLossConfig,
+		CongestionMinLoss: 0.25,
+	}
+)
+
+// -------------------------------------------------------------------------------
+
 type qdMeasurement struct {
 	earlyWarningConfig CongestionSignalConfig
 	congestedConfig    CongestionSignalConfig
@@ -94,7 +146,7 @@ func (q *qdMeasurement) ProcessPacketGroup(pg *packetGroup) {
 		return
 	}
 
-	pqd, pqdOk := pg.PropagatedQueuingDelay()
+	pqd, pqdOk := pg.FinalizedPropagatedQueuingDelay()
 	if !pqdOk {
 		return
 	}
@@ -236,6 +288,7 @@ type CongestionDetectorConfig struct {
 
 	ProbePacketGroup ProbePacketGroupConfig       `yaml:"probe_packet_group,omitempty"`
 	ProbeRegulator   ccutils.ProbeRegulatorConfig `yaml:"probe_regulator,omitempty"`
+	ProbeSignal      ProbeSignalConfig            `yaml:"probe_signal,omitempty"`
 
 	JQRMinDelay time.Duration `yaml:"jqr_min_delay,omitempty"`
 	DQRMaxDelay time.Duration `yaml:"dqr_max_delay,omitempty"`
@@ -271,26 +324,34 @@ var (
 	}
 
 	DefaultCongestionDetectorConfig = CongestionDetectorConfig{
-		PacketGroup:                      DefaultPacketGroupConfig,
-		PacketGroupMaxAge:                15 * time.Second,
-		ProbePacketGroup:                 DefaultPacketGroupConfigProbe,
-		ProbeRegulator:                   ccutils.DefaultProbeRegulatorConfig,
-		JQRMinDelay:                      15 * time.Millisecond,
-		DQRMaxDelay:                      5 * time.Millisecond,
-		WeightedLoss:                     defaultWeightedLossConfig,
-		CongestionMinLoss:                0.25,
-		QueuingDelayEarlyWarning:         DefaultQueuingDelayEarlyWarningCongestionSignalConfig,
-		LossEarlyWarning:                 DefaultLossEarlyWarningCongestionSignalConfig,
-		EarlyWarningHangover:             500 * time.Millisecond,
-		QueuingDelayCongested:            DefaultQueuingDelayCongestedCongestionSignalConfig,
-		LossCongested:                    DefaultLossCongestedCongestionSignalConfig,
-		CongestedHangover:                3 * time.Second,
+		PacketGroup:       DefaultPacketGroupConfig,
+		PacketGroupMaxAge: 15 * time.Second,
+
+		ProbePacketGroup: DefaultPacketGroupConfigProbe,
+		ProbeRegulator:   ccutils.DefaultProbeRegulatorConfig,
+		ProbeSignal:      DefaultProbeSignalConfig,
+
+		JQRMinDelay: 15 * time.Millisecond,
+		DQRMaxDelay: 5 * time.Millisecond,
+
+		WeightedLoss:      defaultWeightedLossConfig,
+		CongestionMinLoss: 0.25,
+
+		QueuingDelayEarlyWarning: DefaultQueuingDelayEarlyWarningCongestionSignalConfig,
+		LossEarlyWarning:         DefaultLossEarlyWarningCongestionSignalConfig,
+		EarlyWarningHangover:     500 * time.Millisecond,
+
+		QueuingDelayCongested: DefaultQueuingDelayCongestedCongestionSignalConfig,
+		LossCongested:         DefaultLossCongestedCongestionSignalConfig,
+		CongestedHangover:     3 * time.Second,
+
 		RateMeasurementWindowDurationMin: 800 * time.Millisecond,
 		RateMeasurementWindowDurationMax: 2 * time.Second,
-		PeriodicCheckInterval:            2 * time.Second,
-		PeriodicCheckIntervalCongested:   200 * time.Millisecond,
-		CongestedCTRTrend:                defaultTrendDetectorConfigCongestedCTR,
-		CongestedCTREpsilon:              0.05,
+
+		PeriodicCheckInterval:          2 * time.Second,
+		PeriodicCheckIntervalCongested: 200 * time.Millisecond,
+		CongestedCTRTrend:              defaultTrendDetectorConfigCongestedCTR,
+		CongestedCTREpsilon:            0.05,
 	}
 )
 
@@ -451,25 +512,18 @@ func (c *congestionDetector) ProbeClusterFinalize() (ccutils.ProbeSignal, int64,
 		return ccutils.ProbeSignalInconclusive, 0, isFinalized, nil
 	}
 
+	isSignalValid := c.params.Config.ProbeSignal.IsValid(pci)
 	c.params.Logger.Debugw(
 		"send side bwe: probe done",
-		// RAJA-TODO "isSignalValid", pco.HasEnoughEstimateSamples(),
+		"isSignalValid", isSignalValid,
 		"probeClusterInfo", pci,
+		"probePacketGroup", c.probePacketGroup,
 	)
 
-	probeSignal := ccutils.ProbeSignalClearing
-	/* RAJA-TODO
-	if probeCongestionState != bwe.CongestionStateNone {
-		probeSignal = bwe.ProbeSignalCongesting
-	} else if trend, _ := pco.GetTrend(); !pco.HasEnoughEstimateSamples() || trend == channelTrendNeutral {
-		probeSignal = bwe.ProbeSignalInconclusive
-	} else {
-		highestEstimate := pco.GetHighestEstimate()
-		if highestEstimate > r.committedChannelCapacity {
-			r.committedChannelCapacity = highestEstimate
-		}
+	probeSignal, estimatedAvailableChannelCapacity := c.params.Config.ProbeSignal.ProbeSignal(c.probePacketGroup)
+	if probeSignal == ccutils.ProbeSignalClearing && estimatedAvailableChannelCapacity > c.estimatedAvailableChannelCapacity {
+		c.estimatedAvailableChannelCapacity = estimatedAvailableChannelCapacity
 	}
-	*/
 
 	c.probeRegulator.ProbeSignal(probeSignal, pci.CreatedAt)
 	c.probePacketGroup = nil
@@ -652,7 +706,7 @@ func (c *congestionDetector) updateCTRTrend(pg *packetGroup) {
 }
 
 func (c *congestionDetector) estimateAvailableChannelCapacity() {
-	if len(c.packetGroups) == 0 {
+	if len(c.packetGroups) == 0 || c.probePacketGroup != nil {
 		return
 	}
 
@@ -764,14 +818,13 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 			c.updateCTRTrend(pg)
 
 			// SSBWE-REMOVE c.params.Logger.Infow("packet group done", "group", pg, "numGroups", len(c.packetGroups)) // SSBWE-REMOVE
-			pqd, _ := pg.PropagatedQueuingDelay()
 			pg = newPacketGroup(
 				packetGroupParams{
 					Config:       c.params.Config.PacketGroup,
 					WeightedLoss: c.params.Config.WeightedLoss,
 					Logger:       c.params.Logger,
 				},
-				pqd,
+				pg.PropagatedQueuingDelay(),
 			)
 			c.packetGroups = append(c.packetGroups, pg)
 
