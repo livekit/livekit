@@ -2,13 +2,13 @@ module github.com/livekit/livekit-server
 
 go 1.23
 
-toolchain go1.23.3
+toolchain go1.23.4
 
 require (
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.17.0
 	github.com/dustin/go-humanize v1.0.1
-	github.com/elliotchance/orderedmap/v2 v2.4.0
+	github.com/elliotchance/orderedmap/v2 v2.6.0
 	github.com/florianl/go-tc v0.4.4
 	github.com/frostbyte73/core v0.0.13
 	github.com/gammazero/deque v0.2.1
@@ -46,14 +46,14 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/thoas/go-funk v0.9.3
 	github.com/twitchtv/twirp v8.1.3+incompatible
-	github.com/ua-parser/uap-go v0.0.0-20240611065828-3a4781585db6
-	github.com/urfave/cli/v2 v2.27.4
+	github.com/ua-parser/uap-go v0.0.0-20241012191800-bbb40edc15aa
+	github.com/urfave/cli/v2 v2.27.5
 	github.com/urfave/negroni/v3 v3.1.1
 	go.uber.org/atomic v1.11.0
 	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.27.0
-	golang.org/x/exp v0.0.0-20241108190413-2d47ceb2692f
-	golang.org/x/sync v0.9.0
+	golang.org/x/exp v0.0.0-20241204233417-43b7b7cde48d
+	golang.org/x/sync v0.10.0
 	google.golang.org/protobuf v1.35.2
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -72,7 +72,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/containerd/continuity v0.4.3 // indirect
-	github.com/cpuguy83/go-md2man/v2 v2.0.4 // indirect
+	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/docker/cli v26.1.4+incompatible // indirect
@@ -129,12 +129,12 @@ require (
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
 	go.uber.org/zap/exp v0.3.0 // indirect
-	golang.org/x/crypto v0.29.0 // indirect
+	golang.org/x/crypto v0.30.0 // indirect
 	golang.org/x/mod v0.22.0 // indirect
-	golang.org/x/net v0.31.0 // indirect
-	golang.org/x/sys v0.27.0 // indirect
-	golang.org/x/text v0.20.0 // indirect
-	golang.org/x/tools v0.27.0 // indirect
+	golang.org/x/net v0.32.0 // indirect
+	golang.org/x/sys v0.28.0 // indirect
+	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/tools v0.28.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240903143218-8af14fe29dc1 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241118233622-e639e219e697 // indirect
 	google.golang.org/grpc v1.68.0 // indirect
