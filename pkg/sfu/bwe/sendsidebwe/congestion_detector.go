@@ -499,17 +499,17 @@ func (c *congestionDetector) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
 	}
 }
 
-func (c *congestionDetector) ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool, error) {
+func (c *congestionDetector) ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
 	if c.probePacketGroup == nil {
-		return ccutils.ProbeSignalInconclusive, 0, false, bwe.ErrProbeClusterStateMismatch
+		return ccutils.ProbeSignalInconclusive, 0, false
 	}
 
 	pci, isFinalized := c.probePacketGroup.MaybeFinalizeProbe(c.packetTracker.ProbeMaxSequenceNumber(), c.rtt)
 	if !isFinalized {
-		return ccutils.ProbeSignalInconclusive, 0, isFinalized, nil
+		return ccutils.ProbeSignalInconclusive, 0, isFinalized
 	}
 
 	isSignalValid := c.params.Config.ProbeSignal.IsValid(pci)
@@ -527,7 +527,7 @@ func (c *congestionDetector) ProbeClusterFinalize() (ccutils.ProbeSignal, int64,
 
 	c.probeRegulator.ProbeSignal(probeSignal, pci.CreatedAt)
 	c.probePacketGroup = nil
-	return probeSignal, c.estimatedAvailableChannelCapacity, true, nil
+	return probeSignal, c.estimatedAvailableChannelCapacity, true
 }
 
 func (c *congestionDetector) prunePacketGroups() {

@@ -15,7 +15,6 @@
 package bwe
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
@@ -61,10 +60,6 @@ func (c CongestionState) String() string {
 
 // ------------------------------------------------
 
-var (
-	ErrProbeClusterStateMismatch = errors.New("mismatched probe cluster state")
-)
-
 type BWE interface {
 	SetBWEListener(bweListner BWEListener)
 
@@ -96,7 +91,7 @@ type BWE interface {
 	ProbeDuration() time.Duration
 	ProbeClusterStarting(pci ccutils.ProbeClusterInfo)
 	ProbeClusterDone(pci ccutils.ProbeClusterInfo)
-	ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool, error)
+	ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool)
 }
 
 // ------------------------------------------------

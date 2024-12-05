@@ -140,9 +140,9 @@ func (p *probeController) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
 	p.setState(probeControllerStateHangover)
 }
 
-func (p *probeController) MaybeFinalizeProbe() (ccutils.ProbeClusterInfo, bool, error) {
+func (p *probeController) MaybeFinalizeProbe() (ccutils.ProbeClusterInfo, bool) {
 	if p.state != probeControllerStateHangover {
-		return ccutils.ProbeClusterInfoInvalid, false, bwe.ErrProbeClusterStateMismatch
+		return ccutils.ProbeClusterInfoInvalid, false
 	}
 
 	settleWait := time.Duration(float64(p.params.Config.SettleWaitNumRTT) * p.rtt * float64(time.Second))
@@ -153,11 +153,11 @@ func (p *probeController) MaybeFinalizeProbe() (ccutils.ProbeClusterInfo, bool, 
 		settleWait = p.params.Config.SettleWaitMax
 	}
 	if time.Since(p.stateSwitchedAt) < settleWait {
-		return ccutils.ProbeClusterInfoInvalid, false, nil
+		return ccutils.ProbeClusterInfoInvalid, false
 	}
 
 	p.setState(probeControllerStateNone)
-	return p.pci, true, nil
+	return p.pci, true
 }
 
 func (p *probeController) setState(state probeControllerState) {

@@ -64,8 +64,8 @@ func (n *NullBWE) ProbeClusterStarting(_pci ccutils.ProbeClusterInfo) {}
 
 func (n *NullBWE) ProbeClusterDone(_pci ccutils.ProbeClusterInfo) {}
 
-func (n *NullBWE) ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool, error) {
-	return ccutils.ProbeSignalInconclusive, 0, false, nil
+func (n *NullBWE) ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool) {
+	return ccutils.ProbeSignalInconclusive, 0, false
 }
 
 // ------------------------------------------------

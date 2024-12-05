@@ -694,9 +694,8 @@ func (s *StreamAllocator) handleSignalEstimate(event Event) {
 
 func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 	// finalize any probe that may have finished/aborted
-	if probeSignal, channelCapacity, isFinalized, err := s.params.BWE.ProbeClusterFinalize(); err != nil {
-		s.params.Logger.Warnw("stream allocator: probe result failed", err)
-	} else if isFinalized {
+	if s.activeProbeClusterId !=  ccutils.ProbeClusterIdInvalid {
+	if probeSignal, channelCapacity, isFinalized := s.params.BWE.ProbeClusterFinalize(); isFinalized {
 		s.params.Logger.Debugw(
 			"stream allocator: probe result",
 			"probeClusterId", s.activeProbeClusterId,
@@ -714,6 +713,7 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 			s.maybeBoostDeficientTracks()
 		}
 	}
+}
 
 	// probe if necessary and timing is right
 	if s.state == streamAllocatorStateDeficient {

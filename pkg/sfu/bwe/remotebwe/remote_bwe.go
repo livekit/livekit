@@ -294,13 +294,13 @@ func (r *RemoteBWE) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
 	r.probeController.ProbeClusterDone(pci)
 }
 
-func (r *RemoteBWE) ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool, error) {
+func (r *RemoteBWE) ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	pci, isFinalized, err := r.probeController.MaybeFinalizeProbe()
-	if err != nil || !isFinalized {
-		return ccutils.ProbeSignalInconclusive, 0, isFinalized, err
+	pci, isFinalized := r.probeController.MaybeFinalizeProbe()
+	if !isFinalized {
+		return ccutils.ProbeSignalInconclusive, 0, isFinalized
 	}
 
 	// switch to a non-probe channel observer on probe end,
@@ -333,7 +333,7 @@ func (r *RemoteBWE) ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool, er
 	}
 
 	r.probeController.ProbeSignal(probeSignal, pci.CreatedAt)
-	return probeSignal, r.committedChannelCapacity, true, nil
+	return probeSignal, r.committedChannelCapacity, true
 }
 
 func (r *RemoteBWE) newChannelObserver() {
