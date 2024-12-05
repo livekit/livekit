@@ -41,6 +41,9 @@ type packetTracker struct {
 
 	baseRecvTime int64
 	piLastRecv   *packetInfo
+
+	probeClusterId         ccutils.ProbeClusterId
+	probeMaxSequenceNumber uint64
 }
 
 func newPacketTracker(params packetTrackerParams) *packetTracker {
@@ -73,13 +76,17 @@ func (p *packetTracker) RecordPacketSendAndGetSequenceNumber(
 		probeClusterId: probeClusterId,
 		isProbe:        isProbe,
 	}
-	// SSBWE-REMOVE p.params.Logger.Infow("packet sent", "packetInfo", pi) // SSBWE-REMOVE
+	//p.params.Logger.Infow("send side bwe: packet sent", "packetInfo", pi) // SSBWE-REMOVE
 
 	p.sequenceNumber++
 
 	// extreme case of wrap around before receiving any feedback
 	if pi == p.piLastRecv {
 		p.piLastRecv = nil
+	}
+
+	if p.probeClusterId != ccutils.ProbeClusterIdInvalid && p.probeClusterId == pi.probeClusterId && pi.sequenceNumber > p.probeMaxSequenceNumber {
+		p.probeMaxSequenceNumber = pi.sequenceNumber
 	}
 
 	return uint16(pi.sequenceNumber)
@@ -136,4 +143,27 @@ func (p *packetTracker) getPacketInfoExisting(sn uint16) *packetInfo {
 	}
 
 	return nil
+}
+
+func (p *packetTracker) ProbeClusterStarting(probeClusterId ccutils.ProbeClusterId) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	p.probeClusterId = probeClusterId
+}
+
+func (p *packetTracker) ProbeClusterDone(probeClusterId ccutils.ProbeClusterId) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	if p.probeClusterId == probeClusterId {
+		p.probeClusterId = ccutils.ProbeClusterIdInvalid
+	}
+}
+
+func (p *packetTracker) ProbeMaxSequenceNumber() uint64 {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	return p.probeMaxSequenceNumber
 }

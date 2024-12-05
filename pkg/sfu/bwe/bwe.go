@@ -16,9 +16,17 @@ package bwe
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/pion/rtcp"
+)
+
+// ------------------------------------------------
+
+const (
+	DefaultRTT         = float64(0.070) // 70 ms
+	RTTSmoothingFactor = float64(0.5)
 )
 
 // ------------------------------------------------
@@ -52,29 +60,6 @@ func (c CongestionState) String() string {
 
 // ------------------------------------------------
 
-type ProbeSignal int
-
-const (
-	ProbeSignalInconclusive ProbeSignal = iota
-	ProbeSignalCongesting
-	ProbeSignalClearing
-)
-
-func (p ProbeSignal) String() string {
-	switch p {
-	case ProbeSignalInconclusive:
-		return "INCONCLUSIVE"
-	case ProbeSignalCongesting:
-		return "CONGESTING"
-	case ProbeSignalClearing:
-		return "CLEARING"
-	default:
-		return fmt.Sprintf("%d", int(p))
-	}
-}
-
-// ------------------------------------------------
-
 type BWE interface {
 	SetBWEListener(bweListner BWEListener)
 
@@ -100,10 +85,13 @@ type BWE interface {
 
 	HandleTWCCFeedback(report *rtcp.TransportLayerCC)
 
-	CongestionState() CongestionState
+	UpdateRTT(rtt float64)
 
+	CanProbe() bool
+	ProbeDuration() time.Duration
 	ProbeClusterStarting(pci ccutils.ProbeClusterInfo)
-	ProbeClusterDone(pci ccutils.ProbeClusterInfo) (ProbeSignal, int64)
+	ProbeClusterDone(pci ccutils.ProbeClusterInfo)
+	ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool)
 }
 
 // ------------------------------------------------

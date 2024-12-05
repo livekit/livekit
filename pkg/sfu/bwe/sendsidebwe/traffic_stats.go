@@ -53,6 +53,7 @@ type trafficStats struct {
 	ackedPackets int
 	ackedBytes   int
 	lostPackets  int
+	lostBytes    int
 }
 
 func newTrafficStats(params trafficStatsParams) *trafficStats {
@@ -73,6 +74,11 @@ func (ts *trafficStats) Merge(rhs *trafficStats) {
 	ts.ackedPackets += rhs.ackedPackets
 	ts.ackedBytes += rhs.ackedBytes
 	ts.lostPackets += rhs.lostPackets
+	ts.lostBytes += rhs.lostBytes
+}
+
+func (ts *trafficStats) NumBytes() int {
+	return ts.ackedBytes + ts.lostBytes
 }
 
 func (ts *trafficStats) Duration() int64 {
@@ -80,6 +86,11 @@ func (ts *trafficStats) Duration() int64 {
 }
 
 func (ts *trafficStats) AcknowledgedBitrate() int64 {
+	duration := ts.Duration()
+	if duration == 0 {
+		return 0
+	}
+
 	ackedBitrate := int64(ts.ackedBytes) * 8 * 1e6 / ts.Duration()
 	return int64(float64(ackedBitrate) * ts.CapturedTrafficRatio())
 }
@@ -112,10 +123,10 @@ func (ts *trafficStats) WeightedLoss() float64 {
 	pps := totalPackets * 1e6 / float64(ts.Duration())
 
 	// Log10 is used to give higher weight for the same loss ratio at higher packet rates,
-	// for e.g. with a penalty factor of 0.25
-	//    - 10% loss at 20 pps = 0.1 * log10(20) * 0.25 = 0.032
-	//    - 10% loss at 100 pps = 0.1 * log10(100) * 0.25 = 0.05
-	//    - 10% loss at 1000 pps = 0.1 * log10(1000) * 0.25 = 0.075
+	// for e.g.
+	//    - 10% loss at 20 pps = 0.1 * log10(20) = 0.130
+	//    - 10% loss at 100 pps = 0.1 * log10(100) = 0.2
+	//    - 10% loss at 1000 pps = 0.1 * log10(1000) = 0.3
 	return lossRatio * math.Log10(pps)
 }
 

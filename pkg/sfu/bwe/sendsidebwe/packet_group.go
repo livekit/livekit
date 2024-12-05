@@ -230,16 +230,20 @@ func (p *packetGroup) SendWindow() (int64, int64) {
 	return p.minSendTime, p.maxSendTime
 }
 
-func (p *packetGroup) PropagatedQueuingDelay() (int64, bool) {
+func (p *packetGroup) PropagatedQueuingDelay() int64 {
+	if p.queuingDelay+p.aggregateRecvDelta-p.aggregateSendDelta > 0 {
+		return p.queuingDelay + p.aggregateRecvDelta - p.aggregateSendDelta
+	}
+
+	return max(0, p.aggregateRecvDelta-p.aggregateSendDelta)
+}
+
+func (p *packetGroup) FinalizedPropagatedQueuingDelay() (int64, bool) {
 	if !p.isFinalized {
 		return 0, false
 	}
 
-	if p.queuingDelay+p.aggregateRecvDelta-p.aggregateSendDelta > 0 {
-		return p.queuingDelay + p.aggregateRecvDelta - p.aggregateSendDelta, true
-	}
-
-	return max(0, p.aggregateRecvDelta-p.aggregateSendDelta), true
+	return p.PropagatedQueuingDelay(), true
 }
 
 func (p *packetGroup) Traffic() *trafficStats {
@@ -251,6 +255,7 @@ func (p *packetGroup) Traffic() *trafficStats {
 		ackedPackets: p.acked.numPackets(),
 		ackedBytes:   p.acked.numBytes(),
 		lostPackets:  p.lost.numPackets(),
+		lostBytes:    p.lost.numBytes(),
 	}
 }
 
@@ -282,8 +287,7 @@ func (p *packetGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	ts.Merge(p.Traffic())
 	e.AddObject("trafficStats", ts)
 	e.AddInt64("queuingDelay", p.queuingDelay)
-	pqd, _ := p.PropagatedQueuingDelay()
-	e.AddInt64("propagatedQueuingDelay", pqd)
+	e.AddInt64("propagatedQueuingDelay", p.PropagatedQueuingDelay())
 
 	e.AddBool("isFinalized", p.isFinalized)
 	return nil

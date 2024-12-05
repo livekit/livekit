@@ -15,6 +15,8 @@
 package bwe
 
 import (
+	"time"
+
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/pion/rtcp"
 )
@@ -48,14 +50,22 @@ func (n *NullBWE) HandleREMB(
 
 func (n *NullBWE) HandleTWCCFeedback(_report *rtcp.TransportLayerCC) {}
 
-func (n *NullBWE) CongestionState() CongestionState {
-	return CongestionStateNone
+func (n *NullBWE) UpdateRTT(rtt float64) {}
+
+func (n *NullBWE) CanProbe() bool {
+	return false
+}
+
+func (n *NullBWE) ProbeDuration() time.Duration {
+	return 0
 }
 
 func (n *NullBWE) ProbeClusterStarting(_pci ccutils.ProbeClusterInfo) {}
 
-func (n *NullBWE) ProbeClusterDone(_pci ccutils.ProbeClusterInfo) (ProbeSignal, int64) {
-	return ProbeSignalInconclusive, 0
+func (n *NullBWE) ProbeClusterDone(_pci ccutils.ProbeClusterInfo) {}
+
+func (n *NullBWE) ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool) {
+	return ccutils.ProbeSignalInconclusive, 0, false
 }
 
 // ------------------------------------------------

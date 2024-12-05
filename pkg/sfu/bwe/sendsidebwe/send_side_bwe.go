@@ -15,7 +15,10 @@
 package sendsidebwe
 
 import (
+	"time"
+
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
+	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtcp"
 )
@@ -100,12 +103,42 @@ func (s *SendSideBWE) Stop() {
 	s.congestionDetector.Stop()
 }
 
+func (s *SendSideBWE) RecordPacketSendAndGetSequenceNumber(
+	atMicro int64,
+	size int,
+	isRTX bool,
+	probeClusterId ccutils.ProbeClusterId,
+	isProbe bool,
+) uint16 {
+	return s.congestionDetector.RecordPacketSendAndGetSequenceNumber(atMicro, size, isRTX, probeClusterId, isProbe)
+}
+
 func (s *SendSideBWE) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 	s.congestionDetector.HandleTWCCFeedback(report)
 }
 
-func (s *SendSideBWE) CongestionState() bwe.CongestionState {
-	return s.congestionDetector.CongestionState()
+func (s *SendSideBWE) UpdateRTT(rtt float64) {
+	s.congestionDetector.UpdateRTT(rtt)
+}
+
+func (s *SendSideBWE) CanProbe() bool {
+	return s.congestionDetector.CanProbe()
+}
+
+func (s *SendSideBWE) ProbeDuration() time.Duration {
+	return s.congestionDetector.ProbeDuration()
+}
+
+func (s *SendSideBWE) ProbeClusterStarting(pci ccutils.ProbeClusterInfo) {
+	s.congestionDetector.ProbeClusterStarting(pci)
+}
+
+func (s *SendSideBWE) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
+	s.congestionDetector.ProbeClusterDone(pci)
+}
+
+func (s *SendSideBWE) ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool) {
+	return s.congestionDetector.ProbeClusterFinalize()
 }
 
 // ------------------------------------------------

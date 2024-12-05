@@ -157,16 +157,20 @@ const (
 )
 
 type StreamAllocatorConfig struct {
-	ProbeMode                        ProbeMode             `yaml:"probe_mode,omitempty"`
-	MinChannelCapacity               int64                 `yaml:"min_channel_capacity,omitempty"`
-	ProbeController                  ProbeControllerConfig `yaml:"probe_controller,omitempty"`
-	DisableEstimationUnmanagedTracks bool                  `yaml:"disable_etimation_unmanaged_tracks,omitempty"`
+	ProbeMode                        ProbeMode `yaml:"probe_mode,omitempty"`
+	MinChannelCapacity               int64     `yaml:"min_channel_capacity,omitempty"`
+	DisableEstimationUnmanagedTracks bool      `yaml:"disable_etimation_unmanaged_tracks,omitempty"`
+
+	ProbeOveragePct int64 `yaml:"probe_overage_pct,omitempty"`
+	ProbeMinBps     int64 `yaml:"probe_min_bps,omitempty"`
 }
 
 var (
 	DefaultStreamAllocatorConfig = StreamAllocatorConfig{
-		ProbeMode:       ProbeModePadding,
-		ProbeController: DefaultProbeControllerConfig,
+		ProbeMode: ProbeModePadding,
+
+		ProbeOveragePct: 120,
+		ProbeMinBps:     200_000,
 	}
 )
 
@@ -193,8 +197,7 @@ type StreamAllocator struct {
 	committedChannelCapacity  int64
 	overriddenChannelCapacity int64
 
-	probeController *ProbeController
-	prober          *ccutils.Prober
+	prober *ccutils.Prober
 
 	// STREAM-ALLOCATOR-DATA rateMonitor     *RateMonitor
 
@@ -203,8 +206,9 @@ type StreamAllocator struct {
 	isAllocateAllPending bool
 	rembTrackingSSRC     uint32
 
-	state     streamAllocatorState
-	isHolding bool
+	state                streamAllocatorState
+	isHolding            bool
+	activeProbeClusterId ccutils.ProbeClusterId
 
 	eventsQueue *utils.TypedOpsQueue[Event]
 
@@ -219,8 +223,9 @@ func NewStreamAllocator(params StreamAllocatorParams, enabled bool, allowPause b
 		enabled:    enabled,
 		allowPause: allowPause,
 		// STREAM-ALLOCATOR-DATA rateMonitor: NewRateMonitor(),
-		videoTracks: make(map[livekit.TrackID]*Track),
-		state:       streamAllocatorStateStable,
+		videoTracks:          make(map[livekit.TrackID]*Track),
+		state:                streamAllocatorStateStable,
+		activeProbeClusterId: ccutils.ProbeClusterIdInvalid,
 		eventsQueue: utils.NewTypedOpsQueue[Event](utils.OpsQueueParams{
 			Name:    "stream-allocator",
 			MinSize: 64,
@@ -232,11 +237,6 @@ func NewStreamAllocator(params StreamAllocatorParams, enabled bool, allowPause b
 	s.prober = ccutils.NewProber(ccutils.ProberParams{
 		Listener: s,
 		Logger:   params.Logger,
-	})
-
-	s.probeController = NewProbeController(ProbeControllerParams{
-		Config: s.params.Config.ProbeController,
-		Logger: params.Logger,
 	})
 
 	s.params.BWE.SetBWEListener(s)
@@ -298,7 +298,7 @@ func (s *StreamAllocator) AddTrack(downTrack *sfu.DownTrack, params AddTrackPara
 	}
 
 	downTrack.SetStreamAllocatorListener(s)
-	downTrack.SetProbeClusterId(s.prober.GetActiveClusterId())
+	downTrack.SetProbeClusterId(s.activeProbeClusterId)
 
 	s.maybePostEventAllocateTrack(downTrack)
 }
@@ -694,22 +694,25 @@ func (s *StreamAllocator) handleSignalEstimate(event Event) {
 
 func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 	// finalize any probe that may have finished/aborted
-	if pci, ok := s.probeController.MaybeFinalizeProbe(); ok {
-		probeSignal, channelCapacity := s.params.BWE.ProbeClusterDone(pci)
-		s.params.Logger.Debugw(
-			"stream allocator: probe result",
-			"probeSignal", probeSignal,
-			"channelCapacity", channelCapacity,
-		)
-		if probeSignal != bwe.ProbeSignalCongesting {
-			if channelCapacity > s.committedChannelCapacity {
-				s.committedChannelCapacity = channelCapacity
+	if s.activeProbeClusterId != ccutils.ProbeClusterIdInvalid {
+		if probeSignal, channelCapacity, isFinalized := s.params.BWE.ProbeClusterFinalize(); isFinalized {
+			s.params.Logger.Debugw(
+				"stream allocator: probe result",
+				"probeClusterId", s.activeProbeClusterId,
+				"probeSignal", probeSignal,
+				"channelCapacity", channelCapacity,
+			)
+
+			s.activeProbeClusterId = ccutils.ProbeClusterIdInvalid
+
+			if probeSignal != ccutils.ProbeSignalCongesting {
+				if channelCapacity > s.committedChannelCapacity {
+					s.committedChannelCapacity = channelCapacity
+				}
+
+				s.maybeBoostDeficientTracks()
 			}
-
-			s.maybeBoostDeficientTracks()
 		}
-
-		s.probeController.ProbeSignal(probeSignal)
 	}
 
 	// probe if necessary and timing is right
@@ -722,7 +725,7 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 
 		if s.params.RTTGetter != nil {
 			if rtt, ok := s.params.RTTGetter(); ok {
-				s.probeController.UpdateRTT(rtt)
+				s.params.BWE.UpdateRTT(rtt)
 			}
 		}
 	}
@@ -735,7 +738,8 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 
 func (s *StreamAllocator) handleSignalProbeClusterSwitch(event Event) {
 	pci := event.Data.(ccutils.ProbeClusterInfo)
-	s.probeController.ProbeClusterStarting(pci)
+	s.activeProbeClusterId = pci.Id
+
 	s.params.BWE.ProbeClusterStarting(pci)
 
 	s.params.Pacer.StartProbeCluster(pci)
@@ -765,7 +769,12 @@ func (s *StreamAllocator) handleSignalSendProbe(event Event) {
 func (s *StreamAllocator) handleSignalPacerProbeObserverClusterComplete(event Event) {
 	probeClusterId, _ := event.Data.(ccutils.ProbeClusterId)
 	pci := s.params.Pacer.EndProbeCluster(probeClusterId)
-	s.probeController.ProbeClusterDone(pci)
+
+	for _, t := range s.getTracks() {
+		t.DownTrack().SwapProbeClusterId(pci.Id, ccutils.ProbeClusterIdInvalid)
+	}
+
+	s.params.BWE.ProbeClusterDone(pci)
 	s.prober.ClusterDone(pci)
 }
 
@@ -850,7 +859,7 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 	}
 
 	if cscd.congestionState == bwe.CongestionStateCongested {
-		if s.probeController.GetActiveProbeClusterId() != ccutils.ProbeClusterIdInvalid {
+		if s.activeProbeClusterId != ccutils.ProbeClusterIdInvalid {
 			s.params.Logger.Infow(
 				"stream allocator: channel congestion detected, not updating channel capacity in active probe",
 				"old(bps)", s.committedChannelCapacity,
@@ -887,11 +896,9 @@ func (s *StreamAllocator) setState(state streamAllocatorState) {
 	s.params.Logger.Infow("stream allocator: state change", "from", s.state, "to", state)
 	s.state = state
 
-	// restart everything when when state is stable
+	// restart everything when state is STABLE
 	if state == streamAllocatorStateStable {
 		s.maybeStopProbe()
-
-		s.probeController.Reset()
 
 		s.params.BWE.Reset()
 	}
@@ -1064,12 +1071,13 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 }
 
 func (s *StreamAllocator) maybeStopProbe() {
-	activeProbeClusterId := s.probeController.GetActiveProbeClusterId()
-	if activeProbeClusterId != ccutils.ProbeClusterIdInvalid {
-		pci := s.params.Pacer.EndProbeCluster(activeProbeClusterId)
-		s.probeController.ProbeClusterDone(pci)
-		s.prober.Reset(pci)
+	if s.activeProbeClusterId == ccutils.ProbeClusterIdInvalid {
+		return
 	}
+
+	pci := s.params.Pacer.EndProbeCluster(s.activeProbeClusterId)
+	s.params.BWE.ProbeClusterDone(pci)
+	s.prober.Reset(pci)
 }
 
 func (s *StreamAllocator) maybeBoostDeficientTracks() {
@@ -1296,7 +1304,7 @@ func (s *StreamAllocator) maybeProbe() {
 		return
 	}
 
-	if s.params.BWE.CongestionState() != bwe.CongestionStateNone || !s.probeController.CanProbe() {
+	if !s.params.BWE.CanProbe() {
 		return
 	}
 
@@ -1321,7 +1329,7 @@ func (s *StreamAllocator) maybeProbeWithMedia() {
 		updateStreamStateChange(track, allocation, update)
 		s.maybeSendUpdate(update)
 
-		s.probeController.Reset()
+		s.params.BWE.Reset()
 		break
 	}
 }
@@ -1334,14 +1342,25 @@ func (s *StreamAllocator) maybeProbeWithPadding() {
 			continue
 		}
 
-		pcg, ok := s.probeController.MaybeInitiateProbe(s.committedChannelCapacity, transition.BandwidthDelta, s.getExpectedBandwidthUsage())
-		if ok {
-			pci := s.prober.AddCluster(ccutils.ProbeClusterModeUniform, pcg)
-			s.params.Logger.Debugw(
-				"stream allocator: starting probe",
-				"probeClusterInfo", pci,
-			)
+		// overshoot a bit to account for noise (in measurement/estimate etc)
+		desiredIncreaseBps := (transition.BandwidthDelta * s.params.Config.ProbeOveragePct) / 100
+		if desiredIncreaseBps < s.params.Config.ProbeMinBps {
+			desiredIncreaseBps = s.params.Config.ProbeMinBps
 		}
+		expectedBandwidthUsage := s.getExpectedBandwidthUsage()
+		pci := s.prober.AddCluster(
+			ccutils.ProbeClusterModeUniform,
+			ccutils.ProbeClusterGoal{
+				AvailableBandwidthBps: int(s.committedChannelCapacity),
+				ExpectedUsageBps:      int(expectedBandwidthUsage),
+				DesiredBps:            int(expectedBandwidthUsage + desiredIncreaseBps),
+				Duration:              s.params.BWE.ProbeDuration(),
+			},
+		)
+		s.params.Logger.Debugw(
+			"stream allocator: adding probe",
+			"probeClusterInfo", pci,
+		)
 		break
 	}
 }
