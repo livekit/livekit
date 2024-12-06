@@ -48,6 +48,7 @@ func (c channelTrend) String() string {
 }
 
 // ------------------------------------------------
+
 type channelCongestionReason int
 
 const (

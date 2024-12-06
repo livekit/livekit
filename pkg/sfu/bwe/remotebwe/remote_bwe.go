@@ -320,10 +320,10 @@ func (r *RemoteBWE) ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool) {
 		"probeClusterInfo", pci,
 	)
 
-	probeSignal := ccutils.ProbeSignalClearing
+	probeSignal := ccutils.ProbeSignalNotCongesting
 	if probeCongestionState != bwe.CongestionStateNone {
 		probeSignal = ccutils.ProbeSignalCongesting
-	} else if trend, _ := pco.GetTrend(); !pco.HasEnoughEstimateSamples() || trend == channelTrendNeutral {
+	} else if !pco.HasEnoughEstimateSamples() {
 		probeSignal = ccutils.ProbeSignalInconclusive
 	} else {
 		highestEstimate := pco.GetHighestEstimate()
