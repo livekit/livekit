@@ -94,7 +94,7 @@ func (p ProbeSignalConfig) ProbeSignal(ppg *probePacketGroup) (ccutils.ProbeSign
 	}
 
 	if pqd < p.DQRMaxDelay.Microseconds() {
-		return ccutils.ProbeSignalClearing, ts.AcknowledgedBitrate()
+		return ccutils.ProbeSignalNotCongesting, ts.AcknowledgedBitrate()
 	}
 
 	return ccutils.ProbeSignalInconclusive, ts.AcknowledgedBitrate()
@@ -521,7 +521,7 @@ func (c *congestionDetector) ProbeClusterFinalize() (ccutils.ProbeSignal, int64,
 	)
 
 	probeSignal, estimatedAvailableChannelCapacity := c.params.Config.ProbeSignal.ProbeSignal(c.probePacketGroup)
-	if probeSignal == ccutils.ProbeSignalClearing && estimatedAvailableChannelCapacity > c.estimatedAvailableChannelCapacity {
+	if probeSignal == ccutils.ProbeSignalNotCongesting && estimatedAvailableChannelCapacity > c.estimatedAvailableChannelCapacity {
 		c.estimatedAvailableChannelCapacity = estimatedAvailableChannelCapacity
 	}
 

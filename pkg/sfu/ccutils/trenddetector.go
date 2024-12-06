@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/logger"
+	"go.uber.org/zap/zapcore"
 )
 
 // ------------------------------------------------
@@ -55,6 +56,17 @@ type trendDetectorNumber interface {
 type trendDetectorSample[T trendDetectorNumber] struct {
 	value T
 	at    time.Time
+}
+
+type trendDetectorSampleElapsed[T trendDetectorNumber] struct {
+	value      T
+	sinceFirst time.Duration
+}
+
+func (t trendDetectorSampleElapsed[T]) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddFloat64("value", float64(t.value))
+	e.AddDuration("sinceFirst", t.sinceFirst)
+	return nil
 }
 
 // ------------------------------------------------
@@ -154,28 +166,29 @@ func (t *TrendDetector[T]) HasEnoughSamples() bool {
 	return t.numSamples >= t.params.Config.RequiredSamples
 }
 
-func (t *TrendDetector[T]) String() string {
-	samplesStr := ""
-	if len(t.samples) > 0 {
-		firstTime := t.samples[0].at
-		samplesStr += "["
-		for i, sample := range t.samples {
-			suffix := ", "
-			if i == len(t.samples)-1 {
-				suffix = ""
-			}
-			samplesStr += fmt.Sprintf("%v(%d)%s", sample.value, sample.at.Sub(firstTime).Milliseconds(), suffix)
-		}
-		samplesStr += "]"
+func (t *TrendDetector[T]) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if t == nil {
+		return nil
 	}
 
-	now := time.Now()
-	elapsed := now.Sub(t.startTime).Seconds()
-	return fmt.Sprintf("n: %s, t: %+v|%+v|%.2fs, v: %d|%v|%v|%s|%.2f",
-		t.params.Name,
-		t.startTime.Format(time.UnixDate), now.Format(time.UnixDate), elapsed,
-		t.numSamples, t.lowestValue, t.highestValue, samplesStr, t.kendallsTau(),
-	)
+	var samples []trendDetectorSampleElapsed[T]
+	if len(t.samples) > 0 {
+		firstTime := t.samples[0].at
+		for _, sample := range t.samples {
+			samples = append(samples, trendDetectorSampleElapsed[T]{sample.value, sample.at.Sub(firstTime)})
+		}
+	}
+
+	e.AddString("name", t.params.Name)
+	e.AddTime("startTime", t.startTime)
+	e.AddDuration("elapsed", time.Since(t.startTime))
+	e.AddInt("numSamples", t.numSamples)
+	e.AddArray("samples", logger.ObjectSlice(samples))
+	e.AddFloat64("lowestValue", float64(t.lowestValue))
+	e.AddFloat64("highestValue", float64(t.highestValue))
+	e.AddFloat64("kendallsTau", t.kendallsTau())
+	e.AddString("direction", t.direction.String())
+	return nil
 }
 
 func (t *TrendDetector[T]) prune() {

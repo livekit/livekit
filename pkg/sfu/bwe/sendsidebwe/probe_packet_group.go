@@ -40,7 +40,8 @@ var (
 			MinPackets:        16384,
 			MaxWindowDuration: time.Minute,
 		},
-		SettleWaitNumRTT: 10,
+
+		SettleWaitNumRTT: 5,
 		SettleWaitMin:    500 * time.Millisecond,
 		SettleWaitMax:    10 * time.Second,
 	}

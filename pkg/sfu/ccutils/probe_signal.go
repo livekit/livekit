@@ -23,7 +23,7 @@ type ProbeSignal int
 const (
 	ProbeSignalInconclusive ProbeSignal = iota
 	ProbeSignalCongesting
-	ProbeSignalClearing
+	ProbeSignalNotCongesting
 )
 
 func (p ProbeSignal) String() string {
@@ -32,8 +32,8 @@ func (p ProbeSignal) String() string {
 		return "INCONCLUSIVE"
 	case ProbeSignalCongesting:
 		return "CONGESTING"
-	case ProbeSignalClearing:
-		return "CLEARING"
+	case ProbeSignalNotCongesting:
+		return "NOT_CONGESTING"
 	default:
 		return fmt.Sprintf("%d", int(p))
 	}

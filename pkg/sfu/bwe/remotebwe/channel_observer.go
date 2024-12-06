@@ -48,6 +48,7 @@ func (c channelTrend) String() string {
 }
 
 // ------------------------------------------------
+
 type channelCongestionReason int
 
 const (
@@ -195,7 +196,7 @@ func (c *channelObserver) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	}
 
 	e.AddString("name", c.params.Name)
-	e.AddString("estimate", c.estimateTrend.String())
+	e.AddObject("estimate", c.estimateTrend)
 	e.AddObject("nack", c.nackTracker)
 
 	channelTrend, channelCongestionReason := c.GetTrend()
