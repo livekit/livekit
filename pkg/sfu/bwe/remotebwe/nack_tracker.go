@@ -58,24 +58,16 @@ type nackTracker struct {
 	windowStartTime time.Time
 	packets         uint32
 	repeatedNacks   uint32
-
-	/* REMOTE-BWE-DATA
-	// REMOTE-BWE-EXPERIMENTAL-TODO: remove when cleaning up experimental stuff
-	history []string
-	*/
 }
 
 func newNackTracker(params nackTrackerParams) *nackTracker {
 	return &nackTracker{
 		params: params,
-		// REMOTE-BWE-DATA history: make([]string, 0, 10),
 	}
 }
 
 func (n *nackTracker) Add(packets uint32, repeatedNacks uint32) {
 	if n.params.Config.WindowMaxDuration != 0 && !n.windowStartTime.IsZero() && time.Since(n.windowStartTime) > n.params.Config.WindowMaxDuration {
-		// REMOTE-BWE-DATA n.updateHistory()
-
 		n.windowStartTime = time.Time{}
 		n.packets = 0
 		n.repeatedNacks = 0
@@ -134,19 +126,5 @@ func (n *nackTracker) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	}
 	return nil
 }
-
-/* REMOTE-BWE-DATA
-func (n *nackTracker) GetHistory() []string {
-	return n.history
-}
-
-func (n *nackTracker) updateHistory() {
-	if len(n.history) >= 10 {
-		n.history = n.history[1:]
-	}
-
-	n.history = append(n.history, n.String())
-}
-*/
 
 // ------------------------------------------------
