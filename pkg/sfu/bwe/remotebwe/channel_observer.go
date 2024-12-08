@@ -167,12 +167,6 @@ func (c *channelObserver) GetNackRatio() float64 {
 	return c.nackTracker.GetRatio()
 }
 
-/* REMOTE-BWE-DATA
-func (c *channelObserver) GetNackHistory() []string {
-	return c.nackTracker.GetHistory()
-}
-*/
-
 func (c *channelObserver) GetTrend() (channelTrend, channelCongestionReason) {
 	estimateDirection := c.estimateTrend.GetDirection()
 

@@ -229,13 +229,6 @@ func (r *RemoteBWE) estimateAvailableChannelCapacity(reason channelCongestionRea
 	}
 
 	ulgr.Infow("remote bwe: channel congestion detected, applying channel capacity update")
-	/* REMOTE-BWE-DATA
-	r.params.Logger.Debugw(
-		fmt.Sprintf("remote bwe: channel congestion detected, %s channel capacity: experimental", action),
-		"nackHistory", r.channelObserver.GetNackHistory(),
-	)
-	*/
-
 	r.committedChannelCapacity = estimateToCommit
 
 	// reset to get new set of samples for next trend

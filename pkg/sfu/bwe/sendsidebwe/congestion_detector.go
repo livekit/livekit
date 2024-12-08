@@ -817,7 +817,6 @@ func (c *congestionDetector) processFeedbackReport(fbr feedbackReport) {
 			// previous group ended, start a new group
 			c.updateCTRTrend(pg)
 
-			// SSBWE-REMOVE c.params.Logger.Infow("packet group done", "group", pg, "numGroups", len(c.packetGroups)) // SSBWE-REMOVE
 			pg = newPacketGroup(
 				packetGroupParams{
 					Config:       c.params.Config.PacketGroup,

@@ -90,8 +90,6 @@ const (
 	streamAllocatorSignalResume
 	streamAllocatorSignalSetAllowPause
 	streamAllocatorSignalSetChannelCapacity
-	// STREAM-ALLOCATOR-DATA streamAllocatorSignalNACK
-	// STREAM-ALLOCATOR-DATA streamAllocatorSignalRTCPReceiverReport
 	streamAllocatorSignalCongestionStateChange
 )
 
@@ -119,12 +117,6 @@ func (s streamAllocatorSignal) String() string {
 		return "SET_ALLOW_PAUSE"
 	case streamAllocatorSignalSetChannelCapacity:
 		return "SET_CHANNEL_CAPACITY"
-		/* STREAM-ALLOCATOR-DATA
-		case streamAllocatorSignalNACK:
-			return "NACK"
-		case streamAllocatorSignalRTCPReceiverReport:
-			return "RTCP_RECEIVER_REPORT"
-		*/
 	case streamAllocatorSignalCongestionStateChange:
 		return "CONGESTION_STATE_CHANGE"
 	default:
@@ -199,8 +191,6 @@ type StreamAllocator struct {
 
 	prober *ccutils.Prober
 
-	// STREAM-ALLOCATOR-DATA rateMonitor     *RateMonitor
-
 	videoTracksMu        sync.RWMutex
 	videoTracks          map[livekit.TrackID]*Track
 	isAllocateAllPending bool
@@ -219,10 +209,9 @@ type StreamAllocator struct {
 
 func NewStreamAllocator(params StreamAllocatorParams, enabled bool, allowPause bool) *StreamAllocator {
 	s := &StreamAllocator{
-		params:     params,
-		enabled:    enabled,
-		allowPause: allowPause,
-		// STREAM-ALLOCATOR-DATA rateMonitor: NewRateMonitor(),
+		params:               params,
+		enabled:              enabled,
+		allowPause:           allowPause,
 		videoTracks:          make(map[livekit.TrackID]*Track),
 		state:                streamAllocatorStateStable,
 		activeProbeClusterId: ccutils.ProbeClusterIdInvalid,
@@ -508,27 +497,6 @@ func (s *StreamAllocator) OnResume(downTrack *sfu.DownTrack) {
 	})
 }
 
-/* STREAM-ALLOCATOR-DATA
-// called by a video DownTrack when it processes NACKs
-func (s *StreamAllocator) OnNACK(downTrack *sfu.DownTrack, nackInfos []sfu.NackInfo) {
-	s.postEvent(Event{
-		Signal:  streamAllocatorSignalNACK,
-		TrackID: livekit.TrackID(downTrack.ID()),
-		Data:    nackInfos,
-	})
-}
-
-// called by a video DownTrack when it receives an RTCP Receiver Report
-// STREAM-ALLOCATOR-TODO: this should probably be done for audio tracks also
-func (s *StreamAllocator) OnRTCPReceiverReport(downTrack *sfu.DownTrack, rr rtcp.ReceptionReport) {
-	s.postEvent(Event{
-		Signal:  streamAllocatorSignalRTCPReceiverReport,
-		TrackID: livekit.TrackID(downTrack.ID()),
-		Data:    rr,
-	})
-}
-*/
-
 // called when probe cluster changes
 func (s *StreamAllocator) OnProbeClusterSwitch(pci ccutils.ProbeClusterInfo) {
 	s.postEvent(Event{
@@ -639,12 +607,6 @@ func (s *StreamAllocator) postEvent(event Event) {
 			event.handleSignalSetAllowPause(event)
 		case streamAllocatorSignalSetChannelCapacity:
 			event.handleSignalSetChannelCapacity(event)
-			/* STREAM-ALLOCATOR-DATA
-			case streamAllocatorSignalNACK:
-				event.s.handleSignalNACK(event)
-			case streamAllocatorSignalRTCPReceiverReport:
-				event.s.handleSignalRTCPReceiverReport(event)
-			*/
 		case streamAllocatorSignalCongestionStateChange:
 			s.handleSignalCongestionStateChange(event)
 		}
@@ -729,11 +691,6 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 			}
 		}
 	}
-
-	/* STREAM-ALLOCATOR-DATA
-	s.monitorRate(s.committedChannelCapacity)
-	s.updateTracksHistory()
-	*/
 }
 
 func (s *StreamAllocator) handleSignalProbeClusterSwitch(event Event) {
@@ -805,32 +762,6 @@ func (s *StreamAllocator) handleSignalSetChannelCapacity(event Event) {
 	}
 }
 
-/* STREAM-ALLOCATOR-DATA
-func (s *StreamAllocator) handleSignalNACK(event Event) {
-	nackInfos := event.Data.([]sfu.NackInfo)
-
-	s.videoTracksMu.Lock()
-	track := s.videoTracks[event.TrackID]
-	s.videoTracksMu.Unlock()
-
-	if track != nil {
-		track.UpdateNack(nackInfos)
-	}
-}
-
-func (s *StreamAllocator) handleSignalRTCPReceiverReport(event Event) {
-	rr := event.Data.(rtcp.ReceptionReport)
-
-	s.videoTracksMu.Lock()
-	track := s.videoTracks[event.TrackID]
-	s.videoTracksMu.Unlock()
-
-	if track != nil {
-		track.ProcessRTCPReceiverReport(rr)
-	}
-}
-*/
-
 func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 	cscd := event.Data.(congestionStateChangeData)
 	if cscd.congestionState != bwe.CongestionStateNone {
@@ -873,14 +804,6 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 				"new(bps)", cscd.estimatedAvailableChannelCapacity,
 				"expectedUsage(bps)", s.getExpectedBandwidthUsage(),
 			)
-			/* STREAM-ALLOCATOR-DATA
-			s.params.Logger.Debugw(
-				fmt.Sprintf("stream allocator: channel congestion detected, %s channel capacity: experimental", action),
-				"rateHistory", s.rateMonitor.GetHistory(),
-				"expectedQueuing", s.rateMonitor.GetQueuingGuess(),
-				"trackHistory", s.getTracksHistory(),
-			)
-			*/
 			s.committedChannelCapacity = cscd.estimatedAvailableChannelCapacity
 
 			s.allocateAllTracks()
@@ -1426,51 +1349,6 @@ func (s *StreamAllocator) getMaxDistanceSortedDeficient() MaxDistanceSorter {
 
 	return maxDistanceSorter
 }
-
-/* STREAM-ALLOCATOR-DATA
-// STREAM-ALLOCATOR-EXPERIMENTAL-TODO
-// Monitor sent rate vs estimate to figure out queuing on congestion.
-// Idea here is to pause all managed tracks on congestion detection immediately till queue drains.
-// That will allow channel to clear up without more traffic added and a re-allocation can start afresh.
-// Some bits to work out
-//   - how good is queuing estimate?
-//   - should we pause unmanaged tracks also? But, they will restart at highest layer and request a key frame.
-//   - what should be the channel capacity to use when resume re-allocation happens?
-func (s *StreamAllocator) monitorRate(estimate int64) {
-	managedBytesSent := uint32(0)
-	managedBytesRetransmitted := uint32(0)
-	unmanagedBytesSent := uint32(0)
-	unmanagedBytesRetransmitted := uint32(0)
-	for _, track := range s.getTracks() {
-		b, r := track.GetAndResetBytesSent()
-		if track.IsManaged() {
-			managedBytesSent += b
-			managedBytesRetransmitted += r
-		} else {
-			unmanagedBytesSent += b
-			unmanagedBytesRetransmitted += r
-		}
-	}
-
-	s.rateMonitor.Update(estimate, managedBytesSent, managedBytesRetransmitted, unmanagedBytesSent, unmanagedBytesRetransmitted)
-}
-
-func (s *StreamAllocator) updateTracksHistory() {
-	for _, track := range s.getTracks() {
-		track.UpdateHistory()
-	}
-}
-
-func (s *StreamAllocator) getTracksHistory() map[livekit.TrackID]string {
-	tracks := s.getTracks()
-	history := make(map[livekit.TrackID]string, len(tracks))
-	for _, track := range tracks {
-		history[track.ID()] = track.GetHistory()
-	}
-
-	return history
-}
-*/
 
 // ------------------------------------------------
 

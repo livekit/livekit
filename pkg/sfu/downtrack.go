@@ -157,14 +157,6 @@ func (d DownTrackState) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 // -------------------------------------------------------------------
 
-/* STREAM-ALLOCATOR-DATA
-type NackInfo struct {
-	Timestamp      uint32
-	SequenceNumber uint16
-	Attempts       uint8
-}
-*/
-
 type DownTrackStreamAllocatorListener interface {
 	// RTCP received
 	OnREMB(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)
@@ -190,14 +182,6 @@ type DownTrackStreamAllocatorListener interface {
 
 	// stream resumed
 	OnResume(dt *DownTrack)
-
-	/* STREAM-ALLOCATOR-DATA
-	// NACKs received
-	OnNACK(dt *DownTrack, nackInfos []NackInfo)
-
-	// RTCP Receiver Report received
-	OnRTCPReceiverReport(dt *DownTrack, rr rtcp.ReceptionReport)
-	*/
 
 	// check if track should participate in BWE
 	IsBWEEnabled(dt *DownTrack) bool
@@ -291,11 +275,7 @@ type DownTrack struct {
 
 	streamAllocatorLock     sync.RWMutex
 	streamAllocatorListener DownTrackStreamAllocatorListener
-	/* STREAM-ALLOCATOR-DATA
-	bytesSent                       atomic.Uint32
-	bytesRetransmitted              atomic.Uint32
-	*/
-	probeClusterId atomic.Uint32
+	probeClusterId          atomic.Uint32
 
 	playoutDelay *PlayoutDelayController
 
@@ -904,15 +884,16 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	}
 
 	headerSize := hdr.MarshalSize()
-	d.updateStats(updateStatsParams{
-		packetTime:        extPkt.Arrival,
-		extSequenceNumber: tp.rtp.extSequenceNumber,
-		extTimestamp:      tp.rtp.extTimestamp,
-		isOutOfOrder:      extPkt.IsOutOfOrder,
-		headerSize:        headerSize,
-		payloadSize:       len(payload),
-		marker:            hdr.Marker,
-	})
+	d.rtpStats.Update(
+		extPkt.Arrival,
+		tp.rtp.extSequenceNumber,
+		tp.rtp.extTimestamp,
+		hdr.Marker,
+		headerSize,
+		len(payload),
+		0,
+		extPkt.IsOutOfOrder,
+	)
 	d.pacer.Enqueue(&pacer.Packet{
 		Header:             hdr,
 		HeaderSize:         headerSize,
@@ -1027,15 +1008,16 @@ func (d *DownTrack) WritePaddingRTP(
 
 		hdrSize := hdr.MarshalSize()
 		payloadSize := len(payload)
-		d.updateStats(updateStatsParams{
-			packetTime:        mono.UnixNano(),
-			extSequenceNumber: snts[i].extSequenceNumber,
-			extTimestamp:      snts[i].extTimestamp,
-			headerSize:        hdrSize,
-			payloadSize:       payloadSize,
-			isPadding:         true,
-			disableCounter:    true,
-		})
+		d.rtpStats.Update(
+			mono.UnixNano(),
+			snts[i].extSequenceNumber,
+			snts[i].extTimestamp,
+			hdr.Marker,
+			hdrSize,
+			0,
+			payloadSize,
+			false,
+		)
 		d.pacer.Enqueue(&pacer.Packet{
 			Header:             hdr,
 			HeaderSize:         hdrSize,
@@ -1584,13 +1566,16 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 				}
 
 				headerSize := hdr.MarshalSize()
-				d.updateStats(updateStatsParams{
-					packetTime:        mono.UnixNano(),
-					extSequenceNumber: snts[i].extSequenceNumber,
-					extTimestamp:      snts[i].extTimestamp,
-					headerSize:        headerSize,
-					payloadSize:       len(payload),
-				})
+				d.rtpStats.Update(
+					mono.UnixNano(),
+					snts[i].extSequenceNumber,
+					snts[i].extTimestamp,
+					hdr.Marker,
+					headerSize,
+					len(payload),
+					0,
+					false,
+				)
 				d.pacer.Enqueue(&pacer.Packet{
 					Header:             hdr,
 					HeaderSize:         headerSize,
@@ -1747,12 +1732,6 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 					rttToReport = rtt
 				}
 
-				/* STREAM-ALLOCATOR-DATA
-				if sal := d.getStreamAllocatorListener(); sal != nil {
-					sal.OnRTCPReceiverReport(d, r)
-				}
-				*/
-
 				if d.playoutDelay != nil {
 					d.playoutDelay.OnSeqAcked(uint16(r.LastSequenceNumber))
 					// screen share track has inaccuracy jitter due to its low frame rate and bursty traffic
@@ -1870,20 +1849,12 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	nackAcks := uint32(0)
 	nackMisses := uint32(0)
 	numRepeatedNACKs := uint32(0)
-	// STREAM-ALLOCATOR-DATA nackInfos := make([]NackInfo, 0, len(filtered))
 	for _, epm := range d.sequencer.getExtPacketMetas(filtered) {
 		if disallowedLayers[epm.layer] {
 			continue
 		}
 
 		nackAcks++
-		/* STREAM-ALLOCATOR-DATA
-		nackInfos = append(nackInfos, NackInfo{
-			SequenceNumber: epm.targetSeqNo,
-			Timestamp:      epm.timestamp,
-			Attempts:       epm.nacked,
-		})
-		*/
 
 		pktBuff := *src
 		n, err := d.params.Receiver.ReadRTP(pktBuff, uint8(epm.layer), epm.sourceSeqNo)
@@ -1937,15 +1908,16 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		d.addDummyExtensions(&pkt.Header)
 
 		headerSize := pkt.Header.MarshalSize()
-		d.updateStats(updateStatsParams{
-			packetTime:        mono.UnixNano(),
-			extSequenceNumber: epm.extSequenceNumber,
-			extTimestamp:      epm.extTimestamp,
-			isOutOfOrder:      true,
-			headerSize:        headerSize,
-			payloadSize:       len(payload),
-			isRTX:             true,
-		})
+		d.rtpStats.Update(
+			mono.UnixNano(),
+			epm.extSequenceNumber,
+			epm.extTimestamp,
+			pkt.Header.Marker,
+			headerSize,
+			len(payload),
+			0,
+			true,
+		)
 		d.pacer.Enqueue(&pacer.Packet{
 			Header:             &pkt.Header,
 			HeaderSize:         headerSize,
@@ -1963,23 +1935,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	d.totalRepeatedNACKs.Add(numRepeatedNACKs)
 
 	d.rtpStats.UpdateNackProcessed(nackAcks, nackMisses, numRepeatedNACKs)
-	/* STREAM-ALLOCATOR-DATA
-	// STREAM-ALLOCATOR-EXPERIMENTAL-TODO-START
-	// Need to check on the following
-	//   - get all NACKs from sequencer even if SFU is not acknowledging,
-	//     i. e. SFU does not acknowledge even same sequence number is NACKed too closely,
-	//     but if sequencer return those also (even if not actually retransmitting),
-	//     will that provide a signal?
-	//   - get padding NACKs also? Maybe only look at them when their NACK count is 2?
-	//     because padding runs in a separate path, it could get out of order with
-	//     primary packets. So, it could be NACKed once. But, a repeat NACK means they
-	//     were probably lost. But, as we do not retransmit padding packets, more than
-	//     the second try does not provide any useful signal.
-	// STREAM-ALLOCATOR-EXPERIMENTAL-TODO-END
-	if sal := d.getStreamAllocatorListener(); sal != nil && len(nackInfos) != 0 {
-		sal.OnNACK(d, nackInfos)
-	}
-	*/
 }
 
 func (d *DownTrack) addDummyExtensions(hdr *rtp.Header) {
@@ -2070,12 +2025,6 @@ func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint
 	return
 }
 
-/* STREAM-ALLOCATOR-DATA
-func (d *DownTrack) GetAndResetBytesSent() (uint32, uint32) {
-	return d.bytesSent.Swap(0), d.bytesRetransmitted.Swap(0)
-}
-*/
-
 func (d *DownTrack) onBindAndConnectedChange() {
 	if d.writeStopped.Load() {
 		return
@@ -2154,15 +2103,16 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 			}
 
 			headerSize := hdr.MarshalSize()
-			d.updateStats(updateStatsParams{
-				packetTime:        mono.UnixNano(),
-				extSequenceNumber: snts[i].extSequenceNumber,
-				extTimestamp:      snts[i].extTimestamp,
-				headerSize:        headerSize,
-				payloadSize:       len(payload),
-				// although this is using empty frames, mark as padding as these are used to trigger Pion OnTrack only
-				isPadding: true,
-			})
+			d.rtpStats.Update(
+				mono.UnixNano(),
+				snts[i].extSequenceNumber,
+				snts[i].extTimestamp,
+				hdr.Marker,
+				headerSize,
+				0,
+				len(payload), // although this is using empty frames, mark as padding as these are used to trigger Pion OnTrack only
+				false,
+			)
 			d.pacer.Enqueue(&pacer.Packet{
 				Header:             hdr,
 				HeaderSize:         headerSize,
@@ -2196,50 +2146,6 @@ func (d *DownTrack) HandleRTCPSenderReportData(
 
 func (d *DownTrack) handleRTCPSenderReportData(publisherSRData *livekit.RTCPSenderReportState, tsOffset uint64) {
 	d.rtpStats.MaybeAdjustFirstPacketTime(publisherSRData, tsOffset)
-}
-
-type updateStatsParams struct {
-	packetTime        int64
-	extSequenceNumber uint64
-	extTimestamp      uint64
-	isOutOfOrder      bool
-	headerSize        int
-	payloadSize       int
-	marker            bool
-	isRTX             bool
-	isPadding         bool
-	disableCounter    bool
-}
-
-func (d *DownTrack) updateStats(params updateStatsParams) {
-	if !params.disableCounter {
-		/* STREAM-ALLOCATOR-DATA
-		if params.isRTX {
-			d.bytesRetransmitted.Add(size)
-		} else {
-			d.bytesSent.Add(size)
-		}
-		*/
-	}
-
-	// update RTPStats
-	payloadSize := params.payloadSize
-	paddingSize := params.payloadSize
-	if params.isPadding {
-		payloadSize = 0
-	} else {
-		paddingSize = 0
-	}
-	d.rtpStats.Update(
-		params.packetTime,
-		params.extSequenceNumber,
-		params.extTimestamp,
-		params.marker,
-		params.headerSize,
-		payloadSize,
-		paddingSize,
-		params.isOutOfOrder,
-	)
 }
 
 // -------------------------------------------------------------------------------
