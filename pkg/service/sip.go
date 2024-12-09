@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/twitchtv/twirp"
@@ -231,10 +232,26 @@ func (s *SIPService) ListSIPInboundTrunk(ctx context.Context, req *livekit.ListS
 		return nil, ErrSIPNotConnected
 	}
 
-	trunks, err := s.store.ListSIPInboundTrunk(ctx)
-	if err != nil {
-		return nil, err
+	var trunks []*livekit.SIPInboundTrunkInfo
+	if len(req.TrunkIds) != 0 {
+		trunks = make([]*livekit.SIPInboundTrunkInfo, len(req.TrunkIds))
+		for i, id := range req.TrunkIds {
+			t, err := s.store.LoadSIPInboundTrunk(ctx, id)
+			if errors.Is(err, ErrSIPTrunkNotFound) {
+				continue // keep nil in slice
+			} else if err != nil {
+				return nil, err
+			}
+			trunks[i] = t
+		}
+	} else {
+		var err error
+		trunks, err = s.store.ListSIPInboundTrunk(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
+	trunks = req.FilterSlice(trunks)
 
 	return &livekit.ListSIPInboundTrunkResponse{Items: trunks}, nil
 }
@@ -247,10 +264,26 @@ func (s *SIPService) ListSIPOutboundTrunk(ctx context.Context, req *livekit.List
 		return nil, ErrSIPNotConnected
 	}
 
-	trunks, err := s.store.ListSIPOutboundTrunk(ctx)
-	if err != nil {
-		return nil, err
+	var trunks []*livekit.SIPOutboundTrunkInfo
+	if len(req.TrunkIds) != 0 {
+		trunks = make([]*livekit.SIPOutboundTrunkInfo, len(req.TrunkIds))
+		for i, id := range req.TrunkIds {
+			t, err := s.store.LoadSIPOutboundTrunk(ctx, id)
+			if errors.Is(err, ErrSIPTrunkNotFound) {
+				continue // keep nil in slice
+			} else if err != nil {
+				return nil, err
+			}
+			trunks[i] = t
+		}
+	} else {
+		var err error
+		trunks, err = s.store.ListSIPOutboundTrunk(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
+	trunks = req.FilterSlice(trunks)
 
 	return &livekit.ListSIPOutboundTrunkResponse{Items: trunks}, nil
 }
@@ -326,10 +359,26 @@ func (s *SIPService) ListSIPDispatchRule(ctx context.Context, req *livekit.ListS
 		return nil, ErrSIPNotConnected
 	}
 
-	rules, err := s.store.ListSIPDispatchRule(ctx)
-	if err != nil {
-		return nil, err
+	var rules []*livekit.SIPDispatchRuleInfo
+	if len(req.DispatchRuleIds) != 0 {
+		rules = make([]*livekit.SIPDispatchRuleInfo, len(req.DispatchRuleIds))
+		for i, id := range req.DispatchRuleIds {
+			r, err := s.store.LoadSIPDispatchRule(ctx, id)
+			if errors.Is(err, ErrSIPDispatchRuleNotFound) {
+				continue // keep nil in slice
+			} else if err != nil {
+				return nil, err
+			}
+			rules[i] = r
+		}
+	} else {
+		var err error
+		rules, err = s.store.ListSIPDispatchRule(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
+	rules = req.FilterSlice(rules)
 
 	return &livekit.ListSIPDispatchRuleResponse{Items: rules}, nil
 }
