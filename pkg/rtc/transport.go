@@ -259,8 +259,6 @@ type TransportParams struct {
 	IsSendSide                   bool
 	AllowPlayoutDelay            bool
 	DataChannelMaxBufferedAmount uint64
-	UseSendSideBWEInterceptor    bool
-	UseSendSideBWE               bool
 	UseOneShotSignallingMode     bool
 }
 
@@ -359,7 +357,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	ir := &interceptor.Registry{}
 	if params.IsSendSide {
 		se.DetachDataChannels()
-		if (params.CongestionControlConfig.UseSendSideBWEInterceptor || params.UseSendSideBWEInterceptor) && (!params.CongestionControlConfig.UseSendSideBWE && !params.UseSendSideBWE) {
+		if params.CongestionControlConfig.UseSendSideBWEInterceptor && !params.CongestionControlConfig.UseSendSideBWE {
 			params.Logger.Infow("using send side BWE - interceptor")
 			gf, err := cc.NewInterceptor(func() (cc.BandwidthEstimator, error) {
 				return gcc.NewSendSideBWE(
@@ -456,7 +454,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		lastNegotiate:            time.Now(),
 	}
 	if params.IsSendSide {
-		if params.CongestionControlConfig.UseSendSideBWE || params.UseSendSideBWE {
+		if params.CongestionControlConfig.UseSendSideBWE {
 			params.Logger.Infow("using send side BWE")
 			t.bwe = sendsidebwe.NewSendSideBWE(sendsidebwe.SendSideBWEParams{
 				Config: params.CongestionControlConfig.SendSideBWE,

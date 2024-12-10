@@ -1032,7 +1032,6 @@ func (d *DownTrack) WritePaddingRTP(
 		bytesSent += hdrSize + payloadSize
 	}
 
-	// STREAM_ALLOCATOR-TODO: change this to pull this counter from stream allocator so that counter can be updated in pacer callback
 	return bytesSent
 }
 

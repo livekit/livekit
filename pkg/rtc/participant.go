@@ -158,8 +158,6 @@ type ParticipantParams struct {
 	ForwardStats                   *sfu.ForwardStats
 	DisableSenderReportPassThrough bool
 	MetricConfig                   metric.MetricConfig
-	UseSendSideBWEInterceptor      bool
-	UseSendSideBWE                 bool
 	UseOneShotSignallingMode       bool
 	EnableMetrics                  bool
 }
@@ -1569,8 +1567,6 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		PublisherHandler:             pth,
 		SubscriberHandler:            sth,
 		DataChannelStats:             p.dataChannelStats,
-		UseSendSideBWEInterceptor:    p.params.UseSendSideBWEInterceptor,
-		UseSendSideBWE:               p.params.UseSendSideBWE,
 		UseOneShotSignallingMode:     p.params.UseOneShotSignallingMode,
 	}
 	if p.params.SyncStreams && p.params.PlayoutDelay.GetEnabled() && p.params.ClientInfo.isFirefox() {
