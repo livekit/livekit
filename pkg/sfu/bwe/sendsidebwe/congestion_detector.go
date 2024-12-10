@@ -800,7 +800,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 		}
 	}
 
-	c.estimateAvailableChannelCapacity()
+	c.estimateAvailableChannelCapacity(oldestContributingGroup)
 
 	// update after running the above estimate as state change callback includes the estimated available channel capacity
 	shouldNotify := false
@@ -887,20 +887,23 @@ func (c *congestionDetector) updateCTRTrend(pi *packetInfo, sendDelta, recvDelta
 }
 
 // RAJA-TODO: change this to use contributing groups only
-func (c *congestionDetector) estimateAvailableChannelCapacity() {
+func (c *congestionDetector) estimateAvailableChannelCapacity(oldestContributingGroup int) {
 	if len(c.packetGroups) == 0 || c.congestedCTRTrend != nil || c.probePacketGroup != nil {
 		return
 	}
 
+	/* RAJA-REMOVE
 	threshold, ok := c.packetTracker.BaseSendTimeThreshold(c.params.Config.RateMeasurementWindowDurationMax.Microseconds())
 	if !ok {
 		return
 	}
+	*/
 
 	agg := newTrafficStats(trafficStatsParams{
 		Config: c.params.Config.WeightedLoss,
 		Logger: c.params.Logger,
 	})
+	/* RAJA-REMOVE
 	var idx int
 	for idx = len(c.packetGroups) - 1; idx >= 0; idx-- {
 		pg := c.packetGroups[idx]
@@ -919,6 +922,10 @@ func (c *congestionDetector) estimateAvailableChannelCapacity() {
 			"oldestUsed", max(0, idx),
 		)
 		return
+	}
+	*/
+	for idx := len(c.packetGroups) - 1; idx >= oldestContributingGroup; idx-- {
+		agg.Merge(c.packetGroups[idx].Traffic())
 	}
 
 	c.estimatedAvailableChannelCapacity = agg.AcknowledgedBitrate()
