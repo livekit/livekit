@@ -302,8 +302,8 @@ type CongestionDetectorConfig struct {
 	LossCongested         CongestionSignalConfig `yaml:"loss_congested,omitempty"`
 	CongestedHangover     time.Duration          `yaml:"congested_hangover,omitempty"`
 
-	RateMeasurementWindowDurationMin time.Duration `yaml:"rate_measurement_window_duration_min,omitempty"`
-	RateMeasurementWindowDurationMax time.Duration `yaml:"rate_measurement_window_duration_max,omitempty"`
+	RateMeasurementWindowDurationMin time.Duration `yaml:"rate_measurement_window_duration_min,omitempty"` // RAJA-REMOVE
+	RateMeasurementWindowDurationMax time.Duration `yaml:"rate_measurement_window_duration_max,omitempty"` // RAJA-REMOVE
 
 	CongestedCTRTrend    ccutils.TrendDetectorConfig `yaml:"congested_ctr_trend,omitempty"`
 	CongestedCTREpsilon  float64                     `yaml:"congested_ctr_epsilon,omitempty"`
