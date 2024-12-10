@@ -234,7 +234,7 @@ func newLossMeasurement(
 }
 
 func (l *lossMeasurement) ProcessPacketGroup(pg *packetGroup) {
-	if l.isSealed {
+	if l.isSealed || !pg.IsFinalized() {
 		return
 	}
 
@@ -465,7 +465,7 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 			return
 		}
 
-		// RAJA-REMOVE c.updateCTRTrend(pi, sendDelta, recvDelta, isLost)
+		c.updateCTRTrend(pi, sendDelta, recvDelta, isLost)
 
 		if c.probePacketGroup != nil {
 			c.probePacketGroup.Add(pi, sendDelta, recvDelta, isLost)
@@ -477,9 +477,11 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 		}
 
 		if err == errGroupFinalized {
+			/* RAJA-REMOVE
 			if c.congestionState == bwe.CongestionStateCongested {
 				c.congestedPacketGroup = pg
 			}
+			*/
 
 			// previous group ended, start a new group
 			pg = newPacketGroup(
@@ -720,7 +722,7 @@ func (c *congestionDetector) isCongestionSignalTriggered() (bool, string, bool, 
 			break
 		}
 
-		// if congested triggered, can stop as that is the longer duration check and also
+		// if "congested" triggered, can stop as that is the longer duration check and also
 		// the worst case check, i. e. if "congested" is triggered due to any condition,
 		// there can be nothing else that can trigger
 		if qdMeasurement.IsCongestedTriggered() || lossMeasurement.IsCongestedTriggered() {
@@ -813,9 +815,10 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 	if newState != state {
 		c.updateCongestionState(newState, reason, oldestContributingGroup)
 		shouldNotify = true
-	}
+	} /* RAJA-REMOVE else if c.congestionState == bwe.CongestionStateCongested {
+		shouldNotify = true
+	} */
 
-	/* RAJA-REMOVE
 	if c.congestedCTRTrend != nil && c.congestedCTRTrend.GetDirection() == ccutils.TrendDirectionDownward {
 		shouldNotify = true
 
@@ -831,9 +834,9 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 		)
 
 		// reset to get new set of samples for next trend
-		c.resetCTRTrend()
+		c.resetCTRTrend()	// RAJA-TODO: may be not reset trend here and let next packet group carry propagated queuing delay
 	}
-	*/
+	/* RAJA-REMOVE
 	if c.congestionState == bwe.CongestionStateCongested && c.congestedPacketGroup != nil {
 		ts := newTrafficStats(trafficStatsParams{
 			Config: c.params.Config.WeightedLoss,
@@ -854,8 +857,14 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 
 		c.congestedPacketGroup = nil
 	}
+	*/
 
 	return shouldNotify, c.congestionState, c.estimatedAvailableChannelCapacity
+}
+
+func (c *congestionDetector) createCTRTrend() {
+	c.resetCTRTrend()
+	c.congestedPacketGroup = nil
 }
 
 func (c *congestionDetector) resetCTRTrend() {
@@ -868,7 +877,6 @@ func (c *congestionDetector) resetCTRTrend() {
 		Config: c.params.Config.WeightedLoss,
 		Logger: c.params.Logger,
 	})
-	c.congestedPacketGroup = nil
 }
 
 func (c *congestionDetector) clearCTRTrend() {
@@ -897,7 +905,13 @@ func (c *congestionDetector) updateCTRTrend(pi *packetInfo, sendDelta, recvDelta
 		// progressively keep increasing the window and make measurements over longer windows,
 		// if congestion is not relieving, CTR will trend down
 		c.congestedTrafficStats.Merge(c.congestedPacketGroup.Traffic())
-		ctr := c.congestedTrafficStats.CapturedTrafficRatio()
+		// RAJA-TODO ctr := c.congestedTrafficStats.CapturedTrafficRatio()
+		ts := newTrafficStats(trafficStatsParams{
+			Config: c.params.Config.WeightedLoss,
+			Logger: c.params.Logger,
+		})
+		ts.Merge(c.congestedPacketGroup.Traffic())
+		ctr := ts.CapturedTrafficRatio()
 
 		// quantise CTR to filter out small changes
 		c.congestedCTRTrend.AddValue(float64(int((ctr+(c.params.Config.CongestedCTREpsilon/2))/c.params.Config.CongestedCTREpsilon)) * c.params.Config.CongestedCTREpsilon)
@@ -909,12 +923,12 @@ func (c *congestionDetector) updateCTRTrend(pi *packetInfo, sendDelta, recvDelta
 				WeightedLoss: c.params.Config.WeightedLoss,
 				Logger:       c.params.Logger,
 			},
-			0,
+			// RAJA-TODO 0,
+			c.congestedPacketGroup.PropagatedQueuingDelay(),
 		)
 	}
 }
 
-// RAJA-TODO: change this to use contributing groups only
 func (c *congestionDetector) estimateAvailableChannelCapacity(oldestContributingGroup int) {
 	if len(c.packetGroups) == 0 || c.congestedCTRTrend != nil || c.probePacketGroup != nil {
 		return
@@ -985,7 +999,7 @@ func (c *congestionDetector) updateCongestionState(state bwe.CongestionState, re
 	// on a continuous basis allocations can be adjusted in the direction of
 	// reducing/relieving congestion
 	if state == bwe.CongestionStateCongested && prevState != bwe.CongestionStateCongested {
-		c.resetCTRTrend()
+		c.createCTRTrend()
 	} else if state != bwe.CongestionStateCongested {
 		c.clearCTRTrend()
 	}

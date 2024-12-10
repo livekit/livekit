@@ -29,6 +29,7 @@ type Base struct {
 	logger logger.Logger
 
 	bwe bwe.BWE
+	// RAJA-TODO: lastPacketAt: store lastPacketAt and provide an API to check time since last packet
 
 	*ProbeObserver
 }
@@ -76,8 +77,8 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 	sendingAt := mono.Now()
 	if p.AbsSendTimeExtID != 0 {
-		sendTime := rtp.NewAbsSendTimeExtension(sendingAt)
-		b, err := sendTime.Marshal()
+		absSendTime := rtp.NewAbsSendTimeExtension(sendingAt)
+		b, err := absSendTime.Marshal()
 		if err != nil {
 			return err
 		}

@@ -193,6 +193,10 @@ func (p *packetGroup) Add(pi *packetInfo, sendDelta, recvDelta int64, isLost boo
 			p.lost.remove(int(pi.size), pi.isRTX, pi.isProbe)
 		}
 
+		if sendDelta < 0 && recvDelta > 0 {
+			p.params.Logger.Infow("RAJA out-of-order packet", "pi", pi, "sendDelta", sendDelta, "recvDelta", recvDelta)	// REMOVE
+		}
+
 		// note that out-of-order deliveries will amplify the queueing delay.
 		// for e.g. a, b, c getting delivered as a, c, b.
 		// let us say packets are delivered with interval of `x`
@@ -202,7 +206,12 @@ func (p *packetGroup) Add(pi *packetInfo, sendDelta, recvDelta int64, isLost boo
 		p.aggregateRecvDelta += recvDelta
 	}
 
+	/* RAJA-REMOVE
 	if (p.acked.numPackets()+p.lost.numPackets()) == p.params.Config.MinPackets || (pi.sendTime-p.minSendTime) > p.params.Config.MaxWindowDuration.Microseconds() {
+		p.isFinalized = true
+	}
+	*/
+	if p.acked.numPackets() == p.params.Config.MinPackets || (pi.sendTime-p.minSendTime) > p.params.Config.MaxWindowDuration.Microseconds() {
 		p.isFinalized = true
 	}
 	return nil
@@ -253,6 +262,11 @@ func (p *packetGroup) FinalizedPropagatedQueuingDelay() (int64, bool) {
 
 	return p.PropagatedQueuingDelay(), true
 }
+
+func (p *packetGroup) IsFinalized() bool {
+	return p.isFinalized
+}
+
 
 func (p *packetGroup) Traffic() *trafficStats {
 	return &trafficStats{
