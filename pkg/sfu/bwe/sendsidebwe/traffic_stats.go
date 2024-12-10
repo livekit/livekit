@@ -101,7 +101,7 @@ func (ts *trafficStats) CapturedTrafficRatio() float64 {
 	}
 
 	// apply a penalty for lost packets,
-	// tha rationale being packet dropping is a strategy to relieve congestion
+	// the rationale being packet dropping is a strategy to relieve congestion
 	// and if they were not dropped, they would have increased queuing delay,
 	// as it is not possible to know the reason for the losses,
 	// apply a small penalty to receive delta aggregate to simulate those packets
@@ -143,6 +143,11 @@ func (ts *trafficStats) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddInt64("maxSendTime", ts.maxSendTime)
 	duration := time.Duration(ts.Duration() * 1000)
 	e.AddDuration("duration", duration)
+
+	e.AddInt("ackedPackets", ts.ackedPackets)
+	e.AddInt("ackedBytes", ts.ackedBytes)
+	e.AddInt("lostPackets", ts.lostPackets)
+	e.AddInt("lostBytes", ts.lostBytes)
 
 	bitrate := float64(0)
 	if duration != 0 {

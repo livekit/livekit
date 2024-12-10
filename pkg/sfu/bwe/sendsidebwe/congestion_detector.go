@@ -373,21 +373,21 @@ type congestionDetector struct {
 	lock            sync.RWMutex
 	feedbackReports deque.Deque[feedbackReport]
 
-	rtt float64
+	rtt atomic.Float64
 
 	*packetTracker
 	twccFeedback *twccFeedback
 
 	packetGroups []*packetGroup
 
-	probePacketGroup *probePacketGroup
-	probeRegulator   *ccutils.ProbeRegulator
+	probePacketGroup atomic.Pointer[probePacketGroup]
+	probeRegulator   atomic.Pointer[ccutils.ProbeRegulator]
 
 	wake chan struct{}
 	stop core.Fuse
 
 	estimatedAvailableChannelCapacity int64
-	congestionState                   bwe.CongestionState
+	congestionState                   atomic.Value // bwe.CongestionState
 	congestionStateSwitchedAt         time.Time
 	congestedCTRTrend                 *ccutils.TrendDetector[float64]
 	congestedTrafficStats             *trafficStats
@@ -401,24 +401,34 @@ func newCongestionDetector(params congestionDetectorParams) *congestionDetector 
 		rtt:           bwe.DefaultRTT,
 		packetTracker: newPacketTracker(packetTrackerParams{Logger: params.Logger}),
 		twccFeedback:  newTWCCFeedback(twccFeedbackParams{Logger: params.Logger}),
-		probeRegulator: ccutils.NewProbeRegulator(ccutils.ProbeRegulatorParams{
-			Config: params.Config.ProbeRegulator,
-			Logger: params.Logger,
-		}),
 		wake:                              make(chan struct{}, 1),
 		estimatedAvailableChannelCapacity: 100_000_000,
-		congestionState:                   bwe.CongestionStateNone,
 		congestionStateSwitchedAt:         mono.Now(),
 	}
 
 	c.feedbackReports.SetMinCapacity(3)
+
+	c.probeRegulator.Store(ccutils.NewProbeRegulator(ccutils.ProbeRegulatorParams{
+			Config: params.Config.ProbeRegulator,
+			Logger: params.Logger,
+		}))
+		c.congestionState.Store(bwe.CongestionStateNone)
 
 	go c.worker()
 	return c
 }
 
 func (c *congestionDetector) Stop() {
+	c.params.Logger.Debugw("RAJA stopping congestion detector")	// REMOVE
 	c.stop.Break()
+}
+
+func (c *congestionDetector) Reset() {
+	c.Stop()
+	bweListener := c.getBWEListener()
+
+	c = newCongestionDetector{c.params)
+	c.SetBWEListener(bweListener)
 }
 
 func (c *congestionDetector) SetBWEListener(bweListener bwe.BWEListener) {
@@ -448,66 +458,56 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 }
 
 func (c *congestionDetector) UpdateRTT(rtt float64) {
+	currentRTT := c.rtt.Load()
 	if rtt == 0 {
-		c.rtt = bwe.DefaultRTT
+		updatedRTT = bwe.DefaultRTT
 	} else {
-		if c.rtt == 0 {
-			c.rtt = rtt
+		if currentRTT == 0 {
+			updatedRTT = rtt
 		} else {
-			c.rtt = bwe.RTTSmoothingFactor*rtt + (1.0-bwe.RTTSmoothingFactor)*c.rtt
+			updatedRTT = bwe.RTTSmoothingFactor*rtt + (1.0-bwe.RTTSmoothingFactor)*currentRTT
 		}
 	}
+	c.rtt.Store(updatedRTT)
 }
 
 func (c *congestionDetector) CanProbe() bool {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	return c.congestionState == bwe.CongestionStateNone && c.probePacketGroup == nil && c.probeRegulator.CanProbe()
+	return c.congestionState.Load().(bwe.CongestionState) == bwe.CongestionStateNone && c.probePacketGroup.Load() == nil && c.probeRegulator.Load().CanProbe()
 }
 
 func (c *congestionDetector) ProbeDuration() time.Duration {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	return c.probeRegulator.ProbeDuration()
+	return c.probeRegulator.Load().ProbeDuration()
 }
 
 func (c *congestionDetector) ProbeClusterStarting(pci ccutils.ProbeClusterInfo) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	c.probePacketGroup = newProbePacketGroup(
+	c.probePacketGroup.Store(newProbePacketGroup(
 		probePacketGroupParams{
 			Config:       c.params.Config.ProbePacketGroup,
 			WeightedLoss: c.params.Config.WeightedLoss,
 			Logger:       c.params.Logger,
 		},
 		pci,
-	)
+	))
 
 	c.packetTracker.ProbeClusterStarting(pci.Id)
 }
 
 func (c *congestionDetector) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
 	c.packetTracker.ProbeClusterDone(pci.Id)
-	if c.probePacketGroup != nil {
-		c.probePacketGroup.ProbeClusterDone(pci)
+
+	ppg := c.probePacketGroup.Load()
+	if ppg != nil {
+		ppg.ProbeClusterDone(pci)
 	}
 }
 
 func (c *congestionDetector) ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	if c.probePacketGroup == nil {
+	ppg := c.probePacketGroup.Load()
+	if ppg == nil {
 		return ccutils.ProbeSignalInconclusive, 0, false
 	}
 
-	pci, isFinalized := c.probePacketGroup.MaybeFinalizeProbe(c.packetTracker.ProbeMaxSequenceNumber(), c.rtt)
+	pci, isFinalized := ppg.MaybeFinalizeProbe(c.packetTracker.ProbeMaxSequenceNumber(), c.rtt.Load())
 	if !isFinalized {
 		return ccutils.ProbeSignalInconclusive, 0, isFinalized
 	}
@@ -517,17 +517,17 @@ func (c *congestionDetector) ProbeClusterFinalize() (ccutils.ProbeSignal, int64,
 		"send side bwe: probe finalized",
 		"isSignalValid", isSignalValid,
 		"probeClusterInfo", pci,
-		"probePacketGroup", c.probePacketGroup,
+		"probePacketGroup", ppg,
 	)
 
-	probeSignal, estimatedAvailableChannelCapacity := c.params.Config.ProbeSignal.ProbeSignal(c.probePacketGroup)
-	if probeSignal == ccutils.ProbeSignalNotCongesting && estimatedAvailableChannelCapacity > c.estimatedAvailableChannelCapacity {
-		c.estimatedAvailableChannelCapacity = estimatedAvailableChannelCapacity
+	probeSignal, estimatedAvailableChannelCapacity := c.params.Config.ProbeSignal.ProbeSignal(ppg)
+	if probeSignal == ccutils.ProbeSignalNotCongesting && estimatedAvailableChannelCapacity > c.estimatedAvailableChannelCapacity.Load() {
+		c.estimatedAvailableChannelCapacity.Store(estimatedAvailableChannelCapacity)
 	}
 
-	c.probeRegulator.ProbeSignal(probeSignal, pci.CreatedAt)
-	c.probePacketGroup = nil
-	return probeSignal, c.estimatedAvailableChannelCapacity, true
+	c.probeRegulator.Load().ProbeSignal(probeSignal, pci.CreatedAt)
+	c.probePacketGroup.Store(nil)
+	return probeSignal, c.estimatedAvailableChannelCapacity.Load(), true
 }
 
 func (c *congestionDetector) prunePacketGroups() {
@@ -571,6 +571,13 @@ func (c *congestionDetector) isCongestionSignalTriggered() (bool, string, bool, 
 
 		// if both measurements have enough data to make a decision, stop processing groups
 		if qdMeasurement.IsSealed() && lossMeasurement.IsSealed() {
+			break
+		}
+
+		// if congested triggered, can stop as that is the longer duration check and also
+		// the worst case check, i. e. if "congested" is triggered due to any condition,
+		// there can be nothing else that can trigger
+		if qdMeasurement.IsCongestedTriggered() || lossMeasurement.IsCongestedTriggered() {
 			break
 		}
 	}
@@ -690,7 +697,7 @@ func (c *congestionDetector) updateCTRTrend(pg *packetGroup) {
 
 	// quantise CTR to filter out small changes
 	c.congestedCTRTrend.AddValue(float64(int((ctr+(c.params.Config.CongestedCTREpsilon/2))/c.params.Config.CongestedCTREpsilon)) * c.params.Config.CongestedCTREpsilon)
-
+	c.params.Logger.Debugw("RAJA updating ctr trend", "ts", c.congestedTrafficStats, "ctr", ctr, "trend", c.congestedCTRTrend.GetDirection(), "ctrTrend", c.congestedCTRTrend)	// REMOVE
 	if c.congestedCTRTrend.GetDirection() != ccutils.TrendDirectionDownward {
 		return
 	}
@@ -947,6 +954,7 @@ func (c *congestionDetector) worker() {
 			c.congestionDetectionStateMachine()
 
 		case <-c.stop.Watch():
+			c.params.Logger.Debugw("RAJA returning from congestion detector worker")	// REMOVE
 			return
 		}
 	}

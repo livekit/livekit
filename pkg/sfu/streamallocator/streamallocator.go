@@ -1265,6 +1265,11 @@ func (s *StreamAllocator) maybeProbeWithPadding() {
 			continue
 		}
 
+		probeDuration := s.params.BWE.ProbeDuration()
+		if probeDuration == 0 {
+			break
+		}
+
 		// overshoot a bit to account for noise (in measurement/estimate etc)
 		desiredIncreaseBps := (transition.BandwidthDelta * s.params.Config.ProbeOveragePct) / 100
 		if desiredIncreaseBps < s.params.Config.ProbeMinBps {
@@ -1277,7 +1282,7 @@ func (s *StreamAllocator) maybeProbeWithPadding() {
 				AvailableBandwidthBps: int(s.committedChannelCapacity),
 				ExpectedUsageBps:      int(expectedBandwidthUsage),
 				DesiredBps:            int(expectedBandwidthUsage + desiredIncreaseBps),
-				Duration:              s.params.BWE.ProbeDuration(),
+				Duration:              probeDuration,
 			},
 		)
 		s.params.Logger.Debugw(

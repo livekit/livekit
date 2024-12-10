@@ -111,6 +111,7 @@ func (t *twccFeedback) ProcessReport(report *rtcp.TransportLayerCC, at time.Time
 		t.highestFeedbackCount = report.FbPktCount
 	}
 
+	t.params.Logger.Debugw("RAJA received TWCC feedback", "fbCnt", report.FbPktCount, "packetStatusCount", report.PacketStatusCount)	// REMOVE
 	return referenceTime * cReferenceTimeResolution * 1000, isOutOfOrder
 }
 

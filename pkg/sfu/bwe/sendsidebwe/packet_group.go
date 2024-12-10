@@ -158,8 +158,9 @@ func newPacketGroup(params packetGroupParams, queuingDelay int64) *packetGroup {
 }
 
 func (p *packetGroup) Add(pi *packetInfo, sendDelta, recvDelta int64, isLost bool) error {
-	if isLost {
-		return p.lostPacket(pi)
+	if isLost && pi.recvTime != 0 {
+		// previously received packet, so not actually lost
+		return nil
 	}
 
 	if err := p.inGroup(pi.sequenceNumber); err != nil {
@@ -181,27 +182,33 @@ func (p *packetGroup) Add(pi *packetInfo, sendDelta, recvDelta int64, isLost boo
 	}
 	p.maxRecvTime = max(p.maxRecvTime, pi.recvTime)
 
-	p.acked.add(int(pi.size), pi.isRTX, pi.isProbe)
-	if p.snBitmap.IsSet(pi.sequenceNumber - p.minSequenceNumber) {
-		// an earlier packet reported as lost has been received
-		p.snBitmap.Clear(pi.sequenceNumber - p.minSequenceNumber)
-		p.lost.remove(int(pi.size), pi.isRTX, pi.isProbe)
+	if isLost {
+		p.lost.add(int(pi.size), pi.isRTX, pi.isProbe)
+		p.snBitmap.Set(pi.sequenceNumber - p.minSequenceNumber)
+	} else {
+		p.acked.add(int(pi.size), pi.isRTX, pi.isProbe)
+		if p.snBitmap.IsSet(pi.sequenceNumber - p.minSequenceNumber) {
+			// an earlier packet reported as lost has been received
+			p.snBitmap.Clear(pi.sequenceNumber - p.minSequenceNumber)
+			p.lost.remove(int(pi.size), pi.isRTX, pi.isProbe)
+		}
+
+		// note that out-of-order deliveries will amplify the queueing delay.
+		// for e.g. a, b, c getting delivered as a, c, b.
+		// let us say packets are delivered with interval of `x`
+		//   send delta aggregate will go up by x((a, c) = 2x + (c, b) -1x)
+		//   recv delta aggregate will go up by 3x((a, c) = 2x + (c, b) 1x)
+		p.aggregateSendDelta += sendDelta
+		p.aggregateRecvDelta += recvDelta
 	}
 
-	// note that out-of-order deliveries will amplify the queueing delay.
-	// for e.g. a, b, c getting delivered as a, c, b.
-	// let us say packets are delivered with interval of `x`
-	//   send delta aggregate will go up by x((a, c) = 2x + (c, b) -1x)
-	//   recv delta aggregate will go up by 3x((a, c) = 2x + (c, b) 1x)
-	p.aggregateSendDelta += sendDelta
-	p.aggregateRecvDelta += recvDelta
-
-	if p.acked.numPackets() == p.params.Config.MinPackets || (pi.sendTime-p.minSendTime) > p.params.Config.MaxWindowDuration.Microseconds() {
+	if (p.acked.numPackets() + p.lost.numPackets()) == p.params.Config.MinPackets || (pi.sendTime-p.minSendTime) > p.params.Config.MaxWindowDuration.Microseconds() {
 		p.isFinalized = true
 	}
 	return nil
 }
 
+/* RAJA-REMOVE
 func (p *packetGroup) lostPacket(pi *packetInfo) error {
 	if pi.recvTime != 0 {
 		// previously received packet, so not lost
@@ -221,6 +228,7 @@ func (p *packetGroup) lostPacket(pi *packetInfo) error {
 	p.lost.add(int(pi.size), pi.isRTX, pi.isProbe)
 	return nil
 }
+*/
 
 func (p *packetGroup) MinSendTime() int64 {
 	return p.minSendTime

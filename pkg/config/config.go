@@ -319,7 +319,7 @@ var DefaultConfig = Config{
 			StreamAllocator:           streamallocator.DefaultStreamAllocatorConfig,
 			RemoteBWE:                 remotebwe.DefaultRemoteBWEConfig,
 			UseSendSideBWEInterceptor: false,
-			UseSendSideBWE:            false,
+			UseSendSideBWE:            true,
 			SendSideBWE:               sendsidebwe.DefaultSendSideBWEConfig,
 		},
 	},
