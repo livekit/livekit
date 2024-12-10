@@ -93,14 +93,7 @@ func (s *SendSideBWE) SetBWEListener(bweListener bwe.BWEListener) {
 }
 
 func (s *SendSideBWE) Reset() {
-	s.congestionDetector = newCongestionDetector(congestionDetectorParams{
-		Config: s.params.Config.CongestionDetector,
-		Logger: s.params.Logger,
-	})
-}
-
-func (s *SendSideBWE) Stop() {
-	s.congestionDetector.Stop()
+	s.congestionDetector.Reset()
 }
 
 func (s *SendSideBWE) RecordPacketSendAndGetSequenceNumber(

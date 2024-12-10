@@ -65,8 +65,6 @@ type BWE interface {
 
 	Reset()
 
-	Stop()
-
 	HandleREMB(
 		receivedEstimate int64,
 		expectedBandwidthUsage int64,

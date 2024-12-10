@@ -28,8 +28,6 @@ func (n *NullBWE) SetBWEListener(_bweListener BWEListener) {}
 
 func (n *NullBWE) Reset() {}
 
-func (n *NullBWE) Stop() {}
-
 func (n *NullBWE) RecordPacketSendAndGetSequenceNumber(
 	_atMicro int64,
 	_size int,
