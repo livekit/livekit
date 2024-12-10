@@ -359,7 +359,7 @@ type congestionDetectorParams struct {
 type congestionDetector struct {
 	params congestionDetectorParams
 
-	lock sync.RWMutex
+	lock sync.Mutex
 
 	rtt float64
 
@@ -403,8 +403,6 @@ func (c *congestionDetector) Reset() {
 	defer c.lock.Unlock()
 
 	c.rtt = bwe.DefaultRTT
-	c.packetTracker = newPacketTracker(packetTrackerParams{Logger: c.params.Logger})
-	c.twccFeedback = newTWCCFeedback(twccFeedbackParams{Logger: c.params.Logger})
 	c.packetGroups = nil
 	c.probePacketGroup = nil
 	c.probeRegulator = ccutils.NewProbeRegulator(ccutils.ProbeRegulatorParams{
@@ -425,8 +423,8 @@ func (c *congestionDetector) SetBWEListener(bweListener bwe.BWEListener) {
 }
 
 func (c *congestionDetector) getBWEListener() bwe.BWEListener {
-	c.lock.RLock()
-	defer c.lock.RUnlock()
+	c.lock.Lock()
+	defer c.lock.Unlock()
 
 	return c.bweListener
 }
@@ -902,10 +900,6 @@ func (c *congestionDetector) updateCongestionState(state bwe.CongestionState, re
 
 	prevState := c.congestionState
 	c.congestionState = state
-
-	if bweListener := c.getBWEListener(); bweListener != nil {
-		bweListener.OnCongestionStateChange(state, c.estimatedAvailableChannelCapacity)
-	}
 
 	// when in congested state, monitor changes in captured traffic ratio (CTR)
 	// to ensure allocations are in line with latest estimates, it is possible that
