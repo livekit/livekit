@@ -305,25 +305,31 @@ type CongestionDetectorConfig struct {
 	RateMeasurementWindowDurationMin time.Duration `yaml:"rate_measurement_window_duration_min,omitempty"`
 	RateMeasurementWindowDurationMax time.Duration `yaml:"rate_measurement_window_duration_max,omitempty"`
 
-	CongestedCTRTrend   ccutils.TrendDetectorConfig `yaml:"congested_ctr_trend,omitempty"`
-	CongestedCTREpsilon float64                     `yaml:"congested_ctr_epsilon,omitempty"`
+	CongestedCTRTrend    ccutils.TrendDetectorConfig `yaml:"congested_ctr_trend,omitempty"`
+	CongestedCTREpsilon  float64                     `yaml:"congested_ctr_epsilon,omitempty"`
+	CongestedPacketGroup PacketGroupConfig           `yaml:"congested_packet_group,omitempty"`
 }
 
 var (
 	defaultTrendDetectorConfigCongestedCTR = ccutils.TrendDetectorConfig{
-		RequiredSamples:        5,
+		RequiredSamples:        4,
 		RequiredSamplesMin:     2,
 		DownwardTrendThreshold: -0.5,
-		DownwardTrendMaxWait:   5 * time.Second,
+		DownwardTrendMaxWait:   2 * time.Second,
 		CollapseThreshold:      500 * time.Millisecond,
 		ValidityWindow:         10 * time.Second,
 	}
 
+	defaultCongestedPacketGroupConfig = PacketGroupConfig{
+		MinPackets:        8,
+		MaxWindowDuration: 150 * time.Millisecond,
+	}
+
 	DefaultCongestionDetectorConfig = CongestionDetectorConfig{
 		PacketGroup:       DefaultPacketGroupConfig,
-		PacketGroupMaxAge: 15 * time.Second,
+		PacketGroupMaxAge: 10 * time.Second,
 
-		ProbePacketGroup: DefaultPacketGroupConfigProbe,
+		ProbePacketGroup: DefaultProbePacketGroupConfig,
 		ProbeRegulator:   ccutils.DefaultProbeRegulatorConfig,
 		ProbeSignal:      DefaultProbeSignalConfig,
 
@@ -344,8 +350,9 @@ var (
 		RateMeasurementWindowDurationMin: 800 * time.Millisecond,
 		RateMeasurementWindowDurationMax: 2 * time.Second,
 
-		CongestedCTRTrend:   defaultTrendDetectorConfigCongestedCTR,
-		CongestedCTREpsilon: 0.05,
+		CongestedCTRTrend:    defaultTrendDetectorConfigCongestedCTR,
+		CongestedCTREpsilon:  0.05,
+		CongestedPacketGroup: defaultCongestedPacketGroupConfig,
 	}
 )
 
@@ -374,8 +381,10 @@ type congestionDetector struct {
 	estimatedAvailableChannelCapacity int64
 	congestionState                   bwe.CongestionState
 	congestionStateSwitchedAt         time.Time
-	congestedCTRTrend                 *ccutils.TrendDetector[float64]
-	congestedTrafficStats             *trafficStats
+
+	congestedCTRTrend     *ccutils.TrendDetector[float64]
+	congestedTrafficStats *trafficStats
+	congestedPacketGroup  *packetGroup
 
 	bweListener bwe.BWEListener
 }
@@ -456,6 +465,7 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 			return
 		}
 
+		c.updateCTRTrend(pi, sendDelta, recvDelta, isLost)
 		if c.probePacketGroup != nil {
 			c.probePacketGroup.Add(pi, sendDelta, recvDelta, isLost)
 		}
@@ -467,8 +477,6 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 
 		if err == errGroupFinalized {
 			// previous group ended, start a new group
-			c.updateCTRTrend(pg)
-
 			pg = newPacketGroup(
 				packetGroupParams{
 					Config:       c.params.Config.PacketGroup,
@@ -804,7 +812,16 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 	if c.congestedCTRTrend != nil && c.congestedCTRTrend.GetDirection() == ccutils.TrendDirectionDownward {
 		shouldNotify = true
 
-		c.params.Logger.Infow("send side bwe: captured traffic ratio is trending downward", "channel", c.congestedCTRTrend)
+		congestedAckedBitrate := c.congestedTrafficStats.AcknowledgedBitrate()
+		if congestedAckedBitrate < c.estimatedAvailableChannelCapacity {
+			c.estimatedAvailableChannelCapacity = congestedAckedBitrate
+		}
+		c.params.Logger.Infow(
+			"send side bwe: captured traffic ratio is trending downward",
+			"channel", c.congestedCTRTrend,
+			"trafficStats", c.congestedTrafficStats,
+			"estimatedAvailableChannelCapacity", c.estimatedAvailableChannelCapacity,
+		)
 
 		// reset to get new set of samples for next trend
 		c.resetCTRTrend()
@@ -823,30 +840,55 @@ func (c *congestionDetector) resetCTRTrend() {
 		Config: c.params.Config.WeightedLoss,
 		Logger: c.params.Logger,
 	})
+	c.congestedPacketGroup = nil
 }
 
 func (c *congestionDetector) clearCTRTrend() {
 	c.congestedCTRTrend = nil
 	c.congestedTrafficStats = nil
+	c.congestedPacketGroup = nil
 }
 
-func (c *congestionDetector) updateCTRTrend(pg *packetGroup) {
+func (c *congestionDetector) updateCTRTrend(pi *packetInfo, sendDelta, recvDelta int64, isLost bool) {
 	if c.congestedCTRTrend == nil {
 		return
 	}
 
-	// progressively keep increasing the window and make measurements over longer windows,
-	// if congestion is not relieving, CTR will trend down
-	c.congestedTrafficStats.Merge(pg.Traffic())
-	ctr := c.congestedTrafficStats.CapturedTrafficRatio()
+	if c.congestedPacketGroup == nil {
+		c.congestedPacketGroup = newPacketGroup(
+			packetGroupParams{
+				Config:       c.params.Config.CongestedPacketGroup,
+				WeightedLoss: c.params.Config.WeightedLoss,
+				Logger:       c.params.Logger,
+			},
+			0,
+		)
+	}
 
-	// quantise CTR to filter out small changes
-	c.congestedCTRTrend.AddValue(float64(int((ctr+(c.params.Config.CongestedCTREpsilon/2))/c.params.Config.CongestedCTREpsilon)) * c.params.Config.CongestedCTREpsilon)
-	c.params.Logger.Debugw("RAJA updating ctr trend", "ts", c.congestedTrafficStats, "ctr", ctr, "trend", c.congestedCTRTrend.GetDirection(), "ctrTrend", c.congestedCTRTrend) // REMOVE
+	if err := c.congestedPacketGroup.Add(pi, sendDelta, recvDelta, isLost); err == errGroupFinalized {
+		// progressively keep increasing the window and make measurements over longer windows,
+		// if congestion is not relieving, CTR will trend down
+		c.congestedTrafficStats.Merge(c.congestedPacketGroup.Traffic())
+		ctr := c.congestedTrafficStats.CapturedTrafficRatio()
+
+		// quantise CTR to filter out small changes
+		c.congestedCTRTrend.AddValue(float64(int((ctr+(c.params.Config.CongestedCTREpsilon/2))/c.params.Config.CongestedCTREpsilon)) * c.params.Config.CongestedCTREpsilon)
+		c.params.Logger.Debugw("RAJA updating ctr trend", "ts", c.congestedTrafficStats, "ctr", ctr, "trend", c.congestedCTRTrend.GetDirection(), "ctrTrend", c.congestedCTRTrend) // REMOVE
+
+		c.congestedPacketGroup = newPacketGroup(
+			packetGroupParams{
+				Config:       c.params.Config.CongestedPacketGroup,
+				WeightedLoss: c.params.Config.WeightedLoss,
+				Logger:       c.params.Logger,
+			},
+			0,
+		)
+	}
 }
 
+// RAJA-TODO: change this to use contributing groups only
 func (c *congestionDetector) estimateAvailableChannelCapacity() {
-	if len(c.packetGroups) == 0 || c.probePacketGroup != nil {
+	if len(c.packetGroups) == 0 || c.congestedCTRTrend != nil || c.probePacketGroup != nil {
 		return
 	}
 

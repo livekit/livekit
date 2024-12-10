@@ -202,7 +202,7 @@ func (p *packetGroup) Add(pi *packetInfo, sendDelta, recvDelta int64, isLost boo
 		p.aggregateRecvDelta += recvDelta
 	}
 
-	if (p.acked.numPackets() + p.lost.numPackets()) == p.params.Config.MinPackets || (pi.sendTime-p.minSendTime) > p.params.Config.MaxWindowDuration.Microseconds() {
+	if (p.acked.numPackets()+p.lost.numPackets()) == p.params.Config.MinPackets || (pi.sendTime-p.minSendTime) > p.params.Config.MaxWindowDuration.Microseconds() {
 		p.isFinalized = true
 	}
 	return nil
