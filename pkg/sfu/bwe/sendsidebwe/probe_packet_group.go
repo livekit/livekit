@@ -35,7 +35,7 @@ type ProbePacketGroupConfig struct {
 
 var (
 	// large numbers to treat a probe packet group as one
-	DefaultProbePacketGroupConfig = ProbePacketGroupConfig{
+	defaultProbePacketGroupConfig = ProbePacketGroupConfig{
 		PacketGroup: PacketGroupConfig{
 			MinPackets:        16384,
 			MaxWindowDuration: time.Minute,

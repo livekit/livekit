@@ -31,7 +31,7 @@ type WeightedLossConfig struct {
 
 var (
 	defaultWeightedLossConfig = WeightedLossConfig{
-		MinPacketsForLossValidity: 20,
+		MinPacketsForLossValidity: 15,
 		LossPenaltyFactor:         0.25,
 	}
 )

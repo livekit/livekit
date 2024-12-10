@@ -38,7 +38,7 @@ type PacketGroupConfig struct {
 }
 
 var (
-	DefaultPacketGroupConfig = PacketGroupConfig{
+	defaultPacketGroupConfig = PacketGroupConfig{
 		MinPackets:        20,
 		MaxWindowDuration: 500 * time.Millisecond,
 	}
@@ -177,15 +177,15 @@ func (p *packetGroup) Add(pi *packetInfo, sendDelta, recvDelta int64, isLost boo
 	}
 	p.maxSendTime = max(p.maxSendTime, pi.sendTime)
 
-	if p.minRecvTime == 0 || (pi.recvTime-recvDelta) < p.minRecvTime {
-		p.minRecvTime = pi.recvTime - recvDelta
-	}
-	p.maxRecvTime = max(p.maxRecvTime, pi.recvTime)
-
 	if isLost {
 		p.lost.add(int(pi.size), pi.isRTX, pi.isProbe)
 		p.snBitmap.Set(pi.sequenceNumber - p.minSequenceNumber)
 	} else {
+		if p.minRecvTime == 0 || (pi.recvTime-recvDelta) < p.minRecvTime {
+			p.minRecvTime = pi.recvTime - recvDelta
+		}
+		p.maxRecvTime = max(p.maxRecvTime, pi.recvTime)
+
 		p.acked.add(int(pi.size), pi.isRTX, pi.isProbe)
 		if p.snBitmap.IsSet(pi.sequenceNumber - p.minSequenceNumber) {
 			// an earlier packet reported as lost has been received

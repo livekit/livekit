@@ -38,22 +38,22 @@ func (c CongestionSignalConfig) IsTriggered(numGroups int, duration int64) bool 
 }
 
 var (
-	DefaultQueuingDelayEarlyWarningCongestionSignalConfig = CongestionSignalConfig{
+	defaultQueuingDelayEarlyWarningCongestionSignalConfig = CongestionSignalConfig{
 		MinNumberOfGroups: 1,
 		MinDuration:       100 * time.Millisecond,
 	}
 
-	DefaultLossEarlyWarningCongestionSignalConfig = CongestionSignalConfig{
+	defaultLossEarlyWarningCongestionSignalConfig = CongestionSignalConfig{
 		MinNumberOfGroups: 2,
 		MinDuration:       200 * time.Millisecond,
 	}
 
-	DefaultQueuingDelayCongestedCongestionSignalConfig = CongestionSignalConfig{
+	defaultQueuingDelayCongestedCongestionSignalConfig = CongestionSignalConfig{
 		MinNumberOfGroups: 3,
 		MinDuration:       300 * time.Millisecond,
 	}
 
-	DefaultLossCongestedCongestionSignalConfig = CongestionSignalConfig{
+	defaultLossCongestedCongestionSignalConfig = CongestionSignalConfig{
 		MinNumberOfGroups: 5,
 		MinDuration:       600 * time.Millisecond,
 	}
@@ -99,7 +99,7 @@ func (p ProbeSignalConfig) ProbeSignal(ppg *probePacketGroup) (ccutils.ProbeSign
 }
 
 var (
-	DefaultProbeSignalConfig = ProbeSignalConfig{
+	defaultProbeSignalConfig = ProbeSignalConfig{
 		MinBytesRatio:    0.5,
 		MinDurationRatio: 0.5,
 
@@ -321,17 +321,17 @@ var (
 	}
 
 	defaultCongestedPacketGroupConfig = PacketGroupConfig{
-		MinPackets:        8,
+		MinPackets:        20,
 		MaxWindowDuration: 150 * time.Millisecond,
 	}
 
-	DefaultCongestionDetectorConfig = CongestionDetectorConfig{
-		PacketGroup:       DefaultPacketGroupConfig,
+	defaultCongestionDetectorConfig = CongestionDetectorConfig{
+		PacketGroup:       defaultPacketGroupConfig,
 		PacketGroupMaxAge: 10 * time.Second,
 
-		ProbePacketGroup: DefaultProbePacketGroupConfig,
+		ProbePacketGroup: defaultProbePacketGroupConfig,
 		ProbeRegulator:   ccutils.DefaultProbeRegulatorConfig,
-		ProbeSignal:      DefaultProbeSignalConfig,
+		ProbeSignal:      defaultProbeSignalConfig,
 
 		JQRMinDelay: 15 * time.Millisecond,
 		DQRMaxDelay: 5 * time.Millisecond,
@@ -339,12 +339,12 @@ var (
 		WeightedLoss:      defaultWeightedLossConfig,
 		CongestionMinLoss: 0.25,
 
-		QueuingDelayEarlyWarning: DefaultQueuingDelayEarlyWarningCongestionSignalConfig,
-		LossEarlyWarning:         DefaultLossEarlyWarningCongestionSignalConfig,
+		QueuingDelayEarlyWarning: defaultQueuingDelayEarlyWarningCongestionSignalConfig,
+		LossEarlyWarning:         defaultLossEarlyWarningCongestionSignalConfig,
 		EarlyWarningHangover:     500 * time.Millisecond,
 
-		QueuingDelayCongested: DefaultQueuingDelayCongestedCongestionSignalConfig,
-		LossCongested:         DefaultLossCongestedCongestionSignalConfig,
+		QueuingDelayCongested: defaultQueuingDelayCongestedCongestionSignalConfig,
+		LossCongested:         defaultLossCongestedCongestionSignalConfig,
 		CongestedHangover:     3 * time.Second,
 
 		RateMeasurementWindowDurationMin: 800 * time.Millisecond,
@@ -465,7 +465,8 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 			return
 		}
 
-		c.updateCTRTrend(pi, sendDelta, recvDelta, isLost)
+		// RAJA-REMOVE c.updateCTRTrend(pi, sendDelta, recvDelta, isLost)
+
 		if c.probePacketGroup != nil {
 			c.probePacketGroup.Add(pi, sendDelta, recvDelta, isLost)
 		}
@@ -476,6 +477,10 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 		}
 
 		if err == errGroupFinalized {
+			if c.congestionState == bwe.CongestionStateCongested {
+				c.congestedPacketGroup = pg
+			}
+
 			// previous group ended, start a new group
 			pg = newPacketGroup(
 				packetGroupParams{
@@ -603,6 +608,7 @@ func (c *congestionDetector) CanProbe() bool {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
+	// RAJA-TODO: what happens if allow pause pauses everything, will this condition get stuck?, it will, need a way to get unstuck
 	return c.congestionState == bwe.CongestionStateNone && c.probePacketGroup == nil && c.probeRegulator.CanProbe()
 }
 
@@ -809,6 +815,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 		shouldNotify = true
 	}
 
+	/* RAJA-REMOVE
 	if c.congestedCTRTrend != nil && c.congestedCTRTrend.GetDirection() == ccutils.TrendDirectionDownward {
 		shouldNotify = true
 
@@ -825,6 +832,27 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 
 		// reset to get new set of samples for next trend
 		c.resetCTRTrend()
+	}
+	*/
+	if c.congestionState == bwe.CongestionStateCongested && c.congestedPacketGroup != nil {
+		ts := newTrafficStats(trafficStatsParams{
+			Config: c.params.Config.WeightedLoss,
+		})
+		ts.Merge(c.congestedPacketGroup.Traffic())
+
+		acknowledgedBitrate := ts.AcknowledgedBitrate()
+		if acknowledgedBitrate < c.estimatedAvailableChannelCapacity {
+			shouldNotify = true
+			c.estimatedAvailableChannelCapacity = acknowledgedBitrate
+			c.params.Logger.Infow(
+				"send side bwe: acknowledged bitrate drop in congested state",
+				"packetGroup", c.congestedPacketGroup,
+				"trafficStats", ts,
+				"estimatedAvailableChannelCapacity", c.estimatedAvailableChannelCapacity,
+			)
+		}
+
+		c.congestedPacketGroup = nil
 	}
 
 	return shouldNotify, c.congestionState, c.estimatedAvailableChannelCapacity
@@ -873,7 +901,7 @@ func (c *congestionDetector) updateCTRTrend(pi *packetInfo, sendDelta, recvDelta
 
 		// quantise CTR to filter out small changes
 		c.congestedCTRTrend.AddValue(float64(int((ctr+(c.params.Config.CongestedCTREpsilon/2))/c.params.Config.CongestedCTREpsilon)) * c.params.Config.CongestedCTREpsilon)
-		c.params.Logger.Debugw("RAJA updating ctr trend", "ts", c.congestedTrafficStats, "ctr", ctr, "trend", c.congestedCTRTrend.GetDirection(), "ctrTrend", c.congestedCTRTrend) // REMOVE
+		c.params.Logger.Debugw("RAJA updating ctr trend", "ts", c.congestedTrafficStats, "ctr", ctr, "trend", c.congestedCTRTrend.GetDirection(), "ctrTrend", c.congestedCTRTrend, "pg", c.congestedPacketGroup) // REMOVE
 
 		c.congestedPacketGroup = newPacketGroup(
 			packetGroupParams{

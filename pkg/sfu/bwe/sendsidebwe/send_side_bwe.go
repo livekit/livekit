@@ -59,7 +59,7 @@ type SendSideBWEConfig struct {
 
 var (
 	DefaultSendSideBWEConfig = SendSideBWEConfig{
-		CongestionDetector: DefaultCongestionDetectorConfig,
+		CongestionDetector: defaultCongestionDetectorConfig,
 	}
 )
 
