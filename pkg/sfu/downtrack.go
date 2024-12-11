@@ -1841,6 +1841,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	if len(filtered) == 0 {
 		return
 	}
+	d.params.Logger.Infow("DBG nacks", "nacks", nacks, "filtered", filtered, "disallowed", disallowedLayers) // REMOVE
 
 	src := PacketFactory.Get().(*[]byte)
 	defer PacketFactory.Put(src)
@@ -1868,6 +1869,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		if epm.nacked > 1 {
 			numRepeatedNACKs++
 		}
+		d.params.Logger.Infow("DBG nack ack", "epm", epm) // REMOVE
 
 		var pkt rtp.Packet
 		if err = pkt.Unmarshal(pktBuff[:n]); err != nil {
