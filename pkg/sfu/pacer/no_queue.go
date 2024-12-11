@@ -48,6 +48,11 @@ func NewNoQueue(logger logger.Logger, bwe bwe.BWE) *NoQueue {
 
 func (n *NoQueue) Stop() {
 	n.stop.Break()
+
+	select {
+	case n.wake <- struct{}{}:
+	default:
+	}
 }
 
 func (n *NoQueue) Enqueue(p *Packet) {

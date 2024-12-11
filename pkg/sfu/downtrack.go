@@ -1874,11 +1874,15 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			d.params.Logger.Errorw("could not unmarshal rtp packet in retransmit", err)
 			continue
 		}
-		pkt.Header.Marker = epm.marker
-		pkt.Header.SequenceNumber = epm.targetSeqNo
-		pkt.Header.Timestamp = epm.timestamp
-		pkt.Header.SSRC = d.ssrc
-		pkt.Header.PayloadType = d.getTranslatedPayloadType(pkt.Header.PayloadType)
+		hdr := &rtp.Header{
+			Version:        pkt.Header.Version,
+			Padding:        pkt.Header.Padding,
+			Marker:         epm.marker,
+			PayloadType:    d.getTranslatedPayloadType(pkt.Header.PayloadType),
+			SequenceNumber: epm.targetSeqNo,
+			Timestamp:      epm.timestamp,
+			SSRC:           d.ssrc,
+		}
 
 		poolEntity := PacketFactory.Get().(*[]byte)
 		payload := *poolEntity
@@ -1899,26 +1903,28 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			} else {
 				ddBytes = epm.ddBytes[:epm.ddBytesSize]
 			}
-			pkt.Header.SetExtension(uint8(d.dependencyDescriptorExtID), ddBytes)
+			if len(ddBytes) != 0 {
+				hdr.SetExtension(uint8(d.dependencyDescriptorExtID), ddBytes)
+			}
 		}
 		if d.absCaptureTimeExtID != 0 && len(epm.actBytes) != 0 {
-			pkt.Header.SetExtension(uint8(d.absCaptureTimeExtID), epm.actBytes)
+			hdr.SetExtension(uint8(d.absCaptureTimeExtID), epm.actBytes)
 		}
-		d.addDummyExtensions(&pkt.Header)
+		d.addDummyExtensions(hdr)
 
-		headerSize := pkt.Header.MarshalSize()
+		headerSize := hdr.MarshalSize()
 		d.rtpStats.Update(
 			mono.UnixNano(),
 			epm.extSequenceNumber,
 			epm.extTimestamp,
-			pkt.Header.Marker,
+			hdr.Marker,
 			headerSize,
 			len(payload),
 			0,
 			true,
 		)
 		d.pacer.Enqueue(&pacer.Packet{
-			Header:             &pkt.Header,
+			Header:             hdr,
 			HeaderSize:         headerSize,
 			Payload:            payload,
 			ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
