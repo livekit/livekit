@@ -290,7 +290,7 @@ func (l *lossMeasurement) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	}
 
 	e.AddInt("numGroups", l.numGroups)
-	e.AddInt("snallestGroupIdx", l.smallestGroupIdx)
+	e.AddInt("smallestGroupIdx", l.smallestGroupIdx)
 	e.AddObject("ts", l.ts)
 	e.AddFloat64("earlyWarningWeightedLoss", l.earlyWarningWeightedLoss)
 	e.AddFloat64("congestedWeightedLoss", l.congestedWeightedLoss)
@@ -408,17 +408,10 @@ type congestionDetector struct {
 func newCongestionDetector(params congestionDetectorParams) *congestionDetector {
 	c := &congestionDetector{
 		params:        params,
-		rtt:           bwe.DefaultRTT,
 		packetTracker: newPacketTracker(packetTrackerParams{Logger: params.Logger}),
 		twccFeedback:  newTWCCFeedback(twccFeedbackParams{Logger: params.Logger}),
-		probeRegulator: ccutils.NewProbeRegulator(ccutils.ProbeRegulatorParams{
-			Config: params.Config.ProbeRegulator,
-			Logger: params.Logger,
-		}),
-		estimatedAvailableChannelCapacity: 100_000_000,
-		congestionState:                   bwe.CongestionStateNone,
-		congestionStateSwitchedAt:         mono.Now(),
 	}
+	c.Reset()
 
 	return c
 }
