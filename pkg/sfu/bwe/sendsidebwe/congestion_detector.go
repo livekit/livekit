@@ -119,11 +119,11 @@ type qdMeasurement struct {
 	jqrMin             int64
 	dqrMax             int64
 
-	numGroups      int
+	numGroups        int
 	smallestGroupIdx int
-	minSendTime    int64
-	maxSendTime    int64
-	isSealed       bool
+	minSendTime      int64
+	maxSendTime      int64
+	isSealed         bool
 }
 
 func newQdMeasurement(
@@ -216,13 +216,13 @@ type lossMeasurement struct {
 	congestedConfig    CongestionSignalConfig
 	congestionMinLoss  float64
 
-	numGroups      int
+	numGroups        int
 	smallestGroupIdx int
-	ts             *trafficStats
+	ts               *trafficStats
 
-	earlyWarningWeightedLoss float64
+	earlyWarningWeightedLoss     float64
 	earlyWarningWeightedLossDone bool
-	congestedWeightedLoss    float64
+	congestedWeightedLoss        float64
 
 	isSealed bool
 }
@@ -324,9 +324,6 @@ type CongestionDetectorConfig struct {
 	LossCongested         CongestionSignalConfig `yaml:"loss_congested,omitempty"`
 	CongestedHangover     time.Duration          `yaml:"congested_hangover,omitempty"`
 
-	RateMeasurementWindowDurationMin time.Duration `yaml:"rate_measurement_window_duration_min,omitempty"` // RAJA-REMOVE
-	RateMeasurementWindowDurationMax time.Duration `yaml:"rate_measurement_window_duration_max,omitempty"` // RAJA-REMOVE
-
 	CongestedCTRTrend    ccutils.TrendDetectorConfig `yaml:"congested_ctr_trend,omitempty"`
 	CongestedCTREpsilon  float64                     `yaml:"congested_ctr_epsilon,omitempty"`
 	CongestedPacketGroup PacketGroupConfig           `yaml:"congested_packet_group,omitempty"`
@@ -368,9 +365,6 @@ var (
 		QueuingDelayCongested: defaultQueuingDelayCongestedCongestionSignalConfig,
 		LossCongested:         defaultLossCongestedCongestionSignalConfig,
 		CongestedHangover:     3 * time.Second,
-
-		RateMeasurementWindowDurationMin: 800 * time.Millisecond,
-		RateMeasurementWindowDurationMax: 2 * time.Second,
 
 		CongestedCTRTrend:    defaultTrendDetectorConfigCongestedCTR,
 		CongestedCTREpsilon:  0.05,
@@ -499,13 +493,6 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 		}
 
 		if err == errGroupFinalized {
-			c.params.Logger.Infow("RAJA packet group finalized", "pg", pg)	// REMOVE
-			/* RAJA-REMOVE
-			if c.congestionState == bwe.CongestionStateCongested {
-				c.congestedPacketGroup = pg
-			}
-			*/
-
 			// previous group ended, start a new group
 			pg = newPacketGroup(
 				packetGroupParams{
@@ -633,7 +620,6 @@ func (c *congestionDetector) CanProbe() bool {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	// RAJA-TODO: what happens if allow pause pauses everything, will this condition get stuck?, it will, need a way to get unstuck
 	return c.congestionState == bwe.CongestionStateNone && c.probePacketGroup == nil && c.probeRegulator.CanProbe()
 }
 
@@ -764,7 +750,6 @@ func (c *congestionDetector) isCongestionSignalTriggered() (bool, string, bool, 
 		if earlyWarningTriggered {
 			earlyWarningReason = "loss"
 			oldestContributingGroup = lossMeasurement.SmallestGroupIdx()
-			c.params.Logger.Infow("RAJA early warning loss", "lm", lossMeasurement)	// REMOVE
 		}
 	}
 
@@ -773,14 +758,11 @@ func (c *congestionDetector) isCongestionSignalTriggered() (bool, string, bool, 
 	if congestedTriggered {
 		congestedReason = "queuing-delay"
 		oldestContributingGroup = qdMeasurement.SmallestGroupIdx()
-		c.params.Logger.Infow("RAJA qd congested", "idx", idx, "smallestGroupIdx", qdMeasurement.SmallestGroupIdx())	// REMOVE
 	} else {
 		congestedTriggered = lossMeasurement.IsCongestedTriggered()
 		if congestedTriggered {
 			congestedReason = "loss"
 			oldestContributingGroup = lossMeasurement.SmallestGroupIdx()
-			c.params.Logger.Infow("RAJA loss congested", "idx", idx, "oldesstGroupIdx", lossMeasurement.SmallestGroupIdx())	// REMOVE
-			c.params.Logger.Infow("RAJA congested loss", "lm", lossMeasurement)	// REMOVE
 		}
 	}
 
@@ -847,9 +829,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 	if newState != state {
 		c.updateCongestionState(newState, reason, oldestContributingGroup)
 		shouldNotify = true
-	} /* RAJA-REMOVE else if c.congestionState == bwe.CongestionStateCongested {
-		shouldNotify = true
-	} */
+	}
 
 	if c.congestedCTRTrend != nil && c.congestedCTRTrend.GetDirection() == ccutils.TrendDirectionDownward {
 		shouldNotify = true
@@ -866,30 +846,8 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 		)
 
 		// reset to get new set of samples for next trend
-		c.resetCTRTrend() // RAJA-TODO: may be not reset trend here and let next packet group carry propagated queuing delay
+		c.resetCTRTrend()
 	}
-	/* RAJA-REMOVE
-	if c.congestionState == bwe.CongestionStateCongested && c.congestedPacketGroup != nil {
-		ts := newTrafficStats(trafficStatsParams{
-			Config: c.params.Config.WeightedLoss,
-		})
-		ts.Merge(c.congestedPacketGroup.Traffic())
-
-		acknowledgedBitrate := ts.AcknowledgedBitrate()
-		if acknowledgedBitrate < c.estimatedAvailableChannelCapacity {
-			shouldNotify = true
-			c.estimatedAvailableChannelCapacity = acknowledgedBitrate
-			c.params.Logger.Infow(
-				"send side bwe: acknowledged bitrate drop in congested state",
-				"packetGroup", c.congestedPacketGroup,
-				"trafficStats", ts,
-				"estimatedAvailableChannelCapacity", c.estimatedAvailableChannelCapacity,
-			)
-		}
-
-		c.congestedPacketGroup = nil
-	}
-	*/
 
 	return shouldNotify, c.congestionState, c.estimatedAvailableChannelCapacity
 }
@@ -937,7 +895,7 @@ func (c *congestionDetector) updateCTRTrend(pi *packetInfo, sendDelta, recvDelta
 		// progressively keep increasing the window and make measurements over longer windows,
 		// if congestion is not relieving, CTR will trend down
 		c.congestedTrafficStats.Merge(c.congestedPacketGroup.Traffic())
-		// RAJA-TODO ctr := c.congestedTrafficStats.CapturedTrafficRatio()
+
 		ts := newTrafficStats(trafficStatsParams{
 			Config: c.params.Config.WeightedLoss,
 			Logger: c.params.Logger,
@@ -947,7 +905,6 @@ func (c *congestionDetector) updateCTRTrend(pi *packetInfo, sendDelta, recvDelta
 
 		// quantise CTR to filter out small changes
 		c.congestedCTRTrend.AddValue(float64(int((ctr+(c.params.Config.CongestedCTREpsilon/2))/c.params.Config.CongestedCTREpsilon)) * c.params.Config.CongestedCTREpsilon)
-		c.params.Logger.Debugw("RAJA updating ctr trend", "ts", c.congestedTrafficStats, "ctr", ctr, "trend", c.congestedCTRTrend.GetDirection(), "ctrTrend", c.congestedCTRTrend, "pg", c.congestedPacketGroup) // REMOVE
 
 		c.congestedPacketGroup = newPacketGroup(
 			packetGroupParams{
@@ -955,7 +912,6 @@ func (c *congestionDetector) updateCTRTrend(pi *packetInfo, sendDelta, recvDelta
 				WeightedLoss: c.params.Config.WeightedLoss,
 				Logger:       c.params.Logger,
 			},
-			// RAJA-TODO 0,
 			c.congestedPacketGroup.PropagatedQueuingDelay(),
 		)
 	}
@@ -966,38 +922,10 @@ func (c *congestionDetector) estimateAvailableChannelCapacity(oldestContributing
 		return
 	}
 
-	/* RAJA-REMOVE
-	threshold, ok := c.packetTracker.BaseSendTimeThreshold(c.params.Config.RateMeasurementWindowDurationMax.Microseconds())
-	if !ok {
-		return
-	}
-	*/
-
 	agg := newTrafficStats(trafficStatsParams{
 		Config: c.params.Config.WeightedLoss,
 		Logger: c.params.Logger,
 	})
-	/* RAJA-REMOVE
-	var idx int
-	for idx = len(c.packetGroups) - 1; idx >= 0; idx-- {
-		pg := c.packetGroups[idx]
-		if mst := pg.MinSendTime(); mst != 0 && mst < threshold {
-			break
-		}
-
-		agg.Merge(pg.Traffic())
-	}
-
-	if agg.Duration() < c.params.Config.RateMeasurementWindowDurationMin.Microseconds() {
-		c.params.Logger.Infow(
-			"send side bwe: not enough data to estimate available channel capacity",
-			"duration", agg.Duration(),
-			"numGroups", len(c.packetGroups),
-			"oldestUsed", max(0, idx),
-		)
-		return
-	}
-	*/
 	for idx := len(c.packetGroups) - 1; idx >= oldestContributingGroup; idx-- {
 		pg := c.packetGroups[idx]
 		if !pg.IsFinalized() {

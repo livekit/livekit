@@ -253,7 +253,6 @@ func (r *RemoteBWE) CanProbe() bool {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	// RAJA-TODO: what happens if allow pause pauses everything, will this condition get stuck?
 	return r.congestionState == bwe.CongestionStateNone && r.probeController.CanProbe()
 }
 

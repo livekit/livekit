@@ -76,9 +76,6 @@ func (p *packetTracker) RecordPacketSendAndGetSequenceNumber(
 		probeClusterId: probeClusterId,
 		isProbe:        isProbe,
 	}
-	if isRTX {
-		p.params.Logger.Infow("RAJA got RTX", "sn", p.sequenceNumber)	// REMOVE
-	}
 
 	p.sequenceNumber++
 

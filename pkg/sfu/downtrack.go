@@ -1841,7 +1841,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	if len(filtered) == 0 {
 		return
 	}
-	d.params.Logger.Infow("RAJA nacks", "nacks", nacks, "filtered", filtered)	// REMOVE
 
 	src := PacketFactory.Get().(*[]byte)
 	defer PacketFactory.Put(src)
@@ -1875,19 +1874,10 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			d.params.Logger.Errorw("could not unmarshal rtp packet in retransmit", err)
 			continue
 		}
-		/* RAJA-REMOVE
-		pkt.Header.Marker = epm.marker
-		pkt.Header.SequenceNumber = epm.targetSeqNo
-		pkt.Header.Timestamp = epm.timestamp
-		pkt.Header.SSRC = d.ssrc
-		pkt.Header.PayloadType = d.getTranslatedPayloadType(pkt.Header.PayloadType)
-		pkt.Header.Extension = false
-		pkt.Header.Extensions = nil
-		*/
 		hdr := &rtp.Header{
 			Version:        pkt.Header.Version,
 			Padding:        pkt.Header.Padding,
-			Marker: epm.marker,
+			Marker:         epm.marker,
 			PayloadType:    d.getTranslatedPayloadType(pkt.Header.PayloadType),
 			SequenceNumber: epm.targetSeqNo,
 			Timestamp:      epm.timestamp,
