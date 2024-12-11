@@ -15,7 +15,7 @@
 package sfu
 
 import (
-	"math"
+	// RAJA-TODO "math"
 	"sync"
 	"time"
 
@@ -334,7 +334,7 @@ func (s *sequencer) getExtPacketMetas(seqNo []uint16) []extPacketMeta {
 			continue
 		}
 
-		if meta.nacked < maxAck && refTime-meta.lastNack > uint32(math.Min(float64(ignoreRetransmission), float64(2*s.rtt))) {
+		if meta.nacked < maxAck /* && refTime-meta.lastNack > uint32(math.Min(float64(ignoreRetransmission), float64(2*s.rtt))) RAJA-TODO */ {
 			meta.nacked++
 			meta.lastNack = refTime
 

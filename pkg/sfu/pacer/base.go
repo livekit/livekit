@@ -79,10 +79,12 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 	return written, nil
 }
 
+var packetCount int	// RAJA-REMOVE
 // patch just abs-send-time and transport-cc extensions if applicable
 func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 	sendingAt := mono.Now()
 	if p.AbsSendTimeExtID != 0 {
+		packetCount++	// RAJA-REMOVE
 		absSendTime := rtp.NewAbsSendTimeExtension(sendingAt)
 		absSendTimeBytes, err := absSendTime.Marshal()
 		if err != nil {
@@ -92,8 +94,10 @@ func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 		if err = p.Header.SetExtension(p.AbsSendTimeExtID, absSendTimeBytes); err != nil {
 			return err
 		}
-
-		b.lastPacketSentAt.Store(sendingAt.UnixNano())
+		if p.IsRTX || packetCount % 100 == 0 {
+			marshalled, err := p.Header.Marshal()
+			b.logger.Infow("RAJA got RTX", "isRTX", p.IsRTX, "packetCount", packetCount, "sn", p.Header.SequenceNumber, "marshalled", marshalled, "error", err)	// REMOVE
+		}
 	}
 
 	packetSize := p.HeaderSize + len(p.Payload)
@@ -110,7 +114,7 @@ func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 		}
 		twccExtBytes, err := twccExt.Marshal()
 		if err != nil {
-			b.logger.Infow("RAJA error marshalling", "twccSN", twccSN)	// REMOVE
+			b.logger.Infow("RAJA error marshalling", "twccSN", twccSN, "twccExtBytes", len(twccExtBytes))	// REMOVE
 			return err
 		}
 
@@ -118,13 +122,22 @@ func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 			b.logger.Infow("RAJA error setting extension", "twccSN", twccSN)	// REMOVE
 			return err
 		}
-		if p.IsRTX {
-			b.logger.Infow("RAJA got RTX", "twccSN", twccSN, "sn", p.Header.SequenceNumber)	// REMOVE
+		if p.IsRTX || twccSN % 100 == 0 {
+			marshalled, err := p.Header.Marshal()
+			b.logger.Infow("RAJA got RTX", "twccSN", twccSN, "sn", p.Header.SequenceNumber, "marshalled", marshalled, "error", err)	// REMOVE
 		}
-
-		b.lastPacketSentAt.Store(sendingAt.UnixNano())
 	}
 
+	// RAJA-REMOVE: start
+	lastPacketSentAt := b.lastPacketSentAt.Load()
+	if lastPacketSentAt != 0 {
+		if time.Duration(sendingAt.UnixNano() - lastPacketSentAt) > time.Second {
+			b.logger.Infow("RAJA long time since last packet", "sn", p.Header.SequenceNumber, "gap", time.Duration(sendingAt.UnixNano() - lastPacketSentAt))	// REMOVE
+		}
+	}
+	// RAJA-REMOVE: end
+
+	b.lastPacketSentAt.Store(sendingAt.UnixNano())
 	b.ProbeObserver.RecordPacket(packetSize, p.IsRTX, p.ProbeClusterId, p.IsProbe)
 	return nil
 }

@@ -25,13 +25,15 @@ import (
 // -----------------------------------------------------------
 
 type WeightedLossConfig struct {
-	MinPacketsForLossValidity int     `yaml:"min_packets_for_loss_validity,omitempty"`
+	MinDurationForLossValidity time.Duration `yaml:"min_duration_for_loss_validity,omitempty"`
+	MinPPSForLossValidity int     `yaml:"min_pps_for_loss_validity,omitempty"`
 	LossPenaltyFactor         float64 `yaml:"loss_penalty_factor,omitempty"`
 }
 
 var (
 	defaultWeightedLossConfig = WeightedLossConfig{
-		MinPacketsForLossValidity: 15,
+		MinDurationForLossValidity: 200 * time.Millisecond,
+		MinPPSForLossValidity: 20,
 		LossPenaltyFactor:         0.25,
 	}
 )
@@ -110,8 +112,14 @@ func (ts *trafficStats) CapturedTrafficRatio() float64 {
 }
 
 func (ts *trafficStats) WeightedLoss() float64 {
+	durationMicro := ts.Duration()
+	if time.Duration(durationMicro * 1000) < ts.params.Config.MinDurationForLossValidity {
+		return 0.0
+	}
+
 	totalPackets := float64(ts.lostPackets + ts.ackedPackets)
-	if int(totalPackets) < ts.params.Config.MinPacketsForLossValidity {
+	pps := totalPackets * 1e6 / float64(durationMicro)
+	if int(pps) < ts.params.Config.MinPPSForLossValidity {
 		return 0.0
 	}
 
@@ -119,8 +127,6 @@ func (ts *trafficStats) WeightedLoss() float64 {
 	if totalPackets != 0 {
 		lossRatio = float64(ts.lostPackets) / totalPackets
 	}
-
-	pps := totalPackets * 1e6 / float64(ts.Duration())
 
 	// Log10 is used to give higher weight for the same loss ratio at higher packet rates,
 	// for e.g.
