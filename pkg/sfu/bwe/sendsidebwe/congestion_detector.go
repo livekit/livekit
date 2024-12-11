@@ -168,9 +168,7 @@ func (q *qdMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 		if q.minSendTime == 0 || minSendTime < q.minSendTime {
 			q.minSendTime = minSendTime
 		}
-		if maxSendTime > q.maxSendTime {
-			q.maxSendTime = maxSendTime
-		}
+		q.maxSendTime = max(q.maxSendTime, maxSendTime)
 	}
 
 	if !q.isEarlyWarningTriggered && q.earlyWarningConfig.IsTriggered(q.numGroups, q.maxSendTime-q.minSendTime) {
