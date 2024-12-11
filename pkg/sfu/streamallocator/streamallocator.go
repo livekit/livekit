@@ -149,20 +149,26 @@ const (
 )
 
 type StreamAllocatorConfig struct {
-	ProbeMode                        ProbeMode `yaml:"probe_mode,omitempty"`
-	MinChannelCapacity               int64     `yaml:"min_channel_capacity,omitempty"`
-	DisableEstimationUnmanagedTracks bool      `yaml:"disable_etimation_unmanaged_tracks,omitempty"`
+	MinChannelCapacity               int64 `yaml:"min_channel_capacity,omitempty"`
+	DisableEstimationUnmanagedTracks bool  `yaml:"disable_etimation_unmanaged_tracks,omitempty"`
 
-	ProbeOveragePct int64 `yaml:"probe_overage_pct,omitempty"`
-	ProbeMinBps     int64 `yaml:"probe_min_bps,omitempty"`
+	ProbeMode       ProbeMode `yaml:"probe_mode,omitempty"`
+	ProbeOveragePct int64     `yaml:"probe_overage_pct,omitempty"`
+	ProbeMinBps     int64     `yaml:"probe_min_bps,omitempty"`
+
+	PausedMinWait time.Duration `yaml:"paused_min_wait,omotempty"`
 }
 
 var (
 	DefaultStreamAllocatorConfig = StreamAllocatorConfig{
-		ProbeMode: ProbeModePadding,
+		MinChannelCapacity:               0,
+		DisableEstimationUnmanagedTracks: false,
 
+		ProbeMode:       ProbeModePadding,
 		ProbeOveragePct: 120,
 		ProbeMinBps:     200_000,
+
+		PausedMinWait: 5 * time.Second,
 	}
 )
 
@@ -655,6 +661,13 @@ func (s *StreamAllocator) handleSignalEstimate(event Event) {
 }
 
 func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
+	// if pause is allowed, there may be no packets sent and BWE could be congested state,
+	// reset BWE if that persists for a while
+	if s.state == streamAllocatorStateDeficient && s.params.Pacer.TimeSinceLastSentPacket() > s.params.Config.PausedMinWait {
+		s.params.Logger.Infow("stream allocator: resetting bwe to enable probing")
+		s.params.BWE.Reset()
+	}
+
 	// finalize any probe that may have finished/aborted
 	if s.activeProbeClusterId != ccutils.ProbeClusterIdInvalid {
 		if probeSignal, channelCapacity, isFinalized := s.params.BWE.ProbeClusterFinalize(); isFinalized {

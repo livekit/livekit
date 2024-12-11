@@ -119,10 +119,11 @@ type qdMeasurement struct {
 	jqrMin             int64
 	dqrMax             int64
 
-	numGroups   int
-	minSendTime int64
-	maxSendTime int64
-	isSealed    bool
+	numGroups      int
+	oldestGroupIdx int
+	minSendTime    int64
+	maxSendTime    int64
+	isSealed       bool
 }
 
 func newQdMeasurement(
@@ -139,9 +140,13 @@ func newQdMeasurement(
 	}
 }
 
-func (q *qdMeasurement) ProcessPacketGroup(pg *packetGroup) {
+func (q *qdMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 	if q.isSealed {
 		return
+	}
+
+	if q.oldestGroupIdx == 0 || q.oldestGroupIdx < groupIdx {
+		q.oldestGroupIdx = groupIdx
 	}
 
 	pqd, pqdOk := pg.FinalizedPropagatedQueuingDelay()
@@ -176,6 +181,10 @@ func (q *qdMeasurement) IsSealed() bool {
 	return q.isSealed
 }
 
+func (q *qdMeasurement) OldestGroupIdx() int {
+	return q.oldestGroupIdx
+}
+
 func (q *qdMeasurement) IsEarlyWarningTriggered() bool {
 	return q.earlyWarningConfig.IsTriggered(q.numGroups, q.maxSendTime-q.minSendTime)
 }
@@ -190,6 +199,7 @@ func (q *qdMeasurement) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	}
 
 	e.AddInt("numGroups", q.numGroups)
+	e.AddInt("oldestGroupIdx", q.oldestGroupIdx)
 	e.AddInt64("minSendTime", q.minSendTime)
 	e.AddInt64("maxSendTime", q.maxSendTime)
 	e.AddDuration("duration", time.Duration((q.maxSendTime-q.minSendTime)*1000))
@@ -206,8 +216,9 @@ type lossMeasurement struct {
 	congestedConfig    CongestionSignalConfig
 	congestionMinLoss  float64
 
-	numGroups int
-	ts        *trafficStats
+	numGroups      int
+	oldestGroupIdx int
+	ts             *trafficStats
 
 	earlyWarningWeightedLoss float64
 	congestedWeightedLoss    float64
@@ -233,9 +244,13 @@ func newLossMeasurement(
 	}
 }
 
-func (l *lossMeasurement) ProcessPacketGroup(pg *packetGroup) {
+func (l *lossMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 	if l.isSealed || !pg.IsFinalized() {
 		return
+	}
+
+	if l.oldestGroupIdx == 0 || l.oldestGroupIdx < groupIdx {
+		l.oldestGroupIdx = groupIdx
 	}
 
 	l.numGroups++
@@ -255,6 +270,10 @@ func (l *lossMeasurement) IsSealed() bool {
 	return l.isSealed
 }
 
+func (l *lossMeasurement) OldestGroupIdx() int {
+	return l.oldestGroupIdx
+}
+
 func (l *lossMeasurement) IsEarlyWarningTriggered() bool {
 	return l.earlyWarningWeightedLoss > l.congestionMinLoss
 }
@@ -269,6 +288,7 @@ func (l *lossMeasurement) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	}
 
 	e.AddInt("numGroups", l.numGroups)
+	e.AddInt("oldestGroupIdx", l.oldestGroupIdx)
 	e.AddObject("ts", l.ts)
 	e.AddFloat64("earlyWarningWeightedLoss", l.earlyWarningWeightedLoss)
 	e.AddFloat64("congestedWeightedLoss", l.congestedWeightedLoss)
@@ -714,8 +734,8 @@ func (c *congestionDetector) isCongestionSignalTriggered() (bool, string, bool, 
 	var idx int
 	for idx = len(c.packetGroups) - 1; idx >= 0; idx-- {
 		pg := c.packetGroups[idx]
-		qdMeasurement.ProcessPacketGroup(pg)
-		lossMeasurement.ProcessPacketGroup(pg)
+		qdMeasurement.ProcessPacketGroup(pg, idx)
+		lossMeasurement.ProcessPacketGroup(pg, idx)
 
 		// if both measurements have enough data to make a decision, stop processing groups
 		if qdMeasurement.IsSealed() && lossMeasurement.IsSealed() {
@@ -730,14 +750,17 @@ func (c *congestionDetector) isCongestionSignalTriggered() (bool, string, bool, 
 		}
 	}
 
+	oldestContributingGroup := max(0, idx)
 	earlyWarningReason := ""
 	earlyWarningTriggered := qdMeasurement.IsEarlyWarningTriggered()
 	if earlyWarningTriggered {
 		earlyWarningReason = "queuing-delay"
+		oldestContributingGroup = qdMeasurement.OldestGroupIdx()
 	} else {
 		earlyWarningTriggered = lossMeasurement.IsEarlyWarningTriggered()
 		if earlyWarningTriggered {
 			earlyWarningReason = "loss"
+			oldestContributingGroup = lossMeasurement.OldestGroupIdx()
 		}
 	}
 
@@ -745,14 +768,16 @@ func (c *congestionDetector) isCongestionSignalTriggered() (bool, string, bool, 
 	congestedTriggered := qdMeasurement.IsCongestedTriggered()
 	if congestedTriggered {
 		congestedReason = "queuing-delay"
+		oldestContributingGroup = qdMeasurement.OldestGroupIdx()
 	} else {
 		congestedTriggered = lossMeasurement.IsCongestedTriggered()
 		if congestedTriggered {
 			congestedReason = "loss"
+			oldestContributingGroup = lossMeasurement.OldestGroupIdx()
 		}
 	}
 
-	return earlyWarningTriggered, earlyWarningReason, congestedTriggered, congestedReason, max(0, idx)
+	return earlyWarningTriggered, earlyWarningReason, congestedTriggered, congestedReason, oldestContributingGroup
 }
 
 func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.CongestionState, int64) {
@@ -834,7 +859,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 		)
 
 		// reset to get new set of samples for next trend
-		c.resetCTRTrend()	// RAJA-TODO: may be not reset trend here and let next packet group carry propagated queuing delay
+		c.resetCTRTrend() // RAJA-TODO: may be not reset trend here and let next packet group carry propagated queuing delay
 	}
 	/* RAJA-REMOVE
 	if c.congestionState == bwe.CongestionStateCongested && c.congestedPacketGroup != nil {

@@ -44,6 +44,8 @@ type Pacer interface {
 	SetInterval(interval time.Duration)
 	SetBitrate(bitrate int)
 
+	TimeSinceLastSentPacket() time.Duration
+
 	SetPacerProbeObserverListener(listener PacerProbeObserverListener)
 	StartProbeCluster(pci ccutils.ProbeClusterInfo)
 	EndProbeCluster(probeClusterId ccutils.ProbeClusterId) ccutils.ProbeClusterInfo

@@ -23,13 +23,15 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/mono"
 	"github.com/pion/rtp"
+	"go.uber.org/atomic"
 )
 
 type Base struct {
 	logger logger.Logger
 
 	bwe bwe.BWE
-	// RAJA-TODO: lastPacketAt: store lastPacketAt and provide an API to check time since last packet
+
+	lastPacketSentAt atomic.Int64
 
 	*ProbeObserver
 }
@@ -46,6 +48,10 @@ func (b *Base) SetInterval(_interval time.Duration) {
 }
 
 func (b *Base) SetBitrate(_bitrate int) {
+}
+
+func (b *Base) TimeSinceLastSentPacket() time.Duration {
+	return time.Duration(mono.UnixNano() - b.lastPacketSentAt.Load())
 }
 
 func (b *Base) SendPacket(p *Packet) (int, error) {
@@ -78,14 +84,16 @@ func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 	sendingAt := mono.Now()
 	if p.AbsSendTimeExtID != 0 {
 		absSendTime := rtp.NewAbsSendTimeExtension(sendingAt)
-		b, err := absSendTime.Marshal()
+		absSendTimeBytes, err := absSendTime.Marshal()
 		if err != nil {
 			return err
 		}
 
-		if err = p.Header.SetExtension(p.AbsSendTimeExtID, b); err != nil {
+		if err = p.Header.SetExtension(p.AbsSendTimeExtID, absSendTimeBytes); err != nil {
 			return err
 		}
+
+		b.lastPacketSentAt.Store(sendingAt.UnixNano())
 	}
 
 	packetSize := p.HeaderSize + len(p.Payload)
@@ -100,14 +108,16 @@ func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 		twccExt := rtp.TransportCCExtension{
 			TransportSequence: twccSN,
 		}
-		b, err := twccExt.Marshal()
+		twccExtBytes, err := twccExt.Marshal()
 		if err != nil {
 			return err
 		}
 
-		if err = p.Header.SetExtension(p.TransportWideExtID, b); err != nil {
+		if err = p.Header.SetExtension(p.TransportWideExtID, twccExtBytes); err != nil {
 			return err
 		}
+
+		b.lastPacketSentAt.Store(sendingAt.UnixNano())
 	}
 
 	b.ProbeObserver.RecordPacket(packetSize, p.IsRTX, p.ProbeClusterId, p.IsProbe)
