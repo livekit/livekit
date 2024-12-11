@@ -510,6 +510,7 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 		}
 
 		if err == errGroupFinalized {
+			c.params.Logger.Debugw("send side bwee: packet group finalized", "pg", pg)	// REMOVE
 			// previous group ended, start a new group
 			pg = newPacketGroup(
 				packetGroupParams{

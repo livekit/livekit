@@ -1869,7 +1869,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		if epm.nacked > 1 {
 			numRepeatedNACKs++
 		}
-		d.params.Logger.Infow("DBG nack ack", "epm", epm) // REMOVE
+		d.params.Logger.Infow("DBG nack ack", "epm", &epm) // REMOVE
 
 		var pkt rtp.Packet
 		if err = pkt.Unmarshal(pktBuff[:n]); err != nil {
