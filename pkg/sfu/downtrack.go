@@ -1841,6 +1841,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	if len(filtered) == 0 {
 		return
 	}
+	d.params.Logger.Infow("RAJA nacks", "nacks", nacks, "filtered", filtered)	// REMOVE
 
 	src := PacketFactory.Get().(*[]byte)
 	defer PacketFactory.Put(src)

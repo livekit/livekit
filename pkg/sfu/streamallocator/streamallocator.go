@@ -156,7 +156,7 @@ type StreamAllocatorConfig struct {
 	ProbeOveragePct int64     `yaml:"probe_overage_pct,omitempty"`
 	ProbeMinBps     int64     `yaml:"probe_min_bps,omitempty"`
 
-	PausedMinWait time.Duration `yaml:"paused_min_wait,omotempty"`
+	PausedMinWait time.Duration `yaml:"paused_min_wait,omitempty"`
 }
 
 var (

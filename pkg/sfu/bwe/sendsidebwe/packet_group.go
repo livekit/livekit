@@ -158,9 +158,8 @@ func newPacketGroup(params packetGroupParams, queuingDelay int64) *packetGroup {
 }
 
 func (p *packetGroup) Add(pi *packetInfo, sendDelta, recvDelta int64, isLost bool) error {
-	if isLost && pi.recvTime != 0 {
-		// previously received packet, so not actually lost
-		return nil
+	if isLost {
+		return p.lostPacket(pi)
 	}
 
 	if err := p.inGroup(pi.sequenceNumber); err != nil {
@@ -177,34 +176,32 @@ func (p *packetGroup) Add(pi *packetInfo, sendDelta, recvDelta int64, isLost boo
 	}
 	p.maxSendTime = max(p.maxSendTime, pi.sendTime)
 
-	if isLost {
-		p.lost.add(int(pi.size), pi.isRTX, pi.isProbe)
-		p.snBitmap.Set(pi.sequenceNumber - p.minSequenceNumber)
-	} else {
-		if p.minRecvTime == 0 || (pi.recvTime-recvDelta) < p.minRecvTime {
-			p.minRecvTime = pi.recvTime - recvDelta
-		}
-		p.maxRecvTime = max(p.maxRecvTime, pi.recvTime)
-
-		p.acked.add(int(pi.size), pi.isRTX, pi.isProbe)
-		if p.snBitmap.IsSet(pi.sequenceNumber - p.minSequenceNumber) {
-			// an earlier packet reported as lost has been received
-			p.snBitmap.Clear(pi.sequenceNumber - p.minSequenceNumber)
-			p.lost.remove(int(pi.size), pi.isRTX, pi.isProbe)
-		}
-
-		if sendDelta < 0 && recvDelta > 0 {
-			p.params.Logger.Infow("RAJA out-of-order packet", "pi", pi, "sendDelta", sendDelta, "recvDelta", recvDelta)	// REMOVE
-		}
-
-		// note that out-of-order deliveries will amplify the queueing delay.
-		// for e.g. a, b, c getting delivered as a, c, b.
-		// let us say packets are delivered with interval of `x`
-		//   send delta aggregate will go up by x((a, c) = 2x + (c, b) -1x)
-		//   recv delta aggregate will go up by 3x((a, c) = 2x + (c, b) 1x)
-		p.aggregateSendDelta += sendDelta
-		p.aggregateRecvDelta += recvDelta
+	if p.minRecvTime == 0 || (pi.recvTime-recvDelta) < p.minRecvTime {
+		p.minRecvTime = pi.recvTime - recvDelta
 	}
+	p.maxRecvTime = max(p.maxRecvTime, pi.recvTime)
+
+	p.acked.add(int(pi.size), pi.isRTX, pi.isProbe)
+	if p.snBitmap.IsSet(pi.sequenceNumber - p.minSequenceNumber) {
+		// an earlier packet reported as lost has been received
+		p.snBitmap.Clear(pi.sequenceNumber - p.minSequenceNumber)
+		p.lost.remove(int(pi.size), pi.isRTX, pi.isProbe)
+	}
+
+	if sendDelta < 0 && recvDelta > 0 {
+		p.params.Logger.Infow("RAJA out-of-order packet", "pi", pi, "sendDelta", sendDelta, "recvDelta", recvDelta)	// REMOVE
+	}
+	if pi.isRTX {
+		p.params.Logger.Infow("RAJA got RTX acked", "pi", pi, "sendDelta", sendDelta, "recvDelta", recvDelta)	// REMOVE
+	}
+
+	// note that out-of-order deliveries will amplify the queueing delay.
+	// for e.g. a, b, c getting delivered as a, c, b.
+	// let us say packets are delivered with interval of `x`
+	//   send delta aggregate will go up by x((a, c) = 2x + (c, b) -1x)
+	//   recv delta aggregate will go up by 3x((a, c) = 2x + (c, b) 1x)
+	p.aggregateSendDelta += sendDelta
+	p.aggregateRecvDelta += recvDelta
 
 	/* RAJA-REMOVE
 	if (p.acked.numPackets()+p.lost.numPackets()) == p.params.Config.MinPackets || (pi.sendTime-p.minSendTime) > p.params.Config.MaxWindowDuration.Microseconds() {
@@ -217,11 +214,15 @@ func (p *packetGroup) Add(pi *packetInfo, sendDelta, recvDelta int64, isLost boo
 	return nil
 }
 
-/* RAJA-REMOVE
 func (p *packetGroup) lostPacket(pi *packetInfo) error {
 	if pi.recvTime != 0 {
 		// previously received packet, so not lost
 		return nil
+	}
+
+	if pi.isRTX {
+		p.params.Logger.Infow("RAJA got RTX lost", "pi", pi)	// REMOVE
+		return nil	// REMOVE
 	}
 
 	if err := p.inGroup(pi.sequenceNumber); err != nil {
@@ -237,7 +238,6 @@ func (p *packetGroup) lostPacket(pi *packetInfo) error {
 	p.lost.add(int(pi.size), pi.isRTX, pi.isProbe)
 	return nil
 }
-*/
 
 func (p *packetGroup) MinSendTime() int64 {
 	return p.minSendTime

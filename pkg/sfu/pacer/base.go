@@ -63,7 +63,7 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 
 	err := b.patchRTPHeaderExtensions(p)
 	if err != nil {
-		b.logger.Errorw("writing rtp header extensions err", err)
+		b.logger.Errorw("patching rtp header extensions err", err)
 		return 0, err
 	}
 
@@ -110,11 +110,16 @@ func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 		}
 		twccExtBytes, err := twccExt.Marshal()
 		if err != nil {
+			b.logger.Infow("RAJA error marshalling", "twccSN", twccSN)	// REMOVE
 			return err
 		}
 
 		if err = p.Header.SetExtension(p.TransportWideExtID, twccExtBytes); err != nil {
+			b.logger.Infow("RAJA error setting extension", "twccSN", twccSN)	// REMOVE
 			return err
+		}
+		if p.IsRTX {
+			b.logger.Infow("RAJA got RTX", "twccSN", twccSN, "sn", p.Header.SequenceNumber)	// REMOVE
 		}
 
 		b.lastPacketSentAt.Store(sendingAt.UnixNano())
