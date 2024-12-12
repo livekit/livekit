@@ -3017,7 +3017,7 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 func (p *ParticipantImpl) GetEnabledPublishCodecs() []*livekit.Codec {
 	codecs := make([]*livekit.Codec, 0, len(p.enabledPublishCodecs))
 	for _, c := range p.enabledPublishCodecs {
-		if c.Mime == "video/rtx" {
+		if c.Mime == webrtc.MimeTypeRTX {
 			continue
 		}
 		codecs = append(codecs, c)

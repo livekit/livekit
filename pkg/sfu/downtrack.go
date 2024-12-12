@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -72,7 +73,7 @@ type TrackSender interface {
 // -------------------------------------------------------------------
 
 const (
-	RTPPaddingMaxPayloadSize      = 255
+	RTPPaddingMaxPayloadSize      = 224
 	RTPPaddingEstimatedHeaderSize = 20
 	RTPBlankFramesMuteSeconds     = float32(1.0)
 	RTPBlankFramesCloseSeconds    = float32(0.2)
@@ -190,6 +191,44 @@ type DownTrackStreamAllocatorListener interface {
 	IsSubscribeMutable(dt *DownTrack) bool
 }
 
+// -------------------------------------------------------------------
+
+/* RAJA-REMOVE
+type probePacket struct {
+	extSequenceNumber uint64
+	extTimestamp uint64
+	rtpHeader rtp.Header
+	rtpPayload [1500]byte
+	rtpPayloadSize int
+}
+
+// -------------------------------------------------------------------
+*/
+
+type bindState int
+
+const (
+	bindStateUnbound bindState = iota
+	// downtrack negotiated, but waiting for receiver to be ready to start forwarding
+	bindStateWaitForReceiverReady
+	// downtrack is bound and ready to forward
+	bindStateBound
+)
+
+func (bs bindState) String() string {
+	switch bs {
+	case bindStateUnbound:
+		return "unbound"
+	case bindStateWaitForReceiverReady:
+		return "waitForReceiverReady"
+	case bindStateBound:
+		return "bound"
+	}
+	return "unknown"
+}
+
+// -------------------------------------------------------------------
+
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
 type DowntrackParams struct {
@@ -222,8 +261,11 @@ type DownTrack struct {
 	kind        webrtc.RTPCodecType
 	mime        string
 	ssrc        uint32
+	ssrcRTX        uint32
 	payloadType uint8
+	payloadTypeRTX uint8
 	sequencer   *sequencer
+	rtxSequenceNumber atomic.Uint64
 
 	forwarder *Forwarder
 
@@ -244,6 +286,7 @@ type DownTrack struct {
 	transceiver               atomic.Pointer[webrtc.RTPTransceiver]
 	writeStream               webrtc.TrackLocalWriter
 	rtcpReader                *buffer.RTCPReader
+	rtcpReaderRTX                *buffer.RTCPReader
 
 	listenerLock            sync.RWMutex
 	receiverReportListeners []ReceiverReportListener
@@ -297,28 +340,8 @@ type DownTrack struct {
 	onCodecNegotiated           func(webrtc.RTPCodecCapability)
 
 	createdAt int64
-}
 
-type bindState int
-
-const (
-	bindStateUnbound bindState = iota
-	// downtrack negotiated, but waiting for receiver to be ready to start forwarding
-	bindStateWaitForReceiverReady
-	// downtrack is bound and ready to forward
-	bindStateBound
-)
-
-func (bs bindState) String() string {
-	switch bs {
-	case bindStateUnbound:
-		return "unbound"
-	case bindStateWaitForReceiverReady:
-		return "waitForReceiverReady"
-	case bindStateBound:
-		return "bound"
-	}
-	return "unknown"
+	// RAJA-REMOVE probePacket probePacket
 }
 
 // NewDownTrack returns a DownTrack.
@@ -387,6 +410,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 	}
 
 	d.params.Receiver.AddOnReady(d.handleReceiverReady)
+	d.rtxSequenceNumber.Store(uint64(rand.Intn(1<<14)) + uint64(1<<15)) // a random number in third quartile of sequence number space
 	d.params.Logger.Debugw("downtrack created", "upstreamCodecs", d.upstreamCodecs)
 
 	return d, nil
@@ -490,6 +514,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			"codecs", d.upstreamCodecs,
 			"matchCodec", codec,
 			"ssrc", t.SSRC(),
+			"ssrcRTX", t.SSRCRetransmission(),
 			"isFECEnabled", isFECEnabled,
 		}
 		if d.isRED {
@@ -504,7 +529,9 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		)
 
 		d.ssrc = uint32(t.SSRC())
+		d.ssrcRTX = uint32(t.SSRCRetransmission())
 		d.payloadType = uint8(codec.PayloadType)
+		d.payloadTypeRTX = uint8(utils.FindRTXPayloadType(codec.PayloadType, t.CodecParameters()))
 		d.writeStream = t.WriteStream()
 		d.mime = strings.ToLower(codec.MimeType)
 		if rr := d.params.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, uint32(t.SSRC())).(*buffer.RTCPReader); rr != nil {
@@ -512,6 +539,12 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 				d.handleRTCP(pkt)
 			})
 			d.rtcpReader = rr
+		}
+		if rr := d.params.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, uint32(t.SSRCRetransmission())).(*buffer.RTCPReader); rr != nil {
+			rr.OnPacket(func(pkt []byte) {
+				d.handleRTCP(pkt)
+			})
+			d.rtcpReaderRTX = rr
 		}
 
 		d.sequencer = newSequencer(d.params.MaxTrack, d.kind == webrtc.RTPCodecTypeVideo, d.params.Logger)
@@ -926,6 +959,47 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			sal.OnResume(d)
 		}
 	}
+	if d.kind == webrtc.RTPCodecTypeVideo {
+		d.params.Logger.Infow("RAJA packet", "isn", extPkt.ExtSequenceNumber, "osn", tp.rtp.extSequenceNumber, "size", len(payload), "headerSize", headerSize, "layer", layer, "marker", hdr.Marker)	// REMOVE
+	}
+
+	/* RAJA-REMOVE
+	// cache a packet for probing later
+	// RAJA-TODO: need locking
+	if d.probePacket.extSequenceNumber == 0 {
+		extStartSN, extEndSN := d.rtpStats.ExtSequenceNumberEdges()
+		if extEndSN - extStartSN > 1024 {
+			d.probePacket = probePacket{
+				extSequenceNumber: tp.rtp.extSequenceNumber,
+				extTimestamp: tp.rtp.extTimestamp,
+				rtpHeader: *hdr,
+				rtpPayloadSize: len(payload),
+			}
+			copy(d.probePacket.rtpPayload, payload)
+		}
+	} else {
+		if tp.rtp.extSequenceNumber - d.probePacket.extSequenceNumber > 1024 {
+			d.probePacket = probePacket{
+				extSequenceNumber: tp.rtp.extSequenceNumber,
+				extTimestamp: tp.rtp.extTimestamp,
+				rtpHeader: *hdr,
+				rtpPayloadSize: len(payload),
+			}
+			copy(d.probePacket.rtpPayload, payload)
+		}
+	}
+	*/
+	/* RAJA-REMOVE
+	if d.probePacket.extSequenceNumber == 0 {
+		d.probePacket = probePacket{
+			extSequenceNumber: tp.rtp.extSequenceNumber,
+			extTimestamp: tp.rtp.extTimestamp,
+			rtpHeader: *hdr,
+			rtpPayloadSize: len(payload),
+		}
+		copy(d.probePacket.rtpPayload[:], payload)
+	}
+	*/
 	return nil
 }
 
@@ -1003,6 +1077,9 @@ func (d *DownTrack) WritePaddingRTP(
 		d.addDummyExtensions(hdr)
 
 		payload := make([]byte, RTPPaddingMaxPayloadSize)
+		for i := 0; i < RTPPaddingMaxPayloadSize; i++ {
+			payload[i] = 0x0
+		}
 		// last byte of padding has padding size including that byte
 		payload[RTPPaddingMaxPayloadSize-1] = byte(RTPPaddingMaxPayloadSize)
 
@@ -1153,6 +1230,11 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		d.params.Logger.Debugw("downtrack close rtcp reader")
 		d.rtcpReader.Close()
 		d.rtcpReader.OnPacket(nil)
+	}
+	if d.rtcpReaderRTX != nil && flush {
+		d.params.Logger.Debugw("downtrack close rtcp rtx reader")
+		d.rtcpReaderRTX.Close()
+		d.rtcpReaderRTX.OnPacket(nil)
 	}
 	d.bindLock.Unlock()
 
@@ -1761,7 +1843,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			}
 
 		case *rtcp.TransportLayerCC:
-			if p.MediaSSRC == d.ssrc {
+			if p.MediaSSRC == d.ssrc || p.MediaSSRC == d.ssrcRTX {
 				if sal := d.getStreamAllocatorListener(); sal != nil {
 					sal.OnTransportCCFeedback(d, p)
 				}
@@ -1883,17 +1965,13 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			Timestamp:      epm.timestamp,
 			SSRC:           d.ssrc,
 		}
+		rtxOffset := 0
+		if d.payloadTypeRTX != 0 && d.ssrcRTX != 0 {
+			rtxOffset = 2
 
-		poolEntity := PacketFactory.Get().(*[]byte)
-		payload := *poolEntity
-		if len(epm.codecBytesSlice) != 0 {
-			n := copy(payload, epm.codecBytesSlice)
-			m := copy(payload[n:], pkt.Payload[epm.numCodecBytesIn:])
-			payload = payload[:n+m]
-		} else {
-			copy(payload, epm.codecBytes[:epm.numCodecBytesOut])
-			copy(payload[epm.numCodecBytesOut:], pkt.Payload[epm.numCodecBytesIn:])
-			payload = payload[:int(epm.numCodecBytesOut)+len(pkt.Payload)-int(epm.numCodecBytesIn)]
+			hdr.PayloadType = d.payloadTypeRTX
+			hdr.SequenceNumber = uint16(d.rtxSequenceNumber.Inc())
+			hdr.SSRC = d.ssrcRTX
 		}
 
 		if d.dependencyDescriptorExtID != 0 {
@@ -1911,6 +1989,22 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			hdr.SetExtension(uint8(d.absCaptureTimeExtID), epm.actBytes)
 		}
 		d.addDummyExtensions(hdr)
+
+		poolEntity := PacketFactory.Get().(*[]byte)
+		payload := *poolEntity
+		if rtxOffset != 0 {
+			// write OSN (Original Sequence Number)
+			binary.BigEndian.PutUint16(payload[0:2], epm.targetSeqNo)
+		}
+		if len(epm.codecBytesSlice) != 0 {
+			n := copy(payload[rtxOffset:], epm.codecBytesSlice)
+			m := copy(payload[rtxOffset+n:], pkt.Payload[epm.numCodecBytesIn:])
+			payload = payload[:rtxOffset+n+m]
+		} else {
+			copy(payload[rtxOffset:], epm.codecBytes[:epm.numCodecBytesOut])
+			copy(payload[rtxOffset+int(epm.numCodecBytesOut):], pkt.Payload[epm.numCodecBytesIn:])
+			payload = payload[:rtxOffset+int(epm.numCodecBytesOut)+len(pkt.Payload)-int(epm.numCodecBytesIn)]
+		}
 
 		headerSize := hdr.MarshalSize()
 		d.rtpStats.Update(
@@ -1935,12 +2029,194 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			Pool:               PacketFactory,
 			PoolEntity:         poolEntity,
 		})
+		if epm.nacked > 1 {
+			d.params.Logger.Infow("RAJA RTX repeat", "epm", epm, "size", len(payload), "headerSize", headerSize)	// REMOVE
+		} else {
+			d.params.Logger.Infow("RAJA RTX", "epm", epm, "size", len(payload), "headerSize", headerSize)	// REMOVE
+		}
 	}
 
 	d.totalRepeatedNACKs.Add(numRepeatedNACKs)
 
 	d.rtpStats.UpdateNackProcessed(nackAcks, nackMisses, numRepeatedNACKs)
 }
+
+func (d *DownTrack) WriteProbePackets(bytesToSend int) int {
+	if !d.writable.Load() ||
+	!d.rtpStats.IsActive() ||
+	(d.absSendTimeExtID == 0 && d.transportWideExtID == 0) ||
+	d.rtpStats.LastReceiverReportTime().IsZero() ||
+	d.sequencer == nil {
+		return 0
+	}
+
+	src := PacketFactory.Get().(*[]byte)
+	defer PacketFactory.Put(src)
+
+	bytesSent := 0
+
+	endExtHighestSequenceNumber := d.rtpStats.ExtHighestSequenceNumber()
+	startExtHighestSequenceNumber := endExtHighestSequenceNumber - 5
+	for esn := startExtHighestSequenceNumber; esn <= endExtHighestSequenceNumber; esn++ {
+		epm := d.sequencer.lookupExtPacketMeta(esn)
+		if epm == nil {
+			continue
+		}
+
+		pktBuff := *src
+		n, err := d.params.Receiver.ReadRTP(pktBuff, uint8(epm.layer), epm.sourceSeqNo)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			continue
+		}
+
+		var pkt rtp.Packet
+		if err = pkt.Unmarshal(pktBuff[:n]); err != nil {
+			d.params.Logger.Errorw("could not unmarshal rtp packet in probe", err)
+			continue
+		}
+		hdr := &rtp.Header{
+			Version:        pkt.Header.Version,
+			Padding:        pkt.Header.Padding,
+			Marker:         epm.marker,
+			PayloadType:    d.getTranslatedPayloadType(pkt.Header.PayloadType),
+			SequenceNumber: epm.targetSeqNo,
+			Timestamp:      epm.timestamp,
+			SSRC:           d.ssrc,
+		}
+		rtxOffset := 0
+		if d.payloadTypeRTX != 0 && d.ssrcRTX != 0 {
+			rtxOffset = 2
+
+			hdr.PayloadType = d.payloadTypeRTX
+			hdr.SequenceNumber = uint16(d.rtxSequenceNumber.Inc())
+			hdr.SSRC = d.ssrcRTX
+		}
+
+		if d.dependencyDescriptorExtID != 0 {
+			var ddBytes []byte
+			if len(epm.ddBytesSlice) != 0 {
+				ddBytes = epm.ddBytesSlice
+			} else {
+				ddBytes = epm.ddBytes[:epm.ddBytesSize]
+			}
+			if len(ddBytes) != 0 {
+				hdr.SetExtension(uint8(d.dependencyDescriptorExtID), ddBytes)
+			}
+		}
+		if d.absCaptureTimeExtID != 0 && len(epm.actBytes) != 0 {
+			hdr.SetExtension(uint8(d.absCaptureTimeExtID), epm.actBytes)
+		}
+		d.addDummyExtensions(hdr)
+
+		poolEntity := PacketFactory.Get().(*[]byte)
+		payload := *poolEntity
+		if rtxOffset != 0 {
+			// write OSN (Original Sequence Number)
+			binary.BigEndian.PutUint16(payload[0:2], epm.targetSeqNo)
+		}
+		if len(epm.codecBytesSlice) != 0 {
+			n := copy(payload[rtxOffset:], epm.codecBytesSlice)
+			m := copy(payload[rtxOffset+n:], pkt.Payload[epm.numCodecBytesIn:])
+			payload = payload[:rtxOffset+n+m]
+		} else {
+			copy(payload[rtxOffset:], epm.codecBytes[:epm.numCodecBytesOut])
+			copy(payload[rtxOffset+int(epm.numCodecBytesOut):], pkt.Payload[epm.numCodecBytesIn:])
+			payload = payload[:rtxOffset+int(epm.numCodecBytesOut)+len(pkt.Payload)-int(epm.numCodecBytesIn)]
+		}
+
+
+		headerSize := hdr.MarshalSize()
+		d.rtpStats.Update(
+			mono.UnixNano(),
+			epm.extSequenceNumber,
+			epm.extTimestamp,
+			hdr.Marker,
+			headerSize,
+			len(payload),
+			0,
+			true,
+		)
+		d.pacer.Enqueue(&pacer.Packet{
+			Header:             hdr,
+			HeaderSize:         headerSize,
+			Payload:            payload,
+			ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
+			IsProbe:             true,
+			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
+			TransportWideExtID: uint8(d.transportWideExtID),
+			WriteStream:        d.writeStream,
+			Pool:               PacketFactory,
+			PoolEntity:         poolEntity,
+		})
+
+		bytesSent += headerSize + len(payload)
+		if bytesSent >= bytesToSend {
+			break
+		}
+	}
+
+	return bytesSent
+}
+
+/* RAJA-REMOVE
+func (d *DownTrack) WriteProbePackets(bytesToSend int) int {
+	if !d.writable.Load() ||
+	(d.absSendTimeExtID == 0 && d.transportWideExtID == 0) ||
+	d.rtpStats.LastReceiverReportTime().IsZero() ||
+	d.probePacket.extSequenceNumber == 0 {
+		return 0
+	}
+
+	if d.rtpStats.ExtHighestSequenceNumber() - d.probePacket.extSequenceNumber < 2048 {
+		return 0
+	}
+
+	bytesSent := 0
+	for {
+		hdr := d.probePacket.rtpHeader
+
+		poolEntity := PacketFactory.Get().(*[]byte)
+		payload := *poolEntity
+		n := copy(payload, d.probePacket.rtpPayload[:d.probePacket.rtpPayloadSize])
+		payload = payload[:n]
+
+		headerSize := hdr.MarshalSize()
+		d.rtpStats.Update(
+			mono.UnixNano(),
+			d.probePacket.extSequenceNumber,
+			d.probePacket.extTimestamp,
+			hdr.Marker,
+			headerSize,
+			len(payload),
+			0,
+			true,
+		)
+		d.pacer.Enqueue(&pacer.Packet{
+			Header:             &hdr,
+			HeaderSize:         headerSize,
+			Payload:            payload,
+			ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
+			IsProbe:            true,
+			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
+			TransportWideExtID: uint8(d.transportWideExtID),
+			WriteStream:        d.writeStream,
+			Pool:               PacketFactory,
+			PoolEntity:         poolEntity,
+		})
+
+		bytesSent += headerSize + len(payload)
+		d.params.Logger.Infow("RAJA-PROBE, sent probe", "bytesSent", bytesSent, "extSequenceNumber", d.probePacket.extSequenceNumber)   // REMOVE
+		if bytesSent >= bytesToSend {
+			break
+		}
+	}
+
+	return bytesSent
+}
+*/
 
 func (d *DownTrack) addDummyExtensions(hdr *rtp.Header) {
 	// add dummy extensions (actual ones will be filed by pacer) to get header size

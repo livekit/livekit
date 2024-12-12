@@ -69,7 +69,7 @@ type ProbeSignalConfig struct {
 	DQRMaxDelay time.Duration `yaml:"dqr_max_delay,omitempty"`
 
 	WeightedLoss      WeightedLossConfig `yaml:"weighted_loss,omitempty"`
-	CongestionMinLoss float64            `yaml:"congestion_min_loss,omitempty"`
+	CongestionMinWeightedLoss float64            `yaml:"congestion_min_weighted_loss,omitempty"`
 }
 
 func (p ProbeSignalConfig) IsValid(pci ccutils.ProbeClusterInfo) bool {
@@ -87,7 +87,7 @@ func (p ProbeSignalConfig) ProbeSignal(ppg *probePacketGroup) (ccutils.ProbeSign
 		return ccutils.ProbeSignalCongesting, ts.AcknowledgedBitrate()
 	}
 
-	if ts.WeightedLoss() > p.CongestionMinLoss {
+	if ts.WeightedLoss() > p.CongestionMinWeightedLoss {
 		return ccutils.ProbeSignalCongesting, ts.AcknowledgedBitrate()
 	}
 
@@ -107,7 +107,7 @@ var (
 		DQRMaxDelay: 5 * time.Millisecond,
 
 		WeightedLoss:      defaultWeightedLossConfig,
-		CongestionMinLoss: 0.25,
+		CongestionMinWeightedLoss: 0.25,
 	}
 )
 
@@ -336,7 +336,7 @@ type CongestionDetectorConfig struct {
 	DQRMaxDelay time.Duration `yaml:"dqr_max_delay,omitempty"`
 
 	WeightedLoss      WeightedLossConfig `yaml:"weighted_loss,omitempty"`
-	CongestionMinLoss float64            `yaml:"congestion_min_loss,omitempty"`
+	CongestionMinWeightedLoss float64            `yaml:"congestion_min_weighted_loss,omitempty"`
 
 	QueuingDelayEarlyWarning CongestionSignalConfig `yaml:"queuing_delay_early_warning,omitempty"`
 	LossEarlyWarning         CongestionSignalConfig `yaml:"loss_early_warning,omitempty"`
@@ -378,7 +378,7 @@ var (
 		DQRMaxDelay: 5 * time.Millisecond,
 
 		WeightedLoss:      defaultWeightedLossConfig,
-		CongestionMinLoss: 0.25,
+		CongestionMinWeightedLoss: 0.25,
 
 		QueuingDelayEarlyWarning: defaultQueuingDelayEarlyWarningCongestionSignalConfig,
 		LossEarlyWarning:         defaultLossEarlyWarningCongestionSignalConfig,
@@ -470,6 +470,7 @@ func (c *congestionDetector) getBWEListener() bwe.BWEListener {
 }
 
 func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
+	c.params.Logger.Infow("RAJA TWCC report", "report", report)	// REMOVE
 	c.lock.Lock()
 	recvRefTime, isOutOfOrder := c.twccFeedback.ProcessReport(report, mono.Now())
 	if isOutOfOrder {
@@ -731,7 +732,7 @@ func (c *congestionDetector) isCongestionSignalTriggered() (bool, string, bool, 
 		c.params.Config.LossEarlyWarning,
 		c.params.Config.LossCongested,
 		c.params.Config.WeightedLoss,
-		c.params.Config.CongestionMinLoss,
+		c.params.Config.CongestionMinWeightedLoss,
 		c.params.Logger,
 	)
 
@@ -740,6 +741,7 @@ func (c *congestionDetector) isCongestionSignalTriggered() (bool, string, bool, 
 		pg := c.packetGroups[idx]
 		qdMeasurement.ProcessPacketGroup(pg, idx)
 		lossMeasurement.ProcessPacketGroup(pg, idx)
+		c.params.Logger.Infow("send side bwe: congestion signal", "qd", qdMeasurement, "loss", lossMeasurement)	// REMOVE
 
 		// if both measurements have enough data to make a decision, stop processing groups
 		if qdMeasurement.IsSealed() && lossMeasurement.IsSealed() {
@@ -760,11 +762,13 @@ func (c *congestionDetector) isCongestionSignalTriggered() (bool, string, bool, 
 	if earlyWarningTriggered {
 		earlyWarningReason = "queuing-delay"
 		oldestContributingGroup = qdMeasurement.EarlyWarningGroupIdx()
+		c.params.Logger.Debugw("send side bwe: early warning queuing-delay", "qd", qdMeasurement)
 	} else {
 		earlyWarningTriggered = lossMeasurement.IsEarlyWarningTriggered()
 		if earlyWarningTriggered {
 			earlyWarningReason = "loss"
 			oldestContributingGroup = lossMeasurement.EarlyWarningGroupIdx()
+			c.params.Logger.Debugw("send side bwe: early warning loss", "loss", lossMeasurement)
 		}
 	}
 
@@ -773,11 +777,13 @@ func (c *congestionDetector) isCongestionSignalTriggered() (bool, string, bool, 
 	if congestedTriggered {
 		congestedReason = "queuing-delay"
 		oldestContributingGroup = qdMeasurement.CongestedGroupIdx()
+		c.params.Logger.Debugw("send side bwe: congested queuing-delay", "qd", qdMeasurement)
 	} else {
 		congestedTriggered = lossMeasurement.IsCongestedTriggered()
 		if congestedTriggered {
 			congestedReason = "loss"
 			oldestContributingGroup = lossMeasurement.CongestedGroupIdx()
+			c.params.Logger.Debugw("send side bwe: congested loss", "loss", lossMeasurement)
 		}
 	}
 
@@ -793,7 +799,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 
 	switch state {
 	case bwe.CongestionStateNone:
-		if congestedTriggered {
+		if congestedTriggered && !earlyWarningTriggered {
 			c.params.Logger.Warnw("send side bwe: invalid congested state transition", nil, "from", state, "reason", congestedReason)
 		}
 		if earlyWarningTriggered {
@@ -810,7 +816,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 		}
 
 	case bwe.CongestionStateEarlyWarningHangover:
-		if congestedTriggered {
+		if congestedTriggered && !earlyWarningTriggered {
 			c.params.Logger.Warnw("send side bwe: invalid congested state transition", nil, "from", state, "reason", congestedReason)
 		}
 		if earlyWarningTriggered {
@@ -826,7 +832,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 		}
 
 	case bwe.CongestionStateCongestedHangover:
-		if congestedTriggered {
+		if congestedTriggered && !earlyWarningTriggered {
 			c.params.Logger.Warnw("send side bwe: invalid congested state transition", nil, "from", state, "reason", congestedReason)
 		}
 		if earlyWarningTriggered {

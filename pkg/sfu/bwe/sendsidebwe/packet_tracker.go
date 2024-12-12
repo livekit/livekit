@@ -112,7 +112,7 @@ func (p *packetTracker) RecordPacketIndicationFromRemote(sn uint16, recvTime int
 	}
 
 	if recvTime == 0 {
-		// maybe lost OR already receied but reported lost in a later report
+		// maybe lost OR already received but reported lost in a later report
 		piRecv = *pi
 		return
 	}
