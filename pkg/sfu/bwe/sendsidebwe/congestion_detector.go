@@ -229,9 +229,8 @@ type lossMeasurement struct {
 	congestedConfig    CongestionSignalConfig
 	congestionMinLoss  float64
 
-	numGroups        int
-	smallestGroupIdx int
-	ts               *trafficStats
+	numGroups int
+	ts        *trafficStats
 
 	isEarlyWarningGrouped    bool
 	earlyWarningGroupIdx     int
@@ -310,7 +309,6 @@ func (l *lossMeasurement) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	}
 
 	e.AddInt("numGroups", l.numGroups)
-	e.AddInt("smallestGroupIdx", l.smallestGroupIdx)
 	e.AddObject("ts", l.ts)
 	e.AddBool("isEarlyWarningGrouped", l.isEarlyWarningGrouped)
 	e.AddInt("earlyWarningGroupIdx", l.earlyWarningGroupIdx)
