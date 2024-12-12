@@ -73,7 +73,7 @@ type TrackSender interface {
 // -------------------------------------------------------------------
 
 const (
-	RTPPaddingMaxPayloadSize      = 224
+	RTPPaddingMaxPayloadSize      = 255
 	RTPPaddingEstimatedHeaderSize = 20
 	RTPBlankFramesMuteSeconds     = float32(1.0)
 	RTPBlankFramesCloseSeconds    = float32(0.2)
@@ -193,18 +193,6 @@ type DownTrackStreamAllocatorListener interface {
 
 // -------------------------------------------------------------------
 
-/* RAJA-REMOVE
-type probePacket struct {
-	extSequenceNumber uint64
-	extTimestamp uint64
-	rtpHeader rtp.Header
-	rtpPayload [1500]byte
-	rtpPayloadSize int
-}
-
-// -------------------------------------------------------------------
-*/
-
 type bindState int
 
 const (
@@ -256,15 +244,15 @@ type DowntrackParams struct {
 // - closed
 // once closed, a DownTrack cannot be re-used.
 type DownTrack struct {
-	params      DowntrackParams
-	id          livekit.TrackID
-	kind        webrtc.RTPCodecType
-	mime        string
-	ssrc        uint32
-	ssrcRTX        uint32
-	payloadType uint8
-	payloadTypeRTX uint8
-	sequencer   *sequencer
+	params            DowntrackParams
+	id                livekit.TrackID
+	kind              webrtc.RTPCodecType
+	mime              string
+	ssrc              uint32
+	ssrcRTX           uint32
+	payloadType       uint8
+	payloadTypeRTX    uint8
+	sequencer         *sequencer
 	rtxSequenceNumber atomic.Uint64
 
 	forwarder *Forwarder
@@ -286,7 +274,7 @@ type DownTrack struct {
 	transceiver               atomic.Pointer[webrtc.RTPTransceiver]
 	writeStream               webrtc.TrackLocalWriter
 	rtcpReader                *buffer.RTCPReader
-	rtcpReaderRTX                *buffer.RTCPReader
+	rtcpReaderRTX             *buffer.RTCPReader
 
 	listenerLock            sync.RWMutex
 	receiverReportListeners []ReceiverReportListener
@@ -340,8 +328,6 @@ type DownTrack struct {
 	onCodecNegotiated           func(webrtc.RTPCodecCapability)
 
 	createdAt int64
-
-	// RAJA-REMOVE probePacket probePacket
 }
 
 // NewDownTrack returns a DownTrack.
@@ -959,47 +945,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			sal.OnResume(d)
 		}
 	}
-	if d.kind == webrtc.RTPCodecTypeVideo {
-		d.params.Logger.Infow("RAJA packet", "isn", extPkt.ExtSequenceNumber, "osn", tp.rtp.extSequenceNumber, "size", len(payload), "headerSize", headerSize, "layer", layer, "marker", hdr.Marker)	// REMOVE
-	}
-
-	/* RAJA-REMOVE
-	// cache a packet for probing later
-	// RAJA-TODO: need locking
-	if d.probePacket.extSequenceNumber == 0 {
-		extStartSN, extEndSN := d.rtpStats.ExtSequenceNumberEdges()
-		if extEndSN - extStartSN > 1024 {
-			d.probePacket = probePacket{
-				extSequenceNumber: tp.rtp.extSequenceNumber,
-				extTimestamp: tp.rtp.extTimestamp,
-				rtpHeader: *hdr,
-				rtpPayloadSize: len(payload),
-			}
-			copy(d.probePacket.rtpPayload, payload)
-		}
-	} else {
-		if tp.rtp.extSequenceNumber - d.probePacket.extSequenceNumber > 1024 {
-			d.probePacket = probePacket{
-				extSequenceNumber: tp.rtp.extSequenceNumber,
-				extTimestamp: tp.rtp.extTimestamp,
-				rtpHeader: *hdr,
-				rtpPayloadSize: len(payload),
-			}
-			copy(d.probePacket.rtpPayload, payload)
-		}
-	}
-	*/
-	/* RAJA-REMOVE
-	if d.probePacket.extSequenceNumber == 0 {
-		d.probePacket = probePacket{
-			extSequenceNumber: tp.rtp.extSequenceNumber,
-			extTimestamp: tp.rtp.extTimestamp,
-			rtpHeader: *hdr,
-			rtpPayloadSize: len(payload),
-		}
-		copy(d.probePacket.rtpPayload[:], payload)
-	}
-	*/
 	return nil
 }
 
@@ -2029,11 +1974,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			Pool:               PacketFactory,
 			PoolEntity:         poolEntity,
 		})
-		if epm.nacked > 1 {
-			d.params.Logger.Infow("RAJA RTX repeat", "epm", epm, "size", len(payload), "headerSize", headerSize)	// REMOVE
-		} else {
-			d.params.Logger.Infow("RAJA RTX", "epm", epm, "size", len(payload), "headerSize", headerSize)	// REMOVE
-		}
 	}
 
 	d.totalRepeatedNACKs.Add(numRepeatedNACKs)
@@ -2043,10 +1983,10 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 
 func (d *DownTrack) WriteProbePackets(bytesToSend int) int {
 	if !d.writable.Load() ||
-	!d.rtpStats.IsActive() ||
-	(d.absSendTimeExtID == 0 && d.transportWideExtID == 0) ||
-	d.rtpStats.LastReceiverReportTime().IsZero() ||
-	d.sequencer == nil {
+		!d.rtpStats.IsActive() ||
+		(d.absSendTimeExtID == 0 && d.transportWideExtID == 0) ||
+		d.rtpStats.LastReceiverReportTime().IsZero() ||
+		d.sequencer == nil {
 		return 0
 	}
 
@@ -2127,7 +2067,6 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int) int {
 			payload = payload[:rtxOffset+int(epm.numCodecBytesOut)+len(pkt.Payload)-int(epm.numCodecBytesIn)]
 		}
 
-
 		headerSize := hdr.MarshalSize()
 		d.rtpStats.Update(
 			mono.UnixNano(),
@@ -2144,61 +2083,6 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int) int {
 			HeaderSize:         headerSize,
 			Payload:            payload,
 			ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
-			IsProbe:             true,
-			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
-			TransportWideExtID: uint8(d.transportWideExtID),
-			WriteStream:        d.writeStream,
-			Pool:               PacketFactory,
-			PoolEntity:         poolEntity,
-		})
-
-		bytesSent += headerSize + len(payload)
-		if bytesSent >= bytesToSend {
-			break
-		}
-	}
-
-	return bytesSent
-}
-
-/* RAJA-REMOVE
-func (d *DownTrack) WriteProbePackets(bytesToSend int) int {
-	if !d.writable.Load() ||
-	(d.absSendTimeExtID == 0 && d.transportWideExtID == 0) ||
-	d.rtpStats.LastReceiverReportTime().IsZero() ||
-	d.probePacket.extSequenceNumber == 0 {
-		return 0
-	}
-
-	if d.rtpStats.ExtHighestSequenceNumber() - d.probePacket.extSequenceNumber < 2048 {
-		return 0
-	}
-
-	bytesSent := 0
-	for {
-		hdr := d.probePacket.rtpHeader
-
-		poolEntity := PacketFactory.Get().(*[]byte)
-		payload := *poolEntity
-		n := copy(payload, d.probePacket.rtpPayload[:d.probePacket.rtpPayloadSize])
-		payload = payload[:n]
-
-		headerSize := hdr.MarshalSize()
-		d.rtpStats.Update(
-			mono.UnixNano(),
-			d.probePacket.extSequenceNumber,
-			d.probePacket.extTimestamp,
-			hdr.Marker,
-			headerSize,
-			len(payload),
-			0,
-			true,
-		)
-		d.pacer.Enqueue(&pacer.Packet{
-			Header:             &hdr,
-			HeaderSize:         headerSize,
-			Payload:            payload,
-			ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
 			IsProbe:            true,
 			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 			TransportWideExtID: uint8(d.transportWideExtID),
@@ -2208,7 +2092,6 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int) int {
 		})
 
 		bytesSent += headerSize + len(payload)
-		d.params.Logger.Infow("RAJA-PROBE, sent probe", "bytesSent", bytesSent, "extSequenceNumber", d.probePacket.extSequenceNumber)   // REMOVE
 		if bytesSent >= bytesToSend {
 			break
 		}
@@ -2216,7 +2099,6 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int) int {
 
 	return bytesSent
 }
-*/
 
 func (d *DownTrack) addDummyExtensions(hdr *rtp.Header) {
 	// add dummy extensions (actual ones will be filed by pacer) to get header size

@@ -24,12 +24,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-/* RAJA-REMOVE
-const (
-	videoRTXMimeType = "video/rtx"
-)
-*/
-
 var OpusCodecCapability = webrtc.RTPCodecCapability{
 	MimeType:    webrtc.MimeTypeOpus,
 	ClockRate:   48000,
@@ -139,7 +133,7 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 		if filterOutH264HighProfile && codec.RTPCodecCapability.SDPFmtpLine == h264HighProfileFmtp {
 			continue
 		}
-		if codec.MimeType == webrtc.MimeTypeRTX {
+		if strings.EqualFold(codec.MimeType, webrtc.MimeTypeRTX) {
 			continue
 		}
 		if IsCodecEnabled(codecs, codec.RTPCodecCapability) {

@@ -727,7 +727,6 @@ func (s *StreamAllocator) handleSignalSendProbe(event Event) {
 
 	bytesSent := 0
 	for _, track := range s.getTracks() {
-		// RAJA-TODO sent := track.WritePaddingRTP(bytesToSend)
 		sent := track.WriteProbePackets(bytesToSend)
 		bytesSent += sent
 		bytesToSend -= sent

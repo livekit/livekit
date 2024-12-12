@@ -93,7 +93,7 @@ func (pm packetMeta) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	}
 	if len(pm.ddBytesSlice) != 0 {
 		e.AddInt("ddBytesSlice", len(pm.ddBytesSlice))
-	} else  {
+	} else {
 		e.AddUint8("ddBytesSize", pm.ddBytesSize)
 	}
 	if len(pm.actBytes) != 0 {

@@ -47,14 +47,14 @@ func CodecParametersFuzzySearch(needle webrtc.RTPCodecParameters, haystack []web
 
 // Given a CodecParameters find the RTX CodecParameters if one exists
 func FindRTXPayloadType(needle webrtc.PayloadType, haystack []webrtc.RTPCodecParameters) webrtc.PayloadType {
-    aptStr := fmt.Sprintf("apt=%d", needle)
-    for _, c := range haystack {
-        if aptStr == c.SDPFmtpLine {
-            return c.PayloadType
-        }
-    }
+	aptStr := fmt.Sprintf("apt=%d", needle)
+	for _, c := range haystack {
+		if aptStr == c.SDPFmtpLine {
+			return c.PayloadType
+		}
+	}
 
-    return webrtc.PayloadType(0)
+	return webrtc.PayloadType(0)
 }
 
 // GetHeaderExtensionID returns the ID of a header extension, or 0 if not found

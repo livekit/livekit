@@ -37,8 +37,8 @@ var (
 	// large numbers to treat a probe packet group as one
 	defaultProbePacketGroupConfig = ProbePacketGroupConfig{
 		PacketGroup: PacketGroupConfig{
-			MinPackets:        32768,
-			MaxWindowDuration: 3 * time.Minute,
+			MinPackets:        16384,
+			MaxWindowDuration: time.Minute,
 		},
 
 		SettleWaitNumRTT: 5,

@@ -68,7 +68,7 @@ type ProbeSignalConfig struct {
 	JQRMinDelay time.Duration `yaml:"jqr_min_delay,omitempty"`
 	DQRMaxDelay time.Duration `yaml:"dqr_max_delay,omitempty"`
 
-	WeightedLoss      WeightedLossConfig `yaml:"weighted_loss,omitempty"`
+	WeightedLoss              WeightedLossConfig `yaml:"weighted_loss,omitempty"`
 	CongestionMinWeightedLoss float64            `yaml:"congestion_min_weighted_loss,omitempty"`
 }
 
@@ -106,7 +106,7 @@ var (
 		JQRMinDelay: 15 * time.Millisecond,
 		DQRMaxDelay: 5 * time.Millisecond,
 
-		WeightedLoss:      defaultWeightedLossConfig,
+		WeightedLoss:              defaultWeightedLossConfig,
 		CongestionMinWeightedLoss: 0.25,
 	}
 )
@@ -335,7 +335,7 @@ type CongestionDetectorConfig struct {
 	JQRMinDelay time.Duration `yaml:"jqr_min_delay,omitempty"`
 	DQRMaxDelay time.Duration `yaml:"dqr_max_delay,omitempty"`
 
-	WeightedLoss      WeightedLossConfig `yaml:"weighted_loss,omitempty"`
+	WeightedLoss              WeightedLossConfig `yaml:"weighted_loss,omitempty"`
 	CongestionMinWeightedLoss float64            `yaml:"congestion_min_weighted_loss,omitempty"`
 
 	QueuingDelayEarlyWarning CongestionSignalConfig `yaml:"queuing_delay_early_warning,omitempty"`
@@ -377,7 +377,7 @@ var (
 		JQRMinDelay: 15 * time.Millisecond,
 		DQRMaxDelay: 5 * time.Millisecond,
 
-		WeightedLoss:      defaultWeightedLossConfig,
+		WeightedLoss:              defaultWeightedLossConfig,
 		CongestionMinWeightedLoss: 0.25,
 
 		QueuingDelayEarlyWarning: defaultQueuingDelayEarlyWarningCongestionSignalConfig,
@@ -470,7 +470,6 @@ func (c *congestionDetector) getBWEListener() bwe.BWEListener {
 }
 
 func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
-	c.params.Logger.Infow("RAJA TWCC report", "report", report)	// REMOVE
 	c.lock.Lock()
 	recvRefTime, isOutOfOrder := c.twccFeedback.ProcessReport(report, mono.Now())
 	if isOutOfOrder {
@@ -741,7 +740,6 @@ func (c *congestionDetector) isCongestionSignalTriggered() (bool, string, bool, 
 		pg := c.packetGroups[idx]
 		qdMeasurement.ProcessPacketGroup(pg, idx)
 		lossMeasurement.ProcessPacketGroup(pg, idx)
-		c.params.Logger.Infow("send side bwe: congestion signal", "qd", qdMeasurement, "loss", lossMeasurement)	// REMOVE
 
 		// if both measurements have enough data to make a decision, stop processing groups
 		if qdMeasurement.IsSealed() && lossMeasurement.IsSealed() {

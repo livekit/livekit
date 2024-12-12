@@ -130,10 +130,6 @@ func (t *Track) SetMaxLayer(layer buffer.VideoLayer) bool {
 	return true
 }
 
-func (t *Track) WritePaddingRTP(bytesToSend int) int {
-	return t.downTrack.WritePaddingRTP(bytesToSend, false, false)
-}
-
 func (t *Track) WriteProbePackets(bytesToSend int) int {
 	return t.downTrack.WriteProbePackets(bytesToSend)
 }
