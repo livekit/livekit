@@ -136,7 +136,7 @@ func (t *Track) WritePaddingRTP(bytesToSend int) int {
 }
 
 func (t *Track) WriteProbePackets(bytesToSend int) int {
-	return t.downTrack.WriteProbePackets(bytesToSend, false)
+	return t.downTrack.WriteProbePackets(bytesToSend, true)
 }
 
 func (t *Track) AllocateOptimal(allowOvershoot bool, hold bool) sfu.VideoAllocation {

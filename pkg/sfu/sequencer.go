@@ -256,7 +256,7 @@ func (s *sequencer) push(
 
 	pm.actBytes = append([]byte{}, actBytes...)
 
-	s.logger.Debugw("DBGSEQ, after push", "highest", s.extHighestSN, "modified", extModifiedSN, "hadjusted", extHighestSNAdjusted, "madjusted", extModifiedSNAdjusted, "snOffset", s.snOffset, "sourceSeqNo", extIncomingSN, "targetSeqNo", uint16(extModifiedSN)) // REMOVE
+	s.logger.Debugw("DBGSEQ, after push", "highest", s.extHighestSN, "modified", extModifiedSN, "hadjusted", extHighestSNAdjusted, "madjusted", extModifiedSNAdjusted, "snOffset", s.snOffset, "sourceSeqNo", extIncomingSN, "targetSeqNo", uint16(extModifiedSN), "slot", slot) // REMOVE
 	if extModifiedSN > s.extHighestSN {
 		s.extHighestSN = extModifiedSN
 	}
