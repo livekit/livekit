@@ -746,6 +746,8 @@ func (s *StreamAllocator) handleSignalSendProbe(event Event) {
 			break
 		}
 	}
+
+	s.prober.ProbesSent(bytesSent)
 }
 
 func (s *StreamAllocator) handleSignalPacerProbeObserverClusterComplete(event Event) {

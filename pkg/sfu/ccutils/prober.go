@@ -195,6 +195,15 @@ func (p *Prober) AddCluster(mode ProbeClusterMode, pcg ProbeClusterGoal) ProbeCl
 	return cluster.Info()
 }
 
+func (p *Prober) ProbesSent(bytesSent int) {
+	cluster := p.getFrontCluster()
+	if cluster == nil {
+		return
+	}
+
+	cluster.ProbesSent(bytesSent)
+}
+
 func (p *Prober) ClusterDone(info ProbeClusterInfo) {
 	cluster := p.getFrontCluster()
 	if cluster == nil {
@@ -293,7 +302,10 @@ type ProbeClusterId uint32
 const (
 	ProbeClusterIdInvalid ProbeClusterId = 0
 
-	cBytesPerProbe = 1100 // padding only packets are 255 bytes max + 20 byte header = 4 packets per probe
+	// padding only packets are 255 bytes max + 20 byte header = 4 packets per probe,
+	// when not using padding only packets, this is a min and actual sent could be higher
+	cBytesPerProbe = 1100
+	cSleepTime     = 5 * time.Millisecond
 )
 
 // -----------------------------------
@@ -402,6 +414,9 @@ type Cluster struct {
 	mode     ProbeClusterMode
 	listener ProberListener
 
+	startTime      time.Time
+	probeBytesSent int
+
 	probeSleeps []time.Duration
 	probeIdx    int
 
@@ -418,10 +433,11 @@ func newCluster(id ProbeClusterId, mode ProbeClusterMode, pcg ProbeClusterGoal, 
 		},
 		listener: listener,
 	}
-	c.initProbes()
+	c.initProbes() // RAJA-TODO: not needed
 	return c
 }
 
+// RAJA-TODO: make these time buckets of 5ms each and put how much is expected to be finished at the end of each bucket
 func (c *Cluster) initProbes() {
 	numProbeBytes := int(math.Round(float64(c.info.Goal.DesiredBps-c.info.Goal.ExpectedUsageBps)*c.info.Goal.Duration.Seconds()/8 + 0.5))
 	numProbes := (numProbeBytes + cBytesPerProbe - 1) / cBytesPerProbe
@@ -465,6 +481,13 @@ func (c *Cluster) Info() ProbeClusterInfo {
 	return c.info
 }
 
+func (c *Cluster) ProbesSent(bytesSent int) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.probeBytesSent += bytesSent
+}
+
 func (c *Cluster) MarkCompleted(result ProbeClusterResult) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -480,6 +503,7 @@ func (c *Cluster) Process() time.Duration {
 		return 0
 	}
 
+	/* RAJA-TODO
 	sleepDuration := c.probeSleeps[c.probeIdx%len(c.probeSleeps)]
 	c.probeIdx++
 	if c.probeIdx >= len(c.probeSleeps) {
@@ -493,6 +517,25 @@ func (c *Cluster) Process() time.Duration {
 	}
 
 	return sleepDuration
+	*/
+
+	bytesToSend := 0
+	if c.startTime.IsZero() {
+		c.startTime = mono.Now()
+		bytesToSend = cBytesPerProbe
+	} else {
+		sinceStart := time.Since(c.startTime)
+		expectedProbeBytesSent := int(sinceStart.Seconds() * float64((c.info.Goal.DesiredBps-c.info.Goal.ExpectedUsageBps+7)/8))
+		if expectedProbeBytesSent < c.probeBytesSent {
+			bytesToSend = cBytesPerProbe
+		}
+	}
+
+	if bytesToSend != 0 && c.listener != nil {
+		c.listener.OnSendProbe(bytesToSend)
+	}
+
+	return cSleepTime
 }
 
 func (c *Cluster) MarshalLogObject(e zapcore.ObjectEncoder) error {
