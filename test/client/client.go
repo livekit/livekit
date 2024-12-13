@@ -218,10 +218,11 @@ func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 	}
 	subscriberHandler := &transportfakes.FakeHandler{}
 	c.subscriber, err = rtc.NewPCTransport(rtc.TransportParams{
-		Config:          &conf,
-		DirectionConfig: conf.Publisher,
-		EnabledCodecs:   codecs,
-		Handler:         subscriberHandler,
+		Config:           &conf,
+		DirectionConfig:  conf.Publisher,
+		EnabledCodecs:    codecs,
+		Handler:          subscriberHandler,
+		FireOnTrackBySdp: true,
 	})
 	if err != nil {
 		return nil, err
@@ -585,7 +586,23 @@ func (c *RTCClient) hasPrimaryEverConnected() bool {
 	}
 }
 
-func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string) (writer *TrackWriter, err error) {
+type AddTrackParams struct {
+	NoWriter bool
+}
+
+type AddTrackOption func(params *AddTrackParams)
+
+func AddTrackNoWriter() AddTrackOption {
+	return func(params *AddTrackParams) {
+		params.NoWriter = true
+	}
+}
+
+func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string, opts ...AddTrackOption) (writer *TrackWriter, err error) {
+	var params AddTrackParams
+	for _, opt := range opts {
+		opt(&params)
+	}
 	trackType := livekit.TrackType_AUDIO
 	if track.Kind() == webrtc.RTPCodecTypeVideo {
 		trackType = livekit.TrackType_VIDEO
@@ -627,29 +644,32 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string) 
 	c.localTracks[ti.Sid] = track
 	c.trackSenders[ti.Sid] = sender
 	c.publisher.Negotiate(false)
-	writer = NewTrackWriter(c.ctx, track, path)
 
-	// write tracks only after connection established
-	if c.hasPrimaryEverConnected() {
-		err = writer.Start()
-	} else {
-		c.pendingTrackWriters = append(c.pendingTrackWriters, writer)
+	if !params.NoWriter {
+		writer = NewTrackWriter(c.ctx, track, path)
+
+		// write tracks only after connection established
+		if c.hasPrimaryEverConnected() {
+			err = writer.Start()
+		} else {
+			c.pendingTrackWriters = append(c.pendingTrackWriters, writer)
+		}
 	}
 
 	return
 }
 
-func (c *RTCClient) AddStaticTrack(mime string, id string, label string) (writer *TrackWriter, err error) {
-	return c.AddStaticTrackWithCodec(webrtc.RTPCodecCapability{MimeType: mime}, id, label)
+func (c *RTCClient) AddStaticTrack(mime string, id string, label string, opts ...AddTrackOption) (writer *TrackWriter, err error) {
+	return c.AddStaticTrackWithCodec(webrtc.RTPCodecCapability{MimeType: mime}, id, label, opts...)
 }
 
-func (c *RTCClient) AddStaticTrackWithCodec(codec webrtc.RTPCodecCapability, id string, label string) (writer *TrackWriter, err error) {
+func (c *RTCClient) AddStaticTrackWithCodec(codec webrtc.RTPCodecCapability, id string, label string, opts ...AddTrackOption) (writer *TrackWriter, err error) {
 	track, err := webrtc.NewTrackLocalStaticSample(codec, id, label)
 	if err != nil {
 		return
 	}
 
-	return c.AddTrack(track, "")
+	return c.AddTrack(track, "", opts...)
 }
 
 func (c *RTCClient) AddFileTrack(path string, id string, label string) (writer *TrackWriter, err error) {

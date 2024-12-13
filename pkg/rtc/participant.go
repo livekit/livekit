@@ -17,6 +17,7 @@ package rtc
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strconv"
@@ -160,6 +161,7 @@ type ParticipantParams struct {
 	MetricConfig                   metric.MetricConfig
 	UseOneShotSignallingMode       bool
 	EnableMetrics                  bool
+	FireOnTrackBySdp               bool
 }
 
 type ParticipantImpl struct {
@@ -1568,6 +1570,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		SubscriberHandler:            sth,
 		DataChannelStats:             p.dataChannelStats,
 		UseOneShotSignallingMode:     p.params.UseOneShotSignallingMode,
+		FireOnTrackBySdp:             p.params.FireOnTrackBySdp,
 	}
 	if p.params.SyncStreams && p.params.PlayoutDelay.GetEnabled() && p.params.ClientInfo.isFirefox() {
 		// we will disable playout delay for Firefox if the user is expecting
@@ -1761,22 +1764,48 @@ func (p *ParticipantImpl) removePublishedTrack(track types.MediaTrack) {
 }
 
 // when a new remoteTrack is created, creates a Track and adds it to room
-func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
+func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
 	if p.IsDisconnected() {
 		return
 	}
 
+	codec := rtcTrack.Codec()
+	var fromSdp bool
+	// track fired by sdp
+	if rtcTrack.Codec().PayloadType == 0 {
+		codecs := rtpReceiver.GetParameters().Codecs
+		if len(codecs) == 0 || (rtcTrack.Kind() == webrtc.RTPCodecTypeVideo && !p.params.ClientInfo.SupportFireTrackBySdp()) {
+			go func() {
+				// wait for the first packet to determine the codec
+				bytes := make([]byte, 1500)
+				_, _, err := rtcTrack.Read(bytes)
+				if err != nil {
+					if !errors.Is(err, io.EOF) {
+						p.params.Logger.Warnw("could not read first packet to determine codec, track will be ignored", err, "trackID", rtcTrack.ID(), "StreamID", rtcTrack.StreamID())
+					}
+					return
+				}
+				p.onMediaTrack(rtcTrack, rtpReceiver)
+			}()
+			return
+		}
+		codec = codecs[0]
+		fromSdp = true
+	}
+
+	var track sfu.TrackRemote = sfu.NewTrackRemoteFromSdp(rtcTrack, codec)
+
 	publishedTrack, isNewTrack := p.mediaTrackReceived(track, rtpReceiver)
 	if publishedTrack == nil {
 		p.pendingTracksLock.Lock()
-		p.pendingRemoteTracks = append(p.pendingRemoteTracks, &pendingRemoteTrack{track: track, receiver: rtpReceiver})
+		p.pendingRemoteTracks = append(p.pendingRemoteTracks, &pendingRemoteTrack{track: rtcTrack, receiver: rtpReceiver})
 		p.pendingTracksLock.Unlock()
 		p.pubLogger.Debugw("webrtc Track published but can't find MediaTrack, add to pendingTracks",
 			"kind", track.Kind().String(),
 			"webrtcTrackID", track.ID(),
 			"rid", track.RID(),
 			"SSRC", track.SSRC(),
-			"mime", track.Codec().MimeType,
+			"mime", codec.MimeType,
 		)
 		return
 	}
@@ -1798,8 +1827,9 @@ func (p *ParticipantImpl) onMediaTrack(track *webrtc.TrackRemote, rtpReceiver *w
 		"webrtcTrackID", track.ID(),
 		"rid", track.RID(),
 		"SSRC", track.SSRC(),
-		"mime", track.Codec().MimeType,
+		"mime", codec.MimeType,
 		"trackInfo", logger.Proto(publishedTrack.ToProto()),
+		"fromSdp", fromSdp,
 	)
 
 	if !isNewTrack && !publishedTrack.HasPendingCodec() && p.IsReady() {
@@ -2363,7 +2393,7 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) *li
 	return trackInfo
 }
 
-func (p *ParticipantImpl) mediaTrackReceived(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) (*MediaTrack, bool) {
+func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver *webrtc.RTPReceiver) (*MediaTrack, bool) {
 	p.pendingTracksLock.Lock()
 	newTrack := false
 
