@@ -736,12 +736,12 @@ func TestFireTrackBySdp(t *testing.T) {
 	for _, c := range cases {
 		codecs, sdk := c.codecs, c.pubSDK
 		t.Run(c.name, func(t *testing.T) {
-			c1 := createRTCClient("c1", defaultServerPort, &testclient.Options{
+			c1 := createRTCClient(c.name+"_c1", defaultServerPort, &testclient.Options{
 				ClientInfo: &livekit.ClientInfo{
 					Sdk: sdk,
 				},
 			})
-			c2 := createRTCClient("c2", defaultServerPort, &testclient.Options{
+			c2 := createRTCClient(c.name+"_c2", defaultServerPort, &testclient.Options{
 				AutoSubscribe: true,
 				ClientInfo: &livekit.ClientInfo{
 					Sdk: livekit.ClientInfo_JS,
