@@ -305,8 +305,8 @@ const (
 	// padding only packets are 255 bytes max + 20 byte header = 4 packets per probe,
 	// when not using padding only packets, this is a min and actual sent could be higher
 	cBytesPerProbe    = 1100
-	cSleepDuration    = 5 * time.Millisecond
-	cSleepDurationMin = 2 * time.Millisecond
+	cSleepDuration    = 20 * time.Millisecond
+	cSleepDurationMin    = 10 * time.Millisecond
 )
 
 // -----------------------------------
@@ -409,12 +409,12 @@ func (p ProbeClusterInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
 // ---------------------------------------------------------------------------
 
 type bucket struct {
-	sleepDuration          time.Duration
+	expectedElapsedDuration          time.Duration
 	expectedProbeBytesSent int
 }
 
 func (b bucket) MarshalLogObject(e zapcore.ObjectEncoder) error {
-	e.AddDuration("sleepDuration", b.sleepDuration)
+	e.AddDuration("expectedElapsedDuration", b.expectedElapsedDuration)
 	e.AddInt("expectedProbesBytesSent", b.expectedProbeBytesSent)
 	return nil
 }
@@ -438,7 +438,7 @@ type Cluster struct {
 
 	probeBytesSent int
 
-	isStarted  bool
+	startTime time.Time
 	isComplete bool
 }
 
@@ -513,14 +513,26 @@ func (c *Cluster) initProbes() {
 	}
 
 	numIntervals = int(math.Round(c.info.Goal.Duration.Seconds()/c.baseSleepDuration.Seconds() + 0.5))
-	desiredBytesPerInterval := (c.info.Goal.DesiredBytes + numIntervals - 1) / numIntervals
+	desiredProbeBytesPerInterval := int(math.Round(((c.info.Goal.Duration.Seconds() * float64(c.info.Goal.DesiredBps-c.info.Goal.ExpectedUsageBps)/8) + float64(numIntervals) - 1) / float64(numIntervals) + 0.5))
+	logger.Infow("bytesPerInterval", "numIntervals", numIntervals, "bytes", desiredProbeBytesPerInterval, "numBytes", ((c.info.Goal.Duration.Seconds() * float64(c.info.Goal.DesiredBps-c.info.Goal.ExpectedUsageBps)/8)))	// REMOVE
 
 	c.buckets = make([]bucket, numBuckets)
-	for i := 0; i < numIntervals; i++ {
-		c.buckets[i] = bucket{
-			sleepDuration:          time.Duration(numBuckets-i) * c.baseSleepDuration,
-			expectedProbeBytesSent: (i + 1) * desiredBytesPerInterval,
+	for i := 0; i < numBuckets; i++ {
+		switch c.mode {
+		case ProbeClusterModeUniform:
+			c.buckets[i] = bucket{
+				expectedElapsedDuration: c.baseSleepDuration,
+			}
+
+		case ProbeClusterModeLinearChirp:
+			c.buckets[i] = bucket{
+				expectedElapsedDuration: time.Duration(numBuckets-i) * c.baseSleepDuration,
+			}
 		}
+		if i > 0 {
+			c.buckets[i].expectedElapsedDuration += c.buckets[i - 1].expectedElapsedDuration
+		}
+		c.buckets[i].expectedProbeBytesSent = (i + 1) * desiredProbeBytesPerInterval
 	}
 }
 
@@ -579,22 +591,40 @@ func (c *Cluster) Process() time.Duration {
 	return sleepDuration
 	*/
 
-	var sleepDuration time.Duration
 	bytesToSend := 0
-	if !c.isStarted {
-		c.isStarted = true
+	if c.startTime.IsZero() {
+		c.startTime = mono.Now()
 		bytesToSend = cBytesPerProbe
-		sleepDuration = c.buckets[c.bucketIdx].sleepDuration
 	} else {
-		if c.buckets[c.bucketIdx].expectedProbeBytesSent < c.probeBytesSent {
-			bytesToSend = cBytesPerProbe
+		sinceStart := time.Since(c.startTime)
+		if sinceStart > c.buckets[c.bucketIdx].expectedElapsedDuration {
+			logger.Debugw("cluster bucket", "bucketIdx", c.bucketIdx, "expectedProbeBytesSent", c.buckets[c.bucketIdx].expectedProbeBytesSent, "probeBytesSent", c.probeBytesSent)	// REMOVE
+			c.bucketIdx++
+			overflow := false
+			if c.bucketIdx >= len(c.buckets) {
+				// when overflowing, repeat the last bucket
+				c.bucketIdx = len(c.buckets) - 1
+				overflow = true
+			}
+			if c.buckets[c.bucketIdx].expectedProbeBytesSent > c.probeBytesSent || overflow {
+				bytesToSend = max(cBytesPerProbe, c.buckets[c.bucketIdx].expectedProbeBytesSent - c.probeBytesSent)
+			}
 		}
-		sleepDuration = c.buckets[c.bucketIdx].sleepDuration
+		/* RAJA-REMOVE
+		if c.buckets[c.bucketIdx].expectedProbeBytesSent > c.probeBytesSent {
+			bytesToSend = max(cBytesPerProbe, c.buckets[c.bucketIdx].expectedProbeBytesSent - c.probeBytesSent)
+		}
+		logger.Debugw("cluster bucket", "bucketIdx", c.bucketIdx, "expectedProbeBytesSent", c.buckets[c.bucketIdx].expectedProbeBytesSent, "probeBytesSent", c.probeBytesSent)	// REMOVE
 		c.bucketIdx++
 		if c.bucketIdx >= len(c.buckets) {
-			// when overflowing, back off to ensure probe finishes, but not overshoot too much
-			c.bucketIdx /= 2
+			// when overflowing, repeat the last bucket
+			c.bucketIdx = len(c.buckets) - 1
+			if bytesToSend == 0 {
+				bytesToSend = max(cBytesPerProbe, c.buckets[c.bucketIdx].expectedProbeBytesSent - c.probeBytesSent)
+			}
+
 		}
+		*/
 	}
 	c.lock.Unlock()
 
@@ -602,7 +632,7 @@ func (c *Cluster) Process() time.Duration {
 		c.listener.OnSendProbe(bytesToSend)
 	}
 
-	return sleepDuration
+	return cSleepDurationMin
 }
 
 func (c *Cluster) MarshalLogObject(e zapcore.ObjectEncoder) error {
@@ -614,7 +644,8 @@ func (c *Cluster) MarshalLogObject(e zapcore.ObjectEncoder) error {
 		e.AddArray("buckets", logger.ObjectSlice(c.buckets))
 		e.AddInt("bucketIdx", c.bucketIdx)
 		e.AddInt("probeBytesSent", c.probeBytesSent)
-		e.AddBool("isStarted", c.isStarted)
+		e.AddTime("startTime", c.startTime)
+		e.AddDuration("elapsed", time.Since(c.startTime))
 		e.AddBool("isComplete", c.isComplete)
 	}
 	return nil
