@@ -491,6 +491,7 @@ func (r *RoomManager) StartSession(
 		ForwardStats:                 r.forwardStats,
 		MetricConfig:                 r.config.Metric,
 		UseOneShotSignallingMode:     useOneShotSignallingMode,
+		FireOnTrackBySdp:             true,
 	})
 	if err != nil {
 		return err

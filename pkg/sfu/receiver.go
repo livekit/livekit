@@ -151,7 +151,7 @@ type WebRTCReceiver struct {
 
 	bufferMu sync.RWMutex
 	buffers  [buffer.DefaultMaxLayerSpatial + 1]*buffer.Buffer
-	upTracks [buffer.DefaultMaxLayerSpatial + 1]*webrtc.TrackRemote
+	upTracks [buffer.DefaultMaxLayerSpatial + 1]TrackRemote
 	rtt      uint32
 
 	lbThreshold int
@@ -220,7 +220,7 @@ func WithForwardStats(forwardStats *ForwardStats) ReceiverOpts {
 // NewWebRTCReceiver creates a new webrtc track receiver
 func NewWebRTCReceiver(
 	receiver *webrtc.RTPReceiver,
-	track *webrtc.TrackRemote,
+	track TrackRemote,
 	trackInfo *livekit.TrackInfo,
 	logger logger.Logger,
 	onRTCP func([]rtcp.Packet),
@@ -360,7 +360,7 @@ func (w *WebRTCReceiver) Kind() webrtc.RTPCodecType {
 	return w.kind
 }
 
-func (w *WebRTCReceiver) AddUpTrack(track *webrtc.TrackRemote, buff *buffer.Buffer) error {
+func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) error {
 	if w.closed.Load() {
 		return ErrReceiverClosed
 	}
