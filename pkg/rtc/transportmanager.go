@@ -104,6 +104,7 @@ type TransportManagerParams struct {
 	SubscriberHandler            transport.Handler
 	DataChannelStats             *telemetry.BytesTrackStats
 	UseOneShotSignallingMode     bool
+	FireOnTrackBySdp             bool
 }
 
 type TransportManager struct {
@@ -159,6 +160,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		Transport:                livekit.SignalTarget_PUBLISHER,
 		Handler:                  TransportManagerPublisherTransportHandler{TransportManagerTransportHandler{params.PublisherHandler, t, lgr}},
 		UseOneShotSignallingMode: params.UseOneShotSignallingMode,
+		FireOnTrackBySdp:         params.FireOnTrackBySdp,
 	})
 	if err != nil {
 		return nil, err

@@ -260,6 +260,7 @@ type TransportParams struct {
 	AllowPlayoutDelay            bool
 	DataChannelMaxBufferedAmount uint64
 	UseOneShotSignallingMode     bool
+	FireOnTrackBySdp             bool
 }
 
 func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
@@ -286,6 +287,10 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	// Disable close by dtls to avoid peerconnection close too early in migration
 	// https://github.com/pion/webrtc/pull/2961
 	se.DisableCloseByDTLS(true)
+
+	if params.FireOnTrackBySdp {
+		se.SetFireOnTrackBeforeFirstRTP(true)
+	}
 
 	//
 	// Disable SRTP replay protection (https://datatracker.ietf.org/doc/html/rfc3711#page-15).
