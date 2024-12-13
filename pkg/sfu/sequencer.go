@@ -30,6 +30,7 @@ const (
 	maxAck               = 3
 )
 
+/* RAJA-REMOVE
 func btoi(b bool) int {
 	if b {
 		return 1
@@ -41,6 +42,7 @@ func btoi(b bool) int {
 func itob(i int) bool {
 	return i != 0
 }
+*/
 
 type packetMeta struct {
 	// Original extended sequence number from stream.
@@ -254,6 +256,7 @@ func (s *sequencer) push(
 
 	pm.actBytes = append([]byte{}, actBytes...)
 
+	s.logger.Debugw("DBGSEQ, after push", "highest", s.extHighestSN, "modified", extModifiedSN, "hadjusted", extHighestSNAdjusted, "madjusted", extModifiedSNAdjusted, "snOffset", s.snOffset, "sourceSeqNo", extIncomingSN, "targetSeqNo", uint16(extModifiedSN)) // REMOVE
 	if extModifiedSN > s.extHighestSN {
 		s.extHighestSN = extModifiedSN
 	}
@@ -286,20 +289,20 @@ func (s *sequencer) pushPadding(extStartSNInclusive uint64, extEndSNInclusive ui
 		}
 
 		// if exclusion range is before what has already been sequenced, invalidate exclusion range slots
-		for sn := extStartSNInclusive; sn != extEndSNInclusive+1; sn++ {
-			diff := int64(sn - s.extHighestSN)
+		for esn := extStartSNInclusive; esn != extEndSNInclusive+1; esn++ {
+			diff := int64(esn - s.extHighestSN)
 			if diff >= 0 || diff < -int64(s.size) {
 				// too old OR too new (too new should not happen, just be safe)
 				continue
 			}
 
-			snOffset, err := s.snRangeMap.GetValue(sn)
+			snOffset, err := s.snRangeMap.GetValue(esn)
 			if err != nil {
-				s.logger.Errorw("could not get sequence number offset", err, "sn", sn)
+				s.logger.Errorw("could not get sequence number offset", err, "sn", esn)
 				continue
 			}
 
-			slot := (sn - snOffset) % uint64(s.size)
+			slot := (esn - snOffset) % uint64(s.size)
 			s.invalidateSlot(int(slot))
 		}
 		return
@@ -312,6 +315,7 @@ func (s *sequencer) pushPadding(extStartSNInclusive uint64, extEndSNInclusive ui
 
 	s.extHighestSN = extEndSNInclusive
 	s.updateSNOffset()
+	s.logger.Debugw("DBGSEQ after push padding", "start", extStartSNInclusive, "end", extEndSNInclusive, "highestSN", s.extHighestSN, "snOffset", s.snOffset) // REMOVE
 }
 
 func (s *sequencer) getExtPacketMetas(seqNo []uint16) []extPacketMeta {
@@ -380,6 +384,7 @@ func (s *sequencer) getExtPacketMetas(seqNo []uint16) []extPacketMeta {
 			epm.ddBytesSlice = append([]byte{}, meta.ddBytesSlice...)
 			epm.actBytes = append([]byte{}, meta.actBytes...)
 			extPacketMetas = append(extPacketMetas, epm)
+			s.logger.Debugw("DBGSEQ, in rtx", "highest", s.extHighestSN, "sn", sn, "extSN", extSN, "snOffset", snOffset, "ssnOffset", s.snOffset, "extSNAdjusted", extSNAdjusted, "extHighestSNAdjusted", extHighestSNAdjusted, "slot", slot, "epm", &epm) // REMOVE
 		}
 	}
 

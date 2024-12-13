@@ -2004,7 +2004,6 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 }
 
 func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
-	return bytesToSend
 	if !d.writable.Load() ||
 		!d.rtpStats.IsActive() ||
 		(d.absSendTimeExtID == 0 && d.transportWideExtID == 0) ||
