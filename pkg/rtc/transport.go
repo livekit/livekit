@@ -811,7 +811,9 @@ func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal, params types.AddTra
 		return
 	}
 
-	configureAudioTransceiver(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
+	if trackLocal.Kind() == webrtc.RTPCodecTypeAudio {
+		configureAudioTransceiver(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
+	}
 	return
 }
 
@@ -827,7 +829,9 @@ func (t *PCTransport) AddTransceiverFromTrack(trackLocal webrtc.TrackLocal, para
 		return
 	}
 
-	configureAudioTransceiver(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
+	if trackLocal.Kind() == webrtc.RTPCodecTypeAudio {
+		configureAudioTransceiver(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
+	}
 
 	return
 }
