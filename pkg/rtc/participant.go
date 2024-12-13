@@ -1774,7 +1774,7 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 	// track fired by sdp
 	if rtcTrack.Codec().PayloadType == 0 {
 		codecs := rtpReceiver.GetParameters().Codecs
-		if len(codecs) == 0 || (rtcTrack.Kind() == webrtc.RTPCodecTypeVideo && !p.params.ClientInfo.SupportFireTrackBySdp()) {
+		if len(codecs) == 0 || (rtcTrack.Kind() == webrtc.RTPCodecTypeVideo && p.params.ClientInfo.FireTrackByRTPPacket()) {
 			go func() {
 				// wait for the first packet to determine the codec
 				bytes := make([]byte, 1500)

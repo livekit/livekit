@@ -105,12 +105,6 @@ func (c ClientInfo) SupportSctpZeroChecksum() bool {
 	return !(c.isGo() && c.compareVersion("2.1.3") <= 0)
 }
 
-// Go SDK can publish any codec in the negotiated codecs so we can't populate the actual codec by the sdp
-// and should wait for the first rtp packet
-func (c ClientInfo) SupportFireTrackBySdp() bool {
-	return !c.isGo()
-}
-
 // compareVersion compares a semver against the current client SDK version
 // returning 1 if current version is greater than version
 // 0 if they are the same, and -1 if it's an earlier version

@@ -711,9 +711,16 @@ func TestFireTrackBySdp(t *testing.T) {
 	_, finish := setupSingleNodeTest("TestFireTrackBySdp")
 	defer finish()
 
-	c1 := createRTCClient("c1", defaultServerPort, nil)
+	c1 := createRTCClient("c1", defaultServerPort, &testclient.Options{
+		ClientInfo: &livekit.ClientInfo{
+			Sdk: livekit.ClientInfo_JS,
+		},
+	})
 	c2 := createRTCClient("c2", defaultServerPort, &testclient.Options{
 		AutoSubscribe: true,
+		ClientInfo: &livekit.ClientInfo{
+			Sdk: livekit.ClientInfo_JS,
+		},
 	})
 	waitUntilConnected(t, c1, c2)
 	defer func() {
@@ -740,8 +747,8 @@ func TestFireTrackBySdp(t *testing.T) {
 		t.Log("pub track", pubTrack)
 		tracks := c2.SubscribedTracks()[c1.ID()]
 		for _, track := range tracks {
-			t.Log("sub track", track.ID(), track.PayloadType())
-			if track.PayloadType() == 0 && track.ID() == pubTrack {
+			t.Log("sub track", track.ID(), track.Codec())
+			if track.Codec().PayloadType == 0 && track.ID() == pubTrack {
 				found++
 				break
 			}

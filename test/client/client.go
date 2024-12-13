@@ -127,6 +127,7 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 	SetAuthorizationToken(requestHeader, token)
 
 	connectUrl := u.String()
+	sdk := "go"
 	if opts != nil {
 		connectUrl = fmt.Sprintf("%s&auto_subscribe=%t", connectUrl, opts.AutoSubscribe)
 		if opts.Publish != "" {
@@ -139,8 +140,12 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 			if opts.ClientInfo.Os != "" {
 				connectUrl += encodeQueryParam("os", opts.ClientInfo.Os)
 			}
+			if opts.ClientInfo.Sdk != livekit.ClientInfo_UNKNOWN {
+				sdk = opts.ClientInfo.Sdk.String()
+			}
 		}
 	}
+	connectUrl += encodeQueryParam("sdk", sdk)
 	conn, _, err := websocket.DefaultDialer.Dial(connectUrl, requestHeader)
 	return conn, err
 }
@@ -259,6 +264,7 @@ func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 		return c.SendIceCandidate(ic, livekit.SignalTarget_SUBSCRIBER)
 	})
 	subscriberHandler.OnTrackCalls(func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
+		fmt.Println("ontrack", track.Codec(), track.PayloadType())
 		go c.processTrack(track)
 	})
 	subscriberHandler.OnDataPacketCalls(c.handleDataMessage)
@@ -815,6 +821,7 @@ func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 	logger.Infow("client added track", "participant", c.localParticipant.Identity,
 		"pID", pId,
 		"trackID", trackId,
+		"codec", track.Codec(),
 	)
 
 	defer func() {
