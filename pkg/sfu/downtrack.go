@@ -695,6 +695,10 @@ func (d *DownTrack) SSRC() uint32 {
 	return d.ssrc
 }
 
+func (d *DownTrack) SSRCRTX() uint32 {
+	return d.ssrcRTX
+}
+
 func (d *DownTrack) Stop() error {
 	if tr := d.transceiver.Load(); tr != nil {
 		return tr.Stop()
@@ -1738,6 +1742,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 
 		case *rtcp.ReceiverEstimatedMaximumBitrate:
 			if sal := d.getStreamAllocatorListener(); sal != nil {
+				d.params.Logger.Debugw("RAJA REMB", "p", p, "ssrcs", p.SSRCs, "ssrc", d.ssrc, "ssrcRTX", d.ssrcRTX)	// REMOVE
 				sal.OnREMB(d, p)
 			}
 
