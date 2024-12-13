@@ -711,48 +711,71 @@ func TestFireTrackBySdp(t *testing.T) {
 	_, finish := setupSingleNodeTest("TestFireTrackBySdp")
 	defer finish()
 
-	c1 := createRTCClient("c1", defaultServerPort, &testclient.Options{
-		ClientInfo: &livekit.ClientInfo{
-			Sdk: livekit.ClientInfo_JS,
+	var cases = []struct {
+		name   string
+		codecs []webrtc.RTPCodecCapability
+		pubSDK livekit.ClientInfo_SDK
+	}{
+		{
+			name: "js client could pub a/v tracks",
+			codecs: []webrtc.RTPCodecCapability{
+				{MimeType: "video/H264"},
+				{MimeType: "audio/opus"},
+			},
+			pubSDK: livekit.ClientInfo_JS,
 		},
-	})
-	c2 := createRTCClient("c2", defaultServerPort, &testclient.Options{
-		AutoSubscribe: true,
-		ClientInfo: &livekit.ClientInfo{
-			Sdk: livekit.ClientInfo_JS,
+		{
+			name: "go client could pub audio tracks",
+			codecs: []webrtc.RTPCodecCapability{
+				{MimeType: "audio/opus"},
+			},
+			pubSDK: livekit.ClientInfo_GO,
 		},
-	})
-	waitUntilConnected(t, c1, c2)
-	defer func() {
-		c1.Stop()
-		c2.Stop()
-	}()
-
-	codecs := []webrtc.RTPCodecCapability{
-		{MimeType: "video/H264"},
-		{MimeType: "audio/opus"},
-	}
-	// publish tracks and don't write any packets
-	for _, codec := range codecs {
-		_, err := c1.AddStaticTrackWithCodec(codec, codec.MimeType, codec.MimeType, testclient.AddTrackNoWriter())
-		require.NoError(t, err)
 	}
 
-	require.Eventually(t, func() bool {
-		return len(c2.SubscribedTracks()[c1.ID()]) == 2
-	}, 5*time.Second, 10*time.Millisecond)
+	for _, c := range cases {
+		codecs, sdk := c.codecs, c.pubSDK
+		t.Run(c.name, func(t *testing.T) {
+			c1 := createRTCClient(c.name+"_c1", defaultServerPort, &testclient.Options{
+				ClientInfo: &livekit.ClientInfo{
+					Sdk: sdk,
+				},
+			})
+			c2 := createRTCClient(c.name+"_c2", defaultServerPort, &testclient.Options{
+				AutoSubscribe: true,
+				ClientInfo: &livekit.ClientInfo{
+					Sdk: livekit.ClientInfo_JS,
+				},
+			})
+			waitUntilConnected(t, c1, c2)
+			defer func() {
+				c1.Stop()
+				c2.Stop()
+			}()
 
-	var found int
-	for _, pubTrack := range c1.GetPublishedTrackIDs() {
-		t.Log("pub track", pubTrack)
-		tracks := c2.SubscribedTracks()[c1.ID()]
-		for _, track := range tracks {
-			t.Log("sub track", track.ID(), track.Codec())
-			if track.Codec().PayloadType == 0 && track.ID() == pubTrack {
-				found++
-				break
+			// publish tracks and don't write any packets
+			for _, codec := range codecs {
+				_, err := c1.AddStaticTrackWithCodec(codec, codec.MimeType, codec.MimeType, testclient.AddTrackNoWriter())
+				require.NoError(t, err)
 			}
-		}
+
+			require.Eventually(t, func() bool {
+				return len(c2.SubscribedTracks()[c1.ID()]) == len(codecs)
+			}, 5*time.Second, 10*time.Millisecond)
+
+			var found int
+			for _, pubTrack := range c1.GetPublishedTrackIDs() {
+				t.Log("pub track", pubTrack)
+				tracks := c2.SubscribedTracks()[c1.ID()]
+				for _, track := range tracks {
+					t.Log("sub track", track.ID(), track.Codec())
+					if track.Codec().PayloadType == 0 && track.ID() == pubTrack {
+						found++
+						break
+					}
+				}
+			}
+			require.Equal(t, len(codecs), found)
+		})
 	}
-	require.Equal(t, 2, found)
 }
