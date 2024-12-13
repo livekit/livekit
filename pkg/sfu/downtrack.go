@@ -1026,9 +1026,6 @@ func (d *DownTrack) WritePaddingRTP(
 		d.addDummyExtensions(hdr)
 
 		payload := make([]byte, RTPPaddingMaxPayloadSize)
-		for i := 0; i < RTPPaddingMaxPayloadSize; i++ {
-			payload[i] = 0x0
-		}
 		// last byte of padding has padding size including that byte
 		payload[RTPPaddingMaxPayloadSize-1] = byte(RTPPaddingMaxPayloadSize)
 
@@ -1755,7 +1752,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			for _, r := range p.Reports {
 				if r.SSRC != d.ssrc {
 					if r.SSRC == d.ssrcRTX {
-						d.params.Logger.Debugw("RAJA got RR for RTX")	// REMOVE
+						d.params.Logger.Debugw("RAJA got RR for RTX") // REMOVE
 					}
 					continue
 				}
@@ -1920,31 +1917,27 @@ func (d *DownTrack) sendRTX(epm *extPacketMeta, sourcePkt []byte, isProbe bool) 
 	}
 
 	headerSize := hdr.MarshalSize()
+	var (
+		payloadSize, paddingSize int
+		isOutOfOrder             bool
+	)
 	if isProbe {
-	// although not padding only packets, marking it as padding for accounting as padding is used to signify probing,
-	// also not marking them as out-of-order although sequence numbers in packets are out-of-order because of re-sending packets
-		d.rtpStats.Update(
-			mono.UnixNano(),
-			epm.extSequenceNumber,
-			epm.extTimestamp,
-			hdr.Marker,
-			headerSize,
-			0,
-			len(payload),
-			false,
-		)
+		// although not padding only packets, marking it as padding for accounting as padding is used to signify probing,
+		// also not marking them as out-of-order although sequence numbers in packets are out-of-order because of re-sending packets
+		payloadSize, paddingSize, isOutOfOrder = 0, len(payload), false
 	} else {
-		d.rtpStats.Update(
-			mono.UnixNano(),
-			epm.extSequenceNumber,
-			epm.extTimestamp,
-			hdr.Marker,
-			headerSize,
-			len(payload),
-			0,
-			true,
-		)
+		payloadSize, paddingSize, isOutOfOrder = len(payload), 0, true
 	}
+	d.rtpStats.Update(
+		mono.UnixNano(),
+		epm.extSequenceNumber,
+		epm.extTimestamp,
+		hdr.Marker,
+		headerSize,
+		payloadSize,
+		paddingSize,
+		isOutOfOrder,
+	)
 	d.pacer.Enqueue(&pacer.Packet{
 		Header:             hdr,
 		HeaderSize:         headerSize,
