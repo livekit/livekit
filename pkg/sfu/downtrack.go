@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -217,13 +218,16 @@ type DowntrackParams struct {
 // - closed
 // once closed, a DownTrack cannot be re-used.
 type DownTrack struct {
-	params      DowntrackParams
-	id          livekit.TrackID
-	kind        webrtc.RTPCodecType
-	mime        string
-	ssrc        uint32
-	payloadType uint8
-	sequencer   *sequencer
+	params            DowntrackParams
+	id                livekit.TrackID
+	kind              webrtc.RTPCodecType
+	mime              string
+	ssrc              uint32
+	ssrcRTX           uint32
+	payloadType       uint8
+	payloadTypeRTX    uint8
+	sequencer         *sequencer
+	rtxSequenceNumber atomic.Uint64
 
 	forwarder *Forwarder
 
@@ -244,6 +248,7 @@ type DownTrack struct {
 	transceiver               atomic.Pointer[webrtc.RTPTransceiver]
 	writeStream               webrtc.TrackLocalWriter
 	rtcpReader                *buffer.RTCPReader
+	rtcpReaderRTX             *buffer.RTCPReader
 
 	listenerLock            sync.RWMutex
 	receiverReportListeners []ReceiverReportListener
@@ -387,6 +392,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 	}
 
 	d.params.Receiver.AddOnReady(d.handleReceiverReady)
+	d.rtxSequenceNumber.Store(uint64(rand.Intn(1<<14)) + uint64(1<<15)) // a random number in third quartile of sequence number space
 	d.params.Logger.Debugw("downtrack created", "upstreamCodecs", d.upstreamCodecs)
 
 	return d, nil
@@ -490,6 +496,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			"codecs", d.upstreamCodecs,
 			"matchCodec", codec,
 			"ssrc", t.SSRC(),
+			"ssrcRTX", t.SSRCRetransmission(),
 			"isFECEnabled", isFECEnabled,
 		}
 		if d.isRED {
@@ -504,14 +511,22 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		)
 
 		d.ssrc = uint32(t.SSRC())
+		d.ssrcRTX = uint32(t.SSRCRetransmission())
 		d.payloadType = uint8(codec.PayloadType)
+		d.payloadTypeRTX = uint8(utils.FindRTXPayloadType(codec.PayloadType, t.CodecParameters()))
 		d.writeStream = t.WriteStream()
 		d.mime = strings.ToLower(codec.MimeType)
-		if rr := d.params.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, uint32(t.SSRC())).(*buffer.RTCPReader); rr != nil {
+		if rr := d.params.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, d.ssrc).(*buffer.RTCPReader); rr != nil {
 			rr.OnPacket(func(pkt []byte) {
 				d.handleRTCP(pkt)
 			})
 			d.rtcpReader = rr
+		}
+		if rr := d.params.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, d.ssrcRTX).(*buffer.RTCPReader); rr != nil {
+			rr.OnPacket(func(pkt []byte) {
+				d.handleRTCP(pkt)
+			})
+			d.rtcpReaderRTX = rr
 		}
 
 		d.sequencer = newSequencer(d.params.MaxTrack, d.kind == webrtc.RTPCodecTypeVideo, d.params.Logger)
@@ -1154,6 +1169,11 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		d.rtcpReader.Close()
 		d.rtcpReader.OnPacket(nil)
 	}
+	if d.rtcpReaderRTX != nil && flush {
+		d.params.Logger.Debugw("downtrack close rtcp rtx reader")
+		d.rtcpReaderRTX.Close()
+		d.rtcpReaderRTX.OnPacket(nil)
+	}
 	d.bindLock.Unlock()
 
 	d.connectionStats.Close()
@@ -1761,7 +1781,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			}
 
 		case *rtcp.TransportLayerCC:
-			if p.MediaSSRC == d.ssrc {
+			if p.MediaSSRC == d.ssrc || p.MediaSSRC == d.ssrcRTX {
 				if sal := d.getStreamAllocatorListener(); sal != nil {
 					sal.OnTransportCCFeedback(d, p)
 				}
@@ -1883,17 +1903,13 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			Timestamp:      epm.timestamp,
 			SSRC:           d.ssrc,
 		}
+		rtxOffset := 0
+		if d.payloadTypeRTX != 0 && d.ssrcRTX != 0 {
+			rtxOffset = 2
 
-		poolEntity := PacketFactory.Get().(*[]byte)
-		payload := *poolEntity
-		if len(epm.codecBytesSlice) != 0 {
-			n := copy(payload, epm.codecBytesSlice)
-			m := copy(payload[n:], pkt.Payload[epm.numCodecBytesIn:])
-			payload = payload[:n+m]
-		} else {
-			copy(payload, epm.codecBytes[:epm.numCodecBytesOut])
-			copy(payload[epm.numCodecBytesOut:], pkt.Payload[epm.numCodecBytesIn:])
-			payload = payload[:int(epm.numCodecBytesOut)+len(pkt.Payload)-int(epm.numCodecBytesIn)]
+			hdr.PayloadType = d.payloadTypeRTX
+			hdr.SequenceNumber = uint16(d.rtxSequenceNumber.Inc())
+			hdr.SSRC = d.ssrcRTX
 		}
 
 		if d.dependencyDescriptorExtID != 0 {
@@ -1911,6 +1927,22 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			hdr.SetExtension(uint8(d.absCaptureTimeExtID), epm.actBytes)
 		}
 		d.addDummyExtensions(hdr)
+
+		poolEntity := PacketFactory.Get().(*[]byte)
+		payload := *poolEntity
+		if rtxOffset != 0 {
+			// write OSN (Original Sequence Number)
+			binary.BigEndian.PutUint16(payload[0:2], epm.targetSeqNo)
+		}
+		if len(epm.codecBytesSlice) != 0 {
+			n := copy(payload[rtxOffset:], epm.codecBytesSlice)
+			m := copy(payload[rtxOffset+n:], pkt.Payload[epm.numCodecBytesIn:])
+			payload = payload[:rtxOffset+n+m]
+		} else {
+			copy(payload[rtxOffset:], epm.codecBytes[:epm.numCodecBytesOut])
+			copy(payload[rtxOffset+int(epm.numCodecBytesOut):], pkt.Payload[epm.numCodecBytesIn:])
+			payload = payload[:rtxOffset+int(epm.numCodecBytesOut)+len(pkt.Payload)-int(epm.numCodecBytesIn)]
+		}
 
 		headerSize := hdr.MarshalSize()
 		d.rtpStats.Update(
