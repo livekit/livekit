@@ -42,6 +42,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/transport/transportfakes"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
 type SignalRequestHandler func(msg *livekit.SignalRequest) error
@@ -172,6 +173,8 @@ func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 	}
 	conf.SettingEngine.SetLite(false)
 	conf.SettingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleClient)
+	ff := buffer.NewFactoryOfBufferFactory(500, 200)
+	conf.SetBufferFactory(ff.CreateBufferFactory())
 	var codecs []*livekit.Codec
 	for _, codec := range []*livekit.Codec{
 		{
