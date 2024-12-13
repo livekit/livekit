@@ -353,7 +353,12 @@ func (p ProbeClusterResult) Duration() time.Duration {
 }
 
 func (p ProbeClusterResult) Bitrate() float64 {
-	return float64(p.Bytes()*8) / p.Duration().Seconds()
+	duration := p.Duration().Seconds()
+	if duration != 0 {
+		return float64(p.Bytes()*8) / duration
+	}
+
+	return 0
 }
 
 func (p ProbeClusterResult) MarshalLogObject(e zapcore.ObjectEncoder) error {

@@ -21,6 +21,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/protocol/logger"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -83,6 +84,19 @@ type extPacketMeta struct {
 	packetMeta
 	extSequenceNumber uint64
 	extTimestamp      uint64
+}
+
+func (epm *extPacketMeta) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if epm == nil {
+		return nil
+	}
+
+	e.AddUint64("sourceSeqNo", epm.sourceSeqNo)
+	e.AddUint16("targetSeqNo", epm.targetSeqNo)
+	e.AddUint64("extSequenceNumber", epm.extSequenceNumber)
+	e.AddInt8("layer", epm.layer)
+	e.AddUint8("nacked", epm.nacked)
+	return nil
 }
 
 // Sequencer stores the packet sequence received by the down track

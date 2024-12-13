@@ -25,14 +25,16 @@ import (
 // -----------------------------------------------------------
 
 type WeightedLossConfig struct {
-	MinPacketsForLossValidity int     `yaml:"min_packets_for_loss_validity,omitempty"`
-	LossPenaltyFactor         float64 `yaml:"loss_penalty_factor,omitempty"`
+	MinDurationForLossValidity time.Duration `yaml:"min_duration_for_loss_validity,omitempty"`
+	MinPPSForLossValidity      int           `yaml:"min_pps_for_loss_validity,omitempty"`
+	LossPenaltyFactor          float64       `yaml:"loss_penalty_factor,omitempty"`
 }
 
 var (
 	defaultWeightedLossConfig = WeightedLossConfig{
-		MinPacketsForLossValidity: 20,
-		LossPenaltyFactor:         0.25,
+		MinDurationForLossValidity: 200 * time.Millisecond,
+		MinPPSForLossValidity:      20,
+		LossPenaltyFactor:          0.25,
 	}
 )
 
@@ -101,7 +103,7 @@ func (ts *trafficStats) CapturedTrafficRatio() float64 {
 	}
 
 	// apply a penalty for lost packets,
-	// tha rationale being packet dropping is a strategy to relieve congestion
+	// the rationale being packet dropping is a strategy to relieve congestion
 	// and if they were not dropped, they would have increased queuing delay,
 	// as it is not possible to know the reason for the losses,
 	// apply a small penalty to receive delta aggregate to simulate those packets
@@ -110,8 +112,14 @@ func (ts *trafficStats) CapturedTrafficRatio() float64 {
 }
 
 func (ts *trafficStats) WeightedLoss() float64 {
+	durationMicro := ts.Duration()
+	if time.Duration(durationMicro*1000) < ts.params.Config.MinDurationForLossValidity {
+		return 0.0
+	}
+
 	totalPackets := float64(ts.lostPackets + ts.ackedPackets)
-	if int(totalPackets) < ts.params.Config.MinPacketsForLossValidity {
+	pps := totalPackets * 1e6 / float64(durationMicro)
+	if int(pps) < ts.params.Config.MinPPSForLossValidity {
 		return 0.0
 	}
 
@@ -119,8 +127,6 @@ func (ts *trafficStats) WeightedLoss() float64 {
 	if totalPackets != 0 {
 		lossRatio = float64(ts.lostPackets) / totalPackets
 	}
-
-	pps := totalPackets * 1e6 / float64(ts.Duration())
 
 	// Log10 is used to give higher weight for the same loss ratio at higher packet rates,
 	// for e.g.
@@ -143,6 +149,11 @@ func (ts *trafficStats) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddInt64("maxSendTime", ts.maxSendTime)
 	duration := time.Duration(ts.Duration() * 1000)
 	e.AddDuration("duration", duration)
+
+	e.AddInt("ackedPackets", ts.ackedPackets)
+	e.AddInt("ackedBytes", ts.ackedBytes)
+	e.AddInt("lostPackets", ts.lostPackets)
+	e.AddInt("lostBytes", ts.lostBytes)
 
 	bitrate := float64(0)
 	if duration != 0 {

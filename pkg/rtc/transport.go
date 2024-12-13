@@ -1023,9 +1023,6 @@ func (t *PCTransport) Close() {
 	if t.pacer != nil {
 		t.pacer.Stop()
 	}
-	if t.bwe != nil {
-		t.bwe.Stop()
-	}
 
 	_ = t.pc.Close()
 

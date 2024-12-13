@@ -38,7 +38,7 @@ type PacketGroupConfig struct {
 }
 
 var (
-	DefaultPacketGroupConfig = PacketGroupConfig{
+	defaultPacketGroupConfig = PacketGroupConfig{
 		MinPackets:        20,
 		MaxWindowDuration: 500 * time.Millisecond,
 	}
@@ -244,6 +244,10 @@ func (p *packetGroup) FinalizedPropagatedQueuingDelay() (int64, bool) {
 	}
 
 	return p.PropagatedQueuingDelay(), true
+}
+
+func (p *packetGroup) IsFinalized() bool {
+	return p.isFinalized
 }
 
 func (p *packetGroup) Traffic() *trafficStats {
