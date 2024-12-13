@@ -520,13 +520,13 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.payloadTypeRTX = uint8(utils.FindRTXPayloadType(codec.PayloadType, t.CodecParameters()))
 		d.writeStream = t.WriteStream()
 		d.mime = strings.ToLower(codec.MimeType)
-		if rr := d.params.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, uint32(t.SSRC())).(*buffer.RTCPReader); rr != nil {
+		if rr := d.params.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, d.ssrc).(*buffer.RTCPReader); rr != nil {
 			rr.OnPacket(func(pkt []byte) {
 				d.handleRTCP(pkt)
 			})
 			d.rtcpReader = rr
 		}
-		if rr := d.params.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, uint32(t.SSRCRetransmission())).(*buffer.RTCPReader); rr != nil {
+		if rr := d.params.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, d.ssrcRTX).(*buffer.RTCPReader); rr != nil {
 			rr.OnPacket(func(pkt []byte) {
 				d.handleRTCP(pkt)
 			})
@@ -1742,7 +1742,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 
 		case *rtcp.ReceiverEstimatedMaximumBitrate:
 			if sal := d.getStreamAllocatorListener(); sal != nil {
-				d.params.Logger.Debugw("RAJA REMB", "p", p, "ssrcs", p.SSRCs, "ssrc", d.ssrc, "ssrcRTX", d.ssrcRTX)	// REMOVE
+				d.params.Logger.Debugw("RAJA REMB", "p", p, "ssrcs", p.SSRCs, "ssrc", d.ssrc, "ssrcRTX", d.ssrcRTX) // REMOVE
 				sal.OnREMB(d, p)
 			}
 
