@@ -24,10 +24,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-const (
-	videoRTXMimeType = "video/rtx"
-)
-
 var OpusCodecCapability = webrtc.RTPCodecCapability{
 	MimeType:    webrtc.MimeTypeOpus,
 	ClockRate:   48000,
@@ -41,7 +37,7 @@ var RedCodecCapability = webrtc.RTPCodecCapability{
 	SDPFmtpLine: "111/111",
 }
 var videoRTX = webrtc.RTPCodecCapability{
-	MimeType:  videoRTXMimeType,
+	MimeType:  webrtc.MimeTypeRTX,
 	ClockRate: 90000,
 }
 
@@ -137,7 +133,7 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 		if filterOutH264HighProfile && codec.RTPCodecCapability.SDPFmtpLine == h264HighProfileFmtp {
 			continue
 		}
-		if codec.MimeType == videoRTXMimeType {
+		if strings.EqualFold(codec.MimeType, webrtc.MimeTypeRTX) {
 			continue
 		}
 		if IsCodecEnabled(codecs, codec.RTPCodecCapability) {
@@ -147,7 +143,7 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 			if rtxEnabled {
 				if err := me.RegisterCodec(webrtc.RTPCodecParameters{
 					RTPCodecCapability: webrtc.RTPCodecCapability{
-						MimeType:    videoRTXMimeType,
+						MimeType:    webrtc.MimeTypeRTX,
 						ClockRate:   90000,
 						SDPFmtpLine: fmt.Sprintf("apt=%d", codec.PayloadType),
 					},

@@ -333,11 +333,12 @@ var DefaultConfig = Config{
 		AutoCreate: true,
 		EnabledCodecs: []CodecSpec{
 			{Mime: webrtc.MimeTypeOpus},
-			{Mime: "audio/red"},
+			{Mime: sfu.MimeTypeAudioRed},
 			{Mime: webrtc.MimeTypeVP8},
 			{Mime: webrtc.MimeTypeH264},
 			{Mime: webrtc.MimeTypeVP9},
 			{Mime: webrtc.MimeTypeAV1},
+			{Mime: webrtc.MimeTypeRTX},
 		},
 		EmptyTimeout:       5 * 60,
 		DepartureTimeout:   20,
