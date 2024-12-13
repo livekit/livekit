@@ -1860,7 +1860,7 @@ func (d *DownTrack) SetActivePaddingOnMuteUpTrack() {
 	d.activePaddingOnMuteUpTrack.Store(true)
 }
 
-func (d *DownTrack) sendRTX(epm *extPacketMeta, sourcePkt []byte, isProbe bool) (int, error) {
+func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isProbe bool) (int, error) {
 	var pkt rtp.Packet
 	if err := pkt.Unmarshal(sourcePkt); err != nil {
 		d.params.Logger.Errorw("could not unmarshal rtp packet to send via RTX", err)
@@ -1995,7 +1995,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			numRepeatedNACKs++
 		}
 
-		d.sendRTX(&epm, pktBuff[:n], false)
+		d.retransmitPacket(&epm, pktBuff[:n], false)
 	}
 
 	d.totalRepeatedNACKs.Add(numRepeatedNACKs)
@@ -2003,7 +2003,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	d.rtpStats.UpdateNackProcessed(nackAcks, nackMisses, numRepeatedNACKs)
 }
 
-func (d *DownTrack) WriteProbePackets(bytesToSend int) int {
+func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 	if !d.writable.Load() ||
 		!d.rtpStats.IsActive() ||
 		(d.absSendTimeExtID == 0 && d.transportWideExtID == 0) ||
@@ -2012,32 +2012,83 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int) int {
 		return 0
 	}
 
-	src := PacketFactory.Get().(*[]byte)
-	defer PacketFactory.Put(src)
-
 	bytesSent := 0
 
-	endExtHighestSequenceNumber := d.rtpStats.ExtHighestSequenceNumber()
-	startExtHighestSequenceNumber := endExtHighestSequenceNumber - 5
-	for esn := startExtHighestSequenceNumber; esn <= endExtHighestSequenceNumber; esn++ {
-		epm := d.sequencer.lookupExtPacketMeta(esn)
-		if epm == nil {
-			continue
+	if usePadding {
+		num := (bytesToSend + RTPPaddingMaxPayloadSize + RTPPaddingEstimatedHeaderSize - 1) / (RTPPaddingMaxPayloadSize + RTPPaddingEstimatedHeaderSize)
+		if num == 0 {
+			return 0
 		}
 
-		pktBuff := *src
-		n, err := d.params.Receiver.ReadRTP(pktBuff, uint8(epm.layer), epm.sourceSeqNo)
-		if err != nil {
-			if err == io.EOF {
+		for i := 0; i < num; i++ {
+			hdr := &rtp.Header{
+				Version:        2,
+				Padding:        true,
+				Marker:         false,
+				PayloadType:    d.payloadTypeRTX,
+				SequenceNumber: uint16(d.rtxSequenceNumber.Inc()),
+				Timestamp:      0,
+				SSRC:           d.ssrcRTX,
+			}
+			d.addDummyExtensions(hdr)
+
+			payload := make([]byte, RTPPaddingMaxPayloadSize)
+			// last byte of padding has padding size including that byte
+			payload[RTPPaddingMaxPayloadSize-1] = byte(RTPPaddingMaxPayloadSize)
+
+			hdrSize := hdr.MarshalSize()
+			payloadSize := len(payload)
+			/* RAJA-TODO
+			d.rtpStats.Update(
+				mono.UnixNano(),
+				snts[i].extSequenceNumber,
+				snts[i].extTimestamp,
+				hdr.Marker,
+				hdrSize,
+				0,
+				payloadSize,
+				false,
+			)
+			*/
+			d.pacer.Enqueue(&pacer.Packet{
+				Header:             hdr,
+				HeaderSize:         hdrSize,
+				Payload:            payload,
+				ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
+				IsProbe:            true,
+				AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
+				TransportWideExtID: uint8(d.transportWideExtID),
+				WriteStream:        d.writeStream,
+			})
+
+			bytesSent += hdrSize + payloadSize
+		}
+	} else {
+		src := PacketFactory.Get().(*[]byte)
+		defer PacketFactory.Put(src)
+
+		endExtHighestSequenceNumber := d.rtpStats.ExtHighestSequenceNumber()
+		startExtHighestSequenceNumber := endExtHighestSequenceNumber - 5
+		for esn := startExtHighestSequenceNumber; esn <= endExtHighestSequenceNumber; esn++ {
+			epm := d.sequencer.lookupExtPacketMeta(esn)
+			if epm == nil {
+				continue
+			}
+
+			pktBuff := *src
+			n, err := d.params.Receiver.ReadRTP(pktBuff, uint8(epm.layer), epm.sourceSeqNo)
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				continue
+			}
+
+			sent, _ := d.retransmitPacket(epm, pktBuff[:n], true)
+			bytesSent += sent
+			if bytesSent >= bytesToSend {
 				break
 			}
-			continue
-		}
-
-		sent, _ := d.sendRTX(epm, pktBuff[:n], true)
-		bytesSent += sent
-		if bytesSent >= bytesToSend {
-			break
 		}
 	}
 
