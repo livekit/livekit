@@ -1754,6 +1754,9 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			}
 			for _, r := range p.Reports {
 				if r.SSRC != d.ssrc {
+					if r.SSRC == d.ssrcRTX {
+						d.params.Logger.Debugw("RAJA got RR for RTX")	// REMOVE
+					}
 					continue
 				}
 				rr.Reports = append(rr.Reports, r)
@@ -2073,15 +2076,17 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int) int {
 		}
 
 		headerSize := hdr.MarshalSize()
+		// although not padding only packets, marking it as padding for accounting as padding is used to signify probing,
+		// also not marking them as out-of-order although sequence numbers in packets are out-of-order because of re-sending packets
 		d.rtpStats.Update(
 			mono.UnixNano(),
 			epm.extSequenceNumber,
 			epm.extTimestamp,
 			hdr.Marker,
 			headerSize,
-			len(payload),
 			0,
-			true,
+			len(payload),
+			false,
 		)
 		d.pacer.Enqueue(&pacer.Packet{
 			Header:             hdr,
