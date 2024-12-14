@@ -29,15 +29,15 @@ import (
 type channelTrend int
 
 const (
-	channelTrendNeutral channelTrend = iota
+	channelTrendInconclusive channelTrend = iota
 	channelTrendClearing
 	channelTrendCongesting
 )
 
 func (c channelTrend) String() string {
 	switch c {
-	case channelTrendNeutral:
-		return "NEUTRAL"
+	case channelTrendInconclusive:
+		return "INCONCLUSIVE"
 	case channelTrendClearing:
 		return "CLEARING"
 	case channelTrendCongesting:
@@ -181,7 +181,7 @@ func (c *channelObserver) GetTrend() (channelTrend, channelCongestionReason) {
 		return channelTrendClearing, channelCongestionReasonNone
 	}
 
-	return channelTrendNeutral, channelCongestionReasonNone
+	return channelTrendInconclusive, channelCongestionReasonNone
 }
 
 func (c *channelObserver) MarshalLogObject(e zapcore.ObjectEncoder) error {

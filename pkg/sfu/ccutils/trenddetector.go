@@ -27,15 +27,15 @@ import (
 type TrendDirection int
 
 const (
-	TrendDirectionNeutral TrendDirection = iota
+	TrendDirectionInconclusive TrendDirection = iota
 	TrendDirectionUpward
 	TrendDirectionDownward
 )
 
 func (t TrendDirection) String() string {
 	switch t {
-	case TrendDirectionNeutral:
-		return "NEUTRAL"
+	case TrendDirectionInconclusive:
+		return "INCONCLUSIVE"
 	case TrendDirectionUpward:
 		return "UPWARD"
 	case TrendDirectionDownward:
@@ -104,7 +104,7 @@ func NewTrendDetector[T trendDetectorNumber](params TrendDetectorParams) *TrendD
 	return &TrendDetector[T]{
 		params:    params,
 		startTime: time.Now(),
-		direction: TrendDirectionNeutral,
+		direction: TrendDirectionInconclusive,
 	}
 }
 
@@ -236,14 +236,14 @@ func (t *TrendDetector[T]) prune() {
 
 func (t *TrendDetector[T]) updateDirection() {
 	if len(t.samples) < t.params.Config.RequiredSamplesMin {
-		t.direction = TrendDirectionNeutral
+		t.direction = TrendDirectionInconclusive
 		return
 	}
 
 	// using Kendall's Tau to find trend
 	kt := t.kendallsTau()
 
-	t.direction = TrendDirectionNeutral
+	t.direction = TrendDirectionInconclusive
 	switch {
 	case kt > 0 && len(t.samples) >= t.params.Config.RequiredSamples:
 		t.direction = TrendDirectionUpward
