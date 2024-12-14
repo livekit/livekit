@@ -1741,7 +1741,6 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 
 		case *rtcp.ReceiverEstimatedMaximumBitrate:
 			if sal := d.getStreamAllocatorListener(); sal != nil {
-				d.params.Logger.Debugw("RAJA REMB", "p", p, "ssrcs", p.SSRCs, "ssrc", d.ssrc, "ssrcRTX", d.ssrcRTX) // REMOVE
 				sal.OnREMB(d, p)
 			}
 
@@ -1753,9 +1752,6 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			}
 			for _, r := range p.Reports {
 				if r.SSRC != d.ssrc {
-					if r.SSRC == d.ssrcRTX {
-						d.params.Logger.Debugw("RAJA got RR for RTX") // REMOVE
-					}
 					continue
 				}
 				rr.Reports = append(rr.Reports, r)
@@ -2044,7 +2040,7 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 
 			hdrSize := hdr.MarshalSize()
 			payloadSize := len(payload)
-			/* RAJA-TODO
+			/* RTX-TODO
 			d.rtpStats.Update(
 				mono.UnixNano(),
 				snts[i].extSequenceNumber,

@@ -306,7 +306,7 @@ const (
 	// when not using padding only packets, this is a min and actual sent could be higher
 	cBytesPerProbe    = 1100
 	cSleepDuration    = 20 * time.Millisecond
-	cSleepDurationMin    = 10 * time.Millisecond
+	cSleepDurationMin = 10 * time.Millisecond
 )
 
 // -----------------------------------
@@ -409,8 +409,8 @@ func (p ProbeClusterInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
 // ---------------------------------------------------------------------------
 
 type bucket struct {
-	expectedElapsedDuration          time.Duration
-	expectedProbeBytesSent int
+	expectedElapsedDuration time.Duration
+	expectedProbeBytesSent  int
 }
 
 func (b bucket) MarshalLogObject(e zapcore.ObjectEncoder) error {
@@ -428,17 +428,13 @@ type Cluster struct {
 	mode     ProbeClusterMode
 	listener ProberListener
 
-	/* RAJA-REMOVE
-	probeSleeps   []time.Duration
-	probeIdx      int
-	*/
 	baseSleepDuration time.Duration
 	buckets           []bucket
 	bucketIdx         int
 
 	probeBytesSent int
 
-	startTime time.Time
+	startTime  time.Time
 	isComplete bool
 }
 
@@ -456,33 +452,7 @@ func newCluster(id ProbeClusterId, mode ProbeClusterMode, pcg ProbeClusterGoal, 
 	return c
 }
 
-// RAJA-TODO: make these time buckets of 5ms each and put how much is expected to be finished at the end of each bucket
 func (c *Cluster) initProbes() {
-	/* RAJA-TODO
-	numProbeBytes := int(math.Round(float64(c.info.Goal.DesiredBps-c.info.Goal.ExpectedUsageBps)*c.info.Goal.Duration.Seconds()/8 + 0.5))
-	numProbes := (numProbeBytes + cBytesPerProbe - 1) / cBytesPerProbe
-	if numProbes < 1 {
-		numProbes = 1
-	}
-
-	c.probeSleeps = make([]time.Duration, numProbes)
-	switch c.mode {
-	case ProbeClusterModeUniform:
-		interval := c.info.Goal.Duration / time.Duration(numProbes)
-		for i := 0; i < numProbes; i++ {
-			c.probeSleeps[i] = interval
-		}
-
-	case ProbeClusterModeLinearChirp:
-		numIntervals := numProbes * (numProbes + 1) / 2
-		interval := c.info.Goal.Duration / time.Duration(numIntervals)
-		for i := 0; i < numProbes; i++ {
-			c.probeSleeps[i] = time.Duration(numProbes-i) * interval
-		}
-	}
-
-	c.info.Goal.DesiredBytes = int(math.Round(float64(c.info.Goal.DesiredBps)*c.info.Goal.Duration.Seconds()/8 + 0.5))
-	*/
 	c.info.Goal.DesiredBytes = int(math.Round(float64(c.info.Goal.DesiredBps)*c.info.Goal.Duration.Seconds()/8 + 0.5))
 
 	numBuckets := int(math.Round(c.info.Goal.Duration.Seconds()/cSleepDuration.Seconds() + 0.5))
@@ -513,8 +483,7 @@ func (c *Cluster) initProbes() {
 	}
 
 	numIntervals = int(math.Round(c.info.Goal.Duration.Seconds()/c.baseSleepDuration.Seconds() + 0.5))
-	desiredProbeBytesPerInterval := int(math.Round(((c.info.Goal.Duration.Seconds() * float64(c.info.Goal.DesiredBps-c.info.Goal.ExpectedUsageBps)/8) + float64(numIntervals) - 1) / float64(numIntervals) + 0.5))
-	logger.Infow("bytesPerInterval", "numIntervals", numIntervals, "bytes", desiredProbeBytesPerInterval, "numBytes", ((c.info.Goal.Duration.Seconds() * float64(c.info.Goal.DesiredBps-c.info.Goal.ExpectedUsageBps)/8)))	// REMOVE
+	desiredProbeBytesPerInterval := int(math.Round(((c.info.Goal.Duration.Seconds()*float64(c.info.Goal.DesiredBps-c.info.Goal.ExpectedUsageBps)/8)+float64(numIntervals)-1)/float64(numIntervals) + 0.5))
 
 	c.buckets = make([]bucket, numBuckets)
 	for i := 0; i < numBuckets; i++ {
@@ -530,7 +499,7 @@ func (c *Cluster) initProbes() {
 			}
 		}
 		if i > 0 {
-			c.buckets[i].expectedElapsedDuration += c.buckets[i - 1].expectedElapsedDuration
+			c.buckets[i].expectedElapsedDuration += c.buckets[i-1].expectedElapsedDuration
 		}
 		c.buckets[i].expectedProbeBytesSent = (i + 1) * desiredProbeBytesPerInterval
 	}
@@ -575,22 +544,6 @@ func (c *Cluster) Process() time.Duration {
 		return 0
 	}
 
-	/* RAJA-TODO
-	sleepDuration := c.probeSleeps[c.probeIdx%len(c.probeSleeps)]
-	c.probeIdx++
-	if c.probeIdx >= len(c.probeSleeps) {
-		// when overflowing, back off to ensure probe finishes, but not overshoot too much
-		sleepDuration *= time.Duration(c.probeIdx/len(c.probeSleeps) + 1)
-	}
-	c.lock.Unlock()
-
-	if c.listener != nil {
-		c.listener.OnSendProbe(cBytesPerProbe)
-	}
-
-	return sleepDuration
-	*/
-
 	bytesToSend := 0
 	if c.startTime.IsZero() {
 		c.startTime = mono.Now()
@@ -598,7 +551,6 @@ func (c *Cluster) Process() time.Duration {
 	} else {
 		sinceStart := time.Since(c.startTime)
 		if sinceStart > c.buckets[c.bucketIdx].expectedElapsedDuration {
-			logger.Debugw("cluster bucket", "bucketIdx", c.bucketIdx, "expectedProbeBytesSent", c.buckets[c.bucketIdx].expectedProbeBytesSent, "probeBytesSent", c.probeBytesSent)	// REMOVE
 			c.bucketIdx++
 			overflow := false
 			if c.bucketIdx >= len(c.buckets) {
@@ -607,24 +559,9 @@ func (c *Cluster) Process() time.Duration {
 				overflow = true
 			}
 			if c.buckets[c.bucketIdx].expectedProbeBytesSent > c.probeBytesSent || overflow {
-				bytesToSend = max(cBytesPerProbe, c.buckets[c.bucketIdx].expectedProbeBytesSent - c.probeBytesSent)
+				bytesToSend = max(cBytesPerProbe, c.buckets[c.bucketIdx].expectedProbeBytesSent-c.probeBytesSent)
 			}
 		}
-		/* RAJA-REMOVE
-		if c.buckets[c.bucketIdx].expectedProbeBytesSent > c.probeBytesSent {
-			bytesToSend = max(cBytesPerProbe, c.buckets[c.bucketIdx].expectedProbeBytesSent - c.probeBytesSent)
-		}
-		logger.Debugw("cluster bucket", "bucketIdx", c.bucketIdx, "expectedProbeBytesSent", c.buckets[c.bucketIdx].expectedProbeBytesSent, "probeBytesSent", c.probeBytesSent)	// REMOVE
-		c.bucketIdx++
-		if c.bucketIdx >= len(c.buckets) {
-			// when overflowing, repeat the last bucket
-			c.bucketIdx = len(c.buckets) - 1
-			if bytesToSend == 0 {
-				bytesToSend = max(cBytesPerProbe, c.buckets[c.bucketIdx].expectedProbeBytesSent - c.probeBytesSent)
-			}
-
-		}
-		*/
 	}
 	c.lock.Unlock()
 

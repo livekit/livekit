@@ -30,20 +30,6 @@ const (
 	maxAck               = 3
 )
 
-/* RAJA-REMOVE
-func btoi(b bool) int {
-	if b {
-		return 1
-	}
-
-	return 0
-}
-
-func itob(i int) bool {
-	return i != 0
-}
-*/
-
 type packetMeta struct {
 	// Original extended sequence number from stream.
 	// The original extended sequence number is used to find the original
@@ -256,7 +242,6 @@ func (s *sequencer) push(
 
 	pm.actBytes = append([]byte{}, actBytes...)
 
-	s.logger.Debugw("DBGSEQ, after push", "highest", s.extHighestSN, "modified", extModifiedSN, "hadjusted", extHighestSNAdjusted, "madjusted", extModifiedSNAdjusted, "snOffset", s.snOffset, "sourceSeqNo", extIncomingSN, "targetSeqNo", uint16(extModifiedSN), "slot", slot) // REMOVE
 	if extModifiedSN > s.extHighestSN {
 		s.extHighestSN = extModifiedSN
 	}
@@ -315,7 +300,6 @@ func (s *sequencer) pushPadding(extStartSNInclusive uint64, extEndSNInclusive ui
 
 	s.extHighestSN = extEndSNInclusive
 	s.updateSNOffset()
-	s.logger.Debugw("DBGSEQ after push padding", "start", extStartSNInclusive, "end", extEndSNInclusive, "highestSN", s.extHighestSN, "snOffset", s.snOffset) // REMOVE
 }
 
 func (s *sequencer) getExtPacketMetas(seqNo []uint16) []extPacketMeta {
@@ -384,7 +368,6 @@ func (s *sequencer) getExtPacketMetas(seqNo []uint16) []extPacketMeta {
 			epm.ddBytesSlice = append([]byte{}, meta.ddBytesSlice...)
 			epm.actBytes = append([]byte{}, meta.actBytes...)
 			extPacketMetas = append(extPacketMetas, epm)
-			s.logger.Debugw("DBGSEQ, in rtx", "highest", s.extHighestSN, "sn", sn, "extSN", extSN, "snOffset", snOffset, "ssnOffset", s.snOffset, "extSNAdjusted", extSNAdjusted, "extHighestSNAdjusted", extHighestSNAdjusted, "slot", slot, "epm", &epm) // REMOVE
 		}
 	}
 
