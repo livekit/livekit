@@ -142,15 +142,19 @@ var (
 // -------------------------------------------------------------------
 
 type DownTrackState struct {
-	RTPStats                    *rtpstats.RTPStatsSender
-	DeltaStatsSenderSnapshotId  uint32
-	ForwarderState              *livekit.RTPForwarderState
-	PlayoutDelayControllerState PlayoutDelayControllerState
+	RTPStats                      *rtpstats.RTPStatsSender
+	DeltaStatsSenderSnapshotId    uint32
+	RTPStatsRTX                   *rtpstats.RTPStatsSender
+	DeltaStatsRTXSenderSnapshotId uint32
+	ForwarderState                *livekit.RTPForwarderState
+	PlayoutDelayControllerState   PlayoutDelayControllerState
 }
 
 func (d DownTrackState) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddObject("RTPStats", d.RTPStats)
 	e.AddUint32("DeltaStatsSenderSnapshotId", d.DeltaStatsSenderSnapshotId)
+	e.AddObject("RTPStatsRTX", d.RTPStatsRTX)
+	e.AddUint32("DeltaStatsRTXSenderSnapshotId", d.DeltaStatsRTXSenderSnapshotId)
 	e.AddObject("ForwarderState", logger.Proto(d.ForwarderState))
 	e.AddObject("PlayoutDelayControllerState", d.PlayoutDelayControllerState)
 	return nil
@@ -291,14 +295,17 @@ type DownTrack struct {
 	writeStopped         atomic.Bool
 	isReceiverReady      bool
 
-	rtpStats *rtpstats.RTPStatsSender
+	rtpStats                   *rtpstats.RTPStatsSender
+	deltaStatsSenderSnapshotId uint32
+
+	rtpStatsRTX                   *rtpstats.RTPStatsSender
+	deltaStatsRTXSenderSnapshotId uint32
 
 	totalRepeatedNACKs atomic.Uint32
 
 	blankFramesGeneration atomic.Uint32
 
-	connectionStats            *connectionquality.ConnectionStats
-	deltaStatsSenderSnapshotId uint32
+	connectionStats *connectionquality.ConnectionStats
 
 	isNACKThrottled atomic.Bool
 
@@ -365,6 +372,12 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		Logger:    d.params.Logger,
 	})
 	d.deltaStatsSenderSnapshotId = d.rtpStats.NewSenderSnapshotId()
+
+	d.rtpStatsRTX = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{
+		ClockRate: d.codec.ClockRate,
+		Logger:    d.params.Logger,
+	})
+	d.deltaStatsRTXSenderSnapshotId = d.rtpStatsRTX.NewSenderSnapshotId()
 
 	d.forwarder = NewForwarder(
 		d.kind,
@@ -956,11 +969,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 
 // WritePaddingRTP tries to write as many padding only RTP packets as necessary
 // to satisfy given size to the DownTrack
-func (d *DownTrack) WritePaddingRTP(
-	bytesToSend int,
-	paddingOnMute bool,
-	forceMarker bool,
-) int {
+func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMarker bool) int {
 	if !d.writable.Load() {
 		return 0
 	}
@@ -1189,11 +1198,13 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	d.connectionStats.Close()
 
 	d.rtpStats.Stop()
+	d.rtpStatsRTX.Stop()
 	d.params.Logger.Debugw("rtp stats",
 		"direction", "downstream",
 		"mime", d.mime,
 		"ssrc", d.ssrc,
 		"stats", d.rtpStats,
+		"statsRTX", d.rtpStatsRTX,
 	)
 
 	d.maxLayerNotifierChMu.Lock()
@@ -1241,9 +1252,11 @@ func (d *DownTrack) MaxLayer() buffer.VideoLayer {
 
 func (d *DownTrack) GetState() DownTrackState {
 	dts := DownTrackState{
-		RTPStats:                   d.rtpStats,
-		DeltaStatsSenderSnapshotId: d.deltaStatsSenderSnapshotId,
-		ForwarderState:             d.forwarder.GetState(),
+		RTPStats:                      d.rtpStats,
+		DeltaStatsSenderSnapshotId:    d.deltaStatsSenderSnapshotId,
+		RTPStatsRTX:                   d.rtpStatsRTX,
+		DeltaStatsRTXSenderSnapshotId: d.deltaStatsRTXSenderSnapshotId,
+		ForwarderState:                d.forwarder.GetState(),
 	}
 
 	if d.playoutDelay != nil {
@@ -1262,6 +1275,10 @@ func (d *DownTrack) SeedState(state DownTrackState) {
 		if d.playoutDelay != nil {
 			d.playoutDelay.SeedState(state.PlayoutDelayControllerState)
 		}
+	}
+	if state.RTPStatsRTX != nil {
+		d.rtpStatsRTX.Seed(state.RTPStatsRTX)
+		d.deltaStatsRTXSenderSnapshotId = state.DeltaStatsRTXSenderSnapshotId
 	}
 	d.forwarder.SeedState(state.ForwarderState)
 }
@@ -1520,6 +1537,7 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 		return nil
 	}
 
+	// RAJA-TODO: should this send sender report for RTX also?
 	_, tsOffset, refSenderReport := d.forwarder.GetSenderReportParams()
 	return d.rtpStats.GetRtcpSenderReport(d.ssrc, refSenderReport, tsOffset, !d.params.DisableSenderReportPassThrough)
 }
@@ -1926,16 +1944,29 @@ func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isPro
 	} else {
 		payloadSize, paddingSize, isOutOfOrder = len(payload), 0, true
 	}
-	d.rtpStats.Update(
-		mono.UnixNano(),
-		epm.extSequenceNumber,
-		epm.extTimestamp,
-		hdr.Marker,
-		headerSize,
-		payloadSize,
-		paddingSize,
-		isOutOfOrder,
-	)
+	if hdr.SSRC == d.ssrcRTX {
+		d.rtpStatsRTX.Update(
+			mono.UnixNano(),
+			epm.extSequenceNumber,
+			epm.extTimestamp,
+			hdr.Marker,
+			headerSize,
+			payloadSize,
+			paddingSize,
+			isOutOfOrder,
+		)
+	} else {
+		d.rtpStats.Update(
+			mono.UnixNano(),
+			epm.extSequenceNumber,
+			epm.extTimestamp,
+			hdr.Marker,
+			headerSize,
+			payloadSize,
+			paddingSize,
+			isOutOfOrder,
+		)
+	}
 	d.pacer.Enqueue(&pacer.Packet{
 		Header:             hdr,
 		HeaderSize:         headerSize,
@@ -2022,13 +2053,14 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 			return 0
 		}
 
+		extSequenceNumber := d.rtxSequenceNumber.Inc()
 		for i := 0; i < num; i++ {
 			hdr := &rtp.Header{
 				Version:        2,
 				Padding:        true,
 				Marker:         false,
 				PayloadType:    d.payloadTypeRTX,
-				SequenceNumber: uint16(d.rtxSequenceNumber.Inc()),
+				SequenceNumber: uint16(extSequenceNumber),
 				Timestamp:      0,
 				SSRC:           d.ssrcRTX,
 			}
@@ -2040,18 +2072,16 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 
 			hdrSize := hdr.MarshalSize()
 			payloadSize := len(payload)
-			/* RTX-TODO
-			d.rtpStats.Update(
+			d.rtpStatsRTX.Update(
 				mono.UnixNano(),
-				snts[i].extSequenceNumber,
-				snts[i].extTimestamp,
+				extSequenceNumber,
+				0,
 				hdr.Marker,
 				hdrSize,
 				0,
 				payloadSize,
 				false,
 			)
-			*/
 			d.pacer.Enqueue(&pacer.Packet{
 				Header:             hdr,
 				HeaderSize:         hdrSize,
@@ -2149,6 +2179,7 @@ func (d *DownTrack) GetConnectionScoreAndQuality() (float32, livekit.ConnectionQ
 
 func (d *DownTrack) GetTrackStats() *livekit.RTPStats {
 	return d.rtpStats.ToProto()
+	// RAJA-TODO - need to reconcole loss with rtpStatsRTX
 }
 
 func (d *DownTrack) deltaStats(ds *rtpstats.RTPDeltaInfo) map[uint32]*buffer.StreamStatsWithLayers {
@@ -2168,6 +2199,7 @@ func (d *DownTrack) deltaStats(ds *rtpstats.RTPDeltaInfo) map[uint32]*buffer.Str
 }
 
 func (d *DownTrack) GetDeltaStatsSender() map[uint32]*buffer.StreamStatsWithLayers {
+	// RAJA-TODO - need to reconcile loss with rtpStatsRTX
 	return d.deltaStats(d.rtpStats.DeltaInfoSender(d.deltaStatsSenderSnapshotId))
 }
 
@@ -2176,10 +2208,12 @@ func (d *DownTrack) GetLastReceiverReportTime() time.Time {
 }
 
 func (d *DownTrack) GetTotalPacketsSent() uint64 {
+	// RAJA-TODO: need to reconcile with RTX padding
 	return d.rtpStats.GetPacketsSeenMinusPadding()
 }
 
 func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint32) {
+	// RAJA-TODO: need to reconcile with RTX padding
 	totalPackets = uint32(d.rtpStats.GetPacketsSeenMinusPadding())
 	totalRepeatedNACKs = d.totalRepeatedNACKs.Load()
 	return
