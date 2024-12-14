@@ -195,6 +195,15 @@ func (p *Prober) AddCluster(mode ProbeClusterMode, pcg ProbeClusterGoal) ProbeCl
 	return cluster.Info()
 }
 
+func (p *Prober) ProbesSent(bytesSent int) {
+	cluster := p.getFrontCluster()
+	if cluster == nil {
+		return
+	}
+
+	cluster.ProbesSent(bytesSent)
+}
+
 func (p *Prober) ClusterDone(info ProbeClusterInfo) {
 	cluster := p.getFrontCluster()
 	if cluster == nil {
@@ -293,7 +302,11 @@ type ProbeClusterId uint32
 const (
 	ProbeClusterIdInvalid ProbeClusterId = 0
 
-	cBytesPerProbe = 1100 // padding only packets are 255 bytes max + 20 byte header = 4 packets per probe
+	// padding only packets are 255 bytes max + 20 byte header = 4 packets per probe,
+	// when not using padding only packets, this is a min and actual sent could be higher
+	cBytesPerProbe    = 1100
+	cSleepDuration    = 20 * time.Millisecond
+	cSleepDurationMin = 10 * time.Millisecond
 )
 
 // -----------------------------------
@@ -395,6 +408,19 @@ func (p ProbeClusterInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 // ---------------------------------------------------------------------------
 
+type bucket struct {
+	expectedElapsedDuration time.Duration
+	expectedProbeBytesSent  int
+}
+
+func (b bucket) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddDuration("expectedElapsedDuration", b.expectedElapsedDuration)
+	e.AddInt("expectedProbesBytesSent", b.expectedProbeBytesSent)
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+
 type Cluster struct {
 	lock sync.RWMutex
 
@@ -402,9 +428,13 @@ type Cluster struct {
 	mode     ProbeClusterMode
 	listener ProberListener
 
-	probeSleeps []time.Duration
-	probeIdx    int
+	baseSleepDuration time.Duration
+	buckets           []bucket
+	bucketIdx         int
 
+	probeBytesSent int
+
+	startTime  time.Time
 	isComplete bool
 }
 
@@ -423,29 +453,56 @@ func newCluster(id ProbeClusterId, mode ProbeClusterMode, pcg ProbeClusterGoal, 
 }
 
 func (c *Cluster) initProbes() {
-	numProbeBytes := int(math.Round(float64(c.info.Goal.DesiredBps-c.info.Goal.ExpectedUsageBps)*c.info.Goal.Duration.Seconds()/8 + 0.5))
-	numProbes := (numProbeBytes + cBytesPerProbe - 1) / cBytesPerProbe
-	if numProbes < 1 {
-		numProbes = 1
-	}
-
-	c.probeSleeps = make([]time.Duration, numProbes)
-	switch c.mode {
-	case ProbeClusterModeUniform:
-		interval := c.info.Goal.Duration / time.Duration(numProbes)
-		for i := 0; i < numProbes; i++ {
-			c.probeSleeps[i] = interval
-		}
-
-	case ProbeClusterModeLinearChirp:
-		numIntervals := numProbes * (numProbes + 1) / 2
-		interval := c.info.Goal.Duration / time.Duration(numIntervals)
-		for i := 0; i < numProbes; i++ {
-			c.probeSleeps[i] = time.Duration(numProbes-i) * interval
-		}
-	}
-
 	c.info.Goal.DesiredBytes = int(math.Round(float64(c.info.Goal.DesiredBps)*c.info.Goal.Duration.Seconds()/8 + 0.5))
+
+	numBuckets := int(math.Round(c.info.Goal.Duration.Seconds()/cSleepDuration.Seconds() + 0.5))
+	if numBuckets < 1 {
+		numBuckets = 1
+	}
+	numIntervals := numBuckets
+
+	// for linear chirp, group intervals with decreasing duration, i.e. incraasing bitrate,
+	// by aiming to send same number of bytes in each interval, as intervals get shorter, the bitrate is higher
+	if c.mode == ProbeClusterModeLinearChirp {
+		sum := 0
+		i := 1
+		for {
+			sum += i
+			if sum >= numBuckets {
+				break
+			}
+			i++
+		}
+		numBuckets = i
+		numIntervals = sum
+	}
+
+	c.baseSleepDuration = c.info.Goal.Duration / time.Duration(numIntervals)
+	if c.baseSleepDuration < cSleepDurationMin {
+		c.baseSleepDuration = cSleepDurationMin
+	}
+
+	numIntervals = int(math.Round(c.info.Goal.Duration.Seconds()/c.baseSleepDuration.Seconds() + 0.5))
+	desiredProbeBytesPerInterval := int(math.Round(((c.info.Goal.Duration.Seconds()*float64(c.info.Goal.DesiredBps-c.info.Goal.ExpectedUsageBps)/8)+float64(numIntervals)-1)/float64(numIntervals) + 0.5))
+
+	c.buckets = make([]bucket, numBuckets)
+	for i := 0; i < numBuckets; i++ {
+		switch c.mode {
+		case ProbeClusterModeUniform:
+			c.buckets[i] = bucket{
+				expectedElapsedDuration: c.baseSleepDuration,
+			}
+
+		case ProbeClusterModeLinearChirp:
+			c.buckets[i] = bucket{
+				expectedElapsedDuration: time.Duration(numBuckets-i) * c.baseSleepDuration,
+			}
+		}
+		if i > 0 {
+			c.buckets[i].expectedElapsedDuration += c.buckets[i-1].expectedElapsedDuration
+		}
+		c.buckets[i].expectedProbeBytesSent = (i + 1) * desiredProbeBytesPerInterval
+	}
 }
 
 func (c *Cluster) Start() {
@@ -465,6 +522,13 @@ func (c *Cluster) Info() ProbeClusterInfo {
 	return c.info
 }
 
+func (c *Cluster) ProbesSent(bytesSent int) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.probeBytesSent += bytesSent
+}
+
 func (c *Cluster) MarkCompleted(result ProbeClusterResult) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -480,28 +544,45 @@ func (c *Cluster) Process() time.Duration {
 		return 0
 	}
 
-	sleepDuration := c.probeSleeps[c.probeIdx%len(c.probeSleeps)]
-	c.probeIdx++
-	if c.probeIdx >= len(c.probeSleeps) {
-		// when overflowing, back off to ensure probe finishes, but not overshoot too much
-		sleepDuration *= time.Duration(c.probeIdx/len(c.probeSleeps) + 1)
+	bytesToSend := 0
+	if c.startTime.IsZero() {
+		c.startTime = mono.Now()
+		bytesToSend = cBytesPerProbe
+	} else {
+		sinceStart := time.Since(c.startTime)
+		if sinceStart > c.buckets[c.bucketIdx].expectedElapsedDuration {
+			c.bucketIdx++
+			overflow := false
+			if c.bucketIdx >= len(c.buckets) {
+				// when overflowing, repeat the last bucket
+				c.bucketIdx = len(c.buckets) - 1
+				overflow = true
+			}
+			if c.buckets[c.bucketIdx].expectedProbeBytesSent > c.probeBytesSent || overflow {
+				bytesToSend = max(cBytesPerProbe, c.buckets[c.bucketIdx].expectedProbeBytesSent-c.probeBytesSent)
+			}
+		}
 	}
 	c.lock.Unlock()
 
-	if c.listener != nil {
-		c.listener.OnSendProbe(cBytesPerProbe)
+	if bytesToSend != 0 && c.listener != nil {
+		c.listener.OnSendProbe(bytesToSend)
 	}
 
-	return sleepDuration
+	return cSleepDurationMin
 }
 
 func (c *Cluster) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	if c != nil {
 		e.AddString("mode", c.mode.String())
 		e.AddObject("info", c.info)
-		e.AddInt("numProbes", len(c.probeSleeps))
-		e.AddArray("probeSleeps", logger.DurationSlice(c.probeSleeps))
-		e.AddInt("probeIdx", c.probeIdx)
+		e.AddDuration("baseSleepDuration", c.baseSleepDuration)
+		e.AddInt("numBuckets", len(c.buckets))
+		e.AddArray("buckets", logger.ObjectSlice(c.buckets))
+		e.AddInt("bucketIdx", c.bucketIdx)
+		e.AddInt("probeBytesSent", c.probeBytesSent)
+		e.AddTime("startTime", c.startTime)
+		e.AddDuration("elapsed", time.Since(c.startTime))
 		e.AddBool("isComplete", c.isComplete)
 	}
 	return nil

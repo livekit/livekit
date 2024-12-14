@@ -372,10 +372,12 @@ func (s *StreamAllocator) OnREMB(downTrack *sfu.DownTrack, remb *rtcp.ReceiverEs
 		return
 	}
 
-	track := s.videoTracks[livekit.TrackID(downTrack.ID())]
 	downTrackSSRC := uint32(0)
+	downTrackSSRCRTX := uint32(0)
+	track := s.videoTracks[livekit.TrackID(downTrack.ID())]
 	if track != nil {
 		downTrackSSRC = track.DownTrack().SSRC()
+		downTrackSSRCRTX = track.DownTrack().SSRCRTX()
 	}
 
 	found := false
@@ -393,13 +395,22 @@ func (s *StreamAllocator) OnREMB(downTrack *sfu.DownTrack, remb *rtcp.ReceiverEs
 		}
 
 		// try to lock to track which is sending this update
-		if downTrackSSRC != 0 {
-			for _, ssrc := range remb.SSRCs {
-				if ssrc == downTrackSSRC {
-					s.rembTrackingSSRC = downTrackSSRC
-					found = true
-					break
-				}
+		downTrackSSRC := track.DownTrack().SSRC()
+		downTrackSSRCRTX := track.DownTrack().SSRCRTX()
+		for _, ssrc := range remb.SSRCs {
+			if ssrc == 0 {
+				continue
+			}
+
+			if ssrc == downTrackSSRC {
+				s.rembTrackingSSRC = downTrackSSRC
+				found = true
+				break
+			}
+			if ssrc == downTrackSSRCRTX {
+				s.rembTrackingSSRC = downTrackSSRCRTX
+				found = true
+				break
 			}
 		}
 
@@ -408,7 +419,7 @@ func (s *StreamAllocator) OnREMB(downTrack *sfu.DownTrack, remb *rtcp.ReceiverEs
 		}
 	}
 
-	if s.rembTrackingSSRC == 0 || s.rembTrackingSSRC != downTrackSSRC {
+	if s.rembTrackingSSRC == 0 || (s.rembTrackingSSRC != downTrackSSRC && s.rembTrackingSSRC != downTrackSSRCRTX) {
 		s.videoTracksMu.Unlock()
 		return
 	}
@@ -727,13 +738,15 @@ func (s *StreamAllocator) handleSignalSendProbe(event Event) {
 
 	bytesSent := 0
 	for _, track := range s.getTracks() {
-		sent := track.WritePaddingRTP(bytesToSend)
+		sent := track.WriteProbePackets(bytesToSend)
 		bytesSent += sent
 		bytesToSend -= sent
 		if bytesToSend <= 0 {
 			break
 		}
 	}
+
+	s.prober.ProbesSent(bytesSent)
 }
 
 func (s *StreamAllocator) handleSignalPacerProbeObserverClusterComplete(event Event) {
