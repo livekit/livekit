@@ -157,7 +157,7 @@ func (r *RemoteBWE) congestionDetectionStateMachine() (bool, bwe.CongestionState
 	newState := r.congestionState
 	update := false
 	trend, reason := r.channelObserver.GetTrend()
-	if trend == channelTrendCongesting {
+	if trend == channelTrendCongesting && r.congestionState == bwe.CongestionStateNone {
 		r.params.Logger.Debugw("remote bwe, channel congesting", "channel", r.channelObserver)
 	}
 
@@ -165,7 +165,7 @@ func (r *RemoteBWE) congestionDetectionStateMachine() (bool, bwe.CongestionState
 	case bwe.CongestionStateNone:
 		if trend == channelTrendCongesting {
 			if r.probeController.IsInProbe() || r.estimateAvailableChannelCapacity(reason) {
-				// when in probe, if congested, stays there will probe is done,
+				// when in probe, if congested, stays there till probe is done,
 				// the estimate stays at pre-probe level
 				newState = bwe.CongestionStateCongested
 			}
@@ -223,7 +223,7 @@ func (r *RemoteBWE) estimateAvailableChannelCapacity(reason channelCongestionRea
 		"commitThreshold(bps)", commitThreshold,
 		"channel", r.channelObserver,
 	)
-	if estimateToCommit > commitThreshold {
+	if estimateToCommit > commitThreshold || r.committedChannelCapacity == estimateToCommit {
 		ulgr.Debugw("remote bwe: channel congestion detected, skipping above commit threshold channel capacity update")
 		return false
 	}
@@ -231,8 +231,10 @@ func (r *RemoteBWE) estimateAvailableChannelCapacity(reason channelCongestionRea
 	ulgr.Infow("remote bwe: channel congestion detected, applying channel capacity update")
 	r.committedChannelCapacity = estimateToCommit
 
-	// reset to get new set of samples for next trend
-	r.newChannelObserver()
+	/*
+		// reset to get new set of samples for next trend
+		r.newChannelObserver()
+	*/
 	return true
 }
 
