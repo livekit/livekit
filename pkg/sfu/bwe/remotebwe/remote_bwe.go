@@ -127,7 +127,8 @@ func (r *RemoteBWE) HandleREMB(
 	r.lastExpectedBandwidthUsage = expectedBandwidthUsage
 
 	// in probe, freeze channel observer state if probe causes congestion till the probe is done,
-	// this is to ensure that probe result is not a success and an unsuccessful probe will not up allocate any tracks
+	// this is to ensure that probe result is not marked a success,
+	// an unsuccessful probe will not up allocate any tracks
 	if r.congestionState != bwe.CongestionStateNone && r.probeController.IsInProbe() {
 		r.lock.Unlock()
 		return
@@ -157,15 +158,17 @@ func (r *RemoteBWE) congestionDetectionStateMachine() (bool, bwe.CongestionState
 	newState := r.congestionState
 	update := false
 	trend, reason := r.channelObserver.GetTrend()
-	if trend == channelTrendCongesting {
+	if trend == channelTrendCongesting && r.congestionState == bwe.CongestionStateNone {
 		r.params.Logger.Debugw("remote bwe, channel congesting", "channel", r.channelObserver)
+	} else if trend == channelTrendClearing && r.congestionState != bwe.CongestionStateNone {
+		r.params.Logger.Debugw("remote bwe, channel congestion relieving", "channel", r.channelObserver)
 	}
 
 	switch r.congestionState {
 	case bwe.CongestionStateNone:
 		if trend == channelTrendCongesting {
 			if r.probeController.IsInProbe() || r.estimateAvailableChannelCapacity(reason) {
-				// when in probe, if congested, stays there will probe is done,
+				// when in probe, if congested, stays there till probe is done,
 				// the estimate stays at pre-probe level
 				newState = bwe.CongestionStateCongested
 			}
@@ -213,8 +216,12 @@ func (r *RemoteBWE) estimateAvailableChannelCapacity(reason channelCongestionRea
 	}
 
 	commitThreshold := int64(r.params.Config.ExpectedUsageThreshold * float64(r.lastExpectedBandwidthUsage))
+	if estimateToCommit > commitThreshold || r.committedChannelCapacity == estimateToCommit {
+		return false
+	}
 
-	ulgr := r.params.Logger.WithUnlikelyValues(
+	r.params.Logger.Infow(
+		"remote bwe: channel congestion detected, applying channel capacity update",
 		"reason", reason,
 		"old(bps)", r.committedChannelCapacity,
 		"new(bps)", estimateToCommit,
@@ -223,16 +230,7 @@ func (r *RemoteBWE) estimateAvailableChannelCapacity(reason channelCongestionRea
 		"commitThreshold(bps)", commitThreshold,
 		"channel", r.channelObserver,
 	)
-	if estimateToCommit > commitThreshold {
-		ulgr.Debugw("remote bwe: channel congestion detected, skipping above commit threshold channel capacity update")
-		return false
-	}
-
-	ulgr.Infow("remote bwe: channel congestion detected, applying channel capacity update")
 	r.committedChannelCapacity = estimateToCommit
-
-	// reset to get new set of samples for next trend
-	r.newChannelObserver()
 	return true
 }
 
@@ -330,22 +328,18 @@ func (r *RemoteBWE) ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool) {
 }
 
 func (r *RemoteBWE) newChannelObserver() {
+	var params channelObserverParams
 	if r.probeController.IsInProbe() {
-		r.channelObserver = newChannelObserver(
-			channelObserverParams{
-				Name:   "probe",
-				Config: r.params.Config.ChannelObserverProbe,
-			},
-			r.params.Logger,
-		)
-		r.channelObserver.SeedEstimate(r.committedChannelCapacity)
+		params = channelObserverParams{
+			Name:   "probe",
+			Config: r.params.Config.ChannelObserverProbe,
+		}
 	} else {
-		r.channelObserver = newChannelObserver(
-			channelObserverParams{
-				Name:   "non-probe",
-				Config: r.params.Config.ChannelObserverNonProbe,
-			},
-			r.params.Logger,
-		)
+		params = channelObserverParams{
+			Name:   "non-probe",
+			Config: r.params.Config.ChannelObserverNonProbe,
+		}
 	}
+
+	r.channelObserver = newChannelObserver(params, r.params.Logger)
 }
