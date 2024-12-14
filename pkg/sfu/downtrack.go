@@ -526,11 +526,13 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			})
 			d.rtcpReader = rr
 		}
-		if rr := d.params.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, d.ssrcRTX).(*buffer.RTCPReader); rr != nil {
-			rr.OnPacket(func(pkt []byte) {
-				d.handleRTCP(pkt)
-			})
-			d.rtcpReaderRTX = rr
+		if d.ssrcRTX != 0 {
+			if rr := d.params.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, d.ssrcRTX).(*buffer.RTCPReader); rr != nil {
+				rr.OnPacket(func(pkt []byte) {
+					d.handleRTCP(pkt)
+				})
+				d.rtcpReaderRTX = rr
+			}
 		}
 
 		d.sequencer = newSequencer(d.params.MaxTrack, d.kind == webrtc.RTPCodecTypeVideo, d.params.Logger)
@@ -1793,7 +1795,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			}
 
 		case *rtcp.TransportLayerCC:
-			if p.MediaSSRC == d.ssrc || p.MediaSSRC == d.ssrcRTX {
+			if p.MediaSSRC == d.ssrc || (d.ssrcRTX != 0 && p.MediaSSRC == d.ssrcRTX) {
 				if sal := d.getStreamAllocatorListener(); sal != nil {
 					sal.OnTransportCCFeedback(d, p)
 				}
@@ -2004,6 +2006,10 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 }
 
 func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
+	if d.ssrcRTX == 0 {
+		return d.WritePaddingRTP(bytesToSend, false, false)
+	}
+
 	if !d.writable.Load() ||
 		!d.rtpStats.IsActive() ||
 		(d.absSendTimeExtID == 0 && d.transportWideExtID == 0) ||
