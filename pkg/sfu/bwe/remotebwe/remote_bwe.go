@@ -127,7 +127,7 @@ func (r *RemoteBWE) HandleREMB(
 	r.lastExpectedBandwidthUsage = expectedBandwidthUsage
 
 	// in probe, freeze channel observer state if probe causes congestion till the probe is done,
-	// this is to ensure that probe result is not marked a success, 
+	// this is to ensure that probe result is not marked a success,
 	// an unsuccessful probe will not up allocate any tracks
 	if r.congestionState != bwe.CongestionStateNone && r.probeController.IsInProbe() {
 		r.lock.Unlock()
@@ -160,7 +160,7 @@ func (r *RemoteBWE) congestionDetectionStateMachine() (bool, bwe.CongestionState
 	trend, reason := r.channelObserver.GetTrend()
 	if trend == channelTrendCongesting && r.congestionState == bwe.CongestionStateNone {
 		r.params.Logger.Debugw("remote bwe, channel congesting", "channel", r.channelObserver)
-	} else  if trend == channelTrendClearing && r.congestionState != bwe.CongestionStateNone {
+	} else if trend == channelTrendClearing && r.congestionState != bwe.CongestionStateNone {
 		r.params.Logger.Debugw("remote bwe, channel congestion relieving", "channel", r.channelObserver)
 	}
 
@@ -221,7 +221,7 @@ func (r *RemoteBWE) estimateAvailableChannelCapacity(reason channelCongestionRea
 	}
 
 	r.params.Logger.Infow(
-		"remote bwe: channel congestion detected, applying channel capacity update")
+		"remote bwe: channel congestion detected, applying channel capacity update",
 		"reason", reason,
 		"old(bps)", r.committedChannelCapacity,
 		"new(bps)", estimateToCommit,
@@ -335,7 +335,7 @@ func (r *RemoteBWE) newChannelObserver() {
 			Config: r.params.Config.ChannelObserverProbe,
 		}
 	} else {
-		params  = channelObserverParams{
+		params = channelObserverParams{
 			Name:   "non-probe",
 			Config: r.params.Config.ChannelObserverNonProbe,
 		}
