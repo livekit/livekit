@@ -2083,14 +2083,14 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 			return 0
 		}
 
-		extSequenceNumber := d.rtxSequenceNumber.Inc()
+		rtxExtSequenceNumber := d.rtxSequenceNumber.Inc()
 		for i := 0; i < num; i++ {
 			hdr := &rtp.Header{
 				Version:        2,
 				Padding:        true,
 				Marker:         false,
 				PayloadType:    d.payloadTypeRTX,
-				SequenceNumber: uint16(extSequenceNumber),
+				SequenceNumber: uint16(rtxExtSequenceNumber),
 				Timestamp:      0,
 				SSRC:           d.ssrcRTX,
 			}
@@ -2104,7 +2104,7 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 			payloadSize := len(payload)
 			d.rtpStatsRTX.Update(
 				mono.UnixNano(),
-				extSequenceNumber,
+				rtxExtSequenceNumber,
 				0,
 				hdr.Marker,
 				hdrSize,
