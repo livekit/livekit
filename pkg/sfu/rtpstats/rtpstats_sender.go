@@ -142,10 +142,10 @@ type senderSnapshot struct {
 
 	frames uint32
 
-	nacks uint32
+	nacks        uint32
 	nackRepeated uint32
-	plis  uint32
-	firs  uint32
+	plis         uint32
+	firs         uint32
 
 	maxRtt        uint32
 	maxJitterFeed float64
@@ -237,7 +237,7 @@ type RTPStatsSender struct {
 func NewRTPStatsSender(params RTPStatsParams, cacheSize int) *RTPStatsSender {
 	return &RTPStatsSender{
 		rtpStatsBase:         newRTPStatsBase(params),
-		snInfos: make([]snInfo, cacheSize),
+		snInfos:              make([]snInfo, cacheSize),
 		nextSenderSnapshotID: cFirstSnapshotID,
 		senderSnapshots:      make([]senderSnapshot, 2),
 	}
@@ -1019,7 +1019,7 @@ func (r *RTPStatsSender) clearSnInfos(extStartInclusive uint64, extEndExclusive 
 	}
 
 	for esn := extStartInclusive; esn != extEndExclusive; esn++ {
-		snInfo := &r.snInfos[int(esn) % len(r.snInfos)]
+		snInfo := &r.snInfos[int(esn)%len(r.snInfos)]
 		snInfo.pktSize = 0
 		snInfo.hdrSize = 0
 		snInfo.flags = 0

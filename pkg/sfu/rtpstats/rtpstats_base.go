@@ -54,7 +54,7 @@ type RTPDeltaInfo struct {
 	RttMax               uint32
 	JitterMax            float64
 	Nacks                uint32
-	NackRepeated        uint32
+	NackRepeated         uint32
 	Plis                 uint32
 	Firs                 uint32
 }
@@ -923,13 +923,13 @@ func ReconcileRTPStatsWithRTX(primaryStats *livekit.RTPStats, rtxStats *livekit.
 	if int32(lossAdjustment) < 0 {
 		lossAdjustment = 0
 	}
-	if lossAdjustment  >= primaryStats.PacketsLost {
+	if lossAdjustment >= primaryStats.PacketsLost {
 		primaryStats.PacketsLost = 0
 	} else {
 		primaryStats.PacketsLost -= lossAdjustment
 	}
 	primaryStats.PacketLossRate = float64(primaryStats.PacketsLost) / primaryStats.Duration
-	primaryStats.PacketLossPercentage = float32(primaryStats.PacketsLost)  / float32(primaryStats.Packets + primaryStats.PacketsPadding + primaryStats.PacketsLost) * 100.0
+	primaryStats.PacketLossPercentage = float32(primaryStats.PacketsLost) / float32(primaryStats.Packets+primaryStats.PacketsPadding+primaryStats.PacketsLost) * 100.0
 	return primaryStats
 }
 
@@ -953,7 +953,7 @@ func ReconcileRTPDeltaInfoWithRTX(primaryDeltaInfo *RTPDeltaInfo, rtxDeltaInfo *
 	if int32(lossAdjustment) < 0 {
 		lossAdjustment = 0
 	}
-	if lossAdjustment  >= primaryDeltaInfo.PacketsLost {
+	if lossAdjustment >= primaryDeltaInfo.PacketsLost {
 		primaryDeltaInfo.PacketsLost = 0
 	} else {
 		primaryDeltaInfo.PacketsLost -= lossAdjustment
