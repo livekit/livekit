@@ -370,13 +370,13 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 	d.rtpStats = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{
 		ClockRate: d.codec.ClockRate,
 		Logger:    d.params.Logger,
-	})
+	}, 4096)
 	d.deltaStatsSenderSnapshotId = d.rtpStats.NewSenderSnapshotId()
 
 	d.rtpStatsRTX = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{
 		ClockRate: d.codec.ClockRate,
 		Logger:    d.params.Logger,
-	})
+	}, 1024)
 	d.deltaStatsRTXSenderSnapshotId = d.rtpStatsRTX.NewSenderSnapshotId()
 
 	d.forwarder = NewForwarder(
@@ -1537,9 +1537,10 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 		return nil
 	}
 
-	// RAJA-TODO: should this send sender report for RTX also?
 	_, tsOffset, refSenderReport := d.forwarder.GetSenderReportParams()
 	return d.rtpStats.GetRtcpSenderReport(d.ssrc, refSenderReport, tsOffset, !d.params.DisableSenderReportPassThrough)
+
+	// not sending RTCP Sender Report for RTX
 }
 
 func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan struct{} {
@@ -1786,12 +1787,15 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 						d.playoutDelay.SetJitter(uint32(jitterMs))
 					}
 				}
-
-				if r.SSRC == d.ssrcRTX {
-					d.rtpStatsRTX.UpdateFromReceiverReport(r)
-				}
 			}
-			// RAJA-TODO: change this to report back just loss, but loss needs to be calculated taking RTX into account
+			// RTX-TODO: This is used for media loss proxying only as of 2024-12-15.
+			// Ideally, this should keep deltas between previous RTCP Receiver Report
+			// and current report, calculate the loss in the window and reconcile it with
+			// data in a similar window from RTX stream (to ensure losses are discounted
+			// for NACKs), but keeping this simple for several reasons
+			//   - media loss proxying is a configurable setting and could be disabled
+			//   - media loss proxying is used for audio only and audio may not have NACKing
+			//   - to keep it simple
 			if len(rr.Reports) > 0 {
 				d.listenerLock.RLock()
 				rrListeners := d.receiverReportListeners
@@ -1917,11 +1921,12 @@ func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isPro
 		SSRC:           d.ssrc,
 	}
 	rtxOffset := 0
+	rtxExtSequenceNumber := d.rtxSequenceNumber.Inc()
 	if d.payloadTypeRTX != 0 && d.ssrcRTX != 0 {
 		rtxOffset = 2
 
 		hdr.PayloadType = d.payloadTypeRTX
-		hdr.SequenceNumber = uint16(d.rtxSequenceNumber.Inc())
+		hdr.SequenceNumber = uint16(rtxExtSequenceNumber)
 		hdr.SSRC = d.ssrcRTX
 	}
 
@@ -1972,8 +1977,8 @@ func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isPro
 	if hdr.SSRC == d.ssrcRTX {
 		d.rtpStatsRTX.Update(
 			mono.UnixNano(),
-			epm.extSequenceNumber,
-			epm.extTimestamp,
+			rtxExtSequenceNumber,
+			0,
 			hdr.Marker,
 			headerSize,
 			payloadSize,
@@ -2203,8 +2208,7 @@ func (d *DownTrack) GetConnectionScoreAndQuality() (float32, livekit.ConnectionQ
 }
 
 func (d *DownTrack) GetTrackStats() *livekit.RTPStats {
-	return d.rtpStats.ToProto()
-	// RAJA-TODO - need to reconcole loss with rtpStatsRTX
+	return rtpstats.ReconcileRTPStatsWithRTX(d.rtpStats.ToProto(), d.rtpStatsRTX.ToProto())
 }
 
 func (d *DownTrack) deltaStats(ds *rtpstats.RTPDeltaInfo) map[uint32]*buffer.StreamStatsWithLayers {
@@ -2224,21 +2228,23 @@ func (d *DownTrack) deltaStats(ds *rtpstats.RTPDeltaInfo) map[uint32]*buffer.Str
 }
 
 func (d *DownTrack) GetDeltaStatsSender() map[uint32]*buffer.StreamStatsWithLayers {
-	// RAJA-TODO - need to reconcile loss with rtpStatsRTX
-	return d.deltaStats(d.rtpStats.DeltaInfoSender(d.deltaStatsSenderSnapshotId))
+	return d.deltaStats(
+		rtpstats.ReconcileRTPDeltaInfoWithRTX(
+			d.rtpStats.DeltaInfoSender(d.deltaStatsSenderSnapshotId),
+			d.rtpStatsRTX.DeltaInfoSender(d.deltaStatsRTXSenderSnapshotId),
+		),
+	)
 }
 
-func (d *DownTrack) GetLastReceiverReportTime() time.Time {
+func (d *DownTrack) GetPrimaryStreamLastReceiverReportTime() time.Time {
 	return d.rtpStats.LastReceiverReportTime()
 }
 
-func (d *DownTrack) GetTotalPacketsSent() uint64 {
-	// RAJA-TODO: need to reconcile with RTX padding
+func (d *DownTrack) GetPrimaryStreamPacketsSent() uint64 {
 	return d.rtpStats.GetPacketsSeenMinusPadding()
 }
 
 func (d *DownTrack) GetNackStats() (totalPackets uint32, totalRepeatedNACKs uint32) {
-	// RAJA-TODO: need to reconcile with RTX padding
 	totalPackets = uint32(d.rtpStats.GetPacketsSeenMinusPadding())
 	totalRepeatedNACKs = d.totalRepeatedNACKs.Load()
 	return

@@ -54,6 +54,7 @@ type RTPDeltaInfo struct {
 	RttMax               uint32
 	JitterMax            float64
 	Nacks                uint32
+	NackRepeated        uint32
 	Plis                 uint32
 	Firs                 uint32
 }
@@ -81,6 +82,7 @@ func (r *RTPDeltaInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddUint32("RttMax", r.RttMax)
 	e.AddFloat64("JitterMax", r.JitterMax)
 	e.AddUint32("Nacks", r.Nacks)
+	e.AddUint32("NackRepeated", r.NackRepeated)
 	e.AddUint32("Plis", r.Plis)
 	e.AddUint32("Firs", r.Firs)
 	return nil
@@ -895,6 +897,68 @@ func AggregateRTPDeltaInfo(deltaInfoList []*RTPDeltaInfo) *RTPDeltaInfo {
 		Plis:                 plis,
 		Firs:                 firs,
 	}
+}
+
+func ReconcileRTPStatsWithRTX(primaryStats *livekit.RTPStats, rtxStats *livekit.RTPStats) *livekit.RTPStats {
+	if primaryStats == nil || rtxStats == nil {
+		return primaryStats
+	}
+
+	primaryStats.PacketsDuplicate += rtxStats.Packets
+	primaryStats.PacketDuplicateRate = float64(primaryStats.PacketsDuplicate) / primaryStats.Duration
+
+	primaryStats.BytesDuplicate += rtxStats.Bytes
+	primaryStats.HeaderBytesDuplicate += rtxStats.HeaderBytes
+	primaryStats.BitrateDuplicate = float64(primaryStats.BytesDuplicate) * 8.0 / primaryStats.Duration
+
+	primaryStats.PacketsPadding += rtxStats.PacketsPadding
+	primaryStats.PacketPaddingRate = float64(primaryStats.PacketsPadding) / primaryStats.Duration
+
+	primaryStats.BytesPadding += rtxStats.BytesPadding
+	primaryStats.HeaderBytesPadding += rtxStats.HeaderBytesPadding
+	primaryStats.BitratePadding = float64(primaryStats.BytesPadding) * 8.0 / primaryStats.Duration
+
+	// RTX non-padding packets are responses to NACKs, that should discount packets lost,
+	lossAdjustment := rtxStats.Packets - rtxStats.PacketsLost - primaryStats.NackRepeated
+	if int32(lossAdjustment) < 0 {
+		lossAdjustment = 0
+	}
+	if lossAdjustment  >= primaryStats.PacketsLost {
+		primaryStats.PacketsLost = 0
+	} else {
+		primaryStats.PacketsLost -= lossAdjustment
+	}
+	primaryStats.PacketLossRate = float64(primaryStats.PacketsLost) / primaryStats.Duration
+	primaryStats.PacketLossPercentage = float32(primaryStats.PacketsLost)  / float32(primaryStats.Packets + primaryStats.PacketsPadding + primaryStats.PacketsLost) * 100.0
+	return primaryStats
+}
+
+func ReconcileRTPDeltaInfoWithRTX(primaryDeltaInfo *RTPDeltaInfo, rtxDeltaInfo *RTPDeltaInfo) *RTPDeltaInfo {
+	if primaryDeltaInfo == nil || rtxDeltaInfo == nil {
+		return primaryDeltaInfo
+	}
+
+	primaryDeltaInfo.PacketsDuplicate += rtxDeltaInfo.Packets
+
+	primaryDeltaInfo.BytesDuplicate += rtxDeltaInfo.Bytes
+	primaryDeltaInfo.HeaderBytesDuplicate += rtxDeltaInfo.HeaderBytes
+
+	primaryDeltaInfo.PacketsPadding += rtxDeltaInfo.PacketsPadding
+
+	primaryDeltaInfo.BytesPadding += rtxDeltaInfo.BytesPadding
+	primaryDeltaInfo.HeaderBytesPadding += rtxDeltaInfo.HeaderBytesPadding
+
+	// RTX non-padding packets are responses to NACKs, that should discount packets lost
+	lossAdjustment := rtxDeltaInfo.Packets - rtxDeltaInfo.PacketsLost - primaryDeltaInfo.NackRepeated
+	if int32(lossAdjustment) < 0 {
+		lossAdjustment = 0
+	}
+	if lossAdjustment  >= primaryDeltaInfo.PacketsLost {
+		primaryDeltaInfo.PacketsLost = 0
+	} else {
+		primaryDeltaInfo.PacketsLost -= lossAdjustment
+	}
+	return primaryDeltaInfo
 }
 
 // -------------------------------------------------------------------

@@ -29,11 +29,6 @@ import (
 	"github.com/livekit/protocol/utils/mono"
 )
 
-const (
-	cSnInfoSize = 4096
-	cSnInfoMask = cSnInfoSize - 1
-)
-
 // -------------------------------------------------------------------
 
 type snInfoFlag byte
@@ -148,6 +143,7 @@ type senderSnapshot struct {
 	frames uint32
 
 	nacks uint32
+	nackRepeated uint32
 	plis  uint32
 	firs  uint32
 
@@ -223,7 +219,7 @@ type RTPStatsSender struct {
 	jitterFromRR    float64
 	maxJitterFromRR float64
 
-	snInfos [cSnInfoSize]snInfo
+	snInfos []snInfo
 
 	layerLockPlis    uint32
 	lastLayerLockPli time.Time
@@ -238,9 +234,10 @@ type RTPStatsSender struct {
 	timeReversedCount          int
 }
 
-func NewRTPStatsSender(params RTPStatsParams) *RTPStatsSender {
+func NewRTPStatsSender(params RTPStatsParams, cacheSize int) *RTPStatsSender {
 	return &RTPStatsSender{
 		rtpStatsBase:         newRTPStatsBase(params),
+		snInfos: make([]snInfo, cacheSize),
 		nextSenderSnapshotID: cFirstSnapshotID,
 		senderSnapshots:      make([]senderSnapshot, 2),
 	}
@@ -271,7 +268,8 @@ func (r *RTPStatsSender) Seed(from *RTPStatsSender) {
 	r.jitterFromRR = from.jitterFromRR
 	r.maxJitterFromRR = from.maxJitterFromRR
 
-	r.snInfos = from.snInfos
+	r.snInfos = make([]snInfo, len(from.snInfos))
+	copy(r.snInfos, from.snInfos)
 
 	r.layerLockPlis = from.layerLockPlis
 	r.lastLayerLockPli = from.lastLayerLockPli
@@ -891,6 +889,7 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) *RTPDeltaInfo 
 		RttMax:               then.maxRtt,
 		JitterMax:            maxJitterTime,
 		Nacks:                now.nacks - then.nacks,
+		NackRepeated:         now.nackRepeated - then.nackRepeated,
 		Plis:                 now.plis - then.plis,
 		Firs:                 now.firs - then.firs,
 	}
@@ -968,6 +967,7 @@ func (r *RTPStatsSender) getSenderSnapshot(startTime time.Time, s *senderSnapsho
 		packetsLostFromRR:     r.packetsLostFromRR,
 		frames:                s.frames + s.intervalStats.frames,
 		nacks:                 r.nacks,
+		nackRepeated:          r.nackRepeated,
 		plis:                  r.plis,
 		firs:                  r.firs,
 		maxRtt:                r.rtt,
@@ -979,12 +979,12 @@ func (r *RTPStatsSender) getSenderSnapshot(startTime time.Time, s *senderSnapsho
 
 func (r *RTPStatsSender) getSnInfoOutOfOrderSlot(esn uint64, ehsn uint64) int {
 	offset := int64(ehsn - esn)
-	if offset >= cSnInfoSize || offset < 0 {
+	if offset >= int64(len(r.snInfos)) || offset < 0 {
 		// too old OR too new (i. e. ahead of highest)
 		return -1
 	}
 
-	return int(esn & cSnInfoMask)
+	return int(esn) % len(r.snInfos)
 }
 
 func (r *RTPStatsSender) setSnInfo(esn uint64, ehsn uint64, pktSize uint16, hdrSize uint8, payloadSize uint16, marker bool, isOutOfOrder bool) {
@@ -995,7 +995,7 @@ func (r *RTPStatsSender) setSnInfo(esn uint64, ehsn uint64, pktSize uint16, hdrS
 			return
 		}
 	} else {
-		slot = int(esn & cSnInfoMask)
+		slot = int(esn) % len(r.snInfos)
 	}
 
 	snInfo := &r.snInfos[slot]
@@ -1019,7 +1019,7 @@ func (r *RTPStatsSender) clearSnInfos(extStartInclusive uint64, extEndExclusive 
 	}
 
 	for esn := extStartInclusive; esn != extEndExclusive; esn++ {
-		snInfo := &r.snInfos[esn&cSnInfoMask]
+		snInfo := &r.snInfos[int(esn) % len(r.snInfos)]
 		snInfo.pktSize = 0
 		snInfo.hdrSize = 0
 		snInfo.flags = 0
