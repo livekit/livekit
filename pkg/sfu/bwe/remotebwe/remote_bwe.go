@@ -285,6 +285,19 @@ func (r *RemoteBWE) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
 	r.probeController.ProbeClusterDone(pci)
 }
 
+func (r *RemoteBWE) ProbeClusterIsGoalReached() bool {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if !r.probeController.IsInProbe() ||
+		r.congestionState != bwe.CongestionStateNone ||
+		!r.channelObserver.HasEnoughEstimateSamples() {
+		return false
+	}
+
+	return r.channelObserver.GetHighestEstimate() > int64(r.probeController.ProbeClusterInfo().Goal.DesiredBps)
+}
+
 func (r *RemoteBWE) ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool) {
 	r.lock.Lock()
 	defer r.lock.Unlock()

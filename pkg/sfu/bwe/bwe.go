@@ -89,6 +89,7 @@ type BWE interface {
 	ProbeDuration() time.Duration
 	ProbeClusterStarting(pci ccutils.ProbeClusterInfo)
 	ProbeClusterDone(pci ccutils.ProbeClusterInfo)
+	ProbeClusterIsGoalReached() bool
 	ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool)
 }
 

@@ -140,6 +140,10 @@ func (p *probeController) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
 	p.setState(probeControllerStateHangover)
 }
 
+func (p *probeController) ProbeClusterInfo() ccutils.ProbeClusterInfo {
+	return p.pci
+}
+
 func (p *probeController) MaybeFinalizeProbe() (ccutils.ProbeClusterInfo, bool) {
 	if p.state != probeControllerStateHangover {
 		return ccutils.ProbeClusterInfoInvalid, false

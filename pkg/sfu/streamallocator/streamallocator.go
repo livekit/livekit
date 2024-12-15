@@ -679,12 +679,21 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 		s.params.BWE.Reset()
 	}
 
-	// finalize any probe that may have finished/aborted
 	if s.activeProbeClusterId != ccutils.ProbeClusterIdInvalid {
+		// check for probe that has attained its goal
+		if s.params.BWE.ProbeClusterIsGoalReached() {
+			s.params.Logger.Debugw(
+				"stream allocator: probe goal reached",
+				"activeProbeClusterId", s.activeProbeClusterId,
+			)
+			s.maybeStopProbe()
+		}
+
+		// finalize any probe that may have finished/aborted
 		if probeSignal, channelCapacity, isFinalized := s.params.BWE.ProbeClusterFinalize(); isFinalized {
 			s.params.Logger.Debugw(
 				"stream allocator: probe result",
-				"probeClusterId", s.activeProbeClusterId,
+				"activeProbeClusterId", s.activeProbeClusterId,
 				"probeSignal", probeSignal,
 				"channelCapacity", channelCapacity,
 			)
