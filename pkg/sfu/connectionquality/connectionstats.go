@@ -43,8 +43,8 @@ type ConnectionStatsReceiverProvider interface {
 
 type ConnectionStatsSenderProvider interface {
 	GetDeltaStatsSender() map[uint32]*buffer.StreamStatsWithLayers
-	GetLastReceiverReportTime() time.Time
-	GetTotalPacketsSent() uint64
+	GetPrimaryStreamLastReceiverReportTime() time.Time
+	GetPrimaryStreamPacketsSent() uint64
 }
 
 type ConnectionStatsParams struct {
@@ -237,7 +237,7 @@ func (cs *ConnectionStats) updateScoreFromReceiverReport(at time.Time) (float32,
 	streams := cs.params.SenderProvider.GetDeltaStatsSender()
 	if len(streams) == 0 {
 		//  check for receiver report not received for a while
-		marker := cs.params.SenderProvider.GetLastReceiverReportTime()
+		marker := cs.params.SenderProvider.GetPrimaryStreamLastReceiverReportTime()
 		if marker.IsZero() || streamingStartedAt.After(marker) {
 			marker = streamingStartedAt
 		}
@@ -253,7 +253,7 @@ func (cs *ConnectionStats) updateScoreFromReceiverReport(at time.Time) (float32,
 
 	// delta stat duration could be large due to not receiving receiver report for a long time (for example, due to mute),
 	// adjust to streaming start if necessary
-	if streamingStartedAt.After(cs.params.SenderProvider.GetLastReceiverReportTime()) {
+	if streamingStartedAt.After(cs.params.SenderProvider.GetPrimaryStreamLastReceiverReportTime()) {
 		// last receiver report was before streaming started, wait for next one
 		mos, _ := cs.scorer.GetMOSAndQuality()
 		return mos, streams
@@ -294,7 +294,7 @@ func (cs *ConnectionStats) updateStreamingStart(at time.Time) time.Time {
 	cs.lock.Lock()
 	defer cs.lock.Unlock()
 
-	packetsSent := cs.params.SenderProvider.GetTotalPacketsSent()
+	packetsSent := cs.params.SenderProvider.GetPrimaryStreamPacketsSent()
 	if packetsSent > cs.packetsSent {
 		if cs.streamingStartedAt.IsZero() {
 			// the start could be anywhere after last update, but using `at` as this is not required to be accurate
