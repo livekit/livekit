@@ -202,9 +202,11 @@ type StreamAllocator struct {
 	isAllocateAllPending bool
 	rembTrackingSSRC     uint32
 
-	state                streamAllocatorState
-	isHolding            bool
-	activeProbeClusterId ccutils.ProbeClusterId
+	state                  streamAllocatorState
+	isHolding              bool
+	activeProbeClusterId   ccutils.ProbeClusterId
+	activeProbeGoalReached bool
+	activeProbeCongesting  bool
 
 	eventsQueue *utils.TypedOpsQueue[Event]
 
@@ -679,12 +681,21 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 		s.params.BWE.Reset()
 	}
 
-	// finalize any probe that may have finished/aborted
 	if s.activeProbeClusterId != ccutils.ProbeClusterIdInvalid {
+		if !s.activeProbeCongesting && !s.activeProbeGoalReached && s.params.BWE.ProbeClusterIsGoalReached() {
+			s.params.Logger.Debugw(
+				"stream allocator: probe goal reached",
+				"activeProbeClusterId", s.activeProbeClusterId,
+			)
+			s.activeProbeGoalReached = true
+			s.maybeStopProbe()
+		}
+
+		// finalize any probe that may have finished/aborted
 		if probeSignal, channelCapacity, isFinalized := s.params.BWE.ProbeClusterFinalize(); isFinalized {
 			s.params.Logger.Debugw(
 				"stream allocator: probe result",
-				"probeClusterId", s.activeProbeClusterId,
+				"activeProbeClusterId", s.activeProbeClusterId,
 				"probeSignal", probeSignal,
 				"channelCapacity", channelCapacity,
 			)
@@ -720,6 +731,8 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 func (s *StreamAllocator) handleSignalProbeClusterSwitch(event Event) {
 	pci := event.Data.(ccutils.ProbeClusterInfo)
 	s.activeProbeClusterId = pci.Id
+	s.activeProbeGoalReached = false
+	s.activeProbeCongesting = false
 
 	s.params.BWE.ProbeClusterStarting(pci)
 
@@ -817,12 +830,15 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 
 	if cscd.congestionState == bwe.CongestionStateCongested {
 		if s.activeProbeClusterId != ccutils.ProbeClusterIdInvalid {
-			s.params.Logger.Infow(
-				"stream allocator: channel congestion detected, not updating channel capacity in active probe",
-				"old(bps)", s.committedChannelCapacity,
-				"new(bps)", cscd.estimatedAvailableChannelCapacity,
-				"expectedUsage(bps)", s.getExpectedBandwidthUsage(),
-			)
+			if !s.activeProbeCongesting {
+				s.activeProbeCongesting = true
+				s.params.Logger.Infow(
+					"stream allocator: channel congestion detected, not updating channel capacity in active probe",
+					"old(bps)", s.committedChannelCapacity,
+					"new(bps)", cscd.estimatedAvailableChannelCapacity,
+					"expectedUsage(bps)", s.getExpectedBandwidthUsage(),
+				)
+			}
 		} else {
 			s.params.Logger.Infow(
 				"stream allocator: channel congestion detected, updating channel capacity",

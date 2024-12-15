@@ -62,8 +62,8 @@ var (
 		ProbeRegulator: ccutils.DefaultProbeRegulatorConfig,
 
 		SettleWaitNumRTT: 5,
-		SettleWaitMin:    500 * time.Millisecond,
-		SettleWaitMax:    10 * time.Second,
+		SettleWaitMin:    250 * time.Millisecond,
+		SettleWaitMax:    5 * time.Second,
 	}
 )
 
@@ -138,6 +138,10 @@ func (p *probeController) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
 
 	p.pci.Result = pci.Result
 	p.setState(probeControllerStateHangover)
+}
+
+func (p *probeController) ProbeClusterInfo() ccutils.ProbeClusterInfo {
+	return p.pci
 }
 
 func (p *probeController) MaybeFinalizeProbe() (ccutils.ProbeClusterInfo, bool) {

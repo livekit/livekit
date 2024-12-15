@@ -158,11 +158,6 @@ func (r *RemoteBWE) congestionDetectionStateMachine() (bool, bwe.CongestionState
 	newState := r.congestionState
 	update := false
 	trend, reason := r.channelObserver.GetTrend()
-	if trend == channelTrendCongesting && r.congestionState == bwe.CongestionStateNone {
-		r.params.Logger.Debugw("remote bwe, channel congesting", "channel", r.channelObserver)
-	} else if trend == channelTrendClearing && r.congestionState != bwe.CongestionStateNone {
-		r.params.Logger.Debugw("remote bwe, channel congestion relieving", "channel", r.channelObserver)
-	}
 
 	switch r.congestionState {
 	case bwe.CongestionStateNone:
@@ -283,6 +278,19 @@ func (r *RemoteBWE) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
 	defer r.lock.Unlock()
 
 	r.probeController.ProbeClusterDone(pci)
+}
+
+func (r *RemoteBWE) ProbeClusterIsGoalReached() bool {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	if !r.probeController.IsInProbe() ||
+		r.congestionState != bwe.CongestionStateNone ||
+		!r.channelObserver.HasEnoughEstimateSamples() {
+		return false
+	}
+
+	return r.channelObserver.GetHighestEstimate() > int64(r.probeController.ProbeClusterInfo().Goal.DesiredBps)
 }
 
 func (r *RemoteBWE) ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool) {
