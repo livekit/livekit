@@ -202,11 +202,11 @@ type StreamAllocator struct {
 	isAllocateAllPending bool
 	rembTrackingSSRC     uint32
 
-	state                streamAllocatorState
-	isHolding            bool
-	activeProbeClusterId ccutils.ProbeClusterId
+	state                  streamAllocatorState
+	isHolding              bool
+	activeProbeClusterId   ccutils.ProbeClusterId
 	activeProbeGoalReached bool
-	activeProbeCongesting bool
+	activeProbeCongesting  bool
 
 	eventsQueue *utils.TypedOpsQueue[Event]
 
