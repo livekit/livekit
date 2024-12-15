@@ -542,7 +542,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		if d.ssrcRTX != 0 {
 			if rr := d.params.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, d.ssrcRTX).(*buffer.RTCPReader); rr != nil {
 				rr.OnPacket(func(pkt []byte) {
-					d.handleRTCP(pkt)
+					d.handleRTCPRTX(pkt)
 				})
 				d.rtcpReaderRTX = rr
 			}
@@ -1720,7 +1720,7 @@ func (d *DownTrack) getH264BlankFrame(_frameEndNeeded bool) ([]byte, error) {
 func (d *DownTrack) handleRTCP(bytes []byte) {
 	pkts, err := rtcp.Unmarshal(bytes)
 	if err != nil {
-		d.params.Logger.Errorw("could not unmarshal rtcp receiver packets", err)
+		d.params.Logger.Errorw("could not unmarshal rtcp receiver packet", err)
 		return
 	}
 
@@ -1769,21 +1769,21 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				ProfileExtensions: p.ProfileExtensions,
 			}
 			for _, r := range p.Reports {
-				if r.SSRC == d.ssrc {
-					rr.Reports = append(rr.Reports, r)
+				if r.SSRC != d.ssrc {
+					continue
+				}
 
-					rtt, isRttChanged := d.rtpStats.UpdateFromReceiverReport(r)
-					if isRttChanged {
-						rttToReport = rtt
-					}
+				rtt, isRttChanged := d.rtpStats.UpdateFromReceiverReport(r)
+				if isRttChanged {
+					rttToReport = rtt
+				}
 
-					if d.playoutDelay != nil {
-						d.playoutDelay.OnSeqAcked(uint16(r.LastSequenceNumber))
-						// screen share track has inaccuracy jitter due to its low frame rate and bursty traffic
-						if d.params.Source != livekit.TrackSource_SCREEN_SHARE {
-							jitterMs := uint64(r.Jitter*1e3) / uint64(d.clockRate)
-							d.playoutDelay.SetJitter(uint32(jitterMs))
-						}
+				if d.playoutDelay != nil {
+					d.playoutDelay.OnSeqAcked(uint16(r.LastSequenceNumber))
+					// screen share track has inaccuracy jitter due to its low frame rate and bursty traffic
+					if d.params.Source != livekit.TrackSource_SCREEN_SHARE {
+						jitterMs := uint64(r.Jitter*1e3) / uint64(d.clockRate)
+						d.playoutDelay.SetJitter(uint32(jitterMs))
 					}
 				}
 
@@ -1860,6 +1860,27 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 
 		if onRttUpdate := d.getOnRttUpdate(); onRttUpdate != nil {
 			onRttUpdate(d, rttToReport)
+		}
+	}
+}
+
+func (d *DownTrack) handleRTCPRTX(bytes []byte) {
+	pkts, err := rtcp.Unmarshal(bytes)
+	if err != nil {
+		d.params.Logger.Errorw("could not unmarshal rtcp rtx receiver packet", err)
+		return
+	}
+
+	for _, pkt := range pkts {
+		switch p := pkt.(type) {
+		case *rtcp.ReceiverReport:
+			for _, r := range p.Reports {
+				if r.SSRC != d.ssrcRTX {
+					continue
+				}
+
+				d.rtpStatsRTX.UpdateFromReceiverReport(r)
+			}
 		}
 	}
 }
