@@ -1827,7 +1827,6 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 		"webrtcTrackID", track.ID(),
 		"rid", track.RID(),
 		"SSRC", track.SSRC(),
-		"rtxSSRC", track.RtxSSRC(),
 		"mime", codec.MimeType,
 		"trackInfo", logger.Proto(publishedTrack.ToProto()),
 		"fromSdp", fromSdp,
