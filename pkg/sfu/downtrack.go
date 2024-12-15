@@ -1769,25 +1769,29 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				ProfileExtensions: p.ProfileExtensions,
 			}
 			for _, r := range p.Reports {
-				if r.SSRC != d.ssrc {
-					continue
-				}
-				rr.Reports = append(rr.Reports, r)
+				if r.SSRC == d.ssrc {
+					rr.Reports = append(rr.Reports, r)
 
-				rtt, isRttChanged := d.rtpStats.UpdateFromReceiverReport(r)
-				if isRttChanged {
-					rttToReport = rtt
-				}
+					rtt, isRttChanged := d.rtpStats.UpdateFromReceiverReport(r)
+					if isRttChanged {
+						rttToReport = rtt
+					}
 
-				if d.playoutDelay != nil {
-					d.playoutDelay.OnSeqAcked(uint16(r.LastSequenceNumber))
-					// screen share track has inaccuracy jitter due to its low frame rate and bursty traffic
-					if d.params.Source != livekit.TrackSource_SCREEN_SHARE {
-						jitterMs := uint64(r.Jitter*1e3) / uint64(d.clockRate)
-						d.playoutDelay.SetJitter(uint32(jitterMs))
+					if d.playoutDelay != nil {
+						d.playoutDelay.OnSeqAcked(uint16(r.LastSequenceNumber))
+						// screen share track has inaccuracy jitter due to its low frame rate and bursty traffic
+						if d.params.Source != livekit.TrackSource_SCREEN_SHARE {
+							jitterMs := uint64(r.Jitter*1e3) / uint64(d.clockRate)
+							d.playoutDelay.SetJitter(uint32(jitterMs))
+						}
 					}
 				}
+
+				if r.SSRC == d.ssrcRTX {
+					d.rtpStatsRTX.UpdateFromReceiverReport(r)
+				}
 			}
+			// RAJA-TODO: change this to report back just loss, but loss needs to be calculated taking RTX into account
 			if len(rr.Reports) > 0 {
 				d.listenerLock.RLock()
 				rrListeners := d.receiverReportListeners

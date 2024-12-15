@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/pion/rtcp"
+	"github.com/pion/transport/v3/packetio"
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
 
@@ -198,6 +199,32 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		return newCodec
 	}
 
+	ssrcRTX := uint32(track.RtxSSRC())
+	if ssrcRTX != 0 {
+		t.params.Logger.Debugw("RAJA rtx SSRC", "rtxSSRC", ssrcRTX)	// REMOVE
+		if rr := t.params.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, ssrcRTX).(*buffer.RTCPReader); rr != nil {
+			t.params.Logger.Debugw("RAJA setting up publisher RTX sender report")
+			rr.OnPacket(func(bytes []byte) {
+				pkts, err := rtcp.Unmarshal(bytes)
+				if err != nil {
+					t.params.Logger.Errorw("could not unmarshal RTCP", err)
+					return
+				}
+
+				for _, pkt := range pkts {
+					switch pkt := pkt.(type) {
+					case *rtcp.SenderReport:
+						// RAJA-REMOVE - START
+						if pkt.SSRC == uint32(track.RtxSSRC()) {
+							t.params.Logger.Debugw("RAJA publisher RTX sender report")
+						}
+						// RAJA-REMOVE - STOP
+					}
+				}
+			})
+		}
+	}
+
 	var lastRR uint32
 	rtcpReader.OnPacket(func(bytes []byte) {
 		pkts, err := rtcp.Unmarshal(bytes)
@@ -213,6 +240,11 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 				if pkt.SSRC == uint32(track.SSRC()) {
 					buff.SetSenderReportData(pkt.RTPTime, pkt.NTPTime, pkt.PacketCount, pkt.OctetCount)
 				}
+				// RAJA-REMOVE - START
+				if pkt.SSRC == uint32(track.RtxSSRC()) {
+					t.params.Logger.Debugw("RAJA publisher RTX sender report")
+				}
+				// RAJA-REMOVE - STOP
 			case *rtcp.ExtendedReport:
 			rttFromXR:
 				for _, report := range pkt.Reports {
