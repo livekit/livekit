@@ -42,8 +42,8 @@ var (
 		},
 
 		SettleWaitNumRTT: 5,
-		SettleWaitMin:    500 * time.Millisecond,
-		SettleWaitMax:    10 * time.Second,
+		SettleWaitMin:    250 * time.Millisecond,
+		SettleWaitMax:    5 * time.Second,
 	}
 )
 

@@ -158,11 +158,6 @@ func (r *RemoteBWE) congestionDetectionStateMachine() (bool, bwe.CongestionState
 	newState := r.congestionState
 	update := false
 	trend, reason := r.channelObserver.GetTrend()
-	if trend == channelTrendCongesting && r.congestionState == bwe.CongestionStateNone {
-		r.params.Logger.Debugw("remote bwe, channel congesting", "channel", r.channelObserver)
-	} else if trend == channelTrendClearing && r.congestionState != bwe.CongestionStateNone {
-		r.params.Logger.Debugw("remote bwe, channel congestion relieving", "channel", r.channelObserver)
-	}
 
 	switch r.congestionState {
 	case bwe.CongestionStateNone:

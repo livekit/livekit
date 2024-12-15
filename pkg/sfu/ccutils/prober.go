@@ -578,7 +578,6 @@ func (c *Cluster) MarshalLogObject(e zapcore.ObjectEncoder) error {
 		e.AddObject("info", c.info)
 		e.AddDuration("baseSleepDuration", c.baseSleepDuration)
 		e.AddInt("numBuckets", len(c.buckets))
-		e.AddArray("buckets", logger.ObjectSlice(c.buckets))
 		e.AddInt("bucketIdx", c.bucketIdx)
 		e.AddInt("probeBytesSent", c.probeBytesSent)
 		e.AddTime("startTime", c.startTime)
