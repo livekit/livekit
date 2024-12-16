@@ -46,7 +46,7 @@ var (
 
 	defaultLossEarlyWarningCongestionSignalConfig = CongestionSignalConfig{
 		MinNumberOfGroups: 2,
-		MinDuration:       200 * time.Millisecond,
+		MinDuration:       300 * time.Millisecond,
 	}
 
 	defaultQueuingDelayCongestedCongestionSignalConfig = CongestionSignalConfig{
@@ -55,8 +55,8 @@ var (
 	}
 
 	defaultLossCongestedCongestionSignalConfig = CongestionSignalConfig{
-		MinNumberOfGroups: 5,
-		MinDuration:       600 * time.Millisecond,
+		MinNumberOfGroups: 6,
+		MinDuration:       900 * time.Millisecond,
 	}
 )
 
@@ -344,7 +344,7 @@ var (
 
 	defaultCongestionDetectorConfig = CongestionDetectorConfig{
 		PacketGroup:       defaultPacketGroupConfig,
-		PacketGroupMaxAge: 10 * time.Second,
+		PacketGroupMaxAge: 5 * time.Second,
 
 		ProbePacketGroup: defaultProbePacketGroupConfig,
 		ProbeRegulator:   ccutils.DefaultProbeRegulatorConfig,
@@ -485,6 +485,7 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 		}
 
 		if err == errGroupFinalized {
+			c.params.Logger.Debugw("RAJA packet group", "pg", pg)	// REMOVE
 			// previous group ended, start a new group
 			pg = newPacketGroup(
 				packetGroupParams{
@@ -743,6 +744,7 @@ func (c *congestionDetector) getCongestionSignal(
 			break
 		}
 	}
+	c.params.Logger.Debugw("RAJA send side bwe: loss measurement", "stage", stage, "loss", lossMeasurement)	// REMOVE
 
 	oldestContributingGroup := max(0, idx)
 	reason := ""
@@ -752,7 +754,7 @@ func (c *congestionDetector) getCongestionSignal(
 		oldestContributingGroup = groupIdx
 		c.params.Logger.Debugw("send side bwe: queuing-delay in JQR", "stage", stage, "qd", qdMeasurement)
 	} else {
-		qr, groupIdx := lossMeasurement.Result()
+		qr, groupIdx = lossMeasurement.Result()
 		if qr == queuingRegionJQR {
 			reason = "loss"
 			oldestContributingGroup = groupIdx

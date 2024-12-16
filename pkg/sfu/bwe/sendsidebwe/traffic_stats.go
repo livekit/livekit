@@ -165,10 +165,14 @@ func (ts *trafficStats) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddInt64("recvDelta", ts.recvDelta)
 	e.AddInt64("groupDelay", ts.recvDelta-ts.sendDelta)
 
-	e.AddFloat64("weightedLoss", ts.WeightedLoss())
-	if (ts.ackedPackets + ts.lostPackets) != 0 {
-		e.AddFloat64("rawLoss", float64(ts.lostPackets)/float64(ts.ackedPackets+ts.lostPackets))
+	totalPackets := ts.lostPackets + ts.ackedPackets
+	if duration != 0 {
+		e.AddFloat64("pps", float64(totalPackets) / duration.Seconds())
 	}
+	if (totalPackets) != 0 {
+		e.AddFloat64("rawLoss", float64(ts.lostPackets)/float64(totalPackets))
+	}
+	e.AddFloat64("weightedLoss", ts.WeightedLoss())
 	e.AddInt64("lossPenalty", ts.lossPenalty())
 
 	capturedTrafficRatio := ts.CapturedTrafficRatio()

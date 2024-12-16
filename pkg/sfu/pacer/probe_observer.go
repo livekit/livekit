@@ -112,11 +112,14 @@ func (po *ProbeObserver) RecordPacket(size int, isRTX bool, probeClusterId ccuti
 	}
 
 	if isProbe {
+		po.pci.Result.PacketsProbe++
 		po.pci.Result.BytesProbe += size
 	} else {
 		if isRTX {
+			po.pci.Result.PacketsNonProbeRTX++
 			po.pci.Result.BytesNonProbeRTX += size
 		} else {
+			po.pci.Result.PacketsNonProbePrimary++
 			po.pci.Result.BytesNonProbePrimary += size
 		}
 	}
