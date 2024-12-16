@@ -167,7 +167,7 @@ func (ts *trafficStats) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 	totalPackets := ts.lostPackets + ts.ackedPackets
 	if duration != 0 {
-		e.AddFloat64("pps", float64(totalPackets) / duration.Seconds())
+		e.AddFloat64("pps", float64(totalPackets)/duration.Seconds())
 	}
 	if (totalPackets) != 0 {
 		e.AddFloat64("rawLoss", float64(ts.lostPackets)/float64(totalPackets))

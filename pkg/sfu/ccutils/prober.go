@@ -349,15 +349,15 @@ func (p ProbeClusterGoal) MarshalLogObject(e zapcore.ObjectEncoder) error {
 }
 
 type ProbeClusterResult struct {
-	StartTime            int64
-	EndTime              int64
+	StartTime              int64
+	EndTime                int64
 	PacketsProbe           int
-	BytesProbe           int
+	BytesProbe             int
 	PacketsNonProbePrimary int
-	BytesNonProbePrimary int
-	PacketsNonProbeRTX int
-	BytesNonProbeRTX     int
-	IsCompleted          bool
+	BytesNonProbePrimary   int
+	PacketsNonProbeRTX     int
+	BytesNonProbeRTX       int
+	IsCompleted            bool
 }
 
 func (p ProbeClusterResult) Bytes() int {
