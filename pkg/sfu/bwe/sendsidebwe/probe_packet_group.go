@@ -115,7 +115,7 @@ func (p *probePacketGroup) MaybeFinalizeProbe(maxSequenceNumber uint64, rtt floa
 }
 
 func (p *probePacketGroup) Add(pi *packetInfo, sendDelta, recvDelta int64, isLost bool) error {
-	if !p.doneAt.IsZero() || pi.probeClusterId != p.pci.Id {
+	if pi.probeClusterId != p.pci.Id {
 		return nil
 	}
 

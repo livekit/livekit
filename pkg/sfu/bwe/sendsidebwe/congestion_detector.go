@@ -485,7 +485,6 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 		}
 
 		if err == errGroupFinalized {
-			c.params.Logger.Debugw("RAJA packet group", "pg", pg) // REMOVE
 			// previous group ended, start a new group
 			pg = newPacketGroup(
 				packetGroupParams{
@@ -744,7 +743,6 @@ func (c *congestionDetector) getCongestionSignal(
 			break
 		}
 	}
-	c.params.Logger.Debugw("RAJA send side bwe: loss measurement", "stage", stage, "loss", lossMeasurement) // REMOVE
 
 	oldestContributingGroup := max(0, idx)
 	reason := ""

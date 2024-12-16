@@ -1817,7 +1817,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			}
 
 		case *rtcp.TransportLayerCC:
-			if p.MediaSSRC == d.ssrc || (d.ssrcRTX != 0 && p.MediaSSRC == d.ssrcRTX) {
+			if p.MediaSSRC == d.ssrc {
 				if sal := d.getStreamAllocatorListener(); sal != nil {
 					sal.OnTransportCCFeedback(d, p)
 				}
@@ -1884,6 +1884,13 @@ func (d *DownTrack) handleRTCPRTX(bytes []byte) {
 				}
 
 				d.rtpStatsRTX.UpdateFromReceiverReport(r)
+			}
+
+		case *rtcp.TransportLayerCC:
+			if p.MediaSSRC == d.ssrcRTX {
+				if sal := d.getStreamAllocatorListener(); sal != nil {
+					sal.OnTransportCCFeedback(d, p)
+				}
 			}
 		}
 	}

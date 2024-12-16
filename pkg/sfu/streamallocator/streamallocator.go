@@ -83,6 +83,7 @@ const (
 	streamAllocatorSignalAllocateAllTracks
 	streamAllocatorSignalAdjustState
 	streamAllocatorSignalEstimate
+	streamAllocatorSignalFeedback
 	streamAllocatorSignalPeriodicPing
 	streamAllocatorSignalProbeClusterSwitch
 	streamAllocatorSignalSendProbe
@@ -103,6 +104,8 @@ func (s streamAllocatorSignal) String() string {
 		return "ADJUST_STATE"
 	case streamAllocatorSignalEstimate:
 		return "ESTIMATE"
+	case streamAllocatorSignalFeedback:
+		return "FEEDBACK"
 	case streamAllocatorSignalPeriodicPing:
 		return "PERIODIC_PING"
 	case streamAllocatorSignalProbeClusterSwitch:
@@ -435,11 +438,10 @@ func (s *StreamAllocator) OnREMB(downTrack *sfu.DownTrack, remb *rtcp.ReceiverEs
 
 // called when a new transport-cc feedback is received
 func (s *StreamAllocator) OnTransportCCFeedback(downTrack *sfu.DownTrack, fb *rtcp.TransportLayerCC) {
-	if s.sendSideBWEInterceptor != nil {
-		s.sendSideBWEInterceptor.WriteRTCP([]rtcp.Packet{fb}, nil)
-	}
-
-	s.params.BWE.HandleTWCCFeedback(fb)
+	s.postEvent(Event{
+		Signal: streamAllocatorSignalFeedback,
+		Data:   fb,
+	})
 }
 
 // called when target bitrate changes (send side bandwidth estimation)
@@ -612,6 +614,8 @@ func (s *StreamAllocator) postEvent(event Event) {
 			event.handleSignalAdjustState(event)
 		case streamAllocatorSignalEstimate:
 			event.handleSignalEstimate(event)
+		case streamAllocatorSignalFeedback:
+			event.handleSignalFeedback(event)
 		case streamAllocatorSignalPeriodicPing:
 			event.handleSignalPeriodicPing(event)
 		case streamAllocatorSignalProbeClusterSwitch:
@@ -660,7 +664,7 @@ func (s *StreamAllocator) handleSignalAdjustState(Event) {
 }
 
 func (s *StreamAllocator) handleSignalEstimate(event Event) {
-	receivedEstimate, _ := event.Data.(int64)
+	receivedEstimate := event.Data.(int64)
 
 	// always update NACKs
 	packetDelta, repeatedNackDelta := s.getNackDelta()
@@ -671,6 +675,15 @@ func (s *StreamAllocator) handleSignalEstimate(event Event) {
 		packetDelta,
 		repeatedNackDelta,
 	)
+}
+
+func (s *StreamAllocator) handleSignalFeedback(event Event) {
+	fb := event.Data.(*rtcp.TransportLayerCC)
+	if s.sendSideBWEInterceptor != nil {
+		s.sendSideBWEInterceptor.WriteRTCP([]rtcp.Packet{fb}, nil)
+	}
+
+	s.params.BWE.HandleTWCCFeedback(fb)
 }
 
 func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
