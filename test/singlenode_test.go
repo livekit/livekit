@@ -16,6 +16,7 @@ package test
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"net/http"
@@ -28,6 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thoas/go-funk"
 	"github.com/twitchtv/twirp"
+	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -705,6 +707,121 @@ func TestSubscribeToCodecUnsupported(t *testing.T) {
 		return "did not 2 receive track with vp8"
 	})
 	require.Nil(t, c2.GetSubscriptionResponseAndClear())
+}
+
+func TestDataPublishSlowSubscriber(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	dataChannelSlowThreshold := 101024
+
+	logger.Infow("----------------STARTING TEST----------------", "test", t.Name())
+	s := createSingleNodeServer(func(c *config.Config) {
+		c.RTC.DatachannelSlowThreshold = dataChannelSlowThreshold
+	})
+	go func() {
+		if err := s.Start(); err != nil {
+			logger.Errorw("server returned error", err)
+		}
+	}()
+
+	waitForServerToStart(s)
+
+	defer func() {
+		s.Stop(true)
+		logger.Infow("----------------FINISHING TEST----------------", "test", t.Name())
+	}()
+
+	pub := createRTCClient("pub", defaultServerPort, nil)
+	fastSub := createRTCClient("fastSub", defaultServerPort, nil)
+	slowSubNotDrop := createRTCClient("slowSubNotDrop", defaultServerPort, nil)
+	slowSubDrop := createRTCClient("slowSubDrop", defaultServerPort, nil)
+	waitUntilConnected(t, pub, fastSub, slowSubDrop, slowSubNotDrop)
+	defer func() {
+		pub.Stop()
+		fastSub.Stop()
+		slowSubNotDrop.Stop()
+		slowSubDrop.Stop()
+	}()
+
+	// publisher sends data as fast as possible, it will block by the slowest subscriber above the slow threshold
+	var (
+		blocked   atomic.Bool
+		stopWrite atomic.Bool
+	)
+	writeStopped := make(chan struct{})
+	go func() {
+		defer close(writeStopped)
+		var i int
+		buf := make([]byte, 100)
+		for !stopWrite.Load() {
+			i++
+			binary.BigEndian.PutUint64(buf[len(buf)-8:], uint64(i))
+			if err := pub.PublishData(buf, livekit.DataPacket_RELIABLE); err != nil {
+				if errors.Is(err, context.DeadlineExceeded) {
+					blocked.Store(true)
+					i--
+					continue
+				} else {
+					t.Log("error writing", err)
+					break
+				}
+			}
+		}
+	}()
+
+	// no data should be dropped for fast subscriber
+	var fastDataIndex atomic.Uint64
+	fastSub.OnDataReceived = func(data []byte, sid string) {
+		idx := binary.BigEndian.Uint64(data[len(data)-8:])
+		require.Equal(t, fastDataIndex.Load()+1, idx)
+		fastDataIndex.Store(idx)
+	}
+
+	// no data should be dropped for slow subscriber that is above threshold
+	var slowNoDropDataIndex atomic.Uint64
+	var drainSlowSubNotDrop atomic.Bool
+	slowNoDropReader := testclient.NewDataChannelReader(dataChannelSlowThreshold * 3 / 2)
+	slowSubNotDrop.OnDataReceived = func(data []byte, sid string) {
+		idx := binary.BigEndian.Uint64(data[len(data)-8:])
+		require.Equal(t, slowNoDropDataIndex.Load()+1, idx)
+		slowNoDropDataIndex.Store(idx)
+		if !drainSlowSubNotDrop.Load() {
+			slowNoDropReader.Read(data, sid)
+		}
+	}
+
+	// data should be dropped for slow subscriber that is below threshold
+	var slowDropDataIndex atomic.Uint64
+	dropped := make(chan struct{})
+	slowDropReader := testclient.NewDataChannelReader(dataChannelSlowThreshold / 2)
+	slowSubDrop.OnDataReceived = func(data []byte, sid string) {
+		select {
+		case <-dropped:
+			return
+		default:
+		}
+		idx := binary.BigEndian.Uint64(data[len(data)-8:])
+		if idx != slowDropDataIndex.Load()+1 {
+			close(dropped)
+		}
+		slowDropDataIndex.Store(idx)
+		slowDropReader.Read(data, sid)
+	}
+
+	<-dropped
+
+	time.Sleep(time.Second)
+	blocked.Store(false)
+	require.Eventually(t, func() bool { return blocked.Load() }, 30*time.Second, 100*time.Millisecond)
+	stopWrite.Store(true)
+	<-writeStopped
+	drainSlowSubNotDrop.Store(true)
+	// wait for the subscribers to drain the buffer
+	time.Sleep(3 * time.Second)
+	require.Equal(t, fastDataIndex.Load(), slowNoDropDataIndex.Load())
 }
 
 func TestFireTrackBySdp(t *testing.T) {

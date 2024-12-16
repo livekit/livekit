@@ -480,7 +480,6 @@ func (r *RoomManager) StartSession(
 		ReconnectOnPublicationError:  reconnectOnPublicationError,
 		ReconnectOnSubscriptionError: reconnectOnSubscriptionError,
 		ReconnectOnDataChannelError:  reconnectOnDataChannelError,
-		DataChannelMaxBufferedAmount: r.config.RTC.DataChannelMaxBufferedAmount,
 		VersionGenerator:             r.versionGenerator,
 		TrackResolver:                room.ResolveMediaTrackForSubscriber,
 		SubscriberAllowPause:         subscriberAllowPause,
@@ -491,6 +490,7 @@ func (r *RoomManager) StartSession(
 		ForwardStats:                 r.forwardStats,
 		MetricConfig:                 r.config.Metric,
 		UseOneShotSignallingMode:     useOneShotSignallingMode,
+		DatachannelSlowThreshold:     r.config.RTC.DatachannelSlowThreshold,
 		FireOnTrackBySdp:             true,
 	})
 	if err != nil {

@@ -147,7 +147,6 @@ type ParticipantParams struct {
 	ReconnectOnPublicationError    bool
 	ReconnectOnSubscriptionError   bool
 	ReconnectOnDataChannelError    bool
-	DataChannelMaxBufferedAmount   uint64
 	VersionGenerator               utils.TimedVersionGenerator
 	TrackResolver                  types.MediaTrackResolver
 	DisableDynacast                bool
@@ -161,6 +160,7 @@ type ParticipantParams struct {
 	MetricConfig                   metric.MetricConfig
 	UseOneShotSignallingMode       bool
 	EnableMetrics                  bool
+	DatachannelSlowThreshold       int
 	FireOnTrackBySdp               bool
 }
 
@@ -1549,28 +1549,28 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		SID:      p.params.SID,
 		// primary connection does not change, canSubscribe can change if permission was updated
 		// after the participant has joined
-		SubscriberAsPrimary:          subscriberAsPrimary,
-		Config:                       p.params.Config,
-		Twcc:                         p.twcc,
-		ProtocolVersion:              p.params.ProtocolVersion,
-		CongestionControlConfig:      p.params.CongestionControlConfig,
-		EnabledPublishCodecs:         p.enabledPublishCodecs,
-		EnabledSubscribeCodecs:       p.enabledSubscribeCodecs,
-		SimTracks:                    p.params.SimTracks,
-		ClientInfo:                   p.params.ClientInfo,
-		Migration:                    p.params.Migration,
-		AllowTCPFallback:             p.params.AllowTCPFallback,
-		TCPFallbackRTTThreshold:      p.params.TCPFallbackRTTThreshold,
-		AllowUDPUnstableFallback:     p.params.AllowUDPUnstableFallback,
-		TURNSEnabled:                 p.params.TURNSEnabled,
-		AllowPlayoutDelay:            p.params.PlayoutDelay.GetEnabled(),
-		DataChannelMaxBufferedAmount: p.params.DataChannelMaxBufferedAmount,
-		Logger:                       p.params.Logger.WithComponent(sutils.ComponentTransport),
-		PublisherHandler:             pth,
-		SubscriberHandler:            sth,
-		DataChannelStats:             p.dataChannelStats,
-		UseOneShotSignallingMode:     p.params.UseOneShotSignallingMode,
-		FireOnTrackBySdp:             p.params.FireOnTrackBySdp,
+		SubscriberAsPrimary:      subscriberAsPrimary,
+		Config:                   p.params.Config,
+		Twcc:                     p.twcc,
+		ProtocolVersion:          p.params.ProtocolVersion,
+		CongestionControlConfig:  p.params.CongestionControlConfig,
+		EnabledPublishCodecs:     p.enabledPublishCodecs,
+		EnabledSubscribeCodecs:   p.enabledSubscribeCodecs,
+		SimTracks:                p.params.SimTracks,
+		ClientInfo:               p.params.ClientInfo,
+		Migration:                p.params.Migration,
+		AllowTCPFallback:         p.params.AllowTCPFallback,
+		TCPFallbackRTTThreshold:  p.params.TCPFallbackRTTThreshold,
+		AllowUDPUnstableFallback: p.params.AllowUDPUnstableFallback,
+		TURNSEnabled:             p.params.TURNSEnabled,
+		AllowPlayoutDelay:        p.params.PlayoutDelay.GetEnabled(),
+		DatachannelSlowThreshold: p.params.DatachannelSlowThreshold,
+		Logger:                   p.params.Logger.WithComponent(sutils.ComponentTransport),
+		PublisherHandler:         pth,
+		SubscriberHandler:        sth,
+		DataChannelStats:         p.dataChannelStats,
+		UseOneShotSignallingMode: p.params.UseOneShotSignallingMode,
+		FireOnTrackBySdp:         p.params.FireOnTrackBySdp,
 	}
 	if p.params.SyncStreams && p.params.PlayoutDelay.GetEnabled() && p.params.ClientInfo.isFirefox() {
 		// we will disable playout delay for Firefox if the user is expecting

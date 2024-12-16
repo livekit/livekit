@@ -16,6 +16,7 @@ package rtc
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -29,7 +30,6 @@ import (
 	"github.com/pion/interceptor/pkg/gcc"
 	"github.com/pion/interceptor/pkg/twcc"
 	"github.com/pion/rtcp"
-	"github.com/pion/sctp"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 	"github.com/pkg/errors"
@@ -42,6 +42,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/remotebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
+	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
 	sfuinterceptor "github.com/livekit/livekit-server/pkg/sfu/interceptor"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
@@ -78,6 +79,8 @@ const (
 	maxConnectTimeoutAfterICE = 20 * time.Second // max duration for waiting pc to connect after ICE is connected
 
 	shortConnectionThreshold = 90 * time.Second
+
+	dataChannelBufferSize = 65535
 )
 
 var (
@@ -188,9 +191,9 @@ type PCTransport struct {
 
 	firstOfferReceived      bool
 	firstOfferNoDataChannel bool
-	reliableDC              *webrtc.DataChannel
+	reliableDC              *datachannel.DataChannelWriter[*webrtc.DataChannel]
 	reliableDCOpened        bool
-	lossyDC                 *webrtc.DataChannel
+	lossyDC                 *datachannel.DataChannelWriter[*webrtc.DataChannel]
 	lossyDCOpened           bool
 
 	iceStartedAt               time.Time
@@ -242,25 +245,28 @@ type PCTransport struct {
 }
 
 type TransportParams struct {
-	Handler                      transport.Handler
-	ParticipantID                livekit.ParticipantID
-	ParticipantIdentity          livekit.ParticipantIdentity
-	ProtocolVersion              types.ProtocolVersion
-	Config                       *WebRTCConfig
-	Twcc                         *lktwcc.Responder
-	DirectionConfig              DirectionConfig
-	CongestionControlConfig      config.CongestionControlConfig
-	EnabledCodecs                []*livekit.Codec
-	Logger                       logger.Logger
-	Transport                    livekit.SignalTarget
-	SimTracks                    map[uint32]SimulcastTrackInfo
-	ClientInfo                   ClientInfo
-	IsOfferer                    bool
-	IsSendSide                   bool
-	AllowPlayoutDelay            bool
-	DataChannelMaxBufferedAmount uint64
-	UseOneShotSignallingMode     bool
-	FireOnTrackBySdp             bool
+	Handler                  transport.Handler
+	ParticipantID            livekit.ParticipantID
+	ParticipantIdentity      livekit.ParticipantIdentity
+	ProtocolVersion          types.ProtocolVersion
+	Config                   *WebRTCConfig
+	Twcc                     *lktwcc.Responder
+	DirectionConfig          DirectionConfig
+	CongestionControlConfig  config.CongestionControlConfig
+	EnabledCodecs            []*livekit.Codec
+	Logger                   logger.Logger
+	Transport                livekit.SignalTarget
+	SimTracks                map[uint32]SimulcastTrackInfo
+	ClientInfo               ClientInfo
+	IsOfferer                bool
+	IsSendSide               bool
+	AllowPlayoutDelay        bool
+	UseOneShotSignallingMode bool
+	FireOnTrackBySdp         bool
+	DatachannelSlowThreshold int
+
+	// for development test
+	DatachannelMaxReceiverBufferSize int
 }
 
 func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
@@ -288,6 +294,11 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	// https://github.com/pion/webrtc/pull/2961
 	se.DisableCloseByDTLS(true)
 
+	se.DetachDataChannels()
+	se.EnableDataChannelBlockWrite(true)
+	if params.DatachannelMaxReceiverBufferSize > 0 {
+		se.SetSCTPMaxReceiveBufferSize(uint32(params.DatachannelMaxReceiverBufferSize))
+	}
 	if params.FireOnTrackBySdp {
 		se.SetFireOnTrackBeforeFirstRTP(true)
 	}
@@ -361,7 +372,6 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 
 	ir := &interceptor.Registry{}
 	if params.IsSendSide {
-		se.DetachDataChannels()
 		if params.CongestionControlConfig.UseSendSideBWEInterceptor && !params.CongestionControlConfig.UseSendSideBWE {
 			params.Logger.Infow("using send side BWE - interceptor")
 			gf, err := cc.NewInterceptor(func() (cc.BandwidthEstimator, error) {
@@ -717,31 +727,65 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 }
 
 func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
-	t.params.Logger.Debugw(dc.Label() + " data channel open")
-	switch dc.Label() {
-	case ReliableDataChannel:
-		t.lock.Lock()
-		t.reliableDC = dc
-		t.reliableDCOpened = true
-		t.lock.Unlock()
-		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-			t.params.Handler.OnDataPacket(livekit.DataPacket_RELIABLE, msg.Data)
-		})
+	dc.OnOpen(func() {
+		t.params.Logger.Debugw(dc.Label() + " data channel open")
+		var kind livekit.DataPacket_Kind
+		switch dc.Label() {
+		case ReliableDataChannel:
+			kind = livekit.DataPacket_RELIABLE
+
+		case LossyDataChannel:
+			kind = livekit.DataPacket_LOSSY
+
+		default:
+			t.params.Logger.Warnw("unsupported datachannel added", nil, "label", dc.Label())
+			return
+		}
+
+		rawDC, err := dc.DetachWithDeadline()
+		if err != nil {
+			t.params.Logger.Errorw("failed to detach data channel", err, "label", dc.Label())
+			return
+		}
+
+		switch kind {
+		case livekit.DataPacket_RELIABLE:
+			t.lock.Lock()
+			if t.reliableDC != nil {
+				t.reliableDC.Close()
+			}
+			t.reliableDC = datachannel.NewDataChannelWriter(dc, rawDC, t.params.DatachannelSlowThreshold)
+			t.reliableDCOpened = true
+			t.lock.Unlock()
+
+		case livekit.DataPacket_LOSSY:
+			t.lock.Lock()
+			if t.lossyDC != nil {
+				t.lossyDC.Close()
+			}
+			t.lossyDC = datachannel.NewDataChannelWriter(dc, rawDC, 0)
+			t.lossyDCOpened = true
+			t.lock.Unlock()
+		}
+
+		go func() {
+			defer rawDC.Close()
+			buffer := make([]byte, dataChannelBufferSize)
+			for {
+				n, _, err := rawDC.ReadDataChannel(buffer)
+				if err != nil {
+					if !errors.Is(err, io.EOF) {
+						t.params.Logger.Warnw("error reading data channel", err, "label", dc.Label())
+					}
+					return
+				}
+
+				t.params.Handler.OnDataPacket(kind, buffer[:n])
+			}
+		}()
 
 		t.maybeNotifyFullyEstablished()
-	case LossyDataChannel:
-		t.lock.Lock()
-		t.lossyDC = dc
-		t.lossyDCOpened = true
-		t.lock.Unlock()
-		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-			t.params.Handler.OnDataPacket(livekit.DataPacket_LOSSY, msg.Data)
-		})
-
-		t.maybeNotifyFullyEstablished()
-	default:
-		t.params.Logger.Warnw("unsupported datachannel added", nil, "label", dc.Label())
-	}
+	})
 }
 
 func (t *PCTransport) maybeNotifyFullyEstablished() {
@@ -866,7 +910,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 		return err
 	}
 	var (
-		dcPtr   **webrtc.DataChannel
+		dcPtr   **datachannel.DataChannelWriter[*webrtc.DataChannel]
 		dcReady *bool
 	)
 	switch dc.Label() {
@@ -883,60 +927,41 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 		dcReady = &t.lossyDCOpened
 	}
 
-	dcReadyHandler := func() {
+	dc.OnOpen(func() {
+		rawDC, err := dc.DetachWithDeadline()
+		if err != nil {
+			t.params.Logger.Warnw("failed to detach data channel", err)
+			return
+		}
+
+		var slowThreshold int
+		if dc.Label() == ReliableDataChannel {
+			slowThreshold = t.params.DatachannelSlowThreshold
+		}
+
 		t.lock.Lock()
+		if *dcPtr != nil {
+			(*dcPtr).Close()
+		}
+		*dcPtr = datachannel.NewDataChannelWriter(dc, rawDC, slowThreshold)
 		*dcReady = true
 		t.lock.Unlock()
 		t.params.Logger.Debugw(dc.Label() + " data channel open")
 
 		t.maybeNotifyFullyEstablished()
-	}
+	})
 
-	dcCloseHandler := func() {
-		t.params.Logger.Debugw(dc.Label() + " data channel close")
-	}
-
-	dcErrorHandler := func(err error) {
-		if !errors.Is(err, sctp.ErrResetPacketInStateNotExist) && !errors.Is(err, sctp.ErrChunk) {
-			t.params.Logger.Warnw(dc.Label()+" data channel error", err)
-		}
-	}
-
-	t.lock.Lock()
-	defer t.lock.Unlock()
-	*dcPtr = dc
-	if t.params.DirectionConfig.StrictACKs {
-		dc.OnOpen(func() {
-			if t.params.IsSendSide {
-				if _, err := dc.Detach(); err != nil {
-					t.params.Logger.Warnw("failed to detach data channel", err)
-				}
-			}
-			dcReadyHandler()
-		})
-	} else {
-		dc.OnOpen(func() {
-			if t.params.IsSendSide {
-				if _, err := dc.Detach(); err != nil {
-					t.params.Logger.Warnw("failed to detach data channel", err)
-				}
-			}
-		})
-		dc.OnDial(dcReadyHandler)
-	}
-	dc.OnClose(dcCloseHandler)
-	dc.OnError(dcErrorHandler)
 	return nil
 }
 
 func (t *PCTransport) CreateDataChannelIfEmpty(dcLabel string, dci *webrtc.DataChannelInit) (label string, id uint16, existing bool, err error) {
 	t.lock.RLock()
-	var dc *webrtc.DataChannel
+	var dcw *datachannel.DataChannelWriter[*webrtc.DataChannel]
 	switch dcLabel {
 	case ReliableDataChannel:
-		dc = t.reliableDC
+		dcw = t.reliableDC
 	case LossyDataChannel:
-		dc = t.lossyDC
+		dcw = t.lossyDC
 	default:
 		t.params.Logger.Warnw("unknown data channel label", nil, "label", label)
 		err = errors.New("unknown data channel label")
@@ -946,11 +971,12 @@ func (t *PCTransport) CreateDataChannelIfEmpty(dcLabel string, dci *webrtc.DataC
 		return
 	}
 
-	if dc != nil {
+	if dcw != nil {
+		dc := dcw.BufferedAmountGetter()
 		return dc.Label(), *dc.ID(), true, nil
 	}
 
-	dc, err = t.pc.CreateDataChannel(dcLabel, dci)
+	dc, err := t.pc.CreateDataChannel(dcLabel, dci)
 	if err != nil {
 		return
 	}
@@ -989,7 +1015,7 @@ func (t *PCTransport) WriteRTCP(pkts []rtcp.Packet) error {
 }
 
 func (t *PCTransport) SendDataPacket(kind livekit.DataPacket_Kind, encoded []byte) error {
-	var dc *webrtc.DataChannel
+	var dc io.Writer
 	t.lock.RLock()
 	if kind == livekit.DataPacket_RELIABLE {
 		dc = t.reliableDC
@@ -1006,11 +1032,9 @@ func (t *PCTransport) SendDataPacket(kind livekit.DataPacket_Kind, encoded []byt
 		return ErrTransportFailure
 	}
 
-	if t.params.DataChannelMaxBufferedAmount > 0 && dc.BufferedAmount() > t.params.DataChannelMaxBufferedAmount {
-		return ErrDataChannelBufferFull
-	}
+	_, err := dc.Write(encoded)
 
-	return dc.Send(encoded)
+	return err
 }
 
 func (t *PCTransport) Close() {
@@ -1031,6 +1055,18 @@ func (t *PCTransport) Close() {
 	_ = t.pc.Close()
 
 	t.clearConnTimer()
+
+	t.lock.Lock()
+	if t.reliableDC != nil {
+		t.reliableDC.Close()
+		t.reliableDC = nil
+	}
+
+	if t.lossyDC != nil {
+		t.lossyDC.Close()
+		t.lossyDC = nil
+	}
+	t.lock.Unlock()
 }
 
 func (t *PCTransport) clearConnTimer() {
