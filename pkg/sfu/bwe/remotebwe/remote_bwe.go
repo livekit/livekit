@@ -290,7 +290,7 @@ func (r *RemoteBWE) ProbeClusterIsGoalReached() bool {
 		return false
 	}
 
-	return r.channelObserver.GetHighestEstimate() > int64(r.probeController.ProbeClusterInfo().Goal.DesiredBps)
+	return r.probeController.ProbeClusterIsGoalReached(r.channelObserver.GetHighestEstimate())
 }
 
 func (r *RemoteBWE) ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool) {
