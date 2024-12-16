@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/pion/datachannel"
+
+	"github.com/livekit/protocol/utils/mono"
 )
 
 const (
@@ -57,7 +59,7 @@ func (w *DataChannelWriter[T]) Write(p []byte) (n int, err error) {
 			return
 		}
 
-		now := time.Now()
+		now := mono.Now()
 		w.rate.AddBytes(n, int(w.bufferGetter.BufferedAmount()), now)
 		// retry if the write timed out on a non-slow receiver
 		if errors.Is(err, context.DeadlineExceeded) && w.rate.Bitrate(now) > w.slowThreshold {

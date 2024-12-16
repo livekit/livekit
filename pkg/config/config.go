@@ -114,7 +114,7 @@ type RTCConfig struct {
 	// Deprecated
 	DataChannelMaxBufferedAmount uint64 `yaml:"data_channel_max_buffered_amount,omitempty"`
 
-	// Send bitrate threshold for data channel to consider it slow, data packet could
+	// Threshold of data channel writing to be considered too slow, data packet could
 	// be dropped for a slow data channel to avoid blocking the room.
 	DatachannelSlowThreshold int `yaml:"datachannel_slow_threshold,omitempty"`
 

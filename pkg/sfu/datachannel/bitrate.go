@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/gammazero/deque"
+
+	"github.com/livekit/protocol/utils/mono"
 )
 
 const (
@@ -31,12 +33,13 @@ func NewBitrateCalculator(duration time.Duration, window time.Duration) *Bitrate
 	if windowCnt == 0 {
 		windowCnt = 1
 	}
+	now := mono.Now()
 	c := &BitrateCalculator{
 		duration:       duration,
 		windowDuration: window,
 		windows:        deque.New[bitrateWindow](windowCnt+1, windowCnt+1),
-		start:          time.Now(),
-		active:         bitrateWindow{start: time.Now()},
+		start:          now,
+		active:         bitrateWindow{start: now},
 	}
 
 	return c
