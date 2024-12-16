@@ -816,9 +816,9 @@ func TestDataPublishSlowSubscriber(t *testing.T) {
 	time.Sleep(time.Second)
 	blocked.Store(false)
 	require.Eventually(t, func() bool { return blocked.Load() }, 30*time.Second, 100*time.Millisecond)
+	drainSlowSubNotDrop.Store(true)
 	stopWrite.Store(true)
 	<-writeStopped
-	drainSlowSubNotDrop.Store(true)
 	// wait for the subscribers to drain the buffer
 	time.Sleep(3 * time.Second)
 	require.Equal(t, fastDataIndex.Load(), slowNoDropDataIndex.Load())
