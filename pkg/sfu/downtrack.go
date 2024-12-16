@@ -1886,6 +1886,11 @@ func (d *DownTrack) handleRTCPRTX(bytes []byte) {
 				d.rtpStatsRTX.UpdateFromReceiverReport(r)
 			}
 
+		case *rtcp.ReceiverEstimatedMaximumBitrate:
+			if sal := d.getStreamAllocatorListener(); sal != nil {
+				sal.OnREMB(d, p)
+			}
+
 		case *rtcp.TransportLayerCC:
 			if p.MediaSSRC == d.ssrcRTX {
 				if sal := d.getStreamAllocatorListener(); sal != nil {
