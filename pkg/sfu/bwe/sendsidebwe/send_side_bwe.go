@@ -130,6 +130,10 @@ func (s *SendSideBWE) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
 	s.congestionDetector.ProbeClusterDone(pci)
 }
 
+func (s *SendSideBWE) ProbeClusterIsGoalReached() bool {
+	return s.congestionDetector.ProbeClusterIsGoalReached()
+}
+
 func (s *SendSideBWE) ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool) {
 	return s.congestionDetector.ProbeClusterFinalize()
 }
