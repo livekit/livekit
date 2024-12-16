@@ -678,6 +678,7 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 	// reset BWE if that persists for a while
 	if s.state == streamAllocatorStateDeficient && s.params.Pacer.TimeSinceLastSentPacket() > s.params.Config.PausedMinWait {
 		s.params.Logger.Infow("stream allocator: resetting bwe to enable probing")
+		s.maybeStopProbe()
 		s.params.BWE.Reset()
 	}
 
@@ -1041,6 +1042,11 @@ func (s *StreamAllocator) maybeStopProbe() {
 	}
 
 	pci := s.params.Pacer.EndProbeCluster(s.activeProbeClusterId)
+
+	for _, t := range s.getTracks() {
+		t.DownTrack().SwapProbeClusterId(pci.Id, ccutils.ProbeClusterIdInvalid)
+	}
+
 	s.params.BWE.ProbeClusterDone(pci)
 	s.prober.Reset(pci)
 }

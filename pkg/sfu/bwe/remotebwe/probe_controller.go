@@ -140,8 +140,12 @@ func (p *probeController) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
 	p.setState(probeControllerStateHangover)
 }
 
-func (p *probeController) ProbeClusterInfo() ccutils.ProbeClusterInfo {
-	return p.pci
+func (p *probeController) ProbeClusterIsGoalReached(estimate int64) bool {
+	if p.pci.Id == ccutils.ProbeClusterIdInvalid {
+		return false
+	}
+
+	return estimate > int64(p.pci.Goal.DesiredBps)
 }
 
 func (p *probeController) MaybeFinalizeProbe() (ccutils.ProbeClusterInfo, bool) {
