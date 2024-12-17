@@ -587,10 +587,6 @@ func untilTransportsConnected(transports ...*transportfakes.FakeHandler) *sync.W
 }
 
 func TestConfigureAudioTransceiver(t *testing.T) {
-	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
-	require.NoError(t, err)
-	defer pc.Close()
-
 	for _, testcase := range []struct {
 		nack   bool
 		stereo bool
@@ -601,6 +597,11 @@ func TestConfigureAudioTransceiver(t *testing.T) {
 		{true, true},
 	} {
 		t.Run(fmt.Sprintf("nack=%v,stereo=%v", testcase.nack, testcase.stereo), func(t *testing.T) {
+			var me webrtc.MediaEngine
+			registerCodecs(&me, []*livekit.Codec{{Mime: webrtc.MimeTypeOpus}}, RTCPFeedbackConfig{Audio: []webrtc.RTCPFeedback{{Type: webrtc.TypeRTCPFBNACK}}}, false)
+			pc, err := webrtc.NewAPI(webrtc.WithMediaEngine(&me)).NewPeerConnection(webrtc.Configuration{})
+			require.NoError(t, err)
+			defer pc.Close()
 			tr, err := pc.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly})
 			require.NoError(t, err)
 

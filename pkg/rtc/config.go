@@ -125,6 +125,10 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 			},
 		},
 		RTCPFeedback: RTCPFeedbackConfig{
+			Audio: []webrtc.RTCPFeedback{
+				// always enable NACK for audio but disable it later for red enabled transceiver. https://github.com/pion/webrtc/pull/2972
+				{Type: webrtc.TypeRTCPFBNACK},
+			},
 			Video: []webrtc.RTCPFeedback{
 				{Type: webrtc.TypeRTCPFBCCM, Parameter: "fir"},
 				{Type: webrtc.TypeRTCPFBNACK},
