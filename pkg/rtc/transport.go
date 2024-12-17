@@ -245,25 +245,26 @@ type PCTransport struct {
 }
 
 type TransportParams struct {
-	Handler                  transport.Handler
-	ParticipantID            livekit.ParticipantID
-	ParticipantIdentity      livekit.ParticipantIdentity
-	ProtocolVersion          types.ProtocolVersion
-	Config                   *WebRTCConfig
-	Twcc                     *lktwcc.Responder
-	DirectionConfig          DirectionConfig
-	CongestionControlConfig  config.CongestionControlConfig
-	EnabledCodecs            []*livekit.Codec
-	Logger                   logger.Logger
-	Transport                livekit.SignalTarget
-	SimTracks                map[uint32]SimulcastTrackInfo
-	ClientInfo               ClientInfo
-	IsOfferer                bool
-	IsSendSide               bool
-	AllowPlayoutDelay        bool
-	UseOneShotSignallingMode bool
-	FireOnTrackBySdp         bool
-	DatachannelSlowThreshold int
+	Handler                      transport.Handler
+	ParticipantID                livekit.ParticipantID
+	ParticipantIdentity          livekit.ParticipantIdentity
+	ProtocolVersion              types.ProtocolVersion
+	Config                       *WebRTCConfig
+	Twcc                         *lktwcc.Responder
+	DirectionConfig              DirectionConfig
+	CongestionControlConfig      config.CongestionControlConfig
+	EnabledCodecs                []*livekit.Codec
+	Logger                       logger.Logger
+	Transport                    livekit.SignalTarget
+	SimTracks                    map[uint32]SimulcastTrackInfo
+	ClientInfo                   ClientInfo
+	IsOfferer                    bool
+	IsSendSide                   bool
+	AllowPlayoutDelay            bool
+	UseOneShotSignallingMode     bool
+	FireOnTrackBySdp             bool
+	DataChannelMaxBufferedAmount uint64
+	DatachannelSlowThreshold     int
 
 	// for development test
 	DatachannelMaxReceiverBufferSize int
@@ -295,7 +296,9 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	se.DisableCloseByDTLS(true)
 
 	se.DetachDataChannels()
-	se.EnableDataChannelBlockWrite(true)
+	if params.DatachannelSlowThreshold > 0 {
+		se.EnableDataChannelBlockWrite(true)
+	}
 	if params.DatachannelMaxReceiverBufferSize > 0 {
 		se.SetSCTPMaxReceiveBufferSize(uint32(params.DatachannelMaxReceiverBufferSize))
 	}
@@ -1015,7 +1018,7 @@ func (t *PCTransport) WriteRTCP(pkts []rtcp.Packet) error {
 }
 
 func (t *PCTransport) SendDataPacket(kind livekit.DataPacket_Kind, encoded []byte) error {
-	var dc io.Writer
+	var dc *datachannel.DataChannelWriter[*webrtc.DataChannel]
 	t.lock.RLock()
 	if kind == livekit.DataPacket_RELIABLE {
 		dc = t.reliableDC
@@ -1032,6 +1035,9 @@ func (t *PCTransport) SendDataPacket(kind livekit.DataPacket_Kind, encoded []byt
 		return ErrTransportFailure
 	}
 
+	if t.params.DatachannelSlowThreshold == 0 && t.params.DataChannelMaxBufferedAmount > 0 && dc.BufferedAmountGetter().BufferedAmount() > t.params.DataChannelMaxBufferedAmount {
+		return ErrDataChannelBufferFull
+	}
 	_, err := dc.Write(encoded)
 
 	return err

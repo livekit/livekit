@@ -490,6 +490,7 @@ func (r *RoomManager) StartSession(
 		ForwardStats:                 r.forwardStats,
 		MetricConfig:                 r.config.Metric,
 		UseOneShotSignallingMode:     useOneShotSignallingMode,
+		DataChannelMaxBufferedAmount: r.config.RTC.DataChannelMaxBufferedAmount,
 		DatachannelSlowThreshold:     r.config.RTC.DatachannelSlowThreshold,
 		FireOnTrackBySdp:             true,
 	})
