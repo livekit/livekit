@@ -726,6 +726,17 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 		}
 	}
 
+	// try up allocations in case there is available headroom,
+	// it is possible that a previous up allocation is waiting to settle,
+	// so even if there was headroom available while doing previous up allocation
+	// it may not have used up all available headroom,
+	// check before probing again as this could use available headroom and
+	// up allocate all tracks to their desired layers, that would avoid
+	// an unnecessary probe cluster
+	if s.state == streamAllocatorStateDeficient {
+		s.maybeBoostDeficientTracks()
+	}
+
 	// probe if necessary and timing is right
 	if s.state == streamAllocatorStateDeficient {
 		s.maybeProbe()
