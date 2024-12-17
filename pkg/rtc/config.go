@@ -15,6 +15,8 @@
 package rtc
 
 import (
+	"slices"
+
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 
@@ -117,7 +119,7 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 
 	// subscriber configuration
 	subscriberConfig := DirectionConfig{
-		StrictACKs: conf.RTC.StrictACKs,
+		StrictACKs: rtcConf.StrictACKs,
 		RTPHeaderExtension: RTPHeaderExtensionConfig{
 			Video: []string{
 				dd.ExtensionURI,
@@ -152,6 +154,23 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 		Publisher:  publisherConfig,
 		Subscriber: subscriberConfig,
 	}, nil
+}
+
+func (c *WebRTCConfig) UpdateCongestionControl(conf config.CongestionControlConfig) {
+	c.Subscriber.RTPHeaderExtension.Video = slices.DeleteFunc(c.Subscriber.RTPHeaderExtension.Video, func(ext string) bool {
+		return ext == sdp.TransportCCURI || ext == sdp.ABSSendTimeURI
+	})
+	c.Subscriber.RTCPFeedback.Video = slices.DeleteFunc(c.Subscriber.RTCPFeedback.Video, func(fb webrtc.RTCPFeedback) bool {
+		return fb.Type == webrtc.TypeRTCPFBTransportCC || fb.Type == webrtc.TypeRTCPFBGoogREMB
+	})
+
+	if conf.UseSendSideBWEInterceptor || conf.UseSendSideBWE {
+		c.Subscriber.RTPHeaderExtension.Video = append(c.Subscriber.RTPHeaderExtension.Video, sdp.TransportCCURI)
+		c.Subscriber.RTCPFeedback.Video = append(c.Subscriber.RTCPFeedback.Video, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBTransportCC})
+	} else {
+		c.Subscriber.RTPHeaderExtension.Video = append(c.Subscriber.RTPHeaderExtension.Video, sdp.ABSSendTimeURI)
+		c.Subscriber.RTCPFeedback.Video = append(c.Subscriber.RTCPFeedback.Video, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBGoogREMB})
+	}
 }
 
 func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
