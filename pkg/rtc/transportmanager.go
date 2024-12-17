@@ -15,6 +15,7 @@
 package rtc
 
 import (
+	"context"
 	"io"
 	"math/bits"
 	"sync"
@@ -295,7 +296,7 @@ func (t *TransportManager) SendDataPacket(kind livekit.DataPacket_Kind, encoded 
 	// downstream data is sent via primary peer connection
 	err := t.getTransport(true).SendDataPacket(kind, encoded)
 	if err != nil {
-		if !utils.ErrorIsOneOf(err, io.ErrClosedPipe, sctp.ErrStreamClosed, ErrTransportFailure, ErrDataChannelBufferFull) {
+		if !utils.ErrorIsOneOf(err, io.ErrClosedPipe, sctp.ErrStreamClosed, ErrTransportFailure, ErrDataChannelBufferFull, context.DeadlineExceeded) {
 			t.params.Logger.Warnw("send data packet error", err)
 		}
 		if utils.ErrorIsOneOf(err, sctp.ErrStreamClosed, io.ErrClosedPipe) {

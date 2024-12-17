@@ -750,6 +750,7 @@ func TestDataPublishSlowSubscriber(t *testing.T) {
 	var (
 		blocked   atomic.Bool
 		stopWrite atomic.Bool
+		writeIdx  atomic.Uint64
 	)
 	writeStopped := make(chan struct{})
 	go func() {
@@ -769,6 +770,7 @@ func TestDataPublishSlowSubscriber(t *testing.T) {
 					break
 				}
 			}
+			writeIdx.Store(uint64(i))
 		}
 	}()
 
@@ -819,9 +821,10 @@ func TestDataPublishSlowSubscriber(t *testing.T) {
 	drainSlowSubNotDrop.Store(true)
 	stopWrite.Store(true)
 	<-writeStopped
-	// wait for the subscribers to drain the buffer
-	time.Sleep(3 * time.Second)
-	require.Equal(t, fastDataIndex.Load(), slowNoDropDataIndex.Load())
+	require.Eventually(t, func() bool {
+		return writeIdx.Load() == fastDataIndex.Load() &&
+			writeIdx.Load() == slowNoDropDataIndex.Load()
+	}, 5*time.Second, 50*time.Millisecond)
 }
 
 func TestFireTrackBySdp(t *testing.T) {
