@@ -102,7 +102,8 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 		videoLayer.Spatial, videoLayer.Temporal = int32(ddVal.FrameDependencies.SpatialId), int32(ddVal.FrameDependencies.TemporalId)
 	}
 
-	extFN := r.frameWrapAround.Update(ddVal.FrameNumber).ExtendedVal
+	unwrapped := r.frameWrapAround.Update(ddVal.FrameNumber)
+	extFN := unwrapped.ExtendedVal
 
 	if extFN < r.structureExtFrameNum {
 		r.logger.Debugw("drop frame which is earlier than current structure", "frameNum", extFN, "structureFrameNum", r.structureExtFrameNum)
@@ -128,6 +129,9 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 		}
 		r.structure = ddVal.AttachedStructure
 		r.decodeTargets = ProcessFrameDependencyStructure(ddVal.AttachedStructure)
+		if extFN > unwrapped.PreExtendedHighest && extFN-unwrapped.PreExtendedHighest > 1000 {
+			r.logger.Debugw("large frame number jump on structure updating", "extFN", extFN, "preExtendedHighest", unwrapped.PreExtendedHighest, "structureExtFrameNum", r.structureExtFrameNum)
+		}
 		r.structureExtFrameNum = extFN
 		extDD.StructureUpdated = true
 		extDD.ActiveDecodeTargetsUpdated = true

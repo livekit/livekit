@@ -1274,17 +1274,12 @@ func (f *Forwarder) AllocateNextHigher(availableChannelCapacity int64, available
 		return f.lastAllocation, false
 	}
 
-	// if targets are still pending, don't increase
-	targetLayer := f.vls.GetTarget()
-	if targetLayer.IsValid() && targetLayer != f.vls.GetCurrent() {
-		return f.lastAllocation, false
-	}
-
 	maxLayer := f.vls.GetMax()
 	maxSeenLayer := f.vls.GetMaxSeen()
 	optimalBandwidthNeeded := getOptimalBandwidthNeeded(f.muted, f.pubMuted, maxSeenLayer.Spatial, brs, maxLayer)
 
 	alreadyAllocated := int64(0)
+	targetLayer := f.vls.GetTarget()
 	if targetLayer.IsValid() {
 		alreadyAllocated = brs[targetLayer.Spatial][targetLayer.Temporal]
 	}

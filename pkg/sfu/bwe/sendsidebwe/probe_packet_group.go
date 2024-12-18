@@ -87,6 +87,10 @@ func (p *probePacketGroup) ProbeClusterDone(pci ccutils.ProbeClusterInfo) {
 	p.doneAt = mono.Now()
 }
 
+func (p *probePacketGroup) ProbeClusterInfo() ccutils.ProbeClusterInfo {
+	return p.pci
+}
+
 func (p *probePacketGroup) MaybeFinalizeProbe(maxSequenceNumber uint64, rtt float64) (ccutils.ProbeClusterInfo, bool) {
 	if p.doneAt.IsZero() {
 		return ccutils.ProbeClusterInfoInvalid, false
@@ -111,7 +115,7 @@ func (p *probePacketGroup) MaybeFinalizeProbe(maxSequenceNumber uint64, rtt floa
 }
 
 func (p *probePacketGroup) Add(pi *packetInfo, sendDelta, recvDelta int64, isLost bool) error {
-	if !p.doneAt.IsZero() || pi.probeClusterId != p.pci.Id {
+	if pi.probeClusterId != p.pci.Id {
 		return nil
 	}
 
