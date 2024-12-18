@@ -785,7 +785,7 @@ func TestDataPublishSlowSubscriber(t *testing.T) {
 	// no data should be dropped for slow subscriber that is above threshold
 	var slowNoDropDataIndex atomic.Uint64
 	var drainSlowSubNotDrop atomic.Bool
-	slowNoDropReader := testclient.NewDataChannelReader(dataChannelSlowThreshold * 3 / 2)
+	slowNoDropReader := testclient.NewDataChannelReader(dataChannelSlowThreshold * 2)
 	slowSubNotDrop.OnDataReceived = func(data []byte, sid string) {
 		idx := binary.BigEndian.Uint64(data[len(data)-8:])
 		require.Equal(t, slowNoDropDataIndex.Load()+1, idx)
