@@ -140,9 +140,10 @@ type qdMeasurement struct {
 	jqrMin int64
 	dqrMax int64
 
-	numGroups   int
-	minSendTime int64
-	maxSendTime int64
+	numGroups    int
+	numJQRGroups int
+	minSendTime  int64
+	maxSendTime  int64
 
 	isSealed       bool
 	sealedGroupIdx int
@@ -169,6 +170,7 @@ func (q *qdMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 		return
 	}
 
+	q.numGroups++
 	if pqd < q.dqrMax {
 		// a DQR breaks continuity
 		q.isSealed = true
@@ -178,7 +180,7 @@ func (q *qdMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 	}
 
 	if pqd > q.jqrMin {
-		q.numGroups++
+		q.numJQRGroups++
 		minSendTime, maxSendTime := pg.SendWindow()
 		if q.minSendTime == 0 || minSendTime < q.minSendTime {
 			q.minSendTime = minSendTime
@@ -186,7 +188,7 @@ func (q *qdMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 		q.maxSendTime = max(q.maxSendTime, maxSendTime)
 	}
 
-	if q.config.IsTriggered(q.numGroups, q.maxSendTime-q.minSendTime) {
+	if q.config.IsTriggered(q.numJQRGroups, q.maxSendTime-q.minSendTime) {
 		q.isSealed = true
 		q.sealedGroupIdx = groupIdx
 		q.queuingRegion = queuingRegionJQR
@@ -207,6 +209,7 @@ func (q *qdMeasurement) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	}
 
 	e.AddInt("numGroups", q.numGroups)
+	e.AddInt("numJQRGroups", q.numJQRGroups)
 	e.AddInt64("minSendTime", q.minSendTime)
 	e.AddInt64("maxSendTime", q.maxSendTime)
 	e.AddDuration("duration", time.Duration((q.maxSendTime-q.minSendTime)*1000))

@@ -142,18 +142,18 @@ type packetGroup struct {
 	lost     classStat
 	snBitmap *utils.Bitmap[uint64]
 
-	aggregateSendDelta int64
-	aggregateRecvDelta int64
-	queuingDelay       int64
+	aggregateSendDelta    int64
+	aggregateRecvDelta    int64
+	inheritedQueuingDelay int64
 
 	isFinalized bool
 }
 
-func newPacketGroup(params packetGroupParams, queuingDelay int64) *packetGroup {
+func newPacketGroup(params packetGroupParams, inheritedQueuingDelay int64) *packetGroup {
 	return &packetGroup{
-		params:       params,
-		queuingDelay: queuingDelay,
-		snBitmap:     utils.NewBitmap[uint64](params.Config.MinPackets),
+		params:                params,
+		inheritedQueuingDelay: inheritedQueuingDelay,
+		snBitmap:              utils.NewBitmap[uint64](params.Config.MinPackets),
 	}
 }
 
@@ -231,8 +231,8 @@ func (p *packetGroup) SendWindow() (int64, int64) {
 }
 
 func (p *packetGroup) PropagatedQueuingDelay() int64 {
-	if p.queuingDelay+p.aggregateRecvDelta-p.aggregateSendDelta > 0 {
-		return p.queuingDelay + p.aggregateRecvDelta - p.aggregateSendDelta
+	if p.inheritedQueuingDelay+p.aggregateRecvDelta-p.aggregateSendDelta > 0 {
+		return p.inheritedQueuingDelay + p.aggregateRecvDelta - p.aggregateSendDelta
 	}
 
 	return max(0, p.aggregateRecvDelta-p.aggregateSendDelta)
@@ -290,7 +290,7 @@ func (p *packetGroup) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	})
 	ts.Merge(p.Traffic())
 	e.AddObject("trafficStats", ts)
-	e.AddInt64("queuingDelay", p.queuingDelay)
+	e.AddInt64("inheritedQueuingDelay", p.inheritedQueuingDelay)
 	e.AddInt64("propagatedQueuingDelay", p.PropagatedQueuingDelay())
 
 	e.AddBool("isFinalized", p.isFinalized)
