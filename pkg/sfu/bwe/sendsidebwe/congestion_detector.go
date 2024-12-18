@@ -345,7 +345,7 @@ var (
 	defaultTrendDetectorConfigCongestedCTR = ccutils.TrendDetectorConfig{
 		RequiredSamples:        4,
 		RequiredSamplesMin:     2,
-		DownwardTrendThreshold: -0.7,
+		DownwardTrendThreshold: -0.5,
 		DownwardTrendMaxWait:   2 * time.Second,
 		CollapseThreshold:      500 * time.Millisecond,
 		ValidityWindow:         10 * time.Second,
