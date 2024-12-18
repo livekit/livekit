@@ -847,18 +847,19 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 	}
 
 	if c.congestedCTRTrend != nil && c.congestedCTRTrend.GetDirection() == ccutils.TrendDirectionDownward {
-		shouldNotify = true
-
 		congestedAckedBitrate := c.congestedTrafficStats.AcknowledgedBitrate()
 		if congestedAckedBitrate < c.estimatedAvailableChannelCapacity {
 			c.estimatedAvailableChannelCapacity = congestedAckedBitrate
+
+			c.params.Logger.Infow(
+				"send side bwe: captured traffic ratio is trending downward",
+				"channel", c.congestedCTRTrend,
+				"trafficStats", c.congestedTrafficStats,
+				"estimatedAvailableChannelCapacity", c.estimatedAvailableChannelCapacity,
+			)
+
+			shouldNotify = true
 		}
-		c.params.Logger.Infow(
-			"send side bwe: captured traffic ratio is trending downward",
-			"channel", c.congestedCTRTrend,
-			"trafficStats", c.congestedTrafficStats,
-			"estimatedAvailableChannelCapacity", c.estimatedAvailableChannelCapacity,
-		)
 
 		// reset to get new set of samples for next trend
 		c.resetCTRTrend()
