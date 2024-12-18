@@ -517,20 +517,26 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			"isFECEnabled", isFECEnabled,
 		}
 		if d.isRED {
-			logFields = append(logFields,
+			logFields = append(
+				logFields,
 				"isRED", d.isRED,
 				"upstreamPrimaryPT", d.upstreamPrimaryPT,
 				"primaryPT", d.primaryPT,
 			)
 		}
-		d.params.Logger.Debugw("DownTrack.Bind",
-			logFields...,
-		)
 
 		d.ssrc = uint32(t.SSRC())
 		d.ssrcRTX = uint32(t.SSRCRetransmission())
 		d.payloadType = uint8(codec.PayloadType)
 		d.payloadTypeRTX = uint8(utils.FindRTXPayloadType(codec.PayloadType, t.CodecParameters()))
+		logFields = append(
+			logFields,
+			"payloadType", d.payloadType,
+			"payloadTypeRTX", d.payloadTypeRTX,
+			"codecParameters", t.CodecParameters(),
+		)
+		d.params.Logger.Debugw("DownTrack.Bind", logFields...)
+
 		d.writeStream = t.WriteStream()
 		d.mime = strings.ToLower(codec.MimeType)
 		if rr := d.params.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, d.ssrc).(*buffer.RTCPReader); rr != nil {
