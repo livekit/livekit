@@ -842,7 +842,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 	// update after running the above estimate as state change callback includes the estimated available channel capacity
 	shouldNotify := false
 	if toState != fromState {
-		c.updateCongestionState(toState, reason, oldestContributingGroup)
+		fromState, toState = c.updateCongestionState(toState, reason, oldestContributingGroup)
 		shouldNotify = true
 	}
 
@@ -864,7 +864,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 		c.resetCTRTrend()
 	}
 
-	return shouldNotify, fromState, c.congestionState, c.estimatedAvailableChannelCapacity
+	return shouldNotify, fromState, toState, c.estimatedAvailableChannelCapacity
 }
 
 func (c *congestionDetector) createCTRTrend() {
@@ -953,7 +953,7 @@ func (c *congestionDetector) estimateAvailableChannelCapacity(oldestContributing
 	c.estimatedAvailableChannelCapacity = agg.AcknowledgedBitrate()
 }
 
-func (c *congestionDetector) updateCongestionState(state bwe.CongestionState, reason string, oldestContributingGroup int) {
+func (c *congestionDetector) updateCongestionState(state bwe.CongestionState, reason string, oldestContributingGroup int) (bwe.CongestionState, bwe.CongestionState) {
 	c.params.Logger.Infow(
 		"send side bwe: congestion state change",
 		"from", c.congestionState,
@@ -969,7 +969,7 @@ func (c *congestionDetector) updateCongestionState(state bwe.CongestionState, re
 		c.congestionStateSwitchedAt = mono.Now()
 	}
 
-	prevState := c.congestionState
+	fromState := c.congestionState
 	c.congestionState = state
 
 	// when in congested state, monitor changes in captured traffic ratio (CTR)
@@ -978,9 +978,11 @@ func (c *congestionDetector) updateCongestionState(state bwe.CongestionState, re
 	// sub-optimal and not enough to reduce/relieve congestion, by monitoing CTR
 	// on a continuous basis allocations can be adjusted in the direction of
 	// reducing/relieving congestion
-	if state == bwe.CongestionStateCongested && prevState != bwe.CongestionStateCongested {
+	if state == bwe.CongestionStateCongested && fromState != bwe.CongestionStateCongested {
 		c.createCTRTrend()
 	} else if state != bwe.CongestionStateCongested {
 		c.clearCTRTrend()
 	}
+
+	return fromState, c.congestionState
 }

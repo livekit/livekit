@@ -192,11 +192,11 @@ func (r *RemoteBWE) congestionDetectionStateMachine() (bool, bwe.CongestionState
 
 	shouldNotify := false
 	if toState != fromState || update {
-		r.updateCongestionState(toState, reason)
+		fromState, toState = r.updateCongestionState(toState, reason)
 		shouldNotify = true
 	}
 
-	return shouldNotify, fromState, r.congestionState, r.committedChannelCapacity
+	return shouldNotify, fromState, toState, r.committedChannelCapacity
 }
 
 func (r *RemoteBWE) estimateAvailableChannelCapacity(reason channelCongestionReason) bool {
@@ -230,7 +230,7 @@ func (r *RemoteBWE) estimateAvailableChannelCapacity(reason channelCongestionRea
 	return true
 }
 
-func (r *RemoteBWE) updateCongestionState(state bwe.CongestionState, reason channelCongestionReason) {
+func (r *RemoteBWE) updateCongestionState(state bwe.CongestionState, reason channelCongestionReason) (bwe.CongestionState, bwe.CongestionState) {
 	r.params.Logger.Infow(
 		"remote bwe: congestion state change",
 		"from", r.congestionState,
@@ -239,8 +239,10 @@ func (r *RemoteBWE) updateCongestionState(state bwe.CongestionState, reason chan
 		"committedChannelCapacity", r.committedChannelCapacity,
 	)
 
+	fromState := r.congestionState
 	r.congestionState = state
 	r.congestionStateSwitchedAt = mono.Now()
+	return fromState, r.congestionState
 }
 
 func (r *RemoteBWE) CongestionState() bwe.CongestionState {
