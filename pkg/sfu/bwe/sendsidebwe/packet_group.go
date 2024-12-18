@@ -39,7 +39,7 @@ type PacketGroupConfig struct {
 
 var (
 	defaultPacketGroupConfig = PacketGroupConfig{
-		MinPackets:        20,
+		MinPackets:        30,
 		MaxWindowDuration: 500 * time.Millisecond,
 	}
 )

@@ -32,8 +32,8 @@ type WeightedLossConfig struct {
 
 var (
 	defaultWeightedLossConfig = WeightedLossConfig{
-		MinDurationForLossValidity: 200 * time.Millisecond,
-		MinPPSForLossValidity:      20,
+		MinDurationForLossValidity: 250 * time.Millisecond,
+		MinPPSForLossValidity:      30,
 		LossPenaltyFactor:          0.25,
 	}
 )

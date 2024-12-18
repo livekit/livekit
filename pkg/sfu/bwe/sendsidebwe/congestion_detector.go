@@ -40,23 +40,23 @@ func (c CongestionSignalConfig) IsTriggered(numGroups int, duration int64) bool 
 
 var (
 	defaultQueuingDelayEarlyWarningCongestionSignalConfig = CongestionSignalConfig{
-		MinNumberOfGroups: 1,
-		MinDuration:       100 * time.Millisecond,
+		MinNumberOfGroups: 2,
+		MinDuration:       200 * time.Millisecond,
 	}
 
 	defaultLossEarlyWarningCongestionSignalConfig = CongestionSignalConfig{
-		MinNumberOfGroups: 2,
-		MinDuration:       300 * time.Millisecond,
-	}
-
-	defaultQueuingDelayCongestedCongestionSignalConfig = CongestionSignalConfig{
 		MinNumberOfGroups: 3,
 		MinDuration:       300 * time.Millisecond,
 	}
 
+	defaultQueuingDelayCongestedCongestionSignalConfig = CongestionSignalConfig{
+		MinNumberOfGroups: 4,
+		MinDuration:       400 * time.Millisecond,
+	}
+
 	defaultLossCongestedCongestionSignalConfig = CongestionSignalConfig{
 		MinNumberOfGroups: 6,
-		MinDuration:       900 * time.Millisecond,
+		MinDuration:       600 * time.Millisecond,
 	}
 )
 
