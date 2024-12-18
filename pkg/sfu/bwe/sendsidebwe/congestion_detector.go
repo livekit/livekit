@@ -808,7 +808,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 		if qr == queuingRegionJQR {
 			toState = bwe.CongestionStateCongested
 		} else {
-			qr, _, _ := c.getEarlyWarningSignal()
+			qr, reason, oldestContributingGroup = c.getEarlyWarningSignal()
 			if qr == queuingRegionDQR {
 				toState = bwe.CongestionStateEarlyWarningHangover
 			}
@@ -823,7 +823,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 		}
 
 	case bwe.CongestionStateCongested:
-		qr, _, _ = c.getCongestedSignal()
+		qr, reason, oldestContributingGroup = c.getCongestedSignal()
 		if qr == queuingRegionDQR {
 			toState = bwe.CongestionStateCongestedHangover
 		}
