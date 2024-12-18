@@ -40,23 +40,23 @@ func (c CongestionSignalConfig) IsTriggered(numGroups int, duration int64) bool 
 
 var (
 	defaultQueuingDelayEarlyWarningCongestionSignalConfig = CongestionSignalConfig{
-		MinNumberOfGroups: 1,
-		MinDuration:       100 * time.Millisecond,
+		MinNumberOfGroups: 2,
+		MinDuration:       200 * time.Millisecond,
 	}
 
 	defaultLossEarlyWarningCongestionSignalConfig = CongestionSignalConfig{
-		MinNumberOfGroups: 2,
-		MinDuration:       300 * time.Millisecond,
-	}
-
-	defaultQueuingDelayCongestedCongestionSignalConfig = CongestionSignalConfig{
 		MinNumberOfGroups: 3,
 		MinDuration:       300 * time.Millisecond,
 	}
 
+	defaultQueuingDelayCongestedCongestionSignalConfig = CongestionSignalConfig{
+		MinNumberOfGroups: 4,
+		MinDuration:       400 * time.Millisecond,
+	}
+
 	defaultLossCongestedCongestionSignalConfig = CongestionSignalConfig{
 		MinNumberOfGroups: 6,
-		MinDuration:       900 * time.Millisecond,
+		MinDuration:       600 * time.Millisecond,
 	}
 )
 
@@ -140,12 +140,14 @@ type qdMeasurement struct {
 	jqrMin int64
 	dqrMax int64
 
-	numGroups   int
-	minSendTime int64
-	maxSendTime int64
+	numGroups    int
+	numJQRGroups int
+	minSendTime  int64
+	maxSendTime  int64
 
-	isSealed       bool
-	sealedGroupIdx int
+	isSealed    bool
+	minGroupIdx int
+	maxGroupIdx int
 
 	queuingRegion queuingRegion
 }
@@ -169,16 +171,21 @@ func (q *qdMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 		return
 	}
 
+	q.numGroups++
+	if q.minGroupIdx == 0 || q.minGroupIdx > groupIdx {
+		groupIdx = q.minGroupIdx
+	}
+	q.maxGroupIdx = max(q.maxGroupIdx, groupIdx)
+
 	if pqd < q.dqrMax {
 		// a DQR breaks continuity
 		q.isSealed = true
-		q.sealedGroupIdx = groupIdx
 		q.queuingRegion = queuingRegionDQR
 		return
 	}
 
 	if pqd > q.jqrMin {
-		q.numGroups++
+		q.numJQRGroups++
 		minSendTime, maxSendTime := pg.SendWindow()
 		if q.minSendTime == 0 || minSendTime < q.minSendTime {
 			q.minSendTime = minSendTime
@@ -186,9 +193,8 @@ func (q *qdMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 		q.maxSendTime = max(q.maxSendTime, maxSendTime)
 	}
 
-	if q.config.IsTriggered(q.numGroups, q.maxSendTime-q.minSendTime) {
+	if q.config.IsTriggered(q.numJQRGroups, q.maxSendTime-q.minSendTime) {
 		q.isSealed = true
-		q.sealedGroupIdx = groupIdx
 		q.queuingRegion = queuingRegionJQR
 	}
 }
@@ -197,8 +203,8 @@ func (q *qdMeasurement) IsSealed() bool {
 	return q.isSealed
 }
 
-func (q *qdMeasurement) Result() (queuingRegion, int) {
-	return q.queuingRegion, q.sealedGroupIdx
+func (q *qdMeasurement) Result() (queuingRegion, int, int) {
+	return q.queuingRegion, q.minGroupIdx, q.maxGroupIdx
 }
 
 func (q *qdMeasurement) MarshalLogObject(e zapcore.ObjectEncoder) error {
@@ -207,11 +213,13 @@ func (q *qdMeasurement) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	}
 
 	e.AddInt("numGroups", q.numGroups)
+	e.AddInt("numJQRGroups", q.numJQRGroups)
 	e.AddInt64("minSendTime", q.minSendTime)
 	e.AddInt64("maxSendTime", q.maxSendTime)
 	e.AddDuration("duration", time.Duration((q.maxSendTime-q.minSendTime)*1000))
 	e.AddBool("isSealed", q.isSealed)
-	e.AddInt("sealedGroupIdx", q.sealedGroupIdx)
+	e.AddInt("minGroupIdx", q.minGroupIdx)
+	e.AddInt("maxGroupIdx", q.maxGroupIdx)
 	e.AddString("queuingRegion", q.queuingRegion.String())
 	return nil
 }
@@ -226,8 +234,9 @@ type lossMeasurement struct {
 	numGroups int
 	ts        *trafficStats
 
-	isSealed       bool
-	sealedGroupIdx int
+	isSealed    bool
+	minGroupIdx int
+	maxGroupIdx int
 
 	weightedLoss float64
 
@@ -259,12 +268,16 @@ func (l *lossMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 	}
 
 	l.numGroups++
+	if l.minGroupIdx == 0 || l.minGroupIdx > groupIdx {
+		groupIdx = l.minGroupIdx
+	}
+	l.maxGroupIdx = max(l.maxGroupIdx, groupIdx)
+
 	l.ts.Merge(pg.Traffic())
 
 	duration := l.ts.Duration()
 	if l.config.IsTriggered(l.numGroups, duration) {
 		l.isSealed = true
-		l.sealedGroupIdx = groupIdx
 		l.weightedLoss = l.ts.WeightedLoss()
 
 		if l.weightedLoss < l.dqrMaxLoss {
@@ -279,8 +292,8 @@ func (l *lossMeasurement) IsSealed() bool {
 	return l.isSealed
 }
 
-func (l *lossMeasurement) Result() (queuingRegion, int) {
-	return l.queuingRegion, l.sealedGroupIdx
+func (l *lossMeasurement) Result() (queuingRegion, int, int) {
+	return l.queuingRegion, l.minGroupIdx, l.maxGroupIdx
 }
 
 func (l *lossMeasurement) MarshalLogObject(e zapcore.ObjectEncoder) error {
@@ -291,7 +304,8 @@ func (l *lossMeasurement) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddInt("numGroups", l.numGroups)
 	e.AddObject("ts", l.ts)
 	e.AddBool("isSealed", l.isSealed)
-	e.AddInt("sealedGroupIdx", l.sealedGroupIdx)
+	e.AddInt("minGroupIdx", l.minGroupIdx)
+	e.AddInt("maxGroupIdx", l.maxGroupIdx)
 	e.AddFloat64("weightedLoss", l.weightedLoss)
 	e.AddString("queuingRegion", l.queuingRegion.String())
 	return nil
@@ -331,7 +345,7 @@ var (
 	defaultTrendDetectorConfigCongestedCTR = ccutils.TrendDetectorConfig{
 		RequiredSamples:        4,
 		RequiredSamplesMin:     2,
-		DownwardTrendThreshold: -0.5,
+		DownwardTrendThreshold: -0.7,
 		DownwardTrendMaxWait:   2 * time.Second,
 		CollapseThreshold:      500 * time.Millisecond,
 		ValidityWindow:         10 * time.Second,
@@ -583,12 +597,12 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 	}
 
 	c.prunePacketGroups()
-	shouldNotify, state, committedChannelCapacity := c.congestionDetectionStateMachine()
+	shouldNotify, fromState, toState, committedChannelCapacity := c.congestionDetectionStateMachine()
 	c.lock.Unlock()
 
 	if shouldNotify {
 		if bweListener := c.getBWEListener(); bweListener != nil {
-			bweListener.OnCongestionStateChange(state, committedChannelCapacity)
+			bweListener.OnCongestionStateChange(fromState, toState, committedChannelCapacity)
 		}
 	}
 }
@@ -606,6 +620,13 @@ func (c *congestionDetector) UpdateRTT(rtt float64) {
 			c.rtt = bwe.RTTSmoothingFactor*rtt + (1.0-bwe.RTTSmoothingFactor)*c.rtt
 		}
 	}
+}
+
+func (c *congestionDetector) CongestionState() bwe.CongestionState {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	return c.congestionState
 }
 
 func (c *congestionDetector) CanProbe() bool {
@@ -718,7 +739,7 @@ func (c *congestionDetector) getCongestionSignal(
 	stage string,
 	qdConfig CongestionSignalConfig,
 	lossConfig CongestionSignalConfig,
-) (queuingRegion, string, int) {
+) (queuingRegion, string, int, int) {
 	qdMeasurement := newQdMeasurement(
 		qdConfig,
 		c.params.Config.JQRMinDelay.Microseconds(),
@@ -744,24 +765,21 @@ func (c *congestionDetector) getCongestionSignal(
 		}
 	}
 
-	oldestContributingGroup := max(0, idx)
 	reason := ""
-	qr, groupIdx := qdMeasurement.Result()
+	qr, minGroupIdx, maxGroupIdx := qdMeasurement.Result()
 	if qr == queuingRegionJQR {
 		reason = "queuing-delay"
-		oldestContributingGroup = groupIdx
 	} else {
-		qr, groupIdx = lossMeasurement.Result()
+		qr, minGroupIdx, maxGroupIdx = lossMeasurement.Result()
 		if qr == queuingRegionJQR {
 			reason = "loss"
-			oldestContributingGroup = groupIdx
 		}
 	}
 
-	return qr, reason, oldestContributingGroup
+	return qr, reason, max(0, minGroupIdx), max(0, maxGroupIdx)
 }
 
-func (c *congestionDetector) getEarlyWarningSignal() (queuingRegion, string, int) {
+func (c *congestionDetector) getEarlyWarningSignal() (queuingRegion, string, int, int) {
 	return c.getCongestionSignal(
 		"early-warning",
 		c.params.Config.QueuingDelayEarlyWarning,
@@ -769,7 +787,7 @@ func (c *congestionDetector) getEarlyWarningSignal() (queuingRegion, string, int
 	)
 }
 
-func (c *congestionDetector) getCongestedSignal() (queuingRegion, string, int) {
+func (c *congestionDetector) getCongestedSignal() (queuingRegion, string, int, int) {
 	return c.getCongestionSignal(
 		"congested",
 		c.params.Config.QueuingDelayCongested,
@@ -777,84 +795,85 @@ func (c *congestionDetector) getCongestedSignal() (queuingRegion, string, int) {
 	)
 }
 
-func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.CongestionState, int64) {
-	state := c.congestionState
-	newState := c.congestionState
+func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.CongestionState, bwe.CongestionState, int64) {
+	fromState := c.congestionState
+	toState := c.congestionState
 
 	var (
-		qr                      queuingRegion
-		reason                  string
-		oldestContributingGroup int
+		qr                       queuingRegion
+		reason                   string
+		minGroupIdx, maxGroupIdx int
 	)
-	switch state {
+	switch fromState {
 	case bwe.CongestionStateNone:
-		qr, reason, oldestContributingGroup = c.getEarlyWarningSignal()
+		qr, reason, minGroupIdx, maxGroupIdx = c.getEarlyWarningSignal()
 		if qr == queuingRegionJQR {
-			newState = bwe.CongestionStateEarlyWarning
+			toState = bwe.CongestionStateEarlyWarning
 		}
 
 	case bwe.CongestionStateEarlyWarning:
-		qr, reason, oldestContributingGroup = c.getCongestedSignal()
+		qr, reason, minGroupIdx, maxGroupIdx = c.getCongestedSignal()
 		if qr == queuingRegionJQR {
-			newState = bwe.CongestionStateCongested
+			toState = bwe.CongestionStateCongested
 		} else {
-			qr, _, _ := c.getEarlyWarningSignal()
+			qr, reason, minGroupIdx, maxGroupIdx = c.getEarlyWarningSignal()
 			if qr == queuingRegionDQR {
-				newState = bwe.CongestionStateEarlyWarningHangover
+				toState = bwe.CongestionStateEarlyWarningHangover
 			}
 		}
 
 	case bwe.CongestionStateEarlyWarningHangover:
-		qr, reason, oldestContributingGroup = c.getEarlyWarningSignal()
+		qr, reason, minGroupIdx, maxGroupIdx = c.getEarlyWarningSignal()
 		if qr == queuingRegionJQR {
-			newState = bwe.CongestionStateEarlyWarning
+			toState = bwe.CongestionStateEarlyWarning
 		} else if time.Since(c.congestionStateSwitchedAt) >= c.params.Config.EarlyWarningHangover {
-			newState = bwe.CongestionStateNone
+			toState = bwe.CongestionStateNone
 		}
 
 	case bwe.CongestionStateCongested:
-		qr, _, _ = c.getCongestedSignal()
+		qr, reason, minGroupIdx, maxGroupIdx = c.getCongestedSignal()
 		if qr == queuingRegionDQR {
-			newState = bwe.CongestionStateCongestedHangover
+			toState = bwe.CongestionStateCongestedHangover
 		}
 
 	case bwe.CongestionStateCongestedHangover:
-		qr, reason, oldestContributingGroup = c.getEarlyWarningSignal()
+		qr, reason, minGroupIdx, maxGroupIdx = c.getEarlyWarningSignal()
 		if qr == queuingRegionJQR {
-			newState = bwe.CongestionStateEarlyWarning
+			toState = bwe.CongestionStateEarlyWarning
 		} else if time.Since(c.congestionStateSwitchedAt) >= c.params.Config.CongestedHangover {
-			newState = bwe.CongestionStateNone
+			toState = bwe.CongestionStateNone
 		}
 	}
 
-	c.estimateAvailableChannelCapacity(oldestContributingGroup)
+	c.estimateAvailableChannelCapacity(minGroupIdx)
 
 	// update after running the above estimate as state change callback includes the estimated available channel capacity
 	shouldNotify := false
-	if newState != state {
-		c.updateCongestionState(newState, reason, oldestContributingGroup)
+	if toState != fromState {
+		fromState, toState = c.updateCongestionState(toState, reason, minGroupIdx, maxGroupIdx)
 		shouldNotify = true
 	}
 
 	if c.congestedCTRTrend != nil && c.congestedCTRTrend.GetDirection() == ccutils.TrendDirectionDownward {
-		shouldNotify = true
-
 		congestedAckedBitrate := c.congestedTrafficStats.AcknowledgedBitrate()
 		if congestedAckedBitrate < c.estimatedAvailableChannelCapacity {
 			c.estimatedAvailableChannelCapacity = congestedAckedBitrate
+
+			c.params.Logger.Infow(
+				"send side bwe: captured traffic ratio is trending downward",
+				"channel", c.congestedCTRTrend,
+				"trafficStats", c.congestedTrafficStats,
+				"estimatedAvailableChannelCapacity", c.estimatedAvailableChannelCapacity,
+			)
+
+			shouldNotify = true
 		}
-		c.params.Logger.Infow(
-			"send side bwe: captured traffic ratio is trending downward",
-			"channel", c.congestedCTRTrend,
-			"trafficStats", c.congestedTrafficStats,
-			"estimatedAvailableChannelCapacity", c.estimatedAvailableChannelCapacity,
-		)
 
 		// reset to get new set of samples for next trend
 		c.resetCTRTrend()
 	}
 
-	return shouldNotify, c.congestionState, c.estimatedAvailableChannelCapacity
+	return shouldNotify, fromState, toState, c.estimatedAvailableChannelCapacity
 }
 
 func (c *congestionDetector) createCTRTrend() {
@@ -943,23 +962,26 @@ func (c *congestionDetector) estimateAvailableChannelCapacity(oldestContributing
 	c.estimatedAvailableChannelCapacity = agg.AcknowledgedBitrate()
 }
 
-func (c *congestionDetector) updateCongestionState(state bwe.CongestionState, reason string, oldestContributingGroup int) {
-	c.params.Logger.Infow(
-		"send side bwe: congestion state change",
+func (c *congestionDetector) updateCongestionState(state bwe.CongestionState, reason string, minGroupIdx int, maxGroupIdx int) (bwe.CongestionState, bwe.CongestionState) {
+	loggingFields := []any{
 		"from", c.congestionState,
 		"to", state,
 		"reason", reason,
 		"numPacketGroups", len(c.packetGroups),
-		"numContributingGroups", len(c.packetGroups[oldestContributingGroup:]),
-		"contributingGroups", logger.ObjectSlice(c.packetGroups[oldestContributingGroup:]),
+		"minGroupIdx", minGroupIdx,
+		"maxGroupIdx", maxGroupIdx,
 		"estimatedAvailableChannelCapacity", c.estimatedAvailableChannelCapacity,
-	)
+	}
+	if state == bwe.CongestionStateEarlyWarning || state == bwe.CongestionStateCongested {
+		loggingFields = append(loggingFields, "contributingGroups", logger.ObjectSlice(c.packetGroups[minGroupIdx:maxGroupIdx+1]))
+	}
+	c.params.Logger.Infow("send side bwe: congestion state change", loggingFields...)
 
 	if state != c.congestionState {
 		c.congestionStateSwitchedAt = mono.Now()
 	}
 
-	prevState := c.congestionState
+	fromState := c.congestionState
 	c.congestionState = state
 
 	// when in congested state, monitor changes in captured traffic ratio (CTR)
@@ -968,9 +990,11 @@ func (c *congestionDetector) updateCongestionState(state bwe.CongestionState, re
 	// sub-optimal and not enough to reduce/relieve congestion, by monitoing CTR
 	// on a continuous basis allocations can be adjusted in the direction of
 	// reducing/relieving congestion
-	if state == bwe.CongestionStateCongested && prevState != bwe.CongestionStateCongested {
+	if state == bwe.CongestionStateCongested && fromState != bwe.CongestionStateCongested {
 		c.createCTRTrend()
 	} else if state != bwe.CongestionStateCongested {
 		c.clearCTRTrend()
 	}
+
+	return fromState, c.congestionState
 }

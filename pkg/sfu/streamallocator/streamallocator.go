@@ -205,8 +205,8 @@ type StreamAllocator struct {
 	isAllocateAllPending bool
 	rembTrackingSSRC     uint32
 
-	state                  streamAllocatorState
-	isHolding              bool
+	state streamAllocatorState
+
 	activeProbeClusterId   ccutils.ProbeClusterId
 	activeProbeGoalReached bool
 	activeProbeCongesting  bool
@@ -454,15 +454,16 @@ func (s *StreamAllocator) onTargetBitrateChange(bitrate int) {
 
 // called when congestion state changes (send side bandwidth estimation)
 type congestionStateChangeData struct {
-	congestionState                   bwe.CongestionState
+	fromState                         bwe.CongestionState
+	toState                           bwe.CongestionState
 	estimatedAvailableChannelCapacity int64
 }
 
 // BWEListener implementation
-func (s *StreamAllocator) OnCongestionStateChange(congestionState bwe.CongestionState, estimatedAvailableChannelCapacity int64) {
+func (s *StreamAllocator) OnCongestionStateChange(fromState bwe.CongestionState, toState bwe.CongestionState, estimatedAvailableChannelCapacity int64) {
 	s.postEvent(Event{
 		Signal: streamAllocatorSignalCongestionStateChange,
-		Data:   congestionStateChangeData{congestionState, estimatedAvailableChannelCapacity},
+		Data:   congestionStateChangeData{fromState, toState, estimatedAvailableChannelCapacity},
 	})
 }
 
@@ -828,32 +829,23 @@ func (s *StreamAllocator) handleSignalSetChannelCapacity(event Event) {
 
 func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 	cscd := event.Data.(congestionStateChangeData)
-	if cscd.congestionState != bwe.CongestionStateNone {
+	if cscd.toState != bwe.CongestionStateNone {
 		// end/abort any running probe if channel is not clear
 		s.maybeStopProbe()
 	}
 
-	if cscd.congestionState == bwe.CongestionStateEarlyWarning ||
-		cscd.congestionState == bwe.CongestionStateEarlyWarningHangover {
-		s.isHolding = true
-	} else {
-		// early warning is done and hold has been released,
-		// if there is no congestion, allocate all tracks optimally as
-		// some tracks may have been held at sub-optimal allocation
-		// during early warning hold
-		if s.isHolding && cscd.congestionState == bwe.CongestionStateNone && s.state == streamAllocatorStateStable {
-			update := NewStreamStateUpdate()
-			for _, track := range s.getTracks() {
-				allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal, false)
-				updateStreamStateChange(track, allocation, update)
-			}
-			s.maybeSendUpdate(update)
+	// some tracks may have been held at sub-optimal allocation
+	// during early warning hold (if there was one)
+	if isHoldableCongestionState(cscd.fromState) && cscd.toState == bwe.CongestionStateNone && s.state == streamAllocatorStateStable {
+		update := NewStreamStateUpdate()
+		for _, track := range s.getTracks() {
+			allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal, false)
+			updateStreamStateChange(track, allocation, update)
 		}
-
-		s.isHolding = false
+		s.maybeSendUpdate(update)
 	}
 
-	if cscd.congestionState == bwe.CongestionStateCongested {
+	if cscd.toState == bwe.CongestionStateCongested {
 		if s.activeProbeClusterId != ccutils.ProbeClusterIdInvalid {
 			if !s.activeProbeCongesting {
 				s.activeProbeCongesting = true
@@ -910,9 +902,10 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	s.maybeStopProbe()
 
 	// if not deficient, free pass allocate track
-	if !s.enabled || s.state == streamAllocatorStateStable || !track.IsManaged() {
+	bweCongestionState := s.params.BWE.CongestionState()
+	if !s.enabled || (s.state == streamAllocatorStateStable && !isDeficientCongestionState(bweCongestionState)) || !track.IsManaged() {
 		update := NewStreamStateUpdate()
-		allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal, s.isHolding)
+		allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal, isHoldableCongestionState(bweCongestionState))
 		updateStreamStateChange(track, allocation, update)
 		s.maybeSendUpdate(update)
 		return
@@ -1443,6 +1436,14 @@ func updateStreamStateChange(track *Track, allocation sfu.VideoAllocation, updat
 	if updated {
 		update.HandleStreamingChange(track, streamState)
 	}
+}
+
+func isHoldableCongestionState(bweCongestionState bwe.CongestionState) bool {
+	return bweCongestionState == bwe.CongestionStateEarlyWarning || bweCongestionState == bwe.CongestionStateEarlyWarningHangover
+}
+
+func isDeficientCongestionState(bweCongestionState bwe.CongestionState) bool {
+	return bweCongestionState == bwe.CongestionStateCongested || bweCongestionState == bwe.CongestionStateCongestedHangover
 }
 
 // ------------------------------------------------

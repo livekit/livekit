@@ -137,12 +137,12 @@ func (r *RemoteBWE) HandleREMB(
 	r.channelObserver.AddEstimate(r.lastReceivedEstimate)
 	r.channelObserver.AddNack(sentPackets, repeatedNacks)
 
-	shouldNotify, state, committedChannelCapacity := r.congestionDetectionStateMachine()
+	shouldNotify, fromState, toState, committedChannelCapacity := r.congestionDetectionStateMachine()
 	r.lock.Unlock()
 
 	if shouldNotify {
 		if bweListener := r.getBWEListener(); bweListener != nil {
-			bweListener.OnCongestionStateChange(state, committedChannelCapacity)
+			bweListener.OnCongestionStateChange(fromState, toState, committedChannelCapacity)
 		}
 	}
 }
@@ -154,18 +154,19 @@ func (r *RemoteBWE) UpdateRTT(rtt float64) {
 	r.probeController.UpdateRTT(rtt)
 }
 
-func (r *RemoteBWE) congestionDetectionStateMachine() (bool, bwe.CongestionState, int64) {
-	newState := r.congestionState
+func (r *RemoteBWE) congestionDetectionStateMachine() (bool, bwe.CongestionState, bwe.CongestionState, int64) {
+	fromState := r.congestionState
+	toState := r.congestionState
 	update := false
 	trend, reason := r.channelObserver.GetTrend()
 
-	switch r.congestionState {
+	switch fromState {
 	case bwe.CongestionStateNone:
 		if trend == channelTrendCongesting {
 			if r.probeController.IsInProbe() || r.estimateAvailableChannelCapacity(reason) {
 				// when in probe, if congested, stays there till probe is done,
 				// the estimate stays at pre-probe level
-				newState = bwe.CongestionStateCongested
+				toState = bwe.CongestionStateCongested
 			}
 		}
 
@@ -176,26 +177,26 @@ func (r *RemoteBWE) congestionDetectionStateMachine() (bool, bwe.CongestionState
 				update = true
 			}
 		} else {
-			newState = bwe.CongestionStateCongestedHangover
+			toState = bwe.CongestionStateCongestedHangover
 		}
 
 	case bwe.CongestionStateCongestedHangover:
 		if trend == channelTrendCongesting {
 			if r.estimateAvailableChannelCapacity(reason) {
-				newState = bwe.CongestionStateCongested
+				toState = bwe.CongestionStateCongested
 			}
 		} else if time.Since(r.congestionStateSwitchedAt) >= r.params.Config.CongestedHangoverDuration {
-			newState = bwe.CongestionStateNone
+			toState = bwe.CongestionStateNone
 		}
 	}
 
 	shouldNotify := false
-	if newState != r.congestionState || update {
-		r.updateCongestionState(newState, reason)
+	if toState != fromState || update {
+		fromState, toState = r.updateCongestionState(toState, reason)
 		shouldNotify = true
 	}
 
-	return shouldNotify, r.congestionState, r.committedChannelCapacity
+	return shouldNotify, fromState, toState, r.committedChannelCapacity
 }
 
 func (r *RemoteBWE) estimateAvailableChannelCapacity(reason channelCongestionReason) bool {
@@ -229,7 +230,7 @@ func (r *RemoteBWE) estimateAvailableChannelCapacity(reason channelCongestionRea
 	return true
 }
 
-func (r *RemoteBWE) updateCongestionState(state bwe.CongestionState, reason channelCongestionReason) {
+func (r *RemoteBWE) updateCongestionState(state bwe.CongestionState, reason channelCongestionReason) (bwe.CongestionState, bwe.CongestionState) {
 	r.params.Logger.Infow(
 		"remote bwe: congestion state change",
 		"from", r.congestionState,
@@ -238,8 +239,17 @@ func (r *RemoteBWE) updateCongestionState(state bwe.CongestionState, reason chan
 		"committedChannelCapacity", r.committedChannelCapacity,
 	)
 
+	fromState := r.congestionState
 	r.congestionState = state
 	r.congestionStateSwitchedAt = mono.Now()
+	return fromState, r.congestionState
+}
+
+func (r *RemoteBWE) CongestionState() bwe.CongestionState {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	return r.congestionState
 }
 
 func (r *RemoteBWE) CanProbe() bool {

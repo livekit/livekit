@@ -50,6 +50,10 @@ func (n *NullBWE) HandleTWCCFeedback(_report *rtcp.TransportLayerCC) {}
 
 func (n *NullBWE) UpdateRTT(rtt float64) {}
 
+func (n *NullBWE) CongestionState() CongestionState {
+	return CongestionStateNone
+}
+
 func (n *NullBWE) CanProbe() bool {
 	return false
 }
