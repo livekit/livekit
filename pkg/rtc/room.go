@@ -52,7 +52,7 @@ const (
 	invAudioLevelQuantization = 1.0 / AudioLevelQuantization
 	subscriberUpdateInterval  = 3 * time.Second
 
-	dataForwardLoadBalanceThreshold = 20
+	dataForwardLoadBalanceThreshold = 4
 
 	simulateDisconnectSignalTimeout = 5 * time.Second
 )

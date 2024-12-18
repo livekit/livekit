@@ -58,7 +58,6 @@ type RTCPFeedbackConfig struct {
 type DirectionConfig struct {
 	RTPHeaderExtension RTPHeaderExtensionConfig
 	RTCPFeedback       RTCPFeedbackConfig
-	StrictACKs         bool
 }
 
 func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
@@ -86,7 +85,6 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 
 	// publisher configuration
 	publisherConfig := DirectionConfig{
-		StrictACKs: true, // publisher is dialed, and will always reply with ACK
 		RTPHeaderExtension: RTPHeaderExtensionConfig{
 			Audio: []string{
 				sdp.SDESMidURI,
@@ -119,7 +117,6 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 
 	// subscriber configuration
 	subscriberConfig := DirectionConfig{
-		StrictACKs: rtcConf.StrictACKs,
 		RTPHeaderExtension: RTPHeaderExtensionConfig{
 			Video: []string{
 				dd.ExtensionURI,
@@ -130,6 +127,10 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 			},
 		},
 		RTCPFeedback: RTCPFeedbackConfig{
+			Audio: []webrtc.RTCPFeedback{
+				// always enable NACK for audio but disable it later for red enabled transceiver. https://github.com/pion/webrtc/pull/2972
+				{Type: webrtc.TypeRTCPFBNACK},
+			},
 			Video: []webrtc.RTCPFeedback{
 				{Type: webrtc.TypeRTCPFBCCM, Parameter: "fir"},
 				{Type: webrtc.TypeRTCPFBNACK},

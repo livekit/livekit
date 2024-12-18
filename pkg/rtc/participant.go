@@ -147,7 +147,6 @@ type ParticipantParams struct {
 	ReconnectOnPublicationError    bool
 	ReconnectOnSubscriptionError   bool
 	ReconnectOnDataChannelError    bool
-	DataChannelMaxBufferedAmount   uint64
 	VersionGenerator               utils.TimedVersionGenerator
 	TrackResolver                  types.MediaTrackResolver
 	DisableDynacast                bool
@@ -161,6 +160,8 @@ type ParticipantParams struct {
 	MetricConfig                   metric.MetricConfig
 	UseOneShotSignallingMode       bool
 	EnableMetrics                  bool
+	DataChannelMaxBufferedAmount   uint64
+	DatachannelSlowThreshold       int
 	FireOnTrackBySdp               bool
 }
 
@@ -1565,6 +1566,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		TURNSEnabled:                 p.params.TURNSEnabled,
 		AllowPlayoutDelay:            p.params.PlayoutDelay.GetEnabled(),
 		DataChannelMaxBufferedAmount: p.params.DataChannelMaxBufferedAmount,
+		DatachannelSlowThreshold:     p.params.DatachannelSlowThreshold,
 		Logger:                       p.params.Logger.WithComponent(sutils.ComponentTransport),
 		PublisherHandler:             pth,
 		SubscriberHandler:            sth,
