@@ -954,16 +954,18 @@ func (c *congestionDetector) estimateAvailableChannelCapacity(oldestContributing
 }
 
 func (c *congestionDetector) updateCongestionState(state bwe.CongestionState, reason string, oldestContributingGroup int) (bwe.CongestionState, bwe.CongestionState) {
-	c.params.Logger.Infow(
-		"send side bwe: congestion state change",
+	loggingFields := []any{
 		"from", c.congestionState,
 		"to", state,
 		"reason", reason,
 		"numPacketGroups", len(c.packetGroups),
-		"numContributingGroups", len(c.packetGroups[oldestContributingGroup:]),
-		"contributingGroups", logger.ObjectSlice(c.packetGroups[oldestContributingGroup:]),
+		"oldestContributingGroup", oldestContributingGroup,
 		"estimatedAvailableChannelCapacity", c.estimatedAvailableChannelCapacity,
-	)
+	}
+	if state == bwe.CongestionStateEarlyWarning || state == bwe.CongestionStateCongested {
+		loggingFields = append(loggingFields, "contributingGroups", logger.ObjectSlice(c.packetGroups[oldestContributingGroup:]))
+	}
+	c.params.Logger.Infow("send side bwe: congestion state change", loggingFields...)
 
 	if state != c.congestionState {
 		c.congestionStateSwitchedAt = mono.Now()
