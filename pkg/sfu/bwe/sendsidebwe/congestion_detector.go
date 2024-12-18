@@ -750,13 +750,11 @@ func (c *congestionDetector) getCongestionSignal(
 	if qr == queuingRegionJQR {
 		reason = "queuing-delay"
 		oldestContributingGroup = groupIdx
-		c.params.Logger.Debugw("send side bwe: queuing-delay in JQR", "stage", stage, "qd", qdMeasurement)
 	} else {
 		qr, groupIdx = lossMeasurement.Result()
 		if qr == queuingRegionJQR {
 			reason = "loss"
 			oldestContributingGroup = groupIdx
-			c.params.Logger.Debugw("send side bwe: loss in JQR", "stage", stage, "loss", lossMeasurement)
 		}
 	}
 
