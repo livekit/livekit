@@ -114,6 +114,10 @@ func (s *SendSideBWE) UpdateRTT(rtt float64) {
 	s.congestionDetector.UpdateRTT(rtt)
 }
 
+func (s *SendSideBWE) CongestionState() bwe.CongestionState {
+	return s.congestionDetector.CongestionState()
+}
+
 func (s *SendSideBWE) CanProbe() bool {
 	return s.congestionDetector.CanProbe()
 }

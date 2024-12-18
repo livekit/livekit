@@ -85,6 +85,8 @@ type BWE interface {
 
 	UpdateRTT(rtt float64)
 
+	CongestionState() CongestionState
+
 	CanProbe() bool
 	ProbeDuration() time.Duration
 	ProbeClusterStarting(pci ccutils.ProbeClusterInfo)
@@ -96,7 +98,7 @@ type BWE interface {
 // ------------------------------------------------
 
 type BWEListener interface {
-	OnCongestionStateChange(congestionState CongestionState, estimatedAvailableChannelCapacity int64)
+	OnCongestionStateChange(fromState CongestionState, toState CongestionState, estimatedAvailableChannelCapacity int64)
 }
 
 // ------------------------------------------------

@@ -205,8 +205,7 @@ type StreamAllocator struct {
 	isAllocateAllPending bool
 	rembTrackingSSRC     uint32
 
-	state              streamAllocatorState
-	bweCongestionState bwe.CongestionState
+	state streamAllocatorState
 
 	activeProbeClusterId   ccutils.ProbeClusterId
 	activeProbeGoalReached bool
@@ -226,7 +225,6 @@ func NewStreamAllocator(params StreamAllocatorParams, enabled bool, allowPause b
 		allowPause:           allowPause,
 		videoTracks:          make(map[livekit.TrackID]*Track),
 		state:                streamAllocatorStateStable,
-		bweCongestionState:   bwe.CongestionStateNone,
 		activeProbeClusterId: ccutils.ProbeClusterIdInvalid,
 		eventsQueue: utils.NewTypedOpsQueue[Event](utils.OpsQueueParams{
 			Name:    "stream-allocator",
@@ -456,15 +454,16 @@ func (s *StreamAllocator) onTargetBitrateChange(bitrate int) {
 
 // called when congestion state changes (send side bandwidth estimation)
 type congestionStateChangeData struct {
-	congestionState                   bwe.CongestionState
+	fromState                         bwe.CongestionState
+	toState                           bwe.CongestionState
 	estimatedAvailableChannelCapacity int64
 }
 
 // BWEListener implementation
-func (s *StreamAllocator) OnCongestionStateChange(congestionState bwe.CongestionState, estimatedAvailableChannelCapacity int64) {
+func (s *StreamAllocator) OnCongestionStateChange(fromState bwe.CongestionState, toState bwe.CongestionState, estimatedAvailableChannelCapacity int64) {
 	s.postEvent(Event{
 		Signal: streamAllocatorSignalCongestionStateChange,
-		Data:   congestionStateChangeData{congestionState, estimatedAvailableChannelCapacity},
+		Data:   congestionStateChangeData{fromState, toState, estimatedAvailableChannelCapacity},
 	})
 }
 
@@ -830,17 +829,14 @@ func (s *StreamAllocator) handleSignalSetChannelCapacity(event Event) {
 
 func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 	cscd := event.Data.(congestionStateChangeData)
-
-	prevBWECongestionState := s.bweCongestionState
-	s.bweCongestionState = cscd.congestionState
-	if s.bweCongestionState != bwe.CongestionStateNone {
+	if cscd.toState != bwe.CongestionStateNone {
 		// end/abort any running probe if channel is not clear
 		s.maybeStopProbe()
 	}
 
 	// some tracks may have been held at sub-optimal allocation
 	// during early warning hold (if there was one)
-	if isHoldableCongestionState(prevBWECongestionState) && s.bweCongestionState == bwe.CongestionStateNone && s.state == streamAllocatorStateStable {
+	if isHoldableCongestionState(cscd.fromState) && cscd.toState == bwe.CongestionStateNone && s.state == streamAllocatorStateStable {
 		update := NewStreamStateUpdate()
 		for _, track := range s.getTracks() {
 			allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal, false)
@@ -849,7 +845,7 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 		s.maybeSendUpdate(update)
 	}
 
-	if s.bweCongestionState == bwe.CongestionStateCongested {
+	if cscd.toState == bwe.CongestionStateCongested {
 		if s.activeProbeClusterId != ccutils.ProbeClusterIdInvalid {
 			if !s.activeProbeCongesting {
 				s.activeProbeCongesting = true
@@ -906,9 +902,10 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	s.maybeStopProbe()
 
 	// if not deficient, free pass allocate track
-	if !s.enabled || (s.state == streamAllocatorStateStable && !isDeficientCongestionState(s.bweCongestionState)) || !track.IsManaged() {
+	bweCongestionState := s.params.BWE.CongestionState()
+	if !s.enabled || (s.state == streamAllocatorStateStable && !isDeficientCongestionState(bweCongestionState)) || !track.IsManaged() {
 		update := NewStreamStateUpdate()
-		allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal, isHoldableCongestionState(s.bweCongestionState))
+		allocation := track.AllocateOptimal(FlagAllowOvershootWhileOptimal, isHoldableCongestionState(bweCongestionState))
 		updateStreamStateChange(track, allocation, update)
 		s.maybeSendUpdate(update)
 		return

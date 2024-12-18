@@ -586,12 +586,12 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 	}
 
 	c.prunePacketGroups()
-	shouldNotify, state, committedChannelCapacity := c.congestionDetectionStateMachine()
+	shouldNotify, fromState, toState, committedChannelCapacity := c.congestionDetectionStateMachine()
 	c.lock.Unlock()
 
 	if shouldNotify {
 		if bweListener := c.getBWEListener(); bweListener != nil {
-			bweListener.OnCongestionStateChange(state, committedChannelCapacity)
+			bweListener.OnCongestionStateChange(fromState, toState, committedChannelCapacity)
 		}
 	}
 }
@@ -609,6 +609,13 @@ func (c *congestionDetector) UpdateRTT(rtt float64) {
 			c.rtt = bwe.RTTSmoothingFactor*rtt + (1.0-bwe.RTTSmoothingFactor)*c.rtt
 		}
 	}
+}
+
+func (c *congestionDetector) CongestionState() bwe.CongestionState {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	return c.congestionState
 }
 
 func (c *congestionDetector) CanProbe() bool {
@@ -780,53 +787,53 @@ func (c *congestionDetector) getCongestedSignal() (queuingRegion, string, int) {
 	)
 }
 
-func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.CongestionState, int64) {
-	state := c.congestionState
-	newState := c.congestionState
+func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.CongestionState, bwe.CongestionState, int64) {
+	fromState := c.congestionState
+	toState := c.congestionState
 
 	var (
 		qr                      queuingRegion
 		reason                  string
 		oldestContributingGroup int
 	)
-	switch state {
+	switch fromState {
 	case bwe.CongestionStateNone:
 		qr, reason, oldestContributingGroup = c.getEarlyWarningSignal()
 		if qr == queuingRegionJQR {
-			newState = bwe.CongestionStateEarlyWarning
+			toState = bwe.CongestionStateEarlyWarning
 		}
 
 	case bwe.CongestionStateEarlyWarning:
 		qr, reason, oldestContributingGroup = c.getCongestedSignal()
 		if qr == queuingRegionJQR {
-			newState = bwe.CongestionStateCongested
+			toState = bwe.CongestionStateCongested
 		} else {
 			qr, _, _ := c.getEarlyWarningSignal()
 			if qr == queuingRegionDQR {
-				newState = bwe.CongestionStateEarlyWarningHangover
+				toState = bwe.CongestionStateEarlyWarningHangover
 			}
 		}
 
 	case bwe.CongestionStateEarlyWarningHangover:
 		qr, reason, oldestContributingGroup = c.getEarlyWarningSignal()
 		if qr == queuingRegionJQR {
-			newState = bwe.CongestionStateEarlyWarning
+			toState = bwe.CongestionStateEarlyWarning
 		} else if time.Since(c.congestionStateSwitchedAt) >= c.params.Config.EarlyWarningHangover {
-			newState = bwe.CongestionStateNone
+			toState = bwe.CongestionStateNone
 		}
 
 	case bwe.CongestionStateCongested:
 		qr, _, _ = c.getCongestedSignal()
 		if qr == queuingRegionDQR {
-			newState = bwe.CongestionStateCongestedHangover
+			toState = bwe.CongestionStateCongestedHangover
 		}
 
 	case bwe.CongestionStateCongestedHangover:
 		qr, reason, oldestContributingGroup = c.getEarlyWarningSignal()
 		if qr == queuingRegionJQR {
-			newState = bwe.CongestionStateEarlyWarning
+			toState = bwe.CongestionStateEarlyWarning
 		} else if time.Since(c.congestionStateSwitchedAt) >= c.params.Config.CongestedHangover {
-			newState = bwe.CongestionStateNone
+			toState = bwe.CongestionStateNone
 		}
 	}
 
@@ -834,8 +841,8 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 
 	// update after running the above estimate as state change callback includes the estimated available channel capacity
 	shouldNotify := false
-	if newState != state {
-		c.updateCongestionState(newState, reason, oldestContributingGroup)
+	if toState != fromState {
+		c.updateCongestionState(toState, reason, oldestContributingGroup)
 		shouldNotify = true
 	}
 
@@ -857,7 +864,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 		c.resetCTRTrend()
 	}
 
-	return shouldNotify, c.congestionState, c.estimatedAvailableChannelCapacity
+	return shouldNotify, fromState, c.congestionState, c.estimatedAvailableChannelCapacity
 }
 
 func (c *congestionDetector) createCTRTrend() {
