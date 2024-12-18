@@ -173,7 +173,7 @@ func (q *qdMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 
 	q.numGroups++
 	if q.minGroupIdx == 0 || q.minGroupIdx > groupIdx {
-		groupIdx = q.minGroupIdx
+		q.minGroupIdx = groupIdx
 	}
 	q.maxGroupIdx = max(q.maxGroupIdx, groupIdx)
 
@@ -269,7 +269,7 @@ func (l *lossMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 
 	l.numGroups++
 	if l.minGroupIdx == 0 || l.minGroupIdx > groupIdx {
-		groupIdx = l.minGroupIdx
+		l.minGroupIdx = groupIdx
 	}
 	l.maxGroupIdx = max(l.maxGroupIdx, groupIdx)
 
