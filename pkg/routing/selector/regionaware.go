@@ -24,21 +24,23 @@ import (
 
 // RegionAwareSelector prefers available nodes that are closest to the region of the current instance
 type RegionAwareSelector struct {
-	SystemLoadSelector
+	NodeSelector
+
 	CurrentRegion   string
 	regionDistances map[string]float64
 	regions         []config.RegionConfig
 	SortBy          string
 }
 
-func NewRegionAwareSelector(currentRegion string, regions []config.RegionConfig, sortBy string) (*RegionAwareSelector, error) {
+func NewRegionAwareSelector(currentRegion string, regions []config.RegionConfig, sortBy string, selector NodeSelector) (*RegionAwareSelector, error) {
 	if currentRegion == "" {
 		return nil, ErrCurrentRegionNotSet
 	}
 	// build internal map of distances
 	s := &RegionAwareSelector{
+		NodeSelector:    selector,
 		CurrentRegion:   currentRegion,
-		regionDistances: make(map[string]float64),
+		regionDistances: make(map[string]float64, len(regions)),
 		regions:         regions,
 		SortBy:          sortBy,
 	}
@@ -66,7 +68,7 @@ func NewRegionAwareSelector(currentRegion string, regions []config.RegionConfig,
 }
 
 func (s *RegionAwareSelector) SelectNode(nodes []*livekit.Node) (*livekit.Node, error) {
-	nodes, err := s.SystemLoadSelector.filterNodes(nodes)
+	nodes, err := s.NodeSelector.filterNodes(nodes)
 	if err != nil {
 		return nil, err
 	}
