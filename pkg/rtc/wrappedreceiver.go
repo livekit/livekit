@@ -158,6 +158,7 @@ func (r *WrappedReceiver) AddOnReady(f func()) {
 	if trackReceiver == nil {
 		r.onReadyCallbacks = append(r.onReadyCallbacks, f)
 		r.lock.Unlock()
+		return
 	}
 	r.lock.Unlock()
 
