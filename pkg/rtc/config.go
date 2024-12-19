@@ -158,6 +158,10 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 }
 
 func (c *WebRTCConfig) UpdateCongestionControl(conf config.CongestionControlConfig) {
+	if c.Subscriber.RTPHeaderExtension.Video == nil {
+		return
+	}
+
 	c.Subscriber.RTPHeaderExtension.Video = slices.DeleteFunc(c.Subscriber.RTPHeaderExtension.Video, func(ext string) bool {
 		return ext == sdp.TransportCCURI || ext == sdp.ABSSendTimeURI
 	})
