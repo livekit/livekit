@@ -183,13 +183,10 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 	})
 
 	if mid != "" {
-		trackInfo := t.TrackInfo()
-
+		trackInfo := t.TrackInfoClone()
 		if priority == 0 {
-			trackInfo = utils.CloneProto(trackInfo)
 			trackInfo.MimeType = receiver.Codec().MimeType
 			trackInfo.Mid = mid
-			t.trackInfo.Store(trackInfo)
 		}
 
 		for i, ci := range trackInfo.Codecs {
@@ -199,6 +196,7 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 				break
 			}
 		}
+		t.trackInfo.Store(trackInfo)
 	}
 
 	t.receivers = receivers
