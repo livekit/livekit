@@ -96,7 +96,7 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) boo
 	r.lock.Lock()
 	r.determinedCodec = codec
 
-	var trackReceiver sfu.Trackreceiver
+	var trackReceiver sfu.TrackReceiver
 	for _, receiver := range r.receivers {
 		if c := receiver.Codec(); strings.EqualFold(c.MimeType, codec.MimeType) {
 			trackReceiver = receiver
@@ -118,8 +118,11 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) boo
 	}
 	r.TrackReceiver = trackReceiver
 
-	onReadyCallbacks := r.onReadyCallbacks
-	r.onReadyCallbacks = nil
+	var onReadyCallbacks []func()
+	if trackReceiver != nil {
+		onReadyCallbacks = r.onReadyCallbacks
+		r.onReadyCallbacks = nil
+	}
 	r.lock.Unlock()
 
 	if trackReceiver != nil {
