@@ -21,7 +21,7 @@ import (
 	"github.com/pion/rtp/codecs"
 )
 
-var minFramesForCalculation = [...]int{8, 15, 40}
+var minFramesForCalculation = [...]int{8, 15, 40, 60}
 
 type frameInfo struct {
 	seq       uint16

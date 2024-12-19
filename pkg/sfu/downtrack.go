@@ -459,17 +459,6 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		return codec, nil
 	}
 
-	// Bind is called under RTPSender.mu lock, call the RTPSender.GetParameters in goroutine to avoid deadlock
-	go func() {
-		if tr := d.transceiver.Load(); tr != nil {
-			if sender := tr.Sender(); sender != nil {
-				extensions := sender.GetParameters().HeaderExtensions
-				d.params.Logger.Debugw("negotiated downtrack extensions", "extensions", extensions)
-				d.SetRTPHeaderExtensions(extensions)
-			}
-		}
-	}()
-
 	doBind := func() {
 		d.bindLock.Lock()
 		if d.IsClosed() {
@@ -566,6 +555,17 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.forwarder.DetermineCodec(codec.RTPCodecCapability, d.params.Receiver.HeaderExtensions())
 		d.connectionStats.Start(codec.MimeType, isFECEnabled)
 		d.params.Logger.Debugw("downtrack bound")
+
+		// Bind is called under RTPSender.mu lock, call the RTPSender.GetParameters in goroutine to avoid deadlock
+		go func() {
+			if tr := d.transceiver.Load(); tr != nil {
+				if sender := tr.Sender(); sender != nil {
+					extensions := sender.GetParameters().HeaderExtensions
+					d.params.Logger.Debugw("negotiated downtrack extensions", "extensions", extensions)
+					d.SetRTPHeaderExtensions(extensions)
+				}
+			}
+		}()
 	}
 
 	isReceiverReady := d.isReceiverReady
