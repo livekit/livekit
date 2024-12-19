@@ -261,9 +261,10 @@ type DownTrack struct {
 
 	forwarder *Forwarder
 
-	upstreamCodecs []webrtc.RTPCodecParameters
-	codec          webrtc.RTPCodecCapability
-	clockRate      uint32
+	upstreamCodecs            []webrtc.RTPCodecParameters
+	codec                     webrtc.RTPCodecCapability
+	clockRate                 uint32
+	negotiatedCodecParameters []webrtc.RTPCodecParameters
 
 	// payload types for red codec only
 	isRED             bool
@@ -430,9 +431,12 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.bindLock.Unlock()
 		return webrtc.RTPCodecParameters{}, ErrDownTrackAlreadyBound
 	}
+	// the context's codec parameters will be set to the binded codec after Bind return so we keep
+	// a copy of the codec parameters here to use it later
+	d.negotiatedCodecParameters = append([]webrtc.RTPCodecParameters{}, t.CodecParameters()...)
 	var codec, matchedUpstreamCodec webrtc.RTPCodecParameters
 	for _, c := range d.upstreamCodecs {
-		matchCodec, err := utils.CodecParametersFuzzySearch(c, t.CodecParameters())
+		matchCodec, err := utils.CodecParametersFuzzySearch(c, d.negotiatedCodecParameters)
 		if err == nil {
 			codec = matchCodec
 			matchedUpstreamCodec = c
@@ -444,7 +448,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		err := webrtc.ErrUnsupportedCodec
 		onBinding := d.onBinding
 		d.bindLock.Unlock()
-		d.params.Logger.Infow("bind error for unsupported codec", "codecs", d.upstreamCodecs, "remoteParameters", t.CodecParameters())
+		d.params.Logger.Infow("bind error for unsupported codec", "codecs", d.upstreamCodecs, "remoteParameters", d.negotiatedCodecParameters)
 		if onBinding != nil {
 			onBinding(err)
 		}
@@ -458,6 +462,17 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.bindLock.Unlock()
 		return codec, nil
 	}
+
+	// Bind is called under RTPSender.mu lock, call the RTPSender.GetParameters in goroutine to avoid deadlock
+	go func() {
+		if tr := d.transceiver.Load(); tr != nil {
+			if sender := tr.Sender(); sender != nil {
+				extensions := sender.GetParameters().HeaderExtensions
+				d.params.Logger.Debugw("negotiated downtrack extensions", "extensions", extensions)
+				d.SetRTPHeaderExtensions(extensions)
+			}
+		}
+	}()
 
 	doBind := func() {
 		d.bindLock.Lock()
@@ -517,12 +532,12 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.ssrc = uint32(t.SSRC())
 		d.ssrcRTX = uint32(t.SSRCRetransmission())
 		d.payloadType = uint8(codec.PayloadType)
-		d.payloadTypeRTX = uint8(utils.FindRTXPayloadType(codec.PayloadType, t.CodecParameters()))
+		d.payloadTypeRTX = uint8(utils.FindRTXPayloadType(codec.PayloadType, d.negotiatedCodecParameters))
 		logFields = append(
 			logFields,
 			"payloadType", d.payloadType,
 			"payloadTypeRTX", d.payloadTypeRTX,
-			"codecParameters", t.CodecParameters(),
+			"codecParameters", d.negotiatedCodecParameters,
 		)
 		d.params.Logger.Debugw("DownTrack.Bind", logFields...)
 
@@ -555,17 +570,6 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.forwarder.DetermineCodec(codec.RTPCodecCapability, d.params.Receiver.HeaderExtensions())
 		d.connectionStats.Start(codec.MimeType, isFECEnabled)
 		d.params.Logger.Debugw("downtrack bound")
-
-		// Bind is called under RTPSender.mu lock, call the RTPSender.GetParameters in goroutine to avoid deadlock
-		go func() {
-			if tr := d.transceiver.Load(); tr != nil {
-				if sender := tr.Sender(); sender != nil {
-					extensions := sender.GetParameters().HeaderExtensions
-					d.params.Logger.Debugw("negotiated downtrack extensions", "extensions", extensions)
-					d.SetRTPHeaderExtensions(extensions)
-				}
-			}
-		}()
 	}
 
 	isReceiverReady := d.isReceiverReady
