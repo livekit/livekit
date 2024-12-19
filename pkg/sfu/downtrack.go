@@ -2081,7 +2081,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 }
 
 func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
-	if d.ssrcRTX == 0 {
+	if d.payloadTypeRTX == 0 || d.ssrcRTX == 0 {
 		return d.WritePaddingRTP(bytesToSend, false, false)
 	}
 
