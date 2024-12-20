@@ -344,7 +344,7 @@ func (r *RoomManager) StartSession(
 
 			participant.GetLogger().Infow("resuming RTC session",
 				"nodeID", r.currentNode.NodeID(),
-				"participantInit", pi,
+				"participantInit", &pi,
 				"numParticipants", room.GetParticipantCount(),
 			)
 			iceConfig := r.getIceConfig(room.Name(), participant)
@@ -406,7 +406,7 @@ func (r *RoomManager) StartSession(
 		"room", room.Name(),
 		"nodeID", r.currentNode.NodeID(),
 		"numParticipants", room.GetParticipantCount(),
-		"participantInit", pi,
+		"participantInit", &pi,
 	)
 
 	clientConf := r.clientConfManager.GetConfiguration(pi.Client)
