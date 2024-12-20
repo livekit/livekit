@@ -37,10 +37,11 @@ func NewBitrateCalculator(duration time.Duration, window time.Duration) *Bitrate
 	c := &BitrateCalculator{
 		duration:       duration,
 		windowDuration: window,
-		windows:        deque.New[bitrateWindow](windowCnt+1, windowCnt+1),
+		windows:        &deque.Deque[bitrateWindow]{},
 		start:          now,
 		active:         bitrateWindow{start: now},
 	}
+	c.windows.SetBaseCap(windowCnt + 1)
 
 	return c
 }
