@@ -157,7 +157,7 @@ func NewProber(params ProberParams) *Prober {
 	p := &Prober{
 		params: params,
 	}
-	p.clusters.SetBaseCap(16)
+	p.clusters.SetBaseCap(4)
 	return p
 }
 
