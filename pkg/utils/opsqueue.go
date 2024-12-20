@@ -81,12 +81,13 @@ type opsQueueBase[T opsQueueItem] struct {
 }
 
 func newOpsQueueBase[T opsQueueItem](params OpsQueueParams) *opsQueueBase[T] {
-	return &opsQueueBase[T]{
+	b := &opsQueueBase[T]{
 		params:   params,
-		ops:      *deque.New[T](min(bits.Len64(uint64(params.MinSize-1)), 7)),
 		wake:     make(chan struct{}, 1),
 		doneChan: make(chan struct{}),
 	}
+	b.ops.Grow(min(bits.Len64(uint64(params.MinSize-1)), 7))
+	return b
 }
 
 func (oq *opsQueueBase[T]) Start() {

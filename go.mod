@@ -11,7 +11,7 @@ require (
 	github.com/elliotchance/orderedmap/v2 v2.4.0
 	github.com/florianl/go-tc v0.4.4
 	github.com/frostbyte73/core v0.0.13
-	github.com/gammazero/deque v0.2.1
+	github.com/gammazero/deque v1.0.0
 	github.com/gammazero/workerpool v1.1.3
 	github.com/google/wire v0.6.0
 	github.com/gorilla/websocket v1.5.3
@@ -20,7 +20,7 @@ require (
 	github.com/jellydator/ttlcache/v3 v3.3.0
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
-	github.com/livekit/mediatransportutil v0.0.0-20241128072814-c363618d4c98
+	github.com/livekit/mediatransportutil v0.0.0-20241220010243-a2bdee945564
 	github.com/livekit/protocol v1.29.5-0.20241217013317-bc388341b9f2
 	github.com/livekit/psrpc v0.6.1-0.20241018124827-1efff3d113a8
 	github.com/mackerelio/go-osstat v0.2.5

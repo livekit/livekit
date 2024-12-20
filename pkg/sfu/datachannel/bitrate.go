@@ -34,10 +34,12 @@ func NewBitrateCalculator(duration time.Duration, window time.Duration) *Bitrate
 		windowCnt = 1
 	}
 	now := mono.Now()
+	windows := &deque.Deque[bitrateWindow]{}
+	windows.Grow(windowCnt + 1)
 	c := &BitrateCalculator{
 		duration:       duration,
 		windowDuration: window,
-		windows:        deque.New[bitrateWindow](windowCnt+1, windowCnt+1),
+		windows:        windows,
 		start:          now,
 		active:         bitrateWindow{start: now},
 	}
