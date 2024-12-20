@@ -1,14 +1,15 @@
 module github.com/livekit/livekit-server
 
-go 1.23
+go 1.23.0
 
-toolchain go1.23.3
+toolchain go1.23.4
 
 require (
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.17.0
 	github.com/dustin/go-humanize v1.0.1
-	github.com/elliotchance/orderedmap/v2 v2.4.0
+	github.com/elliotchance/orderedmap/v2 v2.6.0
+	github.com/elliotchance/orderedmap/v3 v3.0.0
 	github.com/florianl/go-tc v0.4.4
 	github.com/frostbyte73/core v0.1.0
 	github.com/gammazero/deque v1.0.0
