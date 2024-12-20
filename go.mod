@@ -34,7 +34,7 @@ require (
 	github.com/pion/ice/v4 v4.0.3
 	github.com/pion/interceptor v0.1.37
 	github.com/pion/rtcp v1.2.15
-	github.com/pion/rtp v1.8.9
+	github.com/pion/rtp v1.8.10
 	github.com/pion/sctp v1.8.35
 	github.com/pion/sdp/v3 v3.0.9
 	github.com/pion/transport/v3 v3.0.7
