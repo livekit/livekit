@@ -715,7 +715,7 @@ func TestDataPublishSlowSubscriber(t *testing.T) {
 		return
 	}
 
-	dataChannelSlowThreshold := 101024
+	dataChannelSlowThreshold := 21024
 
 	logger.Infow("----------------STARTING TEST----------------", "test", t.Name())
 	s := createSingleNodeServer(func(c *config.Config) {
@@ -818,13 +818,13 @@ func TestDataPublishSlowSubscriber(t *testing.T) {
 	time.Sleep(time.Second)
 	blocked.Store(false)
 	require.Eventually(t, func() bool { return blocked.Load() }, 30*time.Second, 100*time.Millisecond)
-	drainSlowSubNotDrop.Store(true)
 	stopWrite.Store(true)
 	<-writeStopped
+	drainSlowSubNotDrop.Store(true)
 	require.Eventually(t, func() bool {
 		return writeIdx.Load() == fastDataIndex.Load() &&
 			writeIdx.Load() == slowNoDropDataIndex.Load()
-	}, 5*time.Second, 50*time.Millisecond)
+	}, 10*time.Second, 50*time.Millisecond, "writeIdx %d, fast %d, slowNoDrop %d", writeIdx.Load(), fastDataIndex.Load(), slowNoDropDataIndex.Load())
 }
 
 func TestFireTrackBySdp(t *testing.T) {

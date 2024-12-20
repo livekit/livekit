@@ -21,7 +21,7 @@ func NewDataChannelReader(bitrate int) *DataChannelReader {
 func (d *DataChannelReader) Read(p []byte, sid string) {
 	for {
 		if bitrate := d.bitrate.Bitrate(time.Now()); bitrate > 0 && bitrate > d.target {
-			time.Sleep(20 * time.Millisecond)
+			time.Sleep(10 * time.Millisecond)
 			d.bitrate.AddBytes(0, 0, time.Now())
 			continue
 		}
