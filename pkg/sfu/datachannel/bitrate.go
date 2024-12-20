@@ -20,7 +20,7 @@ type BitrateCalculator struct {
 	windowDuration time.Duration
 	duration       time.Duration
 
-	windows *deque.Deque[bitrateWindow]
+	windows deque.Deque[bitrateWindow]
 	active  bitrateWindow
 
 	bytes              int
@@ -37,10 +37,10 @@ func NewBitrateCalculator(duration time.Duration, window time.Duration) *Bitrate
 	c := &BitrateCalculator{
 		duration:       duration,
 		windowDuration: window,
-		windows:        deque.New[bitrateWindow](windowCnt+1, windowCnt+1),
 		start:          now,
 		active:         bitrateWindow{start: now},
 	}
+	c.windows.SetBaseCap(windowCnt + 1)
 
 	return c
 }

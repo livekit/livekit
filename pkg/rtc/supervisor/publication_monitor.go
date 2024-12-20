@@ -62,7 +62,7 @@ func NewPublicationMonitor(params PublicationMonitorParams) *PublicationMonitor 
 		params:      params,
 		isConnected: params.IsPeerConnectionConnected,
 	}
-	p.desiredPublishes.SetMinCapacity(2)
+	p.desiredPublishes.SetBaseCap(4)
 	return p
 }
 

@@ -15,7 +15,6 @@
 package utils
 
 import (
-	"math/bits"
 	"sync"
 
 	"github.com/gammazero/deque"
@@ -81,12 +80,13 @@ type opsQueueBase[T opsQueueItem] struct {
 }
 
 func newOpsQueueBase[T opsQueueItem](params OpsQueueParams) *opsQueueBase[T] {
-	return &opsQueueBase[T]{
+	o := &opsQueueBase[T]{
 		params:   params,
-		ops:      *deque.New[T](min(bits.Len64(uint64(params.MinSize-1)), 7)),
 		wake:     make(chan struct{}, 1),
 		doneChan: make(chan struct{}),
 	}
+	o.ops.SetBaseCap(int(min(params.MinSize, 128)))
+	return o
 }
 
 func (oq *opsQueueBase[T]) Start() {

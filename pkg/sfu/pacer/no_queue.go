@@ -40,7 +40,7 @@ func NewNoQueue(logger logger.Logger, bwe bwe.BWE) *NoQueue {
 		logger: logger,
 		wake:   make(chan struct{}, 1),
 	}
-	n.packets.SetMinCapacity(9)
+	n.packets.SetBaseCap(512)
 
 	go n.sendWorker()
 	return n

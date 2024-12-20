@@ -153,7 +153,7 @@ func NewBuffer(ssrc uint32, maxVideoPkts, maxAudioPkts int) *Buffer {
 		logger:       l.WithComponent(sutils.ComponentPub).WithComponent(sutils.ComponentSFU),
 	}
 	b.readCond = sync.NewCond(&b.RWMutex)
-	b.extPackets.SetMinCapacity(7)
+	b.extPackets.SetBaseCap(128)
 	return b
 }
 
