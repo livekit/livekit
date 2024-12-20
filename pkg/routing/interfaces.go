@@ -20,8 +20,10 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/atomic"
+	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -116,22 +118,6 @@ func (n *NullMessageSource) ConnectionID() livekit.ConnectionID {
 
 // ------------------------------------------------
 
-type ParticipantInit struct {
-	Identity             livekit.ParticipantIdentity
-	Name                 livekit.ParticipantName
-	Reconnect            bool
-	ReconnectReason      livekit.ReconnectReason
-	AutoSubscribe        bool
-	Client               *livekit.ClientInfo
-	Grants               *auth.ClaimGrants
-	Region               string
-	AdaptiveStream       bool
-	ID                   livekit.ParticipantID
-	SubscriberAllowPause *bool
-	DisableICELite       bool
-	CreateRoom           *livekit.CreateRoomRequest
-}
-
 // Router allows multiple nodes to coordinate the participant session
 //
 //counterfeiter:generate . Router
@@ -186,6 +172,52 @@ func CreateRouter(
 	// local routing and store
 	logger.Infow("using single-node routing")
 	return lr
+}
+
+// ------------------------------------------------
+
+type ParticipantInit struct {
+	Identity             livekit.ParticipantIdentity
+	Name                 livekit.ParticipantName
+	Reconnect            bool
+	ReconnectReason      livekit.ReconnectReason
+	AutoSubscribe        bool
+	Client               *livekit.ClientInfo
+	Grants               *auth.ClaimGrants
+	Region               string
+	AdaptiveStream       bool
+	ID                   livekit.ParticipantID
+	SubscriberAllowPause *bool
+	DisableICELite       bool
+	CreateRoom           *livekit.CreateRoomRequest
+}
+
+func (pi *ParticipantInit) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if pi == nil {
+		return nil
+	}
+
+	logBoolPtr := func(prop string, val *bool) {
+		if val == nil {
+			e.AddString(prop, "not-set")
+		} else {
+			e.AddBool(prop, *val)
+		}
+	}
+
+	e.AddString("Identity", string(pi.Identity))
+	logBoolPtr("Reconnect", &pi.Reconnect)
+	e.AddString("ReconnectReason", pi.ReconnectReason.String())
+	logBoolPtr("AutoSubscribe", &pi.AutoSubscribe)
+	e.AddObject("Client", logger.Proto(utils.ClientInfoWithoutAddress(pi.Client)))
+	e.AddObject("Grants", pi.Grants)
+	e.AddString("Region", pi.Region)
+	logBoolPtr("AdaptiveStream", &pi.AdaptiveStream)
+	e.AddString("ID", string(pi.ID))
+	logBoolPtr("SubscriberAllowPause", pi.SubscriberAllowPause)
+	logBoolPtr("DisableICELite", &pi.DisableICELite)
+	e.AddObject("CreateRoom", logger.Proto(pi.CreateRoom))
+	return nil
 }
 
 func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionID livekit.ConnectionID) (*livekit.StartSession, error) {
