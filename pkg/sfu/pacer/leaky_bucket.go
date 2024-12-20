@@ -47,7 +47,7 @@ func NewLeakyBucket(logger logger.Logger, bwe bwe.BWE, interval time.Duration, b
 		interval: interval,
 		bitrate:  bitrate,
 	}
-	l.packets.SetMinCapacity(9)
+	l.packets.SetBaseCap(512)
 
 	go l.sendWorker()
 	return l
