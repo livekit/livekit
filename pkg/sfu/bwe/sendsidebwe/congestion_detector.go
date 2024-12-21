@@ -963,7 +963,7 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 			"queuingRegion", c.queuingRegion,
 			"qdMeasurement", c.qdMeasurement,
 			"lossMeasurement", c.lossMeasurement,
-		)	// REMOVE
+		) // REMOVE
 		if c.queuingRegion == queuingRegionDQR {
 			// RAJA-TODO toState = bwe.CongestionStateCongestedHangover
 			toState = bwe.CongestionStateNone
