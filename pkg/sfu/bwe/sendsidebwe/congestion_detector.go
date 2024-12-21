@@ -196,7 +196,7 @@ type qdMeasurement struct {
 	queuingRegion queuingRegion
 }
 
-func newQdMeasurement(jqrConfig CongestionSignalConfig, dqrConfig CongestionSignalConfig, jqrMin int64, dqrMax int64) *qdMeasurement {
+func newQDMeasurement(jqrConfig CongestionSignalConfig, dqrConfig CongestionSignalConfig, jqrMin int64, dqrMax int64) *qdMeasurement {
 	return &qdMeasurement{
 		jqrConfig:     jqrConfig,
 		dqrConfig:     dqrConfig,
@@ -236,7 +236,7 @@ func (q *qdMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 			return
 		}
 
-		if q.dqrConfig.IsTriggered(q.numJQRGroups, q.maxSendTime-q.minSendTime) {
+		if q.dqrConfig.IsTriggered(q.numDQRGroups, q.maxSendTime-q.minSendTime) {
 			q.isSealed = true
 			q.queuingRegion = queuingRegionDQR
 			return
@@ -344,20 +344,19 @@ func (l *lossMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 
 	l.ts.Merge(pg.Traffic())
 
-	duration := l.ts.Duration()
-	if !l.isJQRSealed && l.jqrConfig.IsTriggered(l.numGroups, duration) {
+	if !l.isJQRSealed && l.jqrConfig.IsTriggered(l.numGroups, l.ts.Duration()) {
 		l.isJQRSealed = true
 
 		weightedLoss := l.ts.WeightedLoss()
 		if weightedLoss > l.jqrMinLoss {
 			l.weightedLoss = weightedLoss
-			l.queuingRegion = queuingRegionDQR
+			l.queuingRegion = queuingRegionJQR
 			l.isDQRSealed = true // seal DQR also as JQR is already hit
 			return
 		}
 	}
 
-	if l.dqrConfig.IsTriggered(l.numGroups, duration) {
+	if l.dqrConfig.IsTriggered(l.numGroups, l.ts.Duration()) {
 		l.isDQRSealed = true
 
 		l.weightedLoss = l.ts.WeightedLoss()
@@ -449,7 +448,7 @@ var (
 
 	defaultCongestionDetectorConfig = CongestionDetectorConfig{
 		PacketGroup:       defaultPacketGroupConfig,
-		PacketGroupMaxAge: 5 * time.Second,
+		PacketGroupMaxAge: 10 * time.Second,
 
 		ProbePacketGroup: defaultProbePacketGroupConfig,
 		ProbeRegulator:   ccutils.DefaultProbeRegulatorConfig,
@@ -866,7 +865,7 @@ func (c *congestionDetector) updateCongestionSignal(
 	lossJQRConfig CongestionSignalConfig,
 	lossDQRConfig CongestionSignalConfig,
 ) {
-	c.qdMeasurement = newQdMeasurement(
+	c.qdMeasurement = newQDMeasurement(
 		qdJQRConfig,
 		qdDQRConfig,
 		c.params.Config.JQRMinDelay.Microseconds(),
@@ -943,7 +942,8 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 		} else {
 			c.updateEarlyWarningSignal()
 			if c.queuingRegion == queuingRegionDQR {
-				toState = bwe.CongestionStateEarlyWarningHangover
+				// RAJA-TODO toState = bwe.CongestionStateEarlyWarningHangover
+				toState = bwe.CongestionStateNone
 			}
 		}
 
@@ -957,8 +957,16 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 
 	case bwe.CongestionStateCongested:
 		c.updateCongestedSignal()
+		c.params.Logger.Infow(
+			"RAJA congested state",
+			"congestionReason", c.congestionReason,
+			"queuingRegion", c.queuingRegion,
+			"qdMeasurement", c.qdMeasurement,
+			"lossMeasurement", c.lossMeasurement,
+		)	// REMOVE
 		if c.queuingRegion == queuingRegionDQR {
-			toState = bwe.CongestionStateCongestedHangover
+			// RAJA-TODO toState = bwe.CongestionStateCongestedHangover
+			toState = bwe.CongestionStateNone
 		}
 
 	case bwe.CongestionStateCongestedHangover:
