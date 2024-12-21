@@ -26,14 +26,16 @@ import (
 
 type WeightedLossConfig struct {
 	MinDurationForLossValidity time.Duration `yaml:"min_duration_for_loss_validity,omitempty"`
-	MinPPSForLossValidity      int           `yaml:"min_pps_for_loss_validity,omitempty"`
+	BaseDuration               time.Duration `yaml:"base_duration,omitempty"`
+	BasePPS                    int           `yaml:"base_pps,omitempty"`
 	LossPenaltyFactor          float64       `yaml:"loss_penalty_factor,omitempty"`
 }
 
 var (
 	defaultWeightedLossConfig = WeightedLossConfig{
-		MinDurationForLossValidity: 250 * time.Millisecond,
-		MinPPSForLossValidity:      30,
+		MinDurationForLossValidity: 100 * time.Millisecond,
+		BaseDuration:               500 * time.Millisecond,
+		BasePPS:                    30,
 		LossPenaltyFactor:          0.25,
 	}
 )
@@ -119,7 +121,14 @@ func (ts *trafficStats) WeightedLoss() float64 {
 
 	totalPackets := float64(ts.lostPackets + ts.ackedPackets)
 	pps := totalPackets * 1e6 / float64(durationMicro)
-	if int(pps) < ts.params.Config.MinPPSForLossValidity {
+
+	// longer duration, i. e. more time resolution, lower pps is acceptable as the measurement is more stable
+	deltaDuration := time.Duration(durationMicro*1000) - ts.params.Config.BaseDuration
+	if deltaDuration < 0 {
+		deltaDuration = 0
+	}
+	threshold := math.Exp(-deltaDuration.Seconds()) * float64(ts.params.Config.BasePPS)
+	if pps < threshold {
 		return 0.0
 	}
 
