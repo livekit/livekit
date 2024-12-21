@@ -944,13 +944,6 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 
 	case bwe.CongestionStateCongested:
 		c.updateCongestedSignal()
-		c.params.Logger.Infow(
-			"RAJA congested state",
-			"congestionReason", c.congestionReason,
-			"queuingRegion", c.queuingRegion,
-			"qdMeasurement", c.qdMeasurement,
-			"lossMeasurement", c.lossMeasurement,
-		) // REMOVE
 		if c.queuingRegion == queuingRegionDQR {
 			toState = bwe.CongestionStateNone
 		}

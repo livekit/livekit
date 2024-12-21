@@ -323,7 +323,7 @@ var DefaultConfig = Config{
 			StreamAllocator:           streamallocator.DefaultStreamAllocatorConfig,
 			RemoteBWE:                 remotebwe.DefaultRemoteBWEConfig,
 			UseSendSideBWEInterceptor: false,
-			UseSendSideBWE:            true,
+			UseSendSideBWE:            false,
 			SendSideBWE:               sendsidebwe.DefaultSendSideBWEConfig,
 		},
 		DatachannelSlowThreshold: 1000000,
