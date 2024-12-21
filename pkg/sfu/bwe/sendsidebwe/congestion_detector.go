@@ -45,8 +45,8 @@ var (
 	}
 
 	defaultQueuingDelayEarlyWarningDQRConfig = CongestionSignalConfig{
-		MinNumberOfGroups: 4,
-		MinDuration:       400 * time.Millisecond,
+		MinNumberOfGroups: 3,
+		MinDuration:       300 * time.Millisecond,
 	}
 
 	defaultLossEarlyWarningJQRConfig = CongestionSignalConfig{
@@ -55,8 +55,8 @@ var (
 	}
 
 	defaultLossEarlyWarningDQRConfig = CongestionSignalConfig{
-		MinNumberOfGroups: 6,
-		MinDuration:       600 * time.Millisecond,
+		MinNumberOfGroups: 4,
+		MinDuration:       400 * time.Millisecond,
 	}
 
 	defaultQueuingDelayCongestedJQRConfig = CongestionSignalConfig{
@@ -65,8 +65,8 @@ var (
 	}
 
 	defaultQueuingDelayCongestedDQRConfig = CongestionSignalConfig{
-		MinNumberOfGroups: 8,
-		MinDuration:       800 * time.Millisecond,
+		MinNumberOfGroups: 5,
+		MinDuration:       500 * time.Millisecond,
 	}
 
 	defaultLossCongestedJQRConfig = CongestionSignalConfig{
@@ -75,8 +75,8 @@ var (
 	}
 
 	defaultLossCongestedDQRConfig = CongestionSignalConfig{
-		MinNumberOfGroups: 12,
-		MinDuration:       1200 * time.Millisecond,
+		MinNumberOfGroups: 6,
+		MinDuration:       600 * time.Millisecond,
 	}
 )
 
