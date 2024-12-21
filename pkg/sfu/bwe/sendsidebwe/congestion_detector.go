@@ -416,13 +416,11 @@ type CongestionDetectorConfig struct {
 	QueuingDelayEarlyWarningDQR CongestionSignalConfig `yaml:"queuing_delay_early_warning_dqr,omitempty"`
 	LossEarlyWarningJQR         CongestionSignalConfig `yaml:"loss_early_warning_jqr,omitempty"`
 	LossEarlyWarningDQR         CongestionSignalConfig `yaml:"loss_early_warning_dqr,omitempty"`
-	EarlyWarningHangover        time.Duration          `yaml:"early_warning_hangover,omitempty"`
 
 	QueuingDelayCongestedJQR CongestionSignalConfig `yaml:"queuing_delay_congested_jqr,omitempty"`
 	QueuingDelayCongestedDQR CongestionSignalConfig `yaml:"queuing_delay_congested_dqr,omitempty"`
 	LossCongestedJQR         CongestionSignalConfig `yaml:"loss_congested_jqr,omitempty"`
 	LossCongestedDQR         CongestionSignalConfig `yaml:"loss_congested_dqr,omitempty"`
-	CongestedHangover        time.Duration          `yaml:"congested_hangover,omitempty"`
 
 	CongestedCTRTrend    ccutils.TrendDetectorConfig `yaml:"congested_ctr_trend,omitempty"`
 	CongestedCTREpsilon  float64                     `yaml:"congested_ctr_epsilon,omitempty"`
@@ -465,13 +463,11 @@ var (
 		QueuingDelayEarlyWarningDQR: defaultQueuingDelayEarlyWarningDQRConfig,
 		LossEarlyWarningJQR:         defaultLossEarlyWarningJQRConfig,
 		LossEarlyWarningDQR:         defaultLossEarlyWarningDQRConfig,
-		EarlyWarningHangover:        500 * time.Millisecond,
 
 		QueuingDelayCongestedJQR: defaultQueuingDelayCongestedJQRConfig,
 		QueuingDelayCongestedDQR: defaultQueuingDelayCongestedDQRConfig,
 		LossCongestedJQR:         defaultLossCongestedJQRConfig,
 		LossCongestedDQR:         defaultLossCongestedDQRConfig,
-		CongestedHangover:        3 * time.Second,
 
 		CongestedCTRTrend:    defaultTrendDetectorConfigCongestedCTR,
 		CongestedCTREpsilon:  0.05,
@@ -942,17 +938,8 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 		} else {
 			c.updateEarlyWarningSignal()
 			if c.queuingRegion == queuingRegionDQR {
-				// RAJA-TODO toState = bwe.CongestionStateEarlyWarningHangover
 				toState = bwe.CongestionStateNone
 			}
-		}
-
-	case bwe.CongestionStateEarlyWarningHangover:
-		c.updateEarlyWarningSignal()
-		if c.queuingRegion == queuingRegionJQR {
-			toState = bwe.CongestionStateEarlyWarning
-		} else if time.Since(c.congestionStateSwitchedAt) >= c.params.Config.EarlyWarningHangover {
-			toState = bwe.CongestionStateNone
 		}
 
 	case bwe.CongestionStateCongested:
@@ -965,15 +952,6 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 			"lossMeasurement", c.lossMeasurement,
 		) // REMOVE
 		if c.queuingRegion == queuingRegionDQR {
-			// RAJA-TODO toState = bwe.CongestionStateCongestedHangover
-			toState = bwe.CongestionStateNone
-		}
-
-	case bwe.CongestionStateCongestedHangover:
-		c.updateEarlyWarningSignal()
-		if c.queuingRegion == queuingRegionJQR {
-			toState = bwe.CongestionStateEarlyWarning
-		} else if time.Since(c.congestionStateSwitchedAt) >= c.params.Config.CongestedHangover {
 			toState = bwe.CongestionStateNone
 		}
 	}

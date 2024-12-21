@@ -1441,11 +1441,11 @@ func updateStreamStateChange(track *Track, allocation sfu.VideoAllocation, updat
 }
 
 func isHoldableCongestionState(bweCongestionState bwe.CongestionState) bool {
-	return bweCongestionState == bwe.CongestionStateEarlyWarning || bweCongestionState == bwe.CongestionStateEarlyWarningHangover
+	return bweCongestionState == bwe.CongestionStateEarlyWarning
 }
 
 func isDeficientCongestionState(bweCongestionState bwe.CongestionState) bool {
-	return bweCongestionState == bwe.CongestionStateCongested || bweCongestionState == bwe.CongestionStateCongestedHangover
+	return bweCongestionState == bwe.CongestionStateCongested
 }
 
 // ------------------------------------------------
