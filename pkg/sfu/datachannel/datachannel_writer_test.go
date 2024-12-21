@@ -32,7 +32,7 @@ func TestDataChannelWriter(t *testing.T) {
 	// bitrate below slow threshold(2000bytes/3sec), should drop by timeout
 	mockDC.SetNextWriteCompleteAt(t0.Add(3 * time.Second))
 	n, err = w.Write(buf[:1000])
-	require.ErrorIs(t, err, context.DeadlineExceeded, err)
+	require.ErrorIs(t, err, ErrDataDroppedBySlowReader, err)
 	require.Equal(t, 0, n)
 }
 
