@@ -37,6 +37,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	testclient "github.com/livekit/livekit-server/test/client"
 )
@@ -746,34 +747,6 @@ func TestDataPublishSlowSubscriber(t *testing.T) {
 		slowSubDrop.Stop()
 	}()
 
-	// publisher sends data as fast as possible, it will block by the slowest subscriber above the slow threshold
-	var (
-		blocked   atomic.Bool
-		stopWrite atomic.Bool
-		writeIdx  atomic.Uint64
-	)
-	writeStopped := make(chan struct{})
-	go func() {
-		defer close(writeStopped)
-		var i int
-		buf := make([]byte, 100)
-		for !stopWrite.Load() {
-			i++
-			binary.BigEndian.PutUint64(buf[len(buf)-8:], uint64(i))
-			if err := pub.PublishData(buf, livekit.DataPacket_RELIABLE); err != nil {
-				if errors.Is(err, context.DeadlineExceeded) {
-					blocked.Store(true)
-					i--
-					continue
-				} else {
-					t.Log("error writing", err)
-					break
-				}
-			}
-			writeIdx.Store(uint64(i))
-		}
-	}()
-
 	// no data should be dropped for fast subscriber
 	var fastDataIndex atomic.Uint64
 	fastSub.OnDataReceived = func(data []byte, sid string) {
@@ -812,6 +785,34 @@ func TestDataPublishSlowSubscriber(t *testing.T) {
 		slowDropDataIndex.Store(idx)
 		slowDropReader.Read(data, sid)
 	}
+
+	// publisher sends data as fast as possible, it will block by the slowest subscriber above the slow threshold
+	var (
+		blocked   atomic.Bool
+		stopWrite atomic.Bool
+		writeIdx  atomic.Uint64
+	)
+	writeStopped := make(chan struct{})
+	go func() {
+		defer close(writeStopped)
+		var i int
+		buf := make([]byte, 100)
+		for !stopWrite.Load() {
+			i++
+			binary.BigEndian.PutUint64(buf[len(buf)-8:], uint64(i))
+			if err := pub.PublishData(buf, livekit.DataPacket_RELIABLE); err != nil {
+				if errors.Is(err, datachannel.ErrDataDroppedBySlowReader) {
+					blocked.Store(true)
+					i--
+					continue
+				} else {
+					t.Log("error writing", err)
+					break
+				}
+			}
+			writeIdx.Store(uint64(i))
+		}
+	}()
 
 	<-dropped
 

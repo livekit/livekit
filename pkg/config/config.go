@@ -326,7 +326,6 @@ var DefaultConfig = Config{
 			UseSendSideBWE:            false,
 			SendSideBWE:               sendsidebwe.DefaultSendSideBWEConfig,
 		},
-		DatachannelSlowThreshold: 1000000,
 	},
 	Audio: sfu.DefaultAudioConfig,
 	Video: VideoConfig{

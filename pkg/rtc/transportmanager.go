@@ -38,6 +38,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
@@ -299,7 +300,11 @@ func (t *TransportManager) SendDataPacket(kind livekit.DataPacket_Kind, encoded 
 	err := t.getTransport(true).SendDataPacket(kind, encoded)
 	if err != nil {
 		if !utils.ErrorIsOneOf(err, io.ErrClosedPipe, sctp.ErrStreamClosed, ErrTransportFailure, ErrDataChannelBufferFull, context.DeadlineExceeded) {
-			t.params.Logger.Warnw("send data packet error", err)
+			if errors.Is(err, datachannel.ErrDataDroppedBySlowReader) {
+				t.params.Logger.Debugw("slow data reader", "error", err)
+			} else {
+				t.params.Logger.Warnw("send data packet error", err)
+			}
 		}
 		if utils.ErrorIsOneOf(err, sctp.ErrStreamClosed, io.ErrClosedPipe) {
 			t.params.SubscriberHandler.OnDataSendError(err)

@@ -777,7 +777,7 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 			for {
 				n, _, err := rawDC.ReadDataChannel(buffer)
 				if err != nil {
-					if !errors.Is(err, io.EOF) {
+					if !errors.Is(err, io.EOF) && !strings.Contains(err.Error(), "state=Closed") {
 						t.params.Logger.Warnw("error reading data channel", err, "label", dc.Label())
 					}
 					return
