@@ -727,6 +727,7 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 		}
 	}
 
+	/* RAJA-TODO
 	// try up allocations in case there is available headroom,
 	// it is possible that a previous up allocation is waiting to settle,
 	// so even if there was headroom available while doing previous up allocation
@@ -737,6 +738,7 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 	if s.state == streamAllocatorStateDeficient {
 		s.maybeBoostDeficientTracks()
 	}
+	*/
 
 	// probe if necessary and timing is right
 	if s.state == streamAllocatorStateDeficient {

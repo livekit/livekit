@@ -453,8 +453,8 @@ type congestionDetector struct {
 
 	queuingRegion      queuingRegion
 	congestionReason   congestionReason
-	jqrQDMeasurement   *qdMeasurement
-	jqrLossMeasurement *lossMeasurement
+	qdMeasurement   *qdMeasurement
+	lossMeasurement *lossMeasurement
 
 	bweListener bwe.BWEListener
 }
@@ -494,8 +494,8 @@ func (c *congestionDetector) Reset() {
 
 	c.queuingRegion = queuingRegionIndeterminate
 	c.congestionReason = congestionReasonNone
-	c.jqrQDMeasurement = nil
-	c.jqrLossMeasurement = nil
+	c.qdMeasurement = nil
+	c.lossMeasurement = nil
 }
 
 func (c *congestionDetector) SetBWEListener(bweListener bwe.BWEListener) {
@@ -757,7 +757,16 @@ func (c *congestionDetector) ProbeClusterFinalize() (ccutils.ProbeSignal, int64,
 		"isSignalValid", isSignalValid,
 		"probeClusterInfo", pci,
 		"probePacketGroup", c.probePacketGroup,
+		"congestionState", c.congestionState,
 	)
+
+	// if congestion signal changed during probe, defer to that signal
+	if c.congestionState != bwe.CongestionStateNone {
+		probeSignal := ccutils.ProbeSignalCongesting
+		c.probeRegulator.ProbeSignal(probeSignal, pci.CreatedAt)
+		c.probePacketGroup = nil
+		return probeSignal, c.estimatedAvailableChannelCapacity, true
+	}
 
 	probeSignal, estimatedAvailableChannelCapacity := c.params.Config.ProbeSignal.ProbeSignal(c.probePacketGroup)
 	if probeSignal == ccutils.ProbeSignalNotCongesting && estimatedAvailableChannelCapacity > c.estimatedAvailableChannelCapacity {
@@ -792,12 +801,12 @@ func (c *congestionDetector) updateCongestionSignal(
 	qdConfig CongestionSignalConfig,
 	lossConfig CongestionSignalConfig,
 ) {
-	qdMeasurement := newQdMeasurement(
+	c.qdMeasurement = newQdMeasurement(
 		qdConfig,
 		c.params.Config.JQRMinDelay.Microseconds(),
 		c.params.Config.DQRMaxDelay.Microseconds(),
 	)
-	lossMeasurement := newLossMeasurement(
+	c.lossMeasurement = newLossMeasurement(
 		lossConfig,
 		c.params.Config.WeightedLoss,
 		c.params.Config.JQRMinWeightedLoss,
@@ -808,28 +817,23 @@ func (c *congestionDetector) updateCongestionSignal(
 	var idx int
 	for idx = len(c.packetGroups) - 1; idx >= 0; idx-- {
 		pg := c.packetGroups[idx]
-		qdMeasurement.ProcessPacketGroup(pg, idx)
-		lossMeasurement.ProcessPacketGroup(pg, idx)
+		c.qdMeasurement.ProcessPacketGroup(pg, idx)
+		c.lossMeasurement.ProcessPacketGroup(pg, idx)
 
 		// if both measurements have enough data to make a decision, stop processing groups
-		if qdMeasurement.IsSealed() && lossMeasurement.IsSealed() {
+		if c.qdMeasurement.IsSealed() && c.lossMeasurement.IsSealed() {
 			break
 		}
 	}
 
 	c.congestionReason = congestionReasonNone
-	c.queuingRegion = qdMeasurement.QueuingRegion()
+	c.queuingRegion = c.qdMeasurement.QueuingRegion()
 	if c.queuingRegion == queuingRegionJQR {
 		c.congestionReason = congestionReasonQueuingDelay
-		c.jqrQDMeasurement = qdMeasurement
 	} else {
-		c.jqrQDMeasurement = nil
-		c.queuingRegion = lossMeasurement.QueuingRegion()
+		c.queuingRegion = c.lossMeasurement.QueuingRegion()
 		if c.queuingRegion == queuingRegionJQR {
 			c.congestionReason = congestionReasonLoss
-			c.jqrLossMeasurement = lossMeasurement
-		} else {
-			c.jqrLossMeasurement = nil
 		}
 	}
 }
@@ -1001,10 +1005,14 @@ func (c *congestionDetector) estimateAvailableChannelCapacity() {
 	useWindow := false
 	isAggValid := true
 	minGroupIdx := 0
-	if c.jqrQDMeasurement != nil {
-		minGroupIdx, _ = c.jqrQDMeasurement.GroupRange()
-	} else if c.jqrLossMeasurement != nil {
-		minGroupIdx, _ = c.jqrLossMeasurement.GroupRange()
+	maxGroupIdx := len(c.packetGroups) - 1
+	if c.queuingRegion == queuingRegionJQR {
+		switch c.congestionReason {
+		case congestionReasonQueuingDelay:
+			minGroupIdx, maxGroupIdx = c.qdMeasurement.GroupRange()
+		case congestionReasonLoss:
+			minGroupIdx, maxGroupIdx = c.lossMeasurement.GroupRange()
+		}
 	} else {
 		useWindow = true
 		isAggValid = false
@@ -1014,7 +1022,7 @@ func (c *congestionDetector) estimateAvailableChannelCapacity() {
 		Config: c.params.Config.WeightedLoss,
 		Logger: c.params.Logger,
 	})
-	for idx := len(c.packetGroups) - 1; idx >= minGroupIdx; idx-- {
+	for idx := maxGroupIdx; idx >= minGroupIdx; idx-- {
 		pg := c.packetGroups[idx]
 		if !pg.IsFinalized() {
 			continue
@@ -1039,21 +1047,22 @@ func (c *congestionDetector) updateCongestionState(state bwe.CongestionState) (b
 		"to", state,
 		"queuingRegion", c.queuingRegion,
 		"congestionReason", c.congestionReason,
+		"qdMeasurement", c.qdMeasurement,
+		"lossMeasurement", c.lossMeasurement,
 		"numPacketGroups", len(c.packetGroups),
 		"estimatedAvailableChannelCapacity", c.estimatedAvailableChannelCapacity,
 		"estimateTrafficStats", c.estimateTrafficStats,
 	}
 	if c.queuingRegion == queuingRegionJQR {
 		var minGroupIdx, maxGroupIdx int
-		if c.jqrQDMeasurement != nil {
-			minGroupIdx, maxGroupIdx = c.jqrQDMeasurement.GroupRange()
-		} else if c.jqrLossMeasurement != nil {
-			minGroupIdx, maxGroupIdx = c.jqrLossMeasurement.GroupRange()
+		switch c.congestionReason {
+		case congestionReasonQueuingDelay:
+			minGroupIdx, maxGroupIdx = c.qdMeasurement.GroupRange()
+		case congestionReasonLoss:
+			minGroupIdx, maxGroupIdx = c.lossMeasurement.GroupRange()
 		}
 		loggingFields = append(
 			loggingFields,
-			"jqrQDMeasurement", c.jqrQDMeasurement,
-			"jqrLossMeasurement", c.jqrLossMeasurement,
 			"contributingGroups", logger.ObjectSlice(c.packetGroups[minGroupIdx:maxGroupIdx+1]),
 		)
 	}
