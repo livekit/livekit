@@ -370,7 +370,7 @@ type CongestionDetectorConfig struct {
 	CongestedCTREpsilon  float64                     `yaml:"congested_ctr_epsilon,omitempty"`
 	CongestedPacketGroup PacketGroupConfig           `yaml:"congested_packet_group,omitempty"`
 
-	EstimationWindowDuration time.Duration `yaml:estimaton_window_duration,omitempty"`
+	EstimationWindowDuration time.Duration `yaml:"estimaton_window_duration,omitempty"`
 }
 
 var (
@@ -475,16 +475,27 @@ func (c *congestionDetector) Reset() {
 	defer c.lock.Unlock()
 
 	c.rtt = bwe.DefaultRTT
+
 	c.packetGroups = nil
+
 	c.probePacketGroup = nil
 	c.probeRegulator = ccutils.NewProbeRegulator(ccutils.ProbeRegulatorParams{
 		Config: c.params.Config.ProbeRegulator,
 		Logger: c.params.Logger,
 	})
+
 	c.estimatedAvailableChannelCapacity = 100_000_000
+	c.estimateTrafficStats = nil
+
 	c.congestionState = bwe.CongestionStateNone
 	c.congestionStateSwitchedAt = mono.Now()
+
 	c.clearCTRTrend()
+
+	c.queuingRegion = queuingRegionIndeterminate
+	c.congestionReason = congestionReasonNone
+	c.jqrQDMeasurement = nil
+	c.jqrLossMeasurement = nil
 }
 
 func (c *congestionDetector) SetBWEListener(bweListener bwe.BWEListener) {
@@ -1031,13 +1042,13 @@ func (c *congestionDetector) updateCongestionState(state bwe.CongestionState) (b
 		"congestionReason", c.congestionReason,
 		"numPacketGroups", len(c.packetGroups),
 		"estimatedAvailableChannelCapacity", c.estimatedAvailableChannelCapacity,
+		"estimateTrafficStats", c.estimateTrafficStats,
 	}
 	if c.queuingRegion == queuingRegionJQR {
 		var minGroupIdx, maxGroupIdx int
 		if c.jqrQDMeasurement != nil {
 			minGroupIdx, maxGroupIdx = c.jqrQDMeasurement.GroupRange()
-		}
-		if c.jqrLossMeasurement != nil {
+		} else if c.jqrLossMeasurement != nil {
 			minGroupIdx, maxGroupIdx = c.jqrLossMeasurement.GroupRange()
 		}
 		loggingFields = append(
