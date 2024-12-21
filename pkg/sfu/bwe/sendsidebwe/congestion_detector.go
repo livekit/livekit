@@ -998,7 +998,6 @@ func (c *congestionDetector) estimateAvailableChannelCapacity() {
 
 	// when in JQR, use contributing groups,
 	// else use a time windowed measurement
-	// RAJA-TODO: maybe always use time windowed measurement???
 	useWindow := false
 	isAggValid := true
 	minGroupIdx := 0
