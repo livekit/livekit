@@ -27,22 +27,20 @@ import (
 // ---------------------------------------------------------------------------
 
 type RemoteBWEConfig struct {
-	NackRatioAttenuator       float64               `yaml:"nack_ratio_attenuator,omitempty"`
-	ExpectedUsageThreshold    float64               `yaml:"expected_usage_threshold,omitempty"`
-	ChannelObserverProbe      ChannelObserverConfig `yaml:"channel_observer_probe,omitempty"`
-	ChannelObserverNonProbe   ChannelObserverConfig `yaml:"channel_observer_non_probe,omitempty"`
-	CongestedHangoverDuration time.Duration         `yaml:"congested_hangover_duration,omitempty"`
-	ProbeController           ProbeControllerConfig `yaml:"probe_controller,omitempty"`
+	NackRatioAttenuator     float64               `yaml:"nack_ratio_attenuator,omitempty"`
+	ExpectedUsageThreshold  float64               `yaml:"expected_usage_threshold,omitempty"`
+	ChannelObserverProbe    ChannelObserverConfig `yaml:"channel_observer_probe,omitempty"`
+	ChannelObserverNonProbe ChannelObserverConfig `yaml:"channel_observer_non_probe,omitempty"`
+	ProbeController         ProbeControllerConfig `yaml:"probe_controller,omitempty"`
 }
 
 var (
 	DefaultRemoteBWEConfig = RemoteBWEConfig{
-		NackRatioAttenuator:       0.4,
-		ExpectedUsageThreshold:    0.95,
-		ChannelObserverProbe:      defaultChannelObserverConfigProbe,
-		ChannelObserverNonProbe:   defaultChannelObserverConfigNonProbe,
-		CongestedHangoverDuration: 3 * time.Second,
-		ProbeController:           DefaultProbeControllerConfig,
+		NackRatioAttenuator:     0.4,
+		ExpectedUsageThreshold:  0.95,
+		ChannelObserverProbe:    defaultChannelObserverConfigProbe,
+		ChannelObserverNonProbe: defaultChannelObserverConfigNonProbe,
+		ProbeController:         DefaultProbeControllerConfig,
 	}
 )
 
@@ -177,15 +175,6 @@ func (r *RemoteBWE) congestionDetectionStateMachine() (bool, bwe.CongestionState
 				update = true
 			}
 		} else {
-			toState = bwe.CongestionStateCongestedHangover
-		}
-
-	case bwe.CongestionStateCongestedHangover:
-		if trend == channelTrendCongesting {
-			if r.estimateAvailableChannelCapacity(reason) {
-				toState = bwe.CongestionStateCongested
-			}
-		} else if time.Since(r.congestionStateSwitchedAt) >= r.params.Config.CongestedHangoverDuration {
 			toState = bwe.CongestionStateNone
 		}
 	}
