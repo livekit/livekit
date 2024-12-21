@@ -39,24 +39,44 @@ func (c CongestionSignalConfig) IsTriggered(numGroups int, duration int64) bool 
 }
 
 var (
-	defaultQueuingDelayEarlyWarningCongestionSignalConfig = CongestionSignalConfig{
+	defaultQueuingDelayEarlyWarningJQRConfig = CongestionSignalConfig{
 		MinNumberOfGroups: 2,
 		MinDuration:       200 * time.Millisecond,
 	}
 
-	defaultLossEarlyWarningCongestionSignalConfig = CongestionSignalConfig{
-		MinNumberOfGroups: 3,
-		MinDuration:       300 * time.Millisecond,
-	}
-
-	defaultQueuingDelayCongestedCongestionSignalConfig = CongestionSignalConfig{
+	defaultQueuingDelayEarlyWarningDQRConfig = CongestionSignalConfig{
 		MinNumberOfGroups: 4,
 		MinDuration:       400 * time.Millisecond,
 	}
 
-	defaultLossCongestedCongestionSignalConfig = CongestionSignalConfig{
+	defaultLossEarlyWarningJQRConfig = CongestionSignalConfig{
+		MinNumberOfGroups: 3,
+		MinDuration:       300 * time.Millisecond,
+	}
+
+	defaultLossEarlyWarningDQRConfig = CongestionSignalConfig{
 		MinNumberOfGroups: 6,
 		MinDuration:       600 * time.Millisecond,
+	}
+
+	defaultQueuingDelayCongestedJQRConfig = CongestionSignalConfig{
+		MinNumberOfGroups: 4,
+		MinDuration:       400 * time.Millisecond,
+	}
+
+	defaultQueuingDelayCongestedDQRConfig = CongestionSignalConfig{
+		MinNumberOfGroups: 8,
+		MinDuration:       800 * time.Millisecond,
+	}
+
+	defaultLossCongestedJQRConfig = CongestionSignalConfig{
+		MinNumberOfGroups: 6,
+		MinDuration:       600 * time.Millisecond,
+	}
+
+	defaultLossCongestedDQRConfig = CongestionSignalConfig{
+		MinNumberOfGroups: 12,
+		MinDuration:       1200 * time.Millisecond,
 	}
 )
 
@@ -158,12 +178,14 @@ func (c congestionReason) String() string {
 
 // -------------------------------------------------------------------------------
 type qdMeasurement struct {
-	config CongestionSignalConfig
-	jqrMin int64
-	dqrMax int64
+	jqrConfig CongestionSignalConfig
+	dqrConfig CongestionSignalConfig
+	jqrMin    int64
+	dqrMax    int64
 
 	numGroups    int
 	numJQRGroups int
+	numDQRGroups int
 	minSendTime  int64
 	maxSendTime  int64
 
@@ -174,9 +196,10 @@ type qdMeasurement struct {
 	queuingRegion queuingRegion
 }
 
-func newQdMeasurement(config CongestionSignalConfig, jqrMin int64, dqrMax int64) *qdMeasurement {
+func newQdMeasurement(jqrConfig CongestionSignalConfig, dqrConfig CongestionSignalConfig, jqrMin int64, dqrMax int64) *qdMeasurement {
 	return &qdMeasurement{
-		config:        config,
+		jqrConfig:     jqrConfig,
+		dqrConfig:     dqrConfig,
 		jqrMin:        jqrMin,
 		dqrMax:        dqrMax,
 		queuingRegion: queuingRegionIndeterminate,
@@ -199,25 +222,40 @@ func (q *qdMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 	}
 	q.maxGroupIdx = max(q.maxGroupIdx, groupIdx)
 
+	minSendTime, maxSendTime := pg.SendWindow()
+	if q.minSendTime == 0 || minSendTime < q.minSendTime {
+		q.minSendTime = minSendTime
+	}
+	q.maxSendTime = max(q.maxSendTime, maxSendTime)
+
 	if pqd < q.dqrMax {
-		// a DQR breaks continuity
-		q.isSealed = true
-		q.queuingRegion = queuingRegionDQR
-		return
+		q.numDQRGroups++
+		if q.numJQRGroups > 0 {
+			// JQR continuity is broken
+			q.isSealed = true
+			return
+		}
+
+		if q.dqrConfig.IsTriggered(q.numJQRGroups, q.maxSendTime-q.minSendTime) {
+			q.isSealed = true
+			q.queuingRegion = queuingRegionDQR
+			return
+		}
 	}
 
 	if pqd > q.jqrMin {
 		q.numJQRGroups++
-		minSendTime, maxSendTime := pg.SendWindow()
-		if q.minSendTime == 0 || minSendTime < q.minSendTime {
-			q.minSendTime = minSendTime
+		if q.numDQRGroups > 0 {
+			// DQR continuity is broken
+			q.isSealed = true
+			return
 		}
-		q.maxSendTime = max(q.maxSendTime, maxSendTime)
-	}
 
-	if q.config.IsTriggered(q.numJQRGroups, q.maxSendTime-q.minSendTime) {
-		q.isSealed = true
-		q.queuingRegion = queuingRegionJQR
+		if q.jqrConfig.IsTriggered(q.numJQRGroups, q.maxSendTime-q.minSendTime) {
+			q.isSealed = true
+			q.queuingRegion = queuingRegionJQR
+			return
+		}
 	}
 }
 
@@ -240,6 +278,7 @@ func (q *qdMeasurement) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 	e.AddInt("numGroups", q.numGroups)
 	e.AddInt("numJQRGroups", q.numJQRGroups)
+	e.AddInt("numDQRGroups", q.numDQRGroups)
 	e.AddInt64("minSendTime", q.minSendTime)
 	e.AddInt64("maxSendTime", q.maxSendTime)
 	e.AddDuration("duration", time.Duration((q.maxSendTime-q.minSendTime)*1000))
@@ -253,14 +292,16 @@ func (q *qdMeasurement) MarshalLogObject(e zapcore.ObjectEncoder) error {
 // -------------------------------------------------------------------------------
 
 type lossMeasurement struct {
-	config     CongestionSignalConfig
+	jqrConfig  CongestionSignalConfig
+	dqrConfig  CongestionSignalConfig
 	jqrMinLoss float64
 	dqrMaxLoss float64
 
 	numGroups int
 	ts        *trafficStats
 
-	isSealed    bool
+	isJQRSealed bool
+	isDQRSealed bool
 	minGroupIdx int
 	maxGroupIdx int
 
@@ -270,14 +311,16 @@ type lossMeasurement struct {
 }
 
 func newLossMeasurement(
-	config CongestionSignalConfig,
+	jqrConfig CongestionSignalConfig,
+	dqrConfig CongestionSignalConfig,
 	weightedLossConfig WeightedLossConfig,
 	jqrMinLoss float64,
 	dqrMaxLoss float64,
 	logger logger.Logger,
 ) *lossMeasurement {
 	return &lossMeasurement{
-		config:     config,
+		jqrConfig:  jqrConfig,
+		dqrConfig:  dqrConfig,
 		jqrMinLoss: jqrMinLoss,
 		dqrMaxLoss: dqrMaxLoss,
 		ts: newTrafficStats(trafficStatsParams{
@@ -289,7 +332,7 @@ func newLossMeasurement(
 }
 
 func (l *lossMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
-	if l.isSealed || !pg.IsFinalized() {
+	if (l.isJQRSealed && l.isDQRSealed) || !pg.IsFinalized() {
 		return
 	}
 
@@ -302,20 +345,31 @@ func (l *lossMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 	l.ts.Merge(pg.Traffic())
 
 	duration := l.ts.Duration()
-	if l.config.IsTriggered(l.numGroups, duration) {
-		l.isSealed = true
-		l.weightedLoss = l.ts.WeightedLoss()
+	if !l.isJQRSealed && l.jqrConfig.IsTriggered(l.numGroups, duration) {
+		l.isJQRSealed = true
 
+		weightedLoss := l.ts.WeightedLoss()
+		if weightedLoss > l.jqrMinLoss {
+			l.weightedLoss = weightedLoss
+			l.queuingRegion = queuingRegionDQR
+			l.isDQRSealed = true // seal DQR also as JQR is already hit
+			return
+		}
+	}
+
+	if l.dqrConfig.IsTriggered(l.numGroups, duration) {
+		l.isDQRSealed = true
+
+		l.weightedLoss = l.ts.WeightedLoss()
 		if l.weightedLoss < l.dqrMaxLoss {
 			l.queuingRegion = queuingRegionDQR
-		} else if l.weightedLoss > l.jqrMinLoss {
-			l.queuingRegion = queuingRegionJQR
+			return
 		}
 	}
 }
 
 func (l *lossMeasurement) IsSealed() bool {
-	return l.isSealed
+	return l.isJQRSealed && l.isDQRSealed
 }
 
 func (l *lossMeasurement) QueuingRegion() queuingRegion {
@@ -333,7 +387,8 @@ func (l *lossMeasurement) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 	e.AddInt("numGroups", l.numGroups)
 	e.AddObject("ts", l.ts)
-	e.AddBool("isSealed", l.isSealed)
+	e.AddBool("isJQRSealed", l.isJQRSealed)
+	e.AddBool("isDQRSealed", l.isDQRSealed)
 	e.AddInt("minGroupIdx", l.minGroupIdx)
 	e.AddInt("maxGroupIdx", l.maxGroupIdx)
 	e.AddFloat64("weightedLoss", l.weightedLoss)
@@ -358,13 +413,17 @@ type CongestionDetectorConfig struct {
 	JQRMinWeightedLoss float64            `yaml:"jqr_min_weighted_loss,omitempty"`
 	DQRMaxWeightedLoss float64            `yaml:"dqr_max_weighted_loss,omitempty"`
 
-	QueuingDelayEarlyWarning CongestionSignalConfig `yaml:"queuing_delay_early_warning,omitempty"`
-	LossEarlyWarning         CongestionSignalConfig `yaml:"loss_early_warning,omitempty"`
-	EarlyWarningHangover     time.Duration          `yaml:"early_warning_hangover,omitempty"`
+	QueuingDelayEarlyWarningJQR CongestionSignalConfig `yaml:"queuing_delay_early_warning_jqr,omitempty"`
+	QueuingDelayEarlyWarningDQR CongestionSignalConfig `yaml:"queuing_delay_early_warning_dqr,omitempty"`
+	LossEarlyWarningJQR         CongestionSignalConfig `yaml:"loss_early_warning_jqr,omitempty"`
+	LossEarlyWarningDQR         CongestionSignalConfig `yaml:"loss_early_warning_dqr,omitempty"`
+	EarlyWarningHangover        time.Duration          `yaml:"early_warning_hangover,omitempty"`
 
-	QueuingDelayCongested CongestionSignalConfig `yaml:"queuing_delay_congested,omitempty"`
-	LossCongested         CongestionSignalConfig `yaml:"loss_congested,omitempty"`
-	CongestedHangover     time.Duration          `yaml:"congested_hangover,omitempty"`
+	QueuingDelayCongestedJQR CongestionSignalConfig `yaml:"queuing_delay_congested_jqr,omitempty"`
+	QueuingDelayCongestedDQR CongestionSignalConfig `yaml:"queuing_delay_congested_dqr,omitempty"`
+	LossCongestedJQR         CongestionSignalConfig `yaml:"loss_congested_jqr,omitempty"`
+	LossCongestedDQR         CongestionSignalConfig `yaml:"loss_congested_dqr,omitempty"`
+	CongestedHangover        time.Duration          `yaml:"congested_hangover,omitempty"`
 
 	CongestedCTRTrend    ccutils.TrendDetectorConfig `yaml:"congested_ctr_trend,omitempty"`
 	CongestedCTREpsilon  float64                     `yaml:"congested_ctr_epsilon,omitempty"`
@@ -403,13 +462,17 @@ var (
 		JQRMinWeightedLoss: 0.25,
 		DQRMaxWeightedLoss: 0.1,
 
-		QueuingDelayEarlyWarning: defaultQueuingDelayEarlyWarningCongestionSignalConfig,
-		LossEarlyWarning:         defaultLossEarlyWarningCongestionSignalConfig,
-		EarlyWarningHangover:     500 * time.Millisecond,
+		QueuingDelayEarlyWarningJQR: defaultQueuingDelayEarlyWarningJQRConfig,
+		QueuingDelayEarlyWarningDQR: defaultQueuingDelayEarlyWarningDQRConfig,
+		LossEarlyWarningJQR:         defaultLossEarlyWarningJQRConfig,
+		LossEarlyWarningDQR:         defaultLossEarlyWarningDQRConfig,
+		EarlyWarningHangover:        500 * time.Millisecond,
 
-		QueuingDelayCongested: defaultQueuingDelayCongestedCongestionSignalConfig,
-		LossCongested:         defaultLossCongestedCongestionSignalConfig,
-		CongestedHangover:     3 * time.Second,
+		QueuingDelayCongestedJQR: defaultQueuingDelayCongestedJQRConfig,
+		QueuingDelayCongestedDQR: defaultQueuingDelayCongestedDQRConfig,
+		LossCongestedJQR:         defaultLossCongestedJQRConfig,
+		LossCongestedDQR:         defaultLossCongestedDQRConfig,
+		CongestedHangover:        3 * time.Second,
 
 		CongestedCTRTrend:    defaultTrendDetectorConfigCongestedCTR,
 		CongestedCTREpsilon:  0.05,
@@ -451,10 +514,10 @@ type congestionDetector struct {
 	congestedTrafficStats *trafficStats
 	congestedPacketGroup  *packetGroup
 
-	queuingRegion      queuingRegion
-	congestionReason   congestionReason
-	qdMeasurement   *qdMeasurement
-	lossMeasurement *lossMeasurement
+	queuingRegion    queuingRegion
+	congestionReason congestionReason
+	qdMeasurement    *qdMeasurement
+	lossMeasurement  *lossMeasurement
 
 	bweListener bwe.BWEListener
 }
@@ -798,16 +861,20 @@ func (c *congestionDetector) prunePacketGroups() {
 
 func (c *congestionDetector) updateCongestionSignal(
 	stage string,
-	qdConfig CongestionSignalConfig,
-	lossConfig CongestionSignalConfig,
+	qdJQRConfig CongestionSignalConfig,
+	qdDQRConfig CongestionSignalConfig,
+	lossJQRConfig CongestionSignalConfig,
+	lossDQRConfig CongestionSignalConfig,
 ) {
 	c.qdMeasurement = newQdMeasurement(
-		qdConfig,
+		qdJQRConfig,
+		qdDQRConfig,
 		c.params.Config.JQRMinDelay.Microseconds(),
 		c.params.Config.DQRMaxDelay.Microseconds(),
 	)
 	c.lossMeasurement = newLossMeasurement(
-		lossConfig,
+		lossJQRConfig,
+		lossDQRConfig,
 		c.params.Config.WeightedLoss,
 		c.params.Config.JQRMinWeightedLoss,
 		c.params.Config.DQRMaxWeightedLoss,
@@ -841,16 +908,20 @@ func (c *congestionDetector) updateCongestionSignal(
 func (c *congestionDetector) updateEarlyWarningSignal() {
 	c.updateCongestionSignal(
 		"early-warning",
-		c.params.Config.QueuingDelayEarlyWarning,
-		c.params.Config.LossEarlyWarning,
+		c.params.Config.QueuingDelayEarlyWarningJQR,
+		c.params.Config.QueuingDelayEarlyWarningDQR,
+		c.params.Config.LossEarlyWarningJQR,
+		c.params.Config.LossEarlyWarningDQR,
 	)
 }
 
 func (c *congestionDetector) updateCongestedSignal() {
 	c.updateCongestionSignal(
 		"congested",
-		c.params.Config.QueuingDelayCongested,
-		c.params.Config.LossCongested,
+		c.params.Config.QueuingDelayCongestedJQR,
+		c.params.Config.QueuingDelayCongestedDQR,
+		c.params.Config.LossCongestedJQR,
+		c.params.Config.LossCongestedDQR,
 	)
 }
 
