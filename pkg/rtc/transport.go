@@ -471,6 +471,11 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		connectionDetails:        types.NewICEConnectionDetails(params.Transport, params.Logger),
 		lastNegotiate:            time.Now(),
 	}
+
+	if err := t.createPeerConnection(); err != nil {
+		return nil, err
+	}
+
 	if params.IsSendSide {
 		if params.CongestionControlConfig.UseSendSideBWE {
 			params.Logger.Infow("using send side BWE")
@@ -496,10 +501,6 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		}, params.CongestionControlConfig.Enabled, params.CongestionControlConfig.AllowPause)
 		t.streamAllocator.OnStreamStateChange(params.Handler.OnStreamStateChange)
 		t.streamAllocator.Start()
-	}
-
-	if err := t.createPeerConnection(); err != nil {
-		return nil, err
 	}
 
 	t.eventsQueue.Start()
