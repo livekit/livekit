@@ -472,7 +472,8 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		lastNegotiate:            time.Now(),
 	}
 
-	if err := t.createPeerConnection(); err != nil {
+	bwe, err := t.createPeerConnection()
+	if err != nil {
 		return nil, err
 	}
 
@@ -501,6 +502,10 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		}, params.CongestionControlConfig.Enabled, params.CongestionControlConfig.AllowPause)
 		t.streamAllocator.OnStreamStateChange(params.Handler.OnStreamStateChange)
 		t.streamAllocator.Start()
+
+		if bwe != nil {
+			t.streamAllocator.SetSendSideBWEInterceptor(bwe)
+		}
 	}
 
 	t.eventsQueue.Start()
@@ -508,13 +513,13 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 	return t, nil
 }
 
-func (t *PCTransport) createPeerConnection() error {
+func (t *PCTransport) createPeerConnection() (cc.BandwidthEstimator, error) {
 	var bwe cc.BandwidthEstimator
 	pc, me, err := newPeerConnection(t.params, func(estimator cc.BandwidthEstimator) {
 		bwe = estimator
 	})
 	if err != nil {
-		return err
+		return bwe, err
 	}
 
 	t.pc = pc
@@ -531,7 +536,7 @@ func (t *PCTransport) createPeerConnection() error {
 
 	t.iceTransport = t.pc.SCTP().Transport().ICETransport()
 	if t.iceTransport == nil {
-		return ErrNoICETransport
+		return bwe, ErrNoICETransport
 	}
 	t.iceTransport.OnSelectedCandidatePairChange(func(pair *webrtc.ICECandidatePair) {
 		t.params.Logger.Debugw("selected ICE candidate pair changed", "pair", wrappedICECandidatePairLogger{pair})
@@ -547,12 +552,7 @@ func (t *PCTransport) createPeerConnection() error {
 	})
 
 	t.me = me
-
-	if bwe != nil && t.streamAllocator != nil {
-		t.streamAllocator.SetSendSideBWEInterceptor(bwe)
-	}
-
-	return nil
+	return bwe, nil
 }
 
 func (t *PCTransport) GetPacer() pacer.Pacer {
