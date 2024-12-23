@@ -116,6 +116,7 @@ func NewLivekitServer(conf *config.Config,
 	}
 	roomServer := livekit.NewRoomServiceServer(roomService, serverOptions...)
 	agentDispatchServer := livekit.NewAgentDispatchServiceServer(agentDispatchService, serverOptions...)
+	agentServer := livekit.NewAgentServiceServer(agentService, serverOptions...)
 	egressServer := livekit.NewEgressServer(egressService, serverOptions...)
 	ingressServer := livekit.NewIngressServer(ingressService, serverOptions...)
 	sipServer := livekit.NewSIPServer(sipService, serverOptions...)
@@ -130,6 +131,7 @@ func NewLivekitServer(conf *config.Config,
 
 	mux.Handle(roomServer.PathPrefix(), roomServer)
 	mux.Handle(agentDispatchServer.PathPrefix(), agentDispatchServer)
+	mux.Handle(agentServer.PathPrefix(), agentServer)
 	mux.Handle(egressServer.PathPrefix(), egressServer)
 	mux.Handle(ingressServer.PathPrefix(), ingressServer)
 	mux.Handle(sipServer.PathPrefix(), sipServer)

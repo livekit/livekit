@@ -434,18 +434,44 @@ func (h *AgentHandler) JobTerminate(ctx context.Context, req *rpc.JobTerminateRe
 	}, nil
 }
 
-func (h *AgentHandler) CheckEnabled(ctx context.Context, req *rpc.CheckEnabledRequest) (*rpc.CheckEnabledResponse, error) {
+func (h *AgentHandler) CheckEnabled(ctx context.Context, req *livekit.CheckEnabledRequest) (*livekit.CheckEnabledResponse, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	// This doesn't return the full agentName -> namespace mapping, which can cause some unnecessary RPC.
 	// namespaces are however deprecated.
-	return &rpc.CheckEnabledResponse{
+	return &livekit.CheckEnabledResponse{
 		Namespaces:       slices.Compact(slices.Clone(h.namespaces)),
 		AgentNames:       slices.Compact(slices.Clone(h.agentNames)),
 		RoomEnabled:      h.roomKeyCount != 0,
 		PublisherEnabled: h.publisherKeyCount != 0,
 	}, nil
+}
+
+func (h *AgentHandler) CheckAvailibility(ctx context.Context, req *livekit.CheckAvailibilityRequest) (*livekit.CheckAvailibilityResponse, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	response := &livekit.CheckAvailibilityResponse{
+		Workers: []*livekit.WorkerInfo{},
+	}
+
+	for _, nsWorkers := range h.namespaceWorkers {
+		for _, w := range nsWorkers {
+			if len(req.AgentNames) == 0 || slices.Contains(req.AgentNames, w.AgentName) {
+				response.Workers = append(response.Workers, &livekit.WorkerInfo{
+					Id:        w.ID,
+					AgentName: w.AgentName,
+					Metadata:  w.Metadata,
+					Status:    w.Status(),
+					Load:      w.Load(),
+					JobCount:  uint32(w.RunningJobCount()),
+				})
+			}
+		}
+	}
+
+	return response, nil
 }
 
 func (h *AgentHandler) DrainConnections(interval time.Duration) {
