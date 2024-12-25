@@ -2106,6 +2106,7 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 		}
 
 		rtxExtSequenceNumber := d.rtxSequenceNumber.Inc()
+		payloads := make([]byte, RTPPaddingMaxPayloadSize*num)
 		for i := 0; i < num; i++ {
 			hdr := &rtp.Header{
 				Version:        2,
@@ -2118,7 +2119,7 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 			}
 			d.addDummyExtensions(hdr)
 
-			payload := make([]byte, RTPPaddingMaxPayloadSize)
+			payload := payloads[i*RTPPaddingMaxPayloadSize : (i+1)*RTPPaddingMaxPayloadSize : (i+1)*RTPPaddingMaxPayloadSize]
 			// last byte of padding has padding size including that byte
 			payload[RTPPaddingMaxPayloadSize-1] = byte(RTPPaddingMaxPayloadSize)
 
