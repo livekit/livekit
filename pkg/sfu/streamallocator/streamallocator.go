@@ -688,12 +688,15 @@ func (s *StreamAllocator) handleSignalFeedback(event Event) {
 }
 
 func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
-	// if pause is allowed, there may be no packets sent and BWE could be congested state,
+	// if pause is allowed, there may be no packets sent and BWE could be in congested state,
 	// reset BWE if that persists for a while
-	if s.state == streamAllocatorStateDeficient && s.params.Pacer.TimeSinceLastSentPacket() > s.params.Config.PausedMinWait {
+	if s.allowPause && s.state == streamAllocatorStateDeficient && s.params.Pacer.TimeSinceLastSentPacket() > s.params.Config.PausedMinWait {
 		s.params.Logger.Infow("stream allocator: resetting bwe to enable probing")
 		s.maybeStopProbe()
 		s.params.BWE.Reset()
+
+		// as BWE is reset, there is no finalizing for active cluster, so reset active cluster id
+		s.activeProbeClusterId = ccutils.ProbeClusterIdInvalid
 	}
 
 	if s.activeProbeClusterId != ccutils.ProbeClusterIdInvalid {
