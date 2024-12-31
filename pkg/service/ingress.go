@@ -261,6 +261,10 @@ func updateInfoUsingRequest(req *livekit.UpdateIngressRequest, info *livekit.Ing
 		info.Video = req.Video
 	}
 
+	if req.SessionEnabled != nil {
+		info.SessionEnabled = req.SessionEnabled
+	}
+
 	if err := ingress.ValidateForSerialization(info); err != nil {
 		return err
 	}
