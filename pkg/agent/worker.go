@@ -475,9 +475,13 @@ func (w *Worker) HandleAvailability(res *livekit.AvailabilityResponse) error {
 func (w *Worker) HandleUpdateJob(update *livekit.UpdateJobStatus) error {
 	_, err := w.UpdateJobStatus(update)
 	if err != nil {
-		w.logger.Infow("received job update for unknown job", "jobID", update.JobId)
+		// treating this as a debug message only
+		// this can happen if the Room closes first, which would delete the agent dispatch
+		// that would mark the job as successful. subsequent updates from the same worker
+		// would not be able to find the same jobID.
+		w.logger.Debugw("received job update for unknown job", "jobID", update.JobId)
 	}
-	return err
+	return nil
 }
 
 func (w *Worker) UpdateJobStatus(update *livekit.UpdateJobStatus) (*livekit.JobState, error) {
