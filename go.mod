@@ -8,7 +8,7 @@ require (
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.17.0
 	github.com/dustin/go-humanize v1.0.1
-	github.com/elliotchance/orderedmap/v2 v2.6.1
+	github.com/elliotchance/orderedmap/v2 v2.7.0
 	github.com/florianl/go-tc v0.4.4
 	github.com/frostbyte73/core v0.1.0
 	github.com/gammazero/deque v1.0.0
