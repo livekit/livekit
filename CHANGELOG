@@ -2,6 +2,65 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1] - 2025-01-03
+
+### Added
+
+- Allow requesting a dialtone during call transfer (#3122)
+- Handle room configuration that's set in the grant itself (#3120)
+- Update ICE to pick up accepting use-candidate unconditionally for ICE lite agents (#3150)
+- auto create rooms during create agent dispatch api request (#3158)
+- Annotate SIP errors with Twirp codes. (#3161)
+- TWCC based congestion control (#3165 #3234 #3235 #3244 #3245 #3250 #3251 #3253 #3254 #3256 #3262 #3282)
+- Loss based congestion signal detector. (#3168 #3169)
+- Fix header size calculation in stats. (#3171)
+- add per message deflate to signal ws (#3174)
+- Add ResyncDownTracks API that can be used to resync all down tracks on (#3185)
+- One shot signalling mode (#3188 #3192 #3194 #3223)
+- Server side metrics (#3198)
+- Add datastream packet type handling (#3210)
+- Support SIP list filters. (#3240)
+- Add RTX to downstream (#3247)
+- Handle REMB on RTX RTCP (#3257)
+- Thottle the publisher data channel sending when subscriber is slow (#3255 #3265 #3281)
+
+### Fixed
+
+- avoids NaN (#3119)
+- reduce retransmit by seeding duplicate packets and bytes. (#3124)
+- don't return video/rtx to client (#3142)
+- ignore unexported fields in yaml lint (#3145)
+- Fix incorrect computation of SecondsSinceNodeStatsUpdate (#3172)
+- Attempt to fix missing participant left webhook. (#3173)
+- Set down track connected flag in one-shot-signalling mode. (#3191)
+- Don't SetCodecPreferences for video transceiver (#3249)
+- Disable av1 for safari (#3284)
+- fix completed job status updates causing workers to reconnect (#3294)
+
+### Changed
+
+- Display both pairs on selected candidate pair change (#3133)
+- Maintain RTT marker for calculations. (#3139)
+- Consolidate operations on LocalNode. (#3140)
+- Use int64 nanoseconds and reduce conversion in a few places (#3159)
+- De-centralize some configs to where they are used. (#3162)
+- Split out audio level config. (#3163)
+- Use int64 nanoseconds and reduce conversion in a few places (#3159)
+- Reduce lock scope. (#3167)
+- Clean up forwardRTP function a bit. (#3177)
+- StreamAllocator (congestion controller) refactor (#3180)
+- convert psprc error to http code in rtc service failure response (#3187)
+- skip http request logging when the client aborts the request (#3195)
+- Do not treat data publisher as publisher. (#3204)
+- Publish data and signal bytes once every 30 seconds. (#3212)
+- upgrade to pion/webrtc v4 (#3213)
+- Don't wait rtp packet to fire track (#3246)
+- Keep negotiated codec parameters in Downtrack.Bind (#3271)
+- Structured logging of ParticipantInit (#3279)
+- Start stream allocator after creating peer connection. (#3283)
+- Reduce memory allocation in WritePaddingRTP / WriteProbePackets (#3288)
+- add room/participant to logger context for SIP APIs (#3290)
+
 ## [1.8.0] - 2024-10-18
 
 ### Added
