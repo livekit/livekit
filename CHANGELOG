@@ -8,7 +8,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Allow requesting a dialtone during call transfer (#3122)
 - Handle room configuration that's set in the grant itself (#3120)
-- Drop remote candidates based on lite option (#3127)
 - Update ICE to pick up accepting use-candidate unconditionally for ICE lite agents (#3150)
 - auto create rooms during create agent dispatch api request (#3158)
 - Annotate SIP errors with Twirp codes. (#3161)
@@ -43,7 +42,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Display both pairs on selected candidate pair change (#3133)
 - Maintain RTT marker for calculations. (#3139)
 - Consolidate operations on LocalNode. (#3140)
-- Only drop srflx if configured. (#3149)
 - Use int64 nanoseconds and reduce conversion in a few places (#3159)
 - De-centralize some configs to where they are used. (#3162)
 - Split out audio level config. (#3163)
