@@ -37,13 +37,13 @@ func (v *VP8) Select(extPkt *buffer.ExtPacket, current int32, target int32) (thi
 	}
 
 	vp8, ok := extPkt.Payload.(buffer.VP8)
-	if !ok || !vp8.T {
+	if !ok {
 		return
 	}
 
-	tid := int32(vp8.TID)
+	tid := extPkt.Temporal
 	if current < target {
-		if tid > current && tid <= target && vp8.S && vp8.Y {
+		if tid > current && tid <= target && vp8.S {
 			this = tid
 			next = tid
 		}
