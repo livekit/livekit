@@ -159,6 +159,7 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 		ParticipantName:     req.ParticipantName,
 		ParticipantMetadata: req.ParticipantMetadata,
 		State:               &livekit.IngressState{},
+		Enabled:             req.Enabled,
 	}
 
 	switch req.InputType {
@@ -259,6 +260,10 @@ func updateInfoUsingRequest(req *livekit.UpdateIngressRequest, info *livekit.Ing
 	}
 	if req.Video != nil {
 		info.Video = req.Video
+	}
+
+	if req.Enabled != nil {
+		info.Enabled = req.Enabled
 	}
 
 	if err := ingress.ValidateForSerialization(info); err != nil {
