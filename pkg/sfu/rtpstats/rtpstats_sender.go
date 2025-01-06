@@ -364,7 +364,7 @@ func (r *RTPStatsSender) Update(
 	pktSize := uint64(hdrSize + payloadSize + paddingSize)
 	isDuplicate := false
 	gapSN := int64(extSequenceNumber - r.extHighestSN)
-	logger := func() logger.UnlikelyLogger {
+	ulgr := func() logger.UnlikelyLogger {
 		return r.logger.WithUnlikelyValues(
 			"currSN", extSequenceNumber,
 			"gapSN", gapSN,
@@ -404,7 +404,7 @@ func (r *RTPStatsSender) Update(
 				}
 			}
 
-			logger().Infow(
+			ulgr().Infow(
 				"adjusting start sequence number",
 				"snAfter", extSequenceNumber,
 				"tsAfter", extTimestamp,
@@ -429,7 +429,7 @@ func (r *RTPStatsSender) Update(
 		if !isDuplicate && -gapSN >= cSequenceNumberLargeJumpThreshold {
 			r.largeJumpNegativeCount++
 			if (r.largeJumpNegativeCount-1)%100 == 0 {
-				logger().Warnw(
+				ulgr().Warnw(
 					"large sequence number gap negative", nil,
 					"count", r.largeJumpNegativeCount,
 				)
@@ -439,7 +439,7 @@ func (r *RTPStatsSender) Update(
 		if gapSN >= cSequenceNumberLargeJumpThreshold {
 			r.largeJumpCount++
 			if (r.largeJumpCount-1)%100 == 0 {
-				logger().Warnw(
+				ulgr().Warnw(
 					"large sequence number gap", nil,
 					"count", r.largeJumpCount,
 				)
@@ -449,7 +449,7 @@ func (r *RTPStatsSender) Update(
 		if extTimestamp < r.extHighestTS {
 			r.timeReversedCount++
 			if (r.timeReversedCount-1)%100 == 0 {
-				logger().Warnw(
+				ulgr().Warnw(
 					"time reversed", nil,
 					"count", r.timeReversedCount,
 				)
@@ -469,7 +469,7 @@ func (r *RTPStatsSender) Update(
 	}
 
 	if extTimestamp < r.extStartTS {
-		logger().Infow(
+		ulgr().Infow(
 			"adjusting start timestamp",
 			"snAfter", extSequenceNumber,
 			"tsAfter", extTimestamp,
