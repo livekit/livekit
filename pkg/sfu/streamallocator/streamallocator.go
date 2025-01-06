@@ -1065,6 +1065,12 @@ func (s *StreamAllocator) maybeStopProbe() {
 func (s *StreamAllocator) maybeBoostDeficientTracks() {
 	availableChannelCapacity := s.getAvailableHeadroom(false)
 	if availableChannelCapacity <= 0 {
+		s.params.Logger.Infow(
+			"stream allocator: no available headroom to boost deficient tracks",
+			"committedChannelCapacity", s.committedChannelCapacity,
+			"availableChannelCapacity", availableChannelCapacity,
+			"expectedBandwidthUsage", s.getExpectedBandwidthUsage(),
+		)
 		return
 	}
 
