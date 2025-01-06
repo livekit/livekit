@@ -228,34 +228,30 @@ func (q *qdMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 	}
 	q.maxSendTime = max(q.maxSendTime, maxSendTime)
 
-	if pqd < q.dqrMax {
+	switch {
+	case pqd < q.dqrMax:
 		q.numDQRGroups++
 		if q.numJQRGroups > 0 {
-			// JQR continuity is broken
+			// broken continuity, seal
 			q.isSealed = true
-			return
-		}
-
-		if q.dqrConfig.IsTriggered(q.numDQRGroups, q.maxSendTime-q.minSendTime) {
+		} else if q.dqrConfig.IsTriggered(q.numDQRGroups, q.maxSendTime-q.minSendTime) {
 			q.isSealed = true
 			q.queuingRegion = queuingRegionDQR
-			return
 		}
-	}
 
-	if pqd > q.jqrMin {
+	case pqd > q.jqrMin:
 		q.numJQRGroups++
 		if q.numDQRGroups > 0 {
-			// DQR continuity is broken
+			// broken continuity, seal
 			q.isSealed = true
-			return
-		}
-
-		if q.jqrConfig.IsTriggered(q.numJQRGroups, q.maxSendTime-q.minSendTime) {
+		} else if q.jqrConfig.IsTriggered(q.numJQRGroups, q.maxSendTime-q.minSendTime) {
 			q.isSealed = true
 			q.queuingRegion = queuingRegionJQR
-			return
 		}
+
+	default:
+		// broken continuity, seal
+		q.isSealed = true
 	}
 }
 
@@ -351,17 +347,19 @@ func (l *lossMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 		if weightedLoss > l.jqrMinLoss {
 			l.weightedLoss = weightedLoss
 			l.queuingRegion = queuingRegionJQR
-			l.isDQRSealed = true // seal DQR also as JQR is already hit
+			l.isDQRSealed = true // seal DQR also as queuing region has been determined
 			return
 		}
 	}
 
-	if l.dqrConfig.IsTriggered(l.numGroups, l.ts.Duration()) {
+	if !l.isDQRSealed && l.dqrConfig.IsTriggered(l.numGroups, l.ts.Duration()) {
 		l.isDQRSealed = true
 
-		l.weightedLoss = l.ts.WeightedLoss()
-		if l.weightedLoss < l.dqrMaxLoss {
+		weightedLoss := l.ts.WeightedLoss()
+		if weightedLoss < l.dqrMaxLoss {
+			l.weightedLoss = weightedLoss
 			l.queuingRegion = queuingRegionDQR
+			l.isJQRSealed = true // seal JQR also as queuing region has been determined
 			return
 		}
 	}
@@ -855,7 +853,6 @@ func (c *congestionDetector) prunePacketGroups() {
 }
 
 func (c *congestionDetector) updateCongestionSignal(
-	stage string,
 	qdJQRConfig CongestionSignalConfig,
 	qdDQRConfig CongestionSignalConfig,
 	lossJQRConfig CongestionSignalConfig,
@@ -902,7 +899,6 @@ func (c *congestionDetector) updateCongestionSignal(
 
 func (c *congestionDetector) updateEarlyWarningSignal() {
 	c.updateCongestionSignal(
-		"early-warning",
 		c.params.Config.QueuingDelayEarlyWarningJQR,
 		c.params.Config.QueuingDelayEarlyWarningDQR,
 		c.params.Config.LossEarlyWarningJQR,
@@ -912,7 +908,6 @@ func (c *congestionDetector) updateEarlyWarningSignal() {
 
 func (c *congestionDetector) updateCongestedSignal() {
 	c.updateCongestionSignal(
-		"congested",
 		c.params.Config.QueuingDelayCongestedJQR,
 		c.params.Config.QueuingDelayCongestedDQR,
 		c.params.Config.LossCongestedJQR,
