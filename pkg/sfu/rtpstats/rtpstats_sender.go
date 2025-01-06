@@ -735,20 +735,22 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 		Octets:          octetCount,
 	}
 
-	logger := r.logger.WithUnlikelyValues(
-		"curr", WrappedRTCPSenderReportStateLogger{srData},
-		"feed", WrappedRTCPSenderReportStateLogger{publisherSRData},
-		"tsOffset", tsOffset,
-		"timeNow", time.Now(),
-		"reportTime", time.Unix(0, reportTime),
-		"reportTimeAdjusted", time.Unix(0, reportTimeAdjusted),
-		"timeSinceHighest", time.Since(time.Unix(0, r.highestTime)),
-		"timeSinceFirst", time.Since(time.Unix(0, r.firstTime)),
-		"timeSincePublisherSRAdjusted", time.Since(time.Unix(0, publisherSRData.AtAdjusted)),
-		"timeSincePublisherSR", time.Since(time.Unix(0, publisherSRData.At)),
-		"nowRTPExt", nowRTPExt,
-		"rtpStats", lockedRTPStatsSenderLogEncoder{r},
-	)
+	ulgr := func() logger.UnlikelyLogger {
+		return r.logger.WithUnlikelyValues(
+			"curr", WrappedRTCPSenderReportStateLogger{srData},
+			"feed", WrappedRTCPSenderReportStateLogger{publisherSRData},
+			"tsOffset", tsOffset,
+			"timeNow", time.Now(),
+			"reportTime", time.Unix(0, reportTime),
+			"reportTimeAdjusted", time.Unix(0, reportTimeAdjusted),
+			"timeSinceHighest", time.Since(time.Unix(0, r.highestTime)),
+			"timeSinceFirst", time.Since(time.Unix(0, r.firstTime)),
+			"timeSincePublisherSRAdjusted", time.Since(time.Unix(0, publisherSRData.AtAdjusted)),
+			"timeSincePublisherSR", time.Since(time.Unix(0, publisherSRData.At)),
+			"nowRTPExt", nowRTPExt,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
+		)
+	}
 
 	if r.srNewest != nil && nowRTPExt >= r.srNewest.RtpTimestampExt {
 		timeSinceLastReport := nowNTP.Time().Sub(mediatransportutil.NtpTime(r.srNewest.NtpTimestamp).Time())
@@ -757,7 +759,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 		if timeSinceLastReport.Seconds() > 0.2 && math.Abs(float64(r.params.ClockRate)-windowClockRate) > 0.2*float64(r.params.ClockRate) {
 			r.clockSkewCount++
 			if (r.clockSkewCount-1)%100 == 0 {
-				logger.Infow(
+				ulgr().Infow(
 					"sending sender report, clock skew",
 					"timeSinceLastReport", timeSinceLastReport,
 					"rtpDiffSinceLastReport", rtpDiffSinceLastReport,
@@ -771,7 +773,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 	if r.srNewest != nil && nowRTPExt < r.srNewest.RtpTimestampExt {
 		// If report being generated is behind the last report, skip it.
 		// Should not happen.
-		logger.Infow("sending sender report, out-of-order, skipping")
+		ulgr().Infow("sending sender report, out-of-order, skipping")
 		return nil
 	}
 
