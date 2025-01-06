@@ -231,14 +231,20 @@ func (q *qdMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 	switch {
 	case pqd < q.dqrMax:
 		q.numDQRGroups++
-		if q.dqrConfig.IsTriggered(q.numDQRGroups, q.maxSendTime-q.minSendTime) {
+		if q.numJQRGroups > 0 {
+			// broken continuity, seal
+			q.isSealed = true
+		} else if q.dqrConfig.IsTriggered(q.numDQRGroups, q.maxSendTime-q.minSendTime) {
 			q.isSealed = true
 			q.queuingRegion = queuingRegionDQR
 		}
 
 	case pqd > q.jqrMin:
 		q.numJQRGroups++
-		if q.jqrConfig.IsTriggered(q.numJQRGroups, q.maxSendTime-q.minSendTime) {
+		if q.numDQRGroups > 0 {
+			// broken continuity, seal
+			q.isSealed = true
+		} else if q.jqrConfig.IsTriggered(q.numJQRGroups, q.maxSendTime-q.minSendTime) {
 			q.isSealed = true
 			q.queuingRegion = queuingRegionJQR
 		}
