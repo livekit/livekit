@@ -26,6 +26,7 @@ import (
 
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/mono"
 )
 
@@ -363,18 +364,20 @@ func (r *RTPStatsSender) Update(
 	pktSize := uint64(hdrSize + payloadSize + paddingSize)
 	isDuplicate := false
 	gapSN := int64(extSequenceNumber - r.extHighestSN)
-	logger := r.logger.WithUnlikelyValues(
-		"currSN", extSequenceNumber,
-		"gapSN", gapSN,
-		"currTS", extTimestamp,
-		"gapTS", int64(extTimestamp-r.extHighestTS),
-		"packetTime", packetTime,
-		"marker", marker,
-		"hdrSize", hdrSize,
-		"payloadSize", payloadSize,
-		"paddingSize", paddingSize,
-		"rtpStats", lockedRTPStatsSenderLogEncoder{r},
-	)
+	logger := func() logger.UnlikelyLogger {
+		return r.logger.WithUnlikelyValues(
+			"currSN", extSequenceNumber,
+			"gapSN", gapSN,
+			"currTS", extTimestamp,
+			"gapTS", int64(extTimestamp-r.extHighestTS),
+			"packetTime", packetTime,
+			"marker", marker,
+			"hdrSize", hdrSize,
+			"payloadSize", payloadSize,
+			"paddingSize", paddingSize,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
+		)
+	}
 	if gapSN <= 0 { // duplicate OR out-of-order
 		if payloadSize == 0 && extSequenceNumber < r.extStartSN {
 			// do not start on a padding only packet
@@ -401,7 +404,7 @@ func (r *RTPStatsSender) Update(
 				}
 			}
 
-			logger.Infow(
+			logger().Infow(
 				"adjusting start sequence number",
 				"snAfter", extSequenceNumber,
 				"tsAfter", extTimestamp,
@@ -426,7 +429,7 @@ func (r *RTPStatsSender) Update(
 		if !isDuplicate && -gapSN >= cSequenceNumberLargeJumpThreshold {
 			r.largeJumpNegativeCount++
 			if (r.largeJumpNegativeCount-1)%100 == 0 {
-				logger.Warnw(
+				logger().Warnw(
 					"large sequence number gap negative", nil,
 					"count", r.largeJumpNegativeCount,
 				)
@@ -436,7 +439,7 @@ func (r *RTPStatsSender) Update(
 		if gapSN >= cSequenceNumberLargeJumpThreshold {
 			r.largeJumpCount++
 			if (r.largeJumpCount-1)%100 == 0 {
-				logger.Warnw(
+				logger().Warnw(
 					"large sequence number gap", nil,
 					"count", r.largeJumpCount,
 				)
@@ -446,7 +449,7 @@ func (r *RTPStatsSender) Update(
 		if extTimestamp < r.extHighestTS {
 			r.timeReversedCount++
 			if (r.timeReversedCount-1)%100 == 0 {
-				logger.Warnw(
+				logger().Warnw(
 					"time reversed", nil,
 					"count", r.timeReversedCount,
 				)
@@ -466,7 +469,7 @@ func (r *RTPStatsSender) Update(
 	}
 
 	if extTimestamp < r.extStartTS {
-		logger.Infow(
+		logger().Infow(
 			"adjusting start timestamp",
 			"snAfter", extSequenceNumber,
 			"tsAfter", extTimestamp,
