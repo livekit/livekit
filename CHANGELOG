@@ -2,7 +2,7 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.8.1] - 2025-01-03
+## [1.8.2] - 2025-01-07
 
 ### Added
 
@@ -60,6 +60,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Start stream allocator after creating peer connection. (#3283)
 - Reduce memory allocation in WritePaddingRTP / WriteProbePackets (#3288)
 - add room/participant to logger context for SIP APIs (#3290)
+- vp8 temporal layer selection with dependency descriptor (#3302)
+- Use contiguous groups to determine queuing region. (#3308)
 
 ## [1.8.0] - 2024-10-18
 
