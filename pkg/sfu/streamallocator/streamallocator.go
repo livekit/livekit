@@ -400,8 +400,6 @@ func (s *StreamAllocator) OnREMB(downTrack *sfu.DownTrack, remb *rtcp.ReceiverEs
 		}
 
 		// try to lock to track which is sending this update
-		downTrackSSRC := track.DownTrack().SSRC()
-		downTrackSSRCRTX := track.DownTrack().SSRCRTX()
 		for _, ssrc := range remb.SSRCs {
 			if ssrc == 0 {
 				continue
