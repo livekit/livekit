@@ -69,8 +69,6 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 	// we don't want to use active TCP on a server, clients should be dialing
 	webRTCConfig.SettingEngine.DisableActiveTCP(true)
 
-	webRTCConfig.SettingEngine.EnableSCTPZeroChecksum(true)
-
 	if rtcConf.PacketBufferSize == 0 {
 		rtcConf.PacketBufferSize = 500
 	}
