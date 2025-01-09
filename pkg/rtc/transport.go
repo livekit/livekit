@@ -306,6 +306,10 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		se.SetFireOnTrackBeforeFirstRTP(true)
 	}
 
+	if params.ClientInfo.SupportSctpZeroChecksum() {
+		se.EnableSCTPZeroChecksum(true)
+	}
+
 	//
 	// Disable SRTP replay protection (https://datatracker.ietf.org/doc/html/rfc3711#page-15).
 	// Needed due to lack of RTX stream support in Pion.
