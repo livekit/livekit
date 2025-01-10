@@ -160,10 +160,6 @@ func NewLivekitServer(conf *config.Config,
 		}
 	}
 
-	// clean up old rooms on startup
-	if err = roomManager.CleanupRooms(); err != nil {
-		return
-	}
 	if err = router.RemoveDeadNodes(); err != nil {
 		return
 	}
