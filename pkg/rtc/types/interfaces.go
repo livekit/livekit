@@ -476,7 +476,7 @@ type Room interface {
 	UpdateSubscriptionPermission(participant LocalParticipant, permissions *livekit.SubscriptionPermission) error
 	SyncState(participant LocalParticipant, state *livekit.SyncState) error
 	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
-	ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, trackID livekit.TrackID) MediaResolverResult
+	ResolveMediaTrackForSubscriber(sub LocalParticipant, trackID livekit.TrackID) MediaResolverResult
 	GetLocalParticipants() []LocalParticipant
 }
 
@@ -593,7 +593,7 @@ type MediaResolverResult struct {
 }
 
 // MediaTrackResolver locates a specific media track for a subscriber
-type MediaTrackResolver func(livekit.ParticipantIdentity, livekit.TrackID) MediaResolverResult
+type MediaTrackResolver func(LocalParticipant, livekit.TrackID) MediaResolverResult
 
 // Supervisor/operation monitor related definitions
 type OperationMonitorEvent int

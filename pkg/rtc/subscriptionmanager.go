@@ -503,7 +503,7 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 	}
 
 	trackID := s.trackID
-	res := m.params.TrackResolver(m.params.Participant.Identity(), trackID)
+	res := m.params.TrackResolver(m.params.Participant, trackID)
 	s.logger.Debugw("resolved track", "result", res)
 
 	if res.TrackChangedNotifier != nil && s.setChangedNotifier(res.TrackChangedNotifier) {
@@ -517,7 +517,7 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 	if res.TrackRemovedNotifier != nil && s.setRemovedNotifier(res.TrackRemovedNotifier) {
 		res.TrackRemovedNotifier.AddObserver(string(m.params.Participant.ID()), func() {
 			// re-resolve the track in case the same track had been re-published
-			res := m.params.TrackResolver(m.params.Participant.Identity(), trackID)
+			res := m.params.TrackResolver(m.params.Participant, trackID)
 			if res.Track != nil {
 				// do not unsubscribe, track is still available
 				return
@@ -627,7 +627,7 @@ func (m *SubscriptionManager) subscribeSynchronous(trackID livekit.TrackID) erro
 		return ErrNoSubscribePermission
 	}
 
-	res := m.params.TrackResolver(m.params.Participant.Identity(), trackID)
+	res := m.params.TrackResolver(m.params.Participant, trackID)
 	m.params.Logger.Debugw("resolved track", "trackID", trackID, " result", res)
 
 	track := res.Track
