@@ -22,6 +22,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils/mono"
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -64,7 +65,7 @@ func (r *RTPDeltaInfoLite) MarshalLogObject(e zapcore.ObjectEncoder) error {
 type snapshotLite struct {
 	isValid bool
 
-	startTime time.Time
+	startTime int64
 
 	extStartSN uint64
 	bytes      uint64
@@ -82,7 +83,7 @@ func (s *snapshotLite) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	}
 
 	e.AddBool("isValid", s.isValid)
-	e.AddTime("startTime", s.startTime)
+	e.AddTime("startTime", time.Unix(0, s.startTime))
 	e.AddUint64("extStartSN", s.extStartSN)
 	e.AddUint64("bytes", s.bytes)
 	e.AddUint64("packetsOutOfOrder", s.packetsOutOfOrder)
@@ -106,8 +107,8 @@ type rtpStatsBaseLite struct {
 
 	initialized bool
 
-	startTime time.Time
-	endTime   time.Time
+	startTime int64
+	endTime   int64
 
 	bytes uint64
 
@@ -123,7 +124,7 @@ type rtpStatsBaseLite struct {
 	nackRepeated uint32
 
 	plis    uint32
-	lastPli time.Time
+	lastPli int64
 
 	nextSnapshotLiteID uint32
 	snapshotLites      []snapshotLite
@@ -178,7 +179,7 @@ func (r *rtpStatsBaseLite) Stop() {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	r.endTime = time.Now()
+	r.endTime = mono.UnixNano()
 }
 
 func (r *rtpStatsBaseLite) newSnapshotLiteID(extStartSN uint64) uint32 {
@@ -192,7 +193,7 @@ func (r *rtpStatsBaseLite) newSnapshotLiteID(extStartSN uint64) uint32 {
 	}
 
 	if r.initialized {
-		r.snapshotLites[id-cFirstSnapshotID] = initSnapshotLite(time.Now(), extStartSN)
+		r.snapshotLites[id-cFirstSnapshotID] = initSnapshotLite(mono.UnixNano(), extStartSN)
 	}
 	return id
 }
@@ -201,14 +202,14 @@ func (r *rtpStatsBaseLite) IsActive() bool {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	return r.initialized && r.endTime.IsZero()
+	return r.initialized && r.endTime == 0
 }
 
 func (r *rtpStatsBaseLite) UpdateNack(nackCount uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if !r.endTime.IsZero() {
+	if r.endTime != 0 {
 		return
 	}
 
@@ -219,7 +220,7 @@ func (r *rtpStatsBaseLite) UpdateNackProcessed(nackAckCount uint32, nackMissCoun
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if !r.endTime.IsZero() {
+	if r.endTime != 0 {
 		return
 	}
 
@@ -232,7 +233,7 @@ func (r *rtpStatsBaseLite) CheckAndUpdatePli(throttle int64, force bool) bool {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if !r.endTime.IsZero() || (!force && time.Now().UnixNano()-r.lastPli.UnixNano() < throttle) {
+	if r.endTime != 0 || (!force && mono.UnixNano()-r.lastPli < throttle) {
 		return false
 	}
 	r.updatePliLocked(1)
@@ -244,7 +245,7 @@ func (r *rtpStatsBaseLite) UpdatePliAndTime(pliCount uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if !r.endTime.IsZero() {
+	if r.endTime != 0 {
 		return
 	}
 
@@ -256,7 +257,7 @@ func (r *rtpStatsBaseLite) UpdatePli(pliCount uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if !r.endTime.IsZero() {
+	if r.endTime != 0 {
 		return
 	}
 
@@ -271,7 +272,7 @@ func (r *rtpStatsBaseLite) UpdatePliTime() {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if !r.endTime.IsZero() {
+	if r.endTime != 0 {
 		return
 	}
 
@@ -279,10 +280,10 @@ func (r *rtpStatsBaseLite) UpdatePliTime() {
 }
 
 func (r *rtpStatsBaseLite) updatePliTimeLocked() {
-	r.lastPli = time.Now()
+	r.lastPli = mono.UnixNano()
 }
 
-func (r *rtpStatsBaseLite) LastPli() time.Time {
+func (r *rtpStatsBaseLite) LastPli() int64 {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
@@ -322,15 +323,15 @@ func (r *rtpStatsBaseLite) deltaInfoLite(
 			"snapshotLiteNow", now,
 			"snapshotLiteThen", then,
 			"packetsExpected", packetsExpected,
-			"duration", endTime.Sub(startTime).String(),
+			"duration", time.Duration(endTime - startTime),
 		}
 		err = errors.New("too many packets expected in delta lite")
 		return
 	}
 	if packetsExpected == 0 {
 		deltaInfoLite = &RTPDeltaInfoLite{
-			StartTime: startTime,
-			EndTime:   endTime,
+			StartTime: time.Unix(0, startTime),
+			EndTime:   time.Unix(0, endTime),
 		}
 		return
 	}
@@ -346,14 +347,14 @@ func (r *rtpStatsBaseLite) deltaInfoLite(
 			"snapshotLiteThen", then,
 			"packetsExpected", packetsExpected,
 			"packetsLost", packetsLost,
-			"duration", endTime.Sub(startTime).String(),
+			"duration", time.Duration(endTime - startTime),
 		}
 		err = errors.New("unexpected number of packets lost in delta lite")
 	}
 
 	deltaInfoLite = &RTPDeltaInfoLite{
-		StartTime:         startTime,
-		EndTime:           endTime,
+		StartTime:         time.Unix(0, startTime),
+		EndTime:           time.Unix(0, endTime),
 		Packets:           packetsExpected,
 		Bytes:             now.bytes - then.bytes,
 		PacketsLost:       packetsLost,
@@ -369,17 +370,17 @@ func (r *rtpStatsBaseLite) marshalLogObject(e zapcore.ObjectEncoder, packetsExpe
 	}
 
 	endTime := r.endTime
-	if endTime.IsZero() {
-		endTime = time.Now()
+	if endTime == 0 {
+		endTime = mono.UnixNano()
 	}
-	elapsed := endTime.Sub(r.startTime)
+	elapsed := time.Duration(endTime - r.startTime)
 	if elapsed == 0 {
 		return 0, errors.New("no time elapsed")
 	}
 	elapsedSeconds := elapsed.Seconds()
 
-	e.AddTime("startTime", r.startTime)
-	e.AddTime("endTime", r.endTime)
+	e.AddTime("startTime", time.Unix(0, r.startTime))
+	e.AddTime("endTime", time.Unix(0, r.endTime))
 	e.AddDuration("elapsed", elapsed)
 
 	e.AddUint64("packetsExpected", packetsExpected)
@@ -424,20 +425,20 @@ func (r *rtpStatsBaseLite) marshalLogObject(e zapcore.ObjectEncoder, packetsExpe
 	e.AddUint32("nackRepeated", r.nackRepeated)
 
 	e.AddUint32("plis", r.plis)
-	e.AddTime("lastPli", r.lastPli)
+	e.AddTime("lastPli", time.Unix(0, r.lastPli))
 	return elapsedSeconds, nil
 }
 
 func (r *rtpStatsBaseLite) toProto(packetsExpected, packetsSeenMinusPadding, packetsLost uint64) *livekit.RTPStats {
-	if r.startTime.IsZero() {
+	if r.startTime == 0 {
 		return nil
 	}
 
 	endTime := r.endTime
-	if endTime.IsZero() {
-		endTime = time.Now()
+	if endTime == 0 {
+		endTime = mono.UnixNano()
 	}
-	elapsed := endTime.Sub(r.startTime).Seconds()
+	elapsed := time.Duration(endTime - r.startTime).Seconds()
 	if elapsed == 0.0 {
 		return nil
 	}
@@ -452,8 +453,8 @@ func (r *rtpStatsBaseLite) toProto(packetsExpected, packetsSeenMinusPadding, pac
 	}
 
 	p := &livekit.RTPStats{
-		StartTime:            timestamppb.New(r.startTime),
-		EndTime:              timestamppb.New(endTime),
+		StartTime:            timestamppb.New(time.Unix(0, r.startTime)),
+		EndTime:              timestamppb.New(time.Unix(0, endTime)),
 		Duration:             elapsed,
 		Packets:              uint32(packetsSeenMinusPadding),
 		PacketRate:           packetRate,
@@ -468,7 +469,7 @@ func (r *rtpStatsBaseLite) toProto(packetsExpected, packetsSeenMinusPadding, pac
 		NackMisses:           r.nackMisses,
 		NackRepeated:         r.nackRepeated,
 		Plis:                 r.plis,
-		LastPli:              timestamppb.New(r.lastPli),
+		LastPli:              timestamppb.New(time.Unix(0, r.lastPli)),
 	}
 
 	gapsPresent := false
@@ -508,7 +509,7 @@ func (r *rtpStatsBaseLite) getAndResetSnapshotLite(snapshotLiteID uint32, extSta
 	}
 
 	// snapshot now
-	now := r.getSnapshotLite(time.Now(), extHighestSN+1)
+	now := r.getSnapshotLite(mono.UnixNano(), extHighestSN+1)
 	r.snapshotLites[idx] = now
 	return &then, &now
 }
@@ -526,7 +527,7 @@ func (r *rtpStatsBaseLite) updateGapHistogram(gap int) {
 	}
 }
 
-func (r *rtpStatsBaseLite) getSnapshotLite(startTime time.Time, extStartSN uint64) snapshotLite {
+func (r *rtpStatsBaseLite) getSnapshotLite(startTime int64, extStartSN uint64) snapshotLite {
 	return snapshotLite{
 		isValid:           true,
 		startTime:         startTime,
@@ -540,7 +541,7 @@ func (r *rtpStatsBaseLite) getSnapshotLite(startTime time.Time, extStartSN uint6
 
 // ----------------------------------
 
-func initSnapshotLite(startTime time.Time, extStartSN uint64) snapshotLite {
+func initSnapshotLite(startTime int64, extStartSN uint64) snapshotLite {
 	return snapshotLite{
 		isValid:    true,
 		startTime:  startTime,

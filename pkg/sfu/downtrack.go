@@ -1008,7 +1008,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 
 	// Hold sending padding packets till first RTCP-RR is received for this RTP stream.
 	// That is definitive proof that the remote side knows about this RTP stream.
-	if d.rtpStats.LastReceiverReportTime().IsZero() && !paddingOnMute {
+	if d.rtpStats.LastReceiverReportTime() == 0 && !paddingOnMute {
 		return 0
 	}
 
@@ -2093,7 +2093,7 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 	if !d.writable.Load() ||
 		!d.rtpStats.IsActive() ||
 		(d.absSendTimeExtID == 0 && d.transportWideExtID == 0) ||
-		d.rtpStats.LastReceiverReportTime().IsZero() ||
+		d.rtpStats.LastReceiverReportTime() == 0 ||
 		d.sequencer == nil {
 		return 0
 	}
@@ -2261,7 +2261,7 @@ func (d *DownTrack) GetDeltaStatsSender() map[uint32]*buffer.StreamStatsWithLaye
 }
 
 func (d *DownTrack) GetPrimaryStreamLastReceiverReportTime() time.Time {
-	return d.rtpStats.LastReceiverReportTime()
+	return time.Unix(0, d.rtpStats.LastReceiverReportTime())
 }
 
 func (d *DownTrack) GetPrimaryStreamPacketsSent() uint64 {
