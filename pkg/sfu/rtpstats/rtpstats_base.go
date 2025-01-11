@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/mono"
 )
 
 const (
@@ -298,7 +299,7 @@ func (r *rtpStatsBase) newSnapshotID(extStartSN uint64) uint32 {
 	}
 
 	if r.initialized {
-		r.snapshots[id-cFirstSnapshotID] = initSnapshot(time.Now(), extStartSN)
+		r.snapshots[id-cFirstSnapshotID] = initSnapshot(mono.UnixNano(), extStartSN)
 	}
 	return id
 }
@@ -307,7 +308,7 @@ func (r *rtpStatsBase) UpdateFir(firCount uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if !r.endTime.IsZero() {
+	if r.endTime != 0 {
 		return
 	}
 
@@ -318,7 +319,7 @@ func (r *rtpStatsBase) UpdateFirTime() {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if !r.endTime.IsZero() {
+	if r.endTime != 0 {
 		return
 	}
 
@@ -329,7 +330,7 @@ func (r *rtpStatsBase) UpdateKeyFrame(kfCount uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if !r.endTime.IsZero() {
+	if r.endTime != 0 {
 		return
 	}
 
@@ -341,7 +342,7 @@ func (r *rtpStatsBase) UpdateRtt(rtt uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if !r.endTime.IsZero() {
+	if r.endTime != 0 {
 		return
 	}
 
@@ -366,7 +367,8 @@ func (r *rtpStatsBase) GetRtt() uint32 {
 }
 
 func (r *rtpStatsBase) maybeAdjustFirstPacketTime(srData *livekit.RTCPSenderReportState, tsOffset uint64, extStartTS uint64) (err error, loggingFields []interface{}) {
-	if time.Since(r.startTime) > cFirstPacketTimeAdjustWindow {
+	nowNano := mono.UnixNano()
+	if time.Duration(nowNano-r.startTime) > cFirstPacketTimeAdjustWindow {
 		return
 	}
 
@@ -376,7 +378,7 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(srData *livekit.RTCPSenderRepo
 	// abnormal delay (maybe due to pacing or maybe due to queuing
 	// in some network element along the way), push back first time
 	// to an earlier instance.
-	timeSinceReceive := time.Since(time.Unix(0, srData.AtAdjusted))
+	timeSinceReceive := time.Duration(nowNano - srData.AtAdjusted)
 	extNowTS := srData.RtpTimestampExt - tsOffset + uint64(timeSinceReceive.Nanoseconds()*int64(r.params.ClockRate)/1e9)
 	samplesDiff := int64(extNowTS - extStartTS)
 	if samplesDiff < 0 {
@@ -385,13 +387,13 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(srData *livekit.RTCPSenderRepo
 	}
 
 	samplesDuration := time.Duration(float64(samplesDiff) / float64(r.params.ClockRate) * float64(time.Second))
-	timeSinceFirst := time.Since(time.Unix(0, r.firstTime))
+	timeSinceFirst := time.Duration(nowNano - r.firstTime)
 	now := r.firstTime + timeSinceFirst.Nanoseconds()
 	firstTime := now - samplesDuration.Nanoseconds()
 
 	getFields := func() []interface{} {
 		return []interface{}{
-			"startTime", r.startTime,
+			"startTime", time.Unix(0, r.startTime),
 			"nowTime", time.Unix(0, now),
 			"before", time.Unix(0, r.firstTime),
 			"after", time.Unix(0, firstTime),
@@ -455,7 +457,7 @@ func (r *rtpStatsBase) deltaInfo(
 			"snapshotID", snapshotID,
 			"snapshotNow", now,
 			"snapshotThen", then,
-			"duration", endTime.Sub(startTime),
+			"duration", time.Duration(endTime - startTime),
 			"packetsExpected", packetsExpected,
 		}
 		err = errors.New("too many packets expected in delta")
@@ -463,8 +465,8 @@ func (r *rtpStatsBase) deltaInfo(
 	}
 	if packetsExpected == 0 {
 		deltaInfo = &RTPDeltaInfo{
-			StartTime: startTime,
-			EndTime:   endTime,
+			StartTime: time.Unix(0, startTime),
+			EndTime:   time.Unix(0, endTime),
 		}
 		return
 	}
@@ -481,7 +483,7 @@ func (r *rtpStatsBase) deltaInfo(
 			"snapshotID", snapshotID,
 			"snapshotNow", now,
 			"snapshotThen", then,
-			"duration", endTime.Sub(startTime),
+			"duration", time.Duration(endTime - startTime),
 			"packetsExpected", packetsExpected,
 			"packetsPadding", packetsPadding,
 			"packetsLost", packetsLost,
@@ -493,8 +495,8 @@ func (r *rtpStatsBase) deltaInfo(
 	}
 
 	deltaInfo = &RTPDeltaInfo{
-		StartTime:            startTime,
-		EndTime:              endTime,
+		StartTime:            time.Unix(0, startTime),
+		EndTime:              time.Unix(0, endTime),
 		Packets:              uint32(packetsExpected),
 		Bytes:                now.bytes - then.bytes,
 		HeaderBytes:          now.headerBytes - then.headerBytes,
@@ -667,7 +669,7 @@ func (r *rtpStatsBase) getAndResetSnapshot(snapshotID uint32, extStartSN uint64,
 	}
 
 	// snapshot now
-	now := r.getSnapshot(time.Now(), extHighestSN+1)
+	now := r.getSnapshot(mono.UnixNano(), extHighestSN+1)
 	r.snapshots[idx] = now
 	return &then, &now
 }
@@ -765,7 +767,7 @@ func (r *rtpStatsBase) updateGapHistogram(gap int) {
 	}
 }
 
-func (r *rtpStatsBase) getSnapshot(startTime time.Time, extStartSN uint64) snapshot {
+func (r *rtpStatsBase) getSnapshot(startTime int64, extStartSN uint64) snapshot {
 	return snapshot{
 		snapshotLite:         r.getSnapshotLite(startTime, extStartSN),
 		headerBytes:          r.headerBytes,
@@ -785,7 +787,7 @@ func (r *rtpStatsBase) getSnapshot(startTime time.Time, extStartSN uint64) snaps
 
 // ----------------------------------
 
-func initSnapshot(startTime time.Time, extStartSN uint64) snapshot {
+func initSnapshot(startTime int64, extStartSN uint64) snapshot {
 	return snapshot{
 		snapshotLite: initSnapshotLite(startTime, extStartSN),
 	}
@@ -800,8 +802,8 @@ func AggregateRTPDeltaInfo(deltaInfoList []*RTPDeltaInfo) *RTPDeltaInfo {
 		return nil
 	}
 
-	startTime := time.Time{}
-	endTime := time.Time{}
+	startTime := int64(0)
+	endTime := int64(0)
 
 	packets := uint32(0)
 	bytes := uint64(0)
@@ -833,12 +835,12 @@ func AggregateRTPDeltaInfo(deltaInfoList []*RTPDeltaInfo) *RTPDeltaInfo {
 			continue
 		}
 
-		if startTime.IsZero() || startTime.After(deltaInfo.StartTime) {
-			startTime = deltaInfo.StartTime
+		if startTime == 0 || startTime > deltaInfo.StartTime.UnixNano() {
+			startTime = deltaInfo.StartTime.UnixNano()
 		}
 
-		if endTime.IsZero() || endTime.Before(deltaInfo.EndTime) {
-			endTime = deltaInfo.EndTime
+		if endTime == 0 || endTime < deltaInfo.EndTime.UnixNano() {
+			endTime = deltaInfo.EndTime.UnixNano()
 		}
 
 		packets += deltaInfo.Packets
@@ -871,13 +873,13 @@ func AggregateRTPDeltaInfo(deltaInfoList []*RTPDeltaInfo) *RTPDeltaInfo {
 		plis += deltaInfo.Plis
 		firs += deltaInfo.Firs
 	}
-	if startTime.IsZero() || endTime.IsZero() {
+	if startTime == 0 || endTime == 0 {
 		return nil
 	}
 
 	return &RTPDeltaInfo{
-		StartTime:            startTime,
-		EndTime:              endTime,
+		StartTime:            time.Unix(0, startTime),
+		EndTime:              time.Unix(0, endTime),
 		Packets:              packets,
 		Bytes:                bytes,
 		HeaderBytes:          headerBytes,
