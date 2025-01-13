@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func toLowerSwitch(mimeType string) mimeType {
+func toLowerSwitch(mimeType string) MimeType {
 	switch strings.ToLower(mimeType) {
 	case "video/vp8":
 		return MimeTypeVP8
