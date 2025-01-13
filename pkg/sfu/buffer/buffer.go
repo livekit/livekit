@@ -1124,9 +1124,7 @@ func (b *Buffer) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 // SVC-TODO: i. e. may be possible to treat single layer as SVC to get proper/intended functionality.
 func IsSvcCodec(mime string) bool {
 	switch utils.MatchMimeType(mime) {
-	case utils.MimeTypeAV1:
-		fallthrough
-	case utils.MimeTypeVP9:
+	case utils.MimeTypeAV1, utils.MimeTypeVP9:
 		return true
 	}
 	return false
