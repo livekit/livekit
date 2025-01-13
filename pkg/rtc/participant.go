@@ -1910,6 +1910,10 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		if payload.StreamChunk == nil {
 			return
 		}
+	case *livekit.DataPacket_StreamTrailer:
+		if payload.StreamTrailer == nil {
+			return
+		}
 	default:
 		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
 	}
