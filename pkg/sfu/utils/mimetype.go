@@ -14,17 +14,17 @@
 
 package utils
 
-type mimeType int
+type MimeType int
 
 const (
-	MimeTypeUnknown mimeType = iota
+	MimeTypeUnknown MimeType = iota
 	MimeTypeVP8
 	MimeTypeVP9
 	MimeTypeH264
 	MimeTypeAV1
 )
 
-func MatchMimeType(mimeType string) mimeType {
+func MatchMimeType(mimeType string) MimeType {
 	switch len(mimeType) {
 	default:
 		return MimeTypeUnknown

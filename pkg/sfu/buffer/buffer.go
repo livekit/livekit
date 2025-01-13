@@ -1123,10 +1123,10 @@ func (b *Buffer) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 // SVC-TODO: May only need to differentiate between simulcast and non-simulcast
 // SVC-TODO: i. e. may be possible to treat single layer as SVC to get proper/intended functionality.
 func IsSvcCodec(mime string) bool {
-	switch strings.ToLower(mime) {
-	case "video/av1":
+	switch utils.MatchMimeType(mime) {
+	case utils.MimeTypeAV1:
 		fallthrough
-	case "video/vp9":
+	case utils.MimeTypeVP9:
 		return true
 	}
 	return false
