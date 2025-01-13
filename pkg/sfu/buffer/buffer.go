@@ -785,8 +785,9 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 			// DD-TODO : notify active decode target change if changed.
 		}
 	}
-	switch b.mime {
-	case "video/vp8":
+
+	switch utils.MatchMimeType(b.mime) {
+	case utils.MimeTypeVP8:
 		vp8Packet := VP8{}
 		if err := vp8Packet.Unmarshal(rtpPacket.Payload); err != nil {
 			b.logger.Warnw("could not unmarshal VP8 packet", err)
@@ -802,7 +803,7 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 		ep.Payload = vp8Packet
 		ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to invalid
 
-	case "video/vp9":
+	case utils.MimeTypeVP9:
 		if ep.DependencyDescriptor == nil {
 			var vp9Packet codecs.VP9Packet
 			_, err := vp9Packet.Unmarshal(rtpPacket.Payload)
@@ -818,11 +819,11 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 		}
 		ep.KeyFrame = IsVP9KeyFrame(rtpPacket.Payload)
 
-	case "video/h264":
+	case utils.MimeTypeH264:
 		ep.KeyFrame = IsH264KeyFrame(rtpPacket.Payload)
 		ep.Spatial = InvalidLayerSpatial // h.264 don't have spatial scalability, reset to invalid
 
-	case "video/av1":
+	case utils.MimeTypeAV1:
 		ep.KeyFrame = IsAV1KeyFrame(rtpPacket.Payload)
 	}
 
