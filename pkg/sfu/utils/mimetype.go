@@ -26,44 +26,24 @@ const (
 
 func MatchMimeType(mimeType string) MimeType {
 	switch len(mimeType) {
-	default:
-		return MimeTypeUnknown
 	case 9:
 		switch mimeType[0] {
-		default:
-			return MimeTypeUnknown
 		case 'v', 'V':
 			switch mimeType[1] {
-			default:
-				return MimeTypeUnknown
 			case 'i', 'I':
 				switch mimeType[2] {
-				default:
-					return MimeTypeUnknown
 				case 'd', 'D':
 					switch mimeType[3] {
-					default:
-						return MimeTypeUnknown
 					case 'e', 'E':
 						switch mimeType[4] {
-						default:
-							return MimeTypeUnknown
 						case 'o', 'O':
 							switch mimeType[5] {
-							default:
-								return MimeTypeUnknown
 							case '/':
 								switch mimeType[6] {
-								default:
-									return MimeTypeUnknown
 								case 'v', 'V':
 									switch mimeType[7] {
-									default:
-										return MimeTypeUnknown
 									case 'p', 'P':
 										switch mimeType[8] {
-										default:
-											return MimeTypeUnknown
 										case '8':
 											return MimeTypeVP8
 										case '9':
@@ -72,12 +52,8 @@ func MatchMimeType(mimeType string) MimeType {
 									}
 								case 'a', 'A':
 									switch mimeType[7] {
-									default:
-										return MimeTypeUnknown
 									case 'v', 'V':
 										switch mimeType[8] {
-										default:
-											return MimeTypeUnknown
 										case '1':
 											return MimeTypeAV1
 										}
@@ -91,44 +67,24 @@ func MatchMimeType(mimeType string) MimeType {
 		}
 	case 10:
 		switch mimeType[0] {
-		default:
-			return MimeTypeUnknown
 		case 'v', 'V':
 			switch mimeType[1] {
-			default:
-				return MimeTypeUnknown
 			case 'i', 'I':
 				switch mimeType[2] {
-				default:
-					return MimeTypeUnknown
 				case 'd', 'D':
 					switch mimeType[3] {
-					default:
-						return MimeTypeUnknown
 					case 'e', 'E':
 						switch mimeType[4] {
-						default:
-							return MimeTypeUnknown
 						case 'o', 'O':
 							switch mimeType[5] {
-							default:
-								return MimeTypeUnknown
 							case '/':
 								switch mimeType[6] {
-								default:
-									return MimeTypeUnknown
 								case 'h', 'H':
 									switch mimeType[7] {
-									default:
-										return MimeTypeUnknown
 									case '2':
 										switch mimeType[8] {
-										default:
-											return MimeTypeUnknown
 										case '6':
 											switch mimeType[9] {
-											default:
-												return MimeTypeUnknown
 											case '4':
 												return MimeTypeH264
 											}
@@ -142,4 +98,5 @@ func MatchMimeType(mimeType string) MimeType {
 			}
 		}
 	}
+	return MimeTypeUnknown
 }
