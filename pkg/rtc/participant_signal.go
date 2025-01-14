@@ -332,13 +332,23 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 
 	err := sink.WriteMessage(msg)
 	if errors.Is(err, psrpc.Canceled) {
-		p.params.Logger.Debugw("could not send message to participant",
-			"error", err, "messageType", fmt.Sprintf("%T", msg.Message))
+		p.params.Logger.Debugw(
+			"could not send message to participant",
+			"error", err,
+			"messageType", fmt.Sprintf("%T", msg.Message),
+		)
 		return nil
 	} else if err != nil {
-		p.params.Logger.Warnw("could not send message to participant", err,
-			"messageType", fmt.Sprintf("%T", msg.Message))
+		p.params.Logger.Warnw(
+			"could not send message to participant", err,
+			"messageType", fmt.Sprintf("%T", msg.Message),
+		)
 		return err
+	} else {
+		p.params.Logger.Debugw(
+			"sent message to participant",
+			"messageType", fmt.Sprintf("%T", msg.Message),
+		)
 	}
 	return nil
 }

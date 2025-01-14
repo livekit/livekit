@@ -323,7 +323,7 @@ var DefaultConfig = Config{
 			StreamAllocator:           streamallocator.DefaultStreamAllocatorConfig,
 			RemoteBWE:                 remotebwe.DefaultRemoteBWEConfig,
 			UseSendSideBWEInterceptor: false,
-			UseSendSideBWE:            false,
+			UseSendSideBWE:            true,
 			SendSideBWE:               sendsidebwe.DefaultSendSideBWEConfig,
 		},
 	},
@@ -361,7 +361,8 @@ var DefaultConfig = Config{
 		PionLevel: "error",
 	},
 	TURN: TURNConfig{
-		Enabled: false,
+		Enabled: true,
+		UDPPort: 3478,
 	},
 	NodeSelector: NodeSelectorConfig{
 		Kind:         "any",
