@@ -627,6 +627,7 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 		// try an older group
 		for idx := len(c.packetGroups) - 2; idx >= 0; idx-- {
 			opg := c.packetGroups[idx]
+			c.params.Logger.Debugw("send side bwe: trying older group", "packetInfo", pi, "packetGroup", opg)
 			if err := opg.Add(pi, sendDelta, recvDelta, isLost); err == nil {
 				return
 			} else if err == errGroupFinalized {
@@ -650,6 +651,23 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 	sequenceNumber := report.BaseSequenceNumber
 	endSequenceNumberExclusive := sequenceNumber + report.PacketStatusCount
 	deltaIdx := 0
+	processSymbol := func(symbol uint16) {
+		recvTime := int64(0)
+		isLost := false
+		if symbol != rtcp.TypeTCCPacketNotReceived {
+			recvRefTime += report.RecvDeltas[deltaIdx].Delta
+			deltaIdx++
+
+			recvTime = recvRefTime
+		} else {
+			isLost = true
+		}
+		pi, sendDelta, recvDelta := c.packetTracker.RecordPacketIndicationFromRemote(sequenceNumber, recvTime)
+		if pi.sendTime != 0 {
+			trackPacketGroup(&pi, sendDelta, recvDelta, isLost)
+		}
+		sequenceNumber++
+	}
 	for _, chunk := range report.PacketChunks {
 		if sequenceNumber == endSequenceNumberExclusive {
 			break
@@ -662,21 +680,7 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 					break
 				}
 
-				recvTime := int64(0)
-				isLost := false
-				if chunk.PacketStatusSymbol != rtcp.TypeTCCPacketNotReceived {
-					recvRefTime += report.RecvDeltas[deltaIdx].Delta
-					deltaIdx++
-
-					recvTime = recvRefTime
-				} else {
-					isLost = true
-				}
-				pi, sendDelta, recvDelta := c.packetTracker.RecordPacketIndicationFromRemote(sequenceNumber, recvTime)
-				if pi.sendTime != 0 {
-					trackPacketGroup(&pi, sendDelta, recvDelta, isLost)
-				}
-				sequenceNumber++
+				processSymbol(chunk.PacketStatusSymbol)
 			}
 
 		case *rtcp.StatusVectorChunk:
@@ -685,21 +689,7 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 					break
 				}
 
-				recvTime := int64(0)
-				isLost := false
-				if symbol != rtcp.TypeTCCPacketNotReceived {
-					recvRefTime += report.RecvDeltas[deltaIdx].Delta
-					deltaIdx++
-
-					recvTime = recvRefTime
-				} else {
-					isLost = true
-				}
-				pi, sendDelta, recvDelta := c.packetTracker.RecordPacketIndicationFromRemote(sequenceNumber, recvTime)
-				if pi.sendTime != 0 {
-					trackPacketGroup(&pi, sendDelta, recvDelta, isLost)
-				}
-				sequenceNumber++
+				processSymbol(symbol)
 			}
 		}
 	}
