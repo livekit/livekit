@@ -121,8 +121,8 @@ var (
 		MinBytesRatio:    0.5,
 		MinDurationRatio: 0.5,
 
-		JQRMinDelay: 15 * time.Millisecond,
-		DQRMaxDelay: 5 * time.Millisecond,
+		JQRMinDelay: 40 * time.Millisecond,
+		DQRMaxDelay: 15 * time.Millisecond,
 
 		WeightedLoss:       defaultWeightedLossConfig,
 		JQRMinWeightedLoss: 0.25,
@@ -450,8 +450,8 @@ var (
 		ProbeRegulator:   ccutils.DefaultProbeRegulatorConfig,
 		ProbeSignal:      defaultProbeSignalConfig,
 
-		JQRMinDelay: 15 * time.Millisecond,
-		DQRMaxDelay: 5 * time.Millisecond,
+		JQRMinDelay: 40 * time.Millisecond,
+		DQRMaxDelay: 15 * time.Millisecond,
 
 		WeightedLoss:       defaultWeightedLossConfig,
 		JQRMinWeightedLoss: 0.25,
@@ -627,7 +627,6 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 		// try an older group
 		for idx := len(c.packetGroups) - 2; idx >= 0; idx-- {
 			opg := c.packetGroups[idx]
-			c.params.Logger.Debugw("send side bwe: trying older group", "packetInfo", pi, "packetGroup", opg)
 			if err := opg.Add(pi, sendDelta, recvDelta, isLost); err == nil {
 				return
 			} else if err == errGroupFinalized {

@@ -88,6 +88,7 @@ func (p *packetTracker) RecordPacketSendAndGetSequenceNumber(
 		p.probeMaxSequenceNumber = pi.sequenceNumber
 	}
 
+	p.params.Logger.Debugw("sn", "sn", pi.sequenceNumber) // REMOVE
 	return uint16(pi.sequenceNumber)
 }
 
