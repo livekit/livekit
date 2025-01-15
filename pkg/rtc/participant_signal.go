@@ -344,11 +344,6 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 			"messageType", fmt.Sprintf("%T", msg.Message),
 		)
 		return err
-	} else {
-		p.params.Logger.Debugw(
-			"sent message to participant",
-			"messageType", fmt.Sprintf("%T", msg.Message),
-		)
 	}
 	return nil
 }
