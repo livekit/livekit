@@ -361,8 +361,7 @@ var DefaultConfig = Config{
 		PionLevel: "error",
 	},
 	TURN: TURNConfig{
-		Enabled: true,
-		UDPPort: 3478,
+		Enabled: false,
 	},
 	NodeSelector: NodeSelectorConfig{
 		Kind:         "any",
