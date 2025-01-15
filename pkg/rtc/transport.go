@@ -379,7 +379,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 
 	ir := &interceptor.Registry{}
 	if params.IsSendSide {
-		if params.CongestionControlConfig.UseSendSideBWEInterceptor && !params.CongestionControlConfig.UseSendSideBWE {
+		if params.CongestionControlConfig.UseSendSideBWEInterceptor && !params.CongestionControlConfig.UseSendSideBWE && !params.ClientInfo.isFirefox() {
 			params.Logger.Infow("using send side BWE - interceptor")
 			gf, err := cc.NewInterceptor(func() (cc.BandwidthEstimator, error) {
 				return gcc.NewSendSideBWE(
@@ -482,7 +482,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 	}
 
 	if params.IsSendSide {
-		if params.CongestionControlConfig.UseSendSideBWE {
+		if params.CongestionControlConfig.UseSendSideBWE && !t.params.ClientInfo.isFirefox() {
 			params.Logger.Infow("using send side BWE")
 			t.bwe = sendsidebwe.NewSendSideBWE(sendsidebwe.SendSideBWEParams{
 				Config: params.CongestionControlConfig.SendSideBWE,
