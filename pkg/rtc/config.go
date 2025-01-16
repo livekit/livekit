@@ -122,9 +122,8 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 	}, nil
 }
 
-func (c *WebRTCConfig) UpdateCongestionControl(ccConf config.CongestionControlConfig, clientInfo ClientInfo) {
-	enableTWCC := (ccConf.UseSendSideBWEInterceptor || ccConf.UseSendSideBWE) && !clientInfo.isFirefox()
-	c.Subscriber = getSubscriberConfig(enableTWCC)
+func (c *WebRTCConfig) UpdateCongestionControl(ccConf config.CongestionControlConfig) {
+	c.Subscriber = getSubscriberConfig(ccConf.UseSendSideBWEInterceptor || ccConf.UseSendSideBWE)
 }
 
 func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
