@@ -640,6 +640,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 			if (r.metadataCacheOverflowCount-1)%10 == 0 {
 				r.logger.Infow(
 					"metadata cache overflow",
+					"senderSnapshotID", i+cFirstSnapshotID,
 					"timeSinceLastRR", timeSinceLastRR,
 					"receivedRR", rr,
 					"extReceivedRRSN", extReceivedRRSN,
