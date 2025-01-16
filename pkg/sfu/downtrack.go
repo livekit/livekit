@@ -2281,7 +2281,7 @@ func (d *DownTrack) onBindAndConnectedChange() {
 	d.writable.Store(d.connected.Load() && d.bindState.Load() == bindStateBound)
 	if d.connected.Load() && d.bindState.Load() == bindStateBound && !d.bindAndConnectedOnce.Swap(true) {
 		if d.activePaddingOnMuteUpTrack.Load() {
-			// go d.sendPaddingOnMute()
+			go d.sendPaddingOnMute()
 		}
 
 		// kick off PLI request if allocation is pending

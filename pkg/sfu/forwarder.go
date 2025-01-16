@@ -1503,14 +1503,9 @@ func (f *Forwarder) Pause(availableLayers []int32, brs Bitrates) VideoAllocation
 }
 
 func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) VideoAllocation {
-	if alloc.TargetLayer.IsValid() {
-		if strings.ToLower(f.codec.MimeType) == "video/h264" {
-			// restrict target temporal to 0 if codec does not support temporal layers
-			alloc.TargetLayer.Temporal = 0
-		} else {
-			// TEST: do not allow temporal scaling
-			alloc.TargetLayer.Temporal = buffer.DefaultMaxLayerTemporal
-		}
+	if alloc.TargetLayer.IsValid() && strings.ToLower(f.codec.MimeType) == "video/h264" {
+		// restrict target temporal to 0 if codec does not support temporal layers
+		alloc.TargetLayer.Temporal = 0
 	}
 
 	if alloc.IsDeficient != f.lastAllocation.IsDeficient ||
