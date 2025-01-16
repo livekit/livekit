@@ -207,7 +207,7 @@ func (t *telemetryService) TrackPublishRequested(
 	track *livekit.TrackInfo,
 ) {
 	t.enqueue(func() {
-		prometheus.AddPublishAttempt(track.Type.String())
+		prometheus.AddPublishAttempt(track.Type.String(), track.Source.String(), track.MimeType)
 		room := t.getRoomDetails(participantID)
 		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_PUBLISH_REQUESTED, room, participantID, track)
 		if ev.Participant != nil {
@@ -224,8 +224,8 @@ func (t *telemetryService) TrackPublished(
 	track *livekit.TrackInfo,
 ) {
 	t.enqueue(func() {
-		prometheus.AddPublishedTrack(track.Type.String())
-		prometheus.AddPublishSuccess(track.Type.String())
+		prometheus.AddPublishedTrack(track.Type.String(), track.Source.String(), track.MimeType)
+		prometheus.AddPublishSuccess(track.Type.String(), track.Source.String(), track.MimeType)
 
 		room := t.getRoomDetails(participantID)
 		participant := &livekit.ParticipantInfo{
@@ -290,7 +290,7 @@ func (t *telemetryService) TrackSubscribed(
 	shouldSendEvent bool,
 ) {
 	t.enqueue(func() {
-		prometheus.RecordTrackSubscribeSuccess(track.Type.String())
+		prometheus.RecordTrackSubscribeSuccess(track.Type.String(), track.Source.String(), track.MimeType)
 
 		if !shouldSendEvent {
 			return
@@ -329,7 +329,7 @@ func (t *telemetryService) TrackUnsubscribed(
 	shouldSendEvent bool,
 ) {
 	t.enqueue(func() {
-		prometheus.RecordTrackUnsubscribed(track.Type.String())
+		prometheus.RecordTrackUnsubscribed(track.Type.String(), track.Source.String(), track.MimeType)
 
 		if shouldSendEvent {
 			room := t.getRoomDetails(participantID)
@@ -346,7 +346,7 @@ func (t *telemetryService) TrackUnpublished(
 	shouldSendEvent bool,
 ) {
 	t.enqueue(func() {
-		prometheus.SubPublishedTrack(track.Type.String())
+		prometheus.SubPublishedTrack(track.Type.String(), track.Source.String(), track.MimeType)
 		if !shouldSendEvent {
 			return
 		}
