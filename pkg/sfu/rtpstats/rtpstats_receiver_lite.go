@@ -15,12 +15,11 @@
 package rtpstats
 
 import (
-	"time"
-
 	"go.uber.org/zap/zapcore"
 
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/utils/mono"
 )
 
 type RTPFlowStateLite struct {
@@ -70,7 +69,7 @@ func (r *RTPStatsReceiverLite) Update(packetTime int64, packetSize int, sequence
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if !r.endTime.IsZero() {
+	if r.endTime != 0 {
 		flowStateLite.IsNotHandled = true
 		return
 	}
@@ -79,7 +78,7 @@ func (r *RTPStatsReceiverLite) Update(packetTime int64, packetSize int, sequence
 	if !r.initialized {
 		r.initialized = true
 
-		r.startTime = time.Now()
+		r.startTime = mono.UnixNano()
 
 		resSN = r.sequenceNumber.Update(sequenceNumber)
 

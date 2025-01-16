@@ -102,7 +102,8 @@ func (c ClientInfo) SupportErrorResponse() bool {
 }
 
 func (c ClientInfo) SupportSctpZeroChecksum() bool {
-	return !(c.isGo() && c.compareVersion("2.1.3") <= 0)
+	return !(c.ClientInfo.GetSdk() == livekit.ClientInfo_UNKNOWN ||
+		(c.isGo() && c.compareVersion("2.4.0") < 0))
 }
 
 // compareVersion compares a semver against the current client SDK version

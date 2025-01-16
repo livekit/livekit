@@ -400,8 +400,6 @@ func (s *StreamAllocator) OnREMB(downTrack *sfu.DownTrack, remb *rtcp.ReceiverEs
 		}
 
 		// try to lock to track which is sending this update
-		downTrackSSRC := track.DownTrack().SSRC()
-		downTrackSSRCRTX := track.DownTrack().SSRCRTX()
 		for _, ssrc := range remb.SSRCs {
 			if ssrc == 0 {
 				continue
@@ -688,12 +686,15 @@ func (s *StreamAllocator) handleSignalFeedback(event Event) {
 }
 
 func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
-	// if pause is allowed, there may be no packets sent and BWE could be congested state,
+	// if pause is allowed, there may be no packets sent and BWE could be in congested state,
 	// reset BWE if that persists for a while
-	if s.state == streamAllocatorStateDeficient && s.params.Pacer.TimeSinceLastSentPacket() > s.params.Config.PausedMinWait {
+	if s.allowPause && s.state == streamAllocatorStateDeficient && s.params.BWE.CongestionState() != bwe.CongestionStateNone && s.params.Pacer.TimeSinceLastSentPacket() > s.params.Config.PausedMinWait {
 		s.params.Logger.Infow("stream allocator: resetting bwe to enable probing")
 		s.maybeStopProbe()
 		s.params.BWE.Reset()
+
+		// as BWE is reset, there is no finalizing for active cluster, so reset active cluster id
+		s.activeProbeClusterId = ccutils.ProbeClusterIdInvalid
 	}
 
 	if s.activeProbeClusterId != ccutils.ProbeClusterIdInvalid {
@@ -872,6 +873,8 @@ func (s *StreamAllocator) setState(state streamAllocatorState) {
 		s.maybeStopProbe()
 
 		s.params.BWE.Reset()
+
+		s.activeProbeClusterId = ccutils.ProbeClusterIdInvalid
 	}
 }
 
@@ -1060,6 +1063,12 @@ func (s *StreamAllocator) maybeStopProbe() {
 func (s *StreamAllocator) maybeBoostDeficientTracks() {
 	availableChannelCapacity := s.getAvailableHeadroom(false)
 	if availableChannelCapacity <= 0 {
+		s.params.Logger.Infow(
+			"stream allocator: no available headroom to boost deficient tracks",
+			"committedChannelCapacity", s.committedChannelCapacity,
+			"availableChannelCapacity", availableChannelCapacity,
+			"expectedBandwidthUsage", s.getExpectedBandwidthUsage(),
+		)
 		return
 	}
 

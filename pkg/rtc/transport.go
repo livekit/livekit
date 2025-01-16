@@ -306,6 +306,10 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		se.SetFireOnTrackBeforeFirstRTP(true)
 	}
 
+	if params.ClientInfo.SupportSctpZeroChecksum() {
+		se.EnableSCTPZeroChecksum(true)
+	}
+
 	//
 	// Disable SRTP replay protection (https://datatracker.ietf.org/doc/html/rfc3711#page-15).
 	// Needed due to lack of RTX stream support in Pion.
@@ -1415,7 +1419,7 @@ func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDesc
 func (t *PCTransport) SetPreviousSdp(offer, answer *webrtc.SessionDescription) {
 	// when there is no previous answer, cannot migrate, force a full reconnect
 	if answer == nil {
-		t.params.Handler.OnNegotiationFailed()
+		t.onNegotiationFailed(true, "no previous answer for previous sdp")
 		return
 	}
 
@@ -1423,10 +1427,9 @@ func (t *PCTransport) SetPreviousSdp(offer, answer *webrtc.SessionDescription) {
 	if t.pc.RemoteDescription() == nil && t.previousAnswer == nil {
 		t.previousAnswer = answer
 		if senders, err := t.initPCWithPreviousAnswer(*t.previousAnswer); err != nil {
-			t.params.Logger.Warnw("initPCWithPreviousAnswer failed", err)
 			t.lock.Unlock()
 
-			t.params.Handler.OnNegotiationFailed()
+			t.onNegotiationFailed(true, fmt.Sprintf("initPCWithPreviousAnswer failed, error: %s", err))
 			return
 		} else if offer != nil {
 			// in migration case, can't reuse transceiver before negotiated except track subscribed at previous node
@@ -1491,8 +1494,7 @@ func (t *PCTransport) postEvent(e event) {
 		}
 		if err != nil {
 			if !e.isClosed.Load() {
-				e.params.Logger.Warnw("error handling event", err, "event", e.String())
-				e.params.Handler.OnNegotiationFailed()
+				e.onNegotiationFailed(true, fmt.Sprintf("error handling event. err: %s, event: %s", err, e))
 			}
 		}
 	}, e)
@@ -1698,14 +1700,7 @@ func (t *PCTransport) setupSignalStateCheckTimer() {
 		failed := t.negotiationState != transport.NegotiationStateNone
 
 		if t.negotiateCounter.Load() == negotiateVersion && failed && t.pc.ConnectionState() == webrtc.PeerConnectionStateConnected {
-			t.params.Logger.Infow(
-				"negotiation timed out",
-				"localCurrent", t.pc.CurrentLocalDescription(),
-				"localPending", t.pc.PendingLocalDescription(),
-				"remoteCurrent", t.pc.CurrentRemoteDescription(),
-				"remotePending", t.pc.PendingRemoteDescription(),
-			)
-			t.params.Handler.OnNegotiationFailed()
+			t.onNegotiationFailed(false, "negotiation timed out")
 		}
 	})
 }
@@ -2060,6 +2055,26 @@ func (t *PCTransport) doICERestart() error {
 
 func (t *PCTransport) handleICERestart(_ event) error {
 	return t.doICERestart()
+}
+
+func (t *PCTransport) onNegotiationFailed(warning bool, reason string) {
+	logFields := []interface{}{
+		"reason", reason,
+		"localCurrent", t.pc.CurrentLocalDescription(),
+		"localPending", t.pc.PendingLocalDescription(),
+		"remoteCurrent", t.pc.CurrentRemoteDescription(),
+		"remotePending", t.pc.PendingRemoteDescription(),
+	}
+	if warning {
+		t.params.Logger.Warnw(
+			"negotiation failed",
+			nil,
+			logFields...,
+		)
+	} else {
+		t.params.Logger.Infow("negotiation failed", logFields...)
+	}
+	t.params.Handler.OnNegotiationFailed()
 }
 
 // configure subscriber transceiver for audio stereo and nack

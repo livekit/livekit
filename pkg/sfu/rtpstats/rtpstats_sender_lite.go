@@ -15,9 +15,8 @@
 package rtpstats
 
 import (
-	"time"
-
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/utils/mono"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -38,14 +37,14 @@ func (r *RTPStatsSenderLite) Update(packetTime int64, packetSize int, extSequenc
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if !r.endTime.IsZero() {
+	if r.endTime != 0 {
 		return
 	}
 
 	if !r.initialized {
 		r.initialized = true
 
-		r.startTime = time.Now()
+		r.startTime = mono.UnixNano()
 
 		r.extStartSN = extSequenceNumber
 		r.extHighestSN = extSequenceNumber - 1

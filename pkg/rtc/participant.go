@@ -253,7 +253,7 @@ type ParticipantImpl struct {
 
 	supervisor *supervisor.ParticipantSupervisor
 
-	tracksQuality map[livekit.TrackID]livekit.ConnectionQuality
+	connectionQuality livekit.ConnectionQuality
 
 	metricTimestamper *metric.MetricTimestamper
 	metricsCollector  *metric.MetricsCollector
@@ -292,9 +292,9 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			params.SID,
 			params.Telemetry,
 		),
-		tracksQuality: make(map[livekit.TrackID]livekit.ConnectionQuality),
-		pubLogger:     params.Logger.WithComponent(sutils.ComponentPub),
-		subLogger:     params.Logger.WithComponent(sutils.ComponentSub),
+		connectionQuality: livekit.ConnectionQuality_EXCELLENT,
+		pubLogger:         params.Logger.WithComponent(sutils.ComponentPub),
+		subLogger:         params.Logger.WithComponent(sutils.ComponentSub),
 	}
 	if !params.DisableSupervisor {
 		p.supervisor = supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger})
@@ -1249,17 +1249,10 @@ func (p *ParticipantImpl) OnICEConfigChanged(f func(participant types.LocalParti
 }
 
 func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo {
-	numTracks := 0
 	minQuality := livekit.ConnectionQuality_EXCELLENT
 	minScore := connectionquality.MaxMOS
-	numUpDrops := 0
-	numDownDrops := 0
-
-	availableTracks := make(map[livekit.TrackID]bool)
 
 	for _, pt := range p.GetPublishedTracks() {
-		numTracks++
-
 		score, quality := pt.(types.LocalMediaTrack).GetConnectionScoreAndQuality()
 		if utils.IsConnectionQualityLower(minQuality, quality) {
 			minQuality = quality
@@ -1267,24 +1260,10 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		} else if quality == minQuality && score < minScore {
 			minScore = score
 		}
-
-		p.lock.Lock()
-		trackID := pt.ID()
-		if prevQuality, ok := p.tracksQuality[trackID]; ok {
-			if utils.IsConnectionQualityLower(prevQuality, quality) {
-				numUpDrops++
-			}
-		}
-		p.tracksQuality[trackID] = quality
-		p.lock.Unlock()
-
-		availableTracks[trackID] = true
 	}
 
 	subscribedTracks := p.SubscriptionManager.GetSubscribedTracks()
 	for _, subTrack := range subscribedTracks {
-		numTracks++
-
 		score, quality := subTrack.DownTrack().GetConnectionScoreAndQuality()
 		if utils.IsConnectionQualityLower(minQuality, quality) {
 			minQuality = quality
@@ -1292,34 +1271,20 @@ func (p *ParticipantImpl) GetConnectionQuality() *livekit.ConnectionQualityInfo 
 		} else if quality == minQuality && score < minScore {
 			minScore = score
 		}
-
-		p.lock.Lock()
-		trackID := subTrack.ID()
-		if prevQuality, ok := p.tracksQuality[trackID]; ok {
-			if utils.IsConnectionQualityLower(prevQuality, quality) {
-				numDownDrops++
-			}
-		}
-		p.tracksQuality[trackID] = quality
-		p.lock.Unlock()
-
-		availableTracks[trackID] = true
 	}
 
-	prometheus.RecordQuality(minQuality, minScore, numUpDrops, numDownDrops)
-
-	// remove unavailable tracks from track quality cache
-	p.lock.Lock()
-	for trackID := range p.tracksQuality {
-		if !availableTracks[trackID] {
-			delete(p.tracksQuality, trackID)
-		}
-	}
-	p.lock.Unlock()
+	prometheus.RecordQuality(minQuality, minScore)
 
 	if minQuality == livekit.ConnectionQuality_LOST && !p.ProtocolVersion().SupportsConnectionQualityLost() {
 		minQuality = livekit.ConnectionQuality_POOR
 	}
+
+	p.lock.Lock()
+	if minQuality != p.connectionQuality {
+		p.params.Logger.Debugw("connection quality changed", "from", p.connectionQuality, "to", minQuality)
+	}
+	p.connectionQuality = minQuality
+	p.lock.Unlock()
 
 	return &livekit.ConnectionQualityInfo{
 		ParticipantSid: string(p.ID()),
@@ -1943,6 +1908,10 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		}
 	case *livekit.DataPacket_StreamChunk:
 		if payload.StreamChunk == nil {
+			return
+		}
+	case *livekit.DataPacket_StreamTrailer:
+		if payload.StreamTrailer == nil {
 			return
 		}
 	default:

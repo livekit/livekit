@@ -27,6 +27,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	protoutils "github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/mono"
 )
 
 const (
@@ -137,7 +138,7 @@ func (r *RTPStatsReceiver) Update(
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if !r.endTime.IsZero() {
+	if r.endTime != 0 {
 		flowState.IsNotHandled = true
 		return
 	}
@@ -181,7 +182,7 @@ func (r *RTPStatsReceiver) Update(
 
 		r.initialized = true
 
-		r.startTime = time.Now()
+		r.startTime = mono.UnixNano()
 
 		r.firstTime = packetTime
 		r.highestTime = packetTime
@@ -275,14 +276,13 @@ func (r *RTPStatsReceiver) Update(
 		}
 
 		if r.isInRange(resSN.ExtendedVal, resSN.PreExtendedHighest) {
-			if r.history.IsSet(resSN.ExtendedVal) {
+			if r.history.GetAndSet(resSN.ExtendedVal) {
 				r.bytesDuplicate += pktSize
 				r.headerBytesDuplicate += uint64(hdrSize)
 				r.packetsDuplicate++
 				flowState.IsDuplicate = true
 			} else {
 				r.packetsLost--
-				r.history.Set(resSN.ExtendedVal)
 			}
 		}
 
@@ -461,14 +461,15 @@ func (r *RTPStatsReceiver) checkRTPClockSkewAgainstMediaPathForSenderReport(srDa
 		return
 	}
 
-	timeSinceSR := time.Since(time.Unix(0, srData.AtAdjusted))
+	nowNano := mono.UnixNano()
+	timeSinceSR := time.Duration(nowNano - srData.AtAdjusted)
 	extNowTSSR := srData.RtpTimestampExt + uint64(timeSinceSR.Nanoseconds()*int64(r.params.ClockRate)/1e9)
 
-	timeSinceHighest := time.Since(time.Unix(0, r.highestTime))
+	timeSinceHighest := time.Duration(nowNano - r.highestTime)
 	extNowTSHighest := r.timestamp.GetExtendedHighest() + uint64(timeSinceHighest.Nanoseconds()*int64(r.params.ClockRate)/1e9)
 	diffHighest := extNowTSSR - extNowTSHighest
 
-	timeSinceFirst := time.Since(time.Unix(0, r.firstTime))
+	timeSinceFirst := time.Duration(nowNano - r.firstTime)
 	extNowTSFirst := r.timestamp.GetExtendedStart() + uint64(timeSinceFirst.Nanoseconds()*int64(r.params.ClockRate)/1e9)
 	diffFirst := extNowTSSR - extNowTSFirst
 

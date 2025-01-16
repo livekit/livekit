@@ -830,7 +830,7 @@ func (r *Room) UpdateSubscriptionPermission(participant types.LocalParticipant, 
 	return nil
 }
 
-func (r *Room) ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, trackID livekit.TrackID) types.MediaResolverResult {
+func (r *Room) ResolveMediaTrackForSubscriber(sub types.LocalParticipant, trackID livekit.TrackID) types.MediaResolverResult {
 	res := types.MediaResolverResult{}
 
 	info := r.trackManager.GetTrackInfo(trackID)
@@ -848,7 +848,7 @@ func (r *Room) ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIde
 	pub := r.GetParticipantByID(info.PublisherID)
 	// when publisher is not found, we will assume it doesn't have permission to access
 	if pub != nil {
-		res.HasPermission = pub.HasPermission(trackID, subIdentity)
+		res.HasPermission = IsParticipantExemptFromTrackPermissionsRestrictions(sub) || pub.HasPermission(trackID, sub.Identity())
 	}
 
 	return res
@@ -1807,6 +1807,12 @@ func BroadcastMetricsForRoom(r types.Room, source types.Participant, dp *livekit
 
 func IsCloseNotifySkippable(closeReason types.ParticipantCloseReason) bool {
 	return closeReason == types.ParticipantCloseReasonDuplicateIdentity
+}
+
+func IsParticipantExemptFromTrackPermissionsRestrictions(p types.LocalParticipant) bool {
+	// egress/recorder participants bypass permissions as auto-egress does not
+	// have enough context to check permissions
+	return p.IsRecorder()
 }
 
 func connectionDetailsFields(infos []*types.ICEConnectionInfo) []interface{} {

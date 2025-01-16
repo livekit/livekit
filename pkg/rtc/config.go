@@ -69,8 +69,6 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 	// we don't want to use active TCP on a server, clients should be dialing
 	webRTCConfig.SettingEngine.DisableActiveTCP(true)
 
-	webRTCConfig.SettingEngine.EnableSCTPZeroChecksum(true)
-
 	if rtcConf.PacketBufferSize == 0 {
 		rtcConf.PacketBufferSize = 500
 	}
@@ -120,12 +118,12 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 			PacketBufferSizeAudio: rtcConf.PacketBufferSizeAudio,
 		},
 		Publisher:  publisherConfig,
-		Subscriber: getSubscriberConfig(rtcConf.CongestionControl),
+		Subscriber: getSubscriberConfig(rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE),
 	}, nil
 }
 
 func (c *WebRTCConfig) UpdateCongestionControl(ccConf config.CongestionControlConfig) {
-	c.Subscriber = getSubscriberConfig(ccConf)
+	c.Subscriber = getSubscriberConfig(ccConf.UseSendSideBWEInterceptor || ccConf.UseSendSideBWE)
 }
 
 func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
@@ -133,7 +131,7 @@ func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
 	c.SettingEngine.BufferFactory = factory.GetOrNew
 }
 
-func getSubscriberConfig(ccConf config.CongestionControlConfig) DirectionConfig {
+func getSubscriberConfig(enableTWCC bool) DirectionConfig {
 	subscriberConfig := DirectionConfig{
 		RTPHeaderExtension: RTPHeaderExtensionConfig{
 			Video: []string{
@@ -156,7 +154,7 @@ func getSubscriberConfig(ccConf config.CongestionControlConfig) DirectionConfig 
 			},
 		},
 	}
-	if ccConf.UseSendSideBWEInterceptor || ccConf.UseSendSideBWE {
+	if enableTWCC {
 		subscriberConfig.RTPHeaderExtension.Video = append(subscriberConfig.RTPHeaderExtension.Video, sdp.TransportCCURI)
 		subscriberConfig.RTCPFeedback.Video = append(subscriberConfig.RTCPFeedback.Video, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBTransportCC})
 	} else {

@@ -46,10 +46,10 @@ type FakeRoom struct {
 		arg2 livekit.ParticipantID
 		arg3 types.ParticipantCloseReason
 	}
-	ResolveMediaTrackForSubscriberStub        func(livekit.ParticipantIdentity, livekit.TrackID) types.MediaResolverResult
+	ResolveMediaTrackForSubscriberStub        func(types.LocalParticipant, livekit.TrackID) types.MediaResolverResult
 	resolveMediaTrackForSubscriberMutex       sync.RWMutex
 	resolveMediaTrackForSubscriberArgsForCall []struct {
-		arg1 livekit.ParticipantIdentity
+		arg1 types.LocalParticipant
 		arg2 livekit.TrackID
 	}
 	resolveMediaTrackForSubscriberReturns struct {
@@ -299,11 +299,11 @@ func (fake *FakeRoom) RemoveParticipantArgsForCall(i int) (livekit.ParticipantId
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
-func (fake *FakeRoom) ResolveMediaTrackForSubscriber(arg1 livekit.ParticipantIdentity, arg2 livekit.TrackID) types.MediaResolverResult {
+func (fake *FakeRoom) ResolveMediaTrackForSubscriber(arg1 types.LocalParticipant, arg2 livekit.TrackID) types.MediaResolverResult {
 	fake.resolveMediaTrackForSubscriberMutex.Lock()
 	ret, specificReturn := fake.resolveMediaTrackForSubscriberReturnsOnCall[len(fake.resolveMediaTrackForSubscriberArgsForCall)]
 	fake.resolveMediaTrackForSubscriberArgsForCall = append(fake.resolveMediaTrackForSubscriberArgsForCall, struct {
-		arg1 livekit.ParticipantIdentity
+		arg1 types.LocalParticipant
 		arg2 livekit.TrackID
 	}{arg1, arg2})
 	stub := fake.ResolveMediaTrackForSubscriberStub
@@ -325,13 +325,13 @@ func (fake *FakeRoom) ResolveMediaTrackForSubscriberCallCount() int {
 	return len(fake.resolveMediaTrackForSubscriberArgsForCall)
 }
 
-func (fake *FakeRoom) ResolveMediaTrackForSubscriberCalls(stub func(livekit.ParticipantIdentity, livekit.TrackID) types.MediaResolverResult) {
+func (fake *FakeRoom) ResolveMediaTrackForSubscriberCalls(stub func(types.LocalParticipant, livekit.TrackID) types.MediaResolverResult) {
 	fake.resolveMediaTrackForSubscriberMutex.Lock()
 	defer fake.resolveMediaTrackForSubscriberMutex.Unlock()
 	fake.ResolveMediaTrackForSubscriberStub = stub
 }
 
-func (fake *FakeRoom) ResolveMediaTrackForSubscriberArgsForCall(i int) (livekit.ParticipantIdentity, livekit.TrackID) {
+func (fake *FakeRoom) ResolveMediaTrackForSubscriberArgsForCall(i int) (types.LocalParticipant, livekit.TrackID) {
 	fake.resolveMediaTrackForSubscriberMutex.RLock()
 	defer fake.resolveMediaTrackForSubscriberMutex.RUnlock()
 	argsForCall := fake.resolveMediaTrackForSubscriberArgsForCall[i]

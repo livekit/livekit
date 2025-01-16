@@ -344,9 +344,11 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 				res, ok := msg.(*livekit.SignalResponse)
 				if !ok {
-					pLogger.Errorw("unexpected message type", nil,
+					pLogger.Errorw(
+						"unexpected message type", nil,
 						"type", fmt.Sprintf("%T", msg),
-						"connID", cr.ConnectionID)
+						"connID", cr.ConnectionID,
+					)
 					continue
 				}
 
@@ -356,10 +358,14 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				case *livekit.SignalResponse_Answer:
 					pLogger.Debugw("sending answer", "answer", m)
 				case *livekit.SignalResponse_Join:
+					pLogger.Debugw("sending join", "join", m)
 					signalStats.ResolveRoom(m.Join.GetRoom())
 					signalStats.ResolveParticipant(m.Join.GetParticipant())
 				case *livekit.SignalResponse_RoomUpdate:
+					pLogger.Debugw("sending room update", "roomUpdate", m)
 					signalStats.ResolveRoom(m.RoomUpdate.GetRoom())
+				case *livekit.SignalResponse_Update:
+					pLogger.Debugw("sending participant update", "participantUpdate", m)
 				}
 
 				if count, err := sigConn.WriteResponse(res); err != nil {

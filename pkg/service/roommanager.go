@@ -49,7 +49,6 @@ import (
 )
 
 const (
-	roomPurgeSeconds     = 24 * 60 * 60
 	tokenRefreshInterval = 5 * time.Minute
 	tokenDefaultTTL      = 10 * time.Minute
 )
@@ -190,26 +189,6 @@ func (r *RoomManager) deleteRoom(ctx context.Context, roomName livekit.RoomName)
 	}
 
 	return err
-}
-
-// CleanupRooms cleans up after old rooms that have been around for a while
-func (r *RoomManager) CleanupRooms() error {
-	// cleanup rooms that have been left for over a day
-	ctx := context.Background()
-	rooms, err := r.roomStore.ListRooms(ctx, nil)
-	if err != nil {
-		return err
-	}
-
-	now := time.Now().Unix()
-	for _, room := range rooms {
-		if (now - room.CreationTime) > roomPurgeSeconds {
-			if err := r.deleteRoom(ctx, livekit.RoomName(room.Name)); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
 
 func (r *RoomManager) CloseIdleRooms() {
