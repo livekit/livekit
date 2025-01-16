@@ -370,7 +370,8 @@ func (r *RTPStatsSender) Update(
 			"gapSN", gapSN,
 			"currTS", extTimestamp,
 			"gapTS", int64(extTimestamp-r.extHighestTS),
-			"packetTime", packetTime,
+			"packetTime", time.Unix(0, packetTime),
+			"timeSinceHighest", time.Duration(packetTime-r.highestTime),
 			"marker", marker,
 			"hdrSize", hdrSize,
 			"payloadSize", payloadSize,
@@ -385,7 +386,7 @@ func (r *RTPStatsSender) Update(
 		}
 
 		if extSequenceNumber < r.extStartSN {
-			r.packetsLost += r.extStartSN - extSequenceNumber
+			r.packetsLost += r.extStartSN - extSequenceNumber - 1
 
 			// adjust start of snapshots
 			for i := uint32(0); i < r.nextSnapshotID-cFirstSnapshotID; i++ {
