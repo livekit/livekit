@@ -145,11 +145,6 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 		sk = guid.New("")
 	}
 
-	enabled := true
-	if req.Enabled != nil {
-		enabled = *req.Enabled
-	}
-
 	info := &livekit.IngressInfo{
 		IngressId:           guid.New(utils.IngressPrefix),
 		Name:                req.Name,
@@ -164,7 +159,7 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 		ParticipantName:     req.ParticipantName,
 		ParticipantMetadata: req.ParticipantMetadata,
 		State:               &livekit.IngressState{},
-		Enabled:             enabled,
+		Enabled:             req.Enabled,
 	}
 
 	switch req.InputType {
@@ -268,7 +263,7 @@ func updateInfoUsingRequest(req *livekit.UpdateIngressRequest, info *livekit.Ing
 	}
 
 	if req.Enabled != nil {
-		info.Enabled = *req.Enabled
+		info.Enabled = req.Enabled
 	}
 
 	if err := ingress.ValidateForSerialization(info); err != nil {
