@@ -874,7 +874,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	}
 
 	// add extensions
-	if tp.ddBytes != nil {
+	if d.dependencyDescriptorExtID != 0 && tp.ddBytes != nil {
 		hdr.SetExtension(uint8(d.dependencyDescriptorExtID), tp.ddBytes)
 	}
 	if d.playoutDelayExtID != 0 && d.playoutDelay != nil {
