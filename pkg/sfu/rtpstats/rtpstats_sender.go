@@ -152,10 +152,11 @@ type senderSnapshot struct {
 	maxJitterFeed float64
 	maxJitter     float64
 
-	extLastRRSN               uint64
-	intervalStats             intervalStats
-	processedReceptionReports []rtcp.ReceptionReport
-	skippedReceptionReports   []rtcp.ReceptionReport
+	extLastRRSN                uint64
+	intervalStats              intervalStats
+	processedReceptionReports  []rtcp.ReceptionReport
+	skippedReceptionReports    []rtcp.ReceptionReport
+	metadataCacheOverflowCount int
 }
 
 func (s *senderSnapshot) MarshalLogObject(e zapcore.ObjectEncoder) error {
@@ -188,6 +189,7 @@ func (s *senderSnapshot) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddObject("intervalStats", &s.intervalStats)
 	e.AddObject("processedReceptionReports", wrappedReceptionReportsLogger{s, false})
 	e.AddObject("skippedReceptionReports", wrappedReceptionReportsLogger{s, true})
+	e.AddInt("metadataCacheOverflowCount", s.metadataCacheOverflowCount)
 	return nil
 }
 
@@ -228,11 +230,10 @@ type RTPStatsSender struct {
 	nextSenderSnapshotID uint32
 	senderSnapshots      []senderSnapshot
 
-	clockSkewCount             int
-	metadataCacheOverflowCount int
-	largeJumpNegativeCount     int
-	largeJumpCount             int
-	timeReversedCount          int
+	clockSkewCount         int
+	largeJumpNegativeCount int
+	largeJumpCount         int
+	timeReversedCount      int
 }
 
 func NewRTPStatsSender(params RTPStatsParams, cacheSize int) *RTPStatsSender {
@@ -636,8 +637,8 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 			if r.lastRRTime == 0 {
 				timeSinceLastRR = time.Duration(mono.UnixNano() - r.startTime)
 			}
-			r.metadataCacheOverflowCount++
-			if (r.metadataCacheOverflowCount-1)%10 == 0 {
+			s.metadataCacheOverflowCount++
+			if (s.metadataCacheOverflowCount-1)%10 == 0 {
 				r.logger.Infow(
 					"metadata cache overflow",
 					"senderSnapshotID", i+cFirstSnapshotID,
@@ -647,7 +648,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 					"packetsInInterval", extReceivedRRSN-s.extLastRRSN,
 					"intervalStats", &is,
 					"aggregateIntervalStats", eis,
-					"count", r.metadataCacheOverflowCount,
+					"count", s.metadataCacheOverflowCount,
 					"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 				)
 			}
