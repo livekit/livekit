@@ -370,13 +370,17 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 
 	d.rtpStats = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{
 		ClockRate: d.codec.ClockRate,
-		Logger:    d.params.Logger,
+		Logger: d.params.Logger.WithValues(
+			"stream", "primary",
+		),
 	}, 4096)
 	d.deltaStatsSenderSnapshotId = d.rtpStats.NewSenderSnapshotId()
 
 	d.rtpStatsRTX = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{
 		ClockRate: d.codec.ClockRate,
-		Logger:    d.params.Logger,
+		Logger: d.params.Logger.WithValues(
+			"stream", "rtx",
+		),
 	}, 1024)
 	d.deltaStatsRTXSenderSnapshotId = d.rtpStatsRTX.NewSenderSnapshotId()
 
@@ -1277,6 +1281,13 @@ func (d *DownTrack) GetState() DownTrackState {
 }
 
 func (d *DownTrack) SeedState(state DownTrackState) {
+	d.bindLock.Lock()
+	defer d.bindLock.Unlock()
+
+	if d.writable.Load() {
+		return
+	}
+
 	if state.RTPStats != nil || state.ForwarderState != nil {
 		d.params.Logger.Debugw("seeding down track state", "state", state)
 	}
