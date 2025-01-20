@@ -1281,9 +1281,6 @@ func (d *DownTrack) GetState() DownTrackState {
 }
 
 func (d *DownTrack) SeedState(state DownTrackState) {
-	d.bindLock.Lock()
-	defer d.bindLock.Unlock()
-
 	if d.writable.Load() {
 		return
 	}
