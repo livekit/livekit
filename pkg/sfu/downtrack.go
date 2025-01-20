@@ -1244,6 +1244,7 @@ func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
 	}
 
 	d.postMaxLayerNotifierEvent("max-subscribed")
+	d.postKeyFrameRequestEvent()
 
 	if sal := d.getStreamAllocatorListener(); sal != nil {
 		sal.OnSubscribedLayerChanged(d, maxLayer)
