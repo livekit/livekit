@@ -1552,7 +1552,18 @@ func (f *Forwarder) CheckSync() (bool, int32) {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	return f.vls.CheckSync()
+	locked, layer := f.vls.CheckSync()
+	if !locked {
+		return locked, layer
+	}
+
+	// max published layer (as seen by this forwarder) could be
+	// lower than max subscribed, mark de-synced if not deficient
+	if !f.isDeficientLocked() && f.vls.GetMax().Spatial > f.vls.GetTarget().Spatial {
+		return false, layer
+	}
+
+	return true, layer
 }
 
 func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLayers [buffer.DefaultMaxLayerSpatial + 1]bool) {
