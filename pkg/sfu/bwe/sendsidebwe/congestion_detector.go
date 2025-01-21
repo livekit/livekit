@@ -797,7 +797,7 @@ func (c *congestionDetector) ProbeClusterFinalize() (ccutils.ProbeSignal, int64,
 	}
 
 	isSignalValid := c.params.Config.ProbeSignal.IsValid(pci)
-	c.params.Logger.Debugw(
+	c.params.Logger.Infow(
 		"send side bwe: probe finalized",
 		"isSignalValid", isSignalValid,
 		"probeClusterInfo", pci,

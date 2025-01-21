@@ -220,7 +220,7 @@ func (r *RemoteBWE) estimateAvailableChannelCapacity(reason channelCongestionRea
 }
 
 func (r *RemoteBWE) updateCongestionState(state bwe.CongestionState, reason channelCongestionReason) (bwe.CongestionState, bwe.CongestionState) {
-	r.params.Logger.Infow(
+	r.params.Logger.Debugw(
 		"remote bwe: congestion state change",
 		"from", r.congestionState,
 		"to", state,
@@ -309,7 +309,7 @@ func (r *RemoteBWE) ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool) {
 	r.congestionState = bwe.CongestionStateNone
 	r.newChannelObserver()
 
-	r.params.Logger.Debugw(
+	r.params.Logger.Infow(
 		"remote bwe: probe finalized",
 		"lastReceived", r.lastReceivedEstimate,
 		"expectedBandwidthUsage", r.lastExpectedBandwidthUsage,

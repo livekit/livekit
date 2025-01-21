@@ -1953,8 +1953,9 @@ func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isPro
 		SSRC:           d.ssrc,
 	}
 	rtxOffset := 0
-	rtxExtSequenceNumber := d.rtxSequenceNumber.Inc()
+	var rtxExtSequenceNumber uint64
 	if d.payloadTypeRTX != 0 && d.ssrcRTX != 0 {
+		rtxExtSequenceNumber = d.rtxSequenceNumber.Inc()
 		rtxOffset = 2
 
 		hdr.PayloadType = d.payloadTypeRTX
@@ -2115,9 +2116,9 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 			return 0
 		}
 
-		rtxExtSequenceNumber := d.rtxSequenceNumber.Inc()
 		payloads := make([]byte, RTPPaddingMaxPayloadSize*num)
 		for i := 0; i < num; i++ {
+			rtxExtSequenceNumber := d.rtxSequenceNumber.Inc()
 			hdr := &rtp.Header{
 				Version:        2,
 				Padding:        true,
