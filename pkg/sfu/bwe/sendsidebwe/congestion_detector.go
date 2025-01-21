@@ -803,6 +803,7 @@ func (c *congestionDetector) ProbeClusterFinalize() (ccutils.ProbeSignal, int64,
 		"probeClusterInfo", pci,
 		"probePacketGroup", c.probePacketGroup,
 		"congestionState", c.congestionState,
+		"rtt", c.rtt,
 	)
 
 	// if congestion signal changed during probe, defer to that signal
