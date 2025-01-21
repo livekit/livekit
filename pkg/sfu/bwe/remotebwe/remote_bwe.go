@@ -316,6 +316,7 @@ func (r *RemoteBWE) ProbeClusterFinalize() (ccutils.ProbeSignal, int64, bool) {
 		"channel", pco,
 		"isSignalValid", pco.HasEnoughEstimateSamples(),
 		"probeClusterInfo", pci,
+		"rtt", r.probeController.GetRTT(),
 	)
 
 	probeSignal := ccutils.ProbeSignalNotCongesting
