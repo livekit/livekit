@@ -1408,7 +1408,7 @@ func (r *Room) pushAndDequeueUpdates(
 		ep := r.GetParticipant(identity)
 		if ep != nil {
 			epi := ep.ToProto()
-			if CompareParticipant(epi, pi) >= 0 {
+			if CompareParticipant(epi, pi) > 0 {
 				// older session update, newer session has already become active, so nothing to do
 				return nil
 			}
