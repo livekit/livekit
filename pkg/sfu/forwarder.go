@@ -15,7 +15,6 @@
 package sfu
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -297,8 +296,9 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	if f.codec.MimeType != "" {
-		return
+	codecChanged := f.codec.MimeType != "" && f.codec.MimeType != codec.MimeType
+	if codecChanged {
+		f.logger.Debugw("forwarder codec changed", "from", f.codec.MimeType, "to", codec.MimeType)
 	}
 	f.codec = codec
 
@@ -315,15 +315,21 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 	case "video/vp8":
 		f.codecMunger = codecmunger.NewVP8FromNull(f.codecMunger, f.logger)
 		if f.vls != nil {
-			f.vls = videolayerselector.NewSimulcastFromNull(f.vls)
+			if vls := videolayerselector.NewSimulcastFromOther(f.vls); vls != nil {
+				f.vls = vls
+			} else {
+				f.logger.Errorw("failed to create simulcast on codec change", nil)
+			}
 		} else {
 			f.vls = videolayerselector.NewSimulcast(f.logger)
 		}
 		f.vls.SetTemporalLayerSelector(temporallayerselector.NewVP8(f.logger))
 
 	case "video/h264":
+		fallthrough
+	case "video/h265":
 		if f.vls != nil {
-			f.vls = videolayerselector.NewSimulcastFromNull(f.vls)
+			f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
 		} else {
 			f.vls = videolayerselector.NewSimulcast(f.logger)
 		}
@@ -357,7 +363,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 			}
 		} else {
 			if f.vls != nil {
-				f.vls = videolayerselector.NewSimulcastFromNull(f.vls)
+				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
 			} else {
 				f.vls = videolayerselector.NewSimulcast(f.logger)
 			}
@@ -1834,7 +1840,9 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 				// AVSYNC-TODO: Consider some forcing function to do the switch
 				// (like "have waited for too long for layer switch, nothing available, switch to whatever is available" kind of condition).
 				logTransition("layer switch, reference too far behind", extExpectedTS, extRefTS, extLastTS, diffSeconds)
-				return errors.New("switch point too far behind")
+
+				// TODO-REGRESSION: it returns error when upstream track changed (codec regression, need to handle the timestamp jump)
+				// return errors.New("switch point too far behind")
 			}
 
 			// use a nominal increase to ensure that timestamp is always moving forward

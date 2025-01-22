@@ -22,6 +22,7 @@ const (
 	MimeTypeVP9
 	MimeTypeH264
 	MimeTypeAV1
+	MimeTypeH265
 )
 
 func MatchMimeType(mimeType string) MimeType {
@@ -87,6 +88,8 @@ func MatchMimeType(mimeType string) MimeType {
 											switch mimeType[9] {
 											case '4':
 												return MimeTypeH264
+											case '5':
+												return MimeTypeH265
 											}
 										}
 									}

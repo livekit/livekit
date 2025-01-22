@@ -21,6 +21,7 @@ import (
 
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
 
 	"github.com/livekit/protocol/livekit"
@@ -47,14 +48,13 @@ type WrappedReceiver struct {
 	params           WrappedReceiverParams
 	receivers        []sfu.TrackReceiver
 	codecs           []webrtc.RTPCodecParameters
-	determinedCodec  webrtc.RTPCodecCapability
 	onReadyCallbacks []func()
 }
 
 func NewWrappedReceiver(params WrappedReceiverParams) *WrappedReceiver {
 	sfuReceivers := make([]sfu.TrackReceiver, 0, len(params.Receivers))
 	for _, r := range params.Receivers {
-		sfuReceivers = append(sfuReceivers, r.TrackReceiver)
+		sfuReceivers = append(sfuReceivers, r)
 	}
 
 	codecs := params.UpstreamCodecs
@@ -94,7 +94,6 @@ func (r *WrappedReceiver) StreamID() string {
 // DetermineReceiver determines the receiver of negotiated codec and return ready state of the receiver
 func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) bool {
 	r.lock.Lock()
-	r.determinedCodec = codec
 
 	var trackReceiver sfu.TrackReceiver
 	for _, receiver := range r.receivers {
@@ -130,8 +129,10 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) boo
 			trackReceiver.AddOnReady(f)
 		}
 
-		if d, ok := trackReceiver.(*DummyReceiver); ok {
-			return d.IsReady()
+		if s, ok := trackReceiver.(*simulcastReceiver); ok {
+			if d, ok := s.TrackReceiver.(*DummyReceiver); ok {
+				return d.IsReady()
+			}
 		}
 		return true
 	}
@@ -174,9 +175,10 @@ type DummyReceiver struct {
 	codec            webrtc.RTPCodecParameters
 	headerExtensions []webrtc.RTPHeaderExtensionParameter
 
-	downTrackLock    sync.Mutex
-	downTracks       map[livekit.ParticipantID]sfu.TrackSender
-	onReadyCallbacks []func()
+	downTrackLock      sync.Mutex
+	downTracks         map[livekit.ParticipantID]sfu.TrackSender
+	onReadyCallbacks   []func()
+	onCodecStateChange []func(webrtc.RTPCodecParameters, sfu.ReceiverCodecState)
 
 	settingsLock          sync.Mutex
 	maxExpectedLayerValid bool
@@ -214,10 +216,16 @@ func (d *DummyReceiver) Upgrade(receiver sfu.TrackReceiver) {
 	d.downTracks = make(map[livekit.ParticipantID]sfu.TrackSender)
 	onReadyCallbacks := d.onReadyCallbacks
 	d.onReadyCallbacks = nil
+	codecChange := d.onCodecStateChange
+	d.onCodecStateChange = nil
 	d.downTrackLock.Unlock()
 
 	for _, f := range onReadyCallbacks {
 		receiver.AddOnReady(f)
+	}
+
+	for _, f := range codecChange {
+		receiver.AddOnCodecStateChange(f)
 	}
 
 	d.settingsLock.Lock()
@@ -336,6 +344,16 @@ func (d *DummyReceiver) DeleteDownTrack(subscriberID livekit.ParticipantID) {
 	}
 }
 
+func (d *DummyReceiver) GetDownTracks() []sfu.TrackSender {
+	d.downTrackLock.Lock()
+	defer d.downTrackLock.Unlock()
+
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		return r.GetDownTracks()
+	}
+	return maps.Values(d.downTracks)
+}
+
 func (d *DummyReceiver) DebugInfo() map[string]interface{} {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.DebugInfo()
@@ -420,6 +438,27 @@ func (d *DummyReceiver) IsReady() bool {
 	return d.receiver.Load() != nil
 }
 
+func (d *DummyReceiver) AddOnCodecStateChange(f func(codec webrtc.RTPCodecParameters, state sfu.ReceiverCodecState)) {
+	var receiver sfu.TrackReceiver
+	d.downTrackLock.Lock()
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		receiver = r
+	} else {
+		d.onCodecStateChange = append(d.onCodecStateChange, f)
+	}
+	d.downTrackLock.Unlock()
+	if receiver != nil {
+		receiver.AddOnCodecStateChange(f)
+	}
+}
+
+func (d *DummyReceiver) CodecState() sfu.ReceiverCodecState {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		return r.CodecState()
+	}
+	return sfu.ReceiverCodecStateNormal
+}
+
 // --------------------------------------------
 
 type DummyRedReceiver struct {
@@ -462,6 +501,16 @@ func (d *DummyRedReceiver) DeleteDownTrack(subscriberID livekit.ParticipantID) {
 	} else {
 		delete(d.downTracks, subscriberID)
 	}
+}
+
+func (d *DummyRedReceiver) GetDownTracks() []sfu.TrackSender {
+	d.downTrackLock.Lock()
+	defer d.downTrackLock.Unlock()
+
+	if r, ok := d.redReceiver.Load().(sfu.TrackReceiver); ok {
+		return r.GetDownTracks()
+	}
+	return maps.Values(d.downTracks)
 }
 
 func (d *DummyRedReceiver) ReadRTP(buf []byte, layer uint8, esn uint64) (int, error) {
