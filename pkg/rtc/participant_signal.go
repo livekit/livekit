@@ -331,7 +331,7 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 	}
 
 	err := sink.WriteMessage(msg)
-	if errors.Is(err, psrpc.Canceled) {
+	if errors.Is(err, psrpc.Canceled) || errors.Is(err, routing.ErrChannelClosed) {
 		p.params.Logger.Debugw(
 			"could not send message to participant",
 			"error", err,
