@@ -685,7 +685,7 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 		}
 
 		if !found {
-			pi.Tracks = append(pi.Tracks, pti.trackInfos[0])
+			pi.Tracks = append(pi.Tracks, utils.CloneProto(pti.trackInfos[0]))
 		}
 	}
 
@@ -2683,7 +2683,7 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 		return signalCid, nil, false, time.Time{}
 	}
 
-	return signalCid, pendingInfo.trackInfos[0], pendingInfo.migrated, pendingInfo.createdAt
+	return signalCid, utils.CloneProto(pendingInfo.trackInfos[0]), pendingInfo.migrated, pendingInfo.createdAt
 }
 
 // setTrackID either generates a new TrackID for an AddTrackRequest
