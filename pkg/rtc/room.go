@@ -1392,7 +1392,7 @@ func (r *Room) pushAndDequeueUpdates(
 			}
 		} else {
 			// different participant sessions
-			if existing.pi.JoinedAt < pi.JoinedAt {
+			if CompareParticipant(existing.pi, pi) < 0 {
 				// existing is older, synthesize a DISCONNECT for older and
 				// send immediately along with newer session to signal switch
 				shouldSend = true
@@ -1408,7 +1408,7 @@ func (r *Room) pushAndDequeueUpdates(
 		ep := r.GetParticipant(identity)
 		if ep != nil {
 			epi := ep.ToProto()
-			if epi.JoinedAt > pi.JoinedAt {
+			if CompareParticipant(epi, pi) > 0 {
 				// older session update, newer session has already become active, so nothing to do
 				return nil
 			}
@@ -1813,6 +1813,36 @@ func IsParticipantExemptFromTrackPermissionsRestrictions(p types.LocalParticipan
 	// egress/recorder participants bypass permissions as auto-egress does not
 	// have enough context to check permissions
 	return p.IsRecorder()
+}
+
+func CompareParticipant(pi1 *livekit.ParticipantInfo, pi2 *livekit.ParticipantInfo) int {
+	if pi1.JoinedAt != pi2.JoinedAt {
+		if pi1.JoinedAt < pi2.JoinedAt {
+			return -1
+		} else {
+			return 1
+		}
+	}
+
+	if pi1.JoinedAtMs != 0 && pi2.JoinedAtMs != 0 && pi1.JoinedAtMs != pi2.JoinedAtMs {
+		if pi1.JoinedAtMs < pi2.JoinedAtMs {
+			return -1
+		} else {
+			return 1
+		}
+	}
+
+	// all join times being equal, it is not possible to really know which one is newer,
+	// pick the higher pID to be consistent
+	if pi1.Sid != pi2.Sid {
+		if pi1.Sid < pi2.Sid {
+			return -1
+		} else {
+			return 1
+		}
+	}
+
+	return 0
 }
 
 func connectionDetailsFields(infos []*types.ICEConnectionInfo) []interface{} {
