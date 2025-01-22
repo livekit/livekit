@@ -656,6 +656,7 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 		Name:             grants.Name,
 		State:            p.State(),
 		JoinedAt:         p.ConnectedAt().Unix(),
+		JoinedAtMs:       p.ConnectedAt().UnixMilli(),
 		Version:          v,
 		Permission:       grants.Video.ToPermission(),
 		Metadata:         grants.Metadata,
