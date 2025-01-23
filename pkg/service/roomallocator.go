@@ -71,11 +71,13 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	rm, internal, err := r.roomStore.LoadRoom(ctx, livekit.RoomName(req.Name), true)
 	if errors.Is(err, ErrRoomNotFound) {
 		created = true
+		now := time.Now()
 		rm = &livekit.Room{
-			Sid:          guid.New(utils.RoomPrefix),
-			Name:         req.Name,
-			CreationTime: time.Now().Unix(),
-			TurnPassword: utils.RandomSecret(),
+			Sid:            guid.New(utils.RoomPrefix),
+			Name:           req.Name,
+			CreationTime:   now.Unix(),
+			CreationTimeMs: now.UnixMilli(),
+			TurnPassword:   utils.RandomSecret(),
 		}
 		internal = &livekit.RoomInternal{}
 		applyDefaultRoomConfig(rm, internal, &r.config.Room)
