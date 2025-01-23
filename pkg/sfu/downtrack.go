@@ -651,7 +651,8 @@ func (d *DownTrack) handleUpstreamCodecChange(mime string) {
 
 	if codec.MimeType == "" {
 		// codec not found, should not happen since the upstream codec should only fall back to higher compatibility (vp8)
-		d.params.Logger.Errorw("can't find matched codec for new upstream payload type", nil,
+		d.params.Logger.Errorw(
+			"can't find matched codec for new upstream payload type", nil,
 			"upstreamCodecs", d.upstreamCodecs,
 			"remoteParameters", d.negotiatedCodecParameters,
 			"mime", mime,
@@ -665,12 +666,14 @@ func (d *DownTrack) handleUpstreamCodecChange(mime string) {
 	d.codec = codec.RTPCodecCapability
 	d.bindLock.Unlock()
 
-	d.params.Logger.Infow("upstream codec changed",
+	d.params.Logger.Infow(
+		"upstream codec changed",
 		"oldPT", oldPT, "newPT", d.payloadType.Load(),
 		"oldRTXPT", oldRtxPT, "newRTXPT", d.payloadTypeRTX.Load(),
 		"oldCodec", oldCodec, "newCodec", codec.RTPCodecCapability,
 	)
 
+	d.forwarder.Restart()
 	d.forwarder.DetermineCodec(codec.RTPCodecCapability, d.Receiver().HeaderExtensions())
 }
 

@@ -75,6 +75,7 @@ require (
 	github.com/containerd/continuity v0.4.3 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/dennwc/iters v1.0.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/docker/cli v26.1.4+incompatible // indirect
 	github.com/docker/docker v27.1.1+incompatible // indirect
