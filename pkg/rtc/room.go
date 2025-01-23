@@ -279,7 +279,9 @@ func NewRoom(
 		r.protoRoom.DepartureTimeout = roomConfig.DepartureTimeout
 	}
 	if r.protoRoom.CreationTime == 0 {
-		r.protoRoom.CreationTime = time.Now().Unix()
+		now := time.Now()
+		r.protoRoom.CreationTime = now.Unix()
+		r.protoRoom.CreationTimeMs = now.UnixMilli()
 	}
 	r.protoProxy = utils.NewProtoProxy[*livekit.Room](roomUpdateInterval, r.updateProto)
 

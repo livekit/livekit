@@ -123,7 +123,9 @@ func (s *RedisStore) Stop() {
 
 func (s *RedisStore) StoreRoom(_ context.Context, room *livekit.Room, internal *livekit.RoomInternal) error {
 	if room.CreationTime == 0 {
-		room.CreationTime = time.Now().Unix()
+		now := time.Now()
+		room.CreationTime = now.Unix()
+		room.CreationTimeMs = now.UnixMilli()
 	}
 
 	roomData, err := proto.Marshal(room)
