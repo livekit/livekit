@@ -702,6 +702,8 @@ func (f *FrameRateCalculatorH26x) calc() bool {
 			f.reset()
 			return true
 		}
+
+		cur = next
 	}
 
 	return false
