@@ -995,6 +995,16 @@ type FakeLocalParticipant struct {
 		arg2 livekit.TrackID
 		arg3 bool
 	}
+	SupportsCodecChangeStub        func() bool
+	supportsCodecChangeMutex       sync.RWMutex
+	supportsCodecChangeArgsForCall []struct {
+	}
+	supportsCodecChangeReturns struct {
+		result1 bool
+	}
+	supportsCodecChangeReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	SupportsSyncStreamIDStub        func() bool
 	supportsSyncStreamIDMutex       sync.RWMutex
 	supportsSyncStreamIDArgsForCall []struct {
@@ -6468,6 +6478,59 @@ func (fake *FakeLocalParticipant) SubscriptionPermissionUpdateArgsForCall(i int)
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
+func (fake *FakeLocalParticipant) SupportsCodecChange() bool {
+	fake.supportsCodecChangeMutex.Lock()
+	ret, specificReturn := fake.supportsCodecChangeReturnsOnCall[len(fake.supportsCodecChangeArgsForCall)]
+	fake.supportsCodecChangeArgsForCall = append(fake.supportsCodecChangeArgsForCall, struct {
+	}{})
+	stub := fake.SupportsCodecChangeStub
+	fakeReturns := fake.supportsCodecChangeReturns
+	fake.recordInvocation("SupportsCodecChange", []interface{}{})
+	fake.supportsCodecChangeMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) SupportsCodecChangeCallCount() int {
+	fake.supportsCodecChangeMutex.RLock()
+	defer fake.supportsCodecChangeMutex.RUnlock()
+	return len(fake.supportsCodecChangeArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) SupportsCodecChangeCalls(stub func() bool) {
+	fake.supportsCodecChangeMutex.Lock()
+	defer fake.supportsCodecChangeMutex.Unlock()
+	fake.SupportsCodecChangeStub = stub
+}
+
+func (fake *FakeLocalParticipant) SupportsCodecChangeReturns(result1 bool) {
+	fake.supportsCodecChangeMutex.Lock()
+	defer fake.supportsCodecChangeMutex.Unlock()
+	fake.SupportsCodecChangeStub = nil
+	fake.supportsCodecChangeReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) SupportsCodecChangeReturnsOnCall(i int, result1 bool) {
+	fake.supportsCodecChangeMutex.Lock()
+	defer fake.supportsCodecChangeMutex.Unlock()
+	fake.SupportsCodecChangeStub = nil
+	if fake.supportsCodecChangeReturnsOnCall == nil {
+		fake.supportsCodecChangeReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.supportsCodecChangeReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) SupportsSyncStreamID() bool {
 	fake.supportsSyncStreamIDMutex.Lock()
 	ret, specificReturn := fake.supportsSyncStreamIDReturnsOnCall[len(fake.supportsSyncStreamIDArgsForCall)]
@@ -7671,6 +7734,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.subscriptionPermissionMutex.RUnlock()
 	fake.subscriptionPermissionUpdateMutex.RLock()
 	defer fake.subscriptionPermissionUpdateMutex.RUnlock()
+	fake.supportsCodecChangeMutex.RLock()
+	defer fake.supportsCodecChangeMutex.RUnlock()
 	fake.supportsSyncStreamIDMutex.RLock()
 	defer fake.supportsSyncStreamIDMutex.RUnlock()
 	fake.supportsTransceiverReuseMutex.RLock()

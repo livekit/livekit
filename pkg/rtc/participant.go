@@ -3113,6 +3113,10 @@ func (p *ParticipantImpl) HandleMetrics(senderParticipantID livekit.ParticipantI
 	return nil
 }
 
+func (p *ParticipantImpl) SupportsCodecChange() bool {
+	return p.params.ClientInfo.SupportsCodecChange()
+}
+
 // ----------------------------------------------
 
 func codecsFromMediaDescription(m *sdp.MediaDescription) (out []sdp.Codec, err error) {

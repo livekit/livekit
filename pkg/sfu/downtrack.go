@@ -238,6 +238,7 @@ type DowntrackParams struct {
 	Trailer                        []byte
 	RTCPWriter                     func([]rtcp.Packet) error
 	DisableSenderReportPassThrough bool
+	SupportsCodecChange            bool
 }
 
 // DownTrack implements TrackLocal, is the track used to write packets
@@ -634,6 +635,13 @@ func (d *DownTrack) handleUpstreamCodecChange(mime string) {
 		return
 	}
 
+	if !d.params.SupportsCodecChange {
+		d.bindLock.Unlock()
+		d.params.Logger.Infow("client doesn't support codec change, renegotiate new codec")
+		go d.Close()
+		return
+	}
+
 	oldPT, oldRtxPT, oldCodec := d.payloadType.Load(), d.payloadTypeRTX.Load(), d.codec
 
 	var codec webrtc.RTPCodecParameters
@@ -764,6 +772,9 @@ func (d *DownTrack) SetReceiver(r TrackReceiver) {
 
 	r.AddOnReady(d.handleReceiverReady)
 	d.handleUpstreamCodecChange(r.Codec().MimeType)
+	if sal := d.getStreamAllocatorListener(); sal != nil {
+		sal.OnSubscribedLayerChanged(d, d.forwarder.MaxLayer())
+	}
 }
 
 // Sets RTP header extensions for this track

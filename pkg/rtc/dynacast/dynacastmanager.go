@@ -88,15 +88,15 @@ func (d *DynacastManager) AddCodec(mime string) {
 }
 
 func (d *DynacastManager) HandleCodecRegression(fromMime, toMime string) {
-	d.lock.Lock()
+	fromDq := d.getOrCreateDynacastQuality(fromMime)
 
+	d.lock.Lock()
 	if d.isClosed {
 		d.lock.Unlock()
 		return
 	}
 
 	normalizedFromMime, normalizedToMime := strings.ToLower(fromMime), strings.ToLower(toMime)
-	fromDq := d.dynacastQuality[normalizedFromMime]
 	if fromDq == nil {
 		// should not happen as we have added the codec on setup receiver
 		d.params.Logger.Warnw("regression from codec not found", nil, "mime", normalizedFromMime)

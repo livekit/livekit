@@ -390,6 +390,7 @@ type LocalParticipant interface {
 	// has been reached. If the timeout expires, it will return an error.
 	WaitUntilSubscribed(timeout time.Duration) error
 	StopAndGetSubscribedTracksForwarderState() map[livekit.TrackID]*livekit.RTPForwarderState
+	SupportsCodecChange() bool
 
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []livekit.ParticipantID
