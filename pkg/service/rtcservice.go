@@ -428,10 +428,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		if err := cr.RequestSink.WriteMessage(req); err != nil {
 			pLogger.Warnw("error writing to request sink", err, "connID", cr.ConnectionID)
-			if errors.Is(err, psrpc.ErrStreamClosed) {
-				// disconnect the participant WS since the signal proxy has been broken
-				return
-			}
+			return
 		}
 	}
 }
