@@ -146,7 +146,7 @@ type Room struct {
 	disconnectSignalOnResumeParticipants           map[livekit.ParticipantIdentity]time.Time
 	disconnectSignalOnResumeNoMessagesParticipants map[livekit.ParticipantIdentity]*disconnectSignalOnResumeNoMessages
 
-	seenDataMessages *orderedmap.OrderedMap[int64, struct{}]
+	seenDataMessages *orderedmap.OrderedMap[string, struct{}]
 }
 
 type ParticipantOptions struct {
@@ -275,7 +275,7 @@ func NewRoom(
 		trailer:                              []byte(utils.RandomSecret()),
 		disconnectSignalOnResumeParticipants: make(map[livekit.ParticipantIdentity]time.Time),
 		disconnectSignalOnResumeNoMessagesParticipants: make(map[livekit.ParticipantIdentity]*disconnectSignalOnResumeNoMessages),
-		seenDataMessages: orderedmap.NewOrderedMap[int64, struct{}](),
+		seenDataMessages: orderedmap.NewOrderedMap[string, struct{}](),
 	}
 
 	if r.protoRoom.EmptyTimeout == 0 {
@@ -1751,7 +1751,7 @@ func (r *Room) IsDataMessageUserPacketDuplicate(up *livekit.UserPacket) bool {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if up.Nonce == 0 {
+	if len(up.Nonce) == 0 {
 		return false
 	}
 
