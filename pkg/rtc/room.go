@@ -1749,13 +1749,13 @@ func (r *Room) createAgentDispatchesFromRoomAgent() {
 
 func (r *Room) IsDataMessageUserPacketDuplicate(up *livekit.UserPacket) bool {
 	r.lock.Lock()
+	defer r.lock.Unlock()
+
 	if up.Nonce == 0 {
-		r.lock.Unlock()
 		return false
 	}
 
 	if _, ok := r.seenDataMessages.Get(up.Nonce); ok {
-		r.lock.Unlock()
 		return true
 	}
 
@@ -1764,7 +1764,6 @@ func (r *Room) IsDataMessageUserPacketDuplicate(up *livekit.UserPacket) bool {
 		el := r.seenDataMessages.Front()
 		r.seenDataMessages.Delete(el.Key)
 	}
-	r.lock.Unlock()
 	return false
 }
 
