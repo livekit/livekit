@@ -478,6 +478,7 @@ type Room interface {
 	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
 	ResolveMediaTrackForSubscriber(sub LocalParticipant, trackID livekit.TrackID) MediaResolverResult
 	GetLocalParticipants() []LocalParticipant
+	IsDataMessageUserPacketDuplicate(ip *livekit.UserPacket) bool
 }
 
 // MediaTrack represents a media track

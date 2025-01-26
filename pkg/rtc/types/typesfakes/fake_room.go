@@ -29,6 +29,17 @@ type FakeRoom struct {
 	iDReturnsOnCall map[int]struct {
 		result1 livekit.RoomID
 	}
+	IsDataMessageUserPacketDuplicateStub        func(*livekit.UserPacket) bool
+	isDataMessageUserPacketDuplicateMutex       sync.RWMutex
+	isDataMessageUserPacketDuplicateArgsForCall []struct {
+		arg1 *livekit.UserPacket
+	}
+	isDataMessageUserPacketDuplicateReturns struct {
+		result1 bool
+	}
+	isDataMessageUserPacketDuplicateReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	NameStub        func() livekit.RoomName
 	nameMutex       sync.RWMutex
 	nameArgsForCall []struct {
@@ -209,6 +220,67 @@ func (fake *FakeRoom) IDReturnsOnCall(i int, result1 livekit.RoomID) {
 	}
 	fake.iDReturnsOnCall[i] = struct {
 		result1 livekit.RoomID
+	}{result1}
+}
+
+func (fake *FakeRoom) IsDataMessageUserPacketDuplicate(arg1 *livekit.UserPacket) bool {
+	fake.isDataMessageUserPacketDuplicateMutex.Lock()
+	ret, specificReturn := fake.isDataMessageUserPacketDuplicateReturnsOnCall[len(fake.isDataMessageUserPacketDuplicateArgsForCall)]
+	fake.isDataMessageUserPacketDuplicateArgsForCall = append(fake.isDataMessageUserPacketDuplicateArgsForCall, struct {
+		arg1 *livekit.UserPacket
+	}{arg1})
+	stub := fake.IsDataMessageUserPacketDuplicateStub
+	fakeReturns := fake.isDataMessageUserPacketDuplicateReturns
+	fake.recordInvocation("IsDataMessageUserPacketDuplicate", []interface{}{arg1})
+	fake.isDataMessageUserPacketDuplicateMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRoom) IsDataMessageUserPacketDuplicateCallCount() int {
+	fake.isDataMessageUserPacketDuplicateMutex.RLock()
+	defer fake.isDataMessageUserPacketDuplicateMutex.RUnlock()
+	return len(fake.isDataMessageUserPacketDuplicateArgsForCall)
+}
+
+func (fake *FakeRoom) IsDataMessageUserPacketDuplicateCalls(stub func(*livekit.UserPacket) bool) {
+	fake.isDataMessageUserPacketDuplicateMutex.Lock()
+	defer fake.isDataMessageUserPacketDuplicateMutex.Unlock()
+	fake.IsDataMessageUserPacketDuplicateStub = stub
+}
+
+func (fake *FakeRoom) IsDataMessageUserPacketDuplicateArgsForCall(i int) *livekit.UserPacket {
+	fake.isDataMessageUserPacketDuplicateMutex.RLock()
+	defer fake.isDataMessageUserPacketDuplicateMutex.RUnlock()
+	argsForCall := fake.isDataMessageUserPacketDuplicateArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeRoom) IsDataMessageUserPacketDuplicateReturns(result1 bool) {
+	fake.isDataMessageUserPacketDuplicateMutex.Lock()
+	defer fake.isDataMessageUserPacketDuplicateMutex.Unlock()
+	fake.IsDataMessageUserPacketDuplicateStub = nil
+	fake.isDataMessageUserPacketDuplicateReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeRoom) IsDataMessageUserPacketDuplicateReturnsOnCall(i int, result1 bool) {
+	fake.isDataMessageUserPacketDuplicateMutex.Lock()
+	defer fake.isDataMessageUserPacketDuplicateMutex.Unlock()
+	fake.IsDataMessageUserPacketDuplicateStub = nil
+	if fake.isDataMessageUserPacketDuplicateReturnsOnCall == nil {
+		fake.isDataMessageUserPacketDuplicateReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isDataMessageUserPacketDuplicateReturnsOnCall[i] = struct {
+		result1 bool
 	}{result1}
 }
 
@@ -599,6 +671,8 @@ func (fake *FakeRoom) Invocations() map[string][][]interface{} {
 	defer fake.getLocalParticipantsMutex.RUnlock()
 	fake.iDMutex.RLock()
 	defer fake.iDMutex.RUnlock()
+	fake.isDataMessageUserPacketDuplicateMutex.RLock()
+	defer fake.isDataMessageUserPacketDuplicateMutex.RUnlock()
 	fake.nameMutex.RLock()
 	defer fake.nameMutex.RUnlock()
 	fake.removeParticipantMutex.RLock()

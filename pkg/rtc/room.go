@@ -28,6 +28,7 @@ import (
 	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/elliotchance/orderedmap/v2"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -55,6 +56,8 @@ const (
 	dataForwardLoadBalanceThreshold = 4
 
 	simulateDisconnectSignalTimeout = 5 * time.Second
+
+	seenDataMessagesMaxSize = 100
 )
 
 var (
@@ -142,6 +145,8 @@ type Room struct {
 	simulationLock                                 sync.Mutex
 	disconnectSignalOnResumeParticipants           map[livekit.ParticipantIdentity]time.Time
 	disconnectSignalOnResumeNoMessagesParticipants map[livekit.ParticipantIdentity]*disconnectSignalOnResumeNoMessages
+
+	seenDataMessages *orderedmap.OrderedMap[int64, struct{}]
 }
 
 type ParticipantOptions struct {
@@ -270,6 +275,7 @@ func NewRoom(
 		trailer:                              []byte(utils.RandomSecret()),
 		disconnectSignalOnResumeParticipants: make(map[livekit.ParticipantIdentity]time.Time),
 		disconnectSignalOnResumeNoMessagesParticipants: make(map[livekit.ParticipantIdentity]*disconnectSignalOnResumeNoMessages),
+		seenDataMessages: orderedmap.NewOrderedMap[int64, struct{}](),
 	}
 
 	if r.protoRoom.EmptyTimeout == 0 {
@@ -1741,12 +1747,37 @@ func (r *Room) createAgentDispatchesFromRoomAgent() {
 	}
 }
 
+func (r *Room) IsDataMessageUserPacketDuplicate(up *livekit.UserPacket) bool {
+	r.lock.Lock()
+	if up.Nonce == 0 {
+		r.lock.Unlock()
+		return false
+	}
+
+	if _, ok := r.seenDataMessages.Get(up.Nonce); ok {
+		r.lock.Unlock()
+		return true
+	}
+
+	r.seenDataMessages.Set(up.Nonce, struct{}{})
+	for r.seenDataMessages.Len() > seenDataMessagesMaxSize {
+		el := r.seenDataMessages.Front()
+		r.seenDataMessages.Delete(el.Key)
+	}
+	r.lock.Unlock()
+	return false
+}
+
 // ------------------------------------------------------------
 
 func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, kind livekit.DataPacket_Kind, dp *livekit.DataPacket, logger logger.Logger) {
 	dp.Kind = kind // backward compatibility
 	dest := dp.GetUser().GetDestinationSids()
 	if u := dp.GetUser(); u != nil {
+		if r.IsDataMessageUserPacketDuplicate(u) {
+			logger.Infow("dropping duplicate data message", "nonce", u.Nonce)
+			return
+		}
 		if len(dp.DestinationIdentities) == 0 {
 			dp.DestinationIdentities = u.DestinationIdentities
 		} else {

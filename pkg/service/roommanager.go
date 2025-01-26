@@ -21,7 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/elliotchance/orderedmap/v2"
 	"github.com/pkg/errors"
 	"golang.org/x/exp/maps"
 
@@ -52,8 +51,6 @@ import (
 const (
 	tokenRefreshInterval = 5 * time.Minute
 	tokenDefaultTTL      = 10 * time.Minute
-
-	seenDataMessagesMaxSize = 1000
 )
 
 var affinityEpoch = time.Date(2000, 0, 0, 0, 0, 0, 0, time.UTC)
@@ -61,11 +58,6 @@ var affinityEpoch = time.Date(2000, 0, 0, 0, 0, 0, 0, time.UTC)
 type iceConfigCacheKey struct {
 	roomName            livekit.RoomName
 	participantIdentity livekit.ParticipantIdentity
-}
-
-type seenDataMessageKey struct {
-	roomName livekit.RoomName
-	nonce    int64
 }
 
 // RoomManager manages rooms and its interaction with participants.
@@ -99,8 +91,6 @@ type RoomManager struct {
 	iceConfigCache *sutils.IceConfigCache[iceConfigCacheKey]
 
 	forwardStats *sfu.ForwardStats
-
-	seenDataMessages *orderedmap.OrderedMap[seenDataMessageKey, struct{}]
 }
 
 func NewLocalRoomManager(
@@ -153,8 +143,6 @@ func NewLocalRoomManager(
 			Region:        conf.Region,
 			NodeId:        string(currentNode.NodeID()),
 		},
-
-		seenDataMessages: orderedmap.NewOrderedMap[seenDataMessageKey, struct{}](),
 	}
 
 	r.roomManagerServer, err = rpc.NewTypedRoomManagerServer(r, bus, rpc.WithServerLogger(logger.GetLogger()), middleware.WithServerMetrics(rpc.PSRPCMetricsObserver{}), psrpc.WithServerChannelSize(conf.PSRPC.BufferSize))
@@ -819,22 +807,6 @@ func (r *RoomManager) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 }
 
 func (r *RoomManager) SendData(ctx context.Context, req *livekit.SendDataRequest) (*livekit.SendDataResponse, error) {
-	r.lock.Lock()
-	if req.Nonce != 0 {
-		key := seenDataMessageKey{livekit.RoomName(req.Room), req.Nonce}
-		if _, ok := r.seenDataMessages.Get(key); ok {
-			r.lock.Unlock()
-			return &livekit.SendDataResponse{}, nil
-		}
-
-		r.seenDataMessages.Set(key, struct{}{})
-	}
-	for r.seenDataMessages.Len() > seenDataMessagesMaxSize {
-		el := r.seenDataMessages.Front()
-		r.seenDataMessages.Delete(el.Key)
-	}
-	r.lock.Unlock()
-
 	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
 	if room == nil {
 		return nil, ErrRoomNotFound
@@ -850,6 +822,7 @@ func (r *RoomManager) SendData(ctx context.Context, req *livekit.SendDataRequest
 				DestinationSids:       req.DestinationSids,
 				DestinationIdentities: req.DestinationIdentities,
 				Topic:                 req.Topic,
+				Nonce:                 req.Nonce,
 			},
 		},
 	}, req.Kind)
