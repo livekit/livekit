@@ -28,7 +28,6 @@ import (
 	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/elliotchance/orderedmap/v2"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -56,8 +55,6 @@ const (
 	dataForwardLoadBalanceThreshold = 4
 
 	simulateDisconnectSignalTimeout = 5 * time.Second
-
-	seenDataMessagesMaxSize = 100
 )
 
 var (
@@ -146,7 +143,7 @@ type Room struct {
 	disconnectSignalOnResumeParticipants           map[livekit.ParticipantIdentity]time.Time
 	disconnectSignalOnResumeNoMessagesParticipants map[livekit.ParticipantIdentity]*disconnectSignalOnResumeNoMessages
 
-	seenDataMessages *orderedmap.OrderedMap[string, struct{}]
+	userPacketDeduper *UserPacketDeduper
 }
 
 type ParticipantOptions struct {
@@ -275,7 +272,7 @@ func NewRoom(
 		trailer:                              []byte(utils.RandomSecret()),
 		disconnectSignalOnResumeParticipants: make(map[livekit.ParticipantIdentity]time.Time),
 		disconnectSignalOnResumeNoMessagesParticipants: make(map[livekit.ParticipantIdentity]*disconnectSignalOnResumeNoMessages),
-		seenDataMessages: orderedmap.NewOrderedMap[string, struct{}](),
+		userPacketDeduper: NewUserPacketDeduper(),
 	}
 
 	if r.protoRoom.EmptyTimeout == 0 {
@@ -1748,23 +1745,7 @@ func (r *Room) createAgentDispatchesFromRoomAgent() {
 }
 
 func (r *Room) IsDataMessageUserPacketDuplicate(up *livekit.UserPacket) bool {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-
-	if len(up.Nonce) == 0 {
-		return false
-	}
-
-	if _, ok := r.seenDataMessages.Get(up.Nonce); ok {
-		return true
-	}
-
-	r.seenDataMessages.Set(up.Nonce, struct{}{})
-	for r.seenDataMessages.Len() > seenDataMessagesMaxSize {
-		el := r.seenDataMessages.Front()
-		r.seenDataMessages.Delete(el.Key)
-	}
-	return false
+	return r.userPacketDeduper.IsDuplicate(up)
 }
 
 // ------------------------------------------------------------
