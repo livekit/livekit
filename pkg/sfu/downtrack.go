@@ -368,12 +368,18 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		"subscriberID", d.SubscriberID(),
 	)
 
+	var mdCacheSize, mdCacheSizeRTX int
+	if d.kind == webrtc.RTPCodecTypeVideo {
+		mdCacheSize, mdCacheSizeRTX = 32768, 4096
+	} else {
+		mdCacheSize, mdCacheSizeRTX = 8192, 1024
+	}
 	d.rtpStats = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{
 		ClockRate: d.codec.ClockRate,
 		Logger: d.params.Logger.WithValues(
 			"stream", "primary",
 		),
-	}, 4096)
+	}, mdCacheSize)
 	d.deltaStatsSenderSnapshotId = d.rtpStats.NewSenderSnapshotId()
 
 	d.rtpStatsRTX = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{
@@ -381,7 +387,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		Logger: d.params.Logger.WithValues(
 			"stream", "rtx",
 		),
-	}, 1024)
+	}, mdCacheSizeRTX)
 	d.deltaStatsRTXSenderSnapshotId = d.rtpStatsRTX.NewSenderSnapshotId()
 
 	d.forwarder = NewForwarder(
