@@ -39,13 +39,13 @@ func NewUserPacketDeduper() *UserPacketDeduper {
 }
 
 func (u *UserPacketDeduper) IsDuplicate(up *livekit.UserPacket) bool {
-	u.lock.Lock()
-	defer u.lock.Unlock()
-
 	id, err := uuid.FromBytes(up.Nonce)
 	if err != nil {
 		return false
 	}
+
+	u.lock.Lock()
+	defer u.lock.Unlock()
 
 	if u.head == id {
 		return true
