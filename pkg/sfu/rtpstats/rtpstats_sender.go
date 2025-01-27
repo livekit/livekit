@@ -563,21 +563,6 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 	}
 	r.extHighestSNFromRR = extHighestSNFromRR
 
-	// there are cases where remote does not RTCP Receiver Report for extended periods of time,
-	// some times several minutes, in that interval the sequence number rolls over,
-	// check for a gap higher than sequence number range and adjust
-	if (r.extHighestSN - r.extHighestSNFromRR) > 65536 {
-		extHighestSNFromRR := r.extHighestSNFromRR
-		r.extHighestSNFromRR += 65536
-		r.logger.Infow(
-			"receiver report potentially received after a long time, adjusting",
-			"sinceLastRR", time.Duration(mono.UnixNano()-r.lastRRTime),
-			"receivedRR", rr,
-			"extHighestSNFromRR", extHighestSNFromRR,
-			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
-		)
-	}
-
 	if r.srNewest != nil {
 		var err error
 		rtt, err = mediatransportutil.GetRttMs(&rr, r.rttMarker.ntpTime, r.rttMarker.sentAt)
@@ -615,7 +600,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 	}
 
 	extReceivedRRSN := r.extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000)
-	// there are cases where remote does not RTCP Receiver Report for extended periods of time,
+	// there are cases where remote does not send RTCP Receiver Report for extended periods of time,
 	// some times several minutes, in that interval the sequence number rolls over,
 	// check for a gap higher than sequence number range and adjust
 	if r.extHighestSN > extReceivedRRSN && (r.extHighestSN-extReceivedRRSN) > 65536 {
