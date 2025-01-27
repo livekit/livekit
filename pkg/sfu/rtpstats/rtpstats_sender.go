@@ -603,7 +603,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 	// there are cases where remote does not send RTCP Receiver Report for extended periods of time,
 	// some times several minutes, in that interval the sequence number rolls over,
 	// check for a gap higher than sequence number range and adjust
-	if r.extHighestSN > extReceivedRRSN && (r.extHighestSN-extReceivedRRSN) > 65536 {
+	for r.extHighestSN > extReceivedRRSN && (r.extHighestSN-extReceivedRRSN) > 65536 {
 		r.extHighestSNFromRR += 65536
 		r.logger.Infow(
 			"receiver report potentially received after a long time, adjusting",
