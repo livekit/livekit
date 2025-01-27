@@ -69,6 +69,7 @@ type MediaTrackParams struct {
 	AudioConfig           sfu.AudioConfig
 	VideoConfig           config.VideoConfig
 	Telemetry             telemetry.TelemetryService
+	TelemetryInterval     time.Duration
 	Logger                logger.Logger
 	SimTracks             map[uint32]SimulcastTrackInfo
 	OnRTCP                func([]rtcp.Packet)
@@ -91,6 +92,7 @@ func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 		SubscriberConfig:    params.SubscriberConfig,
 		AudioConfig:         params.AudioConfig,
 		Telemetry:           params.Telemetry,
+		TelemetryInterval:   params.TelemetryInterval,
 		Logger:              params.Logger,
 	}, ti)
 
@@ -286,6 +288,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			sfu.WithLoadBalanceThreshold(20),
 			sfu.WithStreamTrackers(),
 			sfu.WithForwardStats(t.params.ForwardStats),
+			sfu.WithTelemetryInterval(t.params.TelemetryInterval),
 		)
 		newWR.OnCloseHandler(func() {
 			t.MediaTrackReceiver.SetClosing()

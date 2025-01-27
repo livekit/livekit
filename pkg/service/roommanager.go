@@ -432,6 +432,7 @@ func (r *RoomManager) StartSession(
 		ProtocolVersion:         pv,
 		SessionStartTime:        sessionStartTime,
 		Telemetry:               r.telemetry,
+		TelemetryInterval:       r.config.RTC.TelemetryInterval,
 		Trailer:                 room.Trailer(),
 		PLIThrottleConfig:       r.config.RTC.PLIThrottle,
 		CongestionControlConfig: r.config.RTC.CongestionControl,

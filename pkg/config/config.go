@@ -119,6 +119,8 @@ type RTCConfig struct {
 	DatachannelSlowThreshold int `yaml:"datachannel_slow_threshold,omitempty"`
 
 	ForwardStats ForwardStatsConfig `yaml:"forward_stats,omitempty"`
+
+	TelemetryInterval time.Duration `yaml:"telemetry_interval,omitempty"`
 }
 
 type TURNServer struct {

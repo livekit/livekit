@@ -18,6 +18,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
@@ -56,7 +57,8 @@ type MediaTrackSubscriptionsParams struct {
 	ReceiverConfig   ReceiverConfig
 	SubscriberConfig DirectionConfig
 
-	Telemetry telemetry.TelemetryService
+	Telemetry         telemetry.TelemetryService
+	TelemetryInterval time.Duration
 
 	Logger logger.Logger
 }
@@ -143,6 +145,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		Logger:                         LoggerWithTrack(sub.GetLogger().WithComponent(sutils.ComponentSub), trackID, t.params.IsRelayed),
 		RTCPWriter:                     sub.WriteSubscriberRTCP,
 		DisableSenderReportPassThrough: sub.GetDisableSenderReportPassThrough(),
+		TelemetryInterval:              t.params.TelemetryInterval,
 	})
 	if err != nil {
 		return nil, err

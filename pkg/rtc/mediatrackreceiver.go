@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
@@ -92,6 +93,7 @@ type MediaTrackReceiverParams struct {
 	SubscriberConfig    DirectionConfig
 	AudioConfig         sfu.AudioConfig
 	Telemetry           telemetry.TelemetryService
+	TelemetryInterval   time.Duration
 	Logger              logger.Logger
 }
 
@@ -120,12 +122,13 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams, ti *livekit.TrackInf
 	t.trackInfo.Store(utils.CloneProto(ti))
 
 	t.MediaTrackSubscriptions = NewMediaTrackSubscriptions(MediaTrackSubscriptionsParams{
-		MediaTrack:       params.MediaTrack,
-		IsRelayed:        params.IsRelayed,
-		ReceiverConfig:   params.ReceiverConfig,
-		SubscriberConfig: params.SubscriberConfig,
-		Telemetry:        params.Telemetry,
-		Logger:           params.Logger,
+		MediaTrack:        params.MediaTrack,
+		IsRelayed:         params.IsRelayed,
+		ReceiverConfig:    params.ReceiverConfig,
+		SubscriberConfig:  params.SubscriberConfig,
+		Telemetry:         params.Telemetry,
+		TelemetryInterval: params.TelemetryInterval,
+		Logger:            params.Logger,
 	})
 	t.MediaTrackSubscriptions.OnDownTrackCreated(t.onDownTrackCreated)
 

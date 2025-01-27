@@ -120,6 +120,7 @@ type ParticipantParams struct {
 	ProtocolVersion         types.ProtocolVersion
 	SessionStartTime        time.Time
 	Telemetry               telemetry.TelemetryService
+	TelemetryInterval       time.Duration
 	Trailer                 []byte
 	PLIThrottleConfig       sfu.PLIThrottleConfig
 	CongestionControlConfig config.CongestionControlConfig
@@ -2535,6 +2536,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 		AudioConfig:           p.params.AudioConfig,
 		VideoConfig:           p.params.VideoConfig,
 		Telemetry:             p.params.Telemetry,
+		TelemetryInterval:     p.params.TelemetryInterval,
 		Logger:                LoggerWithTrack(p.pubLogger, livekit.TrackID(ti.Sid), false),
 		SubscriberConfig:      p.params.Config.Subscriber,
 		PLIThrottleConfig:     p.params.PLIThrottleConfig,

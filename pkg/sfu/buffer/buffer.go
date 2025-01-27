@@ -106,10 +106,11 @@ type Buffer struct {
 
 	pliThrottle int64
 
-	rtpStats             *rtpstats.RTPStatsReceiver
-	rrSnapshotId         uint32
-	deltaStatsSnapshotId uint32
-	ppsSnapshotId        uint32
+	rtpStats                              *rtpstats.RTPStatsReceiver
+	rrSnapshotId                          uint32
+	connectionQualityDeltaStatsSnapshotId uint32
+	telemetryDeltaStatsSnapshotId         uint32
+	ppsSnapshotId                         uint32
 
 	lastFractionLostToReport uint8 // Last fraction lost from subscribers, should report to publisher; Audio only
 
@@ -208,7 +209,8 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		Logger:    b.logger,
 	})
 	b.rrSnapshotId = b.rtpStats.NewSnapshotId()
-	b.deltaStatsSnapshotId = b.rtpStats.NewSnapshotId()
+	b.connectionQualityDeltaStatsSnapshotId = b.rtpStats.NewSnapshotId()
+	b.telemetryDeltaStatsSnapshotId = b.rtpStats.NewSnapshotId()
 	b.ppsSnapshotId = b.rtpStats.NewSnapshotId()
 
 	b.clockRate = codec.ClockRate
@@ -1056,7 +1058,7 @@ func (b *Buffer) GetStats() *livekit.RTPStats {
 	return b.rtpStats.ToProto()
 }
 
-func (b *Buffer) GetDeltaStats() *StreamStatsWithLayers {
+func (b *Buffer) GetConnectionQualityDeltaStats() *StreamStatsWithLayers {
 	b.RLock()
 	defer b.RUnlock()
 
@@ -1064,7 +1066,28 @@ func (b *Buffer) GetDeltaStats() *StreamStatsWithLayers {
 		return nil
 	}
 
-	deltaStats := b.rtpStats.DeltaInfo(b.deltaStatsSnapshotId)
+	deltaStats := b.rtpStats.DeltaInfo(b.connectionQualityDeltaStatsSnapshotId)
+	if deltaStats == nil {
+		return nil
+	}
+
+	return &StreamStatsWithLayers{
+		RTPStats: deltaStats,
+		Layers: map[int32]*rtpstats.RTPDeltaInfo{
+			0: deltaStats,
+		},
+	}
+}
+
+func (b *Buffer) GetTelemetryDeltaStats() *StreamStatsWithLayers {
+	b.RLock()
+	defer b.RUnlock()
+
+	if b.rtpStats == nil {
+		return nil
+	}
+
+	deltaStats := b.rtpStats.DeltaInfo(b.telemetryDeltaStatsSnapshotId)
 	if deltaStats == nil {
 		return nil
 	}

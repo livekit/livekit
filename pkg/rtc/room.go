@@ -41,13 +41,14 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 )
 
 const (
+	connectionQualityUpdateInterval = 5 * time.Second
+
 	AudioLevelQuantization    = 8 // ideally power of 2 to minimize float decimal
 	invAudioLevelQuantization = 1.0 / AudioLevelQuantization
 	subscriberUpdateInterval  = 3 * time.Second
@@ -1516,7 +1517,7 @@ func (r *Room) audioUpdateWorker() {
 }
 
 func (r *Room) connectionQualityWorker() {
-	ticker := time.NewTicker(connectionquality.UpdateInterval)
+	ticker := time.NewTicker(connectionQualityUpdateInterval)
 	defer ticker.Stop()
 
 	prevConnectionInfos := make(map[livekit.ParticipantID]*livekit.ConnectionQualityInfo)
