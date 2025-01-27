@@ -822,6 +822,7 @@ func (r *RoomManager) SendData(ctx context.Context, req *livekit.SendDataRequest
 				DestinationSids:       req.DestinationSids,
 				DestinationIdentities: req.DestinationIdentities,
 				Topic:                 req.Topic,
+				Nonce:                 req.Nonce,
 			},
 		},
 	}, req.Kind)
