@@ -553,7 +553,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 	}
 
 	if r.lastRRTime != 0 && r.extHighestSNFromRR > extHighestSNFromRR {
-		r.logger.Debugw(
+		r.logger.Infow(
 			fmt.Sprintf("receiver report potentially out of order, highestSN: existing: %d, received: %d", r.extHighestSNFromRR, extHighestSNFromRR),
 			"sinceLastRR", time.Duration(mono.UnixNano()-r.lastRRTime),
 			"receivedRR", rr,
@@ -562,6 +562,21 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		return
 	}
 	r.extHighestSNFromRR = extHighestSNFromRR
+
+	// there are cases where remote does not RTCP Receiver Report for extended periods of time,
+	// some times several minutes, in that interval the sequence number rolls over,
+	// check for a gap higher than sequence number range and adjust
+	if (r.extHighestSN - r.extHighestSNFromRR) > 65536 {
+		extHighestSNFromRR := r.extHighestSNFromRR
+		r.extHighestSNFromRR += 65536
+		r.logger.Infow(
+			"receiver report potentially received after a long time, adjusting",
+			"sinceLastRR", time.Duration(mono.UnixNano()-r.lastRRTime),
+			"receivedRR", rr,
+			"extHighestSNFromRR", extHighestSNFromRR,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
+		)
+	}
 
 	if r.srNewest != nil {
 		var err error
@@ -600,6 +615,21 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 	}
 
 	extReceivedRRSN := r.extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000)
+	// there are cases where remote does not RTCP Receiver Report for extended periods of time,
+	// some times several minutes, in that interval the sequence number rolls over,
+	// check for a gap higher than sequence number range and adjust
+	if r.extHighestSN > extReceivedRRSN && (r.extHighestSN-extReceivedRRSN) > 65536 {
+		r.extHighestSNFromRR += 65536
+		r.logger.Infow(
+			"receiver report potentially received after a long time, adjusting",
+			"sinceLastRR", time.Duration(mono.UnixNano()-r.lastRRTime),
+			"receivedRR", rr,
+			"extReceivedRRSN", extReceivedRRSN,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
+		)
+		extReceivedRRSN = r.extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000)
+	}
+
 	for i := uint32(0); i < r.nextSenderSnapshotID-cFirstSnapshotID; i++ {
 		s := &r.senderSnapshots[i]
 		if isRttChanged && rtt > s.maxRtt {

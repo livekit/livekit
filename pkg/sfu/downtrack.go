@@ -373,7 +373,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		Logger: d.params.Logger.WithValues(
 			"stream", "primary",
 		),
-	}, 4096)
+	}, 32768)
 	d.deltaStatsSenderSnapshotId = d.rtpStats.NewSenderSnapshotId()
 
 	d.rtpStatsRTX = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{
@@ -381,7 +381,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		Logger: d.params.Logger.WithValues(
 			"stream", "rtx",
 		),
-	}, 1024)
+	}, 4096)
 	d.deltaStatsRTXSenderSnapshotId = d.rtpStatsRTX.NewSenderSnapshotId()
 
 	d.forwarder = NewForwarder(
