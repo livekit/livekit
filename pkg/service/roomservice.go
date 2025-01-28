@@ -235,7 +235,7 @@ func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest
 	}
 
 	// nonce is either absent or 128-bit UUID
-	if len(req.Nonce) != 8 && len(req.Nonce) != 16 {
+	if len(req.Nonce) != 0 && len(req.Nonce) != 16 {
 		return nil, twirp.NewError(twirp.InvalidArgument, fmt.Sprintf("nonce should be 16-bytes or not present, got: %d bytes", len(req.Nonce)))
 	}
 
