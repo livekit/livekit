@@ -877,7 +877,6 @@ func (c *congestionDetector) updateCongestionSignal(
 		}
 	}
 
-	c.congestionReason = congestionReasonNone
 	qdQueuingRegion := c.qdMeasurement.QueuingRegion()
 	lossQueuingRegion := c.lossMeasurement.QueuingRegion()
 	switch {
@@ -889,6 +888,7 @@ func (c *congestionDetector) updateCongestionSignal(
 		c.congestionReason = congestionReasonLoss
 	case qdQueuingRegion == queuingRegionDQR && lossQueuingRegion == queuingRegionDQR:
 		c.queuingRegion = queuingRegionDQR
+		c.congestionReason = congestionReasonNone
 	}
 }
 
