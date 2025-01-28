@@ -250,8 +250,10 @@ func (q *qdMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 		}
 
 	default:
-		// broken continuity, seal
-		q.isSealed = true
+		if q.numDQRGroups > 0 || q.numJQRGroups > 0 {
+			// broken continuity, seal
+			q.isSealed = true
+		}
 	}
 }
 
@@ -876,14 +878,17 @@ func (c *congestionDetector) updateCongestionSignal(
 	}
 
 	c.congestionReason = congestionReasonNone
-	c.queuingRegion = c.qdMeasurement.QueuingRegion()
-	if c.queuingRegion == queuingRegionJQR {
+	qdQueuingRegion := c.qdMeasurement.QueuingRegion()
+	lossQueuingRegion := c.lossMeasurement.QueuingRegion()
+	switch {
+	case qdQueuingRegion == queuingRegionJQR:
+		c.queuingRegion = queuingRegionJQR
 		c.congestionReason = congestionReasonQueuingDelay
-	} else {
-		c.queuingRegion = c.lossMeasurement.QueuingRegion()
-		if c.queuingRegion == queuingRegionJQR {
-			c.congestionReason = congestionReasonLoss
-		}
+	case lossQueuingRegion == queuingRegionJQR:
+		c.queuingRegion = queuingRegionJQR
+		c.congestionReason = congestionReasonLoss
+	case qdQueuingRegion == queuingRegionDQR && lossQueuingRegion == queuingRegionDQR:
+		c.queuingRegion = queuingRegionDQR
 	}
 }
 
