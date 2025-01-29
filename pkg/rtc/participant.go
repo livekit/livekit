@@ -2267,7 +2267,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		}
 	}
 
-	p.params.Telemetry.TrackPublishRequested(context.Background(), p.ID(), p.Identity(), ti)
+	p.params.Telemetry.TrackPublishRequested(context.Background(), p.ID(), p.Identity(), utils.CloneProto(ti))
 	if p.supervisor != nil {
 		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
 		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
