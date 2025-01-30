@@ -264,6 +264,7 @@ type Participant interface {
 	ID() livekit.ParticipantID
 	Identity() livekit.ParticipantIdentity
 	State() livekit.ParticipantInfo_State
+	ConnectedAt() time.Time
 	CloseReason() ParticipantCloseReason
 	Kind() livekit.ParticipantInfo_Kind
 	IsRecorder() bool
@@ -324,7 +325,6 @@ type LocalParticipant interface {
 	ProtocolVersion() ProtocolVersion
 	SupportsSyncStreamID() bool
 	SupportsTransceiverReuse() bool
-	ConnectedAt() time.Time
 	IsClosed() bool
 	IsReady() bool
 	IsDisconnected() bool
