@@ -437,7 +437,7 @@ func (p *ParticipantImpl) GetClientInfo() *livekit.ClientInfo {
 func (p *ParticipantImpl) GetClientConfiguration() *livekit.ClientConfiguration {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-	return p.params.ClientConf
+	return utils.CloneProto(p.params.ClientConf)
 }
 
 func (p *ParticipantImpl) GetBufferFactory() *buffer.Factory {
