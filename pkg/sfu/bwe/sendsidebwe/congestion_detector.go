@@ -1029,7 +1029,8 @@ func (c *congestionDetector) updateCTRTrend(pi *packetInfo, sendDelta, recvDelta
 }
 
 func (c *congestionDetector) estimateAvailableChannelCapacity() {
-	if len(c.packetGroups) == 0 || c.congestedCTRTrend != nil || c.probePacketGroup != nil {
+	c.estimateTrafficStats = nil
+	if len(c.packetGroups) == 0 || c.probePacketGroup != nil {
 		return
 	}
 
