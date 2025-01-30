@@ -284,7 +284,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		}),
 		pendingTracks:           make(map[string]*pendingTrackInfo),
 		pendingPublishingTracks: make(map[livekit.TrackID]*pendingTrackInfo),
-		connectedAt:             time.Now(),
+		connectedAt:             time.Now().Truncate(time.Millisecond),
 		rttUpdatedAt:            time.Now(),
 		cachedDownTracks:        make(map[livekit.TrackID]*downTrackState),
 		dataChannelStats: telemetry.NewBytesTrackStats(
