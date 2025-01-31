@@ -256,6 +256,13 @@ func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*
 		return nil, err
 	}
 
+	// TODO: clean up after 1.7 eol
+	if ss.CreateRoom == nil {
+		ss.CreateRoom = &livekit.CreateRoomRequest{
+			Name: ss.RoomName,
+		}
+	}
+
 	pi := &ParticipantInit{
 		Identity:        livekit.ParticipantIdentity(ss.Identity),
 		Name:            livekit.ParticipantName(ss.Name),
