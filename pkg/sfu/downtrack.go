@@ -682,7 +682,7 @@ func (d *DownTrack) Codec() webrtc.RTPCodecCapability {
 func (d *DownTrack) StreamID() string { return d.params.StreamID }
 
 func (d *DownTrack) SubscriberID() livekit.ParticipantID {
-	// add `createdAt` to ensure repeated subscriptions from same subscrober to same publisher does not collide
+	// add `createdAt` to ensure repeated subscriptions from same subscriber to same publisher does not collide
 	return livekit.ParticipantID(fmt.Sprintf("%s:%d", d.params.SubID, d.createdAt))
 }
 
@@ -1305,6 +1305,8 @@ func (d *DownTrack) SeedState(state DownTrackState) {
 	if state.RTPStatsRTX != nil {
 		d.rtpStatsRTX.Seed(state.RTPStatsRTX)
 		d.deltaStatsRTXSenderSnapshotId = state.DeltaStatsRTXSenderSnapshotId
+
+		d.rtxSequenceNumber.Store(d.rtpStatsRTX.ExtHighestSequenceNumber())
 	}
 	d.forwarder.SeedState(state.ForwarderState)
 }
