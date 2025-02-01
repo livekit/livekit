@@ -542,6 +542,18 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		return
 	}
 
+	extHighestSNFromRR := r.extHighestSNFromRR&0xFFFF_FFFF_0000_0000 + uint64(rr.LastSequenceNumber) + r.extHighestSNFromRRMisalignment
+	if r.lastRRTime != 0 {
+		if (rr.LastSequenceNumber-r.lastRR.LastSequenceNumber) < (1<<31) && rr.LastSequenceNumber < r.lastRR.LastSequenceNumber {
+			extHighestSNFromRR += (1 << 32)
+		}
+	}
+	if (extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000)) < r.extStartSN {
+		// it is possible that the `LastSequenceNumber` in the receiver report is before the starting
+		// sequence number when dummy packets are used to trigger Pion's OnTrack path.
+		return
+	}
+
 	nowNano := mono.UnixNano()
 	defer func() {
 		r.lastRRTime = nowNano
@@ -553,18 +565,6 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 			return time.Duration(nowNano - r.lastRRTime)
 		}
 		return time.Duration(nowNano - r.startTime)
-	}
-
-	extHighestSNFromRR := r.extHighestSNFromRR&0xFFFF_FFFF_0000_0000 + uint64(rr.LastSequenceNumber) + r.extHighestSNFromRRMisalignment
-	if r.lastRRTime != 0 {
-		if (rr.LastSequenceNumber-r.lastRR.LastSequenceNumber) < (1<<31) && rr.LastSequenceNumber < r.lastRR.LastSequenceNumber {
-			extHighestSNFromRR += (1 << 32)
-		}
-	}
-	if (extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000)) < r.extStartSN {
-		// it is possible that the `LastSequenceNumber` in the receiver report is before the starting
-		// sequence number when dummy packets are used to trigger Pion's OnTrack path.
-		return
 	}
 
 	if r.extHighestSNFromRR > extHighestSNFromRR {
@@ -603,7 +603,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		}
 	} else {
 		// if remote adjusts somehow, roll back alignment
-		if (extHighestSNFromRR - r.extHighestSNFromRR) > (1 << 15) {
+		if r.lastRRTime != 0 && (extHighestSNFromRR-r.extHighestSNFromRR) > (1<<15) {
 			r.logger.Infow(
 				"receiver report caught up rollover, adjusting",
 				"timeSinceLastRR", timeSinceLastRR(),
@@ -611,7 +611,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 				"extHighestSNFromRR", extHighestSNFromRR,
 				"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 			)
-			for (extHighestSNFromRR - r.extHighestSNFromRR) > (1 << 15) {
+			for int64(extHighestSNFromRR-r.extHighestSNFromRR) > (1 << 15) {
 				extHighestSNFromRR -= (1 << 16)
 				r.extHighestSNFromRRMisalignment -= (1 << 16)
 			}
