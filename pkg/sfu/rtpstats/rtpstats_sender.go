@@ -327,7 +327,7 @@ func (r *RTPStatsSender) Update(
 	}
 
 	if !r.initialized {
-		if payloadSize == 0 {
+		if payloadSize == 0 && !r.params.IsRTX {
 			// do not start on a padding only packet
 			return
 		}
@@ -383,7 +383,7 @@ func (r *RTPStatsSender) Update(
 		)
 	}
 	if gapSN <= 0 { // duplicate OR out-of-order
-		if payloadSize == 0 && extSequenceNumber < r.extStartSN {
+		if payloadSize == 0 && extSequenceNumber < r.extStartSN && !r.params.IsRTX {
 			// do not start on a padding only packet
 			return
 		}
