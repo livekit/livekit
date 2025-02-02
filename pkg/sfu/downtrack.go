@@ -384,6 +384,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 
 	d.rtpStatsRTX = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{
 		ClockRate: d.codec.ClockRate,
+		IsRTX:     true,
 		Logger: d.params.Logger.WithValues(
 			"stream", "rtx",
 		),

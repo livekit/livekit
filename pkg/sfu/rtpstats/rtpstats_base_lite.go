@@ -96,6 +96,7 @@ func (s *snapshotLite) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 type RTPStatsParams struct {
 	ClockRate uint32
+	IsRTX     bool
 	Logger    logger.Logger
 }
 
