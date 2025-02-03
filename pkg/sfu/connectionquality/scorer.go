@@ -408,10 +408,10 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 	var score, packetScore, bitrateScore, layerScore float64
 	if stat.packets+stat.packetsPadding == 0 {
 		if !stat.lastRTCPAt.IsZero() && at.Sub(stat.lastRTCPAt) > stat.duration {
-			reason = "dry"
+			reason = "rtcp"
 			score = qualityTransitionScore[livekit.ConnectionQuality_LOST]
 		} else {
-			reason = "rtcp"
+			reason = "dry"
 			score = qualityTransitionScore[livekit.ConnectionQuality_POOR]
 		}
 	} else {
