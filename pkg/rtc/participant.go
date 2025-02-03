@@ -2403,7 +2403,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 			var codecFound int
 			for _, c := range ti.Codecs {
 				for _, nc := range parameters.Codecs {
-					if strings.EqualFold(nc.MimeType, c.MimeType) {
+					if sfuutils.NormalizeMimeType(nc.MimeType) == c.MimeType {
 						codecFound++
 						break
 					}
@@ -2486,7 +2486,7 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 	parameters := rtpReceiver.GetParameters()
 	for _, c := range ti.Codecs {
 		for _, nc := range parameters.Codecs {
-			if strings.EqualFold(nc.MimeType, c.MimeType) {
+			if sfuutils.NormalizeMimeType(nc.MimeType) == c.MimeType {
 				potentialCodecs = append(potentialCodecs, nc)
 				break
 			}
@@ -2495,10 +2495,10 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 	// check for mime_type for tracks that do not have simulcast_codecs set
 	if ti.MimeType != "" {
 		for _, nc := range parameters.Codecs {
-			if strings.EqualFold(nc.MimeType, ti.MimeType) {
+			if sfuutils.NormalizeMimeType(nc.MimeType) == ti.MimeType {
 				alreadyAdded := false
 				for _, pc := range potentialCodecs {
-					if strings.EqualFold(pc.MimeType, ti.MimeType) {
+					if sfuutils.NormalizeMimeType(pc.MimeType) == ti.MimeType {
 						alreadyAdded = true
 						break
 					}
@@ -2980,7 +2980,7 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 	shouldDisable := func(c *livekit.Codec, disabled []*livekit.Codec) bool {
 		for _, disableCodec := range disabled {
 			// disable codec's fmtp is empty means disable this codec entirely
-			if strings.EqualFold(c.Mime, disableCodec.Mime) {
+			if sfuutils.NormalizeMimeType(c.Mime) == sfuutils.NormalizeMimeType(disableCodec.Mime) {
 				return true
 			}
 		}
@@ -2994,13 +2994,14 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 		}
 
 		// sort by compatibility, since we will look for backups in these.
-		if strings.EqualFold(c.Mime, webrtc.MimeTypeVP8) {
+		normalizedMimeType := sfuutils.NormalizeMimeType(c.Mime)
+		if normalizedMimeType == sfuutils.MimeTypeVP8 {
 			if len(p.enabledPublishCodecs) > 0 {
 				p.enabledPublishCodecs = slices.Insert(p.enabledPublishCodecs, 0, c)
 			} else {
 				p.enabledPublishCodecs = append(p.enabledPublishCodecs, c)
 			}
-		} else if strings.EqualFold(c.Mime, webrtc.MimeTypeH264) {
+		} else if normalizedMimeType == sfuutils.MimeTypeH264 {
 			p.enabledPublishCodecs = append(p.enabledPublishCodecs, c)
 		} else {
 			publishCodecs = append(publishCodecs, c)
@@ -3021,7 +3022,7 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 func (p *ParticipantImpl) GetEnabledPublishCodecs() []*livekit.Codec {
 	codecs := make([]*livekit.Codec, 0, len(p.enabledPublishCodecs))
 	for _, c := range p.enabledPublishCodecs {
-		if strings.EqualFold(c.Mime, webrtc.MimeTypeRTX) {
+		if sfuutils.NormalizeMimeType(c.Mime) == sfuutils.MimeTypeRTX {
 			continue
 		}
 		codecs = append(codecs, c)

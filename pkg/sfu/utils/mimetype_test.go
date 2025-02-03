@@ -21,26 +21,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func toLowerSwitch(mimeType string) MimeType {
+func toLowerSwitch(mimeType string) MimeTypeNumber {
 	switch strings.ToLower(mimeType) {
 	case "video/vp8":
-		return MimeTypeVP8
+		return MimeTypeNumberVP8
 	case "video/vp9":
-		return MimeTypeVP9
+		return MimeTypeNumberVP9
 	case "video/h264":
-		return MimeTypeH264
+		return MimeTypeNumberH264
 	case "video/av1":
-		return MimeTypeAV1
+		return MimeTypeNumberAV1
 	default:
-		return MimeTypeUnknown
+		return MimeTypeNumberUnknown
 	}
 }
 
 func TestMimeTypeMatch(t *testing.T) {
-	require.Equal(t, MimeTypeVP8, MatchMimeType("VIDEO/VP8"), "VIDEO/VP8")
-	require.Equal(t, MimeTypeVP9, MatchMimeType("VIDEO/VP9"), "VIDEO/VP9")
-	require.Equal(t, MimeTypeH264, MatchMimeType("VIDEO/H264"), "VIDEO/H264")
-	require.Equal(t, MimeTypeAV1, MatchMimeType("VIDEO/AV1"), "VIDEO/AV1")
+	require.Equal(t, MimeTypeNumberVP8, MatchMimeType("VIDEO/VP8"), "VIDEO/VP8")
+	require.Equal(t, MimeTypeNumberVP9, MatchMimeType("VIDEO/VP9"), "VIDEO/VP9")
+	require.Equal(t, MimeTypeNumberH264, MatchMimeType("VIDEO/H264"), "VIDEO/H264")
+	require.Equal(t, MimeTypeNumberAV1, MatchMimeType("VIDEO/AV1"), "VIDEO/AV1")
 }
 
 func BenchmarkMimeTypeMatch(b *testing.B) {

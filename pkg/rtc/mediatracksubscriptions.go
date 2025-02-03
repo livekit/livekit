@@ -24,6 +24,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -279,7 +280,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			Stereo: info.Stereo,
 			Red:    !info.DisableRed,
 		}
-		if addTrackParams.Red && (len(codecs) == 1 && strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus)) {
+		if addTrackParams.Red && (len(codecs) == 1 && sfuutils.NormalizeMimeType(codecs[0].MimeType) == sfuutils.MimeTypeOpus) {
 			addTrackParams.Red = false
 		}
 

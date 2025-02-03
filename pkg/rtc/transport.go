@@ -2089,7 +2089,7 @@ func configureAudioTransceiver(tr *webrtc.RTPTransceiver, stereo bool, nack bool
 	codecs := sender.GetParameters().Codecs
 	configCodecs := make([]webrtc.RTPCodecParameters, 0, len(codecs))
 	for _, c := range codecs {
-		if strings.EqualFold(c.MimeType, webrtc.MimeTypeOpus) {
+		if sfuutils.NormalizeMimeType(c.MimeType) == sfuutils.MimeTypeOpus {
 			c.SDPFmtpLine = strings.ReplaceAll(c.SDPFmtpLine, ";sprop-stereo=1", "")
 			if stereo {
 				c.SDPFmtpLine += ";sprop-stereo=1"
