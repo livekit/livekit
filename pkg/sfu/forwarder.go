@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"strings"
 	"sync"
 	"time"
 
@@ -37,6 +36,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/codecmunger"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
+	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector"
 	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector/temporallayerselector"
 )
@@ -311,8 +311,8 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		return false
 	}
 
-	switch strings.ToLower(codec.MimeType) {
-	case "video/vp8":
+	switch sfuutils.NormalizeMimeType(codec.MimeType) {
+	case sfuutils.MimeTypeVP8:
 		f.codecMunger = codecmunger.NewVP8FromNull(f.codecMunger, f.logger)
 		if f.vls != nil {
 			f.vls = videolayerselector.NewSimulcastFromNull(f.vls)
@@ -321,14 +321,14 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		}
 		f.vls.SetTemporalLayerSelector(temporallayerselector.NewVP8(f.logger))
 
-	case "video/h264":
+	case sfuutils.MimeTypeH264:
 		if f.vls != nil {
 			f.vls = videolayerselector.NewSimulcastFromNull(f.vls)
 		} else {
 			f.vls = videolayerselector.NewSimulcast(f.logger)
 		}
 
-	case "video/vp9":
+	case sfuutils.MimeTypeVP9:
 		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
 		isDDAvailable := ddAvailable(extensions)
 		if isDDAvailable {
@@ -346,7 +346,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		}
 		// SVC-TODO: Support for VP9 simulcast. When DD is not available, have to pick selector based on VP9 SVC or Simulcast
 
-	case "video/av1":
+	case sfuutils.MimeTypeAV1:
 		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
 		isDDAvailable := ddAvailable(extensions)
 		if isDDAvailable {
@@ -1504,7 +1504,7 @@ func (f *Forwarder) Pause(availableLayers []int32, brs Bitrates) VideoAllocation
 
 func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) VideoAllocation {
 	// restrict target temporal to 0 if codec does not support temporal layers
-	if alloc.TargetLayer.IsValid() && strings.ToLower(f.codec.MimeType) == "video/h264" {
+	if alloc.TargetLayer.IsValid() && sfuutils.NormalizeMimeType(f.codec.MimeType) == sfuutils.MimeTypeH264 {
 		alloc.TargetLayer.Temporal = 0
 	}
 

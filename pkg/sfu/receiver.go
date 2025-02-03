@@ -36,6 +36,7 @@ import (
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/streamtracker"
+	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
 )
 
 var (
@@ -235,8 +236,8 @@ func NewWebRTCReceiver(
 		codec:    track.Codec(),
 		kind:     track.Kind(),
 		onRTCP:   onRTCP,
-		isSVC:    buffer.IsSvcCodec(track.Codec().MimeType),
-		isRED:    buffer.IsRedCodec(track.Codec().MimeType),
+		isSVC:    sfuutils.IsSvcCodec(track.Codec().MimeType),
+		isRED:    sfuutils.IsRedCodec(track.Codec().MimeType),
 	}
 
 	for _, opt := range opts {
@@ -259,9 +260,9 @@ func NewWebRTCReceiver(
 		}
 	})
 	w.connectionStats.Start(
-		w.codec.MimeType,
+		sfuutils.NormalizeMimeType(w.codec.MimeType),
 		// TODO: technically not correct to declare FEC on when RED. Need the primary codec's fmtp line to check.
-		strings.EqualFold(w.codec.MimeType, MimeTypeAudioRed) || strings.Contains(strings.ToLower(w.codec.SDPFmtpLine), "useinbandfec=1"),
+		(sfuutils.NormalizeMimeType(w.codec.MimeType) == sfuutils.MimeTypeAudioRed) || strings.Contains(strings.ToLower(w.codec.SDPFmtpLine), "useinbandfec=1"),
 	)
 
 	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC, w.codec.ClockRate, streamTrackerManagerConfig)

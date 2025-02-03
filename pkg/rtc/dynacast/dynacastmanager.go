@@ -15,7 +15,6 @@
 package dynacast
 
 import (
-	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +25,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/livekit-server/pkg/utils"
 )
 
@@ -159,7 +159,7 @@ func (d *DynacastManager) getOrCreateDynacastQuality(mime string) *DynacastQuali
 		return nil
 	}
 
-	normalizedMime := strings.ToLower(mime)
+	normalizedMime := sfuutils.NormalizeMimeType(mime)
 	if dq := d.dynacastQuality[normalizedMime]; dq != nil {
 		return dq
 	}

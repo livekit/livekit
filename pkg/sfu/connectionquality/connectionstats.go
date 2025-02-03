@@ -15,12 +15,10 @@
 package connectionquality
 
 import (
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/frostbyte73/core"
-	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -29,6 +27,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 )
 
 const (
@@ -93,7 +92,8 @@ func (cs *ConnectionStats) StartAt(codecMimeType string, isFECEnabled bool, at t
 		return
 	}
 
-	cs.isVideo.Store(strings.HasPrefix(strings.ToLower(codecMimeType), "video/"))
+	codecMimeType = utils.NormalizeMimeType(codecMimeType)
+	cs.isVideo.Store(utils.IsMimeTypeVideo(codecMimeType))
 	cs.codecMimeType.Store(codecMimeType)
 	cs.scorer.StartAt(getPacketLossWeight(codecMimeType, isFECEnabled), at)
 
@@ -384,7 +384,7 @@ func (cs *ConnectionStats) updateStatsWorker() {
 func getPacketLossWeight(mimeType string, isFecEnabled bool) float64 {
 	var plw float64
 	switch {
-	case strings.EqualFold(mimeType, webrtc.MimeTypeOpus):
+	case mimeType == utils.MimeTypeOpus:
 		// 2.5%: fall to GOOD, 7.5%: fall to POOR
 		plw = 8.0
 		if isFecEnabled {
@@ -392,7 +392,7 @@ func getPacketLossWeight(mimeType string, isFecEnabled bool) float64 {
 			plw /= 1.5
 		}
 
-	case strings.EqualFold(mimeType, "audio/red"):
+	case mimeType == utils.MimeTypeAudioRed:
 		// 5%: fall to GOOD, 15.0%: fall to POOR
 		plw = 4.0
 		if isFecEnabled {
@@ -400,7 +400,7 @@ func getPacketLossWeight(mimeType string, isFecEnabled bool) float64 {
 			plw /= 1.5
 		}
 
-	case strings.HasPrefix(strings.ToLower(mimeType), "video/"):
+	case utils.IsMimeTypeVideo(mimeType):
 		// 2%: fall to GOOD, 6%: fall to POOR
 		plw = 10.0
 	}

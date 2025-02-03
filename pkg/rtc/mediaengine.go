@@ -20,7 +20,7 @@ import (
 
 	"github.com/pion/webrtc/v4"
 
-	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/protocol/livekit"
 )
 
@@ -31,7 +31,7 @@ var OpusCodecCapability = webrtc.RTPCodecCapability{
 	SDPFmtpLine: "minptime=10;useinbandfec=1",
 }
 var RedCodecCapability = webrtc.RTPCodecCapability{
-	MimeType:    sfu.MimeTypeAudioRed,
+	MimeType:    utils.MimeTypeAudioRed,
 	ClockRate:   48000,
 	Channels:    2,
 	SDPFmtpLine: "111/111",
@@ -133,7 +133,7 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 		if filterOutH264HighProfile && codec.RTPCodecCapability.SDPFmtpLine == h264HighProfileFmtp {
 			continue
 		}
-		if strings.EqualFold(codec.MimeType, webrtc.MimeTypeRTX) {
+		if utils.NormalizeMimeType(codec.MimeType) == utils.MimeTypeRTX {
 			continue
 		}
 		if IsCodecEnabled(codecs, codec.RTPCodecCapability) {
@@ -200,10 +200,10 @@ func IsCodecEnabled(codecs []*livekit.Codec, cap webrtc.RTPCodecCapability) bool
 
 func selectAlternativeVideoCodec(enabledCodecs []*livekit.Codec) string {
 	for _, c := range enabledCodecs {
-		if strings.HasPrefix(c.Mime, "video/") {
+		if utils.IsMimeTypeVideo(c.Mime) {
 			return c.Mime
 		}
 	}
 	// no viable codec in the list of enabled codecs, fall back to the most widely supported codec
-	return webrtc.MimeTypeVP8
+	return utils.MimeTypeVP8
 }

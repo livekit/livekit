@@ -16,7 +16,6 @@ package rtc
 
 import (
 	"errors"
-	"strings"
 	"sync"
 
 	"github.com/pion/webrtc/v4"
@@ -27,6 +26,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 )
 
 // wrapper around WebRTC receiver, overriding its ID
@@ -59,13 +59,14 @@ func NewWrappedReceiver(params WrappedReceiverParams) *WrappedReceiver {
 
 	codecs := params.UpstreamCodecs
 	if len(codecs) == 1 {
-		if strings.EqualFold(codecs[0].MimeType, sfu.MimeTypeAudioRed) {
+		normalizedMimeType := utils.NormalizeMimeType(codecs[0].MimeType)
+		if normalizedMimeType == utils.MimeTypeAudioRed {
 			// if upstream is opus/red, then add opus to match clients that don't support red
 			codecs = append(codecs, webrtc.RTPCodecParameters{
 				RTPCodecCapability: OpusCodecCapability,
 				PayloadType:        111,
 			})
-		} else if !params.DisableRed && strings.EqualFold(codecs[0].MimeType, webrtc.MimeTypeOpus) {
+		} else if !params.DisableRed && normalizedMimeType == utils.MimeTypeOpus {
 			// if upstream is opus only and red enabled, add red to match clients that support red
 			codecs = append(codecs, webrtc.RTPCodecParameters{
 				RTPCodecCapability: RedCodecCapability,
@@ -96,16 +97,18 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) boo
 	r.lock.Lock()
 	r.determinedCodec = codec
 
+	codecMimeType := utils.NormalizeMimeType(codec.MimeType)
 	var trackReceiver sfu.TrackReceiver
 	for _, receiver := range r.receivers {
-		if c := receiver.Codec(); strings.EqualFold(c.MimeType, codec.MimeType) {
+		receiverMimeType := utils.NormalizeMimeType(receiver.Codec().MimeType)
+		if receiverMimeType == codecMimeType {
 			trackReceiver = receiver
 			break
-		} else if strings.EqualFold(c.MimeType, sfu.MimeTypeAudioRed) && strings.EqualFold(codec.MimeType, webrtc.MimeTypeOpus) {
+		} else if (receiverMimeType == utils.MimeTypeAudioRed) && (codecMimeType == utils.MimeTypeOpus) {
 			// audio opus/red can match opus only
 			trackReceiver = receiver.GetPrimaryReceiverForRed()
 			break
-		} else if strings.EqualFold(c.MimeType, webrtc.MimeTypeOpus) && strings.EqualFold(codec.MimeType, sfu.MimeTypeAudioRed) {
+		} else if (receiverMimeType == utils.MimeTypeOpus) && (codecMimeType == utils.MimeTypeAudioRed) {
 			trackReceiver = receiver.GetRedReceiver()
 			break
 		}

@@ -156,7 +156,7 @@ func TestSinglePublisher(t *testing.T) {
 	waitUntilConnected(t, c1, c2)
 
 	// publish a track and ensure clients receive it ok
-	t1, err := c1.AddStaticTrack("audio/opus", "audio", "webcamaudio")
+	t1, err := c1.AddStaticTrack("audio/OPUS", "audio", "webcamaudio")
 	require.NoError(t, err)
 	defer t1.Stop()
 	t2, err := c1.AddStaticTrack("video/vp8", "video", "webcamvideo")

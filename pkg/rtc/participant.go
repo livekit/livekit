@@ -51,6 +51,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
+	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
@@ -1768,7 +1769,8 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 		p.pendingTracksLock.Lock()
 		p.pendingRemoteTracks = append(p.pendingRemoteTracks, &pendingRemoteTrack{track: rtcTrack, receiver: rtpReceiver})
 		p.pendingTracksLock.Unlock()
-		p.pubLogger.Debugw("webrtc Track published but can't find MediaTrack, add to pendingTracks",
+		p.pubLogger.Debugw(
+			"webrtc Track published but can't find MediaTrack, add to pendingTracks",
 			"kind", track.Kind().String(),
 			"webrtcTrackID", track.ID(),
 			"rid", track.RID(),
@@ -2160,7 +2162,7 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(
 
 	// normalize the codec name
 	for _, subscribedQuality := range subscribedQualities {
-		subscribedQuality.Codec = strings.ToLower(strings.TrimPrefix(subscribedQuality.Codec, "video/"))
+		subscribedQuality.Codec = strings.ToLower(strings.TrimPrefix(subscribedQuality.Codec, sfuutils.MimeTypePrefixVideo))
 	}
 
 	subscribedQualityUpdate := &livekit.SubscribedQualityUpdate{
@@ -2233,8 +2235,8 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		for _, codec := range req.SimulcastCodecs {
 			mime := codec.Codec
 			if req.Type == livekit.TrackType_VIDEO {
-				if !strings.HasPrefix(mime, "video/") {
-					mime = "video/" + mime
+				if !sfuutils.IsMimeTypeVideo(mime) {
+					mime = sfuutils.MimeTypePrefixVideo + mime
 				}
 				if !IsCodecEnabled(p.enabledPublishCodecs, webrtc.RTPCodecCapability{MimeType: mime}) {
 					altCodec := selectAlternativeVideoCodec(p.enabledPublishCodecs)
@@ -2246,8 +2248,8 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 					// select an alternative MIME type that's generally supported
 					mime = altCodec
 				}
-			} else if req.Type == livekit.TrackType_AUDIO && !strings.HasPrefix(mime, "audio/") {
-				mime = "audio/" + mime
+			} else if req.Type == livekit.TrackType_AUDIO && !sfuutils.IsMimeTypeAudio(mime) {
+				mime = sfuutils.MimeTypePrefixAudio + mime
 			}
 
 			if _, ok := seenCodecs[mime]; ok || mime == "" {
@@ -2260,7 +2262,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 				clonedLayers = append(clonedLayers, utils.CloneProto(l))
 			}
 			ti.Codecs = append(ti.Codecs, &livekit.SimulcastCodecInfo{
-				MimeType: mime,
+				MimeType: sfuutils.NormalizeMimeType(mime),
 				Cid:      codec.Cid,
 				Layers:   clonedLayers,
 			})
@@ -2376,7 +2378,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 		"trackID", track.ID(),
 		"rid", track.RID(),
 		"SSRC", track.SSRC(),
-		"mime", track.Codec().MimeType,
+		"mime", sfuutils.NormalizeMimeType(track.Codec().MimeType),
 		"mid", mid,
 	)
 	if mid == "" {

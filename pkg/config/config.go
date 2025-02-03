@@ -32,6 +32,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/remotebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -337,7 +338,7 @@ var DefaultConfig = Config{
 		AutoCreate: true,
 		EnabledCodecs: []CodecSpec{
 			{Mime: webrtc.MimeTypeOpus},
-			{Mime: sfu.MimeTypeAudioRed},
+			{Mime: utils.MimeTypeAudioRed},
 			{Mime: webrtc.MimeTypeVP8},
 			{Mime: webrtc.MimeTypeH264},
 			{Mime: webrtc.MimeTypeVP9},

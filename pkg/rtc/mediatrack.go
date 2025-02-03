@@ -34,6 +34,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	util "github.com/livekit/mediatransportutil"
 )
@@ -238,7 +239,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 
 	ti := t.MediaTrackReceiver.TrackInfoClone()
 	t.lock.Lock()
-	mime := strings.ToLower(track.Codec().MimeType)
+	mime := utils.NormalizeMimeType(track.Codec().MimeType)
 	layer := buffer.RidToSpatialLayer(track.RID(), ti)
 	t.params.Logger.Debugw(
 		"AddReceiver",
@@ -311,7 +312,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			parameters := receiver.GetParameters()
 			for _, c := range ti.Codecs {
 				for _, nc := range parameters.Codecs {
-					if strings.EqualFold(nc.MimeType, c.MimeType) {
+					if utils.NormalizeMimeType(nc.MimeType) == c.MimeType {
 						potentialCodecs = append(potentialCodecs, nc)
 						break
 					}
