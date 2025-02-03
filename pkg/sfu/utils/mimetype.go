@@ -15,7 +15,6 @@
 package utils
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -161,8 +160,7 @@ func NormalizeMimeType(mime string) string {
 		return MimeTypeFlexFEC
 	}
 
-	panic(fmt.Sprintf("unknown mime type: %s", mime))
-	return ""
+	return strings.ToLower(mime)
 }
 
 // SVC-TODO: Have to use more conditions to differentiate between

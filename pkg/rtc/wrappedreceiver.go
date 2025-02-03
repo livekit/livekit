@@ -104,11 +104,11 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) boo
 		if receiverMimeType == codecMimeType {
 			trackReceiver = receiver
 			break
-		} else if (receiverMimeType == utils.MimeTypeAudioRed) && (codecMimeType == utils.MimeTypeOpus) {
+		} else if receiverMimeType == utils.MimeTypeAudioRed && codecMimeType == utils.MimeTypeOpus {
 			// audio opus/red can match opus only
 			trackReceiver = receiver.GetPrimaryReceiverForRed()
 			break
-		} else if (receiverMimeType == utils.MimeTypeOpus) && (codecMimeType == utils.MimeTypeAudioRed) {
+		} else if receiverMimeType == utils.MimeTypeOpus && codecMimeType == utils.MimeTypeAudioRed {
 			trackReceiver = receiver.GetRedReceiver()
 			break
 		}
