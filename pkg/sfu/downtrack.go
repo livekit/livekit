@@ -1582,14 +1582,14 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 		}
 
 		var getBlankFrame func(bool) ([]byte, error)
-		switch d.mime {
-		case strings.ToLower(webrtc.MimeTypeOpus):
+		switch {
+		case strings.EqualFold(d.mime, webrtc.MimeTypeOpus):
 			getBlankFrame = d.getOpusBlankFrame
-		case strings.ToLower(MimeTypeAudioRed):
+		case strings.EqualFold(d.mime, MimeTypeAudioRed):
 			getBlankFrame = d.getOpusRedBlankFrame
-		case strings.ToLower(webrtc.MimeTypeVP8):
+		case strings.EqualFold(d.mime, webrtc.MimeTypeVP8):
 			getBlankFrame = d.getVP8BlankFrame
-		case strings.ToLower(webrtc.MimeTypeH264):
+		case strings.EqualFold(d.mime, webrtc.MimeTypeH264):
 			getBlankFrame = d.getH264BlankFrame
 		default:
 			close(done)
