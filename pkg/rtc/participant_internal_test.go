@@ -432,7 +432,7 @@ func TestDisablePublishCodec(t *testing.T) {
 		Cid:  "cid1",
 		Type: livekit.TrackType_VIDEO,
 		SimulcastCodecs: []*livekit.SimulcastCodec{{
-			Codec: "h264",
+			Codec: "video/h264",
 			Cid:   "cid1",
 		}},
 	})
@@ -455,7 +455,7 @@ func TestDisablePublishCodec(t *testing.T) {
 		Cid:  "cid2",
 		Type: livekit.TrackType_VIDEO,
 		SimulcastCodecs: []*livekit.SimulcastCodec{{
-			Codec: "vp8",
+			Codec: "video/vp8",
 			Cid:   "cid2",
 		}},
 	})
@@ -483,7 +483,7 @@ func TestPreferVideoCodecForPublisher(t *testing.T) {
 			Source: livekit.TrackSource_CAMERA,
 			SimulcastCodecs: []*livekit.SimulcastCodec{
 				{
-					Codec: "h264",
+					Codec: "video/h264",
 					Cid:   trackCid,
 				},
 			},
