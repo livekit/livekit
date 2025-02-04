@@ -76,6 +76,7 @@ type TelemetryService interface {
 	IngressUpdated(ctx context.Context, info *livekit.IngressInfo)
 	IngressEnded(ctx context.Context, info *livekit.IngressInfo)
 	LocalRoomState(ctx context.Context, info *livekit.AnalyticsNodeRooms)
+	Report(ctx context.Context, report *livekit.ReportInfo)
 
 	// helpers
 	AnalyticsService
