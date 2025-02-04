@@ -240,10 +240,6 @@ func newRTPStatsBase(params RTPStatsParams) *rtpStatsBase {
 }
 
 func (r *rtpStatsBase) seed(from *rtpStatsBase) bool {
-	if from == nil || !from.initialized {
-		return false
-	}
-
 	if !r.rtpStatsBaseLite.seed(from.rtpStatsBaseLite) {
 		return false
 	}

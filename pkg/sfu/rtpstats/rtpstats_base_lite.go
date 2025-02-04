@@ -141,7 +141,7 @@ func newRTPStatsBaseLite(params RTPStatsParams) *rtpStatsBaseLite {
 }
 
 func (r *rtpStatsBaseLite) seed(from *rtpStatsBaseLite) bool {
-	if from == nil || !from.initialized {
+	if from == nil || !from.initialized || r.initialized {
 		return false
 	}
 
