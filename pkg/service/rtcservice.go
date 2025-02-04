@@ -91,8 +91,12 @@ func NewRTCService(
 	return s
 }
 
-func (s *RTCService) Validate(w http.ResponseWriter, r *http.Request) {
-	_, _, code, err := s.validate(r)
+func (s *RTCService) SetupRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/validate", s.validate)
+}
+
+func (s *RTCService) validate(w http.ResponseWriter, r *http.Request) {
+	_, _, code, err := s.validateInternal(r)
 	if err != nil {
 		handleError(w, r, code, err)
 		return
@@ -100,7 +104,7 @@ func (s *RTCService) Validate(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("success"))
 }
 
-func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.ParticipantInit, int, error) {
+func (s *RTCService) validateInternal(r *http.Request) (livekit.RoomName, routing.ParticipantInit, int, error) {
 	claims := GetGrants(r.Context())
 	var pi routing.ParticipantInit
 
@@ -214,7 +218,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	roomName, pi, code, err := s.validate(r)
+	roomName, pi, code, err := s.validateInternal(r)
 	if err != nil {
 		handleError(w, r, code, err)
 		return
