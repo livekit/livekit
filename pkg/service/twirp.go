@@ -220,12 +220,16 @@ func statusReporterErrorReceived(ctx context.Context, e twirp.Error) context.Con
 
 type twirpTelemetryKey struct{}
 
-func TwirpTelemetry(nodeID livekit.NodeID, telemetry telemetry.TelemetryService) *twirp.ServerHooks {
+func TwirpTelemetry(
+	nodeID livekit.NodeID,
+	getProjectID func(ctx context.Context) string,
+	telemetry telemetry.TelemetryService,
+) *twirp.ServerHooks {
 	return &twirp.ServerHooks{
 		RequestReceived: telemetryRequestReceived,
 		Error:           telemetryErrorReceived,
 		ResponseSent: func(ctx context.Context) {
-			telemetryResponseSent(ctx, nodeID, telemetry)
+			telemetryResponseSent(ctx, nodeID, getProjectID, telemetry)
 		},
 	}
 }
@@ -293,12 +297,20 @@ func telemetryRequestRouted(ctx context.Context) (context.Context, error) {
 	return ctx, nil
 }
 
-func telemetryResponseSent(ctx context.Context, nodeID livekit.NodeID, telemetry telemetry.TelemetryService) {
+func telemetryResponseSent(
+	ctx context.Context,
+	nodeID livekit.NodeID,
+	getProjectID func(ctx context.Context) string,
+	telemetry telemetry.TelemetryService,
+) {
 	a, ok := ctx.Value(twirpTelemetryKey{}).(*livekit.APICallInfo)
 	if !ok || a == nil {
 		return
 	}
 
+	if getProjectID != nil {
+		a.ProjectId = getProjectID(ctx)
+	}
 	a.NodeId = string(nodeID)
 	if status, ok := twirp.StatusCode(ctx); ok {
 		a.Status = status
