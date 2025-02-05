@@ -23,13 +23,14 @@ import (
 	"time"
 
 	"github.com/twitchtv/twirp"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/utils"
+	"github.com/livekit/protocol/livekit"
 )
-
-type twirpLoggerContext struct{}
-type statusReporterKey struct{}
 
 type twirpRequestFields struct {
 	service string
@@ -37,29 +38,33 @@ type twirpRequestFields struct {
 	error   twirp.Error
 }
 
+// --------------------------------------------------------------------------
+
+type twirpLoggerKey struct{}
+
 // logging handling inspired by https://github.com/bakins/twirpzap
 // License: Apache-2.0
 func TwirpLogger() *twirp.ServerHooks {
 	loggerPool := &sync.Pool{
 		New: func() interface{} {
-			return &requestLogger{
+			return &twirpLogger{
 				fieldsOrig: make([]interface{}, 0, 30),
 			}
 		},
 	}
 	return &twirp.ServerHooks{
 		RequestReceived: func(ctx context.Context) (context.Context, error) {
-			return requestReceived(ctx, loggerPool)
+			return loggerRequestReceived(ctx, loggerPool)
 		},
-		RequestRouted: responseRouted,
-		Error:         errorReceived,
+		RequestRouted: loggerRequestRouted,
+		Error:         loggerErrorReceived,
 		ResponseSent: func(ctx context.Context) {
-			responseSent(ctx, loggerPool)
+			loggerResponseSent(ctx, loggerPool)
 		},
 	}
 }
 
-type requestLogger struct {
+type twirpLogger struct {
 	twirpRequestFields
 
 	fieldsOrig []interface{}
@@ -68,7 +73,7 @@ type requestLogger struct {
 }
 
 func AppendLogFields(ctx context.Context, fields ...interface{}) {
-	r, ok := ctx.Value(twirpLoggerContext{}).(*requestLogger)
+	r, ok := ctx.Value(twirpLoggerKey{}).(*twirpLogger)
 	if !ok || r == nil {
 		return
 	}
@@ -76,8 +81,8 @@ func AppendLogFields(ctx context.Context, fields ...interface{}) {
 	r.fields = append(r.fields, fields...)
 }
 
-func requestReceived(ctx context.Context, requestLoggerPool *sync.Pool) (context.Context, error) {
-	r := requestLoggerPool.Get().(*requestLogger)
+func loggerRequestReceived(ctx context.Context, twirpLoggerPool *sync.Pool) (context.Context, error) {
+	r := twirpLoggerPool.Get().(*twirpLogger)
 	r.startedAt = time.Now()
 	r.fields = r.fieldsOrig
 	r.error = nil
@@ -87,13 +92,12 @@ func requestReceived(ctx context.Context, requestLoggerPool *sync.Pool) (context
 		r.fields = append(r.fields, "service", svc)
 	}
 
-	ctx = context.WithValue(ctx, twirpLoggerContext{}, r)
-	return ctx, nil
+	return context.WithValue(ctx, twirpLoggerKey{}, r), nil
 }
 
-func responseRouted(ctx context.Context) (context.Context, error) {
+func loggerRequestRouted(ctx context.Context) (context.Context, error) {
 	if meth, ok := twirp.MethodName(ctx); ok {
-		l, ok := ctx.Value(twirpLoggerContext{}).(*requestLogger)
+		l, ok := ctx.Value(twirpLoggerKey{}).(*twirpLogger)
 		if !ok || l == nil {
 			return ctx, nil
 		}
@@ -104,8 +108,8 @@ func responseRouted(ctx context.Context) (context.Context, error) {
 	return ctx, nil
 }
 
-func responseSent(ctx context.Context, requestLoggerPool *sync.Pool) {
-	r, ok := ctx.Value(twirpLoggerContext{}).(*requestLogger)
+func loggerResponseSent(ctx context.Context, twirpLoggerPool *sync.Pool) {
+	r, ok := ctx.Value(twirpLoggerKey{}).(*twirpLogger)
 	if !ok || r == nil {
 		return
 	}
@@ -126,24 +130,27 @@ func responseSent(ctx context.Context, requestLoggerPool *sync.Pool) {
 	r.fields = r.fieldsOrig
 	r.error = nil
 
-	requestLoggerPool.Put(r)
+	twirpLoggerPool.Put(r)
 }
 
-func errorReceived(ctx context.Context, e twirp.Error) context.Context {
-	r, ok := ctx.Value(twirpLoggerContext{}).(*requestLogger)
+func loggerErrorReceived(ctx context.Context, e twirp.Error) context.Context {
+	r, ok := ctx.Value(twirpLoggerKey{}).(*twirpLogger)
 	if !ok || r == nil {
 		return ctx
 	}
 
 	r.error = e
-
 	return ctx
 }
+
+// --------------------------------------------------------------------------
+
+type statusReporterKey struct{}
 
 func TwirpRequestStatusReporter() *twirp.ServerHooks {
 	return &twirp.ServerHooks{
 		RequestReceived: statusReporterRequestReceived,
-		RequestRouted:   statusReporterResponseRouted,
+		RequestRouted:   statusReporterRequestRouted,
 		Error:           statusReporterErrorReceived,
 		ResponseSent:    statusReporterResponseSent,
 	}
@@ -156,11 +163,10 @@ func statusReporterRequestReceived(ctx context.Context) (context.Context, error)
 		r.service = svc
 	}
 
-	ctx = context.WithValue(ctx, statusReporterKey{}, r)
-	return ctx, nil
+	return context.WithValue(ctx, statusReporterKey{}, r), nil
 }
 
-func statusReporterResponseRouted(ctx context.Context) (context.Context, error) {
+func statusReporterRequestRouted(ctx context.Context) (context.Context, error) {
 	if meth, ok := twirp.MethodName(ctx); ok {
 		l, ok := ctx.Value(statusReporterKey{}).(*twirpRequestFields)
 		if !ok || l == nil {
@@ -207,6 +213,121 @@ func statusReporterErrorReceived(ctx context.Context, e twirp.Error) context.Con
 	}
 
 	r.error = e
-
 	return ctx
 }
+
+// --------------------------------------------------------------------------
+
+type twirpTelemetryKey struct{}
+
+func TwirpTelemetry(nodeID livekit.NodeID, telemetry telemetry.TelemetryService) *twirp.ServerHooks {
+	return &twirp.ServerHooks{
+		RequestReceived: telemetryRequestReceived,
+		Error:           telemetryErrorReceived,
+		ResponseSent: func(ctx context.Context) {
+			telemetryResponseSent(ctx, nodeID, telemetry)
+		},
+	}
+}
+
+/* RAJA-REMOVE
+type twirpTelemetry struct {
+	twirpRequestFields
+
+	startedAt time.Time
+	request   proto.Message
+	response  proto.Message
+}
+*/
+
+func RecordRequest(ctx context.Context, request proto.Message) {
+	if request == nil {
+		return
+	}
+
+	a, ok := ctx.Value(twirpTelemetryKey{}).(*livekit.APICallInfo)
+	if !ok || a == nil {
+		return
+	}
+
+	switch request.(type) {
+	case *livekit.CreateRoomRequest:
+		a.Request = &livekit.APICallRequest{
+			Message: &livekit.APICallRequest_CreateRoomRequest{
+				CreateRoomRequest: request.(*livekit.CreateRoomRequest),
+			},
+		}
+	}
+}
+
+func RecordResponse(ctx context.Context, response proto.Message) {
+	if response == nil {
+		return
+	}
+
+	a, ok := ctx.Value(twirpTelemetryKey{}).(*livekit.APICallInfo)
+	if !ok || a == nil {
+		return
+	}
+
+	switch response.(type) {
+	case *livekit.Room:
+		a.Response = &livekit.APICallResponse{
+			Message: &livekit.APICallResponse_Room{
+				Room: response.(*livekit.Room),
+			},
+		}
+	}
+}
+
+func telemetryRequestReceived(ctx context.Context) (context.Context, error) {
+	a := &livekit.APICallInfo{}
+	a.StartedAt = timestamppb.Now()
+
+	if svc, ok := twirp.ServiceName(ctx); ok {
+		a.Service = svc
+	}
+
+	return context.WithValue(ctx, twirpTelemetryKey{}, a), nil
+}
+
+func telemetryRequestRouted(ctx context.Context) (context.Context, error) {
+	if meth, ok := twirp.MethodName(ctx); ok {
+		a, ok := ctx.Value(twirpTelemetryKey{}).(*livekit.APICallInfo)
+		if !ok || a == nil {
+			return ctx, nil
+		}
+		a.Method = meth
+	}
+
+	return ctx, nil
+}
+
+func telemetryResponseSent(ctx context.Context, nodeID livekit.NodeID, telemetry telemetry.TelemetryService) {
+	a, ok := ctx.Value(twirpTelemetryKey{}).(*livekit.APICallInfo)
+	if !ok || a == nil {
+		return
+	}
+
+	a.NodeId = string(nodeID)
+	if status, ok := twirp.StatusCode(ctx); ok {
+		a.Status = status
+	}
+	a.DurationNs = time.Since(a.StartedAt.AsTime()).Nanoseconds()
+	if telemetry != nil {
+		telemetry.APICall(ctx, a)
+	}
+}
+
+func telemetryErrorReceived(ctx context.Context, e twirp.Error) context.Context {
+	a, ok := ctx.Value(twirpTelemetryKey{}).(*livekit.APICallInfo)
+	if !ok || a == nil {
+		return ctx
+	}
+
+	a.ErrorCode = string(e.Code())
+	a.ErrorMessage = e.Msg()
+	return ctx
+}
+
+// --------------------------------------------------------------------------
