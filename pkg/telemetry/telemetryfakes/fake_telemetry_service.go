@@ -10,6 +10,12 @@ import (
 )
 
 type FakeTelemetryService struct {
+	APICallStub        func(context.Context, *livekit.APICallInfo)
+	aPICallMutex       sync.RWMutex
+	aPICallArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.APICallInfo
+	}
 	EgressEndedStub        func(context.Context, *livekit.EgressInfo)
 	egressEndedMutex       sync.RWMutex
 	egressEndedArgsForCall []struct {
@@ -261,6 +267,39 @@ type FakeTelemetryService struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeTelemetryService) APICall(arg1 context.Context, arg2 *livekit.APICallInfo) {
+	fake.aPICallMutex.Lock()
+	fake.aPICallArgsForCall = append(fake.aPICallArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.APICallInfo
+	}{arg1, arg2})
+	stub := fake.APICallStub
+	fake.recordInvocation("APICall", []interface{}{arg1, arg2})
+	fake.aPICallMutex.Unlock()
+	if stub != nil {
+		fake.APICallStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeTelemetryService) APICallCallCount() int {
+	fake.aPICallMutex.RLock()
+	defer fake.aPICallMutex.RUnlock()
+	return len(fake.aPICallArgsForCall)
+}
+
+func (fake *FakeTelemetryService) APICallCalls(stub func(context.Context, *livekit.APICallInfo)) {
+	fake.aPICallMutex.Lock()
+	defer fake.aPICallMutex.Unlock()
+	fake.APICallStub = stub
+}
+
+func (fake *FakeTelemetryService) APICallArgsForCall(i int) (context.Context, *livekit.APICallInfo) {
+	fake.aPICallMutex.RLock()
+	defer fake.aPICallMutex.RUnlock()
+	argsForCall := fake.aPICallArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeTelemetryService) EgressEnded(arg1 context.Context, arg2 *livekit.EgressInfo) {
@@ -1458,6 +1497,8 @@ func (fake *FakeTelemetryService) TrackUnsubscribedArgsForCall(i int) (context.C
 func (fake *FakeTelemetryService) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
+	fake.aPICallMutex.RLock()
+	defer fake.aPICallMutex.RUnlock()
 	fake.egressEndedMutex.RLock()
 	defer fake.egressEndedMutex.RUnlock()
 	fake.egressStartedMutex.RLock()

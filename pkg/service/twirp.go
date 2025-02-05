@@ -230,16 +230,6 @@ func TwirpTelemetry(nodeID livekit.NodeID, telemetry telemetry.TelemetryService)
 	}
 }
 
-/* RAJA-REMOVE
-type twirpTelemetry struct {
-	twirpRequestFields
-
-	startedAt time.Time
-	request   proto.Message
-	response  proto.Message
-}
-*/
-
 func RecordRequest(ctx context.Context, request proto.Message) {
 	if request == nil {
 		return
