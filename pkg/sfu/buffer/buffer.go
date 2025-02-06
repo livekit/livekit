@@ -30,6 +30,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
@@ -89,7 +90,7 @@ type Buffer struct {
 	audioLevelExtID uint8
 	bound           bool
 	closed          atomic.Bool
-	mime            string
+	mime            mime.MimeType
 
 	snRangeMap *utils.RangeMap[uint64, uint64]
 
@@ -212,9 +213,9 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 
 	b.clockRate = codec.ClockRate
 	b.lastReport = mono.UnixNano()
-	b.mime = utils.NormalizeMimeType(codec.MimeType)
+	b.mime = mime.NormalizeMimeType(codec.MimeType)
 	for _, codecParameter := range params.Codecs {
-		if utils.NormalizeMimeType(codecParameter.MimeType) == utils.NormalizeMimeType(codec.MimeType) {
+		if mime.IsMimeTypeStringEqual(codecParameter.MimeType, codec.MimeType) {
 			b.payloadType = uint8(codecParameter.PayloadType)
 			break
 		}
@@ -228,7 +229,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	for _, ext := range params.HeaderExtensions {
 		switch ext.URI {
 		case dd.ExtensionURI:
-			if utils.IsSvcCodec(b.mime) || b.mime == utils.MimeTypeVP8 {
+			if mime.IsMimeTypeSVC(b.mime) || b.mime == mime.MimeTypeVP8 {
 				if b.ddExtID != 0 {
 					b.logger.Warnw("multiple dependency descriptor extensions found", nil, "id", ext.ID, "previous", b.ddExtID)
 					continue
@@ -253,19 +254,19 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	}
 
 	switch {
-	case utils.IsMimeTypeAudio(b.mime):
+	case mime.IsMimeTypeAudio(b.mime):
 		b.codecType = webrtc.RTPCodecTypeAudio
 		b.bucket = bucket.NewBucket[uint64](InitPacketBufferSizeAudio)
 
-	case utils.IsMimeTypeVideo(b.mime):
+	case mime.IsMimeTypeVideo(b.mime):
 		b.codecType = webrtc.RTPCodecTypeVideo
 		b.bucket = bucket.NewBucket[uint64](InitPacketBufferSizeVideo)
 		if b.frameRateCalculator[0] == nil {
-			if b.mime == utils.MimeTypeVP8 {
+			if b.mime == mime.MimeTypeVP8 {
 				b.frameRateCalculator[0] = NewFrameRateCalculatorVP8(b.clockRate, b.logger)
 			}
 
-			if b.mime == utils.MimeTypeVP9 {
+			if b.mime == mime.MimeTypeVP9 {
 				frc := NewFrameRateCalculatorVP9(b.clockRate, b.logger)
 				for i := range b.frameRateCalculator {
 					b.frameRateCalculator[i] = frc.GetFrameRateCalculatorForSpatial(int32(i))
@@ -294,7 +295,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 			// pion use a single mediaengine to manage negotiated codecs of peerconnection, that means we can't have different
 			// codec settings at track level for same codec type, so enable nack for all audio receivers but don't create nack queue
 			// for red codec.
-			if b.mime == utils.MimeTypeAudioRed {
+			if b.mime == mime.MimeTypeRED {
 				break
 			}
 			b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
@@ -785,8 +786,8 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 		}
 	}
 
-	switch utils.MatchMimeType(b.mime) {
-	case utils.MimeTypeNumberVP8:
+	switch b.mime {
+	case mime.MimeTypeVP8:
 		vp8Packet := VP8{}
 		if err := vp8Packet.Unmarshal(rtpPacket.Payload); err != nil {
 			b.logger.Warnw("could not unmarshal VP8 packet", err)
@@ -802,7 +803,7 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 		ep.Payload = vp8Packet
 		ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to invalid
 
-	case utils.MimeTypeNumberVP9:
+	case mime.MimeTypeVP9:
 		if ep.DependencyDescriptor == nil {
 			var vp9Packet codecs.VP9Packet
 			_, err := vp9Packet.Unmarshal(rtpPacket.Payload)
@@ -818,11 +819,11 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 		}
 		ep.KeyFrame = IsVP9KeyFrame(rtpPacket.Payload)
 
-	case utils.MimeTypeNumberH264:
+	case mime.MimeTypeH264:
 		ep.KeyFrame = IsH264KeyFrame(rtpPacket.Payload)
 		ep.Spatial = InvalidLayerSpatial // h.264 don't have spatial scalability, reset to invalid
 
-	case utils.MimeTypeNumberAV1:
+	case mime.MimeTypeAV1:
 		ep.KeyFrame = IsAV1KeyFrame(rtpPacket.Payload)
 	}
 

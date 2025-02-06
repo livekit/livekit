@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/mitchellh/go-homedir"
-	"github.com/pion/webrtc/v4"
 	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
@@ -31,8 +30,8 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/remotebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
-	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -337,13 +336,13 @@ var DefaultConfig = Config{
 	Room: RoomConfig{
 		AutoCreate: true,
 		EnabledCodecs: []CodecSpec{
-			{Mime: webrtc.MimeTypeOpus},
-			{Mime: utils.MimeTypeAudioRed},
-			{Mime: webrtc.MimeTypeVP8},
-			{Mime: webrtc.MimeTypeH264},
-			{Mime: webrtc.MimeTypeVP9},
-			{Mime: webrtc.MimeTypeAV1},
-			{Mime: webrtc.MimeTypeRTX},
+			{Mime: mime.MimeTypeOpus.String()},
+			{Mime: mime.MimeTypeRED.String()},
+			{Mime: mime.MimeTypeVP8.String()},
+			{Mime: mime.MimeTypeH264.String()},
+			{Mime: mime.MimeTypeVP9.String()},
+			{Mime: mime.MimeTypeAV1.String()},
+			{Mime: mime.MimeTypeRTX.String()},
 		},
 		EmptyTimeout:       5 * 60,
 		DepartureTimeout:   20,

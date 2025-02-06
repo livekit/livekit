@@ -44,6 +44,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
 	sfuinterceptor "github.com/livekit/livekit-server/pkg/sfu/interceptor"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
@@ -2089,7 +2090,7 @@ func configureAudioTransceiver(tr *webrtc.RTPTransceiver, stereo bool, nack bool
 	codecs := sender.GetParameters().Codecs
 	configCodecs := make([]webrtc.RTPCodecParameters, 0, len(codecs))
 	for _, c := range codecs {
-		if sfuutils.NormalizeMimeType(c.MimeType) == sfuutils.MimeTypeOpus {
+		if mime.IsMimeTypeStringOpus(c.MimeType) {
 			c.SDPFmtpLine = strings.ReplaceAll(c.SDPFmtpLine, ";sprop-stereo=1", "")
 			if stereo {
 				c.SDPFmtpLine += ";sprop-stereo=1"

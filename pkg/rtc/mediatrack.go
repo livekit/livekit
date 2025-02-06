@@ -17,7 +17,6 @@ package rtc
 import (
 	"context"
 	"math"
-	"strings"
 	"sync"
 	"time"
 
@@ -34,7 +33,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
-	"github.com/livekit/livekit-server/pkg/sfu/utils"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	util "github.com/livekit/mediatransportutil"
 )
@@ -112,14 +111,14 @@ func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 			DynacastPauseDelay: params.VideoConfig.DynacastPauseDelay,
 			Logger:             params.Logger,
 		})
-		t.MediaTrackReceiver.OnSetupReceiver(func(mime string) {
+		t.MediaTrackReceiver.OnSetupReceiver(func(mime mime.MimeType) {
 			t.dynacastManager.AddCodec(mime)
 		})
 		t.MediaTrackReceiver.OnSubscriberMaxQualityChange(
-			func(subscriberID livekit.ParticipantID, codec webrtc.RTPCodecCapability, layer int32) {
+			func(subscriberID livekit.ParticipantID, mimeType mime.MimeType, layer int32) {
 				t.dynacastManager.NotifySubscriberMaxQuality(
 					subscriberID,
-					codec.MimeType,
+					mimeType,
 					buffer.SpatialLayerToVideoQuality(layer, t.MediaTrackReceiver.TrackInfo()),
 				)
 			},
@@ -239,7 +238,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 
 	ti := t.MediaTrackReceiver.TrackInfoClone()
 	t.lock.Lock()
-	mime := utils.NormalizeMimeType(track.Codec().MimeType)
+	mimeType := mime.NormalizeMimeType(track.Codec().MimeType)
 	layer := buffer.RidToSpatialLayer(track.RID(), ti)
 	t.params.Logger.Debugw(
 		"AddReceiver",
@@ -248,11 +247,11 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		"ssrc", track.SSRC(),
 		"codec", track.Codec(),
 	)
-	wr := t.MediaTrackReceiver.Receiver(mime)
+	wr := t.MediaTrackReceiver.Receiver(mimeType)
 	if wr == nil {
 		priority := -1
 		for idx, c := range ti.Codecs {
-			if strings.EqualFold(mime, c.MimeType) {
+			if mime.IsMimeTypeStringEqual(track.Codec().MimeType, c.MimeType) {
 				priority = idx
 				break
 			}
@@ -270,7 +269,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			}
 		}
 		if priority < 0 {
-			t.params.Logger.Warnw("could not find codec for webrtc receiver", nil, "webrtcCodec", mime, "track", logger.Proto(ti))
+			t.params.Logger.Warnw("could not find codec for webrtc receiver", nil, "webrtcCodec", mimeType, "track", logger.Proto(ti))
 			t.lock.Unlock()
 			return false
 		}
@@ -279,7 +278,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			receiver,
 			track,
 			ti,
-			LoggerWithCodecMime(t.params.Logger, mime),
+			LoggerWithCodecMime(t.params.Logger, mimeType),
 			t.params.OnRTCP,
 			t.params.VideoConfig.StreamTrackerManager,
 			sfu.WithPliThrottleConfig(t.params.PLIThrottleConfig),
@@ -290,7 +289,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		)
 		newWR.OnCloseHandler(func() {
 			t.MediaTrackReceiver.SetClosing()
-			t.MediaTrackReceiver.ClearReceiver(mime, false)
+			t.MediaTrackReceiver.ClearReceiver(mimeType, false)
 			if t.MediaTrackReceiver.TryClose() {
 				if t.dynacastManager != nil {
 					t.dynacastManager.Close()
@@ -312,7 +311,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			parameters := receiver.GetParameters()
 			for _, c := range ti.Codecs {
 				for _, nc := range parameters.Codecs {
-					if utils.NormalizeMimeType(nc.MimeType) == c.MimeType {
+					if mime.IsMimeTypeStringEqual(nc.MimeType, c.MimeType) {
 						potentialCodecs = append(potentialCodecs, nc)
 						break
 					}
@@ -331,7 +330,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 
 		for ssrc, info := range t.params.SimTracks {
 			if info.Mid == mid {
-				t.MediaTrackReceiver.SetLayerSsrc(mime, info.Rid, ssrc)
+				t.MediaTrackReceiver.SetLayerSsrc(mimeType, info.Rid, ssrc)
 			}
 		}
 		wr = newWR
@@ -362,7 +361,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		bitrates = int(ti.Layers[layer].GetBitrate())
 	}
 
-	t.MediaTrackReceiver.SetLayerSsrc(mime, track.RID(), uint32(track.SSRC()))
+	t.MediaTrackReceiver.SetLayerSsrc(mimeType, track.RID(), uint32(track.SSRC()))
 
 	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability, bitrates)
 
@@ -376,7 +375,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			context.Background(),
 			t.params.ParticipantID,
 			t.ID(),
-			mime,
+			mimeType,
 			int(layer),
 			stats,
 		)

@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 	"sync"
 
 	"github.com/pion/rtcp"
@@ -35,6 +34,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
@@ -105,7 +105,7 @@ type MediaTrackReceiver struct {
 	state              mediaTrackReceiverState
 	isExpectedToResume bool
 
-	onSetupReceiver     func(mime string)
+	onSetupReceiver     func(mime mime.MimeType)
 	onMediaLossFeedback func(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
 	onClose             []func(isExpectedToResume bool)
 
@@ -143,7 +143,7 @@ func (t *MediaTrackReceiver) Restart() {
 	}
 }
 
-func (t *MediaTrackReceiver) OnSetupReceiver(f func(mime string)) {
+func (t *MediaTrackReceiver) OnSetupReceiver(f func(mime mime.MimeType)) {
 	t.lock.Lock()
 	t.onSetupReceiver = f
 	t.lock.Unlock()
@@ -163,7 +163,7 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 	receiverToAdd := receiver
 	idx := -1
 	for i, r := range receivers {
-		if strings.EqualFold(r.Codec().MimeType, receiver.Codec().MimeType) {
+		if r.Mime() == receiver.Mime() {
 			idx = i
 			break
 		}
@@ -185,13 +185,13 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 	if mid != "" {
 		trackInfo := t.TrackInfoClone()
 		if priority == 0 {
-			trackInfo.MimeType = receiver.Codec().MimeType
+			trackInfo.MimeType = receiver.Mime().String()
 			trackInfo.Mid = mid
 		}
 
 		for i, ci := range trackInfo.Codecs {
 			if i == priority {
-				ci.MimeType = receiver.Codec().MimeType
+				ci.MimeType = receiver.Mime().String()
 				ci.Mid = mid
 				break
 			}
@@ -203,20 +203,20 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 	onSetupReceiver := t.onSetupReceiver
 	t.lock.Unlock()
 
-	var receiverCodecs []string
+	var receiverCodecs []mime.MimeType
 	for _, r := range receivers {
-		receiverCodecs = append(receiverCodecs, r.Codec().MimeType)
+		receiverCodecs = append(receiverCodecs, r.Mime())
 	}
 	t.params.Logger.Debugw(
 		"setup receiver",
-		"mime", receiver.Codec().MimeType,
+		"mime", receiver.Mime(),
 		"priority", priority,
 		"receivers", receiverCodecs,
 		"mid", mid,
 	)
 
 	if onSetupReceiver != nil {
-		onSetupReceiver(receiver.Codec().MimeType)
+		onSetupReceiver(receiver.Mime())
 	}
 }
 
@@ -229,7 +229,7 @@ func (t *MediaTrackReceiver) SetPotentialCodecs(codecs []webrtc.RTPCodecParamete
 	for i, c := range codecs {
 		var exist bool
 		for _, r := range receivers {
-			if strings.EqualFold(c.MimeType, r.Codec().MimeType) {
+			if mime.NormalizeMimeType(c.MimeType) == r.Mime() {
 				exist = true
 				break
 			}
@@ -248,11 +248,11 @@ func (t *MediaTrackReceiver) SetPotentialCodecs(codecs []webrtc.RTPCodecParamete
 	t.lock.Unlock()
 }
 
-func (t *MediaTrackReceiver) ClearReceiver(mime string, isExpectedToResume bool) {
+func (t *MediaTrackReceiver) ClearReceiver(mime mime.MimeType, isExpectedToResume bool) {
 	t.lock.Lock()
 	receivers := slices.Clone(t.receivers)
 	for idx, receiver := range receivers {
-		if strings.EqualFold(receiver.Codec().MimeType, mime) {
+		if receiver.Mime() == mime {
 			receivers[idx] = receivers[len(receivers)-1]
 			receivers[len(receivers)-1] = nil
 			receivers = receivers[:len(receivers)-1]
@@ -275,7 +275,7 @@ func (t *MediaTrackReceiver) ClearAllReceivers(isExpectedToResume bool) {
 	t.lock.Unlock()
 
 	for _, r := range receivers {
-		t.removeAllSubscribersForMime(r.Codec().MimeType, isExpectedToResume)
+		t.removeAllSubscribersForMime(r.Mime(), isExpectedToResume)
 	}
 }
 
@@ -450,7 +450,7 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 		codec := receiver.Codec()
 		var found bool
 		for _, pc := range potentialCodecs {
-			if strings.EqualFold(codec.MimeType, pc.MimeType) {
+			if mime.IsMimeTypeStringEqual(codec.MimeType, pc.MimeType) {
 				found = true
 				break
 			}
@@ -502,7 +502,7 @@ func (t *MediaTrackReceiver) RemoveSubscriber(subscriberID livekit.ParticipantID
 	_ = t.MediaTrackSubscriptions.RemoveSubscriber(subscriberID, isExpectedToResume)
 }
 
-func (t *MediaTrackReceiver) removeAllSubscribersForMime(mime string, isExpectedToResume bool) {
+func (t *MediaTrackReceiver) removeAllSubscribersForMime(mime mime.MimeType, isExpectedToResume bool) {
 	t.params.Logger.Debugw("removing all subscribers for mime", "mime", mime)
 	for _, subscriberID := range t.MediaTrackSubscriptions.GetAllSubscribersForMime(mime) {
 		t.RemoveSubscriber(subscriberID, isExpectedToResume)
@@ -542,7 +542,7 @@ func (t *MediaTrackReceiver) updateTrackInfoOfReceivers() {
 	}
 }
 
-func (t *MediaTrackReceiver) SetLayerSsrc(mime string, rid string, ssrc uint32) {
+func (t *MediaTrackReceiver) SetLayerSsrc(mimeType mime.MimeType, rid string, ssrc uint32) {
 	t.lock.Lock()
 	trackInfo := t.TrackInfoClone()
 	layer := buffer.RidToSpatialLayer(rid, trackInfo)
@@ -553,7 +553,7 @@ func (t *MediaTrackReceiver) SetLayerSsrc(mime string, rid string, ssrc uint32) 
 	quality := buffer.SpatialLayerToVideoQuality(layer, trackInfo)
 	// set video layer ssrc info
 	for i, ci := range trackInfo.Codecs {
-		if !strings.EqualFold(ci.MimeType, mime) {
+		if mime.NormalizeMimeType(ci.MimeType) == mimeType {
 			continue
 		}
 
@@ -590,7 +590,7 @@ func (t *MediaTrackReceiver) UpdateCodecCid(codecs []*livekit.SimulcastCodec) {
 	trackInfo := t.TrackInfoClone()
 	for _, c := range codecs {
 		for _, origin := range trackInfo.Codecs {
-			if strings.Contains(origin.MimeType, c.Codec) {
+			if mime.IsMimeTypeStringContains(origin.MimeType, c.Codec) {
 				origin.Cid = c.Cid
 				break
 			}
@@ -611,7 +611,7 @@ func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 	// patch Mid and SSRC of codecs/layers by keeping original if available
 	for i, ci := range clonedInfo.Codecs {
 		for _, originCi := range trackInfo.Codecs {
-			if !strings.EqualFold(ci.MimeType, originCi.MimeType) {
+			if !mime.IsMimeTypeStringEqual(ci.MimeType, originCi.MimeType) {
 				continue
 			}
 
@@ -832,9 +832,9 @@ func (t *MediaTrackReceiver) PrimaryReceiver() sfu.TrackReceiver {
 	return receivers[0].TrackReceiver
 }
 
-func (t *MediaTrackReceiver) Receiver(mime string) sfu.TrackReceiver {
+func (t *MediaTrackReceiver) Receiver(mime mime.MimeType) sfu.TrackReceiver {
 	for _, r := range t.loadReceivers() {
-		if strings.EqualFold(r.Codec().MimeType, mime) {
+		if r.Mime() == mime {
 			if dr, ok := r.TrackReceiver.(*DummyReceiver); ok {
 				return dr.Receiver()
 			}
@@ -867,7 +867,7 @@ func (t *MediaTrackReceiver) SetRTT(rtt uint32) {
 	}
 }
 
-func (t *MediaTrackReceiver) GetTemporalLayerForSpatialFps(spatial int32, fps uint32, mime string) int32 {
+func (t *MediaTrackReceiver) GetTemporalLayerForSpatialFps(spatial int32, fps uint32, mime mime.MimeType) int32 {
 	receiver := t.Receiver(mime)
 	if receiver == nil {
 		return buffer.DefaultMaxLayerTemporal

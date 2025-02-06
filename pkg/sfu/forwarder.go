@@ -34,9 +34,9 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/codecmunger"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
-	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector"
 	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector/temporallayerselector"
 )
@@ -210,7 +210,8 @@ func (r refInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 type Forwarder struct {
 	lock            sync.RWMutex
-	codec           webrtc.RTPCodecCapability
+	mime            mime.MimeType
+	clockRate       uint32
 	kind            webrtc.RTPCodecType
 	logger          logger.Logger
 	skipReferenceTS bool
@@ -248,6 +249,7 @@ func NewForwarder(
 	rtpStats *rtpstats.RTPStatsSender,
 ) *Forwarder {
 	f := &Forwarder{
+		mime:                  mime.MimeTypeUnknown,
 		kind:                  kind,
 		logger:                logger,
 		skipReferenceTS:       skipReferenceTS,
@@ -297,10 +299,11 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	if f.codec.MimeType != "" {
+	if f.mime != mime.MimeTypeUnknown {
 		return
 	}
-	f.codec = codec
+	f.mime = mime.NormalizeMimeType(codec.MimeType)
+	f.clockRate = codec.ClockRate
 
 	ddAvailable := func(exts []webrtc.RTPHeaderExtensionParameter) bool {
 		for _, ext := range exts {
@@ -311,8 +314,8 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		return false
 	}
 
-	switch sfuutils.NormalizeMimeType(codec.MimeType) {
-	case sfuutils.MimeTypeVP8:
+	switch f.mime {
+	case mime.MimeTypeVP8:
 		f.codecMunger = codecmunger.NewVP8FromNull(f.codecMunger, f.logger)
 		if f.vls != nil {
 			f.vls = videolayerselector.NewSimulcastFromNull(f.vls)
@@ -321,14 +324,14 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		}
 		f.vls.SetTemporalLayerSelector(temporallayerselector.NewVP8(f.logger))
 
-	case sfuutils.MimeTypeH264:
+	case mime.MimeTypeH264:
 		if f.vls != nil {
 			f.vls = videolayerselector.NewSimulcastFromNull(f.vls)
 		} else {
 			f.vls = videolayerselector.NewSimulcast(f.logger)
 		}
 
-	case sfuutils.MimeTypeVP9:
+	case mime.MimeTypeVP9:
 		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
 		isDDAvailable := ddAvailable(extensions)
 		if isDDAvailable {
@@ -346,7 +349,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		}
 		// SVC-TODO: Support for VP9 simulcast. When DD is not available, have to pick selector based on VP9 SVC or Simulcast
 
-	case sfuutils.MimeTypeAV1:
+	case mime.MimeTypeAV1:
 		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
 		isDDAvailable := ddAvailable(extensions)
 		if isDDAvailable {
@@ -1504,7 +1507,7 @@ func (f *Forwarder) Pause(availableLayers []int32, brs Bitrates) VideoAllocation
 
 func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) VideoAllocation {
 	// restrict target temporal to 0 if codec does not support temporal layers
-	if alloc.TargetLayer.IsValid() && sfuutils.NormalizeMimeType(f.codec.MimeType) == sfuutils.MimeTypeH264 {
+	if alloc.TargetLayer.IsValid() && f.mime == mime.MimeTypeH264 {
 		alloc.TargetLayer.Temporal = 0
 	}
 
@@ -1638,7 +1641,7 @@ func (f *Forwarder) getRefLayerRTPTimestamp(ts uint32, refLayer, targetLayer int
 	}
 
 	ntpDiff := mediatransportutil.NtpTime(srRef.NtpTimestamp).Time().Sub(mediatransportutil.NtpTime(srTarget.NtpTimestamp).Time())
-	rtpDiff := ntpDiff.Nanoseconds() * int64(f.codec.ClockRate) / 1e9
+	rtpDiff := ntpDiff.Nanoseconds() * int64(f.clockRate) / 1e9
 
 	// calculate other layer's time stamp at the same time as ref layer's NTP time
 	normalizedOtherTS := srTarget.RtpTimestamp + uint32(rtpDiff)
@@ -1760,7 +1763,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		} else {
 			if !f.preStartTime.IsZero() {
 				timeSinceFirst := time.Since(f.preStartTime)
-				rtpDiff := uint64(timeSinceFirst.Nanoseconds() * int64(f.codec.ClockRate) / 1e9)
+				rtpDiff := uint64(timeSinceFirst.Nanoseconds() * int64(f.clockRate) / 1e9)
 				extExpectedTS = f.extFirstTS + rtpDiff
 				if f.dummyStartTSOffset == 0 {
 					f.dummyStartTSOffset = extExpectedTS - uint64(refTS)
@@ -1804,7 +1807,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		// Ideally, extRefTS should not be ahead of extExpectedTS, but extExpectedTS uses the first packet's
 		// wall clock time. So, if the first packet experienced abmormal latency, it is possible
 		// for extRefTS > extExpectedTS
-		diffSeconds := float64(int64(extExpectedTS-extRefTS)) / float64(f.codec.ClockRate)
+		diffSeconds := float64(int64(extExpectedTS-extRefTS)) / float64(f.clockRate)
 		if diffSeconds >= 0.0 {
 			if f.resumeBehindThreshold > 0 && diffSeconds > f.resumeBehindThreshold {
 				logTransitionInfo("resume, reference too far behind", extExpectedTS, extRefTS, extLastTS, diffSeconds)
@@ -1827,7 +1830,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		f.resumeBehindThreshold = 0.0
 	} else {
 		// switching between layers, check if extRefTS is too far behind the last sent
-		diffSeconds := float64(int64(extRefTS-extLastTS)) / float64(f.codec.ClockRate)
+		diffSeconds := float64(int64(extRefTS-extLastTS)) / float64(f.clockRate)
 		if diffSeconds < 0.0 {
 			if math.Abs(diffSeconds) > LayerSwitchBehindThresholdSeconds {
 				// this could be due to pacer trickling out this layer. Error out and wait for a more opportune time.
@@ -1841,7 +1844,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 			logTransition("layer switch, reference is slightly behind", extExpectedTS, extRefTS, extLastTS, diffSeconds)
 			extNextTS = extLastTS + 1
 		} else {
-			diffSeconds = float64(int64(extRefTS-extExpectedTS)) / float64(f.codec.ClockRate)
+			diffSeconds = float64(int64(extRefTS-extExpectedTS)) / float64(f.clockRate)
 			if diffSeconds > SwitchAheadThresholdSeconds {
 				logTransition("layer switch, reference too far ahead", extExpectedTS, extRefTS, extLastTS, diffSeconds)
 			}
@@ -2114,7 +2117,7 @@ func (f *Forwarder) GetSnTsForBlankFrames(frameRate uint32, numPackets int) ([]S
 	if int64(extExpectedTS-extLastTS) <= 0 {
 		extExpectedTS = extLastTS + 1
 	}
-	snts, err := f.rtpMunger.UpdateAndGetPaddingSnTs(numPackets, f.codec.ClockRate, frameRate, frameEndNeeded, extExpectedTS)
+	snts, err := f.rtpMunger.UpdateAndGetPaddingSnTs(numPackets, f.clockRate, frameRate, frameEndNeeded, extExpectedTS)
 	return snts, frameEndNeeded, err
 }
 

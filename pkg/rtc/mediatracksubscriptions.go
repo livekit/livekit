@@ -16,7 +16,6 @@ package rtc
 
 import (
 	"errors"
-	"strings"
 	"sync"
 
 	"github.com/pion/rtcp"
@@ -24,7 +23,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -47,7 +46,7 @@ type MediaTrackSubscriptions struct {
 	subscribedTracks   map[livekit.ParticipantID]types.SubscribedTrack
 
 	onDownTrackCreated           func(downTrack *sfu.DownTrack)
-	onSubscriberMaxQualityChange func(subscriberID livekit.ParticipantID, codec webrtc.RTPCodecCapability, layer int32)
+	onSubscriberMaxQualityChange func(subscriberID livekit.ParticipantID, mime mime.MimeType, layer int32)
 }
 
 type MediaTrackSubscriptionsParams struct {
@@ -73,7 +72,7 @@ func (t *MediaTrackSubscriptions) OnDownTrackCreated(f func(downTrack *sfu.DownT
 	t.onDownTrackCreated = f
 }
 
-func (t *MediaTrackSubscriptions) OnSubscriberMaxQualityChange(f func(subscriberID livekit.ParticipantID, codec webrtc.RTPCodecCapability, layer int32)) {
+func (t *MediaTrackSubscriptions) OnSubscriberMaxQualityChange(f func(subscriberID livekit.ParticipantID, mime mime.MimeType, layer int32)) {
 	t.onSubscriberMaxQualityChange = f
 }
 
@@ -179,7 +178,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			if t.onSubscriberMaxQualityChange != nil {
 				go func() {
 					spatial := buffer.VideoQualityToSpatialLayer(livekit.VideoQuality_HIGH, t.params.MediaTrack.ToProto())
-					t.onSubscriberMaxQualityChange(downTrack.SubscriberID(), codec, spatial)
+					t.onSubscriberMaxQualityChange(downTrack.SubscriberID(), mime.NormalizeMimeType(codec.MimeType), spatial)
 				}()
 			}
 		}
@@ -214,7 +213,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 
 	downTrack.OnMaxLayerChanged(func(dt *sfu.DownTrack, layer int32) {
 		if t.onSubscriberMaxQualityChange != nil {
-			t.onSubscriberMaxQualityChange(dt.SubscriberID(), dt.Codec(), layer)
+			t.onSubscriberMaxQualityChange(dt.SubscriberID(), dt.Mime(), layer)
 		}
 	})
 
@@ -280,7 +279,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			Stereo: info.Stereo,
 			Red:    !info.DisableRed,
 		}
-		if addTrackParams.Red && (len(codecs) == 1 && sfuutils.NormalizeMimeType(codecs[0].MimeType) == sfuutils.MimeTypeOpus) {
+		if addTrackParams.Red && (len(codecs) == 1 && mime.IsMimeTypeStringOpus(codecs[0].MimeType)) {
 			addTrackParams.Red = false
 		}
 
@@ -379,13 +378,13 @@ func (t *MediaTrackSubscriptions) GetAllSubscribers() []livekit.ParticipantID {
 	return subs
 }
 
-func (t *MediaTrackSubscriptions) GetAllSubscribersForMime(mime string) []livekit.ParticipantID {
+func (t *MediaTrackSubscriptions) GetAllSubscribersForMime(mime mime.MimeType) []livekit.ParticipantID {
 	t.subscribedTracksMu.RLock()
 	defer t.subscribedTracksMu.RUnlock()
 
 	subs := make([]livekit.ParticipantID, 0, len(t.subscribedTracks))
 	for id, subTrack := range t.subscribedTracks {
-		if !strings.EqualFold(subTrack.DownTrack().Codec().MimeType, mime) {
+		if subTrack.DownTrack().Mime() != mime {
 			continue
 		}
 

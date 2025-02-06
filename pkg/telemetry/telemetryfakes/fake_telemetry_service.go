@@ -5,6 +5,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/livekit"
 )
@@ -140,13 +141,13 @@ type FakeTelemetryService struct {
 		arg1 context.Context
 		arg2 []*livekit.AnalyticsStat
 	}
-	TrackMaxSubscribedVideoQualityStub        func(context.Context, livekit.ParticipantID, *livekit.TrackInfo, string, livekit.VideoQuality)
+	TrackMaxSubscribedVideoQualityStub        func(context.Context, livekit.ParticipantID, *livekit.TrackInfo, mime.MimeType, livekit.VideoQuality)
 	trackMaxSubscribedVideoQualityMutex       sync.RWMutex
 	trackMaxSubscribedVideoQualityArgsForCall []struct {
 		arg1 context.Context
 		arg2 livekit.ParticipantID
 		arg3 *livekit.TrackInfo
-		arg4 string
+		arg4 mime.MimeType
 		arg5 livekit.VideoQuality
 	}
 	TrackMutedStub        func(context.Context, livekit.ParticipantID, *livekit.TrackInfo)
@@ -156,13 +157,13 @@ type FakeTelemetryService struct {
 		arg2 livekit.ParticipantID
 		arg3 *livekit.TrackInfo
 	}
-	TrackPublishRTPStatsStub        func(context.Context, livekit.ParticipantID, livekit.TrackID, string, int, *livekit.RTPStats)
+	TrackPublishRTPStatsStub        func(context.Context, livekit.ParticipantID, livekit.TrackID, mime.MimeType, int, *livekit.RTPStats)
 	trackPublishRTPStatsMutex       sync.RWMutex
 	trackPublishRTPStatsArgsForCall []struct {
 		arg1 context.Context
 		arg2 livekit.ParticipantID
 		arg3 livekit.TrackID
-		arg4 string
+		arg4 mime.MimeType
 		arg5 int
 		arg6 *livekit.RTPStats
 	}
@@ -204,13 +205,13 @@ type FakeTelemetryService struct {
 		arg4 error
 		arg5 bool
 	}
-	TrackSubscribeRTPStatsStub        func(context.Context, livekit.ParticipantID, livekit.TrackID, string, *livekit.RTPStats)
+	TrackSubscribeRTPStatsStub        func(context.Context, livekit.ParticipantID, livekit.TrackID, mime.MimeType, *livekit.RTPStats)
 	trackSubscribeRTPStatsMutex       sync.RWMutex
 	trackSubscribeRTPStatsArgsForCall []struct {
 		arg1 context.Context
 		arg2 livekit.ParticipantID
 		arg3 livekit.TrackID
-		arg4 string
+		arg4 mime.MimeType
 		arg5 *livekit.RTPStats
 	}
 	TrackSubscribeRequestedStub        func(context.Context, livekit.ParticipantID, *livekit.TrackInfo)
@@ -925,13 +926,13 @@ func (fake *FakeTelemetryService) SendStatsArgsForCall(i int) (context.Context, 
 	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakeTelemetryService) TrackMaxSubscribedVideoQuality(arg1 context.Context, arg2 livekit.ParticipantID, arg3 *livekit.TrackInfo, arg4 string, arg5 livekit.VideoQuality) {
+func (fake *FakeTelemetryService) TrackMaxSubscribedVideoQuality(arg1 context.Context, arg2 livekit.ParticipantID, arg3 *livekit.TrackInfo, arg4 mime.MimeType, arg5 livekit.VideoQuality) {
 	fake.trackMaxSubscribedVideoQualityMutex.Lock()
 	fake.trackMaxSubscribedVideoQualityArgsForCall = append(fake.trackMaxSubscribedVideoQualityArgsForCall, struct {
 		arg1 context.Context
 		arg2 livekit.ParticipantID
 		arg3 *livekit.TrackInfo
-		arg4 string
+		arg4 mime.MimeType
 		arg5 livekit.VideoQuality
 	}{arg1, arg2, arg3, arg4, arg5})
 	stub := fake.TrackMaxSubscribedVideoQualityStub
@@ -948,13 +949,13 @@ func (fake *FakeTelemetryService) TrackMaxSubscribedVideoQualityCallCount() int 
 	return len(fake.trackMaxSubscribedVideoQualityArgsForCall)
 }
 
-func (fake *FakeTelemetryService) TrackMaxSubscribedVideoQualityCalls(stub func(context.Context, livekit.ParticipantID, *livekit.TrackInfo, string, livekit.VideoQuality)) {
+func (fake *FakeTelemetryService) TrackMaxSubscribedVideoQualityCalls(stub func(context.Context, livekit.ParticipantID, *livekit.TrackInfo, mime.MimeType, livekit.VideoQuality)) {
 	fake.trackMaxSubscribedVideoQualityMutex.Lock()
 	defer fake.trackMaxSubscribedVideoQualityMutex.Unlock()
 	fake.TrackMaxSubscribedVideoQualityStub = stub
 }
 
-func (fake *FakeTelemetryService) TrackMaxSubscribedVideoQualityArgsForCall(i int) (context.Context, livekit.ParticipantID, *livekit.TrackInfo, string, livekit.VideoQuality) {
+func (fake *FakeTelemetryService) TrackMaxSubscribedVideoQualityArgsForCall(i int) (context.Context, livekit.ParticipantID, *livekit.TrackInfo, mime.MimeType, livekit.VideoQuality) {
 	fake.trackMaxSubscribedVideoQualityMutex.RLock()
 	defer fake.trackMaxSubscribedVideoQualityMutex.RUnlock()
 	argsForCall := fake.trackMaxSubscribedVideoQualityArgsForCall[i]
@@ -995,13 +996,13 @@ func (fake *FakeTelemetryService) TrackMutedArgsForCall(i int) (context.Context,
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
-func (fake *FakeTelemetryService) TrackPublishRTPStats(arg1 context.Context, arg2 livekit.ParticipantID, arg3 livekit.TrackID, arg4 string, arg5 int, arg6 *livekit.RTPStats) {
+func (fake *FakeTelemetryService) TrackPublishRTPStats(arg1 context.Context, arg2 livekit.ParticipantID, arg3 livekit.TrackID, arg4 mime.MimeType, arg5 int, arg6 *livekit.RTPStats) {
 	fake.trackPublishRTPStatsMutex.Lock()
 	fake.trackPublishRTPStatsArgsForCall = append(fake.trackPublishRTPStatsArgsForCall, struct {
 		arg1 context.Context
 		arg2 livekit.ParticipantID
 		arg3 livekit.TrackID
-		arg4 string
+		arg4 mime.MimeType
 		arg5 int
 		arg6 *livekit.RTPStats
 	}{arg1, arg2, arg3, arg4, arg5, arg6})
@@ -1019,13 +1020,13 @@ func (fake *FakeTelemetryService) TrackPublishRTPStatsCallCount() int {
 	return len(fake.trackPublishRTPStatsArgsForCall)
 }
 
-func (fake *FakeTelemetryService) TrackPublishRTPStatsCalls(stub func(context.Context, livekit.ParticipantID, livekit.TrackID, string, int, *livekit.RTPStats)) {
+func (fake *FakeTelemetryService) TrackPublishRTPStatsCalls(stub func(context.Context, livekit.ParticipantID, livekit.TrackID, mime.MimeType, int, *livekit.RTPStats)) {
 	fake.trackPublishRTPStatsMutex.Lock()
 	defer fake.trackPublishRTPStatsMutex.Unlock()
 	fake.TrackPublishRTPStatsStub = stub
 }
 
-func (fake *FakeTelemetryService) TrackPublishRTPStatsArgsForCall(i int) (context.Context, livekit.ParticipantID, livekit.TrackID, string, int, *livekit.RTPStats) {
+func (fake *FakeTelemetryService) TrackPublishRTPStatsArgsForCall(i int) (context.Context, livekit.ParticipantID, livekit.TrackID, mime.MimeType, int, *livekit.RTPStats) {
 	fake.trackPublishRTPStatsMutex.RLock()
 	defer fake.trackPublishRTPStatsMutex.RUnlock()
 	argsForCall := fake.trackPublishRTPStatsArgsForCall[i]
@@ -1205,13 +1206,13 @@ func (fake *FakeTelemetryService) TrackSubscribeFailedArgsForCall(i int) (contex
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5
 }
 
-func (fake *FakeTelemetryService) TrackSubscribeRTPStats(arg1 context.Context, arg2 livekit.ParticipantID, arg3 livekit.TrackID, arg4 string, arg5 *livekit.RTPStats) {
+func (fake *FakeTelemetryService) TrackSubscribeRTPStats(arg1 context.Context, arg2 livekit.ParticipantID, arg3 livekit.TrackID, arg4 mime.MimeType, arg5 *livekit.RTPStats) {
 	fake.trackSubscribeRTPStatsMutex.Lock()
 	fake.trackSubscribeRTPStatsArgsForCall = append(fake.trackSubscribeRTPStatsArgsForCall, struct {
 		arg1 context.Context
 		arg2 livekit.ParticipantID
 		arg3 livekit.TrackID
-		arg4 string
+		arg4 mime.MimeType
 		arg5 *livekit.RTPStats
 	}{arg1, arg2, arg3, arg4, arg5})
 	stub := fake.TrackSubscribeRTPStatsStub
@@ -1228,13 +1229,13 @@ func (fake *FakeTelemetryService) TrackSubscribeRTPStatsCallCount() int {
 	return len(fake.trackSubscribeRTPStatsArgsForCall)
 }
 
-func (fake *FakeTelemetryService) TrackSubscribeRTPStatsCalls(stub func(context.Context, livekit.ParticipantID, livekit.TrackID, string, *livekit.RTPStats)) {
+func (fake *FakeTelemetryService) TrackSubscribeRTPStatsCalls(stub func(context.Context, livekit.ParticipantID, livekit.TrackID, mime.MimeType, *livekit.RTPStats)) {
 	fake.trackSubscribeRTPStatsMutex.Lock()
 	defer fake.trackSubscribeRTPStatsMutex.Unlock()
 	fake.TrackSubscribeRTPStatsStub = stub
 }
 
-func (fake *FakeTelemetryService) TrackSubscribeRTPStatsArgsForCall(i int) (context.Context, livekit.ParticipantID, livekit.TrackID, string, *livekit.RTPStats) {
+func (fake *FakeTelemetryService) TrackSubscribeRTPStatsArgsForCall(i int) (context.Context, livekit.ParticipantID, livekit.TrackID, mime.MimeType, *livekit.RTPStats) {
 	fake.trackSubscribeRTPStatsMutex.RLock()
 	defer fake.trackSubscribeRTPStatsMutex.RUnlock()
 	argsForCall := fake.trackSubscribeRTPStatsArgsForCall[i]

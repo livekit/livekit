@@ -26,7 +26,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/sfu/utils"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 )
 
 // wrapper around WebRTC receiver, overriding its ID
@@ -59,14 +59,14 @@ func NewWrappedReceiver(params WrappedReceiverParams) *WrappedReceiver {
 
 	codecs := params.UpstreamCodecs
 	if len(codecs) == 1 {
-		normalizedMimeType := utils.NormalizeMimeType(codecs[0].MimeType)
-		if normalizedMimeType == utils.MimeTypeAudioRed {
+		normalizedMimeType := mime.NormalizeMimeType(codecs[0].MimeType)
+		if normalizedMimeType == mime.MimeTypeRED {
 			// if upstream is opus/red, then add opus to match clients that don't support red
 			codecs = append(codecs, webrtc.RTPCodecParameters{
 				RTPCodecCapability: OpusCodecCapability,
 				PayloadType:        111,
 			})
-		} else if !params.DisableRed && normalizedMimeType == utils.MimeTypeOpus {
+		} else if !params.DisableRed && normalizedMimeType == mime.MimeTypeOpus {
 			// if upstream is opus only and red enabled, add red to match clients that support red
 			codecs = append(codecs, webrtc.RTPCodecParameters{
 				RTPCodecCapability: RedCodecCapability,
@@ -97,18 +97,18 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) boo
 	r.lock.Lock()
 	r.determinedCodec = codec
 
-	codecMimeType := utils.NormalizeMimeType(codec.MimeType)
+	codecMimeType := mime.NormalizeMimeType(codec.MimeType)
 	var trackReceiver sfu.TrackReceiver
 	for _, receiver := range r.receivers {
-		receiverMimeType := utils.NormalizeMimeType(receiver.Codec().MimeType)
+		receiverMimeType := receiver.Mime()
 		if receiverMimeType == codecMimeType {
 			trackReceiver = receiver
 			break
-		} else if receiverMimeType == utils.MimeTypeAudioRed && codecMimeType == utils.MimeTypeOpus {
+		} else if receiverMimeType == mime.MimeTypeRED && codecMimeType == mime.MimeTypeOpus {
 			// audio opus/red can match opus only
 			trackReceiver = receiver.GetPrimaryReceiverForRed()
 			break
-		} else if receiverMimeType == utils.MimeTypeOpus && codecMimeType == utils.MimeTypeAudioRed {
+		} else if receiverMimeType == mime.MimeTypeOpus && codecMimeType == mime.MimeTypeRED {
 			trackReceiver = receiver.GetRedReceiver()
 			break
 		}
@@ -256,6 +256,13 @@ func (d *DummyReceiver) Codec() webrtc.RTPCodecParameters {
 		return r.Codec()
 	}
 	return d.codec
+}
+
+func (d *DummyReceiver) Mime() mime.MimeType {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		return r.Mime()
+	}
+	return mime.NormalizeMimeType(d.codec.MimeType)
 }
 
 func (d *DummyReceiver) HeaderExtensions() []webrtc.RTPHeaderExtensionParameter {

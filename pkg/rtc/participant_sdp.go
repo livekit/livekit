@@ -22,6 +22,7 @@ import (
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/protocol/livekit"
 	lksdp "github.com/livekit/protocol/sdp"
 )
@@ -58,7 +59,7 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.Se
 
 		var opusPayload uint8
 		for _, codec := range codecs {
-			if strings.EqualFold(codec.Name, "opus") {
+			if mime.IsMimeTypeCodecStringOpus(codec.Name) {
 				opusPayload = codec.PayloadType
 				break
 			}
@@ -70,7 +71,7 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.Se
 		var preferredCodecs, leftCodecs []string
 		for _, codec := range codecs {
 			// codec contain opus/red
-			if !disableRed && strings.EqualFold(codec.Name, "red") && strings.Contains(codec.Fmtp, strconv.FormatInt(int64(opusPayload), 10)) {
+			if !disableRed && mime.IsMimeTypeCodecStringRED(codec.Name) && strings.Contains(codec.Fmtp, strconv.FormatInt(int64(opusPayload), 10)) {
 				preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
 			} else {
 				leftCodecs = append(leftCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
@@ -241,7 +242,7 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 				continue
 			}
 
-			opusPT, err := parsed.GetPayloadTypeForCodec(sdp.Codec{Name: "opus"})
+			opusPT, err := parsed.GetPayloadTypeForCodec(sdp.Codec{Name: mime.MimeTypeCodecOpus.String()})
 			if err != nil {
 				p.pubLogger.Infow("failed to get opus payload type", "error", err, "trackID", ti.Sid)
 				continue

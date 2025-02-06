@@ -29,6 +29,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 )
 
@@ -74,7 +75,7 @@ func (m MigrateState) String() string {
 // ---------------------------------------------
 
 type SubscribedCodecQuality struct {
-	CodecMime string
+	CodecMime mime.MimeType
 	Quality   livekit.VideoQuality
 }
 
@@ -526,7 +527,7 @@ type MediaTrack interface {
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
 
 	// returns temporal layer that's appropriate for fps
-	GetTemporalLayerForSpatialFps(spatial int32, fps uint32, mime string) int32
+	GetTemporalLayerForSpatialFps(spatial int32, fps uint32, mime mime.MimeType) int32
 
 	Receivers() []sfu.TrackReceiver
 	ClearAllReceivers(isExpectedToResume bool)

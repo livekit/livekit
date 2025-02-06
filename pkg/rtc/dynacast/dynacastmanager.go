@@ -25,7 +25,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/utils"
 )
 
@@ -38,9 +38,9 @@ type DynacastManager struct {
 	params DynacastManagerParams
 
 	lock                          sync.RWMutex
-	dynacastQuality               map[string]*DynacastQuality // mime type => DynacastQuality
-	maxSubscribedQuality          map[string]livekit.VideoQuality
-	committedMaxSubscribedQuality map[string]livekit.VideoQuality
+	dynacastQuality               map[mime.MimeType]*DynacastQuality
+	maxSubscribedQuality          map[mime.MimeType]livekit.VideoQuality
+	committedMaxSubscribedQuality map[mime.MimeType]livekit.VideoQuality
 
 	maxSubscribedQualityDebounce        func(func())
 	maxSubscribedQualityDebouncePending bool
@@ -58,9 +58,9 @@ func NewDynacastManager(params DynacastManagerParams) *DynacastManager {
 	}
 	d := &DynacastManager{
 		params:                        params,
-		dynacastQuality:               make(map[string]*DynacastQuality),
-		maxSubscribedQuality:          make(map[string]livekit.VideoQuality),
-		committedMaxSubscribedQuality: make(map[string]livekit.VideoQuality),
+		dynacastQuality:               make(map[mime.MimeType]*DynacastQuality),
+		maxSubscribedQuality:          make(map[mime.MimeType]livekit.VideoQuality),
+		committedMaxSubscribedQuality: make(map[mime.MimeType]livekit.VideoQuality),
 		qualityNotifyOpQueue: utils.NewOpsQueue(utils.OpsQueueParams{
 			Name:        "quality-notify",
 			MinSize:     64,
@@ -81,13 +81,13 @@ func (d *DynacastManager) OnSubscribedMaxQualityChange(f func(subscribedQualitie
 	d.lock.Unlock()
 }
 
-func (d *DynacastManager) AddCodec(mime string) {
+func (d *DynacastManager) AddCodec(mime mime.MimeType) {
 	d.getOrCreateDynacastQuality(mime)
 }
 
 func (d *DynacastManager) Restart() {
 	d.lock.Lock()
-	d.committedMaxSubscribedQuality = make(map[string]livekit.VideoQuality)
+	d.committedMaxSubscribedQuality = make(map[mime.MimeType]livekit.VideoQuality)
 
 	dqs := d.getDynacastQualitiesLocked()
 	d.lock.Unlock()
@@ -102,7 +102,7 @@ func (d *DynacastManager) Close() {
 
 	d.lock.Lock()
 	dqs := d.getDynacastQualitiesLocked()
-	d.dynacastQuality = make(map[string]*DynacastQuality)
+	d.dynacastQuality = make(map[mime.MimeType]*DynacastQuality)
 
 	d.isClosed = true
 	d.lock.Unlock()
@@ -135,7 +135,7 @@ func (d *DynacastManager) ForceQuality(quality livekit.VideoQuality) {
 	d.enqueueSubscribedQualityChange()
 }
 
-func (d *DynacastManager) NotifySubscriberMaxQuality(subscriberID livekit.ParticipantID, mime string, quality livekit.VideoQuality) {
+func (d *DynacastManager) NotifySubscriberMaxQuality(subscriberID livekit.ParticipantID, mime mime.MimeType, quality livekit.VideoQuality) {
 	dq := d.getOrCreateDynacastQuality(mime)
 	if dq != nil {
 		dq.NotifySubscriberMaxQuality(subscriberID, quality)
@@ -151,7 +151,7 @@ func (d *DynacastManager) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, 
 	}
 }
 
-func (d *DynacastManager) getOrCreateDynacastQuality(mime string) *DynacastQuality {
+func (d *DynacastManager) getOrCreateDynacastQuality(mimeType mime.MimeType) *DynacastQuality {
 	d.lock.Lock()
 	defer d.lock.Unlock()
 
@@ -159,21 +159,18 @@ func (d *DynacastManager) getOrCreateDynacastQuality(mime string) *DynacastQuali
 		return nil
 	}
 
-	normalizedMime := sfuutils.NormalizeMimeType(mime)
-	if dq := d.dynacastQuality[normalizedMime]; dq != nil {
+	if dq := d.dynacastQuality[mimeType]; dq != nil {
 		return dq
 	}
 
 	dq := NewDynacastQuality(DynacastQualityParams{
-		MimeType: normalizedMime,
+		MimeType: mimeType,
 		Logger:   d.params.Logger,
 	})
-	dq.OnSubscribedMaxQualityChange(func(mimeType string, maxQuality livekit.VideoQuality) {
-		d.updateMaxQualityForMime(mimeType, maxQuality)
-	})
+	dq.OnSubscribedMaxQualityChange(d.updateMaxQualityForMime)
 	dq.Start()
 
-	d.dynacastQuality[normalizedMime] = dq
+	d.dynacastQuality[mimeType] = dq
 	return dq
 }
 
@@ -181,7 +178,7 @@ func (d *DynacastManager) getDynacastQualitiesLocked() []*DynacastQuality {
 	return maps.Values(d.dynacastQuality)
 }
 
-func (d *DynacastManager) updateMaxQualityForMime(mime string, maxQuality livekit.VideoQuality) {
+func (d *DynacastManager) updateMaxQualityForMime(mime mime.MimeType, maxQuality livekit.VideoQuality) {
 	d.lock.Lock()
 	d.maxSubscribedQuality[mime] = maxQuality
 	d.lock.Unlock()
@@ -261,7 +258,7 @@ func (d *DynacastManager) update(force bool) {
 	)
 
 	// commit change
-	d.committedMaxSubscribedQuality = make(map[string]livekit.VideoQuality, len(d.maxSubscribedQuality))
+	d.committedMaxSubscribedQuality = make(map[mime.MimeType]livekit.VideoQuality, len(d.maxSubscribedQuality))
 	for mime, quality := range d.maxSubscribedQuality {
 		d.committedMaxSubscribedQuality[mime] = quality
 	}
@@ -285,7 +282,7 @@ func (d *DynacastManager) enqueueSubscribedQualityChange() {
 
 		if quality == livekit.VideoQuality_OFF {
 			subscribedCodecs = append(subscribedCodecs, &livekit.SubscribedCodec{
-				Codec: mime,
+				Codec: mime.String(),
 				Qualities: []*livekit.SubscribedQuality{
 					{Quality: livekit.VideoQuality_LOW, Enabled: false},
 					{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
@@ -301,7 +298,7 @@ func (d *DynacastManager) enqueueSubscribedQualityChange() {
 				})
 			}
 			subscribedCodecs = append(subscribedCodecs, &livekit.SubscribedCodec{
-				Codec:     mime,
+				Codec:     mime.String(),
 				Qualities: subscribedQualities,
 			})
 		}
