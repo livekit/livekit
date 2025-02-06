@@ -163,6 +163,7 @@ type ParticipantParams struct {
 	DataChannelMaxBufferedAmount   uint64
 	DatachannelSlowThreshold       int
 	FireOnTrackBySdp               bool
+	DisableCodecRegression         bool
 }
 
 type ParticipantImpl struct {
@@ -2201,6 +2202,11 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		return ti
 	}
 
+	backupCodecPolicy := req.BackupCodecPolicy
+	if backupCodecPolicy == livekit.BackupCodecPolicy_REGRESSION && p.params.DisableCodecRegression {
+		backupCodecPolicy = livekit.BackupCodecPolicy_SIMULCAST
+	}
+
 	ti := &livekit.TrackInfo{
 		Type:              req.Type,
 		Name:              req.Name,
@@ -2214,7 +2220,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		Stereo:            req.Stereo,
 		Encryption:        req.Encryption,
 		Stream:            req.Stream,
-		BackupCodecPolicy: req.BackupCodecPolicy,
+		BackupCodecPolicy: backupCodecPolicy,
 	}
 	if req.Stereo {
 		ti.AudioFeatures = append(ti.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO)
