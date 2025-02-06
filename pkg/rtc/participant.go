@@ -3009,14 +3009,13 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 		}
 
 		// sort by compatibility, since we will look for backups in these.
-		normalizedMimeType := mime.NormalizeMimeType(c.Mime)
-		if normalizedMimeType == mime.MimeTypeVP8 {
+		if mime.IsMimeTypeStringVP8(c.Mime) {
 			if len(p.enabledPublishCodecs) > 0 {
 				p.enabledPublishCodecs = slices.Insert(p.enabledPublishCodecs, 0, c)
 			} else {
 				p.enabledPublishCodecs = append(p.enabledPublishCodecs, c)
 			}
-		} else if normalizedMimeType == mime.MimeTypeH264 {
+		} else if mime.IsMimeTypeStringH264(c.Mime) {
 			p.enabledPublishCodecs = append(p.enabledPublishCodecs, c)
 		} else {
 			publishCodecs = append(publishCodecs, c)

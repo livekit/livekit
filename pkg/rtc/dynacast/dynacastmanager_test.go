@@ -288,11 +288,11 @@ func TestCodecRegression(t *testing.T) {
 		lock.Unlock()
 	})
 
-	dm.NotifySubscriberMaxQuality("s1", webrtc.MimeTypeAV1, livekit.VideoQuality_HIGH)
+	dm.NotifySubscriberMaxQuality("s1", mime.MimeTypeAV1, livekit.VideoQuality_HIGH)
 
 	expectedSubscribedQualities := []*livekit.SubscribedCodec{
 		{
-			Codec: strings.ToLower(webrtc.MimeTypeAV1),
+			Codec: mime.MimeTypeAV1.String(),
 			Qualities: []*livekit.SubscribedQuality{
 				{Quality: livekit.VideoQuality_LOW, Enabled: true},
 				{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
@@ -307,11 +307,11 @@ func TestCodecRegression(t *testing.T) {
 		return subscribedCodecsAsString(expectedSubscribedQualities) == subscribedCodecsAsString(actualSubscribedQualities)
 	}, 10*time.Second, 100*time.Millisecond)
 
-	dm.HandleCodecRegression(webrtc.MimeTypeAV1, webrtc.MimeTypeVP8)
+	dm.HandleCodecRegression(mime.MimeTypeAV1, mime.MimeTypeVP8)
 
 	expectedSubscribedQualities = []*livekit.SubscribedCodec{
 		{
-			Codec: strings.ToLower(webrtc.MimeTypeAV1),
+			Codec: mime.MimeTypeAV1.String(),
 			Qualities: []*livekit.SubscribedQuality{
 				{Quality: livekit.VideoQuality_LOW, Enabled: false},
 				{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
@@ -319,7 +319,7 @@ func TestCodecRegression(t *testing.T) {
 			},
 		},
 		{
-			Codec: strings.ToLower(webrtc.MimeTypeVP8),
+			Codec: mime.MimeTypeVP8.String(),
 			Qualities: []*livekit.SubscribedQuality{
 				{Quality: livekit.VideoQuality_LOW, Enabled: true},
 				{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
@@ -336,13 +336,13 @@ func TestCodecRegression(t *testing.T) {
 
 	// av1 quality change should be forwarded to vp8
 	// av1 quality change of node should be ignored
-	dm.NotifySubscriberMaxQuality("s1", webrtc.MimeTypeAV1, livekit.VideoQuality_MEDIUM)
+	dm.NotifySubscriberMaxQuality("s1", mime.MimeTypeAV1, livekit.VideoQuality_MEDIUM)
 	dm.NotifySubscriberNodeMaxQuality("n1", []types.SubscribedCodecQuality{
-		{CodecMime: webrtc.MimeTypeAV1, Quality: livekit.VideoQuality_HIGH},
+		{CodecMime: mime.MimeTypeAV1, Quality: livekit.VideoQuality_HIGH},
 	})
 	expectedSubscribedQualities = []*livekit.SubscribedCodec{
 		{
-			Codec: strings.ToLower(webrtc.MimeTypeAV1),
+			Codec: mime.MimeTypeAV1.String(),
 			Qualities: []*livekit.SubscribedQuality{
 				{Quality: livekit.VideoQuality_LOW, Enabled: false},
 				{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
@@ -350,7 +350,7 @@ func TestCodecRegression(t *testing.T) {
 			},
 		},
 		{
-			Codec: strings.ToLower(webrtc.MimeTypeVP8),
+			Codec: mime.MimeTypeVP8.String(),
 			Qualities: []*livekit.SubscribedQuality{
 				{Quality: livekit.VideoQuality_LOW, Enabled: true},
 				{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},

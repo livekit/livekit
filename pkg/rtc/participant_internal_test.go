@@ -411,7 +411,7 @@ func TestDisablePublishCodec(t *testing.T) {
 	})
 
 	for _, codec := range participant.enabledPublishCodecs {
-		require.NotEqual(t, strings.ToLower(codec.Mime), "video/h264")
+		require.False(t, mime.IsMimeTypeStringH264(codec.Mime))
 	}
 
 	sink := &routingfakes.FakeMessageSink{}
@@ -422,7 +422,7 @@ func TestDisablePublishCodec(t *testing.T) {
 			if published := res.GetTrackPublished(); published != nil {
 				publishReceived.Store(true)
 				require.NotEmpty(t, published.Track.Codecs)
-				require.Equal(t, "video/vp8", strings.ToLower(published.Track.Codecs[0].MimeType))
+				require.True(t, mime.IsMimeTypeStringVP8(published.Track.Codecs[0].MimeType))
 			}
 		}
 		return nil
@@ -447,7 +447,7 @@ func TestDisablePublishCodec(t *testing.T) {
 			if published := res.GetTrackPublished(); published != nil {
 				publishReceived.Store(true)
 				require.NotEmpty(t, published.Track.Codecs)
-				require.Equal(t, "video/vp8", strings.ToLower(published.Track.Codecs[0].MimeType))
+				require.True(t, mime.IsMimeTypeStringVP8(published.Track.Codecs[0].MimeType))
 			}
 		}
 		return nil

@@ -664,7 +664,7 @@ func TestSubscribeToCodecUnsupported(t *testing.T) {
 		remoteC1 := c2.GetRemoteParticipant(c1.ID())
 		require.NotNil(t, remoteC1)
 		for _, track := range remoteC1.Tracks {
-			if mime.IsMimeTypeCodecStringH264(track.MimeType) {
+			if mime.IsMimeTypeStringH264(track.MimeType) {
 				h264TrackID = track.Sid
 				return true
 			}
