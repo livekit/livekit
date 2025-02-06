@@ -110,7 +110,7 @@ func NormalizeMimeTypeCodec(codec string) MimeTypeCodec {
 func GetMimeTypeCodec(mime string) MimeTypeCodec {
 	parts := strings.Split(mime, "/")
 	if len(parts) > 1 {
-		return MimeTypeCodec(parts[1])
+		return NormalizeMimeTypeCodec(parts[1])
 	}
 
 	return MimeTypeCodecUnknown

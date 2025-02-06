@@ -433,7 +433,7 @@ func TestDisablePublishCodec(t *testing.T) {
 		Cid:  "cid1",
 		Type: livekit.TrackType_VIDEO,
 		SimulcastCodecs: []*livekit.SimulcastCodec{{
-			Codec: "video/h264",
+			Codec: "h264",
 			Cid:   "cid1",
 		}},
 	})
@@ -456,7 +456,7 @@ func TestDisablePublishCodec(t *testing.T) {
 		Cid:  "cid2",
 		Type: livekit.TrackType_VIDEO,
 		SimulcastCodecs: []*livekit.SimulcastCodec{{
-			Codec: "video/vp8",
+			Codec: "vp8",
 			Cid:   "cid2",
 		}},
 	})
@@ -484,7 +484,7 @@ func TestPreferVideoCodecForPublisher(t *testing.T) {
 			Source: livekit.TrackSource_CAMERA,
 			SimulcastCodecs: []*livekit.SimulcastCodec{
 				{
-					Codec: "video/h264",
+					Codec: "h264",
 					Cid:   trackCid,
 				},
 			},
@@ -500,7 +500,7 @@ func TestPreferVideoCodecForPublisher(t *testing.T) {
 		codecs := transceiver.Receiver().GetParameters().Codecs
 
 		// h264 should not be preferred
-		require.NotEqual(t, codecs[0].MimeType, "video/h264")
+		require.False(t, mime.IsMimeTypeStringH264(codecs[0].MimeType))
 
 		sink := &routingfakes.FakeMessageSink{}
 		participant.SetResponseSink(sink)
