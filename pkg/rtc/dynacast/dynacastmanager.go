@@ -38,6 +38,7 @@ type DynacastManager struct {
 	params DynacastManagerParams
 
 	lock                          sync.RWMutex
+	regressedCodec                map[string]struct{}
 	dynacastQuality               map[string]*DynacastQuality // mime type => DynacastQuality
 	maxSubscribedQuality          map[string]livekit.VideoQuality
 	committedMaxSubscribedQuality map[string]livekit.VideoQuality
@@ -58,6 +59,7 @@ func NewDynacastManager(params DynacastManagerParams) *DynacastManager {
 	}
 	d := &DynacastManager{
 		params:                        params,
+		regressedCodec:                make(map[string]struct{}),
 		dynacastQuality:               make(map[string]*DynacastQuality),
 		maxSubscribedQuality:          make(map[string]livekit.VideoQuality),
 		committedMaxSubscribedQuality: make(map[string]livekit.VideoQuality),
@@ -83,6 +85,38 @@ func (d *DynacastManager) OnSubscribedMaxQualityChange(f func(subscribedQualitie
 
 func (d *DynacastManager) AddCodec(mime string) {
 	d.getOrCreateDynacastQuality(mime)
+}
+
+func (d *DynacastManager) HandleCodecRegression(fromMime, toMime string) {
+	fromDq := d.getOrCreateDynacastQuality(fromMime)
+
+	d.lock.Lock()
+	if d.isClosed {
+		d.lock.Unlock()
+		return
+	}
+
+	normalizedFromMime, normalizedToMime := strings.ToLower(fromMime), strings.ToLower(toMime)
+	if fromDq == nil {
+		// should not happen as we have added the codec on setup receiver
+		d.params.Logger.Warnw("regression from codec not found", nil, "mime", normalizedFromMime)
+		d.lock.Unlock()
+		return
+	}
+	d.regressedCodec[normalizedFromMime] = struct{}{}
+	d.maxSubscribedQuality[normalizedFromMime] = livekit.VideoQuality_OFF
+
+	// if the new codec is not added, notify the publisher to start publishing
+	if _, ok := d.maxSubscribedQuality[normalizedToMime]; !ok {
+		d.maxSubscribedQuality[normalizedToMime] = livekit.VideoQuality_HIGH
+	}
+
+	d.lock.Unlock()
+	d.update(false)
+
+	fromDq.Stop()
+	ToDq := d.getOrCreateDynacastQuality(normalizedToMime)
+	fromDq.RegressTo(ToDq)
 }
 
 func (d *DynacastManager) Restart() {
@@ -183,7 +217,9 @@ func (d *DynacastManager) getDynacastQualitiesLocked() []*DynacastQuality {
 
 func (d *DynacastManager) updateMaxQualityForMime(mime string, maxQuality livekit.VideoQuality) {
 	d.lock.Lock()
-	d.maxSubscribedQuality[mime] = maxQuality
+	if _, ok := d.regressedCodec[mime]; !ok {
+		d.maxSubscribedQuality[mime] = maxQuality
+	}
 	d.lock.Unlock()
 
 	d.update(false)
