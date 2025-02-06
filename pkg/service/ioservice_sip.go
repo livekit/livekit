@@ -19,6 +19,7 @@ import (
 	"errors"
 	"net/netip"
 
+	"github.com/dennwc/iters"
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/protocol/livekit"
@@ -30,23 +31,54 @@ import (
 // matchSIPTrunk finds a SIP Trunk definition matching the request.
 // Returns nil if no rules matched or an error if there are conflicting definitions.
 func (s *IOInfoService) matchSIPTrunk(ctx context.Context, trunkID, calling, called string, srcIP netip.Addr) (*livekit.SIPInboundTrunkInfo, error) {
-	trunks, err := s.ss.ListSIPInboundTrunk(ctx)
-	if err != nil {
-		return nil, err
+	if s.ss == nil {
+		return nil, ErrSIPNotConnected
 	}
-	return sip.MatchTrunk(trunks, srcIP, calling, called)
+	if trunkID != "" {
+		// This is a best-effort optimization. Fallthrough to listing trunks if it doesn't work.
+		if tr, err := s.ss.LoadSIPInboundTrunk(ctx, trunkID); err == nil {
+			tr, err = sip.MatchTrunkIter(iters.Slice([]*livekit.SIPInboundTrunkInfo{tr}), srcIP, calling, called)
+			if err == nil {
+				return tr, nil
+			}
+		}
+	}
+	it := s.SelectSIPInboundTrunk(ctx, called)
+	return sip.MatchTrunkIter(it, srcIP, calling, called)
+}
+
+func (s *IOInfoService) SelectSIPInboundTrunk(ctx context.Context, called string) iters.Iter[*livekit.SIPInboundTrunkInfo] {
+	it := livekit.ListPageIter(s.ss.ListSIPInboundTrunk, &livekit.ListSIPInboundTrunkRequest{
+		Numbers: []string{called},
+	})
+	return iters.PagesAsIter(ctx, it)
 }
 
 // matchSIPDispatchRule finds the best dispatch rule matching the request parameters. Returns an error if no rule matched.
 // Trunk parameter can be nil, in which case only wildcard dispatch rules will be effective (ones without Trunk IDs).
 func (s *IOInfoService) matchSIPDispatchRule(ctx context.Context, trunk *livekit.SIPInboundTrunkInfo, req *rpc.EvaluateSIPDispatchRulesRequest) (*livekit.SIPDispatchRuleInfo, error) {
+	if s.ss == nil {
+		return nil, ErrSIPNotConnected
+	}
+	var trunkID string
+	if trunk != nil {
+		trunkID = trunk.SipTrunkId
+	}
 	// Trunk can still be nil here in case none matched or were defined.
 	// This is still fine, but only in case we'll match exactly one wildcard dispatch rule.
-	rules, err := s.ss.ListSIPDispatchRule(ctx)
-	if err != nil {
-		return nil, err
+	it := s.SelectSIPDispatchRule(ctx, trunkID)
+	return sip.MatchDispatchRuleIter(trunk, it, req)
+}
+
+func (s *IOInfoService) SelectSIPDispatchRule(ctx context.Context, trunkID string) iters.Iter[*livekit.SIPDispatchRuleInfo] {
+	var trunkIDs []string
+	if trunkID != "" {
+		trunkIDs = []string{trunkID}
 	}
-	return sip.MatchDispatchRule(trunk, rules, req)
+	it := livekit.ListPageIter(s.ss.ListSIPDispatchRule, &livekit.ListSIPDispatchRuleRequest{
+		TrunkIds: trunkIDs,
+	})
+	return iters.PagesAsIter(ctx, it)
 }
 
 func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.EvaluateSIPDispatchRulesRequest) (*rpc.EvaluateSIPDispatchRulesResponse, error) {

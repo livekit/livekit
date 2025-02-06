@@ -25,6 +25,24 @@ import (
 	"github.com/livekit/livekit-server/pkg/service"
 )
 
+func redisClientDocker(t testing.TB) *redis.Client {
+	addr := runRedis(t)
+	cli := redis.NewClient(&redis.Options{
+		Addr: addr,
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := cli.Ping(ctx).Err(); err != nil {
+		_ = cli.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = cli.Close()
+	})
+	return cli
+}
+
 func redisClient(t testing.TB) *redis.Client {
 	cli := redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",
@@ -42,21 +60,7 @@ func redisClient(t testing.TB) *redis.Client {
 	t.Logf("local redis not available: %v", err)
 
 	t.Logf("starting redis in docker")
-	addr := runRedis(t)
-	cli = redis.NewClient(&redis.Options{
-		Addr: addr,
-	})
-	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err = cli.Ping(ctx).Err(); err != nil {
-		_ = cli.Close()
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = cli.Close()
-	})
-	return cli
+	return redisClientDocker(t)
 }
 
 func TestIsValidDomain(t *testing.T) {

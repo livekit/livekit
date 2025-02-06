@@ -32,6 +32,10 @@ import (
 	"github.com/livekit/livekit-server/pkg/service"
 )
 
+func redisStoreDocker(t testing.TB) *service.RedisStore {
+	return service.NewRedisStore(redisClientDocker(t))
+}
+
 func redisStore(t testing.TB) *service.RedisStore {
 	return service.NewRedisStore(redisClient(t))
 }
