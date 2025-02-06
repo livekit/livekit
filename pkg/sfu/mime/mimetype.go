@@ -196,6 +196,15 @@ func NormalizeMimeTypeCodec(codec string) MimeTypeCodec {
 	return MimeTypeCodecUnknown
 }
 
+func GetMimeTypeCodec(mime string) MimeTypeCodec {
+	parts := strings.Split(mime, "/")
+	if len(parts) > 1 {
+		return MimeTypeCodec(parts[1])
+	}
+
+	return MimeTypeCodecUnknown
+}
+
 func IsMimeTypeCodecStringOpus(codec string) bool {
 	return NormalizeMimeTypeCodec(codec) == MimeTypeCodecOpus
 }
@@ -294,10 +303,6 @@ func IsMimeTypeStringEqual(mime1 string, mime2 string) bool {
 	return NormalizeMimeType(mime1) == NormalizeMimeType(mime2)
 }
 
-func IsMimeTypeStringContains(haystack string, needle string) bool {
-	return strings.Contains(strings.ToLower(haystack), strings.ToLower(needle))
-}
-
 func IsMimeTypeStringAudio(mime string) bool {
 	return strings.HasPrefix(mime, MimeTypePrefixAudio)
 }
@@ -344,6 +349,10 @@ func IsMimeTypeStringRTX(mime string) bool {
 
 func IsMimeTypeStringVP8(mime string) bool {
 	return NormalizeMimeType(mime) == MimeTypeVP8
+}
+
+func IsMimeTypeStringVP9(mime string) bool {
+	return NormalizeMimeType(mime) == MimeTypeVP9
 }
 
 func IsMimeTypeStringH264(mime string) bool {

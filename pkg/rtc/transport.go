@@ -417,11 +417,11 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	}
 
 	setTWCCForVideo := func(info *interceptor.StreamInfo) {
-		if !strings.HasPrefix(info.MimeType, "video") {
+		if !mime.IsMimeTypeStringVideo(info.MimeType) {
 			return
 		}
 		// rtx stream don't have rtcp feedback, always set twcc for rtx stream
-		twccFb := strings.HasSuffix(info.MimeType, "rtx")
+		twccFb := mime.GetMimeTypeCodec(info.MimeType) == mime.MimeTypeCodecRTX
 		if !twccFb {
 			for _, fb := range info.RTCPFeedback {
 				if fb.Type == webrtc.TypeRTCPFBTransportCC {

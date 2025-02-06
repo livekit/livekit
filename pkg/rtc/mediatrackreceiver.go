@@ -704,7 +704,7 @@ func (t *MediaTrackReceiver) UpdateCodecCid(codecs []*livekit.SimulcastCodec) {
 	trackInfo := t.TrackInfoClone()
 	for _, c := range codecs {
 		for _, origin := range trackInfo.Codecs {
-			if mime.IsMimeTypeStringContains(origin.MimeType, c.Codec) {
+			if mime.GetMimeTypeCodec(origin.MimeType) == mime.NormalizeMimeTypeCodec(c.Codec) {
 				origin.Cid = c.Cid
 				break
 			}
