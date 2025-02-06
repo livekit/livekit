@@ -114,68 +114,108 @@ func (s *RedisStore) DeleteSIPTrunk(ctx context.Context, id string) error {
 	return err
 }
 
-func (s *RedisStore) listSIPLegacyTrunk(ctx context.Context) ([]*livekit.SIPTrunkInfo, error) {
-	return redisLoadMany[livekit.SIPTrunkInfo](ctx, s, SIPTrunkKey)
+func (s *RedisStore) listSIPLegacyTrunk(ctx context.Context, page *livekit.Pagination) ([]*livekit.SIPTrunkInfo, error) {
+	return redisIterPage[livekit.SIPTrunkInfo](ctx, s, SIPTrunkKey, page)
 }
 
-func (s *RedisStore) listSIPInboundTrunk(ctx context.Context) ([]*livekit.SIPInboundTrunkInfo, error) {
-	return redisLoadMany[livekit.SIPInboundTrunkInfo](ctx, s, SIPInboundTrunkKey)
+func (s *RedisStore) listSIPInboundTrunk(ctx context.Context, page *livekit.Pagination) ([]*livekit.SIPInboundTrunkInfo, error) {
+	return redisIterPage[livekit.SIPInboundTrunkInfo](ctx, s, SIPInboundTrunkKey, page)
 }
 
-func (s *RedisStore) listSIPOutboundTrunk(ctx context.Context) ([]*livekit.SIPOutboundTrunkInfo, error) {
-	return redisLoadMany[livekit.SIPOutboundTrunkInfo](ctx, s, SIPOutboundTrunkKey)
+func (s *RedisStore) listSIPOutboundTrunk(ctx context.Context, page *livekit.Pagination) ([]*livekit.SIPOutboundTrunkInfo, error) {
+	return redisIterPage[livekit.SIPOutboundTrunkInfo](ctx, s, SIPOutboundTrunkKey, page)
 }
 
-func (s *RedisStore) ListSIPTrunk(ctx context.Context) ([]*livekit.SIPTrunkInfo, error) {
-	infos, err := s.listSIPLegacyTrunk(ctx)
+func (s *RedisStore) listSIPDispatchRule(ctx context.Context, page *livekit.Pagination) ([]*livekit.SIPDispatchRuleInfo, error) {
+	return redisIterPage[livekit.SIPDispatchRuleInfo](ctx, s, SIPDispatchRuleKey, page)
+}
+
+func (s *RedisStore) ListSIPTrunk(ctx context.Context, req *livekit.ListSIPTrunkRequest) (*livekit.ListSIPTrunkResponse, error) {
+	var items []*livekit.SIPTrunkInfo
+	old, err := s.listSIPLegacyTrunk(ctx, req.Page)
 	if err != nil {
 		return nil, err
 	}
-	in, err := s.listSIPInboundTrunk(ctx)
+	for _, t := range old {
+		v := t
+		if req.Filter(v) && req.Page.Filter(v) {
+			items = append(items, v)
+		}
+	}
+	in, err := s.listSIPInboundTrunk(ctx, req.Page)
 	if err != nil {
-		return infos, err
+		return nil, err
 	}
 	for _, t := range in {
-		infos = append(infos, t.AsTrunkInfo())
+		v := t.AsTrunkInfo()
+		if req.Filter(v) && req.Page.Filter(v) {
+			items = append(items, v)
+		}
 	}
-	out, err := s.listSIPOutboundTrunk(ctx)
+	out, err := s.listSIPOutboundTrunk(ctx, req.Page)
 	if err != nil {
-		return infos, err
+		return nil, err
 	}
 	for _, t := range out {
-		infos = append(infos, t.AsTrunkInfo())
+		v := t.AsTrunkInfo()
+		if req.Filter(v) && req.Page.Filter(v) {
+			items = append(items, v)
+		}
 	}
-	return infos, nil
+	items = sortPage(items, req.Page)
+	return &livekit.ListSIPTrunkResponse{Items: items}, nil
 }
 
-func (s *RedisStore) ListSIPInboundTrunk(ctx context.Context) (infos []*livekit.SIPInboundTrunkInfo, err error) {
-	in, err := s.listSIPInboundTrunk(ctx)
+func (s *RedisStore) ListSIPInboundTrunk(ctx context.Context, req *livekit.ListSIPInboundTrunkRequest) (*livekit.ListSIPInboundTrunkResponse, error) {
+	var items []*livekit.SIPInboundTrunkInfo
+	in, err := s.listSIPInboundTrunk(ctx, req.Page)
 	if err != nil {
-		return in, err
+		return nil, err
 	}
-	old, err := s.listSIPLegacyTrunk(ctx)
+	for _, t := range in {
+		v := t
+		if req.Filter(v) && req.Page.Filter(v) {
+			items = append(items, v)
+		}
+	}
+	old, err := s.listSIPLegacyTrunk(ctx, req.Page)
 	if err != nil {
 		return nil, err
 	}
 	for _, t := range old {
-		in = append(in, t.AsInbound())
+		v := t.AsInbound()
+		if req.Filter(v) && req.Page.Filter(v) {
+			items = append(items, v)
+		}
 	}
-	return in, nil
+	items = sortPage(items, req.Page)
+	return &livekit.ListSIPInboundTrunkResponse{Items: items}, nil
 }
 
-func (s *RedisStore) ListSIPOutboundTrunk(ctx context.Context) (infos []*livekit.SIPOutboundTrunkInfo, err error) {
-	out, err := s.listSIPOutboundTrunk(ctx)
+func (s *RedisStore) ListSIPOutboundTrunk(ctx context.Context, req *livekit.ListSIPOutboundTrunkRequest) (*livekit.ListSIPOutboundTrunkResponse, error) {
+	var items []*livekit.SIPOutboundTrunkInfo
+	out, err := s.listSIPOutboundTrunk(ctx, req.Page)
 	if err != nil {
-		return out, err
+		return nil, err
 	}
-	old, err := s.listSIPLegacyTrunk(ctx)
+	for _, t := range out {
+		v := t
+		if req.Filter(v) && req.Page.Filter(v) {
+			items = append(items, v)
+		}
+	}
+	old, err := s.listSIPLegacyTrunk(ctx, req.Page)
 	if err != nil {
 		return nil, err
 	}
 	for _, t := range old {
-		out = append(out, t.AsOutbound())
+		v := t.AsOutbound()
+		if req.Filter(v) && req.Page.Filter(v) {
+			items = append(items, v)
+		}
 	}
-	return out, nil
+	items = sortPage(items, req.Page)
+	return &livekit.ListSIPOutboundTrunkResponse{Items: items}, nil
 }
 
 func (s *RedisStore) StoreSIPDispatchRule(ctx context.Context, info *livekit.SIPDispatchRuleInfo) error {
@@ -186,10 +226,22 @@ func (s *RedisStore) LoadSIPDispatchRule(ctx context.Context, sipDispatchRuleId 
 	return redisLoadOne[livekit.SIPDispatchRuleInfo](ctx, s, SIPDispatchRuleKey, sipDispatchRuleId, ErrSIPDispatchRuleNotFound)
 }
 
-func (s *RedisStore) DeleteSIPDispatchRule(ctx context.Context, info *livekit.SIPDispatchRuleInfo) error {
-	return s.rc.HDel(s.ctx, SIPDispatchRuleKey, info.SipDispatchRuleId).Err()
+func (s *RedisStore) DeleteSIPDispatchRule(ctx context.Context, sipDispatchRuleId string) error {
+	return s.rc.HDel(s.ctx, SIPDispatchRuleKey, sipDispatchRuleId).Err()
 }
 
-func (s *RedisStore) ListSIPDispatchRule(ctx context.Context) (infos []*livekit.SIPDispatchRuleInfo, err error) {
-	return redisLoadMany[livekit.SIPDispatchRuleInfo](ctx, s, SIPDispatchRuleKey)
+func (s *RedisStore) ListSIPDispatchRule(ctx context.Context, req *livekit.ListSIPDispatchRuleRequest) (*livekit.ListSIPDispatchRuleResponse, error) {
+	var items []*livekit.SIPDispatchRuleInfo
+	out, err := s.listSIPDispatchRule(ctx, req.Page)
+	if err != nil {
+		return nil, err
+	}
+	for _, t := range out {
+		v := t
+		if req.Filter(v) && req.Page.Filter(v) {
+			items = append(items, v)
+		}
+	}
+	items = sortPage(items, req.Page)
+	return &livekit.ListSIPDispatchRuleResponse{Items: items}, nil
 }

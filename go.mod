@@ -7,6 +7,7 @@ toolchain go1.23.6
 require (
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.17.0
+	github.com/dennwc/iters v1.0.1
 	github.com/dustin/go-humanize v1.0.1
 	github.com/elliotchance/orderedmap/v2 v2.7.0
 	github.com/florianl/go-tc v0.4.4
@@ -22,7 +23,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20241220010243-a2bdee945564
-	github.com/livekit/protocol v1.33.1-0.20250218083317-1a019aab5b83
+	github.com/livekit/protocol v1.33.1-0.20250218100713-bfe8101478c7
 	github.com/livekit/psrpc v0.6.1-0.20250205181828-a0beed2e4126
 	github.com/mackerelio/go-osstat v0.2.5
 	github.com/magefile/mage v1.15.0
@@ -77,7 +78,6 @@ require (
 	github.com/containerd/continuity v0.4.3 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/dennwc/iters v1.0.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/docker/cli v26.1.4+incompatible // indirect
 	github.com/docker/docker v27.1.1+incompatible // indirect

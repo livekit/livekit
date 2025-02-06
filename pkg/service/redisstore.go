@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -858,7 +859,7 @@ func (s *RedisStore) DeleteAgentDispatch(_ context.Context, dispatch *livekit.Ag
 
 func (s *RedisStore) ListAgentDispatches(_ context.Context, roomName livekit.RoomName) ([]*livekit.AgentDispatch, error) {
 	key := AgentDispatchPrefix + string(roomName)
-	dispatches, err := redisLoadMany[livekit.AgentDispatch](s.ctx, s, key)
+	dispatches, err := redisLoadAll[livekit.AgentDispatch](s.ctx, s, key)
 	if err != nil {
 		return nil, err
 	}
@@ -869,7 +870,7 @@ func (s *RedisStore) ListAgentDispatches(_ context.Context, roomName livekit.Roo
 	}
 
 	key = AgentJobPrefix + string(roomName)
-	jobs, err := redisLoadMany[livekit.Job](s.ctx, s, key)
+	jobs, err := redisLoadAll[livekit.Job](s.ctx, s, key)
 	if err != nil {
 		return nil, err
 	}
@@ -936,10 +937,12 @@ func redisStoreOne(ctx context.Context, s *RedisStore, key, id string, p proto.M
 	return s.rc.HSet(s.ctx, key, id, data).Err()
 }
 
-func redisLoadOne[T any, P interface {
+type protoMsg[T any] interface {
 	*T
 	proto.Message
-}](ctx context.Context, s *RedisStore, key, id string, notFoundErr error) (P, error) {
+}
+
+func redisLoadOne[T any, P protoMsg[T]](ctx context.Context, s *RedisStore, key, id string, notFoundErr error) (P, error) {
 	data, err := s.rc.HGet(s.ctx, key, id).Result()
 	if err == redis.Nil {
 		return nil, notFoundErr
@@ -954,11 +957,8 @@ func redisLoadOne[T any, P interface {
 	return p, err
 }
 
-func redisLoadMany[T any, P interface {
-	*T
-	proto.Message
-}](ctx context.Context, s *RedisStore, key string) ([]P, error) {
-	data, err := s.rc.HGetAll(s.ctx, key).Result()
+func redisLoadAll[T any, P protoMsg[T]](ctx context.Context, s *RedisStore, key string) ([]P, error) {
+	data, err := s.rc.HVals(s.ctx, key).Result()
 	if err == redis.Nil {
 		return nil, nil
 	} else if err != nil {
@@ -975,4 +975,104 @@ func redisLoadMany[T any, P interface {
 	}
 
 	return list, nil
+}
+
+func redisLoadBatch[T any, P protoMsg[T]](ctx context.Context, s *RedisStore, key string, ids []string, keepEmpty bool) ([]P, error) {
+	data, err := s.rc.HMGet(s.ctx, key, ids...).Result()
+	if err == redis.Nil {
+		if keepEmpty {
+			return make([]P, len(ids)), nil
+		}
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+	if !keepEmpty {
+		list := make([]P, 0, len(data))
+		for _, v := range data {
+			if d, ok := v.(string); ok {
+				var p P = new(T)
+				if err = proto.Unmarshal([]byte(d), p); err != nil {
+					return list, err
+				}
+				list = append(list, p)
+			}
+		}
+		return list, nil
+	}
+	// Keep zero values where ID was not found.
+	list := make([]P, len(ids))
+	for i := range ids {
+		if d, ok := data[i].(string); ok {
+			var p P = new(T)
+			if err = proto.Unmarshal([]byte(d), p); err != nil {
+				return list, err
+			}
+			list[i] = p
+		}
+	}
+	return list, nil
+}
+
+func redisIDs(ctx context.Context, s *RedisStore, key string) ([]string, error) {
+	list, err := s.rc.HKeys(s.ctx, key).Result()
+	if err == redis.Nil {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+	slices.Sort(list)
+	return list, nil
+}
+
+type protoEntity[T any] interface {
+	protoMsg[T]
+	ID() string
+}
+
+func redisIterPage[T any, P protoEntity[T]](ctx context.Context, s *RedisStore, key string, page *livekit.Pagination) ([]P, error) {
+	if page == nil {
+		return redisLoadAll[T, P](ctx, s, key)
+	}
+	ids, err := redisIDs(ctx, s, key)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	if page.AfterId != "" {
+		i, ok := slices.BinarySearch(ids, page.AfterId)
+		if ok {
+			i++
+		}
+		ids = ids[i:]
+		if len(ids) == 0 {
+			return nil, nil
+		}
+	}
+	limit := 1000
+	if page.Limit > 0 {
+		limit = int(page.Limit)
+	}
+	if len(ids) > limit {
+		ids = ids[:limit]
+	}
+	return redisLoadBatch[T, P](ctx, s, key, ids, false)
+}
+
+func sortProtos[T any, P protoEntity[T]](arr []P) {
+	slices.SortFunc(arr, func(a, b P) int {
+		return strings.Compare(a.ID(), b.ID())
+	})
+}
+
+func sortPage[T any, P protoEntity[T]](items []P, page *livekit.Pagination) []P {
+	sortProtos(items)
+	if page != nil {
+		if limit := int(page.Limit); limit > 0 && len(items) > limit {
+			items = items[:limit]
+		}
+	}
+	return items
 }
