@@ -276,7 +276,7 @@ func TestMuteSetting(t *testing.T) {
 		p.pendingTracks["cid"] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}}
 
 		p.SetTrackMuted(livekit.TrackID(ti.Sid), true, false)
-		require.True(t, ti.Muted)
+		require.True(t, p.pendingTracks["cid"].trackInfos[0].Muted)
 	})
 
 	t.Run("can publish a muted track", func(t *testing.T) {

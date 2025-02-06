@@ -54,6 +54,9 @@ type MediaTrack struct {
 	lock sync.RWMutex
 
 	rttFromXR atomic.Bool
+
+	enableRegression      bool
+	regressionTargetCodec mime.MimeType
 }
 
 type MediaTrackParams struct {
@@ -81,17 +84,25 @@ func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 		params: params,
 	}
 
+	// TODO: disable codec regression until simulcast-codec clients knows that
+	if ti.BackupCodecPolicy == livekit.BackupCodecPolicy_REGRESSION && len(ti.Codecs) > 1 {
+		t.enableRegression = true
+		t.regressionTargetCodec = mime.NormalizeMimeType(ti.Codecs[1].MimeType)
+		t.params.Logger.Debugw("track enabled codec regression", "regressionCodec", t.regressionTargetCodec)
+	}
+
 	t.MediaTrackReceiver = NewMediaTrackReceiver(MediaTrackReceiverParams{
-		MediaTrack:          t,
-		IsRelayed:           false,
-		ParticipantID:       params.ParticipantID,
-		ParticipantIdentity: params.ParticipantIdentity,
-		ParticipantVersion:  params.ParticipantVersion,
-		ReceiverConfig:      params.ReceiverConfig,
-		SubscriberConfig:    params.SubscriberConfig,
-		AudioConfig:         params.AudioConfig,
-		Telemetry:           params.Telemetry,
-		Logger:              params.Logger,
+		MediaTrack:            t,
+		IsRelayed:             false,
+		ParticipantID:         params.ParticipantID,
+		ParticipantIdentity:   params.ParticipantIdentity,
+		ParticipantVersion:    params.ParticipantVersion,
+		ReceiverConfig:        params.ReceiverConfig,
+		SubscriberConfig:      params.SubscriberConfig,
+		AudioConfig:           params.AudioConfig,
+		Telemetry:             params.Telemetry,
+		Logger:                params.Logger,
+		RegressionTargetCodec: t.regressionTargetCodec,
 	}, ti)
 
 	if ti.Type == livekit.TrackType_AUDIO {
@@ -123,6 +134,9 @@ func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 				)
 			},
 		)
+		t.MediaTrackReceiver.OnCodecRegression(func(old, new webrtc.RTPCodecParameters) {
+			t.dynacastManager.HandleCodecRegression(mime.NormalizeMimeType(old.MimeType), mime.NormalizeMimeType(new.MimeType))
+		})
 	}
 
 	return t
@@ -335,6 +349,10 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		}
 		wr = newWR
 		newCodec = true
+
+		newWR.AddOnCodecStateChange(func(codec webrtc.RTPCodecParameters, state sfu.ReceiverCodecState) {
+			t.MediaTrackReceiver.HandleReceiverCodecChange(newWR, codec, state)
+		})
 	}
 	t.lock.Unlock()
 
@@ -362,6 +380,22 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 	}
 
 	t.MediaTrackReceiver.SetLayerSsrc(mimeType, track.RID(), uint32(track.SSRC()))
+
+	if newCodec && t.enableRegression && mimeType == t.regressionTargetCodec {
+		t.params.Logger.Infow("regression target codec received", "codec", mimeType)
+		for _, c := range ti.Codecs {
+			if mime.NormalizeMimeType(c.MimeType) == mimeType {
+				continue
+			}
+
+			t.params.Logger.Debugw("suspending codec for codec regression", "codec", c.MimeType)
+			if r := t.MediaTrackReceiver.Receiver(mime.NormalizeMimeType(c.MimeType)); r != nil {
+				if rtcreceiver, ok := r.(*sfu.WebRTCReceiver); ok {
+					rtcreceiver.SetCodecState(sfu.ReceiverCodecStateSuspended)
+				}
+			}
+		}
+	}
 
 	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability, bitrates)
 

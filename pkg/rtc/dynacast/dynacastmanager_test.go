@@ -28,14 +28,7 @@ import (
 )
 
 func TestSubscribedMaxQuality(t *testing.T) {
-	subscribedCodecsAsString := func(c1 []*livekit.SubscribedCodec) string {
-		sort.Slice(c1, func(i, j int) bool { return c1[i].Codec < c1[j].Codec })
-		var s1 string
-		for _, c := range c1 {
-			s1 += c.String()
-		}
-		return s1
-	}
+
 	t.Run("subscribers muted", func(t *testing.T) {
 		dm := NewDynacastManager(DynacastManagerParams{})
 		var lock sync.Mutex
@@ -283,4 +276,101 @@ func TestSubscribedMaxQuality(t *testing.T) {
 			return subscribedCodecsAsString(expectedSubscribedQualities) == subscribedCodecsAsString(actualSubscribedQualities)
 		}, 10*time.Second, 100*time.Millisecond)
 	})
+}
+
+func TestCodecRegression(t *testing.T) {
+	dm := NewDynacastManager(DynacastManagerParams{})
+	var lock sync.Mutex
+	actualSubscribedQualities := make([]*livekit.SubscribedCodec, 0)
+	dm.OnSubscribedMaxQualityChange(func(subscribedQualities []*livekit.SubscribedCodec, _maxSubscribedQualities []types.SubscribedCodecQuality) {
+		lock.Lock()
+		actualSubscribedQualities = subscribedQualities
+		lock.Unlock()
+	})
+
+	dm.NotifySubscriberMaxQuality("s1", webrtc.MimeTypeAV1, livekit.VideoQuality_HIGH)
+
+	expectedSubscribedQualities := []*livekit.SubscribedCodec{
+		{
+			Codec: strings.ToLower(webrtc.MimeTypeAV1),
+			Qualities: []*livekit.SubscribedQuality{
+				{Quality: livekit.VideoQuality_LOW, Enabled: true},
+				{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
+				{Quality: livekit.VideoQuality_HIGH, Enabled: true},
+			},
+		},
+	}
+	require.Eventually(t, func() bool {
+		lock.Lock()
+		defer lock.Unlock()
+
+		return subscribedCodecsAsString(expectedSubscribedQualities) == subscribedCodecsAsString(actualSubscribedQualities)
+	}, 10*time.Second, 100*time.Millisecond)
+
+	dm.HandleCodecRegression(webrtc.MimeTypeAV1, webrtc.MimeTypeVP8)
+
+	expectedSubscribedQualities = []*livekit.SubscribedCodec{
+		{
+			Codec: strings.ToLower(webrtc.MimeTypeAV1),
+			Qualities: []*livekit.SubscribedQuality{
+				{Quality: livekit.VideoQuality_LOW, Enabled: false},
+				{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+				{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+			},
+		},
+		{
+			Codec: strings.ToLower(webrtc.MimeTypeVP8),
+			Qualities: []*livekit.SubscribedQuality{
+				{Quality: livekit.VideoQuality_LOW, Enabled: true},
+				{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
+				{Quality: livekit.VideoQuality_HIGH, Enabled: true},
+			},
+		},
+	}
+	require.Eventually(t, func() bool {
+		lock.Lock()
+		defer lock.Unlock()
+
+		return subscribedCodecsAsString(expectedSubscribedQualities) == subscribedCodecsAsString(actualSubscribedQualities)
+	}, 10*time.Second, 100*time.Millisecond)
+
+	// av1 quality change should be forwarded to vp8
+	// av1 quality change of node should be ignored
+	dm.NotifySubscriberMaxQuality("s1", webrtc.MimeTypeAV1, livekit.VideoQuality_MEDIUM)
+	dm.NotifySubscriberNodeMaxQuality("n1", []types.SubscribedCodecQuality{
+		{CodecMime: webrtc.MimeTypeAV1, Quality: livekit.VideoQuality_HIGH},
+	})
+	expectedSubscribedQualities = []*livekit.SubscribedCodec{
+		{
+			Codec: strings.ToLower(webrtc.MimeTypeAV1),
+			Qualities: []*livekit.SubscribedQuality{
+				{Quality: livekit.VideoQuality_LOW, Enabled: false},
+				{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+				{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+			},
+		},
+		{
+			Codec: strings.ToLower(webrtc.MimeTypeVP8),
+			Qualities: []*livekit.SubscribedQuality{
+				{Quality: livekit.VideoQuality_LOW, Enabled: true},
+				{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
+				{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+			},
+		},
+	}
+	require.Eventually(t, func() bool {
+		lock.Lock()
+		defer lock.Unlock()
+
+		return subscribedCodecsAsString(expectedSubscribedQualities) == subscribedCodecsAsString(actualSubscribedQualities)
+	}, 10*time.Second, 100*time.Millisecond)
+}
+
+func subscribedCodecsAsString(c1 []*livekit.SubscribedCodec) string {
+	sort.Slice(c1, func(i, j int) bool { return c1[i].Codec < c1[j].Codec })
+	var s1 string
+	for _, c := range c1 {
+		s1 += c.String()
+	}
+	return s1
 }

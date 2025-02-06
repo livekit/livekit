@@ -100,18 +100,11 @@ func (is *intervalStats) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 type wrappedReceptionReportsLogger struct {
 	*senderSnapshot
-	useSkipped bool
 }
 
 func (w wrappedReceptionReportsLogger) MarshalLogObject(e zapcore.ObjectEncoder) error {
-	if w.useSkipped {
-		for i, rr := range w.senderSnapshot.skippedReceptionReports {
-			e.AddReflected(fmt.Sprintf("%d", i), rr)
-		}
-	} else {
-		for i, rr := range w.senderSnapshot.processedReceptionReports {
-			e.AddReflected(fmt.Sprintf("%d", i), rr)
-		}
+	for i, rr := range w.senderSnapshot.processedReceptionReports {
+		e.AddReflected(fmt.Sprintf("%d", i), rr)
 	}
 
 	return nil
@@ -155,7 +148,6 @@ type senderSnapshot struct {
 	extLastRRSN                uint64
 	intervalStats              intervalStats
 	processedReceptionReports  []rtcp.ReceptionReport
-	skippedReceptionReports    []rtcp.ReceptionReport
 	metadataCacheOverflowCount int
 }
 
@@ -187,8 +179,7 @@ func (s *senderSnapshot) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddFloat64("maxJitter", s.maxJitter)
 	e.AddUint64("extLastRRSN", s.extLastRRSN)
 	e.AddObject("intervalStats", &s.intervalStats)
-	e.AddObject("processedReceptionReports", wrappedReceptionReportsLogger{s, false})
-	e.AddObject("skippedReceptionReports", wrappedReceptionReportsLogger{s, true})
+	e.AddObject("processedReceptionReports", wrappedReceptionReportsLogger{s})
 	e.AddInt("metadataCacheOverflowCount", s.metadataCacheOverflowCount)
 	return nil
 }
@@ -567,62 +558,76 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		return time.Duration(nowNano - r.startTime)
 	}
 
-	if r.extHighestSNFromRR > extHighestSNFromRR {
+	extReceivedRRSN := extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000)
+	if int64(r.extHighestSN-extReceivedRRSN) > (1 << 16) {
 		// there are cases where remote does not send RTCP Receiver Report for extended periods of time,
 		// some times several minutes, in that interval the sequence number rolls over,
-		// check for a gap higher than half the sequence number range and adjust
-		if (r.extHighestSNFromRR - extHighestSNFromRR) > (1 << 15) {
-			// potentially missed rollover
-			r.logger.Infow(
-				"receiver report missed rollover, adjusting",
-				"timeSinceLastRR", timeSinceLastRR(),
-				"receivedRR", rr,
-				"extHighestSNFromRR", extHighestSNFromRR,
-				"rtpStats", lockedRTPStatsSenderLogEncoder{r},
-			)
-			for extHighestSNFromRR < r.extHighestSNFromRR {
-				extHighestSNFromRR += (1 << 16)
-				r.extHighestSNFromRRMisalignment += (1 << 16)
-			}
-			r.logger.Infow(
-				"receiver report missed rollover, adjusted",
-				"timeSinceLastRR", timeSinceLastRR(),
-				"receivedRR", rr,
-				"extHighestSNFromRR", extHighestSNFromRR,
-				"rtpStats", lockedRTPStatsSenderLogEncoder{r},
-			)
-		} else {
-			r.logger.Infow(
-				"receiver report out-of-order, dropping",
-				"timeSinceLastRR", timeSinceLastRR(),
-				"receivedRR", rr,
-				"extHighestSNFromRR", extHighestSNFromRR,
-				"rtpStats", lockedRTPStatsSenderLogEncoder{r},
-			)
-			return
+		//
+		// NOTE: even if there is a large gap in time, the sequence number should be higher
+		// than previous report (extended sequence number in receiver report is 32-bit wide and
+		// should not roll over for long time, for e. g. it will approximately take 100 days at 500 pps).
+		// So, there seems to be a remote reporter issue where the sequence number rollover is missed.
+		//
+		// catch up till diffrence between highest sent and highest received via receiver report is
+		// less than full 16-bit range.
+		r.logger.Infow(
+			"receiver report missed rollover, adjusting",
+			"timeSinceLastRR", timeSinceLastRR(),
+			"receivedRR", rr,
+			"extHighestSNFromRR", extHighestSNFromRR,
+			"extReceivedRRSN", extReceivedRRSN,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
+		)
+		for int64(r.extHighestSN-extReceivedRRSN) > (1 << 16) {
+			extHighestSNFromRR += (1 << 16)
+			r.extHighestSNFromRRMisalignment += (1 << 16)
+			extReceivedRRSN = extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000)
 		}
-	} else {
+		r.logger.Infow(
+			"receiver report missed rollover, adjusted",
+			"timeSinceLastRR", timeSinceLastRR(),
+			"receivedRR", rr,
+			"extHighestSNFromRR", extHighestSNFromRR,
+			"extReceivedRRSN", extReceivedRRSN,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
+		)
+	}
+
+	if r.extHighestSN < extReceivedRRSN {
 		// if remote adjusts somehow, roll back alignment
-		if r.lastRRTime != 0 && (extHighestSNFromRR-r.extHighestSNFromRR) > (1<<15) {
-			r.logger.Infow(
-				"receiver report caught up rollover, adjusting",
-				"timeSinceLastRR", timeSinceLastRR(),
-				"receivedRR", rr,
-				"extHighestSNFromRR", extHighestSNFromRR,
-				"rtpStats", lockedRTPStatsSenderLogEncoder{r},
-			)
-			for int64(extHighestSNFromRR-r.extHighestSNFromRR) > (1 << 15) {
-				extHighestSNFromRR -= (1 << 16)
-				r.extHighestSNFromRRMisalignment -= (1 << 16)
-			}
-			r.logger.Infow(
-				"receiver report caught up rollover, adjusted",
-				"timeSinceLastRR", timeSinceLastRR(),
-				"receivedRR", rr,
-				"extHighestSNFromRR", extHighestSNFromRR,
-				"rtpStats", lockedRTPStatsSenderLogEncoder{r},
-			)
+		r.logger.Infow(
+			"receiver report caught up rollover, adjusting",
+			"timeSinceLastRR", timeSinceLastRR(),
+			"receivedRR", rr,
+			"extHighestSNFromRR", extHighestSNFromRR,
+			"extReceivedRRSN", extReceivedRRSN,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
+		)
+		for r.extHighestSN < extReceivedRRSN {
+			extHighestSNFromRR -= (1 << 16)
+			r.extHighestSNFromRRMisalignment -= (1 << 16)
+			extReceivedRRSN = extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000)
 		}
+		r.logger.Infow(
+			"receiver report caught up rollover, adjusted",
+			"timeSinceLastRR", timeSinceLastRR(),
+			"receivedRR", rr,
+			"extHighestSNFromRR", extHighestSNFromRR,
+			"extReceivedRRSN", extReceivedRRSN,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
+		)
+	}
+
+	if r.extHighestSNFromRR > extHighestSNFromRR {
+		r.logger.Infow(
+			"receiver report out-of-order, dropping",
+			"timeSinceLastRR", timeSinceLastRR(),
+			"receivedRR", rr,
+			"extHighestSNFromRR", extHighestSNFromRR,
+			"extReceivedRRSN", extReceivedRRSN,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
+		)
+		return
 	}
 	r.extHighestSNFromRR = extHighestSNFromRR
 
@@ -662,7 +667,6 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		}
 	}
 
-	extReceivedRRSN := r.extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000)
 	for i := uint32(0); i < r.nextSenderSnapshotID-cFirstSnapshotID; i++ {
 		s := &r.senderSnapshots[i]
 		if isRttChanged && rtt > s.maxRtt {
@@ -671,22 +675,6 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 
 		if r.jitterFromRR > s.maxJitter {
 			s.maxJitter = r.jitterFromRR
-		}
-
-		if int64(extReceivedRRSN-s.extLastRRSN) < 0 || (extReceivedRRSN-s.extLastRRSN) > (1<<15) {
-			r.logger.Infow(
-				"rr interval too big, skipping",
-				"senderSnapshotID", i+cFirstSnapshotID,
-				"senderSnapshot", s,
-				"timeSinceLastRR", timeSinceLastRR(),
-				"receivedRR", rr,
-				"extReceivedRRSN", extReceivedRRSN,
-				"packetsInInterval", extReceivedRRSN-s.extLastRRSN,
-				"rtpStats", lockedRTPStatsSenderLogEncoder{r},
-			)
-			s.extLastRRSN = extReceivedRRSN
-			s.skippedReceptionReports = append(s.skippedReceptionReports, rr)
-			continue
 		}
 
 		// on every RR, calculate delta since last RR using packet metadata cache

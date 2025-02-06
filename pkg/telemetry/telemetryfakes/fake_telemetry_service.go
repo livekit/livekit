@@ -111,6 +111,12 @@ type FakeTelemetryService struct {
 		arg4 livekit.NodeID
 		arg5 livekit.ReconnectReason
 	}
+	ReportStub        func(context.Context, *livekit.ReportInfo)
+	reportMutex       sync.RWMutex
+	reportArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.ReportInfo
+	}
 	RoomEndedStub        func(context.Context, *livekit.Room)
 	roomEndedMutex       sync.RWMutex
 	roomEndedArgsForCall []struct {
@@ -754,6 +760,39 @@ func (fake *FakeTelemetryService) ParticipantResumedArgsForCall(i int) (context.
 	defer fake.participantResumedMutex.RUnlock()
 	argsForCall := fake.participantResumedArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5
+}
+
+func (fake *FakeTelemetryService) Report(arg1 context.Context, arg2 *livekit.ReportInfo) {
+	fake.reportMutex.Lock()
+	fake.reportArgsForCall = append(fake.reportArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.ReportInfo
+	}{arg1, arg2})
+	stub := fake.ReportStub
+	fake.recordInvocation("Report", []interface{}{arg1, arg2})
+	fake.reportMutex.Unlock()
+	if stub != nil {
+		fake.ReportStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeTelemetryService) ReportCallCount() int {
+	fake.reportMutex.RLock()
+	defer fake.reportMutex.RUnlock()
+	return len(fake.reportArgsForCall)
+}
+
+func (fake *FakeTelemetryService) ReportCalls(stub func(context.Context, *livekit.ReportInfo)) {
+	fake.reportMutex.Lock()
+	defer fake.reportMutex.Unlock()
+	fake.ReportStub = stub
+}
+
+func (fake *FakeTelemetryService) ReportArgsForCall(i int) (context.Context, *livekit.ReportInfo) {
+	fake.reportMutex.RLock()
+	defer fake.reportMutex.RUnlock()
+	argsForCall := fake.reportArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeTelemetryService) RoomEnded(arg1 context.Context, arg2 *livekit.Room) {
@@ -1450,6 +1489,8 @@ func (fake *FakeTelemetryService) Invocations() map[string][][]interface{} {
 	defer fake.participantLeftMutex.RUnlock()
 	fake.participantResumedMutex.RLock()
 	defer fake.participantResumedMutex.RUnlock()
+	fake.reportMutex.RLock()
+	defer fake.reportMutex.RUnlock()
 	fake.roomEndedMutex.RLock()
 	defer fake.roomEndedMutex.RUnlock()
 	fake.roomStartedMutex.RLock()

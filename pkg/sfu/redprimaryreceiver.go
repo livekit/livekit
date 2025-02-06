@@ -117,6 +117,10 @@ func (r *RedPrimaryReceiver) DeleteDownTrack(subscriberID livekit.ParticipantID)
 	r.logger.Debugw("red primary receiver downtrack deleted", "subscriberID", subscriberID)
 }
 
+func (r *RedPrimaryReceiver) GetDownTracks() []TrackSender {
+	return r.downTrackSpreader.GetDownTracks()
+}
+
 func (r *RedPrimaryReceiver) ResyncDownTracks() {
 	r.downTrackSpreader.Broadcast(func(dt TrackSender) {
 		dt.Resync()

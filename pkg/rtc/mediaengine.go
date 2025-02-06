@@ -129,6 +129,14 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 			},
 			PayloadType: 35,
 		},
+		{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:     webrtc.MimeTypeH265,
+				ClockRate:    90000,
+				RTCPFeedback: rtcpFeedback.Video,
+			},
+			PayloadType: 116,
+		},
 	} {
 		if filterOutH264HighProfile && codec.RTPCodecCapability.SDPFmtpLine == h264HighProfileFmtp {
 			continue

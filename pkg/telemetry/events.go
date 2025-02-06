@@ -500,6 +500,17 @@ func (t *telemetryService) IngressEnded(ctx context.Context, info *livekit.Ingre
 	})
 }
 
+func (t *telemetryService) Report(ctx context.Context, report *livekit.ReportInfo) {
+	t.enqueue(func() {
+		ev := &livekit.AnalyticsEvent{
+			Type:      livekit.AnalyticsEventType_REPORT,
+			Timestamp: timestamppb.Now(),
+			Report:    report,
+		}
+		t.SendEvent(ctx, ev)
+	})
+}
+
 // returns a livekit.Room with only name and sid filled out
 // returns nil if room is not found
 func (t *telemetryService) getRoomDetails(participantID livekit.ParticipantID) *livekit.Room {

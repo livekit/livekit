@@ -134,8 +134,8 @@ func NewLivekitServer(conf *config.Config,
 	mux.Handle(ingressServer.PathPrefix(), ingressServer)
 	mux.Handle(sipServer.PathPrefix(), sipServer)
 	mux.Handle("/rtc", rtcService)
+	rtcService.SetupRoutes(mux)
 	mux.Handle("/agent", agentService)
-	mux.HandleFunc("/rtc/validate", rtcService.Validate)
 	mux.HandleFunc("/", s.defaultHandler)
 
 	s.httpServer = &http.Server{

@@ -29,9 +29,29 @@ func NewSimulcast(logger logger.Logger) *Simulcast {
 	}
 }
 
-func NewSimulcastFromNull(vls VideoLayerSelector) *Simulcast {
-	return &Simulcast{
-		Base: vls.(*Null).Base,
+func NewSimulcastFromOther(vls VideoLayerSelector) *Simulcast {
+	switch vls := vls.(type) {
+	case *Null:
+		return &Simulcast{
+			Base: vls.Base,
+		}
+	case *Simulcast:
+		return &Simulcast{
+			Base: vls.Base,
+		}
+
+	case *DependencyDescriptor:
+		return &Simulcast{
+			Base: vls.Base,
+		}
+
+	case *VP9:
+		return &Simulcast{
+			Base: vls.Base,
+		}
+
+	default:
+		return nil
 	}
 }
 

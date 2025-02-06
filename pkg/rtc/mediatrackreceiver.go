@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/pion/rtcp"
@@ -75,24 +76,59 @@ func (m mediaTrackReceiverState) String() string {
 
 type simulcastReceiver struct {
 	sfu.TrackReceiver
-	priority int
+	priority  int
+	lock      sync.Mutex
+	regressTo sfu.TrackReceiver
 }
 
 func (r *simulcastReceiver) Priority() int {
 	return r.priority
 }
 
+func (r *simulcastReceiver) AddDownTrack(track sfu.TrackSender) error {
+	r.lock.Lock()
+	if rt := r.regressTo; rt != nil {
+		r.lock.Unlock()
+		// AddDownTrack could be called in downtrack.OnBinding callback, use a goroutine to avoid deadlock
+		go track.SetReceiver(rt)
+		return nil
+	}
+	err := r.TrackReceiver.AddDownTrack(track)
+	r.lock.Unlock()
+	return err
+}
+
+func (r *simulcastReceiver) RegressTo(receiver sfu.TrackReceiver) {
+	r.lock.Lock()
+	r.regressTo = receiver
+	dts := r.GetDownTracks()
+	r.lock.Unlock()
+
+	for _, dt := range dts {
+		dt.SetReceiver(receiver)
+	}
+}
+
+func (r *simulcastReceiver) IsRegressed() bool {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	return r.regressTo != nil
+}
+
+// -----------------------------------------------------
+
 type MediaTrackReceiverParams struct {
-	MediaTrack          types.MediaTrack
-	IsRelayed           bool
-	ParticipantID       livekit.ParticipantID
-	ParticipantIdentity livekit.ParticipantIdentity
-	ParticipantVersion  uint32
-	ReceiverConfig      ReceiverConfig
-	SubscriberConfig    DirectionConfig
-	AudioConfig         sfu.AudioConfig
-	Telemetry           telemetry.TelemetryService
-	Logger              logger.Logger
+	MediaTrack            types.MediaTrack
+	IsRelayed             bool
+	ParticipantID         livekit.ParticipantID
+	ParticipantIdentity   livekit.ParticipantIdentity
+	ParticipantVersion    uint32
+	ReceiverConfig        ReceiverConfig
+	SubscriberConfig      DirectionConfig
+	AudioConfig           sfu.AudioConfig
+	Telemetry             telemetry.TelemetryService
+	Logger                logger.Logger
+	RegressionTargetCodec mime.MimeType
 }
 
 type MediaTrackReceiver struct {
@@ -108,6 +144,7 @@ type MediaTrackReceiver struct {
 	onSetupReceiver     func(mime mime.MimeType)
 	onMediaLossFeedback func(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
 	onClose             []func(isExpectedToResume bool)
+	onCodecRegression   func(old, new webrtc.RTPCodecParameters)
 
 	*MediaTrackSubscriptions
 }
@@ -160,23 +197,21 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 	receivers := slices.Clone(t.receivers)
 
 	// codec position maybe taken by DummyReceiver, check and upgrade to WebRTCReceiver
-	receiverToAdd := receiver
-	idx := -1
-	for i, r := range receivers {
+	var existingReceiver bool
+	for _, r := range receivers {
 		if r.Mime() == receiver.Mime() {
-			idx = i
+			existingReceiver = true
+			if d, ok := r.TrackReceiver.(*DummyReceiver); ok {
+				d.Upgrade(receiver)
+			} else {
+				t.params.Logger.Errorw("receiver already exists, setup failed", nil, "mime", receiver.Mime())
+			}
 			break
 		}
 	}
-	if idx != -1 {
-		if d, ok := receivers[idx].TrackReceiver.(*DummyReceiver); ok {
-			d.Upgrade(receiver)
-			receiverToAdd = d
-		}
-		// replace receiver
-		receivers = slices.Delete(receivers, idx, idx+1)
+	if !existingReceiver {
+		receivers = append(receivers, &simulcastReceiver{TrackReceiver: receiver, priority: priority})
 	}
-	receivers = append(receivers, &simulcastReceiver{TrackReceiver: receiverToAdd, priority: priority})
 
 	sort.Slice(receivers, func(i, j int) bool {
 		return receivers[i].Priority() < receivers[j].Priority()
@@ -218,6 +253,81 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 	if onSetupReceiver != nil {
 		onSetupReceiver(receiver.Mime())
 	}
+}
+
+func (t *MediaTrackReceiver) HandleReceiverCodecChange(r sfu.TrackReceiver, codec webrtc.RTPCodecParameters, state sfu.ReceiverCodecState) {
+	// TODO: we only support codec regress to backup codec now, so the receiver will not be available
+	// once fallback / regression happens.
+	// We will support codec upgrade in the future then the primary receiver will be available again if
+	// all subscribers of the track negotiate it.
+	if state == sfu.ReceiverCodecStateNormal {
+		return
+	}
+
+	t.lock.Lock()
+	// codec regression, find backup codec and switch all downtracks to it
+	var (
+		oldReceiver         *simulcastReceiver
+		backupCodecReceiver sfu.TrackReceiver
+	)
+	for _, receiver := range t.receivers {
+		if receiver.TrackReceiver == r {
+			oldReceiver = receiver
+			continue
+		}
+		if d, ok := receiver.TrackReceiver.(*DummyReceiver); ok && d.Receiver() == r {
+			oldReceiver = receiver
+			continue
+		}
+
+		if receiver.Mime() == t.params.RegressionTargetCodec {
+			backupCodecReceiver = receiver.TrackReceiver
+		}
+
+		if oldReceiver != nil && backupCodecReceiver != nil {
+			break
+		}
+	}
+
+	if oldReceiver == nil {
+		// should not happen
+		t.params.Logger.Errorw("could not find primary receiver for codec", nil, "codec", codec.MimeType)
+		t.lock.Unlock()
+		return
+	}
+
+	if oldReceiver.IsRegressed() {
+		t.params.Logger.Infow("codec already regressed", "codec", codec.MimeType)
+		t.lock.Unlock()
+		return
+	}
+
+	if backupCodecReceiver == nil {
+		t.params.Logger.Infow("no backup codec found, can't regress codec")
+		t.lock.Unlock()
+		return
+	}
+
+	t.params.Logger.Infow("regressing codec", "from", codec.MimeType, "to", backupCodecReceiver.Codec().MimeType)
+
+	// remove old codec from potential codecs
+	for i, c := range t.potentialCodecs {
+		if strings.EqualFold(c.MimeType, codec.MimeType) {
+			slices.Delete(t.potentialCodecs, i, i+1)
+			break
+		}
+	}
+	onCodecRegression := t.onCodecRegression
+	t.lock.Unlock()
+	oldReceiver.RegressTo(backupCodecReceiver)
+
+	if onCodecRegression != nil {
+		onCodecRegression(codec, backupCodecReceiver.Codec())
+	}
+}
+
+func (t *MediaTrackReceiver) OnCodecRegression(f func(old, new webrtc.RTPCodecParameters)) {
+	t.onCodecRegression = f
 }
 
 func (t *MediaTrackReceiver) SetPotentialCodecs(codecs []webrtc.RTPCodecParameters, headers []webrtc.RTPHeaderExtensionParameter) {
@@ -447,6 +557,10 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 	}
 
 	for _, receiver := range receivers {
+		if receiver.IsRegressed() {
+			continue
+		}
+
 		codec := receiver.Codec()
 		var found bool
 		for _, pc := range potentialCodecs {
