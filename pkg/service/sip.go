@@ -438,8 +438,10 @@ func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.Crea
 
 	// CreateSIPParticipant will wait for LiveKit Participant to be created and that can take some time.
 	// Thus, we must set a higher deadline for it, if it's not set already.
-	// TODO: support context timeouts in psrpc
 	timeout := 30 * time.Second
+	if req.WaitUntilAnswered {
+		timeout = 80 * time.Second
+	}
 	if deadline, ok := ctx.Deadline(); ok {
 		timeout = time.Until(deadline)
 	} else {
@@ -449,7 +451,7 @@ func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.Crea
 	}
 	resp, err := s.psrpcClient.CreateSIPParticipant(ctx, "", ireq, psrpc.WithRequestTimeout(timeout))
 	if err != nil {
-		unlikelyLogger.Errorw("cannot update sip participant", err)
+		unlikelyLogger.Errorw("cannot create sip participant", err)
 		return nil, err
 	}
 	return &livekit.SIPParticipantInfo{

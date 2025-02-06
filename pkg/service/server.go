@@ -35,12 +35,14 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils/xtwirp"
+
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/version"
 )
 
 type LivekitServer struct {
@@ -114,6 +116,9 @@ func NewLivekitServer(conf *config.Config,
 			TwirpRequestStatusReporter(),
 		)),
 	}
+	for _, opt := range xtwirp.DefaultServerOptions() {
+		serverOptions = append(serverOptions, opt)
+	}
 	roomServer := livekit.NewRoomServiceServer(roomService, serverOptions...)
 	agentDispatchServer := livekit.NewAgentDispatchServiceServer(agentDispatchService, serverOptions...)
 	egressServer := livekit.NewEgressServer(egressService, serverOptions...)
@@ -128,11 +133,11 @@ func NewLivekitServer(conf *config.Config,
 		mux.HandleFunc("/debug/rooms", s.debugInfo)
 	}
 
-	mux.Handle(roomServer.PathPrefix(), roomServer)
-	mux.Handle(agentDispatchServer.PathPrefix(), agentDispatchServer)
-	mux.Handle(egressServer.PathPrefix(), egressServer)
-	mux.Handle(ingressServer.PathPrefix(), ingressServer)
-	mux.Handle(sipServer.PathPrefix(), sipServer)
+	xtwirp.RegisterServer(mux, roomServer)
+	xtwirp.RegisterServer(mux, agentDispatchServer)
+	xtwirp.RegisterServer(mux, egressServer)
+	xtwirp.RegisterServer(mux, ingressServer)
+	xtwirp.RegisterServer(mux, sipServer)
 	mux.Handle("/rtc", rtcService)
 	rtcService.SetupRoutes(mux)
 	mux.Handle("/agent", agentService)
