@@ -95,8 +95,8 @@ func (ts *trafficStats) AcknowledgedBitrate() int64 {
 		return 0
 	}
 
-	ackedBitrate := int64(ts.ackedBytes) * 8 * 1e6 / ts.Duration()
-	return int64(float64(ackedBitrate) * ts.CapturedTrafficRatio())
+	ackedBitrate := float64(ts.ackedBytes) * 8 * 1e6 / float64(ts.Duration())
+	return int64(ackedBitrate * ts.CapturedTrafficRatio())
 }
 
 func (ts *trafficStats) CapturedTrafficRatio() float64 {

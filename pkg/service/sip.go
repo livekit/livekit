@@ -331,6 +331,7 @@ func (s *SIPService) CreateSIPDispatchRule(ctx context.Context, req *livekit.Cre
 		Name:            req.Name,
 		Metadata:        req.Metadata,
 		Attributes:      req.Attributes,
+		RoomConfig:      req.RoomConfig,
 	}
 
 	// Validate all rules including the new one first.

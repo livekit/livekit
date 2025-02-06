@@ -240,10 +240,6 @@ func newRTPStatsBase(params RTPStatsParams) *rtpStatsBase {
 }
 
 func (r *rtpStatsBase) seed(from *rtpStatsBase) bool {
-	if from == nil || !from.initialized {
-		return false
-	}
-
 	if !r.rtpStatsBaseLite.seed(from.rtpStatsBaseLite) {
 		return false
 	}
@@ -468,6 +464,13 @@ func (r *rtpStatsBase) deltaInfo(
 			StartTime: time.Unix(0, startTime),
 			EndTime:   time.Unix(0, endTime),
 		}
+		loggingFields = []interface{}{
+			"snapshotID", snapshotID,
+			"snapshotNow", now,
+			"snapshotThen", then,
+			"duration", time.Duration(endTime - startTime),
+		}
+		err = errors.New("no packets in delta")
 		return
 	}
 

@@ -142,6 +142,8 @@ type Room struct {
 	simulationLock                                 sync.Mutex
 	disconnectSignalOnResumeParticipants           map[livekit.ParticipantIdentity]time.Time
 	disconnectSignalOnResumeNoMessagesParticipants map[livekit.ParticipantIdentity]*disconnectSignalOnResumeNoMessages
+
+	userPacketDeduper *UserPacketDeduper
 }
 
 type ParticipantOptions struct {
@@ -270,6 +272,7 @@ func NewRoom(
 		trailer:                              []byte(utils.RandomSecret()),
 		disconnectSignalOnResumeParticipants: make(map[livekit.ParticipantIdentity]time.Time),
 		disconnectSignalOnResumeNoMessagesParticipants: make(map[livekit.ParticipantIdentity]*disconnectSignalOnResumeNoMessages),
+		userPacketDeduper: NewUserPacketDeduper(),
 	}
 
 	if r.protoRoom.EmptyTimeout == 0 {
@@ -279,7 +282,9 @@ func NewRoom(
 		r.protoRoom.DepartureTimeout = roomConfig.DepartureTimeout
 	}
 	if r.protoRoom.CreationTime == 0 {
-		r.protoRoom.CreationTime = time.Now().Unix()
+		now := time.Now()
+		r.protoRoom.CreationTime = now.Unix()
+		r.protoRoom.CreationTimeMs = now.UnixMilli()
 	}
 	r.protoProxy = utils.NewProtoProxy[*livekit.Room](roomUpdateInterval, r.updateProto)
 
@@ -1392,7 +1397,7 @@ func (r *Room) pushAndDequeueUpdates(
 			}
 		} else {
 			// different participant sessions
-			if existing.pi.JoinedAt < pi.JoinedAt {
+			if CompareParticipant(existing.pi, pi) < 0 {
 				// existing is older, synthesize a DISCONNECT for older and
 				// send immediately along with newer session to signal switch
 				shouldSend = true
@@ -1408,7 +1413,7 @@ func (r *Room) pushAndDequeueUpdates(
 		ep := r.GetParticipant(identity)
 		if ep != nil {
 			epi := ep.ToProto()
-			if epi.JoinedAt > pi.JoinedAt {
+			if CompareParticipant(epi, pi) > 0 {
 				// older session update, newer session has already become active, so nothing to do
 				return nil
 			}
@@ -1739,12 +1744,20 @@ func (r *Room) createAgentDispatchesFromRoomAgent() {
 	}
 }
 
+func (r *Room) IsDataMessageUserPacketDuplicate(up *livekit.UserPacket) bool {
+	return r.userPacketDeduper.IsDuplicate(up)
+}
+
 // ------------------------------------------------------------
 
 func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, kind livekit.DataPacket_Kind, dp *livekit.DataPacket, logger logger.Logger) {
 	dp.Kind = kind // backward compatibility
 	dest := dp.GetUser().GetDestinationSids()
 	if u := dp.GetUser(); u != nil {
+		if r.IsDataMessageUserPacketDuplicate(u) {
+			logger.Infow("dropping duplicate data message", "nonce", u.Nonce)
+			return
+		}
 		if len(dp.DestinationIdentities) == 0 {
 			dp.DestinationIdentities = u.DestinationIdentities
 		} else {
@@ -1813,6 +1826,36 @@ func IsParticipantExemptFromTrackPermissionsRestrictions(p types.LocalParticipan
 	// egress/recorder participants bypass permissions as auto-egress does not
 	// have enough context to check permissions
 	return p.IsRecorder()
+}
+
+func CompareParticipant(pi1 *livekit.ParticipantInfo, pi2 *livekit.ParticipantInfo) int {
+	if pi1.JoinedAt != pi2.JoinedAt {
+		if pi1.JoinedAt < pi2.JoinedAt {
+			return -1
+		} else {
+			return 1
+		}
+	}
+
+	if pi1.JoinedAtMs != 0 && pi2.JoinedAtMs != 0 && pi1.JoinedAtMs != pi2.JoinedAtMs {
+		if pi1.JoinedAtMs < pi2.JoinedAtMs {
+			return -1
+		} else {
+			return 1
+		}
+	}
+
+	// all join times being equal, it is not possible to really know which one is newer,
+	// pick the higher pID to be consistent
+	if pi1.Sid != pi2.Sid {
+		if pi1.Sid < pi2.Sid {
+			return -1
+		} else {
+			return 1
+		}
+	}
+
+	return 0
 }
 
 func connectionDetailsFields(infos []*types.ICEConnectionInfo) []interface{} {

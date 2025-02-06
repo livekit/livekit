@@ -96,6 +96,7 @@ func (s *snapshotLite) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 type RTPStatsParams struct {
 	ClockRate uint32
+	IsRTX     bool
 	Logger    logger.Logger
 }
 
@@ -140,7 +141,7 @@ func newRTPStatsBaseLite(params RTPStatsParams) *rtpStatsBaseLite {
 }
 
 func (r *rtpStatsBaseLite) seed(from *rtpStatsBaseLite) bool {
-	if from == nil || !from.initialized {
+	if from == nil || !from.initialized || r.initialized {
 		return false
 	}
 

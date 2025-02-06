@@ -468,6 +468,8 @@ func (t *MediaTrack) SetMuted(muted bool) {
 	t.MediaTrackReceiver.SetMuted(muted)
 }
 
+// OnTrackSubscribed is called when the track is subscribed by a non-hidden subscriber
+// this allows the publisher to know when they should start sending data
 func (t *MediaTrack) OnTrackSubscribed() {
 	if !t.everSubscribed.Swap(true) && t.params.OnTrackEverSubscribed != nil {
 		go t.params.OnTrackEverSubscribed(t.ID())

@@ -373,20 +373,27 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		"subscriberID", d.SubscriberID(),
 	)
 
+	var mdCacheSize, mdCacheSizeRTX int
+	if d.kind == webrtc.RTPCodecTypeVideo {
+		mdCacheSize, mdCacheSizeRTX = 32768, 4096
+	} else {
+		mdCacheSize, mdCacheSizeRTX = 8192, 1024
+	}
 	d.rtpStats = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{
 		ClockRate: d.codec.ClockRate,
 		Logger: d.params.Logger.WithValues(
 			"stream", "primary",
 		),
-	}, 4096)
+	}, mdCacheSize)
 	d.deltaStatsSenderSnapshotId = d.rtpStats.NewSenderSnapshotId()
 
 	d.rtpStatsRTX = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{
 		ClockRate: d.codec.ClockRate,
+		IsRTX:     true,
 		Logger: d.params.Logger.WithValues(
 			"stream", "rtx",
 		),
-	}, 1024)
+	}, mdCacheSizeRTX)
 	d.deltaStatsRTXSenderSnapshotId = d.rtpStatsRTX.NewSenderSnapshotId()
 
 	d.forwarder = NewForwarder(
@@ -741,7 +748,7 @@ func (d *DownTrack) Codec() webrtc.RTPCodecCapability {
 func (d *DownTrack) StreamID() string { return d.params.StreamID }
 
 func (d *DownTrack) SubscriberID() livekit.ParticipantID {
-	// add `createdAt` to ensure repeated subscriptions from same subscrober to same publisher does not collide
+	// add `createdAt` to ensure repeated subscriptions from same subscriber to same publisher does not collide
 	return livekit.ParticipantID(fmt.Sprintf("%s:%d", d.params.SubID, d.createdAt))
 }
 
@@ -1397,6 +1404,8 @@ func (d *DownTrack) SeedState(state DownTrackState) {
 	if state.RTPStatsRTX != nil {
 		d.rtpStatsRTX.Seed(state.RTPStatsRTX)
 		d.deltaStatsRTXSenderSnapshotId = state.DeltaStatsRTXSenderSnapshotId
+
+		d.rtxSequenceNumber.Store(d.rtpStatsRTX.ExtHighestSequenceNumber())
 	}
 	d.forwarder.SeedState(state.ForwarderState)
 }
@@ -1672,14 +1681,14 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 
 		mime := strings.ToLower(d.Codec().MimeType)
 		var getBlankFrame func(bool) ([]byte, error)
-		switch mime {
-		case strings.ToLower(webrtc.MimeTypeOpus):
+		switch {
+		case strings.EqualFold(mime, webrtc.MimeTypeOpus):
 			getBlankFrame = d.getOpusBlankFrame
-		case strings.ToLower(MimeTypeAudioRed):
+		case strings.EqualFold(mime, MimeTypeAudioRed):
 			getBlankFrame = d.getOpusRedBlankFrame
-		case strings.ToLower(webrtc.MimeTypeVP8):
+		case strings.EqualFold(mime, webrtc.MimeTypeVP8):
 			getBlankFrame = d.getVP8BlankFrame
-		case strings.ToLower(webrtc.MimeTypeH264):
+		case strings.EqualFold(mime, webrtc.MimeTypeH264):
 			getBlankFrame = d.getH264BlankFrame
 		default:
 			close(done)
@@ -2052,8 +2061,9 @@ func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isPro
 		SSRC:           d.ssrc,
 	}
 	rtxOffset := 0
-	rtxExtSequenceNumber := d.rtxSequenceNumber.Inc()
+	var rtxExtSequenceNumber uint64
 	if rtxPT := d.payloadTypeRTX.Load(); rtxPT != 0 && d.ssrcRTX != 0 {
+		rtxExtSequenceNumber = d.rtxSequenceNumber.Inc()
 		rtxOffset = 2
 
 		hdr.PayloadType = uint8(rtxPT)
@@ -2215,9 +2225,9 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 			return 0
 		}
 
-		rtxExtSequenceNumber := d.rtxSequenceNumber.Inc()
 		payloads := make([]byte, RTPPaddingMaxPayloadSize*num)
 		for i := 0; i < num; i++ {
+			rtxExtSequenceNumber := d.rtxSequenceNumber.Inc()
 			hdr := &rtp.Header{
 				Version:        2,
 				Padding:        true,

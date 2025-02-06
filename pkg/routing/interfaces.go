@@ -275,5 +275,12 @@ func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*
 		pi.SubscriberAllowPause = &subscriberAllowPause
 	}
 
+	// TODO: clean up after 1.7 eol
+	if pi.CreateRoom == nil {
+		pi.CreateRoom = &livekit.CreateRoomRequest{
+			Name: ss.RoomName,
+		}
+	}
+
 	return pi, nil
 }
