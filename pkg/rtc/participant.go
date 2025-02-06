@@ -2340,9 +2340,11 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) *li
 	isPending := false
 	p.pendingTracksLock.RLock()
 	for _, pti := range p.pendingTracks {
-		for _, ti := range pti.trackInfos {
+		for i, ti := range pti.trackInfos {
 			if livekit.TrackID(ti.Sid) == trackID {
+				ti = utils.CloneProto(ti)
 				ti.Muted = muted
+				pti.trackInfos[i] = ti
 				isPending = true
 				trackInfo = ti
 			}
