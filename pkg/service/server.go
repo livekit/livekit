@@ -167,6 +167,14 @@ func NewLivekitServer(conf *config.Config,
 		bindAddress = conf.BindAddresses[0]
 	}
 
+	// clean up old rooms on startup
+	if err = roomManager.CleanupRooms(); err != nil {
+		return
+	}
+	if err = router.RemoveDeadNodes(); err != nil {
+		return
+	}
+
 	err = nodeProvider.Save(context.Background(), Node{
 		Id:           db.GetHost().ID().String(),
 		Participants: 0,
@@ -175,14 +183,6 @@ func NewLivekitServer(conf *config.Config,
 	})
 	if err != nil {
 		conf.LoggingP2P.Errorf("node provider save error: %s", err)
-	}
-
-	// clean up old rooms on startup
-	if err = roomManager.CleanupRooms(); err != nil {
-		return
-	}
-	if err = router.RemoveDeadNodes(); err != nil {
-		return
 	}
 
 	return

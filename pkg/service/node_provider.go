@@ -35,12 +35,14 @@ const (
 
 	intervalPingNode = 5 * time.Second
 	deadlinePingNode = 30 * time.Second
+	intervalResetNode = 500 * time.Second
 )
 
 type NodeProvider struct {
 	db     *p2p_database.DB
 	geo    *geoip2.Reader
 	logger *log.ZapEventLogger
+	currentNode *Node
 }
 
 func NewNodeProvider(db *p2p_database.DB, geo *geoip2.Reader, logger *log.ZapEventLogger) *NodeProvider {
@@ -53,6 +55,7 @@ func NewNodeProvider(db *p2p_database.DB, geo *geoip2.Reader, logger *log.ZapEve
 	backgroundCtx := context.Background()
 
 	provider.refreshTTL(backgroundCtx)
+	provider.refreshNode(backgroundCtx)
 
 	return provider
 }
@@ -144,18 +147,24 @@ func (p *NodeProvider) FetchRelevant(ctx context.Context, clientIP string) (Node
 func (p *NodeProvider) IncrementParticipants(ctx context.Context, nodeId string) error {
 	node, err := p.Get(ctx, nodeId)
 	if err != nil {
-		return errors.Wrap(err, "get current value")
+		return p.reset(ctx)
 	}
 	node.Participants++
+	p.currentNode = &node
+
 	return p.save(ctx, node)
 }
 
 func (p *NodeProvider) DecrementParticipants(ctx context.Context, nodeId string) error {
 	node, err := p.Get(ctx, nodeId)
 	if err != nil {
-		return errors.Wrap(err, "get current value")
+		return p.reset(ctx)
 	}
-	node.Participants--
+	if node.Participants > 1 {
+		node.Participants--
+	}
+	p.currentNode = &node
+
 	return p.save(ctx, node)
 }
 
@@ -176,8 +185,13 @@ func (p *NodeProvider) Save(ctx context.Context, node Node) error {
 	node.Latitude = city.Location.Latitude
 	node.Longitude = city.Location.Longitude
 	node.CreatedAt = time.Now()
+	p.currentNode = &node
 
 	return p.save(ctx, node)
+}
+
+func (p *NodeProvider) reset(ctx context.Context) error {
+	return p.save(ctx, *p.currentNode)
 }
 
 func (p *NodeProvider) RemoveCurrentNode(ctx context.Context) error {
@@ -203,31 +217,6 @@ func (p *NodeProvider) Get(ctx context.Context, id string) (Node, error) {
 	}
 
 	return res, nil
-}
-
-func (p *NodeProvider) FindByIP(ctx context.Context, ip string) (Node, error) {
-	keys, err := p.db.List(ctx)
-	if err != nil {
-		return Node{}, errors.Wrap(err, "list keys")
-	}
-
-	for _, key := range keys {
-		if !strings.HasPrefix(key, "/"+prefixKeyNode) {
-			continue
-		}
-		nodeId := strings.TrimLeft(key, "/"+prefixKeyNode)
-
-		node, err := p.Get(ctx, nodeId)
-		if err != nil {
-			continue
-		}
-
-		if node.IP == ip {
-			return node, nil
-		}
-	}
-
-	return Node{}, errors.New("not found node")
 }
 
 func (p *NodeProvider) save(ctx context.Context, node Node) error {
@@ -261,6 +250,16 @@ func (p *NodeProvider) refreshTTL(ctx context.Context) {
 				p.logger.Errorw("refresh ttl", err)
 			}
 			<-ticker.C
+		}
+	}()
+}
+
+func (p *NodeProvider) refreshNode(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(intervalResetNode)
+		for {
+			<-ticker.C
+			p.reset(ctx)
 		}
 	}()
 }
