@@ -124,7 +124,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	clientProvider := createClientProvider(ethSmartContract, db)
 	relevantNodesHandler := createRelevantNodesHandler(conf, nodeProvider)
-	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, participantCounter, nodeProvider, db, relevantNodesHandler)
+	mainDebugHandler := createMainDebugHandler(conf, nodeProvider)
+	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, participantCounter, nodeProvider, db, relevantNodesHandler, mainDebugHandler)
 	if err != nil {
 		return nil, err
 	}
@@ -135,6 +136,10 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 
 func createRelevantNodesHandler(conf *config.Config, nodeProvider *NodeProvider) *RelevantNodesHandler {
 	return NewRelevantNodesHandler(nodeProvider, conf.LoggingP2P)
+}
+
+func createMainDebugHandler(conf *config.Config, nodeProvider *NodeProvider) *MainDebugHandler {
+	return NewMainDebugHandler(nodeProvider, conf.LoggingP2P)
 }
 
 func createGeoIP() (*geoip2.Reader, error) {
@@ -169,6 +174,7 @@ func createParticipantCounter(mainDatabase *p2p_database.DB, conf *config.Config
 
 func GetDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 	return p2p_database.Config{
+		DisableGater:            true,
 		PeerListenPort:          conf.Ethereum.P2pNodePort,
 		EthereumNetworkHost:     conf.Ethereum.NetworkHost,
 		EthereumNetworkKey:      conf.Ethereum.NetworkKey,

@@ -116,7 +116,7 @@ func (p *NodeProvider) FetchRelevant(ctx context.Context, clientIP string) (Node
 		dist := distance(node.Latitude, node.Longitude, clientLat, clientLon)
 		weight = dist*weightDistance + float64(node.Participants)*weightParticipantsCount
 
-		p.logger.Debugf(
+		p.logger.Infow(
 			"calculated weight for node %s is %f (%s - %s, %f, %d)",
 			nodeId,
 			dist,

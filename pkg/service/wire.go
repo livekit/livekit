@@ -74,6 +74,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createTrafficManager,
 		CreateNodeProvider,
 		createRelevantNodesHandler,
+		createMainDebugHandler,
 		NewLivekitServer,
 	)
 	return &LivekitServer{}, nil
@@ -81,6 +82,10 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 
 func createRelevantNodesHandler(conf *config.Config, nodeProvider *NodeProvider) *RelevantNodesHandler {
 	return NewRelevantNodesHandler(nodeProvider, conf.LoggingP2P)
+}
+
+func createMainDebugHandler(conf *config.Config, nodeProvider *NodeProvider) *MainDebugHandler {
+	return NewMainDebugHandler(nodeProvider, conf.LoggingP2P)
 }
 
 func createGeoIP() (*geoip2.Reader, error) {
