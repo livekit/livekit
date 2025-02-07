@@ -65,6 +65,9 @@ func (p *NodeProvider) List(ctx context.Context) ([]Node, error) {
 
 	var nodes []Node
 	for _, k := range keys {
+		if !strings.HasPrefix(k, "/"+prefixKeyNode) {
+			continue
+		}
 		nodeId := strings.TrimLeft(k, "/"+prefixKeyNode)
 		node, err := p.Get(ctx, nodeId)
 		if err != nil {
