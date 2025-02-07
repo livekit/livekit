@@ -244,11 +244,88 @@ func RecordRequest(ctx context.Context, request proto.Message) {
 		return
 	}
 
-	switch request.(type) {
+	// capture request and extract common fields to top level as appropriate
+	switch msg := request.(type) {
 	case *livekit.CreateRoomRequest:
 		a.Request = &livekit.APICallRequest{
 			Message: &livekit.APICallRequest_CreateRoomRequest{
-				CreateRoomRequest: request.(*livekit.CreateRoomRequest),
+				CreateRoomRequest: msg,
+			},
+		}
+		a.RoomName = msg.Name
+
+	case *livekit.ListRoomsRequest:
+		a.Request = &livekit.APICallRequest{
+			Message: &livekit.APICallRequest_ListRoomsRequest{
+				ListRoomsRequest: msg,
+			},
+		}
+
+	case *livekit.DeleteRoomRequest:
+		a.Request = &livekit.APICallRequest{
+			Message: &livekit.APICallRequest_DeleteRoomRequest{
+				DeleteRoomRequest: msg,
+			},
+		}
+		a.RoomName = msg.Room
+
+	case *livekit.ListParticipantsRequest:
+		a.Request = &livekit.APICallRequest{
+			Message: &livekit.APICallRequest_ListParticipantsRequest{
+				ListParticipantsRequest: msg,
+			},
+		}
+		a.RoomName = msg.Room
+
+	case *livekit.RoomParticipantIdentity:
+		a.Request = &livekit.APICallRequest{
+			Message: &livekit.APICallRequest_RoomParticipantIdentity{
+				RoomParticipantIdentity: msg,
+			},
+		}
+		a.RoomName = msg.Room
+		a.ParticipantIdentity = msg.Identity
+
+	case *livekit.MuteRoomTrackRequest:
+		a.Request = &livekit.APICallRequest{
+			Message: &livekit.APICallRequest_MuteRoomTrackRequest{
+				MuteRoomTrackRequest: msg,
+			},
+		}
+		a.RoomName = msg.Room
+		a.ParticipantIdentity = msg.Identity
+		a.TrackId = msg.TrackSid
+
+	case *livekit.UpdateParticipantRequest:
+		a.Request = &livekit.APICallRequest{
+			Message: &livekit.APICallRequest_UpdateParticipantRequest{
+				UpdateParticipantRequest: msg,
+			},
+		}
+		a.RoomName = msg.Room
+		a.ParticipantIdentity = msg.Identity
+
+	case *livekit.UpdateSubscriptionsRequest:
+		a.Request = &livekit.APICallRequest{
+			Message: &livekit.APICallRequest_UpdateSubscriptionsRequest{
+				UpdateSubscriptionsRequest: msg,
+			},
+		}
+		a.RoomName = msg.Room
+		a.ParticipantIdentity = msg.Identity
+
+	case *livekit.SendDataRequest:
+		a.Request = &livekit.APICallRequest{
+			Message: &livekit.APICallRequest_SendDataRequest{
+				SendDataRequest: msg,
+			},
+		}
+		a.RoomName = msg.Room
+
+	case *livekit.UpdateRoomMetadataRequest:
+		a.Request = &livekit.APICallRequest{
+			Message: &livekit.APICallRequest_UpdateRoomMetadataRequest{
+				UpdateRoomMetadataRequest: msg,
 			},
 		}
 	}
@@ -264,13 +341,13 @@ func RecordResponse(ctx context.Context, response proto.Message) {
 		return
 	}
 
-	switch response.(type) {
+	// extract common fields to top level as appropriate
+	switch msg := response.(type) {
 	case *livekit.Room:
-		a.Response = &livekit.APICallResponse{
-			Message: &livekit.APICallResponse_Room{
-				Room: response.(*livekit.Room),
-			},
-		}
+		a.RoomId = msg.Sid
+
+	case *livekit.ParticipantInfo:
+		a.ParticipantId = msg.Sid
 	}
 }
 
@@ -312,8 +389,10 @@ func telemetryResponseSent(
 		a.ProjectId = getProjectID(ctx)
 	}
 	a.NodeId = string(nodeID)
-	if status, ok := twirp.StatusCode(ctx); ok {
-		a.Status = status
+	if statusCode, ok := twirp.StatusCode(ctx); ok {
+		if status, err := strconv.Atoi(statusCode); err == nil {
+			a.Status = int32(status)
+		}
 	}
 	a.DurationNs = time.Since(a.StartedAt.AsTime()).Nanoseconds()
 	if telemetry != nil {
@@ -327,8 +406,8 @@ func telemetryErrorReceived(ctx context.Context, e twirp.Error) context.Context 
 		return ctx
 	}
 
-	a.ErrorCode = string(e.Code())
-	a.ErrorMessage = e.Msg()
+	a.TwirpErrorCode = string(e.Code())
+	a.TwirpErrorMessage = e.Msg()
 	return ctx
 }
 
