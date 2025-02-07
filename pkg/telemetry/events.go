@@ -500,12 +500,23 @@ func (t *telemetryService) IngressEnded(ctx context.Context, info *livekit.Ingre
 	})
 }
 
-func (t *telemetryService) Report(ctx context.Context, report *livekit.ReportInfo) {
+func (t *telemetryService) Report(ctx context.Context, reportInfo *livekit.ReportInfo) {
 	t.enqueue(func() {
 		ev := &livekit.AnalyticsEvent{
 			Type:      livekit.AnalyticsEventType_REPORT,
 			Timestamp: timestamppb.Now(),
-			Report:    report,
+			Report:    reportInfo,
+		}
+		t.SendEvent(ctx, ev)
+	})
+}
+
+func (t *telemetryService) APICall(ctx context.Context, apiCallInfo *livekit.APICallInfo) {
+	t.enqueue(func() {
+		ev := &livekit.AnalyticsEvent{
+			Type:      livekit.AnalyticsEventType_API_CALL,
+			Timestamp: timestamppb.Now(),
+			ApiCall:   apiCallInfo,
 		}
 		t.SendEvent(ctx, ev)
 	})
