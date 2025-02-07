@@ -219,7 +219,7 @@ func IsMimeTypeStringAudio(mime string) bool {
 }
 
 func IsMimeTypeAudio(mimeType MimeType) bool {
-	return strings.HasPrefix(string(mimeType), MimeTypePrefixAudio)
+	return strings.HasPrefix(mimeType.String(), MimeTypePrefixAudio)
 }
 
 func IsMimeTypeStringVideo(mime string) bool {
@@ -227,7 +227,7 @@ func IsMimeTypeStringVideo(mime string) bool {
 }
 
 func IsMimeTypeVideo(mimeType MimeType) bool {
-	return strings.HasPrefix(string(mimeType), MimeTypePrefixVideo)
+	return strings.HasPrefix(mimeType.String(), MimeTypePrefixVideo)
 }
 
 // SVC-TODO: Have to use more conditions to differentiate between
