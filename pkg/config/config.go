@@ -578,9 +578,10 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 		switch kind {
 		case reflect.Bool:
 			flag = &cli.BoolFlag{
-				Name:   name,
-				Usage:  generatedCLIFlagUsage,
-				Hidden: hidden,
+				Name:    name,
+				EnvVars: []string{envVar},
+				Usage:   generatedCLIFlagUsage,
+				Hidden:  hidden,
 			}
 		case reflect.String:
 			flag = &cli.StringFlag{
