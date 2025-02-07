@@ -28,8 +28,5 @@ func NewTrackRemoteFromSdp(track *webrtc.TrackRemote, codec webrtc.RTPCodecParam
 }
 
 func (t *TrackRemoteFromSdp) Codec() webrtc.RTPCodecParameters {
-	if t.TrackRemote.PayloadType() == 0 {
-		return t.sdpCodec
-	}
-	return t.TrackRemote.Codec()
+	return t.sdpCodec
 }

@@ -58,6 +58,10 @@ func (c ClientInfo) FireTrackByRTPPacket() bool {
 	return c.isGo()
 }
 
+func (c ClientInfo) SupportsCodecChange() bool {
+	return c.ClientInfo != nil && c.ClientInfo.Sdk != livekit.ClientInfo_GO && c.ClientInfo.Sdk != livekit.ClientInfo_UNKNOWN
+}
+
 func (c ClientInfo) CanHandleReconnectResponse() bool {
 	if c.Sdk == livekit.ClientInfo_JS {
 		// JS handles Reconnect explicitly in 1.6.3, prior to 1.6.4 it could not handle unknown responses

@@ -163,6 +163,7 @@ type ParticipantParams struct {
 	DataChannelMaxBufferedAmount   uint64
 	DatachannelSlowThreshold       int
 	FireOnTrackBySdp               bool
+	DisableCodecRegression         bool
 }
 
 type ParticipantImpl struct {
@@ -1737,12 +1738,10 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 		return
 	}
 
-	codec := rtcTrack.Codec()
+	var codec webrtc.RTPCodecParameters
 	var fromSdp bool
-	// track fired by sdp
-	if rtcTrack.Codec().PayloadType == 0 {
-		codecs := rtpReceiver.GetParameters().Codecs
-		if len(codecs) == 0 || (rtcTrack.Kind() == webrtc.RTPCodecTypeVideo && p.params.ClientInfo.FireTrackByRTPPacket()) {
+	if rtcTrack.Kind() == webrtc.RTPCodecTypeVideo && p.params.ClientInfo.FireTrackByRTPPacket() {
+		if rtcTrack.Codec().PayloadType == 0 {
 			go func() {
 				// wait for the first packet to determine the codec
 				bytes := make([]byte, 1500)
@@ -1757,12 +1756,20 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 			}()
 			return
 		}
+		codec = rtcTrack.Codec()
+	} else {
+		// track fired by sdp
+		codecs := rtpReceiver.GetParameters().Codecs
+		if len(codecs) == 0 {
+			p.pubLogger.Errorw("no negotiated codecs for track, track will be ignored", nil, "trackID", rtcTrack.ID(), "StreamID", rtcTrack.StreamID())
+			return
+		}
 		codec = codecs[0]
 		fromSdp = true
 	}
+	p.params.Logger.Debugw("onMediaTrack", "codec", codec, "payloadType", codec.PayloadType, "fromSdp", fromSdp, "parameters", rtpReceiver.GetParameters())
 
 	var track sfu.TrackRemote = sfu.NewTrackRemoteFromSdp(rtcTrack, codec)
-
 	publishedTrack, isNewTrack := p.mediaTrackReceived(track, rtpReceiver)
 	if publishedTrack == nil {
 		p.pendingTracksLock.Lock()
@@ -2195,19 +2202,25 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		return ti
 	}
 
+	backupCodecPolicy := req.BackupCodecPolicy
+	if backupCodecPolicy == livekit.BackupCodecPolicy_REGRESSION && p.params.DisableCodecRegression {
+		backupCodecPolicy = livekit.BackupCodecPolicy_SIMULCAST
+	}
+
 	ti := &livekit.TrackInfo{
-		Type:       req.Type,
-		Name:       req.Name,
-		Width:      req.Width,
-		Height:     req.Height,
-		Muted:      req.Muted,
-		DisableDtx: req.DisableDtx,
-		Source:     req.Source,
-		Layers:     req.Layers,
-		DisableRed: req.DisableRed,
-		Stereo:     req.Stereo,
-		Encryption: req.Encryption,
-		Stream:     req.Stream,
+		Type:              req.Type,
+		Name:              req.Name,
+		Width:             req.Width,
+		Height:            req.Height,
+		Muted:             req.Muted,
+		DisableDtx:        req.DisableDtx,
+		Source:            req.Source,
+		Layers:            req.Layers,
+		DisableRed:        req.DisableRed,
+		Stereo:            req.Stereo,
+		Encryption:        req.Encryption,
+		Stream:            req.Stream,
+		BackupCodecPolicy: backupCodecPolicy,
 	}
 	if req.Stereo {
 		ti.AudioFeatures = append(ti.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO)
@@ -2340,9 +2353,11 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) *li
 	isPending := false
 	p.pendingTracksLock.RLock()
 	for _, pti := range p.pendingTracks {
-		for _, ti := range pti.trackInfos {
+		for i, ti := range pti.trackInfos {
 			if livekit.TrackID(ti.Sid) == trackID {
+				ti = utils.CloneProto(ti)
 				ti.Muted = muted
+				pti.trackInfos[i] = ti
 				isPending = true
 				trackInfo = ti
 			}
@@ -3105,6 +3120,10 @@ func (p *ParticipantImpl) HandleMetrics(senderParticipantID livekit.ParticipantI
 
 	p.metricsReporter.Merge(metrics)
 	return nil
+}
+
+func (p *ParticipantImpl) SupportsCodecChange() bool {
+	return p.params.ClientInfo.SupportsCodecChange()
 }
 
 // ----------------------------------------------
