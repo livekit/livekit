@@ -25,22 +25,22 @@ const (
 	MimeTypePrefixVideo = "video/"
 )
 
-type MimeTypeCodec string
+type MimeTypeCodec int
 
 const (
-	MimeTypeCodecUnknown MimeTypeCodec = "MimeTypeCodecUnknown"
-	MimeTypeCodecH264    MimeTypeCodec = "H264"
-	MimeTypeCodecH265    MimeTypeCodec = "H265"
-	MimeTypeCodecOpus    MimeTypeCodec = "opus"
-	MimeTypeCodecRED     MimeTypeCodec = "red"
-	MimeTypeCodecVP8     MimeTypeCodec = "VP8"
-	MimeTypeCodecVP9     MimeTypeCodec = "VP9"
-	MimeTypeCodecAV1     MimeTypeCodec = "AV1"
-	MimeTypeCodecG722    MimeTypeCodec = "G722"
-	MimeTypeCodecPCMU    MimeTypeCodec = "PCMU"
-	MimeTypeCodecPCMA    MimeTypeCodec = "PCMA"
-	MimeTypeCodecRTX     MimeTypeCodec = "rtx"
-	MimeTypeCodecFlexFEC MimeTypeCodec = "flexfec"
+	MimeTypeCodecUnknown MimeTypeCodec = iota
+	MimeTypeCodecH264
+	MimeTypeCodecH265
+	MimeTypeCodecOpus
+	MimeTypeCodecRED
+	MimeTypeCodecVP8
+	MimeTypeCodecVP9
+	MimeTypeCodecAV1
+	MimeTypeCodecG722
+	MimeTypeCodecPCMU
+	MimeTypeCodecPCMA
+	MimeTypeCodecRTX
+	MimeTypeCodecFlexFEC
 )
 
 func (m MimeTypeCodec) String() string {
@@ -73,7 +73,7 @@ func (m MimeTypeCodec) String() string {
 		return "flexfec"
 	}
 
-	return string(m)
+	return "MimeTypeCodecUnknown"
 }
 
 func NormalizeMimeTypeCodec(codec string) MimeTypeCodec {
@@ -128,22 +128,22 @@ func IsMimeTypeCodecStringH264(codec string) bool {
 	return NormalizeMimeTypeCodec(codec) == MimeTypeCodecH264
 }
 
-type MimeType string
+type MimeType int
 
 const (
-	MimeTypeUnknown MimeType = "MimeTypeUnknown"
-	MimeTypeH264    MimeType = MimeTypePrefixVideo + MimeType(MimeTypeCodecH264)
-	MimeTypeH265    MimeType = MimeTypePrefixVideo + MimeType(MimeTypeCodecH265)
-	MimeTypeOpus    MimeType = MimeTypePrefixAudio + MimeType(MimeTypeCodecOpus)
-	MimeTypeRED     MimeType = MimeTypePrefixAudio + MimeType(MimeTypeCodecRED)
-	MimeTypeVP8     MimeType = MimeTypePrefixVideo + MimeType(MimeTypeCodecVP8)
-	MimeTypeVP9     MimeType = MimeTypePrefixVideo + MimeType(MimeTypeCodecVP9)
-	MimeTypeAV1     MimeType = MimeTypePrefixVideo + MimeType(MimeTypeCodecAV1)
-	MimeTypeG722    MimeType = MimeTypePrefixAudio + MimeType(MimeTypeCodecG722)
-	MimeTypePCMU    MimeType = MimeTypePrefixAudio + MimeType(MimeTypeCodecPCMU)
-	MimeTypePCMA    MimeType = MimeTypePrefixAudio + MimeType(MimeTypeCodecPCMA)
-	MimeTypeRTX     MimeType = MimeTypePrefixVideo + MimeType(MimeTypeCodecRTX)
-	MimeTypeFlexFEC MimeType = MimeTypePrefixVideo + MimeType(MimeTypeCodecFlexFEC)
+	MimeTypeUnknown MimeType = iota
+	MimeTypeH264
+	MimeTypeH265
+	MimeTypeOpus
+	MimeTypeRED
+	MimeTypeVP8
+	MimeTypeVP9
+	MimeTypeAV1
+	MimeTypeG722
+	MimeTypePCMU
+	MimeTypePCMA
+	MimeTypeRTX
+	MimeTypeFlexFEC
 )
 
 func (m MimeType) String() string {
@@ -176,7 +176,7 @@ func (m MimeType) String() string {
 		return webrtc.MimeTypeFlexFEC
 	}
 
-	return string(m)
+	return "MimeTypeUnknown"
 }
 
 func NormalizeMimeType(mime string) MimeType {
