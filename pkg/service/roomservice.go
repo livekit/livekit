@@ -346,13 +346,17 @@ func redactUpdateParticipantRequest(req *livekit.UpdateParticipantRequest) *live
 	}
 
 	if len(clone.Attributes) != 0 {
-		total := 0
+		keysSize := 0
+		valuesSize := 0
 		for k, v := range clone.Attributes {
-			total += len(k) + len(v)
+			keysSize += len(k)
+			valuesSize += len(v)
 		}
 
 		clone.Attributes = map[string]string{
-			"__size": fmt.Sprintf("%d", total),
+			"__num_elements": fmt.Sprintf("%d", len(clone.Attributes)),
+			"__keys_size":    fmt.Sprintf("%d", keysSize),
+			"__values_size":  fmt.Sprintf("%d", valuesSize),
 		}
 	}
 
