@@ -108,12 +108,12 @@ func NormalizeMimeTypeCodec(codec string) MimeTypeCodec {
 }
 
 func GetMimeTypeCodec(mime string) MimeTypeCodec {
-	parts := strings.Split(mime, "/")
-	if len(parts) > 1 {
-		return NormalizeMimeTypeCodec(parts[1])
+	i := strings.IndexByte(mime, '/')
+	if i == -1 {
+		return MimeTypeCodecUnknown
 	}
 
-	return MimeTypeCodecUnknown
+	return NormalizeMimeTypeCodec(mime[i+1:])
 }
 
 func IsMimeTypeCodecStringOpus(codec string) bool {
