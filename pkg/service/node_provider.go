@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"google.golang.org/protobuf/proto"
 
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/ipfs/go-log/v2"
@@ -16,6 +15,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 const prefixKeyNode = "node_"
@@ -51,6 +51,7 @@ type NodeProvider struct {
 	logger *log.ZapEventLogger
 	current Node
 	localNode routing.LocalNode
+	prevStats *livekit.NodeStats
 }
 
 func NewNodeProvider(mainDatabase *p2p_database.DB, geo *geoip2.Reader, logger *log.ZapEventLogger, localNode routing.LocalNode) *NodeProvider {
@@ -163,10 +164,8 @@ func (p *NodeProvider) Save(ctx context.Context, node Node) error {
 }
 
 func (p *NodeProvider) refresh(ctx context.Context) error {
-	lkNode := proto.Clone((*livekit.Node)(p.localNode)).(*livekit.Node)
 	node := p.current
-
-	node.Participants = lkNode.Stats.NumClients
+	node.Participants = p.localNode.Stats.NumClients
 
 	return p.save(ctx, node)
 }
@@ -305,6 +304,7 @@ func (p *NodeProvider) startRefresh() {
 		ticker := time.NewTicker(nodeRefreshInterval)
 		for {
 			<-ticker.C
+			p.UpdateNodeStats()
 			err := p.refresh(ctx)
 			if err != nil {
 				p.logger.Errorw("[refresh] error %s\r\n", err)
@@ -312,4 +312,20 @@ func (p *NodeProvider) startRefresh() {
 			}
 		}
 	}()
+}
+
+func (p *NodeProvider) UpdateNodeStats() {
+
+	if p.prevStats == nil {
+		p.prevStats = p.localNode.Stats
+	}
+
+	updated, computedAvg, err := prometheus.GetUpdatedNodeStats(p.localNode.Stats, p.prevStats)
+	if err != nil {
+		p.logger.Errorw("could not update node stats", err)
+	}
+	p.localNode.Stats = updated
+	if computedAvg {
+		p.prevStats = updated
+	}
 }
