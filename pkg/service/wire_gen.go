@@ -54,16 +54,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	router := routing.CreateRouter(conf, universalClient, currentNode, signalClient, db)
-	participantCounter, err := createParticipantCounter(db, conf)
-	if err != nil {
-		return nil, err
-	}
-	reader, err := createGeoIP()
-	if err != nil {
-		return nil, err
-	}
-	nodeProvider := CreateNodeProvider(reader, conf, db)
-	objectStore := createStore(db, p2p_databaseConfig, nodeID, participantCounter, conf, nodeProvider)
+	objectStore := createStore(db, p2p_databaseConfig, nodeID, conf)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
 		return nil, err
@@ -122,10 +113,15 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	clientProvider := createClientProvider(ethSmartContract, db)
+	clientProvider := createClientProvider(ethSmartContract, conf, db)
+	reader, err := createGeoIP()
+	if err != nil {
+		return nil, err
+	}
+	nodeProvider := CreateNodeProvider(reader, conf, db, currentNode)
 	relevantNodesHandler := createRelevantNodesHandler(conf, nodeProvider)
-	mainDebugHandler := createMainDebugHandler(conf, nodeProvider, db)
-	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, participantCounter, nodeProvider, db, relevantNodesHandler, mainDebugHandler)
+	mainDebugHandler := createMainDebugHandler(conf, nodeProvider, clientProvider, db)
+	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, nodeProvider, db, relevantNodesHandler, mainDebugHandler)
 	if err != nil {
 		return nil, err
 	}
@@ -138,20 +134,20 @@ func createRelevantNodesHandler(conf *config.Config, nodeProvider *NodeProvider)
 	return NewRelevantNodesHandler(nodeProvider, conf.LoggingP2P)
 }
 
-func createMainDebugHandler(conf *config.Config, nodeProvider *NodeProvider, db *p2p_database.DB) *MainDebugHandler {
-	return NewMainDebugHandler(db, nodeProvider, conf.LoggingP2P)
+func createMainDebugHandler(conf *config.Config, nodeProvider *NodeProvider, clientProvider *ClientProvider, db *p2p_database.DB) *MainDebugHandler {
+	return NewMainDebugHandler(db, nodeProvider, clientProvider, conf.LoggingP2P)
 }
 
 func createGeoIP() (*geoip2.Reader, error) {
 	return geoip2.FromBytes(livekit.MixmindDatabase)
 }
 
-func CreateNodeProvider(geo *geoip2.Reader, config2 *config.Config, db *p2p_database.DB) *NodeProvider {
-	return NewNodeProvider(db, geo, config2.LoggingP2P)
+func CreateNodeProvider(geo *geoip2.Reader, config2 *config.Config, db *p2p_database.DB, node routing.LocalNode) *NodeProvider {
+	return NewNodeProvider(db, geo, config2.LoggingP2P, node)
 }
 
-func createClientProvider(contract *p2p_database.EthSmartContract, db *p2p_database.DB) *ClientProvider {
-	return NewClientProvider(db, contract)
+func createClientProvider(contract *p2p_database.EthSmartContract, config2 *config.Config, db *p2p_database.DB) *ClientProvider {
+	return NewClientProvider(db, contract, config2.LoggingP2P)
 }
 
 func createSmartContractClient(conf *config.Config) (*p2p_database.EthSmartContract, error) {
@@ -166,10 +162,6 @@ func createSmartContractClient(conf *config.Config) (*p2p_database.EthSmartContr
 	}
 
 	return contract, nil
-}
-
-func createParticipantCounter(mainDatabase *p2p_database.DB, conf *config.Config) (*ParticipantCounter, error) {
-	return NewParticipantCounter(mainDatabase, conf.LoggingP2P)
 }
 
 func GetDatabaseConfiguration(conf *config.Config) p2p_database.Config {
@@ -229,11 +221,9 @@ func createStore(
 	mainDatabase *p2p_database.DB,
 	p2pDbConfig p2p_database.Config,
 	nodeID livekit2.NodeID,
-	participantCounter *ParticipantCounter,
 	conf *config.Config,
-	nodeProvider *NodeProvider,
 ) ObjectStore {
-	return NewLocalStore(nodeID, participantCounter, mainDatabase, nodeProvider)
+	return NewLocalStore(nodeID, mainDatabase)
 }
 
 func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {

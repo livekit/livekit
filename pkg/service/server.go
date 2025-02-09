@@ -43,7 +43,6 @@ type LivekitServer struct {
 	turnServer         *turn.Server
 	currentNode        routing.LocalNode
 	clientProvider     *ClientProvider
-	participantCounter *ParticipantCounter
 	nodeProvider       *NodeProvider
 	running            atomic.Bool
 	doneChan           chan struct{}
@@ -62,7 +61,6 @@ func NewLivekitServer(conf *config.Config,
 	turnServer *turn.Server,
 	currentNode routing.LocalNode,
 	clientProvider *ClientProvider,
-	participantCounter *ParticipantCounter,
 	nodeProvider *NodeProvider,
 	db *p2p_database.DB,
 	relevantNodesHandler *RelevantNodesHandler,
@@ -78,7 +76,6 @@ func NewLivekitServer(conf *config.Config,
 		turnServer:         turnServer,
 		currentNode:        currentNode,
 		clientProvider:     clientProvider,
-		participantCounter: participantCounter,
 		nodeProvider:       nodeProvider,
 		closedChan:         make(chan struct{}),
 	}
@@ -97,7 +94,7 @@ func NewLivekitServer(conf *config.Config,
 		}),
 	}
 	if keyProvider != nil {
-		middlewares = append(middlewares, NewAPIKeyAuthMiddleware(clientProvider, participantCounter))
+		middlewares = append(middlewares, NewAPIKeyAuthMiddleware(clientProvider))
 	}
 
 	twirpLoggingHook := TwirpLogger(logger.GetLogger())
@@ -177,7 +174,6 @@ func NewLivekitServer(conf *config.Config,
 
 	err = nodeProvider.Save(context.Background(), Node{
 		Id:           db.GetHost().ID().String(),
-		Participants: 0,
 		Domain:       conf.Domain,
 		IP:           bindAddress,
 	})
@@ -354,12 +350,7 @@ func (s *LivekitServer) Start() error {
 }
 
 func (s *LivekitServer) Stop(force bool) {
-	err := s.participantCounter.RemoveAllNodeKeys(context.Background())
-	if err != nil {
-		logger.Errorw("cannot remove all nodes participant counter keys", err)
-	}
-
-	err = s.nodeProvider.RemoveCurrentNode(context.Background())
+	err := s.nodeProvider.RemoveCurrentNode(context.Background())
 	if err != nil {
 		logger.Errorw("remove current node from db", err)
 	}

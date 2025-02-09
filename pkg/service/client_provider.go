@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math/big"
 	"strings"
 	"time"
@@ -12,6 +11,7 @@ import (
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
+	"github.com/ipfs/go-log/v2"
 )
 
 const (
@@ -23,6 +23,7 @@ const (
 type ClientProvider struct {
 	mainDatabase *p2p_database.DB
 	contract     *p2p_database.EthSmartContract
+	logger *log.ZapEventLogger
 }
 
 type Client struct {
@@ -37,15 +38,39 @@ type rowDatabaseRecord struct {
 	TTL    time.Time `json:"ttl"`
 }
 
-func NewClientProvider(database *p2p_database.DB, contract *p2p_database.EthSmartContract) *ClientProvider {
+func NewClientProvider(database *p2p_database.DB, contract *p2p_database.EthSmartContract, logger *log.ZapEventLogger) *ClientProvider {
 	provider := &ClientProvider{
 		mainDatabase: database,
 		contract:     contract,
+		logger: logger,
 	}
 
 	provider.startRemovingExpiredRecord()
 
 	return provider
+}
+
+func (c *ClientProvider) List(ctx context.Context) ([]Client, error) {
+	keys, err := c.mainDatabase.List(ctx)
+	if err != nil {
+		return []Client{}, errors.Wrap(err, "list keys")
+	}
+
+	var clients []Client
+	for _, k := range keys {
+		if !strings.HasPrefix(k, "/"+databasePrefixClientKey) {
+			continue
+		}
+		clientId := strings.TrimLeft(k, "/"+databasePrefixClientKey)
+		client, err := c.ClientByAddress(ctx, clientId)
+		if err != nil {
+			c.logger.Errorw("key not found "+k, err)
+			continue
+		}
+		clients = append(clients, client)
+	}
+
+	return clients, nil
 }
 
 func (c *ClientProvider) ClientByAddress(ctx context.Context, address string) (Client, error) {
@@ -131,7 +156,7 @@ func (c *ClientProvider) startRemovingExpiredRecord() {
 		for {
 			keys, err := c.mainDatabase.List(ctx)
 			if err != nil {
-				log.Printf("[startRemovingExpiredRecord] error list main databases keys %s\r\n", err)
+				c.logger.Errorw("[startRemovingExpiredRecord] error list main databases keys %s\r\n", err)
 				return
 			}
 
@@ -143,21 +168,21 @@ func (c *ClientProvider) startRemovingExpiredRecord() {
 
 				row, err := c.mainDatabase.Get(ctx, key)
 				if err != nil {
-					log.Printf("[startRemovingExpiredRecord] get database record with key %s error %s\r\n", key, err)
+					c.logger.Errorw("[startRemovingExpiredRecord] get database record with key %s error %s\r\n", key, err)
 					continue
 				}
 
 				var result rowDatabaseRecord
 				err = json.Unmarshal([]byte(row), &result)
 				if err != nil {
-					log.Printf("[startRemovingExpiredRecord] unmarshal record with key %s error %s\r\n", key, err)
+					c.logger.Errorw("[startRemovingExpiredRecord] unmarshal record with key %s error %s\r\n", key, err)
 					continue
 				}
 
 				if result.TTL.Before(time.Now().UTC()) {
 					err = c.mainDatabase.Remove(ctx, key)
 					if err != nil {
-						log.Printf("[startRemovingExpiredRecord] remove expired record with key %s error %s\r\n", key, err)
+						c.logger.Errorw("[startRemovingExpiredRecord] remove expired record with key %s error %s\r\n", key, err)
 						continue
 					}
 				}

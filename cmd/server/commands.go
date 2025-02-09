@@ -1,15 +1,10 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"time"
 
-	livekit2 "github.com/livekit/livekit-server"
-	"github.com/olekukonko/tablewriter"
-	"github.com/oschwald/geoip2-golang"
-	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 
@@ -17,7 +12,6 @@ import (
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/service"
 )
 
 func generateKeys(_ *cli.Context) error {
@@ -25,108 +19,6 @@ func generateKeys(_ *cli.Context) error {
 	secret := utils.RandomSecret()
 	fmt.Println("API Key: ", apiKey)
 	fmt.Println("API Secret: ", secret)
-	return nil
-}
-
-func listConnectedPeers(c *cli.Context) error {
-	conf, err := getConfig(c)
-	if err != nil {
-		return errors.Wrap(err, "get config")
-	}
-
-	databaseConfig := service.GetDatabaseConfiguration(conf)
-	db, err := service.CreateMainDatabaseP2P(databaseConfig, conf)
-	if err != nil {
-		return errors.Wrap(err, "connect main db")
-	}
-
-	table := tablewriter.NewWriter(os.Stdout)
-	table.SetRowLine(true)
-	table.SetAutoWrapText(false)
-	table.SetHeader([]string{
-		"ID",
-		"Remote address",
-	})
-	table.SetColumnAlignment([]int{
-		tablewriter.ALIGN_CENTER,
-		tablewriter.ALIGN_CENTER,
-	})
-
-	for _, node := range db.ConnectedPeers() {
-		table.Append([]string{
-			node.ID.String(),
-			node.Addrs[0].String(),
-		})
-	}
-
-	table.Render()
-	return nil
-}
-
-func listP2pNodes(c *cli.Context) error {
-	conf, err := getConfig(c)
-	if err != nil {
-		return errors.Wrap(err, "get config")
-	}
-
-	databaseConfig := service.GetDatabaseConfiguration(conf)
-	db, err := service.CreateMainDatabaseP2P(databaseConfig, conf)
-	if err != nil {
-		return errors.Wrap(err, "connect main db")
-	}
-	geoIp, err := geoip2.FromBytes(livekit2.MixmindDatabase)
-	if err != nil {
-		return errors.Wrap(err, "create mixmind")
-	}
-	nodeProvider := service.CreateNodeProvider(geoIp, conf, db)
-	nodes, err := nodeProvider.List(context.Background())
-	if err != nil {
-		return errors.Wrap(err, "list nodes")
-	}
-
-	fmt.Println("Waiting p2p database sync")
-	time.Sleep(5 * time.Second)
-	fmt.Println("Done waiting p2p database sync")
-
-	table := tablewriter.NewWriter(os.Stdout)
-	table.SetRowLine(true)
-	table.SetAutoWrapText(false)
-	table.SetHeader([]string{
-		"ID",
-		"Participants",
-		"Domain",
-		"IP",
-		"Country",
-		"Latitude",
-		"Longitude",
-		"CreatedAt",
-	})
-
-	table.SetColumnAlignment([]int{
-		tablewriter.ALIGN_CENTER,
-		tablewriter.ALIGN_CENTER,
-		tablewriter.ALIGN_CENTER,
-		tablewriter.ALIGN_CENTER,
-		tablewriter.ALIGN_CENTER,
-		tablewriter.ALIGN_CENTER,
-		tablewriter.ALIGN_CENTER,
-		tablewriter.ALIGN_CENTER,
-	})
-
-	for _, node := range nodes {
-		table.Append([]string{
-			node.Id,
-			fmt.Sprintf("%d", node.Participants),
-			node.Domain,
-			node.IP,
-			node.Country,
-			fmt.Sprintf("%f", node.Latitude),
-			fmt.Sprintf("%f", node.Longitude),
-			node.CreatedAt.Format(time.RFC3339),
-		})
-	}
-
-	table.Render()
 	return nil
 }
 
@@ -243,34 +135,5 @@ func createToken(c *cli.Context) error {
 
 	fmt.Println("Token:", token)
 
-	return nil
-}
-
-func relevantNode(c *cli.Context) error {
-	conf, err := getConfig(c)
-	if err != nil {
-		return errors.Wrap(err, "get config")
-	}
-
-	databaseConfig := service.GetDatabaseConfiguration(conf)
-	db, err := service.CreateMainDatabaseP2P(databaseConfig, conf)
-	if err != nil {
-		return errors.Wrap(err, "connect main db")
-	}
-	geoIp, err := geoip2.FromBytes(livekit2.MixmindDatabase)
-	if err != nil {
-		return errors.Wrap(err, "create mixmind")
-	}
-	nodeProvider := service.CreateNodeProvider(geoIp, conf, db)
-
-	clientIP := c.String("client-ip")
-
-	fmt.Printf("Search relevant node for %s\r\n", clientIP)
-	n, err := nodeProvider.FetchRelevant(context.Background(), clientIP)
-	if err != nil {
-		return errors.Wrap(err, "fetch relevant")
-	}
-
-	fmt.Printf("Relevant node is %v\r\n", n)
 	return nil
 }

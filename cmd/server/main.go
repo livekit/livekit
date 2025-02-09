@@ -154,28 +154,6 @@ func main() {
 				},
 			},
 			{
-				Name:   "relevant-node",
-				Usage:  "fetch relevant node from p2p network",
-				Action: relevantNode,
-				Flags: []cli.Flag{
-					&cli.StringFlag{
-						Name:     "client-ip",
-						Usage:    "client ip",
-						Required: true,
-					},
-				},
-			},
-			{
-				Name:   "list-p2p-nodes",
-				Usage:  "list p2p nodes",
-				Action: listP2pNodes,
-			},
-			{
-				Name:   "list-p2p-connected-peers",
-				Usage:  "list p2p connected peers",
-				Action: listConnectedPeers,
-			},
-			{
 				Name:   "help-verbose",
 				Usage:  "prints app help, including all generated configuration flags",
 				Action: helpVerbose,

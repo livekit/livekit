@@ -6,10 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/protocol/logger"
 	"github.com/pkg/errors"
-
-	// "github.com/livekit/livekit-server/pkg/utils"
 
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/thoas/go-funk"
@@ -22,8 +19,6 @@ import (
 // encapsulates CRUD operations for room settings
 type LocalStore struct {
 	currentNodeId            livekit.NodeID
-	clientParticipantCounter *ParticipantCounter
-	nodeProvider             *NodeProvider
 	mainDatabase             *p2p_database.DB
 
 	// map of roomKey => room
@@ -39,14 +34,10 @@ type LocalStore struct {
 
 func NewLocalStore(
 	currentNodeId livekit.NodeID,
-	participantCounter *ParticipantCounter,
 	mainDatabase *p2p_database.DB,
-	nodeProvider *NodeProvider,
 ) *LocalStore {
 	return &LocalStore{
 		currentNodeId:            currentNodeId,
-		clientParticipantCounter: participantCounter,
-		nodeProvider:             nodeProvider,
 		mainDatabase:             mainDatabase,
 
 		rooms:             make(map[livekit.RoomKey]*livekit.Room),
@@ -153,32 +144,12 @@ func (s *LocalStore) UnlockRoom(_ context.Context, _ livekit.RoomKey, _ string) 
 func (s *LocalStore) StoreParticipant(ctx context.Context, roomKey livekit.RoomKey, participant *livekit.ParticipantInfo) error {
 	log.Println("Calling localstore.StoreParticipant")
 
-	// _, apiKey, err := utils.ParseRoomKey(roomKey)
-	// if err != nil {
-	// 	return errors.Wrap(err, "parse room key")
-	// }
-
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	roomParticipants := s.participants[roomKey]
 	if roomParticipants == nil {
 		roomParticipants = make(map[livekit.ParticipantIdentity]*livekit.ParticipantInfo)
 		s.participants[roomKey] = roomParticipants
-	}
-
-	if participant.Relayed == false {
-		_, participantExists := roomParticipants[livekit.ParticipantIdentity(participant.Identity)]
-		if !participantExists {
-			err := s.nodeProvider.IncrementParticipants(ctx, s.mainDatabase.GetHost().ID().String())
-			if err != nil {
-				logger.Errorw("increment participants count", err)
-			}
-
-			// err = s.clientParticipantCounter.Increment(ctx, string(apiKey), string(roomKey), participant.Identity)
-			// if err != nil {
-			// 	logger.Errorw("cannot increment participant count", err)
-			// }
-		}
 	}
 
 	roomParticipants[livekit.ParticipantIdentity(participant.Identity)] = participant
@@ -224,26 +195,11 @@ func (s *LocalStore) DeleteParticipant(ctx context.Context, roomKey livekit.Room
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	// _, apiKey, err := utils.ParseRoomKey(roomKey)
-	// if err != nil {
-	// 	return errors.Wrap(err, "parse room key")
-	// }
-
 	roomParticipants := s.participants[roomKey]
 	if roomParticipants != nil {
-		participant, participantExists := roomParticipants[identity]
+		_, participantExists := roomParticipants[identity]
 		if participantExists {
 			delete(roomParticipants, identity)
-			if participant.Relayed == false {
-				// err := s.clientParticipantCounter.Decrement(ctx, string(apiKey), string(roomKey), string(identity))
-				// if err != nil {
-				// 	logger.Errorw("cannot decrement participant count", err)
-				// }
-				err := s.nodeProvider.DecrementParticipants(ctx, s.mainDatabase.GetHost().ID().String())
-				if err != nil {
-					logger.Errorw("decrement participants count: %s", err)
-				}
-			}
 		}
 	}
 	return nil

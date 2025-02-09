@@ -410,6 +410,7 @@ func (r *RoomManager) StartSession(
 			bandwidthLimit := limit * TrafficLimitPerClient
 			currentBandwidth := r.trafficManager.GetValue(apiKey)
 			// return currentBandwidth < bandwidthLimit
+			// tmp disabled
 			_ = currentBandwidth < bandwidthLimit
 			return true
 		},

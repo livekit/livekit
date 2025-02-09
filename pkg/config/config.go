@@ -488,6 +488,8 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 	conf.LoggingP2P = logging.Logger("p2p")
 	if conf.Ethereum.LogLevel != "" {
 		_ = logging.SetLogLevel("*", conf.Ethereum.LogLevel)
+	} else {
+		_ = logging.SetLogLevel("*", conf.LogLevel)
 	}
 
 	if conf.LogLevel != "" {

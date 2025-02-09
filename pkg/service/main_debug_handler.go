@@ -12,16 +12,56 @@ import (
 
 type MainDebugHandler struct {
 	nodeProvider *NodeProvider
+	clientProvider *ClientProvider
 	logger       *log.ZapEventLogger
 	db     *p2p_database.DB
 }
 
-func NewMainDebugHandler(db *p2p_database.DB, nodeProvider *NodeProvider, logger *log.ZapEventLogger) *MainDebugHandler {
+func NewMainDebugHandler(db *p2p_database.DB, nodeProvider *NodeProvider, clientProvider *ClientProvider, logger *log.ZapEventLogger) *MainDebugHandler {
 	return &MainDebugHandler{
 		nodeProvider: nodeProvider,
+		clientProvider: clientProvider,
 		logger:       logger,
 		db: db,
 	}
+}
+
+func (h *MainDebugHandler) clientHTTPHandler(w http.ResponseWriter, r *http.Request) {
+
+	clients, err := h.clientProvider.List(context.Background())
+	if err != nil {
+		handleError(w, http.StatusBadRequest, fmt.Errorf("send response %w", err))
+		return
+	}
+
+	table := tablewriter.NewWriter(w)
+	table.SetRowLine(true)
+	table.SetAutoWrapText(false)
+	table.SetHeader([]string{
+		"Key",
+		"Until",
+		"Active",
+		"Key",
+	})
+
+	table.SetColumnAlignment([]int{
+		tablewriter.ALIGN_CENTER,
+		tablewriter.ALIGN_CENTER,
+		tablewriter.ALIGN_CENTER,
+		tablewriter.ALIGN_CENTER,
+	})
+
+	for _, client := range clients {
+		table.Append([]string{
+			client.Key,
+			fmt.Sprintf("%d", client.Until),
+			fmt.Sprintf("%s", client.Active),
+			fmt.Sprintf("%s", client.Limit),
+		})
+	}
+
+	table.Render()
+	return
 }
 
 func (h *MainDebugHandler) nodeHTTPHandler(w http.ResponseWriter, r *http.Request) {
