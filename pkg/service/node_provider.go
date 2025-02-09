@@ -33,7 +33,7 @@ type Node struct {
 
 type rowNodeDatabaseRecord struct {
 	Node Node    `json:"node"`
-	TTL    time.Time `json:"ttl"`
+	TTL    int64 `json:"ttl"`
 }
 
 const (
@@ -156,7 +156,7 @@ func (p *NodeProvider) Save(ctx context.Context, node Node) error {
 	node.Country = country.Country.IsoCode
 	node.Latitude = city.Location.Latitude
 	node.Longitude = city.Location.Longitude
-	node.CreatedAt = time.Now()
+	node.CreatedAt = time.Now().UTC()
 	node.Participants = p.localNode.Stats.NumClients
 	p.current = node
 
@@ -198,21 +198,13 @@ func (p *NodeProvider) getFromDatabase(ctx context.Context, id string) (Node, er
 		return Node{}, errors.Wrap(err, "unmarshal record")
 	}
 
-	if result.TTL.Before(time.Now().UTC()) {
-		err = p.mainDatabase.Remove(ctx, key)
-		if err != nil {
-			return Node{}, errors.Wrap(err, "remove expired record")
-		}
-		return Node{}, errors.New("client expired")
-	}
-
 	return result.Node, nil
 }
 
 func (p *NodeProvider) save(ctx context.Context, node Node) error {
 	record := rowNodeDatabaseRecord{
 		Node: node,
-		TTL:    time.Now().UTC().Add(defaultNodeTtl),
+		TTL:    time.Now().Add(defaultNodeTtl).Unix(),
 	}
 
 	k := prefixKeyNode + node.Id
@@ -256,6 +248,8 @@ func (p *NodeProvider) startRemovingExpiredRecord() {
 
 		ticker := time.NewTicker(defaultNodeIntervalCheckingExpiredRecord)
 		for {
+			now:=time.Now().Unix()
+
 			keys, err := p.mainDatabase.List(ctx)
 			if err != nil {
 				p.logger.Errorw("[startRemovingExpiredRecord] error list main databases keys %s\r\n", err)
@@ -281,7 +275,7 @@ func (p *NodeProvider) startRemovingExpiredRecord() {
 					continue
 				}
 
-				if result.TTL.Before(time.Now().UTC()) {
+				if now > result.TTL {
 					err = p.mainDatabase.Remove(ctx, key)
 					if err != nil {
 						p.logger.Errorw("[startRemovingExpiredRecord] remove expired record with key %s error %s\r\n", key, err)
