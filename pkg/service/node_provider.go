@@ -8,12 +8,14 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"google.golang.org/protobuf/proto"
 
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/ipfs/go-log/v2"
 	"github.com/oschwald/geoip2-golang"
 	"github.com/pkg/errors"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/protocol/livekit"
 )
 
 const prefixKeyNode = "node_"
@@ -117,13 +119,12 @@ func (p *NodeProvider) FetchRelevant(ctx context.Context, clientIP string) (Node
 		weight = dist*weightDistance + float64(xNode.Participants)*weightParticipantsCount
 
 		p.logger.Infow(
-			"calculated weight for node %s is %f (%s - %s, %f, %d)",
-			xNode.Id,
-			dist,
-			clientCountry,
-			xNode.Country,
-			dist,
-			xNode.Participants,
+			"calculated weight for",
+			"node id", xNode.Id,
+			"distance", dist,
+			"client country", clientCountry,
+			"node country", xNode.Country,
+			"node participants", xNode.Participants,
 		)
 
 		nodes = append(nodes, nodeRow{node: xNode, weight: weight})
@@ -162,8 +163,10 @@ func (p *NodeProvider) Save(ctx context.Context, node Node) error {
 }
 
 func (p *NodeProvider) refresh(ctx context.Context) error {
+	lkNode := proto.Clone((*livekit.Node)(p.localNode)).(*livekit.Node)
 	node := p.current
-	node.Participants = p.localNode.Stats.NumClients
+
+	node.Participants = lkNode.Stats.NumClients
 
 	return p.save(ctx, node)
 }
@@ -284,6 +287,8 @@ func (p *NodeProvider) startRemovingExpiredRecord() {
 					if err != nil {
 						p.logger.Errorw("[startRemovingExpiredRecord] remove expired record with key %s error %s\r\n", key, err)
 						continue
+					} else {
+						p.logger.Infow("[startRemovingExpiredRecord] removed expired record with", "key",  key)
 					}
 				}
 			}

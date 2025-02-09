@@ -184,6 +184,8 @@ func (c *ClientProvider) startRemovingExpiredRecord() {
 					if err != nil {
 						c.logger.Errorw("[startRemovingExpiredRecord] remove expired record with key %s error %s\r\n", key, err)
 						continue
+					} else {
+						c.logger.Infow("[startRemovingExpiredRecord] removed expired record with", "key",  key)
 					}
 				}
 			}
