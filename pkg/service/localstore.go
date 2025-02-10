@@ -18,8 +18,8 @@ import (
 
 // encapsulates CRUD operations for room settings
 type LocalStore struct {
-	currentNodeId            livekit.NodeID
-	mainDatabase             *p2p_database.DB
+	currentNodeId livekit.NodeID
+	mainDatabase  *p2p_database.DB
 
 	// map of roomKey => room
 	rooms        map[livekit.RoomKey]*livekit.Room
@@ -37,8 +37,8 @@ func NewLocalStore(
 	mainDatabase *p2p_database.DB,
 ) *LocalStore {
 	return &LocalStore{
-		currentNodeId:            currentNodeId,
-		mainDatabase:             mainDatabase,
+		currentNodeId: currentNodeId,
+		mainDatabase:  mainDatabase,
 
 		rooms:             make(map[livekit.RoomKey]*livekit.Room),
 		roomInternal:      make(map[livekit.RoomKey]*livekit.RoomInternal),

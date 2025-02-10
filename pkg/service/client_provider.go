@@ -10,8 +10,8 @@ import (
 
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/pkg/errors"
 	"github.com/ipfs/go-log/v2"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -23,7 +23,7 @@ const (
 type ClientProvider struct {
 	mainDatabase *p2p_database.DB
 	contract     *p2p_database.EthSmartContract
-	logger *log.ZapEventLogger
+	logger       *log.ZapEventLogger
 }
 
 type Client struct {
@@ -34,15 +34,15 @@ type Client struct {
 }
 
 type rowDatabaseRecord struct {
-	Client Client    `json:"client"`
-	TTL    int64 `json:"ttl"`
+	Client Client `json:"client"`
+	TTL    int64  `json:"ttl"`
 }
 
 func NewClientProvider(database *p2p_database.DB, contract *p2p_database.EthSmartContract, logger *log.ZapEventLogger) *ClientProvider {
 	provider := &ClientProvider{
 		mainDatabase: database,
 		contract:     contract,
-		logger: logger,
+		logger:       logger,
 	}
 
 	provider.startRemovingExpiredRecord()
@@ -142,13 +142,14 @@ func (c *ClientProvider) getFromContract(address string) (Client, error) {
 
 func (c *ClientProvider) startRemovingExpiredRecord() {
 	go func() {
-		ctx := context.Background()
 
 		ticker := time.NewTicker(defaultIntervalCheckingExpiredRecord)
 		for {
 			<-ticker.C
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+			defer cancel()
 
-			now:=time.Now().Unix()
+			now := time.Now().Unix()
 
 			keys, err := c.mainDatabase.List(ctx)
 			if err != nil {
@@ -181,7 +182,7 @@ func (c *ClientProvider) startRemovingExpiredRecord() {
 						c.logger.Errorw("[startRemovingExpiredRecord] remove expired record with key %s error %s\r\n", key, err)
 						continue
 					} else {
-						c.logger.Infow("[startRemovingExpiredRecord] removed expired record with", "key",  key)
+						c.logger.Infow("[startRemovingExpiredRecord] removed expired record with", "key", key)
 					}
 				}
 			}

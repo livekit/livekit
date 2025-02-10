@@ -27,12 +27,12 @@ func CreateNodeSelector(conf *config.Config) (NodeSelector, error) {
 	case "cpuload":
 		return &CPULoadSelector{
 			CPULoadLimit: conf.NodeSelector.CPULoadLimit,
-			SortBy: conf.NodeSelector.SortBy,
+			SortBy:       conf.NodeSelector.SortBy,
 		}, nil
 	case "sysload":
 		return &SystemLoadSelector{
 			SysloadLimit: conf.NodeSelector.SysloadLimit,
-			SortBy: conf.NodeSelector.SortBy,
+			SortBy:       conf.NodeSelector.SortBy,
 		}, nil
 	case "regionaware":
 		s, err := NewRegionAwareSelector(conf.Region, conf.NodeSelector.Regions, conf.NodeSelector.SortBy)

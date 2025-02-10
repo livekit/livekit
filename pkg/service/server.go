@@ -32,21 +32,21 @@ import (
 )
 
 type LivekitServer struct {
-	config             *config.Config
-	rtcService         *RTCService
-	httpServer         *http.Server
-	httpsServer        *http.Server
-	promServer         *http.Server
-	router             routing.Router
-	roomManager        *RoomManager
-	signalServer       *SignalServer
-	turnServer         *turn.Server
-	currentNode        routing.LocalNode
-	clientProvider     *ClientProvider
-	nodeProvider       *NodeProvider
-	running            atomic.Bool
-	doneChan           chan struct{}
-	closedChan         chan struct{}
+	config         *config.Config
+	rtcService     *RTCService
+	httpServer     *http.Server
+	httpsServer    *http.Server
+	promServer     *http.Server
+	router         routing.Router
+	roomManager    *RoomManager
+	signalServer   *SignalServer
+	turnServer     *turn.Server
+	currentNode    routing.LocalNode
+	clientProvider *ClientProvider
+	nodeProvider   *NodeProvider
+	running        atomic.Bool
+	doneChan       chan struct{}
+	closedChan     chan struct{}
 }
 
 func NewLivekitServer(conf *config.Config,
@@ -73,11 +73,11 @@ func NewLivekitServer(conf *config.Config,
 		roomManager:  roomManager,
 		signalServer: signalServer,
 		// turn server starts automatically
-		turnServer:         turnServer,
-		currentNode:        currentNode,
-		clientProvider:     clientProvider,
-		nodeProvider:       nodeProvider,
-		closedChan:         make(chan struct{}),
+		turnServer:     turnServer,
+		currentNode:    currentNode,
+		clientProvider: clientProvider,
+		nodeProvider:   nodeProvider,
+		closedChan:     make(chan struct{}),
 	}
 
 	middlewares := []negroni.Handler{
@@ -123,6 +123,7 @@ func NewLivekitServer(conf *config.Config,
 	mux.HandleFunc("/relevant", relevantNodesHandler.HTTPHandler)
 	mux.HandleFunc("/node-debug", mainDebugHandler.nodeHTTPHandler)
 	mux.HandleFunc("/peer-debug", mainDebugHandler.peerHTTPHandler)
+	mux.HandleFunc("/client-debug", mainDebugHandler.clientHTTPHandler)
 	mux.HandleFunc("/", s.defaultHandler)
 
 	if conf.Domain != "" {
@@ -172,10 +173,13 @@ func NewLivekitServer(conf *config.Config,
 		return
 	}
 
-	err = nodeProvider.Save(context.Background(), Node{
-		Id:           db.GetHost().ID().String(),
-		Domain:       conf.Domain,
-		IP:           bindAddress,
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	err = nodeProvider.Save(ctx, Node{
+		Id:     db.GetHost().ID().String(),
+		Domain: conf.Domain,
+		IP:     bindAddress,
 	})
 	if err != nil {
 		conf.LoggingP2P.Errorf("node provider save error: %s", err)
@@ -350,10 +354,6 @@ func (s *LivekitServer) Start() error {
 }
 
 func (s *LivekitServer) Stop(force bool) {
-	err := s.nodeProvider.RemoveCurrentNode(context.Background())
-	if err != nil {
-		logger.Errorw("remove current node from db", err)
-	}
 
 	// wait for all participants to exit
 	s.router.Drain()

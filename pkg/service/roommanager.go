@@ -60,7 +60,7 @@ type RoomManager struct {
 	clientConfManager clientconfiguration.ClientConfigurationManager
 	egressLauncher    rtc.EgressLauncher
 	versionGenerator  utils.TimedVersionGenerator
-	trafficManager    *TrafficManager
+	// trafficManager    *TrafficManager
 
 	rooms               map[livekit.RoomKey]*rtc.Room
 	outRelayCollections map[livekit.RoomKey]*relay.Collection
@@ -77,7 +77,7 @@ func NewLocalRoomManager(
 	clientConfManager clientconfiguration.ClientConfigurationManager,
 	egressLauncher rtc.EgressLauncher,
 	versionGenerator utils.TimedVersionGenerator,
-	trafficManager *TrafficManager,
+	// trafficManager *TrafficManager,
 ) (*RoomManager, error) {
 	rtcConf, err := rtc.NewWebRTCConfig(conf, currentNode.Ip)
 	if err != nil {
@@ -94,7 +94,7 @@ func NewLocalRoomManager(
 		clientConfManager: clientConfManager,
 		egressLauncher:    egressLauncher,
 		versionGenerator:  versionGenerator,
-		trafficManager:    trafficManager,
+		// trafficManager:    trafficManager,
 
 		rooms:               make(map[livekit.RoomKey]*rtc.Room),
 		outRelayCollections: make(map[livekit.RoomKey]*relay.Collection),
@@ -229,13 +229,13 @@ func (r *RoomManager) SaveClientsBandwidth() {
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
+	// ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	// defer cancel()
 
-	err := r.trafficManager.SetValue(ctx, bandwidthByApiKey)
-	if err != nil {
-		logger.Errorw("could not set bandwidth", err)
-	}
+	// err := r.trafficManager.SetValue(ctx, bandwidthByApiKey)
+	// if err != nil {
+	// 	logger.Errorw("could not set bandwidth", err)
+	// }
 }
 
 func (r *RoomManager) HasParticipants() bool {
@@ -407,11 +407,11 @@ func (r *RoomManager) StartSession(
 		VersionGenerator:             r.versionGenerator,
 		TrackResolver:                room.ResolveMediaTrackForSubscriber,
 		BandwidthChecker: func(apiKey livekit.ApiKey, limit int64) bool {
-			bandwidthLimit := limit * TrafficLimitPerClient
-			currentBandwidth := r.trafficManager.GetValue(apiKey)
+			// bandwidthLimit := limit * TrafficLimitPerClient
+			// currentBandwidth := r.trafficManager.GetValue(apiKey)
 			// return currentBandwidth < bandwidthLimit
 			// tmp disabled
-			_ = currentBandwidth < bandwidthLimit
+			// _ = currentBandwidth < bandwidthLimit
 			return true
 		},
 		RelayCollection: outRelayCollection,

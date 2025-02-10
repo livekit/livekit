@@ -9,9 +9,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 )
 
-//
 // RTPMunger
-//
 type SequenceNumberOrdering int
 
 const (

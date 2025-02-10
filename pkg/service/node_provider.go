@@ -6,23 +6,23 @@ import (
 	"math"
 	"net"
 	"sort"
-	"strings"
+	"sync"
 	"time"
 
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/ipfs/go-log/v2"
+	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
+	"github.com/livekit/protocol/livekit"
 	"github.com/oschwald/geoip2-golang"
 	"github.com/pkg/errors"
-	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 const prefixKeyNode = "node_"
 
 type Node struct {
 	Id           string    `json:"id"`
-	Participants int32       `json:"participants"`
+	Participants int32     `json:"participants"`
 	Domain       string    `json:"domain"`
 	IP           string    `json:"ip"`
 	Country      string    `json:"country"`
@@ -31,61 +31,81 @@ type Node struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
-type rowNodeDatabaseRecord struct {
-	Node Node    `json:"node"`
-	TTL    int64 `json:"ttl"`
+type nodeMessage struct {
+	Node Node  `json:"node"`
+	TTL  int64 `json:"ttl"`
+}
+
+func (v *nodeMessage) isExpired() bool {
+	return time.Now().Unix() >= v.TTL
 }
 
 const (
-	weightEqualsCountries   = 1.0
-	weightParticipantsCount = -0.1
-	weightDistance          = -0.001
-	defaultNodeTtl                           = 2 * time.Minute
-	defaultNodeIntervalCheckingExpiredRecord = 1 * time.Minute
-	nodeRefreshInterval = 10 * time.Second
+	weightEqualsCountries    = 1.0
+	weightParticipantsCount  = -0.1
+	weightDistance           = -0.001
+	defaultNodeTtl           = 30 * time.Second
+	nodeRefreshInterval      = 10 * time.Second
+	topicNodeValuesStreaming = "nodes_values"
 )
 
 type NodeProvider struct {
-	mainDatabase     *p2p_database.DB
-	geo    *geoip2.Reader
-	logger *log.ZapEventLogger
-	current Node
-	localNode routing.LocalNode
-	prevStats *livekit.NodeStats
+	mainDatabase *p2p_database.DB
+	geo          *geoip2.Reader
+	logger       *log.ZapEventLogger
+	current      Node
+	localNode    routing.LocalNode
+	prevStats    *livekit.NodeStats
+	lock         sync.RWMutex
+	nodeValues   map[string]nodeMessage
 }
 
 func NewNodeProvider(mainDatabase *p2p_database.DB, geo *geoip2.Reader, logger *log.ZapEventLogger, localNode routing.LocalNode) *NodeProvider {
 	provider := &NodeProvider{
-		mainDatabase:     mainDatabase,
-		geo:    geo,
-		logger: logger,
-		localNode: localNode,
+		mainDatabase: mainDatabase,
+		geo:          geo,
+		logger:       logger,
+		localNode:    localNode,
+		lock:         sync.RWMutex{},
+		nodeValues:   make(map[string]nodeMessage),
 	}
 
-	provider.startRemovingExpiredRecord()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	err := mainDatabase.Subscribe(ctx, topicNodeValuesStreaming, func(event p2p_database.Event) {
+		jsonMsg, ok := event.Message.(string)
+		if !ok {
+			logger.Errorw("convert interface to string from message topic node values")
+			return
+		}
+
+		nodeMsg := nodeMessage{}
+		err := json.Unmarshal([]byte(jsonMsg), &nodeMsg)
+		if err != nil {
+			logger.Errorw("topic node values unmarshal error", err)
+			return
+		}
+
+		provider.handleNodeMessage(nodeMsg, event.FromPeerId)
+	})
+
+	logger.Errorw("topic node values subscribe error", err)
+
 	provider.startRefresh()
 
 	return provider
 }
 
 func (p *NodeProvider) List(ctx context.Context) ([]Node, error) {
-	keys, err := p.mainDatabase.List(ctx)
-	if err != nil {
-		return []Node{}, errors.Wrap(err, "list keys")
-	}
+	p.lock.Lock()
+	defer p.lock.Unlock()
 
 	var nodes []Node
-	for _, k := range keys {
-		if !strings.HasPrefix(k, "/"+prefixKeyNode) {
-			continue
+	for _, v := range p.nodeValues {
+		if v.isExpired() == false {
+			nodes = append(nodes, v.Node)
 		}
-		nodeId := strings.TrimLeft(k, "/"+prefixKeyNode)
-		node, err := p.Get(ctx, nodeId)
-		if err != nil {
-			p.logger.Errorw("key not found "+k, err)
-			continue
-		}
-		nodes = append(nodes, node)
 	}
 
 	return nodes, nil
@@ -170,56 +190,31 @@ func (p *NodeProvider) refresh(ctx context.Context) error {
 	return p.save(ctx, node)
 }
 
-
-func (p *NodeProvider) RemoveCurrentNode(ctx context.Context) error {
-	k := prefixKeyNode + p.mainDatabase.GetHost().ID().String()
-	err := p.mainDatabase.Remove(ctx, k)
-	if err != nil {
-		return errors.Wrap(err, "remove p2p key")
-	}
-	return nil
-}
-
-func (p *NodeProvider) Get(ctx context.Context, id string) (Node, error) {
-	return p.getFromDatabase(ctx, id)
-}
-
-func (p *NodeProvider) getFromDatabase(ctx context.Context, id string) (Node, error) {
-	key := prefixKeyNode + id
-
-	row, err := p.mainDatabase.Get(ctx, key)
-	if err != nil {
-		return Node{}, errors.Wrap(err, "get row")
-	}
-
-	var result rowNodeDatabaseRecord
-	err = json.Unmarshal([]byte(row), &result)
-	if err != nil {
-		return Node{}, errors.Wrap(err, "unmarshal record")
-	}
-
-	return result.Node, nil
-}
-
 func (p *NodeProvider) save(ctx context.Context, node Node) error {
-	record := rowNodeDatabaseRecord{
+	record := nodeMessage{
 		Node: node,
-		TTL:    time.Now().Add(defaultNodeTtl).Unix(),
+		TTL:  time.Now().Add(defaultNodeTtl).Unix(),
 	}
 
-	k := prefixKeyNode + node.Id
+	p.handleNodeMessage(record, node.Id)
 
 	marshaled, err := json.Marshal(record)
 	if err != nil {
 		return errors.Wrap(err, "marshal node")
 	}
 
-	err = p.mainDatabase.Set(ctx, k, string(marshaled))
+	_, err = p.mainDatabase.Publish(ctx, topicNodeValuesStreaming, string(marshaled))
 	if err != nil {
-		return errors.Wrap(err, "p2p db set")
+		return errors.Wrap(err, "publish traffic message")
 	}
 
 	return nil
+}
+
+func (p *NodeProvider) handleNodeMessage(nodeMsg nodeMessage, fromPeerId string) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	p.nodeValues[fromPeerId] = nodeMsg
 }
 
 func distance(lat1 float64, lng1 float64, lat2 float64, lng2 float64) float64 {
@@ -242,69 +237,14 @@ func distance(lat1 float64, lng1 float64, lat2 float64, lng2 float64) float64 {
 	return dist
 }
 
-func (p *NodeProvider) startRemovingExpiredRecord() {
-	go func() {
-		ctx := context.Background()
-
-		ticker := time.NewTicker(defaultNodeIntervalCheckingExpiredRecord)
-		for {
-			<-ticker.C
-
-			now:=time.Now().Unix()
-
-			keys, err := p.mainDatabase.List(ctx)
-			if err != nil {
-				p.logger.Errorw("[startRemovingExpiredRecord] error list main databases keys %s\r\n", err)
-				continue
-			}
-
-			p.logger.Infow("[startRemovingExpiredRecord] check nodes", "len",  len(keys))
-
-			for _, key := range keys {
-				key = strings.TrimPrefix(key, "/")
-				if !strings.HasPrefix(key, prefixKeyNode) {
-					continue
-				}
-
-				p.logger.Infow("[startRemovingExpiredRecord] check nodes", "key",  key)
-
-				row, err := p.mainDatabase.Get(ctx, key)
-				if err != nil {
-					p.logger.Errorw("[startRemovingExpiredRecord] get database record with key %s error %s\r\n", key, err)
-					continue
-				}
-
-				var result rowNodeDatabaseRecord
-				err = json.Unmarshal([]byte(row), &result)
-				if err != nil {
-					p.logger.Errorw("[startRemovingExpiredRecord] unmarshal record with key %s error %s\r\n", key, err)
-					continue
-				}
-
-				p.logger.Infow("[startRemovingExpiredRecord] check nodes", "now",  now, "ttl", result.TTL )
-
-				if now > result.TTL {
-					err = p.mainDatabase.Remove(ctx, key)
-					if err != nil {
-						p.logger.Errorw("[startRemovingExpiredRecord] remove expired record with key %s error %s\r\n", key, err)
-						continue
-					} else {
-						p.logger.Infow("[startRemovingExpiredRecord] removed expired record with", "key",  key)
-					}
-				}
-			}
-		}
-	}()
-}
-
 func (p *NodeProvider) startRefresh() {
 	go func() {
-		ctx := context.Background()
-
 		ticker := time.NewTicker(nodeRefreshInterval)
 		for {
 			<-ticker.C
 			p.UpdateNodeStats()
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+			defer cancel()
 			err := p.refresh(ctx)
 			if err != nil {
 				p.logger.Errorw("[refresh] error %s\r\n", err)

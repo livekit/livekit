@@ -69,7 +69,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createSmartContractClient,
 		createClientProvider,
 		createGeoIP,
-		createTrafficManager,
+		// createTrafficManager,
 		CreateNodeProvider,
 		createRelevantNodesHandler,
 		createMainDebugHandler,
@@ -114,7 +114,7 @@ func createSmartContractClient(conf *config.Config) (*p2p_database.EthSmartContr
 
 func GetDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 	return p2p_database.Config{
-		DisableGater: true,
+		DisableGater:            true,
 		PeerListenPort:          conf.Ethereum.P2pNodePort,
 		EthereumNetworkHost:     conf.Ethereum.NetworkHost,
 		EthereumNetworkKey:      conf.Ethereum.NetworkKey,
@@ -124,9 +124,9 @@ func GetDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 	}
 }
 
-func createTrafficManager(mainDatabase *p2p_database.DB, configuration *config.Config) *TrafficManager {
-	return NewTrafficManager(mainDatabase, configuration.LoggingP2P)
-}
+// func createTrafficManager(mainDatabase *p2p_database.DB, configuration *config.Config) *TrafficManager {
+// 	return NewTrafficManager(mainDatabase, configuration.LoggingP2P)
+// }
 
 func CreateMainDatabaseP2P(conf p2p_database.Config, c *config.Config) (*p2p_database.DB, error) {
 	db, err := p2p_database.Connect(context.Background(), conf, c.LoggingP2P)

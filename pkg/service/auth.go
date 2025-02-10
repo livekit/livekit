@@ -33,12 +33,12 @@ var (
 
 // authentication middleware
 type APIKeyAuthMiddleware struct {
-	clientProvider     *ClientProvider
+	clientProvider *ClientProvider
 }
 
 func NewAPIKeyAuthMiddleware(clientProvider *ClientProvider) *APIKeyAuthMiddleware {
 	return &APIKeyAuthMiddleware{
-		clientProvider:     clientProvider,
+		clientProvider: clientProvider,
 	}
 }
 

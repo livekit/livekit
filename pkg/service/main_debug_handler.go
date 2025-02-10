@@ -2,33 +2,31 @@ package service
 
 import (
 	"fmt"
-	"net/http"
-	"context"
-	"time"
-	"github.com/olekukonko/tablewriter"
-	"github.com/ipfs/go-log/v2"
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
+	"github.com/ipfs/go-log/v2"
+	"github.com/olekukonko/tablewriter"
+	"net/http"
+	"time"
 )
 
 type MainDebugHandler struct {
-	nodeProvider *NodeProvider
+	nodeProvider   *NodeProvider
 	clientProvider *ClientProvider
-	logger       *log.ZapEventLogger
-	db     *p2p_database.DB
+	logger         *log.ZapEventLogger
+	db             *p2p_database.DB
 }
 
 func NewMainDebugHandler(db *p2p_database.DB, nodeProvider *NodeProvider, clientProvider *ClientProvider, logger *log.ZapEventLogger) *MainDebugHandler {
 	return &MainDebugHandler{
-		nodeProvider: nodeProvider,
+		nodeProvider:   nodeProvider,
 		clientProvider: clientProvider,
-		logger:       logger,
-		db: db,
+		logger:         logger,
+		db:             db,
 	}
 }
 
 func (h *MainDebugHandler) clientHTTPHandler(w http.ResponseWriter, r *http.Request) {
-
-	clients, err := h.clientProvider.List(context.Background())
+	clients, err := h.clientProvider.List(r.Context())
 	if err != nil {
 		handleError(w, http.StatusBadRequest, fmt.Errorf("send response %w", err))
 		return
@@ -65,8 +63,7 @@ func (h *MainDebugHandler) clientHTTPHandler(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *MainDebugHandler) nodeHTTPHandler(w http.ResponseWriter, r *http.Request) {
-
-	nodes, err := h.nodeProvider.List(context.Background())
+	nodes, err := h.nodeProvider.List(r.Context())
 	if err != nil {
 		handleError(w, http.StatusBadRequest, fmt.Errorf("send response %w", err))
 		return
