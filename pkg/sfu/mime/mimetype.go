@@ -41,6 +41,7 @@ const (
 	MimeTypeCodecPCMA
 	MimeTypeCodecRTX
 	MimeTypeCodecFlexFEC
+	MimeTypeCodecULPFEC
 )
 
 func (m MimeTypeCodec) String() string {
@@ -71,6 +72,8 @@ func (m MimeTypeCodec) String() string {
 		return "rtx"
 	case MimeTypeCodecFlexFEC:
 		return "flexfec"
+	case MimeTypeCodecULPFEC:
+		return "ulpfec"
 	}
 
 	return "MimeTypeCodecUnknown"
@@ -102,6 +105,8 @@ func NormalizeMimeTypeCodec(codec string) MimeTypeCodec {
 		return MimeTypeCodecRTX
 	case strings.EqualFold(codec, "flexfec"):
 		return MimeTypeCodecFlexFEC
+	case strings.EqualFold(codec, "ulpfec"):
+		return MimeTypeCodecULPFEC
 	}
 
 	return MimeTypeCodecUnknown
@@ -144,6 +149,7 @@ const (
 	MimeTypePCMA
 	MimeTypeRTX
 	MimeTypeFlexFEC
+	MimeTypeULPFEC
 )
 
 func (m MimeType) String() string {
@@ -174,6 +180,8 @@ func (m MimeType) String() string {
 		return webrtc.MimeTypeRTX
 	case MimeTypeFlexFEC:
 		return webrtc.MimeTypeFlexFEC
+	case MimeTypeULPFEC:
+		return "video/ulpfec"
 	}
 
 	return "MimeTypeUnknown"
@@ -205,6 +213,8 @@ func NormalizeMimeType(mime string) MimeType {
 		return MimeTypeRTX
 	case strings.EqualFold(mime, webrtc.MimeTypeFlexFEC):
 		return MimeTypeFlexFEC
+	case strings.EqualFold(mime, "video/ulpfec"):
+		return MimeTypeULPFEC
 	}
 
 	return MimeTypeUnknown
