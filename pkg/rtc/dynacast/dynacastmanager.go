@@ -114,8 +114,7 @@ func (d *DynacastManager) HandleCodecRegression(fromMime, toMime mime.MimeType) 
 	d.update(false)
 
 	fromDq.Stop()
-	ToDq := d.getOrCreateDynacastQuality(toMime)
-	fromDq.RegressTo(ToDq)
+	fromDq.RegressTo(d.getOrCreateDynacastQuality(toMime))
 }
 
 func (d *DynacastManager) Restart() {

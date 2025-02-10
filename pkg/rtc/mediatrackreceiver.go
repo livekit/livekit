@@ -238,9 +238,9 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 	onSetupReceiver := t.onSetupReceiver
 	t.lock.Unlock()
 
-	var receiverCodecs []mime.MimeType
+	var receiverCodecs []string
 	for _, r := range receivers {
-		receiverCodecs = append(receiverCodecs, r.Mime())
+		receiverCodecs = append(receiverCodecs, r.Mime().String())
 	}
 	t.params.Logger.Debugw(
 		"setup receiver",
@@ -667,7 +667,7 @@ func (t *MediaTrackReceiver) SetLayerSsrc(mimeType mime.MimeType, rid string, ss
 	quality := buffer.SpatialLayerToVideoQuality(layer, trackInfo)
 	// set video layer ssrc info
 	for i, ci := range trackInfo.Codecs {
-		if mime.NormalizeMimeType(ci.MimeType) == mimeType {
+		if mime.NormalizeMimeType(ci.MimeType) != mimeType {
 			continue
 		}
 
