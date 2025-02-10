@@ -107,6 +107,12 @@ func (cs *ConnectionStats) Close() {
 	cs.done.Break()
 }
 
+func (cs *ConnectionStats) UpdateCodec(codecMimeType mime.MimeType, isFECEnabled bool) {
+	cs.isVideo.Store(mime.IsMimeTypeVideo(codecMimeType))
+	cs.codecMimeType.Store(codecMimeType)
+	cs.scorer.UpdatePacketLossWeight(getPacketLossWeight(codecMimeType, isFECEnabled))
+}
+
 func (cs *ConnectionStats) OnStatsUpdate(fn func(cs *ConnectionStats, stat *livekit.AnalyticsStat)) {
 	cs.onStatsUpdate = fn
 }

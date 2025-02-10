@@ -584,10 +584,11 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			d.onBinding(nil)
 		}
 		d.setBindStateLocked(bindStateBound)
+		mimeType := d.mime
 		d.bindLock.Unlock()
 
 		d.forwarder.DetermineCodec(codec.RTPCodecCapability, d.Receiver().HeaderExtensions())
-		d.connectionStats.Start(d.mime, isFECEnabled)
+		d.connectionStats.Start(mimeType, isFECEnabled)
 		d.params.Logger.Debugw("downtrack bound")
 	}
 
@@ -639,9 +640,9 @@ func (d *DownTrack) handleReceiverReady() {
 	}
 }
 
-func (d *DownTrack) handleUpstreamCodecChange(mime string) {
+func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 	d.bindLock.Lock()
-	if strings.EqualFold(d.codec.MimeType, mime) {
+	if mime.IsMimeTypeStringEqual(d.codec.MimeType, mimeType) {
 		d.bindLock.Unlock()
 		return
 	}
@@ -657,7 +658,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mime string) {
 
 	var codec webrtc.RTPCodecParameters
 	for _, c := range d.upstreamCodecs {
-		if !strings.EqualFold(c.MimeType, mime) {
+		if !mime.IsMimeTypeStringEqual(d.codec.MimeType, mimeType) {
 			continue
 		}
 
@@ -674,7 +675,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mime string) {
 			"can't find matched codec for new upstream payload type", nil,
 			"upstreamCodecs", d.upstreamCodecs,
 			"remoteParameters", d.negotiatedCodecParameters,
-			"mime", mime,
+			"mime", mimeType,
 		)
 		d.bindLock.Unlock()
 		return
@@ -683,6 +684,9 @@ func (d *DownTrack) handleUpstreamCodecChange(mime string) {
 	d.payloadType.Store(uint32(codec.PayloadType))
 	d.payloadTypeRTX.Store(uint32(utils.FindRTXPayloadType(codec.PayloadType, d.negotiatedCodecParameters)))
 	d.codec = codec.RTPCodecCapability
+	d.mime = mime.NormalizeMimeType(codec.MimeType)
+	newMimeType := d.mime
+	isFECEnabled := strings.Contains(strings.ToLower(d.codec.SDPFmtpLine), "fec")
 	d.bindLock.Unlock()
 
 	d.params.Logger.Infow(
@@ -694,6 +698,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mime string) {
 
 	d.forwarder.Restart()
 	d.forwarder.DetermineCodec(codec.RTPCodecCapability, d.Receiver().HeaderExtensions())
+	d.connectionStats.UpdateCodec(newMimeType, isFECEnabled)
 }
 
 // Unbind implements the teardown logic when the track is no longer needed. This happens

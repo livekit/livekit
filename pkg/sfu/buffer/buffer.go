@@ -235,7 +235,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 
 	// find RTX payload type
 	for _, codec := range params.Codecs {
-		if strings.EqualFold(codec.MimeType, "video/rtx") && strings.Contains(codec.SDPFmtpLine, fmt.Sprintf("apt=%d", b.payloadType)) {
+		if mime.IsMimeTypeStringRTX(codec.MimeType) && strings.Contains(codec.SDPFmtpLine, fmt.Sprintf("apt=%d", b.payloadType)) {
 			b.rtxPayloadType = uint8(codec.PayloadType)
 			break
 		}
@@ -764,7 +764,7 @@ func (b *Buffer) handleCodecChange(newPT uint8) {
 			codecFound = true
 		}
 
-		if strings.EqualFold(codec.MimeType, "video/rtx") && strings.Contains(codec.SDPFmtpLine, fmt.Sprintf("apt=%d", newPT)) {
+		if mime.IsMimeTypeStringRTX(codec.MimeType) && strings.Contains(codec.SDPFmtpLine, fmt.Sprintf("apt=%d", newPT)) {
 			rtxFound = true
 			rtxPt = uint8(codec.PayloadType)
 		}
