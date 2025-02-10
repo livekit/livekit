@@ -35,7 +35,7 @@ type Client struct {
 
 type rowDatabaseRecord struct {
 	Client Client    `json:"client"`
-	TTL    time.Time `json:"ttl"`
+	TTL    int64 `json:"ttl"`
 }
 
 func NewClientProvider(database *p2p_database.DB, contract *p2p_database.EthSmartContract, logger *log.ZapEventLogger) *ClientProvider {
@@ -103,21 +103,13 @@ func (c *ClientProvider) getFromDatabase(ctx context.Context, address string) (C
 		return Client{}, errors.Wrap(err, "unmarshal record")
 	}
 
-	if result.TTL.Before(time.Now().UTC()) {
-		err = c.mainDatabase.Remove(ctx, key)
-		if err != nil {
-			return Client{}, errors.Wrap(err, "remove expired record")
-		}
-		return Client{}, errors.New("client expired")
-	}
-
 	return result.Client, nil
 }
 
 func (c *ClientProvider) saveInDatabase(ctx context.Context, address string, client Client) error {
 	record := rowDatabaseRecord{
 		Client: client,
-		TTL:    time.Now().UTC().Add(defaultTtl),
+		TTL:    time.Now().Add(defaultNodeTtl).Unix(),
 	}
 
 	marshaled, err := json.Marshal(record)
@@ -154,14 +146,18 @@ func (c *ClientProvider) startRemovingExpiredRecord() {
 
 		ticker := time.NewTicker(defaultIntervalCheckingExpiredRecord)
 		for {
+			<-ticker.C
+
+			now:=time.Now().Unix()
+
 			keys, err := c.mainDatabase.List(ctx)
 			if err != nil {
 				c.logger.Errorw("[startRemovingExpiredRecord] error list main databases keys %s\r\n", err)
-				return
+				continue
 			}
 
 			for _, key := range keys {
-				key = strings.TrimPrefix("/", key)
+				key = strings.TrimPrefix(key, "/")
 				if !strings.HasPrefix(key, databasePrefixClientKey) {
 					continue
 				}
@@ -179,7 +175,7 @@ func (c *ClientProvider) startRemovingExpiredRecord() {
 					continue
 				}
 
-				if result.TTL.Before(time.Now().UTC()) {
+				if now > result.TTL {
 					err = c.mainDatabase.Remove(ctx, key)
 					if err != nil {
 						c.logger.Errorw("[startRemovingExpiredRecord] remove expired record with key %s error %s\r\n", key, err)
@@ -189,8 +185,6 @@ func (c *ClientProvider) startRemovingExpiredRecord() {
 					}
 				}
 			}
-
-			<-ticker.C
 		}
 	}()
 }

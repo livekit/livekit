@@ -261,7 +261,7 @@ func (p *NodeProvider) startRemovingExpiredRecord() {
 			p.logger.Infow("[startRemovingExpiredRecord] check nodes", "len",  len(keys))
 
 			for _, key := range keys {
-				key = strings.TrimPrefix("/", key)
+				key = strings.TrimPrefix(key, "/")
 				if !strings.HasPrefix(key, prefixKeyNode) {
 					continue
 				}
