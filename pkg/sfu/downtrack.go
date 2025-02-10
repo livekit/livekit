@@ -40,6 +40,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
@@ -253,6 +254,7 @@ type DownTrack struct {
 	params            DowntrackParams
 	id                livekit.TrackID
 	kind              webrtc.RTPCodecType
+	mime              mime.MimeType
 	ssrc              uint32
 	ssrcRTX           uint32
 	payloadType       atomic.Uint32
@@ -345,11 +347,12 @@ type DownTrack struct {
 // NewDownTrack returns a DownTrack.
 func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 	codecs := params.Codecs
+	mimeType := mime.NormalizeMimeType(codecs[0].MimeType)
 	var kind webrtc.RTPCodecType
 	switch {
-	case strings.HasPrefix(codecs[0].MimeType, "audio/"):
+	case mime.IsMimeTypeAudio(mimeType):
 		kind = webrtc.RTPCodecTypeAudio
-	case strings.HasPrefix(codecs[0].MimeType, "video/"):
+	case mime.IsMimeTypeVideo(mimeType):
 		kind = webrtc.RTPCodecTypeVideo
 	default:
 		kind = webrtc.RTPCodecType(0)
@@ -505,13 +508,13 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		}
 
 		isFECEnabled := false
-		if strings.EqualFold(matchedUpstreamCodec.MimeType, MimeTypeAudioRed) {
+		if mime.IsMimeTypeStringRED(matchedUpstreamCodec.MimeType) {
 			d.isRED = true
 			for _, c := range d.upstreamCodecs {
 				isFECEnabled = strings.Contains(strings.ToLower(c.SDPFmtpLine), "useinbandfec=1")
 
 				// assume upstream primary codec is opus since we only support it for audio now
-				if strings.EqualFold(c.MimeType, webrtc.MimeTypeOpus) {
+				if mime.IsMimeTypeStringOpus(c.MimeType) {
 					d.upstreamPrimaryPT = uint8(c.PayloadType)
 					break
 				}
@@ -525,7 +528,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 				d.params.Logger.Errorw("failed to parse primary and secondary payload type for RED", err, "matchedCodec", codec)
 			}
 			d.primaryPT = uint8(primaryPT)
-		} else if strings.HasPrefix(strings.ToLower(matchedUpstreamCodec.MimeType), "audio/") {
+		} else if mime.IsMimeTypeStringAudio(matchedUpstreamCodec.MimeType) {
 			isFECEnabled = strings.Contains(strings.ToLower(matchedUpstreamCodec.SDPFmtpLine), "fec")
 		}
 
@@ -558,6 +561,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.params.Logger.Debugw("DownTrack.Bind", logFields...)
 
 		d.writeStream = t.WriteStream()
+		d.mime = mime.NormalizeMimeType(codec.MimeType)
 		if rr := d.params.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, d.ssrc).(*buffer.RTCPReader); rr != nil {
 			rr.OnPacket(func(pkt []byte) {
 				d.handleRTCP(pkt)
@@ -580,10 +584,11 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			d.onBinding(nil)
 		}
 		d.setBindStateLocked(bindStateBound)
+		mimeType := d.mime
 		d.bindLock.Unlock()
 
 		d.forwarder.DetermineCodec(codec.RTPCodecCapability, d.Receiver().HeaderExtensions())
-		d.connectionStats.Start(codec.MimeType, isFECEnabled)
+		d.connectionStats.Start(mimeType, isFECEnabled)
 		d.params.Logger.Debugw("downtrack bound")
 	}
 
@@ -635,9 +640,9 @@ func (d *DownTrack) handleReceiverReady() {
 	}
 }
 
-func (d *DownTrack) handleUpstreamCodecChange(mime string) {
+func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 	d.bindLock.Lock()
-	if strings.EqualFold(d.codec.MimeType, mime) {
+	if mime.IsMimeTypeStringEqual(d.codec.MimeType, mimeType) {
 		d.bindLock.Unlock()
 		return
 	}
@@ -653,7 +658,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mime string) {
 
 	var codec webrtc.RTPCodecParameters
 	for _, c := range d.upstreamCodecs {
-		if !strings.EqualFold(c.MimeType, mime) {
+		if !mime.IsMimeTypeStringEqual(d.codec.MimeType, mimeType) {
 			continue
 		}
 
@@ -670,7 +675,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mime string) {
 			"can't find matched codec for new upstream payload type", nil,
 			"upstreamCodecs", d.upstreamCodecs,
 			"remoteParameters", d.negotiatedCodecParameters,
-			"mime", mime,
+			"mime", mimeType,
 		)
 		d.bindLock.Unlock()
 		return
@@ -679,6 +684,9 @@ func (d *DownTrack) handleUpstreamCodecChange(mime string) {
 	d.payloadType.Store(uint32(codec.PayloadType))
 	d.payloadTypeRTX.Store(uint32(utils.FindRTXPayloadType(codec.PayloadType, d.negotiatedCodecParameters)))
 	d.codec = codec.RTPCodecCapability
+	d.mime = mime.NormalizeMimeType(codec.MimeType)
+	newMimeType := d.mime
+	isFECEnabled := strings.Contains(strings.ToLower(d.codec.SDPFmtpLine), "fec")
 	d.bindLock.Unlock()
 
 	d.params.Logger.Infow(
@@ -690,6 +698,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mime string) {
 
 	d.forwarder.Restart()
 	d.forwarder.DetermineCodec(codec.RTPCodecCapability, d.Receiver().HeaderExtensions())
+	d.connectionStats.UpdateCodec(newMimeType, isFECEnabled)
 }
 
 // Unbind implements the teardown logic when the track is no longer needed. This happens
@@ -742,6 +751,12 @@ func (d *DownTrack) Codec() webrtc.RTPCodecCapability {
 	d.bindLock.Lock()
 	defer d.bindLock.Unlock()
 	return d.codec
+}
+
+func (d *DownTrack) Mime() mime.MimeType {
+	d.bindLock.Lock()
+	defer d.bindLock.Unlock()
+	return d.mime
 }
 
 // StreamID is the group this track belongs too. This must be unique
@@ -1679,16 +1694,15 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 			return
 		}
 
-		mime := strings.ToLower(d.Codec().MimeType)
 		var getBlankFrame func(bool) ([]byte, error)
-		switch {
-		case strings.EqualFold(mime, webrtc.MimeTypeOpus):
+		switch d.mime {
+		case mime.MimeTypeOpus:
 			getBlankFrame = d.getOpusBlankFrame
-		case strings.EqualFold(mime, MimeTypeAudioRed):
+		case mime.MimeTypeRED:
 			getBlankFrame = d.getOpusRedBlankFrame
-		case strings.EqualFold(mime, webrtc.MimeTypeVP8):
+		case mime.MimeTypeVP8:
 			getBlankFrame = d.getVP8BlankFrame
-		case strings.EqualFold(mime, webrtc.MimeTypeH264):
+		case mime.MimeTypeH264:
 			getBlankFrame = d.getH264BlankFrame
 		default:
 			close(done)
@@ -1696,7 +1710,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 		}
 
 		frameRate := uint32(30)
-		if mime == strings.ToLower(webrtc.MimeTypeOpus) || mime == strings.ToLower(MimeTypeAudioRed) {
+		if d.mime == mime.MimeTypeOpus || d.mime == mime.MimeTypeRED {
 			frameRate = 50
 		}
 
@@ -2414,7 +2428,7 @@ func (d *DownTrack) sendPaddingOnMute() {
 
 	if d.kind == webrtc.RTPCodecTypeVideo {
 		d.sendPaddingOnMuteForVideo()
-	} else if strings.EqualFold(d.Codec().MimeType, webrtc.MimeTypeOpus) {
+	} else if d.mime == mime.MimeTypeOpus {
 		d.sendSilentFrameOnMuteForOpus()
 	}
 }

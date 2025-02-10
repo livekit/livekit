@@ -19,10 +19,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -70,7 +70,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		duration := 5 * time.Second
 		now := time.Now()
-		cs.StartAt(webrtc.MimeTypeOpus, false, now.Add(-duration))
+		cs.StartAt(mime.MimeTypeOpus, false, now.Add(-duration))
 		cs.UpdateMuteAt(false, now.Add(-1*time.Second))
 
 		// no data and not enough unmute time should return default state which is EXCELLENT quality
@@ -484,7 +484,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		duration := 5 * time.Second
 		now := time.Now()
-		cs.StartAt(webrtc.MimeTypeOpus, false, now.Add(-duration))
+		cs.StartAt(mime.MimeTypeOpus, false, now.Add(-duration))
 		cs.UpdateMuteAt(false, now.Add(-1*time.Second))
 
 		// RTT does not knock quality down because it is dependent and hence not taken into account
@@ -517,7 +517,7 @@ func TestConnectionQuality(t *testing.T) {
 
 		duration := 5 * time.Second
 		now := time.Now()
-		cs.StartAt(webrtc.MimeTypeOpus, false, now.Add(-duration))
+		cs.StartAt(mime.MimeTypeOpus, false, now.Add(-duration))
 		cs.UpdateMuteAt(false, now.Add(-1*time.Second))
 
 		// Jitter does not knock quality down because it is dependent and hence not taken into account
@@ -548,7 +548,7 @@ func TestConnectionQuality(t *testing.T) {
 		}
 		testCases := []struct {
 			name              string
-			mimeType          string
+			mimeType          mime.MimeType
 			isFECEnabled      bool
 			packetsExpected   uint32
 			expectedQualities []expectedQuality
@@ -557,7 +557,7 @@ func TestConnectionQuality(t *testing.T) {
 			// "audio/opus" - no fec - 0 <= loss < 2.5%: EXCELLENT, 2.5% <= loss < 7.5%: GOOD, >= 7.5%: POOR
 			{
 				name:            "audio/opus - no fec",
-				mimeType:        "audio/opus",
+				mimeType:        mime.MimeTypeOpus,
 				isFECEnabled:    false,
 				packetsExpected: 200,
 				expectedQualities: []expectedQuality{
@@ -581,7 +581,7 @@ func TestConnectionQuality(t *testing.T) {
 			// "audio/opus" - fec - 0 <= loss < 3.75%: EXCELLENT, 3.75% <= loss < 11.25%: GOOD, >= 11.25%: POOR
 			{
 				name:            "audio/opus - fec",
-				mimeType:        "audio/opus",
+				mimeType:        mime.MimeTypeOpus,
 				isFECEnabled:    true,
 				packetsExpected: 200,
 				expectedQualities: []expectedQuality{
@@ -605,7 +605,7 @@ func TestConnectionQuality(t *testing.T) {
 			// "audio/red" - no fec - 0 <= loss < 5%: EXCELLENT, 5% <= loss < 15%: GOOD, >= 15%: POOR
 			{
 				name:            "audio/red - no fec",
-				mimeType:        "audio/red",
+				mimeType:        mime.MimeTypeRED,
 				isFECEnabled:    false,
 				packetsExpected: 200,
 				expectedQualities: []expectedQuality{
@@ -629,7 +629,7 @@ func TestConnectionQuality(t *testing.T) {
 			// "audio/red" - fec - 0 <= loss < 7.5%: EXCELLENT, 7.5% <= loss < 22.5%: GOOD, >= 22.5%: POOR
 			{
 				name:            "audio/red - fec",
-				mimeType:        "audio/red",
+				mimeType:        mime.MimeTypeRED,
 				isFECEnabled:    true,
 				packetsExpected: 200,
 				expectedQualities: []expectedQuality{
@@ -653,7 +653,7 @@ func TestConnectionQuality(t *testing.T) {
 			// "video/*" - 0 <= loss < 2%: EXCELLENT, 2% <= loss < 6%: GOOD, >= 6%: POOR
 			{
 				name:            "video/*",
-				mimeType:        "video/vp8",
+				mimeType:        mime.MimeTypeVP8,
 				isFECEnabled:    false,
 				packetsExpected: 200,
 				expectedQualities: []expectedQuality{
@@ -786,7 +786,7 @@ func TestConnectionQuality(t *testing.T) {
 
 				duration := 5 * time.Second
 				now := time.Now()
-				cs.StartAt(webrtc.MimeTypeVP8, false, now)
+				cs.StartAt(mime.MimeTypeVP8, false, now)
 
 				for _, tr := range tc.transitions {
 					cs.AddBitrateTransitionAt(tr.bitrate, now.Add(tr.offset))
@@ -878,7 +878,7 @@ func TestConnectionQuality(t *testing.T) {
 
 				duration := 5 * time.Second
 				now := time.Now()
-				cs.StartAt(webrtc.MimeTypeVP8, false, now)
+				cs.StartAt(mime.MimeTypeVP8, false, now)
 
 				for _, tr := range tc.transitions {
 					cs.AddLayerTransitionAt(tr.distance, now.Add(tr.offset))

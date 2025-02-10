@@ -49,6 +49,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -1775,12 +1776,13 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 		p.pendingTracksLock.Lock()
 		p.pendingRemoteTracks = append(p.pendingRemoteTracks, &pendingRemoteTrack{track: rtcTrack, receiver: rtpReceiver})
 		p.pendingTracksLock.Unlock()
-		p.pubLogger.Debugw("webrtc Track published but can't find MediaTrack, add to pendingTracks",
+		p.pubLogger.Debugw(
+			"webrtc Track published but can't find MediaTrack, add to pendingTracks",
 			"kind", track.Kind().String(),
 			"webrtcTrackID", track.ID(),
 			"rid", track.RID(),
 			"SSRC", track.SSRC(),
-			"mime", codec.MimeType,
+			"mime", mime.NormalizeMimeType(codec.MimeType),
 		)
 		return
 	}
@@ -1802,7 +1804,7 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 		"webrtcTrackID", track.ID(),
 		"rid", track.RID(),
 		"SSRC", track.SSRC(),
-		"mime", codec.MimeType,
+		"mime", mime.NormalizeMimeType(codec.MimeType),
 		"trackInfo", logger.Proto(publishedTrack.ToProto()),
 		"fromSdp", fromSdp,
 	)
@@ -2167,7 +2169,7 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(
 
 	// normalize the codec name
 	for _, subscribedQuality := range subscribedQualities {
-		subscribedQuality.Codec = strings.ToLower(strings.TrimPrefix(subscribedQuality.Codec, "video/"))
+		subscribedQuality.Codec = strings.ToLower(strings.TrimPrefix(subscribedQuality.Codec, mime.MimeTypePrefixVideo))
 	}
 
 	subscribedQualityUpdate := &livekit.SubscribedQualityUpdate{
@@ -2244,36 +2246,36 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	} else {
 		seenCodecs := make(map[string]struct{})
 		for _, codec := range req.SimulcastCodecs {
-			mime := codec.Codec
+			mimeType := codec.Codec
 			if req.Type == livekit.TrackType_VIDEO {
-				if !strings.HasPrefix(mime, "video/") {
-					mime = "video/" + mime
+				if !mime.IsMimeTypeStringVideo(mimeType) {
+					mimeType = mime.MimeTypePrefixVideo + mimeType
 				}
-				if !IsCodecEnabled(p.enabledPublishCodecs, webrtc.RTPCodecCapability{MimeType: mime}) {
+				if !IsCodecEnabled(p.enabledPublishCodecs, webrtc.RTPCodecCapability{MimeType: mimeType}) {
 					altCodec := selectAlternativeVideoCodec(p.enabledPublishCodecs)
 					p.pubLogger.Infow("falling back to alternative codec",
-						"codec", mime,
+						"codec", mimeType,
 						"altCodec", altCodec,
 						"trackID", ti.Sid,
 					)
 					// select an alternative MIME type that's generally supported
-					mime = altCodec
+					mimeType = altCodec
 				}
-			} else if req.Type == livekit.TrackType_AUDIO && !strings.HasPrefix(mime, "audio/") {
-				mime = "audio/" + mime
+			} else if req.Type == livekit.TrackType_AUDIO && !mime.IsMimeTypeStringAudio(mimeType) {
+				mimeType = mime.MimeTypePrefixAudio + mimeType
 			}
 
-			if _, ok := seenCodecs[mime]; ok || mime == "" {
+			if _, ok := seenCodecs[mimeType]; ok || mimeType == "" {
 				continue
 			}
-			seenCodecs[mime] = struct{}{}
+			seenCodecs[mimeType] = struct{}{}
 
 			clonedLayers := make([]*livekit.VideoLayer, 0, len(req.Layers))
 			for _, l := range req.Layers {
 				clonedLayers = append(clonedLayers, utils.CloneProto(l))
 			}
 			ti.Codecs = append(ti.Codecs, &livekit.SimulcastCodecInfo{
-				MimeType: mime,
+				MimeType: mimeType,
 				Cid:      codec.Cid,
 				Layers:   clonedLayers,
 			})
@@ -2391,7 +2393,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 		"trackID", track.ID(),
 		"rid", track.RID(),
 		"SSRC", track.SSRC(),
-		"mime", track.Codec().MimeType,
+		"mime", mime.NormalizeMimeType(track.Codec().MimeType),
 		"mid", mid,
 	)
 	if mid == "" {
@@ -2416,7 +2418,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 			var codecFound int
 			for _, c := range ti.Codecs {
 				for _, nc := range parameters.Codecs {
-					if strings.EqualFold(nc.MimeType, c.MimeType) {
+					if mime.IsMimeTypeStringEqual(nc.MimeType, c.MimeType) {
 						codecFound++
 						break
 					}
@@ -2499,7 +2501,7 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 	parameters := rtpReceiver.GetParameters()
 	for _, c := range ti.Codecs {
 		for _, nc := range parameters.Codecs {
-			if strings.EqualFold(nc.MimeType, c.MimeType) {
+			if mime.IsMimeTypeStringEqual(nc.MimeType, c.MimeType) {
 				potentialCodecs = append(potentialCodecs, nc)
 				break
 			}
@@ -2508,10 +2510,10 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 	// check for mime_type for tracks that do not have simulcast_codecs set
 	if ti.MimeType != "" {
 		for _, nc := range parameters.Codecs {
-			if strings.EqualFold(nc.MimeType, ti.MimeType) {
+			if mime.IsMimeTypeStringEqual(nc.MimeType, ti.MimeType) {
 				alreadyAdded := false
 				for _, pc := range potentialCodecs {
-					if strings.EqualFold(pc.MimeType, ti.MimeType) {
+					if mime.IsMimeTypeStringEqual(pc.MimeType, ti.MimeType) {
 						alreadyAdded = true
 						break
 					}
@@ -2528,7 +2530,7 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 	for _, codec := range ti.Codecs {
 		for ssrc, info := range p.params.SimTracks {
 			if info.Mid == codec.Mid {
-				mt.SetLayerSsrc(codec.MimeType, info.Rid, ssrc)
+				mt.SetLayerSsrc(mime.NormalizeMimeType(codec.MimeType), info.Rid, ssrc)
 			}
 		}
 	}
@@ -2993,7 +2995,7 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 	shouldDisable := func(c *livekit.Codec, disabled []*livekit.Codec) bool {
 		for _, disableCodec := range disabled {
 			// disable codec's fmtp is empty means disable this codec entirely
-			if strings.EqualFold(c.Mime, disableCodec.Mime) {
+			if mime.IsMimeTypeStringEqual(c.Mime, disableCodec.Mime) {
 				return true
 			}
 		}
@@ -3007,13 +3009,13 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 		}
 
 		// sort by compatibility, since we will look for backups in these.
-		if strings.EqualFold(c.Mime, webrtc.MimeTypeVP8) {
+		if mime.IsMimeTypeStringVP8(c.Mime) {
 			if len(p.enabledPublishCodecs) > 0 {
 				p.enabledPublishCodecs = slices.Insert(p.enabledPublishCodecs, 0, c)
 			} else {
 				p.enabledPublishCodecs = append(p.enabledPublishCodecs, c)
 			}
-		} else if strings.EqualFold(c.Mime, webrtc.MimeTypeH264) {
+		} else if mime.IsMimeTypeStringH264(c.Mime) {
 			p.enabledPublishCodecs = append(p.enabledPublishCodecs, c)
 		} else {
 			publishCodecs = append(publishCodecs, c)
@@ -3034,7 +3036,7 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 func (p *ParticipantImpl) GetEnabledPublishCodecs() []*livekit.Codec {
 	codecs := make([]*livekit.Codec, 0, len(p.enabledPublishCodecs))
 	for _, c := range p.enabledPublishCodecs {
-		if strings.EqualFold(c.Mime, webrtc.MimeTypeRTX) {
+		if mime.IsMimeTypeStringRTX(c.Mime) {
 			continue
 		}
 		codecs = append(codecs, c)

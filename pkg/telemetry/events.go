@@ -20,6 +20,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -256,14 +257,14 @@ func (t *telemetryService) TrackMaxSubscribedVideoQuality(
 	ctx context.Context,
 	participantID livekit.ParticipantID,
 	track *livekit.TrackInfo,
-	mime string,
+	mime mime.MimeType,
 	maxQuality livekit.VideoQuality,
 ) {
 	t.enqueue(func() {
 		room := t.getRoomDetails(participantID)
 		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_MAX_SUBSCRIBED_VIDEO_QUALITY, room, participantID, track)
 		ev.MaxSubscribedVideoQuality = maxQuality
-		ev.Mime = mime
+		ev.Mime = mime.String()
 		t.SendEvent(ctx, ev)
 	})
 }
@@ -393,7 +394,7 @@ func (t *telemetryService) TrackPublishRTPStats(
 	ctx context.Context,
 	participantID livekit.ParticipantID,
 	trackID livekit.TrackID,
-	mimeType string,
+	mimeType mime.MimeType,
 	layer int,
 	stats *livekit.RTPStats,
 ) {
@@ -402,7 +403,7 @@ func (t *telemetryService) TrackPublishRTPStats(
 		ev := newRoomEvent(livekit.AnalyticsEventType_TRACK_PUBLISH_STATS, room)
 		ev.ParticipantId = string(participantID)
 		ev.TrackId = string(trackID)
-		ev.Mime = mimeType
+		ev.Mime = mimeType.String()
 		ev.VideoLayer = int32(layer)
 		ev.RtpStats = stats
 		t.SendEvent(ctx, ev)
@@ -413,7 +414,7 @@ func (t *telemetryService) TrackSubscribeRTPStats(
 	ctx context.Context,
 	participantID livekit.ParticipantID,
 	trackID livekit.TrackID,
-	mimeType string,
+	mimeType mime.MimeType,
 	stats *livekit.RTPStats,
 ) {
 	t.enqueue(func() {
@@ -421,7 +422,7 @@ func (t *telemetryService) TrackSubscribeRTPStats(
 		ev := newRoomEvent(livekit.AnalyticsEventType_TRACK_SUBSCRIBE_STATS, room)
 		ev.ParticipantId = string(participantID)
 		ev.TrackId = string(trackID)
-		ev.Mime = mimeType
+		ev.Mime = mimeType.String()
 		ev.RtpStats = stats
 		t.SendEvent(ctx, ev)
 	})

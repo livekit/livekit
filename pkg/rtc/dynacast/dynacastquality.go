@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -27,7 +28,7 @@ const (
 )
 
 type DynacastQualityParams struct {
-	MimeType string
+	MimeType mime.MimeType
 	Logger   logger.Logger
 }
 
@@ -44,7 +45,7 @@ type DynacastQuality struct {
 	maxQualityTimer          *time.Timer
 	regressTo                *DynacastQuality
 
-	onSubscribedMaxQualityChange func(mimeType string, maxSubscribedQuality livekit.VideoQuality)
+	onSubscribedMaxQualityChange func(mimeType mime.MimeType, maxSubscribedQuality livekit.VideoQuality)
 }
 
 func NewDynacastQuality(params DynacastQualityParams) *DynacastQuality {
@@ -67,7 +68,7 @@ func (d *DynacastQuality) Stop() {
 	d.stopMaxQualityTimer()
 }
 
-func (d *DynacastQuality) OnSubscribedMaxQualityChange(f func(mimeType string, maxSubscribedQuality livekit.VideoQuality)) {
+func (d *DynacastQuality) OnSubscribedMaxQualityChange(f func(mimeType mime.MimeType, maxSubscribedQuality livekit.VideoQuality)) {
 	d.lock.Lock()
 	defer d.lock.Unlock()
 	d.onSubscribedMaxQualityChange = f

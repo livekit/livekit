@@ -33,6 +33,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/streamtracker"
@@ -100,6 +101,7 @@ type TrackReceiver interface {
 	// returns the initial codec of the receiver, it is determined by the track's codec
 	// and will not change if the codec changes during the session (publisher changes codec)
 	Codec() webrtc.RTPCodecParameters
+	Mime() mime.MimeType
 	HeaderExtensions() []webrtc.RTPHeaderExtensionParameter
 	IsClosed() bool
 
@@ -254,8 +256,8 @@ func NewWebRTCReceiver(
 		codecState: ReceiverCodecStateNormal,
 		kind:       track.Kind(),
 		onRTCP:     onRTCP,
-		isSVC:      buffer.IsSvcCodec(track.Codec().MimeType),
-		isRED:      buffer.IsRedCodec(track.Codec().MimeType),
+		isSVC:      mime.IsMimeTypeStringSVC(track.Codec().MimeType),
+		isRED:      mime.IsMimeTypeStringRED(track.Codec().MimeType),
 	}
 
 	for _, opt := range opts {
@@ -278,9 +280,9 @@ func NewWebRTCReceiver(
 		}
 	})
 	w.connectionStats.Start(
-		w.codec.MimeType,
+		mime.NormalizeMimeType(w.codec.MimeType),
 		// TODO: technically not correct to declare FEC on when RED. Need the primary codec's fmtp line to check.
-		strings.EqualFold(w.codec.MimeType, MimeTypeAudioRed) || strings.Contains(strings.ToLower(w.codec.SDPFmtpLine), "useinbandfec=1"),
+		mime.IsMimeTypeStringRED(w.codec.MimeType) || strings.Contains(strings.ToLower(w.codec.SDPFmtpLine), "useinbandfec=1"),
 	)
 
 	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC, w.codec.ClockRate, streamTrackerManagerConfig)
@@ -369,6 +371,10 @@ func (w *WebRTCReceiver) ssrc(layer int) uint32 {
 
 func (w *WebRTCReceiver) Codec() webrtc.RTPCodecParameters {
 	return w.codec
+}
+
+func (w *WebRTCReceiver) Mime() mime.MimeType {
+	return mime.NormalizeMimeType(w.codec.MimeType)
 }
 
 func (w *WebRTCReceiver) HeaderExtensions() []webrtc.RTPHeaderExtensionParameter {

@@ -32,6 +32,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
@@ -94,7 +95,7 @@ type Buffer struct {
 	rtpParameters  webrtc.RTPParameters
 	payloadType    uint8
 	rtxPayloadType uint8
-	mime           string
+	mime           mime.MimeType
 
 	snRangeMap *utils.RangeMap[uint64, uint64]
 
@@ -218,10 +219,10 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 
 	b.clockRate = codec.ClockRate
 	b.lastReport = mono.UnixNano()
-	b.mime = strings.ToLower(codec.MimeType)
+	b.mime = mime.NormalizeMimeType(codec.MimeType)
 	b.rtpParameters = params
 	for _, codecParameter := range params.Codecs {
-		if strings.EqualFold(codecParameter.MimeType, codec.MimeType) {
+		if mime.IsMimeTypeStringEqual(codecParameter.MimeType, codec.MimeType) {
 			b.payloadType = uint8(codecParameter.PayloadType)
 			break
 		}
@@ -234,7 +235,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 
 	// find RTX payload type
 	for _, codec := range params.Codecs {
-		if strings.EqualFold(codec.MimeType, "video/rtx") && strings.Contains(codec.SDPFmtpLine, fmt.Sprintf("apt=%d", b.payloadType)) {
+		if mime.IsMimeTypeStringRTX(codec.MimeType) && strings.Contains(codec.SDPFmtpLine, fmt.Sprintf("apt=%d", b.payloadType)) {
 			b.rtxPayloadType = uint8(codec.PayloadType)
 			break
 		}
@@ -248,7 +249,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 				continue
 			}
 			b.ddExtID = uint8(ext.ID)
-			b.createDDParserAndFrameRateCalculator(codec.MimeType)
+			b.createDDParserAndFrameRateCalculator()
 
 		case sdp.AudioLevelURI:
 			b.audioLevelExtID = uint8(ext.ID)
@@ -260,15 +261,15 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	}
 
 	switch {
-	case strings.HasPrefix(b.mime, "audio/"):
+	case mime.IsMimeTypeAudio(b.mime):
 		b.codecType = webrtc.RTPCodecTypeAudio
 		b.bucket = bucket.NewBucket[uint64](InitPacketBufferSizeAudio)
 
-	case strings.HasPrefix(b.mime, "video/"):
+	case mime.IsMimeTypeVideo(b.mime):
 		b.codecType = webrtc.RTPCodecTypeVideo
 		b.bucket = bucket.NewBucket[uint64](InitPacketBufferSizeVideo)
 		if b.frameRateCalculator[0] == nil {
-			b.createFrameRateCalculator(codec.MimeType)
+			b.createFrameRateCalculator()
 		}
 		if bitrates > 0 {
 			pps := bitrates / 8 / 1200
@@ -292,7 +293,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 			// pion use a single mediaengine to manage negotiated codecs of peerconnection, that means we can't have different
 			// codec settings at track level for same codec type, so enable nack for all audio receivers but don't create nack queue
 			// for red codec.
-			if strings.EqualFold(b.mime, "audio/red") {
+			if b.mime == mime.MimeTypeRED {
 				break
 			}
 			b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
@@ -313,8 +314,8 @@ func (b *Buffer) OnCodecChange(fn func(webrtc.RTPCodecParameters)) {
 	b.Unlock()
 }
 
-func (b *Buffer) createDDParserAndFrameRateCalculator(mime string) {
-	if IsSvcCodec(mime) || strings.EqualFold(mime, webrtc.MimeTypeVP8) {
+func (b *Buffer) createDDParserAndFrameRateCalculator() {
+	if mime.IsMimeTypeSVC(b.mime) || b.mime == mime.MimeTypeVP8 {
 		frc := NewFrameRateCalculatorDD(b.clockRate, b.logger)
 		for i := range b.frameRateCalculator {
 			b.frameRateCalculator[i] = frc.GetFrameRateCalculatorForSpatial(int32(i))
@@ -325,18 +326,18 @@ func (b *Buffer) createDDParserAndFrameRateCalculator(mime string) {
 	}
 }
 
-func (b *Buffer) createFrameRateCalculator(mime string) {
-	switch {
-	case strings.EqualFold(mime, webrtc.MimeTypeVP8):
+func (b *Buffer) createFrameRateCalculator() {
+	switch b.mime {
+	case mime.MimeTypeVP8:
 		b.frameRateCalculator[0] = NewFrameRateCalculatorVP8(b.clockRate, b.logger)
 
-	case strings.EqualFold(mime, webrtc.MimeTypeVP9):
+	case mime.MimeTypeVP9:
 		frc := NewFrameRateCalculatorVP9(b.clockRate, b.logger)
 		for i := range b.frameRateCalculator {
 			b.frameRateCalculator[i] = frc.GetFrameRateCalculatorForSpatial(int32(i))
 		}
 
-	case strings.EqualFold(mime, webrtc.MimeTypeH265):
+	case mime.MimeTypeH265:
 		b.frameRateCalculator[0] = NewFrameRateCalculatorH26x(b.clockRate, b.logger)
 	}
 }
@@ -763,7 +764,7 @@ func (b *Buffer) handleCodecChange(newPT uint8) {
 			codecFound = true
 		}
 
-		if strings.EqualFold(codec.MimeType, "video/rtx") && strings.Contains(codec.SDPFmtpLine, fmt.Sprintf("apt=%d", newPT)) {
+		if mime.IsMimeTypeStringRTX(codec.MimeType) && strings.Contains(codec.SDPFmtpLine, fmt.Sprintf("apt=%d", newPT)) {
 			rtxFound = true
 			rtxPt = uint8(codec.PayloadType)
 		}
@@ -776,21 +777,22 @@ func (b *Buffer) handleCodecChange(newPT uint8) {
 		b.logger.Errorw("could not find codec for new payload type", nil, "pt", newPT, "rtpParameters", b.rtpParameters)
 		return
 	}
-	b.logger.Infow("codec changed",
+	b.logger.Infow(
+		"codec changed",
 		"oldPayload", b.payloadType, "newPayload", newPT,
 		"oldRtxPayload", b.rtxPayloadType, "newRtxPayload", rtxPt,
 		"oldMime", b.mime, "newMime", newCodec.MimeType)
 	b.payloadType = newPT
 	b.rtxPayloadType = rtxPt
-	b.mime = strings.ToLower(newCodec.MimeType)
+	b.mime = mime.NormalizeMimeType(newCodec.MimeType)
 	b.frameRateCalculated = false
 
 	if b.ddExtID != 0 {
-		b.createDDParserAndFrameRateCalculator(b.mime)
+		b.createDDParserAndFrameRateCalculator()
 	}
 
 	if b.frameRateCalculator[0] == nil {
-		b.createFrameRateCalculator(b.mime)
+		b.createFrameRateCalculator()
 	}
 
 	b.bucket.ResyncOnNextPacket()
@@ -874,8 +876,8 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 		}
 	}
 
-	switch utils.MatchMimeType(b.mime) {
-	case utils.MimeTypeVP8:
+	switch b.mime {
+	case mime.MimeTypeVP8:
 		vp8Packet := VP8{}
 		if err := vp8Packet.Unmarshal(rtpPacket.Payload); err != nil {
 			b.logger.Warnw("could not unmarshal VP8 packet", err)
@@ -891,7 +893,7 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 		ep.Payload = vp8Packet
 		ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to invalid
 
-	case utils.MimeTypeVP9:
+	case mime.MimeTypeVP9:
 		if ep.DependencyDescriptor == nil {
 			var vp9Packet codecs.VP9Packet
 			_, err := vp9Packet.Unmarshal(rtpPacket.Payload)
@@ -907,14 +909,14 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 		}
 		ep.KeyFrame = IsVP9KeyFrame(rtpPacket.Payload)
 
-	case utils.MimeTypeH264:
+	case mime.MimeTypeH264:
 		ep.KeyFrame = IsH264KeyFrame(rtpPacket.Payload)
 		ep.Spatial = InvalidLayerSpatial // h.264 don't have spatial scalability, reset to invalid
 
-	case utils.MimeTypeAV1:
+	case mime.MimeTypeAV1:
 		ep.KeyFrame = IsAV1KeyFrame(rtpPacket.Payload)
 
-	case utils.MimeTypeH265:
+	case mime.MimeTypeH265:
 		if ep.DependencyDescriptor == nil {
 			if len(rtpPacket.Payload) < 2 {
 				b.logger.Warnw("invalid H265 packet", nil)
@@ -1218,19 +1220,3 @@ func (b *Buffer) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 }
 
 // ---------------------------------------------------------------
-
-// SVC-TODO: Have to use more conditions to differentiate between
-// SVC-TODO: SVC and non-SVC (could be single layer or simulcast).
-// SVC-TODO: May only need to differentiate between simulcast and non-simulcast
-// SVC-TODO: i. e. may be possible to treat single layer as SVC to get proper/intended functionality.
-func IsSvcCodec(mime string) bool {
-	switch utils.MatchMimeType(mime) {
-	case utils.MimeTypeAV1, utils.MimeTypeVP9:
-		return true
-	}
-	return false
-}
-
-func IsRedCodec(mime string) bool {
-	return strings.HasSuffix(strings.ToLower(mime), "red")
-}

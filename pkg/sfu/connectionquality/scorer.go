@@ -258,6 +258,13 @@ func (q *qualityScorer) Start(packetLossWeight float64) {
 	q.startAtLocked(packetLossWeight, time.Now())
 }
 
+func (q *qualityScorer) UpdatePacketLossWeight(packetLossWeight float64) {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+
+	q.packetLossWeight = packetLossWeight
+}
+
 func (q *qualityScorer) updateMuteAtLocked(isMuted bool, at time.Time) {
 	if isMuted {
 		q.mutedAt = at

@@ -26,6 +26,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -356,7 +357,7 @@ func TestDisableCodecs(t *testing.T) {
 	codecs := transceiver.Receiver().GetParameters().Codecs
 	var found264 bool
 	for _, c := range codecs {
-		if strings.EqualFold(c.MimeType, "video/h264") {
+		if mime.IsMimeTypeStringH264(c.MimeType) {
 			found264 = true
 		}
 	}
@@ -390,7 +391,7 @@ func TestDisableCodecs(t *testing.T) {
 	codecs = transceiver.Receiver().GetParameters().Codecs
 	found264 = false
 	for _, c := range codecs {
-		if strings.EqualFold(c.MimeType, "video/h264") {
+		if mime.IsMimeTypeStringH264(c.MimeType) {
 			found264 = true
 		}
 	}
@@ -410,7 +411,7 @@ func TestDisablePublishCodec(t *testing.T) {
 	})
 
 	for _, codec := range participant.enabledPublishCodecs {
-		require.NotEqual(t, strings.ToLower(codec.Mime), "video/h264")
+		require.False(t, mime.IsMimeTypeStringH264(codec.Mime))
 	}
 
 	sink := &routingfakes.FakeMessageSink{}
@@ -421,7 +422,7 @@ func TestDisablePublishCodec(t *testing.T) {
 			if published := res.GetTrackPublished(); published != nil {
 				publishReceived.Store(true)
 				require.NotEmpty(t, published.Track.Codecs)
-				require.Equal(t, "video/vp8", strings.ToLower(published.Track.Codecs[0].MimeType))
+				require.True(t, mime.IsMimeTypeStringVP8(published.Track.Codecs[0].MimeType))
 			}
 		}
 		return nil
@@ -446,7 +447,7 @@ func TestDisablePublishCodec(t *testing.T) {
 			if published := res.GetTrackPublished(); published != nil {
 				publishReceived.Store(true)
 				require.NotEmpty(t, published.Track.Codecs)
-				require.Equal(t, "video/vp8", strings.ToLower(published.Track.Codecs[0].MimeType))
+				require.True(t, mime.IsMimeTypeStringVP8(published.Track.Codecs[0].MimeType))
 			}
 		}
 		return nil
@@ -493,13 +494,20 @@ func TestPreferVideoCodecForPublisher(t *testing.T) {
 		require.NoError(t, err)
 		transceiver, err := pc.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendrecv})
 		require.NoError(t, err)
-		sdp, err := pc.CreateOffer(nil)
-		require.NoError(t, err)
-		pc.SetLocalDescription(sdp)
 		codecs := transceiver.Receiver().GetParameters().Codecs
 
+		if i > 0 {
+			// the negotiated codecs order could be updated by first negotiation, reorder to make h264 not preferred
+			for mime.IsMimeTypeStringH264(codecs[0].MimeType) {
+				codecs = append(codecs[1:], codecs[0])
+			}
+		}
 		// h264 should not be preferred
-		require.NotEqual(t, codecs[0].MimeType, "video/h264")
+		require.False(t, mime.IsMimeTypeStringH264(codecs[0].MimeType), "codecs", codecs)
+
+		sdp, err := pc.CreateOffer(nil)
+		require.NoError(t, err)
+		require.NoError(t, pc.SetLocalDescription(sdp))
 
 		sink := &routingfakes.FakeMessageSink{}
 		participant.SetResponseSink(sink)
@@ -528,7 +536,7 @@ func TestPreferVideoCodecForPublisher(t *testing.T) {
 				if videoSectionIndex == i {
 					codecs, err := codecsFromMediaDescription(m)
 					require.NoError(t, err)
-					if strings.EqualFold(codecs[0].Name, "h264") {
+					if mime.IsMimeTypeCodecStringH264(codecs[0].Name) {
 						h264Preferred = true
 						break
 					}
@@ -626,7 +634,7 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 						}
 						require.True(t, nackEnabled, "nack should be enabled for opus")
 
-						if strings.EqualFold(codecs[0].Name, "red") {
+						if mime.IsMimeTypeCodecStringRED(codecs[0].Name) {
 							redPreferred = true
 							break
 						}

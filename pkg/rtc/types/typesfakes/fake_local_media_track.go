@@ -6,6 +6,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/protocol/livekit"
 )
 
@@ -94,12 +95,12 @@ type FakeLocalMediaTrack struct {
 	getQualityForDimensionReturnsOnCall map[int]struct {
 		result1 livekit.VideoQuality
 	}
-	GetTemporalLayerForSpatialFpsStub        func(int32, uint32, string) int32
+	GetTemporalLayerForSpatialFpsStub        func(int32, uint32, mime.MimeType) int32
 	getTemporalLayerForSpatialFpsMutex       sync.RWMutex
 	getTemporalLayerForSpatialFpsArgsForCall []struct {
 		arg1 int32
 		arg2 uint32
-		arg3 string
+		arg3 mime.MimeType
 	}
 	getTemporalLayerForSpatialFpsReturns struct {
 		result1 int32
@@ -795,13 +796,13 @@ func (fake *FakeLocalMediaTrack) GetQualityForDimensionReturnsOnCall(i int, resu
 	}{result1}
 }
 
-func (fake *FakeLocalMediaTrack) GetTemporalLayerForSpatialFps(arg1 int32, arg2 uint32, arg3 string) int32 {
+func (fake *FakeLocalMediaTrack) GetTemporalLayerForSpatialFps(arg1 int32, arg2 uint32, arg3 mime.MimeType) int32 {
 	fake.getTemporalLayerForSpatialFpsMutex.Lock()
 	ret, specificReturn := fake.getTemporalLayerForSpatialFpsReturnsOnCall[len(fake.getTemporalLayerForSpatialFpsArgsForCall)]
 	fake.getTemporalLayerForSpatialFpsArgsForCall = append(fake.getTemporalLayerForSpatialFpsArgsForCall, struct {
 		arg1 int32
 		arg2 uint32
-		arg3 string
+		arg3 mime.MimeType
 	}{arg1, arg2, arg3})
 	stub := fake.GetTemporalLayerForSpatialFpsStub
 	fakeReturns := fake.getTemporalLayerForSpatialFpsReturns
@@ -822,13 +823,13 @@ func (fake *FakeLocalMediaTrack) GetTemporalLayerForSpatialFpsCallCount() int {
 	return len(fake.getTemporalLayerForSpatialFpsArgsForCall)
 }
 
-func (fake *FakeLocalMediaTrack) GetTemporalLayerForSpatialFpsCalls(stub func(int32, uint32, string) int32) {
+func (fake *FakeLocalMediaTrack) GetTemporalLayerForSpatialFpsCalls(stub func(int32, uint32, mime.MimeType) int32) {
 	fake.getTemporalLayerForSpatialFpsMutex.Lock()
 	defer fake.getTemporalLayerForSpatialFpsMutex.Unlock()
 	fake.GetTemporalLayerForSpatialFpsStub = stub
 }
 
-func (fake *FakeLocalMediaTrack) GetTemporalLayerForSpatialFpsArgsForCall(i int) (int32, uint32, string) {
+func (fake *FakeLocalMediaTrack) GetTemporalLayerForSpatialFpsArgsForCall(i int) (int32, uint32, mime.MimeType) {
 	fake.getTemporalLayerForSpatialFpsMutex.RLock()
 	defer fake.getTemporalLayerForSpatialFpsMutex.RUnlock()
 	argsForCall := fake.getTemporalLayerForSpatialFpsArgsForCall[i]

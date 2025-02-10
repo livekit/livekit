@@ -18,7 +18,6 @@ import (
 	"context"
 	"io"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/pion/webrtc/v4"
@@ -27,6 +26,7 @@ import (
 	"github.com/pion/webrtc/v4/pkg/media/ivfreader"
 	"github.com/pion/webrtc/v4/pkg/media/oggreader"
 
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -37,7 +37,7 @@ type TrackWriter struct {
 	cancel   context.CancelFunc
 	track    *webrtc.TrackLocalStaticSample
 	filePath string
-	mime     string
+	mime     mime.MimeType
 
 	ogg       *oggreader.OggReader
 	ivfheader *ivfreader.IVFFileHeader
@@ -52,7 +52,7 @@ func NewTrackWriter(ctx context.Context, track *webrtc.TrackLocalStaticSample, f
 		cancel:   cancel,
 		track:    track,
 		filePath: filePath,
-		mime:     track.Codec().MimeType,
+		mime:     mime.NormalizeMimeType(track.Codec().MimeType),
 	}
 }
 
@@ -67,23 +67,25 @@ func (w *TrackWriter) Start() error {
 		return err
 	}
 
-	logger.Debugw("starting track writer",
+	logger.Debugw(
+		"starting track writer",
 		"trackID", w.track.ID(),
-		"mime", w.mime)
+		"mime", w.mime,
+	)
 	switch w.mime {
-	case webrtc.MimeTypeOpus:
+	case mime.MimeTypeOpus:
 		w.ogg, _, err = oggreader.NewWith(file)
 		if err != nil {
 			return err
 		}
 		go w.writeOgg()
-	case webrtc.MimeTypeVP8:
+	case mime.MimeTypeVP8:
 		w.ivf, w.ivfheader, err = ivfreader.NewWith(file)
 		if err != nil {
 			return err
 		}
 		go w.writeVP8()
-	case webrtc.MimeTypeH264:
+	case mime.MimeTypeH264:
 		w.h264, err = h264reader.NewReader(file)
 		if err != nil {
 			return err
@@ -104,7 +106,7 @@ func (w *TrackWriter) writeNull() {
 	for {
 		select {
 		case <-time.After(20 * time.Millisecond):
-			if strings.EqualFold(w.mime, webrtc.MimeTypeH264) {
+			if w.mime == mime.MimeTypeH264 {
 				w.track.WriteSample(h264Sample)
 			} else {
 				w.track.WriteSample(sample)

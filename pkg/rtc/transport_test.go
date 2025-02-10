@@ -28,6 +28,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
 	"github.com/livekit/livekit-server/pkg/rtc/transport/transportfakes"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	"github.com/livekit/protocol/livekit"
 )
@@ -389,9 +390,9 @@ func TestFilteringCandidates(t *testing.T) {
 		ParticipantIdentity: "identity",
 		Config:              &WebRTCConfig{},
 		EnabledCodecs: []*livekit.Codec{
-			{Mime: webrtc.MimeTypeOpus},
-			{Mime: webrtc.MimeTypeVP8},
-			{Mime: webrtc.MimeTypeH264},
+			{Mime: mime.MimeTypeOpus.String()},
+			{Mime: mime.MimeTypeVP8.String()},
+			{Mime: mime.MimeTypeH264.String()},
 		},
 		Handler: &transportfakes.FakeHandler{},
 	}
@@ -598,7 +599,7 @@ func TestConfigureAudioTransceiver(t *testing.T) {
 	} {
 		t.Run(fmt.Sprintf("nack=%v,stereo=%v", testcase.nack, testcase.stereo), func(t *testing.T) {
 			var me webrtc.MediaEngine
-			registerCodecs(&me, []*livekit.Codec{{Mime: webrtc.MimeTypeOpus}}, RTCPFeedbackConfig{Audio: []webrtc.RTCPFeedback{{Type: webrtc.TypeRTCPFBNACK}}}, false)
+			registerCodecs(&me, []*livekit.Codec{{Mime: mime.MimeTypeOpus.String()}}, RTCPFeedbackConfig{Audio: []webrtc.RTCPFeedback{{Type: webrtc.TypeRTCPFBNACK}}}, false)
 			pc, err := webrtc.NewAPI(webrtc.WithMediaEngine(&me)).NewPeerConnection(webrtc.Configuration{})
 			require.NoError(t, err)
 			defer pc.Close()
@@ -608,7 +609,7 @@ func TestConfigureAudioTransceiver(t *testing.T) {
 			configureAudioTransceiver(tr, testcase.stereo, testcase.nack)
 			codecs := tr.Sender().GetParameters().Codecs
 			for _, codec := range codecs {
-				if strings.Contains(codec.MimeType, webrtc.MimeTypeOpus) {
+				if mime.IsMimeTypeStringOpus(codec.MimeType) {
 					require.Equal(t, testcase.stereo, strings.Contains(codec.SDPFmtpLine, "sprop-stereo=1"))
 					var nackEnabled bool
 					for _, fb := range codec.RTCPFeedback {

@@ -38,6 +38,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	testclient "github.com/livekit/livekit-server/test/client"
 )
@@ -156,7 +157,7 @@ func TestSinglePublisher(t *testing.T) {
 	waitUntilConnected(t, c1, c2)
 
 	// publish a track and ensure clients receive it ok
-	t1, err := c1.AddStaticTrack("audio/opus", "audio", "webcamaudio")
+	t1, err := c1.AddStaticTrack("audio/OPUS", "audio", "webcamaudio")
 	require.NoError(t, err)
 	defer t1.Stop()
 	t2, err := c1.AddStaticTrack("video/vp8", "video", "webcamvideo")
@@ -280,7 +281,7 @@ func Test_RenegotiationWithDifferentCodecs(t *testing.T) {
 
 		tracks := c2.SubscribedTracks()[c1.ID()]
 		for _, t := range tracks {
-			if strings.EqualFold(t.Codec().MimeType, "video/vp8") {
+			if mime.IsMimeTypeStringVP8(t.Codec().MimeType) {
 				return ""
 
 			}
@@ -308,9 +309,9 @@ func Test_RenegotiationWithDifferentCodecs(t *testing.T) {
 		var vp8Found, h264Found bool
 		tracks := c2.SubscribedTracks()[c1.ID()]
 		for _, t := range tracks {
-			if strings.EqualFold(t.Codec().MimeType, "video/vp8") {
+			if mime.IsMimeTypeStringVP8(t.Codec().MimeType) {
 				vp8Found = true
-			} else if strings.EqualFold(t.Codec().MimeType, "video/h264") {
+			} else if mime.IsMimeTypeStringH264(t.Codec().MimeType) {
 				h264Found = true
 			}
 		}
@@ -594,8 +595,8 @@ func TestDeviceCodecOverride(t *testing.T) {
 	hasSeenVP8 := false
 	for _, a := range desc.Attributes {
 		if a.Key == "rtpmap" {
-			require.NotContains(t, a.Value, "H264", "should not contain H264 codec")
-			if strings.Contains(a.Value, "VP8") {
+			require.NotContains(t, a.Value, mime.MimeTypeCodecH264.String(), "should not contain H264 codec")
+			if strings.Contains(a.Value, mime.MimeTypeCodecVP8.String()) {
 				hasSeenVP8 = true
 			}
 		}
@@ -641,7 +642,7 @@ func TestSubscribeToCodecUnsupported(t *testing.T) {
 
 		tracks := c2.SubscribedTracks()[c1.ID()]
 		for _, t := range tracks {
-			if strings.EqualFold(t.Codec().MimeType, "video/vp8") {
+			if mime.IsMimeTypeStringVP8(t.Codec().MimeType) {
 				return ""
 			}
 		}
@@ -663,7 +664,7 @@ func TestSubscribeToCodecUnsupported(t *testing.T) {
 		remoteC1 := c2.GetRemoteParticipant(c1.ID())
 		require.NotNil(t, remoteC1)
 		for _, track := range remoteC1.Tracks {
-			if strings.EqualFold(track.MimeType, "video/h264") {
+			if mime.IsMimeTypeStringH264(track.MimeType) {
 				h264TrackID = track.Sid
 				return true
 			}
@@ -698,7 +699,7 @@ func TestSubscribeToCodecUnsupported(t *testing.T) {
 		var vp8Count int
 		tracks := c2.SubscribedTracks()[c1.ID()]
 		for _, t := range tracks {
-			if strings.EqualFold(t.Codec().MimeType, "video/vp8") {
+			if mime.IsMimeTypeStringVP8(t.Codec().MimeType) {
 				vp8Count++
 			}
 		}

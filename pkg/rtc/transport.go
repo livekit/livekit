@@ -44,6 +44,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
 	sfuinterceptor "github.com/livekit/livekit-server/pkg/sfu/interceptor"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
@@ -416,11 +417,11 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	}
 
 	setTWCCForVideo := func(info *interceptor.StreamInfo) {
-		if !strings.HasPrefix(info.MimeType, "video") {
+		if !mime.IsMimeTypeStringVideo(info.MimeType) {
 			return
 		}
 		// rtx stream don't have rtcp feedback, always set twcc for rtx stream
-		twccFb := strings.HasSuffix(info.MimeType, "rtx")
+		twccFb := mime.GetMimeTypeCodec(info.MimeType) == mime.MimeTypeCodecRTX
 		if !twccFb {
 			for _, fb := range info.RTCPFeedback {
 				if fb.Type == webrtc.TypeRTCPFBTransportCC {
@@ -2089,7 +2090,7 @@ func configureAudioTransceiver(tr *webrtc.RTPTransceiver, stereo bool, nack bool
 	codecs := sender.GetParameters().Codecs
 	configCodecs := make([]webrtc.RTPCodecParameters, 0, len(codecs))
 	for _, c := range codecs {
-		if strings.EqualFold(c.MimeType, webrtc.MimeTypeOpus) {
+		if mime.IsMimeTypeStringOpus(c.MimeType) {
 			c.SDPFmtpLine = strings.ReplaceAll(c.SDPFmtpLine, ";sprop-stereo=1", "")
 			if stereo {
 				c.SDPFmtpLine += ";sprop-stereo=1"

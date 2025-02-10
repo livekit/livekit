@@ -15,6 +15,7 @@
 package clientconfiguration
 
 import (
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/protocol/livekit"
 )
 
@@ -28,7 +29,7 @@ var StaticConfigurations = []ConfigurationItem{
 	{
 		Match: &ScriptMatch{Expr: `c.browser == "safari"`},
 		Configuration: &livekit.ClientConfiguration{DisabledCodecs: &livekit.DisabledCodecs{Codecs: []*livekit.Codec{
-			{Mime: "video/av1"},
+			{Mime: mime.MimeTypeAV1.String()},
 		}}},
 		Merge: false,
 	},
@@ -37,7 +38,7 @@ var StaticConfigurations = []ConfigurationItem{
 		  ((c.browser == "firefox" || c.browser == "firefox mobile") && (c.os == "linux" || c.os == "android"))`},
 		Configuration: &livekit.ClientConfiguration{
 			DisabledCodecs: &livekit.DisabledCodecs{
-				Publish: []*livekit.Codec{{Mime: "video/h264"}},
+				Publish: []*livekit.Codec{{Mime: mime.MimeTypeH264.String()}},
 			},
 		},
 		Merge: false,

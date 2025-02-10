@@ -17,8 +17,8 @@ package utils
 import (
 	"errors"
 	"fmt"
-	"strings"
 
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/pion/interceptor"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
@@ -29,7 +29,7 @@ import (
 func CodecParametersFuzzySearch(needle webrtc.RTPCodecParameters, haystack []webrtc.RTPCodecParameters) (webrtc.RTPCodecParameters, error) {
 	// First attempt to match on MimeType + SDPFmtpLine
 	for _, c := range haystack {
-		if strings.EqualFold(c.RTPCodecCapability.MimeType, needle.RTPCodecCapability.MimeType) &&
+		if mime.IsMimeTypeStringEqual(c.RTPCodecCapability.MimeType, needle.RTPCodecCapability.MimeType) &&
 			c.RTPCodecCapability.SDPFmtpLine == needle.RTPCodecCapability.SDPFmtpLine {
 			return c, nil
 		}
@@ -37,7 +37,7 @@ func CodecParametersFuzzySearch(needle webrtc.RTPCodecParameters, haystack []web
 
 	// Fallback to just MimeType
 	for _, c := range haystack {
-		if strings.EqualFold(c.RTPCodecCapability.MimeType, needle.RTPCodecCapability.MimeType) {
+		if mime.IsMimeTypeStringEqual(c.RTPCodecCapability.MimeType, needle.RTPCodecCapability.MimeType) {
 			return c, nil
 		}
 	}

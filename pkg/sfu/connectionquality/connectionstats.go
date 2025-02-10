@@ -15,12 +15,10 @@
 package connectionquality
 
 import (
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/frostbyte73/core"
-	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -28,6 +26,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 )
 
@@ -60,7 +59,7 @@ type ConnectionStatsParams struct {
 type ConnectionStats struct {
 	params ConnectionStatsParams
 
-	codecMimeType atomic.String
+	codecMimeType atomic.Value // mime.MimeType
 
 	isStarted atomic.Bool
 	isVideo   atomic.Bool
@@ -88,24 +87,30 @@ func NewConnectionStats(params ConnectionStatsParams) *ConnectionStats {
 	}
 }
 
-func (cs *ConnectionStats) StartAt(codecMimeType string, isFECEnabled bool, at time.Time) {
+func (cs *ConnectionStats) StartAt(codecMimeType mime.MimeType, isFECEnabled bool, at time.Time) {
 	if cs.isStarted.Swap(true) {
 		return
 	}
 
-	cs.isVideo.Store(strings.HasPrefix(strings.ToLower(codecMimeType), "video/"))
+	cs.isVideo.Store(mime.IsMimeTypeVideo(codecMimeType))
 	cs.codecMimeType.Store(codecMimeType)
 	cs.scorer.StartAt(getPacketLossWeight(codecMimeType, isFECEnabled), at)
 
 	go cs.updateStatsWorker()
 }
 
-func (cs *ConnectionStats) Start(codecMimeType string, isFECEnabled bool) {
+func (cs *ConnectionStats) Start(codecMimeType mime.MimeType, isFECEnabled bool) {
 	cs.StartAt(codecMimeType, isFECEnabled, time.Now())
 }
 
 func (cs *ConnectionStats) Close() {
 	cs.done.Break()
+}
+
+func (cs *ConnectionStats) UpdateCodec(codecMimeType mime.MimeType, isFECEnabled bool) {
+	cs.isVideo.Store(mime.IsMimeTypeVideo(codecMimeType))
+	cs.codecMimeType.Store(codecMimeType)
+	cs.scorer.UpdatePacketLossWeight(getPacketLossWeight(codecMimeType, isFECEnabled))
 }
 
 func (cs *ConnectionStats) OnStatsUpdate(fn func(cs *ConnectionStats, stat *livekit.AnalyticsStat)) {
@@ -340,7 +345,7 @@ func (cs *ConnectionStats) getStat() {
 		cs.onStatsUpdate(cs, &livekit.AnalyticsStat{
 			Score:   score,
 			Streams: analyticsStreams,
-			Mime:    cs.codecMimeType.Load(),
+			Mime:    cs.codecMimeType.Load().(mime.MimeType).String(),
 		})
 	}
 }
@@ -381,10 +386,10 @@ func (cs *ConnectionStats) updateStatsWorker() {
 // For video:
 //
 //	o No in-built codec repair available, hence same for all codecs
-func getPacketLossWeight(mimeType string, isFecEnabled bool) float64 {
+func getPacketLossWeight(mimeType mime.MimeType, isFecEnabled bool) float64 {
 	var plw float64
 	switch {
-	case strings.EqualFold(mimeType, webrtc.MimeTypeOpus):
+	case mimeType == mime.MimeTypeOpus:
 		// 2.5%: fall to GOOD, 7.5%: fall to POOR
 		plw = 8.0
 		if isFecEnabled {
@@ -392,7 +397,7 @@ func getPacketLossWeight(mimeType string, isFecEnabled bool) float64 {
 			plw /= 1.5
 		}
 
-	case strings.EqualFold(mimeType, "audio/red"):
+	case mimeType == mime.MimeTypeRED:
 		// 5%: fall to GOOD, 15.0%: fall to POOR
 		plw = 4.0
 		if isFecEnabled {
@@ -400,7 +405,7 @@ func getPacketLossWeight(mimeType string, isFecEnabled bool) float64 {
 			plw /= 1.5
 		}
 
-	case strings.HasPrefix(strings.ToLower(mimeType), "video/"):
+	case mime.IsMimeTypeVideo(mimeType):
 		// 2%: fall to GOOD, 6%: fall to POOR
 		plw = 10.0
 	}
