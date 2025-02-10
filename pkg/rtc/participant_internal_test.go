@@ -494,13 +494,20 @@ func TestPreferVideoCodecForPublisher(t *testing.T) {
 		require.NoError(t, err)
 		transceiver, err := pc.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendrecv})
 		require.NoError(t, err)
-		sdp, err := pc.CreateOffer(nil)
-		require.NoError(t, err)
-		pc.SetLocalDescription(sdp)
 		codecs := transceiver.Receiver().GetParameters().Codecs
 
+		if i > 0 {
+			// the negotiated codecs order could be updated by first negotiation, reorder to make h264 not preferred
+			for mime.IsMimeTypeStringH264(codecs[0].MimeType) {
+				codecs = append(codecs[1:], codecs[0])
+			}
+		}
 		// h264 should not be preferred
-		require.False(t, mime.IsMimeTypeStringH264(codecs[0].MimeType))
+		require.False(t, mime.IsMimeTypeStringH264(codecs[0].MimeType), "codecs", codecs)
+
+		sdp, err := pc.CreateOffer(nil)
+		require.NoError(t, err)
+		require.NoError(t, pc.SetLocalDescription(sdp))
 
 		sink := &routingfakes.FakeMessageSink{}
 		participant.SetResponseSink(sink)
