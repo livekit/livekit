@@ -248,19 +248,25 @@ func (p *NodeProvider) startRemovingExpiredRecord() {
 
 		ticker := time.NewTicker(defaultNodeIntervalCheckingExpiredRecord)
 		for {
+			<-ticker.C
+
 			now:=time.Now().Unix()
 
 			keys, err := p.mainDatabase.List(ctx)
 			if err != nil {
 				p.logger.Errorw("[startRemovingExpiredRecord] error list main databases keys %s\r\n", err)
-				return
+				continue
 			}
+
+			p.logger.Infow("[startRemovingExpiredRecord] check nodes", "len",  len(keys))
 
 			for _, key := range keys {
 				key = strings.TrimPrefix("/", key)
 				if !strings.HasPrefix(key, prefixKeyNode) {
 					continue
 				}
+
+				p.logger.Infow("[startRemovingExpiredRecord] check nodes", "key",  key)
 
 				row, err := p.mainDatabase.Get(ctx, key)
 				if err != nil {
@@ -275,6 +281,8 @@ func (p *NodeProvider) startRemovingExpiredRecord() {
 					continue
 				}
 
+				p.logger.Infow("[startRemovingExpiredRecord] check nodes", "now",  now, "ttl", result.TTL )
+
 				if now > result.TTL {
 					err = p.mainDatabase.Remove(ctx, key)
 					if err != nil {
@@ -285,8 +293,6 @@ func (p *NodeProvider) startRemovingExpiredRecord() {
 					}
 				}
 			}
-
-			<-ticker.C
 		}
 	}()
 }
