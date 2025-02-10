@@ -187,7 +187,7 @@ func (d *DynacastManager) getOrCreateDynacastQuality(mimeType mime.MimeType) *Dy
 	d.lock.Lock()
 	defer d.lock.Unlock()
 
-	if d.isClosed {
+	if d.isClosed || mimeType == mime.MimeTypeUnknown {
 		return nil
 	}
 

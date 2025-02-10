@@ -364,6 +364,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		upstreamCodecs:      codecs,
 		kind:                kind,
 		codec:               codecs[0].RTPCodecCapability,
+		mime:                mime.NormalizeMimeType(codecs[0].MimeType),
 		clockRate:           codecs[0].ClockRate,
 		pacer:               params.Pacer,
 		maxLayerNotifierCh:  make(chan string, 1),
