@@ -18,17 +18,14 @@ import (
 	"github.com/pkg/errors"
 )
 
-const prefixKeyNode = "node_"
-
 type Node struct {
-	Id           string    `json:"id"`
-	Participants int32     `json:"participants"`
-	Domain       string    `json:"domain"`
-	IP           string    `json:"ip"`
-	Country      string    `json:"country"`
-	Latitude     float64   `json:"latitude"`
-	Longitude    float64   `json:"longitude"`
-	CreatedAt    time.Time `json:"created_at"`
+	Id           string  `json:"id"`
+	Participants int32   `json:"participants"`
+	Domain       string  `json:"domain"`
+	IP           string  `json:"ip"`
+	Country      string  `json:"country"`
+	Latitude     float64 `json:"latitude"`
+	Longitude    float64 `json:"longitude"`
 }
 
 type nodeMessage struct {
@@ -87,7 +84,9 @@ func NewNodeProvider(mainDatabase *p2p_database.DB, geo *geoip2.Reader, logger *
 		provider.handleNodeMessage(nodeMsg, event.FromPeerId)
 	})
 
-	logger.Errorw("topic node values subscribe error", err)
+	if err != nil {
+		logger.Errorw("topic node values subscribe error", err)
+	}
 
 	provider.startRefresh()
 
@@ -173,7 +172,6 @@ func (p *NodeProvider) Save(ctx context.Context, node Node) error {
 	node.Country = country.Country.IsoCode
 	node.Latitude = city.Location.Latitude
 	node.Longitude = city.Location.Longitude
-	node.CreatedAt = time.Now().UTC()
 	node.Participants = p.localNode.Stats.NumClients
 	p.current = node
 

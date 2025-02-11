@@ -6,7 +6,6 @@ import (
 	"github.com/ipfs/go-log/v2"
 	"github.com/olekukonko/tablewriter"
 	"net/http"
-	"time"
 )
 
 type MainDebugHandler struct {
@@ -36,10 +35,10 @@ func (h *MainDebugHandler) clientHTTPHandler(w http.ResponseWriter, r *http.Requ
 	table.SetRowLine(true)
 	table.SetAutoWrapText(false)
 	table.SetHeader([]string{
-		"Key",
+		"Address",
 		"Until",
 		"Active",
-		"Key",
+		"Limit",
 	})
 
 	table.SetColumnAlignment([]int{
@@ -49,9 +48,9 @@ func (h *MainDebugHandler) clientHTTPHandler(w http.ResponseWriter, r *http.Requ
 		tablewriter.ALIGN_CENTER,
 	})
 
-	for _, client := range clients {
+	for address, client := range clients {
 		table.Append([]string{
-			client.Key,
+			address,
 			fmt.Sprintf("%d", client.Until),
 			fmt.Sprintf("%v", client.Active),
 			fmt.Sprintf("%s", client.Limit),
@@ -80,11 +79,9 @@ func (h *MainDebugHandler) nodeHTTPHandler(w http.ResponseWriter, r *http.Reques
 		"Country",
 		"Latitude",
 		"Longitude",
-		"CreatedAt",
 	})
 
 	table.SetColumnAlignment([]int{
-		tablewriter.ALIGN_CENTER,
 		tablewriter.ALIGN_CENTER,
 		tablewriter.ALIGN_CENTER,
 		tablewriter.ALIGN_CENTER,
@@ -103,7 +100,6 @@ func (h *MainDebugHandler) nodeHTTPHandler(w http.ResponseWriter, r *http.Reques
 			node.Country,
 			fmt.Sprintf("%f", node.Latitude),
 			fmt.Sprintf("%f", node.Longitude),
-			node.CreatedAt.Format(time.RFC3339),
 		})
 	}
 
