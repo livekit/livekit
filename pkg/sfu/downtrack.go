@@ -254,7 +254,6 @@ type DownTrack struct {
 	params            DowntrackParams
 	id                livekit.TrackID
 	kind              webrtc.RTPCodecType
-	mime              mime.MimeType
 	ssrc              uint32
 	ssrcRTX           uint32
 	payloadType       atomic.Uint32
@@ -364,7 +363,6 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		upstreamCodecs:      codecs,
 		kind:                kind,
 		codec:               codecs[0].RTPCodecCapability,
-		mime:                mime.NormalizeMimeType(codecs[0].MimeType),
 		clockRate:           codecs[0].ClockRate,
 		pacer:               params.Pacer,
 		maxLayerNotifierCh:  make(chan string, 1),
@@ -562,7 +560,6 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.params.Logger.Debugw("DownTrack.Bind", logFields...)
 
 		d.writeStream = t.WriteStream()
-		d.mime = mime.NormalizeMimeType(codec.MimeType)
 		if rr := d.params.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, d.ssrc).(*buffer.RTCPReader); rr != nil {
 			rr.OnPacket(func(pkt []byte) {
 				d.handleRTCP(pkt)
@@ -585,7 +582,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			d.onBinding(nil)
 		}
 		d.setBindStateLocked(bindStateBound)
-		mimeType := d.mime
+		mimeType := d.mimeTypeLocked()
 		d.bindLock.Unlock()
 
 		d.forwarder.DetermineCodec(codec.RTPCodecCapability, d.Receiver().HeaderExtensions())
@@ -685,8 +682,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 	d.payloadType.Store(uint32(codec.PayloadType))
 	d.payloadTypeRTX.Store(uint32(utils.FindRTXPayloadType(codec.PayloadType, d.negotiatedCodecParameters)))
 	d.codec = codec.RTPCodecCapability
-	d.mime = mime.NormalizeMimeType(codec.MimeType)
-	newMimeType := d.mime
+	newMimeType := d.mimeTypeLocked()
 	isFECEnabled := strings.Contains(strings.ToLower(d.codec.SDPFmtpLine), "fec")
 	d.bindLock.Unlock()
 
@@ -757,7 +753,11 @@ func (d *DownTrack) Codec() webrtc.RTPCodecCapability {
 func (d *DownTrack) Mime() mime.MimeType {
 	d.bindLock.Lock()
 	defer d.bindLock.Unlock()
-	return d.mime
+	return d.mimeTypeLocked()
+}
+
+func (d *DownTrack) mimeTypeLocked() mime.MimeType {
+	return mime.NormalizeMimeType(d.codec.MimeType)
 }
 
 // StreamID is the group this track belongs too. This must be unique
@@ -1695,8 +1695,9 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 			return
 		}
 
+		mimeType := d.Mime()
 		var getBlankFrame func(bool) ([]byte, error)
-		switch d.mime {
+		switch mimeType {
 		case mime.MimeTypeOpus:
 			getBlankFrame = d.getOpusBlankFrame
 		case mime.MimeTypeRED:
@@ -1711,7 +1712,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 		}
 
 		frameRate := uint32(30)
-		if d.mime == mime.MimeTypeOpus || d.mime == mime.MimeTypeRED {
+		if mimeType == mime.MimeTypeOpus || mimeType == mime.MimeTypeRED {
 			frameRate = 50
 		}
 
@@ -2429,7 +2430,7 @@ func (d *DownTrack) sendPaddingOnMute() {
 
 	if d.kind == webrtc.RTPCodecTypeVideo {
 		d.sendPaddingOnMuteForVideo()
-	} else if d.mime == mime.MimeTypeOpus {
+	} else if d.Mime() == mime.MimeTypeOpus {
 		d.sendSilentFrameOnMuteForOpus()
 	}
 }
