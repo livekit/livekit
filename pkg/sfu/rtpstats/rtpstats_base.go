@@ -134,6 +134,18 @@ func (s *snapshot) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	return nil
 }
 
+func (s *snapshot) maybeUpdateMaxRTT(rtt uint32) {
+	if rtt > s.maxRtt {
+		s.maxRtt = rtt
+	}
+}
+
+func (s *snapshot) maybeUpdateMaxJitter(jitter float64) {
+	if jitter > s.maxJitter {
+		s.maxJitter = jitter
+	}
+}
+
 // ------------------------------------------------------------------
 
 type wrappedRTPDriftLogger struct {
@@ -646,10 +658,7 @@ func (r *rtpStatsBase) updateJitter(ets uint64, packetTime int64) float64 {
 			}
 
 			for i := uint32(0); i < r.nextSnapshotID-cFirstSnapshotID; i++ {
-				s := &r.snapshots[i]
-				if r.jitter > s.maxJitter {
-					s.maxJitter = r.jitter
-				}
+				r.snapshots[i].maybeUpdateMaxJitter(r.jitter)
 			}
 		}
 

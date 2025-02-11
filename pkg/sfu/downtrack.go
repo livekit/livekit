@@ -2370,14 +2370,15 @@ func (d *DownTrack) GetTrackStats() *livekit.RTPStats {
 	return rtpstats.ReconcileRTPStatsWithRTX(d.rtpStats.ToProto(), d.rtpStatsRTX.ToProto())
 }
 
-func (d *DownTrack) deltaStats(ds *rtpstats.RTPDeltaInfo) map[uint32]*buffer.StreamStatsWithLayers {
-	if ds == nil {
+func (d *DownTrack) deltaStats(ds *rtpstats.RTPDeltaInfo, dsrv *rtpstats.RTPDeltaInfo) map[uint32]*buffer.StreamStatsWithLayers {
+	if ds == nil && dsrv == nil {
 		return nil
 	}
 
 	streamStats := make(map[uint32]*buffer.StreamStatsWithLayers, 1)
 	streamStats[d.ssrc] = &buffer.StreamStatsWithLayers{
-		RTPStats: ds,
+		RTPStats:           ds,
+		RTPStatsRemoteView: dsrv,
 		Layers: map[int32]*rtpstats.RTPDeltaInfo{
 			0: ds,
 		},
@@ -2387,11 +2388,11 @@ func (d *DownTrack) deltaStats(ds *rtpstats.RTPDeltaInfo) map[uint32]*buffer.Str
 }
 
 func (d *DownTrack) GetDeltaStatsSender() map[uint32]*buffer.StreamStatsWithLayers {
+	ds, dsrv := d.rtpStats.DeltaInfoSender(d.deltaStatsSenderSnapshotId)
+	dsRTX, dsrvRTX := d.rtpStatsRTX.DeltaInfoSender(d.deltaStatsRTXSenderSnapshotId)
 	return d.deltaStats(
-		rtpstats.ReconcileRTPDeltaInfoWithRTX(
-			d.rtpStats.DeltaInfoSender(d.deltaStatsSenderSnapshotId),
-			d.rtpStatsRTX.DeltaInfoSender(d.deltaStatsRTXSenderSnapshotId),
-		),
+		rtpstats.ReconcileRTPDeltaInfoWithRTX(ds, dsRTX),
+		rtpstats.ReconcileRTPDeltaInfoWithRTX(dsrv, dsrvRTX),
 	)
 }
 

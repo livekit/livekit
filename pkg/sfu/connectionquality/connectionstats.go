@@ -264,7 +264,12 @@ func (cs *ConnectionStats) updateScoreFromReceiverReport(at time.Time) (float32,
 		return mos, streams
 	}
 
-	agg := toAggregateDeltaInfo(streams)
+	agg := toAggregateDeltaInfo(streams, true)
+	if agg == nil {
+		// no receiver report in the window
+		mos, _ := cs.scorer.GetMOSAndQuality()
+		return mos, streams
+	}
 	if streamingStartedAt.After(agg.StartTime) {
 		agg.StartTime = streamingStartedAt
 	}
@@ -287,11 +292,12 @@ func (cs *ConnectionStats) updateScoreAt(at time.Time) (float32, map[uint32]*buf
 		return mos, nil
 	}
 
-	deltaInfoList := make([]*rtpstats.RTPDeltaInfo, 0, len(streams))
-	for _, s := range streams {
-		deltaInfoList = append(deltaInfoList, s.RTPStats)
+	agg := toAggregateDeltaInfo(streams, false)
+	if agg == nil {
+		// no receiver report in the window
+		mos, _ := cs.scorer.GetMOSAndQuality()
+		return mos, streams
 	}
-	agg := rtpstats.AggregateRTPDeltaInfo(deltaInfoList)
 	return cs.updateScoreWithAggregate(agg, cs.params.ReceiverProvider.GetLastSenderReportTime(), at), streams
 }
 
@@ -323,7 +329,7 @@ func (cs *ConnectionStats) getStat() {
 	if cs.onStatsUpdate != nil && len(streams) != 0 {
 		analyticsStreams := make([]*livekit.AnalyticsStream, 0, len(streams))
 		for ssrc, stream := range streams {
-			as := toAnalyticsStream(ssrc, stream.RTPStats)
+			as := toAnalyticsStream(ssrc, stream.RTPStats, stream.RTPStatsRemoteView)
 
 			//
 			// add video layer if either
@@ -413,21 +419,36 @@ func getPacketLossWeight(mimeType mime.MimeType, isFecEnabled bool) float64 {
 	return plw
 }
 
-func toAggregateDeltaInfo(streams map[uint32]*buffer.StreamStatsWithLayers) *rtpstats.RTPDeltaInfo {
+func toAggregateDeltaInfo(streams map[uint32]*buffer.StreamStatsWithLayers, useRemoteView bool) *rtpstats.RTPDeltaInfo {
 	deltaInfoList := make([]*rtpstats.RTPDeltaInfo, 0, len(streams))
 	for _, s := range streams {
-		deltaInfoList = append(deltaInfoList, s.RTPStats)
+		if useRemoteView {
+			if s.RTPStatsRemoteView != nil {
+				deltaInfoList = append(deltaInfoList, s.RTPStatsRemoteView)
+			}
+		} else {
+			if s.RTPStats != nil {
+				deltaInfoList = append(deltaInfoList, s.RTPStats)
+			}
+		}
 	}
 	return rtpstats.AggregateRTPDeltaInfo(deltaInfoList)
 }
 
-func toAnalyticsStream(ssrc uint32, deltaStats *rtpstats.RTPDeltaInfo) *livekit.AnalyticsStream {
-	// discount the feed side loss when reporting forwarded track stats
+func toAnalyticsStream(
+	ssrc uint32,
+	deltaStats *rtpstats.RTPDeltaInfo,
+	deltaStatsRemoteView *rtpstats.RTPDeltaInfo,
+) *livekit.AnalyticsStream {
+	// discount the feed side loss when reporting forwarded track stats,
 	packetsLost := deltaStats.PacketsLost
-	if deltaStats.PacketsMissing > packetsLost {
-		packetsLost = 0
-	} else {
-		packetsLost -= deltaStats.PacketsMissing
+	if deltaStatsRemoteView != nil {
+		packetsLost = deltaStatsRemoteView.PacketsLost
+		if deltaStatsRemoteView.PacketsMissing > packetsLost {
+			packetsLost = 0
+		} else {
+			packetsLost -= deltaStatsRemoteView.PacketsMissing
+		}
 	}
 	return &livekit.AnalyticsStream{
 		StartTime:         timestamppb.New(deltaStats.StartTime),
