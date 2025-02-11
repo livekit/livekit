@@ -659,7 +659,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 
 	var codec webrtc.RTPCodecParameters
 	for _, c := range d.upstreamCodecs {
-		if !mime.IsMimeTypeStringEqual(d.codec.MimeType, mimeType) {
+		if !mime.IsMimeTypeStringEqual(c.MimeType, mimeType) {
 			continue
 		}
 
