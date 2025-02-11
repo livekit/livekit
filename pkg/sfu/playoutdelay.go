@@ -119,7 +119,7 @@ func (c *PlayoutDelayController) SeedState(pdcs PlayoutDelayControllerState) {
 
 func (c *PlayoutDelayController) SetJitter(jitter uint32) {
 	c.lock.Lock()
-	deltaInfoSender := c.rtpStats.DeltaInfoSender(c.senderSnapshotID)
+	deltaInfoSender, _ := c.rtpStats.DeltaInfoSender(c.senderSnapshotID)
 	var nackPercent uint32
 	if deltaInfoSender != nil && deltaInfoSender.Packets > 0 {
 		nackPercent = deltaInfoSender.Nacks * 100 / deltaInfoSender.Packets
