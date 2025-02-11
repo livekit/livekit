@@ -70,10 +70,7 @@ func NewNodeProvider(mainDatabase *p2p_database.DB, geo *geoip2.Reader, logger *
 		nodeValues:   make(map[string]nodeMessage),
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-
-	err := mainDatabase.Subscribe(ctx, topicNodeValuesStreaming, func(event p2p_database.Event) {
+	err := mainDatabase.Subscribe(context.Background(), topicNodeValuesStreaming, func(event p2p_database.Event) {
 		jsonMsg, ok := event.Message.(string)
 		if !ok {
 			logger.Errorw("convert interface to string from message topic node values")
@@ -205,7 +202,7 @@ func (p *NodeProvider) save(ctx context.Context, node Node) error {
 
 	_, err = p.mainDatabase.Publish(ctx, topicNodeValuesStreaming, string(marshaled))
 	if err != nil {
-		return errors.Wrap(err, "publish traffic message")
+		return errors.Wrap(err, "publish node message")
 	}
 
 	return nil
@@ -243,7 +240,7 @@ func (p *NodeProvider) startRefresh() {
 		for {
 			<-ticker.C
 			p.UpdateNodeStats()
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
 			defer cancel()
 			err := p.refresh(ctx)
 			if err != nil {

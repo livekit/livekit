@@ -146,7 +146,7 @@ func (c *ClientProvider) startRemovingExpiredRecord() {
 		ticker := time.NewTicker(defaultIntervalCheckingExpiredRecord)
 		for {
 			<-ticker.C
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
 			defer cancel()
 
 			now := time.Now().Unix()

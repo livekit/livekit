@@ -53,7 +53,7 @@ func (h *MainDebugHandler) clientHTTPHandler(w http.ResponseWriter, r *http.Requ
 		table.Append([]string{
 			client.Key,
 			fmt.Sprintf("%d", client.Until),
-			fmt.Sprintf("%s", client.Active),
+			fmt.Sprintf("%v", client.Active),
 			fmt.Sprintf("%s", client.Limit),
 		})
 	}
