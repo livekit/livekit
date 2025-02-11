@@ -121,6 +121,9 @@ func (c *ClientProvider) getFromDatabase(ctx context.Context, address string) (C
 	if !ok {
 		return Client{}, fmt.Errorf("no data in db: %w", address)
 	}
+	if clientMessage.isExpired() == true {
+		return Client{}, fmt.Errorf("expired data in db: %w", address)
+	}
 	return clientMessage.Client, nil
 }
 
