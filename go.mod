@@ -8,7 +8,7 @@ replace github.com/livekit/psrpc v0.2.10 => github.com/dTelecom/psrpc v1.0.16
 require (
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.14.0
-	github.com/dTelecom/p2p-realtime-database v1.0.16
+	github.com/dTelecom/p2p-realtime-database v1.0.17
 	github.com/dustin/go-humanize v1.0.1
 	github.com/elliotchance/orderedmap/v2 v2.2.0
 	github.com/ethereum/go-ethereum v1.11.6

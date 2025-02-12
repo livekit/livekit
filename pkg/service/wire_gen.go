@@ -165,7 +165,7 @@ func createSmartContractClient(conf *config.Config) (*p2p_database.EthSmartContr
 
 func GetDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 	return p2p_database.Config{
-		DisableGater:            true,
+		DisableGater:            false,
 		PeerListenPort:          conf.Ethereum.P2pNodePort,
 		EthereumNetworkHost:     conf.Ethereum.NetworkHost,
 		EthereumNetworkKey:      conf.Ethereum.NetworkKey,
