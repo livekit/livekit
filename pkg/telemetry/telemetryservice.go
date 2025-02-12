@@ -79,6 +79,7 @@ type TelemetryService interface {
 	LocalRoomState(ctx context.Context, info *livekit.AnalyticsNodeRooms)
 	Report(ctx context.Context, reportInfo *livekit.ReportInfo)
 	APICall(ctx context.Context, apiCallInfo *livekit.APICallInfo)
+	Webhook(ctx context.Context, webhookInfo *livekit.WebhookInfo)
 
 	// helpers
 	AnalyticsService
@@ -110,8 +111,7 @@ type telemetryService struct {
 func NewTelemetryService(notifier webhook.QueuedNotifier, analytics AnalyticsService) TelemetryService {
 	t := &telemetryService{
 		AnalyticsService: analytics,
-
-		notifier: notifier,
+		notifier:         notifier,
 		jobsQueue: utils.NewOpsQueue(utils.OpsQueueParams{
 			Name:        "telemetry",
 			MinSize:     jobsQueueMinSize,
@@ -120,6 +120,9 @@ func NewTelemetryService(notifier webhook.QueuedNotifier, analytics AnalyticsSer
 		}),
 		workers: make(map[livekit.ParticipantID]*StatsWorker),
 	}
+	t.notifier.RegisterProcessedHook(func(ctx context.Context, whi *livekit.WebhookInfo) {
+		t.Webhook(ctx, whi)
+	})
 
 	t.jobsQueue.Start()
 	go t.run()

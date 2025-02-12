@@ -142,3 +142,7 @@ require (
 	google.golang.org/grpc v1.70.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
+
+replace github.com/livekit/protocol => ../protocol
+
+replace github.com/frostbyte73/core => ../frostbyte73/core/core
