@@ -173,6 +173,7 @@ func (p *NodeProvider) Save(ctx context.Context, node Node) error {
 	node.Latitude = city.Location.Latitude
 	node.Longitude = city.Location.Longitude
 	node.Participants = p.localNode.Stats.NumClients
+	node.Id = p.mainDatabase.GetHost().ID().String()
 	p.current = node
 
 	return p.save(ctx, node)

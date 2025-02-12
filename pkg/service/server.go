@@ -157,32 +157,12 @@ func NewLivekitServer(conf *config.Config,
 		}
 	}
 
-	var bindAddress string
-	if len(conf.BindAddresses) == 0 {
-		conf.LoggingP2P.Error("bind address expect value")
-		bindAddress = "127.0.0.1"
-	} else {
-		bindAddress = conf.BindAddresses[0]
-	}
-
 	// clean up old rooms on startup
 	if err = roomManager.CleanupRooms(); err != nil {
 		return
 	}
 	if err = router.RemoveDeadNodes(); err != nil {
 		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-
-	err = nodeProvider.Save(ctx, Node{
-		Id:     db.GetHost().ID().String(),
-		Domain: conf.Domain,
-		IP:     bindAddress,
-	})
-	if err != nil {
-		conf.LoggingP2P.Errorf("node provider save error: %s", err)
 	}
 
 	return
@@ -283,6 +263,16 @@ func (s *LivekitServer) Start() error {
 		values = append(values, "region", s.config.Region)
 	}
 	logger.Infow("starting LiveKit server", values...)
+
+	ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
+
+	err := s.nodeProvider.Save(ctx, Node{
+		Domain: s.config.Domain,
+		IP:     s.currentNode.Ip,
+	})
+	if err != nil {
+		logger.Errorw("node provider save error", err)
+	}
 
 	for _, promLn := range promListeners {
 		go s.promServer.Serve(promLn)
