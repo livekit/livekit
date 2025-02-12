@@ -572,8 +572,6 @@ func (conf *Config) ValidateKeys() error {
 		return errors.New("empty ethereum.wallet_address")
 	case conf.Ethereum.ContractAddress == "":
 		return errors.New("empty ethereum.contract_address")
-	case conf.Ethereum.NetworkKey == "":
-		return errors.New("empty ethereum.network_key")
 	case conf.Ethereum.NetworkHost == "":
 		return errors.New("empty ethereum.network_host")
 	case conf.Ethereum.P2pNodePort <= 0:
