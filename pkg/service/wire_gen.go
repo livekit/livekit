@@ -109,7 +109,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	authHandler := newTurnAuthHandler(objectStore)
-	tlsMuxer, err := NewVhostMuxer(conf)
+	manager, err := NewCertManager(conf)
+	if err != nil {
+		return nil, err
+	}
+	tlsMuxer, err := NewVhostMuxer(conf, manager)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +129,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	nodeProvider := CreateNodeProvider(reader, conf, db, currentNode)
 	relevantNodesHandler := createRelevantNodesHandler(conf, nodeProvider)
 	mainDebugHandler := createMainDebugHandler(conf, nodeProvider, clientProvider, db)
-	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, nodeProvider, db, relevantNodesHandler, mainDebugHandler, tlsMuxer)
+	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, nodeProvider, db, relevantNodesHandler, mainDebugHandler, tlsMuxer, manager)
 	if err != nil {
 		return nil, err
 	}

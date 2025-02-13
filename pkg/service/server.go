@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"golang.org/x/crypto/acme/autocert"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -47,6 +49,7 @@ type LivekitServer struct {
 	doneChan       chan struct{}
 	closedChan     chan struct{}
 	TLSMuxer       *vhost.TLSMuxer
+	certManager    *autocert.Manager
 }
 
 func NewLivekitServer(conf *config.Config,
@@ -66,6 +69,7 @@ func NewLivekitServer(conf *config.Config,
 	relevantNodesHandler *RelevantNodesHandler,
 	mainDebugHandler *MainDebugHandler,
 	TLSMuxer *vhost.TLSMuxer,
+	certManager *autocert.Manager,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
 		config:       conf,
@@ -80,6 +84,7 @@ func NewLivekitServer(conf *config.Config,
 		nodeProvider:   nodeProvider,
 		closedChan:     make(chan struct{}),
 		TLSMuxer:       TLSMuxer,
+		certManager:    certManager,
 	}
 
 	middlewares := []negroni.Handler{
@@ -128,8 +133,17 @@ func NewLivekitServer(conf *config.Config,
 	mux.HandleFunc("/client-debug", mainDebugHandler.clientHTTPHandler)
 	mux.HandleFunc("/", s.defaultHandler)
 
-	s.httpServer = &http.Server{
-		Handler: configureMiddlewares(mux, middlewares...),
+	if conf.Domain != "" {
+		s.httpsServer = &http.Server{
+			TLSConfig: &tls.Config{
+				GetCertificate: certManager.GetCertificate,
+			},
+			Handler: configureMiddlewares(mux, middlewares...),
+		}
+	} else {
+		s.httpServer = &http.Server{
+			Handler: configureMiddlewares(mux, middlewares...),
+		}
 	}
 
 	if conf.PrometheusPort > 0 {
@@ -254,11 +268,16 @@ func (s *LivekitServer) Start() error {
 			s.Stop(true)
 		}
 
-		err = s.httpsServer.ServeTLS(tlsListener, "", "")
-		if err != nil {
-			logger.Errorw("could not start server", err)
-			s.Stop(true)
-		}
+		httpGroup := &errgroup.Group{}
+		httpGroup.Go(func() error {
+			return s.httpsServer.ServeTLS(tlsListener, "", "")
+		})
+		go func() {
+			if err := httpGroup.Wait(); err != http.ErrServerClosed {
+				logger.Errorw("could not start server", err)
+				s.Stop(true)
+			}
+		}()
 	} else {
 		httpGroup := &errgroup.Group{}
 		for _, ln := range listeners {

@@ -64,6 +64,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewDefaultSignalServer,
 		routing.NewSignalClient,
 		NewLocalRoomManager,
+		NewCertManager,
 		NewVhostMuxer,
 		newTurnAuthHandler,
 		newInProcessTurnServer,
