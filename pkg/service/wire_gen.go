@@ -9,6 +9,7 @@ package service
 import (
 	"context"
 	"github.com/dTelecom/p2p-realtime-database"
+	"github.com/inconshreveable/go-vhost"
 	"github.com/livekit/livekit-server"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
@@ -108,7 +109,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	authHandler := newTurnAuthHandler(objectStore)
-	server, err := newInProcessTurnServer(conf, authHandler)
+	tlsMuxer, err := NewVhostMuxer(conf)
+	if err != nil {
+		return nil, err
+	}
+	server, err := newInProcessTurnServer(conf, authHandler, tlsMuxer)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +125,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	nodeProvider := CreateNodeProvider(reader, conf, db, currentNode)
 	relevantNodesHandler := createRelevantNodesHandler(conf, nodeProvider)
 	mainDebugHandler := createMainDebugHandler(conf, nodeProvider, clientProvider, db)
-	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, nodeProvider, db, relevantNodesHandler, mainDebugHandler)
+	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, nodeProvider, db, relevantNodesHandler, mainDebugHandler, tlsMuxer)
 	if err != nil {
 		return nil, err
 	}
@@ -260,6 +265,6 @@ func getSignalRelayConfig(config2 *config.Config) config.SignalRelayConfig {
 	return config2.SignalRelay
 }
 
-func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
-	return NewTurnServer(conf, authHandler, false)
+func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler, TLSMuxer *vhost.TLSMuxer) (*turn.Server, error) {
+	return NewTurnServer(conf, authHandler, false, TLSMuxer)
 }

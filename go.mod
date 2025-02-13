@@ -3,6 +3,7 @@ module github.com/livekit/livekit-server
 go 1.18
 
 replace github.com/livekit/protocol v1.5.4 => github.com/dTelecom/protocol v1.0.14
+
 replace github.com/livekit/psrpc v0.2.10 => github.com/dTelecom/psrpc v1.0.16
 
 require (
@@ -106,6 +107,7 @@ require (
 	github.com/holiman/uint256 v1.2.2-0.20230321075855-87b91420868c // indirect
 	github.com/hsanjuan/ipfs-lite v1.7.0 // indirect
 	github.com/huin/goupnp v1.0.3 // indirect
+	github.com/inconshreveable/go-vhost v1.0.0 // indirect
 	github.com/ipfs/bbloom v0.0.4 // indirect
 	github.com/ipfs/boxo v0.8.0 // indirect
 	github.com/ipfs/go-bitfield v1.1.0 // indirect

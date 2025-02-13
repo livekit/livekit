@@ -8,6 +8,7 @@ import (
 
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/google/wire"
+	"github.com/inconshreveable/go-vhost"
 	livekit2 "github.com/livekit/livekit-server"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
@@ -63,6 +64,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewDefaultSignalServer,
 		routing.NewSignalClient,
 		NewLocalRoomManager,
+		NewVhostMuxer,
 		newTurnAuthHandler,
 		newInProcessTurnServer,
 		utils.NewDefaultTimedVersionGenerator,
@@ -213,6 +215,6 @@ func getSignalRelayConfig(config *config.Config) config.SignalRelayConfig {
 	return config.SignalRelay
 }
 
-func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
-	return NewTurnServer(conf, authHandler, false)
+func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler, TLSMuxer *vhost.TLSMuxer) (*turn.Server, error) {
+	return NewTurnServer(conf, authHandler, false, TLSMuxer)
 }
