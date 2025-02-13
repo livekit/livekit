@@ -266,6 +266,12 @@ type FakeTelemetryService struct {
 		arg3 *livekit.TrackInfo
 		arg4 bool
 	}
+	WebhookStub        func(context.Context, *livekit.WebhookInfo)
+	webhookMutex       sync.RWMutex
+	webhookArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.WebhookInfo
+	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -1495,6 +1501,39 @@ func (fake *FakeTelemetryService) TrackUnsubscribedArgsForCall(i int) (context.C
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
 }
 
+func (fake *FakeTelemetryService) Webhook(arg1 context.Context, arg2 *livekit.WebhookInfo) {
+	fake.webhookMutex.Lock()
+	fake.webhookArgsForCall = append(fake.webhookArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.WebhookInfo
+	}{arg1, arg2})
+	stub := fake.WebhookStub
+	fake.recordInvocation("Webhook", []interface{}{arg1, arg2})
+	fake.webhookMutex.Unlock()
+	if stub != nil {
+		fake.WebhookStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeTelemetryService) WebhookCallCount() int {
+	fake.webhookMutex.RLock()
+	defer fake.webhookMutex.RUnlock()
+	return len(fake.webhookArgsForCall)
+}
+
+func (fake *FakeTelemetryService) WebhookCalls(stub func(context.Context, *livekit.WebhookInfo)) {
+	fake.webhookMutex.Lock()
+	defer fake.webhookMutex.Unlock()
+	fake.WebhookStub = stub
+}
+
+func (fake *FakeTelemetryService) WebhookArgsForCall(i int) (context.Context, *livekit.WebhookInfo) {
+	fake.webhookMutex.RLock()
+	defer fake.webhookMutex.RUnlock()
+	argsForCall := fake.webhookArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
 func (fake *FakeTelemetryService) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -1570,6 +1609,8 @@ func (fake *FakeTelemetryService) Invocations() map[string][][]interface{} {
 	defer fake.trackUnpublishedMutex.RUnlock()
 	fake.trackUnsubscribedMutex.RLock()
 	defer fake.trackUnsubscribedMutex.RUnlock()
+	fake.webhookMutex.RLock()
+	defer fake.webhookMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value
