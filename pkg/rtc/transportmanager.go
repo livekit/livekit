@@ -134,6 +134,8 @@ type TransportManager struct {
 	signalingRTT, udpRTT uint32
 
 	onICEConfigChanged func(iceConfig *livekit.ICEConfig)
+
+	droppedBySlowReaderCount atomic.Uint32
 }
 
 func NewTransportManager(params TransportManagerParams) (*TransportManager, error) {
@@ -301,7 +303,10 @@ func (t *TransportManager) SendDataPacket(kind livekit.DataPacket_Kind, encoded 
 	if err != nil {
 		if !utils.ErrorIsOneOf(err, io.ErrClosedPipe, sctp.ErrStreamClosed, ErrTransportFailure, ErrDataChannelBufferFull, context.DeadlineExceeded) {
 			if errors.Is(err, datachannel.ErrDataDroppedBySlowReader) {
-				t.params.Logger.Debugw("slow data reader", "error", err)
+				droppedBySlowReaderCount := t.droppedBySlowReaderCount.Inc()
+				if (droppedBySlowReaderCount-1)%100 == 0 {
+					t.params.Logger.Infow("drop data packet by slow reader", "error", err, "kind", kind, "count", droppedBySlowReaderCount)
+				}
 			} else {
 				t.params.Logger.Warnw("send data packet error", err)
 			}
