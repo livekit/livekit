@@ -10,7 +10,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1
 	github.com/elliotchance/orderedmap/v2 v2.7.0
 	github.com/florianl/go-tc v0.4.4
-	github.com/frostbyte73/core v0.1.0
+	github.com/frostbyte73/core v0.1.1
 	github.com/gammazero/deque v1.0.0
 	github.com/gammazero/workerpool v1.1.3
 	github.com/google/uuid v1.6.0
@@ -22,7 +22,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20241220010243-a2bdee945564
-	github.com/livekit/protocol v1.33.1-0.20250207102646-9ce0387a72a4
+	github.com/livekit/protocol v1.33.1-0.20250213045117-9b6e5d703ff8
 	github.com/livekit/psrpc v0.6.1-0.20250205181828-a0beed2e4126
 	github.com/mackerelio/go-osstat v0.2.5
 	github.com/magefile/mage v1.15.0
