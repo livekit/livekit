@@ -330,6 +330,9 @@ func (cs *ConnectionStats) getStat() {
 		analyticsStreams := make([]*livekit.AnalyticsStream, 0, len(streams))
 		for ssrc, stream := range streams {
 			as := toAnalyticsStream(ssrc, stream.RTPStats, stream.RTPStatsRemoteView)
+			if as == nil {
+				continue
+			}
 
 			//
 			// add video layer if either
@@ -348,11 +351,13 @@ func (cs *ConnectionStats) getStat() {
 			analyticsStreams = append(analyticsStreams, as)
 		}
 
-		cs.onStatsUpdate(cs, &livekit.AnalyticsStat{
-			Score:   score,
-			Streams: analyticsStreams,
-			Mime:    cs.codecMimeType.Load().(mime.MimeType).String(),
-		})
+		if len(analyticsStreams) != 0 {
+			cs.onStatsUpdate(cs, &livekit.AnalyticsStat{
+				Score:   score,
+				Streams: analyticsStreams,
+				Mime:    cs.codecMimeType.Load().(mime.MimeType).String(),
+			})
+		}
 	}
 }
 
@@ -440,6 +445,10 @@ func toAnalyticsStream(
 	deltaStats *rtpstats.RTPDeltaInfo,
 	deltaStatsRemoteView *rtpstats.RTPDeltaInfo,
 ) *livekit.AnalyticsStream {
+	if deltaStats == nil {
+		return nil
+	}
+
 	// discount the feed side loss when reporting forwarded track stats,
 	packetsLost := deltaStats.PacketsLost
 	if deltaStatsRemoteView != nil {
@@ -472,6 +481,10 @@ func toAnalyticsStream(
 }
 
 func toAnalyticsVideoLayer(layer int32, layerStats *rtpstats.RTPDeltaInfo) *livekit.AnalyticsVideoLayer {
+	if layerStats == nil {
+		return nil
+	}
+
 	avl := &livekit.AnalyticsVideoLayer{
 		Layer:   layer,
 		Packets: layerStats.Packets + layerStats.PacketsDuplicate + layerStats.PacketsPadding,
