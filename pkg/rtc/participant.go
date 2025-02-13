@@ -1773,9 +1773,6 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 	var track sfu.TrackRemote = sfu.NewTrackRemoteFromSdp(rtcTrack, codec)
 	publishedTrack, isNewTrack := p.mediaTrackReceived(track, rtpReceiver)
 	if publishedTrack == nil {
-		p.pendingTracksLock.Lock()
-		p.pendingRemoteTracks = append(p.pendingRemoteTracks, &pendingRemoteTrack{track: rtcTrack, receiver: rtpReceiver})
-		p.pendingTracksLock.Unlock()
 		p.pubLogger.Debugw(
 			"webrtc Track published but can't find MediaTrack, add to pendingTracks",
 			"kind", track.Kind().String(),
@@ -2397,6 +2394,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 		"mid", mid,
 	)
 	if mid == "" {
+		p.pendingRemoteTracks = append(p.pendingRemoteTracks, &pendingRemoteTrack{track: track.RTCTrack(), receiver: rtpReceiver})
 		p.pendingTracksLock.Unlock()
 		p.pubLogger.Warnw("could not get mid for track", nil, "trackID", track.ID())
 		return nil, false
@@ -2408,6 +2406,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 	if !ok {
 		signalCid, ti, migrated, createdAt := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()), true)
 		if ti == nil {
+			p.pendingRemoteTracks = append(p.pendingRemoteTracks, &pendingRemoteTrack{track: track.RTCTrack(), receiver: rtpReceiver})
 			p.pendingTracksLock.Unlock()
 			return nil, false
 		}
