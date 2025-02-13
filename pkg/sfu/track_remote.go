@@ -10,6 +10,7 @@ type TrackRemote interface {
 	StreamID() string
 	Kind() webrtc.RTPCodecType
 	Codec() webrtc.RTPCodecParameters
+	RTCTrack() *webrtc.TrackRemote
 }
 
 // TrackRemoteFromSdp represents a remote track that could be created by the sdp.
@@ -29,4 +30,8 @@ func NewTrackRemoteFromSdp(track *webrtc.TrackRemote, codec webrtc.RTPCodecParam
 
 func (t *TrackRemoteFromSdp) Codec() webrtc.RTPCodecParameters {
 	return t.sdpCodec
+}
+
+func (t *TrackRemoteFromSdp) RTCTrack() *webrtc.TrackRemote {
+	return t.TrackRemote
 }
