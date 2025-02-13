@@ -89,23 +89,23 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	rtcEgressLauncher := NewEgressLauncher(egressClient, ioInfoService)
 	topicFormatter := rpc.NewTopicFormatter()
-	roomClient, err := rpc.NewTypedRoomClient(clientParams)
+	v, err := rpc.NewTypedRoomClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	participantClient, err := rpc.NewTypedParticipantClient(clientParams)
+	v2, err := rpc.NewTypedParticipantClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, roomClient, participantClient)
+	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, v, v2)
 	if err != nil {
 		return nil, err
 	}
-	agentDispatchInternalClient, err := rpc.NewTypedAgentDispatchInternalClient(clientParams)
+	v3, err := rpc.NewTypedAgentDispatchInternalClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	agentDispatchService := NewAgentDispatchService(agentDispatchInternalClient, topicFormatter, roomAllocator, router)
+	agentDispatchService := NewAgentDispatchService(v3, topicFormatter, roomAllocator, router)
 	egressService := NewEgressService(egressClient, rtcEgressLauncher, objectStore, ioInfoService, roomService)
 	ingressConfig := getIngressConfig(conf)
 	ingressClient, err := rpc.NewIngressClient(clientParams)

@@ -522,6 +522,17 @@ func (t *telemetryService) APICall(ctx context.Context, apiCallInfo *livekit.API
 	})
 }
 
+func (t *telemetryService) Webhook(ctx context.Context, webhookInfo *livekit.WebhookInfo) {
+	t.enqueue(func() {
+		ev := &livekit.AnalyticsEvent{
+			Type:      livekit.AnalyticsEventType_WEBHOOK,
+			Timestamp: timestamppb.Now(),
+			Webhook:   webhookInfo,
+		}
+		t.SendEvent(ctx, ev)
+	})
+}
+
 // returns a livekit.Room with only name and sid filled out
 // returns nil if room is not found
 func (t *telemetryService) getRoomDetails(participantID livekit.ParticipantID) *livekit.Room {
