@@ -660,7 +660,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 			"extReceivedRRSN", extReceivedRRSN,
 			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 		)
-		for int64(r.extHighestSN-extReceivedRRSN) > (1 << 16) {
+		for int64(r.extHighestSN-extReceivedRRSN) >= (1 << 16) {
 			extHighestSNFromRR += (1 << 16)
 			r.extHighestSNFromRRMisalignment += (1 << 16)
 			extReceivedRRSN = extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000)
