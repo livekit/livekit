@@ -247,106 +247,86 @@ func RecordRequest(ctx context.Context, request proto.Message) {
 	// capture request and extract common fields to top level as appropriate
 	switch msg := request.(type) {
 	case *livekit.CreateRoomRequest:
-		if msg != nil {
-			a.Request = &livekit.APICallRequest{
-				Message: &livekit.APICallRequest_CreateRoomRequest{
-					CreateRoomRequest: msg,
-				},
-			}
-			a.RoomName = msg.Name
+		a.Request = &livekit.APICallRequest{
+			Message: &livekit.APICallRequest_CreateRoomRequest{
+				CreateRoomRequest: msg,
+			},
 		}
+		a.RoomName = msg.GetName()
 
 	case *livekit.ListRoomsRequest:
-		if msg != nil {
-			a.Request = &livekit.APICallRequest{
-				Message: &livekit.APICallRequest_ListRoomsRequest{
-					ListRoomsRequest: msg,
-				},
-			}
+		a.Request = &livekit.APICallRequest{
+			Message: &livekit.APICallRequest_ListRoomsRequest{
+				ListRoomsRequest: msg,
+			},
 		}
 
 	case *livekit.DeleteRoomRequest:
-		if msg != nil {
-			a.Request = &livekit.APICallRequest{
-				Message: &livekit.APICallRequest_DeleteRoomRequest{
-					DeleteRoomRequest: msg,
-				},
-			}
-			a.RoomName = msg.Room
+		a.Request = &livekit.APICallRequest{
+			Message: &livekit.APICallRequest_DeleteRoomRequest{
+				DeleteRoomRequest: msg,
+			},
 		}
+		a.RoomName = msg.GetRoom()
 
 	case *livekit.ListParticipantsRequest:
-		if msg != nil {
-			a.Request = &livekit.APICallRequest{
-				Message: &livekit.APICallRequest_ListParticipantsRequest{
-					ListParticipantsRequest: msg,
-				},
-			}
-			a.RoomName = msg.Room
+		a.Request = &livekit.APICallRequest{
+			Message: &livekit.APICallRequest_ListParticipantsRequest{
+				ListParticipantsRequest: msg,
+			},
 		}
+		a.RoomName = msg.GetRoom()
 
 	case *livekit.RoomParticipantIdentity:
-		if msg != nil {
-			a.Request = &livekit.APICallRequest{
-				Message: &livekit.APICallRequest_RoomParticipantIdentity{
-					RoomParticipantIdentity: msg,
-				},
-			}
-			a.RoomName = msg.Room
-			a.ParticipantIdentity = msg.Identity
+		a.Request = &livekit.APICallRequest{
+			Message: &livekit.APICallRequest_RoomParticipantIdentity{
+				RoomParticipantIdentity: msg,
+			},
 		}
+		a.RoomName = msg.GetRoom()
+		a.ParticipantIdentity = msg.GetIdentity()
 
 	case *livekit.MuteRoomTrackRequest:
-		if msg != nil {
-			a.Request = &livekit.APICallRequest{
-				Message: &livekit.APICallRequest_MuteRoomTrackRequest{
-					MuteRoomTrackRequest: msg,
-				},
-			}
-			a.RoomName = msg.Room
-			a.ParticipantIdentity = msg.Identity
-			a.TrackId = msg.TrackSid
+		a.Request = &livekit.APICallRequest{
+			Message: &livekit.APICallRequest_MuteRoomTrackRequest{
+				MuteRoomTrackRequest: msg,
+			},
 		}
+		a.RoomName = msg.GetRoom()
+		a.ParticipantIdentity = msg.GetIdentity()
+		a.TrackId = msg.GetTrackSid()
 
 	case *livekit.UpdateParticipantRequest:
-		if msg != nil {
-			a.Request = &livekit.APICallRequest{
-				Message: &livekit.APICallRequest_UpdateParticipantRequest{
-					UpdateParticipantRequest: msg,
-				},
-			}
-			a.RoomName = msg.Room
-			a.ParticipantIdentity = msg.Identity
+		a.Request = &livekit.APICallRequest{
+			Message: &livekit.APICallRequest_UpdateParticipantRequest{
+				UpdateParticipantRequest: msg,
+			},
 		}
+		a.RoomName = msg.GetRoom()
+		a.ParticipantIdentity = msg.GetIdentity()
 
 	case *livekit.UpdateSubscriptionsRequest:
-		if msg != nil {
-			a.Request = &livekit.APICallRequest{
-				Message: &livekit.APICallRequest_UpdateSubscriptionsRequest{
-					UpdateSubscriptionsRequest: msg,
-				},
-			}
-			a.RoomName = msg.Room
-			a.ParticipantIdentity = msg.Identity
+		a.Request = &livekit.APICallRequest{
+			Message: &livekit.APICallRequest_UpdateSubscriptionsRequest{
+				UpdateSubscriptionsRequest: msg,
+			},
 		}
+		a.RoomName = msg.GetRoom()
+		a.ParticipantIdentity = msg.GetIdentity()
 
 	case *livekit.SendDataRequest:
-		if msg != nil {
-			a.Request = &livekit.APICallRequest{
-				Message: &livekit.APICallRequest_SendDataRequest{
-					SendDataRequest: msg,
-				},
-			}
-			a.RoomName = msg.Room
+		a.Request = &livekit.APICallRequest{
+			Message: &livekit.APICallRequest_SendDataRequest{
+				SendDataRequest: msg,
+			},
 		}
+		a.RoomName = msg.GetRoom()
 
 	case *livekit.UpdateRoomMetadataRequest:
-		if msg != nil {
-			a.Request = &livekit.APICallRequest{
-				Message: &livekit.APICallRequest_UpdateRoomMetadataRequest{
-					UpdateRoomMetadataRequest: msg,
-				},
-			}
+		a.Request = &livekit.APICallRequest{
+			Message: &livekit.APICallRequest_UpdateRoomMetadataRequest{
+				UpdateRoomMetadataRequest: msg,
+			},
 		}
 	}
 }
@@ -364,14 +344,10 @@ func RecordResponse(ctx context.Context, response proto.Message) {
 	// extract common fields to top level as appropriate
 	switch msg := response.(type) {
 	case *livekit.Room:
-		if msg != nil {
-			a.RoomId = msg.Sid
-		}
+		a.RoomId = msg.GetSid()
 
 	case *livekit.ParticipantInfo:
-		if msg != nil {
-			a.ParticipantId = msg.Sid
-		}
+		a.ParticipantId = msg.GetSid()
 	}
 }
 
