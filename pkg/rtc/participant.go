@@ -1215,7 +1215,7 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 
 	case types.MigrateStateComplete:
 		p.TransportManager.ProcessPendingPublisherDataChannels()
-		p.cacheForwarderState()
+		go p.cacheForwarderState()
 	}
 
 	if onMigrateStateChange := p.getOnMigrateStateChange(); onMigrateStateChange != nil {
@@ -2826,6 +2826,12 @@ func (p *ParticipantImpl) cacheForwarderState() {
 			p.lock.Lock()
 			p.forwarderState = fs
 			p.lock.Unlock()
+
+			for _, t := range p.SubscriptionManager.GetSubscribedTracks() {
+				if dt := t.DownTrack(); dt != nil {
+					dt.SeedState(sfu.DownTrackState{ForwarderState: p.getAndDeleteForwarderState(t.ID())})
+				}
+			}
 		}
 	}
 }
