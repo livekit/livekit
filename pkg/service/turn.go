@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"net"
 	"strconv"
 
 	"github.com/pion/turn/v2"
 	"github.com/pkg/errors"
+	"golang.org/x/crypto/acme/autocert"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -26,7 +28,7 @@ const (
 	turnMaxPort     = 30000
 )
 
-func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone bool, TLSMuxer *vhost.TLSMuxer) (*turn.Server, error) {
+func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone bool, TLSMuxer *vhost.TLSMuxer, certManager *autocert.Manager) (*turn.Server, error) {
 	turnConf := conf.TURN
 	if !turnConf.Enabled {
 		return nil, nil
@@ -66,10 +68,14 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 		}
 
 		if !turnConf.ExternalTLS {
-			tlsListener, err := TLSMuxer.Listen(turnConf.Domain)
+			listener, err := TLSMuxer.Listen(turnConf.Domain)
 			if err != nil {
 				return nil, errors.Wrap(err, "could not listen on TURN TCP port")
 			}
+			tlsListener := tls.NewListener(listener,
+				&tls.Config{
+					GetCertificate: certManager.GetCertificate,
+				})
 
 			if standalone {
 				tlsListener = telemetry.NewListener(tlsListener)

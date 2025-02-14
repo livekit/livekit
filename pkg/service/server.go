@@ -49,7 +49,6 @@ type LivekitServer struct {
 	doneChan       chan struct{}
 	closedChan     chan struct{}
 	TLSMuxer       *vhost.TLSMuxer
-	certManager    *autocert.Manager
 }
 
 func NewLivekitServer(conf *config.Config,
@@ -84,7 +83,6 @@ func NewLivekitServer(conf *config.Config,
 		nodeProvider:   nodeProvider,
 		closedChan:     make(chan struct{}),
 		TLSMuxer:       TLSMuxer,
-		certManager:    certManager,
 	}
 
 	middlewares := []negroni.Handler{

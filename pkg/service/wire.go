@@ -26,6 +26,7 @@ import (
 	"github.com/pion/turn/v2"
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/crypto/acme/autocert"
 )
 
 func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
@@ -216,6 +217,6 @@ func getSignalRelayConfig(config *config.Config) config.SignalRelayConfig {
 	return config.SignalRelay
 }
 
-func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler, TLSMuxer *vhost.TLSMuxer) (*turn.Server, error) {
-	return NewTurnServer(conf, authHandler, false, TLSMuxer)
+func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler, TLSMuxer *vhost.TLSMuxer, certManager *autocert.Manager) (*turn.Server, error) {
+	return NewTurnServer(conf, authHandler, false, TLSMuxer, certManager)
 }

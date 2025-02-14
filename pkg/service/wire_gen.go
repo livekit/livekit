@@ -27,6 +27,7 @@ import (
 	"github.com/pion/turn/v2"
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/crypto/acme/autocert"
 )
 
 import (
@@ -109,15 +110,15 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	authHandler := newTurnAuthHandler(objectStore)
+	tlsMuxer, err := NewVhostMuxer(conf)
+	if err != nil {
+		return nil, err
+	}
 	manager, err := NewCertManager(conf)
 	if err != nil {
 		return nil, err
 	}
-	tlsMuxer, err := NewVhostMuxer(conf, manager)
-	if err != nil {
-		return nil, err
-	}
-	server, err := newInProcessTurnServer(conf, authHandler, tlsMuxer)
+	server, err := newInProcessTurnServer(conf, authHandler, tlsMuxer, manager)
 	if err != nil {
 		return nil, err
 	}
@@ -269,6 +270,6 @@ func getSignalRelayConfig(config2 *config.Config) config.SignalRelayConfig {
 	return config2.SignalRelay
 }
 
-func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler, TLSMuxer *vhost.TLSMuxer) (*turn.Server, error) {
-	return NewTurnServer(conf, authHandler, false, TLSMuxer)
+func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler, TLSMuxer *vhost.TLSMuxer, certManager *autocert.Manager) (*turn.Server, error) {
+	return NewTurnServer(conf, authHandler, false, TLSMuxer, certManager)
 }
