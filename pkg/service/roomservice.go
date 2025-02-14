@@ -315,14 +315,16 @@ func redactCreateRoomRequest(req *livekit.CreateRoomRequest) *livekit.CreateRoom
 
 	clone := utils.CloneProto(req)
 
-	if clone.Egress.Room != nil {
-		egress.RedactEncodedOutputs(clone.Egress.Room)
-	}
-	if clone.Egress.Participant != nil {
-		egress.RedactAutoEncodedOutput(clone.Egress.Participant)
-	}
-	if clone.Egress.Tracks != nil {
-		egress.RedactUpload(clone.Egress.Tracks)
+	if clone.Egress != nil {
+		if clone.Egress.Room != nil {
+			egress.RedactEncodedOutputs(clone.Egress.Room)
+		}
+		if clone.Egress.Participant != nil {
+			egress.RedactAutoEncodedOutput(clone.Egress.Participant)
+		}
+		if clone.Egress.Tracks != nil {
+			egress.RedactUpload(clone.Egress.Tracks)
+		}
 	}
 
 	// replace with size of metadata to provide visibility on request size
