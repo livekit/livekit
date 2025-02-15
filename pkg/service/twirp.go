@@ -252,7 +252,7 @@ func RecordRequest(ctx context.Context, request proto.Message) {
 				CreateRoomRequest: msg,
 			},
 		}
-		a.RoomName = msg.Name
+		a.RoomName = msg.GetName()
 
 	case *livekit.ListRoomsRequest:
 		a.Request = &livekit.APICallRequest{
@@ -267,7 +267,7 @@ func RecordRequest(ctx context.Context, request proto.Message) {
 				DeleteRoomRequest: msg,
 			},
 		}
-		a.RoomName = msg.Room
+		a.RoomName = msg.GetRoom()
 
 	case *livekit.ListParticipantsRequest:
 		a.Request = &livekit.APICallRequest{
@@ -275,7 +275,7 @@ func RecordRequest(ctx context.Context, request proto.Message) {
 				ListParticipantsRequest: msg,
 			},
 		}
-		a.RoomName = msg.Room
+		a.RoomName = msg.GetRoom()
 
 	case *livekit.RoomParticipantIdentity:
 		a.Request = &livekit.APICallRequest{
@@ -283,8 +283,8 @@ func RecordRequest(ctx context.Context, request proto.Message) {
 				RoomParticipantIdentity: msg,
 			},
 		}
-		a.RoomName = msg.Room
-		a.ParticipantIdentity = msg.Identity
+		a.RoomName = msg.GetRoom()
+		a.ParticipantIdentity = msg.GetIdentity()
 
 	case *livekit.MuteRoomTrackRequest:
 		a.Request = &livekit.APICallRequest{
@@ -292,9 +292,9 @@ func RecordRequest(ctx context.Context, request proto.Message) {
 				MuteRoomTrackRequest: msg,
 			},
 		}
-		a.RoomName = msg.Room
-		a.ParticipantIdentity = msg.Identity
-		a.TrackId = msg.TrackSid
+		a.RoomName = msg.GetRoom()
+		a.ParticipantIdentity = msg.GetIdentity()
+		a.TrackId = msg.GetTrackSid()
 
 	case *livekit.UpdateParticipantRequest:
 		a.Request = &livekit.APICallRequest{
@@ -302,8 +302,8 @@ func RecordRequest(ctx context.Context, request proto.Message) {
 				UpdateParticipantRequest: msg,
 			},
 		}
-		a.RoomName = msg.Room
-		a.ParticipantIdentity = msg.Identity
+		a.RoomName = msg.GetRoom()
+		a.ParticipantIdentity = msg.GetIdentity()
 
 	case *livekit.UpdateSubscriptionsRequest:
 		a.Request = &livekit.APICallRequest{
@@ -311,8 +311,8 @@ func RecordRequest(ctx context.Context, request proto.Message) {
 				UpdateSubscriptionsRequest: msg,
 			},
 		}
-		a.RoomName = msg.Room
-		a.ParticipantIdentity = msg.Identity
+		a.RoomName = msg.GetRoom()
+		a.ParticipantIdentity = msg.GetIdentity()
 
 	case *livekit.SendDataRequest:
 		a.Request = &livekit.APICallRequest{
@@ -320,7 +320,7 @@ func RecordRequest(ctx context.Context, request proto.Message) {
 				SendDataRequest: msg,
 			},
 		}
-		a.RoomName = msg.Room
+		a.RoomName = msg.GetRoom()
 
 	case *livekit.UpdateRoomMetadataRequest:
 		a.Request = &livekit.APICallRequest{
@@ -344,10 +344,10 @@ func RecordResponse(ctx context.Context, response proto.Message) {
 	// extract common fields to top level as appropriate
 	switch msg := response.(type) {
 	case *livekit.Room:
-		a.RoomId = msg.Sid
+		a.RoomId = msg.GetSid()
 
 	case *livekit.ParticipantInfo:
-		a.ParticipantId = msg.Sid
+		a.ParticipantId = msg.GetSid()
 	}
 }
 
