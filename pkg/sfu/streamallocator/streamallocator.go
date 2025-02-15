@@ -839,7 +839,7 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 		if s.activeProbeClusterId != ccutils.ProbeClusterIdInvalid {
 			if !s.activeProbeCongesting {
 				s.activeProbeCongesting = true
-				s.params.Logger.Infow(
+				s.params.Logger.Debugw(
 					"stream allocator: channel congestion detected, not updating channel capacity in active probe",
 					"old(bps)", s.committedChannelCapacity,
 					"new(bps)", cscd.estimatedAvailableChannelCapacity,
@@ -847,7 +847,7 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 				)
 			}
 		} else {
-			s.params.Logger.Infow(
+			s.params.Logger.Debugw(
 				"stream allocator: channel congestion detected, updating channel capacity",
 				"old(bps)", s.committedChannelCapacity,
 				"new(bps)", cscd.estimatedAvailableChannelCapacity,
@@ -1063,7 +1063,7 @@ func (s *StreamAllocator) maybeStopProbe() {
 func (s *StreamAllocator) maybeBoostDeficientTracks() {
 	availableChannelCapacity := s.getAvailableHeadroom(false)
 	if availableChannelCapacity <= 0 {
-		s.params.Logger.Infow(
+		s.params.Logger.Debugw(
 			"stream allocator: no available headroom to boost deficient tracks",
 			"committedChannelCapacity", s.committedChannelCapacity,
 			"availableChannelCapacity", availableChannelCapacity,
