@@ -377,7 +377,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 
 	var mdCacheSize, mdCacheSizeRTX int
 	if d.kind == webrtc.RTPCodecTypeVideo {
-		mdCacheSize, mdCacheSizeRTX = 32768, 4096
+		mdCacheSize, mdCacheSizeRTX = 8192, 8192
 	} else {
 		mdCacheSize, mdCacheSizeRTX = 8192, 1024
 	}
