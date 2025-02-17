@@ -626,6 +626,7 @@ func (r *Room) IsClosed() bool {
 
 // CloseIfEmpty closes the room if all participants had left, or it's still empty past timeout
 func (r *Room) CloseIfEmpty() {
+	participants := r.GetLocalParticipants()
 	r.lock.Lock()
 
 	if r.IsClosed() || r.holds.Load() > 0 {
@@ -633,7 +634,7 @@ func (r *Room) CloseIfEmpty() {
 		return
 	}
 
-	for _, p := range r.participants {
+	for _, p := range participants {
 		if !p.IsRecorder() {
 			r.lock.Unlock()
 			return
