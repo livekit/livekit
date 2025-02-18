@@ -15,15 +15,22 @@ func TestBitrateCalculator(t *testing.T) {
 	c.AddBytes(100, 0, t0)
 	// bytes buffered
 	c.AddBytes(100, 100, t0.Add(50*time.Millisecond))
+	bitrate, ok := c.Bitrate(t0.Add(50 * time.Millisecond))
+	require.Equal(t, 0, bitrate)
+	require.False(t, ok)
 	// 50 bytes sent (50 bytes buffer flushed)
 	c.AddBytes(100, 50, t0.Add(time.Second))
 
 	// 250 bytes sent in 1 second
-	require.Equal(t, 2000, c.Bitrate(t0.Add(time.Second)))
+	bitrate, ok = c.Bitrate(t0.Add(time.Second))
+	require.Equal(t, 2000, bitrate)
+	require.True(t, ok)
 
 	// silence for long time
 	t1 := t0.Add(2 * BitrateDuration)
 	// 150 bytes sent (50 bytes buffer flushed)
 	c.AddBytes(100, 0, t1)
-	require.Equal(t, 1200, c.Bitrate(t1.Add(time.Second)))
+	bitrate, ok = c.Bitrate(t1.Add(time.Second))
+	require.Equal(t, 1200, bitrate)
+	require.True(t, ok)
 }
