@@ -20,7 +20,7 @@ func NewDataChannelReader(bitrate int) *DataChannelReader {
 
 func (d *DataChannelReader) Read(p []byte, sid string) {
 	for {
-		if bitrate := d.bitrate.Bitrate(time.Now()); bitrate > 0 && bitrate > d.target {
+		if bitrate, ok := d.bitrate.Bitrate(time.Now()); ok && bitrate > 0 && bitrate > d.target {
 			time.Sleep(10 * time.Millisecond)
 			d.bitrate.AddBytes(0, 0, time.Now())
 			continue
@@ -31,5 +31,6 @@ func (d *DataChannelReader) Read(p []byte, sid string) {
 }
 
 func (d *DataChannelReader) Bitrate() int {
-	return d.bitrate.Bitrate(time.Now())
+	b, _ := d.bitrate.Bitrate(time.Now())
+	return b
 }
