@@ -269,7 +269,6 @@ func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 		return c.SendIceCandidate(ic, livekit.SignalTarget_SUBSCRIBER)
 	})
 	subscriberHandler.OnTrackCalls(func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
-		fmt.Println("ontrack", track.Codec(), track.PayloadType())
 		go c.processTrack(track)
 	})
 	subscriberHandler.OnDataPacketCalls(c.handleDataMessage)

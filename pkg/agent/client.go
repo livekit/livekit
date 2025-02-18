@@ -21,23 +21,31 @@ import (
 	"time"
 
 	"github.com/gammazero/workerpool"
+	"google.golang.org/protobuf/types/known/emptypb"
+
 	serverutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 const (
 	EnabledCacheTTL         = 1 * time.Minute
 	RoomAgentTopic          = "room"
 	PublisherAgentTopic     = "publisher"
+	ParticipantAgentTopic   = "participant"
 	DefaultHandlerNamespace = ""
 
 	CheckEnabledTimeout = 5 * time.Second
 )
+
+var jobTypeTopics = map[livekit.JobType]string{
+	livekit.JobType_JT_ROOM:        RoomAgentTopic,
+	livekit.JobType_JT_PUBLISHER:   PublisherAgentTopic,
+	livekit.JobType_JT_PARTICIPANT: ParticipantAgentTopic,
+}
 
 type Client interface {
 	// LaunchJob starts a room or participant job on an agent.
@@ -64,10 +72,12 @@ type agentClient struct {
 
 	// cache response to avoid constantly checking with controllers
 	// cache is invalidated with AgentRegistered updates
-	roomNamespaces      *serverutils.IncrementalDispatcher[string] // deprecated
-	publisherNamespaces *serverutils.IncrementalDispatcher[string] // deprecated
-	roomAgentNames      *serverutils.IncrementalDispatcher[string]
-	publisherAgentNames *serverutils.IncrementalDispatcher[string]
+	roomNamespaces        *serverutils.IncrementalDispatcher[string] // deprecated
+	publisherNamespaces   *serverutils.IncrementalDispatcher[string] // deprecated
+	participantNamespaces *serverutils.IncrementalDispatcher[string] // deprecated
+	roomAgentNames        *serverutils.IncrementalDispatcher[string]
+	publisherAgentNames   *serverutils.IncrementalDispatcher[string]
+	participantAgentNames *serverutils.IncrementalDispatcher[string]
 
 	enabledExpiresAt time.Time
 
@@ -102,8 +112,10 @@ func NewAgentClient(bus psrpc.MessageBus) (Client, error) {
 			c.mu.Lock()
 			c.roomNamespaces = nil
 			c.publisherNamespaces = nil
+			c.participantNamespaces = nil
 			c.roomAgentNames = nil
 			c.publisherAgentNames = nil
+			c.participantAgentNames = nil
 			c.mu.Unlock()
 		}
 
@@ -114,11 +126,6 @@ func NewAgentClient(bus psrpc.MessageBus) (Client, error) {
 }
 
 func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverutils.IncrementalDispatcher[*livekit.Job] {
-	jobTypeTopic := RoomAgentTopic
-	if desc.JobType == livekit.JobType_JT_PUBLISHER {
-		jobTypeTopic = PublisherAgentTopic
-	}
-
 	var wg sync.WaitGroup
 	ret := serverutils.NewIncrementalDispatcher[*livekit.Job]()
 	defer func() {
@@ -127,6 +134,11 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverut
 			ret.Done()
 		})
 	}()
+
+	jobTypeTopic, ok := jobTypeTopics[desc.JobType]
+	if !ok {
+		return ret
+	}
 
 	dispatcher := c.getDispatcher(desc.AgentName, desc.JobType)
 
@@ -186,21 +198,30 @@ func (c *agentClient) getDispatcher(agName string, jobType livekit.JobType) *ser
 	c.mu.Lock()
 
 	if time.Since(c.enabledExpiresAt) > EnabledCacheTTL || c.roomNamespaces == nil ||
-		c.publisherNamespaces == nil || c.roomAgentNames == nil || c.publisherAgentNames == nil {
+		c.publisherNamespaces == nil || c.participantNamespaces == nil || c.roomAgentNames == nil || c.publisherAgentNames == nil || c.participantAgentNames == nil {
 		c.enabledExpiresAt = time.Now()
 		c.roomNamespaces = serverutils.NewIncrementalDispatcher[string]()
 		c.publisherNamespaces = serverutils.NewIncrementalDispatcher[string]()
+		c.participantNamespaces = serverutils.NewIncrementalDispatcher[string]()
 		c.roomAgentNames = serverutils.NewIncrementalDispatcher[string]()
 		c.publisherAgentNames = serverutils.NewIncrementalDispatcher[string]()
+		c.participantAgentNames = serverutils.NewIncrementalDispatcher[string]()
 
-		go c.checkEnabled(c.roomNamespaces, c.publisherNamespaces, c.roomAgentNames, c.publisherAgentNames)
+		go c.checkEnabled(c.roomNamespaces, c.publisherNamespaces, c.participantNamespaces, c.roomAgentNames, c.publisherAgentNames, c.participantAgentNames)
 	}
 
-	target := c.roomNamespaces
-	agentNames := c.roomAgentNames
-	if jobType == livekit.JobType_JT_PUBLISHER {
+	var target *serverutils.IncrementalDispatcher[string]
+	var agentNames *serverutils.IncrementalDispatcher[string]
+	switch jobType {
+	case livekit.JobType_JT_ROOM:
+		target = c.roomNamespaces
+		agentNames = c.roomAgentNames
+	case livekit.JobType_JT_PUBLISHER:
 		target = c.publisherNamespaces
 		agentNames = c.publisherAgentNames
+	case livekit.JobType_JT_PARTICIPANT:
+		target = c.participantNamespaces
+		agentNames = c.participantAgentNames
 	}
 	c.mu.Unlock()
 
@@ -229,11 +250,13 @@ func (c *agentClient) getDispatcher(agName string, jobType livekit.JobType) *ser
 	return <-done
 }
 
-func (c *agentClient) checkEnabled(roomNamespaces, publisherNamespaces, roomAgentNames, publisherAgentNames *serverutils.IncrementalDispatcher[string]) {
+func (c *agentClient) checkEnabled(roomNamespaces, publisherNamespaces, participantNamespaces, roomAgentNames, publisherAgentNames, participantAgentNames *serverutils.IncrementalDispatcher[string]) {
 	defer roomNamespaces.Done()
 	defer publisherNamespaces.Done()
+	defer participantNamespaces.Done()
 	defer roomAgentNames.Done()
 	defer publisherAgentNames.Done()
+	defer participantAgentNames.Done()
 
 	resChan, err := c.client.CheckEnabled(context.Background(), &rpc.CheckEnabledRequest{}, psrpc.WithRequestTimeout(CheckEnabledTimeout))
 	if err != nil {
@@ -243,8 +266,10 @@ func (c *agentClient) checkEnabled(roomNamespaces, publisherNamespaces, roomAgen
 
 	roomNSMap := make(map[string]bool)
 	publisherNSMap := make(map[string]bool)
+	participantNSMap := make(map[string]bool)
 	roomAgMap := make(map[string]bool)
 	publisherAgMap := make(map[string]bool)
+	participantAgMap := make(map[string]bool)
 
 	for r := range resChan {
 		if r.Result.GetRoomEnabled() {
@@ -272,6 +297,20 @@ func (c *agentClient) checkEnabled(roomNamespaces, publisherNamespaces, roomAgen
 				if _, ok := publisherAgMap[ag]; !ok {
 					publisherAgentNames.Add(ag)
 					publisherAgMap[ag] = true
+				}
+			}
+		}
+		if r.Result.GetParticipantEnabled() {
+			for _, ns := range r.Result.GetNamespaces() {
+				if _, ok := participantNSMap[ns]; !ok {
+					participantNamespaces.Add(ns)
+					participantNSMap[ns] = true
+				}
+			}
+			for _, ag := range r.Result.GetAgentNames() {
+				if _, ok := participantAgMap[ag]; !ok {
+					participantAgentNames.Add(ag)
+					participantAgMap[ag] = true
 				}
 			}
 		}

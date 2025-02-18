@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/rand"
 	"net/http"
 	"slices"
@@ -136,14 +137,16 @@ type AgentHandler struct {
 	jobToWorker map[livekit.JobID]*agent.Worker
 	keyProvider auth.KeyProvider
 
-	namespaceWorkers  map[workerKey][]*agent.Worker
-	roomKeyCount      int
-	publisherKeyCount int
-	namespaces        []string // namespaces deprecated
-	agentNames        []string
+	namespaceWorkers    map[workerKey][]*agent.Worker
+	roomKeyCount        int
+	publisherKeyCount   int
+	participantKeyCount int
+	namespaces          []string // namespaces deprecated
+	agentNames          []string
 
-	roomTopic      string
-	publisherTopic string
+	roomTopic        string
+	publisherTopic   string
+	participantTopic string
 }
 
 type workerKey struct {
@@ -179,6 +182,7 @@ func NewAgentService(conf *config.Config,
 		serverInfo,
 		agent.RoomAgentTopic,
 		agent.PublisherAgentTopic,
+		agent.ParticipantAgentTopic,
 	)
 	return s, nil
 }
@@ -197,6 +201,7 @@ func NewAgentHandler(
 	serverInfo *livekit.ServerInfo,
 	roomTopic string,
 	publisherTopic string,
+	participantTopic string,
 ) *AgentHandler {
 	return &AgentHandler{
 		agentServer:      agentServer,
@@ -208,6 +213,7 @@ func NewAgentHandler(
 		keyProvider:      keyProvider,
 		roomTopic:        roomTopic,
 		publisherTopic:   publisherTopic,
+		participantTopic: participantTopic,
 	}
 }
 
@@ -244,10 +250,18 @@ func (h *AgentHandler) registerWorker(w *agent.Worker) {
 
 	if created {
 		nameTopic := agent.GetAgentTopic(w.AgentName, w.Namespace)
-		typeTopic := h.roomTopic
-		if w.JobType == livekit.JobType_JT_PUBLISHER {
+		var typeTopic string
+		switch w.JobType {
+		case livekit.JobType_JT_ROOM:
+			typeTopic = h.roomTopic
+		case livekit.JobType_JT_PUBLISHER:
 			typeTopic = h.publisherTopic
+		case livekit.JobType_JT_PARTICIPANT:
+			typeTopic = h.participantTopic
 		}
+
+		fmt.Println(">>> register worker", typeTopic)
+
 		err := h.agentServer.RegisterJobRequestTopic(nameTopic, typeTopic)
 		if err != nil {
 			h.mu.Unlock()
@@ -257,10 +271,13 @@ func (h *AgentHandler) registerWorker(w *agent.Worker) {
 			return
 		}
 
-		if w.JobType == livekit.JobType_JT_ROOM {
+		switch w.JobType {
+		case livekit.JobType_JT_ROOM:
 			h.roomKeyCount++
-		} else {
+		case livekit.JobType_JT_PUBLISHER:
 			h.publisherKeyCount++
+		case livekit.JobType_JT_PARTICIPANT:
+			h.participantKeyCount++
 		}
 
 		h.namespaces = append(h.namespaces, w.Namespace)
@@ -316,12 +333,17 @@ func (h *AgentHandler) deregisterWorker(w *agent.Worker) {
 		delete(h.namespaceWorkers, key)
 
 		topic := agent.GetAgentTopic(w.AgentName, w.Namespace)
-		if w.JobType == livekit.JobType_JT_ROOM {
+
+		switch w.JobType {
+		case livekit.JobType_JT_ROOM:
 			h.roomKeyCount--
 			h.agentServer.DeregisterJobRequestTopic(topic, h.roomTopic)
-		} else {
+		case livekit.JobType_JT_PUBLISHER:
 			h.publisherKeyCount--
 			h.agentServer.DeregisterJobRequestTopic(topic, h.publisherTopic)
+		case livekit.JobType_JT_PARTICIPANT:
+			h.participantKeyCount--
+			h.agentServer.DeregisterJobRequestTopic(topic, h.participantTopic)
 		}
 
 		// agentNames and namespaces contains repeated entries for each agentNames/namespaces combinations
@@ -352,6 +374,7 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 		"jobID", job.Id,
 		"namespace", job.Namespace,
 		"agentName", job.AgentName,
+		"jobType", job.Type.String(),
 	)
 	if job.Room != nil {
 		logger = logger.WithValues("room", job.Room.Name, "roomID", job.Room.Sid)
@@ -441,10 +464,11 @@ func (h *AgentHandler) CheckEnabled(ctx context.Context, req *rpc.CheckEnabledRe
 	// This doesn't return the full agentName -> namespace mapping, which can cause some unnecessary RPC.
 	// namespaces are however deprecated.
 	return &rpc.CheckEnabledResponse{
-		Namespaces:       slices.Compact(slices.Clone(h.namespaces)),
-		AgentNames:       slices.Compact(slices.Clone(h.agentNames)),
-		RoomEnabled:      h.roomKeyCount != 0,
-		PublisherEnabled: h.publisherKeyCount != 0,
+		Namespaces:         slices.Compact(slices.Clone(h.namespaces)),
+		AgentNames:         slices.Compact(slices.Clone(h.agentNames)),
+		RoomEnabled:        h.roomKeyCount != 0,
+		PublisherEnabled:   h.publisherKeyCount != 0,
+		ParticipantEnabled: h.participantKeyCount != 0,
 	}, nil
 }
 
