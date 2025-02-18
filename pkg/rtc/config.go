@@ -69,6 +69,16 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 	// we don't want to use active TCP on a server, clients should be dialing
 	webRTCConfig.SettingEngine.DisableActiveTCP(true)
 
+	if rtcConf.ICESrflxAcceptanceWait != nil {
+		webRTCConfig.SettingEngine.SetSrflxAcceptanceMinWait(*rtcConf.ICESrflxAcceptanceWait)
+	}
+	if rtcConf.ICEPrflxAcceptanceWait != nil {
+		webRTCConfig.SettingEngine.SetPrflxAcceptanceMinWait(*rtcConf.ICEPrflxAcceptanceWait)
+	}
+	if rtcConf.ICERelayAcceptanceWait != nil {
+		webRTCConfig.SettingEngine.SetRelayAcceptanceMinWait(*rtcConf.ICERelayAcceptanceWait)
+	}
+
 	if rtcConf.PacketBufferSize == 0 {
 		rtcConf.PacketBufferSize = 500
 	}
