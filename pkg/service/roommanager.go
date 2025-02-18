@@ -60,7 +60,6 @@ type RoomManager struct {
 	clientConfManager clientconfiguration.ClientConfigurationManager
 	egressLauncher    rtc.EgressLauncher
 	versionGenerator  utils.TimedVersionGenerator
-	// trafficManager    *TrafficManager
 
 	rooms               map[livekit.RoomKey]*rtc.Room
 	outRelayCollections map[livekit.RoomKey]*relay.Collection
@@ -77,7 +76,6 @@ func NewLocalRoomManager(
 	clientConfManager clientconfiguration.ClientConfigurationManager,
 	egressLauncher rtc.EgressLauncher,
 	versionGenerator utils.TimedVersionGenerator,
-	// trafficManager *TrafficManager,
 ) (*RoomManager, error) {
 	rtcConf, err := rtc.NewWebRTCConfig(conf, currentNode.Ip)
 	if err != nil {
@@ -94,7 +92,6 @@ func NewLocalRoomManager(
 		clientConfManager: clientConfManager,
 		egressLauncher:    egressLauncher,
 		versionGenerator:  versionGenerator,
-		// trafficManager:    trafficManager,
 
 		rooms:               make(map[livekit.RoomKey]*rtc.Room),
 		outRelayCollections: make(map[livekit.RoomKey]*relay.Collection),
@@ -182,60 +179,6 @@ func (r *RoomManager) CloseIdleRooms() {
 	for _, room := range rooms {
 		room.CloseIfEmpty()
 	}
-}
-
-func (r *RoomManager) SaveClientsBandwidth() {
-	r.lock.RLock()
-	rooms := make([]*rtc.Room, 0, len(r.rooms))
-	for _, rm := range r.rooms {
-		rooms = append(rooms, rm)
-	}
-	r.lock.RUnlock()
-
-	bandwidthByApiKey := make(map[livekit.ApiKey]int64)
-	for _, room := range rooms {
-		localParticipants := room.GetLocalParticipants()
-		for _, p := range localParticipants {
-			participantBandwidth := int64(0)
-			for _, t := range p.GetSubscribedTracks() {
-				switch t.MediaTrack().Kind() {
-				case livekit.TrackType_AUDIO:
-					if !t.IsPublisherMuted() {
-						if !t.IsMuted() {
-							participantBandwidth += AudioBandwidth
-						}
-					}
-				case livekit.TrackType_VIDEO:
-					if !t.IsPublisherMuted() {
-						if t.MediaTrack().IsSimulcast() {
-							switch t.DownTrack().CurrentLayers().Spatial {
-							case 2:
-								participantBandwidth += VideoBanwithHigh
-							case 1:
-								participantBandwidth += VideoBanwithMedium
-							case 0:
-								participantBandwidth += VideoBanwithLow
-							}
-						} else {
-							if !t.IsMuted() {
-								participantBandwidth += VideoBanwithHigh
-							}
-						}
-					}
-				}
-			}
-			oldBandwidth, _ := bandwidthByApiKey[p.GetApiKey()]
-			bandwidthByApiKey[p.GetApiKey()] = oldBandwidth + participantBandwidth
-		}
-	}
-
-	// ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	// defer cancel()
-
-	// err := r.trafficManager.SetValue(ctx, bandwidthByApiKey)
-	// if err != nil {
-	// 	logger.Errorw("could not set bandwidth", err)
-	// }
 }
 
 func (r *RoomManager) HasParticipants() bool {
@@ -407,11 +350,6 @@ func (r *RoomManager) StartSession(
 		VersionGenerator:             r.versionGenerator,
 		TrackResolver:                room.ResolveMediaTrackForSubscriber,
 		BandwidthChecker: func(apiKey livekit.ApiKey, limit int64) bool {
-			// bandwidthLimit := limit * TrafficLimitPerClient
-			// currentBandwidth := r.trafficManager.GetValue(apiKey)
-			// return currentBandwidth < bandwidthLimit
-			// tmp disabled
-			// _ = currentBandwidth < bandwidthLimit
 			return true
 		},
 		RelayCollection: outRelayCollection,

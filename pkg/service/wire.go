@@ -73,7 +73,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createSmartContractClient,
 		createClientProvider,
 		createGeoIP,
-		// createTrafficManager,
 		CreateNodeProvider,
 		createRelevantNodesHandler,
 		createMainDebugHandler,
@@ -127,10 +126,6 @@ func GetDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 		DatabaseName:            conf.Ethereum.P2pMainDatabaseName,
 	}
 }
-
-// func createTrafficManager(mainDatabase *p2p_database.DB, configuration *config.Config) *TrafficManager {
-// 	return NewTrafficManager(mainDatabase, configuration.LoggingP2P)
-// }
 
 func CreateMainDatabaseP2P(conf p2p_database.Config, c *config.Config) (*p2p_database.DB, error) {
 	db, err := p2p_database.Connect(context.Background(), conf, c.LoggingP2P)
