@@ -34,6 +34,8 @@ type agentClient struct {
 	registered              atomic.Int32
 	roomAvailability        atomic.Int32
 	roomJobs                atomic.Int32
+	publisherAvailability   atomic.Int32
+	publisherJobs           atomic.Int32
 	participantAvailability atomic.Int32
 	participantJobs         atomic.Int32
 
@@ -89,6 +91,17 @@ func (c *agentClient) Run(jobType livekit.JobType, namespace string) (err error)
 				},
 			},
 		})
+
+	case livekit.JobType_JT_PARTICIPANT:
+		err = c.write(&livekit.WorkerMessage{
+			Message: &livekit.WorkerMessage_Register{
+				Register: &livekit.RegisterWorkerRequest{
+					Type:      livekit.JobType_JT_PARTICIPANT,
+					Version:   "version",
+					Namespace: &namespace,
+				},
+			},
+		})
 	}
 
 	return err
@@ -123,17 +136,23 @@ func (c *agentClient) read() {
 }
 
 func (c *agentClient) handleAssignment(req *livekit.JobAssignment) {
-	if req.Job.Type == livekit.JobType_JT_ROOM {
+	switch req.Job.Type {
+	case livekit.JobType_JT_ROOM:
 		c.roomJobs.Inc()
-	} else {
+	case livekit.JobType_JT_PUBLISHER:
+		c.publisherJobs.Inc()
+	case livekit.JobType_JT_PARTICIPANT:
 		c.participantJobs.Inc()
 	}
 }
 
 func (c *agentClient) handleAvailability(req *livekit.AvailabilityRequest) {
-	if req.Job.Type == livekit.JobType_JT_ROOM {
+	switch req.Job.Type {
+	case livekit.JobType_JT_ROOM:
 		c.roomAvailability.Inc()
-	} else {
+	case livekit.JobType_JT_PUBLISHER:
+		c.publisherAvailability.Inc()
+	case livekit.JobType_JT_PARTICIPANT:
 		c.participantAvailability.Inc()
 	}
 

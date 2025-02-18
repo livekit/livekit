@@ -321,6 +321,8 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobS
 	job = utils.CloneProto(job)
 	jobID := livekit.JobID(job.Id)
 
+	w.logger.Infow("assign job?", "job", logger.Proto(job))
+
 	w.mu.Lock()
 	if _, ok := w.availability[jobID]; ok {
 		w.mu.Unlock()

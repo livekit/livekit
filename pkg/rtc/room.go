@@ -520,6 +520,8 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 		}
 	})
 
+	r.launchTargetAgents(maps.Values(r.agentDispatches), participant, livekit.JobType_JT_PARTICIPANT)
+
 	r.Logger.Debugw("new participant joined",
 		"pID", participant.ID(),
 		"participant", participant.Identity(),
@@ -985,7 +987,10 @@ func (r *Room) AddAgentDispatch(dispatch *livekit.AgentDispatch) (*livekit.Agent
 	r.lock.RLock()
 	// launchPublisherAgents starts a goroutine to send requests, so is safe to call locked
 	for _, p := range r.participants {
-		r.launchPublisherAgents([]*agentDispatch{ad}, p)
+		if p.IsPublisher() {
+			r.launchTargetAgents([]*agentDispatch{ad}, p, livekit.JobType_JT_PUBLISHER)
+		}
+		r.launchTargetAgents([]*agentDispatch{ad}, p, livekit.JobType_JT_PARTICIPANT)
 	}
 	r.lock.RUnlock()
 
@@ -1209,7 +1214,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 
 	if !hasPublished {
 		r.lock.RLock()
-		r.launchPublisherAgents(maps.Values(r.agentDispatches), participant)
+		r.launchTargetAgents(maps.Values(r.agentDispatches), participant, livekit.JobType_JT_PUBLISHER)
 		r.lock.RUnlock()
 		if r.internal != nil && r.internal.ParticipantEgress != nil {
 			go func() {
@@ -1645,7 +1650,7 @@ func (r *Room) launchRoomAgents(ads []*agentDispatch) {
 	}
 }
 
-func (r *Room) launchPublisherAgents(ads []*agentDispatch, p types.Participant) {
+func (r *Room) launchTargetAgents(ads []*agentDispatch, p types.Participant, jobType livekit.JobType) {
 	if p == nil || p.IsDependent() || r.agentClient == nil {
 		return
 	}
@@ -1655,7 +1660,7 @@ func (r *Room) launchPublisherAgents(ads []*agentDispatch, p types.Participant) 
 
 		go func() {
 			inc := r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
-				JobType:     livekit.JobType_JT_PUBLISHER,
+				JobType:     jobType,
 				Room:        r.ToProto(),
 				Participant: p.ToProto(),
 				Metadata:    ad.Metadata,
