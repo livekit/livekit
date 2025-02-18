@@ -2,164 +2,169 @@ package service
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/binary"
 	"fmt"
-	"math/big"
-	"sync"
-	"time"
-
-	p2p_database "github.com/dTelecom/p2p-realtime-database"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ipfs/go-log/v2"
-	"github.com/pkg/errors"
+	"github.com/gagliardetto/solana-go"
+	"github.com/gagliardetto/solana-go/rpc"
+	"github.com/gagliardetto/solana-go/rpc/ws"
+	"github.com/livekit/livekit-server/pkg/config"
 )
 
 const (
-	defaultClientTtl           = time.Hour
-	topicClientValuesStreaming = "clients_values"
+	RegistryEntrySize = 8 + 32 + 32 + 8 + 4 // discriminator + parent + registered + until + limit
 )
 
+// RegistryClient represents a client for interacting with the registry program
+type RegistryClient struct {
+	programID solana.PublicKey
+	client    *rpc.Client
+	wsClient  *ws.Client
+}
+
+// RegistryEntry represents an entry in the registry
+type RegistryEntry struct {
+	Parent    solana.PublicKey
+	Registred solana.PublicKey
+	Until     int64
+	Limit     uint32
+}
+
 type ClientProvider struct {
-	mainDatabase *p2p_database.DB
-	contract     *p2p_database.EthSmartContract
-	logger       *log.ZapEventLogger
-	lock         sync.RWMutex
-	clientValues map[string]clientMessage
+	ContractAddress string
+	NetworkHostHTTP string
+	NetworkHostWS   string
 }
 
 type Client struct {
-	Limit  *big.Int `json:"limit"`
-	Until  *big.Int `json:"until"`
-	Active bool     `json:"active"`
-	Key    string   `json:"key"`
+	Limit int
+	Key   string
 }
 
-type clientMessage struct {
-	Client  Client `json:"client"`
-	Address string `json:"address"`
-	TTL     int64  `json:"ttl"`
-}
-
-func (v *clientMessage) isExpired() bool {
-	return time.Now().Unix() >= v.TTL
-}
-
-func NewClientProvider(mainDatabase *p2p_database.DB, contract *p2p_database.EthSmartContract, logger *log.ZapEventLogger) *ClientProvider {
+func NewClientProvider(conf config.SolanaConfig) *ClientProvider {
 	provider := &ClientProvider{
-		mainDatabase: mainDatabase,
-		contract:     contract,
-		logger:       logger,
-		lock:         sync.RWMutex{},
-		clientValues: make(map[string]clientMessage),
+		ContractAddress: conf.ContractAddress,
+		NetworkHostHTTP: conf.NetworkHostHTTP,
+		NetworkHostWS:   conf.NetworkHostWS,
 	}
-
-	err := mainDatabase.Subscribe(context.Background(), topicClientValuesStreaming, func(event p2p_database.Event) {
-		jsonMsg, ok := event.Message.(string)
-		if !ok {
-			logger.Errorw("convert interface to string from message topic client values")
-			return
-		}
-
-		clientMsg := clientMessage{}
-		err := json.Unmarshal([]byte(jsonMsg), &clientMsg)
-		if err != nil {
-			logger.Errorw("topic client values unmarshal error", err)
-			return
-		}
-
-		provider.handleClientMessage(clientMsg)
-	})
-
-	if err != nil {
-		logger.Errorw("topic client values subscribe error", err)
-	}
-
 	return provider
 }
 
-func (c *ClientProvider) handleClientMessage(clientMsg clientMessage) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	c.clientValues[clientMsg.Address] = clientMsg
-}
-
-func (c *ClientProvider) List(ctx context.Context) (map[string]Client, error) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	clients := make(map[string]Client)
-	for _, v := range c.clientValues {
-		if v.isExpired() == false {
-			clients[v.Address] = v.Client
-		}
-	}
-
-	return clients, nil
-}
-
 func (c *ClientProvider) ClientByAddress(ctx context.Context, address string) (Client, error) {
-	client, err := c.getFromDatabase(ctx, address)
+	account, err := solana.PublicKeyFromBase58(address)
 	if err != nil {
-		client, errContract := c.getFromContract(address)
-		if errContract != nil {
-			return Client{}, fmt.Errorf("get from contract error: %w, get from db error: %s", errContract, err)
-		}
-		err = c.saveInDatabase(ctx, address, client)
-		if err != nil {
-			return Client{}, fmt.Errorf("save client in db: %w", err)
-		}
-		return client, nil
-	}
-	return client, nil
-}
-
-func (c *ClientProvider) getFromDatabase(ctx context.Context, address string) (Client, error) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	clientMessage, ok := c.clientValues[address]
-	if !ok {
-		return Client{}, fmt.Errorf("no data in db: %w", address)
-	}
-	if clientMessage.isExpired() == true {
-		return Client{}, fmt.Errorf("expired data in db: %w", address)
-	}
-	return clientMessage.Client, nil
-}
-
-func (c *ClientProvider) saveInDatabase(ctx context.Context, address string, client Client) error {
-	record := clientMessage{
-		Client:  client,
-		TTL:     time.Now().Add(defaultClientTtl).Unix(),
-		Address: address,
+		return Client{}, err
 	}
 
-	c.handleClientMessage(record)
-
-	marshaled, err := json.Marshal(record)
+	authority, err := solana.PublicKeyFromBase58("8bxabQhCLRfpHZQjAXg9AmqqyQ2WJrXQVAQXH3YFzxwT")
 	if err != nil {
-		return errors.Wrap(err, "marshal client")
+		return Client{}, err
 	}
 
-	_, err = c.mainDatabase.Publish(ctx, topicClientValuesStreaming, string(marshaled))
+	client, err := newRegistryClient(c.NetworkHostHTTP, c.NetworkHostWS, c.ContractAddress)
 	if err != nil {
-		return errors.Wrap(err, "publish client message")
+		return Client{}, err
 	}
-
-	return nil
-}
-
-func (c *ClientProvider) getFromContract(address string) (Client, error) {
-	client, err := c.contract.GetEthereumClient().ClientByAddress(nil, common.HexToAddress(address))
-
+	entry, err := client.GetFromRegistry(ctx, authority, "clients", account)
 	if err != nil {
-		return Client{}, errors.Wrap(err, "client by address")
+		return Client{}, err
 	}
-
 	return Client{
-		Limit:  client.Limit,
-		Until:  client.Until,
-		Active: client.Active,
-		Key:    client.Key,
+		Limit: int(entry.Limit),
+		Key:   address,
 	}, nil
+}
+
+func newRegistryClient(rpcEndpoint string, wsEndpoint string, programID string) (*RegistryClient, error) {
+	client := rpc.New(rpcEndpoint)
+
+	wsClient, err := ws.Connect(context.Background(), wsEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to websocket: %v", err)
+	}
+
+	programPubkey, err := solana.PublicKeyFromBase58(programID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid program ID: %v", err)
+	}
+
+	return &RegistryClient{
+		programID: programPubkey,
+		client:    client,
+		wsClient:  wsClient,
+	}, nil
+}
+
+// GetFromRegistry retrieves an entry from the registry
+func (c *RegistryClient) GetFromRegistry(ctx context.Context, registryAuthority solana.PublicKey, registryName string, accountToCheck solana.PublicKey) (*RegistryEntry, error) {
+	// Find the registry PDA
+	registryPDA, _, err := findRegistryPDA(c.programID, registryAuthority, registryName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find registry PDA: %v", err)
+	}
+
+	return getRegistryEntry(ctx, c.client, c.programID, registryPDA, accountToCheck)
+}
+
+// findRegistryPDA finds the PDA for a registry with the given name
+func findRegistryPDA(programID solana.PublicKey, authority solana.PublicKey, name string) (solana.PublicKey, uint8, error) {
+	return solana.FindProgramAddress(
+		[][]byte{
+			authority.Bytes(),
+			[]byte(name),
+		},
+		programID,
+	)
+}
+
+// getRegistryEntry retrieves a registry entry account data
+func getRegistryEntry(
+	ctx context.Context,
+	client *rpc.Client,
+	programID solana.PublicKey,
+	registry solana.PublicKey,
+	accountToCheck solana.PublicKey,
+) (*RegistryEntry, error) {
+	entryPDA, _, err := findRegistryEntryPDA(programID, accountToCheck, registry)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find entry PDA: %v", err)
+	}
+
+	// Get the account info
+	accountInfo, err := client.GetAccountInfo(ctx, entryPDA)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get account info: %v", err)
+	}
+
+	if accountInfo == nil || len(accountInfo.Value.Data.GetBinary()) == 0 {
+		return nil, nil // Account doesn't exist
+	}
+
+	// Parse the account data
+	data := accountInfo.Value.Data.GetBinary()
+	if len(data) != RegistryEntrySize {
+		return nil, fmt.Errorf("invalid account data size: expected %d, got %d", RegistryEntrySize, len(data))
+	}
+
+	// Skip the 8-byte discriminator
+	data = data[8:]
+
+	entry := &RegistryEntry{
+		Parent:    solana.PublicKeyFromBytes(data[:32]),
+		Registred: solana.PublicKeyFromBytes(data[32:64]),
+		Until:     int64(binary.LittleEndian.Uint64(data[64:72])),
+		Limit:     binary.LittleEndian.Uint32(data[72:76]),
+	}
+
+	return entry, nil
+}
+
+// findRegistryEntryPDA finds the PDA for a registry entry
+func findRegistryEntryPDA(programID solana.PublicKey, accountToAdd solana.PublicKey, registry solana.PublicKey) (solana.PublicKey, uint8, error) {
+	return solana.FindProgramAddress(
+		[][]byte{
+			accountToAdd.Bytes(),
+			registry.Bytes(),
+		},
+		programID,
+	)
 }

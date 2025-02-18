@@ -64,6 +64,7 @@ type Config struct {
 	Region         string                   `yaml:"region,omitempty"`
 	SignalRelay    SignalRelayConfig        `yaml:"signal_relay,omitempty"`
 	Ethereum       EthereumConfig           `yaml:"ethereum"`
+	Solana         SolanaConfig             `yaml:"solana"`
 	Domain         string                   `yaml:"domain,omitempty"`
 	// LogLevel is deprecated
 	LogLevel   string        `yaml:"log_level,omitempty"`
@@ -85,6 +86,13 @@ type EthereumConfig struct {
 	NetworkKey       string `yaml:"network_key"`
 
 	LogLevel string `yaml:"log_level"`
+}
+
+type SolanaConfig struct {
+	WalletPrivateKey string `yaml:"wallet_private_key"`
+	ContractAddress  string `yaml:"contract_address"`
+	NetworkHostHTTP  string `yaml:"network_host_http"`
+	NetworkHostWS    string `yaml:"network_host_ws"`
 }
 
 type RTCConfig struct {
@@ -578,6 +586,17 @@ func (conf *Config) ValidateKeys() error {
 		return errors.New("incorrect ethereum.p2p_node_port")
 	case conf.Ethereum.P2pMainDatabaseName == "":
 		return errors.New("incorrect ethereum.p2p_main_database_name")
+	}
+
+	switch {
+	case conf.Solana.WalletPrivateKey == "":
+		return errors.New("empty solana.wallet_private_key")
+	case conf.Solana.ContractAddress == "":
+		return errors.New("empty solana.contract_address")
+	case conf.Solana.NetworkHostHTTP == "":
+		return errors.New("empty solana.network_host_http")
+	case conf.Solana.NetworkHostWS == "":
+		return errors.New("empty solana.network_host_ws")
 	}
 
 	return nil

@@ -95,7 +95,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	ingressStore := getIngressStore(objectStore)
 	ingressService := NewIngressService(ingressConfig, nodeID, messageBus, ingressClient, ingressStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode, telemetryService)
-	keyProviderPublicKey, err := createKeyPublicKeyProvider(conf, ethSmartContract)
+	keyProviderPublicKey, err := createKeyPublicKeyProvider(conf)
 	if err != nil {
 		return nil, err
 	}
@@ -122,14 +122,14 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	clientProvider := createClientProvider(ethSmartContract, conf, db)
+	clientProvider := createClientProvider(conf)
 	reader, err := createGeoIP()
 	if err != nil {
 		return nil, err
 	}
 	nodeProvider := CreateNodeProvider(reader, conf, db, currentNode)
 	relevantNodesHandler := createRelevantNodesHandler(conf, nodeProvider)
-	mainDebugHandler := createMainDebugHandler(conf, nodeProvider, clientProvider, db)
+	mainDebugHandler := createMainDebugHandler(conf, nodeProvider, db)
 	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, nodeProvider, db, relevantNodesHandler, mainDebugHandler, tlsMuxer, manager)
 	if err != nil {
 		return nil, err
@@ -143,8 +143,8 @@ func createRelevantNodesHandler(conf *config.Config, nodeProvider *NodeProvider)
 	return NewRelevantNodesHandler(nodeProvider, conf.LoggingP2P)
 }
 
-func createMainDebugHandler(conf *config.Config, nodeProvider *NodeProvider, clientProvider *ClientProvider, db *p2p_database.DB) *MainDebugHandler {
-	return NewMainDebugHandler(db, nodeProvider, clientProvider, conf.LoggingP2P)
+func createMainDebugHandler(conf *config.Config, nodeProvider *NodeProvider, db *p2p_database.DB) *MainDebugHandler {
+	return NewMainDebugHandler(db, nodeProvider, conf.LoggingP2P)
 }
 
 func createGeoIP() (*geoip2.Reader, error) {
@@ -155,8 +155,8 @@ func CreateNodeProvider(geo *geoip2.Reader, config2 *config.Config, db *p2p_data
 	return NewNodeProvider(db, geo, config2.LoggingP2P, node)
 }
 
-func createClientProvider(contract *p2p_database.EthSmartContract, config2 *config.Config, db *p2p_database.DB) *ClientProvider {
-	return NewClientProvider(db, contract, config2.LoggingP2P)
+func createClientProvider(config2 *config.Config) *ClientProvider {
+	return NewClientProvider(config2.Solana)
 }
 
 func createSmartContractClient(conf *config.Config) (*p2p_database.EthSmartContract, error) {
@@ -198,11 +198,11 @@ func getNodeID(currentNode routing.LocalNode) livekit2.NodeID {
 }
 
 func createKeyProvider(conf *config.Config, contract *p2p_database.EthSmartContract) (auth.KeyProvider, error) {
-	return createKeyPublicKeyProvider(conf, contract)
+	return createKeyPublicKeyProvider(conf)
 }
 
-func createKeyPublicKeyProvider(conf *config.Config, contract *p2p_database.EthSmartContract) (auth.KeyProviderPublicKey, error) {
-	return auth.NewEthKeyProvider(*contract, conf.Ethereum.WalletAddress, conf.Ethereum.WalletPrivateKey), nil
+func createKeyPublicKeyProvider(conf *config.Config) (auth.KeyProviderPublicKey, error) {
+	return auth.NewSolanaKeyProvider(conf.Solana.WalletPrivateKey), nil
 }
 
 func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webhook.Notifier, error) {

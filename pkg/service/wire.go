@@ -85,8 +85,8 @@ func createRelevantNodesHandler(conf *config.Config, nodeProvider *NodeProvider)
 	return NewRelevantNodesHandler(nodeProvider, conf.LoggingP2P)
 }
 
-func createMainDebugHandler(conf *config.Config, nodeProvider *NodeProvider, clientProvider *ClientProvider, db *p2p_database.DB) *MainDebugHandler {
-	return NewMainDebugHandler(db, nodeProvider, clientProvider, conf.LoggingP2P)
+func createMainDebugHandler(conf *config.Config, nodeProvider *NodeProvider, db *p2p_database.DB) *MainDebugHandler {
+	return NewMainDebugHandler(db, nodeProvider, conf.LoggingP2P)
 }
 
 func createGeoIP() (*geoip2.Reader, error) {
@@ -97,8 +97,8 @@ func CreateNodeProvider(geo *geoip2.Reader, config *config.Config, db *p2p_datab
 	return NewNodeProvider(db, geo, config.LoggingP2P, node)
 }
 
-func createClientProvider(contract *p2p_database.EthSmartContract, config *config.Config, db *p2p_database.DB) *ClientProvider {
-	return NewClientProvider(db, contract, config.LoggingP2P)
+func createClientProvider(config *config.Config) *ClientProvider {
+	return NewClientProvider(config.Solana)
 }
 
 func createSmartContractClient(conf *config.Config) (*p2p_database.EthSmartContract, error) {
@@ -140,11 +140,11 @@ func getNodeID(currentNode routing.LocalNode) livekit.NodeID {
 }
 
 func createKeyProvider(conf *config.Config, contract *p2p_database.EthSmartContract) (auth.KeyProvider, error) {
-	return createKeyPublicKeyProvider(conf, contract)
+	return createKeyPublicKeyProvider(conf)
 }
 
-func createKeyPublicKeyProvider(conf *config.Config, contract *p2p_database.EthSmartContract) (auth.KeyProviderPublicKey, error) {
-	return auth.NewEthKeyProvider(*contract, conf.Ethereum.WalletAddress, conf.Ethereum.WalletPrivateKey), nil
+func createKeyPublicKeyProvider(conf *config.Config) (auth.KeyProviderPublicKey, error) {
+	return auth.NewSolanaKeyProvider(conf.Solana.WalletPrivateKey), nil
 }
 
 func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webhook.Notifier, error) {
