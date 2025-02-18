@@ -75,13 +75,12 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 			return
 		}
 
-		pk := client.Key
-		if pk == "" {
+		if client.Key == "" {
 			handleError(w, http.StatusUnauthorized, errors.New(fmt.Sprintf("wallet %s not exists in contract", apiKey)))
 			return
 		}
 
-		grants, err := v.Verify(pk)
+		grants, err := v.Verify(client.Key)
 		if err != nil {
 			handleError(w, http.StatusUnauthorized, fmt.Errorf("invalid token: %s, error: %s", authToken, err))
 			return
