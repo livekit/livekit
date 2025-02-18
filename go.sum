@@ -330,6 +330,8 @@ github.com/dTelecom/protocol v1.0.15 h1:FwWiZxuU4+M+TgO4GbuPhTB1vWtFq/Mby8WqB5dX
 github.com/dTelecom/protocol v1.0.15/go.mod h1:jjAYPgeKzrmNuNjmeDXRrfW0uUYmZBppxJkzNXRsMLs=
 github.com/dTelecom/protocol v1.0.16 h1:A/SXaKOY+KNIp1+tuddn4yiHfu3rs3i+NBgjxHI20T8=
 github.com/dTelecom/protocol v1.0.16/go.mod h1:jjAYPgeKzrmNuNjmeDXRrfW0uUYmZBppxJkzNXRsMLs=
+github.com/dTelecom/protocol v1.0.17 h1:lqQFVuU3mbf/UeF2GOFu76Xt4/61TAcVVyO/kUBDFVc=
+github.com/dTelecom/protocol v1.0.17/go.mod h1:jjAYPgeKzrmNuNjmeDXRrfW0uUYmZBppxJkzNXRsMLs=
 github.com/dTelecom/psrpc v1.0.1 h1:O9xAfdNcM0Zrc4UzJtgmJn/+6POaiqePP+Kr8/c9YWQ=
 github.com/dTelecom/psrpc v1.0.1/go.mod h1:K0j8f1PgLShR7Lx80KbmwFkDH2BvOnycXGV0OSRURKc=
 github.com/dTelecom/psrpc v1.0.2 h1:1CXmvCDp5aKJkk1JJgChQ9y+oBoxV4tvONfUOAWusZE=

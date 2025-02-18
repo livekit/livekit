@@ -4,7 +4,7 @@ go 1.23
 
 toolchain go1.23.6
 
-replace github.com/livekit/protocol v1.5.4 => github.com/dTelecom/protocol v1.0.16
+replace github.com/livekit/protocol v1.5.4 => github.com/dTelecom/protocol v1.0.17
 
 replace github.com/livekit/psrpc v0.2.10 => github.com/dTelecom/psrpc v1.0.16
 
