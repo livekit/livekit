@@ -15,15 +15,20 @@
 package prometheus
 
 import (
+	"slices"
+	"strings"
+
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/livekit/protocol/livekit"
 )
 
 var (
+	promDataPacketStreamLabels    = []string{"type", "mime_type"}
+	promDataPacketStreamMimeTypes = []string{"text", "image", "application", "audio", "video"}
+
 	promDataPacketStreamDestCount *prometheus.HistogramVec
 	promDataPacketStreamSize      *prometheus.HistogramVec
-	promDataPacketStreamTotal     *prometheus.CounterVec
 )
 
 func initDataPacketStats(nodeID string, nodeType livekit.NodeType) {
@@ -33,38 +38,38 @@ func initDataPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "dest_count",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		Buckets:     []float64{1, 2, 3, 4, 5, 10, 15, 25, 50},
-	}, []string{"type"})
+	}, promDataPacketStreamLabels)
 	promDataPacketStreamSize = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "datapacket_stream",
 		Name:        "bytes",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		Buckets:     []float64{128, 512, 2048, 8192, 32768, 131072, 524288, 2097152, 8388608, 33554432},
-	}, []string{"type"})
-	promDataPacketStreamTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace:   livekitNamespace,
-		Subsystem:   "datapacket_stream",
-		Name:        "total",
-		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
-	}, []string{"type", "mime_type"})
+	}, promDataPacketStreamLabels)
 
 	prometheus.MustRegister(promDataPacketStreamDestCount)
 	prometheus.MustRegister(promDataPacketStreamSize)
-	prometheus.MustRegister(promDataPacketStreamTotal)
 }
 
 func RecordDataPacketStream(h *livekit.DataStream_Header, destCount int) {
-	typ := "unknown"
+	streamType := "unknown"
 	switch h.ContentHeader.(type) {
 	case *livekit.DataStream_Header_TextHeader:
-		typ = "text"
+		streamType = "text"
 	case *livekit.DataStream_Header_ByteHeader:
-		typ = "bytes"
+		streamType = "bytes"
 	}
 
-	promDataPacketStreamDestCount.WithLabelValues(typ).Observe(float64(destCount))
-	if h.TotalLength != nil {
-		promDataPacketStreamSize.WithLabelValues(typ).Observe(float64(*h.TotalLength))
+	mimeType := strings.ToLower(h.MimeType)
+	if i := strings.IndexByte(mimeType, '/'); i != -1 {
+		mimeType = mimeType[:i]
 	}
-	promDataPacketStreamTotal.WithLabelValues(typ, h.MimeType).Inc()
+	if !slices.Contains(promDataPacketStreamMimeTypes, mimeType) {
+		mimeType = "unknown"
+	}
+
+	promDataPacketStreamDestCount.WithLabelValues(streamType, mimeType).Observe(float64(destCount))
+	if h.TotalLength != nil {
+		promDataPacketStreamSize.WithLabelValues(streamType, mimeType).Observe(float64(*h.TotalLength))
+	}
 }
