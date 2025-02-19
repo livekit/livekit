@@ -1913,6 +1913,22 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 				overrideSenderIdentity = true
 			}
 		}
+		p.pubLogger.Infow("received stream header data packet",
+			"topic", payload.StreamHeader.Topic,
+			"stream_id", payload.StreamHeader.StreamId,
+			"mime_type", payload.StreamHeader.MimeType,
+			"total_length", payload.StreamHeader.TotalLength,
+			"type", func() string {
+				switch payload.StreamHeader.ContentHeader.(type) {
+				case *livekit.DataStream_Header_TextHeader:
+					return "text"
+				case *livekit.DataStream_Header_ByteHeader:
+					return "bytes"
+				default:
+					return "unknown"
+				}
+			}(),
+		)
 	case *livekit.DataPacket_StreamChunk:
 		if payload.StreamChunk == nil {
 			return
