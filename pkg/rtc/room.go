@@ -440,7 +440,7 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 		}
 	}
 
-	if r.FirstJoinedAt() == 0 {
+	if r.FirstJoinedAt() == 0 && !participant.IsDependent() {
 		r.joinedAt.Store(time.Now().Unix())
 	}
 
@@ -871,36 +871,42 @@ func (r *Room) IsClosed() bool {
 }
 
 // CloseIfEmpty closes the room if all participants had left, or it's still empty past timeout
-func (r *Room) CloseIfEmpty() {
+func (r *Room) CloseIfEmpty() string {
 	r.lock.Lock()
 
 	if r.IsClosed() || r.holds.Load() > 0 {
 		r.lock.Unlock()
-		return
+		return ""
 	}
 
 	for _, p := range r.participants {
 		if !p.IsDependent() {
 			r.lock.Unlock()
-			return
+			return ""
 		}
 	}
 
 	var timeout uint32
 	var elapsed int64
+	reason := ""
 	if r.FirstJoinedAt() > 0 && r.LastLeftAt() > 0 {
 		elapsed = time.Now().Unix() - r.LastLeftAt()
 		// need to give time in case participant is reconnecting
 		timeout = r.protoRoom.DepartureTimeout
+		reason = "departure timeout"
 	} else {
 		elapsed = time.Now().Unix() - r.protoRoom.CreationTime
 		timeout = r.protoRoom.EmptyTimeout
+		reason = "empty timeout"
 	}
 	r.lock.Unlock()
 
 	if elapsed >= int64(timeout) {
 		r.Close(types.ParticipantCloseReasonRoomClosed)
+		return reason
 	}
+
+	return ""
 }
 
 func (r *Room) Close(reason types.ParticipantCloseReason) {
