@@ -96,7 +96,7 @@ func (h *MainDebugHandler) clientHTTPHandler(w http.ResponseWriter, r *http.Requ
 		table.Append([]string{
 			address,
 			fmt.Sprintf("%d", client.Until),
-			fmt.Sprintf("%s", client.Limit),
+			fmt.Sprintf("%d", client.Limit),
 		})
 	}
 
