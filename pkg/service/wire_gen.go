@@ -129,7 +129,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	nodeProvider := CreateNodeProvider(reader, conf, db, currentNode)
 	relevantNodesHandler := createRelevantNodesHandler(conf, nodeProvider)
-	mainDebugHandler := createMainDebugHandler(conf, nodeProvider, db)
+	mainDebugHandler := createMainDebugHandler(conf, nodeProvider, clientProvider, db)
 	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, nodeProvider, db, relevantNodesHandler, mainDebugHandler, tlsMuxer, manager)
 	if err != nil {
 		return nil, err
@@ -143,8 +143,8 @@ func createRelevantNodesHandler(conf *config.Config, nodeProvider *NodeProvider)
 	return NewRelevantNodesHandler(nodeProvider, conf.LoggingP2P)
 }
 
-func createMainDebugHandler(conf *config.Config, nodeProvider *NodeProvider, db *p2p_database.DB) *MainDebugHandler {
-	return NewMainDebugHandler(db, nodeProvider, conf.LoggingP2P)
+func createMainDebugHandler(conf *config.Config, nodeProvider *NodeProvider, clientProvider *ClientProvider, db *p2p_database.DB) *MainDebugHandler {
+	return NewMainDebugHandler(db, nodeProvider, clientProvider, conf.LoggingP2P)
 }
 
 func createGeoIP() (*geoip2.Reader, error) {

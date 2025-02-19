@@ -128,6 +128,7 @@ func NewLivekitServer(conf *config.Config,
 	mux.HandleFunc("/relevant", relevantNodesHandler.HTTPHandler)
 	mux.HandleFunc("/node-debug", mainDebugHandler.nodeHTTPHandler)
 	mux.HandleFunc("/peer-debug", mainDebugHandler.peerHTTPHandler)
+	mux.HandleFunc("/client-debug", mainDebugHandler.clientHTTPHandler)
 	mux.HandleFunc("/", s.defaultHandler)
 
 	if conf.Domain != "" {
