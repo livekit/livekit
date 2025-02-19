@@ -1918,6 +1918,7 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 			"stream_id", payload.StreamHeader.StreamId,
 			"mime_type", payload.StreamHeader.MimeType,
 			"total_length", payload.StreamHeader.TotalLength,
+			"dest_count", len(dp.DestinationIdentities),
 			"type", func() string {
 				switch payload.StreamHeader.ContentHeader.(type) {
 				case *livekit.DataStream_Header_TextHeader:
