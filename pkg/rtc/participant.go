@@ -1904,6 +1904,9 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		if payload.StreamHeader == nil {
 			return
 		}
+
+		prometheus.RecordDataPacketStream(payload.StreamHeader, len(dp.DestinationIdentities))
+
 		if p.IsAgent() && dp.ParticipantIdentity != "" && string(p.params.Identity) != dp.ParticipantIdentity {
 			switch contentHeader := payload.StreamHeader.ContentHeader.(type) {
 			case *livekit.DataStream_Header_TextHeader:
