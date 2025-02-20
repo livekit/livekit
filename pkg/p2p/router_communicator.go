@@ -6,7 +6,7 @@ import (
 	"errors"
 	"log"
 
-	p2p_database "github.com/dTelecom/p2p-realtime-database"
+	pubsub "github.com/dTelecom/pubsub-solana"
 	"github.com/livekit/protocol/livekit"
 	"google.golang.org/protobuf/proto"
 )
@@ -46,13 +46,13 @@ func unpackRouterMessage(message interface{}) (data []byte, err error) {
 type RouterCommunicatorImpl struct {
 	topic          string
 	key            livekit.RoomKey
-	mainDatabase   *p2p_database.DB
+	pubSub         *pubsub.PubSub
 	ctx            context.Context
 	cancel         context.CancelFunc
 	messageHandler func(ctx context.Context, roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) error
 }
 
-func NewRouterCommunicatorImpl(key livekit.RoomKey, mainDatabase *p2p_database.DB, messageHandler func(ctx context.Context, roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) error) *RouterCommunicatorImpl {
+func NewRouterCommunicatorImpl(key livekit.RoomKey, pubSub *pubsub.PubSub, messageHandler func(ctx context.Context, roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) error) *RouterCommunicatorImpl {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -61,7 +61,7 @@ func NewRouterCommunicatorImpl(key livekit.RoomKey, mainDatabase *p2p_database.D
 	routerCommunicator := &RouterCommunicatorImpl{
 		topic:          topic,
 		key:            key,
-		mainDatabase:   mainDatabase,
+		pubSub:         pubSub,
 		ctx:            ctx,
 		cancel:         cancel,
 		messageHandler: messageHandler,
@@ -83,22 +83,18 @@ func (c *RouterCommunicatorImpl) Publish(message *livekit.RTCNodeMessage) {
 		log.Printf("RouterCommunicatorImpl Publish cannot marshal %v", message)
 	}
 
-	if _, err := c.mainDatabase.Publish(c.ctx, c.topic, packRouterMessage(data)); err != nil {
+	if _, err := c.pubSub.Publish(c.ctx, c.topic, packRouterMessage(data)); err != nil {
 		log.Printf("RouterCommunicatorImpl cannot publish %v", err)
 	}
 }
 
 func (c *RouterCommunicatorImpl) init() {
-
-	subErr := c.mainDatabase.Subscribe(c.ctx, c.topic, c.dbHandler)
-	if subErr != nil {
-		log.Printf("RouterCommunicatorImpl cannot subscribe to topic %v", subErr)
-	}
+	c.pubSub.Subscribe(c.topic, c.dbHandler)
 }
 
-func (c *RouterCommunicatorImpl) dbHandler(event p2p_database.Event) {
+func (c *RouterCommunicatorImpl) dbHandler(_ context.Context, event pubsub.Event) {
 
-	if event.FromPeerId == c.mainDatabase.GetHost().ID().String() {
+	if event.FromPeerId == c.pubSub.GetPeerId() {
 		return
 	}
 

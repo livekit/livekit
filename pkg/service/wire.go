@@ -7,13 +7,9 @@ import (
 	"context"
 
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
+	pubsub "github.com/dTelecom/pubsub-solana"
 	"github.com/google/wire"
 	"github.com/inconshreveable/go-vhost"
-	livekit2 "github.com/livekit/livekit-server"
-	"github.com/livekit/livekit-server/pkg/clientconfiguration"
-	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
@@ -27,6 +23,12 @@ import (
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/acme/autocert"
+
+	livekit2 "github.com/livekit/livekit-server"
+	"github.com/livekit/livekit-server/pkg/clientconfiguration"
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
 func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
@@ -76,6 +78,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		CreateNodeProvider,
 		createRelevantNodesHandler,
 		createMainDebugHandler,
+		newPubSub,
 		NewLivekitServer,
 	)
 	return &LivekitServer{}, nil
@@ -165,12 +168,10 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 }
 
 func createStore(
-	mainDatabase *p2p_database.DB,
-	p2pDbConfig p2p_database.Config,
+	pubSub *pubsub.PubSub,
 	nodeID livekit.NodeID,
-	conf *config.Config,
 ) ObjectStore {
-	return NewLocalStore(nodeID, mainDatabase)
+	return NewLocalStore(nodeID, pubSub)
 }
 
 func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
@@ -214,4 +215,8 @@ func getSignalRelayConfig(config *config.Config) config.SignalRelayConfig {
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler, TLSMuxer *vhost.TLSMuxer, certManager *autocert.Manager) (*turn.Server, error) {
 	return NewTurnServer(conf, authHandler, false, TLSMuxer, certManager)
+}
+
+func newPubSub(conf *config.Config) *pubsub.PubSub {
+	return pubsub.New(conf.Solana.EphemeralHostHTTP, conf.Solana.EphemeralHostWS, conf.Solana.EphemeralHostHTTP, conf.Solana.EphemeralHostWS, conf.Solana.WalletPrivateKey)
 }

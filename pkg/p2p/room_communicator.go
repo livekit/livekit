@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	p2p_database "github.com/dTelecom/p2p-realtime-database"
+	pubsub "github.com/dTelecom/pubsub-solana"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/livekit/protocol/livekit"
 	"github.com/pkg/errors"
@@ -27,7 +27,7 @@ type RoomCommunicatorImpl struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mainDatabase *p2p_database.DB
+	pubSub *pubsub.PubSub
 
 	peers           map[string]struct{}
 	peerHandlers    []func(peerId string)
@@ -36,15 +36,15 @@ type RoomCommunicatorImpl struct {
 	mu sync.Mutex
 }
 
-func NewRoomCommunicatorImpl(room *livekit.Room, mainDatabase *p2p_database.DB) (*RoomCommunicatorImpl, error) {
+func NewRoomCommunicatorImpl(room *livekit.Room, pubSub *pubsub.PubSub) (*RoomCommunicatorImpl, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	roomCommunicator := &RoomCommunicatorImpl{
-		room:         room,
-		ctx:          ctx,
-		cancel:       cancel,
-		mainDatabase: mainDatabase,
-		peers:        make(map[string]struct{}),
+		room:   room,
+		ctx:    ctx,
+		cancel: cancel,
+		pubSub: pubSub,
+		peers:  make(map[string]struct{}),
 	}
 
 	_ = logging.SetLogLevel("*", "error")
@@ -60,21 +60,17 @@ func (c *RoomCommunicatorImpl) Close() {
 }
 
 func (c *RoomCommunicatorImpl) init() error {
-	incomingMessagesTopic := formatIncomingMessagesTopic(c.room.Key, c.mainDatabase.GetHost().ID().String())
-	if err := c.mainDatabase.Subscribe(c.ctx, incomingMessagesTopic, c.incomingMessageHandler); err != nil {
-		return errors.Wrap(err, "cannot subscribe to incoming messages topic")
-	}
+	incomingMessagesTopic := formatIncomingMessagesTopic(c.room.Key, c.pubSub.GetPeerId())
+	c.pubSub.Subscribe(incomingMessagesTopic, c.incomingMessageHandler)
 	log.Printf("subscribed to topic %v", incomingMessagesTopic)
 
 	roomMessagesTopic := formatRoomMessageTopic(c.room.Key)
-	if err := c.mainDatabase.Subscribe(c.ctx, roomMessagesTopic, c.roomMessageHandler); err != nil {
-		return errors.Wrap(err, "cannot subscribe to room messages topic")
-	}
+	c.pubSub.Subscribe(roomMessagesTopic, c.roomMessageHandler)
 	log.Printf("subscribed to topic %v", roomMessagesTopic)
 
 	go func() {
 		for {
-			if _, err := c.mainDatabase.Publish(c.ctx, roomMessagesTopic, adMessage); err != nil {
+			if _, err := c.pubSub.Publish(c.ctx, roomMessagesTopic, adMessage); err != nil {
 				if c.ctx.Err() == nil {
 					log.Fatalf("cannot publish ad message: %v", err)
 				} else {
@@ -107,7 +103,7 @@ func (c *RoomCommunicatorImpl) checkPeer(peerId string) {
 		log.Printf("New key added peer added %v", peerId)
 
 		incomingMessageTopic := formatIncomingMessagesTopic(c.room.Key, peerId)
-		if _, err := c.mainDatabase.Publish(c.ctx, incomingMessageTopic, pingMessage); err != nil {
+		if _, err := c.pubSub.Publish(c.ctx, incomingMessageTopic, pingMessage); err != nil {
 			log.Printf("cannot send ping message for node %s in db %s: %s", peerId, c.room.Key, err)
 		} else {
 			log.Printf("PING message sent to %v", peerId)
@@ -115,11 +111,11 @@ func (c *RoomCommunicatorImpl) checkPeer(peerId string) {
 	}
 }
 
-func (c *RoomCommunicatorImpl) incomingMessageHandler(event p2p_database.Event) {
+func (c *RoomCommunicatorImpl) incomingMessageHandler(_ context.Context, event pubsub.Event) {
 	if event.Message == pingMessage {
 		log.Println("PING message received")
 		incomingMessageTopic := formatIncomingMessagesTopic(c.room.Key, event.FromPeerId)
-		if _, err := c.mainDatabase.Publish(c.ctx, incomingMessageTopic, pongMessage); err != nil {
+		if _, err := c.pubSub.Publish(c.ctx, incomingMessageTopic, pongMessage); err != nil {
 			log.Printf("cannot send pong message for node %s in db %s: %s", event.FromPeerId, c.room.Key, err)
 		} else {
 			log.Printf("PONG message sent to %v", event.FromPeerId)
@@ -137,12 +133,12 @@ func (c *RoomCommunicatorImpl) incomingMessageHandler(event p2p_database.Event) 
 	}
 }
 
-func (c *RoomCommunicatorImpl) roomMessageHandler(event p2p_database.Event) {
+func (c *RoomCommunicatorImpl) roomMessageHandler(_ context.Context, event pubsub.Event) {
 	if event.Message == adMessage {
 		c.checkPeer(event.FromPeerId)
 
 		incomingMessageTopic := formatIncomingMessagesTopic(c.room.Key, event.FromPeerId)
-		if _, err := c.mainDatabase.Publish(c.ctx, incomingMessageTopic, adMessage); err != nil {
+		if _, err := c.pubSub.Publish(c.ctx, incomingMessageTopic, adMessage); err != nil {
 			log.Printf("cannot send ad message for node %s in db %s: %s", event.FromPeerId, c.room.Key, err)
 		} else {
 			log.Printf("ad message sent to %v", event.FromPeerId)
@@ -164,11 +160,11 @@ func (c *RoomCommunicatorImpl) ForEachPeer(peerHandler func(peerId string)) {
 
 func (c *RoomCommunicatorImpl) SendMessage(peerId string, message interface{}) (string, error) {
 	incomingMessagesTopic := formatIncomingMessagesTopic(c.room.Key, peerId)
-	event, err := c.mainDatabase.Publish(c.ctx, incomingMessagesTopic, message)
+	eventID, err := c.pubSub.Publish(c.ctx, incomingMessagesTopic, message)
 	if err != nil {
 		return "", errors.Wrap(err, "publish error")
 	}
-	return event.ID, nil
+	return eventID, nil
 }
 
 func (c *RoomCommunicatorImpl) OnMessage(messageHandler func(message interface{}, fromPeerId string, eventId string)) {
