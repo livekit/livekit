@@ -89,10 +89,11 @@ type EthereumConfig struct {
 }
 
 type SolanaConfig struct {
-	WalletPrivateKey string `yaml:"wallet_private_key"`
-	ContractAddress  string `yaml:"contract_address"`
-	NetworkHostHTTP  string `yaml:"network_host_http"`
-	NetworkHostWS    string `yaml:"network_host_ws"`
+	WalletPrivateKey  string `yaml:"wallet_private_key"`
+	ContractAddress   string `yaml:"contract_address"`
+	NetworkHostHTTP   string `yaml:"network_host_http"`
+	NetworkHostWS     string `yaml:"network_host_ws"`
+	RegistryAuthority string `yaml:"registry_authority"`
 }
 
 type RTCConfig struct {
@@ -597,6 +598,8 @@ func (conf *Config) ValidateKeys() error {
 		return errors.New("empty solana.network_host_http")
 	case conf.Solana.NetworkHostWS == "":
 		return errors.New("empty solana.network_host_ws")
+	case conf.Solana.RegistryAuthority == "":
+		return errors.New("empty solana.registr_authority")
 	}
 
 	return nil

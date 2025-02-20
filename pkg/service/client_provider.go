@@ -42,11 +42,12 @@ type RegistryEntry struct {
 }
 
 type ClientProvider struct {
-	ContractAddress string
-	NetworkHostHTTP string
-	NetworkHostWS   string
-	lock            sync.RWMutex
-	clientValues    map[string]clientMessage
+	ContractAddress   string
+	NetworkHostHTTP   string
+	NetworkHostWS     string
+	RegistryAuthority string
+	lock              sync.RWMutex
+	clientValues      map[string]clientMessage
 }
 
 type Client struct {
@@ -57,11 +58,12 @@ type Client struct {
 
 func NewClientProvider(conf config.SolanaConfig) *ClientProvider {
 	provider := &ClientProvider{
-		ContractAddress: conf.ContractAddress,
-		NetworkHostHTTP: conf.NetworkHostHTTP,
-		NetworkHostWS:   conf.NetworkHostWS,
-		lock:            sync.RWMutex{},
-		clientValues:    make(map[string]clientMessage),
+		ContractAddress:   conf.ContractAddress,
+		NetworkHostHTTP:   conf.NetworkHostHTTP,
+		NetworkHostWS:     conf.NetworkHostWS,
+		RegistryAuthority: conf.RegistryAuthority,
+		lock:              sync.RWMutex{},
+		clientValues:      make(map[string]clientMessage),
 	}
 	return provider
 }
@@ -79,7 +81,7 @@ func (c *ClientProvider) ClientByAddress(ctx context.Context, address string) (C
 		return Client{}, err
 	}
 
-	authority, err := solana.PublicKeyFromBase58("8bxabQhCLRfpHZQjAXg9AmqqyQ2WJrXQVAQXH3YFzxwT")
+	authority, err := solana.PublicKeyFromBase58(c.RegistryAuthority)
 	if err != nil {
 		return Client{}, err
 	}
