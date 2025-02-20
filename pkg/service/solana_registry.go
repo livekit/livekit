@@ -23,10 +23,10 @@ var (
 
 // RegistryClient represents a client for interacting with the registry program
 type RegistryClient struct {
-	programID solana.PublicKey
-	client    *rpc.Client
-	wsClient  *ws.Client
-	signer    solana.PrivateKey
+	programID  solana.PublicKey
+	client     *rpc.Client
+	wsEndpoint string
+	signer     solana.PrivateKey
 }
 
 // ClientEntry represents a client entry in the registry
@@ -49,11 +49,6 @@ type NodeEntry struct {
 func NewRegistryClient(rpcEndpoint string, wsEndpoint string, programID string, privateKey string) (*RegistryClient, error) {
 	client := rpc.New(rpcEndpoint)
 
-	wsClient, err := ws.Connect(context.Background(), wsEndpoint)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to websocket: %v", err)
-	}
-
 	programPubkey, err := solana.PublicKeyFromBase58(programID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid program ID: %v", err)
@@ -65,10 +60,10 @@ func NewRegistryClient(rpcEndpoint string, wsEndpoint string, programID string, 
 	}
 
 	return &RegistryClient{
-		programID: programPubkey,
-		client:    client,
-		wsClient:  wsClient,
-		signer:    privateKeyBytes,
+		programID:  programPubkey,
+		client:     client,
+		wsEndpoint: wsEndpoint,
+		signer:     privateKeyBytes,
 	}, nil
 }
 
@@ -199,10 +194,15 @@ func (c *RegistryClient) UpdateNodeOnline(ctx context.Context, registryName stri
 		return solana.Signature{}, fmt.Errorf("failed to sign transaction: %v", err)
 	}
 
+	wsClient, err := ws.Connect(ctx, c.wsEndpoint)
+	if err != nil {
+		return solana.Signature{}, fmt.Errorf("failed to connect to websocket: %v", err)
+	}
+
 	sig, err := confirm.SendAndConfirmTransaction(
 		ctx,
 		c.client,
-		c.wsClient,
+		wsClient,
 		tx,
 	)
 	if err != nil {
