@@ -199,7 +199,7 @@ func (r *RoomManager) CloseIdleRooms() {
 	for _, room := range rooms {
 		reason := room.CloseIfEmpty()
 		if reason != "" {
-			logger.Infow("closing idle room", "room", room.Name(), "reason", reason)
+			room.Logger.Infow("closing idle room", "reason", reason)
 		}
 	}
 }
