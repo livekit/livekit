@@ -16,9 +16,9 @@ package service
 
 import (
 	"context"
-	"errors"
 	"time"
 
+	"github.com/dennwc/iters"
 	"github.com/twitchtv/twirp"
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -88,12 +88,12 @@ func (s *SIPService) CreateSIPTrunk(ctx context.Context, req *livekit.CreateSIPT
 	}
 
 	// Validate all trunks including the new one first.
-	list, err := s.store.ListSIPInboundTrunk(ctx)
+	it, err := ListSIPInboundTrunk(ctx, s.store, &livekit.ListSIPInboundTrunkRequest{}, info.AsInbound())
 	if err != nil {
 		return nil, err
 	}
-	list = append(list, info.AsInbound())
-	if err = sip.ValidateTrunks(list); err != nil {
+	defer it.Close()
+	if err = sip.ValidateTrunksIter(it); err != nil {
 		return nil, err
 	}
 
@@ -125,12 +125,14 @@ func (s *SIPService) CreateSIPInboundTrunk(ctx context.Context, req *livekit.Cre
 	// Keep ID empty still, so that validation can print "<new>" instead of a non-existent ID in the error.
 
 	// Validate all trunks including the new one first.
-	list, err := s.store.ListSIPInboundTrunk(ctx)
+	it, err := ListSIPInboundTrunk(ctx, s.store, &livekit.ListSIPInboundTrunkRequest{
+		Numbers: req.GetTrunk().GetNumbers(),
+	}, info)
 	if err != nil {
 		return nil, err
 	}
-	list = append(list, info)
-	if err = sip.ValidateTrunks(list); err != nil {
+	defer it.Close()
+	if err = sip.ValidateTrunksIter(it); err != nil {
 		return nil, err
 	}
 
@@ -215,13 +217,38 @@ func (s *SIPService) ListSIPTrunk(ctx context.Context, req *livekit.ListSIPTrunk
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
+	it := livekit.ListPageIter(s.store.ListSIPTrunk, req)
+	defer it.Close()
 
-	trunks, err := s.store.ListSIPTrunk(ctx)
+	items, err := iters.AllPages(ctx, it)
 	if err != nil {
 		return nil, err
 	}
+	return &livekit.ListSIPTrunkResponse{Items: items}, nil
+}
 
-	return &livekit.ListSIPTrunkResponse{Items: trunks}, nil
+func ListSIPInboundTrunk(ctx context.Context, s SIPStore, req *livekit.ListSIPInboundTrunkRequest, add ...*livekit.SIPInboundTrunkInfo) (iters.Iter[*livekit.SIPInboundTrunkInfo], error) {
+	if s == nil {
+		return nil, ErrSIPNotConnected
+	}
+	pages := livekit.ListPageIter(s.ListSIPInboundTrunk, req)
+	it := iters.PagesAsIter(ctx, pages)
+	if len(add) != 0 {
+		it = iters.MultiIter(true, it, iters.Slice(add))
+	}
+	return it, nil
+}
+
+func ListSIPOutboundTrunk(ctx context.Context, s SIPStore, req *livekit.ListSIPOutboundTrunkRequest, add ...*livekit.SIPOutboundTrunkInfo) (iters.Iter[*livekit.SIPOutboundTrunkInfo], error) {
+	if s == nil {
+		return nil, ErrSIPNotConnected
+	}
+	pages := livekit.ListPageIter(s.ListSIPOutboundTrunk, req)
+	it := iters.PagesAsIter(ctx, pages)
+	if len(add) != 0 {
+		it = iters.MultiIter(true, it, iters.Slice(add))
+	}
+	return it, nil
 }
 
 func (s *SIPService) ListSIPInboundTrunk(ctx context.Context, req *livekit.ListSIPInboundTrunkRequest) (*livekit.ListSIPInboundTrunkResponse, error) {
@@ -231,29 +258,17 @@ func (s *SIPService) ListSIPInboundTrunk(ctx context.Context, req *livekit.ListS
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
-
-	var trunks []*livekit.SIPInboundTrunkInfo
-	if len(req.TrunkIds) != 0 {
-		trunks = make([]*livekit.SIPInboundTrunkInfo, len(req.TrunkIds))
-		for i, id := range req.TrunkIds {
-			t, err := s.store.LoadSIPInboundTrunk(ctx, id)
-			if errors.Is(err, ErrSIPTrunkNotFound) {
-				continue // keep nil in slice
-			} else if err != nil {
-				return nil, err
-			}
-			trunks[i] = t
-		}
-	} else {
-		var err error
-		trunks, err = s.store.ListSIPInboundTrunk(ctx)
-		if err != nil {
-			return nil, err
-		}
+	it, err := ListSIPInboundTrunk(ctx, s.store, req)
+	if err != nil {
+		return nil, err
 	}
-	trunks = req.FilterSlice(trunks)
+	defer it.Close()
 
-	return &livekit.ListSIPInboundTrunkResponse{Items: trunks}, nil
+	items, err := iters.All(it)
+	if err != nil {
+		return nil, err
+	}
+	return &livekit.ListSIPInboundTrunkResponse{Items: items}, nil
 }
 
 func (s *SIPService) ListSIPOutboundTrunk(ctx context.Context, req *livekit.ListSIPOutboundTrunkRequest) (*livekit.ListSIPOutboundTrunkResponse, error) {
@@ -263,29 +278,17 @@ func (s *SIPService) ListSIPOutboundTrunk(ctx context.Context, req *livekit.List
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
-
-	var trunks []*livekit.SIPOutboundTrunkInfo
-	if len(req.TrunkIds) != 0 {
-		trunks = make([]*livekit.SIPOutboundTrunkInfo, len(req.TrunkIds))
-		for i, id := range req.TrunkIds {
-			t, err := s.store.LoadSIPOutboundTrunk(ctx, id)
-			if errors.Is(err, ErrSIPTrunkNotFound) {
-				continue // keep nil in slice
-			} else if err != nil {
-				return nil, err
-			}
-			trunks[i] = t
-		}
-	} else {
-		var err error
-		trunks, err = s.store.ListSIPOutboundTrunk(ctx)
-		if err != nil {
-			return nil, err
-		}
+	it, err := ListSIPOutboundTrunk(ctx, s.store, req)
+	if err != nil {
+		return nil, err
 	}
-	trunks = req.FilterSlice(trunks)
+	defer it.Close()
 
-	return &livekit.ListSIPOutboundTrunkResponse{Items: trunks}, nil
+	items, err := iters.All(it)
+	if err != nil {
+		return nil, err
+	}
+	return &livekit.ListSIPOutboundTrunkResponse{Items: items}, nil
 }
 
 func (s *SIPService) DeleteSIPTrunk(ctx context.Context, req *livekit.DeleteSIPTrunkRequest) (*livekit.SIPTrunkInfo, error) {
@@ -335,12 +338,14 @@ func (s *SIPService) CreateSIPDispatchRule(ctx context.Context, req *livekit.Cre
 	}
 
 	// Validate all rules including the new one first.
-	list, err := s.store.ListSIPDispatchRule(ctx)
+	it, err := ListSIPDispatchRule(ctx, s.store, &livekit.ListSIPDispatchRuleRequest{
+		TrunkIds: req.TrunkIds,
+	}, info)
 	if err != nil {
 		return nil, err
 	}
-	list = append(list, info)
-	if err = sip.ValidateDispatchRules(list); err != nil {
+	defer it.Close()
+	if _, err = sip.ValidateDispatchRulesIter(it); err != nil {
 		return nil, err
 	}
 
@@ -352,6 +357,18 @@ func (s *SIPService) CreateSIPDispatchRule(ctx context.Context, req *livekit.Cre
 	return info, nil
 }
 
+func ListSIPDispatchRule(ctx context.Context, s SIPStore, req *livekit.ListSIPDispatchRuleRequest, add ...*livekit.SIPDispatchRuleInfo) (iters.Iter[*livekit.SIPDispatchRuleInfo], error) {
+	if s == nil {
+		return nil, ErrSIPNotConnected
+	}
+	pages := livekit.ListPageIter(s.ListSIPDispatchRule, req)
+	it := iters.PagesAsIter(ctx, pages)
+	if len(add) != 0 {
+		it = iters.MultiIter(true, it, iters.Slice(add))
+	}
+	return it, nil
+}
+
 func (s *SIPService) ListSIPDispatchRule(ctx context.Context, req *livekit.ListSIPDispatchRuleRequest) (*livekit.ListSIPDispatchRuleResponse, error) {
 	if err := EnsureSIPAdminPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
@@ -359,29 +376,17 @@ func (s *SIPService) ListSIPDispatchRule(ctx context.Context, req *livekit.ListS
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
-
-	var rules []*livekit.SIPDispatchRuleInfo
-	if len(req.DispatchRuleIds) != 0 {
-		rules = make([]*livekit.SIPDispatchRuleInfo, len(req.DispatchRuleIds))
-		for i, id := range req.DispatchRuleIds {
-			r, err := s.store.LoadSIPDispatchRule(ctx, id)
-			if errors.Is(err, ErrSIPDispatchRuleNotFound) {
-				continue // keep nil in slice
-			} else if err != nil {
-				return nil, err
-			}
-			rules[i] = r
-		}
-	} else {
-		var err error
-		rules, err = s.store.ListSIPDispatchRule(ctx)
-		if err != nil {
-			return nil, err
-		}
+	it, err := ListSIPDispatchRule(ctx, s.store, req)
+	if err != nil {
+		return nil, err
 	}
-	rules = req.FilterSlice(rules)
+	defer it.Close()
 
-	return &livekit.ListSIPDispatchRuleResponse{Items: rules}, nil
+	items, err := iters.All(it)
+	if err != nil {
+		return nil, err
+	}
+	return &livekit.ListSIPDispatchRuleResponse{Items: items}, nil
 }
 
 func (s *SIPService) DeleteSIPDispatchRule(ctx context.Context, req *livekit.DeleteSIPDispatchRuleRequest) (*livekit.SIPDispatchRuleInfo, error) {
@@ -400,7 +405,7 @@ func (s *SIPService) DeleteSIPDispatchRule(ctx context.Context, req *livekit.Del
 		return nil, err
 	}
 
-	if err = s.store.DeleteSIPDispatchRule(ctx, info); err != nil {
+	if err = s.store.DeleteSIPDispatchRule(ctx, info.SipDispatchRuleId); err != nil {
 		return nil, err
 	}
 

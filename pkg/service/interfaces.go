@@ -87,15 +87,15 @@ type SIPStore interface {
 	LoadSIPTrunk(ctx context.Context, sipTrunkID string) (*livekit.SIPTrunkInfo, error)
 	LoadSIPInboundTrunk(ctx context.Context, sipTrunkID string) (*livekit.SIPInboundTrunkInfo, error)
 	LoadSIPOutboundTrunk(ctx context.Context, sipTrunkID string) (*livekit.SIPOutboundTrunkInfo, error)
-	ListSIPTrunk(ctx context.Context) ([]*livekit.SIPTrunkInfo, error)
-	ListSIPInboundTrunk(ctx context.Context) ([]*livekit.SIPInboundTrunkInfo, error)
-	ListSIPOutboundTrunk(ctx context.Context) ([]*livekit.SIPOutboundTrunkInfo, error)
+	ListSIPTrunk(ctx context.Context, opts *livekit.ListSIPTrunkRequest) (*livekit.ListSIPTrunkResponse, error)
+	ListSIPInboundTrunk(ctx context.Context, opts *livekit.ListSIPInboundTrunkRequest) (*livekit.ListSIPInboundTrunkResponse, error)
+	ListSIPOutboundTrunk(ctx context.Context, opts *livekit.ListSIPOutboundTrunkRequest) (*livekit.ListSIPOutboundTrunkResponse, error)
 	DeleteSIPTrunk(ctx context.Context, sipTrunkID string) error
 
 	StoreSIPDispatchRule(ctx context.Context, info *livekit.SIPDispatchRuleInfo) error
 	LoadSIPDispatchRule(ctx context.Context, sipDispatchRuleID string) (*livekit.SIPDispatchRuleInfo, error)
-	ListSIPDispatchRule(ctx context.Context) ([]*livekit.SIPDispatchRuleInfo, error)
-	DeleteSIPDispatchRule(ctx context.Context, info *livekit.SIPDispatchRuleInfo) error
+	ListSIPDispatchRule(ctx context.Context, opts *livekit.ListSIPDispatchRuleRequest) (*livekit.ListSIPDispatchRuleResponse, error)
+	DeleteSIPDispatchRule(ctx context.Context, sipDispatchRuleID string) error
 }
 
 //counterfeiter:generate . AgentStore
