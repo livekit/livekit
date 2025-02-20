@@ -81,11 +81,23 @@ func (c *BitrateCalculator) AddBytes(bytes int, bufferedAmout int, ts time.Time)
 }
 
 func (c *BitrateCalculator) Bitrate(ts time.Time) (int, bool) {
+	return c.bitrate(ts, false)
+}
+
+func (c *BitrateCalculator) ForceBitrate(ts time.Time) (int, bool) {
+	return c.bitrate(ts, true)
+}
+
+func (c *BitrateCalculator) bitrate(ts time.Time, force bool) (int, bool) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	duration := ts.Sub(c.start)
 	if duration < c.windowDuration {
-		return 0, false
+		if force {
+			duration = c.windowDuration
+		} else {
+			return 0, false
+		}
 	}
 
 	return c.bytes * 8 * 1000 / int(duration.Milliseconds()), true
