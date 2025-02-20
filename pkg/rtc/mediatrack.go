@@ -55,8 +55,9 @@ type MediaTrack struct {
 
 	rttFromXR atomic.Bool
 
-	enableRegression      bool
-	regressionTargetCodec mime.MimeType
+	enableRegression              bool
+	regressionTargetCodec         mime.MimeType
+	regressionTargetCodecReceived bool
 }
 
 type MediaTrackParams struct {
@@ -252,6 +253,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 
 	ti := t.MediaTrackReceiver.TrackInfoClone()
 	t.lock.Lock()
+	var regressCodec bool
 	mimeType := mime.NormalizeMimeType(track.Codec().MimeType)
 	layer := buffer.RidToSpatialLayer(track.RID(), ti)
 	t.params.Logger.Debugw(
@@ -354,6 +356,16 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			t.MediaTrackReceiver.HandleReceiverCodecChange(newWR, codec, state)
 		})
 	}
+
+	if newCodec && t.enableRegression {
+		if mimeType == t.regressionTargetCodec {
+			t.params.Logger.Infow("regression target codec received", "codec", mimeType)
+			t.regressionTargetCodecReceived = true
+			regressCodec = true
+		} else if t.regressionTargetCodecReceived {
+			regressCodec = true
+		}
+	}
 	t.lock.Unlock()
 
 	if err := wr.(*sfu.WebRTCReceiver).AddUpTrack(track, buff); err != nil {
@@ -381,10 +393,9 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 
 	t.MediaTrackReceiver.SetLayerSsrc(mimeType, track.RID(), uint32(track.SSRC()))
 
-	if newCodec && t.enableRegression && mimeType == t.regressionTargetCodec {
-		t.params.Logger.Infow("regression target codec received", "codec", mimeType)
+	if regressCodec {
 		for _, c := range ti.Codecs {
-			if mime.NormalizeMimeType(c.MimeType) == mimeType {
+			if mime.NormalizeMimeType(c.MimeType) == t.regressionTargetCodec {
 				continue
 			}
 
