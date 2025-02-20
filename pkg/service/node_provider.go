@@ -199,7 +199,7 @@ func (p *NodeProvider) refresh(ctx context.Context) error {
 
 		node := Node{
 			Participants: entryNode.Online,
-			Domain:       fmt.Sprintf("%s", entryNode.IP) + ".dtel.network",
+			Domain:       fmt.Sprintf("%d", entryNode.IP) + ".dtel.network",
 			IP:           ip.String(),
 			Country:      country.Country.Names["en"],
 			City:         city.City.Names["en"],
