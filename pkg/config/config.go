@@ -93,6 +93,7 @@ type SolanaConfig struct {
 	ContractAddress   string `yaml:"contract_address"`
 	NetworkHostHTTP   string `yaml:"network_host_http"`
 	NetworkHostWS     string `yaml:"network_host_ws"`
+	RegistryAuthority string `yaml:"registry_authority"`
 	EphemeralHostHTTP string `yaml:"network_host_http"`
 	EphemeralHostWS   string `yaml:"network_host_ws"`
 }

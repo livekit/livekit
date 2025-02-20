@@ -1,9 +1,11 @@
 package routing
 
 import (
+	"fmt"
 	"runtime"
 	"time"
 
+	"github.com/gagliardetto/solana-go"
 	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -15,8 +17,14 @@ func NewLocalNode(conf *config.Config) (LocalNode, error) {
 	if conf.RTC.NodeIP == "" {
 		return nil, ErrIPNotSet
 	}
+
+	privateKey, err := solana.PrivateKeyFromBase58(conf.Solana.WalletPrivateKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid private key: %v", err)
+	}
+
 	node := &livekit.Node{
-		Id:      conf.Ethereum.WalletAddress,
+		Id:      privateKey.PublicKey().String(),
 		Ip:      conf.RTC.NodeIP,
 		NumCpus: uint32(runtime.NumCPU()),
 		Region:  conf.Region,

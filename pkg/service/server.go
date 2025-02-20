@@ -13,7 +13,6 @@ import (
 	"runtime/pprof"
 	"time"
 
-	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/pion/turn/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
@@ -64,7 +63,6 @@ func NewLivekitServer(conf *config.Config,
 	currentNode routing.LocalNode,
 	clientProvider *ClientProvider,
 	nodeProvider *NodeProvider,
-	db *p2p_database.DB,
 	relevantNodesHandler *RelevantNodesHandler,
 	mainDebugHandler *MainDebugHandler,
 	TLSMuxer *vhost.TLSMuxer,
@@ -128,6 +126,7 @@ func NewLivekitServer(conf *config.Config,
 	mux.HandleFunc("/relevant", relevantNodesHandler.HTTPHandler)
 	mux.HandleFunc("/node-debug", mainDebugHandler.nodeHTTPHandler)
 	mux.HandleFunc("/peer-debug", mainDebugHandler.peerHTTPHandler)
+	mux.HandleFunc("/client-debug", mainDebugHandler.clientHTTPHandler)
 	mux.HandleFunc("/", s.defaultHandler)
 
 	if conf.Domain != "" {
@@ -245,14 +244,6 @@ func (s *LivekitServer) Start() error {
 	logger.Infow("starting LiveKit server", values...)
 
 	ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
-
-	err := s.nodeProvider.Save(ctx, Node{
-		Domain: s.config.Domain,
-		IP:     s.currentNode.Ip,
-	})
-	if err != nil {
-		logger.Errorw("node provider save error", err)
-	}
 
 	for _, promLn := range promListeners {
 		go s.promServer.Serve(promLn)

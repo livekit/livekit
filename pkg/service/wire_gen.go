@@ -9,7 +9,6 @@ package service
 import (
 	"context"
 	"github.com/dTelecom/p2p-realtime-database"
-	"github.com/dTelecom/pubsub-solana"
 	"github.com/inconshreveable/go-vhost"
 	"github.com/livekit/livekit-server"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
@@ -51,9 +50,13 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	pubSub := newPubSub(conf)
-	router := routing.CreateRouter(conf, universalClient, currentNode, signalClient, pubSub)
-	objectStore := createStore(pubSub, nodeID)
+	p2p_databaseConfig := GetDatabaseConfiguration(conf)
+	db, err := CreateMainDatabaseP2P(p2p_databaseConfig, conf)
+	if err != nil {
+		return nil, err
+	}
+	router := routing.CreateRouter(conf, universalClient, currentNode, signalClient, db)
+	objectStore := createStore(db, p2p_databaseConfig, nodeID, conf)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
 		return nil, err
@@ -124,15 +127,10 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	p2p_databaseConfig := GetDatabaseConfiguration(conf)
-	db, err := CreateMainDatabaseP2P(p2p_databaseConfig, conf)
-	if err != nil {
-		return nil, err
-	}
-	nodeProvider := CreateNodeProvider(reader, conf, db, currentNode)
+	nodeProvider := CreateNodeProvider(reader, conf, currentNode)
 	relevantNodesHandler := createRelevantNodesHandler(conf, nodeProvider)
-	mainDebugHandler := createMainDebugHandler(conf, nodeProvider, db)
-	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, nodeProvider, db, relevantNodesHandler, mainDebugHandler, tlsMuxer, manager)
+	mainDebugHandler := createMainDebugHandler(conf, nodeProvider, clientProvider, db)
+	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, nodeProvider, relevantNodesHandler, mainDebugHandler, tlsMuxer, manager)
 	if err != nil {
 		return nil, err
 	}
@@ -145,16 +143,16 @@ func createRelevantNodesHandler(conf *config.Config, nodeProvider *NodeProvider)
 	return NewRelevantNodesHandler(nodeProvider, conf.LoggingP2P)
 }
 
-func createMainDebugHandler(conf *config.Config, nodeProvider *NodeProvider, db *p2p_database.DB) *MainDebugHandler {
-	return NewMainDebugHandler(db, nodeProvider, conf.LoggingP2P)
+func createMainDebugHandler(conf *config.Config, nodeProvider *NodeProvider, clientProvider *ClientProvider, db *p2p_database.DB) *MainDebugHandler {
+	return NewMainDebugHandler(db, nodeProvider, clientProvider, conf.LoggingP2P)
 }
 
 func createGeoIP() (*geoip2.Reader, error) {
 	return geoip2.FromBytes(livekit.MixmindDatabase)
 }
 
-func CreateNodeProvider(geo *geoip2.Reader, config2 *config.Config, db *p2p_database.DB, node routing.LocalNode) *NodeProvider {
-	return NewNodeProvider(db, geo, config2.LoggingP2P, node)
+func CreateNodeProvider(geo *geoip2.Reader, config2 *config.Config, node routing.LocalNode) *NodeProvider {
+	return NewNodeProvider(geo, node, config2.Solana)
 }
 
 func createClientProvider(config2 *config.Config) *ClientProvider {
@@ -225,10 +223,12 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 }
 
 func createStore(
-	pubSub *pubsub_solana.PubSub,
+	mainDatabase *p2p_database.DB,
+	p2pDbConfig p2p_database.Config,
 	nodeID livekit2.NodeID,
+	conf *config.Config,
 ) ObjectStore {
-	return NewLocalStore(nodeID, pubSub)
+	return NewLocalStore(nodeID, mainDatabase)
 }
 
 func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
@@ -272,8 +272,4 @@ func getSignalRelayConfig(config2 *config.Config) config.SignalRelayConfig {
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler, TLSMuxer *vhost.TLSMuxer, certManager *autocert.Manager) (*turn.Server, error) {
 	return NewTurnServer(conf, authHandler, false, TLSMuxer, certManager)
-}
-
-func newPubSub(conf *config.Config) *pubsub_solana.PubSub {
-	return pubsub_solana.New(conf.Solana.EphemeralHostHTTP, conf.Solana.EphemeralHostWS, conf.Solana.EphemeralHostHTTP, conf.Solana.EphemeralHostWS, conf.Solana.WalletPrivateKey)
 }

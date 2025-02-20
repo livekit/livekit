@@ -88,16 +88,16 @@ func createRelevantNodesHandler(conf *config.Config, nodeProvider *NodeProvider)
 	return NewRelevantNodesHandler(nodeProvider, conf.LoggingP2P)
 }
 
-func createMainDebugHandler(conf *config.Config, nodeProvider *NodeProvider, db *p2p_database.DB) *MainDebugHandler {
-	return NewMainDebugHandler(db, nodeProvider, conf.LoggingP2P)
+func createMainDebugHandler(conf *config.Config, nodeProvider *NodeProvider, clientProvider *ClientProvider, db *p2p_database.DB) *MainDebugHandler {
+	return NewMainDebugHandler(db, nodeProvider, clientProvider, conf.LoggingP2P)
 }
 
 func createGeoIP() (*geoip2.Reader, error) {
 	return geoip2.FromBytes(livekit2.MixmindDatabase)
 }
 
-func CreateNodeProvider(geo *geoip2.Reader, config *config.Config, db *p2p_database.DB, node routing.LocalNode) *NodeProvider {
-	return NewNodeProvider(db, geo, config.LoggingP2P, node)
+func CreateNodeProvider(geo *geoip2.Reader, config *config.Config, node routing.LocalNode) *NodeProvider {
+	return NewNodeProvider(geo, node, config.Solana)
 }
 
 func createClientProvider(config *config.Config) *ClientProvider {
