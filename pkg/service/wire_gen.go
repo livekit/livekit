@@ -127,7 +127,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	nodeProvider := CreateNodeProvider(reader, conf, db, currentNode)
+	nodeProvider := CreateNodeProvider(reader, conf, currentNode)
 	relevantNodesHandler := createRelevantNodesHandler(conf, nodeProvider)
 	mainDebugHandler := createMainDebugHandler(conf, nodeProvider, clientProvider, db)
 	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, nodeProvider, db, relevantNodesHandler, mainDebugHandler, tlsMuxer, manager)
@@ -151,8 +151,8 @@ func createGeoIP() (*geoip2.Reader, error) {
 	return geoip2.FromBytes(livekit.MixmindDatabase)
 }
 
-func CreateNodeProvider(geo *geoip2.Reader, config2 *config.Config, db *p2p_database.DB, node routing.LocalNode) *NodeProvider {
-	return NewNodeProvider(db, geo, config2.LoggingP2P, node)
+func CreateNodeProvider(geo *geoip2.Reader, config2 *config.Config, node routing.LocalNode) *NodeProvider {
+	return NewNodeProvider(geo, node, config2.Solana)
 }
 
 func createClientProvider(config2 *config.Config) *ClientProvider {

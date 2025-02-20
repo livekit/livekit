@@ -247,14 +247,6 @@ func (s *LivekitServer) Start() error {
 
 	ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
 
-	err := s.nodeProvider.Save(ctx, Node{
-		Domain: s.config.Domain,
-		IP:     s.currentNode.Ip,
-	})
-	if err != nil {
-		logger.Errorw("node provider save error", err)
-	}
-
 	for _, promLn := range promListeners {
 		go s.promServer.Serve(promLn)
 	}

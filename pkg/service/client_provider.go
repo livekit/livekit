@@ -23,6 +23,7 @@ const (
 )
 
 type ClientProvider struct {
+	WalletPrivateKey  string
 	ContractAddress   string
 	NetworkHostHTTP   string
 	NetworkHostWS     string
@@ -39,6 +40,7 @@ type Client struct {
 
 func NewClientProvider(conf config.SolanaConfig) *ClientProvider {
 	provider := &ClientProvider{
+		WalletPrivateKey:  conf.WalletPrivateKey,
 		ContractAddress:   conf.ContractAddress,
 		NetworkHostHTTP:   conf.NetworkHostHTTP,
 		NetworkHostWS:     conf.NetworkHostWS,
@@ -67,11 +69,11 @@ func (c *ClientProvider) ClientByAddress(ctx context.Context, address string) (C
 		return Client{}, err
 	}
 
-	client, err := newRegistryClient(c.NetworkHostHTTP, c.NetworkHostWS, c.ContractAddress)
+	client, err := NewRegistryClient(c.NetworkHostHTTP, c.NetworkHostWS, c.ContractAddress, c.WalletPrivateKey)
 	if err != nil {
 		return Client{}, err
 	}
-	entry, err := client.GetFromRegistry(ctx, authority, "clients", account)
+	entry, err := client.GetClientFromRegistry(ctx, authority, "clients", account)
 	if err != nil {
 		return Client{}, err
 	}
