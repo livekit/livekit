@@ -130,7 +130,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	nodeProvider := CreateNodeProvider(reader, conf, currentNode)
 	relevantNodesHandler := createRelevantNodesHandler(conf, nodeProvider)
 	mainDebugHandler := createMainDebugHandler(conf, nodeProvider, clientProvider, db)
-	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, nodeProvider, db, relevantNodesHandler, mainDebugHandler, tlsMuxer, manager)
+	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, nodeProvider, relevantNodesHandler, mainDebugHandler, tlsMuxer, manager)
 	if err != nil {
 		return nil, err
 	}

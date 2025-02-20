@@ -13,7 +13,6 @@ import (
 	"runtime/pprof"
 	"time"
 
-	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/pion/turn/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
@@ -64,7 +63,6 @@ func NewLivekitServer(conf *config.Config,
 	currentNode routing.LocalNode,
 	clientProvider *ClientProvider,
 	nodeProvider *NodeProvider,
-	db *p2p_database.DB,
 	relevantNodesHandler *RelevantNodesHandler,
 	mainDebugHandler *MainDebugHandler,
 	TLSMuxer *vhost.TLSMuxer,
