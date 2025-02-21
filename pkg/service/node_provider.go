@@ -181,10 +181,15 @@ func (p *NodeProvider) refresh(ctx context.Context) error {
 		return err
 	}
 	for _, entryNode := range entryNodes {
+		if entryNode.Active == false {
+			continue
+		}
+
 		var ipv4 net.IP
 		ips, _ := net.LookupIP(entryNode.Domain)
 		for _, ip := range ips {
-			if ipv4 := ip.To4(); ipv4 != nil {
+			ipv4 = ip.To4()
+			if ipv4 != nil {
 				break
 			}
 		}
