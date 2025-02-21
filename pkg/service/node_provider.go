@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	"math"
 	"net"
@@ -182,16 +181,25 @@ func (p *NodeProvider) refresh(ctx context.Context) error {
 		return err
 	}
 	for _, entryNode := range entryNodes {
-		ip := make(net.IP, 4)
-		binary.BigEndian.PutUint32(ip, entryNode.IP)
+		var ipv4 net.IP
+		ips, _ := net.LookupIP(entryNode.Domain)
+		for _, ip := range ips {
+			if ipv4 := ip.To4(); ipv4 != nil {
+				break
+			}
+		}
+		if ipv4 == nil {
+			logger.Errorw("ipv4 nil", fmt.Errorf("domain error: %v", entryNode.Domain))
+			continue
+		}
 
-		country, err := p.geo.Country(ip)
+		country, err := p.geo.Country(ipv4)
 		if err != nil {
 			logger.Errorw("country", err)
 			continue
 		}
 
-		city, err := p.geo.City(ip)
+		city, err := p.geo.City(ipv4)
 		if err != nil {
 			logger.Errorw("city", err)
 			continue
@@ -199,8 +207,8 @@ func (p *NodeProvider) refresh(ctx context.Context) error {
 
 		node := Node{
 			Participants: entryNode.Online,
-			Domain:       fmt.Sprintf("%d", entryNode.IP) + ".dtel.network",
-			IP:           ip.String(),
+			Domain:       entryNode.Domain,
+			IP:           ipv4.String(),
 			Country:      country.Country.Names["en"],
 			City:         city.City.Names["en"],
 			Latitude:     city.Location.Latitude,

@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	ClientEntrySize = 8 + 32 + 32 + 8 + 4 // discriminator + parent + registered + until + limit
-	NodeEntrySize   = 8 + 32 + 32 + 4 + 4 // discriminator + parent + registered + ip + online
+	ClientEntrySize = 8 + 32 + 32 + 8 + 4           // discriminator + parent + registered + until + limit
+	NodeEntrySize   = 8 + 32 + 32 + 4 + 253 + 4 + 1 // discriminator + parent + registered + domain length + domain + online + active
 )
 
 // Anchor instruction discriminators
@@ -41,8 +41,9 @@ type ClientEntry struct {
 type NodeEntry struct {
 	Parent    solana.PublicKey
 	Registred solana.PublicKey
-	IP        uint32
+	Domain    string
 	Online    int32
+	Active    bool
 }
 
 // NewRegistryClient creates a new instance of the registry client
@@ -132,11 +133,15 @@ func (c *RegistryClient) ListNodesInRegistry(ctx context.Context, authority sola
 		// Skip the 8-byte discriminator
 		data = data[8:]
 
+		// Read domain string length (4 bytes)
+		domainLen := binary.LittleEndian.Uint32(data[64:68])
+
 		entry := &NodeEntry{
 			Parent:    solana.PublicKeyFromBytes(data[:32]),
 			Registred: solana.PublicKeyFromBytes(data[32:64]),
-			IP:        binary.LittleEndian.Uint32(data[64:68]),
-			Online:    int32(binary.LittleEndian.Uint32(data[68:72])),
+			Domain:    string(data[68 : 68+domainLen]),
+			Online:    int32(binary.LittleEndian.Uint32(data[68+domainLen : 72+domainLen])),
+			Active:    data[72+domainLen] == 1,
 		}
 		entries = append(entries, entry)
 	}
@@ -308,11 +313,15 @@ func getNodeEntry(
 	// Skip the 8-byte discriminator
 	data = data[8:]
 
+	// Read domain string length (4 bytes)
+	domainLen := binary.LittleEndian.Uint32(data[64:68])
+
 	entry := &NodeEntry{
 		Parent:    solana.PublicKeyFromBytes(data[:32]),
 		Registred: solana.PublicKeyFromBytes(data[32:64]),
-		IP:        binary.LittleEndian.Uint32(data[64:68]),
-		Online:    int32(binary.LittleEndian.Uint32(data[68:72])),
+		Domain:    string(data[68 : 68+domainLen]),
+		Online:    int32(binary.LittleEndian.Uint32(data[68+domainLen : 72+domainLen])),
+		Active:    data[72+domainLen] == 1,
 	}
 
 	return entry, nil
