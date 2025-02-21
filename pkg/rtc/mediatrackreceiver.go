@@ -628,6 +628,10 @@ func (t *MediaTrackReceiver) RevokeDisallowedSubscribers(allowedSubscriberIdenti
 
 	// LK-TODO: large number of subscribers needs to be solved for this loop
 	for _, subTrack := range t.MediaTrackSubscriptions.getAllSubscribedTracks() {
+		if IsParticipantExemptFromTrackPermissionsRestrictions(subTrack.Subscriber()) {
+			continue
+		}
+
 		found := false
 		for _, allowedIdentity := range allowedSubscriberIdentities {
 			if subTrack.SubscriberIdentity() == allowedIdentity {
