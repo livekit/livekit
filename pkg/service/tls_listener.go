@@ -11,6 +11,10 @@ import (
 )
 
 func NewCertManager(conf *config.Config) (*autocert.Manager, error) {
+	if !conf.TURN.Enabled {
+		return nil, nil
+	}
+
 	if conf.Domain != "" && conf.TURN.Domain != "" {
 		certManager := autocert.Manager{
 			Prompt:     autocert.AcceptTOS,
@@ -29,6 +33,10 @@ func NewCertManager(conf *config.Config) (*autocert.Manager, error) {
 }
 
 func NewVhostMuxer(conf *config.Config) (*vhost.TLSMuxer, error) {
+	if !conf.TURN.Enabled {
+		return nil, nil
+	}
+
 	if conf.Domain != "" && conf.TURN.Domain != "" {
 		listener, err := net.Listen("tcp4", "0.0.0.0:443")
 

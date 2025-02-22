@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	"math"
 	"net"
@@ -76,6 +75,7 @@ func NewNodeProvider(geo *geoip2.Reader, localNode routing.LocalNode, conf confi
 	}
 
 	provider.startRefresh()
+	go provider.processRefresh()
 
 	return provider
 }
@@ -182,16 +182,30 @@ func (p *NodeProvider) refresh(ctx context.Context) error {
 		return err
 	}
 	for _, entryNode := range entryNodes {
-		ip := make(net.IP, 4)
-		binary.BigEndian.PutUint32(ip, entryNode.IP)
+		if entryNode.Active == false {
+			continue
+		}
 
-		country, err := p.geo.Country(ip)
+		var ipv4 net.IP
+		ips, _ := net.LookupIP(entryNode.Domain)
+		for _, ip := range ips {
+			ipv4 = ip.To4()
+			if ipv4 != nil {
+				break
+			}
+		}
+		if ipv4 == nil {
+			logger.Errorw("ipv4 nil", fmt.Errorf("domain error: %v", entryNode.Domain))
+			continue
+		}
+
+		country, err := p.geo.Country(ipv4)
 		if err != nil {
 			logger.Errorw("country", err)
 			continue
 		}
 
-		city, err := p.geo.City(ip)
+		city, err := p.geo.City(ipv4)
 		if err != nil {
 			logger.Errorw("city", err)
 			continue
@@ -199,8 +213,8 @@ func (p *NodeProvider) refresh(ctx context.Context) error {
 
 		node := Node{
 			Participants: entryNode.Online,
-			Domain:       fmt.Sprintf("%d", entryNode.IP) + ".dtel.network",
-			IP:           ip.String(),
+			Domain:       entryNode.Domain,
+			IP:           ipv4.String(),
 			Country:      country.Country.Names["en"],
 			City:         city.City.Names["en"],
 			Latitude:     city.Location.Latitude,
@@ -246,21 +260,25 @@ func (p *NodeProvider) startRefresh() {
 		ticker := time.NewTicker(nodeRefreshInterval)
 		for {
 			<-ticker.C
-			p.UpdateNodeStats()
-			ctx1, cancel1 := context.WithTimeout(context.Background(), time.Second*15)
-			defer cancel1()
-			err := p.selfRefresh(ctx1)
-			if err != nil {
-				logger.Errorw("[selfRefresh] error %s\r\n", err)
-			}
-			ctx2, cancel2 := context.WithTimeout(context.Background(), time.Second*15)
-			defer cancel2()
-			err = p.refresh(ctx2)
-			if err != nil {
-				logger.Errorw("[refresh] error %s\r\n", err)
-			}
+			p.processRefresh()
 		}
 	}()
+}
+
+func (p *NodeProvider) processRefresh() {
+	p.UpdateNodeStats()
+	ctx1, cancel1 := context.WithTimeout(context.Background(), time.Second*15)
+	defer cancel1()
+	err := p.selfRefresh(ctx1)
+	if err != nil {
+		logger.Errorw("[selfRefresh] error %s\r\n", err)
+	}
+	ctx2, cancel2 := context.WithTimeout(context.Background(), time.Second*15)
+	defer cancel2()
+	err = p.refresh(ctx2)
+	if err != nil {
+		logger.Errorw("[refresh] error %s\r\n", err)
+	}
 }
 
 func (p *NodeProvider) UpdateNodeStats() {
