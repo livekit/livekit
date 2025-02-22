@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -623,7 +623,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 				pendingAnswersMu.Unlock()
 			}()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
 			select {
@@ -638,7 +638,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 		}
 	})
 
-	p2pCommunicator.OnMessage(func(message interface{}, fromPeerId string, eventId string) {
+	p2pCommunicator.OnMessage(func(message []byte, fromPeerId string, eventId string) {
 		replyTo, signal, err := unpackSignalPeerMessage(message)
 		if err != nil {
 			logger.Errorw("Unmarshal signal peer message", err)
@@ -1065,42 +1065,28 @@ func getConnQualitiesPayloadForRelay(room *rtc.Room, connQualities map[livekit.P
 	}
 }
 
-func packSignalPeerMessage(replyTo string, signal []byte) interface{} {
-	return &signalPeerMessage{
-		ReplyTo: replyTo,
-		Signal:  base64.StdEncoding.EncodeToString(signal),
-	}
+func packSignalPeerMessage(replyTo string, signal []byte) []byte {
+	buffer := make([]byte, 0, 2+len(replyTo)+len(signal))
+	buffer = binary.LittleEndian.AppendUint16(buffer, uint16(len(replyTo)))
+	buffer = append(buffer, []byte(replyTo)...)
+	buffer = append(buffer, signal...)
+	return buffer
 }
 
-func unpackSignalPeerMessage(message interface{}) (replyTo string, signal []byte, err error) {
-	messageMap, ok := message.(map[string]interface{})
-	if !ok {
-		err = errors.New("cannot cast")
+func unpackSignalPeerMessage(message []byte) (replyTo string, signal []byte, err error) {
+	if len(message) < 2 {
+		err = errors.New("message is too small")
 		return
 	}
 
-	replyToValue, ok := messageMap["replyTo"]
-	if !ok {
-		err = errors.New("ReplyTo undefined")
-		return
-	}
-	replyTo, ok = replyToValue.(string)
-	if !ok {
-		err = errors.New("cannot cast ReplyTo to string")
+	replyToLen, message := binary.LittleEndian.Uint16(message[:2]), message[2:]
+
+	if len(message) < int(replyToLen) {
+		err = errors.New("message is incorrect")
 		return
 	}
 
-	signalBase64Value, ok := messageMap["signal"]
-	if !ok {
-		err = errors.New("Signal undefined")
-		return
-	}
-	signalBase64, ok := signalBase64Value.(string)
-	if !ok {
-		err = errors.New("cannot cast Signal to string")
-		return
-	}
-	signal, err = base64.StdEncoding.DecodeString(signalBase64)
+	replyTo, signal = string(message[:replyToLen]), message[replyToLen:]
 
 	return
 }

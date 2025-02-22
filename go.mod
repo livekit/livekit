@@ -69,6 +69,7 @@ require (
 require (
 	filippo.io/edwards25519 v1.0.0-rc.1 // indirect
 	github.com/AlekSi/pointer v1.1.0 // indirect
+	github.com/DataDog/zstd v1.5.6 // indirect
 	github.com/Jorropo/jsync v1.0.1 // indirect
 	github.com/StackExchange/wmi v0.0.0-20180116203802-5d049714c4a6 // indirect
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b // indirect

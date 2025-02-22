@@ -217,6 +217,8 @@ func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler, T
 	return NewTurnServer(conf, authHandler, false, TLSMuxer, certManager)
 }
 
-func newPubSub(conf *config.Config) *pubsub.PubSub {
-	return pubsub.New(conf.Solana.EphemeralHostHTTP, conf.Solana.EphemeralHostWS, conf.Solana.EphemeralHostHTTP, conf.Solana.EphemeralHostWS, conf.Solana.WalletPrivateKey)
+func newPubSub(conf *config.Config) (pubSub *pubsub.PubSub, err error) {
+	pubSub = pubsub.New(conf.Solana.EphemeralHostHTTP, conf.Solana.EphemeralHostWS, conf.Solana.EphemeralHostHTTP, conf.Solana.EphemeralHostWS, conf.Solana.WalletPrivateKey)
+	err = pubSub.Start(context.Background())
+	return
 }

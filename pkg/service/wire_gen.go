@@ -9,6 +9,7 @@ package service
 import (
 	"context"
 	"github.com/dTelecom/p2p-realtime-database"
+	"github.com/dTelecom/pubsub-solana"
 	"github.com/inconshreveable/go-vhost"
 	"github.com/livekit/livekit-server"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
@@ -50,13 +51,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	p2p_databaseConfig := GetDatabaseConfiguration(conf)
-	db, err := CreateMainDatabaseP2P(p2p_databaseConfig, conf)
+	pubSub, err := newPubSub(conf)
 	if err != nil {
 		return nil, err
 	}
-	router := routing.CreateRouter(conf, universalClient, currentNode, signalClient, db)
-	objectStore := createStore(db, p2p_databaseConfig, nodeID, conf)
+	router := routing.CreateRouter(conf, universalClient, currentNode, signalClient, pubSub)
+	objectStore := createStore(pubSub, nodeID)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
 		return nil, err
@@ -129,6 +129,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	nodeProvider := CreateNodeProvider(reader, conf, currentNode)
 	relevantNodesHandler := createRelevantNodesHandler(conf, nodeProvider)
+	p2p_databaseConfig := GetDatabaseConfiguration(conf)
+	db, err := CreateMainDatabaseP2P(p2p_databaseConfig, conf)
+	if err != nil {
+		return nil, err
+	}
 	mainDebugHandler := createMainDebugHandler(conf, nodeProvider, clientProvider, db)
 	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, nodeProvider, relevantNodesHandler, mainDebugHandler, tlsMuxer, manager)
 	if err != nil {
@@ -223,12 +228,10 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 }
 
 func createStore(
-	mainDatabase *p2p_database.DB,
-	p2pDbConfig p2p_database.Config,
+	pubSub *pubsub_solana.PubSub,
 	nodeID livekit2.NodeID,
-	conf *config.Config,
 ) ObjectStore {
-	return NewLocalStore(nodeID, mainDatabase)
+	return NewLocalStore(nodeID, pubSub)
 }
 
 func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
@@ -272,4 +275,10 @@ func getSignalRelayConfig(config2 *config.Config) config.SignalRelayConfig {
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler, TLSMuxer *vhost.TLSMuxer, certManager *autocert.Manager) (*turn.Server, error) {
 	return NewTurnServer(conf, authHandler, false, TLSMuxer, certManager)
+}
+
+func newPubSub(conf *config.Config) (pubSub *pubsub_solana.PubSub, err error) {
+	pubSub = pubsub_solana.New(conf.Solana.EphemeralHostHTTP, conf.Solana.EphemeralHostWS, conf.Solana.EphemeralHostHTTP, conf.Solana.EphemeralHostWS, conf.Solana.WalletPrivateKey)
+	err = pubSub.Start(context.Background())
+	return
 }

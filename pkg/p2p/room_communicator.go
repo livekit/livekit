@@ -31,7 +31,7 @@ type RoomCommunicatorImpl struct {
 
 	peers           map[string]struct{}
 	peerHandlers    []func(peerId string)
-	messageHandlers []func(message interface{}, fromPeerId string, eventId string)
+	messageHandlers []func(message []byte, fromPeerId string, eventId string)
 
 	mu sync.Mutex
 }
@@ -70,7 +70,7 @@ func (c *RoomCommunicatorImpl) init() error {
 
 	go func() {
 		for {
-			if _, err := c.pubSub.Publish(c.ctx, roomMessagesTopic, adMessage); err != nil {
+			if _, err := c.pubSub.Publish(c.ctx, roomMessagesTopic, []byte(adMessage)); err != nil {
 				if c.ctx.Err() == nil {
 					log.Fatalf("cannot publish ad message: %v", err)
 				} else {
@@ -103,7 +103,7 @@ func (c *RoomCommunicatorImpl) checkPeer(peerId string) {
 		log.Printf("New key added peer added %v", peerId)
 
 		incomingMessageTopic := formatIncomingMessagesTopic(c.room.Key, peerId)
-		if _, err := c.pubSub.Publish(c.ctx, incomingMessageTopic, pingMessage); err != nil {
+		if _, err := c.pubSub.Publish(c.ctx, incomingMessageTopic, []byte(pingMessage)); err != nil {
 			log.Printf("cannot send ping message for node %s in db %s: %s", peerId, c.room.Key, err)
 		} else {
 			log.Printf("PING message sent to %v", peerId)
@@ -112,17 +112,17 @@ func (c *RoomCommunicatorImpl) checkPeer(peerId string) {
 }
 
 func (c *RoomCommunicatorImpl) incomingMessageHandler(_ context.Context, event pubsub.Event) {
-	if event.Message == pingMessage {
+	if string(event.Message) == pingMessage {
 		log.Println("PING message received")
 		incomingMessageTopic := formatIncomingMessagesTopic(c.room.Key, event.FromPeerId)
-		if _, err := c.pubSub.Publish(c.ctx, incomingMessageTopic, pongMessage); err != nil {
+		if _, err := c.pubSub.Publish(c.ctx, incomingMessageTopic, []byte(pongMessage)); err != nil {
 			log.Printf("cannot send pong message for node %s in db %s: %s", event.FromPeerId, c.room.Key, err)
 		} else {
 			log.Printf("PONG message sent to %v", event.FromPeerId)
 		}
-	} else if event.Message == pongMessage {
+	} else if string(event.Message) == pongMessage {
 		log.Printf("PONG message received from %v", event.FromPeerId)
-	} else if event.Message == adMessage {
+	} else if string(event.Message) == adMessage {
 		c.checkPeer(event.FromPeerId)
 	} else {
 		c.mu.Lock()
@@ -134,11 +134,11 @@ func (c *RoomCommunicatorImpl) incomingMessageHandler(_ context.Context, event p
 }
 
 func (c *RoomCommunicatorImpl) roomMessageHandler(_ context.Context, event pubsub.Event) {
-	if event.Message == adMessage {
+	if string(event.Message) == adMessage {
 		c.checkPeer(event.FromPeerId)
 
 		incomingMessageTopic := formatIncomingMessagesTopic(c.room.Key, event.FromPeerId)
-		if _, err := c.pubSub.Publish(c.ctx, incomingMessageTopic, adMessage); err != nil {
+		if _, err := c.pubSub.Publish(c.ctx, incomingMessageTopic, []byte(adMessage)); err != nil {
 			log.Printf("cannot send ad message for node %s in db %s: %s", event.FromPeerId, c.room.Key, err)
 		} else {
 			log.Printf("ad message sent to %v", event.FromPeerId)
@@ -158,7 +158,7 @@ func (c *RoomCommunicatorImpl) ForEachPeer(peerHandler func(peerId string)) {
 	}
 }
 
-func (c *RoomCommunicatorImpl) SendMessage(peerId string, message interface{}) (string, error) {
+func (c *RoomCommunicatorImpl) SendMessage(peerId string, message []byte) (string, error) {
 	incomingMessagesTopic := formatIncomingMessagesTopic(c.room.Key, peerId)
 	eventID, err := c.pubSub.Publish(c.ctx, incomingMessagesTopic, message)
 	if err != nil {
@@ -167,7 +167,7 @@ func (c *RoomCommunicatorImpl) SendMessage(peerId string, message interface{}) (
 	return eventID, nil
 }
 
-func (c *RoomCommunicatorImpl) OnMessage(messageHandler func(message interface{}, fromPeerId string, eventId string)) {
+func (c *RoomCommunicatorImpl) OnMessage(messageHandler func(message []byte, fromPeerId string, eventId string)) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
