@@ -87,6 +87,10 @@ type RTCConfig struct {
 	// Deprecated
 	StrictACKs bool `yaml:"strict_acks,omitempty"`
 
+	ICEPrflxAcceptanceWait *time.Duration `yaml:"ice_prflx_acceptance_wait,omitempty"`
+	ICESrflxAcceptanceWait *time.Duration `yaml:"ice_srflx_acceptance_wait,omitempty"`
+	ICERelayAcceptanceWait *time.Duration `yaml:"ice_relay_acceptance_wait,omitempty"`
+
 	// Deprecated: use PacketBufferSizeVideo and PacketBufferSizeAudio
 	PacketBufferSize int `yaml:"packet_buffer_size,omitempty"`
 	// Number of packets to buffer for NACK - video
