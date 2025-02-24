@@ -501,7 +501,7 @@ func (r *RTPStatsReceiver) updatePropagationDelayAndRecordSenderReport(srData *l
 	if stepChange {
 		r.logger.Debugw(
 			"propagation delay step change",
-			"currentSenderReport", srData,
+			"currentSenderReport", WrappedRTCPSenderReportStateLogger{srData},
 			"rtpStats", lockedRTPStatsReceiverLogEncoder{r},
 		)
 	}
@@ -526,7 +526,7 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *livekit.RTCPSenderRep
 	if r.srNewest != nil && r.srNewest.NtpTimestamp > srData.NtpTimestamp {
 		r.logger.Infow(
 			"received sender report, anachronous, dropping",
-			"current", srData,
+			"current", WrappedRTCPSenderReportStateLogger{srData},
 			"rtpStats", lockedRTPStatsReceiverLogEncoder{r},
 		)
 		return false
