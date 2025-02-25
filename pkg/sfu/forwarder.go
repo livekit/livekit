@@ -344,13 +344,13 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		isDDAvailable := ddAvailable(extensions)
 		if isDDAvailable {
 			if f.vls != nil {
-				f.vls = videolayerselector.NewDependencyDescriptorFromNull(f.vls)
+				f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
 			} else {
 				f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
 			}
 		} else {
 			if f.vls != nil {
-				f.vls = videolayerselector.NewVP9FromNull(f.vls)
+				f.vls = videolayerselector.NewVP9FromOther(f.vls)
 			} else {
 				f.vls = videolayerselector.NewVP9(f.logger)
 			}
@@ -362,7 +362,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		isDDAvailable := ddAvailable(extensions)
 		if isDDAvailable {
 			if f.vls != nil {
-				f.vls = videolayerselector.NewDependencyDescriptorFromNull(f.vls)
+				f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
 			} else {
 				f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
 			}
