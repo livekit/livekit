@@ -30,9 +30,30 @@ func NewVP9(logger logger.Logger) *VP9 {
 	}
 }
 
-func NewVP9FromNull(vls VideoLayerSelector) *VP9 {
-	return &VP9{
-		Base: vls.(*Null).Base,
+func NewVP9FromOther(vls VideoLayerSelector) *VP9 {
+	switch vls := vls.(type) {
+	case *Null:
+		return &VP9{
+			Base: vls.Base,
+		}
+
+	case *Simulcast:
+		return &VP9{
+			Base: vls.Base,
+		}
+
+	case *DependencyDescriptor:
+		return &VP9{
+			Base: vls.Base,
+		}
+
+	case *VP9:
+		return &VP9{
+			Base: vls.Base,
+		}
+
+	default:
+		return nil
 	}
 }
 

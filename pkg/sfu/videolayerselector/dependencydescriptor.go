@@ -50,11 +50,30 @@ func NewDependencyDescriptor(logger logger.Logger) *DependencyDescriptor {
 	}
 }
 
-func NewDependencyDescriptorFromNull(vls VideoLayerSelector) *DependencyDescriptor {
-	return &DependencyDescriptor{
-		Base:      vls.(*Null).Base,
-		decisions: NewSelectorDecisionCache(256, 80),
-		fnWrapper: FrameNumberWrapper{logger: vls.(*Null).logger},
+func NewDependencyDescriptorFromOther(vls VideoLayerSelector) *DependencyDescriptor {
+	switch vls := vls.(type) {
+	case *Null:
+		return &DependencyDescriptor{
+			Base: vls.Base,
+		}
+
+	case *Simulcast:
+		return &DependencyDescriptor{
+			Base: vls.Base,
+		}
+
+	case *DependencyDescriptor:
+		return &DependencyDescriptor{
+			Base: vls.Base,
+		}
+
+	case *VP9:
+		return &DependencyDescriptor{
+			Base: vls.Base,
+		}
+
+	default:
+		return nil
 	}
 }
 
