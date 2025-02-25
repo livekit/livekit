@@ -871,24 +871,24 @@ func (r *Room) IsClosed() bool {
 }
 
 // CloseIfEmpty closes the room if all participants had left, or it's still empty past timeout
-func (r *Room) CloseIfEmpty() string {
+func (r *Room) CloseIfEmpty() {
 	r.lock.Lock()
 
 	if r.IsClosed() || r.holds.Load() > 0 {
 		r.lock.Unlock()
-		return ""
+		return
 	}
 
 	for _, p := range r.participants {
 		if !p.IsDependent() {
 			r.lock.Unlock()
-			return ""
+			return
 		}
 	}
 
 	var timeout uint32
 	var elapsed int64
-	reason := ""
+	var reason string
 	if r.FirstJoinedAt() > 0 && r.LastLeftAt() > 0 {
 		elapsed = time.Now().Unix() - r.LastLeftAt()
 		// need to give time in case participant is reconnecting
@@ -903,10 +903,8 @@ func (r *Room) CloseIfEmpty() string {
 
 	if elapsed >= int64(timeout) {
 		r.Close(types.ParticipantCloseReasonRoomClosed)
-		return reason
+		r.Logger.Infow("closing idle room", "reason", reason)
 	}
-
-	return ""
 }
 
 func (r *Room) Close(reason types.ParticipantCloseReason) {

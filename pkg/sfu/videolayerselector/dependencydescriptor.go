@@ -51,30 +51,7 @@ func NewDependencyDescriptor(logger logger.Logger) *DependencyDescriptor {
 }
 
 func NewDependencyDescriptorFromOther(vls VideoLayerSelector) *DependencyDescriptor {
-	switch vls := vls.(type) {
-	case *Null:
-		return &DependencyDescriptor{
-			Base: vls.Base,
-		}
-
-	case *Simulcast:
-		return &DependencyDescriptor{
-			Base: vls.Base,
-		}
-
-	case *DependencyDescriptor:
-		return &DependencyDescriptor{
-			Base: vls.Base,
-		}
-
-	case *VP9:
-		return &DependencyDescriptor{
-			Base: vls.Base,
-		}
-
-	default:
-		return nil
-	}
+	return &DependencyDescriptor{Base: vls.getBase()}
 }
 
 func (d *DependencyDescriptor) IsOvershootOkay() bool {
