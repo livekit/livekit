@@ -54,6 +54,10 @@ func (b *Base) getBase() *Base {
 	return b
 }
 
+func (b *Base) getLogger() logger.Logger {
+	return b.logger
+}
+
 func (b *Base) IsOvershootOkay() bool {
 	return false
 }
