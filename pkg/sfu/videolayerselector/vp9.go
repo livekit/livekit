@@ -15,9 +15,10 @@
 package videolayerselector
 
 import (
+	"github.com/pion/rtp/codecs"
+
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/logger"
-	"github.com/pion/rtp/codecs"
 )
 
 type VP9 struct {
@@ -31,30 +32,7 @@ func NewVP9(logger logger.Logger) *VP9 {
 }
 
 func NewVP9FromOther(vls VideoLayerSelector) *VP9 {
-	switch vls := vls.(type) {
-	case *Null:
-		return &VP9{
-			Base: vls.Base,
-		}
-
-	case *Simulcast:
-		return &VP9{
-			Base: vls.Base,
-		}
-
-	case *DependencyDescriptor:
-		return &VP9{
-			Base: vls.Base,
-		}
-
-	case *VP9:
-		return &VP9{
-			Base: vls.Base,
-		}
-
-	default:
-		return nil
-	}
+	return &VP9{Base: vls.getBase()}
 }
 
 func (v *VP9) IsOvershootOkay() bool {

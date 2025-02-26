@@ -29,6 +29,8 @@ type VideoLayerSelectorResult struct {
 }
 
 type VideoLayerSelector interface {
+	getBase() *Base
+
 	IsOvershootOkay() bool
 
 	SetTemporalLayerSelector(tls temporallayerselector.TemporalLayerSelector)
