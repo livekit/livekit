@@ -51,7 +51,11 @@ func NewDependencyDescriptor(logger logger.Logger) *DependencyDescriptor {
 }
 
 func NewDependencyDescriptorFromOther(vls VideoLayerSelector) *DependencyDescriptor {
-	return &DependencyDescriptor{Base: vls.getBase()}
+	return &DependencyDescriptor{
+		Base:      vls.getBase(),
+		decisions: NewSelectorDecisionCache(256, 80),
+		fnWrapper: FrameNumberWrapper{logger: vls.getLogger()},
+	}
 }
 
 func (d *DependencyDescriptor) IsOvershootOkay() bool {
