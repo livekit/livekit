@@ -407,7 +407,18 @@ func (s *SIPService) DeleteSIPDispatchRule(ctx context.Context, req *livekit.Del
 }
 
 func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.CreateSIPParticipantRequest) (*livekit.SIPParticipantInfo, error) {
-	unlikelyLogger := logger.GetLogger().WithUnlikelyValues("room", req.RoomName, "sipTrunk", req.SipTrunkId, "toUser", req.SipCallTo)
+	unlikelyLogger := logger.GetLogger().WithUnlikelyValues(
+		"room", req.RoomName,
+		"sipTrunk", req.SipTrunkId,
+		"toUser", req.SipCallTo,
+		"participant", req.ParticipantIdentity,
+	)
+	AppendLogFields(ctx,
+		"room", req.RoomName,
+		"participant", req.ParticipantIdentity,
+		"toUser", req.SipCallTo,
+		"trunkID", req.SipTrunkId,
+	)
 	ireq, err := s.CreateSIPParticipantRequest(ctx, req, "", "", "", "")
 	if err != nil {
 		unlikelyLogger.Errorw("cannot create sip participant request", err)
@@ -419,9 +430,6 @@ func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.Crea
 		"toHost", ireq.Address,
 	)
 	AppendLogFields(ctx,
-		"room", req.RoomName,
-		"toUser", req.SipCallTo,
-		"trunkID", req.SipTrunkId,
 		"callID", ireq.SipCallId,
 		"fromUser", ireq.Number,
 		"toHost", ireq.Address,
@@ -478,18 +486,24 @@ func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livek
 }
 
 func (s *SIPService) TransferSIPParticipant(ctx context.Context, req *livekit.TransferSIPParticipantRequest) (*emptypb.Empty, error) {
-	log := logger.GetLogger().WithUnlikelyValues("room", req.RoomName, "participant", req.ParticipantIdentity)
-	ireq, err := s.transferSIPParticipantRequest(ctx, req)
-	if err != nil {
-		log.Errorw("cannot create transfer sip participant request", err)
-		return nil, err
-	}
+	log := logger.GetLogger().WithUnlikelyValues(
+		"room", req.RoomName,
+		"participant", req.ParticipantIdentity,
+		"transferTo", req.TransferTo,
+		"playDialtone", req.PlayDialtone,
+	)
 	AppendLogFields(ctx,
 		"room", req.RoomName,
 		"participant", req.ParticipantIdentity,
 		"transferTo", req.TransferTo,
 		"playDialtone", req.PlayDialtone,
 	)
+
+	ireq, err := s.transferSIPParticipantRequest(ctx, req)
+	if err != nil {
+		log.Errorw("cannot create transfer sip participant request", err)
+		return nil, err
+	}
 
 	timeout := 30 * time.Second
 	if deadline, ok := ctx.Deadline(); ok {

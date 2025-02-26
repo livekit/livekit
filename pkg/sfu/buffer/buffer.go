@@ -229,7 +229,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	for _, ext := range params.HeaderExtensions {
 		switch ext.URI {
 		case dd.ExtensionURI:
-			if IsSvcCodec(codec.MimeType) {
+			if IsSvcCodec(codec.MimeType) || strings.EqualFold(codec.MimeType, webrtc.MimeTypeVP8) {
 				if b.ddExtID != 0 {
 					b.logger.Warnw("multiple dependency descriptor extensions found", nil, "id", ext.ID, "previous", b.ddExtID)
 					continue
