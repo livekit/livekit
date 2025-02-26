@@ -786,21 +786,25 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 
 		// track video layers
 		if w.Kind() == webrtc.RTPCodecTypeVideo {
-			if spatialTrackers[spatialLayer] == nil {
-				spatialTrackers[spatialLayer] = w.streamTrackerManager.GetTracker(spatialLayer)
+			if int(spatialLayer) < len(spatialTrackers) {
 				if spatialTrackers[spatialLayer] == nil {
-					spatialTrackers[spatialLayer] = w.streamTrackerManager.AddTracker(spatialLayer)
+					spatialTrackers[spatialLayer] = w.streamTrackerManager.GetTracker(spatialLayer)
+					if spatialTrackers[spatialLayer] == nil {
+						spatialTrackers[spatialLayer] = w.streamTrackerManager.AddTracker(spatialLayer)
+					}
 				}
-			}
-			if spatialTrackers[spatialLayer] != nil {
-				spatialTrackers[spatialLayer].Observe(
-					pkt.Temporal,
-					len(pkt.RawPacket),
-					len(pkt.Packet.Payload),
-					pkt.Packet.Marker,
-					pkt.Packet.Timestamp,
-					pkt.DependencyDescriptor,
-				)
+				if spatialTrackers[spatialLayer] != nil {
+					spatialTrackers[spatialLayer].Observe(
+						pkt.Temporal,
+						len(pkt.RawPacket),
+						len(pkt.Packet.Payload),
+						pkt.Packet.Marker,
+						pkt.Packet.Timestamp,
+						pkt.DependencyDescriptor,
+					)
+				}
+			} else {
+				w.logger.Errorw("unexpected spatial layer", nil, "spatialLayer", spatialLayer, "pktSpatialLayer", pkt.Spatial)
 			}
 		}
 	}
