@@ -1035,7 +1035,7 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) (*RTPDeltaInfo
 				}
 				if packetsLost > packetsExpected {
 					r.logger.Warnw(
-						"unexpected number of packets lost (receiver view)", nil,
+						"unexpected number of packets lost (sender - receiver view)", nil,
 						"senderSnapshotID", senderSnapshotID,
 						"senderSnapshotNow", nowReceiverView,
 						"senderSnapshotThen", thenReceiverView,
