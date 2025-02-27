@@ -770,6 +770,14 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 			// svc packet, take spatial layer info from packet
 			spatialLayer = pkt.Spatial
 		}
+		if int(spatialLayer) >= len(spatialTrackers) {
+			w.logger.Errorw(
+				"unexpected spatial layer", nil,
+				"spatialLayer", spatialLayer,
+				"pktSpatialLayer", pkt.Spatial,
+			)
+			continue
+		}
 
 		writeCount := w.downTrackSpreader.Broadcast(func(dt TrackSender) {
 			_ = dt.WriteRTP(pkt, spatialLayer)
