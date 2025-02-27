@@ -774,7 +774,6 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 					"packetsInInterval", extReceivedRRSN-s.receiverView.extLastRRSN,
 					"intervalStats", &is,
 					"aggregateIntervalStats", eis,
-					"count", s.receiverView.metadataCacheOverflowCount,
 					"rtpStats", lockedRTPStatsSenderLogEncoder{r},
 				)
 			}
@@ -1036,7 +1035,7 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) (*RTPDeltaInfo
 				}
 				if packetsLost > packetsExpected {
 					r.logger.Warnw(
-						"unexpected number of packets lost (receiver view)", nil,
+						"unexpected number of packets lost (sender - receiver view)", nil,
 						"senderSnapshotID", senderSnapshotID,
 						"senderSnapshotNow", nowReceiverView,
 						"senderSnapshotThen", thenReceiverView,
@@ -1203,10 +1202,11 @@ func (r *RTPStatsSender) getSenderSnapshotReceiverView(startTime int64, s *sende
 			firs:                  r.firs,
 			maxJitterFeed:         r.jitter,
 		},
-		packetsLost: r.packetsLostFromRR,
-		maxRtt:      r.rtt,
-		maxJitter:   r.jitterFromRR,
-		extLastRRSN: s.extLastRRSN,
+		packetsLost:                r.packetsLostFromRR,
+		maxRtt:                     r.rtt,
+		maxJitter:                  r.jitterFromRR,
+		extLastRRSN:                s.extLastRRSN,
+		metadataCacheOverflowCount: s.metadataCacheOverflowCount,
 	}
 }
 
