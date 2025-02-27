@@ -241,8 +241,10 @@ type PCTransport struct {
 	currentOfferIceCredential string // ice user:pwd, for publish side ice restart checking
 	pendingRestartIceOffer    *webrtc.SessionDescription
 
-	connectionDetails *types.ICEConnectionDetails
-	selectedPair      atomic.Pointer[webrtc.ICECandidatePair]
+	connectionDetails      *types.ICEConnectionDetails
+	selectedPair           atomic.Pointer[webrtc.ICECandidatePair]
+	mayFailedICEStats      []iceCandidatePairStats
+	mayFailedICEStatsTimer *time.Timer
 }
 
 type TransportParams struct {
@@ -573,6 +575,9 @@ func (t *PCTransport) setICEStartedAt(at time.Time) {
 	if t.iceStartedAt.IsZero() {
 		t.iceStartedAt = at
 
+		// checklist of ice agent will be cleared on ice failed, get stats before that
+		t.mayFailedICEStatsTimer = time.AfterFunc(iceFailedTimeoutTotal-time.Second, t.logMayFailedICEStats)
+
 		// set failure timer for tcp ice connection based on signaling RTT
 		if t.preferTCP.Load() {
 			signalingRTT := t.signalingRTT.Load()
@@ -587,6 +592,7 @@ func (t *PCTransport) setICEStartedAt(at time.Time) {
 				t.tcpICETimer = time.AfterFunc(tcpICETimeout, func() {
 					if t.pc.ICEConnectionState() == webrtc.ICEConnectionStateChecking {
 						t.params.Logger.Infow("TCP ICE connect timeout", "timeout", tcpICETimeout, "signalRTT", signalingRTT)
+						t.logMayFailedICEStats()
 						t.handleConnectionFailed(true)
 					}
 				})
@@ -630,6 +636,43 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 			t.tcpICETimer = nil
 		}
 	}
+
+	if t.mayFailedICEStatsTimer != nil {
+		t.mayFailedICEStatsTimer.Stop()
+		t.mayFailedICEStatsTimer = nil
+	}
+	t.mayFailedICEStats = nil
+	t.lock.Unlock()
+}
+
+func (t *PCTransport) logMayFailedICEStats() {
+	var candidatePairStats []webrtc.ICECandidatePairStats
+	pairStats := t.pc.GetStats()
+	candidateStats := make(map[string]webrtc.ICECandidateStats)
+	for _, stat := range pairStats {
+		switch stat := stat.(type) {
+		case webrtc.ICECandidatePairStats:
+			candidatePairStats = append(candidatePairStats, stat)
+		case webrtc.ICECandidateStats:
+			candidateStats[stat.ID] = stat
+		}
+	}
+
+	iceStats := make([]iceCandidatePairStats, 0, len(candidatePairStats))
+	for _, pairStat := range candidatePairStats {
+		iceStat := iceCandidatePairStats{ICECandidatePairStats: pairStat}
+		if local, ok := candidateStats[pairStat.LocalCandidateID]; ok {
+			iceStat.local = local
+		}
+		if remote, ok := candidateStats[pairStat.RemoteCandidateID]; ok {
+			remote.IP = MaybeTruncateIP(remote.IP)
+			iceStat.remote = remote
+		}
+		iceStats = append(iceStats, iceStat)
+	}
+
+	t.lock.Lock()
+	t.mayFailedICEStats = iceStats
 	t.lock.Unlock()
 }
 
@@ -1078,7 +1121,13 @@ func (t *PCTransport) Close() {
 		t.lossyDC.Close()
 		t.lossyDC = nil
 	}
+
+	if t.mayFailedICEStatsTimer != nil {
+		t.mayFailedICEStatsTimer.Stop()
+		t.mayFailedICEStatsTimer = nil
+	}
 	t.lock.Unlock()
+	t.outputAndClearICEStats()
 }
 
 func (t *PCTransport) clearConnTimer() {
@@ -1951,6 +2000,10 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription) e
 		t.resetShortConn()
 	}
 
+	if offerRestartICE {
+		t.outputAndClearICEStats()
+	}
+
 	if err := t.setRemoteDescription(*sd); err != nil {
 		return err
 	}
@@ -2018,6 +2071,7 @@ func (t *PCTransport) doICERestart() error {
 	}
 
 	if t.negotiationState == transport.NegotiationStateNone {
+		t.outputAndClearICEStats()
 		return t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true})
 	}
 
@@ -2049,6 +2103,7 @@ func (t *PCTransport) doICERestart() error {
 			return errors.Wrap(err, "set remote description failed")
 		} else {
 			t.setNegotiationState(transport.NegotiationStateNone)
+			t.outputAndClearICEStats()
 			return t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true})
 		}
 	}
@@ -2077,6 +2132,19 @@ func (t *PCTransport) onNegotiationFailed(warning bool, reason string) {
 	}
 	t.params.Handler.OnNegotiationFailed()
 }
+
+func (t *PCTransport) outputAndClearICEStats() {
+	t.lock.Lock()
+	stats := t.mayFailedICEStats
+	t.mayFailedICEStats = nil
+	t.lock.Unlock()
+
+	if len(stats) > 0 {
+		t.params.Logger.Infow("ICE candidate pair stats", "stats", iceCandidatePairStatsEncoder{stats})
+	}
+}
+
+// ----------------------
 
 // configure subscriber transceiver for audio stereo and nack
 // pion doesn't support per transciver codec configuration, so the nack of this session will be disabled
@@ -2153,4 +2221,46 @@ func nonSimulcastRTXRepairsFromSDP(s *sdp.SessionDescription, logger logger.Logg
 	}
 
 	return rtxRepairFlows
+}
+
+// ----------------------
+
+type iceCandidatePairStatsEncoder struct {
+	stats []iceCandidatePairStats
+}
+
+func (e iceCandidatePairStatsEncoder) MarshalLogArray(arr zapcore.ArrayEncoder) error {
+	for _, s := range e.stats {
+		if err := arr.AppendObject(s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type iceCandidatePairStats struct {
+	webrtc.ICECandidatePairStats
+	local, remote webrtc.ICECandidateStats
+}
+
+func (r iceCandidatePairStats) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	candidateToString := func(c webrtc.ICECandidateStats) string {
+		return fmt.Sprintf("%s:%d %s type(%s/%s), priority(%d)", c.IP, c.Port, c.Protocol, c.CandidateType, c.RelayProtocol, c.Priority)
+	}
+	e.AddString("state", string(r.State))
+	e.AddBool("nominated", r.Nominated)
+	e.AddString("local", candidateToString(r.local))
+	e.AddString("remote", candidateToString(r.remote))
+	e.AddUint64("requestsSent", r.RequestsSent)
+	e.AddUint64("responsesReceived", r.ResponsesReceived)
+	e.AddUint64("requestsReceived", r.RequestsReceived)
+	e.AddUint64("responsesSent", r.ResponsesSent)
+	e.AddTime("firstRequestSentAt", r.FirstRequestTimestamp.Time())
+	e.AddTime("lastRequestSentAt", r.LastRequestTimestamp.Time())
+	e.AddTime("firstResponseReceivedAt", r.FirstResponseTimestamp.Time())
+	e.AddTime("lastResponseReceivedAt", r.LastResponseTimestamp.Time())
+	e.AddTime("firstRequestReceivedAt", r.FirstRequestReceivedTimestamp.Time())
+	e.AddTime("lastRequestReceivedAt", r.LastRequestReceivedTimestamp.Time())
+
+	return nil
 }
