@@ -143,6 +143,12 @@ type TrackReceiver interface {
 }
 
 type redPktWriteFunc func(pkt *buffer.ExtPacket, spatialLayer int32) int
+type redSenderReportWriteFunc func(
+	payloadType webrtc.PayloadType,
+	isSVC bool,
+	layer int32,
+	publisherSRData *livekit.RTCPSenderReportState,
+)
 
 // WebRTCReceiver receives a media track
 type WebRTCReceiver struct {
@@ -185,9 +191,10 @@ type WebRTCReceiver struct {
 	onStatsUpdate    func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)
 	onMaxLayerChange func(maxLayer int32)
 
-	primaryReceiver atomic.Pointer[RedPrimaryReceiver]
-	redReceiver     atomic.Pointer[RedReceiver]
-	redPktWriter    atomic.Value // redPktWriteFunc
+	primaryReceiver       atomic.Pointer[RedPrimaryReceiver]
+	redReceiver           atomic.Pointer[RedReceiver]
+	redPktWriter          atomic.Value // redPktWriteFunc
+	redSenderReportWriter atomic.Value // redPktWriteFunc
 
 	forwardStats *ForwardStats
 }
@@ -405,6 +412,10 @@ func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) erro
 		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
 			_ = dt.HandleRTCPSenderReportData(w.codec.PayloadType, w.isSVC, layer, srData)
 		})
+
+		if f := w.redSenderReportWriter.Load(); f != nil {
+			f.(redSenderReportWriteFunc)(w.codec.PayloadType, w.isSVC, layer, srData)
+		}
 	})
 
 	if w.Kind() == webrtc.RTPCodecTypeVideo && layer == 0 {
@@ -866,6 +877,7 @@ func (w *WebRTCReceiver) GetPrimaryReceiverForRed() TrackReceiver {
 		})
 		if w.primaryReceiver.CompareAndSwap(nil, pr) {
 			w.redPktWriter.Store(redPktWriteFunc(pr.ForwardRTP))
+			w.redSenderReportWriter.Store(redSenderReportWriteFunc(pr.ForwardRTCPSenderReport))
 		}
 	}
 	return w.primaryReceiver.Load()
@@ -883,6 +895,7 @@ func (w *WebRTCReceiver) GetRedReceiver() TrackReceiver {
 		})
 		if w.redReceiver.CompareAndSwap(nil, pr) {
 			w.redPktWriter.Store(redPktWriteFunc(pr.ForwardRTP))
+			w.redSenderReportWriter.Store(redSenderReportWriteFunc(pr.ForwardRTCPSenderReport))
 		}
 	}
 	return w.redReceiver.Load()
