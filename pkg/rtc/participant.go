@@ -2066,6 +2066,7 @@ func (p *ParticipantImpl) subscriberRTCPWorker() {
 			if sr == nil || chunks == nil {
 				continue
 			}
+			p.params.Logger.Infow("RAJA SR", "trackID", subTrack.DownTrack().ID(), "mime", subTrack.DownTrack().Mime()) // REMOVE
 
 			pkts = append(pkts, sr)
 			sd = append(sd, chunks...)

@@ -150,6 +150,8 @@ type REDTransformer interface {
 		layer int32,
 		publisherSRData *livekit.RTCPSenderReportState,
 	)
+	ResyncDownTracks()
+	CanClose() bool
 	Close()
 }
 
@@ -863,40 +865,49 @@ func (w *WebRTCReceiver) DebugInfo() map[string]interface{} {
 }
 
 func (w *WebRTCReceiver) GetPrimaryReceiverForRed() TrackReceiver {
+	w.bufferMu.Lock()
+	defer w.bufferMu.Unlock()
+
 	if !w.isRED || w.closed.Load() {
 		return w
 	}
 
-	if w.redTransformer.Load() == nil {
+	rt := w.redTransformer.Load()
+	if rt == nil {
 		pr := NewRedPrimaryReceiver(w, DownTrackSpreaderParams{
 			Threshold: w.lbThreshold,
 			Logger:    w.logger,
 		})
-		w.redTransformer.CompareAndSwap(nil, pr)
-	}
-	rt := w.redTransformer.Load()
-	if pr, ok := rt.(*RedPrimaryReceiver); ok {
+		w.redTransformer.Store(pr)
 		return pr
+	} else {
+		if pr, ok := rt.(*RedPrimaryReceiver); ok {
+			return pr
+		}
 	}
 	return nil
 }
 
 func (w *WebRTCReceiver) GetRedReceiver() TrackReceiver {
+	w.bufferMu.Lock()
+	defer w.bufferMu.Unlock()
+
 	if w.isRED || w.closed.Load() {
 		return w
 	}
 
-	if w.redTransformer.Load() == nil {
+	rt := w.redTransformer.Load()
+	if rt == nil {
 		pr := NewRedReceiver(w, DownTrackSpreaderParams{
 			Threshold: w.lbThreshold,
 			Logger:    w.logger,
 		})
-		w.redTransformer.CompareAndSwap(nil, pr)
-	}
-
-	rt := w.redTransformer.Load()
-	if pr, ok := rt.(*RedReceiver); ok {
+		w.redTransformer.Store(pr)
 		return pr
+	} else {
+		if pr, ok := rt.(*RedReceiver); ok {
+			return pr
+		}
 	}
 	return nil
 }
