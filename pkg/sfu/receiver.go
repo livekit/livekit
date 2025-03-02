@@ -142,7 +142,7 @@ type TrackReceiver interface {
 	CodecState() ReceiverCodecState
 }
 
-type redTransformer interface {
+type REDTransformer interface {
 	ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int
 	ForwardRTCPSenderReport(
 		payloadType webrtc.PayloadType,
@@ -414,7 +414,7 @@ func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) erro
 		})
 
 		if rt := w.redTransformer.Load(); rt != nil {
-			rt.(redTransformer).ForwardRTCPSenderReport(w.codec.PayloadType, w.isSVC, layer, srData)
+			rt.(REDTransformer).ForwardRTCPSenderReport(w.codec.PayloadType, w.isSVC, layer, srData)
 		}
 	})
 
@@ -744,7 +744,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 			w.closed.Store(true)
 			w.closeTracks()
 			if rt := w.redTransformer.Load(); rt != nil {
-				rt.(redTransformer).Close()
+				rt.(REDTransformer).Close()
 			}
 		})
 
@@ -792,7 +792,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 		})
 
 		if rt := w.redTransformer.Load(); rt != nil {
-			writeCount += rt.(redTransformer).ForwardRTP(pkt, spatialLayer)
+			writeCount += rt.(REDTransformer).ForwardRTP(pkt, spatialLayer)
 		}
 
 		// track delay/jitter
