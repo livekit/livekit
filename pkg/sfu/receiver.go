@@ -142,13 +142,16 @@ type TrackReceiver interface {
 	CodecState() ReceiverCodecState
 }
 
-type redPktWriteFunc func(pkt *buffer.ExtPacket, spatialLayer int32) int
-type redSenderReportWriteFunc func(
-	payloadType webrtc.PayloadType,
-	isSVC bool,
-	layer int32,
-	publisherSRData *livekit.RTCPSenderReportState,
-)
+type redTransformer interface {
+	ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int
+	ForwardRTCPSenderReport(
+		payloadType webrtc.PayloadType,
+		isSVC bool,
+		layer int32,
+		publisherSRData *livekit.RTCPSenderReportState,
+	)
+	Close()
+}
 
 // WebRTCReceiver receives a media track
 type WebRTCReceiver struct {
@@ -191,10 +194,7 @@ type WebRTCReceiver struct {
 	onStatsUpdate    func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)
 	onMaxLayerChange func(maxLayer int32)
 
-	primaryReceiver       atomic.Pointer[RedPrimaryReceiver]
-	redReceiver           atomic.Pointer[RedReceiver]
-	redPktWriter          atomic.Value // redPktWriteFunc
-	redSenderReportWriter atomic.Value // redPktWriteFunc
+	redTransformer atomic.Value // redTransformer interface
 
 	forwardStats *ForwardStats
 }
@@ -413,8 +413,8 @@ func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) erro
 			_ = dt.HandleRTCPSenderReportData(w.codec.PayloadType, w.isSVC, layer, srData)
 		})
 
-		if f := w.redSenderReportWriter.Load(); f != nil {
-			f.(redSenderReportWriteFunc)(w.codec.PayloadType, w.isSVC, layer, srData)
+		if rt := w.redTransformer.Load(); rt != nil {
+			rt.(redTransformer).ForwardRTCPSenderReport(w.codec.PayloadType, w.isSVC, layer, srData)
 		}
 	})
 
@@ -743,11 +743,8 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 		w.closeOnce.Do(func() {
 			w.closed.Store(true)
 			w.closeTracks()
-			if pr := w.primaryReceiver.Load(); pr != nil {
-				pr.Close()
-			}
-			if pr := w.redReceiver.Load(); pr != nil {
-				pr.Close()
+			if rt := w.redTransformer.Load(); rt != nil {
+				rt.(redTransformer).Close()
 			}
 		})
 
@@ -794,8 +791,8 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 			_ = dt.WriteRTP(pkt, spatialLayer)
 		})
 
-		if f := w.redPktWriter.Load(); f != nil {
-			writeCount += f.(redPktWriteFunc)(pkt, spatialLayer)
+		if rt := w.redTransformer.Load(); rt != nil {
+			writeCount += rt.(redTransformer).ForwardRTP(pkt, spatialLayer)
 		}
 
 		// track delay/jitter
@@ -870,17 +867,18 @@ func (w *WebRTCReceiver) GetPrimaryReceiverForRed() TrackReceiver {
 		return w
 	}
 
-	if w.primaryReceiver.Load() == nil {
+	if w.redTransformer.Load() == nil {
 		pr := NewRedPrimaryReceiver(w, DownTrackSpreaderParams{
 			Threshold: w.lbThreshold,
 			Logger:    w.logger,
 		})
-		if w.primaryReceiver.CompareAndSwap(nil, pr) {
-			w.redPktWriter.Store(redPktWriteFunc(pr.ForwardRTP))
-			w.redSenderReportWriter.Store(redSenderReportWriteFunc(pr.ForwardRTCPSenderReport))
-		}
+		w.redTransformer.CompareAndSwap(nil, pr)
 	}
-	return w.primaryReceiver.Load()
+	rt := w.redTransformer.Load()
+	if pr, ok := rt.(*RedPrimaryReceiver); ok {
+		return pr
+	}
+	return nil
 }
 
 func (w *WebRTCReceiver) GetRedReceiver() TrackReceiver {
@@ -888,17 +886,19 @@ func (w *WebRTCReceiver) GetRedReceiver() TrackReceiver {
 		return w
 	}
 
-	if w.redReceiver.Load() == nil {
+	if w.redTransformer.Load() == nil {
 		pr := NewRedReceiver(w, DownTrackSpreaderParams{
 			Threshold: w.lbThreshold,
 			Logger:    w.logger,
 		})
-		if w.redReceiver.CompareAndSwap(nil, pr) {
-			w.redPktWriter.Store(redPktWriteFunc(pr.ForwardRTP))
-			w.redSenderReportWriter.Store(redSenderReportWriteFunc(pr.ForwardRTCPSenderReport))
-		}
+		w.redTransformer.CompareAndSwap(nil, pr)
 	}
-	return w.redReceiver.Load()
+
+	rt := w.redTransformer.Load()
+	if pr, ok := rt.(*RedReceiver); ok {
+		return pr
+	}
+	return nil
 }
 
 func (w *WebRTCReceiver) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
