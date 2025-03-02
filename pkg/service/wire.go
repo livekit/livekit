@@ -5,9 +5,12 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	pubsub "github.com/dTelecom/pubsub-solana"
+	"github.com/gagliardetto/solana-go"
 	"github.com/google/wire"
 	"github.com/inconshreveable/go-vhost"
 	"github.com/livekit/protocol/auth"
@@ -217,8 +220,33 @@ func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler, T
 	return NewTurnServer(conf, authHandler, false, TLSMuxer, certManager)
 }
 
-func newPubSub(conf *config.Config) (pubSub *pubsub.PubSub, err error) {
-	pubSub = pubsub.New(conf.Solana.EphemeralHostHTTP, conf.Solana.EphemeralHostWS, conf.Solana.EphemeralHostHTTP, conf.Solana.EphemeralHostWS, conf.Solana.WalletPrivateKey)
-	err = pubSub.Start(context.Background())
-	return
+func newPubSub(conf *config.Config, nodeProvider *NodeProvider) (*pubsub.PubSub, error) {
+	ctx := context.Background()
+
+	pubSub := pubsub.New(conf.Solana.NetworkHostHTTP, conf.Solana.NetworkHostWS, conf.Solana.EphemeralHostHTTP, conf.Solana.EphemeralHostWS, conf.Solana.WalletPrivateKey)
+
+	go func() {
+		var nodesMap map[string]Node
+		for len(nodesMap) == 0 {
+			time.Sleep(time.Second)
+			var err error
+			nodesMap, err = nodeProvider.List(ctx)
+			if err != nil {
+				fmt.Printf("cannot list nodes: %v\n", err)
+			} else if len(nodesMap) > 0 {
+				break
+			}
+		}
+
+		nodes := make([]solana.PublicKey, 0, len(nodesMap))
+		for nodeID := range nodesMap {
+			nodes = append(nodes, solana.MustPublicKeyFromBase58(nodeID))
+		}
+
+		if err := pubSub.Start(ctx, nodes); err != nil {
+			panic(err)
+		}
+	}()
+
+	return pubSub, nil
 }

@@ -8,8 +8,10 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"github.com/dTelecom/p2p-realtime-database"
 	"github.com/dTelecom/pubsub-solana"
+	"github.com/gagliardetto/solana-go"
 	"github.com/inconshreveable/go-vhost"
 	"github.com/livekit/livekit-server"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
@@ -29,6 +31,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/acme/autocert"
+	"time"
 )
 
 import (
@@ -51,7 +54,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	pubSub, err := newPubSub(conf)
+	reader, err := createGeoIP()
+	if err != nil {
+		return nil, err
+	}
+	nodeProvider := CreateNodeProvider(reader, conf, currentNode)
+	pubSub, err := newPubSub(conf, nodeProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -123,11 +131,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	clientProvider := createClientProvider(conf)
-	reader, err := createGeoIP()
-	if err != nil {
-		return nil, err
-	}
-	nodeProvider := CreateNodeProvider(reader, conf, currentNode)
 	relevantNodesHandler := createRelevantNodesHandler(conf, nodeProvider)
 	p2p_databaseConfig := GetDatabaseConfiguration(conf)
 	db, err := CreateMainDatabaseP2P(p2p_databaseConfig, conf)
@@ -277,8 +280,33 @@ func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler, T
 	return NewTurnServer(conf, authHandler, false, TLSMuxer, certManager)
 }
 
-func newPubSub(conf *config.Config) (pubSub *pubsub_solana.PubSub, err error) {
-	pubSub = pubsub_solana.New(conf.Solana.EphemeralHostHTTP, conf.Solana.EphemeralHostWS, conf.Solana.EphemeralHostHTTP, conf.Solana.EphemeralHostWS, conf.Solana.WalletPrivateKey)
-	err = pubSub.Start(context.Background())
-	return
+func newPubSub(conf *config.Config, nodeProvider *NodeProvider) (*pubsub_solana.PubSub, error) {
+	ctx := context.Background()
+
+	pubSub := pubsub_solana.New(conf.Solana.NetworkHostHTTP, conf.Solana.NetworkHostWS, conf.Solana.EphemeralHostHTTP, conf.Solana.EphemeralHostWS, conf.Solana.WalletPrivateKey)
+
+	go func() {
+		var nodesMap map[string]Node
+		for len(nodesMap) == 0 {
+			time.Sleep(time.Second)
+			var err error
+			nodesMap, err = nodeProvider.List(ctx)
+			if err != nil {
+				fmt.Printf("cannot list nodes: %v\n", err)
+			} else if len(nodesMap) > 0 {
+				break
+			}
+		}
+
+		nodes := make([]solana.PublicKey, 0, len(nodesMap))
+		for nodeID := range nodesMap {
+			nodes = append(nodes, solana.MustPublicKeyFromBase58(nodeID))
+		}
+
+		if err := pubSub.Start(ctx, nodes); err != nil {
+			panic(err)
+		}
+	}()
+
+	return pubSub, nil
 }
