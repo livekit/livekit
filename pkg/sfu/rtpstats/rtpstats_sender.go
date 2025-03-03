@@ -1048,12 +1048,7 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) (*RTPDeltaInfo
 					packetsLost = packetsExpected
 				}
 
-				// discount jitter from publisher side + internal processing
-				maxJitter := thenReceiverView.maxJitter - thenReceiverView.maxJitterFeed
-				if maxJitter < 0.0 {
-					maxJitter = 0.0
-				}
-				maxJitterTime := maxJitter / float64(r.params.ClockRate) * 1e6
+				maxJitterTime := thenReceiverView.maxJitter / float64(r.params.ClockRate) * 1e6
 
 				deltaStatsReceiverView = &RTPDeltaInfo{
 					StartTime:            time.Unix(0, startTime),
