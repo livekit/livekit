@@ -429,6 +429,13 @@ func toAggregateDeltaInfo(streams map[uint32]*buffer.StreamStatsWithLayers, useR
 	for _, s := range streams {
 		if useRemoteView {
 			if s.RTPStatsRemoteView != nil {
+				// discount jitter from publisher side + internal processing while reporting downstream jitter
+				if s.RTPStats != nil {
+					s.RTPStatsRemoteView.JitterMax -= s.RTPStats.JitterMax
+					if s.RTPStatsRemoteView.JitterMax < 0.0 {
+						s.RTPStatsRemoteView.JitterMax = 0.0
+					}
+				}
 				deltaInfoList = append(deltaInfoList, s.RTPStatsRemoteView)
 			}
 		} else {
@@ -463,11 +470,7 @@ func toAnalyticsStream(
 		}
 
 		rtt = deltaStatsRemoteView.RttMax
-
-		maxJitter = deltaStatsRemoteView.JitterMax - deltaStats.JitterMax
-		if maxJitter < 0.0 {
-			maxJitter = 0.0
-		}
+		maxJitter = deltaStatsRemoteView.JitterMax
 	}
 
 	return &livekit.AnalyticsStream{
