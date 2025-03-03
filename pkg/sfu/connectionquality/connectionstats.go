@@ -429,6 +429,13 @@ func toAggregateDeltaInfo(streams map[uint32]*buffer.StreamStatsWithLayers, useR
 	for _, s := range streams {
 		if useRemoteView {
 			if s.RTPStatsRemoteView != nil {
+				// discount jitter from publisher side + internal processing while reporting downstream jitter
+				if s.RTPStats != nil {
+					s.RTPStatsRemoteView.JitterMax -= s.RTPStats.JitterMax
+					if s.RTPStatsRemoteView.JitterMax < 0.0 {
+						s.RTPStatsRemoteView.JitterMax = 0.0
+					}
+				}
 				deltaInfoList = append(deltaInfoList, s.RTPStatsRemoteView)
 			}
 		} else {
@@ -450,7 +457,10 @@ func toAnalyticsStream(
 	}
 
 	// discount the feed side loss when reporting forwarded track stats,
+	// discount jitter from publisher side + internal processing while reporting downstream jitter
 	packetsLost := deltaStats.PacketsLost
+	rtt := uint32(0)
+	maxJitter := float64(0.0)
 	if deltaStatsRemoteView != nil {
 		packetsLost = deltaStatsRemoteView.PacketsLost
 		if deltaStatsRemoteView.PacketsMissing > packetsLost {
@@ -458,7 +468,11 @@ func toAnalyticsStream(
 		} else {
 			packetsLost -= deltaStatsRemoteView.PacketsMissing
 		}
+
+		rtt = deltaStatsRemoteView.RttMax
+		maxJitter = deltaStatsRemoteView.JitterMax
 	}
+
 	return &livekit.AnalyticsStream{
 		StartTime:         timestamppb.New(deltaStats.StartTime),
 		EndTime:           timestamppb.New(deltaStats.EndTime),
@@ -472,8 +486,8 @@ func toAnalyticsStream(
 		PacketsLost:       packetsLost,
 		PacketsOutOfOrder: deltaStats.PacketsOutOfOrder,
 		Frames:            deltaStats.Frames,
-		Rtt:               deltaStats.RttMax,
-		Jitter:            uint32(deltaStats.JitterMax),
+		Rtt:               rtt,
+		Jitter:            uint32(maxJitter),
 		Nacks:             deltaStats.Nacks,
 		Plis:              deltaStats.Plis,
 		Firs:              deltaStats.Firs,
