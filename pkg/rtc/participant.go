@@ -937,7 +937,7 @@ func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription) {
 	p.TransportManager.HandleAnswer(answer)
 }
 
-func (p *ParticipantImpl) handleMigrateTracks() {
+func (p *ParticipantImpl) handleMigrateTracks() []*MediaTrack {
 	// muted track won't send rtp packet, so it is required to add mediatrack manually.
 	// But, synthesising track publish for unmuted tracks keeps a consistent path.
 	// In both cases (muted and unmuted), when publisher sends media packets, OnTrack would register and go from there.
@@ -959,7 +959,7 @@ func (p *ParticipantImpl) handleMigrateTracks() {
 			p.pubLogger.Warnw("could not find migrated track, migration failed", nil, "cid", cid)
 			p.pendingTracksLock.Unlock()
 			p.IssueFullReconnect(types.ParticipantCloseReasonMigrateCodecMismatch)
-			return
+			return nil
 		}
 	}
 
@@ -968,13 +968,7 @@ func (p *ParticipantImpl) handleMigrateTracks() {
 	}
 	p.pendingTracksLock.Unlock()
 
-	// launch callbacks in goroutine since they could block.
-	// callbacks handle webhooks as well as db persistence
-	go func() {
-		for _, t := range addedTracks {
-			p.handleTrackPublished(t)
-		}
-	}()
+	return addedTracks
 }
 
 // AddTrack is called when client intends to publish track.
@@ -1203,8 +1197,9 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	}
 
 	p.params.Logger.Debugw("SetMigrateState", "state", s)
+	var migratedTracks []*MediaTrack
 	if s == types.MigrateStateComplete {
-		p.handleMigrateTracks()
+		migratedTracks = p.handleMigrateTracks()
 	}
 	p.migrateState.Store(s)
 	p.dirty.Store(true)
@@ -1219,9 +1214,17 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		go p.cacheForwarderState()
 	}
 
-	if onMigrateStateChange := p.getOnMigrateStateChange(); onMigrateStateChange != nil {
-		go onMigrateStateChange(p, s)
-	}
+	go func() {
+		// launch callbacks in goroutine since they could block.
+		// callbacks handle webhooks as well as db persistence
+		for _, t := range migratedTracks {
+			p.handleTrackPublished(t, true)
+		}
+
+		if onMigrateStateChange := p.getOnMigrateStateChange(); onMigrateStateChange != nil {
+			onMigrateStateChange(p, s)
+		}
+	}()
 }
 
 func (p *ParticipantImpl) MigrateState() types.MigrateState {
@@ -2406,6 +2409,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 
 	// use existing media track to handle simulcast
 	var pubTime time.Duration
+	var isMigrated bool
 	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
 	if !ok {
 		signalCid, ti, migrated, createdAt := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()), true)
@@ -2414,6 +2418,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 			p.pendingTracksLock.Unlock()
 			return nil, false
 		}
+		isMigrated = migrated
 
 		// check if the migrated track has correct codec
 		if migrated && len(ti.Codecs) > 0 {
@@ -2472,6 +2477,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 					"cost", pubTime.Milliseconds(),
 					"rid", track.RID(),
 					"mime", track.Codec().MimeType,
+					"isMigrated", isMigrated,
 				)
 			} else {
 				p.pubLogger.Debugw(
@@ -2479,11 +2485,12 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 					"trackID", mt.ID(),
 					"track", logger.Proto(mt.ToProto()),
 					"cost", pubTime.Milliseconds(),
+					"isMigrated", isMigrated,
 				)
 			}
 
 			prometheus.RecordPublishTime(mt.Source(), mt.Kind(), pubTime, p.GetClientInfo().GetSdk(), p.Kind())
-			p.handleTrackPublished(mt)
+			p.handleTrackPublished(mt, isMigrated)
 		}()
 	}
 
@@ -2592,18 +2599,20 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 	}
 
 	trackID := livekit.TrackID(ti.Sid)
-	mt.AddOnClose(func(_isExpectedToRsume bool) {
+	mt.AddOnClose(func(isExpectedToRsume bool) {
 		if p.supervisor != nil {
 			p.supervisor.ClearPublishedTrack(trackID, mt)
 		}
 
-		p.params.Telemetry.TrackUnpublished(
-			context.Background(),
-			p.ID(),
-			p.Identity(),
-			mt.ToProto(),
-			true,
-		)
+		if !isExpectedToRsume {
+			p.params.Telemetry.TrackUnpublished(
+				context.Background(),
+				p.ID(),
+				p.Identity(),
+				mt.ToProto(),
+				true,
+			)
+		}
 
 		p.pendingTracksLock.Lock()
 		if pti := p.pendingTracks[signalCid]; pti != nil {
@@ -2615,7 +2624,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 
 		p.dirty.Store(true)
 
-		p.pubLogger.Debugw("track unpublished", "trackID", ti.Sid, "track", logger.Proto(ti))
+		p.pubLogger.Debugw("track unpublished", "trackID", ti.Sid, "expectedToRsume", isExpectedToRsume, "track", logger.Proto(ti))
 		if onTrackUnpublished := p.getOnTrackUnpublished(); onTrackUnpublished != nil {
 			onTrackUnpublished(p, mt)
 		}
@@ -2624,19 +2633,22 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 	return mt
 }
 
-func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack) {
+func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack, isMigrated bool) {
 	if onTrackPublished := p.getOnTrackPublished(); onTrackPublished != nil {
 		onTrackPublished(p, track)
 	}
 
 	// send webhook after callbacks are complete, persistence and state handling happens
 	// in `onTrackPublished` cb
-	p.params.Telemetry.TrackPublished(
-		context.Background(),
-		p.ID(),
-		p.Identity(),
-		track.ToProto(),
-	)
+	if !isMigrated {
+		p.params.Telemetry.TrackPublished(
+			context.Background(),
+			p.ID(),
+			p.Identity(),
+			track.ToProto(),
+		)
+
+	}
 
 	p.pendingTracksLock.Lock()
 	delete(p.pendingPublishingTracks, track.ID())
