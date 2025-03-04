@@ -276,29 +276,30 @@ func (cs *ConnectionStats) updateScoreFromReceiverReport(at time.Time) (float32,
 	return cs.updateScoreWithAggregate(agg, time.Time{}, at), streams
 }
 
-func (cs *ConnectionStats) updateScoreAt(at time.Time) (float32, map[uint32]*buffer.StreamStatsWithLayers) {
+func (cs *ConnectionStats) updateScoreAt(at time.Time) (float32, map[uint32]*buffer.StreamStatsWithLayers, bool) {
 	if cs.params.SenderProvider != nil {
 		// receiver report based quality scoring, use stats from receiver report for scoring
-		return cs.updateScoreFromReceiverReport(at)
+		score, streams := cs.updateScoreFromReceiverReport(at)
+		return score, streams, true
 	}
 
 	if cs.params.ReceiverProvider == nil {
-		return MinMOS, nil
+		return MinMOS, nil, false
 	}
 
 	streams := cs.params.ReceiverProvider.GetDeltaStats()
 	if len(streams) == 0 {
 		mos, _ := cs.scorer.GetMOSAndQuality()
-		return mos, nil
+		return mos, nil, false
 	}
 
 	agg := toAggregateDeltaInfo(streams, false)
 	if agg == nil {
 		// no receiver report in the window
 		mos, _ := cs.scorer.GetMOSAndQuality()
-		return mos, streams
+		return mos, streams, false
 	}
-	return cs.updateScoreWithAggregate(agg, cs.params.ReceiverProvider.GetLastSenderReportTime(), at), streams
+	return cs.updateScoreWithAggregate(agg, cs.params.ReceiverProvider.GetLastSenderReportTime(), at), streams, false
 }
 
 func (cs *ConnectionStats) updateStreamingStart(at time.Time) time.Time {
@@ -324,12 +325,12 @@ func (cs *ConnectionStats) updateStreamingStart(at time.Time) time.Time {
 }
 
 func (cs *ConnectionStats) getStat() {
-	score, streams := cs.updateScoreAt(time.Time{})
+	score, streams, isSender := cs.updateScoreAt(time.Time{})
 
 	if cs.onStatsUpdate != nil && len(streams) != 0 {
 		analyticsStreams := make([]*livekit.AnalyticsStream, 0, len(streams))
 		for ssrc, stream := range streams {
-			as := toAnalyticsStream(ssrc, stream.RTPStats, stream.RTPStatsRemoteView)
+			as := toAnalyticsStream(ssrc, stream.RTPStats, stream.RTPStatsRemoteView, isSender)
 			if as == nil {
 				continue
 			}
@@ -451,6 +452,7 @@ func toAnalyticsStream(
 	ssrc uint32,
 	deltaStats *rtpstats.RTPDeltaInfo,
 	deltaStatsRemoteView *rtpstats.RTPDeltaInfo,
+	isSender bool,
 ) *livekit.AnalyticsStream {
 	if deltaStats == nil {
 		return nil
@@ -459,8 +461,8 @@ func toAnalyticsStream(
 	// discount the feed side loss when reporting forwarded track stats,
 	// discount jitter from publisher side + internal processing while reporting downstream jitter
 	packetsLost := deltaStats.PacketsLost
-	rtt := uint32(0)
-	maxJitter := float64(0.0)
+	rtt := deltaStats.RttMax
+	maxJitter := deltaStats.JitterMax
 	if deltaStatsRemoteView != nil {
 		packetsLost = deltaStatsRemoteView.PacketsLost
 		if deltaStatsRemoteView.PacketsMissing > packetsLost {
@@ -471,6 +473,9 @@ func toAnalyticsStream(
 
 		rtt = deltaStatsRemoteView.RttMax
 		maxJitter = deltaStatsRemoteView.JitterMax
+	} else if isSender {
+		rtt = 0
+		maxJitter = 0
 	}
 
 	return &livekit.AnalyticsStream{
