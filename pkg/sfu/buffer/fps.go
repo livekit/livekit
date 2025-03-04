@@ -17,14 +17,16 @@ package buffer
 import (
 	"container/list"
 
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtp/codecs"
+
+	"github.com/livekit/protocol/logger"
 )
 
 var minFramesForCalculation = [...]int{8, 15, 40, 60}
 
 type frameInfo struct {
-	seq       uint16
+	startSeq  uint16
+	endSeq    uint16
 	ts        uint32
 	fn        uint16
 	spatial   int32
@@ -79,7 +81,7 @@ func (f *frameRateCalculatorVPx) RecvPacket(ep *ExtPacket, fn uint16) bool {
 	}
 
 	if f.baseFrame == nil {
-		f.baseFrame = &frameInfo{seq: ep.Packet.SequenceNumber, ts: ep.Packet.Timestamp, fn: fn}
+		f.baseFrame = &frameInfo{ts: ep.Packet.Timestamp, fn: fn}
 		f.fnReceived[0] = f.baseFrame
 		f.firstFrames[temporal] = f.baseFrame
 		return false
@@ -102,7 +104,6 @@ func (f *frameRateCalculatorVPx) RecvPacket(ep *ExtPacket, fn uint16) bool {
 	}
 
 	fi := &frameInfo{
-		seq:      ep.Packet.SequenceNumber,
 		ts:       ep.Packet.Timestamp,
 		fn:       fn,
 		temporal: temporal,
@@ -373,7 +374,7 @@ func (f *FrameRateCalculatorDD) RecvPacket(ep *ExtPacket) bool {
 
 	fn := ep.DependencyDescriptor.Descriptor.FrameNumber
 	if f.baseFrame == nil {
-		f.baseFrame = &frameInfo{seq: ep.Packet.SequenceNumber, ts: ep.Packet.Timestamp, fn: fn}
+		f.baseFrame = &frameInfo{ts: ep.Packet.Timestamp, fn: fn}
 		f.fnReceived[0] = f.baseFrame
 		f.firstFrames[spatial][temporal] = f.baseFrame
 		f.secondFrames[spatial][temporal] = f.baseFrame
@@ -406,7 +407,6 @@ func (f *FrameRateCalculatorDD) RecvPacket(ep *ExtPacket) bool {
 	}
 
 	fi := &frameInfo{
-		seq:       ep.Packet.SequenceNumber,
 		ts:        ep.Packet.Timestamp,
 		fn:        fn,
 		temporal:  temporal,
@@ -438,12 +438,13 @@ func (f *FrameRateCalculatorDD) RecvPacket(ep *ExtPacket) bool {
 			switch {
 			case val == dependFrame:
 				break insertFrame
-			case val < dependFrame:
+			case sn16LT(val, dependFrame):
 				chain.InsertAfter(dependFrame, e)
 				break insertFrame
 			default:
 				if e == chain.Front() {
 					chain.PushFront(dependFrame)
+					break insertFrame
 				}
 			}
 		}
@@ -570,3 +571,162 @@ func (f *FrameRateCalculatorForDDLayer) GetFrameRate() []float32 {
 }
 
 // -----------------------------------------------
+
+type FrameRateCalculatorH26x struct {
+	frameRates [DefaultMaxLayerTemporal + 1]float32
+	clockRate  uint32
+	logger     logger.Logger
+	fnReceived *list.List
+	baseFrame  *frameInfo
+	completed  bool
+}
+
+func NewFrameRateCalculatorH26x(clockRate uint32, logger logger.Logger) *FrameRateCalculatorH26x {
+	return &FrameRateCalculatorH26x{
+		clockRate: clockRate,
+		logger:    logger,
+	}
+}
+
+func (f *FrameRateCalculatorH26x) Completed() bool {
+	return f.completed
+}
+
+func (f *FrameRateCalculatorH26x) RecvPacket(ep *ExtPacket) bool {
+	if f.completed {
+		return true
+	}
+
+	if ep.Temporal >= int32(len(f.frameRates)) {
+		f.logger.Warnw("invalid temporal layer", nil, "temporal", ep.Temporal)
+		return false
+	}
+
+	temporal := ep.Temporal
+	if temporal < 0 {
+		temporal = 0
+	}
+
+	if f.baseFrame == nil {
+		f.baseFrame = &frameInfo{
+			startSeq: ep.Packet.SequenceNumber,
+			endSeq:   ep.Packet.SequenceNumber,
+			ts:       ep.Packet.Timestamp,
+			temporal: temporal,
+		}
+		f.fnReceived = list.New()
+		f.fnReceived.PushBack(f.baseFrame)
+		return false
+	}
+
+	if sn16LTOrEqual(ep.Packet.SequenceNumber, f.baseFrame.startSeq) {
+		return false
+	}
+
+insertFrame:
+	for e := f.fnReceived.Back(); e != nil; e = e.Prev() {
+		frame := e.Value.(*frameInfo)
+		switch {
+		case frame.ts == ep.Packet.Timestamp:
+			if sn16LT(frame.endSeq, ep.Packet.SequenceNumber) {
+				frame.endSeq = ep.Packet.SequenceNumber
+			}
+			if sn16LT(ep.Packet.SequenceNumber, frame.startSeq) {
+				frame.startSeq = ep.Packet.SequenceNumber
+			}
+			break insertFrame
+		case sn32LT(frame.ts, ep.Packet.Timestamp):
+			f.fnReceived.InsertAfter(&frameInfo{
+				startSeq: ep.Packet.SequenceNumber,
+				endSeq:   ep.Packet.SequenceNumber,
+				ts:       ep.Packet.Timestamp,
+				temporal: temporal,
+			}, e)
+			break insertFrame
+		default:
+			if e == f.fnReceived.Front() {
+				f.fnReceived.PushFront(&frameInfo{
+					startSeq: ep.Packet.SequenceNumber,
+					endSeq:   ep.Packet.SequenceNumber,
+					ts:       ep.Packet.Timestamp,
+					temporal: temporal,
+				})
+				break insertFrame
+			}
+		}
+	}
+
+	return f.calc()
+}
+
+func (f *FrameRateCalculatorH26x) calc() bool {
+	frameCounts := make([]int, DefaultMaxLayerTemporal+1)
+	var totalFrameCount int
+	var tsDuration int
+	cur := f.fnReceived.Front()
+	for {
+		next := cur.Next()
+		if next == nil {
+			break
+		}
+		ff := cur.Value.(*frameInfo)
+		nf := next.Value.(*frameInfo)
+		if nf.startSeq-ff.endSeq == 1 {
+			totalFrameCount++
+			tsDuration += int(nf.ts - ff.ts)
+			for i := int(nf.temporal); i < len(frameCounts); i++ {
+				frameCounts[i]++
+			}
+		} else {
+			// reset to find continuous frames
+			totalFrameCount = 0
+			for i := range frameCounts {
+				frameCounts[i] = 0
+			}
+			tsDuration = 0
+		}
+
+		// received enough continuous frames, calculate fps
+		if totalFrameCount >= minFramesForCalculation[DefaultMaxLayerTemporal] {
+			for currentTemporal := int32(0); currentTemporal <= DefaultMaxLayerTemporal; currentTemporal++ {
+				count := frameCounts[currentTemporal]
+				if currentTemporal > 0 && count == frameCounts[currentTemporal-1] {
+					// no frames for this temporal layer
+					f.frameRates[currentTemporal] = 0
+				} else {
+					f.frameRates[currentTemporal] = float32(f.clockRate) / float32(tsDuration) * float32(count)
+				}
+			}
+			f.logger.Debugw("fps changed", "fps", f.GetFrameRate())
+			f.completed = true
+			f.reset()
+			return true
+		}
+
+		cur = next
+	}
+
+	return false
+}
+
+func (f *FrameRateCalculatorH26x) reset() {
+	f.fnReceived.Init()
+	f.baseFrame = nil
+}
+
+func (f *FrameRateCalculatorH26x) GetFrameRate() []float32 {
+	return f.frameRates[:]
+}
+
+// -----------------------------------------------
+func sn16LT(a, b uint16) bool {
+	return a-b > 0x8000
+}
+
+func sn16LTOrEqual(a, b uint16) bool {
+	return a == b || a-b > 0x8000
+}
+
+func sn32LT(a, b uint32) bool {
+	return a-b > 0x80000000
+}

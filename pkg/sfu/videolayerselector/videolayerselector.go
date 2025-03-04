@@ -17,6 +17,7 @@ package videolayerselector
 import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector/temporallayerselector"
+	"github.com/livekit/protocol/logger"
 )
 
 type VideoLayerSelectorResult struct {
@@ -29,6 +30,10 @@ type VideoLayerSelectorResult struct {
 }
 
 type VideoLayerSelector interface {
+	getBase() *Base
+
+	getLogger() logger.Logger
+
 	IsOvershootOkay() bool
 
 	SetTemporalLayerSelector(tls temporallayerselector.TemporalLayerSelector)

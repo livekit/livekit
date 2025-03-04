@@ -64,7 +64,7 @@ func (w *DataChannelWriter[T]) Write(p []byte) (n int, err error) {
 		w.rate.AddBytes(n, int(w.bufferGetter.BufferedAmount()), now)
 		// retry if the write timed out on a non-slow receiver
 		if errors.Is(err, context.DeadlineExceeded) {
-			if bitrate := w.rate.Bitrate(now); bitrate >= w.slowThreshold {
+			if bitrate, ok := w.rate.Bitrate(now); !ok || bitrate >= w.slowThreshold {
 				continue
 			} else {
 				err = fmt.Errorf("%w: bitrate %d, threshold %d", ErrDataDroppedBySlowReader, bitrate, w.slowThreshold)

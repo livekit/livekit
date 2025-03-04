@@ -53,7 +53,9 @@ func NewLocalStore() *LocalStore {
 
 func (s *LocalStore) StoreRoom(_ context.Context, room *livekit.Room, internal *livekit.RoomInternal) error {
 	if room.CreationTime == 0 {
-		room.CreationTime = time.Now().Unix()
+		now := time.Now()
+		room.CreationTime = now.Unix()
+		room.CreationTimeMs = now.UnixMilli()
 	}
 	roomName := livekit.RoomName(room.Name)
 

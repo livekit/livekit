@@ -28,6 +28,17 @@ import (
 	"github.com/livekit/mediatransportutil/pkg/nack"
 )
 
+var h265Codec = webrtc.RTPCodecParameters{
+	RTPCodecCapability: webrtc.RTPCodecCapability{
+		MimeType:  "video/h265",
+		ClockRate: 90000,
+		RTCPFeedback: []webrtc.RTCPFeedback{{
+			Type: "nack",
+		}},
+	},
+	PayloadType: 116,
+}
+
 var vp8Codec = webrtc.RTPCodecParameters{
 	RTPCodecCapability: webrtc.RTPCodecCapability{
 		MimeType:  "video/vp8",
@@ -312,6 +323,105 @@ func TestFractionLostReport(t *testing.T) {
 		require.NoError(t, err)
 	}
 	wg.Wait()
+}
+
+func TestCodecChange(t *testing.T) {
+	// codec change before bind
+	buff := NewBuffer(123, 1, 1)
+	require.NotNil(t, buff)
+	changedCodec := make(chan webrtc.RTPCodecParameters, 1)
+	buff.OnCodecChange(func(rp webrtc.RTPCodecParameters) {
+		select {
+		case changedCodec <- rp:
+		default:
+			t.Fatalf("codec change not consumed")
+		}
+	})
+
+	h265Pkt := rtp.Packet{
+		Header: rtp.Header{
+			Version:        2,
+			PayloadType:    116,
+			SequenceNumber: 1,
+			Timestamp:      1,
+			SSRC:           123,
+		},
+		Payload: []byte{0xff, 0xff, 0xff, 0xfd, 0xb4, 0x9f, 0x94, 0x1},
+	}
+	buf, err := h265Pkt.Marshal()
+	require.NoError(t, err)
+	_, err = buff.Write(buf)
+	require.NoError(t, err)
+
+	select {
+	case <-changedCodec:
+		t.Fatalf("unexpected codec change")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	buff.Bind(webrtc.RTPParameters{
+		HeaderExtensions: nil,
+		Codecs:           []webrtc.RTPCodecParameters{vp8Codec, h265Codec},
+	}, vp8Codec.RTPCodecCapability, 0)
+
+	select {
+	case c := <-changedCodec:
+		require.Equal(t, h265Codec, c)
+
+	case <-time.After(1 * time.Second):
+		t.Fatalf("expected codec change")
+	}
+
+	// codec change after bind
+	vp8Pkt := rtp.Packet{
+		Header: rtp.Header{
+			Version:        2,
+			PayloadType:    96,
+			SequenceNumber: 3,
+			Timestamp:      3,
+			SSRC:           123,
+		},
+		Payload: []byte{0xff, 0xff, 0xff, 0xfd, 0xb4, 0x9f, 0x94, 0x1},
+	}
+	buf, err = vp8Pkt.Marshal()
+	require.NoError(t, err)
+	_, err = buff.Write(buf)
+	require.NoError(t, err)
+
+	select {
+	case c := <-changedCodec:
+		require.Equal(t, vp8Codec, c)
+
+	case <-time.After(1 * time.Second):
+		t.Fatalf("expected codec change")
+	}
+
+	// out of order pkts can't cause codec change
+	h265Pkt.SequenceNumber = 2
+	h265Pkt.Timestamp = 2
+	buf, err = h265Pkt.Marshal()
+	require.NoError(t, err)
+	_, err = buff.Write(buf)
+	require.NoError(t, err)
+	select {
+	case <-changedCodec:
+		t.Fatalf("unexpected codec change")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// unknown codec should not cause change
+	h265Pkt.SequenceNumber = 4
+	h265Pkt.Timestamp = 4
+	h265Pkt.PayloadType = 117
+	buf, err = h265Pkt.Marshal()
+	require.NoError(t, err)
+	_, err = buff.Write(buf)
+	require.NoError(t, err)
+	select {
+	case <-changedCodec:
+		t.Fatalf("unexpected codec change")
+	case <-time.After(100 * time.Millisecond):
+	}
 }
 
 func BenchmarkMemcpu(b *testing.B) {

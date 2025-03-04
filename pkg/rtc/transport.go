@@ -44,6 +44,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
 	sfuinterceptor "github.com/livekit/livekit-server/pkg/sfu/interceptor"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
@@ -240,8 +241,10 @@ type PCTransport struct {
 	currentOfferIceCredential string // ice user:pwd, for publish side ice restart checking
 	pendingRestartIceOffer    *webrtc.SessionDescription
 
-	connectionDetails *types.ICEConnectionDetails
-	selectedPair      atomic.Pointer[webrtc.ICECandidatePair]
+	connectionDetails      *types.ICEConnectionDetails
+	selectedPair           atomic.Pointer[webrtc.ICECandidatePair]
+	mayFailedICEStats      []iceCandidatePairStats
+	mayFailedICEStatsTimer *time.Timer
 }
 
 type TransportParams struct {
@@ -304,6 +307,10 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	}
 	if params.FireOnTrackBySdp {
 		se.SetFireOnTrackBeforeFirstRTP(true)
+	}
+
+	if params.ClientInfo.SupportSctpZeroChecksum() {
+		se.EnableSCTPZeroChecksum(true)
 	}
 
 	//
@@ -412,11 +419,11 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	}
 
 	setTWCCForVideo := func(info *interceptor.StreamInfo) {
-		if !strings.HasPrefix(info.MimeType, "video") {
+		if !mime.IsMimeTypeStringVideo(info.MimeType) {
 			return
 		}
 		// rtx stream don't have rtcp feedback, always set twcc for rtx stream
-		twccFb := strings.HasSuffix(info.MimeType, "rtx")
+		twccFb := mime.GetMimeTypeCodec(info.MimeType) == mime.MimeTypeCodecRTX
 		if !twccFb {
 			for _, fb := range info.RTCPFeedback {
 				if fb.Type == webrtc.TypeRTCPFBTransportCC {
@@ -568,6 +575,9 @@ func (t *PCTransport) setICEStartedAt(at time.Time) {
 	if t.iceStartedAt.IsZero() {
 		t.iceStartedAt = at
 
+		// checklist of ice agent will be cleared on ice failed, get stats before that
+		t.mayFailedICEStatsTimer = time.AfterFunc(iceFailedTimeoutTotal-time.Second, t.logMayFailedICEStats)
+
 		// set failure timer for tcp ice connection based on signaling RTT
 		if t.preferTCP.Load() {
 			signalingRTT := t.signalingRTT.Load()
@@ -582,6 +592,7 @@ func (t *PCTransport) setICEStartedAt(at time.Time) {
 				t.tcpICETimer = time.AfterFunc(tcpICETimeout, func() {
 					if t.pc.ICEConnectionState() == webrtc.ICEConnectionStateChecking {
 						t.params.Logger.Infow("TCP ICE connect timeout", "timeout", tcpICETimeout, "signalRTT", signalingRTT)
+						t.logMayFailedICEStats()
 						t.handleConnectionFailed(true)
 					}
 				})
@@ -625,6 +636,43 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 			t.tcpICETimer = nil
 		}
 	}
+
+	if t.mayFailedICEStatsTimer != nil {
+		t.mayFailedICEStatsTimer.Stop()
+		t.mayFailedICEStatsTimer = nil
+	}
+	t.mayFailedICEStats = nil
+	t.lock.Unlock()
+}
+
+func (t *PCTransport) logMayFailedICEStats() {
+	var candidatePairStats []webrtc.ICECandidatePairStats
+	pairStats := t.pc.GetStats()
+	candidateStats := make(map[string]webrtc.ICECandidateStats)
+	for _, stat := range pairStats {
+		switch stat := stat.(type) {
+		case webrtc.ICECandidatePairStats:
+			candidatePairStats = append(candidatePairStats, stat)
+		case webrtc.ICECandidateStats:
+			candidateStats[stat.ID] = stat
+		}
+	}
+
+	iceStats := make([]iceCandidatePairStats, 0, len(candidatePairStats))
+	for _, pairStat := range candidatePairStats {
+		iceStat := iceCandidatePairStats{ICECandidatePairStats: pairStat}
+		if local, ok := candidateStats[pairStat.LocalCandidateID]; ok {
+			iceStat.local = local
+		}
+		if remote, ok := candidateStats[pairStat.RemoteCandidateID]; ok {
+			remote.IP = MaybeTruncateIP(remote.IP)
+			iceStat.remote = remote
+		}
+		iceStats = append(iceStats, iceStat)
+	}
+
+	t.lock.Lock()
+	t.mayFailedICEStats = iceStats
 	t.lock.Unlock()
 }
 
@@ -1073,7 +1121,13 @@ func (t *PCTransport) Close() {
 		t.lossyDC.Close()
 		t.lossyDC = nil
 	}
+
+	if t.mayFailedICEStatsTimer != nil {
+		t.mayFailedICEStatsTimer.Stop()
+		t.mayFailedICEStatsTimer = nil
+	}
 	t.lock.Unlock()
+	t.outputAndClearICEStats()
 }
 
 func (t *PCTransport) clearConnTimer() {
@@ -1415,7 +1469,7 @@ func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDesc
 func (t *PCTransport) SetPreviousSdp(offer, answer *webrtc.SessionDescription) {
 	// when there is no previous answer, cannot migrate, force a full reconnect
 	if answer == nil {
-		t.params.Handler.OnNegotiationFailed()
+		t.onNegotiationFailed(true, "no previous answer for previous sdp")
 		return
 	}
 
@@ -1423,10 +1477,9 @@ func (t *PCTransport) SetPreviousSdp(offer, answer *webrtc.SessionDescription) {
 	if t.pc.RemoteDescription() == nil && t.previousAnswer == nil {
 		t.previousAnswer = answer
 		if senders, err := t.initPCWithPreviousAnswer(*t.previousAnswer); err != nil {
-			t.params.Logger.Warnw("initPCWithPreviousAnswer failed", err)
 			t.lock.Unlock()
 
-			t.params.Handler.OnNegotiationFailed()
+			t.onNegotiationFailed(true, fmt.Sprintf("initPCWithPreviousAnswer failed, error: %s", err))
 			return
 		} else if offer != nil {
 			// in migration case, can't reuse transceiver before negotiated except track subscribed at previous node
@@ -1491,8 +1544,7 @@ func (t *PCTransport) postEvent(e event) {
 		}
 		if err != nil {
 			if !e.isClosed.Load() {
-				e.params.Logger.Warnw("error handling event", err, "event", e.String())
-				e.params.Handler.OnNegotiationFailed()
+				e.onNegotiationFailed(true, fmt.Sprintf("error handling event. err: %s, event: %s", err, e))
 			}
 		}
 	}, e)
@@ -1698,14 +1750,7 @@ func (t *PCTransport) setupSignalStateCheckTimer() {
 		failed := t.negotiationState != transport.NegotiationStateNone
 
 		if t.negotiateCounter.Load() == negotiateVersion && failed && t.pc.ConnectionState() == webrtc.PeerConnectionStateConnected {
-			t.params.Logger.Infow(
-				"negotiation timed out",
-				"localCurrent", t.pc.CurrentLocalDescription(),
-				"localPending", t.pc.PendingLocalDescription(),
-				"remoteCurrent", t.pc.CurrentRemoteDescription(),
-				"remotePending", t.pc.PendingRemoteDescription(),
-			)
-			t.params.Handler.OnNegotiationFailed()
+			t.onNegotiationFailed(false, "negotiation timed out")
 		}
 	})
 }
@@ -1955,6 +2000,10 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription) e
 		t.resetShortConn()
 	}
 
+	if offerRestartICE {
+		t.outputAndClearICEStats()
+	}
+
 	if err := t.setRemoteDescription(*sd); err != nil {
 		return err
 	}
@@ -2022,6 +2071,7 @@ func (t *PCTransport) doICERestart() error {
 	}
 
 	if t.negotiationState == transport.NegotiationStateNone {
+		t.outputAndClearICEStats()
 		return t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true})
 	}
 
@@ -2053,6 +2103,7 @@ func (t *PCTransport) doICERestart() error {
 			return errors.Wrap(err, "set remote description failed")
 		} else {
 			t.setNegotiationState(transport.NegotiationStateNone)
+			t.outputAndClearICEStats()
 			return t.createAndSendOffer(&webrtc.OfferOptions{ICERestart: true})
 		}
 	}
@@ -2061,6 +2112,39 @@ func (t *PCTransport) doICERestart() error {
 func (t *PCTransport) handleICERestart(_ event) error {
 	return t.doICERestart()
 }
+
+func (t *PCTransport) onNegotiationFailed(warning bool, reason string) {
+	logFields := []interface{}{
+		"reason", reason,
+		"localCurrent", t.pc.CurrentLocalDescription(),
+		"localPending", t.pc.PendingLocalDescription(),
+		"remoteCurrent", t.pc.CurrentRemoteDescription(),
+		"remotePending", t.pc.PendingRemoteDescription(),
+	}
+	if warning {
+		t.params.Logger.Warnw(
+			"negotiation failed",
+			nil,
+			logFields...,
+		)
+	} else {
+		t.params.Logger.Infow("negotiation failed", logFields...)
+	}
+	t.params.Handler.OnNegotiationFailed()
+}
+
+func (t *PCTransport) outputAndClearICEStats() {
+	t.lock.Lock()
+	stats := t.mayFailedICEStats
+	t.mayFailedICEStats = nil
+	t.lock.Unlock()
+
+	if len(stats) > 0 {
+		t.params.Logger.Infow("ICE candidate pair stats", "stats", iceCandidatePairStatsEncoder{stats})
+	}
+}
+
+// ----------------------
 
 // configure subscriber transceiver for audio stereo and nack
 // pion doesn't support per transciver codec configuration, so the nack of this session will be disabled
@@ -2074,7 +2158,7 @@ func configureAudioTransceiver(tr *webrtc.RTPTransceiver, stereo bool, nack bool
 	codecs := sender.GetParameters().Codecs
 	configCodecs := make([]webrtc.RTPCodecParameters, 0, len(codecs))
 	for _, c := range codecs {
-		if strings.EqualFold(c.MimeType, webrtc.MimeTypeOpus) {
+		if mime.IsMimeTypeStringOpus(c.MimeType) {
 			c.SDPFmtpLine = strings.ReplaceAll(c.SDPFmtpLine, ";sprop-stereo=1", "")
 			if stereo {
 				c.SDPFmtpLine += ";sprop-stereo=1"
@@ -2137,4 +2221,46 @@ func nonSimulcastRTXRepairsFromSDP(s *sdp.SessionDescription, logger logger.Logg
 	}
 
 	return rtxRepairFlows
+}
+
+// ----------------------
+
+type iceCandidatePairStatsEncoder struct {
+	stats []iceCandidatePairStats
+}
+
+func (e iceCandidatePairStatsEncoder) MarshalLogArray(arr zapcore.ArrayEncoder) error {
+	for _, s := range e.stats {
+		if err := arr.AppendObject(s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type iceCandidatePairStats struct {
+	webrtc.ICECandidatePairStats
+	local, remote webrtc.ICECandidateStats
+}
+
+func (r iceCandidatePairStats) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	candidateToString := func(c webrtc.ICECandidateStats) string {
+		return fmt.Sprintf("%s:%d %s type(%s/%s), priority(%d)", c.IP, c.Port, c.Protocol, c.CandidateType, c.RelayProtocol, c.Priority)
+	}
+	e.AddString("state", string(r.State))
+	e.AddBool("nominated", r.Nominated)
+	e.AddString("local", candidateToString(r.local))
+	e.AddString("remote", candidateToString(r.remote))
+	e.AddUint64("requestsSent", r.RequestsSent)
+	e.AddUint64("responsesReceived", r.ResponsesReceived)
+	e.AddUint64("requestsReceived", r.RequestsReceived)
+	e.AddUint64("responsesSent", r.ResponsesSent)
+	e.AddTime("firstRequestSentAt", r.FirstRequestTimestamp.Time())
+	e.AddTime("lastRequestSentAt", r.LastRequestTimestamp.Time())
+	e.AddTime("firstResponseReceivedAt", r.FirstResponseTimestamp.Time())
+	e.AddTime("lastResponseReceivedAt", r.LastResponseTimestamp.Time())
+	e.AddTime("firstRequestReceivedAt", r.FirstRequestReceivedTimestamp.Time())
+	e.AddTime("lastRequestReceivedAt", r.LastRequestReceivedTimestamp.Time())
+
+	return nil
 }

@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -43,6 +42,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/transport/transportfakes"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 )
 
 type SignalRequestHandler func(msg *livekit.SignalRequest) error
@@ -103,9 +103,9 @@ var (
 		},
 	}
 	extMimeMapping = map[string]string{
-		".ivf":  webrtc.MimeTypeVP8,
-		".h264": webrtc.MimeTypeH264,
-		".ogg":  webrtc.MimeTypeOpus,
+		".ivf":  mime.MimeTypeVP8.String(),
+		".h264": mime.MimeTypeH264.String(),
+		".ogg":  mime.MimeTypeOpus.String(),
 	}
 )
 
@@ -195,7 +195,7 @@ func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 		var disabled bool
 		if opts != nil {
 			for _, dc := range opts.DisabledCodecs {
-				if strings.EqualFold(dc.MimeType, codec.Mime) && (dc.SDPFmtpLine == "" || dc.SDPFmtpLine == codec.FmtpLine) {
+				if mime.IsMimeTypeStringEqual(dc.MimeType, codec.Mime) && (dc.SDPFmtpLine == "" || dc.SDPFmtpLine == codec.FmtpLine) {
 					disabled = true
 					break
 				}
@@ -269,7 +269,6 @@ func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 		return c.SendIceCandidate(ic, livekit.SignalTarget_SUBSCRIBER)
 	})
 	subscriberHandler.OnTrackCalls(func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
-		fmt.Println("ontrack", track.Codec(), track.PayloadType())
 		go c.processTrack(track)
 	})
 	subscriberHandler.OnDataPacketCalls(c.handleDataMessage)

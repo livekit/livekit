@@ -21,6 +21,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/pion/rtp"
+	"github.com/pion/webrtc/v4"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/mediatransportutil/pkg/bucket"
@@ -89,6 +90,17 @@ func (r *RedReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int 
 	})
 }
 
+func (r *RedReceiver) ForwardRTCPSenderReport(
+	payloadType webrtc.PayloadType,
+	isSVC bool,
+	layer int32,
+	publisherSRData *livekit.RTCPSenderReportState,
+) {
+	r.downTrackSpreader.Broadcast(func(dt TrackSender) {
+		_ = dt.HandleRTCPSenderReportData(payloadType, isSVC, layer, publisherSRData)
+	})
+}
+
 func (r *RedReceiver) AddDownTrack(track TrackSender) error {
 	if r.closed.Load() {
 		return ErrReceiverClosed
@@ -110,6 +122,10 @@ func (r *RedReceiver) DeleteDownTrack(subscriberID livekit.ParticipantID) {
 
 	r.downTrackSpreader.Free(subscriberID)
 	r.logger.Debugw("red receiver downtrack deleted", "subscriberID", subscriberID)
+}
+
+func (r *RedReceiver) GetDownTracks() []TrackSender {
+	return r.downTrackSpreader.GetDownTracks()
 }
 
 func (r *RedReceiver) ResyncDownTracks() {

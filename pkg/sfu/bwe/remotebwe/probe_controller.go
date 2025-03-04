@@ -114,6 +114,10 @@ func (p *probeController) UpdateRTT(rtt float64) {
 	}
 }
 
+func (p *probeController) GetRTT() float64 {
+	return p.rtt
+}
+
 func (p *probeController) CanProbe() bool {
 	return p.state == probeControllerStateNone && p.ProbeRegulator.CanProbe()
 }

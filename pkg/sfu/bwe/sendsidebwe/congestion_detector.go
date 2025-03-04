@@ -121,8 +121,8 @@ var (
 		MinBytesRatio:    0.5,
 		MinDurationRatio: 0.5,
 
-		JQRMinDelay: 15 * time.Millisecond,
-		DQRMaxDelay: 5 * time.Millisecond,
+		JQRMinDelay: 40 * time.Millisecond,
+		DQRMaxDelay: 15 * time.Millisecond,
 
 		WeightedLoss:       defaultWeightedLossConfig,
 		JQRMinWeightedLoss: 0.25,
@@ -250,8 +250,10 @@ func (q *qdMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 		}
 
 	default:
-		// broken continuity, seal
-		q.isSealed = true
+		if q.numDQRGroups > 0 || q.numJQRGroups > 0 {
+			// broken continuity, seal
+			q.isSealed = true
+		}
 	}
 }
 
@@ -450,8 +452,8 @@ var (
 		ProbeRegulator:   ccutils.DefaultProbeRegulatorConfig,
 		ProbeSignal:      defaultProbeSignalConfig,
 
-		JQRMinDelay: 15 * time.Millisecond,
-		DQRMaxDelay: 5 * time.Millisecond,
+		JQRMinDelay: 40 * time.Millisecond,
+		DQRMaxDelay: 15 * time.Millisecond,
 
 		WeightedLoss:       defaultWeightedLossConfig,
 		JQRMinWeightedLoss: 0.25,
@@ -507,7 +509,6 @@ type congestionDetector struct {
 	congestedTrafficStats *trafficStats
 	congestedPacketGroup  *packetGroup
 
-	queuingRegion    queuingRegion
 	congestionReason congestionReason
 	qdMeasurement    *qdMeasurement
 	lossMeasurement  *lossMeasurement
@@ -548,7 +549,6 @@ func (c *congestionDetector) Reset() {
 
 	c.clearCTRTrend()
 
-	c.queuingRegion = queuingRegionIndeterminate
 	c.congestionReason = congestionReasonNone
 	c.qdMeasurement = nil
 	c.lossMeasurement = nil
@@ -650,6 +650,23 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 	sequenceNumber := report.BaseSequenceNumber
 	endSequenceNumberExclusive := sequenceNumber + report.PacketStatusCount
 	deltaIdx := 0
+	processSymbol := func(symbol uint16) {
+		recvTime := int64(0)
+		isLost := false
+		if symbol != rtcp.TypeTCCPacketNotReceived {
+			recvRefTime += report.RecvDeltas[deltaIdx].Delta
+			deltaIdx++
+
+			recvTime = recvRefTime
+		} else {
+			isLost = true
+		}
+		pi, sendDelta, recvDelta := c.packetTracker.RecordPacketIndicationFromRemote(sequenceNumber, recvTime)
+		if pi.sendTime != 0 {
+			trackPacketGroup(&pi, sendDelta, recvDelta, isLost)
+		}
+		sequenceNumber++
+	}
 	for _, chunk := range report.PacketChunks {
 		if sequenceNumber == endSequenceNumberExclusive {
 			break
@@ -662,21 +679,7 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 					break
 				}
 
-				recvTime := int64(0)
-				isLost := false
-				if chunk.PacketStatusSymbol != rtcp.TypeTCCPacketNotReceived {
-					recvRefTime += report.RecvDeltas[deltaIdx].Delta
-					deltaIdx++
-
-					recvTime = recvRefTime
-				} else {
-					isLost = true
-				}
-				pi, sendDelta, recvDelta := c.packetTracker.RecordPacketIndicationFromRemote(sequenceNumber, recvTime)
-				if pi.sendTime != 0 {
-					trackPacketGroup(&pi, sendDelta, recvDelta, isLost)
-				}
-				sequenceNumber++
+				processSymbol(chunk.PacketStatusSymbol)
 			}
 
 		case *rtcp.StatusVectorChunk:
@@ -685,21 +688,7 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 					break
 				}
 
-				recvTime := int64(0)
-				isLost := false
-				if symbol != rtcp.TypeTCCPacketNotReceived {
-					recvRefTime += report.RecvDeltas[deltaIdx].Delta
-					deltaIdx++
-
-					recvTime = recvRefTime
-				} else {
-					isLost = true
-				}
-				pi, sendDelta, recvDelta := c.packetTracker.RecordPacketIndicationFromRemote(sequenceNumber, recvTime)
-				if pi.sendTime != 0 {
-					trackPacketGroup(&pi, sendDelta, recvDelta, isLost)
-				}
-				sequenceNumber++
+				processSymbol(symbol)
 			}
 		}
 	}
@@ -808,12 +797,13 @@ func (c *congestionDetector) ProbeClusterFinalize() (ccutils.ProbeSignal, int64,
 	}
 
 	isSignalValid := c.params.Config.ProbeSignal.IsValid(pci)
-	c.params.Logger.Debugw(
+	c.params.Logger.Infow(
 		"send side bwe: probe finalized",
 		"isSignalValid", isSignalValid,
 		"probeClusterInfo", pci,
 		"probePacketGroup", c.probePacketGroup,
 		"congestionState", c.congestionState,
+		"rtt", c.rtt,
 	)
 
 	// if congestion signal changed during probe, defer to that signal
@@ -857,7 +847,7 @@ func (c *congestionDetector) updateCongestionSignal(
 	qdDQRConfig CongestionSignalConfig,
 	lossJQRConfig CongestionSignalConfig,
 	lossDQRConfig CongestionSignalConfig,
-) {
+) queuingRegion {
 	c.qdMeasurement = newQDMeasurement(
 		qdJQRConfig,
 		qdDQRConfig,
@@ -885,20 +875,26 @@ func (c *congestionDetector) updateCongestionSignal(
 		}
 	}
 
-	c.congestionReason = congestionReasonNone
-	c.queuingRegion = c.qdMeasurement.QueuingRegion()
-	if c.queuingRegion == queuingRegionJQR {
+	qr := queuingRegionIndeterminate
+	qdQueuingRegion := c.qdMeasurement.QueuingRegion()
+	lossQueuingRegion := c.lossMeasurement.QueuingRegion()
+	switch {
+	case qdQueuingRegion == queuingRegionJQR:
+		qr = queuingRegionJQR
 		c.congestionReason = congestionReasonQueuingDelay
-	} else {
-		c.queuingRegion = c.lossMeasurement.QueuingRegion()
-		if c.queuingRegion == queuingRegionJQR {
-			c.congestionReason = congestionReasonLoss
-		}
+	case lossQueuingRegion == queuingRegionJQR:
+		qr = queuingRegionJQR
+		c.congestionReason = congestionReasonLoss
+	case qdQueuingRegion == queuingRegionDQR && lossQueuingRegion == queuingRegionDQR:
+		qr = queuingRegionDQR
+		c.congestionReason = congestionReasonNone
 	}
+
+	return qr
 }
 
-func (c *congestionDetector) updateEarlyWarningSignal() {
-	c.updateCongestionSignal(
+func (c *congestionDetector) updateEarlyWarningSignal() queuingRegion {
+	return c.updateCongestionSignal(
 		c.params.Config.QueuingDelayEarlyWarningJQR,
 		c.params.Config.QueuingDelayEarlyWarningDQR,
 		c.params.Config.LossEarlyWarningJQR,
@@ -906,8 +902,8 @@ func (c *congestionDetector) updateEarlyWarningSignal() {
 	)
 }
 
-func (c *congestionDetector) updateCongestedSignal() {
-	c.updateCongestionSignal(
+func (c *congestionDetector) updateCongestedSignal() queuingRegion {
+	return c.updateCongestionSignal(
 		c.params.Config.QueuingDelayCongestedJQR,
 		c.params.Config.QueuingDelayCongestedDQR,
 		c.params.Config.LossCongestedJQR,
@@ -921,34 +917,26 @@ func (c *congestionDetector) congestionDetectionStateMachine() (bool, bwe.Conges
 
 	switch fromState {
 	case bwe.CongestionStateNone:
-		c.updateEarlyWarningSignal()
-		if c.queuingRegion == queuingRegionJQR {
+		if c.updateEarlyWarningSignal() == queuingRegionJQR {
 			toState = bwe.CongestionStateEarlyWarning
 		}
 
 	case bwe.CongestionStateEarlyWarning:
-		c.updateCongestedSignal()
-		if c.queuingRegion == queuingRegionJQR {
+		if c.updateCongestedSignal() == queuingRegionJQR {
 			toState = bwe.CongestionStateCongested
-		} else {
-			c.updateEarlyWarningSignal()
-			if c.queuingRegion == queuingRegionDQR {
-				toState = bwe.CongestionStateNone
-			}
+		} else if c.updateEarlyWarningSignal() == queuingRegionDQR {
+			toState = bwe.CongestionStateNone
 		}
 
 	case bwe.CongestionStateCongested:
-		c.updateCongestedSignal()
-		if c.queuingRegion == queuingRegionDQR {
+		if c.updateCongestedSignal() == queuingRegionDQR {
 			toState = bwe.CongestionStateNone
 		}
 	}
 
-	c.estimateAvailableChannelCapacity()
-
-	// update after running the above estimate as state change callback includes the estimated available channel capacity
 	shouldNotify := false
 	if toState != fromState {
+		c.estimateAvailableChannelCapacity()
 		fromState, toState = c.updateCongestionState(toState)
 		shouldNotify = true
 	}
@@ -1041,24 +1029,23 @@ func (c *congestionDetector) updateCTRTrend(pi *packetInfo, sendDelta, recvDelta
 }
 
 func (c *congestionDetector) estimateAvailableChannelCapacity() {
-	if len(c.packetGroups) == 0 || c.congestedCTRTrend != nil || c.probePacketGroup != nil {
+	c.estimateTrafficStats = nil
+	if len(c.packetGroups) == 0 || c.probePacketGroup != nil {
 		return
 	}
 
-	// when in JQR, use contributing groups,
+	// when congested, use contributing groups,
 	// else use a time windowed measurement
 	useWindow := false
 	isAggValid := true
 	minGroupIdx := 0
 	maxGroupIdx := len(c.packetGroups) - 1
-	if c.queuingRegion == queuingRegionJQR {
-		switch c.congestionReason {
-		case congestionReasonQueuingDelay:
-			minGroupIdx, maxGroupIdx = c.qdMeasurement.GroupRange()
-		case congestionReasonLoss:
-			minGroupIdx, maxGroupIdx = c.lossMeasurement.GroupRange()
-		}
-	} else {
+	switch c.congestionReason {
+	case congestionReasonQueuingDelay:
+		minGroupIdx, maxGroupIdx = c.qdMeasurement.GroupRange()
+	case congestionReasonLoss:
+		minGroupIdx, maxGroupIdx = c.lossMeasurement.GroupRange()
+	default:
 		useWindow = true
 		isAggValid = false
 	}
@@ -1090,7 +1077,6 @@ func (c *congestionDetector) updateCongestionState(state bwe.CongestionState) (b
 	loggingFields := []any{
 		"from", c.congestionState,
 		"to", state,
-		"queuingRegion", c.queuingRegion,
 		"congestionReason", c.congestionReason,
 		"qdMeasurement", c.qdMeasurement,
 		"lossMeasurement", c.lossMeasurement,
@@ -1098,7 +1084,7 @@ func (c *congestionDetector) updateCongestionState(state bwe.CongestionState) (b
 		"estimatedAvailableChannelCapacity", c.estimatedAvailableChannelCapacity,
 		"estimateTrafficStats", c.estimateTrafficStats,
 	}
-	if c.queuingRegion == queuingRegionJQR {
+	if c.congestionReason != congestionReasonNone {
 		var minGroupIdx, maxGroupIdx int
 		switch c.congestionReason {
 		case congestionReasonQueuingDelay:

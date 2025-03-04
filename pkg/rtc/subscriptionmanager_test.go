@@ -45,7 +45,7 @@ const (
 
 func TestSubscribe(t *testing.T) {
 	t.Run("happy path subscribe", func(t *testing.T) {
-		sm := newTestSubscriptionManager(t)
+		sm := newTestSubscriptionManager()
 		defer sm.Close(false)
 		resolver := newTestResolver(true, true, "pub", "pubID")
 		sm.params.TrackResolver = resolver.Resolve
@@ -118,7 +118,7 @@ func TestSubscribe(t *testing.T) {
 	})
 
 	t.Run("no track permission", func(t *testing.T) {
-		sm := newTestSubscriptionManager(t)
+		sm := newTestSubscriptionManager()
 		defer sm.Close(false)
 		resolver := newTestResolver(false, true, "pub", "pubID")
 		sm.params.TrackResolver = resolver.Resolve
@@ -159,7 +159,7 @@ func TestSubscribe(t *testing.T) {
 	})
 
 	t.Run("publisher left", func(t *testing.T) {
-		sm := newTestSubscriptionManager(t)
+		sm := newTestSubscriptionManager()
 		defer sm.Close(false)
 		resolver := newTestResolver(true, true, "pub", "pubID")
 		sm.params.TrackResolver = resolver.Resolve
@@ -188,7 +188,7 @@ func TestSubscribe(t *testing.T) {
 }
 
 func TestUnsubscribe(t *testing.T) {
-	sm := newTestSubscriptionManager(t)
+	sm := newTestSubscriptionManager()
 	defer sm.Close(false)
 	unsubCount := atomic.Int32{}
 	sm.params.OnTrackUnsubscribed = func(subTrack types.SubscribedTrack) {
@@ -208,7 +208,7 @@ func TestUnsubscribe(t *testing.T) {
 		logger:            logger.GetLogger(),
 	}
 	// a bunch of unfortunate manual wiring
-	res := resolver.Resolve("sub", s.trackID)
+	res := resolver.Resolve(nil, s.trackID)
 	res.TrackChangedNotifier.AddObserver(string(sm.params.Participant.ID()), func() {})
 	s.changedNotifier = res.TrackChangedNotifier
 	st, err := res.Track.AddSubscriber(sm.params.Participant)
@@ -257,7 +257,7 @@ func TestUnsubscribe(t *testing.T) {
 }
 
 func TestSubscribeStatusChanged(t *testing.T) {
-	sm := newTestSubscriptionManager(t)
+	sm := newTestSubscriptionManager()
 	defer sm.Close(false)
 	resolver := newTestResolver(true, true, "pub", "pubID")
 	sm.params.TrackResolver = resolver.Resolve
@@ -320,7 +320,7 @@ func TestSubscribeStatusChanged(t *testing.T) {
 // clients may send update subscribed settings prior to subscription events coming through
 // settings should be persisted and used when the subscription does take place.
 func TestUpdateSettingsBeforeSubscription(t *testing.T) {
-	sm := newTestSubscriptionManager(t)
+	sm := newTestSubscriptionManager()
 	defer sm.Close(false)
 	resolver := newTestResolver(true, true, "pub", "pubID")
 	sm.params.TrackResolver = resolver.Resolve
@@ -351,7 +351,7 @@ func TestUpdateSettingsBeforeSubscription(t *testing.T) {
 }
 
 func TestSubscriptionLimits(t *testing.T) {
-	sm := newTestSubscriptionManagerWithParams(t, testSubscriptionParams{
+	sm := newTestSubscriptionManagerWithParams(testSubscriptionParams{
 		SubscriptionLimitAudio: 1,
 		SubscriptionLimitVideo: 1,
 	})
@@ -452,11 +452,11 @@ type testSubscriptionParams struct {
 	SubscriptionLimitVideo int32
 }
 
-func newTestSubscriptionManager(t *testing.T) *SubscriptionManager {
-	return newTestSubscriptionManagerWithParams(t, testSubscriptionParams{})
+func newTestSubscriptionManager() *SubscriptionManager {
+	return newTestSubscriptionManagerWithParams(testSubscriptionParams{})
 }
 
-func newTestSubscriptionManagerWithParams(t *testing.T, params testSubscriptionParams) *SubscriptionManager {
+func newTestSubscriptionManagerWithParams(params testSubscriptionParams) *SubscriptionManager {
 	p := &typesfakes.FakeLocalParticipant{}
 	p.CanSubscribeReturns(true)
 	p.IDReturns("subID")
@@ -468,7 +468,7 @@ func newTestSubscriptionManagerWithParams(t *testing.T, params testSubscriptionP
 		OnTrackSubscribed:   func(subTrack types.SubscribedTrack) {},
 		OnTrackUnsubscribed: func(subTrack types.SubscribedTrack) {},
 		OnSubscriptionError: func(trackID livekit.TrackID, fatal bool, err error) {},
-		TrackResolver: func(identity livekit.ParticipantIdentity, trackID livekit.TrackID) types.MediaResolverResult {
+		TrackResolver: func(sub types.LocalParticipant, trackID livekit.TrackID) types.MediaResolverResult {
 			return types.MediaResolverResult{}
 		},
 		Telemetry:              &telemetryfakes.FakeTelemetryService{},
@@ -502,7 +502,7 @@ func (t *testResolver) SetPause(paused bool) {
 	t.paused = paused
 }
 
-func (t *testResolver) Resolve(identity livekit.ParticipantIdentity, trackID livekit.TrackID) types.MediaResolverResult {
+func (t *testResolver) Resolve(_subscriber types.LocalParticipant, trackID livekit.TrackID) types.MediaResolverResult {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	res := types.MediaResolverResult{

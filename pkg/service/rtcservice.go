@@ -91,8 +91,12 @@ func NewRTCService(
 	return s
 }
 
-func (s *RTCService) Validate(w http.ResponseWriter, r *http.Request) {
-	_, _, code, err := s.validate(r)
+func (s *RTCService) SetupRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/rtc/validate", s.validate)
+}
+
+func (s *RTCService) validate(w http.ResponseWriter, r *http.Request) {
+	_, _, code, err := s.validateInternal(r)
 	if err != nil {
 		handleError(w, r, code, err)
 		return
@@ -100,7 +104,7 @@ func (s *RTCService) Validate(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("success"))
 }
 
-func (s *RTCService) validate(r *http.Request) (livekit.RoomName, routing.ParticipantInit, int, error) {
+func (s *RTCService) validateInternal(r *http.Request) (livekit.RoomName, routing.ParticipantInit, int, error) {
 	claims := GetGrants(r.Context())
 	var pi routing.ParticipantInit
 
@@ -214,7 +218,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	roomName, pi, code, err := s.validate(r)
+	roomName, pi, code, err := s.validateInternal(r)
 	if err != nil {
 		handleError(w, r, code, err)
 		return
@@ -344,9 +348,11 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 				res, ok := msg.(*livekit.SignalResponse)
 				if !ok {
-					pLogger.Errorw("unexpected message type", nil,
+					pLogger.Errorw(
+						"unexpected message type", nil,
 						"type", fmt.Sprintf("%T", msg),
-						"connID", cr.ConnectionID)
+						"connID", cr.ConnectionID,
+					)
 					continue
 				}
 
@@ -356,10 +362,14 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				case *livekit.SignalResponse_Answer:
 					pLogger.Debugw("sending answer", "answer", m)
 				case *livekit.SignalResponse_Join:
+					pLogger.Debugw("sending join", "join", m)
 					signalStats.ResolveRoom(m.Join.GetRoom())
 					signalStats.ResolveParticipant(m.Join.GetParticipant())
 				case *livekit.SignalResponse_RoomUpdate:
+					pLogger.Debugw("sending room update", "roomUpdate", m)
 					signalStats.ResolveRoom(m.RoomUpdate.GetRoom())
+				case *livekit.SignalResponse_Update:
+					pLogger.Debugw("sending participant update", "participantUpdate", m)
 				}
 
 				if count, err := sigConn.WriteResponse(res); err != nil {
@@ -422,10 +432,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		if err := cr.RequestSink.WriteMessage(req); err != nil {
 			pLogger.Warnw("error writing to request sink", err, "connID", cr.ConnectionID)
-			if errors.Is(err, psrpc.ErrStreamClosed) {
-				// disconnect the participant WS since the signal proxy has been broken
-				return
-			}
+			return
 		}
 	}
 }

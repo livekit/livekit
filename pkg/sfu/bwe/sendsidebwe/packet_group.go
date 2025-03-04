@@ -182,7 +182,7 @@ func (p *packetGroup) Add(pi *packetInfo, sendDelta, recvDelta int64, isLost boo
 	p.maxRecvTime = max(p.maxRecvTime, pi.recvTime)
 
 	p.acked.add(int(pi.size), pi.isRTX, pi.isProbe)
-	if p.snBitmap.IsSet(pi.sequenceNumber - p.minSequenceNumber) {
+	if int(pi.sequenceNumber-p.minSequenceNumber) < p.snBitmap.Len() && p.snBitmap.IsSet(pi.sequenceNumber-p.minSequenceNumber) {
 		// an earlier packet reported as lost has been received
 		p.snBitmap.Clear(pi.sequenceNumber - p.minSequenceNumber)
 		p.lost.remove(int(pi.size), pi.isRTX, pi.isProbe)

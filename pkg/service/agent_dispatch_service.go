@@ -51,7 +51,11 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 	}
 
 	if ag.roomAllocator.AutoCreateEnabled(ctx) {
-		// ensure at least one node is available to handle the request
+		err := ag.roomAllocator.SelectRoomNode(ctx, livekit.RoomName(req.Room), "")
+		if err != nil {
+			return nil, err
+		}
+
 		_, err = ag.router.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: req.Room})
 		if err != nil {
 			return nil, err

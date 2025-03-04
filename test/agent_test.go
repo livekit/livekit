@@ -43,17 +43,25 @@ func TestAgents(t *testing.T) {
 	require.NoError(t, err)
 	ac4, err := newAgentClient(agentToken(), defaultServerPort)
 	require.NoError(t, err)
+	ac5, err := newAgentClient(agentToken(), defaultServerPort)
+	require.NoError(t, err)
+	ac6, err := newAgentClient(agentToken(), defaultServerPort)
+	require.NoError(t, err)
 	defer ac1.close()
 	defer ac2.close()
 	defer ac3.close()
 	defer ac4.close()
+	defer ac5.close()
+	defer ac6.close()
 	ac1.Run(livekit.JobType_JT_ROOM, "default")
 	ac2.Run(livekit.JobType_JT_ROOM, "default")
 	ac3.Run(livekit.JobType_JT_PUBLISHER, "default")
 	ac4.Run(livekit.JobType_JT_PUBLISHER, "default")
+	ac5.Run(livekit.JobType_JT_PARTICIPANT, "default")
+	ac6.Run(livekit.JobType_JT_PARTICIPANT, "default")
 
 	testutils.WithTimeout(t, func() string {
-		if ac1.registered.Load() != 1 || ac2.registered.Load() != 1 || ac3.registered.Load() != 1 || ac4.registered.Load() != 1 {
+		if ac1.registered.Load() != 1 || ac2.registered.Load() != 1 || ac3.registered.Load() != 1 || ac4.registered.Load() != 1 || ac5.registered.Load() != 1 || ac6.registered.Load() != 1 {
 			return "worker not registered"
 		}
 
@@ -77,8 +85,12 @@ func TestAgents(t *testing.T) {
 			return "room job not assigned"
 		}
 
-		if ac3.participantJobs.Load()+ac4.participantJobs.Load() != 1 {
-			return fmt.Sprintf("participant jobs not assigned, ac3: %d, ac4: %d", ac3.participantJobs.Load(), ac4.participantJobs.Load())
+		if ac3.publisherJobs.Load()+ac4.publisherJobs.Load() != 1 {
+			return fmt.Sprintf("publisher jobs not assigned, ac3: %d, ac4: %d", ac3.publisherJobs.Load(), ac4.publisherJobs.Load())
+		}
+
+		if ac5.participantJobs.Load()+ac6.participantJobs.Load() != 2 {
+			return fmt.Sprintf("participant jobs not assigned, ac5: %d, ac6: %d", ac5.participantJobs.Load(), ac6.participantJobs.Load())
 		}
 
 		return ""
@@ -97,8 +109,12 @@ func TestAgents(t *testing.T) {
 			return "room job must be assigned 1 time"
 		}
 
-		if ac3.participantJobs.Load()+ac4.participantJobs.Load() != 2 {
+		if ac3.publisherJobs.Load()+ac4.publisherJobs.Load() != 2 {
 			return "2 publisher jobs must assigned"
+		}
+
+		if ac5.participantJobs.Load()+ac6.participantJobs.Load() != 2 {
+			return "2 participant jobs must assigned"
 		}
 
 		return ""
@@ -198,7 +214,7 @@ func TestAgentMultiNode(t *testing.T) {
 			return "room job not assigned"
 		}
 
-		if ac2.participantJobs.Load() != 1 {
+		if ac2.publisherJobs.Load() != 1 {
 			return "participant job not assigned"
 		}
 

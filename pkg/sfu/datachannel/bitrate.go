@@ -50,6 +50,10 @@ func (c *BitrateCalculator) AddBytes(bytes int, bufferedAmout int, ts time.Time)
 	defer c.lock.Unlock()
 
 	bytes -= bufferedAmout - c.lastBufferedAmount
+	if bytes < 0 {
+		// it is possible that internal buffering (non-data like DCEP packet from webrtc) caused bytes to be negative
+		bytes = 0
+	}
 	c.lastBufferedAmount = bufferedAmout
 	if ts.Sub(c.active.start) >= c.windowDuration {
 		c.windows.PushBack(c.active)
@@ -76,15 +80,27 @@ func (c *BitrateCalculator) AddBytes(bytes int, bufferedAmout int, ts time.Time)
 
 }
 
-func (c *BitrateCalculator) Bitrate(ts time.Time) int {
+func (c *BitrateCalculator) Bitrate(ts time.Time) (int, bool) {
+	return c.bitrate(ts, false)
+}
+
+func (c *BitrateCalculator) ForceBitrate(ts time.Time) (int, bool) {
+	return c.bitrate(ts, true)
+}
+
+func (c *BitrateCalculator) bitrate(ts time.Time, force bool) (int, bool) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	duration := ts.Sub(c.start)
 	if duration < c.windowDuration {
-		duration = c.windowDuration
+		if force {
+			duration = c.windowDuration
+		} else {
+			return 0, false
+		}
 	}
 
-	return c.bytes * 8 * 1000 / int(duration.Milliseconds())
+	return c.bytes * 8 * 1000 / int(duration.Milliseconds()), true
 }
 
 type bitrateWindow struct {

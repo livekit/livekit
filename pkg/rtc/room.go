@@ -142,6 +142,8 @@ type Room struct {
 	simulationLock                                 sync.Mutex
 	disconnectSignalOnResumeParticipants           map[livekit.ParticipantIdentity]time.Time
 	disconnectSignalOnResumeNoMessagesParticipants map[livekit.ParticipantIdentity]*disconnectSignalOnResumeNoMessages
+
+	userPacketDeduper *UserPacketDeduper
 }
 
 type ParticipantOptions struct {
@@ -270,6 +272,7 @@ func NewRoom(
 		trailer:                              []byte(utils.RandomSecret()),
 		disconnectSignalOnResumeParticipants: make(map[livekit.ParticipantIdentity]time.Time),
 		disconnectSignalOnResumeNoMessagesParticipants: make(map[livekit.ParticipantIdentity]*disconnectSignalOnResumeNoMessages),
+		userPacketDeduper: NewUserPacketDeduper(),
 	}
 
 	if r.protoRoom.EmptyTimeout == 0 {
@@ -279,7 +282,9 @@ func NewRoom(
 		r.protoRoom.DepartureTimeout = roomConfig.DepartureTimeout
 	}
 	if r.protoRoom.CreationTime == 0 {
-		r.protoRoom.CreationTime = time.Now().Unix()
+		now := time.Now()
+		r.protoRoom.CreationTime = now.Unix()
+		r.protoRoom.CreationTimeMs = now.UnixMilli()
 	}
 	r.protoProxy = utils.NewProtoProxy[*livekit.Room](roomUpdateInterval, r.updateProto)
 
@@ -435,7 +440,7 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 		}
 	}
 
-	if r.FirstJoinedAt() == 0 {
+	if r.FirstJoinedAt() == 0 && !participant.IsDependent() {
 		r.joinedAt.Store(time.Now().Unix())
 	}
 
@@ -514,6 +519,8 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 			}, true)
 		}
 	})
+
+	r.launchTargetAgents(maps.Values(r.agentDispatches), participant, livekit.JobType_JT_PARTICIPANT)
 
 	r.Logger.Debugw("new participant joined",
 		"pID", participant.ID(),
@@ -830,7 +837,7 @@ func (r *Room) UpdateSubscriptionPermission(participant types.LocalParticipant, 
 	return nil
 }
 
-func (r *Room) ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, trackID livekit.TrackID) types.MediaResolverResult {
+func (r *Room) ResolveMediaTrackForSubscriber(sub types.LocalParticipant, trackID livekit.TrackID) types.MediaResolverResult {
 	res := types.MediaResolverResult{}
 
 	info := r.trackManager.GetTrackInfo(trackID)
@@ -848,7 +855,7 @@ func (r *Room) ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIde
 	pub := r.GetParticipantByID(info.PublisherID)
 	// when publisher is not found, we will assume it doesn't have permission to access
 	if pub != nil {
-		res.HasPermission = pub.HasPermission(trackID, subIdentity)
+		res.HasPermission = IsParticipantExemptFromTrackPermissionsRestrictions(sub) || pub.HasPermission(trackID, sub.Identity())
 	}
 
 	return res
@@ -881,18 +888,22 @@ func (r *Room) CloseIfEmpty() {
 
 	var timeout uint32
 	var elapsed int64
+	var reason string
 	if r.FirstJoinedAt() > 0 && r.LastLeftAt() > 0 {
 		elapsed = time.Now().Unix() - r.LastLeftAt()
 		// need to give time in case participant is reconnecting
 		timeout = r.protoRoom.DepartureTimeout
+		reason = "departure timeout"
 	} else {
 		elapsed = time.Now().Unix() - r.protoRoom.CreationTime
 		timeout = r.protoRoom.EmptyTimeout
+		reason = "empty timeout"
 	}
 	r.lock.Unlock()
 
 	if elapsed >= int64(timeout) {
 		r.Close(types.ParticipantCloseReasonRoomClosed)
+		r.Logger.Infow("closing idle room", "reason", reason)
 	}
 }
 
@@ -980,7 +991,10 @@ func (r *Room) AddAgentDispatch(dispatch *livekit.AgentDispatch) (*livekit.Agent
 	r.lock.RLock()
 	// launchPublisherAgents starts a goroutine to send requests, so is safe to call locked
 	for _, p := range r.participants {
-		r.launchPublisherAgents([]*agentDispatch{ad}, p)
+		if p.IsPublisher() {
+			r.launchTargetAgents([]*agentDispatch{ad}, p, livekit.JobType_JT_PUBLISHER)
+		}
+		r.launchTargetAgents([]*agentDispatch{ad}, p, livekit.JobType_JT_PARTICIPANT)
 	}
 	r.lock.RUnlock()
 
@@ -1204,7 +1218,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 
 	if !hasPublished {
 		r.lock.RLock()
-		r.launchPublisherAgents(maps.Values(r.agentDispatches), participant)
+		r.launchTargetAgents(maps.Values(r.agentDispatches), participant, livekit.JobType_JT_PUBLISHER)
 		r.lock.RUnlock()
 		if r.internal != nil && r.internal.ParticipantEgress != nil {
 			go func() {
@@ -1392,7 +1406,7 @@ func (r *Room) pushAndDequeueUpdates(
 			}
 		} else {
 			// different participant sessions
-			if existing.pi.JoinedAt < pi.JoinedAt {
+			if CompareParticipant(existing.pi, pi) < 0 {
 				// existing is older, synthesize a DISCONNECT for older and
 				// send immediately along with newer session to signal switch
 				shouldSend = true
@@ -1408,7 +1422,7 @@ func (r *Room) pushAndDequeueUpdates(
 		ep := r.GetParticipant(identity)
 		if ep != nil {
 			epi := ep.ToProto()
-			if epi.JoinedAt > pi.JoinedAt {
+			if CompareParticipant(epi, pi) > 0 {
 				// older session update, newer session has already become active, so nothing to do
 				return nil
 			}
@@ -1640,7 +1654,7 @@ func (r *Room) launchRoomAgents(ads []*agentDispatch) {
 	}
 }
 
-func (r *Room) launchPublisherAgents(ads []*agentDispatch, p types.Participant) {
+func (r *Room) launchTargetAgents(ads []*agentDispatch, p types.Participant, jobType livekit.JobType) {
 	if p == nil || p.IsDependent() || r.agentClient == nil {
 		return
 	}
@@ -1650,7 +1664,7 @@ func (r *Room) launchPublisherAgents(ads []*agentDispatch, p types.Participant) 
 
 		go func() {
 			inc := r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
-				JobType:     livekit.JobType_JT_PUBLISHER,
+				JobType:     jobType,
 				Room:        r.ToProto(),
 				Participant: p.ToProto(),
 				Metadata:    ad.Metadata,
@@ -1739,12 +1753,20 @@ func (r *Room) createAgentDispatchesFromRoomAgent() {
 	}
 }
 
+func (r *Room) IsDataMessageUserPacketDuplicate(up *livekit.UserPacket) bool {
+	return r.userPacketDeduper.IsDuplicate(up)
+}
+
 // ------------------------------------------------------------
 
 func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, kind livekit.DataPacket_Kind, dp *livekit.DataPacket, logger logger.Logger) {
 	dp.Kind = kind // backward compatibility
 	dest := dp.GetUser().GetDestinationSids()
 	if u := dp.GetUser(); u != nil {
+		if r.IsDataMessageUserPacketDuplicate(u) {
+			logger.Infow("dropping duplicate data message", "nonce", u.Nonce)
+			return
+		}
 		if len(dp.DestinationIdentities) == 0 {
 			dp.DestinationIdentities = u.DestinationIdentities
 		} else {
@@ -1807,6 +1829,42 @@ func BroadcastMetricsForRoom(r types.Room, source types.Participant, dp *livekit
 
 func IsCloseNotifySkippable(closeReason types.ParticipantCloseReason) bool {
 	return closeReason == types.ParticipantCloseReasonDuplicateIdentity
+}
+
+func IsParticipantExemptFromTrackPermissionsRestrictions(p types.LocalParticipant) bool {
+	// egress/recorder participants bypass permissions as auto-egress does not
+	// have enough context to check permissions
+	return p.IsRecorder()
+}
+
+func CompareParticipant(pi1 *livekit.ParticipantInfo, pi2 *livekit.ParticipantInfo) int {
+	if pi1.JoinedAt != pi2.JoinedAt {
+		if pi1.JoinedAt < pi2.JoinedAt {
+			return -1
+		} else {
+			return 1
+		}
+	}
+
+	if pi1.JoinedAtMs != 0 && pi2.JoinedAtMs != 0 && pi1.JoinedAtMs != pi2.JoinedAtMs {
+		if pi1.JoinedAtMs < pi2.JoinedAtMs {
+			return -1
+		} else {
+			return 1
+		}
+	}
+
+	// all join times being equal, it is not possible to really know which one is newer,
+	// pick the higher pID to be consistent
+	if pi1.Sid != pi2.Sid {
+		if pi1.Sid < pi2.Sid {
+			return -1
+		} else {
+			return 1
+		}
+	}
+
+	return 0
 }
 
 func connectionDetailsFields(infos []*types.ICEConnectionInfo) []interface{} {

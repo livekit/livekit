@@ -258,6 +258,13 @@ func (q *qualityScorer) Start(packetLossWeight float64) {
 	q.startAtLocked(packetLossWeight, time.Now())
 }
 
+func (q *qualityScorer) UpdatePacketLossWeight(packetLossWeight float64) {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+
+	q.packetLossWeight = packetLossWeight
+}
+
 func (q *qualityScorer) updateMuteAtLocked(isMuted bool, at time.Time) {
 	if isMuted {
 		q.mutedAt = at
@@ -408,10 +415,10 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 	var score, packetScore, bitrateScore, layerScore float64
 	if stat.packets+stat.packetsPadding == 0 {
 		if !stat.lastRTCPAt.IsZero() && at.Sub(stat.lastRTCPAt) > stat.duration {
-			reason = "dry"
+			reason = "rtcp"
 			score = qualityTransitionScore[livekit.ConnectionQuality_LOST]
 		} else {
-			reason = "rtcp"
+			reason = "dry"
 			score = qualityTransitionScore[livekit.ConnectionQuality_POOR]
 		}
 	} else {

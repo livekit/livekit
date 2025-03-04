@@ -15,7 +15,6 @@
 package rtc
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
@@ -23,6 +22,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -331,13 +331,18 @@ func (p *ParticipantImpl) writeMessage(msg *livekit.SignalResponse) error {
 	}
 
 	err := sink.WriteMessage(msg)
-	if errors.Is(err, psrpc.Canceled) {
-		p.params.Logger.Debugw("could not send message to participant",
-			"error", err, "messageType", fmt.Sprintf("%T", msg.Message))
+	if utils.ErrorIsOneOf(err, psrpc.Canceled, routing.ErrChannelClosed) {
+		p.params.Logger.Debugw(
+			"could not send message to participant",
+			"error", err,
+			"messageType", fmt.Sprintf("%T", msg.Message),
+		)
 		return nil
 	} else if err != nil {
-		p.params.Logger.Warnw("could not send message to participant", err,
-			"messageType", fmt.Sprintf("%T", msg.Message))
+		p.params.Logger.Warnw(
+			"could not send message to participant", err,
+			"messageType", fmt.Sprintf("%T", msg.Message),
+		)
 		return err
 	}
 	return nil

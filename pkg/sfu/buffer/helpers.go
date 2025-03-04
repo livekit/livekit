@@ -18,8 +18,9 @@ import (
 	"encoding/binary"
 	"errors"
 
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtp/codecs"
+
+	"github.com/livekit/protocol/logger"
 )
 
 var (
@@ -412,6 +413,42 @@ func IsAV1KeyFrame(payload []byte) bool {
 		}
 		offset += length
 		i++
+	}
+}
+
+func IsH265KeyFrame(payload []byte) (kf bool) {
+	if len(payload) < 2 {
+		return false
+	}
+	naluType := (payload[0] & 0x7E) >> 1
+	switch {
+	case naluType == 33 || naluType == 34:
+		return true
+	case naluType == 48: // AP
+		idx := 2
+		for idx < len(payload)-2 {
+			// TODO: check the DONL field (controled by sprop-max-don-diff)
+			size := binary.BigEndian.Uint16(payload[idx:])
+			idx += 2
+			if idx >= len(payload) {
+				return false
+			}
+			naluType = (payload[idx] & 0x7E) >> 1
+			if naluType == 33 || naluType == 34 {
+				return true
+			}
+			idx += int(size)
+		}
+		return false
+
+	case naluType == 49: // FU
+		if len(payload) < 3 {
+			return false
+		}
+		naluType = (payload[2] & 0x7E) >> 1
+		return naluType == 33 || naluType == 34
+	default:
+		return false
 	}
 }
 

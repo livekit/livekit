@@ -23,6 +23,7 @@ import (
 
 	"github.com/pion/webrtc/v4"
 
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -195,9 +196,9 @@ func LoggerWithPCTarget(l logger.Logger, target livekit.SignalTarget) logger.Log
 	return l.WithValues("transport", target)
 }
 
-func LoggerWithCodecMime(l logger.Logger, mime string) logger.Logger {
-	if mime != "" {
-		return l.WithValues("mime", mime)
+func LoggerWithCodecMime(l logger.Logger, mimeType mime.MimeType) logger.Logger {
+	if mimeType != mime.MimeTypeUnknown {
+		return l.WithValues("mime", mimeType.String())
 	}
 	return l
 }

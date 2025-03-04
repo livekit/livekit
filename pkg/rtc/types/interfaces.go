@@ -29,6 +29,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 )
 
@@ -74,7 +75,7 @@ func (m MigrateState) String() string {
 // ---------------------------------------------
 
 type SubscribedCodecQuality struct {
-	CodecMime string
+	CodecMime mime.MimeType
 	Quality   livekit.VideoQuality
 }
 
@@ -264,6 +265,7 @@ type Participant interface {
 	ID() livekit.ParticipantID
 	Identity() livekit.ParticipantIdentity
 	State() livekit.ParticipantInfo_State
+	ConnectedAt() time.Time
 	CloseReason() ParticipantCloseReason
 	Kind() livekit.ParticipantInfo_Kind
 	IsRecorder() bool
@@ -324,7 +326,6 @@ type LocalParticipant interface {
 	ProtocolVersion() ProtocolVersion
 	SupportsSyncStreamID() bool
 	SupportsTransceiverReuse() bool
-	ConnectedAt() time.Time
 	IsClosed() bool
 	IsReady() bool
 	IsDisconnected() bool
@@ -390,6 +391,7 @@ type LocalParticipant interface {
 	// has been reached. If the timeout expires, it will return an error.
 	WaitUntilSubscribed(timeout time.Duration) error
 	StopAndGetSubscribedTracksForwarderState() map[livekit.TrackID]*livekit.RTPForwarderState
+	SupportsCodecChange() bool
 
 	// returns list of participant identities that the current participant is subscribed to
 	GetSubscribedParticipants() []livekit.ParticipantID
@@ -476,8 +478,9 @@ type Room interface {
 	UpdateSubscriptionPermission(participant LocalParticipant, permissions *livekit.SubscriptionPermission) error
 	SyncState(participant LocalParticipant, state *livekit.SyncState) error
 	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
-	ResolveMediaTrackForSubscriber(subIdentity livekit.ParticipantIdentity, trackID livekit.TrackID) MediaResolverResult
+	ResolveMediaTrackForSubscriber(sub LocalParticipant, trackID livekit.TrackID) MediaResolverResult
 	GetLocalParticipants() []LocalParticipant
+	IsDataMessageUserPacketDuplicate(ip *livekit.UserPacket) bool
 }
 
 // MediaTrack represents a media track
@@ -525,7 +528,7 @@ type MediaTrack interface {
 	GetQualityForDimension(width, height uint32) livekit.VideoQuality
 
 	// returns temporal layer that's appropriate for fps
-	GetTemporalLayerForSpatialFps(spatial int32, fps uint32, mime string) int32
+	GetTemporalLayerForSpatialFps(spatial int32, fps uint32, mime mime.MimeType) int32
 
 	Receivers() []sfu.TrackReceiver
 	ClearAllReceivers(isExpectedToResume bool)
@@ -593,7 +596,7 @@ type MediaResolverResult struct {
 }
 
 // MediaTrackResolver locates a specific media track for a subscriber
-type MediaTrackResolver func(livekit.ParticipantIdentity, livekit.TrackID) MediaResolverResult
+type MediaTrackResolver func(LocalParticipant, livekit.TrackID) MediaResolverResult
 
 // Supervisor/operation monitor related definitions
 type OperationMonitorEvent int
