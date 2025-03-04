@@ -2,8 +2,6 @@ package service
 
 import (
 	"fmt"
-	p2p_database "github.com/dTelecom/p2p-realtime-database"
-	"github.com/ipfs/go-log/v2"
 	"github.com/olekukonko/tablewriter"
 	"net/http"
 )
@@ -11,16 +9,12 @@ import (
 type MainDebugHandler struct {
 	nodeProvider   *NodeProvider
 	clientProvider *ClientProvider
-	logger         *log.ZapEventLogger
-	db             *p2p_database.DB
 }
 
-func NewMainDebugHandler(db *p2p_database.DB, nodeProvider *NodeProvider, clientProvider *ClientProvider, logger *log.ZapEventLogger) *MainDebugHandler {
+func NewMainDebugHandler(nodeProvider *NodeProvider, clientProvider *ClientProvider) *MainDebugHandler {
 	return &MainDebugHandler{
 		nodeProvider:   nodeProvider,
 		clientProvider: clientProvider,
-		logger:         logger,
-		db:             db,
 	}
 }
 
@@ -100,31 +94,6 @@ func (h *MainDebugHandler) clientHTTPHandler(w http.ResponseWriter, r *http.Requ
 			address,
 			fmt.Sprintf("%d", client.Until),
 			fmt.Sprintf("%d", client.Limit),
-		})
-	}
-
-	table.Render()
-	return
-}
-
-func (h *MainDebugHandler) peerHTTPHandler(w http.ResponseWriter, r *http.Request) {
-
-	table := tablewriter.NewWriter(w)
-	table.SetRowLine(true)
-	table.SetAutoWrapText(false)
-	table.SetHeader([]string{
-		"ID",
-		"Remote address",
-	})
-	table.SetColumnAlignment([]int{
-		tablewriter.ALIGN_CENTER,
-		tablewriter.ALIGN_CENTER,
-	})
-
-	for _, node := range h.db.ConnectedPeers() {
-		table.Append([]string{
-			node.ID.String(),
-			node.Addrs[0].String(),
 		})
 	}
 

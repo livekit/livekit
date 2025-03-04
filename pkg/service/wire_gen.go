@@ -9,7 +9,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"github.com/dTelecom/p2p-realtime-database"
 	"github.com/dTelecom/pubsub-solana"
 	"github.com/gagliardetto/solana-go"
 	"github.com/inconshreveable/go-vhost"
@@ -28,7 +27,6 @@ import (
 	"github.com/livekit/psrpc"
 	"github.com/oschwald/geoip2-golang"
 	"github.com/pion/turn/v2"
-	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/acme/autocert"
 	"time"
@@ -75,15 +73,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	rpcClient := egress.NewRedisRPCClient(nodeID, universalClient)
 	egressStore := getEgressStore(objectStore)
-	ethSmartContract, err := createSmartContractClient(conf)
+	keyProvider, err := createKeyProvider(conf)
 	if err != nil {
 		return nil, err
 	}
-	keyProvider, err := createKeyProvider(conf, ethSmartContract)
-	if err != nil {
-		return nil, err
-	}
-	notifier, err := createWebhookNotifier(conf, keyProvider)
+	notifier, err := createWebhookNotifier(keyProvider, nodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -131,13 +125,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	clientProvider := createClientProvider(conf)
-	relevantNodesHandler := createRelevantNodesHandler(conf, nodeProvider)
-	p2p_databaseConfig := GetDatabaseConfiguration(conf)
-	db, err := CreateMainDatabaseP2P(p2p_databaseConfig, conf)
-	if err != nil {
-		return nil, err
-	}
-	mainDebugHandler := createMainDebugHandler(conf, nodeProvider, clientProvider, db)
+	relevantNodesHandler := createRelevantNodesHandler(nodeProvider)
+	mainDebugHandler := createMainDebugHandler(nodeProvider, clientProvider)
 	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, nodeProvider, relevantNodesHandler, mainDebugHandler, tlsMuxer, manager)
 	if err != nil {
 		return nil, err
@@ -147,12 +136,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 
 // wire.go:
 
-func createRelevantNodesHandler(conf *config.Config, nodeProvider *NodeProvider) *RelevantNodesHandler {
-	return NewRelevantNodesHandler(nodeProvider, conf.LoggingP2P)
+func createRelevantNodesHandler(nodeProvider *NodeProvider) *RelevantNodesHandler {
+	return NewRelevantNodesHandler(nodeProvider)
 }
 
-func createMainDebugHandler(conf *config.Config, nodeProvider *NodeProvider, clientProvider *ClientProvider, db *p2p_database.DB) *MainDebugHandler {
-	return NewMainDebugHandler(db, nodeProvider, clientProvider, conf.LoggingP2P)
+func createMainDebugHandler(nodeProvider *NodeProvider, clientProvider *ClientProvider) *MainDebugHandler {
+	return NewMainDebugHandler(nodeProvider, clientProvider)
 }
 
 func createGeoIP() (*geoip2.Reader, error) {
@@ -167,45 +156,11 @@ func createClientProvider(config2 *config.Config) *ClientProvider {
 	return NewClientProvider(config2.Solana)
 }
 
-func createSmartContractClient(conf *config.Config) (*p2p_database.EthSmartContract, error) {
-	contract, err := p2p_database.NewEthSmartContract(p2p_database.Config{
-		EthereumNetworkHost:     conf.Ethereum.NetworkHost,
-		EthereumNetworkKey:      conf.Ethereum.NetworkKey,
-		EthereumContractAddress: conf.Ethereum.ContractAddress,
-	}, conf.LoggingP2P)
-
-	if err != nil {
-		return nil, errors.Wrap(err, "try create contract")
-	}
-
-	return contract, nil
-}
-
-func GetDatabaseConfiguration(conf *config.Config) p2p_database.Config {
-	return p2p_database.Config{
-		DisableGater:            false,
-		PeerListenPort:          conf.Ethereum.P2pNodePort,
-		EthereumNetworkHost:     conf.Ethereum.NetworkHost,
-		EthereumNetworkKey:      conf.Ethereum.NetworkKey,
-		EthereumContractAddress: conf.Ethereum.ContractAddress,
-		WalletPrivateKey:        conf.Ethereum.WalletPrivateKey,
-		DatabaseName:            conf.Ethereum.P2pMainDatabaseName,
-	}
-}
-
-func CreateMainDatabaseP2P(conf p2p_database.Config, c *config.Config) (*p2p_database.DB, error) {
-	db, err := p2p_database.Connect(context.Background(), conf, c.LoggingP2P)
-	if err != nil {
-		return nil, errors.Wrap(err, "create main p2p db")
-	}
-	return db, nil
-}
-
 func getNodeID(currentNode routing.LocalNode) livekit2.NodeID {
 	return livekit2.NodeID(currentNode.Id)
 }
 
-func createKeyProvider(conf *config.Config, contract *p2p_database.EthSmartContract) (auth.KeyProvider, error) {
+func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {
 	return createKeyPublicKeyProvider(conf)
 }
 
@@ -213,14 +168,15 @@ func createKeyPublicKeyProvider(conf *config.Config) (auth.KeyProviderPublicKey,
 	return auth.NewSolanaKeyProvider(conf.Solana.WalletPrivateKey), nil
 }
 
-func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webhook.Notifier, error) {
-	wallet := conf.Ethereum.WalletAddress
-	secret := provider.GetSecret(wallet)
+func createWebhookNotifier(keyProvider auth.KeyProvider, nodeID livekit2.NodeID) (webhook.Notifier, error) {
+	key := string(nodeID)
+
+	secret := keyProvider.GetSecret(key)
 	if secret == "" {
 		return nil, ErrWebHookMissingAPIKey
 	}
 
-	return webhook.NewNotifier(wallet, secret), nil
+	return webhook.NewNotifier(key, secret), nil
 }
 
 func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {

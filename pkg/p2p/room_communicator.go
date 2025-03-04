@@ -8,7 +8,6 @@ import (
 	"time"
 
 	pubsub "github.com/dTelecom/pubsub-solana"
-	logging "github.com/ipfs/go-log/v2"
 	"github.com/livekit/protocol/livekit"
 	"github.com/pkg/errors"
 )
@@ -47,7 +46,6 @@ func NewRoomCommunicatorImpl(room *livekit.Room, pubSub *pubsub.PubSub) (*RoomCo
 		peers:  make(map[string]struct{}),
 	}
 
-	_ = logging.SetLogLevel("*", "error")
 	if err := roomCommunicator.init(); err != nil {
 		return nil, errors.Wrap(err, "cannot init room communicator")
 	}
