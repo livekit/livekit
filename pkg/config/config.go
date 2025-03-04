@@ -562,6 +562,12 @@ func (conf *Config) ValidateKeys() error {
 		return errors.New("empty solana.network_host_http")
 	case conf.Solana.NetworkHostWS == "":
 		return errors.New("empty solana.network_host_ws")
+	case conf.Solana.RegistryAuthority == "":
+		return errors.New("empty solana.registry_authority")
+	case conf.Solana.EphemeralHostHTTP == "":
+		return errors.New("empty solana.ephemeral_host_http")
+	case conf.Solana.EphemeralHostWS == "":
+		return errors.New("empty solana.ephemeral_host_ws")
 	}
 
 	return nil
