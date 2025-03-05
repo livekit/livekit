@@ -61,11 +61,11 @@ func (c *RoomCommunicatorImpl) Close() {
 func (c *RoomCommunicatorImpl) init() error {
 	incomingMessagesTopic := formatIncomingMessagesTopic(c.room.Key, c.pubSub.GetPeerId())
 	c.pubSub.Subscribe(incomingMessagesTopic, c.incomingMessageHandler)
-	logger.Debugw("subscribed to topic", incomingMessagesTopic)
+	logger.Debugw("subscribed to", "topic", incomingMessagesTopic)
 
 	roomMessagesTopic := formatRoomMessageTopic(c.room.Key)
 	c.pubSub.Subscribe(roomMessagesTopic, c.roomMessageHandler)
-	logger.Debugw("subscribed to topic", roomMessagesTopic)
+	logger.Debugw("subscribed to", "topic", roomMessagesTopic)
 
 	go func() {
 		for {
@@ -93,34 +93,34 @@ func (c *RoomCommunicatorImpl) checkPeer(peerId string) {
 	if _, ok := c.peers[peerId]; ok {
 		c.mu.Unlock()
 	} else {
-		logger.Debugw("New key added peer not exist", peerId)
+		logger.Debugw("New key added peer not exist", "peer", peerId)
 		c.peers[peerId] = struct{}{}
 		for _, peerHandler := range c.peerHandlers {
 			go peerHandler(peerId)
 		}
 		c.mu.Unlock()
-		logger.Debugw("New key added peer added", peerId)
+		logger.Debugw("New key added peer added", "peer", peerId)
 
 		incomingMessageTopic := formatIncomingMessagesTopic(c.room.Key, peerId)
 		if _, err := c.pubSub.Publish(c.ctx, incomingMessageTopic, []byte(pingMessage)); err != nil {
 			logger.Errorw("cannot send ping message for node", err)
 		} else {
-			logger.Debugw("PING message sent to", peerId)
+			logger.Debugw("PING message sent to", "peer", peerId)
 		}
 	}
 }
 
 func (c *RoomCommunicatorImpl) incomingMessageHandler(_ context.Context, event pubsub.Event) {
 	if string(event.Message) == pingMessage {
-		logger.Debugw("PING message received from", event.FromPeerId)
+		logger.Debugw("PING message received from", "node", event.FromPeerId)
 		incomingMessageTopic := formatIncomingMessagesTopic(c.room.Key, event.FromPeerId)
 		if _, err := c.pubSub.Publish(c.ctx, incomingMessageTopic, []byte(pongMessage)); err != nil {
 			logger.Errorw("cannot send pong message for node", err)
 		} else {
-			logger.Debugw("PONG message sent to", event.FromPeerId)
+			logger.Debugw("PONG message sent to", "node", event.FromPeerId)
 		}
 	} else if string(event.Message) == pongMessage {
-		logger.Debugw("PONG message received from", event.FromPeerId)
+		logger.Debugw("PONG message received from", "node", event.FromPeerId)
 	} else if string(event.Message) == adMessage {
 		c.checkPeer(event.FromPeerId)
 	} else {
@@ -140,7 +140,7 @@ func (c *RoomCommunicatorImpl) roomMessageHandler(_ context.Context, event pubsu
 		if _, err := c.pubSub.Publish(c.ctx, incomingMessageTopic, []byte(adMessage)); err != nil {
 			logger.Errorw("cannot send ad message for node", err)
 		} else {
-			logger.Debugw("ad message sent to", event.FromPeerId)
+			logger.Debugw("ad message sent to", "node", event.FromPeerId)
 		}
 	} else {
 		logger.Errorw("unknown room message from peer", fmt.Errorf(event.FromPeerId))
