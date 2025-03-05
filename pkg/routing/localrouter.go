@@ -2,7 +2,7 @@ package routing
 
 import (
 	"context"
-	"log"
+	"fmt"
 	"sync"
 	"time"
 
@@ -146,7 +146,7 @@ func (r *LocalRouter) writeFromP2P(ctx context.Context, roomKey livekit.RoomKey,
 
 func (r *LocalRouter) writeToP2P(roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) {
 	if routerCommunicator, ok := r.routerCommunicators[roomKey]; !ok {
-		log.Printf("writeToP2P no routerCommunicator %v", roomKey)
+		logger.Errorw("writeToP2P err", fmt.Errorf("no routerCommunicator"))
 	} else {
 		routerCommunicator.Publish(msg)
 	}

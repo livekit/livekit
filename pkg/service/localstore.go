@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"log"
 	"sync"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/thoas/go-funk"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/p2p"
 )
@@ -50,7 +50,6 @@ func NewLocalStore(
 }
 
 func (s *LocalStore) StoreRoom(_ context.Context, room *livekit.Room, roomKey livekit.RoomKey, internal *livekit.RoomInternal) error {
-	log.Println("Calling localstore.StoreRoom")
 	if room.CreationTime == 0 {
 		room.CreationTime = time.Now().Unix()
 	}
@@ -63,10 +62,10 @@ func (s *LocalStore) StoreRoom(_ context.Context, room *livekit.Room, roomKey li
 			return errors.Wrap(err, "cannot create room communicator")
 		} else {
 			s.roomCommunicators[roomKey] = roomCommunicator
-			log.Println("New room communicator has been created")
+			logger.Debugw("New room communicator has been created")
 		}
 	} else {
-		log.Println("Room communicator already exists")
+		logger.Debugw("Room communicator already exists")
 	}
 	s.lock.Unlock()
 
@@ -105,8 +104,6 @@ func (s *LocalStore) ListRooms(_ context.Context, roomKeys []livekit.RoomKey) ([
 }
 
 func (s *LocalStore) DeleteRoom(ctx context.Context, roomKey livekit.RoomKey) error {
-	log.Println("Calling localstore.DeleteRoom")
-
 	_, _, _, err := s.LoadRoom(ctx, roomKey, false)
 	if err == ErrRoomNotFound {
 		return nil
@@ -142,8 +139,6 @@ func (s *LocalStore) UnlockRoom(_ context.Context, _ livekit.RoomKey, _ string) 
 }
 
 func (s *LocalStore) StoreParticipant(ctx context.Context, roomKey livekit.RoomKey, participant *livekit.ParticipantInfo) error {
-	log.Println("Calling localstore.StoreParticipant")
-
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	roomParticipants := s.participants[roomKey]
@@ -190,8 +185,6 @@ func (s *LocalStore) ListParticipants(_ context.Context, roomKey livekit.RoomKey
 }
 
 func (s *LocalStore) DeleteParticipant(ctx context.Context, roomKey livekit.RoomKey, identity livekit.ParticipantIdentity) error {
-	log.Println("Calling localstore.DeleteParticipant")
-
 	s.lock.Lock()
 	defer s.lock.Unlock()
 

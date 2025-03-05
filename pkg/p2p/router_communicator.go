@@ -2,10 +2,11 @@ package p2p
 
 import (
 	"context"
-	"log"
 
 	pubsub "github.com/dTelecom/pubsub-solana"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+
 	"google.golang.org/protobuf/proto"
 )
 
@@ -46,11 +47,11 @@ func (c *RouterCommunicatorImpl) Publish(message *livekit.RTCNodeMessage) {
 
 	data, err := proto.Marshal(message)
 	if err != nil {
-		log.Printf("RouterCommunicatorImpl Publish cannot marshal %v", message)
+		logger.Errorw("RouterCommunicatorImpl Publish cannot marshal", err)
 	}
 
 	if _, err := c.pubSub.Publish(c.ctx, c.topic, data); err != nil {
-		log.Printf("RouterCommunicatorImpl cannot publish %v", err)
+		logger.Errorw("RouterCommunicatorImpl cannot publish", err)
 	}
 }
 
@@ -66,12 +67,12 @@ func (c *RouterCommunicatorImpl) dbHandler(_ context.Context, event pubsub.Event
 
 	rm := livekit.RTCNodeMessage{}
 	if err := proto.Unmarshal(event.Message, &rm); err != nil {
-		log.Printf("RouterCommunicatorImpl dbHandler cannot unmarshal: %v", event)
+		logger.Errorw("RouterCommunicatorImpl dbHandler cannot unmarshal", err)
 		return
 	}
 
 	err := c.messageHandler(c.ctx, c.key, &rm)
 	if err != nil {
-		log.Printf("RouterCommunicatorImpl dbHandler err: %v", err)
+		logger.Errorw("RouterCommunicatorImpl dbHandler err", err)
 	}
 }
