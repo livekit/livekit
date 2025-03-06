@@ -868,7 +868,15 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 	if b.ddParser != nil {
 		ddVal, videoLayer, err := b.ddParser.Parse(ep.Packet)
 		if err != nil {
-			return nil
+			if errors.Is(err, ErrDDExtentionNotFound) {
+				if b.mime == mime.MimeTypeVP8 {
+					b.logger.Infow("dd extension not found for vp8 packet, disable dd parser")
+					b.ddParser = nil
+					b.createFrameRateCalculator()
+				}
+			} else {
+				return nil
+			}
 		} else if ddVal != nil {
 			ep.DependencyDescriptor = ddVal
 			ep.VideoLayer = videoLayer
