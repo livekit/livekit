@@ -428,7 +428,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 	}
 
 	// create new room, get details first
-	ri, internal, p2pCommunicator, err := r.roomStore.LoadRoom(ctx, roomKey, true)
+	ri, internal, roomCommunicator, err := r.roomStore.LoadRoom(ctx, roomKey, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -551,7 +551,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 	pendingAnswers := map[string]chan []byte{}
 	pendingAnswersMu := sync.Mutex{}
 
-	p2pCommunicator.ForEachPeer(func(peerId string) {
+	roomCommunicator.ForEachPeer(func(peerId string) {
 		logger.Infow("New p2p peer", "peerId", peerId)
 		rel, err := pc.NewRelay(newRoom.Logger, &relay.RelayConfig{
 			ID:            peerId,
@@ -608,7 +608,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 			answer := make(chan []byte, 1)
 
 			pendingAnswersMu.Lock()
-			msgId, sendErr := p2pCommunicator.SendMessage(peerId, packSignalPeerMessage("", offer))
+			msgId, sendErr := roomCommunicator.SendMessage(peerId, packSignalPeerMessage("", offer))
 			if sendErr != nil {
 				pendingAnswersMu.Unlock()
 				return nil, fmt.Errorf("cannot send message to room commmunicator: %w", sendErr)
@@ -638,7 +638,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 		}
 	})
 
-	p2pCommunicator.OnMessage(func(message []byte, fromPeerId string, eventId string) {
+	roomCommunicator.OnMessage(func(message []byte, fromPeerId string, eventId string) {
 		replyTo, signal, err := unpackSignalPeerMessage(message)
 		if err != nil {
 			logger.Errorw("Unmarshal signal peer message", err)
@@ -679,7 +679,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 				return
 			}
 
-			if _, err := p2pCommunicator.SendMessage(fromPeerId, packSignalPeerMessage(eventId, answer)); err != nil {
+			if _, err := roomCommunicator.SendMessage(fromPeerId, packSignalPeerMessage(eventId, answer)); err != nil {
 				logger.Errorw("can not send answer", err)
 				return
 			}

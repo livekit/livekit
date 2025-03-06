@@ -16,8 +16,6 @@ import (
 const (
 	roomMessagesTopicFmt     = "room_messages_%v"
 	incomingMessagesTopicFmt = "incoming_messages_%v_%v"
-	pingMessage              = "ping"
-	pongMessage              = "pong"
 	adMessage                = "ad"
 )
 
@@ -100,28 +98,11 @@ func (c *RoomCommunicatorImpl) checkPeer(peerId string) {
 		}
 		c.mu.Unlock()
 		logger.Debugw("New key added peer added", "peer", peerId)
-
-		incomingMessageTopic := formatIncomingMessagesTopic(c.room.Key, peerId)
-		if _, err := c.pubSub.Publish(c.ctx, incomingMessageTopic, []byte(pingMessage)); err != nil {
-			logger.Errorw("cannot send ping message for node", err)
-		} else {
-			logger.Debugw("PING message sent to", "peer", peerId)
-		}
 	}
 }
 
 func (c *RoomCommunicatorImpl) incomingMessageHandler(_ context.Context, event pubsub.Event) {
-	if string(event.Message) == pingMessage {
-		logger.Debugw("PING message received from", "node", event.FromPeerId)
-		incomingMessageTopic := formatIncomingMessagesTopic(c.room.Key, event.FromPeerId)
-		if _, err := c.pubSub.Publish(c.ctx, incomingMessageTopic, []byte(pongMessage)); err != nil {
-			logger.Errorw("cannot send pong message for node", err)
-		} else {
-			logger.Debugw("PONG message sent to", "node", event.FromPeerId)
-		}
-	} else if string(event.Message) == pongMessage {
-		logger.Debugw("PONG message received from", "node", event.FromPeerId)
-	} else if string(event.Message) == adMessage {
+	if string(event.Message) == adMessage {
 		c.checkPeer(event.FromPeerId)
 	} else {
 		c.mu.Lock()
@@ -135,13 +116,6 @@ func (c *RoomCommunicatorImpl) incomingMessageHandler(_ context.Context, event p
 func (c *RoomCommunicatorImpl) roomMessageHandler(_ context.Context, event pubsub.Event) {
 	if string(event.Message) == adMessage {
 		c.checkPeer(event.FromPeerId)
-
-		incomingMessageTopic := formatIncomingMessagesTopic(c.room.Key, event.FromPeerId)
-		if _, err := c.pubSub.Publish(c.ctx, incomingMessageTopic, []byte(adMessage)); err != nil {
-			logger.Errorw("cannot send ad message for node", err)
-		} else {
-			logger.Debugw("ad message sent to", "node", event.FromPeerId)
-		}
 	} else {
 		logger.Errorw("unknown room message from peer", fmt.Errorf(event.FromPeerId))
 	}
