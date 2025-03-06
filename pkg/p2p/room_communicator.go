@@ -67,7 +67,7 @@ func (c *RoomCommunicatorImpl) init() error {
 
 	go func() {
 		for {
-			if _, err := c.pubSub.Publish(c.ctx, roomMessagesTopic, []byte(adMessage)); err != nil {
+			if _, err := c.pubSub.Publish(roomMessagesTopic, []byte(adMessage)); err != nil {
 				if c.ctx.Err() == nil {
 					logger.Errorw("cannot publish ad message", err)
 				} else {
@@ -133,7 +133,7 @@ func (c *RoomCommunicatorImpl) ForEachPeer(peerHandler func(peerId string)) {
 
 func (c *RoomCommunicatorImpl) SendMessage(peerId string, message []byte) (string, error) {
 	incomingMessagesTopic := formatIncomingMessagesTopic(c.room.Key, peerId)
-	eventID, err := c.pubSub.Publish(c.ctx, incomingMessagesTopic, message)
+	eventID, err := c.pubSub.Publish(incomingMessagesTopic, message)
 	if err != nil {
 		return "", errors.Wrap(err, "publish error")
 	}

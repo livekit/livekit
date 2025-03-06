@@ -50,7 +50,7 @@ func (c *RouterCommunicatorImpl) Publish(message *livekit.RTCNodeMessage) {
 		logger.Errorw("RouterCommunicatorImpl Publish cannot marshal", err)
 	}
 
-	if _, err := c.pubSub.Publish(c.ctx, c.topic, data); err != nil {
+	if _, err := c.pubSub.Publish(c.topic, data); err != nil {
 		logger.Errorw("RouterCommunicatorImpl cannot publish", err)
 	}
 }
