@@ -383,8 +383,8 @@ func (t *TransportManager) GetUnmatchMediaForOffer(offer webrtc.SessionDescripti
 		parsedAnswer, err1 := answer.Unmarshal()
 		if err1 != nil {
 			// should not happen
-			t.params.Logger.Errorw("failed to parse last answer", err)
-			return
+			t.params.Logger.Errorw("failed to parse last answer", err1)
+			return parsed, unmatched, err1
 		}
 
 		for i := len(parsedAnswer.MediaDescriptions) - 1; i >= 0; i-- {
