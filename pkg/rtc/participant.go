@@ -1209,7 +1209,9 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		p.TransportManager.ProcessPendingPublisherOffer()
 
 	case types.MigrateStateComplete:
-		p.params.Logger.Infow("migration complete")
+		if preState == types.MigrateStateSync {
+			p.params.Logger.Infow("migration complete")
+		}
 		p.TransportManager.ProcessPendingPublisherDataChannels()
 		go p.cacheForwarderState()
 	}
