@@ -15,6 +15,7 @@
 package sfu
 
 import (
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -480,7 +481,7 @@ func (s *StreamTrackerManager) getLayeredBitrateLocked() ([]int32, Bitrates) {
 	for i, tracker := range s.trackers {
 		if tracker != nil {
 			tls := make([]int64, buffer.DefaultMaxLayerTemporal+1)
-			if s.hasSpatialLayerLocked(int32(i)) {
+			if slices.Contains(s.availableLayers ,int32(i)) {
 				tls = tracker.BitrateTemporalCumulative()
 			}
 
@@ -507,16 +508,6 @@ func (s *StreamTrackerManager) getLayeredBitrateLocked() ([]int32, Bitrates) {
 	copy(availableLayers, s.availableLayers)
 
 	return availableLayers, br
-}
-
-func (s *StreamTrackerManager) hasSpatialLayerLocked(layer int32) bool {
-	for _, l := range s.availableLayers {
-		if l == layer {
-			return true
-		}
-	}
-
-	return false
 }
 
 func (s *StreamTrackerManager) addAvailableLayer(layer int32) {
