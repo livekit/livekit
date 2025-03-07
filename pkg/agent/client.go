@@ -258,7 +258,7 @@ func (c *agentClient) checkEnabled(roomNamespaces, publisherNamespaces, particip
 	defer publisherAgentNames.Done()
 	defer participantAgentNames.Done()
 
-	resChan, err := c.client.CheckEnabled(context.Background(), &rpc.CheckEnabledRequest{}, psrpc.WithRequestTimeout(CheckEnabledTimeout))
+	resChan, err := c.client.CheckEnabled(context.Background(), &livekit.CheckEnabledRequest{}, psrpc.WithRequestTimeout(CheckEnabledTimeout))
 	if err != nil {
 		logger.Errorw("failed to check enabled", err)
 		return

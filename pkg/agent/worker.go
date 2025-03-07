@@ -144,6 +144,7 @@ type WorkerRegistration struct {
 	AgentName   string
 	Namespace   string
 	JobType     livekit.JobType
+	Metadata    string
 	Permissions *livekit.ParticipantPermission
 }
 
@@ -202,6 +203,7 @@ func (h *WorkerRegisterer) HandleRegister(req *livekit.RegisterWorkerRequest) er
 		AgentName:   req.AgentName,
 		Namespace:   req.GetNamespace(),
 		JobType:     req.GetType(),
+		Metadata:    req.Metadata,
 		Permissions: permissions,
 	}
 	h.registered = true
@@ -428,6 +430,7 @@ func (w *Worker) TerminateJob(jobID livekit.JobID, reason rpc.JobTerminateReason
 }
 
 func (w *Worker) UpdateMetadata(metadata string) {
+	w.Metadata = metadata
 	w.logger.Debugw("worker metadata updated", nil, "metadata", metadata)
 }
 

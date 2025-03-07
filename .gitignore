@@ -27,3 +27,7 @@ proto/
 .idea/
 
 dist/
+
+.vscode
+config.yaml
+vendor

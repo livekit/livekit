@@ -121,6 +121,7 @@ func NewLivekitServer(conf *config.Config,
 	}
 	roomServer := livekit.NewRoomServiceServer(roomService, serverOptions...)
 	agentDispatchServer := livekit.NewAgentDispatchServiceServer(agentDispatchService, serverOptions...)
+	agentServer := livekit.NewAgentServiceServer(agentService, serverOptions...)
 	egressServer := livekit.NewEgressServer(egressService, serverOptions...)
 	ingressServer := livekit.NewIngressServer(ingressService, serverOptions...)
 	sipServer := livekit.NewSIPServer(sipService, serverOptions...)
@@ -135,6 +136,7 @@ func NewLivekitServer(conf *config.Config,
 
 	xtwirp.RegisterServer(mux, roomServer)
 	xtwirp.RegisterServer(mux, agentDispatchServer)
+	xtwirp.RegisterServer(mux, agentServer)
 	xtwirp.RegisterServer(mux, egressServer)
 	xtwirp.RegisterServer(mux, ingressServer)
 	xtwirp.RegisterServer(mux, sipServer)
