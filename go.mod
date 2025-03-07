@@ -36,12 +36,12 @@ require (
 	github.com/pion/ice/v4 v4.0.7
 	github.com/pion/interceptor v0.1.37
 	github.com/pion/rtcp v1.2.15
-	github.com/pion/rtp v1.8.11
-	github.com/pion/sctp v1.8.36
+	github.com/pion/rtp v1.8.12
+	github.com/pion/sctp v1.8.37
 	github.com/pion/sdp/v3 v3.0.10
 	github.com/pion/transport/v3 v3.0.7
 	github.com/pion/turn/v4 v4.0.0
-	github.com/pion/webrtc/v4 v4.0.11
+	github.com/pion/webrtc/v4 v4.0.13
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.20.5
 	github.com/redis/go-redis/v9 v9.7.0
