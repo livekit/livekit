@@ -1266,7 +1266,7 @@ func (d *DownTrack) handleMute(muted bool, changed bool) {
 	// mute too.
 	d.blankFramesGeneration.Inc()
 	if d.kind == webrtc.RTPCodecTypeAudio && muted {
-		d.writeBlankFrameRTP(RTPBlankFramesMuteSeconds, d.blankFramesGeneration.Load())
+		d.writeBlankFrameRTP(RTPBlankFramesMuteSeconds, d.blankFramesGeneration.Load(), d.Mime())
 	}
 }
 
@@ -1293,9 +1293,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	}
 
 	d.params.Logger.Debugw("close down track", "flushBlankFrame", flush)
-	isBound := d.bindState.Load() == bindStateBound
-	d.bindLock.Unlock()
-	if isBound {
+	if d.bindState.Load() == bindStateBound {
 		d.forwarder.Mute(true, true)
 
 		// write blank frames after disabling so that other frames do not interfere.
@@ -1303,7 +1301,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		// Otherwise, with transceiver re-use last frame from previous stream is held in the
 		// display buffer and there could be a brief moment where the previous stream is displayed.
 		if flush {
-			doneFlushing := d.writeBlankFrameRTP(RTPBlankFramesCloseSeconds, d.blankFramesGeneration.Inc())
+			doneFlushing := d.writeBlankFrameRTP(RTPBlankFramesCloseSeconds, d.blankFramesGeneration.Inc(), d.mimeTypeLocked())
 
 			// wait a limited time to flush
 			timer := time.NewTimer(flushTimeout)
@@ -1319,7 +1317,6 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		d.params.Logger.Debugw("closing sender", "kind", d.kind)
 	}
 
-	d.bindLock.Lock()
 	d.setBindStateLocked(bindStateUnbound)
 	d.Receiver().DeleteDownTrack(d.SubscriberID())
 
@@ -1691,7 +1688,7 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 	// not sending RTCP Sender Report for RTX
 }
 
-func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan struct{} {
+func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32, mimeType mime.MimeType) chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		// don't send if not writable OR nothing has been sent
@@ -1700,7 +1697,6 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 			return
 		}
 
-		mimeType := d.Mime()
 		var getBlankFrame func(bool) ([]byte, error)
 		switch mimeType {
 		case mime.MimeTypeOpus:
