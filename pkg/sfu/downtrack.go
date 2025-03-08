@@ -1285,14 +1285,17 @@ func (d *DownTrack) Close() {
 //  2. in case of session migration, participant migrate from other node, video track should
 //     be resumed with same participant, set flush=false since we don't need to flush decoder.
 func (d *DownTrack) CloseWithFlush(flush bool) {
+	d.bindLock.Lock()
 	if d.isClosed.Swap(true) {
 		// already closed
+		d.bindLock.Unlock()
 		return
 	}
 
-	d.bindLock.Lock()
 	d.params.Logger.Debugw("close down track", "flushBlankFrame", flush)
-	if d.bindState.Load() == bindStateBound {
+	isBound := d.bindState.Load() == bindStateBound
+	d.bindLock.Unlock()
+	if isBound {
 		d.forwarder.Mute(true, true)
 
 		// write blank frames after disabling so that other frames do not interfere.
@@ -1315,6 +1318,8 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 
 		d.params.Logger.Debugw("closing sender", "kind", d.kind)
 	}
+
+	d.bindLock.Lock()
 	d.setBindStateLocked(bindStateUnbound)
 	d.Receiver().DeleteDownTrack(d.SubscriberID())
 
