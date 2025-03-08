@@ -1033,9 +1033,13 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		"reason", reason.String(),
 		"isExpectedToResume", isExpectedToResume,
 	)
+
+	stopwatch := sutils.NewStopwatch()
+
 	p.closeReason.Store(reason)
 	p.clearDisconnectTimer()
 	p.clearMigrationTimer()
+	stopwatch.Mark("clear timers")
 
 	if sendLeave {
 		p.sendLeaveRequest(
@@ -1044,6 +1048,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 			false, // isExpectedToReconnect
 			false, // sendOnlyIfSupportingLeaveRequestWithAction
 		)
+		stopwatch.Mark("send leave request")
 	}
 
 	if p.supervisor != nil {
@@ -1054,20 +1059,31 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	p.pendingTracks = make(map[string]*pendingTrackInfo)
 	p.pendingPublishingTracks = make(map[livekit.TrackID]*pendingTrackInfo)
 	p.pendingTracksLock.Unlock()
+	stopwatch.Mark("clear pending tracks")
 
 	p.UpTrackManager.Close(isExpectedToResume)
+	stopwatch.Mark("close up track manager")
 
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
 	close(p.disconnected)
+	stopwatch.Mark("update state")
 
 	// ensure this is synchronized
 	p.CloseSignalConnection(types.SignallingCloseReasonParticipantClose)
+	stopwatch.Mark("close signal conn")
 	p.lock.RLock()
 	onClose := p.onClose
 	p.lock.RUnlock()
+	stopwatch.Mark("acquire onClose handler")
 	if onClose != nil {
 		onClose(p)
+		stopwatch.Mark("call onClose")
 	}
+
+	p.params.Logger.Debugw(
+		"participant closed",
+		"splits", logger.ObjectSlice(stopwatch.Splits()),
+	)
 
 	// Close peer connections without blocking participant Close. If peer connections are gathering candidates
 	// Close will block.
