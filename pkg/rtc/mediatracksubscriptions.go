@@ -183,8 +183,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 				}()
 			}
 		}
-
-		subTrack.SetPublisherMuted(t.params.MediaTrack.IsMuted())
 	})
 	downTrack.OnBinding(func(err error) {
 		if err != nil {
@@ -205,6 +203,8 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		}
 
 		go subTrack.Bound(nil)
+
+		subTrack.SetPublisherMuted(t.params.MediaTrack.IsMuted())
 	})
 
 	downTrack.OnStatsUpdate(func(_ *sfu.DownTrack, stat *livekit.AnalyticsStat) {

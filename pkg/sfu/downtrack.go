@@ -267,7 +267,7 @@ type DownTrack struct {
 	forwarder *Forwarder
 
 	upstreamCodecs            []webrtc.RTPCodecParameters
-	codec                     webrtc.RTPCodecCapability
+	codec                     atomic.Value // webrtc.RTPCodecCapability
 	clockRate                 uint32
 	negotiatedCodecParameters []webrtc.RTPCodecParameters
 
@@ -362,7 +362,6 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		id:                  params.Receiver.TrackID(),
 		upstreamCodecs:      codecs,
 		kind:                kind,
-		codec:               codecs[0].RTPCodecCapability,
 		clockRate:           codecs[0].ClockRate,
 		pacer:               params.Pacer,
 		maxLayerNotifierCh:  make(chan string, 1),
@@ -370,6 +369,8 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		createdAt:           time.Now().UnixNano(),
 		receiver:            params.Receiver,
 	}
+	codec := codecs[0].RTPCodecCapability
+	d.codec.Store(codec)
 	d.bindState.Store(bindStateUnbound)
 	d.params.Logger = params.Logger.WithValues(
 		"subscriberID", d.SubscriberID(),
@@ -382,7 +383,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		mdCacheSize, mdCacheSizeRTX = 8192, 1024
 	}
 	d.rtpStats = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{
-		ClockRate: d.codec.ClockRate,
+		ClockRate: codec.ClockRate,
 		Logger: d.params.Logger.WithValues(
 			"stream", "primary",
 		),
@@ -390,7 +391,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 	d.deltaStatsSenderSnapshotId = d.rtpStats.NewSenderSnapshotId()
 
 	d.rtpStatsRTX = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{
-		ClockRate: d.codec.ClockRate,
+		ClockRate: codec.ClockRate,
 		IsRTX:     true,
 		Logger: d.params.Logger.WithValues(
 			"stream", "rtx",
@@ -577,16 +578,15 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 
 		d.sequencer = newSequencer(d.params.MaxTrack, d.kind == webrtc.RTPCodecTypeVideo, d.params.Logger)
 
-		d.codec = codec.RTPCodecCapability
+		d.codec.Store(codec.RTPCodecCapability)
 		if d.onBinding != nil {
 			d.onBinding(nil)
 		}
 		d.setBindStateLocked(bindStateBound)
-		mimeType := d.mimeTypeLocked()
 		d.bindLock.Unlock()
 
 		d.forwarder.DetermineCodec(codec.RTPCodecCapability, d.Receiver().HeaderExtensions())
-		d.connectionStats.Start(mimeType, isFECEnabled)
+		d.connectionStats.Start(d.Mime(), isFECEnabled)
 		d.params.Logger.Debugw("downtrack bound")
 	}
 
@@ -640,7 +640,8 @@ func (d *DownTrack) handleReceiverReady() {
 
 func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 	d.bindLock.Lock()
-	if mime.IsMimeTypeStringEqual(d.codec.MimeType, mimeType) {
+	existingMimeType := d.codec.Load().(webrtc.RTPCodecCapability).MimeType
+	if mime.IsMimeTypeStringEqual(existingMimeType, mimeType) {
 		d.bindLock.Unlock()
 		return
 	}
@@ -681,9 +682,8 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 
 	d.payloadType.Store(uint32(codec.PayloadType))
 	d.payloadTypeRTX.Store(uint32(utils.FindRTXPayloadType(codec.PayloadType, d.negotiatedCodecParameters)))
-	d.codec = codec.RTPCodecCapability
-	newMimeType := d.mimeTypeLocked()
-	isFECEnabled := strings.Contains(strings.ToLower(d.codec.SDPFmtpLine), "fec")
+	d.codec.Store(codec.RTPCodecCapability)
+	isFECEnabled := strings.Contains(strings.ToLower(codec.SDPFmtpLine), "fec")
 	d.bindLock.Unlock()
 
 	d.params.Logger.Infow(
@@ -695,7 +695,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 
 	d.forwarder.Restart()
 	d.forwarder.DetermineCodec(codec.RTPCodecCapability, d.Receiver().HeaderExtensions())
-	d.connectionStats.UpdateCodec(newMimeType, isFECEnabled)
+	d.connectionStats.UpdateCodec(d.Mime(), isFECEnabled)
 }
 
 // Unbind implements the teardown logic when the track is no longer needed. This happens
@@ -745,19 +745,11 @@ func (d *DownTrack) ID() string { return string(d.id) }
 
 // Codec returns current track codec capability
 func (d *DownTrack) Codec() webrtc.RTPCodecCapability {
-	d.bindLock.Lock()
-	defer d.bindLock.Unlock()
-	return d.codec
+	return d.codec.Load().(webrtc.RTPCodecCapability)
 }
 
 func (d *DownTrack) Mime() mime.MimeType {
-	d.bindLock.Lock()
-	defer d.bindLock.Unlock()
-	return d.mimeTypeLocked()
-}
-
-func (d *DownTrack) mimeTypeLocked() mime.MimeType {
-	return mime.NormalizeMimeType(d.codec.MimeType)
+	return mime.NormalizeMimeType(d.codec.Load().(webrtc.RTPCodecCapability).MimeType)
 }
 
 // StreamID is the group this track belongs too. This must be unique
@@ -1301,7 +1293,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		// Otherwise, with transceiver re-use last frame from previous stream is held in the
 		// display buffer and there could be a brief moment where the previous stream is displayed.
 		if flush {
-			doneFlushing := d.writeBlankFrameRTP(RTPBlankFramesCloseSeconds, d.blankFramesGeneration.Inc(), d.mimeTypeLocked())
+			doneFlushing := d.writeBlankFrameRTP(RTPBlankFramesCloseSeconds, d.blankFramesGeneration.Inc(), d.Mime())
 
 			// wait a limited time to flush
 			timer := time.NewTimer(flushTimeout)
@@ -1330,7 +1322,6 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		d.rtcpReaderRTX.Close()
 		d.rtcpReaderRTX.OnPacket(nil)
 	}
-	mime := d.codec.MimeType
 	d.bindLock.Unlock()
 
 	d.connectionStats.Close()
@@ -1339,7 +1330,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	d.rtpStatsRTX.Stop()
 	d.params.Logger.Debugw("rtp stats",
 		"direction", "downstream",
-		"mime", mime,
+		"mime", d.Mime().String(),
 		"ssrc", d.ssrc,
 		"stats", d.rtpStats,
 		"statsRTX", d.rtpStatsRTX,
@@ -2354,7 +2345,7 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 		"TrackID":             d.id,
 		"StreamID":            d.params.StreamID,
 		"SSRC":                d.ssrc,
-		"MimeType":            d.codec.MimeType,
+		"MimeType":            d.Mime().String(),
 		"BindState":           d.bindState.Load().(bindState),
 		"Muted":               d.forwarder.IsMuted(),
 		"PubMuted":            d.forwarder.IsPubMuted(),
