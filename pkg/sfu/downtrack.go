@@ -1258,7 +1258,7 @@ func (d *DownTrack) handleMute(muted bool, changed bool) {
 	// mute too.
 	d.blankFramesGeneration.Inc()
 	if d.kind == webrtc.RTPCodecTypeAudio && muted {
-		d.writeBlankFrameRTP(RTPBlankFramesMuteSeconds, d.blankFramesGeneration.Load(), d.Mime())
+		d.writeBlankFrameRTP(RTPBlankFramesMuteSeconds, d.blankFramesGeneration.Load())
 	}
 }
 
@@ -1293,7 +1293,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 		// Otherwise, with transceiver re-use last frame from previous stream is held in the
 		// display buffer and there could be a brief moment where the previous stream is displayed.
 		if flush {
-			doneFlushing := d.writeBlankFrameRTP(RTPBlankFramesCloseSeconds, d.blankFramesGeneration.Inc(), d.Mime())
+			doneFlushing := d.writeBlankFrameRTP(RTPBlankFramesCloseSeconds, d.blankFramesGeneration.Inc())
 
 			// wait a limited time to flush
 			timer := time.NewTimer(flushTimeout)
@@ -1679,7 +1679,7 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 	// not sending RTCP Sender Report for RTX
 }
 
-func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32, mimeType mime.MimeType) chan struct{} {
+func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		// don't send if not writable OR nothing has been sent
@@ -1688,6 +1688,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32, mime
 			return
 		}
 
+		mimeType := d.Mime()
 		var getBlankFrame func(bool) ([]byte, error)
 		switch mimeType {
 		case mime.MimeTypeOpus:
