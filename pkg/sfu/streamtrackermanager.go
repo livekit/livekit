@@ -481,7 +481,7 @@ func (s *StreamTrackerManager) getLayeredBitrateLocked() ([]int32, Bitrates) {
 	for i, tracker := range s.trackers {
 		if tracker != nil {
 			tls := make([]int64, buffer.DefaultMaxLayerTemporal+1)
-			if slices.Contains(s.availableLayers ,int32(i)) {
+			if slices.Contains(s.availableLayers, int32(i)) {
 				tls = tracker.BitrateTemporalCumulative()
 			}
 
