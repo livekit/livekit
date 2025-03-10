@@ -773,6 +773,10 @@ func (r *RoomManager) UpdateParticipant(ctx context.Context, req *livekit.Update
 	return participant.ToProto(), nil
 }
 
+func (r *RoomManager) ForwardParticipant(ctx context.Context, req *livekit.ForwardParticipantRequest) (*livekit.ForwardParticipantResponse, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (r *RoomManager) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomRequest) (*livekit.DeleteRoomResponse, error) {
 	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
 	if room == nil {
