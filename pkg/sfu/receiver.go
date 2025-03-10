@@ -741,8 +741,16 @@ func (w *WebRTCReceiver) GetLastSenderReportTime() time.Time {
 }
 
 func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
+	numPacketsForwarded := 0
+	numPacketsDropped := 0
 	defer func() {
 		w.closeOnce.Do(func() {
+			w.logger.Debugw(
+				"closing forwarder",
+				"layer", layer,
+				"numPacketsForwarded", numPacketsForwarded,
+				"numPacketsDropped", numPacketsDropped,
+			)
 			w.closed.Store(true)
 			w.closeTracks()
 			if rt := w.redTransformer.Load(); rt != nil {
@@ -772,6 +780,12 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 
 		if pkt.Packet.PayloadType != uint8(w.codec.PayloadType) {
 			// drop packets as we don't support codec fallback directly
+			w.logger.Debugw(
+				"dropping packet - payload mismatch",
+				"packetPayloadType", pkt.Packet.PayloadType,
+				"payloadType", w.codec.PayloadType,
+			)
+			numPacketsDropped++
 			continue
 		}
 
@@ -786,6 +800,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 				"spatialLayer", spatialLayer,
 				"pktSpatialLayer", pkt.Spatial,
 			)
+			numPacketsDropped++
 			continue
 		}
 
@@ -821,6 +836,8 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 				)
 			}
 		}
+
+		numPacketsForwarded++
 	}
 }
 
