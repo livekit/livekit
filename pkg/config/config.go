@@ -63,7 +63,7 @@ type Config struct {
 	TURN           TURNConfig               `yaml:"turn,omitempty"`
 	Ingress        IngressConfig            `yaml:"ingress,omitempty"`
 	SIP            SIPConfig                `yaml:"sip,omitempty"`
-	WebHook        WebHookConfig            `yaml:"webhook,omitempty"`
+	WebHook        webhook.WebHookConfig    `yaml:"webhook,omitempty"`
 	NodeSelector   NodeSelectorConfig       `yaml:"node_selector,omitempty"`
 	KeyFile        string                   `yaml:"key_file,omitempty"`
 	Keys           map[string]string        `yaml:"keys,omitempty"`
@@ -197,13 +197,6 @@ type TURNConfig struct {
 	RelayPortRangeStart uint16 `yaml:"relay_range_start,omitempty"`
 	RelayPortRangeEnd   uint16 `yaml:"relay_range_end,omitempty"`
 	ExternalTLS         bool   `yaml:"external_tls,omitempty"`
-}
-
-type WebHookConfig struct {
-	URLs []string `yaml:"urls,omitempty"`
-	// key to use for webhook
-	APIKey              string                            `yaml:"api_key,omitempty"`
-	ResourceURLNotifier webhook.ResourceURLNotifierConfig `yaml:"resource_url_notifier,omitempty"`
 }
 
 type NodeSelectorConfig struct {
@@ -378,12 +371,10 @@ var DefaultConfig = Config{
 		StreamBufferSize: 1000,
 		ConnectAttempts:  3,
 	},
-	PSRPC:  rpc.DefaultPSRPCConfig,
-	Keys:   map[string]string{},
-	Metric: metric.DefaultMetricConfig,
-	WebHook: WebHookConfig{
-		ResourceURLNotifier: webhook.DefaultResourceURLNotifierConfig,
-	},
+	PSRPC:   rpc.DefaultPSRPCConfig,
+	Keys:    map[string]string{},
+	Metric:  metric.DefaultMetricConfig,
+	WebHook: webhook.DefaultWebHookConfig,
 }
 
 func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []cli.Flag) (*Config, error) {
