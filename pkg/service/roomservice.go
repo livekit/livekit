@@ -133,7 +133,7 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	}
 
 	// ensure at least one node is available to handle the request
-	_, err = s.router.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: req.Room})
+	room, err := s.router.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: req.Room})
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +145,7 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 
 	err = s.roomStore.DeleteRoom(ctx, livekit.RoomName(req.Room))
 	res := &livekit.DeleteRoomResponse{}
-	RecordResponse(ctx, res)
+	RecordResponse(ctx, room)
 	return res, err
 }
 
