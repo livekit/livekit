@@ -30,6 +30,7 @@ var (
 	ErrAttributeExceedsLimits           = psrpc.NewErrorf(psrpc.InvalidArgument, "attribute size exceeds limits")
 	ErrRoomNameExceedsLimits            = psrpc.NewErrorf(psrpc.InvalidArgument, "room name length exceeds limits")
 	ErrParticipantIdentityExceedsLimits = psrpc.NewErrorf(psrpc.InvalidArgument, "participant identity length exceeds limits")
+	ErrForwardToSameRoom                = psrpc.NewErrorf(psrpc.InvalidArgument, "cannot forward to the same room")
 	ErrOperationFailed                  = psrpc.NewErrorf(psrpc.Internal, "operation cannot be completed")
 	ErrParticipantNotFound              = psrpc.NewErrorf(psrpc.NotFound, "participant does not exist")
 	ErrRoomNotFound                     = psrpc.NewErrorf(psrpc.NotFound, "requested room does not exist")
