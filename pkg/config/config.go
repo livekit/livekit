@@ -37,6 +37,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	redisLiveKit "github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/webhook"
 )
 
 const (
@@ -201,7 +202,8 @@ type TURNConfig struct {
 type WebHookConfig struct {
 	URLs []string `yaml:"urls,omitempty"`
 	// key to use for webhook
-	APIKey string `yaml:"api_key,omitempty"`
+	APIKey              string                            `yaml:"api_key,omitempty"`
+	ResourceURLNotifier webhook.ResourceURLNotifierConfig `yaml:"resource_url_notifier,omitempty"`
 }
 
 type NodeSelectorConfig struct {
@@ -379,6 +381,9 @@ var DefaultConfig = Config{
 	PSRPC:  rpc.DefaultPSRPCConfig,
 	Keys:   map[string]string{},
 	Metric: metric.DefaultMetricConfig,
+	WebHook: WebHookConfig{
+		ResourceURLNotifier: webhook.DefaultResourceURLNotifierConfig,
+	},
 }
 
 func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []cli.Flag) (*Config, error) {
