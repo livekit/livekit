@@ -316,6 +316,10 @@ func (s *RoomService) ForwardParticipant(ctx context.Context, req *livekit.Forwa
 		return nil, twirpAuthError(err)
 	}
 
+	if req.Room == req.DestinationRoom {
+		return nil, twirp.InvalidArgumentError(ErrForwardToSameRoom.Error(), "")
+	}
+
 	res, err := s.participantClient.ForwardParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
 	RecordResponse(ctx, res)
 	return res, err
