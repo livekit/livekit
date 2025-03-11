@@ -231,6 +231,7 @@ func TwirpTelemetry(
 		ResponseSent: func(ctx context.Context) {
 			telemetryResponseSent(ctx, nodeID, getProjectID, telemetry)
 		},
+		RequestRouted: telemetryRequestRouted,
 	}
 }
 
