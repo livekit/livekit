@@ -745,12 +745,6 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 	numPacketsDropped := 0
 	defer func() {
 		w.closeOnce.Do(func() {
-			w.logger.Debugw(
-				"closing forwarder",
-				"layer", layer,
-				"numPacketsForwarded", numPacketsForwarded,
-				"numPacketsDropped", numPacketsDropped,
-			)
 			w.closed.Store(true)
 			w.closeTracks()
 			if rt := w.redTransformer.Load(); rt != nil {
@@ -762,6 +756,13 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 		if w.isSVC {
 			w.streamTrackerManager.RemoveAllTrackers()
 		}
+
+		w.logger.Debugw(
+			"closing forwarder",
+			"layer", layer,
+			"numPacketsForwarded", numPacketsForwarded,
+			"numPacketsDropped", numPacketsDropped,
+		)
 	}()
 
 	var spatialTrackers [buffer.DefaultMaxLayerSpatial + 1]streamtracker.StreamTrackerWorker

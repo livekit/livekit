@@ -1563,18 +1563,7 @@ func (f *Forwarder) CheckSync() (bool, int32) {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
-	locked, layer := f.vls.CheckSync()
-	if !locked {
-		return locked, layer
-	}
-
-	// max published layer (as seen by this forwarder) could be
-	// lower than max subscribed, mark de-synced if not deficient
-	if !f.isDeficientLocked() && f.vls.GetMax().Spatial > f.vls.GetTarget().Spatial {
-		return false, layer
-	}
-
-	return true, layer
+	return f.vls.CheckSync()
 }
 
 func (f *Forwarder) Restart() {
