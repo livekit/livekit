@@ -17,7 +17,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math/rand"
 	"net/http"
 	"slices"
@@ -257,8 +256,6 @@ func (h *AgentHandler) registerWorker(w *agent.Worker) {
 		case livekit.JobType_JT_PARTICIPANT:
 			typeTopic = h.participantTopic
 		}
-
-		fmt.Println(">>> register worker", typeTopic)
 
 		err := h.agentServer.RegisterJobRequestTopic(nameTopic, typeTopic)
 		if err != nil {
