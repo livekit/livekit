@@ -17,7 +17,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math/rand"
 	"net/http"
 	"slices"
@@ -42,8 +41,6 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
 )
-
-const agentWorkerLoadTarget = 0.65
 
 type AgentSocketUpgrader struct {
 	websocket.Upgrader
@@ -260,8 +257,6 @@ func (h *AgentHandler) registerWorker(w *agent.Worker) {
 			typeTopic = h.participantTopic
 		}
 
-		fmt.Println(">>> register worker", typeTopic)
-
 		err := h.agentServer.RegisterJobRequestTopic(nameTopic, typeTopic)
 		if err != nil {
 			h.mu.Unlock()
@@ -431,7 +426,7 @@ func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 		}
 
 		if w.Status() == livekit.WorkerStatus_WS_AVAILABLE {
-			affinity += max(0, agentWorkerLoadTarget-w.Load())
+			affinity += max(0, 1-w.Load())
 		}
 	}
 
