@@ -93,6 +93,9 @@ func (r *signalClient) StartParticipantSignal(
 		"reqNodeID", nodeID,
 		"participant", pi.Identity,
 		"connID", connectionID,
+		"mediaNodeID", nodeID,
+		"participantInit", pi,
+		"startSession", logger.Proto(ss),
 	)
 
 	l.Debugw("starting signal connection")
