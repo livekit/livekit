@@ -346,6 +346,13 @@ func (r *rtpStatsBase) UpdateKeyFrame(kfCount uint32) {
 	r.lastKeyFrame = time.Now()
 }
 
+func (r *rtpStatsBase) KeyFrame() (uint32, time.Time) {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	return r.keyFrames, r.lastKeyFrame
+}
+
 func (r *rtpStatsBase) UpdateRtt(rtt uint32) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
