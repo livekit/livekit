@@ -1245,7 +1245,7 @@ func (b *Buffer) seedKeyFrame() {
 	// till then packets are dropped which results in stream tracker not
 	// getting any data which means it does not declare layer start.
 	//
-	// send grauitous PLIs for some time or until a key frame is seen to
+	// send gratuitous PLIs for some time or until a key frame is seen to
 	// get the engine rolling
 	b.logger.Debugw("starting key frame seeder")
 	timer := time.NewTimer(time.Minute)
