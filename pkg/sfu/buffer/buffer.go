@@ -1248,7 +1248,7 @@ func (b *Buffer) seedKeyFrame() {
 	// send gratuitous PLIs for some time or until a key frame is seen to
 	// get the engine rolling
 	b.logger.Debugw("starting key frame seeder")
-	timer := time.NewTimer(time.Minute)
+	timer := time.NewTimer(30 * time.Second)
 	defer timer.Stop()
 
 	ticker := time.NewTicker(time.Second)
@@ -1280,7 +1280,7 @@ func (b *Buffer) seedKeyFrame() {
 					return
 				}
 
-				b.SendPLI(true)
+				b.SendPLI(false)
 			}
 		}
 	}
