@@ -22,6 +22,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
+	"golang.org/x/exp/slices"
 )
 
 // RoomTrackManager holds tracks that are published to the room
@@ -29,7 +30,7 @@ type RoomTrackManager struct {
 	lock            sync.RWMutex
 	changedNotifier *utils.ChangeNotifierManager
 	removedNotifier *utils.ChangeNotifierManager
-	tracks          map[livekit.TrackID]*TrackInfo
+	tracks          map[livekit.TrackID][]*TrackInfo
 }
 
 type TrackInfo struct {
@@ -40,52 +41,73 @@ type TrackInfo struct {
 
 func NewRoomTrackManager() *RoomTrackManager {
 	return &RoomTrackManager{
-		tracks:          make(map[livekit.TrackID]*TrackInfo),
+		tracks:          make(map[livekit.TrackID][]*TrackInfo),
 		changedNotifier: utils.NewChangeNotifierManager(),
 		removedNotifier: utils.NewChangeNotifierManager(),
 	}
 }
 
 func (r *RoomTrackManager) AddTrack(track types.MediaTrack, publisherIdentity livekit.ParticipantIdentity, publisherID livekit.ParticipantID) {
+	trackID := track.ID()
 	r.lock.Lock()
-	r.tracks[track.ID()] = &TrackInfo{
+	r.tracks[trackID] = append(r.tracks[trackID], &TrackInfo{
 		Track:             track,
 		PublisherIdentity: publisherIdentity,
 		PublisherID:       publisherID,
-	}
+	})
 	r.lock.Unlock()
 
-	r.NotifyTrackChanged(track.ID())
+	r.NotifyTrackChanged(trackID)
 }
 
 func (r *RoomTrackManager) RemoveTrack(track types.MediaTrack) {
+	trackID := track.ID()
 	r.lock.Lock()
 	// ensure we are removing the same track as added
-	info, ok := r.tracks[track.ID()]
-	if !ok || info.Track != track {
+	infos, ok := r.tracks[trackID]
+	if !ok {
 		r.lock.Unlock()
 		return
 	}
-	delete(r.tracks, track.ID())
+
+	found := false
+	for idx, info := range infos {
+		if info.Track == track {
+			r.tracks[trackID] = slices.Delete(r.tracks[trackID], idx, idx+1)
+			if len(r.tracks[trackID]) == 0 {
+				delete(r.tracks, trackID)
+			}
+			found = true
+			break
+		}
+	}
 	r.lock.Unlock()
 
-	n := r.removedNotifier.GetNotifier(string(track.ID()))
+	if !found {
+		return
+	}
+
+	n := r.removedNotifier.GetNotifier(string(trackID))
 	if n != nil {
 		n.NotifyChanged()
 	}
 
-	r.changedNotifier.RemoveNotifier(string(track.ID()), true)
-	r.removedNotifier.RemoveNotifier(string(track.ID()), true)
+	r.changedNotifier.RemoveNotifier(string(trackID), true)
+	r.removedNotifier.RemoveNotifier(string(trackID), true)
 }
 
 func (r *RoomTrackManager) GetTrackInfo(trackID livekit.TrackID) *TrackInfo {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	info := r.tracks[trackID]
-	if info == nil {
+	infos := r.tracks[trackID]
+	if len(infos) == 0 {
 		return nil
 	}
+
+	// earliest added track is used till it is removed
+	info := infos[0]
+
 	// when track is about to close, do not resolve
 	if info.Track != nil && !info.Track.IsOpen() {
 		return nil

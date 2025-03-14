@@ -376,7 +376,7 @@ func (t *MediaTrackReceiver) ClearReceiver(mime mime.MimeType, isExpectedToResum
 }
 
 func (t *MediaTrackReceiver) ClearAllReceivers(isExpectedToResume bool) {
-	t.params.Logger.Debugw("clearing all receivers")
+	t.params.Logger.Debugw("clearing all receivers", "isExpectedToResume", isExpectedToResume)
 	t.lock.Lock()
 	receivers := t.receivers
 	t.receivers = nil
@@ -408,12 +408,15 @@ func (t *MediaTrackReceiver) IsOpen() bool {
 	return true
 }
 
-func (t *MediaTrackReceiver) SetClosing() {
+func (t *MediaTrackReceiver) SetClosing(isExpectedToResume bool) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
+
 	if t.state == mediaTrackReceiverStateOpen {
 		t.state = mediaTrackReceiverStateClosing
 	}
+
+	t.isExpectedToResume = isExpectedToResume
 }
 
 func (t *MediaTrackReceiver) TryClose() bool {
@@ -603,6 +606,7 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 	t.lock.RUnlock()
 
 	if remove {
+		t.params.Logger.Debugw("removing susbcriber on a not-open track", "subscriberID", sub.ID(), "isExpectedToResume", isExpectedToResume)
 		_ = t.MediaTrackSubscriptions.RemoveSubscriber(sub.ID(), isExpectedToResume)
 		return nil, ErrNotOpen
 	}
@@ -617,7 +621,7 @@ func (t *MediaTrackReceiver) RemoveSubscriber(subscriberID livekit.ParticipantID
 }
 
 func (t *MediaTrackReceiver) removeAllSubscribersForMime(mime mime.MimeType, isExpectedToResume bool) {
-	t.params.Logger.Debugw("removing all subscribers for mime", "mime", mime)
+	t.params.Logger.Debugw("removing all subscribers for mime", "mime", mime, "isExpectedToResume", isExpectedToResume)
 	for _, subscriberID := range t.MediaTrackSubscriptions.GetAllSubscribersForMime(mime) {
 		t.RemoveSubscriber(subscriberID, isExpectedToResume)
 	}

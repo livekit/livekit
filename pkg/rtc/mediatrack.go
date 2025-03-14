@@ -304,7 +304,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			sfu.WithForwardStats(t.params.ForwardStats),
 		)
 		newWR.OnCloseHandler(func() {
-			t.MediaTrackReceiver.SetClosing()
+			t.MediaTrackReceiver.SetClosing(false)
 			t.MediaTrackReceiver.ClearReceiver(mimeType, false)
 			if t.MediaTrackReceiver.TryClose() {
 				if t.dynacastManager != nil {
@@ -460,7 +460,7 @@ func (t *MediaTrack) Restart() {
 }
 
 func (t *MediaTrack) Close(isExpectedToResume bool) {
-	t.MediaTrackReceiver.SetClosing()
+	t.MediaTrackReceiver.SetClosing(isExpectedToResume)
 	if t.dynacastManager != nil {
 		t.dynacastManager.Close()
 	}
