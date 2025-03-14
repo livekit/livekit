@@ -710,6 +710,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 
 	// remove all published tracks
 	for _, t := range p.GetPublishedTracks() {
+		p.RemovePublishedTrack(t, false, true)
 		r.trackManager.RemoveTrack(t)
 	}
 
