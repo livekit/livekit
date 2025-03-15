@@ -2,7 +2,7 @@ module github.com/livekit/livekit-server
 
 go 1.23.0
 
-toolchain go1.23.6
+toolchain go1.24.1
 
 require (
 	github.com/bep/debounce v1.2.1
@@ -10,7 +10,7 @@ require (
 	github.com/dennwc/iters v1.0.1
 	github.com/dustin/go-humanize v1.0.1
 	github.com/elliotchance/orderedmap/v2 v2.7.0
-	github.com/florianl/go-tc v0.4.4
+	github.com/florianl/go-tc v0.4.5
 	github.com/frostbyte73/core v0.1.1
 	github.com/gammazero/deque v1.0.0
 	github.com/gammazero/workerpool v1.1.3
@@ -43,14 +43,14 @@ require (
 	github.com/pion/turn/v4 v4.0.0
 	github.com/pion/webrtc/v4 v4.0.11
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v1.20.5
+	github.com/prometheus/client_golang v1.21.1
 	github.com/redis/go-redis/v9 v9.7.1
 	github.com/rs/cors v1.11.1
 	github.com/stretchr/testify v1.10.0
 	github.com/thoas/go-funk v0.9.3
 	github.com/twitchtv/twirp v8.1.3+incompatible
-	github.com/ua-parser/uap-go v0.0.0-20250126222208-a52596c19dff
-	github.com/urfave/cli/v2 v2.27.5
+	github.com/ua-parser/uap-go v0.0.0-20250213224047-9c035f085b90
+	github.com/urfave/cli/v2 v2.27.6
 	github.com/urfave/negroni/v3 v3.1.1
 	go.uber.org/atomic v1.11.0
 	go.uber.org/multierr v1.11.0
@@ -118,7 +118,7 @@ require (
 	github.com/pion/stun/v3 v3.0.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
-	github.com/prometheus/common v0.55.0 // indirect
+	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/puzpuzpuz/xsync/v3 v3.5.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
