@@ -11,7 +11,7 @@ replace github.com/livekit/psrpc v0.2.10 => github.com/dTelecom/psrpc v1.0.16
 require (
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.14.0
-	github.com/dTelecom/pubsub-solana v1.0.2-0.20250306160139-af4b61e3782e
+	github.com/dTelecom/pubsub-solana v1.0.2-0.20250316215756-7a0400066516
 	github.com/elliotchance/orderedmap/v2 v2.2.0
 	github.com/florianl/go-tc v0.4.2
 	github.com/frostbyte73/core v0.0.5

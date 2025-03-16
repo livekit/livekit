@@ -35,10 +35,8 @@ github.com/dTelecom/protocol v1.0.18 h1:ZIAzUAnN4PdTib+IfqlIUv5OwTw4/sqlk55sW8ax
 github.com/dTelecom/protocol v1.0.18/go.mod h1:jjAYPgeKzrmNuNjmeDXRrfW0uUYmZBppxJkzNXRsMLs=
 github.com/dTelecom/psrpc v1.0.16 h1:WltSApMr72WdOd+goHuRK5steg7b0y6q9rZ1qTFMBGY=
 github.com/dTelecom/psrpc v1.0.16/go.mod h1:K0j8f1PgLShR7Lx80KbmwFkDH2BvOnycXGV0OSRURKc=
-github.com/dTelecom/pubsub-solana v1.0.1 h1:zZhSuDHZMkxn0rj4qNOvutXqIN47cnXDtHnQy0oYzOc=
-github.com/dTelecom/pubsub-solana v1.0.1/go.mod h1:q+Jr9NhYjGutFj3HM2vUtrX76bFn+rMU9mpJGGcLh1k=
-github.com/dTelecom/pubsub-solana v1.0.2-0.20250306160139-af4b61e3782e h1:CcIpVsF7w16BrzPTEjadv0BI6YvPTbVXY4xa9m0Px18=
-github.com/dTelecom/pubsub-solana v1.0.2-0.20250306160139-af4b61e3782e/go.mod h1:q+Jr9NhYjGutFj3HM2vUtrX76bFn+rMU9mpJGGcLh1k=
+github.com/dTelecom/pubsub-solana v1.0.2-0.20250316215756-7a0400066516 h1:RPt/MRUOdf5E/ra8AuX8O+r61IIFkgHXyzvgQc5SHqs=
+github.com/dTelecom/pubsub-solana v1.0.2-0.20250316215756-7a0400066516/go.mod h1:q+Jr9NhYjGutFj3HM2vUtrX76bFn+rMU9mpJGGcLh1k=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

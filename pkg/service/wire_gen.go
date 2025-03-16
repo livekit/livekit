@@ -20,6 +20,7 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/egress"
 	livekit2 "github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	redis2 "github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
@@ -239,7 +240,7 @@ func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler, T
 func newPubSub(conf *config.Config, nodeProvider *NodeProvider) (*pubsub_solana.PubSub, error) {
 	ctx := context.Background()
 
-	pubSub := pubsub_solana.New(conf.Solana.NetworkHostHTTP, conf.Solana.NetworkHostWS, conf.Solana.EphemeralHostHTTP, conf.Solana.EphemeralHostWS, conf.Solana.WalletPrivateKey)
+	pubSub := pubsub_solana.New(logger.GetLogger(), conf.Solana.NetworkHostHTTP, conf.Solana.NetworkHostWS, conf.Solana.EphemeralHostHTTP, conf.Solana.EphemeralHostWS, conf.Solana.WalletPrivateKey)
 
 	go func() {
 		var nodesMap map[string]Node
