@@ -975,7 +975,12 @@ func (p *ParticipantImpl) handleMigrateTracks() []*MediaTrack {
 // records track details and lets client know it's ok to proceed
 func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 	if !p.CanPublishSource(req.Source) {
-		p.pubLogger.Warnw("no permission to publish track", nil)
+		p.pubLogger.Warnw("no permission to publish track", nil, "trackID", req.Sid, "kind", req.Type)
+		return
+	}
+
+	if req.Type != livekit.TrackType_AUDIO && req.Type != livekit.TrackType_VIDEO {
+		p.pubLogger.Warnw("unsupported track type", nil, "trackID", req.Sid, "kind", req.Type)
 		return
 	}
 
