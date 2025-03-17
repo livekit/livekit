@@ -119,6 +119,10 @@ type sequencer struct {
 }
 
 func newSequencer(size int, maybeSparse bool, logger logger.Logger) *sequencer {
+	if size == 0 {
+		return nil
+	}
+
 	s := &sequencer{
 		size:      size,
 		startTime: time.Now().UnixNano(),
