@@ -145,6 +145,8 @@ type Buffer struct {
 	rtxPktBuf           []byte
 
 	absCaptureTimeExtID uint8
+
+	keyFrameSeederGeneration atomic.Int32
 }
 
 // NewBuffer constructs a new Buffer
@@ -308,7 +310,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	b.bound = true
 
 	if mime.IsMimeTypeVideo(b.mime) {
-		go b.seedKeyFrame()
+		go b.seedKeyFrame(b.keyFrameSeederGeneration.Inc())
 	}
 }
 
@@ -810,7 +812,7 @@ func (b *Buffer) handleCodecChange(newPT uint8) {
 	}
 
 	if mime.IsMimeTypeVideo(b.mime) {
-		go b.seedKeyFrame()
+		go b.seedKeyFrame(b.keyFrameSeederGeneration.Inc())
 	}
 }
 
@@ -1239,7 +1241,7 @@ func (b *Buffer) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 	return nil
 }
 
-func (b *Buffer) seedKeyFrame() {
+func (b *Buffer) seedKeyFrame(keyFrameSeederGeneration int32) {
 	// a key frame is needed especially when using Dependency Descriptor
 	// to get the DD structure which is used in parsing subsequent packets,
 	// till then packets are dropped which results in stream tracker not
@@ -1255,7 +1257,7 @@ func (b *Buffer) seedKeyFrame() {
 	defer ticker.Stop()
 
 	for {
-		if b.closed.Load() {
+		if b.closed.Load() || b.keyFrameSeederGeneration.Load() != keyFrameSeederGeneration {
 			return
 		}
 
