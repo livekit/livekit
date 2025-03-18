@@ -255,6 +255,7 @@ func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {
 		MinScore:    minScore,
 		MedianScore: utils.MedianFloat32(scores),
 		Streams:     []*livekit.AnalyticsStream{coalescedStream},
+		Mime:        stats[len(stats)-1].Mime, // use the latest Mime
 	}
 	numScores := len(scores)
 	if numScores > 0 {
