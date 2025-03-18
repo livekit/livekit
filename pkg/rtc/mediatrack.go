@@ -315,16 +315,22 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 
 		// SIMULCAST-CODEC-TODO: these need to be receiver/mime aware, setting it up only for primary now
 		newWR.OnStatsUpdate(func(_ *sfu.WebRTCReceiver, stat *livekit.AnalyticsStat) {
-			if priority == 0 || t.regressionTargetCodecReceived {
-				// send for only one codec, either primary (priority == 0) OR regressed codec
+			// send for only one codec, either primary (priority == 0) OR regressed codec
+			t.lock.RLock()
+			regressionTargetCodecReceived := t.regressionTargetCodecReceived
+			t.lock.RUnlock()
+			if priority == 0 || regressionTargetCodecReceived {
 				key := telemetry.StatsKeyForTrack(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), ti.Source, ti.Type)
 				t.params.Telemetry.TrackStats(key, stat)
 			}
 		})
 
 		newWR.OnMaxLayerChange(func(maxLayer int32) {
-			if priority == 0 || t.regressionTargetCodecReceived {
-				// send for only one codec, either primary (priority == 0) OR regressed codec
+			// send for only one codec, either primary (priority == 0) OR regressed codec
+			t.lock.RLock()
+			regressionTargetCodecReceived := t.regressionTargetCodecReceived
+			t.lock.RUnlock()
+			if priority == 0 || regressionTargetCodecReceived {
 				t.MediaTrackReceiver.NotifyMaxLayerChange(maxLayer)
 			}
 		})
