@@ -2369,9 +2369,7 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) *li
 		for i, ti := range pti.trackInfos {
 			if livekit.TrackID(ti.Sid) == trackID {
 				ti = utils.CloneProto(ti)
-				if !changed && ti.Muted != muted {
-					changed = true
-				}
+				changed = changed || ti.Muted != muted
 				ti.Muted = muted
 				pti.trackInfos[i] = ti
 				if trackInfo == nil {
