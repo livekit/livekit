@@ -2357,37 +2357,37 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) *li
 		p.supervisor.SetPublicationMute(trackID, muted)
 	}
 
-	track := p.UpTrackManager.SetPublishedTrackMuted(trackID, muted)
+	track, changed := p.UpTrackManager.SetPublishedTrackMuted(trackID, muted)
 	var trackInfo *livekit.TrackInfo
 	if track != nil {
 		trackInfo = track.ToProto()
 	}
 
-	isPending := false
+	// update mute status in any pending/queued add track requests too
 	p.pendingTracksLock.RLock()
 	for _, pti := range p.pendingTracks {
 		for i, ti := range pti.trackInfos {
 			if livekit.TrackID(ti.Sid) == trackID {
 				ti = utils.CloneProto(ti)
+				if !changed && ti.Muted != muted {
+					changed = true
+				}
 				ti.Muted = muted
 				pti.trackInfos[i] = ti
-				isPending = true
-				trackInfo = ti
+				if trackInfo == nil {
+					trackInfo = ti
+				}
 			}
 		}
 	}
 	p.pendingTracksLock.RUnlock()
 
-	if trackInfo != nil {
+	if trackInfo != nil && changed {
 		if muted {
 			p.params.Telemetry.TrackMuted(context.Background(), p.ID(), trackInfo)
 		} else {
 			p.params.Telemetry.TrackUnmuted(context.Background(), p.ID(), trackInfo)
 		}
-	}
-
-	if !isPending && track == nil {
-		p.pubLogger.Debugw("could not locate track", "trackID", trackID)
 	}
 
 	return trackInfo
