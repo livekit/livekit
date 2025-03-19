@@ -197,6 +197,9 @@ type TURNConfig struct {
 	RelayPortRangeStart uint16 `yaml:"relay_range_start,omitempty"`
 	RelayPortRangeEnd   uint16 `yaml:"relay_range_end,omitempty"`
 	ExternalTLS         bool   `yaml:"external_tls,omitempty"`
+
+	// Support project specific TURN domains
+	ProjectSubdomainTemplate string `yaml:"project_subdomain_template,omitempty"`
 }
 
 type NodeSelectorConfig struct {
