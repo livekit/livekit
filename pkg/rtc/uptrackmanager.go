@@ -116,13 +116,15 @@ func (u *UpTrackManager) OnPublishedTrackUpdated(f func(track types.MediaTrack))
 	u.onTrackUpdated = f
 }
 
-func (u *UpTrackManager) SetPublishedTrackMuted(trackID livekit.TrackID, muted bool) types.MediaTrack {
+func (u *UpTrackManager) SetPublishedTrackMuted(trackID livekit.TrackID, muted bool) (types.MediaTrack, bool) {
+	changed := false
 	track := u.GetPublishedTrack(trackID)
 	if track != nil {
 		currentMuted := track.IsMuted()
 		track.SetMuted(muted)
 
 		if currentMuted != track.IsMuted() {
+			changed = true
 			u.params.Logger.Debugw("publisher mute status changed", "trackID", trackID, "muted", track.IsMuted())
 			if u.onTrackUpdated != nil {
 				u.onTrackUpdated(track)
@@ -130,7 +132,7 @@ func (u *UpTrackManager) SetPublishedTrackMuted(trackID livekit.TrackID, muted b
 		}
 	}
 
-	return track
+	return track, changed
 }
 
 func (u *UpTrackManager) GetPublishedTrack(trackID livekit.TrackID) types.MediaTrack {
