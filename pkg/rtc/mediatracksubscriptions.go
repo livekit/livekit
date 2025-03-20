@@ -166,7 +166,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	})
 
 	if !sub.Hidden() {
-		subTrack.AddOnBind(func(err error) {
+		downTrack.OnBindAndConnected(func() {
 			if err == nil {
 				t.params.MediaTrack.OnTrackSubscribed()
 			}

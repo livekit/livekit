@@ -293,6 +293,7 @@ type DownTrack struct {
 	bindState           atomic.Value
 	onBinding           func(error)
 	bindOnReceiverReady func()
+	onBindAndConnected  func()
 
 	isClosed             atomic.Bool
 	connected            atomic.Bool
@@ -1501,6 +1502,13 @@ func (d *DownTrack) OnBinding(fn func(error)) {
 	d.onBinding = fn
 }
 
+func (d *DownTrack) OnBindAndConnected(fn func()) {
+	d.bindLock.Lock()
+	defer d.bindLock.Unlock()
+
+	d.onBindAndConnected = fn
+}
+
 func (d *DownTrack) AddReceiverReportListener(listener ReceiverReportListener) {
 	d.listenerLock.Lock()
 	defer d.listenerLock.Unlock()
@@ -2409,6 +2417,9 @@ func (d *DownTrack) onBindAndConnectedChange() {
 	}
 	d.writable.Store(d.connected.Load() && d.bindState.Load() == bindStateBound)
 	if d.connected.Load() && d.bindState.Load() == bindStateBound && !d.bindAndConnectedOnce.Swap(true) {
+		if f := d.onBindAndConnected; f != nil {
+			go f()
+		}
 		if d.activePaddingOnMuteUpTrack.Load() {
 			go d.sendPaddingOnMute()
 		}
