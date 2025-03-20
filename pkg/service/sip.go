@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/dennwc/iters"
@@ -188,7 +189,39 @@ func (s *SIPService) UpdateSIPInboundTrunk(ctx context.Context, req *livekit.Upd
 		"trunkID", req.SipTrunkId,
 	)
 
-	return nil, twirp.NewError(twirp.Unimplemented, "not implemented")
+	// Validate all trunks including the new one first.
+	info, err := s.store.LoadSIPInboundTrunk(ctx, req.SipTrunkId)
+	if err != nil {
+		return nil, err
+	}
+	switch a := req.Action.(type) {
+	default:
+		return nil, errors.New("missing or unsupported action")
+	case livekit.UpdateSIPInboundTrunkRequestAction:
+		if err = a.Apply(info); err != nil {
+			return nil, err
+		}
+	}
+
+	it, err := ListSIPInboundTrunk(ctx, s.store, &livekit.ListSIPInboundTrunkRequest{
+		Numbers: info.Numbers,
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer it.Close()
+	if err = sip.ValidateTrunksIter(it, sip.WithTrunkReplace(func(t *livekit.SIPInboundTrunkInfo) *livekit.SIPInboundTrunkInfo {
+		if req.SipTrunkId == t.SipTrunkId {
+			return info // updated one
+		}
+		return t
+	})); err != nil {
+		return nil, err
+	}
+	if err := s.store.StoreSIPInboundTrunk(ctx, info); err != nil {
+		return nil, err
+	}
+	return info, nil
 }
 
 func (s *SIPService) UpdateSIPOutboundTrunk(ctx context.Context, req *livekit.UpdateSIPOutboundTrunkRequest) (*livekit.SIPOutboundTrunkInfo, error) {
@@ -207,7 +240,23 @@ func (s *SIPService) UpdateSIPOutboundTrunk(ctx context.Context, req *livekit.Up
 		"trunkID", req.SipTrunkId,
 	)
 
-	return nil, twirp.NewError(twirp.Unimplemented, "not implemented")
+	info, err := s.store.LoadSIPOutboundTrunk(ctx, req.SipTrunkId)
+	if err != nil {
+		return nil, err
+	}
+	switch a := req.Action.(type) {
+	default:
+		return nil, errors.New("missing or unsupported action")
+	case livekit.UpdateSIPOutboundTrunkRequestAction:
+		if err = a.Apply(info); err != nil {
+			return nil, err
+		}
+	}
+	// No additional validation needed for outbound.
+	if err := s.store.StoreSIPOutboundTrunk(ctx, info); err != nil {
+		return nil, err
+	}
+	return info, nil
 }
 
 func (s *SIPService) GetSIPInboundTrunk(ctx context.Context, req *livekit.GetSIPInboundTrunkRequest) (*livekit.GetSIPInboundTrunkResponse, error) {
@@ -406,7 +455,40 @@ func (s *SIPService) UpdateSIPDispatchRule(ctx context.Context, req *livekit.Upd
 		"ruleID", req.SipDispatchRuleId,
 	)
 
-	return nil, twirp.NewError(twirp.Unimplemented, "not implemented")
+	// Validate all trunks including the new one first.
+	info, err := s.store.LoadSIPDispatchRule(ctx, req.SipDispatchRuleId)
+	if err != nil {
+		return nil, err
+	}
+	switch a := req.Action.(type) {
+	default:
+		return nil, errors.New("missing or unsupported action")
+	case livekit.UpdateSIPDispatchRuleRequestAction:
+		if err = a.Apply(info); err != nil {
+			return nil, err
+		}
+	}
+
+	it, err := ListSIPDispatchRule(ctx, s.store, &livekit.ListSIPDispatchRuleRequest{
+		TrunkIds: info.TrunkIds,
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer it.Close()
+	if _, err = sip.ValidateDispatchRulesIter(it, sip.WithDispatchRuleReplace(func(t *livekit.SIPDispatchRuleInfo) *livekit.SIPDispatchRuleInfo {
+		if req.SipDispatchRuleId == t.SipDispatchRuleId {
+			return info // updated one
+		}
+		return t
+	})); err != nil {
+		return nil, err
+	}
+
+	if err := s.store.StoreSIPDispatchRule(ctx, info); err != nil {
+		return nil, err
+	}
+	return info, nil
 }
 
 func ListSIPDispatchRule(ctx context.Context, s SIPStore, req *livekit.ListSIPDispatchRuleRequest, add ...*livekit.SIPDispatchRuleInfo) (iters.Iter[*livekit.SIPDispatchRuleInfo], error) {
