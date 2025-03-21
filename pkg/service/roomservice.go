@@ -133,7 +133,7 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	}
 
 	// ensure at least one node is available to handle the request
-	_, err = s.router.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: req.Room})
+	room, err := s.router.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: req.Room})
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +145,7 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 
 	err = s.roomStore.DeleteRoom(ctx, livekit.RoomName(req.Room))
 	res := &livekit.DeleteRoomResponse{}
-	RecordResponse(ctx, res)
+	RecordResponse(ctx, room)
 	return res, err
 }
 
@@ -309,6 +309,24 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 
 	RecordResponse(ctx, room)
 	return room, nil
+}
+
+func (s *RoomService) ForwardParticipant(ctx context.Context, req *livekit.ForwardParticipantRequest) (*livekit.ForwardParticipantResponse, error) {
+	RecordRequest(ctx, req)
+
+	roomName := livekit.RoomName(req.Room)
+	AppendLogFields(ctx, "room", roomName, "participant", req.Identity)
+	if err := EnsureAdminPermission(ctx, roomName); err != nil {
+		return nil, twirpAuthError(err)
+	}
+
+	if req.Room == req.DestinationRoom {
+		return nil, twirp.InvalidArgumentError(ErrForwardToSameRoom.Error(), "")
+	}
+
+	res, err := s.participantClient.ForwardParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
+	RecordResponse(ctx, res)
+	return res, err
 }
 
 func redactCreateRoomRequest(req *livekit.CreateRoomRequest) *livekit.CreateRoomRequest {

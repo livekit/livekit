@@ -226,9 +226,11 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	loggerFields := []any{
 		"participant", pi.Identity,
-		"pID", pi.ID,
 		"room", roomName,
 		"remote", false,
+	}
+	if pi.ID != "" {
+		loggerFields = append(loggerFields, "pID", pi.ID)
 	}
 	pLogger := utils.GetLogger(r.Context()).WithValues(loggerFields...)
 
@@ -257,8 +259,10 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	prometheus.IncrementParticipantJoin(1)
 
+	pLogger = pLogger.WithValues("connID", cr.ConnectionID)
 	if !pi.Reconnect && initialResponse.GetJoin() != nil {
 		pi.ID = livekit.ParticipantID(initialResponse.GetJoin().GetParticipant().GetSid())
+		pLogger = pLogger.WithValues("pID", pi.ID)
 	}
 
 	signalStats := telemetry.NewBytesSignalStats(r.Context(), s.telemetry)
@@ -277,10 +281,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	done := make(chan struct{})
 	// function exits when websocket terminates, it'll close the event reading off of request sink and response source as well
 	defer func() {
-		pLogger.Debugw("finishing WS connection",
-			"connID", cr.ConnectionID,
-			"closedByClient", closedByClient.Load(),
-		)
+		pLogger.Debugw("finishing WS connection", "closedByClient", closedByClient.Load())
 		cr.ResponseSource.Close()
 		cr.RequestSink.Close()
 		close(done)
@@ -314,8 +315,8 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	signalStats.AddBytes(uint64(count), true)
 
-	pLogger.Debugw("new client WS connected",
-		"connID", cr.ConnectionID,
+	pLogger.Debugw(
+		"new client WS connected",
 		"reconnect", pi.Reconnect,
 		"reconnectReason", pi.ReconnectReason,
 		"adaptiveStream", pi.AdaptiveStream,
@@ -343,7 +344,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			case msg := <-cr.ResponseSource.ReadChan():
 				if msg == nil {
-					pLogger.Debugw("nothing to read from response source", "connID", cr.ConnectionID)
+					pLogger.Debugw("nothing to read from response source")
 					return
 				}
 				res, ok := msg.(*livekit.SignalResponse)
@@ -351,7 +352,6 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					pLogger.Errorw(
 						"unexpected message type", nil,
 						"type", fmt.Sprintf("%T", msg),
-						"connID", cr.ConnectionID,
 					)
 					continue
 				}
@@ -389,7 +389,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if IsWebSocketCloseError(err) {
 				closedByClient.Store(true)
 			} else {
-				pLogger.Errorw("error reading from websocket", err, "connID", cr.ConnectionID)
+				pLogger.Errorw("error reading from websocket", err)
 			}
 			return
 		}
@@ -431,7 +431,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := cr.RequestSink.WriteMessage(req); err != nil {
-			pLogger.Warnw("error writing to request sink", err, "connID", cr.ConnectionID)
+			pLogger.Warnw("error writing to request sink", err)
 			return
 		}
 	}

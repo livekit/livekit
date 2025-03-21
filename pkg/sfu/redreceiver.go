@@ -21,6 +21,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/pion/rtp"
+	"github.com/pion/webrtc/v4"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/mediatransportutil/pkg/bucket"
@@ -86,6 +87,17 @@ func (r *RedReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int 
 	// otherwise it should be set to the correct value (marshal the primary rtp packet)
 	return r.downTrackSpreader.Broadcast(func(dt TrackSender) {
 		_ = dt.WriteRTP(&pPkt, spatialLayer)
+	})
+}
+
+func (r *RedReceiver) ForwardRTCPSenderReport(
+	payloadType webrtc.PayloadType,
+	isSVC bool,
+	layer int32,
+	publisherSRData *livekit.RTCPSenderReportState,
+) {
+	r.downTrackSpreader.Broadcast(func(dt TrackSender) {
+		_ = dt.HandleRTCPSenderReportData(payloadType, isSVC, layer, publisherSRData)
 	})
 }
 

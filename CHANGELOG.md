@@ -2,6 +2,71 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.4] - 2025-03-01
+
+### Added
+
+- Add support for datastream trailer (#3329)
+- Reject ingress if Enabled flag is false (#3293)
+- Use nonce in data messages to de-dupe SendData API. (#3366)
+- H265 supoort and codec regression (#3358)
+- Pass error details and timeouts. (#3402)
+- Webhook analytics event. (#3423)
+- add participant job type (#3443)
+- add datapacket stream metrics (#3450)
+- Implement SIP iterators. (#3332)
+- Add ice candidates logs for failed peerconnection (#3473)
+
+### Fixed
+
+- Disable SCTP zero checksum for old go client (#3319)
+- disable sctp zero checksum for unknown sdk (#3321)
+- remove code that deletes state from the store for rooms older than 24 hours (#3320)
+- Correct off-by-one lost count on a restart. (#3337)
+- Do not send DD extension if ID is 0. (#3339)
+- allocate node for autocreated room in agent dispatch (#3344)
+- Do not seed if stream is already writable. (#3347)
+- Clone pending tracks to prevent concurrent update. (#3359)
+- Resolve newer participant using higher precision join time. (#3360)
+- Resolve FromAsCasing warning in Dockerfile (#3356)
+- pass RoomConfig along when creating a new dispatch rule (#3367)
+- Reduce chances of metadata cache overflow. (#3369, #3370)
+- ReconnectResponse getting mutated due to mutation of client conf. (#3379)
+- fire TrackSubscribed event only when subscriber is visible (#3378)
+- fix internal signal protocol backward compatibility with 1.7.x (#3384)
+- Correct reason for poor/lost score. (#3397)
+- Do not skip due to large RR interval. (#3398)
+- Update config.go to properly process bool env vars (#3382)
+- consolidated mime type checks (#3407, #3418)
+- Ignore unknown mime in dynacast manager. (#3419)
+- Fix timing issue between track republish (#3428)
+- Catch up if the diff is exactly (1 << 16) also. (#3433)
+- Don't drop message if calculate duration is too small (#3442)
+- Dependent participants should not trigger count towards FirstJoinedAt (#3448)
+- Fix codec regression failed after migration (#3455)
+- Do not revoke track subscription on permission update for exempt participants. (#3458)
+
+### Changed
+
+- Remove duplicate SSRC get. (#3318)
+- Exempt egress participant from track permissions. (#3322)
+- Use nano time for easier (and hopefully) faster checks/calculations. (#3323)
+- move unrolled mime type check for broader use (#3326)
+- Request key frame if subscribed is higher than max seen and not congested. (#3348)
+- Request key frame on subscription change. (#3349)
+- Room creation time with ms resolution (#3362)
+- close signal session is request messages are undeliverable (#3364)
+- Declare congestion none only if both methods are in DQR. (#3372)
+- Clone TrackInfo to TrackPublishRequested event. (#3377)
+- Run bandwidth estimation when congestion is relieved also (#3380)
+- move ConnectedAt to Participant interface (#3383)
+- Starting on padding for RTX stream is accepted. (#3390)
+- Adjust receiver report sequence number to be within range of highest. (#3396)
+- Split down stream snapshot into sender view and receiver view. (#3422)
+- Seed on receiving forwarder state. (#3435)
+- Give more cache for RTX. (#3438)
+- Properly initialise DD layer selector. (#3467)
+
 ## [1.8.3] - 2025-01-07
 
 ### Added

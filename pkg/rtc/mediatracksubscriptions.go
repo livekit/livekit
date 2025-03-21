@@ -113,6 +113,8 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	case livekit.TrackType_VIDEO:
 		rtcpFeedback = t.params.SubscriberConfig.RTCPFeedback.Video
 		maxTrack = t.params.ReceiverConfig.PacketBufferSizeVideo
+	default:
+		t.params.Logger.Warnw("unexpected track type", nil, "kind", t.params.MediaTrack.Kind())
 	}
 	codecs := wr.Codecs()
 	for _, c := range codecs {
@@ -164,7 +166,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	})
 
 	if !sub.Hidden() {
-		subTrack.AddOnBind(func(err error) {
+		downTrack.OnBindAndConnected(func() {
 			if err == nil {
 				t.params.MediaTrack.OnTrackSubscribed()
 			}

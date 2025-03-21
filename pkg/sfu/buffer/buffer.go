@@ -145,6 +145,8 @@ type Buffer struct {
 	rtxPktBuf           []byte
 
 	absCaptureTimeExtID uint8
+
+	keyFrameSeederGeneration atomic.Int32
 }
 
 // NewBuffer constructs a new Buffer
@@ -306,6 +308,10 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	}
 	b.pPackets = nil
 	b.bound = true
+
+	if mime.IsMimeTypeVideo(b.mime) {
+		go b.seedKeyFrame(b.keyFrameSeederGeneration.Inc())
+	}
 }
 
 func (b *Buffer) OnCodecChange(fn func(webrtc.RTPCodecParameters)) {
@@ -499,14 +505,18 @@ func (b *Buffer) Close() error {
 	b.closeOnce.Do(func() {
 		b.closed.Store(true)
 
-		if b.rtpStats != nil {
-			b.rtpStats.Stop()
+		b.RLock()
+		rtpStats := b.rtpStats
+		b.RUnlock()
+
+		if rtpStats != nil {
+			rtpStats.Stop()
 			b.logger.Debugw("rtp stats",
 				"direction", "upstream",
-				"stats", b.rtpStats,
+				"stats", rtpStats,
 			)
 			if cb := b.getOnFinalRtpStats(); cb != nil {
-				cb(b.rtpStats.ToProto())
+				cb(rtpStats.ToProto())
 			}
 		}
 
@@ -800,6 +810,10 @@ func (b *Buffer) handleCodecChange(newPT uint8) {
 	if f := b.onCodecChange; f != nil {
 		go f(newCodec)
 	}
+
+	if mime.IsMimeTypeVideo(b.mime) {
+		go b.seedKeyFrame(b.keyFrameSeederGeneration.Inc())
+	}
 }
 
 func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime int64) rtpstats.RTPFlowState {
@@ -868,7 +882,15 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 	if b.ddParser != nil {
 		ddVal, videoLayer, err := b.ddParser.Parse(ep.Packet)
 		if err != nil {
-			return nil
+			if errors.Is(err, ErrDDExtentionNotFound) {
+				if b.mime == mime.MimeTypeVP8 {
+					b.logger.Infow("dd extension not found for vp8 packet, disable dd parser")
+					b.ddParser = nil
+					b.createFrameRateCalculator()
+				}
+			} else {
+				return nil
+			}
 		} else if ddVal != nil {
 			ep.DependencyDescriptor = ddVal
 			ep.VideoLayer = videoLayer
@@ -1217,6 +1239,53 @@ func (b *Buffer) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
 		return fc.GetFrameRate()
 	}
 	return nil
+}
+
+func (b *Buffer) seedKeyFrame(keyFrameSeederGeneration int32) {
+	// a key frame is needed especially when using Dependency Descriptor
+	// to get the DD structure which is used in parsing subsequent packets,
+	// till then packets are dropped which results in stream tracker not
+	// getting any data which means it does not declare layer start.
+	//
+	// send gratuitous PLIs for some time or until a key frame is seen to
+	// get the engine rolling
+	b.logger.Debugw("starting key frame seeder")
+	timer := time.NewTimer(30 * time.Second)
+	defer timer.Stop()
+
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		if b.closed.Load() || b.keyFrameSeederGeneration.Load() != keyFrameSeederGeneration {
+			return
+		}
+
+		select {
+		case <-timer.C:
+			b.logger.Infow("stopping key frame seeder: timeout")
+			return
+
+		case <-ticker.C:
+			b.RLock()
+			rtpStats := b.rtpStats
+			b.RUnlock()
+
+			if rtpStats != nil {
+				cnt, last := rtpStats.KeyFrame()
+				if cnt > 0 {
+					b.logger.Debugw(
+						"stopping key frame seeder: received key frame",
+						"keyFrameCount", cnt,
+						"lastKeyFrame", last,
+					)
+					return
+				}
+
+				b.SendPLI(false)
+			}
+		}
+	}
 }
 
 // ---------------------------------------------------------------

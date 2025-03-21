@@ -304,7 +304,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			sfu.WithForwardStats(t.params.ForwardStats),
 		)
 		newWR.OnCloseHandler(func() {
-			t.MediaTrackReceiver.SetClosing()
+			t.MediaTrackReceiver.SetClosing(false)
 			t.MediaTrackReceiver.ClearReceiver(mimeType, false)
 			if t.MediaTrackReceiver.TryClose() {
 				if t.dynacastManager != nil {
@@ -312,15 +312,30 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 				}
 			}
 		})
+
 		// SIMULCAST-CODEC-TODO: these need to be receiver/mime aware, setting it up only for primary now
-		if priority == 0 {
-			newWR.OnStatsUpdate(func(_ *sfu.WebRTCReceiver, stat *livekit.AnalyticsStat) {
+		newWR.OnStatsUpdate(func(_ *sfu.WebRTCReceiver, stat *livekit.AnalyticsStat) {
+			// send for only one codec, either primary (priority == 0) OR regressed codec
+			t.lock.RLock()
+			regressionTargetCodecReceived := t.regressionTargetCodecReceived
+			t.lock.RUnlock()
+			if priority == 0 || regressionTargetCodecReceived {
 				key := telemetry.StatsKeyForTrack(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), ti.Source, ti.Type)
 				t.params.Telemetry.TrackStats(key, stat)
-			})
+			}
+		})
 
-			newWR.OnMaxLayerChange(t.onMaxLayerChange)
-		}
+		newWR.OnMaxLayerChange(func(maxLayer int32) {
+			// send for only one codec, either primary (priority == 0) OR regressed codec
+			t.lock.RLock()
+			regressionTargetCodecReceived := t.regressionTargetCodecReceived
+			t.lock.RUnlock()
+			if priority == 0 || regressionTargetCodecReceived {
+				t.MediaTrackReceiver.NotifyMaxLayerChange(maxLayer)
+			}
+		})
+		// SIMULCAST-CODEC-TODO END: these need to be receiver/mime aware, setting it up only for primary now
+
 		if t.PrimaryReceiver() == nil {
 			// primary codec published, set potential codecs
 			potentialCodecs := make([]webrtc.RTPCodecParameters, 0, len(ti.Codecs))
@@ -447,10 +462,6 @@ func (t *MediaTrack) HasPendingCodec() bool {
 	return t.MediaTrackReceiver.PrimaryReceiver() == nil
 }
 
-func (t *MediaTrack) onMaxLayerChange(maxLayer int32) {
-	t.MediaTrackReceiver.NotifyMaxLayerChange(maxLayer)
-}
-
 func (t *MediaTrack) Restart() {
 	t.MediaTrackReceiver.Restart()
 
@@ -460,7 +471,7 @@ func (t *MediaTrack) Restart() {
 }
 
 func (t *MediaTrack) Close(isExpectedToResume bool) {
-	t.MediaTrackReceiver.SetClosing()
+	t.MediaTrackReceiver.SetClosing(isExpectedToResume)
 	if t.dynacastManager != nil {
 		t.dynacastManager.Close()
 	}

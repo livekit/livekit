@@ -50,11 +50,11 @@ func NewDependencyDescriptor(logger logger.Logger) *DependencyDescriptor {
 	}
 }
 
-func NewDependencyDescriptorFromNull(vls VideoLayerSelector) *DependencyDescriptor {
+func NewDependencyDescriptorFromOther(vls VideoLayerSelector) *DependencyDescriptor {
 	return &DependencyDescriptor{
-		Base:      vls.(*Null).Base,
+		Base:      vls.getBase(),
 		decisions: NewSelectorDecisionCache(256, 80),
-		fnWrapper: FrameNumberWrapper{logger: vls.(*Null).logger},
+		fnWrapper: FrameNumberWrapper{logger: vls.getLogger()},
 	}
 }
 

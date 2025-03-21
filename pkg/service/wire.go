@@ -165,7 +165,7 @@ func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webh
 		return nil, ErrWebHookMissingAPIKey
 	}
 
-	return webhook.NewDefaultNotifier(wc.APIKey, secret, wc.URLs), nil
+	return webhook.NewDefaultNotifier(wc, secret), nil
 }
 
 func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {

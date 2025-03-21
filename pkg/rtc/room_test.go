@@ -816,7 +816,7 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 			NodeId:   "testnode",
 			Region:   "testregion",
 		},
-		telemetry.NewTelemetryService(webhook.NewDefaultNotifier("", "", nil), &telemetryfakes.FakeAnalyticsService{}),
+		telemetry.NewTelemetryService(webhook.NewDefaultNotifier(webhook.DefaultWebHookConfig, ""), &telemetryfakes.FakeAnalyticsService{}),
 		nil, nil, nil,
 	)
 	for i := 0; i < opts.num+opts.numHidden; i++ {

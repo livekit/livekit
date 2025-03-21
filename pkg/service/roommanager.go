@@ -197,10 +197,7 @@ func (r *RoomManager) CloseIdleRooms() {
 	r.lock.RUnlock()
 
 	for _, room := range rooms {
-		reason := room.CloseIfEmpty()
-		if reason != "" {
-			room.Logger.Infow("closing idle room", "reason", reason)
-		}
+		room.CloseIfEmpty()
 	}
 }
 
@@ -774,6 +771,10 @@ func (r *RoomManager) UpdateParticipant(ctx context.Context, req *livekit.Update
 		participant.SetPermission(req.Permission)
 	}
 	return participant.ToProto(), nil
+}
+
+func (r *RoomManager) ForwardParticipant(ctx context.Context, req *livekit.ForwardParticipantRequest) (*livekit.ForwardParticipantResponse, error) {
+	return nil, errors.New("not implemented")
 }
 
 func (r *RoomManager) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomRequest) (*livekit.DeleteRoomResponse, error) {

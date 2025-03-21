@@ -190,20 +190,19 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 		if err != nil {
 			return info, err
 		}
-	}
-
-	// TODO Remove this store Ingress call for URL pull as it is redundant since
-	// the ingress service sends a CreateIngress RPC
-	_, err = s.io.CreateIngress(ctx, info)
-	switch err {
-	case nil:
-		break
-	case ingress.ErrIngressOutOfDate:
-		// Error returned if the ingress was already created by the ingress service
-		err = nil
-	default:
-		logger.Errorw("could not create ingress object", err)
-		return nil, err
+		// The Ingress instance will create the ingress object when handling the URL pull ingress
+	} else {
+		_, err = s.io.CreateIngress(ctx, info)
+		switch err {
+		case nil:
+			break
+		case ingress.ErrIngressOutOfDate:
+			// Error returned if the ingress was already created by the ingress service
+			err = nil
+		default:
+			logger.Errorw("could not create ingress object", err)
+			return nil, err
+		}
 	}
 
 	return info, nil

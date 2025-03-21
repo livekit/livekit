@@ -35,6 +35,7 @@ func NewSimulcastFromOther(vls VideoLayerSelector) *Simulcast {
 		return &Simulcast{
 			Base: vls.Base,
 		}
+
 	case *Simulcast:
 		return &Simulcast{
 			Base: vls.Base,

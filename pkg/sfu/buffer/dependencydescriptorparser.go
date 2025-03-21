@@ -30,6 +30,7 @@ import (
 var (
 	ErrFrameEarlierThanKeyFrame            = fmt.Errorf("frame is earlier than current keyframe")
 	ErrDDStructureAttachedToNonFirstPacket = fmt.Errorf("dependency descriptor structure is attached to non-first packet of a frame")
+	ErrDDExtentionNotFound                 = fmt.Errorf("dependency descriptor extension not found")
 )
 
 type DependencyDescriptorParser struct {
@@ -80,7 +81,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 		if ddNotFoundCount%100 == 0 {
 			r.logger.Warnw("dependency descriptor extension is not present", nil, "seq", pkt.SequenceNumber, "count", ddNotFoundCount)
 		}
-		return nil, videoLayer, nil
+		return nil, videoLayer, ErrDDExtentionNotFound
 	}
 
 	var ddVal dd.DependencyDescriptor
