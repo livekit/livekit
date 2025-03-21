@@ -52,6 +52,10 @@ type ServiceStore interface {
 	ListParticipants(ctx context.Context, roomName livekit.RoomName) ([]*livekit.ParticipantInfo, error)
 }
 
+type OSSServiceStore interface {
+	HasParticipant(context.Context, livekit.RoomName, livekit.ParticipantIdentity) (bool, error)
+}
+
 //counterfeiter:generate . EgressStore
 type EgressStore interface {
 	StoreEgress(ctx context.Context, info *livekit.EgressInfo) error

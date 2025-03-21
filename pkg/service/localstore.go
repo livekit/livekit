@@ -153,6 +153,11 @@ func (s *LocalStore) LoadParticipant(_ context.Context, roomName livekit.RoomNam
 	return participant, nil
 }
 
+func (s *LocalStore) HasParticipant(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) (bool, error) {
+	p, err := s.LoadParticipant(ctx, roomName, identity)
+	return p != nil, utils.ScreenError(err, ErrParticipantNotFound)
+}
+
 func (s *LocalStore) ListParticipants(_ context.Context, roomName livekit.RoomName) ([]*livekit.ParticipantInfo, error) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()

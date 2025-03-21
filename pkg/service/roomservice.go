@@ -238,6 +238,15 @@ func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.Update
 		return nil, twirpAuthError(err)
 	}
 
+	if os, ok := s.roomStore.(OSSServiceStore); ok {
+		found, err := os.HasParticipant(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity))
+		if err != nil {
+			return nil, err
+		} else if !found {
+			return nil, ErrParticipantNotFound
+		}
+	}
+
 	res, err := s.participantClient.UpdateParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
 	RecordResponse(ctx, res)
 	return res, err
