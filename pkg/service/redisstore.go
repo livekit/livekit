@@ -316,10 +316,7 @@ func (s *RedisStore) LoadParticipant(_ context.Context, roomName livekit.RoomNam
 
 func (s *RedisStore) HasParticipant(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) (bool, error) {
 	p, err := s.LoadParticipant(ctx, roomName, identity)
-	if err == ErrParticipantNotFound {
-		return false, nil
-	}
-	return p != nil, err
+	return p != nil, utils.ScreenError(err, ErrParticipantNotFound)
 }
 
 func (s *RedisStore) ListParticipants(_ context.Context, roomName livekit.RoomName) ([]*livekit.ParticipantInfo, error) {
