@@ -356,8 +356,6 @@ func TestSingleNodeUpdateParticipant(t *testing.T) {
 		require.Error(t, err)
 		var twErr twirp.Error
 		require.True(t, errors.As(err, &twErr))
-		// Note: for Cloud this would return 404, currently we are not able to differentiate between
-		// non-existent participant vs server being unavailable in OSS
 		require.Equal(t, twirp.NotFound, twErr.Code())
 	})
 }

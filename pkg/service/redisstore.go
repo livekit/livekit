@@ -314,6 +314,14 @@ func (s *RedisStore) LoadParticipant(_ context.Context, roomName livekit.RoomNam
 	return &pi, nil
 }
 
+func (s *RedisStore) HasParticipant(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) (bool, error) {
+	p, err := s.LoadParticipant(ctx, roomName, identity)
+	if err == ErrParticipantNotFound {
+		return false, nil
+	}
+	return p != nil, err
+}
+
 func (s *RedisStore) ListParticipants(_ context.Context, roomName livekit.RoomName) ([]*livekit.ParticipantInfo, error) {
 	key := RoomParticipantsPrefix + string(roomName)
 	items, err := s.rc.HVals(s.ctx, key).Result()
