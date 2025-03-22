@@ -165,7 +165,11 @@ func (h *TURNAuthHandler) CreateUsername(apiKey string, pID livekit.ParticipantI
 }
 
 func (h *TURNAuthHandler) ParseUsername(username string) (apiKey string, pID livekit.ParticipantID, err error) {
-	parts := strings.Split(username, "|")
+	decoded, err := base62.DecodeString(username)
+	if err != nil {
+		return "", "", err
+	}
+	parts := strings.Split(string(decoded), "|")
 	if len(parts) != 2 {
 		return "", "", errors.New("invalid username")
 	}
