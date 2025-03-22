@@ -164,6 +164,19 @@ func (h *TURNAuthHandler) CreateUsername(apiKey string, pID livekit.ParticipantI
 	return base62.EncodeToString([]byte(fmt.Sprintf("%s|%s", apiKey, pID)))
 }
 
+func (h *TURNAuthHandler) ParseUsername(username string) (apiKey string, pID livekit.ParticipantID, err error) {
+	decoded, err := base62.DecodeString(username)
+	if err != nil {
+		return "", "", err
+	}
+	parts := strings.Split(string(decoded), "|")
+	if len(parts) != 2 {
+		return "", "", errors.New("invalid username")
+	}
+
+	return parts[0], livekit.ParticipantID(parts[1]), nil
+}
+
 func (h *TURNAuthHandler) CreatePassword(apiKey string, pID livekit.ParticipantID) (string, error) {
 	secret := h.keyProvider.GetSecret(apiKey)
 	if secret == "" {
