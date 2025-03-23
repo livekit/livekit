@@ -272,6 +272,7 @@ func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 	track.AddOnClose(func(_isExpectedToResume bool) {
 		u.lock.Lock()
 		delete(u.publishedTracks, track.ID())
+		u.simulcastTrackIds.Delete(track.ID())
 		// not modifying subscription permissions, will get reset on next update from participant
 		u.lock.Unlock()
 	})
@@ -285,6 +286,7 @@ func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack, isExpected
 	}
 	u.lock.Lock()
 	delete(u.publishedTracks, track.ID())
+	u.simulcastTrackIds.Delete(track.ID())
 	u.lock.Unlock()
 }
 
