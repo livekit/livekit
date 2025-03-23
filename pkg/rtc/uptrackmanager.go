@@ -56,6 +56,8 @@ type UpTrackManager struct {
 	// callbacks & handlers
 	onClose        func()
 	onTrackUpdated func(track types.MediaTrack)
+
+	simulcastTrackIds sync.Map
 }
 
 func NewUpTrackManager(params UpTrackManagerParams) *UpTrackManager {
@@ -76,6 +78,7 @@ func (u *UpTrackManager) Close(isExpectedToResume bool) {
 
 	publishedTracks := u.publishedTracks
 	u.publishedTracks = make(map[livekit.TrackID]types.MediaTrack)
+	u.simulcastTrackIds.Clear()
 	u.lock.Unlock()
 
 	for _, t := range publishedTracks {

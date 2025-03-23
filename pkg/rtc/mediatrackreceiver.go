@@ -498,8 +498,8 @@ func (t *MediaTrackReceiver) SetSimulcast(simulcast bool) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
-	trackInfo := t.TrackInfoClone()
-	if trackInfo.Simulcast != simulcast {
+	if t.IsSimulcast() != simulcast {
+		trackInfo := t.TrackInfoClone()
 		trackInfo.Simulcast = simulcast
 		t.trackInfo.Store(trackInfo)
 	}

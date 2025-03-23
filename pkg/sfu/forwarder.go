@@ -223,7 +223,7 @@ type Forwarder struct {
 
 	started                  bool
 	preStartTime             time.Time
-	isSimulcast              bool
+	isReceiverSimulcast      bool
 	extFirstTS               uint64
 	lastSSRC                 uint32
 	lastReferencePayloadType int8
@@ -249,7 +249,7 @@ func NewForwarder(
 	logger logger.Logger,
 	skipReferenceTS bool,
 	rtpStats *rtpstats.RTPStatsSender,
-	isSimulcast bool,
+	isReceiverSimulcast bool,
 ) *Forwarder {
 	f := &Forwarder{
 		mime:                     mime.MimeTypeUnknown,
@@ -257,7 +257,7 @@ func NewForwarder(
 		logger:                   logger,
 		skipReferenceTS:          skipReferenceTS,
 		rtpStats:                 rtpStats,
-		isSimulcast:              isSimulcast,
+		isReceiverSimulcast:      isReceiverSimulcast,
 		referenceLayerSpatial:    buffer.InvalidLayerSpatial,
 		lastAllocation:           VideoAllocationDefault,
 		lastReferencePayloadType: -1,
@@ -354,13 +354,13 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 			}
 		} else {
 			if f.vls != nil {
-				if f.isSimulcast {
+				if f.isReceiverSimulcast {
 					f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
 				} else {
 					f.vls = videolayerselector.NewVP9FromOther(f.vls)
 				}
 			} else {
-				if f.isSimulcast {
+				if f.isReceiverSimulcast {
 					f.vls = videolayerselector.NewSimulcast(f.logger)
 				} else {
 					f.vls = videolayerselector.NewVP9(f.logger)

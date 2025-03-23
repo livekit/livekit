@@ -240,7 +240,7 @@ type DowntrackParams struct {
 	RTCPWriter                     func([]rtcp.Packet) error
 	DisableSenderReportPassThrough bool
 	SupportsCodecChange            bool
-	IsSimulcast                    bool
+	IsReceiverSimulcast            bool
 }
 
 // DownTrack implements TrackLocal, is the track used to write packets
@@ -406,7 +406,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		d.params.Logger,
 		false,
 		d.rtpStats,
-		d.params.IsSimulcast,
+		d.params.IsReceiverSimulcast,
 	)
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{

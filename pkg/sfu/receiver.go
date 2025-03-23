@@ -271,8 +271,6 @@ func NewWebRTCReceiver(
 	isSVC := false
 	isSimulcast := trackInfo.GetSimulcast()
 	if !isSimulcast {
-		// Q: What if someone wants to do single layer VP9/AV1?
-		// Will the SVC code handle this?
 		isSVC = mime.IsMimeTypeStringSVC(track.Codec().MimeType)
 	}
 	w.isSVC = isSVC

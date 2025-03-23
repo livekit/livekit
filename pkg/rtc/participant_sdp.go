@@ -272,3 +272,19 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 	answer.SDP = string(bytes)
 	return answer
 }
+
+func getTrackIDFromMediaDescription(m *sdp.MediaDescription) string {
+	trackID := ""
+	msid, ok := m.Attribute(sdp.AttrKeyMsid)
+	if ok {
+		if split := strings.Split(msid, " "); len(split) == 2 {
+			trackID = split[1]
+		}
+	}
+	return trackID
+}
+
+func isMediaDescriptionSimulcast(m *sdp.MediaDescription) bool {
+	_, ok := m.Attribute("simulcast")
+	return ok
+}

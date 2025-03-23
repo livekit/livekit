@@ -210,9 +210,6 @@ type ParticipantImpl struct {
 	enabledPublishCodecs   []*livekit.Codec
 	enabledSubscribeCodecs []*livekit.Codec
 
-	// map instead of list for faster lookup, avoiding duplicates and using a built-in sync data structure
-	simulcastTrackIds sync.Map
-
 	*TransportManager
 	*UpTrackManager
 	*SubscriptionManager
@@ -873,24 +870,6 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(offer webrtc.SessionDescrip
 	return nil
 }
 
-func (p *ParticipantImpl) getTrackIDFromMediaDescription(m *sdp.MediaDescription) string {
-	trackID := ""
-	msid, ok := m.Attribute(sdp.AttrKeyMsid)
-	if ok {
-		if split := strings.Split(msid, " "); len(split) == 2 {
-			trackID = split[1]
-		}
-	}
-	return trackID
-}
-
-func (p *ParticipantImpl) isMediaDescriptionSimulcast(m *sdp.MediaDescription) bool {
-	if _, ok := m.Attribute("simulcast"); ok {
-		return true
-	}
-	return false
-}
-
 func (p *ParticipantImpl) findAndStoreSimulcastTrackIds(offer webrtc.SessionDescription) {
 	parsed, err := offer.Unmarshal()
 	if err != nil {
@@ -901,8 +880,8 @@ func (p *ParticipantImpl) findAndStoreSimulcastTrackIds(offer webrtc.SessionDesc
 		if m.MediaName.Media != "video" {
 			continue
 		}
-		if p.isMediaDescriptionSimulcast(m) {
-			trackID := p.getTrackIDFromMediaDescription(m)
+		if isMediaDescriptionSimulcast(m) {
+			trackID := getTrackIDFromMediaDescription(m)
 			p.simulcastTrackIds.LoadOrStore(trackID, true)
 		}
 	}
