@@ -223,6 +223,7 @@ type Forwarder struct {
 
 	started                  bool
 	preStartTime             time.Time
+	isSimulcast              bool
 	extFirstTS               uint64
 	lastSSRC                 uint32
 	lastReferencePayloadType int8
@@ -248,6 +249,7 @@ func NewForwarder(
 	logger logger.Logger,
 	skipReferenceTS bool,
 	rtpStats *rtpstats.RTPStatsSender,
+	isSimulcast bool,
 ) *Forwarder {
 	f := &Forwarder{
 		mime:                     mime.MimeTypeUnknown,
@@ -255,6 +257,7 @@ func NewForwarder(
 		logger:                   logger,
 		skipReferenceTS:          skipReferenceTS,
 		rtpStats:                 rtpStats,
+		isSimulcast:              isSimulcast,
 		referenceLayerSpatial:    buffer.InvalidLayerSpatial,
 		lastAllocation:           VideoAllocationDefault,
 		lastReferencePayloadType: -1,
@@ -340,6 +343,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		}
 
 	case mime.MimeTypeVP9:
+
 		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
 		isDDAvailable := ddAvailable(extensions)
 		if isDDAvailable {
@@ -350,12 +354,20 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 			}
 		} else {
 			if f.vls != nil {
-				f.vls = videolayerselector.NewVP9FromOther(f.vls)
+				if f.isSimulcast {
+					f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
+				} else {
+					f.vls = videolayerselector.NewVP9FromOther(f.vls)
+				}
 			} else {
-				f.vls = videolayerselector.NewVP9(f.logger)
+				if f.isSimulcast {
+					f.vls = videolayerselector.NewSimulcast(f.logger)
+				} else {
+					f.vls = videolayerselector.NewVP9(f.logger)
+				}
 			}
 		}
-		// SVC-TODO: Support for VP9 simulcast. When DD is not available, have to pick selector based on VP9 SVC or Simulcast
+		// Q: Do we need a temporal layer selector for VP9?
 
 	case mime.MimeTypeAV1:
 		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
@@ -374,6 +386,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 			}
 		}
 		// SVC-TODO: Support for AV1 Simulcast
+		// Q: Does this need any VLS changes or any other changes in the code above?
 	}
 }
 

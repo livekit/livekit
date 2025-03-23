@@ -395,12 +395,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		return false
 	}
 
-	// LK-TODO: can remove this completely when VideoLayers protocol becomes the default as it has info from client or if we decide to use TrackInfo.Simulcast
-	if t.numUpTracks.Inc() > 1 || track.RID() != "" {
-		// cannot only rely on numUpTracks since we fire metadata events immediately after the first layer
-		t.SetSimulcast(true)
-	}
-
 	var bitrates int
 	if len(ti.Layers) > int(layer) {
 		bitrates = int(ti.Layers[layer].GetBitrate())

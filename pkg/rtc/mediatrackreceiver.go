@@ -499,8 +499,10 @@ func (t *MediaTrackReceiver) SetSimulcast(simulcast bool) {
 	defer t.lock.Unlock()
 
 	trackInfo := t.TrackInfoClone()
-	trackInfo.Simulcast = simulcast
-	t.trackInfo.Store(trackInfo)
+	if trackInfo.Simulcast != simulcast {
+		trackInfo.Simulcast = simulcast
+		t.trackInfo.Store(trackInfo)
+	}
 }
 
 func (t *MediaTrackReceiver) Name() string {
@@ -593,7 +595,7 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 		Logger:         tLogger,
 		DisableRed:     t.TrackInfo().GetDisableRed() || !t.params.AudioConfig.ActiveREDEncoding,
 	})
-	subTrack, err := t.MediaTrackSubscriptions.AddSubscriber(sub, wr)
+	subTrack, err := t.MediaTrackSubscriptions.AddSubscriber(sub, wr, t.IsSimulcast())
 
 	// media track could have been closed while adding subscription
 	remove := false

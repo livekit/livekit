@@ -210,6 +210,9 @@ type ParticipantImpl struct {
 	enabledPublishCodecs   []*livekit.Codec
 	enabledSubscribeCodecs []*livekit.Codec
 
+	// map instead of list for faster lookup, avoiding duplicates and using a built-in sync data structure
+	simulcastTrackIds sync.Map
+
 	*TransportManager
 	*UpTrackManager
 	*SubscriptionManager
@@ -870,9 +873,48 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(offer webrtc.SessionDescrip
 	return nil
 }
 
+func (p *ParticipantImpl) getTrackIDFromMediaDescription(m *sdp.MediaDescription) string {
+	trackID := ""
+	msid, ok := m.Attribute(sdp.AttrKeyMsid)
+	if ok {
+		if split := strings.Split(msid, " "); len(split) == 2 {
+			trackID = split[1]
+		}
+	}
+	return trackID
+}
+
+func (p *ParticipantImpl) isMediaDescriptionSimulcast(m *sdp.MediaDescription) bool {
+	if _, ok := m.Attribute("simulcast"); ok {
+		return true
+	}
+	return false
+}
+
+func (p *ParticipantImpl) findAndStoreSimulcastTrackIds(offer webrtc.SessionDescription) {
+	parsed, err := offer.Unmarshal()
+	if err != nil {
+		return
+	}
+
+	for _, m := range parsed.MediaDescriptions {
+		if m.MediaName.Media != "video" {
+			continue
+		}
+		if p.isMediaDescriptionSimulcast(m) {
+			trackID := p.getTrackIDFromMediaDescription(m)
+			p.simulcastTrackIds.LoadOrStore(trackID, true)
+		}
+	}
+}
+
 // HandleOffer an offer from remote participant, used when clients make the initial connection
 func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
 	p.pubLogger.Debugw("received offer", "transport", livekit.SignalTarget_PUBLISHER, "offer", offer)
+
+	if p.IsPublisher() {
+		p.findAndStoreSimulcastTrackIds(offer)
+	}
 
 	if p.params.UseOneShotSignallingMode {
 		if err := p.synthesizeAddTrackRequests(offer); err != nil {
@@ -2455,6 +2497,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 			// only assign version on a fresh publish, i. e. avoid updating version in scenarios like migration
 			ti.Version = p.params.VersionGenerator.Next().ToProto()
 		}
+
 		mt = p.addMediaTrack(signalCid, track.ID(), ti)
 		newTrack = true
 
@@ -2467,6 +2510,12 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 		pubTime = time.Since(createdAt)
 		p.dirty.Store(true)
 	}
+
+	isSimulcast, ok := p.simulcastTrackIds.Load(track.ID())
+	if !ok {
+		isSimulcast = false
+	}
+	mt.SetSimulcast(isSimulcast.(bool))
 
 	p.pendingTracksLock.Unlock()
 

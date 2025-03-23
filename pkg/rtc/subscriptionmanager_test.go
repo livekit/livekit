@@ -242,10 +242,7 @@ func TestUnsubscribe(t *testing.T) {
 		sm.lock.RLock()
 		subLen := len(sm.subscriptions)
 		sm.lock.RUnlock()
-		if subLen != 0 {
-			return false
-		}
-		return true
+		return subLen == 0
 	}, subSettleTimeout, subCheckInterval, "Track was not unsubscribed")
 
 	// no traces should be left
