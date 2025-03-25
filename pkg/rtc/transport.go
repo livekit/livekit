@@ -491,7 +491,14 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 				Config: params.CongestionControlConfig.SendSideBWE,
 				Logger: params.Logger,
 			})
-			t.pacer = pacer.NewNoQueue(params.Logger, t.bwe)
+			switch pacer.PacerBehavior(params.CongestionControlConfig.SendSideBWEPacer) {
+			case pacer.PacerBehaviorPassThrough:
+				t.pacer = pacer.NewPassThrough(params.Logger, t.bwe)
+			case pacer.PacerBehaviorNoQueue:
+				t.pacer = pacer.NewNoQueue(params.Logger, t.bwe)
+			default:
+				t.pacer = pacer.NewNoQueue(params.Logger, t.bwe)
+			}
 		} else {
 			t.bwe = remotebwe.NewRemoteBWE(remotebwe.RemoteBWEParams{
 				Config: params.CongestionControlConfig.RemoteBWE,

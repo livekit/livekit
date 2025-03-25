@@ -23,6 +23,14 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
+type PacerBehavior string
+
+const (
+	PacerBehaviorPassThrough PacerBehavior = "pass-through"
+	PacerBehaviorNoQueue     PacerBehavior = "no-queue"
+	PacerBehaviorLeakybucket PacerBehavior = "leaky-bucket"
+)
+
 type Packet struct {
 	Header             *rtp.Header
 	HeaderSize         int
