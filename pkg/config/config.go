@@ -31,6 +31,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/remotebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
+	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/livekit"
@@ -140,8 +141,9 @@ type CongestionControlConfig struct {
 
 	UseSendSideBWEInterceptor bool `yaml:"use_send_side_bwe_interceptor,omitempty"`
 
-	UseSendSideBWE bool                          `yaml:"use_send_side_bwe,omitempty"`
-	SendSideBWE    sendsidebwe.SendSideBWEConfig `yaml:"send_side_bwe,omitempty"`
+	UseSendSideBWE   bool                          `yaml:"use_send_side_bwe,omitempty"`
+	SendSideBWEPacer string                        `yaml:"send_side_bwe_pacer,omitempty"`
+	SendSideBWE      sendsidebwe.SendSideBWEConfig `yaml:"send_side_bwe,omitempty"`
 }
 
 type PlayoutDelayConfig struct {
@@ -319,6 +321,7 @@ var DefaultConfig = Config{
 			RemoteBWE:                 remotebwe.DefaultRemoteBWEConfig,
 			UseSendSideBWEInterceptor: false,
 			UseSendSideBWE:            false,
+			SendSideBWEPacer:          string(pacer.PacerBehaviorNoQueue),
 			SendSideBWE:               sendsidebwe.DefaultSendSideBWEConfig,
 		},
 	},

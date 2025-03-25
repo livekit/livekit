@@ -121,8 +121,8 @@ var (
 		MinBytesRatio:    0.5,
 		MinDurationRatio: 0.5,
 
-		JQRMinDelay: 40 * time.Millisecond,
-		DQRMaxDelay: 15 * time.Millisecond,
+		JQRMinDelay: 50 * time.Millisecond,
+		DQRMaxDelay: 20 * time.Millisecond,
 
 		WeightedLoss:       defaultWeightedLossConfig,
 		JQRMinWeightedLoss: 0.25,
@@ -452,8 +452,8 @@ var (
 		ProbeRegulator:   ccutils.DefaultProbeRegulatorConfig,
 		ProbeSignal:      defaultProbeSignalConfig,
 
-		JQRMinDelay: 40 * time.Millisecond,
-		DQRMaxDelay: 15 * time.Millisecond,
+		JQRMinDelay: 50 * time.Millisecond,
+		DQRMaxDelay: 20 * time.Millisecond,
 
 		WeightedLoss:       defaultWeightedLossConfig,
 		JQRMinWeightedLoss: 0.25,
