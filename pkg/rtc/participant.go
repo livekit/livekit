@@ -1760,11 +1760,13 @@ func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) err
 
 func (p *ParticipantImpl) removePublishedTrack(track types.MediaTrack) {
 	p.RemovePublishedTrack(track, false, true)
+
+	if lmt, ok := track.(types.LocalMediaTrack); ok {
+		p.simulcastTrackIds.Delete(lmt.SdpCid())
+	}
+
 	if p.ProtocolVersion().SupportsUnpublish() {
 		p.sendTrackUnpublished(track.ID())
-		if lmt, ok := track.(types.LocalMediaTrack); ok {
-			p.simulcastTrackIds.Delete(lmt.SdpCid())
-		}
 	} else {
 		// for older clients that don't support unpublish, mute to avoid them sending data
 		p.sendTrackMuted(track.ID(), true)
