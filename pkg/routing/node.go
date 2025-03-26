@@ -67,20 +67,25 @@ func NewLocalNode(conf *config.Config) (*LocalNodeImpl, error) {
 			},
 		},
 	}
+	var nsc *config.NodeStatsConfig
 	if conf != nil {
 		l.node.Ip = conf.RTC.NodeIP
 		l.node.Region = conf.Region
+
+		nsc = &conf.NodeStats
+	} else {
+		nsc = &config.DefaultNodeStatsConfig
 	}
 
 	// set up stats history to be able to measure different rate windows
 	var maxInterval time.Duration
-	for _, rateInterval := range conf.NodeStats.StatsRateMeasurementIntervals {
+	for _, rateInterval := range nsc.StatsRateMeasurementIntervals {
 		if rateInterval > maxInterval {
 			maxInterval = rateInterval
 		}
 	}
-	l.statsHistory = make([]*livekit.NodeStats, (maxInterval+conf.NodeStats.StatsUpdateInterval-1)/conf.NodeStats.StatsUpdateInterval)
-	l.rateIntervals = conf.NodeStats.StatsRateMeasurementIntervals
+	l.statsHistory = make([]*livekit.NodeStats, (maxInterval+nsc.StatsUpdateInterval-1)/nsc.StatsUpdateInterval)
+	l.rateIntervals = nsc.StatsRateMeasurementIntervals
 
 	return l, nil
 }
