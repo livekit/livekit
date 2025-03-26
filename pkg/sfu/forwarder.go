@@ -349,7 +349,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 			} else {
 				f.vls = videolayerselector.NewSimulcast(f.logger)
 			}
-			// TODO: Add temporal layer selector for VP9
+			// VP9-SIMULCAST-TODO: Add temporal layer selector for VP9
 		} else {
 			isDDAvailable := ddAvailable(extensions)
 			if isDDAvailable {
@@ -370,7 +370,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 	case mime.MimeTypeAV1:
 		isDDAvailable := ddAvailable(extensions)
 		if f.isReceiverSimulcast || !isDDAvailable {
-			// TODO: Add temporal layer selector for AV1
+			// AV1-SIMULCAST-TODO: Add temporal layer selector for AV1
 			if f.vls != nil {
 				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
 			} else {
