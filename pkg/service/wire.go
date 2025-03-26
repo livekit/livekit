@@ -53,6 +53,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createWebhookNotifier,
 		createClientConfiguration,
 		createForwardStats,
+		getNodeStatsConfig,
 		routing.CreateRouter,
 		getLimitConf,
 		config.DefaultAPIConfig,
@@ -116,6 +117,7 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 		getRoomConfig,
 		routing.NewRoomManagerClient,
 		rpc.NewKeepalivePubSub,
+		getNodeStatsConfig,
 		routing.CreateRouter,
 	)
 
@@ -268,4 +270,8 @@ func createForwardStats(conf *config.Config) *sfu.ForwardStats {
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
 	return NewTurnServer(conf, authHandler, false)
+}
+
+func getNodeStatsConfig(config *config.Config) config.NodeStatsConfig {
+	return config.NodeStats
 }

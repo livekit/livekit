@@ -33,11 +33,6 @@ import (
 )
 
 const (
-	// expire participant mappings after a day
-	participantMappingTTL = 24 * time.Hour
-	statsUpdateInterval   = 2 * time.Second
-	statsMaxDelaySeconds  = float64(30)
-
 	// hash of node_id => Node proto
 	NodesKey = "nodes"
 
@@ -209,11 +204,11 @@ func (r *RedisRouter) statsWorker() {
 	for r.ctx.Err() == nil {
 		// update periodically
 		select {
-		case <-time.After(statsUpdateInterval):
+		case <-time.After(r.nodeStatsConfig.StatsUpdateInterval):
 			r.kps.PublishPing(r.ctx, r.currentNode.NodeID(), &rpc.KeepalivePing{Timestamp: time.Now().Unix()})
 
 			delaySeconds := r.currentNode.SecondsSinceNodeStatsUpdate()
-			if delaySeconds > statsMaxDelaySeconds {
+			if delaySeconds > r.nodeStatsConfig.StatsMaxDelay.Seconds() {
 				if !goroutineDumped {
 					goroutineDumped = true
 					buf := bytes.NewBuffer(nil)
@@ -240,7 +235,7 @@ func (r *RedisRouter) keepaliveWorker(startedChan chan error) {
 	close(startedChan)
 
 	for ping := range pings.Channel() {
-		if time.Since(time.Unix(ping.Timestamp, 0)) > statsUpdateInterval {
+		if time.Since(time.Unix(ping.Timestamp, 0)) > r.nodeStatsConfig.StatsUpdateInterval {
 			logger.Infow("keep alive too old, skipping", "timestamp", ping.Timestamp)
 			continue
 		}

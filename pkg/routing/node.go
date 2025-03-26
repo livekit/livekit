@@ -45,8 +45,10 @@ type LocalNodeImpl struct {
 	lock sync.RWMutex
 	node *livekit.Node
 
-	// previous stats for computing averages
-	prevStats *livekit.NodeStats
+	// previous stats for computing rate
+	statsHistory         []*livekit.NodeStats
+	statsHistoryWritePtr int
+	rateIntervals        []time.Duration
 }
 
 func NewLocalNode(conf *config.Config) (*LocalNodeImpl, error) {
@@ -69,6 +71,17 @@ func NewLocalNode(conf *config.Config) (*LocalNodeImpl, error) {
 		l.node.Ip = conf.RTC.NodeIP
 		l.node.Region = conf.Region
 	}
+
+	// set up stats history to be able to measure different rate windows
+	var maxInterval time.Duration
+	for _, rateInterval := range conf.NodeStats.StatsRateMeasurementIntervals {
+		if rateInterval > maxInterval {
+			maxInterval = rateInterval
+		}
+	}
+	l.statsHistory = make([]*livekit.NodeStats, (maxInterval+conf.NodeStats.StatsUpdateInterval-1)/conf.NodeStats.StatsUpdateInterval)
+	l.rateIntervals = conf.NodeStats.StatsRateMeasurementIntervals
+
 	return l, nil
 }
 
@@ -138,18 +151,20 @@ func (l *LocalNodeImpl) UpdateNodeStats() bool {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
-	if l.prevStats == nil {
-		l.prevStats = l.node.Stats
-	}
-	updated, computedAvg, err := prometheus.GetUpdatedNodeStats(l.node.Stats, l.prevStats)
+	stats, err := prometheus.GetNodeStats(
+		l.node.Stats.StartedAt,
+		append(l.statsHistory[l.statsHistoryWritePtr:], l.statsHistory[0:l.statsHistoryWritePtr]...),
+		l.rateIntervals,
+	)
 	if err != nil {
 		logger.Errorw("could not update node stats", err)
 		return false
 	}
-	l.node.Stats = updated
-	if computedAvg {
-		l.prevStats = updated
-	}
+
+	l.node.Stats = stats
+
+	l.statsHistory[l.statsHistoryWritePtr] = stats
+	l.statsHistoryWritePtr = (l.statsHistoryWritePtr + 1) % len(l.statsHistory)
 	return true
 }
 

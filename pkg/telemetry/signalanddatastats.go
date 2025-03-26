@@ -121,7 +121,7 @@ func (s *BytesTrackStats) report() {
 }
 
 func (s *BytesTrackStats) reporter() {
-	ticker := time.NewTicker(telemetryNonMediaStatsUpdateInterval)
+	ticker := time.NewTicker(5 * time.Second)
 	defer func() {
 		ticker.Stop()
 		s.report()

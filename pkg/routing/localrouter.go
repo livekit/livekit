@@ -21,6 +21,7 @@ import (
 
 	"go.uber.org/atomic"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -32,6 +33,7 @@ type LocalRouter struct {
 	currentNode       LocalNode
 	signalClient      SignalClient
 	roomManagerClient RoomManagerClient
+	nodeStatsConfig   config.NodeStatsConfig
 
 	lock sync.RWMutex
 	// channels for each participant
@@ -44,11 +46,13 @@ func NewLocalRouter(
 	currentNode LocalNode,
 	signalClient SignalClient,
 	roomManagerClient RoomManagerClient,
+	nodeStatsConfig config.NodeStatsConfig,
 ) *LocalRouter {
 	return &LocalRouter{
 		currentNode:       currentNode,
 		signalClient:      signalClient,
 		roomManagerClient: roomManagerClient,
+		nodeStatsConfig:   nodeStatsConfig,
 		requestChannels:   make(map[string]*MessageChannel),
 		responseChannels:  make(map[string]*MessageChannel),
 	}
@@ -146,8 +150,7 @@ func (r *LocalRouter) statsWorker() {
 		if !r.isStarted.Load() {
 			return
 		}
-		// update every 10 seconds
-		<-time.After(statsUpdateInterval)
+		<-time.After(r.nodeStatsConfig.StatsUpdateInterval)
 		r.currentNode.UpdateNodeStats()
 	}
 }

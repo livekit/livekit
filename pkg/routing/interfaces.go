@@ -23,6 +23,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -162,8 +163,9 @@ func CreateRouter(
 	signalClient SignalClient,
 	roomManagerClient RoomManagerClient,
 	kps rpc.KeepalivePubSub,
+	nodeStatsConfig config.NodeStatsConfig,
 ) Router {
-	lr := NewLocalRouter(node, signalClient, roomManagerClient)
+	lr := NewLocalRouter(node, signalClient, roomManagerClient, nodeStatsConfig)
 
 	if rc != nil {
 		return NewRedisRouter(lr, rc, kps)

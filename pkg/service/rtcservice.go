@@ -309,7 +309,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// websocket established
 	sigConn := NewWSSignalConnection(conn)
-	pLogger.Debugw("sending join", "join", logger.Proto(initialResponse))
+	pLogger.Debugw("sending initial response", "response", logger.Proto(initialResponse))
 	count, err := sigConn.WriteResponse(initialResponse)
 	if err != nil {
 		pLogger.Warnw("could not write initial response", err)
