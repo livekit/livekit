@@ -55,7 +55,7 @@ type MediaTrack struct {
 
 	rttFromXR atomic.Bool
 
-	enableRegression              bool
+	backupCodecPolicy             livekit.BackupCodecPolicy
 	regressionTargetCodec         mime.MimeType
 	regressionTargetCodecReceived bool
 }
@@ -78,16 +78,16 @@ type MediaTrackParams struct {
 	OnRTCP                func([]rtcp.Packet)
 	ForwardStats          *sfu.ForwardStats
 	OnTrackEverSubscribed func(livekit.TrackID)
+	ShouldRegressCodec    func() bool
 }
 
 func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 	t := &MediaTrack{
-		params: params,
+		params:            params,
+		backupCodecPolicy: ti.BackupCodecPolicy,
 	}
 
-	// TODO: disable codec regression until simulcast-codec clients knows that
-	if ti.BackupCodecPolicy == livekit.BackupCodecPolicy_REGRESSION && len(ti.Codecs) > 1 {
-		t.enableRegression = true
+	if t.backupCodecPolicy != livekit.BackupCodecPolicy_SIMULCAST && len(ti.Codecs) > 1 {
 		t.regressionTargetCodec = mime.NormalizeMimeType(ti.Codecs[1].MimeType)
 		t.params.Logger.Debugw("track enabled codec regression", "regressionCodec", t.regressionTargetCodec)
 	}
@@ -179,6 +179,10 @@ func (t *MediaTrack) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, quali
 
 func (t *MediaTrack) SignalCid() string {
 	return t.params.SignalCid
+}
+
+func (t *MediaTrack) SdpCid() string {
+	return t.params.SdpCid
 }
 
 func (t *MediaTrack) HasSdpCid(cid string) bool {
@@ -372,7 +376,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		})
 	}
 
-	if newCodec && t.enableRegression {
+	if newCodec && t.enableRegression() {
 		if mimeType == t.regressionTargetCodec {
 			t.params.Logger.Infow("regression target codec received", "codec", mimeType)
 			t.regressionTargetCodecReceived = true
@@ -393,12 +397,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		)
 		buff.Close()
 		return false
-	}
-
-	// LK-TODO: can remove this completely when VideoLayers protocol becomes the default as it has info from client or if we decide to use TrackInfo.Simulcast
-	if t.numUpTracks.Inc() > 1 || track.RID() != "" {
-		// cannot only rely on numUpTracks since we fire metadata events immediately after the first layer
-		t.SetSimulcast(true)
 	}
 
 	var bitrates int
@@ -496,4 +494,9 @@ func (t *MediaTrack) OnTrackSubscribed() {
 	if !t.everSubscribed.Swap(true) && t.params.OnTrackEverSubscribed != nil {
 		go t.params.OnTrackEverSubscribed(t.ID())
 	}
+}
+
+func (t *MediaTrack) enableRegression() bool {
+	return t.backupCodecPolicy == livekit.BackupCodecPolicy_REGRESSION ||
+		(t.backupCodecPolicy == livekit.BackupCodecPolicy_PREFER_REGRESSION && t.params.ShouldRegressCodec())
 }

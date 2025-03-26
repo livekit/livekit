@@ -37,6 +37,7 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	sdpHelper "github.com/livekit/protocol/sdp"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 
@@ -144,6 +145,7 @@ type ParticipantParams struct {
 	GetParticipantInfo             func(pID livekit.ParticipantID) *livekit.ParticipantInfo
 	GetRegionSettings              func(ip string) *livekit.RegionSettings
 	GetSubscriberForwarderState    func(p types.LocalParticipant) (map[livekit.TrackID]*livekit.RTPForwarderState, error)
+	ShouldRegressCodec             func() bool
 	DisableSupervisor              bool
 	ReconnectOnPublicationError    bool
 	ReconnectOnSubscriptionError   bool
@@ -204,6 +206,8 @@ type ParticipantImpl struct {
 	pendingTracks           map[string]*pendingTrackInfo
 	pendingPublishingTracks map[livekit.TrackID]*pendingTrackInfo
 	pendingRemoteTracks     []*pendingRemoteTrack
+
+	simulcastTrackIds sync.Map
 
 	// supported codecs
 	enabledPublishCodecs   []*livekit.Codec
@@ -869,9 +873,28 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(offer webrtc.SessionDescrip
 	return nil
 }
 
+func (p *ParticipantImpl) findAndStoreSimulcastTrackIds(offer webrtc.SessionDescription) {
+	parsed, err := offer.Unmarshal()
+	if err != nil {
+		return
+	}
+
+	for _, m := range parsed.MediaDescriptions {
+		if m.MediaName.Media != "video" {
+			continue
+		}
+		if sdpHelper.IsMediaDescriptionSimulcast(m) {
+			trackID := sdpHelper.GetTrackIDFromMediaDescription(m)
+			p.simulcastTrackIds.LoadOrStore(trackID, true)
+		}
+	}
+}
+
 // HandleOffer an offer from remote participant, used when clients make the initial connection
 func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
 	p.pubLogger.Debugw("received offer", "transport", livekit.SignalTarget_PUBLISHER, "offer", offer)
+
+	p.findAndStoreSimulcastTrackIds(offer)
 
 	if p.params.UseOneShotSignallingMode {
 		if err := p.synthesizeAddTrackRequests(offer); err != nil {
@@ -1058,6 +1081,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	p.pendingTracksLock.Lock()
 	p.pendingTracks = make(map[string]*pendingTrackInfo)
 	p.pendingPublishingTracks = make(map[livekit.TrackID]*pendingTrackInfo)
+	p.simulcastTrackIds.Clear()
 	p.pendingTracksLock.Unlock()
 
 	p.UpTrackManager.Close(isExpectedToResume)
@@ -1736,6 +1760,11 @@ func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) err
 
 func (p *ParticipantImpl) removePublishedTrack(track types.MediaTrack) {
 	p.RemovePublishedTrack(track, false, true)
+
+	if lmt, ok := track.(types.LocalMediaTrack); ok {
+		p.simulcastTrackIds.Delete(lmt.SdpCid())
+	}
+
 	if p.ProtocolVersion().SupportsUnpublish() {
 		p.sendTrackUnpublished(track.ID())
 	} else {
@@ -2216,7 +2245,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 
 	backupCodecPolicy := req.BackupCodecPolicy
-	if backupCodecPolicy == livekit.BackupCodecPolicy_REGRESSION && p.params.DisableCodecRegression {
+	if backupCodecPolicy != livekit.BackupCodecPolicy_SIMULCAST && p.params.DisableCodecRegression {
 		backupCodecPolicy = livekit.BackupCodecPolicy_SIMULCAST
 	}
 
@@ -2454,6 +2483,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 			// only assign version on a fresh publish, i. e. avoid updating version in scenarios like migration
 			ti.Version = p.params.VersionGenerator.Next().ToProto()
 		}
+
 		mt = p.addMediaTrack(signalCid, track.ID(), ti)
 		newTrack = true
 
@@ -2466,6 +2496,12 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 		pubTime = time.Since(createdAt)
 		p.dirty.Store(true)
 	}
+
+	isSimulcast, ok := p.simulcastTrackIds.Load(track.ID())
+	if !ok {
+		isSimulcast = false
+	}
+	mt.SetSimulcast(isSimulcast.(bool))
 
 	p.pendingTracksLock.Unlock()
 
@@ -2574,6 +2610,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 		OnRTCP:                p.postRtcp,
 		ForwardStats:          p.params.ForwardStats,
 		OnTrackEverSubscribed: p.sendTrackHasBeenSubscribed,
+		ShouldRegressCodec:    p.params.ShouldRegressCodec,
 	}, ti)
 
 	mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
@@ -2618,6 +2655,8 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 				true,
 			)
 		}
+
+		p.simulcastTrackIds.Delete(mt.SdpCid())
 
 		p.pendingTracksLock.Lock()
 		if pti := p.pendingTracks[signalCid]; pti != nil {
