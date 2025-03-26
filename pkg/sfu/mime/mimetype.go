@@ -240,10 +240,6 @@ func IsMimeTypeVideo(mimeType MimeType) bool {
 	return strings.HasPrefix(mimeType.String(), MimeTypePrefixVideo)
 }
 
-// SVC-TODO: Have to use more conditions to differentiate between
-// SVC-TODO: SVC and non-SVC (could be single layer or simulcast).
-// SVC-TODO: May only need to differentiate between simulcast and non-simulcast
-// SVC-TODO: i. e. may be possible to treat single layer as SVC to get proper/intended functionality.
 func IsMimeTypeSVC(mimeType MimeType) bool {
 	switch mimeType {
 	case MimeTypeAV1, MimeTypeVP9:
