@@ -37,6 +37,7 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	sdpHelper "github.com/livekit/protocol/sdp"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 
@@ -205,6 +206,8 @@ type ParticipantImpl struct {
 	pendingTracks           map[string]*pendingTrackInfo
 	pendingPublishingTracks map[livekit.TrackID]*pendingTrackInfo
 	pendingRemoteTracks     []*pendingRemoteTrack
+
+	simulcastTrackIds sync.Map
 
 	// supported codecs
 	enabledPublishCodecs   []*livekit.Codec
@@ -880,8 +883,8 @@ func (p *ParticipantImpl) findAndStoreSimulcastTrackIds(offer webrtc.SessionDesc
 		if m.MediaName.Media != "video" {
 			continue
 		}
-		if isMediaDescriptionSimulcast(m) {
-			trackID := getTrackIDFromMediaDescription(m)
+		if sdpHelper.IsMediaDescriptionSimulcast(m) {
+			trackID := sdpHelper.GetTrackIDFromMediaDescription(m)
 			p.simulcastTrackIds.LoadOrStore(trackID, true)
 		}
 	}
@@ -891,9 +894,7 @@ func (p *ParticipantImpl) findAndStoreSimulcastTrackIds(offer webrtc.SessionDesc
 func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
 	p.pubLogger.Debugw("received offer", "transport", livekit.SignalTarget_PUBLISHER, "offer", offer)
 
-	if p.IsPublisher() {
-		p.findAndStoreSimulcastTrackIds(offer)
-	}
+	p.findAndStoreSimulcastTrackIds(offer)
 
 	if p.params.UseOneShotSignallingMode {
 		if err := p.synthesizeAddTrackRequests(offer); err != nil {
@@ -1080,6 +1081,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	p.pendingTracksLock.Lock()
 	p.pendingTracks = make(map[string]*pendingTrackInfo)
 	p.pendingPublishingTracks = make(map[livekit.TrackID]*pendingTrackInfo)
+	p.simulcastTrackIds.Clear()
 	p.pendingTracksLock.Unlock()
 
 	p.UpTrackManager.Close(isExpectedToResume)
@@ -1760,6 +1762,9 @@ func (p *ParticipantImpl) removePublishedTrack(track types.MediaTrack) {
 	p.RemovePublishedTrack(track, false, true)
 	if p.ProtocolVersion().SupportsUnpublish() {
 		p.sendTrackUnpublished(track.ID())
+		if lmt, ok := track.(types.LocalMediaTrack); ok {
+			p.simulcastTrackIds.Delete(lmt.SdpCid())
+		}
 	} else {
 		// for older clients that don't support unpublish, mute to avoid them sending data
 		p.sendTrackMuted(track.ID(), true)
@@ -2648,6 +2653,8 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 				true,
 			)
 		}
+
+		p.simulcastTrackIds.Delete(mt.SdpCid())
 
 		p.pendingTracksLock.Lock()
 		if pti := p.pendingTracks[signalCid]; pti != nil {

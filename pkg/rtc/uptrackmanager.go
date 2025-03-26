@@ -56,8 +56,6 @@ type UpTrackManager struct {
 	// callbacks & handlers
 	onClose        func()
 	onTrackUpdated func(track types.MediaTrack)
-
-	simulcastTrackIds sync.Map
 }
 
 func NewUpTrackManager(params UpTrackManagerParams) *UpTrackManager {
@@ -78,7 +76,6 @@ func (u *UpTrackManager) Close(isExpectedToResume bool) {
 
 	publishedTracks := u.publishedTracks
 	u.publishedTracks = make(map[livekit.TrackID]types.MediaTrack)
-	u.simulcastTrackIds.Clear()
 	u.lock.Unlock()
 
 	for _, t := range publishedTracks {
@@ -272,7 +269,6 @@ func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 	track.AddOnClose(func(_isExpectedToResume bool) {
 		u.lock.Lock()
 		delete(u.publishedTracks, track.ID())
-		u.simulcastTrackIds.Delete(track.ID())
 		// not modifying subscription permissions, will get reset on next update from participant
 		u.lock.Unlock()
 	})
@@ -286,7 +282,6 @@ func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack, isExpected
 	}
 	u.lock.Lock()
 	delete(u.publishedTracks, track.ID())
-	u.simulcastTrackIds.Delete(track.ID())
 	u.lock.Unlock()
 }
 

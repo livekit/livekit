@@ -343,50 +343,46 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		}
 
 	case mime.MimeTypeVP9:
-
-		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
-		isDDAvailable := ddAvailable(extensions)
-		if isDDAvailable {
-			if f.vls != nil {
-				f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
-			} else {
-				f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
-			}
-		} else {
-			if f.vls != nil {
-				if f.isReceiverSimulcast {
-					f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
-				} else {
-					f.vls = videolayerselector.NewVP9FromOther(f.vls)
-				}
-			} else {
-				if f.isReceiverSimulcast {
-					f.vls = videolayerselector.NewSimulcast(f.logger)
-				} else {
-					f.vls = videolayerselector.NewVP9(f.logger)
-				}
-			}
-		}
-		// Q: Do we need a temporal layer selector for VP9?
-
-	case mime.MimeTypeAV1:
-		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
-		isDDAvailable := ddAvailable(extensions)
-		if isDDAvailable {
-			if f.vls != nil {
-				f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
-			} else {
-				f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
-			}
-		} else {
+		if f.isReceiverSimulcast {
 			if f.vls != nil {
 				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
 			} else {
 				f.vls = videolayerselector.NewSimulcast(f.logger)
 			}
+			// TODO: Add temporal layer selector for VP9
+		} else {
+			isDDAvailable := ddAvailable(extensions)
+			if isDDAvailable {
+				if f.vls != nil {
+					f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
+				} else {
+					f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
+				}
+			} else {
+				if f.vls != nil {
+					f.vls = videolayerselector.NewVP9FromOther(f.vls)
+				} else {
+					f.vls = videolayerselector.NewVP9(f.logger)
+				}
+			}
 		}
-		// SVC-TODO: Support for AV1 Simulcast
-		// Q: Does this need any VLS changes or any other changes in the code above?
+
+	case mime.MimeTypeAV1:
+		isDDAvailable := ddAvailable(extensions)
+		if f.isReceiverSimulcast || !isDDAvailable {
+			// TODO: Add temporal layer selector for AV1
+			if f.vls != nil {
+				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
+			} else {
+				f.vls = videolayerselector.NewSimulcast(f.logger)
+			}
+		} else {
+			if f.vls != nil {
+				f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
+			} else {
+				f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
+			}
+		}
 	}
 }
 

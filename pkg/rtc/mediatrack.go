@@ -181,6 +181,10 @@ func (t *MediaTrack) SignalCid() string {
 	return t.params.SignalCid
 }
 
+func (t *MediaTrack) SdpCid() string {
+	return t.params.SdpCid
+}
+
 func (t *MediaTrack) HasSdpCid(cid string) bool {
 	if t.params.SdpCid == cid {
 		return true
