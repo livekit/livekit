@@ -55,7 +55,7 @@ type MediaTrack struct {
 
 	rttFromXR atomic.Bool
 
-	enableRegression              bool
+	backupCodecPolicy             livekit.BackupCodecPolicy
 	regressionTargetCodec         mime.MimeType
 	regressionTargetCodecReceived bool
 }
@@ -78,16 +78,16 @@ type MediaTrackParams struct {
 	OnRTCP                func([]rtcp.Packet)
 	ForwardStats          *sfu.ForwardStats
 	OnTrackEverSubscribed func(livekit.TrackID)
+	ShouldRegressCodec    func() bool
 }
 
 func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 	t := &MediaTrack{
-		params: params,
+		params:            params,
+		backupCodecPolicy: ti.BackupCodecPolicy,
 	}
 
-	// TODO: disable codec regression until simulcast-codec clients knows that
-	if ti.BackupCodecPolicy == livekit.BackupCodecPolicy_REGRESSION && len(ti.Codecs) > 1 {
-		t.enableRegression = true
+	if t.backupCodecPolicy != livekit.BackupCodecPolicy_SIMULCAST && len(ti.Codecs) > 1 {
 		t.regressionTargetCodec = mime.NormalizeMimeType(ti.Codecs[1].MimeType)
 		t.params.Logger.Debugw("track enabled codec regression", "regressionCodec", t.regressionTargetCodec)
 	}
@@ -372,7 +372,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		})
 	}
 
-	if newCodec && t.enableRegression {
+	if newCodec && t.enableRegression() {
 		if mimeType == t.regressionTargetCodec {
 			t.params.Logger.Infow("regression target codec received", "codec", mimeType)
 			t.regressionTargetCodecReceived = true
@@ -496,4 +496,9 @@ func (t *MediaTrack) OnTrackSubscribed() {
 	if !t.everSubscribed.Swap(true) && t.params.OnTrackEverSubscribed != nil {
 		go t.params.OnTrackEverSubscribed(t.ID())
 	}
+}
+
+func (t *MediaTrack) enableRegression() bool {
+	return t.backupCodecPolicy == livekit.BackupCodecPolicy_REGRESSION ||
+		(t.backupCodecPolicy == livekit.BackupCodecPolicy_PREFER_REGRESSION && t.params.ShouldRegressCodec())
 }

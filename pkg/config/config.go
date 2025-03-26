@@ -155,6 +155,8 @@ type PlayoutDelayConfig struct {
 type VideoConfig struct {
 	DynacastPauseDelay   time.Duration                  `yaml:"dynacast_pause_delay,omitempty"`
 	StreamTrackerManager sfu.StreamTrackerManagerConfig `yaml:"stream_tracker_manager,omitempty"`
+
+	CodecRegressionThreshold int `yaml:"codec_regression_threshold,omitempty"`
 }
 
 type RoomConfig struct {
@@ -327,8 +329,9 @@ var DefaultConfig = Config{
 	},
 	Audio: sfu.DefaultAudioConfig,
 	Video: VideoConfig{
-		DynacastPauseDelay:   5 * time.Second,
-		StreamTrackerManager: sfu.DefaultStreamTrackerManagerConfig,
+		DynacastPauseDelay:       5 * time.Second,
+		StreamTrackerManager:     sfu.DefaultStreamTrackerManagerConfig,
+		CodecRegressionThreshold: 5,
 	},
 	Redis: redisLiveKit.RedisConfig{},
 	Room: RoomConfig{

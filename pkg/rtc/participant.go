@@ -144,6 +144,7 @@ type ParticipantParams struct {
 	GetParticipantInfo             func(pID livekit.ParticipantID) *livekit.ParticipantInfo
 	GetRegionSettings              func(ip string) *livekit.RegionSettings
 	GetSubscriberForwarderState    func(p types.LocalParticipant) (map[livekit.TrackID]*livekit.RTPForwarderState, error)
+	ShouldRegressCodec             func() bool
 	DisableSupervisor              bool
 	ReconnectOnPublicationError    bool
 	ReconnectOnSubscriptionError   bool
@@ -2216,7 +2217,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 
 	backupCodecPolicy := req.BackupCodecPolicy
-	if backupCodecPolicy == livekit.BackupCodecPolicy_REGRESSION && p.params.DisableCodecRegression {
+	if backupCodecPolicy != livekit.BackupCodecPolicy_SIMULCAST && p.params.DisableCodecRegression {
 		backupCodecPolicy = livekit.BackupCodecPolicy_SIMULCAST
 	}
 
@@ -2574,6 +2575,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 		OnRTCP:                p.postRtcp,
 		ForwardStats:          p.params.ForwardStats,
 		OnTrackEverSubscribed: p.sendTrackHasBeenSubscribed,
+		ShouldRegressCodec:    p.params.ShouldRegressCodec,
 	}, ti)
 
 	mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
