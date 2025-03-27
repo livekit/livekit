@@ -32,17 +32,24 @@ type NodeStats struct {
 	lock                 sync.Mutex
 	statsHistory         []*livekit.NodeStats
 	statsHistoryWritePtr int
-	rateIntervals        []time.Duration
 }
 
 func NewNodeStats(conf *config.NodeStatsConfig, startedAt int64) *NodeStats {
+	n := &NodeStats{
+		startedAt: startedAt,
+	}
+	n.UpdateConfig(conf)
+	return n
+}
+
+func (n *NodeStats) UpdateConfig(conf *config.NodeStatsConfig) {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+
 	if conf == nil {
 		conf = &config.DefaultNodeStatsConfig
 	}
-	n := &NodeStats{
-		config:    *conf,
-		startedAt: startedAt,
-	}
+	n.config = *conf
 
 	// set up stats history to be able to measure different rate windows
 	var maxInterval time.Duration
@@ -52,8 +59,7 @@ func NewNodeStats(conf *config.NodeStatsConfig, startedAt int64) *NodeStats {
 		}
 	}
 	n.statsHistory = make([]*livekit.NodeStats, (maxInterval+conf.StatsUpdateInterval-1)/conf.StatsUpdateInterval)
-
-	return n
+	n.statsHistoryWritePtr = 0
 }
 
 func (n *NodeStats) UpdateAndGetNodeStats() (*livekit.NodeStats, error) {
