@@ -20,12 +20,10 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 type LocalNode interface {
@@ -45,8 +43,7 @@ type LocalNodeImpl struct {
 	lock sync.RWMutex
 	node *livekit.Node
 
-	// previous stats for computing averages
-	prevStats *livekit.NodeStats
+	nodeStats *NodeStats
 }
 
 func NewLocalNode(conf *config.Config) (*LocalNodeImpl, error) {
@@ -54,21 +51,27 @@ func NewLocalNode(conf *config.Config) (*LocalNodeImpl, error) {
 	if conf != nil && conf.RTC.NodeIP == "" {
 		return nil, ErrIPNotSet
 	}
+	nowUnix := time.Now().Unix()
 	l := &LocalNodeImpl{
 		node: &livekit.Node{
 			Id:      nodeID,
 			NumCpus: uint32(runtime.NumCPU()),
 			State:   livekit.NodeState_SERVING,
 			Stats: &livekit.NodeStats{
-				StartedAt: time.Now().Unix(),
-				UpdatedAt: time.Now().Unix(),
+				StartedAt: nowUnix,
+				UpdatedAt: nowUnix,
 			},
 		},
 	}
+	var nsc *config.NodeStatsConfig
 	if conf != nil {
 		l.node.Ip = conf.RTC.NodeIP
 		l.node.Region = conf.Region
+
+		nsc = &conf.NodeStats
 	}
+	l.nodeStats = NewNodeStats(nsc, nowUnix)
+
 	return l, nil
 }
 
@@ -138,18 +141,12 @@ func (l *LocalNodeImpl) UpdateNodeStats() bool {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
-	if l.prevStats == nil {
-		l.prevStats = l.node.Stats
-	}
-	updated, computedAvg, err := prometheus.GetUpdatedNodeStats(l.node.Stats, l.prevStats)
+	stats, err := l.nodeStats.UpdateAndGetNodeStats()
 	if err != nil {
-		logger.Errorw("could not update node stats", err)
 		return false
 	}
-	l.node.Stats = updated
-	if computedAvg {
-		l.prevStats = updated
-	}
+
+	l.node.Stats = stats
 	return true
 }
 

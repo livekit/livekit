@@ -60,7 +60,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	router := routing.CreateRouter(universalClient, currentNode, signalClient, roomManagerClient, keepalivePubSub)
+	nodeStatsConfig := getNodeStatsConfig(conf)
+	router := routing.CreateRouter(universalClient, currentNode, signalClient, roomManagerClient, keepalivePubSub, nodeStatsConfig)
 	objectStore := createStore(universalClient)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
@@ -89,23 +90,23 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	rtcEgressLauncher := NewEgressLauncher(egressClient, ioInfoService)
 	topicFormatter := rpc.NewTopicFormatter()
-	v, err := rpc.NewTypedRoomClient(clientParams)
+	roomClient, err := rpc.NewTypedRoomClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	v2, err := rpc.NewTypedParticipantClient(clientParams)
+	participantClient, err := rpc.NewTypedParticipantClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, v, v2)
+	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, roomClient, participantClient)
 	if err != nil {
 		return nil, err
 	}
-	v3, err := rpc.NewTypedAgentDispatchInternalClient(clientParams)
+	agentDispatchInternalClient, err := rpc.NewTypedAgentDispatchInternalClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	agentDispatchService := NewAgentDispatchService(v3, topicFormatter, roomAllocator, router)
+	agentDispatchService := NewAgentDispatchService(agentDispatchInternalClient, topicFormatter, roomAllocator, router)
 	egressService := NewEgressService(egressClient, rtcEgressLauncher, objectStore, ioInfoService, roomService)
 	ingressConfig := getIngressConfig(conf)
 	ingressClient, err := rpc.NewIngressClient(clientParams)
@@ -176,7 +177,8 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	if err != nil {
 		return nil, err
 	}
-	router := routing.CreateRouter(universalClient, currentNode, signalClient, roomManagerClient, keepalivePubSub)
+	nodeStatsConfig := getNodeStatsConfig(conf)
+	router := routing.CreateRouter(universalClient, currentNode, signalClient, roomManagerClient, keepalivePubSub, nodeStatsConfig)
 	return router, nil
 }
 
@@ -328,4 +330,8 @@ func createForwardStats(conf *config.Config) *sfu.ForwardStats {
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (*turn.Server, error) {
 	return NewTurnServer(conf, authHandler, false)
+}
+
+func getNodeStatsConfig(config2 *config.Config) config.NodeStatsConfig {
+	return config2.NodeStats
 }

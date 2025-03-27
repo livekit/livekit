@@ -486,7 +486,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 
 	if params.IsSendSide {
 		if params.CongestionControlConfig.UseSendSideBWE {
-			params.Logger.Infow("using send side BWE")
+			params.Logger.Infow("using send side BWE", "pacerBehavior", params.CongestionControlConfig.SendSideBWEPacer)
 			t.bwe = sendsidebwe.NewSendSideBWE(sendsidebwe.SendSideBWEParams{
 				Config: params.CongestionControlConfig.SendSideBWE,
 				Logger: params.Logger,

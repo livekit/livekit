@@ -79,6 +79,8 @@ type Config struct {
 	Development bool `yaml:"development,omitempty"`
 
 	Metric metric.MetricConfig `yaml:"metric,omitempty"`
+
+	NodeStats NodeStatsConfig `yaml:"node_stats,omitempty"`
 }
 
 type RTCConfig struct {
@@ -302,6 +304,18 @@ func DefaultAPIConfig() APIConfig {
 	}
 }
 
+type NodeStatsConfig struct {
+	StatsUpdateInterval           time.Duration   `yaml:"stats_update_interval,omitempty"`
+	StatsRateMeasurementIntervals []time.Duration `yaml:"stats_rate_measurement_intervals,omitempty"`
+	StatsMaxDelay                 time.Duration   `yaml:"stats_max_delay,omitempty"`
+}
+
+var DefaultNodeStatsConfig = NodeStatsConfig{
+	StatsUpdateInterval:           2 * time.Second,
+	StatsRateMeasurementIntervals: []time.Duration{10 * time.Second},
+	StatsMaxDelay:                 30 * time.Second,
+}
+
 var DefaultConfig = Config{
 	Port: 7880,
 	RTC: RTCConfig{
@@ -377,10 +391,11 @@ var DefaultConfig = Config{
 		StreamBufferSize: 1000,
 		ConnectAttempts:  3,
 	},
-	PSRPC:   rpc.DefaultPSRPCConfig,
-	Keys:    map[string]string{},
-	Metric:  metric.DefaultMetricConfig,
-	WebHook: webhook.DefaultWebHookConfig,
+	PSRPC:     rpc.DefaultPSRPCConfig,
+	Keys:      map[string]string{},
+	Metric:    metric.DefaultMetricConfig,
+	WebHook:   webhook.DefaultWebHookConfig,
+	NodeStats: DefaultNodeStatsConfig,
 }
 
 func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []cli.Flag) (*Config, error) {

@@ -28,8 +28,6 @@ import (
 
 const (
 	livekitNamespace string = "livekit"
-
-	statsUpdateInterval = time.Second * 10
 )
 
 var (
@@ -104,22 +102,11 @@ func Init(nodeID string, nodeType livekit.NodeType) error {
 		[]string{"type"},
 	)
 
-	promSysDroppedPacketPctGauge = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Namespace:   livekitNamespace,
-			Subsystem:   "node",
-			Name:        "dropped_packets",
-			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
-			Help:        "System level dropped outgoing packet percentage.",
-		},
-	)
-
 	prometheus.MustRegister(MessageCounter)
 	prometheus.MustRegister(MessageBytes)
 	prometheus.MustRegister(ServiceOperationCounter)
 	prometheus.MustRegister(TwirpRequestStatusCounter)
 	prometheus.MustRegister(promSysPacketGauge)
-	prometheus.MustRegister(promSysDroppedPacketPctGauge)
 
 	sysPacketsStart, sysDroppedPacketsStart, _ = getTCStats()
 
@@ -138,10 +125,10 @@ func Init(nodeID string, nodeType livekit.NodeType) error {
 	return nil
 }
 
-func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats) (*livekit.NodeStats, bool, error) {
+func GetNodeStats(nodeStartedAt int64, prevStats []*livekit.NodeStats, rateIntervals []time.Duration) (*livekit.NodeStats, error) {
 	loadAvg, err := getLoadAvg()
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
 	var cpuLoad float64
@@ -160,118 +147,119 @@ func GetUpdatedNodeStats(prev *livekit.NodeStats, prevAverage *livekit.NodeStats
 		memUsed = memInfo.Used
 	}
 
-	// do not error out, and use the information if it is available
 	sysPackets, sysDroppedPackets, _ := getTCStats()
 	promSysPacketGauge.WithLabelValues("out").Set(float64(sysPackets - sysPacketsStart))
 	promSysPacketGauge.WithLabelValues("dropped").Set(float64(sysDroppedPackets - sysDroppedPacketsStart))
 
-	bytesInNow := bytesIn.Load()
-	bytesOutNow := bytesOut.Load()
-	packetsInNow := packetsIn.Load()
-	packetsOutNow := packetsOut.Load()
-	nackTotalNow := nackTotal.Load()
-	retransmitBytesNow := retransmitBytes.Load()
-	retransmitPacketsNow := retransmitPackets.Load()
-	participantSignalConnectedNow := participantSignalConnected.Load()
-	participantRTCInitNow := participantRTCInit.Load()
-	participantRTConnectedCNow := participantRTCConnected.Load()
-	trackPublishAttemptsNow := trackPublishAttempts.Load()
-	trackPublishSuccessNow := trackPublishSuccess.Load()
-	trackSubscribeAttemptsNow := trackSubscribeAttempts.Load()
-	trackSubscribeSuccessNow := trackSubscribeSuccess.Load()
-	forwardLatencyNow := forwardLatency.Load()
-	forwardJitterNow := forwardJitter.Load()
-
-	updatedAt := time.Now().Unix()
-	elapsed := updatedAt - prevAverage.UpdatedAt
-	// include sufficient buffer to be sure a stats update had taken place
-	computeAverage := elapsed > int64(statsUpdateInterval.Seconds()+2)
-	if bytesInNow != prevAverage.BytesIn ||
-		bytesOutNow != prevAverage.BytesOut ||
-		packetsInNow != prevAverage.PacketsIn ||
-		packetsOutNow != prevAverage.PacketsOut ||
-		retransmitBytesNow != prevAverage.RetransmitBytesOut ||
-		retransmitPacketsNow != prevAverage.RetransmitPacketsOut {
-		computeAverage = true
-	}
-
 	stats := &livekit.NodeStats{
-		StartedAt:                        prev.StartedAt,
-		UpdatedAt:                        updatedAt,
-		NumRooms:                         roomCurrent.Load(),
-		NumClients:                       participantCurrent.Load(),
-		NumTracksIn:                      trackPublishedCurrent.Load(),
-		NumTracksOut:                     trackSubscribedCurrent.Load(),
-		NumTrackPublishAttempts:          trackPublishAttemptsNow,
-		NumTrackPublishSuccess:           trackPublishSuccessNow,
-		NumTrackSubscribeAttempts:        trackSubscribeAttemptsNow,
-		NumTrackSubscribeSuccess:         trackSubscribeSuccessNow,
-		BytesIn:                          bytesInNow,
-		BytesOut:                         bytesOutNow,
-		PacketsIn:                        packetsInNow,
-		PacketsOut:                       packetsOutNow,
-		RetransmitBytesOut:               retransmitBytesNow,
-		RetransmitPacketsOut:             retransmitPacketsNow,
-		NackTotal:                        nackTotalNow,
-		ParticipantSignalConnected:       participantSignalConnectedNow,
-		ParticipantRtcInit:               participantRTCInitNow,
-		ParticipantRtcConnected:          participantRTConnectedCNow,
-		BytesInPerSec:                    prevAverage.BytesInPerSec,
-		BytesOutPerSec:                   prevAverage.BytesOutPerSec,
-		PacketsInPerSec:                  prevAverage.PacketsInPerSec,
-		PacketsOutPerSec:                 prevAverage.PacketsOutPerSec,
-		RetransmitBytesOutPerSec:         prevAverage.RetransmitBytesOutPerSec,
-		RetransmitPacketsOutPerSec:       prevAverage.RetransmitPacketsOutPerSec,
-		NackPerSec:                       prevAverage.NackPerSec,
-		ForwardLatency:                   forwardLatencyNow,
-		ForwardJitter:                    forwardJitterNow,
-		ParticipantSignalConnectedPerSec: prevAverage.ParticipantSignalConnectedPerSec,
-		ParticipantRtcInitPerSec:         prevAverage.ParticipantRtcInitPerSec,
-		ParticipantRtcConnectedPerSec:    prevAverage.ParticipantRtcConnectedPerSec,
-		NumCpus:                          uint32(cpuStats.NumCPU()), // this will round down to the nearest integer
-		CpuLoad:                          float32(cpuLoad),
-		MemoryTotal:                      memTotal,
-		MemoryUsed:                       memUsed,
-		LoadAvgLast1Min:                  float32(loadAvg.Loadavg1),
-		LoadAvgLast5Min:                  float32(loadAvg.Loadavg5),
-		LoadAvgLast15Min:                 float32(loadAvg.Loadavg15),
-		SysPacketsOut:                    sysPackets,
-		SysPacketsDropped:                sysDroppedPackets,
-		TrackPublishAttemptsPerSec:       prevAverage.TrackPublishAttemptsPerSec,
-		TrackPublishSuccessPerSec:        prevAverage.TrackPublishSuccessPerSec,
-		TrackSubscribeAttemptsPerSec:     prevAverage.TrackSubscribeAttemptsPerSec,
-		TrackSubscribeSuccessPerSec:      prevAverage.TrackSubscribeSuccessPerSec,
+		StartedAt:                  nodeStartedAt,
+		UpdatedAt:                  time.Now().Unix(),
+		NumRooms:                   roomCurrent.Load(),
+		NumClients:                 participantCurrent.Load(),
+		NumTracksIn:                trackPublishedCurrent.Load(),
+		NumTracksOut:               trackSubscribedCurrent.Load(),
+		NumTrackPublishAttempts:    trackPublishAttempts.Load(),
+		NumTrackPublishSuccess:     trackPublishSuccess.Load(),
+		NumTrackSubscribeAttempts:  trackSubscribeAttempts.Load(),
+		NumTrackSubscribeSuccess:   trackSubscribeSuccess.Load(),
+		BytesIn:                    bytesIn.Load(),
+		BytesOut:                   bytesOut.Load(),
+		PacketsIn:                  packetsIn.Load(),
+		PacketsOut:                 packetsOut.Load(),
+		RetransmitBytesOut:         retransmitBytes.Load(),
+		RetransmitPacketsOut:       retransmitPackets.Load(),
+		NackTotal:                  nackTotal.Load(),
+		ParticipantSignalConnected: participantSignalConnected.Load(),
+		ParticipantRtcInit:         participantRTCInit.Load(),
+		ParticipantRtcConnected:    participantRTCConnected.Load(),
+		ForwardLatency:             forwardLatency.Load(),
+		ForwardJitter:              forwardJitter.Load(),
+		NumCpus:                    uint32(cpuStats.NumCPU()), // this will round down to the nearest integer
+		CpuLoad:                    float32(cpuLoad),
+		MemoryTotal:                memTotal,
+		MemoryUsed:                 memUsed,
+		LoadAvgLast1Min:            float32(loadAvg.Loadavg1),
+		LoadAvgLast5Min:            float32(loadAvg.Loadavg5),
+		LoadAvgLast15Min:           float32(loadAvg.Loadavg15),
+		SysPacketsOut:              sysPackets,
+		SysPacketsDropped:          sysDroppedPackets,
 	}
 
-	// update stats
-	if computeAverage {
-		stats.BytesInPerSec = perSec(prevAverage.BytesIn, bytesInNow, elapsed)
-		stats.BytesOutPerSec = perSec(prevAverage.BytesOut, bytesOutNow, elapsed)
-		stats.PacketsInPerSec = perSec(prevAverage.PacketsIn, packetsInNow, elapsed)
-		stats.PacketsOutPerSec = perSec(prevAverage.PacketsOut, packetsOutNow, elapsed)
-		stats.RetransmitBytesOutPerSec = perSec(prevAverage.RetransmitBytesOut, retransmitBytesNow, elapsed)
-		stats.RetransmitPacketsOutPerSec = perSec(prevAverage.RetransmitPacketsOut, retransmitPacketsNow, elapsed)
-		stats.NackPerSec = perSec(prevAverage.NackTotal, nackTotalNow, elapsed)
-		stats.ParticipantSignalConnectedPerSec = perSec(prevAverage.ParticipantSignalConnected, participantSignalConnectedNow, elapsed)
-		stats.ParticipantRtcInitPerSec = perSec(prevAverage.ParticipantRtcInit, participantRTCInitNow, elapsed)
-		stats.ParticipantRtcConnectedPerSec = perSec(prevAverage.ParticipantRtcConnected, participantRTConnectedCNow, elapsed)
-		stats.SysPacketsOutPerSec = perSec(uint64(prevAverage.SysPacketsOut), uint64(sysPackets), elapsed)
-		stats.SysPacketsDroppedPerSec = perSec(uint64(prevAverage.SysPacketsDropped), uint64(sysDroppedPackets), elapsed)
-		stats.TrackPublishAttemptsPerSec = perSec(uint64(prevAverage.NumTrackPublishAttempts), uint64(trackPublishAttemptsNow), elapsed)
-		stats.TrackPublishSuccessPerSec = perSec(uint64(prevAverage.NumTrackPublishSuccess), uint64(trackPublishSuccessNow), elapsed)
-		stats.TrackSubscribeAttemptsPerSec = perSec(uint64(prevAverage.NumTrackSubscribeAttempts), uint64(trackSubscribeAttemptsNow), elapsed)
-		stats.TrackSubscribeSuccessPerSec = perSec(uint64(prevAverage.NumTrackSubscribeSuccess), uint64(trackSubscribeSuccessNow), elapsed)
+	for _, rateInterval := range rateIntervals {
+		for idx := len(prevStats) - 1; idx >= 0; idx-- {
+			prev := prevStats[idx]
+			if prev == nil {
+				continue
+			}
 
-		packetTotal := stats.SysPacketsOutPerSec + stats.SysPacketsDroppedPerSec
-		if packetTotal == 0 {
-			stats.SysPacketsDroppedPctPerSec = 0
-		} else {
-			stats.SysPacketsDroppedPctPerSec = stats.SysPacketsDroppedPerSec / packetTotal
+			if stats.UpdatedAt-prev.UpdatedAt >= int64(rateInterval.Seconds()) {
+				if rate := getNodeStatsRate(append(prevStats[idx:], stats)); rate != nil {
+					stats.Rates = append(stats.Rates, rate)
+				}
+				break
+			}
 		}
-		promSysDroppedPacketPctGauge.Set(float64(stats.SysPacketsDroppedPctPerSec))
 	}
 
-	return stats, computeAverage, nil
+	return stats, nil
+}
+
+func getNodeStatsRate(statsHistory []*livekit.NodeStats) *livekit.NodeStatsRate {
+	if len(statsHistory) == 0 {
+		return nil
+	}
+
+	elapsed := statsHistory[len(statsHistory)-1].UpdatedAt - statsHistory[0].UpdatedAt
+	if elapsed <= 0 {
+		return nil
+	}
+
+	// time weighted averages
+	var cpuLoad, memoryLoad float32
+	for idx := len(statsHistory) - 1; idx > 0; idx-- {
+		stats := statsHistory[idx]
+		prevStats := statsHistory[idx-1]
+		if stats == nil || prevStats == nil {
+			continue
+		}
+
+		spanElapsed := stats.UpdatedAt - prevStats.UpdatedAt
+		if spanElapsed <= 0 {
+			continue
+		}
+
+		cpuLoad += stats.CpuLoad * float32(spanElapsed)
+		if stats.MemoryTotal > 0 {
+			memoryLoad += float32(stats.MemoryUsed) / float32(stats.MemoryTotal) * float32(spanElapsed)
+		}
+	}
+
+	earlier := statsHistory[0]
+	later := statsHistory[len(statsHistory)-1]
+	rate := &livekit.NodeStatsRate{
+		StartedAt:                  earlier.UpdatedAt,
+		EndedAt:                    later.UpdatedAt,
+		Duration:                   elapsed,
+		BytesIn:                    perSec(earlier.BytesIn, later.BytesIn, elapsed),
+		BytesOut:                   perSec(earlier.BytesOut, later.BytesOut, elapsed),
+		PacketsIn:                  perSec(earlier.PacketsIn, later.PacketsIn, elapsed),
+		PacketsOut:                 perSec(earlier.PacketsOut, later.PacketsOut, elapsed),
+		RetransmitBytesOut:         perSec(earlier.RetransmitBytesOut, later.RetransmitBytesOut, elapsed),
+		RetransmitPacketsOut:       perSec(earlier.RetransmitPacketsOut, later.RetransmitPacketsOut, elapsed),
+		NackTotal:                  perSec(earlier.NackTotal, later.NackTotal, elapsed),
+		ParticipantSignalConnected: perSec(earlier.ParticipantSignalConnected, later.ParticipantSignalConnected, elapsed),
+		ParticipantRtcInit:         perSec(earlier.ParticipantRtcInit, later.ParticipantRtcInit, elapsed),
+		ParticipantRtcConnected:    perSec(earlier.ParticipantRtcConnected, later.ParticipantRtcConnected, elapsed),
+		SysPacketsOut:              perSec(uint64(earlier.SysPacketsOut), uint64(later.SysPacketsOut), elapsed),
+		SysPacketsDropped:          perSec(uint64(earlier.SysPacketsDropped), uint64(later.SysPacketsDropped), elapsed),
+		TrackPublishAttempts:       perSec(uint64(earlier.NumTrackPublishAttempts), uint64(later.NumTrackPublishAttempts), elapsed),
+		TrackPublishSuccess:        perSec(uint64(earlier.NumTrackPublishSuccess), uint64(later.NumTrackPublishSuccess), elapsed),
+		TrackSubscribeAttempts:     perSec(uint64(earlier.NumTrackSubscribeAttempts), uint64(later.NumTrackSubscribeAttempts), elapsed),
+		TrackSubscribeSuccess:      perSec(uint64(earlier.NumTrackSubscribeSuccess), uint64(later.NumTrackSubscribeSuccess), elapsed),
+		CpuLoad:                    cpuLoad / float32(elapsed),
+		MemoryLoad:                 memoryLoad / float32(elapsed),
+	}
+	return rate
 }
 
 func perSec(prev, curr uint64, secs int64) float32 {

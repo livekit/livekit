@@ -91,8 +91,7 @@ const (
 	workerCleanupWait = 3 * time.Minute
 	jobsQueueMinSize  = 2048
 
-	telemetryStatsUpdateInterval         = time.Second * 30
-	telemetryNonMediaStatsUpdateInterval = time.Second * 30
+	telemetryStatsUpdateInterval = time.Second * 30
 )
 
 type telemetryService struct {
