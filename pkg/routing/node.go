@@ -20,12 +20,10 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 type LocalNode interface {
@@ -45,10 +43,7 @@ type LocalNodeImpl struct {
 	lock sync.RWMutex
 	node *livekit.Node
 
-	// previous stats for computing rate
-	statsHistory         []*livekit.NodeStats
-	statsHistoryWritePtr int
-	rateIntervals        []time.Duration
+	nodeStats *NodeStats
 }
 
 func NewLocalNode(conf *config.Config) (*LocalNodeImpl, error) {
@@ -56,14 +51,15 @@ func NewLocalNode(conf *config.Config) (*LocalNodeImpl, error) {
 	if conf != nil && conf.RTC.NodeIP == "" {
 		return nil, ErrIPNotSet
 	}
+	nowUnix := time.Now().Unix()
 	l := &LocalNodeImpl{
 		node: &livekit.Node{
 			Id:      nodeID,
 			NumCpus: uint32(runtime.NumCPU()),
 			State:   livekit.NodeState_SERVING,
 			Stats: &livekit.NodeStats{
-				StartedAt: time.Now().Unix(),
-				UpdatedAt: time.Now().Unix(),
+				StartedAt: nowUnix,
+				UpdatedAt: nowUnix,
 			},
 		},
 	}
@@ -73,19 +69,8 @@ func NewLocalNode(conf *config.Config) (*LocalNodeImpl, error) {
 		l.node.Region = conf.Region
 
 		nsc = &conf.NodeStats
-	} else {
-		nsc = &config.DefaultNodeStatsConfig
 	}
-
-	// set up stats history to be able to measure different rate windows
-	var maxInterval time.Duration
-	for _, rateInterval := range nsc.StatsRateMeasurementIntervals {
-		if rateInterval > maxInterval {
-			maxInterval = rateInterval
-		}
-	}
-	l.statsHistory = make([]*livekit.NodeStats, (maxInterval+nsc.StatsUpdateInterval-1)/nsc.StatsUpdateInterval)
-	l.rateIntervals = nsc.StatsRateMeasurementIntervals
+	l.nodeStats = NewNodeStats(nsc, nowUnix)
 
 	return l, nil
 }
@@ -156,20 +141,12 @@ func (l *LocalNodeImpl) UpdateNodeStats() bool {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
-	stats, err := prometheus.GetNodeStats(
-		l.node.Stats.StartedAt,
-		append(l.statsHistory[l.statsHistoryWritePtr:], l.statsHistory[0:l.statsHistoryWritePtr]...),
-		l.rateIntervals,
-	)
+	stats, err := l.nodeStats.UpdateAndGetNodeStats()
 	if err != nil {
-		logger.Errorw("could not update node stats", err)
 		return false
 	}
 
 	l.node.Stats = stats
-
-	l.statsHistory[l.statsHistoryWritePtr] = stats
-	l.statsHistoryWritePtr = (l.statsHistoryWritePtr + 1) % len(l.statsHistory)
 	return true
 }
 
