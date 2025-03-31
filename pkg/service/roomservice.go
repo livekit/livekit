@@ -321,7 +321,7 @@ func (s *RoomService) ForwardParticipant(ctx context.Context, req *livekit.Forwa
 
 	roomName := livekit.RoomName(req.Room)
 	AppendLogFields(ctx, "room", roomName, "participant", req.Identity)
-	if err := EnsureAdminPermission(ctx, roomName); err != nil {
+	if err := EnsureAdminPermission(ctx, livekit.RoomName(fmt.Sprintf("%s|%s", req.Room, req.DestinationRoom))); err != nil {
 		return nil, twirpAuthError(err)
 	}
 
