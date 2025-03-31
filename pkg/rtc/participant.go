@@ -1762,7 +1762,9 @@ func (p *ParticipantImpl) removePublishedTrack(track types.MediaTrack) {
 	p.RemovePublishedTrack(track, false, true)
 
 	if lmt, ok := track.(types.LocalMediaTrack); ok {
-		p.simulcastTrackIds.Delete(lmt.SdpCid())
+		for _, sdpCid := range lmt.SdpCids() {
+			p.simulcastTrackIds.Delete(sdpCid)
+		}
 	}
 
 	if p.ProtocolVersion().SupportsUnpublish() {
@@ -1808,7 +1810,13 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 		codec = codecs[0]
 		fromSdp = true
 	}
-	p.params.Logger.Debugw("onMediaTrack", "codec", codec, "payloadType", codec.PayloadType, "fromSdp", fromSdp, "parameters", rtpReceiver.GetParameters())
+	p.params.Logger.Debugw(
+		"onMediaTrack",
+		"codec", codec,
+		"payloadType", codec.PayloadType,
+		"fromSdp", fromSdp,
+		"parameters", rtpReceiver.GetParameters(),
+	)
 
 	var track sfu.TrackRemote = sfu.NewTrackRemoteFromSdp(rtcTrack, codec)
 	publishedTrack, isNewTrack := p.mediaTrackReceived(track, rtpReceiver)
@@ -2239,7 +2247,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 			return nil
 		}
 
-		track.(*MediaTrack).UpdateCodecCid(req.SimulcastCodecs)
+		track.(*MediaTrack).UpdateCodecSignalCid(req.SimulcastCodecs)
 		ti := track.ToProto()
 		return ti
 	}
@@ -2279,8 +2287,8 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		if req.Type == livekit.TrackType_VIDEO {
 			// clients not supporting simulcast codecs, synthesise a codec
 			ti.Codecs = append(ti.Codecs, &livekit.SimulcastCodecInfo{
-				Cid:    req.Cid,
-				Layers: req.Layers,
+				SignalCid: req.Cid,
+				Layers:    req.Layers,
 			})
 		}
 	} else {
@@ -2315,9 +2323,9 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 				clonedLayers = append(clonedLayers, utils.CloneProto(l))
 			}
 			ti.Codecs = append(ti.Codecs, &livekit.SimulcastCodecInfo{
-				MimeType: mimeType,
-				Cid:      codec.Cid,
-				Layers:   clonedLayers,
+				MimeType:  mimeType,
+				SignalCid: codec.Cid,
+				Layers:    clonedLayers,
 			})
 		}
 	}
@@ -2441,10 +2449,20 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 		return nil, false
 	}
 
+	receiverIsSimulcast := false
+	cidIsSimulcast, ok := p.simulcastTrackIds.Load(track.ID())
+	if ok {
+		receiverIsSimulcast = cidIsSimulcast.(bool)
+	}
+
 	// use existing media track to handle simulcast
 	var pubTime time.Duration
 	var isMigrated bool
 	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
+	if !ok {
+		// only works for clients using same cid in signal and SDP, so won't work for clients like Firefox
+		mt, ok = p.getPublishedTrackBySignalCid(track.ID()).(*MediaTrack)
+	}
 	if !ok {
 		signalCid, ti, migrated, createdAt := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()), true)
 		if ti == nil {
@@ -2483,6 +2501,9 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 			// only assign version on a fresh publish, i. e. avoid updating version in scenarios like migration
 			ti.Version = p.params.VersionGenerator.Next().ToProto()
 		}
+		// track level simulcast set up only for the primary codec
+		// assumption: when a new track is created, it is the primary codec that causes that
+		ti.Simulcast = receiverIsSimulcast
 
 		mt = p.addMediaTrack(signalCid, track.ID(), ti)
 		newTrack = true
@@ -2496,16 +2517,9 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 		pubTime = time.Since(createdAt)
 		p.dirty.Store(true)
 	}
-
-	isSimulcast, ok := p.simulcastTrackIds.Load(track.ID())
-	if !ok {
-		isSimulcast = false
-	}
-	mt.SetSimulcast(isSimulcast.(bool))
-
 	p.pendingTracksLock.Unlock()
 
-	mt.AddReceiver(rtpReceiver, track, mid)
+	mt.AddReceiver(rtpReceiver, track, mid, receiverIsSimulcast)
 
 	if newTrack {
 		go func() {
@@ -2593,8 +2607,6 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 
 func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *livekit.TrackInfo) *MediaTrack {
 	mt := NewMediaTrack(MediaTrackParams{
-		SignalCid:             signalCid,
-		SdpCid:                sdpCid,
 		ParticipantID:         p.params.SID,
 		ParticipantIdentity:   p.params.Identity,
 		ParticipantVersion:    p.version.Load(),
@@ -2656,7 +2668,9 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 			)
 		}
 
-		p.simulcastTrackIds.Delete(mt.SdpCid())
+		for _, sdpCid := range mt.SdpCids() {
+			p.simulcastTrackIds.Delete(sdpCid)
+		}
 
 		p.pendingTracksLock.Lock()
 		if pti := p.pendingTracks[signalCid]; pti != nil {
@@ -2730,7 +2744,7 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 		for cid, pti := range p.pendingTracks {
 			ti := pti.trackInfos[0]
 			for _, c := range ti.Codecs {
-				if c.Cid == clientId {
+				if c.SignalCid == clientId {
 					pendingInfo = pti
 					signalCid = cid
 					break track_loop
@@ -2797,7 +2811,8 @@ func (p *ParticipantImpl) setTrackID(cid string, info *livekit.TrackInfo) {
 
 func (p *ParticipantImpl) getPublishedTrackBySignalCid(clientId string) types.MediaTrack {
 	for _, publishedTrack := range p.GetPublishedTracks() {
-		if publishedTrack.(types.LocalMediaTrack).SignalCid() == clientId {
+		if publishedTrack.(types.LocalMediaTrack).HasSignalCid(clientId) {
+			p.pubLogger.Debugw("found track by signal cid", "signalCid", clientId, "trackID", publishedTrack.ID())
 			return publishedTrack
 		}
 	}

@@ -1322,7 +1322,7 @@ func (t *PCTransport) AddTrackToStreamAllocator(subTrack types.SubscribedTrack) 
 
 	t.streamAllocator.AddTrack(subTrack.DownTrack(), streamallocator.AddTrackParams{
 		Source:      subTrack.MediaTrack().Source(),
-		IsSimulcast: subTrack.MediaTrack().IsSimulcast(),
+		IsSimulcast: subTrack.MediaTrack().HasMultipleSpatialLayers(),
 		PublisherID: subTrack.MediaTrack().PublisherID(),
 	})
 }

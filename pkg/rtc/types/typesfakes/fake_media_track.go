@@ -96,6 +96,16 @@ type FakeMediaTrack struct {
 	getTemporalLayerForSpatialFpsReturnsOnCall map[int]struct {
 		result1 int32
 	}
+	HasMultipleSpatialLayersStub        func() bool
+	hasMultipleSpatialLayersMutex       sync.RWMutex
+	hasMultipleSpatialLayersArgsForCall []struct {
+	}
+	hasMultipleSpatialLayersReturns struct {
+		result1 bool
+	}
+	hasMultipleSpatialLayersReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	IDStub        func() livekit.TrackID
 	iDMutex       sync.RWMutex
 	iDArgsForCall []struct {
@@ -736,6 +746,59 @@ func (fake *FakeMediaTrack) GetTemporalLayerForSpatialFpsReturnsOnCall(i int, re
 	}
 	fake.getTemporalLayerForSpatialFpsReturnsOnCall[i] = struct {
 		result1 int32
+	}{result1}
+}
+
+func (fake *FakeMediaTrack) HasMultipleSpatialLayers() bool {
+	fake.hasMultipleSpatialLayersMutex.Lock()
+	ret, specificReturn := fake.hasMultipleSpatialLayersReturnsOnCall[len(fake.hasMultipleSpatialLayersArgsForCall)]
+	fake.hasMultipleSpatialLayersArgsForCall = append(fake.hasMultipleSpatialLayersArgsForCall, struct {
+	}{})
+	stub := fake.HasMultipleSpatialLayersStub
+	fakeReturns := fake.hasMultipleSpatialLayersReturns
+	fake.recordInvocation("HasMultipleSpatialLayers", []interface{}{})
+	fake.hasMultipleSpatialLayersMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeMediaTrack) HasMultipleSpatialLayersCallCount() int {
+	fake.hasMultipleSpatialLayersMutex.RLock()
+	defer fake.hasMultipleSpatialLayersMutex.RUnlock()
+	return len(fake.hasMultipleSpatialLayersArgsForCall)
+}
+
+func (fake *FakeMediaTrack) HasMultipleSpatialLayersCalls(stub func() bool) {
+	fake.hasMultipleSpatialLayersMutex.Lock()
+	defer fake.hasMultipleSpatialLayersMutex.Unlock()
+	fake.HasMultipleSpatialLayersStub = stub
+}
+
+func (fake *FakeMediaTrack) HasMultipleSpatialLayersReturns(result1 bool) {
+	fake.hasMultipleSpatialLayersMutex.Lock()
+	defer fake.hasMultipleSpatialLayersMutex.Unlock()
+	fake.HasMultipleSpatialLayersStub = nil
+	fake.hasMultipleSpatialLayersReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeMediaTrack) HasMultipleSpatialLayersReturnsOnCall(i int, result1 bool) {
+	fake.hasMultipleSpatialLayersMutex.Lock()
+	defer fake.hasMultipleSpatialLayersMutex.Unlock()
+	fake.HasMultipleSpatialLayersStub = nil
+	if fake.hasMultipleSpatialLayersReturnsOnCall == nil {
+		fake.hasMultipleSpatialLayersReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.hasMultipleSpatialLayersReturnsOnCall[i] = struct {
+		result1 bool
 	}{result1}
 }
 
@@ -1814,6 +1877,8 @@ func (fake *FakeMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.getQualityForDimensionMutex.RUnlock()
 	fake.getTemporalLayerForSpatialFpsMutex.RLock()
 	defer fake.getTemporalLayerForSpatialFpsMutex.RUnlock()
+	fake.hasMultipleSpatialLayersMutex.RLock()
+	defer fake.hasMultipleSpatialLayersMutex.RUnlock()
 	fake.iDMutex.RLock()
 	defer fake.iDMutex.RUnlock()
 	fake.isEncryptedMutex.RLock()
