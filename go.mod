@@ -23,7 +23,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1
 	github.com/livekit/mediatransportutil v0.0.0-20250310153736-45596af895b6
-	github.com/livekit/protocol v1.36.2-0.20250326174620-fbbb1c3ae28a
+	github.com/livekit/protocol v1.36.2-0.20250331123911-67af9b92e4ac
 	github.com/livekit/psrpc v0.6.1-0.20250205181828-a0beed2e4126
 	github.com/mackerelio/go-osstat v0.2.5
 	github.com/magefile/mage v1.15.0
@@ -32,7 +32,7 @@ require (
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/ory/dockertest/v3 v3.11.0
 	github.com/pion/datachannel v1.5.10
-	github.com/pion/dtls/v3 v3.0.5
+	github.com/pion/dtls/v3 v3.0.6
 	github.com/pion/ice/v4 v4.0.9
 	github.com/pion/interceptor v0.1.37
 	github.com/pion/rtcp v1.2.15
@@ -133,7 +133,7 @@ require (
 	go.uber.org/zap/exp v0.3.0 // indirect
 	golang.org/x/crypto v0.36.0 // indirect
 	golang.org/x/mod v0.24.0 // indirect
-	golang.org/x/net v0.37.0 // indirect
+	golang.org/x/net v0.38.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 	golang.org/x/tools v0.31.0 // indirect

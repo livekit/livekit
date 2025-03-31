@@ -506,6 +506,7 @@ type MediaTrack interface {
 	SetMuted(muted bool)
 
 	IsSimulcast() bool
+	HasMultipleSpatialLayers() bool
 
 	GetAudioLevel() (level float64, active bool)
 

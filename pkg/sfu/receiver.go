@@ -171,7 +171,6 @@ type WebRTCReceiver struct {
 	codecState         ReceiverCodecState
 	codecStateLock     sync.Mutex
 	onCodecStateChange []func(webrtc.RTPCodecParameters, ReceiverCodecState)
-	isSimulcast        bool
 	isSVC              bool
 	isRED              bool
 	onCloseHandler     func()
@@ -253,26 +252,31 @@ func NewWebRTCReceiver(
 	receiver *webrtc.RTPReceiver,
 	track TrackRemote,
 	trackInfo *livekit.TrackInfo,
-	isSimulcast bool,
 	logger logger.Logger,
 	onRTCP func([]rtcp.Packet),
 	streamTrackerManagerConfig StreamTrackerManagerConfig,
 	opts ...ReceiverOpts,
 ) *WebRTCReceiver {
 	w := &WebRTCReceiver{
-		logger:      logger,
-		receiver:    receiver,
-		trackID:     livekit.TrackID(track.ID()),
-		streamID:    track.StreamID(),
-		codec:       track.Codec(),
-		codecState:  ReceiverCodecStateNormal,
-		kind:        track.Kind(),
-		onRTCP:      onRTCP,
-		isSimulcast: isSimulcast,
-		isRED:       mime.IsMimeTypeStringRED(track.Codec().MimeType),
+		logger:     logger,
+		receiver:   receiver,
+		trackID:    livekit.TrackID(track.ID()),
+		streamID:   track.StreamID(),
+		codec:      track.Codec(),
+		codecState: ReceiverCodecStateNormal,
+		kind:       track.Kind(),
+		onRTCP:     onRTCP,
+		isRED:      mime.IsMimeTypeStringRED(track.Codec().MimeType),
 	}
 
 	isSVC := false
+	isSimulcast := false
+	for _, codec := range trackInfo.Codecs {
+		if mime.GetMimeTypeCodec(codec.MimeType) == mime.NormalizeMimeTypeCodec(track.Codec().MimeType) {
+			isSimulcast = codec.IsSimulcast
+			break
+		}
+	}
 	if !isSimulcast {
 		isSVC = mime.IsMimeTypeStringSVC(track.Codec().MimeType)
 	}
@@ -328,7 +332,13 @@ func (w *WebRTCReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 }
 
 func (w *WebRTCReceiver) IsSimulcast() bool {
-	return w.isSimulcast
+	for _, codec := range w.trackInfo.Load().Codecs {
+		if mime.IsMimeTypeStringEqual(codec.MimeType, w.codec.MimeType) {
+			return codec.IsSimulcast
+		}
+	}
+
+	return false
 }
 
 func (w *WebRTCReceiver) OnStatsUpdate(fn func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)) {

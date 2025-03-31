@@ -23,7 +23,6 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/maps"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -43,7 +42,6 @@ import (
 // Implements MediaTrack and PublishedTrack interface
 type MediaTrack struct {
 	params         MediaTrackParams
-	sdpCids        map[mime.MimeType]string
 	buffer         *buffer.Buffer
 	everSubscribed atomic.Bool
 
@@ -84,7 +82,6 @@ func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 	t := &MediaTrack{
 		params:            params,
 		backupCodecPolicy: ti.BackupCodecPolicy,
-		sdpCids:           make(map[mime.MimeType]string),
 	}
 
 	if t.backupCodecPolicy != livekit.BackupCodecPolicy_SIMULCAST && len(ti.Codecs) > 1 {
@@ -178,9 +175,8 @@ func (t *MediaTrack) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, quali
 }
 
 func (t *MediaTrack) HasSignalCid(cid string) bool {
-	ti := t.MediaTrackReceiver.TrackInfoClone()
-	for _, c := range ti.Codecs {
-		if c.Cid == cid {
+	for _, c := range t.MediaTrackReceiver.TrackInfo().Codecs {
+		if c.SignalCid == cid {
 			return true
 		}
 	}
@@ -188,21 +184,21 @@ func (t *MediaTrack) HasSignalCid(cid string) bool {
 }
 
 func (t *MediaTrack) SdpCids() []string {
-	t.lock.RLock()
-	defer t.lock.RUnlock()
-
-	return maps.Values(t.sdpCids)
+	var sdpCids []string
+	for _, c := range t.MediaTrackReceiver.TrackInfo().Codecs {
+		if c.SdpCid != "" {
+			sdpCids = append(sdpCids, c.SdpCid)
+		}
+	}
+	return sdpCids
 }
 
 func (t *MediaTrack) HasSdpCid(cid string) bool {
-	t.lock.RLock()
-	defer t.lock.RUnlock()
-	for _, sdpCid := range t.sdpCids {
-		if cid == sdpCid {
+	for _, c := range t.MediaTrackReceiver.TrackInfo().Codecs {
+		if c.SdpCid == cid {
 			return true
 		}
 	}
-
 	return false
 }
 
@@ -258,6 +254,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		}
 	})
 
+	t.MediaTrackReceiver.UpdateCodecInfo(track.Codec().MimeType, track.ID(), isSimulcast)
 	ti := t.MediaTrackReceiver.TrackInfoClone()
 	t.lock.Lock()
 	var regressCodec bool
@@ -302,7 +299,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			receiver,
 			track,
 			ti,
-			isSimulcast,
 			LoggerWithCodecMime(t.params.Logger, mimeType),
 			t.params.OnRTCP,
 			t.params.VideoConfig.StreamTrackerManager,
@@ -390,8 +386,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			regressCodec = true
 		}
 	}
-
-	t.sdpCids[mimeType] = track.ID()
 	t.lock.Unlock()
 
 	if err := wr.(*sfu.WebRTCReceiver).AddUpTrack(track, buff); err != nil {
