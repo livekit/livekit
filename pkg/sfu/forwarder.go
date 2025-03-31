@@ -344,7 +344,6 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 
 	case mime.MimeTypeVP9:
 		if f.isReceiverSimulcast {
-			f.logger.Debugw("selecting simulcast video layer selector for VP9")
 			if f.vls != nil {
 				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
 			} else {
@@ -354,14 +353,12 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		} else {
 			isDDAvailable := ddAvailable(extensions)
 			if isDDAvailable {
-				f.logger.Debugw("selecting dependency descriptor video layer selector for VP9")
 				if f.vls != nil {
 					f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
 				} else {
 					f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
 				}
 			} else {
-				f.logger.Debugw("selecting VP9 SVC video layer selector")
 				if f.vls != nil {
 					f.vls = videolayerselector.NewVP9FromOther(f.vls)
 				} else {
@@ -374,14 +371,12 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		isDDAvailable := ddAvailable(extensions)
 		if f.isReceiverSimulcast || !isDDAvailable {
 			// AV1-SIMULCAST-TODO: Add temporal layer selector for AV1
-			f.logger.Debugw("selecting simulcast video layer selector for AV1")
 			if f.vls != nil {
 				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
 			} else {
 				f.vls = videolayerselector.NewSimulcast(f.logger)
 			}
 		} else {
-			f.logger.Debugw("selecting dependency descriptor video layer selector for AV1")
 			if f.vls != nil {
 				f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
 			} else {
