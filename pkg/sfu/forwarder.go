@@ -221,9 +221,8 @@ type Forwarder struct {
 	pubMuted              bool
 	resumeBehindThreshold float64
 
-	started      bool
-	preStartTime time.Time
-	// RAJA-REMOVE isReceiverSimulcast      bool
+	started                  bool
+	preStartTime             time.Time
 	extFirstTS               uint64
 	lastSSRC                 uint32
 	lastReferencePayloadType int8
@@ -249,15 +248,13 @@ func NewForwarder(
 	logger logger.Logger,
 	skipReferenceTS bool,
 	rtpStats *rtpstats.RTPStatsSender,
-	// RAJA-REMOVE isReceiverSimulcast bool,
 ) *Forwarder {
 	f := &Forwarder{
-		mime:            mime.MimeTypeUnknown,
-		kind:            kind,
-		logger:          logger,
-		skipReferenceTS: skipReferenceTS,
-		rtpStats:        rtpStats,
-		// RAJA-REMOVE isReceiverSimulcast:      isReceiverSimulcast,
+		mime:                     mime.MimeTypeUnknown,
+		kind:                     kind,
+		logger:                   logger,
+		skipReferenceTS:          skipReferenceTS,
+		rtpStats:                 rtpStats,
 		referenceLayerSpatial:    buffer.InvalidLayerSpatial,
 		lastAllocation:           VideoAllocationDefault,
 		lastReferencePayloadType: -1,
