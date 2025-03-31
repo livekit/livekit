@@ -269,23 +269,16 @@ func NewWebRTCReceiver(
 		isRED:      mime.IsMimeTypeStringRED(track.Codec().MimeType),
 	}
 
-	isSVC := false
-	isSimulcast := false
-	for _, codec := range trackInfo.Codecs {
-		if mime.GetMimeTypeCodec(codec.MimeType) == mime.NormalizeMimeTypeCodec(track.Codec().MimeType) {
-			isSimulcast = codec.IsSimulcast
-			break
-		}
-	}
-	if !isSimulcast {
-		isSVC = mime.IsMimeTypeStringSVC(track.Codec().MimeType)
-	}
-	w.isSVC = isSVC
-
 	for _, opt := range opts {
 		w = opt(w)
 	}
 	w.trackInfo.Store(utils.CloneProto(trackInfo))
+
+	isSVC := false
+	if !w.IsSimulcast() {
+		isSVC = mime.IsMimeTypeStringSVC(track.Codec().MimeType)
+	}
+	w.isSVC = isSVC
 
 	w.downTrackSpreader = NewDownTrackSpreader(DownTrackSpreaderParams{
 		Threshold: w.lbThreshold,
@@ -878,13 +871,9 @@ func (w *WebRTCReceiver) closeTracks() {
 }
 
 func (w *WebRTCReceiver) DebugInfo() map[string]interface{} {
-	isSimulcast := !w.isSVC
-	if ti := w.trackInfo.Load(); ti != nil {
-		isSimulcast = isSimulcast && len(ti.Layers) > 1
-	}
 	info := map[string]interface{}{
 		"SVC":       w.isSVC,
-		"Simulcast": isSimulcast,
+		"Simulcast": w.IsSimulcast(),
 	}
 
 	w.bufferMu.RLock()
