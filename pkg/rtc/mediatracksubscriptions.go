@@ -92,7 +92,7 @@ func (t *MediaTrackSubscriptions) IsSubscriber(subID livekit.ParticipantID) bool
 }
 
 // AddSubscriber subscribes sub to current mediaTrack
-func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *WrappedReceiver, isReceiverSimulcast bool) (types.SubscribedTrack, error) {
+func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *WrappedReceiver) (types.SubscribedTrack, error) {
 	trackID := t.params.MediaTrack.ID()
 	subscriberID := sub.ID()
 
@@ -146,7 +146,6 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		RTCPWriter:                     sub.WriteSubscriberRTCP,
 		DisableSenderReportPassThrough: sub.GetDisableSenderReportPassThrough(),
 		SupportsCodecChange:            sub.SupportsCodecChange(),
-		IsReceiverSimulcast:            isReceiverSimulcast,
 	})
 	if err != nil {
 		return nil, err

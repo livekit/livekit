@@ -181,10 +181,6 @@ func (t *MediaTrack) SignalCid() string {
 	return t.params.SignalCid
 }
 
-func (t *MediaTrack) SdpCid() string {
-	return t.params.SdpCid
-}
-
 func (t *MediaTrack) HasSdpCid(cid string) bool {
 	if t.params.SdpCid == cid {
 		return true
@@ -397,6 +393,12 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		)
 		buff.Close()
 		return false
+	}
+
+	// LK-TODO: can remove this completely when VideoLayers protocol becomes the default as it has info from client or if we decide to use TrackInfo.Simulcast
+	if t.numUpTracks.Inc() > 1 || track.RID() != "" {
+		// cannot only rely on numUpTracks since we fire metadata events immediately after the first layer
+		t.SetSimulcast(true)
 	}
 
 	var bitrates int

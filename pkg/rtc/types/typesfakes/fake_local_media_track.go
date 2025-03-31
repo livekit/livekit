@@ -287,16 +287,6 @@ type FakeLocalMediaTrack struct {
 	revokeDisallowedSubscribersReturnsOnCall map[int]struct {
 		result1 []livekit.ParticipantIdentity
 	}
-	SdpCidStub        func() string
-	sdpCidMutex       sync.RWMutex
-	sdpCidArgsForCall []struct {
-	}
-	sdpCidReturns struct {
-		result1 string
-	}
-	sdpCidReturnsOnCall map[int]struct {
-		result1 string
-	}
 	SetMutedStub        func(bool)
 	setMutedMutex       sync.RWMutex
 	setMutedArgsForCall []struct {
@@ -1845,59 +1835,6 @@ func (fake *FakeLocalMediaTrack) RevokeDisallowedSubscribersReturnsOnCall(i int,
 	}{result1}
 }
 
-func (fake *FakeLocalMediaTrack) SdpCid() string {
-	fake.sdpCidMutex.Lock()
-	ret, specificReturn := fake.sdpCidReturnsOnCall[len(fake.sdpCidArgsForCall)]
-	fake.sdpCidArgsForCall = append(fake.sdpCidArgsForCall, struct {
-	}{})
-	stub := fake.SdpCidStub
-	fakeReturns := fake.sdpCidReturns
-	fake.recordInvocation("SdpCid", []interface{}{})
-	fake.sdpCidMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeLocalMediaTrack) SdpCidCallCount() int {
-	fake.sdpCidMutex.RLock()
-	defer fake.sdpCidMutex.RUnlock()
-	return len(fake.sdpCidArgsForCall)
-}
-
-func (fake *FakeLocalMediaTrack) SdpCidCalls(stub func() string) {
-	fake.sdpCidMutex.Lock()
-	defer fake.sdpCidMutex.Unlock()
-	fake.SdpCidStub = stub
-}
-
-func (fake *FakeLocalMediaTrack) SdpCidReturns(result1 string) {
-	fake.sdpCidMutex.Lock()
-	defer fake.sdpCidMutex.Unlock()
-	fake.SdpCidStub = nil
-	fake.sdpCidReturns = struct {
-		result1 string
-	}{result1}
-}
-
-func (fake *FakeLocalMediaTrack) SdpCidReturnsOnCall(i int, result1 string) {
-	fake.sdpCidMutex.Lock()
-	defer fake.sdpCidMutex.Unlock()
-	fake.SdpCidStub = nil
-	if fake.sdpCidReturnsOnCall == nil {
-		fake.sdpCidReturnsOnCall = make(map[int]struct {
-			result1 string
-		})
-	}
-	fake.sdpCidReturnsOnCall[i] = struct {
-		result1 string
-	}{result1}
-}
-
 func (fake *FakeLocalMediaTrack) SetMuted(arg1 bool) {
 	fake.setMutedMutex.Lock()
 	fake.setMutedArgsForCall = append(fake.setMutedArgsForCall, struct {
@@ -2333,8 +2270,6 @@ func (fake *FakeLocalMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.restartMutex.RUnlock()
 	fake.revokeDisallowedSubscribersMutex.RLock()
 	defer fake.revokeDisallowedSubscribersMutex.RUnlock()
-	fake.sdpCidMutex.RLock()
-	defer fake.sdpCidMutex.RUnlock()
 	fake.setMutedMutex.RLock()
 	defer fake.setMutedMutex.RUnlock()
 	fake.setRTTMutex.RLock()

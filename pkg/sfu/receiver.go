@@ -265,15 +265,9 @@ func NewWebRTCReceiver(
 		codecState: ReceiverCodecStateNormal,
 		kind:       track.Kind(),
 		onRTCP:     onRTCP,
+		isSVC:      mime.IsMimeTypeStringSVC(track.Codec().MimeType),
 		isRED:      mime.IsMimeTypeStringRED(track.Codec().MimeType),
 	}
-
-	isSVC := false
-	isSimulcast := trackInfo.GetSimulcast()
-	if !isSimulcast {
-		isSVC = mime.IsMimeTypeStringSVC(track.Codec().MimeType)
-	}
-	w.isSVC = isSVC
 
 	for _, opt := range opts {
 		w = opt(w)
