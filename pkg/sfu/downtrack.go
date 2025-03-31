@@ -586,8 +586,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.setBindStateLocked(bindStateBound)
 		d.bindLock.Unlock()
 
-		receiver := d.Receiver()
-		d.forwarder.DetermineCodec(codec.RTPCodecCapability, receiver.HeaderExtensions(), receiver.IsSimulcast())
+		d.forwarder.DetermineCodec(codec.RTPCodecCapability, d.Receiver().HeaderExtensions())
 		d.connectionStats.Start(d.Mime(), isFECEnabled)
 		d.params.Logger.Debugw("downtrack bound")
 	}
@@ -696,8 +695,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 	)
 
 	d.forwarder.Restart()
-	receiver := d.Receiver()
-	d.forwarder.DetermineCodec(codec.RTPCodecCapability, receiver.HeaderExtensions(), receiver.IsSimulcast())
+	d.forwarder.DetermineCodec(codec.RTPCodecCapability, d.Receiver().HeaderExtensions())
 	d.connectionStats.UpdateCodec(d.Mime(), isFECEnabled)
 }
 

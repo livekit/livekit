@@ -118,16 +118,6 @@ type FakeLocalMediaTrack struct {
 	getTrackStatsReturnsOnCall map[int]struct {
 		result1 *livekit.RTPStats
 	}
-	HasMultipleSpatialLayersStub        func() bool
-	hasMultipleSpatialLayersMutex       sync.RWMutex
-	hasMultipleSpatialLayersArgsForCall []struct {
-	}
-	hasMultipleSpatialLayersReturns struct {
-		result1 bool
-	}
-	hasMultipleSpatialLayersReturnsOnCall map[int]struct {
-		result1 bool
-	}
 	HasSdpCidStub        func(string) bool
 	hasSdpCidMutex       sync.RWMutex
 	hasSdpCidArgsForCall []struct {
@@ -137,17 +127,6 @@ type FakeLocalMediaTrack struct {
 		result1 bool
 	}
 	hasSdpCidReturnsOnCall map[int]struct {
-		result1 bool
-	}
-	HasSignalCidStub        func(string) bool
-	hasSignalCidMutex       sync.RWMutex
-	hasSignalCidArgsForCall []struct {
-		arg1 string
-	}
-	hasSignalCidReturns struct {
-		result1 bool
-	}
-	hasSignalCidReturnsOnCall map[int]struct {
 		result1 bool
 	}
 	IDStub        func() livekit.TrackID
@@ -308,16 +287,6 @@ type FakeLocalMediaTrack struct {
 	revokeDisallowedSubscribersReturnsOnCall map[int]struct {
 		result1 []livekit.ParticipantIdentity
 	}
-	SdpCidsStub        func() []string
-	sdpCidsMutex       sync.RWMutex
-	sdpCidsArgsForCall []struct {
-	}
-	sdpCidsReturns struct {
-		result1 []string
-	}
-	sdpCidsReturnsOnCall map[int]struct {
-		result1 []string
-	}
 	SetMutedStub        func(bool)
 	setMutedMutex       sync.RWMutex
 	setMutedArgsForCall []struct {
@@ -327,6 +296,16 @@ type FakeLocalMediaTrack struct {
 	setRTTMutex       sync.RWMutex
 	setRTTArgsForCall []struct {
 		arg1 uint32
+	}
+	SignalCidStub        func() string
+	signalCidMutex       sync.RWMutex
+	signalCidArgsForCall []struct {
+	}
+	signalCidReturns struct {
+		result1 string
+	}
+	signalCidReturnsOnCall map[int]struct {
+		result1 string
 	}
 	SourceStub        func() livekit.TrackSource
 	sourceMutex       sync.RWMutex
@@ -933,59 +912,6 @@ func (fake *FakeLocalMediaTrack) GetTrackStatsReturnsOnCall(i int, result1 *live
 	}{result1}
 }
 
-func (fake *FakeLocalMediaTrack) HasMultipleSpatialLayers() bool {
-	fake.hasMultipleSpatialLayersMutex.Lock()
-	ret, specificReturn := fake.hasMultipleSpatialLayersReturnsOnCall[len(fake.hasMultipleSpatialLayersArgsForCall)]
-	fake.hasMultipleSpatialLayersArgsForCall = append(fake.hasMultipleSpatialLayersArgsForCall, struct {
-	}{})
-	stub := fake.HasMultipleSpatialLayersStub
-	fakeReturns := fake.hasMultipleSpatialLayersReturns
-	fake.recordInvocation("HasMultipleSpatialLayers", []interface{}{})
-	fake.hasMultipleSpatialLayersMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeLocalMediaTrack) HasMultipleSpatialLayersCallCount() int {
-	fake.hasMultipleSpatialLayersMutex.RLock()
-	defer fake.hasMultipleSpatialLayersMutex.RUnlock()
-	return len(fake.hasMultipleSpatialLayersArgsForCall)
-}
-
-func (fake *FakeLocalMediaTrack) HasMultipleSpatialLayersCalls(stub func() bool) {
-	fake.hasMultipleSpatialLayersMutex.Lock()
-	defer fake.hasMultipleSpatialLayersMutex.Unlock()
-	fake.HasMultipleSpatialLayersStub = stub
-}
-
-func (fake *FakeLocalMediaTrack) HasMultipleSpatialLayersReturns(result1 bool) {
-	fake.hasMultipleSpatialLayersMutex.Lock()
-	defer fake.hasMultipleSpatialLayersMutex.Unlock()
-	fake.HasMultipleSpatialLayersStub = nil
-	fake.hasMultipleSpatialLayersReturns = struct {
-		result1 bool
-	}{result1}
-}
-
-func (fake *FakeLocalMediaTrack) HasMultipleSpatialLayersReturnsOnCall(i int, result1 bool) {
-	fake.hasMultipleSpatialLayersMutex.Lock()
-	defer fake.hasMultipleSpatialLayersMutex.Unlock()
-	fake.HasMultipleSpatialLayersStub = nil
-	if fake.hasMultipleSpatialLayersReturnsOnCall == nil {
-		fake.hasMultipleSpatialLayersReturnsOnCall = make(map[int]struct {
-			result1 bool
-		})
-	}
-	fake.hasMultipleSpatialLayersReturnsOnCall[i] = struct {
-		result1 bool
-	}{result1}
-}
-
 func (fake *FakeLocalMediaTrack) HasSdpCid(arg1 string) bool {
 	fake.hasSdpCidMutex.Lock()
 	ret, specificReturn := fake.hasSdpCidReturnsOnCall[len(fake.hasSdpCidArgsForCall)]
@@ -1043,67 +969,6 @@ func (fake *FakeLocalMediaTrack) HasSdpCidReturnsOnCall(i int, result1 bool) {
 		})
 	}
 	fake.hasSdpCidReturnsOnCall[i] = struct {
-		result1 bool
-	}{result1}
-}
-
-func (fake *FakeLocalMediaTrack) HasSignalCid(arg1 string) bool {
-	fake.hasSignalCidMutex.Lock()
-	ret, specificReturn := fake.hasSignalCidReturnsOnCall[len(fake.hasSignalCidArgsForCall)]
-	fake.hasSignalCidArgsForCall = append(fake.hasSignalCidArgsForCall, struct {
-		arg1 string
-	}{arg1})
-	stub := fake.HasSignalCidStub
-	fakeReturns := fake.hasSignalCidReturns
-	fake.recordInvocation("HasSignalCid", []interface{}{arg1})
-	fake.hasSignalCidMutex.Unlock()
-	if stub != nil {
-		return stub(arg1)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeLocalMediaTrack) HasSignalCidCallCount() int {
-	fake.hasSignalCidMutex.RLock()
-	defer fake.hasSignalCidMutex.RUnlock()
-	return len(fake.hasSignalCidArgsForCall)
-}
-
-func (fake *FakeLocalMediaTrack) HasSignalCidCalls(stub func(string) bool) {
-	fake.hasSignalCidMutex.Lock()
-	defer fake.hasSignalCidMutex.Unlock()
-	fake.HasSignalCidStub = stub
-}
-
-func (fake *FakeLocalMediaTrack) HasSignalCidArgsForCall(i int) string {
-	fake.hasSignalCidMutex.RLock()
-	defer fake.hasSignalCidMutex.RUnlock()
-	argsForCall := fake.hasSignalCidArgsForCall[i]
-	return argsForCall.arg1
-}
-
-func (fake *FakeLocalMediaTrack) HasSignalCidReturns(result1 bool) {
-	fake.hasSignalCidMutex.Lock()
-	defer fake.hasSignalCidMutex.Unlock()
-	fake.HasSignalCidStub = nil
-	fake.hasSignalCidReturns = struct {
-		result1 bool
-	}{result1}
-}
-
-func (fake *FakeLocalMediaTrack) HasSignalCidReturnsOnCall(i int, result1 bool) {
-	fake.hasSignalCidMutex.Lock()
-	defer fake.hasSignalCidMutex.Unlock()
-	fake.HasSignalCidStub = nil
-	if fake.hasSignalCidReturnsOnCall == nil {
-		fake.hasSignalCidReturnsOnCall = make(map[int]struct {
-			result1 bool
-		})
-	}
-	fake.hasSignalCidReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }
@@ -1970,59 +1835,6 @@ func (fake *FakeLocalMediaTrack) RevokeDisallowedSubscribersReturnsOnCall(i int,
 	}{result1}
 }
 
-func (fake *FakeLocalMediaTrack) SdpCids() []string {
-	fake.sdpCidsMutex.Lock()
-	ret, specificReturn := fake.sdpCidsReturnsOnCall[len(fake.sdpCidsArgsForCall)]
-	fake.sdpCidsArgsForCall = append(fake.sdpCidsArgsForCall, struct {
-	}{})
-	stub := fake.SdpCidsStub
-	fakeReturns := fake.sdpCidsReturns
-	fake.recordInvocation("SdpCids", []interface{}{})
-	fake.sdpCidsMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeLocalMediaTrack) SdpCidsCallCount() int {
-	fake.sdpCidsMutex.RLock()
-	defer fake.sdpCidsMutex.RUnlock()
-	return len(fake.sdpCidsArgsForCall)
-}
-
-func (fake *FakeLocalMediaTrack) SdpCidsCalls(stub func() []string) {
-	fake.sdpCidsMutex.Lock()
-	defer fake.sdpCidsMutex.Unlock()
-	fake.SdpCidsStub = stub
-}
-
-func (fake *FakeLocalMediaTrack) SdpCidsReturns(result1 []string) {
-	fake.sdpCidsMutex.Lock()
-	defer fake.sdpCidsMutex.Unlock()
-	fake.SdpCidsStub = nil
-	fake.sdpCidsReturns = struct {
-		result1 []string
-	}{result1}
-}
-
-func (fake *FakeLocalMediaTrack) SdpCidsReturnsOnCall(i int, result1 []string) {
-	fake.sdpCidsMutex.Lock()
-	defer fake.sdpCidsMutex.Unlock()
-	fake.SdpCidsStub = nil
-	if fake.sdpCidsReturnsOnCall == nil {
-		fake.sdpCidsReturnsOnCall = make(map[int]struct {
-			result1 []string
-		})
-	}
-	fake.sdpCidsReturnsOnCall[i] = struct {
-		result1 []string
-	}{result1}
-}
-
 func (fake *FakeLocalMediaTrack) SetMuted(arg1 bool) {
 	fake.setMutedMutex.Lock()
 	fake.setMutedArgsForCall = append(fake.setMutedArgsForCall, struct {
@@ -2085,6 +1897,59 @@ func (fake *FakeLocalMediaTrack) SetRTTArgsForCall(i int) uint32 {
 	defer fake.setRTTMutex.RUnlock()
 	argsForCall := fake.setRTTArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakeLocalMediaTrack) SignalCid() string {
+	fake.signalCidMutex.Lock()
+	ret, specificReturn := fake.signalCidReturnsOnCall[len(fake.signalCidArgsForCall)]
+	fake.signalCidArgsForCall = append(fake.signalCidArgsForCall, struct {
+	}{})
+	stub := fake.SignalCidStub
+	fakeReturns := fake.signalCidReturns
+	fake.recordInvocation("SignalCid", []interface{}{})
+	fake.signalCidMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalMediaTrack) SignalCidCallCount() int {
+	fake.signalCidMutex.RLock()
+	defer fake.signalCidMutex.RUnlock()
+	return len(fake.signalCidArgsForCall)
+}
+
+func (fake *FakeLocalMediaTrack) SignalCidCalls(stub func() string) {
+	fake.signalCidMutex.Lock()
+	defer fake.signalCidMutex.Unlock()
+	fake.SignalCidStub = stub
+}
+
+func (fake *FakeLocalMediaTrack) SignalCidReturns(result1 string) {
+	fake.signalCidMutex.Lock()
+	defer fake.signalCidMutex.Unlock()
+	fake.SignalCidStub = nil
+	fake.signalCidReturns = struct {
+		result1 string
+	}{result1}
+}
+
+func (fake *FakeLocalMediaTrack) SignalCidReturnsOnCall(i int, result1 string) {
+	fake.signalCidMutex.Lock()
+	defer fake.signalCidMutex.Unlock()
+	fake.SignalCidStub = nil
+	if fake.signalCidReturnsOnCall == nil {
+		fake.signalCidReturnsOnCall = make(map[int]struct {
+			result1 string
+		})
+	}
+	fake.signalCidReturnsOnCall[i] = struct {
+		result1 string
+	}{result1}
 }
 
 func (fake *FakeLocalMediaTrack) Source() livekit.TrackSource {
@@ -2367,12 +2232,8 @@ func (fake *FakeLocalMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.getTemporalLayerForSpatialFpsMutex.RUnlock()
 	fake.getTrackStatsMutex.RLock()
 	defer fake.getTrackStatsMutex.RUnlock()
-	fake.hasMultipleSpatialLayersMutex.RLock()
-	defer fake.hasMultipleSpatialLayersMutex.RUnlock()
 	fake.hasSdpCidMutex.RLock()
 	defer fake.hasSdpCidMutex.RUnlock()
-	fake.hasSignalCidMutex.RLock()
-	defer fake.hasSignalCidMutex.RUnlock()
 	fake.iDMutex.RLock()
 	defer fake.iDMutex.RUnlock()
 	fake.isEncryptedMutex.RLock()
@@ -2409,12 +2270,12 @@ func (fake *FakeLocalMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.restartMutex.RUnlock()
 	fake.revokeDisallowedSubscribersMutex.RLock()
 	defer fake.revokeDisallowedSubscribersMutex.RUnlock()
-	fake.sdpCidsMutex.RLock()
-	defer fake.sdpCidsMutex.RUnlock()
 	fake.setMutedMutex.RLock()
 	defer fake.setMutedMutex.RUnlock()
 	fake.setRTTMutex.RLock()
 	defer fake.setRTTMutex.RUnlock()
+	fake.signalCidMutex.RLock()
+	defer fake.signalCidMutex.RUnlock()
 	fake.sourceMutex.RLock()
 	defer fake.sourceMutex.RUnlock()
 	fake.streamMutex.RLock()

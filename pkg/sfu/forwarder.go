@@ -297,11 +297,7 @@ func (f *Forwarder) SetMaxTemporalLayerSeen(maxTemporalLayerSeen int32) bool {
 	return true
 }
 
-func (f *Forwarder) DetermineCodec(
-	codec webrtc.RTPCodecCapability,
-	extensions []webrtc.RTPHeaderExtensionParameter,
-	isReceiverSimulcast bool,
-) {
+func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions []webrtc.RTPHeaderExtensionParameter) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -344,51 +340,40 @@ func (f *Forwarder) DetermineCodec(
 		}
 
 	case mime.MimeTypeVP9:
-		if isReceiverSimulcast {
-			f.logger.Debugw("selecting simulcast video layer selector for VP9")
-			if f.vls != nil {
-				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
-			} else {
-				f.vls = videolayerselector.NewSimulcast(f.logger)
-			}
-			// VP9-SIMULCAST-TODO: Add temporal layer selector for VP9
-		} else {
-			isDDAvailable := ddAvailable(extensions)
-			if isDDAvailable {
-				f.logger.Debugw("selecting dependency descriptor video layer selector for VP9")
-				if f.vls != nil {
-					f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
-				} else {
-					f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
-				}
-			} else {
-				f.logger.Debugw("selecting VP9 SVC video layer selector")
-				if f.vls != nil {
-					f.vls = videolayerselector.NewVP9FromOther(f.vls)
-				} else {
-					f.vls = videolayerselector.NewVP9(f.logger)
-				}
-			}
-		}
-
-	case mime.MimeTypeAV1:
+		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
 		isDDAvailable := ddAvailable(extensions)
-		if isReceiverSimulcast || !isDDAvailable {
-			// AV1-SIMULCAST-TODO: Add temporal layer selector for AV1
-			f.logger.Debugw("selecting simulcast video layer selector for AV1")
-			if f.vls != nil {
-				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
-			} else {
-				f.vls = videolayerselector.NewSimulcast(f.logger)
-			}
-		} else {
-			f.logger.Debugw("selecting dependency descriptor video layer selector for AV1")
+		if isDDAvailable {
 			if f.vls != nil {
 				f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
 			} else {
 				f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
 			}
+		} else {
+			if f.vls != nil {
+				f.vls = videolayerselector.NewVP9FromOther(f.vls)
+			} else {
+				f.vls = videolayerselector.NewVP9(f.logger)
+			}
 		}
+		// SVC-TODO: Support for VP9 simulcast. When DD is not available, have to pick selector based on VP9 SVC or Simulcast
+
+	case mime.MimeTypeAV1:
+		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
+		isDDAvailable := ddAvailable(extensions)
+		if isDDAvailable {
+			if f.vls != nil {
+				f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
+			} else {
+				f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
+			}
+		} else {
+			if f.vls != nil {
+				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
+			} else {
+				f.vls = videolayerselector.NewSimulcast(f.logger)
+			}
+		}
+		// SVC-TODO: Support for AV1 Simulcast
 	}
 }
 

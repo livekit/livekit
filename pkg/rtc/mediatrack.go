@@ -42,6 +42,7 @@ import (
 // Implements MediaTrack and PublishedTrack interface
 type MediaTrack struct {
 	params         MediaTrackParams
+	numUpTracks    atomic.Uint32
 	buffer         *buffer.Buffer
 	everSubscribed atomic.Bool
 
@@ -176,27 +177,8 @@ func (t *MediaTrack) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, quali
 	}
 }
 
-func (t *MediaTrack) HasSignalCid(cid string) bool {
-	if t.params.SignalCid == cid {
-		return true
-	}
-
-	for _, c := range t.MediaTrackReceiver.TrackInfo().Codecs {
-		if c.SignalCid == cid {
-			return true
-		}
-	}
-	return false
-}
-
-func (t *MediaTrack) SdpCids() []string {
-	var sdpCids []string
-	for _, c := range t.MediaTrackReceiver.TrackInfo().Codecs {
-		if c.SdpCid != "" {
-			sdpCids = append(sdpCids, c.SdpCid)
-		}
-	}
-	return sdpCids
+func (t *MediaTrack) SignalCid() string {
+	return t.params.SignalCid
 }
 
 func (t *MediaTrack) HasSdpCid(cid string) bool {
@@ -204,8 +186,9 @@ func (t *MediaTrack) HasSdpCid(cid string) bool {
 		return true
 	}
 
-	for _, c := range t.MediaTrackReceiver.TrackInfo().Codecs {
-		if c.SdpCid == cid {
+	ti := t.MediaTrackReceiver.TrackInfoClone()
+	for _, c := range ti.Codecs {
+		if c.Cid == cid {
 			return true
 		}
 	}
@@ -216,8 +199,12 @@ func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 	return t.MediaTrackReceiver.TrackInfoClone()
 }
 
+func (t *MediaTrack) UpdateCodecCid(codecs []*livekit.SimulcastCodec) {
+	t.MediaTrackReceiver.UpdateCodecCid(codecs)
+}
+
 // AddReceiver adds a new RTP receiver to the track, returns true when receiver represents a new codec
-func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRemote, mid string, isSimulcast bool) bool {
+func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRemote, mid string) bool {
 	var newCodec bool
 	ssrc := uint32(track.SSRC())
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(ssrc)
@@ -264,7 +251,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		}
 	})
 
-	t.MediaTrackReceiver.UpdateCodecInfo(track.Codec().MimeType, track.ID(), isSimulcast)
 	ti := t.MediaTrackReceiver.TrackInfoClone()
 	t.lock.Lock()
 	var regressCodec bool
@@ -272,7 +258,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 	layer := buffer.RidToSpatialLayer(track.RID(), ti)
 	t.params.Logger.Debugw(
 		"AddReceiver",
-		"cid", track.ID(),
 		"rid", track.RID(),
 		"layer", layer,
 		"ssrc", track.SSRC(),
@@ -408,6 +393,12 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		)
 		buff.Close()
 		return false
+	}
+
+	// LK-TODO: can remove this completely when VideoLayers protocol becomes the default as it has info from client or if we decide to use TrackInfo.Simulcast
+	if t.numUpTracks.Inc() > 1 || track.RID() != "" {
+		// cannot only rely on numUpTracks since we fire metadata events immediately after the first layer
+		t.SetSimulcast(true)
 	}
 
 	var bitrates int

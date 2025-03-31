@@ -123,7 +123,6 @@ type TrackReceiver interface {
 
 	TrackInfo() *livekit.TrackInfo
 	UpdateTrackInfo(ti *livekit.TrackInfo)
-	IsSimulcast() bool
 
 	// Get primary receiver if this receiver represents a RED codec; otherwise it will return itself
 	GetPrimaryReceiverForRed() TrackReceiver
@@ -266,6 +265,7 @@ func NewWebRTCReceiver(
 		codecState: ReceiverCodecStateNormal,
 		kind:       track.Kind(),
 		onRTCP:     onRTCP,
+		isSVC:      mime.IsMimeTypeStringSVC(track.Codec().MimeType),
 		isRED:      mime.IsMimeTypeStringRED(track.Codec().MimeType),
 	}
 
@@ -273,12 +273,6 @@ func NewWebRTCReceiver(
 		w = opt(w)
 	}
 	w.trackInfo.Store(utils.CloneProto(trackInfo))
-
-	isSVC := false
-	if !w.IsSimulcast() {
-		isSVC = mime.IsMimeTypeStringSVC(track.Codec().MimeType)
-	}
-	w.isSVC = isSVC
 
 	w.downTrackSpreader = NewDownTrackSpreader(DownTrackSpreaderParams{
 		Threshold: w.lbThreshold,
@@ -322,16 +316,6 @@ func (w *WebRTCReceiver) TrackInfo() *livekit.TrackInfo {
 func (w *WebRTCReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 	w.trackInfo.Store(utils.CloneProto(ti))
 	w.streamTrackerManager.UpdateTrackInfo(ti)
-}
-
-func (w *WebRTCReceiver) IsSimulcast() bool {
-	for _, codec := range w.trackInfo.Load().Codecs {
-		if mime.IsMimeTypeStringEqual(codec.MimeType, w.codec.MimeType) {
-			return codec.IsSimulcast
-		}
-	}
-
-	return false
 }
 
 func (w *WebRTCReceiver) OnStatsUpdate(fn func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)) {
@@ -871,9 +855,13 @@ func (w *WebRTCReceiver) closeTracks() {
 }
 
 func (w *WebRTCReceiver) DebugInfo() map[string]interface{} {
+	isSimulcast := !w.isSVC
+	if ti := w.trackInfo.Load(); ti != nil {
+		isSimulcast = isSimulcast && len(ti.Layers) > 1
+	}
 	info := map[string]interface{}{
 		"SVC":       w.isSVC,
-		"Simulcast": w.IsSimulcast(),
+		"Simulcast": isSimulcast,
 	}
 
 	w.bufferMu.RLock()

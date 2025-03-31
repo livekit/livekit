@@ -141,12 +141,7 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 		}
 		var mimeType string
 		for _, c := range info.Codecs {
-			// this is reading streamID from SDP which is technically SDP cid,
-			// but it is not set in TrackInfo by the time this is checked,
-			// hence the check on signal cid.
-			// As a result, this will fail for clients that use different cid
-			// while signalling and while doing negotiation (e. g. Firefox)
-			if c.SignalCid == streamID {
+			if c.Cid == streamID {
 				mimeType = c.MimeType
 				break
 			}
