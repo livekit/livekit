@@ -542,8 +542,6 @@ type LocalMediaTrack interface {
 
 	Restart()
 
-	// RAJA-REMOVE SignalCid() string
-	// RAJA-REMOVE SdpCid() string
 	HasSignalCid(cid string) bool
 	SdpCids() []string
 	HasSdpCid(cid string) bool
