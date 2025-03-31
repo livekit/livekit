@@ -1762,7 +1762,9 @@ func (p *ParticipantImpl) removePublishedTrack(track types.MediaTrack) {
 	p.RemovePublishedTrack(track, false, true)
 
 	if lmt, ok := track.(types.LocalMediaTrack); ok {
-		p.simulcastTrackIds.Delete(lmt.SdpCid())
+		for _, sdpCid := range lmt.SdpCids() {
+			p.simulcastTrackIds.Delete(sdpCid)
+		}
 	}
 
 	if p.ProtocolVersion().SupportsUnpublish() {
@@ -2497,15 +2499,19 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 		p.dirty.Store(true)
 	}
 
-	isSimulcast, ok := p.simulcastTrackIds.Load(track.ID())
-	if !ok {
-		isSimulcast = false
+	receiverIsSimulcast := false
+	cidIsSimulcast, ok := p.simulcastTrackIds.Load(track.ID())
+	if ok {
+		receiverIsSimulcast = cidIsSimulcast.(bool)
 	}
-	mt.SetSimulcast(isSimulcast.(bool))
+	// in the case of simulcast codecs, it is possible that the primary is not simulcast
+	// and the back up is simulcast, in that case this will set simulcast: true at track level
+	mt.SetSimulcast(receiverIsSimulcast)
+	mt.UpdateCodecCid([]*livekit.SimulcastCodec{{Codec: track.Codec().MimeType, Cid: track.ID()}})
 
 	p.pendingTracksLock.Unlock()
 
-	mt.AddReceiver(rtpReceiver, track, mid)
+	mt.AddReceiver(rtpReceiver, track, mid, receiverIsSimulcast)
 
 	if newTrack {
 		go func() {
@@ -2593,8 +2599,6 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 
 func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *livekit.TrackInfo) *MediaTrack {
 	mt := NewMediaTrack(MediaTrackParams{
-		SignalCid:             signalCid,
-		SdpCid:                sdpCid,
 		ParticipantID:         p.params.SID,
 		ParticipantIdentity:   p.params.Identity,
 		ParticipantVersion:    p.version.Load(),
@@ -2656,7 +2660,9 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 			)
 		}
 
-		p.simulcastTrackIds.Delete(mt.SdpCid())
+		for _, sdpCid := range mt.SdpCids() {
+			p.simulcastTrackIds.Delete(sdpCid)
+		}
 
 		p.pendingTracksLock.Lock()
 		if pti := p.pendingTracks[signalCid]; pti != nil {
@@ -2797,7 +2803,8 @@ func (p *ParticipantImpl) setTrackID(cid string, info *livekit.TrackInfo) {
 
 func (p *ParticipantImpl) getPublishedTrackBySignalCid(clientId string) types.MediaTrack {
 	for _, publishedTrack := range p.GetPublishedTracks() {
-		if publishedTrack.(types.LocalMediaTrack).SignalCid() == clientId {
+		if publishedTrack.(types.LocalMediaTrack).HasSignalCid(clientId) {
+			p.pubLogger.Debugw("found track by signal cid", "signalCid", clientId, "trackID", publishedTrack.ID())
 			return publishedTrack
 		}
 	}

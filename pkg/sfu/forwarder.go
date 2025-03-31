@@ -221,9 +221,9 @@ type Forwarder struct {
 	pubMuted              bool
 	resumeBehindThreshold float64
 
-	started                  bool
-	preStartTime             time.Time
-	isReceiverSimulcast      bool
+	started      bool
+	preStartTime time.Time
+	// RAJA-REMOVE isReceiverSimulcast      bool
 	extFirstTS               uint64
 	lastSSRC                 uint32
 	lastReferencePayloadType int8
@@ -249,15 +249,15 @@ func NewForwarder(
 	logger logger.Logger,
 	skipReferenceTS bool,
 	rtpStats *rtpstats.RTPStatsSender,
-	isReceiverSimulcast bool,
+	// RAJA-REMOVE isReceiverSimulcast bool,
 ) *Forwarder {
 	f := &Forwarder{
-		mime:                     mime.MimeTypeUnknown,
-		kind:                     kind,
-		logger:                   logger,
-		skipReferenceTS:          skipReferenceTS,
-		rtpStats:                 rtpStats,
-		isReceiverSimulcast:      isReceiverSimulcast,
+		mime:            mime.MimeTypeUnknown,
+		kind:            kind,
+		logger:          logger,
+		skipReferenceTS: skipReferenceTS,
+		rtpStats:        rtpStats,
+		// RAJA-REMOVE isReceiverSimulcast:      isReceiverSimulcast,
 		referenceLayerSpatial:    buffer.InvalidLayerSpatial,
 		lastAllocation:           VideoAllocationDefault,
 		lastReferencePayloadType: -1,
@@ -300,7 +300,11 @@ func (f *Forwarder) SetMaxTemporalLayerSeen(maxTemporalLayerSeen int32) bool {
 	return true
 }
 
-func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions []webrtc.RTPHeaderExtensionParameter) {
+func (f *Forwarder) DetermineCodec(
+	codec webrtc.RTPCodecCapability,
+	extensions []webrtc.RTPHeaderExtensionParameter,
+	isReceiverSimulcast bool,
+) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -343,7 +347,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		}
 
 	case mime.MimeTypeVP9:
-		if f.isReceiverSimulcast {
+		if isReceiverSimulcast {
 			if f.vls != nil {
 				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
 			} else {
@@ -369,7 +373,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 
 	case mime.MimeTypeAV1:
 		isDDAvailable := ddAvailable(extensions)
-		if f.isReceiverSimulcast || !isDDAvailable {
+		if isReceiverSimulcast || !isDDAvailable {
 			// AV1-SIMULCAST-TODO: Add temporal layer selector for AV1
 			if f.vls != nil {
 				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)

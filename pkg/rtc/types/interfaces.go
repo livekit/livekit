@@ -542,8 +542,10 @@ type LocalMediaTrack interface {
 
 	Restart()
 
-	SignalCid() string
-	SdpCid() string
+	// RAJA-REMOVE SignalCid() string
+	// RAJA-REMOVE SdpCid() string
+	HasSignalCid(cid string) bool
+	SdpCids() []string
 	HasSdpCid(cid string) bool
 
 	GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality)

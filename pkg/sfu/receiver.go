@@ -123,6 +123,7 @@ type TrackReceiver interface {
 
 	TrackInfo() *livekit.TrackInfo
 	UpdateTrackInfo(ti *livekit.TrackInfo)
+	IsSimulcast() bool
 
 	// Get primary receiver if this receiver represents a RED codec; otherwise it will return itself
 	GetPrimaryReceiverForRed() TrackReceiver
@@ -170,6 +171,7 @@ type WebRTCReceiver struct {
 	codecState         ReceiverCodecState
 	codecStateLock     sync.Mutex
 	onCodecStateChange []func(webrtc.RTPCodecParameters, ReceiverCodecState)
+	isSimulcast        bool
 	isSVC              bool
 	isRED              bool
 	onCloseHandler     func()
@@ -251,25 +253,26 @@ func NewWebRTCReceiver(
 	receiver *webrtc.RTPReceiver,
 	track TrackRemote,
 	trackInfo *livekit.TrackInfo,
+	isSimulcast bool,
 	logger logger.Logger,
 	onRTCP func([]rtcp.Packet),
 	streamTrackerManagerConfig StreamTrackerManagerConfig,
 	opts ...ReceiverOpts,
 ) *WebRTCReceiver {
 	w := &WebRTCReceiver{
-		logger:     logger,
-		receiver:   receiver,
-		trackID:    livekit.TrackID(track.ID()),
-		streamID:   track.StreamID(),
-		codec:      track.Codec(),
-		codecState: ReceiverCodecStateNormal,
-		kind:       track.Kind(),
-		onRTCP:     onRTCP,
-		isRED:      mime.IsMimeTypeStringRED(track.Codec().MimeType),
+		logger:      logger,
+		receiver:    receiver,
+		trackID:     livekit.TrackID(track.ID()),
+		streamID:    track.StreamID(),
+		codec:       track.Codec(),
+		codecState:  ReceiverCodecStateNormal,
+		kind:        track.Kind(),
+		onRTCP:      onRTCP,
+		isSimulcast: isSimulcast,
+		isRED:       mime.IsMimeTypeStringRED(track.Codec().MimeType),
 	}
 
 	isSVC := false
-	isSimulcast := trackInfo.GetSimulcast()
 	if !isSimulcast {
 		isSVC = mime.IsMimeTypeStringSVC(track.Codec().MimeType)
 	}
@@ -322,6 +325,10 @@ func (w *WebRTCReceiver) TrackInfo() *livekit.TrackInfo {
 func (w *WebRTCReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 	w.trackInfo.Store(utils.CloneProto(ti))
 	w.streamTrackerManager.UpdateTrackInfo(ti)
+}
+
+func (w *WebRTCReceiver) IsSimulcast() bool {
+	return w.isSimulcast
 }
 
 func (w *WebRTCReceiver) OnStatsUpdate(fn func(w *WebRTCReceiver, stat *livekit.AnalyticsStat)) {

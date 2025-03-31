@@ -391,6 +391,14 @@ func (d *DummyReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 	}
 }
 
+func (d *DummyReceiver) IsSimulcast() bool {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		return r.IsSimulcast()
+	}
+
+	return false
+}
+
 func (d *DummyReceiver) IsClosed() bool {
 	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return r.IsClosed()

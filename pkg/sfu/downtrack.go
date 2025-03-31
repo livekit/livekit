@@ -240,7 +240,6 @@ type DowntrackParams struct {
 	RTCPWriter                     func([]rtcp.Packet) error
 	DisableSenderReportPassThrough bool
 	SupportsCodecChange            bool
-	IsReceiverSimulcast            bool
 }
 
 // DownTrack implements TrackLocal, is the track used to write packets
@@ -406,7 +405,6 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		d.params.Logger,
 		false,
 		d.rtpStats,
-		d.params.IsReceiverSimulcast,
 	)
 
 	d.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
@@ -588,7 +586,8 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.setBindStateLocked(bindStateBound)
 		d.bindLock.Unlock()
 
-		d.forwarder.DetermineCodec(codec.RTPCodecCapability, d.Receiver().HeaderExtensions())
+		receiver := d.Receiver()
+		d.forwarder.DetermineCodec(codec.RTPCodecCapability, receiver.HeaderExtensions(), receiver.IsSimulcast())
 		d.connectionStats.Start(d.Mime(), isFECEnabled)
 		d.params.Logger.Debugw("downtrack bound")
 	}
@@ -697,7 +696,8 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 	)
 
 	d.forwarder.Restart()
-	d.forwarder.DetermineCodec(codec.RTPCodecCapability, d.Receiver().HeaderExtensions())
+	receiver := d.Receiver()
+	d.forwarder.DetermineCodec(codec.RTPCodecCapability, receiver.HeaderExtensions(), receiver.IsSimulcast())
 	d.connectionStats.UpdateCodec(d.Mime(), isFECEnabled)
 }
 
