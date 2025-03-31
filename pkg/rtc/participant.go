@@ -2507,7 +2507,6 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 	// in the case of simulcast codecs, it is possible that the primary is not simulcast
 	// and the back up is simulcast, in that case this will set simulcast: true at track level
 	mt.SetSimulcast(receiverIsSimulcast)
-	mt.UpdateCodecCid([]*livekit.SimulcastCodec{{Codec: track.Codec().MimeType, Cid: track.ID()}})
 
 	p.pendingTracksLock.Unlock()
 
