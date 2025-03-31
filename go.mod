@@ -32,7 +32,7 @@ require (
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/ory/dockertest/v3 v3.11.0
 	github.com/pion/datachannel v1.5.10
-	github.com/pion/dtls/v3 v3.0.5
+	github.com/pion/dtls/v3 v3.0.6
 	github.com/pion/ice/v4 v4.0.9
 	github.com/pion/interceptor v0.1.37
 	github.com/pion/rtcp v1.2.15

@@ -235,8 +235,8 @@ github.com/ory/dockertest/v3 v3.11.0 h1:OiHcxKAvSDUwsEVh2BjxQQc/5EHz9n0va9awCtNG
 github.com/ory/dockertest/v3 v3.11.0/go.mod h1:VIPxS1gwT9NpPOrfD3rACs8Y9Z7yhzO4SB194iUDnUI=
 github.com/pion/datachannel v1.5.10 h1:ly0Q26K1i6ZkGf42W7D4hQYR90pZwzFOjTq5AuCKk4o=
 github.com/pion/datachannel v1.5.10/go.mod h1:p/jJfC9arb29W7WrxyKbepTU20CFgyx5oLo8Rs4Py/M=
-github.com/pion/dtls/v3 v3.0.5 h1:OGWLu21/Wc5+H8R75F1BWvedH7H+nYUPFzJOew4k1iA=
-github.com/pion/dtls/v3 v3.0.5/go.mod h1:JVCnfmbgq45QoU07AaxFbdjF2iomKzYouVNy+W5kqmY=
+github.com/pion/dtls/v3 v3.0.6 h1:7Hkd8WhAJNbRgq9RgdNh1aaWlZlGpYTzdqjy9x9sK2E=
+github.com/pion/dtls/v3 v3.0.6/go.mod h1:iJxNQ3Uhn1NZWOMWlLxEEHAN5yX7GyPvvKw04v9bzYU=
 github.com/pion/ice/v4 v4.0.9 h1:VKgU4MwA2LUDVLq+WBkpEHTcAb8c5iCvFMECeuPOZNk=
 github.com/pion/ice/v4 v4.0.9/go.mod h1:y3M18aPhIxLlcO/4dn9X8LzLLSma84cx6emMSu14FGw=
 github.com/pion/interceptor v0.1.37 h1:aRA8Zpab/wE7/c0O3fh1PqY0AJI3fCSEM5lRWJVorwI=
