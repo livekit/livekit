@@ -60,6 +60,8 @@ type MediaTrack struct {
 }
 
 type MediaTrackParams struct {
+	SignalCid             string
+	SdpCid                string
 	ParticipantID         livekit.ParticipantID
 	ParticipantIdentity   livekit.ParticipantIdentity
 	ParticipantVersion    uint32
@@ -175,6 +177,10 @@ func (t *MediaTrack) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, quali
 }
 
 func (t *MediaTrack) HasSignalCid(cid string) bool {
+	if t.params.SignalCid == cid {
+		return true
+	}
+
 	for _, c := range t.MediaTrackReceiver.TrackInfo().Codecs {
 		if c.SignalCid == cid {
 			return true
@@ -194,6 +200,10 @@ func (t *MediaTrack) SdpCids() []string {
 }
 
 func (t *MediaTrack) HasSdpCid(cid string) bool {
+	if t.params.SdpCid == cid {
+		return true
+	}
+
 	for _, c := range t.MediaTrackReceiver.TrackInfo().Codecs {
 		if c.SdpCid == cid {
 			return true
