@@ -2607,6 +2607,8 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 
 func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *livekit.TrackInfo) *MediaTrack {
 	mt := NewMediaTrack(MediaTrackParams{
+		SignalCid:             signalCid,
+		SdpCid:                sdpCid,
 		ParticipantID:         p.params.SID,
 		ParticipantIdentity:   p.params.Identity,
 		ParticipantVersion:    p.version.Load(),
