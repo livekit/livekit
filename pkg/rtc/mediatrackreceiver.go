@@ -505,10 +505,6 @@ func (t *MediaTrackReceiver) SetSimulcast(simulcast bool) {
 	}
 }
 
-func (t *MediaTrackReceiver) HasMultipleSpatialLayers() bool {
-	return len(t.TrackInfo().Layers) > 1
-}
-
 func (t *MediaTrackReceiver) Name() string {
 	return t.TrackInfo().Name
 }
@@ -599,7 +595,7 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 		Logger:         tLogger,
 		DisableRed:     t.TrackInfo().GetDisableRed() || !t.params.AudioConfig.ActiveREDEncoding,
 	})
-	subTrack, err := t.MediaTrackSubscriptions.AddSubscriber(sub, wr)
+	subTrack, err := t.MediaTrackSubscriptions.AddSubscriber(sub, wr, t.IsSimulcast())
 
 	// media track could have been closed while adding subscription
 	remove := false
@@ -713,41 +709,15 @@ func (t *MediaTrackReceiver) SetLayerSsrc(mimeType mime.MimeType, rid string, ss
 	t.updateTrackInfoOfReceivers()
 }
 
-func (t *MediaTrackReceiver) UpdateCodecSignalCid(codecs []*livekit.SimulcastCodec) {
+func (t *MediaTrackReceiver) UpdateCodecCid(codecs []*livekit.SimulcastCodec) {
 	t.lock.Lock()
 	trackInfo := t.TrackInfoClone()
 	for _, c := range codecs {
 		for _, origin := range trackInfo.Codecs {
 			if mime.GetMimeTypeCodec(origin.MimeType) == mime.NormalizeMimeTypeCodec(c.Codec) {
-				origin.SignalCid = c.Cid
+				origin.Cid = c.Cid
 				break
 			}
-		}
-	}
-	t.trackInfo.Store(trackInfo)
-	t.lock.Unlock()
-
-	t.updateTrackInfoOfReceivers()
-}
-
-func (t *MediaTrackReceiver) UpdateCodecInfo(mimeType string, cid string, isSimulcast bool) {
-	t.lock.Lock()
-	trackInfo := t.TrackInfoClone()
-	for _, origin := range trackInfo.Codecs {
-		if mime.IsMimeTypeStringEqual(origin.MimeType, mimeType) {
-			if origin.SdpCid != "" {
-				if origin.SdpCid != cid || origin.IsSimulcast != isSimulcast {
-					t.params.Logger.Warnw(
-						"uexpected codec info change", nil,
-						"oldCid", origin.SdpCid, "newCid", cid,
-						"oldIsSimulcast", origin.IsSimulcast, "newIsSimulcast", isSimulcast,
-					)
-				}
-
-			}
-			origin.SdpCid = cid
-			origin.IsSimulcast = isSimulcast
-			break
 		}
 	}
 	t.trackInfo.Store(trackInfo)

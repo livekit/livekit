@@ -223,6 +223,7 @@ type Forwarder struct {
 
 	started                  bool
 	preStartTime             time.Time
+	isReceiverSimulcast      bool
 	extFirstTS               uint64
 	lastSSRC                 uint32
 	lastReferencePayloadType int8
@@ -248,6 +249,7 @@ func NewForwarder(
 	logger logger.Logger,
 	skipReferenceTS bool,
 	rtpStats *rtpstats.RTPStatsSender,
+	isReceiverSimulcast bool,
 ) *Forwarder {
 	f := &Forwarder{
 		mime:                     mime.MimeTypeUnknown,
@@ -255,6 +257,7 @@ func NewForwarder(
 		logger:                   logger,
 		skipReferenceTS:          skipReferenceTS,
 		rtpStats:                 rtpStats,
+		isReceiverSimulcast:      isReceiverSimulcast,
 		referenceLayerSpatial:    buffer.InvalidLayerSpatial,
 		lastAllocation:           VideoAllocationDefault,
 		lastReferencePayloadType: -1,
@@ -297,11 +300,7 @@ func (f *Forwarder) SetMaxTemporalLayerSeen(maxTemporalLayerSeen int32) bool {
 	return true
 }
 
-func (f *Forwarder) DetermineCodec(
-	codec webrtc.RTPCodecCapability,
-	extensions []webrtc.RTPHeaderExtensionParameter,
-	isReceiverSimulcast bool,
-) {
+func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions []webrtc.RTPHeaderExtensionParameter) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -344,7 +343,7 @@ func (f *Forwarder) DetermineCodec(
 		}
 
 	case mime.MimeTypeVP9:
-		if isReceiverSimulcast {
+		if f.isReceiverSimulcast {
 			f.logger.Debugw("selecting simulcast video layer selector for VP9")
 			if f.vls != nil {
 				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
@@ -373,7 +372,7 @@ func (f *Forwarder) DetermineCodec(
 
 	case mime.MimeTypeAV1:
 		isDDAvailable := ddAvailable(extensions)
-		if isReceiverSimulcast || !isDDAvailable {
+		if f.isReceiverSimulcast || !isDDAvailable {
 			// AV1-SIMULCAST-TODO: Add temporal layer selector for AV1
 			f.logger.Debugw("selecting simulcast video layer selector for AV1")
 			if f.vls != nil {

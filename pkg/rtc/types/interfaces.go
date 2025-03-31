@@ -506,7 +506,6 @@ type MediaTrack interface {
 	SetMuted(muted bool)
 
 	IsSimulcast() bool
-	HasMultipleSpatialLayers() bool
 
 	GetAudioLevel() (level float64, active bool)
 
@@ -543,8 +542,8 @@ type LocalMediaTrack interface {
 
 	Restart()
 
-	HasSignalCid(cid string) bool
-	SdpCids() []string
+	SignalCid() string
+	SdpCid() string
 	HasSdpCid(cid string) bool
 
 	GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality)

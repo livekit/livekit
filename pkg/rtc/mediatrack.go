@@ -42,6 +42,7 @@ import (
 // Implements MediaTrack and PublishedTrack interface
 type MediaTrack struct {
 	params         MediaTrackParams
+	numUpTracks    atomic.Uint32
 	buffer         *buffer.Buffer
 	everSubscribed atomic.Bool
 
@@ -60,6 +61,8 @@ type MediaTrack struct {
 }
 
 type MediaTrackParams struct {
+	SignalCid             string
+	SdpCid                string
 	ParticipantID         livekit.ParticipantID
 	ParticipantIdentity   livekit.ParticipantIdentity
 	ParticipantVersion    uint32
@@ -174,28 +177,22 @@ func (t *MediaTrack) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, quali
 	}
 }
 
-func (t *MediaTrack) HasSignalCid(cid string) bool {
-	for _, c := range t.MediaTrackReceiver.TrackInfo().Codecs {
-		if c.SignalCid == cid {
-			return true
-		}
-	}
-	return false
+func (t *MediaTrack) SignalCid() string {
+	return t.params.SignalCid
 }
 
-func (t *MediaTrack) SdpCids() []string {
-	var sdpCids []string
-	for _, c := range t.MediaTrackReceiver.TrackInfo().Codecs {
-		if c.SdpCid != "" {
-			sdpCids = append(sdpCids, c.SdpCid)
-		}
-	}
-	return sdpCids
+func (t *MediaTrack) SdpCid() string {
+	return t.params.SdpCid
 }
 
 func (t *MediaTrack) HasSdpCid(cid string) bool {
-	for _, c := range t.MediaTrackReceiver.TrackInfo().Codecs {
-		if c.SdpCid == cid {
+	if t.params.SdpCid == cid {
+		return true
+	}
+
+	ti := t.MediaTrackReceiver.TrackInfoClone()
+	for _, c := range ti.Codecs {
+		if c.Cid == cid {
 			return true
 		}
 	}
@@ -206,8 +203,12 @@ func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 	return t.MediaTrackReceiver.TrackInfoClone()
 }
 
+func (t *MediaTrack) UpdateCodecCid(codecs []*livekit.SimulcastCodec) {
+	t.MediaTrackReceiver.UpdateCodecCid(codecs)
+}
+
 // AddReceiver adds a new RTP receiver to the track, returns true when receiver represents a new codec
-func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRemote, mid string, isSimulcast bool) bool {
+func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRemote, mid string) bool {
 	var newCodec bool
 	ssrc := uint32(track.SSRC())
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(ssrc)
@@ -254,7 +255,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		}
 	})
 
-	t.MediaTrackReceiver.UpdateCodecInfo(track.Codec().MimeType, track.ID(), isSimulcast)
 	ti := t.MediaTrackReceiver.TrackInfoClone()
 	t.lock.Lock()
 	var regressCodec bool
@@ -262,7 +262,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 	layer := buffer.RidToSpatialLayer(track.RID(), ti)
 	t.params.Logger.Debugw(
 		"AddReceiver",
-		"cid", track.ID(),
 		"rid", track.RID(),
 		"layer", layer,
 		"ssrc", track.SSRC(),
