@@ -297,25 +297,49 @@ func (t *TransportManager) RemoveSubscribedTrack(subTrack types.SubscribedTrack)
 	t.subscriber.RemoveTrackFromStreamAllocator(subTrack)
 }
 
-func (t *TransportManager) SendDataPacket(kind livekit.DataPacket_Kind, encoded []byte) error {
+func (t *TransportManager) SendDataMessage(kind livekit.DataPacket_Kind, data []byte) error {
 	// downstream data is sent via primary peer connection
-	err := t.getTransport(true).SendDataPacket(kind, encoded)
+	return t.handleSendDataResult(t.getTransport(true).SendDataMessage(kind, data), kind.String(), len(data))
+}
+
+func (t *TransportManager) SendDataMessageUnlabeled(data []byte) error {
+	// downstream data is sent via primary peer connection
+	return t.handleSendDataResult(t.getTransport(true).SendDataMessageUnlabeled(data), "unlabeled", len(data))
+}
+
+func (t *TransportManager) handleSendDataResult(err error, kind string, size int) error {
 	if err != nil {
-		if !utils.ErrorIsOneOf(err, io.ErrClosedPipe, sctp.ErrStreamClosed, ErrTransportFailure, ErrDataChannelBufferFull, context.DeadlineExceeded) {
+		if !utils.ErrorIsOneOf(
+			err,
+			io.ErrClosedPipe,
+			sctp.ErrStreamClosed,
+			ErrTransportFailure,
+			ErrDataChannelBufferFull,
+			context.DeadlineExceeded,
+		) {
 			if errors.Is(err, datachannel.ErrDataDroppedBySlowReader) {
 				droppedBySlowReaderCount := t.droppedBySlowReaderCount.Inc()
 				if (droppedBySlowReaderCount-1)%100 == 0 {
-					t.params.Logger.Infow("drop data packet by slow reader", "error", err, "kind", kind, "count", droppedBySlowReaderCount)
+					t.params.Logger.Infow(
+						"drop data message by slow reader",
+						"error", err,
+						"kind", kind,
+						"count", droppedBySlowReaderCount,
+					)
 				}
 			} else {
-				t.params.Logger.Warnw("send data packet error", err)
+				t.params.Logger.Warnw("send data message error", err)
 			}
 		}
 		if utils.ErrorIsOneOf(err, sctp.ErrStreamClosed, io.ErrClosedPipe) {
-			t.params.SubscriberHandler.OnDataSendError(err)
+			if t.params.SubscriberAsPrimary {
+				t.params.SubscriberHandler.OnDataSendError(err)
+			} else {
+				t.params.PublisherHandler.OnDataSendError(err)
+			}
 		}
 	} else {
-		t.params.DataChannelStats.AddBytes(uint64(len(encoded)), true)
+		t.params.DataChannelStats.AddBytes(uint64(size), true)
 	}
 
 	return err

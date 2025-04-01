@@ -243,6 +243,7 @@ type ParticipantImpl struct {
 	onMigrateStateChange func(p types.LocalParticipant, migrateState types.MigrateState)
 	onParticipantUpdate  func(types.LocalParticipant)
 	onDataPacket         func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
+	onDataMessage        func(types.LocalParticipant, []byte)
 	onMetrics            func(types.Participant, *livekit.DataPacket)
 
 	migrateState atomic.Value // types.MigrateState
@@ -787,6 +788,18 @@ func (p *ParticipantImpl) getOnDataPacket() func(types.LocalParticipant, livekit
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	return p.onDataPacket
+}
+
+func (p *ParticipantImpl) OnDataMessage(callback func(types.LocalParticipant, []byte)) {
+	p.lock.Lock()
+	p.onDataMessage = callback
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) getOnDataMessage() func(types.LocalParticipant, []byte) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.onDataMessage
 }
 
 func (p *ParticipantImpl) OnMetrics(callback func(types.Participant, *livekit.DataPacket)) {
@@ -1465,8 +1478,16 @@ func (h PublisherTransportHandler) OnInitialConnected() {
 	h.p.onPublisherInitialConnected()
 }
 
-func (h PublisherTransportHandler) OnDataPacket(kind livekit.DataPacket_Kind, data []byte) {
-	h.p.onDataMessage(kind, data)
+func (h PublisherTransportHandler) OnDataMessage(kind livekit.DataPacket_Kind, data []byte) {
+	h.p.onReceivedDataMessage(kind, data)
+}
+
+func (h PublisherTransportHandler) OnDataMessageUnlabeled(data []byte) {
+	h.p.onReceivedDataMessageUnlabeled(data)
+}
+
+func (h PublisherTransportHandler) OnDataSendError(err error) {
+	h.p.onDataSendError(err)
 }
 
 // ----------------------------------------------------------
@@ -1655,7 +1676,7 @@ func (p *ParticipantImpl) MetricsReporterBatchReady(mb *livekit.MetricsBatch) {
 		return
 	}
 
-	p.TransportManager.SendDataPacket(livekit.DataPacket_RELIABLE, dpData)
+	p.TransportManager.SendDataMessage(livekit.DataPacket_RELIABLE, dpData)
 }
 
 func (p *ParticipantImpl) setupMetrics() {
@@ -1835,7 +1856,7 @@ func (p *ParticipantImpl) handlePendingRemoteTracks() {
 	}
 }
 
-func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byte) {
+func (p *ParticipantImpl) onReceivedDataMessage(kind livekit.DataPacket_Kind, data []byte) {
 	if p.IsDisconnected() || !p.CanPublishData() {
 		return
 	}
@@ -1955,6 +1976,18 @@ func (p *ParticipantImpl) onDataMessage(kind livekit.DataPacket_Kind, data []byt
 		if onMetrics := p.getOnMetrics(); onMetrics != nil {
 			onMetrics(p, dp)
 		}
+	}
+}
+
+func (p *ParticipantImpl) onReceivedDataMessageUnlabeled(data []byte) {
+	if p.IsDisconnected() || !p.CanPublishData() {
+		return
+	}
+
+	p.dataChannelStats.AddBytes(uint64(len(data)), false)
+
+	if onDataMessage := p.getOnDataMessage(); onDataMessage != nil {
+		onDataMessage(p, data)
 	}
 }
 
@@ -3004,12 +3037,20 @@ func (p *ParticipantImpl) SupportsTransceiverReuse() bool {
 	return p.ProtocolVersion().SupportsTransceiverReuse() && !p.SupportsSyncStreamID()
 }
 
-func (p *ParticipantImpl) SendDataPacket(kind livekit.DataPacket_Kind, encoded []byte) error {
+func (p *ParticipantImpl) SendDataMessage(kind livekit.DataPacket_Kind, data []byte) error {
 	if p.State() != livekit.ParticipantInfo_ACTIVE {
 		return ErrDataChannelUnavailable
 	}
 
-	return p.TransportManager.SendDataPacket(kind, encoded)
+	return p.TransportManager.SendDataMessage(kind, data)
+}
+
+func (p *ParticipantImpl) SendDataMessageUnlabeled(data []byte) error {
+	if p.State() != livekit.ParticipantInfo_ACTIVE {
+		return ErrDataChannelUnavailable
+	}
+
+	return p.TransportManager.SendDataMessageUnlabeled(data)
 }
 
 func (p *ParticipantImpl) onDataSendError(err error) {
