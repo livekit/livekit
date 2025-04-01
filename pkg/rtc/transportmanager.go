@@ -328,7 +328,7 @@ func (t *TransportManager) handleSendDataResult(err error, kind string, size int
 					)
 				}
 			} else {
-				t.params.Logger.Errorw("send data message error", err)
+				t.params.Logger.Warnw("send data message error", err)
 			}
 		}
 		if utils.ErrorIsOneOf(err, sctp.ErrStreamClosed, io.ErrClosedPipe) {
