@@ -23,11 +23,16 @@ type FakeHandler struct {
 	onAnswerReturnsOnCall map[int]struct {
 		result1 error
 	}
-	OnDataPacketStub        func(livekit.DataPacket_Kind, []byte)
-	onDataPacketMutex       sync.RWMutex
-	onDataPacketArgsForCall []struct {
+	OnDataMessageStub        func(livekit.DataPacket_Kind, []byte)
+	onDataMessageMutex       sync.RWMutex
+	onDataMessageArgsForCall []struct {
 		arg1 livekit.DataPacket_Kind
 		arg2 []byte
+	}
+	OnDataMessageUnlabeledStub        func([]byte)
+	onDataMessageUnlabeledMutex       sync.RWMutex
+	onDataMessageUnlabeledArgsForCall []struct {
+		arg1 []byte
 	}
 	OnDataSendErrorStub        func(error)
 	onDataSendErrorMutex       sync.RWMutex
@@ -162,42 +167,79 @@ func (fake *FakeHandler) OnAnswerReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
-func (fake *FakeHandler) OnDataPacket(arg1 livekit.DataPacket_Kind, arg2 []byte) {
+func (fake *FakeHandler) OnDataMessage(arg1 livekit.DataPacket_Kind, arg2 []byte) {
 	var arg2Copy []byte
 	if arg2 != nil {
 		arg2Copy = make([]byte, len(arg2))
 		copy(arg2Copy, arg2)
 	}
-	fake.onDataPacketMutex.Lock()
-	fake.onDataPacketArgsForCall = append(fake.onDataPacketArgsForCall, struct {
+	fake.onDataMessageMutex.Lock()
+	fake.onDataMessageArgsForCall = append(fake.onDataMessageArgsForCall, struct {
 		arg1 livekit.DataPacket_Kind
 		arg2 []byte
 	}{arg1, arg2Copy})
-	stub := fake.OnDataPacketStub
-	fake.recordInvocation("OnDataPacket", []interface{}{arg1, arg2Copy})
-	fake.onDataPacketMutex.Unlock()
+	stub := fake.OnDataMessageStub
+	fake.recordInvocation("OnDataMessage", []interface{}{arg1, arg2Copy})
+	fake.onDataMessageMutex.Unlock()
 	if stub != nil {
-		fake.OnDataPacketStub(arg1, arg2)
+		fake.OnDataMessageStub(arg1, arg2)
 	}
 }
 
-func (fake *FakeHandler) OnDataPacketCallCount() int {
-	fake.onDataPacketMutex.RLock()
-	defer fake.onDataPacketMutex.RUnlock()
-	return len(fake.onDataPacketArgsForCall)
+func (fake *FakeHandler) OnDataMessageCallCount() int {
+	fake.onDataMessageMutex.RLock()
+	defer fake.onDataMessageMutex.RUnlock()
+	return len(fake.onDataMessageArgsForCall)
 }
 
-func (fake *FakeHandler) OnDataPacketCalls(stub func(livekit.DataPacket_Kind, []byte)) {
-	fake.onDataPacketMutex.Lock()
-	defer fake.onDataPacketMutex.Unlock()
-	fake.OnDataPacketStub = stub
+func (fake *FakeHandler) OnDataMessageCalls(stub func(livekit.DataPacket_Kind, []byte)) {
+	fake.onDataMessageMutex.Lock()
+	defer fake.onDataMessageMutex.Unlock()
+	fake.OnDataMessageStub = stub
 }
 
-func (fake *FakeHandler) OnDataPacketArgsForCall(i int) (livekit.DataPacket_Kind, []byte) {
-	fake.onDataPacketMutex.RLock()
-	defer fake.onDataPacketMutex.RUnlock()
-	argsForCall := fake.onDataPacketArgsForCall[i]
+func (fake *FakeHandler) OnDataMessageArgsForCall(i int) (livekit.DataPacket_Kind, []byte) {
+	fake.onDataMessageMutex.RLock()
+	defer fake.onDataMessageMutex.RUnlock()
+	argsForCall := fake.onDataMessageArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeHandler) OnDataMessageUnlabeled(arg1 []byte) {
+	var arg1Copy []byte
+	if arg1 != nil {
+		arg1Copy = make([]byte, len(arg1))
+		copy(arg1Copy, arg1)
+	}
+	fake.onDataMessageUnlabeledMutex.Lock()
+	fake.onDataMessageUnlabeledArgsForCall = append(fake.onDataMessageUnlabeledArgsForCall, struct {
+		arg1 []byte
+	}{arg1Copy})
+	stub := fake.OnDataMessageUnlabeledStub
+	fake.recordInvocation("OnDataMessageUnlabeled", []interface{}{arg1Copy})
+	fake.onDataMessageUnlabeledMutex.Unlock()
+	if stub != nil {
+		fake.OnDataMessageUnlabeledStub(arg1)
+	}
+}
+
+func (fake *FakeHandler) OnDataMessageUnlabeledCallCount() int {
+	fake.onDataMessageUnlabeledMutex.RLock()
+	defer fake.onDataMessageUnlabeledMutex.RUnlock()
+	return len(fake.onDataMessageUnlabeledArgsForCall)
+}
+
+func (fake *FakeHandler) OnDataMessageUnlabeledCalls(stub func([]byte)) {
+	fake.onDataMessageUnlabeledMutex.Lock()
+	defer fake.onDataMessageUnlabeledMutex.Unlock()
+	fake.OnDataMessageUnlabeledStub = stub
+}
+
+func (fake *FakeHandler) OnDataMessageUnlabeledArgsForCall(i int) []byte {
+	fake.onDataMessageUnlabeledMutex.RLock()
+	defer fake.onDataMessageUnlabeledMutex.RUnlock()
+	argsForCall := fake.onDataMessageUnlabeledArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeHandler) OnDataSendError(arg1 error) {
@@ -591,8 +633,10 @@ func (fake *FakeHandler) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.onAnswerMutex.RLock()
 	defer fake.onAnswerMutex.RUnlock()
-	fake.onDataPacketMutex.RLock()
-	defer fake.onDataPacketMutex.RUnlock()
+	fake.onDataMessageMutex.RLock()
+	defer fake.onDataMessageMutex.RUnlock()
+	fake.onDataMessageUnlabeledMutex.RLock()
+	defer fake.onDataMessageUnlabeledMutex.RUnlock()
 	fake.onDataSendErrorMutex.RLock()
 	defer fake.onDataSendErrorMutex.RUnlock()
 	fake.onFailedMutex.RLock()

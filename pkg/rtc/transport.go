@@ -196,6 +196,7 @@ type PCTransport struct {
 	reliableDCOpened        bool
 	lossyDC                 *datachannel.DataChannelWriter[*webrtc.DataChannel]
 	lossyDCOpened           bool
+	unlabeledDataChannels   []*datachannel.DataChannelWriter[*webrtc.DataChannel]
 
 	iceStartedAt               time.Time
 	iceConnectedAt             time.Time
@@ -789,6 +790,7 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 	dc.OnOpen(func() {
 		t.params.Logger.Debugw(dc.Label() + " data channel open")
 		var kind livekit.DataPacket_Kind
+		var isUnlabeled bool
 		switch dc.Label() {
 		case ReliableDataChannel:
 			kind = livekit.DataPacket_RELIABLE
@@ -797,8 +799,8 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 			kind = livekit.DataPacket_LOSSY
 
 		default:
-			t.params.Logger.Warnw("unsupported datachannel added", nil, "label", dc.Label())
-			return
+			t.params.Logger.Infow("unlabeled datachannel added", "label", dc.Label())
+			isUnlabeled = true
 		}
 
 		rawDC, err := dc.DetachWithDeadline()
@@ -807,8 +809,16 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 			return
 		}
 
-		switch kind {
-		case livekit.DataPacket_RELIABLE:
+		switch {
+		case isUnlabeled:
+			t.lock.Lock()
+			t.unlabeledDataChannels = append(
+				t.unlabeledDataChannels,
+				datachannel.NewDataChannelWriter(dc, rawDC, t.params.DatachannelSlowThreshold),
+			)
+			t.lock.Unlock()
+
+		case kind == livekit.DataPacket_RELIABLE:
 			t.lock.Lock()
 			if t.reliableDC != nil {
 				t.reliableDC.Close()
@@ -817,7 +827,7 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 			t.reliableDCOpened = true
 			t.lock.Unlock()
 
-		case livekit.DataPacket_LOSSY:
+		case kind == livekit.DataPacket_LOSSY:
 			t.lock.Lock()
 			if t.lossyDC != nil {
 				t.lossyDC.Close()
@@ -839,7 +849,11 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 					return
 				}
 
-				t.params.Handler.OnDataPacket(kind, buffer[:n])
+				if isUnlabeled {
+					t.params.Handler.OnDataMessageUnlabeled(buffer[:n])
+				} else {
+					t.params.Handler.OnDataMessage(kind, buffer[:n])
+				}
 			}
 		}()
 
@@ -1073,7 +1087,7 @@ func (t *PCTransport) WriteRTCP(pkts []rtcp.Packet) error {
 	return t.pc.WriteRTCP(pkts)
 }
 
-func (t *PCTransport) SendDataPacket(kind livekit.DataPacket_Kind, encoded []byte) error {
+func (t *PCTransport) SendDataMessage(kind livekit.DataPacket_Kind, data []byte) error {
 	var dc *datachannel.DataChannelWriter[*webrtc.DataChannel]
 	t.lock.RLock()
 	if kind == livekit.DataPacket_RELIABLE {
@@ -1083,6 +1097,22 @@ func (t *PCTransport) SendDataPacket(kind livekit.DataPacket_Kind, encoded []byt
 	}
 	t.lock.RUnlock()
 
+	return t.sendDataMessage(dc, data)
+}
+
+func (t *PCTransport) SendDataMessageUnlabeled(data []byte) error {
+	var dc *datachannel.DataChannelWriter[*webrtc.DataChannel]
+	t.lock.RLock()
+	if len(t.unlabeledDataChannels) > 0 {
+		// use the first unlabeled to send
+		dc = t.unlabeledDataChannels[0]
+	}
+	t.lock.RUnlock()
+
+	return t.sendDataMessage(dc, data)
+}
+
+func (t *PCTransport) sendDataMessage(dc *datachannel.DataChannelWriter[*webrtc.DataChannel], data []byte) error {
 	if dc == nil {
 		return ErrDataChannelUnavailable
 	}
@@ -1094,7 +1124,7 @@ func (t *PCTransport) SendDataPacket(kind livekit.DataPacket_Kind, encoded []byt
 	if t.params.DatachannelSlowThreshold == 0 && t.params.DataChannelMaxBufferedAmount > 0 && dc.BufferedAmountGetter().BufferedAmount() > t.params.DataChannelMaxBufferedAmount {
 		return ErrDataChannelBufferFull
 	}
-	_, err := dc.Write(encoded)
+	_, err := dc.Write(data)
 
 	return err
 }
@@ -1128,6 +1158,11 @@ func (t *PCTransport) Close() {
 		t.lossyDC.Close()
 		t.lossyDC = nil
 	}
+
+	for _, dc := range t.unlabeledDataChannels {
+		dc.Close()
+	}
+	t.unlabeledDataChannels = nil
 
 	if t.mayFailedICEStatsTimer != nil {
 		t.mayFailedICEStatsTimer.Stop()

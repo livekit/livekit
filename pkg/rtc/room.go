@@ -484,6 +484,7 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 	participant.OnTrackUnpublished(r.onTrackUnpublished)
 	participant.OnParticipantUpdate(r.onParticipantUpdate)
 	participant.OnDataPacket(r.onDataPacket)
+	participant.OnDataMessage(r.onDataMessage)
 	participant.OnMetrics(r.onMetrics)
 	participant.OnSubscribeStatusChanged(func(publisherID livekit.ParticipantID, subscribed bool) {
 		if subscribed {
@@ -1285,6 +1286,10 @@ func (r *Room) onDataPacket(source types.LocalParticipant, kind livekit.DataPack
 	BroadcastDataPacketForRoom(r, source, kind, dp, r.Logger)
 }
 
+func (r *Room) onDataMessage(source types.LocalParticipant, data []byte) {
+	BroadcastDataMessageForRoom(r, source, data, r.Logger)
+}
+
 func (r *Room) onMetrics(source types.Participant, dp *livekit.DataPacket) {
 	BroadcastMetricsForRoom(r, source, dp, r.Logger)
 }
@@ -1760,7 +1765,13 @@ func (r *Room) IsDataMessageUserPacketDuplicate(up *livekit.UserPacket) bool {
 
 // ------------------------------------------------------------
 
-func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, kind livekit.DataPacket_Kind, dp *livekit.DataPacket, logger logger.Logger) {
+func BroadcastDataPacketForRoom(
+	r types.Room,
+	source types.LocalParticipant,
+	kind livekit.DataPacket_Kind,
+	dp *livekit.DataPacket,
+	logger logger.Logger,
+) {
 	dp.Kind = kind // backward compatibility
 	dest := dp.GetUser().GetDestinationSids()
 	if u := dp.GetUser(); u != nil {
@@ -1813,7 +1824,13 @@ func BroadcastDataPacketForRoom(r types.Room, source types.LocalParticipant, kin
 	}
 
 	utils.ParallelExec(destParticipants, dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
-		op.SendDataPacket(kind, dpData)
+		op.SendDataMessage(kind, dpData)
+	})
+}
+
+func BroadcastDataMessageForRoom(r types.Room, source types.LocalParticipant, data []byte, logger logger.Logger) {
+	utils.ParallelExec(r.GetLocalParticipants(), dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
+		op.SendDataMessageUnlabeled(data)
 	})
 }
 
