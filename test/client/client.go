@@ -271,7 +271,7 @@ func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 	subscriberHandler.OnTrackCalls(func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
 		go c.processTrack(track)
 	})
-	subscriberHandler.OnDataPacketCalls(c.handleDataMessage)
+	subscriberHandler.OnDataMessageCalls(c.handleDataMessage)
 	subscriberHandler.OnInitialConnectedCalls(func() {
 		logger.Debugw("subscriber initial connected", "participant", c.localParticipant.Identity)
 
@@ -732,7 +732,7 @@ func (c *RTCClient) PublishData(data []byte, kind livekit.DataPacket_Kind) error
 		return err
 	}
 
-	return c.publisher.SendDataPacket(kind, dpData)
+	return c.publisher.SendDataMessage(kind, dpData)
 }
 
 func (c *RTCClient) GetPublishedTrackIDs() []string {

@@ -637,11 +637,11 @@ func TestDataChannel(t *testing.T) {
 				for _, op := range participants {
 					fp := op.(*typesfakes.FakeLocalParticipant)
 					if fp == p {
-						require.Zero(t, fp.SendDataPacketCallCount())
+						require.Zero(t, fp.SendDataMessageCallCount())
 						continue
 					}
-					require.Equal(t, 1, fp.SendDataPacketCallCount())
-					_, got := fp.SendDataPacketArgsForCall(0)
+					require.Equal(t, 1, fp.SendDataMessageCallCount())
+					_, got := fp.SendDataMessageArgsForCall(0)
 					require.Equal(t, encoded, got)
 				}
 			})
@@ -684,11 +684,11 @@ func TestDataChannel(t *testing.T) {
 				for _, op := range participants {
 					fp := op.(*typesfakes.FakeLocalParticipant)
 					if fp != p1 {
-						require.Zero(t, fp.SendDataPacketCallCount())
+						require.Zero(t, fp.SendDataMessageCallCount())
 					}
 				}
-				require.Equal(t, 1, p1.SendDataPacketCallCount())
-				_, got := p1.SendDataPacketArgsForCall(0)
+				require.Equal(t, 1, p1.SendDataMessageCallCount())
+				_, got := p1.SendDataMessageArgsForCall(0)
 				require.Equal(t, encoded, got)
 			})
 		}
@@ -716,7 +716,7 @@ func TestDataChannel(t *testing.T) {
 		// no one should've been sent packet
 		for _, op := range participants {
 			fp := op.(*typesfakes.FakeLocalParticipant)
-			require.Zero(t, fp.SendDataPacketCallCount())
+			require.Zero(t, fp.SendDataMessageCallCount())
 		}
 	})
 }
