@@ -321,14 +321,14 @@ func (t *TransportManager) handleSendDataResult(err error, kind string, size int
 				droppedBySlowReaderCount := t.droppedBySlowReaderCount.Inc()
 				if (droppedBySlowReaderCount-1)%100 == 0 {
 					t.params.Logger.Infow(
-						"drop data packet by slow reader",
+						"drop data message by slow reader",
 						"error", err,
 						"kind", kind,
 						"count", droppedBySlowReaderCount,
 					)
 				}
 			} else {
-				t.params.Logger.Warnw("send data packet error", err)
+				t.params.Logger.Errorw("send data message error", err)
 			}
 		}
 		if utils.ErrorIsOneOf(err, sctp.ErrStreamClosed, io.ErrClosedPipe) {

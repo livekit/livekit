@@ -983,15 +983,14 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 		return err
 	}
 	var (
-		dcPtr   **datachannel.DataChannelWriter[*webrtc.DataChannel]
-		dcReady *bool
+		dcPtr       **datachannel.DataChannelWriter[*webrtc.DataChannel]
+		dcReady     *bool
+		isUnlabeled bool
 	)
 	switch dc.Label() {
 	default:
-		// TODO: Appears that it's never called, so not sure what needs to be done here. We just keep the DC open?
-		//       Maybe just add "reliable" parameter instead of checking the label.
-		t.params.Logger.Warnw("unknown data channel label", nil, "label", dc.Label())
-		return nil
+		isUnlabeled = true
+		t.params.Logger.Infow("unlabeled datachannel added", "label", dc.Label())
 	case ReliableDataChannel:
 		dcPtr = &t.reliableDC
 		dcReady = &t.reliableDCOpened
@@ -1008,22 +1007,70 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 		}
 
 		var slowThreshold int
-		if dc.Label() == ReliableDataChannel {
+		if dc.Label() == ReliableDataChannel || isUnlabeled {
 			slowThreshold = t.params.DatachannelSlowThreshold
 		}
 
 		t.lock.Lock()
-		if *dcPtr != nil {
-			(*dcPtr).Close()
+		if isUnlabeled {
+			t.unlabeledDataChannels = append(
+				t.unlabeledDataChannels,
+				datachannel.NewDataChannelWriter(dc, rawDC, slowThreshold),
+			)
+		} else {
+			if *dcPtr != nil {
+				(*dcPtr).Close()
+			}
+			*dcPtr = datachannel.NewDataChannelWriter(dc, rawDC, slowThreshold)
+			*dcReady = true
 		}
-		*dcPtr = datachannel.NewDataChannelWriter(dc, rawDC, slowThreshold)
-		*dcReady = true
 		t.lock.Unlock()
 		t.params.Logger.Debugw(dc.Label() + " data channel open")
 
 		t.maybeNotifyFullyEstablished()
 	})
 
+	return nil
+}
+
+// for testing only
+func (t *PCTransport) CreateReadableDataChannel(label string, dci *webrtc.DataChannelInit) error {
+	dc, err := t.pc.CreateDataChannel(label, dci)
+	if err != nil {
+		return err
+	}
+
+	dc.OnOpen(func() {
+		t.params.Logger.Debugw(dc.Label() + " data channel open")
+		rawDC, err := dc.DetachWithDeadline()
+		if err != nil {
+			t.params.Logger.Errorw("failed to detach data channel", err, "label", dc.Label())
+			return
+		}
+
+		t.lock.Lock()
+		t.unlabeledDataChannels = append(
+			t.unlabeledDataChannels,
+			datachannel.NewDataChannelWriter(dc, rawDC, t.params.DatachannelSlowThreshold),
+		)
+		t.lock.Unlock()
+
+		go func() {
+			defer rawDC.Close()
+			buffer := make([]byte, dataChannelBufferSize)
+			for {
+				n, _, err := rawDC.ReadDataChannel(buffer)
+				if err != nil {
+					if !errors.Is(err, io.EOF) && !strings.Contains(err.Error(), "state=Closed") {
+						t.params.Logger.Warnw("error reading data channel", err, "label", dc.Label())
+					}
+					return
+				}
+
+				t.params.Handler.OnDataMessageUnlabeled(buffer[:n])
+			}
+		}()
+	})
 	return nil
 }
 

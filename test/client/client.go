@@ -81,10 +81,11 @@ type RTCClient struct {
 	// tracks waiting to be acked, cid => trackInfo
 	pendingPublishedTracks map[string]*livekit.TrackInfo
 
-	pendingTrackWriters []*TrackWriter
-	OnConnected         func()
-	OnDataReceived      func(data []byte, sid string)
-	refreshToken        string
+	pendingTrackWriters     []*TrackWriter
+	OnConnected             func()
+	OnDataReceived          func(data []byte, sid string)
+	OnDataUnlabeledReceived func(data []byte)
+	refreshToken            string
 
 	// map of livekit.ParticipantID and last packet
 	lastPackets   map[livekit.ParticipantID]*rtp.Packet
@@ -262,6 +263,18 @@ func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 		return nil, err
 	}
 
+	if err := c.publisher.CreateDataChannel("pubraw", &webrtc.DataChannelInit{
+		Ordered: &ordered,
+	}); err != nil {
+		return nil, err
+	}
+
+	if err := c.subscriber.CreateReadableDataChannel("subraw", &webrtc.DataChannelInit{
+		Ordered: &ordered,
+	}); err != nil {
+		return nil, err
+	}
+
 	subscriberHandler.OnICECandidateCalls(func(ic *webrtc.ICECandidate, t livekit.SignalTarget) error {
 		if ic == nil {
 			return nil
@@ -272,6 +285,7 @@ func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 		go c.processTrack(track)
 	})
 	subscriberHandler.OnDataMessageCalls(c.handleDataMessage)
+	subscriberHandler.OnDataMessageUnlabeledCalls(c.handleDataMessageUnlabeled)
 	subscriberHandler.OnInitialConnectedCalls(func() {
 		logger.Debugw("subscriber initial connected", "participant", c.localParticipant.Identity)
 
@@ -735,6 +749,15 @@ func (c *RTCClient) PublishData(data []byte, kind livekit.DataPacket_Kind) error
 	return c.publisher.SendDataMessage(kind, dpData)
 }
 
+func (c *RTCClient) PublishDataUnlabeled(data []byte) error {
+	if err := c.ensurePublisherConnected(); err != nil {
+		return err
+	}
+
+	fmt.Printf("RAJA sending unlabeled data: %s\n", string(data)) // REMOVE
+	return c.publisher.SendDataMessageUnlabeled(data)
+}
+
 func (c *RTCClient) GetPublishedTrackIDs() []string {
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -784,6 +807,12 @@ func (c *RTCClient) handleDataMessage(kind livekit.DataPacket_Kind, data []byte)
 		if c.OnDataReceived != nil {
 			c.OnDataReceived(val.User.Payload, val.User.ParticipantSid)
 		}
+	}
+}
+
+func (c *RTCClient) handleDataMessageUnlabeled(data []byte) {
+	if c.OnDataUnlabeledReceived != nil {
+		c.OnDataUnlabeledReceived(data)
 	}
 }
 

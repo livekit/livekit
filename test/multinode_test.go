@@ -154,6 +154,7 @@ func TestMultinodeDataPublishing(t *testing.T) {
 	defer finish()
 
 	scenarioDataPublish(t)
+	scenarioDataUnlabeledPublish(t)
 }
 
 func TestMultiNodeJoinAfterClose(t *testing.T) {
