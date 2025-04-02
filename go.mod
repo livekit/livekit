@@ -10,6 +10,7 @@ require (
 	github.com/dennwc/iters v1.0.1
 	github.com/dustin/go-humanize v1.0.1
 	github.com/elliotchance/orderedmap/v2 v2.7.0
+	github.com/elliotchance/orderedmap/v3 v3.1.0
 	github.com/florianl/go-tc v0.4.4
 	github.com/frostbyte73/core v0.1.1
 	github.com/gammazero/deque v1.0.0
@@ -50,7 +51,8 @@ require (
 	github.com/thoas/go-funk v0.9.3
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/ua-parser/uap-go v0.0.0-20250126222208-a52596c19dff
-	github.com/urfave/cli/v2 v2.27.5
+	github.com/urfave/cli/v2 v2.27.6
+	github.com/urfave/cli/v3 v3.1.1
 	github.com/urfave/negroni/v3 v3.1.1
 	go.uber.org/atomic v1.11.0
 	go.uber.org/multierr v1.11.0
