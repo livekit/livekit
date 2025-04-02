@@ -215,7 +215,7 @@ func getNodeStatsRate(statsHistory []*livekit.NodeStats) *livekit.NodeStatsRate 
 	}
 
 	// time weighted averages
-	var cpuLoad, memoryLoad float32
+	var cpuLoad, memoryUsed, memoryTotal, memoryLoad float32
 	for idx := len(statsHistory) - 1; idx > 0; idx-- {
 		stats := statsHistory[idx]
 		prevStats := statsHistory[idx-1]
@@ -229,6 +229,8 @@ func getNodeStatsRate(statsHistory []*livekit.NodeStats) *livekit.NodeStatsRate 
 		}
 
 		cpuLoad += stats.CpuLoad * float32(spanElapsed)
+		memoryUsed += float32(stats.MemoryUsed) * float32(spanElapsed)
+		memoryTotal += float32(stats.MemoryTotal) * float32(spanElapsed)
 		if stats.MemoryTotal > 0 {
 			memoryLoad += float32(stats.MemoryUsed) / float32(stats.MemoryTotal) * float32(spanElapsed)
 		}
@@ -258,6 +260,8 @@ func getNodeStatsRate(statsHistory []*livekit.NodeStats) *livekit.NodeStatsRate 
 		TrackSubscribeSuccess:      perSec(uint64(earlier.NumTrackSubscribeSuccess), uint64(later.NumTrackSubscribeSuccess), elapsed),
 		CpuLoad:                    cpuLoad / float32(elapsed),
 		MemoryLoad:                 memoryLoad / float32(elapsed),
+		MemoryUsed:                 memoryUsed / float32(elapsed),
+		MemoryTotal:                memoryTotal / float32(elapsed),
 	}
 	return rate
 }
