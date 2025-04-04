@@ -51,9 +51,9 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.Se
 		disableRed := info != nil && info.DisableRed
 		p.pendingTracksLock.RUnlock()
 
-		codecs, err := codecsFromMediaDescription(unmatchAudio)
+		codecs, err := lksdp.CodecsFromMediaDescription(unmatchAudio)
 		if err != nil {
-			p.pubLogger.Errorw("extract codecs from media section failed", err, "media", unmatchAudio)
+			p.pubLogger.Errorw("extract codecs from media section failed", err, "media", unmatchAudio, "offer", offer)
 			continue
 		}
 
@@ -152,9 +152,9 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 		p.pendingTracksLock.RUnlock()
 
 		if mimeType != "" {
-			codecs, err := codecsFromMediaDescription(unmatchVideo)
+			codecs, err := lksdp.CodecsFromMediaDescription(unmatchVideo)
 			if err != nil {
-				p.pubLogger.Errorw("extract codecs from media section failed", err, "media", unmatchVideo)
+				p.pubLogger.Errorw("extract codecs from media section failed", err, "media", unmatchVideo, "offer", offer)
 				continue
 			}
 
