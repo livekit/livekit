@@ -2054,6 +2054,7 @@ func (p *ParticipantImpl) onPrimaryTransportInitialConnected() {
 	if !p.hasPendingMigratedTrack() && len(p.GetPublishedTracks()) == 0 {
 		// if there are no published tracks, declare migration complete on primary transport initial connect,
 		// else, wait for all tracks to be published and publisher peer connection established
+		p.migratedTracksPublishedFuse.Break()
 		p.SetMigrateState(types.MigrateStateComplete)
 	}
 }
