@@ -245,7 +245,8 @@ type ParticipantImpl struct {
 	onDataMessage        func(types.LocalParticipant, []byte)
 	onMetrics            func(types.Participant, *livekit.DataPacket)
 
-	migrateState atomic.Value // types.MigrateState
+	migrateState                   atomic.Value // types.MigrateState
+	migratedTracksPublishedPromise *utils.Promise[bool]
 
 	onClose            func(types.LocalParticipant)
 	onClaimsChanged    func(participant types.LocalParticipant)
@@ -305,7 +306,13 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.closeReason.Store(types.ParticipantCloseReasonNone)
 	p.version.Store(params.InitialVersion)
 	p.timedVersion.Update(params.VersionGenerator.Next())
+
 	p.migrateState.Store(types.MigrateStateInit)
+	p.migratedTracksPublishedPromise = utils.NewPromise[bool]()
+	if !p.params.Migration {
+		p.migratedTracksPublishedPromise.Resolve(true, nil)
+	}
+
 	p.state.Store(livekit.ParticipantInfo_JOINING)
 	p.grants.Store(params.Grants.Clone())
 	p.SetResponseSink(params.Sink)
@@ -1239,6 +1246,25 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		// callbacks handle webhooks as well as db persistence
 		for _, t := range migratedTracks {
 			p.handleTrackPublished(t, true)
+		}
+
+		if s == types.MigrateStateComplete {
+			// wait for all migrated track to be published,
+			// it is possible that synthesized track publish above could
+			// race with actual publish from client and the above synthesized
+			// one could actually be a no-op because the actual publish path is active.
+			//
+			// if the actual publish path has not finished, the migration state change
+			// callback could close the remote participant/tracks before the local track
+			// is fully active.
+			//
+			// that could lead subscribers to unsubscribe due to source
+			// track going away, i. e. in this case, the remote track close would have
+			// notified the subscription manager, the subscription manager would
+			// re-resolve to check if the track is still active and unsubscribe if none
+			// is active, as local track is in the process of completing publish,
+			// the check would have resolved to an empty track leading to unsubscription.
+			<-p.migratedTracksPublishedPromise.Done()
 		}
 
 		if onMigrateStateChange := p.getOnMigrateStateChange(); onMigrateStateChange != nil {
@@ -2692,6 +2718,10 @@ func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack, isMigrate
 	p.pendingTracksLock.Lock()
 	delete(p.pendingPublishingTracks, track.ID())
 	p.pendingTracksLock.Unlock()
+
+	if !p.hasPendingMigratedTrack() && !p.migratedTracksPublishedPromise.Resolved() {
+		p.migratedTracksPublishedPromise.Resolve(true, nil)
+	}
 }
 
 func (p *ParticipantImpl) hasPendingMigratedTrack() bool {
