@@ -17,7 +17,6 @@ package prometheus
 import (
 	"time"
 
-	"github.com/mackerelio/go-osstat/memory"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
@@ -43,7 +42,8 @@ var (
 	promSysPacketGauge           *prometheus.GaugeVec
 	promSysDroppedPacketPctGauge prometheus.Gauge
 
-	cpuStats *hwstats.CPUStats
+	cpuStats    *hwstats.CPUStats
+	memoryStats *hwstats.MemoryStats
 )
 
 func Init(nodeID string, nodeType livekit.NodeType) error {
@@ -122,6 +122,11 @@ func Init(nodeID string, nodeType livekit.NodeType) error {
 		return err
 	}
 
+	memoryStats, err = hwstats.NewMemoryStats()
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -131,21 +136,9 @@ func GetNodeStats(nodeStartedAt int64, prevStats []*livekit.NodeStats, rateInter
 		return nil, err
 	}
 
-	var cpuLoad float64
-	cpuIdle := cpuStats.GetCPUIdle()
-	if cpuIdle > 0 {
-		cpuLoad = 1 - (cpuIdle / cpuStats.NumCPU())
-	}
-
 	// On MacOS, get "\"vm_stat\": executable file not found in $PATH" although it is in /usr/bin
 	// So, do not error out. Use the information if it is available.
-	memTotal := uint64(0)
-	memUsed := uint64(0)
-	memInfo, _ := memory.Get()
-	if memInfo != nil {
-		memTotal = memInfo.Total
-		memUsed = memInfo.Used
-	}
+	memUsed, memTotal, _ := memoryStats.GetMemory()
 
 	sysPackets, sysDroppedPackets, _ := getTCStats()
 	promSysPacketGauge.WithLabelValues("out").Set(float64(sysPackets - sysPacketsStart))
@@ -175,7 +168,7 @@ func GetNodeStats(nodeStartedAt int64, prevStats []*livekit.NodeStats, rateInter
 		ForwardLatency:             forwardLatency.Load(),
 		ForwardJitter:              forwardJitter.Load(),
 		NumCpus:                    uint32(cpuStats.NumCPU()), // this will round down to the nearest integer
-		CpuLoad:                    float32(cpuLoad),
+		CpuLoad:                    float32(cpuStats.GetCPULoad()),
 		MemoryTotal:                memTotal,
 		MemoryUsed:                 memUsed,
 		LoadAvgLast1Min:            float32(loadAvg.Loadavg1),
