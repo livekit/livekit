@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/frostbyte73/core"
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/pion/rtcp"
 	"github.com/pion/sdp/v3"
@@ -245,8 +246,8 @@ type ParticipantImpl struct {
 	onDataMessage        func(types.LocalParticipant, []byte)
 	onMetrics            func(types.Participant, *livekit.DataPacket)
 
-	migrateState                   atomic.Value // types.MigrateState
-	migratedTracksPublishedPromise *utils.Promise[bool]
+	migrateState                atomic.Value // types.MigrateState
+	migratedTracksPublishedFuse core.Fuse
 
 	onClose            func(types.LocalParticipant)
 	onClaimsChanged    func(participant types.LocalParticipant)
@@ -308,9 +309,8 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.timedVersion.Update(params.VersionGenerator.Next())
 
 	p.migrateState.Store(types.MigrateStateInit)
-	p.migratedTracksPublishedPromise = utils.NewPromise[bool]()
 	if !p.params.Migration {
-		p.migratedTracksPublishedPromise.Resolve(true, nil)
+		p.migratedTracksPublishedFuse.Break()
 	}
 
 	p.state.Store(livekit.ParticipantInfo_JOINING)
@@ -1264,7 +1264,7 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 			// re-resolve to check if the track is still active and unsubscribe if none
 			// is active, as local track is in the process of completing publish,
 			// the check would have resolved to an empty track leading to unsubscription.
-			<-p.migratedTracksPublishedPromise.Done()
+			<-p.migratedTracksPublishedFuse.Watch()
 		}
 
 		if onMigrateStateChange := p.getOnMigrateStateChange(); onMigrateStateChange != nil {
@@ -2719,8 +2719,8 @@ func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack, isMigrate
 	delete(p.pendingPublishingTracks, track.ID())
 	p.pendingTracksLock.Unlock()
 
-	if !p.hasPendingMigratedTrack() && !p.migratedTracksPublishedPromise.Resolved() {
-		p.migratedTracksPublishedPromise.Resolve(true, nil)
+	if !p.hasPendingMigratedTrack() {
+		p.migratedTracksPublishedFuse.Break()
 	}
 }
 
