@@ -309,9 +309,6 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.timedVersion.Update(params.VersionGenerator.Next())
 
 	p.migrateState.Store(types.MigrateStateInit)
-	if !p.params.Migration {
-		p.migratedTracksPublishedFuse.Break()
-	}
 
 	p.state.Store(livekit.ParticipantInfo_JOINING)
 	p.grants.Store(params.Grants.Clone())
@@ -1264,6 +1261,19 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 			// re-resolve to check if the track is still active and unsubscribe if none
 			// is active, as local track is in the process of completing publish,
 			// the check would have resolved to an empty track leading to unsubscription.
+			go func() {
+				startTime := time.Now()
+				for {
+					if !p.hasPendingMigratedTrack() || p.IsDisconnected() || time.Since(startTime) > 15*time.Second {
+						// a time out just to be safe, but it should not be needed
+						p.migratedTracksPublishedFuse.Break()
+						return
+					}
+
+					time.Sleep(20 * time.Millisecond)
+				}
+			}()
+
 			<-p.migratedTracksPublishedFuse.Watch()
 		}
 
@@ -2718,10 +2728,6 @@ func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack, isMigrate
 	p.pendingTracksLock.Lock()
 	delete(p.pendingPublishingTracks, track.ID())
 	p.pendingTracksLock.Unlock()
-
-	if !p.hasPendingMigratedTrack() {
-		p.migratedTracksPublishedFuse.Break()
-	}
 }
 
 func (p *ParticipantImpl) hasPendingMigratedTrack() bool {
