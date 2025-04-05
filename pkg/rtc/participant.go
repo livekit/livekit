@@ -1265,6 +1265,7 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 				startTime := time.Now()
 				for {
 					if !p.hasPendingMigratedTrack() || p.IsDisconnected() || time.Since(startTime) > 15*time.Second {
+						// a time out just to be safe, but it should not be needed
 						p.migratedTracksPublishedFuse.Break()
 						return
 					}
