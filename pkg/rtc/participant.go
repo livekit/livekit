@@ -20,7 +20,6 @@ import (
 	"io"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -3195,31 +3194,4 @@ func (p *ParticipantImpl) HandleMetrics(senderParticipantID livekit.ParticipantI
 
 func (p *ParticipantImpl) SupportsCodecChange() bool {
 	return p.params.ClientInfo.SupportsCodecChange()
-}
-
-// ----------------------------------------------
-
-func codecsFromMediaDescription(m *sdp.MediaDescription) (out []sdp.Codec, err error) {
-	s := &sdp.SessionDescription{
-		MediaDescriptions: []*sdp.MediaDescription{m},
-	}
-
-	for _, payloadStr := range m.MediaName.Formats {
-		payloadType, err := strconv.ParseUint(payloadStr, 10, 8)
-		if err != nil {
-			return nil, err
-		}
-
-		codec, err := s.GetCodecForPayloadType(uint8(payloadType))
-		if err != nil {
-			if payloadType == 0 {
-				continue
-			}
-			return nil, err
-		}
-
-		out = append(out, codec)
-	}
-
-	return out, nil
 }

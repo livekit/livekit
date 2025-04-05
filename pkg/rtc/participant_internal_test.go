@@ -31,6 +31,7 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	lksdp "github.com/livekit/protocol/sdp"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 
@@ -534,7 +535,7 @@ func TestPreferVideoCodecForPublisher(t *testing.T) {
 		for _, m := range parsed.MediaDescriptions {
 			if m.MediaName.Media == "video" {
 				if videoSectionIndex == i {
-					codecs, err := codecsFromMediaDescription(m)
+					codecs, err := lksdp.CodecsFromMediaDescription(m)
 					require.NoError(t, err)
 					if mime.IsMimeTypeCodecStringH264(codecs[0].Name) {
 						h264Preferred = true
@@ -618,7 +619,7 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 			for _, m := range parsed.MediaDescriptions {
 				if m.MediaName.Media == "audio" {
 					if audioSectionIndex == i {
-						codecs, err := codecsFromMediaDescription(m)
+						codecs, err := lksdp.CodecsFromMediaDescription(m)
 						require.NoError(t, err)
 						// nack is always enabled. if red is preferred, server will not generate nack request
 						var nackEnabled bool
