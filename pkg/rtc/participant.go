@@ -1248,22 +1248,24 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 			p.handleTrackPublished(t, true)
 		}
 
-		// wait for all migrated track to be published,
-		// it is possible that synthesized track publish above could
-		// race with actual publish from client and the above synthesized
-		// one could actually be a no-op because the actual publish path is active.
-		//
-		// if the actual publish path has not finished, the migration state change
-		// callback could close the remote participant/tracks before the local track
-		// is fully active.
-		//
-		// that could lead subscribers to unsubscribe due to source
-		// track going away, i. e. in this case, the remote track close would have
-		// notified the subscription manager, the subscription manager would
-		// re-resolve to check if the track is still active and unsubscribe if none
-		// is active, as local track is in the process of completing publish,
-		// the check would have resolved to an empty track leading to unsubscription.
-		<-p.migratedTracksPublishedPromise.Done()
+		if s == types.MigrateStateComplete {
+			// wait for all migrated track to be published,
+			// it is possible that synthesized track publish above could
+			// race with actual publish from client and the above synthesized
+			// one could actually be a no-op because the actual publish path is active.
+			//
+			// if the actual publish path has not finished, the migration state change
+			// callback could close the remote participant/tracks before the local track
+			// is fully active.
+			//
+			// that could lead subscribers to unsubscribe due to source
+			// track going away, i. e. in this case, the remote track close would have
+			// notified the subscription manager, the subscription manager would
+			// re-resolve to check if the track is still active and unsubscribe if none
+			// is active, as local track is in the process of completing publish,
+			// the check would have resolved to an empty track leading to unsubscription.
+			<-p.migratedTracksPublishedPromise.Done()
+		}
 
 		if onMigrateStateChange := p.getOnMigrateStateChange(); onMigrateStateChange != nil {
 			onMigrateStateChange(p, s)
@@ -2717,7 +2719,7 @@ func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack, isMigrate
 	delete(p.pendingPublishingTracks, track.ID())
 	p.pendingTracksLock.Unlock()
 
-	if !p.hasPendingMigratedTrack() {
+	if !p.hasPendingMigratedTrack() && !p.migratedTracksPublishedPromise.Resolved() {
 		p.migratedTracksPublishedPromise.Resolve(true, nil)
 	}
 }
