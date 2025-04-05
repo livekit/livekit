@@ -1262,8 +1262,9 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 			// is active, as local track is in the process of completing publish,
 			// the check would have resolved to an empty track leading to unsubscription.
 			go func() {
+				startTime := time.Now()
 				for {
-					if !p.hasPendingMigratedTrack() {
+					if !p.hasPendingMigratedTrack() || p.IsDisconnected() || time.Since(startTime) > 15*time.Second {
 						p.migratedTracksPublishedFuse.Break()
 						return
 					}
