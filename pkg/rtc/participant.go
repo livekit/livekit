@@ -1712,15 +1712,15 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 			p.params.Logger.Debugw("ignoring out of order participant state", "state", state.String())
 			return
 		}
+		if state == livekit.ParticipantInfo_ACTIVE {
+			p.lastActiveAt.CompareAndSwap(nil, pointer.To(time.Now()))
+		}
 		if p.state.CompareAndSwap(oldState, state) {
 			break
 		}
 	}
 
 	p.params.Logger.Debugw("updating participant state", "state", state.String())
-	if state == livekit.ParticipantInfo_ACTIVE {
-		p.lastActiveAt.CompareAndSwap(nil, pointer.To(time.Now()))
-	}
 	p.dirty.Store(true)
 
 	if onStateChange := p.getOnStateChange(); onStateChange != nil {
