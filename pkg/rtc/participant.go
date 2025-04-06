@@ -240,7 +240,7 @@ type ParticipantImpl struct {
 	onTrackPublished     func(types.LocalParticipant, types.MediaTrack)
 	onTrackUpdated       func(types.LocalParticipant, types.MediaTrack)
 	onTrackUnpublished   func(types.LocalParticipant, types.MediaTrack)
-	onStateChange        func(p types.LocalParticipant, state livekit.ParticipantInfo_State)
+	onStateChange        func(p types.LocalParticipant)
 	onMigrateStateChange func(p types.LocalParticipant, migrateState types.MigrateState)
 	onParticipantUpdate  func(types.LocalParticipant)
 	onDataPacket         func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
@@ -737,13 +737,13 @@ func (p *ParticipantImpl) getOnTrackUnpublished() func(types.LocalParticipant, t
 	return p.onTrackUnpublished
 }
 
-func (p *ParticipantImpl) OnStateChange(callback func(p types.LocalParticipant, state livekit.ParticipantInfo_State)) {
+func (p *ParticipantImpl) OnStateChange(callback func(p types.LocalParticipant)) {
 	p.lock.Lock()
 	p.onStateChange = callback
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) getOnStateChange() func(p types.LocalParticipant, state livekit.ParticipantInfo_State) {
+func (p *ParticipantImpl) getOnStateChange() func(p types.LocalParticipant) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	return p.onStateChange
@@ -1723,7 +1723,7 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 	p.dirty.Store(true)
 
 	if onStateChange := p.getOnStateChange(); onStateChange != nil {
-		go onStateChange(p, state)
+		go onStateChange(p)
 	}
 
 	if state == livekit.ParticipantInfo_DISCONNECTED && oldState == livekit.ParticipantInfo_ACTIVE {

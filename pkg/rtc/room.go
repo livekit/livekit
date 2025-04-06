@@ -444,13 +444,16 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 		r.joinedAt.Store(time.Now().Unix())
 	}
 
-	participant.OnStateChange(func(p types.LocalParticipant, state livekit.ParticipantInfo_State) {
+	var onStateChangeMu sync.Mutex
+	participant.OnStateChange(func(p types.LocalParticipant) {
 		if r.onParticipantChanged != nil {
 			r.onParticipantChanged(p)
 		}
 		r.broadcastParticipantState(p, broadcastOptions{skipSource: true})
 
-		if state == livekit.ParticipantInfo_ACTIVE {
+		onStateChangeMu.Lock()
+		defer onStateChangeMu.Unlock()
+		if state := p.State(); state == livekit.ParticipantInfo_ACTIVE {
 			// subscribe participant to existing published tracks
 			r.subscribeToExistingTracks(p)
 
