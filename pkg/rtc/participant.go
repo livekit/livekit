@@ -39,6 +39,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
+	"github.com/livekit/protocol/utils/pointer"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/metric"
@@ -239,7 +240,7 @@ type ParticipantImpl struct {
 	onTrackPublished     func(types.LocalParticipant, types.MediaTrack)
 	onTrackUpdated       func(types.LocalParticipant, types.MediaTrack)
 	onTrackUnpublished   func(types.LocalParticipant, types.MediaTrack)
-	onStateChange        func(p types.LocalParticipant, state livekit.ParticipantInfo_State)
+	onStateChange        func(p types.LocalParticipant)
 	onMigrateStateChange func(p types.LocalParticipant, migrateState types.MigrateState)
 	onParticipantUpdate  func(types.LocalParticipant)
 	onDataPacket         func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
@@ -739,13 +740,13 @@ func (p *ParticipantImpl) getOnTrackUnpublished() func(types.LocalParticipant, t
 	return p.onTrackUnpublished
 }
 
-func (p *ParticipantImpl) OnStateChange(callback func(p types.LocalParticipant, state livekit.ParticipantInfo_State)) {
+func (p *ParticipantImpl) OnStateChange(callback func(p types.LocalParticipant)) {
 	p.lock.Lock()
 	p.onStateChange = callback
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) getOnStateChange() func(p types.LocalParticipant, state livekit.ParticipantInfo_State) {
+func (p *ParticipantImpl) getOnStateChange() func(p types.LocalParticipant) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	return p.onStateChange
@@ -1738,23 +1739,30 @@ func (p *ParticipantImpl) setupMetrics() {
 }
 
 func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
-	if state == livekit.ParticipantInfo_ACTIVE {
-		t := time.Now()
-		p.lastActiveAt.CompareAndSwap(nil, &t)
-	}
-	oldState := p.state.Swap(state).(livekit.ParticipantInfo_State)
-	if oldState == state {
-		return
+	var oldState livekit.ParticipantInfo_State
+	for {
+		oldState = p.state.Load().(livekit.ParticipantInfo_State)
+		if state <= oldState {
+			p.params.Logger.Debugw("ignoring out of order participant state", "state", state.String())
+			return
+		}
+		if state == livekit.ParticipantInfo_ACTIVE {
+			p.lastActiveAt.CompareAndSwap(nil, pointer.To(time.Now()))
+		}
+		if p.state.CompareAndSwap(oldState, state) {
+			break
+		}
 	}
 
-	if state == livekit.ParticipantInfo_DISCONNECTED && oldState == livekit.ParticipantInfo_ACTIVE {
-		prometheus.RecordSessionDuration(int(p.ProtocolVersion()), time.Since(*p.lastActiveAt.Load()))
-	}
 	p.params.Logger.Debugw("updating participant state", "state", state.String())
 	p.dirty.Store(true)
 
 	if onStateChange := p.getOnStateChange(); onStateChange != nil {
-		go onStateChange(p, state)
+		go onStateChange(p)
+	}
+
+	if state == livekit.ParticipantInfo_DISCONNECTED && oldState == livekit.ParticipantInfo_ACTIVE {
+		prometheus.RecordSessionDuration(int(p.ProtocolVersion()), time.Since(*p.lastActiveAt.Load()))
 	}
 }
 
