@@ -179,7 +179,6 @@ type ParticipantImpl struct {
 	isClosed    atomic.Bool
 	closeReason atomic.Value // types.ParticipantCloseReason
 
-	stateMu      sync.Mutex
 	state        atomic.Value // livekit.ParticipantInfo_State
 	disconnected chan struct{}
 
