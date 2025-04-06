@@ -39,6 +39,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
+	"github.com/livekit/protocol/utils/pointer"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/metric"
@@ -178,6 +179,7 @@ type ParticipantImpl struct {
 	isClosed    atomic.Bool
 	closeReason atomic.Value // types.ParticipantCloseReason
 
+	stateMu      sync.Mutex
 	state        atomic.Value // livekit.ParticipantInfo_State
 	disconnected chan struct{}
 
@@ -1703,23 +1705,30 @@ func (p *ParticipantImpl) setupMetrics() {
 }
 
 func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
-	if state == livekit.ParticipantInfo_ACTIVE {
-		t := time.Now()
-		p.lastActiveAt.CompareAndSwap(nil, &t)
-	}
-	oldState := p.state.Swap(state).(livekit.ParticipantInfo_State)
-	if oldState == state {
-		return
+	var oldState livekit.ParticipantInfo_State
+	for {
+		oldState = p.state.Load().(livekit.ParticipantInfo_State)
+		if state <= oldState {
+			p.params.Logger.Debugw("ignoring out of order participant state", "state", state.String())
+			return
+		}
+		if p.state.CompareAndSwap(oldState, state) {
+			break
+		}
 	}
 
-	if state == livekit.ParticipantInfo_DISCONNECTED && oldState == livekit.ParticipantInfo_ACTIVE {
-		prometheus.RecordSessionDuration(int(p.ProtocolVersion()), time.Since(*p.lastActiveAt.Load()))
-	}
 	p.params.Logger.Debugw("updating participant state", "state", state.String())
+	if state == livekit.ParticipantInfo_ACTIVE {
+		p.lastActiveAt.CompareAndSwap(nil, pointer.To(time.Now()))
+	}
 	p.dirty.Store(true)
 
 	if onStateChange := p.getOnStateChange(); onStateChange != nil {
 		go onStateChange(p, state)
+	}
+
+	if state == livekit.ParticipantInfo_DISCONNECTED && oldState == livekit.ParticipantInfo_ACTIVE {
+		prometheus.RecordSessionDuration(int(p.ProtocolVersion()), time.Since(*p.lastActiveAt.Load()))
 	}
 }
 
