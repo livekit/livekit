@@ -75,11 +75,12 @@ type FakeTelemetryService struct {
 		arg1 context.Context
 		arg2 *livekit.AnalyticsNodeRooms
 	}
-	NotifyEventStub        func(context.Context, *livekit.WebhookEvent)
-	notifyEventMutex       sync.RWMutex
-	notifyEventArgsForCall []struct {
+	NotifyEgressEventStub        func(context.Context, string, *livekit.EgressInfo)
+	notifyEgressEventMutex       sync.RWMutex
+	notifyEgressEventArgsForCall []struct {
 		arg1 context.Context
-		arg2 *livekit.WebhookEvent
+		arg2 string
+		arg3 *livekit.EgressInfo
 	}
 	ParticipantActiveStub        func(context.Context, *livekit.Room, *livekit.ParticipantInfo, *livekit.AnalyticsClientMeta, bool)
 	participantActiveMutex       sync.RWMutex
@@ -630,37 +631,38 @@ func (fake *FakeTelemetryService) LocalRoomStateArgsForCall(i int) (context.Cont
 	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakeTelemetryService) NotifyEvent(arg1 context.Context, arg2 *livekit.WebhookEvent) {
-	fake.notifyEventMutex.Lock()
-	fake.notifyEventArgsForCall = append(fake.notifyEventArgsForCall, struct {
+func (fake *FakeTelemetryService) NotifyEgressEvent(arg1 context.Context, arg2 string, arg3 *livekit.EgressInfo) {
+	fake.notifyEgressEventMutex.Lock()
+	fake.notifyEgressEventArgsForCall = append(fake.notifyEgressEventArgsForCall, struct {
 		arg1 context.Context
-		arg2 *livekit.WebhookEvent
-	}{arg1, arg2})
-	stub := fake.NotifyEventStub
-	fake.recordInvocation("NotifyEvent", []interface{}{arg1, arg2})
-	fake.notifyEventMutex.Unlock()
+		arg2 string
+		arg3 *livekit.EgressInfo
+	}{arg1, arg2, arg3})
+	stub := fake.NotifyEgressEventStub
+	fake.recordInvocation("NotifyEgressEvent", []interface{}{arg1, arg2, arg3})
+	fake.notifyEgressEventMutex.Unlock()
 	if stub != nil {
-		fake.NotifyEventStub(arg1, arg2)
+		fake.NotifyEgressEventStub(arg1, arg2, arg3)
 	}
 }
 
-func (fake *FakeTelemetryService) NotifyEventCallCount() int {
-	fake.notifyEventMutex.RLock()
-	defer fake.notifyEventMutex.RUnlock()
-	return len(fake.notifyEventArgsForCall)
+func (fake *FakeTelemetryService) NotifyEgressEventCallCount() int {
+	fake.notifyEgressEventMutex.RLock()
+	defer fake.notifyEgressEventMutex.RUnlock()
+	return len(fake.notifyEgressEventArgsForCall)
 }
 
-func (fake *FakeTelemetryService) NotifyEventCalls(stub func(context.Context, *livekit.WebhookEvent)) {
-	fake.notifyEventMutex.Lock()
-	defer fake.notifyEventMutex.Unlock()
-	fake.NotifyEventStub = stub
+func (fake *FakeTelemetryService) NotifyEgressEventCalls(stub func(context.Context, string, *livekit.EgressInfo)) {
+	fake.notifyEgressEventMutex.Lock()
+	defer fake.notifyEgressEventMutex.Unlock()
+	fake.NotifyEgressEventStub = stub
 }
 
-func (fake *FakeTelemetryService) NotifyEventArgsForCall(i int) (context.Context, *livekit.WebhookEvent) {
-	fake.notifyEventMutex.RLock()
-	defer fake.notifyEventMutex.RUnlock()
-	argsForCall := fake.notifyEventArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+func (fake *FakeTelemetryService) NotifyEgressEventArgsForCall(i int) (context.Context, string, *livekit.EgressInfo) {
+	fake.notifyEgressEventMutex.RLock()
+	defer fake.notifyEgressEventMutex.RUnlock()
+	argsForCall := fake.notifyEgressEventArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeTelemetryService) ParticipantActive(arg1 context.Context, arg2 *livekit.Room, arg3 *livekit.ParticipantInfo, arg4 *livekit.AnalyticsClientMeta, arg5 bool) {
@@ -1559,8 +1561,8 @@ func (fake *FakeTelemetryService) Invocations() map[string][][]interface{} {
 	defer fake.ingressUpdatedMutex.RUnlock()
 	fake.localRoomStateMutex.RLock()
 	defer fake.localRoomStateMutex.RUnlock()
-	fake.notifyEventMutex.RLock()
-	defer fake.notifyEventMutex.RUnlock()
+	fake.notifyEgressEventMutex.RLock()
+	defer fake.notifyEgressEventMutex.RUnlock()
 	fake.participantActiveMutex.RLock()
 	defer fake.participantActiveMutex.RUnlock()
 	fake.participantJoinedMutex.RLock()
