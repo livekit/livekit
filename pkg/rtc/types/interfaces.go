@@ -184,7 +184,7 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		// expected to be connected but is not
 		return livekit.DisconnectReason_JOIN_FAILURE
 	case ParticipantCloseReasonPeerConnectionDisconnected:
-		return livekit.DisconnectReason_STATE_MISMATCH
+		return livekit.DisconnectReason_CONNECTION_TIMEOUT
 	case ParticipantCloseReasonDuplicateIdentity, ParticipantCloseReasonStale:
 		return livekit.DisconnectReason_DUPLICATE_IDENTITY
 	case ParticipantCloseReasonMigrationRequested, ParticipantCloseReasonMigrationComplete, ParticipantCloseReasonSimulateMigration:
