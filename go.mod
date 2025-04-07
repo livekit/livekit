@@ -38,14 +38,10 @@ require (
 	github.com/pion/rtcp v1.2.15
 	github.com/pion/rtp v1.8.13
 	github.com/pion/sctp v1.8.37
-	// sdp/v3 3.0.11 (https://github.com/pion/sdp/releases/tag/v3.0.11)
-	// errors on conflicting codec values in SDP.
-	// Some clients (especially Android) seems to be sending invalid SDP
-	// which fails when trying to set preferred codec.
-	github.com/pion/sdp/v3 v3.0.10
+	github.com/pion/sdp/v3 v3.0.11
 	github.com/pion/transport/v3 v3.0.7
 	github.com/pion/turn/v4 v4.0.0
-	github.com/pion/webrtc/v4 v4.0.13
+	github.com/pion/webrtc/v4 v4.0.14
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.20.5
 	github.com/redis/go-redis/v9 v9.7.3
@@ -60,6 +56,7 @@ require (
 	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394
+	golang.org/x/mod v0.24.0
 	golang.org/x/sync v0.12.0
 	google.golang.org/protobuf v1.36.6
 	gopkg.in/yaml.v3 v3.0.1
@@ -136,7 +133,6 @@ require (
 	github.com/zeebo/xxh3 v1.0.2 // indirect
 	go.uber.org/zap/exp v0.3.0 // indirect
 	golang.org/x/crypto v0.36.0 // indirect
-	golang.org/x/mod v0.24.0 // indirect
 	golang.org/x/net v0.38.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
