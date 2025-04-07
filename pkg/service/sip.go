@@ -198,7 +198,8 @@ func (s *SIPService) UpdateSIPInboundTrunk(ctx context.Context, req *livekit.Upd
 	default:
 		return nil, errors.New("missing or unsupported action")
 	case livekit.UpdateSIPInboundTrunkRequestAction:
-		if err = a.Apply(info); err != nil {
+		info, err = a.Apply(info)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -248,7 +249,8 @@ func (s *SIPService) UpdateSIPOutboundTrunk(ctx context.Context, req *livekit.Up
 	default:
 		return nil, errors.New("missing or unsupported action")
 	case livekit.UpdateSIPOutboundTrunkRequestAction:
-		if err = a.Apply(info); err != nil {
+		info, err = a.Apply(info)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -464,7 +466,8 @@ func (s *SIPService) UpdateSIPDispatchRule(ctx context.Context, req *livekit.Upd
 	default:
 		return nil, errors.New("missing or unsupported action")
 	case livekit.UpdateSIPDispatchRuleRequestAction:
-		if err = a.Apply(info); err != nil {
+		info, err = a.Apply(info)
+		if err != nil {
 			return nil, err
 		}
 	}
