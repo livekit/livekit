@@ -3114,7 +3114,8 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 		return false
 	}
 
-	publishCodecs := make([]*livekit.Codec, 0, len(publishEnabledCodecs))
+	publishCodecsAudio := make([]*livekit.Codec, 0, len(publishEnabledCodecs))
+	publishCodecsVideo := make([]*livekit.Codec, 0, len(publishEnabledCodecs))
 	for _, c := range publishEnabledCodecs {
 		if shouldDisable(c, disabledCodecs.GetCodecs()) || shouldDisable(c, disabledCodecs.GetPublish()) {
 			continue
@@ -3130,10 +3131,16 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 		} else if mime.IsMimeTypeStringH264(c.Mime) {
 			p.enabledPublishCodecs = append(p.enabledPublishCodecs, c)
 		} else {
-			publishCodecs = append(publishCodecs, c)
+			if mime.IsMimeTypeStringAudio(c.Mime) {
+				publishCodecsAudio = append(publishCodecsAudio, c)
+			} else {
+				publishCodecsVideo = append(publishCodecsVideo, c)
+			}
 		}
 	}
-	p.enabledPublishCodecs = append(p.enabledPublishCodecs, publishCodecs...)
+	// list all video first and then audio to work around a client side issue with Flutter SDK 2.4.2
+	p.enabledPublishCodecs = append(p.enabledPublishCodecs, publishCodecsVideo...)
+	p.enabledPublishCodecs = append(p.enabledPublishCodecs, publishCodecsAudio...)
 
 	subscribeCodecs := make([]*livekit.Codec, 0, len(subscribeEnabledCodecs))
 	for _, c := range subscribeEnabledCodecs {
