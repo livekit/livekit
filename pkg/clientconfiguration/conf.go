@@ -50,7 +50,7 @@ var StaticConfigurations = []ConfigurationItem{
 		Merge: false,
 	},
 	{
-		Match: &ScriptMatch{Expr: `c.sdk == "flutter" && c.version == "2.4.2" && c.os == "android"`},
+		Match: &ScriptMatch{Expr: `c.sdk == "flutter" && c.version == "2.4.2"`},
 		Configuration: &livekit.ClientConfiguration{
 			DisabledCodecs: &livekit.DisabledCodecs{
 				Publish: []*livekit.Codec{
