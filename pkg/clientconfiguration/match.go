@@ -20,6 +20,8 @@ import (
 	"strings"
 
 	"github.com/d5/tengo/v2"
+	"github.com/d5/tengo/v2/token"
+	"golang.org/x/mod/semver"
 
 	"github.com/livekit/protocol/livekit"
 )
@@ -49,6 +51,8 @@ func (m *ScriptMatch) Match(clientInfo *livekit.ClientInfo) (bool, error) {
 	return false, errors.New("invalid match expression result")
 }
 
+// ------------------------------------------------
+
 type clientObject struct {
 	tengo.ObjectImpl
 	info *livekit.ClientInfo
@@ -72,7 +76,7 @@ func (c *clientObject) IndexGet(index tengo.Object) (res tengo.Object, err error
 	case "sdk":
 		return &tengo.String{Value: strings.ToLower(c.info.Sdk.String())}, nil
 	case "version":
-		return &tengo.String{Value: c.info.Version}, nil
+		return &ruleSdkVersion{sdkVersion: c.info.Version}, nil
 	case "protocol":
 		return &tengo.Int{Value: int64(c.info.Protocol)}, nil
 	case "os":
@@ -89,4 +93,65 @@ func (c *clientObject) IndexGet(index tengo.Object) (res tengo.Object, err error
 		return &tengo.String{Value: c.info.Address}, nil
 	}
 	return &tengo.Undefined{}, nil
+}
+
+// ------------------------------------------
+
+type ruleSdkVersion struct {
+	tengo.ObjectImpl
+	sdkVersion string
+}
+
+func (r *ruleSdkVersion) TypeName() string {
+	return "sdkVersion"
+}
+
+func (r *ruleSdkVersion) String() string {
+	return r.sdkVersion
+}
+
+func (r *ruleSdkVersion) BinaryOp(op token.Token, rhs tengo.Object) (tengo.Object, error) {
+	if rhs, ok := rhs.(*tengo.String); ok {
+		cmp := r.compare(rhs.Value)
+
+		isMatch := false
+		switch op {
+		case token.Greater:
+			isMatch = cmp > 0
+		case token.GreaterEq:
+			isMatch = cmp >= 0
+		default:
+			return nil, tengo.ErrInvalidOperator
+		}
+
+		if isMatch {
+			return tengo.TrueValue, nil
+		}
+		return tengo.FalseValue, nil
+	}
+
+	return nil, tengo.ErrInvalidOperator
+}
+
+func (r *ruleSdkVersion) Equals(rhs tengo.Object) bool {
+	if rhs, ok := rhs.(*tengo.String); ok {
+		return r.compare(rhs.Value) == 0
+	}
+
+	return false
+}
+
+func (r *ruleSdkVersion) compare(rhsSdkVersion string) int {
+	if !semver.IsValid("v"+r.sdkVersion) || !semver.IsValid("v"+rhsSdkVersion) {
+		// if not valid semver, do string compare
+		switch {
+		case r.sdkVersion < rhsSdkVersion:
+			return -1
+		case r.sdkVersion > rhsSdkVersion:
+			return 1
+		}
+	} else {
+		return semver.Compare("v"+r.sdkVersion, "v"+rhsSdkVersion)
+	}
+	return 0
 }
