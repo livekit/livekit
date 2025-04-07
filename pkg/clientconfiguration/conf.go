@@ -28,9 +28,13 @@ var StaticConfigurations = []ConfigurationItem{
 	// },
 	{
 		Match: &ScriptMatch{Expr: `c.browser == "safari"`},
-		Configuration: &livekit.ClientConfiguration{DisabledCodecs: &livekit.DisabledCodecs{Codecs: []*livekit.Codec{
-			{Mime: mime.MimeTypeAV1.String()},
-		}}},
+		Configuration: &livekit.ClientConfiguration{
+			DisabledCodecs: &livekit.DisabledCodecs{
+				Codecs: []*livekit.Codec{
+					{Mime: mime.MimeTypeAV1.String()},
+				},
+			},
+		},
 		Merge: false,
 	},
 	{
@@ -38,16 +42,21 @@ var StaticConfigurations = []ConfigurationItem{
 		  ((c.browser == "firefox" || c.browser == "firefox mobile") && (c.os == "linux" || c.os == "android"))`},
 		Configuration: &livekit.ClientConfiguration{
 			DisabledCodecs: &livekit.DisabledCodecs{
-				Publish: []*livekit.Codec{{Mime: mime.MimeTypeH264.String()}},
+				Publish: []*livekit.Codec{
+					{Mime: mime.MimeTypeH264.String()},
+				},
 			},
 		},
 		Merge: false,
 	},
 	{
-		Match: &ScriptMatch{Expr: `(c.sdk == "flutter" && c.version == "2.4.2" && c.os == "android"`},
+		Match: &ScriptMatch{Expr: `c.sdk == "flutter" && c.version == "2.4.2" && c.os == "android"`},
 		Configuration: &livekit.ClientConfiguration{
 			DisabledCodecs: &livekit.DisabledCodecs{
-				Publish: []*livekit.Codec{{Mime: mime.MimeTypeRED.String()}},
+				Publish: []*livekit.Codec{
+					{Mime: mime.MimeTypeOpus.String()},
+					{Mime: mime.MimeTypeRED.String()},
+				},
 			},
 		},
 		Merge: false,
