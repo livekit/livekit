@@ -42,16 +42,17 @@ func StartParticipantEgress(
 ) error {
 	if req, err := startParticipantEgress(ctx, launcher, opts, identity, roomName, roomID); err != nil {
 		// send egress failed webhook
-		ts.NotifyEvent(ctx, &livekit.WebhookEvent{
-			Event: webhook.EventEgressEnded,
-			EgressInfo: &livekit.EgressInfo{
-				RoomId:   string(roomID),
-				RoomName: string(roomName),
-				Status:   livekit.EgressStatus_EGRESS_FAILED,
-				Error:    err.Error(),
-				Request:  &livekit.EgressInfo_Participant{Participant: req},
-			},
-		})
+
+		info := &livekit.EgressInfo{
+			RoomId:   string(roomID),
+			RoomName: string(roomName),
+			Status:   livekit.EgressStatus_EGRESS_FAILED,
+			Error:    err.Error(),
+			Request:  &livekit.EgressInfo_Participant{Participant: req},
+		}
+
+		ts.NotifyEgressEvent(ctx, webhook.EventEgressEnded, info)
+
 		return err
 	}
 	return nil
@@ -103,16 +104,16 @@ func StartTrackEgress(
 ) error {
 	if req, err := startTrackEgress(ctx, launcher, opts, track, roomName, roomID); err != nil {
 		// send egress failed webhook
-		ts.NotifyEvent(ctx, &livekit.WebhookEvent{
-			Event: webhook.EventEgressEnded,
-			EgressInfo: &livekit.EgressInfo{
-				RoomId:   string(roomID),
-				RoomName: string(roomName),
-				Status:   livekit.EgressStatus_EGRESS_FAILED,
-				Error:    err.Error(),
-				Request:  &livekit.EgressInfo_Track{Track: req},
-			},
-		})
+
+		info := &livekit.EgressInfo{
+			RoomId:   string(roomID),
+			RoomName: string(roomName),
+			Status:   livekit.EgressStatus_EGRESS_FAILED,
+			Error:    err.Error(),
+			Request:  &livekit.EgressInfo_Track{Track: req},
+		}
+		ts.NotifyEgressEvent(ctx, webhook.EventEgressEnded, info)
+
 		return err
 	}
 	return nil

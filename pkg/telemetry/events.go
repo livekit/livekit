@@ -28,7 +28,7 @@ import (
 	"github.com/livekit/protocol/webhook"
 )
 
-func (t *telemetryService) NotifyEvent(ctx context.Context, event *livekit.WebhookEvent) {
+func (t *telemetryService) NotifyEvent(ctx context.Context, event *livekit.WebhookEvent, opts ...webhook.NotifyOption) {
 	if t.notifier == nil {
 		return
 	}
@@ -36,7 +36,7 @@ func (t *telemetryService) NotifyEvent(ctx context.Context, event *livekit.Webho
 	event.CreatedAt = time.Now().Unix()
 	event.Id = guid.New("EV_")
 
-	if err := t.notifier.QueueNotify(ctx, event); err != nil {
+	if err := t.notifier.QueueNotify(ctx, event, opts...); err != nil {
 		logger.Warnw("failed to notify webhook", err, "event", event.Event)
 	}
 }
@@ -428,12 +428,19 @@ func (t *telemetryService) TrackSubscribeRTPStats(
 	})
 }
 
+func (t *telemetryService) NotifyEgressEvent(ctx context.Context, event string, info *livekit.EgressInfo) {
+	opts := getEgressNotifyOptions(info)
+
+	t.NotifyEvent(ctx, &livekit.WebhookEvent{
+		Event:      event,
+		EgressInfo: info,
+	}, opts...)
+}
+
 func (t *telemetryService) EgressStarted(ctx context.Context, info *livekit.EgressInfo) {
+
 	t.enqueue(func() {
-		t.NotifyEvent(ctx, &livekit.WebhookEvent{
-			Event:      webhook.EventEgressStarted,
-			EgressInfo: info,
-		})
+		t.NotifyEgressEvent(ctx, webhook.EventEgressStarted, info)
 
 		t.SendEvent(ctx, newEgressEvent(livekit.AnalyticsEventType_EGRESS_STARTED, info))
 	})
@@ -441,20 +448,15 @@ func (t *telemetryService) EgressStarted(ctx context.Context, info *livekit.Egre
 
 func (t *telemetryService) EgressUpdated(ctx context.Context, info *livekit.EgressInfo) {
 	t.enqueue(func() {
-		t.NotifyEvent(ctx, &livekit.WebhookEvent{
-			Event:      webhook.EventEgressUpdated,
-			EgressInfo: info,
-		})
+		t.NotifyEgressEvent(ctx, webhook.EventEgressUpdated, info)
+
 		t.SendEvent(ctx, newEgressEvent(livekit.AnalyticsEventType_EGRESS_UPDATED, info))
 	})
 }
 
 func (t *telemetryService) EgressEnded(ctx context.Context, info *livekit.EgressInfo) {
 	t.enqueue(func() {
-		t.NotifyEvent(ctx, &livekit.WebhookEvent{
-			Event:      webhook.EventEgressEnded,
-			EgressInfo: info,
-		})
+		t.NotifyEgressEvent(ctx, webhook.EventEgressEnded, info)
 
 		t.SendEvent(ctx, newEgressEvent(livekit.AnalyticsEventType_EGRESS_ENDED, info))
 	})
@@ -595,4 +597,45 @@ func newIngressEvent(event livekit.AnalyticsEventType, ingress *livekit.IngressI
 		IngressId: ingress.IngressId,
 		Ingress:   ingress,
 	}
+}
+
+func getEgressNotifyOptions(egressInfo *livekit.EgressInfo) []webhook.NotifyOption {
+	if egressInfo == nil {
+		return nil
+	}
+
+	if egressInfo.Request == nil {
+		return nil
+	}
+
+	var whs []*livekit.WebhookConfig
+
+	switch req := egressInfo.Request.(type) {
+	case *livekit.EgressInfo_RoomComposite:
+		if req.RoomComposite != nil {
+			whs = req.RoomComposite.Webhooks
+		}
+	case *livekit.EgressInfo_Web:
+		if req.Web != nil {
+			whs = req.Web.Webhooks
+		}
+	case *livekit.EgressInfo_Participant:
+		if req.Participant != nil {
+			whs = req.Participant.Webhooks
+		}
+	case *livekit.EgressInfo_TrackComposite:
+		if req.TrackComposite != nil {
+			whs = req.TrackComposite.Webhooks
+		}
+	case *livekit.EgressInfo_Track:
+		if req.Track != nil {
+			whs = req.Track.Webhooks
+		}
+	}
+
+	if len(whs) > 0 {
+		return []webhook.NotifyOption{webhook.WithExtraWebhooks(whs)}
+	}
+
+	return nil
 }

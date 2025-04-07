@@ -2,6 +2,8 @@ module github.com/livekit/livekit-server
 
 go 1.23.0
 
+replace github.com/livekit/protocol => ../protocol
+
 toolchain go1.23.6
 
 require (
