@@ -93,6 +93,11 @@ var (
 	ErrMidNotFound                      = errors.New("mid not found")
 	ErrNotSynchronousPeerConnectionMode = errors.New("not using synchronous peer connection mode")
 	ErrNoRemoteDescription              = errors.New("no remote description")
+	ErrNoLocalDescription               = errors.New("no local description")
+	ErrInvalidSDPFragment               = errors.New("invalid sdp fragment")
+	ErrNoBundleMid                      = errors.New("could not get bundle mid")
+	ErrMidMismatch                      = errors.New("media mid does not match bundle mid")
+	ErrICECredentialMismatch            = errors.New("ice credential mismatch")
 )
 
 // -------------------------------------------------------------------------
@@ -1315,6 +1320,185 @@ func (t *PCTransport) GetAnswer() (webrtc.SessionDescription, error) {
 	}
 
 	return *cld, nil
+}
+
+func (t *PCTransport) GetICESessionUfrag() (string, error) {
+	cld := t.pc.CurrentLocalDescription()
+	if cld == nil {
+		return "", ErrNoLocalDescription
+	}
+
+	parsed, err := cld.Unmarshal()
+	if err != nil {
+		return "", err
+	}
+
+	ufrag, _, err := lksdp.ExtractICECredential(parsed)
+	if err != nil {
+		return "", err
+	}
+
+	return ufrag, nil
+}
+
+// Handles SDP Fragment for ICE Trickle in WHIP
+func (t *PCTransport) HandleICETrickleSDPFragment(sdpFragment string) error {
+	if !t.params.UseOneShotSignallingMode {
+		return ErrNotSynchronousPeerConnectionMode
+	}
+
+	parsedFragment := &lksdp.SDPFragment{}
+	if err := parsedFragment.Unmarshal(sdpFragment); err != nil {
+		t.params.Logger.Warnw("could not parse SDP fragment", err, "sdpFragment", sdpFragment)
+		return ErrInvalidSDPFragment
+	}
+
+	crd := t.pc.CurrentRemoteDescription()
+	if crd == nil {
+		t.params.Logger.Warnw("no remote description", nil)
+		return ErrNoRemoteDescription
+	}
+
+	parsedRemote, err := crd.Unmarshal()
+	if err != nil {
+		t.params.Logger.Warnw("could not parse remote description", err, "offer", crd)
+		return err
+	}
+
+	// check if BUNDLE mid matches the "mid" in the SDP fragment
+	bundleMid, found := lksdp.GetBundleMid(parsedRemote)
+	if !found {
+		return ErrNoBundleMid
+	}
+
+	if parsedFragment.Mid() != bundleMid {
+		t.params.Logger.Warnw("incorrect mid", nil, "sdpFragment", sdpFragment)
+		return ErrMidMismatch
+	}
+
+	fragmentICEUfrag, fragmentICEPwd, err := parsedFragment.ExtractICECredential()
+	if err != nil {
+		t.params.Logger.Warnw(
+			"could not get ICE crendential from fragment", err,
+			"sdpFragment", sdpFragment,
+		)
+		return ErrInvalidSDPFragment
+	}
+	remoteICEUfrag, remoteICEPwd, err := lksdp.ExtractICECredential(parsedRemote)
+	if err != nil {
+		t.params.Logger.Warnw("could not get ICE crendential from remote description", err, "sdpFragment", sdpFragment, "remoteDescription", crd)
+		return err
+	}
+	if fragmentICEUfrag != "" && fragmentICEUfrag != remoteICEUfrag {
+		t.params.Logger.Warnw(
+			"ice ufrag mismatch", nil,
+			"remoteICEUfrag", remoteICEUfrag,
+			"fragmentICEUfrag", fragmentICEUfrag,
+			"sdpFragment", sdpFragment,
+			"remoteDescription", crd,
+		)
+		return ErrICECredentialMismatch
+	}
+	if fragmentICEPwd != "" && fragmentICEPwd != remoteICEPwd {
+		t.params.Logger.Warnw(
+			"ice pwd mismatch", nil,
+			"remoteICEPwd", remoteICEPwd,
+			"fragmentICEPwd", fragmentICEPwd,
+			"sdpFragment", sdpFragment,
+			"remoteDescription", crd,
+		)
+		return ErrICECredentialMismatch
+	}
+
+	// add candidates from media description
+	for _, ic := range parsedFragment.Candidates() {
+		c, err := ice.UnmarshalCandidate(ic)
+		if err == nil {
+			t.connectionDetails.AddRemoteICECandidate(c, false, false, false)
+		}
+
+		candidate := webrtc.ICECandidateInit{
+			Candidate: ic,
+		}
+		if err := t.pc.AddICECandidate(candidate); err != nil {
+			t.params.Logger.Warnw("failed to add ICE candidate", err, "candidate", candidate)
+		}
+	}
+	return nil
+}
+
+func (t *PCTransport) HandleICERestartSDPFragment(sdpFragment string) (string, error) {
+	if !t.params.UseOneShotSignallingMode {
+		return "", ErrNotSynchronousPeerConnectionMode
+	}
+
+	parsedFragment := &lksdp.SDPFragment{}
+	if err := parsedFragment.Unmarshal(sdpFragment); err != nil {
+		t.params.Logger.Warnw("could not parse SDP fragment", err, "sdpFragment", sdpFragment)
+		return "", ErrInvalidSDPFragment
+	}
+
+	crd := t.pc.CurrentRemoteDescription()
+	if crd == nil {
+		t.params.Logger.Warnw("no remote description", nil)
+		return "", ErrNoRemoteDescription
+	}
+
+	parsedRemote, err := crd.Unmarshal()
+	if err != nil {
+		t.params.Logger.Warnw("could not parse remote description", err, "offer", crd)
+		return "", err
+	}
+
+	if err := parsedFragment.PatchICECredentialIntoSDP(parsedRemote); err != nil {
+		t.params.Logger.Warnw("could not patch SDP fragment into remote description", err, "offer", crd, "sdpFragment", sdpFragment)
+		return "", err
+	}
+
+	bytes, err := parsedRemote.Marshal()
+	if err != nil {
+		t.params.Logger.Warnw("could not marshal SDP with patched remote", err)
+		return "", err
+	}
+	sd := webrtc.SessionDescription{
+		SDP:  string(bytes),
+		Type: webrtc.SDPTypeOffer,
+	}
+	if err := t.pc.SetRemoteDescription(sd); err != nil {
+		t.params.Logger.Warnw("could not set remote description", err)
+		return "", err
+	}
+
+	ans, err := t.pc.CreateAnswer(nil)
+	if err != nil {
+		t.params.Logger.Warnw("could not create answer", err)
+		return "", err
+	}
+
+	if err = t.pc.SetLocalDescription(ans); err != nil {
+		t.params.Logger.Warnw("could not set local description", err)
+		return "", err
+	}
+
+	parsedAnswer, err := ans.Unmarshal()
+	if err != nil {
+		t.params.Logger.Warnw("could not parse local description", err)
+		return "", err
+	}
+
+	parsedFragmentAnswer, err := lksdp.ExtractSDPFragment(parsedAnswer)
+	if err != nil {
+		t.params.Logger.Warnw("could not extract SDP fragment", err)
+		return "", err
+	}
+
+	answerFragment, err := parsedFragmentAnswer.Marshal()
+	if err != nil {
+		t.params.Logger.Warnw("could not marshal answer SDP fragment", err)
+		return "", err
+	}
+
+	return answerFragment, nil
 }
 
 func (t *PCTransport) OnNegotiationStateChanged(f func(state transport.NegotiationState)) {

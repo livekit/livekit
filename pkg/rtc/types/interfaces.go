@@ -340,6 +340,7 @@ type LocalParticipant interface {
 	GetICEConnectionInfo() []*ICEConnectionInfo
 	HasConnected() bool
 	GetEnabledPublishCodecs() []*livekit.Codec
+	GetPublisherICESessionUfrag() (string, error)
 
 	SetResponseSink(sink routing.MessageSink)
 	CloseSignalConnection(reason SignallingCloseReason)
@@ -367,6 +368,8 @@ type LocalParticipant interface {
 	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget)
 	HandleOffer(sdp webrtc.SessionDescription) error
 	GetAnswer() (webrtc.SessionDescription, error)
+	HandleICETrickleSDPFragment(sdpFragment string) error
+	HandleICERestartSDPFragment(sdpFragment string) (string, error)
 	AddTrack(req *livekit.AddTrackRequest)
 	SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool) *livekit.TrackInfo
 

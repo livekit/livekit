@@ -390,6 +390,18 @@ type FakeLocalParticipant struct {
 	getPublishedTracksReturnsOnCall map[int]struct {
 		result1 []types.MediaTrack
 	}
+	GetPublisherICESessionUfragStub        func() (string, error)
+	getPublisherICESessionUfragMutex       sync.RWMutex
+	getPublisherICESessionUfragArgsForCall []struct {
+	}
+	getPublisherICESessionUfragReturns struct {
+		result1 string
+		result2 error
+	}
+	getPublisherICESessionUfragReturnsOnCall map[int]struct {
+		result1 string
+		result2 error
+	}
 	GetSubscribedParticipantsStub        func() []livekit.ParticipantID
 	getSubscribedParticipantsMutex       sync.RWMutex
 	getSubscribedParticipantsArgsForCall []struct {
@@ -424,6 +436,30 @@ type FakeLocalParticipant struct {
 	handleAnswerMutex       sync.RWMutex
 	handleAnswerArgsForCall []struct {
 		arg1 webrtc.SessionDescription
+	}
+	HandleICERestartSDPFragmentStub        func(string) (string, error)
+	handleICERestartSDPFragmentMutex       sync.RWMutex
+	handleICERestartSDPFragmentArgsForCall []struct {
+		arg1 string
+	}
+	handleICERestartSDPFragmentReturns struct {
+		result1 string
+		result2 error
+	}
+	handleICERestartSDPFragmentReturnsOnCall map[int]struct {
+		result1 string
+		result2 error
+	}
+	HandleICETrickleSDPFragmentStub        func(string) error
+	handleICETrickleSDPFragmentMutex       sync.RWMutex
+	handleICETrickleSDPFragmentArgsForCall []struct {
+		arg1 string
+	}
+	handleICETrickleSDPFragmentReturns struct {
+		result1 error
+	}
+	handleICETrickleSDPFragmentReturnsOnCall map[int]struct {
+		result1 error
 	}
 	HandleMetricsStub        func(livekit.ParticipantID, *livekit.MetricsBatch) error
 	handleMetricsMutex       sync.RWMutex
@@ -3124,6 +3160,62 @@ func (fake *FakeLocalParticipant) GetPublishedTracksReturnsOnCall(i int, result1
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) GetPublisherICESessionUfrag() (string, error) {
+	fake.getPublisherICESessionUfragMutex.Lock()
+	ret, specificReturn := fake.getPublisherICESessionUfragReturnsOnCall[len(fake.getPublisherICESessionUfragArgsForCall)]
+	fake.getPublisherICESessionUfragArgsForCall = append(fake.getPublisherICESessionUfragArgsForCall, struct {
+	}{})
+	stub := fake.GetPublisherICESessionUfragStub
+	fakeReturns := fake.getPublisherICESessionUfragReturns
+	fake.recordInvocation("GetPublisherICESessionUfrag", []interface{}{})
+	fake.getPublisherICESessionUfragMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeLocalParticipant) GetPublisherICESessionUfragCallCount() int {
+	fake.getPublisherICESessionUfragMutex.RLock()
+	defer fake.getPublisherICESessionUfragMutex.RUnlock()
+	return len(fake.getPublisherICESessionUfragArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetPublisherICESessionUfragCalls(stub func() (string, error)) {
+	fake.getPublisherICESessionUfragMutex.Lock()
+	defer fake.getPublisherICESessionUfragMutex.Unlock()
+	fake.GetPublisherICESessionUfragStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetPublisherICESessionUfragReturns(result1 string, result2 error) {
+	fake.getPublisherICESessionUfragMutex.Lock()
+	defer fake.getPublisherICESessionUfragMutex.Unlock()
+	fake.GetPublisherICESessionUfragStub = nil
+	fake.getPublisherICESessionUfragReturns = struct {
+		result1 string
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeLocalParticipant) GetPublisherICESessionUfragReturnsOnCall(i int, result1 string, result2 error) {
+	fake.getPublisherICESessionUfragMutex.Lock()
+	defer fake.getPublisherICESessionUfragMutex.Unlock()
+	fake.GetPublisherICESessionUfragStub = nil
+	if fake.getPublisherICESessionUfragReturnsOnCall == nil {
+		fake.getPublisherICESessionUfragReturnsOnCall = make(map[int]struct {
+			result1 string
+			result2 error
+		})
+	}
+	fake.getPublisherICESessionUfragReturnsOnCall[i] = struct {
+		result1 string
+		result2 error
+	}{result1, result2}
+}
+
 func (fake *FakeLocalParticipant) GetSubscribedParticipants() []livekit.ParticipantID {
 	fake.getSubscribedParticipantsMutex.Lock()
 	ret, specificReturn := fake.getSubscribedParticipantsReturnsOnCall[len(fake.getSubscribedParticipantsArgsForCall)]
@@ -3313,6 +3405,131 @@ func (fake *FakeLocalParticipant) HandleAnswerArgsForCall(i int) webrtc.SessionD
 	defer fake.handleAnswerMutex.RUnlock()
 	argsForCall := fake.handleAnswerArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) HandleICERestartSDPFragment(arg1 string) (string, error) {
+	fake.handleICERestartSDPFragmentMutex.Lock()
+	ret, specificReturn := fake.handleICERestartSDPFragmentReturnsOnCall[len(fake.handleICERestartSDPFragmentArgsForCall)]
+	fake.handleICERestartSDPFragmentArgsForCall = append(fake.handleICERestartSDPFragmentArgsForCall, struct {
+		arg1 string
+	}{arg1})
+	stub := fake.HandleICERestartSDPFragmentStub
+	fakeReturns := fake.handleICERestartSDPFragmentReturns
+	fake.recordInvocation("HandleICERestartSDPFragment", []interface{}{arg1})
+	fake.handleICERestartSDPFragmentMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeLocalParticipant) HandleICERestartSDPFragmentCallCount() int {
+	fake.handleICERestartSDPFragmentMutex.RLock()
+	defer fake.handleICERestartSDPFragmentMutex.RUnlock()
+	return len(fake.handleICERestartSDPFragmentArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) HandleICERestartSDPFragmentCalls(stub func(string) (string, error)) {
+	fake.handleICERestartSDPFragmentMutex.Lock()
+	defer fake.handleICERestartSDPFragmentMutex.Unlock()
+	fake.HandleICERestartSDPFragmentStub = stub
+}
+
+func (fake *FakeLocalParticipant) HandleICERestartSDPFragmentArgsForCall(i int) string {
+	fake.handleICERestartSDPFragmentMutex.RLock()
+	defer fake.handleICERestartSDPFragmentMutex.RUnlock()
+	argsForCall := fake.handleICERestartSDPFragmentArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) HandleICERestartSDPFragmentReturns(result1 string, result2 error) {
+	fake.handleICERestartSDPFragmentMutex.Lock()
+	defer fake.handleICERestartSDPFragmentMutex.Unlock()
+	fake.HandleICERestartSDPFragmentStub = nil
+	fake.handleICERestartSDPFragmentReturns = struct {
+		result1 string
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeLocalParticipant) HandleICERestartSDPFragmentReturnsOnCall(i int, result1 string, result2 error) {
+	fake.handleICERestartSDPFragmentMutex.Lock()
+	defer fake.handleICERestartSDPFragmentMutex.Unlock()
+	fake.HandleICERestartSDPFragmentStub = nil
+	if fake.handleICERestartSDPFragmentReturnsOnCall == nil {
+		fake.handleICERestartSDPFragmentReturnsOnCall = make(map[int]struct {
+			result1 string
+			result2 error
+		})
+	}
+	fake.handleICERestartSDPFragmentReturnsOnCall[i] = struct {
+		result1 string
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeLocalParticipant) HandleICETrickleSDPFragment(arg1 string) error {
+	fake.handleICETrickleSDPFragmentMutex.Lock()
+	ret, specificReturn := fake.handleICETrickleSDPFragmentReturnsOnCall[len(fake.handleICETrickleSDPFragmentArgsForCall)]
+	fake.handleICETrickleSDPFragmentArgsForCall = append(fake.handleICETrickleSDPFragmentArgsForCall, struct {
+		arg1 string
+	}{arg1})
+	stub := fake.HandleICETrickleSDPFragmentStub
+	fakeReturns := fake.handleICETrickleSDPFragmentReturns
+	fake.recordInvocation("HandleICETrickleSDPFragment", []interface{}{arg1})
+	fake.handleICETrickleSDPFragmentMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) HandleICETrickleSDPFragmentCallCount() int {
+	fake.handleICETrickleSDPFragmentMutex.RLock()
+	defer fake.handleICETrickleSDPFragmentMutex.RUnlock()
+	return len(fake.handleICETrickleSDPFragmentArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) HandleICETrickleSDPFragmentCalls(stub func(string) error) {
+	fake.handleICETrickleSDPFragmentMutex.Lock()
+	defer fake.handleICETrickleSDPFragmentMutex.Unlock()
+	fake.HandleICETrickleSDPFragmentStub = stub
+}
+
+func (fake *FakeLocalParticipant) HandleICETrickleSDPFragmentArgsForCall(i int) string {
+	fake.handleICETrickleSDPFragmentMutex.RLock()
+	defer fake.handleICETrickleSDPFragmentMutex.RUnlock()
+	argsForCall := fake.handleICETrickleSDPFragmentArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) HandleICETrickleSDPFragmentReturns(result1 error) {
+	fake.handleICETrickleSDPFragmentMutex.Lock()
+	defer fake.handleICETrickleSDPFragmentMutex.Unlock()
+	fake.HandleICETrickleSDPFragmentStub = nil
+	fake.handleICETrickleSDPFragmentReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) HandleICETrickleSDPFragmentReturnsOnCall(i int, result1 error) {
+	fake.handleICETrickleSDPFragmentMutex.Lock()
+	defer fake.handleICETrickleSDPFragmentMutex.Unlock()
+	fake.HandleICETrickleSDPFragmentStub = nil
+	if fake.handleICETrickleSDPFragmentReturnsOnCall == nil {
+		fake.handleICETrickleSDPFragmentReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.handleICETrickleSDPFragmentReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
 }
 
 func (fake *FakeLocalParticipant) HandleMetrics(arg1 livekit.ParticipantID, arg2 *livekit.MetricsBatch) error {
@@ -7702,6 +7919,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getPublishedTrackMutex.RUnlock()
 	fake.getPublishedTracksMutex.RLock()
 	defer fake.getPublishedTracksMutex.RUnlock()
+	fake.getPublisherICESessionUfragMutex.RLock()
+	defer fake.getPublisherICESessionUfragMutex.RUnlock()
 	fake.getSubscribedParticipantsMutex.RLock()
 	defer fake.getSubscribedParticipantsMutex.RUnlock()
 	fake.getSubscribedTracksMutex.RLock()
@@ -7710,6 +7929,10 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getTrailerMutex.RUnlock()
 	fake.handleAnswerMutex.RLock()
 	defer fake.handleAnswerMutex.RUnlock()
+	fake.handleICERestartSDPFragmentMutex.RLock()
+	defer fake.handleICERestartSDPFragmentMutex.RUnlock()
+	fake.handleICETrickleSDPFragmentMutex.RLock()
+	defer fake.handleICETrickleSDPFragmentMutex.RUnlock()
 	fake.handleMetricsMutex.RLock()
 	defer fake.handleMetricsMutex.RUnlock()
 	fake.handleOfferMutex.RLock()
