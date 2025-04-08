@@ -1427,6 +1427,7 @@ func (t *PCTransport) HandleICETrickleSDPFragment(sdpFragment string) error {
 	return nil
 }
 
+// Handles SDP Fragment for ICE Restart in WHIP
 func (t *PCTransport) HandleICERestartSDPFragment(sdpFragment string) (string, error) {
 	if !t.params.UseOneShotSignallingMode {
 		return "", ErrNotSynchronousPeerConnectionMode
