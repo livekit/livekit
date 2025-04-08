@@ -65,8 +65,8 @@ func NewNodeProvider(geo *geoip2.Reader, localNode routing.LocalNode, conf confi
 	provider := &NodeProvider{
 		WalletPrivateKey:  conf.WalletPrivateKey,
 		ContractAddress:   conf.ContractAddress,
-		NetworkHostHTTP:   conf.NetworkHostHTTP,
-		NetworkHostWS:     conf.NetworkHostWS,
+		NetworkHostHTTP:   conf.EphemeralHostHTTP,
+		NetworkHostWS:     conf.EphemeralHostWS,
 		RegistryAuthority: conf.RegistryAuthority,
 		geo:               geo,
 		localNode:         localNode,
