@@ -462,6 +462,18 @@ func (t *TransportManager) GetAnswer() (webrtc.SessionDescription, error) {
 	return answer, err
 }
 
+func (t *TransportManager) GetPublisherICESessionUfrag() (string, error) {
+	return t.publisher.GetICESessionUfrag()
+}
+
+func (t *TransportManager) HandleICETrickleSDPFragment(sdpFragment string) error {
+	return t.publisher.HandleICETrickleSDPFragment(sdpFragment)
+}
+
+func (t *TransportManager) HandleICERestartSDPFragment(sdpFragment string) (string, error) {
+	return t.publisher.HandleICERestartSDPFragment(sdpFragment)
+}
+
 func (t *TransportManager) ProcessPendingPublisherOffer() {
 	t.lock.Lock()
 	pendingOffer := t.pendingOfferPublisher
