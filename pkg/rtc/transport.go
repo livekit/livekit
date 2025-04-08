@@ -876,7 +876,7 @@ func (t *PCTransport) isFullyEstablished() bool {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	dataChannelReady := t.firstOfferNoDataChannel || (t.reliableDCOpened && t.lossyDCOpened)
+	dataChannelReady := t.params.UseOneShotSignallingMode || t.firstOfferNoDataChannel || (t.reliableDCOpened && t.lossyDCOpened)
 
 	return dataChannelReady && !t.connectedAt.IsZero()
 }
@@ -1422,6 +1422,8 @@ func (t *PCTransport) HandleICETrickleSDPFragment(sdpFragment string) error {
 		}
 		if err := t.pc.AddICECandidate(candidate); err != nil {
 			t.params.Logger.Warnw("failed to add ICE candidate", err, "candidate", candidate)
+		} else {
+			t.params.Logger.Debugw("added ICE candidate", "candidate", candidate)
 		}
 	}
 	return nil
@@ -1937,7 +1939,7 @@ func (t *PCTransport) handleRemoteICECandidate(e event) error {
 	}
 
 	if err := t.pc.AddICECandidate(*c); err != nil {
-		t.params.Logger.Warnw("failed to add cached ICE candidate", err, "candidate", c)
+		t.params.Logger.Warnw("failed to add ICE candidate", err, "candidate", c)
 		return errors.Wrap(err, "add ice candidate failed")
 	} else {
 		t.params.Logger.Debugw("added ICE candidate", "candidate", c)
