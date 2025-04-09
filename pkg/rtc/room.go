@@ -481,6 +481,9 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 			go r.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonNone)
 		}
 	})
+	participant.OnSubscriberReady(func(p types.LocalParticipant) {
+		r.subscribeToExistingTracks(p)
+	})
 	// it's important to set this before connection, we don't want to miss out on any published tracks
 	participant.OnTrackPublished(r.onTrackPublished)
 	participant.OnTrackUpdated(r.onTrackUpdated)
@@ -733,6 +736,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	p.OnTrackPublished(nil)
 	p.OnTrackUnpublished(nil)
 	p.OnStateChange(nil)
+	p.OnSubscriberReady(nil)
 	p.OnParticipantUpdate(nil)
 	p.OnDataPacket(nil)
 	p.OnDataMessage(nil)

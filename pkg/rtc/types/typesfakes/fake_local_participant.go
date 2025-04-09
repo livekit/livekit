@@ -772,6 +772,11 @@ type FakeLocalParticipant struct {
 	onSubscribeStatusChangedArgsForCall []struct {
 		arg1 func(publisherID livekit.ParticipantID, subscribed bool)
 	}
+	OnSubscriberReadyStub        func(func(types.LocalParticipant))
+	onSubscriberReadyMutex       sync.RWMutex
+	onSubscriberReadyArgsForCall []struct {
+		arg1 func(types.LocalParticipant)
+	}
 	OnTrackPublishedStub        func(func(types.LocalParticipant, types.MediaTrack))
 	onTrackPublishedMutex       sync.RWMutex
 	onTrackPublishedArgsForCall []struct {
@@ -5256,6 +5261,38 @@ func (fake *FakeLocalParticipant) OnSubscribeStatusChangedArgsForCall(i int) fun
 	return argsForCall.arg1
 }
 
+func (fake *FakeLocalParticipant) OnSubscriberReady(arg1 func(types.LocalParticipant)) {
+	fake.onSubscriberReadyMutex.Lock()
+	fake.onSubscriberReadyArgsForCall = append(fake.onSubscriberReadyArgsForCall, struct {
+		arg1 func(types.LocalParticipant)
+	}{arg1})
+	stub := fake.OnSubscriberReadyStub
+	fake.recordInvocation("OnSubscriberReady", []interface{}{arg1})
+	fake.onSubscriberReadyMutex.Unlock()
+	if stub != nil {
+		fake.OnSubscriberReadyStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) OnSubscriberReadyCallCount() int {
+	fake.onSubscriberReadyMutex.RLock()
+	defer fake.onSubscriberReadyMutex.RUnlock()
+	return len(fake.onSubscriberReadyArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) OnSubscriberReadyCalls(stub func(func(types.LocalParticipant))) {
+	fake.onSubscriberReadyMutex.Lock()
+	defer fake.onSubscriberReadyMutex.Unlock()
+	fake.OnSubscriberReadyStub = stub
+}
+
+func (fake *FakeLocalParticipant) OnSubscriberReadyArgsForCall(i int) func(types.LocalParticipant) {
+	fake.onSubscriberReadyMutex.RLock()
+	defer fake.onSubscriberReadyMutex.RUnlock()
+	argsForCall := fake.onSubscriberReadyArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeLocalParticipant) OnTrackPublished(arg1 func(types.LocalParticipant, types.MediaTrack)) {
 	fake.onTrackPublishedMutex.Lock()
 	fake.onTrackPublishedArgsForCall = append(fake.onTrackPublishedArgsForCall, struct {
@@ -8009,6 +8046,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.onStateChangeMutex.RUnlock()
 	fake.onSubscribeStatusChangedMutex.RLock()
 	defer fake.onSubscribeStatusChangedMutex.RUnlock()
+	fake.onSubscriberReadyMutex.RLock()
+	defer fake.onSubscriberReadyMutex.RUnlock()
 	fake.onTrackPublishedMutex.RLock()
 	defer fake.onTrackPublishedMutex.RUnlock()
 	fake.onTrackUnpublishedMutex.RLock()

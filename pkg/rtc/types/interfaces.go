@@ -418,6 +418,7 @@ type LocalParticipant interface {
 
 	// callbacks
 	OnStateChange(func(p LocalParticipant))
+	OnSubscriberReady(callback func(LocalParticipant))
 	OnMigrateStateChange(func(p LocalParticipant, migrateState MigrateState))
 	// OnTrackPublished - remote added a track
 	OnTrackPublished(func(LocalParticipant, MediaTrack))
