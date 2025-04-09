@@ -184,7 +184,7 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		// expected to be connected but is not
 		return livekit.DisconnectReason_JOIN_FAILURE
 	case ParticipantCloseReasonPeerConnectionDisconnected:
-		return livekit.DisconnectReason_STATE_MISMATCH
+		return livekit.DisconnectReason_CONNECTION_TIMEOUT
 	case ParticipantCloseReasonDuplicateIdentity, ParticipantCloseReasonStale:
 		return livekit.DisconnectReason_DUPLICATE_IDENTITY
 	case ParticipantCloseReasonMigrationRequested, ParticipantCloseReasonMigrationComplete, ParticipantCloseReasonSimulateMigration:
@@ -340,6 +340,7 @@ type LocalParticipant interface {
 	GetICEConnectionInfo() []*ICEConnectionInfo
 	HasConnected() bool
 	GetEnabledPublishCodecs() []*livekit.Codec
+	GetPublisherICESessionUfrag() (string, error)
 
 	SetResponseSink(sink routing.MessageSink)
 	CloseSignalConnection(reason SignallingCloseReason)
@@ -367,6 +368,8 @@ type LocalParticipant interface {
 	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget)
 	HandleOffer(sdp webrtc.SessionDescription) error
 	GetAnswer() (webrtc.SessionDescription, error)
+	HandleICETrickleSDPFragment(sdpFragment string) error
+	HandleICERestartSDPFragment(sdpFragment string) (string, error)
 	AddTrack(req *livekit.AddTrackRequest)
 	SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool) *livekit.TrackInfo
 
@@ -414,7 +417,7 @@ type LocalParticipant interface {
 	IssueFullReconnect(reason ParticipantCloseReason)
 
 	// callbacks
-	OnStateChange(func(p LocalParticipant, state livekit.ParticipantInfo_State))
+	OnStateChange(func(p LocalParticipant))
 	OnMigrateStateChange(func(p LocalParticipant, migrateState MigrateState))
 	// OnTrackPublished - remote added a track
 	OnTrackPublished(func(LocalParticipant, MediaTrack))

@@ -17,7 +17,6 @@ package prometheus
 import (
 	"time"
 
-	"github.com/mackerelio/go-osstat/memory"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
@@ -43,7 +42,8 @@ var (
 	promSysPacketGauge           *prometheus.GaugeVec
 	promSysDroppedPacketPctGauge prometheus.Gauge
 
-	cpuStats *hwstats.CPUStats
+	cpuStats    *hwstats.CPUStats
+	memoryStats *hwstats.MemoryStats
 )
 
 func Init(nodeID string, nodeType livekit.NodeType) error {
@@ -122,6 +122,11 @@ func Init(nodeID string, nodeType livekit.NodeType) error {
 		return err
 	}
 
+	memoryStats, err = hwstats.NewMemoryStats()
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -131,21 +136,9 @@ func GetNodeStats(nodeStartedAt int64, prevStats []*livekit.NodeStats, rateInter
 		return nil, err
 	}
 
-	var cpuLoad float64
-	cpuIdle := cpuStats.GetCPUIdle()
-	if cpuIdle > 0 {
-		cpuLoad = 1 - (cpuIdle / cpuStats.NumCPU())
-	}
-
 	// On MacOS, get "\"vm_stat\": executable file not found in $PATH" although it is in /usr/bin
 	// So, do not error out. Use the information if it is available.
-	memTotal := uint64(0)
-	memUsed := uint64(0)
-	memInfo, _ := memory.Get()
-	if memInfo != nil {
-		memTotal = memInfo.Total
-		memUsed = memInfo.Used
-	}
+	memUsed, memTotal, _ := memoryStats.GetMemory()
 
 	sysPackets, sysDroppedPackets, _ := getTCStats()
 	promSysPacketGauge.WithLabelValues("out").Set(float64(sysPackets - sysPacketsStart))
@@ -175,7 +168,7 @@ func GetNodeStats(nodeStartedAt int64, prevStats []*livekit.NodeStats, rateInter
 		ForwardLatency:             forwardLatency.Load(),
 		ForwardJitter:              forwardJitter.Load(),
 		NumCpus:                    uint32(cpuStats.NumCPU()), // this will round down to the nearest integer
-		CpuLoad:                    float32(cpuLoad),
+		CpuLoad:                    float32(cpuStats.GetCPULoad()),
 		MemoryTotal:                memTotal,
 		MemoryUsed:                 memUsed,
 		LoadAvgLast1Min:            float32(loadAvg.Loadavg1),
@@ -215,7 +208,7 @@ func getNodeStatsRate(statsHistory []*livekit.NodeStats) *livekit.NodeStatsRate 
 	}
 
 	// time weighted averages
-	var cpuLoad, memoryLoad float32
+	var cpuLoad, memoryUsed, memoryTotal, memoryLoad float32
 	for idx := len(statsHistory) - 1; idx > 0; idx-- {
 		stats := statsHistory[idx]
 		prevStats := statsHistory[idx-1]
@@ -229,6 +222,8 @@ func getNodeStatsRate(statsHistory []*livekit.NodeStats) *livekit.NodeStatsRate 
 		}
 
 		cpuLoad += stats.CpuLoad * float32(spanElapsed)
+		memoryUsed += float32(stats.MemoryUsed) * float32(spanElapsed)
+		memoryTotal += float32(stats.MemoryTotal) * float32(spanElapsed)
 		if stats.MemoryTotal > 0 {
 			memoryLoad += float32(stats.MemoryUsed) / float32(stats.MemoryTotal) * float32(spanElapsed)
 		}
@@ -258,6 +253,8 @@ func getNodeStatsRate(statsHistory []*livekit.NodeStats) *livekit.NodeStatsRate 
 		TrackSubscribeSuccess:      perSec(uint64(earlier.NumTrackSubscribeSuccess), uint64(later.NumTrackSubscribeSuccess), elapsed),
 		CpuLoad:                    cpuLoad / float32(elapsed),
 		MemoryLoad:                 memoryLoad / float32(elapsed),
+		MemoryUsed:                 memoryUsed / float32(elapsed),
+		MemoryTotal:                memoryTotal / float32(elapsed),
 	}
 	return rate
 }

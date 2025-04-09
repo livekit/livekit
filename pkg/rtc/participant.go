@@ -20,11 +20,11 @@ import (
 	"io"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/frostbyte73/core"
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/pion/rtcp"
 	"github.com/pion/sdp/v3"
@@ -39,6 +39,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
+	"github.com/livekit/protocol/utils/pointer"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/metric"
@@ -239,14 +240,15 @@ type ParticipantImpl struct {
 	onTrackPublished     func(types.LocalParticipant, types.MediaTrack)
 	onTrackUpdated       func(types.LocalParticipant, types.MediaTrack)
 	onTrackUnpublished   func(types.LocalParticipant, types.MediaTrack)
-	onStateChange        func(p types.LocalParticipant, state livekit.ParticipantInfo_State)
+	onStateChange        func(p types.LocalParticipant)
 	onMigrateStateChange func(p types.LocalParticipant, migrateState types.MigrateState)
 	onParticipantUpdate  func(types.LocalParticipant)
 	onDataPacket         func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
 	onDataMessage        func(types.LocalParticipant, []byte)
 	onMetrics            func(types.Participant, *livekit.DataPacket)
 
-	migrateState atomic.Value // types.MigrateState
+	migrateState                atomic.Value // types.MigrateState
+	migratedTracksPublishedFuse core.Fuse
 
 	onClose            func(types.LocalParticipant)
 	onClaimsChanged    func(participant types.LocalParticipant)
@@ -306,7 +308,9 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.closeReason.Store(types.ParticipantCloseReasonNone)
 	p.version.Store(params.InitialVersion)
 	p.timedVersion.Update(params.VersionGenerator.Next())
+
 	p.migrateState.Store(types.MigrateStateInit)
+
 	p.state.Store(livekit.ParticipantInfo_JOINING)
 	p.grants.Store(params.Grants.Clone())
 	p.SetResponseSink(params.Sink)
@@ -736,13 +740,13 @@ func (p *ParticipantImpl) getOnTrackUnpublished() func(types.LocalParticipant, t
 	return p.onTrackUnpublished
 }
 
-func (p *ParticipantImpl) OnStateChange(callback func(p types.LocalParticipant, state livekit.ParticipantInfo_State)) {
+func (p *ParticipantImpl) OnStateChange(callback func(p types.LocalParticipant)) {
 	p.lock.Lock()
 	p.onStateChange = callback
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) getOnStateChange() func(p types.LocalParticipant, state livekit.ParticipantInfo_State) {
+func (p *ParticipantImpl) getOnStateChange() func(p types.LocalParticipant) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	return p.onStateChange
@@ -899,11 +903,7 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
 	}
 
 	offer = p.setCodecPreferencesForPublisher(offer)
-	err := p.TransportManager.HandleOffer(offer, shouldPend)
-	if p.params.UseOneShotSignallingMode {
-		p.updateState(livekit.ParticipantInfo_ACTIVE)
-	}
-	return err
+	return p.TransportManager.HandleOffer(offer, shouldPend)
 }
 
 func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) error {
@@ -1240,6 +1240,38 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		// callbacks handle webhooks as well as db persistence
 		for _, t := range migratedTracks {
 			p.handleTrackPublished(t, true)
+		}
+
+		if s == types.MigrateStateComplete {
+			// wait for all migrated track to be published,
+			// it is possible that synthesized track publish above could
+			// race with actual publish from client and the above synthesized
+			// one could actually be a no-op because the actual publish path is active.
+			//
+			// if the actual publish path has not finished, the migration state change
+			// callback could close the remote participant/tracks before the local track
+			// is fully active.
+			//
+			// that could lead subscribers to unsubscribe due to source
+			// track going away, i. e. in this case, the remote track close would have
+			// notified the subscription manager, the subscription manager would
+			// re-resolve to check if the track is still active and unsubscribe if none
+			// is active, as local track is in the process of completing publish,
+			// the check would have resolved to an empty track leading to unsubscription.
+			go func() {
+				startTime := time.Now()
+				for {
+					if !p.hasPendingMigratedTrack() || p.IsDisconnected() || time.Since(startTime) > 15*time.Second {
+						// a time out just to be safe, but it should not be needed
+						p.migratedTracksPublishedFuse.Break()
+						return
+					}
+
+					time.Sleep(20 * time.Millisecond)
+				}
+			}()
+
+			<-p.migratedTracksPublishedFuse.Watch()
 		}
 
 		if onMigrateStateChange := p.getOnMigrateStateChange(); onMigrateStateChange != nil {
@@ -1703,23 +1735,30 @@ func (p *ParticipantImpl) setupMetrics() {
 }
 
 func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
-	if state == livekit.ParticipantInfo_ACTIVE {
-		t := time.Now()
-		p.lastActiveAt.CompareAndSwap(nil, &t)
-	}
-	oldState := p.state.Swap(state).(livekit.ParticipantInfo_State)
-	if oldState == state {
-		return
+	var oldState livekit.ParticipantInfo_State
+	for {
+		oldState = p.state.Load().(livekit.ParticipantInfo_State)
+		if state <= oldState {
+			p.params.Logger.Debugw("ignoring out of order participant state", "state", state.String())
+			return
+		}
+		if state == livekit.ParticipantInfo_ACTIVE {
+			p.lastActiveAt.CompareAndSwap(nil, pointer.To(time.Now()))
+		}
+		if p.state.CompareAndSwap(oldState, state) {
+			break
+		}
 	}
 
-	if state == livekit.ParticipantInfo_DISCONNECTED && oldState == livekit.ParticipantInfo_ACTIVE {
-		prometheus.RecordSessionDuration(int(p.ProtocolVersion()), time.Since(*p.lastActiveAt.Load()))
-	}
 	p.params.Logger.Debugw("updating participant state", "state", state.String())
 	p.dirty.Store(true)
 
 	if onStateChange := p.getOnStateChange(); onStateChange != nil {
-		go onStateChange(p, state)
+		go onStateChange(p)
+	}
+
+	if state == livekit.ParticipantInfo_DISCONNECTED && oldState == livekit.ParticipantInfo_ACTIVE {
+		prometheus.RecordSessionDuration(int(p.ProtocolVersion()), time.Since(*p.lastActiveAt.Load()))
 	}
 }
 
@@ -3071,7 +3110,8 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 		return false
 	}
 
-	publishCodecs := make([]*livekit.Codec, 0, len(publishEnabledCodecs))
+	publishCodecsAudio := make([]*livekit.Codec, 0, len(publishEnabledCodecs))
+	publishCodecsVideo := make([]*livekit.Codec, 0, len(publishEnabledCodecs))
 	for _, c := range publishEnabledCodecs {
 		if shouldDisable(c, disabledCodecs.GetCodecs()) || shouldDisable(c, disabledCodecs.GetPublish()) {
 			continue
@@ -3087,10 +3127,16 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 		} else if mime.IsMimeTypeStringH264(c.Mime) {
 			p.enabledPublishCodecs = append(p.enabledPublishCodecs, c)
 		} else {
-			publishCodecs = append(publishCodecs, c)
+			if mime.IsMimeTypeStringAudio(c.Mime) {
+				publishCodecsAudio = append(publishCodecsAudio, c)
+			} else {
+				publishCodecsVideo = append(publishCodecsVideo, c)
+			}
 		}
 	}
-	p.enabledPublishCodecs = append(p.enabledPublishCodecs, publishCodecs...)
+	// list all video first and then audio to work around a client side issue with Flutter SDK 2.4.2
+	p.enabledPublishCodecs = append(p.enabledPublishCodecs, publishCodecsVideo...)
+	p.enabledPublishCodecs = append(p.enabledPublishCodecs, publishCodecsAudio...)
 
 	subscribeCodecs := make([]*livekit.Codec, 0, len(subscribeEnabledCodecs))
 	for _, c := range subscribeEnabledCodecs {
@@ -3195,31 +3241,4 @@ func (p *ParticipantImpl) HandleMetrics(senderParticipantID livekit.ParticipantI
 
 func (p *ParticipantImpl) SupportsCodecChange() bool {
 	return p.params.ClientInfo.SupportsCodecChange()
-}
-
-// ----------------------------------------------
-
-func codecsFromMediaDescription(m *sdp.MediaDescription) (out []sdp.Codec, err error) {
-	s := &sdp.SessionDescription{
-		MediaDescriptions: []*sdp.MediaDescription{m},
-	}
-
-	for _, payloadStr := range m.MediaName.Formats {
-		payloadType, err := strconv.ParseUint(payloadStr, 10, 8)
-		if err != nil {
-			return nil, err
-		}
-
-		codec, err := s.GetCodecForPayloadType(uint8(payloadType))
-		if err != nil {
-			if payloadType == 0 {
-				continue
-			}
-			return nil, err
-		}
-
-		out = append(out, codec)
-	}
-
-	return out, nil
 }
