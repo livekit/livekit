@@ -219,6 +219,19 @@ func EnsureSIPCallPermission(ctx context.Context) error {
 	return nil
 }
 
+func EnsureForwardPermission(ctx context.Context, source livekit.RoomName, destination livekit.RoomName) error {
+	claims := GetGrants(ctx)
+	if claims == nil || claims.Video == nil {
+		return ErrPermissionDenied
+	}
+
+	if !claims.Video.RoomAdmin || source != livekit.RoomName(claims.Video.Room) || destination != livekit.RoomName(claims.Video.DestinationRoom) {
+		return ErrPermissionDenied
+	}
+
+	return nil
+}
+
 // wraps authentication errors around Twirp
 func twirpAuthError(err error) error {
 	return twirp.NewError(twirp.Unauthenticated, err.Error())
