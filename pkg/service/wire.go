@@ -159,15 +159,13 @@ func createKeyProvider(conf *config.Config) (auth.KeyProvider, error) {
 
 func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webhook.QueuedNotifier, error) {
 	wc := conf.WebHook
-	if len(wc.URLs) == 0 {
-		return nil, nil
-	}
+
 	secret := provider.GetSecret(wc.APIKey)
-	if secret == "" {
+	if secret == "" && len(wc.URLs) > 0 {
 		return nil, ErrWebHookMissingAPIKey
 	}
 
-	return webhook.NewDefaultNotifier(wc, secret), nil
+	return webhook.NewDefaultNotifier(wc, provider)
 }
 
 func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {

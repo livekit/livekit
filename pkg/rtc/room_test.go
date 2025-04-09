@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/protocol/auth/authfakes"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
@@ -797,6 +798,12 @@ type testRoomOpts struct {
 }
 
 func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
+	kp := &authfakes.FakeKeyProvider{}
+	kp.GetSecretReturns("testkey")
+
+	n, err := webhook.NewDefaultNotifier(webhook.DefaultWebHookConfig, kp)
+	require.NoError(t, err)
+
 	rm := NewRoom(
 		&livekit.Room{Name: "room"},
 		nil,
@@ -818,7 +825,7 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 			NodeId:   "testnode",
 			Region:   "testregion",
 		},
-		telemetry.NewTelemetryService(webhook.NewDefaultNotifier(webhook.DefaultWebHookConfig, ""), &telemetryfakes.FakeAnalyticsService{}),
+		telemetry.NewTelemetryService(n, &telemetryfakes.FakeAnalyticsService{}),
 		nil, nil, nil,
 	)
 	for i := 0; i < opts.num+opts.numHidden; i++ {

@@ -83,7 +83,7 @@ type TelemetryService interface {
 
 	// helpers
 	AnalyticsService
-	NotifyEvent(ctx context.Context, event *livekit.WebhookEvent)
+	NotifyEgressEvent(ctx context.Context, event string, info *livekit.EgressInfo)
 	FlushStats()
 }
 
