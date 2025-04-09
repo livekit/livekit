@@ -903,7 +903,11 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
 	}
 
 	offer = p.setCodecPreferencesForPublisher(offer)
-	return p.TransportManager.HandleOffer(offer, shouldPend)
+	err := p.TransportManager.HandleOffer(offer, shouldPend)
+	if p.params.UseOneShotSignallingMode {
+		p.updateState(livekit.ParticipantInfo_ACTIVE)
+	}
+	return err
 }
 
 func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) error {
