@@ -241,6 +241,7 @@ type ParticipantImpl struct {
 	onTrackUpdated       func(types.LocalParticipant, types.MediaTrack)
 	onTrackUnpublished   func(types.LocalParticipant, types.MediaTrack)
 	onStateChange        func(p types.LocalParticipant)
+	onSubscriberReady    func(p types.LocalParticipant)
 	onMigrateStateChange func(p types.LocalParticipant, migrateState types.MigrateState)
 	onParticipantUpdate  func(types.LocalParticipant)
 	onDataPacket         func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
@@ -752,6 +753,18 @@ func (p *ParticipantImpl) getOnStateChange() func(p types.LocalParticipant) {
 	return p.onStateChange
 }
 
+func (p *ParticipantImpl) OnSubscriberReady(callback func(p types.LocalParticipant)) {
+	p.lock.Lock()
+	p.onSubscriberReady = callback
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) getOnSubscriberReady() func(p types.LocalParticipant) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.onSubscriberReady
+}
+
 func (p *ParticipantImpl) OnMigrateStateChange(callback func(p types.LocalParticipant, state types.MigrateState)) {
 	p.lock.Lock()
 	p.onMigrateStateChange = callback
@@ -903,7 +916,13 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
 	}
 
 	offer = p.setCodecPreferencesForPublisher(offer)
-	return p.TransportManager.HandleOffer(offer, shouldPend)
+	err := p.TransportManager.HandleOffer(offer, shouldPend)
+	if p.params.UseOneShotSignallingMode {
+		if onSubscriberReady := p.getOnSubscriberReady(); onSubscriberReady != nil {
+			go onSubscriberReady(p)
+		}
+	}
+	return err
 }
 
 func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) error {
