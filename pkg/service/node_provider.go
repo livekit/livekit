@@ -155,7 +155,12 @@ func (p *NodeProvider) selfRefresh(ctx context.Context) error {
 	}
 	entry, err := client.GetNodeFromRegistry(ctx, authority, "nodes", client.signer.PublicKey())
 	if err != nil {
-		return err
+		// force refresh self in case of missing record
+		_, err = client.UpdateNodeOnline(ctx, "nodes", authority, client.signer.PublicKey(), p.localNode.Stats.NumClients)
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 	if entry.Online != p.localNode.Stats.NumClients {
 		_, err = client.UpdateNodeOnline(ctx, "nodes", authority, client.signer.PublicKey(), p.localNode.Stats.NumClients)
