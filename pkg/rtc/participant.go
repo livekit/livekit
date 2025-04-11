@@ -858,8 +858,7 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(offer webrtc.SessionDescrip
 	}
 
 	for _, m := range parsed.MediaDescriptions {
-		if !strings.EqualFold(m.MediaName.Media, "audio") {
-			// ONE-SHOT-SIGNALLING-MODE-TODO: support video
+		if !strings.EqualFold(m.MediaName.Media, "audio") && !strings.EqualFold(m.MediaName.Media, "video") {
 			continue
 		}
 
@@ -886,14 +885,33 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(offer webrtc.SessionDescrip
 			trackID = guid.New(utils.TrackPrefix)
 		}
 
+		var (
+			name        string
+			trackSource livekit.TrackSource
+			trackType   livekit.TrackType
+		)
+		if strings.EqualFold(m.MediaName.Media, "audio") {
+			name = "synthesized-microphone"
+			trackSource = livekit.TrackSource_MICROPHONE
+			trackType = livekit.TrackType_AUDIO
+		} else {
+			name = "synthesized-camera"
+			trackSource = livekit.TrackSource_CAMERA
+			trackType = livekit.TrackType_VIDEO
+		}
 		req := &livekit.AddTrackRequest{
 			Cid:        trackID,
-			Name:       "synthesized-microphone",
-			Source:     livekit.TrackSource_MICROPHONE,
-			Type:       livekit.TrackType_AUDIO,
+			Name:       name,
+			Source:     trackSource,
+			Type:       trackType,
 			DisableDtx: true,
 			Stereo:     false,
 			Stream:     "camera",
+		}
+		// ONE-SHOT-SIGNALLING-MODE-TODO: support video simulcast
+		if strings.EqualFold(m.MediaName.Media, "video") {
+			// dummy layer to ensure at least one layer is available
+			req.Layers = []*livekit.VideoLayer{{}}
 		}
 		p.AddTrack(req)
 	}
