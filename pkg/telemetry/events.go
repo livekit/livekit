@@ -22,6 +22,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
+	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/guid"
@@ -429,7 +430,7 @@ func (t *telemetryService) TrackSubscribeRTPStats(
 }
 
 func (t *telemetryService) NotifyEgressEvent(ctx context.Context, event string, info *livekit.EgressInfo) {
-	opts := getEgressNotifyOptions(info)
+	opts := egress.GetEgressNotifyOptions(info)
 
 	t.NotifyEvent(ctx, &livekit.WebhookEvent{
 		Event:      event,
@@ -597,45 +598,4 @@ func newIngressEvent(event livekit.AnalyticsEventType, ingress *livekit.IngressI
 		IngressId: ingress.IngressId,
 		Ingress:   ingress,
 	}
-}
-
-func getEgressNotifyOptions(egressInfo *livekit.EgressInfo) []webhook.NotifyOption {
-	if egressInfo == nil {
-		return nil
-	}
-
-	if egressInfo.Request == nil {
-		return nil
-	}
-
-	var whs []*livekit.WebhookConfig
-
-	switch req := egressInfo.Request.(type) {
-	case *livekit.EgressInfo_RoomComposite:
-		if req.RoomComposite != nil {
-			whs = req.RoomComposite.Webhooks
-		}
-	case *livekit.EgressInfo_Web:
-		if req.Web != nil {
-			whs = req.Web.Webhooks
-		}
-	case *livekit.EgressInfo_Participant:
-		if req.Participant != nil {
-			whs = req.Participant.Webhooks
-		}
-	case *livekit.EgressInfo_TrackComposite:
-		if req.TrackComposite != nil {
-			whs = req.TrackComposite.Webhooks
-		}
-	case *livekit.EgressInfo_Track:
-		if req.Track != nil {
-			whs = req.Track.Webhooks
-		}
-	}
-
-	if len(whs) > 0 {
-		return []webhook.NotifyOption{webhook.WithExtraWebhooks(whs)}
-	}
-
-	return nil
 }
