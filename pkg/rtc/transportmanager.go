@@ -625,7 +625,7 @@ func (t *TransportManager) getTransport(isPrimary bool) *PCTransport {
 
 func (t *TransportManager) getLowestPriorityConnectionType() types.ICEConnectionType {
 	ctype := t.publisher.GetICEConnectionType()
-	if stype := t.publisher.GetICEConnectionType(); stype > ctype {
+	if stype := t.subscriber.GetICEConnectionType(); stype > ctype {
 		ctype = stype
 	}
 	return ctype
