@@ -680,18 +680,21 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 			}
 
 		case types.ICEConnectionTypeTCP:
-			// try TURN/TLS if ICE/TCP failed
-			if ic.PreferenceSubscriber == livekit.ICECandidateType_ICT_TCP {
-				if t.params.TURNSEnabled {
-					return livekit.ICECandidateType_ICT_TLS
-				}
+			// try TURN/TLS if ICE/TCP failed,
+			// the configuration could have been ICT_NONE or ICT_TCP,
+			// in either case, fallback to TURN/TLS
+			if t.params.TURNSEnabled {
+				return livekit.ICECandidateType_ICT_TLS
+			} else {
+				// keep the current config
+				return ic.PreferenceSubscriber
 			}
 
 		case types.ICEConnectionTypeTURN:
 			// TURN/TLS is the most permissive option, if that fails there is nowhere to go to
-			if ic.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS {
-				return livekit.ICECandidateType_ICT_TLS
-			}
+			// the configuration could have been ICT_NONE or ICT_TLS,
+			// keep the current config
+			return ic.PreferenceSubscriber
 		}
 		return livekit.ICECandidateType_ICT_NONE
 	}
