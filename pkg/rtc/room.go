@@ -463,7 +463,7 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 			infos := p.GetICEConnectionInfo()
 			for _, info := range infos {
 				if info.Type != types.ICEConnectionTypeUnknown {
-					meta.ConnectionType = string(info.Type)
+					meta.ConnectionType = info.Type.String()
 					break
 				}
 			}

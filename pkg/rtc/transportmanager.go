@@ -623,6 +623,14 @@ func (t *TransportManager) getTransport(isPrimary bool) *PCTransport {
 	return pcTransport
 }
 
+func (t *TransportManager) getLowestPriorityConnectionType() types.ICEConnectionType {
+	ctype := t.publisher.GetICEConnectionType()
+	if stype := t.publisher.GetICEConnectionType(); stype > ctype {
+		ctype = stype
+	}
+	return ctype
+}
+
 func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 	if !t.params.AllowTCPFallback || t.params.UseOneShotSignallingMode {
 		return
@@ -650,6 +658,8 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 		return
 	}
 
+	lowestPriorityConnectionType := t.getLowestPriorityConnectionType()
+
 	//
 	// Checking only `PreferenceSubscriber` field although any connection failure (PUBLISHER OR SUBSCRIBER) will
 	// flow through here.
@@ -657,13 +667,23 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 	// As both transports are switched to the same type on any failure, checking just subscriber should be fine.
 	//
 	getNext := func(ic *livekit.ICEConfig) livekit.ICECandidateType {
-		if ic.PreferenceSubscriber == livekit.ICECandidateType_ICT_NONE && t.params.ClientInfo.SupportsICETCP() && t.canUseICETCP() {
-			return livekit.ICECandidateType_ICT_TCP
-		} else if ic.PreferenceSubscriber != livekit.ICECandidateType_ICT_TLS && t.params.TURNSEnabled {
-			return livekit.ICECandidateType_ICT_TLS
-		} else {
-			return livekit.ICECandidateType_ICT_NONE
+		switch lowestPriorityConnectionType {
+		case types.ICEConnectionTypeUDP:
+			// try ICE/TCP if ICE/UDP failed
+			if ic.PreferenceSubscriber == livekit.ICECandidateType_ICT_NONE && t.params.ClientInfo.SupportsICETCP() && t.canUseICETCP() {
+				return livekit.ICECandidateType_ICT_TCP
+			}
+
+		case types.ICEConnectionTypeTCP:
+			// try TURN/TLS if ICE/TCP failed
+			if t.params.TURNSEnabled {
+				return livekit.ICECandidateType_ICT_TLS
+			}
+
+		case types.ICEConnectionTypeTURN:
+			// TURN/TLS is the most permissive option, if that fails there is nowhere to go to
 		}
+		return livekit.ICECandidateType_ICT_NONE
 	}
 
 	var preferNext livekit.ICECandidateType
