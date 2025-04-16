@@ -2,16 +2,18 @@ package routing
 
 import (
 	"context"
-	"go.uber.org/atomic"
-	"google.golang.org/protobuf/proto"
-	"log"
+	"fmt"
 	"sync"
 	"time"
 
-	p2p_database "github.com/dTelecom/p2p-realtime-database"
-	"github.com/livekit/livekit-server/pkg/p2p"
+	pubsub "github.com/dTelecom/pubsub-solana"
+	"go.uber.org/atomic"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+
+	"github.com/livekit/livekit-server/pkg/p2p"
 )
 
 const (
@@ -40,13 +42,13 @@ type LocalRouter struct {
 	onNewParticipant NewParticipantCallback
 	onRTCMessage     RTCMessageCallback
 
-	mainDatabase        *p2p_database.DB
+	pubSub              *pubsub.PubSub
 	routerCommunicators map[livekit.RoomKey]*p2p.RouterCommunicatorImpl
 }
 
-func NewLocalRouter(currentNode LocalNode, signalClient SignalClient, mainDatabase *p2p_database.DB) *LocalRouter {
+func NewLocalRouter(currentNode LocalNode, signalClient SignalClient, pubSub *pubsub.PubSub) *LocalRouter {
 	return &LocalRouter{
-		mainDatabase:        mainDatabase,
+		pubSub:              pubSub,
 		currentNode:         currentNode,
 		signalClient:        signalClient,
 		requestChannels:     make(map[string]*MessageChannel),
@@ -107,8 +109,7 @@ func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
 func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomKey livekit.RoomKey, pi ParticipantInit) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error) {
 
 	if _, ok := r.routerCommunicators[roomKey]; !ok {
-		db := r.mainDatabase
-		r.routerCommunicators[roomKey] = p2p.NewRouterCommunicatorImpl(roomKey, db, r.writeFromP2P)
+		r.routerCommunicators[roomKey] = p2p.NewRouterCommunicatorImpl(roomKey, r.pubSub, r.writeFromP2P)
 	}
 
 	return r.StartParticipantSignalWithNodeID(ctx, roomKey, pi, livekit.NodeID(r.currentNode.Id))
@@ -145,7 +146,7 @@ func (r *LocalRouter) writeFromP2P(ctx context.Context, roomKey livekit.RoomKey,
 
 func (r *LocalRouter) writeToP2P(roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) {
 	if routerCommunicator, ok := r.routerCommunicators[roomKey]; !ok {
-		log.Printf("writeToP2P no routerCommunicator %v", roomKey)
+		logger.Errorw("writeToP2P err", fmt.Errorf("no routerCommunicator"))
 	} else {
 		routerCommunicator.Publish(msg)
 	}

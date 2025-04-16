@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -60,7 +60,6 @@ type RoomManager struct {
 	clientConfManager clientconfiguration.ClientConfigurationManager
 	egressLauncher    rtc.EgressLauncher
 	versionGenerator  utils.TimedVersionGenerator
-	// trafficManager    *TrafficManager
 
 	rooms               map[livekit.RoomKey]*rtc.Room
 	outRelayCollections map[livekit.RoomKey]*relay.Collection
@@ -77,7 +76,6 @@ func NewLocalRoomManager(
 	clientConfManager clientconfiguration.ClientConfigurationManager,
 	egressLauncher rtc.EgressLauncher,
 	versionGenerator utils.TimedVersionGenerator,
-	// trafficManager *TrafficManager,
 ) (*RoomManager, error) {
 	rtcConf, err := rtc.NewWebRTCConfig(conf, currentNode.Ip)
 	if err != nil {
@@ -94,7 +92,6 @@ func NewLocalRoomManager(
 		clientConfManager: clientConfManager,
 		egressLauncher:    egressLauncher,
 		versionGenerator:  versionGenerator,
-		// trafficManager:    trafficManager,
 
 		rooms:               make(map[livekit.RoomKey]*rtc.Room),
 		outRelayCollections: make(map[livekit.RoomKey]*relay.Collection),
@@ -182,60 +179,6 @@ func (r *RoomManager) CloseIdleRooms() {
 	for _, room := range rooms {
 		room.CloseIfEmpty()
 	}
-}
-
-func (r *RoomManager) SaveClientsBandwidth() {
-	r.lock.RLock()
-	rooms := make([]*rtc.Room, 0, len(r.rooms))
-	for _, rm := range r.rooms {
-		rooms = append(rooms, rm)
-	}
-	r.lock.RUnlock()
-
-	bandwidthByApiKey := make(map[livekit.ApiKey]int64)
-	for _, room := range rooms {
-		localParticipants := room.GetLocalParticipants()
-		for _, p := range localParticipants {
-			participantBandwidth := int64(0)
-			for _, t := range p.GetSubscribedTracks() {
-				switch t.MediaTrack().Kind() {
-				case livekit.TrackType_AUDIO:
-					if !t.IsPublisherMuted() {
-						if !t.IsMuted() {
-							participantBandwidth += AudioBandwidth
-						}
-					}
-				case livekit.TrackType_VIDEO:
-					if !t.IsPublisherMuted() {
-						if t.MediaTrack().IsSimulcast() {
-							switch t.DownTrack().CurrentLayers().Spatial {
-							case 2:
-								participantBandwidth += VideoBanwithHigh
-							case 1:
-								participantBandwidth += VideoBanwithMedium
-							case 0:
-								participantBandwidth += VideoBanwithLow
-							}
-						} else {
-							if !t.IsMuted() {
-								participantBandwidth += VideoBanwithHigh
-							}
-						}
-					}
-				}
-			}
-			oldBandwidth, _ := bandwidthByApiKey[p.GetApiKey()]
-			bandwidthByApiKey[p.GetApiKey()] = oldBandwidth + participantBandwidth
-		}
-	}
-
-	// ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	// defer cancel()
-
-	// err := r.trafficManager.SetValue(ctx, bandwidthByApiKey)
-	// if err != nil {
-	// 	logger.Errorw("could not set bandwidth", err)
-	// }
 }
 
 func (r *RoomManager) HasParticipants() bool {
@@ -407,11 +350,6 @@ func (r *RoomManager) StartSession(
 		VersionGenerator:             r.versionGenerator,
 		TrackResolver:                room.ResolveMediaTrackForSubscriber,
 		BandwidthChecker: func(apiKey livekit.ApiKey, limit int64) bool {
-			// bandwidthLimit := limit * TrafficLimitPerClient
-			// currentBandwidth := r.trafficManager.GetValue(apiKey)
-			// return currentBandwidth < bandwidthLimit
-			// tmp disabled
-			// _ = currentBandwidth < bandwidthLimit
 			return true
 		},
 		RelayCollection: outRelayCollection,
@@ -490,7 +428,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 	}
 
 	// create new room, get details first
-	ri, internal, p2pCommunicator, err := r.roomStore.LoadRoom(ctx, roomKey, true)
+	ri, internal, roomCommunicator, err := r.roomStore.LoadRoom(ctx, roomKey, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -613,7 +551,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 	pendingAnswers := map[string]chan []byte{}
 	pendingAnswersMu := sync.Mutex{}
 
-	p2pCommunicator.ForEachPeer(func(peerId string) {
+	roomCommunicator.ForEachPeer(func(peerId string) {
 		logger.Infow("New p2p peer", "peerId", peerId)
 		rel, err := pc.NewRelay(newRoom.Logger, &relay.RelayConfig{
 			ID:            peerId,
@@ -670,7 +608,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 			answer := make(chan []byte, 1)
 
 			pendingAnswersMu.Lock()
-			msgId, sendErr := p2pCommunicator.SendMessage(peerId, packSignalPeerMessage("", offer))
+			msgId, sendErr := roomCommunicator.SendMessage(peerId, packSignalPeerMessage("", offer))
 			if sendErr != nil {
 				pendingAnswersMu.Unlock()
 				return nil, fmt.Errorf("cannot send message to room commmunicator: %w", sendErr)
@@ -685,7 +623,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 				pendingAnswersMu.Unlock()
 			}()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
 			select {
@@ -700,7 +638,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 		}
 	})
 
-	p2pCommunicator.OnMessage(func(message interface{}, fromPeerId string, eventId string) {
+	roomCommunicator.OnMessage(func(message []byte, fromPeerId string, eventId string) {
 		replyTo, signal, err := unpackSignalPeerMessage(message)
 		if err != nil {
 			logger.Errorw("Unmarshal signal peer message", err)
@@ -741,7 +679,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 				return
 			}
 
-			if _, err := p2pCommunicator.SendMessage(fromPeerId, packSignalPeerMessage(eventId, answer)); err != nil {
+			if _, err := roomCommunicator.SendMessage(fromPeerId, packSignalPeerMessage(eventId, answer)); err != nil {
 				logger.Errorw("can not send answer", err)
 				return
 			}
@@ -1127,42 +1065,28 @@ func getConnQualitiesPayloadForRelay(room *rtc.Room, connQualities map[livekit.P
 	}
 }
 
-func packSignalPeerMessage(replyTo string, signal []byte) interface{} {
-	return &signalPeerMessage{
-		ReplyTo: replyTo,
-		Signal:  base64.StdEncoding.EncodeToString(signal),
-	}
+func packSignalPeerMessage(replyTo string, signal []byte) []byte {
+	buffer := make([]byte, 0, 2+len(replyTo)+len(signal))
+	buffer = binary.LittleEndian.AppendUint16(buffer, uint16(len(replyTo)))
+	buffer = append(buffer, []byte(replyTo)...)
+	buffer = append(buffer, signal...)
+	return buffer
 }
 
-func unpackSignalPeerMessage(message interface{}) (replyTo string, signal []byte, err error) {
-	messageMap, ok := message.(map[string]interface{})
-	if !ok {
-		err = errors.New("cannot cast")
+func unpackSignalPeerMessage(message []byte) (replyTo string, signal []byte, err error) {
+	if len(message) < 2 {
+		err = errors.New("message is too small")
 		return
 	}
 
-	replyToValue, ok := messageMap["replyTo"]
-	if !ok {
-		err = errors.New("ReplyTo undefined")
-		return
-	}
-	replyTo, ok = replyToValue.(string)
-	if !ok {
-		err = errors.New("cannot cast ReplyTo to string")
+	replyToLen, message := binary.LittleEndian.Uint16(message[:2]), message[2:]
+
+	if len(message) < int(replyToLen) {
+		err = errors.New("message is incorrect")
 		return
 	}
 
-	signalBase64Value, ok := messageMap["signal"]
-	if !ok {
-		err = errors.New("Signal undefined")
-		return
-	}
-	signalBase64, ok := signalBase64Value.(string)
-	if !ok {
-		err = errors.New("cannot cast Signal to string")
-		return
-	}
-	signal, err = base64.StdEncoding.DecodeString(signalBase64)
+	replyTo, signal = string(message[:replyToLen]), message[replyToLen:]
 
 	return
 }

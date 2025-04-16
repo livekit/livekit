@@ -6,13 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"golang.org/x/crypto/acme/autocert"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"runtime/pprof"
 	"time"
 
-	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/pion/turn/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
@@ -24,8 +24,8 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"golang.org/x/crypto/acme/autocert"
 
+	"github.com/inconshreveable/go-vhost"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/version"
@@ -47,6 +47,7 @@ type LivekitServer struct {
 	running        atomic.Bool
 	doneChan       chan struct{}
 	closedChan     chan struct{}
+	TLSMuxer       *vhost.TLSMuxer
 }
 
 func NewLivekitServer(conf *config.Config,
@@ -62,9 +63,10 @@ func NewLivekitServer(conf *config.Config,
 	currentNode routing.LocalNode,
 	clientProvider *ClientProvider,
 	nodeProvider *NodeProvider,
-	db *p2p_database.DB,
 	relevantNodesHandler *RelevantNodesHandler,
 	mainDebugHandler *MainDebugHandler,
+	TLSMuxer *vhost.TLSMuxer,
+	certManager *autocert.Manager,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
 		config:       conf,
@@ -78,6 +80,7 @@ func NewLivekitServer(conf *config.Config,
 		clientProvider: clientProvider,
 		nodeProvider:   nodeProvider,
 		closedChan:     make(chan struct{}),
+		TLSMuxer:       TLSMuxer,
 	}
 
 	middlewares := []negroni.Handler{
@@ -122,28 +125,15 @@ func NewLivekitServer(conf *config.Config,
 	mux.HandleFunc("/rtc/validate", rtcService.Validate)
 	mux.HandleFunc("/relevant", relevantNodesHandler.HTTPHandler)
 	mux.HandleFunc("/node-debug", mainDebugHandler.nodeHTTPHandler)
-	mux.HandleFunc("/peer-debug", mainDebugHandler.peerHTTPHandler)
 	mux.HandleFunc("/client-debug", mainDebugHandler.clientHTTPHandler)
 	mux.HandleFunc("/", s.defaultHandler)
 
 	if conf.Domain != "" {
-		certManager := autocert.Manager{
-			Prompt:     autocert.AcceptTOS,
-			HostPolicy: autocert.HostWhitelist(conf.Domain),
-		}
-
-		dir := cacheDir()
-		if dir != "" {
-			certManager.Cache = autocert.DirCache(dir)
-		}
 		s.httpsServer = &http.Server{
 			TLSConfig: &tls.Config{
 				GetCertificate: certManager.GetCertificate,
 			},
 			Handler: configureMiddlewares(mux, middlewares...),
-		}
-		s.httpServer = &http.Server{
-			Handler: certManager.HTTPHandler(nil),
 		}
 	} else {
 		s.httpServer = &http.Server{
@@ -206,21 +196,9 @@ func (s *LivekitServer) Start() error {
 
 	// ensure we could listen
 	listeners := make([]net.Listener, 0)
-	listenersHTTPS := make([]net.Listener, 0)
 	promListeners := make([]net.Listener, 0)
 	for _, addr := range addresses {
-		if s.config.Domain != "" {
-			ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, 80))
-			if err != nil {
-				return err
-			}
-			listeners = append(listeners, ln)
-			lnHTTPS, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, 443))
-			if err != nil {
-				return err
-			}
-			listenersHTTPS = append(listenersHTTPS, lnHTTPS)
-		} else {
+		if s.config.Domain == "" {
 			ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, s.config.Port))
 			if err != nil {
 				return err
@@ -266,32 +244,21 @@ func (s *LivekitServer) Start() error {
 
 	ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
 
-	err := s.nodeProvider.Save(ctx, Node{
-		Domain: s.config.Domain,
-		IP:     s.currentNode.Ip,
-	})
-	if err != nil {
-		logger.Errorw("node provider save error", err)
-	}
-
 	for _, promLn := range promListeners {
 		go s.promServer.Serve(promLn)
 	}
 
 	if s.config.Domain != "" {
+		tlsListener, err := s.TLSMuxer.Listen(s.config.Domain)
+		if err != nil {
+			logger.Errorw("could not start server", err)
+			s.Stop(true)
+		}
+
 		httpGroup := &errgroup.Group{}
-		for _, ln := range listeners {
-			l := ln
-			httpGroup.Go(func() error {
-				return s.httpServer.Serve(l)
-			})
-		}
-		for _, lnHTTPS := range listenersHTTPS {
-			l := lnHTTPS
-			httpGroup.Go(func() error {
-				return s.httpsServer.ServeTLS(l, "", "")
-			})
-		}
+		httpGroup.Go(func() error {
+			return s.httpsServer.ServeTLS(tlsListener, "", "")
+		})
 		go func() {
 			if err := httpGroup.Wait(); err != http.ErrServerClosed {
 				logger.Errorw("could not start server", err)
@@ -425,7 +392,6 @@ func (s *LivekitServer) backgroundWorker() {
 			return
 		case <-roomTicker.C:
 			s.roomManager.CloseIdleRooms()
-			s.roomManager.SaveClientsBandwidth()
 		}
 	}
 }

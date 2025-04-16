@@ -2,57 +2,24 @@ package p2p
 
 import (
 	"context"
-	"encoding/base64"
-	"errors"
-	"log"
 
-	p2p_database "github.com/dTelecom/p2p-realtime-database"
+	pubsub "github.com/dTelecom/pubsub-solana"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+
 	"google.golang.org/protobuf/proto"
 )
-
-type routerMessage struct {
-	Data string `json:"data"`
-}
-
-func packRouterMessage(data []byte) interface{} {
-	return &routerMessage{
-		Data: base64.StdEncoding.EncodeToString(data),
-	}
-}
-
-func unpackRouterMessage(message interface{}) (data []byte, err error) {
-	messageMap, ok := message.(map[string]interface{})
-	if !ok {
-		err = errors.New("cannot cast")
-		return
-	}
-
-	dataBase64Value, ok := messageMap["data"]
-	if !ok {
-		err = errors.New("Data undefined")
-		return
-	}
-	dataBase64, ok := dataBase64Value.(string)
-	if !ok {
-		err = errors.New("cannot cast Data to string")
-		return
-	}
-	data, err = base64.StdEncoding.DecodeString(dataBase64)
-
-	return
-}
 
 type RouterCommunicatorImpl struct {
 	topic          string
 	key            livekit.RoomKey
-	mainDatabase   *p2p_database.DB
+	pubSub         *pubsub.PubSub
 	ctx            context.Context
 	cancel         context.CancelFunc
 	messageHandler func(ctx context.Context, roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) error
 }
 
-func NewRouterCommunicatorImpl(key livekit.RoomKey, mainDatabase *p2p_database.DB, messageHandler func(ctx context.Context, roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) error) *RouterCommunicatorImpl {
+func NewRouterCommunicatorImpl(key livekit.RoomKey, pubSub *pubsub.PubSub, messageHandler func(ctx context.Context, roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) error) *RouterCommunicatorImpl {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -61,7 +28,7 @@ func NewRouterCommunicatorImpl(key livekit.RoomKey, mainDatabase *p2p_database.D
 	routerCommunicator := &RouterCommunicatorImpl{
 		topic:          topic,
 		key:            key,
-		mainDatabase:   mainDatabase,
+		pubSub:         pubSub,
 		ctx:            ctx,
 		cancel:         cancel,
 		messageHandler: messageHandler,
@@ -78,44 +45,34 @@ func (c *RouterCommunicatorImpl) Close() {
 
 func (c *RouterCommunicatorImpl) Publish(message *livekit.RTCNodeMessage) {
 
-	data, err := proto.Marshal((*livekit.RTCNodeMessage)(message))
+	data, err := proto.Marshal(message)
 	if err != nil {
-		log.Printf("RouterCommunicatorImpl Publish cannot marshal %v", message)
+		logger.Errorw("RouterCommunicatorImpl Publish cannot marshal", err)
 	}
 
-	if _, err := c.mainDatabase.Publish(c.ctx, c.topic, packRouterMessage(data)); err != nil {
-		log.Printf("RouterCommunicatorImpl cannot publish %v", err)
+	if _, err := c.pubSub.Publish(c.topic, data); err != nil {
+		logger.Errorw("RouterCommunicatorImpl cannot publish", err)
 	}
 }
 
 func (c *RouterCommunicatorImpl) init() {
-
-	subErr := c.mainDatabase.Subscribe(c.ctx, c.topic, c.dbHandler)
-	if subErr != nil {
-		log.Printf("RouterCommunicatorImpl cannot subscribe to topic %v", subErr)
-	}
+	c.pubSub.Subscribe(c.topic, c.dbHandler)
 }
 
-func (c *RouterCommunicatorImpl) dbHandler(event p2p_database.Event) {
+func (c *RouterCommunicatorImpl) dbHandler(_ context.Context, event pubsub.Event) {
 
-	if event.FromPeerId == c.mainDatabase.GetHost().ID().String() {
-		return
-	}
-
-	data, err := unpackRouterMessage(event.Message)
-	if err != nil {
-		log.Printf("RouterCommunicatorImpl dbHandler type err: %v %v", err, event)
+	if event.FromPeerId == c.pubSub.GetPeerId() {
 		return
 	}
 
 	rm := livekit.RTCNodeMessage{}
-	if err := proto.Unmarshal(data, &rm); err != nil {
-		log.Printf("RouterCommunicatorImpl dbHandler cannot unmarshal: %v", event)
+	if err := proto.Unmarshal(event.Message, &rm); err != nil {
+		logger.Errorw("RouterCommunicatorImpl dbHandler cannot unmarshal", err)
 		return
 	}
 
-	err = c.messageHandler(c.ctx, c.key, &rm)
+	err := c.messageHandler(c.ctx, c.key, &rm)
 	if err != nil {
-		log.Printf("RouterCommunicatorImpl dbHandler err: %v", err)
+		logger.Errorw("RouterCommunicatorImpl dbHandler err", err)
 	}
 }

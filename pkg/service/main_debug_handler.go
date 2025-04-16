@@ -2,8 +2,6 @@ package service
 
 import (
 	"fmt"
-	p2p_database "github.com/dTelecom/p2p-realtime-database"
-	"github.com/ipfs/go-log/v2"
 	"github.com/olekukonko/tablewriter"
 	"net/http"
 )
@@ -11,54 +9,13 @@ import (
 type MainDebugHandler struct {
 	nodeProvider   *NodeProvider
 	clientProvider *ClientProvider
-	logger         *log.ZapEventLogger
-	db             *p2p_database.DB
 }
 
-func NewMainDebugHandler(db *p2p_database.DB, nodeProvider *NodeProvider, clientProvider *ClientProvider, logger *log.ZapEventLogger) *MainDebugHandler {
+func NewMainDebugHandler(nodeProvider *NodeProvider, clientProvider *ClientProvider) *MainDebugHandler {
 	return &MainDebugHandler{
 		nodeProvider:   nodeProvider,
 		clientProvider: clientProvider,
-		logger:         logger,
-		db:             db,
 	}
-}
-
-func (h *MainDebugHandler) clientHTTPHandler(w http.ResponseWriter, r *http.Request) {
-	clients, err := h.clientProvider.List(r.Context())
-	if err != nil {
-		handleError(w, http.StatusBadRequest, fmt.Errorf("send response %w", err))
-		return
-	}
-
-	table := tablewriter.NewWriter(w)
-	table.SetRowLine(true)
-	table.SetAutoWrapText(false)
-	table.SetHeader([]string{
-		"Address",
-		"Until",
-		"Active",
-		"Limit",
-	})
-
-	table.SetColumnAlignment([]int{
-		tablewriter.ALIGN_CENTER,
-		tablewriter.ALIGN_CENTER,
-		tablewriter.ALIGN_CENTER,
-		tablewriter.ALIGN_CENTER,
-	})
-
-	for address, client := range clients {
-		table.Append([]string{
-			address,
-			fmt.Sprintf("%d", client.Until),
-			fmt.Sprintf("%v", client.Active),
-			fmt.Sprintf("%s", client.Limit),
-		})
-	}
-
-	table.Render()
-	return
 }
 
 func (h *MainDebugHandler) nodeHTTPHandler(w http.ResponseWriter, r *http.Request) {
@@ -77,6 +34,7 @@ func (h *MainDebugHandler) nodeHTTPHandler(w http.ResponseWriter, r *http.Reques
 		"Domain",
 		"IP",
 		"Country",
+		"City",
 		"Latitude",
 		"Longitude",
 	})
@@ -89,15 +47,17 @@ func (h *MainDebugHandler) nodeHTTPHandler(w http.ResponseWriter, r *http.Reques
 		tablewriter.ALIGN_CENTER,
 		tablewriter.ALIGN_CENTER,
 		tablewriter.ALIGN_CENTER,
+		tablewriter.ALIGN_CENTER,
 	})
 
-	for _, node := range nodes {
+	for k, node := range nodes {
 		table.Append([]string{
-			node.Id,
+			k,
 			fmt.Sprintf("%d", node.Participants),
 			node.Domain,
 			node.IP,
 			node.Country,
+			node.City,
 			fmt.Sprintf("%f", node.Latitude),
 			fmt.Sprintf("%f", node.Longitude),
 		})
@@ -107,24 +67,33 @@ func (h *MainDebugHandler) nodeHTTPHandler(w http.ResponseWriter, r *http.Reques
 	return
 }
 
-func (h *MainDebugHandler) peerHTTPHandler(w http.ResponseWriter, r *http.Request) {
+func (h *MainDebugHandler) clientHTTPHandler(w http.ResponseWriter, r *http.Request) {
+	clients, err := h.clientProvider.List(r.Context())
+	if err != nil {
+		handleError(w, http.StatusBadRequest, fmt.Errorf("send response %w", err))
+		return
+	}
 
 	table := tablewriter.NewWriter(w)
 	table.SetRowLine(true)
 	table.SetAutoWrapText(false)
 	table.SetHeader([]string{
-		"ID",
-		"Remote address",
+		"Address",
+		"Until",
+		"Limit",
 	})
+
 	table.SetColumnAlignment([]int{
+		tablewriter.ALIGN_CENTER,
 		tablewriter.ALIGN_CENTER,
 		tablewriter.ALIGN_CENTER,
 	})
 
-	for _, node := range h.db.ConnectedPeers() {
+	for address, client := range clients {
 		table.Append([]string{
-			node.ID.String(),
-			node.Addrs[0].String(),
+			address,
+			fmt.Sprintf("%d", client.Until),
+			fmt.Sprintf("%d", client.Limit),
 		})
 	}
 

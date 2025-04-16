@@ -6,19 +6,15 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-
-	"github.com/ipfs/go-log/v2"
 )
 
 type RelevantNodesHandler struct {
 	nodeProvider *NodeProvider
-	logger       *log.ZapEventLogger
 }
 
-func NewRelevantNodesHandler(nodeProvider *NodeProvider, logger *log.ZapEventLogger) *RelevantNodesHandler {
+func NewRelevantNodesHandler(nodeProvider *NodeProvider) *RelevantNodesHandler {
 	return &RelevantNodesHandler{
 		nodeProvider: nodeProvider,
-		logger:       logger,
 	}
 }
 

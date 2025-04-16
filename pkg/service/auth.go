@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	eth_crypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/protocol/auth"
@@ -77,36 +75,21 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 			return
 		}
 
-		pk := client.Key
-		if pk == "" {
+		if client.Key == "" {
 			handleError(w, http.StatusUnauthorized, errors.New(fmt.Sprintf("wallet %s not exists in contract", apiKey)))
 			return
 		}
 
-		pkb, err := hexutil.Decode(pk)
-		if err != nil {
-			handleError(w, http.StatusUnauthorized, fmt.Errorf("cannot decode public key %s err %s", pk, err))
-			return
-		}
-
-		publicKey, err := eth_crypto.UnmarshalPubkey(pkb)
-		if err != nil {
-			handleError(w, http.StatusUnauthorized, fmt.Errorf("cannot unmarshal public key %s err %s", pk, err))
-			return
-		}
-
-		grants, err := v.Verify(publicKey)
+		grants, err := v.Verify(client.Key)
 		if err != nil {
 			handleError(w, http.StatusUnauthorized, fmt.Errorf("invalid token: %s, error: %s", authToken, err))
 			return
 		}
 
-		clientLimitInt := client.Limit.Int64()
-
 		// set grants in context
 		ctx := context.WithValue(r.Context(), grantsKey{}, grants)
 		ctx = context.WithValue(ctx, apiKeyKey{}, apiKey)
-		ctx = context.WithValue(ctx, limitKey{}, clientLimitInt)
+		ctx = context.WithValue(ctx, limitKey{}, client.Limit)
 
 		r = r.WithContext(ctx)
 	}
