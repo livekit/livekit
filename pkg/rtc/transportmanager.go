@@ -670,18 +670,28 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 		switch lowestPriorityConnectionType {
 		case types.ICEConnectionTypeUDP:
 			// try ICE/TCP if ICE/UDP failed
-			if ic.PreferenceSubscriber == livekit.ICECandidateType_ICT_NONE && t.params.ClientInfo.SupportsICETCP() && t.canUseICETCP() {
-				return livekit.ICECandidateType_ICT_TCP
+			if ic.PreferenceSubscriber == livekit.ICECandidateType_ICT_NONE {
+				if t.params.ClientInfo.SupportsICETCP() && t.canUseICETCP() {
+					return livekit.ICECandidateType_ICT_TCP
+				} else if t.params.TURNSEnabled {
+					// fallback to TURN/TLS if TCP is not supported
+					return livekit.ICECandidateType_ICT_TLS
+				}
 			}
 
 		case types.ICEConnectionTypeTCP:
 			// try TURN/TLS if ICE/TCP failed
-			if t.params.TURNSEnabled {
-				return livekit.ICECandidateType_ICT_TLS
+			if ic.PreferenceSubscriber == livekit.ICECandidateType_ICT_TCP {
+				if t.params.TURNSEnabled {
+					return livekit.ICECandidateType_ICT_TLS
+				}
 			}
 
 		case types.ICEConnectionTypeTURN:
 			// TURN/TLS is the most permissive option, if that fails there is nowhere to go to
+			if ic.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS {
+				return livekit.ICECandidateType_ICT_TLS
+			}
 		}
 		return livekit.ICECandidateType_ICT_NONE
 	}
