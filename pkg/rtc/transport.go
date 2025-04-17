@@ -1453,7 +1453,7 @@ func (t *PCTransport) HandleICERestartSDPFragment(sdpFragment string) (string, e
 		return "", err
 	}
 
-	if err := parsedFragment.PatchICECredentialIntoSDP(parsedRemote); err != nil {
+	if err := parsedFragment.PatchICECredentialAndCandidatesIntoSDP(parsedRemote); err != nil {
 		t.params.Logger.Warnw("could not patch SDP fragment into remote description", err, "offer", crd, "sdpFragment", sdpFragment)
 		return "", err
 	}
@@ -1472,6 +1472,16 @@ func (t *PCTransport) HandleICERestartSDPFragment(sdpFragment string) (string, e
 		return "", err
 	}
 
+	// clear out connection details on ICE restart and re-populate
+	t.connectionDetails.Clear()
+	for _, candidate := range parsedFragment.Candidates() {
+		c, err := ice.UnmarshalCandidate(candidate)
+		if err != nil {
+			continue
+		}
+		t.connectionDetails.AddRemoteICECandidate(c, false, false, false)
+	}
+
 	ans, err := t.pc.CreateAnswer(nil)
 	if err != nil {
 		t.params.Logger.Warnw("could not create answer", err)
@@ -1483,10 +1493,33 @@ func (t *PCTransport) HandleICERestartSDPFragment(sdpFragment string) (string, e
 		return "", err
 	}
 
-	parsedAnswer, err := ans.Unmarshal()
+	// wait for gathering to complete to include all candidates in the answer
+	<-webrtc.GatheringCompletePromise(t.pc)
+
+	cld := t.pc.CurrentLocalDescription()
+
+	// add local candidates to ICE connection details
+	parsedAnswer, err := cld.Unmarshal()
 	if err != nil {
 		t.params.Logger.Warnw("could not parse local description", err)
 		return "", err
+	}
+
+	addLocalICECandidates := func(attrs []sdp.Attribute) {
+		for _, a := range attrs {
+			if a.IsICECandidate() {
+				c, err := ice.UnmarshalCandidate(a.Value)
+				if err != nil {
+					continue
+				}
+				t.connectionDetails.AddLocalICECandidate(c, false, false)
+			}
+		}
+	}
+
+	addLocalICECandidates(parsedAnswer.Attributes)
+	for _, m := range parsedAnswer.MediaDescriptions {
+		addLocalICECandidates(m.Attributes)
 	}
 
 	parsedFragmentAnswer, err := lksdp.ExtractSDPFragment(parsedAnswer)
