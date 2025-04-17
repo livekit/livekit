@@ -153,6 +153,9 @@ func (p *NodeProvider) selfRefresh(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	defer client.Close()
+
 	entry, err := client.GetNodeFromRegistry(ctx, authority, "nodes", client.signer.PublicKey())
 	if err != nil {
 		// force refresh self in case of missing record
@@ -182,6 +185,9 @@ func (p *NodeProvider) refresh(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	defer client.Close()
+
 	entryNodes, err := client.ListNodesInRegistry(ctx, authority, "nodes")
 	if err != nil {
 		return err

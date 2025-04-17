@@ -68,6 +68,11 @@ func NewRegistryClient(rpcEndpoint string, wsEndpoint string, programID string, 
 	}, nil
 }
 
+// Close client after use
+func (c *RegistryClient) Close() {
+	c.client.Close()
+}
+
 // GetClientFromRegistry retrieves a client entry from the registry
 func (c *RegistryClient) GetClientFromRegistry(ctx context.Context, authority solana.PublicKey, registryName string, accountToCheck solana.PublicKey) (*ClientEntry, error) {
 	// Find the registry PDA
@@ -203,6 +208,8 @@ func (c *RegistryClient) UpdateNodeOnline(ctx context.Context, registryName stri
 	if err != nil {
 		return solana.Signature{}, fmt.Errorf("failed to connect to websocket: %v", err)
 	}
+
+	defer wsClient.Close()
 
 	sig, err := confirm.SendAndConfirmTransaction(
 		ctx,

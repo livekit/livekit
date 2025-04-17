@@ -73,6 +73,9 @@ func (c *ClientProvider) ClientByAddress(ctx context.Context, address string) (C
 	if err != nil {
 		return Client{}, err
 	}
+
+	defer client.Close()
+
 	entry, err := client.GetClientFromRegistry(ctx, authority, "clients", account)
 	if err != nil {
 		return Client{}, err
