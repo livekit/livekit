@@ -707,5 +707,6 @@ func (s *SIPService) transferSIPParticipantRequest(ctx context.Context, req *liv
 		SipCallId:    callID,
 		TransferTo:   req.TransferTo,
 		PlayDialtone: req.PlayDialtone,
+		Headers:      req.Headers,
 	}, nil
 }
