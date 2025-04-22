@@ -1268,6 +1268,14 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription) erro
 		if err != nil {
 			t.params.Logger.Errorw("could not set remote description on synchronous mode peer connection", err)
 		}
+
+		rtxRepairs := nonSimulcastRTXRepairsFromSDP(parsed, t.params.Logger)
+		if len(rtxRepairs) > 0 {
+			t.params.Logger.Debugw("rtx pairs found from sdp", "ssrcs", rtxRepairs)
+			for repair, base := range rtxRepairs {
+				t.params.Config.BufferFactory.SetRTXPair(repair, base)
+			}
+		}
 		return err
 	}
 
