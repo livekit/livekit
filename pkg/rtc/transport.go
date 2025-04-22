@@ -1135,6 +1135,10 @@ func (t *PCTransport) GetICEConnectionInfo() *types.ICEConnectionInfo {
 	return t.connectionDetails.GetInfo()
 }
 
+func (t *PCTransport) GetICEConnectionType() types.ICEConnectionType {
+	return t.connectionDetails.GetConnectionType()
+}
+
 func (t *PCTransport) WriteRTCP(pkts []rtcp.Packet) error {
 	return t.pc.WriteRTCP(pkts)
 }
