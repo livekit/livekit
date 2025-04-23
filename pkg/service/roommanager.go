@@ -965,9 +965,7 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 			} else {
 				host = r.config.RTC.NodeIP
 			}
-			if r.config.TURN.Domain != "" && r.config.RTC.UseTURNDomain {
-				urls = append(urls, fmt.Sprintf("turn:%s:%d?transport=udp", host, r.config.TURN.UDPPort))
-			}
+			urls = append(urls, fmt.Sprintf("turn:%s:%d?transport=udp", host, r.config.TURN.UDPPort))
 		}
 		if r.config.TURN.TLSPort > 0 {
 			urls = append(urls, fmt.Sprintf("turns:%s:443?transport=tcp", r.config.TURN.Domain))
