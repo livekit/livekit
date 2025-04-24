@@ -23,6 +23,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -86,7 +87,7 @@ type defaultSessionHandler struct {
 }
 
 func (s *defaultSessionHandler) Logger(ctx context.Context) logger.Logger {
-	return logger.GetLogger()
+	return utils.GetLogger(ctx)
 }
 
 func (s *defaultSessionHandler) HandleSession(
