@@ -23,12 +23,12 @@ import (
 )
 
 type Track struct {
-	downTrack   *sfu.DownTrack
-	source      livekit.TrackSource
-	isSimulcast bool
-	priority    uint8
-	publisherID livekit.ParticipantID
-	logger      logger.Logger
+	downTrack      *sfu.DownTrack
+	source         livekit.TrackSource
+	isMultiLayered bool
+	priority       uint8
+	publisherID    livekit.ParticipantID
+	logger         logger.Logger
 
 	maxLayer buffer.VideoLayer
 
@@ -43,17 +43,17 @@ type Track struct {
 func NewTrack(
 	downTrack *sfu.DownTrack,
 	source livekit.TrackSource,
-	isSimulcast bool,
+	isMultiLayered bool,
 	publisherID livekit.ParticipantID,
 	logger logger.Logger,
 ) *Track {
 	t := &Track{
-		downTrack:   downTrack,
-		source:      source,
-		isSimulcast: isSimulcast,
-		publisherID: publisherID,
-		logger:      logger,
-		streamState: StreamStateInactive,
+		downTrack:      downTrack,
+		source:         source,
+		isMultiLayered: isMultiLayered,
+		publisherID:    publisherID,
+		logger:         logger,
+		streamState:    StreamStateInactive,
 	}
 	t.SetPriority(0)
 	t.SetMaxLayer(downTrack.MaxLayer())
@@ -110,7 +110,7 @@ func (t *Track) DownTrack() *sfu.DownTrack {
 }
 
 func (t *Track) IsManaged() bool {
-	return t.source != livekit.TrackSource_SCREEN_SHARE || t.isSimulcast
+	return t.source != livekit.TrackSource_SCREEN_SHARE || t.isMultiLayered
 }
 
 func (t *Track) ID() livekit.TrackID {

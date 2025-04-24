@@ -273,10 +273,10 @@ func (s *StreamAllocator) SetSendSideBWEInterceptor(sendSideBWEInterceptor cc.Ba
 }
 
 type AddTrackParams struct {
-	Source      livekit.TrackSource
-	Priority    uint8
-	IsSimulcast bool
-	PublisherID livekit.ParticipantID
+	Source         livekit.TrackSource
+	Priority       uint8
+	IsMultiLayered bool
+	PublisherID    livekit.ParticipantID
 }
 
 func (s *StreamAllocator) AddTrack(downTrack *sfu.DownTrack, params AddTrackParams) {
@@ -284,7 +284,7 @@ func (s *StreamAllocator) AddTrack(downTrack *sfu.DownTrack, params AddTrackPara
 		return
 	}
 
-	track := NewTrack(downTrack, params.Source, params.IsSimulcast, params.PublisherID, s.params.Logger)
+	track := NewTrack(downTrack, params.Source, params.IsMultiLayered, params.PublisherID, s.params.Logger)
 	track.SetPriority(params.Priority)
 
 	trackID := livekit.TrackID(downTrack.ID())
