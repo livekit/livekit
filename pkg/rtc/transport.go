@@ -1636,9 +1636,9 @@ func (t *PCTransport) AddTrackToStreamAllocator(subTrack types.SubscribedTrack) 
 	}
 
 	t.streamAllocator.AddTrack(subTrack.DownTrack(), streamallocator.AddTrackParams{
-		Source:      subTrack.MediaTrack().Source(),
-		IsSimulcast: subTrack.MediaTrack().IsSimulcast(),
-		PublisherID: subTrack.MediaTrack().PublisherID(),
+		Source:         subTrack.MediaTrack().Source(),
+		IsMultiLayered: len(subTrack.MediaTrack().ToProto().GetLayers()) > 1,
+		PublisherID:    subTrack.MediaTrack().PublisherID(),
 	})
 }
 
