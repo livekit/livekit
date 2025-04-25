@@ -843,11 +843,12 @@ type FakeLocalParticipant struct {
 	sendDataMessageReturnsOnCall map[int]struct {
 		result1 error
 	}
-	SendDataMessageUnlabeledStub        func([]byte, bool) error
+	SendDataMessageUnlabeledStub        func([]byte, bool, livekit.ParticipantIdentity) error
 	sendDataMessageUnlabeledMutex       sync.RWMutex
 	sendDataMessageUnlabeledArgsForCall []struct {
 		arg1 []byte
 		arg2 bool
+		arg3 livekit.ParticipantIdentity
 	}
 	sendDataMessageUnlabeledReturns struct {
 		result1 error
@@ -5666,7 +5667,7 @@ func (fake *FakeLocalParticipant) SendDataMessageReturnsOnCall(i int, result1 er
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) SendDataMessageUnlabeled(arg1 []byte, arg2 bool) error {
+func (fake *FakeLocalParticipant) SendDataMessageUnlabeled(arg1 []byte, arg2 bool, arg3 livekit.ParticipantIdentity) error {
 	var arg1Copy []byte
 	if arg1 != nil {
 		arg1Copy = make([]byte, len(arg1))
@@ -5677,13 +5678,14 @@ func (fake *FakeLocalParticipant) SendDataMessageUnlabeled(arg1 []byte, arg2 boo
 	fake.sendDataMessageUnlabeledArgsForCall = append(fake.sendDataMessageUnlabeledArgsForCall, struct {
 		arg1 []byte
 		arg2 bool
-	}{arg1Copy, arg2})
+		arg3 livekit.ParticipantIdentity
+	}{arg1Copy, arg2, arg3})
 	stub := fake.SendDataMessageUnlabeledStub
 	fakeReturns := fake.sendDataMessageUnlabeledReturns
-	fake.recordInvocation("SendDataMessageUnlabeled", []interface{}{arg1Copy, arg2})
+	fake.recordInvocation("SendDataMessageUnlabeled", []interface{}{arg1Copy, arg2, arg3})
 	fake.sendDataMessageUnlabeledMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
 		return ret.result1
@@ -5697,17 +5699,17 @@ func (fake *FakeLocalParticipant) SendDataMessageUnlabeledCallCount() int {
 	return len(fake.sendDataMessageUnlabeledArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) SendDataMessageUnlabeledCalls(stub func([]byte, bool) error) {
+func (fake *FakeLocalParticipant) SendDataMessageUnlabeledCalls(stub func([]byte, bool, livekit.ParticipantIdentity) error) {
 	fake.sendDataMessageUnlabeledMutex.Lock()
 	defer fake.sendDataMessageUnlabeledMutex.Unlock()
 	fake.SendDataMessageUnlabeledStub = stub
 }
 
-func (fake *FakeLocalParticipant) SendDataMessageUnlabeledArgsForCall(i int) ([]byte, bool) {
+func (fake *FakeLocalParticipant) SendDataMessageUnlabeledArgsForCall(i int) ([]byte, bool, livekit.ParticipantIdentity) {
 	fake.sendDataMessageUnlabeledMutex.RLock()
 	defer fake.sendDataMessageUnlabeledMutex.RUnlock()
 	argsForCall := fake.sendDataMessageUnlabeledArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeLocalParticipant) SendDataMessageUnlabeledReturns(result1 error) {
