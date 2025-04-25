@@ -173,8 +173,7 @@ func scenarioDataUnlabeledPublish(t *testing.T) {
 	payload := "test unlabeled bytes"
 
 	received := atomic.NewBool(false)
-	c2.OnDataUnlabeledReceived = func(data []byte) {
-		fmt.Printf("RAJA received data: message: %s, sid: %s\n", string(data), c1.ID()) // REMOVE
+	c2.OnDataReceived = func(data []byte, _sid string) {
 		if string(data) == payload {
 			received.Store(true)
 		}

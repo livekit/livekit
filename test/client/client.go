@@ -754,8 +754,7 @@ func (c *RTCClient) PublishDataUnlabeled(data []byte) error {
 		return err
 	}
 
-	fmt.Printf("RAJA sending unlabeled data: %s\n", string(data)) // REMOVE
-	return c.publisher.SendDataMessageUnlabeled(data)
+	return c.publisher.SendDataMessageUnlabeled(data, true)
 }
 
 func (c *RTCClient) GetPublishedTrackIDs() []string {

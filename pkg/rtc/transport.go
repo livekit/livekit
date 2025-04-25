@@ -1066,6 +1066,7 @@ func (t *PCTransport) CreateReadableDataChannel(label string, dci *webrtc.DataCh
 			buffer := make([]byte, dataChannelBufferSize)
 			for {
 				n, _, err := rawDC.ReadDataChannel(buffer)
+				t.params.Logger.Infow("RAJA read data", "data", string(buffer[:n])) // REMVOE
 				if err != nil {
 					if !errors.Is(err, io.EOF) && !strings.Contains(err.Error(), "state=Closed") {
 						t.params.Logger.Warnw("error reading data channel", err, "label", dc.Label())
@@ -1180,11 +1181,11 @@ func (t *PCTransport) SendDataMessage(kind livekit.DataPacket_Kind, data []byte)
 	return t.sendDataMessage(dc, data)
 }
 
-func (t *PCTransport) SendDataMessageUnlabeled(data []byte) error {
+func (t *PCTransport) SendDataMessageUnlabeled(data []byte, useRaw bool) error {
 	convertToUserPacket := false
 	var dc *datachannel.DataChannelWriter[*webrtc.DataChannel]
 	t.lock.RLock()
-	if t.params.UseOneShotSignallingMode {
+	if t.params.UseOneShotSignallingMode || useRaw {
 		if len(t.unlabeledDataChannels) > 0 {
 			// use the first unlabeled to send
 			dc = t.unlabeledDataChannels[0]

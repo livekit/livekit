@@ -843,10 +843,11 @@ type FakeLocalParticipant struct {
 	sendDataMessageReturnsOnCall map[int]struct {
 		result1 error
 	}
-	SendDataMessageUnlabeledStub        func([]byte) error
+	SendDataMessageUnlabeledStub        func([]byte, bool) error
 	sendDataMessageUnlabeledMutex       sync.RWMutex
 	sendDataMessageUnlabeledArgsForCall []struct {
 		arg1 []byte
+		arg2 bool
 	}
 	sendDataMessageUnlabeledReturns struct {
 		result1 error
@@ -5665,7 +5666,7 @@ func (fake *FakeLocalParticipant) SendDataMessageReturnsOnCall(i int, result1 er
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) SendDataMessageUnlabeled(arg1 []byte) error {
+func (fake *FakeLocalParticipant) SendDataMessageUnlabeled(arg1 []byte, arg2 bool) error {
 	var arg1Copy []byte
 	if arg1 != nil {
 		arg1Copy = make([]byte, len(arg1))
@@ -5675,13 +5676,14 @@ func (fake *FakeLocalParticipant) SendDataMessageUnlabeled(arg1 []byte) error {
 	ret, specificReturn := fake.sendDataMessageUnlabeledReturnsOnCall[len(fake.sendDataMessageUnlabeledArgsForCall)]
 	fake.sendDataMessageUnlabeledArgsForCall = append(fake.sendDataMessageUnlabeledArgsForCall, struct {
 		arg1 []byte
-	}{arg1Copy})
+		arg2 bool
+	}{arg1Copy, arg2})
 	stub := fake.SendDataMessageUnlabeledStub
 	fakeReturns := fake.sendDataMessageUnlabeledReturns
-	fake.recordInvocation("SendDataMessageUnlabeled", []interface{}{arg1Copy})
+	fake.recordInvocation("SendDataMessageUnlabeled", []interface{}{arg1Copy, arg2})
 	fake.sendDataMessageUnlabeledMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1
@@ -5695,17 +5697,17 @@ func (fake *FakeLocalParticipant) SendDataMessageUnlabeledCallCount() int {
 	return len(fake.sendDataMessageUnlabeledArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) SendDataMessageUnlabeledCalls(stub func([]byte) error) {
+func (fake *FakeLocalParticipant) SendDataMessageUnlabeledCalls(stub func([]byte, bool) error) {
 	fake.sendDataMessageUnlabeledMutex.Lock()
 	defer fake.sendDataMessageUnlabeledMutex.Unlock()
 	fake.SendDataMessageUnlabeledStub = stub
 }
 
-func (fake *FakeLocalParticipant) SendDataMessageUnlabeledArgsForCall(i int) []byte {
+func (fake *FakeLocalParticipant) SendDataMessageUnlabeledArgsForCall(i int) ([]byte, bool) {
 	fake.sendDataMessageUnlabeledMutex.RLock()
 	defer fake.sendDataMessageUnlabeledMutex.RUnlock()
 	argsForCall := fake.sendDataMessageUnlabeledArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) SendDataMessageUnlabeledReturns(result1 error) {
