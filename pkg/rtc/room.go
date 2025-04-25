@@ -1842,7 +1842,7 @@ func BroadcastDataMessageForRoom(r types.Room, source types.LocalParticipant, da
 			return
 		}
 
-		op.SendDataMessageUnlabeled(data)
+		op.SendDataMessageUnlabeled(data, false)
 	})
 }
 

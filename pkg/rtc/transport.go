@@ -35,6 +35,7 @@ import (
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
 	"go.uber.org/zap/zapcore"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
@@ -1065,6 +1066,7 @@ func (t *PCTransport) CreateReadableDataChannel(label string, dci *webrtc.DataCh
 			buffer := make([]byte, dataChannelBufferSize)
 			for {
 				n, _, err := rawDC.ReadDataChannel(buffer)
+				t.params.Logger.Infow("RAJA read data", "data", string(buffer[:n])) // REMVOE
 				if err != nil {
 					if !errors.Is(err, io.EOF) && !strings.Contains(err.Error(), "state=Closed") {
 						t.params.Logger.Warnw("error reading data channel", err, "label", dc.Label())
@@ -1144,26 +1146,72 @@ func (t *PCTransport) WriteRTCP(pkts []rtcp.Packet) error {
 }
 
 func (t *PCTransport) SendDataMessage(kind livekit.DataPacket_Kind, data []byte) error {
+	convertFromUserPacket := false
 	var dc *datachannel.DataChannelWriter[*webrtc.DataChannel]
 	t.lock.RLock()
-	if kind == livekit.DataPacket_RELIABLE {
-		dc = t.reliableDC
+	if t.params.UseOneShotSignallingMode {
+		if len(t.unlabeledDataChannels) > 0 {
+			// use the first unlabeled to send
+			dc = t.unlabeledDataChannels[0]
+		}
+		convertFromUserPacket = true
 	} else {
-		dc = t.lossyDC
+		if kind == livekit.DataPacket_RELIABLE {
+			dc = t.reliableDC
+		} else {
+			dc = t.lossyDC
+		}
 	}
 	t.lock.RUnlock()
+
+	if convertFromUserPacket {
+		dp := &livekit.DataPacket{}
+		if err := proto.Unmarshal(data, dp); err != nil {
+			return err
+		}
+
+		switch payload := dp.Value.(type) {
+		case *livekit.DataPacket_User:
+			return t.sendDataMessage(dc, payload.User.Payload)
+		default:
+			return errors.New("cannot forward non user data packet")
+		}
+	}
 
 	return t.sendDataMessage(dc, data)
 }
 
-func (t *PCTransport) SendDataMessageUnlabeled(data []byte) error {
+func (t *PCTransport) SendDataMessageUnlabeled(data []byte, useRaw bool) error {
+	convertToUserPacket := false
 	var dc *datachannel.DataChannelWriter[*webrtc.DataChannel]
 	t.lock.RLock()
-	if len(t.unlabeledDataChannels) > 0 {
-		// use the first unlabeled to send
-		dc = t.unlabeledDataChannels[0]
+	if t.params.UseOneShotSignallingMode || useRaw {
+		if len(t.unlabeledDataChannels) > 0 {
+			// use the first unlabeled to send
+			dc = t.unlabeledDataChannels[0]
+		}
+	} else {
+		if t.reliableDC != nil {
+			dc = t.reliableDC
+		} else if t.lossyDC != nil {
+			dc = t.lossyDC
+		}
+
+		convertToUserPacket = true
 	}
 	t.lock.RUnlock()
+
+	if convertToUserPacket {
+		dpData, err := proto.Marshal(&livekit.DataPacket{
+			Value: &livekit.DataPacket_User{
+				User: &livekit.UserPacket{Payload: data},
+			},
+		})
+		if err != nil {
+			return err
+		}
+		return t.sendDataMessage(dc, dpData)
+	}
 
 	return t.sendDataMessage(dc, data)
 }
