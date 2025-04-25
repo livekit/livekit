@@ -43,8 +43,8 @@ func (d *IncrementalDispatcher[T]) Add(item T) {
 	}
 	d.lock.Lock()
 	d.items = append(d.items, item)
-	d.lock.Unlock()
 	d.cond.Broadcast()
+	d.lock.Unlock()
 }
 
 func (d *IncrementalDispatcher[T]) Done() {
