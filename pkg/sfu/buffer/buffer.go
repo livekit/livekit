@@ -397,14 +397,14 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 			packet:      packet,
 			arrivalTime: now,
 		})
-		b.Unlock()
 		b.readCond.Broadcast()
+		b.Unlock()
 		return
 	}
 
 	b.calc(pkt, &rtpPacket, now, false)
-	b.Unlock()
 	b.readCond.Broadcast()
+	b.Unlock()
 	return
 }
 
@@ -507,6 +507,7 @@ func (b *Buffer) Close() error {
 
 		b.RLock()
 		rtpStats := b.rtpStats
+		b.readCond.Broadcast()
 		b.RUnlock()
 
 		if rtpStats != nil {
@@ -520,7 +521,6 @@ func (b *Buffer) Close() error {
 			}
 		}
 
-		b.readCond.Broadcast()
 		if cb := b.getOnClose(); cb != nil {
 			cb()
 		}
