@@ -3121,12 +3121,12 @@ func (p *ParticipantImpl) SendDataMessage(kind livekit.DataPacket_Kind, data []b
 	return p.TransportManager.SendDataMessage(kind, data)
 }
 
-func (p *ParticipantImpl) SendDataMessageUnlabeled(data []byte, useRaw bool) error {
+func (p *ParticipantImpl) SendDataMessageUnlabeled(data []byte, useRaw bool, sender livekit.ParticipantIdentity) error {
 	if p.State() != livekit.ParticipantInfo_ACTIVE {
 		return ErrDataChannelUnavailable
 	}
 
-	return p.TransportManager.SendDataMessageUnlabeled(data, useRaw)
+	return p.TransportManager.SendDataMessageUnlabeled(data, useRaw, sender)
 }
 
 func (p *ParticipantImpl) onDataSendError(err error) {

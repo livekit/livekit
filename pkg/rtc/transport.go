@@ -1181,7 +1181,7 @@ func (t *PCTransport) SendDataMessage(kind livekit.DataPacket_Kind, data []byte)
 	return t.sendDataMessage(dc, data)
 }
 
-func (t *PCTransport) SendDataMessageUnlabeled(data []byte, useRaw bool) error {
+func (t *PCTransport) SendDataMessageUnlabeled(data []byte, useRaw bool, sender livekit.ParticipantIdentity) error {
 	convertToUserPacket := false
 	var dc *datachannel.DataChannelWriter[*webrtc.DataChannel]
 	t.lock.RLock()
@@ -1203,6 +1203,7 @@ func (t *PCTransport) SendDataMessageUnlabeled(data []byte, useRaw bool) error {
 
 	if convertToUserPacket {
 		dpData, err := proto.Marshal(&livekit.DataPacket{
+			ParticipantIdentity: string(sender),
 			Value: &livekit.DataPacket_User{
 				User: &livekit.UserPacket{Payload: data},
 			},

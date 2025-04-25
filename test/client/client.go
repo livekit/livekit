@@ -754,7 +754,7 @@ func (c *RTCClient) PublishDataUnlabeled(data []byte) error {
 		return err
 	}
 
-	return c.publisher.SendDataMessageUnlabeled(data, true)
+	return c.publisher.SendDataMessageUnlabeled(data, true, "test")
 }
 
 func (c *RTCClient) GetPublishedTrackIDs() []string {

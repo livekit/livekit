@@ -407,7 +407,7 @@ type LocalParticipant interface {
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
 	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo, force bool) error
 	SendDataMessage(kind livekit.DataPacket_Kind, data []byte) error
-	SendDataMessageUnlabeled(data []byte, useRaw bool) error
+	SendDataMessageUnlabeled(data []byte, useRaw bool, sender livekit.ParticipantIdentity) error
 	SendRoomUpdate(room *livekit.Room) error
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
 	SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool)
