@@ -505,10 +505,10 @@ func (b *Buffer) Close() error {
 	b.closeOnce.Do(func() {
 		b.closed.Store(true)
 
-		b.Lock()
+		b.RLock()
 		rtpStats := b.rtpStats
 		b.readCond.Broadcast()
-		b.Unlock()
+		b.RUnlock()
 
 		if rtpStats != nil {
 			rtpStats.Stop()
