@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	pubsub "github.com/dTelecom/pubsub-solana"
 	"github.com/gagliardetto/solana-go"
 	"github.com/google/wire"
@@ -46,6 +47,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		routing.CreateRouter,
 		getRoomConf,
 		config.DefaultAPIConfig,
+		CreateMainDatabaseP2P,
 		wire.Bind(new(routing.MessageRouter), new(routing.Router)),
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
 		telemetry.NewAnalyticsService,
@@ -83,11 +85,35 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	return &LivekitServer{}, nil
 }
 
+func GetDatabaseConfiguration(conf *config.Config) p2p_database.Config {
+	return p2p_database.Config{
+		DisableGater:     false,
+		WalletPrivateKey: conf.Solana.WalletPrivateKey,
+		PeerListenPort:   conf.P2P.PeerListenPort,
+		DatabaseName:     conf.P2P.DatabaseName,
+	}
+}
+
+func CreateMainDatabaseP2P(conf *config.Config) (*p2p_database.DB, error) {
+	p2pConf := p2p_database.Config{
+			DisableGater:     false,
+			WalletPrivateKey: conf.Solana.WalletPrivateKey,
+			PeerListenPort:   conf.P2P.PeerListenPort,
+			DatabaseName:     conf.P2P.DatabaseName,
+		}
+	adaptedLogger := p2p_database.NewLivekitLoggerAdapter(logger.GetLogger())
+	db, err := p2p_database.Connect(context.Background(), p2pConf, adaptedLogger)
+	if err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
 func createRelevantNodesHandler(nodeProvider *NodeProvider) *RelevantNodesHandler {
 	return NewRelevantNodesHandler(nodeProvider)
 }
 
-func createMainDebugHandler(nodeProvider *NodeProvider, clientProvider *ClientProvider) *MainDebugHandler {
+func createMainDebugHandler(nodeProvider *NodeProvider, clientProvider *ClientProvider, db *p2p_database.DB) *MainDebugHandler {
 	return NewMainDebugHandler(nodeProvider, clientProvider)
 }
 

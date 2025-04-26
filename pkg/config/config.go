@@ -63,6 +63,7 @@ type Config struct {
 	Region         string                   `yaml:"region,omitempty"`
 	SignalRelay    SignalRelayConfig        `yaml:"signal_relay,omitempty"`
 	Solana         SolanaConfig             `yaml:"solana"`
+	P2P            P2PConfig                `yaml:"p2p"`
 	Domain         string                   `yaml:"domain,omitempty"`
 	// LogLevel is deprecated
 	LogLevel string        `yaml:"log_level,omitempty"`
@@ -80,6 +81,11 @@ type SolanaConfig struct {
 	RegistryAuthority string `yaml:"registry_authority"`
 	EphemeralHostHTTP string `yaml:"ephemeral_host_http"`
 	EphemeralHostWS   string `yaml:"ephemeral_host_ws"`
+}
+
+type P2PConfig struct {
+	PeerListenPort int    `yaml:"peer_listen_port"`
+	DatabaseName   string `yaml:"database_name"`
 }
 
 type RTCConfig struct {
@@ -568,8 +574,11 @@ func (conf *Config) ValidateKeys() error {
 		return errors.New("empty solana.ephemeral_host_http")
 	case conf.Solana.EphemeralHostWS == "":
 		return errors.New("empty solana.ephemeral_host_ws")
+	case conf.P2P.PeerListenPort <= 0:
+		return errors.New("incorrect PeerListenPort")
+	case conf.P2P.DatabaseName == "":
+		return errors.New("incorrect DatabaseName")
 	}
-
 	return nil
 }
 
