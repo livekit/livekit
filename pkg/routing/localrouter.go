@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	pubsub "github.com/dTelecom/pubsub-solana"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
+	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -42,13 +42,13 @@ type LocalRouter struct {
 	onNewParticipant NewParticipantCallback
 	onRTCMessage     RTCMessageCallback
 
-	pubSub              *pubsub.PubSub
+	db                  *p2p_database.DB
 	routerCommunicators map[livekit.RoomKey]*p2p.RouterCommunicatorImpl
 }
 
-func NewLocalRouter(currentNode LocalNode, signalClient SignalClient, pubSub *pubsub.PubSub) *LocalRouter {
+func NewLocalRouter(currentNode LocalNode, signalClient SignalClient, db *p2p_database.DB) *LocalRouter {
 	return &LocalRouter{
-		pubSub:              pubSub,
+		db:                  db,
 		currentNode:         currentNode,
 		signalClient:        signalClient,
 		requestChannels:     make(map[string]*MessageChannel),
@@ -109,7 +109,7 @@ func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
 func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomKey livekit.RoomKey, pi ParticipantInit) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error) {
 
 	if _, ok := r.routerCommunicators[roomKey]; !ok {
-		r.routerCommunicators[roomKey] = p2p.NewRouterCommunicatorImpl(roomKey, r.pubSub, r.writeFromP2P)
+		r.routerCommunicators[roomKey] = p2p.NewRouterCommunicatorImpl(roomKey, r.db, r.writeFromP2P)
 	}
 
 	return r.StartParticipantSignalWithNodeID(ctx, roomKey, pi, livekit.NodeID(r.currentNode.Id))

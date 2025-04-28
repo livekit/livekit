@@ -2,9 +2,9 @@ package service
 
 import (
 	"fmt"
+	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/olekukonko/tablewriter"
 	"net/http"
-	p2p_database "github.com/dTelecom/p2p-realtime-database"
 )
 
 type MainDebugHandler struct {

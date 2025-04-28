@@ -5,12 +5,8 @@ package service
 
 import (
 	"context"
-	"fmt"
-	"time"
 
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
-	pubsub "github.com/dTelecom/pubsub-solana"
-	"github.com/gagliardetto/solana-go"
 	"github.com/google/wire"
 	"github.com/inconshreveable/go-vhost"
 	"github.com/livekit/protocol/auth"
@@ -37,6 +33,8 @@ import (
 func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
 	wire.Build(
 		getNodeID,
+		CreateNodeProvider,
+		CreateMainDatabaseP2P,
 		createRedisClient,
 		createStore,
 		wire.Bind(new(ServiceStore), new(ObjectStore)),
@@ -75,33 +73,21 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		utils.NewDefaultTimedVersionGenerator,
 		createClientProvider,
 		createGeoIP,
-		CreateNodeProvider,
 		createRelevantNodesHandler,
-		newPubSub,
-		CreateMainDatabaseP2P,
 		createMainDebugHandler,
 		NewLivekitServer,
 	)
 	return &LivekitServer{}, nil
 }
 
-func GetDatabaseConfiguration(conf *config.Config) p2p_database.Config {
-	return p2p_database.Config{
+func CreateMainDatabaseP2P(conf *config.Config, nodeProvider *NodeProvider) (*p2p_database.DB, error) {
+	p2pConf := p2p_database.Config{
 		DisableGater:     false,
 		WalletPrivateKey: conf.Solana.WalletPrivateKey,
 		PeerListenPort:   conf.P2P.PeerListenPort,
 		DatabaseName:     conf.P2P.DatabaseName,
+		GetNodes:         nodeProvider.GetNodes,
 	}
-}
-
-func CreateMainDatabaseP2P(conf *config.Config, nodeProvider *NodeProvider) (*p2p_database.DB, error) {
-	p2pConf := p2p_database.Config{
-			DisableGater:     false,
-			WalletPrivateKey: conf.Solana.WalletPrivateKey,
-			PeerListenPort:   conf.P2P.PeerListenPort,
-			DatabaseName:     conf.P2P.DatabaseName,
-			GetNodes: nodeProvider.GetNodes,
-		}
 	adaptedLogger := p2p_database.NewLivekitLoggerAdapter(logger.GetLogger())
 	db, err := p2p_database.Connect(context.Background(), p2pConf, adaptedLogger)
 	if err != nil {
@@ -161,10 +147,10 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 }
 
 func createStore(
-	pubSub *pubsub.PubSub,
+	db *p2p_database.DB,
 	nodeID livekit.NodeID,
 ) ObjectStore {
-	return NewLocalStore(nodeID, pubSub)
+	return NewLocalStore(nodeID, db)
 }
 
 func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
@@ -208,35 +194,4 @@ func getSignalRelayConfig(config *config.Config) config.SignalRelayConfig {
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler, TLSMuxer *vhost.TLSMuxer, certManager *autocert.Manager) (*turn.Server, error) {
 	return NewTurnServer(conf, authHandler, false, TLSMuxer, certManager)
-}
-
-func newPubSub(conf *config.Config, nodeProvider *NodeProvider) (*pubsub.PubSub, error) {
-	ctx := context.Background()
-
-	pubSub := pubsub.New(logger.GetLogger(), conf.Solana.NetworkHostHTTP, conf.Solana.NetworkHostWS, conf.Solana.EphemeralHostHTTP, conf.Solana.EphemeralHostWS, conf.Solana.WalletPrivateKey)
-
-	go func() {
-		var nodesMap map[string]Node
-		for len(nodesMap) == 0 {
-			time.Sleep(time.Second)
-			var err error
-			nodesMap, err = nodeProvider.List(ctx)
-			if err != nil {
-				fmt.Printf("cannot list nodes: %v\n", err)
-			} else if len(nodesMap) > 0 {
-				break
-			}
-		}
-
-		nodes := make([]solana.PublicKey, 0, len(nodesMap))
-		for nodeID := range nodesMap {
-			nodes = append(nodes, solana.MustPublicKeyFromBase58(nodeID))
-		}
-
-		if err := pubSub.Start(ctx, nodes); err != nil {
-			panic(err)
-		}
-	}()
-
-	return pubSub, nil
 }

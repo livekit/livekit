@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"encoding/binary"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -638,7 +638,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 		}
 	})
 
-	roomCommunicator.OnMessage(func(message []byte, fromPeerId string, eventId string) {
+	roomCommunicator.OnMessage(func(message interface{}, fromPeerId string, eventId string) {
 		replyTo, signal, err := unpackSignalPeerMessage(message)
 		if err != nil {
 			logger.Errorw("Unmarshal signal peer message", err)
@@ -1065,28 +1065,42 @@ func getConnQualitiesPayloadForRelay(room *rtc.Room, connQualities map[livekit.P
 	}
 }
 
-func packSignalPeerMessage(replyTo string, signal []byte) []byte {
-	buffer := make([]byte, 0, 2+len(replyTo)+len(signal))
-	buffer = binary.LittleEndian.AppendUint16(buffer, uint16(len(replyTo)))
-	buffer = append(buffer, []byte(replyTo)...)
-	buffer = append(buffer, signal...)
-	return buffer
+func packSignalPeerMessage(replyTo string, signal []byte) interface{} {
+	return &signalPeerMessage{
+		ReplyTo: replyTo,
+		Signal:  base64.StdEncoding.EncodeToString(signal),
+	}
 }
 
-func unpackSignalPeerMessage(message []byte) (replyTo string, signal []byte, err error) {
-	if len(message) < 2 {
-		err = errors.New("message is too small")
+func unpackSignalPeerMessage(message interface{}) (replyTo string, signal []byte, err error) {
+	messageMap, ok := message.(map[string]interface{})
+	if !ok {
+		err = errors.New("cannot cast")
 		return
 	}
 
-	replyToLen, message := binary.LittleEndian.Uint16(message[:2]), message[2:]
-
-	if len(message) < int(replyToLen) {
-		err = errors.New("message is incorrect")
+	replyToValue, ok := messageMap["replyTo"]
+	if !ok {
+		err = errors.New("ReplyTo undefined")
+		return
+	}
+	replyTo, ok = replyToValue.(string)
+	if !ok {
+		err = errors.New("cannot cast ReplyTo to string")
 		return
 	}
 
-	replyTo, signal = string(message[:replyToLen]), message[replyToLen:]
+	signalBase64Value, ok := messageMap["signal"]
+	if !ok {
+		err = errors.New("Signal undefined")
+		return
+	}
+	signalBase64, ok := signalBase64Value.(string)
+	if !ok {
+		err = errors.New("cannot cast Signal to string")
+		return
+	}
+	signal, err = base64.StdEncoding.DecodeString(signalBase64)
 
 	return
 }

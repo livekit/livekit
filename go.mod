@@ -12,7 +12,6 @@ require (
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.14.0
 	github.com/dTelecom/p2p-realtime-database v1.0.30
-	github.com/dTelecom/pubsub-solana v1.0.4-0.20250410195036-9d216364985a
 	github.com/elliotchance/orderedmap/v2 v2.2.0
 	github.com/florianl/go-tc v0.4.2
 	github.com/frostbyte73/core v0.0.5

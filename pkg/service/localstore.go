@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	pubsub "github.com/dTelecom/pubsub-solana"
+	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/pkg/errors"
 
 	"github.com/thoas/go-funk"
@@ -19,7 +19,7 @@ import (
 // encapsulates CRUD operations for room settings
 type LocalStore struct {
 	currentNodeId livekit.NodeID
-	pubSub        *pubsub.PubSub
+	db            *p2p_database.DB
 
 	// map of roomKey => room
 	rooms        map[livekit.RoomKey]*livekit.Room
@@ -34,11 +34,11 @@ type LocalStore struct {
 
 func NewLocalStore(
 	currentNodeId livekit.NodeID,
-	pubSub *pubsub.PubSub,
+	db *p2p_database.DB,
 ) *LocalStore {
 	return &LocalStore{
 		currentNodeId: currentNodeId,
-		pubSub:        pubSub,
+		db:            db,
 
 		rooms:             make(map[livekit.RoomKey]*livekit.Room),
 		roomInternal:      make(map[livekit.RoomKey]*livekit.RoomInternal),
@@ -58,7 +58,7 @@ func (s *LocalStore) StoreRoom(_ context.Context, room *livekit.Room, roomKey li
 	s.rooms[roomKey] = room
 	s.roomInternal[roomKey] = internal
 	if _, ok := s.roomCommunicators[roomKey]; !ok {
-		if roomCommunicator, err := p2p.NewRoomCommunicatorImpl(room, s.pubSub); err != nil {
+		if roomCommunicator, err := p2p.NewRoomCommunicatorImpl(room, s.db); err != nil {
 			return errors.Wrap(err, "cannot create room communicator")
 		} else {
 			s.roomCommunicators[roomKey] = roomCommunicator

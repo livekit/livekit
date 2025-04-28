@@ -8,10 +8,7 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"github.com/dTelecom/p2p-realtime-database"
-	"github.com/dTelecom/pubsub-solana"
-	"github.com/gagliardetto/solana-go"
 	"github.com/inconshreveable/go-vhost"
 	"github.com/livekit/livekit-server"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
@@ -31,7 +28,6 @@ import (
 	"github.com/pion/turn/v2"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/acme/autocert"
-	"time"
 )
 
 import (
@@ -59,12 +55,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	nodeProvider := CreateNodeProvider(reader, conf, currentNode)
-	pubSub, err := newPubSub(conf, nodeProvider)
+	db, err := CreateMainDatabaseP2P(conf, nodeProvider)
 	if err != nil {
 		return nil, err
 	}
-	router := routing.CreateRouter(conf, universalClient, currentNode, signalClient, pubSub)
-	objectStore := createStore(pubSub, nodeID)
+	router := routing.CreateRouter(conf, universalClient, currentNode, signalClient, db)
+	objectStore := createStore(db, nodeID)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
 		return nil, err
@@ -128,10 +124,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	clientProvider := createClientProvider(conf)
 	relevantNodesHandler := createRelevantNodesHandler(nodeProvider)
-	db, err := CreateMainDatabaseP2P(conf, nodeProvider)
-	if err != nil {
-		return nil, err
-	}
 	mainDebugHandler := createMainDebugHandler(nodeProvider, clientProvider, db)
 	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, nodeProvider, relevantNodesHandler, mainDebugHandler, tlsMuxer, manager)
 	if err != nil {
@@ -141,15 +133,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 }
 
 // wire.go:
-
-func GetDatabaseConfiguration(conf *config.Config) p2p_database.Config {
-	return p2p_database.Config{
-		DisableGater:     false,
-		WalletPrivateKey: conf.Solana.WalletPrivateKey,
-		PeerListenPort:   conf.P2P.PeerListenPort,
-		DatabaseName:     conf.P2P.DatabaseName,
-	}
-}
 
 func CreateMainDatabaseP2P(conf *config.Config, nodeProvider *NodeProvider) (*p2p_database.DB, error) {
 	p2pConf := p2p_database.Config{
@@ -218,10 +201,10 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 }
 
 func createStore(
-	pubSub *pubsub_solana.PubSub,
+	db *p2p_database.DB,
 	nodeID livekit2.NodeID,
 ) ObjectStore {
-	return NewLocalStore(nodeID, pubSub)
+	return NewLocalStore(nodeID, db)
 }
 
 func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
@@ -265,35 +248,4 @@ func getSignalRelayConfig(config2 *config.Config) config.SignalRelayConfig {
 
 func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler, TLSMuxer *vhost.TLSMuxer, certManager *autocert.Manager) (*turn.Server, error) {
 	return NewTurnServer(conf, authHandler, false, TLSMuxer, certManager)
-}
-
-func newPubSub(conf *config.Config, nodeProvider *NodeProvider) (*pubsub_solana.PubSub, error) {
-	ctx := context.Background()
-
-	pubSub := pubsub_solana.New(logger.GetLogger(), conf.Solana.NetworkHostHTTP, conf.Solana.NetworkHostWS, conf.Solana.EphemeralHostHTTP, conf.Solana.EphemeralHostWS, conf.Solana.WalletPrivateKey)
-
-	go func() {
-		var nodesMap map[string]Node
-		for len(nodesMap) == 0 {
-			time.Sleep(time.Second)
-			var err error
-			nodesMap, err = nodeProvider.List(ctx)
-			if err != nil {
-				fmt.Printf("cannot list nodes: %v\n", err)
-			} else if len(nodesMap) > 0 {
-				break
-			}
-		}
-
-		nodes := make([]solana.PublicKey, 0, len(nodesMap))
-		for nodeID := range nodesMap {
-			nodes = append(nodes, solana.MustPublicKeyFromBase58(nodeID))
-		}
-
-		if err := pubSub.Start(ctx, nodes); err != nil {
-			panic(err)
-		}
-	}()
-
-	return pubSub, nil
 }
