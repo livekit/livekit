@@ -47,7 +47,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		routing.CreateRouter,
 		getRoomConf,
 		config.DefaultAPIConfig,
-		CreateMainDatabaseP2P,
 		wire.Bind(new(routing.MessageRouter), new(routing.Router)),
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
 		telemetry.NewAnalyticsService,
@@ -78,8 +77,9 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createGeoIP,
 		CreateNodeProvider,
 		createRelevantNodesHandler,
-		createMainDebugHandler,
 		newPubSub,
+		CreateMainDatabaseP2P,
+		createMainDebugHandler,
 		NewLivekitServer,
 	)
 	return &LivekitServer{}, nil
@@ -94,12 +94,13 @@ func GetDatabaseConfiguration(conf *config.Config) p2p_database.Config {
 	}
 }
 
-func CreateMainDatabaseP2P(conf *config.Config) (*p2p_database.DB, error) {
+func CreateMainDatabaseP2P(conf *config.Config, nodeProvider *NodeProvider) (*p2p_database.DB, error) {
 	p2pConf := p2p_database.Config{
 			DisableGater:     false,
 			WalletPrivateKey: conf.Solana.WalletPrivateKey,
 			PeerListenPort:   conf.P2P.PeerListenPort,
 			DatabaseName:     conf.P2P.DatabaseName,
+			GetNodes: nodeProvider.GetNodes,
 		}
 	adaptedLogger := p2p_database.NewLivekitLoggerAdapter(logger.GetLogger())
 	db, err := p2p_database.Connect(context.Background(), p2pConf, adaptedLogger)
@@ -114,7 +115,7 @@ func createRelevantNodesHandler(nodeProvider *NodeProvider) *RelevantNodesHandle
 }
 
 func createMainDebugHandler(nodeProvider *NodeProvider, clientProvider *ClientProvider, db *p2p_database.DB) *MainDebugHandler {
-	return NewMainDebugHandler(nodeProvider, clientProvider)
+	return NewMainDebugHandler(nodeProvider, clientProvider, db)
 }
 
 func createGeoIP() (*geoip2.Reader, error) {

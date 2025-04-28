@@ -94,6 +94,20 @@ func (p *NodeProvider) List(ctx context.Context) (map[string]Node, error) {
 	return nodes, nil
 }
 
+func (p *NodeProvider) GetNodes() map[string]string {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	nodes := make(map[string]string)
+	for k, v := range p.nodeValues {
+		if v.isExpired() == false {
+			nodes[k] = v.Node.IP
+		}
+	}
+
+	return nodes
+}
+
 func (p *NodeProvider) FetchRelevant(ctx context.Context, clientIP string) (Node, error) {
 	ip := net.ParseIP(clientIP)
 	city, err := p.geo.City(ip)

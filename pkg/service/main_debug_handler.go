@@ -4,17 +4,20 @@ import (
 	"fmt"
 	"github.com/olekukonko/tablewriter"
 	"net/http"
+	p2p_database "github.com/dTelecom/p2p-realtime-database"
 )
 
 type MainDebugHandler struct {
 	nodeProvider   *NodeProvider
 	clientProvider *ClientProvider
+	db             *p2p_database.DB
 }
 
-func NewMainDebugHandler(nodeProvider *NodeProvider, clientProvider *ClientProvider) *MainDebugHandler {
+func NewMainDebugHandler(nodeProvider *NodeProvider, clientProvider *ClientProvider, db *p2p_database.DB) *MainDebugHandler {
 	return &MainDebugHandler{
 		nodeProvider:   nodeProvider,
 		clientProvider: clientProvider,
+		db:             db,
 	}
 }
 
@@ -94,6 +97,31 @@ func (h *MainDebugHandler) clientHTTPHandler(w http.ResponseWriter, r *http.Requ
 			address,
 			fmt.Sprintf("%d", client.Until),
 			fmt.Sprintf("%d", client.Limit),
+		})
+	}
+
+	table.Render()
+	return
+}
+
+func (h *MainDebugHandler) peerHTTPHandler(w http.ResponseWriter, r *http.Request) {
+
+	table := tablewriter.NewWriter(w)
+	table.SetRowLine(true)
+	table.SetAutoWrapText(false)
+	table.SetHeader([]string{
+		"ID",
+		"Remote address",
+	})
+	table.SetColumnAlignment([]int{
+		tablewriter.ALIGN_CENTER,
+		tablewriter.ALIGN_CENTER,
+	})
+
+	for _, node := range h.db.ConnectedPeers() {
+		table.Append([]string{
+			node.ID.String(),
+			node.Addrs[0].String(),
 		})
 	}
 
