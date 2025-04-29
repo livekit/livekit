@@ -88,7 +88,7 @@ func (c *clientObject) IndexGet(index tengo.Object) (res tengo.Object, err error
 	case "browser":
 		return &tengo.String{Value: strings.ToLower(c.info.Browser)}, nil
 	case "browser_version":
-		return &tengo.String{Value: c.info.BrowserVersion}, nil
+		return &ruleSdkVersion{sdkVersion: c.info.BrowserVersion}, nil
 	case "address":
 		return &tengo.String{Value: c.info.Address}, nil
 	}

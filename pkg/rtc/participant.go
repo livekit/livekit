@@ -3183,6 +3183,7 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 		subscribeCodecs = append(subscribeCodecs, c)
 	}
 	p.enabledSubscribeCodecs = subscribeCodecs
+	p.params.Logger.Debugw("setup enabled codecs", "publish", p.enabledPublishCodecs, "subscribe", p.enabledSubscribeCodecs, "disabled", disabledCodecs)
 }
 
 func (p *ParticipantImpl) GetEnabledPublishCodecs() []*livekit.Codec {
