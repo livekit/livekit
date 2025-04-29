@@ -23,7 +23,7 @@ func TestDataChannelWriter(t *testing.T) {
 	require.Equal(t, 2000, n)
 
 	t1 := time.Now()
-	mockDC.SetNextWriteCompleteAt(t0.Add(time.Second))
+	mockDC.SetNextWriteCompleteAt(t0.Add(time.Second * 3 / 2))
 	n, err = w.Write(buf[:10])
 	require.NoError(t, err)
 	require.Equal(t, 10, n)
