@@ -35,7 +35,18 @@ var StaticConfigurations = []ConfigurationItem{
 				},
 			},
 		},
-		Merge: false,
+		Merge: true,
+	},
+	{
+		Match: &ScriptMatch{Expr: `c.browser == "safari" && c.browser_version > "18.3"`},
+		Configuration: &livekit.ClientConfiguration{
+			DisabledCodecs: &livekit.DisabledCodecs{
+				Publish: []*livekit.Codec{
+					{Mime: mime.MimeTypeVP9.String()},
+				},
+			},
+		},
+		Merge: true,
 	},
 	{
 		Match: &ScriptMatch{Expr: `(c.device_model == "xiaomi 2201117ti" && c.os == "android") ||
