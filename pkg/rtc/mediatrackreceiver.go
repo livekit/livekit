@@ -38,6 +38,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	sutils "github.com/livekit/livekit-server/pkg/utils"
 )
 
 const (
@@ -780,7 +781,9 @@ func (t *MediaTrackReceiver) UpdateAudioTrack(update *livekit.UpdateLocalAudioTr
 	t.lock.Lock()
 	trackInfo := t.TrackInfo()
 	clonedInfo := utils.CloneProto(trackInfo)
-	clonedInfo.AudioFeatures = update.Features
+
+	clonedInfo.AudioFeatures = sutils.DedupeSlice(update.Features)
+
 	clonedInfo.Stereo = false
 	clonedInfo.DisableDtx = false
 	for _, feature := range update.Features {
@@ -791,6 +794,7 @@ func (t *MediaTrackReceiver) UpdateAudioTrack(update *livekit.UpdateLocalAudioTr
 			clonedInfo.DisableDtx = true
 		}
 	}
+
 	if proto.Equal(trackInfo, clonedInfo) {
 		t.lock.Unlock()
 		return
