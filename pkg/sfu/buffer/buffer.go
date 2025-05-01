@@ -393,7 +393,11 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 	if !b.bound {
 		packet := make([]byte, len(pkt))
 		copy(packet, pkt)
-		b.pPackets = append(b.pPackets, pendingPacket{
+		startIdx := 0
+		if len(b.pPackets) > max(b.maxVideoPkts, b.maxAudioPkts) {
+			startIdx = 1
+		}
+		b.pPackets = append(b.pPackets[startIdx:], pendingPacket{
 			packet:      packet,
 			arrivalTime: now,
 		})
