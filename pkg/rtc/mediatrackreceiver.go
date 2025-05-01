@@ -782,7 +782,7 @@ func (t *MediaTrackReceiver) UpdateAudioTrack(update *livekit.UpdateLocalAudioTr
 	trackInfo := t.TrackInfo()
 	clonedInfo := utils.CloneProto(trackInfo)
 
-	clonedInfo.AudioFeatures = sutils.DedupeSlice[livekit.AudioTrackFeature](update.Features)
+	clonedInfo.AudioFeatures = sutils.DedupeSlice(update.Features)
 
 	clonedInfo.Stereo = false
 	clonedInfo.DisableDtx = false
