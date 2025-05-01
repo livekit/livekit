@@ -393,10 +393,17 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 	if !b.bound {
 		packet := make([]byte, len(pkt))
 		copy(packet, pkt)
-		b.pPackets = append(b.pPackets, pendingPacket{
+
+		startIdx := 0
+		overflow := len(b.pPackets) - max(b.maxVideoPkts, b.maxAudioPkts)
+		if overflow > 0 {
+			startIdx = overflow
+		}
+		b.pPackets = append(b.pPackets[startIdx:], pendingPacket{
 			packet:      packet,
 			arrivalTime: now,
 		})
+
 		b.readCond.Broadcast()
 		b.Unlock()
 		return
