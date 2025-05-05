@@ -474,7 +474,11 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 				false,
 			)
 
-			p.GetLogger().Infow("participant active", connectionDetailsFields(infos)...)
+			fields := append(
+				connectionDetailsFields(infos),
+				"clientInfo", logger.Proto(p.GetClientInfo()),
+			)
+			p.GetLogger().Infow("participant active", fields...)
 		} else if state == livekit.ParticipantInfo_DISCONNECTED {
 			// remove participant from room
 			// participant should already be closed and have a close reason, so NONE is fine here
@@ -706,8 +710,10 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 	r.protoProxy.MarkDirty(immediateChange)
 
 	if !p.HasConnected() {
-		fields := append(connectionDetailsFields(p.GetICEConnectionInfo()),
+		fields := append(
+			connectionDetailsFields(p.GetICEConnectionInfo()),
 			"reason", reason.String(),
+			"clientInfo", logger.Proto(p.GetClientInfo()),
 		)
 		p.GetLogger().Infow("removing participant without connection", fields...)
 	}
