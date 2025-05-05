@@ -481,8 +481,7 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 			p.GetLogger().Infow("participant active", fields...)
 		} else if state == livekit.ParticipantInfo_DISCONNECTED {
 			// remove participant from room
-			// participant should already be closed and have a close reason, so NONE is fine here
-			go r.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonNone)
+			go r.RemoveParticipant(p.Identity(), p.ID(), p.CloseReason())
 		}
 	})
 	participant.OnSubscriberReady(func(p types.LocalParticipant) {
