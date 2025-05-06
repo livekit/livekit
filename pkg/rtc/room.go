@@ -476,7 +476,7 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 
 			fields := append(
 				connectionDetailsFields(infos),
-				"clientInfo", logger.Proto(p.GetClientInfo()),
+				"clientInfo", logger.Proto(sutils.ClientInfoWithoutAddress(p.GetClientInfo())),
 			)
 			p.GetLogger().Infow("participant active", fields...)
 		} else if state == livekit.ParticipantInfo_DISCONNECTED {
@@ -712,7 +712,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 		fields := append(
 			connectionDetailsFields(p.GetICEConnectionInfo()),
 			"reason", reason.String(),
-			"clientInfo", logger.Proto(p.GetClientInfo()),
+			"clientInfo", logger.Proto(sutils.ClientInfoWithoutAddress(p.GetClientInfo())),
 		)
 		p.GetLogger().Infow("removing participant without connection", fields...)
 	}
