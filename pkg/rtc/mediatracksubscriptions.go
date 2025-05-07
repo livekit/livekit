@@ -333,7 +333,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	downTrack.SetTransceiver(transceiver)
 
 	downTrack.OnCloseHandler(func(isExpectedToResume bool) {
-		t.downTrackClosed(sub, subTrack, isExpectedToResume)
+		t.downTrackClosed(subscriberID, sub, subTrack, isExpectedToResume)
 	})
 
 	t.subscribedTracksMu.Lock()
@@ -443,6 +443,7 @@ func (t *MediaTrackSubscriptions) DebugInfo() []map[string]interface{} {
 }
 
 func (t *MediaTrackSubscriptions) downTrackClosed(
+	subscriberID livekit.ParticipantID,
 	sub types.LocalParticipant,
 	subTrack types.SubscribedTrack,
 	isExpectedToResume bool,
@@ -460,7 +461,7 @@ func (t *MediaTrackSubscriptions) downTrackClosed(
 
 	go func() {
 		t.subscribedTracksMu.Lock()
-		delete(t.subscribedTracks, sub.ID())
+		delete(t.subscribedTracks, subscriberID)
 		t.subscribedTracksMu.Unlock()
 		subTrack.Close(isExpectedToResume)
 	}()

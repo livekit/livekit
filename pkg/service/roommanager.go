@@ -444,17 +444,14 @@ func (r *RoomManager) StartSession(
 		AdaptiveStream:          pi.AdaptiveStream,
 		AllowTCPFallback:        allowFallback,
 		TURNSEnabled:            r.config.IsTURNSEnabled(),
-		GetParticipantInfo: func(pID livekit.ParticipantID) *livekit.ParticipantInfo {
-			if p := room.GetParticipantByID(pID); p != nil {
-				return p.ToProto()
-			}
-			return nil
+		ParticipantHelper: &roomManagerParticipantHelper{
+			room:                     room,
+			codecRegressionThreshold: r.config.Video.CodecRegressionThreshold,
 		},
 		ReconnectOnPublicationError:  reconnectOnPublicationError,
 		ReconnectOnSubscriptionError: reconnectOnSubscriptionError,
 		ReconnectOnDataChannelError:  reconnectOnDataChannelError,
 		VersionGenerator:             r.versionGenerator,
-		TrackResolver:                room.ResolveMediaTrackForSubscriber,
 		SubscriberAllowPause:         subscriberAllowPause,
 		SubscriptionLimitAudio:       r.config.Limit.SubscriptionLimitAudio,
 		SubscriptionLimitVideo:       r.config.Limit.SubscriptionLimitVideo,
@@ -466,9 +463,6 @@ func (r *RoomManager) StartSession(
 		DataChannelMaxBufferedAmount: r.config.RTC.DataChannelMaxBufferedAmount,
 		DatachannelSlowThreshold:     r.config.RTC.DatachannelSlowThreshold,
 		FireOnTrackBySdp:             true,
-		ShouldRegressCodec: func() bool {
-			return r.config.Video.CodecRegressionThreshold == 0 || room.GetParticipantCount() < r.config.Video.CodecRegressionThreshold
-		},
 	})
 	if err != nil {
 		return err
@@ -778,6 +772,10 @@ func (r *RoomManager) ForwardParticipant(ctx context.Context, req *livekit.Forwa
 	return nil, errors.New("not implemented")
 }
 
+func (r *RoomManager) MoveParticipant(ctx context.Context, req *livekit.MoveParticipantRequest) (*livekit.MoveParticipantResponse, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (r *RoomManager) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomRequest) (*livekit.DeleteRoomResponse, error) {
 	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
 	if room == nil {
@@ -1014,4 +1012,32 @@ func iceServerForStunServers(servers []string) *livekit.ICEServer {
 		iceServer.Urls = append(iceServer.Urls, fmt.Sprintf("stun:%s", stunServer))
 	}
 	return iceServer
+}
+
+type roomManagerParticipantHelper struct {
+	room                     *rtc.Room
+	codecRegressionThreshold int
+}
+
+func (h *roomManagerParticipantHelper) GetParticipantInfo(pID livekit.ParticipantID) *livekit.ParticipantInfo {
+	if p := h.room.GetParticipantByID(pID); p != nil {
+		return p.ToProto()
+	}
+	return nil
+}
+
+func (h *roomManagerParticipantHelper) GetRegionSettings(ip string) *livekit.RegionSettings {
+	return nil
+}
+
+func (h *roomManagerParticipantHelper) GetSubscriberForwarderState(lp types.LocalParticipant) (map[livekit.TrackID]*livekit.RTPForwarderState, error) {
+	return nil, nil
+}
+
+func (h *roomManagerParticipantHelper) ResolveMediaTrack(lp types.LocalParticipant, trackID livekit.TrackID) types.MediaResolverResult {
+	return h.room.ResolveMediaTrackForSubscriber(lp, trackID)
+}
+
+func (h *roomManagerParticipantHelper) ShouldRegressCodec() bool {
+	return h.codecRegressionThreshold == 0 || h.room.GetParticipantCount() < h.codecRegressionThreshold
 }

@@ -256,8 +256,6 @@ type PCTransport struct {
 
 type TransportParams struct {
 	Handler                      transport.Handler
-	ParticipantID                livekit.ParticipantID
-	ParticipantIdentity          livekit.ParticipantIdentity
 	ProtocolVersion              types.ProtocolVersion
 	Config                       *WebRTCConfig
 	Twcc                         *lktwcc.Responder

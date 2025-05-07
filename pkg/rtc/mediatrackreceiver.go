@@ -121,7 +121,7 @@ func (r *simulcastReceiver) IsRegressed() bool {
 type MediaTrackReceiverParams struct {
 	MediaTrack            types.MediaTrack
 	IsRelayed             bool
-	ParticipantID         livekit.ParticipantID
+	ParticipantID         func() livekit.ParticipantID
 	ParticipantIdentity   livekit.ParticipantIdentity
 	ParticipantVersion    uint32
 	ReceiverConfig        ReceiverConfig
@@ -480,7 +480,7 @@ func (t *MediaTrackReceiver) Stream() string {
 }
 
 func (t *MediaTrackReceiver) PublisherID() livekit.ParticipantID {
-	return t.params.ParticipantID
+	return t.params.ParticipantID()
 }
 
 func (t *MediaTrackReceiver) PublisherIdentity() livekit.ParticipantIdentity {
@@ -594,6 +594,7 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 		Logger:         tLogger,
 		DisableRed:     t.TrackInfo().GetDisableRed() || !t.params.AudioConfig.ActiveREDEncoding,
 	})
+	subID := sub.ID()
 	subTrack, err := t.MediaTrackSubscriptions.AddSubscriber(sub, wr)
 
 	// media track could have been closed while adding subscription
@@ -607,8 +608,8 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 	t.lock.RUnlock()
 
 	if remove {
-		t.params.Logger.Debugw("removing susbcriber on a not-open track", "subscriberID", sub.ID(), "isExpectedToResume", isExpectedToResume)
-		_ = t.MediaTrackSubscriptions.RemoveSubscriber(sub.ID(), isExpectedToResume)
+		t.params.Logger.Debugw("removing susbcriber on a not-open track", "subscriberID", subID, "isExpectedToResume", isExpectedToResume)
+		_ = t.MediaTrackSubscriptions.RemoveSubscriber(subID, isExpectedToResume)
 		return nil, ErrNotOpen
 	}
 

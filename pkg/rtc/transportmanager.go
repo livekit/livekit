@@ -83,8 +83,6 @@ func (h TransportManagerPublisherTransportHandler) OnAnswer(sd webrtc.SessionDes
 // -------------------------------
 
 type TransportManagerParams struct {
-	Identity                     livekit.ParticipantIdentity
-	SID                          livekit.ParticipantID
 	SubscriberAsPrimary          bool
 	Config                       *WebRTCConfig
 	Twcc                         *twcc.Responder
@@ -151,8 +149,6 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 
 	lgr := LoggerWithPCTarget(params.Logger, livekit.SignalTarget_PUBLISHER)
 	publisher, err := NewPCTransport(TransportParams{
-		ParticipantID:                params.SID,
-		ParticipantIdentity:          params.Identity,
 		ProtocolVersion:              params.ProtocolVersion,
 		Config:                       params.Config,
 		Twcc:                         params.Twcc,
@@ -176,8 +172,6 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 
 	lgr = LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER)
 	subscriber, err := NewPCTransport(TransportParams{
-		ParticipantID:            params.SID,
-		ParticipantIdentity:      params.Identity,
 		ProtocolVersion:          params.ProtocolVersion,
 		Config:                   params.Config,
 		DirectionConfig:          params.Config.Subscriber,
