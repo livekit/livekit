@@ -778,6 +778,10 @@ func (r *RoomManager) ForwardParticipant(ctx context.Context, req *livekit.Forwa
 	return nil, errors.New("not implemented")
 }
 
+func (r *RoomManager) MoveParticipant(ctx context.Context, req *livekit.MoveParticipantRequest) (*livekit.MoveParticipantResponse, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (r *RoomManager) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomRequest) (*livekit.DeleteRoomResponse, error) {
 	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
 	if room == nil {
