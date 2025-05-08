@@ -111,7 +111,7 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 				isValid = false
 			}
 		}
-		if pi.Permission != nil && pi.Permission.Hidden && pi.Sid != string(p.params.SID) {
+		if pi.Permission != nil && pi.Permission.Hidden && pi.Sid != string(p.ID()) {
 			p.params.Logger.Debugw("skipping hidden participant update", "otherParticipant", pi.Identity)
 			isValid = false
 		}
@@ -209,6 +209,14 @@ func (p *ParticipantImpl) SendRequestResponse(requestResponse *livekit.RequestRe
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_RequestResponse{
 			RequestResponse: requestResponse,
+		},
+	})
+}
+
+func (p *ParticipantImpl) SendRoomMovedResponse(roomMovedResponse *livekit.RoomMovedResponse) error {
+	return p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_RoomMoved{
+			RoomMoved: roomMovedResponse,
 		},
 	})
 }
@@ -377,9 +385,9 @@ func (p *ParticipantImpl) sendLeaveRequest(
 		default:
 			leave.Action = livekit.LeaveRequest_DISCONNECT
 		}
-		if leave.Action != livekit.LeaveRequest_DISCONNECT && p.params.GetRegionSettings != nil {
+		if leave.Action != livekit.LeaveRequest_DISCONNECT {
 			// sending region settings even for RESUME just in case client wants to a full reconnect despite server saying RESUME
-			leave.Regions = p.params.GetRegionSettings(p.params.ClientInfo.Address)
+			leave.Regions = p.helper().GetRegionSettings(p.params.ClientInfo.Address)
 		}
 	} else {
 		if !sendOnlyIfSupportingLeaveRequestWithAction {

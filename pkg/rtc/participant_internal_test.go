@@ -705,6 +705,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		Logger:                 LoggerWithParticipant(logger.GetLogger(), identity, sid, false),
 		Telemetry:              &telemetryfakes.FakeTelemetryService{},
 		VersionGenerator:       utils.NewDefaultTimedVersionGenerator(),
+		ParticipantHelper:      &typesfakes.FakeLocalParticipantHelper{},
 	})
 	p.isPublisher.Store(opts.publisher)
 	p.updateState(livekit.ParticipantInfo_ACTIVE)

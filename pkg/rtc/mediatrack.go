@@ -63,7 +63,7 @@ type MediaTrack struct {
 type MediaTrackParams struct {
 	SignalCid             string
 	SdpCid                string
-	ParticipantID         livekit.ParticipantID
+	ParticipantID         func() livekit.ParticipantID
 	ParticipantIdentity   livekit.ParticipantIdentity
 	ParticipantVersion    uint32
 	BufferFactory         *buffer.Factory
@@ -433,7 +433,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 	buff.OnFinalRtpStats(func(stats *livekit.RTPStats) {
 		t.params.Telemetry.TrackPublishRTPStats(
 			context.Background(),
-			t.params.ParticipantID,
+			t.params.ParticipantID(),
 			t.ID(),
 			mimeType,
 			int(layer),
@@ -501,4 +501,8 @@ func (t *MediaTrack) OnTrackSubscribed() {
 func (t *MediaTrack) enableRegression() bool {
 	return t.backupCodecPolicy == livekit.BackupCodecPolicy_REGRESSION ||
 		(t.backupCodecPolicy == livekit.BackupCodecPolicy_PREFER_REGRESSION && t.params.ShouldRegressCodec())
+}
+
+func (t *MediaTrack) Logger() logger.Logger {
+	return t.params.Logger
 }

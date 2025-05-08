@@ -219,7 +219,7 @@ func EnsureSIPCallPermission(ctx context.Context) error {
 	return nil
 }
 
-func EnsureForwardPermission(ctx context.Context, source livekit.RoomName, destination livekit.RoomName) error {
+func EnsureDestRoomPermission(ctx context.Context, source livekit.RoomName, destination livekit.RoomName) error {
 	claims := GetGrants(ctx)
 	if claims == nil || claims.Video == nil {
 		return ErrPermissionDenied

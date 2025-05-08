@@ -227,13 +227,13 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	loggerFields := []any{
 		"participant", pi.Identity,
-		"room", roomName,
 		"remote", false,
 	}
 	if pi.ID != "" {
 		loggerFields = append(loggerFields, "pID", pi.ID)
 	}
-	pLogger := utils.GetLogger(r.Context()).WithValues(loggerFields...)
+	pLogger, loggerResolver := utils.GetLogger(r.Context()).WithValues(loggerFields...).WithDeferredValues()
+	loggerResolver("room", roomName)
 
 	// give it a few attempts to start session
 	var cr connectionResult
@@ -263,7 +263,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	pLogger = pLogger.WithValues("connID", cr.ConnectionID)
 	if !pi.Reconnect && initialResponse.GetJoin() != nil {
 		pi.ID = livekit.ParticipantID(initialResponse.GetJoin().GetParticipant().GetSid())
-		pLogger = pLogger.WithValues("pID", pi.ID)
+		loggerResolver("pID", pi.ID)
 	}
 
 	signalStats := telemetry.NewBytesSignalStats(r.Context(), s.telemetry)
@@ -372,6 +372,9 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					signalStats.ResolveRoom(m.RoomUpdate.GetRoom())
 				case *livekit.SignalResponse_Update:
 					pLogger.Debugw("sending participant update", "participantUpdate", m)
+				case *livekit.SignalResponse_RoomMoved:
+					loggerResolver("room", m.RoomMoved.GetRoom(), "pID", m.RoomMoved.GetParticipant().GetSid())
+					pLogger.Debugw("sending room moved", "roomMoved", m)
 				}
 
 				if count, err := sigConn.WriteResponse(res); err != nil {

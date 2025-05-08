@@ -95,3 +95,7 @@ func (v ProtocolVersion) SupportsRegionsInLeaveRequest() bool {
 func (v ProtocolVersion) SupportsNonErrorSignalResponse() bool {
 	return v > 14
 }
+
+func (v ProtocolVersion) SupportsMoving() bool {
+	return v > 15
+}

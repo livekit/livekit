@@ -35,10 +35,8 @@ import (
 
 func TestMissingAnswerDuringICERestart(t *testing.T) {
 	params := TransportParams{
-		ParticipantID:       "id",
-		ParticipantIdentity: "identity",
-		Config:              &WebRTCConfig{},
-		IsOfferer:           true,
+		Config:    &WebRTCConfig{},
+		IsOfferer: true,
 	}
 
 	paramsA := params
@@ -91,10 +89,8 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 
 func TestNegotiationTiming(t *testing.T) {
 	params := TransportParams{
-		ParticipantID:       "id",
-		ParticipantIdentity: "identity",
-		Config:              &WebRTCConfig{},
-		IsOfferer:           true,
+		Config:    &WebRTCConfig{},
+		IsOfferer: true,
 	}
 
 	paramsA := params
@@ -190,10 +186,8 @@ func TestNegotiationTiming(t *testing.T) {
 
 func TestFirstOfferMissedDuringICERestart(t *testing.T) {
 	params := TransportParams{
-		ParticipantID:       "id",
-		ParticipantIdentity: "identity",
-		Config:              &WebRTCConfig{},
-		IsOfferer:           true,
+		Config:    &WebRTCConfig{},
+		IsOfferer: true,
 	}
 
 	paramsA := params
@@ -264,10 +258,8 @@ func TestFirstOfferMissedDuringICERestart(t *testing.T) {
 
 func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 	params := TransportParams{
-		ParticipantID:       "id",
-		ParticipantIdentity: "identity",
-		Config:              &WebRTCConfig{},
-		IsOfferer:           true,
+		Config:    &WebRTCConfig{},
+		IsOfferer: true,
 	}
 
 	paramsA := params
@@ -343,10 +335,8 @@ func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 
 func TestNegotiationFailed(t *testing.T) {
 	params := TransportParams{
-		ParticipantID:       "id",
-		ParticipantIdentity: "identity",
-		Config:              &WebRTCConfig{},
-		IsOfferer:           true,
+		Config:    &WebRTCConfig{},
+		IsOfferer: true,
 	}
 
 	paramsA := params
@@ -386,9 +376,7 @@ func TestNegotiationFailed(t *testing.T) {
 
 func TestFilteringCandidates(t *testing.T) {
 	params := TransportParams{
-		ParticipantID:       "id",
-		ParticipantIdentity: "identity",
-		Config:              &WebRTCConfig{},
+		Config: &WebRTCConfig{},
 		EnabledCodecs: []*livekit.Codec{
 			{Mime: mime.MimeTypeOpus.String()},
 			{Mime: mime.MimeTypeVP8.String()},

@@ -16,7 +16,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 
@@ -322,12 +321,12 @@ func (s *RoomService) ForwardParticipant(ctx context.Context, req *livekit.Forwa
 
 	roomName := livekit.RoomName(req.Room)
 	AppendLogFields(ctx, "room", roomName, "participant", req.Identity)
-	if err := EnsureForwardPermission(ctx, roomName, livekit.RoomName(req.DestinationRoom)); err != nil {
+	if err := EnsureDestRoomPermission(ctx, roomName, livekit.RoomName(req.DestinationRoom)); err != nil {
 		return nil, twirpAuthError(err)
 	}
 
 	if req.Room == req.DestinationRoom {
-		return nil, twirp.InvalidArgumentError(ErrForwardToSameRoom.Error(), "")
+		return nil, twirp.InvalidArgumentError(ErrDestinationSameAsSourceRoom.Error(), "")
 	}
 
 	res, err := s.participantClient.ForwardParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
@@ -336,7 +335,21 @@ func (s *RoomService) ForwardParticipant(ctx context.Context, req *livekit.Forwa
 }
 
 func (s *RoomService) MoveParticipant(ctx context.Context, req *livekit.MoveParticipantRequest) (*livekit.MoveParticipantResponse, error) {
-	return nil, errors.New("unimplemented")
+	RecordRequest(ctx, req)
+
+	roomName := livekit.RoomName(req.Room)
+	AppendLogFields(ctx, "room", roomName, "participant", req.Identity)
+	if err := EnsureDestRoomPermission(ctx, roomName, livekit.RoomName(req.DestinationRoom)); err != nil {
+		return nil, twirpAuthError(err)
+	}
+
+	if req.Room == req.DestinationRoom {
+		return nil, twirp.InvalidArgumentError(ErrDestinationSameAsSourceRoom.Error(), "")
+	}
+
+	res, err := s.participantClient.MoveParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
+	RecordResponse(ctx, res)
+	return res, err
 }
 
 func redactCreateRoomRequest(req *livekit.CreateRoomRequest) *livekit.CreateRoomRequest {

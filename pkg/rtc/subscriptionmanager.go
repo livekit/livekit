@@ -181,6 +181,23 @@ func (m *SubscriptionManager) UnsubscribeFromTrack(trackID livekit.TrackID) {
 	m.queueReconcile(trackID)
 }
 
+func (m *SubscriptionManager) ClearAllSubscriptions() {
+	m.params.Logger.Debugw("clearing all subscriptions")
+
+	if m.params.UseOneShotSignallingMode {
+		for _, track := range m.GetSubscribedTracks() {
+			m.unsubscribeSynchronous(track.ID())
+		}
+	}
+
+	m.lock.RLock()
+	for _, sub := range m.subscriptions {
+		sub.setDesired(false)
+	}
+	m.lock.RUnlock()
+	m.ReconcileAll()
+}
+
 func (m *SubscriptionManager) GetSubscribedTracks() []types.SubscribedTrack {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
@@ -356,7 +373,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 		if numAttempts == 0 {
 			m.params.Telemetry.TrackSubscribeRequested(
 				context.Background(),
-				m.params.Participant.ID(),
+				s.subscriberID,
 				&livekit.TrackInfo{
 					Sid: string(s.trackID),
 				},
@@ -375,14 +392,14 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 				// - ErrSubscriptionLimitExceeded: the participant have reached the limit of subscriptions, wait for the other subscription to be unsubscribed
 				// We'll still log an event to reflect this in telemetry since it's been too long
 				if s.durationSinceStart() > subscriptionTimeout {
-					s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), err, true)
+					s.maybeRecordError(m.params.Telemetry, s.subscriberID, err, true)
 				}
 			case ErrTrackNotFound:
 				// source track was never published or closed
 				// if after timeout we'd unsubscribe from it.
 				// this is the *only* case we'd change desired state
 				if s.durationSinceStart() > notFoundTimeout {
-					s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), err, true)
+					s.maybeRecordError(m.params.Telemetry, s.subscriberID, err, true)
 					s.logger.Infow("unsubscribing from track after notFoundTimeout", "error", err)
 					s.setDesired(false)
 					m.queueReconcile(s.trackID)
@@ -394,7 +411,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 					s.logger.Warnw("failed to subscribe, triggering error handler", err,
 						"attempt", numAttempts,
 					)
-					s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), err, false)
+					s.maybeRecordError(m.params.Telemetry, s.subscriberID, err, false)
 					m.params.OnSubscriptionError(s.trackID, true, err)
 				} else {
 					s.logger.Debugw("failed to subscribe, retrying",
@@ -430,7 +447,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *trackSubscription) {
 		// back to needsSubscribe state
 		if s.durationSinceStart() > subscriptionTimeout {
 			s.logger.Warnw("track not bound after timeout", nil)
-			s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), ErrTrackNotBound, false)
+			s.maybeRecordError(m.params.Telemetry, s.subscriberID, ErrTrackNotBound, false)
 			m.params.OnSubscriptionError(s.trackID, true, ErrTrackNotBound)
 		}
 	}
@@ -510,12 +527,12 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		// set callback only when we haven't done it before
 		// we set the observer before checking for existence of track, so that we may get notified
 		// when the track becomes available
-		res.TrackChangedNotifier.AddObserver(string(m.params.Participant.ID()), func() {
+		res.TrackChangedNotifier.AddObserver(string(s.subscriberID), func() {
 			m.queueReconcile(trackID)
 		})
 	}
 	if res.TrackRemovedNotifier != nil && s.setRemovedNotifier(res.TrackRemovedNotifier) {
-		res.TrackRemovedNotifier.AddObserver(string(m.params.Participant.ID()), func() {
+		res.TrackRemovedNotifier.AddObserver(string(s.subscriberID), func() {
 			// re-resolve the track in case the same track had been re-published
 			res := m.params.TrackResolver(m.params.Participant, trackID)
 			if res.Track != nil {
@@ -569,13 +586,13 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 		subTrack.AddOnBind(func(err error) {
 			if err != nil {
 				s.logger.Infow("failed to bind track", "err", err)
-				s.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), err, true)
+				s.maybeRecordError(m.params.Telemetry, s.subscriberID, err, true)
 				m.UnsubscribeFromTrack(trackID)
 				m.params.OnSubscriptionError(trackID, false, err)
 				return
 			}
 			s.setBound()
-			s.maybeRecordSuccess(m.params.Telemetry, m.params.Participant.ID())
+			s.maybeRecordSuccess(m.params.Telemetry, s.subscriberID)
 		})
 		s.setSubscribedTrack(subTrack)
 
@@ -670,13 +687,13 @@ func (m *SubscriptionManager) subscribeSynchronous(trackID livekit.TrackID) erro
 		subTrack.AddOnBind(func(err error) {
 			if err != nil {
 				sub.logger.Infow("failed to bind track", "err", err)
-				sub.maybeRecordError(m.params.Telemetry, m.params.Participant.ID(), err, true)
+				sub.maybeRecordError(m.params.Telemetry, sub.subscriberID, err, true)
 				m.UnsubscribeFromTrack(trackID)
 				m.params.OnSubscriptionError(trackID, false, err)
 				return
 			}
 			sub.setBound()
-			sub.maybeRecordSuccess(m.params.Telemetry, m.params.Participant.ID())
+			sub.maybeRecordSuccess(m.params.Telemetry, sub.subscriberID)
 		})
 		sub.setSubscribedTrack(subTrack)
 
@@ -709,7 +726,7 @@ func (m *SubscriptionManager) unsubscribe(s *trackSubscription) error {
 	}
 
 	track := subTrack.MediaTrack()
-	pID := m.params.Participant.ID()
+	pID := s.subscriberID
 	m.pendingUnsubscribes.Inc()
 	go func() {
 		defer m.pendingUnsubscribes.Dec()
@@ -738,7 +755,7 @@ func (m *SubscriptionManager) unsubscribeSynchronous(trackID livekit.TrackID) er
 	}
 
 	track := subTrack.MediaTrack()
-	track.RemoveSubscriber(m.params.Participant.ID(), false)
+	track.RemoveSubscriber(sub.subscriberID, false)
 	return nil
 }
 
@@ -806,7 +823,7 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, i
 	if wasBound {
 		m.params.Telemetry.TrackUnsubscribed(
 			context.Background(),
-			m.params.Participant.ID(),
+			s.subscriberID,
 			&livekit.TrackInfo{Sid: string(s.trackID), Type: subTrack.MediaTrack().Kind()},
 			!isExpectedToResume,
 		)
@@ -817,7 +834,7 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, i
 			if stats != nil {
 				m.params.Telemetry.TrackSubscribeRTPStats(
 					context.Background(),
-					m.params.Participant.ID(),
+					s.subscriberID,
 					s.trackID,
 					dt.Mime(),
 					stats,
