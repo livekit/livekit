@@ -705,6 +705,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		Logger:                 LoggerWithParticipant(logger.GetLogger(), identity, sid, false),
 		Telemetry:              &telemetryfakes.FakeTelemetryService{},
 		VersionGenerator:       utils.NewDefaultTimedVersionGenerator(),
+		ParticipantHelper:      &dumbParticipantHelper{},
 	})
 	p.isPublisher.Store(opts.publisher)
 	p.updateState(livekit.ParticipantInfo_ACTIVE)
@@ -714,4 +715,26 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 
 func newParticipantForTest(identity livekit.ParticipantIdentity) *ParticipantImpl {
 	return newParticipantForTestWithOpts(identity, nil)
+}
+
+type dumbParticipantHelper struct{}
+
+func (d *dumbParticipantHelper) ResolveMediaTrack(types.LocalParticipant, livekit.TrackID) types.MediaResolverResult {
+	return types.MediaResolverResult{}
+}
+
+func (d *dumbParticipantHelper) GetParticipantInfo(pID livekit.ParticipantID) *livekit.ParticipantInfo {
+	return nil
+}
+
+func (d *dumbParticipantHelper) GetRegionSettings(ip string) *livekit.RegionSettings {
+	return nil
+}
+
+func (d *dumbParticipantHelper) GetSubscriberForwarderState(p types.LocalParticipant) (map[livekit.TrackID]*livekit.RTPForwarderState, error) {
+	return nil, nil
+}
+
+func (d *dumbParticipantHelper) ShouldRegressCodec() bool {
+	return false
 }
