@@ -326,7 +326,7 @@ func (s *RoomService) ForwardParticipant(ctx context.Context, req *livekit.Forwa
 	}
 
 	if req.Room == req.DestinationRoom {
-		return nil, twirp.InvalidArgumentError(ErrDestinationSameAsSoruceRoom.Error(), "")
+		return nil, twirp.InvalidArgumentError(ErrDestinationSameAsSourceRoom.Error(), "")
 	}
 
 	res, err := s.participantClient.ForwardParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
@@ -344,7 +344,7 @@ func (s *RoomService) MoveParticipant(ctx context.Context, req *livekit.MovePart
 	}
 
 	if req.Room == req.DestinationRoom {
-		return nil, twirp.InvalidArgumentError(ErrDestinationSameAsSoruceRoom.Error(), "")
+		return nil, twirp.InvalidArgumentError(ErrDestinationSameAsSourceRoom.Error(), "")
 	}
 
 	res, err := s.participantClient.MoveParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
