@@ -16,10 +16,13 @@ package service
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 )
 
@@ -45,6 +48,7 @@ func NewAgentDispatchService(
 }
 
 func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit.CreateAgentDispatchRequest) (*livekit.AgentDispatch, error) {
+	AppendLogFields(ctx, "room", req.Room, "request", logger.Proto(redactCreateAgentDispatchRequest(req)))
 	err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room))
 	if err != nil {
 		return nil, twirpAuthError(err)
@@ -72,6 +76,7 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 }
 
 func (ag *AgentDispatchService) DeleteDispatch(ctx context.Context, req *livekit.DeleteAgentDispatchRequest) (*livekit.AgentDispatch, error) {
+	AppendLogFields(ctx, "room", req.Room, "request", logger.Proto(req))
 	err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room))
 	if err != nil {
 		return nil, twirpAuthError(err)
@@ -81,10 +86,26 @@ func (ag *AgentDispatchService) DeleteDispatch(ctx context.Context, req *livekit
 }
 
 func (ag *AgentDispatchService) ListDispatch(ctx context.Context, req *livekit.ListAgentDispatchRequest) (*livekit.ListAgentDispatchResponse, error) {
+	AppendLogFields(ctx, "room", req.Room, "request", logger.Proto(req))
 	err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room))
 	if err != nil {
 		return nil, twirpAuthError(err)
 	}
 
 	return ag.agentDispatchClient.ListDispatch(ctx, ag.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
+}
+
+func redactCreateAgentDispatchRequest(req *livekit.CreateAgentDispatchRequest) *livekit.CreateAgentDispatchRequest {
+	if req.Metadata == "" {
+		return req
+	}
+
+	clone := utils.CloneProto(req)
+
+	// replace with size of metadata to provide visibility on request size
+	if clone.Metadata != "" {
+		clone.Metadata = fmt.Sprintf("__size: %d", len(clone.Metadata))
+	}
+
+	return clone
 }
