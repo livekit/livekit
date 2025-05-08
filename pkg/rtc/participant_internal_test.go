@@ -712,3 +712,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 
 	return p
 }
+
+func newParticipantForTest(identity livekit.ParticipantIdentity) *ParticipantImpl {
+	return newParticipantForTestWithOpts(identity, nil)
+}
