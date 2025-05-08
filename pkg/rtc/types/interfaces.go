@@ -323,6 +323,7 @@ type MoveToRoomParams struct {
 	Helper        LocalParticipantHelper
 }
 
+//counterfeiter:generate . LocalParticipantHelper
 type LocalParticipantHelper interface {
 	ResolveMediaTrack(LocalParticipant, livekit.TrackID) MediaResolverResult
 	GetParticipantInfo(pID livekit.ParticipantID) *livekit.ParticipantInfo
