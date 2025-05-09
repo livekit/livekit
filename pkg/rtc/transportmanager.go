@@ -377,6 +377,7 @@ func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels [
 		return err
 	}
 
+	ordered = false
 	retransmits := uint16(0)
 	negotiated = t.params.Migration && lossyIDPtr == nil
 	if err := t.subscriber.CreateDataChannel(LossyDataChannel, &webrtc.DataChannelInit{
@@ -778,6 +779,7 @@ func (t *TransportManager) ProcessPendingPublisherDataChannels() {
 			err        error
 		)
 		if ci.Label == LossyDataChannel {
+			ordered = false
 			retransmits := uint16(0)
 			id := uint16(ci.GetId())
 			dcLabel, dcID, dcExisting, err = t.publisher.CreateDataChannelIfEmpty(LossyDataChannel, &webrtc.DataChannelInit{
