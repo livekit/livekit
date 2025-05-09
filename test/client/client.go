@@ -255,6 +255,7 @@ func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 		return nil, err
 	}
 
+	ordered = false
 	maxRetransmits := uint16(0)
 	if err := c.publisher.CreateDataChannel(rtc.LossyDataChannel, &webrtc.DataChannelInit{
 		Ordered:        &ordered,
