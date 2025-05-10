@@ -1348,6 +1348,10 @@ func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcas
 		return
 	}
 
+	if p.SupportsInitialParticipantUpdateOnActive() && !p.Verify() {
+		return
+	}
+
 	updates := r.pushAndDequeueUpdates(pi, p.CloseReason(), opts.immediate)
 	r.sendParticipantUpdates(updates)
 }
