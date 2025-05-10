@@ -1161,7 +1161,7 @@ func (r *Room) createJoinResponseLocked(participant types.LocalParticipant, iceS
 	// gather other participants and send join response
 	otherParticipants := make([]*livekit.ParticipantInfo, 0, len(r.participants))
 	for _, p := range r.participants {
-		if p.ID() != participant.ID() && !p.Hidden() {
+		if p.ID() != participant.ID() && !p.Hidden() && (!participant.SupportsInitialParticipantUpdateOnActive() || p.Verify()) {
 			otherParticipants = append(otherParticipants, p.ToProto())
 		}
 	}

@@ -1090,6 +1090,16 @@ type FakeLocalParticipant struct {
 	supportsCodecChangeReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	SupportsInitialParticipantUpdateOnActiveStub        func() bool
+	supportsInitialParticipantUpdateOnActiveMutex       sync.RWMutex
+	supportsInitialParticipantUpdateOnActiveArgsForCall []struct {
+	}
+	supportsInitialParticipantUpdateOnActiveReturns struct {
+		result1 bool
+	}
+	supportsInitialParticipantUpdateOnActiveReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	SupportsMovingStub        func() bool
 	supportsMovingMutex       sync.RWMutex
 	supportsMovingArgsForCall []struct {
@@ -1243,11 +1253,17 @@ type FakeLocalParticipant struct {
 	verifyReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	VerifySubscribeParticipantInfoStub        func(livekit.ParticipantID, uint32)
+	VerifySubscribeParticipantInfoStub        func(livekit.ParticipantID, uint32) bool
 	verifySubscribeParticipantInfoMutex       sync.RWMutex
 	verifySubscribeParticipantInfoArgsForCall []struct {
 		arg1 livekit.ParticipantID
 		arg2 uint32
+	}
+	verifySubscribeParticipantInfoReturns struct {
+		result1 bool
+	}
+	verifySubscribeParticipantInfoReturnsOnCall map[int]struct {
+		result1 bool
 	}
 	VersionStub        func() utils.TimedVersion
 	versionMutex       sync.RWMutex
@@ -7085,6 +7101,59 @@ func (fake *FakeLocalParticipant) SupportsCodecChangeReturnsOnCall(i int, result
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) SupportsInitialParticipantUpdateOnActive() bool {
+	fake.supportsInitialParticipantUpdateOnActiveMutex.Lock()
+	ret, specificReturn := fake.supportsInitialParticipantUpdateOnActiveReturnsOnCall[len(fake.supportsInitialParticipantUpdateOnActiveArgsForCall)]
+	fake.supportsInitialParticipantUpdateOnActiveArgsForCall = append(fake.supportsInitialParticipantUpdateOnActiveArgsForCall, struct {
+	}{})
+	stub := fake.SupportsInitialParticipantUpdateOnActiveStub
+	fakeReturns := fake.supportsInitialParticipantUpdateOnActiveReturns
+	fake.recordInvocation("SupportsInitialParticipantUpdateOnActive", []interface{}{})
+	fake.supportsInitialParticipantUpdateOnActiveMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) SupportsInitialParticipantUpdateOnActiveCallCount() int {
+	fake.supportsInitialParticipantUpdateOnActiveMutex.RLock()
+	defer fake.supportsInitialParticipantUpdateOnActiveMutex.RUnlock()
+	return len(fake.supportsInitialParticipantUpdateOnActiveArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) SupportsInitialParticipantUpdateOnActiveCalls(stub func() bool) {
+	fake.supportsInitialParticipantUpdateOnActiveMutex.Lock()
+	defer fake.supportsInitialParticipantUpdateOnActiveMutex.Unlock()
+	fake.SupportsInitialParticipantUpdateOnActiveStub = stub
+}
+
+func (fake *FakeLocalParticipant) SupportsInitialParticipantUpdateOnActiveReturns(result1 bool) {
+	fake.supportsInitialParticipantUpdateOnActiveMutex.Lock()
+	defer fake.supportsInitialParticipantUpdateOnActiveMutex.Unlock()
+	fake.SupportsInitialParticipantUpdateOnActiveStub = nil
+	fake.supportsInitialParticipantUpdateOnActiveReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) SupportsInitialParticipantUpdateOnActiveReturnsOnCall(i int, result1 bool) {
+	fake.supportsInitialParticipantUpdateOnActiveMutex.Lock()
+	defer fake.supportsInitialParticipantUpdateOnActiveMutex.Unlock()
+	fake.SupportsInitialParticipantUpdateOnActiveStub = nil
+	if fake.supportsInitialParticipantUpdateOnActiveReturnsOnCall == nil {
+		fake.supportsInitialParticipantUpdateOnActiveReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.supportsInitialParticipantUpdateOnActiveReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) SupportsMoving() bool {
 	fake.supportsMovingMutex.Lock()
 	ret, specificReturn := fake.supportsMovingReturnsOnCall[len(fake.supportsMovingArgsForCall)]
@@ -7907,18 +7976,24 @@ func (fake *FakeLocalParticipant) VerifyReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) VerifySubscribeParticipantInfo(arg1 livekit.ParticipantID, arg2 uint32) {
+func (fake *FakeLocalParticipant) VerifySubscribeParticipantInfo(arg1 livekit.ParticipantID, arg2 uint32) bool {
 	fake.verifySubscribeParticipantInfoMutex.Lock()
+	ret, specificReturn := fake.verifySubscribeParticipantInfoReturnsOnCall[len(fake.verifySubscribeParticipantInfoArgsForCall)]
 	fake.verifySubscribeParticipantInfoArgsForCall = append(fake.verifySubscribeParticipantInfoArgsForCall, struct {
 		arg1 livekit.ParticipantID
 		arg2 uint32
 	}{arg1, arg2})
 	stub := fake.VerifySubscribeParticipantInfoStub
+	fakeReturns := fake.verifySubscribeParticipantInfoReturns
 	fake.recordInvocation("VerifySubscribeParticipantInfo", []interface{}{arg1, arg2})
 	fake.verifySubscribeParticipantInfoMutex.Unlock()
 	if stub != nil {
-		fake.VerifySubscribeParticipantInfoStub(arg1, arg2)
+		return stub(arg1, arg2)
 	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
 }
 
 func (fake *FakeLocalParticipant) VerifySubscribeParticipantInfoCallCount() int {
@@ -7927,7 +8002,7 @@ func (fake *FakeLocalParticipant) VerifySubscribeParticipantInfoCallCount() int 
 	return len(fake.verifySubscribeParticipantInfoArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) VerifySubscribeParticipantInfoCalls(stub func(livekit.ParticipantID, uint32)) {
+func (fake *FakeLocalParticipant) VerifySubscribeParticipantInfoCalls(stub func(livekit.ParticipantID, uint32) bool) {
 	fake.verifySubscribeParticipantInfoMutex.Lock()
 	defer fake.verifySubscribeParticipantInfoMutex.Unlock()
 	fake.VerifySubscribeParticipantInfoStub = stub
@@ -7938,6 +8013,29 @@ func (fake *FakeLocalParticipant) VerifySubscribeParticipantInfoArgsForCall(i in
 	defer fake.verifySubscribeParticipantInfoMutex.RUnlock()
 	argsForCall := fake.verifySubscribeParticipantInfoArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeLocalParticipant) VerifySubscribeParticipantInfoReturns(result1 bool) {
+	fake.verifySubscribeParticipantInfoMutex.Lock()
+	defer fake.verifySubscribeParticipantInfoMutex.Unlock()
+	fake.VerifySubscribeParticipantInfoStub = nil
+	fake.verifySubscribeParticipantInfoReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) VerifySubscribeParticipantInfoReturnsOnCall(i int, result1 bool) {
+	fake.verifySubscribeParticipantInfoMutex.Lock()
+	defer fake.verifySubscribeParticipantInfoMutex.Unlock()
+	fake.VerifySubscribeParticipantInfoStub = nil
+	if fake.verifySubscribeParticipantInfoReturnsOnCall == nil {
+		fake.verifySubscribeParticipantInfoReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.verifySubscribeParticipantInfoReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
 }
 
 func (fake *FakeLocalParticipant) Version() utils.TimedVersion {
@@ -8361,6 +8459,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.subscriptionPermissionUpdateMutex.RUnlock()
 	fake.supportsCodecChangeMutex.RLock()
 	defer fake.supportsCodecChangeMutex.RUnlock()
+	fake.supportsInitialParticipantUpdateOnActiveMutex.RLock()
+	defer fake.supportsInitialParticipantUpdateOnActiveMutex.RUnlock()
 	fake.supportsMovingMutex.RLock()
 	defer fake.supportsMovingMutex.RUnlock()
 	fake.supportsSyncStreamIDMutex.RLock()
