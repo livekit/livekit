@@ -1354,7 +1354,7 @@ func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcas
 
 	if p.Hidden() {
 		// hidden participant updates are sent only to the hidden participant itself,
-		// these could things like metadata update
+		// these could be things like metadata update
 		return
 	}
 
