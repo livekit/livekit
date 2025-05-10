@@ -34,8 +34,9 @@ import (
 )
 
 var (
-	errAlreadySubscribed = errors.New("already subscribed")
-	errNotFound          = errors.New("not found")
+	errAlreadySubscribed  = errors.New("already subscribed")
+	errNotFound           = errors.New("not found")
+	errPublisherNotActive = errors.New("publisher is not active")
 )
 
 // MediaTrackSubscriptions manages subscriptions of a media track
@@ -286,7 +287,9 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			addTrackParams.Red = false
 		}
 
-		sub.VerifySubscribeParticipantInfo(subTrack.PublisherID(), subTrack.PublisherVersion())
+		if !sub.VerifySubscribeParticipantInfo(subTrack.PublisherID(), subTrack.PublisherVersion()) {
+			return nil, errPublisherNotActive
+		}
 		if sub.SupportsTransceiverReuse() {
 			//
 			// AddTrack will create a new transceiver or re-use an unused one

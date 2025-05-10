@@ -1161,7 +1161,7 @@ func (r *Room) createJoinResponseLocked(participant types.LocalParticipant, iceS
 	// gather other participants and send join response
 	otherParticipants := make([]*livekit.ParticipantInfo, 0, len(r.participants))
 	for _, p := range r.participants {
-		if p.ID() != participant.ID() && !p.Hidden() {
+		if p.ID() != participant.ID() && !p.Hidden() && (!participant.SupportsInitialParticipantUpdateOnActive() || p.Verify()) {
 			otherParticipants = append(otherParticipants, p.ToProto())
 		}
 	}
@@ -1389,12 +1389,31 @@ func (r *Room) sendParticipantUpdates(updates []*participantUpdate) {
 		fullUpdates = append(fullUpdates, update.pi)
 	}
 
+	getVerifiedUpdates := func(infos []*livekit.ParticipantInfo) []*livekit.ParticipantInfo {
+		var verifiedUpdates []*livekit.ParticipantInfo
+		for _, update := range infos {
+			if update.State == livekit.ParticipantInfo_JOINING || update.State == livekit.ParticipantInfo_JOINED {
+				continue
+			}
+			verifiedUpdates = append(verifiedUpdates, update)
+		}
+		return verifiedUpdates
+	}
+
 	for _, op := range r.GetParticipants() {
 		var err error
 		if op.ProtocolVersion().SupportsIdentityBasedReconnection() {
-			err = op.SendParticipantUpdate(filteredUpdates)
+			if op.SupportsInitialParticipantUpdateOnActive() {
+				err = op.SendParticipantUpdate(getVerifiedUpdates(filteredUpdates))
+			} else {
+				err = op.SendParticipantUpdate(filteredUpdates)
+			}
 		} else {
-			err = op.SendParticipantUpdate(fullUpdates)
+			if op.SupportsInitialParticipantUpdateOnActive() {
+				err = op.SendParticipantUpdate(getVerifiedUpdates(fullUpdates))
+			} else {
+				err = op.SendParticipantUpdate(fullUpdates)
+			}
 		}
 		if err != nil {
 			op.GetLogger().Errorw("could not send update to participant", err)
