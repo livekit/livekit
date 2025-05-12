@@ -351,7 +351,14 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 			if tc.existing != nil {
 				rm.batchedUpdates[livekit.ParticipantIdentity(tc.existing.ParticipantInfo.Identity)] = tc.existing
 			}
-			updates := rm.pushAndDequeueUpdates(tc.pi, tc.closeReason, tc.immediate)
+			updates := PushAndDequeueUpdates(
+				tc.pi,
+				tc.closeReason,
+				tc.immediate,
+				rm.GetParticipant(livekit.ParticipantIdentity(tc.pi.Identity)),
+				&rm.batchedUpdatesMu,
+				rm.batchedUpdates,
+			)
 			require.Equal(t, len(tc.expected), len(updates))
 			for i, item := range tc.expected {
 				requirePIEquals(t, item.ParticipantInfo, updates[i].ParticipantInfo)
