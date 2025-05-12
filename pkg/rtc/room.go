@@ -2006,7 +2006,7 @@ func connectionDetailsFields(infos []*types.ICEConnectionInfo) []interface{} {
 func toParticipants(lps []types.LocalParticipant) []types.Participant {
 	participants := make([]types.Participant, len(lps))
 	for idx, lp := range lps {
-		participants[idx] = types.Participant(lp)
+		participants[idx] = lp
 	}
 	return participants
 }
