@@ -120,12 +120,10 @@ func SubLocalParticipant() {
 
 func AddRelayedParticipant() {
 	promRelayedParticipantCurrent.Add(1)
-	participantCurrent.Inc()
 }
 
 func SubRelayedParticipant() {
 	promRelayedParticipantCurrent.Sub(1)
-	participantCurrent.Dec()
 }
 
 func AddPublishedTrack(kind string) {
