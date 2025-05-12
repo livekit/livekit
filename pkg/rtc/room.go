@@ -1352,7 +1352,14 @@ func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcas
 		return
 	}
 
-	updates := r.pushAndDequeueUpdates(pi, p.CloseReason(), opts.immediate)
+	updates := PushAndDequeueUpdates(
+		pi,
+		p.CloseReason(),
+		opts.immediate,
+		r.GetParticipant(livekit.ParticipantIdentity(pi.Identity)),
+		&r.batchedUpdatesMu,
+		r.batchedUpdates,
+	)
 	if len(updates) != 0 {
 		selfSent = true
 		SendParticipantUpdates(updates, r.GetParticipants())
@@ -1366,68 +1373,6 @@ func (r *Room) sendSpeakerChanges(speakers []*livekit.SpeakerInfo) {
 			_ = p.SendSpeakerUpdate(speakers, false)
 		}
 	}
-}
-
-// push a participant update for batched broadcast, optionally returning immediate updates to broadcast.
-// it handles the following scenarios
-// * subscriber-only updates will be queued for batch updates
-// * publisher & immediate updates will be returned without queuing
-// * when the SID changes, it will return both updates, with the earlier participant set to disconnected
-func (r *Room) pushAndDequeueUpdates(
-	pi *livekit.ParticipantInfo,
-	closeReason types.ParticipantCloseReason,
-	isImmediate bool,
-) []*ParticipantUpdate {
-	r.batchedUpdatesMu.Lock()
-	defer r.batchedUpdatesMu.Unlock()
-
-	var updates []*ParticipantUpdate
-	identity := livekit.ParticipantIdentity(pi.Identity)
-	existing := r.batchedUpdates[identity]
-	shouldSend := isImmediate || pi.IsPublisher
-
-	if existing != nil {
-		if pi.Sid == existing.ParticipantInfo.Sid {
-			// same participant session
-			if pi.Version < existing.ParticipantInfo.Version {
-				// out of order update
-				return nil
-			}
-		} else {
-			// different participant sessions
-			if CompareParticipant(existing.ParticipantInfo, pi) < 0 {
-				// existing is older, synthesize a DISCONNECT for older and
-				// send immediately along with newer session to signal switch
-				shouldSend = true
-				existing.ParticipantInfo.State = livekit.ParticipantInfo_DISCONNECTED
-				existing.IsSynthesizedDisconnect = true
-				updates = append(updates, existing)
-			} else {
-				// older session update, newer session has already become active, so nothing to do
-				return nil
-			}
-		}
-	} else {
-		ep := r.GetParticipant(identity)
-		if ep != nil {
-			epi := ep.ToProto()
-			if CompareParticipant(epi, pi) > 0 {
-				// older session update, newer session has already become active, so nothing to do
-				return nil
-			}
-		}
-	}
-
-	if shouldSend {
-		// include any queued update, and return
-		delete(r.batchedUpdates, identity)
-		updates = append(updates, &ParticipantUpdate{ParticipantInfo: pi, CloseReason: closeReason})
-	} else {
-		// enqueue for batch
-		r.batchedUpdates[identity] = &ParticipantUpdate{ParticipantInfo: pi, CloseReason: closeReason}
-	}
-
-	return updates
 }
 
 func (r *Room) updateProto() *livekit.Room {
@@ -1876,6 +1821,70 @@ type ParticipantUpdate struct {
 	ParticipantInfo         *livekit.ParticipantInfo
 	IsSynthesizedDisconnect bool
 	CloseReason             types.ParticipantCloseReason
+}
+
+// push a participant update for batched broadcast, optionally returning immediate updates to broadcast.
+// it handles the following scenarios
+// * subscriber-only updates will be queued for batch updates
+// * publisher & immediate updates will be returned without queuing
+// * when the SID changes, it will return both updates, with the earlier participant set to disconnected
+func PushAndDequeueUpdates(
+	pi *livekit.ParticipantInfo,
+	closeReason types.ParticipantCloseReason,
+	isImmediate bool,
+	existingParticipant types.Participant,
+	lock *sync.Mutex,
+	cache map[livekit.ParticipantIdentity]*ParticipantUpdate,
+) []*ParticipantUpdate {
+	lock.Lock()
+	defer lock.Unlock()
+
+	var updates []*ParticipantUpdate
+	identity := livekit.ParticipantIdentity(pi.Identity)
+	existing := cache[identity]
+	shouldSend := isImmediate || pi.IsPublisher
+
+	if existing != nil {
+		if pi.Sid == existing.ParticipantInfo.Sid {
+			// same participant session
+			if pi.Version < existing.ParticipantInfo.Version {
+				// out of order update
+				return nil
+			}
+		} else {
+			// different participant sessions
+			if CompareParticipant(existing.ParticipantInfo, pi) < 0 {
+				// existing is older, synthesize a DISCONNECT for older and
+				// send immediately along with newer session to signal switch
+				shouldSend = true
+				existing.ParticipantInfo.State = livekit.ParticipantInfo_DISCONNECTED
+				existing.IsSynthesizedDisconnect = true
+				updates = append(updates, existing)
+			} else {
+				// older session update, newer session has already become active, so nothing to do
+				return nil
+			}
+		}
+	} else {
+		if existingParticipant != nil {
+			epi := existingParticipant.ToProto()
+			if CompareParticipant(epi, pi) > 0 {
+				// older session update, newer session has already become active, so nothing to do
+				return nil
+			}
+		}
+	}
+
+	if shouldSend {
+		// include any queued update, and return
+		delete(cache, identity)
+		updates = append(updates, &ParticipantUpdate{ParticipantInfo: pi, CloseReason: closeReason})
+	} else {
+		// enqueue for batch
+		cache[identity] = &ParticipantUpdate{ParticipantInfo: pi, CloseReason: closeReason}
+	}
+
+	return updates
 }
 
 func SendParticipantUpdates(updates []*ParticipantUpdate, participants []types.LocalParticipant) {
