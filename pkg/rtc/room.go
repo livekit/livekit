@@ -318,6 +318,7 @@ func (r *Room) Trailer() []byte {
 func (r *Room) GetParticipant(identity livekit.ParticipantIdentity) types.LocalParticipant {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
+
 	return r.participants[identity]
 }
 
@@ -638,7 +639,7 @@ func (r *Room) ResumeParticipant(
 	}
 
 	// include the local participant's info as well, since metadata could have been changed
-	updates := r.getOtherParticipantInfo("")
+	updates := GetOtherParticipantInfo(nil, false, toParticipants(r.GetParticipants()), false)
 	if err := p.SendParticipantUpdate(updates); err != nil {
 		return err
 	}
@@ -1129,18 +1130,6 @@ func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScen
 	return nil
 }
 
-func (r *Room) getOtherParticipantInfo(identity livekit.ParticipantIdentity) []*livekit.ParticipantInfo {
-	participants := r.GetParticipants()
-	pi := make([]*livekit.ParticipantInfo, 0, len(participants))
-	for _, p := range participants {
-		if !p.Hidden() && p.Identity() != identity {
-			pi = append(pi, p.ToProto())
-		}
-	}
-
-	return pi
-}
-
 // checks if participant should be autosubscribed to new tracks, assumes lock is already acquired
 func (r *Room) autoSubscribe(participant types.LocalParticipant) bool {
 	opts := r.participantOpts[participant.Identity()]
@@ -1152,21 +1141,18 @@ func (r *Room) autoSubscribe(participant types.LocalParticipant) bool {
 }
 
 func (r *Room) createJoinResponseLocked(participant types.LocalParticipant, iceServers []*livekit.ICEServer) *livekit.JoinResponse {
-	// gather other participants and send join response
-	otherParticipants := make([]*livekit.ParticipantInfo, 0, len(r.participants))
-	for _, p := range r.participants {
-		if p.ID() != participant.ID() && !p.Hidden() && (!participant.SupportsInitialParticipantUpdateOnActive() || p.Verify()) {
-			otherParticipants = append(otherParticipants, p.ToProto())
-		}
-	}
-
 	iceConfig := participant.GetICEConfig()
 	hasICEFallback := iceConfig.GetPreferencePublisher() != livekit.ICECandidateType_ICT_NONE || iceConfig.GetPreferenceSubscriber() != livekit.ICECandidateType_ICT_NONE
 	return &livekit.JoinResponse{
-		Room:              r.ToProto(),
-		Participant:       participant.ToProto(),
-		OtherParticipants: otherParticipants,
-		IceServers:        iceServers,
+		Room:        r.ToProto(),
+		Participant: participant.ToProto(),
+		OtherParticipants: GetOtherParticipantInfo(
+			participant,
+			false, // isMigratingIn
+			toParticipants(maps.Values(r.participants)),
+			false, // skipSubscriberBroadcast
+		),
+		IceServers: iceServers,
 		// indicates both server and client support subscriber as primary
 		SubscriberPrimary:   participant.SubscriberAsPrimary(),
 		ClientConfiguration: participant.GetClientConfiguration(),
@@ -1943,6 +1929,32 @@ func SendParticipantUpdates(updates []*ParticipantUpdate, participants []types.L
 	}
 }
 
+// GetOtherParticipantInfo returns ParticipantInfo for everyone in the room except for the participant identified by lp.Identity()
+func GetOtherParticipantInfo(
+	lp types.LocalParticipant,
+	isMigratingIn bool,
+	allParticipants []types.Participant,
+	skipSubscriberBroadcast bool,
+) []*livekit.ParticipantInfo {
+	var lpIdentity livekit.ParticipantIdentity
+	if lp != nil {
+		lpIdentity = lp.Identity()
+	}
+
+	pInfos := make([]*livekit.ParticipantInfo, 0, len(allParticipants))
+	for _, op := range allParticipants {
+		if !op.Hidden() &&
+			op.Identity() != lpIdentity &&
+			!isMigratingIn &&
+			!(skipSubscriberBroadcast && op.CanSkipBroadcast()) &&
+			(lp == nil || !lp.SupportsInitialParticipantUpdateOnActive() || (op.State() != livekit.ParticipantInfo_JOINING && op.State() != livekit.ParticipantInfo_JOINED)) {
+			pInfos = append(pInfos, op.ToProto())
+		}
+	}
+
+	return pInfos
+}
+
 func connectionDetailsFields(infos []*types.ICEConnectionInfo) []interface{} {
 	var fields []interface{}
 	connectionType := types.ICEConnectionTypeUnknown
@@ -1989,4 +2001,12 @@ func connectionDetailsFields(infos []*types.ICEConnectionInfo) []interface{} {
 	}
 	fields = append(fields, "connectionType", connectionType)
 	return fields
+}
+
+func toParticipants(lps []types.LocalParticipant) []types.Participant {
+	participants := make([]types.Participant, len(lps))
+	for idx, lp := range lps {
+		participants[idx] = types.Participant(lp)
+	}
+	return participants
 }
