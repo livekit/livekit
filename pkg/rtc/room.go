@@ -1331,19 +1331,32 @@ func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) {
 func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcastOptions) {
 	pi := p.ToProto()
 
-	if p.Hidden() {
-		if !opts.skipSource {
-			// send update only to hidden participant
+	// send it to the same participant immediately
+	selfSent := false
+	if !opts.skipSource {
+		defer func() {
+			if selfSent {
+				return
+			}
+
 			err := p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi})
 			if err != nil {
 				p.GetLogger().Errorw("could not send update to participant", err)
 			}
-		}
+		}()
+	}
+
+	if p.Hidden() {
+		// hidden participant updates are sent only to the hidden participant itself,
+		// these could be things like metadata update
 		return
 	}
 
 	updates := r.pushAndDequeueUpdates(pi, p.CloseReason(), opts.immediate)
-	SendParticipantUpdates(updates, r.GetParticipants())
+	if len(updates) != 0 {
+		selfSent = true
+		SendParticipantUpdates(updates, r.GetParticipants())
+	}
 }
 
 // for protocol 3, send only changed updates
