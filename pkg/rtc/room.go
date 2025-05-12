@@ -1868,6 +1868,7 @@ func PushAndDequeueUpdates(
 	} else {
 		// enqueue for batch
 		cache[identity] = &ParticipantUpdate{ParticipantInfo: pi, CloseReason: closeReason}
+		logger.Debugw("DEBUG caching participant info", "participant", identity, "pID", pi.Sid, "pi", pi) // REMOVE
 	}
 
 	return updates
