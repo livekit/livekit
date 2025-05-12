@@ -338,6 +338,8 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.setupSubscriptionManager()
 	p.setupMetrics()
 
+	p.params.LoggerResolver("pID", p.ID())
+
 	return p, nil
 }
 
