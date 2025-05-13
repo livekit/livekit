@@ -291,6 +291,7 @@ type DownTrack struct {
 
 	bindLock            sync.Mutex
 	bindState           atomic.Value
+	wasEverBound        atomic.Bool
 	onBinding           func(error)
 	bindOnReceiverReady func()
 	onBindAndConnected  func()
@@ -584,6 +585,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			d.onBinding(nil)
 		}
 		d.setBindStateLocked(bindStateBound)
+		d.wasEverBound.Store(true)
 		d.bindLock.Unlock()
 
 		d.forwarder.DetermineCodec(codec.RTPCodecCapability, d.Receiver().HeaderExtensions())
@@ -853,7 +855,7 @@ func (d *DownTrack) SetTransceiver(transceiver *webrtc.RTPTransceiver) {
 }
 
 func (d *DownTrack) GetTransceiver() (*webrtc.RTPTransceiver, bool) {
-	return d.transceiver.Load(), d.bindState.Load() == bindStateBound
+	return d.transceiver.Load(), d.wasEverBound.Load()
 }
 
 func (d *DownTrack) postKeyFrameRequestEvent() {
