@@ -463,6 +463,7 @@ func (t *MediaTrackSubscriptions) downTrackClosed(
 			} else {
 				// unbound transceivers cannot be re-used as pion will not fire Bind() in
 				// ReplaceTrack().
+				t.params.Logger.Infow("stopping unbound transceiver")
 				tr.Stop()
 			}
 		}
