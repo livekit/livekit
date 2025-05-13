@@ -287,9 +287,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			addTrackParams.Red = false
 		}
 
-		if !sub.VerifySubscribeParticipantInfo(subTrack.PublisherID(), subTrack.PublisherVersion()) {
-			return nil, errPublisherNotActive
-		}
+		sub.VerifySubscribeParticipantInfo(subTrack.PublisherID(), subTrack.PublisherVersion())
 		if sub.SupportsTransceiverReuse() {
 			//
 			// AddTrack will create a new transceiver or re-use an unused one

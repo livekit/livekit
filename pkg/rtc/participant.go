@@ -1439,28 +1439,19 @@ func (p *ParticipantImpl) Verify() bool {
 	return isActive
 }
 
-func (p *ParticipantImpl) VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32) bool {
+func (p *ParticipantImpl) VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32) {
 	if !p.IsReady() {
 		// we have not sent a JoinResponse yet. metadata would be covered in JoinResponse
-		return true
+		return
 	}
 	if info, ok := p.updateCache.Get(pID); ok && info.version >= version {
-		return true
+		return
 	}
 
 	info := p.helper().GetParticipantInfo(pID)
-	if info == nil {
-		// participant not present
-		return false
+	if info != nil {
+		_ = p.SendParticipantUpdate([]*livekit.ParticipantInfo{info})
 	}
-
-	if p.SupportsInitialParticipantUpdateOnActive() && (info.State == livekit.ParticipantInfo_JOINING || info.State == livekit.ParticipantInfo_JOINED) {
-		// wait for participant to transition out of joining states
-		return false
-	}
-
-	_ = p.SendParticipantUpdate([]*livekit.ParticipantInfo{info})
-	return true
 }
 
 // onTrackSubscribed handles post-processing after a track is subscribed
@@ -3323,10 +3314,6 @@ func (p *ParticipantImpl) SupportsCodecChange() bool {
 
 func (p *ParticipantImpl) SupportsMoving() bool {
 	return p.ProtocolVersion().SupportsMoving()
-}
-
-func (p *ParticipantImpl) SupportsInitialParticipantUpdateOnActive() bool {
-	return p.ProtocolVersion().SupportsInitialParticipantUpdateOnActive()
 }
 
 func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {

@@ -1898,31 +1898,12 @@ func SendParticipantUpdates(updates []*ParticipantUpdate, participants []types.L
 		fullUpdates = append(fullUpdates, update.ParticipantInfo)
 	}
 
-	getVerifiedUpdates := func(infos []*livekit.ParticipantInfo) []*livekit.ParticipantInfo {
-		var verifiedUpdates []*livekit.ParticipantInfo
-		for _, update := range infos {
-			if update.State == livekit.ParticipantInfo_JOINING || update.State == livekit.ParticipantInfo_JOINED {
-				continue
-			}
-			verifiedUpdates = append(verifiedUpdates, update)
-		}
-		return verifiedUpdates
-	}
-
 	for _, op := range participants {
 		var err error
 		if op.ProtocolVersion().SupportsIdentityBasedReconnection() {
-			if op.SupportsInitialParticipantUpdateOnActive() {
-				err = op.SendParticipantUpdate(getVerifiedUpdates(filteredUpdates))
-			} else {
-				err = op.SendParticipantUpdate(filteredUpdates)
-			}
+			err = op.SendParticipantUpdate(filteredUpdates)
 		} else {
-			if op.SupportsInitialParticipantUpdateOnActive() {
-				err = op.SendParticipantUpdate(getVerifiedUpdates(fullUpdates))
-			} else {
-				err = op.SendParticipantUpdate(fullUpdates)
-			}
+			err = op.SendParticipantUpdate(fullUpdates)
 		}
 		if err != nil {
 			op.GetLogger().Errorw("could not send update to participant", err)
@@ -1947,8 +1928,7 @@ func GetOtherParticipantInfo(
 		if !op.Hidden() &&
 			op.Identity() != lpIdentity &&
 			!isMigratingIn &&
-			!(skipSubscriberBroadcast && op.CanSkipBroadcast()) &&
-			(lp == nil || !lp.SupportsInitialParticipantUpdateOnActive() || (op.State() != livekit.ParticipantInfo_JOINING && op.State() != livekit.ParticipantInfo_JOINED)) {
+			!(skipSubscriberBroadcast && op.CanSkipBroadcast()) {
 			pInfos = append(pInfos, op.ToProto())
 		}
 	}

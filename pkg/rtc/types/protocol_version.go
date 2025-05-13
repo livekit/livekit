@@ -99,7 +99,3 @@ func (v ProtocolVersion) SupportsNonErrorSignalResponse() bool {
 func (v ProtocolVersion) SupportsMoving() bool {
 	return v > 15
 }
-
-func (v ProtocolVersion) SupportsInitialParticipantUpdateOnActive() bool {
-	return v > 15
-}

@@ -362,7 +362,6 @@ type LocalParticipant interface {
 	GetEnabledPublishCodecs() []*livekit.Codec
 	GetPublisherICESessionUfrag() (string, error)
 	SupportsMoving() bool
-	SupportsInitialParticipantUpdateOnActive() bool
 
 	SetResponseSink(sink routing.MessageSink)
 	CloseSignalConnection(reason SignallingCloseReason)
@@ -411,7 +410,7 @@ type LocalParticipant interface {
 	GetSubscribedTracks() []SubscribedTrack
 	IsTrackNameSubscribed(publisherIdentity livekit.ParticipantIdentity, trackName string) bool
 	Verify() bool
-	VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32) bool
+	VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32)
 	// WaitUntilSubscribed waits until all subscriptions have been settled, or if the timeout
 	// has been reached. If the timeout expires, it will return an error.
 	WaitUntilSubscribed(timeout time.Duration) error
