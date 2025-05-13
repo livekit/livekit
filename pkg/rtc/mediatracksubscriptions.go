@@ -456,9 +456,15 @@ func (t *MediaTrackSubscriptions) downTrackClosed(
 	// delete the subscribed track only after caching.
 	if isExpectedToResume {
 		dt := subTrack.DownTrack()
-		tr := dt.GetTransceiver()
+		tr, wasBound := dt.GetTransceiver()
 		if tr != nil {
-			sub.CacheDownTrack(subTrack.ID(), tr, dt.GetState())
+			if wasBound {
+				sub.CacheDownTrack(subTrack.ID(), tr, dt.GetState())
+			} else {
+				// unbound transceivers cannot be re-used as pion will not fire Bind() in
+				// ReplaceTrack().
+				tr.Stop()
+			}
 		}
 	}
 

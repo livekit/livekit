@@ -852,8 +852,8 @@ func (d *DownTrack) SetTransceiver(transceiver *webrtc.RTPTransceiver) {
 	d.transceiver.Store(transceiver)
 }
 
-func (d *DownTrack) GetTransceiver() *webrtc.RTPTransceiver {
-	return d.transceiver.Load()
+func (d *DownTrack) GetTransceiver() (*webrtc.RTPTransceiver, bool) {
+	return d.transceiver.Load(), d.bindState.Load() == bindStateBound
 }
 
 func (d *DownTrack) postKeyFrameRequestEvent() {
