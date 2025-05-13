@@ -608,7 +608,7 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 	t.lock.RUnlock()
 
 	if remove {
-		t.params.Logger.Debugw("removing susbcriber on a not-open track", "subscriberID", subID, "isExpectedToResume", isExpectedToResume)
+		t.params.Logger.Debugw("removing subscriber on a not-open track", "subscriberID", subID, "isExpectedToResume", isExpectedToResume)
 		_ = t.MediaTrackSubscriptions.RemoveSubscriber(subID, isExpectedToResume)
 		return nil, ErrNotOpen
 	}
