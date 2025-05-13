@@ -1448,8 +1448,7 @@ func (p *ParticipantImpl) VerifySubscribeParticipantInfo(pID livekit.Participant
 		return
 	}
 
-	info := p.helper().GetParticipantInfo(pID)
-	if info != nil {
+	if info := p.helper().GetParticipantInfo(pID); info != nil {
 		_ = p.SendParticipantUpdate([]*livekit.ParticipantInfo{info})
 	}
 }

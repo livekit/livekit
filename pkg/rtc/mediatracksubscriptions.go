@@ -34,9 +34,8 @@ import (
 )
 
 var (
-	errAlreadySubscribed  = errors.New("already subscribed")
-	errNotFound           = errors.New("not found")
-	errPublisherNotActive = errors.New("publisher is not active")
+	errAlreadySubscribed = errors.New("already subscribed")
+	errNotFound          = errors.New("not found")
 )
 
 // MediaTrackSubscriptions manages subscriptions of a media track

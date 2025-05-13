@@ -131,7 +131,6 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 		return nil
 	}
 
-	p.params.Logger.Debugw("DEBUG, sending participant updates", "updates", logger.ProtoSlice(validUpdates)) // REMOVE
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Update{
 			Update: &livekit.ParticipantUpdate{
