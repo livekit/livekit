@@ -1877,7 +1877,11 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 				_, _, err := rtcTrack.Read(bytes)
 				if err != nil {
 					if !errors.Is(err, io.EOF) {
-						p.params.Logger.Warnw("could not read first packet to determine codec, track will be ignored", err, "trackID", rtcTrack.ID(), "StreamID", rtcTrack.StreamID())
+						p.params.Logger.Warnw(
+							"could not read first packet to determine codec, track will be ignored", err,
+							"trackID", rtcTrack.ID(),
+							"StreamID", rtcTrack.StreamID(),
+						)
 					}
 					return
 				}
@@ -1890,13 +1894,23 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 		// track fired by sdp
 		codecs := rtpReceiver.GetParameters().Codecs
 		if len(codecs) == 0 {
-			p.pubLogger.Errorw("no negotiated codecs for track, track will be ignored", nil, "trackID", rtcTrack.ID(), "StreamID", rtcTrack.StreamID())
+			p.pubLogger.Errorw(
+				"no negotiated codecs for track, track will be ignored", nil,
+				"trackID", rtcTrack.ID(),
+				"StreamID", rtcTrack.StreamID(),
+			)
 			return
 		}
 		codec = codecs[0]
 		fromSdp = true
 	}
-	p.params.Logger.Debugw("onMediaTrack", "codec", codec, "payloadType", codec.PayloadType, "fromSdp", fromSdp, "parameters", rtpReceiver.GetParameters())
+	p.params.Logger.Debugw(
+		"onMediaTrack",
+		"codec", codec,
+		"payloadType", codec.PayloadType,
+		"fromSdp", fromSdp,
+		"parameters", rtpReceiver.GetParameters(),
+	)
 
 	var track sfu.TrackRemote = sfu.NewTrackRemoteFromSdp(rtcTrack, codec)
 	publishedTrack, isNewTrack := p.mediaTrackReceived(track, rtpReceiver)
@@ -2536,7 +2550,10 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 		"mid", mid,
 	)
 	if mid == "" {
-		p.pendingRemoteTracks = append(p.pendingRemoteTracks, &pendingRemoteTrack{track: track.RTCTrack(), receiver: rtpReceiver})
+		p.pendingRemoteTracks = append(
+			p.pendingRemoteTracks,
+			&pendingRemoteTrack{track: track.RTCTrack(), receiver: rtpReceiver},
+		)
 		p.pendingTracksLock.Unlock()
 		p.pubLogger.Warnw("could not get mid for track", nil, "trackID", track.ID())
 		return nil, false
@@ -2549,7 +2566,10 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 	if !ok {
 		signalCid, ti, migrated, createdAt := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()), true)
 		if ti == nil {
-			p.pendingRemoteTracks = append(p.pendingRemoteTracks, &pendingRemoteTrack{track: track.RTCTrack(), receiver: rtpReceiver})
+			p.pendingRemoteTracks = append(
+				p.pendingRemoteTracks,
+				&pendingRemoteTrack{track: track.RTCTrack(), receiver: rtpReceiver},
+			)
 			p.pendingTracksLock.Unlock()
 			return nil, false
 		}
