@@ -3344,7 +3344,7 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 	grants := p.grants.Load().Clone()
 	grants.Video.Room = string(params.RoomName)
 	p.grants.Store(grants)
-	p.params.LoggerResolver("pID", p.ID())
+	p.params.LoggerResolver("room", params.RoomName, "pID", p.ID())
 }
 
 func (p *ParticipantImpl) helper() types.LocalParticipantHelper {
