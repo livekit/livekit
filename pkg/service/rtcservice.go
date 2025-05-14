@@ -249,12 +249,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		if force || (roomName != "" && roomID != "" && participantIdentity != "" && pID != "") {
 			loggerResolved = true
-			loggerResolver.Resolve(
-				"room", roomName,
-				"roomID", roomID,
-				"participant", participantIdentity,
-				"pID", pID,
-			)
+			loggerResolver.Resolve(getLoggerFields()...)
 		}
 	}
 
