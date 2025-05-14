@@ -260,15 +260,9 @@ func (p *NodeProvider) startRefresh() {
 
 func (p *NodeProvider) processRefresh() {
 	p.UpdateNodeStats()
-	ctx1, cancel1 := context.WithTimeout(context.Background(), time.Second*10)
-	defer cancel1()
-	err := p.selfRefresh(ctx1)
-	if err != nil {
-		logger.Errorw("[selfRefresh] error %s\r\n", err)
-	}
-	ctx2, cancel2 := context.WithTimeout(context.Background(), time.Second*10)
-	defer cancel2()
-	err = p.refresh(ctx2)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+	err := p.refresh(ctx)
 	if err != nil {
 		logger.Errorw("[refresh] error %s\r\n", err)
 	}
