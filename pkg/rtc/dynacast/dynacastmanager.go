@@ -183,6 +183,15 @@ func (d *DynacastManager) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, 
 	}
 }
 
+func (d *DynacastManager) ClearSubscriberNodesMaxQuality() {
+	d.lock.Lock()
+	dqs := d.getDynacastQualitiesLocked()
+	d.lock.Unlock()
+	for _, dq := range dqs {
+		dq.ClearSubscriberNodesMaxQuality()
+	}
+}
+
 func (d *DynacastManager) getOrCreateDynacastQuality(mimeType mime.MimeType) *DynacastQuality {
 	d.lock.Lock()
 	defer d.lock.Unlock()

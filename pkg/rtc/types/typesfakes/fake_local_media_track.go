@@ -35,6 +35,10 @@ type FakeLocalMediaTrack struct {
 	clearAllReceiversArgsForCall []struct {
 		arg1 bool
 	}
+	ClearSubscriberNodesMaxQualityStub        func()
+	clearSubscriberNodesMaxQualityMutex       sync.RWMutex
+	clearSubscriberNodesMaxQualityArgsForCall []struct {
+	}
 	CloseStub        func(bool)
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct {
@@ -493,6 +497,30 @@ func (fake *FakeLocalMediaTrack) ClearAllReceiversArgsForCall(i int) bool {
 	defer fake.clearAllReceiversMutex.RUnlock()
 	argsForCall := fake.clearAllReceiversArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakeLocalMediaTrack) ClearSubscriberNodesMaxQuality() {
+	fake.clearSubscriberNodesMaxQualityMutex.Lock()
+	fake.clearSubscriberNodesMaxQualityArgsForCall = append(fake.clearSubscriberNodesMaxQualityArgsForCall, struct {
+	}{})
+	stub := fake.ClearSubscriberNodesMaxQualityStub
+	fake.recordInvocation("ClearSubscriberNodesMaxQuality", []interface{}{})
+	fake.clearSubscriberNodesMaxQualityMutex.Unlock()
+	if stub != nil {
+		fake.ClearSubscriberNodesMaxQualityStub()
+	}
+}
+
+func (fake *FakeLocalMediaTrack) ClearSubscriberNodesMaxQualityCallCount() int {
+	fake.clearSubscriberNodesMaxQualityMutex.RLock()
+	defer fake.clearSubscriberNodesMaxQualityMutex.RUnlock()
+	return len(fake.clearSubscriberNodesMaxQualityArgsForCall)
+}
+
+func (fake *FakeLocalMediaTrack) ClearSubscriberNodesMaxQualityCalls(stub func()) {
+	fake.clearSubscriberNodesMaxQualityMutex.Lock()
+	defer fake.clearSubscriberNodesMaxQualityMutex.Unlock()
+	fake.ClearSubscriberNodesMaxQualityStub = stub
 }
 
 func (fake *FakeLocalMediaTrack) Close(arg1 bool) {
@@ -2280,6 +2308,8 @@ func (fake *FakeLocalMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.addSubscriberMutex.RUnlock()
 	fake.clearAllReceiversMutex.RLock()
 	defer fake.clearAllReceiversMutex.RUnlock()
+	fake.clearSubscriberNodesMaxQualityMutex.RLock()
+	defer fake.clearSubscriberNodesMaxQualityMutex.RUnlock()
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
 	fake.getAllSubscribersMutex.RLock()

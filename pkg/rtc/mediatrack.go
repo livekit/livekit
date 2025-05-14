@@ -177,6 +177,12 @@ func (t *MediaTrack) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, quali
 	}
 }
 
+func (t *MediaTrack) ClearSubscriberNodesMaxQuality() {
+	if t.dynacastManager != nil {
+		t.dynacastManager.ClearSubscriberNodesMaxQuality()
+	}
+}
+
 func (t *MediaTrack) SignalCid() string {
 	return t.params.SignalCid
 }
