@@ -3344,13 +3344,13 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 
 	p.params.Logger.Infow("move participant to new room", "newRoomName", params.RoomName, "newID", params.ParticipantID)
 
+	p.params.LoggerResolver.Reset()
 	p.participantHelper.Store(params.Helper)
 	p.SubscriptionManager.ClearAllSubscriptions()
 	p.id.Store(params.ParticipantID)
 	grants := p.grants.Load().Clone()
 	grants.Video.Room = string(params.RoomName)
 	p.grants.Store(grants)
-	p.params.LoggerResolver("room", params.RoomName, "pID", p.ID())
 }
 
 func (p *ParticipantImpl) helper() types.LocalParticipantHelper {
