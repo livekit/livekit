@@ -219,20 +219,65 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	roomName, pi, code, err := s.validateInternal(r)
+	var (
+		roomName            livekit.RoomName
+		roomID              livekit.RoomID
+		participantIdentity livekit.ParticipantIdentity
+		pID                 livekit.ParticipantID
+		loggerResolved      bool
+
+		pi   routing.ParticipantInit
+		code int
+		err  error
+	)
+
+	pLogger, loggerResolver := utils.GetLogger(r.Context()).WithDeferredValues()
+
+	getLoggerFields := func() []any {
+		return []any{
+			"room", roomName,
+			"roomID", roomID,
+			"participant", participantIdentity,
+			"pID", pID,
+		}
+	}
+
+	resolveLogger := func(force bool) {
+		if loggerResolved {
+			return
+		}
+
+		if force || (roomName != "" && roomID != "" && participantIdentity != "" && pID != "") {
+			loggerResolved = true
+			loggerResolver.Resolve(
+				"room", roomName,
+				"roomID", roomID,
+				"participant", participantIdentity,
+				"pID", pID,
+			)
+		}
+	}
+
+	resetLogger := func() {
+		loggerResolver.Reset()
+
+		roomName = ""
+		roomID = ""
+		participantIdentity = ""
+		pID = ""
+		loggerResolved = false
+	}
+
+	roomName, pi, code, err = s.validateInternal(r)
 	if err != nil {
 		handleError(w, r, code, err)
 		return
 	}
 
-	loggerFields := []any{
-		"participant", pi.Identity,
-		"remote", false,
-	}
+	participantIdentity = pi.Identity
 	if pi.ID != "" {
-		loggerFields = append(loggerFields, "pID", pi.ID)
+		pID = pi.ID
 	}
-	pLogger, loggerResolver := utils.GetLogger(r.Context()).WithValues(loggerFields...).WithDeferredValues()
 
 	// give it a few attempts to start session
 	var cr connectionResult
@@ -253,7 +298,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if errors.As(err, &psrpcErr) {
 			status = psrpcErr.ToHttp()
 		}
-		handleError(w, r, status, err, loggerFields...)
+		handleError(w, r, status, err, getLoggerFields()...)
 		return
 	}
 
@@ -261,10 +306,15 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	pLogger = pLogger.WithValues("connID", cr.ConnectionID)
 	if !pi.Reconnect && initialResponse.GetJoin() != nil {
+		joinRoomID := livekit.RoomID(initialResponse.GetJoin().GetRoom().GetSid())
+		if joinRoomID != "" {
+			roomID = joinRoomID
+		}
+
 		pi.ID = livekit.ParticipantID(initialResponse.GetJoin().GetParticipant().GetSid())
-		loggerResolver.Resolve("room", roomName, "pID", pi.ID)
-	} else {
-		loggerResolver.Resolve("room", roomName)
+		pID = pi.ID
+
+		resolveLogger(false)
 	}
 
 	signalStats := telemetry.NewBytesSignalStats(r.Context(), s.telemetry)
@@ -294,7 +344,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// upgrade only once the basics are good to go
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, err, loggerFields...)
+		handleError(w, r, http.StatusInternalServerError, err, getLoggerFields()...)
 		return
 	}
 
@@ -313,6 +363,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	pLogger.Debugw("sending initial response", "response", logger.Proto(initialResponse))
 	count, err := sigConn.WriteResponse(initialResponse)
 	if err != nil {
+		resolveLogger(true)
 		pLogger.Warnw("could not write initial response", err)
 		return
 	}
@@ -347,6 +398,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			case msg := <-cr.ResponseSource.ReadChan():
 				if msg == nil {
+					resolveLogger(true)
 					pLogger.Debugw("nothing to read from response source")
 					return
 				}
@@ -369,13 +421,25 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					signalStats.ResolveRoom(m.Join.GetRoom())
 					signalStats.ResolveParticipant(m.Join.GetParticipant())
 				case *livekit.SignalResponse_RoomUpdate:
+					updateRoomID := livekit.RoomID(m.RoomUpdate.GetRoom().GetSid())
+					if updateRoomID != "" {
+						roomID = updateRoomID
+						resolveLogger(false)
+					}
 					pLogger.Debugw("sending room update", "roomUpdate", m)
 					signalStats.ResolveRoom(m.RoomUpdate.GetRoom())
 				case *livekit.SignalResponse_Update:
 					pLogger.Debugw("sending participant update", "participantUpdate", m)
 				case *livekit.SignalResponse_RoomMoved:
-					loggerResolver.Reset()
-					loggerResolver.Resolve("room", m.RoomMoved.GetRoom(), "pID", m.RoomMoved.GetParticipant().GetSid())
+					resetLogger()
+					roomName = livekit.RoomName(m.RoomMoved.GetRoom().GetName())
+					moveRoomID := livekit.RoomID(m.RoomMoved.GetRoom().GetSid())
+					if moveRoomID != "" {
+						roomID = moveRoomID
+					}
+					participantIdentity = livekit.ParticipantIdentity(m.RoomMoved.GetParticipant().GetIdentity())
+					pID = livekit.ParticipantID(m.RoomMoved.GetParticipant().GetSid())
+					resolveLogger(false)
 					pLogger.Debugw("sending room moved", "roomMoved", m)
 				}
 
