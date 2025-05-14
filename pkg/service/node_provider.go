@@ -20,8 +20,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-var bootstrapNodes = [7]string{"wTXA7UUP8sJFmbXi2jTC8wXQsf7AUEJNuYVeNCR7d1d", "56EfQS7to175rMGiZ3kSYpT3xp5sK6SXVx4VhAbw7PcP", "7spwAJL7TLpBRV3ZYHNCd2R8RLwEZteyeAuqN7DWs3dZ", "EtPNdLSf2QbNESa2gkJQikpdNwdDA1Qft2qaNqwUoE4e", "E21pjHeVJLWLQSBANrE4GXSPvh7ZUpgbMjGBgNDFLbdz", "DSerT5fmaw1GQFS2xJcYjTb1kJudKUcezEqGCfueiPfZ", "2TWwNKMi2vtNpRVVySS8nVW2JKUhmcVgD4bKYAFaR5Zo"}
-
 type Node struct {
 	Participants int32
 	Domain       string
@@ -54,8 +52,6 @@ type NodeProvider struct {
 	ContractAddress   string
 	NetworkHostHTTP   string
 	NetworkHostWS     string
-	SolanaHostHTTP    string
-	SolanaHostWS      string
 	RegistryAuthority string
 	geo               *geoip2.Reader
 	current           Node
@@ -69,10 +65,8 @@ func NewNodeProvider(geo *geoip2.Reader, localNode routing.LocalNode, conf confi
 	provider := &NodeProvider{
 		WalletPrivateKey:  conf.WalletPrivateKey,
 		ContractAddress:   conf.ContractAddress,
-		NetworkHostHTTP:   conf.EphemeralHostHTTP,
-		NetworkHostWS:     conf.EphemeralHostWS,
-		SolanaHostHTTP:    conf.NetworkHostHTTP,
-		SolanaHostWS:      conf.NetworkHostWS,
+		NetworkHostHTTP:   conf.NetworkHostHTTP,
+		NetworkHostWS:     conf.NetworkHostWS,
 		RegistryAuthority: conf.RegistryAuthority,
 		geo:               geo,
 		localNode:         localNode,
@@ -163,38 +157,6 @@ func (p *NodeProvider) FetchRelevant(ctx context.Context, clientIP string) (Node
 	return nodes[0].node, nil
 }
 
-func (p *NodeProvider) selfRefresh(ctx context.Context) error {
-	authority, err := solana.PublicKeyFromBase58(p.RegistryAuthority)
-	if err != nil {
-		return err
-	}
-
-	client, err := NewRegistryClient(p.NetworkHostHTTP, p.NetworkHostWS, p.ContractAddress, p.WalletPrivateKey)
-	if err != nil {
-		return err
-	}
-
-	defer client.Close()
-
-	entry, err := client.GetNodeFromRegistry(ctx, authority, "nodes", client.signer.PublicKey())
-	if err != nil {
-		// force refresh self in case of missing record
-		_, err = client.UpdateNodeOnline(ctx, "nodes", authority, client.signer.PublicKey(), p.localNode.Stats.NumClients)
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-	if entry.Online != p.localNode.Stats.NumClients {
-		_, err = client.UpdateNodeOnline(ctx, "nodes", authority, client.signer.PublicKey(), p.localNode.Stats.NumClients)
-		if err != nil {
-			return err
-		}
-
-	}
-	return nil
-}
-
 func (p *NodeProvider) refresh(ctx context.Context) error {
 	authority, err := solana.PublicKeyFromBase58(p.RegistryAuthority)
 	if err != nil {
@@ -208,7 +170,7 @@ func (p *NodeProvider) refresh(ctx context.Context) error {
 
 	defer client.Close()
 
-	entryNodes, err := client.ListNodesInRegistry(ctx, authority, "nodes")
+	entryNodes, err := client.ListNodesInRegistry(ctx, authority, "dtel-nodes")
 	if err != nil {
 		return err
 	}
@@ -252,82 +214,6 @@ func (p *NodeProvider) refresh(ctx context.Context) error {
 			Longitude:    city.Location.Longitude,
 		}
 		p.save(entryNode.Registred.String(), node)
-	}
-	return nil
-}
-
-func (p *NodeProvider) forceRefresh(ctx context.Context) error {
-	nodes := p.GetNodes()
-
-	if len(nodes) >= len(bootstrapNodes) {
-		return nil
-	}
-
-	authority, err := solana.PublicKeyFromBase58(p.RegistryAuthority)
-	if err != nil {
-		return err
-	}
-
-	client, err := NewRegistryClient(p.SolanaHostHTTP, p.SolanaHostWS, p.ContractAddress, p.WalletPrivateKey)
-	if err != nil {
-		return err
-	}
-
-	defer client.Close()
-
-	for _, bootstrap := range bootstrapNodes {
-		_, ok := nodes[bootstrap]
-		if !ok {
-			address, err := solana.PublicKeyFromBase58(bootstrap)
-			if err != nil {
-				logger.Errorw("forceRefresh", err)
-				continue
-			}
-			entryNode, err := client.GetNodeFromRegistry(ctx, authority, "nodes", address)
-			if err != nil {
-				logger.Errorw("forceRefresh", err)
-				continue
-			}
-			if entryNode.Active == false {
-				continue
-			}
-
-			var ipv4 net.IP
-			ips, _ := net.LookupIP(entryNode.Domain)
-			for _, ip := range ips {
-				ipv4 = ip.To4()
-				if ipv4 != nil {
-					break
-				}
-			}
-			if ipv4 == nil {
-				logger.Errorw("ipv4 nil", fmt.Errorf("domain error: %v", entryNode.Domain))
-				continue
-			}
-
-			country, err := p.geo.Country(ipv4)
-			if err != nil {
-				logger.Errorw("country", err)
-				continue
-			}
-
-			city, err := p.geo.City(ipv4)
-			if err != nil {
-				logger.Errorw("city", err)
-				continue
-			}
-
-			node := Node{
-				Participants: entryNode.Online,
-				Domain:       entryNode.Domain,
-				IP:           ipv4.String(),
-				Country:      country.Country.Names["en"],
-				City:         city.City.Names["en"],
-				Latitude:     city.Location.Latitude,
-				Longitude:    city.Location.Longitude,
-			}
-			p.save(entryNode.Registred.String(), node)
-		}
 	}
 	return nil
 }
@@ -385,12 +271,6 @@ func (p *NodeProvider) processRefresh() {
 	err = p.refresh(ctx2)
 	if err != nil {
 		logger.Errorw("[refresh] error %s\r\n", err)
-	}
-	ctx3, cancel3 := context.WithTimeout(context.Background(), time.Second*10)
-	defer cancel3()
-	err = p.forceRefresh(ctx3)
-	if err != nil {
-		logger.Errorw("[forceRefresh] error %s\r\n", err)
 	}
 }
 
