@@ -1110,15 +1110,6 @@ func (s *trackSubscription) getNumAttempts() int32 {
 func (s *trackSubscription) handleSourceTrackRemoved() {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	startedAt := s.subStartedAt.Load()
-	if startedAt == nil || time.Since(*startedAt) < trackRemoveGracePeriod {
-		// to prevent race conditions, if we've recently been asked to subscribe to a track
-		// ignore when source was removed. reconciler will take care of it eventually
-		// this would address the case when a track was unpublished and republished immediately
-		// it's possible for another caller to call setDesired(true) for the republished track before
-		// handleSourceTrackRemoved is called on the previously unpublished track
-		return
-	}
 
 	// source track removed, we would unsubscribe
 	s.logger.Debugw("unsubscribing from track since source track was removed")

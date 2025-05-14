@@ -3326,6 +3326,9 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 	}
 
 	for _, track := range p.GetPublishedTracks() {
+		for _, sub := range track.GetAllSubscribers() {
+			track.RemoveSubscriber(sub, false)
+		}
 		trackInfo := track.ToProto()
 		p.params.Telemetry.TrackUnpublished(
 			context.Background(),
