@@ -33,7 +33,7 @@ import (
 func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
 	wire.Build(
 		getNodeID,
-		CreateNodeProvider,
+		CreateBootNodeProvider,
 		CreateMainDatabaseP2P,
 		createRedisClient,
 		createStore,
@@ -72,6 +72,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		newInProcessTurnServer,
 		utils.NewDefaultTimedVersionGenerator,
 		createClientProvider,
+		createNodeProvider,
 		createGeoIP,
 		createRelevantNodesHandler,
 		createMainDebugHandler,
@@ -80,13 +81,13 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	return &LivekitServer{}, nil
 }
 
-func CreateMainDatabaseP2P(conf *config.Config, nodeProvider *NodeProvider) (*p2p_database.DB, error) {
+func CreateMainDatabaseP2P(conf *config.Config, bootNodeProvider *BootNodeProvider) (*p2p_database.DB, error) {
 	p2pConf := p2p_database.Config{
 		DisableGater:     false,
 		WalletPrivateKey: conf.Solana.WalletPrivateKey,
 		PeerListenPort:   conf.P2P.PeerListenPort,
 		DatabaseName:     conf.P2P.DatabaseName,
-		GetNodes:         nodeProvider.GetNodes,
+		GetNodes:         bootNodeProvider.GetNodes,
 	}
 	adaptedLogger := p2p_database.NewLivekitLoggerAdapter(logger.GetLogger())
 	db, err := p2p_database.Connect(context.Background(), p2pConf, adaptedLogger)
@@ -94,6 +95,10 @@ func CreateMainDatabaseP2P(conf *config.Config, nodeProvider *NodeProvider) (*p2
 		return nil, err
 	}
 	return db, nil
+}
+
+func createNodeProvider(geo *geoip2.Reader, node routing.LocalNode, db *p2p_database.DB) *NodeProvider {
+	return NewNodeProvider(geo, node, db)
 }
 
 func createRelevantNodesHandler(nodeProvider *NodeProvider) *RelevantNodesHandler {
@@ -108,8 +113,8 @@ func createGeoIP() (*geoip2.Reader, error) {
 	return geoip2.FromBytes(livekit2.MixmindDatabase)
 }
 
-func CreateNodeProvider(geo *geoip2.Reader, config *config.Config, node routing.LocalNode) *NodeProvider {
-	return NewNodeProvider(geo, node, config.Solana)
+func CreateBootNodeProvider(config *config.Config) *BootNodeProvider {
+	return NewBootNodeProvider(config.Solana)
 }
 
 func createClientProvider(config *config.Config) *ClientProvider {

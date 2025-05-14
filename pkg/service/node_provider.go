@@ -2,16 +2,14 @@ package service
 
 import (
 	"context"
-	"fmt"
+	"encoding/json"
 	"math"
 	"net"
 	"sort"
 	"sync"
 	"time"
 
-	"github.com/gagliardetto/solana-go"
-
-	"github.com/livekit/livekit-server/pkg/config"
+	p2p_database "github.com/dTelecom/p2p-realtime-database"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
@@ -21,18 +19,19 @@ import (
 )
 
 type Node struct {
-	Participants int32
-	Domain       string
-	IP           string
-	Country      string
-	City         string
-	Latitude     float64
-	Longitude    float64
+	Id           string  `json:"id"`
+	Participants int32   `json:"participants"`
+	Domain       string  `json:"domain"`
+	IP           string  `json:"ip"`
+	Country      string  `json:"country"`
+	City         string  `json:"city"`
+	Latitude     float64 `json:"latitude"`
+	Longitude    float64 `json:"longitude"`
 }
 
 type nodeMessage struct {
-	Node Node
-	TTL  int64
+	Node Node  `json:"node"`
+	TTL  int64 `json:"ttl"`
 }
 
 func (v *nodeMessage) isExpired() bool {
@@ -40,72 +39,71 @@ func (v *nodeMessage) isExpired() bool {
 }
 
 const (
-	weightEqualsCountries   = 1.0
-	weightParticipantsCount = -0.1
-	weightDistance          = -0.001
-	defaultNodeTtl          = 30 * time.Second
-	nodeRefreshInterval     = 10 * time.Second
+	weightEqualsCountries    = 1.0
+	weightParticipantsCount  = -0.1
+	weightDistance           = -0.001
+	defaultNodeTtl           = 30 * time.Second
+	nodeRefreshInterval      = 10 * time.Second
+	topicNodeValuesStreaming = "nodes_values"
 )
 
 type NodeProvider struct {
-	WalletPrivateKey  string
-	ContractAddress   string
-	NetworkHostHTTP   string
-	NetworkHostWS     string
-	RegistryAuthority string
-	geo               *geoip2.Reader
-	current           Node
-	localNode         routing.LocalNode
-	prevStats         *livekit.NodeStats
-	lock              sync.RWMutex
-	nodeValues        map[string]nodeMessage
+	db         *p2p_database.DB
+	geo        *geoip2.Reader
+	current    Node
+	localNode  routing.LocalNode
+	prevStats  *livekit.NodeStats
+	lock       sync.RWMutex
+	nodeValues map[string]nodeMessage
 }
 
-func NewNodeProvider(geo *geoip2.Reader, localNode routing.LocalNode, conf config.SolanaConfig) *NodeProvider {
+func NewNodeProvider(geo *geoip2.Reader, localNode routing.LocalNode, db *p2p_database.DB) *NodeProvider {
 	provider := &NodeProvider{
-		WalletPrivateKey:  conf.WalletPrivateKey,
-		ContractAddress:   conf.ContractAddress,
-		NetworkHostHTTP:   conf.NetworkHostHTTP,
-		NetworkHostWS:     conf.NetworkHostWS,
-		RegistryAuthority: conf.RegistryAuthority,
-		geo:               geo,
-		localNode:         localNode,
-		lock:              sync.RWMutex{},
-		nodeValues:        make(map[string]nodeMessage),
+		db:         db,
+		geo:        geo,
+		localNode:  localNode,
+		lock:       sync.RWMutex{},
+		nodeValues: make(map[string]nodeMessage),
+	}
+
+	err := db.Subscribe(context.Background(), topicNodeValuesStreaming, func(event p2p_database.Event) {
+		jsonMsg, ok := event.Message.(string)
+		if !ok {
+			logger.Errorw("convert interface to string from message topic node values", errors.New("NewNodeProvider"))
+			return
+		}
+
+		nodeMsg := nodeMessage{}
+		err := json.Unmarshal([]byte(jsonMsg), &nodeMsg)
+		if err != nil {
+			logger.Errorw("topic node values unmarshal error", err)
+			return
+		}
+
+		provider.handleNodeMessage(nodeMsg, event.FromPeerId)
+	})
+
+	if err != nil {
+		logger.Errorw("topic node values subscribe error", err)
 	}
 
 	provider.startRefresh()
-	go provider.processRefresh()
 
 	return provider
 }
 
-func (p *NodeProvider) List(ctx context.Context) (map[string]Node, error) {
+func (p *NodeProvider) List(ctx context.Context) ([]Node, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	nodes := make(map[string]Node)
-	for k, v := range p.nodeValues {
+	var nodes []Node
+	for _, v := range p.nodeValues {
 		if v.isExpired() == false {
-			nodes[k] = v.Node
+			nodes = append(nodes, v.Node)
 		}
 	}
 
 	return nodes, nil
-}
-
-func (p *NodeProvider) GetNodes() map[string]string {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	nodes := make(map[string]string)
-	for k, v := range p.nodeValues {
-		if v.isExpired() == false {
-			nodes[k] = v.Node.IP
-		}
-	}
-
-	return nodes
 }
 
 func (p *NodeProvider) FetchRelevant(ctx context.Context, clientIP string) (Node, error) {
@@ -128,7 +126,7 @@ func (p *NodeProvider) FetchRelevant(ctx context.Context, clientIP string) (Node
 		return Node{}, errors.Wrap(err, "list nodes")
 	}
 
-	for k, xNode := range xNodes {
+	for _, xNode := range xNodes {
 		var weight float64
 		if clientCountry == xNode.Country {
 			weight += weightEqualsCountries
@@ -138,7 +136,7 @@ func (p *NodeProvider) FetchRelevant(ctx context.Context, clientIP string) (Node
 
 		logger.Infow(
 			"calculated weight for",
-			"node id", k,
+			"node id", xNode.Id,
 			"distance", dist,
 			"client country", clientCountry,
 			"node country", xNode.Country,
@@ -157,75 +155,62 @@ func (p *NodeProvider) FetchRelevant(ctx context.Context, clientIP string) (Node
 	return nodes[0].node, nil
 }
 
+func (p *NodeProvider) Save(ctx context.Context, node Node) error {
+	ip := net.ParseIP(node.IP)
+
+	country, err := p.geo.Country(ip)
+	if err != nil {
+		return errors.Wrap(err, "fetch country")
+	}
+
+	city, err := p.geo.City(ip)
+	if err != nil {
+		return errors.Wrap(err, "fetch city")
+	}
+
+	node.Country = country.Country.Names["en"]
+	node.City = city.City.Names["en"]
+	node.Latitude = city.Location.Latitude
+	node.Longitude = city.Location.Longitude
+	node.Participants = p.localNode.Stats.NumClients
+	node.Id = p.db.GetHost().ID().String()
+	p.current = node
+
+	return p.save(ctx, node)
+}
+
 func (p *NodeProvider) refresh(ctx context.Context) error {
-	authority, err := solana.PublicKeyFromBase58(p.RegistryAuthority)
+	node := p.current
+	node.Participants = p.localNode.Stats.NumClients
+
+	return p.save(ctx, node)
+}
+
+func (p *NodeProvider) save(ctx context.Context, node Node) error {
+	record := nodeMessage{
+		Node: node,
+		TTL:  time.Now().Add(defaultNodeTtl).Unix(),
+	}
+
+	p.handleNodeMessage(record, node.Id)
+
+	marshaled, err := json.Marshal(record)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "marshal node")
 	}
 
-	client, err := NewRegistryClient(p.NetworkHostHTTP, p.NetworkHostWS, p.ContractAddress, p.WalletPrivateKey)
+	_, err = p.db.Publish(ctx, topicNodeValuesStreaming, string(marshaled))
 	if err != nil {
-		return err
+		return errors.Wrap(err, "publish node message")
 	}
 
-	defer client.Close()
-
-	entryNodes, err := client.ListNodesInRegistry(ctx, authority, "dtel-nodes")
-	if err != nil {
-		return err
-	}
-	for _, entryNode := range entryNodes {
-		if entryNode.Active == false {
-			continue
-		}
-
-		var ipv4 net.IP
-		ips, _ := net.LookupIP(entryNode.Domain)
-		for _, ip := range ips {
-			ipv4 = ip.To4()
-			if ipv4 != nil {
-				break
-			}
-		}
-		if ipv4 == nil {
-			logger.Errorw("ipv4 nil", fmt.Errorf("domain error: %v", entryNode.Domain))
-			continue
-		}
-
-		country, err := p.geo.Country(ipv4)
-		if err != nil {
-			logger.Errorw("country", err)
-			continue
-		}
-
-		city, err := p.geo.City(ipv4)
-		if err != nil {
-			logger.Errorw("city", err)
-			continue
-		}
-
-		node := Node{
-			Participants: entryNode.Online,
-			Domain:       entryNode.Domain,
-			IP:           ipv4.String(),
-			Country:      country.Country.Names["en"],
-			City:         city.City.Names["en"],
-			Latitude:     city.Location.Latitude,
-			Longitude:    city.Location.Longitude,
-		}
-		p.save(entryNode.Registred.String(), node)
-	}
 	return nil
 }
 
-func (p *NodeProvider) save(id string, node Node) {
+func (p *NodeProvider) handleNodeMessage(nodeMsg nodeMessage, fromPeerId string) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	msg := nodeMessage{
-		Node: node,
-		TTL:  time.Now().Add(defaultClientTtl).Unix(),
-	}
-	p.nodeValues[id] = msg
+	p.nodeValues[fromPeerId] = nodeMsg
 }
 
 func distance(lat1 float64, lng1 float64, lat2 float64, lng2 float64) float64 {
@@ -253,19 +238,16 @@ func (p *NodeProvider) startRefresh() {
 		ticker := time.NewTicker(nodeRefreshInterval)
 		for {
 			<-ticker.C
-			p.processRefresh()
+			p.UpdateNodeStats()
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
+			defer cancel()
+			err := p.refresh(ctx)
+			if err != nil {
+				logger.Errorw("[refresh] error %s\r\n", err)
+				continue
+			}
 		}
 	}()
-}
-
-func (p *NodeProvider) processRefresh() {
-	p.UpdateNodeStats()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-	defer cancel()
-	err := p.refresh(ctx)
-	if err != nil {
-		logger.Errorw("[refresh] error %s\r\n", err)
-	}
 }
 
 func (p *NodeProvider) UpdateNodeStats() {

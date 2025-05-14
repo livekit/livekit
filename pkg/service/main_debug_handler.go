@@ -53,9 +53,9 @@ func (h *MainDebugHandler) nodeHTTPHandler(w http.ResponseWriter, r *http.Reques
 		tablewriter.ALIGN_CENTER,
 	})
 
-	for k, node := range nodes {
+	for _, node := range nodes {
 		table.Append([]string{
-			k,
+			node.Id,
 			fmt.Sprintf("%d", node.Participants),
 			node.Domain,
 			node.IP,

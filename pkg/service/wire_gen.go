@@ -50,12 +50,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	reader, err := createGeoIP()
-	if err != nil {
-		return nil, err
-	}
-	nodeProvider := CreateNodeProvider(reader, conf, currentNode)
-	db, err := CreateMainDatabaseP2P(conf, nodeProvider)
+	bootNodeProvider := CreateBootNodeProvider(conf)
+	db, err := CreateMainDatabaseP2P(conf, bootNodeProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -123,6 +119,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	clientProvider := createClientProvider(conf)
+	reader, err := createGeoIP()
+	if err != nil {
+		return nil, err
+	}
+	nodeProvider := createNodeProvider(reader, currentNode, db)
 	relevantNodesHandler := createRelevantNodesHandler(nodeProvider)
 	mainDebugHandler := createMainDebugHandler(nodeProvider, clientProvider, db)
 	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, nodeProvider, relevantNodesHandler, mainDebugHandler, tlsMuxer, manager)
@@ -134,13 +135,13 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 
 // wire.go:
 
-func CreateMainDatabaseP2P(conf *config.Config, nodeProvider *NodeProvider) (*p2p_database.DB, error) {
+func CreateMainDatabaseP2P(conf *config.Config, bootNodeProvider *BootNodeProvider) (*p2p_database.DB, error) {
 	p2pConf := p2p_database.Config{
 		DisableGater:     false,
 		WalletPrivateKey: conf.Solana.WalletPrivateKey,
 		PeerListenPort:   conf.P2P.PeerListenPort,
 		DatabaseName:     conf.P2P.DatabaseName,
-		GetNodes:         nodeProvider.GetNodes,
+		GetNodes:         bootNodeProvider.GetNodes,
 	}
 	adaptedLogger := p2p_database.NewLivekitLoggerAdapter(logger.GetLogger())
 	db, err := p2p_database.Connect(context.Background(), p2pConf, adaptedLogger)
@@ -148,6 +149,10 @@ func CreateMainDatabaseP2P(conf *config.Config, nodeProvider *NodeProvider) (*p2
 		return nil, err
 	}
 	return db, nil
+}
+
+func createNodeProvider(geo *geoip2.Reader, node routing.LocalNode, db *p2p_database.DB) *NodeProvider {
+	return NewNodeProvider(geo, node, db)
 }
 
 func createRelevantNodesHandler(nodeProvider *NodeProvider) *RelevantNodesHandler {
@@ -162,8 +167,8 @@ func createGeoIP() (*geoip2.Reader, error) {
 	return geoip2.FromBytes(livekit.MixmindDatabase)
 }
 
-func CreateNodeProvider(geo *geoip2.Reader, config2 *config.Config, node routing.LocalNode) *NodeProvider {
-	return NewNodeProvider(geo, node, config2.Solana)
+func CreateBootNodeProvider(config2 *config.Config) *BootNodeProvider {
+	return NewBootNodeProvider(config2.Solana)
 }
 
 func createClientProvider(config2 *config.Config) *ClientProvider {
