@@ -3326,6 +3326,12 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 	}
 
 	for _, track := range p.GetPublishedTracks() {
+		for _, sub := range track.GetAllSubscribers() {
+			track.RemoveSubscriber(sub, false)
+			// clear the subscriber node max quality as the remote quality notify
+			// from source room would not reach the moving out participant.
+			track.(types.LocalMediaTrack).ClearSubscriberNodesMaxQuality()
+		}
 		trackInfo := track.ToProto()
 		p.params.Telemetry.TrackUnpublished(
 			context.Background(),

@@ -99,6 +99,13 @@ func (d *DynacastQuality) NotifySubscriberMaxQuality(subscriberID livekit.Partic
 	d.updateQualityChange(false)
 }
 
+func (d *DynacastQuality) ClearSubscriberNodesMaxQuality() {
+	d.lock.Lock()
+	d.maxSubscriberNodeQuality = make(map[livekit.NodeID]livekit.VideoQuality)
+	d.lock.Unlock()
+	d.updateQualityChange(false)
+}
+
 func (d *DynacastQuality) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, quality livekit.VideoQuality) {
 	d.params.Logger.Debugw(
 		"setting subscriber node max quality",
