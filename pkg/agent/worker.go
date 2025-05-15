@@ -153,17 +153,19 @@ type WorkerRegisterer struct {
 	WorkerPingHandler
 	serverInfo *livekit.ServerInfo
 	protocol   WorkerProtocolVersion
+	workerID   string
 	deadline   time.Time
 
 	registration WorkerRegistration
 	registered   bool
 }
 
-func NewWorkerRegisterer(conn SignalConn, serverInfo *livekit.ServerInfo, protocol WorkerProtocolVersion) *WorkerRegisterer {
+func NewWorkerRegisterer(conn SignalConn, serverInfo *livekit.ServerInfo, protocol WorkerProtocolVersion, workerID string) *WorkerRegisterer {
 	return &WorkerRegisterer{
 		WorkerPingHandler: WorkerPingHandler{conn: conn},
 		serverInfo:        serverInfo,
 		protocol:          protocol,
+		workerID:          workerID,
 		deadline:          time.Now().Add(RegisterTimeout),
 	}
 }
@@ -197,7 +199,7 @@ func (h *WorkerRegisterer) HandleRegister(req *livekit.RegisterWorkerRequest) er
 
 	h.registration = WorkerRegistration{
 		Protocol:    h.protocol,
-		ID:          guid.New(guid.AgentWorkerPrefix),
+		ID:          h.workerID,
 		Version:     req.Version,
 		AgentName:   req.AgentName,
 		Namespace:   req.GetNamespace(),

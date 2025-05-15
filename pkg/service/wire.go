@@ -33,6 +33,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	pagent "github.com/livekit/protocol/agent"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -83,6 +84,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewAgentDispatchService,
 		agent.NewAgentClient,
 		getAgentStore,
+		getWorkerTokenProvider,
 		getSignalRelayConfig,
 		NewDefaultSignalServer,
 		routing.NewSignalClient,
@@ -257,6 +259,10 @@ func getPSRPCConfig(config *config.Config) rpc.PSRPCConfig {
 
 func getPSRPCClientParams(config rpc.PSRPCConfig, bus psrpc.MessageBus) rpc.ClientParams {
 	return rpc.NewClientParams(config, bus, logger.GetLogger(), rpc.PSRPCMetricsObserver{})
+}
+
+func getWorkerTokenProvider(nodeID livekit.NodeID, config *config.Config) *pagent.WorkerTokenProvider {
+	return pagent.NewWorkerTokenProvider(nodeID, config.Agents.WorkerToken)
 }
 
 func createForwardStats(conf *config.Config) *sfu.ForwardStats {

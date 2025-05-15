@@ -34,6 +34,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
+	"github.com/livekit/protocol/agent"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	redisLiveKit "github.com/livekit/protocol/redis"
@@ -64,6 +65,7 @@ type Config struct {
 	TURN           TURNConfig               `yaml:"turn,omitempty"`
 	Ingress        IngressConfig            `yaml:"ingress,omitempty"`
 	SIP            SIPConfig                `yaml:"sip,omitempty"`
+	Agents         AgentsConfig             `yaml:"agents,omitempty"`
 	WebHook        webhook.WebHookConfig    `yaml:"webhook,omitempty"`
 	NodeSelector   NodeSelectorConfig       `yaml:"node_selector,omitempty"`
 	KeyFile        string                   `yaml:"key_file,omitempty"`
@@ -272,6 +274,10 @@ type IngressConfig struct {
 }
 
 type SIPConfig struct{}
+
+type AgentsConfig struct {
+	WorkerToken agent.WorkerTokenConfig `yaml:"worker_token,omitempty"`
+}
 
 type APIConfig struct {
 	// amount of time to wait for API to execute, default 2s
@@ -724,6 +730,9 @@ func (conf *Config) updateFromCLI(c *cli.Context, baseFlags []cli.Flag) error {
 		if err := conf.unmarshalKeys(c.String("keys")); err != nil {
 			return errors.New("Could not parse keys, it needs to be exactly, \"key: secret\", including the space")
 		}
+	}
+	if c.String("agents-jwt-secret") != "" {
+		conf.Agents.WorkerToken.Secret = c.String("agents-jwt-secret")
 	}
 	if c.IsSet("region") {
 		conf.Region = c.String("region")
