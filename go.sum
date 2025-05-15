@@ -169,8 +169,8 @@ github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731 h1:9x+U2HGLrSw5AT
 github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731/go.mod h1:Rs3MhFwutWhGwmY1VQsygw28z5bWcnEYmS1OG9OxjOQ=
 github.com/livekit/mediatransportutil v0.0.0-20250416051815-7632a9d1b50d h1:okulvWxyywxCffnvgNbfHxpO8v5ISV9bTjF2O1764IU=
 github.com/livekit/mediatransportutil v0.0.0-20250416051815-7632a9d1b50d/go.mod h1:CMenkOQQjEbjvs0oJa2ye84oHSfr7tRiXO+sCIZiG9A=
-github.com/livekit/protocol v1.38.1-0.20250515151618-2b00a15c76e2 h1:hLZzPe2zP677A7au2x4W28BpvufFzBv58i3MrIRo+sA=
-github.com/livekit/protocol v1.38.1-0.20250515151618-2b00a15c76e2/go.mod h1:F5GLzgMUFFFgm7ajoYLIEXxlZVnRNusV5Qlnok4dtlc=
+github.com/livekit/protocol v1.38.1-0.20250515171358-c442e9709acb h1:QwpjVj92IkUiniXdfvsf4Rm0ashI94TfE/Cytcp3lBw=
+github.com/livekit/protocol v1.38.1-0.20250515171358-c442e9709acb/go.mod h1:F5GLzgMUFFFgm7ajoYLIEXxlZVnRNusV5Qlnok4dtlc=
 github.com/livekit/psrpc v0.6.1-0.20250511053145-465289d72c3c h1:WwEr0YBejYbKzk8LSaO9h8h0G9MnE7shyDu8yXQWmEc=
 github.com/livekit/psrpc v0.6.1-0.20250511053145-465289d72c3c/go.mod h1:kmD+AZPkWu0MaXIMv57jhNlbiSZZ/Jx4bzlxBDVmJes=
 github.com/mackerelio/go-osstat v0.2.5 h1:+MqTbZUhoIt4m8qzkVoXUJg1EuifwlAJSk4Yl2GXh+o=

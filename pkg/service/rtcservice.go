@@ -99,7 +99,7 @@ func (s *RTCService) SetupRoutes(mux *http.ServeMux) {
 func (s *RTCService) validate(w http.ResponseWriter, r *http.Request) {
 	_, _, code, err := s.validateInternal(r)
 	if err != nil {
-		handleError(w, r, code, err)
+		HandleError(w, r, code, err)
 		return
 	}
 	_, _ = w.Write([]byte("success"))
@@ -265,7 +265,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	roomName, pi, code, err = s.validateInternal(r)
 	if err != nil {
-		handleError(w, r, code, err)
+		HandleError(w, r, code, err)
 		return
 	}
 
@@ -293,7 +293,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if errors.As(err, &psrpcErr) {
 			status = psrpcErr.ToHttp()
 		}
-		handleError(w, r, status, err, getLoggerFields()...)
+		HandleError(w, r, status, err, getLoggerFields()...)
 		return
 	}
 
@@ -339,7 +339,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// upgrade only once the basics are good to go
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, err, getLoggerFields()...)
+		HandleError(w, r, http.StatusInternalServerError, err, getLoggerFields()...)
 		return
 	}
 

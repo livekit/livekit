@@ -26,7 +26,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-func handleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...interface{}) {
+func HandleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...interface{}) {
 	keysAndValues = append(keysAndValues, "status", status)
 	if r != nil && r.URL != nil {
 		keysAndValues = append(keysAndValues, "method", r.Method, "path", r.URL.Path)
