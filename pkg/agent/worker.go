@@ -147,23 +147,29 @@ type WorkerRegistration struct {
 	Permissions *livekit.ParticipantPermission
 }
 
+func MakeWorkerRegistration() WorkerRegistration {
+	return WorkerRegistration{
+		ID:       guid.New(guid.AgentWorkerPrefix),
+		Protocol: CurrentProtocol,
+	}
+}
+
 var _ WorkerSignalHandler = (*WorkerRegisterer)(nil)
 
 type WorkerRegisterer struct {
 	WorkerPingHandler
 	serverInfo *livekit.ServerInfo
-	protocol   WorkerProtocolVersion
 	deadline   time.Time
 
 	registration WorkerRegistration
 	registered   bool
 }
 
-func NewWorkerRegisterer(conn SignalConn, serverInfo *livekit.ServerInfo, protocol WorkerProtocolVersion) *WorkerRegisterer {
+func NewWorkerRegisterer(conn SignalConn, serverInfo *livekit.ServerInfo, base WorkerRegistration) *WorkerRegisterer {
 	return &WorkerRegisterer{
 		WorkerPingHandler: WorkerPingHandler{conn: conn},
 		serverInfo:        serverInfo,
-		protocol:          protocol,
+		registration:      base,
 		deadline:          time.Now().Add(RegisterTimeout),
 	}
 }
@@ -195,15 +201,11 @@ func (h *WorkerRegisterer) HandleRegister(req *livekit.RegisterWorkerRequest) er
 		}
 	}
 
-	h.registration = WorkerRegistration{
-		Protocol:    h.protocol,
-		ID:          guid.New(guid.AgentWorkerPrefix),
-		Version:     req.Version,
-		AgentName:   req.AgentName,
-		Namespace:   req.GetNamespace(),
-		JobType:     req.GetType(),
-		Permissions: permissions,
-	}
+	h.registration.Version = req.Version
+	h.registration.AgentName = req.AgentName
+	h.registration.Namespace = req.GetNamespace()
+	h.registration.JobType = req.GetType()
+	h.registration.Permissions = permissions
 	h.registered = true
 
 	_, err := h.conn.WriteServerMessage(&livekit.ServerMessage{

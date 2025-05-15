@@ -27,7 +27,7 @@ import (
 )
 
 type AgentService interface {
-	HandleConnection(context.Context, agent.SignalConn, agent.WorkerProtocolVersion)
+	HandleConnection(context.Context, agent.SignalConn, agent.WorkerRegistration)
 	DrainConnections(time.Duration)
 }
 
@@ -126,7 +126,7 @@ func (h *TestServer) SimulateAgentWorker(opts ...SimulatedWorkerOption) *AgentWo
 	}
 
 	ctx := service.WithAPIKey(o.Context, &auth.ClaimGrants{}, "test")
-	go h.HandleConnection(ctx, w, agent.CurrentProtocol)
+	go h.HandleConnection(ctx, w, agent.MakeWorkerRegistration())
 
 	return w
 }
