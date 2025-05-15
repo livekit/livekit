@@ -34,7 +34,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/version"
-	pagent "github.com/livekit/protocol/agent"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -45,7 +44,6 @@ import (
 
 type AgentSocketUpgrader struct {
 	websocket.Upgrader
-	WorkerTokenProvider *pagent.WorkerTokenProvider
 }
 
 func (u AgentSocketUpgrader) Upgrade(
@@ -74,26 +72,16 @@ func (u AgentSocketUpgrader) Upgrade(
 	// require a claim
 	claims := GetGrants(r.Context())
 	if claims == nil || claims.Video == nil || !claims.Video.Agent {
-		handleError(w, r, http.StatusUnauthorized, rtc.ErrPermissionDenied)
+		HandleError(w, r, http.StatusUnauthorized, rtc.ErrPermissionDenied)
 		return
 	}
 
 	registration = agent.MakeWorkerRegistration()
 
-	workerToken := r.FormValue("worker_token")
-	if workerToken != "" {
-		claims, err := u.WorkerTokenProvider.Decode(workerToken)
-		if err != nil {
-			handleError(w, r, http.StatusUnauthorized, rtc.ErrPermissionDenied)
-			return
-		}
-		registration.ID = claims.Subject
-	}
-
 	// upgrade
 	conn, err := u.Upgrader.Upgrade(w, r, responseHeader)
 	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, err)
+		HandleError(w, r, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -179,11 +167,7 @@ func NewAgentService(
 	bus psrpc.MessageBus,
 	keyProvider auth.KeyProvider,
 ) (*AgentService, error) {
-	s := &AgentService{
-		upgrader: AgentSocketUpgrader{
-			WorkerTokenProvider: pagent.NewWorkerTokenProvider(currentNode.NodeID(), conf.Agents.WorkerToken),
-		},
-	}
+	s := &AgentService{}
 
 	serverInfo := &livekit.ServerInfo{
 		Edition:       livekit.ServerInfo_Standard,
