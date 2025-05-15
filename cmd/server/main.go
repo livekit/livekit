@@ -61,9 +61,9 @@ var baseFlags = []cli.Flag{
 		EnvVars: []string{"LIVEKIT_KEYS"},
 	},
 	&cli.StringFlag{
-		Name:    "agents-jwt-secret",
-		Usage:   "JWT secret for agents",
-		EnvVars: []string{"AGENTS_JWT_SECRET"},
+		Name:    "agents-jwt-keys",
+		Usage:   "one or more JWT keys for agents",
+		EnvVars: []string{"AGENTS_JWT_KEYS"},
 	},
 	&cli.StringFlag{
 		Name:    "region",

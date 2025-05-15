@@ -731,8 +731,8 @@ func (conf *Config) updateFromCLI(c *cli.Context, baseFlags []cli.Flag) error {
 			return errors.New("Could not parse keys, it needs to be exactly, \"key: secret\", including the space")
 		}
 	}
-	if c.String("agents-jwt-secret") != "" {
-		conf.Agents.WorkerToken.Secret = c.String("agents-jwt-secret")
+	if c.String("agents-jwt-keys") != "" {
+		conf.Agents.WorkerToken.Keys = c.String("agents-jwt-keys")
 	}
 	if c.IsSet("region") {
 		conf.Region = c.String("region")
