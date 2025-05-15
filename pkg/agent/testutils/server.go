@@ -17,6 +17,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
+	pagent "github.com/livekit/protocol/agent"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils/events"
@@ -27,7 +28,7 @@ import (
 )
 
 type AgentService interface {
-	HandleConnection(context.Context, agent.SignalConn, agent.WorkerProtocolVersion)
+	HandleConnection(context.Context, agent.SignalConn, agent.WorkerRegistration)
 	DrainConnections(time.Duration)
 }
 
@@ -42,6 +43,7 @@ func NewTestServer(bus psrpc.MessageBus) *TestServer {
 		localNode,
 		bus,
 		auth.NewSimpleKeyProvider("test", "verysecretsecret"),
+		pagent.NewWorkerTokenProvider("test", pagent.WorkerTokenConfig{Secret: "anothersecret"}),
 	)))
 }
 
@@ -126,7 +128,7 @@ func (h *TestServer) SimulateAgentWorker(opts ...SimulatedWorkerOption) *AgentWo
 	}
 
 	ctx := service.WithAPIKey(o.Context, &auth.ClaimGrants{}, "test")
-	go h.HandleConnection(ctx, w, agent.CurrentProtocol)
+	go h.HandleConnection(ctx, w, agent.MakeWorkerRegistration())
 
 	return w
 }

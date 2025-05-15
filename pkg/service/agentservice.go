@@ -40,7 +40,6 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
-	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
 )
 
@@ -55,8 +54,7 @@ func (u AgentSocketUpgrader) Upgrade(
 	responseHeader http.Header,
 ) (
 	conn *websocket.Conn,
-	protocol agent.WorkerProtocolVersion,
-	workerID string,
+	registration agent.WorkerRegistration,
 	ok bool,
 ) {
 	if u.CheckOrigin == nil {
@@ -80,6 +78,8 @@ func (u AgentSocketUpgrader) Upgrade(
 		return
 	}
 
+	registration = agent.MakeWorkerRegistration()
+
 	workerToken := r.FormValue("worker_token")
 	if workerToken != "" {
 		claims, err := u.WorkerTokenProvider.Decode(workerToken)
@@ -87,9 +87,7 @@ func (u AgentSocketUpgrader) Upgrade(
 			handleError(w, r, http.StatusUnauthorized, rtc.ErrPermissionDenied)
 			return
 		}
-		workerID = claims.Subject
-	} else {
-		workerID = guid.New(guid.AgentWorkerPrefix)
+		registration.ID = claims.Subject
 	}
 
 	// upgrade
@@ -99,12 +97,11 @@ func (u AgentSocketUpgrader) Upgrade(
 		return
 	}
 
-	protocol = agent.CurrentProtocol
 	if pv, err := strconv.Atoi(r.FormValue("protocol")); err == nil {
-		protocol = agent.WorkerProtocolVersion(pv)
+		registration.Protocol = agent.WorkerProtocolVersion(pv)
 	}
 
-	return conn, protocol, workerID, true
+	return conn, registration, true
 }
 
 func DispatchAgentWorkerSignal(c agent.SignalConn, h agent.WorkerSignalHandler, l logger.Logger) bool {
@@ -126,8 +123,8 @@ func DispatchAgentWorkerSignal(c agent.SignalConn, h agent.WorkerSignalHandler, 
 	return true
 }
 
-func HandshakeAgentWorker(c agent.SignalConn, serverInfo *livekit.ServerInfo, protocol agent.WorkerProtocolVersion, workerID string, l logger.Logger) (r agent.WorkerRegistration, ok bool) {
-	wr := agent.NewWorkerRegisterer(c, serverInfo, protocol, workerID)
+func HandshakeAgentWorker(c agent.SignalConn, serverInfo *livekit.ServerInfo, registration agent.WorkerRegistration, l logger.Logger) (r agent.WorkerRegistration, ok bool) {
+	wr := agent.NewWorkerRegisterer(c, serverInfo, registration)
 	if err := c.SetReadDeadline(wr.Deadline()); err != nil {
 		return
 	}
@@ -214,8 +211,8 @@ func NewAgentService(conf *config.Config,
 }
 
 func (s *AgentService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if conn, workerID, protocol, ok := s.upgrader.Upgrade(w, r, nil); ok {
-		s.HandleConnection(r.Context(), NewWSSignalConnection(conn), protocol, workerID)
+	if conn, registration, ok := s.upgrader.Upgrade(w, r, nil); ok {
+		s.HandleConnection(r.Context(), NewWSSignalConnection(conn), registration)
 		conn.Close()
 	}
 }
@@ -243,8 +240,8 @@ func NewAgentHandler(
 	}
 }
 
-func (h *AgentHandler) HandleConnection(ctx context.Context, conn agent.SignalConn, workerID string, protocol agent.WorkerProtocolVersion) {
-	registration, ok := HandshakeAgentWorker(conn, h.serverInfo, protocol, workerID, h.logger)
+func (h *AgentHandler) HandleConnection(ctx context.Context, conn agent.SignalConn, registration agent.WorkerRegistration) {
+	registration, ok := HandshakeAgentWorker(conn, h.serverInfo, registration, h.logger)
 	if !ok {
 		return
 	}
