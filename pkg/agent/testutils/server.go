@@ -17,7 +17,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
-	pagent "github.com/livekit/protocol/agent"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils/events"
@@ -43,7 +42,6 @@ func NewTestServer(bus psrpc.MessageBus) *TestServer {
 		localNode,
 		bus,
 		auth.NewSimpleKeyProvider("test", "verysecretsecret"),
-		pagent.NewWorkerTokenProvider("test", pagent.WorkerTokenConfig{Secret: "anothersecret"}),
 	)))
 }
 

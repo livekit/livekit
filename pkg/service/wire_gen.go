@@ -14,7 +14,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/telemetry"
-	agent2 "github.com/livekit/protocol/agent"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -122,8 +121,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	sipService := NewSIPService(sipConfig, nodeID, messageBus, sipClient, sipStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, objectStore, router, currentNode, telemetryService)
-	workerTokenProvider := getWorkerTokenProvider(nodeID, conf)
-	agentService, err := NewAgentService(conf, currentNode, messageBus, keyProvider, workerTokenProvider)
+	agentService, err := NewAgentService(conf, currentNode, messageBus, keyProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -319,10 +317,6 @@ func getPSRPCConfig(config2 *config.Config) rpc.PSRPCConfig {
 
 func getPSRPCClientParams(config2 rpc.PSRPCConfig, bus psrpc.MessageBus) rpc.ClientParams {
 	return rpc.NewClientParams(config2, bus, logger.GetLogger(), rpc.PSRPCMetricsObserver{})
-}
-
-func getWorkerTokenProvider(nodeID livekit.NodeID, config2 *config.Config) *agent2.WorkerTokenProvider {
-	return agent2.NewWorkerTokenProvider(nodeID, config2.Agents.WorkerToken)
 }
 
 func createForwardStats(conf *config.Config) *sfu.ForwardStats {

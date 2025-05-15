@@ -173,15 +173,15 @@ type workerKey struct {
 	jobType   livekit.JobType
 }
 
-func NewAgentService(conf *config.Config,
+func NewAgentService(
+	conf *config.Config,
 	currentNode routing.LocalNode,
 	bus psrpc.MessageBus,
 	keyProvider auth.KeyProvider,
-	workerTokenProvider *pagent.WorkerTokenProvider,
 ) (*AgentService, error) {
 	s := &AgentService{
 		upgrader: AgentSocketUpgrader{
-			WorkerTokenProvider: workerTokenProvider,
+			WorkerTokenProvider: pagent.NewWorkerTokenProvider(currentNode.NodeID(), conf.Agents.WorkerToken),
 		},
 	}
 
