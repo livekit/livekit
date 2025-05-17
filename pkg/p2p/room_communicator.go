@@ -8,7 +8,6 @@ import (
 	"time"
 
 	p2p_database "github.com/dTelecom/p2p-realtime-database"
-	logging "github.com/ipfs/go-log/v2"
 	"github.com/livekit/protocol/livekit"
 	"github.com/pkg/errors"
 )
@@ -47,7 +46,6 @@ func NewRoomCommunicatorImpl(room *livekit.Room, mainDatabase *p2p_database.DB) 
 		peers:        make(map[string]struct{}),
 	}
 
-	_ = logging.SetLogLevel("*", "error")
 	if err := roomCommunicator.init(); err != nil {
 		return nil, errors.Wrap(err, "cannot init room communicator")
 	}
