@@ -1396,13 +1396,13 @@ func (r *Room) changeUpdateWorker() {
 			r.sendRoomUpdate()
 		case <-subTicker.C:
 			r.batchedUpdatesMu.Lock()
+			if len(r.batchedUpdates) == 0 {
+				r.batchedUpdatesMu.Unlock()
+				continue
+			}
 			updatesMap := r.batchedUpdates
 			r.batchedUpdates = make(map[livekit.ParticipantIdentity]*ParticipantUpdate)
 			r.batchedUpdatesMu.Unlock()
-
-			if len(updatesMap) == 0 {
-				continue
-			}
 
 			SendParticipantUpdates(maps.Values(updatesMap), r.GetParticipants())
 		}
