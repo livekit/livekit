@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	p2p_database "github.com/dTelecom/p2p-realtime-database"
+	p2p_database "github.com/dTelecom/p2p-database"
 	"github.com/pkg/errors"
 
 	"github.com/thoas/go-funk"

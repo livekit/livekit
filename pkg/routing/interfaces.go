@@ -7,7 +7,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
 
-	p2p_database "github.com/dTelecom/p2p-realtime-database"
+	p2p_database "github.com/dTelecom/p2p-database"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"

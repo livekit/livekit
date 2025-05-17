@@ -8,7 +8,7 @@ package service
 
 import (
 	"context"
-	"github.com/dTelecom/p2p-realtime-database"
+	"github.com/dTelecom/p2p-database"
 	"github.com/inconshreveable/go-vhost"
 	"github.com/livekit/livekit-server"
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"

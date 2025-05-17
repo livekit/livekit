@@ -9,7 +9,7 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
-	p2p_database "github.com/dTelecom/p2p-realtime-database"
+	p2p_database "github.com/dTelecom/p2p-database"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 

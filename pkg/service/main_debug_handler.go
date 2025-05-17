@@ -2,7 +2,7 @@ package service
 
 import (
 	"fmt"
-	p2p_database "github.com/dTelecom/p2p-realtime-database"
+	p2p_database "github.com/dTelecom/p2p-database"
 	"github.com/olekukonko/tablewriter"
 	"net/http"
 )

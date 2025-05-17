@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	p2p_database "github.com/dTelecom/p2p-realtime-database"
+	p2p_database "github.com/dTelecom/p2p-database"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"

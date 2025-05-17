@@ -6,7 +6,7 @@ import (
 	"errors"
 	"log"
 
-	p2p_database "github.com/dTelecom/p2p-realtime-database"
+	p2p_database "github.com/dTelecom/p2p-database"
 	"github.com/livekit/protocol/livekit"
 	"google.golang.org/protobuf/proto"
 )

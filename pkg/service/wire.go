@@ -6,7 +6,7 @@ package service
 import (
 	"context"
 
-	p2p_database "github.com/dTelecom/p2p-realtime-database"
+	p2p_database "github.com/dTelecom/p2p-database"
 	"github.com/google/wire"
 	"github.com/inconshreveable/go-vhost"
 	"github.com/livekit/protocol/auth"
