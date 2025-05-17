@@ -1338,14 +1338,15 @@ func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcas
 		return
 	}
 
+	r.batchedUpdatesMu.Lock()
 	updates := PushAndDequeueUpdates(
 		pi,
 		p.CloseReason(),
 		opts.immediate,
 		r.GetParticipant(livekit.ParticipantIdentity(pi.Identity)),
-		&r.batchedUpdatesMu,
 		r.batchedUpdates,
 	)
+	r.batchedUpdatesMu.Unlock()
 	if len(updates) != 0 {
 		selfSent = true
 		SendParticipantUpdates(updates, r.GetParticipants())
@@ -1395,13 +1396,13 @@ func (r *Room) changeUpdateWorker() {
 			r.sendRoomUpdate()
 		case <-subTicker.C:
 			r.batchedUpdatesMu.Lock()
+			if len(r.batchedUpdates) == 0 {
+				r.batchedUpdatesMu.Unlock()
+				continue
+			}
 			updatesMap := r.batchedUpdates
 			r.batchedUpdates = make(map[livekit.ParticipantIdentity]*ParticipantUpdate)
 			r.batchedUpdatesMu.Unlock()
-
-			if len(updatesMap) == 0 {
-				continue
-			}
 
 			SendParticipantUpdates(maps.Values(updatesMap), r.GetParticipants())
 		}
@@ -1819,12 +1820,8 @@ func PushAndDequeueUpdates(
 	closeReason types.ParticipantCloseReason,
 	isImmediate bool,
 	existingParticipant types.Participant,
-	lock *sync.Mutex,
 	cache map[livekit.ParticipantIdentity]*ParticipantUpdate,
 ) []*ParticipantUpdate {
-	lock.Lock()
-	defer lock.Unlock()
-
 	var updates []*ParticipantUpdate
 	identity := livekit.ParticipantIdentity(pi.Identity)
 	existing := cache[identity]
