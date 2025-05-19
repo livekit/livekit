@@ -23,7 +23,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/mediatransportutil v0.0.0-20250416051815-7632a9d1b50d
-	github.com/livekit/protocol v1.38.1-0.20250515171358-c442e9709acb
+	github.com/livekit/protocol v1.38.1-0.20250519021605-53d1afe260e9
 	github.com/livekit/psrpc v0.6.1-0.20250511053145-465289d72c3c
 	github.com/mackerelio/go-osstat v0.2.5
 	github.com/magefile/mage v1.15.0
@@ -40,10 +40,10 @@ require (
 	github.com/pion/sctp v1.8.39
 	github.com/pion/sdp/v3 v3.0.11
 	github.com/pion/transport/v3 v3.0.7
-	github.com/pion/turn/v4 v4.0.1
+	github.com/pion/turn/v4 v4.0.2
 	github.com/pion/webrtc/v4 v4.1.0
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v1.20.5
+	github.com/prometheus/client_golang v1.22.0
 	github.com/redis/go-redis/v9 v9.8.0
 	github.com/rs/cors v1.11.1
 	github.com/stretchr/testify v1.10.0
@@ -118,9 +118,9 @@ require (
 	github.com/pion/srtp/v3 v3.0.4 // indirect
 	github.com/pion/stun/v3 v3.0.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_model v0.6.1 // indirect
-	github.com/prometheus/common v0.55.0 // indirect
-	github.com/prometheus/procfs v0.15.1 // indirect
+	github.com/prometheus/client_model v0.6.2 // indirect
+	github.com/prometheus/common v0.64.0 // indirect
+	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/puzpuzpuz/xsync/v3 v3.5.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
@@ -139,6 +139,6 @@ require (
 	golang.org/x/tools v0.33.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250512202823-5a2f75b736a9 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250512202823-5a2f75b736a9 // indirect
-	google.golang.org/grpc v1.72.0 // indirect
+	google.golang.org/grpc v1.72.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

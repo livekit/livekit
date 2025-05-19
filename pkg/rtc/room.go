@@ -634,6 +634,7 @@ func (r *Room) ResumeParticipant(
 	if err := p.HandleReconnectAndSendResponse(reason, &livekit.ReconnectResponse{
 		IceServers:          iceServers,
 		ClientConfiguration: p.GetClientConfiguration(),
+		ServerInfo:          r.serverInfo,
 	}); err != nil {
 		return err
 	}
