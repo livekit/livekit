@@ -145,6 +145,7 @@ type WorkerRegistration struct {
 	Namespace   string
 	JobType     livekit.JobType
 	Permissions *livekit.ParticipantPermission
+	ClientIP    string
 }
 
 func MakeWorkerRegistration() WorkerRegistration {

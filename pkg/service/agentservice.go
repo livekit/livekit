@@ -77,6 +77,7 @@ func (u AgentSocketUpgrader) Upgrade(
 	}
 
 	registration = agent.MakeWorkerRegistration()
+	registration.ClientIP = GetClientIP(r)
 
 	// upgrade
 	conn, err := u.Upgrader.Upgrade(w, r, responseHeader)
