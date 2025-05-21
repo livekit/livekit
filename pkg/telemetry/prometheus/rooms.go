@@ -76,19 +76,19 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		Subsystem:   "track",
 		Name:        "published_total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
-	}, []string{"kind"})
+	}, []string{"kind", "source", "mimeType"})
 	promTrackSubscribedCurrent = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "track",
 		Name:        "subscribed_total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
-	}, []string{"kind"})
+	}, []string{"kind", "source", "mimeType"})
 	promTrackPublishCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "track",
 		Name:        "publish_counter",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
-	}, []string{"kind", "state"})
+	}, []string{"kind", "source", "mimeType", "state"})
 	promTrackSubscribeCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "track",
@@ -152,24 +152,24 @@ func SubParticipant() {
 	participantCurrent.Dec()
 }
 
-func AddPublishedTrack(kind string) {
-	promTrackPublishedCurrent.WithLabelValues(kind).Add(1)
+func AddPublishedTrack(kind, source, mimeType string) {
+	promTrackPublishedCurrent.WithLabelValues(kind, source, mimeType).Add(1)
 	trackPublishedCurrent.Inc()
 }
 
-func SubPublishedTrack(kind string) {
-	promTrackPublishedCurrent.WithLabelValues(kind).Sub(1)
+func SubPublishedTrack(kind, source, mimeType string) {
+	promTrackPublishedCurrent.WithLabelValues(kind, source, mimeType).Sub(1)
 	trackPublishedCurrent.Dec()
 }
 
-func AddPublishAttempt(kind string) {
+func AddPublishAttempt(kind, source, mimeType string) {
 	trackPublishAttempts.Inc()
-	promTrackPublishCounter.WithLabelValues(kind, "attempt").Inc()
+	promTrackPublishCounter.WithLabelValues(kind, source, mimeType, "attempt").Inc()
 }
 
-func AddPublishSuccess(kind string) {
+func AddPublishSuccess(kind, source, mimeType string) {
 	trackPublishSuccess.Inc()
-	promTrackPublishCounter.WithLabelValues(kind, "success").Inc()
+	promTrackPublishCounter.WithLabelValues(kind, source, mimeType, "success").Inc()
 }
 
 func RecordPublishTime(source livekit.TrackSource, trackType livekit.TrackType, d time.Duration, sdk livekit.ClientInfo_SDK, kind livekit.ParticipantInfo_Kind) {
@@ -188,19 +188,19 @@ func recordPubSubTime(isPublish bool, source livekit.TrackSource, trackType live
 	promPubSubTime.WithLabelValues(direction, source.String(), trackType.String(), sdk.String(), kind.String(), strconv.Itoa(count)).Observe(float64(d.Milliseconds()))
 }
 
-func RecordTrackSubscribeSuccess(kind string) {
+func RecordTrackSubscribeSuccess(kind, source, mimeType string) {
 	// modify both current and total counters
-	promTrackSubscribedCurrent.WithLabelValues(kind).Add(1)
+	promTrackSubscribedCurrent.WithLabelValues(kind, source, mimeType).Add(1)
 	trackSubscribedCurrent.Inc()
 
 	promTrackSubscribeCounter.WithLabelValues("success", "").Inc()
 	trackSubscribeSuccess.Inc()
 }
 
-func RecordTrackUnsubscribed(kind string) {
+func RecordTrackUnsubscribed(kind, source, mimeType string) {
 	// unsubscribed modifies current counter, but we leave the total values alone since they
 	// are used to compute rate
-	promTrackSubscribedCurrent.WithLabelValues(kind).Sub(1)
+	promTrackSubscribedCurrent.WithLabelValues(kind, source, mimeType).Sub(1)
 	trackSubscribedCurrent.Dec()
 }
 
