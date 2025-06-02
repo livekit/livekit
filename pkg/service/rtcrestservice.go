@@ -38,8 +38,6 @@ import (
 )
 
 const (
-	maxAttempts = 3
-
 	cParticipantPath   = "/whip/v1"
 	cParticipantIDPath = "/whip/v1/{participant_id}"
 )
@@ -68,16 +66,14 @@ func NewRTCRestService(
 		return nil, err
 	}
 
-	s := &RTCRestService{
+	return &RTCRestService{
 		config:            config,
 		router:            router,
 		roomAllocator:     roomAllocator,
 		client:            client,
 		topicFormatter:    topicFormatter,
 		participantClient: participantClient,
-	}
-
-	return s, nil
+	}, nil
 }
 
 func (s *RTCRestService) SetupRoutes(mux *http.ServeMux) {
