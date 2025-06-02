@@ -45,9 +45,7 @@ import (
 type RTCService struct {
 	router        routing.MessageRouter
 	roomAllocator RoomAllocator
-	store         ServiceStore
 	upgrader      websocket.Upgrader
-	currentNode   routing.LocalNode
 	config        *config.Config
 	isDev         bool
 	limits        config.LimitConfig
@@ -61,16 +59,12 @@ type RTCService struct {
 func NewRTCService(
 	conf *config.Config,
 	ra RoomAllocator,
-	store ServiceStore,
 	router routing.MessageRouter,
-	currentNode routing.LocalNode,
 	telemetry telemetry.TelemetryService,
 ) *RTCService {
 	s := &RTCService{
 		router:        router,
 		roomAllocator: ra,
-		store:         store,
-		currentNode:   currentNode,
 		config:        conf,
 		isDev:         conf.Development,
 		limits:        conf.Limit,
