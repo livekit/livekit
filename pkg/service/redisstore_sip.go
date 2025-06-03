@@ -106,12 +106,19 @@ func (s *RedisStore) LoadSIPOutboundTrunk(ctx context.Context, id string) (*live
 }
 
 func (s *RedisStore) DeleteSIPTrunk(ctx context.Context, id string) error {
-	tx := s.rc.TxPipeline()
-	tx.HDel(s.ctx, SIPTrunkKey, id)
-	tx.HDel(s.ctx, SIPInboundTrunkKey, id)
-	tx.HDel(s.ctx, SIPOutboundTrunkKey, id)
-	_, err := tx.Exec(ctx)
-	return err
+	err1 := s.rc.HDel(s.ctx, SIPTrunkKey, id).Err()
+	err2 := s.rc.HDel(s.ctx, SIPInboundTrunkKey, id).Err()
+	err3 := s.rc.HDel(s.ctx, SIPOutboundTrunkKey, id).Err()
+	if err1 != nil {
+		return err1
+	}
+	if err2 != nil {
+		return err2
+	}
+	if err3 != nil {
+		return err3
+	}
+	return nil
 }
 
 func (s *RedisStore) listSIPLegacyTrunk(ctx context.Context, page *livekit.Pagination) ([]*livekit.SIPTrunkInfo, error) {
