@@ -492,23 +492,22 @@ func (r *RoomManager) StartSession(
 		return err
 	}
 
+	var participantServerClosers utils.Closers
 	participantTopic := rpc.FormatParticipantTopic(room.Name(), participant.Identity())
 	participantServer := must.Get(rpc.NewTypedParticipantServer(r, r.bus))
-	killParticipantServer := r.participantServers.Replace(participantTopic, participantServer)
+	participantServerClosers = append(participantServerClosers, utils.CloseFunc(r.participantServers.Replace(participantTopic, participantServer)))
 	if err := participantServer.RegisterAllParticipantTopics(participantTopic); err != nil {
-		killParticipantServer()
+		participantServerClosers.Close()
 		pLogger.Errorw("could not join register participant topic", err)
 		_ = participant.Close(true, types.ParticipantCloseReasonMessageBusFailed, false)
 		return err
 	}
 
-	var killRTCRestParticipantServer func()
 	if useOneShotSignallingMode {
 		rtcRestParticipantServer := must.Get(rpc.NewTypedRTCRestParticipantServer(rtcRestParticipantService{r}, r.bus))
-		killRTCRestParticipantServer := r.rtcRestParticipantServers.Replace(participantTopic, rtcRestParticipantServer)
+		participantServerClosers = append(participantServerClosers, utils.CloseFunc(r.rtcRestParticipantServers.Replace(participantTopic, rtcRestParticipantServer)))
 		if err := rtcRestParticipantServer.RegisterAllCommonTopics(participantTopic); err != nil {
-			killParticipantServer()
-			killRTCRestParticipantServer()
+			participantServerClosers.Close()
 			pLogger.Errorw("could not join register participant topic for rtc rest participant server", err)
 			_ = participant.Close(true, types.ParticipantCloseReasonMessageBusFailed, false)
 			return err
@@ -534,10 +533,7 @@ func (r *RoomManager) StartSession(
 	clientMeta := &livekit.AnalyticsClientMeta{Region: r.currentNode.Region(), Node: string(r.currentNode.NodeID())}
 	r.telemetry.ParticipantJoined(ctx, protoRoom, participant.ToProto(), pi.Client, clientMeta, true)
 	participant.OnClose(func(p types.LocalParticipant) {
-		killParticipantServer()
-		if killRTCRestParticipantServer != nil {
-			killRTCRestParticipantServer()
-		}
+		participantServerClosers.Close()
 
 		if err := r.roomStore.DeleteParticipant(ctx, room.Name(), p.Identity()); err != nil {
 			pLogger.Errorw("could not delete participant", err)

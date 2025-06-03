@@ -34,7 +34,7 @@ func (s rtcRestService) Create(ctx context.Context, req *rpc.RTCRestCreateReques
 		ctx,
 		*pi,
 		routing.NewNullMessageSource(livekit.ConnectionID(req.StartSession.ConnectionId)), // no requestSource
-		routing.NewNullMessageSink(livekit.ConnectionID(req.StartSession.ConnectionId)),   // no requestSource
+		routing.NewNullMessageSink(livekit.ConnectionID(req.StartSession.ConnectionId)),   // no responseSink
 		true, // useOneShotSignallingMode
 	); err != nil {
 		logger.Errorw("rtcRest service: could not start session", err)
