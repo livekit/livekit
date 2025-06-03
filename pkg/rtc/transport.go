@@ -1064,7 +1064,6 @@ func (t *PCTransport) CreateReadableDataChannel(label string, dci *webrtc.DataCh
 			buffer := make([]byte, dataChannelBufferSize)
 			for {
 				n, _, err := rawDC.ReadDataChannel(buffer)
-				t.params.Logger.Infow("RAJA read data", "data", string(buffer[:n])) // REMVOE
 				if err != nil {
 					if !errors.Is(err, io.EOF) && !strings.Contains(err.Error(), "state=Closed") {
 						t.params.Logger.Warnw("error reading data channel", err, "label", dc.Label())

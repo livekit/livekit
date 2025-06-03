@@ -99,7 +99,7 @@ type Room struct {
 	protoRoom  *livekit.Room
 	internal   *livekit.RoomInternal
 	protoProxy *utils.ProtoProxy[*livekit.Room]
-	Logger     logger.Logger
+	logger     logger.Logger
 
 	config          WebRTCConfig
 	audioConfig     *sfu.AudioConfig
@@ -241,7 +241,7 @@ func NewRoom(
 	r := &Room{
 		protoRoom: utils.CloneProto(room),
 		internal:  internal,
-		Logger: LoggerWithRoom(
+		logger: LoggerWithRoom(
 			logger.GetLogger().WithComponent(sutils.ComponentRoom),
 			livekit.RoomName(room.Name),
 			livekit.RoomID(room.Sid),
@@ -292,6 +292,10 @@ func NewRoom(
 	go r.simulationCleanupWorker()
 
 	return r
+}
+
+func (r *Room) Logger() logger.Logger {
+	return r.logger
 }
 
 func (r *Room) ToProto() *livekit.Room {
@@ -527,7 +531,7 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 
 	r.launchTargetAgents(maps.Values(r.agentDispatches), participant, livekit.JobType_JT_PARTICIPANT)
 
-	r.Logger.Debugw("new participant joined",
+	r.logger.Debugw("new participant joined",
 		"pID", participant.ID(),
 		"participant", participant.Identity(),
 		"clientInfo", logger.Proto(participant.GetClientInfo()),
@@ -728,7 +732,7 @@ func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livek
 		go func() {
 			_, err := r.agentClient.TerminateJob(context.Background(), agentJob.Id, rpc.JobTerminateReason_AGENT_LEFT_ROOM)
 			if err != nil {
-				r.Logger.Infow("failed sending TerminateJob RPC", "error", err, "jobID", agentJob.Id, "participant", identity)
+				r.logger.Infow("failed sending TerminateJob RPC", "error", err, "jobID", agentJob.Id, "participant", identity)
 			}
 		}()
 	}
@@ -914,7 +918,7 @@ func (r *Room) CloseIfEmpty() {
 
 	if elapsed >= int64(timeout) {
 		r.Close(types.ParticipantCloseReasonRoomClosed)
-		r.Logger.Infow("closing idle room", "reason", reason)
+		r.logger.Infow("closing idle room", "reason", reason)
 	}
 }
 
@@ -930,7 +934,7 @@ func (r *Room) Close(reason types.ParticipantCloseReason) {
 	close(r.closed)
 	r.lock.Unlock()
 
-	r.Logger.Infow("closing room")
+	r.logger.Infow("closing room")
 	for _, p := range r.GetParticipants() {
 		_ = p.Close(true, reason, false)
 	}
@@ -971,7 +975,7 @@ func (r *Room) sendRoomUpdate() {
 
 		err := p.SendRoomUpdate(roomInfo)
 		if err != nil {
-			r.Logger.Warnw("failed to send room update", err, "participant", p.Identity())
+			r.logger.Warnw("failed to send room update", err, "participant", p.Identity())
 		}
 	}
 }
@@ -1049,7 +1053,7 @@ func (r *Room) DeleteAgentDispatch(dispatchID string) (*livekit.AgentDispatch, e
 					if agentJob != nil {
 						err := agentJob.waitForParticipantLeaving()
 						if err == ErrJobShutdownTimeout {
-							r.Logger.Infow("Agent Worker did not disconnect after 3s")
+							r.logger.Infow("Agent Worker did not disconnect after 3s")
 						}
 					}
 					r.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonServiceRequestRemoveParticipant)
@@ -1071,7 +1075,7 @@ func (r *Room) OnRoomUpdated(f func()) {
 func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScenario *livekit.SimulateScenario) error {
 	switch scenario := simulateScenario.Scenario.(type) {
 	case *livekit.SimulateScenario_SpeakerUpdate:
-		r.Logger.Infow("simulating speaker update", "participant", participant.Identity(), "duration", scenario.SpeakerUpdate)
+		r.logger.Infow("simulating speaker update", "participant", participant.Identity(), "duration", scenario.SpeakerUpdate)
 		go func() {
 			<-time.After(time.Duration(scenario.SpeakerUpdate) * time.Second)
 			r.sendSpeakerChanges([]*livekit.SpeakerInfo{{
@@ -1086,33 +1090,33 @@ func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScen
 			Level:  0.9,
 		}})
 	case *livekit.SimulateScenario_Migration:
-		r.Logger.Infow("simulating migration", "participant", participant.Identity())
+		r.logger.Infow("simulating migration", "participant", participant.Identity())
 		// drop participant without necessarily cleaning up
 		if err := participant.Close(false, types.ParticipantCloseReasonSimulateMigration, true); err != nil {
 			return err
 		}
 	case *livekit.SimulateScenario_NodeFailure:
-		r.Logger.Infow("simulating node failure", "participant", participant.Identity())
+		r.logger.Infow("simulating node failure", "participant", participant.Identity())
 		// drop participant without necessarily cleaning up
 		if err := participant.Close(false, types.ParticipantCloseReasonSimulateNodeFailure, true); err != nil {
 			return err
 		}
 	case *livekit.SimulateScenario_ServerLeave:
-		r.Logger.Infow("simulating server leave", "participant", participant.Identity())
+		r.logger.Infow("simulating server leave", "participant", participant.Identity())
 		if err := participant.Close(true, types.ParticipantCloseReasonSimulateServerLeave, false); err != nil {
 			return err
 		}
 	case *livekit.SimulateScenario_SwitchCandidateProtocol:
-		r.Logger.Infow("simulating switch candidate protocol", "participant", participant.Identity())
+		r.logger.Infow("simulating switch candidate protocol", "participant", participant.Identity())
 		participant.ICERestart(&livekit.ICEConfig{
 			PreferenceSubscriber: livekit.ICECandidateType(scenario.SwitchCandidateProtocol),
 			PreferencePublisher:  livekit.ICECandidateType(scenario.SwitchCandidateProtocol),
 		})
 	case *livekit.SimulateScenario_SubscriberBandwidth:
 		if scenario.SubscriberBandwidth > 0 {
-			r.Logger.Infow("simulating subscriber bandwidth start", "participant", participant.Identity(), "bandwidth", scenario.SubscriberBandwidth)
+			r.logger.Infow("simulating subscriber bandwidth start", "participant", participant.Identity(), "bandwidth", scenario.SubscriberBandwidth)
 		} else {
-			r.Logger.Infow("simulating subscriber bandwidth end", "participant", participant.Identity())
+			r.logger.Infow("simulating subscriber bandwidth end", "participant", participant.Identity())
 		}
 		participant.SetSubscriberChannelCapacity(scenario.SubscriberBandwidth)
 	case *livekit.SimulateScenario_DisconnectSignalOnResume:
@@ -1189,7 +1193,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 			continue
 		}
 
-		r.Logger.Debugw("subscribing to new track",
+		r.logger.Debugw("subscribing to new track",
 			"participant", existingParticipant.Identity(),
 			"pID", existingParticipant.ID(),
 			"publisher", participant.Identity(),
@@ -1227,7 +1231,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 					r.Name(),
 					r.ID(),
 				); err != nil {
-					r.Logger.Errorw("failed to launch participant egress", err)
+					r.logger.Errorw("failed to launch participant egress", err)
 				}
 			}()
 		}
@@ -1243,7 +1247,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 				r.Name(),
 				r.ID(),
 			); err != nil {
-				r.Logger.Errorw("failed to launch track egress", err)
+				r.logger.Errorw("failed to launch track egress", err)
 			}
 		}()
 	}
@@ -1277,15 +1281,15 @@ func (r *Room) onParticipantUpdate(p types.LocalParticipant) {
 }
 
 func (r *Room) onDataPacket(source types.LocalParticipant, kind livekit.DataPacket_Kind, dp *livekit.DataPacket) {
-	BroadcastDataPacketForRoom(r, source, kind, dp, r.Logger)
+	BroadcastDataPacketForRoom(r, source, kind, dp, r.logger)
 }
 
 func (r *Room) onDataMessage(source types.LocalParticipant, data []byte) {
-	BroadcastDataMessageForRoom(r, source, data, r.Logger)
+	BroadcastDataMessageForRoom(r, source, data, r.logger)
 }
 
 func (r *Room) onMetrics(source types.Participant, dp *livekit.DataPacket) {
-	BroadcastMetricsForRoom(r, source, dp, r.Logger)
+	BroadcastMetricsForRoom(r, source, dp, r.logger)
 }
 
 func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) {
@@ -1310,7 +1314,7 @@ func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) {
 		}
 	}
 	if len(trackIDs) > 0 {
-		r.Logger.Debugw("subscribed participant to existing tracks", "trackID", trackIDs)
+		r.logger.Debugw("subscribed participant to existing tracks", "trackID", trackIDs)
 	}
 }
 
@@ -1520,7 +1524,7 @@ func (r *Room) connectionQualityWorker() {
 				continue
 			}
 			if err := op.SendConnectionQualityUpdate(update); err != nil {
-				r.Logger.Warnw("could not send connection quality update", err,
+				r.logger.Warnw("could not send connection quality update", err,
 					"participant", op.Identity())
 			}
 		}
@@ -1670,7 +1674,7 @@ func (r *Room) createAgentDispatchesFromRoomAgent() {
 	for _, ag := range roomDisp {
 		_, err := r.createAgentDispatchFromParams(ag.AgentName, ag.Metadata)
 		if err != nil {
-			r.Logger.Warnw("failed storing room dispatch", err)
+			r.logger.Warnw("failed storing room dispatch", err)
 		}
 	}
 }

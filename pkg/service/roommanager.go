@@ -70,6 +70,7 @@ type RoomManager struct {
 	router            routing.Router
 	roomAllocator     RoomAllocator
 	roomManagerServer rpc.TypedRoomManagerServer
+	rtcRestServer     rpc.RTCRestServer[livekit.NodeID]
 	roomStore         ObjectStore
 	telemetry         telemetry.TelemetryService
 	clientConfManager clientconfiguration.ClientConfigurationManager
@@ -82,9 +83,10 @@ type RoomManager struct {
 
 	rooms map[livekit.RoomName]*rtc.Room
 
-	roomServers          utils.MultitonService[rpc.RoomTopic]
-	agentDispatchServers utils.MultitonService[rpc.RoomTopic]
-	participantServers   utils.MultitonService[rpc.ParticipantTopic]
+	roomServers               utils.MultitonService[rpc.RoomTopic]
+	agentDispatchServers      utils.MultitonService[rpc.RoomTopic]
+	participantServers        utils.MultitonService[rpc.ParticipantTopic]
+	rtcRestParticipantServers utils.MultitonService[rpc.ParticipantTopic]
 
 	iceConfigCache *sutils.IceConfigCache[iceConfigCacheKey]
 
@@ -148,6 +150,14 @@ func NewLocalRoomManager(
 		return nil, err
 	}
 	if err := r.roomManagerServer.RegisterAllNodeTopics(currentNode.NodeID()); err != nil {
+		return nil, err
+	}
+
+	r.rtcRestServer, err = rpc.NewRTCRestServer[livekit.NodeID](rtcRestService{r}, bus, rpc.WithDefaultServerOptions(conf.PSRPC, logger.GetLogger()))
+	if err != nil {
+		return nil, err
+	}
+	if err := r.rtcRestServer.RegisterAllCommonTopics(currentNode.NodeID()); err != nil {
 		return nil, err
 	}
 
@@ -222,9 +232,11 @@ func (r *RoomManager) Stop() {
 	}
 
 	r.roomManagerServer.Kill()
+	r.rtcRestServer.Kill()
 	r.roomServers.Kill()
 	r.agentDispatchServers.Kill()
 	r.participantServers.Kill()
+	r.rtcRestParticipantServers.Kill()
 
 	if r.rtcConfig != nil {
 		if r.rtcConfig.UDPMux != nil {
@@ -480,14 +492,26 @@ func (r *RoomManager) StartSession(
 		return err
 	}
 
+	var participantServerClosers utils.Closers
 	participantTopic := rpc.FormatParticipantTopic(room.Name(), participant.Identity())
 	participantServer := must.Get(rpc.NewTypedParticipantServer(r, r.bus))
-	killParticipantServer := r.participantServers.Replace(participantTopic, participantServer)
+	participantServerClosers = append(participantServerClosers, utils.CloseFunc(r.participantServers.Replace(participantTopic, participantServer)))
 	if err := participantServer.RegisterAllParticipantTopics(participantTopic); err != nil {
-		killParticipantServer()
+		participantServerClosers.Close()
 		pLogger.Errorw("could not join register participant topic", err)
 		_ = participant.Close(true, types.ParticipantCloseReasonMessageBusFailed, false)
 		return err
+	}
+
+	if useOneShotSignallingMode {
+		rtcRestParticipantServer := must.Get(rpc.NewTypedRTCRestParticipantServer(rtcRestParticipantService{r}, r.bus))
+		participantServerClosers = append(participantServerClosers, utils.CloseFunc(r.rtcRestParticipantServers.Replace(participantTopic, rtcRestParticipantServer)))
+		if err := rtcRestParticipantServer.RegisterAllCommonTopics(participantTopic); err != nil {
+			participantServerClosers.Close()
+			pLogger.Errorw("could not join register participant topic for rtc rest participant server", err)
+			_ = participant.Close(true, types.ParticipantCloseReasonMessageBusFailed, false)
+			return err
+		}
 	}
 
 	if err = r.roomStore.StoreParticipant(ctx, room.Name(), participant.ToProto()); err != nil {
@@ -509,7 +533,7 @@ func (r *RoomManager) StartSession(
 	clientMeta := &livekit.AnalyticsClientMeta{Region: r.currentNode.Region(), Node: string(r.currentNode.NodeID())}
 	r.telemetry.ParticipantJoined(ctx, protoRoom, participant.ToProto(), pi.Client, clientMeta, true)
 	participant.OnClose(func(p types.LocalParticipant) {
-		killParticipantServer()
+		participantServerClosers.Close()
 
 		if err := r.roomStore.DeleteParticipant(ctx, room.Name(), p.Identity()); err != nil {
 			pLogger.Errorw("could not delete participant", err)
@@ -594,22 +618,22 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 		r.telemetry.RoomEnded(ctx, roomInfo)
 		prometheus.RoomEnded(time.Unix(roomInfo.CreationTime, 0))
 		if err := r.deleteRoom(ctx, roomName); err != nil {
-			newRoom.Logger.Errorw("could not delete room", err)
+			newRoom.Logger().Errorw("could not delete room", err)
 		}
 
-		newRoom.Logger.Infow("room closed")
+		newRoom.Logger().Infow("room closed")
 	})
 
 	newRoom.OnRoomUpdated(func() {
 		if err := r.roomStore.StoreRoom(ctx, newRoom.ToProto(), newRoom.Internal()); err != nil {
-			newRoom.Logger.Errorw("could not handle metadata update", err)
+			newRoom.Logger().Errorw("could not handle metadata update", err)
 		}
 	})
 
 	newRoom.OnParticipantChanged(func(p types.LocalParticipant) {
 		if !p.IsDisconnected() {
 			if err := r.roomStore.StoreParticipant(ctx, roomName, p.ToProto()); err != nil {
-				newRoom.Logger.Errorw("could not handle participant change", err)
+				newRoom.Logger().Errorw("could not handle participant change", err)
 			}
 		}
 	})
@@ -787,7 +811,7 @@ func (r *RoomManager) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 			return nil, err
 		}
 	} else {
-		room.Logger.Infow("deleting room")
+		room.Logger().Infow("deleting room")
 		room.Close(types.ParticipantCloseReasonServiceRequestDeleteRoom)
 	}
 	return &livekit.DeleteRoomResponse{}, nil
@@ -815,7 +839,7 @@ func (r *RoomManager) SendData(ctx context.Context, req *livekit.SendDataRequest
 		return nil, ErrRoomNotFound
 	}
 
-	room.Logger.Debugw("api send data", "size", len(req.Data))
+	room.Logger().Debugw("api send data", "size", len(req.Data))
 	room.SendDataPacket(&livekit.DataPacket{
 		Kind:                  req.Kind,
 		DestinationIdentities: req.DestinationIdentities,
@@ -838,7 +862,7 @@ func (r *RoomManager) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 		return nil, ErrRoomNotFound
 	}
 
-	room.Logger.Debugw("updating room")
+	room.Logger().Debugw("updating room")
 	done := room.SetMetadata(req.Metadata)
 	// wait till the update is applied
 	<-done
