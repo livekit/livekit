@@ -23,6 +23,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils/hwstats"
+	"github.com/livekit/protocol/webhook"
 )
 
 const (
@@ -113,6 +114,7 @@ func Init(nodeID string, nodeType livekit.NodeType) error {
 	initPacketStats(nodeID, nodeType)
 	initRoomStats(nodeID, nodeType)
 	rpc.InitPSRPCStats(prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()})
+	webhook.InitWebhookStats(prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()})
 	initQualityStats(nodeID, nodeType)
 	initDataPacketStats(nodeID, nodeType)
 
