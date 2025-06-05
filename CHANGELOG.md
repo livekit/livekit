@@ -2,6 +2,54 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2025-06-02
+
+### Added
+
+- Add pID and connID to log context to make it easier to search using pID. (#3518)
+- add server agent load threshold config (#3520)
+- Add a key frame seeder in up track. (#3524)
+- Implement SIP update API. (#3141)
+- Add option to use different pacer with send side bwe. (#3552)
+- Allow specifying extra webhooks with egress requests (#3597)
+
+### Fixed
+
+- Fix missing RTCP sender report when forwarding RED as Opus. (#3480)
+- Take RTT and jitter from receiver view while reporting track stats for (#3483)
+- Fix receiver rtt/jitter. (#3487)
+- fix: fix the wrong error return value (#3493)
+- load mime type before calling writeBlankFrameRTP (#3502)
+- Prevent bind lock deadlock on muted. (#3504)
+- Handle subscribe race with track close better. (#3526)
+- Do not instantiate 0 sized sequencer. (#3529)
+- Fix: Return NotFoundErr instead of Unavailable when the participant does not exist in UpdateParticipant. (#3543)
+- skip out of order participant state updates (#3583)
+- Exclude RED from enabled codecs for Flutter + 2.4.2 + Android. (#3587)
+- protocol update to fix IPv6 SDP fragment parsing (#3603)
+- Forward transfer headers to internal request (#3615)
+- Do not use Redis pipeline for SIP delete. Fixes Redis clustering support. (#3694)
+
+### Changed
+
+- Use a RED transformer to consolidate both RED -> Opus OR Opus -> RED (#3481)
+- refactor: using slices.Contains to simplify the code (#3495)
+- Do not bind lock across flush which could take time (#3501)
+- Log packet drops/forward. (#3510)
+- Clean up published track on participant removal. (#3527)
+- Do not accept unsupported track type in AddTrack (#3530)
+- Use cgroup for memstats. (#3573)
+- Replace Promise with Fuse. (#3580)
+- Do not drop audio codecs (#3590)
+- map PEER_CONNECTION_DISCONNECTED -> CONNECTION_TIMEOUT (#3591)
+- Update mediatransportutil for max sctp message (65K) (#3611)
+- Disable vp9 for safari 18.4 due to compatibility (#3631)
+- Avoid synthesising duplicate feature. (#3632)
+- Take AudioFeatures from AddTrack. (#3635)
+- Use unordered for lossy data channel. (#3653)
+- Send self participant update immediately. (#3656)
+- update mediatransportutil for sctp congestion control (#3673)
+
 ## [1.8.4] - 2025-03-01
 
 ### Added
