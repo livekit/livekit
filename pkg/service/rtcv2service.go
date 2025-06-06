@@ -15,58 +15,49 @@
 package service
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"net/url"
-	"strings"
 
-	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/rtc"
-	"github.com/livekit/livekit-server/pkg/rtc/types"
-	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/protocol/utils/guid"
-	"github.com/livekit/psrpc"
-	"github.com/pion/webrtc/v4"
-	"github.com/tomnomnom/linkheader"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
-	cParticipantPath   = "/whip/v1"
-	cParticipantIDPath = "/whip/v1/{participant_id}"
+	cRTCv2Path = "/rtc/v2"
 )
 
-type RTCRestService struct {
+type RTCv2Service struct {
 	http.Handler
 
+	/* RAJA-TODO
 	config            *config.Config
 	router            routing.Router
 	roomAllocator     RoomAllocator
-	client            rpc.RTCRestClient[livekit.NodeID]
+	client            rpc.RTCv2ServiceClient[livekit.NodeID]
 	topicFormatter    rpc.TopicFormatter
-	participantClient rpc.TypedRTCRestParticipantClient
+	participantClient rpc.TypedRTCv2ServiceParticipantClient
+	*/
 }
 
-func NewRTCRestService(
-	config *config.Config,
-	router routing.Router,
-	roomAllocator RoomAllocator,
-	clientParams rpc.ClientParams,
-	topicFormatter rpc.TopicFormatter,
-	participantClient rpc.TypedRTCRestParticipantClient,
-) (*RTCRestService, error) {
-	client, err := rpc.NewRTCRestClient[livekit.NodeID](clientParams.Args())
+func NewRTCv2Service(
+/* RAJA-TODO
+config *config.Config,
+router routing.Router,
+roomAllocator RoomAllocator,
+clientParams rpc.ClientParams,
+topicFormatter rpc.TopicFormatter,
+participantClient rpc.TypedRTCv2ServiceParticipantClient,
+*/
+) (*RTCv2Service, error) {
+	/* RAJA-TODO
+	client, err := rpc.NewRTCv2ServiceClient[livekit.NodeID](clientParams.Args())
 	if err != nil {
 		return nil, err
 	}
 
-	return &RTCRestService{
+	return &RTCv2Service{
 		config:            config,
 		router:            router,
 		roomAllocator:     roomAllocator,
@@ -74,23 +65,44 @@ func NewRTCRestService(
 		topicFormatter:    topicFormatter,
 		participantClient: participantClient,
 	}, nil
+	*/
+	return &RTCv2Service{}, nil
 }
 
-func (s *RTCRestService) SetupRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET "+cParticipantPath, s.handleGet)
-	mux.HandleFunc("OPTIONS "+cParticipantPath, s.handleOptions)
-	mux.HandleFunc("POST "+cParticipantPath, s.handleCreate)
-	mux.HandleFunc("GET "+cParticipantIDPath, s.handleParticipantGet)
-	mux.HandleFunc("PATCH "+cParticipantIDPath, s.handleParticipantPatch)
-	mux.HandleFunc("DELETE "+cParticipantIDPath, s.handleParticipantDelete)
+func (s *RTCv2Service) SetupRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("POST "+cRTCv2Path, s.handlePost)
 }
 
-func (s *RTCRestService) handleGet(w http.ResponseWriter, r *http.Request) {
+func (s *RTCv2Service) handlePost(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Content-type") != "application/x-protobuf" {
+		HandleErrorJson(w, r, http.StatusBadRequest, fmt.Errorf("unsupported content-type: %s", r.Header.Get("Content-type")))
+		return
+	}
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		HandleErrorJson(w, r, http.StatusBadRequest, fmt.Errorf("could not read request body: %s", err))
+		return
+	}
+
+	msg := &livekit.Signalv2ClientEnvelope{}
+	err = proto.Unmarshal(body, msg)
+	if err != nil {
+		HandleErrorJson(w, r, http.StatusBadRequest, fmt.Errorf("could not unmarshal request: %s", err))
+		return
+	}
+
+	logger.Infow("RAJA POST", "msg", logger.Proto(msg)) // REMOVE
+	w.WriteHeader(http.StatusOK)
+}
+
+/* RAJA-REMOVE
+func (s *RTCv2Service) handleGet(w http.ResponseWriter, r *http.Request) {
 	// https:/www.rfc-editor.org/rfc/rfc9725.html#name-http-usage
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *RTCRestService) handleOptions(w http.ResponseWriter, r *http.Request) {
+func (s *RTCv2Service) handleOptions(w http.ResponseWriter, r *http.Request) {
 	logger.Infow("RAJA got here to options", "req", r) // REMOVE
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "*")
@@ -118,7 +130,7 @@ type createRequest struct {
 	SubscribedParticipantTrackNames map[string][]string
 }
 
-func (s *RTCRestService) validateCreate(r *http.Request) (*createRequest, int, error) {
+func (s *RTCv2Service) validateCreate(r *http.Request) (*createRequest, int, error) {
 	claims := GetGrants(r.Context())
 	if claims == nil || claims.Video == nil {
 		return nil, http.StatusUnauthorized, rtc.ErrPermissionDenied
@@ -197,9 +209,9 @@ func (s *RTCRestService) validateCreate(r *http.Request) (*createRequest, int, e
 	}, http.StatusOK, nil
 }
 
-func (s *RTCRestService) handleCreate(w http.ResponseWriter, r *http.Request) {
+func (s *RTCv2Service) handleCreate(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Content-type") != "application/sdp" {
-		s.handleError("Create", w, r, http.StatusBadRequest, fmt.Errorf("unsupported content-type: %s", r.Header.Get("Content-type")))
+		handleError("Create", w, r, http.StatusBadRequest, fmt.Errorf("unsupported content-type: %s", r.Header.Get("Content-type")))
 		return
 	}
 
@@ -207,42 +219,42 @@ func (s *RTCRestService) handleCreate(w http.ResponseWriter, r *http.Request) {
 
 	req, status, err := s.validateCreate(r)
 	if err != nil {
-		s.handleError("Create", w, r, status, err)
+		handleError("Create", w, r, status, err)
 		return
 	}
 
 	if err := s.roomAllocator.SelectRoomNode(r.Context(), req.RoomName, ""); err != nil {
-		s.handleError("Create", w, r, http.StatusInternalServerError, err)
+		handleError("Create", w, r, http.StatusInternalServerError, err)
 		return
 	}
 
 	rtcNode, err := s.router.GetNodeForRoom(r.Context(), req.RoomName)
 	if err != nil {
-		s.handleError("Create", w, r, http.StatusInternalServerError, err)
+		handleError("Create", w, r, http.StatusInternalServerError, err)
 		return
 	}
 
 	connID := livekit.ConnectionID(guid.New("CO_"))
 	starSession, err := req.ParticipantInit.ToStartSession(req.RoomName, connID)
 	if err != nil {
-		s.handleError("Create", w, r, http.StatusInternalServerError, err)
+		handleError("Create", w, r, http.StatusInternalServerError, err)
 		return
 	}
 
-	subscribedParticipantTracks := map[string]*rpc.RTCRestCreateRequest_TrackList{}
+	subscribedParticipantTracks := map[string]*rpc.RTCv2ServiceCreateRequest_TrackList{}
 	for identity, trackNames := range req.SubscribedParticipantTrackNames {
-		subscribedParticipantTracks[identity] = &rpc.RTCRestCreateRequest_TrackList{
+		subscribedParticipantTracks[identity] = &rpc.RTCv2ServiceCreateRequest_TrackList{
 			TrackNames: trackNames,
 		}
 	}
 
-	res, err := s.client.Create(r.Context(), livekit.NodeID(rtcNode.Id), &rpc.RTCRestCreateRequest{
+	res, err := s.client.Create(r.Context(), livekit.NodeID(rtcNode.Id), &rpc.RTCv2ServiceCreateRequest{
 		OfferSdp:                    req.OfferSDP,
 		StartSession:                starSession,
 		SubscribedParticipantTracks: subscribedParticipantTracks,
 	})
 	if err != nil {
-		s.handleError("Create", w, r, http.StatusServiceUnavailable, err)
+		handleError("Create", w, r, http.StatusServiceUnavailable, err)
 		return
 	}
 
@@ -289,7 +301,7 @@ func (s *RTCRestService) handleCreate(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(res.AnswerSdp))
 
 	sutils.GetLogger(r.Context()).Infow(
-		"API RTCRest.Create",
+		"API RTCv2Service.Create",
 		"connID", connID,
 		"participant", req.ParticipantInit.Identity,
 		"room", req.RoomName,
@@ -299,12 +311,12 @@ func (s *RTCRestService) handleCreate(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
-func (s *RTCRestService) handleParticipantGet(w http.ResponseWriter, r *http.Request) {
+func (s *RTCv2Service) handleParticipantGet(w http.ResponseWriter, r *http.Request) {
 	// https:/www.rfc-editor.org/rfc/rfc9725.html#name-http-usage
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *RTCRestService) iceTrickle(
+func (s *RTCv2Service) iceTrickle(
 	w http.ResponseWriter,
 	r *http.Request,
 	roomName livekit.RoomName,
@@ -316,7 +328,7 @@ func (s *RTCRestService) iceTrickle(
 	_, err := s.participantClient.ICETrickle(
 		r.Context(),
 		s.topicFormatter.ParticipantTopic(r.Context(), roomName, participantIdentity),
-		&rpc.RTCRestParticipantICETrickleRequest{
+		&rpc.RTCv2ServiceParticipantICETrickleRequest{
 			Room:                string(roomName),
 			ParticipantIdentity: string(participantIdentity),
 			ParticipantId:       string(pID),
@@ -329,25 +341,25 @@ func (s *RTCRestService) iceTrickle(
 		if errors.As(err, &pe) {
 			switch pe.Code() {
 			case psrpc.NotFound:
-				s.handleError("Patch", w, r, http.StatusNotFound, errors.New(pe.Error()))
+				handleError("Patch", w, r, http.StatusNotFound, errors.New(pe.Error()))
 
 			case psrpc.InvalidArgument:
 				switch pe.Error() {
 				case rtc.ErrInvalidSDPFragment.Error(), rtc.ErrMidMismatch.Error(), rtc.ErrICECredentialMismatch.Error():
-					s.handleError("Patch", w, r, http.StatusBadRequest, errors.New(pe.Error()))
+					handleError("Patch", w, r, http.StatusBadRequest, errors.New(pe.Error()))
 				default:
-					s.handleError("Patch", w, r, http.StatusInternalServerError, errors.New(pe.Error()))
+					handleError("Patch", w, r, http.StatusInternalServerError, errors.New(pe.Error()))
 				}
 			default:
-				s.handleError("Patch", w, r, http.StatusInternalServerError, errors.New(pe.Error()))
+				handleError("Patch", w, r, http.StatusInternalServerError, errors.New(pe.Error()))
 			}
 		} else {
-			s.handleError("Patch", w, r, http.StatusInternalServerError, nil)
+			handleError("Patch", w, r, http.StatusInternalServerError, nil)
 		}
 		return
 	}
 	sutils.GetLogger(r.Context()).Infow(
-		"API RTCRest.Patch",
+		"API RTCv2Service.Patch",
 		"method", "ice-trickle",
 		"room", roomName,
 		"participant", participantIdentity,
@@ -358,7 +370,7 @@ func (s *RTCRestService) iceTrickle(
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *RTCRestService) iceRestart(
+func (s *RTCv2Service) iceRestart(
 	w http.ResponseWriter,
 	r *http.Request,
 	roomName livekit.RoomName,
@@ -369,7 +381,7 @@ func (s *RTCRestService) iceRestart(
 	res, err := s.participantClient.ICERestart(
 		r.Context(),
 		s.topicFormatter.ParticipantTopic(r.Context(), roomName, participantIdentity),
-		&rpc.RTCRestParticipantICERestartRequest{
+		&rpc.RTCv2ServiceParticipantICERestartRequest{
 			Room:                string(roomName),
 			ParticipantIdentity: string(participantIdentity),
 			ParticipantId:       string(pID),
@@ -381,25 +393,25 @@ func (s *RTCRestService) iceRestart(
 		if errors.As(err, &pe) {
 			switch pe.Code() {
 			case psrpc.NotFound:
-				s.handleError("Patch", w, r, http.StatusNotFound, errors.New(pe.Error()))
+				handleError("Patch", w, r, http.StatusNotFound, errors.New(pe.Error()))
 
 			case psrpc.InvalidArgument:
 				switch pe.Error() {
 				case rtc.ErrInvalidSDPFragment.Error():
-					s.handleError("Patch", w, r, http.StatusBadRequest, errors.New(pe.Error()))
+					handleError("Patch", w, r, http.StatusBadRequest, errors.New(pe.Error()))
 				default:
-					s.handleError("Patch", w, r, http.StatusInternalServerError, errors.New(pe.Error()))
+					handleError("Patch", w, r, http.StatusInternalServerError, errors.New(pe.Error()))
 				}
 			default:
-				s.handleError("Patch", w, r, http.StatusInternalServerError, errors.New(pe.Error()))
+				handleError("Patch", w, r, http.StatusInternalServerError, errors.New(pe.Error()))
 			}
 		} else {
-			s.handleError("Patch", w, r, http.StatusInternalServerError, nil)
+			handleError("Patch", w, r, http.StatusInternalServerError, nil)
 		}
 		return
 	}
 	sutils.GetLogger(r.Context()).Infow(
-		"API RTCRest.Patch",
+		"API RTCv2Service.Patch",
 		"method", "ice-restart",
 		"room", roomName,
 		"participant", participantIdentity,
@@ -415,9 +427,9 @@ func (s *RTCRestService) iceRestart(
 	w.Write([]byte(res.SdpFragment))
 }
 
-func (s *RTCRestService) handleParticipantPatch(w http.ResponseWriter, r *http.Request) {
+func (s *RTCv2Service) handleParticipantPatch(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Content-type") != "application/trickle-ice-sdpfrag" {
-		s.handleError("Patch", w, r, http.StatusBadRequest, fmt.Errorf("unsupported content-type: %s", r.Header.Get("Content-type")))
+		handleError("Patch", w, r, http.StatusBadRequest, fmt.Errorf("unsupported content-type: %s", r.Header.Get("Content-type")))
 		return
 	}
 
@@ -426,38 +438,38 @@ func (s *RTCRestService) handleParticipantPatch(w http.ResponseWriter, r *http.R
 	// https://www.rfc-editor.org/rfc/rfc9725.html#name-http-patch-request-usage
 	ifMatch := r.Header.Get("If-Match")
 	if ifMatch == "" {
-		s.handleError("Patch", w, r, http.StatusPreconditionRequired, errors.New("missing entity tag"))
+		handleError("Patch", w, r, http.StatusPreconditionRequired, errors.New("missing entity tag"))
 		return
 	}
 
 	claims := GetGrants(r.Context())
 	if claims == nil || claims.Video == nil {
-		s.handleError("Patch", w, r, http.StatusUnauthorized, rtc.ErrPermissionDenied)
+		handleError("Patch", w, r, http.StatusUnauthorized, rtc.ErrPermissionDenied)
 		return
 	}
 
 	roomName, err := EnsureJoinPermission(r.Context())
 	if err != nil {
-		s.handleError("Patch", w, r, http.StatusUnauthorized, err)
+		handleError("Patch", w, r, http.StatusUnauthorized, err)
 		return
 	}
 	if roomName == "" {
-		s.handleError("Patch", w, r, http.StatusUnauthorized, errors.New("room name cannot be empty"))
+		handleError("Patch", w, r, http.StatusUnauthorized, errors.New("room name cannot be empty"))
 		return
 	}
 	if claims.Identity == "" {
-		s.handleError("Patch", w, r, http.StatusUnauthorized, errors.New("participant identity cannot be empty"))
+		handleError("Patch", w, r, http.StatusUnauthorized, errors.New("participant identity cannot be empty"))
 		return
 	}
 	pID := livekit.ParticipantID(r.PathValue("participant_id"))
 	if pID == "" {
-		s.handleError("Patch", w, r, http.StatusUnauthorized, errors.New("participant ID cannot be empty"))
+		handleError("Patch", w, r, http.StatusUnauthorized, errors.New("participant ID cannot be empty"))
 		return
 	}
 
 	sdpFragmentBytes, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		s.handleError("Patch", w, r, http.StatusBadRequest, fmt.Errorf("body does not have SDP fragment: %s", err))
+		handleError("Patch", w, r, http.StatusBadRequest, fmt.Errorf("body does not have SDP fragment: %s", err))
 	}
 	sdpFragment := string(sdpFragmentBytes)
 
@@ -468,43 +480,43 @@ func (s *RTCRestService) handleParticipantPatch(w http.ResponseWriter, r *http.R
 	}
 }
 
-func (s *RTCRestService) handleParticipantDelete(w http.ResponseWriter, r *http.Request) {
+func (s *RTCv2Service) handleParticipantDelete(w http.ResponseWriter, r *http.Request) {
 	claims := GetGrants(r.Context())
 	if claims == nil || claims.Video == nil {
-		s.handleError("Delete", w, r, http.StatusUnauthorized, rtc.ErrPermissionDenied)
+		handleError("Delete", w, r, http.StatusUnauthorized, rtc.ErrPermissionDenied)
 		return
 	}
 
 	roomName, err := EnsureJoinPermission(r.Context())
 	if err != nil {
-		s.handleError("Delete", w, r, http.StatusUnauthorized, err)
+		handleError("Delete", w, r, http.StatusUnauthorized, err)
 		return
 	}
 	if roomName == "" {
-		s.handleError("Delete", w, r, http.StatusUnauthorized, errors.New("room name cannot be empty"))
+		handleError("Delete", w, r, http.StatusUnauthorized, errors.New("room name cannot be empty"))
 		return
 	}
 	if claims.Identity == "" {
-		s.handleError("Delete", w, r, http.StatusUnauthorized, errors.New("participant identity cannot be empty"))
+		handleError("Delete", w, r, http.StatusUnauthorized, errors.New("participant identity cannot be empty"))
 		return
 	}
 
 	_, err = s.participantClient.DeleteSession(
 		r.Context(),
 		s.topicFormatter.ParticipantTopic(r.Context(), roomName, livekit.ParticipantIdentity(claims.Identity)),
-		&rpc.RTCRestParticipantDeleteSessionRequest{
+		&rpc.RTCv2ServiceParticipantDeleteSessionRequest{
 			Room:                string(roomName),
 			ParticipantIdentity: claims.Identity,
 			ParticipantId:       r.PathValue("participant_id"),
 		},
 	)
 	if err != nil {
-		s.handleError("Delete", w, r, http.StatusNotFound, err)
+		handleError("Delete", w, r, http.StatusNotFound, err)
 		return
 	}
 
 	sutils.GetLogger(r.Context()).Infow(
-		"API RTCRest.Delete",
+		"API RTCv2Service.Delete",
 		"participant", claims.Identity,
 		"pID", r.PathValue("participant_id"),
 		"room", roomName,
@@ -513,9 +525,9 @@ func (s *RTCRestService) handleParticipantDelete(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusOK)
 }
 
-func (s *RTCRestService) handleError(method string, w http.ResponseWriter, r *http.Request, status int, err error) {
+func handleError(method string, w http.ResponseWriter, r *http.Request, status int, err error) {
 	sutils.GetLogger(r.Context()).Warnw(
-		fmt.Sprintf("API RTCRest.%s", method), err,
+		fmt.Sprintf("API RTCv2Service.%s", method), err,
 		"status", status,
 	)
 	w.WriteHeader(status)
@@ -525,3 +537,4 @@ func (s *RTCRestService) handleError(method string, w http.ResponseWriter, r *ht
 		Error: err.Error(),
 	})
 }
+*/

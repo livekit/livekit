@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -26,7 +27,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-func HandleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...interface{}) {
+func handleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...interface{}) {
 	keysAndValues = append(keysAndValues, "status", status)
 	if r != nil && r.URL != nil {
 		keysAndValues = append(keysAndValues, "method", r.Method, "path", r.URL.Path)
@@ -35,7 +36,20 @@ func HandleError(w http.ResponseWriter, r *http.Request, status int, err error, 
 		utils.GetLogger(r.Context()).WithCallDepth(1).Warnw("error handling request", err, keysAndValues...)
 	}
 	w.WriteHeader(status)
+}
+
+func HandleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...interface{}) {
+	handleError(w, r, status, err, keysAndValues...)
 	_, _ = w.Write([]byte(err.Error()))
+}
+
+func HandleErrorJson(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...interface{}) {
+	handleError(w, r, status, err, keysAndValues...)
+	json.NewEncoder(w).Encode(struct {
+		Error string `json:"error"`
+	}{
+		Error: err.Error(),
+	})
 }
 
 func boolValue(s string) bool {

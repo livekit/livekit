@@ -79,6 +79,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewRoomAllocator,
 		NewRoomService,
 		NewRTCService,
+		NewRTCv2Service,
 		NewRTCRestService,
 		NewAgentService,
 		NewAgentDispatchService,

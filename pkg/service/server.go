@@ -49,6 +49,7 @@ type LivekitServer struct {
 	config         *config.Config
 	ioService      *IOInfoService
 	rtcService     *RTCService
+	rtcv2Service   *RTCv2Service
 	rtcRestService *RTCRestService
 	agentService   *AgentService
 	httpServer     *http.Server
@@ -71,6 +72,7 @@ func NewLivekitServer(conf *config.Config,
 	sipService *SIPService,
 	ioService *IOInfoService,
 	rtcService *RTCService,
+	rtcv2Service *RTCv2Service,
 	rtcRestService *RTCRestService,
 	agentService *AgentService,
 	keyProvider auth.KeyProvider,
@@ -84,6 +86,7 @@ func NewLivekitServer(conf *config.Config,
 		config:         conf,
 		ioService:      ioService,
 		rtcService:     rtcService,
+		rtcv2Service:   rtcv2Service,
 		rtcRestService: rtcRestService,
 		agentService:   agentService,
 		router:         router,
@@ -143,8 +146,9 @@ func NewLivekitServer(conf *config.Config,
 	xtwirp.RegisterServer(mux, egressServer)
 	xtwirp.RegisterServer(mux, ingressServer)
 	xtwirp.RegisterServer(mux, sipServer)
-	mux.Handle("/rtc", rtcService)
+	// RAJA-REMOVE mux.Handle("/rtc", rtcService)
 	rtcService.SetupRoutes(mux)
+	rtcv2Service.SetupRoutes(mux)
 	rtcRestService.SetupRoutes(mux)
 	mux.Handle("/agent", agentService)
 	mux.HandleFunc("/", s.defaultHandler)

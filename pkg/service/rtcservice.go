@@ -87,6 +87,7 @@ func NewRTCService(
 }
 
 func (s *RTCService) SetupRoutes(mux *http.ServeMux) {
+	mux.Handle("/rtc", s)
 	mux.HandleFunc("/rtc/validate", s.validate)
 }
 

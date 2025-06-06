@@ -121,6 +121,10 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	sipService := NewSIPService(sipConfig, nodeID, messageBus, sipClient, sipStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, router, telemetryService)
+	rtCv2Service, err := NewRTCv2Service()
+	if err != nil {
+		return nil, err
+	}
 	rtcRestParticipantClient, err := rpc.NewTypedRTCRestParticipantClient(clientParams)
 	if err != nil {
 		return nil, err
@@ -155,7 +159,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, serviceRTCRestService, agentService, keyProvider, router, roomManager, signalServer, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, rtCv2Service, serviceRTCRestService, agentService, keyProvider, router, roomManager, signalServer, server, currentNode)
 	if err != nil {
 		return nil, err
 	}
