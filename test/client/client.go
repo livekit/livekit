@@ -16,6 +16,8 @@ package client
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -113,6 +115,7 @@ var (
 type Options struct {
 	AutoSubscribe             bool
 	Publish                   string
+	Attributes                map[string]string
 	ClientInfo                *livekit.ClientInfo
 	DisabledCodecs            []webrtc.RTPCodecCapability
 	TokenCustomizer           func(token *auth.AccessToken, grants *auth.VideoGrant)
@@ -134,6 +137,13 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 		connectUrl = fmt.Sprintf("%s&auto_subscribe=%t", connectUrl, opts.AutoSubscribe)
 		if opts.Publish != "" {
 			connectUrl += encodeQueryParam("publish", opts.Publish)
+		}
+		if len(opts.Attributes) != 0 {
+			data, err := json.Marshal(opts.Attributes)
+			if err != nil {
+				return nil, err
+			}
+			connectUrl += encodeQueryParam("attributes", base64.URLEncoding.EncodeToString(data))
 		}
 		if opts.ClientInfo != nil {
 			if opts.ClientInfo.DeviceModel != "" {
