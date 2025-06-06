@@ -177,17 +177,20 @@ func (c congestionReason) String() string {
 }
 
 // -------------------------------------------------------------------------------
-type qdMeasurement struct {
-	jqrConfig CongestionSignalConfig
-	dqrConfig CongestionSignalConfig
-	jqrMin    int64
-	dqrMax    int64
 
-	numGroups    int
-	numJQRGroups int
-	numDQRGroups int
-	minSendTime  int64
-	maxSendTime  int64
+type qdMeasurement struct {
+	jqrConfig              CongestionSignalConfig
+	dqrConfig              CongestionSignalConfig
+	jqrMinDelay            int64
+	jqrMinTrendCoefficient float64
+	dqrMaxDelay            int64
+
+	numGroups               int
+	numJQRGroups            int
+	numDQRGroups            int
+	minSendTime             int64
+	maxSendTime             int64
+	propagatedQueuingDelays []int64
 
 	isSealed    bool
 	minGroupIdx int
@@ -196,13 +199,14 @@ type qdMeasurement struct {
 	queuingRegion queuingRegion
 }
 
-func newQDMeasurement(jqrConfig CongestionSignalConfig, dqrConfig CongestionSignalConfig, jqrMin int64, dqrMax int64) *qdMeasurement {
+func newQDMeasurement(jqrConfig CongestionSignalConfig, dqrConfig CongestionSignalConfig, jqrMinDelay int64, jqrMinTrendCoefficient float64, dqrMaxDelay int64) *qdMeasurement {
 	return &qdMeasurement{
-		jqrConfig:     jqrConfig,
-		dqrConfig:     dqrConfig,
-		jqrMin:        jqrMin,
-		dqrMax:        dqrMax,
-		queuingRegion: queuingRegionIndeterminate,
+		jqrConfig:              jqrConfig,
+		dqrConfig:              dqrConfig,
+		jqrMinDelay:            jqrMinDelay,
+		jqrMinTrendCoefficient: jqrMinTrendCoefficient,
+		dqrMaxDelay:            dqrMaxDelay,
+		queuingRegion:          queuingRegionIndeterminate,
 	}
 }
 
@@ -228,8 +232,10 @@ func (q *qdMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 	}
 	q.maxSendTime = max(q.maxSendTime, maxSendTime)
 
+	q.propagatedQueuingDelays = append(q.propagatedQueuingDelays, pqd)
+
 	switch {
-	case pqd < q.dqrMax:
+	case pqd < q.dqrMaxDelay:
 		q.numDQRGroups++
 		if q.numJQRGroups > 0 {
 			// broken continuity, seal
@@ -239,12 +245,12 @@ func (q *qdMeasurement) ProcessPacketGroup(pg *packetGroup, groupIdx int) {
 			q.queuingRegion = queuingRegionDQR
 		}
 
-	case pqd > q.jqrMin:
+	case pqd > q.jqrMinDelay:
 		q.numJQRGroups++
 		if q.numDQRGroups > 0 {
 			// broken continuity, seal
 			q.isSealed = true
-		} else if q.jqrConfig.IsTriggered(q.numJQRGroups, q.maxSendTime-q.minSendTime) {
+		} else if q.jqrConfig.IsTriggered(q.numJQRGroups, q.maxSendTime-q.minSendTime) && q.trendCoefficient() > q.jqrMinTrendCoefficient {
 			q.isSealed = true
 			q.queuingRegion = queuingRegionJQR
 		}
@@ -279,12 +285,43 @@ func (q *qdMeasurement) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddInt("numDQRGroups", q.numDQRGroups)
 	e.AddInt64("minSendTime", q.minSendTime)
 	e.AddInt64("maxSendTime", q.maxSendTime)
+	e.AddArray("propagatedQueuingDelays", logger.Int64Slice(q.propagatedQueuingDelays))
+	e.AddFloat64("trendCoefficient", q.trendCoefficient())
 	e.AddDuration("duration", time.Duration((q.maxSendTime-q.minSendTime)*1000))
 	e.AddBool("isSealed", q.isSealed)
 	e.AddInt("minGroupIdx", q.minGroupIdx)
 	e.AddInt("maxGroupIdx", q.maxGroupIdx)
 	e.AddString("queuingRegion", q.queuingRegion.String())
 	return nil
+}
+
+func (q *qdMeasurement) trendCoefficient() float64 {
+	concordantPairs := 0
+	discordantPairs := 0
+
+	// the packet groups are processed from newest to oldest,
+	// so a concordant pair is when the value drops,
+	// i. e. the propagated queuing delay is increasing if newer (earlier entity in slice) is higher than older (later entity in slice)
+	for i := 0; i < len(q.propagatedQueuingDelays)-1; i++ {
+		for j := i + 1; j < len(q.propagatedQueuingDelays); j++ {
+			if q.propagatedQueuingDelays[i] > q.propagatedQueuingDelays[j] {
+				concordantPairs++
+			} else if q.propagatedQueuingDelays[i] < q.propagatedQueuingDelays[j] {
+				discordantPairs++
+			}
+		}
+	}
+
+	if (concordantPairs + discordantPairs) == 0 {
+		// if the min requirements is only one sample, trend calculation is not possible, declare highest trend value
+		if len(q.propagatedQueuingDelays) == 1 {
+			return 1.0
+		}
+
+		return 0.0
+	}
+
+	return (float64(concordantPairs) - float64(discordantPairs)) / (float64(concordantPairs) + float64(discordantPairs))
 }
 
 // -------------------------------------------------------------------------------
@@ -405,8 +442,9 @@ type CongestionDetectorConfig struct {
 	ProbeRegulator   ccutils.ProbeRegulatorConfig `yaml:"probe_regulator,omitempty"`
 	ProbeSignal      ProbeSignalConfig            `yaml:"probe_signal,omitempty"`
 
-	JQRMinDelay time.Duration `yaml:"jqr_min_delay,omitempty"`
-	DQRMaxDelay time.Duration `yaml:"dqr_max_delay,omitempty"`
+	JQRMinDelay            time.Duration `yaml:"jqr_min_delay,omitempty"`
+	JQRMinTrendCoefficient float64       `yaml:"jqr_min_trend_coefficient,omitempty"`
+	DQRMaxDelay            time.Duration `yaml:"dqr_max_delay,omitempty"`
 
 	WeightedLoss       WeightedLossConfig `yaml:"weighted_loss,omitempty"`
 	JQRMinWeightedLoss float64            `yaml:"jqr_min_weighted_loss,omitempty"`
@@ -452,8 +490,9 @@ var (
 		ProbeRegulator:   ccutils.DefaultProbeRegulatorConfig,
 		ProbeSignal:      defaultProbeSignalConfig,
 
-		JQRMinDelay: 50 * time.Millisecond,
-		DQRMaxDelay: 20 * time.Millisecond,
+		JQRMinDelay:            50 * time.Millisecond,
+		JQRMinTrendCoefficient: 0.8,
+		DQRMaxDelay:            20 * time.Millisecond,
 
 		WeightedLoss:       defaultWeightedLossConfig,
 		JQRMinWeightedLoss: 0.25,
@@ -852,6 +891,7 @@ func (c *congestionDetector) updateCongestionSignal(
 		qdJQRConfig,
 		qdDQRConfig,
 		c.params.Config.JQRMinDelay.Microseconds(),
+		c.params.Config.JQRMinTrendCoefficient,
 		c.params.Config.DQRMaxDelay.Microseconds(),
 	)
 	c.lossMeasurement = newLossMeasurement(
