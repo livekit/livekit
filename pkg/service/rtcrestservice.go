@@ -135,15 +135,15 @@ func (s *RTCRestService) validateCreate(r *http.Request) (*createRequest, int, e
 	if roomName == "" {
 		return nil, http.StatusUnauthorized, errors.New("room name cannot be empty")
 	}
-	if limit := s.config.Limit.MaxRoomNameLength; limit > 0 && len(roomName) > limit {
-		return nil, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, limit)
+	if !s.config.Limit.CheckRoomNameLength(string(roomName)) {
+		return nil, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, s.config.Limit.MaxRoomNameLength)
 	}
 
 	if claims.Identity == "" {
 		return nil, http.StatusBadRequest, ErrIdentityEmpty
 	}
-	if limit := s.config.Limit.MaxParticipantIdentityLength; limit > 0 && len(claims.Identity) > limit {
-		return nil, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, limit)
+	if !s.config.Limit.CheckParticipantIdentityLength(claims.Identity) {
+		return nil, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, s.config.Limit.MaxParticipantIdentityLength)
 	}
 
 	var clientInfo struct {
