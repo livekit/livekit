@@ -246,6 +246,10 @@ func (l LimitConfig) CheckRoomNameLength(name string) bool {
 	return l.MaxRoomNameLength == 0 || len(name) <= l.MaxRoomNameLength
 }
 
+func (l LimitConfig) CheckParticipantIdentityLength(identity string) bool {
+	return l.MaxParticipantIdentityLength == 0 || len(identity) <= l.MaxParticipantIdentityLength
+}
+
 func (l LimitConfig) CheckParticipantNameLength(name string) bool {
 	return l.MaxParticipantNameLength == 0 || len(name) <= l.MaxParticipantNameLength
 }
