@@ -136,6 +136,13 @@ func (s *RTCService) validateInternal(log logger.Logger, r *http.Request, strict
 		return "", pi, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, s.config.Limit.MaxParticipantIdentityLength)
 	}
 
+	if claims.RoomConfig != nil {
+		if err := claims.RoomConfig.CheckCredentials(); err != nil {
+			logger.Warnw("credentials found in token", nil)
+			// TODO(dz): in a future version, we'll reject these connections
+		}
+	}
+
 	roomName := livekit.RoomName(r.FormValue("room"))
 	reconnectParam := r.FormValue("reconnect")
 	reconnectReason, _ := strconv.Atoi(r.FormValue("reconnect_reason")) // 0 means unknown reason
