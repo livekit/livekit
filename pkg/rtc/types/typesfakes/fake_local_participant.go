@@ -13,6 +13,7 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/observability/roomobs"
 	"github.com/livekit/protocol/utils"
 	"github.com/pion/rtcp"
 	webrtc "github.com/pion/webrtc/v4"
@@ -411,6 +412,26 @@ type FakeLocalParticipant struct {
 	getPublisherICESessionUfragReturnsOnCall map[int]struct {
 		result1 string
 		result2 error
+	}
+	GetReporterStub        func() roomobs.ParticipantSessionReporter
+	getReporterMutex       sync.RWMutex
+	getReporterArgsForCall []struct {
+	}
+	getReporterReturns struct {
+		result1 roomobs.ParticipantSessionReporter
+	}
+	getReporterReturnsOnCall map[int]struct {
+		result1 roomobs.ParticipantSessionReporter
+	}
+	GetReporterResolverStub        func() roomobs.ParticipantReporterResolver
+	getReporterResolverMutex       sync.RWMutex
+	getReporterResolverArgsForCall []struct {
+	}
+	getReporterResolverReturns struct {
+		result1 roomobs.ParticipantReporterResolver
+	}
+	getReporterResolverReturnsOnCall map[int]struct {
+		result1 roomobs.ParticipantReporterResolver
 	}
 	GetSubscribedParticipantsStub        func() []livekit.ParticipantID
 	getSubscribedParticipantsMutex       sync.RWMutex
@@ -3310,6 +3331,112 @@ func (fake *FakeLocalParticipant) GetPublisherICESessionUfragReturnsOnCall(i int
 		result1 string
 		result2 error
 	}{result1, result2}
+}
+
+func (fake *FakeLocalParticipant) GetReporter() roomobs.ParticipantSessionReporter {
+	fake.getReporterMutex.Lock()
+	ret, specificReturn := fake.getReporterReturnsOnCall[len(fake.getReporterArgsForCall)]
+	fake.getReporterArgsForCall = append(fake.getReporterArgsForCall, struct {
+	}{})
+	stub := fake.GetReporterStub
+	fakeReturns := fake.getReporterReturns
+	fake.recordInvocation("GetReporter", []interface{}{})
+	fake.getReporterMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetReporterCallCount() int {
+	fake.getReporterMutex.RLock()
+	defer fake.getReporterMutex.RUnlock()
+	return len(fake.getReporterArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetReporterCalls(stub func() roomobs.ParticipantSessionReporter) {
+	fake.getReporterMutex.Lock()
+	defer fake.getReporterMutex.Unlock()
+	fake.GetReporterStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetReporterReturns(result1 roomobs.ParticipantSessionReporter) {
+	fake.getReporterMutex.Lock()
+	defer fake.getReporterMutex.Unlock()
+	fake.GetReporterStub = nil
+	fake.getReporterReturns = struct {
+		result1 roomobs.ParticipantSessionReporter
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetReporterReturnsOnCall(i int, result1 roomobs.ParticipantSessionReporter) {
+	fake.getReporterMutex.Lock()
+	defer fake.getReporterMutex.Unlock()
+	fake.GetReporterStub = nil
+	if fake.getReporterReturnsOnCall == nil {
+		fake.getReporterReturnsOnCall = make(map[int]struct {
+			result1 roomobs.ParticipantSessionReporter
+		})
+	}
+	fake.getReporterReturnsOnCall[i] = struct {
+		result1 roomobs.ParticipantSessionReporter
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetReporterResolver() roomobs.ParticipantReporterResolver {
+	fake.getReporterResolverMutex.Lock()
+	ret, specificReturn := fake.getReporterResolverReturnsOnCall[len(fake.getReporterResolverArgsForCall)]
+	fake.getReporterResolverArgsForCall = append(fake.getReporterResolverArgsForCall, struct {
+	}{})
+	stub := fake.GetReporterResolverStub
+	fakeReturns := fake.getReporterResolverReturns
+	fake.recordInvocation("GetReporterResolver", []interface{}{})
+	fake.getReporterResolverMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetReporterResolverCallCount() int {
+	fake.getReporterResolverMutex.RLock()
+	defer fake.getReporterResolverMutex.RUnlock()
+	return len(fake.getReporterResolverArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetReporterResolverCalls(stub func() roomobs.ParticipantReporterResolver) {
+	fake.getReporterResolverMutex.Lock()
+	defer fake.getReporterResolverMutex.Unlock()
+	fake.GetReporterResolverStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetReporterResolverReturns(result1 roomobs.ParticipantReporterResolver) {
+	fake.getReporterResolverMutex.Lock()
+	defer fake.getReporterResolverMutex.Unlock()
+	fake.GetReporterResolverStub = nil
+	fake.getReporterResolverReturns = struct {
+		result1 roomobs.ParticipantReporterResolver
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetReporterResolverReturnsOnCall(i int, result1 roomobs.ParticipantReporterResolver) {
+	fake.getReporterResolverMutex.Lock()
+	defer fake.getReporterResolverMutex.Unlock()
+	fake.GetReporterResolverStub = nil
+	if fake.getReporterResolverReturnsOnCall == nil {
+		fake.getReporterResolverReturnsOnCall = make(map[int]struct {
+			result1 roomobs.ParticipantReporterResolver
+		})
+	}
+	fake.getReporterResolverReturnsOnCall[i] = struct {
+		result1 roomobs.ParticipantReporterResolver
+	}{result1}
 }
 
 func (fake *FakeLocalParticipant) GetSubscribedParticipants() []livekit.ParticipantID {
@@ -8199,6 +8326,10 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getPublishedTracksMutex.RUnlock()
 	fake.getPublisherICESessionUfragMutex.RLock()
 	defer fake.getPublisherICESessionUfragMutex.RUnlock()
+	fake.getReporterMutex.RLock()
+	defer fake.getReporterMutex.RUnlock()
+	fake.getReporterResolverMutex.RLock()
+	defer fake.getReporterResolverMutex.RUnlock()
 	fake.getSubscribedParticipantsMutex.RLock()
 	defer fake.getSubscribedParticipantsMutex.RUnlock()
 	fake.getSubscribedTracksMutex.RLock()

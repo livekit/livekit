@@ -27,6 +27,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/observability/roomobs"
 )
 
 type ICEConnectionType int
@@ -44,18 +45,29 @@ func (i ICEConnectionType) String() string {
 	switch i {
 	case ICEConnectionTypeUnknown:
 		return "unknown"
-
 	case ICEConnectionTypeUDP:
 		return "udp"
-
 	case ICEConnectionTypeTCP:
 		return "tcp"
-
 	case ICEConnectionTypeTURN:
 		return "turn"
-
 	default:
 		return "unknown"
+	}
+}
+
+func (i ICEConnectionType) ReporterType() roomobs.ConnectionType {
+	switch i {
+	case ICEConnectionTypeUnknown:
+		return roomobs.ConnectionTypeUndefined
+	case ICEConnectionTypeUDP:
+		return roomobs.ConnectionTypeUDP
+	case ICEConnectionTypeTCP:
+		return roomobs.ConnectionTypeTCP
+	case ICEConnectionTypeTURN:
+		return roomobs.ConnectionTypeTurn
+	default:
+		return roomobs.ConnectionTypeUndefined
 	}
 }
 
@@ -81,6 +93,15 @@ type ICEConnectionInfo struct {
 
 func (i *ICEConnectionInfo) HasCandidates() bool {
 	return len(i.Local) > 0 || len(i.Remote) > 0
+}
+
+func ICEConnectionInfosType(infos []*ICEConnectionInfo) ICEConnectionType {
+	for _, info := range infos {
+		if info.Type != ICEConnectionTypeUnknown {
+			return info.Type
+		}
+	}
+	return ICEConnectionTypeUnknown
 }
 
 // --------------------------------------------

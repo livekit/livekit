@@ -37,6 +37,8 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/observability"
+	"github.com/livekit/protocol/observability/roomobs"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/protocol/utils/pointer"
@@ -130,6 +132,8 @@ type ParticipantParams struct {
 	SubscribeEnabledCodecs         []*livekit.Codec
 	Logger                         logger.Logger
 	LoggerResolver                 logger.DeferredFieldResolver
+	Reporter                       roomobs.ParticipantSessionReporter
+	ReporterResolver               roomobs.ParticipantReporterResolver
 	SimTracks                      map[uint32]SimulcastTrackInfo
 	Grants                         *auth.ClaimGrants
 	InitialVersion                 uint32
@@ -191,7 +195,8 @@ type ParticipantImpl struct {
 	sessionStartRecorded atomic.Bool
 	lastActiveAt         atomic.Pointer[time.Time]
 	// when first connected
-	connectedAt time.Time
+	connectedAt    time.Time
+	disconnectedAt atomic.Pointer[time.Time]
 	// timer that's set when disconnect is detected on primary PC
 	disconnectTimer *time.Timer
 	migrationTimer  *time.Timer
@@ -303,6 +308,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeData, p.ID()),
 		p.ID(),
 		params.Telemetry,
+		params.Reporter,
 	)
 	p.participantHelper.Store(params.ParticipantHelper)
 	if !params.DisableSupervisor {
@@ -322,6 +328,20 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	if p.supervisor != nil {
 		p.supervisor.OnPublicationError(p.onPublicationError)
 	}
+
+	sessionTimer := observability.NewSessionTimer(p.params.SessionStartTime)
+	params.Reporter.RegisterFunc(func(ts time.Time, tx roomobs.ParticipantSessionTx) bool {
+		if dts := p.disconnectedAt.Load(); dts != nil {
+			ts = *dts
+			tx.ReportEndTime(ts)
+		}
+
+		millis, mins := sessionTimer.Advance(ts)
+		tx.ReportDuration(uint16(millis))
+		tx.ReportDurationMinutes(uint8(mins))
+
+		return !p.IsDisconnected()
+	})
 
 	var err error
 	// keep last participants and when updates were sent
@@ -353,6 +373,14 @@ func (p *ParticipantImpl) GetLogger() logger.Logger {
 
 func (p *ParticipantImpl) GetLoggerResolver() logger.DeferredFieldResolver {
 	return p.params.LoggerResolver
+}
+
+func (p *ParticipantImpl) GetReporter() roomobs.ParticipantSessionReporter {
+	return p.params.Reporter
+}
+
+func (p *ParticipantImpl) GetReporterResolver() roomobs.ParticipantReporterResolver {
+	return p.params.ReporterResolver
 }
 
 func (p *ParticipantImpl) GetAdaptiveStream() bool {
@@ -1710,6 +1738,7 @@ func (p *ParticipantImpl) setupSubscriptionManager() {
 			return p.helper().ResolveMediaTrack(lp, ti)
 		},
 		Telemetry:                p.params.Telemetry,
+		Reporter:                 p.params.Reporter,
 		OnTrackSubscribed:        p.onTrackSubscribed,
 		OnTrackUnsubscribed:      p.onTrackUnsubscribed,
 		OnSubscriptionError:      p.onSubscriptionError,
@@ -1804,6 +1833,7 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 	}
 
 	if state == livekit.ParticipantInfo_DISCONNECTED && oldState == livekit.ParticipantInfo_ACTIVE {
+		p.disconnectedAt.Store(pointer.To(time.Now()))
 		prometheus.RecordSessionDuration(int(p.ProtocolVersion()), time.Since(*p.lastActiveAt.Load()))
 	}
 }
@@ -2708,6 +2738,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 		VideoConfig:           p.params.VideoConfig,
 		Telemetry:             p.params.Telemetry,
 		Logger:                LoggerWithTrack(p.pubLogger, livekit.TrackID(ti.Sid), false),
+		Reporter:              p.params.Reporter.WithTrack(ti.Sid),
 		SubscriberConfig:      p.params.Config.Subscriber,
 		PLIThrottleConfig:     p.params.PLIThrottleConfig,
 		SimTracks:             p.params.SimTracks,
@@ -3345,6 +3376,7 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 	p.params.Logger.Infow("move participant to new room", "newRoomName", params.RoomName, "newID", params.ParticipantID)
 
 	p.params.LoggerResolver.Reset()
+	p.params.ReporterResolver.Reset()
 	p.participantHelper.Store(params.Helper)
 	p.SubscriptionManager.ClearAllSubscriptions()
 	p.id.Store(params.ParticipantID)

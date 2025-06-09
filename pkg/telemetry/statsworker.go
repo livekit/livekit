@@ -264,6 +264,39 @@ func coalesce(stats []*livekit.AnalyticsStat) *livekit.AnalyticsStat {
 	return stat
 }
 
+type CondensedStat struct {
+	StartTime   time.Time
+	EndTime     time.Time
+	Bytes       uint64
+	Packets     uint32
+	PacketsLost uint32
+	Frames      uint32
+}
+
+func CondenseStat(stat *livekit.AnalyticsStat) (ps CondensedStat, ok bool) {
+	if ok = isValid(stat); !ok {
+		return
+	}
+
+	for _, stream := range stat.Streams {
+		startTime := stream.StartTime.AsTime()
+		endTime := stream.EndTime.AsTime()
+		if ps.StartTime.IsZero() || startTime.Before(ps.StartTime) {
+			ps.StartTime = startTime
+		}
+		if endTime.After(ps.EndTime) {
+			ps.EndTime = endTime
+		}
+
+		ps.Bytes += stream.PrimaryBytes
+		ps.Packets += stream.PrimaryPackets
+		ps.PacketsLost += stream.PacketsLost
+		ps.Frames += stream.Frames
+	}
+
+	return
+}
+
 func isValid(stat *livekit.AnalyticsStat) bool {
 	for _, analyticsStream := range stat.Streams {
 		if int32(analyticsStream.PrimaryPackets) < 0 ||

@@ -22,6 +22,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/observability/roomobs"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils/guid"
 
@@ -34,6 +35,7 @@ type AnalyticsService interface {
 	SendStats(ctx context.Context, stats []*livekit.AnalyticsStat)
 	SendEvent(ctx context.Context, events *livekit.AnalyticsEvent)
 	SendNodeRoomStates(ctx context.Context, nodeRooms *livekit.AnalyticsNodeRooms)
+	RoomProjectReporter(ctx context.Context) roomobs.ProjectReporter
 }
 
 type analyticsService struct {
@@ -94,4 +96,8 @@ func (a *analyticsService) SendNodeRoomStates(_ context.Context, nodeRooms *live
 	if err := a.nodeRooms.Send(nodeRooms); err != nil {
 		logger.Errorw("failed to send node room states", err)
 	}
+}
+
+func (a *analyticsService) RoomProjectReporter(_ context.Context) roomobs.ProjectReporter {
+	return roomobs.NewNoopProjectReporter()
 }

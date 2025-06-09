@@ -18,6 +18,8 @@ import (
 	"strings"
 
 	"github.com/pion/webrtc/v4"
+
+	"github.com/livekit/protocol/observability/roomobs"
 )
 
 const (
@@ -185,6 +187,41 @@ func (m MimeType) String() string {
 	}
 
 	return "MimeTypeUnknown"
+}
+
+func (m MimeType) ReporterType() roomobs.MimeType {
+	switch m {
+	case MimeTypeUnknown:
+		return roomobs.MimeTypeUndefined
+	case MimeTypeH264:
+		return roomobs.MimeTypeVideoH264
+	case MimeTypeH265:
+		return roomobs.MimeTypeVideoH265
+	case MimeTypeOpus:
+		return roomobs.MimeTypeAudioOpus
+	case MimeTypeRED:
+		return roomobs.MimeTypeAudioRed
+	case MimeTypeVP8:
+		return roomobs.MimeTypeVideoVp8
+	case MimeTypeVP9:
+		return roomobs.MimeTypeVideoVp9
+	case MimeTypeAV1:
+		return roomobs.MimeTypeVideoAv1
+	case MimeTypeG722:
+		return roomobs.MimeTypeAudioG722
+	case MimeTypePCMU:
+		return roomobs.MimeTypeAudioPcmu
+	case MimeTypePCMA:
+		return roomobs.MimeTypeAudioPcma
+	case MimeTypeRTX:
+		return roomobs.MimeTypeVideoRtx
+	case MimeTypeFlexFEC:
+		return roomobs.MimeTypeVideoFlexfec
+	case MimeTypeULPFEC:
+		return roomobs.MimeTypeVideoUlpfec
+	}
+
+	return roomobs.MimeTypeUndefined
 }
 
 func NormalizeMimeType(mime string) MimeType {

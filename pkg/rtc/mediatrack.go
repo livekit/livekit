@@ -26,6 +26,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/observability/roomobs"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/dynacast"
@@ -74,6 +75,7 @@ type MediaTrackParams struct {
 	VideoConfig           config.VideoConfig
 	Telemetry             telemetry.TelemetryService
 	Logger                logger.Logger
+	Reporter              roomobs.TrackReporter
 	SimTracks             map[uint32]SimulcastTrackInfo
 	OnRTCP                func([]rtcp.Packet)
 	ForwardStats          *sfu.ForwardStats
@@ -328,6 +330,23 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			if priority == 0 || regressionTargetCodecReceived {
 				key := telemetry.StatsKeyForTrack(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), ti.Source, ti.Type)
 				t.params.Telemetry.TrackStats(key, stat)
+
+				if ps, ok := telemetry.CondenseStat(stat); ok {
+					t.params.Reporter.Tx(func(tx roomobs.TrackTx) {
+						tx.ReportName(ti.Name)
+						tx.ReportKind(roomobs.TrackKindSub)
+						tx.ReportType(roomobs.TrackTypeFromProto(ti.Type))
+						tx.ReportSource(roomobs.TrackSourceFromProto(ti.Source))
+						tx.ReportMime(mime.NormalizeMimeType(ti.MimeType).ReporterType())
+						tx.ReportLayer(roomobs.PackTrackLayer(ti.Height, ti.Width))
+						tx.ReportDuration(uint16(ps.EndTime.Sub(ps.StartTime).Milliseconds()))
+						tx.ReportFrames(uint16(ps.Frames))
+						tx.ReportRecvBytes(uint32(ps.Bytes))
+						tx.ReportRecvPackets(ps.Packets)
+						tx.ReportPacketsLost(ps.PacketsLost)
+						tx.ReportScore(stat.Score)
+					})
+				}
 			}
 		})
 
@@ -445,6 +464,19 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			int(layer),
 			stats,
 		)
+		t.params.Reporter.Tx(func(tx roomobs.TrackTx) {
+			tx.ReportName(ti.Name)
+			tx.ReportKind(roomobs.TrackKindSub)
+			tx.ReportType(roomobs.TrackTypeFromProto(ti.Type))
+			tx.ReportSource(roomobs.TrackSourceFromProto(ti.Source))
+			tx.ReportMime(mimeType.ReporterType())
+			tx.ReportLayer(roomobs.PackTrackLayer(ti.Height, ti.Width))
+			tx.ReportDuration(uint16(time.Duration(stats.Duration * float64(time.Second)).Milliseconds()))
+			tx.ReportFrames(uint16(stats.Frames))
+			tx.ReportRecvBytes(uint32(stats.Bytes))
+			tx.ReportRecvPackets(stats.Packets)
+			tx.ReportPacketsLost(stats.PacketsLost)
+		})
 	})
 	return newCodec
 }

@@ -28,10 +28,12 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/observability/roomobs"
 	"github.com/livekit/protocol/utils"
 )
 
@@ -59,6 +61,7 @@ type SubscriptionManagerParams struct {
 	OnTrackUnsubscribed func(subTrack types.SubscribedTrack)
 	OnSubscriptionError func(trackID livekit.TrackID, fatal bool, err error)
 	Telemetry           telemetry.TelemetryService
+	Reporter            roomobs.ParticipantSessionReporter
 
 	SubscriptionLimitVideo, SubscriptionLimitAudio int32
 
@@ -839,6 +842,24 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, i
 					dt.Mime(),
 					stats,
 				)
+				m.params.Reporter.WithTrack(s.trackID.String()).Tx(func(tx roomobs.TrackTx) {
+					tx.ReportKind(roomobs.TrackKindSub)
+
+					mimeType := dt.Mime()
+					switch {
+					case mime.IsMimeTypeAudio(mimeType):
+						tx.ReportType(roomobs.TrackTypeAudio)
+					case mime.IsMimeTypeVideo(mimeType):
+						tx.ReportType(roomobs.TrackTypeVideo)
+					}
+					tx.ReportMime(mimeType.ReporterType())
+
+					tx.ReportDuration(uint16(time.Duration(stats.Duration * float64(time.Second)).Milliseconds()))
+					tx.ReportFrames(uint16(stats.Frames))
+					tx.ReportRecvBytes(uint32(stats.Bytes))
+					tx.ReportRecvPackets(stats.Packets)
+					tx.ReportPacketsLost(stats.PacketsLost)
+				})
 			}
 		}
 	}
