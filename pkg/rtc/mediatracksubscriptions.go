@@ -215,20 +215,20 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		key := telemetry.StatsKeyForTrack(livekit.StreamType_DOWNSTREAM, subscriberID, trackID, t.params.MediaTrack.Source(), t.params.MediaTrack.Kind())
 		t.params.Telemetry.TrackStats(key, stat)
 
-		if ps, ok := telemetry.CondenseStat(stat); ok {
+		if cs, ok := telemetry.CondenseStat(stat); ok {
 			reporter.Tx(func(tx roomobs.TrackTx) {
 				ti := wr.TrackInfo()
 				tx.ReportName(ti.Name)
-				tx.ReportKind(roomobs.TrackKindSub)
+				tx.ReportKind(roomobs.TrackKindPub)
 				tx.ReportType(roomobs.TrackTypeFromProto(ti.Type))
 				tx.ReportSource(roomobs.TrackSourceFromProto(ti.Source))
 				tx.ReportMime(mime.NormalizeMimeType(ti.MimeType).ReporterType())
 				tx.ReportLayer(roomobs.PackTrackLayer(ti.Height, ti.Width))
-				tx.ReportDuration(uint16(ps.EndTime.Sub(ps.StartTime).Milliseconds()))
-				tx.ReportFrames(uint16(ps.Frames))
-				tx.ReportSendBytes(uint32(ps.Bytes))
-				tx.ReportSendPackets(ps.Packets)
-				tx.ReportPacketsLost(ps.PacketsLost)
+				tx.ReportDuration(uint16(cs.EndTime.Sub(cs.StartTime).Milliseconds()))
+				tx.ReportFrames(uint16(cs.Frames))
+				tx.ReportSendBytes(uint32(cs.Bytes))
+				tx.ReportSendPackets(cs.Packets)
+				tx.ReportPacketsLost(cs.PacketsLost)
 				tx.ReportScore(stat.Score)
 			})
 		}

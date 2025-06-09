@@ -331,7 +331,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 				key := telemetry.StatsKeyForTrack(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), ti.Source, ti.Type)
 				t.params.Telemetry.TrackStats(key, stat)
 
-				if ps, ok := telemetry.CondenseStat(stat); ok {
+				if cs, ok := telemetry.CondenseStat(stat); ok {
 					t.params.Reporter.Tx(func(tx roomobs.TrackTx) {
 						tx.ReportName(ti.Name)
 						tx.ReportKind(roomobs.TrackKindSub)
@@ -339,11 +339,11 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 						tx.ReportSource(roomobs.TrackSourceFromProto(ti.Source))
 						tx.ReportMime(mime.NormalizeMimeType(ti.MimeType).ReporterType())
 						tx.ReportLayer(roomobs.PackTrackLayer(ti.Height, ti.Width))
-						tx.ReportDuration(uint16(ps.EndTime.Sub(ps.StartTime).Milliseconds()))
-						tx.ReportFrames(uint16(ps.Frames))
-						tx.ReportRecvBytes(uint32(ps.Bytes))
-						tx.ReportRecvPackets(ps.Packets)
-						tx.ReportPacketsLost(ps.PacketsLost)
+						tx.ReportDuration(uint16(cs.EndTime.Sub(cs.StartTime).Milliseconds()))
+						tx.ReportFrames(uint16(cs.Frames))
+						tx.ReportRecvBytes(uint32(cs.Bytes))
+						tx.ReportRecvPackets(cs.Packets)
+						tx.ReportPacketsLost(cs.PacketsLost)
 						tx.ReportScore(stat.Score)
 					})
 				}
@@ -464,19 +464,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			int(layer),
 			stats,
 		)
-		t.params.Reporter.Tx(func(tx roomobs.TrackTx) {
-			tx.ReportName(ti.Name)
-			tx.ReportKind(roomobs.TrackKindSub)
-			tx.ReportType(roomobs.TrackTypeFromProto(ti.Type))
-			tx.ReportSource(roomobs.TrackSourceFromProto(ti.Source))
-			tx.ReportMime(mimeType.ReporterType())
-			tx.ReportLayer(roomobs.PackTrackLayer(ti.Height, ti.Width))
-			tx.ReportDuration(uint16(time.Duration(stats.Duration * float64(time.Second)).Milliseconds()))
-			tx.ReportFrames(uint16(stats.Frames))
-			tx.ReportRecvBytes(uint32(stats.Bytes))
-			tx.ReportRecvPackets(stats.Packets)
-			tx.ReportPacketsLost(stats.PacketsLost)
-		})
 	})
 	return newCodec
 }
