@@ -93,36 +93,34 @@ func (c *WSSignalConnection) ReadRequest() (*livekit.SignalRequest, int, error) 
 }
 
 func (c *WSSignalConnection) ReadWorkerMessage() (*livekit.WorkerMessage, int, error) {
-	for {
-		// handle special messages and pass on the rest
-		messageType, payload, err := c.conn.ReadMessage()
-		if err != nil {
-			return nil, 0, err
-		}
+	// handle special messages and pass on the rest
+	messageType, payload, err := c.conn.ReadMessage()
+	if err != nil {
+		return nil, 0, err
+	}
 
-		msg := &livekit.WorkerMessage{}
-		switch messageType {
-		case websocket.BinaryMessage:
-			if c.useJSON {
-				c.mu.Lock()
-				// switch to protobuf if client supports it
-				c.useJSON = false
-				c.mu.Unlock()
-			}
-			// protobuf encoded
-			err := proto.Unmarshal(payload, msg)
-			return msg, len(payload), err
-		case websocket.TextMessage:
+	msg := &livekit.WorkerMessage{}
+	switch messageType {
+	case websocket.BinaryMessage:
+		if c.useJSON {
 			c.mu.Lock()
-			// json encoded, also write back JSON
-			c.useJSON = true
+			// switch to protobuf if client supports it
+			c.useJSON = false
 			c.mu.Unlock()
-			err := protojson.Unmarshal(payload, msg)
-			return msg, len(payload), err
-		default:
-			logger.Debugw("unsupported message", "message", messageType)
-			return nil, len(payload), nil
 		}
+		// protobuf encoded
+		err := proto.Unmarshal(payload, msg)
+		return msg, len(payload), err
+	case websocket.TextMessage:
+		c.mu.Lock()
+		// json encoded, also write back JSON
+		c.useJSON = true
+		c.mu.Unlock()
+		err := protojson.Unmarshal(payload, msg)
+		return msg, len(payload), err
+	default:
+		logger.Debugw("unsupported message", "message", messageType)
+		return nil, len(payload), nil
 	}
 }
 
