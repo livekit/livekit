@@ -1738,7 +1738,6 @@ func (p *ParticipantImpl) setupSubscriptionManager() {
 			return p.helper().ResolveMediaTrack(lp, ti)
 		},
 		Telemetry:                p.params.Telemetry,
-		Reporter:                 p.params.Reporter,
 		OnTrackSubscribed:        p.onTrackSubscribed,
 		OnTrackUnsubscribed:      p.onTrackUnsubscribed,
 		OnSubscriptionError:      p.onSubscriptionError,
