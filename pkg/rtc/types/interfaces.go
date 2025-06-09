@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/observability/roomobs"
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -342,6 +343,8 @@ type LocalParticipant interface {
 	GetTrailer() []byte
 	GetLogger() logger.Logger
 	GetLoggerResolver() logger.DeferredFieldResolver
+	GetReporter() roomobs.ParticipantSessionReporter
+	GetReporterResolver() roomobs.ParticipantReporterResolver
 	GetAdaptiveStream() bool
 	ProtocolVersion() ProtocolVersion
 	SupportsSyncStreamID() bool

@@ -31,6 +31,8 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/observability"
+	"github.com/livekit/protocol/observability/roomobs"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
@@ -73,6 +75,7 @@ type RoomManager struct {
 	rtcRestServer     rpc.RTCRestServer[livekit.NodeID]
 	roomStore         ObjectStore
 	telemetry         telemetry.TelemetryService
+	recorder          observability.Reporter
 	clientConfManager clientconfiguration.ClientConfigurationManager
 	agentClient       agent.Client
 	agentStore        AgentStore
@@ -450,6 +453,7 @@ func (r *RoomManager) StartSession(
 		Grants:                  pi.Grants,
 		Reconnect:               pi.Reconnect,
 		Logger:                  pLogger,
+		Reporter:                roomobs.NewNoopParticipantSessionReporter(),
 		ClientConf:              clientConf,
 		ClientInfo:              rtc.ClientInfo{ClientInfo: pi.Client},
 		Region:                  pi.Region,
