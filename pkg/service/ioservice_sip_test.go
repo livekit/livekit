@@ -16,13 +16,15 @@ package service_test
 
 import (
 	"context"
-	"github.com/dennwc/iters"
-	"github.com/livekit/livekit-server/pkg/service"
-	"github.com/livekit/psrpc"
 	"slices"
 	"testing"
 
+	"github.com/dennwc/iters"
+	"github.com/livekit/livekit-server/pkg/service"
+	"github.com/livekit/psrpc"
+
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/rpc"
 	"github.com/stretchr/testify/require"
 )
 
@@ -117,6 +119,109 @@ func TestSIPRuleSelect(t *testing.T) {
 			slices.Sort(c.exp)
 			slices.Sort(ids)
 			require.Equal(t, c.exp, ids)
+		})
+	}
+}
+
+func TestGetSIPTrunkAuthentication(t *testing.T) {
+	ctx := context.Background()
+	s, rs := ioStoreDocker(t)
+
+	// Set up test trunks
+	trunks := []*livekit.SIPInboundTrunkInfo{
+		{
+			SipTrunkId:   "trunk1",
+			Numbers:      []string{"1234"},
+			AuthUsername: "user1",
+			AuthPassword: "pass1",
+		},
+		{
+			SipTrunkId:   "trunk2",
+			Numbers:      []string{"5678", "5679"},
+			AuthUsername: "user2",
+			AuthPassword: "pass2",
+		},
+	}
+
+	for _, tr := range trunks {
+		err := rs.StoreSIPInboundTrunk(ctx, tr)
+		require.NoError(t, err)
+	}
+
+	tests := []struct {
+		name        string
+		call        *rpc.SIPCall
+		wantTrunkID string
+		wantUser    string
+		wantPass    string
+		wantErr     bool
+		wantErrMsg  string
+	}{
+		{
+			name: "exact match single number",
+			call: &rpc.SIPCall{
+				To:       &livekit.SIPUri{User: "1234"},
+				From:     &livekit.SIPUri{User: "9999"},
+				SourceIp: "192.168.1.1",
+			},
+			wantTrunkID: "trunk1",
+			wantUser:    "user1",
+			wantPass:    "pass1",
+			wantErr:     false,
+		},
+		{
+			name: "exact match multiple numbers",
+			call: &rpc.SIPCall{
+				To:       &livekit.SIPUri{User: "5679"},
+				From:     &livekit.SIPUri{User: "8888"},
+				SourceIp: "192.168.1.1",
+			},
+			wantTrunkID: "trunk2",
+			wantUser:    "user2",
+			wantPass:    "pass2",
+			wantErr:     false,
+		},
+		{
+			name: "no matching trunk",
+			call: &rpc.SIPCall{
+				To:       &livekit.SIPUri{User: "9999"},
+				From:     &livekit.SIPUri{User: "8888"},
+				SourceIp: "192.168.1.1",
+			},
+			wantErr:    true,
+			wantErrMsg: `sip trunk not found for destination "user:\"9999\""`,
+		},
+		{
+			name: "invalid source IP",
+			call: &rpc.SIPCall{
+				To:       &livekit.SIPUri{User: "1234"},
+				From:     &livekit.SIPUri{User: "9999"},
+				SourceIp: "invalid-ip",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &rpc.GetSIPTrunkAuthenticationRequest{
+				Call: tt.call,
+			}
+			resp, err := s.GetSIPTrunkAuthentication(ctx, req)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.wantErrMsg != "" {
+					require.Contains(t, err.Error(), tt.wantErrMsg)
+				}
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+			require.Equal(t, tt.wantTrunkID, resp.SipTrunkId)
+			require.Equal(t, tt.wantUser, resp.Username)
+			require.Equal(t, tt.wantPass, resp.Password)
 		})
 	}
 }

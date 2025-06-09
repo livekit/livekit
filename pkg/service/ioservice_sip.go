@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/netip"
 
 	"github.com/dennwc/iters"
@@ -145,8 +146,9 @@ func (s *IOInfoService) GetSIPTrunkAuthentication(ctx context.Context, req *rpc.
 		return nil, err
 	}
 	if trunk == nil {
-		log.Debugw("No SIP trunk matched for auth", "sipTrunk", "")
-		return &rpc.GetSIPTrunkAuthenticationResponse{}, nil
+		err := twirp.NotFoundError(fmt.Sprintf("sip trunk not found for destination %q", req.Call.To))
+		log.Errorw("No SIP trunk matched for auth", err, "sipTrunk", "", "to", req.Call.To)
+		return nil, err
 	}
 	log.Debugw("SIP trunk matched for auth", "sipTrunk", trunk.SipTrunkId)
 	return &rpc.GetSIPTrunkAuthenticationResponse{
