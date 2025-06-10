@@ -334,7 +334,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 				if cs, ok := telemetry.CondenseStat(stat); ok {
 					t.params.Reporter.Tx(func(tx roomobs.TrackTx) {
 						tx.ReportName(ti.Name)
-						tx.ReportKind(roomobs.TrackKindSub)
+						tx.ReportKind(roomobs.TrackKindPub)
 						tx.ReportType(roomobs.TrackTypeFromProto(ti.Type))
 						tx.ReportSource(roomobs.TrackSourceFromProto(ti.Source))
 						tx.ReportMime(mime.NormalizeMimeType(ti.MimeType).ReporterType())
