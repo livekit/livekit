@@ -374,6 +374,7 @@ func (cs *ConnectionStats) updateStatsWorker() {
 	for {
 		select {
 		case <-cs.done.Watch():
+			cs.getStat()
 			return
 
 		case <-tk.C:

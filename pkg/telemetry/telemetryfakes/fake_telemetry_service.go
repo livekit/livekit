@@ -8,6 +8,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/observability/roomobs"
 )
 
 type FakeTelemetryService struct {
@@ -129,6 +130,17 @@ type FakeTelemetryService struct {
 	roomEndedArgsForCall []struct {
 		arg1 context.Context
 		arg2 *livekit.Room
+	}
+	RoomProjectReporterStub        func(context.Context) roomobs.ProjectReporter
+	roomProjectReporterMutex       sync.RWMutex
+	roomProjectReporterArgsForCall []struct {
+		arg1 context.Context
+	}
+	roomProjectReporterReturns struct {
+		result1 roomobs.ProjectReporter
+	}
+	roomProjectReporterReturnsOnCall map[int]struct {
+		result1 roomobs.ProjectReporter
 	}
 	RoomStartedStub        func(context.Context, *livekit.Room)
 	roomStartedMutex       sync.RWMutex
@@ -875,6 +887,67 @@ func (fake *FakeTelemetryService) RoomEndedArgsForCall(i int) (context.Context, 
 	return argsForCall.arg1, argsForCall.arg2
 }
 
+func (fake *FakeTelemetryService) RoomProjectReporter(arg1 context.Context) roomobs.ProjectReporter {
+	fake.roomProjectReporterMutex.Lock()
+	ret, specificReturn := fake.roomProjectReporterReturnsOnCall[len(fake.roomProjectReporterArgsForCall)]
+	fake.roomProjectReporterArgsForCall = append(fake.roomProjectReporterArgsForCall, struct {
+		arg1 context.Context
+	}{arg1})
+	stub := fake.RoomProjectReporterStub
+	fakeReturns := fake.roomProjectReporterReturns
+	fake.recordInvocation("RoomProjectReporter", []interface{}{arg1})
+	fake.roomProjectReporterMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeTelemetryService) RoomProjectReporterCallCount() int {
+	fake.roomProjectReporterMutex.RLock()
+	defer fake.roomProjectReporterMutex.RUnlock()
+	return len(fake.roomProjectReporterArgsForCall)
+}
+
+func (fake *FakeTelemetryService) RoomProjectReporterCalls(stub func(context.Context) roomobs.ProjectReporter) {
+	fake.roomProjectReporterMutex.Lock()
+	defer fake.roomProjectReporterMutex.Unlock()
+	fake.RoomProjectReporterStub = stub
+}
+
+func (fake *FakeTelemetryService) RoomProjectReporterArgsForCall(i int) context.Context {
+	fake.roomProjectReporterMutex.RLock()
+	defer fake.roomProjectReporterMutex.RUnlock()
+	argsForCall := fake.roomProjectReporterArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeTelemetryService) RoomProjectReporterReturns(result1 roomobs.ProjectReporter) {
+	fake.roomProjectReporterMutex.Lock()
+	defer fake.roomProjectReporterMutex.Unlock()
+	fake.RoomProjectReporterStub = nil
+	fake.roomProjectReporterReturns = struct {
+		result1 roomobs.ProjectReporter
+	}{result1}
+}
+
+func (fake *FakeTelemetryService) RoomProjectReporterReturnsOnCall(i int, result1 roomobs.ProjectReporter) {
+	fake.roomProjectReporterMutex.Lock()
+	defer fake.roomProjectReporterMutex.Unlock()
+	fake.RoomProjectReporterStub = nil
+	if fake.roomProjectReporterReturnsOnCall == nil {
+		fake.roomProjectReporterReturnsOnCall = make(map[int]struct {
+			result1 roomobs.ProjectReporter
+		})
+	}
+	fake.roomProjectReporterReturnsOnCall[i] = struct {
+		result1 roomobs.ProjectReporter
+	}{result1}
+}
+
 func (fake *FakeTelemetryService) RoomStarted(arg1 context.Context, arg2 *livekit.Room) {
 	fake.roomStartedMutex.Lock()
 	fake.roomStartedArgsForCall = append(fake.roomStartedArgsForCall, struct {
@@ -1575,6 +1648,8 @@ func (fake *FakeTelemetryService) Invocations() map[string][][]interface{} {
 	defer fake.reportMutex.RUnlock()
 	fake.roomEndedMutex.RLock()
 	defer fake.roomEndedMutex.RUnlock()
+	fake.roomProjectReporterMutex.RLock()
+	defer fake.roomProjectReporterMutex.RUnlock()
 	fake.roomStartedMutex.RLock()
 	defer fake.roomStartedMutex.RUnlock()
 	fake.sendEventMutex.RLock()

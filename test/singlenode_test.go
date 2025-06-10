@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -539,6 +540,57 @@ func TestSingleNodeUpdateSubscriptionPermissions(t *testing.T) {
 		} else {
 			return fmt.Sprintf("expected 2 tracks subscribed, actual: %d", len(tracks))
 		}
+	})
+}
+
+func TestSingleNodeAttributes(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+	_, finish := setupSingleNodeTest("TestSingleNodeAttributes")
+	defer finish()
+
+	pub := createRTCClient("pub", defaultServerPort, &testclient.Options{
+		Attributes: map[string]string{
+			"b": "2",
+			"c": "3",
+		},
+		TokenCustomizer: func(token *auth.AccessToken, grants *auth.VideoGrant) {
+			T := true
+			grants.CanUpdateOwnMetadata = &T
+			token.SetAttributes(map[string]string{
+				"a": "0",
+				"b": "1",
+			})
+		},
+	})
+	grant := &auth.VideoGrant{RoomJoin: true, Room: testRoom}
+	grant.SetCanSubscribe(false)
+	at := auth.NewAccessToken(testApiKey, testApiSecret).
+		SetVideoGrant(grant).
+		SetIdentity("sub")
+	token, err := at.ToJWT()
+	require.NoError(t, err)
+	sub := createRTCClientWithToken(token, defaultServerPort, nil)
+
+	waitUntilConnected(t, pub, sub)
+
+	// wait sub receives initial attributes
+	testutils.WithTimeout(t, func() string {
+		pubRemote := sub.GetRemoteParticipant(pub.ID())
+		if pubRemote == nil {
+			return "could not find remote publisher"
+		}
+		attrs := pubRemote.Attributes
+		if !reflect.DeepEqual(attrs, map[string]string{
+			"a": "0",
+			"b": "2",
+			"c": "3",
+		}) {
+			return fmt.Sprintf("did not receive expected attributes: %v", attrs)
+		}
+		return ""
 	})
 }
 

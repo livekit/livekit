@@ -27,6 +27,7 @@ import (
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/observability/roomobs"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -209,9 +210,28 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		subTrack.SetPublisherMuted(t.params.MediaTrack.IsMuted())
 	})
 
+	reporter := sub.GetReporter().WithTrack(trackID.String())
 	downTrack.OnStatsUpdate(func(_ *sfu.DownTrack, stat *livekit.AnalyticsStat) {
 		key := telemetry.StatsKeyForTrack(livekit.StreamType_DOWNSTREAM, subscriberID, trackID, t.params.MediaTrack.Source(), t.params.MediaTrack.Kind())
 		t.params.Telemetry.TrackStats(key, stat)
+
+		if cs, ok := telemetry.CondenseStat(stat); ok {
+			reporter.Tx(func(tx roomobs.TrackTx) {
+				ti := wr.TrackInfo()
+				tx.ReportName(ti.Name)
+				tx.ReportKind(roomobs.TrackKindPub)
+				tx.ReportType(roomobs.TrackTypeFromProto(ti.Type))
+				tx.ReportSource(roomobs.TrackSourceFromProto(ti.Source))
+				tx.ReportMime(mime.NormalizeMimeType(ti.MimeType).ReporterType())
+				tx.ReportLayer(roomobs.PackTrackLayer(ti.Height, ti.Width))
+				tx.ReportDuration(uint16(cs.EndTime.Sub(cs.StartTime).Milliseconds()))
+				tx.ReportFrames(uint16(cs.Frames))
+				tx.ReportSendBytes(uint32(cs.Bytes))
+				tx.ReportSendPackets(cs.Packets)
+				tx.ReportPacketsLost(cs.PacketsLost)
+				tx.ReportScore(stat.Score)
+			})
+		}
 	})
 
 	downTrack.OnMaxLayerChanged(func(dt *sfu.DownTrack, layer int32) {

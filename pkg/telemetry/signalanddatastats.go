@@ -24,6 +24,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/observability/roomobs"
 	"github.com/livekit/protocol/utils"
 )
 
@@ -55,16 +56,23 @@ type BytesTrackStats struct {
 	totalSendBytes, totalRecvBytes       atomic.Uint64
 	totalSendMessages, totalRecvMessages atomic.Uint32
 	telemetry                            TelemetryService
+	reporter                             roomobs.TrackReporter
 	done                                 core.Fuse
 }
 
-func NewBytesTrackStats(trackID livekit.TrackID, pID livekit.ParticipantID, telemetry TelemetryService) *BytesTrackStats {
+func NewBytesTrackStats(
+	trackID livekit.TrackID,
+	pID livekit.ParticipantID,
+	telemetry TelemetryService,
+	participantReporter roomobs.ParticipantSessionReporter,
+) *BytesTrackStats {
 	s := &BytesTrackStats{
 		trackID:   trackID,
 		pID:       pID,
 		telemetry: telemetry,
+		reporter:  participantReporter.WithTrack(trackID.String()),
 	}
-	go s.reporter()
+	go s.worker()
 	return s
 }
 
@@ -74,11 +82,23 @@ func (s *BytesTrackStats) AddBytes(bytes uint64, isSend bool) {
 		s.sendMessages.Inc()
 		s.totalSendBytes.Add(bytes)
 		s.totalSendMessages.Inc()
+
+		s.reporter.Tx(func(tx roomobs.TrackTx) {
+			tx.ReportType(roomobs.TrackTypeData)
+			tx.ReportSendBytes(uint32(bytes))
+			tx.ReportSendPackets(1)
+		})
 	} else {
 		s.recv.Add(bytes)
 		s.recvMessages.Inc()
 		s.totalRecvBytes.Add(bytes)
 		s.totalRecvMessages.Inc()
+
+		s.reporter.Tx(func(tx roomobs.TrackTx) {
+			tx.ReportType(roomobs.TrackTypeData)
+			tx.ReportRecvBytes(uint32(bytes))
+			tx.ReportRecvPackets(1)
+		})
 	}
 }
 
@@ -98,29 +118,31 @@ func (s *BytesTrackStats) Stop() {
 
 func (s *BytesTrackStats) report() {
 	if recv := s.recv.Swap(0); recv > 0 {
+		packets := s.recvMessages.Swap(0)
 		s.telemetry.TrackStats(StatsKeyForData(livekit.StreamType_UPSTREAM, s.pID, s.trackID), &livekit.AnalyticsStat{
 			Streams: []*livekit.AnalyticsStream{
 				{
 					PrimaryBytes:   recv,
-					PrimaryPackets: s.recvMessages.Swap(0),
+					PrimaryPackets: packets,
 				},
 			},
 		})
 	}
 
 	if send := s.send.Swap(0); send > 0 {
+		packets := s.sendMessages.Swap(0)
 		s.telemetry.TrackStats(StatsKeyForData(livekit.StreamType_DOWNSTREAM, s.pID, s.trackID), &livekit.AnalyticsStat{
 			Streams: []*livekit.AnalyticsStream{
 				{
 					PrimaryBytes:   send,
-					PrimaryPackets: s.sendMessages.Swap(0),
+					PrimaryPackets: packets,
 				},
 			},
 		})
 	}
 }
 
-func (s *BytesTrackStats) reporter() {
+func (s *BytesTrackStats) worker() {
 	ticker := time.NewTicker(5 * time.Second)
 	defer func() {
 		ticker.Stop()
@@ -143,17 +165,30 @@ type BytesSignalStats struct {
 	BytesTrackStats
 	ctx context.Context
 
-	mu sync.Mutex
-	ri *livekit.Room
-	pi *livekit.ParticipantInfo
+	participantResolver roomobs.ParticipantReporterResolver
+	trackResolver       roomobs.KeyResolver
+
+	mu      sync.Mutex
+	ri      *livekit.Room
+	pi      *livekit.ParticipantInfo
+	stopped chan struct{}
 }
 
-func NewBytesSignalStats(ctx context.Context, telemetry TelemetryService) *BytesSignalStats {
+func NewBytesSignalStats(
+	ctx context.Context,
+	telemetry TelemetryService,
+) *BytesSignalStats {
+	projectReporter := telemetry.RoomProjectReporter(ctx)
+	participantReporter, participantReporterResolver := roomobs.DeferredParticipantReporter(projectReporter)
+	trackReporter, trackReporterResolver := participantReporter.WithDeferredTrack()
 	return &BytesSignalStats{
 		BytesTrackStats: BytesTrackStats{
 			telemetry: telemetry,
+			reporter:  trackReporter,
 		},
-		ctx: ctx,
+		ctx:                 ctx,
+		participantResolver: participantReporterResolver,
+		trackResolver:       trackReporterResolver,
 	}
 }
 
@@ -181,6 +216,22 @@ func (s *BytesSignalStats) ResolveParticipant(pi *livekit.ParticipantInfo) {
 	}
 }
 
+func (s *BytesSignalStats) Reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stopped != nil {
+		s.done.Break()
+		<-s.stopped
+		s.stopped = nil
+		s.done = core.Fuse{}
+	}
+	s.ri = nil
+	s.pi = nil
+
+	s.participantResolver.Reset()
+	s.trackResolver.Reset()
+}
+
 func (s *BytesSignalStats) maybeStart() {
 	if s.ri == nil || s.pi == nil {
 		return
@@ -189,17 +240,27 @@ func (s *BytesSignalStats) maybeStart() {
 	s.pID = livekit.ParticipantID(s.pi.Sid)
 	s.trackID = BytesTrackIDForParticipantID(BytesTrackTypeSignal, s.pID)
 
+	s.participantResolver.Resolve(
+		livekit.RoomName(s.ri.Name),
+		livekit.RoomID(s.ri.Sid),
+		livekit.ParticipantIdentity(s.pi.Identity),
+		livekit.ParticipantID(s.pi.Sid),
+	)
+	s.trackResolver.Resolve(string(s.trackID))
+
 	s.telemetry.ParticipantJoined(s.ctx, s.ri, s.pi, nil, nil, false)
-	go s.reporter()
+	s.stopped = make(chan struct{})
+	go s.worker()
 }
 
-func (s *BytesSignalStats) reporter() {
-	s.BytesTrackStats.reporter()
+func (s *BytesSignalStats) worker() {
+	s.BytesTrackStats.worker()
 	s.telemetry.ParticipantLeft(s.ctx, s.ri, s.pi, false)
+	close(s.stopped)
 }
 
 // -----------------------------------------------------------------------
 
 func BytesTrackIDForParticipantID(typ BytesTrackType, participantID livekit.ParticipantID) livekit.TrackID {
-	return livekit.TrackID(fmt.Sprintf("%s_%s%s", utils.TrackPrefix, string(typ), participantID))
+	return livekit.TrackID(fmt.Sprintf("%s%s%s", utils.TrackPrefix, typ, participantID))
 }

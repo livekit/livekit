@@ -31,6 +31,7 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/observability/roomobs"
 	lksdp "github.com/livekit/protocol/sdp"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
@@ -703,6 +704,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		ClientConf:             opts.clientConf,
 		ClientInfo:             ClientInfo{ClientInfo: opts.clientInfo},
 		Logger:                 LoggerWithParticipant(logger.GetLogger(), identity, sid, false),
+		Reporter:               roomobs.NewNoopParticipantSessionReporter(),
 		Telemetry:              &telemetryfakes.FakeTelemetryService{},
 		VersionGenerator:       utils.NewDefaultTimedVersionGenerator(),
 		ParticipantHelper:      &typesfakes.FakeLocalParticipantHelper{},

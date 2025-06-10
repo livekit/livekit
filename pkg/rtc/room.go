@@ -30,6 +30,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/observability/roomobs"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
@@ -456,13 +457,16 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 			// subscribe participant to existing published tracks
 			r.subscribeToExistingTracks(p)
 
+			connectTime := time.Since(p.ConnectedAt())
 			meta := &livekit.AnalyticsClientMeta{
-				ClientConnectTime: uint32(time.Since(p.ConnectedAt()).Milliseconds()),
+				ClientConnectTime: uint32(connectTime.Milliseconds()),
 			}
 			infos := p.GetICEConnectionInfo()
+			var connectionType roomobs.ConnectionType
 			for _, info := range infos {
 				if info.Type != types.ICEConnectionTypeUnknown {
 					meta.ConnectionType = info.Type.String()
+					connectionType = info.Type.ReporterType()
 					break
 				}
 			}
@@ -472,6 +476,12 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 				meta,
 				false,
 			)
+
+			participant.GetReporter().Tx(func(tx roomobs.ParticipantSessionTx) {
+				tx.ReportClientConnectTime(uint16(connectTime.Milliseconds()))
+				tx.ReportConnectResult(roomobs.ConnectionResultSuccess)
+				tx.ReportConnectionType(connectionType)
+			})
 
 			fields := append(
 				connectionDetailsFields(infos),
