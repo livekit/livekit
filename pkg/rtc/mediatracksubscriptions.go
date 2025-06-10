@@ -219,7 +219,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			reporter.Tx(func(tx roomobs.TrackTx) {
 				ti := wr.TrackInfo()
 				tx.ReportName(ti.Name)
-				tx.ReportKind(roomobs.TrackKindPub)
+				tx.ReportKind(roomobs.TrackKindSub)
 				tx.ReportType(roomobs.TrackTypeFromProto(ti.Type))
 				tx.ReportSource(roomobs.TrackSourceFromProto(ti.Source))
 				tx.ReportMime(mime.NormalizeMimeType(ti.MimeType).ReporterType())
