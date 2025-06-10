@@ -9,7 +9,6 @@ package service
 import (
 	"fmt"
 	"github.com/livekit/livekit-server/pkg/agent"
-	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -133,7 +132,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	clientConfigurationManager := createClientConfiguration()
 	client, err := agent.NewAgentClient(messageBus)
 	if err != nil {
 		return nil, err
@@ -142,7 +140,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	timedVersionGenerator := utils.NewDefaultTimedVersionGenerator()
 	turnAuthHandler := NewTURNAuthHandler(keyProvider)
 	forwardStats := createForwardStats(conf)
-	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, roomAllocator, telemetryService, clientConfigurationManager, client, agentStore, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, messageBus, forwardStats)
+	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, roomAllocator, telemetryService, client, agentStore, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, messageBus, forwardStats)
 	if err != nil {
 		return nil, err
 	}
@@ -301,10 +299,6 @@ func getSIPStore(s ObjectStore) SIPStore {
 
 func getSIPConfig(conf *config.Config) *config.SIPConfig {
 	return &conf.SIP
-}
-
-func createClientConfiguration() clientconfiguration.ClientConfigurationManager {
-	return clientconfiguration.NewStaticClientConfigurationManager(clientconfiguration.StaticConfigurations)
 }
 
 func getLimitConf(config2 *config.Config) config.LimitConfig {
