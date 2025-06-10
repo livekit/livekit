@@ -91,7 +91,6 @@ func (s *RTCRestService) handleGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *RTCRestService) handleOptions(w http.ResponseWriter, r *http.Request) {
-	logger.Infow("RAJA got here to options", "req", r) // REMOVE
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "PATCH, OPTIONS, GET, POST, DELETE")
@@ -122,10 +121,6 @@ func (s *RTCRestService) validateCreate(r *http.Request) (*createRequest, int, e
 	claims := GetGrants(r.Context())
 	if claims == nil || claims.Video == nil {
 		return nil, http.StatusUnauthorized, rtc.ErrPermissionDenied
-	}
-
-	if err := EnsureCreatePermission(r.Context()); err != nil {
-		return nil, http.StatusUnauthorized, err
 	}
 
 	roomName, err := EnsureJoinPermission(r.Context())
@@ -160,6 +155,9 @@ func (s *RTCRestService) validateCreate(r *http.Request) (*createRequest, int, e
 	offerSDPBytes, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		return nil, http.StatusBadRequest, fmt.Errorf("body does not have SDP offer: %s", err)
+	}
+	if len(offerSDPBytes) == 0 {
+		return nil, http.StatusBadRequest, errors.New("body does not have SDP offer")
 	}
 	offerSDP := string(offerSDPBytes)
 	sd := &webrtc.SessionDescription{
