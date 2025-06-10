@@ -64,8 +64,9 @@ const (
 	sdBatchSize       = 30
 	rttUpdateInterval = 5 * time.Second
 
-	disconnectCleanupDuration = 5 * time.Second
-	migrationWaitDuration     = 3 * time.Second
+	disconnectCleanupDuration          = 5 * time.Second
+	migrationWaitDuration              = 3 * time.Second
+	migrationWaitContinuousMsgDuration = 2 * time.Second
 
 	PingIntervalSeconds = 5
 	PingTimeoutSeconds  = 15
@@ -168,6 +169,7 @@ type ParticipantParams struct {
 	DatachannelSlowThreshold       int
 	FireOnTrackBySdp               bool
 	DisableCodecRegression         bool
+	LastPubReliableSeq             uint32
 }
 
 type ParticipantImpl struct {
@@ -231,7 +233,14 @@ type ParticipantImpl struct {
 	updateCache *lru.Cache[livekit.ParticipantID, participantUpdateInfo]
 	updateLock  utils.Mutex
 
-	dataChannelStats *telemetry.BytesTrackStats
+	dataChannelStats              *telemetry.BytesTrackStats
+	joiningMessageLock            sync.Mutex
+	joiningMessageFirstSeqs       map[livekit.ParticipantID]uint32
+	joiningMessageLastWrittenSeqs map[livekit.ParticipantID]uint32
+	lastPubReliableSeq            atomic.Uint32
+	stopReliableByMigrateOut      atomic.Bool
+	canWriteReliable              bool
+	migrateInPubDataCache         atomic.Pointer[MigrationDataCache]
 
 	rttUpdatedAt time.Time
 	lastRTT      uint32
@@ -294,14 +303,16 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			MinSize: 64,
 			Logger:  params.Logger,
 		}),
-		pendingTracks:           make(map[string]*pendingTrackInfo),
-		pendingPublishingTracks: make(map[livekit.TrackID]*pendingTrackInfo),
-		connectedAt:             time.Now().Truncate(time.Millisecond),
-		rttUpdatedAt:            time.Now(),
-		cachedDownTracks:        make(map[livekit.TrackID]*downTrackState),
-		connectionQuality:       livekit.ConnectionQuality_EXCELLENT,
-		pubLogger:               params.Logger.WithComponent(sutils.ComponentPub),
-		subLogger:               params.Logger.WithComponent(sutils.ComponentSub),
+		pendingTracks:                 make(map[string]*pendingTrackInfo),
+		pendingPublishingTracks:       make(map[livekit.TrackID]*pendingTrackInfo),
+		connectedAt:                   time.Now().Truncate(time.Millisecond),
+		rttUpdatedAt:                  time.Now(),
+		cachedDownTracks:              make(map[livekit.TrackID]*downTrackState),
+		connectionQuality:             livekit.ConnectionQuality_EXCELLENT,
+		pubLogger:                     params.Logger.WithComponent(sutils.ComponentPub),
+		subLogger:                     params.Logger.WithComponent(sutils.ComponentSub),
+		joiningMessageFirstSeqs:       make(map[livekit.ParticipantID]uint32),
+		joiningMessageLastWrittenSeqs: make(map[livekit.ParticipantID]uint32),
 	}
 	p.id.Store(params.SID)
 	p.dataChannelStats = telemetry.NewBytesTrackStats(
@@ -310,6 +321,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		params.Telemetry,
 		params.Reporter,
 	)
+	p.lastPubReliableSeq.Store(params.LastPubReliableSeq)
 	p.participantHelper.Store(params.ParticipantHelper)
 	if !params.DisableSupervisor {
 		p.supervisor = supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger})
@@ -1090,6 +1102,7 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	previousOffer, previousAnswer *webrtc.SessionDescription,
 	mediaTracks []*livekit.TrackPublishedResponse,
 	dataChannels []*livekit.DataChannelInfo,
+	dataChannelReceiveState []*livekit.DataChannelReceiveState,
 ) {
 	p.pendingTracksLock.Lock()
 	for _, t := range mediaTracks {
@@ -1108,6 +1121,12 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	if len(mediaTracks) != 0 {
 		p.setIsPublisher(true)
 	}
+
+	p.joiningMessageLock.Lock()
+	for _, state := range dataChannelReceiveState {
+		p.joiningMessageFirstSeqs[livekit.ParticipantID(state.PublisherSid)] = state.LastSeq + 1
+	}
+	p.joiningMessageLock.Unlock()
 
 	p.TransportManager.SetMigrateInfo(previousOffer, previousAnswer, dataChannels)
 }
@@ -1306,6 +1325,10 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 	case types.MigrateStateComplete:
 		if preState == types.MigrateStateSync {
 			p.params.Logger.Infow("migration complete")
+
+			if p.params.LastPubReliableSeq > 0 {
+				p.migrateInPubDataCache.Store(NewMigrationDataCache(p.params.LastPubReliableSeq, time.Now().Add(migrationWaitContinuousMsgDuration)))
+			}
 		}
 		p.TransportManager.ProcessPendingPublisherDataChannels()
 		go p.cacheForwarderState()
@@ -1824,6 +1847,10 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 		}
 	}
 
+	if state == livekit.ParticipantInfo_ACTIVE {
+		p.replayJoiningReliableMessages()
+	}
+
 	p.params.Logger.Debugw("updating participant state", "state", state.String())
 	p.dirty.Store(true)
 
@@ -1995,6 +2022,45 @@ func (p *ParticipantImpl) onReceivedDataMessage(kind livekit.DataPacket_Kind, da
 	if err := proto.Unmarshal(data, dp); err != nil {
 		p.pubLogger.Warnw("could not parse data packet", err)
 		return
+	}
+
+	dp.ParticipantSid = string(p.ID())
+	if kind == livekit.DataPacket_RELIABLE && dp.Sequence > 0 {
+		if p.stopReliableByMigrateOut.Load() {
+			return
+		}
+
+		if migrationCache := p.migrateInPubDataCache.Load(); migrationCache != nil {
+			switch migrationCache.Add(dp) {
+			case MigrationDataCacheStateWaiting:
+				// waiting for the reliable sequence to continue from last node
+				return
+
+			case MigrationDataCacheStateTimeout:
+				p.migrateInPubDataCache.Store(nil)
+				// waiting time out, handle all cached messages
+				for _, cachedDp := range migrationCache.Get() {
+					p.handleReceivedDataMessage(kind, cachedDp)
+				}
+				return
+
+			case MigrationDataCacheStateDone:
+				// see the continous message, drop the cache
+				p.migrateInPubDataCache.Store(nil)
+			}
+		}
+	}
+
+	p.handleReceivedDataMessage(kind, dp)
+}
+
+func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind, dp *livekit.DataPacket) {
+	if kind == livekit.DataPacket_RELIABLE && dp.Sequence > 0 {
+		if p.lastPubReliableSeq.Load() >= dp.Sequence {
+			return
+		}
+
+		p.lastPubReliableSeq.Store(dp.Sequence)
 	}
 
 	// trust the channel that it came in as the source of truth
@@ -3173,10 +3239,35 @@ func (p *ParticipantImpl) SupportsTransceiverReuse() bool {
 	return p.ProtocolVersion().SupportsTransceiverReuse() && !p.SupportsSyncStreamID()
 }
 
-func (p *ParticipantImpl) SendDataMessage(kind livekit.DataPacket_Kind, data []byte) error {
-	if p.State() != livekit.ParticipantInfo_ACTIVE {
-		return ErrDataChannelUnavailable
+func (p *ParticipantImpl) SendDataMessage(kind livekit.DataPacket_Kind, data []byte, sender livekit.ParticipantID, seq uint32) error {
+	if sender == "" || kind != livekit.DataPacket_RELIABLE || seq == 0 {
+		if p.State() != livekit.ParticipantInfo_ACTIVE {
+			return ErrDataChannelUnavailable
+		}
+		return p.TransportManager.SendDataMessage(kind, data)
 	}
+
+	p.joiningMessageLock.Lock()
+	if !p.canWriteReliable {
+		if _, ok := p.joiningMessageFirstSeqs[sender]; !ok {
+			p.joiningMessageFirstSeqs[sender] = seq
+		}
+		p.joiningMessageLock.Unlock()
+		return nil
+	}
+
+	lastWrittenSeq, ok := p.joiningMessageLastWrittenSeqs[sender]
+	if ok {
+		if seq <= lastWrittenSeq {
+			// already sent by replayJoiningReliableMessages
+			p.joiningMessageLock.Unlock()
+			return nil
+		} else {
+			delete(p.joiningMessageLastWrittenSeqs, sender)
+		}
+	}
+
+	p.joiningMessageLock.Unlock()
 
 	return p.TransportManager.SendDataMessage(kind, data)
 }
@@ -3244,6 +3335,24 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 	}
 	p.enabledSubscribeCodecs = subscribeCodecs
 	p.params.Logger.Debugw("setup enabled codecs", "publish", p.enabledPublishCodecs, "subscribe", p.enabledSubscribeCodecs, "disabled", disabledCodecs)
+}
+
+func (p *ParticipantImpl) replayJoiningReliableMessages() {
+	p.joiningMessageLock.Lock()
+	for _, msgCache := range p.helper().GetCachedReliableDataMessage(p.joiningMessageFirstSeqs) {
+		if len(msgCache.DestIdentities) != 0 && !slices.Contains(msgCache.DestIdentities, p.Identity()) {
+			continue
+		}
+		if lastSeq, ok := p.joiningMessageLastWrittenSeqs[msgCache.SenderID]; !ok || lastSeq < msgCache.Seq {
+			p.joiningMessageLastWrittenSeqs[msgCache.SenderID] = msgCache.Seq
+		}
+
+		p.TransportManager.SendDataMessage(livekit.DataPacket_RELIABLE, msgCache.Data)
+	}
+
+	p.joiningMessageFirstSeqs = make(map[livekit.ParticipantID]uint32)
+	p.canWriteReliable = true
+	p.joiningMessageLock.Unlock()
 }
 
 func (p *ParticipantImpl) GetEnabledPublishCodecs() []*livekit.Codec {
@@ -3386,4 +3495,11 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 
 func (p *ParticipantImpl) helper() types.LocalParticipantHelper {
 	return p.participantHelper.Load().(types.LocalParticipantHelper)
+}
+
+func (p *ParticipantImpl) GetLastReliableSequence(migrateOut bool) uint32 {
+	if migrateOut {
+		p.stopReliableByMigrateOut.Store(true)
+	}
+	return p.lastPubReliableSeq.Load()
 }
