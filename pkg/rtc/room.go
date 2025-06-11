@@ -56,6 +56,9 @@ const (
 	dataForwardLoadBalanceThreshold = 4
 
 	simulateDisconnectSignalTimeout = 5 * time.Second
+
+	dataMessageCacheTTL  = 2 * time.Second
+	dataMessageCacheSize = 100_000
 )
 
 var (
@@ -139,6 +142,8 @@ type Room struct {
 	disconnectSignalOnResumeNoMessagesParticipants map[livekit.ParticipantIdentity]*disconnectSignalOnResumeNoMessages
 
 	userPacketDeduper *UserPacketDeduper
+
+	dataMessagecache *utils.TimeSizeCache[types.DataMessageCache]
 }
 
 type ParticipantOptions struct {
@@ -268,6 +273,10 @@ func NewRoom(
 		disconnectSignalOnResumeParticipants: make(map[livekit.ParticipantIdentity]time.Time),
 		disconnectSignalOnResumeNoMessagesParticipants: make(map[livekit.ParticipantIdentity]*disconnectSignalOnResumeNoMessages),
 		userPacketDeduper: NewUserPacketDeduper(),
+		dataMessagecache: utils.NewTimeSizeCache[types.DataMessageCache](utils.TimeSizeCacheParams{
+			TTL:     dataMessageCacheTTL,
+			MaxSize: dataMessageCacheSize,
+		}),
 	}
 
 	if r.protoRoom.EmptyTimeout == 0 {
@@ -649,6 +658,7 @@ func (r *Room) ResumeParticipant(
 		IceServers:          iceServers,
 		ClientConfiguration: p.GetClientConfiguration(),
 		ServerInfo:          r.serverInfo,
+		LastMessageSeq:      p.GetLastReliableSequence(false),
 	}); err != nil {
 		return err
 	}
@@ -1291,6 +1301,19 @@ func (r *Room) onParticipantUpdate(p types.LocalParticipant) {
 }
 
 func (r *Room) onDataPacket(source types.LocalParticipant, kind livekit.DataPacket_Kind, dp *livekit.DataPacket) {
+	if kind == livekit.DataPacket_RELIABLE && source != nil && dp.GetSequence() > 0 {
+		data, err := proto.Marshal(dp)
+		if err != nil {
+			r.logger.Errorw("failed to marshal data packet for cache", err, "participant", source.Identity(), "seq", dp.GetSequence())
+			return
+		}
+		r.dataMessagecache.Add(&types.DataMessageCache{
+			SenderID:       source.ID(),
+			Seq:            dp.GetSequence(),
+			Data:           data,
+			DestIdentities: livekit.StringsAsIDs[livekit.ParticipantIdentity](dp.DestinationIdentities),
+		}, len(data))
+	}
 	BroadcastDataPacketForRoom(r, source, kind, dp, r.logger)
 }
 
@@ -1400,6 +1423,8 @@ func (r *Room) changeUpdateWorker() {
 	subTicker := time.NewTicker(subscriberUpdateInterval)
 	defer subTicker.Stop()
 
+	cleanDataMessageTicker := time.NewTicker(dataMessageCacheTTL)
+
 	for !r.IsClosed() {
 		select {
 		case <-r.closed:
@@ -1420,6 +1445,9 @@ func (r *Room) changeUpdateWorker() {
 			r.batchedUpdatesMu.Unlock()
 
 			SendParticipantUpdates(maps.Values(updatesMap), r.GetParticipants())
+
+		case <-cleanDataMessageTicker.C:
+			r.dataMessagecache.Prune()
 		}
 	}
 }
@@ -1693,6 +1721,17 @@ func (r *Room) IsDataMessageUserPacketDuplicate(up *livekit.UserPacket) bool {
 	return r.userPacketDeduper.IsDuplicate(up)
 }
 
+func (r *Room) GetCachedReliableDataMessage(seqs map[livekit.ParticipantID]uint32) []*types.DataMessageCache {
+	msgs := make([]*types.DataMessageCache, 0, len(seqs)*10)
+	for _, msg := range r.dataMessagecache.Get() {
+		seq, ok := seqs[msg.SenderID]
+		if ok && msg.Seq >= seq {
+			msgs = append(msgs, msg)
+		}
+	}
+	return msgs
+}
+
 // ------------------------------------------------------------
 
 func BroadcastDataPacketForRoom(
@@ -1754,7 +1793,7 @@ func BroadcastDataPacketForRoom(
 	}
 
 	utils.ParallelExec(destParticipants, dataForwardLoadBalanceThreshold, 1, func(op types.LocalParticipant) {
-		op.SendDataMessage(kind, dpData)
+		op.SendDataMessage(kind, dpData, livekit.ParticipantID(dp.GetParticipantSid()), dp.GetSequence())
 	})
 }
 

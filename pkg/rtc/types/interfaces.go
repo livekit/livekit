@@ -324,6 +324,13 @@ type MoveToRoomParams struct {
 	Helper        LocalParticipantHelper
 }
 
+type DataMessageCache struct {
+	Data           []byte
+	SenderID       livekit.ParticipantID
+	Seq            uint32
+	DestIdentities []livekit.ParticipantIdentity
+}
+
 //counterfeiter:generate . LocalParticipantHelper
 type LocalParticipantHelper interface {
 	ResolveMediaTrack(LocalParticipant, livekit.TrackID) MediaResolverResult
@@ -331,6 +338,7 @@ type LocalParticipantHelper interface {
 	GetRegionSettings(ip string) *livekit.RegionSettings
 	GetSubscriberForwarderState(p LocalParticipant) (map[livekit.TrackID]*livekit.RTPForwarderState, error)
 	ShouldRegressCodec() bool
+	GetCachedReliableDataMessage(seqs map[livekit.ParticipantID]uint32) []*DataMessageCache
 }
 
 //counterfeiter:generate . LocalParticipant
@@ -365,6 +373,7 @@ type LocalParticipant interface {
 	GetEnabledPublishCodecs() []*livekit.Codec
 	GetPublisherICESessionUfrag() (string, error)
 	SupportsMoving() bool
+	GetLastReliableSequence(migrateOut bool) uint32
 
 	SetResponseSink(sink routing.MessageSink)
 	CloseSignalConnection(reason SignallingCloseReason)
@@ -430,7 +439,7 @@ type LocalParticipant interface {
 	SendJoinResponse(joinResponse *livekit.JoinResponse) error
 	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
 	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo, force bool) error
-	SendDataMessage(kind livekit.DataPacket_Kind, data []byte) error
+	SendDataMessage(kind livekit.DataPacket_Kind, data []byte, senderID livekit.ParticipantID, seq uint32) error
 	SendDataMessageUnlabeled(data []byte, useRaw bool, sender livekit.ParticipantIdentity) error
 	SendRoomUpdate(room *livekit.Room) error
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
@@ -470,6 +479,7 @@ type LocalParticipant interface {
 		previousOffer, previousAnswer *webrtc.SessionDescription,
 		mediaTracks []*livekit.TrackPublishedResponse,
 		dataChannels []*livekit.DataChannelInfo,
+		dataChannelReceiveState []*livekit.DataChannelReceiveState,
 	)
 	IsReconnect() bool
 	MoveToRoom(params MoveToRoomParams)

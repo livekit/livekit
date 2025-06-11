@@ -9,6 +9,17 @@ import (
 )
 
 type FakeLocalParticipantHelper struct {
+	GetCachedReliableDataMessageStub        func(map[livekit.ParticipantID]uint32) []*types.DataMessageCache
+	getCachedReliableDataMessageMutex       sync.RWMutex
+	getCachedReliableDataMessageArgsForCall []struct {
+		arg1 map[livekit.ParticipantID]uint32
+	}
+	getCachedReliableDataMessageReturns struct {
+		result1 []*types.DataMessageCache
+	}
+	getCachedReliableDataMessageReturnsOnCall map[int]struct {
+		result1 []*types.DataMessageCache
+	}
 	GetParticipantInfoStub        func(livekit.ParticipantID) *livekit.ParticipantInfo
 	getParticipantInfoMutex       sync.RWMutex
 	getParticipantInfoArgsForCall []struct {
@@ -68,6 +79,67 @@ type FakeLocalParticipantHelper struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeLocalParticipantHelper) GetCachedReliableDataMessage(arg1 map[livekit.ParticipantID]uint32) []*types.DataMessageCache {
+	fake.getCachedReliableDataMessageMutex.Lock()
+	ret, specificReturn := fake.getCachedReliableDataMessageReturnsOnCall[len(fake.getCachedReliableDataMessageArgsForCall)]
+	fake.getCachedReliableDataMessageArgsForCall = append(fake.getCachedReliableDataMessageArgsForCall, struct {
+		arg1 map[livekit.ParticipantID]uint32
+	}{arg1})
+	stub := fake.GetCachedReliableDataMessageStub
+	fakeReturns := fake.getCachedReliableDataMessageReturns
+	fake.recordInvocation("GetCachedReliableDataMessage", []interface{}{arg1})
+	fake.getCachedReliableDataMessageMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipantHelper) GetCachedReliableDataMessageCallCount() int {
+	fake.getCachedReliableDataMessageMutex.RLock()
+	defer fake.getCachedReliableDataMessageMutex.RUnlock()
+	return len(fake.getCachedReliableDataMessageArgsForCall)
+}
+
+func (fake *FakeLocalParticipantHelper) GetCachedReliableDataMessageCalls(stub func(map[livekit.ParticipantID]uint32) []*types.DataMessageCache) {
+	fake.getCachedReliableDataMessageMutex.Lock()
+	defer fake.getCachedReliableDataMessageMutex.Unlock()
+	fake.GetCachedReliableDataMessageStub = stub
+}
+
+func (fake *FakeLocalParticipantHelper) GetCachedReliableDataMessageArgsForCall(i int) map[livekit.ParticipantID]uint32 {
+	fake.getCachedReliableDataMessageMutex.RLock()
+	defer fake.getCachedReliableDataMessageMutex.RUnlock()
+	argsForCall := fake.getCachedReliableDataMessageArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipantHelper) GetCachedReliableDataMessageReturns(result1 []*types.DataMessageCache) {
+	fake.getCachedReliableDataMessageMutex.Lock()
+	defer fake.getCachedReliableDataMessageMutex.Unlock()
+	fake.GetCachedReliableDataMessageStub = nil
+	fake.getCachedReliableDataMessageReturns = struct {
+		result1 []*types.DataMessageCache
+	}{result1}
+}
+
+func (fake *FakeLocalParticipantHelper) GetCachedReliableDataMessageReturnsOnCall(i int, result1 []*types.DataMessageCache) {
+	fake.getCachedReliableDataMessageMutex.Lock()
+	defer fake.getCachedReliableDataMessageMutex.Unlock()
+	fake.GetCachedReliableDataMessageStub = nil
+	if fake.getCachedReliableDataMessageReturnsOnCall == nil {
+		fake.getCachedReliableDataMessageReturnsOnCall = make(map[int]struct {
+			result1 []*types.DataMessageCache
+		})
+	}
+	fake.getCachedReliableDataMessageReturnsOnCall[i] = struct {
+		result1 []*types.DataMessageCache
+	}{result1}
 }
 
 func (fake *FakeLocalParticipantHelper) GetParticipantInfo(arg1 livekit.ParticipantID) *livekit.ParticipantInfo {
@@ -374,6 +446,8 @@ func (fake *FakeLocalParticipantHelper) ShouldRegressCodecReturnsOnCall(i int, r
 func (fake *FakeLocalParticipantHelper) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
+	fake.getCachedReliableDataMessageMutex.RLock()
+	defer fake.getCachedReliableDataMessageMutex.RUnlock()
 	fake.getParticipantInfoMutex.RLock()
 	defer fake.getParticipantInfoMutex.RUnlock()
 	fake.getRegionSettingsMutex.RLock()

@@ -1069,3 +1069,7 @@ func (h *roomManagerParticipantHelper) ResolveMediaTrack(lp types.LocalParticipa
 func (h *roomManagerParticipantHelper) ShouldRegressCodec() bool {
 	return h.codecRegressionThreshold == 0 || h.room.GetParticipantCount() < h.codecRegressionThreshold
 }
+
+func (h *roomManagerParticipantHelper) GetCachedReliableDataMessage(seqs map[livekit.ParticipantID]uint32) []*types.DataMessageCache {
+	return h.room.GetCachedReliableDataMessage(seqs)
+}
