@@ -27,10 +27,10 @@ import (
 	"github.com/frostbyte73/core"
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/pion/rtcp"
-	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
+	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/mediatransportutil/pkg/twcc"
@@ -39,6 +39,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/observability"
 	"github.com/livekit/protocol/observability/roomobs"
+	sdpHelper "github.com/livekit/protocol/sdp"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/protocol/utils/pointer"
@@ -72,16 +73,34 @@ const (
 	PingTimeoutSeconds  = 15
 )
 
+// -------------------------------------------------
+
 type pendingTrackInfo struct {
 	trackInfos []*livekit.TrackInfo
+	sdpRids    buffer.VideoLayersRid
 	migrated   bool
 	createdAt  time.Time
 
 	// indicates if this track is queued for publishing to avoid a track has been published
-	// before the previous track is unpublished(closed) because client is allowed to neogtiate
+	// before the previous track is unpublished(closed) because client is allowed to negotiate
 	// webrtc track before AddTrackRequest return to speed up the publishing process
 	queued bool
 }
+
+func (p *pendingTrackInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if p == nil {
+		return nil
+	}
+
+	e.AddArray("trackInfos", logger.ProtoSlice(p.trackInfos))
+	e.AddArray("sdpRids", logger.StringSlice(p.sdpRids[:]))
+	e.AddBool("migrated", p.migrated)
+	e.AddTime("createdAt", p.createdAt)
+	e.AddBool("queued", p.queued)
+	return nil
+}
+
+// --------------------------------------------------
 
 type pendingRemoteTrack struct {
 	track    *webrtc.TrackRemote
@@ -920,28 +939,12 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(offer webrtc.SessionDescrip
 			continue
 		}
 
-		trackID := ""
-
-		msid, ok := m.Attribute(sdp.AttrKeyMsid)
-		if ok {
-			if split := strings.Split(msid, " "); len(split) == 2 {
-				trackID = split[1]
-			}
+		cid := sdpHelper.GetMediaStreamTrack(m)
+		if cid == "" {
+			cid = guid.New(utils.TrackPrefix)
 		}
 
-		if trackID == "" {
-			attr, ok := m.Attribute(sdp.AttrKeySSRC)
-			if ok {
-				split := strings.Split(attr, " ")
-				if len(split) == 3 && strings.HasPrefix(split[1], "msid:") {
-					trackID = split[2]
-				}
-			}
-		}
-
-		if trackID == "" {
-			trackID = guid.New(utils.TrackPrefix)
-		}
+		rids, ridsOk := sdpHelper.GetSimulcastRids(m)
 
 		var (
 			name        string
@@ -958,7 +961,7 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(offer webrtc.SessionDescrip
 			trackType = livekit.TrackType_VIDEO
 		}
 		req := &livekit.AddTrackRequest{
-			Cid:        trackID,
+			Cid:        cid,
 			Name:       name,
 			Source:     trackSource,
 			Type:       trackType,
@@ -966,14 +969,85 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(offer webrtc.SessionDescrip
 			Stereo:     false,
 			Stream:     "camera",
 		}
-		// ONE-SHOT-SIGNALLING-MODE-TODO: support video simulcast
+		// ONE-SHOT-SIGNALLING-MODE-TODO: simulcsat layer mapping
 		if strings.EqualFold(m.MediaName.Media, "video") {
-			// dummy layer to ensure at least one layer is available
-			req.Layers = []*livekit.VideoLayer{{}}
+			if ridsOk {
+				// add simulcast layers, NOTE: only quality can be set as dimensions/fps is not available
+				n := min(len(rids), int(buffer.DefaultMaxLayerSpatial)+1)
+				for i := 0; i < n; i++ {
+					// WARN: casting int -> protobuf enum
+					req.Layers = append(req.Layers, &livekit.VideoLayer{Quality: livekit.VideoQuality(i)})
+				}
+			} else {
+				// dummy layer to ensure at least one layer is available
+				req.Layers = []*livekit.VideoLayer{{}}
+			}
 		}
 		p.AddTrack(req)
+
+		/* RAJA-REMOVE
+		if strings.EqualFold(m.MediaName.Media, "video") {
+			p.pendingTracksLock.Lock()
+			pti := p.pendingTracks[cid]
+			if pti != nil {
+				n := min(len(rids), len(pti.sdpRids))
+				for i := 0; i < n; i++ {
+					pti.sdpRids[i] = rids[i]
+				}
+
+				p.pubLogger.Debugw(
+					"pending track rids updated",
+					"trackID", pti.trackInfos[0].Sid,
+					"pendingTrack", pti,
+				)
+			}
+			p.pendingTracksLock.Unlock()
+		}
+		*/
 	}
 	return nil
+}
+
+func (p *ParticipantImpl) updateRidsFromSDP(offer *webrtc.SessionDescription) {
+	parsed, err := offer.Unmarshal()
+	if err != nil {
+		return
+	}
+
+	for _, m := range parsed.MediaDescriptions {
+		if m.MediaName.Media != "video" {
+			continue
+		}
+
+		rids, ok := sdpHelper.GetSimulcastRids(m)
+		if !ok {
+			continue
+		}
+
+		mst := sdpHelper.GetMediaStreamTrack(m)
+		if mst == "" {
+			continue
+		}
+
+		p.pendingTracksLock.Lock()
+		pti := p.pendingTracks[mst]
+		if pti != nil {
+			// does not work for clients that use a different media stream track in SDP (e.g. Firefox)
+			// one option is to look up by track type, but that fails when there are multiple pending tracks
+			// of the same type
+			n := min(len(rids), len(pti.sdpRids))
+			for i := 0; i < n; i++ {
+				pti.sdpRids[i] = rids[i]
+			}
+
+			p.pubLogger.Debugw(
+				"pending track rids updated",
+				"trackID", pti.trackInfos[0].Sid,
+				"pendingTrack", pti,
+			)
+		}
+		p.pendingTracksLock.Unlock()
+	}
 }
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
@@ -992,6 +1066,7 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
 	}
 
 	offer = p.setCodecPreferencesForPublisher(offer)
+	p.updateRidsFromSDP(&offer)
 	err := p.TransportManager.HandleOffer(offer, shouldPend)
 	if p.params.UseOneShotSignallingMode {
 		if onSubscriberReady := p.getOnSubscriberReady(); onSubscriberReady != nil {
@@ -1061,7 +1136,7 @@ func (p *ParticipantImpl) handleMigrateTracks() []*MediaTrack {
 			p.pubLogger.Warnw("too many pending migrated tracks", nil, "trackID", pti.trackInfos[0].Sid, "count", len(pti.trackInfos), "cid", cid)
 		}
 
-		mt := p.addMigratedTrack(cid, pti.trackInfos[0])
+		mt := p.addMigratedTrack(cid, pti.trackInfos[0], pti.sdpRids)
 		if mt != nil {
 			addedTracks = append(addedTracks, mt)
 		} else {
@@ -1120,10 +1195,21 @@ func (p *ParticipantImpl) SetMigrateInfo(
 			p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 		}
 
-		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}, migrated: true, createdAt: time.Now()}
-		p.pubLogger.Infow("pending track added (migration)", "trackID", ti.Sid, "track", logger.Proto(ti))
+		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{
+			trackInfos: []*livekit.TrackInfo{ti},
+			sdpRids:    buffer.DefaultVideoLayersRid,
+			migrated:   true,
+			createdAt:  time.Now(),
+		}
+		p.pubLogger.Infow(
+			"pending track added (migration)",
+			"trackID", ti.Sid,
+			"pendingTrack", p.pendingTracks[t.GetCid()],
+		)
 	}
 	p.pendingTracksLock.Unlock()
+
+	p.updateRidsFromSDP(previousOffer)
 
 	if len(mediaTracks) != 0 {
 		p.setIsPublisher(true)
@@ -2546,16 +2632,35 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid) != nil || p.pendingTracks[req.Cid] != nil {
 		if p.pendingTracks[req.Cid] == nil {
-			p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}, createdAt: time.Now(), queued: true}
+			p.pendingTracks[req.Cid] = &pendingTrackInfo{
+				trackInfos: []*livekit.TrackInfo{ti},
+				sdpRids:    buffer.DefaultVideoLayersRid, // could get updated from SDP
+				createdAt:  time.Now(),
+				queued:     true,
+			}
 		} else {
 			p.pendingTracks[req.Cid].trackInfos = append(p.pendingTracks[req.Cid].trackInfos, ti)
 		}
-		p.pubLogger.Infow("pending track queued", "trackID", ti.Sid, "track", logger.Proto(ti), "request", logger.Proto(req))
+		p.pubLogger.Infow(
+			"pending track queued",
+			"trackID", ti.Sid,
+			"request", logger.Proto(req),
+			"pendingTrack", p.pendingTracks[req.Cid],
+		)
 		return nil
 	}
 
-	p.pendingTracks[req.Cid] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}, createdAt: time.Now()}
-	p.pubLogger.Debugw("pending track added", "trackID", ti.Sid, "track", logger.Proto(ti), "request", logger.Proto(req))
+	p.pendingTracks[req.Cid] = &pendingTrackInfo{
+		trackInfos: []*livekit.TrackInfo{ti},
+		sdpRids:    buffer.DefaultVideoLayersRid, // could get updated from SDP
+		createdAt:  time.Now(),
+	}
+	p.pubLogger.Debugw(
+		"pending track added",
+		"trackID", ti.Sid,
+		"request", logger.Proto(req),
+		"pendingTrack", p.pendingTracks[req.Cid],
+	)
 	return ti
 }
 
@@ -2666,7 +2771,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 	var isMigrated bool
 	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
 	if !ok {
-		signalCid, ti, migrated, createdAt := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()), true)
+		signalCid, ti, sdpRids, migrated, createdAt := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()), true)
 		if ti == nil {
 			p.pendingRemoteTracks = append(
 				p.pendingRemoteTracks,
@@ -2706,7 +2811,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 			// only assign version on a fresh publish, i. e. avoid updating version in scenarios like migration
 			ti.Version = p.params.VersionGenerator.Next().ToProto()
 		}
-		mt = p.addMediaTrack(signalCid, track.ID(), ti)
+		mt = p.addMediaTrack(signalCid, track.ID(), ti, sdpRids)
 		newTrack = true
 
 		// if the addTrackRequest is sent before participant active then it means the client tries to publish
@@ -2754,7 +2859,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 	return mt, newTrack
 }
 
-func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *MediaTrack {
+func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo, sdpRids buffer.VideoLayersRid) *MediaTrack {
 	p.pubLogger.Infow("add migrated track", "cid", cid, "trackID", ti.Sid, "track", logger.Proto(ti))
 	rtpReceiver := p.TransportManager.GetPublisherRTPReceiver(ti.Mid)
 	if rtpReceiver == nil {
@@ -2762,7 +2867,7 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 		return nil
 	}
 
-	mt := p.addMediaTrack(cid, cid, ti)
+	mt := p.addMediaTrack(cid, cid, ti, sdpRids)
 
 	potentialCodecs := make([]webrtc.RTPCodecParameters, 0, len(ti.Codecs))
 	parameters := rtpReceiver.GetParameters()
@@ -2807,7 +2912,7 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 	return mt
 }
 
-func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *livekit.TrackInfo) *MediaTrack {
+func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *livekit.TrackInfo, sdpRids buffer.VideoLayersRid) *MediaTrack {
 	mt := NewMediaTrack(MediaTrackParams{
 		SignalCid:             signalCid,
 		SdpCid:                sdpCid,
@@ -2830,6 +2935,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 		ShouldRegressCodec: func() bool {
 			return p.helper().ShouldRegressCodec()
 		},
+		Rids: sdpRids,
 	}, ti)
 
 	mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
@@ -2939,7 +3045,7 @@ func (p *ParticipantImpl) onUpTrackManagerClose() {
 	p.pubRTCPQueue.Stop()
 }
 
-func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType, skipQueued bool) (string, *livekit.TrackInfo, bool, time.Time) {
+func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType, skipQueued bool) (string, *livekit.TrackInfo, buffer.VideoLayersRid, bool, time.Time) {
 	signalCid := clientId
 	pendingInfo := p.pendingTracks[clientId]
 	if pendingInfo == nil {
@@ -2974,10 +3080,10 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 
 	// if still not found, we are done
 	if pendingInfo == nil || (skipQueued && pendingInfo.queued) {
-		return signalCid, nil, false, time.Time{}
+		return signalCid, nil, buffer.VideoLayersRid{}, false, time.Time{}
 	}
 
-	return signalCid, utils.CloneProto(pendingInfo.trackInfos[0]), pendingInfo.migrated, pendingInfo.createdAt
+	return signalCid, utils.CloneProto(pendingInfo.trackInfos[0]), pendingInfo.sdpRids, pendingInfo.migrated, pendingInfo.createdAt
 }
 
 // setTrackID either generates a new TrackID for an AddTrackRequest
