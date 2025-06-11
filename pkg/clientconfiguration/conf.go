@@ -48,6 +48,21 @@ var StaticConfigurations = []ConfigurationItem{
 		},
 		Merge: true,
 	},
+	// disable advanced codecs when publishing using JS SDK from iOS,
+	// seeing publish failures (no DD header extension found) when Chrome Mobile publishes VP9,
+	// being defensive and disabling advanced codecs
+	{
+		Match: &ScriptMatch{Expr: `c.os == "ios" && c.sdk == "js"`},
+		Configuration: &livekit.ClientConfiguration{
+			DisabledCodecs: &livekit.DisabledCodecs{
+				Publish: []*livekit.Codec{
+					{Mime: mime.MimeTypeVP9.String()},
+					{Mime: mime.MimeTypeAV1.String()},
+				},
+			},
+		},
+		Merge: true,
+	},
 	{
 		Match: &ScriptMatch{Expr: `(c.device_model == "xiaomi 2201117ti" && c.os == "android") ||
 		  ((c.browser == "firefox" || c.browser == "firefox mobile") && (c.os == "linux" || c.os == "android"))`},
