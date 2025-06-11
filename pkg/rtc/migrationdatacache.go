@@ -28,7 +28,11 @@ func NewMigrationDataCache(lastSeq uint32, expiredAt time.Time) *MigrationDataCa
 	}
 }
 
-// Add adds a message to the cache if there is a gap between the last sequence number and cached messages then return false.
+// Add adds a message to the cache if there is a gap between the last sequence number and cached messages then return the cache State:
+//   - MigrationDataCacheStateWaiting: waiting for the next packet (lastSeq + 1) of last sequence from old node
+//   - MigrationDataCacheStateTimeout: the next packet is not received before the expiredAt, participant will
+//     continue to process the reliable messages, subscribers will see the gap after the publisher migration
+//   - MigrationDataCacheStateDone: the next packet is received, participant can continue to process the reliable messages
 func (c *MigrationDataCache) Add(pkt *livekit.DataPacket) MigrationDataCacheState {
 	if c.state == MigrationDataCacheStateDone || c.state == MigrationDataCacheStateTimeout {
 		return c.state
