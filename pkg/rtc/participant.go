@@ -984,26 +984,6 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(offer webrtc.SessionDescrip
 			}
 		}
 		p.AddTrack(req)
-
-		/* RAJA-REMOVE
-		if strings.EqualFold(m.MediaName.Media, "video") {
-			p.pendingTracksLock.Lock()
-			pti := p.pendingTracks[cid]
-			if pti != nil {
-				n := min(len(rids), len(pti.sdpRids))
-				for i := 0; i < n; i++ {
-					pti.sdpRids[i] = rids[i]
-				}
-
-				p.pubLogger.Debugw(
-					"pending track rids updated",
-					"trackID", pti.trackInfos[0].Sid,
-					"pendingTrack", pti,
-				)
-			}
-			p.pendingTracksLock.Unlock()
-		}
-		*/
 	}
 	return nil
 }
