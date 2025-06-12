@@ -2334,7 +2334,7 @@ func (t *PCTransport) createAndSendAnswer() error {
 		t.params.Logger.Debugw("local answer (filtered)", "sdp", answer.SDP)
 	}
 
-	if err := t.params.Handler.OnAnswer(answer, t.activeOfferId); err != nil {
+	if err := t.params.Handler.OnAnswer(answer, t.activeAnswerId); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
 		return errors.Wrap(err, "could not send answer")
 	}
@@ -2345,7 +2345,7 @@ func (t *PCTransport) createAndSendAnswer() error {
 
 func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, offerId uint32) error {
 	t.params.Logger.Debugw("processing offer", "offerId", offerId)
-	t.activeOfferId = offerId
+	t.activeAnswerId = offerId
 
 	parsed, err := sd.Unmarshal()
 	if err != nil {
