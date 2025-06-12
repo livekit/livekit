@@ -71,6 +71,7 @@ type Config struct {
 	Region         string                   `yaml:"region,omitempty"`
 	SignalRelay    SignalRelayConfig        `yaml:"signal_relay,omitempty"`
 	PSRPC          rpc.PSRPCConfig          `yaml:"psrpc,omitempty"`
+	Mesh           MeshConfig               `yaml:"mesh,omitempty"`
 	// Deprecated: LogLevel is deprecated
 	LogLevel string        `yaml:"log_level,omitempty"`
 	Logging  LoggingConfig `yaml:"logging,omitempty"`
@@ -211,6 +212,10 @@ type NodeSelectorConfig struct {
 	CPULoadLimit float32        `yaml:"cpu_load_limit,omitempty"`
 	SysloadLimit float32        `yaml:"sysload_limit,omitempty"`
 	Regions      []RegionConfig `yaml:"regions,omitempty"`
+}
+
+type MeshConfig struct {
+	Enabled bool `yaml:"enabled,omitempty"`
 }
 
 type SignalRelayConfig struct {
@@ -396,6 +401,7 @@ var DefaultConfig = Config{
 		ConnectAttempts:  3,
 	},
 	PSRPC:     rpc.DefaultPSRPCConfig,
+	Mesh:      MeshConfig{Enabled: false},
 	Keys:      map[string]string{},
 	Metric:    metric.DefaultMetricConfig,
 	WebHook:   webhook.DefaultWebHookConfig,

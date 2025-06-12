@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/mesh"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -60,7 +61,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	nodeStatsConfig := getNodeStatsConfig(conf)
-	router := routing.CreateRouter(universalClient, currentNode, signalClient, roomManagerClient, keepalivePubSub, nodeStatsConfig)
+	router := routing.CreateRouter(universalClient, currentNode, signalClient, roomManagerClient, keepalivePubSub, nodeStatsConfig, conf.Mesh, mesh.NewMesh())
 	objectStore := createStore(universalClient)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
@@ -184,7 +185,7 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 		return nil, err
 	}
 	nodeStatsConfig := getNodeStatsConfig(conf)
-	router := routing.CreateRouter(universalClient, currentNode, signalClient, roomManagerClient, keepalivePubSub, nodeStatsConfig)
+	router := routing.CreateRouter(universalClient, currentNode, signalClient, roomManagerClient, keepalivePubSub, nodeStatsConfig, conf.Mesh, mesh.NewMesh())
 	return router, nil
 }
 

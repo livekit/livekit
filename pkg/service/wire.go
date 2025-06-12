@@ -29,6 +29,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/mesh"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -52,6 +53,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createWebhookNotifier,
 		createForwardStats,
 		getNodeStatsConfig,
+		getMeshConfig,
+		mesh.NewMesh,
 		routing.CreateRouter,
 		getLimitConf,
 		config.DefaultAPIConfig,
@@ -118,6 +121,8 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 		routing.NewRoomManagerClient,
 		rpc.NewKeepalivePubSub,
 		getNodeStatsConfig,
+		getMeshConfig,
+		mesh.NewMesh,
 		routing.CreateRouter,
 	)
 
@@ -268,4 +273,8 @@ func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (
 
 func getNodeStatsConfig(config *config.Config) config.NodeStatsConfig {
 	return config.NodeStats
+}
+
+func getMeshConfig(config *config.Config) config.MeshConfig {
+	return config.Mesh
 }
