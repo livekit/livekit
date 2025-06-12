@@ -399,14 +399,14 @@ type LocalParticipant interface {
 
 	// PeerConnection
 	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget)
-	HandleOffer(sdp webrtc.SessionDescription) error
+	HandleOffer(sdp webrtc.SessionDescription, offerId uint32) error
 	GetAnswer() (webrtc.SessionDescription, error)
 	HandleICETrickleSDPFragment(sdpFragment string) error
 	HandleICERestartSDPFragment(sdpFragment string) (string, error)
 	AddTrack(req *livekit.AddTrackRequest)
 	SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool) *livekit.TrackInfo
 
-	HandleAnswer(sdp webrtc.SessionDescription)
+	HandleAnswer(sdp webrtc.SessionDescription, answerId uint32)
 	Negotiate(force bool)
 	ICERestart(iceConfig *livekit.ICEConfig)
 	AddTrackLocal(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)

@@ -1034,8 +1034,13 @@ func (p *ParticipantImpl) updateRidsFromSDP(offer *webrtc.SessionDescription) {
 }
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
-func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
-	p.pubLogger.Debugw("received offer", "transport", livekit.SignalTarget_PUBLISHER, "offer", offer)
+func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription, offerId uint32) error {
+	p.pubLogger.Debugw(
+		"received offer",
+		"transport", livekit.SignalTarget_PUBLISHER,
+		"offer", offer,
+		"offerId", offerId,
+	)
 
 	if p.params.UseOneShotSignallingMode {
 		if err := p.synthesizeAddTrackRequests(offer); err != nil {
@@ -1050,7 +1055,7 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
 
 	offer = p.setCodecPreferencesForPublisher(offer)
 	p.updateRidsFromSDP(&offer)
-	err := p.TransportManager.HandleOffer(offer, shouldPend)
+	err := p.TransportManager.HandleOffer(offer, offerId, shouldPend)
 	if p.params.UseOneShotSignallingMode {
 		if onSubscriberReady := p.getOnSubscriberReady(); onSubscriberReady != nil {
 			go onSubscriberReady(p)
@@ -1059,16 +1064,21 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription) error {
 	return err
 }
 
-func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription) error {
+func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription, answerId uint32) error {
 	if p.IsClosed() || p.IsDisconnected() {
 		return nil
 	}
 
 	answer = p.configurePublisherAnswer(answer)
-	p.pubLogger.Debugw("sending answer", "transport", livekit.SignalTarget_PUBLISHER, "answer", answer)
+	p.pubLogger.Debugw(
+		"sending answer",
+		"transport", livekit.SignalTarget_PUBLISHER,
+		"answer", answer,
+		"answerId", answerId,
+	)
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
-			Answer: ToProtoSessionDescription(answer),
+			Answer: ToProtoSessionDescription(answer, answerId),
 		},
 	})
 }
@@ -1090,8 +1100,13 @@ func (p *ParticipantImpl) GetAnswer() (webrtc.SessionDescription, error) {
 
 // HandleAnswer handles a client answer response, with subscriber PC, server initiates the
 // offer and client answers
-func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription) {
-	p.subLogger.Debugw("received answer", "transport", livekit.SignalTarget_SUBSCRIBER, "answer", answer)
+func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription, answerId uint32) {
+	p.subLogger.Debugw(
+		"received answer",
+		"transport", livekit.SignalTarget_SUBSCRIBER,
+		"answer", answer,
+		"answerId", answerId,
+	)
 
 	/* from server received join request to client answer
 	 * 1. server send join response & offer
@@ -1101,7 +1116,7 @@ func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription) {
 	signalConnCost := time.Since(p.ConnectedAt()).Milliseconds()
 	p.TransportManager.UpdateSignalingRTT(uint32(signalConnCost))
 
-	p.TransportManager.HandleAnswer(answer)
+	p.TransportManager.HandleAnswer(answer, answerId)
 }
 
 func (p *ParticipantImpl) handleMigrateTracks() []*MediaTrack {
@@ -1671,8 +1686,8 @@ type PublisherTransportHandler struct {
 	AnyTransportHandler
 }
 
-func (h PublisherTransportHandler) OnAnswer(sd webrtc.SessionDescription) error {
-	return h.p.onPublisherAnswer(sd)
+func (h PublisherTransportHandler) OnAnswer(sd webrtc.SessionDescription, answerId uint32) error {
+	return h.p.onPublisherAnswer(sd, answerId)
 }
 
 func (h PublisherTransportHandler) OnTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
@@ -1701,8 +1716,8 @@ type SubscriberTransportHandler struct {
 	AnyTransportHandler
 }
 
-func (h SubscriberTransportHandler) OnOffer(sd webrtc.SessionDescription) error {
-	return h.p.onSubscriberOffer(sd)
+func (h SubscriberTransportHandler) OnOffer(sd webrtc.SessionDescription, offerId uint32) error {
+	return h.p.onSubscriberOffer(sd, offerId)
 }
 
 func (h SubscriberTransportHandler) OnStreamStateChange(update *streamallocator.StreamStateUpdate) error {
@@ -1964,11 +1979,16 @@ func (p *ParticipantImpl) setIsPublisher(isPublisher bool) {
 }
 
 // when the server has an offer for participant
-func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription) error {
-	p.subLogger.Debugw("sending offer", "transport", livekit.SignalTarget_SUBSCRIBER, "offer", offer)
+func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription, offerId uint32) error {
+	p.subLogger.Debugw(
+		"sending offer",
+		"transport", livekit.SignalTarget_SUBSCRIBER,
+		"offer", offer,
+		"offerId", offerId,
+	)
 	return p.writeMessage(&livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Offer{
-			Offer: ToProtoSessionDescription(offer),
+			Offer: ToProtoSessionDescription(offer, offerId),
 		},
 	})
 }
