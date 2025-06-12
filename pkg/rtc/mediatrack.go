@@ -34,6 +34,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	"github.com/livekit/livekit-server/pkg/sfu/mesh"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	util "github.com/livekit/mediatransportutil"
@@ -59,6 +60,9 @@ type MediaTrack struct {
 	backupCodecPolicy             livekit.BackupCodecPolicy
 	regressionTargetCodec         mime.MimeType
 	regressionTargetCodecReceived bool
+
+	// mesh relays for forwarding this track to other SFU nodes
+	relays []*mesh.Relay
 }
 
 type MediaTrackParams struct {
@@ -88,6 +92,7 @@ func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 	t := &MediaTrack{
 		params:            params,
 		backupCodecPolicy: ti.BackupCodecPolicy,
+		relays:            []*mesh.Relay{},
 	}
 
 	if t.backupCodecPolicy != livekit.BackupCodecPolicy_SIMULCAST && len(ti.Codecs) > 1 {
@@ -533,4 +538,23 @@ func (t *MediaTrack) enableRegression() bool {
 
 func (t *MediaTrack) Logger() logger.Logger {
 	return t.params.Logger
+}
+
+// AddRelay attaches a remote mesh relay to this track.
+func (t *MediaTrack) AddRelay(r *mesh.Relay) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	t.relays = append(t.relays, r)
+}
+
+// RemoveRelay detaches a remote mesh relay from this track.
+func (t *MediaTrack) RemoveRelay(r *mesh.Relay) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	for i, rr := range t.relays {
+		if rr == r {
+			t.relays = append(t.relays[:i], t.relays[i+1:]...)
+			break
+		}
+	}
 }

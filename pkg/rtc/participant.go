@@ -53,6 +53,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	"github.com/livekit/livekit-server/pkg/sfu/mesh"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
@@ -296,6 +297,9 @@ type ParticipantImpl struct {
 	cachedDownTracks map[livekit.TrackID]*downTrackState
 	forwarderState   map[livekit.TrackID]*livekit.RTPForwarderState
 
+	// mesh relays per published track
+	meshRelays map[livekit.TrackID][]*mesh.Relay
+
 	supervisor *supervisor.ParticipantSupervisor
 
 	connectionQuality livekit.ConnectionQuality
@@ -332,6 +336,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		connectedAt:             time.Now().Truncate(time.Millisecond),
 		rttUpdatedAt:            time.Now(),
 		cachedDownTracks:        make(map[livekit.TrackID]*downTrackState),
+		meshRelays:              make(map[livekit.TrackID][]*mesh.Relay),
 		connectionQuality:       livekit.ConnectionQuality_EXCELLENT,
 		pubLogger:               params.Logger.WithComponent(sutils.ComponentPub),
 		subLogger:               params.Logger.WithComponent(sutils.ComponentSub),
@@ -3239,6 +3244,29 @@ func (p *ParticipantImpl) GetCachedDownTrack(trackID livekit.TrackID) (*webrtc.R
 	}
 
 	return nil, sfu.DownTrackState{}
+}
+
+// AddMeshRelay adds a remote relay for the given track.
+func (p *ParticipantImpl) AddMeshRelay(trackID livekit.TrackID, r *mesh.Relay) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	p.meshRelays[trackID] = append(p.meshRelays[trackID], r)
+}
+
+// RemoveMeshRelay removes a remote relay for the given track.
+func (p *ParticipantImpl) RemoveMeshRelay(trackID livekit.TrackID, r *mesh.Relay) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	relays := p.meshRelays[trackID]
+	for i, rr := range relays {
+		if rr == r {
+			p.meshRelays[trackID] = append(relays[:i], relays[i+1:]...)
+			break
+		}
+	}
+	if len(p.meshRelays[trackID]) == 0 {
+		delete(p.meshRelays, trackID)
+	}
 }
 
 func (p *ParticipantImpl) IssueFullReconnect(reason types.ParticipantCloseReason) {
