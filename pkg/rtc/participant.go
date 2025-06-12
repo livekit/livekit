@@ -1019,6 +1019,9 @@ func (p *ParticipantImpl) updateRidsFromSDP(offer *webrtc.SessionDescription) {
 			for i := 0; i < n; i++ {
 				pti.sdpRids[i] = rids[i]
 			}
+			for i := 0; i < len(pti.sdpRids); i++ {
+				pti.sdpRids[i] = ""
+			}
 
 			p.pubLogger.Debugw(
 				"pending track rids updated",
