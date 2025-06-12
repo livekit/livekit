@@ -26,6 +26,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/mesh"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/auth"
@@ -796,7 +797,23 @@ func (r *RoomManager) UpdateParticipant(ctx context.Context, req *livekit.Update
 }
 
 func (r *RoomManager) ForwardParticipant(ctx context.Context, req *livekit.ForwardParticipantRequest) (*livekit.ForwardParticipantResponse, error) {
-	return nil, errors.New("not implemented")
+	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
+	if room == nil {
+		return nil, errors.New("room not found")
+	}
+	participant := room.GetParticipant(livekit.ParticipantIdentity(req.Identity))
+	if participant == nil {
+		return nil, errors.New("participant not found")
+	}
+
+	// create relays for all published tracks (placeholder implementation)
+	for _, track := range participant.GetPublishedTracks() {
+		relay := mesh.NewRelay(nil, participant.GetLogger())
+		if mt, ok := track.(*rtc.MediaTrack); ok {
+			mt.AddRelay(relay)
+		}
+	}
+	return &livekit.ForwardParticipantResponse{}, nil
 }
 
 func (r *RoomManager) MoveParticipant(ctx context.Context, req *livekit.MoveParticipantRequest) (*livekit.MoveParticipantResponse, error) {
