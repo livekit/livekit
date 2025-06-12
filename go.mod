@@ -23,7 +23,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/mediatransportutil v0.0.0-20250519131108-fb90f5acfded
-	github.com/livekit/protocol v1.39.1-0.20250610020455-4ba773363c7f
+	github.com/livekit/protocol v1.39.2-0.20250612021623-821e6560dbf7
 	github.com/livekit/psrpc v0.6.1-0.20250511053145-465289d72c3c
 	github.com/mackerelio/go-osstat v0.2.5
 	github.com/magefile/mage v1.15.0
@@ -34,7 +34,7 @@ require (
 	github.com/pion/datachannel v1.5.10
 	github.com/pion/dtls/v3 v3.0.6
 	github.com/pion/ice/v4 v4.0.10
-	github.com/pion/interceptor v0.1.38
+	github.com/pion/interceptor v0.1.40
 	github.com/pion/rtcp v1.2.15
 	github.com/pion/rtp v1.8.18
 	github.com/pion/sctp v1.8.39
@@ -143,5 +143,3 @@ require (
 	google.golang.org/grpc v1.73.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
-
-replace github.com/livekit/protocol => ../protocol
