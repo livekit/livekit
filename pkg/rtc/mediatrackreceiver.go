@@ -130,6 +130,7 @@ type MediaTrackReceiverParams struct {
 	Telemetry             telemetry.TelemetryService
 	Logger                logger.Logger
 	RegressionTargetCodec mime.MimeType
+	Rids                  buffer.VideoLayersRid
 }
 
 type MediaTrackReceiver struct {
@@ -669,7 +670,7 @@ func (t *MediaTrackReceiver) updateTrackInfoOfReceivers() {
 func (t *MediaTrackReceiver) SetLayerSsrc(mimeType mime.MimeType, rid string, ssrc uint32) {
 	t.lock.Lock()
 	trackInfo := t.TrackInfoClone()
-	layer := buffer.RidToSpatialLayer(rid, trackInfo)
+	layer := buffer.RidToSpatialLayer(rid, trackInfo, t.params.Rids)
 	if layer == buffer.InvalidLayerSpatial {
 		// non-simulcast case will not have `rid`
 		layer = 0

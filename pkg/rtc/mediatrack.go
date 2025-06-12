@@ -81,6 +81,7 @@ type MediaTrackParams struct {
 	ForwardStats          *sfu.ForwardStats
 	OnTrackEverSubscribed func(livekit.TrackID)
 	ShouldRegressCodec    func() bool
+	Rids                  buffer.VideoLayersRid
 }
 
 func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
@@ -106,6 +107,7 @@ func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 		Telemetry:             params.Telemetry,
 		Logger:                params.Logger,
 		RegressionTargetCodec: t.regressionTargetCodec,
+		Rids:                  params.Rids,
 	}, ti)
 
 	if ti.Type == livekit.TrackType_AUDIO {
@@ -263,7 +265,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 	t.lock.Lock()
 	var regressCodec bool
 	mimeType := mime.NormalizeMimeType(track.Codec().MimeType)
-	layer := buffer.RidToSpatialLayer(track.RID(), ti)
+	layer := buffer.RidToSpatialLayer(track.RID(), ti, t.params.Rids)
 	t.params.Logger.Debugw(
 		"AddReceiver",
 		"rid", track.RID(),
@@ -302,6 +304,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			receiver,
 			track,
 			ti,
+			t.params.Rids,
 			LoggerWithCodecMime(t.params.Logger, mimeType),
 			t.params.OnRTCP,
 			t.params.VideoConfig.StreamTrackerManager,

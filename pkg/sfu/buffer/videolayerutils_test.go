@@ -160,10 +160,10 @@ func TestRidConversion(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			for testRid, expectedResult := range test.ridToLayer {
-				actualLayer := RidToSpatialLayer(testRid, test.trackInfo)
+				actualLayer := RidToSpatialLayer(testRid, test.trackInfo, DefaultVideoLayersRid)
 				require.Equal(t, expectedResult.layer, actualLayer)
 
-				actualRid := SpatialLayerToRid(actualLayer, test.trackInfo)
+				actualRid := SpatialLayerToRid(actualLayer, test.trackInfo, DefaultVideoLayersRid)
 				require.Equal(t, expectedResult.rid, actualRid)
 			}
 		})
@@ -434,7 +434,7 @@ func TestVideoQualityToRidConversion(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			for testQuality, expectedRid := range test.qualityToRid {
-				actualRid := VideoQualityToRid(testQuality, test.trackInfo)
+				actualRid := VideoQualityToRid(testQuality, test.trackInfo, DefaultVideoLayersRid)
 				require.Equal(t, expectedRid, actualRid)
 			}
 		})

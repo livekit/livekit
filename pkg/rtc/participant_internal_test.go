@@ -289,7 +289,7 @@ func TestMuteSetting(t *testing.T) {
 			Muted: true,
 		})
 
-		_, ti, _, _ := p.getPendingTrack("cid", livekit.TrackType_AUDIO, false)
+		_, ti, _, _, _ := p.getPendingTrack("cid", livekit.TrackType_AUDIO, false)
 		require.NotNil(t, ti)
 		require.True(t, ti.Muted)
 	})
