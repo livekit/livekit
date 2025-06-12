@@ -1956,7 +1956,6 @@ func (t *PCTransport) handleICEGatheringCompleteAnswerer() error {
 		return err
 	}
 
-	// RAJA-TODO
 	return t.createAndSendAnswer()
 }
 
