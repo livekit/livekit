@@ -75,9 +75,9 @@ type TransportManagerPublisherTransportHandler struct {
 	TransportManagerTransportHandler
 }
 
-func (h TransportManagerPublisherTransportHandler) OnAnswer(sd webrtc.SessionDescription) error {
+func (h TransportManagerPublisherTransportHandler) OnAnswer(sd webrtc.SessionDescription, answerId uint32) error {
 	h.t.lastPublisherAnswer.Store(sd)
-	return h.Handler.OnAnswer(sd)
+	return h.Handler.OnAnswer(sd, answerId)
 }
 
 // -------------------------------
@@ -122,6 +122,7 @@ type TransportManager struct {
 	signalSourceValid       atomic.Bool
 
 	pendingOfferPublisher        *webrtc.SessionDescription
+	pendingOfferIdPublisher      uint32
 	pendingDataChannelsPublisher []*livekit.DataChannelInfo
 	lastPublisherAnswer          atomic.Value
 	lastPublisherOffer           atomic.Value
@@ -440,17 +441,18 @@ func (t *TransportManager) LastPublisherOffer() webrtc.SessionDescription {
 	return webrtc.SessionDescription{}
 }
 
-func (t *TransportManager) HandleOffer(offer webrtc.SessionDescription, shouldPend bool) error {
+func (t *TransportManager) HandleOffer(offer webrtc.SessionDescription, offerId uint32, shouldPend bool) error {
 	t.lock.Lock()
 	if shouldPend {
 		t.pendingOfferPublisher = &offer
+		t.pendingOfferIdPublisher = offerId
 		t.lock.Unlock()
 		return nil
 	}
 	t.lock.Unlock()
 	t.lastPublisherOffer.Store(offer)
 
-	return t.publisher.HandleRemoteDescription(offer)
+	return t.publisher.HandleRemoteDescription(offer, offerId)
 }
 
 func (t *TransportManager) GetAnswer() (webrtc.SessionDescription, error) {
@@ -477,15 +479,18 @@ func (t *TransportManager) ProcessPendingPublisherOffer() {
 	t.lock.Lock()
 	pendingOffer := t.pendingOfferPublisher
 	t.pendingOfferPublisher = nil
+
+	pendingOfferId := t.pendingOfferIdPublisher
+	t.pendingOfferIdPublisher = 0
 	t.lock.Unlock()
 
 	if pendingOffer != nil {
-		t.HandleOffer(*pendingOffer, false)
+		t.HandleOffer(*pendingOffer, pendingOfferId, false)
 	}
 }
 
-func (t *TransportManager) HandleAnswer(answer webrtc.SessionDescription) {
-	t.subscriber.HandleRemoteDescription(answer)
+func (t *TransportManager) HandleAnswer(answer webrtc.SessionDescription, answerId uint32) {
+	t.subscriber.HandleRemoteDescription(answer, answerId)
 }
 
 // AddICECandidate adds candidates for remote peer

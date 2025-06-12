@@ -474,10 +474,11 @@ type FakeLocalParticipant struct {
 	getTrailerReturnsOnCall map[int]struct {
 		result1 []byte
 	}
-	HandleAnswerStub        func(webrtc.SessionDescription)
+	HandleAnswerStub        func(webrtc.SessionDescription, uint32)
 	handleAnswerMutex       sync.RWMutex
 	handleAnswerArgsForCall []struct {
 		arg1 webrtc.SessionDescription
+		arg2 uint32
 	}
 	HandleICERestartSDPFragmentStub        func(string) (string, error)
 	handleICERestartSDPFragmentMutex       sync.RWMutex
@@ -515,10 +516,11 @@ type FakeLocalParticipant struct {
 	handleMetricsReturnsOnCall map[int]struct {
 		result1 error
 	}
-	HandleOfferStub        func(webrtc.SessionDescription) error
+	HandleOfferStub        func(webrtc.SessionDescription, uint32) error
 	handleOfferMutex       sync.RWMutex
 	handleOfferArgsForCall []struct {
 		arg1 webrtc.SessionDescription
+		arg2 uint32
 	}
 	handleOfferReturns struct {
 		result1 error
@@ -3673,16 +3675,17 @@ func (fake *FakeLocalParticipant) GetTrailerReturnsOnCall(i int, result1 []byte)
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) HandleAnswer(arg1 webrtc.SessionDescription) {
+func (fake *FakeLocalParticipant) HandleAnswer(arg1 webrtc.SessionDescription, arg2 uint32) {
 	fake.handleAnswerMutex.Lock()
 	fake.handleAnswerArgsForCall = append(fake.handleAnswerArgsForCall, struct {
 		arg1 webrtc.SessionDescription
-	}{arg1})
+		arg2 uint32
+	}{arg1, arg2})
 	stub := fake.HandleAnswerStub
-	fake.recordInvocation("HandleAnswer", []interface{}{arg1})
+	fake.recordInvocation("HandleAnswer", []interface{}{arg1, arg2})
 	fake.handleAnswerMutex.Unlock()
 	if stub != nil {
-		fake.HandleAnswerStub(arg1)
+		fake.HandleAnswerStub(arg1, arg2)
 	}
 }
 
@@ -3692,17 +3695,17 @@ func (fake *FakeLocalParticipant) HandleAnswerCallCount() int {
 	return len(fake.handleAnswerArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) HandleAnswerCalls(stub func(webrtc.SessionDescription)) {
+func (fake *FakeLocalParticipant) HandleAnswerCalls(stub func(webrtc.SessionDescription, uint32)) {
 	fake.handleAnswerMutex.Lock()
 	defer fake.handleAnswerMutex.Unlock()
 	fake.HandleAnswerStub = stub
 }
 
-func (fake *FakeLocalParticipant) HandleAnswerArgsForCall(i int) webrtc.SessionDescription {
+func (fake *FakeLocalParticipant) HandleAnswerArgsForCall(i int) (webrtc.SessionDescription, uint32) {
 	fake.handleAnswerMutex.RLock()
 	defer fake.handleAnswerMutex.RUnlock()
 	argsForCall := fake.handleAnswerArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) HandleICERestartSDPFragment(arg1 string) (string, error) {
@@ -3892,18 +3895,19 @@ func (fake *FakeLocalParticipant) HandleMetricsReturnsOnCall(i int, result1 erro
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) HandleOffer(arg1 webrtc.SessionDescription) error {
+func (fake *FakeLocalParticipant) HandleOffer(arg1 webrtc.SessionDescription, arg2 uint32) error {
 	fake.handleOfferMutex.Lock()
 	ret, specificReturn := fake.handleOfferReturnsOnCall[len(fake.handleOfferArgsForCall)]
 	fake.handleOfferArgsForCall = append(fake.handleOfferArgsForCall, struct {
 		arg1 webrtc.SessionDescription
-	}{arg1})
+		arg2 uint32
+	}{arg1, arg2})
 	stub := fake.HandleOfferStub
 	fakeReturns := fake.handleOfferReturns
-	fake.recordInvocation("HandleOffer", []interface{}{arg1})
+	fake.recordInvocation("HandleOffer", []interface{}{arg1, arg2})
 	fake.handleOfferMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1
@@ -3917,17 +3921,17 @@ func (fake *FakeLocalParticipant) HandleOfferCallCount() int {
 	return len(fake.handleOfferArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) HandleOfferCalls(stub func(webrtc.SessionDescription) error) {
+func (fake *FakeLocalParticipant) HandleOfferCalls(stub func(webrtc.SessionDescription, uint32) error) {
 	fake.handleOfferMutex.Lock()
 	defer fake.handleOfferMutex.Unlock()
 	fake.HandleOfferStub = stub
 }
 
-func (fake *FakeLocalParticipant) HandleOfferArgsForCall(i int) webrtc.SessionDescription {
+func (fake *FakeLocalParticipant) HandleOfferArgsForCall(i int) (webrtc.SessionDescription, uint32) {
 	fake.handleOfferMutex.RLock()
 	defer fake.handleOfferMutex.RUnlock()
 	argsForCall := fake.handleOfferArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) HandleOfferReturns(result1 error) {
