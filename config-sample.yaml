@@ -229,6 +229,10 @@ keys:
 #   # number of messages to buffer before dropping
 #   buffer_size: 1000
 
+# Mesh networking between nodes (experimental)
+# mesh:
+#   enabled: true
+
 # customize audio level sensitivity
 # audio:
 #   # minimum level to be considered active, 0-127, where 0 is loudest
