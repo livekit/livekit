@@ -2163,6 +2163,7 @@ func (p *ParticipantImpl) onReceivedDataMessage(kind livekit.DataPacket_Kind, da
 func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind, dp *livekit.DataPacket) {
 	if kind == livekit.DataPacket_RELIABLE && dp.Sequence > 0 {
 		if p.reliableDataInfo.lastPubReliableSeq.Load() >= dp.Sequence {
+			p.params.Logger.Infow("received out of order reliable data packet", "lastPubReliableSeq", p.reliableDataInfo.lastPubReliableSeq.Load(), "dpSequence", dp.Sequence)
 			return
 		}
 
