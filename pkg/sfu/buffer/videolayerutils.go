@@ -104,13 +104,13 @@ func RidToSpatialLayer(rid string, trackInfo *livekit.TrackInfo, ridSpace VideoL
 			return 2
 
 		case lp[livekit.VideoQuality_LOW] && lp[livekit.VideoQuality_MEDIUM]:
-			logger.Warnw("unexpected rid f with only two qualities, low and medium", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo))
+			logger.Warnw("unexpected rid with only two qualities, low and medium", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo), "rid", ridSpace[2])
 			return 1
 		case lp[livekit.VideoQuality_LOW] && lp[livekit.VideoQuality_HIGH]:
-			logger.Warnw("unexpected rid f with only two qualities, low and high", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo))
+			logger.Warnw("unexpected rid with only two qualities, low and high", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo), "rid", ridSpace[2])
 			return 1
 		case lp[livekit.VideoQuality_MEDIUM] && lp[livekit.VideoQuality_HIGH]:
-			logger.Warnw("unexpected rid f with only two qualities, medium and high", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo))
+			logger.Warnw("unexpected rid with only two qualities, medium and high", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo), "rid", ridSpace[2])
 			return 1
 
 		default:
@@ -329,4 +329,57 @@ func VideoQualityToSpatialLayer(quality livekit.VideoQuality, trackInfo *livekit
 	}
 
 	return InvalidLayerSpatial
+}
+
+// SIMULCAST-CODEC-TODO: these need to be codec mime aware if and when each codec suppports different layers
+func GetSpatialLayerForRid(rid string, ti *livekit.TrackInfo) int32 {
+	if rid == "" {
+		// single layer without RID
+		return 0
+	}
+
+	if ti == nil {
+		return InvalidLayerSpatial
+	}
+
+	for _, layer := range ti.Layers {
+		if layer.Rid == rid {
+			return layer.SpatialLayer
+		}
+	}
+
+	if len(ti.Layers) == 1 {
+		// single layer without RID
+		return 0
+	}
+
+	return InvalidLayerSpatial
+}
+
+func GetSpatialLayerForVideoQuality(quality livekit.VideoQuality, ti *livekit.TrackInfo) int32 {
+	if ti == nil {
+		return InvalidLayerSpatial
+	}
+
+	for _, layer := range ti.Layers {
+		if layer.Quality == quality {
+			return layer.SpatialLayer
+		}
+	}
+
+	return InvalidLayerSpatial
+}
+
+func GetVideoQualityForSpatialLayer(spatialLayer int32, ti *livekit.TrackInfo) livekit.VideoQuality {
+	if spatialLayer == InvalidLayerSpatial || ti == nil {
+		return livekit.VideoQuality_OFF
+	}
+
+	for _, layer := range ti.Layers {
+		if layer.SpatialLayer == spatialLayer {
+			return layer.Quality
+		}
+	}
+
+	return livekit.VideoQuality_OFF
 }

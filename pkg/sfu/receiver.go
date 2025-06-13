@@ -177,7 +177,6 @@ type WebRTCReceiver struct {
 	closed             atomic.Bool
 	useTrackers        bool
 	trackInfo          atomic.Pointer[livekit.TrackInfo]
-	rids               buffer.VideoLayersRid
 
 	onRTCP func([]rtcp.Packet)
 
@@ -252,7 +251,6 @@ func NewWebRTCReceiver(
 	receiver *webrtc.RTPReceiver,
 	track TrackRemote,
 	trackInfo *livekit.TrackInfo,
-	rids buffer.VideoLayersRid,
 	logger logger.Logger,
 	onRTCP func([]rtcp.Packet),
 	streamTrackerManagerConfig StreamTrackerManagerConfig,
@@ -266,7 +264,6 @@ func NewWebRTCReceiver(
 		codec:      track.Codec(),
 		codecState: ReceiverCodecStateNormal,
 		kind:       track.Kind(),
-		rids:       rids,
 		onRTCP:     onRTCP,
 		isSVC:      mime.IsMimeTypeStringSVC(track.Codec().MimeType),
 		isRED:      mime.IsMimeTypeStringRED(track.Codec().MimeType),
@@ -404,7 +401,7 @@ func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) erro
 
 	layer := int32(0)
 	if w.Kind() == webrtc.RTPCodecTypeVideo && !w.isSVC {
-		layer = buffer.RidToSpatialLayer(track.RID(), w.trackInfo.Load(), w.rids)
+		layer = buffer.GetSpatialLayerForRid(track.RID(), w.trackInfo.Load())
 	}
 	buff.SetLogger(w.logger.WithValues("layer", layer))
 	buff.SetAudioLevelParams(audio.AudioLevelParams{
@@ -516,8 +513,7 @@ func (w *WebRTCReceiver) notifyMaxExpectedLayer(layer int32) {
 
 	expectedBitrate := int64(0)
 	for _, vl := range ti.Layers {
-		l := buffer.VideoQualityToSpatialLayer(vl.Quality, ti)
-		if l <= layer {
+		if vl.SpatialLayer <= layer {
 			expectedBitrate += int64(vl.Bitrate)
 		}
 	}
