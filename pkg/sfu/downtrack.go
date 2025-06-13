@@ -502,12 +502,6 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			return
 		}
 
-		if bs := d.bindState.Load(); bs != bindStateWaitForReceiverReady {
-			d.bindLock.Unlock()
-			d.params.Logger.Debugw("DownTrack.Bind: not in wait for receiver state", "state", bs)
-			return
-		}
-
 		isFECEnabled := false
 		if mime.IsMimeTypeStringRED(matchedUpstreamCodec.MimeType) {
 			d.isRED = true
