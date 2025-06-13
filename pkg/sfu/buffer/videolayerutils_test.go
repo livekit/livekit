@@ -524,19 +524,21 @@ func TestGetSpatialLayerForVideoQuality(t *testing.T) {
 				livekit.VideoQuality_LOW:    InvalidLayerSpatial,
 				livekit.VideoQuality_MEDIUM: InvalidLayerSpatial,
 				livekit.VideoQuality_HIGH:   InvalidLayerSpatial,
+				livekit.VideoQuality_OFF:    InvalidLayerSpatial,
 			},
 		},
 		{
 			"no layers",
 			&livekit.TrackInfo{},
 			map[livekit.VideoQuality]int32{
-				livekit.VideoQuality_LOW:    InvalidLayerSpatial,
-				livekit.VideoQuality_MEDIUM: InvalidLayerSpatial,
-				livekit.VideoQuality_HIGH:   InvalidLayerSpatial,
+				livekit.VideoQuality_LOW:    0,
+				livekit.VideoQuality_MEDIUM: 0,
+				livekit.VideoQuality_HIGH:   0,
+				livekit.VideoQuality_OFF:    InvalidLayerSpatial,
 			},
 		},
 		{
-			"layers",
+			"not all layers",
 			&livekit.TrackInfo{
 				Layers: []*livekit.VideoLayer{
 					{Quality: livekit.VideoQuality_LOW, SpatialLayer: 0, Rid: QuarterResolution},
@@ -546,7 +548,24 @@ func TestGetSpatialLayerForVideoQuality(t *testing.T) {
 			map[livekit.VideoQuality]int32{
 				livekit.VideoQuality_LOW:    0,
 				livekit.VideoQuality_MEDIUM: 1,
-				livekit.VideoQuality_HIGH:   InvalidLayerSpatial,
+				livekit.VideoQuality_HIGH:   1,
+				livekit.VideoQuality_OFF:    InvalidLayerSpatial,
+			},
+		},
+		{
+			"all layers",
+			&livekit.TrackInfo{
+				Layers: []*livekit.VideoLayer{
+					{Quality: livekit.VideoQuality_LOW, SpatialLayer: 0, Rid: QuarterResolution},
+					{Quality: livekit.VideoQuality_MEDIUM, SpatialLayer: 1, Rid: HalfResolution},
+					{Quality: livekit.VideoQuality_HIGH, SpatialLayer: 2, Rid: FullResolution},
+				},
+			},
+			map[livekit.VideoQuality]int32{
+				livekit.VideoQuality_LOW:    0,
+				livekit.VideoQuality_MEDIUM: 1,
+				livekit.VideoQuality_HIGH:   2,
+				livekit.VideoQuality_OFF:    InvalidLayerSpatial,
 			},
 		},
 	}
