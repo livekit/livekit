@@ -357,7 +357,7 @@ func GetSpatialLayerForRid(rid string, ti *livekit.TrackInfo) int32 {
 }
 
 func GetSpatialLayerForVideoQuality(quality livekit.VideoQuality, ti *livekit.TrackInfo) int32 {
-	if ti == nil {
+	if ti == nil || quality == livekit.VideoQuality_OFF {
 		return InvalidLayerSpatial
 	}
 
@@ -367,7 +367,13 @@ func GetSpatialLayerForVideoQuality(quality livekit.VideoQuality, ti *livekit.Tr
 		}
 	}
 
-	return InvalidLayerSpatial
+	if len(ti.Layers) == 0 {
+		// single layer
+		return 0
+	}
+
+	// requested quality is higher than available layers, return the highest available layer
+	return ti.Layers[len(ti.Layers)-1].SpatialLayer
 }
 
 func GetVideoQualityForSpatialLayer(spatialLayer int32, ti *livekit.TrackInfo) livekit.VideoQuality {
