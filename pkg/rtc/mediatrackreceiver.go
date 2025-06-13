@@ -130,7 +130,6 @@ type MediaTrackReceiverParams struct {
 	Telemetry             telemetry.TelemetryService
 	Logger                logger.Logger
 	RegressionTargetCodec mime.MimeType
-	Rids                  buffer.VideoLayersRid
 }
 
 type MediaTrackReceiver struct {
@@ -175,7 +174,7 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams, ti *livekit.TrackInf
 }
 
 func (t *MediaTrackReceiver) Restart() {
-	hq := buffer.VideoQualityToSpatialLayer(livekit.VideoQuality_HIGH, t.TrackInfo())
+	hq := buffer.GetSpatialLayerForVideoQuality(livekit.VideoQuality_HIGH, t.TrackInfo())
 
 	for _, receiver := range t.loadReceivers() {
 		receiver.SetMaxExpectedSpatialLayer(hq)
@@ -670,12 +669,12 @@ func (t *MediaTrackReceiver) updateTrackInfoOfReceivers() {
 func (t *MediaTrackReceiver) SetLayerSsrc(mimeType mime.MimeType, rid string, ssrc uint32) {
 	t.lock.Lock()
 	trackInfo := t.TrackInfoClone()
-	layer := buffer.RidToSpatialLayer(rid, trackInfo, t.params.Rids)
+	layer := buffer.GetSpatialLayerForRid(rid, trackInfo)
 	if layer == buffer.InvalidLayerSpatial {
 		// non-simulcast case will not have `rid`
 		layer = 0
 	}
-	quality := buffer.SpatialLayerToVideoQuality(layer, trackInfo)
+	quality := buffer.GetVideoQualityForSpatialLayer(layer, trackInfo)
 	// set video layer ssrc info
 	for i, ci := range trackInfo.Codecs {
 		if mime.NormalizeMimeType(ci.MimeType) != mimeType {
@@ -845,7 +844,7 @@ func (t *MediaTrackReceiver) TrackInfoClone() *livekit.TrackInfo {
 
 func (t *MediaTrackReceiver) NotifyMaxLayerChange(maxLayer int32) {
 	trackInfo := t.TrackInfo()
-	quality := buffer.SpatialLayerToVideoQuality(maxLayer, trackInfo)
+	quality := buffer.GetVideoQualityForSpatialLayer(maxLayer, trackInfo)
 	ti := &livekit.TrackInfo{
 		Sid:    trackInfo.Sid,
 		Type:   trackInfo.Type,

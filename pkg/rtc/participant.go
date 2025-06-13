@@ -2814,6 +2814,25 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 			// only assign version on a fresh publish, i. e. avoid updating version in scenarios like migration
 			ti.Version = p.params.VersionGenerator.Next().ToProto()
 		}
+
+		if len(sdpRids) != 0 {
+			for _, layer := range ti.Layers {
+				layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(layer.Quality, ti)
+				layer.Rid = buffer.VideoQualityToRid(layer.Quality, ti, sdpRids)
+			}
+
+			for _, codec := range ti.Codecs {
+				if !mime.IsMimeTypeStringEqual(codec.MimeType, track.Codec().MimeType) {
+					continue
+				}
+
+				for _, layer := range codec.Layers {
+					layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(layer.Quality, ti)
+					layer.Rid = buffer.VideoQualityToRid(layer.Quality, ti, sdpRids)
+				}
+			}
+		}
+
 		mt = p.addMediaTrack(signalCid, track.ID(), ti, sdpRids)
 		newTrack = true
 
@@ -2938,7 +2957,6 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 		ShouldRegressCodec: func() bool {
 			return p.helper().ShouldRegressCodec()
 		},
-		Rids: sdpRids,
 	}, ti)
 
 	mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
