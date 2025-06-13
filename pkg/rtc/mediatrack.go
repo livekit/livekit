@@ -271,6 +271,14 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		"ssrc", track.SSRC(),
 		"codec", track.Codec(),
 	)
+	logger.Infow(
+		"AddReceiver",
+		"rid", track.RID(),
+		"layer", layer,
+		"ssrc", track.SSRC(),
+		"codec", track.Codec(),
+		"trackInfo", logger.Proto(ti),
+	) // REMOVE
 	wr := t.MediaTrackReceiver.Receiver(mimeType)
 	if wr == nil {
 		priority := -1

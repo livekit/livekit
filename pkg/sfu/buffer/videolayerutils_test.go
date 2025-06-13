@@ -466,7 +466,14 @@ func TestGetSpatialLayerForRid(t *testing.T) {
 			},
 		},
 		{
-			"single layer, no rid",
+			"no rid",
+			&livekit.TrackInfo{},
+			map[string]int32{
+				"": 0,
+			},
+		},
+		{
+			"single layer",
 			&livekit.TrackInfo{
 				Layers: []*livekit.VideoLayer{
 					{Quality: livekit.VideoQuality_LOW, SpatialLayer: 0},
