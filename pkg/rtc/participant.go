@@ -1025,10 +1025,6 @@ func (p *ParticipantImpl) updateRidsFromSDP(offer *webrtc.SessionDescription) {
 					"trackID", pti.trackInfos[0].Sid,
 					"pendingTrack", pti,
 				)
-			} else {
-				for i := 0; i < len(pti.sdpRids); i++ {
-					pti.sdpRids[i] = ""
-				}
 			}
 		}
 		p.pendingTracksLock.Unlock()
