@@ -999,11 +999,6 @@ func (p *ParticipantImpl) updateRidsFromSDP(offer *webrtc.SessionDescription) {
 			continue
 		}
 
-		rids, ok := sdpHelper.GetSimulcastRids(m)
-		if !ok {
-			continue
-		}
-
 		mst := sdpHelper.GetMediaStreamTrack(m)
 		if mst == "" {
 			continue
@@ -1012,22 +1007,29 @@ func (p *ParticipantImpl) updateRidsFromSDP(offer *webrtc.SessionDescription) {
 		p.pendingTracksLock.Lock()
 		pti := p.pendingTracks[mst]
 		if pti != nil {
-			// does not work for clients that use a different media stream track in SDP (e.g. Firefox)
-			// one option is to look up by track type, but that fails when there are multiple pending tracks
-			// of the same type
-			n := min(len(rids), len(pti.sdpRids))
-			for i := 0; i < n; i++ {
-				pti.sdpRids[i] = rids[i]
-			}
-			for i := n; i < len(pti.sdpRids); i++ {
-				pti.sdpRids[i] = ""
-			}
+			rids, ok := sdpHelper.GetSimulcastRids(m)
+			if ok {
+				// does not work for clients that use a different media stream track in SDP (e.g. Firefox)
+				// one option is to look up by track type, but that fails when there are multiple pending tracks
+				// of the same type
+				n := min(len(rids), len(pti.sdpRids))
+				for i := 0; i < n; i++ {
+					pti.sdpRids[i] = rids[i]
+				}
+				for i := n; i < len(pti.sdpRids); i++ {
+					pti.sdpRids[i] = ""
+				}
 
-			p.pubLogger.Debugw(
-				"pending track rids updated",
-				"trackID", pti.trackInfos[0].Sid,
-				"pendingTrack", pti,
-			)
+				p.pubLogger.Debugw(
+					"pending track rids updated",
+					"trackID", pti.trackInfos[0].Sid,
+					"pendingTrack", pti,
+				)
+			} else {
+				for i := 0; i < len(pti.sdpRids); i++ {
+					pti.sdpRids[i] = ""
+				}
+			}
 		}
 		p.pendingTracksLock.Unlock()
 	}
@@ -2816,21 +2818,19 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 			ti.Version = p.params.VersionGenerator.Next().ToProto()
 		}
 
-		if len(sdpRids) != 0 {
-			for _, layer := range ti.Layers {
-				layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(layer.Quality, ti)
-				layer.Rid = buffer.VideoQualityToRid(layer.Quality, ti, sdpRids)
+		for _, layer := range ti.Layers {
+			layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(layer.Quality, ti)
+			layer.Rid = buffer.VideoQualityToRid(layer.Quality, ti, sdpRids)
+		}
+
+		for _, codec := range ti.Codecs {
+			if !mime.IsMimeTypeStringEqual(codec.MimeType, track.Codec().MimeType) {
+				continue
 			}
 
-			for _, codec := range ti.Codecs {
-				if !mime.IsMimeTypeStringEqual(codec.MimeType, track.Codec().MimeType) {
-					continue
-				}
-
-				for _, layer := range codec.Layers {
-					layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(layer.Quality, ti)
-					layer.Rid = buffer.VideoQualityToRid(layer.Quality, ti, sdpRids)
-				}
+			for _, layer := range codec.Layers {
+				layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(layer.Quality, ti)
+				layer.Rid = buffer.VideoQualityToRid(layer.Quality, ti, sdpRids)
 			}
 		}
 
