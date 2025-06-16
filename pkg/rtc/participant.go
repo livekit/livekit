@@ -2260,10 +2260,12 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
 	}
 
-	if p.Hidden() {
-		dp.ParticipantIdentity = ""
-	} else if overrideSenderIdentity {
-		dp.ParticipantIdentity = string(p.params.Identity)
+	if overrideParticipantIdentity {
+		if p.Hidden() {
+			dp.ParticipantIdentity = ""
+		} else {
+			dp.ParticipantIdentity = string(p.params.Identity)
+		}
 	}
 
 	if shouldForwardData {
