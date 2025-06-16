@@ -23,7 +23,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/mediatransportutil v0.0.0-20250519131108-fb90f5acfded
-	github.com/livekit/protocol v1.39.3-0.20250613010514-7b9c3ae9e359
+	github.com/livekit/protocol v1.39.3-0.20250616205541-c32731d9f583
 	github.com/livekit/psrpc v0.6.1-0.20250511053145-465289d72c3c
 	github.com/mackerelio/go-osstat v0.2.5
 	github.com/magefile/mage v1.15.0
@@ -36,12 +36,12 @@ require (
 	github.com/pion/ice/v4 v4.0.10
 	github.com/pion/interceptor v0.1.40
 	github.com/pion/rtcp v1.2.15
-	github.com/pion/rtp v1.8.18
+	github.com/pion/rtp v1.8.19
 	github.com/pion/sctp v1.8.39
 	github.com/pion/sdp/v3 v3.0.13
 	github.com/pion/transport/v3 v3.0.7
 	github.com/pion/turn/v4 v4.0.2
-	github.com/pion/webrtc/v4 v4.1.1
+	github.com/pion/webrtc/v4 v4.1.2
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.22.0
 	github.com/redis/go-redis/v9 v9.10.0
@@ -64,8 +64,8 @@ require (
 )
 
 require (
-	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.6-20250612204948-4001e52a3c94.1 // indirect
-	buf.build/go/protovalidate v0.13.0 // indirect
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.6-20250613105001-9f2d3c737feb.1 // indirect
+	buf.build/go/protovalidate v0.13.1 // indirect
 	buf.build/go/protoyaml v0.6.0 // indirect
 	cel.dev/expr v0.24.0 // indirect
 	dario.cat/mergo v1.0.0 // indirect
@@ -73,6 +73,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
+	github.com/aws/smithy-go v1.22.3 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
@@ -116,7 +117,7 @@ require (
 	github.com/pion/logging v0.2.3 // indirect
 	github.com/pion/mdns/v2 v2.0.7 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
-	github.com/pion/srtp/v3 v3.0.5 // indirect
+	github.com/pion/srtp/v3 v3.0.6 // indirect
 	github.com/pion/stun/v3 v3.0.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
