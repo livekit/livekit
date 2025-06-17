@@ -20,10 +20,12 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
+	"github.com/ua-parser/uap-go/uaparser"
 )
 
 func HandleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...interface{}) {
@@ -81,4 +83,75 @@ func SetRoomConfiguration(createRequest *livekit.CreateRoomRequest, conf *liveki
 	createRequest.MinPlayoutDelay = conf.MinPlayoutDelay
 	createRequest.MaxPlayoutDelay = conf.MaxPlayoutDelay
 	createRequest.SyncStreams = conf.SyncStreams
+}
+
+func ParseClientInfo(r *http.Request) *livekit.ClientInfo {
+	values := r.Form
+	ci := &livekit.ClientInfo{}
+	if pv, err := strconv.Atoi(values.Get("protocol")); err == nil {
+		ci.Protocol = int32(pv)
+	}
+	sdkString := values.Get("sdk")
+	switch sdkString {
+	case "js":
+		ci.Sdk = livekit.ClientInfo_JS
+	case "ios", "swift":
+		ci.Sdk = livekit.ClientInfo_SWIFT
+	case "android":
+		ci.Sdk = livekit.ClientInfo_ANDROID
+	case "flutter":
+		ci.Sdk = livekit.ClientInfo_FLUTTER
+	case "go":
+		ci.Sdk = livekit.ClientInfo_GO
+	case "unity":
+		ci.Sdk = livekit.ClientInfo_UNITY
+	case "reactnative":
+		ci.Sdk = livekit.ClientInfo_REACT_NATIVE
+	case "rust":
+		ci.Sdk = livekit.ClientInfo_RUST
+	case "python":
+		ci.Sdk = livekit.ClientInfo_PYTHON
+	case "cpp":
+		ci.Sdk = livekit.ClientInfo_CPP
+	case "unityweb":
+		ci.Sdk = livekit.ClientInfo_UNITY_WEB
+	case "node":
+		ci.Sdk = livekit.ClientInfo_NODE
+	}
+
+	ci.Version = values.Get("version")
+	ci.Os = values.Get("os")
+	ci.OsVersion = values.Get("os_version")
+	ci.Browser = values.Get("browser")
+	ci.BrowserVersion = values.Get("browser_version")
+	ci.DeviceModel = values.Get("device_model")
+	ci.Network = values.Get("network")
+	// get real address (forwarded http header) - check Cloudflare headers first, fall back to X-Forwarded-For
+	ci.Address = GetClientIP(r)
+
+	// attempt to parse types for SDKs that support browser as a platform
+	if ci.Sdk == livekit.ClientInfo_JS ||
+		ci.Sdk == livekit.ClientInfo_REACT_NATIVE ||
+		ci.Sdk == livekit.ClientInfo_FLUTTER ||
+		ci.Sdk == livekit.ClientInfo_UNITY {
+		client := uaparser.NewFromSaved().Parse(r.UserAgent())
+		if ci.Browser == "" {
+			ci.Browser = client.UserAgent.Family
+			ci.BrowserVersion = client.UserAgent.ToVersionString()
+		}
+		if ci.Os == "" {
+			ci.Os = client.Os.Family
+			ci.OsVersion = client.Os.ToVersionString()
+		}
+		if ci.DeviceModel == "" {
+			model := client.Device.Family
+			if model != "" && client.Device.Model != "" && model != client.Device.Model {
+				model += " " + client.Device.Model
+			}
+
+			ci.DeviceModel = model
+		}
+	}
+
+	return ci
 }

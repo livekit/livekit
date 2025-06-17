@@ -169,14 +169,18 @@ func (s *RTCRestService) validateCreate(r *http.Request) (*createRequest, int, e
 		return nil, http.StatusBadRequest, fmt.Errorf("malformed SDP offer: %s", err)
 	}
 
+	ci := ParseClientInfo(r)
+	if ci.Protocol == 0 {
+		// if no client info available (which will be mostly the case with WHIP clients), at least set protocol
+		ci.Protocol = types.CurrentProtocol
+	}
+
 	pi := routing.ParticipantInit{
 		Identity:      livekit.ParticipantIdentity(claims.Identity),
 		Name:          livekit.ParticipantName(claims.Name),
 		AutoSubscribe: true,
-		Client: &livekit.ClientInfo{
-			Protocol: types.CurrentProtocol,
-		},
-		Grants: claims,
+		Client:        ci,
+		Grants:        claims,
 		CreateRoom: &livekit.CreateRoomRequest{
 			Name:       string(roomName),
 			RoomPreset: claims.RoomPreset,
