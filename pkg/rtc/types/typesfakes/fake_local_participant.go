@@ -1127,15 +1127,15 @@ type FakeLocalParticipant struct {
 	supportsCodecChangeReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	SupportsMovingStub        func() bool
+	SupportsMovingStub        func() error
 	supportsMovingMutex       sync.RWMutex
 	supportsMovingArgsForCall []struct {
 	}
 	supportsMovingReturns struct {
-		result1 bool
+		result1 error
 	}
 	supportsMovingReturnsOnCall map[int]struct {
-		result1 bool
+		result1 error
 	}
 	SupportsSyncStreamIDStub        func() bool
 	supportsSyncStreamIDMutex       sync.RWMutex
@@ -7299,7 +7299,7 @@ func (fake *FakeLocalParticipant) SupportsCodecChangeReturnsOnCall(i int, result
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) SupportsMoving() bool {
+func (fake *FakeLocalParticipant) SupportsMoving() error {
 	fake.supportsMovingMutex.Lock()
 	ret, specificReturn := fake.supportsMovingReturnsOnCall[len(fake.supportsMovingArgsForCall)]
 	fake.supportsMovingArgsForCall = append(fake.supportsMovingArgsForCall, struct {
@@ -7323,32 +7323,32 @@ func (fake *FakeLocalParticipant) SupportsMovingCallCount() int {
 	return len(fake.supportsMovingArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) SupportsMovingCalls(stub func() bool) {
+func (fake *FakeLocalParticipant) SupportsMovingCalls(stub func() error) {
 	fake.supportsMovingMutex.Lock()
 	defer fake.supportsMovingMutex.Unlock()
 	fake.SupportsMovingStub = stub
 }
 
-func (fake *FakeLocalParticipant) SupportsMovingReturns(result1 bool) {
+func (fake *FakeLocalParticipant) SupportsMovingReturns(result1 error) {
 	fake.supportsMovingMutex.Lock()
 	defer fake.supportsMovingMutex.Unlock()
 	fake.SupportsMovingStub = nil
 	fake.supportsMovingReturns = struct {
-		result1 bool
+		result1 error
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) SupportsMovingReturnsOnCall(i int, result1 bool) {
+func (fake *FakeLocalParticipant) SupportsMovingReturnsOnCall(i int, result1 error) {
 	fake.supportsMovingMutex.Lock()
 	defer fake.supportsMovingMutex.Unlock()
 	fake.SupportsMovingStub = nil
 	if fake.supportsMovingReturnsOnCall == nil {
 		fake.supportsMovingReturnsOnCall = make(map[int]struct {
-			result1 bool
+			result1 error
 		})
 	}
 	fake.supportsMovingReturnsOnCall[i] = struct {
-		result1 bool
+		result1 error
 	}{result1}
 }
 
