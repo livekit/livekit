@@ -15,8 +15,8 @@
 package clientconfiguration
 
 import (
-	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/d5/tengo/v2"
@@ -31,7 +31,19 @@ type Match interface {
 }
 
 type ScriptMatch struct {
-	Expr string
+	compiled *tengo.Compiled
+}
+
+func NewScriptMatch(expr string) (*ScriptMatch, error) {
+	script := tengo.NewScript(fmt.Appendf(nil, "__res__ := (%s)", expr))
+	if err := script.Add("c", &clientObject{}); err != nil {
+		return nil, err
+	}
+	compiled, err := script.Compile()
+	if err != nil {
+		return nil, err
+	}
+	return &ScriptMatch{compiled}, nil
 }
 
 // use result of eval script expression for match.
@@ -40,11 +52,15 @@ type ScriptMatch struct {
 // browser if firefox: c.browser == "firefox"
 // combined rule : c.protocol > 5 && c.browser == "firefox"
 func (m *ScriptMatch) Match(clientInfo *livekit.ClientInfo) (bool, error) {
-	res, err := tengo.Eval(context.TODO(), m.Expr, map[string]interface{}{"c": &clientObject{info: clientInfo}})
-	if err != nil {
+	clone := m.compiled.Clone()
+	if err := clone.Set("c", &clientObject{info: clientInfo}); err != nil {
+		return false, err
+	}
+	if err := clone.Run(); err != nil {
 		return false, err
 	}
 
+	res := clone.Get("__res__").Value()
 	if val, ok := res.(bool); ok {
 		return val, nil
 	}
