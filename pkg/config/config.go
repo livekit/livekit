@@ -23,7 +23,7 @@ import (
 
 	"github.com/mitchellh/go-homedir"
 	"github.com/pkg/errors"
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v3"
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/livekit-server/pkg/metric"
@@ -402,7 +402,7 @@ var DefaultConfig = Config{
 	NodeStats: DefaultNodeStatsConfig,
 }
 
-func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []cli.Flag) (*Config, error) {
+func NewConfig(confString string, strictMode bool, c *cli.Command, baseFlags []cli.Flag) (*Config, error) {
 	// start with defaults
 	marshalled, err := yaml.Marshal(&DefaultConfig)
 	if err != nil {
@@ -600,56 +600,56 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 		case reflect.Bool:
 			flag = &cli.BoolFlag{
 				Name:    name,
-				EnvVars: []string{envVar},
+				Sources: cli.EnvVars(envVar),
 				Usage:   generatedCLIFlagUsage,
 				Hidden:  hidden,
 			}
 		case reflect.String:
 			flag = &cli.StringFlag{
 				Name:    name,
-				EnvVars: []string{envVar},
+				Sources: cli.EnvVars(envVar),
 				Usage:   generatedCLIFlagUsage,
 				Hidden:  hidden,
 			}
 		case reflect.Int, reflect.Int32:
 			flag = &cli.IntFlag{
 				Name:    name,
-				EnvVars: []string{envVar},
+				Sources: cli.EnvVars(envVar),
 				Usage:   generatedCLIFlagUsage,
 				Hidden:  hidden,
 			}
 		case reflect.Int64:
 			flag = &cli.Int64Flag{
 				Name:    name,
-				EnvVars: []string{envVar},
+				Sources: cli.EnvVars(envVar),
 				Usage:   generatedCLIFlagUsage,
 				Hidden:  hidden,
 			}
 		case reflect.Uint8, reflect.Uint16, reflect.Uint32:
 			flag = &cli.UintFlag{
 				Name:    name,
-				EnvVars: []string{envVar},
+				Sources: cli.EnvVars(envVar),
 				Usage:   generatedCLIFlagUsage,
 				Hidden:  hidden,
 			}
 		case reflect.Uint64:
 			flag = &cli.Uint64Flag{
 				Name:    name,
-				EnvVars: []string{envVar},
+				Sources: cli.EnvVars(envVar),
 				Usage:   generatedCLIFlagUsage,
 				Hidden:  hidden,
 			}
 		case reflect.Float32:
 			flag = &cli.Float64Flag{
 				Name:    name,
-				EnvVars: []string{envVar},
+				Sources: cli.EnvVars(envVar),
 				Usage:   generatedCLIFlagUsage,
 				Hidden:  hidden,
 			}
 		case reflect.Float64:
 			flag = &cli.Float64Flag{
 				Name:    name,
-				EnvVars: []string{envVar},
+				Sources: cli.EnvVars(envVar),
 				Usage:   generatedCLIFlagUsage,
 				Hidden:  hidden,
 			}
@@ -672,13 +672,12 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 	return flags, nil
 }
 
-func (conf *Config) updateFromCLI(c *cli.Context, baseFlags []cli.Flag) error {
+func (conf *Config) updateFromCLI(c *cli.Command, baseFlags []cli.Flag) error {
 	generatedFlagNames := conf.ToCLIFlagNames(baseFlags)
-	for _, flag := range c.App.Flags {
+	for _, flag := range c.Flags {
 		flagName := flag.Names()[0]
 
-		// the `c.App.Name != "test"` check is needed because `c.IsSet(...)` is always false in unit tests
-		if !c.IsSet(flagName) && c.App.Name != "test" {
+		if !c.IsSet(flagName) {
 			continue
 		}
 
@@ -702,12 +701,42 @@ func (conf *Config) updateFromCLI(c *cli.Context, baseFlags []cli.Flag) error {
 		case reflect.String:
 			configValue.SetString(c.String(flagName))
 		case reflect.Int, reflect.Int32, reflect.Int64:
-			configValue.SetInt(c.Int64(flagName))
+			value := c.Value(flagName)
+			switch value.(type) {
+			case int:
+				configValue.SetInt(int64(value.(int)))
+			case int8:
+				configValue.SetInt(int64(value.(int8)))
+			case int16:
+				configValue.SetInt(int64(value.(int16)))
+			case int32:
+				configValue.SetInt(int64(value.(int32)))
+			case int64:
+				configValue.SetInt(int64(value.(int64)))
+			default:
+				return fmt.Errorf("unsupported generated cli flag type for config: %s is a %s", flagName, kind.String())
+			}
 		case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			configValue.SetUint(c.Uint64(flagName))
+			value := c.Value(flagName)
+			switch value.(type) {
+			case uint:
+				configValue.SetUint(uint64(value.(uint)))
+			case uint8:
+				configValue.SetUint(uint64(value.(uint8)))
+			case uint16:
+				configValue.SetUint(uint64(value.(uint16)))
+			case uint32:
+				configValue.SetUint(uint64(value.(uint32)))
+			case uint64:
+				configValue.SetUint(uint64(value.(uint64)))
+			default:
+				return fmt.Errorf("unsupported generated cli flag type for config: %s is a %s", flagName, kind.String())
+			}
 		case reflect.Float32:
+			fmt.Printf("setting float for: %s %v\n", flagName, c.Float64(flagName))
 			configValue.SetFloat(c.Float64(flagName))
 		case reflect.Float64:
+			fmt.Printf("setting float64 for: %s %v\n", flagName, c.Float64(flagName))
 			configValue.SetFloat(c.Float64(flagName))
 		// case reflect.Slice:
 		// 	// TODO
