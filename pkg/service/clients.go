@@ -19,12 +19,8 @@ import (
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/protocol/utils"
-	"github.com/livekit/protocol/utils/guid"
 )
 
 //counterfeiter:generate . IOClient
@@ -34,42 +30,4 @@ type IOClient interface {
 	ListEgress(ctx context.Context, req *livekit.ListEgressRequest) (*livekit.ListEgressResponse, error)
 	CreateIngress(ctx context.Context, req *livekit.IngressInfo) (*emptypb.Empty, error)
 	UpdateIngressState(ctx context.Context, req *rpc.UpdateIngressStateRequest) (*emptypb.Empty, error)
-}
-
-type egressLauncher struct {
-	client rpc.EgressClient
-	io     IOClient
-}
-
-func NewEgressLauncher(client rpc.EgressClient, io IOClient) rtc.EgressLauncher {
-	if client == nil {
-		return nil
-	}
-	return &egressLauncher{
-		client: client,
-		io:     io,
-	}
-}
-
-func (s *egressLauncher) StartEgress(ctx context.Context, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
-	if s.client == nil {
-		return nil, ErrEgressNotConnected
-	}
-
-	// Ensure we have an Egress ID
-	if req.EgressId == "" {
-		req.EgressId = guid.New(utils.EgressPrefix)
-	}
-
-	info, err := s.client.StartEgress(ctx, "", req)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = s.io.CreateEgress(ctx, info)
-	if err != nil {
-		logger.Errorw("failed to create egress", err)
-	}
-
-	return info, nil
 }
