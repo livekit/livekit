@@ -701,42 +701,12 @@ func (conf *Config) updateFromCLI(c *cli.Command, baseFlags []cli.Flag) error {
 		case reflect.String:
 			configValue.SetString(c.String(flagName))
 		case reflect.Int, reflect.Int32, reflect.Int64:
-			value := c.Value(flagName)
-			switch value.(type) {
-			case int:
-				configValue.SetInt(int64(value.(int)))
-			case int8:
-				configValue.SetInt(int64(value.(int8)))
-			case int16:
-				configValue.SetInt(int64(value.(int16)))
-			case int32:
-				configValue.SetInt(int64(value.(int32)))
-			case int64:
-				configValue.SetInt(int64(value.(int64)))
-			default:
-				return fmt.Errorf("unsupported generated cli flag type for config: %s is a %s", flagName, kind.String())
-			}
+			configValue.Set(reflect.ValueOf(c.Value(flagName)))
 		case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			value := c.Value(flagName)
-			switch value.(type) {
-			case uint:
-				configValue.SetUint(uint64(value.(uint)))
-			case uint8:
-				configValue.SetUint(uint64(value.(uint8)))
-			case uint16:
-				configValue.SetUint(uint64(value.(uint16)))
-			case uint32:
-				configValue.SetUint(uint64(value.(uint32)))
-			case uint64:
-				configValue.SetUint(uint64(value.(uint64)))
-			default:
-				return fmt.Errorf("unsupported generated cli flag type for config: %s is a %s", flagName, kind.String())
-			}
+			configValue.Set(reflect.ValueOf(c.Value(flagName)))
 		case reflect.Float32:
-			fmt.Printf("setting float for: %s %v\n", flagName, c.Float64(flagName))
 			configValue.SetFloat(c.Float64(flagName))
 		case reflect.Float64:
-			fmt.Printf("setting float64 for: %s %v\n", flagName, c.Float64(flagName))
 			configValue.SetFloat(c.Float64(flagName))
 		// case reflect.Slice:
 		// 	// TODO
