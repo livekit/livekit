@@ -2264,10 +2264,15 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
 	}
 
-	if p.Hidden() {
-		dp.ParticipantIdentity = ""
-	} else if overrideSenderIdentity {
-		dp.ParticipantIdentity = string(p.params.Identity)
+	// SFU typically asserts the sender's identity. However, agents are able to 
+	// publish data on behalf of the participant in case of transcriptions/text streams
+	// in those cases we'd leave the existing identity on the data packet alone.
+	if overrideSenderIdentity {
+		if p.Hidden() {
+			dp.ParticipantIdentity = ""
+		} else {
+			dp.ParticipantIdentity = string(p.params.Identity)
+		}
 	}
 
 	if shouldForwardData {
