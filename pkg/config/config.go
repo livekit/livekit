@@ -686,34 +686,16 @@ func (conf *Config) updateFromCLI(c *cli.Command, baseFlags []cli.Flag) error {
 			continue
 		}
 
-		kind := configValue.Kind()
-		if kind == reflect.Ptr {
-			// instantiate value to be set
+		if configValue.Kind() == reflect.Ptr {
 			configValue.Set(reflect.New(configValue.Type().Elem()))
-
-			kind = configValue.Type().Elem().Kind()
 			configValue = configValue.Elem()
 		}
 
-		switch kind {
-		case reflect.Bool:
-			configValue.SetBool(c.Bool(flagName))
-		case reflect.String:
-			configValue.SetString(c.String(flagName))
-		case reflect.Int, reflect.Int32, reflect.Int64:
-			configValue.Set(reflect.ValueOf(c.Value(flagName)))
-		case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			configValue.Set(reflect.ValueOf(c.Value(flagName)))
-		case reflect.Float32:
-			configValue.SetFloat(c.Float64(flagName))
-		case reflect.Float64:
-			configValue.SetFloat(c.Float64(flagName))
-		// case reflect.Slice:
-		// 	// TODO
-		// case reflect.Map:
-		// 	// TODO
-		default:
-			return fmt.Errorf("unsupported generated cli flag type for config: %s is a %s", flagName, kind.String())
+		value := reflect.ValueOf(c.Value(flagName))
+		if value.CanConvert(configValue.Type()) {
+			configValue.Set(value.Convert(configValue.Type()))
+		} else {
+			return fmt.Errorf("unsupported generated cli flag type for config: %s (expected %s, got %s)", flagName, configValue.Type(), value.Type())
 		}
 	}
 
