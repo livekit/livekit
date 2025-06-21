@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"net"
@@ -25,7 +26,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v3"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -49,7 +50,7 @@ var baseFlags = []cli.Flag{
 	&cli.StringFlag{
 		Name:    "config-body",
 		Usage:   "LiveKit config in YAML, typically passed in as an environment var in a container",
-		EnvVars: []string{"LIVEKIT_CONFIG"},
+		Sources: cli.EnvVars("LIVEKIT_CONFIG"),
 	},
 	&cli.StringFlag{
 		Name:  "key-file",
@@ -58,42 +59,42 @@ var baseFlags = []cli.Flag{
 	&cli.StringFlag{
 		Name:    "keys",
 		Usage:   "api keys (key: secret\\n)",
-		EnvVars: []string{"LIVEKIT_KEYS"},
+		Sources: cli.EnvVars("LIVEKIT_KEYS"),
 	},
 	&cli.StringFlag{
 		Name:    "region",
 		Usage:   "region of the current node. Used by regionaware node selector",
-		EnvVars: []string{"LIVEKIT_REGION"},
+		Sources: cli.EnvVars("LIVEKIT_REGION"),
 	},
 	&cli.StringFlag{
 		Name:    "node-ip",
 		Usage:   "IP address of the current node, used to advertise to clients. Automatically determined by default",
-		EnvVars: []string{"NODE_IP"},
+		Sources: cli.EnvVars("NODE_IP"),
 	},
 	&cli.StringFlag{
 		Name:    "udp-port",
 		Usage:   "UDP port(s) to use for WebRTC traffic",
-		EnvVars: []string{"UDP_PORT"},
+		Sources: cli.EnvVars("UDP_PORT"),
 	},
 	&cli.StringFlag{
 		Name:    "redis-host",
 		Usage:   "host (incl. port) to redis server",
-		EnvVars: []string{"REDIS_HOST"},
+		Sources: cli.EnvVars("REDIS_HOST"),
 	},
 	&cli.StringFlag{
 		Name:    "redis-password",
 		Usage:   "password to redis",
-		EnvVars: []string{"REDIS_PASSWORD"},
+		Sources: cli.EnvVars("REDIS_PASSWORD"),
 	},
 	&cli.StringFlag{
 		Name:    "turn-cert",
 		Usage:   "tls cert file for TURN server",
-		EnvVars: []string{"LIVEKIT_TURN_CERT"},
+		Sources: cli.EnvVars("LIVEKIT_TURN_CERT"),
 	},
 	&cli.StringFlag{
 		Name:    "turn-key",
 		Usage:   "tls key file for TURN server",
-		EnvVars: []string{"LIVEKIT_TURN_KEY"},
+		Sources: cli.EnvVars("LIVEKIT_TURN_KEY"),
 	},
 	// debugging flags
 	&cli.StringFlag{
@@ -127,7 +128,7 @@ func main() {
 		fmt.Println(err)
 	}
 
-	app := &cli.App{
+	cmd := &cli.Command{
 		Name:        "livekit-server",
 		Usage:       "High performance WebRTC server",
 		Description: "run without subcommands to start the server",
@@ -182,12 +183,12 @@ func main() {
 		Version: version.Version,
 	}
 
-	if err := app.Run(os.Args); err != nil {
+	if err := cmd.Run(context.Background(), os.Args); err != nil {
 		fmt.Println(err)
 	}
 }
 
-func getConfig(c *cli.Context) (*config.Config, error) {
+func getConfig(c *cli.Command) (*config.Config, error) {
 	confString, err := getConfigString(c.String("config"), c.String("config-body"))
 	if err != nil {
 		return nil, err
@@ -242,7 +243,7 @@ func getConfig(c *cli.Context) (*config.Config, error) {
 	return conf, nil
 }
 
-func startServer(c *cli.Context) error {
+func startServer(_ context.Context, c *cli.Command) error {
 	conf, err := getConfig(c)
 	if err != nil {
 		return err

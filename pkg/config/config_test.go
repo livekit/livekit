@@ -15,11 +15,10 @@
 package config
 
 import (
-	"flag"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v3"
 
 	"github.com/livekit/livekit-server/pkg/config/configtest"
 )
@@ -53,19 +52,17 @@ func TestGeneratedFlags(t *testing.T) {
 	generatedFlags, err := GenerateCLIFlags(nil, false)
 	require.NoError(t, err)
 
-	app := cli.NewApp()
-	app.Name = "test"
-	app.Flags = append(app.Flags, generatedFlags...)
+	c := &cli.Command{}
+	c.Name = "test"
+	c.Flags = append(c.Flags, generatedFlags...)
 
-	set := flag.NewFlagSet("test", 0)
-	set.Bool("rtc.use_ice_lite", true, "")                     // bool
-	set.String("redis.address", "localhost:6379", "")          // string
-	set.Uint("prometheus.port", 9999, "")                      // uint32
-	set.Bool("rtc.allow_tcp_fallback", true, "")               // pointer
-	set.Bool("rtc.reconnect_on_publication_error", true, "")   // pointer
-	set.Bool("rtc.reconnect_on_subscription_error", false, "") // pointer
+	c.Set("rtc.use_ice_lite", "true")
+	c.Set("redis.address", "localhost:6379")
+	c.Set("prometheus.port", "9999")
+	c.Set("rtc.allow_tcp_fallback", "true")
+	c.Set("rtc.reconnect_on_publication_error", "true")
+	c.Set("rtc.reconnect_on_subscription_error", "false")
 
-	c := cli.NewContext(app, set, nil)
 	conf, err := NewConfig("", true, c, nil)
 	require.NoError(t, err)
 

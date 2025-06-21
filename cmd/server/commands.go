@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -23,7 +24,7 @@ import (
 
 	"github.com/dustin/go-humanize"
 	"github.com/olekukonko/tablewriter"
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v3"
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/protocol/auth"
@@ -36,7 +37,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/service"
 )
 
-func generateKeys(_ *cli.Context) error {
+func generateKeys(_ context.Context, _ *cli.Command) error {
 	apiKey := guid.New(utils.APIKeyPrefix)
 	secret := utils.RandomSecret()
 	fmt.Println("API Key: ", apiKey)
@@ -44,7 +45,7 @@ func generateKeys(_ *cli.Context) error {
 	return nil
 }
 
-func printPorts(c *cli.Context) error {
+func printPorts(_ context.Context, c *cli.Command) error {
 	conf, err := getConfig(c)
 	if err != nil {
 		return err
@@ -85,17 +86,17 @@ func printPorts(c *cli.Context) error {
 	return nil
 }
 
-func helpVerbose(c *cli.Context) error {
+func helpVerbose(_ context.Context, c *cli.Command) error {
 	generatedFlags, err := config.GenerateCLIFlags(baseFlags, false)
 	if err != nil {
 		return err
 	}
 
-	c.App.Flags = append(baseFlags, generatedFlags...)
+	c.Flags = append(baseFlags, generatedFlags...)
 	return cli.ShowAppHelp(c)
 }
 
-func createToken(c *cli.Context) error {
+func createToken(_ context.Context, c *cli.Command) error {
 	room := c.String("room")
 	identity := c.String("identity")
 
@@ -161,7 +162,7 @@ func createToken(c *cli.Context) error {
 	return nil
 }
 
-func listNodes(c *cli.Context) error {
+func listNodes(_ context.Context, c *cli.Command) error {
 	conf, err := getConfig(c)
 	if err != nil {
 		return err

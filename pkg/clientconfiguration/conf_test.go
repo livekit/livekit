@@ -20,13 +20,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/utils/must"
 )
 
 func TestScriptMatchConfiguration(t *testing.T) {
 	t.Run("no merge", func(t *testing.T) {
 		confs := []ConfigurationItem{
 			{
-				Match: &ScriptMatch{Expr: `c.protocol > 5 && c.browser != "firefox"`},
+				Match: must.Get(NewScriptMatch(`c.protocol > 5 && c.browser != "firefox"`)),
 				Configuration: &livekit.ClientConfiguration{
 					ResumeConnection: livekit.ClientConfigSetting_ENABLED,
 				},
@@ -48,14 +49,14 @@ func TestScriptMatchConfiguration(t *testing.T) {
 	t.Run("merge", func(t *testing.T) {
 		confs := []ConfigurationItem{
 			{
-				Match: &ScriptMatch{Expr: `c.protocol > 5 && c.browser != "firefox"`},
+				Match: must.Get(NewScriptMatch(`c.protocol > 5 && c.browser != "firefox"`)),
 				Configuration: &livekit.ClientConfiguration{
 					ResumeConnection: livekit.ClientConfigSetting_ENABLED,
 				},
 				Merge: true,
 			},
 			{
-				Match: &ScriptMatch{Expr: `c.sdk == "android"`},
+				Match: must.Get(NewScriptMatch(`c.sdk == "android"`)),
 				Configuration: &livekit.ClientConfiguration{
 					Video: &livekit.VideoConfiguration{
 						HardwareEncoder: livekit.ClientConfigSetting_DISABLED,
@@ -99,12 +100,18 @@ func TestScriptMatch(t *testing.T) {
 		{name: "invalid expr", expr: `cc.protocol > 5`, err: true},
 		{name: "unexist field", expr: `c.protocols > 5`, err: true},
 		{name: "combined condition", expr: `c.protocol > 5 && (c.sdk=="android" || c.sdk=="ios")`, result: true},
-		{name: "combined condition2", expr: `(c.device_model == "xiaomi 2201117ti" && c.os == "android) || ((c.browser == "firefox" || c.browser == "firefox mobile") && (c.os == "linux" || c.os == "android"))`, result: false},
+		{name: "combined condition2", expr: `(c.device_model == "xiaomi 2201117ti" && c.os == "android") || ((c.browser == "firefox" || c.browser == "firefox mobile") && (c.os == "linux" || c.os == "android"))`, result: false},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			match := &ScriptMatch{Expr: c.expr}
+			match, err := NewScriptMatch(c.expr)
+			if err != nil {
+				if !c.err {
+					require.NoError(t, err)
+				}
+				return
+			}
 			m, err := match.Match(client)
 			if c.err {
 				require.Error(t, err)

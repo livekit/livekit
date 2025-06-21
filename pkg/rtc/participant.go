@@ -73,6 +73,10 @@ const (
 	PingTimeoutSeconds  = 15
 )
 
+var (
+	ErrMoveOldClientVersion = errors.New("participant client version does not support moving")
+)
+
 // -------------------------------------------------
 
 type pendingTrackInfo struct {
@@ -2288,10 +2292,15 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
 	}
 
-	if p.Hidden() {
-		dp.ParticipantIdentity = ""
-	} else if overrideSenderIdentity {
-		dp.ParticipantIdentity = string(p.params.Identity)
+	// SFU typically asserts the sender's identity. However, agents are able to 
+	// publish data on behalf of the participant in case of transcriptions/text streams
+	// in those cases we'd leave the existing identity on the data packet alone.
+	if overrideSenderIdentity {
+		if p.Hidden() {
+			dp.ParticipantIdentity = ""
+		} else {
+			dp.ParticipantIdentity = string(p.params.Identity)
+		}
 	}
 
 	if shouldForwardData {
@@ -3619,8 +3628,16 @@ func (p *ParticipantImpl) SupportsCodecChange() bool {
 	return p.params.ClientInfo.SupportsCodecChange()
 }
 
-func (p *ParticipantImpl) SupportsMoving() bool {
-	return p.ProtocolVersion().SupportsMoving()
+func (p *ParticipantImpl) SupportsMoving() error {
+	if !p.ProtocolVersion().SupportsMoving() {
+		return ErrMoveOldClientVersion
+	}
+
+	if kind := p.Kind(); kind == livekit.ParticipantInfo_EGRESS || kind == livekit.ParticipantInfo_AGENT {
+		return fmt.Errorf("%s participants cannot be moved", kind.String())
+	}
+
+	return nil
 }
 
 func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {

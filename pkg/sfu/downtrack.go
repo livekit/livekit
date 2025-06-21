@@ -835,13 +835,6 @@ func (d *DownTrack) SSRCRTX() uint32 {
 	return d.ssrcRTX
 }
 
-func (d *DownTrack) Stop() error {
-	if tr := d.transceiver.Load(); tr != nil {
-		return tr.Stop()
-	}
-	return errors.New("downtrack transceiver does not exist")
-}
-
 func (d *DownTrack) SetTransceiver(transceiver *webrtc.RTPTransceiver) {
 	d.transceiver.Store(transceiver)
 }

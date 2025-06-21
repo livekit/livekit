@@ -372,7 +372,7 @@ type LocalParticipant interface {
 	HasConnected() bool
 	GetEnabledPublishCodecs() []*livekit.Codec
 	GetPublisherICESessionUfrag() (string, error)
-	SupportsMoving() bool
+	SupportsMoving() error
 	GetLastReliableSequence(migrateOut bool) uint32
 
 	SetResponseSink(sink routing.MessageSink)
