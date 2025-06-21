@@ -17,6 +17,7 @@ package rtc
 import (
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"strconv"
 	"strings"
@@ -247,6 +248,8 @@ type PCTransport struct {
 	signalStateCheckTimer     *time.Timer
 	currentOfferIceCredential string // ice user:pwd, for publish side ice restart checking
 	pendingRestartIceOffer    *webrtc.SessionDescription
+	activeOfferId             uint32
+	activeAnswerId            uint32
 
 	connectionDetails      *types.ICEConnectionDetails
 	selectedPair           atomic.Pointer[webrtc.ICECandidatePair]
@@ -482,6 +485,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		canReuseTransceiver:      true,
 		connectionDetails:        types.NewICEConnectionDetails(params.Transport, params.Logger),
 		lastNegotiate:            time.Now(),
+		activeOfferId:            uint32(rand.Intn(1 << 8)),
 	}
 
 	bwe, err := t.createPeerConnection()
@@ -1287,7 +1291,7 @@ func (t *PCTransport) clearConnTimer() {
 	}
 }
 
-func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription) error {
+func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remoteId uint32) error {
 	if t.params.UseOneShotSignallingMode {
 		// add remote candidates to ICE connection details
 		parsed, err := sd.Unmarshal()
@@ -1328,7 +1332,10 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription) erro
 
 	t.postEvent(event{
 		signal: signalRemoteDescriptionReceived,
-		data:   &sd,
+		data: remoteDescriptionData{
+			sessionDescription: &sd,
+			remoteId:           remoteId,
+		},
 	})
 	return nil
 }
@@ -2208,7 +2215,8 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 
 	t.setupSignalStateCheckTimer()
 
-	if err := t.params.Handler.OnOffer(offer); err != nil {
+	t.activeOfferId++
+	if err := t.params.Handler.OnOffer(offer, t.activeOfferId); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "write_message").Add(1)
 		return errors.Wrap(err, "could not send offer")
 	}
@@ -2221,12 +2229,17 @@ func (t *PCTransport) handleSendOffer(_ event) error {
 	return t.createAndSendOffer(nil)
 }
 
+type remoteDescriptionData struct {
+	sessionDescription *webrtc.SessionDescription
+	remoteId           uint32
+}
+
 func (t *PCTransport) handleRemoteDescriptionReceived(e event) error {
-	sd := e.data.(*webrtc.SessionDescription)
-	if sd.Type == webrtc.SDPTypeOffer {
-		return t.handleRemoteOfferReceived(sd)
+	rdd := e.data.(remoteDescriptionData)
+	if rdd.sessionDescription.Type == webrtc.SDPTypeOffer {
+		return t.handleRemoteOfferReceived(rdd.sessionDescription, rdd.remoteId)
 	} else {
-		return t.handleRemoteAnswerReceived(sd)
+		return t.handleRemoteAnswerReceived(rdd.sessionDescription, rdd.remoteId)
 	}
 }
 
@@ -2320,7 +2333,7 @@ func (t *PCTransport) createAndSendAnswer() error {
 		t.params.Logger.Debugw("local answer (filtered)", "sdp", answer.SDP)
 	}
 
-	if err := t.params.Handler.OnAnswer(answer); err != nil {
+	if err := t.params.Handler.OnAnswer(answer, t.activeAnswerId); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
 		return errors.Wrap(err, "could not send answer")
 	}
@@ -2329,7 +2342,10 @@ func (t *PCTransport) createAndSendAnswer() error {
 	return t.localDescriptionSent()
 }
 
-func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription) error {
+func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, offerId uint32) error {
+	t.params.Logger.Debugw("processing offer", "offerId", offerId)
+	t.activeAnswerId = offerId
+
 	parsed, err := sd.Unmarshal()
 	if err != nil {
 		return nil
@@ -2390,7 +2406,11 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription) e
 	return t.createAndSendAnswer()
 }
 
-func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription) error {
+func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription, answerId uint32) error {
+	t.params.Logger.Debugw("processing answer", "answerId", answerId)
+	if answerId != 0 && answerId != t.activeOfferId {
+		t.params.Logger.Warnw("answer id mismatch", nil, "expected", t.activeOfferId, "got", answerId)
+	}
 	t.clearSignalStateCheckTimer()
 
 	if err := t.setRemoteDescription(*sd); err != nil {
@@ -2455,7 +2475,8 @@ func (t *PCTransport) doICERestart() error {
 			t.params.Logger.Infow("deferring ice restart to next offer")
 			t.setNegotiationState(transport.NegotiationStateRetry)
 			t.restartAtNextOffer = true
-			err := t.params.Handler.OnOffer(*offer)
+			t.activeOfferId++
+			err := t.params.Handler.OnOffer(*offer, t.activeOfferId)
 			if err != nil {
 				prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "write_message").Add(1)
 			} else {

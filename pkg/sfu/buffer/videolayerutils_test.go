@@ -160,10 +160,10 @@ func TestRidConversion(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			for testRid, expectedResult := range test.ridToLayer {
-				actualLayer := RidToSpatialLayer(testRid, test.trackInfo)
+				actualLayer := RidToSpatialLayer(testRid, test.trackInfo, DefaultVideoLayersRid)
 				require.Equal(t, expectedResult.layer, actualLayer)
 
-				actualRid := SpatialLayerToRid(actualLayer, test.trackInfo)
+				actualRid := SpatialLayerToRid(actualLayer, test.trackInfo, DefaultVideoLayersRid)
 				require.Equal(t, expectedResult.rid, actualRid)
 			}
 		})
@@ -434,8 +434,200 @@ func TestVideoQualityToRidConversion(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			for testQuality, expectedRid := range test.qualityToRid {
-				actualRid := VideoQualityToRid(testQuality, test.trackInfo)
+				actualRid := VideoQualityToRid(testQuality, test.trackInfo, DefaultVideoLayersRid)
 				require.Equal(t, expectedRid, actualRid)
+			}
+		})
+	}
+}
+
+func TestGetSpatialLayerForRid(t *testing.T) {
+	tests := []struct {
+		name              string
+		trackInfo         *livekit.TrackInfo
+		ridToSpatialLayer map[string]int32
+	}{
+		{
+			"no track info",
+			nil,
+			map[string]int32{
+				QuarterResolution: InvalidLayerSpatial,
+				HalfResolution:    InvalidLayerSpatial,
+				FullResolution:    InvalidLayerSpatial,
+			},
+		},
+		{
+			"no layers",
+			&livekit.TrackInfo{},
+			map[string]int32{
+				QuarterResolution: InvalidLayerSpatial,
+				HalfResolution:    InvalidLayerSpatial,
+				FullResolution:    InvalidLayerSpatial,
+			},
+		},
+		{
+			"no rid",
+			&livekit.TrackInfo{},
+			map[string]int32{
+				"": 0,
+			},
+		},
+		{
+			"single layer",
+			&livekit.TrackInfo{
+				Layers: []*livekit.VideoLayer{
+					{Quality: livekit.VideoQuality_LOW, SpatialLayer: 0},
+				},
+			},
+			map[string]int32{
+				QuarterResolution: 0,
+				HalfResolution:    0,
+				FullResolution:    0,
+			},
+		},
+		{
+			"layers",
+			&livekit.TrackInfo{
+				Layers: []*livekit.VideoLayer{
+					{Quality: livekit.VideoQuality_LOW, SpatialLayer: 0, Rid: QuarterResolution},
+					{Quality: livekit.VideoQuality_MEDIUM, SpatialLayer: 1, Rid: HalfResolution},
+				},
+			},
+			map[string]int32{
+				QuarterResolution: 0,
+				HalfResolution:    1,
+				FullResolution:    InvalidLayerSpatial,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for testRid, expectedSpatialLayer := range test.ridToSpatialLayer {
+				actualSpatialLayer := GetSpatialLayerForRid(testRid, test.trackInfo)
+				require.Equal(t, expectedSpatialLayer, actualSpatialLayer)
+			}
+		})
+	}
+}
+
+func TestGetSpatialLayerForVideoQuality(t *testing.T) {
+	tests := []struct {
+		name                       string
+		trackInfo                  *livekit.TrackInfo
+		videoQualityToSpatialLayer map[livekit.VideoQuality]int32
+	}{
+		{
+			"no track info",
+			nil,
+			map[livekit.VideoQuality]int32{
+				livekit.VideoQuality_LOW:    InvalidLayerSpatial,
+				livekit.VideoQuality_MEDIUM: InvalidLayerSpatial,
+				livekit.VideoQuality_HIGH:   InvalidLayerSpatial,
+				livekit.VideoQuality_OFF:    InvalidLayerSpatial,
+			},
+		},
+		{
+			"no layers",
+			&livekit.TrackInfo{},
+			map[livekit.VideoQuality]int32{
+				livekit.VideoQuality_LOW:    0,
+				livekit.VideoQuality_MEDIUM: 0,
+				livekit.VideoQuality_HIGH:   0,
+				livekit.VideoQuality_OFF:    InvalidLayerSpatial,
+			},
+		},
+		{
+			"not all layers",
+			&livekit.TrackInfo{
+				Layers: []*livekit.VideoLayer{
+					{Quality: livekit.VideoQuality_LOW, SpatialLayer: 0, Rid: QuarterResolution},
+					{Quality: livekit.VideoQuality_MEDIUM, SpatialLayer: 1, Rid: HalfResolution},
+				},
+			},
+			map[livekit.VideoQuality]int32{
+				livekit.VideoQuality_LOW:    0,
+				livekit.VideoQuality_MEDIUM: 1,
+				livekit.VideoQuality_HIGH:   1,
+				livekit.VideoQuality_OFF:    InvalidLayerSpatial,
+			},
+		},
+		{
+			"all layers",
+			&livekit.TrackInfo{
+				Layers: []*livekit.VideoLayer{
+					{Quality: livekit.VideoQuality_LOW, SpatialLayer: 0, Rid: QuarterResolution},
+					{Quality: livekit.VideoQuality_MEDIUM, SpatialLayer: 1, Rid: HalfResolution},
+					{Quality: livekit.VideoQuality_HIGH, SpatialLayer: 2, Rid: FullResolution},
+				},
+			},
+			map[livekit.VideoQuality]int32{
+				livekit.VideoQuality_LOW:    0,
+				livekit.VideoQuality_MEDIUM: 1,
+				livekit.VideoQuality_HIGH:   2,
+				livekit.VideoQuality_OFF:    InvalidLayerSpatial,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for testVideoQuality, expectedSpatialLayer := range test.videoQualityToSpatialLayer {
+				actualSpatialLayer := GetSpatialLayerForVideoQuality(testVideoQuality, test.trackInfo)
+				require.Equal(t, expectedSpatialLayer, actualSpatialLayer)
+			}
+		})
+	}
+}
+
+func TestGetVideoQualityorSpatialLayer(t *testing.T) {
+	tests := []struct {
+		name                       string
+		trackInfo                  *livekit.TrackInfo
+		spatialLayerToVideoQuality map[int32]livekit.VideoQuality
+	}{
+		{
+			"no track info",
+			nil,
+			map[int32]livekit.VideoQuality{
+				InvalidLayerSpatial: livekit.VideoQuality_OFF,
+				0:                   livekit.VideoQuality_OFF,
+				1:                   livekit.VideoQuality_OFF,
+				2:                   livekit.VideoQuality_OFF,
+			},
+		},
+		{
+			"no layers",
+			&livekit.TrackInfo{},
+			map[int32]livekit.VideoQuality{
+				InvalidLayerSpatial: livekit.VideoQuality_OFF,
+				0:                   livekit.VideoQuality_OFF,
+				1:                   livekit.VideoQuality_OFF,
+				2:                   livekit.VideoQuality_OFF,
+			},
+		},
+		{
+			"layers",
+			&livekit.TrackInfo{
+				Layers: []*livekit.VideoLayer{
+					{Quality: livekit.VideoQuality_LOW, SpatialLayer: 0, Rid: QuarterResolution},
+					{Quality: livekit.VideoQuality_MEDIUM, SpatialLayer: 1, Rid: HalfResolution},
+				},
+			},
+			map[int32]livekit.VideoQuality{
+				InvalidLayerSpatial: livekit.VideoQuality_OFF,
+				0:                   livekit.VideoQuality_LOW,
+				1:                   livekit.VideoQuality_MEDIUM,
+				2:                   livekit.VideoQuality_OFF,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for testSpatialLayer, expectedVideoQuality := range test.spatialLayerToVideoQuality {
+				actualVideoQuality := GetVideoQualityForSpatialLayer(testSpatialLayer, test.trackInfo)
+				require.Equal(t, expectedVideoQuality, actualVideoQuality)
 			}
 		})
 	}

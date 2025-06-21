@@ -257,7 +257,7 @@ func (t *SubscribedTrack) applySettings() {
 			quality = mt.GetQualityForDimension(t.settings.Width, t.settings.Height)
 		}
 
-		spatial = buffer.VideoQualityToSpatialLayer(quality, mt.ToProto())
+		spatial = buffer.GetSpatialLayerForVideoQuality(quality, mt.ToProto())
 		if t.settings.Fps > 0 {
 			temporal = mt.GetTemporalLayerForSpatialFps(spatial, t.settings.Fps, dt.Mime())
 		}

@@ -80,14 +80,15 @@ func UnpackDataTrackLabel(packed string) (participantID livekit.ParticipantID, t
 	return
 }
 
-func ToProtoSessionDescription(sd webrtc.SessionDescription) *livekit.SessionDescription {
+func ToProtoSessionDescription(sd webrtc.SessionDescription, id uint32) *livekit.SessionDescription {
 	return &livekit.SessionDescription{
 		Type: sd.Type.String(),
 		Sdp:  sd.SDP,
+		Id:   id,
 	}
 }
 
-func FromProtoSessionDescription(sd *livekit.SessionDescription) webrtc.SessionDescription {
+func FromProtoSessionDescription(sd *livekit.SessionDescription) (webrtc.SessionDescription, uint32) {
 	var sdType webrtc.SDPType
 	switch sd.Type {
 	case webrtc.SDPTypeOffer.String():
@@ -102,7 +103,7 @@ func FromProtoSessionDescription(sd *livekit.SessionDescription) webrtc.SessionD
 	return webrtc.SessionDescription{
 		Type: sdType,
 		SDP:  sd.Sdp,
-	}
+	}, sd.Id
 }
 
 func ToProtoTrickle(candidateInit webrtc.ICECandidateInit, target livekit.SignalTarget, final bool) *livekit.TrickleRequest {

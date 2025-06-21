@@ -103,7 +103,6 @@ func NewLocalRoomManager(
 	router routing.Router,
 	roomAllocator RoomAllocator,
 	telemetry telemetry.TelemetryService,
-	clientConfManager clientconfiguration.ClientConfigurationManager,
 	agentClient agent.Client,
 	agentStore AgentStore,
 	egressLauncher rtc.EgressLauncher,
@@ -125,7 +124,7 @@ func NewLocalRoomManager(
 		roomAllocator:     roomAllocator,
 		roomStore:         roomStore,
 		telemetry:         telemetry,
-		clientConfManager: clientConfManager,
+		clientConfManager: clientconfiguration.NewStaticClientConfigurationManager(clientconfiguration.StaticConfigurations),
 		egressLauncher:    egressLauncher,
 		agentClient:       agentClient,
 		agentStore:        agentStore,
@@ -1068,4 +1067,8 @@ func (h *roomManagerParticipantHelper) ResolveMediaTrack(lp types.LocalParticipa
 
 func (h *roomManagerParticipantHelper) ShouldRegressCodec() bool {
 	return h.codecRegressionThreshold == 0 || h.room.GetParticipantCount() < h.codecRegressionThreshold
+}
+
+func (h *roomManagerParticipantHelper) GetCachedReliableDataMessage(seqs map[livekit.ParticipantID]uint32) []*types.DataMessageCache {
+	return h.room.GetCachedReliableDataMessage(seqs)
 }

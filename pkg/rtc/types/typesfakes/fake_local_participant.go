@@ -329,6 +329,17 @@ type FakeLocalParticipant struct {
 	getICEConnectionInfoReturnsOnCall map[int]struct {
 		result1 []*types.ICEConnectionInfo
 	}
+	GetLastReliableSequenceStub        func(bool) uint32
+	getLastReliableSequenceMutex       sync.RWMutex
+	getLastReliableSequenceArgsForCall []struct {
+		arg1 bool
+	}
+	getLastReliableSequenceReturns struct {
+		result1 uint32
+	}
+	getLastReliableSequenceReturnsOnCall map[int]struct {
+		result1 uint32
+	}
 	GetLoggerStub        func() logger.Logger
 	getLoggerMutex       sync.RWMutex
 	getLoggerArgsForCall []struct {
@@ -463,10 +474,11 @@ type FakeLocalParticipant struct {
 	getTrailerReturnsOnCall map[int]struct {
 		result1 []byte
 	}
-	HandleAnswerStub        func(webrtc.SessionDescription)
+	HandleAnswerStub        func(webrtc.SessionDescription, uint32)
 	handleAnswerMutex       sync.RWMutex
 	handleAnswerArgsForCall []struct {
 		arg1 webrtc.SessionDescription
+		arg2 uint32
 	}
 	HandleICERestartSDPFragmentStub        func(string) (string, error)
 	handleICERestartSDPFragmentMutex       sync.RWMutex
@@ -504,10 +516,11 @@ type FakeLocalParticipant struct {
 	handleMetricsReturnsOnCall map[int]struct {
 		result1 error
 	}
-	HandleOfferStub        func(webrtc.SessionDescription) error
+	HandleOfferStub        func(webrtc.SessionDescription, uint32) error
 	handleOfferMutex       sync.RWMutex
 	handleOfferArgsForCall []struct {
 		arg1 webrtc.SessionDescription
+		arg2 uint32
 	}
 	handleOfferReturns struct {
 		result1 error
@@ -867,11 +880,13 @@ type FakeLocalParticipant struct {
 	sendConnectionQualityUpdateReturnsOnCall map[int]struct {
 		result1 error
 	}
-	SendDataMessageStub        func(livekit.DataPacket_Kind, []byte) error
+	SendDataMessageStub        func(livekit.DataPacket_Kind, []byte, livekit.ParticipantID, uint32) error
 	sendDataMessageMutex       sync.RWMutex
 	sendDataMessageArgsForCall []struct {
 		arg1 livekit.DataPacket_Kind
 		arg2 []byte
+		arg3 livekit.ParticipantID
+		arg4 uint32
 	}
 	sendDataMessageReturns struct {
 		result1 error
@@ -985,13 +1000,14 @@ type FakeLocalParticipant struct {
 	setMetadataArgsForCall []struct {
 		arg1 string
 	}
-	SetMigrateInfoStub        func(*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo)
+	SetMigrateInfoStub        func(*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo, []*livekit.DataChannelReceiveState)
 	setMigrateInfoMutex       sync.RWMutex
 	setMigrateInfoArgsForCall []struct {
 		arg1 *webrtc.SessionDescription
 		arg2 *webrtc.SessionDescription
 		arg3 []*livekit.TrackPublishedResponse
 		arg4 []*livekit.DataChannelInfo
+		arg5 []*livekit.DataChannelReceiveState
 	}
 	SetMigrateStateStub        func(types.MigrateState)
 	setMigrateStateMutex       sync.RWMutex
@@ -1111,15 +1127,15 @@ type FakeLocalParticipant struct {
 	supportsCodecChangeReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	SupportsMovingStub        func() bool
+	SupportsMovingStub        func() error
 	supportsMovingMutex       sync.RWMutex
 	supportsMovingArgsForCall []struct {
 	}
 	supportsMovingReturns struct {
-		result1 bool
+		result1 error
 	}
 	supportsMovingReturnsOnCall map[int]struct {
-		result1 bool
+		result1 error
 	}
 	SupportsSyncStreamIDStub        func() bool
 	supportsSyncStreamIDMutex       sync.RWMutex
@@ -2890,6 +2906,67 @@ func (fake *FakeLocalParticipant) GetICEConnectionInfoReturnsOnCall(i int, resul
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) GetLastReliableSequence(arg1 bool) uint32 {
+	fake.getLastReliableSequenceMutex.Lock()
+	ret, specificReturn := fake.getLastReliableSequenceReturnsOnCall[len(fake.getLastReliableSequenceArgsForCall)]
+	fake.getLastReliableSequenceArgsForCall = append(fake.getLastReliableSequenceArgsForCall, struct {
+		arg1 bool
+	}{arg1})
+	stub := fake.GetLastReliableSequenceStub
+	fakeReturns := fake.getLastReliableSequenceReturns
+	fake.recordInvocation("GetLastReliableSequence", []interface{}{arg1})
+	fake.getLastReliableSequenceMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetLastReliableSequenceCallCount() int {
+	fake.getLastReliableSequenceMutex.RLock()
+	defer fake.getLastReliableSequenceMutex.RUnlock()
+	return len(fake.getLastReliableSequenceArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetLastReliableSequenceCalls(stub func(bool) uint32) {
+	fake.getLastReliableSequenceMutex.Lock()
+	defer fake.getLastReliableSequenceMutex.Unlock()
+	fake.GetLastReliableSequenceStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetLastReliableSequenceArgsForCall(i int) bool {
+	fake.getLastReliableSequenceMutex.RLock()
+	defer fake.getLastReliableSequenceMutex.RUnlock()
+	argsForCall := fake.getLastReliableSequenceArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) GetLastReliableSequenceReturns(result1 uint32) {
+	fake.getLastReliableSequenceMutex.Lock()
+	defer fake.getLastReliableSequenceMutex.Unlock()
+	fake.GetLastReliableSequenceStub = nil
+	fake.getLastReliableSequenceReturns = struct {
+		result1 uint32
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetLastReliableSequenceReturnsOnCall(i int, result1 uint32) {
+	fake.getLastReliableSequenceMutex.Lock()
+	defer fake.getLastReliableSequenceMutex.Unlock()
+	fake.GetLastReliableSequenceStub = nil
+	if fake.getLastReliableSequenceReturnsOnCall == nil {
+		fake.getLastReliableSequenceReturnsOnCall = make(map[int]struct {
+			result1 uint32
+		})
+	}
+	fake.getLastReliableSequenceReturnsOnCall[i] = struct {
+		result1 uint32
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) GetLogger() logger.Logger {
 	fake.getLoggerMutex.Lock()
 	ret, specificReturn := fake.getLoggerReturnsOnCall[len(fake.getLoggerArgsForCall)]
@@ -3598,16 +3675,17 @@ func (fake *FakeLocalParticipant) GetTrailerReturnsOnCall(i int, result1 []byte)
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) HandleAnswer(arg1 webrtc.SessionDescription) {
+func (fake *FakeLocalParticipant) HandleAnswer(arg1 webrtc.SessionDescription, arg2 uint32) {
 	fake.handleAnswerMutex.Lock()
 	fake.handleAnswerArgsForCall = append(fake.handleAnswerArgsForCall, struct {
 		arg1 webrtc.SessionDescription
-	}{arg1})
+		arg2 uint32
+	}{arg1, arg2})
 	stub := fake.HandleAnswerStub
-	fake.recordInvocation("HandleAnswer", []interface{}{arg1})
+	fake.recordInvocation("HandleAnswer", []interface{}{arg1, arg2})
 	fake.handleAnswerMutex.Unlock()
 	if stub != nil {
-		fake.HandleAnswerStub(arg1)
+		fake.HandleAnswerStub(arg1, arg2)
 	}
 }
 
@@ -3617,17 +3695,17 @@ func (fake *FakeLocalParticipant) HandleAnswerCallCount() int {
 	return len(fake.handleAnswerArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) HandleAnswerCalls(stub func(webrtc.SessionDescription)) {
+func (fake *FakeLocalParticipant) HandleAnswerCalls(stub func(webrtc.SessionDescription, uint32)) {
 	fake.handleAnswerMutex.Lock()
 	defer fake.handleAnswerMutex.Unlock()
 	fake.HandleAnswerStub = stub
 }
 
-func (fake *FakeLocalParticipant) HandleAnswerArgsForCall(i int) webrtc.SessionDescription {
+func (fake *FakeLocalParticipant) HandleAnswerArgsForCall(i int) (webrtc.SessionDescription, uint32) {
 	fake.handleAnswerMutex.RLock()
 	defer fake.handleAnswerMutex.RUnlock()
 	argsForCall := fake.handleAnswerArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) HandleICERestartSDPFragment(arg1 string) (string, error) {
@@ -3817,18 +3895,19 @@ func (fake *FakeLocalParticipant) HandleMetricsReturnsOnCall(i int, result1 erro
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) HandleOffer(arg1 webrtc.SessionDescription) error {
+func (fake *FakeLocalParticipant) HandleOffer(arg1 webrtc.SessionDescription, arg2 uint32) error {
 	fake.handleOfferMutex.Lock()
 	ret, specificReturn := fake.handleOfferReturnsOnCall[len(fake.handleOfferArgsForCall)]
 	fake.handleOfferArgsForCall = append(fake.handleOfferArgsForCall, struct {
 		arg1 webrtc.SessionDescription
-	}{arg1})
+		arg2 uint32
+	}{arg1, arg2})
 	stub := fake.HandleOfferStub
 	fakeReturns := fake.handleOfferReturns
-	fake.recordInvocation("HandleOffer", []interface{}{arg1})
+	fake.recordInvocation("HandleOffer", []interface{}{arg1, arg2})
 	fake.handleOfferMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1
@@ -3842,17 +3921,17 @@ func (fake *FakeLocalParticipant) HandleOfferCallCount() int {
 	return len(fake.handleOfferArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) HandleOfferCalls(stub func(webrtc.SessionDescription) error) {
+func (fake *FakeLocalParticipant) HandleOfferCalls(stub func(webrtc.SessionDescription, uint32) error) {
 	fake.handleOfferMutex.Lock()
 	defer fake.handleOfferMutex.Unlock()
 	fake.HandleOfferStub = stub
 }
 
-func (fake *FakeLocalParticipant) HandleOfferArgsForCall(i int) webrtc.SessionDescription {
+func (fake *FakeLocalParticipant) HandleOfferArgsForCall(i int) (webrtc.SessionDescription, uint32) {
 	fake.handleOfferMutex.RLock()
 	defer fake.handleOfferMutex.RUnlock()
 	argsForCall := fake.handleOfferArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) HandleOfferReturns(result1 error) {
@@ -5848,7 +5927,7 @@ func (fake *FakeLocalParticipant) SendConnectionQualityUpdateReturnsOnCall(i int
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) SendDataMessage(arg1 livekit.DataPacket_Kind, arg2 []byte) error {
+func (fake *FakeLocalParticipant) SendDataMessage(arg1 livekit.DataPacket_Kind, arg2 []byte, arg3 livekit.ParticipantID, arg4 uint32) error {
 	var arg2Copy []byte
 	if arg2 != nil {
 		arg2Copy = make([]byte, len(arg2))
@@ -5859,13 +5938,15 @@ func (fake *FakeLocalParticipant) SendDataMessage(arg1 livekit.DataPacket_Kind, 
 	fake.sendDataMessageArgsForCall = append(fake.sendDataMessageArgsForCall, struct {
 		arg1 livekit.DataPacket_Kind
 		arg2 []byte
-	}{arg1, arg2Copy})
+		arg3 livekit.ParticipantID
+		arg4 uint32
+	}{arg1, arg2Copy, arg3, arg4})
 	stub := fake.SendDataMessageStub
 	fakeReturns := fake.sendDataMessageReturns
-	fake.recordInvocation("SendDataMessage", []interface{}{arg1, arg2Copy})
+	fake.recordInvocation("SendDataMessage", []interface{}{arg1, arg2Copy, arg3, arg4})
 	fake.sendDataMessageMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1, arg2, arg3, arg4)
 	}
 	if specificReturn {
 		return ret.result1
@@ -5879,17 +5960,17 @@ func (fake *FakeLocalParticipant) SendDataMessageCallCount() int {
 	return len(fake.sendDataMessageArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) SendDataMessageCalls(stub func(livekit.DataPacket_Kind, []byte) error) {
+func (fake *FakeLocalParticipant) SendDataMessageCalls(stub func(livekit.DataPacket_Kind, []byte, livekit.ParticipantID, uint32) error) {
 	fake.sendDataMessageMutex.Lock()
 	defer fake.sendDataMessageMutex.Unlock()
 	fake.SendDataMessageStub = stub
 }
 
-func (fake *FakeLocalParticipant) SendDataMessageArgsForCall(i int) (livekit.DataPacket_Kind, []byte) {
+func (fake *FakeLocalParticipant) SendDataMessageArgsForCall(i int) (livekit.DataPacket_Kind, []byte, livekit.ParticipantID, uint32) {
 	fake.sendDataMessageMutex.RLock()
 	defer fake.sendDataMessageMutex.RUnlock()
 	argsForCall := fake.sendDataMessageArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
 }
 
 func (fake *FakeLocalParticipant) SendDataMessageReturns(result1 error) {
@@ -6517,7 +6598,7 @@ func (fake *FakeLocalParticipant) SetMetadataArgsForCall(i int) string {
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) SetMigrateInfo(arg1 *webrtc.SessionDescription, arg2 *webrtc.SessionDescription, arg3 []*livekit.TrackPublishedResponse, arg4 []*livekit.DataChannelInfo) {
+func (fake *FakeLocalParticipant) SetMigrateInfo(arg1 *webrtc.SessionDescription, arg2 *webrtc.SessionDescription, arg3 []*livekit.TrackPublishedResponse, arg4 []*livekit.DataChannelInfo, arg5 []*livekit.DataChannelReceiveState) {
 	var arg3Copy []*livekit.TrackPublishedResponse
 	if arg3 != nil {
 		arg3Copy = make([]*livekit.TrackPublishedResponse, len(arg3))
@@ -6528,18 +6609,24 @@ func (fake *FakeLocalParticipant) SetMigrateInfo(arg1 *webrtc.SessionDescription
 		arg4Copy = make([]*livekit.DataChannelInfo, len(arg4))
 		copy(arg4Copy, arg4)
 	}
+	var arg5Copy []*livekit.DataChannelReceiveState
+	if arg5 != nil {
+		arg5Copy = make([]*livekit.DataChannelReceiveState, len(arg5))
+		copy(arg5Copy, arg5)
+	}
 	fake.setMigrateInfoMutex.Lock()
 	fake.setMigrateInfoArgsForCall = append(fake.setMigrateInfoArgsForCall, struct {
 		arg1 *webrtc.SessionDescription
 		arg2 *webrtc.SessionDescription
 		arg3 []*livekit.TrackPublishedResponse
 		arg4 []*livekit.DataChannelInfo
-	}{arg1, arg2, arg3Copy, arg4Copy})
+		arg5 []*livekit.DataChannelReceiveState
+	}{arg1, arg2, arg3Copy, arg4Copy, arg5Copy})
 	stub := fake.SetMigrateInfoStub
-	fake.recordInvocation("SetMigrateInfo", []interface{}{arg1, arg2, arg3Copy, arg4Copy})
+	fake.recordInvocation("SetMigrateInfo", []interface{}{arg1, arg2, arg3Copy, arg4Copy, arg5Copy})
 	fake.setMigrateInfoMutex.Unlock()
 	if stub != nil {
-		fake.SetMigrateInfoStub(arg1, arg2, arg3, arg4)
+		fake.SetMigrateInfoStub(arg1, arg2, arg3, arg4, arg5)
 	}
 }
 
@@ -6549,17 +6636,17 @@ func (fake *FakeLocalParticipant) SetMigrateInfoCallCount() int {
 	return len(fake.setMigrateInfoArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) SetMigrateInfoCalls(stub func(*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo)) {
+func (fake *FakeLocalParticipant) SetMigrateInfoCalls(stub func(*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo, []*livekit.DataChannelReceiveState)) {
 	fake.setMigrateInfoMutex.Lock()
 	defer fake.setMigrateInfoMutex.Unlock()
 	fake.SetMigrateInfoStub = stub
 }
 
-func (fake *FakeLocalParticipant) SetMigrateInfoArgsForCall(i int) (*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo) {
+func (fake *FakeLocalParticipant) SetMigrateInfoArgsForCall(i int) (*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo, []*livekit.DataChannelReceiveState) {
 	fake.setMigrateInfoMutex.RLock()
 	defer fake.setMigrateInfoMutex.RUnlock()
 	argsForCall := fake.setMigrateInfoArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5
 }
 
 func (fake *FakeLocalParticipant) SetMigrateState(arg1 types.MigrateState) {
@@ -7212,7 +7299,7 @@ func (fake *FakeLocalParticipant) SupportsCodecChangeReturnsOnCall(i int, result
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) SupportsMoving() bool {
+func (fake *FakeLocalParticipant) SupportsMoving() error {
 	fake.supportsMovingMutex.Lock()
 	ret, specificReturn := fake.supportsMovingReturnsOnCall[len(fake.supportsMovingArgsForCall)]
 	fake.supportsMovingArgsForCall = append(fake.supportsMovingArgsForCall, struct {
@@ -7236,32 +7323,32 @@ func (fake *FakeLocalParticipant) SupportsMovingCallCount() int {
 	return len(fake.supportsMovingArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) SupportsMovingCalls(stub func() bool) {
+func (fake *FakeLocalParticipant) SupportsMovingCalls(stub func() error) {
 	fake.supportsMovingMutex.Lock()
 	defer fake.supportsMovingMutex.Unlock()
 	fake.SupportsMovingStub = stub
 }
 
-func (fake *FakeLocalParticipant) SupportsMovingReturns(result1 bool) {
+func (fake *FakeLocalParticipant) SupportsMovingReturns(result1 error) {
 	fake.supportsMovingMutex.Lock()
 	defer fake.supportsMovingMutex.Unlock()
 	fake.SupportsMovingStub = nil
 	fake.supportsMovingReturns = struct {
-		result1 bool
+		result1 error
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) SupportsMovingReturnsOnCall(i int, result1 bool) {
+func (fake *FakeLocalParticipant) SupportsMovingReturnsOnCall(i int, result1 error) {
 	fake.supportsMovingMutex.Lock()
 	defer fake.supportsMovingMutex.Unlock()
 	fake.SupportsMovingStub = nil
 	if fake.supportsMovingReturnsOnCall == nil {
 		fake.supportsMovingReturnsOnCall = make(map[int]struct {
-			result1 bool
+			result1 error
 		})
 	}
 	fake.supportsMovingReturnsOnCall[i] = struct {
-		result1 bool
+		result1 error
 	}{result1}
 }
 
@@ -8310,6 +8397,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getICEConfigMutex.RUnlock()
 	fake.getICEConnectionInfoMutex.RLock()
 	defer fake.getICEConnectionInfoMutex.RUnlock()
+	fake.getLastReliableSequenceMutex.RLock()
+	defer fake.getLastReliableSequenceMutex.RUnlock()
 	fake.getLoggerMutex.RLock()
 	defer fake.getLoggerMutex.RUnlock()
 	fake.getLoggerResolverMutex.RLock()

@@ -502,12 +502,6 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			return
 		}
 
-		if bs := d.bindState.Load(); bs != bindStateWaitForReceiverReady {
-			d.bindLock.Unlock()
-			d.params.Logger.Debugw("DownTrack.Bind: not in wait for receiver state", "state", bs)
-			return
-		}
-
 		isFECEnabled := false
 		if mime.IsMimeTypeStringRED(matchedUpstreamCodec.MimeType) {
 			d.isRED = true
@@ -839,13 +833,6 @@ func (d *DownTrack) SSRC() uint32 {
 
 func (d *DownTrack) SSRCRTX() uint32 {
 	return d.ssrcRTX
-}
-
-func (d *DownTrack) Stop() error {
-	if tr := d.transceiver.Load(); tr != nil {
-		return tr.Stop()
-	}
-	return errors.New("downtrack transceiver does not exist")
 }
 
 func (d *DownTrack) SetTransceiver(transceiver *webrtc.RTPTransceiver) {

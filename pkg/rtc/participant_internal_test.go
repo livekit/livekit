@@ -289,7 +289,7 @@ func TestMuteSetting(t *testing.T) {
 			Muted: true,
 		})
 
-		_, ti, _, _ := p.getPendingTrack("cid", livekit.TrackType_AUDIO, false)
+		_, ti, _, _, _ := p.getPendingTrack("cid", livekit.TrackType_AUDIO, false)
 		require.NotNil(t, ti)
 		require.True(t, ti.Muted)
 	})
@@ -364,28 +364,32 @@ func TestDisableCodecs(t *testing.T) {
 		}
 	}
 	require.True(t, found264)
+	offerId := uint32(42)
 
 	// negotiated codec should not contain h264
 	sink := &routingfakes.FakeMessageSink{}
 	participant.SetResponseSink(sink)
 	var answer webrtc.SessionDescription
+	var answerId uint32
 	var answerReceived atomic.Bool
+	var answerIdReceived atomic.Uint32
 	sink.WriteMessageCalls(func(msg proto.Message) error {
 		if res, ok := msg.(*livekit.SignalResponse); ok {
 			if res.GetAnswer() != nil {
-				answer = FromProtoSessionDescription(res.GetAnswer())
+				answer, answerId = FromProtoSessionDescription(res.GetAnswer())
 				answerReceived.Store(true)
+				answerIdReceived.Store(answerId)
 			}
 		}
 		return nil
 	})
-	participant.HandleOffer(sdp)
+	participant.HandleOffer(sdp, offerId)
 
 	testutils.WithTimeout(t, func() string {
-		if answerReceived.Load() {
+		if answerReceived.Load() && answerIdReceived.Load() == offerId {
 			return ""
 		} else {
-			return "answer not received"
+			return "answer not received OR answer id mismatch"
 		}
 	})
 	require.NoError(t, pc.SetRemoteDescription(answer), answer.SDP, sdp.SDP)
@@ -510,24 +514,28 @@ func TestPreferVideoCodecForPublisher(t *testing.T) {
 		sdp, err := pc.CreateOffer(nil)
 		require.NoError(t, err)
 		require.NoError(t, pc.SetLocalDescription(sdp))
+		offerId := uint32(23)
 
 		sink := &routingfakes.FakeMessageSink{}
 		participant.SetResponseSink(sink)
 		var answer webrtc.SessionDescription
+		var answerId uint32
 		var answerReceived atomic.Bool
+		var answerIdReceived atomic.Uint32
 		sink.WriteMessageCalls(func(msg proto.Message) error {
 			if res, ok := msg.(*livekit.SignalResponse); ok {
 				if res.GetAnswer() != nil {
-					answer = FromProtoSessionDescription(res.GetAnswer())
+					answer, answerId = FromProtoSessionDescription(res.GetAnswer())
 					pc.SetRemoteDescription(answer)
 					answerReceived.Store(true)
+					answerIdReceived.Store(answerId)
 				}
 			}
 			return nil
 		})
-		participant.HandleOffer(sdp)
+		participant.HandleOffer(sdp, offerId)
 
-		require.Eventually(t, func() bool { return answerReceived.Load() }, 5*time.Second, 10*time.Millisecond)
+		require.Eventually(t, func() bool { return answerReceived.Load() && answerIdReceived.Load() == offerId }, 5*time.Second, 10*time.Millisecond)
 
 		var h264Preferred bool
 		parsed, err := answer.Unmarshal()
@@ -594,24 +602,28 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 			pc.SetLocalDescription(sdp)
 			// opus should be preferred
 			require.Equal(t, codecs[0].MimeType, "audio/opus", sdp)
+			offerId := uint32(0xffffff)
 
 			sink := &routingfakes.FakeMessageSink{}
 			participant.SetResponseSink(sink)
 			var answer webrtc.SessionDescription
+			var answerId uint32
 			var answerReceived atomic.Bool
+			var answerIdReceived atomic.Uint32
 			sink.WriteMessageCalls(func(msg proto.Message) error {
 				if res, ok := msg.(*livekit.SignalResponse); ok {
 					if res.GetAnswer() != nil {
-						answer = FromProtoSessionDescription(res.GetAnswer())
+						answer, answerId = FromProtoSessionDescription(res.GetAnswer())
 						pc.SetRemoteDescription(answer)
 						answerReceived.Store(true)
+						answerIdReceived.Store(answerId)
 					}
 				}
 				return nil
 			})
-			participant.HandleOffer(sdp)
+			participant.HandleOffer(sdp, offerId)
 
-			require.Eventually(t, func() bool { return answerReceived.Load() }, 5*time.Second, 10*time.Millisecond)
+			require.Eventually(t, func() bool { return answerReceived.Load() && answerIdReceived.Load() == offerId }, 5*time.Second, 10*time.Millisecond)
 
 			var redPreferred bool
 			parsed, err := answer.Unmarshal()

@@ -25,6 +25,12 @@ const (
 	FullResolution    = "f"
 )
 
+type VideoLayersRid [DefaultMaxLayerSpatial + 1]string
+
+var (
+	DefaultVideoLayersRid = VideoLayersRid{QuarterResolution, HalfResolution, FullResolution}
+)
+
 // SIMULCAST-CODEC-TODO: these need to be codec mime aware if and when each codec suppports different layers
 func LayerPresenceFromTrackInfo(trackInfo *livekit.TrackInfo) *[livekit.VideoQuality_HIGH + 1]bool {
 	if trackInfo == nil || len(trackInfo.Layers) == 0 {
@@ -44,7 +50,7 @@ func LayerPresenceFromTrackInfo(trackInfo *livekit.TrackInfo) *[livekit.VideoQua
 	return &layerPresence
 }
 
-func RidToSpatialLayer(rid string, trackInfo *livekit.TrackInfo) int32 {
+func RidToSpatialLayer(rid string, trackInfo *livekit.TrackInfo, ridSpace VideoLayersRid) int32 {
 	lp := LayerPresenceFromTrackInfo(trackInfo)
 	if lp == nil {
 		switch rid {
@@ -60,7 +66,7 @@ func RidToSpatialLayer(rid string, trackInfo *livekit.TrackInfo) int32 {
 	}
 
 	switch rid {
-	case QuarterResolution:
+	case ridSpace[0]:
 		switch {
 		case lp[livekit.VideoQuality_LOW] && lp[livekit.VideoQuality_MEDIUM] && lp[livekit.VideoQuality_HIGH]:
 			fallthrough
@@ -76,7 +82,7 @@ func RidToSpatialLayer(rid string, trackInfo *livekit.TrackInfo) int32 {
 			return 0
 		}
 
-	case HalfResolution:
+	case ridSpace[1]:
 		switch {
 		case lp[livekit.VideoQuality_LOW] && lp[livekit.VideoQuality_MEDIUM] && lp[livekit.VideoQuality_HIGH]:
 			fallthrough
@@ -92,19 +98,19 @@ func RidToSpatialLayer(rid string, trackInfo *livekit.TrackInfo) int32 {
 			return 0
 		}
 
-	case FullResolution:
+	case ridSpace[2]:
 		switch {
 		case lp[livekit.VideoQuality_LOW] && lp[livekit.VideoQuality_MEDIUM] && lp[livekit.VideoQuality_HIGH]:
 			return 2
 
 		case lp[livekit.VideoQuality_LOW] && lp[livekit.VideoQuality_MEDIUM]:
-			logger.Warnw("unexpected rid f with only two qualities, low and medium", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo))
+			logger.Warnw("unexpected rid with only two qualities, low and medium", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo), "rid", ridSpace[2])
 			return 1
 		case lp[livekit.VideoQuality_LOW] && lp[livekit.VideoQuality_HIGH]:
-			logger.Warnw("unexpected rid f with only two qualities, low and high", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo))
+			logger.Warnw("unexpected rid with only two qualities, low and high", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo), "rid", ridSpace[2])
 			return 1
 		case lp[livekit.VideoQuality_MEDIUM] && lp[livekit.VideoQuality_HIGH]:
-			logger.Warnw("unexpected rid f with only two qualities, medium and high", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo))
+			logger.Warnw("unexpected rid with only two qualities, medium and high", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo), "rid", ridSpace[2])
 			return 1
 
 		default:
@@ -118,7 +124,7 @@ func RidToSpatialLayer(rid string, trackInfo *livekit.TrackInfo) int32 {
 	}
 }
 
-func SpatialLayerToRid(layer int32, trackInfo *livekit.TrackInfo) string {
+func SpatialLayerToRid(layer int32, trackInfo *livekit.TrackInfo, ridSpace VideoLayersRid) string {
 	lp := LayerPresenceFromTrackInfo(trackInfo)
 	if lp == nil {
 		switch layer {
@@ -143,10 +149,10 @@ func SpatialLayerToRid(layer int32, trackInfo *livekit.TrackInfo) string {
 		case lp[livekit.VideoQuality_LOW] && lp[livekit.VideoQuality_HIGH]:
 			fallthrough
 		case lp[livekit.VideoQuality_MEDIUM] && lp[livekit.VideoQuality_HIGH]:
-			return QuarterResolution
+			return ridSpace[0]
 
 		default:
-			return QuarterResolution
+			return ridSpace[0]
 		}
 
 	case 1:
@@ -158,38 +164,38 @@ func SpatialLayerToRid(layer int32, trackInfo *livekit.TrackInfo) string {
 		case lp[livekit.VideoQuality_LOW] && lp[livekit.VideoQuality_HIGH]:
 			fallthrough
 		case lp[livekit.VideoQuality_MEDIUM] && lp[livekit.VideoQuality_HIGH]:
-			return HalfResolution
+			return ridSpace[1]
 
 		default:
-			return QuarterResolution
+			return ridSpace[0]
 		}
 
 	case 2:
 		switch {
 		case lp[livekit.VideoQuality_LOW] && lp[livekit.VideoQuality_MEDIUM] && lp[livekit.VideoQuality_HIGH]:
-			return FullResolution
+			return ridSpace[2]
 
 		case lp[livekit.VideoQuality_LOW] && lp[livekit.VideoQuality_MEDIUM]:
 			logger.Warnw("unexpected layer 2 with only two qualities, low and medium", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo))
-			return HalfResolution
+			return ridSpace[1]
 		case lp[livekit.VideoQuality_LOW] && lp[livekit.VideoQuality_HIGH]:
 			logger.Warnw("unexpected layer 2 with only two qualities, low and high", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo))
-			return HalfResolution
+			return ridSpace[1]
 		case lp[livekit.VideoQuality_MEDIUM] && lp[livekit.VideoQuality_HIGH]:
 			logger.Warnw("unexpected layer 2 with only two qualities, medium and high", nil, "trackID", trackInfo.Sid, "trackInfo", logger.Proto(trackInfo))
-			return HalfResolution
+			return ridSpace[1]
 
 		default:
-			return QuarterResolution
+			return ridSpace[0]
 		}
 
 	default:
-		return QuarterResolution
+		return ridSpace[0]
 	}
 }
 
-func VideoQualityToRid(quality livekit.VideoQuality, trackInfo *livekit.TrackInfo) string {
-	return SpatialLayerToRid(VideoQualityToSpatialLayer(quality, trackInfo), trackInfo)
+func VideoQualityToRid(quality livekit.VideoQuality, trackInfo *livekit.TrackInfo, ridSpace VideoLayersRid) string {
+	return SpatialLayerToRid(VideoQualityToSpatialLayer(quality, trackInfo), trackInfo, ridSpace)
 }
 
 func SpatialLayerToVideoQuality(layer int32, trackInfo *livekit.TrackInfo) livekit.VideoQuality {
@@ -323,4 +329,63 @@ func VideoQualityToSpatialLayer(quality livekit.VideoQuality, trackInfo *livekit
 	}
 
 	return InvalidLayerSpatial
+}
+
+// SIMULCAST-CODEC-TODO: these need to be codec mime aware if and when each codec suppports different layers
+func GetSpatialLayerForRid(rid string, ti *livekit.TrackInfo) int32 {
+	if rid == "" {
+		// single layer without RID
+		return 0
+	}
+
+	if ti == nil {
+		return InvalidLayerSpatial
+	}
+
+	for _, layer := range ti.Layers {
+		if layer.Rid == rid {
+			return layer.SpatialLayer
+		}
+	}
+
+	if len(ti.Layers) == 1 {
+		// single layer without RID
+		return 0
+	}
+
+	return InvalidLayerSpatial
+}
+
+func GetSpatialLayerForVideoQuality(quality livekit.VideoQuality, ti *livekit.TrackInfo) int32 {
+	if ti == nil || quality == livekit.VideoQuality_OFF {
+		return InvalidLayerSpatial
+	}
+
+	for _, layer := range ti.Layers {
+		if layer.Quality == quality {
+			return layer.SpatialLayer
+		}
+	}
+
+	if len(ti.Layers) == 0 {
+		// single layer
+		return 0
+	}
+
+	// requested quality is higher than available layers, return the highest available layer
+	return ti.Layers[len(ti.Layers)-1].SpatialLayer
+}
+
+func GetVideoQualityForSpatialLayer(spatialLayer int32, ti *livekit.TrackInfo) livekit.VideoQuality {
+	if spatialLayer == InvalidLayerSpatial || ti == nil {
+		return livekit.VideoQuality_OFF
+	}
+
+	for _, layer := range ti.Layers {
+		if layer.SpatialLayer == spatialLayer {
+			return layer.Quality
+		}
+	}
+
+	return livekit.VideoQuality_OFF
 }

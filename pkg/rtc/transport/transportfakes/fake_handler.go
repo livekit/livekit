@@ -12,10 +12,11 @@ import (
 )
 
 type FakeHandler struct {
-	OnAnswerStub        func(webrtc.SessionDescription) error
+	OnAnswerStub        func(webrtc.SessionDescription, uint32) error
 	onAnswerMutex       sync.RWMutex
 	onAnswerArgsForCall []struct {
 		arg1 webrtc.SessionDescription
+		arg2 uint32
 	}
 	onAnswerReturns struct {
 		result1 error
@@ -74,10 +75,11 @@ type FakeHandler struct {
 	onNegotiationStateChangedArgsForCall []struct {
 		arg1 transport.NegotiationState
 	}
-	OnOfferStub        func(webrtc.SessionDescription) error
+	OnOfferStub        func(webrtc.SessionDescription, uint32) error
 	onOfferMutex       sync.RWMutex
 	onOfferArgsForCall []struct {
 		arg1 webrtc.SessionDescription
+		arg2 uint32
 	}
 	onOfferReturns struct {
 		result1 error
@@ -106,18 +108,19 @@ type FakeHandler struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeHandler) OnAnswer(arg1 webrtc.SessionDescription) error {
+func (fake *FakeHandler) OnAnswer(arg1 webrtc.SessionDescription, arg2 uint32) error {
 	fake.onAnswerMutex.Lock()
 	ret, specificReturn := fake.onAnswerReturnsOnCall[len(fake.onAnswerArgsForCall)]
 	fake.onAnswerArgsForCall = append(fake.onAnswerArgsForCall, struct {
 		arg1 webrtc.SessionDescription
-	}{arg1})
+		arg2 uint32
+	}{arg1, arg2})
 	stub := fake.OnAnswerStub
 	fakeReturns := fake.onAnswerReturns
-	fake.recordInvocation("OnAnswer", []interface{}{arg1})
+	fake.recordInvocation("OnAnswer", []interface{}{arg1, arg2})
 	fake.onAnswerMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1
@@ -131,17 +134,17 @@ func (fake *FakeHandler) OnAnswerCallCount() int {
 	return len(fake.onAnswerArgsForCall)
 }
 
-func (fake *FakeHandler) OnAnswerCalls(stub func(webrtc.SessionDescription) error) {
+func (fake *FakeHandler) OnAnswerCalls(stub func(webrtc.SessionDescription, uint32) error) {
 	fake.onAnswerMutex.Lock()
 	defer fake.onAnswerMutex.Unlock()
 	fake.OnAnswerStub = stub
 }
 
-func (fake *FakeHandler) OnAnswerArgsForCall(i int) webrtc.SessionDescription {
+func (fake *FakeHandler) OnAnswerArgsForCall(i int) (webrtc.SessionDescription, uint32) {
 	fake.onAnswerMutex.RLock()
 	defer fake.onAnswerMutex.RUnlock()
 	argsForCall := fake.onAnswerArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeHandler) OnAnswerReturns(result1 error) {
@@ -473,18 +476,19 @@ func (fake *FakeHandler) OnNegotiationStateChangedArgsForCall(i int) transport.N
 	return argsForCall.arg1
 }
 
-func (fake *FakeHandler) OnOffer(arg1 webrtc.SessionDescription) error {
+func (fake *FakeHandler) OnOffer(arg1 webrtc.SessionDescription, arg2 uint32) error {
 	fake.onOfferMutex.Lock()
 	ret, specificReturn := fake.onOfferReturnsOnCall[len(fake.onOfferArgsForCall)]
 	fake.onOfferArgsForCall = append(fake.onOfferArgsForCall, struct {
 		arg1 webrtc.SessionDescription
-	}{arg1})
+		arg2 uint32
+	}{arg1, arg2})
 	stub := fake.OnOfferStub
 	fakeReturns := fake.onOfferReturns
-	fake.recordInvocation("OnOffer", []interface{}{arg1})
+	fake.recordInvocation("OnOffer", []interface{}{arg1, arg2})
 	fake.onOfferMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1
@@ -498,17 +502,17 @@ func (fake *FakeHandler) OnOfferCallCount() int {
 	return len(fake.onOfferArgsForCall)
 }
 
-func (fake *FakeHandler) OnOfferCalls(stub func(webrtc.SessionDescription) error) {
+func (fake *FakeHandler) OnOfferCalls(stub func(webrtc.SessionDescription, uint32) error) {
 	fake.onOfferMutex.Lock()
 	defer fake.onOfferMutex.Unlock()
 	fake.OnOfferStub = stub
 }
 
-func (fake *FakeHandler) OnOfferArgsForCall(i int) webrtc.SessionDescription {
+func (fake *FakeHandler) OnOfferArgsForCall(i int) (webrtc.SessionDescription, uint32) {
 	fake.onOfferMutex.RLock()
 	defer fake.onOfferMutex.RUnlock()
 	argsForCall := fake.onOfferArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeHandler) OnOfferReturns(result1 error) {

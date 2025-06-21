@@ -53,7 +53,7 @@ func (s rtcRestService) Create(ctx context.Context, req *rpc.RTCRestCreateReques
 		return nil, ErrParticipantNotFound
 	}
 
-	if err := lp.HandleOffer(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: req.OfferSdp}); err != nil {
+	if err := lp.HandleOffer(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: req.OfferSdp}, 0); err != nil {
 		lp.GetLogger().Errorw("rtcRest service: could not handle offer", err)
 		return nil, err
 	}
