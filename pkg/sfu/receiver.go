@@ -43,6 +43,7 @@ var (
 	ErrDownTrackAlreadyExist = errors.New("DownTrack already exist")
 	ErrBufferNotFound        = errors.New("buffer not found")
 	ErrDuplicateLayer        = errors.New("duplicate layer")
+	ErrInvalidLayer          = errors.New("invalid layer")
 )
 
 // --------------------------------------
@@ -383,6 +384,14 @@ func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) erro
 	layer := int32(0)
 	if w.Kind() == webrtc.RTPCodecTypeVideo && !w.isSVC {
 		layer = buffer.GetSpatialLayerForRid(track.RID(), w.trackInfo.Load())
+	}
+	if layer < 0 {
+		w.logger.Warnw(
+			"invalid layer", nil,
+			"rid", track.RID(),
+			"trackInfo", logger.Proto(w.trackInfo.Load()),
+		)
+		return ErrInvalidLayer
 	}
 	buff.SetLogger(w.logger.WithValues("layer", layer))
 	buff.SetAudioLevelParams(audio.AudioLevelParams{
