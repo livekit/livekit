@@ -348,12 +348,8 @@ func GetSpatialLayerForRid(rid string, ti *livekit.TrackInfo) int32 {
 		}
 	}
 
-	if len(ti.Layers) == 1 {
-		// single layer without RID
-		return 0
-	}
-
-	return InvalidLayerSpatial
+	// single layer without RID (or) RID present in SVC codec specifying multiple layers
+	return 0
 }
 
 func GetSpatialLayerForVideoQuality(quality livekit.VideoQuality, ti *livekit.TrackInfo) int32 {
