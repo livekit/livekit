@@ -1019,6 +1019,10 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(offer webrtc.SessionDescrip
 }
 
 func (p *ParticipantImpl) updateRidsFromSDP(offer *webrtc.SessionDescription) {
+	if offer == nil {
+		return
+	}
+
 	parsed, err := offer.Unmarshal()
 	if err != nil {
 		return
@@ -2292,7 +2296,7 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
 	}
 
-	// SFU typically asserts the sender's identity. However, agents are able to 
+	// SFU typically asserts the sender's identity. However, agents are able to
 	// publish data on behalf of the participant in case of transcriptions/text streams
 	// in those cases we'd leave the existing identity on the data packet alone.
 	if overrideSenderIdentity {
