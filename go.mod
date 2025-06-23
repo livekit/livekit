@@ -38,7 +38,7 @@ require (
 	github.com/pion/rtcp v1.2.15
 	github.com/pion/rtp v1.8.19
 	github.com/pion/sctp v1.8.39
-	github.com/pion/sdp/v3 v3.0.13
+	github.com/pion/sdp/v3 v3.0.14
 	github.com/pion/transport/v3 v3.0.7
 	github.com/pion/turn/v4 v4.0.2
 	github.com/pion/webrtc/v4 v4.1.2
