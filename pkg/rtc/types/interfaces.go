@@ -574,6 +574,7 @@ type MediaTrack interface {
 	GetTemporalLayerForSpatialFps(spatial int32, fps uint32, mime mime.MimeType) int32
 
 	Receivers() []sfu.TrackReceiver
+	ClearAllReceivers(isExpectedToResume bool)
 
 	IsEncrypted() bool
 }
