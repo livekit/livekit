@@ -284,7 +284,7 @@ type Participant interface {
 	IsPublisher() bool
 	GetPublishedTrack(trackID livekit.TrackID) MediaTrack
 	GetPublishedTracks() []MediaTrack
-	RemovePublishedTrack(track MediaTrack, isExpectedToResume bool, shouldClose bool)
+	RemovePublishedTrack(track MediaTrack, isExpectedToResume bool)
 
 	GetAudioLevel() (smoothedLevel float64, active bool)
 
@@ -574,7 +574,6 @@ type MediaTrack interface {
 	GetTemporalLayerForSpatialFps(spatial int32, fps uint32, mime mime.MimeType) int32
 
 	Receivers() []sfu.TrackReceiver
-	ClearAllReceivers(isExpectedToResume bool)
 
 	IsEncrypted() bool
 }
