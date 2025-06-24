@@ -376,7 +376,7 @@ func (t *MediaTrackReceiver) ClearReceiver(mime mime.MimeType, isExpectedToResum
 	t.removeAllSubscribersForMime(mime, isExpectedToResume)
 }
 
-func (t *MediaTrackReceiver) ClearAllReceivers(isExpectedToResume bool) {
+func (t *MediaTrackReceiver) clearAllReceivers(isExpectedToResume bool) {
 	t.params.Logger.Debugw("clearing all receivers", "isExpectedToResume", isExpectedToResume)
 	t.lock.Lock()
 	receivers := t.receivers
@@ -448,6 +448,8 @@ func (t *MediaTrackReceiver) TryClose() bool {
 }
 
 func (t *MediaTrackReceiver) Close(isExpectedToResume bool) {
+	t.clearAllReceivers(isExpectedToResume)
+
 	t.lock.Lock()
 	if t.state == mediaTrackReceiverStateClosed {
 		t.lock.Unlock()
