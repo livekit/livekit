@@ -274,12 +274,9 @@ func (u *UpTrackManager) AddPublishedTrack(track types.MediaTrack) {
 	})
 }
 
-func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack, isExpectedToResume bool, shouldClose bool) {
-	if shouldClose {
-		track.Close(isExpectedToResume)
-	} else {
-		track.ClearAllReceivers(isExpectedToResume)
-	}
+func (u *UpTrackManager) RemovePublishedTrack(track types.MediaTrack, isExpectedToResume bool) {
+	track.Close(isExpectedToResume)
+
 	u.lock.Lock()
 	delete(u.publishedTracks, track.ID())
 	u.lock.Unlock()

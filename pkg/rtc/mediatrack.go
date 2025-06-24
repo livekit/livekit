@@ -507,7 +507,6 @@ func (t *MediaTrack) Close(isExpectedToResume bool) {
 	if t.dynacastManager != nil {
 		t.dynacastManager.Close()
 	}
-	t.MediaTrackReceiver.ClearAllReceivers(isExpectedToResume)
 	t.MediaTrackReceiver.Close(isExpectedToResume)
 }
 
