@@ -1524,7 +1524,11 @@ func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) Video
 		alloc.PauseReason != f.lastAllocation.PauseReason ||
 		alloc.TargetLayer != f.lastAllocation.TargetLayer ||
 		alloc.RequestLayerSpatial != f.lastAllocation.RequestLayerSpatial {
-		f.logger.Debugw(fmt.Sprintf("stream allocation: %s", reason), "allocation", &alloc)
+		f.logger.Debugw(
+			fmt.Sprintf("stream allocation: %s", reason),
+			"allocation", &alloc,
+			"lastAllocation", &f.lastAllocation,
+		)
 	}
 	f.lastAllocation = alloc
 
