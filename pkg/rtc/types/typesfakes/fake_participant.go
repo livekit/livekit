@@ -194,12 +194,11 @@ type FakeParticipant struct {
 	onMetricsArgsForCall []struct {
 		arg1 func(types.Participant, *livekit.DataPacket)
 	}
-	RemovePublishedTrackStub        func(types.MediaTrack, bool, bool)
+	RemovePublishedTrackStub        func(types.MediaTrack, bool)
 	removePublishedTrackMutex       sync.RWMutex
 	removePublishedTrackArgsForCall []struct {
 		arg1 types.MediaTrack
 		arg2 bool
-		arg3 bool
 	}
 	StateStub        func() livekit.ParticipantInfo_State
 	stateMutex       sync.RWMutex
@@ -1223,18 +1222,17 @@ func (fake *FakeParticipant) OnMetricsArgsForCall(i int) func(types.Participant,
 	return argsForCall.arg1
 }
 
-func (fake *FakeParticipant) RemovePublishedTrack(arg1 types.MediaTrack, arg2 bool, arg3 bool) {
+func (fake *FakeParticipant) RemovePublishedTrack(arg1 types.MediaTrack, arg2 bool) {
 	fake.removePublishedTrackMutex.Lock()
 	fake.removePublishedTrackArgsForCall = append(fake.removePublishedTrackArgsForCall, struct {
 		arg1 types.MediaTrack
 		arg2 bool
-		arg3 bool
-	}{arg1, arg2, arg3})
+	}{arg1, arg2})
 	stub := fake.RemovePublishedTrackStub
-	fake.recordInvocation("RemovePublishedTrack", []interface{}{arg1, arg2, arg3})
+	fake.recordInvocation("RemovePublishedTrack", []interface{}{arg1, arg2})
 	fake.removePublishedTrackMutex.Unlock()
 	if stub != nil {
-		fake.RemovePublishedTrackStub(arg1, arg2, arg3)
+		fake.RemovePublishedTrackStub(arg1, arg2)
 	}
 }
 
@@ -1244,17 +1242,17 @@ func (fake *FakeParticipant) RemovePublishedTrackCallCount() int {
 	return len(fake.removePublishedTrackArgsForCall)
 }
 
-func (fake *FakeParticipant) RemovePublishedTrackCalls(stub func(types.MediaTrack, bool, bool)) {
+func (fake *FakeParticipant) RemovePublishedTrackCalls(stub func(types.MediaTrack, bool)) {
 	fake.removePublishedTrackMutex.Lock()
 	defer fake.removePublishedTrackMutex.Unlock()
 	fake.RemovePublishedTrackStub = stub
 }
 
-func (fake *FakeParticipant) RemovePublishedTrackArgsForCall(i int) (types.MediaTrack, bool, bool) {
+func (fake *FakeParticipant) RemovePublishedTrackArgsForCall(i int) (types.MediaTrack, bool) {
 	fake.removePublishedTrackMutex.RLock()
 	defer fake.removePublishedTrackMutex.RUnlock()
 	argsForCall := fake.removePublishedTrackArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeParticipant) State() livekit.ParticipantInfo_State {

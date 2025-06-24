@@ -2000,7 +2000,7 @@ func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription, off
 }
 
 func (p *ParticipantImpl) removePublishedTrack(track types.MediaTrack) {
-	p.RemovePublishedTrack(track, false, true)
+	p.RemovePublishedTrack(track, false)
 	if p.ProtocolVersion().SupportsUnpublish() {
 		p.sendTrackUnpublished(track.ID())
 	} else {
