@@ -597,7 +597,8 @@ func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfoLocked() {
 	ti := s.trackInfo.Load()
 	if ti != nil {
 		for _, layer := range ti.Layers {
-			if layer.SpatialLayer > s.maxExpectedLayer {
+			spatialLayer := buffer.VideoQualityToSpatialLayer(layer.Quality, ti)
+			if spatialLayer > s.maxExpectedLayer {
 				s.maxExpectedLayer = layer.SpatialLayer
 			}
 		}
