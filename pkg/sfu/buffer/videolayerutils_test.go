@@ -499,6 +499,20 @@ func TestGetSpatialLayerForRid(t *testing.T) {
 				FullResolution:    InvalidLayerSpatial,
 			},
 		},
+		{
+			"layers - no rid",
+			&livekit.TrackInfo{
+				Layers: []*livekit.VideoLayer{
+					{Quality: livekit.VideoQuality_LOW, SpatialLayer: 0},
+					{Quality: livekit.VideoQuality_MEDIUM, SpatialLayer: 1},
+				},
+			},
+			map[string]int32{
+				QuarterResolution: 0,
+				HalfResolution:    0,
+				FullResolution:    0,
+			},
+		},
 	}
 
 	for _, test := range tests {
