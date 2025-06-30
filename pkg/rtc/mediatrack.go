@@ -265,6 +265,18 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 	var regressCodec bool
 	mimeType := mime.NormalizeMimeType(track.Codec().MimeType)
 	layer := buffer.GetSpatialLayerForRid(track.RID(), ti)
+	if layer < 0 {
+		t.params.Logger.Warnw(
+			"AddReceiver failed due to negative layer", nil,
+			"rid", track.RID(),
+			"layer", layer,
+			"ssrc", track.SSRC(),
+			"codec", track.Codec(),
+			"trackInfo", logger.Proto(ti),
+		)
+		return newCodec, false
+	}
+
 	t.params.Logger.Debugw(
 		"AddReceiver",
 		"rid", track.RID(),
@@ -273,17 +285,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		"codec", track.Codec(),
 		"trackInfo", logger.Proto(ti),
 	)
-	// TODO-REMOVE-AFTER-DEBUG
-	if layer < 0 {
-		t.params.Logger.Infow(
-			"negative layer AddReceiver",
-			"rid", track.RID(),
-			"layer", layer,
-			"ssrc", track.SSRC(),
-			"codec", track.Codec(),
-			"trackInfo", logger.Proto(ti),
-		)
-	}
 	wr := t.MediaTrackReceiver.Receiver(mimeType)
 	if wr == nil {
 		priority := -1
