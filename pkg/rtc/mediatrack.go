@@ -438,7 +438,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 	}
 
 	var bitrates int
-	if len(ti.Layers) > int(layer) {
+	if layer >= 0 && len(ti.Layers) > int(layer) {
 		bitrates = int(ti.Layers[layer].GetBitrate())
 	}
 
