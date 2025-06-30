@@ -383,7 +383,7 @@ func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) erro
 
 	layer := int32(0)
 	if w.Kind() == webrtc.RTPCodecTypeVideo && !w.isSVC {
-		layer = buffer.RidToSpatialLayer(track.RID(), w.trackInfo.Load(), buffer.DefaultVideoLayersRid)
+		layer = buffer.GetSpatialLayerForRid(track.RID(), w.trackInfo.Load())
 	}
 	if layer < 0 {
 		w.logger.Warnw(
@@ -499,8 +499,7 @@ func (w *WebRTCReceiver) notifyMaxExpectedLayer(layer int32) {
 
 	expectedBitrate := int64(0)
 	for _, vl := range ti.Layers {
-		l := buffer.VideoQualityToSpatialLayer(vl.Quality, ti)
-		if l <= layer {
+		if vl.SpatialLayer <= layer {
 			expectedBitrate += int64(vl.Bitrate)
 		}
 	}
