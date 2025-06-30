@@ -348,11 +348,8 @@ func GetSpatialLayerForRid(rid string, ti *livekit.TrackInfo) int32 {
 		}
 	}
 
-	if len(ti.Layers) == 1 {
-		// single layer, rid present in codec, but not specified via signalling
-		return 0
-	} else if len(ti.Layers) > 1 {
-		// RID present in codec, but not specified via signalling
+	if len(ti.Layers) != 0 {
+		// RID present in codec, but may not be specified via signalling
 		// (happens with older browsers setting a rid for SVC codecs)
 		hasRid := false
 		for _, layer := range ti.Layers {
