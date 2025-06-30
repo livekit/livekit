@@ -181,7 +181,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		if !wr.DetermineReceiver(codec) {
 			if t.onSubscriberMaxQualityChange != nil {
 				go func() {
-					spatial := buffer.VideoQualityToSpatialLayer(livekit.VideoQuality_HIGH, t.params.MediaTrack.ToProto())
+					spatial := buffer.GetSpatialLayerForVideoQuality(livekit.VideoQuality_HIGH, t.params.MediaTrack.ToProto())
 					t.onSubscriberMaxQualityChange(downTrack.SubscriberID(), mime.NormalizeMimeType(codec.MimeType), spatial)
 				}()
 			}
