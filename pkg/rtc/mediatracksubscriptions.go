@@ -216,8 +216,8 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		t.params.Telemetry.TrackStats(key, stat)
 
 		if cs, ok := telemetry.CondenseStat(stat); ok {
+			ti := wr.TrackInfo()
 			reporter.Tx(func(tx roomobs.TrackTx) {
-				ti := wr.TrackInfo()
 				tx.ReportName(ti.Name)
 				tx.ReportKind(roomobs.TrackKindSub)
 				tx.ReportType(roomobs.TrackTypeFromProto(ti.Type))

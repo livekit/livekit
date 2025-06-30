@@ -96,7 +96,10 @@ var baseFlags = []cli.Flag{
 		Usage:   "tls key file for TURN server",
 		Sources: cli.EnvVars("LIVEKIT_TURN_KEY"),
 	},
-	// debugging flags
+	&cli.StringFlag{
+		Name:  "cpuprofile",
+		Usage: "write CPU profile to `file`",
+	},
 	&cli.StringFlag{
 		Name:  "memprofile",
 		Usage: "write memory profile to `file`",
@@ -253,6 +256,21 @@ func startServer(_ context.Context, c *cli.Command) error {
 	err = conf.ValidateKeys()
 	if err != nil {
 		return err
+	}
+
+	if cpuProfile := c.String("cpuprofile"); cpuProfile != "" {
+		if f, err := os.Create(cpuProfile); err != nil {
+			return err
+		} else {
+			if err := pprof.StartCPUProfile(f); err != nil {
+				f.Close()
+				return err
+			}
+			defer func() {
+				pprof.StopCPUProfile()
+				f.Close()
+			}()
+		}
 	}
 
 	if memProfile := c.String("memprofile"); memProfile != "" {
