@@ -1140,7 +1140,7 @@ func (p *ParticipantImpl) handleMigrateTracks() []*MediaTrack {
 			p.pubLogger.Warnw("too many pending migrated tracks", nil, "trackID", pti.trackInfos[0].Sid, "count", len(pti.trackInfos), "cid", cid)
 		}
 
-		mt := p.addMigratedTrack(cid, pti.trackInfos[0], pti.sdpRids)
+		mt := p.addMigratedTrack(cid, pti.trackInfos[0])
 		if mt != nil {
 			addedTracks = append(addedTracks, mt)
 		} else {
@@ -2843,7 +2843,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 			}
 		}
 
-		mt = p.addMediaTrack(signalCid, track.ID(), ti, sdpRids)
+		mt = p.addMediaTrack(signalCid, track.ID(), ti)
 		newTrack = true
 
 		// if the addTrackRequest is sent before participant active then it means the client tries to publish
@@ -2891,7 +2891,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 	return mt, newTrack
 }
 
-func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo, sdpRids buffer.VideoLayersRid) *MediaTrack {
+func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *MediaTrack {
 	p.pubLogger.Infow("add migrated track", "cid", cid, "trackID", ti.Sid, "track", logger.Proto(ti))
 	rtpReceiver := p.TransportManager.GetPublisherRTPReceiver(ti.Mid)
 	if rtpReceiver == nil {
@@ -2899,7 +2899,7 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo, sd
 		return nil
 	}
 
-	mt := p.addMediaTrack(cid, cid, ti, sdpRids)
+	mt := p.addMediaTrack(cid, cid, ti)
 
 	potentialCodecs := make([]webrtc.RTPCodecParameters, 0, len(ti.Codecs))
 	parameters := rtpReceiver.GetParameters()
@@ -2944,7 +2944,7 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo, sd
 	return mt
 }
 
-func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *livekit.TrackInfo, sdpRids buffer.VideoLayersRid) *MediaTrack {
+func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *livekit.TrackInfo) *MediaTrack {
 	mt := NewMediaTrack(MediaTrackParams{
 		SignalCid:             signalCid,
 		SdpCid:                sdpCid,
