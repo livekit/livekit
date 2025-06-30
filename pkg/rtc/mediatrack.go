@@ -212,13 +212,14 @@ func (t *MediaTrack) UpdateCodecCid(codecs []*livekit.SimulcastCodec) {
 }
 
 // AddReceiver adds a new RTP receiver to the track, returns true when receiver represents a new codec
-func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRemote, mid string) bool {
+// and if a receiver was added successfully
+func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRemote, mid string) (bool, bool) {
 	var newCodec bool
 	ssrc := uint32(track.SSRC())
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(ssrc)
 	if buff == nil || rtcpReader == nil {
 		t.params.Logger.Errorw("could not retrieve buffer pair", nil)
-		return newCodec
+		return newCodec, false
 	}
 
 	var lastRR uint32
@@ -307,7 +308,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		if priority < 0 {
 			t.params.Logger.Warnw("could not find codec for webrtc receiver", nil, "webrtcCodec", mimeType, "track", logger.Proto(ti))
 			t.lock.Unlock()
-			return false
+			return newCodec, false
 		}
 
 		newWR := sfu.NewWebRTCReceiver(
@@ -428,7 +429,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			"newCodec", newCodec,
 		)
 		buff.Close()
-		return false
+		return newCodec, false
 	}
 
 	// LK-TODO: can remove this completely when VideoLayers protocol becomes the default as it has info from client or if we decide to use TrackInfo.Simulcast
@@ -476,7 +477,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			stats,
 		)
 	})
-	return newCodec
+	return newCodec, true
 }
 
 func (t *MediaTrack) GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality) {
