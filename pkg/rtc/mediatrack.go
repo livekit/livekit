@@ -270,15 +270,19 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		"layer", layer,
 		"ssrc", track.SSRC(),
 		"codec", track.Codec(),
-	)
-	logger.Infow(
-		"AddReceiver",
-		"rid", track.RID(),
-		"layer", layer,
-		"ssrc", track.SSRC(),
-		"codec", track.Codec(),
 		"trackInfo", logger.Proto(ti),
-	) // REMOVE
+	)
+	// TODO-REMOVE-AFTER-DEBUG
+	if layer < 0 {
+		t.params.Logger.Infow(
+			"negative layer AddReceiver",
+			"rid", track.RID(),
+			"layer", layer,
+			"ssrc", track.SSRC(),
+			"codec", track.Codec(),
+			"trackInfo", logger.Proto(ti),
+		)
+	}
 	wr := t.MediaTrackReceiver.Receiver(mimeType)
 	if wr == nil {
 		priority := -1
