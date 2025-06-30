@@ -212,13 +212,14 @@ func (t *MediaTrack) UpdateCodecCid(codecs []*livekit.SimulcastCodec) {
 }
 
 // AddReceiver adds a new RTP receiver to the track, returns true when receiver represents a new codec
-func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRemote, mid string) bool {
+// and if a receiver was added successfully
+func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRemote, mid string) (bool, bool) {
 	var newCodec bool
 	ssrc := uint32(track.SSRC())
 	buff, rtcpReader := t.params.BufferFactory.GetBufferPair(ssrc)
 	if buff == nil || rtcpReader == nil {
 		t.params.Logger.Errorw("could not retrieve buffer pair", nil)
-		return newCodec
+		return newCodec, false
 	}
 
 	var lastRR uint32
@@ -264,6 +265,18 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 	var regressCodec bool
 	mimeType := mime.NormalizeMimeType(track.Codec().MimeType)
 	layer := buffer.GetSpatialLayerForRid(track.RID(), ti)
+	if layer < 0 {
+		t.params.Logger.Warnw(
+			"AddReceiver failed due to negative layer", nil,
+			"rid", track.RID(),
+			"layer", layer,
+			"ssrc", track.SSRC(),
+			"codec", track.Codec(),
+			"trackInfo", logger.Proto(ti),
+		)
+		return newCodec, false
+	}
+
 	t.params.Logger.Debugw(
 		"AddReceiver",
 		"rid", track.RID(),
@@ -272,17 +285,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		"codec", track.Codec(),
 		"trackInfo", logger.Proto(ti),
 	)
-	// TODO-REMOVE-AFTER-DEBUG
-	if layer < 0 {
-		t.params.Logger.Infow(
-			"negative layer AddReceiver",
-			"rid", track.RID(),
-			"layer", layer,
-			"ssrc", track.SSRC(),
-			"codec", track.Codec(),
-			"trackInfo", logger.Proto(ti),
-		)
-	}
 	wr := t.MediaTrackReceiver.Receiver(mimeType)
 	if wr == nil {
 		priority := -1
@@ -307,7 +309,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		if priority < 0 {
 			t.params.Logger.Warnw("could not find codec for webrtc receiver", nil, "webrtcCodec", mimeType, "track", logger.Proto(ti))
 			t.lock.Unlock()
-			return false
+			return newCodec, false
 		}
 
 		newWR := sfu.NewWebRTCReceiver(
@@ -428,7 +430,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			"newCodec", newCodec,
 		)
 		buff.Close()
-		return false
+		return newCodec, false
 	}
 
 	// LK-TODO: can remove this completely when VideoLayers protocol becomes the default as it has info from client or if we decide to use TrackInfo.Simulcast
@@ -476,7 +478,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			stats,
 		)
 	})
-	return newCodec
+	return newCodec, true
 }
 
 func (t *MediaTrack) GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality) {
