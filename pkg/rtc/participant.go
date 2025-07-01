@@ -993,6 +993,10 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(offer webrtc.SessionDescrip
 }
 
 func (p *ParticipantImpl) updateRidsFromSDP(offer *webrtc.SessionDescription) {
+	if !p.params.UseOneShotSignallingMode {
+		return
+	}
+
 	if offer == nil {
 		return
 	}
