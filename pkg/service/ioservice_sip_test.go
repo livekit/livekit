@@ -141,6 +141,13 @@ func TestGetSIPTrunkAuthentication(t *testing.T) {
 			AuthUsername: "user2",
 			AuthPassword: "pass2",
 		},
+		{
+			SipTrunkId:       "restricted-trunk",
+			Numbers:          []string{"9999"},
+			AllowedAddresses: []string{"10.0.0.0/8"}, // Only allow calls from 10.x.x.x
+			AuthUsername:     "restricted-user",
+			AuthPassword:     "restricted-pass",
+		},
 	}
 
 	for _, tr := range trunks {
@@ -182,11 +189,11 @@ func TestGetSIPTrunkAuthentication(t *testing.T) {
 			wantErr:     false,
 		},
 		{
-			name: "no matching trunk",
+			name: "trunk exists but source IP not allowed (TrunkMatchNone)",
 			call: &rpc.SIPCall{
 				To:       &livekit.SIPUri{User: "9999"},
 				From:     &livekit.SIPUri{User: "8888"},
-				SourceIp: "192.168.1.1",
+				SourceIp: "192.168.1.1", // Not in 10.0.0.0/8 range
 			},
 			wantErr:    true,
 			wantErrMsg: `sip trunk not found for destination "user:\"9999\""`,
@@ -222,6 +229,53 @@ func TestGetSIPTrunkAuthentication(t *testing.T) {
 			require.Equal(t, tt.wantTrunkID, resp.SipTrunkId)
 			require.Equal(t, tt.wantUser, resp.Username)
 			require.Equal(t, tt.wantPass, resp.Password)
+		})
+	}
+}
+
+func TestGetSIPTrunkAuthenticationEmpty(t *testing.T) {
+	ctx := context.Background()
+	s, _ := ioStoreDocker(t)
+
+	// No trunks defined at all
+
+	tests := []struct {
+		name        string
+		call        *rpc.SIPCall
+		wantTrunkID string
+		wantUser    string
+		wantPass    string
+		wantErr     bool
+		wantErrMsg  string
+	}{
+		{
+			name: "no trunks defined (TrunkMatchEmpty)",
+			call: &rpc.SIPCall{
+				To:       &livekit.SIPUri{User: "9999"},
+				From:     &livekit.SIPUri{User: "8888"},
+				SourceIp: "192.168.1.1",
+			},
+			wantErr: false, // TrunkMatchEmpty - no error
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &rpc.GetSIPTrunkAuthenticationRequest{
+				Call: tt.call,
+			}
+			resp, err := s.GetSIPTrunkAuthentication(ctx, req)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.wantErrMsg != "" {
+					require.Contains(t, err.Error(), tt.wantErrMsg)
+				}
+				return
+			}
+
+			require.NoError(t, err)
+			require.Nil(t, resp) // For TrunkMatchEmpty, we expect no response
 		})
 	}
 }
