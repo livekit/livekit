@@ -44,7 +44,7 @@ func (s *IOInfoService) matchSIPTrunk(ctx context.Context, trunkID string, call 
 			}
 		}
 	}
-	it := s.SelectSIPInboundTrunk(ctx, call.To.User)
+	it := s.ListAllSIPInboundTrunks(ctx, call.To.User)
 	result, err := sip.MatchTrunkDetailed(it, call)
 	if err != nil {
 		return nil, err
@@ -63,6 +63,13 @@ func (s *IOInfoService) matchSIPTrunk(ctx context.Context, trunkID string, call 
 func (s *IOInfoService) SelectSIPInboundTrunk(ctx context.Context, called string) iters.Iter[*livekit.SIPInboundTrunkInfo] {
 	it := livekit.ListPageIter(s.ss.ListSIPInboundTrunk, &livekit.ListSIPInboundTrunkRequest{
 		Numbers: []string{called},
+	})
+	return iters.PagesAsIter(ctx, it)
+}
+
+func (s *IOInfoService) ListAllSIPInboundTrunks(ctx context.Context, called string) iters.Iter[*livekit.SIPInboundTrunkInfo] {
+	it := livekit.ListPageIter(s.ss.ListSIPInboundTrunk, &livekit.ListSIPInboundTrunkRequest{
+		Numbers: nil,
 	})
 	return iters.PagesAsIter(ctx, it)
 }
