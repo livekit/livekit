@@ -44,27 +44,37 @@ func (s *IOInfoService) matchSIPTrunk(ctx context.Context, trunkID string, call 
 			}
 		}
 	}
-	it := s.SelectSIPInboundTrunk(ctx, call.To.User)
+	it, zeroTrunks := s.SelectSIPInboundTrunk(ctx, call.To.User)
 	result, err := sip.MatchTrunkDetailed(it, call)
 	if err != nil {
 		return nil, err
 	}
-	// If trunks exist but none matched, return a specific error
-	if result.MatchType == sip.TrunkMatchNone {
+	// If trunks exist but none matched or there is atleast one trunk, return a specific error
+	if (result.MatchType == sip.TrunkMatchNone || result.MatchType == sip.TrunkMatchEmpty) && !zeroTrunks {
 		return nil, ErrSIPTrunkNotFound
 	}
+
 	// If no trunks were defined at all, return nil (this is different from TrunkMatchNone)
-	if result.MatchType == sip.TrunkMatchEmpty {
+	if zeroTrunks || result.MatchType == sip.TrunkMatchEmpty {
 		return nil, nil
 	}
+
 	return result.Trunk, nil
 }
 
-func (s *IOInfoService) SelectSIPInboundTrunk(ctx context.Context, called string) iters.Iter[*livekit.SIPInboundTrunkInfo] {
-	it := livekit.ListPageIter(s.ss.ListSIPInboundTrunk, &livekit.ListSIPInboundTrunkRequest{
+func (s *IOInfoService) SelectSIPInboundTrunk(ctx context.Context, called string) (iters.Iter[*livekit.SIPInboundTrunkInfo], bool) {
+	// Create a stats callback to log filtering statistics
+	var zeroTrunks bool
+	statsCallback := func(stats livekit.FilterStats) {
+		// Check if there are no trunks at all
+		if stats.TotalItemsBeforeFilter == 0 {
+			zeroTrunks = true
+		}
+	}
+	it := livekit.ListPageIterWithStats(s.ss.ListSIPInboundTrunk, &livekit.ListSIPInboundTrunkRequest{
 		Numbers: []string{called},
-	})
-	return iters.PagesAsIter(ctx, it)
+	}, statsCallback, false)
+	return iters.PagesAsIter(ctx, it), zeroTrunks
 }
 
 // matchSIPDispatchRule finds the best dispatch rule matching the request parameters. Returns an error if no rule matched.
@@ -88,9 +98,18 @@ func (s *IOInfoService) SelectSIPDispatchRule(ctx context.Context, trunkID strin
 	if trunkID != "" {
 		trunkIDs = []string{trunkID}
 	}
-	it := livekit.ListPageIter(s.ss.ListSIPDispatchRule, &livekit.ListSIPDispatchRuleRequest{
+	// Create a stats callback to log filtering statistics
+	statsCallback := func(stats livekit.FilterStats) {
+		logger.Infow("SIP Dispatch Rule selection filtering stats",
+			"totalBeforeFilter", stats.TotalItemsBeforeFilter,
+			"totalAfterFilter", stats.TotalItemsAfterFilter,
+			"itemsInCurrentPage", stats.ItemsInCurrentPage,
+			"filteredInCurrentPage", stats.FilteredInCurrentPage,
+			"trunkID", trunkID)
+	}
+	it := livekit.ListPageIterWithStats(s.ss.ListSIPDispatchRule, &livekit.ListSIPDispatchRuleRequest{
 		TrunkIds: trunkIDs,
-	})
+	}, statsCallback, false)
 	return iters.PagesAsIter(ctx, it)
 }
 
