@@ -88,6 +88,8 @@ type RTCConfig struct {
 
 	TURNServers []TURNServer `yaml:"turn_servers,omitempty"`
 
+	CloudflareTURN `yaml:"cloudflare_turn,omitempty"`
+
 	// Deprecated
 	StrictACKs bool `yaml:"strict_acks,omitempty"`
 
@@ -131,6 +133,11 @@ type TURNServer struct {
 	Protocol   string `yaml:"protocol,omitempty"`
 	Username   string `yaml:"username,omitempty"`
 	Credential string `yaml:"credential,omitempty"`
+}
+
+type CloudflareTURN struct {
+	KeyID    string `yaml:"key_id,omitempty"`
+	APIToken string `yaml:"api_token,omitempty"`
 }
 
 type CongestionControlConfig struct {
