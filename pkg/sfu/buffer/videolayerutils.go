@@ -363,7 +363,43 @@ func GetSpatialLayerForRid(rid string, ti *livekit.TrackInfo) int32 {
 		}
 	}
 
-	return InvalidLayerSpatial
+	// TODO - ideally should return invalid, but there are
+	// VP9 publish using rid = f, if there are only two layers
+	// in TrackInfo, that will be q;h and f will become invalid.
+	//
+	// Actually, there should be no rids for VP9 in SDP and hence
+	// the above check should take effect. However, as simulcast
+	// codec does not update SDP, the default rids are use when
+	// vp9 (primary codec) is published and that bypasses the above
+	// check.
+	//
+	// The full proper sequence would be
+	// 1. For primary codec using SVC, there will be no rids.
+	//    The above check should take effect and it should
+	//    return 0 even if some publisher uses a rid like `f`.
+	// 2. When secondary codec is published, update rids in the
+	//    codec section in `TrackInfo`. This is a bit tricky
+	//    for a couple of cases
+	//    a. Browsers like Firefox use a different CID everytime.
+	//       So, it cannot be matched between `AddTrack` and SDP.
+	//       One option is to look for a published track with
+	//       back up codec and apply it there. But, that becomes
+	//       a challenge if there are multiple published tracks
+	//       with pending back up codec.
+	//    b. The back up codec publish SDP will have the full
+	//       codec list. It should be okay to assume that the
+	//       codec that will be published is the back up codec,
+	//       but just something to be aware of..
+	// 3. Use this function with proper mime so that proper
+	//    codec section can be looked up in `TrackInfo`.
+	// return InvalidLayerSpatial
+	logger.Infow(
+		"invalid layer for rid, returning default",
+		"trackID", ti.Sid,
+		"rid", rid,
+		"trackInfo", logger.Proto(ti),
+	)
+	return 0
 }
 
 func GetSpatialLayerForVideoQuality(quality livekit.VideoQuality, ti *livekit.TrackInfo) int32 {
