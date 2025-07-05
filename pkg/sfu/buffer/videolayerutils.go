@@ -363,7 +363,7 @@ func GetSpatialLayerForRid(rid string, ti *livekit.TrackInfo) int32 {
 		}
 	}
 
-	// TODO - ideally should return invalid, but there are
+	// SIMULCAST-CODEC-TODO - ideally should return invalid, but there are
 	// VP9 publish using rid = f, if there are only two layers
 	// in TrackInfo, that will be q;h and f will become invalid.
 	//

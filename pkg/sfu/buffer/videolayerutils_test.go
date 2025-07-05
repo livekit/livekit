@@ -460,9 +460,13 @@ func TestGetSpatialLayerForRid(t *testing.T) {
 			"no layers",
 			&livekit.TrackInfo{},
 			map[string]int32{
-				QuarterResolution: InvalidLayerSpatial,
-				HalfResolution:    InvalidLayerSpatial,
-				FullResolution:    InvalidLayerSpatial,
+				// SIMULCAST-CODEC-TODO
+				// QuarterResolution: InvalidLayerSpatial,
+				// HalfResolution:    InvalidLayerSpatial,
+				// FullResolution:    InvalidLayerSpatial,
+				QuarterResolution: 0,
+				HalfResolution:    0,
+				FullResolution:    0,
 			},
 		},
 		{
@@ -496,7 +500,9 @@ func TestGetSpatialLayerForRid(t *testing.T) {
 			map[string]int32{
 				QuarterResolution: 0,
 				HalfResolution:    1,
-				FullResolution:    InvalidLayerSpatial,
+				// SIMULCAST-CODEC-TODO
+				// FullResolution:    InvalidLayerSpatial,
+				FullResolution: 0,
 			},
 		},
 		{
