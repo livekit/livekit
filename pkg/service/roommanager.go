@@ -955,6 +955,27 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 		}
 	}
 
+	if len(r.config.RTC.CloudflareTURN.APIToken) > 0 && len(r.config.RTC.CloudflareTURN.KeyID) > 0 {
+		cfIcesCfg, err := sutils.FetchCloudflareTurnIceConfig(nil, r.config.RTC.CloudflareTURN.KeyID, r.config.RTC.CloudflareTURN.APIToken)
+
+		if err != nil {
+			participant.GetLogger().Warnw("could not create turn from CF", err)
+		} else {
+			for _, cfIceServer := range cfIcesCfg.IceServers {
+				if len(cfIceServer.URLs) == 0 {
+					continue
+				}
+				hasSTUN = true
+				is := &livekit.ICEServer{
+					Urls:       cfIceServer.URLs,
+					Username:   cfIceServer.Username,
+					Credential: cfIceServer.Credential,
+				}
+				iceServers = append(iceServers, is)
+			}
+		}
+	}
+
 	if len(rtcConf.TURNServers) > 0 {
 		hasSTUN = true
 		for _, s := range r.config.RTC.TURNServers {
