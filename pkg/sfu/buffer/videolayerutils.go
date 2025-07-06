@@ -15,20 +15,28 @@
 package buffer
 
 import (
+	"slices"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
 
 const (
-	QuarterResolution = "q"
-	HalfResolution    = "h"
-	FullResolution    = "f"
+	quarterResolutionQ = "q"
+	halfResolutionH    = "h"
+	fullResolutionF    = "f"
+
+	quarterResolution0 = "0"
+	halfResolution1    = "1"
+	fullResolution2    = "2"
 )
 
 type VideoLayersRid [DefaultMaxLayerSpatial + 1]string
 
 var (
-	DefaultVideoLayersRid = VideoLayersRid{QuarterResolution, HalfResolution, FullResolution}
+	videoLayersRidQHF     = VideoLayersRid{quarterResolutionQ, halfResolutionH, fullResolutionF}
+	videoLayersRid012     = VideoLayersRid{quarterResolution0, halfResolution1, fullResolution2}
+	DefaultVideoLayersRid = videoLayersRidQHF
 )
 
 // SIMULCAST-CODEC-TODO: these need to be codec mime aware if and when each codec suppports different layers
@@ -54,11 +62,11 @@ func RidToSpatialLayer(rid string, trackInfo *livekit.TrackInfo, ridSpace VideoL
 	lp := LayerPresenceFromTrackInfo(trackInfo)
 	if lp == nil {
 		switch rid {
-		case QuarterResolution:
+		case quarterResolutionQ:
 			return 0
-		case HalfResolution:
+		case halfResolutionH:
 			return 1
-		case FullResolution:
+		case fullResolutionF:
 			return 2
 		default:
 			return 0
@@ -129,13 +137,13 @@ func SpatialLayerToRid(layer int32, trackInfo *livekit.TrackInfo, ridSpace Video
 	if lp == nil {
 		switch layer {
 		case 0:
-			return QuarterResolution
+			return quarterResolutionQ
 		case 1:
-			return HalfResolution
+			return halfResolutionH
 		case 2:
-			return FullResolution
+			return fullResolutionF
 		default:
-			return QuarterResolution
+			return quarterResolutionQ
 		}
 	}
 
@@ -434,4 +442,42 @@ func GetVideoQualityForSpatialLayer(spatialLayer int32, ti *livekit.TrackInfo) l
 	}
 
 	return livekit.VideoQuality_OFF
+}
+
+func isVideoLayersRidKnown(rids VideoLayersRid, knownRids VideoLayersRid) bool {
+	for _, rid := range rids {
+		if rid == "" {
+			continue
+		}
+
+		if !slices.Contains(knownRids[:], rid) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func NormalizeVideoLayersRid(rids VideoLayersRid) VideoLayersRid {
+	out := rids
+
+	normalize := func(knownRids VideoLayersRid) {
+		idx := 0
+		for _, known := range knownRids {
+			if slices.Contains(rids[:], known) {
+				out[idx] = known
+				idx++
+			}
+		}
+	}
+
+	if isVideoLayersRidKnown(rids, videoLayersRidQHF) {
+		normalize(videoLayersRidQHF)
+	}
+
+	if isVideoLayersRidKnown(rids, videoLayersRid012) {
+		normalize(videoLayersRid012)
+	}
+
+	return out
 }

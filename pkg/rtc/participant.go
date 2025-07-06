@@ -993,10 +993,6 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(offer webrtc.SessionDescrip
 }
 
 func (p *ParticipantImpl) updateRidsFromSDP(offer *webrtc.SessionDescription) {
-	if !p.params.UseOneShotSignallingMode {
-		return
-	}
-
 	if offer == nil {
 		return
 	}
@@ -1033,6 +1029,7 @@ func (p *ParticipantImpl) updateRidsFromSDP(offer *webrtc.SessionDescription) {
 				for i := n; i < len(pti.sdpRids); i++ {
 					pti.sdpRids[i] = ""
 				}
+				pti.sdpRids = buffer.NormalizeVideoLayersRid(pti.sdpRids)
 
 				p.pubLogger.Debugw(
 					"pending track rids updated",
