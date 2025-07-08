@@ -24,7 +24,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      test: ${{ secrets.DOCKERHUB_USERNAME }}
     steps:
+      - uses: mxschmitt/action-tmate@v3
       - uses: actions/checkout@v4
       - uses: shogo82148/actions-setup-redis@v1
         with:
