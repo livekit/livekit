@@ -84,9 +84,9 @@ func SelectSortedNode(nodes []*livekit.Node, sortBy string, algorithm string) (*
 	}
 
 	switch algorithm {
-	case "lowest":
+	case "lowest": // examine all nodes and select the lowest based on sort criteria
 		return selectLowestSortedNode(nodes, sortBy)
-	case "twochoice":
+	case "twochoice": // randomly select two nodes and return the lowest based on sort criteria "Power of Two Random Choices"
 		return selectTwoChoiceSortedNode(nodes, sortBy)
 	default:
 		return nil, ErrAlgorithmUnknown
