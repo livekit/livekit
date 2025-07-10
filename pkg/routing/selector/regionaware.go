@@ -29,9 +29,10 @@ type RegionAwareSelector struct {
 	regionDistances map[string]float64
 	regions         []config.RegionConfig
 	SortBy          string
+	Algorithm       string
 }
 
-func NewRegionAwareSelector(currentRegion string, regions []config.RegionConfig, sortBy string) (*RegionAwareSelector, error) {
+func NewRegionAwareSelector(currentRegion string, regions []config.RegionConfig, sortBy string, algorithm string) (*RegionAwareSelector, error) {
 	if currentRegion == "" {
 		return nil, ErrCurrentRegionNotSet
 	}
@@ -41,6 +42,7 @@ func NewRegionAwareSelector(currentRegion string, regions []config.RegionConfig,
 		regionDistances: make(map[string]float64),
 		regions:         regions,
 		SortBy:          sortBy,
+		Algorithm:       algorithm,
 	}
 
 	var currentRC *config.RegionConfig
@@ -94,7 +96,7 @@ func (s *RegionAwareSelector) SelectNode(nodes []*livekit.Node) (*livekit.Node, 
 		nodes = nearestNodes
 	}
 
-	return SelectSortedNode(nodes, s.SortBy)
+	return SelectSortedNode(nodes, s.SortBy, s.Algorithm)
 }
 
 // haversine(θ) function
