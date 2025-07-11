@@ -141,6 +141,7 @@ type WorkerRegistration struct {
 	Protocol    WorkerProtocolVersion
 	ID          string
 	Version     string
+	AgentID     string
 	AgentName   string
 	Namespace   string
 	JobType     livekit.JobType
@@ -344,6 +345,7 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobS
 	}
 	now := time.Now()
 	job.State.WorkerId = w.ID
+	job.State.AgentId = w.AgentID
 	job.State.UpdatedAt = now.UnixNano()
 	job.State.StartedAt = now.UnixNano()
 	job.State.Status = livekit.JobStatus_JS_RUNNING
