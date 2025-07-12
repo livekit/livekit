@@ -17,18 +17,21 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 
 	"github.com/twitchtv/twirp"
 
-	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
+	"github.com/livekit/psrpc"
+
+	"github.com/livekit/livekit-server/pkg/rtc"
 )
 
 type EgressService struct {
@@ -308,6 +311,14 @@ func (s *EgressService) ListEgress(ctx context.Context, req *livekit.ListEgressR
 }
 
 func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressRequest) (*livekit.EgressInfo, error) {
+	var err error
+	defer func() {
+		if errors.Is(err, psrpc.ErrNoResponse) {
+			// Do not map cases where the context times out to 503
+			err = psrpc.ErrRequestTimedOut
+		}
+	}()
+
 	AppendLogFields(ctx, "egressID", req.EgressId)
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
