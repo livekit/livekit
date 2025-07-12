@@ -36,20 +36,20 @@ func TestRidConversion(t *testing.T) {
 			"no track info",
 			nil,
 			map[string]RidAndLayer{
-				"":                {rid: QuarterResolution, layer: 0},
-				QuarterResolution: {rid: QuarterResolution, layer: 0},
-				HalfResolution:    {rid: HalfResolution, layer: 1},
-				FullResolution:    {rid: FullResolution, layer: 2},
+				"":                 {rid: quarterResolutionQ, layer: 0},
+				quarterResolutionQ: {rid: quarterResolutionQ, layer: 0},
+				halfResolutionH:    {rid: halfResolutionH, layer: 1},
+				fullResolutionF:    {rid: fullResolutionF, layer: 2},
 			},
 		},
 		{
 			"no layers",
 			&livekit.TrackInfo{},
 			map[string]RidAndLayer{
-				"":                {rid: QuarterResolution, layer: 0},
-				QuarterResolution: {rid: QuarterResolution, layer: 0},
-				HalfResolution:    {rid: HalfResolution, layer: 1},
-				FullResolution:    {rid: FullResolution, layer: 2},
+				"":                 {rid: quarterResolutionQ, layer: 0},
+				quarterResolutionQ: {rid: quarterResolutionQ, layer: 0},
+				halfResolutionH:    {rid: halfResolutionH, layer: 1},
+				fullResolutionF:    {rid: fullResolutionF, layer: 2},
 			},
 		},
 		{
@@ -60,10 +60,10 @@ func TestRidConversion(t *testing.T) {
 				},
 			},
 			map[string]RidAndLayer{
-				"":                {rid: QuarterResolution, layer: 0},
-				QuarterResolution: {rid: QuarterResolution, layer: 0},
-				HalfResolution:    {rid: QuarterResolution, layer: 0},
-				FullResolution:    {rid: QuarterResolution, layer: 0},
+				"":                 {rid: quarterResolutionQ, layer: 0},
+				quarterResolutionQ: {rid: quarterResolutionQ, layer: 0},
+				halfResolutionH:    {rid: quarterResolutionQ, layer: 0},
+				fullResolutionF:    {rid: quarterResolutionQ, layer: 0},
 			},
 		},
 		{
@@ -74,10 +74,10 @@ func TestRidConversion(t *testing.T) {
 				},
 			},
 			map[string]RidAndLayer{
-				"":                {rid: QuarterResolution, layer: 0},
-				QuarterResolution: {rid: QuarterResolution, layer: 0},
-				HalfResolution:    {rid: QuarterResolution, layer: 0},
-				FullResolution:    {rid: QuarterResolution, layer: 0},
+				"":                 {rid: quarterResolutionQ, layer: 0},
+				quarterResolutionQ: {rid: quarterResolutionQ, layer: 0},
+				halfResolutionH:    {rid: quarterResolutionQ, layer: 0},
+				fullResolutionF:    {rid: quarterResolutionQ, layer: 0},
 			},
 		},
 		{
@@ -88,10 +88,10 @@ func TestRidConversion(t *testing.T) {
 				},
 			},
 			map[string]RidAndLayer{
-				"":                {rid: QuarterResolution, layer: 0},
-				QuarterResolution: {rid: QuarterResolution, layer: 0},
-				HalfResolution:    {rid: QuarterResolution, layer: 0},
-				FullResolution:    {rid: QuarterResolution, layer: 0},
+				"":                 {rid: quarterResolutionQ, layer: 0},
+				quarterResolutionQ: {rid: quarterResolutionQ, layer: 0},
+				halfResolutionH:    {rid: quarterResolutionQ, layer: 0},
+				fullResolutionF:    {rid: quarterResolutionQ, layer: 0},
 			},
 		},
 		{
@@ -103,10 +103,10 @@ func TestRidConversion(t *testing.T) {
 				},
 			},
 			map[string]RidAndLayer{
-				"":                {rid: QuarterResolution, layer: 0},
-				QuarterResolution: {rid: QuarterResolution, layer: 0},
-				HalfResolution:    {rid: HalfResolution, layer: 1},
-				FullResolution:    {rid: HalfResolution, layer: 1},
+				"":                 {rid: quarterResolutionQ, layer: 0},
+				quarterResolutionQ: {rid: quarterResolutionQ, layer: 0},
+				halfResolutionH:    {rid: halfResolutionH, layer: 1},
+				fullResolutionF:    {rid: halfResolutionH, layer: 1},
 			},
 		},
 		{
@@ -118,10 +118,10 @@ func TestRidConversion(t *testing.T) {
 				},
 			},
 			map[string]RidAndLayer{
-				"":                {rid: QuarterResolution, layer: 0},
-				QuarterResolution: {rid: QuarterResolution, layer: 0},
-				HalfResolution:    {rid: HalfResolution, layer: 1},
-				FullResolution:    {rid: HalfResolution, layer: 1},
+				"":                 {rid: quarterResolutionQ, layer: 0},
+				quarterResolutionQ: {rid: quarterResolutionQ, layer: 0},
+				halfResolutionH:    {rid: halfResolutionH, layer: 1},
+				fullResolutionF:    {rid: halfResolutionH, layer: 1},
 			},
 		},
 		{
@@ -133,10 +133,10 @@ func TestRidConversion(t *testing.T) {
 				},
 			},
 			map[string]RidAndLayer{
-				"":                {rid: QuarterResolution, layer: 0},
-				QuarterResolution: {rid: QuarterResolution, layer: 0},
-				HalfResolution:    {rid: HalfResolution, layer: 1},
-				FullResolution:    {rid: HalfResolution, layer: 1},
+				"":                 {rid: quarterResolutionQ, layer: 0},
+				quarterResolutionQ: {rid: quarterResolutionQ, layer: 0},
+				halfResolutionH:    {rid: halfResolutionH, layer: 1},
+				fullResolutionF:    {rid: halfResolutionH, layer: 1},
 			},
 		},
 		{
@@ -149,10 +149,10 @@ func TestRidConversion(t *testing.T) {
 				},
 			},
 			map[string]RidAndLayer{
-				"":                {rid: QuarterResolution, layer: 0},
-				QuarterResolution: {rid: QuarterResolution, layer: 0},
-				HalfResolution:    {rid: HalfResolution, layer: 1},
-				FullResolution:    {rid: FullResolution, layer: 2},
+				"":                 {rid: quarterResolutionQ, layer: 0},
+				quarterResolutionQ: {rid: quarterResolutionQ, layer: 0},
+				halfResolutionH:    {rid: halfResolutionH, layer: 1},
+				fullResolutionF:    {rid: fullResolutionF, layer: 2},
 			},
 		},
 	}
@@ -319,18 +319,18 @@ func TestVideoQualityToRidConversion(t *testing.T) {
 			"no track info",
 			nil,
 			map[livekit.VideoQuality]string{
-				livekit.VideoQuality_LOW:    QuarterResolution,
-				livekit.VideoQuality_MEDIUM: HalfResolution,
-				livekit.VideoQuality_HIGH:   FullResolution,
+				livekit.VideoQuality_LOW:    quarterResolutionQ,
+				livekit.VideoQuality_MEDIUM: halfResolutionH,
+				livekit.VideoQuality_HIGH:   fullResolutionF,
 			},
 		},
 		{
 			"no layers",
 			&livekit.TrackInfo{},
 			map[livekit.VideoQuality]string{
-				livekit.VideoQuality_LOW:    QuarterResolution,
-				livekit.VideoQuality_MEDIUM: HalfResolution,
-				livekit.VideoQuality_HIGH:   FullResolution,
+				livekit.VideoQuality_LOW:    quarterResolutionQ,
+				livekit.VideoQuality_MEDIUM: halfResolutionH,
+				livekit.VideoQuality_HIGH:   fullResolutionF,
 			},
 		},
 		{
@@ -341,9 +341,9 @@ func TestVideoQualityToRidConversion(t *testing.T) {
 				},
 			},
 			map[livekit.VideoQuality]string{
-				livekit.VideoQuality_LOW:    QuarterResolution,
-				livekit.VideoQuality_MEDIUM: QuarterResolution,
-				livekit.VideoQuality_HIGH:   QuarterResolution,
+				livekit.VideoQuality_LOW:    quarterResolutionQ,
+				livekit.VideoQuality_MEDIUM: quarterResolutionQ,
+				livekit.VideoQuality_HIGH:   quarterResolutionQ,
 			},
 		},
 		{
@@ -354,9 +354,9 @@ func TestVideoQualityToRidConversion(t *testing.T) {
 				},
 			},
 			map[livekit.VideoQuality]string{
-				livekit.VideoQuality_LOW:    QuarterResolution,
-				livekit.VideoQuality_MEDIUM: QuarterResolution,
-				livekit.VideoQuality_HIGH:   QuarterResolution,
+				livekit.VideoQuality_LOW:    quarterResolutionQ,
+				livekit.VideoQuality_MEDIUM: quarterResolutionQ,
+				livekit.VideoQuality_HIGH:   quarterResolutionQ,
 			},
 		},
 		{
@@ -367,9 +367,9 @@ func TestVideoQualityToRidConversion(t *testing.T) {
 				},
 			},
 			map[livekit.VideoQuality]string{
-				livekit.VideoQuality_LOW:    QuarterResolution,
-				livekit.VideoQuality_MEDIUM: QuarterResolution,
-				livekit.VideoQuality_HIGH:   QuarterResolution,
+				livekit.VideoQuality_LOW:    quarterResolutionQ,
+				livekit.VideoQuality_MEDIUM: quarterResolutionQ,
+				livekit.VideoQuality_HIGH:   quarterResolutionQ,
 			},
 		},
 		{
@@ -381,9 +381,9 @@ func TestVideoQualityToRidConversion(t *testing.T) {
 				},
 			},
 			map[livekit.VideoQuality]string{
-				livekit.VideoQuality_LOW:    QuarterResolution,
-				livekit.VideoQuality_MEDIUM: HalfResolution,
-				livekit.VideoQuality_HIGH:   HalfResolution,
+				livekit.VideoQuality_LOW:    quarterResolutionQ,
+				livekit.VideoQuality_MEDIUM: halfResolutionH,
+				livekit.VideoQuality_HIGH:   halfResolutionH,
 			},
 		},
 		{
@@ -395,9 +395,9 @@ func TestVideoQualityToRidConversion(t *testing.T) {
 				},
 			},
 			map[livekit.VideoQuality]string{
-				livekit.VideoQuality_LOW:    QuarterResolution,
-				livekit.VideoQuality_MEDIUM: HalfResolution,
-				livekit.VideoQuality_HIGH:   HalfResolution,
+				livekit.VideoQuality_LOW:    quarterResolutionQ,
+				livekit.VideoQuality_MEDIUM: halfResolutionH,
+				livekit.VideoQuality_HIGH:   halfResolutionH,
 			},
 		},
 		{
@@ -409,9 +409,9 @@ func TestVideoQualityToRidConversion(t *testing.T) {
 				},
 			},
 			map[livekit.VideoQuality]string{
-				livekit.VideoQuality_LOW:    QuarterResolution,
-				livekit.VideoQuality_MEDIUM: QuarterResolution,
-				livekit.VideoQuality_HIGH:   HalfResolution,
+				livekit.VideoQuality_LOW:    quarterResolutionQ,
+				livekit.VideoQuality_MEDIUM: quarterResolutionQ,
+				livekit.VideoQuality_HIGH:   halfResolutionH,
 			},
 		},
 		{
@@ -424,9 +424,9 @@ func TestVideoQualityToRidConversion(t *testing.T) {
 				},
 			},
 			map[livekit.VideoQuality]string{
-				livekit.VideoQuality_LOW:    QuarterResolution,
-				livekit.VideoQuality_MEDIUM: HalfResolution,
-				livekit.VideoQuality_HIGH:   FullResolution,
+				livekit.VideoQuality_LOW:    quarterResolutionQ,
+				livekit.VideoQuality_MEDIUM: halfResolutionH,
+				livekit.VideoQuality_HIGH:   fullResolutionF,
 			},
 		},
 	}
@@ -451,18 +451,22 @@ func TestGetSpatialLayerForRid(t *testing.T) {
 			"no track info",
 			nil,
 			map[string]int32{
-				QuarterResolution: InvalidLayerSpatial,
-				HalfResolution:    InvalidLayerSpatial,
-				FullResolution:    InvalidLayerSpatial,
+				quarterResolutionQ: InvalidLayerSpatial,
+				halfResolutionH:    InvalidLayerSpatial,
+				fullResolutionF:    InvalidLayerSpatial,
 			},
 		},
 		{
 			"no layers",
 			&livekit.TrackInfo{},
 			map[string]int32{
-				QuarterResolution: InvalidLayerSpatial,
-				HalfResolution:    InvalidLayerSpatial,
-				FullResolution:    InvalidLayerSpatial,
+				// SIMULCAST-CODEC-TODO
+				// quarterResolutionQ: InvalidLayerSpatial,
+				// halfResolutionH:    InvalidLayerSpatial,
+				// fullResolutionF:    InvalidLayerSpatial,
+				quarterResolutionQ: 0,
+				halfResolutionH:    0,
+				fullResolutionF:    0,
 			},
 		},
 		{
@@ -480,23 +484,39 @@ func TestGetSpatialLayerForRid(t *testing.T) {
 				},
 			},
 			map[string]int32{
-				QuarterResolution: 0,
-				HalfResolution:    0,
-				FullResolution:    0,
+				quarterResolutionQ: 0,
+				halfResolutionH:    0,
+				fullResolutionF:    0,
 			},
 		},
 		{
 			"layers",
 			&livekit.TrackInfo{
 				Layers: []*livekit.VideoLayer{
-					{Quality: livekit.VideoQuality_LOW, SpatialLayer: 0, Rid: QuarterResolution},
-					{Quality: livekit.VideoQuality_MEDIUM, SpatialLayer: 1, Rid: HalfResolution},
+					{Quality: livekit.VideoQuality_LOW, SpatialLayer: 0, Rid: quarterResolutionQ},
+					{Quality: livekit.VideoQuality_MEDIUM, SpatialLayer: 1, Rid: halfResolutionH},
 				},
 			},
 			map[string]int32{
-				QuarterResolution: 0,
-				HalfResolution:    1,
-				FullResolution:    InvalidLayerSpatial,
+				quarterResolutionQ: 0,
+				halfResolutionH:    1,
+				// SIMULCAST-CODEC-TODO
+				// fullResolutionF:    InvalidLayerSpatial,
+				fullResolutionF: 0,
+			},
+		},
+		{
+			"layers - no rid",
+			&livekit.TrackInfo{
+				Layers: []*livekit.VideoLayer{
+					{Quality: livekit.VideoQuality_LOW, SpatialLayer: 0},
+					{Quality: livekit.VideoQuality_MEDIUM, SpatialLayer: 1},
+				},
+			},
+			map[string]int32{
+				quarterResolutionQ: 0,
+				halfResolutionH:    0,
+				fullResolutionF:    0,
 			},
 		},
 	}
@@ -541,8 +561,8 @@ func TestGetSpatialLayerForVideoQuality(t *testing.T) {
 			"not all layers",
 			&livekit.TrackInfo{
 				Layers: []*livekit.VideoLayer{
-					{Quality: livekit.VideoQuality_LOW, SpatialLayer: 0, Rid: QuarterResolution},
-					{Quality: livekit.VideoQuality_MEDIUM, SpatialLayer: 1, Rid: HalfResolution},
+					{Quality: livekit.VideoQuality_LOW, SpatialLayer: 0, Rid: quarterResolutionQ},
+					{Quality: livekit.VideoQuality_MEDIUM, SpatialLayer: 1, Rid: halfResolutionH},
 				},
 			},
 			map[livekit.VideoQuality]int32{
@@ -556,9 +576,9 @@ func TestGetSpatialLayerForVideoQuality(t *testing.T) {
 			"all layers",
 			&livekit.TrackInfo{
 				Layers: []*livekit.VideoLayer{
-					{Quality: livekit.VideoQuality_LOW, SpatialLayer: 0, Rid: QuarterResolution},
-					{Quality: livekit.VideoQuality_MEDIUM, SpatialLayer: 1, Rid: HalfResolution},
-					{Quality: livekit.VideoQuality_HIGH, SpatialLayer: 2, Rid: FullResolution},
+					{Quality: livekit.VideoQuality_LOW, SpatialLayer: 0, Rid: quarterResolutionQ},
+					{Quality: livekit.VideoQuality_MEDIUM, SpatialLayer: 1, Rid: halfResolutionH},
+					{Quality: livekit.VideoQuality_HIGH, SpatialLayer: 2, Rid: fullResolutionF},
 				},
 			},
 			map[livekit.VideoQuality]int32{
@@ -610,8 +630,8 @@ func TestGetVideoQualityorSpatialLayer(t *testing.T) {
 			"layers",
 			&livekit.TrackInfo{
 				Layers: []*livekit.VideoLayer{
-					{Quality: livekit.VideoQuality_LOW, SpatialLayer: 0, Rid: QuarterResolution},
-					{Quality: livekit.VideoQuality_MEDIUM, SpatialLayer: 1, Rid: HalfResolution},
+					{Quality: livekit.VideoQuality_LOW, SpatialLayer: 0, Rid: quarterResolutionQ},
+					{Quality: livekit.VideoQuality_MEDIUM, SpatialLayer: 1, Rid: halfResolutionH},
 				},
 			},
 			map[int32]livekit.VideoQuality{
@@ -629,6 +649,62 @@ func TestGetVideoQualityorSpatialLayer(t *testing.T) {
 				actualVideoQuality := GetVideoQualityForSpatialLayer(testSpatialLayer, test.trackInfo)
 				require.Equal(t, expectedVideoQuality, actualVideoQuality)
 			}
+		})
+	}
+}
+
+func TestNormalizeVideoLayersRid(t *testing.T) {
+	tests := []struct {
+		name       string
+		rids       VideoLayersRid
+		normalized VideoLayersRid
+	}{
+		{
+			"empty",
+			VideoLayersRid{},
+			VideoLayersRid{},
+		},
+		{
+			"unknown pattern",
+			VideoLayersRid{"3", "2", "1"},
+			VideoLayersRid{"3", "2", "1"},
+		},
+		{
+			"qhf",
+			videoLayersRidQHF,
+			videoLayersRidQHF,
+		},
+		{
+			"scrambled qhf",
+			VideoLayersRid{"f", "h", "q"},
+			videoLayersRidQHF,
+		},
+		{
+			"partial qhf",
+			VideoLayersRid{"h", "q"},
+			VideoLayersRid{"q", "h", ""},
+		},
+		{
+			"012",
+			videoLayersRid012,
+			videoLayersRid012,
+		},
+		{
+			"scrambled 012",
+			VideoLayersRid{"2", "0", "1"},
+			videoLayersRid012,
+		},
+		{
+			"partial 012",
+			VideoLayersRid{"2", "1"},
+			VideoLayersRid{"1", "2", ""},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			normalizedRids := NormalizeVideoLayersRid(test.rids)
+			require.Equal(t, test.normalized, normalizedRids)
 		})
 	}
 }

@@ -448,6 +448,8 @@ func (t *MediaTrackReceiver) TryClose() bool {
 }
 
 func (t *MediaTrackReceiver) Close(isExpectedToResume bool) {
+	t.ClearAllReceivers(isExpectedToResume)
+
 	t.lock.Lock()
 	if t.state == mediaTrackReceiverStateClosed {
 		t.lock.Unlock()

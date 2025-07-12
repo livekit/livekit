@@ -231,6 +231,7 @@ type Forwarder struct {
 	dummyStartTSOffset       uint64
 	refInfos                 [buffer.DefaultMaxLayerSpatial + 1]refInfo
 	refIsSVC                 bool
+	isDDAvailable            bool
 
 	provisional *VideoAllocationProvisional
 
@@ -341,8 +342,8 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 
 	case mime.MimeTypeVP9:
 		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
-		isDDAvailable := ddAvailable(extensions)
-		if isDDAvailable {
+		f.isDDAvailable = ddAvailable(extensions)
+		if f.isDDAvailable {
 			if f.vls != nil {
 				f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
 			} else {
@@ -359,8 +360,8 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 
 	case mime.MimeTypeAV1:
 		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
-		isDDAvailable := ddAvailable(extensions)
-		if isDDAvailable {
+		f.isDDAvailable = ddAvailable(extensions)
+		if f.isDDAvailable {
 			if f.vls != nil {
 				f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
 			} else {
@@ -1523,7 +1524,11 @@ func (f *Forwarder) updateAllocation(alloc VideoAllocation, reason string) Video
 		alloc.PauseReason != f.lastAllocation.PauseReason ||
 		alloc.TargetLayer != f.lastAllocation.TargetLayer ||
 		alloc.RequestLayerSpatial != f.lastAllocation.RequestLayerSpatial {
-		f.logger.Debugw(fmt.Sprintf("stream allocation: %s", reason), "allocation", &alloc)
+		f.logger.Debugw(
+			fmt.Sprintf("stream allocation: %s", reason),
+			"allocation", &alloc,
+			"lastAllocation", &f.lastAllocation,
+		)
 	}
 	f.lastAllocation = alloc
 
@@ -2002,6 +2007,15 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 
 	result := f.vls.Select(extPkt, layer)
 	if !result.IsSelected {
+		if f.isDDAvailable && extPkt.DependencyDescriptor == nil {
+			f.isDDAvailable = false
+			switch f.mime {
+			case mime.MimeTypeVP9:
+				f.vls = videolayerselector.NewVP9FromOther(f.vls)
+			case mime.MimeTypeAV1:
+				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
+			}
+		}
 		tp.shouldDrop = true
 		if f.started && result.IsRelevant {
 			// call to update highest incoming sequence number and other internal structures

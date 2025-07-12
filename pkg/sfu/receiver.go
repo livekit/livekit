@@ -34,7 +34,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
-	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/streamtracker"
 )
@@ -44,6 +43,7 @@ var (
 	ErrDownTrackAlreadyExist = errors.New("DownTrack already exist")
 	ErrBufferNotFound        = errors.New("buffer not found")
 	ErrDuplicateLayer        = errors.New("duplicate layer")
+	ErrInvalidLayer          = errors.New("invalid layer")
 )
 
 // --------------------------------------
@@ -175,7 +175,6 @@ type WebRTCReceiver struct {
 	onCloseHandler     func()
 	closeOnce          sync.Once
 	closed             atomic.Bool
-	useTrackers        bool
 	trackInfo          atomic.Pointer[livekit.TrackInfo]
 
 	onRTCP func([]rtcp.Packet)
@@ -215,14 +214,6 @@ func WithPliThrottleConfig(pliThrottleConfig PLIThrottleConfig) ReceiverOpts {
 func WithAudioConfig(audioConfig AudioConfig) ReceiverOpts {
 	return func(w *WebRTCReceiver) *WebRTCReceiver {
 		w.audioConfig = audioConfig
-		return w
-	}
-}
-
-// WithStreamTrackers enables StreamTracker use for simulcast
-func WithStreamTrackers() ReceiverOpts {
-	return func(w *WebRTCReceiver) *WebRTCReceiver {
-		w.useTrackers = true
 		return w
 	}
 }
@@ -296,15 +287,6 @@ func NewWebRTCReceiver(
 
 	w.streamTrackerManager = NewStreamTrackerManager(logger, trackInfo, w.isSVC, w.codec.ClockRate, streamTrackerManagerConfig)
 	w.streamTrackerManager.SetListener(w)
-	// SVC-TODO: Handle DD for non-SVC cases???
-	if w.isSVC {
-		for _, ext := range receiver.GetParameters().HeaderExtensions {
-			if ext.URI == dd.ExtensionURI {
-				w.streamTrackerManager.AddDependencyDescriptorTrackers()
-				break
-			}
-		}
-	}
 
 	return w
 }
@@ -403,6 +385,14 @@ func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) erro
 	if w.Kind() == webrtc.RTPCodecTypeVideo && !w.isSVC {
 		layer = buffer.GetSpatialLayerForRid(track.RID(), w.trackInfo.Load())
 	}
+	if layer < 0 {
+		w.logger.Warnw(
+			"invalid layer", nil,
+			"rid", track.RID(),
+			"trackInfo", logger.Proto(w.trackInfo.Load()),
+		)
+		return ErrInvalidLayer
+	}
 	buff.SetLogger(w.logger.WithValues("layer", layer))
 	buff.SetAudioLevelParams(audio.AudioLevelParams{
 		Config: w.audioConfig.AudioLevelConfig,
@@ -451,10 +441,6 @@ func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) erro
 
 	buff.SetRTT(rtt)
 	buff.SetPaused(w.streamTrackerManager.IsPaused())
-
-	if w.Kind() == webrtc.RTPCodecTypeVideo && w.useTrackers {
-		w.streamTrackerManager.AddTracker(layer)
-	}
 
 	go w.forwardRTP(layer, buff)
 	return nil
@@ -769,7 +755,6 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 		w.logger.Errorw("invalid layer", nil, "layer", layer)
 		return
 	}
-	spatialTrackers[layer] = w.streamTrackerManager.GetTracker(layer)
 
 	pktBuf := make([]byte, bucket.MaxPktSize)
 	for {
@@ -822,6 +807,9 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 			if spatialTrackers[spatialLayer] == nil {
 				spatialTrackers[spatialLayer] = w.streamTrackerManager.GetTracker(spatialLayer)
 				if spatialTrackers[spatialLayer] == nil {
+					if w.isSVC && pkt.DependencyDescriptor != nil {
+						w.streamTrackerManager.AddDependencyDescriptorTrackers()
+					}
 					spatialTrackers[spatialLayer] = w.streamTrackerManager.AddTracker(spatialLayer)
 				}
 			}

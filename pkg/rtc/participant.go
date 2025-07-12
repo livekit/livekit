@@ -993,6 +993,10 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(offer webrtc.SessionDescrip
 }
 
 func (p *ParticipantImpl) updateRidsFromSDP(offer *webrtc.SessionDescription) {
+	if offer == nil {
+		return
+	}
+
 	parsed, err := offer.Unmarshal()
 	if err != nil {
 		return
@@ -1007,6 +1011,8 @@ func (p *ParticipantImpl) updateRidsFromSDP(offer *webrtc.SessionDescription) {
 		if mst == "" {
 			continue
 		}
+
+		// SIMULCAST-CODEC-TODO - have to update published track's TrackInfo when backup codec starts publishing
 
 		p.pendingTracksLock.Lock()
 		pti := p.pendingTracks[mst]
@@ -1023,6 +1029,7 @@ func (p *ParticipantImpl) updateRidsFromSDP(offer *webrtc.SessionDescription) {
 				for i := n; i < len(pti.sdpRids); i++ {
 					pti.sdpRids[i] = ""
 				}
+				pti.sdpRids = buffer.NormalizeVideoLayersRid(pti.sdpRids)
 
 				p.pubLogger.Debugw(
 					"pending track rids updated",
@@ -1136,7 +1143,7 @@ func (p *ParticipantImpl) handleMigrateTracks() []*MediaTrack {
 			p.pubLogger.Warnw("too many pending migrated tracks", nil, "trackID", pti.trackInfos[0].Sid, "count", len(pti.trackInfos), "cid", cid)
 		}
 
-		mt := p.addMigratedTrack(cid, pti.trackInfos[0], pti.sdpRids)
+		mt := p.addMigratedTrack(cid, pti.trackInfos[0])
 		if mt != nil {
 			addedTracks = append(addedTracks, mt)
 		} else {
@@ -1996,7 +2003,7 @@ func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription, off
 }
 
 func (p *ParticipantImpl) removePublishedTrack(track types.MediaTrack) {
-	p.RemovePublishedTrack(track, false, true)
+	p.RemovePublishedTrack(track, false)
 	if p.ProtocolVersion().SupportsUnpublish() {
 		p.sendTrackUnpublished(track.ID())
 	} else {
@@ -2057,15 +2064,17 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 	)
 
 	var track sfu.TrackRemote = sfu.NewTrackRemoteFromSdp(rtcTrack, codec)
-	publishedTrack, isNewTrack := p.mediaTrackReceived(track, rtpReceiver)
+	publishedTrack, isNewTrack, isReceiverAdded, sdpRids := p.mediaTrackReceived(track, rtpReceiver)
 	if publishedTrack == nil {
 		p.pubLogger.Debugw(
-			"webrtc Track published but can't find MediaTrack, add to pendingTracks",
+			"webrtc Track published but can't find MediaTrack in pendingTracks",
 			"kind", track.Kind().String(),
 			"webrtcTrackID", track.ID(),
 			"rid", track.RID(),
 			"SSRC", track.SSRC(),
 			"mime", mime.NormalizeMimeType(codec.MimeType),
+			"isReceiverAdded", isReceiverAdded,
+			"sdpRids", logger.StringSlice(sdpRids[:]),
 		)
 		return
 	}
@@ -2081,7 +2090,8 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 	p.setIsPublisher(true)
 	p.dirty.Store(true)
 
-	p.pubLogger.Infow("mediaTrack published",
+	p.pubLogger.Infow(
+		"mediaTrack published",
 		"kind", track.Kind().String(),
 		"trackID", publishedTrack.ID(),
 		"webrtcTrackID", track.ID(),
@@ -2090,6 +2100,8 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 		"mime", mime.NormalizeMimeType(codec.MimeType),
 		"trackInfo", logger.Proto(publishedTrack.ToProto()),
 		"fromSdp", fromSdp,
+		"isReceiverAdded", isReceiverAdded,
+		"sdpRids", logger.StringSlice(sdpRids[:]),
 	)
 
 	if !isNewTrack && !publishedTrack.HasPendingCodec() && p.IsReady() {
@@ -2264,7 +2276,7 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
 	}
 
-	// SFU typically asserts the sender's identity. However, agents are able to 
+	// SFU typically asserts the sender's identity. However, agents are able to
 	// publish data on behalf of the participant in case of transcriptions/text streams
 	// in those cases we'd leave the existing identity on the data packet alone.
 	if overrideSenderIdentity {
@@ -2753,7 +2765,12 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) *li
 	return trackInfo
 }
 
-func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver *webrtc.RTPReceiver) (*MediaTrack, bool) {
+func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver *webrtc.RTPReceiver) (
+	*MediaTrack,
+	bool,
+	bool,
+	buffer.VideoLayersRid,
+) {
 	p.pendingTracksLock.Lock()
 	newTrack := false
 
@@ -2774,22 +2791,24 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 		)
 		p.pendingTracksLock.Unlock()
 		p.pubLogger.Warnw("could not get mid for track", nil, "trackID", track.ID())
-		return nil, false
+		return nil, false, false, buffer.VideoLayersRid{}
 	}
 
 	// use existing media track to handle simulcast
 	var pubTime time.Duration
 	var isMigrated bool
+	var ridsFromSdp buffer.VideoLayersRid
 	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
 	if !ok {
 		signalCid, ti, sdpRids, migrated, createdAt := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()), true)
+		ridsFromSdp = sdpRids
 		if ti == nil {
 			p.pendingRemoteTracks = append(
 				p.pendingRemoteTracks,
 				&pendingRemoteTrack{track: track.RTCTrack(), receiver: rtpReceiver},
 			)
 			p.pendingTracksLock.Unlock()
-			return nil, false
+			return nil, false, false, ridsFromSdp
 		}
 		isMigrated = migrated
 
@@ -2809,7 +2828,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 				p.pubLogger.Warnw("migrated track codec mismatched", nil, "track", logger.Proto(ti), "webrtcCodec", parameters)
 				p.pendingTracksLock.Unlock()
 				p.IssueFullReconnect(types.ParticipantCloseReasonMigrateCodecMismatch)
-				return nil, false
+				return nil, false, false, ridsFromSdp
 			}
 		}
 
@@ -2829,17 +2848,13 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 		}
 
 		for _, codec := range ti.Codecs {
-			if !mime.IsMimeTypeStringEqual(codec.MimeType, track.Codec().MimeType) {
-				continue
-			}
-
 			for _, layer := range codec.Layers {
 				layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(layer.Quality, ti)
 				layer.Rid = buffer.VideoQualityToRid(layer.Quality, ti, sdpRids)
 			}
 		}
 
-		mt = p.addMediaTrack(signalCid, track.ID(), ti, sdpRids)
+		mt = p.addMediaTrack(signalCid, track.ID(), ti)
 		newTrack = true
 
 		// if the addTrackRequest is sent before participant active then it means the client tries to publish
@@ -2854,7 +2869,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 
 	p.pendingTracksLock.Unlock()
 
-	mt.AddReceiver(rtpReceiver, track, mid)
+	_, isReceiverAdded := mt.AddReceiver(rtpReceiver, track, mid)
 
 	if newTrack {
 		go func() {
@@ -2884,10 +2899,10 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 		}()
 	}
 
-	return mt, newTrack
+	return mt, newTrack, isReceiverAdded, ridsFromSdp
 }
 
-func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo, sdpRids buffer.VideoLayersRid) *MediaTrack {
+func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *MediaTrack {
 	p.pubLogger.Infow("add migrated track", "cid", cid, "trackID", ti.Sid, "track", logger.Proto(ti))
 	rtpReceiver := p.TransportManager.GetPublisherRTPReceiver(ti.Mid)
 	if rtpReceiver == nil {
@@ -2895,7 +2910,7 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo, sd
 		return nil
 	}
 
-	mt := p.addMediaTrack(cid, cid, ti, sdpRids)
+	mt := p.addMediaTrack(cid, cid, ti)
 
 	potentialCodecs := make([]webrtc.RTPCodecParameters, 0, len(ti.Codecs))
 	parameters := rtpReceiver.GetParameters()
@@ -2940,7 +2955,7 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo, sd
 	return mt
 }
 
-func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *livekit.TrackInfo, sdpRids buffer.VideoLayersRid) *MediaTrack {
+func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *livekit.TrackInfo) *MediaTrack {
 	mt := NewMediaTrack(MediaTrackParams{
 		SignalCid:             signalCid,
 		SdpCid:                sdpCid,

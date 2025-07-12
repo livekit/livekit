@@ -87,7 +87,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	rtcEgressLauncher := NewEgressLauncher(egressClient, ioInfoService)
+	rtcEgressLauncher := NewEgressLauncher(egressClient, ioInfoService, objectStore)
 	topicFormatter := rpc.NewTopicFormatter()
 	roomClient, err := rpc.NewTypedRoomClient(clientParams)
 	if err != nil {
@@ -106,7 +106,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	agentDispatchService := NewAgentDispatchService(agentDispatchInternalClient, topicFormatter, roomAllocator, router)
-	egressService := NewEgressService(egressClient, rtcEgressLauncher, objectStore, ioInfoService, roomService)
+	egressService := NewEgressService(egressClient, rtcEgressLauncher, ioInfoService, roomService)
 	ingressConfig := getIngressConfig(conf)
 	ingressClient, err := rpc.NewIngressClient(clientParams)
 	if err != nil {
