@@ -37,7 +37,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -114,143 +113,42 @@ func decodeAttributes(str string) (map[string]string, error) {
 }
 
 func (s *RTCService) validateInternal(log logger.Logger, r *http.Request, strict bool) (livekit.RoomName, routing.ParticipantInit, int, error) {
-	claims := GetGrants(r.Context())
-	var pi routing.ParticipantInit
-
-	// require a claim
-	if claims == nil || claims.Video == nil {
-		return "", pi, http.StatusUnauthorized, rtc.ErrPermissionDenied
-	}
-
-	onlyName, err := EnsureJoinPermission(r.Context())
-	if err != nil {
-		return "", pi, http.StatusUnauthorized, err
-	}
-
-	if claims.Identity == "" {
-		return "", pi, http.StatusBadRequest, ErrIdentityEmpty
-	}
-	if !s.config.Limit.CheckParticipantIdentityLength(claims.Identity) {
-		return "", pi, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, s.config.Limit.MaxParticipantIdentityLength)
-	}
-
-	if claims.RoomConfig != nil {
-		if err := claims.RoomConfig.CheckCredentials(); err != nil {
-			logger.Warnw("credentials found in token", nil)
-			// TODO(dz): in a future version, we'll reject these connections
-		}
-	}
-
-	roomName := livekit.RoomName(r.FormValue("room"))
-	reconnectParam := r.FormValue("reconnect")
+	var params ValidateConnectRequestParams
+	params.roomName = livekit.RoomName(r.FormValue("room"))
+	params.reconnect = boolValue(r.FormValue("reconnect"))
 	reconnectReason, _ := strconv.Atoi(r.FormValue("reconnect_reason")) // 0 means unknown reason
-	autoSubParam := r.FormValue("auto_subscribe")
-	publishParam := r.FormValue("publish")
-	adaptiveStreamParam := r.FormValue("adaptive_stream")
-	participantID := r.FormValue("sid")
+	params.reconnectReason = livekit.ReconnectReason(reconnectReason)
+	params.autoSubscribe = boolValue(r.FormValue("auto_subscribe"))
+	params.publish = r.FormValue("publish")
+	params.adaptiveStream = boolValue(r.FormValue("adaptive_stream"))
+	params.participantID = livekit.ParticipantID(r.FormValue("sid"))
 	subscriberAllowPauseParam := r.FormValue("subscriber_allow_pause")
-	disableICELite := r.FormValue("disable_ice_lite")
-	attributesStr := r.FormValue("attributes")
-
-	if onlyName != "" {
-		roomName = onlyName
+	if subscriberAllowPauseParam != "" {
+		subscriberAllowPause := boolValue(subscriberAllowPauseParam)
+		params.subscriberAllowPause = &subscriberAllowPause
 	}
-	if !s.config.Limit.CheckRoomNameLength(string(roomName)) {
-		return "", pi, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, s.config.Limit.MaxRoomNameLength)
-	}
+	params.disableICELite = boolValue(r.FormValue("disable_ice_lite"))
 
-	// this is new connection for existing participant -  with publish only permissions
-	if publishParam != "" {
-		// Make sure grant has GetCanPublish set,
-		if !claims.Video.GetCanPublish() {
-			return "", routing.ParticipantInit{}, http.StatusUnauthorized, rtc.ErrPermissionDenied
-		}
-		// Make sure by default subscribe is off
-		claims.Video.SetCanSubscribe(false)
-		claims.Identity += "#" + publishParam
-	}
-
-	// room allocator validations
-	err = s.roomAllocator.ValidateCreateRoom(r.Context(), roomName)
-	if err != nil {
-		if errors.Is(err, ErrRoomNotFound) {
-			return "", pi, http.StatusNotFound, err
-		} else {
-			return "", pi, http.StatusInternalServerError, err
-		}
-	}
-
-	region := ""
-	if router, ok := s.router.(routing.Router); ok {
-		region = router.GetRegion()
-		if foundNode, err := router.GetNodeForRoom(r.Context(), roomName); err == nil {
-			if selector.LimitsReached(s.limits, foundNode.Stats) {
-				return "", pi, http.StatusServiceUnavailable, rtc.ErrLimitExceeded
-			}
-		}
-	}
-
-	createRequest := &livekit.CreateRoomRequest{
-		Name:       string(roomName),
-		RoomPreset: claims.RoomPreset,
-	}
-	SetRoomConfiguration(createRequest, claims.GetRoomConfiguration())
-
-	// Add extra attributes to the participant
-	if attributesStr != "" {
-		// Make sure grant has GetCanUpdateOwnMetadata set
-		if !claims.Video.GetCanUpdateOwnMetadata() {
-			return "", routing.ParticipantInit{}, http.StatusUnauthorized, rtc.ErrPermissionDenied
-		}
-		attrs, err := decodeAttributes(attributesStr)
+	attributesStrParam := r.FormValue("attributes")
+	if attributesStrParam != "" {
+		attrs, err := decodeAttributes(attributesStrParam)
 		if err != nil {
 			if strict {
-				return "", pi, http.StatusBadRequest, errors.New("cannot decode attributes")
+				return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot decode attributes")
 			}
 			log.Debugw("failed to decode attributes", "error", err)
 			// attrs will be empty here, so just proceed
 		}
-		if len(attrs) != 0 && claims.Attributes == nil {
-			claims.Attributes = make(map[string]string, len(attrs))
-		}
-		for k, v := range attrs {
-			if v == "" {
-				continue // do not allow deleting existing attributes
-			}
-			claims.Attributes[k] = v
-		}
+		params.attributes = attrs
 	}
 
-	pi = routing.ParticipantInit{
-		Reconnect:       boolValue(reconnectParam),
-		ReconnectReason: livekit.ReconnectReason(reconnectReason),
-		Identity:        livekit.ParticipantIdentity(claims.Identity),
-		Name:            livekit.ParticipantName(claims.Name),
-		AutoSubscribe:   true,
-		Client:          ParseClientInfo(r),
-		Grants:          claims,
-		Region:          region,
-		CreateRoom:      createRequest,
-	}
-	if pi.Reconnect {
-		pi.ID = livekit.ParticipantID(participantID)
-	}
-
-	if autoSubParam != "" {
-		pi.AutoSubscribe = boolValue(autoSubParam)
-	}
-	if adaptiveStreamParam != "" {
-		pi.AdaptiveStream = boolValue(adaptiveStreamParam)
-	}
-	if subscriberAllowPauseParam != "" {
-		subscriberAllowPause := boolValue(subscriberAllowPauseParam)
-		pi.SubscriberAllowPause = &subscriberAllowPause
-	}
-	if disableICELite != "" {
-		pi.DisableICELite = boolValue(disableICELite)
-	}
-
-	return roomName, pi, http.StatusOK, nil
+	return ValidateConnectRequest(
+		r,
+		s.limits,
+		params,
+		s.router,
+		s.roomAllocator,
+	)
 }
 
 func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {

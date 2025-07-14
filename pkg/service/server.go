@@ -146,7 +146,6 @@ func NewLivekitServer(conf *config.Config,
 	xtwirp.RegisterServer(mux, egressServer)
 	xtwirp.RegisterServer(mux, ingressServer)
 	xtwirp.RegisterServer(mux, sipServer)
-	// RAJA-REMOVE mux.Handle("/rtc", rtcService)
 	rtcService.SetupRoutes(mux)
 	rtcv2Service.SetupRoutes(mux)
 	rtcRestService.SetupRoutes(mux)
