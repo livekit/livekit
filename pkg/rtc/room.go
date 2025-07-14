@@ -143,7 +143,7 @@ type Room struct {
 
 	userPacketDeduper *UserPacketDeduper
 
-	dataMessagecache *utils.TimeSizeCache[types.DataMessageCache]
+	dataMessageCache *utils.TimeSizeCache[types.DataMessageCache]
 }
 
 type ParticipantOptions struct {
@@ -273,7 +273,7 @@ func NewRoom(
 		disconnectSignalOnResumeParticipants: make(map[livekit.ParticipantIdentity]time.Time),
 		disconnectSignalOnResumeNoMessagesParticipants: make(map[livekit.ParticipantIdentity]*disconnectSignalOnResumeNoMessages),
 		userPacketDeduper: NewUserPacketDeduper(),
-		dataMessagecache: utils.NewTimeSizeCache[types.DataMessageCache](utils.TimeSizeCacheParams{
+		dataMessageCache: utils.NewTimeSizeCache[types.DataMessageCache](utils.TimeSizeCacheParams{
 			TTL:     dataMessageCacheTTL,
 			MaxSize: dataMessageCacheSize,
 		}),
@@ -1307,7 +1307,7 @@ func (r *Room) onDataPacket(source types.LocalParticipant, kind livekit.DataPack
 			r.logger.Errorw("failed to marshal data packet for cache", err, "participant", source.Identity(), "seq", dp.GetSequence())
 			return
 		}
-		r.dataMessagecache.Add(&types.DataMessageCache{
+		r.dataMessageCache.Add(&types.DataMessageCache{
 			SenderID:       source.ID(),
 			Seq:            dp.GetSequence(),
 			Data:           data,
@@ -1447,7 +1447,7 @@ func (r *Room) changeUpdateWorker() {
 			SendParticipantUpdates(maps.Values(updatesMap), r.GetParticipants())
 
 		case <-cleanDataMessageTicker.C:
-			r.dataMessagecache.Prune()
+			r.dataMessageCache.Prune()
 		}
 	}
 }
@@ -1723,7 +1723,7 @@ func (r *Room) IsDataMessageUserPacketDuplicate(up *livekit.UserPacket) bool {
 
 func (r *Room) GetCachedReliableDataMessage(seqs map[livekit.ParticipantID]uint32) []*types.DataMessageCache {
 	msgs := make([]*types.DataMessageCache, 0, len(seqs)*10)
-	for _, msg := range r.dataMessagecache.Get() {
+	for _, msg := range r.dataMessageCache.Get() {
 		seq, ok := seqs[msg.SenderID]
 		if ok && msg.Seq >= seq {
 			msgs = append(msgs, msg)
