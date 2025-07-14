@@ -91,8 +91,8 @@ func (s *RTCService) SetupRoutes(mux *http.ServeMux) {
 }
 
 func (s *RTCService) validate(w http.ResponseWriter, r *http.Request) {
-	log := utils.GetLogger(r.Context())
-	_, _, code, err := s.validateInternal(log, r, true)
+	lgr := utils.GetLogger(r.Context())
+	_, _, code, err := s.validateInternal(lgr, r, true)
 	if err != nil {
 		HandleError(w, r, code, err)
 		return
@@ -112,22 +112,9 @@ func decodeAttributes(str string) (map[string]string, error) {
 	return attrs, nil
 }
 
-func (s *RTCService) validateInternal(log logger.Logger, r *http.Request, strict bool) (livekit.RoomName, routing.ParticipantInit, int, error) {
+func (s *RTCService) validateInternal(lgr logger.Logger, r *http.Request, strict bool) (livekit.RoomName, routing.ParticipantInit, int, error) {
 	var params ValidateConnectRequestParams
-	params.roomName = livekit.RoomName(r.FormValue("room"))
-	params.reconnect = boolValue(r.FormValue("reconnect"))
-	reconnectReason, _ := strconv.Atoi(r.FormValue("reconnect_reason")) // 0 means unknown reason
-	params.reconnectReason = livekit.ReconnectReason(reconnectReason)
-	params.autoSubscribe = boolValue(r.FormValue("auto_subscribe"))
 	params.publish = r.FormValue("publish")
-	params.adaptiveStream = boolValue(r.FormValue("adaptive_stream"))
-	params.participantID = livekit.ParticipantID(r.FormValue("sid"))
-	subscriberAllowPauseParam := r.FormValue("subscriber_allow_pause")
-	if subscriberAllowPauseParam != "" {
-		subscriberAllowPause := boolValue(subscriberAllowPauseParam)
-		params.subscriberAllowPause = &subscriberAllowPause
-	}
-	params.disableICELite = boolValue(r.FormValue("disable_ice_lite"))
 
 	attributesStrParam := r.FormValue("attributes")
 	if attributesStrParam != "" {
@@ -136,19 +123,50 @@ func (s *RTCService) validateInternal(log logger.Logger, r *http.Request, strict
 			if strict {
 				return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot decode attributes")
 			}
-			log.Debugw("failed to decode attributes", "error", err)
+			lgr.Debugw("failed to decode attributes", "error", err)
 			// attrs will be empty here, so just proceed
 		}
 		params.attributes = attrs
 	}
 
-	return ValidateConnectRequest(
+	res, code, err := ValidateConnectRequest(
+		lgr,
 		r,
 		s.limits,
 		params,
 		s.router,
 		s.roomAllocator,
 	)
+	if err != nil {
+		return res.roomName, routing.ParticipantInit{}, code, err
+	}
+
+	pi := routing.ParticipantInit{
+		Reconnect:      boolValue(r.FormValue("reconnect")),
+		Identity:       livekit.ParticipantIdentity(res.grants.Identity),
+		Name:           livekit.ParticipantName(res.grants.Name),
+		Client:         ParseClientInfo(r),
+		Grants:         res.grants,
+		Region:         res.region,
+		CreateRoom:     res.createRoomRequest,
+		AutoSubscribe:  boolValue(r.FormValue("auto_subscribe")),
+		AdaptiveStream: boolValue(r.FormValue("adaptive_stream")),
+		DisableICELite: boolValue(r.FormValue("disable_ice_lite")),
+	}
+	reconnectReason, _ := strconv.Atoi(r.FormValue("reconnect_reason")) // 0 means unknown reason
+	pi.ReconnectReason = livekit.ReconnectReason(reconnectReason)
+
+	if pi.Reconnect {
+		pi.ID = livekit.ParticipantID(r.FormValue("sid"))
+	}
+
+	subscriberAllowPauseParam := r.FormValue("subscriber_allow_pause")
+	if subscriberAllowPauseParam != "" {
+		subscriberAllowPause := boolValue(subscriberAllowPauseParam)
+		pi.SubscriberAllowPause = &subscriberAllowPause
+	}
+
+	return res.roomName, pi, code, err
 }
 
 func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {

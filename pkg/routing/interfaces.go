@@ -229,10 +229,9 @@ func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionI
 	}
 
 	ss := &livekit.StartSession{
-		RoomName: string(roomName),
-		Identity: string(pi.Identity),
-		Name:     string(pi.Name),
-		// connection id is to allow the RTC node to identify where to route the message back to
+		RoomName:        string(roomName),
+		Identity:        string(pi.Identity),
+		Name:            string(pi.Name),
 		ConnectionId:    string(connectionID),
 		Reconnect:       pi.Reconnect,
 		ReconnectReason: pi.ReconnectReason,

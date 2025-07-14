@@ -15,10 +15,13 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"google.golang.org/protobuf/proto"
@@ -31,10 +34,10 @@ const (
 type RTCv2Service struct {
 	http.Handler
 
+	limits        config.LimitConfig
+	router        routing.Router
+	roomAllocator RoomAllocator
 	/* RAJA-TODO
-	config            *config.Config
-	router            routing.Router
-	roomAllocator     RoomAllocator
 	client            rpc.RTCv2ServiceClient[livekit.NodeID]
 	topicFormatter    rpc.TopicFormatter
 	participantClient rpc.TypedRTCv2ServiceParticipantClient
@@ -42,35 +45,74 @@ type RTCv2Service struct {
 }
 
 func NewRTCv2Service(
-/* RAJA-TODO
-config *config.Config,
-router routing.Router,
-roomAllocator RoomAllocator,
-clientParams rpc.ClientParams,
-topicFormatter rpc.TopicFormatter,
-participantClient rpc.TypedRTCv2ServiceParticipantClient,
-*/
+	config *config.Config,
+	router routing.Router,
+	roomAllocator RoomAllocator,
+	/* RAJA-TODO
+	   clientParams rpc.ClientParams,
+	   topicFormatter rpc.TopicFormatter,
+	   participantClient rpc.TypedRTCv2ServiceParticipantClient,
+	*/
 ) (*RTCv2Service, error) {
 	/* RAJA-TODO
 	client, err := rpc.NewRTCv2ServiceClient[livekit.NodeID](clientParams.Args())
 	if err != nil {
 		return nil, err
 	}
+	*/
 
 	return &RTCv2Service{
-		config:            config,
-		router:            router,
-		roomAllocator:     roomAllocator,
+		limits:        config.Limit,
+		router:        router,
+		roomAllocator: roomAllocator,
+		/* RAJA-TODO
 		client:            client,
 		topicFormatter:    topicFormatter,
 		participantClient: participantClient,
+		*/
 	}, nil
-	*/
-	return &RTCv2Service{}, nil
 }
 
 func (s *RTCv2Service) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+cRTCv2Path, s.handlePost)
+}
+
+func (s *RTCv2Service) validateInternal(
+	lgr logger.Logger,
+	r *http.Request,
+	connectRequest *livekit.ConnectRequest,
+) (*livekit.CreateParticipantSession, int, error) {
+	params := ValidateConnectRequestParams{
+		attributes: connectRequest.ParticipantAttributes,
+	}
+
+	res, code, err := ValidateConnectRequest(
+		lgr,
+		r,
+		s.limits,
+		params,
+		s.router,
+		s.roomAllocator,
+	)
+	if err != nil {
+		lgr.Debugw("returning error", "error", err) // REMOVE
+		return nil, code, err
+	}
+
+	grantsJson, err := json.Marshal(res.grants)
+	if err != nil {
+		return nil, http.StatusInternalServerError, err
+	}
+
+	AugmentClientInfo(connectRequest.ClientInfo, r)
+
+	cps := &livekit.CreateParticipantSession{
+		GrantsJson: string(grantsJson),
+		CreateRoom: res.createRoomRequest,
+		Connect:    connectRequest,
+	}
+
+	return cps, code, err
 }
 
 func (s *RTCv2Service) handlePost(w http.ResponseWriter, r *http.Request) {
@@ -85,14 +127,26 @@ func (s *RTCv2Service) handlePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg := &livekit.Signalv2ClientEnvelope{}
-	err = proto.Unmarshal(body, msg)
+	envelope := &livekit.Signalv2ClientEnvelope{}
+	err = proto.Unmarshal(body, envelope)
 	if err != nil {
 		HandleErrorJson(w, r, http.StatusBadRequest, fmt.Errorf("could not unmarshal request: %s", err))
 		return
 	}
 
-	logger.Infow("RAJA POST", "msg", logger.Proto(msg)) // REMOVE
+	for _, cm := range envelope.ClientMessages {
+		switch msg := cm.GetMessage().(type) {
+		case *livekit.Signalv2ClientMessage_ConnectRequest:
+			cps, code, err := s.validateInternal(logger.GetLogger(), r, msg.ConnectRequest)
+			if err != nil {
+				HandleErrorJson(w, r, code, err)
+				return
+			}
+
+			logger.Infow("RAJA POST", "msg", logger.Proto(msg.ConnectRequest), "cps", logger.Proto(cps)) // REMOVE
+		}
+	}
+
 	w.WriteHeader(http.StatusOK)
 }
 
