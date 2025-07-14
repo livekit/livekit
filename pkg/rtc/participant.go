@@ -1947,10 +1947,6 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 		}
 	}
 
-	if state == livekit.ParticipantInfo_ACTIVE {
-		p.replayJoiningReliableMessages()
-	}
-
 	p.params.Logger.Debugw("updating participant state", "state", state.String())
 	p.dirty.Store(true)
 
@@ -2351,13 +2347,15 @@ func (p *ParticipantImpl) onPrimaryTransportInitialConnected() {
 		// else, wait for all tracks to be published and publisher peer connection established
 		p.SetMigrateState(types.MigrateStateComplete)
 	}
-}
 
-func (p *ParticipantImpl) onPrimaryTransportFullyEstablished() {
 	if !p.sessionStartRecorded.Swap(true) {
 		prometheus.RecordSessionStartTime(int(p.ProtocolVersion()), time.Since(p.params.SessionStartTime))
 	}
 	p.updateState(livekit.ParticipantInfo_ACTIVE)
+}
+
+func (p *ParticipantImpl) onPrimaryTransportFullyEstablished() {
+	p.replayJoiningReliableMessages()
 }
 
 func (p *ParticipantImpl) clearDisconnectTimer() {
