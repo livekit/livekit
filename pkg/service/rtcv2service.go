@@ -15,6 +15,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -24,6 +25,9 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/psrpc"
+	"github.com/livekit/psrpc/pkg/middleware"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -37,6 +41,7 @@ type RTCv2Service struct {
 	limits        config.LimitConfig
 	router        routing.Router
 	roomAllocator RoomAllocator
+	client        rpc.TypedSignalv2Client
 	/* RAJA-TODO
 	client            rpc.RTCv2ServiceClient[livekit.NodeID]
 	topicFormatter    rpc.TopicFormatter
@@ -45,28 +50,32 @@ type RTCv2Service struct {
 }
 
 func NewRTCv2Service(
+	nodeID livekit.NodeID,
 	config *config.Config,
 	router routing.Router,
 	roomAllocator RoomAllocator,
+	bus psrpc.MessageBus,
 	/* RAJA-TODO
 	   clientParams rpc.ClientParams,
 	   topicFormatter rpc.TopicFormatter,
 	   participantClient rpc.TypedRTCv2ServiceParticipantClient,
 	*/
 ) (*RTCv2Service, error) {
-	/* RAJA-TODO
-	client, err := rpc.NewRTCv2ServiceClient[livekit.NodeID](clientParams.Args())
+	client, err := rpc.NewTypedSignalv2Client(
+		nodeID,
+		bus,
+		middleware.WithClientMetrics(rpc.PSRPCMetricsObserver{}),
+	)
 	if err != nil {
 		return nil, err
 	}
-	*/
 
 	return &RTCv2Service{
 		limits:        config.Limit,
 		router:        router,
 		roomAllocator: roomAllocator,
+		client:        client,
 		/* RAJA-TODO
-		client:            client,
 		topicFormatter:    topicFormatter,
 		participantClient: participantClient,
 		*/
@@ -81,7 +90,7 @@ func (s *RTCv2Service) validateInternal(
 	lgr logger.Logger,
 	r *http.Request,
 	connectRequest *livekit.ConnectRequest,
-) (*livekit.CreateParticipantSession, int, error) {
+) (livekit.RoomName, *rpc.RelaySignalv2ConnectRequest, int, error) {
 	params := ValidateConnectRequestParams{
 		attributes: connectRequest.ParticipantAttributes,
 	}
@@ -96,23 +105,21 @@ func (s *RTCv2Service) validateInternal(
 	)
 	if err != nil {
 		lgr.Debugw("returning error", "error", err) // REMOVE
-		return nil, code, err
+		return res.roomName, nil, code, err
 	}
 
 	grantsJson, err := json.Marshal(res.grants)
 	if err != nil {
-		return nil, http.StatusInternalServerError, err
+		return res.roomName, nil, http.StatusInternalServerError, err
 	}
 
 	AugmentClientInfo(connectRequest.ClientInfo, r)
 
-	cps := &livekit.CreateParticipantSession{
+	return res.roomName, &rpc.RelaySignalv2ConnectRequest{
 		GrantsJson: string(grantsJson),
 		CreateRoom: res.createRoomRequest,
 		Connect:    connectRequest,
-	}
-
-	return cps, code, err
+	}, code, err
 }
 
 func (s *RTCv2Service) handlePost(w http.ResponseWriter, r *http.Request) {
@@ -137,13 +144,26 @@ func (s *RTCv2Service) handlePost(w http.ResponseWriter, r *http.Request) {
 	for _, cm := range envelope.ClientMessages {
 		switch msg := cm.GetMessage().(type) {
 		case *livekit.Signalv2ClientMessage_ConnectRequest:
-			cps, code, err := s.validateInternal(logger.GetLogger(), r, msg.ConnectRequest)
+			roomName, rscr, code, err := s.validateInternal(logger.GetLogger(), r, msg.ConnectRequest)
 			if err != nil {
 				HandleErrorJson(w, r, code, err)
 				return
 			}
 
-			logger.Infow("RAJA POST", "msg", logger.Proto(msg.ConnectRequest), "cps", logger.Proto(cps)) // REMOVE
+			if err := s.roomAllocator.SelectRoomNode(r.Context(), roomName, ""); err != nil {
+				HandleErrorJson(w, r, http.StatusInternalServerError, err)
+				return
+			}
+
+			node, err := s.router.GetNodeForRoom(r.Context(), roomName)
+			if err != nil {
+				HandleErrorJson(w, r, code, err)
+				return
+			}
+
+			logger.Infow("RAJA POST", "msg", logger.Proto(msg.ConnectRequest), "rscr", logger.Proto(rscr), "selectedNodeID", node.Id) // REMOVE
+			resp, err := s.client.RelaySignalv2Connect(context.Background(), livekit.NodeID(node.Id), rscr)
+			logger.Infow("RAJA PSRPC", "resp", logger.Proto(resp), "error", err) // REMOVE
 		}
 	}
 

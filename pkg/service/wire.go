@@ -85,6 +85,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		getAgentStore,
 		getSignalRelayConfig,
 		NewDefaultSignalServer,
+		NewDefaultSignalv2Server,
 		routing.NewSignalClient,
 		getRoomConfig,
 		routing.NewRoomManagerClient,

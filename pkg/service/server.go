@@ -57,6 +57,7 @@ type LivekitServer struct {
 	router         routing.Router
 	roomManager    *RoomManager
 	signalServer   *SignalServer
+	signalv2Server *Signalv2Server
 	turnServer     *turn.Server
 	currentNode    routing.LocalNode
 	running        atomic.Bool
@@ -79,6 +80,7 @@ func NewLivekitServer(conf *config.Config,
 	router routing.Router,
 	roomManager *RoomManager,
 	signalServer *SignalServer,
+	signalv2Server *Signalv2Server,
 	turnServer *turn.Server,
 	currentNode routing.LocalNode,
 ) (s *LivekitServer, err error) {
@@ -92,6 +94,7 @@ func NewLivekitServer(conf *config.Config,
 		router:         router,
 		roomManager:    roomManager,
 		signalServer:   signalServer,
+		signalv2Server: signalv2Server,
 		// turn server starts automatically
 		turnServer:  turnServer,
 		currentNode: currentNode,
@@ -275,6 +278,10 @@ func (s *LivekitServer) Start() error {
 	}
 
 	if err := s.signalServer.Start(); err != nil {
+		return err
+	}
+
+	if err := s.signalv2Server.Start(); err != nil {
 		return err
 	}
 

@@ -120,7 +120,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	sipService := NewSIPService(sipConfig, nodeID, messageBus, sipClient, sipStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, router, telemetryService)
-	rtCv2Service, err := NewRTCv2Service(conf, router, roomAllocator)
+	rtCv2Service, err := NewRTCv2Service(nodeID, conf, router, roomAllocator, messageBus)
 	if err != nil {
 		return nil, err
 	}
@@ -152,12 +152,16 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
+	signalv2Server, err := NewDefaultSignalv2Server(currentNode, messageBus, signalRelayConfig, router, roomManager)
+	if err != nil {
+		return nil, err
+	}
 	authHandler := getTURNAuthHandlerFunc(turnAuthHandler)
 	server, err := newInProcessTurnServer(conf, authHandler)
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, rtCv2Service, serviceRTCRestService, agentService, keyProvider, router, roomManager, signalServer, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, rtCv2Service, serviceRTCRestService, agentService, keyProvider, router, roomManager, signalServer, signalv2Server, server, currentNode)
 	if err != nil {
 		return nil, err
 	}
