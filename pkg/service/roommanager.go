@@ -333,7 +333,8 @@ func (r *RoomManager) StartSession(
 				return errors.New("could not restart closed participant")
 			}
 
-			participant.GetLogger().Infow("resuming RTC session",
+			participant.GetLogger().Infow(
+				"resuming RTC session",
 				"nodeID", r.currentNode.NodeID(),
 				"participantInit", &pi,
 				"numParticipants", room.GetParticipantCount(),
@@ -393,7 +394,8 @@ func (r *RoomManager) StartSession(
 		sid,
 		false,
 	)
-	pLogger.Infow("starting RTC session",
+	pLogger.Infow(
+		"starting RTC session",
 		"room", room.Name(),
 		"nodeID", r.currentNode.NodeID(),
 		"numParticipants", room.GetParticipantCount(),
@@ -1031,6 +1033,304 @@ func (r *RoomManager) getFirstKeyPair() (string, string, error) {
 	return "", "", errors.New("no API keys configured")
 }
 
+func (r *RoomManager) HandleConnect(
+	ctx context.Context,
+	grants *auth.ClaimGrants,
+	rscr *rpc.RelaySignalv2ConnectRequest,
+) (*rpc.RelaySignalv2ConnectResponse, error) {
+	sessionStartTime := time.Now()
+
+	createRoom := rscr.CreateRoom
+	room, err := r.getOrCreateRoom(ctx, createRoom)
+	if err != nil {
+		return nil, err
+	}
+	defer room.Release()
+
+	protoRoom, roomInternal := room.ToProto(), room.Internal()
+
+	participantIdentity := livekit.ParticipantIdentity(grants.Identity)
+
+	// should not error out, error is logged in iceServersForParticipant even if it fails
+	// since this is used for TURN server credentials, we don't want to fail the request even if there's no TURN for the session
+	// RAJA-TODO apiKey, _, _ := r.getFirstKeyPair()
+
+	/* SIGNALLING-V2-TODO
+	participant := room.GetParticipant(pi.Identity)
+	if participant != nil {
+		// When reconnecting, it means WS has interrupted but underlying peer connection is still ok in this state,
+		// we'll keep the participant SID, and just swap the sink for the underlying connection
+		if pi.Reconnect {
+			if participant.IsClosed() {
+				// Send leave request if participant is closed, i. e. handle the case of client trying to resume crossing wires with
+				// server closing the participant due to some irrecoverable condition. Such a condition would have triggered
+				// a full reconnect when that condition occurred.
+				//
+				// It is possible that the client did not get that send request. So, send it again.
+				logger.Infow("cannot restart a closed participant",
+					"room", room.Name(),
+					"nodeID", r.currentNode.NodeID(),
+					"participant", pi.Identity,
+					"reason", pi.ReconnectReason,
+				)
+
+				var leave *livekit.LeaveRequest
+				pv := types.ProtocolVersion(pi.Client.Protocol)
+				if pv.SupportsRegionsInLeaveRequest() {
+					leave = &livekit.LeaveRequest{
+						Reason: livekit.DisconnectReason_STATE_MISMATCH,
+						Action: livekit.LeaveRequest_RECONNECT,
+					}
+				} else {
+					leave = &livekit.LeaveRequest{
+						CanReconnect: true,
+						Reason:       livekit.DisconnectReason_STATE_MISMATCH,
+					}
+				}
+				_ = responseSink.WriteMessage(&livekit.SignalResponse{
+					Message: &livekit.SignalResponse_Leave{
+						Leave: leave,
+					},
+				})
+				return errors.New("could not restart closed participant")
+			}
+
+			participant.GetLogger().Infow(
+				"resuming RTC session",
+				"nodeID", r.currentNode.NodeID(),
+				"participantInit", &pi,
+				"numParticipants", room.GetParticipantCount(),
+			)
+			iceConfig := r.getIceConfig(room.Name(), participant)
+			if err = room.ResumeParticipant(
+				participant,
+				requestSource,
+				responseSink,
+				iceConfig,
+				r.iceServersForParticipant(
+					apiKey,
+					participant,
+					iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS,
+				),
+				pi.ReconnectReason,
+			); err != nil {
+				participant.GetLogger().Warnw("could not resume participant", err)
+				return err
+			}
+			r.telemetry.ParticipantResumed(ctx, room.ToProto(), participant.ToProto(), r.currentNode.NodeID(), pi.ReconnectReason)
+			go r.rtcSessionWorker(room, participant, requestSource)
+			return nil
+		}
+
+		// we need to clean up the existing participant, so a new one can join
+		participant.GetLogger().Infow("removing duplicate participant")
+		room.RemoveParticipant(participant.Identity(), participant.ID(), types.ParticipantCloseReasonDuplicateIdentity)
+	} else if pi.Reconnect {
+		// send leave request if participant is trying to reconnect without keep subscribe state
+		// but missing from the room
+		var leave *livekit.LeaveRequest
+		pv := types.ProtocolVersion(pi.Client.Protocol)
+		if pv.SupportsRegionsInLeaveRequest() {
+			leave = &livekit.LeaveRequest{
+				Reason: livekit.DisconnectReason_STATE_MISMATCH,
+				Action: livekit.LeaveRequest_RECONNECT,
+			}
+		} else {
+			leave = &livekit.LeaveRequest{
+				CanReconnect: true,
+				Reason:       livekit.DisconnectReason_STATE_MISMATCH,
+			}
+		}
+		_ = responseSink.WriteMessage(&livekit.SignalResponse{
+			Message: &livekit.SignalResponse_Leave{
+				Leave: leave,
+			},
+		})
+		return errors.New("could not restart participant")
+	}
+	*/
+
+	sid := livekit.ParticipantID(guid.New(utils.ParticipantPrefix))
+	pLogger := rtc.LoggerWithParticipant(
+		rtc.LoggerWithRoom(logger.GetLogger(), room.Name(), room.ID()),
+		participantIdentity,
+		sid,
+		false,
+	)
+	pLogger.Infow(
+		"starting RTC session",
+		"room", room.Name(),
+		"nodeID", r.currentNode.NodeID(),
+		"numParticipants", room.GetParticipantCount(),
+		"grants", grants,
+		"connectRequest", logger.Proto(rscr),
+	)
+
+	clientInfo := rscr.Connect.ClientInfo
+	clientConf := r.clientConfManager.GetConfiguration(clientInfo)
+
+	rtcConf := *r.rtcConfig
+	rtcConf.SetBufferFactory(room.GetBufferFactory())
+	if rscr.Connect.ConnectionSettings.DisableIceLite {
+		rtcConf.SettingEngine.SetLite(false)
+	}
+
+	// default allow forceTCP
+	allowFallback := true
+	if r.config.RTC.AllowTCPFallback != nil {
+		allowFallback = *r.config.RTC.AllowTCPFallback
+	}
+
+	// default do not force full reconnect on a publication error
+	reconnectOnPublicationError := false
+	if r.config.RTC.ReconnectOnPublicationError != nil {
+		reconnectOnPublicationError = *r.config.RTC.ReconnectOnPublicationError
+	}
+
+	// default do not force full reconnect on a subscription error
+	reconnectOnSubscriptionError := false
+	if r.config.RTC.ReconnectOnSubscriptionError != nil {
+		reconnectOnSubscriptionError = *r.config.RTC.ReconnectOnSubscriptionError
+	}
+
+	// default do not force full reconnect on a data channel error
+	reconnectOnDataChannelError := false
+	if r.config.RTC.ReconnectOnDataChannelError != nil {
+		reconnectOnDataChannelError = *r.config.RTC.ReconnectOnDataChannelError
+	}
+
+	subscriberAllowPause := r.config.RTC.CongestionControl.AllowPause
+	if rscr.Connect.ConnectionSettings.SubscriberAllowPause != nil {
+		subscriberAllowPause = *rscr.Connect.ConnectionSettings.SubscriberAllowPause
+	}
+
+	participant, err := rtc.NewParticipant(rtc.ParticipantParams{
+		Identity:                participantIdentity,
+		Name:                    livekit.ParticipantName(grants.Name),
+		SID:                     sid,
+		Config:                  &rtcConf,
+		AudioConfig:             r.config.Audio,
+		VideoConfig:             r.config.Video,
+		LimitConfig:             r.config.Limit,
+		ProtocolVersion:         types.ProtocolVersion(clientInfo.Protocol),
+		SessionStartTime:        sessionStartTime,
+		Telemetry:               r.telemetry,
+		Trailer:                 room.Trailer(),
+		PLIThrottleConfig:       r.config.RTC.PLIThrottle,
+		CongestionControlConfig: r.config.RTC.CongestionControl,
+		PublishEnabledCodecs:    protoRoom.EnabledCodecs,
+		SubscribeEnabledCodecs:  protoRoom.EnabledCodecs,
+		Grants:                  grants,
+		// SIGNALLING-V2-TODO Reconnect:               pi.Reconnect,
+		Logger:     pLogger,
+		Reporter:   roomobs.NewNoopParticipantSessionReporter(),
+		ClientConf: clientConf,
+		ClientInfo: rtc.ClientInfo{ClientInfo: clientInfo},
+		// SIGNALLING-V@-TODO Region:                  pi.Region,
+		AdaptiveStream:   rscr.Connect.ConnectionSettings.AdaptiveStream,
+		AllowTCPFallback: allowFallback,
+		TURNSEnabled:     r.config.IsTURNSEnabled(),
+		ParticipantHelper: &roomManagerParticipantHelper{
+			room:                     room,
+			codecRegressionThreshold: r.config.Video.CodecRegressionThreshold,
+		},
+		ReconnectOnPublicationError:  reconnectOnPublicationError,
+		ReconnectOnSubscriptionError: reconnectOnSubscriptionError,
+		ReconnectOnDataChannelError:  reconnectOnDataChannelError,
+		VersionGenerator:             r.versionGenerator,
+		SubscriberAllowPause:         subscriberAllowPause,
+		SubscriptionLimitAudio:       r.config.Limit.SubscriptionLimitAudio,
+		SubscriptionLimitVideo:       r.config.Limit.SubscriptionLimitVideo,
+		PlayoutDelay:                 roomInternal.GetPlayoutDelay(),
+		SyncStreams:                  roomInternal.GetSyncStreams(),
+		ForwardStats:                 r.forwardStats,
+		MetricConfig:                 r.config.Metric,
+		DataChannelMaxBufferedAmount: r.config.RTC.DataChannelMaxBufferedAmount,
+		DatachannelSlowThreshold:     r.config.RTC.DatachannelSlowThreshold,
+		FireOnTrackBySdp:             true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	/* RAJA-TODO
+	iceConfig := r.setIceConfig(room.Name(), participant)
+
+	// join room
+	opts := rtc.ParticipantOptions{
+		AutoSubscribe: rscr.Connect.ConnectionSettings.AutoSubscribe,
+	}
+	iceServers := r.iceServersForParticipant(
+		apiKey,
+		participant,
+		iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS,
+	)
+	if err = room.Join(participant, requestSource, &opts, iceServers); err != nil {
+		pLogger.Errorw("could not join room", err)
+		_ = participant.Close(true, types.ParticipantCloseReasonJoinFailed, false)
+		return err
+	}
+	*/
+
+	/* SIGNALLING-V2-TODO
+	var participantServerClosers utils.Closers
+	participantTopic := rpc.FormatParticipantTopic(room.Name(), participant.Identity())
+	participantServer := must.Get(rpc.NewTypedParticipantServer(r, r.bus))
+	participantServerClosers = append(participantServerClosers, utils.CloseFunc(r.participantServers.Replace(participantTopic, participantServer)))
+	if err := participantServer.RegisterAllParticipantTopics(participantTopic); err != nil {
+		participantServerClosers.Close()
+		pLogger.Errorw("could not join register participant topic", err)
+		_ = participant.Close(true, types.ParticipantCloseReasonMessageBusFailed, false)
+		return err
+	}
+	*/
+
+	if err = r.roomStore.StoreParticipant(ctx, room.Name(), participant.ToProto()); err != nil {
+		pLogger.Errorw("could not store participant", err)
+	}
+
+	persistRoomForParticipantCount := func(proto *livekit.Room) {
+		if !participant.Hidden() && !room.IsClosed() {
+			err = r.roomStore.StoreRoom(ctx, proto, room.Internal())
+			if err != nil {
+				logger.Errorw("could not store room", err)
+			}
+		}
+	}
+
+	// update room store with new numParticipants
+	persistRoomForParticipantCount(room.ToProto())
+
+	clientMeta := &livekit.AnalyticsClientMeta{
+		Region: r.currentNode.Region(),
+		Node:   string(r.currentNode.NodeID()),
+	}
+	r.telemetry.ParticipantJoined(ctx, protoRoom, participant.ToProto(), clientInfo, clientMeta, true)
+	participant.OnClose(func(p types.LocalParticipant) {
+		// SIGNALLING-V2-TODO participantServerClosers.Close()
+
+		if err := r.roomStore.DeleteParticipant(ctx, room.Name(), p.Identity()); err != nil {
+			pLogger.Errorw("could not delete participant", err)
+		}
+
+		// update room store with new numParticipants
+		proto := room.ToProto()
+		persistRoomForParticipantCount(proto)
+		r.telemetry.ParticipantLeft(ctx, proto, p.ToProto(), true)
+	})
+	participant.OnClaimsChanged(func(participant types.LocalParticipant) {
+		pLogger.Debugw("refreshing client token after claims change")
+		if err := r.refreshToken(participant); err != nil {
+			pLogger.Errorw("could not refresh token", err)
+		}
+	})
+	participant.OnICEConfigChanged(func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig) {
+		r.iceConfigCache.Put(iceConfigCacheKey{room.Name(), participant.Identity()}, iceConfig)
+	})
+
+	// RAJA-TODO: get ConnectResponse and return
+	return nil, nil
+}
+
 // ------------------------------------
 
 func iceServerForStunServers(servers []string) *livekit.ICEServer {
@@ -1040,6 +1340,8 @@ func iceServerForStunServers(servers []string) *livekit.ICEServer {
 	}
 	return iceServer
 }
+
+// ------------------------------------
 
 type roomManagerParticipantHelper struct {
 	room                     *rtc.Room

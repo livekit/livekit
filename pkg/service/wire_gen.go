@@ -152,7 +152,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	signalv2Server, err := NewDefaultSignalv2Server(currentNode, messageBus, signalRelayConfig, router, roomManager)
+	signalv2Server, err := NewDefaultSignalv2Server(currentNode, messageBus, router, roomManager)
 	if err != nil {
 		return nil, err
 	}
