@@ -133,56 +133,60 @@ func (s *RTCv2Service) handlePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	envelope := &livekit.Signalv2ClientEnvelope{}
-	err = proto.Unmarshal(body, envelope)
+	clientMessage := &livekit.Signalv2ClientMessage{}
+	err = proto.Unmarshal(body, clientMessage)
 	if err != nil {
 		HandleErrorJson(w, r, http.StatusBadRequest, fmt.Errorf("could not unmarshal request: %s", err))
 		return
 	}
 
-	for _, cm := range envelope.ClientMessages {
-		switch msg := cm.GetMessage().(type) {
-		case *livekit.Signalv2ClientMessage_ConnectRequest:
-			roomName, rscr, code, err := s.validateInternal(logger.GetLogger(), r, msg.ConnectRequest)
-			if err != nil {
-				HandleErrorJson(w, r, code, err)
-				return
-			}
+	switch msg := clientMessage.GetMessage().(type) {
+	case *livekit.Signalv2ClientMessage_ConnectRequest:
+		roomName, rscr, code, err := s.validateInternal(logger.GetLogger(), r, msg.ConnectRequest)
+		if err != nil {
+			HandleErrorJson(w, r, code, err)
+			return
+		}
 
-			if err := s.roomAllocator.SelectRoomNode(r.Context(), roomName, ""); err != nil {
-				HandleErrorJson(w, r, http.StatusInternalServerError, err)
-				return
-			}
+		if err := s.roomAllocator.SelectRoomNode(r.Context(), roomName, ""); err != nil {
+			HandleErrorJson(w, r, http.StatusInternalServerError, err)
+			return
+		}
 
-			node, err := s.router.GetNodeForRoom(r.Context(), roomName)
-			if err != nil {
-				HandleErrorJson(w, r, http.StatusInternalServerError, err)
-				return
-			}
+		node, err := s.router.GetNodeForRoom(r.Context(), roomName)
+		if err != nil {
+			HandleErrorJson(w, r, http.StatusInternalServerError, err)
+			return
+		}
 
-			resp, err := s.client.RelaySignalv2Connect(context.Background(), livekit.NodeID(node.Id), rscr)
-			if err != nil {
-				HandleErrorJson(w, r, http.StatusInternalServerError, err)
-				return
-			}
+		resp, err := s.client.RelaySignalv2Connect(context.Background(), livekit.NodeID(node.Id), rscr)
+		if err != nil {
+			HandleErrorJson(w, r, http.StatusInternalServerError, err)
+			return
+		}
 
-			envelope := &livekit.Signalv2ServerEnvelope{
-				ServerMessages: []*livekit.Signalv2ServerMessage{
-					{
-						Message: &livekit.Signalv2ServerMessage_ConnectResponse{
-							ConnectResponse: resp.ConnectResponse,
-						},
-					},
-				},
-			}
-			marshalled, err := proto.Marshal(envelope)
-			if err != nil {
-				HandleErrorJson(w, r, http.StatusInternalServerError, err)
-				return
-			}
+		serverMessage := &livekit.Signalv2ServerMessage{
+			Message: &livekit.Signalv2ServerMessage_ConnectResponse{
+				ConnectResponse: resp.ConnectResponse,
+			},
+		}
+		marshalled, err := proto.Marshal(serverMessage)
+		if err != nil {
+			HandleErrorJson(w, r, http.StatusInternalServerError, err)
+			return
+		}
 
-			w.Header().Add("Content-type", "application/x-protobuf")
-			w.Write(marshalled)
+		w.Header().Add("Content-type", "application/x-protobuf")
+		w.Write(marshalled)
+
+	case *livekit.Signalv2ClientMessage_Envelope:
+		for _, cm := range msg.Envelope.ClientMessages {
+			switch oneOf := cm.GetMessage().(type) {
+			case *livekit.Signalv2ClientMessage_ConnectRequest:
+				logger.Errorw("should not get ConnectRequest in envelope", nil)
+			default:
+				logger.Debugw("unhandled message", "message", oneOf)
+			}
 		}
 	}
 
