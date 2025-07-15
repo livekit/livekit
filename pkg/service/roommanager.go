@@ -1053,7 +1053,7 @@ func (r *RoomManager) HandleConnect(
 
 	// should not error out, error is logged in iceServersForParticipant even if it fails
 	// since this is used for TURN server credentials, we don't want to fail the request even if there's no TURN for the session
-	// RAJA-TODO apiKey, _, _ := r.getFirstKeyPair()
+	apiKey, _, _ := r.getFirstKeyPair()
 
 	/* SIGNALLING-V2-TODO
 	participant := room.GetParticipant(pi.Identity)
@@ -1166,12 +1166,12 @@ func (r *RoomManager) HandleConnect(
 		"connectRequest", logger.Proto(rscr),
 	)
 
-	clientInfo := rscr.Connect.ClientInfo
+	clientInfo := rscr.ConnectRequest.ClientInfo
 	clientConf := r.clientConfManager.GetConfiguration(clientInfo)
 
 	rtcConf := *r.rtcConfig
 	rtcConf.SetBufferFactory(room.GetBufferFactory())
-	if rscr.Connect.ConnectionSettings.DisableIceLite {
+	if rscr.ConnectRequest.ConnectionSettings.DisableIceLite {
 		rtcConf.SettingEngine.SetLite(false)
 	}
 
@@ -1200,8 +1200,8 @@ func (r *RoomManager) HandleConnect(
 	}
 
 	subscriberAllowPause := r.config.RTC.CongestionControl.AllowPause
-	if rscr.Connect.ConnectionSettings.SubscriberAllowPause != nil {
-		subscriberAllowPause = *rscr.Connect.ConnectionSettings.SubscriberAllowPause
+	if rscr.ConnectRequest.ConnectionSettings.SubscriberAllowPause != nil {
+		subscriberAllowPause = *rscr.ConnectRequest.ConnectionSettings.SubscriberAllowPause
 	}
 
 	participant, err := rtc.NewParticipant(rtc.ParticipantParams{
@@ -1227,49 +1227,49 @@ func (r *RoomManager) HandleConnect(
 		ClientConf: clientConf,
 		ClientInfo: rtc.ClientInfo{ClientInfo: clientInfo},
 		// SIGNALLING-V@-TODO Region:                  pi.Region,
-		AdaptiveStream:   rscr.Connect.ConnectionSettings.AdaptiveStream,
+		AdaptiveStream:   rscr.ConnectRequest.ConnectionSettings.AdaptiveStream,
 		AllowTCPFallback: allowFallback,
 		TURNSEnabled:     r.config.IsTURNSEnabled(),
 		ParticipantHelper: &roomManagerParticipantHelper{
 			room:                     room,
 			codecRegressionThreshold: r.config.Video.CodecRegressionThreshold,
 		},
-		ReconnectOnPublicationError:  reconnectOnPublicationError,
-		ReconnectOnSubscriptionError: reconnectOnSubscriptionError,
-		ReconnectOnDataChannelError:  reconnectOnDataChannelError,
-		VersionGenerator:             r.versionGenerator,
-		SubscriberAllowPause:         subscriberAllowPause,
-		SubscriptionLimitAudio:       r.config.Limit.SubscriptionLimitAudio,
-		SubscriptionLimitVideo:       r.config.Limit.SubscriptionLimitVideo,
-		PlayoutDelay:                 roomInternal.GetPlayoutDelay(),
-		SyncStreams:                  roomInternal.GetSyncStreams(),
-		ForwardStats:                 r.forwardStats,
-		MetricConfig:                 r.config.Metric,
-		DataChannelMaxBufferedAmount: r.config.RTC.DataChannelMaxBufferedAmount,
-		DatachannelSlowThreshold:     r.config.RTC.DatachannelSlowThreshold,
-		FireOnTrackBySdp:             true,
+		ReconnectOnPublicationError:    reconnectOnPublicationError,
+		ReconnectOnSubscriptionError:   reconnectOnSubscriptionError,
+		ReconnectOnDataChannelError:    reconnectOnDataChannelError,
+		VersionGenerator:               r.versionGenerator,
+		SubscriberAllowPause:           subscriberAllowPause,
+		SubscriptionLimitAudio:         r.config.Limit.SubscriptionLimitAudio,
+		SubscriptionLimitVideo:         r.config.Limit.SubscriptionLimitVideo,
+		PlayoutDelay:                   roomInternal.GetPlayoutDelay(),
+		SyncStreams:                    roomInternal.GetSyncStreams(),
+		ForwardStats:                   r.forwardStats,
+		MetricConfig:                   r.config.Metric,
+		DataChannelMaxBufferedAmount:   r.config.RTC.DataChannelMaxBufferedAmount,
+		DatachannelSlowThreshold:       r.config.RTC.DatachannelSlowThreshold,
+		FireOnTrackBySdp:               true,
+		SynchronousLocalCandidatesMode: true,
 	})
 	if err != nil {
 		return nil, err
 	}
-	/* RAJA-TODO
 	iceConfig := r.setIceConfig(room.Name(), participant)
 
 	// join room
 	opts := rtc.ParticipantOptions{
-		AutoSubscribe: rscr.Connect.ConnectionSettings.AutoSubscribe,
+		AutoSubscribe: rscr.ConnectRequest.ConnectionSettings.AutoSubscribe,
 	}
 	iceServers := r.iceServersForParticipant(
 		apiKey,
 		participant,
 		iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS,
 	)
-	if err = room.Join(participant, requestSource, &opts, iceServers); err != nil {
+	connectResponse, err := room.Joinv2(participant, &opts, iceServers)
+	if err != nil {
 		pLogger.Errorw("could not join room", err)
 		_ = participant.Close(true, types.ParticipantCloseReasonJoinFailed, false)
-		return err
+		return nil, err
 	}
-	*/
 
 	/* SIGNALLING-V2-TODO
 	var participantServerClosers utils.Closers
@@ -1328,7 +1328,9 @@ func (r *RoomManager) HandleConnect(
 	})
 
 	// RAJA-TODO: get ConnectResponse and return
-	return nil, nil
+	return &rpc.RelaySignalv2ConnectResponse{
+		ConnectResponse: connectResponse,
+	}, nil
 }
 
 // ------------------------------------

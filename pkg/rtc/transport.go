@@ -87,19 +87,19 @@ const (
 )
 
 var (
-	ErrNoICETransport                   = errors.New("no ICE transport")
-	ErrIceRestartWithoutLocalSDP        = errors.New("ICE restart without local SDP settled")
-	ErrIceRestartOnClosedPeerConnection = errors.New("ICE restart on closed peer connection")
-	ErrNoTransceiver                    = errors.New("no transceiver")
-	ErrNoSender                         = errors.New("no sender")
-	ErrMidNotFound                      = errors.New("mid not found")
-	ErrNotSynchronousPeerConnectionMode = errors.New("not using synchronous peer connection mode")
-	ErrNoRemoteDescription              = errors.New("no remote description")
-	ErrNoLocalDescription               = errors.New("no local description")
-	ErrInvalidSDPFragment               = errors.New("invalid sdp fragment")
-	ErrNoBundleMid                      = errors.New("could not get bundle mid")
-	ErrMidMismatch                      = errors.New("media mid does not match bundle mid")
-	ErrICECredentialMismatch            = errors.New("ice credential mismatch")
+	ErrNoICETransport                    = errors.New("no ICE transport")
+	ErrIceRestartWithoutLocalSDP         = errors.New("ICE restart without local SDP settled")
+	ErrIceRestartOnClosedPeerConnection  = errors.New("ICE restart on closed peer connection")
+	ErrNoTransceiver                     = errors.New("no transceiver")
+	ErrNoSender                          = errors.New("no sender")
+	ErrMidNotFound                       = errors.New("mid not found")
+	ErrNotSynchronousLocalCandidatesMode = errors.New("not using synchronous local candidates mode")
+	ErrNoRemoteDescription               = errors.New("no remote description")
+	ErrNoLocalDescription                = errors.New("no local description")
+	ErrInvalidSDPFragment                = errors.New("invalid sdp fragment")
+	ErrNoBundleMid                       = errors.New("could not get bundle mid")
+	ErrMidMismatch                       = errors.New("media mid does not match bundle mid")
+	ErrICECredentialMismatch             = errors.New("ice credential mismatch")
 )
 
 // -------------------------------------------------------------------------
@@ -258,24 +258,25 @@ type PCTransport struct {
 }
 
 type TransportParams struct {
-	Handler                      transport.Handler
-	ProtocolVersion              types.ProtocolVersion
-	Config                       *WebRTCConfig
-	Twcc                         *lktwcc.Responder
-	DirectionConfig              DirectionConfig
-	CongestionControlConfig      config.CongestionControlConfig
-	EnabledCodecs                []*livekit.Codec
-	Logger                       logger.Logger
-	Transport                    livekit.SignalTarget
-	SimTracks                    map[uint32]SimulcastTrackInfo
-	ClientInfo                   ClientInfo
-	IsOfferer                    bool
-	IsSendSide                   bool
-	AllowPlayoutDelay            bool
-	UseOneShotSignallingMode     bool
-	FireOnTrackBySdp             bool
-	DataChannelMaxBufferedAmount uint64
-	DatachannelSlowThreshold     int
+	Handler                        transport.Handler
+	ProtocolVersion                types.ProtocolVersion
+	Config                         *WebRTCConfig
+	Twcc                           *lktwcc.Responder
+	DirectionConfig                DirectionConfig
+	CongestionControlConfig        config.CongestionControlConfig
+	EnabledCodecs                  []*livekit.Codec
+	Logger                         logger.Logger
+	Transport                      livekit.SignalTarget
+	SimTracks                      map[uint32]SimulcastTrackInfo
+	ClientInfo                     ClientInfo
+	IsOfferer                      bool
+	IsSendSide                     bool
+	AllowPlayoutDelay              bool
+	UseOneShotSignallingMode       bool
+	SynchronousLocalCandidatesMode bool
+	FireOnTrackBySdp               bool
+	DataChannelMaxBufferedAmount   uint64
+	DatachannelSlowThreshold       int
 
 	// for development test
 	DatachannelMaxReceiverBufferSize int
@@ -546,7 +547,7 @@ func (t *PCTransport) createPeerConnection() (cc.BandwidthEstimator, error) {
 	}
 
 	t.pc = pc
-	if !t.params.UseOneShotSignallingMode {
+	if !t.params.UseOneShotSignallingMode && !t.params.SynchronousLocalCandidatesMode {
 		// one shot signalling mode gathers all candidates and sends in answer
 		t.pc.OnICEGatheringStateChange(t.onICEGatheringStateChange)
 		t.pc.OnICECandidate(t.onICECandidateTrickle)
@@ -1292,7 +1293,8 @@ func (t *PCTransport) clearConnTimer() {
 }
 
 func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remoteId uint32) error {
-	if t.params.UseOneShotSignallingMode {
+	if t.params.UseOneShotSignallingMode || t.params.SynchronousLocalCandidatesMode {
+		// SIGNALLING-V2-TODO: need to support filtering candidates for transport fallback
 		// add remote candidates to ICE connection details
 		parsed, err := sd.Unmarshal()
 		if err == nil {
@@ -1341,8 +1343,8 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remo
 }
 
 func (t *PCTransport) GetAnswer() (webrtc.SessionDescription, error) {
-	if !t.params.UseOneShotSignallingMode {
-		return webrtc.SessionDescription{}, ErrNotSynchronousPeerConnectionMode
+	if !t.params.UseOneShotSignallingMode && !t.params.SynchronousLocalCandidatesMode {
+		return webrtc.SessionDescription{}, ErrNotSynchronousLocalCandidatesMode
 	}
 
 	prd := t.pc.PendingRemoteDescription()
@@ -1388,6 +1390,49 @@ func (t *PCTransport) GetAnswer() (webrtc.SessionDescription, error) {
 	return *cld, nil
 }
 
+func (t *PCTransport) GetOffer() (webrtc.SessionDescription, error) {
+	if !t.params.SynchronousLocalCandidatesMode {
+		return webrtc.SessionDescription{}, ErrNotSynchronousLocalCandidatesMode
+	}
+
+	offer, err := t.pc.CreateOffer(nil)
+	if err != nil {
+		return webrtc.SessionDescription{}, err
+	}
+
+	if err = t.pc.SetLocalDescription(offer); err != nil {
+		return webrtc.SessionDescription{}, err
+	}
+
+	// wait for gathering to complete to include all candidates in the answer
+	<-webrtc.GatheringCompletePromise(t.pc)
+
+	pld := t.pc.PendingLocalDescription()
+
+	// add local candidates to ICE connection details
+	parsed, err := pld.Unmarshal()
+	if err == nil {
+		addLocalICECandidates := func(attrs []sdp.Attribute) {
+			for _, a := range attrs {
+				if a.IsICECandidate() {
+					c, err := ice.UnmarshalCandidate(a.Value)
+					if err != nil {
+						continue
+					}
+					t.connectionDetails.AddLocalICECandidate(c, false, false)
+				}
+			}
+		}
+
+		addLocalICECandidates(parsed.Attributes)
+		for _, m := range parsed.MediaDescriptions {
+			addLocalICECandidates(m.Attributes)
+		}
+	}
+
+	return *pld, nil
+}
+
 func (t *PCTransport) GetICESessionUfrag() (string, error) {
 	cld := t.pc.CurrentLocalDescription()
 	if cld == nil {
@@ -1410,7 +1455,7 @@ func (t *PCTransport) GetICESessionUfrag() (string, error) {
 // Handles SDP Fragment for ICE Trickle in WHIP
 func (t *PCTransport) HandleICETrickleSDPFragment(sdpFragment string) error {
 	if !t.params.UseOneShotSignallingMode {
-		return ErrNotSynchronousPeerConnectionMode
+		return ErrNotSynchronousLocalCandidatesMode
 	}
 
 	parsedFragment := &lksdp.SDPFragment{}
@@ -1498,7 +1543,7 @@ func (t *PCTransport) HandleICETrickleSDPFragment(sdpFragment string) error {
 // Handles SDP Fragment for ICE Restart in WHIP
 func (t *PCTransport) HandleICERestartSDPFragment(sdpFragment string) (string, error) {
 	if !t.params.UseOneShotSignallingMode {
-		return "", ErrNotSynchronousPeerConnectionMode
+		return "", ErrNotSynchronousLocalCandidatesMode
 	}
 
 	parsedFragment := &lksdp.SDPFragment{}
@@ -1628,7 +1673,7 @@ func (t *PCTransport) Negotiate(force bool) {
 			// no op to cancel pending negotiation
 		})
 		t.debouncePending = false
-		t.updateLastNeogitateLocked()
+		t.updateLastNegotiateLocked()
 
 		postEvent = true
 	} else {
@@ -1642,7 +1687,7 @@ func (t *PCTransport) Negotiate(force bool) {
 			t.debouncedNegotiate.Add(func() {
 				t.lock.Lock()
 				t.debouncePending = false
-				t.updateLastNeogitateLocked()
+				t.updateLastNegotiateLocked()
 				t.lock.Unlock()
 
 				t.postEvent(event{
@@ -1661,7 +1706,7 @@ func (t *PCTransport) Negotiate(force bool) {
 	}
 }
 
-func (t *PCTransport) updateLastNeogitateLocked() {
+func (t *PCTransport) updateLastNegotiateLocked() {
 	if now := time.Now(); now.After(t.lastNegotiate) {
 		t.lastNegotiate = now
 	}

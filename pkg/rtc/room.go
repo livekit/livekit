@@ -35,6 +35,7 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
+	"github.com/pion/webrtc/v4"
 
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
@@ -426,7 +427,12 @@ func (r *Room) Release() {
 	r.holds.Dec()
 }
 
-func (r *Room) Join(participant types.LocalParticipant, requestSource routing.MessageSource, opts *ParticipantOptions, iceServers []*livekit.ICEServer) error {
+func (r *Room) Join(
+	participant types.LocalParticipant,
+	requestSource routing.MessageSource,
+	opts *ParticipantOptions,
+	iceServers []*livekit.ICEServer,
+) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -464,7 +470,7 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 		defer onStateChangeMu.Unlock()
 		if state := p.State(); state == livekit.ParticipantInfo_ACTIVE {
 			// subscribe participant to existing published tracks
-			r.subscribeToExistingTracks(p)
+			r.subscribeToExistingTracks(p, false)
 
 			connectTime := time.Since(p.ConnectedAt())
 			meta := &livekit.AnalyticsClientMeta{
@@ -503,7 +509,7 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 		}
 	})
 	participant.OnSubscriberReady(func(p types.LocalParticipant) {
-		r.subscribeToExistingTracks(p)
+		r.subscribeToExistingTracks(p, false)
 	})
 	// it's important to set this before connection, we don't want to miss out on any published tracks
 	participant.OnTrackPublished(r.onTrackPublished)
@@ -550,7 +556,8 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 
 	r.launchTargetAgents(maps.Values(r.agentDispatches), participant, livekit.JobType_JT_PARTICIPANT)
 
-	r.logger.Debugw("new participant joined",
+	r.logger.Debugw(
+		"new participant joined",
 		"pID", participant.ID(),
 		"participant", participant.Identity(),
 		"clientInfo", logger.Proto(participant.GetClientInfo()),
@@ -591,7 +598,7 @@ func (r *Room) Join(participant types.LocalParticipant, requestSource routing.Me
 		// initiates sub connection as primary
 		if participant.ProtocolVersion().SupportFastStart() {
 			go func() {
-				r.subscribeToExistingTracks(participant)
+				r.subscribeToExistingTracks(participant, false)
 				participant.Negotiate(true)
 			}()
 		} else {
@@ -790,7 +797,7 @@ func (r *Room) UpdateSubscriptions(
 	// handle subscription changes
 	for _, trackID := range trackIDs {
 		if subscribe {
-			participant.SubscribeToTrack(trackID)
+			participant.SubscribeToTrack(trackID, false)
 		} else {
 			participant.UnsubscribeFromTrack(trackID)
 		}
@@ -799,7 +806,7 @@ func (r *Room) UpdateSubscriptions(
 	for _, pt := range participantTracks {
 		for _, trackID := range livekit.StringsAsIDs[livekit.TrackID](pt.TrackSids) {
 			if subscribe {
-				participant.SubscribeToTrack(trackID)
+				participant.SubscribeToTrack(trackID, false)
 			} else {
 				participant.UnsubscribeFromTrack(trackID)
 			}
@@ -1213,13 +1220,14 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 			continue
 		}
 
-		r.logger.Debugw("subscribing to new track",
+		r.logger.Debugw(
+			"subscribing to new track",
 			"participant", existingParticipant.Identity(),
 			"pID", existingParticipant.ID(),
 			"publisher", participant.Identity(),
 			"publisherID", participant.ID(),
 			"trackID", track.ID())
-		existingParticipant.SubscribeToTrack(track.ID())
+		existingParticipant.SubscribeToTrack(track.ID(), false)
 	}
 	onParticipantChanged := r.onParticipantChanged
 	r.lock.RUnlock()
@@ -1325,7 +1333,7 @@ func (r *Room) onMetrics(source types.Participant, dp *livekit.DataPacket) {
 	BroadcastMetricsForRoom(r, source, dp, r.logger)
 }
 
-func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) {
+func (r *Room) subscribeToExistingTracks(p types.LocalParticipant, isSync bool) {
 	r.lock.RLock()
 	shouldSubscribe := r.autoSubscribe(p)
 	r.lock.RUnlock()
@@ -1343,7 +1351,7 @@ func (r *Room) subscribeToExistingTracks(p types.LocalParticipant) {
 		// subscribe to all
 		for _, track := range op.GetPublishedTracks() {
 			trackIDs = append(trackIDs, track.ID())
-			p.SubscribeToTrack(track.ID())
+			p.SubscribeToTrack(track.ID(), isSync)
 		}
 	}
 	if len(trackIDs) > 0 {
@@ -1730,6 +1738,235 @@ func (r *Room) GetCachedReliableDataMessage(seqs map[livekit.ParticipantID]uint3
 		}
 	}
 	return msgs
+}
+
+// RAJA-TODO: probably need to return ConnectResponse also?
+func (r *Room) Joinv2(
+	participant types.LocalParticipant,
+	opts *ParticipantOptions,
+	iceServers []*livekit.ICEServer,
+) (*livekit.ConnectResponse, error) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	// RAJA-TODO: refactor this whole thing for common parts of v1 and v2
+	if r.IsClosed() {
+		return nil, ErrRoomClosed
+	}
+
+	if r.participants[participant.Identity()] != nil {
+		return nil, ErrAlreadyJoined
+	}
+	if r.protoRoom.MaxParticipants > 0 && !participant.IsDependent() {
+		numParticipants := uint32(0)
+		for _, p := range r.participants {
+			if !p.IsDependent() {
+				numParticipants++
+			}
+		}
+		if numParticipants >= r.protoRoom.MaxParticipants {
+			return nil, ErrMaxParticipantsExceeded
+		}
+	}
+
+	if r.FirstJoinedAt() == 0 && !participant.IsDependent() {
+		r.joinedAt.Store(time.Now().Unix())
+	}
+
+	var onStateChangeMu sync.Mutex
+	participant.OnStateChange(func(p types.LocalParticipant) {
+		if r.onParticipantChanged != nil {
+			r.onParticipantChanged(p)
+		}
+		r.broadcastParticipantState(p, broadcastOptions{skipSource: true})
+
+		onStateChangeMu.Lock()
+		defer onStateChangeMu.Unlock()
+		if state := p.State(); state == livekit.ParticipantInfo_ACTIVE {
+			// subscribe participant to existing published tracks
+			r.subscribeToExistingTracks(p, false)
+
+			connectTime := time.Since(p.ConnectedAt())
+			meta := &livekit.AnalyticsClientMeta{
+				ClientConnectTime: uint32(connectTime.Milliseconds()),
+			}
+			infos := p.GetICEConnectionInfo()
+			var connectionType roomobs.ConnectionType
+			for _, info := range infos {
+				if info.Type != types.ICEConnectionTypeUnknown {
+					meta.ConnectionType = info.Type.String()
+					connectionType = info.Type.ReporterType()
+					break
+				}
+			}
+			r.telemetry.ParticipantActive(context.Background(),
+				r.ToProto(),
+				p.ToProto(),
+				meta,
+				false,
+			)
+
+			participant.GetReporter().Tx(func(tx roomobs.ParticipantSessionTx) {
+				tx.ReportClientConnectTime(uint16(connectTime.Milliseconds()))
+				tx.ReportConnectResult(roomobs.ConnectionResultSuccess)
+				tx.ReportConnectionType(connectionType)
+			})
+
+			fields := append(
+				connectionDetailsFields(infos),
+				"clientInfo", logger.Proto(sutils.ClientInfoWithoutAddress(p.GetClientInfo())),
+			)
+			p.GetLogger().Infow("participant active", fields...)
+		} else if state == livekit.ParticipantInfo_DISCONNECTED {
+			// remove participant from room
+			go r.RemoveParticipant(p.Identity(), p.ID(), p.CloseReason())
+		}
+	})
+	participant.OnSubscriberReady(func(p types.LocalParticipant) {
+		r.subscribeToExistingTracks(p, false)
+	})
+	// it's important to set this before connection, we don't want to miss out on any published tracks
+	participant.OnTrackPublished(r.onTrackPublished)
+	participant.OnTrackUpdated(r.onTrackUpdated)
+	participant.OnTrackUnpublished(r.onTrackUnpublished)
+	participant.OnParticipantUpdate(r.onParticipantUpdate)
+	participant.OnDataPacket(r.onDataPacket)
+	participant.OnDataMessage(r.onDataMessage)
+	participant.OnMetrics(r.onMetrics)
+	participant.OnSubscribeStatusChanged(func(publisherID livekit.ParticipantID, subscribed bool) {
+		if subscribed {
+			pub := r.GetParticipantByID(publisherID)
+			if pub != nil && pub.State() == livekit.ParticipantInfo_ACTIVE {
+				// when a participant subscribes to another participant,
+				// send speaker update if the subscribed to participant is active.
+				level, active := pub.GetAudioLevel()
+				if active {
+					_ = participant.SendSpeakerUpdate([]*livekit.SpeakerInfo{
+						{
+							Sid:    string(pub.ID()),
+							Level:  float32(level),
+							Active: active,
+						},
+					}, false)
+				}
+
+				if cq := pub.GetConnectionQuality(); cq != nil {
+					update := &livekit.ConnectionQualityUpdate{}
+					update.Updates = append(update.Updates, cq)
+					_ = participant.SendConnectionQualityUpdate(update)
+				}
+			}
+		} else {
+			// no longer subscribed to the publisher, clear speaker status
+			_ = participant.SendSpeakerUpdate([]*livekit.SpeakerInfo{
+				{
+					Sid:    string(publisherID),
+					Level:  0,
+					Active: false,
+				},
+			}, true)
+		}
+	})
+
+	r.launchTargetAgents(maps.Values(r.agentDispatches), participant, livekit.JobType_JT_PARTICIPANT)
+
+	r.logger.Debugw(
+		"new participant joined",
+		"pID", participant.ID(),
+		"participant", participant.Identity(),
+		"clientInfo", logger.Proto(participant.GetClientInfo()),
+		"options", opts,
+		"numParticipants", len(r.participants),
+	)
+
+	if participant.IsRecorder() && !r.protoRoom.ActiveRecording {
+		r.protoRoom.ActiveRecording = true
+		r.protoProxy.MarkDirty(true)
+	} else {
+		r.protoProxy.MarkDirty(false)
+	}
+
+	r.participants[participant.Identity()] = participant
+	r.participantOpts[participant.Identity()] = opts
+
+	if r.onParticipantChanged != nil {
+		r.onParticipantChanged(participant)
+	}
+
+	time.AfterFunc(time.Minute, func() {
+		if !participant.Verify() {
+			r.RemoveParticipant(participant.Identity(), participant.ID(), types.ParticipantCloseReasonJoinTimeout)
+		}
+	})
+
+	participant.SetMigrateState(types.MigrateStateComplete)
+
+	// RAJA-TODO: have to not hold lock r.subscribeToExistingTracks(participant, true)
+	offer, err := participant.GetOffer()
+	if err != nil {
+		participant.GetLogger().Warnw("could not get offer", err)
+		return nil, err
+	}
+
+	connectResponse := r.createConnectResponseLocked(participant, iceServers, offer)
+	/* RAJA-TODO
+	if err := participant.SendJoinResponse(joinResponse); err != nil {
+		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "send_response").Add(1)
+		return err
+	}
+	*/
+
+	/* RAJA-TODO: all v2 clients should use this as primary and it should synchronously negotiate and
+	generate subscriber offer
+	if participant.SubscriberAsPrimary() {
+		// initiates sub connection as primary
+		if participant.ProtocolVersion().SupportFastStart() {
+			go func() {
+				r.subscribeToExistingTracks(participant, true)
+				participant.Negotiate(true)
+			}()
+		} else {
+			participant.Negotiate(true)
+		}
+	}
+	*/
+
+	// SIGNALLING-V2-TODO prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
+	// RAJA-TODO
+	//  1. process audio_tracks
+	//  2. process video_tracks
+	//  3. HandleOffer and get answer (publisher)
+	//  4. Subscribe to existing tracks and generate offer (subscriber)
+
+	return connectResponse, nil
+}
+
+func (r *Room) createConnectResponseLocked(
+	participant types.LocalParticipant,
+	iceServers []*livekit.ICEServer,
+	offer webrtc.SessionDescription,
+) *livekit.ConnectResponse {
+	iceConfig := participant.GetICEConfig()
+	hasICEFallback := iceConfig.GetPreferencePublisher() != livekit.ICECandidateType_ICT_NONE || iceConfig.GetPreferenceSubscriber() != livekit.ICECandidateType_ICT_NONE
+	return &livekit.ConnectResponse{
+		Room:        r.ToProto(),
+		Participant: participant.ToProto(),
+		OtherParticipants: GetOtherParticipantInfo(
+			participant,
+			false, // isMigratingIn
+			toParticipants(maps.Values(r.participants)),
+			false, // skipSubscriberBroadcast
+		),
+		IceServers:          iceServers,
+		ClientConfiguration: participant.GetClientConfiguration(),
+		ServerInfo:          r.serverInfo,
+		// SIGNALLING-V2-TODO ServerVersion:        r.serverInfo.Version,
+		// SIGNALLING-V2-TODO ServerRegion:         r.serverInfo.Region,
+		SifTrailer:           r.trailer,
+		EnabledPublishCodecs: participant.GetEnabledPublishCodecs(),
+		FastPublish:          participant.CanPublish() && !hasICEFallback,
+		SubscriberSdp:        ToProtoSessionDescription(offer, 0),
+	}
 }
 
 // ------------------------------------------------------------

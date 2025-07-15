@@ -139,8 +139,8 @@ func (m *SubscriptionManager) isClosed() bool {
 	}
 }
 
-func (m *SubscriptionManager) SubscribeToTrack(trackID livekit.TrackID) {
-	if m.params.UseOneShotSignallingMode {
+func (m *SubscriptionManager) SubscribeToTrack(trackID livekit.TrackID, isSync bool) {
+	if m.params.UseOneShotSignallingMode || isSync {
 		m.subscribeSynchronous(trackID)
 		return
 	}

@@ -275,6 +275,7 @@ func ValidateConnectRequest(
 		RoomPreset: claims.RoomPreset,
 	}
 	SetRoomConfiguration(createRequest, claims.GetRoomConfiguration())
+	res.createRoomRequest = createRequest
 
 	// Add extra attributes to the participant
 	if len(params.attributes) != 0 {
