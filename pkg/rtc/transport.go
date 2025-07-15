@@ -485,7 +485,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		canReuseTransceiver:      true,
 		connectionDetails:        types.NewICEConnectionDetails(params.Transport, params.Logger),
 		lastNegotiate:            time.Now(),
-		activeOfferId:            uint32(rand.Intn(1 << 8)),
+		activeOfferId:            uint32(rand.Intn(1<<8) + 1),
 	}
 
 	bwe, err := t.createPeerConnection()
