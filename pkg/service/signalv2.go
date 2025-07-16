@@ -141,7 +141,7 @@ func (r *signalv2Service) RelaySignalv2Connect(ctx context.Context, rscr *rpc.Re
 	lgr := r.connectHandler.Logger(ctx).WithValues(
 		"room", grants.Video.Room,
 		"participant", grants.Identity,
-		// RAJA-TODO - maybe add a connection ID to rscr for tracking only
+		// SIGNALLING-V2-TODO - maybe add a connection ID to rscr for tracking/debugging only
 	)
 
 	resp, err := r.connectHandler.HandleConnect(ctx, lgr, grants, rscr)

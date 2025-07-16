@@ -1033,6 +1033,7 @@ func (r *RoomManager) getFirstKeyPair() (string, string, error) {
 	return "", "", errors.New("no API keys configured")
 }
 
+// SIGNALLING-V2-TODO: consolidate common parts beteen this and `StartSession`
 func (r *RoomManager) HandleConnect(
 	ctx context.Context,
 	grants *auth.ClaimGrants,
@@ -1055,100 +1056,7 @@ func (r *RoomManager) HandleConnect(
 	// since this is used for TURN server credentials, we don't want to fail the request even if there's no TURN for the session
 	apiKey, _, _ := r.getFirstKeyPair()
 
-	/* SIGNALLING-V2-TODO
-	participant := room.GetParticipant(pi.Identity)
-	if participant != nil {
-		// When reconnecting, it means WS has interrupted but underlying peer connection is still ok in this state,
-		// we'll keep the participant SID, and just swap the sink for the underlying connection
-		if pi.Reconnect {
-			if participant.IsClosed() {
-				// Send leave request if participant is closed, i. e. handle the case of client trying to resume crossing wires with
-				// server closing the participant due to some irrecoverable condition. Such a condition would have triggered
-				// a full reconnect when that condition occurred.
-				//
-				// It is possible that the client did not get that send request. So, send it again.
-				logger.Infow("cannot restart a closed participant",
-					"room", room.Name(),
-					"nodeID", r.currentNode.NodeID(),
-					"participant", pi.Identity,
-					"reason", pi.ReconnectReason,
-				)
-
-				var leave *livekit.LeaveRequest
-				pv := types.ProtocolVersion(pi.Client.Protocol)
-				if pv.SupportsRegionsInLeaveRequest() {
-					leave = &livekit.LeaveRequest{
-						Reason: livekit.DisconnectReason_STATE_MISMATCH,
-						Action: livekit.LeaveRequest_RECONNECT,
-					}
-				} else {
-					leave = &livekit.LeaveRequest{
-						CanReconnect: true,
-						Reason:       livekit.DisconnectReason_STATE_MISMATCH,
-					}
-				}
-				_ = responseSink.WriteMessage(&livekit.SignalResponse{
-					Message: &livekit.SignalResponse_Leave{
-						Leave: leave,
-					},
-				})
-				return errors.New("could not restart closed participant")
-			}
-
-			participant.GetLogger().Infow(
-				"resuming RTC session",
-				"nodeID", r.currentNode.NodeID(),
-				"participantInit", &pi,
-				"numParticipants", room.GetParticipantCount(),
-			)
-			iceConfig := r.getIceConfig(room.Name(), participant)
-			if err = room.ResumeParticipant(
-				participant,
-				requestSource,
-				responseSink,
-				iceConfig,
-				r.iceServersForParticipant(
-					apiKey,
-					participant,
-					iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS,
-				),
-				pi.ReconnectReason,
-			); err != nil {
-				participant.GetLogger().Warnw("could not resume participant", err)
-				return err
-			}
-			r.telemetry.ParticipantResumed(ctx, room.ToProto(), participant.ToProto(), r.currentNode.NodeID(), pi.ReconnectReason)
-			go r.rtcSessionWorker(room, participant, requestSource)
-			return nil
-		}
-
-		// we need to clean up the existing participant, so a new one can join
-		participant.GetLogger().Infow("removing duplicate participant")
-		room.RemoveParticipant(participant.Identity(), participant.ID(), types.ParticipantCloseReasonDuplicateIdentity)
-	} else if pi.Reconnect {
-		// send leave request if participant is trying to reconnect without keep subscribe state
-		// but missing from the room
-		var leave *livekit.LeaveRequest
-		pv := types.ProtocolVersion(pi.Client.Protocol)
-		if pv.SupportsRegionsInLeaveRequest() {
-			leave = &livekit.LeaveRequest{
-				Reason: livekit.DisconnectReason_STATE_MISMATCH,
-				Action: livekit.LeaveRequest_RECONNECT,
-			}
-		} else {
-			leave = &livekit.LeaveRequest{
-				CanReconnect: true,
-				Reason:       livekit.DisconnectReason_STATE_MISMATCH,
-			}
-		}
-		_ = responseSink.WriteMessage(&livekit.SignalResponse{
-			Message: &livekit.SignalResponse_Leave{
-				Leave: leave,
-			},
-		})
-		return errors.New("could not restart participant")
-	}
-	*/
+	/* SIGNALLING-V2-TODO - v2 should not have ICERestart, but leaving reminder here (similar location as `StartSession` code check on this path */
 
 	sid := livekit.ParticipantID(guid.New(utils.ParticipantPrefix))
 	pLogger := rtc.LoggerWithParticipant(
@@ -1221,11 +1129,10 @@ func (r *RoomManager) HandleConnect(
 		PublishEnabledCodecs:    protoRoom.EnabledCodecs,
 		SubscribeEnabledCodecs:  protoRoom.EnabledCodecs,
 		Grants:                  grants,
-		// SIGNALLING-V2-TODO Reconnect:               pi.Reconnect,
-		Logger:     pLogger,
-		Reporter:   roomobs.NewNoopParticipantSessionReporter(),
-		ClientConf: clientConf,
-		ClientInfo: rtc.ClientInfo{ClientInfo: clientInfo},
+		Logger:                  pLogger,
+		Reporter:                roomobs.NewNoopParticipantSessionReporter(),
+		ClientConf:              clientConf,
+		ClientInfo:              rtc.ClientInfo{ClientInfo: clientInfo},
 		// SIGNALLING-V@-TODO Region:                  pi.Region,
 		AdaptiveStream:   rscr.ConnectRequest.ConnectionSettings.AdaptiveStream,
 		AllowTCPFallback: allowFallback,
@@ -1271,19 +1178,6 @@ func (r *RoomManager) HandleConnect(
 		return nil, err
 	}
 
-	/* SIGNALLING-V2-TODO
-	var participantServerClosers utils.Closers
-	participantTopic := rpc.FormatParticipantTopic(room.Name(), participant.Identity())
-	participantServer := must.Get(rpc.NewTypedParticipantServer(r, r.bus))
-	participantServerClosers = append(participantServerClosers, utils.CloseFunc(r.participantServers.Replace(participantTopic, participantServer)))
-	if err := participantServer.RegisterAllParticipantTopics(participantTopic); err != nil {
-		participantServerClosers.Close()
-		pLogger.Errorw("could not join register participant topic", err)
-		_ = participant.Close(true, types.ParticipantCloseReasonMessageBusFailed, false)
-		return err
-	}
-	*/
-
 	if err = r.roomStore.StoreParticipant(ctx, room.Name(), participant.ToProto()); err != nil {
 		pLogger.Errorw("could not store participant", err)
 	}
@@ -1306,8 +1200,6 @@ func (r *RoomManager) HandleConnect(
 	}
 	r.telemetry.ParticipantJoined(ctx, protoRoom, participant.ToProto(), clientInfo, clientMeta, true)
 	participant.OnClose(func(p types.LocalParticipant) {
-		// SIGNALLING-V2-TODO participantServerClosers.Close()
-
 		if err := r.roomStore.DeleteParticipant(ctx, room.Name(), p.Identity()); err != nil {
 			pLogger.Errorw("could not delete participant", err)
 		}
@@ -1327,7 +1219,6 @@ func (r *RoomManager) HandleConnect(
 		r.iceConfigCache.Put(iceConfigCacheKey{room.Name(), participant.Identity()}, iceConfig)
 	})
 
-	// RAJA-TODO: get ConnectResponse and return
 	return &rpc.RelaySignalv2ConnectResponse{
 		ConnectResponse: connectResponse,
 	}, nil

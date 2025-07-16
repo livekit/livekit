@@ -42,11 +42,6 @@ type RTCv2Service struct {
 	router        routing.Router
 	roomAllocator RoomAllocator
 	client        rpc.TypedSignalv2Client
-	/* RAJA-TODO
-	client            rpc.RTCv2ServiceClient[livekit.NodeID]
-	topicFormatter    rpc.TopicFormatter
-	participantClient rpc.TypedRTCv2ServiceParticipantClient
-	*/
 }
 
 func NewRTCv2Service(
@@ -55,11 +50,6 @@ func NewRTCv2Service(
 	router routing.Router,
 	roomAllocator RoomAllocator,
 	bus psrpc.MessageBus,
-	/* RAJA-TODO
-	   clientParams rpc.ClientParams,
-	   topicFormatter rpc.TopicFormatter,
-	   participantClient rpc.TypedRTCv2ServiceParticipantClient,
-	*/
 ) (*RTCv2Service, error) {
 	client, err := rpc.NewTypedSignalv2Client(
 		nodeID,
@@ -75,10 +65,6 @@ func NewRTCv2Service(
 		router:        router,
 		roomAllocator: roomAllocator,
 		client:        client,
-		/* RAJA-TODO
-		topicFormatter:    topicFormatter,
-		participantClient: participantClient,
-		*/
 	}, nil
 }
 

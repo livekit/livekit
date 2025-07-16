@@ -35,7 +35,6 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
-	"github.com/pion/webrtc/v4"
 
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
@@ -1740,16 +1739,14 @@ func (r *Room) GetCachedReliableDataMessage(seqs map[livekit.ParticipantID]uint3
 	return msgs
 }
 
-// RAJA-TODO: probably need to return ConnectResponse also?
+// SIGNALLING-V2-TODO: consolidate common parts between this function and Join()
 func (r *Room) Joinv2(
 	participant types.LocalParticipant,
 	opts *ParticipantOptions,
 	iceServers []*livekit.ICEServer,
 ) (*livekit.ConnectResponse, error) {
 	r.lock.Lock()
-	defer r.lock.Unlock()
 
-	// RAJA-TODO: refactor this whole thing for common parts of v1 and v2
 	if r.IsClosed() {
 		return nil, ErrRoomClosed
 	}
@@ -1899,44 +1896,25 @@ func (r *Room) Joinv2(
 		}
 	})
 
-	participant.SetMigrateState(types.MigrateStateComplete)
+	connectResponse := r.createConnectResponseLocked(participant, iceServers)
 
-	// RAJA-TODO: have to not hold lock r.subscribeToExistingTracks(participant, true)
+	participant.SetMigrateState(types.MigrateStateComplete)
+	r.lock.Unlock()
+
+	// SIGNALLING-V2-TODO
+	//  1. process published audio_tracks
+	//  2. process published video_tracks
+	//  3. HandleOffer and get answer (publisher)
+
+	r.subscribeToExistingTracks(participant, true)
 	offer, err := participant.GetOffer()
 	if err != nil {
 		participant.GetLogger().Warnw("could not get offer", err)
 		return nil, err
 	}
-
-	connectResponse := r.createConnectResponseLocked(participant, iceServers, offer)
-	/* RAJA-TODO
-	if err := participant.SendJoinResponse(joinResponse); err != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "send_response").Add(1)
-		return err
-	}
-	*/
-
-	/* RAJA-TODO: all v2 clients should use this as primary and it should synchronously negotiate and
-	generate subscriber offer
-	if participant.SubscriberAsPrimary() {
-		// initiates sub connection as primary
-		if participant.ProtocolVersion().SupportFastStart() {
-			go func() {
-				r.subscribeToExistingTracks(participant, true)
-				participant.Negotiate(true)
-			}()
-		} else {
-			participant.Negotiate(true)
-		}
-	}
-	*/
+	connectResponse.SubscriberSdp = ToProtoSessionDescription(offer, 0) // SIGNALLING-V2-TODO - need to proper offerId?
 
 	// SIGNALLING-V2-TODO prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
-	// RAJA-TODO
-	//  1. process audio_tracks
-	//  2. process video_tracks
-	//  3. HandleOffer and get answer (publisher)
-	//  4. Subscribe to existing tracks and generate offer (subscriber)
 
 	return connectResponse, nil
 }
@@ -1944,7 +1922,6 @@ func (r *Room) Joinv2(
 func (r *Room) createConnectResponseLocked(
 	participant types.LocalParticipant,
 	iceServers []*livekit.ICEServer,
-	offer webrtc.SessionDescription,
 ) *livekit.ConnectResponse {
 	iceConfig := participant.GetICEConfig()
 	hasICEFallback := iceConfig.GetPreferencePublisher() != livekit.ICECandidateType_ICT_NONE || iceConfig.GetPreferenceSubscriber() != livekit.ICECandidateType_ICT_NONE
@@ -1957,15 +1934,11 @@ func (r *Room) createConnectResponseLocked(
 			toParticipants(maps.Values(r.participants)),
 			false, // skipSubscriberBroadcast
 		),
-		IceServers:          iceServers,
-		ClientConfiguration: participant.GetClientConfiguration(),
-		ServerInfo:          r.serverInfo,
-		// SIGNALLING-V2-TODO ServerVersion:        r.serverInfo.Version,
-		// SIGNALLING-V2-TODO ServerRegion:         r.serverInfo.Region,
-		SifTrailer:           r.trailer,
+		IceServers:           iceServers,
+		ClientConfiguration:  participant.GetClientConfiguration(),
+		ServerInfo:           r.serverInfo,
 		EnabledPublishCodecs: participant.GetEnabledPublishCodecs(),
 		FastPublish:          participant.CanPublish() && !hasICEFallback,
-		SubscriberSdp:        ToProtoSessionDescription(offer, 0),
 	}
 }
 
