@@ -49,7 +49,7 @@ func NewSignalCache(params SignalCacheParams) *SignalCache {
 	return s
 }
 
-func (s *SignalCache) Add(msg *livekit.Signalv2ServerMessage, lastRemoteId uint32) *livekit.Signalv2ServerEnvelope {
+func (s *SignalCache) Add(msg *livekit.Signalv2ServerMessage, lastRemoteId uint32) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -58,9 +58,18 @@ func (s *SignalCache) Add(msg *livekit.Signalv2ServerMessage, lastRemoteId uint3
 	msg.LastProcessedRemoteMessageId = lastRemoteId
 
 	s.messages.PushBack(msg)
+}
 
-	return &livekit.Signalv2ServerEnvelope{
-		ServerMessages: []*livekit.Signalv2ServerMessage{msg},
+func (s *SignalCache) AddBatch(msgs []*livekit.Signalv2ServerMessage, lastRemoteId uint32) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	for _, msg := range msgs {
+		msg.MessageId = s.messageId
+		s.messageId++
+		msg.LastProcessedRemoteMessageId = lastRemoteId
+
+		s.messages.PushBack(msg)
 	}
 }
 
@@ -81,29 +90,23 @@ func (s *SignalCache) clearLocked(till uint32) {
 	}
 }
 
-func (s *SignalCache) GetFromFront() *livekit.Signalv2ServerEnvelope {
+func (s *SignalCache) GetFromFront() []*livekit.Signalv2ServerMessage {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
 	return s.getFromFrontLocked()
 }
 
-func (s *SignalCache) getFromFrontLocked() *livekit.Signalv2ServerEnvelope {
+func (s *SignalCache) getFromFrontLocked() []*livekit.Signalv2ServerMessage {
 	var msgs []*livekit.Signalv2ServerMessage
 	for msg := range s.messages.Iter() {
 		msgs = append(msgs, msg)
 	}
 
-	if len(msgs) == 0 {
-		return nil
-	}
-
-	return &livekit.Signalv2ServerEnvelope{
-		ServerMessages: msgs,
-	}
+	return msgs
 }
 
-func (s *SignalCache) ClearAndGetFrom(from uint32) *livekit.Signalv2ServerEnvelope {
+func (s *SignalCache) ClearAndGetFrom(from uint32) []*livekit.Signalv2ServerMessage {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 

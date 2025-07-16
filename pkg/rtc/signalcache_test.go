@@ -18,68 +18,58 @@ func TestSignalCache(t *testing.T) {
 		&livekit.Signalv2ServerMessage{
 			Message: &livekit.Signalv2ServerMessage_ConnectResponse{},
 		},
+		// SIGNALLING-V2-TODO: replace with other kinds of messages when more types are added
 		&livekit.Signalv2ServerMessage{
-			Message: &livekit.Signalv2ServerMessage_Acknowledgement{},
+			Message: &livekit.Signalv2ServerMessage_ConnectResponse{},
 		},
 		&livekit.Signalv2ServerMessage{
-			Message: &livekit.Signalv2ServerMessage_ConnectionQualityUpdate{},
+			Message: &livekit.Signalv2ServerMessage_ConnectResponse{},
 		},
 		&livekit.Signalv2ServerMessage{
-			Message: &livekit.Signalv2ServerMessage_LeaveRequest{},
+			Message: &livekit.Signalv2ServerMessage_ConnectResponse{},
 		},
 	}
 
+	// Add() - add one message at a time
 	for _, inputMessage := range inputMessages {
-		// Add should return current message in envelope
-		envelope := cache.Add(inputMessage, 2345)
-		expectedEnvelope := &livekit.Signalv2ServerEnvelope{
-			ServerMessages: []*livekit.Signalv2ServerMessage{inputMessage},
-		}
-		require.Equal(t, expectedEnvelope, envelope)
+		cache.Add(inputMessage, 2345)
 	}
 
 	// get all messages in cache
-	envelope := cache.GetFromFront()
-	expectedEnvelope := &livekit.Signalv2ServerEnvelope{
-		ServerMessages: inputMessages,
-	}
-	require.Equal(t, expectedEnvelope, envelope)
+	outputMessages := cache.GetFromFront()
+	require.Equal(t, inputMessages, outputMessages)
 
 	// clear one and get again
 	cache.Clear(firstMessageId)
 
-	envelope = cache.GetFromFront()
-	expectedEnvelope = &livekit.Signalv2ServerEnvelope{
-		ServerMessages: inputMessages[1:],
-	}
-	require.Equal(t, expectedEnvelope, envelope)
+	outputMessages = cache.GetFromFront()
+	require.Equal(t, inputMessages[1:], outputMessages)
 
 	// clearing some evicted messages should not clear anything
 	cache.Clear(firstMessageId) // firstMessageId has been cleared already at this point
 
-	envelope = cache.GetFromFront()
-	expectedEnvelope = &livekit.Signalv2ServerEnvelope{
-		ServerMessages: inputMessages[1:],
-	}
-	require.Equal(t, expectedEnvelope, envelope)
+	outputMessages = cache.GetFromFront()
+	require.Equal(t, inputMessages[1:], outputMessages)
 
 	// clear some and get rest in one go
-	envelope = cache.ClearAndGetFrom(firstMessageId + 3)
-	expectedEnvelope = &livekit.Signalv2ServerEnvelope{
-		ServerMessages: inputMessages[3:],
-	}
-	require.Equal(t, expectedEnvelope, envelope)
+	outputMessages = cache.ClearAndGetFrom(firstMessageId + 3)
+	require.Equal(t, 1, len(outputMessages))
+	require.Equal(t, inputMessages[3:], outputMessages)
 
 	// getting again should get the same messages again as they sill should in cache
-	envelope = cache.GetFromFront()
-	expectedEnvelope = &livekit.Signalv2ServerEnvelope{
-		ServerMessages: inputMessages[3:],
-	}
-	require.Equal(t, expectedEnvelope, envelope)
+	outputMessages = cache.GetFromFront()
+	require.Equal(t, inputMessages[3:], outputMessages)
 
 	// clearing all and getting should return nil
 	require.Nil(t, cache.ClearAndGetFrom(firstMessageId+uint32(len(inputMessages))))
 
 	// getting again should return nil as the cache is fully cleared above
 	require.Nil(t, cache.GetFromFront())
+
+	// AddBatch() - add all messages at once
+	cache.AddBatch(inputMessages, 4567)
+
+	// get all messages in cache
+	outputMessages = cache.GetFromFront()
+	require.Equal(t, inputMessages, outputMessages)
 }
