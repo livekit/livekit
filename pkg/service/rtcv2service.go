@@ -78,6 +78,7 @@ func (s *RTCv2Service) validateInternal(
 	connectRequest *livekit.ConnectRequest,
 ) (livekit.RoomName, *rpc.RelaySignalv2ConnectRequest, int, error) {
 	params := ValidateConnectRequestParams{
+		metadata:   connectRequest.Metadata,
 		attributes: connectRequest.ParticipantAttributes,
 	}
 

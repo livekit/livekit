@@ -776,7 +776,7 @@ func (r *Room) Joinv2(
 		return connectResponse, nil
 	}()
 	if err != nil {
-		return nil, err
+		return connectResponse, err
 	}
 
 	// SIGNALLING-V2-TODO

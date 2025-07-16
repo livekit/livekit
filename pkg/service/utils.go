@@ -184,6 +184,7 @@ func AugmentClientInfo(ci *livekit.ClientInfo, req *http.Request) {
 type ValidateConnectRequestParams struct {
 	roomName   livekit.RoomName
 	publish    string
+	metadata   string
 	attributes map[string]string
 }
 
@@ -276,6 +277,14 @@ func ValidateConnectRequest(
 	}
 	SetRoomConfiguration(createRequest, claims.GetRoomConfiguration())
 	res.createRoomRequest = createRequest
+
+	if len(params.metadata) != 0 {
+		// Make sure grant has GetCanUpdateOwnMetadata set
+		if !claims.Video.GetCanUpdateOwnMetadata() {
+			return res, http.StatusUnauthorized, rtc.ErrPermissionDenied
+		}
+		claims.Metadata = params.metadata
+	}
 
 	// Add extra attributes to the participant
 	if len(params.attributes) != 0 {
