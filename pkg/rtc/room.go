@@ -616,161 +616,168 @@ func (r *Room) Joinv2(
 	opts *ParticipantOptions,
 	iceServers []*livekit.ICEServer,
 ) (*livekit.ConnectResponse, error) {
-	r.lock.Lock()
+	connectResponse, err := func() (*livekit.ConnectResponse, error) {
+		r.lock.Lock()
+		defer r.lock.Unlock()
 
-	if r.IsClosed() {
-		return nil, ErrRoomClosed
-	}
+		if r.IsClosed() {
+			return nil, ErrRoomClosed
+		}
 
-	if r.participants[participant.Identity()] != nil {
-		return nil, ErrAlreadyJoined
-	}
-	if r.protoRoom.MaxParticipants > 0 && !participant.IsDependent() {
-		numParticipants := uint32(0)
-		for _, p := range r.participants {
-			if !p.IsDependent() {
-				numParticipants++
+		if r.participants[participant.Identity()] != nil {
+			return nil, ErrAlreadyJoined
+		}
+		if r.protoRoom.MaxParticipants > 0 && !participant.IsDependent() {
+			numParticipants := uint32(0)
+			for _, p := range r.participants {
+				if !p.IsDependent() {
+					numParticipants++
+				}
+			}
+			if numParticipants >= r.protoRoom.MaxParticipants {
+				return nil, ErrMaxParticipantsExceeded
 			}
 		}
-		if numParticipants >= r.protoRoom.MaxParticipants {
-			return nil, ErrMaxParticipantsExceeded
+
+		if r.FirstJoinedAt() == 0 && !participant.IsDependent() {
+			r.joinedAt.Store(time.Now().Unix())
 		}
-	}
 
-	if r.FirstJoinedAt() == 0 && !participant.IsDependent() {
-		r.joinedAt.Store(time.Now().Unix())
-	}
+		var onStateChangeMu sync.Mutex
+		participant.OnStateChange(func(p types.LocalParticipant) {
+			if r.onParticipantChanged != nil {
+				r.onParticipantChanged(p)
+			}
+			r.broadcastParticipantState(p, broadcastOptions{skipSource: true})
 
-	var onStateChangeMu sync.Mutex
-	participant.OnStateChange(func(p types.LocalParticipant) {
-		if r.onParticipantChanged != nil {
-			r.onParticipantChanged(p)
-		}
-		r.broadcastParticipantState(p, broadcastOptions{skipSource: true})
+			onStateChangeMu.Lock()
+			defer onStateChangeMu.Unlock()
+			if state := p.State(); state == livekit.ParticipantInfo_ACTIVE {
+				// subscribe participant to existing published tracks
+				r.subscribeToExistingTracks(p, false)
 
-		onStateChangeMu.Lock()
-		defer onStateChangeMu.Unlock()
-		if state := p.State(); state == livekit.ParticipantInfo_ACTIVE {
-			// subscribe participant to existing published tracks
+				connectTime := time.Since(p.ConnectedAt())
+				meta := &livekit.AnalyticsClientMeta{
+					ClientConnectTime: uint32(connectTime.Milliseconds()),
+				}
+				infos := p.GetICEConnectionInfo()
+				var connectionType roomobs.ConnectionType
+				for _, info := range infos {
+					if info.Type != types.ICEConnectionTypeUnknown {
+						meta.ConnectionType = info.Type.String()
+						connectionType = info.Type.ReporterType()
+						break
+					}
+				}
+				r.telemetry.ParticipantActive(context.Background(),
+					r.ToProto(),
+					p.ToProto(),
+					meta,
+					false,
+				)
+
+				participant.GetReporter().Tx(func(tx roomobs.ParticipantSessionTx) {
+					tx.ReportClientConnectTime(uint16(connectTime.Milliseconds()))
+					tx.ReportConnectResult(roomobs.ConnectionResultSuccess)
+					tx.ReportConnectionType(connectionType)
+				})
+
+				fields := append(
+					connectionDetailsFields(infos),
+					"clientInfo", logger.Proto(sutils.ClientInfoWithoutAddress(p.GetClientInfo())),
+				)
+				p.GetLogger().Infow("participant active", fields...)
+			} else if state == livekit.ParticipantInfo_DISCONNECTED {
+				// remove participant from room
+				go r.RemoveParticipant(p.Identity(), p.ID(), p.CloseReason())
+			}
+		})
+		participant.OnSubscriberReady(func(p types.LocalParticipant) {
 			r.subscribeToExistingTracks(p, false)
+		})
+		// it's important to set this before connection, we don't want to miss out on any published tracks
+		participant.OnTrackPublished(r.onTrackPublished)
+		participant.OnTrackUpdated(r.onTrackUpdated)
+		participant.OnTrackUnpublished(r.onTrackUnpublished)
+		participant.OnParticipantUpdate(r.onParticipantUpdate)
+		participant.OnDataPacket(r.onDataPacket)
+		participant.OnDataMessage(r.onDataMessage)
+		participant.OnMetrics(r.onMetrics)
+		participant.OnSubscribeStatusChanged(func(publisherID livekit.ParticipantID, subscribed bool) {
+			if subscribed {
+				pub := r.GetParticipantByID(publisherID)
+				if pub != nil && pub.State() == livekit.ParticipantInfo_ACTIVE {
+					// when a participant subscribes to another participant,
+					// send speaker update if the subscribed to participant is active.
+					level, active := pub.GetAudioLevel()
+					if active {
+						_ = participant.SendSpeakerUpdate([]*livekit.SpeakerInfo{
+							{
+								Sid:    string(pub.ID()),
+								Level:  float32(level),
+								Active: active,
+							},
+						}, false)
+					}
 
-			connectTime := time.Since(p.ConnectedAt())
-			meta := &livekit.AnalyticsClientMeta{
-				ClientConnectTime: uint32(connectTime.Milliseconds()),
-			}
-			infos := p.GetICEConnectionInfo()
-			var connectionType roomobs.ConnectionType
-			for _, info := range infos {
-				if info.Type != types.ICEConnectionTypeUnknown {
-					meta.ConnectionType = info.Type.String()
-					connectionType = info.Type.ReporterType()
-					break
+					if cq := pub.GetConnectionQuality(); cq != nil {
+						update := &livekit.ConnectionQualityUpdate{}
+						update.Updates = append(update.Updates, cq)
+						_ = participant.SendConnectionQualityUpdate(update)
+					}
 				}
+			} else {
+				// no longer subscribed to the publisher, clear speaker status
+				_ = participant.SendSpeakerUpdate([]*livekit.SpeakerInfo{
+					{
+						Sid:    string(publisherID),
+						Level:  0,
+						Active: false,
+					},
+				}, true)
 			}
-			r.telemetry.ParticipantActive(context.Background(),
-				r.ToProto(),
-				p.ToProto(),
-				meta,
-				false,
-			)
+		})
 
-			participant.GetReporter().Tx(func(tx roomobs.ParticipantSessionTx) {
-				tx.ReportClientConnectTime(uint16(connectTime.Milliseconds()))
-				tx.ReportConnectResult(roomobs.ConnectionResultSuccess)
-				tx.ReportConnectionType(connectionType)
-			})
+		r.launchTargetAgents(maps.Values(r.agentDispatches), participant, livekit.JobType_JT_PARTICIPANT)
 
-			fields := append(
-				connectionDetailsFields(infos),
-				"clientInfo", logger.Proto(sutils.ClientInfoWithoutAddress(p.GetClientInfo())),
-			)
-			p.GetLogger().Infow("participant active", fields...)
-		} else if state == livekit.ParticipantInfo_DISCONNECTED {
-			// remove participant from room
-			go r.RemoveParticipant(p.Identity(), p.ID(), p.CloseReason())
-		}
-	})
-	participant.OnSubscriberReady(func(p types.LocalParticipant) {
-		r.subscribeToExistingTracks(p, false)
-	})
-	// it's important to set this before connection, we don't want to miss out on any published tracks
-	participant.OnTrackPublished(r.onTrackPublished)
-	participant.OnTrackUpdated(r.onTrackUpdated)
-	participant.OnTrackUnpublished(r.onTrackUnpublished)
-	participant.OnParticipantUpdate(r.onParticipantUpdate)
-	participant.OnDataPacket(r.onDataPacket)
-	participant.OnDataMessage(r.onDataMessage)
-	participant.OnMetrics(r.onMetrics)
-	participant.OnSubscribeStatusChanged(func(publisherID livekit.ParticipantID, subscribed bool) {
-		if subscribed {
-			pub := r.GetParticipantByID(publisherID)
-			if pub != nil && pub.State() == livekit.ParticipantInfo_ACTIVE {
-				// when a participant subscribes to another participant,
-				// send speaker update if the subscribed to participant is active.
-				level, active := pub.GetAudioLevel()
-				if active {
-					_ = participant.SendSpeakerUpdate([]*livekit.SpeakerInfo{
-						{
-							Sid:    string(pub.ID()),
-							Level:  float32(level),
-							Active: active,
-						},
-					}, false)
-				}
+		r.logger.Debugw(
+			"new participant joined",
+			"pID", participant.ID(),
+			"participant", participant.Identity(),
+			"clientInfo", logger.Proto(participant.GetClientInfo()),
+			"options", opts,
+			"numParticipants", len(r.participants),
+		)
 
-				if cq := pub.GetConnectionQuality(); cq != nil {
-					update := &livekit.ConnectionQualityUpdate{}
-					update.Updates = append(update.Updates, cq)
-					_ = participant.SendConnectionQualityUpdate(update)
-				}
-			}
+		if participant.IsRecorder() && !r.protoRoom.ActiveRecording {
+			r.protoRoom.ActiveRecording = true
+			r.protoProxy.MarkDirty(true)
 		} else {
-			// no longer subscribed to the publisher, clear speaker status
-			_ = participant.SendSpeakerUpdate([]*livekit.SpeakerInfo{
-				{
-					Sid:    string(publisherID),
-					Level:  0,
-					Active: false,
-				},
-			}, true)
+			r.protoProxy.MarkDirty(false)
 		}
-	})
 
-	r.launchTargetAgents(maps.Values(r.agentDispatches), participant, livekit.JobType_JT_PARTICIPANT)
+		r.participants[participant.Identity()] = participant
+		r.participantOpts[participant.Identity()] = opts
 
-	r.logger.Debugw(
-		"new participant joined",
-		"pID", participant.ID(),
-		"participant", participant.Identity(),
-		"clientInfo", logger.Proto(participant.GetClientInfo()),
-		"options", opts,
-		"numParticipants", len(r.participants),
-	)
-
-	if participant.IsRecorder() && !r.protoRoom.ActiveRecording {
-		r.protoRoom.ActiveRecording = true
-		r.protoProxy.MarkDirty(true)
-	} else {
-		r.protoProxy.MarkDirty(false)
-	}
-
-	r.participants[participant.Identity()] = participant
-	r.participantOpts[participant.Identity()] = opts
-
-	if r.onParticipantChanged != nil {
-		r.onParticipantChanged(participant)
-	}
-
-	time.AfterFunc(time.Minute, func() {
-		if !participant.Verify() {
-			r.RemoveParticipant(participant.Identity(), participant.ID(), types.ParticipantCloseReasonJoinTimeout)
+		if r.onParticipantChanged != nil {
+			r.onParticipantChanged(participant)
 		}
-	})
 
-	connectResponse := r.createConnectResponseLocked(participant, iceServers)
+		time.AfterFunc(time.Minute, func() {
+			if !participant.Verify() {
+				r.RemoveParticipant(participant.Identity(), participant.ID(), types.ParticipantCloseReasonJoinTimeout)
+			}
+		})
 
-	participant.SetMigrateState(types.MigrateStateComplete)
-	r.lock.Unlock()
+		connectResponse := r.createConnectResponseLocked(participant, iceServers)
+
+		participant.SetMigrateState(types.MigrateStateComplete)
+
+		return connectResponse, nil
+	}()
+	if err != nil {
+		return nil, err
+	}
 
 	// SIGNALLING-V2-TODO
 	//  1. process published audio_tracks
