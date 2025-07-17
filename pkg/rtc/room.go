@@ -1403,6 +1403,7 @@ func (r *Room) createConnectResponseLocked(
 		IceServers:           iceServers,
 		ClientConfiguration:  participant.GetClientConfiguration(),
 		ServerInfo:           r.serverInfo,
+		SifTrailer:           r.trailer,
 		EnabledPublishCodecs: participant.GetEnabledPublishCodecs(),
 		FastPublish:          participant.CanPublish() && !hasICEFallback,
 	}
