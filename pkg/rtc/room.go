@@ -792,8 +792,7 @@ func (r *Room) Joinv2(
 	}
 	connectResponse.SubscriberSdp = ToProtoSessionDescription(offer, 0) // SIGNALLING-V2-TODO - need to proper offerId?
 
-	// SIGNALLING-V2-TODO prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
-
+	prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
 	return connectResponse, nil
 }
 
