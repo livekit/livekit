@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -106,7 +107,7 @@ func (s *defaultSignalv2Handler) HandleConnect(
 	grants *auth.ClaimGrants,
 	rscr *rpc.RelaySignalv2ConnectRequest,
 ) (*rpc.RelaySignalv2ConnectResponse, error) {
-	// SIGNALLING-V2-TODO prometheus.IncrementParticipantRtcInit(1)
+	prometheus.IncrementParticipantRtcInit(1)
 
 	rtcNode, err := s.router.GetNodeForRoom(ctx, livekit.RoomName(rscr.CreateRoom.Name))
 	if err != nil {
