@@ -11,7 +11,7 @@ replace github.com/livekit/psrpc v0.2.10 => github.com/dTelecom/psrpc v1.0.16
 require (
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.14.0
-	github.com/dTelecom/p2p-database v1.0.1
+	github.com/dTelecom/p2p-database v1.0.2
 	github.com/elliotchance/orderedmap/v2 v2.2.0
 	github.com/florianl/go-tc v0.4.2
 	github.com/frostbyte73/core v0.0.5
@@ -48,7 +48,7 @@ require (
 	github.com/prometheus/client_golang v1.20.5
 	github.com/redis/go-redis/v9 v9.0.4
 	github.com/rs/cors v1.9.0
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	github.com/thoas/go-funk v0.9.3
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/ua-parser/uap-go v0.0.0-20211112212520-00c877edfe0f
