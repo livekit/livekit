@@ -65,12 +65,13 @@ type FakeRouter struct {
 	getRegionReturnsOnCall map[int]struct {
 		result1 string
 	}
-	HandleParticipantConnectRequestStub        func(context.Context, livekit.RoomName, *rpc.RelaySignalv2ConnectRequest) (*rpc.RelaySignalv2ConnectResponse, error)
+	HandleParticipantConnectRequestStub        func(context.Context, livekit.RoomName, livekit.ParticipantIdentity, *rpc.RelaySignalv2ConnectRequest) (*rpc.RelaySignalv2ConnectResponse, error)
 	handleParticipantConnectRequestMutex       sync.RWMutex
 	handleParticipantConnectRequestArgsForCall []struct {
 		arg1 context.Context
 		arg2 livekit.RoomName
-		arg3 *rpc.RelaySignalv2ConnectRequest
+		arg3 livekit.ParticipantIdentity
+		arg4 *rpc.RelaySignalv2ConnectRequest
 	}
 	handleParticipantConnectRequestReturns struct {
 		result1 *rpc.RelaySignalv2ConnectResponse
@@ -437,20 +438,21 @@ func (fake *FakeRouter) GetRegionReturnsOnCall(i int, result1 string) {
 	}{result1}
 }
 
-func (fake *FakeRouter) HandleParticipantConnectRequest(arg1 context.Context, arg2 livekit.RoomName, arg3 *rpc.RelaySignalv2ConnectRequest) (*rpc.RelaySignalv2ConnectResponse, error) {
+func (fake *FakeRouter) HandleParticipantConnectRequest(arg1 context.Context, arg2 livekit.RoomName, arg3 livekit.ParticipantIdentity, arg4 *rpc.RelaySignalv2ConnectRequest) (*rpc.RelaySignalv2ConnectResponse, error) {
 	fake.handleParticipantConnectRequestMutex.Lock()
 	ret, specificReturn := fake.handleParticipantConnectRequestReturnsOnCall[len(fake.handleParticipantConnectRequestArgsForCall)]
 	fake.handleParticipantConnectRequestArgsForCall = append(fake.handleParticipantConnectRequestArgsForCall, struct {
 		arg1 context.Context
 		arg2 livekit.RoomName
-		arg3 *rpc.RelaySignalv2ConnectRequest
-	}{arg1, arg2, arg3})
+		arg3 livekit.ParticipantIdentity
+		arg4 *rpc.RelaySignalv2ConnectRequest
+	}{arg1, arg2, arg3, arg4})
 	stub := fake.HandleParticipantConnectRequestStub
 	fakeReturns := fake.handleParticipantConnectRequestReturns
-	fake.recordInvocation("HandleParticipantConnectRequest", []interface{}{arg1, arg2, arg3})
+	fake.recordInvocation("HandleParticipantConnectRequest", []interface{}{arg1, arg2, arg3, arg4})
 	fake.handleParticipantConnectRequestMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2, arg3)
+		return stub(arg1, arg2, arg3, arg4)
 	}
 	if specificReturn {
 		return ret.result1, ret.result2
@@ -464,17 +466,17 @@ func (fake *FakeRouter) HandleParticipantConnectRequestCallCount() int {
 	return len(fake.handleParticipantConnectRequestArgsForCall)
 }
 
-func (fake *FakeRouter) HandleParticipantConnectRequestCalls(stub func(context.Context, livekit.RoomName, *rpc.RelaySignalv2ConnectRequest) (*rpc.RelaySignalv2ConnectResponse, error)) {
+func (fake *FakeRouter) HandleParticipantConnectRequestCalls(stub func(context.Context, livekit.RoomName, livekit.ParticipantIdentity, *rpc.RelaySignalv2ConnectRequest) (*rpc.RelaySignalv2ConnectResponse, error)) {
 	fake.handleParticipantConnectRequestMutex.Lock()
 	defer fake.handleParticipantConnectRequestMutex.Unlock()
 	fake.HandleParticipantConnectRequestStub = stub
 }
 
-func (fake *FakeRouter) HandleParticipantConnectRequestArgsForCall(i int) (context.Context, livekit.RoomName, *rpc.RelaySignalv2ConnectRequest) {
+func (fake *FakeRouter) HandleParticipantConnectRequestArgsForCall(i int) (context.Context, livekit.RoomName, livekit.ParticipantIdentity, *rpc.RelaySignalv2ConnectRequest) {
 	fake.handleParticipantConnectRequestMutex.RLock()
 	defer fake.handleParticipantConnectRequestMutex.RUnlock()
 	argsForCall := fake.handleParticipantConnectRequestArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
 }
 
 func (fake *FakeRouter) HandleParticipantConnectRequestReturns(result1 *rpc.RelaySignalv2ConnectResponse, result2 error) {

@@ -21,12 +21,14 @@ type FakeSignalClient struct {
 	activeCountReturnsOnCall map[int]struct {
 		result1 int
 	}
-	HandleParticipantConnectRequestStub        func(context.Context, livekit.NodeID, *rpc.RelaySignalv2ConnectRequest) (*rpc.RelaySignalv2ConnectResponse, error)
+	HandleParticipantConnectRequestStub        func(context.Context, livekit.RoomName, livekit.ParticipantIdentity, livekit.NodeID, *rpc.RelaySignalv2ConnectRequest) (*rpc.RelaySignalv2ConnectResponse, error)
 	handleParticipantConnectRequestMutex       sync.RWMutex
 	handleParticipantConnectRequestArgsForCall []struct {
 		arg1 context.Context
-		arg2 livekit.NodeID
-		arg3 *rpc.RelaySignalv2ConnectRequest
+		arg2 livekit.RoomName
+		arg3 livekit.ParticipantIdentity
+		arg4 livekit.NodeID
+		arg5 *rpc.RelaySignalv2ConnectRequest
 	}
 	handleParticipantConnectRequestReturns struct {
 		result1 *rpc.RelaySignalv2ConnectResponse
@@ -113,20 +115,22 @@ func (fake *FakeSignalClient) ActiveCountReturnsOnCall(i int, result1 int) {
 	}{result1}
 }
 
-func (fake *FakeSignalClient) HandleParticipantConnectRequest(arg1 context.Context, arg2 livekit.NodeID, arg3 *rpc.RelaySignalv2ConnectRequest) (*rpc.RelaySignalv2ConnectResponse, error) {
+func (fake *FakeSignalClient) HandleParticipantConnectRequest(arg1 context.Context, arg2 livekit.RoomName, arg3 livekit.ParticipantIdentity, arg4 livekit.NodeID, arg5 *rpc.RelaySignalv2ConnectRequest) (*rpc.RelaySignalv2ConnectResponse, error) {
 	fake.handleParticipantConnectRequestMutex.Lock()
 	ret, specificReturn := fake.handleParticipantConnectRequestReturnsOnCall[len(fake.handleParticipantConnectRequestArgsForCall)]
 	fake.handleParticipantConnectRequestArgsForCall = append(fake.handleParticipantConnectRequestArgsForCall, struct {
 		arg1 context.Context
-		arg2 livekit.NodeID
-		arg3 *rpc.RelaySignalv2ConnectRequest
-	}{arg1, arg2, arg3})
+		arg2 livekit.RoomName
+		arg3 livekit.ParticipantIdentity
+		arg4 livekit.NodeID
+		arg5 *rpc.RelaySignalv2ConnectRequest
+	}{arg1, arg2, arg3, arg4, arg5})
 	stub := fake.HandleParticipantConnectRequestStub
 	fakeReturns := fake.handleParticipantConnectRequestReturns
-	fake.recordInvocation("HandleParticipantConnectRequest", []interface{}{arg1, arg2, arg3})
+	fake.recordInvocation("HandleParticipantConnectRequest", []interface{}{arg1, arg2, arg3, arg4, arg5})
 	fake.handleParticipantConnectRequestMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2, arg3)
+		return stub(arg1, arg2, arg3, arg4, arg5)
 	}
 	if specificReturn {
 		return ret.result1, ret.result2
@@ -140,17 +144,17 @@ func (fake *FakeSignalClient) HandleParticipantConnectRequestCallCount() int {
 	return len(fake.handleParticipantConnectRequestArgsForCall)
 }
 
-func (fake *FakeSignalClient) HandleParticipantConnectRequestCalls(stub func(context.Context, livekit.NodeID, *rpc.RelaySignalv2ConnectRequest) (*rpc.RelaySignalv2ConnectResponse, error)) {
+func (fake *FakeSignalClient) HandleParticipantConnectRequestCalls(stub func(context.Context, livekit.RoomName, livekit.ParticipantIdentity, livekit.NodeID, *rpc.RelaySignalv2ConnectRequest) (*rpc.RelaySignalv2ConnectResponse, error)) {
 	fake.handleParticipantConnectRequestMutex.Lock()
 	defer fake.handleParticipantConnectRequestMutex.Unlock()
 	fake.HandleParticipantConnectRequestStub = stub
 }
 
-func (fake *FakeSignalClient) HandleParticipantConnectRequestArgsForCall(i int) (context.Context, livekit.NodeID, *rpc.RelaySignalv2ConnectRequest) {
+func (fake *FakeSignalClient) HandleParticipantConnectRequestArgsForCall(i int) (context.Context, livekit.RoomName, livekit.ParticipantIdentity, livekit.NodeID, *rpc.RelaySignalv2ConnectRequest) {
 	fake.handleParticipantConnectRequestMutex.RLock()
 	defer fake.handleParticipantConnectRequestMutex.RUnlock()
 	argsForCall := fake.handleParticipantConnectRequestArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5
 }
 
 func (fake *FakeSignalClient) HandleParticipantConnectRequestReturns(result1 *rpc.RelaySignalv2ConnectResponse, result2 error) {
