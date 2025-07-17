@@ -41,17 +41,24 @@ var ErrSignalMessageDropped = errors.New("signal message dropped")
 type SignalClient interface {
 	ActiveCount() int
 	StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit, nodeID livekit.NodeID) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error)
+
+	HandleParticipantConnectRequest(
+		ctx context.Context,
+		nodeID livekit.NodeID,
+		rscr *rpc.RelaySignalv2ConnectRequest,
+	) (*rpc.RelaySignalv2ConnectResponse, error)
 }
 
 type signalClient struct {
-	nodeID livekit.NodeID
-	config config.SignalRelayConfig
-	client rpc.TypedSignalClient
-	active atomic.Int32
+	nodeID   livekit.NodeID
+	config   config.SignalRelayConfig
+	client   rpc.TypedSignalClient
+	clientv2 rpc.TypedSignalv2Client
+	active   atomic.Int32
 }
 
 func NewSignalClient(nodeID livekit.NodeID, bus psrpc.MessageBus, config config.SignalRelayConfig) (SignalClient, error) {
-	c, err := rpc.NewTypedSignalClient(
+	client, err := rpc.NewTypedSignalClient(
 		nodeID,
 		bus,
 		middleware.WithClientMetrics(rpc.PSRPCMetricsObserver{}),
@@ -61,10 +68,20 @@ func NewSignalClient(nodeID livekit.NodeID, bus psrpc.MessageBus, config config.
 		return nil, err
 	}
 
+	clientv2, err := rpc.NewTypedSignalv2Client(
+		nodeID,
+		bus,
+		middleware.WithClientMetrics(rpc.PSRPCMetricsObserver{}),
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	return &signalClient{
-		nodeID: nodeID,
-		config: config,
-		client: c,
+		nodeID:   nodeID,
+		config:   config,
+		client:   client,
+		clientv2: clientv2,
 	}, nil
 }
 
@@ -142,6 +159,16 @@ func (r *signalClient) StartParticipantSignal(
 	return connectionID, sink, resChan, nil
 }
 
+func (r *signalClient) HandleParticipantConnectRequest(
+	ctx context.Context,
+	nodeID livekit.NodeID,
+	rscr *rpc.RelaySignalv2ConnectRequest,
+) (*rpc.RelaySignalv2ConnectResponse, error) {
+	return r.clientv2.RelaySignalv2Connect(ctx, nodeID, rscr)
+}
+
+// ------------------------------
+
 type signalRequestMessageWriter struct{}
 
 func (e signalRequestMessageWriter) Write(seq uint64, close bool, msgs []proto.Message) *rpc.RelaySignalRequest {
@@ -156,6 +183,8 @@ func (e signalRequestMessageWriter) Write(seq uint64, close bool, msgs []proto.M
 	return r
 }
 
+// -------------------------------
+
 type signalResponseMessageReader struct{}
 
 func (e signalResponseMessageReader) Read(rm *rpc.RelaySignalResponse) ([]proto.Message, error) {
@@ -165,6 +194,8 @@ func (e signalResponseMessageReader) Read(rm *rpc.RelaySignalResponse) ([]proto.
 	}
 	return msgs, nil
 }
+
+// -----------------------------------------
 
 type RelaySignalMessage interface {
 	proto.Message
@@ -212,6 +243,8 @@ func CopySignalStreamToMessageChannel[SendType, RecvType RelaySignalMessage](
 	return stream.Err()
 }
 
+// ----------------------------------------
+
 type signalMessageReader[SendType, RecvType RelaySignalMessage] struct {
 	seq    uint64
 	reader SignalMessageReader[RecvType]
@@ -238,6 +271,8 @@ func (r *signalMessageReader[SendType, RecvType]) Read(msg RecvType) ([]proto.Me
 
 	return res, nil
 }
+
+// ----------------------------------------
 
 type SignalSinkParams[SendType, RecvType RelaySignalMessage] struct {
 	Stream         psrpc.Stream[SendType, RecvType]

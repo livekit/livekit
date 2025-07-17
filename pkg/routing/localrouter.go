@@ -33,7 +33,6 @@ var _ Router = (*LocalRouter)(nil)
 type LocalRouter struct {
 	currentNode       LocalNode
 	signalClient      SignalClient
-	signalv2Client    Signalv2Client
 	roomManagerClient RoomManagerClient
 	nodeStatsConfig   config.NodeStatsConfig
 
@@ -47,14 +46,12 @@ type LocalRouter struct {
 func NewLocalRouter(
 	currentNode LocalNode,
 	signalClient SignalClient,
-	signalv2Client Signalv2Client,
 	roomManagerClient RoomManagerClient,
 	nodeStatsConfig config.NodeStatsConfig,
 ) *LocalRouter {
 	return &LocalRouter{
 		currentNode:       currentNode,
 		signalClient:      signalClient,
-		signalv2Client:    signalv2Client,
 		roomManagerClient: roomManagerClient,
 		nodeStatsConfig:   nodeStatsConfig,
 		requestChannels:   make(map[string]*MessageChannel),
@@ -144,7 +141,7 @@ func (r *LocalRouter) HandleParticipantConnectRequestWithNodeID(
 	rscr *rpc.RelaySignalv2ConnectRequest,
 	nodeID livekit.NodeID,
 ) (*rpc.RelaySignalv2ConnectResponse, error) {
-	resp, err := r.signalv2Client.HandleParticipantConnectRequest(ctx, nodeID, rscr)
+	resp, err := r.signalClient.HandleParticipantConnectRequest(ctx, nodeID, rscr)
 	if err != nil {
 		/* RAJA-TODO
 		logger.Errorw(

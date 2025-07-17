@@ -48,10 +48,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	signalv2Client, err := routing.NewSignalv2Client(nodeID, messageBus)
-	if err != nil {
-		return nil, err
-	}
 	psrpcConfig := getPSRPCConfig(conf)
 	clientParams := getPSRPCClientParams(psrpcConfig, messageBus)
 	roomConfig := getRoomConfig(conf)
@@ -64,7 +60,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	nodeStatsConfig := getNodeStatsConfig(conf)
-	router := routing.CreateRouter(universalClient, currentNode, signalClient, signalv2Client, roomManagerClient, keepalivePubSub, nodeStatsConfig)
+	router := routing.CreateRouter(universalClient, currentNode, signalClient, roomManagerClient, keepalivePubSub, nodeStatsConfig)
 	objectStore := createStore(universalClient)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
@@ -181,10 +177,6 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	if err != nil {
 		return nil, err
 	}
-	signalv2Client, err := routing.NewSignalv2Client(nodeID, messageBus)
-	if err != nil {
-		return nil, err
-	}
 	psrpcConfig := getPSRPCConfig(conf)
 	clientParams := getPSRPCClientParams(psrpcConfig, messageBus)
 	roomConfig := getRoomConfig(conf)
@@ -197,7 +189,7 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 		return nil, err
 	}
 	nodeStatsConfig := getNodeStatsConfig(conf)
-	router := routing.CreateRouter(universalClient, currentNode, signalClient, signalv2Client, roomManagerClient, keepalivePubSub, nodeStatsConfig)
+	router := routing.CreateRouter(universalClient, currentNode, signalClient, roomManagerClient, keepalivePubSub, nodeStatsConfig)
 	return router, nil
 }
 

@@ -173,12 +173,11 @@ func CreateRouter(
 	rc redis.UniversalClient,
 	node LocalNode,
 	signalClient SignalClient,
-	signalv2Client Signalv2Client,
 	roomManagerClient RoomManagerClient,
 	kps rpc.KeepalivePubSub,
 	nodeStatsConfig config.NodeStatsConfig,
 ) Router {
-	lr := NewLocalRouter(node, signalClient, signalv2Client, roomManagerClient, nodeStatsConfig)
+	lr := NewLocalRouter(node, signalClient, roomManagerClient, nodeStatsConfig)
 
 	if rc != nil {
 		return NewRedisRouter(lr, rc, kps)
