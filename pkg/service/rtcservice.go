@@ -115,7 +115,6 @@ func decodeAttributes(str string) (map[string]string, error) {
 func (s *RTCService) validateInternal(lgr logger.Logger, r *http.Request, strict bool) (livekit.RoomName, routing.ParticipantInit, int, error) {
 	var params ValidateConnectRequestParams
 	params.publish = r.FormValue("publish")
-	logger.Infow("RAJA publish param", "publish", params.publish) // REMOVE
 
 	attributesStrParam := r.FormValue("attributes")
 	if attributesStrParam != "" {

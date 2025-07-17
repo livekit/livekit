@@ -165,6 +165,7 @@ type MessageRouter interface {
 	HandleParticipantConnectRequest(
 		ctx context.Context,
 		roomName livekit.RoomName,
+		participantIdentity livekit.ParticipantIdentity,
 		rscr *rpc.RelaySignalv2ConnectRequest,
 	) (resp *rpc.RelaySignalv2ConnectResponse, err error)
 }

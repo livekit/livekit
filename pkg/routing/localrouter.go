@@ -130,27 +130,28 @@ func (r *LocalRouter) StartParticipantSignalWithNodeID(ctx context.Context, room
 
 func (r *LocalRouter) HandleParticipantConnectRequest(
 	ctx context.Context,
-	_roomName livekit.RoomName,
+	roomName livekit.RoomName,
+	participantIdentity livekit.ParticipantIdentity,
 	rscr *rpc.RelaySignalv2ConnectRequest,
 ) (*rpc.RelaySignalv2ConnectResponse, error) {
-	return r.HandleParticipantConnectRequestWithNodeID(ctx, rscr, r.currentNode.NodeID())
+	return r.HandleParticipantConnectRequestWithNodeID(ctx, roomName, participantIdentity, rscr, r.currentNode.NodeID())
 }
 
 func (r *LocalRouter) HandleParticipantConnectRequestWithNodeID(
 	ctx context.Context,
+	roomName livekit.RoomName,
+	participantIdentity livekit.ParticipantIdentity,
 	rscr *rpc.RelaySignalv2ConnectRequest,
 	nodeID livekit.NodeID,
 ) (*rpc.RelaySignalv2ConnectResponse, error) {
-	resp, err := r.signalClient.HandleParticipantConnectRequest(ctx, nodeID, rscr)
+	resp, err := r.signalClient.HandleParticipantConnectRequest(ctx, roomName, participantIdentity, nodeID, rscr)
 	if err != nil {
-		/* SIGNALLING-V2-TODO - maybe should add roomName and participantIdentity to rscr to make these easier
 		logger.Errorw(
 			"could not handle new participant", err,
 			"room", roomName,
-			"participant", pi.Identity,
-			"connID", connectionID,
+			"participant", participantIdentity,
+			// SIGNALLING-V2-TODO "connID", connectionID,
 		)
-		*/
 	}
 	return resp, err
 }

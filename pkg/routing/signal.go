@@ -44,6 +44,8 @@ type SignalClient interface {
 
 	HandleParticipantConnectRequest(
 		ctx context.Context,
+		roomName livekit.RoomName,
+		participantIdentity livekit.ParticipantIdentity,
 		nodeID livekit.NodeID,
 		rscr *rpc.RelaySignalv2ConnectRequest,
 	) (*rpc.RelaySignalv2ConnectResponse, error)
@@ -161,9 +163,21 @@ func (r *signalClient) StartParticipantSignal(
 
 func (r *signalClient) HandleParticipantConnectRequest(
 	ctx context.Context,
+	roomName livekit.RoomName,
+	participantIdentity livekit.ParticipantIdentity,
 	nodeID livekit.NodeID,
 	rscr *rpc.RelaySignalv2ConnectRequest,
 ) (*rpc.RelaySignalv2ConnectResponse, error) {
+	lgr := utils.GetLogger(ctx).WithValues(
+		"room", roomName,
+		"participant", participantIdentity,
+		"reqNodeID", nodeID,
+		// SIGNALLING-V2-TODO "connID", connectionID,
+		"connectRequest", logger.Proto(rscr),
+	)
+
+	lgr.Debugw("handling participant connect request")
+
 	return r.clientv2.RelaySignalv2Connect(ctx, nodeID, rscr)
 }
 

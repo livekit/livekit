@@ -173,6 +173,7 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 func (r *RedisRouter) HandleParticipantConnectRequest(
 	ctx context.Context,
 	roomName livekit.RoomName,
+	participantIdentity livekit.ParticipantIdentity,
 	rscr *rpc.RelaySignalv2ConnectRequest,
 ) (*rpc.RelaySignalv2ConnectResponse, error) {
 	rtcNode, err := r.GetNodeForRoom(ctx, roomName)
@@ -180,7 +181,13 @@ func (r *RedisRouter) HandleParticipantConnectRequest(
 		return nil, err
 	}
 
-	return r.HandleParticipantConnectRequestWithNodeID(ctx, rscr, livekit.NodeID(rtcNode.Id))
+	return r.HandleParticipantConnectRequestWithNodeID(
+		ctx,
+		roomName,
+		participantIdentity,
+		rscr,
+		livekit.NodeID(rtcNode.Id),
+	)
 }
 
 func (r *RedisRouter) Start() error {

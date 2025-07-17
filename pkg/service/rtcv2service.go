@@ -60,7 +60,7 @@ func (s *RTCv2Service) validateInternal(
 	lgr logger.Logger,
 	r *http.Request,
 	connectRequest *livekit.ConnectRequest,
-) (livekit.RoomName, *rpc.RelaySignalv2ConnectRequest, int, error) {
+) (livekit.RoomName, livekit.ParticipantIdentity, *rpc.RelaySignalv2ConnectRequest, int, error) {
 	params := ValidateConnectRequestParams{
 		metadata:   connectRequest.Metadata,
 		attributes: connectRequest.ParticipantAttributes,
@@ -75,21 +75,25 @@ func (s *RTCv2Service) validateInternal(
 		s.roomAllocator,
 	)
 	if err != nil {
-		return res.roomName, nil, code, err
+		return "", "", nil, code, err
 	}
 
 	grantsJson, err := json.Marshal(res.grants)
 	if err != nil {
-		return res.roomName, nil, http.StatusInternalServerError, err
+		return "", "", nil, http.StatusInternalServerError, err
 	}
 
 	AugmentClientInfo(connectRequest.ClientInfo, r)
 
-	return res.roomName, &rpc.RelaySignalv2ConnectRequest{
-		GrantsJson:     string(grantsJson),
-		CreateRoom:     res.createRoomRequest,
-		ConnectRequest: connectRequest,
-	}, code, err
+	return res.roomName,
+		livekit.ParticipantIdentity(res.grants.Identity),
+		&rpc.RelaySignalv2ConnectRequest{
+			GrantsJson:     string(grantsJson),
+			CreateRoom:     res.createRoomRequest,
+			ConnectRequest: connectRequest,
+		},
+		code,
+		err
 }
 
 func (s *RTCv2Service) handlePost(w http.ResponseWriter, r *http.Request) {
@@ -113,7 +117,7 @@ func (s *RTCv2Service) handlePost(w http.ResponseWriter, r *http.Request) {
 
 	switch msg := clientMessage.GetMessage().(type) {
 	case *livekit.Signalv2ClientMessage_ConnectRequest:
-		roomName, rscr, code, err := s.validateInternal(logger.GetLogger(), r, msg.ConnectRequest)
+		roomName, participantIdentity, rscr, code, err := s.validateInternal(logger.GetLogger(), r, msg.ConnectRequest)
 		if err != nil {
 			HandleErrorJson(w, r, code, err)
 			return
@@ -124,7 +128,7 @@ func (s *RTCv2Service) handlePost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		resp, err := s.router.HandleParticipantConnectRequest(r.Context(), roomName, rscr)
+		resp, err := s.router.HandleParticipantConnectRequest(r.Context(), roomName, participantIdentity, rscr)
 		if err != nil {
 			HandleErrorJson(w, r, http.StatusInternalServerError, err)
 			return
