@@ -23,7 +23,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/mediatransportutil v0.0.0-20250519131108-fb90f5acfded
-	github.com/livekit/protocol v1.39.4-0.20250716132625-924eb8b30d90
+	github.com/livekit/protocol v1.39.4-0.20250717134438-9922dc496733
 	github.com/livekit/psrpc v0.6.1-0.20250511053145-465289d72c3c
 	github.com/mackerelio/go-osstat v0.2.5
 	github.com/magefile/mage v1.15.0
@@ -36,12 +36,12 @@ require (
 	github.com/pion/ice/v4 v4.0.10
 	github.com/pion/interceptor v0.1.40
 	github.com/pion/rtcp v1.2.15
-	github.com/pion/rtp v1.8.19
+	github.com/pion/rtp v1.8.21
 	github.com/pion/sctp v1.8.39
 	github.com/pion/sdp/v3 v3.0.14
 	github.com/pion/transport/v3 v3.0.7
 	github.com/pion/turn/v4 v4.0.2
-	github.com/pion/webrtc/v4 v4.1.2
+	github.com/pion/webrtc/v4 v4.1.3
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.22.0
 	github.com/redis/go-redis/v9 v9.11.0
@@ -55,9 +55,9 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.27.0
-	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b
-	golang.org/x/mod v0.25.0
-	golang.org/x/sync v0.15.0
+	golang.org/x/exp v0.0.0-20250711185948-6ae5c78190dc
+	golang.org/x/mod v0.26.0
+	golang.org/x/sync v0.16.0
 	google.golang.org/protobuf v1.36.6
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -87,7 +87,7 @@ require (
 	github.com/go-jose/go-jose/v3 v3.0.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/google/cel-go v0.25.0 // indirect
+	github.com/google/cel-go v0.26.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/google/subcommands v1.2.0 // indirect
@@ -96,7 +96,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/josharian/native v1.1.0 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
-	github.com/klauspost/cpuid/v2 v2.2.11 // indirect
+	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/lithammer/shortuuid/v4 v4.2.0 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/mdlayher/netlink v1.7.1 // indirect
@@ -130,15 +130,13 @@ require (
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
 	go.uber.org/zap/exp v0.3.0 // indirect
-	golang.org/x/crypto v0.39.0 // indirect
-	golang.org/x/net v0.41.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
-	golang.org/x/text v0.26.0 // indirect
-	golang.org/x/tools v0.34.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20250603155806-513f23925822 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250603155806-513f23925822 // indirect
-	google.golang.org/grpc v1.73.0 // indirect
+	golang.org/x/crypto v0.40.0 // indirect
+	golang.org/x/net v0.42.0 // indirect
+	golang.org/x/sys v0.34.0 // indirect
+	golang.org/x/text v0.27.0 // indirect
+	golang.org/x/tools v0.35.0 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20250715232539-7130f93afb79 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250715232539-7130f93afb79 // indirect
+	google.golang.org/grpc v1.74.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
-
-replace github.com/livekit/protocol => ../protocol
