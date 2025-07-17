@@ -83,29 +83,30 @@ func (h TransportManagerPublisherTransportHandler) OnAnswer(sd webrtc.SessionDes
 // -------------------------------
 
 type TransportManagerParams struct {
-	SubscriberAsPrimary          bool
-	Config                       *WebRTCConfig
-	Twcc                         *twcc.Responder
-	ProtocolVersion              types.ProtocolVersion
-	CongestionControlConfig      config.CongestionControlConfig
-	EnabledSubscribeCodecs       []*livekit.Codec
-	EnabledPublishCodecs         []*livekit.Codec
-	SimTracks                    map[uint32]SimulcastTrackInfo
-	ClientInfo                   ClientInfo
-	Migration                    bool
-	AllowTCPFallback             bool
-	TCPFallbackRTTThreshold      int
-	AllowUDPUnstableFallback     bool
-	TURNSEnabled                 bool
-	AllowPlayoutDelay            bool
-	DataChannelMaxBufferedAmount uint64
-	DatachannelSlowThreshold     int
-	Logger                       logger.Logger
-	PublisherHandler             transport.Handler
-	SubscriberHandler            transport.Handler
-	DataChannelStats             *telemetry.BytesTrackStats
-	UseOneShotSignallingMode     bool
-	FireOnTrackBySdp             bool
+	SubscriberAsPrimary            bool
+	Config                         *WebRTCConfig
+	Twcc                           *twcc.Responder
+	ProtocolVersion                types.ProtocolVersion
+	CongestionControlConfig        config.CongestionControlConfig
+	EnabledSubscribeCodecs         []*livekit.Codec
+	EnabledPublishCodecs           []*livekit.Codec
+	SimTracks                      map[uint32]SimulcastTrackInfo
+	ClientInfo                     ClientInfo
+	Migration                      bool
+	AllowTCPFallback               bool
+	TCPFallbackRTTThreshold        int
+	AllowUDPUnstableFallback       bool
+	TURNSEnabled                   bool
+	AllowPlayoutDelay              bool
+	DataChannelMaxBufferedAmount   uint64
+	DatachannelSlowThreshold       int
+	Logger                         logger.Logger
+	PublisherHandler               transport.Handler
+	SubscriberHandler              transport.Handler
+	DataChannelStats               *telemetry.BytesTrackStats
+	UseOneShotSignallingMode       bool
+	SynchronousLocalCandidatesMode bool
+	FireOnTrackBySdp               bool
 }
 
 type TransportManager struct {
@@ -150,21 +151,22 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 
 	lgr := LoggerWithPCTarget(params.Logger, livekit.SignalTarget_PUBLISHER)
 	publisher, err := NewPCTransport(TransportParams{
-		ProtocolVersion:              params.ProtocolVersion,
-		Config:                       params.Config,
-		Twcc:                         params.Twcc,
-		DirectionConfig:              params.Config.Publisher,
-		CongestionControlConfig:      params.CongestionControlConfig,
-		EnabledCodecs:                params.EnabledPublishCodecs,
-		Logger:                       lgr,
-		SimTracks:                    params.SimTracks,
-		ClientInfo:                   params.ClientInfo,
-		Transport:                    livekit.SignalTarget_PUBLISHER,
-		Handler:                      TransportManagerPublisherTransportHandler{TransportManagerTransportHandler{params.PublisherHandler, t, lgr}},
-		UseOneShotSignallingMode:     params.UseOneShotSignallingMode,
-		DataChannelMaxBufferedAmount: params.DataChannelMaxBufferedAmount,
-		DatachannelSlowThreshold:     params.DatachannelSlowThreshold,
-		FireOnTrackBySdp:             params.FireOnTrackBySdp,
+		ProtocolVersion:                params.ProtocolVersion,
+		Config:                         params.Config,
+		Twcc:                           params.Twcc,
+		DirectionConfig:                params.Config.Publisher,
+		CongestionControlConfig:        params.CongestionControlConfig,
+		EnabledCodecs:                  params.EnabledPublishCodecs,
+		Logger:                         lgr,
+		SimTracks:                      params.SimTracks,
+		ClientInfo:                     params.ClientInfo,
+		Transport:                      livekit.SignalTarget_PUBLISHER,
+		Handler:                        TransportManagerPublisherTransportHandler{TransportManagerTransportHandler{params.PublisherHandler, t, lgr}},
+		UseOneShotSignallingMode:       params.UseOneShotSignallingMode,
+		SynchronousLocalCandidatesMode: params.SynchronousLocalCandidatesMode,
+		DataChannelMaxBufferedAmount:   params.DataChannelMaxBufferedAmount,
+		DatachannelSlowThreshold:       params.DatachannelSlowThreshold,
+		FireOnTrackBySdp:               params.FireOnTrackBySdp,
 	})
 	if err != nil {
 		return nil, err
@@ -173,19 +175,20 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 
 	lgr = LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER)
 	subscriber, err := NewPCTransport(TransportParams{
-		ProtocolVersion:          params.ProtocolVersion,
-		Config:                   params.Config,
-		DirectionConfig:          params.Config.Subscriber,
-		CongestionControlConfig:  params.CongestionControlConfig,
-		EnabledCodecs:            params.EnabledSubscribeCodecs,
-		Logger:                   lgr,
-		ClientInfo:               params.ClientInfo,
-		IsOfferer:                true,
-		IsSendSide:               true,
-		AllowPlayoutDelay:        params.AllowPlayoutDelay,
-		DatachannelSlowThreshold: params.DatachannelSlowThreshold,
-		Transport:                livekit.SignalTarget_SUBSCRIBER,
-		Handler:                  TransportManagerTransportHandler{params.SubscriberHandler, t, lgr},
+		ProtocolVersion:                params.ProtocolVersion,
+		Config:                         params.Config,
+		DirectionConfig:                params.Config.Subscriber,
+		CongestionControlConfig:        params.CongestionControlConfig,
+		EnabledCodecs:                  params.EnabledSubscribeCodecs,
+		Logger:                         lgr,
+		ClientInfo:                     params.ClientInfo,
+		IsOfferer:                      true,
+		IsSendSide:                     true,
+		AllowPlayoutDelay:              params.AllowPlayoutDelay,
+		DatachannelSlowThreshold:       params.DatachannelSlowThreshold,
+		Transport:                      livekit.SignalTarget_SUBSCRIBER,
+		Handler:                        TransportManagerTransportHandler{params.SubscriberHandler, t, lgr},
+		SynchronousLocalCandidatesMode: params.SynchronousLocalCandidatesMode,
 	})
 	if err != nil {
 		return nil, err
@@ -491,6 +494,10 @@ func (t *TransportManager) ProcessPendingPublisherOffer() {
 
 func (t *TransportManager) HandleAnswer(answer webrtc.SessionDescription, answerId uint32) {
 	t.subscriber.HandleRemoteDescription(answer, answerId)
+}
+
+func (t *TransportManager) GetOffer() (webrtc.SessionDescription, error) {
+	return t.subscriber.GetOffer()
 }
 
 // AddICECandidate adds candidates for remote peer

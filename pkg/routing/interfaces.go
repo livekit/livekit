@@ -153,8 +153,21 @@ type StartParticipantSignalResults struct {
 type MessageRouter interface {
 	// CreateRoom starts an rtc room
 	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (res *livekit.Room, err error)
+
 	// StartParticipantSignal participant signal connection is ready to start
-	StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (res StartParticipantSignalResults, err error)
+	StartParticipantSignal(
+		ctx context.Context,
+		roomName livekit.RoomName,
+		pi ParticipantInit,
+	) (res StartParticipantSignalResults, err error)
+
+	// HandleParticipantConnectRequest handles connection request from participant
+	HandleParticipantConnectRequest(
+		ctx context.Context,
+		roomName livekit.RoomName,
+		participantIdentity livekit.ParticipantIdentity,
+		rscr *rpc.RelaySignalv2ConnectRequest,
+	) (resp *rpc.RelaySignalv2ConnectResponse, err error)
 }
 
 func CreateRouter(
@@ -229,10 +242,9 @@ func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionI
 	}
 
 	ss := &livekit.StartSession{
-		RoomName: string(roomName),
-		Identity: string(pi.Identity),
-		Name:     string(pi.Name),
-		// connection id is to allow the RTC node to identify where to route the message back to
+		RoomName:        string(roomName),
+		Identity:        string(pi.Identity),
+		Name:            string(pi.Name),
 		ConnectionId:    string(connectionID),
 		Reconnect:       pi.Reconnect,
 		ReconnectReason: pi.ReconnectReason,
