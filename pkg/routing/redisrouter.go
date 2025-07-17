@@ -169,6 +169,20 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 	return r.StartParticipantSignalWithNodeID(ctx, roomName, pi, livekit.NodeID(rtcNode.Id))
 }
 
+// HandleParticipantConnectRequest sends participant connect request to the RTC node for the room
+func (r *RedisRouter) HandleParticipantConnectRequest(
+	ctx context.Context,
+	roomName livekit.RoomName,
+	rscr *rpc.RelaySignalv2ConnectRequest,
+) (*rpc.RelaySignalv2ConnectResponse, error) {
+	rtcNode, err := r.GetNodeForRoom(ctx, roomName)
+	if err != nil {
+		return nil, err
+	}
+
+	return r.HandleParticipantConnectRequestWithNodeID(ctx, rscr, livekit.NodeID(rtcNode.Id))
+}
+
 func (r *RedisRouter) Start() error {
 	if r.isStarted.Swap(true) {
 		return nil

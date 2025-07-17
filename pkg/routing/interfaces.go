@@ -153,19 +153,32 @@ type StartParticipantSignalResults struct {
 type MessageRouter interface {
 	// CreateRoom starts an rtc room
 	CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (res *livekit.Room, err error)
+
 	// StartParticipantSignal participant signal connection is ready to start
-	StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit) (res StartParticipantSignalResults, err error)
+	StartParticipantSignal(
+		ctx context.Context,
+		roomName livekit.RoomName,
+		pi ParticipantInit,
+	) (res StartParticipantSignalResults, err error)
+
+	// HandleParticipantConnectRequest handles connection request from participant
+	HandleParticipantConnectRequest(
+		ctx context.Context,
+		roomName livekit.RoomName,
+		rscr *rpc.RelaySignalv2ConnectRequest,
+	) (resp *rpc.RelaySignalv2ConnectResponse, err error)
 }
 
 func CreateRouter(
 	rc redis.UniversalClient,
 	node LocalNode,
 	signalClient SignalClient,
+	signalv2Client Signalv2Client,
 	roomManagerClient RoomManagerClient,
 	kps rpc.KeepalivePubSub,
 	nodeStatsConfig config.NodeStatsConfig,
 ) Router {
-	lr := NewLocalRouter(node, signalClient, roomManagerClient, nodeStatsConfig)
+	lr := NewLocalRouter(node, signalClient, signalv2Client, roomManagerClient, nodeStatsConfig)
 
 	if rc != nil {
 		return NewRedisRouter(lr, rc, kps)

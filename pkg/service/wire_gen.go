@@ -48,6 +48,10 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
+	signalv2Client, err := routing.NewSignalv2Client(nodeID, messageBus)
+	if err != nil {
+		return nil, err
+	}
 	psrpcConfig := getPSRPCConfig(conf)
 	clientParams := getPSRPCClientParams(psrpcConfig, messageBus)
 	roomConfig := getRoomConfig(conf)
@@ -60,7 +64,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	nodeStatsConfig := getNodeStatsConfig(conf)
-	router := routing.CreateRouter(universalClient, currentNode, signalClient, roomManagerClient, keepalivePubSub, nodeStatsConfig)
+	router := routing.CreateRouter(universalClient, currentNode, signalClient, signalv2Client, roomManagerClient, keepalivePubSub, nodeStatsConfig)
 	objectStore := createStore(universalClient)
 	roomAllocator, err := NewRoomAllocator(conf, router, objectStore)
 	if err != nil {
@@ -120,10 +124,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	sipService := NewSIPService(sipConfig, nodeID, messageBus, sipClient, sipStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, router, telemetryService)
-	rtCv2Service, err := NewRTCv2Service(nodeID, conf, router, roomAllocator, messageBus)
-	if err != nil {
-		return nil, err
-	}
+	rtCv2Service := NewRTCv2Service(conf, roomAllocator, router)
 	rtcRestParticipantClient, err := rpc.NewTypedRTCRestParticipantClient(clientParams)
 	if err != nil {
 		return nil, err
@@ -180,6 +181,10 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 	if err != nil {
 		return nil, err
 	}
+	signalv2Client, err := routing.NewSignalv2Client(nodeID, messageBus)
+	if err != nil {
+		return nil, err
+	}
 	psrpcConfig := getPSRPCConfig(conf)
 	clientParams := getPSRPCClientParams(psrpcConfig, messageBus)
 	roomConfig := getRoomConfig(conf)
@@ -192,7 +197,7 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 		return nil, err
 	}
 	nodeStatsConfig := getNodeStatsConfig(conf)
-	router := routing.CreateRouter(universalClient, currentNode, signalClient, roomManagerClient, keepalivePubSub, nodeStatsConfig)
+	router := routing.CreateRouter(universalClient, currentNode, signalClient, signalv2Client, roomManagerClient, keepalivePubSub, nodeStatsConfig)
 	return router, nil
 }
 

@@ -15,7 +15,6 @@
 package service
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -26,8 +25,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/psrpc"
-	"github.com/livekit/psrpc/pkg/middleware"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -39,33 +36,20 @@ type RTCv2Service struct {
 	http.Handler
 
 	limits        config.LimitConfig
-	router        routing.Router
 	roomAllocator RoomAllocator
-	client        rpc.TypedSignalv2Client
+	router        routing.MessageRouter
 }
 
 func NewRTCv2Service(
-	nodeID livekit.NodeID,
 	config *config.Config,
-	router routing.Router,
 	roomAllocator RoomAllocator,
-	bus psrpc.MessageBus,
-) (*RTCv2Service, error) {
-	client, err := rpc.NewTypedSignalv2Client(
-		nodeID,
-		bus,
-		middleware.WithClientMetrics(rpc.PSRPCMetricsObserver{}),
-	)
-	if err != nil {
-		return nil, err
-	}
-
+	router routing.MessageRouter,
+) *RTCv2Service {
 	return &RTCv2Service{
 		limits:        config.Limit,
 		router:        router,
 		roomAllocator: roomAllocator,
-		client:        client,
-	}, nil
+	}
 }
 
 func (s *RTCv2Service) SetupRoutes(mux *http.ServeMux) {
@@ -140,13 +124,7 @@ func (s *RTCv2Service) handlePost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		node, err := s.router.GetNodeForRoom(r.Context(), roomName)
-		if err != nil {
-			HandleErrorJson(w, r, http.StatusInternalServerError, err)
-			return
-		}
-
-		resp, err := s.client.RelaySignalv2Connect(context.Background(), livekit.NodeID(node.Id), rscr)
+		resp, err := s.router.HandleParticipantConnectRequest(r.Context(), roomName, rscr)
 		if err != nil {
 			HandleErrorJson(w, r, http.StatusInternalServerError, err)
 			return
