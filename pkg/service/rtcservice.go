@@ -115,6 +115,7 @@ func decodeAttributes(str string) (map[string]string, error) {
 func (s *RTCService) validateInternal(lgr logger.Logger, r *http.Request, strict bool) (livekit.RoomName, routing.ParticipantInit, int, error) {
 	var params ValidateConnectRequestParams
 	params.publish = r.FormValue("publish")
+	logger.Infow("RAJA publish param", "publish", params.publish) // REMOVE
 
 	attributesStrParam := r.FormValue("attributes")
 	if attributesStrParam != "" {
@@ -149,15 +150,20 @@ func (s *RTCService) validateInternal(lgr logger.Logger, r *http.Request, strict
 		Grants:         res.grants,
 		Region:         res.region,
 		CreateRoom:     res.createRoomRequest,
-		AutoSubscribe:  boolValue(r.FormValue("auto_subscribe")),
+		AutoSubscribe:  true,
 		AdaptiveStream: boolValue(r.FormValue("adaptive_stream")),
 		DisableICELite: boolValue(r.FormValue("disable_ice_lite")),
 	}
+
 	reconnectReason, _ := strconv.Atoi(r.FormValue("reconnect_reason")) // 0 means unknown reason
 	pi.ReconnectReason = livekit.ReconnectReason(reconnectReason)
 
 	if pi.Reconnect {
 		pi.ID = livekit.ParticipantID(r.FormValue("sid"))
+	}
+
+	if autoSubscribe := r.FormValue("auto_subscribe"); autoSubscribe != "" {
+		pi.AutoSubscribe = boolValue(autoSubscribe)
 	}
 
 	subscriberAllowPauseParam := r.FormValue("subscriber_allow_pause")
