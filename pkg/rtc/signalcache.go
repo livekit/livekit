@@ -50,14 +50,7 @@ func NewSignalCache(params SignalCacheParams) *SignalCache {
 }
 
 func (s *SignalCache) Add(msg *livekit.Signalv2ServerMessage, lastRemoteId uint32) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	msg.MessageId = s.messageId
-	s.messageId++
-	msg.LastProcessedRemoteMessageId = lastRemoteId
-
-	s.messages.PushBack(msg)
+	s.AddBatch([]*livekit.Signalv2ServerMessage{msg}, lastRemoteId)
 }
 
 func (s *SignalCache) AddBatch(msgs []*livekit.Signalv2ServerMessage, lastRemoteId uint32) {

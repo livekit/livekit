@@ -134,7 +134,7 @@ func (s *SignalFragment) Reassemble(fragment *livekit.Fragment) []byte {
 		return nil
 	}
 
-	var data []byte
+	data := make([]byte, 0, expectedTotalSize)
 	for _, fr := range re.fragments {
 		data = append(data, fr.Data...)
 	}
