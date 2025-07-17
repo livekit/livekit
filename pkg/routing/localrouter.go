@@ -143,7 +143,7 @@ func (r *LocalRouter) HandleParticipantConnectRequestWithNodeID(
 ) (*rpc.RelaySignalv2ConnectResponse, error) {
 	resp, err := r.signalClient.HandleParticipantConnectRequest(ctx, nodeID, rscr)
 	if err != nil {
-		/* RAJA-TODO
+		/* SIGNALLING-V2-TODO - maybe should add roomName and participantIdentity to rscr to make these easier
 		logger.Errorw(
 			"could not handle new participant", err,
 			"room", roomName,
