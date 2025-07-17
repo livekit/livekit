@@ -788,6 +788,7 @@ func (r *Room) Joinv2(
 	offer, err := participant.GetOffer()
 	if err != nil {
 		participant.GetLogger().Warnw("could not get offer", err)
+		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "get_subscriber_offer").Add(1)
 		return nil, err
 	}
 	connectResponse.SubscriberSdp = ToProtoSessionDescription(offer, 0) // SIGNALLING-V2-TODO - need to proper offerId?
