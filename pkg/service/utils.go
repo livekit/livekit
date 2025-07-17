@@ -53,7 +53,6 @@ func HandleError(w http.ResponseWriter, r *http.Request, status int, err error, 
 }
 
 func HandleErrorJson(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...interface{}) {
-	logger.Infow("RAJA got error") // REMOVE
 	handleError(w, r, status, err, keysAndValues...)
 	json.NewEncoder(w).Encode(struct {
 		Error string `json:"error"`

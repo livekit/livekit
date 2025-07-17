@@ -134,7 +134,6 @@ type signalv2Service struct {
 }
 
 func (r *signalv2Service) RelaySignalv2Connect(ctx context.Context, rscr *rpc.RelaySignalv2ConnectRequest) (*rpc.RelaySignalv2ConnectResponse, error) {
-	logger.Infow("RAJA got to RelaySignalv2Connect") // REMOVE
 	grants := &auth.ClaimGrants{}
 	if err := json.Unmarshal([]byte(rscr.GrantsJson), grants); err != nil {
 		return nil, err
