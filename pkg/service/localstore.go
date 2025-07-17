@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	p2p_database "github.com/dTelecom/p2p-database"
 	"github.com/pkg/errors"
+	"github.com/dTelecom/p2p-database/pubsub"
 
 	"github.com/thoas/go-funk"
 
@@ -19,7 +19,7 @@ import (
 // encapsulates CRUD operations for room settings
 type LocalStore struct {
 	currentNodeId livekit.NodeID
-	db            *p2p_database.DB
+	db            *pubsub.DB
 
 	// map of roomKey => room
 	rooms        map[livekit.RoomKey]*livekit.Room
@@ -34,7 +34,7 @@ type LocalStore struct {
 
 func NewLocalStore(
 	currentNodeId livekit.NodeID,
-	db *p2p_database.DB,
+	db *pubsub.DB,
 ) *LocalStore {
 	return &LocalStore{
 		currentNodeId: currentNodeId,

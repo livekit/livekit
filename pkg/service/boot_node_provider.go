@@ -9,6 +9,8 @@ import (
 
 	"github.com/gagliardetto/solana-go"
 
+	p2p_common "github.com/dTelecom/p2p-database/common"
+
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/logger"
 )
@@ -38,19 +40,21 @@ type BootNodeProvider struct {
 	NetworkHostHTTP   string
 	NetworkHostWS     string
 	RegistryAuthority string
+	PeerListenPort int
 	lock              sync.RWMutex
-	nodeValues        map[string]bootNodeMessage
+	nodeValues        map[solana.PublicKey]bootNodeMessage
 }
 
-func NewBootNodeProvider(conf config.SolanaConfig) *BootNodeProvider {
+func NewBootNodeProvider(conf *config.Config) *BootNodeProvider {
 	provider := &BootNodeProvider{
-		WalletPrivateKey:  conf.WalletPrivateKey,
-		ContractAddress:   conf.ContractAddress,
-		NetworkHostHTTP:   conf.NetworkHostHTTP,
-		NetworkHostWS:     conf.NetworkHostWS,
-		RegistryAuthority: conf.RegistryAuthority,
+		WalletPrivateKey:  conf.Solana.WalletPrivateKey,
+		ContractAddress:   conf.Solana.ContractAddress,
+		NetworkHostHTTP:   conf.Solana.NetworkHostHTTP,
+		NetworkHostWS:     conf.Solana.NetworkHostWS,
+		RegistryAuthority: conf.Solana.RegistryAuthority,
+		PeerListenPort:   conf.P2P.PeerListenPort,
 		lock:              sync.RWMutex{},
-		nodeValues:        make(map[string]bootNodeMessage),
+		nodeValues:        make(map[solana.PublicKey]bootNodeMessage),
 	}
 
 	provider.startRefresh()
@@ -59,18 +63,38 @@ func NewBootNodeProvider(conf config.SolanaConfig) *BootNodeProvider {
 	return provider
 }
 
-func (p *BootNodeProvider) GetNodes() map[string]string {
+func (p *BootNodeProvider) GetAuthorizedWallets(ctx context.Context) ([]solana.PublicKey, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	nodes := make(map[string]string)
+	var wallets []solana.PublicKey
 	for k, v := range p.nodeValues {
 		if v.isExpired() == false {
-			nodes[k] = v.BootNode.IP
+			wallets = append(wallets, k)
 		}
 	}
 
-	return nodes
+	return wallets, nil
+}
+
+func (p *BootNodeProvider) GetBootstrapNodes(ctx context.Context) ([]p2p_common.BootstrapNode, error) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	var nodes []p2p_common.BootstrapNode
+	for k, v := range p.nodeValues {
+		if v.isExpired() == false {
+			node := p2p_common.BootstrapNode{
+				PublicKey: k,
+				IP:        v.BootNode.IP,
+				QUICPort:  p.PeerListenPort,
+				TCPPort:   p.PeerListenPort,
+			}
+			nodes = append(nodes, node)
+		}
+	}
+
+	return nodes, nil
 }
 
 func (p *BootNodeProvider) refresh(ctx context.Context) error {
@@ -112,12 +136,12 @@ func (p *BootNodeProvider) refresh(ctx context.Context) error {
 			Domain: entryNode.Domain,
 			IP:     ipv4.String(),
 		}
-		p.save(entryNode.Registred.String(), node)
+		p.save(entryNode.Registred, node)
 	}
 	return nil
 }
 
-func (p *BootNodeProvider) save(id string, node BootNode) {
+func (p *BootNodeProvider) save(id solana.PublicKey, node BootNode) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	msg := bootNodeMessage{

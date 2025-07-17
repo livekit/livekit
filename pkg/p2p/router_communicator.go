@@ -5,8 +5,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"log"
+	"github.com/dTelecom/p2p-database/pubsub"
+	p2p_common "github.com/dTelecom/p2p-database/common"
 
-	p2p_database "github.com/dTelecom/p2p-database"
 	"github.com/livekit/protocol/livekit"
 	"google.golang.org/protobuf/proto"
 )
@@ -46,13 +47,13 @@ func unpackRouterMessage(message interface{}) (data []byte, err error) {
 type RouterCommunicatorImpl struct {
 	topic          string
 	key            livekit.RoomKey
-	mainDatabase   *p2p_database.DB
+	mainDatabase   *pubsub.DB
 	ctx            context.Context
 	cancel         context.CancelFunc
 	messageHandler func(ctx context.Context, roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) error
 }
 
-func NewRouterCommunicatorImpl(key livekit.RoomKey, mainDatabase *p2p_database.DB, messageHandler func(ctx context.Context, roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) error) *RouterCommunicatorImpl {
+func NewRouterCommunicatorImpl(key livekit.RoomKey, mainDatabase *pubsub.DB, messageHandler func(ctx context.Context, roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) error) *RouterCommunicatorImpl {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -96,7 +97,7 @@ func (c *RouterCommunicatorImpl) init() {
 	}
 }
 
-func (c *RouterCommunicatorImpl) dbHandler(event p2p_database.Event) {
+func (c *RouterCommunicatorImpl) dbHandler(event p2p_common.Event) {
 
 	if event.FromPeerId == c.mainDatabase.GetHost().ID().String() {
 		return

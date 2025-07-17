@@ -7,7 +7,9 @@ import (
 	"sync"
 	"time"
 
-	p2p_database "github.com/dTelecom/p2p-database"
+	"github.com/dTelecom/p2p-database/pubsub"
+
+	p2p_common "github.com/dTelecom/p2p-database/common"
 	"github.com/livekit/protocol/livekit"
 	"github.com/pkg/errors"
 )
@@ -26,7 +28,7 @@ type RoomCommunicatorImpl struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mainDatabase *p2p_database.DB
+	mainDatabase *pubsub.DB
 
 	peers           map[string]struct{}
 	peerHandlers    []func(peerId string)
@@ -35,7 +37,7 @@ type RoomCommunicatorImpl struct {
 	mu sync.Mutex
 }
 
-func NewRoomCommunicatorImpl(room *livekit.Room, mainDatabase *p2p_database.DB) (*RoomCommunicatorImpl, error) {
+func NewRoomCommunicatorImpl(room *livekit.Room, mainDatabase *pubsub.DB) (*RoomCommunicatorImpl, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	roomCommunicator := &RoomCommunicatorImpl{
@@ -113,7 +115,7 @@ func (c *RoomCommunicatorImpl) checkPeer(peerId string) {
 	}
 }
 
-func (c *RoomCommunicatorImpl) incomingMessageHandler(event p2p_database.Event) {
+func (c *RoomCommunicatorImpl) incomingMessageHandler(event p2p_common.Event) {
 	if event.Message == pingMessage {
 		log.Println("PING message received")
 		incomingMessageTopic := formatIncomingMessagesTopic(c.room.Key, event.FromPeerId)
@@ -135,7 +137,7 @@ func (c *RoomCommunicatorImpl) incomingMessageHandler(event p2p_database.Event) 
 	}
 }
 
-func (c *RoomCommunicatorImpl) roomMessageHandler(event p2p_database.Event) {
+func (c *RoomCommunicatorImpl) roomMessageHandler(event p2p_common.Event) {
 	if event.Message == adMessage {
 		c.checkPeer(event.FromPeerId)
 

@@ -9,7 +9,9 @@ import (
 	"sync"
 	"time"
 
-	p2p_database "github.com/dTelecom/p2p-database"
+	"github.com/dTelecom/p2p-database/pubsub"
+	p2p_common "github.com/dTelecom/p2p-database/common"
+
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
@@ -48,7 +50,7 @@ const (
 )
 
 type NodeProvider struct {
-	db         *p2p_database.DB
+	db         *pubsub.DB
 	geo        *geoip2.Reader
 	current    Node
 	localNode  routing.LocalNode
@@ -57,7 +59,7 @@ type NodeProvider struct {
 	nodeValues map[string]nodeMessage
 }
 
-func NewNodeProvider(geo *geoip2.Reader, localNode routing.LocalNode, db *p2p_database.DB) *NodeProvider {
+func NewNodeProvider(geo *geoip2.Reader, localNode routing.LocalNode, db *pubsub.DB) *NodeProvider {
 	provider := &NodeProvider{
 		db:         db,
 		geo:        geo,
@@ -66,7 +68,7 @@ func NewNodeProvider(geo *geoip2.Reader, localNode routing.LocalNode, db *p2p_da
 		nodeValues: make(map[string]nodeMessage),
 	}
 
-	err := db.Subscribe(context.Background(), topicNodeValuesStreaming, func(event p2p_database.Event) {
+	err := db.Subscribe(context.Background(), topicNodeValuesStreaming, func(event p2p_common.Event) {
 		jsonMsg, ok := event.Message.(string)
 		if !ok {
 			logger.Errorw("convert interface to string from message topic node values", errors.New("NewNodeProvider"))

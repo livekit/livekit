@@ -2,7 +2,7 @@ package service
 
 import (
 	"fmt"
-	p2p_database "github.com/dTelecom/p2p-database"
+	"github.com/dTelecom/p2p-database/pubsub"
 	"github.com/olekukonko/tablewriter"
 	"net/http"
 )
@@ -10,10 +10,10 @@ import (
 type MainDebugHandler struct {
 	nodeProvider   *NodeProvider
 	clientProvider *ClientProvider
-	db             *p2p_database.DB
+	db             *pubsub.DB
 }
 
-func NewMainDebugHandler(nodeProvider *NodeProvider, clientProvider *ClientProvider, db *p2p_database.DB) *MainDebugHandler {
+func NewMainDebugHandler(nodeProvider *NodeProvider, clientProvider *ClientProvider, db *pubsub.DB) *MainDebugHandler {
 	return &MainDebugHandler{
 		nodeProvider:   nodeProvider,
 		clientProvider: clientProvider,

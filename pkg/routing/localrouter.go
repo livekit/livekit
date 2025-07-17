@@ -9,7 +9,7 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
-	p2p_database "github.com/dTelecom/p2p-database"
+	"github.com/dTelecom/p2p-database/pubsub"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -42,11 +42,11 @@ type LocalRouter struct {
 	onNewParticipant NewParticipantCallback
 	onRTCMessage     RTCMessageCallback
 
-	db                  *p2p_database.DB
+	db                  *pubsub.DB
 	routerCommunicators map[livekit.RoomKey]*p2p.RouterCommunicatorImpl
 }
 
-func NewLocalRouter(currentNode LocalNode, signalClient SignalClient, db *p2p_database.DB) *LocalRouter {
+func NewLocalRouter(currentNode LocalNode, signalClient SignalClient, db *pubsub.DB) *LocalRouter {
 	return &LocalRouter{
 		db:                  db,
 		currentNode:         currentNode,

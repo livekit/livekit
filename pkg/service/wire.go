@@ -6,7 +6,9 @@ package service
 import (
 	"context"
 
-	p2p_database "github.com/dTelecom/p2p-database"
+	p2p_common "github.com/dTelecom/p2p-database/common"
+	"github.com/dTelecom/p2p-database/pubsub"
+
 	"github.com/google/wire"
 	"github.com/inconshreveable/go-vhost"
 	"github.com/livekit/protocol/auth"
@@ -34,7 +36,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	wire.Build(
 		getNodeID,
 		CreateBootNodeProvider,
-		CreateMainDatabaseP2P,
+		CreateP2PPubSub,
 		createRedisClient,
 		createStore,
 		wire.Bind(new(ServiceStore), new(ObjectStore)),
@@ -81,23 +83,30 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	return &LivekitServer{}, nil
 }
 
-func CreateMainDatabaseP2P(conf *config.Config, bootNodeProvider *BootNodeProvider) (*p2p_database.DB, error) {
-	p2pConf := p2p_database.Config{
-		DisableGater:     false,
+func CreateP2PPubSub(conf *config.Config, bootNodeProvider *BootNodeProvider) (*pubsub.DB, error) {
+	adaptedLogger := p2p_common.NewLivekitLoggerAdapter(logger.GetLogger())
+
+	p2pConf := p2p_common.Config{
 		WalletPrivateKey: conf.Solana.WalletPrivateKey,
-		PeerListenPort:   conf.P2P.PeerListenPort,
 		DatabaseName:     conf.P2P.DatabaseName,
-		GetNodes:         bootNodeProvider.GetNodes,
+		GetAuthorizedWallets:         bootNodeProvider.GetAuthorizedWallets,
+		GetBootstrapNodes:         bootNodeProvider.GetBootstrapNodes,
+		Logger:               adaptedLogger,
+		ListenPorts: p2p_common.ListenPorts{
+			QUIC: conf.P2P.PeerListenPort,
+			TCP:  conf.P2P.PeerListenPort,
+		},
 	}
-	adaptedLogger := p2p_database.NewLivekitLoggerAdapter(logger.GetLogger())
-	db, err := p2p_database.Connect(context.Background(), p2pConf, adaptedLogger)
+
+	db, err := pubsub.Connect(context.Background(), p2pConf)
+
 	if err != nil {
 		return nil, err
 	}
 	return db, nil
 }
 
-func createNodeProvider(geo *geoip2.Reader, node routing.LocalNode, db *p2p_database.DB) *NodeProvider {
+func createNodeProvider(geo *geoip2.Reader, node routing.LocalNode, db *pubsub.DB) *NodeProvider {
 	return NewNodeProvider(geo, node, db)
 }
 
@@ -105,7 +114,7 @@ func createRelevantNodesHandler(nodeProvider *NodeProvider) *RelevantNodesHandle
 	return NewRelevantNodesHandler(nodeProvider)
 }
 
-func createMainDebugHandler(nodeProvider *NodeProvider, clientProvider *ClientProvider, db *p2p_database.DB) *MainDebugHandler {
+func createMainDebugHandler(nodeProvider *NodeProvider, clientProvider *ClientProvider, db *pubsub.DB) *MainDebugHandler {
 	return NewMainDebugHandler(nodeProvider, clientProvider, db)
 }
 
@@ -114,7 +123,7 @@ func createGeoIP() (*geoip2.Reader, error) {
 }
 
 func CreateBootNodeProvider(config *config.Config) *BootNodeProvider {
-	return NewBootNodeProvider(config.Solana)
+	return NewBootNodeProvider(config)
 }
 
 func createClientProvider(config *config.Config) *ClientProvider {
@@ -152,7 +161,7 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 }
 
 func createStore(
-	db *p2p_database.DB,
+	db *pubsub.DB,
 	nodeID livekit.NodeID,
 ) ObjectStore {
 	return NewLocalStore(nodeID, db)
