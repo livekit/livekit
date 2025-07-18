@@ -10,7 +10,7 @@ import (
 )
 
 func TestSignalFragment(t *testing.T) {
-	inputMessage := &livekit.Signalv2ServerEnvelope{
+	inputMessage := &livekit.Envelope{
 		ServerMessages: []*livekit.Signalv2ServerMessage{
 			{
 				Message: &livekit.Signalv2ServerMessage_ConnectResponse{
