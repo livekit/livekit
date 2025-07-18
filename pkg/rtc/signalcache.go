@@ -58,9 +58,11 @@ func (s *SignalCache) AddBatch(msgs []*livekit.Signalv2ServerMessage, lastRemote
 	defer s.lock.Unlock()
 
 	for _, msg := range msgs {
-		msg.MessageId = s.messageId
+		msg.Sequencer = &livekit.Sequencer{
+			MessageId:                    s.messageId,
+			LastProcessedRemoteMessageId: lastRemoteId,
+		}
 		s.messageId++
-		msg.LastProcessedRemoteMessageId = lastRemoteId
 
 		s.messages.PushBack(msg)
 	}
@@ -76,7 +78,7 @@ func (s *SignalCache) Clear(till uint32) {
 func (s *SignalCache) clearLocked(till uint32) {
 	for s.messages.Len() != 0 {
 		front := s.messages.Front()
-		if front.GetMessageId() > till {
+		if front.Sequencer.GetMessageId() > till {
 			break
 		}
 		s.messages.PopFront()

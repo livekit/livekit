@@ -16,6 +16,7 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -26,6 +27,11 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"google.golang.org/protobuf/proto"
+)
+
+var (
+	errFragmentsInHTTP    = errors.New("should not get fragments via HTTP request")
+	errUnknownMessageType = errors.New("unknown message type")
 )
 
 const (
@@ -104,59 +110,89 @@ func (s *RTCv2Service) handlePost(w http.ResponseWriter, r *http.Request) {
 
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		HandleErrorJson(w, r, http.StatusBadRequest, fmt.Errorf("could not read request body: %s", err))
+		HandleErrorJson(w, r, http.StatusBadRequest, fmt.Errorf("could not read request body: %w", err))
 		return
 	}
 
-	clientMessage := &livekit.Signalv2ClientMessage{}
-	err = proto.Unmarshal(body, clientMessage)
+	wireMessage := &livekit.Signalv2WireMessage{}
+	err = proto.Unmarshal(body, wireMessage)
 	if err != nil {
-		HandleErrorJson(w, r, http.StatusBadRequest, fmt.Errorf("could not unmarshal request: %s", err))
+		HandleErrorJson(w, r, http.StatusBadRequest, fmt.Errorf("could not unmarshal request: %w", err))
 		return
 	}
 
-	switch msg := clientMessage.GetMessage().(type) {
-	case *livekit.Signalv2ClientMessage_ConnectRequest:
-		roomName, participantIdentity, rscr, code, err := s.validateInternal(logger.GetLogger(), r, msg.ConnectRequest)
-		if err != nil {
-			HandleErrorJson(w, r, code, err)
-			return
-		}
-
-		if err := s.roomAllocator.SelectRoomNode(r.Context(), roomName, ""); err != nil {
-			HandleErrorJson(w, r, http.StatusInternalServerError, err)
-			return
-		}
-
-		resp, err := s.router.HandleParticipantConnectRequest(r.Context(), roomName, participantIdentity, rscr)
-		if err != nil {
-			HandleErrorJson(w, r, http.StatusInternalServerError, err)
-			return
-		}
-
-		serverMessage := &livekit.Signalv2ServerMessage{
-			Message: &livekit.Signalv2ServerMessage_ConnectResponse{
-				ConnectResponse: resp.ConnectResponse,
-			},
-		}
-		marshalled, err := proto.Marshal(serverMessage)
-		if err != nil {
-			HandleErrorJson(w, r, http.StatusInternalServerError, err)
-			return
-		}
-
-		w.Header().Add("Content-type", "application/x-protobuf")
-		w.Write(marshalled)
-
-	case *livekit.Signalv2ClientMessage_Envelope:
-		for _, cm := range msg.Envelope.ClientMessages {
-			switch oneOf := cm.GetMessage().(type) {
+	switch msg := wireMessage.GetMessage().(type) {
+	case *livekit.Signalv2WireMessage_Envelope:
+		for _, innerMsg := range msg.Envelope.GetClientMessages() {
+			switch clientMessage := innerMsg.GetMessage().(type) {
 			case *livekit.Signalv2ClientMessage_ConnectRequest:
-				logger.Errorw("should not get ConnectRequest in envelope", nil)
+				roomName, participantIdentity, rscr, code, err := s.validateInternal(
+					logger.GetLogger(),
+					r,
+					clientMessage.ConnectRequest,
+				)
+				if err != nil {
+					HandleErrorJson(w, r, code, err)
+					return
+				}
+
+				if err := s.roomAllocator.SelectRoomNode(r.Context(), roomName, ""); err != nil {
+					HandleErrorJson(w, r, http.StatusInternalServerError, err)
+					return
+				}
+
+				resp, err := s.router.HandleParticipantConnectRequest(r.Context(), roomName, participantIdentity, rscr)
+				if err != nil {
+					HandleErrorJson(w, r, http.StatusInternalServerError, err)
+					return
+				}
+
+				// SIGNALLING-V2-TODO: this needs to be in signal cache and get messageId
+				wireMessage := &livekit.Signalv2WireMessage{
+					Message: &livekit.Signalv2WireMessage_Envelope{
+						Envelope: &livekit.Envelope{
+							ServerMessages: []*livekit.Signalv2ServerMessage{
+								&livekit.Signalv2ServerMessage{
+									Message: &livekit.Signalv2ServerMessage_ConnectResponse{
+										ConnectResponse: resp.ConnectResponse,
+									},
+								},
+							},
+						},
+					},
+				}
+				marshalled, err := proto.Marshal(wireMessage)
+				if err != nil {
+					HandleErrorJson(w, r, http.StatusInternalServerError, err)
+					return
+				}
+
+				w.Header().Add("Content-type", "application/x-protobuf")
+				w.Write(marshalled)
+
+				logger.Debugw(
+					"connect response",
+					"room", roomName,
+					"roomID", resp.ConnectResponse.Room.Sid, // SIGNALLING-V2-TODO: roomID may not be resolved
+					"participant", participantIdentity,
+					"pID", resp.ConnectResponse.Participant.Sid,
+					"connectResponse", logger.Proto(resp.ConnectResponse),
+				)
+
 			default:
-				logger.Debugw("unhandled message", "message", oneOf)
+				HandleErrorJson(
+					w,
+					r,
+					http.StatusBadRequest,
+					fmt.Errorf("%w, message: %T", errUnknownMessageType, clientMessage),
+				)
 			}
 		}
+
+	case *livekit.Signalv2WireMessage_Fragment:
+		logger.Errorw("signalv2 bad request", errFragmentsInHTTP)
+		HandleErrorJson(w, r, http.StatusBadRequest, errFragmentsInHTTP)
+		return
 	}
 
 	w.WriteHeader(http.StatusOK)

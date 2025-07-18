@@ -407,3 +407,75 @@ func (p *ParticipantImpl) sendLeaveRequest(
 
 	return nil
 }
+
+func (p *ParticipantImpl) sendSdpAnswer(answer webrtc.SessionDescription, answerId uint32) error {
+	return p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_Answer{
+			Answer: ToProtoSessionDescription(answer, answerId),
+		},
+	})
+}
+
+func (p *ParticipantImpl) sendSdpOffer(offer webrtc.SessionDescription, offerId uint32) error {
+	return p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_Offer{
+			Offer: ToProtoSessionDescription(offer, offerId),
+		},
+	})
+}
+
+func (p *ParticipantImpl) sendStreamStateUpdate(streamStateUpdate *livekit.StreamStateUpdate) error {
+	return p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_StreamStateUpdate{
+			StreamStateUpdate: streamStateUpdate,
+		},
+	})
+}
+
+func (p *ParticipantImpl) sendSubscribedQualityUpdate(subscribedQualityUpdate *livekit.SubscribedQualityUpdate) error {
+	return p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_SubscribedQualityUpdate{
+			SubscribedQualityUpdate: subscribedQualityUpdate,
+		},
+	})
+}
+
+func (p *ParticipantImpl) sendTrackPublished(cid string, ti *livekit.TrackInfo) error {
+	p.pubLogger.Debugw("sending track published", "cid", cid, "trackInfo", logger.Proto(ti))
+	return p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_TrackPublished{
+			TrackPublished: &livekit.TrackPublishedResponse{
+				Cid:   cid,
+				Track: ti,
+			},
+		},
+	})
+}
+
+func (p *ParticipantImpl) sendSubscriptionResponse(trackID livekit.TrackID, subErr livekit.SubscriptionError) error {
+	return p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_SubscriptionResponse{
+			SubscriptionResponse: &livekit.SubscriptionResponse{
+				TrackSid: string(trackID),
+				Err:      subErr,
+			},
+		},
+	})
+}
+
+func (p *ParticipantImpl) SendSubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool) error {
+	p.subLogger.Debugw("sending subscription permission update", "publisherID", publisherID, "trackID", trackID, "allowed", allowed)
+	err := p.writeMessage(&livekit.SignalResponse{
+		Message: &livekit.SignalResponse_SubscriptionPermissionUpdate{
+			SubscriptionPermissionUpdate: &livekit.SubscriptionPermissionUpdate{
+				ParticipantSid: string(publisherID),
+				TrackSid:       string(trackID),
+				Allowed:        allowed,
+			},
+		},
+	})
+	if err != nil {
+		p.subLogger.Errorw("could not send subscription permission update", err)
+	}
+	return err
+}

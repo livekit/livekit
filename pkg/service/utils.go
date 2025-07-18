@@ -148,13 +148,14 @@ func ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 	ci.BrowserVersion = values.Get("browser_version")
 	ci.DeviceModel = values.Get("device_model")
 	ci.Network = values.Get("network")
-	// get real address (forwarded http header) - check Cloudflare headers first, fall back to X-Forwarded-For
+
 	AugmentClientInfo(ci, r)
 
 	return ci
 }
 
 func AugmentClientInfo(ci *livekit.ClientInfo, req *http.Request) {
+	// get real address (forwarded http header) - check Cloudflare headers first, fall back to X-Forwarded-For
 	ci.Address = GetClientIP(req)
 
 	// attempt to parse types for SDKs that support browser as a platform
