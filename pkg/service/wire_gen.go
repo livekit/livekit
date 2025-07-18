@@ -89,23 +89,23 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	rtcEgressLauncher := NewEgressLauncher(egressClient, ioInfoService, objectStore)
 	topicFormatter := rpc.NewTopicFormatter()
-	roomClient, err := rpc.NewTypedRoomClient(clientParams)
+	v, err := rpc.NewTypedRoomClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	participantClient, err := rpc.NewTypedParticipantClient(clientParams)
+	v2, err := rpc.NewTypedParticipantClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, roomClient, participantClient)
+	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, v, v2)
 	if err != nil {
 		return nil, err
 	}
-	agentDispatchInternalClient, err := rpc.NewTypedAgentDispatchInternalClient(clientParams)
+	v3, err := rpc.NewTypedAgentDispatchInternalClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	agentDispatchService := NewAgentDispatchService(agentDispatchInternalClient, topicFormatter, roomAllocator, router)
+	agentDispatchService := NewAgentDispatchService(v3, topicFormatter, roomAllocator, router)
 	egressService := NewEgressService(egressClient, rtcEgressLauncher, ioInfoService, roomService)
 	ingressConfig := getIngressConfig(conf)
 	ingressClient, err := rpc.NewIngressClient(clientParams)
@@ -120,11 +120,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	sipService := NewSIPService(sipConfig, nodeID, messageBus, sipClient, sipStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, router, telemetryService)
-	rtcRestParticipantClient, err := rpc.NewTypedRTCRestParticipantClient(clientParams)
+	rtCv2Service := NewRTCv2Service(conf, roomAllocator, router)
+	v4, err := rpc.NewTypedRTCRestParticipantClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	serviceRTCRestService, err := NewRTCRestService(conf, router, roomAllocator, clientParams, topicFormatter, rtcRestParticipantClient)
+	serviceRTCRestService, err := NewRTCRestService(conf, router, roomAllocator, clientParams, topicFormatter, v4)
 	if err != nil {
 		return nil, err
 	}
@@ -148,12 +149,16 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
+	signalv2Server, err := NewDefaultSignalv2Server(currentNode, messageBus, router, roomManager)
+	if err != nil {
+		return nil, err
+	}
 	authHandler := getTURNAuthHandlerFunc(turnAuthHandler)
 	server, err := newInProcessTurnServer(conf, authHandler)
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, serviceRTCRestService, agentService, keyProvider, router, roomManager, signalServer, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, rtCv2Service, serviceRTCRestService, agentService, keyProvider, router, roomManager, signalServer, signalv2Server, server, currentNode)
 	if err != nil {
 		return nil, err
 	}

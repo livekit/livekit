@@ -49,6 +49,7 @@ type LivekitServer struct {
 	config         *config.Config
 	ioService      *IOInfoService
 	rtcService     *RTCService
+	rtcv2Service   *RTCv2Service
 	rtcRestService *RTCRestService
 	agentService   *AgentService
 	httpServer     *http.Server
@@ -56,6 +57,7 @@ type LivekitServer struct {
 	router         routing.Router
 	roomManager    *RoomManager
 	signalServer   *SignalServer
+	signalv2Server *Signalv2Server
 	turnServer     *turn.Server
 	currentNode    routing.LocalNode
 	running        atomic.Bool
@@ -71,12 +73,14 @@ func NewLivekitServer(conf *config.Config,
 	sipService *SIPService,
 	ioService *IOInfoService,
 	rtcService *RTCService,
+	rtcv2Service *RTCv2Service,
 	rtcRestService *RTCRestService,
 	agentService *AgentService,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
 	roomManager *RoomManager,
 	signalServer *SignalServer,
+	signalv2Server *Signalv2Server,
 	turnServer *turn.Server,
 	currentNode routing.LocalNode,
 ) (s *LivekitServer, err error) {
@@ -84,11 +88,13 @@ func NewLivekitServer(conf *config.Config,
 		config:         conf,
 		ioService:      ioService,
 		rtcService:     rtcService,
+		rtcv2Service:   rtcv2Service,
 		rtcRestService: rtcRestService,
 		agentService:   agentService,
 		router:         router,
 		roomManager:    roomManager,
 		signalServer:   signalServer,
+		signalv2Server: signalv2Server,
 		// turn server starts automatically
 		turnServer:  turnServer,
 		currentNode: currentNode,
@@ -143,8 +149,8 @@ func NewLivekitServer(conf *config.Config,
 	xtwirp.RegisterServer(mux, egressServer)
 	xtwirp.RegisterServer(mux, ingressServer)
 	xtwirp.RegisterServer(mux, sipServer)
-	mux.Handle("/rtc", rtcService)
 	rtcService.SetupRoutes(mux)
+	rtcv2Service.SetupRoutes(mux)
 	rtcRestService.SetupRoutes(mux)
 	mux.Handle("/agent", agentService)
 	mux.HandleFunc("/", s.defaultHandler)
@@ -272,6 +278,10 @@ func (s *LivekitServer) Start() error {
 	}
 
 	if err := s.signalServer.Start(); err != nil {
+		return err
+	}
+
+	if err := s.signalv2Server.Start(); err != nil {
 		return err
 	}
 

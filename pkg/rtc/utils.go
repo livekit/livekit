@@ -216,3 +216,21 @@ func MaybeTruncateIP(addr string) string {
 
 	return addr[:len(addr)-3] + "..."
 }
+
+func FragmentsAsSignalv2ServerMessages(fragments []*livekit.Fragment) []*livekit.Signalv2ServerMessage {
+	msgs := make([]*livekit.Signalv2ServerMessage, len(fragments))
+	for idx, fragment := range fragments {
+		msgs[idx] = &livekit.Signalv2ServerMessage{
+			Message: &livekit.Signalv2ServerMessage_Fragment{
+				Fragment: fragment,
+			},
+		}
+	}
+	return msgs
+}
+
+func MakeSignalv2ServerEnvelope(msgs []*livekit.Signalv2ServerMessage) *livekit.Signalv2ServerEnvelope {
+	return &livekit.Signalv2ServerEnvelope{
+		ServerMessages: msgs,
+	}
+}

@@ -28,6 +28,7 @@ var (
 	ErrNameExceedsLimits                = psrpc.NewErrorf(psrpc.InvalidArgument, "name length exceeds limits")
 	ErrMetadataExceedsLimits            = psrpc.NewErrorf(psrpc.InvalidArgument, "metadata size exceeds limits")
 	ErrAttributeExceedsLimits           = psrpc.NewErrorf(psrpc.InvalidArgument, "attribute size exceeds limits")
+	ErrNoRoomName                       = psrpc.NewErrorf(psrpc.InvalidArgument, "no room name")
 	ErrRoomNameExceedsLimits            = psrpc.NewErrorf(psrpc.InvalidArgument, "room name length exceeds limits")
 	ErrParticipantIdentityExceedsLimits = psrpc.NewErrorf(psrpc.InvalidArgument, "participant identity length exceeds limits")
 	ErrDestinationSameAsSourceRoom      = psrpc.NewErrorf(psrpc.InvalidArgument, "destination room cannot be the same as source room")

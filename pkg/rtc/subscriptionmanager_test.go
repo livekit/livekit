@@ -67,7 +67,7 @@ func TestSubscribe(t *testing.T) {
 			}
 		})
 
-		sm.SubscribeToTrack("track")
+		sm.SubscribeToTrack("track", false)
 		s := sm.subscriptions["track"]
 		require.True(t, s.isDesired())
 		require.Eventually(t, func() bool {
@@ -127,7 +127,7 @@ func TestSubscribe(t *testing.T) {
 			failed.Store(true)
 		}
 
-		sm.SubscribeToTrack("track")
+		sm.SubscribeToTrack("track", false)
 		s := sm.subscriptions["track"]
 		require.Eventually(t, func() bool {
 			return !s.getHasPermission()
@@ -168,7 +168,7 @@ func TestSubscribe(t *testing.T) {
 			failed.Store(true)
 		}
 
-		sm.SubscribeToTrack("track")
+		sm.SubscribeToTrack("track", false)
 		s := sm.subscriptions["track"]
 		require.Eventually(t, func() bool {
 			return !s.needsSubscribe()
@@ -271,8 +271,8 @@ func TestSubscribeStatusChanged(t *testing.T) {
 		}
 	})
 
-	sm.SubscribeToTrack("track1")
-	sm.SubscribeToTrack("track2")
+	sm.SubscribeToTrack("track1", false)
+	sm.SubscribeToTrack("track2", false)
 	s1 := sm.subscriptions["track1"]
 	s2 := sm.subscriptions["track2"]
 	require.Eventually(t, func() bool {
@@ -332,7 +332,7 @@ func TestUpdateSettingsBeforeSubscription(t *testing.T) {
 	}
 	sm.UpdateSubscribedTrackSettings("track", settings)
 
-	sm.SubscribeToTrack("track")
+	sm.SubscribeToTrack("track", false)
 
 	s := sm.subscriptions["track"]
 	require.Eventually(t, func() bool {
@@ -376,7 +376,7 @@ func TestSubscriptionLimits(t *testing.T) {
 		}
 	})
 
-	sm.SubscribeToTrack("track")
+	sm.SubscribeToTrack("track", false)
 	s := sm.subscriptions["track"]
 	require.True(t, s.isDesired())
 	require.Eventually(t, func() bool {
@@ -405,7 +405,7 @@ func TestSubscriptionLimits(t *testing.T) {
 	require.Equal(t, 1, tm.TrackSubscribedCallCount())
 
 	// reach subscription limit, subscribe pending
-	sm.SubscribeToTrack("track2")
+	sm.SubscribeToTrack("track2", false)
 	s2 := sm.subscriptions["track2"]
 	time.Sleep(subscriptionTimeout * 2)
 	require.True(t, s2.needsSubscribe())
@@ -437,7 +437,7 @@ func TestSubscriptionLimits(t *testing.T) {
 	}, subSettleTimeout, subCheckInterval, "track was not bound")
 
 	// subscribe to track1 again, which should pending
-	sm.SubscribeToTrack("track")
+	sm.SubscribeToTrack("track", false)
 	s = sm.subscriptions["track"]
 	require.True(t, s.isDesired())
 	time.Sleep(subscriptionTimeout * 2)

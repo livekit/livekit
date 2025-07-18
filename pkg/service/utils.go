@@ -16,19 +16,27 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/routing/selector"
+	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/utils"
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/ua-parser/uap-go/uaparser"
 )
 
-func HandleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...interface{}) {
+func handleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...interface{}) {
 	keysAndValues = append(keysAndValues, "status", status)
 	if r != nil && r.URL != nil {
 		keysAndValues = append(keysAndValues, "method", r.Method, "path", r.URL.Path)
@@ -37,7 +45,20 @@ func HandleError(w http.ResponseWriter, r *http.Request, status int, err error, 
 		utils.GetLogger(r.Context()).WithCallDepth(1).Warnw("error handling request", err, keysAndValues...)
 	}
 	w.WriteHeader(status)
+}
+
+func HandleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...interface{}) {
+	handleError(w, r, status, err, keysAndValues...)
 	_, _ = w.Write([]byte(err.Error()))
+}
+
+func HandleErrorJson(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...interface{}) {
+	handleError(w, r, status, err, keysAndValues...)
+	json.NewEncoder(w).Encode(struct {
+		Error string `json:"error"`
+	}{
+		Error: err.Error(),
+	})
 }
 
 func boolValue(s string) bool {
@@ -127,14 +148,20 @@ func ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 	ci.DeviceModel = values.Get("device_model")
 	ci.Network = values.Get("network")
 	// get real address (forwarded http header) - check Cloudflare headers first, fall back to X-Forwarded-For
-	ci.Address = GetClientIP(r)
+	AugmentClientInfo(ci, r)
+
+	return ci
+}
+
+func AugmentClientInfo(ci *livekit.ClientInfo, req *http.Request) {
+	ci.Address = GetClientIP(req)
 
 	// attempt to parse types for SDKs that support browser as a platform
 	if ci.Sdk == livekit.ClientInfo_JS ||
 		ci.Sdk == livekit.ClientInfo_REACT_NATIVE ||
 		ci.Sdk == livekit.ClientInfo_FLUTTER ||
 		ci.Sdk == livekit.ClientInfo_UNITY {
-		client := uaparser.NewFromSaved().Parse(r.UserAgent())
+		client := uaparser.NewFromSaved().Parse(req.UserAgent())
 		if ci.Browser == "" {
 			ci.Browser = client.UserAgent.Family
 			ci.BrowserVersion = client.UserAgent.ToVersionString()
@@ -152,6 +179,130 @@ func ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 			ci.DeviceModel = model
 		}
 	}
+}
 
-	return ci
+type ValidateConnectRequestParams struct {
+	roomName   livekit.RoomName
+	publish    string
+	metadata   string
+	attributes map[string]string
+}
+
+type ValidateConnectRequestResult struct {
+	roomName          livekit.RoomName
+	grants            *auth.ClaimGrants
+	region            string
+	createRoomRequest *livekit.CreateRoomRequest
+}
+
+func ValidateConnectRequest(
+	lgr logger.Logger,
+	r *http.Request,
+	limitConfig config.LimitConfig,
+	params ValidateConnectRequestParams,
+	router routing.MessageRouter,
+	roomAllocator RoomAllocator,
+) (ValidateConnectRequestResult, int, error) {
+	var res ValidateConnectRequestResult
+
+	// require a claim
+	claims := GetGrants(r.Context())
+	if claims == nil || claims.Video == nil {
+		return res, http.StatusUnauthorized, rtc.ErrPermissionDenied
+	}
+
+	roomNameInToken, err := EnsureJoinPermission(r.Context())
+	if err != nil {
+		return res, http.StatusUnauthorized, err
+	}
+
+	if claims.Identity == "" {
+		return res, http.StatusBadRequest, ErrIdentityEmpty
+	}
+	if !limitConfig.CheckParticipantIdentityLength(claims.Identity) {
+		return res, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, limitConfig.MaxParticipantIdentityLength)
+	}
+
+	if claims.RoomConfig != nil {
+		if err := claims.RoomConfig.CheckCredentials(); err != nil {
+			lgr.Warnw("credentials found in token", nil)
+			// TODO(dz): in a future version, we'll reject these connections
+		}
+	}
+
+	res.roomName = params.roomName
+	if roomNameInToken != "" {
+		res.roomName = roomNameInToken
+	}
+	if res.roomName == "" {
+		return res, http.StatusBadRequest, ErrNoRoomName
+	}
+	if !limitConfig.CheckRoomNameLength(string(res.roomName)) {
+		return res, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, limitConfig.MaxRoomNameLength)
+	}
+
+	// this is new connection for existing participant -  with publish only permissions
+	if params.publish != "" {
+		// Make sure grant has GetCanPublish set,
+		if !claims.Video.GetCanPublish() {
+			return res, http.StatusUnauthorized, rtc.ErrPermissionDenied
+		}
+		// Make sure by default subscribe is off
+		claims.Video.SetCanSubscribe(false)
+		claims.Identity += "#" + params.publish
+	}
+
+	// room allocator validations
+	err = roomAllocator.ValidateCreateRoom(r.Context(), res.roomName)
+	if err != nil {
+		if errors.Is(err, ErrRoomNotFound) {
+			return res, http.StatusNotFound, err
+		} else {
+			return res, http.StatusInternalServerError, err
+		}
+	}
+
+	if router, ok := router.(routing.Router); ok {
+		res.region = router.GetRegion()
+		if foundNode, err := router.GetNodeForRoom(r.Context(), res.roomName); err == nil {
+			if selector.LimitsReached(limitConfig, foundNode.Stats) {
+				return res, http.StatusServiceUnavailable, rtc.ErrLimitExceeded
+			}
+		}
+	}
+
+	createRequest := &livekit.CreateRoomRequest{
+		Name:       string(res.roomName),
+		RoomPreset: claims.RoomPreset,
+	}
+	SetRoomConfiguration(createRequest, claims.GetRoomConfiguration())
+	res.createRoomRequest = createRequest
+
+	if len(params.metadata) != 0 {
+		// Make sure grant has GetCanUpdateOwnMetadata set
+		if !claims.Video.GetCanUpdateOwnMetadata() {
+			return res, http.StatusUnauthorized, rtc.ErrPermissionDenied
+		}
+		claims.Metadata = params.metadata
+	}
+
+	// Add extra attributes to the participant
+	if len(params.attributes) != 0 {
+		// Make sure grant has GetCanUpdateOwnMetadata set
+		if !claims.Video.GetCanUpdateOwnMetadata() {
+			return res, http.StatusUnauthorized, rtc.ErrPermissionDenied
+		}
+		if claims.Attributes == nil {
+			claims.Attributes = make(map[string]string, len(params.attributes))
+		}
+		for k, v := range params.attributes {
+			if v == "" {
+				continue // do not allow deleting existing attributes
+			}
+			claims.Attributes[k] = v
+		}
+	}
+
+	res.grants = claims
+	return res, http.StatusOK, nil
 }

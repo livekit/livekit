@@ -7,6 +7,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/rpc"
 )
 
 type FakeSignalClient struct {
@@ -19,6 +20,23 @@ type FakeSignalClient struct {
 	}
 	activeCountReturnsOnCall map[int]struct {
 		result1 int
+	}
+	HandleParticipantConnectRequestStub        func(context.Context, livekit.RoomName, livekit.ParticipantIdentity, livekit.NodeID, *rpc.RelaySignalv2ConnectRequest) (*rpc.RelaySignalv2ConnectResponse, error)
+	handleParticipantConnectRequestMutex       sync.RWMutex
+	handleParticipantConnectRequestArgsForCall []struct {
+		arg1 context.Context
+		arg2 livekit.RoomName
+		arg3 livekit.ParticipantIdentity
+		arg4 livekit.NodeID
+		arg5 *rpc.RelaySignalv2ConnectRequest
+	}
+	handleParticipantConnectRequestReturns struct {
+		result1 *rpc.RelaySignalv2ConnectResponse
+		result2 error
+	}
+	handleParticipantConnectRequestReturnsOnCall map[int]struct {
+		result1 *rpc.RelaySignalv2ConnectResponse
+		result2 error
 	}
 	StartParticipantSignalStub        func(context.Context, livekit.RoomName, routing.ParticipantInit, livekit.NodeID) (livekit.ConnectionID, routing.MessageSink, routing.MessageSource, error)
 	startParticipantSignalMutex       sync.RWMutex
@@ -95,6 +113,74 @@ func (fake *FakeSignalClient) ActiveCountReturnsOnCall(i int, result1 int) {
 	fake.activeCountReturnsOnCall[i] = struct {
 		result1 int
 	}{result1}
+}
+
+func (fake *FakeSignalClient) HandleParticipantConnectRequest(arg1 context.Context, arg2 livekit.RoomName, arg3 livekit.ParticipantIdentity, arg4 livekit.NodeID, arg5 *rpc.RelaySignalv2ConnectRequest) (*rpc.RelaySignalv2ConnectResponse, error) {
+	fake.handleParticipantConnectRequestMutex.Lock()
+	ret, specificReturn := fake.handleParticipantConnectRequestReturnsOnCall[len(fake.handleParticipantConnectRequestArgsForCall)]
+	fake.handleParticipantConnectRequestArgsForCall = append(fake.handleParticipantConnectRequestArgsForCall, struct {
+		arg1 context.Context
+		arg2 livekit.RoomName
+		arg3 livekit.ParticipantIdentity
+		arg4 livekit.NodeID
+		arg5 *rpc.RelaySignalv2ConnectRequest
+	}{arg1, arg2, arg3, arg4, arg5})
+	stub := fake.HandleParticipantConnectRequestStub
+	fakeReturns := fake.handleParticipantConnectRequestReturns
+	fake.recordInvocation("HandleParticipantConnectRequest", []interface{}{arg1, arg2, arg3, arg4, arg5})
+	fake.handleParticipantConnectRequestMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3, arg4, arg5)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeSignalClient) HandleParticipantConnectRequestCallCount() int {
+	fake.handleParticipantConnectRequestMutex.RLock()
+	defer fake.handleParticipantConnectRequestMutex.RUnlock()
+	return len(fake.handleParticipantConnectRequestArgsForCall)
+}
+
+func (fake *FakeSignalClient) HandleParticipantConnectRequestCalls(stub func(context.Context, livekit.RoomName, livekit.ParticipantIdentity, livekit.NodeID, *rpc.RelaySignalv2ConnectRequest) (*rpc.RelaySignalv2ConnectResponse, error)) {
+	fake.handleParticipantConnectRequestMutex.Lock()
+	defer fake.handleParticipantConnectRequestMutex.Unlock()
+	fake.HandleParticipantConnectRequestStub = stub
+}
+
+func (fake *FakeSignalClient) HandleParticipantConnectRequestArgsForCall(i int) (context.Context, livekit.RoomName, livekit.ParticipantIdentity, livekit.NodeID, *rpc.RelaySignalv2ConnectRequest) {
+	fake.handleParticipantConnectRequestMutex.RLock()
+	defer fake.handleParticipantConnectRequestMutex.RUnlock()
+	argsForCall := fake.handleParticipantConnectRequestArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5
+}
+
+func (fake *FakeSignalClient) HandleParticipantConnectRequestReturns(result1 *rpc.RelaySignalv2ConnectResponse, result2 error) {
+	fake.handleParticipantConnectRequestMutex.Lock()
+	defer fake.handleParticipantConnectRequestMutex.Unlock()
+	fake.HandleParticipantConnectRequestStub = nil
+	fake.handleParticipantConnectRequestReturns = struct {
+		result1 *rpc.RelaySignalv2ConnectResponse
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeSignalClient) HandleParticipantConnectRequestReturnsOnCall(i int, result1 *rpc.RelaySignalv2ConnectResponse, result2 error) {
+	fake.handleParticipantConnectRequestMutex.Lock()
+	defer fake.handleParticipantConnectRequestMutex.Unlock()
+	fake.HandleParticipantConnectRequestStub = nil
+	if fake.handleParticipantConnectRequestReturnsOnCall == nil {
+		fake.handleParticipantConnectRequestReturnsOnCall = make(map[int]struct {
+			result1 *rpc.RelaySignalv2ConnectResponse
+			result2 error
+		})
+	}
+	fake.handleParticipantConnectRequestReturnsOnCall[i] = struct {
+		result1 *rpc.RelaySignalv2ConnectResponse
+		result2 error
+	}{result1, result2}
 }
 
 func (fake *FakeSignalClient) StartParticipantSignal(arg1 context.Context, arg2 livekit.RoomName, arg3 routing.ParticipantInit, arg4 livekit.NodeID) (livekit.ConnectionID, routing.MessageSink, routing.MessageSource, error) {
@@ -175,6 +261,8 @@ func (fake *FakeSignalClient) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.activeCountMutex.RLock()
 	defer fake.activeCountMutex.RUnlock()
+	fake.handleParticipantConnectRequestMutex.RLock()
+	defer fake.handleParticipantConnectRequestMutex.RUnlock()
 	fake.startParticipantSignalMutex.RLock()
 	defer fake.startParticipantSignalMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}

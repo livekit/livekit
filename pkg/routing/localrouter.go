@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/rpc"
 )
 
 var _ Router = (*LocalRouter)(nil)
@@ -110,7 +111,8 @@ func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomName livek
 func (r *LocalRouter) StartParticipantSignalWithNodeID(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit, nodeID livekit.NodeID) (res StartParticipantSignalResults, err error) {
 	connectionID, reqSink, resSource, err := r.signalClient.StartParticipantSignal(ctx, roomName, pi, nodeID)
 	if err != nil {
-		logger.Errorw("could not handle new participant", err,
+		logger.Errorw(
+			"could not handle new participant", err,
 			"room", roomName,
 			"participant", pi.Identity,
 			"connID", connectionID,
@@ -124,6 +126,34 @@ func (r *LocalRouter) StartParticipantSignalWithNodeID(ctx context.Context, room
 		}, nil
 	}
 	return
+}
+
+func (r *LocalRouter) HandleParticipantConnectRequest(
+	ctx context.Context,
+	roomName livekit.RoomName,
+	participantIdentity livekit.ParticipantIdentity,
+	rscr *rpc.RelaySignalv2ConnectRequest,
+) (*rpc.RelaySignalv2ConnectResponse, error) {
+	return r.HandleParticipantConnectRequestWithNodeID(ctx, roomName, participantIdentity, rscr, r.currentNode.NodeID())
+}
+
+func (r *LocalRouter) HandleParticipantConnectRequestWithNodeID(
+	ctx context.Context,
+	roomName livekit.RoomName,
+	participantIdentity livekit.ParticipantIdentity,
+	rscr *rpc.RelaySignalv2ConnectRequest,
+	nodeID livekit.NodeID,
+) (*rpc.RelaySignalv2ConnectResponse, error) {
+	resp, err := r.signalClient.HandleParticipantConnectRequest(ctx, roomName, participantIdentity, nodeID, rscr)
+	if err != nil {
+		logger.Errorw(
+			"could not handle new participant", err,
+			"room", roomName,
+			"participant", participantIdentity,
+			// SIGNALLING-V2-TODO "connID", connectionID,
+		)
+	}
+	return resp, err
 }
 
 func (r *LocalRouter) Start() error {
