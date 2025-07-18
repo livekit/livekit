@@ -241,6 +241,9 @@ func (r *StandardRoomAllocator) applyNamedRoomConfiguration(req *livekit.CreateR
 	if !clone.SyncStreams {
 		clone.SyncStreams = conf.SyncStreams
 	}
+	if clone.Metadata == "" {
+		clone.Metadata = conf.Metadata
+	}
 
 	return clone, nil
 }
