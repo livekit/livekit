@@ -556,7 +556,7 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 
 	permChanged := s.setHasPermission(res.HasPermission)
 	if permChanged {
-		m.params.Participant.SubscriptionPermissionUpdate(s.getPublisherID(), trackID, res.HasPermission)
+		m.params.Participant.SendSubscriptionPermissionUpdate(s.getPublisherID(), trackID, res.HasPermission)
 	}
 	if !res.HasPermission {
 		return ErrNoTrackPermission

@@ -1086,11 +1086,7 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription, an
 		"answer", answer,
 		"answerId", answerId,
 	)
-	return p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_Answer{
-			Answer: ToProtoSessionDescription(answer, answerId),
-		},
-	})
+	return p.sendSdpAnswer(answer, answerId)
 }
 
 func (p *ParticipantImpl) GetAnswer() (webrtc.SessionDescription, error) {
@@ -1638,22 +1634,6 @@ func (p *ParticipantImpl) onTrackUnsubscribed(subTrack types.SubscribedTrack) {
 	p.TransportManager.RemoveSubscribedTrack(subTrack)
 }
 
-func (p *ParticipantImpl) SubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool) {
-	p.subLogger.Debugw("sending subscription permission update", "publisherID", publisherID, "trackID", trackID, "allowed", allowed)
-	err := p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_SubscriptionPermissionUpdate{
-			SubscriptionPermissionUpdate: &livekit.SubscriptionPermissionUpdate{
-				ParticipantSid: string(publisherID),
-				TrackSid:       string(trackID),
-				Allowed:        allowed,
-			},
-		},
-	})
-	if err != nil {
-		p.subLogger.Errorw("could not send subscription permission update", err)
-	}
-}
-
 func (p *ParticipantImpl) UpdateMediaRTT(rtt uint32) {
 	now := time.Now()
 	p.lock.Lock()
@@ -1993,11 +1973,7 @@ func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription, off
 		"offer", offer,
 		"offerId", offerId,
 	)
-	return p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_Offer{
-			Offer: ToProtoSessionDescription(offer, offerId),
-		},
-	})
+	return p.sendSdpOffer(offer, offerId)
 }
 
 func (p *ParticipantImpl) removePublishedTrack(track types.MediaTrack) {
@@ -2489,11 +2465,7 @@ func (p *ParticipantImpl) onStreamStateChange(update *streamallocator.StreamStat
 		})
 	}
 
-	return p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_StreamStateUpdate{
-			StreamStateUpdate: streamStateUpdate,
-		},
-	})
+	return p.sendStreamStateUpdate(streamStateUpdate)
 }
 
 func (p *ParticipantImpl) onSubscribedMaxQualityChange(
@@ -2549,11 +2521,7 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(
 		"qualities", subscribedQualities,
 		"max", maxSubscribedQualities,
 	)
-	return p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_SubscribedQualityUpdate{
-			SubscribedQualityUpdate: subscribedQualityUpdate,
-		},
-	})
+	return p.sendSubscribedQualityUpdate(subscribedQualityUpdate)
 }
 
 func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *livekit.TrackInfo {
@@ -2702,18 +2670,6 @@ func (p *ParticipantImpl) GetPendingTrack(trackID livekit.TrackID) *livekit.Trac
 
 func (p *ParticipantImpl) HasConnected() bool {
 	return p.TransportManager.HasSubscriberEverConnected() || p.TransportManager.HasPublisherEverConnected()
-}
-
-func (p *ParticipantImpl) sendTrackPublished(cid string, ti *livekit.TrackInfo) {
-	p.pubLogger.Debugw("sending track published", "cid", cid, "trackInfo", logger.Proto(ti))
-	_ = p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_TrackPublished{
-			TrackPublished: &livekit.TrackPublishedResponse{
-				Cid:   cid,
-				Track: ti,
-			},
-		},
-	})
 }
 
 func (p *ParticipantImpl) SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool) *livekit.TrackInfo {
@@ -3344,14 +3300,7 @@ func (p *ParticipantImpl) onSubscriptionError(trackID livekit.TrackID, fatal boo
 		signalErr = livekit.SubscriptionError_SE_TRACK_NOTFOUND
 	}
 
-	_ = p.writeMessage(&livekit.SignalResponse{
-		Message: &livekit.SignalResponse_SubscriptionResponse{
-			SubscriptionResponse: &livekit.SubscriptionResponse{
-				TrackSid: string(trackID),
-				Err:      signalErr,
-			},
-		},
-	})
+	p.sendSubscriptionResponse(trackID, signalErr)
 
 	if p.params.ReconnectOnSubscriptionError && fatal {
 		p.subLogger.Infow("issuing full reconnect on subscription error", "trackID", trackID)
