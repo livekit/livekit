@@ -71,9 +71,9 @@ func (r *LocalRouter) SetNodeForRoom(_ context.Context, _ livekit.RoomKey, _ liv
 
 func (r *LocalRouter) ClearRoomState(_ context.Context, roomKey livekit.RoomKey) error {
 
-	db, exists := r.routerCommunicators[roomKey]
+	routerCommunicator, exists := r.routerCommunicators[roomKey]
 	if exists {
-		db.Close()
+		routerCommunicator.Close()
 	}
 
 	delete(r.routerCommunicators, roomKey)

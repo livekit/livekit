@@ -56,6 +56,22 @@ func NewRoomCommunicatorImpl(room *livekit.Room, mainDatabase *pubsub.DB) (*Room
 }
 
 func (c *RoomCommunicatorImpl) Close() {
+	incomingMessagesTopic := formatIncomingMessagesTopic(c.room.Key, c.mainDatabase.GetHost().ID().String())
+	err := c.mainDatabase.Unsubscribe(c.ctx, incomingMessagesTopic)
+	if err != nil {
+		log.Printf("unsubscrib from topic err %v %v", incomingMessagesTopic, err)
+	} else {
+		log.Printf("unsubscribed from topic %v", incomingMessagesTopic)
+	}
+
+	roomMessagesTopic := formatRoomMessageTopic(c.room.Key)
+	err = c.mainDatabase.Unsubscribe(c.ctx, roomMessagesTopic)
+	if err != nil {
+		log.Printf("unsubscrib from topic err %v %v", roomMessagesTopic, err)
+	} else {
+		log.Printf("unsubscribed from topic %v", roomMessagesTopic)
+	}
+
 	c.cancel()
 }
 

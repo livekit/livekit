@@ -74,6 +74,13 @@ func NewRouterCommunicatorImpl(key livekit.RoomKey, mainDatabase *pubsub.DB, mes
 }
 
 func (c *RouterCommunicatorImpl) Close() {
+	err := c.mainDatabase.Unsubscribe(c.ctx, c.topic)
+	if err != nil {
+		log.Printf("unsubscrib from topic err %v %v", c.topic, err)
+	} else {
+		log.Printf("unsubscribed from topic %v", c.topic)
+	}
+
 	c.cancel()
 }
 
