@@ -104,6 +104,7 @@ func SetRoomConfiguration(createRequest *livekit.CreateRoomRequest, conf *liveki
 	createRequest.MinPlayoutDelay = conf.MinPlayoutDelay
 	createRequest.MaxPlayoutDelay = conf.MaxPlayoutDelay
 	createRequest.SyncStreams = conf.SyncStreams
+	createRequest.Metadata = conf.Metadata
 }
 
 func ParseClientInfo(r *http.Request) *livekit.ClientInfo {
