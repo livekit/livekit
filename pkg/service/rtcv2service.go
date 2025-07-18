@@ -170,6 +170,15 @@ func (s *RTCv2Service) handlePost(w http.ResponseWriter, r *http.Request) {
 				w.Header().Add("Content-type", "application/x-protobuf")
 				w.Write(marshalled)
 
+				logger.Debugw(
+					"connect response",
+					"room", roomName,
+					"roomID", resp.ConnectResponse.Room.Sid, // SIGNALLING-V2-TODO: roomID may not be resolved
+					"participant", participantIdentity,
+					"pID", resp.ConnectResponse.Participant.Sid,
+					"connectResponse", logger.Proto(resp.ConnectResponse),
+				)
+
 			default:
 				HandleErrorJson(
 					w,
