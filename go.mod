@@ -23,7 +23,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/mediatransportutil v0.0.0-20250519131108-fb90f5acfded
-	github.com/livekit/protocol v1.39.4-0.20250717134438-9922dc496733
+	github.com/livekit/protocol v1.39.4-0.20250718071209-86b0892a5d8c
 	github.com/livekit/psrpc v0.6.1-0.20250511053145-465289d72c3c
 	github.com/mackerelio/go-osstat v0.2.5
 	github.com/magefile/mage v1.15.0
@@ -38,7 +38,7 @@ require (
 	github.com/pion/rtcp v1.2.15
 	github.com/pion/rtp v1.8.21
 	github.com/pion/sctp v1.8.39
-	github.com/pion/sdp/v3 v3.0.14
+	github.com/pion/sdp/v3 v3.0.15
 	github.com/pion/transport/v3 v3.0.7
 	github.com/pion/turn/v4 v4.0.2
 	github.com/pion/webrtc/v4 v4.1.3
@@ -55,7 +55,7 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.27.0
-	golang.org/x/exp v0.0.0-20250711185948-6ae5c78190dc
+	golang.org/x/exp v0.0.0-20250717185816-542afb5b7346
 	golang.org/x/mod v0.26.0
 	golang.org/x/sync v0.16.0
 	google.golang.org/protobuf v1.36.6
@@ -63,8 +63,8 @@ require (
 )
 
 require (
-	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.6-20250625184727-c923a0c2a132.1 // indirect
-	buf.build/go/protovalidate v0.13.1 // indirect
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.6-20250717185734-6c6e0d3c608e.1 // indirect
+	buf.build/go/protovalidate v0.14.0 // indirect
 	buf.build/go/protoyaml v0.6.0 // indirect
 	cel.dev/expr v0.24.0 // indirect
 	dario.cat/mergo v1.0.0 // indirect
