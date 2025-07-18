@@ -139,8 +139,8 @@ func (m *SubscriptionManager) isClosed() bool {
 	}
 }
 
-func (m *SubscriptionManager) SubscribeToTrack(trackID livekit.TrackID) {
-	if m.params.UseOneShotSignallingMode {
+func (m *SubscriptionManager) SubscribeToTrack(trackID livekit.TrackID, isSync bool) {
+	if m.params.UseOneShotSignallingMode || isSync {
 		m.subscribeSynchronous(trackID)
 		return
 	}
@@ -556,7 +556,7 @@ func (m *SubscriptionManager) subscribe(s *trackSubscription) error {
 
 	permChanged := s.setHasPermission(res.HasPermission)
 	if permChanged {
-		m.params.Participant.SubscriptionPermissionUpdate(s.getPublisherID(), trackID, res.HasPermission)
+		m.params.Participant.SendSubscriptionPermissionUpdate(s.getPublisherID(), trackID, res.HasPermission)
 	}
 	if !res.HasPermission {
 		return ErrNoTrackPermission
