@@ -456,6 +456,16 @@ type FakeLocalParticipant struct {
 	getReporterResolverReturnsOnCall map[int]struct {
 		result1 roomobs.ParticipantReporterResolver
 	}
+	GetResponseSinkStub        func() routing.MessageSink
+	getResponseSinkMutex       sync.RWMutex
+	getResponseSinkArgsForCall []struct {
+	}
+	getResponseSinkReturns struct {
+		result1 routing.MessageSink
+	}
+	getResponseSinkReturnsOnCall map[int]struct {
+		result1 routing.MessageSink
+	}
 	GetSubscribedParticipantsStub        func() []livekit.ParticipantID
 	getSubscribedParticipantsMutex       sync.RWMutex
 	getSubscribedParticipantsArgsForCall []struct {
@@ -3587,6 +3597,59 @@ func (fake *FakeLocalParticipant) GetReporterResolverReturnsOnCall(i int, result
 	}
 	fake.getReporterResolverReturnsOnCall[i] = struct {
 		result1 roomobs.ParticipantReporterResolver
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetResponseSink() routing.MessageSink {
+	fake.getResponseSinkMutex.Lock()
+	ret, specificReturn := fake.getResponseSinkReturnsOnCall[len(fake.getResponseSinkArgsForCall)]
+	fake.getResponseSinkArgsForCall = append(fake.getResponseSinkArgsForCall, struct {
+	}{})
+	stub := fake.GetResponseSinkStub
+	fakeReturns := fake.getResponseSinkReturns
+	fake.recordInvocation("GetResponseSink", []interface{}{})
+	fake.getResponseSinkMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetResponseSinkCallCount() int {
+	fake.getResponseSinkMutex.RLock()
+	defer fake.getResponseSinkMutex.RUnlock()
+	return len(fake.getResponseSinkArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetResponseSinkCalls(stub func() routing.MessageSink) {
+	fake.getResponseSinkMutex.Lock()
+	defer fake.getResponseSinkMutex.Unlock()
+	fake.GetResponseSinkStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetResponseSinkReturns(result1 routing.MessageSink) {
+	fake.getResponseSinkMutex.Lock()
+	defer fake.getResponseSinkMutex.Unlock()
+	fake.GetResponseSinkStub = nil
+	fake.getResponseSinkReturns = struct {
+		result1 routing.MessageSink
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetResponseSinkReturnsOnCall(i int, result1 routing.MessageSink) {
+	fake.getResponseSinkMutex.Lock()
+	defer fake.getResponseSinkMutex.Unlock()
+	fake.GetResponseSinkStub = nil
+	if fake.getResponseSinkReturnsOnCall == nil {
+		fake.getResponseSinkReturnsOnCall = make(map[int]struct {
+			result1 routing.MessageSink
+		})
+	}
+	fake.getResponseSinkReturnsOnCall[i] = struct {
+		result1 routing.MessageSink
 	}{result1}
 }
 
@@ -8524,6 +8587,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getReporterMutex.RUnlock()
 	fake.getReporterResolverMutex.RLock()
 	defer fake.getReporterResolverMutex.RUnlock()
+	fake.getResponseSinkMutex.RLock()
+	defer fake.getResponseSinkMutex.RUnlock()
 	fake.getSubscribedParticipantsMutex.RLock()
 	defer fake.getSubscribedParticipantsMutex.RUnlock()
 	fake.getSubscribedTracksMutex.RLock()

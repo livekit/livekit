@@ -376,6 +376,7 @@ type LocalParticipant interface {
 	GetLastReliableSequence(migrateOut bool) uint32
 
 	SetResponseSink(sink routing.MessageSink)
+	GetResponseSink() routing.MessageSink
 	CloseSignalConnection(reason SignallingCloseReason)
 	UpdateLastSeenSignal()
 	SetSignalSourceValid(valid bool)

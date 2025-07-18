@@ -47,6 +47,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/metric"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc/signalling"
 	"github.com/livekit/livekit-server/pkg/rtc/supervisor"
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -309,6 +310,8 @@ type ParticipantImpl struct {
 	metricsCollector  *metric.MetricsCollector
 	metricsReporter   *metric.MetricsReporter
 
+	signaller signalling.ParticipantSignaller
+
 	// loggers for publisher and subscriber
 	pubLogger logger.Logger
 	subLogger logger.Logger
@@ -345,6 +348,11 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			joiningMessageLastWrittenSeqs: make(map[livekit.ParticipantID]uint32),
 		},
 	}
+	p.signaller = signalling.NewSignaller(signalling.SignallerParams{
+		Logger:      params.Logger,
+		Participant: p,
+	})
+
 	p.id.Store(params.SID)
 	p.dataChannelStats = telemetry.NewBytesTrackStats(
 		telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeData, p.ID()),
