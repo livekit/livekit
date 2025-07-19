@@ -362,7 +362,7 @@ func (r *RoomManager) StartSession(
 
 		// we need to clean up the existing participant, so a new one can join
 		participant.GetLogger().Infow("removing duplicate participant")
-		room.RemoveParticipant(participant.Identity(), participant.ID(), types.ParticipantCloseReasonDuplicateIdentity)
+		participant.HandleLeaveRequest(types.ParticipantCloseReasonDuplicateIdentity)
 	} else if pi.Reconnect {
 		// send leave request if participant is trying to reconnect without keep subscribe state
 		// but missing from the room
@@ -863,19 +863,13 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 
 // manages an RTC session for a participant, runs on the RTC node
 func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalParticipant, requestSource routing.MessageSource) {
-	pLogger := rtc.LoggerWithParticipant(
-		rtc.LoggerWithRoom(logger.GetLogger(), room.Name(), room.ID()),
-		participant.Identity(),
-		participant.ID(),
-		false,
-	)
 	defer func() {
-		pLogger.Debugw("RTC session finishing", "connID", requestSource.ConnectionID())
+		participant.GetLogger().Debugw("RTC session finishing", "connID", requestSource.ConnectionID())
 		requestSource.Close()
 	}()
 
 	defer func() {
-		if r := rtc.Recover(pLogger); r != nil {
+		if r := rtc.Recover(participant.GetLogger()); r != nil {
 			os.Exit(1)
 		}
 	}()
@@ -888,11 +882,13 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 		select {
 		case <-participant.Disconnected():
 			return
+
 		case <-tokenTicker.C:
 			// refresh token with the first API Key/secret pair
 			if err := r.refreshToken(participant); err != nil {
-				pLogger.Errorw("could not refresh token", err, "connID", requestSource.ConnectionID())
+				participant.GetLogger().Errorw("could not refresh token", err, "connID", requestSource.ConnectionID())
 			}
+
 		case obj := <-requestSource.ReadChan():
 			if obj == nil {
 				if room.GetParticipantRequestSource(participant.Identity()) == requestSource {
@@ -902,7 +898,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 			}
 
 			req := obj.(*livekit.SignalRequest)
-			if err := rtc.HandleParticipantSignal(room, participant, req, pLogger); err != nil {
+			if err := rtc.HandleParticipantSignal(participant, req); err != nil {
 				// more specific errors are already logged
 				// treat errors returned as fatal
 				return
@@ -931,13 +927,13 @@ func (r *RoomManager) roomAndParticipantForReq(ctx context.Context, req particip
 }
 
 func (r *RoomManager) RemoveParticipant(ctx context.Context, req *livekit.RoomParticipantIdentity) (*livekit.RemoveParticipantResponse, error) {
-	room, participant, err := r.roomAndParticipantForReq(ctx, req)
+	_, participant, err := r.roomAndParticipantForReq(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
 	participant.GetLogger().Infow("removing participant")
-	room.RemoveParticipant(livekit.ParticipantIdentity(req.Identity), "", types.ParticipantCloseReasonServiceRequestRemoveParticipant)
+	participant.HandleLeaveRequest(types.ParticipantCloseReasonServiceRequestRemoveParticipant)
 	return &livekit.RemoveParticipantResponse{}, nil
 }
 
@@ -1014,14 +1010,13 @@ func (r *RoomManager) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 }
 
 func (r *RoomManager) UpdateSubscriptions(ctx context.Context, req *livekit.UpdateSubscriptionsRequest) (*livekit.UpdateSubscriptionsResponse, error) {
-	room, participant, err := r.roomAndParticipantForReq(ctx, req)
+	_, participant, err := r.roomAndParticipantForReq(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
 	participant.GetLogger().Debugw("updating participant subscriptions")
-	room.UpdateSubscriptions(
-		participant,
+	participant.HandleUpdateSubscriptions(
 		livekit.StringsAsIDs[livekit.TrackID](req.TrackSids),
 		req.ParticipantTracks,
 		req.Subscribe,

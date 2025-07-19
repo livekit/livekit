@@ -281,16 +281,21 @@ type ParticipantImpl struct {
 	version atomic.Uint32
 
 	// callbacks & handlers
-	onTrackPublished     func(types.LocalParticipant, types.MediaTrack)
-	onTrackUpdated       func(types.LocalParticipant, types.MediaTrack)
-	onTrackUnpublished   func(types.LocalParticipant, types.MediaTrack)
-	onStateChange        func(p types.LocalParticipant)
-	onSubscriberReady    func(p types.LocalParticipant)
-	onMigrateStateChange func(p types.LocalParticipant, migrateState types.MigrateState)
-	onParticipantUpdate  func(types.LocalParticipant)
-	onDataPacket         func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
-	onDataMessage        func(types.LocalParticipant, []byte)
-	onMetrics            func(types.Participant, *livekit.DataPacket)
+	onTrackPublished               func(types.LocalParticipant, types.MediaTrack)
+	onTrackUpdated                 func(types.LocalParticipant, types.MediaTrack)
+	onTrackUnpublished             func(types.LocalParticipant, types.MediaTrack)
+	onStateChange                  func(p types.LocalParticipant)
+	onSubscriberReady              func(p types.LocalParticipant)
+	onMigrateStateChange           func(p types.LocalParticipant, migrateState types.MigrateState)
+	onParticipantUpdate            func(types.LocalParticipant)
+	onDataPacket                   func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
+	onDataMessage                  func(types.LocalParticipant, []byte)
+	onMetrics                      func(types.Participant, *livekit.DataPacket)
+	onUpdateSubscriptions          func(types.LocalParticipant, []livekit.TrackID, []*livekit.ParticipantTracks, bool)
+	onUpdateSubscriptionPermission func(types.LocalParticipant, *livekit.SubscriptionPermission) error
+	onSyncState                    func(types.LocalParticipant, *livekit.SyncState) error
+	onSimulateScenario             func(types.LocalParticipant, *livekit.SimulateScenario) error
+	onLeave                        func(types.LocalParticipant, types.ParticipantCloseReason)
 
 	migrateState                atomic.Value // types.MigrateState
 	migratedTracksPublishedFuse core.Fuse
@@ -349,10 +354,10 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			joiningMessageLastWrittenSeqs: make(map[livekit.ParticipantID]uint32),
 		},
 	}
-	p.signalling = signalling.NewSignallingv2(signalling.Signallingv2Params{
+	p.signalling = signalling.NewSignalling(signalling.SignallingParams{
 		Logger: params.Logger,
 	})
-	p.signaller = signalling.NewSignallerv2Async(signalling.Signallerv2AsyncParams{
+	p.signaller = signalling.NewSignallerAsync(signalling.SignallerAsyncParams{
 		Logger:      params.Logger,
 		Participant: p,
 	})
@@ -918,6 +923,66 @@ func (p *ParticipantImpl) getOnMetrics() func(types.Participant, *livekit.DataPa
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	return p.onMetrics
+}
+
+func (p *ParticipantImpl) OnUpdateSubscriptions(callback func(types.LocalParticipant, []livekit.TrackID, []*livekit.ParticipantTracks, bool)) {
+	p.lock.Lock()
+	p.onUpdateSubscriptions = callback
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) getOnUpdateSubscriptions() func(types.LocalParticipant, []livekit.TrackID, []*livekit.ParticipantTracks, bool) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.onUpdateSubscriptions
+}
+
+func (p *ParticipantImpl) OnUpdateSubscriptionPermission(callback func(types.LocalParticipant, *livekit.SubscriptionPermission) error) {
+	p.lock.Lock()
+	p.onUpdateSubscriptionPermission = callback
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) getOnUpdateSubscriptionPermission() func(types.LocalParticipant, *livekit.SubscriptionPermission) error {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.onUpdateSubscriptionPermission
+}
+
+func (p *ParticipantImpl) OnSyncState(callback func(types.LocalParticipant, *livekit.SyncState) error) {
+	p.lock.Lock()
+	p.onSyncState = callback
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) getOnSyncState() func(types.LocalParticipant, *livekit.SyncState) error {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.onSyncState
+}
+
+func (p *ParticipantImpl) OnSimulateScenario(callback func(types.LocalParticipant, *livekit.SimulateScenario) error) {
+	p.lock.Lock()
+	p.onSimulateScenario = callback
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) getOnSimulateScenario() func(types.LocalParticipant, *livekit.SimulateScenario) error {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.onSimulateScenario
+}
+
+func (p *ParticipantImpl) OnLeave(callback func(types.LocalParticipant, types.ParticipantCloseReason)) {
+	p.lock.Lock()
+	p.onLeave = callback
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) getOnLeave() func(types.LocalParticipant, types.ParticipantCloseReason) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.onLeave
 }
 
 func (p *ParticipantImpl) OnClose(callback func(types.LocalParticipant)) {
@@ -3636,4 +3701,44 @@ func (p *ParticipantImpl) GetLastReliableSequence(migrateOut bool) uint32 {
 		p.reliableDataInfo.stopReliableByMigrateOut.Store(true)
 	}
 	return p.reliableDataInfo.lastPubReliableSeq.Load()
+}
+
+func (p *ParticipantImpl) HandleUpdateSubscriptions(
+	trackIDs []livekit.TrackID,
+	participantTracks []*livekit.ParticipantTracks,
+	subscribe bool,
+) {
+	if onUpdateSubscriptions := p.getOnUpdateSubscriptions(); onUpdateSubscriptions != nil {
+		onUpdateSubscriptions(p, trackIDs, participantTracks, subscribe)
+	}
+}
+
+func (p *ParticipantImpl) HandleUpdateSubscriptionPermission(subscriptionPermission *livekit.SubscriptionPermission) error {
+	if onUpdateSubscriptionPermission := p.getOnUpdateSubscriptionPermission(); onUpdateSubscriptionPermission != nil {
+		return onUpdateSubscriptionPermission(p, subscriptionPermission)
+	}
+
+	return errors.New("no handler")
+}
+
+func (p *ParticipantImpl) HandleSyncState(syncState *livekit.SyncState) error {
+	if onSyncState := p.getOnSyncState(); onSyncState != nil {
+		return onSyncState(p, syncState)
+	}
+
+	return errors.New("no handler")
+}
+
+func (p *ParticipantImpl) HandleSimulateScenario(simulateScenario *livekit.SimulateScenario) error {
+	if onSimulateScenario := p.getOnSimulateScenario(); onSimulateScenario != nil {
+		return onSimulateScenario(p, simulateScenario)
+	}
+
+	return errors.New("no handler")
+}
+
+func (p *ParticipantImpl) HandleLeaveRequest(reason types.ParticipantCloseReason) {
+	if onLeave := p.getOnLeave(); onLeave != nil {
+		onLeave(p, reason)
+	}
 }

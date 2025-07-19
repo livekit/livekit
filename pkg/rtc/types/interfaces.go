@@ -473,6 +473,16 @@ type LocalParticipant interface {
 	OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool))
 	OnClose(callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
+	OnUpdateSubscriptions(func(
+		LocalParticipant,
+		[]livekit.TrackID,
+		[]*livekit.ParticipantTracks,
+		bool,
+	))
+	OnUpdateSubscriptionPermission(func(LocalParticipant, *livekit.SubscriptionPermission) error)
+	OnSyncState(func(LocalParticipant, *livekit.SyncState) error)
+	OnSimulateScenario(func(LocalParticipant, *livekit.SimulateScenario) error)
+	OnLeave(func(LocalParticipant, ParticipantCloseReason))
 
 	HandleReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
 
@@ -513,6 +523,15 @@ type LocalParticipant interface {
 	GetDisableSenderReportPassThrough() bool
 
 	HandleMetrics(senderParticipantID livekit.ParticipantID, batch *livekit.MetricsBatch) error
+	HandleUpdateSubscriptions(
+		[]livekit.TrackID,
+		[]*livekit.ParticipantTracks,
+		bool,
+	)
+	HandleUpdateSubscriptionPermission(*livekit.SubscriptionPermission) error
+	HandleSyncState(*livekit.SyncState) error
+	HandleSimulateScenario(*livekit.SimulateScenario) error
+	HandleLeaveRequest(reason ParticipantCloseReason)
 }
 
 // Room is a container of participants, and can provide room-level actions
@@ -521,11 +540,6 @@ type LocalParticipant interface {
 type Room interface {
 	Name() livekit.RoomName
 	ID() livekit.RoomID
-	RemoveParticipant(identity livekit.ParticipantIdentity, pID livekit.ParticipantID, reason ParticipantCloseReason)
-	UpdateSubscriptions(participant LocalParticipant, trackIDs []livekit.TrackID, participantTracks []*livekit.ParticipantTracks, subscribe bool)
-	UpdateSubscriptionPermission(participant LocalParticipant, permissions *livekit.SubscriptionPermission) error
-	SyncState(participant LocalParticipant, state *livekit.SyncState) error
-	SimulateScenario(participant LocalParticipant, scenario *livekit.SimulateScenario) error
 	ResolveMediaTrackForSubscriber(sub LocalParticipant, trackID livekit.TrackID) MediaResolverResult
 	GetLocalParticipants() []LocalParticipant
 	IsDataMessageUserPacketDuplicate(ip *livekit.UserPacket) bool
