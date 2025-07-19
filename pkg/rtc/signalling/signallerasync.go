@@ -56,15 +56,15 @@ func (s *signallerAsync) WriteMessage(msg proto.Message) error {
 	}
 
 	if !s.params.Participant.IsReady() {
-		typed, ok := msg.(*livekit.SignalResponse)
-		if !ok {
+		if typed, ok := msg.(*livekit.SignalResponse); !ok {
 			s.params.Logger.Warnw(
 				"unknown message type", nil,
 				"messageType", fmt.Sprintf("%T", msg),
 			)
-		}
-		if typed.GetJoin() == nil {
-			return nil
+		} else {
+			if typed.GetJoin() == nil {
+				return nil
+			}
 		}
 	}
 

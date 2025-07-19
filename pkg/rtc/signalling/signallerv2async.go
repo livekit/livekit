@@ -56,20 +56,18 @@ func (s *signallerv2Async) WriteMessage(msg proto.Message) error {
 		return nil
 	}
 
-	/* RAJA-TODO
 	if !s.params.Participant.IsReady() {
-		typed, ok := msg.(*livekit.Signalv2WireMessage)
-		if !ok {
+		if typed, ok := msg.(*livekit.Signalv2WireMessage); !ok {
 			s.params.Logger.Warnw(
 				"unknown message type", nil,
 				"messageType", fmt.Sprintf("%T", msg),
 			)
-		}
-		if typed.GetJoin() == nil {
-			return nil
+		} else {
+			if !hasConnectResponse(typed) {
+				return nil
+			}
 		}
 	}
-	*/
 
 	sink := s.GetResponseSink()
 	if sink == nil {
@@ -116,7 +114,25 @@ func (s *signallerv2Async) WriteMessages(msgs []proto.Message) error {
 	return nil
 }
 
-/* RAJA-TODO
-func (s *signallerv2Async) hasConnectResponse(msg *livekit.Signalv2WireMessage) bool {
+// ----------------------------
+
+func hasConnectResponse(wireMessage *livekit.Signalv2WireMessage) bool {
+	switch msg := wireMessage.GetMessage().(type) {
+	case *livekit.Signalv2WireMessage_Envelope:
+		for _, innerMsg := range msg.Envelope.GetServerMessages() {
+			switch innerMsg.GetMessage().(type) {
+			case *livekit.Signalv2ServerMessage_ConnectResponse:
+				return true
+
+			default:
+				return false // first message should be `ConnectResponse`
+			}
+		}
+
+	default:
+		// SIGNALLING-V2-TODO: handle ConnectResponse getting fragmented.
+		return false
+	}
+
+	return false
 }
-*/
