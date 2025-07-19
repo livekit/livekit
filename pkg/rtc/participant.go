@@ -310,7 +310,8 @@ type ParticipantImpl struct {
 	metricsCollector  *metric.MetricsCollector
 	metricsReporter   *metric.MetricsReporter
 
-	signaller signalling.ParticipantSignaller
+	signalling signalling.ParticipantSignalling
+	signaller  signalling.ParticipantSignaller
 
 	// loggers for publisher and subscriber
 	pubLogger logger.Logger
@@ -348,7 +349,10 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			joiningMessageLastWrittenSeqs: make(map[livekit.ParticipantID]uint32),
 		},
 	}
-	p.signaller = signalling.NewSignaller(signalling.SignallerParams{
+	p.signalling = signalling.NewSignalling(signalling.SignallingParams{
+		Logger: params.Logger,
+	})
+	p.signaller = signalling.NewSignallerAsync(signalling.SignallerAsyncParams{
 		Logger:      params.Logger,
 		Participant: p,
 	})

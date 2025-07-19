@@ -52,7 +52,7 @@ func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) e
 	p.updateLock.Unlock()
 
 	// send Join response
-	err := p.signaller.SendJoinResponse(joinResponse)
+	err := p.signaller.WriteMessage(p.signalling.SignalJoinResponse(joinResponse))
 	if err != nil {
 		return err
 	}
@@ -120,7 +120,7 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 	}
 	p.updateLock.Unlock()
 
-	return p.signaller.SendParticipantUpdate(validUpdates)
+	return p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(validUpdates))
 }
 
 // SendSpeakerUpdate notifies participant changes to speakers. only send members that have changed since last update
@@ -141,19 +141,19 @@ func (p *ParticipantImpl) SendSpeakerUpdate(speakers []*livekit.SpeakerInfo, for
 		}
 	}
 
-	return p.signaller.SendSpeakerUpdate(scopedSpeakers)
+	return p.signaller.WriteMessage(p.signalling.SignalSpeakerUpdate(scopedSpeakers))
 }
 
 func (p *ParticipantImpl) SendRoomUpdate(room *livekit.Room) error {
-	return p.signaller.SendRoomUpdate(room)
+	return p.signaller.WriteMessage(p.signalling.SignalRoomUpdate(room))
 }
 
 func (p *ParticipantImpl) SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error {
-	return p.signaller.SendConnectionQualityUpdate(update)
+	return p.signaller.WriteMessage(p.signalling.SignalConnectionQualityUpdate(update))
 }
 
 func (p *ParticipantImpl) SendRefreshToken(token string) error {
-	return p.signaller.SendRefreshToken(token)
+	return p.signaller.WriteMessage(p.signalling.SignalRefreshToken(token))
 }
 
 func (p *ParticipantImpl) SendRequestResponse(requestResponse *livekit.RequestResponse) error {
@@ -165,11 +165,11 @@ func (p *ParticipantImpl) SendRequestResponse(requestResponse *livekit.RequestRe
 		return nil
 	}
 
-	return p.signaller.SendRequestResponse(requestResponse)
+	return p.signaller.WriteMessage(p.signalling.SignalRequestResponse(requestResponse))
 }
 
 func (p *ParticipantImpl) SendRoomMovedResponse(roomMovedResponse *livekit.RoomMovedResponse) error {
-	return p.signaller.SendRoomMovedResponse(roomMovedResponse)
+	return p.signaller.WriteMessage(p.signalling.SignalRoomMovedResponse(roomMovedResponse))
 }
 
 func (p *ParticipantImpl) HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse) error {
@@ -178,7 +178,7 @@ func (p *ParticipantImpl) HandleReconnectAndSendResponse(reconnectReason livekit
 	if !p.params.ClientInfo.CanHandleReconnectResponse() {
 		return nil
 	}
-	if err := p.signaller.SendReconnectResponse(reconnectResponse); err != nil {
+	if err := p.signaller.WriteMessage(p.signalling.SignalReconnectResponse(reconnectResponse)); err != nil {
 		return err
 	}
 
@@ -210,7 +210,7 @@ func (p *ParticipantImpl) sendDisconnectUpdatesForReconnect() error {
 	}
 	p.updateLock.Unlock()
 
-	return p.signaller.SendParticipantUpdate(disconnectedParticipants)
+	return p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(disconnectedParticipants))
 }
 
 func (p *ParticipantImpl) sendICECandidate(ic *webrtc.ICECandidate, target livekit.SignalTarget) error {
@@ -222,37 +222,37 @@ func (p *ParticipantImpl) sendICECandidate(ic *webrtc.ICECandidate, target livek
 	trickle := ToProtoTrickle(prevIC.ToJSON(), target, ic == nil)
 	p.params.Logger.Debugw("sending ICE candidate", "transport", target, "trickle", logger.Proto(trickle))
 
-	return p.signaller.SendICECandidate(trickle)
+	return p.signaller.WriteMessage(p.signalling.SignalICECandidate(trickle))
 }
 
 func (p *ParticipantImpl) sendTrackMuted(trackID livekit.TrackID, muted bool) {
-	_ = p.signaller.SendTrackMuted(&livekit.MuteTrackRequest{
+	_ = p.signaller.WriteMessage(p.signalling.SignalTrackMuted(&livekit.MuteTrackRequest{
 		Sid:   string(trackID),
 		Muted: muted,
-	})
+	}))
 }
 
 func (p *ParticipantImpl) sendTrackPublished(cid string, ti *livekit.TrackInfo) error {
 	p.pubLogger.Debugw("sending track published", "cid", cid, "trackInfo", logger.Proto(ti))
-	return p.signaller.SendTrackPublished(&livekit.TrackPublishedResponse{
+	return p.signaller.WriteMessage(p.signalling.SignalTrackPublished(&livekit.TrackPublishedResponse{
 		Cid:   cid,
 		Track: ti,
-	})
+	}))
 }
 
 func (p *ParticipantImpl) sendTrackUnpublished(trackID livekit.TrackID) {
-	_ = p.signaller.SendTrackUnpublished(&livekit.TrackUnpublishedResponse{
+	_ = p.signaller.WriteMessage(p.signalling.SignalTrackUnpublished(&livekit.TrackUnpublishedResponse{
 		TrackSid: string(trackID),
-	})
+	}))
 }
 
 func (p *ParticipantImpl) sendTrackHasBeenSubscribed(trackID livekit.TrackID) {
 	if !p.params.ClientInfo.SupportTrackSubscribedEvent() {
 		return
 	}
-	_ = p.signaller.SendTrackSubscribed(&livekit.TrackSubscribed{
+	_ = p.signaller.WriteMessage(p.signalling.SignalTrackSubscribed(&livekit.TrackSubscribed{
 		TrackSid: string(trackID),
-	})
+	}))
 	p.params.Logger.Debugw("track has been subscribed", "trackID", trackID)
 }
 
@@ -287,39 +287,39 @@ func (p *ParticipantImpl) sendLeaveRequest(
 			}
 		}
 	}
-	return p.signaller.SendLeaveRequest(leave)
+	return p.signaller.WriteMessage(p.signalling.SignalLeaveRequest(leave))
 }
 
 func (p *ParticipantImpl) sendSdpAnswer(answer webrtc.SessionDescription, answerId uint32) error {
-	return p.signaller.SendSdpAnswer(ToProtoSessionDescription(answer, answerId))
+	return p.signaller.WriteMessage(p.signalling.SignalSdpAnswer(ToProtoSessionDescription(answer, answerId)))
 }
 
 func (p *ParticipantImpl) sendSdpOffer(offer webrtc.SessionDescription, offerId uint32) error {
-	return p.signaller.SendSdpOffer(ToProtoSessionDescription(offer, offerId))
+	return p.signaller.WriteMessage(p.signalling.SignalSdpOffer(ToProtoSessionDescription(offer, offerId)))
 }
 
 func (p *ParticipantImpl) sendStreamStateUpdate(streamStateUpdate *livekit.StreamStateUpdate) error {
-	return p.signaller.SendStreamStateUpdate(streamStateUpdate)
+	return p.signaller.WriteMessage(p.signalling.SignalStreamStateUpdate(streamStateUpdate))
 }
 
 func (p *ParticipantImpl) sendSubscribedQualityUpdate(subscribedQualityUpdate *livekit.SubscribedQualityUpdate) error {
-	return p.signaller.SendSubscribedQualityUpdate(subscribedQualityUpdate)
+	return p.signaller.WriteMessage(p.signalling.SignalSubscribedQualityUpdate(subscribedQualityUpdate))
 }
 
 func (p *ParticipantImpl) sendSubscriptionResponse(trackID livekit.TrackID, subErr livekit.SubscriptionError) error {
-	return p.signaller.SendSubscriptionResponse(&livekit.SubscriptionResponse{
+	return p.signaller.WriteMessage(p.signalling.SignalSubscriptionResponse(&livekit.SubscriptionResponse{
 		TrackSid: string(trackID),
 		Err:      subErr,
-	})
+	}))
 }
 
 func (p *ParticipantImpl) SendSubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool) error {
 	p.subLogger.Debugw("sending subscription permission update", "publisherID", publisherID, "trackID", trackID, "allowed", allowed)
-	err := p.signaller.SendSubscriptionPermissionUpdate(&livekit.SubscriptionPermissionUpdate{
+	err := p.signaller.WriteMessage(p.signalling.SignalSubscriptionPermissionUpdate(&livekit.SubscriptionPermissionUpdate{
 		ParticipantSid: string(publisherID),
 		TrackSid:       string(trackID),
 		Allowed:        allowed,
-	})
+	}))
 	if err != nil {
 		p.subLogger.Errorw("could not send subscription permission update", err)
 	}
@@ -339,8 +339,7 @@ func (p *ParticipantImpl) SendConnectResponse(connectResponse *livekit.ConnectRe
 	}
 	p.updateLock.Unlock()
 
-	// send Join response
-	err := p.signaller.SendConnectResponse(connectResponse)
+	err := p.signaller.WriteMessage(p.signalling.SignalConnectResponse(connectResponse))
 	if err != nil {
 		return err
 	}

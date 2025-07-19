@@ -19,6 +19,8 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+
+	"google.golang.org/protobuf/proto"
 )
 
 type ParticipantSignaller interface {
@@ -26,29 +28,33 @@ type ParticipantSignaller interface {
 	GetResponseSink() routing.MessageSink
 	CloseSignalConnection(reason types.SignallingCloseReason)
 
-	SendJoinResponse(join *livekit.JoinResponse) error
-	SendParticipantUpdate(participants []*livekit.ParticipantInfo) error
-	SendSpeakerUpdate(speakers []*livekit.SpeakerInfo) error
-	SendRoomUpdate(room *livekit.Room) error
-	SendConnectionQualityUpdate(connectionQuality *livekit.ConnectionQualityUpdate) error
-	SendRefreshToken(token string) error
-	SendRequestResponse(requestResponse *livekit.RequestResponse) error
-	SendRoomMovedResponse(roomMoved *livekit.RoomMovedResponse) error
-	SendReconnectResponse(reconnect *livekit.ReconnectResponse) error
-	SendICECandidate(trickle *livekit.TrickleRequest) error
-	SendTrackMuted(mute *livekit.MuteTrackRequest) error
-	SendTrackPublished(trackPublished *livekit.TrackPublishedResponse) error
-	SendTrackUnpublished(trackUnpublished *livekit.TrackUnpublishedResponse) error
-	SendTrackSubscribed(trackSubscribed *livekit.TrackSubscribed) error
-	SendLeaveRequest(leave *livekit.LeaveRequest) error
-	SendSdpAnswer(answer *livekit.SessionDescription) error
-	SendSdpOffer(offer *livekit.SessionDescription) error
-	SendStreamStateUpdate(streamStateUpdate *livekit.StreamStateUpdate) error
-	SendSubscribedQualityUpdate(subscribedQualityUpdate *livekit.SubscribedQualityUpdate) error
-	SendSubscriptionResponse(subscriptionResponse *livekit.SubscriptionResponse) error
-	SendSubscriptionPermissionUpdate(subscriptionPermissionUpdate *livekit.SubscriptionPermissionUpdate) error
+	WriteMessage(msg proto.Message) error
+}
+
+type ParticipantSignalling interface {
+	SignalJoinResponse(join *livekit.JoinResponse) proto.Message
+	SignalParticipantUpdate(participants []*livekit.ParticipantInfo) proto.Message
+	SignalSpeakerUpdate(speakers []*livekit.SpeakerInfo) proto.Message
+	SignalRoomUpdate(room *livekit.Room) proto.Message
+	SignalConnectionQualityUpdate(connectionQuality *livekit.ConnectionQualityUpdate) proto.Message
+	SignalRefreshToken(token string) proto.Message
+	SignalRequestResponse(requestResponse *livekit.RequestResponse) proto.Message
+	SignalRoomMovedResponse(roomMoved *livekit.RoomMovedResponse) proto.Message
+	SignalReconnectResponse(reconnect *livekit.ReconnectResponse) proto.Message
+	SignalICECandidate(trickle *livekit.TrickleRequest) proto.Message
+	SignalTrackMuted(mute *livekit.MuteTrackRequest) proto.Message
+	SignalTrackPublished(trackPublished *livekit.TrackPublishedResponse) proto.Message
+	SignalTrackUnpublished(trackUnpublished *livekit.TrackUnpublishedResponse) proto.Message
+	SignalTrackSubscribed(trackSubscribed *livekit.TrackSubscribed) proto.Message
+	SignalLeaveRequest(leave *livekit.LeaveRequest) proto.Message
+	SignalSdpAnswer(answer *livekit.SessionDescription) proto.Message
+	SignalSdpOffer(offer *livekit.SessionDescription) proto.Message
+	SignalStreamStateUpdate(streamStateUpdate *livekit.StreamStateUpdate) proto.Message
+	SignalSubscribedQualityUpdate(subscribedQualityUpdate *livekit.SubscribedQualityUpdate) proto.Message
+	SignalSubscriptionResponse(subscriptionResponse *livekit.SubscriptionResponse) proto.Message
+	SignalSubscriptionPermissionUpdate(subscriptionPermissionUpdate *livekit.SubscriptionPermissionUpdate) proto.Message
 
 	SetLastProcessedRemoteMessageId(lastProcessedRemoteMessageId uint32)
 
-	SendConnectResponse(connectResponse *livekit.ConnectResponse) error
+	SignalConnectResponse(connectResponse *livekit.ConnectResponse) proto.Message
 }
