@@ -120,10 +120,6 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 	}
 	p.updateLock.Unlock()
 
-	if len(validUpdates) == 0 {
-		return nil
-	}
-
 	return p.signaller.SendParticipantUpdate(validUpdates)
 }
 
@@ -213,10 +209,6 @@ func (p *ParticipantImpl) sendDisconnectUpdatesForReconnect() error {
 		}
 	}
 	p.updateLock.Unlock()
-
-	if len(disconnectedParticipants) == 0 {
-		return nil
-	}
 
 	return p.signaller.SendParticipantUpdate(disconnectedParticipants)
 }
@@ -332,4 +324,35 @@ func (p *ParticipantImpl) SendSubscriptionPermissionUpdate(publisherID livekit.P
 		p.subLogger.Errorw("could not send subscription permission update", err)
 	}
 	return err
+}
+
+func (p *ParticipantImpl) SendConnectResponse(connectResponse *livekit.ConnectResponse) error {
+	// keep track of participant updates and versions
+	p.updateLock.Lock()
+	for _, op := range connectResponse.OtherParticipants {
+		p.updateCache.Add(livekit.ParticipantID(op.Sid), participantUpdateInfo{
+			identity:  livekit.ParticipantIdentity(op.Identity),
+			version:   op.Version,
+			state:     op.State,
+			updatedAt: time.Now(),
+		})
+	}
+	p.updateLock.Unlock()
+
+	// send Join response
+	err := p.signaller.SendConnectResponse(connectResponse)
+	if err != nil {
+		return err
+	}
+
+	// update state after sending message, so that no participant updates could slip through before JoinResponse is sent
+	p.updateLock.Lock()
+	if p.State() == livekit.ParticipantInfo_JOINING {
+		p.updateState(livekit.ParticipantInfo_JOINED)
+	}
+	queuedUpdates := p.queuedUpdates
+	p.queuedUpdates = nil
+	p.updateLock.Unlock()
+
+	return p.SendParticipantUpdate(queuedUpdates)
 }

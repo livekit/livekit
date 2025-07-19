@@ -22,6 +22,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 )
 
 type SignalCacheParams struct {
@@ -32,9 +33,10 @@ type SignalCacheParams struct {
 type SignalCache struct {
 	params SignalCacheParams
 
-	lock      sync.Mutex
-	messageId uint32
-	messages  deque.Deque[*livekit.Signalv2ServerMessage]
+	lock                         sync.Mutex
+	messageId                    uint32
+	lastProcessedRemoteMessageId uint32
+	messages                     deque.Deque[*livekit.Signalv2ServerMessage]
 }
 
 func NewSignalCache(params SignalCacheParams) *SignalCache {
@@ -49,18 +51,26 @@ func NewSignalCache(params SignalCacheParams) *SignalCache {
 	return s
 }
 
-func (s *SignalCache) Add(msg *livekit.Signalv2ServerMessage, lastRemoteId uint32) {
-	s.AddBatch([]*livekit.Signalv2ServerMessage{msg}, lastRemoteId)
+func (s *SignalCache) SetLastProcessedRemoteMessageId(lastProcessedRemoteMessageId uint32) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	s.lastProcessedRemoteMessageId = lastProcessedRemoteMessageId
 }
 
-func (s *SignalCache) AddBatch(msgs []*livekit.Signalv2ServerMessage, lastRemoteId uint32) {
+func (s *SignalCache) Add(msg *livekit.Signalv2ServerMessage) {
+	if msg != nil {
+		s.AddBatch([]*livekit.Signalv2ServerMessage{msg})
+	}
+}
+
+func (s *SignalCache) AddBatch(msgs []*livekit.Signalv2ServerMessage) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
 	for _, msg := range msgs {
 		msg.Sequencer = &livekit.Sequencer{
-			MessageId:                    s.messageId,
-			LastProcessedRemoteMessageId: lastRemoteId,
+			MessageId: s.messageId,
 		}
 		s.messageId++
 
@@ -95,7 +105,9 @@ func (s *SignalCache) GetFromFront() []*livekit.Signalv2ServerMessage {
 func (s *SignalCache) getFromFrontLocked() []*livekit.Signalv2ServerMessage {
 	var msgs []*livekit.Signalv2ServerMessage
 	for msg := range s.messages.Iter() {
-		msgs = append(msgs, msg)
+		clone := utils.CloneProto(msg)
+		clone.Sequencer.LastProcessedRemoteMessageId = s.lastProcessedRemoteMessageId
+		msgs = append(msgs, clone)
 	}
 
 	return msgs

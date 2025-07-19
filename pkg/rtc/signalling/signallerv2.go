@@ -15,6 +15,7 @@
 package signalling
 
 import (
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -41,4 +42,19 @@ func NewSignallerv2(params Signallerv2Params) ParticipantSignaller {
 			Logger: params.Logger,
 		}),
 	}
+}
+
+func (s *signallerv2) SetLastProcessedRemoteMessageId(lastProcessedRemoteMessageId uint32) {
+	s.signalCache.SetLastProcessedRemoteMessageId(lastProcessedRemoteMessageId)
+}
+
+func (s *signallerv2) SendConnectResponse(connectResponse *livekit.ConnectResponse) error {
+	if connectResponse != nil {
+		s.signalCache.Add(&livekit.Signalv2ServerMessage{
+			Message: &livekit.Signalv2ServerMessage_ConnectResponse{
+				ConnectResponse: connectResponse,
+			},
+		})
+	}
+	return nil
 }

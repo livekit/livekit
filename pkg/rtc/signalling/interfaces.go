@@ -47,4 +47,8 @@ type ParticipantSignaller interface {
 	SendSubscribedQualityUpdate(subscribedQualityUpdate *livekit.SubscribedQualityUpdate) error
 	SendSubscriptionResponse(subscriptionResponse *livekit.SubscriptionResponse) error
 	SendSubscriptionPermissionUpdate(subscriptionPermissionUpdate *livekit.SubscriptionPermissionUpdate) error
+
+	SetLastProcessedRemoteMessageId(lastProcessedRemoteMessageId uint32)
+
+	SendConnectResponse(connectResponse *livekit.ConnectResponse) error
 }

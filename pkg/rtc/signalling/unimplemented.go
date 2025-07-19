@@ -114,3 +114,9 @@ func (u *unimplemented) SendSubscriptionResponse(subscriptionResponse *livekit.S
 func (u *unimplemented) SendSubscriptionPermissionUpdate(subscriptionPermissionUpdate *livekit.SubscriptionPermissionUpdate) error {
 	return nil
 }
+
+func (u *unimplemented) SetLastProcessedRemoteMessageId(lastProcessedRemoteMessageId uint32) {}
+
+func (u *unimplemented) SendConnectResponse(connectResponse *livekit.ConnectResponse) error {
+	return nil
+}
