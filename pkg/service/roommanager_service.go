@@ -178,11 +178,7 @@ func (r rtcRestParticipantService) DeleteSession(ctx context.Context, req *rpc.R
 
 	lp := room.GetParticipantByID(livekit.ParticipantID(req.ParticipantId))
 	if lp != nil {
-		room.RemoveParticipant(
-			lp.Identity(),
-			lp.ID(),
-			types.ParticipantCloseReasonClientRequestLeave,
-		)
+		lp.HandleLeaveRequest(types.ParticipantCloseReasonClientRequestLeave)
 	}
 
 	return &emptypb.Empty{}, nil

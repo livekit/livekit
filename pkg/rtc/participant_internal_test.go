@@ -227,7 +227,7 @@ func TestOutOfOrderUpdates(t *testing.T) {
 	p := newParticipantForTest("test")
 	p.updateState(livekit.ParticipantInfo_JOINED)
 	p.SetMetadata("initial metadata")
-	sink := p.getResponseSink().(*routingfakes.FakeMessageSink)
+	sink := p.GetResponseSink().(*routingfakes.FakeMessageSink)
 	pi1 := p.ToProto()
 	p.SetMetadata("second update")
 	pi2 := p.ToProto()
