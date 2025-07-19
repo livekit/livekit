@@ -223,7 +223,7 @@ func (s *signalling) SignalLeaveRequest(leave *livekit.LeaveRequest) proto.Messa
 	}
 }
 
-func (s *signalling) SignaldpAnswer(answer *livekit.SessionDescription) proto.Message {
+func (s *signalling) SignalSdpAnswer(answer *livekit.SessionDescription) proto.Message {
 	if answer == nil {
 		return nil
 	}
