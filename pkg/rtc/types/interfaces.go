@@ -32,6 +32,8 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
+
+	"google.golang.org/protobuf/proto"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -452,6 +454,7 @@ type LocalParticipant interface {
 	IssueFullReconnect(reason ParticipantCloseReason)
 	SendRoomMovedResponse(moved *livekit.RoomMovedResponse) error
 	SendConnectResponse(connectResponse *livekit.ConnectResponse) error
+	SignalPendingMessages() proto.Message
 
 	// callbacks
 	OnStateChange(func(p LocalParticipant))

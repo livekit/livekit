@@ -349,10 +349,10 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			joiningMessageLastWrittenSeqs: make(map[livekit.ParticipantID]uint32),
 		},
 	}
-	p.signalling = signalling.NewSignalling(signalling.SignallingParams{
+	p.signalling = signalling.NewSignallingv2(signalling.Signallingv2Params{
 		Logger: params.Logger,
 	})
-	p.signaller = signalling.NewSignallerAsync(signalling.SignallerAsyncParams{
+	p.signaller = signalling.NewSignallerv2Async(signalling.Signallerv2AsyncParams{
 		Logger:      params.Logger,
 		Participant: p,
 	})

@@ -17,6 +17,7 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/pion/rtcp"
 	webrtc "github.com/pion/webrtc/v4"
+	"google.golang.org/protobuf/proto"
 )
 
 type FakeLocalParticipant struct {
@@ -1107,6 +1108,16 @@ type FakeLocalParticipant struct {
 	}
 	setTrackMutedReturnsOnCall map[int]struct {
 		result1 *livekit.TrackInfo
+	}
+	SignalPendingMessagesStub        func() proto.Message
+	signalPendingMessagesMutex       sync.RWMutex
+	signalPendingMessagesArgsForCall []struct {
+	}
+	signalPendingMessagesReturns struct {
+		result1 proto.Message
+	}
+	signalPendingMessagesReturnsOnCall map[int]struct {
+		result1 proto.Message
 	}
 	StateStub        func() livekit.ParticipantInfo_State
 	stateMutex       sync.RWMutex
@@ -7236,6 +7247,59 @@ func (fake *FakeLocalParticipant) SetTrackMutedReturnsOnCall(i int, result1 *liv
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) SignalPendingMessages() proto.Message {
+	fake.signalPendingMessagesMutex.Lock()
+	ret, specificReturn := fake.signalPendingMessagesReturnsOnCall[len(fake.signalPendingMessagesArgsForCall)]
+	fake.signalPendingMessagesArgsForCall = append(fake.signalPendingMessagesArgsForCall, struct {
+	}{})
+	stub := fake.SignalPendingMessagesStub
+	fakeReturns := fake.signalPendingMessagesReturns
+	fake.recordInvocation("SignalPendingMessages", []interface{}{})
+	fake.signalPendingMessagesMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) SignalPendingMessagesCallCount() int {
+	fake.signalPendingMessagesMutex.RLock()
+	defer fake.signalPendingMessagesMutex.RUnlock()
+	return len(fake.signalPendingMessagesArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) SignalPendingMessagesCalls(stub func() proto.Message) {
+	fake.signalPendingMessagesMutex.Lock()
+	defer fake.signalPendingMessagesMutex.Unlock()
+	fake.SignalPendingMessagesStub = stub
+}
+
+func (fake *FakeLocalParticipant) SignalPendingMessagesReturns(result1 proto.Message) {
+	fake.signalPendingMessagesMutex.Lock()
+	defer fake.signalPendingMessagesMutex.Unlock()
+	fake.SignalPendingMessagesStub = nil
+	fake.signalPendingMessagesReturns = struct {
+		result1 proto.Message
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) SignalPendingMessagesReturnsOnCall(i int, result1 proto.Message) {
+	fake.signalPendingMessagesMutex.Lock()
+	defer fake.signalPendingMessagesMutex.Unlock()
+	fake.SignalPendingMessagesStub = nil
+	if fake.signalPendingMessagesReturnsOnCall == nil {
+		fake.signalPendingMessagesReturnsOnCall = make(map[int]struct {
+			result1 proto.Message
+		})
+	}
+	fake.signalPendingMessagesReturnsOnCall[i] = struct {
+		result1 proto.Message
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) State() livekit.ParticipantInfo_State {
 	fake.stateMutex.Lock()
 	ret, specificReturn := fake.stateReturnsOnCall[len(fake.stateArgsForCall)]
@@ -8813,6 +8877,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.setSubscriberChannelCapacityMutex.RUnlock()
 	fake.setTrackMutedMutex.RLock()
 	defer fake.setTrackMutedMutex.RUnlock()
+	fake.signalPendingMessagesMutex.RLock()
+	defer fake.signalPendingMessagesMutex.RUnlock()
 	fake.stateMutex.RLock()
 	defer fake.stateMutex.RUnlock()
 	fake.stopAndGetSubscribedTracksForwarderStateMutex.RLock()

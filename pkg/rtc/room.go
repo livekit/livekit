@@ -798,6 +798,22 @@ func (r *Room) Joinv2(
 		return nil, err
 	}
 
+	if wireMessage := participant.SignalPendingMessages(); wireMessage != nil {
+		if wireMessage, ok := wireMessage.(*livekit.Signalv2WireMessage); ok {
+			switch msg := wireMessage.GetMessage().(type) {
+			case *livekit.Signalv2WireMessage_Envelope:
+			got_connect_response:
+				for _, innerMsg := range msg.Envelope.GetServerMessages() {
+					switch serverMessage := innerMsg.GetMessage().(type) {
+					case *livekit.Signalv2ServerMessage_ConnectResponse:
+						connectResponse = serverMessage.ConnectResponse
+						break got_connect_response
+					}
+				}
+			}
+		}
+	}
+
 	prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
 	return connectResponse, nil
 }

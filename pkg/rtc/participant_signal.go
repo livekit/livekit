@@ -24,6 +24,8 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+
+	"google.golang.org/protobuf/proto"
 )
 
 func (p *ParticipantImpl) SetResponseSink(sink routing.MessageSink) {
@@ -354,4 +356,8 @@ func (p *ParticipantImpl) SendConnectResponse(connectResponse *livekit.ConnectRe
 	p.updateLock.Unlock()
 
 	return p.SendParticipantUpdate(queuedUpdates)
+}
+
+func (p *ParticipantImpl) SignalPendingMessages() proto.Message {
+	return p.signalling.PendingMessages()
 }
