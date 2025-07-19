@@ -29,6 +29,7 @@ type ParticipantSignaller interface {
 	CloseSignalConnection(reason types.SignallingCloseReason)
 
 	WriteMessage(msg proto.Message) error
+	WriteMessages(msgs []proto.Message) error
 }
 
 type ParticipantSignalling interface {

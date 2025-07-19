@@ -28,25 +28,26 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type SignallerAsyncParams struct {
+type Signallerv2AsyncParams struct {
 	Logger      logger.Logger
 	Participant types.LocalParticipant
 }
 
-type signallerAsync struct {
-	params SignallerAsyncParams
+type signallerv2Async struct {
+	params Signallerv2AsyncParams
 
 	*signallerAsyncBase
 }
 
-func NewSignallerAsync(params SignallerAsyncParams) ParticipantSignaller {
-	return &signallerAsync{
+func NewSignallerv2Async(params Signallerv2AsyncParams) ParticipantSignaller {
+	return &signallerv2Async{
 		params:             params,
 		signallerAsyncBase: newSignallerAsyncBase(signallerAsyncBaseParams{Logger: params.Logger}),
 	}
 }
 
-func (s *signallerAsync) WriteMessage(msg proto.Message) error {
+// SIGNALLING-V2-TODO: need to lock write so that fragments do not get interrupted
+func (s *signallerv2Async) WriteMessage(msg proto.Message) error {
 	if msg == nil {
 		return nil
 	}
@@ -55,8 +56,9 @@ func (s *signallerAsync) WriteMessage(msg proto.Message) error {
 		return nil
 	}
 
+	/* RAJA-TODO
 	if !s.params.Participant.IsReady() {
-		typed, ok := msg.(*livekit.SignalResponse)
+		typed, ok := msg.(*livekit.Signalv2WireMessage)
 		if !ok {
 			s.params.Logger.Warnw(
 				"unknown message type", nil,
@@ -67,10 +69,11 @@ func (s *signallerAsync) WriteMessage(msg proto.Message) error {
 			return nil
 		}
 	}
+	*/
 
 	sink := s.GetResponseSink()
 	if sink == nil {
-		if typed, ok := msg.(*livekit.SignalResponse); ok {
+		if typed, ok := msg.(*livekit.Signalv2WireMessage); ok {
 			s.params.Logger.Debugw(
 				"could not send message to participant",
 				"messageType", fmt.Sprintf("%T", typed.Message),
@@ -79,11 +82,10 @@ func (s *signallerAsync) WriteMessage(msg proto.Message) error {
 		return nil
 	}
 
-	err := sink.WriteMessage(msg)
-	if err != nil {
-		// SIGNALLING-V2-TODO: check for data channel errors to treat as non-error
+	if err := sink.WriteMessage(msg); err != nil {
+		// SIGNALLING-V2-TODO: check for data channel errors to treat as debug too
 		if utils.ErrorIsOneOf(err, psrpc.Canceled, routing.ErrChannelClosed) {
-			if typed, ok := msg.(*livekit.SignalResponse); ok {
+			if typed, ok := msg.(*livekit.Signalv2WireMessage); ok {
 				s.params.Logger.Debugw(
 					"could not send message to participant",
 					"error", err,
@@ -92,7 +94,7 @@ func (s *signallerAsync) WriteMessage(msg proto.Message) error {
 			}
 			return nil
 		} else {
-			if typed, ok := msg.(*livekit.SignalResponse); ok {
+			if typed, ok := msg.(*livekit.Signalv2WireMessage); ok {
 				s.params.Logger.Warnw(
 					"could not send message to participant", err,
 					"messageType", fmt.Sprintf("%T", typed.Message),
@@ -103,3 +105,18 @@ func (s *signallerAsync) WriteMessage(msg proto.Message) error {
 	}
 	return nil
 }
+
+func (s *signallerv2Async) WriteMessages(msgs []proto.Message) error {
+	for _, msg := range msgs {
+		if err := s.WriteMessage(msg); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+/* RAJA-TODO
+func (s *signallerv2Async) hasConnectResponse(msg *livekit.Signalv2WireMessage) bool {
+}
+*/

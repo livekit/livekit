@@ -34,3 +34,7 @@ func (u *signallerUnimplemented) CloseSignalConnection(reason types.SignallingCl
 func (u *signallerUnimplemented) WriteMessage(msg proto.Message) error {
 	return nil
 }
+
+func (u *signallerUnimplemented) WriteMessages(msgs []proto.Message) error {
+	return nil
+}

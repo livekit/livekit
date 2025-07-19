@@ -15,7 +15,6 @@
 package signalling
 
 import (
-	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -24,37 +23,14 @@ type Signallerv2HybridParams struct {
 }
 
 type signallerv2Hybrid struct {
-	signallerUnimplemented
-
 	params Signallerv2HybridParams
 
-	signalCache    *SignalCache
-	signalFragment *SignalFragment
+	*signallerv2Async
 }
 
 func NewSignallerv2Hybrid(params Signallerv2HybridParams) ParticipantSignaller {
 	return &signallerv2Hybrid{
-		params: params,
-		signalCache: NewSignalCache(SignalCacheParams{
-			Logger: params.Logger,
-		}),
-		signalFragment: NewSignalFragment(SignalFragmentParams{
-			Logger: params.Logger,
-		}),
+		params:           params,
+		signallerv2Async: NewSignallerv2Async(Signallerv2AsyncParams{Logger: params.Logger}).(*signallerv2Async),
 	}
-}
-
-func (s *signallerv2Hybrid) SetLastProcessedRemoteMessageId(lastProcessedRemoteMessageId uint32) {
-	s.signalCache.SetLastProcessedRemoteMessageId(lastProcessedRemoteMessageId)
-}
-
-func (s *signallerv2Hybrid) SendConnectResponse(connectResponse *livekit.ConnectResponse) error {
-	if connectResponse != nil {
-		s.signalCache.Add(&livekit.Signalv2ServerMessage{
-			Message: &livekit.Signalv2ServerMessage_ConnectResponse{
-				ConnectResponse: connectResponse,
-			},
-		})
-	}
-	return nil
 }
