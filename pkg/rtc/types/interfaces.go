@@ -451,6 +451,7 @@ type LocalParticipant interface {
 	HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse) error
 	IssueFullReconnect(reason ParticipantCloseReason)
 	SendRoomMovedResponse(moved *livekit.RoomMovedResponse) error
+	SendConnectResponse(connectResponse *livekit.ConnectResponse) error
 
 	// callbacks
 	OnStateChange(func(p LocalParticipant))

@@ -371,12 +371,15 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				switch m := res.Message.(type) {
 				case *livekit.SignalResponse_Offer:
 					pLogger.Debugw("sending offer", "offer", m)
+
 				case *livekit.SignalResponse_Answer:
 					pLogger.Debugw("sending answer", "answer", m)
+
 				case *livekit.SignalResponse_Join:
 					pLogger.Debugw("sending join", "join", m)
 					signalStats.ResolveRoom(m.Join.GetRoom())
 					signalStats.ResolveParticipant(m.Join.GetParticipant())
+
 				case *livekit.SignalResponse_RoomUpdate:
 					updateRoomID := livekit.RoomID(m.RoomUpdate.GetRoom().GetSid())
 					if updateRoomID != "" {
@@ -385,11 +388,14 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					}
 					pLogger.Debugw("sending room update", "roomUpdate", m)
 					signalStats.ResolveRoom(m.RoomUpdate.GetRoom())
+
 				case *livekit.SignalResponse_Update:
 					pLogger.Debugw("sending participant update", "participantUpdate", m)
+
 				case *livekit.SignalResponse_RoomMoved:
 					resetLogger()
 					signalStats.Reset()
+
 					roomName = livekit.RoomName(m.RoomMoved.GetRoom().GetName())
 					moveRoomID := livekit.RoomID(m.RoomMoved.GetRoom().GetSid())
 					if moveRoomID != "" {
@@ -398,6 +404,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					participantIdentity = livekit.ParticipantIdentity(m.RoomMoved.GetParticipant().GetIdentity())
 					pID = livekit.ParticipantID(m.RoomMoved.GetParticipant().GetSid())
 					resolveLogger(false)
+
 					signalStats.ResolveRoom(m.RoomMoved.GetRoom())
 					signalStats.ResolveParticipant(m.RoomMoved.GetParticipant())
 					pLogger.Debugw("sending room moved", "roomMoved", m)

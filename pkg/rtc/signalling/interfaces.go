@@ -29,7 +29,6 @@ type ParticipantSignaller interface {
 	CloseSignalConnection(reason types.SignallingCloseReason)
 
 	WriteMessage(msg proto.Message) error
-	WriteMessages(msgs []proto.Message) error
 }
 
 type ParticipantSignalling interface {
@@ -55,7 +54,10 @@ type ParticipantSignalling interface {
 	SignalSubscriptionResponse(subscriptionResponse *livekit.SubscriptionResponse) proto.Message
 	SignalSubscriptionPermissionUpdate(subscriptionPermissionUpdate *livekit.SubscriptionPermissionUpdate) proto.Message
 
+	AckMessageId(ackMessageId uint32)
 	SetLastProcessedRemoteMessageId(lastProcessedRemoteMessageId uint32)
+
+	PendingMessages() proto.Message
 
 	SignalConnectResponse(connectResponse *livekit.ConnectResponse) proto.Message
 }

@@ -45,8 +45,27 @@ func NewSignallingv2(params Signallingv2Params) ParticipantSignalling {
 	}
 }
 
+func (s *signallingv2) AckMessageId(ackMessageId uint32) {
+	s.signalCache.Clear(ackMessageId)
+}
+
 func (s *signallingv2) SetLastProcessedRemoteMessageId(lastProcessedRemoteMessageId uint32) {
 	s.signalCache.SetLastProcessedRemoteMessageId(lastProcessedRemoteMessageId)
+}
+
+func (s *signallingv2) PendingMessages() proto.Message {
+	serverMessages := s.signalCache.GetFromFront()
+	if len(serverMessages) == 0 {
+		return nil
+	}
+
+	return &livekit.Signalv2WireMessage{
+		Message: &livekit.Signalv2WireMessage_Envelope{
+			Envelope: &livekit.Envelope{
+				ServerMessages: serverMessages,
+			},
+		},
+	}
 }
 
 func (s *signallingv2) SignalConnectResponse(connectResponse *livekit.ConnectResponse) proto.Message {

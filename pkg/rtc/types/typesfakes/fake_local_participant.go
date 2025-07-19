@@ -890,6 +890,17 @@ type FakeLocalParticipant struct {
 	removeTrackLocalReturnsOnCall map[int]struct {
 		result1 error
 	}
+	SendConnectResponseStub        func(*livekit.ConnectResponse) error
+	sendConnectResponseMutex       sync.RWMutex
+	sendConnectResponseArgsForCall []struct {
+		arg1 *livekit.ConnectResponse
+	}
+	sendConnectResponseReturns struct {
+		result1 error
+	}
+	sendConnectResponseReturnsOnCall map[int]struct {
+		result1 error
+	}
 	SendConnectionQualityUpdateStub        func(*livekit.ConnectionQualityUpdate) error
 	sendConnectionQualityUpdateMutex       sync.RWMutex
 	sendConnectionQualityUpdateArgsForCall []struct {
@@ -6002,6 +6013,67 @@ func (fake *FakeLocalParticipant) RemoveTrackLocalReturnsOnCall(i int, result1 e
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) SendConnectResponse(arg1 *livekit.ConnectResponse) error {
+	fake.sendConnectResponseMutex.Lock()
+	ret, specificReturn := fake.sendConnectResponseReturnsOnCall[len(fake.sendConnectResponseArgsForCall)]
+	fake.sendConnectResponseArgsForCall = append(fake.sendConnectResponseArgsForCall, struct {
+		arg1 *livekit.ConnectResponse
+	}{arg1})
+	stub := fake.SendConnectResponseStub
+	fakeReturns := fake.sendConnectResponseReturns
+	fake.recordInvocation("SendConnectResponse", []interface{}{arg1})
+	fake.sendConnectResponseMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) SendConnectResponseCallCount() int {
+	fake.sendConnectResponseMutex.RLock()
+	defer fake.sendConnectResponseMutex.RUnlock()
+	return len(fake.sendConnectResponseArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) SendConnectResponseCalls(stub func(*livekit.ConnectResponse) error) {
+	fake.sendConnectResponseMutex.Lock()
+	defer fake.sendConnectResponseMutex.Unlock()
+	fake.SendConnectResponseStub = stub
+}
+
+func (fake *FakeLocalParticipant) SendConnectResponseArgsForCall(i int) *livekit.ConnectResponse {
+	fake.sendConnectResponseMutex.RLock()
+	defer fake.sendConnectResponseMutex.RUnlock()
+	argsForCall := fake.sendConnectResponseArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) SendConnectResponseReturns(result1 error) {
+	fake.sendConnectResponseMutex.Lock()
+	defer fake.sendConnectResponseMutex.Unlock()
+	fake.SendConnectResponseStub = nil
+	fake.sendConnectResponseReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) SendConnectResponseReturnsOnCall(i int, result1 error) {
+	fake.sendConnectResponseMutex.Lock()
+	defer fake.sendConnectResponseMutex.Unlock()
+	fake.SendConnectResponseStub = nil
+	if fake.sendConnectResponseReturnsOnCall == nil {
+		fake.sendConnectResponseReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.sendConnectResponseReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) SendConnectionQualityUpdate(arg1 *livekit.ConnectionQualityUpdate) error {
 	fake.sendConnectionQualityUpdateMutex.Lock()
 	ret, specificReturn := fake.sendConnectionQualityUpdateReturnsOnCall[len(fake.sendConnectionQualityUpdateArgsForCall)]
@@ -8693,6 +8765,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.removePublishedTrackMutex.RUnlock()
 	fake.removeTrackLocalMutex.RLock()
 	defer fake.removeTrackLocalMutex.RUnlock()
+	fake.sendConnectResponseMutex.RLock()
+	defer fake.sendConnectResponseMutex.RUnlock()
 	fake.sendConnectionQualityUpdateMutex.RLock()
 	defer fake.sendConnectionQualityUpdateMutex.RUnlock()
 	fake.sendDataMessageMutex.RLock()

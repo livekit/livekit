@@ -792,6 +792,11 @@ func (r *Room) Joinv2(
 		return nil, err
 	}
 	connectResponse.SubscriberSdp = ToProtoSessionDescription(offer, 0) // SIGNALLING-V2-TODO - need to proper offerId?
+	// for sync response, this does not actually send, only generates messageId and caches the message
+	if err := participant.SendConnectResponse(connectResponse); err != nil {
+		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "send_response").Add(1)
+		return nil, err
+	}
 
 	prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
 	return connectResponse, nil

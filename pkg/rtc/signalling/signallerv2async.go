@@ -37,12 +37,17 @@ type signallerv2Async struct {
 	params Signallerv2AsyncParams
 
 	*signallerAsyncBase
+
+	signalFragment *SignalFragment
 }
 
 func NewSignallerv2Async(params Signallerv2AsyncParams) ParticipantSignaller {
 	return &signallerv2Async{
 		params:             params,
 		signallerAsyncBase: newSignallerAsyncBase(signallerAsyncBaseParams{Logger: params.Logger}),
+		signalFragment: NewSignalFragment(SignalFragmentParams{
+			Logger: params.Logger,
+		}),
 	}
 }
 
@@ -80,37 +85,64 @@ func (s *signallerv2Async) WriteMessage(msg proto.Message) error {
 		return nil
 	}
 
-	if err := sink.WriteMessage(msg); err != nil {
-		// SIGNALLING-V2-TODO: check for data channel errors to treat as debug too
-		if utils.ErrorIsOneOf(err, psrpc.Canceled, routing.ErrChannelClosed) {
-			if typed, ok := msg.(*livekit.Signalv2WireMessage); ok {
-				s.params.Logger.Debugw(
-					"could not send message to participant",
-					"error", err,
-					"messageType", fmt.Sprintf("%T", typed.Message),
-				)
+	// SIGNALLING-V2-TODO: avoid double marshalling,
+	// have to marshal once to get size of serialised packet and decide if it needs fragmentation,
+	// should used the marshaled bytes if fragmentation is not needed
+	var fragments []*livekit.Fragment
+	marshaled, err := proto.Marshal(msg)
+	if err != nil {
+		if typed, ok := msg.(*livekit.Signalv2WireMessage); ok {
+			s.params.Logger.Warnw(
+				"could not send message to participant", err,
+				"messageType", fmt.Sprintf("%T", typed.Message),
+			)
+		}
+	} else {
+		fragments = s.signalFragment.Segment(marshaled)
+	}
+
+	sendMsg := func(m proto.Message) error {
+		if err := sink.WriteMessage(m); err != nil {
+			// SIGNALLING-V2-TODO: check for data channel errors to treat as debug too
+			if utils.ErrorIsOneOf(err, psrpc.Canceled, routing.ErrChannelClosed) {
+				if typed, ok := m.(*livekit.Signalv2WireMessage); ok {
+					s.params.Logger.Debugw(
+						"could not send message to participant",
+						"error", err,
+						"messageType", fmt.Sprintf("%T", typed.Message),
+					)
+				}
+				return nil
+			} else {
+				if typed, ok := m.(*livekit.Signalv2WireMessage); ok {
+					s.params.Logger.Warnw(
+						"could not send message to participant", err,
+						"messageType", fmt.Sprintf("%T", typed.Message),
+					)
+				}
+				return err
 			}
-			return nil
-		} else {
-			if typed, ok := msg.(*livekit.Signalv2WireMessage); ok {
-				s.params.Logger.Warnw(
-					"could not send message to participant", err,
-					"messageType", fmt.Sprintf("%T", typed.Message),
-				)
+		}
+
+		return nil
+	}
+
+	if len(fragments) != 0 {
+		for _, fragment := range fragments {
+			wireMessage := &livekit.Signalv2WireMessage{
+				Message: &livekit.Signalv2WireMessage_Fragment{
+					Fragment: fragment,
+				},
 			}
+			if err := sendMsg(wireMessage); err != nil {
+				return err
+			}
+		}
+	} else {
+		if err := sendMsg(msg); err != nil {
 			return err
 		}
 	}
-	return nil
-}
-
-func (s *signallerv2Async) WriteMessages(msgs []proto.Message) error {
-	for _, msg := range msgs {
-		if err := s.WriteMessage(msg); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
