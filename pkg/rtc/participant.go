@@ -223,9 +223,6 @@ type ParticipantImpl struct {
 	state        atomic.Value // livekit.ParticipantInfo_State
 	disconnected chan struct{}
 
-	resSinkMu sync.Mutex
-	resSink   routing.MessageSink
-
 	grants      atomic.Pointer[auth.ClaimGrants]
 	isPublisher atomic.Bool
 
