@@ -107,6 +107,8 @@ func (s rtcRestService) Create(ctx context.Context, req *rpc.RTCRestCreateReques
 	}, nil
 }
 
+// -------------------------------------------
+
 type rtcRestParticipantService struct {
 	*RoomManager
 }
@@ -186,4 +188,26 @@ func (r rtcRestParticipantService) DeleteSession(ctx context.Context, req *rpc.R
 	}
 
 	return &emptypb.Empty{}, nil
+}
+
+// --------------------------------
+
+type signalv2ParticipantService struct {
+	*RoomManager
+}
+
+func (s signalv2ParticipantService) RelaySignalv2Participant(ctx context.Context, req *rpc.RelaySignalv2ParticipantRequest) (*rpc.RelaySignalv2ParticipantResponse, error) {
+	room := s.RoomManager.GetRoom(ctx, livekit.RoomName(req.Room))
+	if room == nil {
+		return nil, ErrRoomNotFound
+	}
+
+	lp := room.GetParticipantByID(livekit.ParticipantID(req.ParticipantId))
+	if lp == nil {
+		return nil, ErrParticipantNotFound
+	}
+
+	// SIGNALLING-V2-TODO: send it to participant signal handler
+
+	return &rpc.RelaySignalv2ParticipantResponse{}, nil
 }

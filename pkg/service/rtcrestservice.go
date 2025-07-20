@@ -453,7 +453,7 @@ func (s *RTCRestService) handleParticipantPatch(w http.ResponseWriter, r *http.R
 	}
 	pID := livekit.ParticipantID(r.PathValue("participant_id"))
 	if pID == "" {
-		s.handleError("Patch", w, r, http.StatusUnauthorized, errors.New("participant ID cannot be empty"))
+		s.handleError("Patch", w, r, http.StatusBadRequest, errors.New("participant ID cannot be empty"))
 		return
 	}
 
