@@ -504,7 +504,7 @@ func (r *Room) Join(
 			p.GetLogger().Infow("participant active", fields...)
 		} else if state == livekit.ParticipantInfo_DISCONNECTED {
 			// remove participant from room
-			go r.removeParticipant(p.Identity(), p.ID(), p.CloseReason())
+			go r.RemoveParticipant(p.Identity(), p.ID(), p.CloseReason())
 		}
 	})
 	participant.OnSubscriberReady(func(p types.LocalParticipant) {
@@ -586,7 +586,7 @@ func (r *Room) Join(
 
 	time.AfterFunc(time.Minute, func() {
 		if !participant.Verify() {
-			r.removeParticipant(participant.Identity(), participant.ID(), types.ParticipantCloseReasonJoinTimeout)
+			r.RemoveParticipant(participant.Identity(), participant.ID(), types.ParticipantCloseReasonJoinTimeout)
 		}
 	})
 
@@ -694,7 +694,7 @@ func (r *Room) Joinv2(
 				p.GetLogger().Infow("participant active", fields...)
 			} else if state == livekit.ParticipantInfo_DISCONNECTED {
 				// remove participant from room
-				go r.removeParticipant(p.Identity(), p.ID(), p.CloseReason())
+				go r.RemoveParticipant(p.Identity(), p.ID(), p.CloseReason())
 			}
 		})
 		participant.OnSubscriberReady(func(p types.LocalParticipant) {
@@ -770,7 +770,7 @@ func (r *Room) Joinv2(
 
 		time.AfterFunc(time.Minute, func() {
 			if !participant.Verify() {
-				r.removeParticipant(participant.Identity(), participant.ID(), types.ParticipantCloseReasonJoinTimeout)
+				r.RemoveParticipant(participant.Identity(), participant.ID(), types.ParticipantCloseReasonJoinTimeout)
 			}
 		})
 
@@ -1172,7 +1172,7 @@ func (r *Room) DeleteAgentDispatch(dispatchID string) (*livekit.AgentDispatch, e
 							r.logger.Infow("Agent Worker did not disconnect after 3s")
 						}
 					}
-					r.removeParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonServiceRequestRemoveParticipant)
+					r.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonServiceRequestRemoveParticipant)
 				}
 			}
 			r.lock.Lock()
@@ -1452,6 +1452,15 @@ func (r *Room) onUpdateSubscriptions(
 	participantTracks []*livekit.ParticipantTracks,
 	subscribe bool,
 ) {
+	r.UpdateSubscriptions(participant, trackIDs, participantTracks, subscribe)
+}
+
+func (r *Room) UpdateSubscriptions(
+	participant types.LocalParticipant,
+	trackIDs []livekit.TrackID,
+	participantTracks []*livekit.ParticipantTracks,
+	subscribe bool,
+) {
 	// handle subscription changes
 	for _, trackID := range trackIDs {
 		if subscribe {
@@ -1473,10 +1482,10 @@ func (r *Room) onUpdateSubscriptions(
 }
 
 func (r *Room) onLeave(p types.LocalParticipant, reason types.ParticipantCloseReason) {
-	r.removeParticipant(p.Identity(), p.ID(), reason)
+	r.RemoveParticipant(p.Identity(), p.ID(), reason)
 }
 
-func (r *Room) removeParticipant(
+func (r *Room) RemoveParticipant(
 	identity livekit.ParticipantIdentity,
 	pID livekit.ParticipantID,
 	reason types.ParticipantCloseReason,
