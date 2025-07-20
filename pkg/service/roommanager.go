@@ -863,12 +863,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 
 // manages an RTC session for a participant, runs on the RTC node
 func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalParticipant, requestSource routing.MessageSource) {
-	pLogger := rtc.LoggerWithParticipant(
-		rtc.LoggerWithRoom(logger.GetLogger(), room.Name(), room.ID()),
-		participant.Identity(),
-		participant.ID(),
-		false,
-	)
+	pLogger := participant.GetLogger()
 	defer func() {
 		pLogger.Debugw("RTC session finishing", "connID", requestSource.ConnectionID())
 		requestSource.Close()
@@ -888,11 +883,13 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 		select {
 		case <-participant.Disconnected():
 			return
+
 		case <-tokenTicker.C:
 			// refresh token with the first API Key/secret pair
 			if err := r.refreshToken(participant); err != nil {
 				pLogger.Errorw("could not refresh token", err, "connID", requestSource.ConnectionID())
 			}
+
 		case obj := <-requestSource.ReadChan():
 			if obj == nil {
 				if room.GetParticipantRequestSource(participant.Identity()) == requestSource {
@@ -902,7 +899,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 			}
 
 			req := obj.(*livekit.SignalRequest)
-			if err := rtc.HandleParticipantSignal(room, participant, req, pLogger); err != nil {
+			if err := rtc.HandleParticipantSignal(participant, req); err != nil {
 				// more specific errors are already logged
 				// treat errors returned as fatal
 				return

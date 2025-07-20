@@ -552,6 +552,11 @@ func (r *Room) Join(
 			}, true)
 		}
 	})
+	participant.OnUpdateSubscriptions(r.onUpdateSubscriptions)
+	participant.OnUpdateSubscriptionPermission(r.onUpdateSubscriptionPermission)
+	participant.OnSyncState(r.onSyncState)
+	participant.OnSimulateScenario(r.onSimulateScenario)
+	participant.OnLeave(r.onLeave)
 
 	r.launchTargetAgents(maps.Values(r.agentDispatches), participant, livekit.JobType_JT_PARTICIPANT)
 
@@ -792,6 +797,27 @@ func (r *Room) Joinv2(
 		return nil, err
 	}
 	connectResponse.SubscriberSdp = ToProtoSessionDescription(offer, 0) // SIGNALLING-V2-TODO - need to proper offerId?
+	// for sync response, this does not actually send, only generates messageId and caches the message
+	if err := participant.SendConnectResponse(connectResponse); err != nil {
+		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "send_response").Add(1)
+		return nil, err
+	}
+
+	if wireMessage := participant.SignalPendingMessages(); wireMessage != nil {
+		if wireMessage, ok := wireMessage.(*livekit.Signalv2WireMessage); ok {
+			switch msg := wireMessage.GetMessage().(type) {
+			case *livekit.Signalv2WireMessage_Envelope:
+			got_connect_response:
+				for _, innerMsg := range msg.Envelope.GetServerMessages() {
+					switch serverMessage := innerMsg.GetMessage().(type) {
+					case *livekit.Signalv2ServerMessage_ConnectResponse:
+						connectResponse = serverMessage.ConnectResponse
+						break got_connect_response
+					}
+				}
+			}
+		}
+	}
 
 	prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
 	return connectResponse, nil
@@ -878,129 +904,7 @@ func (r *Room) ResumeParticipant(
 	return nil
 }
 
-func (r *Room) RemoveParticipant(identity livekit.ParticipantIdentity, pID livekit.ParticipantID, reason types.ParticipantCloseReason) {
-	r.lock.Lock()
-	p, ok := r.participants[identity]
-	if !ok {
-		r.lock.Unlock()
-		return
-	}
-
-	if pID != "" && p.ID() != pID {
-		// participant session has been replaced
-		r.lock.Unlock()
-		return
-	}
-
-	agentJob := r.agentParticpants[identity]
-
-	delete(r.participants, identity)
-	delete(r.participantOpts, identity)
-	delete(r.participantRequestSources, identity)
-	delete(r.hasPublished, identity)
-	delete(r.agentParticpants, identity)
-	if !p.Hidden() {
-		r.protoRoom.NumParticipants--
-	}
-
-	immediateChange := false
-	if p.IsRecorder() {
-		activeRecording := false
-		for _, op := range r.participants {
-			if op.IsRecorder() {
-				activeRecording = true
-				break
-			}
-		}
-
-		if r.protoRoom.ActiveRecording != activeRecording {
-			r.protoRoom.ActiveRecording = activeRecording
-			immediateChange = true
-		}
-	}
-	r.lock.Unlock()
-	r.protoProxy.MarkDirty(immediateChange)
-
-	if !p.HasConnected() {
-		fields := append(
-			connectionDetailsFields(p.GetICEConnectionInfo()),
-			"reason", reason.String(),
-			"clientInfo", logger.Proto(sutils.ClientInfoWithoutAddress(p.GetClientInfo())),
-		)
-		p.GetLogger().Infow("removing participant without connection", fields...)
-	}
-
-	// send broadcast only if it's not already closed
-	sendUpdates := !p.IsDisconnected()
-
-	// remove all published tracks
-	for _, t := range p.GetPublishedTracks() {
-		p.RemovePublishedTrack(t, false)
-		r.trackManager.RemoveTrack(t)
-	}
-
-	if agentJob != nil {
-		agentJob.participantLeft()
-
-		go func() {
-			_, err := r.agentClient.TerminateJob(context.Background(), agentJob.Id, rpc.JobTerminateReason_AGENT_LEFT_ROOM)
-			if err != nil {
-				r.logger.Infow("failed sending TerminateJob RPC", "error", err, "jobID", agentJob.Id, "participant", identity)
-			}
-		}()
-	}
-
-	p.OnTrackUpdated(nil)
-	p.OnTrackPublished(nil)
-	p.OnTrackUnpublished(nil)
-	p.OnStateChange(nil)
-	p.OnSubscriberReady(nil)
-	p.OnParticipantUpdate(nil)
-	p.OnDataPacket(nil)
-	p.OnDataMessage(nil)
-	p.OnMetrics(nil)
-	p.OnSubscribeStatusChanged(nil)
-
-	// close participant as well
-	_ = p.Close(true, reason, false)
-
-	r.leftAt.Store(time.Now().Unix())
-
-	if sendUpdates {
-		if r.onParticipantChanged != nil {
-			r.onParticipantChanged(p)
-		}
-		r.broadcastParticipantState(p, broadcastOptions{skipSource: true})
-	}
-}
-
-func (r *Room) UpdateSubscriptions(
-	participant types.LocalParticipant,
-	trackIDs []livekit.TrackID,
-	participantTracks []*livekit.ParticipantTracks,
-	subscribe bool,
-) {
-	// handle subscription changes
-	for _, trackID := range trackIDs {
-		if subscribe {
-			participant.SubscribeToTrack(trackID, false)
-		} else {
-			participant.UnsubscribeFromTrack(trackID)
-		}
-	}
-
-	for _, pt := range participantTracks {
-		for _, trackID := range livekit.StringsAsIDs[livekit.TrackID](pt.TrackSids) {
-			if subscribe {
-				participant.SubscribeToTrack(trackID, false)
-			} else {
-				participant.UnsubscribeFromTrack(trackID)
-			}
-		}
-	}
-}
-
-func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.SyncState) error {
+func (r *Room) onSyncState(participant types.LocalParticipant, state *livekit.SyncState) error {
 	pLogger := participant.GetLogger()
 	pLogger.Infow("setting sync state", "state", logger.Proto(state))
 
@@ -1046,8 +950,7 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 		participant.UpdateSubscribedTrackSettings(livekit.TrackID(trackSid), &livekit.UpdateTrackSettings{Disabled: true})
 	}
 
-	r.UpdateSubscriptions(
-		participant,
+	participant.HandleUpdateSubscriptions(
 		livekit.StringsAsIDs[livekit.TrackID](state.Subscription.TrackSids),
 		state.Subscription.ParticipantTracks,
 		state.Subscription.Subscribe,
@@ -1055,7 +958,7 @@ func (r *Room) SyncState(participant types.LocalParticipant, state *livekit.Sync
 	return nil
 }
 
-func (r *Room) UpdateSubscriptionPermission(participant types.LocalParticipant, subscriptionPermission *livekit.SubscriptionPermission) error {
+func (r *Room) onUpdateSubscriptionPermission(participant types.LocalParticipant, subscriptionPermission *livekit.SubscriptionPermission) error {
 	if err := participant.UpdateSubscriptionPermission(subscriptionPermission, utils.TimedVersion(0), r.GetParticipantByID); err != nil {
 		return err
 	}
@@ -1285,7 +1188,7 @@ func (r *Room) OnRoomUpdated(f func()) {
 	r.onRoomUpdated = f
 }
 
-func (r *Room) SimulateScenario(participant types.LocalParticipant, simulateScenario *livekit.SimulateScenario) error {
+func (r *Room) onSimulateScenario(participant types.LocalParticipant, simulateScenario *livekit.SimulateScenario) error {
 	switch scenario := simulateScenario.Scenario.(type) {
 	case *livekit.SimulateScenario_SpeakerUpdate:
 		r.logger.Infow("simulating speaker update", "participant", participant.Identity(), "duration", scenario.SpeakerUpdate)
@@ -1541,6 +1444,150 @@ func (r *Room) onDataMessage(source types.LocalParticipant, data []byte) {
 
 func (r *Room) onMetrics(source types.Participant, dp *livekit.DataPacket) {
 	BroadcastMetricsForRoom(r, source, dp, r.logger)
+}
+
+func (r *Room) onUpdateSubscriptions(
+	participant types.LocalParticipant,
+	trackIDs []livekit.TrackID,
+	participantTracks []*livekit.ParticipantTracks,
+	subscribe bool,
+) {
+	r.UpdateSubscriptions(participant, trackIDs, participantTracks, subscribe)
+}
+
+func (r *Room) UpdateSubscriptions(
+	participant types.LocalParticipant,
+	trackIDs []livekit.TrackID,
+	participantTracks []*livekit.ParticipantTracks,
+	subscribe bool,
+) {
+	// handle subscription changes
+	for _, trackID := range trackIDs {
+		if subscribe {
+			participant.SubscribeToTrack(trackID, false)
+		} else {
+			participant.UnsubscribeFromTrack(trackID)
+		}
+	}
+
+	for _, pt := range participantTracks {
+		for _, trackID := range livekit.StringsAsIDs[livekit.TrackID](pt.TrackSids) {
+			if subscribe {
+				participant.SubscribeToTrack(trackID, false)
+			} else {
+				participant.UnsubscribeFromTrack(trackID)
+			}
+		}
+	}
+}
+
+func (r *Room) onLeave(p types.LocalParticipant, reason types.ParticipantCloseReason) {
+	r.RemoveParticipant(p.Identity(), p.ID(), reason)
+}
+
+func (r *Room) RemoveParticipant(
+	identity livekit.ParticipantIdentity,
+	pID livekit.ParticipantID,
+	reason types.ParticipantCloseReason,
+) {
+	r.lock.Lock()
+	p, ok := r.participants[identity]
+	if !ok {
+		r.lock.Unlock()
+		return
+	}
+
+	if pID != "" && p.ID() != pID {
+		// participant session has been replaced
+		r.lock.Unlock()
+		return
+	}
+
+	agentJob := r.agentParticpants[identity]
+
+	delete(r.participants, identity)
+	delete(r.participantOpts, identity)
+	delete(r.participantRequestSources, identity)
+	delete(r.hasPublished, identity)
+	delete(r.agentParticpants, identity)
+	if !p.Hidden() {
+		r.protoRoom.NumParticipants--
+	}
+
+	immediateChange := false
+	if p.IsRecorder() {
+		activeRecording := false
+		for _, op := range r.participants {
+			if op.IsRecorder() {
+				activeRecording = true
+				break
+			}
+		}
+
+		if r.protoRoom.ActiveRecording != activeRecording {
+			r.protoRoom.ActiveRecording = activeRecording
+			immediateChange = true
+		}
+	}
+	r.lock.Unlock()
+	r.protoProxy.MarkDirty(immediateChange)
+
+	if !p.HasConnected() {
+		fields := append(
+			connectionDetailsFields(p.GetICEConnectionInfo()),
+			"reason", reason.String(),
+			"clientInfo", logger.Proto(sutils.ClientInfoWithoutAddress(p.GetClientInfo())),
+		)
+		p.GetLogger().Infow("removing participant without connection", fields...)
+	}
+
+	// send broadcast only if it's not already closed
+	sendUpdates := !p.IsDisconnected()
+
+	// remove all published tracks
+	for _, t := range p.GetPublishedTracks() {
+		p.RemovePublishedTrack(t, false)
+		r.trackManager.RemoveTrack(t)
+	}
+
+	if agentJob != nil {
+		agentJob.participantLeft()
+
+		go func() {
+			_, err := r.agentClient.TerminateJob(context.Background(), agentJob.Id, rpc.JobTerminateReason_AGENT_LEFT_ROOM)
+			if err != nil {
+				r.logger.Infow("failed sending TerminateJob RPC", "error", err, "jobID", agentJob.Id, "participant", identity)
+			}
+		}()
+	}
+
+	p.OnTrackUpdated(nil)
+	p.OnTrackPublished(nil)
+	p.OnTrackUnpublished(nil)
+	p.OnStateChange(nil)
+	p.OnSubscriberReady(nil)
+	p.OnParticipantUpdate(nil)
+	p.OnDataPacket(nil)
+	p.OnDataMessage(nil)
+	p.OnMetrics(nil)
+	p.OnSubscribeStatusChanged(nil)
+	p.OnUpdateSubscriptions(nil)
+	p.OnUpdateSubscriptionPermission(nil)
+	p.OnSyncState(nil)
+	p.OnSimulateScenario(nil)
+	p.OnLeave(nil)
+
+	// close participant as well
+	_ = p.Close(true, reason, false)
+
+	r.leftAt.Store(time.Now().Unix())
+
+	if sendUpdates {
+		if r.onParticipantChanged != nil {
+			r.onParticipantChanged(p)
+		}
+		r.broadcastParticipantState(p, broadcastOptions{skipSource: true})
+	}
 }
 
 func (r *Room) subscribeToExistingTracks(p types.LocalParticipant, isSync bool) {
