@@ -38,7 +38,7 @@ var (
 
 const (
 	cRTCv2Path              = "/rtc/v2"
-	cRTCv2ParticipantIDPath = "/whip/v1/{participant_id}"
+	cRTCv2ParticipantIDPath = "/rtc/v2/{participant_id}"
 )
 
 type RTCv2Service struct {

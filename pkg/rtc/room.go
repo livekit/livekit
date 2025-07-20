@@ -39,6 +39,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc/signalling"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -796,7 +797,7 @@ func (r *Room) Joinv2(
 		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "get_subscriber_offer").Add(1)
 		return nil, err
 	}
-	connectResponse.SubscriberSdp = ToProtoSessionDescription(offer, 0) // SIGNALLING-V2-TODO - need to proper offerId?
+	connectResponse.SubscriberSdp = signalling.ToProtoSessionDescription(offer, 0) // SIGNALLING-V2-TODO - need to proper offerId?
 	// for sync response, this does not actually send, only generates messageId and caches the message
 	if err := participant.SendConnectResponse(connectResponse); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "send_response").Add(1)

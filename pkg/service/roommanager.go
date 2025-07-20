@@ -924,8 +924,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 				return
 			}
 
-			req := obj.(*livekit.SignalRequest)
-			if err := rtc.HandleParticipantSignal(participant, req); err != nil {
+			if err := participant.HandleSignalRequest(obj); err != nil {
 				// more specific errors are already logged
 				// treat errors returned as fatal
 				return

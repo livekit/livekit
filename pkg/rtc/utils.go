@@ -15,7 +15,6 @@
 package rtc
 
 import (
-	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -80,6 +79,7 @@ func UnpackDataTrackLabel(packed string) (participantID livekit.ParticipantID, t
 	return
 }
 
+/* RAJA-REMOVE
 func ToProtoSessionDescription(sd webrtc.SessionDescription, id uint32) *livekit.SessionDescription {
 	return &livekit.SessionDescription{
 		Type: sd.Type.String(),
@@ -123,6 +123,7 @@ func FromProtoTrickle(trickle *livekit.TrickleRequest) (webrtc.ICECandidateInit,
 	}
 	return ci, nil
 }
+*/
 
 func ToProtoTrackKind(kind webrtc.RTPCodecType) livekit.TrackType {
 	switch kind {

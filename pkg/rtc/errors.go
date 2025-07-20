@@ -32,9 +32,11 @@ var (
 	ErrEmptyParticipantID       = errors.New("participant ID cannot be empty")
 	ErrMissingGrants            = errors.New("VideoGrant is missing")
 	ErrInternalError            = errors.New("internal error")
+	/* RAJA-REMOVE
 	ErrNameExceedsLimits        = errors.New("name length exceeds limits")
 	ErrMetadataExceedsLimits    = errors.New("metadata size exceeds limits")
 	ErrAttributesExceedsLimits  = errors.New("attributes size exceeds limits")
+	*/
 
 	// Track subscription related
 	ErrNoTrackPermission         = errors.New("participant is not allowed to subscribe to this track")
