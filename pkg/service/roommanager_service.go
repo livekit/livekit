@@ -207,7 +207,22 @@ func (s signalv2ParticipantService) RelaySignalv2Participant(ctx context.Context
 		return nil, ErrParticipantNotFound
 	}
 
-	// SIGNALLING-V2-TODO: send it to participant signal handler
+	err := lp.HandleSignalRequest(req.WireMessage)
+	if err != nil {
+		return nil, err
+	}
 
-	return &rpc.RelaySignalv2ParticipantResponse{}, nil
+	var wireMessage *livekit.Signalv2WireMessage
+	pending := lp.SignalPendingMessages()
+	if pending != nil {
+		var ok bool
+		wireMessage, ok = pending.(*livekit.Signalv2WireMessage)
+		if !ok {
+			return nil, ErrInvalidMessageType
+		}
+	}
+
+	return &rpc.RelaySignalv2ParticipantResponse{
+		WireMessage: wireMessage,
+	}, nil
 }

@@ -45,4 +45,5 @@ var (
 	ErrSIPTrunkNotFound                 = psrpc.NewErrorf(psrpc.NotFound, "requested sip trunk does not exist")
 	ErrSIPDispatchRuleNotFound          = psrpc.NewErrorf(psrpc.NotFound, "requested sip dispatch rule does not exist")
 	ErrSIPParticipantNotFound           = psrpc.NewErrorf(psrpc.NotFound, "requested sip participant does not exist")
+	ErrInvalidMessageType               = psrpc.NewErrorf(psrpc.Internal, "invalid message type")
 )
