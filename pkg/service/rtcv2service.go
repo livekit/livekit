@@ -48,8 +48,8 @@ type RTCv2Service struct {
 	roomAllocator RoomAllocator
 	router        routing.MessageRouter
 
-	topicFormatter      rpc.TopicFormatter
-	participantClientv2 rpc.TypedSignalv2ParticipantClient
+	topicFormatter            rpc.TopicFormatter
+	signalv2ParticipantClient rpc.TypedSignalv2ParticipantClient
 }
 
 func NewRTCv2Service(
@@ -57,14 +57,14 @@ func NewRTCv2Service(
 	roomAllocator RoomAllocator,
 	router routing.MessageRouter,
 	topicFormatter rpc.TopicFormatter,
-	participantClientv2 rpc.TypedSignalv2ParticipantClient,
+	signalv2ParticipantClient rpc.TypedSignalv2ParticipantClient,
 ) *RTCv2Service {
 	return &RTCv2Service{
-		limits:              config.Limit,
-		router:              router,
-		roomAllocator:       roomAllocator,
-		topicFormatter:      topicFormatter,
-		participantClientv2: participantClientv2,
+		limits:                    config.Limit,
+		router:                    router,
+		roomAllocator:             roomAllocator,
+		topicFormatter:            topicFormatter,
+		signalv2ParticipantClient: signalv2ParticipantClient,
 	}
 }
 
@@ -256,7 +256,7 @@ func (s *RTCv2Service) handleParticipantPatch(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	res, err := s.participantClientv2.RelaySignalv2Participant(
+	res, err := s.signalv2ParticipantClient.RelaySignalv2Participant(
 		r.Context(),
 		s.topicFormatter.ParticipantTopic(r.Context(), roomName, participantIdentity),
 		&rpc.RelaySignalv2ParticipantRequest{
