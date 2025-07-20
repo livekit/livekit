@@ -41,6 +41,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/rtc/signalling"
 	"github.com/livekit/livekit-server/pkg/rtc/transport/transportfakes"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -326,7 +327,7 @@ func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 		)
 		return c.SendRequest(&livekit.SignalRequest{
 			Message: &livekit.SignalRequest_Answer{
-				Answer: rtc.ToProtoSessionDescription(answer, answerId),
+				Answer: signalling.ToProtoSessionDescription(answer, answerId),
 			},
 		})
 	})
@@ -395,15 +396,15 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 		// logger.Debugw("received server answer",
 		//	"participant", c.localParticipant.Identity,
 		//	"answer", msg.Answer.Sdp)
-		c.handleAnswer(rtc.FromProtoSessionDescription(msg.Answer))
+		c.handleAnswer(signalling.FromProtoSessionDescription(msg.Answer))
 	case *livekit.SignalResponse_Offer:
 		logger.Infow("received server offer",
 			"participant", c.localParticipant.Identity,
 		)
-		desc, offerId := rtc.FromProtoSessionDescription(msg.Offer)
+		desc, offerId := signalling.FromProtoSessionDescription(msg.Offer)
 		c.handleOffer(desc, offerId)
 	case *livekit.SignalResponse_Trickle:
-		candidateInit, err := rtc.FromProtoTrickle(msg.Trickle)
+		candidateInit, err := signalling.FromProtoTrickle(msg.Trickle)
 		if err != nil {
 			return err
 		}
@@ -598,7 +599,7 @@ func (c *RTCClient) SendIceCandidate(ic *webrtc.ICECandidate, target livekit.Sig
 
 	return c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Trickle{
-			Trickle: rtc.ToProtoTrickle(prevIC.ToJSON(), target, ic == nil),
+			Trickle: signalling.ToProtoTrickle(prevIC.ToJSON(), target, ic == nil),
 		},
 	})
 }
@@ -846,7 +847,7 @@ func (c *RTCClient) onOffer(offer webrtc.SessionDescription, offerId uint32) err
 	}
 	return c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Offer{
-			Offer: rtc.ToProtoSessionDescription(offer, offerId),
+			Offer: signalling.ToProtoSessionDescription(offer, offerId),
 		},
 	})
 }

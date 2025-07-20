@@ -120,7 +120,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	sipService := NewSIPService(sipConfig, nodeID, messageBus, sipClient, sipStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, router, telemetryService)
-	rtCv2Service := NewRTCv2Service(conf, roomAllocator, router)
+	signalv2ParticipantClient, err := rpc.NewTypedSignalv2ParticipantClient(clientParams)
+	if err != nil {
+		return nil, err
+	}
+	rtCv2Service := NewRTCv2Service(conf, roomAllocator, router, topicFormatter, signalv2ParticipantClient)
 	rtcRestParticipantClient, err := rpc.NewTypedRTCRestParticipantClient(clientParams)
 	if err != nil {
 		return nil, err

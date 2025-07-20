@@ -138,6 +138,7 @@ func (s *SignalFragment) Reassemble(fragment *livekit.Fragment) []byte {
 	for _, fr := range re.fragments {
 		data = append(data, fr.Data...)
 	}
+	delete(s.reassemblies, fragment.PacketId) // fully re-assembled, can be deleted from cache
 	return data
 }
 

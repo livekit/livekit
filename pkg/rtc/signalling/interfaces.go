@@ -23,6 +23,10 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+type ParticipantSignalHandler interface {
+	HandleRequest(msg proto.Message) error
+}
+
 type ParticipantSignaller interface {
 	SetResponseSink(sink routing.MessageSink)
 	GetResponseSink() routing.MessageSink

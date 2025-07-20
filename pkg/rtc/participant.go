@@ -223,9 +223,6 @@ type ParticipantImpl struct {
 	state        atomic.Value // livekit.ParticipantInfo_State
 	disconnected chan struct{}
 
-	resSinkMu sync.Mutex
-	resSink   routing.MessageSink
-
 	grants      atomic.Pointer[auth.ClaimGrants]
 	isPublisher atomic.Bool
 
@@ -315,8 +312,9 @@ type ParticipantImpl struct {
 	metricsCollector  *metric.MetricsCollector
 	metricsReporter   *metric.MetricsReporter
 
-	signalling signalling.ParticipantSignalling
-	signaller  signalling.ParticipantSignaller
+	signalhandler signalling.ParticipantSignalHandler
+	signalling    signalling.ParticipantSignalling
+	signaller     signalling.ParticipantSignaller
 
 	// loggers for publisher and subscriber
 	pubLogger logger.Logger
@@ -354,6 +352,10 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			joiningMessageLastWrittenSeqs: make(map[livekit.ParticipantID]uint32),
 		},
 	}
+	p.signalhandler = signalling.NewSignalHandler(signalling.SignalHandlerParams{
+		Logger:      params.Logger,
+		Participant: p,
+	})
 	p.signalling = signalling.NewSignalling(signalling.SignallingParams{
 		Logger: params.Logger,
 	})
@@ -554,15 +556,15 @@ func (p *ParticipantImpl) CheckMetadataLimits(
 	attributes map[string]string,
 ) error {
 	if !p.params.LimitConfig.CheckParticipantNameLength(name) {
-		return ErrNameExceedsLimits
+		return signalling.ErrNameExceedsLimits
 	}
 
 	if !p.params.LimitConfig.CheckMetadataSize(metadata) {
-		return ErrMetadataExceedsLimits
+		return signalling.ErrMetadataExceedsLimits
 	}
 
 	if !p.params.LimitConfig.CheckAttributesSize(attributes) {
-		return ErrAttributesExceedsLimits
+		return signalling.ErrAttributesExceedsLimits
 	}
 
 	return nil
@@ -3741,4 +3743,8 @@ func (p *ParticipantImpl) HandleLeaveRequest(reason types.ParticipantCloseReason
 	if onLeave := p.getOnLeave(); onLeave != nil {
 		onLeave(p, reason)
 	}
+}
+
+func (p *ParticipantImpl) HandleSignalRequest(msg proto.Message) error {
+	return p.signalhandler.HandleRequest(msg)
 }

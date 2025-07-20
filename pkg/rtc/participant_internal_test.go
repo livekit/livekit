@@ -39,6 +39,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
+	"github.com/livekit/livekit-server/pkg/rtc/signalling"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	"github.com/livekit/livekit-server/pkg/testutils"
@@ -376,7 +377,7 @@ func TestDisableCodecs(t *testing.T) {
 	sink.WriteMessageCalls(func(msg proto.Message) error {
 		if res, ok := msg.(*livekit.SignalResponse); ok {
 			if res.GetAnswer() != nil {
-				answer, answerId = FromProtoSessionDescription(res.GetAnswer())
+				answer, answerId = signalling.FromProtoSessionDescription(res.GetAnswer())
 				answerReceived.Store(true)
 				answerIdReceived.Store(answerId)
 			}
@@ -525,7 +526,7 @@ func TestPreferVideoCodecForPublisher(t *testing.T) {
 		sink.WriteMessageCalls(func(msg proto.Message) error {
 			if res, ok := msg.(*livekit.SignalResponse); ok {
 				if res.GetAnswer() != nil {
-					answer, answerId = FromProtoSessionDescription(res.GetAnswer())
+					answer, answerId = signalling.FromProtoSessionDescription(res.GetAnswer())
 					pc.SetRemoteDescription(answer)
 					answerReceived.Store(true)
 					answerIdReceived.Store(answerId)
@@ -613,7 +614,7 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 			sink.WriteMessageCalls(func(msg proto.Message) error {
 				if res, ok := msg.(*livekit.SignalResponse); ok {
 					if res.GetAnswer() != nil {
-						answer, answerId = FromProtoSessionDescription(res.GetAnswer())
+						answer, answerId = signalling.FromProtoSessionDescription(res.GetAnswer())
 						pc.SetRemoteDescription(answer)
 						answerReceived.Store(true)
 						answerIdReceived.Store(answerId)

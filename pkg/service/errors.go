@@ -22,6 +22,7 @@ var (
 	ErrEgressNotFound                   = psrpc.NewErrorf(psrpc.NotFound, "egress does not exist")
 	ErrEgressNotConnected               = psrpc.NewErrorf(psrpc.Internal, "egress not connected (redis required)")
 	ErrIdentityEmpty                    = psrpc.NewErrorf(psrpc.InvalidArgument, "identity cannot be empty")
+	ErrParticipantSidEmpty              = psrpc.NewErrorf(psrpc.InvalidArgument, "participant sid cannot be empty")
 	ErrIngressNotConnected              = psrpc.NewErrorf(psrpc.Internal, "ingress not connected (redis required)")
 	ErrIngressNotFound                  = psrpc.NewErrorf(psrpc.NotFound, "ingress does not exist")
 	ErrIngressNonReusable               = psrpc.NewErrorf(psrpc.InvalidArgument, "ingress is not reusable and cannot be modified")
@@ -44,4 +45,5 @@ var (
 	ErrSIPTrunkNotFound                 = psrpc.NewErrorf(psrpc.NotFound, "requested sip trunk does not exist")
 	ErrSIPDispatchRuleNotFound          = psrpc.NewErrorf(psrpc.NotFound, "requested sip dispatch rule does not exist")
 	ErrSIPParticipantNotFound           = psrpc.NewErrorf(psrpc.NotFound, "requested sip participant does not exist")
+	ErrInvalidMessageType               = psrpc.NewErrorf(psrpc.Internal, "invalid message type")
 )

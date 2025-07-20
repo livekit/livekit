@@ -86,10 +86,11 @@ type RoomManager struct {
 
 	rooms map[livekit.RoomName]*rtc.Room
 
-	roomServers               utils.MultitonService[rpc.RoomTopic]
-	agentDispatchServers      utils.MultitonService[rpc.RoomTopic]
-	participantServers        utils.MultitonService[rpc.ParticipantTopic]
-	rtcRestParticipantServers utils.MultitonService[rpc.ParticipantTopic]
+	roomServers                  utils.MultitonService[rpc.RoomTopic]
+	agentDispatchServers         utils.MultitonService[rpc.RoomTopic]
+	participantServers           utils.MultitonService[rpc.ParticipantTopic]
+	httpSignalParticipantServers utils.MultitonService[rpc.ParticipantTopic]
+	rtcRestParticipantServers    utils.MultitonService[rpc.ParticipantTopic]
 
 	iceConfigCache *sutils.IceConfigCache[iceConfigCacheKey]
 
@@ -238,6 +239,7 @@ func (r *RoomManager) Stop() {
 	r.roomServers.Kill()
 	r.agentDispatchServers.Kill()
 	r.participantServers.Kill()
+	r.httpSignalParticipantServers.Kill()
 	r.rtcRestParticipantServers.Kill()
 
 	if r.rtcConfig != nil {
@@ -708,6 +710,30 @@ func (r *RoomManager) HandleConnect(
 		return nil, err
 	}
 
+	var participantServerClosers utils.Closers
+	participantTopic := rpc.FormatParticipantTopic(room.Name(), participant.Identity())
+	participantServer := must.Get(rpc.NewTypedParticipantServer(r, r.bus))
+	participantServerClosers = append(participantServerClosers, utils.CloseFunc(r.participantServers.Replace(participantTopic, participantServer)))
+	if err := participantServer.RegisterAllParticipantTopics(participantTopic); err != nil {
+		participantServerClosers.Close()
+		pLogger.Errorw("could not join register participant topic", err)
+		_ = participant.Close(true, types.ParticipantCloseReasonMessageBusFailed, false)
+		return nil, err
+	}
+
+	// SIGNALLING-V2-TODO: register HTTP
+	httpSignalParticipantServer := must.Get(rpc.NewTypedSignalv2ParticipantServer(signalv2ParticipantService{r}, r.bus))
+	participantServerClosers = append(
+		participantServerClosers,
+		utils.CloseFunc(r.httpSignalParticipantServers.Replace(participantTopic, httpSignalParticipantServer)),
+	)
+	if err := httpSignalParticipantServer.RegisterAllCommonTopics(participantTopic); err != nil {
+		participantServerClosers.Close()
+		pLogger.Errorw("could not join register participant topic for http signalling", err)
+		_ = participant.Close(true, types.ParticipantCloseReasonMessageBusFailed, false)
+		return nil, err
+	}
+
 	if err = r.roomStore.StoreParticipant(ctx, room.Name(), participant.ToProto()); err != nil {
 		pLogger.Errorw("could not store participant", err)
 	}
@@ -898,8 +924,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 				return
 			}
 
-			req := obj.(*livekit.SignalRequest)
-			if err := rtc.HandleParticipantSignal(participant, req); err != nil {
+			if err := participant.HandleSignalRequest(obj); err != nil {
 				// more specific errors are already logged
 				// treat errors returned as fatal
 				return

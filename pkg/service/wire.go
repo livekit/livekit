@@ -95,6 +95,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		rpc.NewTopicFormatter,
 		rpc.NewTypedRoomClient,
 		rpc.NewTypedParticipantClient,
+		rpc.NewTypedSignalv2ParticipantClient,
 		rpc.NewTypedRTCRestParticipantClient,
 		rpc.NewTypedAgentDispatchInternalClient,
 		NewLocalRoomManager,

@@ -23,9 +23,11 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/psrpc"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -35,7 +37,8 @@ var (
 )
 
 const (
-	cRTCv2Path = "/rtc/v2"
+	cRTCv2Path              = "/rtc/v2"
+	cRTCv2ParticipantIDPath = "/rtc/v2/{participant_id}"
 )
 
 type RTCv2Service struct {
@@ -44,22 +47,30 @@ type RTCv2Service struct {
 	limits        config.LimitConfig
 	roomAllocator RoomAllocator
 	router        routing.MessageRouter
+
+	topicFormatter            rpc.TopicFormatter
+	signalv2ParticipantClient rpc.TypedSignalv2ParticipantClient
 }
 
 func NewRTCv2Service(
 	config *config.Config,
 	roomAllocator RoomAllocator,
 	router routing.MessageRouter,
+	topicFormatter rpc.TopicFormatter,
+	signalv2ParticipantClient rpc.TypedSignalv2ParticipantClient,
 ) *RTCv2Service {
 	return &RTCv2Service{
-		limits:        config.Limit,
-		router:        router,
-		roomAllocator: roomAllocator,
+		limits:                    config.Limit,
+		router:                    router,
+		roomAllocator:             roomAllocator,
+		topicFormatter:            topicFormatter,
+		signalv2ParticipantClient: signalv2ParticipantClient,
 	}
 }
 
 func (s *RTCv2Service) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+cRTCv2Path, s.handlePost)
+	mux.HandleFunc("PATCH "+cRTCv2ParticipantIDPath, s.handleParticipantPatch)
 }
 
 func (s *RTCv2Service) validateInternal(
@@ -194,6 +205,101 @@ func (s *RTCv2Service) handlePost(w http.ResponseWriter, r *http.Request) {
 		HandleErrorJson(w, r, http.StatusBadRequest, errFragmentsInHTTP)
 		return
 	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *RTCv2Service) handleParticipantPatch(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Content-type") != "application/x-protobuf" {
+		HandleErrorJson(w, r, http.StatusBadRequest, fmt.Errorf("unsupported content-type: %s", r.Header.Get("Content-type")))
+		return
+	}
+
+	claims := GetGrants(r.Context())
+	if claims == nil || claims.Video == nil {
+		HandleErrorJson(w, r, http.StatusUnauthorized, rtc.ErrPermissionDenied)
+		return
+	}
+
+	roomName, err := EnsureJoinPermission(r.Context())
+	if err != nil {
+		HandleErrorJson(w, r, http.StatusUnauthorized, err)
+		return
+	}
+	if roomName == "" {
+		HandleErrorJson(w, r, http.StatusUnauthorized, ErrNoRoomName)
+		return
+	}
+
+	participantIdentity := livekit.ParticipantIdentity(claims.Identity)
+	if participantIdentity == "" {
+		HandleErrorJson(w, r, http.StatusUnauthorized, ErrIdentityEmpty)
+		return
+	}
+
+	pID := livekit.ParticipantID(r.PathValue("participant_id"))
+	if pID == "" {
+		HandleErrorJson(w, r, http.StatusBadRequest, ErrParticipantSidEmpty)
+		return
+	}
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		HandleErrorJson(w, r, http.StatusBadRequest, fmt.Errorf("could not read request body: %w", err))
+		return
+	}
+
+	wireMessage := &livekit.Signalv2WireMessage{}
+	err = proto.Unmarshal(body, wireMessage)
+	if err != nil {
+		HandleErrorJson(w, r, http.StatusBadRequest, fmt.Errorf("could not unmarshal request: %w", err))
+		return
+	}
+
+	res, err := s.signalv2ParticipantClient.RelaySignalv2Participant(
+		r.Context(),
+		s.topicFormatter.ParticipantTopic(r.Context(), roomName, participantIdentity),
+		&rpc.RelaySignalv2ParticipantRequest{
+			Room:                string(roomName),
+			ParticipantIdentity: string(participantIdentity),
+			ParticipantId:       string(pID),
+			WireMessage:         wireMessage,
+		},
+	)
+	if err != nil {
+		var pe psrpc.Error
+		if errors.As(err, &pe) {
+			switch pe.Code() {
+			case psrpc.NotFound:
+				HandleErrorJson(w, r, http.StatusNotFound, errors.New(pe.Error()))
+
+			case psrpc.InvalidArgument:
+				HandleErrorJson(w, r, http.StatusBadRequest, errors.New(pe.Error()))
+			default:
+				HandleErrorJson(w, r, http.StatusInternalServerError, errors.New(pe.Error()))
+			}
+		} else {
+			HandleErrorJson(w, r, http.StatusInternalServerError, nil)
+		}
+		return
+	}
+
+	logger.Debugw(
+		"participant response",
+		"room", roomName,
+		"participant", participantIdentity,
+		"pID", pID,
+		"participantResponse", logger.Proto(res),
+	)
+
+	marshalled, err := proto.Marshal(res.WireMessage)
+	if err != nil {
+		HandleErrorJson(w, r, http.StatusInternalServerError, err)
+		return
+	}
+
+	w.Header().Add("Content-type", "application/x-protobuf")
+	w.Write(marshalled)
 
 	w.WriteHeader(http.StatusOK)
 }
