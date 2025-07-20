@@ -79,52 +79,6 @@ func UnpackDataTrackLabel(packed string) (participantID livekit.ParticipantID, t
 	return
 }
 
-/* RAJA-REMOVE
-func ToProtoSessionDescription(sd webrtc.SessionDescription, id uint32) *livekit.SessionDescription {
-	return &livekit.SessionDescription{
-		Type: sd.Type.String(),
-		Sdp:  sd.SDP,
-		Id:   id,
-	}
-}
-
-func FromProtoSessionDescription(sd *livekit.SessionDescription) (webrtc.SessionDescription, uint32) {
-	var sdType webrtc.SDPType
-	switch sd.Type {
-	case webrtc.SDPTypeOffer.String():
-		sdType = webrtc.SDPTypeOffer
-	case webrtc.SDPTypeAnswer.String():
-		sdType = webrtc.SDPTypeAnswer
-	case webrtc.SDPTypePranswer.String():
-		sdType = webrtc.SDPTypePranswer
-	case webrtc.SDPTypeRollback.String():
-		sdType = webrtc.SDPTypeRollback
-	}
-	return webrtc.SessionDescription{
-		Type: sdType,
-		SDP:  sd.Sdp,
-	}, sd.Id
-}
-
-func ToProtoTrickle(candidateInit webrtc.ICECandidateInit, target livekit.SignalTarget, final bool) *livekit.TrickleRequest {
-	data, _ := json.Marshal(candidateInit)
-	return &livekit.TrickleRequest{
-		CandidateInit: string(data),
-		Target:        target,
-		Final:         final,
-	}
-}
-
-func FromProtoTrickle(trickle *livekit.TrickleRequest) (webrtc.ICECandidateInit, error) {
-	ci := webrtc.ICECandidateInit{}
-	err := json.Unmarshal([]byte(trickle.CandidateInit), &ci)
-	if err != nil {
-		return webrtc.ICECandidateInit{}, err
-	}
-	return ci, nil
-}
-*/
-
 func ToProtoTrackKind(kind webrtc.RTPCodecType) livekit.TrackType {
 	switch kind {
 	case webrtc.RTPCodecTypeVideo:
