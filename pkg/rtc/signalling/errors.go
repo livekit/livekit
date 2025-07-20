@@ -19,35 +19,8 @@ import (
 )
 
 var (
-	/* RAJA-REMOVE
-	ErrRoomClosed               = errors.New("room has already closed")
-	ErrParticipantSessionClosed = errors.New("participant session is already closed")
-	ErrPermissionDenied         = errors.New("no permissions to access the room")
-	ErrMaxParticipantsExceeded  = errors.New("room has exceeded its max participants")
-	ErrLimitExceeded            = errors.New("node has exceeded its configured limit")
-	ErrAlreadyJoined            = errors.New("a participant with the same identity is already in the room")
-	ErrDataChannelUnavailable   = errors.New("data channel is not available")
-	ErrDataChannelBufferFull    = errors.New("data channel buffer is full")
-	ErrTransportFailure         = errors.New("transport failure")
-	ErrEmptyIdentity            = errors.New("participant identity cannot be empty")
-	ErrEmptyParticipantID       = errors.New("participant ID cannot be empty")
-	ErrMissingGrants            = errors.New("VideoGrant is missing")
-	ErrInternalError            = errors.New("internal error")
-	*/
-	ErrInvalidMessageType = errors.New("invalid message type")
-
+	ErrInvalidMessageType      = errors.New("invalid message type")
 	ErrNameExceedsLimits       = errors.New("name length exceeds limits")
 	ErrMetadataExceedsLimits   = errors.New("metadata size exceeds limits")
 	ErrAttributesExceedsLimits = errors.New("attributes size exceeds limits")
-
-	/*
-		// Track subscription related
-		ErrNoTrackPermission         = errors.New("participant is not allowed to subscribe to this track")
-		ErrNoSubscribePermission     = errors.New("participant is not given permission to subscribe to tracks")
-		ErrTrackNotFound             = errors.New("track cannot be found")
-		ErrTrackNotBound             = errors.New("track not bound")
-		ErrSubscriptionLimitExceeded = errors.New("participant has exceeded its subscription limit")
-
-		ErrNoSubscribeMetricsPermission = errors.New("participant is not given permission to subscribe to metrics")
-	*/
 )
