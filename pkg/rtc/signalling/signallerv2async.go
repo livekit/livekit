@@ -28,6 +28,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+var _ ParticipantSignaller = (*signallerv2Async)(nil)
+
 type Signallerv2AsyncParams struct {
 	Logger      logger.Logger
 	Participant types.LocalParticipant

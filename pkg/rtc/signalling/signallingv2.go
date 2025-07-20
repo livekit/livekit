@@ -20,6 +20,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+var _ ParticipantSignalling = (*signallingv2)(nil)
+
 type Signallingv2Params struct {
 	Logger logger.Logger
 }

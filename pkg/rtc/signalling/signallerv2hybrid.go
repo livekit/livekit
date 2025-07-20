@@ -18,6 +18,8 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+var _ ParticipantSignaller = (*signallerv2Hybrid)(nil)
+
 type Signallerv2HybridParams struct {
 	Logger logger.Logger
 }

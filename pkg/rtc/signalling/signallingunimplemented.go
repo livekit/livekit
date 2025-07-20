@@ -20,6 +20,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+var _ ParticipantSignalling = (*signallingUnimplemented)(nil)
+
 type signallingUnimplemented struct{}
 
 func (u *signallingUnimplemented) SignalJoinResponse(join *livekit.JoinResponse) proto.Message {

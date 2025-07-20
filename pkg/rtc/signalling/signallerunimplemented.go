@@ -21,6 +21,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+var _ ParticipantSignaller = (*signallerUnimplemented)(nil)
+
 type signallerUnimplemented struct{}
 
 func (u *signallerUnimplemented) SetResponseSink(sink routing.MessageSink) {}
