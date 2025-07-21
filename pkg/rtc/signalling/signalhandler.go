@@ -19,6 +19,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	protosignalling "github.com/livekit/protocol/signalling"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -57,13 +58,13 @@ func (s *signalhandler) HandleRequest(msg proto.Message) error {
 
 	switch msg := req.GetMessage().(type) {
 	case *livekit.SignalRequest_Offer:
-		s.params.Participant.HandleOffer(FromProtoSessionDescription(msg.Offer))
+		s.params.Participant.HandleOffer(protosignalling.FromProtoSessionDescription(msg.Offer))
 
 	case *livekit.SignalRequest_Answer:
-		s.params.Participant.HandleAnswer(FromProtoSessionDescription(msg.Answer))
+		s.params.Participant.HandleAnswer(protosignalling.FromProtoSessionDescription(msg.Answer))
 
 	case *livekit.SignalRequest_Trickle:
-		candidateInit, err := FromProtoTrickle(msg.Trickle)
+		candidateInit, err := protosignalling.FromProtoTrickle(msg.Trickle)
 		if err != nil {
 			s.params.Logger.Warnw("could not decode trickle", err)
 			return err
