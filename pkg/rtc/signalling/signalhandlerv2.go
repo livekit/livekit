@@ -78,6 +78,13 @@ func (s *signalhandlerv2) HandleRequest(msg proto.Message) error {
 			}
 
 			// SIGNALLING-V2-TODO: process messages
+			switch payload := clientMessage.GetMessage().(type) {
+			case *livekit.Signalv2ClientMessage_PublisherSdp:
+				s.params.Participant.HandleOffer(FromProtoSessionDescription(payload.PublisherSdp))
+
+			case *livekit.Signalv2ClientMessage_SubscriberSdp:
+				s.params.Participant.HandleAnswer(FromProtoSessionDescription(payload.SubscriberSdp))
+			}
 
 			s.params.Signalling.AckMessageId(clientMessage.Sequencer.LastProcessedRemoteMessageId)
 			s.params.Signalling.SetLastProcessedRemoteMessageId(clientMessage.Sequencer.MessageId)

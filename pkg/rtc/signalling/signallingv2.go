@@ -76,11 +76,75 @@ func (s *signallingv2) SignalConnectResponse(connectResponse *livekit.ConnectRes
 			ConnectResponse: connectResponse,
 		},
 	}
-	s.signalCache.Add(serverMessage)
+	return s.cacheAndReturnEnvelope(serverMessage)
+}
+
+func (s *signallingv2) SignalSdpOffer(offer *livekit.SessionDescription) proto.Message {
+	if offer == nil {
+		return nil
+	}
+
+	serverMessage := &livekit.Signalv2ServerMessage{
+		Message: &livekit.Signalv2ServerMessage_SubscriberSdp{
+			SubscriberSdp: offer,
+		},
+	}
+	return s.cacheAndReturnEnvelope(serverMessage)
+}
+
+func (s *signallingv2) SignalSdpAnswer(answer *livekit.SessionDescription) proto.Message {
+	if answer == nil {
+		return nil
+	}
+
+	serverMessage := &livekit.Signalv2ServerMessage{
+		Message: &livekit.Signalv2ServerMessage_PublisherSdp{
+			PublisherSdp: answer,
+		},
+	}
+	return s.cacheAndReturnEnvelope(serverMessage)
+}
+
+func (s *signallingv2) SignalRoomUpdate(room *livekit.Room) proto.Message {
+	if room == nil {
+		return nil
+	}
+
+	serverMessage := &livekit.Signalv2ServerMessage{
+		Message: &livekit.Signalv2ServerMessage_RoomUpdate{
+			RoomUpdate: &livekit.RoomUpdate{
+				Room: room,
+			},
+		},
+	}
+	return s.cacheAndReturnEnvelope(serverMessage)
+}
+
+func (s *signallingv2) SignalParticipantUpdate(participants []*livekit.ParticipantInfo) proto.Message {
+	if len(participants) == 0 {
+		return nil
+	}
+
+	serverMessage := &livekit.Signalv2ServerMessage{
+		Message: &livekit.Signalv2ServerMessage_ParticipantUpdate{
+			ParticipantUpdate: &livekit.ParticipantUpdate{
+				Participants: participants,
+			},
+		},
+	}
+	return s.cacheAndReturnEnvelope(serverMessage)
+}
+
+func (s *signallingv2) cacheAndReturnEnvelope(sm *livekit.Signalv2ServerMessage) proto.Message {
+	sm = s.signalCache.Add(sm)
+	if sm == nil {
+		return nil
+	}
+
 	return &livekit.Signalv2WireMessage{
 		Message: &livekit.Signalv2WireMessage_Envelope{
 			Envelope: &livekit.Envelope{
-				ServerMessages: []*livekit.Signalv2ServerMessage{serverMessage},
+				ServerMessages: []*livekit.Signalv2ServerMessage{sm},
 			},
 		},
 	}
