@@ -17,6 +17,7 @@ package signalling
 import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	protosignalling "github.com/livekit/protocol/signalling"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -31,13 +32,13 @@ type signallingv2 struct {
 
 	params Signallingv2Params
 
-	signalCache *SignalCache
+	signalCache *protosignalling.Signalv2Cache
 }
 
 func NewSignallingv2(params Signallingv2Params) ParticipantSignalling {
 	return &signallingv2{
 		params: params,
-		signalCache: NewSignalCache(SignalCacheParams{
+		signalCache: protosignalling.NewSignalv2Cache(protosignalling.Signalv2CacheParams{
 			Logger: params.Logger,
 		}),
 	}

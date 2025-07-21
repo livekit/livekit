@@ -19,6 +19,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	protosignalling "github.com/livekit/protocol/signalling"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -41,13 +42,13 @@ type signalhandlerv2 struct {
 
 	// SIGNALLING-V2-TODO: have to set this properly for `ConnectRequest` coming via sync HTTP path
 	lastProcessedRemoteMessageId atomic.Uint32
-	signalReassembler            *SignalReassembler
+	signalReassembler            *protosignalling.SignalReassembler
 }
 
 func NewSignalHandlerv2(params SignalHandlerv2Params) ParticipantSignalHandler {
 	return &signalhandlerv2{
 		params: params,
-		signalReassembler: NewSignalReassembler(SignalReassemblerParams{
+		signalReassembler: protosignalling.NewSignalReassembler(protosignalling.SignalReassemblerParams{
 			Logger: params.Logger,
 		}),
 	}
@@ -69,6 +70,7 @@ func (s *signalhandlerv2) HandleRequest(msg proto.Message) error {
 	switch msg := req.GetMessage().(type) {
 	case *livekit.Signalv2WireMessage_Envelope:
 		for _, clientMessage := range msg.Envelope.ClientMessages {
+			// SIGNAL-V2-TODO: cannot do this comparison for very first message
 			if clientMessage.Sequencer.MessageId != s.lastProcessedRemoteMessageId.Load()+1 {
 				s.params.Logger.Infow(
 					"gap in message stream",
@@ -77,15 +79,15 @@ func (s *signalhandlerv2) HandleRequest(msg proto.Message) error {
 				)
 			}
 
-			// SIGNALLING-V2-TODO: process messages
 			switch payload := clientMessage.GetMessage().(type) {
 			case *livekit.Signalv2ClientMessage_PublisherSdp:
-				s.params.Participant.HandleOffer(FromProtoSessionDescription(payload.PublisherSdp))
+				s.params.Participant.HandleOffer(protosignalling.FromProtoSessionDescription(payload.PublisherSdp))
 
 			case *livekit.Signalv2ClientMessage_SubscriberSdp:
-				s.params.Participant.HandleAnswer(FromProtoSessionDescription(payload.SubscriberSdp))
+				s.params.Participant.HandleAnswer(protosignalling.FromProtoSessionDescription(payload.SubscriberSdp))
 			}
 
+			s.lastProcessedRemoteMessageId.Store(clientMessage.Sequencer.MessageId)
 			s.params.Signalling.AckMessageId(clientMessage.Sequencer.LastProcessedRemoteMessageId)
 			s.params.Signalling.SetLastProcessedRemoteMessageId(clientMessage.Sequencer.MessageId)
 		}

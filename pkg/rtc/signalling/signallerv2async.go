@@ -19,6 +19,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	protosignalling "github.com/livekit/protocol/signalling"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
 
@@ -40,14 +41,14 @@ type signallerv2Async struct {
 
 	*signallerAsyncBase
 
-	signalSegmenter *SignalSegmenter
+	signalSegmenter *protosignalling.SignalSegmenter
 }
 
 func NewSignallerv2Async(params Signallerv2AsyncParams) ParticipantSignaller {
 	return &signallerv2Async{
 		params:             params,
 		signallerAsyncBase: newSignallerAsyncBase(signallerAsyncBaseParams{Logger: params.Logger}),
-		signalSegmenter: NewSignalSegmenter(SignalSegmenterParams{
+		signalSegmenter: protosignalling.NewSignalSegmenter(protosignalling.SignalSegmenterParams{
 			Logger: params.Logger,
 		}),
 	}

@@ -21,9 +21,9 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	protosignalling "github.com/livekit/protocol/signalling"
 
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/rtc/signalling"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 
 	"google.golang.org/protobuf/proto"
@@ -222,7 +222,7 @@ func (p *ParticipantImpl) sendICECandidate(ic *webrtc.ICECandidate, target livek
 		return nil
 	}
 
-	trickle := signalling.ToProtoTrickle(prevIC.ToJSON(), target, ic == nil)
+	trickle := protosignalling.ToProtoTrickle(prevIC.ToJSON(), target, ic == nil)
 	p.params.Logger.Debugw("sending ICE candidate", "transport", target, "trickle", logger.Proto(trickle))
 
 	return p.signaller.WriteMessage(p.signalling.SignalICECandidate(trickle))
@@ -294,11 +294,11 @@ func (p *ParticipantImpl) sendLeaveRequest(
 }
 
 func (p *ParticipantImpl) sendSdpAnswer(answer webrtc.SessionDescription, answerId uint32) error {
-	return p.signaller.WriteMessage(p.signalling.SignalSdpAnswer(signalling.ToProtoSessionDescription(answer, answerId)))
+	return p.signaller.WriteMessage(p.signalling.SignalSdpAnswer(protosignalling.ToProtoSessionDescription(answer, answerId)))
 }
 
 func (p *ParticipantImpl) sendSdpOffer(offer webrtc.SessionDescription, offerId uint32) error {
-	return p.signaller.WriteMessage(p.signalling.SignalSdpOffer(signalling.ToProtoSessionDescription(offer, offerId)))
+	return p.signaller.WriteMessage(p.signalling.SignalSdpOffer(protosignalling.ToProtoSessionDescription(offer, offerId)))
 }
 
 func (p *ParticipantImpl) sendStreamStateUpdate(streamStateUpdate *livekit.StreamStateUpdate) error {
