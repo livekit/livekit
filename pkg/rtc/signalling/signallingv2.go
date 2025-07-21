@@ -67,10 +67,6 @@ func (s *signallingv2) PendingMessages() proto.Message {
 }
 
 func (s *signallingv2) SignalConnectResponse(connectResponse *livekit.ConnectResponse) proto.Message {
-	if connectResponse == nil {
-		return nil
-	}
-
 	serverMessage := &livekit.Signalv2ServerMessage{
 		Message: &livekit.Signalv2ServerMessage_ConnectResponse{
 			ConnectResponse: connectResponse,
@@ -80,10 +76,6 @@ func (s *signallingv2) SignalConnectResponse(connectResponse *livekit.ConnectRes
 }
 
 func (s *signallingv2) SignalSdpOffer(offer *livekit.SessionDescription) proto.Message {
-	if offer == nil {
-		return nil
-	}
-
 	serverMessage := &livekit.Signalv2ServerMessage{
 		Message: &livekit.Signalv2ServerMessage_SubscriberSdp{
 			SubscriberSdp: offer,
@@ -93,10 +85,6 @@ func (s *signallingv2) SignalSdpOffer(offer *livekit.SessionDescription) proto.M
 }
 
 func (s *signallingv2) SignalSdpAnswer(answer *livekit.SessionDescription) proto.Message {
-	if answer == nil {
-		return nil
-	}
-
 	serverMessage := &livekit.Signalv2ServerMessage{
 		Message: &livekit.Signalv2ServerMessage_PublisherSdp{
 			PublisherSdp: answer,
@@ -106,10 +94,6 @@ func (s *signallingv2) SignalSdpAnswer(answer *livekit.SessionDescription) proto
 }
 
 func (s *signallingv2) SignalRoomUpdate(room *livekit.Room) proto.Message {
-	if room == nil {
-		return nil
-	}
-
 	serverMessage := &livekit.Signalv2ServerMessage{
 		Message: &livekit.Signalv2ServerMessage_RoomUpdate{
 			RoomUpdate: &livekit.RoomUpdate{
