@@ -61,10 +61,11 @@ func (s *SignalSegmenter) Segment(data []byte) []*livekit.Fragment {
 	numFragments := uint32((len(data) + s.params.MaxFragmentSize - 1) / s.params.MaxFragmentSize)
 	fragmentNumber := uint32(1)
 	consumed := 0
+	packetId := s.packetId.Inc()
 	for len(data[consumed:]) != 0 {
 		fragmentSize := min(len(data[consumed:]), s.params.MaxFragmentSize)
 		fragment := &livekit.Fragment{
-			PacketId:       s.packetId.Inc(),
+			PacketId:       packetId,
 			FragmentNumber: fragmentNumber,
 			NumFragments:   numFragments,
 			FragmentSize:   uint32(fragmentSize),
