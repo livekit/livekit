@@ -15,93 +15,93 @@
 package signalling
 
 import (
-	"math/rand"
 	"sync"
 	"time"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
-	defaultMaxFragmentSize = 8192
+	reassemblerTimeout = time.Minute
 )
 
 type reassembly struct {
+	packetId    uint32
 	startedAt   time.Time
 	fragments   []*livekit.Fragment
 	isCorrupted bool
+	tqi         *utils.TimeoutQueueItem[*reassembly]
 }
 
-type SignalFragmentParams struct {
-	Logger          logger.Logger
-	MaxFragmentSize int
-	FirstPacketId   uint32 // should be used for testing only
-}
-
-type SignalFragment struct {
-	params SignalFragmentParams
-
-	lock         sync.Mutex
-	packetId     uint32
-	reassemblies map[uint32]*reassembly
-}
-
-func NewSignalFragment(params SignalFragmentParams) *SignalFragment {
-	s := &SignalFragment{
-		params:       params,
-		packetId:     params.FirstPacketId,
-		reassemblies: make(map[uint32]*reassembly),
-	}
-	if s.params.MaxFragmentSize == 0 {
-		s.params.MaxFragmentSize = defaultMaxFragmentSize
-	}
-	if s.packetId == 0 {
-		s.packetId = uint32(rand.Intn(1<<8) + 1)
-	}
-	return s
-}
-
-func (s *SignalFragment) Segment(data []byte) []*livekit.Fragment {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	if len(data) <= s.params.MaxFragmentSize {
+func (r *reassembly) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if r == nil {
 		return nil
 	}
 
-	var fragments []*livekit.Fragment
-	numFragments := uint32((len(data) + s.params.MaxFragmentSize - 1) / s.params.MaxFragmentSize)
-	fragmentNumber := uint32(1)
-	consumed := 0
-	for len(data[consumed:]) != 0 {
-		fragmentSize := min(len(data[consumed:]), s.params.MaxFragmentSize)
-		fragment := &livekit.Fragment{
-			PacketId:       s.packetId,
-			FragmentNumber: fragmentNumber,
-			NumFragments:   numFragments,
-			FragmentSize:   uint32(fragmentSize),
-			TotalSize:      uint32(len(data)),
-			Data:           data[consumed : consumed+fragmentSize],
-		}
-		fragments = append(fragments, fragment)
-		fragmentNumber++
-		consumed += fragmentSize
-	}
+	e.AddUint32("packetId", r.packetId)
+	e.AddTime("startAt", r.startedAt)
+	e.AddDuration("age", time.Since(r.startedAt))
 
-	return fragments
+	expectedNumberOfFragments := len(r.fragments)
+	expectedTotalSize := uint32(0)
+	availableSize := uint32(0)
+	var availableFragments []uint32
+	for _, fragment := range r.fragments {
+		if fragment == nil {
+			continue
+		}
+
+		expectedTotalSize = fragment.TotalSize
+		availableSize += fragment.FragmentSize
+		availableFragments = append(availableFragments, fragment.FragmentNumber)
+	}
+	e.AddInt("expectedNumberOfFragments", expectedNumberOfFragments)
+	e.AddUint32("expectedTotalSize", expectedTotalSize)
+	e.AddUint32("availableSize", availableSize)
+	e.AddArray("availableFragments", logger.Uint32Slice(availableFragments))
+
+	e.AddBool("isCorrupted", r.isCorrupted)
+	return nil
 }
 
-func (s *SignalFragment) Reassemble(fragment *livekit.Fragment) []byte {
+// ------------------------------------------------
+
+type SignalReassemblerParams struct {
+	Logger logger.Logger
+}
+
+type SignalReassembler struct {
+	params SignalReassemblerParams
+
+	lock         sync.Mutex
+	reassemblies map[uint32]*reassembly
+
+	timeoutQueue utils.TimeoutQueue[*reassembly]
+}
+
+func NewSignalReassembler(params SignalReassemblerParams) *SignalReassembler {
+	return &SignalReassembler{
+		params:       params,
+		reassemblies: make(map[uint32]*reassembly),
+	}
+}
+
+func (s *SignalReassembler) Reassemble(fragment *livekit.Fragment) []byte {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
 	re, ok := s.reassemblies[fragment.PacketId]
 	if !ok {
 		re = &reassembly{
+			packetId:  fragment.PacketId,
 			startedAt: time.Now(),
 			fragments: make([]*livekit.Fragment, fragment.NumFragments),
 		}
+		re.tqi = &utils.TimeoutQueueItem[*reassembly]{Value: re}
+
 		s.reassemblies[fragment.PacketId] = re
 	}
 	if int(fragment.FragmentNumber) <= len(re.fragments) {
@@ -142,4 +142,15 @@ func (s *SignalFragment) Reassemble(fragment *livekit.Fragment) []byte {
 	return data
 }
 
-// SIGNALLING-V2-TODO: need a prune worker to handle stale re-assemblies
+func (s *SignalReassembler) Prune() {
+	for it := s.timeoutQueue.IterateRemoveAfter(reassemblerTimeout); it.Next(); {
+		re := it.Item().Value
+		s.params.Logger.Infow("pruning stale reassembly packet", "reassembly", re)
+
+		s.lock.Lock()
+		delete(s.reassemblies, re.packetId)
+		s.lock.Unlock()
+	}
+}
+
+// SIGNALLING-V2-TODO: maybe do a prune worker? will need a way to stop/clean up the goroutine then

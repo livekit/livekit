@@ -40,14 +40,14 @@ type signallerv2Async struct {
 
 	*signallerAsyncBase
 
-	signalFragment *SignalFragment
+	signalSegmenter *SignalSegmenter
 }
 
 func NewSignallerv2Async(params Signallerv2AsyncParams) ParticipantSignaller {
 	return &signallerv2Async{
 		params:             params,
 		signallerAsyncBase: newSignallerAsyncBase(signallerAsyncBaseParams{Logger: params.Logger}),
-		signalFragment: NewSignalFragment(SignalFragmentParams{
+		signalSegmenter: NewSignalSegmenter(SignalSegmenterParams{
 			Logger: params.Logger,
 		}),
 	}
@@ -100,7 +100,7 @@ func (s *signallerv2Async) WriteMessage(msg proto.Message) error {
 			)
 		}
 	} else {
-		fragments = s.signalFragment.Segment(marshaled)
+		fragments = s.signalSegmenter.Segment(marshaled)
 	}
 
 	sendMsg := func(m proto.Message) error {

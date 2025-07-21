@@ -25,6 +25,7 @@ import (
 
 type ParticipantSignalHandler interface {
 	HandleRequest(msg proto.Message) error
+	PruneStaleReassemblies()
 }
 
 type ParticipantSignaller interface {
