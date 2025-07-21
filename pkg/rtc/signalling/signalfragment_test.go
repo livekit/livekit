@@ -51,7 +51,7 @@ func TestSignalFragment(t *testing.T) {
 	}
 
 	t.Run("no segmentation needed", func(t *testing.T) {
-		sr := NewSignalFragment(SignalFragmentParams{
+		sr := NewSignalSegmenter(SignalSegmenterParams{
 			MaxFragmentSize: 5_000_000,
 		})
 
@@ -60,9 +60,9 @@ func TestSignalFragment(t *testing.T) {
 		require.Nil(t, sr.Segment(marshalled))
 	})
 
-	t.Run("segmentation + reassmebly", func(t *testing.T) {
+	t.Run("segmentation + reassembly", func(t *testing.T) {
 		maxFragmentSize := 5
-		sr := NewSignalFragment(SignalFragmentParams{
+		sr := NewSignalSegmenter(SignalSegmenterParams{
 			MaxFragmentSize: maxFragmentSize,
 		})
 
@@ -75,6 +75,7 @@ func TestSignalFragment(t *testing.T) {
 		require.NotZero(t, len(fragments))
 		require.Equal(t, uint32(len(marshalled)), fragments[0].TotalSize)
 
+		rr := NewSignalReassembler(SignalReassemblerParams{})
 		var reassembled []byte
 		for idx, fragment := range fragments {
 			require.Equal(t, uint32(idx+1), fragment.FragmentNumber)
@@ -82,14 +83,14 @@ func TestSignalFragment(t *testing.T) {
 			require.Equal(t, uint32(expectedNumFragments), fragment.NumFragments)
 			require.Equal(t, fragment.FragmentSize, uint32(len(fragment.Data)))
 
-			reassembled = sr.Reassemble(fragment)
+			reassembled = rr.Reassemble(fragment)
 		}
 		require.Equal(t, marshalled, reassembled)
 	})
 
 	t.Run("runt", func(t *testing.T) {
 		maxFragmentSize := 5
-		sr := NewSignalFragment(SignalFragmentParams{
+		sr := NewSignalSegmenter(SignalSegmenterParams{
 			MaxFragmentSize: maxFragmentSize,
 		})
 
@@ -98,6 +99,7 @@ func TestSignalFragment(t *testing.T) {
 
 		fragments := sr.Segment(marshalled)
 
+		rr := NewSignalReassembler(SignalReassemblerParams{})
 		var reassembled []byte
 		for idx, fragment := range fragments {
 			// do not send one packet into re-assembly initially, re-assembly should not succeed
@@ -105,18 +107,18 @@ func TestSignalFragment(t *testing.T) {
 				continue
 			}
 
-			reassembled = sr.Reassemble(fragment)
+			reassembled = rr.Reassemble(fragment)
 		}
 		require.Zero(t, len(reassembled))
 
 		// submit 1st fragment and ensure reassembly completes
-		reassembled = sr.Reassemble(fragments[0])
+		reassembled = rr.Reassemble(fragments[0])
 		require.Equal(t, marshalled, reassembled)
 	})
 
 	t.Run("corrupted", func(t *testing.T) {
 		maxFragmentSize := 5
-		sr := NewSignalFragment(SignalFragmentParams{
+		sr := NewSignalSegmenter(SignalSegmenterParams{
 			MaxFragmentSize: maxFragmentSize,
 		})
 
@@ -125,6 +127,7 @@ func TestSignalFragment(t *testing.T) {
 
 		fragments := sr.Segment(marshalled)
 
+		rr := NewSignalReassembler(SignalReassemblerParams{})
 		var reassembled []byte
 		for idx, fragment := range fragments {
 			// corrupt a fragment, re-assembly should fail
@@ -132,7 +135,7 @@ func TestSignalFragment(t *testing.T) {
 				fragment.FragmentSize += 1
 			}
 
-			reassembled = sr.Reassemble(fragment)
+			reassembled = rr.Reassemble(fragment)
 		}
 		require.Zero(t, len(reassembled))
 	})

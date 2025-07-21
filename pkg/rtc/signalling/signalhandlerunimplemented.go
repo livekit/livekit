@@ -25,3 +25,5 @@ type signalhandlerUnimplemented struct{}
 func (u *signalhandlerUnimplemented) HandleRequest(msg proto.Message) error {
 	return nil
 }
+
+func (u *signalhandlerUnimplemented) PruneStaleReassemblies() {}

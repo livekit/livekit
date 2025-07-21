@@ -41,13 +41,13 @@ type signalhandlerv2 struct {
 
 	// SIGNALLING-V2-TODO: have to set this properly for `ConnectRequest` coming via sync HTTP path
 	lastProcessedRemoteMessageId atomic.Uint32
-	signalFragment               *SignalFragment
+	signalReassembler            *SignalReassembler
 }
 
 func NewSignalHandlerv2(params SignalHandlerv2Params) ParticipantSignalHandler {
 	return &signalhandlerv2{
 		params: params,
-		signalFragment: NewSignalFragment(SignalFragmentParams{
+		signalReassembler: NewSignalReassembler(SignalReassemblerParams{
 			Logger: params.Logger,
 		}),
 	}
@@ -84,7 +84,7 @@ func (s *signalhandlerv2) HandleRequest(msg proto.Message) error {
 		}
 
 	case *livekit.Signalv2WireMessage_Fragment:
-		bytes := s.signalFragment.Reassemble(msg.Fragment)
+		bytes := s.signalReassembler.Reassemble(msg.Fragment)
 		if len(bytes) != 0 {
 			wireMessage := &livekit.Signalv2WireMessage{}
 			err := proto.Unmarshal(bytes, wireMessage)
@@ -98,4 +98,8 @@ func (s *signalhandlerv2) HandleRequest(msg proto.Message) error {
 	}
 
 	return nil
+}
+
+func (s *signalhandlerv2) PruneStaleReassemblies() {
+	s.signalReassembler.Prune()
 }

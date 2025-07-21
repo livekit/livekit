@@ -31,17 +31,13 @@ type signallingv2 struct {
 
 	params Signallingv2Params
 
-	signalCache    *SignalCache
-	signalFragment *SignalFragment
+	signalCache *SignalCache
 }
 
 func NewSignallingv2(params Signallingv2Params) ParticipantSignalling {
 	return &signallingv2{
 		params: params,
 		signalCache: NewSignalCache(SignalCacheParams{
-			Logger: params.Logger,
-		}),
-		signalFragment: NewSignalFragment(SignalFragmentParams{
 			Logger: params.Logger,
 		}),
 	}
