@@ -58,12 +58,15 @@ func (s *SignalCache) SetLastProcessedRemoteMessageId(lastProcessedRemoteMessage
 	s.lastProcessedRemoteMessageId = lastProcessedRemoteMessageId
 }
 
-func (s *SignalCache) Add(msg *livekit.Signalv2ServerMessage) {
+func (s *SignalCache) Add(msg *livekit.Signalv2ServerMessage) *livekit.Signalv2ServerMessage {
 	if msg != nil {
 		s.AddBatch([]*livekit.Signalv2ServerMessage{msg})
 	}
+
+	return msg
 }
 
+// SIGNALLING-V2-TODO: may not need this API
 func (s *SignalCache) AddBatch(msgs []*livekit.Signalv2ServerMessage) {
 	s.lock.Lock()
 	defer s.lock.Unlock()

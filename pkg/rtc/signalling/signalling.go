@@ -40,10 +40,6 @@ func NewSignalling(params SignallingParams) ParticipantSignalling {
 }
 
 func (s *signalling) SignalJoinResponse(join *livekit.JoinResponse) proto.Message {
-	if join == nil {
-		return nil
-	}
-
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Join{
 			Join: join,
@@ -80,10 +76,6 @@ func (s *signalling) SignalSpeakerUpdate(speakers []*livekit.SpeakerInfo) proto.
 }
 
 func (s *signalling) SignalRoomUpdate(room *livekit.Room) proto.Message {
-	if room == nil {
-		return nil
-	}
-
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_RoomUpdate{
 			RoomUpdate: &livekit.RoomUpdate{
@@ -94,10 +86,6 @@ func (s *signalling) SignalRoomUpdate(room *livekit.Room) proto.Message {
 }
 
 func (s *signalling) SignalConnectionQualityUpdate(connectionQuality *livekit.ConnectionQualityUpdate) proto.Message {
-	if connectionQuality == nil {
-		return nil
-	}
-
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_ConnectionQuality{
 			ConnectionQuality: connectionQuality,
@@ -106,10 +94,6 @@ func (s *signalling) SignalConnectionQualityUpdate(connectionQuality *livekit.Co
 }
 
 func (s *signalling) SignalRefreshToken(token string) proto.Message {
-	if token == "" {
-		return nil
-	}
-
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_RefreshToken{
 			RefreshToken: token,
@@ -118,10 +102,6 @@ func (s *signalling) SignalRefreshToken(token string) proto.Message {
 }
 
 func (s *signalling) SignalRequestResponse(requestResponse *livekit.RequestResponse) proto.Message {
-	if requestResponse == nil {
-		return nil
-	}
-
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_RequestResponse{
 			RequestResponse: requestResponse,
@@ -130,10 +110,6 @@ func (s *signalling) SignalRequestResponse(requestResponse *livekit.RequestRespo
 }
 
 func (s *signalling) SignalRoomMovedResponse(roomMoved *livekit.RoomMovedResponse) proto.Message {
-	if roomMoved == nil {
-		return nil
-	}
-
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_RoomMoved{
 			RoomMoved: roomMoved,
@@ -142,10 +118,6 @@ func (s *signalling) SignalRoomMovedResponse(roomMoved *livekit.RoomMovedRespons
 }
 
 func (s *signalling) SignalReconnectResponse(reconnect *livekit.ReconnectResponse) proto.Message {
-	if reconnect == nil {
-		return nil
-	}
-
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Reconnect{
 			Reconnect: reconnect,
@@ -154,10 +126,6 @@ func (s *signalling) SignalReconnectResponse(reconnect *livekit.ReconnectRespons
 }
 
 func (s *signalling) SignalICECandidate(trickle *livekit.TrickleRequest) proto.Message {
-	if trickle == nil {
-		return nil
-	}
-
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Trickle{
 			Trickle: trickle,
@@ -166,10 +134,6 @@ func (s *signalling) SignalICECandidate(trickle *livekit.TrickleRequest) proto.M
 }
 
 func (s *signalling) SignalTrackMuted(mute *livekit.MuteTrackRequest) proto.Message {
-	if mute == nil {
-		return nil
-	}
-
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Mute{
 			Mute: mute,
@@ -178,10 +142,6 @@ func (s *signalling) SignalTrackMuted(mute *livekit.MuteTrackRequest) proto.Mess
 }
 
 func (s *signalling) SignalTrackPublished(trackPublished *livekit.TrackPublishedResponse) proto.Message {
-	if trackPublished == nil {
-		return nil
-	}
-
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_TrackPublished{
 			TrackPublished: trackPublished,
@@ -190,10 +150,6 @@ func (s *signalling) SignalTrackPublished(trackPublished *livekit.TrackPublished
 }
 
 func (s *signalling) SignalTrackUnpublished(trackUnpublished *livekit.TrackUnpublishedResponse) proto.Message {
-	if trackUnpublished == nil {
-		return nil
-	}
-
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_TrackUnpublished{
 			TrackUnpublished: trackUnpublished,
@@ -202,10 +158,6 @@ func (s *signalling) SignalTrackUnpublished(trackUnpublished *livekit.TrackUnpub
 }
 
 func (s *signalling) SignalTrackSubscribed(trackSubscribed *livekit.TrackSubscribed) proto.Message {
-	if trackSubscribed == nil {
-		return nil
-	}
-
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_TrackSubscribed{
 			TrackSubscribed: trackSubscribed,
@@ -214,10 +166,6 @@ func (s *signalling) SignalTrackSubscribed(trackSubscribed *livekit.TrackSubscri
 }
 
 func (s *signalling) SignalLeaveRequest(leave *livekit.LeaveRequest) proto.Message {
-	if leave == nil {
-		return nil
-	}
-
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Leave{
 			Leave: leave,
@@ -226,10 +174,6 @@ func (s *signalling) SignalLeaveRequest(leave *livekit.LeaveRequest) proto.Messa
 }
 
 func (s *signalling) SignalSdpAnswer(answer *livekit.SessionDescription) proto.Message {
-	if answer == nil {
-		return nil
-	}
-
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
 			Answer: answer,
@@ -238,10 +182,6 @@ func (s *signalling) SignalSdpAnswer(answer *livekit.SessionDescription) proto.M
 }
 
 func (s *signalling) SignalSdpOffer(offer *livekit.SessionDescription) proto.Message {
-	if offer == nil {
-		return nil
-	}
-
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Offer{
 			Offer: offer,
@@ -250,10 +190,6 @@ func (s *signalling) SignalSdpOffer(offer *livekit.SessionDescription) proto.Mes
 }
 
 func (s *signalling) SignalStreamStateUpdate(streamStateUpdate *livekit.StreamStateUpdate) proto.Message {
-	if streamStateUpdate == nil {
-		return nil
-	}
-
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_StreamStateUpdate{
 			StreamStateUpdate: streamStateUpdate,
@@ -262,10 +198,6 @@ func (s *signalling) SignalStreamStateUpdate(streamStateUpdate *livekit.StreamSt
 }
 
 func (s *signalling) SignalSubscribedQualityUpdate(subscribedQualityUpdate *livekit.SubscribedQualityUpdate) proto.Message {
-	if subscribedQualityUpdate == nil {
-		return nil
-	}
-
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_SubscribedQualityUpdate{
 			SubscribedQualityUpdate: subscribedQualityUpdate,
@@ -274,10 +206,6 @@ func (s *signalling) SignalSubscribedQualityUpdate(subscribedQualityUpdate *live
 }
 
 func (s *signalling) SignalSubscriptionResponse(subscriptionResponse *livekit.SubscriptionResponse) proto.Message {
-	if subscriptionResponse == nil {
-		return nil
-	}
-
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_SubscriptionResponse{
 			SubscriptionResponse: subscriptionResponse,
@@ -286,10 +214,6 @@ func (s *signalling) SignalSubscriptionResponse(subscriptionResponse *livekit.Su
 }
 
 func (s *signalling) SignalSubscriptionPermissionUpdate(subscriptionPermissionUpdate *livekit.SubscriptionPermissionUpdate) proto.Message {
-	if subscriptionPermissionUpdate == nil {
-		return nil
-	}
-
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_SubscriptionPermissionUpdate{
 			SubscriptionPermissionUpdate: subscriptionPermissionUpdate,
