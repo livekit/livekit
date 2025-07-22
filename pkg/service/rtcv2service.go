@@ -72,7 +72,7 @@ func NewRTCv2Service(
 
 func (s *RTCv2Service) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+cRTCv2Path, s.handlePost)
-	mux.HandleFunc("GET "+cRTCv2Path, s.handlePost)
+	mux.HandleFunc("GET "+cRTCv2Path, s.validate)
 	mux.HandleFunc("PATCH "+cRTCv2ParticipantIDPath, s.handleParticipantPatch)
 }
 
