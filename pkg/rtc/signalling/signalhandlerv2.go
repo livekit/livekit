@@ -72,7 +72,7 @@ func (s *signalhandlerv2) HandleRequest(msg proto.Message) error {
 		for _, clientMessage := range msg.Envelope.ClientMessages {
 			// SIGNAL-V2-TODO: cannot do this comparison for very first message
 			sequencer := clientMessage.GetSequencer()
-			if sequencer == nil {
+			if sequencer == nil || sequencer.MessageId == 0 {
 				s.params.Logger.Warnw(
 					"skipping message without sequencer", nil,
 					"messageType", fmt.Sprintf("%T", clientMessage),
