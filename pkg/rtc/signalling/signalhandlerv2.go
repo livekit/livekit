@@ -71,7 +71,15 @@ func (s *signalhandlerv2) HandleRequest(msg proto.Message) error {
 	case *livekit.Signalv2WireMessage_Envelope:
 		for _, clientMessage := range msg.Envelope.ClientMessages {
 			// SIGNAL-V2-TODO: cannot do this comparison for very first message
-			if clientMessage.Sequencer.MessageId != s.lastProcessedRemoteMessageId.Load()+1 {
+			sequencer := clientMessage.GetSequencer()
+			if sequencer == nil {
+				s.params.Logger.Warnw(
+					"skipping message without sequencer", nil,
+					"messageType", fmt.Sprintf("%T", clientMessage),
+				)
+				continue
+			}
+			if sequencer.MessageId != s.lastProcessedRemoteMessageId.Load()+1 {
 				s.params.Logger.Infow(
 					"gap in message stream",
 					"last", s.lastProcessedRemoteMessageId.Load(),
@@ -87,9 +95,9 @@ func (s *signalhandlerv2) HandleRequest(msg proto.Message) error {
 				s.params.Participant.HandleAnswer(protosignalling.FromProtoSessionDescription(payload.SubscriberSdp))
 			}
 
-			s.lastProcessedRemoteMessageId.Store(clientMessage.Sequencer.MessageId)
-			s.params.Signalling.AckMessageId(clientMessage.Sequencer.LastProcessedRemoteMessageId)
-			s.params.Signalling.SetLastProcessedRemoteMessageId(clientMessage.Sequencer.MessageId)
+			s.lastProcessedRemoteMessageId.Store(sequencer.MessageId)
+			s.params.Signalling.AckMessageId(sequencer.LastProcessedRemoteMessageId)
+			s.params.Signalling.SetLastProcessedRemoteMessageId(sequencer.MessageId)
 		}
 
 	case *livekit.Signalv2WireMessage_Fragment:
