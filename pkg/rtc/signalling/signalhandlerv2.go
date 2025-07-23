@@ -70,7 +70,6 @@ func (s *signalhandlerv2) HandleRequest(msg proto.Message) error {
 	switch msg := req.GetMessage().(type) {
 	case *livekit.Signalv2WireMessage_Envelope:
 		for _, clientMessage := range msg.Envelope.ClientMessages {
-			// SIGNAL-V2-TODO: cannot do this comparison for very first message
 			/* SIGNALLING-V2-TODO: uncommment once remote side sends proper messageId
 			sequencer := clientMessage.GetSequencer()
 			if sequencer == nil || sequencer.MessageId == 0 {
@@ -81,10 +80,20 @@ func (s *signalhandlerv2) HandleRequest(msg proto.Message) error {
 				continue
 			}
 
-			if sequencer.MessageId != s.lastProcessedRemoteMessageId.Load()+1 {
+			lprmi := s.lastProcessedRemoteMessageId.Load()
+			if sequencer.MessageId <= lprmi {
+				s.params.Logger.Infow(
+					"duplicate in message stream",
+					"last", lprmi,
+					"current", clientMessage.Sequencer.MessageId,
+				)
+				continue
+			}
+
+			if lprmi != 0 && sequencer.MessageId != lprmi+1 {
 				s.params.Logger.Infow(
 					"gap in message stream",
-					"last", s.lastProcessedRemoteMessageId.Load(),
+					"last", lprmi,
 					"current", clientMessage.Sequencer.MessageId,
 				)
 			}
