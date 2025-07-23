@@ -197,7 +197,7 @@ func (s *RTCv2Service) handlePost(w http.ResponseWriter, r *http.Request) {
 		}
 
 	case *livekit.Signalv2WireMessage_Fragment:
-		logger.Errorw("signalv2 bad request", errFragmentsInHTTP)
+		utils.GetLogger(r.Context()).Errorw("signalv2 bad request", errFragmentsInHTTP)
 		HandleErrorJson(w, r, http.StatusBadRequest, errFragmentsInHTTP)
 		return
 	}
