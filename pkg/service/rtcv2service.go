@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -38,6 +39,7 @@ var (
 
 const (
 	cRTCv2Path              = "/rtc/v2"
+	cRTCv2ValidatePath      = "/rtc/v2/validate"
 	cRTCv2ParticipantIDPath = "/rtc/v2/{participant_id}"
 )
 
@@ -70,6 +72,7 @@ func NewRTCv2Service(
 
 func (s *RTCv2Service) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+cRTCv2Path, s.handlePost)
+	mux.HandleFunc("GET "+cRTCv2Path, s.validate)
 	mux.HandleFunc("PATCH "+cRTCv2ParticipantIDPath, s.handleParticipantPatch)
 }
 
@@ -119,16 +122,9 @@ func (s *RTCv2Service) handlePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := ioutil.ReadAll(r.Body)
+	wireMessage, err := getWireMessage(r)
 	if err != nil {
-		HandleErrorJson(w, r, http.StatusBadRequest, fmt.Errorf("could not read request body: %w", err))
-		return
-	}
-
-	wireMessage := &livekit.Signalv2WireMessage{}
-	err = proto.Unmarshal(body, wireMessage)
-	if err != nil {
-		HandleErrorJson(w, r, http.StatusBadRequest, fmt.Errorf("could not unmarshal request: %w", err))
+		HandleErrorJson(w, r, http.StatusBadRequest, fmt.Errorf("could not get wire message: %w", err))
 		return
 	}
 
@@ -138,7 +134,7 @@ func (s *RTCv2Service) handlePost(w http.ResponseWriter, r *http.Request) {
 			switch clientMessage := innerMsg.GetMessage().(type) {
 			case *livekit.Signalv2ClientMessage_ConnectRequest:
 				roomName, participantIdentity, rscr, code, err := s.validateInternal(
-					logger.GetLogger(),
+					utils.GetLogger(r.Context()),
 					r,
 					clientMessage.ConnectRequest,
 				)
@@ -201,11 +197,39 @@ func (s *RTCv2Service) handlePost(w http.ResponseWriter, r *http.Request) {
 		}
 
 	case *livekit.Signalv2WireMessage_Fragment:
-		logger.Errorw("signalv2 bad request", errFragmentsInHTTP)
+		utils.GetLogger(r.Context()).Errorw("signalv2 bad request", errFragmentsInHTTP)
 		HandleErrorJson(w, r, http.StatusBadRequest, errFragmentsInHTTP)
 		return
 	}
 
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *RTCv2Service) validate(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Content-type") != "application/x-protobuf" {
+		HandleErrorJson(w, r, http.StatusBadRequest, fmt.Errorf("unsupported content-type: %s", r.Header.Get("Content-type")))
+		return
+	}
+
+	wireMessage, err := getWireMessage(r)
+	if err != nil {
+		HandleErrorJson(w, r, http.StatusBadRequest, fmt.Errorf("could not get wire message: %w", err))
+		return
+	}
+
+	connectRequest := getConnectRequest(wireMessage)
+	if connectRequest == nil {
+		HandleErrorJson(w, r, http.StatusBadRequest, errors.New("no connect request"))
+		return
+	}
+
+	_, _, _, code, err := s.validateInternal(utils.GetLogger(r.Context()), r, connectRequest)
+	if err != nil {
+		HandleErrorJson(w, r, code, err)
+		return
+	}
+
+	_, _ = w.Write([]byte("success"))
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -243,16 +267,9 @@ func (s *RTCv2Service) handleParticipantPatch(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	body, err := ioutil.ReadAll(r.Body)
+	wireMessage, err := getWireMessage(r)
 	if err != nil {
-		HandleErrorJson(w, r, http.StatusBadRequest, fmt.Errorf("could not read request body: %w", err))
-		return
-	}
-
-	wireMessage := &livekit.Signalv2WireMessage{}
-	err = proto.Unmarshal(body, wireMessage)
-	if err != nil {
-		HandleErrorJson(w, r, http.StatusBadRequest, fmt.Errorf("could not unmarshal request: %w", err))
+		HandleErrorJson(w, r, http.StatusBadRequest, fmt.Errorf("could not get wire message: %w", err))
 		return
 	}
 
@@ -302,4 +319,35 @@ func (s *RTCv2Service) handleParticipantPatch(w http.ResponseWriter, r *http.Req
 	w.Write(marshalled)
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// ---------------------------------------
+
+func getWireMessage(r *http.Request) (*livekit.Signalv2WireMessage, error) {
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	wireMessage := &livekit.Signalv2WireMessage{}
+	err = proto.Unmarshal(body, wireMessage)
+	if err != nil {
+		return nil, err
+	}
+
+	return wireMessage, nil
+}
+
+func getConnectRequest(wireMessage *livekit.Signalv2WireMessage) *livekit.ConnectRequest {
+	switch msg := wireMessage.GetMessage().(type) {
+	case *livekit.Signalv2WireMessage_Envelope:
+		for _, innerMsg := range msg.Envelope.GetClientMessages() {
+			switch clientMessage := innerMsg.GetMessage().(type) {
+			case *livekit.Signalv2ClientMessage_ConnectRequest:
+				return clientMessage.ConnectRequest
+			}
+		}
+	}
+
+	return nil
 }

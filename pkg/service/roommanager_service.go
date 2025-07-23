@@ -213,11 +213,9 @@ func (s signalv2ParticipantService) RelaySignalv2Participant(ctx context.Context
 	}
 
 	var wireMessage *livekit.Signalv2WireMessage
-	pending := lp.SignalPendingMessages()
-	if pending != nil {
+	if pending := lp.SignalPendingMessages(); pending != nil {
 		var ok bool
-		wireMessage, ok = pending.(*livekit.Signalv2WireMessage)
-		if !ok {
+		if wireMessage, ok = pending.(*livekit.Signalv2WireMessage); !ok {
 			return nil, ErrInvalidMessageType
 		}
 	}
