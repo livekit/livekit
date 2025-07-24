@@ -350,6 +350,7 @@ type LocalParticipant interface {
 	ToProtoWithVersion() (*livekit.ParticipantInfo, utils.TimedVersion)
 
 	// getters
+	GetCountry() string
 	GetTrailer() []byte
 	GetLogger() logger.Logger
 	GetLoggerResolver() logger.DeferredFieldResolver

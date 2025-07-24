@@ -1140,7 +1140,15 @@ func (s *trackSubscription) maybeRecordSuccess(ts telemetry.TelemetryService, pI
 	d := time.Since(*s.subscribeAt.Load())
 	s.logger.Debugw("track subscribed", "cost", d.Milliseconds())
 	subscriber := subTrack.Subscriber()
-	prometheus.RecordSubscribeTime(mediaTrack.Source(), mediaTrack.Kind(), d, subscriber.GetClientInfo().GetSdk(), subscriber.Kind(), int(s.succRecordCounter.Inc()))
+	prometheus.RecordSubscribeTime(
+		subscriber.GetCountry(),
+		mediaTrack.Source(),
+		mediaTrack.Kind(),
+		d,
+		subscriber.GetClientInfo().GetSdk(),
+		subscriber.Kind(),
+		int(s.succRecordCounter.Inc()),
+	)
 
 	eventSent := s.eventSent.Swap(true)
 

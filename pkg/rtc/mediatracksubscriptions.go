@@ -210,10 +210,17 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		subTrack.SetPublisherMuted(t.params.MediaTrack.IsMuted())
 	})
 
+	statsKey := telemetry.StatsKeyForTrack(
+		sub.GetCountry(),
+		livekit.StreamType_DOWNSTREAM,
+		subscriberID,
+		trackID,
+		t.params.MediaTrack.Source(),
+		t.params.MediaTrack.Kind(),
+	)
 	reporter := sub.GetReporter().WithTrack(trackID.String())
 	downTrack.OnStatsUpdate(func(_ *sfu.DownTrack, stat *livekit.AnalyticsStat) {
-		key := telemetry.StatsKeyForTrack(livekit.StreamType_DOWNSTREAM, subscriberID, trackID, t.params.MediaTrack.Source(), t.params.MediaTrack.Kind())
-		t.params.Telemetry.TrackStats(key, stat)
+		t.params.Telemetry.TrackStats(statsKey, stat)
 
 		if cs, ok := telemetry.CondenseStat(stat); ok {
 			ti := wr.TrackInfo()

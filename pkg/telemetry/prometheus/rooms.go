@@ -172,20 +172,52 @@ func AddPublishSuccess(kind string) {
 	promTrackPublishCounter.WithLabelValues(kind, "success").Inc()
 }
 
-func RecordPublishTime(source livekit.TrackSource, trackType livekit.TrackType, d time.Duration, sdk livekit.ClientInfo_SDK, kind livekit.ParticipantInfo_Kind) {
-	recordPubSubTime(true, source, trackType, d, sdk, kind, 1)
+func RecordPublishTime(
+	country string,
+	source livekit.TrackSource,
+	trackType livekit.TrackType,
+	d time.Duration,
+	sdk livekit.ClientInfo_SDK,
+	kind livekit.ParticipantInfo_Kind,
+) {
+	recordPubSubTime(true, country, source, trackType, d, sdk, kind, 1)
 }
 
-func RecordSubscribeTime(source livekit.TrackSource, trackType livekit.TrackType, d time.Duration, sdk livekit.ClientInfo_SDK, kind livekit.ParticipantInfo_Kind, count int) {
-	recordPubSubTime(false, source, trackType, d, sdk, kind, count)
+func RecordSubscribeTime(
+	country string,
+	source livekit.TrackSource,
+	trackType livekit.TrackType,
+	d time.Duration,
+	sdk livekit.ClientInfo_SDK,
+	kind livekit.ParticipantInfo_Kind,
+	count int,
+) {
+	recordPubSubTime(false, country, source, trackType, d, sdk, kind, count)
 }
 
-func recordPubSubTime(isPublish bool, source livekit.TrackSource, trackType livekit.TrackType, d time.Duration, sdk livekit.ClientInfo_SDK, kind livekit.ParticipantInfo_Kind, count int) {
+func recordPubSubTime(
+	isPublish bool,
+	country string,
+	source livekit.TrackSource,
+	trackType livekit.TrackType,
+	d time.Duration,
+	sdk livekit.ClientInfo_SDK,
+	kind livekit.ParticipantInfo_Kind,
+	count int,
+) {
 	direction := "subscribe"
 	if isPublish {
 		direction = "publish"
 	}
-	promPubSubTime.WithLabelValues(direction, source.String(), trackType.String(), sdk.String(), kind.String(), strconv.Itoa(count)).Observe(float64(d.Milliseconds()))
+	promPubSubTime.WithLabelValues(
+		direction,
+		source.String(),
+		trackType.String(),
+		country,
+		sdk.String(),
+		kind.String(),
+		strconv.Itoa(count),
+	).Observe(float64(d.Milliseconds()))
 }
 
 func RecordTrackSubscribeSuccess(kind string) {

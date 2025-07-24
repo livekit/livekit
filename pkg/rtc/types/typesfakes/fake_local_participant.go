@@ -292,6 +292,16 @@ type FakeLocalParticipant struct {
 	getConnectionQualityReturnsOnCall map[int]struct {
 		result1 *livekit.ConnectionQualityInfo
 	}
+	GetCountryStub        func() string
+	getCountryMutex       sync.RWMutex
+	getCountryArgsForCall []struct {
+	}
+	getCountryReturns struct {
+		result1 string
+	}
+	getCountryReturnsOnCall map[int]struct {
+		result1 string
+	}
 	GetDisableSenderReportPassThroughStub        func() bool
 	getDisableSenderReportPassThroughMutex       sync.RWMutex
 	getDisableSenderReportPassThroughArgsForCall []struct {
@@ -2829,6 +2839,59 @@ func (fake *FakeLocalParticipant) GetConnectionQualityReturnsOnCall(i int, resul
 	}
 	fake.getConnectionQualityReturnsOnCall[i] = struct {
 		result1 *livekit.ConnectionQualityInfo
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetCountry() string {
+	fake.getCountryMutex.Lock()
+	ret, specificReturn := fake.getCountryReturnsOnCall[len(fake.getCountryArgsForCall)]
+	fake.getCountryArgsForCall = append(fake.getCountryArgsForCall, struct {
+	}{})
+	stub := fake.GetCountryStub
+	fakeReturns := fake.getCountryReturns
+	fake.recordInvocation("GetCountry", []interface{}{})
+	fake.getCountryMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetCountryCallCount() int {
+	fake.getCountryMutex.RLock()
+	defer fake.getCountryMutex.RUnlock()
+	return len(fake.getCountryArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetCountryCalls(stub func() string) {
+	fake.getCountryMutex.Lock()
+	defer fake.getCountryMutex.Unlock()
+	fake.GetCountryStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetCountryReturns(result1 string) {
+	fake.getCountryMutex.Lock()
+	defer fake.getCountryMutex.Unlock()
+	fake.GetCountryStub = nil
+	fake.getCountryReturns = struct {
+		result1 string
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetCountryReturnsOnCall(i int, result1 string) {
+	fake.getCountryMutex.Lock()
+	defer fake.getCountryMutex.Unlock()
+	fake.GetCountryStub = nil
+	if fake.getCountryReturnsOnCall == nil {
+		fake.getCountryReturnsOnCall = make(map[int]struct {
+			result1 string
+		})
+	}
+	fake.getCountryReturnsOnCall[i] = struct {
+		result1 string
 	}{result1}
 }
 
@@ -9262,6 +9325,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getClientInfoMutex.RUnlock()
 	fake.getConnectionQualityMutex.RLock()
 	defer fake.getConnectionQualityMutex.RUnlock()
+	fake.getCountryMutex.RLock()
+	defer fake.getCountryMutex.RUnlock()
 	fake.getDisableSenderReportPassThroughMutex.RLock()
 	defer fake.getDisableSenderReportPassThroughMutex.RUnlock()
 	fake.getEnabledPublishCodecsMutex.RLock()
