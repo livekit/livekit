@@ -363,6 +363,19 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		Logger:      params.Logger,
 		Participant: p,
 	})
+	/* SIGNALLING-V2-TODO: instantiate these based on signalling version and signal transport
+	p.signalhandler = signalling.NewSignalHandlerv2(signalling.SignalHandlerv2Params{
+		Logger:      params.Logger,
+		Participant: p,
+	})
+	p.signalling = signalling.NewSignallingv2(signalling.Signallingv2Params{
+		Logger: params.Logger,
+	})
+	p.signaller = signalling.NewSignallerv2Async(signalling.Signallerv2AsyncParams{
+		Logger:      params.Logger,
+		Participant: p,
+	})
+	*/
 
 	p.id.Store(params.SID)
 	p.dataChannelStats = telemetry.NewBytesTrackStats(
@@ -1168,19 +1181,24 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription, an
 	return p.sendSdpAnswer(answer, answerId)
 }
 
-func (p *ParticipantImpl) GetAnswer() (webrtc.SessionDescription, error) {
+func (p *ParticipantImpl) GetAnswer() (webrtc.SessionDescription, uint32, error) {
 	if p.IsClosed() || p.IsDisconnected() {
-		return webrtc.SessionDescription{}, ErrParticipantSessionClosed
+		return webrtc.SessionDescription{}, 0, ErrParticipantSessionClosed
 	}
 
-	answer, err := p.TransportManager.GetAnswer()
+	answer, answerId, err := p.TransportManager.GetAnswer()
 	if err != nil {
-		return answer, err
+		return answer, answerId, err
 	}
 
 	answer = p.configurePublisherAnswer(answer)
-	p.pubLogger.Debugw("returning answer", "transport", livekit.SignalTarget_PUBLISHER, "answer", answer)
-	return answer, nil
+	p.pubLogger.Debugw(
+		"returning answer",
+		"transport", livekit.SignalTarget_PUBLISHER,
+		"answer", answer,
+		"answerId", answerId,
+	)
+	return answer, answerId, nil
 }
 
 // HandleAnswer handles a client answer response, with subscriber PC, server initiates the
