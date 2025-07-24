@@ -458,12 +458,12 @@ func (t *TransportManager) HandleOffer(offer webrtc.SessionDescription, offerId 
 	return t.publisher.HandleRemoteDescription(offer, offerId)
 }
 
-func (t *TransportManager) GetAnswer() (webrtc.SessionDescription, error) {
-	answer, err := t.publisher.GetAnswer()
+func (t *TransportManager) GetAnswer() (webrtc.SessionDescription, uint32, error) {
+	answer, answerId, err := t.publisher.GetAnswer()
 	if err == nil {
 		t.lastPublisherAnswer.Store(answer)
 	}
-	return answer, err
+	return answer, answerId, err
 }
 
 func (t *TransportManager) GetPublisherICESessionUfrag() (string, error) {
@@ -496,7 +496,7 @@ func (t *TransportManager) HandleAnswer(answer webrtc.SessionDescription, answer
 	t.subscriber.HandleRemoteDescription(answer, answerId)
 }
 
-func (t *TransportManager) GetOffer() (webrtc.SessionDescription, error) {
+func (t *TransportManager) GetOffer() (webrtc.SessionDescription, uint32, error) {
 	return t.subscriber.GetOffer()
 }
 

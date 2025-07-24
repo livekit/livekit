@@ -123,7 +123,7 @@ func (s *defaultSignalv2Handler) HandleConnect(
 		return nil, err
 	}
 
-	return s.roomManager.HandleConnect(ctx, grants, rscr)
+	return s.roomManager.HandleConnect(ctx, grants, rscr.CreateRoom, rscr.WireMessage)
 }
 
 // ------------------------------------------

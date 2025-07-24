@@ -78,7 +78,7 @@ func (s rtcRestService) Create(ctx context.Context, req *rpc.RTCRestCreateReques
 		return nil, err
 	}
 
-	answer, err := lp.GetAnswer()
+	answer, _, err := lp.GetAnswer()
 	if err != nil {
 		lp.GetLogger().Errorw("rtcRest service: could not get answer", err)
 		return nil, err

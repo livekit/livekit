@@ -621,7 +621,7 @@ func (r *Room) Joinv2(
 	participant types.LocalParticipant,
 	opts *ParticipantOptions,
 	iceServers []*livekit.ICEServer,
-) (*livekit.ConnectResponse, error) {
+) error {
 	connectResponse, err := func() (*livekit.ConnectResponse, error) {
 		r.lock.Lock()
 		defer r.lock.Unlock()
@@ -782,7 +782,7 @@ func (r *Room) Joinv2(
 		return connectResponse, nil
 	}()
 	if err != nil {
-		return connectResponse, err
+		return err
 	}
 
 	// SIGNALLING-V2-TODO
@@ -791,37 +791,22 @@ func (r *Room) Joinv2(
 	//  3. HandleOffer and get answer (publisher)
 
 	r.subscribeToExistingTracks(participant, true)
-	offer, err := participant.GetOffer()
+	offer, offerId, err := participant.GetOffer()
 	if err != nil {
 		participant.GetLogger().Warnw("could not get offer", err)
 		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "get_subscriber_offer").Add(1)
-		return nil, err
+		return err
 	}
-	connectResponse.SubscriberSdp = protosignalling.ToProtoSessionDescription(offer, 0) // SIGNALLING-V2-TODO - need to proper offerId?
+	// RAJA-TODO: do SendSdpOffer after sending connect response
+	connectResponse.SubscriberSdp = protosignalling.ToProtoSessionDescription(offer, offerId)
 	// for sync response, this does not actually send, only generates messageId and caches the message
 	if err := participant.SendConnectResponse(connectResponse); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "send_response").Add(1)
-		return nil, err
-	}
-
-	if wireMessage := participant.SignalPendingMessages(); wireMessage != nil {
-		if wireMessage, ok := wireMessage.(*livekit.Signalv2WireMessage); ok {
-			switch msg := wireMessage.GetMessage().(type) {
-			case *livekit.Signalv2WireMessage_Envelope:
-			got_connect_response:
-				for _, innerMsg := range msg.Envelope.GetServerMessages() {
-					switch serverMessage := innerMsg.GetMessage().(type) {
-					case *livekit.Signalv2ServerMessage_ConnectResponse:
-						connectResponse = serverMessage.ConnectResponse
-						break got_connect_response
-					}
-				}
-			}
-		}
+		return err
 	}
 
 	prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
-	return connectResponse, nil
+	return nil
 }
 
 func (r *Room) ReplaceParticipantRequestSource(identity livekit.ParticipantIdentity, reqSource routing.MessageSource) {

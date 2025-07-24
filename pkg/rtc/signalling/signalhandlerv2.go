@@ -105,6 +105,14 @@ func (s *signalhandlerv2) HandleRequest(msg proto.Message) error {
 
 			case *livekit.Signalv2ClientMessage_SubscriberSdp:
 				s.params.Participant.HandleAnswer(protosignalling.FromProtoSessionDescription(payload.SubscriberSdp))
+
+			case *livekit.Signalv2ClientMessage_Trickle:
+				candidateInit, err := protosignalling.FromProtoTrickle(payload.Trickle)
+				if err != nil {
+					s.params.Logger.Warnw("could not decode trickle", err)
+					return err
+				}
+				s.params.Participant.AddICECandidate(candidateInit, payload.Trickle.Target)
 			}
 
 			/* SIGNALLING-V2-TODO: uncomment once sequencer is implemented on both sides

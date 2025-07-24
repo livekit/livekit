@@ -235,6 +235,14 @@ type PCTransport struct {
 	preferTCP atomic.Bool
 	isClosed  atomic.Bool
 
+	// used to check for offer/answer pairing,
+	// i. e. every offer should have an answer before another offer can be sent
+	localOfferId   atomic.Uint32
+	remoteAnswerId atomic.Uint32
+
+	remoteOfferId atomic.Uint32
+	localAnswerId atomic.Uint32
+
 	eventsQueue *utils.TypedOpsQueue[event]
 
 	// the following should be accessed only in event processing go routine
@@ -248,8 +256,6 @@ type PCTransport struct {
 	signalStateCheckTimer     *time.Timer
 	currentOfferIceCredential string // ice user:pwd, for publish side ice restart checking
 	pendingRestartIceOffer    *webrtc.SessionDescription
-	activeOfferId             uint32
-	activeAnswerId            uint32
 
 	connectionDetails      *types.ICEConnectionDetails
 	selectedPair           atomic.Pointer[webrtc.ICECandidatePair]
@@ -486,8 +492,8 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		canReuseTransceiver:      true,
 		connectionDetails:        types.NewICEConnectionDetails(params.Transport, params.Logger),
 		lastNegotiate:            time.Now(),
-		activeOfferId:            uint32(rand.Intn(1<<8) + 1),
 	}
+	t.localOfferId.Store(uint32(rand.Intn(1<<8) + 1))
 
 	bwe, err := t.createPeerConnection()
 	if err != nil {
@@ -1294,6 +1300,24 @@ func (t *PCTransport) clearConnTimer() {
 
 func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remoteId uint32) error {
 	if t.params.UseOneShotSignallingMode || t.params.SynchronousLocalCandidatesMode {
+		if sd.Type == webrtc.SDPTypeOffer {
+			remoteOfferId := t.remoteOfferId.Load()
+			if remoteOfferId != 0 && remoteOfferId != t.localAnswerId.Load() {
+				t.params.Logger.Warnw(
+					"sdp state: multiple offers without answer", nil,
+					"remoteOfferId", remoteOfferId,
+					"localAnswerId", t.localAnswerId.Load(),
+					"receivedRemoteOfferId", remoteId,
+				)
+			}
+			t.remoteOfferId.Store(remoteId)
+		} else {
+			if remoteId != 0 && remoteId != t.localOfferId.Load() {
+				t.params.Logger.Warnw("sdp state: answer id mismatch", nil, "expected", t.localOfferId.Load(), "got", remoteId)
+			}
+			t.remoteAnswerId.Store(remoteId)
+		}
+
 		// SIGNALLING-V2-TODO: need to support filtering candidates for transport fallback
 		// add remote candidates to ICE connection details
 		parsed, err := sd.Unmarshal()
@@ -1342,23 +1366,23 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remo
 	return nil
 }
 
-func (t *PCTransport) GetAnswer() (webrtc.SessionDescription, error) {
+func (t *PCTransport) GetAnswer() (webrtc.SessionDescription, uint32, error) {
 	if !t.params.UseOneShotSignallingMode && !t.params.SynchronousLocalCandidatesMode {
-		return webrtc.SessionDescription{}, ErrNotSynchronousLocalCandidatesMode
+		return webrtc.SessionDescription{}, 0, ErrNotSynchronousLocalCandidatesMode
 	}
 
 	prd := t.pc.PendingRemoteDescription()
 	if prd == nil || prd.Type != webrtc.SDPTypeOffer {
-		return webrtc.SessionDescription{}, ErrNoRemoteDescription
+		return webrtc.SessionDescription{}, 0, ErrNoRemoteDescription
 	}
 
 	answer, err := t.pc.CreateAnswer(nil)
 	if err != nil {
-		return webrtc.SessionDescription{}, err
+		return webrtc.SessionDescription{}, 0, err
 	}
 
 	if err = t.pc.SetLocalDescription(answer); err != nil {
-		return webrtc.SessionDescription{}, err
+		return webrtc.SessionDescription{}, 0, err
 	}
 
 	// wait for gathering to complete to include all candidates in the answer
@@ -1387,21 +1411,24 @@ func (t *PCTransport) GetAnswer() (webrtc.SessionDescription, error) {
 		}
 	}
 
-	return *cld, nil
+	answerId := t.remoteOfferId.Load()
+	t.localAnswerId.Store(answerId)
+
+	return *cld, answerId, nil
 }
 
-func (t *PCTransport) GetOffer() (webrtc.SessionDescription, error) {
+func (t *PCTransport) GetOffer() (webrtc.SessionDescription, uint32, error) {
 	if !t.params.SynchronousLocalCandidatesMode {
-		return webrtc.SessionDescription{}, ErrNotSynchronousLocalCandidatesMode
+		return webrtc.SessionDescription{}, 0, ErrNotSynchronousLocalCandidatesMode
 	}
 
 	offer, err := t.pc.CreateOffer(nil)
 	if err != nil {
-		return webrtc.SessionDescription{}, err
+		return webrtc.SessionDescription{}, 0, err
 	}
 
 	if err = t.pc.SetLocalDescription(offer); err != nil {
-		return webrtc.SessionDescription{}, err
+		return webrtc.SessionDescription{}, 0, err
 	}
 
 	// wait for gathering to complete to include all candidates in the answer
@@ -1430,7 +1457,7 @@ func (t *PCTransport) GetOffer() (webrtc.SessionDescription, error) {
 		}
 	}
 
-	return *pld, nil
+	return *pld, t.localOfferId.Inc(), nil
 }
 
 func (t *PCTransport) GetICESessionUfrag() (string, error) {
@@ -2260,8 +2287,16 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 
 	t.setupSignalStateCheckTimer()
 
-	t.activeOfferId++
-	if err := t.params.Handler.OnOffer(offer, t.activeOfferId); err != nil {
+	remoteAnswerId := t.remoteAnswerId.Load()
+	if remoteAnswerId != 0 && remoteAnswerId != t.localOfferId.Load() {
+		t.params.Logger.Warnw(
+			"sdp state: sending offer before receiving answer", nil,
+			"localOfferId", t.localOfferId.Load(),
+			"remoteAnswerId", remoteAnswerId,
+		)
+	}
+
+	if err := t.params.Handler.OnOffer(offer, t.localOfferId.Inc()); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "write_message").Add(1)
 		return errors.Wrap(err, "could not send offer")
 	}
@@ -2378,10 +2413,21 @@ func (t *PCTransport) createAndSendAnswer() error {
 		t.params.Logger.Debugw("local answer (filtered)", "sdp", answer.SDP)
 	}
 
-	if err := t.params.Handler.OnAnswer(answer, t.activeAnswerId); err != nil {
+	localAnswerId := t.localAnswerId.Load()
+	if localAnswerId != 0 && localAnswerId >= t.remoteOfferId.Load() {
+		t.params.Logger.Warnw(
+			"sdp state: duplicate answer", nil,
+			"localAnswerId", localAnswerId,
+			"remoteOfferId", t.remoteOfferId.Load(),
+		)
+	}
+
+	answerId := t.remoteOfferId.Load()
+	if err := t.params.Handler.OnAnswer(answer, answerId); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
 		return errors.Wrap(err, "could not send answer")
 	}
+	t.localAnswerId.Store(answerId)
 
 	prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
 	return t.localDescriptionSent()
@@ -2389,7 +2435,16 @@ func (t *PCTransport) createAndSendAnswer() error {
 
 func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, offerId uint32) error {
 	t.params.Logger.Debugw("processing offer", "offerId", offerId)
-	t.activeAnswerId = offerId
+	remoteOfferId := t.remoteOfferId.Load()
+	if remoteOfferId != 0 && remoteOfferId != t.localAnswerId.Load() {
+		t.params.Logger.Warnw(
+			"sdp state: multiple offers without answer", nil,
+			"remoteOfferId", remoteOfferId,
+			"localAnswerId", t.localAnswerId.Load(),
+			"receivedRemoteOfferId", offerId,
+		)
+	}
+	t.remoteOfferId.Store(offerId)
 
 	parsed, err := sd.Unmarshal()
 	if err != nil {
@@ -2453,9 +2508,11 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, o
 
 func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription, answerId uint32) error {
 	t.params.Logger.Debugw("processing answer", "answerId", answerId)
-	if answerId != 0 && answerId != t.activeOfferId {
-		t.params.Logger.Warnw("answer id mismatch", nil, "expected", t.activeOfferId, "got", answerId)
+	if answerId != 0 && answerId != t.localOfferId.Load() {
+		t.params.Logger.Warnw("sdp state: answer id mismatch", nil, "expected", t.localOfferId.Load(), "got", answerId)
 	}
+	t.remoteAnswerId.Store(answerId)
+
 	t.clearSignalStateCheckTimer()
 
 	if err := t.setRemoteDescription(*sd); err != nil {
@@ -2520,8 +2577,17 @@ func (t *PCTransport) doICERestart() error {
 			t.params.Logger.Infow("deferring ice restart to next offer")
 			t.setNegotiationState(transport.NegotiationStateRetry)
 			t.restartAtNextOffer = true
-			t.activeOfferId++
-			err := t.params.Handler.OnOffer(*offer, t.activeOfferId)
+
+			remoteAnswerId := t.remoteAnswerId.Load()
+			if remoteAnswerId != 0 && remoteAnswerId != t.localOfferId.Load() {
+				t.params.Logger.Warnw(
+					"sdp state: answer not received in ICE restart", nil,
+					"localOfferId", t.localOfferId.Load(),
+					"remoteAnswerId", remoteAnswerId,
+				)
+			}
+
+			err := t.params.Handler.OnOffer(*offer, t.localOfferId.Inc())
 			if err != nil {
 				prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "write_message").Add(1)
 			} else {
