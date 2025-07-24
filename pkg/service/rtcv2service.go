@@ -75,6 +75,7 @@ func (s *RTCv2Service) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+cRTCv2Path, s.handlePost)
 	mux.HandleFunc("GET "+cRTCv2Path, s.validate)
 	mux.HandleFunc("PATCH "+cRTCv2ParticipantIDPath, s.handleParticipantPatch)
+	mux.HandleFunc("DELETE "+cRTCv2ParticipantIDPath, s.handleParticipantDelete)
 }
 
 func (s *RTCv2Service) validateInternal(
@@ -289,6 +290,59 @@ func (s *RTCv2Service) handleParticipantPatch(w http.ResponseWriter, r *http.Req
 
 	w.Header().Add("Content-type", "application/x-protobuf")
 	w.Write(marshalled)
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *RTCv2Service) handleParticipantDelete(w http.ResponseWriter, r *http.Request) {
+	claims := GetGrants(r.Context())
+	if claims == nil || claims.Video == nil {
+		HandleErrorJson(w, r, http.StatusUnauthorized, rtc.ErrPermissionDenied)
+		return
+	}
+
+	roomName, err := EnsureJoinPermission(r.Context())
+	if err != nil {
+		HandleErrorJson(w, r, http.StatusUnauthorized, err)
+		return
+	}
+	if roomName == "" {
+		HandleErrorJson(w, r, http.StatusUnauthorized, ErrNoRoomName)
+		return
+	}
+
+	participantIdentity := livekit.ParticipantIdentity(claims.Identity)
+	if participantIdentity == "" {
+		HandleErrorJson(w, r, http.StatusUnauthorized, ErrIdentityEmpty)
+		return
+	}
+
+	pID := livekit.ParticipantID(r.PathValue("participant_id"))
+	if pID == "" {
+		HandleErrorJson(w, r, http.StatusBadRequest, ErrParticipantSidEmpty)
+		return
+	}
+
+	_, err = s.signalv2ParticipantClient.RelaySignalv2ParticipantDeleteSession(
+		r.Context(),
+		s.topicFormatter.ParticipantTopic(r.Context(), roomName, participantIdentity),
+		&rpc.RelaySignalv2ParticipantDeleteSessionRequest{
+			Room:                string(roomName),
+			ParticipantIdentity: string(participantIdentity),
+			ParticipantId:       string(pID),
+		},
+	)
+	if err != nil {
+		HandleErrorJson(w, r, http.StatusBadRequest, err)
+		return
+	}
+
+	logger.Debugw(
+		"participant deleted",
+		"room", roomName,
+		"participant", participantIdentity,
+		"pID", pID,
+	)
 
 	w.WriteHeader(http.StatusOK)
 }
