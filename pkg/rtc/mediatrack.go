@@ -67,6 +67,7 @@ type MediaTrackParams struct {
 	ParticipantID         func() livekit.ParticipantID
 	ParticipantIdentity   livekit.ParticipantIdentity
 	ParticipantVersion    uint32
+	ParticipantCountry    string
 	BufferFactory         *buffer.Factory
 	ReceiverConfig        ReceiverConfig
 	SubscriberConfig      DirectionConfig
@@ -335,14 +336,21 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		})
 
 		// SIMULCAST-CODEC-TODO: these need to be receiver/mime aware, setting it up only for primary now
+		statsKey := telemetry.StatsKeyForTrack(
+			t.params.ParticipantCountry,
+			livekit.StreamType_UPSTREAM,
+			t.PublisherID(),
+			t.ID(),
+			ti.Source,
+			ti.Type,
+		)
 		newWR.OnStatsUpdate(func(_ *sfu.WebRTCReceiver, stat *livekit.AnalyticsStat) {
 			// send for only one codec, either primary (priority == 0) OR regressed codec
 			t.lock.RLock()
 			regressionTargetCodecReceived := t.regressionTargetCodecReceived
 			t.lock.RUnlock()
 			if priority == 0 || regressionTargetCodecReceived {
-				key := telemetry.StatsKeyForTrack(livekit.StreamType_UPSTREAM, t.PublisherID(), t.ID(), ti.Source, ti.Type)
-				t.params.Telemetry.TrackStats(key, stat)
+				t.params.Telemetry.TrackStats(statsKey, stat)
 
 				if cs, ok := telemetry.CondenseStat(stat); ok {
 					t.params.Reporter.Tx(func(tx roomobs.TrackTx) {

@@ -24,10 +24,15 @@ import (
 type Direction string
 
 const (
-	Incoming               Direction = "incoming"
-	Outgoing               Direction = "outgoing"
-	transmissionInitial              = "initial"
-	transmissionRetransmit           = "retransmit"
+	Incoming Direction = "incoming"
+	Outgoing Direction = "outgoing"
+)
+
+type transmissionType string
+
+const (
+	transmissionInitial    transmissionType = "initial"
+	transmissionRetransmit transmissionType = "retransmit"
 )
 
 var (
@@ -44,11 +49,11 @@ var (
 	forwardLatency             atomic.Uint32
 	forwardJitter              atomic.Uint32
 
-	promPacketLabels          = []string{"direction", "transmission"}
+	promPacketLabels          = []string{"direction", "transmission", "country"}
 	promPacketTotal           *prometheus.CounterVec
 	promPacketBytes           *prometheus.CounterVec
-	promRTCPLabels            = []string{"direction"}
-	promStreamLabels          = []string{"direction", "source", "type"}
+	promRTCPLabels            = []string{"direction", "country"}
+	promStreamLabels          = []string{"direction", "source", "type", "country"}
 	promNackTotal             *prometheus.CounterVec
 	promPliTotal              *prometheus.CounterVec
 	promFirTotal              *prometheus.CounterVec
@@ -186,31 +191,16 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promConnections)
 	prometheus.MustRegister(promForwardLatency)
 	prometheus.MustRegister(promForwardJitter)
-
-	promPacketTotalIncomingInitial = promPacketTotal.WithLabelValues(string(Incoming), transmissionInitial)
-	promPacketTotalIncomingRetransmit = promPacketTotal.WithLabelValues(string(Incoming), transmissionRetransmit)
-	promPacketTotalOutgoingInitial = promPacketTotal.WithLabelValues(string(Outgoing), transmissionInitial)
-	promPacketTotalOutgoingRetransmit = promPacketTotal.WithLabelValues(string(Outgoing), transmissionRetransmit)
-	promPacketBytesIncomingInitial = promPacketBytes.WithLabelValues(string(Incoming), transmissionInitial)
-	promPacketBytesIncomingRetransmit = promPacketBytes.WithLabelValues(string(Incoming), transmissionRetransmit)
-	promPacketBytesOutgoingInitial = promPacketBytes.WithLabelValues(string(Outgoing), transmissionInitial)
-	promPacketBytesOutgoingRetransmit = promPacketBytes.WithLabelValues(string(Outgoing), transmissionRetransmit)
 }
 
-func IncrementPackets(direction Direction, count uint64, retransmit bool) {
-	if direction == Incoming {
-		if retransmit {
-			promPacketTotalIncomingRetransmit.Add(float64(count))
-		} else {
-			promPacketTotalIncomingInitial.Add(float64(count))
-		}
+func IncrementPackets(country string, direction Direction, count uint64, retransmit bool) {
+	var transmission transmissionType
+	if retransmit {
+		transmission = transmissionRetransmit
 	} else {
-		if retransmit {
-			promPacketTotalOutgoingRetransmit.Add(float64(count))
-		} else {
-			promPacketTotalOutgoingInitial.Add(float64(count))
-		}
+		transmission = transmissionInitial
 	}
+	promPacketTotal.WithLabelValues(string(direction), string(transmission), country).Add(float64(count))
 
 	if direction == Incoming {
 		packetsIn.Add(count)
@@ -222,20 +212,14 @@ func IncrementPackets(direction Direction, count uint64, retransmit bool) {
 	}
 }
 
-func IncrementBytes(direction Direction, count uint64, retransmit bool) {
-	if direction == Incoming {
-		if retransmit {
-			promPacketBytesIncomingRetransmit.Add(float64(count))
-		} else {
-			promPacketBytesIncomingInitial.Add(float64(count))
-		}
+func IncrementBytes(country string, direction Direction, count uint64, retransmit bool) {
+	var transmission transmissionType
+	if retransmit {
+		transmission = transmissionRetransmit
 	} else {
-		if retransmit {
-			promPacketBytesOutgoingRetransmit.Add(float64(count))
-		} else {
-			promPacketBytesOutgoingInitial.Add(float64(count))
-		}
+		transmission = transmissionInitial
 	}
+	promPacketBytes.WithLabelValues(string(direction), string(transmission), country).Add(float64(count))
 
 	if direction == Incoming {
 		bytesIn.Add(count)
@@ -247,46 +231,53 @@ func IncrementBytes(direction Direction, count uint64, retransmit bool) {
 	}
 }
 
-func IncrementRTCP(direction Direction, nack, pli, fir uint32) {
+func IncrementRTCP(country string, direction Direction, nack, pli, fir uint32) {
 	if nack > 0 {
-		promNackTotal.WithLabelValues(string(direction)).Add(float64(nack))
+		promNackTotal.WithLabelValues(string(direction), country).Add(float64(nack))
 		nackTotal.Add(uint64(nack))
 	}
 	if pli > 0 {
-		promPliTotal.WithLabelValues(string(direction)).Add(float64(pli))
+		promPliTotal.WithLabelValues(string(direction), country).Add(float64(pli))
 	}
 	if fir > 0 {
-		promFirTotal.WithLabelValues(string(direction)).Add(float64(fir))
+		promFirTotal.WithLabelValues(string(direction), country).Add(float64(fir))
 	}
 }
 
-func RecordPacketLoss(direction Direction, trackSource livekit.TrackSource, trackType livekit.TrackType, lost, total uint32) {
+func RecordPacketLoss(
+	country string,
+	direction Direction,
+	trackSource livekit.TrackSource,
+	trackType livekit.TrackType,
+	lost uint32,
+	total uint32,
+) {
 	if total > 0 {
-		promPacketLoss.WithLabelValues(string(direction), trackSource.String(), trackType.String()).Observe(float64(lost) / float64(total) * 100)
+		promPacketLoss.WithLabelValues(string(direction), trackSource.String(), trackType.String(), country).Observe(float64(lost) / float64(total) * 100)
 	}
 	if lost > 0 {
-		promPacketLossTotal.WithLabelValues(string(direction), trackSource.String(), trackType.String()).Add(float64(lost))
+		promPacketLossTotal.WithLabelValues(string(direction), trackSource.String(), trackType.String(), country).Add(float64(lost))
 	}
 }
 
-func RecordPacketOutOfOrder(direction Direction, trackSource livekit.TrackSource, trackType livekit.TrackType, ooo, total uint32) {
+func RecordPacketOutOfOrder(country string, direction Direction, trackSource livekit.TrackSource, trackType livekit.TrackType, ooo, total uint32) {
 	if total > 0 {
-		promPacketOutOfOrder.WithLabelValues(string(direction), trackSource.String(), trackType.String()).Observe(float64(ooo) / float64(total) * 100)
+		promPacketOutOfOrder.WithLabelValues(string(direction), trackSource.String(), trackType.String(), country).Observe(float64(ooo) / float64(total) * 100)
 	}
 	if ooo > 0 {
-		promPacketOutOfOrderTotal.WithLabelValues(string(direction), trackSource.String(), trackType.String()).Add(float64(ooo))
+		promPacketOutOfOrderTotal.WithLabelValues(string(direction), trackSource.String(), trackType.String(), country).Add(float64(ooo))
 	}
 }
 
-func RecordJitter(direction Direction, trackSource livekit.TrackSource, trackType livekit.TrackType, jitter uint32) {
+func RecordJitter(country string, direction Direction, trackSource livekit.TrackSource, trackType livekit.TrackType, jitter uint32) {
 	if jitter > 0 {
-		promJitter.WithLabelValues(string(direction), trackSource.String(), trackType.String()).Observe(float64(jitter))
+		promJitter.WithLabelValues(string(direction), trackSource.String(), trackType.String(), country).Observe(float64(jitter))
 	}
 }
 
-func RecordRTT(direction Direction, trackSource livekit.TrackSource, trackType livekit.TrackType, rtt uint32) {
+func RecordRTT(country string, direction Direction, trackSource livekit.TrackSource, trackType livekit.TrackType, rtt uint32) {
 	if rtt > 0 {
-		promRTT.WithLabelValues(string(direction), trackSource.String(), trackType.String()).Observe(float64(rtt))
+		promRTT.WithLabelValues(string(direction), trackSource.String(), trackType.String(), country).Observe(float64(rtt))
 	}
 }
 

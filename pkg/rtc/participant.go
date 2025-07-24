@@ -205,6 +205,7 @@ type ParticipantParams struct {
 	FireOnTrackBySdp               bool
 	DisableCodecRegression         bool
 	LastPubReliableSeq             uint32
+	Country                        string
 }
 
 type ParticipantImpl struct {
@@ -434,6 +435,10 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.setupMetrics()
 
 	return p, nil
+}
+
+func (p *ParticipantImpl) GetCountry() string {
+	return p.params.Country
 }
 
 func (p *ParticipantImpl) GetTrailer() []byte {
@@ -3015,6 +3020,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 		ParticipantID:         p.ID,
 		ParticipantIdentity:   p.params.Identity,
 		ParticipantVersion:    p.version.Load(),
+		ParticipantCountry:    p.params.Country,
 		BufferFactory:         p.params.Config.BufferFactory,
 		ReceiverConfig:        p.params.Config.Receiver,
 		AudioConfig:           p.params.AudioConfig,

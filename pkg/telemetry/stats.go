@@ -20,6 +20,7 @@ import (
 )
 
 type StatsKey struct {
+	country       string
 	streamType    livekit.StreamType
 	participantID livekit.ParticipantID
 	trackID       livekit.TrackID
@@ -28,8 +29,16 @@ type StatsKey struct {
 	track         bool
 }
 
-func StatsKeyForTrack(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID, trackSource livekit.TrackSource, trackType livekit.TrackType) StatsKey {
+func StatsKeyForTrack(
+	country string,
+	streamType livekit.StreamType,
+	participantID livekit.ParticipantID,
+	trackID livekit.TrackID,
+	trackSource livekit.TrackSource,
+	trackType livekit.TrackType,
+) StatsKey {
 	return StatsKey{
+		country:       country,
 		streamType:    streamType,
 		participantID: participantID,
 		trackID:       trackID,
@@ -76,20 +85,20 @@ func (t *telemetryService) TrackStats(key StatsKey, stat *livekit.AnalyticsStat)
 				bytes += stream.RetransmitBytes
 			}
 			if key.track {
-				prometheus.RecordPacketLoss(direction, key.trackSource, key.trackType, stream.PacketsLost, stream.PrimaryPackets+stream.PaddingPackets)
-				prometheus.RecordPacketOutOfOrder(direction, key.trackSource, key.trackType, stream.PacketsOutOfOrder, stream.PrimaryPackets+stream.PaddingPackets)
-				prometheus.RecordRTT(direction, key.trackSource, key.trackType, stream.Rtt)
-				prometheus.RecordJitter(direction, key.trackSource, key.trackType, stream.Jitter)
+				prometheus.RecordPacketLoss(key.country, direction, key.trackSource, key.trackType, stream.PacketsLost, stream.PrimaryPackets+stream.PaddingPackets)
+				prometheus.RecordPacketOutOfOrder(key.country, direction, key.trackSource, key.trackType, stream.PacketsOutOfOrder, stream.PrimaryPackets+stream.PaddingPackets)
+				prometheus.RecordRTT(key.country, direction, key.trackSource, key.trackType, stream.Rtt)
+				prometheus.RecordJitter(key.country, direction, key.trackSource, key.trackType, stream.Jitter)
 			}
 		}
-		prometheus.IncrementRTCP(direction, nacks, plis, firs)
-		prometheus.IncrementPackets(direction, uint64(packets), false)
-		prometheus.IncrementBytes(direction, bytes, false)
+		prometheus.IncrementRTCP(key.country, direction, nacks, plis, firs)
+		prometheus.IncrementPackets(key.country, direction, uint64(packets), false)
+		prometheus.IncrementBytes(key.country, direction, bytes, false)
 		if retransmitPackets != 0 {
-			prometheus.IncrementPackets(direction, uint64(retransmitPackets), true)
+			prometheus.IncrementPackets(key.country, direction, uint64(retransmitPackets), true)
 		}
 		if retransmitBytes != 0 {
-			prometheus.IncrementBytes(direction, retransmitBytes, true)
+			prometheus.IncrementBytes(key.country, direction, retransmitBytes, true)
 		}
 
 		if worker, ok := t.getWorker(key.participantID); ok {

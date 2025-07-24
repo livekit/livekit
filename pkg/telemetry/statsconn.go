@@ -52,7 +52,8 @@ func NewConn(c net.Conn, direction prometheus.Direction) *Conn {
 func (c *Conn) Read(b []byte) (n int, err error) {
 	n, err = c.Conn.Read(b)
 	if n > 0 {
-		prometheus.IncrementBytes(prometheus.Incoming, uint64(n), false)
+		prometheus.IncrementBytes("", prometheus.Incoming, uint64(n), false)
+		prometheus.IncrementPackets("", prometheus.Incoming, 1, false)
 	}
 	return
 }
@@ -60,7 +61,8 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 func (c *Conn) Write(b []byte) (n int, err error) {
 	n, err = c.Conn.Write(b)
 	if n > 0 {
-		prometheus.IncrementBytes(prometheus.Outgoing, uint64(n), false)
+		prometheus.IncrementBytes("", prometheus.Outgoing, uint64(n), false)
+		prometheus.IncrementPackets("", prometheus.Outgoing, 1, false)
 	}
 	return
 }
@@ -83,8 +85,8 @@ func NewPacketConn(c net.PacketConn, direction prometheus.Direction) *PacketConn
 func (c *PacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	n, addr, err = c.PacketConn.ReadFrom(p)
 	if n > 0 {
-		prometheus.IncrementBytes(prometheus.Incoming, uint64(n), false)
-		prometheus.IncrementPackets(prometheus.Incoming, 1, false)
+		prometheus.IncrementBytes("", prometheus.Incoming, uint64(n), false)
+		prometheus.IncrementPackets("", prometheus.Incoming, 1, false)
 	}
 	return
 }
@@ -92,8 +94,8 @@ func (c *PacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 func (c *PacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	n, err = c.PacketConn.WriteTo(p, addr)
 	if n > 0 {
-		prometheus.IncrementBytes(prometheus.Outgoing, uint64(n), false)
-		prometheus.IncrementPackets(prometheus.Outgoing, 1, false)
+		prometheus.IncrementBytes("", prometheus.Outgoing, uint64(n), false)
+		prometheus.IncrementPackets("", prometheus.Outgoing, 1, false)
 	}
 	return
 }
