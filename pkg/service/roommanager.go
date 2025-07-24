@@ -572,7 +572,7 @@ func (r *RoomManager) HandleConnect(
 	grants *auth.ClaimGrants,
 	createRoom *livekit.CreateRoomRequest,
 	wireMessage *livekit.Signalv2WireMessage, // contains livekit.ConnectRequest
-) (*rpc.RelaySignalv2ConnectResponse, error) {
+) (*livekit.Signalv2WireMessage, error) {
 	sessionStartTime := time.Now()
 
 	// find connect request in wire message
@@ -610,6 +610,7 @@ func (r *RoomManager) HandleConnect(
 		"nodeID", r.currentNode.NodeID(),
 		"numParticipants", room.GetParticipantCount(),
 		"grants", grants,
+		"createRoom", logger.Proto(createRoom),
 		"wireMessage", logger.Proto(wireMessage),
 	)
 
@@ -797,9 +798,7 @@ func (r *RoomManager) HandleConnect(
 		r.iceConfigCache.Put(iceConfigCacheKey{room.Name(), participant.Identity()}, iceConfig)
 	})
 
-	return &rpc.RelaySignalv2ConnectResponse{
-		WireMessage: wireMessageResponse,
-	}, nil
+	return wireMessageResponse, nil
 }
 
 // create the actual room object, to be used on RTC node

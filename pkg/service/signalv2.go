@@ -123,7 +123,14 @@ func (s *defaultSignalv2Handler) HandleConnect(
 		return nil, err
 	}
 
-	return s.roomManager.HandleConnect(ctx, grants, rscr.CreateRoom, rscr.WireMessage)
+	wireMessageResponse, err := s.roomManager.HandleConnect(ctx, grants, rscr.CreateRoom, rscr.WireMessage)
+	if err != nil {
+		return nil, err
+	}
+
+	return &rpc.RelaySignalv2ConnectResponse{
+		WireMessage: wireMessageResponse,
+	}, nil
 }
 
 // ------------------------------------------
