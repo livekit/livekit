@@ -48,8 +48,14 @@ func StatsKeyForTrack(
 	}
 }
 
-func StatsKeyForData(streamType livekit.StreamType, participantID livekit.ParticipantID, trackID livekit.TrackID) StatsKey {
+func StatsKeyForData(
+	country string,
+	streamType livekit.StreamType,
+	participantID livekit.ParticipantID,
+	trackID livekit.TrackID,
+) StatsKey {
 	return StatsKey{
+		country:       country,
 		streamType:    streamType,
 		participantID: participantID,
 		trackID:       trackID,

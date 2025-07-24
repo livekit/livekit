@@ -380,6 +380,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 
 	p.id.Store(params.SID)
 	p.dataChannelStats = telemetry.NewBytesTrackStats(
+		p.params.Country,
 		telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeData, p.ID()),
 		p.ID(),
 		params.Telemetry,
