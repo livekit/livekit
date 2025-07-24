@@ -2953,7 +2953,14 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 				)
 			}
 
-			prometheus.RecordPublishTime(mt.Source(), mt.Kind(), pubTime, p.GetClientInfo().GetSdk(), p.Kind())
+			prometheus.RecordPublishTime(
+				p.params.Country,
+				mt.Source(),
+				mt.Kind(),
+				pubTime,
+				p.GetClientInfo().GetSdk(),
+				p.Kind(),
+			)
 			p.handleTrackPublished(mt, isMigrated)
 		}()
 	}
