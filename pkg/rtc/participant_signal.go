@@ -290,7 +290,11 @@ func (p *ParticipantImpl) sendLeaveRequest(
 			}
 		}
 	}
-	return p.signaller.WriteMessage(p.signalling.SignalLeaveRequest(leave))
+	if leave != nil {
+		return p.signaller.WriteMessage(p.signalling.SignalLeaveRequest(leave))
+	}
+
+	return nil
 }
 
 func (p *ParticipantImpl) sendSdpAnswer(answer webrtc.SessionDescription, answerId uint32) error {
