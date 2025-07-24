@@ -57,7 +57,7 @@ func Test_ParticipantAndRoomDataAreSentWithAnalytics(t *testing.T) {
 	// do
 	packet := 33
 	stat := &livekit.AnalyticsStat{Streams: []*livekit.AnalyticsStream{{PrimaryBytes: uint64(packet)}}}
-	fixture.sut.TrackStats(telemetry.StatsKeyForData(livekit.StreamType_DOWNSTREAM, partSID, ""), stat)
+	fixture.sut.TrackStats(telemetry.StatsKeyForData("test", livekit.StreamType_DOWNSTREAM, partSID, ""), stat)
 
 	// flush
 	fixture.flush()
@@ -89,7 +89,7 @@ func Test_OnDownstreamPackets(t *testing.T) {
 	trackID := livekit.TrackID("trackID")
 	for i := range packets {
 		stat := &livekit.AnalyticsStat{Streams: []*livekit.AnalyticsStream{{PrimaryBytes: uint64(packets[i]), PrimaryPackets: uint32(1)}}}
-		fixture.sut.TrackStats(telemetry.StatsKeyForData(livekit.StreamType_DOWNSTREAM, partSID, trackID), stat)
+		fixture.sut.TrackStats(telemetry.StatsKeyForData("test", livekit.StreamType_DOWNSTREAM, partSID, trackID), stat)
 	}
 
 	// flush
@@ -119,12 +119,12 @@ func Test_OnDownstreamPackets_SeveralTracks(t *testing.T) {
 	packet1 := 33
 	trackID1 := livekit.TrackID("trackID1")
 	stat1 := &livekit.AnalyticsStat{Streams: []*livekit.AnalyticsStream{{PrimaryBytes: uint64(packet1), PrimaryPackets: 1}}}
-	fixture.sut.TrackStats(telemetry.StatsKeyForData(livekit.StreamType_DOWNSTREAM, partSID, trackID1), stat1)
+	fixture.sut.TrackStats(telemetry.StatsKeyForData("test", livekit.StreamType_DOWNSTREAM, partSID, trackID1), stat1)
 
 	packet2 := 23
 	trackID2 := livekit.TrackID("trackID2")
 	stat2 := &livekit.AnalyticsStat{Streams: []*livekit.AnalyticsStream{{PrimaryBytes: uint64(packet2), PrimaryPackets: 1}}}
-	fixture.sut.TrackStats(telemetry.StatsKeyForData(livekit.StreamType_DOWNSTREAM, partSID, trackID2), stat2)
+	fixture.sut.TrackStats(telemetry.StatsKeyForData("test", livekit.StreamType_DOWNSTREAM, partSID, trackID2), stat2)
 
 	// flush
 	fixture.flush()
@@ -175,7 +175,7 @@ func Test_OnDownStreamStat(t *testing.T) {
 		},
 	}
 	trackID := livekit.TrackID("trackID1")
-	fixture.sut.TrackStats(telemetry.StatsKeyForData(livekit.StreamType_DOWNSTREAM, partSID, trackID), stat1)
+	fixture.sut.TrackStats(telemetry.StatsKeyForData("test", livekit.StreamType_DOWNSTREAM, partSID, trackID), stat1)
 
 	stat2 := &livekit.AnalyticsStat{
 		Streams: []*livekit.AnalyticsStream{
@@ -191,7 +191,7 @@ func Test_OnDownStreamStat(t *testing.T) {
 			},
 		},
 	}
-	fixture.sut.TrackStats(telemetry.StatsKeyForData(livekit.StreamType_DOWNSTREAM, partSID, trackID), stat2)
+	fixture.sut.TrackStats(telemetry.StatsKeyForData("test", livekit.StreamType_DOWNSTREAM, partSID, trackID), stat2)
 
 	// flush
 	fixture.flush()
@@ -230,7 +230,7 @@ func Test_PacketLostDiffShouldBeSentToTelemetry(t *testing.T) {
 			},
 		},
 	}
-	fixture.sut.TrackStats(telemetry.StatsKeyForData(livekit.StreamType_DOWNSTREAM, partSID, trackID), stat1) // there should be bytes reported so that stats are sent
+	fixture.sut.TrackStats(telemetry.StatsKeyForData("test", livekit.StreamType_DOWNSTREAM, partSID, trackID), stat1) // there should be bytes reported so that stats are sent
 
 	// flush
 	fixture.flush()
@@ -244,7 +244,7 @@ func Test_PacketLostDiffShouldBeSentToTelemetry(t *testing.T) {
 			},
 		},
 	}
-	fixture.sut.TrackStats(telemetry.StatsKeyForData(livekit.StreamType_DOWNSTREAM, partSID, trackID), stat2)
+	fixture.sut.TrackStats(telemetry.StatsKeyForData("test", livekit.StreamType_DOWNSTREAM, partSID, trackID), stat2)
 
 	// flush
 	fixture.flush()
@@ -282,7 +282,7 @@ func Test_OnDownStreamRTCP_SeveralTracks(t *testing.T) {
 			},
 		},
 	}
-	fixture.sut.TrackStats(telemetry.StatsKeyForData(livekit.StreamType_DOWNSTREAM, partSID, trackID1), stat1) // there should be bytes reported so that stats are sent
+	fixture.sut.TrackStats(telemetry.StatsKeyForData("test", livekit.StreamType_DOWNSTREAM, partSID, trackID1), stat1) // there should be bytes reported so that stats are sent
 
 	stat2 := &livekit.AnalyticsStat{
 		Streams: []*livekit.AnalyticsStream{
@@ -293,7 +293,7 @@ func Test_OnDownStreamRTCP_SeveralTracks(t *testing.T) {
 			},
 		},
 	}
-	fixture.sut.TrackStats(telemetry.StatsKeyForData(livekit.StreamType_DOWNSTREAM, partSID, trackID1), stat2)
+	fixture.sut.TrackStats(telemetry.StatsKeyForData("test", livekit.StreamType_DOWNSTREAM, partSID, trackID1), stat2)
 
 	stat3 := &livekit.AnalyticsStat{
 		Streams: []*livekit.AnalyticsStream{
@@ -304,7 +304,7 @@ func Test_OnDownStreamRTCP_SeveralTracks(t *testing.T) {
 			},
 		},
 	}
-	fixture.sut.TrackStats(telemetry.StatsKeyForData(livekit.StreamType_DOWNSTREAM, partSID, trackID2), stat3)
+	fixture.sut.TrackStats(telemetry.StatsKeyForData("test", livekit.StreamType_DOWNSTREAM, partSID, trackID2), stat3)
 
 	// flush
 	fixture.flush()
@@ -357,7 +357,7 @@ func Test_OnUpstreamStat(t *testing.T) {
 	}
 	trackID := livekit.TrackID("trackID")
 
-	fixture.sut.TrackStats(telemetry.StatsKeyForData(livekit.StreamType_UPSTREAM, partSID, trackID), stat1)
+	fixture.sut.TrackStats(telemetry.StatsKeyForData("test", livekit.StreamType_UPSTREAM, partSID, trackID), stat1)
 
 	stat2 := &livekit.AnalyticsStat{
 		Streams: []*livekit.AnalyticsStream{
@@ -373,7 +373,7 @@ func Test_OnUpstreamStat(t *testing.T) {
 			},
 		},
 	}
-	fixture.sut.TrackStats(telemetry.StatsKeyForData(livekit.StreamType_UPSTREAM, partSID, trackID), stat2)
+	fixture.sut.TrackStats(telemetry.StatsKeyForData("test", livekit.StreamType_UPSTREAM, partSID, trackID), stat2)
 
 	// flush
 	fixture.flush()
@@ -416,8 +416,8 @@ func Test_OnUpstreamRTCP_SeveralTracks(t *testing.T) {
 			},
 		},
 	}
-	fixture.sut.TrackStats(telemetry.StatsKeyForData(livekit.StreamType_UPSTREAM, partSID, trackID1), stat1)
-	fixture.sut.TrackStats(telemetry.StatsKeyForData(livekit.StreamType_UPSTREAM, partSID, trackID2), stat1) // using same buffer is not correct but for test it is fine
+	fixture.sut.TrackStats(telemetry.StatsKeyForData("test", livekit.StreamType_UPSTREAM, partSID, trackID1), stat1)
+	fixture.sut.TrackStats(telemetry.StatsKeyForData("test", livekit.StreamType_UPSTREAM, partSID, trackID2), stat1) // using same buffer is not correct but for test it is fine
 
 	// do
 	totalBytes++
@@ -431,7 +431,7 @@ func Test_OnUpstreamRTCP_SeveralTracks(t *testing.T) {
 			},
 		},
 	}
-	fixture.sut.TrackStats(telemetry.StatsKeyForData(livekit.StreamType_UPSTREAM, partSID, trackID1), stat2)
+	fixture.sut.TrackStats(telemetry.StatsKeyForData("test", livekit.StreamType_UPSTREAM, partSID, trackID1), stat2)
 
 	stat3 := &livekit.AnalyticsStat{
 		Streams: []*livekit.AnalyticsStream{
@@ -442,7 +442,7 @@ func Test_OnUpstreamRTCP_SeveralTracks(t *testing.T) {
 			},
 		},
 	}
-	fixture.sut.TrackStats(telemetry.StatsKeyForData(livekit.StreamType_UPSTREAM, partSID, trackID2), stat3)
+	fixture.sut.TrackStats(telemetry.StatsKeyForData("test", livekit.StreamType_UPSTREAM, partSID, trackID2), stat3)
 
 	// flush
 	fixture.flush()
@@ -518,7 +518,7 @@ func Test_AddUpTrack(t *testing.T) {
 		},
 	}
 	trackID := livekit.TrackID("trackID")
-	fixture.sut.TrackStats(telemetry.StatsKeyForData(livekit.StreamType_UPSTREAM, partSID, trackID), stat)
+	fixture.sut.TrackStats(telemetry.StatsKeyForData("test", livekit.StreamType_UPSTREAM, partSID, trackID), stat)
 
 	// flush
 	fixture.flush()
@@ -556,7 +556,7 @@ func Test_AddUpTrack_SeveralBuffers_Simulcast(t *testing.T) {
 			},
 		},
 	}
-	fixture.sut.TrackStats(telemetry.StatsKeyForData(livekit.StreamType_UPSTREAM, partSID, trackID), stat1)
+	fixture.sut.TrackStats(telemetry.StatsKeyForData("test", livekit.StreamType_UPSTREAM, partSID, trackID), stat1)
 
 	// flush
 	fixture.flush()
@@ -591,7 +591,7 @@ func Test_BothDownstreamAndUpstreamStatsAreSentTogether(t *testing.T) {
 			},
 		},
 	}
-	fixture.sut.TrackStats(telemetry.StatsKeyForData(livekit.StreamType_UPSTREAM, partSID, "trackID"), stat1)
+	fixture.sut.TrackStats(telemetry.StatsKeyForData("test", livekit.StreamType_UPSTREAM, partSID, "trackID"), stat1)
 	// downstream bytes
 	stat2 := &livekit.AnalyticsStat{
 		Streams: []*livekit.AnalyticsStream{
@@ -601,7 +601,7 @@ func Test_BothDownstreamAndUpstreamStatsAreSentTogether(t *testing.T) {
 			},
 		},
 	}
-	fixture.sut.TrackStats(telemetry.StatsKeyForData(livekit.StreamType_DOWNSTREAM, partSID, "trackID1"), stat2)
+	fixture.sut.TrackStats(telemetry.StatsKeyForData("test", livekit.StreamType_DOWNSTREAM, partSID, "trackID1"), stat2)
 
 	// flush
 	fixture.flush()
