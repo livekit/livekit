@@ -224,3 +224,24 @@ func (s signalv2ParticipantService) RelaySignalv2Participant(ctx context.Context
 		WireMessage: wireMessage,
 	}, nil
 }
+
+func (s signalv2ParticipantService) RelaySignalv2ParticipantDeleteSession(
+	ctx context.Context,
+	req *rpc.RelaySignalv2ParticipantDeleteSessionRequest,
+) (*emptypb.Empty, error) {
+	room := s.RoomManager.GetRoom(ctx, livekit.RoomName(req.Room))
+	if room == nil {
+		return nil, ErrRoomNotFound
+	}
+
+	lp := room.GetParticipantByID(livekit.ParticipantID(req.ParticipantId))
+	if lp != nil {
+		room.RemoveParticipant(
+			lp.Identity(),
+			lp.ID(),
+			types.ParticipantCloseReasonClientRequestLeave,
+		)
+	}
+
+	return &emptypb.Empty{}, nil
+}

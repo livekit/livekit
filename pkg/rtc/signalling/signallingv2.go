@@ -32,13 +32,13 @@ type signallingv2 struct {
 
 	params Signallingv2Params
 
-	signalCache *protosignalling.Signalv2Cache
+	signalCache *protosignalling.Signalv2ServerMessageCache
 }
 
 func NewSignallingv2(params Signallingv2Params) ParticipantSignalling {
 	return &signallingv2{
 		params: params,
-		signalCache: protosignalling.NewSignalv2Cache(protosignalling.Signalv2CacheParams{
+		signalCache: protosignalling.NewSignalv2ServerMessageCache(protosignalling.SignalCacheParams{
 			Logger: params.Logger,
 		}),
 	}
