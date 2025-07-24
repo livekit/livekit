@@ -352,19 +352,18 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			joiningMessageLastWrittenSeqs: make(map[livekit.ParticipantID]uint32),
 		},
 	}
-	/*
-		p.signalhandler = signalling.NewSignalHandler(signalling.SignalHandlerParams{
-			Logger:      params.Logger,
-			Participant: p,
-		})
-		p.signalling = signalling.NewSignalling(signalling.SignallingParams{
-			Logger: params.Logger,
-		})
-		p.signaller = signalling.NewSignallerAsync(signalling.SignallerAsyncParams{
-			Logger:      params.Logger,
-			Participant: p,
-		})
-	*/
+	p.signalhandler = signalling.NewSignalHandler(signalling.SignalHandlerParams{
+		Logger:      params.Logger,
+		Participant: p,
+	})
+	p.signalling = signalling.NewSignalling(signalling.SignallingParams{
+		Logger: params.Logger,
+	})
+	p.signaller = signalling.NewSignallerAsync(signalling.SignallerAsyncParams{
+		Logger:      params.Logger,
+		Participant: p,
+	})
+	/* SIGNALLING-V2-TODO: instantiate these based on signalling version and signal transport
 	p.signalhandler = signalling.NewSignalHandlerv2(signalling.SignalHandlerv2Params{
 		Logger:      params.Logger,
 		Participant: p,
@@ -376,6 +375,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		Logger:      params.Logger,
 		Participant: p,
 	})
+	*/
 
 	p.id.Store(params.SID)
 	p.dataChannelStats = telemetry.NewBytesTrackStats(

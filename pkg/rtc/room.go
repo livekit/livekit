@@ -797,7 +797,7 @@ func (r *Room) Joinv2(
 		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "get_subscriber_offer").Add(1)
 		return err
 	}
-	// RAJA-TODO: do SendSdpOffer after sending connect response
+	// SIGNALLING-V2-TODO: when moving to envelope response, do SendSdpOffer after sending connect response
 	connectResponse.SubscriberSdp = protosignalling.ToProtoSessionDescription(offer, offerId)
 	// for sync response, this does not actually send, only generates messageId and caches the message
 	if err := participant.SendConnectResponse(connectResponse); err != nil {

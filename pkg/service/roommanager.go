@@ -716,7 +716,7 @@ func (r *RoomManager) HandleConnect(
 		return nil, err
 	}
 
-	// RAJA-TODO: process series of messages
+	// SIGNALLING-V2-TODO: process messages other than ConnecRequest in envelope.
 
 	var wireMessageResponse *livekit.Signalv2WireMessage
 	if pending := participant.SignalPendingMessages(); pending != nil {
