@@ -313,8 +313,8 @@ type ParticipantImpl struct {
 	metricsCollector  *metric.MetricsCollector
 	metricsReporter   *metric.MetricsReporter
 
-	signalhandler signalling.ParticipantSignalHandler
 	signalling    signalling.ParticipantSignalling
+	signalhandler signalling.ParticipantSignalHandler
 	signaller     signalling.ParticipantSignaller
 
 	// loggers for publisher and subscriber
@@ -353,30 +353,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			joiningMessageLastWrittenSeqs: make(map[livekit.ParticipantID]uint32),
 		},
 	}
-	p.signalhandler = signalling.NewSignalHandler(signalling.SignalHandlerParams{
-		Logger:      params.Logger,
-		Participant: p,
-	})
-	p.signalling = signalling.NewSignalling(signalling.SignallingParams{
-		Logger: params.Logger,
-	})
-	p.signaller = signalling.NewSignallerAsync(signalling.SignallerAsyncParams{
-		Logger:      params.Logger,
-		Participant: p,
-	})
-	/* SIGNALLING-V2-TODO: instantiate these based on signalling version and signal transport
-	p.signalhandler = signalling.NewSignalHandlerv2(signalling.SignalHandlerv2Params{
-		Logger:      params.Logger,
-		Participant: p,
-	})
-	p.signalling = signalling.NewSignallingv2(signalling.Signallingv2Params{
-		Logger: params.Logger,
-	})
-	p.signaller = signalling.NewSignallerv2Async(signalling.Signallerv2AsyncParams{
-		Logger:      params.Logger,
-		Participant: p,
-	})
-	*/
+	p.setupSignalling()
 
 	p.id.Store(params.SID)
 	p.dataChannelStats = telemetry.NewBytesTrackStats(
@@ -1841,7 +1818,35 @@ func (h PrimaryTransportHandler) OnFullyEstablished() {
 	h.p.onPrimaryTransportFullyEstablished()
 }
 
-// ----------------------------------------------------------
+func (p *ParticipantImpl) setupSignalling() {
+	// SIGNALLING-V2-TODO: do proper types to decide which signalling components to instantiate
+	if !p.params.SynchronousLocalCandidatesMode {
+		p.signalling = signalling.NewSignalling(signalling.SignallingParams{
+			Logger: p.params.Logger,
+		})
+		p.signalhandler = signalling.NewSignalHandler(signalling.SignalHandlerParams{
+			Logger:      p.params.Logger,
+			Participant: p,
+		})
+		p.signaller = signalling.NewSignallerAsync(signalling.SignallerAsyncParams{
+			Logger:      p.params.Logger,
+			Participant: p,
+		})
+	} else {
+		p.signalling = signalling.NewSignallingv2(signalling.Signallingv2Params{
+			Logger: p.params.Logger,
+		})
+		p.signalhandler = signalling.NewSignalHandlerv2(signalling.SignalHandlerv2Params{
+			Logger:      p.params.Logger,
+			Participant: p,
+			Signalling:  p.signalling,
+		})
+		p.signaller = signalling.NewSignallerv2Async(signalling.Signallerv2AsyncParams{
+			Logger:      p.params.Logger,
+			Participant: p,
+		})
+	}
+}
 
 func (p *ParticipantImpl) setupTransportManager() error {
 	p.twcc = twcc.NewTransportWideCCResponder()

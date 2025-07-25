@@ -73,7 +73,7 @@ func NewRTCv2Service(
 
 func (s *RTCv2Service) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+cRTCv2Path, s.handlePost)
-	mux.HandleFunc("GET "+cRTCv2Path, s.validate)
+	mux.HandleFunc("GET "+cRTCv2ValidatePath, s.validate)
 	mux.HandleFunc("PATCH "+cRTCv2ParticipantIDPath, s.handleParticipantPatch)
 	mux.HandleFunc("DELETE "+cRTCv2ParticipantIDPath, s.handleParticipantDelete)
 }
@@ -212,31 +212,9 @@ func (s *RTCv2Service) handleParticipantPatch(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	claims := GetGrants(r.Context())
-	if claims == nil || claims.Video == nil {
-		HandleErrorJson(w, r, http.StatusUnauthorized, rtc.ErrPermissionDenied)
-		return
-	}
-
-	roomName, err := EnsureJoinPermission(r.Context())
+	roomName, participantIdentity, pID, code, err := getParams(r)
 	if err != nil {
-		HandleErrorJson(w, r, http.StatusUnauthorized, err)
-		return
-	}
-	if roomName == "" {
-		HandleErrorJson(w, r, http.StatusUnauthorized, ErrNoRoomName)
-		return
-	}
-
-	participantIdentity := livekit.ParticipantIdentity(claims.Identity)
-	if participantIdentity == "" {
-		HandleErrorJson(w, r, http.StatusUnauthorized, ErrIdentityEmpty)
-		return
-	}
-
-	pID := livekit.ParticipantID(r.PathValue("participant_id"))
-	if pID == "" {
-		HandleErrorJson(w, r, http.StatusBadRequest, ErrParticipantSidEmpty)
+		HandleErrorJson(w, r, code, err)
 		return
 	}
 
@@ -301,25 +279,9 @@ func (s *RTCv2Service) handleParticipantDelete(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	roomName, err := EnsureJoinPermission(r.Context())
+	roomName, participantIdentity, pID, code, err := getParams(r)
 	if err != nil {
-		HandleErrorJson(w, r, http.StatusUnauthorized, err)
-		return
-	}
-	if roomName == "" {
-		HandleErrorJson(w, r, http.StatusUnauthorized, ErrNoRoomName)
-		return
-	}
-
-	participantIdentity := livekit.ParticipantIdentity(claims.Identity)
-	if participantIdentity == "" {
-		HandleErrorJson(w, r, http.StatusUnauthorized, ErrIdentityEmpty)
-		return
-	}
-
-	pID := livekit.ParticipantID(r.PathValue("participant_id"))
-	if pID == "" {
-		HandleErrorJson(w, r, http.StatusBadRequest, ErrParticipantSidEmpty)
+		HandleErrorJson(w, r, code, err)
 		return
 	}
 
@@ -362,4 +324,31 @@ func getWireMessage(r *http.Request) (*livekit.Signalv2WireMessage, error) {
 	}
 
 	return wireMessage, nil
+}
+
+func getParams(r *http.Request) (livekit.RoomName, livekit.ParticipantIdentity, livekit.ParticipantID, int, error) {
+	claims := GetGrants(r.Context())
+	if claims == nil || claims.Video == nil {
+		return "", "", "", http.StatusUnauthorized, rtc.ErrPermissionDenied
+	}
+
+	roomName, err := EnsureJoinPermission(r.Context())
+	if err != nil {
+		return "", "", "", http.StatusUnauthorized, err
+	}
+	if roomName == "" {
+		return "", "", "", http.StatusUnauthorized, ErrNoRoomName
+	}
+
+	participantIdentity := livekit.ParticipantIdentity(claims.Identity)
+	if participantIdentity == "" {
+		return "", "", "", http.StatusUnauthorized, ErrIdentityEmpty
+	}
+
+	pID := livekit.ParticipantID(r.PathValue("participant_id"))
+	if pID == "" {
+		return "", "", "", http.StatusBadRequest, ErrParticipantSidEmpty
+	}
+
+	return roomName, participantIdentity, pID, http.StatusOK, nil
 }

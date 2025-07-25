@@ -59,6 +59,7 @@ func HandleErrorJson(w http.ResponseWriter, r *http.Request, status int, err err
 	}{
 		Error: err.Error(),
 	})
+	w.Header().Add("Content-type", "application/json")
 }
 
 func boolValue(s string) bool {

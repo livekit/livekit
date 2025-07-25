@@ -70,7 +70,6 @@ func (s *signalhandlerv2) HandleRequest(msg proto.Message) error {
 	switch msg := req.GetMessage().(type) {
 	case *livekit.Signalv2WireMessage_Envelope:
 		for _, clientMessage := range msg.Envelope.ClientMessages {
-			/* SIGNALLING-V2-TODO: uncommment once remote side sends proper messageId
 			sequencer := clientMessage.GetSequencer()
 			if sequencer == nil || sequencer.MessageId == 0 {
 				s.params.Logger.Warnw(
@@ -90,6 +89,7 @@ func (s *signalhandlerv2) HandleRequest(msg proto.Message) error {
 				continue
 			}
 
+			// SIGNALLING-V2-TODO: ask for replay if there are gaps
 			if lprmi != 0 && sequencer.MessageId != lprmi+1 {
 				s.params.Logger.Infow(
 					"gap in message stream",
@@ -97,7 +97,6 @@ func (s *signalhandlerv2) HandleRequest(msg proto.Message) error {
 					"current", clientMessage.Sequencer.MessageId,
 				)
 			}
-			*/
 
 			switch payload := clientMessage.GetMessage().(type) {
 			case *livekit.Signalv2ClientMessage_PublisherSdp:
@@ -115,11 +114,9 @@ func (s *signalhandlerv2) HandleRequest(msg proto.Message) error {
 				s.params.Participant.AddICECandidate(candidateInit, payload.Trickle.Target)
 			}
 
-			/* SIGNALLING-V2-TODO: uncomment once sequencer is implemented on both sides
 			s.lastProcessedRemoteMessageId.Store(sequencer.MessageId)
 			s.params.Signalling.AckMessageId(sequencer.LastProcessedRemoteMessageId)
 			s.params.Signalling.SetLastProcessedRemoteMessageId(sequencer.MessageId)
-			*/
 		}
 
 	case *livekit.Signalv2WireMessage_Fragment:
