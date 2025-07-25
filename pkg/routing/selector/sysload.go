@@ -23,6 +23,7 @@ import (
 type SystemLoadSelector struct {
 	SysloadLimit float32
 	SortBy       string
+	Algorithm    string
 }
 
 func (s *SystemLoadSelector) filterNodes(nodes []*livekit.Node) ([]*livekit.Node, error) {
@@ -49,5 +50,5 @@ func (s *SystemLoadSelector) SelectNode(nodes []*livekit.Node) (*livekit.Node, e
 		return nil, err
 	}
 
-	return SelectSortedNode(nodes, s.SortBy)
+	return SelectSortedNode(nodes, s.SortBy, s.Algorithm)
 }
