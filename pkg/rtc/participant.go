@@ -147,6 +147,8 @@ type reliableDataInfo struct {
 
 // ---------------------------------------------------------------
 
+var _ types.LocalParticipant = (*ParticipantImpl)(nil)
+
 type ParticipantParams struct {
 	Identity                livekit.ParticipantIdentity
 	Name                    livekit.ParticipantName

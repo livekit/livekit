@@ -811,7 +811,6 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 		var isSignalling bool
 		switch dc.Label() {
 		case ReliableDataChannel:
-			t.params.Logger.Infow("RAJA reliable datachannel added", "label", dc.Label()) // REMOVE
 			kind = livekit.DataPacket_RELIABLE
 
 		case LossyDataChannel:
