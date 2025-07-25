@@ -24,7 +24,8 @@ import (
 )
 
 type ParticipantSignalHandler interface {
-	HandleRequest(msg proto.Message) error
+	HandleMessage(msg proto.Message) error
+	HandleEncodedMessage(data []byte) error
 	PruneStaleReassemblies()
 }
 

@@ -30,6 +30,11 @@ type FakeHandler struct {
 		arg1 livekit.DataPacket_Kind
 		arg2 []byte
 	}
+	OnDataMessageSignallingStub        func([]byte)
+	onDataMessageSignallingMutex       sync.RWMutex
+	onDataMessageSignallingArgsForCall []struct {
+		arg1 []byte
+	}
 	OnDataMessageUnlabeledStub        func([]byte)
 	onDataMessageUnlabeledMutex       sync.RWMutex
 	onDataMessageUnlabeledArgsForCall []struct {
@@ -206,6 +211,43 @@ func (fake *FakeHandler) OnDataMessageArgsForCall(i int) (livekit.DataPacket_Kin
 	defer fake.onDataMessageMutex.RUnlock()
 	argsForCall := fake.onDataMessageArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeHandler) OnDataMessageSignalling(arg1 []byte) {
+	var arg1Copy []byte
+	if arg1 != nil {
+		arg1Copy = make([]byte, len(arg1))
+		copy(arg1Copy, arg1)
+	}
+	fake.onDataMessageSignallingMutex.Lock()
+	fake.onDataMessageSignallingArgsForCall = append(fake.onDataMessageSignallingArgsForCall, struct {
+		arg1 []byte
+	}{arg1Copy})
+	stub := fake.OnDataMessageSignallingStub
+	fake.recordInvocation("OnDataMessageSignalling", []interface{}{arg1Copy})
+	fake.onDataMessageSignallingMutex.Unlock()
+	if stub != nil {
+		fake.OnDataMessageSignallingStub(arg1)
+	}
+}
+
+func (fake *FakeHandler) OnDataMessageSignallingCallCount() int {
+	fake.onDataMessageSignallingMutex.RLock()
+	defer fake.onDataMessageSignallingMutex.RUnlock()
+	return len(fake.onDataMessageSignallingArgsForCall)
+}
+
+func (fake *FakeHandler) OnDataMessageSignallingCalls(stub func([]byte)) {
+	fake.onDataMessageSignallingMutex.Lock()
+	defer fake.onDataMessageSignallingMutex.Unlock()
+	fake.OnDataMessageSignallingStub = stub
+}
+
+func (fake *FakeHandler) OnDataMessageSignallingArgsForCall(i int) []byte {
+	fake.onDataMessageSignallingMutex.RLock()
+	defer fake.onDataMessageSignallingMutex.RUnlock()
+	argsForCall := fake.onDataMessageSignallingArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeHandler) OnDataMessageUnlabeled(arg1 []byte) {
@@ -639,6 +681,8 @@ func (fake *FakeHandler) Invocations() map[string][][]interface{} {
 	defer fake.onAnswerMutex.RUnlock()
 	fake.onDataMessageMutex.RLock()
 	defer fake.onDataMessageMutex.RUnlock()
+	fake.onDataMessageSignallingMutex.RLock()
+	defer fake.onDataMessageSignallingMutex.RUnlock()
 	fake.onDataMessageUnlabeledMutex.RLock()
 	defer fake.onDataMessageUnlabeledMutex.RUnlock()
 	fake.onDataSendErrorMutex.RLock()

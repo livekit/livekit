@@ -534,7 +534,7 @@ type LocalParticipant interface {
 	HandleSimulateScenario(*livekit.SimulateScenario) error
 	HandleLeaveRequest(reason ParticipantCloseReason)
 
-	HandleSignalRequest(msg proto.Message) error
+	HandleSignalMessage(msg proto.Message) error
 }
 
 // Room is a container of participants, and can provide room-level actions

@@ -22,7 +22,11 @@ var _ ParticipantSignalHandler = (*signalhandlerUnimplemented)(nil)
 
 type signalhandlerUnimplemented struct{}
 
-func (u *signalhandlerUnimplemented) HandleRequest(msg proto.Message) error {
+func (u *signalhandlerUnimplemented) HandleMessage(msg proto.Message) error {
+	return nil
+}
+
+func (u *signalhandlerUnimplemented) HandleEncodedMessage(data []byte) error {
 	return nil
 }
 

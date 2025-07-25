@@ -207,7 +207,7 @@ func (s signalv2ParticipantService) RelaySignalv2Participant(ctx context.Context
 		return nil, ErrParticipantNotFound
 	}
 
-	err := lp.HandleSignalRequest(req.WireMessage)
+	err := lp.HandleSignalMessage(req.WireMessage)
 	if err != nil {
 		return nil, err
 	}

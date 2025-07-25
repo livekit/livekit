@@ -89,23 +89,23 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	rtcEgressLauncher := NewEgressLauncher(egressClient, ioInfoService, objectStore)
 	topicFormatter := rpc.NewTopicFormatter()
-	roomClient, err := rpc.NewTypedRoomClient(clientParams)
+	v, err := rpc.NewTypedRoomClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	participantClient, err := rpc.NewTypedParticipantClient(clientParams)
+	v2, err := rpc.NewTypedParticipantClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, roomClient, participantClient)
+	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, v, v2)
 	if err != nil {
 		return nil, err
 	}
-	agentDispatchInternalClient, err := rpc.NewTypedAgentDispatchInternalClient(clientParams)
+	v3, err := rpc.NewTypedAgentDispatchInternalClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	agentDispatchService := NewAgentDispatchService(agentDispatchInternalClient, topicFormatter, roomAllocator, router)
+	agentDispatchService := NewAgentDispatchService(v3, topicFormatter, roomAllocator, router)
 	egressService := NewEgressService(egressClient, rtcEgressLauncher, ioInfoService, roomService)
 	ingressConfig := getIngressConfig(conf)
 	ingressClient, err := rpc.NewIngressClient(clientParams)
@@ -120,16 +120,16 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	sipService := NewSIPService(sipConfig, nodeID, messageBus, sipClient, sipStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, router, telemetryService)
-	signalv2ParticipantClient, err := rpc.NewTypedSignalv2ParticipantClient(clientParams)
+	v4, err := rpc.NewTypedSignalv2ParticipantClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	rtCv2Service := NewRTCv2Service(conf, roomAllocator, router, topicFormatter, signalv2ParticipantClient)
-	rtcRestParticipantClient, err := rpc.NewTypedRTCRestParticipantClient(clientParams)
+	rtCv2Service := NewRTCv2Service(conf, roomAllocator, router, topicFormatter, v4)
+	v5, err := rpc.NewTypedRTCRestParticipantClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	serviceRTCRestService, err := NewRTCRestService(conf, router, roomAllocator, clientParams, topicFormatter, rtcRestParticipantClient)
+	serviceRTCRestService, err := NewRTCRestService(conf, router, roomAllocator, clientParams, topicFormatter, v5)
 	if err != nil {
 		return nil, err
 	}

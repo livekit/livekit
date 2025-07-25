@@ -62,8 +62,9 @@ import (
 )
 
 const (
-	LossyDataChannel    = "_lossy"
-	ReliableDataChannel = "_reliable"
+	LossyDataChannel      = "_lossy"
+	ReliableDataChannel   = "_reliable"
+	SignallingDataChannel = "_signalling"
 
 	fastNegotiationFrequency   = 10 * time.Millisecond
 	negotiationFrequency       = 150 * time.Millisecond
@@ -204,6 +205,7 @@ type PCTransport struct {
 	lossyDC                 *datachannel.DataChannelWriter[*webrtc.DataChannel]
 	lossyDCOpened           bool
 	unlabeledDataChannels   []*datachannel.DataChannelWriter[*webrtc.DataChannel]
+	signallingDataChannel   *datachannel.DataChannelWriter[*webrtc.DataChannel]
 
 	iceStartedAt               time.Time
 	iceConnectedAt             time.Time
@@ -553,7 +555,7 @@ func (t *PCTransport) createPeerConnection() (cc.BandwidthEstimator, error) {
 	}
 
 	t.pc = pc
-	if !t.params.UseOneShotSignallingMode && !t.params.SynchronousLocalCandidatesMode {
+	if !t.params.UseOneShotSignallingMode /* RAJA-TODO && !t.params.SynchronousLocalCandidatesMode */ {
 		// one shot signalling mode gathers all candidates and sends in answer
 		t.pc.OnICEGatheringStateChange(t.onICEGatheringStateChange)
 		t.pc.OnICECandidate(t.onICECandidateTrickle)
@@ -806,12 +808,18 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 		t.params.Logger.Debugw(dc.Label() + " data channel open")
 		var kind livekit.DataPacket_Kind
 		var isUnlabeled bool
+		var isSignalling bool
 		switch dc.Label() {
 		case ReliableDataChannel:
+			t.params.Logger.Infow("RAJA reliable datachannel added", "label", dc.Label()) // REMOVE
 			kind = livekit.DataPacket_RELIABLE
 
 		case LossyDataChannel:
 			kind = livekit.DataPacket_LOSSY
+
+		case SignallingDataChannel:
+			t.params.Logger.Infow("signalling datachannel added", "label", dc.Label())
+			isSignalling = true
 
 		default:
 			t.params.Logger.Infow("unlabeled datachannel added", "label", dc.Label())
@@ -831,6 +839,11 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 				t.unlabeledDataChannels,
 				datachannel.NewDataChannelWriter(dc, rawDC, t.params.DatachannelSlowThreshold),
 			)
+			t.lock.Unlock()
+
+		case isSignalling:
+			t.lock.Lock()
+			t.signallingDataChannel = datachannel.NewDataChannelWriter(dc, rawDC, 0)
 			t.lock.Unlock()
 
 		case kind == livekit.DataPacket_RELIABLE:
@@ -864,9 +877,14 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 					return
 				}
 
-				if isUnlabeled {
+				switch {
+				case isUnlabeled:
 					t.params.Handler.OnDataMessageUnlabeled(buffer[:n])
-				} else {
+
+				case isSignalling:
+					t.params.Handler.OnDataMessageSignalling(buffer[:n])
+
+				default:
 					t.params.Handler.OnDataMessage(kind, buffer[:n])
 				}
 			}
@@ -1298,8 +1316,11 @@ func (t *PCTransport) clearConnTimer() {
 	}
 }
 
+// SIGNALLING-V2-TODO: this needs both sync and async support when not in one shot mode,
+// cannot use the state `SynchronousLocalCandidatesMode`
 func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remoteId uint32) error {
-	if t.params.UseOneShotSignallingMode || t.params.SynchronousLocalCandidatesMode {
+	t.params.Logger.Infow("RAJA got remote description", "sd", sd) // REMOVE
+	if t.params.UseOneShotSignallingMode /* RAJA-TODO || t.params.SynchronousLocalCandidatesMode */ {
 		if sd.Type == webrtc.SDPTypeOffer {
 			remoteOfferId := t.remoteOfferId.Load()
 			if remoteOfferId != 0 && remoteOfferId != t.localAnswerId.Load() {
@@ -1356,6 +1377,7 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remo
 		return nil
 	}
 
+	t.params.Logger.Infow("RAJA posting remote description", "sd", sd) // REMOVE
 	t.postEvent(event{
 		signal: signalRemoteDescriptionReceived,
 		data: remoteDescriptionData{
@@ -1366,6 +1388,7 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remo
 	return nil
 }
 
+// SIGNALLING-V2-TODO: check if a flag can be used to check for sync
 func (t *PCTransport) GetAnswer() (webrtc.SessionDescription, uint32, error) {
 	if !t.params.UseOneShotSignallingMode && !t.params.SynchronousLocalCandidatesMode {
 		return webrtc.SessionDescription{}, 0, ErrNotSynchronousLocalCandidatesMode
@@ -1417,6 +1440,7 @@ func (t *PCTransport) GetAnswer() (webrtc.SessionDescription, uint32, error) {
 	return *cld, answerId, nil
 }
 
+// SIGNALLING-V2-TODO: check if a flag can be used to check for sync
 func (t *PCTransport) GetOffer() (webrtc.SessionDescription, uint32, error) {
 	if !t.params.SynchronousLocalCandidatesMode {
 		return webrtc.SessionDescription{}, 0, ErrNotSynchronousLocalCandidatesMode

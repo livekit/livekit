@@ -223,6 +223,13 @@ func (s *RTCv2Service) handleParticipantPatch(w http.ResponseWriter, r *http.Req
 		HandleErrorJson(w, r, http.StatusBadRequest, fmt.Errorf("could not get wire message: %w", err))
 		return
 	}
+	logger.Debugw(
+		"participant request",
+		"room", roomName,
+		"participant", participantIdentity,
+		"pID", pID,
+		"participantRequest", logger.Proto(wireMessage),
+	)
 
 	res, err := s.signalv2ParticipantClient.RelaySignalv2Participant(
 		r.Context(),
@@ -257,7 +264,7 @@ func (s *RTCv2Service) handleParticipantPatch(w http.ResponseWriter, r *http.Req
 		"room", roomName,
 		"participant", participantIdentity,
 		"pID", pID,
-		"participantResponse", logger.Proto(res),
+		"participantResponse", logger.Proto(res.WireMessage),
 	)
 
 	marshalled, err := proto.Marshal(res.WireMessage)
