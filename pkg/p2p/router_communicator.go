@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"log"
-	"github.com/dTelecom/p2p-database/pubsub"
 	p2p_common "github.com/dTelecom/p2p-database/common"
+	"github.com/dTelecom/p2p-database/pubsub"
+	"log"
 
 	"github.com/livekit/protocol/livekit"
 	"google.golang.org/protobuf/proto"

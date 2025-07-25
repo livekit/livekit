@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dTelecom/p2p-database/pubsub"
 	p2p_common "github.com/dTelecom/p2p-database/common"
+	"github.com/dTelecom/p2p-database/pubsub"
 
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -109,10 +109,22 @@ func (p *NodeProvider) List(ctx context.Context) ([]Node, error) {
 }
 
 func (p *NodeProvider) FetchRelevant(ctx context.Context, clientIP string) (Node, error) {
+	nodes, err := p.FetchRelevantNodes(ctx, clientIP)
+	if err != nil {
+		return Node{}, err
+	}
+
+	return nodes[0], nil
+}
+
+func (p *NodeProvider) FetchRelevantNodes(ctx context.Context, clientIP string) ([]Node, error) {
 	ip := net.ParseIP(clientIP)
 	city, err := p.geo.City(ip)
+
+	var result []Node
+
 	if err != nil {
-		return Node{}, errors.Wrap(err, "fetch city")
+		return result, errors.Wrap(err, "fetch city")
 	}
 	clientLat := city.Location.Latitude
 	clientLon := city.Location.Longitude
@@ -122,10 +134,15 @@ func (p *NodeProvider) FetchRelevant(ctx context.Context, clientIP string) (Node
 		node   Node
 		weight float64
 	}
+
 	var nodes []nodeRow
 	xNodes, err := p.List(ctx)
 	if err != nil {
-		return Node{}, errors.Wrap(err, "list nodes")
+		return result, errors.Wrap(err, "list nodes")
+	}
+
+	if len(xNodes) < 2 {
+		return result, errors.New("not enough nodes")
 	}
 
 	for _, xNode := range xNodes {
@@ -151,10 +168,17 @@ func (p *NodeProvider) FetchRelevant(ctx context.Context, clientIP string) (Node
 	sort.SliceStable(nodes, func(i, j int) bool { return nodes[i].weight > nodes[j].weight })
 
 	if len(nodes) == 0 {
-		return Node{}, errors.New("not found node")
+		return result, errors.New("not found node")
 	}
 
-	return nodes[0].node, nil
+	for i, node := range nodes {
+		if i > 3 {
+			break
+		}
+		result = append(result, node.node)
+	}
+
+	return result, nil
 }
 
 func (p *NodeProvider) Save(ctx context.Context, node Node) error {

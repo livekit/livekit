@@ -40,7 +40,7 @@ type BootNodeProvider struct {
 	NetworkHostHTTP   string
 	NetworkHostWS     string
 	RegistryAuthority string
-	PeerListenPort int
+	PeerListenPort    int
 	lock              sync.RWMutex
 	nodeValues        map[solana.PublicKey]bootNodeMessage
 }
@@ -52,7 +52,7 @@ func NewBootNodeProvider(conf *config.Config) *BootNodeProvider {
 		NetworkHostHTTP:   conf.Solana.NetworkHostHTTP,
 		NetworkHostWS:     conf.Solana.NetworkHostWS,
 		RegistryAuthority: conf.Solana.RegistryAuthority,
-		PeerListenPort:   conf.P2P.PeerListenPort,
+		PeerListenPort:    conf.P2P.PeerListenPort,
 		lock:              sync.RWMutex{},
 		nodeValues:        make(map[solana.PublicKey]bootNodeMessage),
 	}

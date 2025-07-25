@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/dTelecom/p2p-database/pubsub"
+	"github.com/pkg/errors"
 
 	"github.com/thoas/go-funk"
 

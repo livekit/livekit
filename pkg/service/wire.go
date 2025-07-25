@@ -87,10 +87,10 @@ func CreateP2PPubSub(conf *config.Config, bootNodeProvider *BootNodeProvider) (*
 	adaptedLogger := p2p_common.NewLivekitLoggerAdapter(logger.GetLogger())
 
 	p2pConf := p2p_common.Config{
-		WalletPrivateKey: conf.Solana.WalletPrivateKey,
-		DatabaseName:     conf.P2P.DatabaseName,
-		GetAuthorizedWallets:         bootNodeProvider.GetAuthorizedWallets,
-		GetBootstrapNodes:         bootNodeProvider.GetBootstrapNodes,
+		WalletPrivateKey:     conf.Solana.WalletPrivateKey,
+		DatabaseName:         conf.P2P.DatabaseName,
+		GetAuthorizedWallets: bootNodeProvider.GetAuthorizedWallets,
+		GetBootstrapNodes:    bootNodeProvider.GetBootstrapNodes,
 		Logger:               adaptedLogger,
 		ListenPorts: p2p_common.ListenPorts{
 			QUIC: conf.P2P.PeerListenPort,
