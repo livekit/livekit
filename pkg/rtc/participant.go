@@ -54,6 +54,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
@@ -1778,6 +1779,19 @@ func (h PublisherTransportHandler) OnDataMessage(kind livekit.DataPacket_Kind, d
 
 func (h PublisherTransportHandler) OnDataMessageUnlabeled(data []byte) {
 	h.p.onReceivedDataMessageUnlabeled(data)
+}
+
+func (h PublisherTransportHandler) OnDataChannelOpenSignalling(dc *datachannel.DataChannelWriter[*webrtc.DataChannel]) {
+	sink := signalling.NewDataChannelMessageSink(signalling.DataChannelMessageSinkParams{
+		Logger:      h.p.params.Logger,
+		DataChannel: dc,
+	})
+	h.p.signaller.SetResponseSink(sink)
+}
+
+func (h PublisherTransportHandler) OnDataChannelCloseSignalling(dc *datachannel.DataChannelWriter[*webrtc.DataChannel]) {
+	// SIGNALLING-V2-TODO: check that the closed data channel is actually the same as response sink
+	h.p.signaller.SetResponseSink(nil)
 }
 
 func (h PublisherTransportHandler) OnDataMessageSignalling(data []byte) {

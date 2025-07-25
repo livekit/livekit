@@ -842,8 +842,10 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 
 		case isSignalling:
 			t.lock.Lock()
-			t.signallingDataChannel = datachannel.NewDataChannelWriter(dc, rawDC, 0)
+			signallingDataChannel := datachannel.NewDataChannelWriter(dc, rawDC, 0)
+			t.signallingDataChannel = signallingDataChannel
 			t.lock.Unlock()
+			t.params.Handler.OnDataChannelOpenSignalling(signallingDataChannel)
 
 		case kind == livekit.DataPacket_RELIABLE:
 			t.lock.Lock()
@@ -890,6 +892,18 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 		}()
 
 		t.maybeNotifyFullyEstablished()
+	})
+
+	dc.OnClose(func() {
+		t.params.Logger.Debugw(dc.Label() + " data channel close")
+		switch dc.Label() {
+		case SignallingDataChannel:
+			t.lock.RLock()
+			signallingDataChannel := t.signallingDataChannel
+			t.lock.RUnlock()
+
+			t.params.Handler.OnDataChannelCloseSignalling(signallingDataChannel)
+		}
 	})
 }
 
