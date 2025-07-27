@@ -6,6 +6,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/protocol/livekit"
 	webrtc "github.com/pion/webrtc/v4"
@@ -23,6 +24,16 @@ type FakeHandler struct {
 	}
 	onAnswerReturnsOnCall map[int]struct {
 		result1 error
+	}
+	OnDataChannelCloseSignallingStub        func(*datachannel.DataChannelWriter[*webrtc.DataChannel])
+	onDataChannelCloseSignallingMutex       sync.RWMutex
+	onDataChannelCloseSignallingArgsForCall []struct {
+		arg1 *datachannel.DataChannelWriter[*webrtc.DataChannel]
+	}
+	OnDataChannelOpenSignallingStub        func(*datachannel.DataChannelWriter[*webrtc.DataChannel])
+	onDataChannelOpenSignallingMutex       sync.RWMutex
+	onDataChannelOpenSignallingArgsForCall []struct {
+		arg1 *datachannel.DataChannelWriter[*webrtc.DataChannel]
 	}
 	OnDataMessageStub        func(livekit.DataPacket_Kind, []byte)
 	onDataMessageMutex       sync.RWMutex
@@ -173,6 +184,70 @@ func (fake *FakeHandler) OnAnswerReturnsOnCall(i int, result1 error) {
 	fake.onAnswerReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
+}
+
+func (fake *FakeHandler) OnDataChannelCloseSignalling(arg1 *datachannel.DataChannelWriter[*webrtc.DataChannel]) {
+	fake.onDataChannelCloseSignallingMutex.Lock()
+	fake.onDataChannelCloseSignallingArgsForCall = append(fake.onDataChannelCloseSignallingArgsForCall, struct {
+		arg1 *datachannel.DataChannelWriter[*webrtc.DataChannel]
+	}{arg1})
+	stub := fake.OnDataChannelCloseSignallingStub
+	fake.recordInvocation("OnDataChannelCloseSignalling", []interface{}{arg1})
+	fake.onDataChannelCloseSignallingMutex.Unlock()
+	if stub != nil {
+		fake.OnDataChannelCloseSignallingStub(arg1)
+	}
+}
+
+func (fake *FakeHandler) OnDataChannelCloseSignallingCallCount() int {
+	fake.onDataChannelCloseSignallingMutex.RLock()
+	defer fake.onDataChannelCloseSignallingMutex.RUnlock()
+	return len(fake.onDataChannelCloseSignallingArgsForCall)
+}
+
+func (fake *FakeHandler) OnDataChannelCloseSignallingCalls(stub func(*datachannel.DataChannelWriter[*webrtc.DataChannel])) {
+	fake.onDataChannelCloseSignallingMutex.Lock()
+	defer fake.onDataChannelCloseSignallingMutex.Unlock()
+	fake.OnDataChannelCloseSignallingStub = stub
+}
+
+func (fake *FakeHandler) OnDataChannelCloseSignallingArgsForCall(i int) *datachannel.DataChannelWriter[*webrtc.DataChannel] {
+	fake.onDataChannelCloseSignallingMutex.RLock()
+	defer fake.onDataChannelCloseSignallingMutex.RUnlock()
+	argsForCall := fake.onDataChannelCloseSignallingArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeHandler) OnDataChannelOpenSignalling(arg1 *datachannel.DataChannelWriter[*webrtc.DataChannel]) {
+	fake.onDataChannelOpenSignallingMutex.Lock()
+	fake.onDataChannelOpenSignallingArgsForCall = append(fake.onDataChannelOpenSignallingArgsForCall, struct {
+		arg1 *datachannel.DataChannelWriter[*webrtc.DataChannel]
+	}{arg1})
+	stub := fake.OnDataChannelOpenSignallingStub
+	fake.recordInvocation("OnDataChannelOpenSignalling", []interface{}{arg1})
+	fake.onDataChannelOpenSignallingMutex.Unlock()
+	if stub != nil {
+		fake.OnDataChannelOpenSignallingStub(arg1)
+	}
+}
+
+func (fake *FakeHandler) OnDataChannelOpenSignallingCallCount() int {
+	fake.onDataChannelOpenSignallingMutex.RLock()
+	defer fake.onDataChannelOpenSignallingMutex.RUnlock()
+	return len(fake.onDataChannelOpenSignallingArgsForCall)
+}
+
+func (fake *FakeHandler) OnDataChannelOpenSignallingCalls(stub func(*datachannel.DataChannelWriter[*webrtc.DataChannel])) {
+	fake.onDataChannelOpenSignallingMutex.Lock()
+	defer fake.onDataChannelOpenSignallingMutex.Unlock()
+	fake.OnDataChannelOpenSignallingStub = stub
+}
+
+func (fake *FakeHandler) OnDataChannelOpenSignallingArgsForCall(i int) *datachannel.DataChannelWriter[*webrtc.DataChannel] {
+	fake.onDataChannelOpenSignallingMutex.RLock()
+	defer fake.onDataChannelOpenSignallingMutex.RUnlock()
+	argsForCall := fake.onDataChannelOpenSignallingArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeHandler) OnDataMessage(arg1 livekit.DataPacket_Kind, arg2 []byte) {
@@ -679,6 +754,10 @@ func (fake *FakeHandler) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.onAnswerMutex.RLock()
 	defer fake.onAnswerMutex.RUnlock()
+	fake.onDataChannelCloseSignallingMutex.RLock()
+	defer fake.onDataChannelCloseSignallingMutex.RUnlock()
+	fake.onDataChannelOpenSignallingMutex.RLock()
+	defer fake.onDataChannelOpenSignallingMutex.RUnlock()
 	fake.onDataMessageMutex.RLock()
 	defer fake.onDataMessageMutex.RUnlock()
 	fake.onDataMessageSignallingMutex.RLock()
