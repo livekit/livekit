@@ -555,7 +555,8 @@ func (t *PCTransport) createPeerConnection() (cc.BandwidthEstimator, error) {
 	}
 
 	t.pc = pc
-	if !t.params.UseOneShotSignallingMode /* RAJA-TODO && !t.params.SynchronousLocalCandidatesMode */ {
+	// SIGNALLING-V2-TODO: have to support both sync and async candidates, so has to be a check at function level
+	if !t.params.UseOneShotSignallingMode /* SIGNALLING-V2-TODO && !t.params.SynchronousLocalCandidatesMode */ {
 		// one shot signalling mode gathers all candidates and sends in answer
 		t.pc.OnICEGatheringStateChange(t.onICEGatheringStateChange)
 		t.pc.OnICECandidate(t.onICECandidateTrickle)
@@ -1330,10 +1331,9 @@ func (t *PCTransport) clearConnTimer() {
 }
 
 // SIGNALLING-V2-TODO: this needs both sync and async support when not in one shot mode,
-// cannot use the state `SynchronousLocalCandidatesMode`
+// cannot use the state `SynchronousLocalCandidatesMode`, needs a flag at function level
 func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remoteId uint32) error {
-	t.params.Logger.Infow("RAJA got remote description", "sd", sd) // REMOVE
-	if t.params.UseOneShotSignallingMode /* RAJA-TODO || t.params.SynchronousLocalCandidatesMode */ {
+	if t.params.UseOneShotSignallingMode /* SIGNALLING-V2-TODO || t.params.SynchronousLocalCandidatesMode */ {
 		if sd.Type == webrtc.SDPTypeOffer {
 			remoteOfferId := t.remoteOfferId.Load()
 			if remoteOfferId != 0 && remoteOfferId != t.localAnswerId.Load() {
@@ -1390,7 +1390,6 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remo
 		return nil
 	}
 
-	t.params.Logger.Infow("RAJA posting remote description", "sd", sd) // REMOVE
 	t.postEvent(event{
 		signal: signalRemoteDescriptionReceived,
 		data: remoteDescriptionData{
@@ -1401,7 +1400,8 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remo
 	return nil
 }
 
-// SIGNALLING-V2-TODO: check if a flag can be used to check for sync
+// SIGNALLING-V2-TODO: use a flag at function level for sync vs async rather
+// then state `SynchronousLocalCandidatesMode`
 func (t *PCTransport) GetAnswer() (webrtc.SessionDescription, uint32, error) {
 	if !t.params.UseOneShotSignallingMode && !t.params.SynchronousLocalCandidatesMode {
 		return webrtc.SessionDescription{}, 0, ErrNotSynchronousLocalCandidatesMode
@@ -1453,7 +1453,8 @@ func (t *PCTransport) GetAnswer() (webrtc.SessionDescription, uint32, error) {
 	return *cld, answerId, nil
 }
 
-// SIGNALLING-V2-TODO: check if a flag can be used to check for sync
+// SIGNALLING-V2-TODO: use a flag at function level for sync vs async rather
+// then state `SynchronousLocalCandidatesMode`
 func (t *PCTransport) GetOffer() (webrtc.SessionDescription, uint32, error) {
 	if !t.params.SynchronousLocalCandidatesMode {
 		return webrtc.SessionDescription{}, 0, ErrNotSynchronousLocalCandidatesMode
