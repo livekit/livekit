@@ -109,7 +109,12 @@ func (r *LocalRouter) ListNodes() ([]*livekit.Node, error) {
 func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomKey livekit.RoomKey, pi ParticipantInit) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error) {
 
 	if _, ok := r.routerCommunicators[roomKey]; !ok {
-		r.routerCommunicators[roomKey] = p2p.NewRouterCommunicatorImpl(roomKey, r.db, r.writeFromP2P)
+		rc, err := p2p.NewRouterCommunicatorImpl(roomKey, r.db, r.writeFromP2P)
+		if err == nil {
+			r.routerCommunicators[roomKey] = rc			
+		} else {
+			logger.Errorw("NewRouterCommunicatorImpl err", err)
+		}
 	}
 
 	return r.StartParticipantSignalWithNodeID(ctx, roomKey, pi, livekit.NodeID(r.currentNode.Id))

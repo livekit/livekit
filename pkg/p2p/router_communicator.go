@@ -54,7 +54,7 @@ type RouterCommunicatorImpl struct {
 	messageHandler func(ctx context.Context, roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) error
 }
 
-func NewRouterCommunicatorImpl(key livekit.RoomKey, mainDatabase *pubsub.DB, messageHandler func(ctx context.Context, roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) error) *RouterCommunicatorImpl {
+func NewRouterCommunicatorImpl(key livekit.RoomKey, mainDatabase *pubsub.DB, messageHandler func(ctx context.Context, roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) error) (*RouterCommunicatorImpl, error) {
 
 	topic := "livekit_router_" + string(key)
 
@@ -65,9 +65,9 @@ func NewRouterCommunicatorImpl(key livekit.RoomKey, mainDatabase *pubsub.DB, mes
 		messageHandler: messageHandler,
 	}
 
-	routerCommunicator.init()
+	err := routerCommunicator.init()
 
-	return routerCommunicator
+	return routerCommunicator, err
 }
 
 func (c *RouterCommunicatorImpl) Close() {
@@ -103,15 +103,12 @@ func (c *RouterCommunicatorImpl) Publish(message *livekit.RTCNodeMessage) {
 	}
 }
 
-func (c *RouterCommunicatorImpl) init() {
+func (c *RouterCommunicatorImpl) init() error {
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
-	defer cancel()
+	ctx, _ := context.WithTimeout(context.Background(), time.Second*15)
 
-	subErr := c.mainDatabase.Subscribe(ctx, c.topic, c.dbHandler)
-	if subErr != nil {
-		log.Printf("RouterCommunicatorImpl cannot subscribe to topic %v", subErr)
-	}
+	err := c.mainDatabase.Subscribe(ctx, c.topic, c.dbHandler)
+	return err
 }
 
 func (c *RouterCommunicatorImpl) dbHandler(event p2p_common.Event) {

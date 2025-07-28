@@ -87,8 +87,7 @@ func (c *RoomCommunicatorImpl) Close() {
 
 func (c *RoomCommunicatorImpl) init() error {
 
-	ctx1, cancel1 := context.WithTimeout(context.Background(), time.Second*15)
-	defer cancel1()
+	ctx1, _ := context.WithTimeout(context.Background(), time.Second*15)
 
 	incomingMessagesTopic := formatIncomingMessagesTopic(c.key, c.mainDatabase.GetHost().ID().String())
 	if err := c.mainDatabase.Subscribe(ctx1, incomingMessagesTopic, c.incomingMessageHandler); err != nil {
@@ -96,8 +95,7 @@ func (c *RoomCommunicatorImpl) init() error {
 	}
 	log.Printf("subscribed to topic %v", incomingMessagesTopic)
 
-	ctx2, cancel2 := context.WithTimeout(context.Background(), time.Second*15)
-	defer cancel2()
+	ctx2, _ := context.WithTimeout(context.Background(), time.Second*15)
 
 	roomMessagesTopic := formatRoomMessageTopic(c.key)
 	if err := c.mainDatabase.Subscribe(ctx2, roomMessagesTopic, c.roomMessageHandler); err != nil {
