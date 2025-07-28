@@ -3,6 +3,7 @@ package p2p
 import (
 	"context"
 	"fmt"
+	"go.uber.org/atomic"
 	"log"
 	"sync"
 	"time"
@@ -23,10 +24,11 @@ const (
 )
 
 type RoomCommunicatorImpl struct {
-	room *livekit.Room
+	key string
 
 	ctx    context.Context
 	cancel context.CancelFunc
+	closed atomic.Bool
 
 	mainDatabase *pubsub.DB
 
@@ -37,11 +39,11 @@ type RoomCommunicatorImpl struct {
 	mu sync.Mutex
 }
 
-func NewRoomCommunicatorImpl(room *livekit.Room, mainDatabase *pubsub.DB) (*RoomCommunicatorImpl, error) {
+func NewRoomCommunicatorImpl(key livekit.RoomKey, mainDatabase *pubsub.DB) (*RoomCommunicatorImpl, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	roomCommunicator := &RoomCommunicatorImpl{
-		room:         room,
+		key:          string(key),
 		ctx:          ctx,
 		cancel:       cancel,
 		mainDatabase: mainDatabase,
@@ -56,47 +58,56 @@ func NewRoomCommunicatorImpl(room *livekit.Room, mainDatabase *pubsub.DB) (*Room
 }
 
 func (c *RoomCommunicatorImpl) Close() {
-	incomingMessagesTopic := formatIncomingMessagesTopic(c.room.Key, c.mainDatabase.GetHost().ID().String())
-	err := c.mainDatabase.Unsubscribe(c.ctx, incomingMessagesTopic)
+	c.closed.Store(true)
+
+	c.cancel()
+
+	ctx1, cancel1 := context.WithTimeout(context.Background(), time.Second*15)
+	defer cancel1()
+
+	incomingMessagesTopic := formatIncomingMessagesTopic(c.key, c.mainDatabase.GetHost().ID().String())
+	err := c.mainDatabase.Unsubscribe(ctx1, incomingMessagesTopic)
 	if err != nil {
 		log.Printf("unsubscrib from topic err %v %v", incomingMessagesTopic, err)
 	} else {
 		log.Printf("unsubscribed from topic %v", incomingMessagesTopic)
 	}
 
-	roomMessagesTopic := formatRoomMessageTopic(c.room.Key)
-	err = c.mainDatabase.Unsubscribe(c.ctx, roomMessagesTopic)
+	ctx2, cancel2 := context.WithTimeout(context.Background(), time.Second*15)
+	defer cancel2()
+
+	roomMessagesTopic := formatRoomMessageTopic(c.key)
+	err = c.mainDatabase.Unsubscribe(ctx2, roomMessagesTopic)
 	if err != nil {
 		log.Printf("unsubscrib from topic err %v %v", roomMessagesTopic, err)
 	} else {
 		log.Printf("unsubscribed from topic %v", roomMessagesTopic)
 	}
-
-	c.cancel()
 }
 
 func (c *RoomCommunicatorImpl) init() error {
-	incomingMessagesTopic := formatIncomingMessagesTopic(c.room.Key, c.mainDatabase.GetHost().ID().String())
-	if err := c.mainDatabase.Subscribe(c.ctx, incomingMessagesTopic, c.incomingMessageHandler); err != nil {
+
+	ctx1, cancel1 := context.WithTimeout(context.Background(), time.Second*15)
+	defer cancel1()
+
+	incomingMessagesTopic := formatIncomingMessagesTopic(c.key, c.mainDatabase.GetHost().ID().String())
+	if err := c.mainDatabase.Subscribe(ctx1, incomingMessagesTopic, c.incomingMessageHandler); err != nil {
 		return errors.Wrap(err, "cannot subscribe to incoming messages topic")
 	}
 	log.Printf("subscribed to topic %v", incomingMessagesTopic)
 
-	roomMessagesTopic := formatRoomMessageTopic(c.room.Key)
-	if err := c.mainDatabase.Subscribe(c.ctx, roomMessagesTopic, c.roomMessageHandler); err != nil {
+	ctx2, cancel2 := context.WithTimeout(context.Background(), time.Second*15)
+	defer cancel2()
+
+	roomMessagesTopic := formatRoomMessageTopic(c.key)
+	if err := c.mainDatabase.Subscribe(ctx2, roomMessagesTopic, c.roomMessageHandler); err != nil {
 		return errors.Wrap(err, "cannot subscribe to room messages topic")
 	}
 	log.Printf("subscribed to topic %v", roomMessagesTopic)
 
 	go func() {
 		for {
-			if _, err := c.mainDatabase.Publish(c.ctx, roomMessagesTopic, adMessage); err != nil {
-				if c.ctx.Err() == nil {
-					log.Fatalf("cannot publish ad message: %v", err)
-				} else {
-					return
-				}
-			}
+			c.publishAd(roomMessagesTopic)
 			select {
 			case <-c.ctx.Done():
 				return
@@ -107,6 +118,20 @@ func (c *RoomCommunicatorImpl) init() error {
 	}()
 
 	return nil
+}
+
+func (c *RoomCommunicatorImpl) publishAd(roomMessagesTopic string) {
+	if c.closed.Load() {
+		log.Printf("RoomCommunicatorImpl closed %v", c.key)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
+	defer cancel()
+
+	if _, err := c.mainDatabase.Publish(ctx, roomMessagesTopic, adMessage); err != nil {
+		log.Printf("cannot publish ad message: %v", err)
+	}
 }
 
 func (c *RoomCommunicatorImpl) checkPeer(peerId string) {
@@ -122,9 +147,17 @@ func (c *RoomCommunicatorImpl) checkPeer(peerId string) {
 		c.mu.Unlock()
 		log.Printf("New key added peer added %v", peerId)
 
-		incomingMessageTopic := formatIncomingMessagesTopic(c.room.Key, peerId)
-		if _, err := c.mainDatabase.Publish(c.ctx, incomingMessageTopic, pingMessage); err != nil {
-			log.Printf("cannot send ping message for node %s in db %s: %s", peerId, c.room.Key, err)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
+		defer cancel()
+
+		if c.closed.Load() {
+			log.Printf("RoomCommunicatorImpl closed %v", c.key)
+			return
+		}
+
+		incomingMessageTopic := formatIncomingMessagesTopic(c.key, peerId)
+		if _, err := c.mainDatabase.Publish(ctx, incomingMessageTopic, pingMessage); err != nil {
+			log.Printf("cannot send ping message for node %s in db %s: %s", peerId, c.key, err)
 		} else {
 			log.Printf("PING message sent to %v", peerId)
 		}
@@ -132,11 +165,25 @@ func (c *RoomCommunicatorImpl) checkPeer(peerId string) {
 }
 
 func (c *RoomCommunicatorImpl) incomingMessageHandler(event p2p_common.Event) {
+
+	if event.FromPeerId == c.mainDatabase.GetHost().ID().String() {
+		return
+	}
+
 	if event.Message == pingMessage {
 		log.Println("PING message received")
-		incomingMessageTopic := formatIncomingMessagesTopic(c.room.Key, event.FromPeerId)
-		if _, err := c.mainDatabase.Publish(c.ctx, incomingMessageTopic, pongMessage); err != nil {
-			log.Printf("cannot send pong message for node %s in db %s: %s", event.FromPeerId, c.room.Key, err)
+
+		if c.closed.Load() {
+			log.Printf("RoomCommunicatorImpl closed %v", c.key)
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
+		defer cancel()
+
+		incomingMessageTopic := formatIncomingMessagesTopic(c.key, event.FromPeerId)
+		if _, err := c.mainDatabase.Publish(ctx, incomingMessageTopic, pongMessage); err != nil {
+			log.Printf("cannot send pong message for node %s in db %s: %s", event.FromPeerId, c.key, err)
 		} else {
 			log.Printf("PONG message sent to %v", event.FromPeerId)
 		}
@@ -154,12 +201,25 @@ func (c *RoomCommunicatorImpl) incomingMessageHandler(event p2p_common.Event) {
 }
 
 func (c *RoomCommunicatorImpl) roomMessageHandler(event p2p_common.Event) {
+
+	if event.FromPeerId == c.mainDatabase.GetHost().ID().String() {
+		return
+	}
+
 	if event.Message == adMessage {
 		c.checkPeer(event.FromPeerId)
 
-		incomingMessageTopic := formatIncomingMessagesTopic(c.room.Key, event.FromPeerId)
-		if _, err := c.mainDatabase.Publish(c.ctx, incomingMessageTopic, adMessage); err != nil {
-			log.Printf("cannot send ad message for node %s in db %s: %s", event.FromPeerId, c.room.Key, err)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
+		defer cancel()
+
+		if c.closed.Load() {
+			log.Printf("RoomCommunicatorImpl closed %v", c.key)
+			return
+		}
+
+		incomingMessageTopic := formatIncomingMessagesTopic(c.key, event.FromPeerId)
+		if _, err := c.mainDatabase.Publish(ctx, incomingMessageTopic, adMessage); err != nil {
+			log.Printf("cannot send ad message for node %s in db %s: %s", event.FromPeerId, c.key, err)
 		} else {
 			log.Printf("ad message sent to %v", event.FromPeerId)
 		}
@@ -179,8 +239,16 @@ func (c *RoomCommunicatorImpl) ForEachPeer(peerHandler func(peerId string)) {
 }
 
 func (c *RoomCommunicatorImpl) SendMessage(peerId string, message interface{}) (string, error) {
-	incomingMessagesTopic := formatIncomingMessagesTopic(c.room.Key, peerId)
-	event, err := c.mainDatabase.Publish(c.ctx, incomingMessagesTopic, message)
+
+	if c.closed.Load() {
+		return "", fmt.Errorf("RoomCommunicatorImpl closed %v", c.key)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
+	defer cancel()
+
+	incomingMessagesTopic := formatIncomingMessagesTopic(c.key, peerId)
+	event, err := c.mainDatabase.Publish(ctx, incomingMessagesTopic, message)
 	if err != nil {
 		return "", errors.Wrap(err, "publish error")
 	}

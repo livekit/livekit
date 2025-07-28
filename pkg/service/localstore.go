@@ -58,7 +58,7 @@ func (s *LocalStore) StoreRoom(_ context.Context, room *livekit.Room, roomKey li
 	s.rooms[roomKey] = room
 	s.roomInternal[roomKey] = internal
 	if _, ok := s.roomCommunicators[roomKey]; !ok {
-		if roomCommunicator, err := p2p.NewRoomCommunicatorImpl(room, s.db); err != nil {
+		if roomCommunicator, err := p2p.NewRoomCommunicatorImpl(roomKey, s.db); err != nil {
 			s.lock.Unlock()
 			return errors.Wrap(err, "cannot create room communicator")
 		} else {
@@ -121,8 +121,8 @@ func (s *LocalStore) DeleteRoom(ctx context.Context, roomKey livekit.RoomKey) er
 
 	roomCommunicator, exists := s.roomCommunicators[roomKey]
 	if exists {
-		roomCommunicator.Close()
 		delete(s.roomCommunicators, roomKey)
+		roomCommunicator.Close()
 	}
 
 	return nil

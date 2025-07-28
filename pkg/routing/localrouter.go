@@ -73,10 +73,10 @@ func (r *LocalRouter) ClearRoomState(_ context.Context, roomKey livekit.RoomKey)
 
 	routerCommunicator, exists := r.routerCommunicators[roomKey]
 	if exists {
+		delete(r.routerCommunicators, roomKey)
 		routerCommunicator.Close()
 	}
 
-	delete(r.routerCommunicators, roomKey)
 
 	return nil
 }

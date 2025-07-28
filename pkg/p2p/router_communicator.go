@@ -6,7 +6,9 @@ import (
 	"errors"
 	p2p_common "github.com/dTelecom/p2p-database/common"
 	"github.com/dTelecom/p2p-database/pubsub"
+	"go.uber.org/atomic"
 	"log"
+	"time"
 
 	"github.com/livekit/protocol/livekit"
 	"google.golang.org/protobuf/proto"
@@ -48,14 +50,11 @@ type RouterCommunicatorImpl struct {
 	topic          string
 	key            livekit.RoomKey
 	mainDatabase   *pubsub.DB
-	ctx            context.Context
-	cancel         context.CancelFunc
+	closed         atomic.Bool
 	messageHandler func(ctx context.Context, roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) error
 }
 
 func NewRouterCommunicatorImpl(key livekit.RoomKey, mainDatabase *pubsub.DB, messageHandler func(ctx context.Context, roomKey livekit.RoomKey, msg *livekit.RTCNodeMessage) error) *RouterCommunicatorImpl {
-
-	ctx, cancel := context.WithCancel(context.Background())
 
 	topic := "livekit_router_" + string(key)
 
@@ -63,8 +62,6 @@ func NewRouterCommunicatorImpl(key livekit.RoomKey, mainDatabase *pubsub.DB, mes
 		topic:          topic,
 		key:            key,
 		mainDatabase:   mainDatabase,
-		ctx:            ctx,
-		cancel:         cancel,
 		messageHandler: messageHandler,
 	}
 
@@ -74,31 +71,44 @@ func NewRouterCommunicatorImpl(key livekit.RoomKey, mainDatabase *pubsub.DB, mes
 }
 
 func (c *RouterCommunicatorImpl) Close() {
-	err := c.mainDatabase.Unsubscribe(c.ctx, c.topic)
+	c.closed.Store(true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
+	defer cancel()
+
+	err := c.mainDatabase.Unsubscribe(ctx, c.topic)
 	if err != nil {
-		log.Printf("unsubscrib from topic err %v %v", c.topic, err)
+		log.Printf("unsubscribed from topic err %v %v", c.topic, err)
 	} else {
 		log.Printf("unsubscribed from topic %v", c.topic)
 	}
-
-	c.cancel()
 }
 
 func (c *RouterCommunicatorImpl) Publish(message *livekit.RTCNodeMessage) {
+	if c.closed.Load() {
+		log.Printf("RouterCommunicatorImpl closed %v", c.key)
+		return
+	}
 
 	data, err := proto.Marshal((*livekit.RTCNodeMessage)(message))
 	if err != nil {
 		log.Printf("RouterCommunicatorImpl Publish cannot marshal %v", message)
 	}
 
-	if _, err := c.mainDatabase.Publish(c.ctx, c.topic, packRouterMessage(data)); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
+	defer cancel()
+
+	if _, err := c.mainDatabase.Publish(ctx, c.topic, packRouterMessage(data)); err != nil {
 		log.Printf("RouterCommunicatorImpl cannot publish %v", err)
 	}
 }
 
 func (c *RouterCommunicatorImpl) init() {
 
-	subErr := c.mainDatabase.Subscribe(c.ctx, c.topic, c.dbHandler)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
+	defer cancel()
+
+	subErr := c.mainDatabase.Subscribe(ctx, c.topic, c.dbHandler)
 	if subErr != nil {
 		log.Printf("RouterCommunicatorImpl cannot subscribe to topic %v", subErr)
 	}
@@ -122,7 +132,10 @@ func (c *RouterCommunicatorImpl) dbHandler(event p2p_common.Event) {
 		return
 	}
 
-	err = c.messageHandler(c.ctx, c.key, &rm)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
+	defer cancel()
+
+	err = c.messageHandler(ctx, c.key, &rm)
 	if err != nil {
 		log.Printf("RouterCommunicatorImpl dbHandler err: %v", err)
 	}
