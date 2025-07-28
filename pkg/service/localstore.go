@@ -60,6 +60,7 @@ func (s *LocalStore) StoreRoom(_ context.Context, room *livekit.Room, roomKey li
 	if _, ok := s.roomCommunicators[roomKey]; !ok {
 		if roomCommunicator, err := p2p.NewRoomCommunicatorImpl(roomKey, s.db); err != nil {
 			s.lock.Unlock()
+			roomCommunicator.Close()
 			return errors.Wrap(err, "cannot create room communicator")
 		} else {
 			s.roomCommunicators[roomKey] = roomCommunicator

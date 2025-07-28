@@ -113,6 +113,7 @@ func (r *LocalRouter) StartParticipantSignal(ctx context.Context, roomKey liveki
 		if err == nil {
 			r.routerCommunicators[roomKey] = rc			
 		} else {
+			rc.Close()
 			logger.Errorw("NewRouterCommunicatorImpl err", err)
 		}
 	}

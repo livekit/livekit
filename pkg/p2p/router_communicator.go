@@ -105,9 +105,7 @@ func (c *RouterCommunicatorImpl) Publish(message *livekit.RTCNodeMessage) {
 
 func (c *RouterCommunicatorImpl) init() error {
 
-	ctx, _ := context.WithTimeout(context.Background(), time.Second*15)
-
-	err := c.mainDatabase.Subscribe(ctx, c.topic, c.dbHandler)
+	err := c.mainDatabase.Subscribe(context.Background(), c.topic, c.dbHandler)
 	return err
 }
 

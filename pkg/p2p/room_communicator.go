@@ -50,11 +50,9 @@ func NewRoomCommunicatorImpl(key livekit.RoomKey, mainDatabase *pubsub.DB) (*Roo
 		peers:        make(map[string]struct{}),
 	}
 
-	if err := roomCommunicator.init(); err != nil {
-		return nil, errors.Wrap(err, "cannot init room communicator")
-	}
+	err := roomCommunicator.init()
 
-	return roomCommunicator, nil
+	return roomCommunicator, err
 }
 
 func (c *RoomCommunicatorImpl) Close() {
@@ -87,18 +85,14 @@ func (c *RoomCommunicatorImpl) Close() {
 
 func (c *RoomCommunicatorImpl) init() error {
 
-	ctx1, _ := context.WithTimeout(context.Background(), time.Second*15)
-
 	incomingMessagesTopic := formatIncomingMessagesTopic(c.key, c.mainDatabase.GetHost().ID().String())
-	if err := c.mainDatabase.Subscribe(ctx1, incomingMessagesTopic, c.incomingMessageHandler); err != nil {
+	if err := c.mainDatabase.Subscribe(context.Background(), incomingMessagesTopic, c.incomingMessageHandler); err != nil {
 		return errors.Wrap(err, "cannot subscribe to incoming messages topic")
 	}
 	log.Printf("subscribed to topic %v", incomingMessagesTopic)
 
-	ctx2, _ := context.WithTimeout(context.Background(), time.Second*15)
-
 	roomMessagesTopic := formatRoomMessageTopic(c.key)
-	if err := c.mainDatabase.Subscribe(ctx2, roomMessagesTopic, c.roomMessageHandler); err != nil {
+	if err := c.mainDatabase.Subscribe(context.Background(), roomMessagesTopic, c.roomMessageHandler); err != nil {
 		return errors.Wrap(err, "cannot subscribe to room messages topic")
 	}
 	log.Printf("subscribed to topic %v", roomMessagesTopic)
