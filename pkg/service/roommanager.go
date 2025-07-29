@@ -124,6 +124,7 @@ func (r *RoomManager) DeleteRoom(ctx context.Context, roomKey livekit.RoomKey) e
 	logger.Infow("deleting room state", "room", roomKey)
 	r.lock.Lock()
 	delete(r.rooms, roomKey)
+	delete(r.outRelayCollections, roomKey)
 	r.lock.Unlock()
 
 	var err, err2 error
