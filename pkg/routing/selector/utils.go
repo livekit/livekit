@@ -15,6 +15,7 @@
 package selector
 
 import (
+	"math/rand/v2"
 	"sort"
 	"time"
 
@@ -74,11 +75,49 @@ func LimitsReached(limitConfig config.LimitConfig, nodeStats *livekit.NodeStats)
 	return false
 }
 
-func SelectSortedNode(nodes []*livekit.Node, sortBy string) (*livekit.Node, error) {
+func SelectSortedNode(nodes []*livekit.Node, sortBy string, algorithm string) (*livekit.Node, error) {
 	if sortBy == "" {
 		return nil, ErrSortByNotSet
 	}
+	if algorithm == "" {
+		return nil, ErrAlgorithmNotSet
+	}
 
+	switch algorithm {
+	case "lowest": // examine all nodes and select the lowest based on sort criteria
+		return selectLowestSortedNode(nodes, sortBy)
+	case "twochoice": // randomly select two nodes and return the lowest based on sort criteria "Power of Two Random Choices"
+		return selectTwoChoiceSortedNode(nodes, sortBy)
+	default:
+		return nil, ErrAlgorithmUnknown
+	}
+}
+
+func selectTwoChoiceSortedNode(nodes []*livekit.Node, sortBy string) (*livekit.Node, error) {
+	if len(nodes) <= 2 {
+		return selectLowestSortedNode(nodes, sortBy)
+	}
+
+	// randomly select two nodes
+	node1, node2, err := selectTwoRandomNodes(nodes)
+	if err != nil {
+		return nil, err
+	}
+
+	// compare the two nodes based on the sort criteria
+	if node1 == nil || node2 == nil {
+		return nil, ErrNoAvailableNodes
+	}
+
+	selectedNode, err := selectLowestSortedNode([]*livekit.Node{node1, node2}, sortBy)
+	if err != nil {
+		return nil, err
+	}
+
+	return selectedNode, nil
+}
+
+func selectLowestSortedNode(nodes []*livekit.Node, sortBy string) (*livekit.Node, error) {
 	// Return a node based on what it should be sorted by for priority
 	switch sortBy {
 	case "random":
@@ -126,4 +165,14 @@ func SelectSortedNode(nodes []*livekit.Node, sortBy string) (*livekit.Node, erro
 	default:
 		return nil, ErrSortByUnknown
 	}
+}
+
+func selectTwoRandomNodes(nodes []*livekit.Node) (*livekit.Node, *livekit.Node, error) {
+	if len(nodes) < 2 {
+		return nil, nil, ErrNoAvailableNodes
+	}
+
+	shuffledIndices := rand.Perm(len(nodes))
+
+	return nodes[shuffledIndices[0]], nodes[shuffledIndices[1]], nil
 }
