@@ -130,7 +130,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 			ice.UDPMuxFromPortWithLogger(s.LoggerFactory.NewLogger("relay_udp_mux")),
 		}
 		var err error
-		relayUdpMux, err = ice.NewMultiUDPMuxFromPort(int(rtcConf.UDPPort), opts...)
+		relayUdpMux, err = ice.NewMultiUDPMuxFromPort(int(rtcConf.RelayPort), opts...)
 		if err != nil {
 			return nil, err
 		}
