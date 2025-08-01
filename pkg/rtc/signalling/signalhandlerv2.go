@@ -54,7 +54,7 @@ func NewSignalHandlerv2(params SignalHandlerv2Params) ParticipantSignalHandler {
 	}
 }
 
-func (s *signalhandlerv2) HandleRequest(msg proto.Message) error {
+func (s *signalhandlerv2) HandleMessage(msg proto.Message) error {
 	req, ok := msg.(*livekit.Signalv2WireMessage)
 	if !ok {
 		s.params.Logger.Warnw(
@@ -129,11 +129,20 @@ func (s *signalhandlerv2) HandleRequest(msg proto.Message) error {
 				return err
 			}
 
-			s.HandleRequest(wireMessage)
+			s.HandleMessage(wireMessage)
 		}
 	}
 
 	return nil
+}
+
+func (s *signalhandlerv2) HandleEncodedMessage(data []byte) error {
+	wireMessage := &livekit.Signalv2WireMessage{}
+	if err := proto.Unmarshal(data, wireMessage); err != nil {
+		return err
+	}
+
+	return s.HandleMessage(wireMessage)
 }
 
 func (s *signalhandlerv2) PruneStaleReassemblies() {

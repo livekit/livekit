@@ -588,15 +588,15 @@ type FakeLocalParticipant struct {
 	handleReconnectAndSendResponseReturnsOnCall map[int]struct {
 		result1 error
 	}
-	HandleSignalRequestStub        func(proto.Message) error
-	handleSignalRequestMutex       sync.RWMutex
-	handleSignalRequestArgsForCall []struct {
+	HandleSignalMessageStub        func(proto.Message) error
+	handleSignalMessageMutex       sync.RWMutex
+	handleSignalMessageArgsForCall []struct {
 		arg1 proto.Message
 	}
-	handleSignalRequestReturns struct {
+	handleSignalMessageReturns struct {
 		result1 error
 	}
-	handleSignalRequestReturnsOnCall map[int]struct {
+	handleSignalMessageReturnsOnCall map[int]struct {
 		result1 error
 	}
 	HandleSignalSourceCloseStub        func()
@@ -4397,16 +4397,16 @@ func (fake *FakeLocalParticipant) HandleReconnectAndSendResponseReturnsOnCall(i 
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) HandleSignalRequest(arg1 proto.Message) error {
-	fake.handleSignalRequestMutex.Lock()
-	ret, specificReturn := fake.handleSignalRequestReturnsOnCall[len(fake.handleSignalRequestArgsForCall)]
-	fake.handleSignalRequestArgsForCall = append(fake.handleSignalRequestArgsForCall, struct {
+func (fake *FakeLocalParticipant) HandleSignalMessage(arg1 proto.Message) error {
+	fake.handleSignalMessageMutex.Lock()
+	ret, specificReturn := fake.handleSignalMessageReturnsOnCall[len(fake.handleSignalMessageArgsForCall)]
+	fake.handleSignalMessageArgsForCall = append(fake.handleSignalMessageArgsForCall, struct {
 		arg1 proto.Message
 	}{arg1})
-	stub := fake.HandleSignalRequestStub
-	fakeReturns := fake.handleSignalRequestReturns
-	fake.recordInvocation("HandleSignalRequest", []interface{}{arg1})
-	fake.handleSignalRequestMutex.Unlock()
+	stub := fake.HandleSignalMessageStub
+	fakeReturns := fake.handleSignalMessageReturns
+	fake.recordInvocation("HandleSignalMessage", []interface{}{arg1})
+	fake.handleSignalMessageMutex.Unlock()
 	if stub != nil {
 		return stub(arg1)
 	}
@@ -4416,44 +4416,44 @@ func (fake *FakeLocalParticipant) HandleSignalRequest(arg1 proto.Message) error 
 	return fakeReturns.result1
 }
 
-func (fake *FakeLocalParticipant) HandleSignalRequestCallCount() int {
-	fake.handleSignalRequestMutex.RLock()
-	defer fake.handleSignalRequestMutex.RUnlock()
-	return len(fake.handleSignalRequestArgsForCall)
+func (fake *FakeLocalParticipant) HandleSignalMessageCallCount() int {
+	fake.handleSignalMessageMutex.RLock()
+	defer fake.handleSignalMessageMutex.RUnlock()
+	return len(fake.handleSignalMessageArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) HandleSignalRequestCalls(stub func(proto.Message) error) {
-	fake.handleSignalRequestMutex.Lock()
-	defer fake.handleSignalRequestMutex.Unlock()
-	fake.HandleSignalRequestStub = stub
+func (fake *FakeLocalParticipant) HandleSignalMessageCalls(stub func(proto.Message) error) {
+	fake.handleSignalMessageMutex.Lock()
+	defer fake.handleSignalMessageMutex.Unlock()
+	fake.HandleSignalMessageStub = stub
 }
 
-func (fake *FakeLocalParticipant) HandleSignalRequestArgsForCall(i int) proto.Message {
-	fake.handleSignalRequestMutex.RLock()
-	defer fake.handleSignalRequestMutex.RUnlock()
-	argsForCall := fake.handleSignalRequestArgsForCall[i]
+func (fake *FakeLocalParticipant) HandleSignalMessageArgsForCall(i int) proto.Message {
+	fake.handleSignalMessageMutex.RLock()
+	defer fake.handleSignalMessageMutex.RUnlock()
+	argsForCall := fake.handleSignalMessageArgsForCall[i]
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) HandleSignalRequestReturns(result1 error) {
-	fake.handleSignalRequestMutex.Lock()
-	defer fake.handleSignalRequestMutex.Unlock()
-	fake.HandleSignalRequestStub = nil
-	fake.handleSignalRequestReturns = struct {
+func (fake *FakeLocalParticipant) HandleSignalMessageReturns(result1 error) {
+	fake.handleSignalMessageMutex.Lock()
+	defer fake.handleSignalMessageMutex.Unlock()
+	fake.HandleSignalMessageStub = nil
+	fake.handleSignalMessageReturns = struct {
 		result1 error
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) HandleSignalRequestReturnsOnCall(i int, result1 error) {
-	fake.handleSignalRequestMutex.Lock()
-	defer fake.handleSignalRequestMutex.Unlock()
-	fake.HandleSignalRequestStub = nil
-	if fake.handleSignalRequestReturnsOnCall == nil {
-		fake.handleSignalRequestReturnsOnCall = make(map[int]struct {
+func (fake *FakeLocalParticipant) HandleSignalMessageReturnsOnCall(i int, result1 error) {
+	fake.handleSignalMessageMutex.Lock()
+	defer fake.handleSignalMessageMutex.Unlock()
+	fake.HandleSignalMessageStub = nil
+	if fake.handleSignalMessageReturnsOnCall == nil {
+		fake.handleSignalMessageReturnsOnCall = make(map[int]struct {
 			result1 error
 		})
 	}
-	fake.handleSignalRequestReturnsOnCall[i] = struct {
+	fake.handleSignalMessageReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
 }
@@ -9383,8 +9383,8 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.handleReceiverReportMutex.RUnlock()
 	fake.handleReconnectAndSendResponseMutex.RLock()
 	defer fake.handleReconnectAndSendResponseMutex.RUnlock()
-	fake.handleSignalRequestMutex.RLock()
-	defer fake.handleSignalRequestMutex.RUnlock()
+	fake.handleSignalMessageMutex.RLock()
+	defer fake.handleSignalMessageMutex.RUnlock()
 	fake.handleSignalSourceCloseMutex.RLock()
 	defer fake.handleSignalSourceCloseMutex.RUnlock()
 	fake.handleSimulateScenarioMutex.RLock()

@@ -945,7 +945,7 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 				return
 			}
 
-			if err := participant.HandleSignalRequest(obj); err != nil {
+			if err := participant.HandleSignalMessage(obj); err != nil {
 				// more specific errors are already logged
 				// treat errors returned as fatal
 				return

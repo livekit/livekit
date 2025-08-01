@@ -54,6 +54,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
@@ -146,6 +147,8 @@ type reliableDataInfo struct {
 }
 
 // ---------------------------------------------------------------
+
+var _ types.LocalParticipant = (*ParticipantImpl)(nil)
 
 type ParticipantParams struct {
 	Identity                livekit.ParticipantIdentity
@@ -314,7 +317,7 @@ type ParticipantImpl struct {
 	metricsReporter   *metric.MetricsReporter
 
 	signalling    signalling.ParticipantSignalling
-	signalhandler signalling.ParticipantSignalHandler
+	signalHandler signalling.ParticipantSignalHandler
 	signaller     signalling.ParticipantSignaller
 
 	// loggers for publisher and subscriber
@@ -1733,6 +1736,8 @@ func (p *ParticipantImpl) UpdateMediaRTT(rtt uint32) {
 
 // ----------------------------------------------------------
 
+var _ transport.Handler = (*AnyTransportHandler)(nil)
+
 type AnyTransportHandler struct {
 	transport.UnimplementedHandler
 	p *ParticipantImpl
@@ -1774,6 +1779,23 @@ func (h PublisherTransportHandler) OnDataMessage(kind livekit.DataPacket_Kind, d
 
 func (h PublisherTransportHandler) OnDataMessageUnlabeled(data []byte) {
 	h.p.onReceivedDataMessageUnlabeled(data)
+}
+
+func (h PublisherTransportHandler) OnDataChannelOpenSignalling(dc *datachannel.DataChannelWriter[*webrtc.DataChannel]) {
+	sink := signalling.NewDataChannelMessageSink(signalling.DataChannelMessageSinkParams{
+		Logger:      h.p.params.Logger,
+		DataChannel: dc,
+	})
+	h.p.signaller.SetResponseSink(sink)
+}
+
+func (h PublisherTransportHandler) OnDataChannelCloseSignalling(dc *datachannel.DataChannelWriter[*webrtc.DataChannel]) {
+	// SIGNALLING-V2-TODO: check that the closed data channel is actually the same as response sink
+	h.p.signaller.SetResponseSink(nil)
+}
+
+func (h PublisherTransportHandler) OnDataMessageSignalling(data []byte) {
+	h.p.signalHandler.HandleEncodedMessage(data)
 }
 
 func (h PublisherTransportHandler) OnDataSendError(err error) {
@@ -1824,7 +1846,7 @@ func (p *ParticipantImpl) setupSignalling() {
 		p.signalling = signalling.NewSignalling(signalling.SignallingParams{
 			Logger: p.params.Logger,
 		})
-		p.signalhandler = signalling.NewSignalHandler(signalling.SignalHandlerParams{
+		p.signalHandler = signalling.NewSignalHandler(signalling.SignalHandlerParams{
 			Logger:      p.params.Logger,
 			Participant: p,
 		})
@@ -1836,7 +1858,7 @@ func (p *ParticipantImpl) setupSignalling() {
 		p.signalling = signalling.NewSignallingv2(signalling.Signallingv2Params{
 			Logger: p.params.Logger,
 		})
-		p.signalhandler = signalling.NewSignalHandlerv2(signalling.SignalHandlerv2Params{
+		p.signalHandler = signalling.NewSignalHandlerv2(signalling.SignalHandlerv2Params{
 			Logger:      p.params.Logger,
 			Participant: p,
 			Signalling:  p.signalling,
@@ -3782,6 +3804,6 @@ func (p *ParticipantImpl) HandleLeaveRequest(reason types.ParticipantCloseReason
 	}
 }
 
-func (p *ParticipantImpl) HandleSignalRequest(msg proto.Message) error {
-	return p.signalhandler.HandleRequest(msg)
+func (p *ParticipantImpl) HandleSignalMessage(msg proto.Message) error {
+	return p.signalHandler.HandleMessage(msg)
 }
