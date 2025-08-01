@@ -134,6 +134,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		if err != nil {
 			return nil, err
 		}
+		logger.Infow("using udp mux for relay port", "port", rtcConf.RelayPort)
 	}
 
 	var udpMux ice.UDPMux
