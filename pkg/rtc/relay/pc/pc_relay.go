@@ -279,11 +279,12 @@ func (r *PcRelay) Offer(signalFn func(offerData []byte) ([]byte, error)) error {
 		r.logger.Warnw("timeout when waiting ice candidates", nil)
 	}
 
-	offerData, marshalErr := json.Marshal(sessionDescriptionWithIceCandidates{offer, iceCandidates})
+	offerWithIceCandidates := sessionDescriptionWithIceCandidates{offer, iceCandidates}
+	offerData, marshalErr := json.Marshal(offerWithIceCandidates)
 	if marshalErr != nil {
 		return errors.Wrap(marshalErr, "json marshal error")
 	}
-	r.logger.Debugw("Offer offer", offerData)
+	r.logger.Debugw("Offer offer", "value", offerWithIceCandidates)
 
 	answerData, signalErr := signalFn(offerData)
 	if signalErr != nil {
@@ -295,7 +296,7 @@ func (r *PcRelay) Offer(signalFn func(offerData []byte) ([]byte, error)) error {
 		return errors.Wrap(err, "json unmarshal error")
 	}
 
-	r.logger.Debugw("Offer answer", answerWithIceCandidates)
+	r.logger.Debugw("Offer answer", "value", answerWithIceCandidates)
 
 	if err := r.pc.SetRemoteDescription(answerWithIceCandidates.SessionDescription); err != nil {
 		return errors.Wrap(err, "SetRemoteDescription error")
@@ -316,7 +317,7 @@ func (r *PcRelay) Answer(offerData []byte) ([]byte, error) {
 		return nil, errors.Wrap(err, "json unmarshal error")
 	}
 
-	r.logger.Debugw("Answer", offerWithIceCandidates)
+	r.logger.Debugw("Answer offer", "value", offerWithIceCandidates)
 
 	doneCh := make(chan struct{})
 	var iceCandidates []webrtc.ICECandidateInit
@@ -356,7 +357,7 @@ func (r *PcRelay) Answer(offerData []byte) ([]byte, error) {
 
 	answerWithIceCandidates := sessionDescriptionWithIceCandidates{answer, iceCandidates}
 
-	r.logger.Debugw("Answer", answerWithIceCandidates)
+	r.logger.Debugw("Answer answer", "value", answerWithIceCandidates)
 
 	data, marshalErr := json.Marshal(answerWithIceCandidates)
 	if marshalErr != nil {
