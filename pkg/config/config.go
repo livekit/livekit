@@ -102,6 +102,7 @@ type RTCConfig struct {
 	EnableLoopbackCandidate bool             `yaml:"enable_loopback_candidate"`
 	UseMDNS                 bool             `yaml:"use_mdns"`
 	StrictACKs              bool             `yaml:"strict_acks"`
+	RelayPort               uint32           `yaml:"relay_port,omitempty"`
 
 	// Number of packets to buffer for NACK
 	PacketBufferSize int `yaml:"packet_buffer_size,omitempty"`
@@ -298,6 +299,7 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 			UseExternalIP:     false,
 			TCPPort:           7881,
 			UDPPort:           0,
+			RelayPort:         4444,
 			ICEPortRangeStart: 0,
 			ICEPortRangeEnd:   0,
 			STUNServers:       []string{},

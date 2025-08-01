@@ -137,6 +137,7 @@ func NewRelay(logger logger.Logger, conf *relay.RelayConfig) (*PcRelay, error) {
 	if err := me.RegisterCodec(vp8RtxCodec, webrtc.RTPCodecTypeVideo); err != nil {
 		return nil, fmt.Errorf("RegisterCodec error: %w", err)
 	}
+	conf.SettingEngine.SetICEUDPMux(conf.RelayUDPMux)
 
 	pc, pcErr := webrtc.
 		NewAPI(webrtc.WithSettingEngine(conf.SettingEngine), webrtc.WithMediaEngine(me)).

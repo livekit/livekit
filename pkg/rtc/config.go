@@ -33,6 +33,7 @@ type WebRTCConfig struct {
 	Receiver       ReceiverConfig
 	BufferFactory  *buffer.Factory
 	UDPMux         ice.UDPMux
+	RelayUDPMux    ice.UDPMux
 	TCPMuxListener *net.TCPListener
 	Publisher      DirectionConfig
 	Subscriber     DirectionConfig
@@ -119,6 +120,20 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 
 	if rtcConf.PacketBufferSize == 0 {
 		rtcConf.PacketBufferSize = 500
+	}
+
+	var relayUdpMux ice.UDPMux
+	if rtcConf.RelayPort != 0 {
+		opts := []ice.UDPMuxFromPortOption{
+			ice.UDPMuxFromPortWithReadBufferSize(defaultUDPBufferSize),
+			ice.UDPMuxFromPortWithWriteBufferSize(defaultUDPBufferSize),
+			ice.UDPMuxFromPortWithLogger(s.LoggerFactory.NewLogger("relay_udp_mux")),
+		}
+		var err error
+		relayUdpMux, err = ice.NewMultiUDPMuxFromPort(int(rtcConf.UDPPort), opts...)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var udpMux ice.UDPMux
@@ -265,6 +280,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 			PacketBufferSize: rtcConf.PacketBufferSize,
 		},
 		UDPMux:         udpMux,
+		RelayUDPMux:    relayUdpMux,
 		TCPMuxListener: tcpListener,
 		Publisher:      publisherConfig,
 		Subscriber:     subscriberConfig,
