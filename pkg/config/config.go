@@ -299,7 +299,7 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 			UseExternalIP:     false,
 			TCPPort:           7881,
 			UDPPort:           0,
-			RelayPort:         4444,
+			RelayPort:         0,
 			ICEPortRangeStart: 0,
 			ICEPortRangeEnd:   0,
 			STUNServers:       []string{},
