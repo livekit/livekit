@@ -39,6 +39,7 @@ type WebRTCConfig struct {
 	Subscriber     DirectionConfig
 	NAT1To1IPs     []string
 	UseMDNS        bool
+	RelayPort      uint32
 }
 
 type ReceiverConfig struct {
@@ -297,6 +298,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		Subscriber:     subscriberConfig,
 		NAT1To1IPs:     nat1to1IPs,
 		UseMDNS:        rtcConf.UseMDNS,
+		RelayPort:      rtcConf.RelayPort,
 	}, nil
 }
 
