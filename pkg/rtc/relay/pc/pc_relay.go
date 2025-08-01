@@ -258,8 +258,6 @@ func (r *PcRelay) Offer(signalFn func(offerData []byte) ([]byte, error)) error {
 		return errors.Wrap(offerErr, "CreateOffer error")
 	}
 
-	// r.logger.Debugw(offer.SDP)
-
 	doneCh := make(chan struct{})
 	var iceCandidates []webrtc.ICECandidateInit
 
@@ -285,6 +283,7 @@ func (r *PcRelay) Offer(signalFn func(offerData []byte) ([]byte, error)) error {
 	if marshalErr != nil {
 		return errors.Wrap(marshalErr, "json marshal error")
 	}
+	r.logger.Debugw("Offer offer", offerData)
 
 	answerData, signalErr := signalFn(offerData)
 	if signalErr != nil {
@@ -295,6 +294,8 @@ func (r *PcRelay) Offer(signalFn func(offerData []byte) ([]byte, error)) error {
 	if err := json.Unmarshal(answerData, &answerWithIceCandidates); err != nil {
 		return errors.Wrap(err, "json unmarshal error")
 	}
+
+	r.logger.Debugw("Offer answer", answerWithIceCandidates)
 
 	if err := r.pc.SetRemoteDescription(answerWithIceCandidates.SessionDescription); err != nil {
 		return errors.Wrap(err, "SetRemoteDescription error")
@@ -314,6 +315,8 @@ func (r *PcRelay) Answer(offerData []byte) ([]byte, error) {
 	if err := json.Unmarshal(offerData, &offerWithIceCandidates); err != nil {
 		return nil, errors.Wrap(err, "json unmarshal error")
 	}
+
+	r.logger.Debugw("Answer", offerWithIceCandidates)
 
 	doneCh := make(chan struct{})
 	var iceCandidates []webrtc.ICECandidateInit
@@ -335,8 +338,6 @@ func (r *PcRelay) Answer(offerData []byte) ([]byte, error) {
 		return nil, errors.Wrap(answerErr, "CreateAnswer error")
 	}
 
-	// r.logger.Debugw(answer.SDP)
-
 	if err := r.pc.SetLocalDescription(answer); err != nil {
 		return nil, errors.Wrap(err, "SetLocalDescription error")
 	}
@@ -353,10 +354,15 @@ func (r *PcRelay) Answer(offerData []byte) ([]byte, error) {
 		r.logger.Warnw("timeout when waiting ice candidates", nil)
 	}
 
-	data, marshalErr := json.Marshal(sessionDescriptionWithIceCandidates{answer, iceCandidates})
+	answerWithIceCandidates := sessionDescriptionWithIceCandidates{answer, iceCandidates}
+
+	r.logger.Debugw("Answer", answerWithIceCandidates)
+
+	data, marshalErr := json.Marshal(answerWithIceCandidates)
 	if marshalErr != nil {
 		return nil, errors.Wrap(marshalErr, "json marshal error")
 	}
+
 	return data, nil
 }
 
