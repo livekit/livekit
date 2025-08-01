@@ -129,6 +129,16 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 			ice.UDPMuxFromPortWithWriteBufferSize(defaultUDPBufferSize),
 			ice.UDPMuxFromPortWithLogger(s.LoggerFactory.NewLogger("relay_udp_mux")),
 		}
+		if rtcConf.EnableLoopbackCandidate {
+			opts = append(opts, ice.UDPMuxFromPortWithLoopback())
+		}
+		if ipFilter != nil {
+			opts = append(opts, ice.UDPMuxFromPortWithIPFilter(ipFilter))
+		}
+		if ifFilter != nil {
+			opts = append(opts, ice.UDPMuxFromPortWithInterfaceFilter(ifFilter))
+		}
+
 		var err error
 		relayUdpMux, err = ice.NewMultiUDPMuxFromPort(int(rtcConf.RelayPort), opts...)
 		if err != nil {
