@@ -73,7 +73,7 @@ type RoomManager struct {
 	router            routing.Router
 	roomAllocator     RoomAllocator
 	roomManagerServer rpc.TypedRoomManagerServer
-	rtcRestServer     rpc.RTCRestServer[livekit.NodeID]
+	whipServer        rpc.WHIPServer[livekit.NodeID]
 	roomStore         ObjectStore
 	telemetry         telemetry.TelemetryService
 	recorder          observability.Reporter
@@ -91,7 +91,7 @@ type RoomManager struct {
 	agentDispatchServers         utils.MultitonService[rpc.RoomTopic]
 	participantServers           utils.MultitonService[rpc.ParticipantTopic]
 	httpSignalParticipantServers utils.MultitonService[rpc.ParticipantTopic]
-	rtcRestParticipantServers    utils.MultitonService[rpc.ParticipantTopic]
+	whipParticipantServers       utils.MultitonService[rpc.ParticipantTopic]
 
 	iceConfigCache *sutils.IceConfigCache[iceConfigCacheKey]
 
@@ -157,11 +157,11 @@ func NewLocalRoomManager(
 		return nil, err
 	}
 
-	r.rtcRestServer, err = rpc.NewRTCRestServer[livekit.NodeID](rtcRestService{r}, bus, rpc.WithDefaultServerOptions(conf.PSRPC, logger.GetLogger()))
+	r.whipServer, err = rpc.NewWHIPServer[livekit.NodeID](whipService{r}, bus, rpc.WithDefaultServerOptions(conf.PSRPC, logger.GetLogger()))
 	if err != nil {
 		return nil, err
 	}
-	if err := r.rtcRestServer.RegisterAllCommonTopics(currentNode.NodeID()); err != nil {
+	if err := r.whipServer.RegisterAllCommonTopics(currentNode.NodeID()); err != nil {
 		return nil, err
 	}
 
@@ -236,12 +236,12 @@ func (r *RoomManager) Stop() {
 	}
 
 	r.roomManagerServer.Kill()
-	r.rtcRestServer.Kill()
+	r.whipServer.Kill()
 	r.roomServers.Kill()
 	r.agentDispatchServers.Kill()
 	r.participantServers.Kill()
 	r.httpSignalParticipantServers.Kill()
-	r.rtcRestParticipantServers.Kill()
+	r.whipParticipantServers.Kill()
 
 	if r.rtcConfig != nil {
 		if r.rtcConfig.UDPMux != nil {
@@ -512,9 +512,9 @@ func (r *RoomManager) StartSession(
 	}
 
 	if useOneShotSignallingMode {
-		rtcRestParticipantServer := must.Get(rpc.NewTypedRTCRestParticipantServer(rtcRestParticipantService{r}, r.bus))
-		participantServerClosers = append(participantServerClosers, utils.CloseFunc(r.rtcRestParticipantServers.Replace(participantTopic, rtcRestParticipantServer)))
-		if err := rtcRestParticipantServer.RegisterAllCommonTopics(participantTopic); err != nil {
+		whipParticipantServer := must.Get(rpc.NewTypedWHIPParticipantServer(whipParticipantService{r}, r.bus))
+		participantServerClosers = append(participantServerClosers, utils.CloseFunc(r.whipParticipantServers.Replace(participantTopic, whipParticipantServer)))
+		if err := whipParticipantServer.RegisterAllCommonTopics(participantTopic); err != nil {
 			participantServerClosers.Close()
 			pLogger.Errorw("could not join register participant topic for rtc rest participant server", err)
 			_ = participant.Close(true, types.ParticipantCloseReasonMessageBusFailed, false)

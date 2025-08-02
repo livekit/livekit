@@ -125,11 +125,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	rtCv2Service := NewRTCv2Service(conf, roomAllocator, router, topicFormatter, signalv2ParticipantClient)
-	rtcRestParticipantClient, err := rpc.NewTypedRTCRestParticipantClient(clientParams)
+	whipParticipantClient, err := rpc.NewTypedWHIPParticipantClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	serviceRTCRestService, err := NewRTCRestService(conf, router, roomAllocator, clientParams, topicFormatter, rtcRestParticipantClient)
+	serviceWHIPService, err := NewWHIPService(conf, router, roomAllocator, clientParams, topicFormatter, whipParticipantClient)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +162,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, rtCv2Service, serviceRTCRestService, agentService, keyProvider, router, roomManager, signalServer, signalv2Server, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, rtCv2Service, serviceWHIPService, agentService, keyProvider, router, roomManager, signalServer, signalv2Server, server, currentNode)
 	if err != nil {
 		return nil, err
 	}
