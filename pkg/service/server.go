@@ -50,7 +50,7 @@ type LivekitServer struct {
 	ioService      *IOInfoService
 	rtcService     *RTCService
 	rtcv2Service   *RTCv2Service
-	rtcRestService *RTCRestService
+	whipService    *WHIPService
 	agentService   *AgentService
 	httpServer     *http.Server
 	promServer     *http.Server
@@ -74,7 +74,7 @@ func NewLivekitServer(conf *config.Config,
 	ioService *IOInfoService,
 	rtcService *RTCService,
 	rtcv2Service *RTCv2Service,
-	rtcRestService *RTCRestService,
+	whipService *WHIPService,
 	agentService *AgentService,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
@@ -89,7 +89,7 @@ func NewLivekitServer(conf *config.Config,
 		ioService:      ioService,
 		rtcService:     rtcService,
 		rtcv2Service:   rtcv2Service,
-		rtcRestService: rtcRestService,
+		whipService:    whipService,
 		agentService:   agentService,
 		router:         router,
 		roomManager:    roomManager,
@@ -151,7 +151,7 @@ func NewLivekitServer(conf *config.Config,
 	xtwirp.RegisterServer(mux, sipServer)
 	rtcService.SetupRoutes(mux)
 	rtcv2Service.SetupRoutes(mux)
-	rtcRestService.SetupRoutes(mux)
+	whipService.SetupRoutes(mux)
 	mux.Handle("/agent", agentService)
 	mux.HandleFunc("/", s.defaultHandler)
 
