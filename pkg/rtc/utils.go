@@ -171,25 +171,3 @@ func MaybeTruncateIP(addr string) string {
 
 	return addr[:len(addr)-3] + "..."
 }
-
-func Signalv2FragmentsAsSignalv2WireMessages(fragments []*livekit.Fragment) []*livekit.Signalv2WireMessage {
-	msgs := make([]*livekit.Signalv2WireMessage, len(fragments))
-	for idx, fragment := range fragments {
-		msgs[idx] = &livekit.Signalv2WireMessage{
-			Message: &livekit.Signalv2WireMessage_Fragment{
-				Fragment: fragment,
-			},
-		}
-	}
-	return msgs
-}
-
-func EnvelopeSignalv2ServerMessages(msgs []*livekit.Signalv2ServerMessage) *livekit.Signalv2WireMessage {
-	return &livekit.Signalv2WireMessage{
-		Message: &livekit.Signalv2WireMessage_Envelope{
-			Envelope: &livekit.Envelope{
-				ServerMessages: msgs,
-			},
-		},
-	}
-}

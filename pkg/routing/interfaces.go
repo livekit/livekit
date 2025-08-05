@@ -160,14 +160,6 @@ type MessageRouter interface {
 		roomName livekit.RoomName,
 		pi ParticipantInit,
 	) (res StartParticipantSignalResults, err error)
-
-	// HandleParticipantConnectRequest handles connection request from participant
-	HandleParticipantConnectRequest(
-		ctx context.Context,
-		roomName livekit.RoomName,
-		participantIdentity livekit.ParticipantIdentity,
-		rscr *rpc.RelaySignalv2ConnectRequest,
-	) (resp *rpc.RelaySignalv2ConnectResponse, err error)
 }
 
 func CreateRouter(

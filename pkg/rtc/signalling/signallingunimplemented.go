@@ -107,16 +107,3 @@ func (u *signallingUnimplemented) SignalSubscriptionResponse(subscriptionRespons
 func (u *signallingUnimplemented) SignalSubscriptionPermissionUpdate(subscriptionPermissionUpdate *livekit.SubscriptionPermissionUpdate) proto.Message {
 	return nil
 }
-
-func (u *signallingUnimplemented) AckMessageId(ackMessageId uint32) {}
-
-func (u *signallingUnimplemented) SetLastProcessedRemoteMessageId(lastProcessedRemoteMessageId uint32) {
-}
-
-func (u *signallingUnimplemented) PendingMessages() proto.Message {
-	return nil
-}
-
-func (u *signallingUnimplemented) SignalConnectResponse(connectResponse *livekit.ConnectResponse) proto.Message {
-	return nil
-}

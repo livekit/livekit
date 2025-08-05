@@ -41,22 +41,13 @@ var ErrSignalMessageDropped = errors.New("signal message dropped")
 type SignalClient interface {
 	ActiveCount() int
 	StartParticipantSignal(ctx context.Context, roomName livekit.RoomName, pi ParticipantInit, nodeID livekit.NodeID) (connectionID livekit.ConnectionID, reqSink MessageSink, resSource MessageSource, err error)
-
-	HandleParticipantConnectRequest(
-		ctx context.Context,
-		roomName livekit.RoomName,
-		participantIdentity livekit.ParticipantIdentity,
-		nodeID livekit.NodeID,
-		rscr *rpc.RelaySignalv2ConnectRequest,
-	) (*rpc.RelaySignalv2ConnectResponse, error)
 }
 
 type signalClient struct {
-	nodeID   livekit.NodeID
-	config   config.SignalRelayConfig
-	client   rpc.TypedSignalClient
-	clientv2 rpc.TypedSignalv2Client
-	active   atomic.Int32
+	nodeID livekit.NodeID
+	config config.SignalRelayConfig
+	client rpc.TypedSignalClient
+	active atomic.Int32
 }
 
 func NewSignalClient(nodeID livekit.NodeID, bus psrpc.MessageBus, config config.SignalRelayConfig) (SignalClient, error) {
@@ -70,20 +61,10 @@ func NewSignalClient(nodeID livekit.NodeID, bus psrpc.MessageBus, config config.
 		return nil, err
 	}
 
-	clientv2, err := rpc.NewTypedSignalv2Client(
-		nodeID,
-		bus,
-		middleware.WithClientMetrics(rpc.PSRPCMetricsObserver{}),
-	)
-	if err != nil {
-		return nil, err
-	}
-
 	return &signalClient{
-		nodeID:   nodeID,
-		config:   config,
-		client:   client,
-		clientv2: clientv2,
+		nodeID: nodeID,
+		config: config,
+		client: client,
 	}, nil
 }
 
@@ -159,26 +140,6 @@ func (r *signalClient) StartParticipantSignal(
 	}()
 
 	return connectionID, sink, resChan, nil
-}
-
-func (r *signalClient) HandleParticipantConnectRequest(
-	ctx context.Context,
-	roomName livekit.RoomName,
-	participantIdentity livekit.ParticipantIdentity,
-	nodeID livekit.NodeID,
-	rscr *rpc.RelaySignalv2ConnectRequest,
-) (*rpc.RelaySignalv2ConnectResponse, error) {
-	lgr := utils.GetLogger(ctx).WithValues(
-		"room", roomName,
-		"participant", participantIdentity,
-		"reqNodeID", nodeID,
-		// SIGNALLING-V2-TODO "connID", connectionID,
-		"connectRequest", logger.Proto(rscr),
-	)
-
-	lgr.Debugw("handling participant connect request")
-
-	return r.clientv2.RelaySignalv2Connect(ctx, nodeID, rscr)
 }
 
 // ------------------------------

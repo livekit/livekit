@@ -120,11 +120,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	sipService := NewSIPService(sipConfig, nodeID, messageBus, sipClient, sipStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, router, telemetryService)
-	signalv2ParticipantClient, err := rpc.NewTypedSignalv2ParticipantClient(clientParams)
-	if err != nil {
-		return nil, err
-	}
-	rtCv2Service := NewRTCv2Service(conf, roomAllocator, router, topicFormatter, signalv2ParticipantClient)
 	whipParticipantClient, err := rpc.NewTypedWHIPParticipantClient(clientParams)
 	if err != nil {
 		return nil, err
@@ -153,16 +148,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	signalv2Server, err := NewDefaultSignalv2Server(currentNode, messageBus, router, roomManager)
-	if err != nil {
-		return nil, err
-	}
 	authHandler := getTURNAuthHandlerFunc(turnAuthHandler)
 	server, err := newInProcessTurnServer(conf, authHandler)
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, rtCv2Service, serviceWHIPService, agentService, keyProvider, router, roomManager, signalServer, signalv2Server, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, serviceWHIPService, agentService, keyProvider, router, roomManager, signalServer, server, currentNode)
 	if err != nil {
 		return nil, err
 	}

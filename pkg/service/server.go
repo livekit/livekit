@@ -46,23 +46,21 @@ import (
 )
 
 type LivekitServer struct {
-	config         *config.Config
-	ioService      *IOInfoService
-	rtcService     *RTCService
-	rtcv2Service   *RTCv2Service
-	whipService    *WHIPService
-	agentService   *AgentService
-	httpServer     *http.Server
-	promServer     *http.Server
-	router         routing.Router
-	roomManager    *RoomManager
-	signalServer   *SignalServer
-	signalv2Server *Signalv2Server
-	turnServer     *turn.Server
-	currentNode    routing.LocalNode
-	running        atomic.Bool
-	doneChan       chan struct{}
-	closedChan     chan struct{}
+	config       *config.Config
+	ioService    *IOInfoService
+	rtcService   *RTCService
+	whipService  *WHIPService
+	agentService *AgentService
+	httpServer   *http.Server
+	promServer   *http.Server
+	router       routing.Router
+	roomManager  *RoomManager
+	signalServer *SignalServer
+	turnServer   *turn.Server
+	currentNode  routing.LocalNode
+	running      atomic.Bool
+	doneChan     chan struct{}
+	closedChan   chan struct{}
 }
 
 func NewLivekitServer(conf *config.Config,
@@ -73,28 +71,24 @@ func NewLivekitServer(conf *config.Config,
 	sipService *SIPService,
 	ioService *IOInfoService,
 	rtcService *RTCService,
-	rtcv2Service *RTCv2Service,
 	whipService *WHIPService,
 	agentService *AgentService,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
 	roomManager *RoomManager,
 	signalServer *SignalServer,
-	signalv2Server *Signalv2Server,
 	turnServer *turn.Server,
 	currentNode routing.LocalNode,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
-		config:         conf,
-		ioService:      ioService,
-		rtcService:     rtcService,
-		rtcv2Service:   rtcv2Service,
-		whipService:    whipService,
-		agentService:   agentService,
-		router:         router,
-		roomManager:    roomManager,
-		signalServer:   signalServer,
-		signalv2Server: signalv2Server,
+		config:       conf,
+		ioService:    ioService,
+		rtcService:   rtcService,
+		whipService:  whipService,
+		agentService: agentService,
+		router:       router,
+		roomManager:  roomManager,
+		signalServer: signalServer,
 		// turn server starts automatically
 		turnServer:  turnServer,
 		currentNode: currentNode,
@@ -150,7 +144,6 @@ func NewLivekitServer(conf *config.Config,
 	xtwirp.RegisterServer(mux, ingressServer)
 	xtwirp.RegisterServer(mux, sipServer)
 	rtcService.SetupRoutes(mux)
-	rtcv2Service.SetupRoutes(mux)
 	whipService.SetupRoutes(mux)
 	mux.Handle("/agent", agentService)
 	mux.HandleFunc("/", s.defaultHandler)
@@ -278,10 +271,6 @@ func (s *LivekitServer) Start() error {
 	}
 
 	if err := s.signalServer.Start(); err != nil {
-		return err
-	}
-
-	if err := s.signalv2Server.Start(); err != nil {
 		return err
 	}
 

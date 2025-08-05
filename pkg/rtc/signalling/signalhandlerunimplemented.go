@@ -25,9 +25,3 @@ type signalhandlerUnimplemented struct{}
 func (u *signalhandlerUnimplemented) HandleMessage(msg proto.Message) error {
 	return nil
 }
-
-func (u *signalhandlerUnimplemented) HandleEncodedMessage(data []byte) error {
-	return nil
-}
-
-func (u *signalhandlerUnimplemented) PruneStaleReassemblies() {}
