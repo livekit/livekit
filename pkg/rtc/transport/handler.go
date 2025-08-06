@@ -42,9 +42,6 @@ type Handler interface {
 	OnTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver)
 	OnDataMessage(kind livekit.DataPacket_Kind, data []byte)
 	OnDataMessageUnlabeled(data []byte)
-	OnDataChannelOpenSignalling(dc *datachannel.DataChannelWriter[*webrtc.DataChannel])
-	OnDataChannelCloseSignalling(dc *datachannel.DataChannelWriter[*webrtc.DataChannel])
-	OnDataMessageSignalling(data []byte)
 	OnDataSendError(err error)
 	OnOffer(sd webrtc.SessionDescription, offerId uint32) error
 	OnAnswer(sd webrtc.SessionDescription, answerId uint32) error

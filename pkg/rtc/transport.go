@@ -62,9 +62,8 @@ import (
 )
 
 const (
-	LossyDataChannel      = "_lossy"
-	ReliableDataChannel   = "_reliable"
-	SignallingDataChannel = "_signalling"
+	LossyDataChannel    = "_lossy"
+	ReliableDataChannel = "_reliable"
 
 	fastNegotiationFrequency   = 10 * time.Millisecond
 	negotiationFrequency       = 150 * time.Millisecond
@@ -205,7 +204,6 @@ type PCTransport struct {
 	lossyDC                 *datachannel.DataChannelWriter[*webrtc.DataChannel]
 	lossyDCOpened           bool
 	unlabeledDataChannels   []*datachannel.DataChannelWriter[*webrtc.DataChannel]
-	signallingDataChannel   *datachannel.DataChannelWriter[*webrtc.DataChannel]
 
 	iceStartedAt               time.Time
 	iceConnectedAt             time.Time
@@ -807,17 +805,12 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 		t.params.Logger.Debugw(dc.Label() + " data channel open")
 		var kind livekit.DataPacket_Kind
 		var isUnlabeled bool
-		var isSignalling bool
 		switch dc.Label() {
 		case ReliableDataChannel:
 			kind = livekit.DataPacket_RELIABLE
 
 		case LossyDataChannel:
 			kind = livekit.DataPacket_LOSSY
-
-		case SignallingDataChannel:
-			t.params.Logger.Infow("signalling datachannel added", "label", dc.Label())
-			isSignalling = true
 
 		default:
 			t.params.Logger.Infow("unlabeled datachannel added", "label", dc.Label())
@@ -838,13 +831,6 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 				datachannel.NewDataChannelWriter(dc, rawDC, t.params.DatachannelSlowThreshold),
 			)
 			t.lock.Unlock()
-
-		case isSignalling:
-			t.lock.Lock()
-			signallingDataChannel := datachannel.NewDataChannelWriter(dc, rawDC, 0)
-			t.signallingDataChannel = signallingDataChannel
-			t.lock.Unlock()
-			t.params.Handler.OnDataChannelOpenSignalling(signallingDataChannel)
 
 		case kind == livekit.DataPacket_RELIABLE:
 			t.lock.Lock()
@@ -881,9 +867,6 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 				case isUnlabeled:
 					t.params.Handler.OnDataMessageUnlabeled(buffer[:n])
 
-				case isSignalling:
-					t.params.Handler.OnDataMessageSignalling(buffer[:n])
-
 				default:
 					t.params.Handler.OnDataMessage(kind, buffer[:n])
 				}
@@ -891,18 +874,6 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 		}()
 
 		t.maybeNotifyFullyEstablished()
-	})
-
-	dc.OnClose(func() {
-		t.params.Logger.Debugw(dc.Label() + " data channel close")
-		switch dc.Label() {
-		case SignallingDataChannel:
-			t.lock.RLock()
-			signallingDataChannel := t.signallingDataChannel
-			t.lock.RUnlock()
-
-			t.params.Handler.OnDataChannelCloseSignalling(signallingDataChannel)
-		}
 	})
 }
 
