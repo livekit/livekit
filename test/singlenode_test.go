@@ -564,6 +564,7 @@ func TestSingleNodeAttributes(t *testing.T) {
 				"b": "1",
 			})
 		},
+		UseJoinRequestQueryParam: true,
 	})
 	grant := &auth.VideoGrant{RoomJoin: true, Room: testRoom}
 	grant.SetCanSubscribe(false)
@@ -663,7 +664,9 @@ func TestSubscribeToCodecUnsupported(t *testing.T) {
 	_, finish := setupSingleNodeTest("TestSubscribeToCodecUnsupported")
 	defer finish()
 
-	c1 := createRTCClient("c1", defaultServerPort, nil)
+	c1 := createRTCClient("c1", defaultServerPort, &testclient.Options{
+		UseJoinRequestQueryParam: true,
+	})
 	// create a client that doesn't support H264
 	c2 := createRTCClient("c2", defaultServerPort, &testclient.Options{
 		AutoSubscribe: true,

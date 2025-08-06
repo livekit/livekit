@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -134,35 +135,58 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 	SetAuthorizationToken(requestHeader, token)
 
 	connectUrl := u.String()
+	sdk := "go"
 	if opts != nil {
-		if !opts.UseJoinRequestQueryParam {
-			sdk := "go"
-			connectUrl = fmt.Sprintf("%s&auto_subscribe=%t", connectUrl, opts.AutoSubscribe)
-			if opts.Publish != "" {
-				connectUrl += encodeQueryParam("publish", opts.Publish)
+		connectUrl = fmt.Sprintf("%s&auto_subscribe=%t", connectUrl, opts.AutoSubscribe)
+		if opts.Publish != "" {
+			connectUrl += encodeQueryParam("publish", opts.Publish)
+		}
+		if len(opts.Attributes) != 0 {
+			data, err := json.Marshal(opts.Attributes)
+			if err != nil {
+				return nil, err
 			}
-			if len(opts.Attributes) != 0 {
-				data, err := json.Marshal(opts.Attributes)
-				if err != nil {
-					return nil, err
-				}
-				connectUrl += encodeQueryParam("attributes", base64.URLEncoding.EncodeToString(data))
+			connectUrl += encodeQueryParam("attributes", base64.URLEncoding.EncodeToString(data))
+		}
+		if opts.ClientInfo != nil {
+			if opts.ClientInfo.DeviceModel != "" {
+				connectUrl += encodeQueryParam("device_model", opts.ClientInfo.DeviceModel)
 			}
-			if opts.ClientInfo != nil {
-				if opts.ClientInfo.DeviceModel != "" {
-					connectUrl += encodeQueryParam("device_model", opts.ClientInfo.DeviceModel)
-				}
-				if opts.ClientInfo.Os != "" {
-					connectUrl += encodeQueryParam("os", opts.ClientInfo.Os)
-				}
-				if opts.ClientInfo.Sdk != livekit.ClientInfo_UNKNOWN {
-					sdk = opts.ClientInfo.Sdk.String()
-				}
+			if opts.ClientInfo.Os != "" {
+				connectUrl += encodeQueryParam("os", opts.ClientInfo.Os)
 			}
-			connectUrl += encodeQueryParam("sdk", sdk)
-		} else {
+			if opts.ClientInfo.Sdk != livekit.ClientInfo_UNKNOWN {
+				sdk = opts.ClientInfo.Sdk.String()
+			}
 		}
 	}
+	connectUrl += encodeQueryParam("sdk", sdk)
+
+	if opts != nil && opts.UseJoinRequestQueryParam {
+		// add JoinRequest as base64 encoded protobuf bytes
+		clientInfo := &livekit.ClientInfo{
+			Os:  runtime.GOOS,
+			Sdk: livekit.ClientInfo_GO,
+		}
+		if opts.ClientInfo != nil {
+			clientInfo = opts.ClientInfo
+		}
+
+		connectionSettings := &livekit.ConnectionSettings{
+			AutoSubscribe: opts.AutoSubscribe,
+		}
+
+		joinRequest := &livekit.JoinRequest{
+			ClientInfo:            clientInfo,
+			ConnectionSettings:    connectionSettings,
+			ParticipantAttributes: opts.Attributes,
+		}
+
+		if marshalled, err := proto.Marshal(joinRequest); err == nil {
+			connectUrl += fmt.Sprintf("&join_request=%s", base64.URLEncoding.EncodeToString(marshalled))
+		}
+	}
+
 	conn, _, err := websocket.DefaultDialer.Dial(connectUrl, requestHeader)
 	return conn, err
 }

@@ -190,6 +190,8 @@ func (s *RTCService) validateInternal(lgr logger.Logger, r *http.Request, strict
 			pi.SubscriberAllowPause = &subscriberAllowPause
 		}
 	} else {
+		lgr.Debugw("processing join request", "joinRequest", logger.Proto(joinRequest))
+
 		AugmentClientInfo(joinRequest.ClientInfo, r)
 		pi.Client = joinRequest.ClientInfo
 
