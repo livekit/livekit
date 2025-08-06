@@ -25,8 +25,6 @@ import (
 
 type ParticipantSignalHandler interface {
 	HandleMessage(msg proto.Message) error
-	HandleEncodedMessage(data []byte) error
-	PruneStaleReassemblies()
 }
 
 type ParticipantSignaller interface {
@@ -59,11 +57,4 @@ type ParticipantSignalling interface {
 	SignalSubscribedQualityUpdate(subscribedQualityUpdate *livekit.SubscribedQualityUpdate) proto.Message
 	SignalSubscriptionResponse(subscriptionResponse *livekit.SubscriptionResponse) proto.Message
 	SignalSubscriptionPermissionUpdate(subscriptionPermissionUpdate *livekit.SubscriptionPermissionUpdate) proto.Message
-
-	AckMessageId(ackMessageId uint32)
-	SetLastProcessedRemoteMessageId(lastProcessedRemoteMessageId uint32)
-
-	PendingMessages() proto.Message
-
-	SignalConnectResponse(connectResponse *livekit.ConnectResponse) proto.Message
 }

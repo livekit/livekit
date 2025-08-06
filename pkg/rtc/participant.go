@@ -54,7 +54,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
-	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
@@ -201,7 +200,6 @@ type ParticipantParams struct {
 	DisableSenderReportPassThrough bool
 	MetricConfig                   metric.MetricConfig
 	UseOneShotSignallingMode       bool
-	SynchronousLocalCandidatesMode bool
 	EnableMetrics                  bool
 	DataChannelMaxBufferedAmount   uint64
 	DatachannelSlowThreshold       int
@@ -1781,23 +1779,6 @@ func (h PublisherTransportHandler) OnDataMessageUnlabeled(data []byte) {
 	h.p.onReceivedDataMessageUnlabeled(data)
 }
 
-func (h PublisherTransportHandler) OnDataChannelOpenSignalling(dc *datachannel.DataChannelWriter[*webrtc.DataChannel]) {
-	sink := signalling.NewDataChannelMessageSink(signalling.DataChannelMessageSinkParams{
-		Logger:      h.p.params.Logger,
-		DataChannel: dc,
-	})
-	h.p.signaller.SetResponseSink(sink)
-}
-
-func (h PublisherTransportHandler) OnDataChannelCloseSignalling(dc *datachannel.DataChannelWriter[*webrtc.DataChannel]) {
-	// SIGNALLING-V2-TODO: check that the closed data channel is actually the same as response sink
-	h.p.signaller.SetResponseSink(nil)
-}
-
-func (h PublisherTransportHandler) OnDataMessageSignalling(data []byte) {
-	h.p.signalHandler.HandleEncodedMessage(data)
-}
-
 func (h PublisherTransportHandler) OnDataSendError(err error) {
 	h.p.onDataSendError(err)
 }
@@ -1841,33 +1822,17 @@ func (h PrimaryTransportHandler) OnFullyEstablished() {
 }
 
 func (p *ParticipantImpl) setupSignalling() {
-	// SIGNALLING-V2-TODO: do proper types to decide which signalling components to instantiate
-	if !p.params.SynchronousLocalCandidatesMode {
-		p.signalling = signalling.NewSignalling(signalling.SignallingParams{
-			Logger: p.params.Logger,
-		})
-		p.signalHandler = signalling.NewSignalHandler(signalling.SignalHandlerParams{
-			Logger:      p.params.Logger,
-			Participant: p,
-		})
-		p.signaller = signalling.NewSignallerAsync(signalling.SignallerAsyncParams{
-			Logger:      p.params.Logger,
-			Participant: p,
-		})
-	} else {
-		p.signalling = signalling.NewSignallingv2(signalling.Signallingv2Params{
-			Logger: p.params.Logger,
-		})
-		p.signalHandler = signalling.NewSignalHandlerv2(signalling.SignalHandlerv2Params{
-			Logger:      p.params.Logger,
-			Participant: p,
-			Signalling:  p.signalling,
-		})
-		p.signaller = signalling.NewSignallerv2Async(signalling.Signallerv2AsyncParams{
-			Logger:      p.params.Logger,
-			Participant: p,
-		})
-	}
+	p.signalling = signalling.NewSignalling(signalling.SignallingParams{
+		Logger: p.params.Logger,
+	})
+	p.signalHandler = signalling.NewSignalHandler(signalling.SignalHandlerParams{
+		Logger:      p.params.Logger,
+		Participant: p,
+	})
+	p.signaller = signalling.NewSignallerAsync(signalling.SignallerAsyncParams{
+		Logger:      p.params.Logger,
+		Participant: p,
+	})
 }
 
 func (p *ParticipantImpl) setupTransportManager() error {
@@ -1889,30 +1854,29 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	params := TransportManagerParams{
 		// primary connection does not change, canSubscribe can change if permission was updated
 		// after the participant has joined
-		SubscriberAsPrimary:            subscriberAsPrimary,
-		Config:                         p.params.Config,
-		Twcc:                           p.twcc,
-		ProtocolVersion:                p.params.ProtocolVersion,
-		CongestionControlConfig:        p.params.CongestionControlConfig,
-		EnabledPublishCodecs:           p.enabledPublishCodecs,
-		EnabledSubscribeCodecs:         p.enabledSubscribeCodecs,
-		SimTracks:                      p.params.SimTracks,
-		ClientInfo:                     p.params.ClientInfo,
-		Migration:                      p.params.Migration,
-		AllowTCPFallback:               p.params.AllowTCPFallback,
-		TCPFallbackRTTThreshold:        p.params.TCPFallbackRTTThreshold,
-		AllowUDPUnstableFallback:       p.params.AllowUDPUnstableFallback,
-		TURNSEnabled:                   p.params.TURNSEnabled,
-		AllowPlayoutDelay:              p.params.PlayoutDelay.GetEnabled(),
-		DataChannelMaxBufferedAmount:   p.params.DataChannelMaxBufferedAmount,
-		DatachannelSlowThreshold:       p.params.DatachannelSlowThreshold,
-		Logger:                         p.params.Logger.WithComponent(sutils.ComponentTransport),
-		PublisherHandler:               pth,
-		SubscriberHandler:              sth,
-		DataChannelStats:               p.dataChannelStats,
-		UseOneShotSignallingMode:       p.params.UseOneShotSignallingMode,
-		SynchronousLocalCandidatesMode: p.params.SynchronousLocalCandidatesMode,
-		FireOnTrackBySdp:               p.params.FireOnTrackBySdp,
+		SubscriberAsPrimary:          subscriberAsPrimary,
+		Config:                       p.params.Config,
+		Twcc:                         p.twcc,
+		ProtocolVersion:              p.params.ProtocolVersion,
+		CongestionControlConfig:      p.params.CongestionControlConfig,
+		EnabledPublishCodecs:         p.enabledPublishCodecs,
+		EnabledSubscribeCodecs:       p.enabledSubscribeCodecs,
+		SimTracks:                    p.params.SimTracks,
+		ClientInfo:                   p.params.ClientInfo,
+		Migration:                    p.params.Migration,
+		AllowTCPFallback:             p.params.AllowTCPFallback,
+		TCPFallbackRTTThreshold:      p.params.TCPFallbackRTTThreshold,
+		AllowUDPUnstableFallback:     p.params.AllowUDPUnstableFallback,
+		TURNSEnabled:                 p.params.TURNSEnabled,
+		AllowPlayoutDelay:            p.params.PlayoutDelay.GetEnabled(),
+		DataChannelMaxBufferedAmount: p.params.DataChannelMaxBufferedAmount,
+		DatachannelSlowThreshold:     p.params.DatachannelSlowThreshold,
+		Logger:                       p.params.Logger.WithComponent(sutils.ComponentTransport),
+		PublisherHandler:             pth,
+		SubscriberHandler:            sth,
+		DataChannelStats:             p.dataChannelStats,
+		UseOneShotSignallingMode:     p.params.UseOneShotSignallingMode,
+		FireOnTrackBySdp:             p.params.FireOnTrackBySdp,
 	}
 	if p.params.SyncStreams && p.params.PlayoutDelay.GetEnabled() && p.params.ClientInfo.isFirefox() {
 		// we will disable playout delay for Firefox if the user is expecting

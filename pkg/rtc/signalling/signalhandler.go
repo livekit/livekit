@@ -44,7 +44,6 @@ func NewSignalHandler(params SignalHandlerParams) ParticipantSignalHandler {
 	}
 }
 
-// SIGNALLING-V2-TODO: consolidate base message handling for messages common to different signalling versions
 func (s *signalhandler) HandleMessage(msg proto.Message) error {
 	req, ok := msg.(*livekit.SignalRequest)
 	if !ok {
@@ -193,13 +192,4 @@ func (s *signalhandler) HandleMessage(msg proto.Message) error {
 	}
 
 	return nil
-}
-
-func (s *signalhandler) HandleEncodedMessage(data []byte) error {
-	signalRequest := &livekit.SignalRequest{}
-	if err := proto.Unmarshal(data, signalRequest); err != nil {
-		return err
-	}
-
-	return s.HandleMessage(signalRequest)
 }

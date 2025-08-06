@@ -83,7 +83,6 @@ func (s *signallerAsync) WriteMessage(msg proto.Message) error {
 
 	err := sink.WriteMessage(msg)
 	if err != nil {
-		// SIGNALLING-V2-TODO: check for data channel errors to treat as non-error
 		if utils.ErrorIsOneOf(err, psrpc.Canceled, routing.ErrChannelClosed) {
 			if typed, ok := msg.(*livekit.SignalResponse); ok {
 				s.params.Logger.Debugw(

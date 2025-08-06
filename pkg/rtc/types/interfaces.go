@@ -411,7 +411,6 @@ type LocalParticipant interface {
 	SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool) *livekit.TrackInfo
 
 	HandleAnswer(sdp webrtc.SessionDescription, answerId uint32)
-	GetOffer() (webrtc.SessionDescription, uint32, error)
 	Negotiate(force bool)
 	ICERestart(iceConfig *livekit.ICEConfig)
 	AddTrackLocal(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
@@ -454,8 +453,6 @@ type LocalParticipant interface {
 	HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse) error
 	IssueFullReconnect(reason ParticipantCloseReason)
 	SendRoomMovedResponse(moved *livekit.RoomMovedResponse) error
-	SendConnectResponse(connectResponse *livekit.ConnectResponse) error
-	SignalPendingMessages() proto.Message
 
 	// callbacks
 	OnStateChange(func(p LocalParticipant))

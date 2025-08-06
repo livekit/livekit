@@ -266,25 +266,24 @@ type PCTransport struct {
 }
 
 type TransportParams struct {
-	Handler                        transport.Handler
-	ProtocolVersion                types.ProtocolVersion
-	Config                         *WebRTCConfig
-	Twcc                           *lktwcc.Responder
-	DirectionConfig                DirectionConfig
-	CongestionControlConfig        config.CongestionControlConfig
-	EnabledCodecs                  []*livekit.Codec
-	Logger                         logger.Logger
-	Transport                      livekit.SignalTarget
-	SimTracks                      map[uint32]SimulcastTrackInfo
-	ClientInfo                     ClientInfo
-	IsOfferer                      bool
-	IsSendSide                     bool
-	AllowPlayoutDelay              bool
-	UseOneShotSignallingMode       bool
-	SynchronousLocalCandidatesMode bool
-	FireOnTrackBySdp               bool
-	DataChannelMaxBufferedAmount   uint64
-	DatachannelSlowThreshold       int
+	Handler                      transport.Handler
+	ProtocolVersion              types.ProtocolVersion
+	Config                       *WebRTCConfig
+	Twcc                         *lktwcc.Responder
+	DirectionConfig              DirectionConfig
+	CongestionControlConfig      config.CongestionControlConfig
+	EnabledCodecs                []*livekit.Codec
+	Logger                       logger.Logger
+	Transport                    livekit.SignalTarget
+	SimTracks                    map[uint32]SimulcastTrackInfo
+	ClientInfo                   ClientInfo
+	IsOfferer                    bool
+	IsSendSide                   bool
+	AllowPlayoutDelay            bool
+	UseOneShotSignallingMode     bool
+	FireOnTrackBySdp             bool
+	DataChannelMaxBufferedAmount uint64
+	DatachannelSlowThreshold     int
 
 	// for development test
 	DatachannelMaxReceiverBufferSize int
@@ -555,8 +554,7 @@ func (t *PCTransport) createPeerConnection() (cc.BandwidthEstimator, error) {
 	}
 
 	t.pc = pc
-	// SIGNALLING-V2-TODO: have to support both sync and async candidates, so has to be a check at function level
-	if !t.params.UseOneShotSignallingMode /* SIGNALLING-V2-TODO && !t.params.SynchronousLocalCandidatesMode */ {
+	if !t.params.UseOneShotSignallingMode {
 		// one shot signalling mode gathers all candidates and sends in answer
 		t.pc.OnICEGatheringStateChange(t.onICEGatheringStateChange)
 		t.pc.OnICECandidate(t.onICECandidateTrickle)
@@ -1330,10 +1328,8 @@ func (t *PCTransport) clearConnTimer() {
 	}
 }
 
-// SIGNALLING-V2-TODO: this needs both sync and async support when not in one shot mode,
-// cannot use the state `SynchronousLocalCandidatesMode`, needs a flag at function level
 func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remoteId uint32) error {
-	if t.params.UseOneShotSignallingMode /* SIGNALLING-V2-TODO || t.params.SynchronousLocalCandidatesMode */ {
+	if t.params.UseOneShotSignallingMode {
 		if sd.Type == webrtc.SDPTypeOffer {
 			remoteOfferId := t.remoteOfferId.Load()
 			if remoteOfferId != 0 && remoteOfferId != t.localAnswerId.Load() {
@@ -1352,7 +1348,6 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remo
 			t.remoteAnswerId.Store(remoteId)
 		}
 
-		// SIGNALLING-V2-TODO: need to support filtering candidates for transport fallback
 		// add remote candidates to ICE connection details
 		parsed, err := sd.Unmarshal()
 		if err == nil {
@@ -1400,10 +1395,8 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remo
 	return nil
 }
 
-// SIGNALLING-V2-TODO: use a flag at function level for sync vs async rather
-// then state `SynchronousLocalCandidatesMode`
 func (t *PCTransport) GetAnswer() (webrtc.SessionDescription, uint32, error) {
-	if !t.params.UseOneShotSignallingMode && !t.params.SynchronousLocalCandidatesMode {
+	if !t.params.UseOneShotSignallingMode {
 		return webrtc.SessionDescription{}, 0, ErrNotSynchronousLocalCandidatesMode
 	}
 
@@ -1451,51 +1444,6 @@ func (t *PCTransport) GetAnswer() (webrtc.SessionDescription, uint32, error) {
 	t.localAnswerId.Store(answerId)
 
 	return *cld, answerId, nil
-}
-
-// SIGNALLING-V2-TODO: use a flag at function level for sync vs async rather
-// then state `SynchronousLocalCandidatesMode`
-func (t *PCTransport) GetOffer() (webrtc.SessionDescription, uint32, error) {
-	if !t.params.SynchronousLocalCandidatesMode {
-		return webrtc.SessionDescription{}, 0, ErrNotSynchronousLocalCandidatesMode
-	}
-
-	offer, err := t.pc.CreateOffer(nil)
-	if err != nil {
-		return webrtc.SessionDescription{}, 0, err
-	}
-
-	if err = t.pc.SetLocalDescription(offer); err != nil {
-		return webrtc.SessionDescription{}, 0, err
-	}
-
-	// wait for gathering to complete to include all candidates in the answer
-	<-webrtc.GatheringCompletePromise(t.pc)
-
-	pld := t.pc.PendingLocalDescription()
-
-	// add local candidates to ICE connection details
-	parsed, err := pld.Unmarshal()
-	if err == nil {
-		addLocalICECandidates := func(attrs []sdp.Attribute) {
-			for _, a := range attrs {
-				if a.IsICECandidate() {
-					c, err := ice.UnmarshalCandidate(a.Value)
-					if err != nil {
-						continue
-					}
-					t.connectionDetails.AddLocalICECandidate(c, false, false)
-				}
-			}
-		}
-
-		addLocalICECandidates(parsed.Attributes)
-		for _, m := range parsed.MediaDescriptions {
-			addLocalICECandidates(m.Attributes)
-		}
-	}
-
-	return *pld, t.localOfferId.Inc(), nil
 }
 
 func (t *PCTransport) GetICESessionUfrag() (string, error) {
