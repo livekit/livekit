@@ -34,6 +34,7 @@ import (
 	"github.com/livekit/protocol/observability"
 	"github.com/livekit/protocol/observability/roomobs"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/signalling"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/protocol/utils/must"
@@ -560,6 +561,13 @@ func (r *RoomManager) StartSession(
 	participant.OnICEConfigChanged(func(participant types.LocalParticipant, iceConfig *livekit.ICEConfig) {
 		r.iceConfigCache.Put(iceConfigCacheKey{room.Name(), participant.Identity()}, iceConfig)
 	})
+
+	for _, addTrackRequest := range pi.AddTrackRequests {
+		participant.AddTrack(addTrackRequest)
+	}
+	if pi.PublisherOffer != nil {
+		participant.HandleOffer(signalling.FromProtoSessionDescription(pi.PublisherOffer))
+	}
 
 	go r.rtcSessionWorker(room, participant, requestSource)
 	return nil

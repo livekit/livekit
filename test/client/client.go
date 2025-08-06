@@ -122,6 +122,7 @@ type Options struct {
 	TokenCustomizer           func(token *auth.AccessToken, grants *auth.VideoGrant)
 	SignalRequestInterceptor  SignalRequestInterceptor
 	SignalResponseInterceptor SignalResponseInterceptor
+	UseJoinRequestQueryParam  bool
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
@@ -133,32 +134,35 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 	SetAuthorizationToken(requestHeader, token)
 
 	connectUrl := u.String()
-	sdk := "go"
 	if opts != nil {
-		connectUrl = fmt.Sprintf("%s&auto_subscribe=%t", connectUrl, opts.AutoSubscribe)
-		if opts.Publish != "" {
-			connectUrl += encodeQueryParam("publish", opts.Publish)
-		}
-		if len(opts.Attributes) != 0 {
-			data, err := json.Marshal(opts.Attributes)
-			if err != nil {
-				return nil, err
+		if !opts.UseJoinRequestQueryParam {
+			sdk := "go"
+			connectUrl = fmt.Sprintf("%s&auto_subscribe=%t", connectUrl, opts.AutoSubscribe)
+			if opts.Publish != "" {
+				connectUrl += encodeQueryParam("publish", opts.Publish)
 			}
-			connectUrl += encodeQueryParam("attributes", base64.URLEncoding.EncodeToString(data))
-		}
-		if opts.ClientInfo != nil {
-			if opts.ClientInfo.DeviceModel != "" {
-				connectUrl += encodeQueryParam("device_model", opts.ClientInfo.DeviceModel)
+			if len(opts.Attributes) != 0 {
+				data, err := json.Marshal(opts.Attributes)
+				if err != nil {
+					return nil, err
+				}
+				connectUrl += encodeQueryParam("attributes", base64.URLEncoding.EncodeToString(data))
 			}
-			if opts.ClientInfo.Os != "" {
-				connectUrl += encodeQueryParam("os", opts.ClientInfo.Os)
+			if opts.ClientInfo != nil {
+				if opts.ClientInfo.DeviceModel != "" {
+					connectUrl += encodeQueryParam("device_model", opts.ClientInfo.DeviceModel)
+				}
+				if opts.ClientInfo.Os != "" {
+					connectUrl += encodeQueryParam("os", opts.ClientInfo.Os)
+				}
+				if opts.ClientInfo.Sdk != livekit.ClientInfo_UNKNOWN {
+					sdk = opts.ClientInfo.Sdk.String()
+				}
 			}
-			if opts.ClientInfo.Sdk != livekit.ClientInfo_UNKNOWN {
-				sdk = opts.ClientInfo.Sdk.String()
-			}
+			connectUrl += encodeQueryParam("sdk", sdk)
+		} else {
 		}
 	}
-	connectUrl += encodeQueryParam("sdk", sdk)
 	conn, _, err := websocket.DefaultDialer.Dial(connectUrl, requestHeader)
 	return conn, err
 }
