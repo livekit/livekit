@@ -20,7 +20,6 @@ import (
 	"github.com/pion/webrtc/v4"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/protocol/livekit"
 )
@@ -61,12 +60,7 @@ func (h UnimplementedHandler) OnFailed(isShortLived bool)                       
 func (h UnimplementedHandler) OnTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {}
 func (h UnimplementedHandler) OnDataMessage(kind livekit.DataPacket_Kind, data []byte)            {}
 func (h UnimplementedHandler) OnDataMessageUnlabeled(data []byte)                                 {}
-func (h UnimplementedHandler) OnDataChannelOpenSignalling(dc *datachannel.DataChannelWriter[*webrtc.DataChannel]) {
-}
-func (h UnimplementedHandler) OnDataChannelCloseSignalling(dc *datachannel.DataChannelWriter[*webrtc.DataChannel]) {
-}
-func (h UnimplementedHandler) OnDataMessageSignalling(data []byte) {}
-func (h UnimplementedHandler) OnDataSendError(err error)           {}
+func (h UnimplementedHandler) OnDataSendError(err error)                                          {}
 func (h UnimplementedHandler) OnOffer(sd webrtc.SessionDescription, offerId uint32) error {
 	return ErrNoOfferHandler
 }
