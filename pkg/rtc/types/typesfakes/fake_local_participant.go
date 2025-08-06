@@ -373,20 +373,6 @@ type FakeLocalParticipant struct {
 	getLoggerResolverReturnsOnCall map[int]struct {
 		result1 logger.DeferredFieldResolver
 	}
-	GetOfferStub        func() (webrtc.SessionDescription, uint32, error)
-	getOfferMutex       sync.RWMutex
-	getOfferArgsForCall []struct {
-	}
-	getOfferReturns struct {
-		result1 webrtc.SessionDescription
-		result2 uint32
-		result3 error
-	}
-	getOfferReturnsOnCall map[int]struct {
-		result1 webrtc.SessionDescription
-		result2 uint32
-		result3 error
-	}
 	GetPacerStub        func() pacer.Pacer
 	getPacerMutex       sync.RWMutex
 	getPacerArgsForCall []struct {
@@ -3251,65 +3237,6 @@ func (fake *FakeLocalParticipant) GetLoggerResolverReturnsOnCall(i int, result1 
 	fake.getLoggerResolverReturnsOnCall[i] = struct {
 		result1 logger.DeferredFieldResolver
 	}{result1}
-}
-
-func (fake *FakeLocalParticipant) GetOffer() (webrtc.SessionDescription, uint32, error) {
-	fake.getOfferMutex.Lock()
-	ret, specificReturn := fake.getOfferReturnsOnCall[len(fake.getOfferArgsForCall)]
-	fake.getOfferArgsForCall = append(fake.getOfferArgsForCall, struct {
-	}{})
-	stub := fake.GetOfferStub
-	fakeReturns := fake.getOfferReturns
-	fake.recordInvocation("GetOffer", []interface{}{})
-	fake.getOfferMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1, ret.result2, ret.result3
-	}
-	return fakeReturns.result1, fakeReturns.result2, fakeReturns.result3
-}
-
-func (fake *FakeLocalParticipant) GetOfferCallCount() int {
-	fake.getOfferMutex.RLock()
-	defer fake.getOfferMutex.RUnlock()
-	return len(fake.getOfferArgsForCall)
-}
-
-func (fake *FakeLocalParticipant) GetOfferCalls(stub func() (webrtc.SessionDescription, uint32, error)) {
-	fake.getOfferMutex.Lock()
-	defer fake.getOfferMutex.Unlock()
-	fake.GetOfferStub = stub
-}
-
-func (fake *FakeLocalParticipant) GetOfferReturns(result1 webrtc.SessionDescription, result2 uint32, result3 error) {
-	fake.getOfferMutex.Lock()
-	defer fake.getOfferMutex.Unlock()
-	fake.GetOfferStub = nil
-	fake.getOfferReturns = struct {
-		result1 webrtc.SessionDescription
-		result2 uint32
-		result3 error
-	}{result1, result2, result3}
-}
-
-func (fake *FakeLocalParticipant) GetOfferReturnsOnCall(i int, result1 webrtc.SessionDescription, result2 uint32, result3 error) {
-	fake.getOfferMutex.Lock()
-	defer fake.getOfferMutex.Unlock()
-	fake.GetOfferStub = nil
-	if fake.getOfferReturnsOnCall == nil {
-		fake.getOfferReturnsOnCall = make(map[int]struct {
-			result1 webrtc.SessionDescription
-			result2 uint32
-			result3 error
-		})
-	}
-	fake.getOfferReturnsOnCall[i] = struct {
-		result1 webrtc.SessionDescription
-		result2 uint32
-		result3 error
-	}{result1, result2, result3}
 }
 
 func (fake *FakeLocalParticipant) GetPacer() pacer.Pacer {
@@ -9206,8 +9133,6 @@ func (fake *FakeLocalParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getLoggerMutex.RUnlock()
 	fake.getLoggerResolverMutex.RLock()
 	defer fake.getLoggerResolverMutex.RUnlock()
-	fake.getOfferMutex.RLock()
-	defer fake.getOfferMutex.RUnlock()
 	fake.getPacerMutex.RLock()
 	defer fake.getPacerMutex.RUnlock()
 	fake.getPendingTrackMutex.RLock()
