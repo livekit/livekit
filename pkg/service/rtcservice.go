@@ -15,14 +15,11 @@
 package service
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math/rand"
 	"net/http"
 	"os"
@@ -137,26 +134,15 @@ func (s *RTCService) validateInternal(lgr logger.Logger, r *http.Request, strict
 			params.attributes = attrs
 		}
 	} else {
-		if compressedBytes, err := base64.URLEncoding.DecodeString(joinRequestBase64); err != nil {
+		if protoBytes, err := base64.URLEncoding.DecodeString(joinRequestBase64); err != nil {
 			return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot base64 decode join request")
 		} else {
-			b := bytes.NewReader(compressedBytes)
-			if reader, err := gzip.NewReader(b); err != nil {
-				return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot decompress join request")
-			} else {
-				protoBytes, err := io.ReadAll(reader)
-				reader.Close()
-				if err != nil {
-					return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot read decompressed join request")
-				}
-
-				if err := proto.Unmarshal(protoBytes, joinRequest); err != nil {
-					return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot unmarshal join request")
-				}
-
-				params.metadata = joinRequest.Metadata
-				params.attributes = joinRequest.ParticipantAttributes
+			if err := proto.Unmarshal(protoBytes, joinRequest); err != nil {
+				return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot unmarshal join request")
 			}
+
+			params.metadata = joinRequest.Metadata
+			params.attributes = joinRequest.ParticipantAttributes
 		}
 	}
 
