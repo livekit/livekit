@@ -156,7 +156,12 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 		}
 
 		if marshalled, err := proto.Marshal(joinRequest); err == nil {
-			connectUrl += fmt.Sprintf("?join_request=%s", base64.URLEncoding.EncodeToString(marshalled))
+			wrapped := &livekit.WrappedJoinRequest{
+				JoinRequest: marshalled,
+			}
+			if marshalled, err := proto.Marshal(wrapped); err == nil {
+				connectUrl += fmt.Sprintf("?join_request=%s", base64.URLEncoding.EncodeToString(marshalled))
+			}
 		}
 	} else {
 		connectUrl += fmt.Sprintf("?protocol=%d", types.CurrentProtocol)
