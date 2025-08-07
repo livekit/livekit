@@ -42,9 +42,8 @@ var (
 	// ensuring this is longer than iceFailedTimeout so we are certain the participant won't return
 	notFoundTimeout = time.Minute
 	// amount of time to try otherwise before flagging subscription as failed
-	subscriptionTimeout    = iceFailedTimeoutTotal
-	trackRemoveGracePeriod = time.Second
-	maxUnsubscribeWait     = time.Second
+	subscriptionTimeout = iceFailedTimeoutTotal
+	maxUnsubscribeWait  = time.Second
 )
 
 const (

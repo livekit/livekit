@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/testutils"
+	testclient "github.com/livekit/livekit-server/test/client"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 )
@@ -69,7 +70,7 @@ func TestAgents(t *testing.T) {
 	}, RegisterTimeout)
 
 	c1 := createRTCClient("c1", defaultServerPort, nil)
-	c2 := createRTCClient("c2", defaultServerPort, nil)
+	c2 := createRTCClient("c2", defaultServerPort, &testclient.Options{UseJoinRequestQueryParam: true})
 	waitUntilConnected(t, c1, c2)
 
 	// publish 2 tracks

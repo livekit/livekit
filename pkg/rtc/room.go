@@ -1053,7 +1053,10 @@ func (r *Room) autoSubscribe(participant types.LocalParticipant) bool {
 	return true
 }
 
-func (r *Room) createJoinResponseLocked(participant types.LocalParticipant, iceServers []*livekit.ICEServer) *livekit.JoinResponse {
+func (r *Room) createJoinResponseLocked(
+	participant types.LocalParticipant,
+	iceServers []*livekit.ICEServer,
+) *livekit.JoinResponse {
 	iceConfig := participant.GetICEConfig()
 	hasICEFallback := iceConfig.GetPreferencePublisher() != livekit.ICECandidateType_ICT_NONE || iceConfig.GetPreferenceSubscriber() != livekit.ICECandidateType_ICT_NONE
 	return &livekit.JoinResponse{

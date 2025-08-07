@@ -15,11 +15,14 @@
 package service
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand"
 	"net/http"
 	"os"
@@ -30,6 +33,7 @@ import (
 	"github.com/gorilla/websocket"
 	"go.uber.org/atomic"
 	"golang.org/x/exp/maps"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -114,19 +118,46 @@ func decodeAttributes(str string) (map[string]string, error) {
 
 func (s *RTCService) validateInternal(lgr logger.Logger, r *http.Request, strict bool) (livekit.RoomName, routing.ParticipantInit, int, error) {
 	var params ValidateConnectRequestParams
-	params.publish = r.FormValue("publish")
+	joinRequest := &livekit.JoinRequest{}
 
-	attributesStrParam := r.FormValue("attributes")
-	if attributesStrParam != "" {
-		attrs, err := decodeAttributes(attributesStrParam)
-		if err != nil {
-			if strict {
-				return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot decode attributes")
+	joinRequestBase64 := r.FormValue("join_request")
+	if joinRequestBase64 == "" {
+		params.publish = r.FormValue("publish")
+
+		attributesStrParam := r.FormValue("attributes")
+		if attributesStrParam != "" {
+			attrs, err := decodeAttributes(attributesStrParam)
+			if err != nil {
+				if strict {
+					return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot decode attributes")
+				}
+				lgr.Debugw("failed to decode attributes", "error", err)
+				// attrs will be empty here, so just proceed
 			}
-			lgr.Debugw("failed to decode attributes", "error", err)
-			// attrs will be empty here, so just proceed
+			params.attributes = attrs
 		}
-		params.attributes = attrs
+	} else {
+		if compressedBytes, err := base64.URLEncoding.DecodeString(joinRequestBase64); err != nil {
+			return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot base64 decode join request")
+		} else {
+			b := bytes.NewReader(compressedBytes)
+			if reader, err := gzip.NewReader(b); err != nil {
+				return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot decompress join request")
+			} else {
+				protoBytes, err := io.ReadAll(reader)
+				reader.Close()
+				if err != nil {
+					return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot read decompressed join request")
+				}
+
+				if err := proto.Unmarshal(protoBytes, joinRequest); err != nil {
+					return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot unmarshal join request")
+				}
+
+				params.metadata = joinRequest.Metadata
+				params.attributes = joinRequest.ParticipantAttributes
+			}
+		}
 	}
 
 	res, code, err := ValidateConnectRequest(
@@ -142,33 +173,55 @@ func (s *RTCService) validateInternal(lgr logger.Logger, r *http.Request, strict
 	}
 
 	pi := routing.ParticipantInit{
-		Reconnect:      boolValue(r.FormValue("reconnect")),
-		Identity:       livekit.ParticipantIdentity(res.grants.Identity),
-		Name:           livekit.ParticipantName(res.grants.Name),
-		Client:         ParseClientInfo(r),
-		Grants:         res.grants,
-		Region:         res.region,
-		CreateRoom:     res.createRoomRequest,
-		AutoSubscribe:  true,
-		AdaptiveStream: boolValue(r.FormValue("adaptive_stream")),
-		DisableICELite: boolValue(r.FormValue("disable_ice_lite")),
+		Identity:   livekit.ParticipantIdentity(res.grants.Identity),
+		Name:       livekit.ParticipantName(res.grants.Name),
+		Grants:     res.grants,
+		Region:     res.region,
+		CreateRoom: res.createRoomRequest,
 	}
 
-	reconnectReason, _ := strconv.Atoi(r.FormValue("reconnect_reason")) // 0 means unknown reason
-	pi.ReconnectReason = livekit.ReconnectReason(reconnectReason)
+	if joinRequestBase64 == "" {
+		pi.Reconnect = boolValue(r.FormValue("reconnect"))
+		pi.Client = ParseClientInfo(r)
+		pi.AutoSubscribe = true
+		pi.AdaptiveStream = boolValue(r.FormValue("adaptive_stream"))
+		pi.DisableICELite = boolValue(r.FormValue("disable_ice_lite"))
 
-	if pi.Reconnect {
-		pi.ID = livekit.ParticipantID(r.FormValue("sid"))
-	}
+		reconnectReason, _ := strconv.Atoi(r.FormValue("reconnect_reason")) // 0 means unknown reason
+		pi.ReconnectReason = livekit.ReconnectReason(reconnectReason)
 
-	if autoSubscribe := r.FormValue("auto_subscribe"); autoSubscribe != "" {
-		pi.AutoSubscribe = boolValue(autoSubscribe)
-	}
+		if pi.Reconnect {
+			pi.ID = livekit.ParticipantID(r.FormValue("sid"))
+		}
 
-	subscriberAllowPauseParam := r.FormValue("subscriber_allow_pause")
-	if subscriberAllowPauseParam != "" {
-		subscriberAllowPause := boolValue(subscriberAllowPauseParam)
+		if autoSubscribe := r.FormValue("auto_subscribe"); autoSubscribe != "" {
+			pi.AutoSubscribe = boolValue(autoSubscribe)
+		}
+
+		subscriberAllowPauseParam := r.FormValue("subscriber_allow_pause")
+		if subscriberAllowPauseParam != "" {
+			subscriberAllowPause := boolValue(subscriberAllowPauseParam)
+			pi.SubscriberAllowPause = &subscriberAllowPause
+		}
+	} else {
+		lgr.Debugw("processing join request", "joinRequest", logger.Proto(joinRequest))
+
+		AugmentClientInfo(joinRequest.ClientInfo, r)
+		pi.Client = joinRequest.ClientInfo
+
+		pi.AutoSubscribe = joinRequest.GetConnectionSettings().GetAutoSubscribe()
+		pi.AdaptiveStream = joinRequest.GetConnectionSettings().GetAdaptiveStream()
+		pi.DisableICELite = joinRequest.GetConnectionSettings().GetDisableIceLite()
+
+		subscriberAllowPause := joinRequest.GetConnectionSettings().GetSubscriberAllowPause()
 		pi.SubscriberAllowPause = &subscriberAllowPause
+
+		pi.AddTrackRequests = joinRequest.AddTrackRequests
+		pi.PublisherOffer = joinRequest.PublisherOffer
+
+		pi.Reconnect = joinRequest.Reconnect
+		pi.ReconnectReason = joinRequest.ReconnectReason
+		pi.ID = livekit.ParticipantID(joinRequest.ParticipantSid)
 	}
 
 	return res.roomName, pi, code, err

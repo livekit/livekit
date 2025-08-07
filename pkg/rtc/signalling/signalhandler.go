@@ -71,7 +71,6 @@ func (s *signalhandler) HandleMessage(msg proto.Message) error {
 		s.params.Participant.AddICECandidate(candidateInit, msg.Trickle.Target)
 
 	case *livekit.SignalRequest_AddTrack:
-		s.params.Logger.Debugw("add track request", "trackID", msg.AddTrack.Cid)
 		s.params.Participant.AddTrack(msg.AddTrack)
 
 	case *livekit.SignalRequest_Mute:

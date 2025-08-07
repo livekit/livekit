@@ -1243,6 +1243,7 @@ func (p *ParticipantImpl) handleMigrateTracks() []*MediaTrack {
 // AddTrack is called when client intends to publish track.
 // records track details and lets client know it's ok to proceed
 func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
+	p.params.Logger.Debugw("add track request", "trackID", req.Cid)
 	if !p.CanPublishSource(req.Source) {
 		p.pubLogger.Warnw("no permission to publish track", nil, "trackID", req.Sid, "kind", req.Type)
 		return
