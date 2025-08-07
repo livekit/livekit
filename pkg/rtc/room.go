@@ -431,7 +431,6 @@ func (r *Room) Join(
 	requestSource routing.MessageSource,
 	opts *ParticipantOptions,
 	iceServers []*livekit.ICEServer,
-	joinPublish bool,
 ) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
@@ -591,7 +590,7 @@ func (r *Room) Join(
 		}
 	})
 
-	joinResponse := r.createJoinResponseLocked(participant, iceServers, joinPublish)
+	joinResponse := r.createJoinResponseLocked(participant, iceServers)
 	if err := participant.SendJoinResponse(joinResponse); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "send_response").Add(1)
 		return err
@@ -1057,7 +1056,6 @@ func (r *Room) autoSubscribe(participant types.LocalParticipant) bool {
 func (r *Room) createJoinResponseLocked(
 	participant types.LocalParticipant,
 	iceServers []*livekit.ICEServer,
-	joinPublish bool,
 ) *livekit.JoinResponse {
 	iceConfig := participant.GetICEConfig()
 	hasICEFallback := iceConfig.GetPreferencePublisher() != livekit.ICECandidateType_ICT_NONE || iceConfig.GetPreferenceSubscriber() != livekit.ICECandidateType_ICT_NONE
@@ -1083,10 +1081,6 @@ func (r *Room) createJoinResponseLocked(
 		SifTrailer:           r.trailer,
 		EnabledPublishCodecs: participant.GetEnabledPublishCodecs(),
 		FastPublish:          participant.CanPublish() && !hasICEFallback,
-		// indicates server processed publish peer connection offer as part of join,
-		// this tells clients to set its local description with the offer it sent
-		// and kick of ICE candidate gathering
-		JoinPublish: joinPublish,
 	}
 }
 

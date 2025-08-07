@@ -494,7 +494,7 @@ func (r *RoomManager) StartSession(
 		AutoSubscribe: pi.AutoSubscribe,
 	}
 	iceServers := r.iceServersForParticipant(apiKey, participant, iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS)
-	if err = room.Join(participant, requestSource, &opts, iceServers, pi.PublisherOffer != nil); err != nil {
+	if err = room.Join(participant, requestSource, &opts, iceServers); err != nil {
 		pLogger.Errorw("could not join room", err)
 		_ = participant.Close(true, types.ParticipantCloseReasonJoinFailed, false)
 		return err

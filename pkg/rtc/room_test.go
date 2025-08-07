@@ -92,7 +92,7 @@ func TestRoomJoin(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numParticipants})
 		pNew := NewMockParticipant("new", types.CurrentProtocol, false, false)
 
-		_ = rm.Join(pNew, nil, nil, iceServersForRoom, false)
+		_ = rm.Join(pNew, nil, nil, iceServersForRoom)
 
 		// expect new participant to get a JoinReply
 		res := pNew.SendJoinResponseArgsForCall(0)
@@ -107,7 +107,7 @@ func TestRoomJoin(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numExisting})
 		p := NewMockParticipant("new", types.CurrentProtocol, false, false)
 
-		err := rm.Join(p, nil, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom, false)
+		err := rm.Join(p, nil, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
 		require.NoError(t, err)
 
 		stateChangeCB := p.OnStateChangeArgsForCall(0)
@@ -163,7 +163,7 @@ func TestRoomJoin(t *testing.T) {
 		rm.lock.Unlock()
 		p := NewMockParticipant("second", types.ProtocolVersion(0), false, false)
 
-		err := rm.Join(p, nil, nil, iceServersForRoom, false)
+		err := rm.Join(p, nil, nil, iceServersForRoom)
 		require.Equal(t, ErrMaxParticipantsExceeded, err)
 	})
 }
@@ -394,7 +394,7 @@ func TestRoomClosure(t *testing.T) {
 		require.Len(t, rm.GetParticipants(), 0)
 		require.True(t, isClosed)
 
-		require.Equal(t, ErrRoomClosed, rm.Join(p, nil, nil, iceServersForRoom, false))
+		require.Equal(t, ErrRoomClosed, rm.Join(p, nil, nil, iceServersForRoom))
 	})
 
 	t.Run("room does not close before empty timeout", func(t *testing.T) {
@@ -737,7 +737,7 @@ func TestHiddenParticipants(t *testing.T) {
 		defer rm.Close(types.ParticipantCloseReasonNone)
 
 		pNew := NewMockParticipant("new", types.CurrentProtocol, false, false)
-		rm.Join(pNew, nil, nil, iceServersForRoom, false)
+		rm.Join(pNew, nil, nil, iceServersForRoom)
 
 		// expect new participant to get a JoinReply
 		res := pNew.SendJoinResponseArgsForCall(0)
@@ -752,7 +752,7 @@ func TestHiddenParticipants(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
 		hidden := NewMockParticipant("hidden", types.CurrentProtocol, true, false)
 
-		err := rm.Join(hidden, nil, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom, false)
+		err := rm.Join(hidden, nil, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
 		require.NoError(t, err)
 
 		stateChangeCB := hidden.OnStateChangeArgsForCall(0)
@@ -773,7 +773,7 @@ func TestRoomUpdate(t *testing.T) {
 		require.Equal(t, 0, p1.SendRoomUpdateCallCount())
 
 		p2 := NewMockParticipant("p2", types.CurrentProtocol, false, false)
-		require.NoError(t, rm.Join(p2, nil, nil, iceServersForRoom, false))
+		require.NoError(t, rm.Join(p2, nil, nil, iceServersForRoom))
 
 		// p1 should have received an update
 		time.Sleep(2 * defaultDelay)
@@ -839,7 +839,7 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 	for i := 0; i < opts.num+opts.numHidden; i++ {
 		identity := livekit.ParticipantIdentity(fmt.Sprintf("p%d", i))
 		participant := NewMockParticipant(identity, opts.protocol, i >= opts.num, true)
-		err := rm.Join(participant, nil, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom, false)
+		err := rm.Join(participant, nil, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
 		require.NoError(t, err)
 		participant.StateReturns(livekit.ParticipantInfo_ACTIVE)
 		participant.IsReadyReturns(true)

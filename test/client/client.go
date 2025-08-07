@@ -15,6 +15,8 @@
 package client
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -127,7 +129,7 @@ type Options struct {
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
-	u, err := url.Parse(host + fmt.Sprintf("/rtc?protocol=%d", types.CurrentProtocol))
+	u, err := url.Parse(host + "/rtc")
 	if err != nil {
 		return nil, err
 	}
@@ -135,33 +137,6 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 	SetAuthorizationToken(requestHeader, token)
 
 	connectUrl := u.String()
-	sdk := "go"
-	if opts != nil {
-		connectUrl = fmt.Sprintf("%s&auto_subscribe=%t", connectUrl, opts.AutoSubscribe)
-		if opts.Publish != "" {
-			connectUrl += encodeQueryParam("publish", opts.Publish)
-		}
-		if len(opts.Attributes) != 0 {
-			data, err := json.Marshal(opts.Attributes)
-			if err != nil {
-				return nil, err
-			}
-			connectUrl += encodeQueryParam("attributes", base64.URLEncoding.EncodeToString(data))
-		}
-		if opts.ClientInfo != nil {
-			if opts.ClientInfo.DeviceModel != "" {
-				connectUrl += encodeQueryParam("device_model", opts.ClientInfo.DeviceModel)
-			}
-			if opts.ClientInfo.Os != "" {
-				connectUrl += encodeQueryParam("os", opts.ClientInfo.Os)
-			}
-			if opts.ClientInfo.Sdk != livekit.ClientInfo_UNKNOWN {
-				sdk = opts.ClientInfo.Sdk.String()
-			}
-		}
-	}
-	connectUrl += encodeQueryParam("sdk", sdk)
-
 	if opts != nil && opts.UseJoinRequestQueryParam {
 		// add JoinRequest as base64 encoded protobuf bytes
 		clientInfo := &livekit.ClientInfo{
@@ -183,8 +158,41 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 		}
 
 		if marshalled, err := proto.Marshal(joinRequest); err == nil {
-			connectUrl += fmt.Sprintf("&join_request=%s", base64.URLEncoding.EncodeToString(marshalled))
+			var buf bytes.Buffer
+			writer := gzip.NewWriter(&buf)
+			writer.Write(marshalled)
+			writer.Close()
+
+			connectUrl += fmt.Sprintf("?join_request=%s", base64.URLEncoding.EncodeToString(buf.Bytes()))
 		}
+	} else {
+		sdk := "go"
+		if opts != nil {
+			connectUrl += fmt.Sprintf("?protocol=%d", types.CurrentProtocol)
+			connectUrl += fmt.Sprintf("&auto_subscribe=%t", opts.AutoSubscribe)
+			if opts.Publish != "" {
+				connectUrl += encodeQueryParam("publish", opts.Publish)
+			}
+			if len(opts.Attributes) != 0 {
+				data, err := json.Marshal(opts.Attributes)
+				if err != nil {
+					return nil, err
+				}
+				connectUrl += encodeQueryParam("attributes", base64.URLEncoding.EncodeToString(data))
+			}
+			if opts.ClientInfo != nil {
+				if opts.ClientInfo.DeviceModel != "" {
+					connectUrl += encodeQueryParam("device_model", opts.ClientInfo.DeviceModel)
+				}
+				if opts.ClientInfo.Os != "" {
+					connectUrl += encodeQueryParam("os", opts.ClientInfo.Os)
+				}
+				if opts.ClientInfo.Sdk != livekit.ClientInfo_UNKNOWN {
+					sdk = opts.ClientInfo.Sdk.String()
+				}
+			}
+		}
+		connectUrl += encodeQueryParam("sdk", sdk)
 	}
 
 	conn, _, err := websocket.DefaultDialer.Dial(connectUrl, requestHeader)
