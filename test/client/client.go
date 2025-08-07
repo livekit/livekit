@@ -138,7 +138,6 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 
 	connectUrl := u.String()
 	if opts != nil && opts.UseJoinRequestQueryParam {
-		// add JoinRequest as base64 encoded protobuf bytes
 		clientInfo := &livekit.ClientInfo{
 			Os:       runtime.GOOS,
 			Sdk:      livekit.ClientInfo_GO,
