@@ -120,8 +120,8 @@ func (s *RTCService) validateInternal(lgr logger.Logger, r *http.Request, strict
 	var params ValidateConnectRequestParams
 	joinRequest := &livekit.JoinRequest{}
 
-	joinRequestBase64 := r.FormValue("join_request")
-	if joinRequestBase64 == "" {
+	wrappedJoinRequestBase64 := r.FormValue("join_request")
+	if wrappedJoinRequestBase64 == "" {
 		params.publish = r.FormValue("publish")
 
 		attributesStrParam := r.FormValue("attributes")
@@ -137,26 +137,39 @@ func (s *RTCService) validateInternal(lgr logger.Logger, r *http.Request, strict
 			params.attributes = attrs
 		}
 	} else {
-		if compressedBytes, err := base64.URLEncoding.DecodeString(joinRequestBase64); err != nil {
-			return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot base64 decode join request")
+		if wrappedProtoBytes, err := base64.URLEncoding.DecodeString(wrappedJoinRequestBase64); err != nil {
+			return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot base64 decode wrapped join request")
 		} else {
-			b := bytes.NewReader(compressedBytes)
-			if reader, err := gzip.NewReader(b); err != nil {
-				return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot decompress join request")
-			} else {
-				protoBytes, err := io.ReadAll(reader)
-				reader.Close()
-				if err != nil {
-					return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot read decompressed join request")
-				}
+			wrappedJoinRequest := &livekit.WrappedJoinRequest{}
+			if err := proto.Unmarshal(wrappedProtoBytes, wrappedJoinRequest); err != nil {
+				return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot unmarshal wrapped join request")
+			}
 
-				if err := proto.Unmarshal(protoBytes, joinRequest); err != nil {
+			switch wrappedJoinRequest.Compression {
+			case livekit.WrappedJoinRequest_NONE:
+				if err := proto.Unmarshal(wrappedJoinRequest.JoinRequest, joinRequest); err != nil {
 					return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot unmarshal join request")
 				}
 
-				params.metadata = joinRequest.Metadata
-				params.attributes = joinRequest.ParticipantAttributes
+			case livekit.WrappedJoinRequest_GZIP:
+				b := bytes.NewReader(wrappedJoinRequest.JoinRequest)
+				if reader, err := gzip.NewReader(b); err != nil {
+					return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot decompress join request")
+				} else {
+					protoBytes, err := io.ReadAll(reader)
+					reader.Close()
+					if err != nil {
+						return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot read decompressed join request")
+					}
+
+					if err := proto.Unmarshal(protoBytes, joinRequest); err != nil {
+						return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot unmarshal join request")
+					}
+				}
 			}
+
+			params.metadata = joinRequest.Metadata
+			params.attributes = joinRequest.ParticipantAttributes
 		}
 	}
 
@@ -180,7 +193,7 @@ func (s *RTCService) validateInternal(lgr logger.Logger, r *http.Request, strict
 		CreateRoom: res.createRoomRequest,
 	}
 
-	if joinRequestBase64 == "" {
+	if wrappedJoinRequestBase64 == "" {
 		pi.Reconnect = boolValue(r.FormValue("reconnect"))
 		pi.Client = ParseClientInfo(r)
 		pi.AutoSubscribe = true
