@@ -140,8 +140,9 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 	if opts != nil && opts.UseJoinRequestQueryParam {
 		// add JoinRequest as base64 encoded protobuf bytes
 		clientInfo := &livekit.ClientInfo{
-			Os:  runtime.GOOS,
-			Sdk: livekit.ClientInfo_GO,
+			Os:       runtime.GOOS,
+			Sdk:      livekit.ClientInfo_GO,
+			Protocol: types.CurrentProtocol,
 		}
 		if opts.ClientInfo != nil {
 			clientInfo = opts.ClientInfo
@@ -166,9 +167,10 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 			connectUrl += fmt.Sprintf("?join_request=%s", base64.URLEncoding.EncodeToString(buf.Bytes()))
 		}
 	} else {
+		connectUrl += fmt.Sprintf("?protocol=%d", types.CurrentProtocol)
+
 		sdk := "go"
 		if opts != nil {
-			connectUrl += fmt.Sprintf("?protocol=%d", types.CurrentProtocol)
 			connectUrl += fmt.Sprintf("&auto_subscribe=%t", opts.AutoSubscribe)
 			if opts.Publish != "" {
 				connectUrl += encodeQueryParam("publish", opts.Publish)
