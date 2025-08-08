@@ -359,6 +359,9 @@ func (r *RoomManager) StartSession(
 				return err
 			}
 			r.telemetry.ParticipantResumed(ctx, room.ToProto(), participant.ToProto(), r.currentNode.NodeID(), pi.ReconnectReason)
+
+			go room.HandleSyncState(participant, pi.SyncState)
+
 			go r.rtcSessionWorker(room, participant, requestSource)
 			return nil
 		}

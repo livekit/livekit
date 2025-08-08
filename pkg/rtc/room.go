@@ -696,6 +696,14 @@ func (r *Room) ResumeParticipant(
 	return nil
 }
 
+func (r *Room) HandleSyncState(participant types.LocalParticipant, state *livekit.SyncState) error {
+	if state != nil {
+		return r.onSyncState(participant, state)
+	}
+
+	return nil
+}
+
 func (r *Room) onSyncState(participant types.LocalParticipant, state *livekit.SyncState) error {
 	pLogger := participant.GetLogger()
 	pLogger.Infow("setting sync state", "state", logger.Proto(state))

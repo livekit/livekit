@@ -199,6 +199,7 @@ type ParticipantInit struct {
 	CreateRoom           *livekit.CreateRoomRequest
 	AddTrackRequests     []*livekit.AddTrackRequest
 	PublisherOffer       *livekit.SessionDescription
+	SyncState            *livekit.SyncState
 }
 
 func (pi *ParticipantInit) MarshalLogObject(e zapcore.ObjectEncoder) error {
@@ -228,6 +229,7 @@ func (pi *ParticipantInit) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddObject("CreateRoom", logger.Proto(pi.CreateRoom))
 	e.AddArray("AddTrackRequests", logger.ProtoSlice(pi.AddTrackRequests))
 	e.AddObject("PublisherOffer", logger.Proto(pi.PublisherOffer))
+	e.AddObject("SyncState", logger.Proto(pi.SyncState))
 	return nil
 }
 
@@ -253,6 +255,7 @@ func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionI
 		CreateRoom:       pi.CreateRoom,
 		AddTrackRequests: pi.AddTrackRequests,
 		PublisherOffer:   pi.PublisherOffer,
+		SyncState:        pi.SyncState,
 	}
 	if pi.SubscriberAllowPause != nil {
 		subscriberAllowPause := *pi.SubscriberAllowPause
@@ -283,6 +286,7 @@ func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*
 		CreateRoom:       ss.CreateRoom,
 		AddTrackRequests: ss.AddTrackRequests,
 		PublisherOffer:   ss.PublisherOffer,
+		SyncState:        ss.SyncState,
 	}
 	if ss.SubscriberAllowPause != nil {
 		subscriberAllowPause := *ss.SubscriberAllowPause
