@@ -697,7 +697,11 @@ func (r *Room) ResumeParticipant(
 }
 
 func (r *Room) HandleSyncState(participant types.LocalParticipant, state *livekit.SyncState) error {
-	return r.onSyncState(participant, state)
+	if state != nil {
+		return r.onSyncState(participant, state)
+	}
+
+	return nil
 }
 
 func (r *Room) onSyncState(participant types.LocalParticipant, state *livekit.SyncState) error {
