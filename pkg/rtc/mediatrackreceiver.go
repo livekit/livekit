@@ -166,10 +166,6 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams, ti *livekit.TrackInf
 		Logger:           params.Logger,
 	})
 	t.MediaTrackSubscriptions.OnDownTrackCreated(t.onDownTrackCreated)
-
-	if ti.Muted {
-		t.SetMuted(true)
-	}
 	return t
 }
 
@@ -491,10 +487,6 @@ func (t *MediaTrackReceiver) PublisherIdentity() livekit.ParticipantIdentity {
 
 func (t *MediaTrackReceiver) PublisherVersion() uint32 {
 	return t.params.ParticipantVersion
-}
-
-func (t *MediaTrackReceiver) IsSimulcast() bool {
-	return t.TrackInfo().Simulcast
 }
 
 func (t *MediaTrackReceiver) SetSimulcast(simulcast bool) {

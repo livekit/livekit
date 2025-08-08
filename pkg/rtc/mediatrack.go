@@ -39,6 +39,8 @@ import (
 	util "github.com/livekit/mediatransportutil"
 )
 
+var _ types.LocalMediaTrack = (*MediaTrack)(nil)
+
 // MediaTrack represents a WebRTC track that needs to be forwarded
 // Implements MediaTrack and PublishedTrack interface
 type MediaTrack struct {
@@ -143,6 +145,7 @@ func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 		})
 	}
 
+	t.SetMuted(ti.Muted)
 	return t
 }
 

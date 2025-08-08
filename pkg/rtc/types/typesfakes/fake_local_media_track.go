@@ -174,16 +174,6 @@ type FakeLocalMediaTrack struct {
 	isOpenReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	IsSimulcastStub        func() bool
-	isSimulcastMutex       sync.RWMutex
-	isSimulcastArgsForCall []struct {
-	}
-	isSimulcastReturns struct {
-		result1 bool
-	}
-	isSimulcastReturnsOnCall map[int]struct {
-		result1 bool
-	}
 	IsSubscriberStub        func(livekit.ParticipantID) bool
 	isSubscriberMutex       sync.RWMutex
 	isSubscriberArgsForCall []struct {
@@ -1220,59 +1210,6 @@ func (fake *FakeLocalMediaTrack) IsOpenReturnsOnCall(i int, result1 bool) {
 		})
 	}
 	fake.isOpenReturnsOnCall[i] = struct {
-		result1 bool
-	}{result1}
-}
-
-func (fake *FakeLocalMediaTrack) IsSimulcast() bool {
-	fake.isSimulcastMutex.Lock()
-	ret, specificReturn := fake.isSimulcastReturnsOnCall[len(fake.isSimulcastArgsForCall)]
-	fake.isSimulcastArgsForCall = append(fake.isSimulcastArgsForCall, struct {
-	}{})
-	stub := fake.IsSimulcastStub
-	fakeReturns := fake.isSimulcastReturns
-	fake.recordInvocation("IsSimulcast", []interface{}{})
-	fake.isSimulcastMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeLocalMediaTrack) IsSimulcastCallCount() int {
-	fake.isSimulcastMutex.RLock()
-	defer fake.isSimulcastMutex.RUnlock()
-	return len(fake.isSimulcastArgsForCall)
-}
-
-func (fake *FakeLocalMediaTrack) IsSimulcastCalls(stub func() bool) {
-	fake.isSimulcastMutex.Lock()
-	defer fake.isSimulcastMutex.Unlock()
-	fake.IsSimulcastStub = stub
-}
-
-func (fake *FakeLocalMediaTrack) IsSimulcastReturns(result1 bool) {
-	fake.isSimulcastMutex.Lock()
-	defer fake.isSimulcastMutex.Unlock()
-	fake.IsSimulcastStub = nil
-	fake.isSimulcastReturns = struct {
-		result1 bool
-	}{result1}
-}
-
-func (fake *FakeLocalMediaTrack) IsSimulcastReturnsOnCall(i int, result1 bool) {
-	fake.isSimulcastMutex.Lock()
-	defer fake.isSimulcastMutex.Unlock()
-	fake.IsSimulcastStub = nil
-	if fake.isSimulcastReturnsOnCall == nil {
-		fake.isSimulcastReturnsOnCall = make(map[int]struct {
-			result1 bool
-		})
-	}
-	fake.isSimulcastReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }
@@ -2336,8 +2273,6 @@ func (fake *FakeLocalMediaTrack) Invocations() map[string][][]interface{} {
 	defer fake.isMutedMutex.RUnlock()
 	fake.isOpenMutex.RLock()
 	defer fake.isOpenMutex.RUnlock()
-	fake.isSimulcastMutex.RLock()
-	defer fake.isSimulcastMutex.RUnlock()
 	fake.isSubscriberMutex.RLock()
 	defer fake.isSubscriberMutex.RUnlock()
 	fake.kindMutex.RLock()

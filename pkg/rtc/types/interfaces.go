@@ -575,8 +575,6 @@ type MediaTrack interface {
 	IsMuted() bool
 	SetMuted(muted bool)
 
-	IsSimulcast() bool
-
 	GetAudioLevel() (level float64, active bool)
 
 	Close(isExpectedToResume bool)

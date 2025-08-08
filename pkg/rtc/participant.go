@@ -3039,8 +3039,6 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 			}
 		}
 	}
-	mt.SetSimulcast(ti.Simulcast)
-	mt.SetMuted(ti.Muted)
 
 	return mt
 }

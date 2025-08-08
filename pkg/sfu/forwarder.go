@@ -341,7 +341,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		}
 
 	case mime.MimeTypeVP9:
-		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
+		// RAJA-TODO: if simulcast, always choose simulcast, if not, if DD is there use that, else VP9
 		f.isDDAvailable = ddAvailable(extensions)
 		if f.isDDAvailable {
 			if f.vls != nil {
@@ -359,7 +359,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		// SVC-TODO: Support for VP9 simulcast. When DD is not available, have to pick selector based on VP9 SVC or Simulcast
 
 	case mime.MimeTypeAV1:
-		// DD-TODO : we only enable dd layer selector for av1/vp9 now, in the future we can enable it for vp8 too
+		// RAJA-TODO: if simulcast, always choose simulcast, if not, if DD is there use that
 		f.isDDAvailable = ddAvailable(extensions)
 		if f.isDDAvailable {
 			if f.vls != nil {
