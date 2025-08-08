@@ -711,13 +711,21 @@ func (t *MediaTrackReceiver) SetLayerSsrc(mimeType mime.MimeType, rid string, ss
 	t.updateTrackInfoOfReceivers()
 }
 
-func (t *MediaTrackReceiver) UpdateCodecCid(codecs []*livekit.SimulcastCodec) {
+func (t *MediaTrackReceiver) UpdateCodecInfo(codecs []*livekit.SimulcastCodec) {
 	t.lock.Lock()
 	trackInfo := t.TrackInfoClone()
 	for _, c := range codecs {
 		for _, origin := range trackInfo.Codecs {
 			if mime.GetMimeTypeCodec(origin.MimeType) == mime.NormalizeMimeTypeCodec(c.Codec) {
 				origin.Cid = c.Cid
+
+				if len(c.Layers) != 0 {
+					clonedLayers := make([]*livekit.VideoLayer, 0, len(c.Layers))
+					for _, l := range c.Layers {
+						clonedLayers = append(clonedLayers, utils.CloneProto(l))
+					}
+					origin.Layers = clonedLayers
+				}
 				break
 			}
 		}

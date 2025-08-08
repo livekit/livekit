@@ -1243,7 +1243,7 @@ func (p *ParticipantImpl) handleMigrateTracks() []*MediaTrack {
 // AddTrack is called when client intends to publish track.
 // records track details and lets client know it's ok to proceed
 func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
-	p.params.Logger.Debugw("add track request", "trackID", req.Cid)
+	p.params.Logger.Debugw("add track request", "trackID", req.Cid, "request", logger.Proto(req))
 	if !p.CanPublishSource(req.Source) {
 		p.pubLogger.Warnw("no permission to publish track", nil, "trackID", req.Sid, "kind", req.Type)
 		return
@@ -2627,7 +2627,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 			return nil
 		}
 
-		track.(*MediaTrack).UpdateCodecCid(req.SimulcastCodecs)
+		track.(*MediaTrack).UpdateCodecInfo(req.SimulcastCodecs)
 		ti := track.ToProto()
 		return ti
 	}
@@ -2664,17 +2664,29 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 	p.setTrackID(req.Cid, ti)
 
+	cloneLayers := func(layers []*livekit.VideoLayer) []*livekit.VideoLayer {
+		clonedLayers := make([]*livekit.VideoLayer, 0, len(layers))
+		for _, l := range layers {
+			clonedLayers = append(clonedLayers, utils.CloneProto(l))
+		}
+		return clonedLayers
+	}
+
 	if len(req.SimulcastCodecs) == 0 {
 		if req.Type == livekit.TrackType_VIDEO {
 			// clients not supporting simulcast codecs, synthesise a codec
 			ti.Codecs = append(ti.Codecs, &livekit.SimulcastCodecInfo{
 				Cid:    req.Cid,
-				Layers: req.Layers,
+				Layers: cloneLayers(req.Layers),
 			})
 		}
 	} else {
 		seenCodecs := make(map[string]struct{})
 		for _, codec := range req.SimulcastCodecs {
+			if codec.Codec == "" {
+				continue
+			}
+
 			mimeType := codec.Codec
 			if req.Type == livekit.TrackType_VIDEO {
 				if !mime.IsMimeTypeStringVideo(mimeType) {
@@ -2682,7 +2694,8 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 				}
 				if !IsCodecEnabled(p.enabledPublishCodecs, webrtc.RTPCodecCapability{MimeType: mimeType}) {
 					altCodec := selectAlternativeVideoCodec(p.enabledPublishCodecs)
-					p.pubLogger.Infow("falling back to alternative codec",
+					p.pubLogger.Infow(
+						"falling back to alternative codec",
 						"codec", mimeType,
 						"altCodec", altCodec,
 						"trackID", ti.Sid,
@@ -2699,15 +2712,34 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 			}
 			seenCodecs[mimeType] = struct{}{}
 
-			clonedLayers := make([]*livekit.VideoLayer, 0, len(req.Layers))
-			for _, l := range req.Layers {
-				clonedLayers = append(clonedLayers, utils.CloneProto(l))
-			}
 			ti.Codecs = append(ti.Codecs, &livekit.SimulcastCodecInfo{
 				MimeType: mimeType,
 				Cid:      codec.Cid,
-				Layers:   clonedLayers,
 			})
+		}
+
+		// set up layers with codec specific layers,
+		// fall back to common layers if codec specific layer is not available
+		for _, codec := range ti.Codecs {
+			found := false
+			for _, simulcastCodec := range req.SimulcastCodecs {
+				if mime.GetMimeTypeCodec(codec.MimeType) != mime.NormalizeMimeTypeCodec(simulcastCodec.Codec) {
+					continue
+				}
+
+				if len(simulcastCodec.Layers) != 0 {
+					codec.Layers = cloneLayers(simulcastCodec.Layers)
+				} else {
+					codec.Layers = cloneLayers(req.Layers)
+				}
+				found = true
+				break
+			}
+
+			if !found {
+				// could happen if an alternate codec is selected and that is not in the simulcast codecs list
+				codec.Layers = cloneLayers(req.Layers)
+			}
 		}
 	}
 
