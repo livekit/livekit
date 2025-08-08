@@ -208,10 +208,6 @@ func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 	return t.MediaTrackReceiver.TrackInfoClone()
 }
 
-func (t *MediaTrack) UpdateCodecCid(codecs []*livekit.SimulcastCodec) {
-	t.MediaTrackReceiver.UpdateCodecCid(codecs)
-}
-
 // AddReceiver adds a new RTP receiver to the track, returns true when receiver represents a new codec
 // and if a receiver was added successfully
 func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRemote, mid string) (bool, bool) {
