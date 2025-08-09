@@ -166,17 +166,12 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams, ti *livekit.TrackInf
 		Logger:           params.Logger,
 	})
 	t.MediaTrackSubscriptions.OnDownTrackCreated(t.onDownTrackCreated)
-
-	if ti.Muted {
-		t.SetMuted(true)
-	}
 	return t
 }
 
 func (t *MediaTrackReceiver) Restart() {
-	hq := buffer.GetSpatialLayerForVideoQuality(livekit.VideoQuality_HIGH, t.TrackInfo())
-
 	for _, receiver := range t.loadReceivers() {
+		hq := buffer.GetSpatialLayerForVideoQuality(receiver.Mime(), livekit.VideoQuality_HIGH, t.TrackInfo())
 		receiver.SetMaxExpectedSpatialLayer(hq)
 	}
 }
@@ -493,19 +488,6 @@ func (t *MediaTrackReceiver) PublisherVersion() uint32 {
 	return t.params.ParticipantVersion
 }
 
-func (t *MediaTrackReceiver) IsSimulcast() bool {
-	return t.TrackInfo().Simulcast
-}
-
-func (t *MediaTrackReceiver) SetSimulcast(simulcast bool) {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-
-	trackInfo := t.TrackInfoClone()
-	trackInfo.Simulcast = simulcast
-	t.trackInfo.Store(trackInfo)
-}
-
 func (t *MediaTrackReceiver) Name() string {
 	return t.TrackInfo().Name
 }
@@ -671,12 +653,12 @@ func (t *MediaTrackReceiver) updateTrackInfoOfReceivers() {
 func (t *MediaTrackReceiver) SetLayerSsrc(mimeType mime.MimeType, rid string, ssrc uint32) {
 	t.lock.Lock()
 	trackInfo := t.TrackInfoClone()
-	layer := buffer.GetSpatialLayerForRid(rid, trackInfo)
+	layer := buffer.GetSpatialLayerForRid(mimeType, rid, trackInfo)
 	if layer == buffer.InvalidLayerSpatial {
 		// non-simulcast case will not have `rid`
 		layer = 0
 	}
-	quality := buffer.GetVideoQualityForSpatialLayer(layer, trackInfo)
+	quality := buffer.GetVideoQualityForSpatialLayer(mimeType, layer, trackInfo)
 	// set video layer ssrc info
 	for i, ci := range trackInfo.Codecs {
 		if mime.NormalizeMimeType(ci.MimeType) != mimeType {
@@ -725,7 +707,15 @@ func (t *MediaTrackReceiver) UpdateCodecInfo(codecs []*livekit.SimulcastCodec) {
 						clonedLayers = append(clonedLayers, utils.CloneProto(l))
 					}
 					origin.Layers = clonedLayers
+
+					mimeType := mime.NormalizeMimeType(origin.MimeType)
+					for _, layer := range origin.Layers {
+						layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(mimeType, layer.Quality, trackInfo)
+						// SIMULCAST-CODEC-TODO: need to map RIDs from SDP -> SimulcastCodecInfo
+						layer.Rid = buffer.VideoQualityToRid(mimeType, layer.Quality, trackInfo, buffer.DefaultVideoLayersRid)
+					}
 				}
+
 				break
 			}
 		}
@@ -852,16 +842,17 @@ func (t *MediaTrackReceiver) TrackInfoClone() *livekit.TrackInfo {
 	return utils.CloneProto(t.TrackInfo())
 }
 
-func (t *MediaTrackReceiver) NotifyMaxLayerChange(maxLayer int32) {
+func (t *MediaTrackReceiver) NotifyMaxLayerChange(mimeType mime.MimeType, maxLayer int32) {
 	trackInfo := t.TrackInfo()
-	quality := buffer.GetVideoQualityForSpatialLayer(maxLayer, trackInfo)
+	quality := buffer.GetVideoQualityForSpatialLayer(mimeType, maxLayer, trackInfo)
 	ti := &livekit.TrackInfo{
 		Sid:    trackInfo.Sid,
 		Type:   trackInfo.Type,
 		Layers: []*livekit.VideoLayer{{Quality: quality}},
 	}
 	if quality != livekit.VideoQuality_OFF {
-		for _, layer := range trackInfo.Layers {
+		layers := buffer.GetVideoLayersForMimeType(mimeType, trackInfo)
+		for _, layer := range layers {
 			if layer.Quality == quality {
 				ti.Layers[0].Width = layer.Width
 				ti.Layers[0].Height = layer.Height
@@ -875,7 +866,7 @@ func (t *MediaTrackReceiver) NotifyMaxLayerChange(maxLayer int32) {
 
 // GetQualityForDimension finds the closest quality to use for desired dimensions
 // affords a 20% tolerance on dimension
-func (t *MediaTrackReceiver) GetQualityForDimension(width, height uint32) livekit.VideoQuality {
+func (t *MediaTrackReceiver) GetQualityForDimension(mimeType mime.MimeType, width, height uint32) livekit.VideoQuality {
 	quality := livekit.VideoQuality_HIGH
 	if t.Kind() == livekit.TrackType_AUDIO {
 		return quality
@@ -897,7 +888,7 @@ func (t *MediaTrackReceiver) GetQualityForDimension(width, height uint32) liveki
 	// default sizes representing qualities low - high
 	layerSizes := []uint32{180, 360, origSize}
 	var providedSizes []uint32
-	for _, layer := range trackInfo.Layers {
+	for _, layer := range buffer.GetVideoLayersForMimeType(mimeType, trackInfo) {
 		providedSizes = append(providedSizes, layer.Height)
 	}
 	if len(providedSizes) > 0 {
@@ -1004,8 +995,8 @@ func (t *MediaTrackReceiver) SetRTT(rtt uint32) {
 	}
 }
 
-func (t *MediaTrackReceiver) GetTemporalLayerForSpatialFps(spatial int32, fps uint32, mime mime.MimeType) int32 {
-	receiver := t.Receiver(mime)
+func (t *MediaTrackReceiver) GetTemporalLayerForSpatialFps(mimeType mime.MimeType, spatial int32, fps uint32) int32 {
+	receiver := t.Receiver(mimeType)
 	if receiver == nil {
 		return buffer.DefaultMaxLayerTemporal
 	}

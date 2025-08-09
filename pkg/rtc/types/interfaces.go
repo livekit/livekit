@@ -575,8 +575,6 @@ type MediaTrack interface {
 	IsMuted() bool
 	SetMuted(muted bool)
 
-	IsSimulcast() bool
-
 	GetAudioLevel() (level float64, active bool)
 
 	Close(isExpectedToResume bool)
@@ -595,10 +593,10 @@ type MediaTrack interface {
 	OnTrackSubscribed()
 
 	// returns quality information that's appropriate for width & height
-	GetQualityForDimension(width, height uint32) livekit.VideoQuality
+	GetQualityForDimension(mimeType mime.MimeType, width, height uint32) livekit.VideoQuality
 
 	// returns temporal layer that's appropriate for fps
-	GetTemporalLayerForSpatialFps(spatial int32, fps uint32, mime mime.MimeType) int32
+	GetTemporalLayerForSpatialFps(mimeType mime.MimeType, spatial int32, fps uint32) int32
 
 	Receivers() []sfu.TrackReceiver
 	ClearAllReceivers(isExpectedToResume bool)

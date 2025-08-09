@@ -92,12 +92,11 @@ func (r *RedReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int 
 
 func (r *RedReceiver) ForwardRTCPSenderReport(
 	payloadType webrtc.PayloadType,
-	isSVC bool,
 	layer int32,
 	publisherSRData *livekit.RTCPSenderReportState,
 ) {
 	r.downTrackSpreader.Broadcast(func(dt TrackSender) {
-		_ = dt.HandleRTCPSenderReportData(payloadType, isSVC, layer, publisherSRData)
+		_ = dt.HandleRTCPSenderReportData(payloadType, layer, publisherSRData)
 	})
 }
 
