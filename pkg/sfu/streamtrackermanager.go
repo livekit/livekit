@@ -28,6 +28,7 @@ import (
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/streamtracker"
 )
 
@@ -111,10 +112,11 @@ var (
 // ---------------------------------------------------
 
 type StreamTrackerManager struct {
-	logger    logger.Logger
-	trackInfo atomic.Pointer[livekit.TrackInfo]
-	isSVC     bool
-	clockRate uint32
+	logger         logger.Logger
+	trackInfo      atomic.Pointer[livekit.TrackInfo]
+	mimeType       mime.MimeType
+	videoLayerMode livekit.VideoLayer_Mode
+	clockRate      uint32
 
 	trackerConfig StreamTrackerConfig
 
@@ -137,13 +139,14 @@ type StreamTrackerManager struct {
 func NewStreamTrackerManager(
 	logger logger.Logger,
 	trackInfo *livekit.TrackInfo,
-	isSVC bool,
+	mimeType mime.MimeType,
 	clockRate uint32,
 	config StreamTrackerManagerConfig,
 ) *StreamTrackerManager {
 	s := &StreamTrackerManager{
 		logger:               logger,
-		isSVC:                isSVC,
+		mimeType:             mimeType,
+		videoLayerMode:       buffer.GetVideoLayerModeForMimeType(mimeType, trackInfo),
 		maxPublishedLayer:    buffer.InvalidLayerSpatial,
 		maxTemporalLayerSeen: buffer.InvalidLayerTemporal,
 		clockRate:            clockRate,
@@ -492,7 +495,7 @@ func (s *StreamTrackerManager) getLayeredBitrateLocked() ([]int32, Bitrates) {
 	}
 
 	// accumulate bitrates for SVC streams without dependency descriptor
-	if s.isSVC && s.ddTracker == nil {
+	if s.videoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM && s.ddTracker == nil {
 		for i := len(br) - 1; i >= 1; i-- {
 			for j := len(br[i]) - 1; j >= 0; j-- {
 				if br[i][j] != 0 {
@@ -596,7 +599,7 @@ func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfoLocked() {
 	s.maxExpectedLayer = buffer.InvalidLayerSpatial
 	ti := s.trackInfo.Load()
 	if ti != nil {
-		for _, layer := range ti.Layers {
+		for _, layer := range buffer.GetCodecLayersForMimeType(s.mimeType, ti) {
 			if layer.SpatialLayer > s.maxExpectedLayer {
 				s.maxExpectedLayer = layer.SpatialLayer
 			}

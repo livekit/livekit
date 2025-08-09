@@ -27,6 +27,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 )
 
@@ -271,6 +272,13 @@ func (d *DummyReceiver) Mime() mime.MimeType {
 		return r.Mime()
 	}
 	return mime.NormalizeMimeType(d.codec.MimeType)
+}
+
+func (d *DummyReceiver) VideoLayerMode() livekit.VideoLayer_Mode {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		return r.VideoLayerMode()
+	}
+	return buffer.GetVideoLayerModeForMimeType(d.Mime(), d.TrackInfo())
 }
 
 func (d *DummyReceiver) HeaderExtensions() []webrtc.RTPHeaderExtensionParameter {

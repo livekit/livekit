@@ -47,10 +47,6 @@ func TestTrackInfo(t *testing.T) {
 	require.Equal(t, ti.Width, outInfo.Width)
 	require.Equal(t, ti.Height, outInfo.Height)
 	require.Equal(t, ti.Simulcast, outInfo.Simulcast)
-
-	// make it simulcasted
-	mt.SetSimulcast(true)
-	require.True(t, mt.ToProto().Simulcast)
 }
 
 func TestGetQualityForDimension(t *testing.T) {

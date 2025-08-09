@@ -17,6 +17,7 @@ package buffer
 import (
 	"slices"
 
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -39,14 +40,18 @@ var (
 	DefaultVideoLayersRid = videoLayersRidQHF
 )
 
-// SIMULCAST-CODEC-TODO: these need to be codec mime aware if and when each codec suppports different layers
-func LayerPresenceFromTrackInfo(trackInfo *livekit.TrackInfo) *[livekit.VideoQuality_HIGH + 1]bool {
-	if trackInfo == nil || len(trackInfo.Layers) == 0 {
+func LayerPresenceFromTrackInfo(mimeType mime.MimeType, trackInfo *livekit.TrackInfo) *[livekit.VideoQuality_HIGH + 1]bool {
+	if trackInfo == nil {
+		return nil
+	}
+
+	layers := GetCodecLayersForMimeType(mimeType, trackInfo)
+	if len(layers) == 0 {
 		return nil
 	}
 
 	var layerPresence [livekit.VideoQuality_HIGH + 1]bool
-	for _, layer := range trackInfo.Layers {
+	for _, layer := range layers {
 		// WARNING: comparing protobuf enum
 		if layer.Quality <= livekit.VideoQuality_HIGH {
 			layerPresence[layer.Quality] = true
@@ -58,8 +63,8 @@ func LayerPresenceFromTrackInfo(trackInfo *livekit.TrackInfo) *[livekit.VideoQua
 	return &layerPresence
 }
 
-func RidToSpatialLayer(rid string, trackInfo *livekit.TrackInfo, ridSpace VideoLayersRid) int32 {
-	lp := LayerPresenceFromTrackInfo(trackInfo)
+func RidToSpatialLayer(mimeType mime.MimeType, rid string, trackInfo *livekit.TrackInfo, ridSpace VideoLayersRid) int32 {
+	lp := LayerPresenceFromTrackInfo(mimeType, trackInfo)
 	if lp == nil {
 		switch rid {
 		case quarterResolutionQ:
@@ -132,8 +137,8 @@ func RidToSpatialLayer(rid string, trackInfo *livekit.TrackInfo, ridSpace VideoL
 	}
 }
 
-func SpatialLayerToRid(layer int32, trackInfo *livekit.TrackInfo, ridSpace VideoLayersRid) string {
-	lp := LayerPresenceFromTrackInfo(trackInfo)
+func SpatialLayerToRid(mimeType mime.MimeType, layer int32, trackInfo *livekit.TrackInfo, ridSpace VideoLayersRid) string {
+	lp := LayerPresenceFromTrackInfo(mimeType, trackInfo)
 	if lp == nil {
 		switch layer {
 		case 0:
@@ -202,12 +207,12 @@ func SpatialLayerToRid(layer int32, trackInfo *livekit.TrackInfo, ridSpace Video
 	}
 }
 
-func VideoQualityToRid(quality livekit.VideoQuality, trackInfo *livekit.TrackInfo, ridSpace VideoLayersRid) string {
-	return SpatialLayerToRid(VideoQualityToSpatialLayer(quality, trackInfo), trackInfo, ridSpace)
+func VideoQualityToRid(mimeType mime.MimeType, quality livekit.VideoQuality, trackInfo *livekit.TrackInfo, ridSpace VideoLayersRid) string {
+	return SpatialLayerToRid(mimeType, VideoQualityToSpatialLayer(mimeType, quality, trackInfo), trackInfo, ridSpace)
 }
 
-func SpatialLayerToVideoQuality(layer int32, trackInfo *livekit.TrackInfo) livekit.VideoQuality {
-	lp := LayerPresenceFromTrackInfo(trackInfo)
+func SpatialLayerToVideoQuality(mimeType mime.MimeType, layer int32, trackInfo *livekit.TrackInfo) livekit.VideoQuality {
+	lp := LayerPresenceFromTrackInfo(mimeType, trackInfo)
 	if lp == nil {
 		switch layer {
 		case 0:
@@ -273,8 +278,8 @@ func SpatialLayerToVideoQuality(layer int32, trackInfo *livekit.TrackInfo) livek
 	return livekit.VideoQuality_OFF
 }
 
-func VideoQualityToSpatialLayer(quality livekit.VideoQuality, trackInfo *livekit.TrackInfo) int32 {
-	lp := LayerPresenceFromTrackInfo(trackInfo)
+func VideoQualityToSpatialLayer(mimeType mime.MimeType, quality livekit.VideoQuality, trackInfo *livekit.TrackInfo) int32 {
+	lp := LayerPresenceFromTrackInfo(mimeType, trackInfo)
 	if lp == nil {
 		switch quality {
 		case livekit.VideoQuality_LOW:
@@ -339,28 +344,51 @@ func VideoQualityToSpatialLayer(quality livekit.VideoQuality, trackInfo *livekit
 	return InvalidLayerSpatial
 }
 
-// SIMULCAST-CODEC-TODO: these need to be codec mime aware if and when each codec suppports different layers
-func GetSpatialLayerForRid(rid string, ti *livekit.TrackInfo) int32 {
+func GetVideoLayerModeForMimeType(mimeType mime.MimeType, ti *livekit.TrackInfo) livekit.VideoLayer_Mode {
+	for _, codec := range ti.Codecs {
+		if mime.NormalizeMimeType(codec.MimeType) == mimeType {
+			return codec.VideoLayerMode
+		}
+	}
+	return livekit.VideoLayer_MODE_UNUSED
+}
+
+func GetCodecLayersForMimeType(mimeType mime.MimeType, ti *livekit.TrackInfo) []*livekit.VideoLayer {
+	var layers []*livekit.VideoLayer
+	for _, codec := range ti.Codecs {
+		if mime.NormalizeMimeType(codec.MimeType) == mimeType {
+			layers = codec.Layers
+			break
+		}
+	}
+	if len(layers) == 0 {
+		layers = ti.Layers
+	}
+	return layers
+}
+
+func GetSpatialLayerForRid(mimeType mime.MimeType, rid string, ti *livekit.TrackInfo) int32 {
+	if ti == nil {
+		return InvalidLayerSpatial
+	}
+
 	if rid == "" {
 		// single layer without RID
 		return 0
 	}
 
-	if ti == nil {
-		return InvalidLayerSpatial
-	}
-
-	for _, layer := range ti.Layers {
+	layers := GetCodecLayersForMimeType(mimeType, ti)
+	for _, layer := range layers {
 		if layer.Rid == rid {
 			return layer.SpatialLayer
 		}
 	}
 
-	if len(ti.Layers) != 0 {
+	if len(layers) != 0 {
 		// RID present in codec, but may not be specified via signalling
 		// (happens with older browsers setting a rid for SVC codecs)
 		hasRid := false
-		for _, layer := range ti.Layers {
+		for _, layer := range layers {
 			if layer.Rid != "" {
 				hasRid = true
 				break
@@ -372,21 +400,22 @@ func GetSpatialLayerForRid(rid string, ti *livekit.TrackInfo) int32 {
 	}
 
 	// SIMULCAST-CODEC-TODO - ideally should return invalid, but there are
-	// VP9 publish using rid = f, if there are only two layers
+	// VP9 publishers using rid = f, if there are only two layers
 	// in TrackInfo, that will be q;h and f will become invalid.
 	//
 	// Actually, there should be no rids for VP9 in SDP and hence
 	// the above check should take effect. However, as simulcast
-	// codec does not update SDP, the default rids are use when
-	// vp9 (primary codec) is published and that bypasses the above
-	// check.
+	// codec/back up codec does not update rids from SDP,
+	// the default rids are used when vp9 (primary codec)
+	// is published. Due to that the above check gets bypassed.
 	//
 	// The full proper sequence would be
 	// 1. For primary codec using SVC, there will be no rids.
 	//    The above check should take effect and it should
 	//    return 0 even if some publisher uses a rid like `f`.
-	// 2. When secondary codec is published, update rids in the
-	//    codec section in `TrackInfo`. This is a bit tricky
+	// 2. When secondary codec is published, rids for the codec
+	//    corresponding to the back up codec mime type should
+	//    be updated in `TrackInfo`. This is a bit tricky
 	//    for a couple of cases
 	//    a. Browsers like Firefox use a different CID everytime.
 	//       So, it cannot be matched between `AddTrack` and SDP.
@@ -397,8 +426,8 @@ func GetSpatialLayerForRid(rid string, ti *livekit.TrackInfo) int32 {
 	//    b. The back up codec publish SDP will have the full
 	//       codec list. It should be okay to assume that the
 	//       codec that will be published is the back up codec,
-	//       but just something to be aware of..
-	// 3. Use this function with proper mime so that proper
+	//       but just something to be aware of.
+	// 3. Use of this function with proper mime so that proper
 	//    codec section can be looked up in `TrackInfo`.
 	// return InvalidLayerSpatial
 	logger.Infow(
@@ -410,32 +439,34 @@ func GetSpatialLayerForRid(rid string, ti *livekit.TrackInfo) int32 {
 	return 0
 }
 
-func GetSpatialLayerForVideoQuality(quality livekit.VideoQuality, ti *livekit.TrackInfo) int32 {
+func GetSpatialLayerForVideoQuality(mimeType mime.MimeType, quality livekit.VideoQuality, ti *livekit.TrackInfo) int32 {
 	if ti == nil || quality == livekit.VideoQuality_OFF {
 		return InvalidLayerSpatial
 	}
 
-	for _, layer := range ti.Layers {
+	layers := GetCodecLayersForMimeType(mimeType, ti)
+	for _, layer := range layers {
 		if layer.Quality == quality {
 			return layer.SpatialLayer
 		}
 	}
 
-	if len(ti.Layers) == 0 {
+	if len(layers) == 0 {
 		// single layer
 		return 0
 	}
 
 	// requested quality is higher than available layers, return the highest available layer
-	return ti.Layers[len(ti.Layers)-1].SpatialLayer
+	return layers[len(layers)-1].SpatialLayer
 }
 
-func GetVideoQualityForSpatialLayer(spatialLayer int32, ti *livekit.TrackInfo) livekit.VideoQuality {
+func GetVideoQualityForSpatialLayer(mimeType mime.MimeType, spatialLayer int32, ti *livekit.TrackInfo) livekit.VideoQuality {
 	if spatialLayer == InvalidLayerSpatial || ti == nil {
 		return livekit.VideoQuality_OFF
 	}
 
-	for _, layer := range ti.Layers {
+	layers := GetCodecLayersForMimeType(mimeType, ti)
+	for _, layer := range layers {
 		if layer.SpatialLayer == spatialLayer {
 			return layer.Quality
 		}

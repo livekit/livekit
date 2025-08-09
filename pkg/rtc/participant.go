@@ -1050,7 +1050,6 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(offer webrtc.SessionDescrip
 			Stereo:     false,
 			Stream:     "camera",
 		}
-		// ONE-SHOT-SIGNALLING-MODE-TODO: simulcsat layer mapping
 		if strings.EqualFold(m.MediaName.Media, "video") {
 			if ridsOk {
 				// add simulcast layers, NOTE: only quality can be set as dimensions/fps is not available
@@ -2583,7 +2582,7 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(
 			Sid:  trackInfo.Sid,
 			Type: trackInfo.Type,
 		}
-		for _, layer := range trackInfo.Layers {
+		for _, layer := range buffer.GetCodecLayersForMimeType(maxSubscribedQuality.CodecMime, trackInfo) {
 			if layer.Quality == maxSubscribedQuality.Quality {
 				ti.Width = layer.Width
 				ti.Height = layer.Height
@@ -2637,6 +2636,14 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		backupCodecPolicy = livekit.BackupCodecPolicy_SIMULCAST
 	}
 
+	cloneLayers := func(layers []*livekit.VideoLayer) []*livekit.VideoLayer {
+		clonedLayers := make([]*livekit.VideoLayer, 0, len(layers))
+		for _, l := range layers {
+			clonedLayers = append(clonedLayers, utils.CloneProto(l))
+		}
+		return clonedLayers
+	}
+
 	ti := &livekit.TrackInfo{
 		Type:              req.Type,
 		Name:              req.Name,
@@ -2645,7 +2652,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		Muted:             req.Muted,
 		DisableDtx:        req.DisableDtx,
 		Source:            req.Source,
-		Layers:            req.Layers,
+		Layers:            cloneLayers(req.Layers),
 		DisableRed:        req.DisableRed,
 		Stereo:            req.Stereo,
 		Encryption:        req.Encryption,
@@ -2664,14 +2671,6 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 	p.setTrackID(req.Cid, ti)
 
-	cloneLayers := func(layers []*livekit.VideoLayer) []*livekit.VideoLayer {
-		clonedLayers := make([]*livekit.VideoLayer, 0, len(layers))
-		for _, l := range layers {
-			clonedLayers = append(clonedLayers, utils.CloneProto(l))
-		}
-		return clonedLayers
-	}
-
 	if len(req.SimulcastCodecs) == 0 {
 		if req.Type == livekit.TrackType_VIDEO {
 			// clients not supporting simulcast codecs, synthesise a codec
@@ -2688,6 +2687,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 			}
 
 			mimeType := codec.Codec
+			videoLayerMode := codec.VideoLayerMode
 			if req.Type == livekit.TrackType_VIDEO {
 				if !mime.IsMimeTypeStringVideo(mimeType) {
 					mimeType = mime.MimeTypePrefixVideo + mimeType
@@ -2703,6 +2703,13 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 					// select an alternative MIME type that's generally supported
 					mimeType = altCodec
 				}
+				if videoLayerMode == livekit.VideoLayer_MODE_UNUSED {
+					if mime.IsMimeTypeStringSVC(mimeType) {
+						videoLayerMode = livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM
+					} else {
+						videoLayerMode = livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM
+					}
+				}
 			} else if req.Type == livekit.TrackType_AUDIO && !mime.IsMimeTypeStringAudio(mimeType) {
 				mimeType = mime.MimeTypePrefixAudio + mimeType
 			}
@@ -2713,14 +2720,15 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 			seenCodecs[mimeType] = struct{}{}
 
 			ti.Codecs = append(ti.Codecs, &livekit.SimulcastCodecInfo{
-				MimeType: mimeType,
-				Cid:      codec.Cid,
+				MimeType:       mimeType,
+				Cid:            codec.Cid,
+				VideoLayerMode: videoLayerMode,
 			})
 		}
 
 		// set up layers with codec specific layers,
 		// fall back to common layers if codec specific layer is not available
-		for _, codec := range ti.Codecs {
+		for idx, codec := range ti.Codecs {
 			found := false
 			for _, simulcastCodec := range req.SimulcastCodecs {
 				if mime.GetMimeTypeCodec(codec.MimeType) != mime.NormalizeMimeTypeCodec(simulcastCodec.Codec) {
@@ -2739,6 +2747,11 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 			if !found {
 				// could happen if an alternate codec is selected and that is not in the simulcast codecs list
 				codec.Layers = cloneLayers(req.Layers)
+			}
+
+			// populate simulcast flag for compatibility, true if primary codec is not SVC and has multiple layers
+			if idx == 0 && codec.VideoLayerMode != livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM && len(codec.Layers) > 1 {
+				ti.Simulcast = true
 			}
 		}
 	}
@@ -2925,15 +2938,17 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 			ti.Version = p.params.VersionGenerator.Next().ToProto()
 		}
 
+		mimeType := mime.NormalizeMimeType(ti.MimeType)
 		for _, layer := range ti.Layers {
-			layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(layer.Quality, ti)
-			layer.Rid = buffer.VideoQualityToRid(layer.Quality, ti, sdpRids)
+			layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(mimeType, layer.Quality, ti)
+			layer.Rid = buffer.VideoQualityToRid(mimeType, layer.Quality, ti, sdpRids)
 		}
 
 		for _, codec := range ti.Codecs {
+			mimeType := mime.NormalizeMimeType(codec.MimeType)
 			for _, layer := range codec.Layers {
-				layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(layer.Quality, ti)
-				layer.Rid = buffer.VideoQualityToRid(layer.Quality, ti, sdpRids)
+				layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(mimeType, layer.Quality, ti)
+				layer.Rid = buffer.VideoQualityToRid(mimeType, layer.Quality, ti, sdpRids)
 			}
 		}
 

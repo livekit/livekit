@@ -253,13 +253,14 @@ func (t *SubscribedTrack) applySettings() {
 	if dt.Kind() == webrtc.RTPCodecTypeVideo {
 		mt := t.MediaTrack()
 		quality := t.settings.Quality
+		mimeType := dt.Mime()
 		if t.settings.Width > 0 {
-			quality = mt.GetQualityForDimension(t.settings.Width, t.settings.Height)
+			quality = mt.GetQualityForDimension(mimeType, t.settings.Width, t.settings.Height)
 		}
 
-		spatial = buffer.GetSpatialLayerForVideoQuality(quality, mt.ToProto())
+		spatial = buffer.GetSpatialLayerForVideoQuality(mimeType, quality, mt.ToProto())
 		if t.settings.Fps > 0 {
-			temporal = mt.GetTemporalLayerForSpatialFps(spatial, t.settings.Fps, dt.Mime())
+			temporal = mt.GetTemporalLayerForSpatialFps(mimeType, spatial, t.settings.Fps)
 		}
 	}
 

@@ -64,7 +64,6 @@ type TrackSender interface {
 	SubscriberID() livekit.ParticipantID
 	HandleRTCPSenderReportData(
 		payloadType webrtc.PayloadType,
-		isSVC bool,
 		layer int32,
 		publisherSRData *livekit.RTCPSenderReportState,
 	) error
@@ -580,7 +579,8 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.setBindStateLocked(bindStateBound)
 		d.bindLock.Unlock()
 
-		d.forwarder.DetermineCodec(codec.RTPCodecCapability, d.Receiver().HeaderExtensions())
+		receiver := d.Receiver()
+		d.forwarder.DetermineCodec(codec.RTPCodecCapability, receiver.HeaderExtensions(), receiver.VideoLayerMode())
 		d.connectionStats.Start(d.Mime(), isFECEnabled)
 		d.params.Logger.Debugw("downtrack bound")
 	}
@@ -689,7 +689,8 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 	)
 
 	d.forwarder.Restart()
-	d.forwarder.DetermineCodec(codec.RTPCodecCapability, d.Receiver().HeaderExtensions())
+	receiver := d.Receiver()
+	d.forwarder.DetermineCodec(codec.RTPCodecCapability, receiver.HeaderExtensions(), receiver.VideoLayerMode())
 	d.connectionStats.UpdateCodec(d.Mime(), isFECEnabled)
 }
 
@@ -1002,7 +1003,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		// clock domain of publisher. SFU is normalising sender reports of publisher
 		// to SFU clock before sending to subscribers. So, capture time should be
 		// normalized to the same clock. Clear out any offset.
-		_, _, refSenderReport := d.forwarder.GetSenderReportParams()
+		_, _, _, refSenderReport := d.forwarder.GetSenderReportParams()
 		if refSenderReport != nil {
 			actExtCopy := *extPkt.AbsCaptureTimeExt
 			if err = actExtCopy.Rewrite(
@@ -1668,7 +1669,7 @@ func (d *DownTrack) CreateSenderReport() *rtcp.SenderReport {
 		return nil
 	}
 
-	_, tsOffset, refSenderReport := d.forwarder.GetSenderReportParams()
+	_, _, tsOffset, refSenderReport := d.forwarder.GetSenderReportParams()
 	return d.rtpStats.GetRtcpSenderReport(d.ssrc, refSenderReport, tsOffset, !d.params.DisableSenderReportPassThrough)
 
 	// not sending RTCP Sender Report for RTX
@@ -2175,6 +2176,8 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	src := PacketFactory.Get().(*[]byte)
 	defer PacketFactory.Put(src)
 
+	receiver := d.Receiver()
+
 	nackAcks := uint32(0)
 	nackMisses := uint32(0)
 	numRepeatedNACKs := uint32(0)
@@ -2186,7 +2189,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		nackAcks++
 
 		pktBuff := *src
-		n, err := d.Receiver().ReadRTP(pktBuff, uint8(epm.layer), epm.sourceSeqNo)
+		n, err := receiver.ReadRTP(pktBuff, uint8(epm.layer), epm.sourceSeqNo)
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -2276,6 +2279,8 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 		src := PacketFactory.Get().(*[]byte)
 		defer PacketFactory.Put(src)
 
+		receiver := d.Receiver()
+
 		endExtHighestSequenceNumber := d.rtpStats.ExtHighestSequenceNumber()
 		startExtHighestSequenceNumber := endExtHighestSequenceNumber - 5
 		for esn := startExtHighestSequenceNumber; esn <= endExtHighestSequenceNumber; esn++ {
@@ -2285,7 +2290,7 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 			}
 
 			pktBuff := *src
-			n, err := d.Receiver().ReadRTP(pktBuff, uint8(epm.layer), epm.sourceSeqNo)
+			n, err := receiver.ReadRTP(pktBuff, uint8(epm.layer), epm.sourceSeqNo)
 			if err != nil {
 				if err == io.EOF {
 					break
@@ -2507,14 +2512,13 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 
 func (d *DownTrack) HandleRTCPSenderReportData(
 	_payloadType webrtc.PayloadType,
-	isSVC bool,
 	layer int32,
 	publisherSRData *livekit.RTCPSenderReportState,
 ) error {
-	d.forwarder.SetRefSenderReport(isSVC, layer, publisherSRData)
+	d.forwarder.SetRefSenderReport(layer, publisherSRData)
 
-	currentLayer, tsOffset, refSenderReport := d.forwarder.GetSenderReportParams()
-	if layer == currentLayer || (layer == 0 && isSVC) {
+	currentLayer, isSingleStream, tsOffset, refSenderReport := d.forwarder.GetSenderReportParams()
+	if layer == currentLayer || (layer == 0 && isSingleStream) {
 		d.handleRTCPSenderReportData(refSenderReport, tsOffset)
 	}
 	return nil

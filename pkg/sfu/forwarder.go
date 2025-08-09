@@ -230,7 +230,7 @@ type Forwarder struct {
 	referenceLayerSpatial    int32
 	dummyStartTSOffset       uint64
 	refInfos                 [buffer.DefaultMaxLayerSpatial + 1]refInfo
-	refIsSVC                 bool
+	refVideoLayerMode        livekit.VideoLayer_Mode
 	isDDAvailable            bool
 
 	provisional *VideoAllocationProvisional
@@ -298,7 +298,7 @@ func (f *Forwarder) SetMaxTemporalLayerSeen(maxTemporalLayerSeen int32) bool {
 	return true
 }
 
-func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions []webrtc.RTPHeaderExtensionParameter) {
+func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions []webrtc.RTPHeaderExtensionParameter, videoLayerMode livekit.VideoLayer_Mode) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -309,6 +309,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 	}
 	f.mime = toMimeType
 	f.clockRate = codec.ClockRate
+	f.refVideoLayerMode = videoLayerMode
 
 	ddAvailable := func(exts []webrtc.RTPHeaderExtensionParameter) bool {
 		for _, ext := range exts {
@@ -335,46 +336,62 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 
 	case mime.MimeTypeH264, mime.MimeTypeH265:
 		if f.vls != nil {
-			f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
+			if vls := videolayerselector.NewSimulcastFromOther(f.vls); vls != nil {
+				f.vls = vls
+			} else {
+				f.logger.Errorw("failed to create simulcast on codec change", nil)
+			}
 		} else {
 			f.vls = videolayerselector.NewSimulcast(f.logger)
 		}
 
 	case mime.MimeTypeVP9:
-		// RAJA-TODO: if simulcast, always choose simulcast, if not, if DD is there use that, else VP9
-		f.isDDAvailable = ddAvailable(extensions)
-		if f.isDDAvailable {
+		if videoLayerMode == livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM {
 			if f.vls != nil {
-				f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
+				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
 			} else {
 				f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
 			}
 		} else {
-			if f.vls != nil {
-				f.vls = videolayerselector.NewVP9FromOther(f.vls)
+			f.isDDAvailable = ddAvailable(extensions)
+			if f.isDDAvailable {
+				if f.vls != nil {
+					f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
+				} else {
+					f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
+				}
 			} else {
-				f.vls = videolayerselector.NewVP9(f.logger)
+				if f.vls != nil {
+					f.vls = videolayerselector.NewVP9FromOther(f.vls)
+				} else {
+					f.vls = videolayerselector.NewVP9(f.logger)
+				}
 			}
 		}
-		// SVC-TODO: Support for VP9 simulcast. When DD is not available, have to pick selector based on VP9 SVC or Simulcast
 
 	case mime.MimeTypeAV1:
-		// RAJA-TODO: if simulcast, always choose simulcast, if not, if DD is there use that
-		f.isDDAvailable = ddAvailable(extensions)
-		if f.isDDAvailable {
-			if f.vls != nil {
-				f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
-			} else {
-				f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
-			}
-		} else {
+		if videoLayerMode == livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM {
 			if f.vls != nil {
 				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
 			} else {
 				f.vls = videolayerselector.NewSimulcast(f.logger)
 			}
+		} else {
+			f.isDDAvailable = ddAvailable(extensions)
+			if f.isDDAvailable {
+				if f.vls != nil {
+					f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
+				} else {
+					f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
+				}
+			} else {
+				if f.vls != nil {
+					f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
+				} else {
+					f.vls = videolayerselector.NewSimulcast(f.logger)
+				}
+			}
 		}
-		// SVC-TODO: Support for AV1 Simulcast
 	}
 }
 
@@ -613,18 +630,17 @@ func (f *Forwarder) getRefLayer() (int32, int32) {
 		return buffer.InvalidLayerSpatial, buffer.InvalidLayerSpatial
 	}
 
-	if f.refIsSVC {
+	if f.refVideoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM {
 		return 0, currentLayerSpatial
 	}
 
 	return currentLayerSpatial, currentLayerSpatial
 }
 
-func (f *Forwarder) SetRefSenderReport(isSVC bool, layer int32, srData *livekit.RTCPSenderReportState) {
+func (f *Forwarder) SetRefSenderReport(layer int32, srData *livekit.RTCPSenderReportState) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	f.refIsSVC = isSVC
 	if layer >= 0 && int(layer) < len(f.refInfos) {
 		if layer == f.referenceLayerSpatial && f.refInfos[layer].senderReport == nil {
 			f.logger.Debugw("received RTCP sender report for reference layer spatial", "layer", layer)
@@ -666,7 +682,7 @@ func (f *Forwarder) SetRefSenderReport(isSVC bool, layer int32, srData *livekit.
 	}
 }
 
-func (f *Forwarder) GetSenderReportParams() (int32, uint64, *livekit.RTCPSenderReportState) {
+func (f *Forwarder) GetSenderReportParams() (int32, bool, uint64, *livekit.RTCPSenderReportState) {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 
@@ -674,10 +690,10 @@ func (f *Forwarder) GetSenderReportParams() (int32, uint64, *livekit.RTCPSenderR
 	if refLayer == buffer.InvalidLayerSpatial ||
 		f.refInfos[refLayer].senderReport == nil ||
 		!f.refInfos[refLayer].isTSOffsetValid {
-		return buffer.InvalidLayerSpatial, 0, nil
+		return buffer.InvalidLayerSpatial, false, 0, nil
 	}
 
-	return currentLayerSpatial, f.refInfos[refLayer].tsOffset, f.refInfos[refLayer].senderReport
+	return currentLayerSpatial, f.refVideoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM, f.refInfos[refLayer].tsOffset, f.refInfos[refLayer].senderReport
 }
 
 func (f *Forwarder) isDeficientLocked() bool {
@@ -1584,7 +1600,7 @@ func (f *Forwarder) Restart() {
 		f.refInfos[layer] = refInfo{}
 	}
 	f.lastSwitchExtIncomingTS = 0
-	f.refIsSVC = false
+	f.refVideoLayerMode = livekit.VideoLayer_MODE_UNUSED
 }
 
 func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLayers [buffer.DefaultMaxLayerSpatial + 1]bool) {
@@ -1645,7 +1661,7 @@ func (f *Forwarder) getRefLayerRTPTimestamp(ts uint32, refLayer, targetLayer int
 		return 0, fmt.Errorf("invalid layer(s), refLayer: %d, targetLayer: %d", refLayer, targetLayer)
 	}
 
-	if refLayer == targetLayer || f.refIsSVC {
+	if refLayer == targetLayer || f.refVideoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM {
 		return ts, nil
 	}
 

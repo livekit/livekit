@@ -20,6 +20,7 @@ import (
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -33,7 +34,7 @@ func disable(f *Forwarder) {
 
 func newForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Forwarder {
 	f := NewForwarder(kind, logger.GetLogger(), true, nil)
-	f.DetermineCodec(codec, nil)
+	f.DetermineCodec(codec, nil, livekit.VideoLayer_MODE_UNUSED)
 	return f
 }
 
