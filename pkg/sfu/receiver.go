@@ -371,7 +371,7 @@ func (w *WebRTCReceiver) Mime() mime.MimeType {
 }
 
 func (w *WebRTCReceiver) VideoLayerMode() livekit.VideoLayer_Mode {
-	return buffer.GetVideoLayerModeForMimeType(w.Mime(), w.trackInfo.Load())
+	return w.videoLayerMode
 }
 
 func (w *WebRTCReceiver) HeaderExtensions() []webrtc.RTPHeaderExtensionParameter {
