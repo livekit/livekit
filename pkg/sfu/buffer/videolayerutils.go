@@ -45,7 +45,7 @@ func LayerPresenceFromTrackInfo(mimeType mime.MimeType, trackInfo *livekit.Track
 		return nil
 	}
 
-	layers := GetCodecLayersForMimeType(mimeType, trackInfo)
+	layers := GetVideoLayersForMimeType(mimeType, trackInfo)
 	if len(layers) == 0 {
 		return nil
 	}
@@ -356,7 +356,7 @@ func GetVideoLayerModeForMimeType(mimeType mime.MimeType, ti *livekit.TrackInfo)
 	return livekit.VideoLayer_MODE_UNUSED
 }
 
-func GetCodecLayersForMimeType(mimeType mime.MimeType, ti *livekit.TrackInfo) []*livekit.VideoLayer {
+func GetVideoLayersForMimeType(mimeType mime.MimeType, ti *livekit.TrackInfo) []*livekit.VideoLayer {
 	var layers []*livekit.VideoLayer
 	if ti != nil {
 		for _, codec := range ti.Codecs {
@@ -382,7 +382,7 @@ func GetSpatialLayerForRid(mimeType mime.MimeType, rid string, ti *livekit.Track
 		return 0
 	}
 
-	layers := GetCodecLayersForMimeType(mimeType, ti)
+	layers := GetVideoLayersForMimeType(mimeType, ti)
 	for _, layer := range layers {
 		if layer.Rid == rid {
 			return layer.SpatialLayer
@@ -449,7 +449,7 @@ func GetSpatialLayerForVideoQuality(mimeType mime.MimeType, quality livekit.Vide
 		return InvalidLayerSpatial
 	}
 
-	layers := GetCodecLayersForMimeType(mimeType, ti)
+	layers := GetVideoLayersForMimeType(mimeType, ti)
 	for _, layer := range layers {
 		if layer.Quality == quality {
 			return layer.SpatialLayer
@@ -470,7 +470,7 @@ func GetVideoQualityForSpatialLayer(mimeType mime.MimeType, spatialLayer int32, 
 		return livekit.VideoQuality_OFF
 	}
 
-	layers := GetCodecLayersForMimeType(mimeType, ti)
+	layers := GetVideoLayersForMimeType(mimeType, ti)
 	for _, layer := range layers {
 		if layer.SpatialLayer == spatialLayer {
 			return layer.Quality

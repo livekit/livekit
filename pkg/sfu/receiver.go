@@ -504,7 +504,7 @@ func (w *WebRTCReceiver) notifyMaxExpectedLayer(layer int32) {
 	}
 
 	expectedBitrate := int64(0)
-	for _, vl := range buffer.GetCodecLayersForMimeType(w.Mime(), ti) {
+	for _, vl := range buffer.GetVideoLayersForMimeType(w.Mime(), ti) {
 		if vl.SpatialLayer <= layer {
 			expectedBitrate += int64(vl.Bitrate)
 		}

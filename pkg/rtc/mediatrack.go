@@ -443,7 +443,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 	}
 
 	var bitrates int
-	layers := buffer.GetCodecLayersForMimeType(mimeType, ti)
+	layers := buffer.GetVideoLayersForMimeType(mimeType, ti)
 	if layer >= 0 && len(layers) > int(layer) {
 		bitrates = int(layers[layer].GetBitrate())
 	}

@@ -851,7 +851,7 @@ func (t *MediaTrackReceiver) NotifyMaxLayerChange(mimeType mime.MimeType, maxLay
 		Layers: []*livekit.VideoLayer{{Quality: quality}},
 	}
 	if quality != livekit.VideoQuality_OFF {
-		layers := buffer.GetCodecLayersForMimeType(mimeType, trackInfo)
+		layers := buffer.GetVideoLayersForMimeType(mimeType, trackInfo)
 		for _, layer := range layers {
 			if layer.Quality == quality {
 				ti.Layers[0].Width = layer.Width
@@ -888,7 +888,7 @@ func (t *MediaTrackReceiver) GetQualityForDimension(mimeType mime.MimeType, widt
 	// default sizes representing qualities low - high
 	layerSizes := []uint32{180, 360, origSize}
 	var providedSizes []uint32
-	for _, layer := range buffer.GetCodecLayersForMimeType(mimeType, trackInfo) {
+	for _, layer := range buffer.GetVideoLayersForMimeType(mimeType, trackInfo) {
 		providedSizes = append(providedSizes, layer.Height)
 	}
 	if len(providedSizes) > 0 {

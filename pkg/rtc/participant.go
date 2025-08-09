@@ -2582,7 +2582,7 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(
 			Sid:  trackInfo.Sid,
 			Type: trackInfo.Type,
 		}
-		for _, layer := range buffer.GetCodecLayersForMimeType(maxSubscribedQuality.CodecMime, trackInfo) {
+		for _, layer := range buffer.GetVideoLayersForMimeType(maxSubscribedQuality.CodecMime, trackInfo) {
 			if layer.Quality == maxSubscribedQuality.Quality {
 				ti.Width = layer.Width
 				ti.Height = layer.Height
