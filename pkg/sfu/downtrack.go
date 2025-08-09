@@ -222,6 +222,8 @@ func (bs bindState) String() string {
 
 // -------------------------------------------------------------------
 
+var _ TrackSender = (*DownTrack)(nil)
+
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
 type DowntrackParams struct {

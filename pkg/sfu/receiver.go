@@ -155,6 +155,8 @@ type REDTransformer interface {
 	Close()
 }
 
+var _ TrackReceiver = (*WebRTCReceiver)(nil)
+
 // WebRTCReceiver receives a media track
 type WebRTCReceiver struct {
 	logger logger.Logger
