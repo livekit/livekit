@@ -345,24 +345,29 @@ func VideoQualityToSpatialLayer(mimeType mime.MimeType, quality livekit.VideoQua
 }
 
 func GetVideoLayerModeForMimeType(mimeType mime.MimeType, ti *livekit.TrackInfo) livekit.VideoLayer_Mode {
-	for _, codec := range ti.Codecs {
-		if mime.NormalizeMimeType(codec.MimeType) == mimeType {
-			return codec.VideoLayerMode
+	if ti != nil {
+		for _, codec := range ti.Codecs {
+			if mime.NormalizeMimeType(codec.MimeType) == mimeType {
+				return codec.VideoLayerMode
+			}
 		}
 	}
+
 	return livekit.VideoLayer_MODE_UNUSED
 }
 
 func GetCodecLayersForMimeType(mimeType mime.MimeType, ti *livekit.TrackInfo) []*livekit.VideoLayer {
 	var layers []*livekit.VideoLayer
-	for _, codec := range ti.Codecs {
-		if mime.NormalizeMimeType(codec.MimeType) == mimeType {
-			layers = codec.Layers
-			break
+	if ti != nil {
+		for _, codec := range ti.Codecs {
+			if mime.NormalizeMimeType(codec.MimeType) == mimeType {
+				layers = codec.Layers
+				break
+			}
 		}
-	}
-	if len(layers) == 0 {
-		layers = ti.Layers
+		if len(layers) == 0 {
+			layers = ti.Layers
+		}
 	}
 	return layers
 }
