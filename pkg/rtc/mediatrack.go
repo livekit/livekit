@@ -239,6 +239,16 @@ func (t *MediaTrack) GetMimeTypeForSdpCid(cid string) mime.MimeType {
 	return mime.MimeTypeUnknown
 }
 
+func (t *MediaTrack) GetCidsForMimeType(mimeType mime.MimeType) (string, string) {
+	ti := t.MediaTrackReceiver.TrackInfoClone()
+	for _, c := range ti.Codecs {
+		if mime.NormalizeMimeType(c.MimeType) == mimeType {
+			return c.Cid, c.SdpCid
+		}
+	}
+	return "", ""
+}
+
 func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 	return t.MediaTrackReceiver.TrackInfoClone()
 }
@@ -525,6 +535,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 }
 
 func (t *MediaTrack) GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality) {
+	// SIMULCAST-CODEC-TODO: need to take into account codec regression policy
 	receiver := t.PrimaryReceiver()
 	if rtcReceiver, ok := receiver.(*sfu.WebRTCReceiver); ok {
 		return rtcReceiver.GetConnectionScoreAndQuality()

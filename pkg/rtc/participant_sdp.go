@@ -23,6 +23,7 @@ import (
 	"github.com/pion/webrtc/v4"
 	"golang.org/x/exp/maps"
 
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -30,13 +31,19 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([]*sdp.MediaDescription, []*sdp.MediaDescription) {
+// RAJA-TODO func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([]*sdp.MediaDescription, []*sdp.MediaDescription) {
+func (p *ParticipantImpl) populateSdpCid(
+	parsedOffer *sdp.SessionDescription,
+	unmatchAudios []*sdp.MediaDescription,
+	unmatchVideos []*sdp.MediaDescription,
+) {
 	processUnmatch := func(unmatches []*sdp.MediaDescription, trackType livekit.TrackType) {
 		for _, unmatch := range unmatches {
 			streamID, ok := lksdp.ExtractStreamID(unmatch)
 			if !ok {
 				continue
 			}
+			p.pubLogger.Debugw("RAJA processing streamID", "streamID", streamID) // REMOVE
 
 			sdpCodecs, err := lksdp.CodecsFromMediaDescription(unmatch)
 			if err != nil || len(sdpCodecs) == 0 {
@@ -53,11 +60,53 @@ func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([
 			if info == nil {
 				p.pendingTracksLock.Unlock()
 
-				p.pubLogger.Warnw(
-					"could not find pending track", nil,
-					"media", unmatch,
-					"parsedOffer", parsedOffer,
-				)
+				// could be already published track and the unmatch could be a back up codec publish
+				numUnmatchedTracks := 0
+				var unmatchedTrack types.MediaTrack
+				var unmatchedSdpMimeType mime.MimeType
+
+				found := false
+				for _, sdpCodec := range sdpCodecs {
+					sdpMimeType := mime.NormalizeMimeTypeCodec(sdpCodec.Name).ToMimeType()
+					for _, publishedTrack := range p.GetPublishedTracks() {
+						if sigCid, sdpCid := publishedTrack.(*MediaTrack).GetCidsForMimeType(sdpMimeType); sigCid != "" && sdpCid == "" {
+							// a back up codec has a SDP cid match
+							if sigCid == streamID {
+								p.pubLogger.Debugw(
+									"found a back up matching cid",
+									"media", unmatch,
+									"parsedOffer", parsedOffer,
+								) // REMOVE
+								found = true
+								break
+							} else {
+								numUnmatchedTracks++
+								unmatchedTrack = publishedTrack
+								unmatchedSdpMimeType = sdpMimeType
+							}
+						}
+					}
+					if found {
+						break
+					}
+				}
+				if !found && unmatchedTrack != nil {
+					if numUnmatchedTracks != 1 {
+						p.pubLogger.Warnw(
+							"too many unmatched tracks", nil,
+							"media", unmatch,
+							"parsedOffer", parsedOffer,
+						)
+					}
+					unmatchedTrack.(*MediaTrack).UpdateCodecSdpCid(unmatchedSdpMimeType, streamID)
+					p.pubLogger.Debugw(
+						"found a back up unmatched cid",
+						"media", unmatch,
+						"parsedOffer", parsedOffer,
+						"trackID", unmatchedTrack.ID(),
+						"track", logger.Proto(unmatchedTrack.ToProto()),
+					) // REMOVE
+				}
 				continue
 			}
 			p.pubLogger.Debugw("RAJA processing signalCid", "signalCid", signalCid, "streamID", streamID) // REMOVE
@@ -65,6 +114,7 @@ func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([
 			found := false
 			updated := false
 			for _, codec := range info.Codecs {
+				/* RAJA-REMOVE
 				for _, sdpCodec := range sdpCodecs {
 					if mime.NormalizeMimeTypeCodec(sdpCodec.Name) == mime.GetMimeTypeCodec(codec.MimeType) {
 						// set SdpCid only if different from SignalCid
@@ -75,6 +125,16 @@ func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([
 						found = true
 						break
 					}
+				}
+				*/
+				if mime.NormalizeMimeTypeCodec(sdpCodecs[0].Name) == mime.GetMimeTypeCodec(codec.MimeType) {
+					// set SdpCid only if different from SignalCid
+					if streamID != codec.Cid {
+						codec.SdpCid = streamID
+						updated = true
+					}
+					found = true
+					break
 				}
 				if found {
 					break
@@ -100,32 +160,43 @@ func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([
 		}
 	}
 
+	/* RAJA-TODO
 	unmatchAudios, err := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "audio")
 	if err != nil {
-		p.pubLogger.Warnw("could not get unmatched audios", err)
+		p.pubLogger.Warnw("could not get unmatch audios", err)
 		return nil, nil
 	}
 
 	unmatchVideos, err := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "video")
 	if err != nil {
-		p.pubLogger.Warnw("could not get unmatched audios", err)
+		p.pubLogger.Warnw("could not get unmatch audios", err)
 		return nil, nil
 	}
-	p.pubLogger.Debugw("RAJA unmatched", "audios", len(unmatchAudios), "videos", len(unmatchVideos)) // REMOVE
+	p.pubLogger.Debugw("RAJA unmatch", "audios", len(unmatchAudios), "videos", len(unmatchVideos)) // REMOVE
+	*/
 
 	processUnmatch(unmatchAudios, livekit.TrackType_AUDIO)
 	processUnmatch(unmatchVideos, livekit.TrackType_VIDEO)
-	return unmatchAudios, unmatchVideos
+	// RAJA-TODO return unmatchAudios, unmatchVideos
 }
 
 func (p *ParticipantImpl) setCodecPreferencesForPublisher(
 	parsedOffer *sdp.SessionDescription,
-	unmatchedAudios []*sdp.MediaDescription,
-	unmatchedVideos []*sdp.MediaDescription,
-) *sdp.SessionDescription {
-	parsedOffer = p.setCodecPreferencesOpusRedForPublisher(parsedOffer, unmatchedAudios)
-	parsedOffer = p.setCodecPreferencesVideoForPublisher(parsedOffer, unmatchedVideos)
-	return parsedOffer
+) (*sdp.SessionDescription, []*sdp.MediaDescription, []*sdp.MediaDescription) {
+	unmatchAudios, err := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "audio")
+	if err != nil {
+		p.pubLogger.Warnw("could not get unmatch audios", err)
+		return parsedOffer, nil, nil
+	}
+
+	unmatchVideos, err := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "video")
+	if err != nil {
+		p.pubLogger.Warnw("could not get unmatch audios", err)
+		return parsedOffer, nil, nil
+	}
+	parsedOffer = p.setCodecPreferencesOpusRedForPublisher(parsedOffer, unmatchAudios)
+	parsedOffer = p.setCodecPreferencesVideoForPublisher(parsedOffer, unmatchVideos)
+	return parsedOffer, unmatchAudios, unmatchVideos
 }
 
 func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(

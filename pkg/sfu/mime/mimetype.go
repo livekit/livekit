@@ -81,6 +81,41 @@ func (m MimeTypeCodec) String() string {
 	return "MimeTypeCodecUnknown"
 }
 
+func (m MimeTypeCodec) ToMimeType() MimeType {
+	switch m {
+	case MimeTypeCodecUnknown:
+		return MimeTypeUnknown
+	case MimeTypeCodecH264:
+		return MimeTypeH264
+	case MimeTypeCodecH265:
+		return MimeTypeH265
+	case MimeTypeCodecOpus:
+		return MimeTypeOpus
+	case MimeTypeCodecRED:
+		return MimeTypeRED
+	case MimeTypeCodecVP8:
+		return MimeTypeVP8
+	case MimeTypeCodecVP9:
+		return MimeTypeVP9
+	case MimeTypeCodecAV1:
+		return MimeTypeAV1
+	case MimeTypeCodecG722:
+		return MimeTypeG722
+	case MimeTypeCodecPCMU:
+		return MimeTypePCMU
+	case MimeTypeCodecPCMA:
+		return MimeTypePCMA
+	case MimeTypeCodecRTX:
+		return MimeTypeRTX
+	case MimeTypeCodecFlexFEC:
+		return MimeTypeFlexFEC
+	case MimeTypeCodecULPFEC:
+		return MimeTypeULPFEC
+	}
+
+	return MimeTypeUnknown
+}
+
 func NormalizeMimeTypeCodec(codec string) MimeTypeCodec {
 	switch {
 	case strings.EqualFold(codec, "h264"):

@@ -725,6 +725,22 @@ func (t *MediaTrackReceiver) UpdateCodecInfo(codecs []*livekit.SimulcastCodec) {
 	t.updateTrackInfoOfReceivers()
 }
 
+func (t *MediaTrackReceiver) UpdateCodecSdpCid(mimeType mime.MimeType, sdpCid string) {
+	t.lock.Lock()
+	trackInfo := t.TrackInfoClone()
+	for _, origin := range trackInfo.Codecs {
+		if mime.NormalizeMimeType(origin.MimeType) == mimeType {
+			if sdpCid != origin.Cid {
+				origin.SdpCid = sdpCid
+			}
+		}
+	}
+	t.trackInfo.Store(trackInfo)
+	t.lock.Unlock()
+
+	t.updateTrackInfoOfReceivers()
+}
+
 func (t *MediaTrackReceiver) UpdateCodecRids(mimeType mime.MimeType, rids buffer.VideoLayersRid) {
 	t.lock.Lock()
 	trackInfo := t.TrackInfoClone()

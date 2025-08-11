@@ -1064,6 +1064,7 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(parsedOffer *sdp.SessionDes
 	return nil
 }
 
+/* RAJA-REMOVE
 func (p *ParticipantImpl) updateRidsFromUnparsedSDP(offer *webrtc.SessionDescription) {
 	if offer == nil {
 		return
@@ -1077,10 +1078,11 @@ func (p *ParticipantImpl) updateRidsFromUnparsedSDP(offer *webrtc.SessionDescrip
 
 	p.updateRidsFromSDP(parsed)
 }
+*/
 
-func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription) {
+func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription, unmatchVideos []*sdp.MediaDescription) {
 	for _, m := range parsed.MediaDescriptions {
-		if m.MediaName.Media != "video" {
+		if m.MediaName.Media != "video" || !slices.Contains(unmatchVideos, m) {
 			continue
 		}
 
@@ -1088,14 +1090,12 @@ func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription) {
 		if mst == "" {
 			continue
 		}
+		p.pubLogger.Debugw("RAJA pending track mst", "mst", mst) // REMOVE
 
 		getRids := func(inRids buffer.VideoLayersRid) buffer.VideoLayersRid {
 			var outRids buffer.VideoLayersRid
 			rids, ok := sdpHelper.GetSimulcastRids(m)
 			if ok {
-				// does not work for clients that use a different media stream track in SDP (e.g. Firefox)
-				// one option is to look up by track type, but that fails when there are multiple pending tracks
-				// of the same type
 				n := min(len(rids), len(inRids))
 				for i := 0; i < n; i++ {
 					outRids[i] = rids[i]
@@ -1114,8 +1114,14 @@ func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription) {
 		}
 
 		p.pendingTracksLock.Lock()
-		pti := p.getPendingTrackBySdpCid(mst, true)
+		pti := p.getPendingTrackPrimaryBySdpCid(mst, true)
 		if pti != nil {
+			/* RAJA-TODO
+			if pti.migrated {
+				continue
+			}
+			*/
+
 			pti.sdpRids = getRids(pti.sdpRids)
 			p.pubLogger.Debugw(
 				"pending track rids updated",
@@ -1127,6 +1133,7 @@ func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription) {
 			for _, codec := range ti.Codecs {
 				if codec.Cid == mst || codec.SdpCid == mst {
 					mimeType := mime.NormalizeMimeType(codec.MimeType)
+					p.pubLogger.Debugw("RAJA pending track rids updated mime", "mime", mimeType) // REMOVE
 					for _, layer := range codec.Layers {
 						layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(mimeType, layer.Quality, ti)
 						layer.Rid = buffer.VideoQualityToRid(mimeType, layer.Quality, ti, pti.sdpRids)
@@ -1190,10 +1197,13 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription, offerId u
 		}
 	}
 
-	unmatchAudios, unmatchVideos := p.populateSdpCid(parsedOffer)
 	// RAJA-TODO: log more than one pending media by type, can this gracefully fail?
-	parsedOffer = p.setCodecPreferencesForPublisher(parsedOffer, unmatchAudios, unmatchVideos)
-	p.updateRidsFromSDP(parsedOffer)
+	parsedOffer, _, _ = p.setCodecPreferencesForPublisher(parsedOffer /* RAJA-TODO unmatchAudios, unmatchVideos */)
+	// RAJA-TODO unmatchAudios, unmatchVideos := p.populateSdpCid(parsedOffer)
+	/* RAJA-TODO
+	p.populateSdpCid(parsedOffer, unmatchAudios, unmatchVideos)
+	p.updateRidsFromSDP(parsedOffer, unmatchVideos)
+	*/
 
 	// put together munged offer after setting codec preferences
 	bytes, err := parsedOffer.Marshal()
@@ -1289,7 +1299,12 @@ func (p *ParticipantImpl) handleMigrateTracks() []*MediaTrack {
 		}
 
 		if len(pti.trackInfos) > 1 {
-			p.pubLogger.Warnw("too many pending migrated tracks", nil, "trackID", pti.trackInfos[0].Sid, "count", len(pti.trackInfos), "cid", cid)
+			p.pubLogger.Warnw(
+				"too many pending migrated tracks", nil,
+				"trackID", pti.trackInfos[0].Sid,
+				"count", len(pti.trackInfos),
+				"cid", cid,
+			)
 		}
 
 		mt := p.addMigratedTrack(cid, pti.trackInfos[0])
@@ -1354,19 +1369,20 @@ func (p *ParticipantImpl) SetMigrateInfo(
 
 		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{
 			trackInfos: []*livekit.TrackInfo{ti},
-			sdpRids:    buffer.DefaultVideoLayersRid,
+			sdpRids:    buffer.DefaultVideoLayersRid, // RAJA-REMOVE
 			migrated:   true,
 			createdAt:  time.Now(),
 		}
 		p.pubLogger.Infow(
 			"pending track added (migration)",
 			"trackID", ti.Sid,
+			"cid", t.GetCid(),
 			"pendingTrack", p.pendingTracks[t.GetCid()],
 		)
 	}
 	p.pendingTracksLock.Unlock()
 
-	p.updateRidsFromUnparsedSDP(previousOffer)
+	// RAJA-REMOVE p.updateRidsFromUnparsedSDP(previousOffer)
 
 	if len(mediaTracks) != 0 {
 		p.setIsPublisher(true)
@@ -2640,6 +2656,12 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(
 	subscribedQualities []*livekit.SubscribedCodec,
 	maxSubscribedQualities []types.SubscribedCodecQuality,
 ) error {
+	p.pubLogger.Debugw(
+		"processing max subscribed quality",
+		"trackID", trackID,
+		"qualities", subscribedQualities,
+		"max", maxSubscribedQualities,
+	) // REMOVE
 	if p.params.DisableDynacast {
 		return nil
 	}
@@ -3089,7 +3111,11 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 	p.pubLogger.Infow("add migrated track", "cid", cid, "trackID", ti.Sid, "track", logger.Proto(ti))
 	rtpReceiver := p.TransportManager.GetPublisherRTPReceiver(ti.Mid)
 	if rtpReceiver == nil {
-		p.pubLogger.Errorw("could not find receiver for migrated track", nil, "trackID", ti.Sid, "mid", ti.Mid)
+		p.pubLogger.Errorw(
+			"could not find receiver for migrated track", nil,
+			"trackID", ti.Sid,
+			"mid", ti.Mid,
+		)
 		return nil
 	}
 
@@ -3315,13 +3341,15 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 	return signalCid, utils.CloneProto(pendingInfo.trackInfos[0]), pendingInfo.sdpRids, pendingInfo.migrated, pendingInfo.createdAt
 }
 
-func (p *ParticipantImpl) getPendingTrackBySdpCid(sdpCid string, skipQueued bool) *pendingTrackInfo {
-	for _, pti := range p.pendingTracks {
+func (p *ParticipantImpl) getPendingTrackPrimaryBySdpCid(sdpCid string, skipQueued bool) *pendingTrackInfo {
+	for cid, pti := range p.pendingTracks {
 		ti := pti.trackInfos[0]
-		for _, c := range ti.Codecs {
-			if c.Cid == sdpCid || c.SdpCid == sdpCid {
-				return pti
-			}
+		if len(ti.Codecs) == 0 {
+			continue
+		}
+		if ti.Codecs[0].Cid == sdpCid || ti.Codecs[0].SdpCid == sdpCid {
+			p.pubLogger.Debugw("RAJA pending track mst found", "sdpCid", sdpCid, "codecSignalCid", ti.Codecs[0].Cid, "codecSdpCid", ti.Codecs[0].SdpCid, "cid", cid) // REMOVE
+			return pti
 		}
 	}
 
