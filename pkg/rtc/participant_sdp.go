@@ -21,23 +21,123 @@ import (
 
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
+	"golang.org/x/exp/maps"
 
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	lksdp "github.com/livekit/protocol/sdp"
+	"github.com/livekit/protocol/utils"
 )
 
-func (p *ParticipantImpl) setCodecPreferencesForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
-	offer = p.setCodecPreferencesOpusRedForPublisher(offer)
-	offer = p.setCodecPreferencesVideoForPublisher(offer)
-	return offer
+func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([]*sdp.MediaDescription, []*sdp.MediaDescription) {
+	processUnmatch := func(unmatches []*sdp.MediaDescription, trackType livekit.TrackType) {
+		for _, unmatch := range unmatches {
+			streamID, ok := lksdp.ExtractStreamID(unmatch)
+			if !ok {
+				continue
+			}
+
+			sdpCodecs, err := lksdp.CodecsFromMediaDescription(unmatch)
+			if err != nil || len(sdpCodecs) == 0 {
+				p.pubLogger.Errorw(
+					"extract codecs from media section failed", err,
+					"media", unmatch,
+					"parsedOffer", parsedOffer,
+				)
+				continue
+			}
+
+			p.pendingTracksLock.Lock()
+			signalCid, info, _, _, _ := p.getPendingTrack(streamID, trackType, false)
+			if info == nil {
+				p.pendingTracksLock.Unlock()
+
+				p.pubLogger.Warnw(
+					"could not find pending track", nil,
+					"media", unmatch,
+					"parsedOffer", parsedOffer,
+				)
+				continue
+			}
+			p.pubLogger.Debugw("RAJA processing signalCid", "signalCid", signalCid, "streamID", streamID) // REMOVE
+
+			found := false
+			updated := false
+			for _, codec := range info.Codecs {
+				for _, sdpCodec := range sdpCodecs {
+					if mime.NormalizeMimeTypeCodec(sdpCodec.Name) == mime.GetMimeTypeCodec(codec.MimeType) {
+						// set SdpCid only if different from SignalCid
+						if streamID != codec.Cid {
+							codec.SdpCid = streamID
+							updated = true
+						}
+						found = true
+						break
+					}
+				}
+				if found {
+					break
+				}
+			}
+
+			if !found {
+				// not using SimulcastCodec, i. e. mime type not available till track publish
+				if len(info.Codecs) == 1 {
+					// set SdpCid only if different from SignalCid
+					if streamID != info.Codecs[0].Cid {
+						info.Codecs[0].SdpCid = streamID
+						updated = true
+					}
+				}
+			}
+
+			if updated {
+				p.pendingTracks[signalCid].trackInfos[0] = utils.CloneProto(info)
+			}
+			p.pubLogger.Debugw("RAJA pending tracks", "pendingTracks", logger.ObjectSlice(maps.Values(p.pendingTracks))) // REMOVE
+			p.pendingTracksLock.Unlock()
+		}
+	}
+
+	unmatchAudios, err := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "audio")
+	if err != nil {
+		p.pubLogger.Warnw("could not get unmatched audios", err)
+		return nil, nil
+	}
+
+	unmatchVideos, err := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "video")
+	if err != nil {
+		p.pubLogger.Warnw("could not get unmatched audios", err)
+		return nil, nil
+	}
+	p.pubLogger.Debugw("RAJA unmatched", "audios", len(unmatchAudios), "videos", len(unmatchVideos)) // REMOVE
+
+	processUnmatch(unmatchAudios, livekit.TrackType_AUDIO)
+	processUnmatch(unmatchVideos, livekit.TrackType_VIDEO)
+	return unmatchAudios, unmatchVideos
 }
 
-func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
-	parsed, unmatchAudios, err := p.TransportManager.GetUnmatchMediaForOffer(offer, "audio")
+func (p *ParticipantImpl) setCodecPreferencesForPublisher(
+	parsedOffer *sdp.SessionDescription,
+	unmatchedAudios []*sdp.MediaDescription,
+	unmatchedVideos []*sdp.MediaDescription,
+) *sdp.SessionDescription {
+	parsedOffer = p.setCodecPreferencesOpusRedForPublisher(parsedOffer, unmatchedAudios)
+	parsedOffer = p.setCodecPreferencesVideoForPublisher(parsedOffer, unmatchedVideos)
+	return parsedOffer
+}
+
+func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(
+	parsedOffer *sdp.SessionDescription,
+	unmatchAudios []*sdp.MediaDescription,
+) *sdp.SessionDescription {
+	/* RAJA-REMOVE
+	unmatchAudios, err := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "audio")
 	if err != nil || len(unmatchAudios) == 0 {
-		return offer
+		return parsedOffer
 	}
+	*/
 
 	for _, unmatchAudio := range unmatchAudios {
 		streamID, ok := lksdp.ExtractStreamID(unmatchAudio)
@@ -53,7 +153,11 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.Se
 
 		codecs, err := lksdp.CodecsFromMediaDescription(unmatchAudio)
 		if err != nil {
-			p.pubLogger.Errorw("extract codecs from media section failed", err, "media", unmatchAudio, "offer", offer)
+			p.pubLogger.Errorw(
+				"extract codecs from media section failed", err,
+				"media", unmatchAudio,
+				"parsedOffer", parsedOffer,
+			)
 			continue
 		}
 
@@ -102,6 +206,7 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.Se
 		unmatchAudio.MediaName.Formats = append(unmatchAudio.MediaName.Formats, leftCodecs...)
 	}
 
+	/* RAJA-REMOVE
 	bytes, err := parsed.Marshal()
 	if err != nil {
 		p.pubLogger.Errorw("failed to marshal offer", err)
@@ -112,13 +217,20 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.Se
 		Type: offer.Type,
 		SDP:  string(bytes),
 	}
+	*/
+	return parsedOffer
 }
 
-func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
-	parsed, unmatchVideos, err := p.TransportManager.GetUnmatchMediaForOffer(offer, "video")
+func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(
+	parsedOffer *sdp.SessionDescription,
+	unmatchVideos []*sdp.MediaDescription,
+) *sdp.SessionDescription {
+	/* RAJA-REMOVE
+	unmatchVideos, err := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "video")
 	if err != nil || len(unmatchVideos) == 0 {
-		return offer
+		return parsedOffer
 	}
+	*/
 	// unmatched video is pending for publish, set codec preference
 	for _, unmatchVideo := range unmatchVideos {
 		streamID, ok := lksdp.ExtractStreamID(unmatchVideo)
@@ -141,7 +253,7 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 		}
 		var mimeType string
 		for _, c := range info.Codecs {
-			if c.Cid == streamID {
+			if c.Cid == streamID || c.SdpCid == streamID /* RAJA-TODO: this needs to be set before this function is run?, but a chicken and egg problem */ {
 				mimeType = c.MimeType
 				break
 			}
@@ -154,7 +266,11 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 		if mimeType != "" {
 			codecs, err := lksdp.CodecsFromMediaDescription(unmatchVideo)
 			if err != nil {
-				p.pubLogger.Errorw("extract codecs from media section failed", err, "media", unmatchVideo, "offer", offer)
+				p.pubLogger.Errorw(
+					"extract codecs from media section failed", err,
+					"media", unmatchVideo,
+					"parsedOffer", parsedOffer,
+				)
 				continue
 			}
 
@@ -175,6 +291,7 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 		}
 	}
 
+	/* RAJA-REMOVE
 	bytes, err := parsed.Marshal()
 	if err != nil {
 		p.pubLogger.Errorw("failed to marshal offer", err)
@@ -185,6 +302,8 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 		Type: offer.Type,
 		SDP:  string(bytes),
 	}
+	*/
+	return parsedOffer
 }
 
 // configure publisher answer for audio track's dtx and stereo settings

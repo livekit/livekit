@@ -711,7 +711,6 @@ func (t *MediaTrackReceiver) UpdateCodecInfo(codecs []*livekit.SimulcastCodec) {
 					mimeType := mime.NormalizeMimeType(origin.MimeType)
 					for _, layer := range origin.Layers {
 						layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(mimeType, layer.Quality, trackInfo)
-						// SIMULCAST-CODEC-TODO: need to map RIDs from SDP -> SimulcastCodecInfo
 						layer.Rid = buffer.VideoQualityToRid(mimeType, layer.Quality, trackInfo, buffer.DefaultVideoLayersRid)
 					}
 				}
@@ -719,6 +718,27 @@ func (t *MediaTrackReceiver) UpdateCodecInfo(codecs []*livekit.SimulcastCodec) {
 				break
 			}
 		}
+	}
+	t.trackInfo.Store(trackInfo)
+	t.lock.Unlock()
+
+	t.updateTrackInfoOfReceivers()
+}
+
+func (t *MediaTrackReceiver) UpdateCodecRids(mimeType mime.MimeType, rids buffer.VideoLayersRid) {
+	t.lock.Lock()
+	trackInfo := t.TrackInfoClone()
+	for _, origin := range trackInfo.Codecs {
+		originMimeType := mime.NormalizeMimeType(origin.MimeType)
+		if originMimeType != mimeType {
+			continue
+		}
+
+		for _, layer := range origin.Layers {
+			layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(mimeType, layer.Quality, trackInfo)
+			layer.Rid = buffer.VideoQualityToRid(mimeType, layer.Quality, trackInfo, rids)
+		}
+		break
 	}
 	t.trackInfo.Store(trackInfo)
 	t.lock.Unlock()

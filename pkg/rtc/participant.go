@@ -27,6 +27,7 @@ import (
 	"github.com/frostbyte73/core"
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/pion/rtcp"
+	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
@@ -1009,13 +1010,8 @@ func (p *ParticipantImpl) HandleSignalSourceClose() {
 	}
 }
 
-func (p *ParticipantImpl) synthesizeAddTrackRequests(offer webrtc.SessionDescription) error {
-	parsed, err := offer.Unmarshal()
-	if err != nil {
-		return err
-	}
-
-	for _, m := range parsed.MediaDescriptions {
+func (p *ParticipantImpl) synthesizeAddTrackRequests(parsedOffer *sdp.SessionDescription) error {
+	for _, m := range parsedOffer.MediaDescriptions {
 		if !strings.EqualFold(m.MediaName.Media, "audio") && !strings.EqualFold(m.MediaName.Media, "video") {
 			continue
 		}
@@ -1068,16 +1064,21 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(offer webrtc.SessionDescrip
 	return nil
 }
 
-func (p *ParticipantImpl) updateRidsFromSDP(offer *webrtc.SessionDescription) {
+func (p *ParticipantImpl) updateRidsFromUnparsedSDP(offer *webrtc.SessionDescription) {
 	if offer == nil {
 		return
 	}
 
 	parsed, err := offer.Unmarshal()
 	if err != nil {
+		p.pubLogger.Warnw("could not parse offer", err, "offer", offer)
 		return
 	}
 
+	p.updateRidsFromSDP(parsed)
+}
+
+func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription) {
 	for _, m := range parsed.MediaDescriptions {
 		if m.MediaName.Media != "video" {
 			continue
@@ -1088,33 +1089,78 @@ func (p *ParticipantImpl) updateRidsFromSDP(offer *webrtc.SessionDescription) {
 			continue
 		}
 
-		// SIMULCAST-CODEC-TODO - have to update published track's TrackInfo when backup codec starts publishing
-
-		p.pendingTracksLock.Lock()
-		pti := p.pendingTracks[mst]
-		if pti != nil {
+		getRids := func(inRids buffer.VideoLayersRid) buffer.VideoLayersRid {
+			var outRids buffer.VideoLayersRid
 			rids, ok := sdpHelper.GetSimulcastRids(m)
 			if ok {
 				// does not work for clients that use a different media stream track in SDP (e.g. Firefox)
 				// one option is to look up by track type, but that fails when there are multiple pending tracks
 				// of the same type
-				n := min(len(rids), len(pti.sdpRids))
+				n := min(len(rids), len(inRids))
 				for i := 0; i < n; i++ {
-					pti.sdpRids[i] = rids[i]
+					outRids[i] = rids[i]
 				}
-				for i := n; i < len(pti.sdpRids); i++ {
-					pti.sdpRids[i] = ""
+				for i := n; i < len(inRids); i++ {
+					outRids[i] = ""
 				}
-				pti.sdpRids = buffer.NormalizeVideoLayersRid(pti.sdpRids)
+				outRids = buffer.NormalizeVideoLayersRid(outRids)
+			} else {
+				for i := 0; i < len(inRids); i++ {
+					outRids[i] = ""
+				}
+			}
 
-				p.pubLogger.Debugw(
-					"pending track rids updated",
-					"trackID", pti.trackInfos[0].Sid,
-					"pendingTrack", pti,
-				)
+			return outRids
+		}
+
+		p.pendingTracksLock.Lock()
+		pti := p.getPendingTrackBySdpCid(mst, true)
+		if pti != nil {
+			pti.sdpRids = getRids(pti.sdpRids)
+			p.pubLogger.Debugw(
+				"pending track rids updated",
+				"trackID", pti.trackInfos[0].Sid,
+				"pendingTrack", pti,
+			)
+
+			ti := pti.trackInfos[0]
+			for _, codec := range ti.Codecs {
+				if codec.Cid == mst || codec.SdpCid == mst {
+					mimeType := mime.NormalizeMimeType(codec.MimeType)
+					for _, layer := range codec.Layers {
+						layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(mimeType, layer.Quality, ti)
+						layer.Rid = buffer.VideoQualityToRid(mimeType, layer.Quality, ti, pti.sdpRids)
+					}
+				}
 			}
 		}
 		p.pendingTracksLock.Unlock()
+
+		if pti == nil {
+			// track could already be published, but this could be back up codec offer,
+			// so check in published tracks also
+			mt := p.getPublishedTrackBySdpCid(mst)
+			if mt != nil {
+				mimeType := mt.(*MediaTrack).GetMimeTypeForSdpCid(mst)
+				if mimeType != mime.MimeTypeUnknown {
+					rids := getRids(buffer.DefaultVideoLayersRid)
+					mt.(*MediaTrack).UpdateCodecRids(mimeType, rids)
+					p.pubLogger.Debugw(
+						"published track rids updated",
+						"trackID", mt.ID(),
+						"mime", mimeType,
+						"track", logger.Proto(mt.ToProto()),
+					)
+				} else {
+					p.pubLogger.Warnw(
+						"could not get mime type for sdp cid", nil,
+						"trackID", mt.ID(),
+						"sdpCid", mst,
+						"track", logger.Proto(mt.ToProto()),
+					)
+				}
+			}
+		}
 	}
 }
 
@@ -1127,25 +1173,51 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription, offerId u
 		"offerId", offerId,
 	)
 
+	parsedOffer, err := offer.Unmarshal()
+	if err != nil {
+		p.pubLogger.Warnw(
+			"could not parse offer", err,
+			"transport", livekit.SignalTarget_PUBLISHER,
+			"offer", offer,
+			"offerId", offerId,
+		)
+		return err
+	}
+
 	if p.params.UseOneShotSignallingMode {
-		if err := p.synthesizeAddTrackRequests(offer); err != nil {
+		if err := p.synthesizeAddTrackRequests(parsedOffer); err != nil {
 			return err
 		}
 	}
 
-	shouldPend := false
-	if p.MigrateState() == types.MigrateStateInit {
-		shouldPend = true
+	unmatchAudios, unmatchVideos := p.populateSdpCid(parsedOffer)
+	// RAJA-TODO: log more than one pending media by type, can this gracefully fail?
+	parsedOffer = p.setCodecPreferencesForPublisher(parsedOffer, unmatchAudios, unmatchVideos)
+	p.updateRidsFromSDP(parsedOffer)
+
+	// put together munged offer after setting codec preferences
+	bytes, err := parsedOffer.Marshal()
+	if err != nil {
+		p.pubLogger.Errorw("failed to marshal offer", err)
+		return err
 	}
 
-	offer = p.setCodecPreferencesForPublisher(offer)
-	p.updateRidsFromSDP(&offer)
-	err := p.TransportManager.HandleOffer(offer, offerId, shouldPend)
+	offer = webrtc.SessionDescription{
+		Type: offer.Type,
+		SDP:  string(bytes),
+	}
+
+	err = p.TransportManager.HandleOffer(offer, offerId, p.MigrateState() == types.MigrateStateInit)
+	if err != nil {
+		return err
+	}
+
 	if p.params.UseOneShotSignallingMode {
 		if onSubscriberReady := p.getOnSubscriberReady(); onSubscriberReady != nil {
 			go onSubscriberReady(p)
 		}
 	}
+
 	return err
 }
 
@@ -1294,7 +1366,7 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	}
 	p.pendingTracksLock.Unlock()
 
-	p.updateRidsFromSDP(previousOffer)
+	p.updateRidsFromUnparsedSDP(previousOffer)
 
 	if len(mediaTracks) != 0 {
 		p.setIsPublisher(true)
@@ -2627,8 +2699,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		}
 
 		track.(*MediaTrack).UpdateCodecInfo(req.SimulcastCodecs)
-		ti := track.ToProto()
-		return ti
+		return track.ToProto()
 	}
 
 	backupCodecPolicy := req.BackupCodecPolicy
@@ -2637,6 +2708,10 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 
 	cloneLayers := func(layers []*livekit.VideoLayer) []*livekit.VideoLayer {
+		if len(layers) == 0 {
+			return nil
+		}
+
 		clonedLayers := make([]*livekit.VideoLayer, 0, len(layers))
 		for _, l := range layers {
 			clonedLayers = append(clonedLayers, utils.CloneProto(l))
@@ -2672,13 +2747,11 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	p.setTrackID(req.Cid, ti)
 
 	if len(req.SimulcastCodecs) == 0 {
-		if req.Type == livekit.TrackType_VIDEO {
-			// clients not supporting simulcast codecs, synthesise a codec
-			ti.Codecs = append(ti.Codecs, &livekit.SimulcastCodecInfo{
-				Cid:    req.Cid,
-				Layers: cloneLayers(req.Layers),
-			})
-		}
+		// clients not supporting simulcast codecs, synthesise a codec
+		ti.Codecs = append(ti.Codecs, &livekit.SimulcastCodecInfo{
+			Cid:    req.Cid,
+			Layers: cloneLayers(req.Layers),
+		})
 	} else {
 		seenCodecs := make(map[string]struct{})
 		for _, codec := range req.SimulcastCodecs {
@@ -2944,15 +3017,21 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 			layer.Rid = buffer.VideoQualityToRid(mimeType, layer.Quality, ti, sdpRids)
 		}
 
+		/* RAJA-REMOVE
 		for _, codec := range ti.Codecs {
+			if mime.IsMimeTypeStringEqual(codec.MimeType, track.Codec().MimeType) && track.ID() != codec.Cid {
+				codec.SdpCid = track.ID()
+			}
+
 			mimeType := mime.NormalizeMimeType(codec.MimeType)
 			for _, layer := range codec.Layers {
 				layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(mimeType, layer.Quality, ti)
 				layer.Rid = buffer.VideoQualityToRid(mimeType, layer.Quality, ti, sdpRids)
 			}
 		}
+		*/
 
-		mt = p.addMediaTrack(signalCid, track.ID(), ti)
+		mt = p.addMediaTrack(signalCid /* RAJA-REMOVE track.ID(), */, ti)
 		newTrack = true
 
 		// if the addTrackRequest is sent before participant active then it means the client tries to publish
@@ -2964,7 +3043,6 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 		pubTime = time.Since(createdAt)
 		p.dirty.Store(true)
 	}
-
 	p.pendingTracksLock.Unlock()
 
 	_, isReceiverAdded := mt.AddReceiver(rtpReceiver, track, mid)
@@ -3015,7 +3093,7 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 		return nil
 	}
 
-	mt := p.addMediaTrack(cid, cid, ti)
+	mt := p.addMediaTrack(cid /* RAJA-REMOVE cid, */, ti)
 
 	potentialCodecs := make([]webrtc.RTPCodecParameters, 0, len(ti.Codecs))
 	parameters := rtpReceiver.GetParameters()
@@ -3058,10 +3136,10 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 	return mt
 }
 
-func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *livekit.TrackInfo) *MediaTrack {
+func (p *ParticipantImpl) addMediaTrack(signalCid string /* RAJA-REMOVE sdpCid string, */, ti *livekit.TrackInfo) *MediaTrack {
 	mt := NewMediaTrack(MediaTrackParams{
-		SignalCid:             signalCid,
-		SdpCid:                sdpCid,
+		// RAJA-REMOVE SignalCid:             signalCid,
+		// RAJA-REMOVE SdpCid:                sdpCid,
 		ParticipantID:         p.ID,
 		ParticipantIdentity:   p.params.Identity,
 		ParticipantVersion:    p.version.Load(),
@@ -3112,12 +3190,12 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 	}
 
 	trackID := livekit.TrackID(ti.Sid)
-	mt.AddOnClose(func(isExpectedToRsume bool) {
+	mt.AddOnClose(func(isExpectedToResume bool) {
 		if p.supervisor != nil {
 			p.supervisor.ClearPublishedTrack(trackID, mt)
 		}
 
-		if !isExpectedToRsume {
+		if !isExpectedToResume {
 			p.params.Telemetry.TrackUnpublished(
 				context.Background(),
 				p.ID(),
@@ -3137,7 +3215,12 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, sdpCid string, ti *liv
 
 		p.dirty.Store(true)
 
-		p.pubLogger.Debugw("track unpublished", "trackID", ti.Sid, "expectedToRsume", isExpectedToRsume, "track", logger.Proto(ti))
+		p.pubLogger.Debugw(
+			"track unpublished",
+			"trackID", ti.Sid,
+			"expectedToResume", isExpectedToResume,
+			"track", logger.Proto(ti),
+		)
 		if onTrackUnpublished := p.getOnTrackUnpublished(); onTrackUnpublished != nil {
 			onTrackUnpublished(p, mt)
 		}
@@ -3232,6 +3315,19 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 	return signalCid, utils.CloneProto(pendingInfo.trackInfos[0]), pendingInfo.sdpRids, pendingInfo.migrated, pendingInfo.createdAt
 }
 
+func (p *ParticipantImpl) getPendingTrackBySdpCid(sdpCid string, skipQueued bool) *pendingTrackInfo {
+	for _, pti := range p.pendingTracks {
+		ti := pti.trackInfos[0]
+		for _, c := range ti.Codecs {
+			if c.Cid == sdpCid || c.SdpCid == sdpCid {
+				return pti
+			}
+		}
+	}
+
+	return nil
+}
+
 // setTrackID either generates a new TrackID for an AddTrackRequest
 func (p *ParticipantImpl) setTrackID(cid string, info *livekit.TrackInfo) {
 	var trackID string
@@ -3266,7 +3362,13 @@ func (p *ParticipantImpl) setTrackID(cid string, info *livekit.TrackInfo) {
 
 func (p *ParticipantImpl) getPublishedTrackBySignalCid(clientId string) types.MediaTrack {
 	for _, publishedTrack := range p.GetPublishedTracks() {
+		/* RAJA-REMOVE
 		if publishedTrack.(types.LocalMediaTrack).SignalCid() == clientId {
+			return publishedTrack
+		}
+		*/
+		if publishedTrack.(*MediaTrack).HasSignalCid(clientId) {
+			p.pubLogger.Debugw("found track by signal cid", "signalCid", clientId, "trackID", publishedTrack.ID())
 			return publishedTrack
 		}
 	}
@@ -3276,7 +3378,7 @@ func (p *ParticipantImpl) getPublishedTrackBySignalCid(clientId string) types.Me
 
 func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.MediaTrack {
 	for _, publishedTrack := range p.GetPublishedTracks() {
-		if publishedTrack.(types.LocalMediaTrack).HasSdpCid(clientId) {
+		if publishedTrack.(*MediaTrack).HasSdpCid(clientId) {
 			p.pubLogger.Debugw("found track by SDP cid", "sdpCid", clientId, "trackID", publishedTrack.ID())
 			return publishedTrack
 		}

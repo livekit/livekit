@@ -64,8 +64,8 @@ type MediaTrack struct {
 }
 
 type MediaTrackParams struct {
-	SignalCid             string
-	SdpCid                string
+	// RAJA-REMOVE SignalCid             string // RAJA-REMOVE
+	// RAJA-REMOVE SdpCid                string // RAJA-REMOVE
 	ParticipantID         func() livekit.ParticipantID
 	ParticipantIdentity   livekit.ParticipantIdentity
 	ParticipantVersion    uint32
@@ -191,14 +191,18 @@ func (t *MediaTrack) ClearSubscriberNodesMaxQuality() {
 	}
 }
 
+/* RAJA-REMOVE
 func (t *MediaTrack) SignalCid() string {
 	return t.params.SignalCid
 }
+*/
 
-func (t *MediaTrack) HasSdpCid(cid string) bool {
+func (t *MediaTrack) HasSignalCid(cid string) bool {
+	/* RAJA-REMOVE
 	if t.params.SdpCid == cid {
 		return true
 	}
+	*/
 
 	ti := t.MediaTrackReceiver.TrackInfoClone()
 	for _, c := range ti.Codecs {
@@ -207,6 +211,32 @@ func (t *MediaTrack) HasSdpCid(cid string) bool {
 		}
 	}
 	return false
+}
+
+func (t *MediaTrack) HasSdpCid(cid string) bool {
+	/* RAJA-REMOVE
+	if t.params.SdpCid == cid {
+		return true
+	}
+	*/
+
+	ti := t.MediaTrackReceiver.TrackInfoClone()
+	for _, c := range ti.Codecs {
+		if c.Cid == cid || c.SdpCid == cid {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *MediaTrack) GetMimeTypeForSdpCid(cid string) mime.MimeType {
+	ti := t.MediaTrackReceiver.TrackInfoClone()
+	for _, c := range ti.Codecs {
+		if c.Cid == cid || c.SdpCid == cid {
+			return mime.NormalizeMimeType(c.MimeType)
+		}
+	}
+	return mime.MimeTypeUnknown
 }
 
 func (t *MediaTrack) ToProto() *livekit.TrackInfo {
@@ -300,6 +330,11 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			switch len(ti.Codecs) {
 			case 0:
 				// audio track
+				t.params.Logger.Warnw(
+					"unexpected 0 codecs in track info", nil,
+					"mime", mimeType,
+					"track", logger.Proto(ti),
+				)
 				priority = 0
 			case 1:
 				// older clients or non simulcast-codec, mime type only set later
@@ -309,7 +344,11 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			}
 		}
 		if priority < 0 {
-			t.params.Logger.Warnw("could not find codec for webrtc receiver", nil, "webrtcCodec", mimeType, "track", logger.Proto(ti))
+			t.params.Logger.Warnw(
+				"could not find codec for webrtc receiver", nil,
+				"mime", mimeType,
+				"track", logger.Proto(ti),
+			)
 			t.lock.Unlock()
 			return newCodec, false
 		}
