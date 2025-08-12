@@ -1198,12 +1198,10 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription, offerId u
 	}
 
 	// RAJA-TODO: log more than one pending media by type, can this gracefully fail?
-	parsedOffer, _, _ = p.setCodecPreferencesForPublisher(parsedOffer /* RAJA-TODO unmatchAudios, unmatchVideos */)
+	parsedOffer, unmatchAudios, unmatchVideos := p.setCodecPreferencesForPublisher(parsedOffer /* RAJA-TODO unmatchAudios, unmatchVideos */)
 	// RAJA-TODO unmatchAudios, unmatchVideos := p.populateSdpCid(parsedOffer)
-	/* RAJA-TODO
 	p.populateSdpCid(parsedOffer, unmatchAudios, unmatchVideos)
 	p.updateRidsFromSDP(parsedOffer, unmatchVideos)
-	*/
 
 	// put together munged offer after setting codec preferences
 	bytes, err := parsedOffer.Marshal()
