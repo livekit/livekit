@@ -446,18 +446,6 @@ func (fake *FakeLocalParticipantHelper) ShouldRegressCodecReturnsOnCall(i int, r
 func (fake *FakeLocalParticipantHelper) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.getCachedReliableDataMessageMutex.RLock()
-	defer fake.getCachedReliableDataMessageMutex.RUnlock()
-	fake.getParticipantInfoMutex.RLock()
-	defer fake.getParticipantInfoMutex.RUnlock()
-	fake.getRegionSettingsMutex.RLock()
-	defer fake.getRegionSettingsMutex.RUnlock()
-	fake.getSubscriberForwarderStateMutex.RLock()
-	defer fake.getSubscriberForwarderStateMutex.RUnlock()
-	fake.resolveMediaTrackMutex.RLock()
-	defer fake.resolveMediaTrackMutex.RUnlock()
-	fake.shouldRegressCodecMutex.RLock()
-	defer fake.shouldRegressCodecMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

@@ -392,16 +392,6 @@ func (fake *FakeAgentStore) StoreAgentJobReturnsOnCall(i int, result1 error) {
 func (fake *FakeAgentStore) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.deleteAgentDispatchMutex.RLock()
-	defer fake.deleteAgentDispatchMutex.RUnlock()
-	fake.deleteAgentJobMutex.RLock()
-	defer fake.deleteAgentJobMutex.RUnlock()
-	fake.listAgentDispatchesMutex.RLock()
-	defer fake.listAgentDispatchesMutex.RUnlock()
-	fake.storeAgentDispatchMutex.RLock()
-	defer fake.storeAgentDispatchMutex.RUnlock()
-	fake.storeAgentJobMutex.RLock()
-	defer fake.storeAgentJobMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

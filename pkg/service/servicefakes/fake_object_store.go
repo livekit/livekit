@@ -807,26 +807,6 @@ func (fake *FakeObjectStore) UnlockRoomReturnsOnCall(i int, result1 error) {
 func (fake *FakeObjectStore) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.deleteParticipantMutex.RLock()
-	defer fake.deleteParticipantMutex.RUnlock()
-	fake.deleteRoomMutex.RLock()
-	defer fake.deleteRoomMutex.RUnlock()
-	fake.listParticipantsMutex.RLock()
-	defer fake.listParticipantsMutex.RUnlock()
-	fake.listRoomsMutex.RLock()
-	defer fake.listRoomsMutex.RUnlock()
-	fake.loadParticipantMutex.RLock()
-	defer fake.loadParticipantMutex.RUnlock()
-	fake.loadRoomMutex.RLock()
-	defer fake.loadRoomMutex.RUnlock()
-	fake.lockRoomMutex.RLock()
-	defer fake.lockRoomMutex.RUnlock()
-	fake.storeParticipantMutex.RLock()
-	defer fake.storeParticipantMutex.RUnlock()
-	fake.storeRoomMutex.RLock()
-	defer fake.storeRoomMutex.RUnlock()
-	fake.unlockRoomMutex.RLock()
-	defer fake.unlockRoomMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

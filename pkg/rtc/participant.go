@@ -3336,7 +3336,7 @@ func (p *ParticipantImpl) setTrackID(cid string, info *livekit.TrackInfo) {
 
 func (p *ParticipantImpl) getPublishedTrackBySignalCid(clientId string) types.MediaTrack {
 	for _, publishedTrack := range p.GetPublishedTracks() {
-		if publishedTrack.(*MediaTrack).HasSignalCid(clientId) {
+		if publishedTrack.(types.LocalMediaTrack).HasSignalCid(clientId) {
 			p.pubLogger.Debugw("found track by signal cid", "signalCid", clientId, "trackID", publishedTrack.ID())
 			return publishedTrack
 		}
@@ -3347,7 +3347,7 @@ func (p *ParticipantImpl) getPublishedTrackBySignalCid(clientId string) types.Me
 
 func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.MediaTrack {
 	for _, publishedTrack := range p.GetPublishedTracks() {
-		if publishedTrack.(*MediaTrack).HasSdpCid(clientId) {
+		if publishedTrack.(types.LocalMediaTrack).HasSdpCid(clientId) {
 			p.pubLogger.Debugw("found track by SDP cid", "sdpCid", clientId, "trackID", publishedTrack.ID())
 			return publishedTrack
 		}

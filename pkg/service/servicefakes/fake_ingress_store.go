@@ -552,20 +552,6 @@ func (fake *FakeIngressStore) UpdateIngressStateReturnsOnCall(i int, result1 err
 func (fake *FakeIngressStore) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.deleteIngressMutex.RLock()
-	defer fake.deleteIngressMutex.RUnlock()
-	fake.listIngressMutex.RLock()
-	defer fake.listIngressMutex.RUnlock()
-	fake.loadIngressMutex.RLock()
-	defer fake.loadIngressMutex.RUnlock()
-	fake.loadIngressFromStreamKeyMutex.RLock()
-	defer fake.loadIngressFromStreamKeyMutex.RUnlock()
-	fake.storeIngressMutex.RLock()
-	defer fake.storeIngressMutex.RUnlock()
-	fake.updateIngressMutex.RLock()
-	defer fake.updateIngressMutex.RUnlock()
-	fake.updateIngressStateMutex.RLock()
-	defer fake.updateIngressStateMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

@@ -140,7 +140,7 @@ func TestTrackPublishing(t *testing.T) {
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
 		track := &typesfakes.FakeLocalMediaTrack{}
-		track.SignalCidReturns("cid")
+		track.HasSignalCidCalls(func(s string) bool { return s == "cid" })
 		track.ToProtoReturns(&livekit.TrackInfo{})
 		// directly add to publishedTracks without lock - for testing purpose only
 		p.UpTrackManager.publishedTracks["cid"] = track

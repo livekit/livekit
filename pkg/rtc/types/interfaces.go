@@ -610,6 +610,9 @@ type LocalMediaTrack interface {
 
 	Restart()
 
+	HasSignalCid(cid string) bool
+	HasSdpCid(cid string) bool
+
 	GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality)
 	GetTrackStats() *livekit.RTPStats
 
