@@ -1064,22 +1064,6 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(parsedOffer *sdp.SessionDes
 	return nil
 }
 
-/* RAJA-REMOVE
-func (p *ParticipantImpl) updateRidsFromUnparsedSDP(offer *webrtc.SessionDescription) {
-	if offer == nil {
-		return
-	}
-
-	parsed, err := offer.Unmarshal()
-	if err != nil {
-		p.pubLogger.Warnw("could not parse offer", err, "offer", offer)
-		return
-	}
-
-	p.updateRidsFromSDP(parsed)
-}
-*/
-
 func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription, unmatchVideos []*sdp.MediaDescription) {
 	for _, m := range parsed.MediaDescriptions {
 		if m.MediaName.Media != "video" || !slices.Contains(unmatchVideos, m) {
@@ -1090,7 +1074,6 @@ func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription, unma
 		if mst == "" {
 			continue
 		}
-		p.pubLogger.Debugw("RAJA pending track mst", "mst", mst) // REMOVE
 
 		getRids := func(inRids buffer.VideoLayersRid) buffer.VideoLayersRid {
 			var outRids buffer.VideoLayersRid
@@ -1116,12 +1099,6 @@ func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription, unma
 		p.pendingTracksLock.Lock()
 		pti := p.getPendingTrackPrimaryBySdpCid(mst, true)
 		if pti != nil {
-			/* RAJA-TODO
-			if pti.migrated {
-				continue
-			}
-			*/
-
 			pti.sdpRids = getRids(pti.sdpRids)
 			p.pubLogger.Debugw(
 				"pending track rids updated",
@@ -1133,7 +1110,6 @@ func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription, unma
 			for _, codec := range ti.Codecs {
 				if codec.Cid == mst || codec.SdpCid == mst {
 					mimeType := mime.NormalizeMimeType(codec.MimeType)
-					p.pubLogger.Debugw("RAJA pending track rids updated mime", "mime", mimeType) // REMOVE
 					for _, layer := range codec.Layers {
 						layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(mimeType, layer.Quality, ti)
 						layer.Rid = buffer.VideoQualityToRid(mimeType, layer.Quality, ti, pti.sdpRids)
@@ -1197,9 +1173,7 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription, offerId u
 		}
 	}
 
-	// RAJA-TODO: log more than one pending media by type, can this gracefully fail?
-	parsedOffer, unmatchAudios, unmatchVideos := p.setCodecPreferencesForPublisher(parsedOffer /* RAJA-TODO unmatchAudios, unmatchVideos */)
-	// RAJA-TODO unmatchAudios, unmatchVideos := p.populateSdpCid(parsedOffer)
+	parsedOffer, unmatchAudios, unmatchVideos := p.setCodecPreferencesForPublisher(parsedOffer)
 	p.populateSdpCid(parsedOffer, unmatchAudios, unmatchVideos)
 	p.updateRidsFromSDP(parsedOffer, unmatchVideos)
 
@@ -1367,7 +1341,6 @@ func (p *ParticipantImpl) SetMigrateInfo(
 
 		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{
 			trackInfos: []*livekit.TrackInfo{ti},
-			sdpRids:    buffer.DefaultVideoLayersRid, // RAJA-REMOVE
 			migrated:   true,
 			createdAt:  time.Now(),
 		}
@@ -1379,8 +1352,6 @@ func (p *ParticipantImpl) SetMigrateInfo(
 		)
 	}
 	p.pendingTracksLock.Unlock()
-
-	// RAJA-REMOVE p.updateRidsFromUnparsedSDP(previousOffer)
 
 	if len(mediaTracks) != 0 {
 		p.setIsPublisher(true)
@@ -2654,12 +2625,6 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(
 	subscribedQualities []*livekit.SubscribedCodec,
 	maxSubscribedQualities []types.SubscribedCodecQuality,
 ) error {
-	p.pubLogger.Debugw(
-		"processing max subscribed quality",
-		"trackID", trackID,
-		"qualities", subscribedQualities,
-		"max", maxSubscribedQualities,
-	) // REMOVE
 	if p.params.DisableDynacast {
 		return nil
 	}
@@ -3037,21 +3002,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 			layer.Rid = buffer.VideoQualityToRid(mimeType, layer.Quality, ti, sdpRids)
 		}
 
-		/* RAJA-REMOVE
-		for _, codec := range ti.Codecs {
-			if mime.IsMimeTypeStringEqual(codec.MimeType, track.Codec().MimeType) && track.ID() != codec.Cid {
-				codec.SdpCid = track.ID()
-			}
-
-			mimeType := mime.NormalizeMimeType(codec.MimeType)
-			for _, layer := range codec.Layers {
-				layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(mimeType, layer.Quality, ti)
-				layer.Rid = buffer.VideoQualityToRid(mimeType, layer.Quality, ti, sdpRids)
-			}
-		}
-		*/
-
-		mt = p.addMediaTrack(signalCid /* RAJA-REMOVE track.ID(), */, ti)
+		mt = p.addMediaTrack(signalCid, ti)
 		newTrack = true
 
 		// if the addTrackRequest is sent before participant active then it means the client tries to publish
@@ -3117,7 +3068,7 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 		return nil
 	}
 
-	mt := p.addMediaTrack(cid /* RAJA-REMOVE cid, */, ti)
+	mt := p.addMediaTrack(cid, ti)
 
 	potentialCodecs := make([]webrtc.RTPCodecParameters, 0, len(ti.Codecs))
 	parameters := rtpReceiver.GetParameters()
@@ -3160,10 +3111,8 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 	return mt
 }
 
-func (p *ParticipantImpl) addMediaTrack(signalCid string /* RAJA-REMOVE sdpCid string, */, ti *livekit.TrackInfo) *MediaTrack {
+func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo) *MediaTrack {
 	mt := NewMediaTrack(MediaTrackParams{
-		// RAJA-REMOVE SignalCid:             signalCid,
-		// RAJA-REMOVE SdpCid:                sdpCid,
 		ParticipantID:         p.ID,
 		ParticipantIdentity:   p.params.Identity,
 		ParticipantVersion:    p.version.Load(),
@@ -3340,13 +3289,12 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 }
 
 func (p *ParticipantImpl) getPendingTrackPrimaryBySdpCid(sdpCid string, skipQueued bool) *pendingTrackInfo {
-	for cid, pti := range p.pendingTracks {
+	for _, pti := range p.pendingTracks {
 		ti := pti.trackInfos[0]
 		if len(ti.Codecs) == 0 {
 			continue
 		}
 		if ti.Codecs[0].Cid == sdpCid || ti.Codecs[0].SdpCid == sdpCid {
-			p.pubLogger.Debugw("RAJA pending track mst found", "sdpCid", sdpCid, "codecSignalCid", ti.Codecs[0].Cid, "codecSdpCid", ti.Codecs[0].SdpCid, "cid", cid) // REMOVE
 			return pti
 		}
 	}
@@ -3388,11 +3336,6 @@ func (p *ParticipantImpl) setTrackID(cid string, info *livekit.TrackInfo) {
 
 func (p *ParticipantImpl) getPublishedTrackBySignalCid(clientId string) types.MediaTrack {
 	for _, publishedTrack := range p.GetPublishedTracks() {
-		/* RAJA-REMOVE
-		if publishedTrack.(types.LocalMediaTrack).SignalCid() == clientId {
-			return publishedTrack
-		}
-		*/
 		if publishedTrack.(*MediaTrack).HasSignalCid(clientId) {
 			p.pubLogger.Debugw("found track by signal cid", "signalCid", clientId, "trackID", publishedTrack.ID())
 			return publishedTrack

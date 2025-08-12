@@ -64,8 +64,6 @@ type MediaTrack struct {
 }
 
 type MediaTrackParams struct {
-	// RAJA-REMOVE SignalCid             string // RAJA-REMOVE
-	// RAJA-REMOVE SdpCid                string // RAJA-REMOVE
 	ParticipantID         func() livekit.ParticipantID
 	ParticipantIdentity   livekit.ParticipantIdentity
 	ParticipantVersion    uint32
@@ -191,19 +189,7 @@ func (t *MediaTrack) ClearSubscriberNodesMaxQuality() {
 	}
 }
 
-/* RAJA-REMOVE
-func (t *MediaTrack) SignalCid() string {
-	return t.params.SignalCid
-}
-*/
-
 func (t *MediaTrack) HasSignalCid(cid string) bool {
-	/* RAJA-REMOVE
-	if t.params.SdpCid == cid {
-		return true
-	}
-	*/
-
 	ti := t.MediaTrackReceiver.TrackInfoClone()
 	for _, c := range ti.Codecs {
 		if c.Cid == cid {
@@ -214,12 +200,6 @@ func (t *MediaTrack) HasSignalCid(cid string) bool {
 }
 
 func (t *MediaTrack) HasSdpCid(cid string) bool {
-	/* RAJA-REMOVE
-	if t.params.SdpCid == cid {
-		return true
-	}
-	*/
-
 	ti := t.MediaTrackReceiver.TrackInfoClone()
 	for _, c := range ti.Codecs {
 		if c.Cid == cid || c.SdpCid == cid {
@@ -535,8 +515,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 }
 
 func (t *MediaTrack) GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality) {
-	// SIMULCAST-CODEC-TODO: need to take into account codec regression policy
-	receiver := t.PrimaryReceiver()
+	receiver := t.ActiveReceiver()
 	if rtcReceiver, ok := receiver.(*sfu.WebRTCReceiver); ok {
 		return rtcReceiver.GetConnectionScoreAndQuality()
 	}

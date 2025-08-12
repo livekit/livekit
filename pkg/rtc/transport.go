@@ -425,7 +425,6 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		ir.Add(lkinterceptor.NewRTTFromXRFactory(func(rtt uint32) {}))
 	}
 	if len(params.SimTracks) > 0 {
-		params.Logger.Debugw("RAJA starting unhandled interceptor", "simTracks", params.SimTracks) // REMOVE
 		f, err := NewUnhandleSimulcastInterceptorFactory(UnhandleSimulcastTracks(params.SimTracks))
 		if err != nil {
 			params.Logger.Warnw("NewUnhandleSimulcastInterceptorFactory failed", err)

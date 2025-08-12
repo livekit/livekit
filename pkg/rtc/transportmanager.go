@@ -394,14 +394,6 @@ func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels [
 
 func (t *TransportManager) GetUnmatchMediaForOffer(parsedOffer *sdp.SessionDescription, mediaType string) (unmatched []*sdp.MediaDescription, err error) {
 	// prefer codec from offer for clients that don't support setCodecPreferences
-	/* RAJA-REMOVE
-	parsed, err = offer.Unmarshal()
-	if err != nil {
-		t.params.Logger.Errorw("failed to parse offer for codec preference", err)
-		return
-	}
-	*/
-
 	var lastMatchedMid string
 	lastAnswer := t.lastPublisherAnswer.Load()
 	if lastAnswer != nil {

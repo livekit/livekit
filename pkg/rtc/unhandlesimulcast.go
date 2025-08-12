@@ -21,7 +21,6 @@ import (
 	"github.com/pion/webrtc/v4"
 
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
-	"github.com/livekit/protocol/logger"
 )
 
 const (
@@ -66,7 +65,6 @@ type unhandleSimulcastRTPReader struct {
 func (r *unhandleSimulcastRTPReader) Read(b []byte, a interceptor.Attributes) (int, interceptor.Attributes, error) {
 	n, a, err := r.reader.Read(b, a)
 	if r.tryTimes < 0 || err != nil {
-		logger.Infow("RAJA tried enough times, cannot find RID", "error", err) // REMOVE
 		return n, a, err
 	}
 
@@ -101,12 +99,10 @@ func (r *unhandleSimulcastRTPReader) Read(b []byte, a interceptor.Attributes) (i
 	hsize2 := header.MarshalSize()
 
 	if hsize2-hsize+n > len(b) { // no enough buf to set extension
-		logger.Infow("RAJA not enough bufer") // REMOVE
 		return n, a, nil
 	}
 	copy(b[hsize2:], b[hsize:n])
 	header.MarshalTo(b)
-	logger.Infow("RAJA set mid and rid", "mid", r.Mid, "rid", r.Rid) // REMOVE
 	return hsize2 - hsize + n, a, nil
 }
 
