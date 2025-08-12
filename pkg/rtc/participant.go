@@ -1173,8 +1173,8 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription, offerId u
 		}
 	}
 
-	parsedOffer, unmatchAudios, unmatchVideos := p.setCodecPreferencesForPublisher(parsedOffer)
-	p.populateSdpCid(parsedOffer, unmatchAudios, unmatchVideos)
+	unmatchAudios, unmatchVideos := p.populateSdpCid(parsedOffer)
+	parsedOffer = p.setCodecPreferencesForPublisher(parsedOffer, unmatchAudios, unmatchVideos)
 	p.updateRidsFromSDP(parsedOffer, unmatchVideos)
 
 	// put together munged offer after setting codec preferences

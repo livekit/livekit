@@ -29,11 +29,7 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-func (p *ParticipantImpl) populateSdpCid(
-	parsedOffer *sdp.SessionDescription,
-	unmatchAudios []*sdp.MediaDescription,
-	unmatchVideos []*sdp.MediaDescription,
-) {
+func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([]*sdp.MediaDescription, []*sdp.MediaDescription) {
 	processUnmatch := func(unmatches []*sdp.MediaDescription, trackType livekit.TrackType) {
 		for _, unmatch := range unmatches {
 			streamID, ok := lksdp.ExtractStreamID(unmatch)
@@ -52,7 +48,12 @@ func (p *ParticipantImpl) populateSdpCid(
 			}
 
 			p.pendingTracksLock.Lock()
-			signalCid, info, _, _, _ := p.getPendingTrack(streamID, trackType, false)
+			signalCid, info, _, migrated, _ := p.getPendingTrack(streamID, trackType, false)
+			if migrated {
+				p.pendingTracksLock.Unlock()
+				continue
+			}
+
 			if info == nil {
 				p.pendingTracksLock.Unlock()
 
@@ -96,11 +97,11 @@ func (p *ParticipantImpl) populateSdpCid(
 
 			found := false
 			updated := false
-			for _, codec := range info.Codecs {
-				if mime.NormalizeMimeTypeCodec(sdpCodecs[0].Name) == mime.GetMimeTypeCodec(codec.MimeType) {
+			for _, sdpCodec := range sdpCodecs {
+				if mime.NormalizeMimeTypeCodec(sdpCodec.Name) == mime.GetMimeTypeCodec(info.Codecs[0].MimeType) {
 					// set SdpCid only if different from SignalCid
-					if streamID != codec.Cid {
-						codec.SdpCid = streamID
+					if streamID != info.Codecs[0].Cid {
+						info.Codecs[0].SdpCid = streamID
 						updated = true
 					}
 					found = true
@@ -129,27 +130,31 @@ func (p *ParticipantImpl) populateSdpCid(
 		}
 	}
 
-	processUnmatch(unmatchAudios, livekit.TrackType_AUDIO)
-	processUnmatch(unmatchVideos, livekit.TrackType_VIDEO)
-}
-
-func (p *ParticipantImpl) setCodecPreferencesForPublisher(
-	parsedOffer *sdp.SessionDescription,
-) (*sdp.SessionDescription, []*sdp.MediaDescription, []*sdp.MediaDescription) {
 	unmatchAudios, err := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "audio")
 	if err != nil {
 		p.pubLogger.Warnw("could not get unmatch audios", err)
-		return parsedOffer, nil, nil
+		return nil, nil
 	}
 
 	unmatchVideos, err := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "video")
 	if err != nil {
 		p.pubLogger.Warnw("could not get unmatch audios", err)
-		return parsedOffer, nil, nil
+		return nil, nil
 	}
+
+	processUnmatch(unmatchAudios, livekit.TrackType_AUDIO)
+	processUnmatch(unmatchVideos, livekit.TrackType_VIDEO)
+	return unmatchAudios, unmatchVideos
+}
+
+func (p *ParticipantImpl) setCodecPreferencesForPublisher(
+	parsedOffer *sdp.SessionDescription,
+	unmatchAudios []*sdp.MediaDescription,
+	unmatchVideos []*sdp.MediaDescription,
+) *sdp.SessionDescription {
 	parsedOffer = p.setCodecPreferencesOpusRedForPublisher(parsedOffer, unmatchAudios)
 	parsedOffer = p.setCodecPreferencesVideoForPublisher(parsedOffer, unmatchVideos)
-	return parsedOffer, unmatchAudios, unmatchVideos
+	return parsedOffer
 }
 
 func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(
@@ -252,13 +257,6 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(
 		}
 		var mimeType string
 		for _, c := range info.Codecs {
-			// SIMULCAST-CODEC-TODO: This is a bit of catch-22 situation,
-			// SDP `cid` should be set so that the following code can work,
-			// setting SDP `cid` needs the preferred codec mime type to set the `cid` for the correct codec
-			//
-			// as Firefox is the only browser which changes `cid` and it does not do simulcast codec,
-			// this should be okay. Will need a solution when a client that changes `cid` can do
-			// simulcast codecs
 			if c.Cid == streamID || c.SdpCid == streamID {
 				mimeType = c.MimeType
 				break
