@@ -41,6 +41,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/remotebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
@@ -424,6 +425,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		ir.Add(lkinterceptor.NewRTTFromXRFactory(func(rtt uint32) {}))
 	}
 	if len(params.SimTracks) > 0 {
+		params.Logger.Debugw("RAJA starting unhandled interceptor", "simTracks", params.SimTracks) // REMOVE
 		f, err := NewUnhandleSimulcastInterceptorFactory(UnhandleSimulcastTracks(params.SimTracks))
 		if err != nil {
 			params.Logger.Warnw("NewUnhandleSimulcastInterceptorFactory failed", err)
@@ -1717,9 +1719,13 @@ func (t *PCTransport) AddTrackToStreamAllocator(subTrack types.SubscribedTrack) 
 		return
 	}
 
+	layers := buffer.GetVideoLayersForMimeType(
+		subTrack.DownTrack().Mime(),
+		subTrack.MediaTrack().ToProto(),
+	)
 	t.streamAllocator.AddTrack(subTrack.DownTrack(), streamallocator.AddTrackParams{
 		Source:         subTrack.MediaTrack().Source(),
-		IsMultiLayered: len(subTrack.MediaTrack().ToProto().GetLayers()) > 1,
+		IsMultiLayered: len(layers) > 1,
 		PublisherID:    subTrack.MediaTrack().PublisherID(),
 	})
 }
