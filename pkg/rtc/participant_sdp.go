@@ -277,59 +277,62 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 		}
 		p.pendingTracksLock.RUnlock()
 
-		if mimeType != "" {
-			codecs, err := lksdp.CodecsFromMediaDescription(unmatch)
-			if err != nil {
-				p.pubLogger.Errorw(
-					"extract codecs from media section failed", err,
-					"media", unmatch,
-					"parsedOffer", parsedOffer,
-				)
-				unprocessed = append(unprocessed, unmatch)
-				continue
-			}
+		if mimeType == "" {
+			unprocessed = append(unprocessed, unmatch)
+			continue
+		}
 
-			var codecIdx int
-			var preferredCodecs, leftCodecs []string
-			for idx, c := range codecs {
-				if mime.GetMimeTypeCodec(mimeType) == mime.NormalizeMimeTypeCodec(c.Name) {
-					preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
-					codecIdx = idx
-				} else {
-					leftCodecs = append(leftCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
-				}
-			}
+		codecs, err := lksdp.CodecsFromMediaDescription(unmatch)
+		if err != nil {
+			p.pubLogger.Errorw(
+				"extract codecs from media section failed", err,
+				"media", unmatch,
+				"parsedOffer", parsedOffer,
+			)
+			unprocessed = append(unprocessed, unmatch)
+			continue
+		}
 
-			// could not find preferred mime in the offer
-			if len(preferredCodecs) == 0 {
-				unprocessed = append(unprocessed, unmatch)
-				continue
-			}
-
-			unmatch.MediaName.Formats = append(unmatch.MediaName.Formats[:0], preferredCodecs...)
-			if trackType == livekit.TrackType_VIDEO {
-				// if the client don't comply with codec order in SDP answer, only keep preferred codecs to force client to use it
-				if p.params.ClientInfo.ComplyWithCodecOrderInSDPAnswer() {
-					unmatch.MediaName.Formats = append(unmatch.MediaName.Formats, leftCodecs...)
-				}
+		var codecIdx int
+		var preferredCodecs, leftCodecs []string
+		for idx, c := range codecs {
+			if mime.GetMimeTypeCodec(mimeType) == mime.NormalizeMimeTypeCodec(c.Name) {
+				preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
+				codecIdx = idx
 			} else {
-				// ensure nack enabled for audio in publisher offer
-				var nackFound bool
-				for _, attr := range unmatch.Attributes {
-					if attr.Key == "rtcp-fb" && strings.Contains(attr.Value, fmt.Sprintf("%d nack", codecs[codecIdx].PayloadType)) {
-						nackFound = true
-						break
-					}
-				}
-				if !nackFound {
-					unmatch.Attributes = append(unmatch.Attributes, sdp.Attribute{
-						Key:   "rtcp-fb",
-						Value: fmt.Sprintf("%d nack", codecs[codecIdx].PayloadType),
-					})
-				}
+				leftCodecs = append(leftCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
+			}
+		}
 
+		// could not find preferred mime in the offer
+		if len(preferredCodecs) == 0 {
+			unprocessed = append(unprocessed, unmatch)
+			continue
+		}
+
+		unmatch.MediaName.Formats = append(unmatch.MediaName.Formats[:0], preferredCodecs...)
+		if trackType == livekit.TrackType_VIDEO {
+			// if the client don't comply with codec order in SDP answer, only keep preferred codecs to force client to use it
+			if p.params.ClientInfo.ComplyWithCodecOrderInSDPAnswer() {
 				unmatch.MediaName.Formats = append(unmatch.MediaName.Formats, leftCodecs...)
 			}
+		} else {
+			// ensure nack enabled for audio in publisher offer
+			var nackFound bool
+			for _, attr := range unmatch.Attributes {
+				if attr.Key == "rtcp-fb" && strings.Contains(attr.Value, fmt.Sprintf("%d nack", codecs[codecIdx].PayloadType)) {
+					nackFound = true
+					break
+				}
+			}
+			if !nackFound {
+				unmatch.Attributes = append(unmatch.Attributes, sdp.Attribute{
+					Key:   "rtcp-fb",
+					Value: fmt.Sprintf("%d nack", codecs[codecIdx].PayloadType),
+				})
+			}
+
+			unmatch.MediaName.Formats = append(unmatch.MediaName.Formats, leftCodecs...)
 		}
 	}
 
