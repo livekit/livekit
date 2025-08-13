@@ -166,6 +166,14 @@ func IsMimeTypeCodecStringRED(codec string) bool {
 	return NormalizeMimeTypeCodec(codec) == MimeTypeCodecRED
 }
 
+func IsMimeTypeCodecStringPCMA(codec string) bool {
+	return NormalizeMimeTypeCodec(codec) == MimeTypeCodecPCMA
+}
+
+func IsMimeTypeCodecStringPCMU(codec string) bool {
+	return NormalizeMimeTypeCodec(codec) == MimeTypeCodecPCMU
+}
+
 func IsMimeTypeCodecStringH264(codec string) bool {
 	return NormalizeMimeTypeCodec(codec) == MimeTypeCodecH264
 }
@@ -334,6 +342,14 @@ func IsMimeTypeStringRED(mime string) bool {
 
 func IsMimeTypeStringOpus(mime string) bool {
 	return NormalizeMimeType(mime) == MimeTypeOpus
+}
+
+func IsMimeTypeStringPCMA(mime string) bool {
+	return NormalizeMimeType(mime) == MimeTypePCMA
+}
+
+func IsMimeTypeStringPCMU(mime string) bool {
+	return NormalizeMimeType(mime) == MimeTypePCMU
 }
 
 func IsMimeTypeStringRTX(mime string) bool {
