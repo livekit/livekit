@@ -297,7 +297,6 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	// Some of the browser clients do not handle H.264 High Profile in signalling properly.
 	// They still decode if the actual stream is H.264 High Profile, but do not handle it well in signalling.
 	// So, disable H.264 High Profile for SUBSCRIBER peer connection to ensure it is not offered.
-	params.Logger.Infow("RAJA enabled codecs", "enabledCodecs", params.EnabledCodecs) // REMOVE
 	me, err := createMediaEngine(params.EnabledCodecs, directionConfig, params.IsOfferer)
 	if err != nil {
 		return nil, nil, err
@@ -2637,7 +2636,6 @@ func configureAudioTransceiver(tr *webrtc.RTPTransceiver, stereo bool, nack bool
 		}
 		configCodecs = append(configCodecs, c)
 	}
-	logger.Infow("RAJA codecs", "codecs", codecs, "configCodecs", configCodecs) // REMOVE
 
 	tr.SetCodecPreferences(configCodecs)
 }

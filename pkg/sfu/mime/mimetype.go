@@ -158,14 +158,6 @@ func GetMimeTypeCodec(mime string) MimeTypeCodec {
 	return NormalizeMimeTypeCodec(mime[i+1:])
 }
 
-func IsMimeTypeCodecStringPCMU(codec string) bool {
-	return NormalizeMimeTypeCodec(codec) == MimeTypeCodecPCMU
-}
-
-func IsMimeTypeCodecStringPCMA(codec string) bool {
-	return NormalizeMimeTypeCodec(codec) == MimeTypeCodecPCMA
-}
-
 func IsMimeTypeCodecStringOpus(codec string) bool {
 	return NormalizeMimeTypeCodec(codec) == MimeTypeCodecOpus
 }
