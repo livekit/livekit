@@ -22,24 +22,146 @@ import (
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/protocol/livekit"
 	lksdp "github.com/livekit/protocol/sdp"
+	"github.com/livekit/protocol/utils"
 )
 
-func (p *ParticipantImpl) setCodecPreferencesForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
-	//offer = p.setCodecPreferencesOpusRedForPublisher(offer)
-	//offer = p.setCodecPreferencesPCMUForPublisher(offer)
-	offer = p.setCodecPreferencesVideoForPublisher(offer)
-	return offer
-}
+func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([]*sdp.MediaDescription, []*sdp.MediaDescription) {
+	processUnmatch := func(unmatches []*sdp.MediaDescription, trackType livekit.TrackType) {
+		for _, unmatch := range unmatches {
+			streamID, ok := lksdp.ExtractStreamID(unmatch)
+			if !ok {
+				continue
+			}
 
-func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
-	parsed, unmatchAudios, err := p.TransportManager.GetUnmatchMediaForOffer(offer, "audio")
-	if err != nil || len(unmatchAudios) == 0 {
-		return offer
+			sdpCodecs, err := lksdp.CodecsFromMediaDescription(unmatch)
+			if err != nil || len(sdpCodecs) == 0 {
+				p.pubLogger.Errorw(
+					"extract codecs from media section failed", err,
+					"media", unmatch,
+					"parsedOffer", parsedOffer,
+				)
+				continue
+			}
+
+			p.pendingTracksLock.Lock()
+			signalCid, info, _, migrated, _ := p.getPendingTrack(streamID, trackType, false)
+			if migrated {
+				p.pendingTracksLock.Unlock()
+				continue
+			}
+
+			if info == nil {
+				p.pendingTracksLock.Unlock()
+
+				// could be already published track and the unmatch could be a back up codec publish
+				numUnmatchedTracks := 0
+				var unmatchedTrack types.MediaTrack
+				var unmatchedSdpMimeType mime.MimeType
+
+				found := false
+				for _, sdpCodec := range sdpCodecs {
+					sdpMimeType := mime.NormalizeMimeTypeCodec(sdpCodec.Name).ToMimeType()
+					for _, publishedTrack := range p.GetPublishedTracks() {
+						if sigCid, sdpCid := publishedTrack.(*MediaTrack).GetCidsForMimeType(sdpMimeType); sigCid != "" && sdpCid == "" {
+							// a back up codec has a SDP cid match
+							if sigCid == streamID {
+								found = true
+								break
+							} else {
+								numUnmatchedTracks++
+								unmatchedTrack = publishedTrack
+								unmatchedSdpMimeType = sdpMimeType
+							}
+						}
+					}
+					if found {
+						break
+					}
+				}
+				if !found && unmatchedTrack != nil {
+					if numUnmatchedTracks != 1 {
+						p.pubLogger.Warnw(
+							"too many unmatched tracks", nil,
+							"media", unmatch,
+							"parsedOffer", parsedOffer,
+						)
+					}
+					unmatchedTrack.(*MediaTrack).UpdateCodecSdpCid(unmatchedSdpMimeType, streamID)
+				}
+				continue
+			}
+
+			found := false
+			updated := false
+			for _, sdpCodec := range sdpCodecs {
+				if mime.NormalizeMimeTypeCodec(sdpCodec.Name) == mime.GetMimeTypeCodec(info.Codecs[0].MimeType) {
+					// set SdpCid only if different from SignalCid
+					if streamID != info.Codecs[0].Cid {
+						info.Codecs[0].SdpCid = streamID
+						updated = true
+					}
+					found = true
+					break
+				}
+				if found {
+					break
+				}
+			}
+
+			if !found {
+				// not using SimulcastCodec, i. e. mime type not available till track publish
+				if len(info.Codecs) == 1 {
+					// set SdpCid only if different from SignalCid
+					if streamID != info.Codecs[0].Cid {
+						info.Codecs[0].SdpCid = streamID
+						updated = true
+					}
+				}
+			}
+
+			if updated {
+				p.pendingTracks[signalCid].trackInfos[0] = utils.CloneProto(info)
+			}
+			p.pendingTracksLock.Unlock()
+		}
 	}
 
+	unmatchAudios, err := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "audio")
+	if err != nil {
+		p.pubLogger.Warnw("could not get unmatch audios", err)
+		return nil, nil
+	}
+
+	unmatchVideos, err := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "video")
+	if err != nil {
+		p.pubLogger.Warnw("could not get unmatch audios", err)
+		return nil, nil
+	}
+
+	processUnmatch(unmatchAudios, livekit.TrackType_AUDIO)
+	processUnmatch(unmatchVideos, livekit.TrackType_VIDEO)
+	return unmatchAudios, unmatchVideos
+}
+
+func (p *ParticipantImpl) setCodecPreferencesForPublisher(
+	parsedOffer *sdp.SessionDescription,
+	unmatchAudios []*sdp.MediaDescription,
+	unmatchVideos []*sdp.MediaDescription,
+) *sdp.SessionDescription {
+	parsedOffer = p.setCodecPreferencesOpusRedForPublisher(parsedOffer, unmatchAudios)
+	//offer = p.setCodecPreferencesPCMUForPublisher(offer)
+	parsedOffer = p.setCodecPreferencesVideoForPublisher(parsedOffer, unmatchVideos)
+	return parsedOffer
+}
+
+func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(
+	parsedOffer *sdp.SessionDescription,
+	unmatchAudios []*sdp.MediaDescription,
+) *sdp.SessionDescription {
 	for _, unmatchAudio := range unmatchAudios {
 		streamID, ok := lksdp.ExtractStreamID(unmatchAudio)
 		if !ok {
@@ -54,7 +176,11 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.Se
 
 		codecs, err := lksdp.CodecsFromMediaDescription(unmatchAudio)
 		if err != nil {
-			p.pubLogger.Errorw("extract codecs from media section failed", err, "media", unmatchAudio, "offer", offer)
+			p.pubLogger.Errorw(
+				"extract codecs from media section failed", err,
+				"media", unmatchAudio,
+				"parsedOffer", parsedOffer,
+			)
 			continue
 		}
 
@@ -103,18 +229,10 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.Se
 		unmatchAudio.MediaName.Formats = append(unmatchAudio.MediaName.Formats, leftCodecs...)
 	}
 
-	bytes, err := parsed.Marshal()
-	if err != nil {
-		p.pubLogger.Errorw("failed to marshal offer", err)
-		return offer
-	}
-
-	return webrtc.SessionDescription{
-		Type: offer.Type,
-		SDP:  string(bytes),
-	}
+	return parsedOffer
 }
 
+/*
 func (p *ParticipantImpl) setCodecPreferencesPCMUForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
 	parsed, unmatchAudios, err := p.TransportManager.GetUnmatchMediaForOffer(offer, "audio")
 	if err != nil || len(unmatchAudios) == 0 {
@@ -197,12 +315,12 @@ func (p *ParticipantImpl) setCodecPreferencesPCMUForPublisher(offer webrtc.Sessi
 		SDP:  string(bytes),
 	}
 }
+*/
 
-func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
-	parsed, unmatchVideos, err := p.TransportManager.GetUnmatchMediaForOffer(offer, "video")
-	if err != nil || len(unmatchVideos) == 0 {
-		return offer
-	}
+func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(
+	parsedOffer *sdp.SessionDescription,
+	unmatchVideos []*sdp.MediaDescription,
+) *sdp.SessionDescription {
 	// unmatched video is pending for publish, set codec preference
 	for _, unmatchVideo := range unmatchVideos {
 		streamID, ok := lksdp.ExtractStreamID(unmatchVideo)
@@ -225,7 +343,7 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 		}
 		var mimeType string
 		for _, c := range info.Codecs {
-			if c.Cid == streamID {
+			if c.Cid == streamID || c.SdpCid == streamID {
 				mimeType = c.MimeType
 				break
 			}
@@ -238,7 +356,11 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 		if mimeType != "" {
 			codecs, err := lksdp.CodecsFromMediaDescription(unmatchVideo)
 			if err != nil {
-				p.pubLogger.Errorw("extract codecs from media section failed", err, "media", unmatchVideo, "offer", offer)
+				p.pubLogger.Errorw(
+					"extract codecs from media section failed", err,
+					"media", unmatchVideo,
+					"parsedOffer", parsedOffer,
+				)
 				continue
 			}
 
@@ -259,16 +381,7 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(offer webrtc.Sess
 		}
 	}
 
-	bytes, err := parsed.Marshal()
-	if err != nil {
-		p.pubLogger.Errorw("failed to marshal offer", err)
-		return offer
-	}
-
-	return webrtc.SessionDescription{
-		Type: offer.Type,
-		SDP:  string(bytes),
-	}
+	return parsedOffer
 }
 
 // configure publisher answer for audio track's dtx and stereo settings

@@ -171,10 +171,6 @@ func (fake *FakeSessionHandler) LoggerReturnsOnCall(i int, result1 logger.Logger
 func (fake *FakeSessionHandler) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.handleSessionMutex.RLock()
-	defer fake.handleSessionMutex.RUnlock()
-	fake.loggerMutex.RLock()
-	defer fake.loggerMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

@@ -392,14 +392,8 @@ func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels [
 	return nil
 }
 
-func (t *TransportManager) GetUnmatchMediaForOffer(offer webrtc.SessionDescription, mediaType string) (parsed *sdp.SessionDescription, unmatched []*sdp.MediaDescription, err error) {
+func (t *TransportManager) GetUnmatchMediaForOffer(parsedOffer *sdp.SessionDescription, mediaType string) (unmatched []*sdp.MediaDescription, err error) {
 	// prefer codec from offer for clients that don't support setCodecPreferences
-	parsed, err = offer.Unmarshal()
-	if err != nil {
-		t.params.Logger.Errorw("failed to parse offer for codec preference", err)
-		return
-	}
-
 	var lastMatchedMid string
 	lastAnswer := t.lastPublisherAnswer.Load()
 	if lastAnswer != nil {
@@ -408,7 +402,7 @@ func (t *TransportManager) GetUnmatchMediaForOffer(offer webrtc.SessionDescripti
 		if err1 != nil {
 			// should not happen
 			t.params.Logger.Errorw("failed to parse last answer", err1)
-			return parsed, unmatched, err1
+			return unmatched, err1
 		}
 
 		for i := len(parsedAnswer.MediaDescriptions) - 1; i >= 0; i-- {
@@ -420,8 +414,8 @@ func (t *TransportManager) GetUnmatchMediaForOffer(offer webrtc.SessionDescripti
 		}
 	}
 
-	for i := len(parsed.MediaDescriptions) - 1; i >= 0; i-- {
-		media := parsed.MediaDescriptions[i]
+	for i := len(parsedOffer.MediaDescriptions) - 1; i >= 0; i-- {
+		media := parsedOffer.MediaDescriptions[i]
 		if media.MediaName.Media == mediaType {
 			mid, _ := media.Attribute(sdp.AttrKeyMID)
 			if mid == lastMatchedMid {

@@ -421,16 +421,6 @@ func (fake *FakeServiceStore) LoadRoomReturnsOnCall(i int, result1 *livekit.Room
 func (fake *FakeServiceStore) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.deleteRoomMutex.RLock()
-	defer fake.deleteRoomMutex.RUnlock()
-	fake.listParticipantsMutex.RLock()
-	defer fake.listParticipantsMutex.RUnlock()
-	fake.listRoomsMutex.RLock()
-	defer fake.listRoomsMutex.RUnlock()
-	fake.loadParticipantMutex.RLock()
-	defer fake.loadParticipantMutex.RUnlock()
-	fake.loadRoomMutex.RLock()
-	defer fake.loadRoomMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

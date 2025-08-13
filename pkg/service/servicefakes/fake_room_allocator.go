@@ -330,14 +330,6 @@ func (fake *FakeRoomAllocator) ValidateCreateRoomReturnsOnCall(i int, result1 er
 func (fake *FakeRoomAllocator) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.autoCreateEnabledMutex.RLock()
-	defer fake.autoCreateEnabledMutex.RUnlock()
-	fake.createRoomMutex.RLock()
-	defer fake.createRoomMutex.RUnlock()
-	fake.selectRoomNodeMutex.RLock()
-	defer fake.selectRoomNodeMutex.RUnlock()
-	fake.validateCreateRoomMutex.RLock()
-	defer fake.validateCreateRoomMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

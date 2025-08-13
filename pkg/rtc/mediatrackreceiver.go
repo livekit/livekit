@@ -711,7 +711,6 @@ func (t *MediaTrackReceiver) UpdateCodecInfo(codecs []*livekit.SimulcastCodec) {
 					mimeType := mime.NormalizeMimeType(origin.MimeType)
 					for _, layer := range origin.Layers {
 						layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(mimeType, layer.Quality, trackInfo)
-						// SIMULCAST-CODEC-TODO: need to map RIDs from SDP -> SimulcastCodecInfo
 						layer.Rid = buffer.VideoQualityToRid(mimeType, layer.Quality, trackInfo, buffer.DefaultVideoLayersRid)
 					}
 				}
@@ -719,6 +718,43 @@ func (t *MediaTrackReceiver) UpdateCodecInfo(codecs []*livekit.SimulcastCodec) {
 				break
 			}
 		}
+	}
+	t.trackInfo.Store(trackInfo)
+	t.lock.Unlock()
+
+	t.updateTrackInfoOfReceivers()
+}
+
+func (t *MediaTrackReceiver) UpdateCodecSdpCid(mimeType mime.MimeType, sdpCid string) {
+	t.lock.Lock()
+	trackInfo := t.TrackInfoClone()
+	for _, origin := range trackInfo.Codecs {
+		if mime.NormalizeMimeType(origin.MimeType) == mimeType {
+			if sdpCid != origin.Cid {
+				origin.SdpCid = sdpCid
+			}
+		}
+	}
+	t.trackInfo.Store(trackInfo)
+	t.lock.Unlock()
+
+	t.updateTrackInfoOfReceivers()
+}
+
+func (t *MediaTrackReceiver) UpdateCodecRids(mimeType mime.MimeType, rids buffer.VideoLayersRid) {
+	t.lock.Lock()
+	trackInfo := t.TrackInfoClone()
+	for _, origin := range trackInfo.Codecs {
+		originMimeType := mime.NormalizeMimeType(origin.MimeType)
+		if originMimeType != mimeType {
+			continue
+		}
+
+		for _, layer := range origin.Layers {
+			layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(mimeType, layer.Quality, trackInfo)
+			layer.Rid = buffer.VideoQualityToRid(mimeType, layer.Quality, trackInfo, rids)
+		}
+		break
 	}
 	t.trackInfo.Store(trackInfo)
 	t.lock.Unlock()
@@ -915,7 +951,7 @@ func (t *MediaTrackReceiver) GetQualityForDimension(mimeType mime.MimeType, widt
 }
 
 func (t *MediaTrackReceiver) GetAudioLevel() (float64, bool) {
-	receiver := t.PrimaryReceiver()
+	receiver := t.ActiveReceiver()
 	if receiver == nil {
 		return 0, false
 	}
@@ -958,6 +994,16 @@ func (t *MediaTrackReceiver) PrimaryReceiver() sfu.TrackReceiver {
 		return dr.Receiver()
 	}
 	return receivers[0].TrackReceiver
+}
+
+func (t *MediaTrackReceiver) ActiveReceiver() sfu.TrackReceiver {
+	for _, r := range t.loadReceivers() {
+		if r.IsRegressed() {
+			return r.TrackReceiver
+		}
+	}
+
+	return t.PrimaryReceiver()
 }
 
 func (t *MediaTrackReceiver) Receiver(mime mime.MimeType) sfu.TrackReceiver {

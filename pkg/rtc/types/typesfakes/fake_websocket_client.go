@@ -384,16 +384,6 @@ func (fake *FakeWebsocketClient) WriteMessageReturnsOnCall(i int, result1 error)
 func (fake *FakeWebsocketClient) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.closeMutex.RLock()
-	defer fake.closeMutex.RUnlock()
-	fake.readMessageMutex.RLock()
-	defer fake.readMessageMutex.RUnlock()
-	fake.setReadDeadlineMutex.RLock()
-	defer fake.setReadDeadlineMutex.RUnlock()
-	fake.writeControlMutex.RLock()
-	defer fake.writeControlMutex.RUnlock()
-	fake.writeMessageMutex.RLock()
-	defer fake.writeMessageMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value
