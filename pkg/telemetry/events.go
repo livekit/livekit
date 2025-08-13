@@ -112,7 +112,7 @@ func (t *telemetryService) ParticipantActive(
 ) {
 	t.enqueue(func() {
 		if !isMigration {
-			// consider participant joined only when they became active
+			// a participant is considered "joined" only when they become "active"
 			t.NotifyEvent(ctx, &livekit.WebhookEvent{
 				Event:       webhook.EventParticipantJoined,
 				Room:        room,
@@ -190,14 +190,20 @@ func (t *telemetryService) ParticipantLeft(ctx context.Context,
 			}
 		}
 
-		if isConnected && shouldSendEvent {
+		if shouldSendEvent {
+			webhookEvent := webhook.EventParticipantLeft
+			analyticsEvent := livekit.AnalyticsEventType_PARTICIPANT_LEFT
+			if !isConnected {
+				webhookEvent = webhook.EventParticipantConnectionAborted
+				analyticsEvent = livekit.AnalyticsEventType_PARTICIPANT_CONNECTION_ABORTED
+			}
 			t.NotifyEvent(ctx, &livekit.WebhookEvent{
-				Event:       webhook.EventParticipantLeft,
+				Event:       webhookEvent,
 				Room:        room,
 				Participant: participant,
 			})
 
-			t.SendEvent(ctx, newParticipantEvent(livekit.AnalyticsEventType_PARTICIPANT_LEFT, room, participant))
+			t.SendEvent(ctx, newParticipantEvent(analyticsEvent, room, participant))
 		}
 	})
 }
