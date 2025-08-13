@@ -355,6 +355,8 @@ var DefaultConfig = Config{
 	Room: RoomConfig{
 		AutoCreate: true,
 		EnabledCodecs: []CodecSpec{
+			{Mime: mime.MimeTypePCMU.String()},
+			{Mime: mime.MimeTypePCMA.String()},
 			{Mime: mime.MimeTypeOpus.String()},
 			{Mime: mime.MimeTypeRED.String()},
 			{Mime: mime.MimeTypeVP8.String()},

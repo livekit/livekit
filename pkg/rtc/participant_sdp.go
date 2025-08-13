@@ -152,8 +152,13 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisher(
 	unmatchAudios []*sdp.MediaDescription,
 	unmatchVideos []*sdp.MediaDescription,
 ) *sdp.SessionDescription {
-	parsedOffer = p.setCodecPreferencesOpusRedForPublisher(parsedOffer, unmatchAudios)
-	parsedOffer = p.setCodecPreferencesVideoForPublisher(parsedOffer, unmatchVideos)
+	parsedOffer, unprocessedUnmatchAudios := p.setCodecPreferencesForPublisherMedia(
+		parsedOffer,
+		unmatchAudios,
+		livekit.TrackType_AUDIO,
+	)
+	parsedOffer = p.setCodecPreferencesOpusRedForPublisher(parsedOffer, unprocessedUnmatchAudios)
+	parsedOffer, _ = p.setCodecPreferencesForPublisherMedia(parsedOffer, unmatchVideos, livekit.TrackType_VIDEO)
 	return parsedOffer
 }
 
@@ -231,14 +236,17 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(
 	return parsedOffer
 }
 
-func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(
+func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 	parsedOffer *sdp.SessionDescription,
-	unmatchVideos []*sdp.MediaDescription,
-) *sdp.SessionDescription {
-	// unmatched video is pending for publish, set codec preference
-	for _, unmatchVideo := range unmatchVideos {
-		streamID, ok := lksdp.ExtractStreamID(unmatchVideo)
+	unmatches []*sdp.MediaDescription,
+	trackType livekit.TrackType,
+) (*sdp.SessionDescription, []*sdp.MediaDescription) {
+	unprocessed := make([]*sdp.MediaDescription, 0, len(unmatches))
+	// unmatched media is pending for publish, set codec preference
+	for _, unmatch := range unmatches {
+		streamID, ok := lksdp.ExtractStreamID(unmatch)
 		if !ok {
+			unprocessed = append(unprocessed, unmatch)
 			continue
 		}
 
@@ -248,13 +256,15 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(
 		if mt != nil {
 			info = mt.ToProto()
 		} else {
-			_, info, _, _, _ = p.getPendingTrack(streamID, livekit.TrackType_VIDEO, false)
+			_, info, _, _, _ = p.getPendingTrack(streamID, trackType, false)
 		}
 
 		if info == nil {
 			p.pendingTracksLock.RUnlock()
+			unprocessed = append(unprocessed, unmatch)
 			continue
 		}
+
 		var mimeType string
 		for _, c := range info.Codecs {
 			if c.Cid == streamID || c.SdpCid == streamID {
@@ -267,35 +277,66 @@ func (p *ParticipantImpl) setCodecPreferencesVideoForPublisher(
 		}
 		p.pendingTracksLock.RUnlock()
 
-		if mimeType != "" {
-			codecs, err := lksdp.CodecsFromMediaDescription(unmatchVideo)
-			if err != nil {
-				p.pubLogger.Errorw(
-					"extract codecs from media section failed", err,
-					"media", unmatchVideo,
-					"parsedOffer", parsedOffer,
-				)
-				continue
-			}
+		if mimeType == "" {
+			unprocessed = append(unprocessed, unmatch)
+			continue
+		}
 
-			var preferredCodecs, leftCodecs []string
-			for _, c := range codecs {
-				if mime.GetMimeTypeCodec(mimeType) == mime.NormalizeMimeTypeCodec(c.Name) {
-					preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
-				} else {
-					leftCodecs = append(leftCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
-				}
-			}
+		codecs, err := lksdp.CodecsFromMediaDescription(unmatch)
+		if err != nil {
+			p.pubLogger.Errorw(
+				"extract codecs from media section failed", err,
+				"media", unmatch,
+				"parsedOffer", parsedOffer,
+			)
+			unprocessed = append(unprocessed, unmatch)
+			continue
+		}
 
-			unmatchVideo.MediaName.Formats = append(unmatchVideo.MediaName.Formats[:0], preferredCodecs...)
+		var codecIdx int
+		var preferredCodecs, leftCodecs []string
+		for idx, c := range codecs {
+			if mime.GetMimeTypeCodec(mimeType) == mime.NormalizeMimeTypeCodec(c.Name) {
+				preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
+				codecIdx = idx
+			} else {
+				leftCodecs = append(leftCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
+			}
+		}
+
+		// could not find preferred mime in the offer
+		if len(preferredCodecs) == 0 {
+			unprocessed = append(unprocessed, unmatch)
+			continue
+		}
+
+		unmatch.MediaName.Formats = append(unmatch.MediaName.Formats[:0], preferredCodecs...)
+		if trackType == livekit.TrackType_VIDEO {
 			// if the client don't comply with codec order in SDP answer, only keep preferred codecs to force client to use it
 			if p.params.ClientInfo.ComplyWithCodecOrderInSDPAnswer() {
-				unmatchVideo.MediaName.Formats = append(unmatchVideo.MediaName.Formats, leftCodecs...)
+				unmatch.MediaName.Formats = append(unmatch.MediaName.Formats, leftCodecs...)
 			}
+		} else {
+			// ensure nack enabled for audio in publisher offer
+			var nackFound bool
+			for _, attr := range unmatch.Attributes {
+				if attr.Key == "rtcp-fb" && strings.Contains(attr.Value, fmt.Sprintf("%d nack", codecs[codecIdx].PayloadType)) {
+					nackFound = true
+					break
+				}
+			}
+			if !nackFound {
+				unmatch.Attributes = append(unmatch.Attributes, sdp.Attribute{
+					Key:   "rtcp-fb",
+					Value: fmt.Sprintf("%d nack", codecs[codecIdx].PayloadType),
+				})
+			}
+
+			unmatch.MediaName.Formats = append(unmatch.MediaName.Formats, leftCodecs...)
 		}
 	}
 
-	return parsedOffer
+	return parsedOffer, unprocessed
 }
 
 // configure publisher answer for audio track's dtx and stereo settings

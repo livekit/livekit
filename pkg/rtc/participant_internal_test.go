@@ -470,93 +470,134 @@ func TestDisablePublishCodec(t *testing.T) {
 	require.Eventually(t, func() bool { return publishReceived.Load() }, 5*time.Second, 10*time.Millisecond)
 }
 
-func TestPreferVideoCodecForPublisher(t *testing.T) {
-	participant := newParticipantForTestWithOpts("123", &participantOpts{
-		publisher: true,
-	})
-	participant.SetMigrateState(types.MigrateStateComplete)
-
-	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
-	require.NoError(t, err)
-	defer pc.Close()
-
-	for i := 0; i < 2; i++ {
-		// publish h264 track without client preferred codec
-		trackCid := fmt.Sprintf("preferh264video%d", i)
-		participant.AddTrack(&livekit.AddTrackRequest{
-			Type:   livekit.TrackType_VIDEO,
-			Name:   "video",
-			Width:  1280,
-			Height: 720,
-			Source: livekit.TrackSource_CAMERA,
-			SimulcastCodecs: []*livekit.SimulcastCodec{
-				{
-					Codec: "h264",
-					Cid:   trackCid,
-				},
+func TestPreferMediaCodecForPublisher(t *testing.T) {
+	testCases := []struct {
+		name                       string
+		mediaKind                  string
+		trackBaseCid               string
+		preferredCodec             string
+		addTrack                   *livekit.AddTrackRequest
+		mimeTypeStringChecker      func(string) bool
+		mimeTypeCodecStringChecker func(string) bool
+		transceiverMimeType        mime.MimeType
+	}{
+		{
+			name:           "video",
+			mediaKind:      "video",
+			trackBaseCid:   "preferH264Video",
+			preferredCodec: "h264",
+			addTrack: &livekit.AddTrackRequest{
+				Type:   livekit.TrackType_VIDEO,
+				Name:   "video",
+				Width:  1280,
+				Height: 720,
+				Source: livekit.TrackSource_CAMERA,
 			},
-		})
+			mimeTypeStringChecker:      mime.IsMimeTypeStringH264,
+			mimeTypeCodecStringChecker: mime.IsMimeTypeCodecStringH264,
+			transceiverMimeType:        mime.MimeTypeVP8,
+		},
+		{
+			name:           "audio",
+			mediaKind:      "audio",
+			trackBaseCid:   "preferPCMAAudio",
+			preferredCodec: "pcma",
+			addTrack: &livekit.AddTrackRequest{
+				Type:   livekit.TrackType_AUDIO,
+				Name:   "audio",
+				Source: livekit.TrackSource_MICROPHONE,
+			},
+			mimeTypeStringChecker:      mime.IsMimeTypeStringPCMA,
+			mimeTypeCodecStringChecker: mime.IsMimeTypeCodecStringPCMA,
+			transceiverMimeType:        mime.MimeTypeOpus,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			participant := newParticipantForTestWithOpts("123", &participantOpts{
+				publisher: true,
+			})
+			participant.SetMigrateState(types.MigrateStateComplete)
 
-		track, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: "video/vp8"}, trackCid, trackCid)
-		require.NoError(t, err)
-		transceiver, err := pc.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendrecv})
-		require.NoError(t, err)
-		codecs := transceiver.Receiver().GetParameters().Codecs
+			pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+			require.NoError(t, err)
+			defer pc.Close()
 
-		if i > 0 {
-			// the negotiated codecs order could be updated by first negotiation, reorder to make h264 not preferred
-			for mime.IsMimeTypeStringH264(codecs[0].MimeType) {
-				codecs = append(codecs[1:], codecs[0])
-			}
-		}
-		// h264 should not be preferred
-		require.False(t, mime.IsMimeTypeStringH264(codecs[0].MimeType), "codecs", codecs)
-
-		sdp, err := pc.CreateOffer(nil)
-		require.NoError(t, err)
-		require.NoError(t, pc.SetLocalDescription(sdp))
-		offerId := uint32(23)
-
-		sink := &routingfakes.FakeMessageSink{}
-		participant.SetResponseSink(sink)
-		var answer webrtc.SessionDescription
-		var answerId uint32
-		var answerReceived atomic.Bool
-		var answerIdReceived atomic.Uint32
-		sink.WriteMessageCalls(func(msg proto.Message) error {
-			if res, ok := msg.(*livekit.SignalResponse); ok {
-				if res.GetAnswer() != nil {
-					answer, answerId = signalling.FromProtoSessionDescription(res.GetAnswer())
-					pc.SetRemoteDescription(answer)
-					answerReceived.Store(true)
-					answerIdReceived.Store(answerId)
+			for i := 0; i < 2; i++ {
+				// publish preferred track without client using setCodecPreferences()
+				trackCid := fmt.Sprintf("%s-%d", tc.trackBaseCid, i)
+				req := utils.CloneProto(tc.addTrack)
+				req.SimulcastCodecs = []*livekit.SimulcastCodec{
+					{
+						Codec: tc.preferredCodec,
+						Cid:   trackCid,
+					},
 				}
-			}
-			return nil
-		})
-		participant.HandleOffer(sdp, offerId)
+				participant.AddTrack(req)
 
-		require.Eventually(t, func() bool { return answerReceived.Load() && answerIdReceived.Load() == offerId }, 5*time.Second, 10*time.Millisecond)
+				track, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: tc.transceiverMimeType.String()}, trackCid, trackCid)
+				require.NoError(t, err)
+				transceiver, err := pc.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendrecv})
+				require.NoError(t, err)
+				codecs := transceiver.Receiver().GetParameters().Codecs
 
-		var h264Preferred bool
-		parsed, err := answer.Unmarshal()
-		require.NoError(t, err)
-		var videoSectionIndex int
-		for _, m := range parsed.MediaDescriptions {
-			if m.MediaName.Media == "video" {
-				if videoSectionIndex == i {
-					codecs, err := lksdp.CodecsFromMediaDescription(m)
-					require.NoError(t, err)
-					if mime.IsMimeTypeCodecStringH264(codecs[0].Name) {
-						h264Preferred = true
-						break
+				if i > 0 {
+					// the negotiated codecs order could be updated by first negotiation,
+					// reorder to make tested preferred codec not preferred
+					for tc.mimeTypeStringChecker(codecs[0].MimeType) {
+						codecs = append(codecs[1:], codecs[0])
 					}
 				}
-				videoSectionIndex++
-			}
-		}
+				// preferred codec should not be preferred in `offer`
+				require.False(t, tc.mimeTypeStringChecker(codecs[0].MimeType), "codecs", codecs)
 
-		require.Truef(t, h264Preferred, "h264 should be preferred for video section %d, answer sdp: \n%s", i, answer.SDP)
+				sdp, err := pc.CreateOffer(nil)
+				require.NoError(t, err)
+				require.NoError(t, pc.SetLocalDescription(sdp))
+				offerId := uint32(23)
+
+				sink := &routingfakes.FakeMessageSink{}
+				participant.SetResponseSink(sink)
+				var answer webrtc.SessionDescription
+				var answerId uint32
+				var answerReceived atomic.Bool
+				var answerIdReceived atomic.Uint32
+				sink.WriteMessageCalls(func(msg proto.Message) error {
+					if res, ok := msg.(*livekit.SignalResponse); ok {
+						if res.GetAnswer() != nil {
+							answer, answerId = signalling.FromProtoSessionDescription(res.GetAnswer())
+							pc.SetRemoteDescription(answer)
+							answerReceived.Store(true)
+							answerIdReceived.Store(answerId)
+						}
+					}
+					return nil
+				})
+				participant.HandleOffer(sdp, offerId)
+
+				require.Eventually(t, func() bool { return answerReceived.Load() && answerIdReceived.Load() == offerId }, 5*time.Second, 10*time.Millisecond)
+
+				var havePreferred bool
+				parsed, err := answer.Unmarshal()
+				require.NoError(t, err)
+				var mediaSectionIndex int
+				for _, m := range parsed.MediaDescriptions {
+					if m.MediaName.Media == tc.mediaKind {
+						if mediaSectionIndex == i {
+							codecs, err := lksdp.CodecsFromMediaDescription(m)
+							require.NoError(t, err)
+							if tc.mimeTypeCodecStringChecker(codecs[0].Name) {
+								havePreferred = true
+								break
+							}
+						}
+						mediaSectionIndex++
+					}
+				}
+
+				require.Truef(t, havePreferred, "%s should be preferred for %s section %d, answer sdp: \n%s", tc.preferredCodec, tc.mediaKind, i, answer.SDP)
+			}
+		})
 	}
 }
 
