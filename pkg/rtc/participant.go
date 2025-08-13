@@ -1139,6 +1139,7 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription, offerId u
 	}
 
 	offer = p.setCodecPreferencesForPublisher(offer)
+	p.pubLogger.Infow("RAJA munged offer", "mungedOffer", offer) // REMOVE
 	p.updateRidsFromSDP(&offer)
 	err := p.TransportManager.HandleOffer(offer, offerId, shouldPend)
 	if p.params.UseOneShotSignallingMode {

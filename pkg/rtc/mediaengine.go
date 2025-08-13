@@ -64,6 +64,33 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 		}
 	}
 
+	for _, codec := range []webrtc.RTPCodecParameters{
+		{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:     mime.MimeTypePCMU.String(),
+				ClockRate:    8000,
+				Channels:     1,
+				RTCPFeedback: rtcpFeedback.Audio,
+			},
+			PayloadType: 0,
+		},
+		{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:     mime.MimeTypePCMA.String(),
+				ClockRate:    8000,
+				Channels:     1,
+				RTCPFeedback: rtcpFeedback.Audio,
+			},
+			PayloadType: 8,
+		},
+	} {
+		if IsCodecEnabled(codecs, codec.RTPCodecCapability) {
+			if err := me.RegisterCodec(codec, webrtc.RTPCodecTypeAudio); err != nil {
+				return err
+			}
+		}
+	}
+
 	rtxEnabled := IsCodecEnabled(codecs, videoRTX)
 
 	h264HighProfileFmtp := "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=640032"
@@ -131,7 +158,7 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 		},
 		{
 			RTPCodecCapability: webrtc.RTPCodecCapability{
-				MimeType:     webrtc.MimeTypeH265,
+				MimeType:     mime.MimeTypeH265.String(),
 				ClockRate:    90000,
 				RTCPFeedback: rtcpFeedback.Video,
 			},

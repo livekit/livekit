@@ -28,7 +28,8 @@ import (
 )
 
 func (p *ParticipantImpl) setCodecPreferencesForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
-	offer = p.setCodecPreferencesOpusRedForPublisher(offer)
+	//offer = p.setCodecPreferencesOpusRedForPublisher(offer)
+	//offer = p.setCodecPreferencesPCMUForPublisher(offer)
 	offer = p.setCodecPreferencesVideoForPublisher(offer)
 	return offer
 }
@@ -90,6 +91,89 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(offer webrtc.Se
 			unmatchAudio.Attributes = append(unmatchAudio.Attributes, sdp.Attribute{
 				Key:   "rtcp-fb",
 				Value: fmt.Sprintf("%d nack", opusPayload),
+			})
+		}
+
+		// no opus/red found
+		if len(preferredCodecs) == 0 {
+			continue
+		}
+
+		unmatchAudio.MediaName.Formats = append(unmatchAudio.MediaName.Formats[:0], preferredCodecs...)
+		unmatchAudio.MediaName.Formats = append(unmatchAudio.MediaName.Formats, leftCodecs...)
+	}
+
+	bytes, err := parsed.Marshal()
+	if err != nil {
+		p.pubLogger.Errorw("failed to marshal offer", err)
+		return offer
+	}
+
+	return webrtc.SessionDescription{
+		Type: offer.Type,
+		SDP:  string(bytes),
+	}
+}
+
+func (p *ParticipantImpl) setCodecPreferencesPCMUForPublisher(offer webrtc.SessionDescription) webrtc.SessionDescription {
+	parsed, unmatchAudios, err := p.TransportManager.GetUnmatchMediaForOffer(offer, "audio")
+	if err != nil || len(unmatchAudios) == 0 {
+		return offer
+	}
+
+	for _, unmatchAudio := range unmatchAudios {
+		streamID, ok := lksdp.ExtractStreamID(unmatchAudio)
+		if !ok {
+			continue
+		}
+
+		p.pendingTracksLock.RLock()
+		_, info, _, _, _ := p.getPendingTrack(streamID, livekit.TrackType_AUDIO, false)
+		p.pendingTracksLock.RUnlock()
+		if info == nil {
+			continue
+		}
+
+		codecs, err := lksdp.CodecsFromMediaDescription(unmatchAudio)
+		if err != nil {
+			p.pubLogger.Errorw("extract codecs from media section failed", err, "media", unmatchAudio, "offer", offer)
+			continue
+		}
+
+		var pcmaPayload uint8
+		found := false
+		for _, codec := range codecs {
+			if mime.IsMimeTypeCodecStringPCMA(codec.Name) {
+				pcmaPayload = codec.PayloadType
+				found = true
+				break
+			}
+		}
+		if !found {
+			continue
+		}
+
+		var preferredCodecs, leftCodecs []string
+		for _, codec := range codecs {
+			if codec.PayloadType == pcmaPayload {
+				preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
+			} else {
+				leftCodecs = append(leftCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
+			}
+		}
+
+		// ensure nack enabled for audio in publisher offer
+		var nackFound bool
+		for _, attr := range unmatchAudio.Attributes {
+			if attr.Key == "rtcp-fb" && strings.Contains(attr.Value, fmt.Sprintf("%d nack", pcmaPayload)) {
+				nackFound = true
+				break
+			}
+		}
+		if !nackFound {
+			unmatchAudio.Attributes = append(unmatchAudio.Attributes, sdp.Attribute{
+				Key:   "rtcp-fb",
+				Value: fmt.Sprintf("%d nack", pcmaPayload),
 			})
 		}
 
