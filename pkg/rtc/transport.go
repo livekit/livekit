@@ -41,6 +41,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/remotebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
@@ -1717,9 +1718,13 @@ func (t *PCTransport) AddTrackToStreamAllocator(subTrack types.SubscribedTrack) 
 		return
 	}
 
+	layers := buffer.GetVideoLayersForMimeType(
+		subTrack.DownTrack().Mime(),
+		subTrack.MediaTrack().ToProto(),
+	)
 	t.streamAllocator.AddTrack(subTrack.DownTrack(), streamallocator.AddTrackParams{
 		Source:         subTrack.MediaTrack().Source(),
-		IsMultiLayered: len(subTrack.MediaTrack().ToProto().GetLayers()) > 1,
+		IsMultiLayered: len(layers) > 1,
 		PublisherID:    subTrack.MediaTrack().PublisherID(),
 	})
 }

@@ -445,20 +445,6 @@ func (fake *FakeRoom) UpdateSubscriptionsArgsForCall(i int) (types.LocalParticip
 func (fake *FakeRoom) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.getLocalParticipantsMutex.RLock()
-	defer fake.getLocalParticipantsMutex.RUnlock()
-	fake.iDMutex.RLock()
-	defer fake.iDMutex.RUnlock()
-	fake.isDataMessageUserPacketDuplicateMutex.RLock()
-	defer fake.isDataMessageUserPacketDuplicateMutex.RUnlock()
-	fake.nameMutex.RLock()
-	defer fake.nameMutex.RUnlock()
-	fake.removeParticipantMutex.RLock()
-	defer fake.removeParticipantMutex.RUnlock()
-	fake.resolveMediaTrackForSubscriberMutex.RLock()
-	defer fake.resolveMediaTrackForSubscriberMutex.RUnlock()
-	fake.updateSubscriptionsMutex.RLock()
-	defer fake.updateSubscriptionsMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

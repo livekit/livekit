@@ -414,16 +414,6 @@ func (fake *FakeIOClient) UpdateIngressStateReturnsOnCall(i int, result1 *emptyp
 func (fake *FakeIOClient) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.createEgressMutex.RLock()
-	defer fake.createEgressMutex.RUnlock()
-	fake.createIngressMutex.RLock()
-	defer fake.createIngressMutex.RUnlock()
-	fake.getEgressMutex.RLock()
-	defer fake.getEgressMutex.RUnlock()
-	fake.listEgressMutex.RLock()
-	defer fake.listEgressMutex.RUnlock()
-	fake.updateIngressStateMutex.RLock()
-	defer fake.updateIngressStateMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

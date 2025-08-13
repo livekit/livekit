@@ -173,10 +173,6 @@ func (fake *FakeSignalClient) StartParticipantSignalReturnsOnCall(i int, result1
 func (fake *FakeSignalClient) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.activeCountMutex.RLock()
-	defer fake.activeCountMutex.RUnlock()
-	fake.startParticipantSignalMutex.RLock()
-	defer fake.startParticipantSignalMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

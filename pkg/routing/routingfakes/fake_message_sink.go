@@ -243,14 +243,6 @@ func (fake *FakeMessageSink) WriteMessageReturnsOnCall(i int, result1 error) {
 func (fake *FakeMessageSink) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.closeMutex.RLock()
-	defer fake.closeMutex.RUnlock()
-	fake.connectionIDMutex.RLock()
-	defer fake.connectionIDMutex.RUnlock()
-	fake.isClosedMutex.RLock()
-	defer fake.isClosedMutex.RUnlock()
-	fake.writeMessageMutex.RLock()
-	defer fake.writeMessageMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

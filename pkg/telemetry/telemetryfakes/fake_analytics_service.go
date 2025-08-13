@@ -212,14 +212,6 @@ func (fake *FakeAnalyticsService) SendStatsArgsForCall(i int) (context.Context, 
 func (fake *FakeAnalyticsService) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.roomProjectReporterMutex.RLock()
-	defer fake.roomProjectReporterMutex.RUnlock()
-	fake.sendEventMutex.RLock()
-	defer fake.sendEventMutex.RUnlock()
-	fake.sendNodeRoomStatesMutex.RLock()
-	defer fake.sendNodeRoomStatesMutex.RUnlock()
-	fake.sendStatsMutex.RLock()
-	defer fake.sendStatsMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

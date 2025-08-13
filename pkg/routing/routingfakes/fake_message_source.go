@@ -234,14 +234,6 @@ func (fake *FakeMessageSource) ReadChanReturnsOnCall(i int, result1 <-chan proto
 func (fake *FakeMessageSource) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.closeMutex.RLock()
-	defer fake.closeMutex.RUnlock()
-	fake.connectionIDMutex.RLock()
-	defer fake.connectionIDMutex.RUnlock()
-	fake.isClosedMutex.RLock()
-	defer fake.isClosedMutex.RUnlock()
-	fake.readChanMutex.RLock()
-	defer fake.readChanMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

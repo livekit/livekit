@@ -64,8 +64,6 @@ type MediaTrack struct {
 }
 
 type MediaTrackParams struct {
-	SignalCid             string
-	SdpCid                string
 	ParticipantID         func() livekit.ParticipantID
 	ParticipantIdentity   livekit.ParticipantIdentity
 	ParticipantVersion    uint32
@@ -191,15 +189,7 @@ func (t *MediaTrack) ClearSubscriberNodesMaxQuality() {
 	}
 }
 
-func (t *MediaTrack) SignalCid() string {
-	return t.params.SignalCid
-}
-
-func (t *MediaTrack) HasSdpCid(cid string) bool {
-	if t.params.SdpCid == cid {
-		return true
-	}
-
+func (t *MediaTrack) HasSignalCid(cid string) bool {
 	ti := t.MediaTrackReceiver.TrackInfoClone()
 	for _, c := range ti.Codecs {
 		if c.Cid == cid {
@@ -207,6 +197,36 @@ func (t *MediaTrack) HasSdpCid(cid string) bool {
 		}
 	}
 	return false
+}
+
+func (t *MediaTrack) HasSdpCid(cid string) bool {
+	ti := t.MediaTrackReceiver.TrackInfoClone()
+	for _, c := range ti.Codecs {
+		if c.Cid == cid || c.SdpCid == cid {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *MediaTrack) GetMimeTypeForSdpCid(cid string) mime.MimeType {
+	ti := t.MediaTrackReceiver.TrackInfoClone()
+	for _, c := range ti.Codecs {
+		if c.Cid == cid || c.SdpCid == cid {
+			return mime.NormalizeMimeType(c.MimeType)
+		}
+	}
+	return mime.MimeTypeUnknown
+}
+
+func (t *MediaTrack) GetCidsForMimeType(mimeType mime.MimeType) (string, string) {
+	ti := t.MediaTrackReceiver.TrackInfoClone()
+	for _, c := range ti.Codecs {
+		if mime.NormalizeMimeType(c.MimeType) == mimeType {
+			return c.Cid, c.SdpCid
+		}
+	}
+	return "", ""
 }
 
 func (t *MediaTrack) ToProto() *livekit.TrackInfo {
@@ -300,6 +320,11 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			switch len(ti.Codecs) {
 			case 0:
 				// audio track
+				t.params.Logger.Warnw(
+					"unexpected 0 codecs in track info", nil,
+					"mime", mimeType,
+					"track", logger.Proto(ti),
+				)
 				priority = 0
 			case 1:
 				// older clients or non simulcast-codec, mime type only set later
@@ -309,7 +334,11 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			}
 		}
 		if priority < 0 {
-			t.params.Logger.Warnw("could not find codec for webrtc receiver", nil, "webrtcCodec", mimeType, "track", logger.Proto(ti))
+			t.params.Logger.Warnw(
+				"could not find codec for webrtc receiver", nil,
+				"mime", mimeType,
+				"track", logger.Proto(ti),
+			)
 			t.lock.Unlock()
 			return newCodec, false
 		}
@@ -486,7 +515,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 }
 
 func (t *MediaTrack) GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality) {
-	receiver := t.PrimaryReceiver()
+	receiver := t.ActiveReceiver()
 	if rtcReceiver, ok := receiver.(*sfu.WebRTCReceiver); ok {
 		return rtcReceiver.GetConnectionScoreAndQuality()
 	}
