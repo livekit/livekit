@@ -55,10 +55,11 @@ type SignalResponseHandler func(msg *livekit.SignalResponse) error
 type SignalResponseInterceptor func(msg *livekit.SignalResponse, next SignalResponseHandler) error
 
 type RTCClient struct {
-	id         livekit.ParticipantID
-	conn       *websocket.Conn
-	publisher  *rtc.PCTransport
-	subscriber *rtc.PCTransport
+	protocolVersion types.ProtocolVersion
+	id              livekit.ParticipantID
+	conn            *websocket.Conn
+	publisher       *rtc.PCTransport
+	subscriber      *rtc.PCTransport
 	// sid => track
 	localTracks        map[string]webrtc.TrackLocal
 	trackSenders       map[string]*webrtc.RTPSender
@@ -206,6 +207,7 @@ func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 	var err error
 
 	c := &RTCClient{
+		protocolVersion:        types.CurrentProtocol,
 		conn:                   conn,
 		localTracks:            make(map[string]webrtc.TrackLocal),
 		trackSenders:           make(map[string]*webrtc.RTPSender),
@@ -684,7 +686,7 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string, 
 	}
 
 	var sender *webrtc.RTPSender
-	if types.ProtocolVersion(types.CurrentProtocol).SupportsSinglePeerConnection() {
+	if c.protocolVersion.SupportsSinglePeerConnection() {
 		sender, _, err = c.subscriber.AddTrack(track, types.AddTrackParams{})
 	} else {
 		sender, _, err = c.publisher.AddTrack(track, types.AddTrackParams{})
@@ -753,7 +755,7 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string, 
 	*/
 	c.localTracks[ti.Sid] = track
 	c.trackSenders[ti.Sid] = sender
-	if !types.ProtocolVersion(types.CurrentProtocol).SupportsSinglePeerConnection() {
+	if !c.protocolVersion.SupportsSinglePeerConnection() {
 		c.publisher.Negotiate(false)
 	}
 
@@ -827,8 +829,10 @@ func (c *RTCClient) SendAddTrack(cid string, mimeType string, name string, track
 }
 
 func (c *RTCClient) PublishData(data []byte, kind livekit.DataPacket_Kind) error {
-	if err := c.ensurePublisherConnected(); err != nil {
-		return err
+	if !c.protocolVersion.SupportsSinglePeerConnection() {
+		if err := c.ensurePublisherConnected(); err != nil {
+			return err
+		}
 	}
 
 	dpData, err := proto.Marshal(&livekit.DataPacket{
@@ -840,7 +844,11 @@ func (c *RTCClient) PublishData(data []byte, kind livekit.DataPacket_Kind) error
 		return err
 	}
 
-	return c.publisher.SendDataMessage(kind, dpData)
+	if !c.protocolVersion.SupportsSinglePeerConnection() {
+		return c.publisher.SendDataMessage(kind, dpData)
+	} else {
+		return c.subscriber.SendDataMessage(kind, dpData)
+	}
 }
 
 func (c *RTCClient) PublishDataUnlabeled(data []byte) error {

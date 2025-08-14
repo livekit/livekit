@@ -1096,6 +1096,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 		dcPtr       **datachannel.DataChannelWriter[*webrtc.DataChannel]
 		dcReady     *bool
 		isUnlabeled bool
+		kind        livekit.DataPacket_Kind
 	)
 	switch dc.Label() {
 	default:
@@ -1104,9 +1105,11 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 	case ReliableDataChannel:
 		dcPtr = &t.reliableDC
 		dcReady = &t.reliableDCOpened
+		kind = livekit.DataPacket_RELIABLE
 	case LossyDataChannel:
 		dcPtr = &t.lossyDC
 		dcReady = &t.lossyDCOpened
+		kind = livekit.DataPacket_LOSSY
 	}
 
 	dc.OnOpen(func() {
@@ -1136,6 +1139,28 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 		}
 		t.lock.Unlock()
 		t.params.Logger.Debugw(dc.Label() + " data channel open")
+
+		go func() {
+			defer rawDC.Close()
+			buffer := make([]byte, dataChannelBufferSize)
+			for {
+				n, _, err := rawDC.ReadDataChannel(buffer)
+				if err != nil {
+					if !errors.Is(err, io.EOF) && !strings.Contains(err.Error(), "state=Closed") {
+						t.params.Logger.Warnw("error reading data channel", err, "label", dc.Label())
+					}
+					return
+				}
+
+				switch {
+				case isUnlabeled:
+					t.params.Handler.OnDataMessageUnlabeled(buffer[:n])
+
+				default:
+					t.params.Handler.OnDataMessage(kind, buffer[:n])
+				}
+			}
+		}()
 
 		t.maybeNotifyFullyEstablished()
 	})
