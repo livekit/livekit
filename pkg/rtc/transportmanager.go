@@ -84,6 +84,7 @@ func (h TransportManagerPublisherTransportHandler) OnAnswer(sd webrtc.SessionDes
 
 type TransportManagerParams struct {
 	SubscriberAsPrimary          bool
+	SinglePeerConnection         bool
 	Config                       *WebRTCConfig
 	Twcc                         *twcc.Responder
 	ProtocolVersion              types.ProtocolVersion
@@ -124,9 +125,10 @@ type TransportManager struct {
 	pendingOfferPublisher        *webrtc.SessionDescription
 	pendingOfferIdPublisher      uint32
 	pendingDataChannelsPublisher []*livekit.DataChannelInfo
-	lastPublisherAnswer          atomic.Value
-	lastPublisherOffer           atomic.Value
-	iceConfig                    *livekit.ICEConfig
+	// RAJA-TODO: check if this can be gotten from peer connection directly
+	lastPublisherAnswer atomic.Value
+	lastPublisherOffer  atomic.Value
+	iceConfig           *livekit.ICEConfig
 
 	mediaLossProxy       *MediaLossProxy
 	udpLossUnstableCount uint32
@@ -148,49 +150,59 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 	}
 	t.mediaLossProxy.OnMediaLossUpdate(t.onMediaLossUpdate)
 
-	lgr := LoggerWithPCTarget(params.Logger, livekit.SignalTarget_PUBLISHER)
-	publisher, err := NewPCTransport(TransportParams{
-		ProtocolVersion:              params.ProtocolVersion,
-		Config:                       params.Config,
-		Twcc:                         params.Twcc,
-		DirectionConfig:              params.Config.Publisher,
-		CongestionControlConfig:      params.CongestionControlConfig,
-		EnabledCodecs:                params.EnabledPublishCodecs,
-		Logger:                       lgr,
-		SimTracks:                    params.SimTracks,
-		ClientInfo:                   params.ClientInfo,
-		Transport:                    livekit.SignalTarget_PUBLISHER,
-		Handler:                      TransportManagerPublisherTransportHandler{TransportManagerTransportHandler{params.PublisherHandler, t, lgr}},
-		UseOneShotSignallingMode:     params.UseOneShotSignallingMode,
-		DataChannelMaxBufferedAmount: params.DataChannelMaxBufferedAmount,
-		DatachannelSlowThreshold:     params.DatachannelSlowThreshold,
-		FireOnTrackBySdp:             params.FireOnTrackBySdp,
-	})
-	if err != nil {
-		return nil, err
+	if t.params.UseOneShotSignallingMode || !t.params.SinglePeerConnection {
+		lgr := LoggerWithPCTarget(params.Logger, livekit.SignalTarget_PUBLISHER)
+		publisher, err := NewPCTransport(TransportParams{
+			ProtocolVersion:              params.ProtocolVersion,
+			Config:                       params.Config,
+			Twcc:                         params.Twcc,
+			DirectionConfig:              params.Config.Publisher,
+			CongestionControlConfig:      params.CongestionControlConfig,
+			EnabledCodecs:                params.EnabledPublishCodecs,
+			Logger:                       lgr,
+			SimTracks:                    params.SimTracks,
+			ClientInfo:                   params.ClientInfo,
+			Transport:                    livekit.SignalTarget_PUBLISHER,
+			Handler:                      TransportManagerPublisherTransportHandler{TransportManagerTransportHandler{params.PublisherHandler, t, lgr}},
+			UseOneShotSignallingMode:     params.UseOneShotSignallingMode,
+			DataChannelMaxBufferedAmount: params.DataChannelMaxBufferedAmount,
+			DatachannelSlowThreshold:     params.DatachannelSlowThreshold,
+			FireOnTrackBySdp:             params.FireOnTrackBySdp,
+		})
+		if err != nil {
+			return nil, err
+		}
+		t.publisher = publisher
 	}
-	t.publisher = publisher
 
-	lgr = LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER)
-	subscriber, err := NewPCTransport(TransportParams{
-		ProtocolVersion:          params.ProtocolVersion,
-		Config:                   params.Config,
-		DirectionConfig:          params.Config.Subscriber,
-		CongestionControlConfig:  params.CongestionControlConfig,
-		EnabledCodecs:            params.EnabledSubscribeCodecs,
-		Logger:                   lgr,
-		ClientInfo:               params.ClientInfo,
-		IsOfferer:                true,
-		IsSendSide:               true,
-		AllowPlayoutDelay:        params.AllowPlayoutDelay,
-		DatachannelSlowThreshold: params.DatachannelSlowThreshold,
-		Transport:                livekit.SignalTarget_SUBSCRIBER,
-		Handler:                  TransportManagerTransportHandler{params.SubscriberHandler, t, lgr},
-	})
-	if err != nil {
-		return nil, err
+	if !t.params.UseOneShotSignallingMode {
+		lgr := LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER)
+		subscriber, err := NewPCTransport(TransportParams{
+			ProtocolVersion:          params.ProtocolVersion,
+			Config:                   params.Config,
+			DirectionConfig:          params.Config.Subscriber,
+			CongestionControlConfig:  params.CongestionControlConfig,
+			EnabledCodecs:            params.EnabledSubscribeCodecs,
+			Logger:                   lgr,
+			ClientInfo:               params.ClientInfo,
+			IsOfferer:                true,
+			IsSendSide:               true,
+			AllowPlayoutDelay:        params.AllowPlayoutDelay,
+			DatachannelSlowThreshold: params.DatachannelSlowThreshold,
+			Transport:                livekit.SignalTarget_SUBSCRIBER,
+			Handler:                  TransportManagerTransportHandler{params.SubscriberHandler, t, lgr},
+			FireOnTrackBySdp:         params.FireOnTrackBySdp,
+		})
+		if err != nil {
+			return nil, err
+		}
+		t.subscriber = subscriber
+	} else {
+		t.subscriber = t.publisher
 	}
-	t.subscriber = subscriber
+	if t.params.SinglePeerConnection {
+		t.publisher = t.subscriber
+	}
 	if !t.params.Migration {
 		if err := t.createDataChannelsForSubscriber(nil); err != nil {
 			return nil, err
@@ -262,6 +274,10 @@ func (t *TransportManager) AddTransceiverFromTrackLocal(
 	} else {
 		return t.subscriber.AddTransceiverFromTrack(trackLocal, params)
 	}
+}
+
+func (t *TransportManager) AddRemoteTrackAndNegotiate(ti *livekit.TrackInfo) error {
+	return t.subscriber.AddRemoteTrackAndNegotiate(ti)
 }
 
 func (t *TransportManager) RemoveTrackLocal(sender *webrtc.RTPSender) error {
@@ -395,10 +411,12 @@ func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels [
 func (t *TransportManager) GetUnmatchMediaForOffer(parsedOffer *sdp.SessionDescription, mediaType string) (unmatched []*sdp.MediaDescription, err error) {
 	// prefer codec from offer for clients that don't support setCodecPreferences
 	var lastMatchedMid string
-	lastAnswer := t.lastPublisherAnswer.Load()
+	// RAJA-TODO lastAnswer := t.lastPublisherAnswer.Load()
+	lastAnswer := t.publisher.CurrentRemoteDescription()
 	if lastAnswer != nil {
-		answer := lastAnswer.(webrtc.SessionDescription)
-		parsedAnswer, err1 := answer.Unmarshal()
+		// RAJA-TODO answer := lastAnswer.(webrtc.SessionDescription)
+		// RAJA-TODO parsedAnswer, err1 := answer.Unmarshal()
+		parsedAnswer, err1 := lastAnswer.Unmarshal()
 		if err1 != nil {
 			// should not happen
 			t.params.Logger.Errorw("failed to parse last answer", err1)

@@ -101,6 +101,7 @@ var (
 	ErrNoBundleMid                       = errors.New("could not get bundle mid")
 	ErrMidMismatch                       = errors.New("media mid does not match bundle mid")
 	ErrICECredentialMismatch             = errors.New("ice credential mismatch")
+	ErrInvalidCodecIndex                 = errors.New("invalid codec index")
 )
 
 // -------------------------------------------------------------------------
@@ -243,6 +244,10 @@ type PCTransport struct {
 
 	remoteOfferId atomic.Uint32
 	localAnswerId atomic.Uint32
+
+	// RAJA-TODO: check if this can be gotten from pc
+	lastLocalDescription  atomic.Value
+	lastRemoteDescription atomic.Value
 
 	eventsQueue *utils.TypedOpsQueue[event]
 
@@ -970,8 +975,96 @@ func (t *PCTransport) AddTransceiverFromTrack(trackLocal webrtc.TrackLocal, para
 	return
 }
 
+func (t *PCTransport) AddRemoteTrackAndNegotiate(ti *livekit.TrackInfo) error {
+	if ti == nil {
+		return nil
+	}
+
+	/* RAJA-REMOVE
+	if codecIdx >= len(ti.Codecs) {
+		t.params.Logger.Warnw(
+			"invalid codec index", ErrInvalidCodecIndex,
+			"trackID", ti.Sid,
+			"track", logger.Proto(ti),
+		)
+		return ErrInvalidCodecIndex
+	}
+
+	sci := ti.Codecs[codecIdx]
+	var mimeType mime.MimeType
+	if sci.MimeType == "" {
+		if ti.Type == livekit.TrackType_AUDIO {
+			mimeType = mime.MimeTypeOpus
+		} else {
+			mimeType = mime.MimeTypeVP8
+		}
+	} else {
+		mimeType = mime.MimeTypeFromString(sci.MimeType)
+	}
+	track, err := webrtc.NewTrackLocalStaticRTP(
+		webrtc.RTPCodecCapability{
+			MimeType: mimeType.String(),
+		},
+		sci.Cid,
+		sci.Cid,
+	)
+	if err != nil {
+		t.params.Logger.Warnw(
+			"could not create local track", err,
+			"trackID", ti.Sid,
+			"track", logger.Proto(ti),
+			"sci", logger.Proto(sci),
+		)
+		return err
+	}
+
+	_, err = t.pc.AddTransceiverFromTrack(
+		track,
+		webrtc.RTPTransceiverInit{
+			Direction: webrtc.RTPTransceiverDirectionSendrecv,
+		},
+	)
+	if err != nil {
+		t.params.Logger.Warnw(
+			"could not add transceiver from track", err,
+			"trackID", ti.Sid,
+			"track", logger.Proto(ti),
+			"sci", logger.Proto(sci),
+		)
+		return err
+	}
+	*/
+
+	rtpCodecType := webrtc.RTPCodecTypeVideo
+	if ti.Type == livekit.TrackType_AUDIO {
+		rtpCodecType = webrtc.RTPCodecTypeAudio
+	}
+	_, err := t.pc.AddTransceiverFromKind(
+		rtpCodecType,
+		webrtc.RTPTransceiverInit{
+			Direction: webrtc.RTPTransceiverDirectionRecvonly,
+		},
+	)
+	if err != nil {
+		t.params.Logger.Warnw(
+			"could not add transceiver from kind", err,
+			"trackID", ti.Sid,
+			"track", logger.Proto(ti),
+		)
+		return err
+	}
+
+	t.Negotiate(true)
+
+	return nil
+}
+
 func (t *PCTransport) RemoveTrack(sender *webrtc.RTPSender) error {
 	return t.pc.RemoveTrack(sender)
+}
+
+func (t *PCTransport) CurrentRemoteDescription() *webrtc.SessionDescription {
+	return t.pc.CurrentRemoteDescription()
 }
 
 func (t *PCTransport) GetMid(rtpReceiver *webrtc.RTPReceiver) string {
@@ -2258,6 +2351,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		)
 	}
 
+	t.lastLocalDescription.Store(offer)
 	if err := t.params.Handler.OnOffer(offer, t.localOfferId.Inc()); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "write_message").Add(1)
 		return errors.Wrap(err, "could not send offer")
@@ -2278,6 +2372,7 @@ type remoteDescriptionData struct {
 
 func (t *PCTransport) handleRemoteDescriptionReceived(e event) error {
 	rdd := e.data.(remoteDescriptionData)
+	t.lastRemoteDescription.Store(*rdd.sessionDescription)
 	if rdd.sessionDescription.Type == webrtc.SDPTypeOffer {
 		return t.handleRemoteOfferReceived(rdd.sessionDescription, rdd.remoteId)
 	} else {
@@ -2384,6 +2479,7 @@ func (t *PCTransport) createAndSendAnswer() error {
 		)
 	}
 
+	t.lastLocalDescription.Store(answer)
 	answerId := t.remoteOfferId.Load()
 	if err := t.params.Handler.OnAnswer(answer, answerId); err != nil {
 		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
@@ -2549,6 +2645,7 @@ func (t *PCTransport) doICERestart() error {
 				)
 			}
 
+			t.lastLocalDescription.Store(*offer)
 			err := t.params.Handler.OnOffer(*offer, t.localOfferId.Inc())
 			if err != nil {
 				prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "write_message").Add(1)

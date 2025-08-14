@@ -1319,8 +1319,15 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 		return
 	}
 
+	if p.ProtocolVersion().SupportsSinglePeerConnection() {
+		if err := p.TransportManager.AddRemoteTrackAndNegotiate(ti); err != nil {
+			return
+		}
+	}
+
 	p.sendTrackPublished(req.Cid, ti)
 
+	// RAJA-TODO: is this needed for single peer connection case
 	p.handlePendingRemoteTracks()
 }
 
@@ -1850,6 +1857,10 @@ func (h SubscriberTransportHandler) OnOffer(sd webrtc.SessionDescription, offerI
 	return h.p.onSubscriberOffer(sd, offerId)
 }
 
+func (h SubscriberTransportHandler) OnTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
+	h.p.onMediaTrack(track, rtpReceiver)
+}
+
 func (h SubscriberTransportHandler) OnStreamStateChange(update *streamallocator.StreamStateUpdate) error {
 	return h.p.onStreamStateChange(update)
 }
@@ -1912,6 +1923,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		// primary connection does not change, canSubscribe can change if permission was updated
 		// after the participant has joined
 		SubscriberAsPrimary:          subscriberAsPrimary,
+		SinglePeerConnection:         p.ProtocolVersion().SupportsSinglePeerConnection(),
 		Config:                       p.params.Config,
 		Twcc:                         p.twcc,
 		ProtocolVersion:              p.params.ProtocolVersion,
@@ -2118,6 +2130,43 @@ func (p *ParticipantImpl) setIsPublisher(isPublisher bool) {
 
 // when the server has an offer for participant
 func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription, offerId uint32) error {
+	if p.ProtocolVersion().SupportsSinglePeerConnection() {
+		parsedOffer, err := offer.Unmarshal()
+		if err != nil {
+			p.pubLogger.Warnw(
+				"could not parse offer", err,
+				"transport", livekit.SignalTarget_PUBLISHER,
+				"offer", offer,
+				"offerId", offerId,
+			)
+			return err
+		}
+
+		unmatchAudios, err := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "audio")
+		if err != nil {
+			p.subLogger.Warnw("could not get unmatch audios", err)
+			return err
+		}
+		unmatchVideos, _ := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "video")
+		if err != nil {
+			p.subLogger.Warnw("could not get unmatch videos", err)
+			return err
+		}
+		parsedOffer = p.setCodecPreferencesForPublisher(parsedOffer, unmatchAudios, unmatchVideos)
+
+		// put together munged offer after setting codec preferences
+		bytes, err := parsedOffer.Marshal()
+		if err != nil {
+			p.pubLogger.Errorw("failed to marshal offer", err)
+			return err
+		}
+
+		offer = webrtc.SessionDescription{
+			Type: offer.Type,
+			SDP:  string(bytes),
+		}
+	}
+
 	p.subLogger.Debugw(
 		"sending offer",
 		"transport", livekit.SignalTarget_SUBSCRIBER,

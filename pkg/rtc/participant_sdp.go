@@ -25,6 +25,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	lksdp "github.com/livekit/protocol/sdp"
 	"github.com/livekit/protocol/utils"
 )
@@ -244,6 +245,7 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 	unprocessed := make([]*sdp.MediaDescription, 0, len(unmatches))
 	// unmatched media is pending for publish, set codec preference
 	for _, unmatch := range unmatches {
+		/* RAJA-TODO
 		streamID, ok := lksdp.ExtractStreamID(unmatch)
 		if !ok {
 			unprocessed = append(unprocessed, unmatch)
@@ -258,7 +260,10 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 		} else {
 			_, info, _, _, _ = p.getPendingTrack(streamID, trackType, false)
 		}
+		*/
 
+		p.pendingTracksLock.RLock()
+		_, info, _, _, _ := p.getPendingTrack("junk", trackType, false) // RAJA-TODO
 		if info == nil {
 			p.pendingTracksLock.RUnlock()
 			unprocessed = append(unprocessed, unmatch)
@@ -266,15 +271,18 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 		}
 
 		var mimeType string
+		/* RAJA-TODO
 		for _, c := range info.Codecs {
 			if c.Cid == streamID || c.SdpCid == streamID {
 				mimeType = c.MimeType
 				break
 			}
 		}
+		*/
 		if mimeType == "" && len(info.Codecs) > 0 {
 			mimeType = info.Codecs[0].MimeType
 		}
+		p.params.Logger.Infow("RAJA mimeType", "mimeType", mimeType, "info", logger.Proto(info)) // REMOVE
 		p.pendingTracksLock.RUnlock()
 
 		if mimeType == "" {
@@ -334,6 +342,9 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 
 			unmatch.MediaName.Formats = append(unmatch.MediaName.Formats, leftCodecs...)
 		}
+
+		// RAJA-TODO: can set mid in TrackInfo before sending offer and check on receiving answer to set SdpCid
+		// RAJA-TODO: Have to check which simulcast codec is not published
 	}
 
 	return parsedOffer, unprocessed

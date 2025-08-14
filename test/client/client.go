@@ -356,9 +356,10 @@ func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 	})
 	subscriberHandler.OnAnswerCalls(func(answer webrtc.SessionDescription, answerId uint32) error {
 		// send remote an answer
-		logger.Infow("sending subscriber answer",
+		logger.Infow(
+			"sending subscriber answer",
 			"participant", c.localParticipant.Identity,
-			// "sdp", answer,
+			"sdp", answer,
 		)
 		return c.SendRequest(&livekit.SignalRequest{
 			Message: &livekit.SignalRequest_Answer{
@@ -433,10 +434,13 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 		//	"answer", msg.Answer.Sdp)
 		c.handleAnswer(signalling.FromProtoSessionDescription(msg.Answer))
 	case *livekit.SignalResponse_Offer:
-		logger.Infow("received server offer",
-			"participant", c.localParticipant.Identity,
-		)
 		desc, offerId := signalling.FromProtoSessionDescription(msg.Offer)
+		logger.Infow(
+			"received server offer",
+			"participant", c.localParticipant.Identity,
+			"sdp", desc,
+			"offerId", offerId,
+		)
 		c.handleOffer(desc, offerId)
 	case *livekit.SignalResponse_Trickle:
 		candidateInit, err := signalling.FromProtoTrickle(msg.Trickle)
@@ -658,7 +662,8 @@ func (c *RTCClient) hasPrimaryEverConnected() bool {
 }
 
 type AddTrackParams struct {
-	NoWriter bool
+	NoWriter                    bool
+	UseSubscriberPeerConnection bool
 }
 
 type AddTrackOption func(params *AddTrackParams)
@@ -666,6 +671,12 @@ type AddTrackOption func(params *AddTrackParams)
 func AddTrackNoWriter() AddTrackOption {
 	return func(params *AddTrackParams) {
 		params.NoWriter = true
+	}
+}
+
+func AddTrackUseSubscriberPeerConnectionr() AddTrackOption {
+	return func(params *AddTrackParams) {
+		params.UseSubscriberPeerConnection = true
 	}
 }
 
@@ -679,7 +690,30 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string, 
 		trackType = livekit.TrackType_VIDEO
 	}
 
-	if err = c.SendAddTrack(track.ID(), track.StreamID(), trackType); err != nil {
+	var sender *webrtc.RTPSender
+	if !params.UseSubscriberPeerConnection {
+		sender, _, err = c.publisher.AddTrack(track, types.AddTrackParams{})
+	} else {
+		sender, _, err = c.subscriber.AddTrack(track, types.AddTrackParams{})
+	}
+	if err != nil {
+		logger.Errorw(
+			"add track failed", err,
+			"participant", c.localParticipant.Identity,
+			"pID", c.localParticipant.Sid,
+			"trackID", track.ID(),
+		)
+		return
+	}
+	logger.Infow(
+		"RAJA add track sender",
+		"participant", c.localParticipant.Identity,
+		"pID", c.localParticipant.Sid,
+		"trackID", track.ID(),
+		"sender", sender.GetParameters(),
+	) // REMOVE
+
+	if err = c.SendAddTrack(track.ID(), track.Codec().MimeType, track.StreamID(), trackType); err != nil {
 		return
 	}
 
@@ -707,14 +741,35 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string, 
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	sender, _, err := c.publisher.AddTrack(track, types.AddTrackParams{})
+	/* RAJA-TODO
+	var sender *webrtc.RTPSender
+	if !params.UseSubscriberPeerConnection {
+		sender, _, err = c.publisher.AddTrack(track, types.AddTrackParams{})
+	} else {
+		sender, _, err = c.subscriber.AddTrack(track, types.AddTrackParams{})
+	}
 	if err != nil {
-		logger.Errorw("add track failed", err, "trackID", ti.Sid, "participant", c.localParticipant.Identity, "pID", c.localParticipant.Sid)
+		logger.Errorw(
+			"add track failed", err,
+			"participant", c.localParticipant.Identity,
+			"pID", c.localParticipant.Sid,
+			"trackID", ti.Sid,
+		)
 		return
 	}
+	logger.Infow(
+		"RAJA add track sender",
+		"participant", c.localParticipant.Identity,
+		"pID", c.localParticipant.Sid,
+		"trackID", ti.Sid,
+		"sender", sender.GetParameters(),
+	) // REMOVE
+	*/
 	c.localTracks[ti.Sid] = track
 	c.trackSenders[ti.Sid] = sender
-	c.publisher.Negotiate(false)
+	if !params.UseSubscriberPeerConnection {
+		c.publisher.Negotiate(false)
+	}
 
 	if !params.NoWriter {
 		writer = NewTrackWriter(c.ctx, track, path)
@@ -767,13 +822,19 @@ func (c *RTCClient) AddFileTrack(path string, id string, label string) (writer *
 }
 
 // send AddTrack command to server to initiate server-side negotiation
-func (c *RTCClient) SendAddTrack(cid string, name string, trackType livekit.TrackType) error {
+func (c *RTCClient) SendAddTrack(cid string, mimeType string, name string, trackType livekit.TrackType) error {
 	return c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_AddTrack{
 			AddTrack: &livekit.AddTrackRequest{
 				Cid:  cid,
 				Name: name,
 				Type: trackType,
+				SimulcastCodecs: []*livekit.SimulcastCodec{
+					{
+						Cid:   cid,
+						Codec: mimeType,
+					},
+				},
 			},
 		},
 	})
@@ -889,23 +950,26 @@ func (c *RTCClient) onOffer(offer webrtc.SessionDescription, offerId uint32) err
 
 func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 	lastUpdate := time.Time{}
-	pId, trackId := rtc.UnpackStreamID(track.StreamID())
-	if trackId == "" {
-		trackId = livekit.TrackID(track.ID())
+	pID, trackID := rtc.UnpackStreamID(track.StreamID())
+	if trackID == "" {
+		trackID = livekit.TrackID(track.ID())
 	}
 	c.lock.Lock()
-	c.subscribedTracks[pId] = append(c.subscribedTracks[pId], track)
+	c.subscribedTracks[pID] = append(c.subscribedTracks[pID], track)
 	c.lock.Unlock()
 
-	logger.Infow("client added track", "participant", c.localParticipant.Identity,
-		"pID", pId,
-		"trackID", trackId,
+	logger.Infow(
+		"client added track",
+		"participant", c.localParticipant.Identity,
+		"pID", pID,
+		"trackID", trackID,
 		"codec", track.Codec(),
+		"ssrc", track.SSRC(),
 	)
 
 	defer func() {
 		c.lock.Lock()
-		c.subscribedTracks[pId] = funk.Without(c.subscribedTracks[pId], track).([]*webrtc.TrackRemote)
+		c.subscribedTracks[pID] = funk.Without(c.subscribedTracks[pID], track).([]*webrtc.TrackRemote)
 		c.lock.Unlock()
 	}()
 
@@ -923,14 +987,17 @@ func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 			continue
 		}
 		c.lock.Lock()
-		c.lastPackets[pId] = pkt
-		c.bytesReceived[pId] += uint64(pkt.MarshalSize())
+		c.lastPackets[pID] = pkt
+		c.bytesReceived[pID] += uint64(pkt.MarshalSize())
 		c.lock.Unlock()
 		numBytes += pkt.MarshalSize()
 		if time.Since(lastUpdate) > 30*time.Second {
-			logger.Infow("consumed from participant",
-				"trackID", trackId, "pID", pId,
-				"size", numBytes)
+			logger.Infow(
+				"consumed from participant",
+				"pID", pID,
+				"trackID", trackID,
+				"size", numBytes,
+			)
 			lastUpdate = time.Now()
 		}
 	}

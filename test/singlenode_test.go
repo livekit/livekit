@@ -894,8 +894,8 @@ func TestFireTrackBySdp(t *testing.T) {
 		{
 			name: "js client could pub a/v tracks",
 			codecs: []webrtc.RTPCodecCapability{
-				{MimeType: "video/H264"},
-				{MimeType: "audio/opus"},
+				{MimeType: mime.MimeTypeH264.String()},
+				{MimeType: mime.MimeTypeOpus.String()},
 			},
 			pubSDK: livekit.ClientInfo_JS,
 		},
@@ -953,4 +953,53 @@ func TestFireTrackBySdp(t *testing.T) {
 			require.Equal(t, len(codecs), found)
 		})
 	}
+}
+
+func TestSinglePeerConnection(t *testing.T) {
+	_, finish := setupSingleNodeTest("TestSinglePeerConnection")
+	defer finish()
+
+	c1 := createRTCClient("c1", defaultServerPort, &testclient.Options{
+		ClientInfo: &livekit.ClientInfo{
+			Sdk: livekit.ClientInfo_GO,
+		},
+	})
+	c2 := createRTCClient("c2", defaultServerPort, &testclient.Options{
+		AutoSubscribe: true,
+		ClientInfo: &livekit.ClientInfo{
+			Sdk: livekit.ClientInfo_GO,
+		},
+	})
+	waitUntilConnected(t, c1, c2)
+	defer func() {
+		c1.Stop()
+		c2.Stop()
+	}()
+
+	codecs := []webrtc.RTPCodecCapability{
+		{MimeType: mime.MimeTypeH264.String()},
+		{MimeType: mime.MimeTypeOpus.String()},
+	}
+	for _, codec := range codecs {
+		_, err := c1.AddStaticTrackWithCodec(codec, codec.MimeType, codec.MimeType, testclient.AddTrackUseSubscriberPeerConnectionr())
+		require.NoError(t, err)
+	}
+
+	require.Eventually(t, func() bool {
+		return len(c2.SubscribedTracks()[c1.ID()]) == len(codecs)
+	}, 5*time.Second, 10*time.Millisecond)
+
+	var found int
+	for _, pubTrack := range c1.GetPublishedTrackIDs() {
+		t.Log("pub track", pubTrack)
+		tracks := c2.SubscribedTracks()[c1.ID()]
+		for _, track := range tracks {
+			t.Log("sub track", track.ID(), track.Codec())
+			if track.ID() == pubTrack {
+				found++
+				break
+			}
+		}
+	}
+	require.Equal(t, len(codecs), found)
 }
