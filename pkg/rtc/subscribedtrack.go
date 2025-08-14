@@ -121,6 +121,7 @@ func (t *SubscribedTrack) Bound(err error) {
 			if t.params.AdaptiveStream {
 				// remove `disabled` flag to force a visibility update
 				t.settings.Disabled = false
+				t.logger.Debugw("enabling subscriber track settings on bind", "settings", logger.Proto(t.settings))
 			}
 		} else {
 			if t.params.AdaptiveStream {
@@ -128,6 +129,7 @@ func (t *SubscribedTrack) Bound(err error) {
 			} else {
 				t.settings = &livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_HIGH}
 			}
+			t.logger.Debugw("initializing subscriber track settings on bind", "settings", logger.Proto(t.settings))
 		}
 		t.settingsLock.Unlock()
 		t.applySettings()
@@ -215,12 +217,14 @@ func (t *SubscribedTrack) SetPublisherMuted(muted bool) {
 func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings, isImmediate bool) {
 	t.settingsLock.Lock()
 	if proto.Equal(t.settings, settings) {
+		t.logger.Debugw("skipping subscriber track settings", "settings", logger.Proto(t.settings))
 		t.settingsLock.Unlock()
 		return
 	}
 
 	isImmediate = isImmediate || (!settings.Disabled && settings.Disabled != t.isMutedLocked())
 	t.settings = utils.CloneProto(settings)
+	t.logger.Debugw("saving subscriber track settings", "settings", logger.Proto(t.settings))
 	t.settingsLock.Unlock()
 
 	if isImmediate {
@@ -242,7 +246,6 @@ func (t *SubscribedTrack) applySettings() {
 		return
 	}
 
-	t.logger.Debugw("updating subscriber track settings", "settings", logger.Proto(t.settings))
 	t.settingsVersion = t.versionGenerator.Next()
 	settingsVersion := t.settingsVersion
 	t.settingsLock.Unlock()
@@ -271,6 +274,7 @@ func (t *SubscribedTrack) applySettings() {
 		return
 	}
 
+	t.logger.Debugw("applying subscriber track settings", "settings", logger.Proto(t.settings))
 	if t.settings.Disabled {
 		dt.Mute(true)
 		t.settingsLock.Unlock()
