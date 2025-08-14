@@ -495,6 +495,7 @@ func TestSingleNodeUpdateSubscriptionPermissions(t *testing.T) {
 	defer finish()
 
 	pub := createRTCClient("pub", defaultServerPort, nil)
+
 	grant := &auth.VideoGrant{RoomJoin: true, Room: testRoom}
 	grant.SetCanSubscribe(false)
 	at := auth.NewAccessToken(testApiKey, testApiSecret).
@@ -955,6 +956,7 @@ func TestFireTrackBySdp(t *testing.T) {
 	}
 }
 
+// SINGLE-PEER-CONNECTION-TODO: delete this test and make all other tests for both two peer connections and one peer connection
 func TestSinglePeerConnection(t *testing.T) {
 	_, finish := setupSingleNodeTest("TestSinglePeerConnection")
 	defer finish()

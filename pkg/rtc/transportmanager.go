@@ -178,20 +178,21 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 	if !t.params.UseOneShotSignallingMode {
 		lgr := LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER)
 		subscriber, err := NewPCTransport(TransportParams{
-			ProtocolVersion:          params.ProtocolVersion,
-			Config:                   params.Config,
-			DirectionConfig:          params.Config.Subscriber,
-			CongestionControlConfig:  params.CongestionControlConfig,
-			EnabledCodecs:            params.EnabledSubscribeCodecs,
-			Logger:                   lgr,
-			ClientInfo:               params.ClientInfo,
-			IsOfferer:                true,
-			IsSendSide:               true,
-			AllowPlayoutDelay:        params.AllowPlayoutDelay,
-			DatachannelSlowThreshold: params.DatachannelSlowThreshold,
-			Transport:                livekit.SignalTarget_SUBSCRIBER,
-			Handler:                  TransportManagerTransportHandler{params.SubscriberHandler, t, lgr},
-			FireOnTrackBySdp:         params.FireOnTrackBySdp,
+			ProtocolVersion:              params.ProtocolVersion,
+			Config:                       params.Config,
+			DirectionConfig:              params.Config.Subscriber,
+			CongestionControlConfig:      params.CongestionControlConfig,
+			EnabledCodecs:                params.EnabledSubscribeCodecs,
+			Logger:                       lgr,
+			ClientInfo:                   params.ClientInfo,
+			IsOfferer:                    true,
+			IsSendSide:                   true,
+			AllowPlayoutDelay:            params.AllowPlayoutDelay,
+			DataChannelMaxBufferedAmount: params.DataChannelMaxBufferedAmount,
+			DatachannelSlowThreshold:     params.DatachannelSlowThreshold,
+			Transport:                    livekit.SignalTarget_SUBSCRIBER,
+			Handler:                      TransportManagerTransportHandler{params.SubscriberHandler, t, lgr},
+			FireOnTrackBySdp:             params.FireOnTrackBySdp,
 		})
 		if err != nil {
 			return nil, err

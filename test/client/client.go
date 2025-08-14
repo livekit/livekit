@@ -261,19 +261,53 @@ func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 	// i. e. the publisher transport on client side has SUBSCRIBER signal target (i. e. publisher is offerer).
 	// Same applies for subscriber transport also
 	//
-	publisherHandler := &transportfakes.FakeHandler{}
-	c.publisher, err = rtc.NewPCTransport(rtc.TransportParams{
-		Config:                   &conf,
-		DirectionConfig:          conf.Subscriber,
-		EnabledCodecs:            codecs,
-		IsOfferer:                true,
-		IsSendSide:               true,
-		Handler:                  publisherHandler,
-		DatachannelSlowThreshold: 1024 * 1024 * 1024,
-	})
-	if err != nil {
-		return nil, err
+	if !c.protocolVersion.SupportsSinglePeerConnection() {
+		publisherHandler := &transportfakes.FakeHandler{}
+		c.publisher, err = rtc.NewPCTransport(rtc.TransportParams{
+			Config:                   &conf,
+			DirectionConfig:          conf.Subscriber,
+			EnabledCodecs:            codecs,
+			IsOfferer:                true,
+			IsSendSide:               true,
+			Handler:                  publisherHandler,
+			DatachannelSlowThreshold: 1024 * 1024 * 1024,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		publisherHandler.OnICECandidateCalls(func(ic *webrtc.ICECandidate, t livekit.SignalTarget) error {
+			return c.SendIceCandidate(ic, livekit.SignalTarget_PUBLISHER)
+		})
+		publisherHandler.OnOfferCalls(c.onOffer)
+		publisherHandler.OnFullyEstablishedCalls(func() {
+			logger.Debugw("publisher fully established", "participant", c.localParticipant.Identity, "pID", c.localParticipant.Sid)
+			c.publisherFullyEstablished.Store(true)
+		})
+
+		ordered := true
+		if err := c.publisher.CreateDataChannel(rtc.ReliableDataChannel, &webrtc.DataChannelInit{
+			Ordered: &ordered,
+		}); err != nil {
+			return nil, err
+		}
+
+		ordered = false
+		maxRetransmits := uint16(0)
+		if err := c.publisher.CreateDataChannel(rtc.LossyDataChannel, &webrtc.DataChannelInit{
+			Ordered:        &ordered,
+			MaxRetransmits: &maxRetransmits,
+		}); err != nil {
+			return nil, err
+		}
+
+		if err := c.publisher.CreateDataChannel("pubraw", &webrtc.DataChannelInit{
+			Ordered: &ordered,
+		}); err != nil {
+			return nil, err
+		}
 	}
+
 	subscriberHandler := &transportfakes.FakeHandler{}
 	c.subscriber, err = rtc.NewPCTransport(rtc.TransportParams{
 		Config:                           &conf,
@@ -281,43 +315,14 @@ func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 		EnabledCodecs:                    codecs,
 		Handler:                          subscriberHandler,
 		DatachannelMaxReceiverBufferSize: 1500,
+		DatachannelSlowThreshold:         1024 * 1024 * 1024,
 		FireOnTrackBySdp:                 true,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	publisherHandler.OnICECandidateCalls(func(ic *webrtc.ICECandidate, t livekit.SignalTarget) error {
-		return c.SendIceCandidate(ic, livekit.SignalTarget_PUBLISHER)
-	})
-	publisherHandler.OnOfferCalls(c.onOffer)
-	publisherHandler.OnFullyEstablishedCalls(func() {
-		logger.Debugw("publisher fully established", "participant", c.localParticipant.Identity, "pID", c.localParticipant.Sid)
-		c.publisherFullyEstablished.Store(true)
-	})
-
-	ordered := true
-	if err := c.publisher.CreateDataChannel(rtc.ReliableDataChannel, &webrtc.DataChannelInit{
-		Ordered: &ordered,
-	}); err != nil {
-		return nil, err
-	}
-
-	ordered = false
-	maxRetransmits := uint16(0)
-	if err := c.publisher.CreateDataChannel(rtc.LossyDataChannel, &webrtc.DataChannelInit{
-		Ordered:        &ordered,
-		MaxRetransmits: &maxRetransmits,
-	}); err != nil {
-		return nil, err
-	}
-
-	if err := c.publisher.CreateDataChannel("pubraw", &webrtc.DataChannelInit{
-		Ordered: &ordered,
-	}); err != nil {
-		return nil, err
-	}
-
+	ordered := false
 	if err := c.subscriber.CreateReadableDataChannel("subraw", &webrtc.DataChannelInit{
 		Ordered: &ordered,
 	}); err != nil {
@@ -424,7 +429,9 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 		// if publish only, negotiate
 		if !msg.Join.SubscriberPrimary {
 			c.subscriberAsPrimary.Store(false)
-			c.publisher.Negotiate(false)
+			if !c.protocolVersion.SupportsSinglePeerConnection() {
+				c.publisher.Negotiate(false)
+			}
 		} else {
 			c.subscriberAsPrimary.Store(true)
 		}
@@ -480,12 +487,14 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 	case *livekit.SignalResponse_TrackUnpublished:
 		sid := msg.TrackUnpublished.TrackSid
 		c.lock.Lock()
-		sender := c.trackSenders[sid]
-		if sender != nil {
-			if err := c.publisher.RemoveTrack(sender); err != nil {
-				logger.Errorw("Could not unpublish track", err)
+		if !c.protocolVersion.SupportsSinglePeerConnection() {
+			sender := c.trackSenders[sid]
+			if sender != nil {
+				if err := c.publisher.RemoveTrack(sender); err != nil {
+					logger.Errorw("Could not unpublish track", err)
+				}
+				c.publisher.Negotiate(false)
 			}
-			c.publisher.Negotiate(false)
 		}
 		delete(c.trackSenders, sid)
 		delete(c.localTracks, sid)
@@ -510,7 +519,7 @@ func (c *RTCClient) WaitUntilConnected() error {
 			}
 			return fmt.Errorf("%s could not connect after timeout", id)
 		case <-time.After(10 * time.Millisecond):
-			if c.subscriberAsPrimary.Load() {
+			if c.subscriberAsPrimary.Load() || c.protocolVersion.SupportsSinglePeerConnection() {
 				if c.subscriberFullyEstablished.Load() {
 					return nil
 				}
@@ -586,7 +595,9 @@ func (c *RTCClient) Stop() {
 	c.publisherFullyEstablished.Store(false)
 	c.subscriberFullyEstablished.Store(false)
 	_ = c.conn.Close()
-	c.publisher.Close()
+	if !c.protocolVersion.SupportsSinglePeerConnection() {
+		c.publisher.Close()
+	}
 	c.subscriber.Close()
 	c.cancel()
 }
@@ -656,7 +667,7 @@ func (c *RTCClient) SetAttributes(attrs map[string]string) error {
 }
 
 func (c *RTCClient) hasPrimaryEverConnected() bool {
-	if c.subscriberAsPrimary.Load() {
+	if c.subscriberAsPrimary.Load() || c.protocolVersion.SupportsSinglePeerConnection() {
 		return c.subscriber.HasEverConnected()
 	} else {
 		return c.publisher.HasEverConnected()
@@ -852,11 +863,15 @@ func (c *RTCClient) PublishData(data []byte, kind livekit.DataPacket_Kind) error
 }
 
 func (c *RTCClient) PublishDataUnlabeled(data []byte) error {
-	if err := c.ensurePublisherConnected(); err != nil {
-		return err
+	if !c.protocolVersion.SupportsSinglePeerConnection() {
+		if err := c.ensurePublisherConnected(); err != nil {
+			return err
+		}
+
+		return c.publisher.SendDataMessageUnlabeled(data, true, "test")
 	}
 
-	return c.publisher.SendDataMessageUnlabeled(data, true, "test")
+	return c.subscriber.SendDataMessageUnlabeled(data, true, "test")
 }
 
 func (c *RTCClient) GetPublishedTrackIDs() []string {
