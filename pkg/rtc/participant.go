@@ -1174,7 +1174,7 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription, offerId u
 	}
 
 	unmatchAudios, unmatchVideos := p.populateSdpCid(parsedOffer)
-	parsedOffer = p.setCodecPreferencesForPublisher(parsedOffer, unmatchAudios, unmatchVideos)
+	parsedOffer = p.setCodecPreferencesForPublisher(parsedOffer, unmatchAudios, unmatchVideos, true)
 	p.updateRidsFromSDP(parsedOffer, unmatchVideos)
 
 	// put together munged offer after setting codec preferences
@@ -2152,7 +2152,7 @@ func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription, off
 			p.subLogger.Warnw("could not get unmatch videos", err)
 			return err
 		}
-		parsedOffer = p.setCodecPreferencesForPublisher(parsedOffer, unmatchAudios, unmatchVideos)
+		parsedOffer = p.setCodecPreferencesForPublisher(parsedOffer, unmatchAudios, unmatchVideos, false)
 
 		// put together munged offer after setting codec preferences
 		bytes, err := parsedOffer.Marshal()
@@ -3335,6 +3335,17 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 	}
 
 	return signalCid, utils.CloneProto(pendingInfo.trackInfos[0]), pendingInfo.sdpRids, pendingInfo.migrated, pendingInfo.createdAt
+}
+
+func (p *ParticipantImpl) getPendingTracksByTrackType(trackType livekit.TrackType) []*livekit.TrackInfo {
+	var pendingTracks []*livekit.TrackInfo
+	for _, pti := range p.pendingTracks {
+		ti := pti.trackInfos[0]
+		if ti.Type == trackType {
+			pendingTracks = append(pendingTracks, utils.CloneProto(ti))
+		}
+	}
+	return pendingTracks
 }
 
 func (p *ParticipantImpl) getPendingTrackPrimaryBySdpCid(sdpCid string, skipQueued bool) *pendingTrackInfo {

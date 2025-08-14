@@ -152,32 +152,49 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisher(
 	parsedOffer *sdp.SessionDescription,
 	unmatchAudios []*sdp.MediaDescription,
 	unmatchVideos []*sdp.MediaDescription,
+	useSdpCid bool,
 ) *sdp.SessionDescription {
 	parsedOffer, unprocessedUnmatchAudios := p.setCodecPreferencesForPublisherMedia(
 		parsedOffer,
 		unmatchAudios,
 		livekit.TrackType_AUDIO,
+		useSdpCid,
 	)
-	parsedOffer = p.setCodecPreferencesOpusRedForPublisher(parsedOffer, unprocessedUnmatchAudios)
-	parsedOffer, _ = p.setCodecPreferencesForPublisherMedia(parsedOffer, unmatchVideos, livekit.TrackType_VIDEO)
+	parsedOffer = p.setCodecPreferencesOpusRedForPublisher(parsedOffer, unprocessedUnmatchAudios, useSdpCid)
+	parsedOffer, _ = p.setCodecPreferencesForPublisherMedia(parsedOffer, unmatchVideos, livekit.TrackType_VIDEO, useSdpCid)
 	return parsedOffer
 }
 
 func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(
 	parsedOffer *sdp.SessionDescription,
 	unmatchAudios []*sdp.MediaDescription,
+	useSdpCid bool,
 ) *sdp.SessionDescription {
 	for _, unmatchAudio := range unmatchAudios {
-		streamID, ok := lksdp.ExtractStreamID(unmatchAudio)
-		if !ok {
+		var ti *livekit.TrackInfo
+		if useSdpCid {
+			streamID, ok := lksdp.ExtractStreamID(unmatchAudio)
+			if !ok {
+				continue
+			}
+
+			p.pendingTracksLock.RLock()
+			_, ti, _, _, _ = p.getPendingTrack(streamID, livekit.TrackType_AUDIO, false)
+			p.pendingTracksLock.RUnlock()
+		} else {
+			p.pendingTracksLock.RLock()
+			pendingTracks := p.getPendingTracksByTrackType(livekit.TrackType_AUDIO)
+			p.pendingTracksLock.RUnlock()
+			if len(pendingTracks) > 1 {
+				p.pubLogger.Warnw("too many pending audio tracks", nil, "count", len(pendingTracks))
+			}
+			if len(pendingTracks) != 0 {
+				ti = pendingTracks[0]
+			}
+		}
+		if ti == nil {
 			continue
 		}
-
-		p.pendingTracksLock.RLock()
-		_, info, _, _, _ := p.getPendingTrack(streamID, livekit.TrackType_AUDIO, false)
-		// if RED is disabled for this track, don't prefer RED codec in offer
-		disableRed := info != nil && info.DisableRed
-		p.pendingTracksLock.RUnlock()
 
 		codecs, err := lksdp.CodecsFromMediaDescription(unmatchAudio)
 		if err != nil {
@@ -200,10 +217,11 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(
 			continue
 		}
 
+		// if RED is disabled for this track, don't prefer RED codec in offer
 		var preferredCodecs, leftCodecs []string
 		for _, codec := range codecs {
 			// codec contain opus/red
-			if !disableRed && mime.IsMimeTypeCodecStringRED(codec.Name) && strings.Contains(codec.Fmtp, strconv.FormatInt(int64(opusPayload), 10)) {
+			if !ti.DisableRed && mime.IsMimeTypeCodecStringRED(codec.Name) && strings.Contains(codec.Fmtp, strconv.FormatInt(int64(opusPayload), 10)) {
 				preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
 			} else {
 				leftCodecs = append(leftCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
@@ -241,49 +259,59 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 	parsedOffer *sdp.SessionDescription,
 	unmatches []*sdp.MediaDescription,
 	trackType livekit.TrackType,
+	useSdpCid bool,
 ) (*sdp.SessionDescription, []*sdp.MediaDescription) {
 	unprocessed := make([]*sdp.MediaDescription, 0, len(unmatches))
 	// unmatched media is pending for publish, set codec preference
 	for _, unmatch := range unmatches {
-		/* RAJA-TODO
-		streamID, ok := lksdp.ExtractStreamID(unmatch)
-		if !ok {
-			unprocessed = append(unprocessed, unmatch)
-			continue
-		}
-
-		var info *livekit.TrackInfo
-		p.pendingTracksLock.RLock()
-		mt := p.getPublishedTrackBySdpCid(streamID)
-		if mt != nil {
-			info = mt.ToProto()
-		} else {
-			_, info, _, _, _ = p.getPendingTrack(streamID, trackType, false)
-		}
-		*/
-
-		p.pendingTracksLock.RLock()
-		_, info, _, _, _ := p.getPendingTrack("junk", trackType, false) // RAJA-TODO
-		if info == nil {
-			p.pendingTracksLock.RUnlock()
-			unprocessed = append(unprocessed, unmatch)
-			continue
-		}
-
+		var ti *livekit.TrackInfo
 		var mimeType string
-		/* RAJA-TODO
-		for _, c := range info.Codecs {
-			if c.Cid == streamID || c.SdpCid == streamID {
-				mimeType = c.MimeType
-				break
+
+		if useSdpCid {
+			streamID, ok := lksdp.ExtractStreamID(unmatch)
+			if !ok {
+				unprocessed = append(unprocessed, unmatch)
+				continue
+			}
+
+			p.pendingTracksLock.RLock()
+			mt := p.getPublishedTrackBySdpCid(streamID)
+			if mt != nil {
+				ti = mt.ToProto()
+			} else {
+				_, ti, _, _, _ = p.getPendingTrack(streamID, trackType, false)
+			}
+			p.pendingTracksLock.RUnlock()
+
+			if ti != nil {
+				for _, c := range ti.Codecs {
+					if c.Cid == streamID || c.SdpCid == streamID {
+						mimeType = c.MimeType
+						break
+					}
+				}
+			}
+		} else {
+			p.pendingTracksLock.RLock()
+			pendingTracks := p.getPendingTracksByTrackType(trackType)
+			p.pendingTracksLock.RUnlock()
+			if len(pendingTracks) > 1 {
+				p.pubLogger.Warnw("too many pending tracks", nil, "trackType", trackType, "count", len(pendingTracks))
+			}
+			if len(pendingTracks) != 0 {
+				ti = pendingTracks[0]
 			}
 		}
-		*/
-		if mimeType == "" && len(info.Codecs) > 0 {
-			mimeType = info.Codecs[0].MimeType
+		if ti == nil {
+			unprocessed = append(unprocessed, unmatch)
+			continue
 		}
-		p.params.Logger.Infow("RAJA mimeType", "mimeType", mimeType, "info", logger.Proto(info)) // REMOVE
-		p.pendingTracksLock.RUnlock()
+
+		// SINGLE-PEER-CONNECTION-TODO: have to figure out primary or back up codec
+		if mimeType == "" && len(ti.Codecs) > 0 {
+			mimeType = ti.Codecs[0].MimeType
+		}
+		p.params.Logger.Infow("RAJA mimeType", "mimeType", mimeType, "track", logger.Proto(ti)) // REMOVE
 
 		if mimeType == "" {
 			unprocessed = append(unprocessed, unmatch)
