@@ -474,6 +474,9 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					signalStats.ResolveRoom(m.RoomMoved.GetRoom())
 					signalStats.ResolveParticipant(m.RoomMoved.GetParticipant())
 					pLogger.Debugw("sending room moved", "roomMoved", m)
+
+				default:
+					pLogger.Debugw("sending signal response", "response", m)
 				}
 
 				if count, err := sigConn.WriteResponse(res); err != nil {
@@ -532,6 +535,8 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			pLogger.Debugw("received offer", "offer", m)
 		case *livekit.SignalRequest_Answer:
 			pLogger.Debugw("received answer", "answer", m)
+		default:
+			pLogger.Debugw("received signal request", "request", m)
 		}
 
 		if err := cr.RequestSink.WriteMessage(req); err != nil {
