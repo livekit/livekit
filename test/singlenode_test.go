@@ -567,6 +567,7 @@ func TestSingleNodeAttributes(t *testing.T) {
 		},
 		UseJoinRequestQueryParam: true,
 	})
+
 	grant := &auth.VideoGrant{RoomJoin: true, Room: testRoom}
 	grant.SetCanSubscribe(false)
 	at := auth.NewAccessToken(testApiKey, testApiSecret).
@@ -622,22 +623,34 @@ func TestDeviceCodecOverride(t *testing.T) {
 	require.NoError(t, err)
 	defer stopWriters(tw)
 
+	var sd *webrtc.SessionDescription
 	// wait for server to receive track
-	require.Eventually(t, func() bool {
-		return c1.LastAnswer() != nil
-	}, waitTimeout, waitTick, "did not receive answer")
+	if !c1.ProtocolVersion().SupportsSinglePeerConnection() {
+		require.Eventually(t, func() bool {
+			return c1.LastAnswer() != nil
+		}, waitTimeout, waitTick, "did not receive answer")
 
-	sd := webrtc.SessionDescription{
-		Type: webrtc.SDPTypeAnswer,
-		SDP:  c1.LastAnswer().SDP,
+		sd = &webrtc.SessionDescription{
+			Type: webrtc.SDPTypeAnswer,
+			SDP:  c1.LastAnswer().SDP,
+		}
+	} else {
+		require.Eventually(t, func() bool {
+			return c1.LastOffer() != nil
+		}, waitTimeout, waitTick, "did not receive offer")
+
+		sd = &webrtc.SessionDescription{
+			Type: webrtc.SDPTypeOffer,
+			SDP:  c1.LastOffer().SDP,
+		}
 	}
-	answer, err := sd.Unmarshal()
+	marshaled, err := sd.Unmarshal()
 	require.NoError(t, err)
 
 	// video and data channel
-	require.Len(t, answer.MediaDescriptions, 2)
+	require.Len(t, marshaled.MediaDescriptions, 2)
 	var desc *sdp.MediaDescription
-	for _, md := range answer.MediaDescriptions {
+	for _, md := range marshaled.MediaDescriptions {
 		if md.MediaName.Media == "video" {
 			desc = md
 			break

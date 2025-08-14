@@ -1897,6 +1897,8 @@ func (h PrimaryTransportHandler) OnFullyEstablished() {
 	h.p.onPrimaryTransportFullyEstablished()
 }
 
+// ----------------------------------------------------------
+
 func (p *ParticipantImpl) setupSignalling() {
 	p.signalling = signalling.NewSignalling(signalling.SignallingParams{
 		Logger: p.params.Logger,
@@ -1920,7 +1922,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	var pth transport.Handler = PublisherTransportHandler{ath}
 	var sth transport.Handler = SubscriberTransportHandler{ath}
 
-	subscriberAsPrimary := p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe() && !p.params.UseOneShotSignallingMode
+	subscriberAsPrimary := !p.params.UseOneShotSignallingMode && ((p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe()) || p.ProtocolVersion().SupportsSinglePeerConnection())
 	if subscriberAsPrimary {
 		sth = PrimaryTransportHandler{sth, p}
 	} else {

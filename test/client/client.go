@@ -81,6 +81,7 @@ type RTCClient struct {
 	publisherFullyEstablished  atomic.Bool
 	subscriberFullyEstablished atomic.Bool
 	pongReceivedAt             atomic.Int64
+	lastOffer                  atomic.Pointer[webrtc.SessionDescription]
 	lastAnswer                 atomic.Pointer[webrtc.SessionDescription]
 
 	// tracks waiting to be acked, cid => trackInfo
@@ -385,6 +386,10 @@ func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
 
 func (c *RTCClient) ID() livekit.ParticipantID {
 	return c.id
+}
+
+func (c *RTCClient) ProtocolVersion() types.ProtocolVersion {
+	return c.protocolVersion
 }
 
 // create an offer for the server
@@ -884,6 +889,11 @@ func (c *RTCClient) GetPublishedTrackIDs() []string {
 	return trackIDs
 }
 
+// LastOffer return SDP of the last offer for the subscriber connection
+func (c *RTCClient) LastOffer() *webrtc.SessionDescription {
+	return c.lastOffer.Load()
+}
+
 // LastAnswer return SDP of the last answer for the publisher connection
 func (c *RTCClient) LastAnswer() *webrtc.SessionDescription {
 	return c.lastAnswer.Load()
@@ -934,6 +944,8 @@ func (c *RTCClient) handleDataMessageUnlabeled(data []byte) {
 
 // handles a server initiated offer, handle on subscriber PC
 func (c *RTCClient) handleOffer(desc webrtc.SessionDescription, offerId uint32) {
+	logger.Infow("handling server offer", "participant", c.localParticipant.Identity)
+	c.lastOffer.Store(&desc)
 	c.subscriber.HandleRemoteDescription(desc, offerId)
 }
 
