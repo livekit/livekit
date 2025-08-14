@@ -80,7 +80,7 @@ func TestClientConnectDuplicate(t *testing.T) {
 		return
 	}
 
-	_, finish := setupSingleNodeTest("TestClientCouldConnect")
+	_, finish := setupSingleNodeTest("TestClientConnectDuplicate")
 	defer finish()
 
 	grant := &auth.VideoGrant{RoomJoin: true, Room: testRoom}

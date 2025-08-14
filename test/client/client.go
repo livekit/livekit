@@ -698,13 +698,6 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string, 
 		)
 		return
 	}
-	logger.Infow(
-		"RAJA add track sender",
-		"participant", c.localParticipant.Identity,
-		"pID", c.localParticipant.Sid,
-		"trackID", track.ID(),
-		"sender", sender.GetParameters(),
-	) // REMOVE
 
 	if err = c.SendAddTrack(track.ID(), track.Codec().MimeType, track.StreamID(), trackType); err != nil {
 		return
