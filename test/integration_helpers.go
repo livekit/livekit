@@ -149,7 +149,7 @@ func waitUntilConnected(t *testing.T, clients ...*testclient.RTCClient) {
 
 func createSingleNodeServer(configUpdater func(*config.Config)) *service.LivekitServer {
 	var err error
-	conf, err := config.NewConfig(`development: true`, true, nil, nil)
+	conf, err := config.NewConfig("", true, nil, nil)
 	if err != nil {
 		panic(fmt.Sprintf("could not create config: %v", err))
 	}
@@ -157,7 +157,6 @@ func createSingleNodeServer(configUpdater func(*config.Config)) *service.Livekit
 	if configUpdater != nil {
 		configUpdater(conf)
 	}
-	conf.Logging.Level = "debug"
 
 	currentNode, err := routing.NewLocalNode(conf)
 	if err != nil {
