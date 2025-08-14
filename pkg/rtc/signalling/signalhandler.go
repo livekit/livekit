@@ -55,6 +55,7 @@ func (s *signalhandler) HandleMessage(msg proto.Message) error {
 	}
 	s.params.Participant.UpdateLastSeenSignal()
 
+	s.params.Logger.Debugw("handling signal request", "request", logger.Proto(req))
 	switch msg := req.GetMessage().(type) {
 	case *livekit.SignalRequest_Offer:
 		s.params.Participant.HandleOffer(protosignalling.FromProtoSessionDescription(msg.Offer))
