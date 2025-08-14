@@ -981,7 +981,7 @@ func TestSinglePeerConnection(t *testing.T) {
 		{MimeType: mime.MimeTypeOpus.String()},
 	}
 	for _, codec := range codecs {
-		_, err := c1.AddStaticTrackWithCodec(codec, codec.MimeType, codec.MimeType, testclient.AddTrackUseSubscriberPeerConnectionr())
+		_, err := c1.AddStaticTrackWithCodec(codec, codec.MimeType, codec.MimeType)
 		require.NoError(t, err)
 	}
 

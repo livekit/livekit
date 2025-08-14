@@ -662,8 +662,7 @@ func (c *RTCClient) hasPrimaryEverConnected() bool {
 }
 
 type AddTrackParams struct {
-	NoWriter                    bool
-	UseSubscriberPeerConnection bool
+	NoWriter bool
 }
 
 type AddTrackOption func(params *AddTrackParams)
@@ -671,12 +670,6 @@ type AddTrackOption func(params *AddTrackParams)
 func AddTrackNoWriter() AddTrackOption {
 	return func(params *AddTrackParams) {
 		params.NoWriter = true
-	}
-}
-
-func AddTrackUseSubscriberPeerConnectionr() AddTrackOption {
-	return func(params *AddTrackParams) {
-		params.UseSubscriberPeerConnection = true
 	}
 }
 
@@ -691,10 +684,10 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string, 
 	}
 
 	var sender *webrtc.RTPSender
-	if !params.UseSubscriberPeerConnection {
-		sender, _, err = c.publisher.AddTrack(track, types.AddTrackParams{})
-	} else {
+	if types.ProtocolVersion(types.CurrentProtocol).SupportsSinglePeerConnection() {
 		sender, _, err = c.subscriber.AddTrack(track, types.AddTrackParams{})
+	} else {
+		sender, _, err = c.publisher.AddTrack(track, types.AddTrackParams{})
 	}
 	if err != nil {
 		logger.Errorw(
@@ -743,10 +736,10 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string, 
 
 	/* RAJA-TODO
 	var sender *webrtc.RTPSender
-	if !params.UseSubscriberPeerConnection {
-		sender, _, err = c.publisher.AddTrack(track, types.AddTrackParams{})
-	} else {
+	if types.ProtocolVersion(types.CurrentProtocol).SupportsSinglePeerConnection() {
 		sender, _, err = c.subscriber.AddTrack(track, types.AddTrackParams{})
+	} else {
+		sender, _, err = c.publisher.AddTrack(track, types.AddTrackParams{})
 	}
 	if err != nil {
 		logger.Errorw(
@@ -767,7 +760,7 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string, 
 	*/
 	c.localTracks[ti.Sid] = track
 	c.trackSenders[ti.Sid] = sender
-	if !params.UseSubscriberPeerConnection {
+	if !types.ProtocolVersion(types.CurrentProtocol).SupportsSinglePeerConnection() {
 		c.publisher.Negotiate(false)
 	}
 
