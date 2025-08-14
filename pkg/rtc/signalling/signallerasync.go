@@ -101,6 +101,8 @@ func (s *signallerAsync) WriteMessage(msg proto.Message) error {
 			}
 			return err
 		}
+	} else {
+		s.params.Logger.Debugw("sent signal response", "response", logger.Proto(msg))
 	}
 	return nil
 }
