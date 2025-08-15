@@ -443,9 +443,11 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 
 		logger.Infow("join accepted, awaiting offer", "participant", msg.Join.Participant.Identity)
 	case *livekit.SignalResponse_Answer:
-		// logger.Debugw("received server answer",
-		//	"participant", c.localParticipant.Identity,
-		//	"answer", msg.Answer.Sdp)
+		logger.Infow(
+			"received server answer",
+			"participant", c.localParticipant.Identity,
+			"answer", msg.Answer.Sdp,
+		)
 		c.handleAnswer(signalling.FromProtoSessionDescription(msg.Answer))
 	case *livekit.SignalResponse_Offer:
 		desc, offerId := signalling.FromProtoSessionDescription(msg.Offer)
@@ -961,6 +963,11 @@ func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription, answerId uint32
 func (c *RTCClient) onOffer(offer webrtc.SessionDescription, offerId uint32) error {
 	if c.localParticipant != nil {
 		logger.Infow("starting negotiation", "participant", c.localParticipant.Identity)
+		logger.Infow(
+			"sending publisher offer",
+			"participant", c.localParticipant.Identity,
+			"offer", offer,
+		)
 	}
 	return c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Offer{

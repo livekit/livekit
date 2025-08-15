@@ -2874,10 +2874,12 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 
 	p.params.Telemetry.TrackPublishRequested(context.Background(), p.ID(), p.Identity(), utils.CloneProto(ti))
+
 	if p.supervisor != nil {
 		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
 		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
 	}
+
 	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid) != nil || p.pendingTracks[req.Cid] != nil {
 		if p.pendingTracks[req.Cid] == nil {
 			p.pendingTracks[req.Cid] = &pendingTrackInfo{
@@ -3737,7 +3739,18 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 		subscribeCodecs = append(subscribeCodecs, c)
 	}
 	p.enabledSubscribeCodecs = subscribeCodecs
-	p.params.Logger.Debugw("setup enabled codecs", "publish", p.enabledPublishCodecs, "subscribe", p.enabledSubscribeCodecs, "disabled", disabledCodecs)
+	p.params.Logger.Debugw(
+		"setup enabled codecs",
+		"publish", p.enabledPublishCodecs,
+		"subscribe", p.enabledSubscribeCodecs,
+		"disabled", disabledCodecs,
+	)
+	p.params.Logger.Infow(
+		"setup enabled codecs",
+		"publish", p.enabledPublishCodecs,
+		"subscribe", p.enabledSubscribeCodecs,
+		"disabled", disabledCodecs,
+	) // REMOVE
 }
 
 func (p *ParticipantImpl) replayJoiningReliableMessages() {

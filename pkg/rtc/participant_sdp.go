@@ -25,7 +25,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 	lksdp "github.com/livekit/protocol/sdp"
 	"github.com/livekit/protocol/utils"
 )
@@ -311,7 +310,6 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 		if mimeType == "" && len(ti.Codecs) > 0 {
 			mimeType = ti.Codecs[0].MimeType
 		}
-		p.params.Logger.Infow("RAJA mimeType", "mimeType", mimeType, "track", logger.Proto(ti)) // REMOVE
 
 		if mimeType == "" {
 			unprocessed = append(unprocessed, unmatch)
@@ -350,8 +348,12 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 		if trackType == livekit.TrackType_VIDEO {
 			// if the client don't comply with codec order in SDP answer, only keep preferred codecs to force client to use it
 			if p.params.ClientInfo.ComplyWithCodecOrderInSDPAnswer() {
+				p.pubLogger.Infow("complying with codec order") // REMOVE
 				unmatch.MediaName.Formats = append(unmatch.MediaName.Formats, leftCodecs...)
+			} else {
+				p.pubLogger.Infow("not complying with codec order") // REMOVE
 			}
+			p.pubLogger.Infow("formats", "formats", unmatch.MediaName.Formats) // REMOVE
 		} else {
 			// ensure nack enabled for audio in publisher offer
 			var nackFound bool
@@ -371,8 +373,7 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 			unmatch.MediaName.Formats = append(unmatch.MediaName.Formats, leftCodecs...)
 		}
 
-		// RAJA-TODO: can set mid in TrackInfo before sending offer and check on receiving answer to set SdpCid
-		// RAJA-TODO: Have to check which simulcast codec is not published
+		// SINGLE-PEER-CONNECTION-TODO: can set mid in TrackInfo before sending offer and check on receiving answer to set SdpCid
 	}
 
 	return parsedOffer, unprocessed
