@@ -2745,6 +2745,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 					"simulcast codec without mime type", nil,
 					"trackID", ti.Sid,
 					"track", logger.Proto(ti),
+					"addTrackRequest", logger.Proto(req),
 				)
 				continue
 			}
