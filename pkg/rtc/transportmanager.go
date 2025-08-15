@@ -114,9 +114,7 @@ type TransportManager struct {
 	pendingOfferPublisher        *webrtc.SessionDescription
 	pendingOfferIdPublisher      uint32
 	pendingDataChannelsPublisher []*livekit.DataChannelInfo
-	// RAJA-TODO: check if this can be gotten from peer connection directly
-	lastPublisherOffer atomic.Value
-	iceConfig          *livekit.ICEConfig
+	iceConfig                    *livekit.ICEConfig
 
 	mediaLossProxy       *MediaLossProxy
 	udpLossUnstableCount uint32
@@ -189,11 +187,6 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 	} else {
 		t.subscriber = t.publisher
 	}
-	/* RAJA-REMOVE
-	if t.params.SinglePeerConnection {
-		t.publisher = t.subscriber
-	}
-	*/
 	if !t.params.Migration {
 		if err := t.createDataChannelsForSubscriber(nil); err != nil {
 			return nil, err
@@ -448,12 +441,6 @@ func (t *TransportManager) GetUnmatchMediaForOffer(parsedOffer *sdp.SessionDescr
 }
 
 func (t *TransportManager) LastPublisherOffer() webrtc.SessionDescription {
-	/* RAJA-REMOVE
-	if sd := t.lastPublisherOffer.Load(); sd != nil {
-		return sd.(webrtc.SessionDescription)
-	}
-	return webrtc.SessionDescription{}
-	*/
 	return t.publisher.CurrentRemoteDescription()
 }
 
@@ -466,7 +453,6 @@ func (t *TransportManager) HandleOffer(offer webrtc.SessionDescription, offerId 
 		return nil
 	}
 	t.lock.Unlock()
-	t.lastPublisherOffer.Store(offer)
 
 	return t.publisher.HandleRemoteDescription(offer, offerId)
 }

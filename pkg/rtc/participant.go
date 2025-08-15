@@ -3744,12 +3744,6 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 		"subscribe", p.enabledSubscribeCodecs,
 		"disabled", disabledCodecs,
 	)
-	p.params.Logger.Infow(
-		"setup enabled codecs",
-		"publish", p.enabledPublishCodecs,
-		"subscribe", p.enabledSubscribeCodecs,
-		"disabled", disabledCodecs,
-	) // REMOVE
 }
 
 func (p *ParticipantImpl) replayJoiningReliableMessages() {
