@@ -95,6 +95,17 @@ func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([
 				continue
 			}
 
+			if len(info.Codecs) == 0 {
+				p.pubLogger.Warnw(
+					"track without codecs", nil,
+					"trackID", info.Sid,
+					"pendingTrack", p.pendingTracks[signalCid],
+					"media", unmatch,
+					"parsedOffer", parsedOffer,
+				)
+				continue
+			}
+
 			found := false
 			updated := false
 			for _, sdpCodec := range sdpCodecs {
@@ -125,6 +136,12 @@ func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([
 
 			if updated {
 				p.pendingTracks[signalCid].trackInfos[0] = utils.CloneProto(info)
+				p.pubLogger.Debugw(
+					"pending track SDP cid updated",
+					"signalCid", signalCid,
+					"trackID", info.Sid,
+					"pendingTrack", p.pendingTracks[signalCid],
+				)
 			}
 			p.pendingTracksLock.Unlock()
 		}
