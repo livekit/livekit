@@ -1327,7 +1327,6 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 
 	p.sendTrackPublished(req.Cid, ti)
 
-	// SINGLE-PEER-CONNECTION-TODO: is this needed?
 	p.handlePendingRemoteTracks()
 }
 
