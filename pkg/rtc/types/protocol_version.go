@@ -16,7 +16,8 @@ package types
 
 type ProtocolVersion int
 
-const CurrentProtocol = 16
+const CurrentProtocol = 17
+const MaxProtocolDualPeerConnection = 16
 
 func (v ProtocolVersion) SupportsPackedStreamId() bool {
 	return v > 0

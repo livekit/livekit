@@ -126,7 +126,7 @@ type Options struct {
 	UseJoinRequestQueryParam  bool
 }
 
-func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
+func NewWebSocketConn(host, token string, protocolVersion types.ProtocolVersion, opts *Options) (*websocket.Conn, error) {
 	u, err := url.Parse(host + "/rtc")
 	if err != nil {
 		return nil, err
@@ -139,7 +139,7 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 		clientInfo := &livekit.ClientInfo{
 			Os:       runtime.GOOS,
 			Sdk:      livekit.ClientInfo_GO,
-			Protocol: types.CurrentProtocol,
+			Protocol: int32(protocolVersion),
 		}
 		if opts.ClientInfo != nil {
 			clientInfo = opts.ClientInfo
@@ -164,7 +164,7 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 			}
 		}
 	} else {
-		connectUrl += fmt.Sprintf("?protocol=%d", types.CurrentProtocol)
+		connectUrl += fmt.Sprintf("?protocol=%d", protocolVersion)
 
 		sdk := "go"
 		if opts != nil {
@@ -202,11 +202,11 @@ func SetAuthorizationToken(header http.Header, token string) {
 	header.Set("Authorization", "Bearer "+token)
 }
 
-func NewRTCClient(conn *websocket.Conn, opts *Options) (*RTCClient, error) {
+func NewRTCClient(conn *websocket.Conn, protocolVersion types.ProtocolVersion, opts *Options) (*RTCClient, error) {
 	var err error
 
 	c := &RTCClient{
-		protocolVersion:        types.CurrentProtocol,
+		protocolVersion:        protocolVersion,
 		conn:                   conn,
 		localTracks:            make(map[string]webrtc.TrackLocal),
 		trackSenders:           make(map[string]*webrtc.RTPSender),
