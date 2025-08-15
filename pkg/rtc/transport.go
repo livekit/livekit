@@ -1003,22 +1003,24 @@ func (t *PCTransport) RemoveTrack(sender *webrtc.RTPSender) error {
 	return t.pc.RemoveTrack(sender)
 }
 
-func (t *PCTransport) CurrentLocalDescription() webrtc.SessionDescription {
+func (t *PCTransport) CurrentLocalDescription() *webrtc.SessionDescription {
 	cld := t.pc.CurrentLocalDescription()
 	if cld == nil {
-		return webrtc.SessionDescription{}
+		return nil
 	}
 
-	return *cld
+	ld := *cld
+	return &ld
 }
 
-func (t *PCTransport) CurrentRemoteDescription() webrtc.SessionDescription {
+func (t *PCTransport) CurrentRemoteDescription() *webrtc.SessionDescription {
 	crd := t.pc.CurrentRemoteDescription()
 	if crd == nil {
-		return webrtc.SessionDescription{}
+		return nil
 	}
 
-	return *crd
+	rd := *crd
+	return &rd
 }
 
 func (t *PCTransport) GetMid(rtpReceiver *webrtc.RTPReceiver) string {

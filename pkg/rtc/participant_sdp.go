@@ -379,6 +379,9 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 // configure publisher answer for audio track's dtx and stereo settings
 func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescription) webrtc.SessionDescription {
 	offer := p.TransportManager.LastPublisherOffer()
+	if offer == nil {
+		return answer
+	}
 	parsedOffer, err := offer.Unmarshal()
 	if err != nil {
 		return answer

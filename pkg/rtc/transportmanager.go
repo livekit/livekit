@@ -404,25 +404,27 @@ func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels [
 
 func (t *TransportManager) GetUnmatchMediaForOffer(parsedOffer *sdp.SessionDescription, mediaType string) (unmatched []*sdp.MediaDescription, err error) {
 	var lastMatchedMid string
-	var lastAnswer webrtc.SessionDescription
+	var lastAnswer *webrtc.SessionDescription
 	if t.params.SinglePeerConnection {
 		lastAnswer = t.subscriber.CurrentLocalDescription()
 	} else {
 		lastAnswer = t.publisher.CurrentLocalDescription()
 	}
 
-	parsedAnswer, err1 := lastAnswer.Unmarshal()
-	if err1 != nil {
-		// should not happen
-		t.params.Logger.Errorw("failed to parse last answer", err1)
-		return unmatched, err1
-	}
+	if lastAnswer != nil {
+		parsedAnswer, err1 := lastAnswer.Unmarshal()
+		if err1 != nil {
+			// should not happen
+			t.params.Logger.Errorw("failed to parse last answer", err1)
+			return unmatched, err1
+		}
 
-	for i := len(parsedAnswer.MediaDescriptions) - 1; i >= 0; i-- {
-		media := parsedAnswer.MediaDescriptions[i]
-		if media.MediaName.Media == mediaType {
-			lastMatchedMid, _ = media.Attribute(sdp.AttrKeyMID)
-			break
+		for i := len(parsedAnswer.MediaDescriptions) - 1; i >= 0; i-- {
+			media := parsedAnswer.MediaDescriptions[i]
+			if media.MediaName.Media == mediaType {
+				lastMatchedMid, _ = media.Attribute(sdp.AttrKeyMID)
+				break
+			}
 		}
 	}
 
@@ -440,7 +442,7 @@ func (t *TransportManager) GetUnmatchMediaForOffer(parsedOffer *sdp.SessionDescr
 	return
 }
 
-func (t *TransportManager) LastPublisherOffer() webrtc.SessionDescription {
+func (t *TransportManager) LastPublisherOffer() *webrtc.SessionDescription {
 	return t.publisher.CurrentRemoteDescription()
 }
 

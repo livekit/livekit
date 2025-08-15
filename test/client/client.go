@@ -81,8 +81,8 @@ type RTCClient struct {
 	publisherFullyEstablished  atomic.Bool
 	subscriberFullyEstablished atomic.Bool
 	pongReceivedAt             atomic.Int64
-	lastOffer                  atomic.Pointer[webrtc.SessionDescription]
-	lastAnswer                 atomic.Pointer[webrtc.SessionDescription]
+	lastOffer                  atomic.Pointer[webrtc.SessionDescription] // RAJA-REMOVE
+	lastAnswer                 atomic.Pointer[webrtc.SessionDescription] // RAJA-REMOVE
 
 	// tracks waiting to be acked, cid => trackInfo
 	pendingPublishedTracks map[string]*livekit.TrackInfo
@@ -869,12 +869,14 @@ func (c *RTCClient) GetPublishedTrackIDs() []string {
 
 // LastOffer return SDP of the last offer for the subscriber connection
 func (c *RTCClient) LastOffer() *webrtc.SessionDescription {
-	return c.lastOffer.Load()
+	// RAJA-REMOVE return c.lastOffer.Load()
+	return c.subscriber.CurrentRemoteDescription()
 }
 
 // LastAnswer return SDP of the last answer for the publisher connection
 func (c *RTCClient) LastAnswer() *webrtc.SessionDescription {
-	return c.lastAnswer.Load()
+	// RAJA-REMOVE return c.lastAnswer.Load()
+	return c.publisher.CurrentRemoteDescription()
 }
 
 func (c *RTCClient) ensurePublisherConnected() error {
@@ -923,7 +925,7 @@ func (c *RTCClient) handleDataMessageUnlabeled(data []byte) {
 // handles a server initiated offer, handle on subscriber PC
 func (c *RTCClient) handleOffer(desc webrtc.SessionDescription, offerId uint32) {
 	logger.Infow("handling server offer", "participant", c.localParticipant.Identity)
-	c.lastOffer.Store(&desc)
+	// RAJA-REMOVE c.lastOffer.Store(&desc)
 	c.subscriber.HandleRemoteDescription(desc, offerId)
 }
 
@@ -931,7 +933,7 @@ func (c *RTCClient) handleOffer(desc webrtc.SessionDescription, offerId uint32) 
 func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription, answerId uint32) {
 	logger.Infow("handling server answer", "participant", c.localParticipant.Identity)
 
-	c.lastAnswer.Store(&desc)
+	// RAJA-REMOVE c.lastAnswer.Store(&desc)
 	// remote answered the offer, establish connection
 	c.publisher.HandleRemoteDescription(desc, answerId)
 }
