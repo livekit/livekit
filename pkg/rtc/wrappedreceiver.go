@@ -477,6 +477,14 @@ func (d *DummyReceiver) CodecState() sfu.ReceiverCodecState {
 	return sfu.ReceiverCodecStateNormal
 }
 
+func (d *DummyReceiver) VideoSizes() []buffer.VideoSize {
+	if r, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
+		return r.VideoSizes()
+	}
+
+	return nil
+}
+
 // --------------------------------------------
 
 type DummyRedReceiver struct {
