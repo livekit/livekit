@@ -265,12 +265,14 @@ type PCTransport struct {
 }
 
 type TransportParams struct {
-	Handler                      transport.Handler
-	ProtocolVersion              types.ProtocolVersion
-	Config                       *WebRTCConfig
-	Twcc                         *lktwcc.Responder
-	DirectionConfig              DirectionConfig
-	CongestionControlConfig      config.CongestionControlConfig
+	Handler         transport.Handler
+	ProtocolVersion types.ProtocolVersion
+	Config          *WebRTCConfig
+	Twcc            *lktwcc.Responder
+	// SINGLE-PEER-CONNECTION-TODO: guess this has to be superset of published and subscribed direction configs
+	DirectionConfig         DirectionConfig
+	CongestionControlConfig config.CongestionControlConfig
+	// SINGLE-PEER-CONNECTION-TODO: guess this has to be superset of published and subscribed codecs
 	EnabledCodecs                []*livekit.Codec
 	Logger                       logger.Logger
 	Transport                    livekit.SignalTarget
