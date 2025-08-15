@@ -318,12 +318,15 @@ func IsH264KeyFrame(payload []byte) bool {
 // IsVP9KeyFrame detects if vp9 payload is a keyframe
 // taken from https://github.com/jech/galene/blob/master/codecs/codecs.go
 // all credits belongs to Juliusz Chroboczek @jech and the awesome Galene SFU
-func IsVP9KeyFrame(payload []byte) bool {
-	var vp9 codecs.VP9Packet
-	_, err := vp9.Unmarshal(payload)
-	if err != nil || len(vp9.Payload) < 1 {
-		return false
+func IsVP9KeyFrame(vp9 *codecs.VP9Packet, payload []byte) bool {
+	if vp9 == nil {
+		vp9 = &codecs.VP9Packet{}
+		_, err := vp9.Unmarshal(payload)
+		if err != nil || len(vp9.Payload) < 1 {
+			return false
+		}
 	}
+
 	if !vp9.B {
 		return false
 	}
@@ -452,4 +455,22 @@ func IsH265KeyFrame(payload []byte) (kf bool) {
 	}
 }
 
-// -------------------------------------
+// ExtractVP8VideoSize extracts video resolution from VP8 key frame
+func ExtractVP8VideoSize(vp8Packet *VP8, payload []byte) VideoSize {
+	if !vp8Packet.IsKeyFrame || len(payload) < vp8Packet.HeaderSize+10 {
+		return VideoSize{}
+	}
+
+	vp8Payload := payload[vp8Packet.HeaderSize:]
+
+	// Check for VP8 start code
+	if len(vp8Payload) < 10 || vp8Payload[3] != 0x9D || vp8Payload[4] != 0x01 || vp8Payload[5] != 0x2A {
+		return VideoSize{}
+	}
+
+	// Read width and height from bytes 6-9
+	width := uint32(vp8Payload[6]) | (uint32(vp8Payload[7]) << 8)
+	height := uint32(vp8Payload[8]) | (uint32(vp8Payload[9]) << 8)
+
+	return VideoSize{width & 0x3FFF, height & 0x3FFF}
+}

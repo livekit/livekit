@@ -21,6 +21,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 )
 
 func TestTrackInfo(t *testing.T) {
@@ -52,7 +53,9 @@ func TestTrackInfo(t *testing.T) {
 
 func TestGetQualityForDimension(t *testing.T) {
 	t.Run("landscape source", func(t *testing.T) {
-		mt := NewMediaTrack(MediaTrackParams{}, &livekit.TrackInfo{
+		mt := NewMediaTrack(MediaTrackParams{
+			Logger: logger.GetLogger(),
+		}, &livekit.TrackInfo{
 			Type:   livekit.TrackType_VIDEO,
 			Width:  1080,
 			Height: 720,
@@ -66,7 +69,9 @@ func TestGetQualityForDimension(t *testing.T) {
 	})
 
 	t.Run("portrait source", func(t *testing.T) {
-		mt := NewMediaTrack(MediaTrackParams{}, &livekit.TrackInfo{
+		mt := NewMediaTrack(MediaTrackParams{
+			Logger: logger.GetLogger(),
+		}, &livekit.TrackInfo{
 			Type:   livekit.TrackType_VIDEO,
 			Width:  540,
 			Height: 960,
@@ -79,7 +84,9 @@ func TestGetQualityForDimension(t *testing.T) {
 	})
 
 	t.Run("layers provided", func(t *testing.T) {
-		mt := NewMediaTrack(MediaTrackParams{}, &livekit.TrackInfo{
+		mt := NewMediaTrack(MediaTrackParams{
+			Logger: logger.GetLogger(),
+		}, &livekit.TrackInfo{
 			Type:   livekit.TrackType_VIDEO,
 			Width:  1080,
 			Height: 720,
@@ -114,7 +121,9 @@ func TestGetQualityForDimension(t *testing.T) {
 	})
 
 	t.Run("highest layer with smallest dimensions", func(t *testing.T) {
-		mt := NewMediaTrack(MediaTrackParams{}, &livekit.TrackInfo{
+		mt := NewMediaTrack(MediaTrackParams{
+			Logger: logger.GetLogger(),
+		}, &livekit.TrackInfo{
 			Type:   livekit.TrackType_VIDEO,
 			Width:  1080,
 			Height: 720,
@@ -148,7 +157,9 @@ func TestGetQualityForDimension(t *testing.T) {
 		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(mime.MimeTypeH264, 1000, 700))
 		require.Equal(t, livekit.VideoQuality_HIGH, mt.GetQualityForDimension(mime.MimeTypeH264, 1200, 800))
 
-		mt = NewMediaTrack(MediaTrackParams{}, &livekit.TrackInfo{
+		mt = NewMediaTrack(MediaTrackParams{
+			Logger: logger.GetLogger(),
+		}, &livekit.TrackInfo{
 			Type:   livekit.TrackType_VIDEO,
 			Width:  1080,
 			Height: 720,

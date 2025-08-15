@@ -64,24 +64,25 @@ type MediaTrack struct {
 }
 
 type MediaTrackParams struct {
-	ParticipantID         func() livekit.ParticipantID
-	ParticipantIdentity   livekit.ParticipantIdentity
-	ParticipantVersion    uint32
-	ParticipantCountry    string
-	BufferFactory         *buffer.Factory
-	ReceiverConfig        ReceiverConfig
-	SubscriberConfig      DirectionConfig
-	PLIThrottleConfig     sfu.PLIThrottleConfig
-	AudioConfig           sfu.AudioConfig
-	VideoConfig           config.VideoConfig
-	Telemetry             telemetry.TelemetryService
-	Logger                logger.Logger
-	Reporter              roomobs.TrackReporter
-	SimTracks             map[uint32]SimulcastTrackInfo
-	OnRTCP                func([]rtcp.Packet)
-	ForwardStats          *sfu.ForwardStats
-	OnTrackEverSubscribed func(livekit.TrackID)
-	ShouldRegressCodec    func() bool
+	ParticipantID            func() livekit.ParticipantID
+	ParticipantIdentity      livekit.ParticipantIdentity
+	ParticipantVersion       uint32
+	ParticipantCountry       string
+	BufferFactory            *buffer.Factory
+	ReceiverConfig           ReceiverConfig
+	SubscriberConfig         DirectionConfig
+	PLIThrottleConfig        sfu.PLIThrottleConfig
+	AudioConfig              sfu.AudioConfig
+	VideoConfig              config.VideoConfig
+	Telemetry                telemetry.TelemetryService
+	Logger                   logger.Logger
+	Reporter                 roomobs.TrackReporter
+	SimTracks                map[uint32]SimulcastTrackInfo
+	OnRTCP                   func([]rtcp.Packet)
+	ForwardStats             *sfu.ForwardStats
+	OnTrackEverSubscribed    func(livekit.TrackID)
+	ShouldRegressCodec       func() bool
+	PreferVideoSizeFromMedia bool
 }
 
 func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
@@ -96,17 +97,18 @@ func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 	}
 
 	t.MediaTrackReceiver = NewMediaTrackReceiver(MediaTrackReceiverParams{
-		MediaTrack:            t,
-		IsRelayed:             false,
-		ParticipantID:         params.ParticipantID,
-		ParticipantIdentity:   params.ParticipantIdentity,
-		ParticipantVersion:    params.ParticipantVersion,
-		ReceiverConfig:        params.ReceiverConfig,
-		SubscriberConfig:      params.SubscriberConfig,
-		AudioConfig:           params.AudioConfig,
-		Telemetry:             params.Telemetry,
-		Logger:                params.Logger,
-		RegressionTargetCodec: t.regressionTargetCodec,
+		MediaTrack:               t,
+		IsRelayed:                false,
+		ParticipantID:            params.ParticipantID,
+		ParticipantIdentity:      params.ParticipantIdentity,
+		ParticipantVersion:       params.ParticipantVersion,
+		ReceiverConfig:           params.ReceiverConfig,
+		SubscriberConfig:         params.SubscriberConfig,
+		AudioConfig:              params.AudioConfig,
+		Telemetry:                params.Telemetry,
+		Logger:                   params.Logger,
+		RegressionTargetCodec:    t.regressionTargetCodec,
+		PreferVideoSizeFromMedia: params.PreferVideoSizeFromMedia,
 	}, ti)
 
 	if ti.Type == livekit.TrackType_AUDIO {
@@ -445,6 +447,11 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 
 		newWR.AddOnCodecStateChange(func(codec webrtc.RTPCodecParameters, state sfu.ReceiverCodecState) {
 			t.MediaTrackReceiver.HandleReceiverCodecChange(newWR, codec, state)
+		})
+
+		// update subscriber video layers when video size changes
+		newWR.OnVideoSizeChanged(func() {
+			t.MediaTrackSubscriptions.UpdateVideoLayers()
 		})
 	}
 
