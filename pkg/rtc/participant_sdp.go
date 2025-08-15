@@ -141,6 +141,7 @@ func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([
 		p.pubLogger.Warnw("could not get unmatch audios", err)
 		return nil, nil
 	}
+	p.pubLogger.Infow("RAJA unmatch", "audios", unmatchAudios, "videos", unmatchVideos) // REMOVE
 
 	processUnmatch(unmatchAudios, livekit.TrackType_AUDIO)
 	processUnmatch(unmatchVideos, livekit.TrackType_VIDEO)
@@ -348,12 +349,8 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 		if trackType == livekit.TrackType_VIDEO {
 			// if the client don't comply with codec order in SDP answer, only keep preferred codecs to force client to use it
 			if p.params.ClientInfo.ComplyWithCodecOrderInSDPAnswer() {
-				p.pubLogger.Infow("complying with codec order") // REMOVE
 				unmatch.MediaName.Formats = append(unmatch.MediaName.Formats, leftCodecs...)
-			} else {
-				p.pubLogger.Infow("not complying with codec order") // REMOVE
 			}
-			p.pubLogger.Infow("formats", "formats", unmatch.MediaName.Formats) // REMOVE
 		} else {
 			// ensure nack enabled for audio in publisher offer
 			var nackFound bool

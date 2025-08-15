@@ -146,7 +146,6 @@ func (w *TrackWriter) writeOgg() {
 			return
 		}
 
-		logger.Infow("RAJA wrote sample") // REMOVE
 		time.Sleep(sampleDuration)
 	}
 }

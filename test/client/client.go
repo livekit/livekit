@@ -747,30 +747,6 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string, 
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	/* RAJA-TODO
-	var sender *webrtc.RTPSender
-	if types.ProtocolVersion(types.CurrentProtocol).SupportsSinglePeerConnection() {
-		sender, _, err = c.subscriber.AddTrack(track, types.AddTrackParams{})
-	} else {
-		sender, _, err = c.publisher.AddTrack(track, types.AddTrackParams{})
-	}
-	if err != nil {
-		logger.Errorw(
-			"add track failed", err,
-			"participant", c.localParticipant.Identity,
-			"pID", c.localParticipant.Sid,
-			"trackID", ti.Sid,
-		)
-		return
-	}
-	logger.Infow(
-		"RAJA add track sender",
-		"participant", c.localParticipant.Identity,
-		"pID", c.localParticipant.Sid,
-		"trackID", ti.Sid,
-		"sender", sender.GetParameters(),
-	) // REMOVE
-	*/
 	c.localTracks[ti.Sid] = track
 	c.trackSenders[ti.Sid] = sender
 	if !c.protocolVersion.SupportsSinglePeerConnection() {

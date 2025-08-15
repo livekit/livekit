@@ -1327,7 +1327,7 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 
 	p.sendTrackPublished(req.Cid, ti)
 
-	// RAJA-TODO: is this needed for single peer connection case
+	// SINGLE-PEER-CONNECTION-TODO: is this needed?
 	p.handlePendingRemoteTracks()
 }
 
@@ -2989,7 +2989,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 	p.pendingTracksLock.Lock()
 	newTrack := false
 
-	mid := p.TransportManager.GetPublisherMid(rtpReceiver)
+	mid := p.TransportManager.GetMid(rtpReceiver)
 	p.pubLogger.Debugw(
 		"media track received",
 		"kind", track.Kind().String(),

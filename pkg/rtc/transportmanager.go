@@ -71,18 +71,6 @@ func (h TransportManagerTransportHandler) OnFailed(isShortLived bool, iceConnect
 
 // -------------------------------
 
-/* RAJA-REMOVE
-type TransportManagerPublisherTransportHandler struct {
-	TransportManagerTransportHandler
-}
-
-func (h TransportManagerPublisherTransportHandler) OnAnswer(sd webrtc.SessionDescription, answerId uint32) error {
-	return h.Handler.OnAnswer(sd, answerId)
-}
-*/
-
-// -------------------------------
-
 type TransportManagerParams struct {
 	SubscriberAsPrimary          bool
 	SinglePeerConnection         bool
@@ -153,17 +141,16 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 	if t.params.UseOneShotSignallingMode || !t.params.SinglePeerConnection {
 		lgr := LoggerWithPCTarget(params.Logger, livekit.SignalTarget_PUBLISHER)
 		publisher, err := NewPCTransport(TransportParams{
-			ProtocolVersion:         params.ProtocolVersion,
-			Config:                  params.Config,
-			Twcc:                    params.Twcc,
-			DirectionConfig:         params.Config.Publisher,
-			CongestionControlConfig: params.CongestionControlConfig,
-			EnabledCodecs:           params.EnabledPublishCodecs,
-			Logger:                  lgr,
-			SimTracks:               params.SimTracks,
-			ClientInfo:              params.ClientInfo,
-			Transport:               livekit.SignalTarget_PUBLISHER,
-			// RAJA-REMOVE Handler:                      TransportManagerPublisherTransportHandler{TransportManagerTransportHandler{params.PublisherHandler, t, lgr}},
+			ProtocolVersion:              params.ProtocolVersion,
+			Config:                       params.Config,
+			Twcc:                         params.Twcc,
+			DirectionConfig:              params.Config.Publisher,
+			CongestionControlConfig:      params.CongestionControlConfig,
+			EnabledCodecs:                params.EnabledPublishCodecs,
+			Logger:                       lgr,
+			SimTracks:                    params.SimTracks,
+			ClientInfo:                   params.ClientInfo,
+			Transport:                    livekit.SignalTarget_PUBLISHER,
 			Handler:                      params.PublisherHandler,
 			UseOneShotSignallingMode:     params.UseOneShotSignallingMode,
 			DataChannelMaxBufferedAmount: params.DataChannelMaxBufferedAmount,
@@ -202,9 +189,11 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 	} else {
 		t.subscriber = t.publisher
 	}
+	/* RAJA-REMOVE
 	if t.params.SinglePeerConnection {
 		t.publisher = t.subscriber
 	}
+	*/
 	if !t.params.Migration {
 		if err := t.createDataChannelsForSubscriber(nil); err != nil {
 			return nil, err
@@ -216,7 +205,9 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 }
 
 func (t *TransportManager) Close() {
-	t.publisher.Close()
+	if t.publisher != nil {
+		t.publisher.Close()
+	}
 	t.subscriber.Close()
 }
 
@@ -287,6 +278,14 @@ func (t *TransportManager) RemoveTrackLocal(sender *webrtc.RTPSender) error {
 		return t.publisher.RemoveTrack(sender)
 	} else {
 		return t.subscriber.RemoveTrack(sender)
+	}
+}
+
+func (t *TransportManager) GetMid(rtpReceiver *webrtc.RTPReceiver) string {
+	if t.params.SinglePeerConnection {
+		return t.subscriber.GetMid(rtpReceiver)
+	} else {
+		return t.publisher.GetMid(rtpReceiver)
 	}
 }
 
@@ -411,10 +410,15 @@ func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels [
 }
 
 func (t *TransportManager) GetUnmatchMediaForOffer(parsedOffer *sdp.SessionDescription, mediaType string) (unmatched []*sdp.MediaDescription, err error) {
-	// prefer codec from offer for clients that don't support setCodecPreferences
 	var lastMatchedMid string
-	lastAnswer := t.publisher.CurrentRemoteDescription()
+	var lastAnswer *webrtc.SessionDescription
+	if t.params.SinglePeerConnection {
+		lastAnswer = t.subscriber.CurrentLocalDescription()
+	} else {
+		lastAnswer = t.publisher.CurrentLocalDescription()
+	}
 	if lastAnswer != nil {
+		t.params.Logger.Infow("RAJA lastAnswer", "lastAnswer", lastAnswer) // REMOVE
 		parsedAnswer, err1 := lastAnswer.Unmarshal()
 		if err1 != nil {
 			// should not happen
@@ -445,11 +449,14 @@ func (t *TransportManager) GetUnmatchMediaForOffer(parsedOffer *sdp.SessionDescr
 	return
 }
 
-func (t *TransportManager) LastPublisherOffer() webrtc.SessionDescription {
+func (t *TransportManager) LastPublisherOffer() *webrtc.SessionDescription {
+	/* RAJA-REMOVE
 	if sd := t.lastPublisherOffer.Load(); sd != nil {
 		return sd.(webrtc.SessionDescription)
 	}
 	return webrtc.SessionDescription{}
+	*/
+	return t.publisher.CurrentRemoteDescription()
 }
 
 func (t *TransportManager) HandleOffer(offer webrtc.SessionDescription, offerId uint32, shouldPend bool) error {
@@ -617,6 +624,10 @@ func (t *TransportManager) SubscriberAsPrimary() bool {
 func (t *TransportManager) GetICEConnectionInfo() []*types.ICEConnectionInfo {
 	infos := make([]*types.ICEConnectionInfo, 0, 2)
 	for _, pc := range []*PCTransport{t.publisher, t.subscriber} {
+		if pc == nil {
+			continue
+		}
+
 		info := pc.GetICEConnectionInfo()
 		if info.HasCandidates() {
 			infos = append(infos, info)
@@ -848,7 +859,9 @@ func (t *TransportManager) UpdateSignalingRTT(rtt uint32) {
 	t.lock.Lock()
 	t.signalingRTT = rtt
 	t.lock.Unlock()
-	t.publisher.SetSignalingRTT(rtt)
+	if t.publisher != nil {
+		t.publisher.SetSignalingRTT(rtt)
+	}
 	t.subscriber.SetSignalingRTT(rtt)
 
 	// TODO: considering using tcp rtt to calculate ice connection cost, if ice connection can't be established
