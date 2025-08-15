@@ -209,27 +209,51 @@ func (t *TransportManager) SubscriberClose() {
 }
 
 func (t *TransportManager) HasPublisherEverConnected() bool {
-	return t.publisher.HasEverConnected()
+	if t.params.SinglePeerConnection {
+		return t.subscriber.HasEverConnected()
+	} else {
+		return t.publisher.HasEverConnected()
+	}
 }
 
 func (t *TransportManager) IsPublisherEstablished() bool {
-	return t.publisher.IsEstablished()
+	if t.params.SinglePeerConnection {
+		return t.subscriber.IsEstablished()
+	} else {
+		return t.publisher.IsEstablished()
+	}
 }
 
 func (t *TransportManager) GetPublisherRTT() (float64, bool) {
-	return t.publisher.GetRTT()
+	if t.params.SinglePeerConnection {
+		return t.subscriber.GetRTT()
+	} else {
+		return t.publisher.GetRTT()
+	}
 }
 
 func (t *TransportManager) GetPublisherMid(rtpReceiver *webrtc.RTPReceiver) string {
-	return t.publisher.GetMid(rtpReceiver)
+	if t.params.SinglePeerConnection {
+		return t.subscriber.GetMid(rtpReceiver)
+	} else {
+		return t.publisher.GetMid(rtpReceiver)
+	}
 }
 
 func (t *TransportManager) GetPublisherRTPReceiver(mid string) *webrtc.RTPReceiver {
-	return t.publisher.GetRTPReceiver(mid)
+	if t.params.SinglePeerConnection {
+		return t.subscriber.GetRTPReceiver(mid)
+	} else {
+		return t.publisher.GetRTPReceiver(mid)
+	}
 }
 
 func (t *TransportManager) WritePublisherRTCP(pkts []rtcp.Packet) error {
-	return t.publisher.WriteRTCP(pkts)
+	if t.params.SinglePeerConnection {
+		return t.subscriber.WriteRTCP(pkts)
+	} else {
+		return t.publisher.WriteRTCP(pkts)
+	}
 }
 
 func (t *TransportManager) GetSubscriberRTT() (float64, bool) {
@@ -271,14 +295,6 @@ func (t *TransportManager) RemoveTrackLocal(sender *webrtc.RTPSender) error {
 		return t.publisher.RemoveTrack(sender)
 	} else {
 		return t.subscriber.RemoveTrack(sender)
-	}
-}
-
-func (t *TransportManager) GetMid(rtpReceiver *webrtc.RTPReceiver) string {
-	if t.params.SinglePeerConnection {
-		return t.subscriber.GetMid(rtpReceiver)
-	} else {
-		return t.publisher.GetMid(rtpReceiver)
 	}
 }
 

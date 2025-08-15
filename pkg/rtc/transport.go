@@ -1207,7 +1207,6 @@ func (t *PCTransport) GetRTT() (float64, bool) {
 	return scps.CurrentRoundTripTime, true
 }
 
-// IsEstablished returns true if the PeerConnection has been established
 func (t *PCTransport) IsEstablished() bool {
 	return t.pc.ConnectionState() != webrtc.PeerConnectionStateNew
 }

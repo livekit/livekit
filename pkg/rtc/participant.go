@@ -2988,7 +2988,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 	p.pendingTracksLock.Lock()
 	newTrack := false
 
-	mid := p.TransportManager.GetMid(rtpReceiver)
+	mid := p.TransportManager.GetPublisherMid(rtpReceiver)
 	p.pubLogger.Debugw(
 		"media track received",
 		"kind", track.Kind().String(),
