@@ -40,6 +40,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/observability"
 	"github.com/livekit/protocol/observability/roomobs"
+	lksdp "github.com/livekit/protocol/sdp"
 	sdpHelper "github.com/livekit/protocol/sdp"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
@@ -1097,7 +1098,7 @@ func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription, unma
 		}
 
 		p.pendingTracksLock.Lock()
-		pti := p.getPendingTrackPrimaryBySdpCid(mst, true)
+		pti := p.getPendingTrackPrimaryBySdpCid(mst)
 		if pti != nil {
 			pti.sdpRids = getRids(pti.sdpRids)
 			p.pubLogger.Debugw(
@@ -1139,6 +1140,85 @@ func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription, unma
 						"could not get mime type for sdp cid", nil,
 						"trackID", mt.ID(),
 						"sdpCid", mst,
+						"track", logger.Proto(mt.ToProto()),
+					)
+				}
+			}
+		}
+	}
+}
+
+func (p *ParticipantImpl) updateRidsFromSDPByMid(parsed *sdp.SessionDescription) {
+	getRids := func(m *sdp.MediaDescription, inRids buffer.VideoLayersRid) buffer.VideoLayersRid {
+		var outRids buffer.VideoLayersRid
+		rids, ok := sdpHelper.GetSimulcastRids(m)
+		if ok {
+			n := min(len(rids), len(inRids))
+			for i := 0; i < n; i++ {
+				outRids[i] = rids[i]
+			}
+			for i := n; i < len(inRids); i++ {
+				outRids[i] = ""
+			}
+			outRids = buffer.NormalizeVideoLayersRid(outRids)
+		} else {
+			for i := 0; i < len(inRids); i++ {
+				outRids[i] = ""
+			}
+		}
+
+		return outRids
+	}
+
+	for _, md := range parsed.MediaDescriptions {
+		mid := lksdp.GetMidValue(md)
+		if mid == "" {
+			continue
+		}
+
+		p.pendingTracksLock.Lock()
+		pti := p.getPendingTrackPrimaryByMid(mid)
+		if pti != nil {
+			pti.sdpRids = getRids(md, pti.sdpRids)
+			p.pubLogger.Debugw(
+				"pending track rids updated",
+				"trackID", pti.trackInfos[0].Sid,
+				"pendingTrack", pti,
+			)
+
+			ti := pti.trackInfos[0]
+			for _, codec := range ti.Codecs {
+				if codec.Mid == mid {
+					mimeType := mime.NormalizeMimeType(codec.MimeType)
+					for _, layer := range codec.Layers {
+						layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(mimeType, layer.Quality, ti)
+						layer.Rid = buffer.VideoQualityToRid(mimeType, layer.Quality, ti, pti.sdpRids)
+					}
+				}
+			}
+		}
+		p.pendingTracksLock.Unlock()
+
+		if pti == nil {
+			// track could already be published, but this could be back up codec offer,
+			// so check in published tracks also
+			mt := p.getPublishedTrackByMid(mid)
+			if mt != nil {
+				mimeType := mt.(*MediaTrack).GetMimeTypeForMid(mid)
+				if mimeType != mime.MimeTypeUnknown {
+					rids := getRids(md, buffer.DefaultVideoLayersRid)
+					mt.(*MediaTrack).UpdateCodecRids(mimeType, rids)
+					p.pubLogger.Debugw(
+						"published track rids updated",
+						"trackID", mt.ID(),
+						"mime", mimeType,
+						"track", logger.Proto(mt.ToProto()),
+					)
+				} else {
+					p.pubLogger.Warnw(
+						"could not get mime type for mid", nil,
+						"trackID", mt.ID(),
+						"mid", mid,
 						"track", logger.Proto(mt.ToProto()),
 					)
 				}
@@ -1256,8 +1336,21 @@ func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription, answerI
 	signalConnCost := time.Since(p.ConnectedAt()).Milliseconds()
 	p.TransportManager.UpdateSignalingRTT(uint32(signalConnCost))
 
-	// SINGLE-PEER-CONNECTION-TODO: have to run `populateSdpCid` and `updateRidsFromSDP`
-	// SINGLE-PEER-CONNECTION-TODO: there won't be unmatched media though, maybe need to store Mid in trackInfo and use that
+	if p.ProtocolVersion().SupportsSinglePeerConnection() {
+		parsedAnswer, err := answer.Unmarshal()
+		if err != nil {
+			p.pubLogger.Warnw(
+				"could not parse answer", err,
+				"transport", livekit.SignalTarget_SUBSCRIBER,
+				"answer", answer,
+				"answerId", answerId,
+			)
+			return
+		}
+
+		p.populateSdpCidByMid(parsedAnswer)
+		p.updateRidsFromSDPByMid(parsedAnswer)
+	}
 
 	p.TransportManager.HandleAnswer(answer, answerId)
 }
@@ -1320,16 +1413,6 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 	p.pendingTracksLock.Unlock()
 	if ti == nil {
 		return
-	}
-
-	if p.ProtocolVersion().SupportsSinglePeerConnection() {
-		if err := p.TransportManager.AddRemoteTrackAndNegotiate(
-			ti,
-			p.getDisabledPublishCodecs(),
-			p.params.Config.Publisher.RTCPFeedback,
-		); err != nil {
-			return
-		}
 	}
 
 	p.sendTrackPublished(req.Cid, ti)
@@ -2146,6 +2229,21 @@ func (p *ParticipantImpl) setIsPublisher(isPublisher bool) {
 
 // when the server has an offer for participant
 func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription, offerId uint32) error {
+	if p.ProtocolVersion().SupportsSinglePeerConnection() {
+		parsedOffer, err := offer.Unmarshal()
+		if err != nil {
+			p.pubLogger.Warnw(
+				"could not parse offer", err,
+				"transport", livekit.SignalTarget_PUBLISHER,
+				"offer", offer,
+				"offerId", offerId,
+			)
+			return err
+		}
+
+		p.populateMid(parsedOffer)
+	}
+
 	p.subLogger.Debugw(
 		"sending offer",
 		"transport", livekit.SignalTarget_SUBSCRIBER,
@@ -2877,6 +2975,16 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		return nil
 	}
 
+	if p.ProtocolVersion().SupportsSinglePeerConnection() {
+		if err := p.TransportManager.AddRemoteTrackAndNegotiate(
+			ti,
+			p.getDisabledPublishCodecs(),
+			p.params.Config.Publisher.RTCPFeedback,
+		); err != nil {
+			return nil
+		}
+	}
+
 	p.pendingTracks[req.Cid] = &pendingTrackInfo{
 		trackInfos: []*livekit.TrackInfo{ti},
 		sdpRids:    buffer.DefaultVideoLayersRid, // could get updated from SDP
@@ -3218,6 +3326,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 
 		p.pendingTracksLock.Lock()
 		if pti := p.pendingTracks[signalCid]; pti != nil {
+			// SINGLE-PEER-CONNECTION-TODO: need to add remote track when dequeuing
 			p.sendTrackPublished(signalCid, pti.trackInfos[0])
 			pti.queued = false
 		}
@@ -3326,6 +3435,7 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 	return signalCid, utils.CloneProto(pendingInfo.trackInfos[0]), pendingInfo.sdpRids, pendingInfo.migrated, pendingInfo.createdAt
 }
 
+// SINGLE-PEER-CONNECTION-TODO: this may not be needed
 func (p *ParticipantImpl) getPendingTracksByTrackType(trackType livekit.TrackType) []*livekit.TrackInfo {
 	var pendingTracks []*livekit.TrackInfo
 	for _, pti := range p.pendingTracks {
@@ -3337,13 +3447,58 @@ func (p *ParticipantImpl) getPendingTracksByTrackType(trackType livekit.TrackTyp
 	return pendingTracks
 }
 
-func (p *ParticipantImpl) getPendingTrackPrimaryBySdpCid(sdpCid string, skipQueued bool) *pendingTrackInfo {
+func (p *ParticipantImpl) getPendingTrackByTrackTypeWithoutMid(trackType livekit.TrackType) (string, *livekit.TrackInfo, bool) {
+	for cid, pti := range p.pendingTracks {
+		ti := pti.trackInfos[0]
+		if ti.Type == trackType {
+			for _, c := range ti.Codecs {
+				if c.Mid == "" {
+					return cid, utils.CloneProto(ti), pti.migrated
+				}
+			}
+		}
+	}
+	return "", nil, false
+}
+
+func (p *ParticipantImpl) getPendingTrackByMid(mid string, skipQueued bool) (string, *livekit.TrackInfo, bool) {
+	for cid, pti := range p.pendingTracks {
+		if skipQueued && pti.queued {
+			continue
+		}
+
+		ti := pti.trackInfos[0]
+		for _, c := range ti.Codecs {
+			if c.Mid == mid {
+				return cid, utils.CloneProto(ti), pti.migrated
+			}
+		}
+	}
+
+	return "", nil, false
+}
+
+func (p *ParticipantImpl) getPendingTrackPrimaryBySdpCid(sdpCid string) *pendingTrackInfo {
 	for _, pti := range p.pendingTracks {
 		ti := pti.trackInfos[0]
 		if len(ti.Codecs) == 0 {
 			continue
 		}
 		if ti.Codecs[0].Cid == sdpCid || ti.Codecs[0].SdpCid == sdpCid {
+			return pti
+		}
+	}
+
+	return nil
+}
+
+func (p *ParticipantImpl) getPendingTrackPrimaryByMid(mid string) *pendingTrackInfo {
+	for _, pti := range p.pendingTracks {
+		ti := pti.trackInfos[0]
+		if len(ti.Codecs) == 0 {
+			continue
+		}
+		if ti.Codecs[0].Mid == mid {
 			return pti
 		}
 	}
@@ -3399,6 +3554,38 @@ func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.Media
 		if publishedTrack.(types.LocalMediaTrack).HasSdpCid(clientId) {
 			p.pubLogger.Debugw("found track by SDP cid", "sdpCid", clientId, "trackID", publishedTrack.ID())
 			return publishedTrack
+		}
+	}
+
+	return nil
+}
+
+func (p *ParticipantImpl) getPublishedTrackPendingMid() types.MediaTrack {
+	for _, publishedTrack := range p.GetPublishedTracks() {
+		ti := publishedTrack.ToProto()
+		for _, c := range ti.Codecs {
+			if c.Mid == "" && c.Cid != "" {
+				p.pubLogger.Debugw(
+					"found track pending mid",
+					"trackID", publishedTrack.ID(),
+					"track", logger.Proto(publishedTrack.ToProto()),
+				)
+				return publishedTrack
+			}
+		}
+	}
+
+	return nil
+}
+
+func (p *ParticipantImpl) getPublishedTrackByMid(mid string) types.MediaTrack {
+	for _, publishedTrack := range p.GetPublishedTracks() {
+		ti := publishedTrack.ToProto()
+		for _, c := range ti.Codecs {
+			if c.Mid == mid {
+				p.pubLogger.Debugw("found track by mid", "mid", mid, "trackID", publishedTrack.ID())
+				return publishedTrack
+			}
 		}
 	}
 

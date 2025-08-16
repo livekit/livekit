@@ -984,10 +984,6 @@ func (t *PCTransport) AddRemoteTrackAndNegotiate(
 	publishDisabledCodecs []*livekit.Codec,
 	rtcpFeedbackConfig RTCPFeedbackConfig,
 ) error {
-	if ti == nil {
-		return nil
-	}
-
 	rtpCodecType := webrtc.RTPCodecTypeVideo
 	if ti.Type == livekit.TrackType_AUDIO {
 		rtpCodecType = webrtc.RTPCodecTypeAudio

@@ -26,6 +26,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	lksdp "github.com/livekit/protocol/sdp"
 	"github.com/livekit/protocol/utils"
 )
@@ -92,6 +93,11 @@ func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([
 						)
 					}
 					unmatchedTrack.(*MediaTrack).UpdateCodecSdpCid(unmatchedSdpMimeType, streamID)
+					p.pubLogger.Debugw(
+						"published track SDP cid updated",
+						"trackID", unmatchedTrack.ID(),
+						"track", logger.Proto(unmatchedTrack.ToProto()),
+					)
 				}
 				continue
 			}
@@ -163,6 +169,143 @@ func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([
 	processUnmatch(unmatchAudios, livekit.TrackType_AUDIO)
 	processUnmatch(unmatchVideos, livekit.TrackType_VIDEO)
 	return unmatchAudios, unmatchVideos
+}
+
+func (p *ParticipantImpl) populateMid(parsedOffer *sdp.SessionDescription) {
+	processUnmatch := func(unmatches []*sdp.MediaDescription, trackType livekit.TrackType) {
+		for _, unmatch := range unmatches {
+			mid := lksdp.GetMidValue(unmatch)
+			if mid == "" {
+				continue
+			}
+
+			p.pendingTracksLock.Lock()
+			signalCid, ti, migrated := p.getPendingTrackByTrackTypeWithoutMid(trackType)
+			if migrated || ti == nil || signalCid == "" {
+				p.pendingTracksLock.Unlock()
+
+				// check for back up codec pending publish
+				publishedTrack := p.getPublishedTrackByMid(mid)
+				if publishedTrack != nil {
+					var mimeType mime.MimeType
+					updated := false
+
+					ti := publishedTrack.ToProto()
+					for _, c := range ti.Codecs {
+						if c.Mid == "" && c.Cid != "" {
+							mimeType = mime.NormalizeMimeType(c.MimeType)
+							updated = true
+						}
+					}
+					publishedTrack.(*MediaTrack).UpdateCodecMid(mimeType, mid)
+					if updated {
+						p.pubLogger.Debugw(
+							"published track mid updated",
+							"trackID", publishedTrack.ID(),
+							"track", logger.Proto(publishedTrack.ToProto()),
+						)
+					}
+				}
+				continue
+			}
+
+			updated := false
+			for _, c := range ti.Codecs {
+				if c.Mid == "" {
+					c.Mid = mid
+					updated = true
+				}
+			}
+
+			if updated {
+				p.pendingTracks[signalCid].trackInfos[0] = utils.CloneProto(ti)
+				p.pubLogger.Debugw(
+					"pending track mid updated",
+					"signalCid", signalCid,
+					"trackID", ti.Sid,
+					"pendingTrack", p.pendingTracks[signalCid],
+				)
+			}
+			p.pendingTracksLock.Unlock()
+		}
+	}
+
+	unmatchAudios, err := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "audio")
+	if err != nil {
+		p.pubLogger.Warnw("could not get unmatch audios", err)
+		return
+	}
+
+	unmatchVideos, err := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "video")
+	if err != nil {
+		p.pubLogger.Warnw("could not get unmatch audios", err)
+		return
+	}
+
+	processUnmatch(unmatchAudios, livekit.TrackType_AUDIO)
+	processUnmatch(unmatchVideos, livekit.TrackType_VIDEO)
+}
+
+func (p *ParticipantImpl) populateSdpCidByMid(parsedAnswer *sdp.SessionDescription) {
+	for _, md := range parsedAnswer.MediaDescriptions {
+		mid := lksdp.GetMidValue(md)
+		if mid == "" {
+			continue
+		}
+
+		streamID, ok := lksdp.ExtractStreamID(md)
+		if !ok {
+			continue
+		}
+
+		p.pendingTracksLock.Lock()
+		signalCid, ti, migrated := p.getPendingTrackByMid(mid, true)
+		if migrated || ti == nil || signalCid == "" {
+			p.pendingTracksLock.Unlock()
+
+			publishedTrack := p.getPublishedTrackByMid(mid)
+			if publishedTrack != nil {
+				var mimeType mime.MimeType
+				updated := false
+
+				ti := publishedTrack.ToProto()
+				for _, c := range ti.Codecs {
+					if c.Mid == mid && c.Cid != streamID {
+						mimeType = mime.NormalizeMimeType(c.MimeType)
+						updated = true
+					}
+				}
+				publishedTrack.(*MediaTrack).UpdateCodecSdpCid(mimeType, streamID)
+				if updated {
+					p.pubLogger.Debugw(
+						"published track SDP cid updated",
+						"trackID", publishedTrack.ID(),
+						"track", logger.Proto(publishedTrack.ToProto()),
+					)
+				}
+			}
+			continue
+		}
+
+		updated := false
+		for _, c := range ti.Codecs {
+			if c.Mid == mid && c.Cid != streamID {
+				c.SdpCid = streamID
+				updated = true
+			}
+		}
+
+		if updated {
+			p.pendingTracks[signalCid].trackInfos[0] = utils.CloneProto(ti)
+			p.pubLogger.Debugw(
+				"pending track SDP cid updated",
+				"signalCid", signalCid,
+				"trackID", ti.Sid,
+				"pendingTrack", p.pendingTracks[signalCid],
+			)
+		}
+		p.pendingTracksLock.Unlock()
+	}
 }
 
 func (p *ParticipantImpl) setCodecPreferencesForPublisher(
