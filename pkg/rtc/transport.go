@@ -1021,6 +1021,7 @@ func (t *PCTransport) AddRemoteTrackAndNegotiate(
 			}
 		}
 		if !disabled && !mime.IsMimeTypeStringRTX(c.RTPCodecCapability.MimeType) {
+			// SINGLE-PEER-CONNECTION-TOOD: remove `nack` for RED and add `nack` for Opus
 			if rtpCodecType == webrtc.RTPCodecTypeVideo {
 				c.RTPCodecCapability.RTCPFeedback = rtcpFeedbackConfig.Video
 			} else {
