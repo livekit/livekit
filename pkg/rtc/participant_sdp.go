@@ -160,7 +160,12 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisher(
 		useSdpCid,
 	)
 	parsedOffer = p.setCodecPreferencesOpusRedForPublisher(parsedOffer, unprocessedUnmatchAudios, useSdpCid)
-	parsedOffer, _ = p.setCodecPreferencesForPublisherMedia(parsedOffer, unmatchVideos, livekit.TrackType_VIDEO, useSdpCid)
+	parsedOffer, _ = p.setCodecPreferencesForPublisherMedia(
+		parsedOffer,
+		unmatchVideos,
+		livekit.TrackType_VIDEO,
+		useSdpCid,
+	)
 	return parsedOffer
 }
 

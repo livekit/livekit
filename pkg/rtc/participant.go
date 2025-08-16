@@ -1256,6 +1256,9 @@ func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription, answerI
 	signalConnCost := time.Since(p.ConnectedAt()).Milliseconds()
 	p.TransportManager.UpdateSignalingRTT(uint32(signalConnCost))
 
+	// SINGLE-PEER-CONNECTION-TODO: have to run `populateSdpCid` and `updateRidsFromSDP`
+	// SINGLE-PEER-CONNECTION-TODO: there won't be unmatched media though, maybe need to store Mid in trackInfo and use that
+
 	p.TransportManager.HandleAnswer(answer, answerId)
 }
 
@@ -1320,7 +1323,11 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 	}
 
 	if p.ProtocolVersion().SupportsSinglePeerConnection() {
-		if err := p.TransportManager.AddRemoteTrackAndNegotiate(ti, p.enabledPublishCodecs, p.params.Config.Publisher.RTCPFeedback); err != nil {
+		if err := p.TransportManager.AddRemoteTrackAndNegotiate(
+			ti,
+			p.getDisabledPublishCodecs(),
+			p.params.Config.Publisher.RTCPFeedback,
+		); err != nil {
 			return
 		}
 	}
@@ -3771,6 +3778,35 @@ func (p *ParticipantImpl) GetEnabledPublishCodecs() []*livekit.Codec {
 			continue
 		}
 		codecs = append(codecs, c)
+	}
+	return codecs
+}
+
+func (p *ParticipantImpl) getDisabledPublishCodecs() []*livekit.Codec {
+	var codecs []*livekit.Codec
+	for _, c := range p.params.ClientConf.GetDisabledCodecs().GetCodecs() {
+		found := false
+		for _, e := range codecs {
+			if mime.NormalizeMimeType(e.Mime) == mime.NormalizeMimeType(c.Mime) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			codecs = append(codecs, c)
+		}
+	}
+	for _, c := range p.params.ClientConf.GetDisabledCodecs().GetPublish() {
+		found := false
+		for _, e := range codecs {
+			if mime.NormalizeMimeType(e.Mime) == mime.NormalizeMimeType(c.Mime) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			codecs = append(codecs, c)
+		}
 	}
 	return codecs
 }

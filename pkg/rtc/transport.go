@@ -19,6 +19,7 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -981,7 +982,7 @@ func (t *PCTransport) AddTransceiverFromKind(
 
 func (t *PCTransport) AddRemoteTrackAndNegotiate(
 	ti *livekit.TrackInfo,
-	publishEnabledCodecs []*livekit.Codec,
+	publishDisabledCodecs []*livekit.Codec,
 	rtcpFeedbackConfig RTCPFeedbackConfig,
 ) error {
 	if ti == nil {
@@ -1008,19 +1009,50 @@ func (t *PCTransport) AddRemoteTrackAndNegotiate(
 	}
 
 	codecs := transceiver.Receiver().GetParameters().Codecs
-	t.params.Logger.Infow("RAJA codecs", "codecs", codecs) // REMOVE
 	enabledCodecs := make([]webrtc.RTPCodecParameters, 0, len(codecs))
+	disabledPayloads := make([]webrtc.PayloadType, 0, len(codecs))
 	for _, c := range codecs {
-		for _, enabled := range publishEnabledCodecs {
-			if mime.NormalizeMimeType(enabled.Mime) == mime.NormalizeMimeType(c.RTPCodecCapability.MimeType) {
-				if rtpCodecType == webrtc.RTPCodecTypeVideo {
-					c.RTPCodecCapability.RTCPFeedback = rtcpFeedbackConfig.Video
-				} else {
-					c.RTPCodecCapability.RTCPFeedback = rtcpFeedbackConfig.Audio
-				}
-				// RAJA-TODO: only add RTX of enabled codecs
-				enabledCodecs = append(enabledCodecs, c)
+		disabled := false
+		for _, disabledCodec := range publishDisabledCodecs {
+			if mime.NormalizeMimeType(disabledCodec.Mime) == mime.NormalizeMimeType(c.RTPCodecCapability.MimeType) {
+				disabled = true
+				disabledPayloads = append(disabledPayloads, c.PayloadType)
 				break
+			}
+		}
+		if !disabled && !mime.IsMimeTypeStringRTX(c.RTPCodecCapability.MimeType) {
+			if rtpCodecType == webrtc.RTPCodecTypeVideo {
+				c.RTPCodecCapability.RTCPFeedback = rtcpFeedbackConfig.Video
+			} else {
+				c.RTPCodecCapability.RTCPFeedback = rtcpFeedbackConfig.Audio
+			}
+			enabledCodecs = append(enabledCodecs, c)
+		}
+	}
+
+	if len(disabledPayloads) != 0 {
+		// remove RTX of disabled payloads
+		for _, c := range codecs {
+			if !mime.IsMimeTypeStringRTX(c.RTPCodecCapability.MimeType) {
+				continue
+			}
+
+			index := strings.Index(c.SDPFmtpLine, "apt=")
+			if index == -1 {
+				continue
+			}
+
+			endIndex := strings.Index(c.SDPFmtpLine[index:], ";")
+			if endIndex == -1 {
+				endIndex = len(c.SDPFmtpLine)
+			}
+			aptPayload, err := strconv.Atoi(c.SDPFmtpLine[index+len("apt=") : endIndex])
+			if err != nil {
+				continue
+			}
+
+			if !slices.Contains(disabledPayloads, webrtc.PayloadType(aptPayload)) {
+				enabledCodecs = append(enabledCodecs, c)
 			}
 		}
 	}
