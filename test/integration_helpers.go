@@ -33,6 +33,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/testutils"
@@ -202,18 +203,18 @@ func createMultiNodeServer(nodeID string, port uint32) *service.LivekitServer {
 }
 
 // creates a client and runs against server
-func createRTCClient(name string, port int, opts *testclient.Options) *testclient.RTCClient {
+func createRTCClient(name string, port int, protocolVersion types.ProtocolVersion, opts *testclient.Options) *testclient.RTCClient {
 	var customizer func(token *auth.AccessToken, grants *auth.VideoGrant)
 	if opts != nil {
 		customizer = opts.TokenCustomizer
 	}
 	token := joinToken(testRoom, name, customizer)
-	ws, err := testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", port), token, opts)
+	ws, err := testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", port), token, protocolVersion, opts)
 	if err != nil {
 		panic(err)
 	}
 
-	c, err := testclient.NewRTCClient(ws, opts)
+	c, err := testclient.NewRTCClient(ws, protocolVersion, opts)
 	if err != nil {
 		panic(err)
 	}
@@ -224,13 +225,13 @@ func createRTCClient(name string, port int, opts *testclient.Options) *testclien
 }
 
 // creates a client and runs against server
-func createRTCClientWithToken(token string, port int, opts *testclient.Options) *testclient.RTCClient {
-	ws, err := testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", port), token, opts)
+func createRTCClientWithToken(token string, port int, protocolVersion types.ProtocolVersion, opts *testclient.Options) *testclient.RTCClient {
+	ws, err := testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", port), token, protocolVersion, opts)
 	if err != nil {
 		panic(err)
 	}
 
-	c, err := testclient.NewRTCClient(ws, opts)
+	c, err := testclient.NewRTCClient(ws, protocolVersion, opts)
 	if err != nil {
 		panic(err)
 	}
