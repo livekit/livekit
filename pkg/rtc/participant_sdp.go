@@ -538,10 +538,6 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 
 			unmatch.MediaName.Formats = append(unmatch.MediaName.Formats, leftCodecs...)
 		}
-
-		// SINGLE-PEER-CONNECTION-TODO: can set mid in TrackInfo before sending offer and check on receiving answer to set SdpCid
-		// SINGLE-PEER-CONNECTION-TODO: this has to be do publish enabled codecs filtering also, cannot do it with setting registered codecs on peer connection as subscriber codecs could be different from publisher codecs
-		// SINGLE-PEER-CONNECTION-TODO: probably have to do RTP Header Extensions and RTCP feedback filtering also here
 	}
 
 	return parsedOffer, unprocessed
