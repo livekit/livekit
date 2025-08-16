@@ -184,8 +184,6 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 			return nil, err
 		}
 		t.subscriber = subscriber
-	} else {
-		t.subscriber = t.publisher
 	}
 	if !t.params.Migration {
 		if err := t.createDataChannelsForSubscriber(nil); err != nil {
