@@ -248,6 +248,14 @@ func (t *TransportManager) GetPublisherRTPReceiver(mid string) *webrtc.RTPReceiv
 	}
 }
 
+func (t *TransportManager) GetPublisherRTPTransceiverDirection(mid string) webrtc.RTPTransceiverDirection {
+	if t.params.SinglePeerConnection {
+		return t.subscriber.GetRTPTransceiverDirection(mid)
+	} else {
+		return t.publisher.GetRTPTransceiverDirection(mid)
+	}
+}
+
 func (t *TransportManager) WritePublisherRTCP(pkts []rtcp.Packet) error {
 	if t.params.SinglePeerConnection {
 		return t.subscriber.WriteRTCP(pkts)

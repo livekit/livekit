@@ -1160,6 +1160,16 @@ func (t *PCTransport) GetRTPReceiver(mid string) *webrtc.RTPReceiver {
 	return nil
 }
 
+func (t *PCTransport) GetRTPTransceiverDirection(mid string) webrtc.RTPTransceiverDirection {
+	for _, tr := range t.pc.GetTransceivers() {
+		if tr.Mid() == mid {
+			return tr.Direction()
+		}
+	}
+
+	return webrtc.RTPTransceiverDirectionUnknown
+}
+
 func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelInit) error {
 	dc, err := t.pc.CreateDataChannel(label, dci)
 	if err != nil {

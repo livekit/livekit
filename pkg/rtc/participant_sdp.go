@@ -179,6 +179,10 @@ func (p *ParticipantImpl) populateMid(parsedOffer *sdp.SessionDescription) {
 				continue
 			}
 
+			if p.TransportManager.GetPublisherRTPTransceiverDirection(mid) != webrtc.RTPTransceiverDirectionRecvonly {
+				continue
+			}
+
 			p.pendingTracksLock.Lock()
 			signalCid, ti, migrated := p.getPendingTrackByTrackTypeWithoutMid(trackType)
 			if migrated || ti == nil || signalCid == "" {
