@@ -2769,6 +2769,12 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		seenCodecs := make(map[string]struct{})
 		for _, codec := range req.SimulcastCodecs {
 			if codec.Codec == "" {
+				p.pubLogger.Warnw(
+					"simulcast codec without mime type", nil,
+					"trackID", ti.Sid,
+					"track", logger.Proto(ti),
+					"addTrackRequest", logger.Proto(req),
+				)
 				continue
 			}
 
