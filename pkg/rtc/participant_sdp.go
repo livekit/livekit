@@ -16,6 +16,7 @@ package rtc
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -467,7 +468,7 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 					if !ti.DisableDtx {
 						attr.Value += ";usedtx=1"
 					}
-					if ti.Stereo {
+					if slices.Contains(ti.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO) {
 						attr.Value += ";stereo=1;maxaveragebitrate=510000"
 					}
 					m.Attributes[i] = attr

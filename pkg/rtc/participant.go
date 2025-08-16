@@ -2713,6 +2713,8 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 
 		track.(*MediaTrack).UpdateCodecInfo(req.SimulcastCodecs)
 		return track.ToProto()
+
+		// SINGLE-PEER-CONNECTION-TODO: AddRemoteTrack
 	}
 
 	backupCodecPolicy := req.BackupCodecPolicy
@@ -3792,7 +3794,7 @@ func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack
 			if ti.Sid == update.TrackSid {
 				isPending = true
 
-				ti.AudioFeatures = update.Features
+				ti.AudioFeatures = sutils.DedupeSlice(update.Features)
 				ti.Stereo = false
 				ti.DisableDtx = false
 				for _, feature := range update.Features {

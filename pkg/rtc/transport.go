@@ -935,7 +935,6 @@ func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal, params types.AddTra
 		return
 	}
 
-	// as there is no way to get transceiver from sender, search
 	for _, tr := range t.pc.GetTransceivers() {
 		if tr.Sender() == sender {
 			transceiver = tr
@@ -1021,7 +1020,7 @@ func (t *PCTransport) AddRemoteTrackAndNegotiate(
 			}
 		}
 		if !disabled && !mime.IsMimeTypeStringRTX(c.RTPCodecCapability.MimeType) {
-			// SINGLE-PEER-CONNECTION-TOOD: remove `nack` for RED and add `nack` for Opus
+			// SINGLE-PEER-CONNECTION-TOOD: remove `nack` for RED?
 			if rtpCodecType == webrtc.RTPCodecTypeVideo {
 				c.RTPCodecCapability.RTCPFeedback = rtcpFeedbackConfig.Video
 			} else {
@@ -1082,9 +1081,40 @@ func (t *PCTransport) AddRemoteTrackAndNegotiate(
 			leftCodecs = append(leftCodecs, enabledCodec)
 		}
 	}
-	transceiver.SetCodecPreferences(append(append([]webrtc.RTPCodecParameters{}, preferredCodecs...), leftCodecs...))
-	// SINGLE-PEER-CONNECTION-TOOD: need to configure stereo for audio codecs
-	// SINGLE-PEER-CONNECTION-TODO: do setCodecPreferencesOpusRedForPublisher for audio
+
+	enabledCodecs = append(append([]webrtc.RTPCodecParameters{}, preferredCodecs...), leftCodecs...)
+
+	// enable dtx, stereo for Opus
+	opusPayload := webrtc.PayloadType(0)
+	for _, enabledCodec := range enabledCodecs {
+		if mime.IsMimeTypeStringOpus(enabledCodec.RTPCodecCapability.MimeType) {
+			opusPayload = enabledCodec.PayloadType
+			if !ti.DisableDtx {
+				enabledCodec.RTPCodecCapability.SDPFmtpLine += ";usedtx=1"
+			}
+			if slices.Contains(ti.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO) {
+				enabledCodec.RTPCodecCapability.SDPFmtpLine += ";stereo=1;maxaveragebitrate=510000"
+			}
+			break
+		}
+	}
+
+	// prioritize audio/red if not disabled and available
+	if opusPayload != 0 {
+		preferredCodecs = nil
+		leftCodecs = nil
+		for _, enabledCodec := range enabledCodecs {
+			if !ti.DisableRed && mime.IsMimeTypeStringRED(enabledCodec.RTPCodecCapability.MimeType) && strings.Contains(enabledCodec.RTPCodecCapability.SDPFmtpLine, strconv.FormatInt(int64(opusPayload), 10)) {
+				preferredCodecs = append(preferredCodecs, enabledCodec)
+			} else {
+				leftCodecs = append(leftCodecs, enabledCodec)
+			}
+		}
+
+		enabledCodecs = append(append([]webrtc.RTPCodecParameters{}, preferredCodecs...), leftCodecs...)
+	}
+
+	transceiver.SetCodecPreferences(enabledCodecs)
 
 	t.Negotiate(true)
 	return nil
