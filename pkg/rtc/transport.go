@@ -972,7 +972,10 @@ func (t *PCTransport) AddTransceiverFromTrack(trackLocal webrtc.TrackLocal, para
 	return
 }
 
-func (t *PCTransport) AddTransceiverFromKind(kind webrtc.RTPCodecType, init webrtc.RTPTransceiverInit) (*webrtc.RTPTransceiver, error) {
+func (t *PCTransport) AddTransceiverFromKind(
+	kind webrtc.RTPCodecType,
+	init webrtc.RTPTransceiverInit,
+) (*webrtc.RTPTransceiver, error) {
 	return t.pc.AddTransceiverFromKind(kind, init)
 }
 
