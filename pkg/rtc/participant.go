@@ -1320,7 +1320,7 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 	}
 
 	if p.ProtocolVersion().SupportsSinglePeerConnection() {
-		if err := p.TransportManager.AddRemoteTrackAndNegotiate(ti); err != nil {
+		if err := p.TransportManager.AddRemoteTrackAndNegotiate(ti, p.enabledPublishCodecs, p.params.Config.Publisher.RTCPFeedback); err != nil {
 			return
 		}
 	}

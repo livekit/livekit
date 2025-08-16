@@ -785,9 +785,7 @@ func (c *RTCClient) AddFileTrack(path string, id string, label string) (writer *
 		return nil, fmt.Errorf("%s has an unsupported extension", filepath.Base(path))
 	}
 
-	logger.Debugw("adding file track",
-		"mime", mime,
-	)
+	logger.Debugw("adding file track", "mime", mime)
 
 	track, err := webrtc.NewTrackLocalStaticSample(
 		webrtc.RTPCodecCapability{MimeType: mime},
@@ -799,6 +797,37 @@ func (c *RTCClient) AddFileTrack(path string, id string, label string) (writer *
 	}
 
 	return c.AddTrack(track, path)
+}
+
+func (c *RTCClient) AddTransceiverOfKind(kind webrtc.RTPCodecType) error {
+	pc := c.publisher
+	if c.protocolVersion.SupportsSinglePeerConnection() {
+		pc = c.subscriber
+	}
+	if _, err := pc.AddTransceiverFromKind(
+		kind,
+		webrtc.RTPTransceiverInit{
+			Direction: webrtc.RTPTransceiverDirectionRecvonly,
+		},
+	); err != nil {
+		return err
+	}
+
+	// send AddTrackRequest with some mock parameters to trigger a negotiation
+	mimeType := "video/vp8"
+	trackType := livekit.TrackType_VIDEO
+	if kind == webrtc.RTPCodecTypeAudio {
+		mimeType = "audio/opus"
+		trackType = livekit.TrackType_AUDIO
+	}
+	if err := c.SendAddTrack(kind.String(), mimeType, kind.String(), trackType); err != nil {
+		return err
+	}
+
+	if !c.protocolVersion.SupportsSinglePeerConnection() {
+		c.publisher.Negotiate(false)
+	}
+	return nil
 }
 
 // send AddTrack command to server to initiate server-side negotiation

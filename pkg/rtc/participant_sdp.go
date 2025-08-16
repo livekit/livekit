@@ -141,7 +141,6 @@ func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([
 		p.pubLogger.Warnw("could not get unmatch audios", err)
 		return nil, nil
 	}
-	p.pubLogger.Infow("RAJA unmatch", "audios", unmatchAudios, "videos", unmatchVideos) // REMOVE
 
 	processUnmatch(unmatchAudios, livekit.TrackType_AUDIO)
 	processUnmatch(unmatchVideos, livekit.TrackType_VIDEO)

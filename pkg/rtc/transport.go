@@ -972,7 +972,15 @@ func (t *PCTransport) AddTransceiverFromTrack(trackLocal webrtc.TrackLocal, para
 	return
 }
 
-func (t *PCTransport) AddRemoteTrackAndNegotiate(ti *livekit.TrackInfo) error {
+func (t *PCTransport) AddTransceiverFromKind(kind webrtc.RTPCodecType, init webrtc.RTPTransceiverInit) (*webrtc.RTPTransceiver, error) {
+	return t.pc.AddTransceiverFromKind(kind, init)
+}
+
+func (t *PCTransport) AddRemoteTrackAndNegotiate(
+	ti *livekit.TrackInfo,
+	publishEnabledCodecs []*livekit.Codec,
+	rtcpFeedbackConfig RTCPFeedbackConfig,
+) error {
 	if ti == nil {
 		return nil
 	}
@@ -981,7 +989,7 @@ func (t *PCTransport) AddRemoteTrackAndNegotiate(ti *livekit.TrackInfo) error {
 	if ti.Type == livekit.TrackType_AUDIO {
 		rtpCodecType = webrtc.RTPCodecTypeAudio
 	}
-	_, err := t.pc.AddTransceiverFromKind(
+	transceiver, err := t.pc.AddTransceiverFromKind(
 		rtpCodecType,
 		webrtc.RTPTransceiverInit{
 			Direction: webrtc.RTPTransceiverDirectionRecvonly,
@@ -996,8 +1004,26 @@ func (t *PCTransport) AddRemoteTrackAndNegotiate(ti *livekit.TrackInfo) error {
 		return err
 	}
 
-	t.Negotiate(true)
+	codecs := transceiver.Receiver().GetParameters().Codecs
+	t.params.Logger.Infow("RAJA codecs", "codecs", codecs) // REMOVE
+	enabledCodecs := make([]webrtc.RTPCodecParameters, 0, len(codecs))
+	for _, c := range codecs {
+		for _, enabled := range publishEnabledCodecs {
+			if mime.NormalizeMimeType(enabled.Mime) == mime.NormalizeMimeType(c.RTPCodecCapability.MimeType) {
+				if rtpCodecType == webrtc.RTPCodecTypeVideo {
+					c.RTPCodecCapability.RTCPFeedback = rtcpFeedbackConfig.Video
+				} else {
+					c.RTPCodecCapability.RTCPFeedback = rtcpFeedbackConfig.Audio
+				}
+				// RAJA-TODO: only add RTX of enabled codecs
+				enabledCodecs = append(enabledCodecs, c)
+				break
+			}
+		}
+	}
+	transceiver.SetCodecPreferences(enabledCodecs)
 
+	t.Negotiate(true)
 	return nil
 }
 
@@ -2559,6 +2585,20 @@ func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription, 
 		// by the SubscriptionManager unsubscribe the failure DownTrack. So don't treat this error as negotiation failure.
 		if !errors.Is(err, webrtc.ErrUnsupportedCodec) {
 			return err
+		}
+	}
+
+	// SINGLE-PEER-CONNECTION-TODO: do this parsing and RTX deduction only for single peer connection mode
+	parsed, err := sd.Unmarshal()
+	if err != nil {
+		return err
+	}
+
+	rtxRepairs := nonSimulcastRTXRepairsFromSDP(parsed, t.params.Logger)
+	if len(rtxRepairs) > 0 {
+		t.params.Logger.Debugw("rtx pairs found from sdp", "ssrcs", rtxRepairs)
+		for repair, base := range rtxRepairs {
+			t.params.Config.BufferFactory.SetRTXPair(repair, base)
 		}
 	}
 

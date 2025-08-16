@@ -25,8 +25,8 @@ import (
 )
 
 const (
-	frameMarking        = "urn:ietf:params:rtp-hdrext:framemarking"
-	repairedRTPStreamID = "urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id"
+	frameMarkingURI        = "urn:ietf:params:rtp-hdrext:framemarking"
+	repairedRTPStreamIDURI = "urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id"
 )
 
 type WebRTCConfig struct {
@@ -92,9 +92,9 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 				sdp.SDESMidURI,
 				sdp.SDESRTPStreamIDURI,
 				sdp.TransportCCURI,
-				frameMarking,
+				frameMarkingURI,
 				dd.ExtensionURI,
-				repairedRTPStreamID,
+				repairedRTPStreamIDURI,
 				//act.AbsCaptureTimeURI,
 			},
 		},

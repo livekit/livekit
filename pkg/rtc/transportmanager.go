@@ -286,8 +286,12 @@ func (t *TransportManager) AddTransceiverFromTrackLocal(
 	}
 }
 
-func (t *TransportManager) AddRemoteTrackAndNegotiate(ti *livekit.TrackInfo) error {
-	return t.subscriber.AddRemoteTrackAndNegotiate(ti)
+func (t *TransportManager) AddRemoteTrackAndNegotiate(
+	ti *livekit.TrackInfo,
+	publishEnabledCodecs []*livekit.Codec,
+	rtcpFeedbackConfig RTCPFeedbackConfig,
+) error {
+	return t.subscriber.AddRemoteTrackAndNegotiate(ti, publishEnabledCodecs, rtcpFeedbackConfig)
 }
 
 func (t *TransportManager) RemoveTrackLocal(sender *webrtc.RTPSender) error {

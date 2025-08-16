@@ -660,10 +660,14 @@ func TestDeviceCodecOverride(t *testing.T) {
 			defer c1.Stop()
 			waitUntilConnected(t, c1)
 
+			/* RAJA-REMOVE
 			// it doesn't really matter what the codec set here is, uses default Pion MediaEngine codecs
 			tw, err := c1.AddStaticTrack("video/h264", "video", "webcam")
 			require.NoError(t, err)
 			defer stopWriters(tw)
+			*/
+			err := c1.AddTransceiverOfKind(webrtc.RTPCodecTypeVideo)
+			require.NoError(t, err)
 
 			var sd *webrtc.SessionDescription
 			// wait for server to receive track
