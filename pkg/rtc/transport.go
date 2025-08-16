@@ -1058,8 +1058,32 @@ func (t *PCTransport) AddRemoteTrackAndNegotiate(
 				enabledCodecs = append(enabledCodecs, c)
 			}
 		}
+	} else {
+		for _, c := range codecs {
+			if mime.IsMimeTypeStringRTX(c.RTPCodecCapability.MimeType) {
+				enabledCodecs = append(enabledCodecs, c)
+			}
+		}
 	}
-	transceiver.SetCodecPreferences(enabledCodecs)
+
+	// arrange enabled by preference in TrackInfo
+	// SINGLE-PEER-CONNECTION-TODO: have to figure out which codec index
+	mimeType := ""
+	if len(ti.Codecs) != 0 {
+		mimeType = ti.Codecs[0].MimeType
+	}
+	preferredCodecs := make([]webrtc.RTPCodecParameters, 0, len(enabledCodecs))
+	leftCodecs := make([]webrtc.RTPCodecParameters, 0, len(enabledCodecs))
+	for _, enabledCodec := range enabledCodecs {
+		if mimeType == "" || mime.NormalizeMimeType(enabledCodec.RTPCodecCapability.MimeType) == mime.NormalizeMimeType(mimeType) {
+			preferredCodecs = append(preferredCodecs, enabledCodec)
+		} else {
+			leftCodecs = append(leftCodecs, enabledCodec)
+		}
+	}
+	transceiver.SetCodecPreferences(append(append([]webrtc.RTPCodecParameters{}, preferredCodecs...), leftCodecs...))
+	// SINGLE-PEER-CONNECTION-TOOD: need to configure stereo for audio codecs
+	// SINGLE-PEER-CONNECTION-TODO: do setCodecPreferencesOpusRedForPublisher for audio
 
 	t.Negotiate(true)
 	return nil

@@ -2146,43 +2146,6 @@ func (p *ParticipantImpl) setIsPublisher(isPublisher bool) {
 
 // when the server has an offer for participant
 func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription, offerId uint32) error {
-	if p.ProtocolVersion().SupportsSinglePeerConnection() {
-		parsedOffer, err := offer.Unmarshal()
-		if err != nil {
-			p.pubLogger.Warnw(
-				"could not parse offer", err,
-				"transport", livekit.SignalTarget_PUBLISHER,
-				"offer", offer,
-				"offerId", offerId,
-			)
-			return err
-		}
-
-		unmatchAudios, err := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "audio")
-		if err != nil {
-			p.subLogger.Warnw("could not get unmatch audios", err)
-			return err
-		}
-		unmatchVideos, _ := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "video")
-		if err != nil {
-			p.subLogger.Warnw("could not get unmatch videos", err)
-			return err
-		}
-		parsedOffer = p.setCodecPreferencesForPublisher(parsedOffer, unmatchAudios, unmatchVideos, false)
-
-		// put together munged offer after setting codec preferences
-		bytes, err := parsedOffer.Marshal()
-		if err != nil {
-			p.pubLogger.Errorw("failed to marshal offer", err)
-			return err
-		}
-
-		offer = webrtc.SessionDescription{
-			Type: offer.Type,
-			SDP:  string(bytes),
-		}
-	}
-
 	p.subLogger.Debugw(
 		"sending offer",
 		"transport", livekit.SignalTarget_SUBSCRIBER,

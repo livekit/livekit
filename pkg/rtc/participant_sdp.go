@@ -151,7 +151,7 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisher(
 	parsedOffer *sdp.SessionDescription,
 	unmatchAudios []*sdp.MediaDescription,
 	unmatchVideos []*sdp.MediaDescription,
-	useSdpCid bool,
+	useSdpCid bool, // SINGLE-PEER-CONNECTION-TODO: remove this arg
 ) *sdp.SessionDescription {
 	parsedOffer, unprocessedUnmatchAudios := p.setCodecPreferencesForPublisherMedia(
 		parsedOffer,
