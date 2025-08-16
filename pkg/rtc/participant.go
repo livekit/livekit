@@ -2220,7 +2220,7 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 	publishedTrack, isNewTrack, isReceiverAdded, sdpRids := p.mediaTrackReceived(track, rtpReceiver)
 	if publishedTrack == nil {
 		p.pubLogger.Debugw(
-			"webrtc Track published but can't find MediaTrack in pendingTracks",
+			"webrtc track published but can't find MediaTrack in pendingTracks",
 			"kind", track.Kind().String(),
 			"webrtcTrackID", track.ID(),
 			"rid", track.RID(),

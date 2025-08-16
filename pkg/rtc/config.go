@@ -19,6 +19,7 @@ import (
 	"github.com/pion/webrtc/v4"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
@@ -118,12 +119,12 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 			PacketBufferSizeAudio: rtcConf.PacketBufferSizeAudio,
 		},
 		Publisher:  publisherConfig,
-		Subscriber: getSubscriberConfig(rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE),
+		Subscriber: getSubscriberConfig(types.CurrentProtocol, rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE),
 	}, nil
 }
 
-func (c *WebRTCConfig) UpdateCongestionControl(ccConf config.CongestionControlConfig) {
-	c.Subscriber = getSubscriberConfig(ccConf.UseSendSideBWEInterceptor || ccConf.UseSendSideBWE)
+func (c *WebRTCConfig) UpdateSubscriberConfig(protocolVersion types.ProtocolVersion, ccConf config.CongestionControlConfig) {
+	c.Subscriber = getSubscriberConfig(protocolVersion, ccConf.UseSendSideBWEInterceptor || ccConf.UseSendSideBWE)
 }
 
 func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
@@ -131,7 +132,42 @@ func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
 	c.SettingEngine.BufferFactory = factory.GetOrNew
 }
 
-func getSubscriberConfig(enableTWCC bool) DirectionConfig {
+func getSubscriberConfig(protocolVersion types.ProtocolVersion, enableTWCC bool) DirectionConfig {
+	if protocolVersion.SupportsSinglePeerConnection() {
+		return DirectionConfig{
+			RTPHeaderExtension: RTPHeaderExtensionConfig{
+				Audio: []string{
+					sdp.SDESMidURI,
+					sdp.SDESRTPStreamIDURI,
+					sdp.AudioLevelURI,
+					//act.AbsCaptureTimeURI,
+				},
+				Video: []string{
+					sdp.SDESMidURI,
+					sdp.SDESRTPStreamIDURI,
+					sdp.TransportCCURI,
+					sdp.ABSSendTimeURI,
+					frameMarkingURI,
+					dd.ExtensionURI,
+					repairedRTPStreamIDURI,
+					//act.AbsCaptureTimeURI,
+				},
+			},
+			RTCPFeedback: RTCPFeedbackConfig{
+				Audio: []webrtc.RTCPFeedback{
+					{Type: webrtc.TypeRTCPFBNACK},
+				},
+				Video: []webrtc.RTCPFeedback{
+					{Type: webrtc.TypeRTCPFBTransportCC},
+					{Type: webrtc.TypeRTCPFBGoogREMB},
+					{Type: webrtc.TypeRTCPFBCCM, Parameter: "fir"},
+					{Type: webrtc.TypeRTCPFBNACK},
+					{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"},
+				},
+			},
+		}
+	}
+
 	subscriberConfig := DirectionConfig{
 		RTPHeaderExtension: RTPHeaderExtensionConfig{
 			Video: []string{
