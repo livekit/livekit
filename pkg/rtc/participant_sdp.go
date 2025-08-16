@@ -316,20 +316,17 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisher(
 	parsedOffer *sdp.SessionDescription,
 	unmatchAudios []*sdp.MediaDescription,
 	unmatchVideos []*sdp.MediaDescription,
-	useSdpCid bool, // SINGLE-PEER-CONNECTION-TODO: remove this arg
 ) *sdp.SessionDescription {
 	parsedOffer, unprocessedUnmatchAudios := p.setCodecPreferencesForPublisherMedia(
 		parsedOffer,
 		unmatchAudios,
 		livekit.TrackType_AUDIO,
-		useSdpCid,
 	)
-	parsedOffer = p.setCodecPreferencesOpusRedForPublisher(parsedOffer, unprocessedUnmatchAudios, useSdpCid)
+	parsedOffer = p.setCodecPreferencesOpusRedForPublisher(parsedOffer, unprocessedUnmatchAudios)
 	parsedOffer, _ = p.setCodecPreferencesForPublisherMedia(
 		parsedOffer,
 		unmatchVideos,
 		livekit.TrackType_VIDEO,
-		useSdpCid,
 	)
 	return parsedOffer
 }
@@ -337,30 +334,16 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisher(
 func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(
 	parsedOffer *sdp.SessionDescription,
 	unmatchAudios []*sdp.MediaDescription,
-	useSdpCid bool,
 ) *sdp.SessionDescription {
 	for _, unmatchAudio := range unmatchAudios {
-		var ti *livekit.TrackInfo
-		if useSdpCid {
-			streamID, ok := lksdp.ExtractStreamID(unmatchAudio)
-			if !ok {
-				continue
-			}
-
-			p.pendingTracksLock.RLock()
-			_, ti, _, _, _ = p.getPendingTrack(streamID, livekit.TrackType_AUDIO, false)
-			p.pendingTracksLock.RUnlock()
-		} else {
-			p.pendingTracksLock.RLock()
-			pendingTracks := p.getPendingTracksByTrackType(livekit.TrackType_AUDIO)
-			p.pendingTracksLock.RUnlock()
-			if len(pendingTracks) > 1 {
-				p.pubLogger.Warnw("too many pending audio tracks", nil, "count", len(pendingTracks))
-			}
-			if len(pendingTracks) != 0 {
-				ti = pendingTracks[0]
-			}
+		streamID, ok := lksdp.ExtractStreamID(unmatchAudio)
+		if !ok {
+			continue
 		}
+
+		p.pendingTracksLock.RLock()
+		_, ti, _, _, _ := p.getPendingTrack(streamID, livekit.TrackType_AUDIO, false)
+		p.pendingTracksLock.RUnlock()
 		if ti == nil {
 			continue
 		}
@@ -428,7 +411,6 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 	parsedOffer *sdp.SessionDescription,
 	unmatches []*sdp.MediaDescription,
 	trackType livekit.TrackType,
-	useSdpCid bool,
 ) (*sdp.SessionDescription, []*sdp.MediaDescription) {
 	unprocessed := make([]*sdp.MediaDescription, 0, len(unmatches))
 	// unmatched media is pending for publish, set codec preference
@@ -436,39 +418,27 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 		var ti *livekit.TrackInfo
 		var mimeType string
 
-		if useSdpCid {
-			streamID, ok := lksdp.ExtractStreamID(unmatch)
-			if !ok {
-				unprocessed = append(unprocessed, unmatch)
-				continue
-			}
+		streamID, ok := lksdp.ExtractStreamID(unmatch)
+		if !ok {
+			unprocessed = append(unprocessed, unmatch)
+			continue
+		}
 
-			p.pendingTracksLock.RLock()
-			mt := p.getPublishedTrackBySdpCid(streamID)
-			if mt != nil {
-				ti = mt.ToProto()
-			} else {
-				_, ti, _, _, _ = p.getPendingTrack(streamID, trackType, false)
-			}
-			p.pendingTracksLock.RUnlock()
-
-			if ti != nil {
-				for _, c := range ti.Codecs {
-					if c.Cid == streamID || c.SdpCid == streamID {
-						mimeType = c.MimeType
-						break
-					}
-				}
-			}
+		p.pendingTracksLock.RLock()
+		mt := p.getPublishedTrackBySdpCid(streamID)
+		if mt != nil {
+			ti = mt.ToProto()
 		} else {
-			p.pendingTracksLock.RLock()
-			pendingTracks := p.getPendingTracksByTrackType(trackType)
-			p.pendingTracksLock.RUnlock()
-			if len(pendingTracks) > 1 {
-				p.pubLogger.Warnw("too many pending tracks", nil, "trackType", trackType, "count", len(pendingTracks))
-			}
-			if len(pendingTracks) != 0 {
-				ti = pendingTracks[0]
+			_, ti, _, _, _ = p.getPendingTrack(streamID, trackType, false)
+		}
+		p.pendingTracksLock.RUnlock()
+
+		if ti != nil {
+			for _, c := range ti.Codecs {
+				if c.Cid == streamID || c.SdpCid == streamID {
+					mimeType = c.MimeType
+					break
+				}
 			}
 		}
 		if ti == nil {
@@ -476,7 +446,6 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 			continue
 		}
 
-		// SINGLE-PEER-CONNECTION-TODO: have to figure out primary or back up codec
 		if mimeType == "" && len(ti.Codecs) > 0 {
 			mimeType = ti.Codecs[0].MimeType
 		}

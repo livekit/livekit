@@ -1254,7 +1254,7 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription, offerId u
 	}
 
 	unmatchAudios, unmatchVideos := p.populateSdpCid(parsedOffer)
-	parsedOffer = p.setCodecPreferencesForPublisher(parsedOffer, unmatchAudios, unmatchVideos, true)
+	parsedOffer = p.setCodecPreferencesForPublisher(parsedOffer, unmatchAudios, unmatchVideos)
 	p.updateRidsFromSDP(parsedOffer, unmatchVideos)
 
 	// put together munged offer after setting codec preferences
@@ -3433,18 +3433,6 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 	}
 
 	return signalCid, utils.CloneProto(pendingInfo.trackInfos[0]), pendingInfo.sdpRids, pendingInfo.migrated, pendingInfo.createdAt
-}
-
-// SINGLE-PEER-CONNECTION-TODO: this may not be needed
-func (p *ParticipantImpl) getPendingTracksByTrackType(trackType livekit.TrackType) []*livekit.TrackInfo {
-	var pendingTracks []*livekit.TrackInfo
-	for _, pti := range p.pendingTracks {
-		ti := pti.trackInfos[0]
-		if ti.Type == trackType {
-			pendingTracks = append(pendingTracks, utils.CloneProto(ti))
-		}
-	}
-	return pendingTracks
 }
 
 func (p *ParticipantImpl) getPendingTrackByTrackTypeWithoutMid(trackType livekit.TrackType) (string, *livekit.TrackInfo, bool) {
