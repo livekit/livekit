@@ -1050,6 +1050,9 @@ func (t *PCTransport) AddRemoteTrackAndNegotiate(
 			if err != nil {
 				continue
 			}
+			if aptPayload < 0 || aptPayload > 255 {
+				continue
+			}
 
 			if !slices.Contains(disabledPayloads, webrtc.PayloadType(aptPayload)) {
 				enabledCodecs = append(enabledCodecs, c)
