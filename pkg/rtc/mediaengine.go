@@ -261,3 +261,13 @@ func selectAlternativeVideoCodec(enabledCodecs []*livekit.Codec) string {
 	// no viable codec in the list of enabled codecs, fall back to the most widely supported codec
 	return mime.MimeTypeVP8.String()
 }
+
+func selectAlternativeAudioCodec(enabledCodecs []*livekit.Codec) string {
+	for _, c := range enabledCodecs {
+		if mime.IsMimeTypeStringAudio(c.Mime) {
+			return c.Mime
+		}
+	}
+	// no viable codec in the list of enabled codecs, fall back to the most widely supported codec
+	return mime.MimeTypeOpus.String()
+}

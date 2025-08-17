@@ -2887,7 +2887,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 				if !IsCodecEnabled(p.enabledPublishCodecs, webrtc.RTPCodecCapability{MimeType: mimeType}) {
 					altCodec := selectAlternativeVideoCodec(p.enabledPublishCodecs)
 					p.pubLogger.Infow(
-						"falling back to alternative codec",
+						"falling back to alternative video codec",
 						"codec", mimeType,
 						"altCodec", altCodec,
 						"trackID", ti.Sid,
@@ -2902,8 +2902,21 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 						videoLayerMode = livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM
 					}
 				}
-			} else if req.Type == livekit.TrackType_AUDIO && !mime.IsMimeTypeStringAudio(mimeType) {
-				mimeType = mime.MimeTypePrefixAudio + mimeType
+			} else if req.Type == livekit.TrackType_AUDIO {
+				if !mime.IsMimeTypeStringAudio(mimeType) {
+					mimeType = mime.MimeTypePrefixAudio + mimeType
+				}
+				if !IsCodecEnabled(p.enabledPublishCodecs, webrtc.RTPCodecCapability{MimeType: mimeType}) {
+					altCodec := selectAlternativeAudioCodec(p.enabledPublishCodecs)
+					p.pubLogger.Infow(
+						"falling back to alternative audio codec",
+						"codec", mimeType,
+						"altCodec", altCodec,
+						"trackID", ti.Sid,
+					)
+					// select an alternative MIME type that's generally supported
+					mimeType = altCodec
+				}
 			}
 
 			if _, ok := seenCodecs[mimeType]; ok || mimeType == "" {
