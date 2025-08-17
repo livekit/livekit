@@ -807,7 +807,7 @@ func (c *RTCClient) AddTransceiverOfKind(kind webrtc.RTPCodecType) error {
 	if _, err := pc.AddTransceiverFromKind(
 		kind,
 		webrtc.RTPTransceiverInit{
-			Direction: webrtc.RTPTransceiverDirectionRecvonly,
+			Direction: webrtc.RTPTransceiverDirectionSendrecv,
 		},
 	); err != nil {
 		return err
