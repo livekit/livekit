@@ -1002,7 +1002,7 @@ func (t *PCTransport) AddRemoteTrackAndNegotiate(
 	}
 
 	codecs := transceiver.Receiver().GetParameters().Codecs
-	enabledCodecs := make([]webrtc.RTPCodecParameters, 0, len(codecs))
+	enabledCodecs := make([]*webrtc.RTPCodecParameters, 0, len(codecs))
 	disabledPayloads := make([]webrtc.PayloadType, 0, len(codecs))
 	for _, c := range codecs {
 		disabled := false
@@ -1020,7 +1020,8 @@ func (t *PCTransport) AddRemoteTrackAndNegotiate(
 			} else {
 				c.RTPCodecCapability.RTCPFeedback = rtcpFeedbackConfig.Audio
 			}
-			enabledCodecs = append(enabledCodecs, c)
+			codecCopy := c
+			enabledCodecs = append(enabledCodecs, &codecCopy)
 		}
 	}
 
@@ -1049,36 +1050,20 @@ func (t *PCTransport) AddRemoteTrackAndNegotiate(
 			}
 
 			if !slices.Contains(disabledPayloads, webrtc.PayloadType(aptPayload)) {
-				enabledCodecs = append(enabledCodecs, c)
+				codecCopy := c
+				enabledCodecs = append(enabledCodecs, &codecCopy)
 			}
 		}
 	} else {
 		for _, c := range codecs {
 			if mime.IsMimeTypeStringRTX(c.RTPCodecCapability.MimeType) {
-				enabledCodecs = append(enabledCodecs, c)
+				codecCopy := c
+				enabledCodecs = append(enabledCodecs, &codecCopy)
 			}
 		}
 	}
 
-	// arrange enabled by preference in TrackInfo
-	// SINGLE-PEER-CONNECTION-TODO: have to figure out which codec index
-	mimeType := ""
-	if len(ti.Codecs) != 0 {
-		mimeType = ti.Codecs[0].MimeType
-	}
-	preferredCodecs := make([]webrtc.RTPCodecParameters, 0, len(enabledCodecs))
-	leftCodecs := make([]webrtc.RTPCodecParameters, 0, len(enabledCodecs))
-	for _, enabledCodec := range enabledCodecs {
-		if mimeType == "" || mime.NormalizeMimeType(enabledCodec.RTPCodecCapability.MimeType) == mime.NormalizeMimeType(mimeType) {
-			preferredCodecs = append(preferredCodecs, enabledCodec)
-		} else {
-			leftCodecs = append(leftCodecs, enabledCodec)
-		}
-	}
-
-	enabledCodecs = append(append([]webrtc.RTPCodecParameters{}, preferredCodecs...), leftCodecs...)
-
-	// enable dtx, stereo for Opus
+	// enable dtx, stereo for Opus if needed
 	opusPayload := webrtc.PayloadType(0)
 	for _, enabledCodec := range enabledCodecs {
 		if mime.IsMimeTypeStringOpus(enabledCodec.RTPCodecCapability.MimeType) {
@@ -1093,6 +1078,24 @@ func (t *PCTransport) AddRemoteTrackAndNegotiate(
 		}
 	}
 
+	// arrange enabled by preference in TrackInfo
+	// SINGLE-PEER-CONNECTION-TODO: have to figure out which codec index
+	mimeType := ""
+	if len(ti.Codecs) != 0 {
+		mimeType = ti.Codecs[0].MimeType
+	}
+	preferredCodecs := make([]*webrtc.RTPCodecParameters, 0, len(enabledCodecs))
+	leftCodecs := make([]*webrtc.RTPCodecParameters, 0, len(enabledCodecs))
+	for _, enabledCodec := range enabledCodecs {
+		if mimeType == "" || mime.NormalizeMimeType(enabledCodec.RTPCodecCapability.MimeType) == mime.NormalizeMimeType(mimeType) {
+			preferredCodecs = append(preferredCodecs, enabledCodec)
+		} else {
+			leftCodecs = append(leftCodecs, enabledCodec)
+		}
+	}
+
+	enabledCodecs = append(append([]*webrtc.RTPCodecParameters{}, preferredCodecs...), leftCodecs...)
+
 	// prioritize audio/red if not disabled and available
 	if opusPayload != 0 {
 		preferredCodecs = nil
@@ -1105,10 +1108,14 @@ func (t *PCTransport) AddRemoteTrackAndNegotiate(
 			}
 		}
 
-		enabledCodecs = append(append([]webrtc.RTPCodecParameters{}, preferredCodecs...), leftCodecs...)
+		enabledCodecs = append(append([]*webrtc.RTPCodecParameters{}, preferredCodecs...), leftCodecs...)
 	}
 
-	transceiver.SetCodecPreferences(enabledCodecs)
+	preferences := make([]webrtc.RTPCodecParameters, 0, len(enabledCodecs))
+	for _, enabledCodec := range enabledCodecs {
+		preferences = append(preferences, *enabledCodec)
+	}
+	transceiver.SetCodecPreferences(preferences)
 
 	t.Negotiate(true)
 	return nil
