@@ -2875,7 +2875,6 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 					"track", logger.Proto(ti),
 					"addTrackRequest", logger.Proto(req),
 				)
-				continue
 			}
 
 			mimeType := codec.Codec
