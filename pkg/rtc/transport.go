@@ -1020,8 +1020,7 @@ func (t *PCTransport) AddRemoteTrackAndNegotiate(
 			} else {
 				c.RTPCodecCapability.RTCPFeedback = rtcpFeedbackConfig.Audio
 			}
-			codecCopy := c
-			enabledCodecs = append(enabledCodecs, &codecCopy)
+			enabledCodecs = append(enabledCodecs, &c)
 		}
 	}
 
@@ -1050,15 +1049,13 @@ func (t *PCTransport) AddRemoteTrackAndNegotiate(
 			}
 
 			if !slices.Contains(disabledPayloads, webrtc.PayloadType(aptPayload)) {
-				codecCopy := c
-				enabledCodecs = append(enabledCodecs, &codecCopy)
+				enabledCodecs = append(enabledCodecs, &c)
 			}
 		}
 	} else {
 		for _, c := range codecs {
 			if mime.IsMimeTypeStringRTX(c.RTPCodecCapability.MimeType) {
-				codecCopy := c
-				enabledCodecs = append(enabledCodecs, &codecCopy)
+				enabledCodecs = append(enabledCodecs, &c)
 			}
 		}
 	}
