@@ -102,6 +102,7 @@ var (
 	ErrNoBundleMid                       = errors.New("could not get bundle mid")
 	ErrMidMismatch                       = errors.New("media mid does not match bundle mid")
 	ErrICECredentialMismatch             = errors.New("ice credential mismatch")
+	ErrUnsupportedRemoteTrackType        = errors.New("unsupported remote track type")
 )
 
 // -------------------------------------------------------------------------
@@ -982,6 +983,10 @@ func (t *PCTransport) AddRemoteTrackAndNegotiate(
 	publishDisabledCodecs []*livekit.Codec,
 	rtcpFeedbackConfig RTCPFeedbackConfig,
 ) error {
+	if ti.Type != livekit.TrackType_AUDIO && ti.Type != livekit.TrackType_VIDEO {
+		return ErrUnsupportedRemoteTrackType
+	}
+
 	rtpCodecType := webrtc.RTPCodecTypeVideo
 	if ti.Type == livekit.TrackType_AUDIO {
 		rtpCodecType = webrtc.RTPCodecTypeAudio

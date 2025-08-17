@@ -267,41 +267,6 @@ func (m MimeType) ReporterType() roomobs.MimeType {
 	return roomobs.MimeTypeUndefined
 }
 
-func MimeTypeFromString(mimeTypeString string) MimeType {
-	switch mimeTypeString {
-	case "MimeTypeUnknown":
-		return MimeTypeUnknown
-	case webrtc.MimeTypeH264:
-		return MimeTypeH264
-	case webrtc.MimeTypeH265:
-		return MimeTypeH265
-	case webrtc.MimeTypeOpus:
-		return MimeTypeOpus
-	case "audio/red":
-		return MimeTypeRED
-	case webrtc.MimeTypeVP8:
-		return MimeTypeVP8
-	case webrtc.MimeTypeVP9:
-		return MimeTypeVP9
-	case webrtc.MimeTypeAV1:
-		return MimeTypeAV1
-	case webrtc.MimeTypeG722:
-		return MimeTypeG722
-	case webrtc.MimeTypePCMU:
-		return MimeTypePCMU
-	case webrtc.MimeTypePCMA:
-		return MimeTypePCMA
-	case webrtc.MimeTypeRTX:
-		return MimeTypeRTX
-	case webrtc.MimeTypeFlexFEC:
-		return MimeTypeFlexFEC
-	case "video/ulpfec":
-		return MimeTypeULPFEC
-	}
-
-	return MimeTypeUnknown
-}
-
 func NormalizeMimeType(mime string) MimeType {
 	switch {
 	case strings.EqualFold(mime, webrtc.MimeTypeH264):

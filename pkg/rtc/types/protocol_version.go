@@ -102,5 +102,5 @@ func (v ProtocolVersion) SupportsMoving() bool {
 }
 
 func (v ProtocolVersion) SupportsSinglePeerConnection() bool {
-	return v > 16
+	return v > MaxProtocolDualPeerConnection
 }
