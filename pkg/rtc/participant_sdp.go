@@ -96,6 +96,7 @@ func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([
 			}
 
 			if len(info.Codecs) == 0 {
+				p.pendingTracksLock.Unlock()
 				p.pubLogger.Warnw(
 					"track without codecs", nil,
 					"trackID", info.Sid,
