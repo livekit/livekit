@@ -72,6 +72,12 @@ type ExtPacket struct {
 	IsOutOfOrder         bool
 }
 
+// VideoSize represents video resolution
+type VideoSize struct {
+	Width  uint32
+	Height uint32
+}
+
 // Buffer contains all packets
 type Buffer struct {
 	sync.RWMutex
@@ -125,6 +131,10 @@ type Buffer struct {
 	onFpsChanged       func()
 	onFinalRtpStats    func(*livekit.RTPStats)
 	onCodecChange      func(webrtc.RTPCodecParameters)
+	onVideoSizeChanged func([]VideoSize)
+
+	// video size tracking for multiple spatial layers
+	currentVideoSize [DefaultMaxLayerSpatial + 1]VideoSize
 
 	// logger
 	logger logger.Logger
@@ -886,6 +896,7 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 	}
 
 	ep.Temporal = 0
+	var videoSize []VideoSize
 	if b.ddParser != nil {
 		ddVal, videoLayer, err := b.ddParser.Parse(ep.Packet)
 		if err != nil {
@@ -901,6 +912,7 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 		} else if ddVal != nil {
 			ep.DependencyDescriptor = ddVal
 			ep.VideoLayer = videoLayer
+			videoSize = ExtractDependencyDescriptorVideoSize(ddVal.Descriptor)
 			// DD-TODO : notify active decode target change if changed.
 		}
 	}
@@ -915,6 +927,12 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 		ep.KeyFrame = vp8Packet.IsKeyFrame
 		if ep.DependencyDescriptor == nil {
 			ep.Temporal = int32(vp8Packet.TID)
+
+			if ep.KeyFrame {
+				if sz := ExtractVP8VideoSize(&vp8Packet, rtpPacket.Payload); sz.Width > 0 && sz.Height > 0 {
+					videoSize = append(videoSize, sz)
+				}
+			}
 		} else {
 			// vp8 with DependencyDescriptor enabled, use the TID from the descriptor
 			vp8Packet.TID = uint8(ep.Temporal)
@@ -935,17 +953,36 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 				Temporal: int32(vp9Packet.TID),
 			}
 			ep.Payload = vp9Packet
+			ep.KeyFrame = IsVP9KeyFrame(&vp9Packet, rtpPacket.Payload)
+
+			if ep.KeyFrame {
+				for i := 0; i < len(vp9Packet.Width); i++ {
+					videoSize = append(videoSize, VideoSize{
+						Width:  uint32(vp9Packet.Width[i]),
+						Height: uint32(vp9Packet.Height[i]),
+					})
+				}
+			}
+		} else {
+			ep.KeyFrame = IsVP9KeyFrame(nil, rtpPacket.Payload)
 		}
-		ep.KeyFrame = IsVP9KeyFrame(rtpPacket.Payload)
 
 	case mime.MimeTypeH264:
 		ep.KeyFrame = IsH264KeyFrame(rtpPacket.Payload)
 		ep.Spatial = InvalidLayerSpatial // h.264 don't have spatial scalability, reset to invalid
 
+		// Check H264 key frame video size
+		if ep.KeyFrame {
+			if sz := ExtractH264VideoSize(rtpPacket.Payload); sz.Width > 0 && sz.Height > 0 {
+				videoSize = append(videoSize, sz)
+			}
+		}
+
 	case mime.MimeTypeAV1:
 		ep.KeyFrame = IsAV1KeyFrame(rtpPacket.Payload)
 
 	case mime.MimeTypeH265:
+		ep.KeyFrame = IsH265KeyFrame(rtpPacket.Payload)
 		if ep.DependencyDescriptor == nil {
 			if len(rtpPacket.Payload) < 2 {
 				b.logger.Warnw("invalid H265 packet", nil)
@@ -955,8 +992,13 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 				Temporal: int32(rtpPacket.Payload[1]&0x07) - 1,
 			}
 			ep.Spatial = InvalidLayerSpatial
+
+			if ep.KeyFrame {
+				if sz := ExtractH265VideoSize(rtpPacket.Payload); sz.Width > 0 && sz.Height > 0 {
+					videoSize = append(videoSize, sz)
+				}
+			}
 		}
-		ep.KeyFrame = IsH265KeyFrame(rtpPacket.Payload)
 	}
 
 	if ep.KeyFrame {
@@ -972,6 +1014,10 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 		if err := actExt.Unmarshal(extData); err == nil {
 			ep.AbsCaptureTimeExt = &actExt
 		}
+	}
+
+	if len(videoSize) > 0 {
+		b.checkVideoSizeChange(videoSize)
 	}
 
 	return ep
@@ -1235,6 +1281,40 @@ func (b *Buffer) OnFpsChanged(f func()) {
 	b.Lock()
 	b.onFpsChanged = f
 	b.Unlock()
+}
+
+func (b *Buffer) OnVideoSizeChanged(fn func([]VideoSize)) {
+	b.Lock()
+	b.onVideoSizeChanged = fn
+	b.Unlock()
+}
+
+// checkVideoSizeChange checks if video size has changed for a specific spatial layer and fires callback
+func (b *Buffer) checkVideoSizeChange(videoSizes []VideoSize) {
+	if len(videoSizes) > len(b.currentVideoSize) {
+		b.logger.Warnw("video size index out of range", nil, "newSize", videoSizes, "currentVideoSize", b.currentVideoSize)
+		return
+	}
+
+	if len(videoSizes) < len(b.currentVideoSize) {
+		videoSizes = append(videoSizes, make([]VideoSize, len(b.currentVideoSize)-len(videoSizes))...)
+	}
+
+	changed := false
+	for i, sz := range videoSizes {
+		if b.currentVideoSize[i].Width != sz.Width || b.currentVideoSize[i].Height != sz.Height {
+			changed = true
+			break
+		}
+	}
+
+	if changed {
+		b.logger.Debugw("video size changed", "from", b.currentVideoSize, "to", videoSizes)
+		copy(b.currentVideoSize[:], videoSizes[:])
+		if b.onVideoSizeChanged != nil {
+			go b.onVideoSizeChanged(videoSizes)
+		}
+	}
 }
 
 func (b *Buffer) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
