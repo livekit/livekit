@@ -621,7 +621,9 @@ func (t *TransportManager) configureICE(iceConfig *livekit.ICEConfig, reset bool
 		t.mediaLossProxy.OnMediaLossUpdate(nil)
 	}
 
-	t.publisher.SetPreferTCP(iceConfig.PreferencePublisher == livekit.ICECandidateType_ICT_TCP)
+	if t.publisher != nil {
+		t.publisher.SetPreferTCP(iceConfig.PreferencePublisher == livekit.ICECandidateType_ICT_TCP)
+	}
 	t.subscriber.SetPreferTCP(iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TCP)
 
 	if onICEConfigChanged != nil {
