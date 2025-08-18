@@ -649,20 +649,38 @@ func (t *TransportManager) GetICEConnectionInfo() []*types.ICEConnectionInfo {
 }
 
 func (t *TransportManager) getTransport(isPrimary bool) *PCTransport {
-	pcTransport := t.publisher
-	if (isPrimary && t.params.SubscriberAsPrimary) || (!isPrimary && !t.params.SubscriberAsPrimary) {
-		pcTransport = t.subscriber
-	}
+	switch {
+	case t.publisher == nil:
+		return t.subscriber
 
-	return pcTransport
+	case t.subscriber == nil:
+		return t.publisher
+
+	default:
+		pcTransport := t.publisher
+		if (isPrimary && t.params.SubscriberAsPrimary) || (!isPrimary && !t.params.SubscriberAsPrimary) {
+			pcTransport = t.subscriber
+		}
+
+		return pcTransport
+	}
 }
 
 func (t *TransportManager) getLowestPriorityConnectionType() types.ICEConnectionType {
-	ctype := t.publisher.GetICEConnectionType()
-	if stype := t.subscriber.GetICEConnectionType(); stype > ctype {
-		ctype = stype
+	switch {
+	case t.publisher == nil:
+		return t.subscriber.GetICEConnectionType()
+
+	case t.subscriber == nil:
+		return t.publisher.GetICEConnectionType()
+
+	default:
+		ctype := t.publisher.GetICEConnectionType()
+		if stype := t.subscriber.GetICEConnectionType(); stype > ctype {
+			ctype = stype
+		}
+		return ctype
 	}
-	return ctype
 }
 
 func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
