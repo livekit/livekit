@@ -544,12 +544,16 @@ func (t *TransportManager) HandleClientReconnect(reason livekit.ReconnectReason)
 	)
 	switch reason {
 	case livekit.ReconnectReason_RR_PUBLISHER_FAILED:
-		resetShortConnection = true
-		isShort, duration = t.publisher.IsShortConnection(time.Now())
+		if t.publisher != nil {
+			resetShortConnection = true
+			isShort, duration = t.publisher.IsShortConnection(time.Now())
+		}
 
 	case livekit.ReconnectReason_RR_SUBSCRIBER_FAILED:
-		resetShortConnection = true
-		isShort, duration = t.subscriber.IsShortConnection(time.Now())
+		if t.subscriber != nil {
+			resetShortConnection = true
+			isShort, duration = t.subscriber.IsShortConnection(time.Now())
+		}
 	}
 
 	if isShort {
@@ -561,8 +565,12 @@ func (t *TransportManager) HandleClientReconnect(reason livekit.ReconnectReason)
 	}
 
 	if resetShortConnection {
-		t.publisher.ResetShortConnOnICERestart()
-		t.subscriber.ResetShortConnOnICERestart()
+		if t.publisher != nil {
+			t.publisher.ResetShortConnOnICERestart()
+		}
+		if t.subscriber != nil {
+			t.subscriber.ResetShortConnOnICERestart()
+		}
 	}
 }
 
