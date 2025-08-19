@@ -298,6 +298,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	// Some of the browser clients do not handle H.264 High Profile in signalling properly.
 	// They still decode if the actual stream is H.264 High Profile, but do not handle it well in signalling.
 	// So, disable H.264 High Profile for SUBSCRIBER peer connection to ensure it is not offered.
+	// SINGLE-PEER-CONNECTION-TODO: need to filter out H.264 high profile in subscriber track m-lines
 	me, err := createMediaEngine(params.EnabledCodecs, directionConfig, params.IsOfferer)
 	if err != nil {
 		return nil, nil, err
@@ -1168,6 +1169,7 @@ func (t *PCTransport) GetRTPReceiver(mid string) *webrtc.RTPReceiver {
 	return nil
 }
 
+// RAJA-TODO: is this needed?
 func (t *PCTransport) GetRTPTransceiverDirection(mid string) webrtc.RTPTransceiverDirection {
 	for _, tr := range t.pc.GetTransceivers() {
 		if tr.Mid() == mid {

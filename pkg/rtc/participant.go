@@ -1958,6 +1958,7 @@ func (h SubscriberTransportHandler) OnInitialConnected() {
 	h.p.onSubscriberInitialConnected()
 }
 
+/* RAJA-REMOVE
 func (h SubscriberTransportHandler) OnDataMessage(kind livekit.DataPacket_Kind, data []byte) {
 	h.p.onReceivedDataMessage(kind, data)
 }
@@ -1965,6 +1966,7 @@ func (h SubscriberTransportHandler) OnDataMessage(kind livekit.DataPacket_Kind, 
 func (h SubscriberTransportHandler) OnDataMessageUnlabeled(data []byte) {
 	h.p.onReceivedDataMessageUnlabeled(data)
 }
+*/
 
 func (h SubscriberTransportHandler) OnDataSendError(err error) {
 	h.p.onDataSendError(err)
