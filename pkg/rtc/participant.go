@@ -2260,6 +2260,12 @@ func (p *ParticipantImpl) onReceivedDataMessage(kind livekit.DataPacket_Kind, da
 		return
 	}
 
+	p.params.Logger.Debugw("received msg", "sequence", dp.Sequence)
+
+	if c, ok := dp.Value.(*livekit.DataPacket_StreamChunk); ok {
+		p.params.Logger.Debugw("received stream chunk", "content", c.StreamChunk.Content)
+	}
+
 	dp.ParticipantSid = string(p.ID())
 	if kind == livekit.DataPacket_RELIABLE && dp.Sequence > 0 {
 		if p.reliableDataInfo.stopReliableByMigrateOut.Load() {
@@ -3580,8 +3586,14 @@ func (p *ParticipantImpl) SupportsTransceiverReuse() bool {
 }
 
 func (p *ParticipantImpl) SendDataMessage(kind livekit.DataPacket_Kind, data []byte, sender livekit.ParticipantID, seq uint32) error {
+	p.params.Logger.Debugw("trying send data message",
+		"kind", kind.String(),
+		"sender", sender,
+		"seq", seq,
+	)
 	if sender == "" || kind != livekit.DataPacket_RELIABLE || seq == 0 {
 		if p.State() != livekit.ParticipantInfo_ACTIVE {
+			p.params.Logger.Warnw("send data message failed, participant not active", nil, "state", p.State().String())
 			return ErrDataChannelUnavailable
 		}
 		return p.TransportManager.SendDataMessage(kind, data)
@@ -3590,6 +3602,7 @@ func (p *ParticipantImpl) SendDataMessage(kind livekit.DataPacket_Kind, data []b
 	p.reliableDataInfo.joiningMessageLock.Lock()
 	if !p.reliableDataInfo.canWriteReliable {
 		if _, ok := p.reliableDataInfo.joiningMessageFirstSeqs[sender]; !ok {
+			p.params.Logger.Debugw("caching joining message", "sender", sender, "seq", seq)
 			p.reliableDataInfo.joiningMessageFirstSeqs[sender] = seq
 		}
 		p.reliableDataInfo.joiningMessageLock.Unlock()
@@ -3608,6 +3621,8 @@ func (p *ParticipantImpl) SendDataMessage(kind livekit.DataPacket_Kind, data []b
 	}
 
 	p.reliableDataInfo.joiningMessageLock.Unlock()
+
+	p.params.Logger.Debugw("sending joining message", "sender", sender, "seq", seq)
 
 	return p.TransportManager.SendDataMessage(kind, data)
 }
@@ -3687,7 +3702,10 @@ func (p *ParticipantImpl) replayJoiningReliableMessages() {
 			p.reliableDataInfo.joiningMessageLastWrittenSeqs[msgCache.SenderID] = msgCache.Seq
 		}
 
-		p.TransportManager.SendDataMessage(livekit.DataPacket_RELIABLE, msgCache.Data)
+		p.params.Logger.Debugw("replaying joining message", "sender", msgCache.SenderID, "seq", msgCache.Seq, "data", msgCache.Data)
+		if err := p.TransportManager.SendDataMessage(livekit.DataPacket_RELIABLE, msgCache.Data); err != nil {
+			p.params.Logger.Errorw("failed to replay joining message", err, "sender", msgCache.SenderID, "seq", msgCache.Seq)
+		}
 	}
 
 	p.reliableDataInfo.joiningMessageFirstSeqs = make(map[livekit.ParticipantID]uint32)

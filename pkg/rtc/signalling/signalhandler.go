@@ -17,10 +17,11 @@ package signalling
 import (
 	"fmt"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	protosignalling "github.com/livekit/protocol/signalling"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
@@ -55,7 +56,7 @@ func (s *signalhandler) HandleMessage(msg proto.Message) error {
 	}
 	s.params.Participant.UpdateLastSeenSignal()
 
-	s.params.Logger.Debugw("handling signal request", "request", logger.Proto(req))
+	// s.params.Logger.Debugw("handling signal request", "request", logger.Proto(req))
 	switch msg := req.GetMessage().(type) {
 	case *livekit.SignalRequest_Offer:
 		s.params.Participant.HandleOffer(protosignalling.FromProtoSessionDescription(msg.Offer))

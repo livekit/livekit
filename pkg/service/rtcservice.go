@@ -536,7 +536,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case *livekit.SignalRequest_Answer:
 			pLogger.Debugw("received answer", "answer", m)
 		default:
-			pLogger.Debugw("received signal request", "request", m)
+			// pLogger.Debugw("received signal request", "request", m)
 		}
 
 		if err := cr.RequestSink.WriteMessage(req); err != nil {
