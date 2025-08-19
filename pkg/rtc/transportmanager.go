@@ -292,6 +292,7 @@ func (t *TransportManager) AddTransceiverFromTrackLocal(
 	}
 }
 
+/* RAJA-REMOVE
 func (t *TransportManager) AddRemoteTrackAndNegotiate(
 	ti *livekit.TrackInfo,
 	publishDisabledCodecs []*livekit.Codec,
@@ -299,6 +300,7 @@ func (t *TransportManager) AddRemoteTrackAndNegotiate(
 ) error {
 	return t.subscriber.AddRemoteTrackAndNegotiate(ti, publishDisabledCodecs, rtcpFeedbackConfig)
 }
+*/
 
 func (t *TransportManager) RemoveTrackLocal(sender *webrtc.RTPSender) error {
 	if t.params.UseOneShotSignallingMode {

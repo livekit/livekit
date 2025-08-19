@@ -260,119 +260,119 @@ func NewRTCClient(conn *websocket.Conn, protocolVersion types.ProtocolVersion, o
 	// i. e. the publisher transport on client side has SUBSCRIBER signal target (i. e. publisher is offerer).
 	// Same applies for subscriber transport also
 	//
-	if !c.protocolVersion.SupportsSinglePeerConnection() {
-		publisherHandler := &transportfakes.FakeHandler{}
-		c.publisher, err = rtc.NewPCTransport(rtc.TransportParams{
-			Config:                   &conf,
-			DirectionConfig:          conf.Subscriber,
-			EnabledCodecs:            codecs,
-			IsOfferer:                true,
-			IsSendSide:               true,
-			Handler:                  publisherHandler,
-			DatachannelSlowThreshold: 1024 * 1024 * 1024,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		publisherHandler.OnICECandidateCalls(func(ic *webrtc.ICECandidate, t livekit.SignalTarget) error {
-			return c.SendIceCandidate(ic, livekit.SignalTarget_PUBLISHER)
-		})
-		publisherHandler.OnOfferCalls(c.onOffer)
-		publisherHandler.OnFullyEstablishedCalls(func() {
-			logger.Debugw("publisher fully established", "participant", c.localParticipant.Identity, "pID", c.localParticipant.Sid)
-			c.publisherFullyEstablished.Store(true)
-		})
-
-		ordered := true
-		if err := c.publisher.CreateDataChannel(rtc.ReliableDataChannel, &webrtc.DataChannelInit{
-			Ordered: &ordered,
-		}); err != nil {
-			return nil, err
-		}
-
-		ordered = false
-		maxRetransmits := uint16(0)
-		if err := c.publisher.CreateDataChannel(rtc.LossyDataChannel, &webrtc.DataChannelInit{
-			Ordered:        &ordered,
-			MaxRetransmits: &maxRetransmits,
-		}); err != nil {
-			return nil, err
-		}
-
-		if err := c.publisher.CreateDataChannel("pubraw", &webrtc.DataChannelInit{
-			Ordered: &ordered,
-		}); err != nil {
-			return nil, err
-		}
-	}
-
-	subscriberHandler := &transportfakes.FakeHandler{}
-	c.subscriber, err = rtc.NewPCTransport(rtc.TransportParams{
-		Config:                           &conf,
-		DirectionConfig:                  conf.Publisher,
-		EnabledCodecs:                    codecs,
-		Handler:                          subscriberHandler,
-		DatachannelMaxReceiverBufferSize: 1500,
-		DatachannelSlowThreshold:         1024 * 1024 * 1024,
-		FireOnTrackBySdp:                 true,
+	publisherHandler := &transportfakes.FakeHandler{}
+	c.publisher, err = rtc.NewPCTransport(rtc.TransportParams{
+		Config:                   &conf,
+		DirectionConfig:          conf.Subscriber,
+		EnabledCodecs:            codecs,
+		IsOfferer:                true,
+		IsSendSide:               true,
+		Handler:                  publisherHandler,
+		DatachannelSlowThreshold: 1024 * 1024 * 1024,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	ordered := false
-	if err := c.subscriber.CreateReadableDataChannel("subraw", &webrtc.DataChannelInit{
+	publisherHandler.OnICECandidateCalls(func(ic *webrtc.ICECandidate, t livekit.SignalTarget) error {
+		return c.SendIceCandidate(ic, livekit.SignalTarget_PUBLISHER)
+	})
+	publisherHandler.OnOfferCalls(c.onOffer)
+	publisherHandler.OnFullyEstablishedCalls(func() {
+		logger.Debugw("publisher fully established", "participant", c.localParticipant.Identity, "pID", c.localParticipant.Sid)
+		c.publisherFullyEstablished.Store(true)
+	})
+
+	ordered := true
+	if err := c.publisher.CreateDataChannel(rtc.ReliableDataChannel, &webrtc.DataChannelInit{
 		Ordered: &ordered,
 	}); err != nil {
 		return nil, err
 	}
 
-	subscriberHandler.OnICECandidateCalls(func(ic *webrtc.ICECandidate, t livekit.SignalTarget) error {
-		if ic == nil {
-			return nil
-		}
-		return c.SendIceCandidate(ic, livekit.SignalTarget_SUBSCRIBER)
-	})
-	subscriberHandler.OnTrackCalls(func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
-		go c.processTrack(track)
-	})
-	subscriberHandler.OnDataMessageCalls(c.handleDataMessage)
-	subscriberHandler.OnDataMessageUnlabeledCalls(c.handleDataMessageUnlabeled)
-	subscriberHandler.OnInitialConnectedCalls(func() {
-		logger.Debugw("subscriber initial connected", "participant", c.localParticipant.Identity)
+	ordered = false
+	maxRetransmits := uint16(0)
+	if err := c.publisher.CreateDataChannel(rtc.LossyDataChannel, &webrtc.DataChannelInit{
+		Ordered:        &ordered,
+		MaxRetransmits: &maxRetransmits,
+	}); err != nil {
+		return nil, err
+	}
 
-		c.lock.Lock()
-		defer c.lock.Unlock()
-		for _, tw := range c.pendingTrackWriters {
-			if err := tw.Start(); err != nil {
-				logger.Errorw("track writer error", err)
-			}
-		}
+	if err := c.publisher.CreateDataChannel("pubraw", &webrtc.DataChannelInit{
+		Ordered: &ordered,
+	}); err != nil {
+		return nil, err
+	}
 
-		c.pendingTrackWriters = nil
-
-		if c.OnConnected != nil {
-			go c.OnConnected()
-		}
-	})
-	subscriberHandler.OnFullyEstablishedCalls(func() {
-		logger.Debugw("subscriber fully established", "participant", c.localParticipant.Identity, "pID", c.localParticipant.Sid)
-		c.subscriberFullyEstablished.Store(true)
-	})
-	subscriberHandler.OnAnswerCalls(func(answer webrtc.SessionDescription, answerId uint32) error {
-		// send remote an answer
-		logger.Infow(
-			"sending subscriber answer",
-			"participant", c.localParticipant.Identity,
-			"sdp", answer,
-		)
-		return c.SendRequest(&livekit.SignalRequest{
-			Message: &livekit.SignalRequest_Answer{
-				Answer: signalling.ToProtoSessionDescription(answer, answerId),
-			},
+	if !c.protocolVersion.SupportsSinglePeerConnection() {
+		subscriberHandler := &transportfakes.FakeHandler{}
+		c.subscriber, err = rtc.NewPCTransport(rtc.TransportParams{
+			Config:                           &conf,
+			DirectionConfig:                  conf.Publisher,
+			EnabledCodecs:                    codecs,
+			Handler:                          subscriberHandler,
+			DatachannelMaxReceiverBufferSize: 1500,
+			DatachannelSlowThreshold:         1024 * 1024 * 1024,
+			FireOnTrackBySdp:                 true,
 		})
-	})
+		if err != nil {
+			return nil, err
+		}
+
+		ordered := false
+		if err := c.subscriber.CreateReadableDataChannel("subraw", &webrtc.DataChannelInit{
+			Ordered: &ordered,
+		}); err != nil {
+			return nil, err
+		}
+
+		subscriberHandler.OnICECandidateCalls(func(ic *webrtc.ICECandidate, t livekit.SignalTarget) error {
+			if ic == nil {
+				return nil
+			}
+			return c.SendIceCandidate(ic, livekit.SignalTarget_SUBSCRIBER)
+		})
+		subscriberHandler.OnTrackCalls(func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
+			go c.processTrack(track)
+		})
+		subscriberHandler.OnDataMessageCalls(c.handleDataMessage)
+		subscriberHandler.OnDataMessageUnlabeledCalls(c.handleDataMessageUnlabeled)
+		subscriberHandler.OnInitialConnectedCalls(func() {
+			logger.Debugw("subscriber initial connected", "participant", c.localParticipant.Identity)
+
+			c.lock.Lock()
+			defer c.lock.Unlock()
+			for _, tw := range c.pendingTrackWriters {
+				if err := tw.Start(); err != nil {
+					logger.Errorw("track writer error", err)
+				}
+			}
+
+			c.pendingTrackWriters = nil
+
+			if c.OnConnected != nil {
+				go c.OnConnected()
+			}
+		})
+		subscriberHandler.OnFullyEstablishedCalls(func() {
+			logger.Debugw("subscriber fully established", "participant", c.localParticipant.Identity, "pID", c.localParticipant.Sid)
+			c.subscriberFullyEstablished.Store(true)
+		})
+		subscriberHandler.OnAnswerCalls(func(answer webrtc.SessionDescription, answerId uint32) error {
+			// send remote an answer
+			logger.Infow(
+				"sending subscriber answer",
+				"participant", c.localParticipant.Identity,
+				"sdp", answer,
+			)
+			return c.SendRequest(&livekit.SignalRequest{
+				Message: &livekit.SignalRequest_Answer{
+					Answer: signalling.ToProtoSessionDescription(answer, answerId),
+				},
+			})
+		})
+	}
 
 	if opts != nil {
 		c.signalRequestInterceptor = opts.SignalRequestInterceptor

@@ -2987,6 +2987,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		return nil
 	}
 
+	/* RAJA-REMOVE
 	if p.ProtocolVersion().SupportsSinglePeerConnection() {
 		if err := p.TransportManager.AddRemoteTrackAndNegotiate(
 			ti,
@@ -2996,6 +2997,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 			return nil
 		}
 	}
+	*/
 
 	p.pendingTracks[req.Cid] = &pendingTrackInfo{
 		trackInfos: []*livekit.TrackInfo{ti},

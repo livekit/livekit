@@ -19,7 +19,6 @@ import (
 	"io"
 	"math/rand"
 	"net"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -978,6 +977,7 @@ func (t *PCTransport) AddTransceiverFromKind(
 	return t.pc.AddTransceiverFromKind(kind, init)
 }
 
+/* RAJA-REMOVE
 func (t *PCTransport) AddRemoteTrackAndNegotiate(
 	ti *livekit.TrackInfo,
 	publishDisabledCodecs []*livekit.Codec,
@@ -1122,6 +1122,7 @@ func (t *PCTransport) AddRemoteTrackAndNegotiate(
 	t.Negotiate(true)
 	return nil
 }
+*/
 
 func (t *PCTransport) RemoveTrack(sender *webrtc.RTPSender) error {
 	return t.pc.RemoveTrack(sender)
@@ -1186,7 +1187,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 		dcPtr       **datachannel.DataChannelWriter[*webrtc.DataChannel]
 		dcReady     *bool
 		isUnlabeled bool
-		kind        livekit.DataPacket_Kind
+		// RAJA-REMOVE kind        livekit.DataPacket_Kind
 	)
 	switch dc.Label() {
 	default:
@@ -1195,11 +1196,11 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 	case ReliableDataChannel:
 		dcPtr = &t.reliableDC
 		dcReady = &t.reliableDCOpened
-		kind = livekit.DataPacket_RELIABLE
+		// RAJA-REMOVE kind = livekit.DataPacket_RELIABLE
 	case LossyDataChannel:
 		dcPtr = &t.lossyDC
 		dcReady = &t.lossyDCOpened
-		kind = livekit.DataPacket_LOSSY
+		// RAJA-REMOVE kind = livekit.DataPacket_LOSSY
 	}
 
 	dc.OnOpen(func() {
@@ -1230,6 +1231,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 		t.lock.Unlock()
 		t.params.Logger.Debugw(dc.Label() + " data channel open")
 
+		/* RAJA-REMOVE
 		go func() {
 			defer rawDC.Close()
 			buffer := make([]byte, dataChannelBufferSize)
@@ -1251,6 +1253,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 				}
 			}
 		}()
+		*/
 
 		t.maybeNotifyFullyEstablished()
 	})
@@ -2694,6 +2697,7 @@ func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription, 
 		}
 	}
 
+	/* RAJA-REMOVE
 	// SINGLE-PEER-CONNECTION-TODO: do this parsing and RTX deduction only for single peer connection mode
 	parsed, err := sd.Unmarshal()
 	if err != nil {
@@ -2707,6 +2711,7 @@ func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription, 
 			t.params.Config.BufferFactory.SetRTXPair(repair, base)
 		}
 	}
+	*/
 
 	if t.negotiationState == transport.NegotiationStateRetry {
 		t.setNegotiationState(transport.NegotiationStateNone)
