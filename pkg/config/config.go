@@ -208,6 +208,7 @@ type TURNConfig struct {
 type NodeSelectorConfig struct {
 	Kind         string         `yaml:"kind,omitempty"`
 	SortBy       string         `yaml:"sort_by,omitempty"`
+	Algorithm    string         `yaml:"algorithm,omitempty"`
 	CPULoadLimit float32        `yaml:"cpu_load_limit,omitempty"`
 	SysloadLimit float32        `yaml:"sysload_limit,omitempty"`
 	Regions      []RegionConfig `yaml:"regions,omitempty"`
@@ -390,6 +391,7 @@ var DefaultConfig = Config{
 		SortBy:       "random",
 		SysloadLimit: 0.9,
 		CPULoadLimit: 0.9,
+		Algorithm:    "lowest",
 	},
 	SignalRelay: SignalRelayConfig{
 		RetryTimeout:     7500 * time.Millisecond,
