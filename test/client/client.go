@@ -508,6 +508,14 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 		c.pongReceivedAt.Store(msg.Pong)
 	case *livekit.SignalResponse_SubscriptionResponse:
 		c.subscriptionResponse.Store(msg.SubscriptionResponse)
+	case *livekit.SignalResponse_MediaSectionsRequirement:
+		logger.Infow(
+			"received media sections requirement",
+			"participant", c.localParticipant.Identity,
+			"numAudios", msg.MediaSectionsRequirement.NumAudios,
+			"numVideos", msg.MediaSectionsRequirement.NumVideos,
+		)
+		// RAJA-TODO: add media sections c.handleAnswer(signalling.FromProtoSessionDescription(msg.Answer))
 	}
 	return nil
 }
