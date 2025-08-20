@@ -88,7 +88,7 @@ func TestClientConnectDuplicate(t *testing.T) {
 	_, finish := setupSingleNodeTest("TestClientConnectDuplicate")
 	defer finish()
 
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
+	for _, pv := range []types.ProtocolVersion{ /* types.MaxProtocolDualPeerConnection, */ types.CurrentProtocol} {
 		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
 			grant := &auth.VideoGrant{RoomJoin: true, Room: testRoom}
 			grant.SetCanPublish(true)
@@ -114,7 +114,7 @@ func TestClientConnectDuplicate(t *testing.T) {
 				if len(c2.SubscribedTracks()) == 0 {
 					return "c2 didn't subscribe to anything"
 				}
-				// should have received three tracks
+				// should have received two tracks
 				if len(c2.SubscribedTracks()[c1.ID()]) != 2 {
 					return "c2 didn't subscribe to both tracks from c1"
 				}

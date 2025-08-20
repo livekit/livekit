@@ -1181,9 +1181,9 @@ func (t *PCTransport) GetRTPTransceiverDirection(mid string) webrtc.RTPTransceiv
 }
 
 // RAJA-TODO: check if this API is needed and correct one
-func (t *PCTransport) getNumUnmatchedTransceivers() (uint32, uint32, bool) {
+func (t *PCTransport) getNumUnmatchedTransceivers() (uint32, uint32) {
 	if t.isClosed.Load() || t.pc.ConnectionState() == webrtc.PeerConnectionStateClosed {
-		return 0, 0, false
+		return 0, 0
 	}
 
 	numAudios := uint32(0)
@@ -1202,7 +1202,7 @@ func (t *PCTransport) getNumUnmatchedTransceivers() (uint32, uint32, bool) {
 		}
 	}
 
-	return numAudios, numVideos, true
+	return numAudios, numVideos
 }
 
 func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelInit) error {
@@ -1214,7 +1214,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 		dcPtr       **datachannel.DataChannelWriter[*webrtc.DataChannel]
 		dcReady     *bool
 		isUnlabeled bool
-		// RAJA-REMOVE kind        livekit.DataPacket_Kind
+		kind        livekit.DataPacket_Kind
 	)
 	switch dc.Label() {
 	default:
@@ -1223,11 +1223,11 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 	case ReliableDataChannel:
 		dcPtr = &t.reliableDC
 		dcReady = &t.reliableDCOpened
-		// RAJA-REMOVE kind = livekit.DataPacket_RELIABLE
+		kind = livekit.DataPacket_RELIABLE
 	case LossyDataChannel:
 		dcPtr = &t.lossyDC
 		dcReady = &t.lossyDCOpened
-		// RAJA-REMOVE kind = livekit.DataPacket_LOSSY
+		kind = livekit.DataPacket_LOSSY
 	}
 
 	dc.OnOpen(func() {
@@ -1258,7 +1258,6 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 		t.lock.Unlock()
 		t.params.Logger.Debugw(dc.Label() + " data channel open")
 
-		/* RAJA-REMOVE
 		go func() {
 			defer rawDC.Close()
 			buffer := make([]byte, dataChannelBufferSize)
@@ -1280,7 +1279,6 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 				}
 			}
 		}()
-		*/
 
 		t.maybeNotifyFullyEstablished()
 	})
@@ -2404,8 +2402,8 @@ func (t *PCTransport) setupSignalStateCheckTimer() {
 func (t *PCTransport) sendUnmatchedMediaRequirement(force bool) error {
 	// if there are unmatched media sections, notify remote peer to generate offer with
 	// enough media section in subsequent offers
-	numAudios, numVideos, shouldSend := t.getNumUnmatchedTransceivers()
-	if shouldSend || force {
+	numAudios, numVideos := t.getNumUnmatchedTransceivers()
+	if force || (numAudios+numVideos) != 0 {
 		if err := t.params.Handler.OnUnmatchedMedia(numAudios, numVideos); err != nil {
 			return errors.Wrap(err, "could not send unmatched media requirements")
 		}

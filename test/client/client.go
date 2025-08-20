@@ -280,6 +280,25 @@ func NewRTCClient(conn *websocket.Conn, protocolVersion types.ProtocolVersion, o
 	publisherHandler.OnTrackCalls(func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
 		go c.processTrack(track)
 	})
+	publisherHandler.OnDataMessageCalls(c.handleDataMessage)
+	publisherHandler.OnDataMessageUnlabeledCalls(c.handleDataMessageUnlabeled)
+	publisherHandler.OnInitialConnectedCalls(func() {
+		logger.Debugw("publisher initial connected", "participant", c.localParticipant.Identity)
+
+		c.lock.Lock()
+		defer c.lock.Unlock()
+		for _, tw := range c.pendingTrackWriters {
+			if err := tw.Start(); err != nil {
+				logger.Errorw("track writer error", err)
+			}
+		}
+
+		c.pendingTrackWriters = nil
+
+		if c.OnConnected != nil {
+			go c.OnConnected()
+		}
+	})
 	publisherHandler.OnOfferCalls(c.onOffer)
 	publisherHandler.OnFullyEstablishedCalls(func() {
 		logger.Debugw("publisher fully established", "participant", c.localParticipant.Identity, "pID", c.localParticipant.Sid)
