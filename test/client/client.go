@@ -262,13 +262,15 @@ func NewRTCClient(conn *websocket.Conn, protocolVersion types.ProtocolVersion, o
 	//
 	publisherHandler := &transportfakes.FakeHandler{}
 	c.publisher, err = rtc.NewPCTransport(rtc.TransportParams{
-		Config:                   &conf,
-		DirectionConfig:          conf.Subscriber,
-		EnabledCodecs:            codecs,
-		IsOfferer:                true,
-		IsSendSide:               true,
-		Handler:                  publisherHandler,
-		DatachannelSlowThreshold: 1024 * 1024 * 1024,
+		Config:                           &conf,
+		DirectionConfig:                  conf.Subscriber,
+		EnabledCodecs:                    codecs,
+		IsOfferer:                        true,
+		IsSendSide:                       true,
+		Handler:                          publisherHandler,
+		DatachannelMaxReceiverBufferSize: 1500,
+		DatachannelSlowThreshold:         1024 * 1024 * 1024,
+		FireOnTrackBySdp:                 true,
 	})
 	if err != nil {
 		return nil, err
