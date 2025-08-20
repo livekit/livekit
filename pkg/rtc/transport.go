@@ -1180,6 +1180,27 @@ func (t *PCTransport) GetRTPTransceiverDirection(mid string) webrtc.RTPTransceiv
 	return webrtc.RTPTransceiverDirectionUnknown
 }
 
+// RAJA-TODO: check if this API is needed and correct one
+func (t *PCTransport) GetNumUnmatchedTransceivers() (int, int) {
+	numAudios := 0
+	numVideos := 0
+	for _, tr := range t.pc.GetTransceivers() {
+		if tr.Mid() != "" {
+			continue
+		}
+
+		switch tr.Kind() {
+		case webrtc.RTPCodecTypeAudio:
+			numAudios++
+
+		case webrtc.RTPCodecTypeVideo:
+			numVideos++
+		}
+	}
+
+	return numAudios, numVideos
+}
+
 func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelInit) error {
 	dc, err := t.pc.CreateDataChannel(label, dci)
 	if err != nil {
