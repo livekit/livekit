@@ -330,3 +330,23 @@ func (p *ParticipantImpl) SendSubscriptionPermissionUpdate(publisherID livekit.P
 	}
 	return err
 }
+
+func (p *ParticipantImpl) sendMediaSectionsRequirement(numAudios uint32, numVideos uint32) error {
+	if numAudios == 0 && numVideos == 0 {
+		return nil
+	}
+
+	p.pubLogger.Debugw(
+		"sending media sections requirement",
+		"numAudios", numAudios,
+		"numVideos", numVideos,
+	)
+	err := p.signaller.WriteMessage(p.signalling.SignalMediaSectionsRequirement(&livekit.MediaSectionsRequirement{
+		NumAudios: numAudios,
+		NumVideos: numVideos,
+	}))
+	if err != nil {
+		p.subLogger.Errorw("could not send media sections requirement", err)
+	}
+	return err
+}

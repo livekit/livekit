@@ -1181,9 +1181,9 @@ func (t *PCTransport) GetRTPTransceiverDirection(mid string) webrtc.RTPTransceiv
 }
 
 // RAJA-TODO: check if this API is needed and correct one
-func (t *PCTransport) GetNumUnmatchedTransceivers() (int, int) {
-	numAudios := 0
-	numVideos := 0
+func (t *PCTransport) getNumUnmatchedTransceivers() (uint32, uint32) {
+	numAudios := uint32(0)
+	numVideos := uint32(0)
 	for _, tr := range t.pc.GetTransceivers() {
 		if tr.Mid() != "" {
 			continue
@@ -2495,8 +2495,15 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "write_message").Add(1)
 		return errors.Wrap(err, "could not send offer")
 	}
-
 	prometheus.ServiceOperationCounter.WithLabelValues("offer", "success", "").Add(1)
+
+	// if there are unmatched media sections, notify remote peer to generate offer with
+	// enough media section in subsequent offers
+	numAudios, numVideos := t.getNumUnmatchedTransceivers()
+	if err := t.params.Handler.OnUnmatchedMedia(numAudios, numVideos); err != nil {
+		return errors.Wrap(err, "could not send unmatched media requirements")
+	}
+
 	return t.localDescriptionSent()
 }
 

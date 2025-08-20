@@ -1936,6 +1936,10 @@ func (h PublisherTransportHandler) OnDataSendError(err error) {
 	h.p.onDataSendError(err)
 }
 
+func (h PublisherTransportHandler) OnUnmatchedMedia(numAudios uint32, numVideos uint32) error {
+	return h.p.sendMediaSectionsRequirement(numAudios, numVideos)
+}
+
 // ----------------------------------------------------------
 
 type SubscriberTransportHandler struct {
