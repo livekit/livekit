@@ -2398,6 +2398,10 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		if payload.StreamTrailer == nil {
 			return
 		}
+	case *livekit.DataPacket_EncryptedPacket:
+		if payload.EncryptedPacket == nil {
+			return
+		}
 	default:
 		p.pubLogger.Warnw("received unsupported data packet", nil, "payload", payload)
 	}
