@@ -185,7 +185,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		}
 		t.subscriber = subscriber
 	}
-	if !t.params.Migration {
+	if !t.params.Migration && t.params.SubscriberAsPrimary {
 		if err := t.createDataChannelsForSubscriber(nil); err != nil {
 			return nil, err
 		}
@@ -525,7 +525,11 @@ func (t *TransportManager) AddICECandidate(candidate webrtc.ICECandidateInit, ta
 }
 
 func (t *TransportManager) NegotiateSubscriber(force bool) {
-	t.subscriber.Negotiate(force)
+	if t.subscriber != nil {
+		t.subscriber.Negotiate(force)
+	} else {
+		t.publisher.Negotiate(force)
+	}
 }
 
 func (t *TransportManager) HandleClientReconnect(reason livekit.ReconnectReason) {

@@ -660,6 +660,7 @@ func TestDeviceCodecOverride(t *testing.T) {
 			defer c1.Stop()
 			waitUntilConnected(t, c1)
 
+			/* RAJA-REMOVE
 			err := c1.AddTransceiverOfKind(webrtc.RTPCodecTypeVideo)
 			require.NoError(t, err)
 
@@ -684,19 +685,72 @@ func TestDeviceCodecOverride(t *testing.T) {
 					SDP:  c1.LastOffer().SDP,
 				}
 			}
-			marshaled, err := sd.Unmarshal()
+			unmarshaled, err := sd.Unmarshal()
 			require.NoError(t, err)
 
 			// video and data channel
-			require.Len(t, marshaled.MediaDescriptions, 2)
+			require.Len(t, unmarshaled.MediaDescriptions, 2)
 			var desc *sdp.MediaDescription
-			for _, md := range marshaled.MediaDescriptions {
+			for _, md := range unmarshaled.MediaDescriptions {
 				if md.MediaName.Media == "video" {
 					desc = md
 					break
 				}
 			}
-			require.NotNil(t, desc)
+			*/
+			// it doesn't really matter what the codec set here is, uses default Pion MediaEngine codecs
+			tw, err := c1.AddStaticTrack("video/h264", "video", "webcam")
+			require.NoError(t, err)
+			defer stopWriters(tw)
+
+			// wait for server to receive track
+			/* RAJA-REMOVE
+			require.Eventually(t, func() bool {
+				return c1.LastAnswer() != nil
+			}, waitTimeout, waitTick, "did not receive answer")
+
+			sd := webrtc.SessionDescription{
+				Type: webrtc.SDPTypeAnswer,
+				SDP:  c1.LastAnswer().SDP,
+			}
+			answer, err := sd.Unmarshal()
+			require.NoError(t, err)
+
+			// video and data channel
+			require.Len(t, answer.MediaDescriptions, 2)
+			*/
+			var desc *sdp.MediaDescription
+			require.Eventually(t, func() bool {
+				lastAnswer := c1.LastAnswer()
+				if lastAnswer == nil {
+					return false
+				}
+
+				sd := webrtc.SessionDescription{
+					Type: webrtc.SDPTypeAnswer,
+					SDP:  lastAnswer.SDP,
+				}
+				answer, err := sd.Unmarshal()
+				require.NoError(t, err)
+
+				// video and data channel
+				if len(answer.MediaDescriptions) < 2 {
+					return false
+				}
+
+				for _, md := range answer.MediaDescriptions {
+					if md.MediaName.Media == "video" {
+						desc = md
+						break
+					}
+				}
+				if desc == nil {
+					return false
+				}
+
+				return true
+			}, waitTimeout, waitTick, "did not receive answer")
+
 			hasSeenVP8 := false
 			for _, a := range desc.Attributes {
 				if a.Key == "rtpmap" {

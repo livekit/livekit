@@ -277,6 +277,9 @@ func NewRTCClient(conn *websocket.Conn, protocolVersion types.ProtocolVersion, o
 	publisherHandler.OnICECandidateCalls(func(ic *webrtc.ICECandidate, t livekit.SignalTarget) error {
 		return c.SendIceCandidate(ic, livekit.SignalTarget_PUBLISHER)
 	})
+	publisherHandler.OnTrackCalls(func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
+		go c.processTrack(track)
+	})
 	publisherHandler.OnOfferCalls(c.onOffer)
 	publisherHandler.OnFullyEstablishedCalls(func() {
 		logger.Debugw("publisher fully established", "participant", c.localParticipant.Identity, "pID", c.localParticipant.Sid)
@@ -432,9 +435,7 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 		// if publish only, negotiate
 		if !msg.Join.SubscriberPrimary {
 			c.subscriberAsPrimary.Store(false)
-			if !c.protocolVersion.SupportsSinglePeerConnection() {
-				c.publisher.Negotiate(false)
-			}
+			c.publisher.Negotiate(false)
 		} else {
 			c.subscriberAsPrimary.Store(true)
 		}
@@ -492,14 +493,11 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 	case *livekit.SignalResponse_TrackUnpublished:
 		sid := msg.TrackUnpublished.TrackSid
 		c.lock.Lock()
-		if !c.protocolVersion.SupportsSinglePeerConnection() {
-			sender := c.trackSenders[sid]
-			if sender != nil {
-				if err := c.publisher.RemoveTrack(sender); err != nil {
-					logger.Errorw("Could not unpublish track", err)
-				}
-				c.publisher.Negotiate(false)
+		if sender := c.trackSenders[sid]; sender != nil {
+			if err := c.publisher.RemoveTrack(sender); err != nil {
+				logger.Errorw("Could not unpublish track", err)
 			}
+			c.publisher.Negotiate(false)
 		}
 		delete(c.trackSenders, sid)
 		delete(c.localTracks, sid)
@@ -515,7 +513,7 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 			"numAudios", msg.MediaSectionsRequirement.NumAudios,
 			"numVideos", msg.MediaSectionsRequirement.NumVideos,
 		)
-		// RAJA-TODO: add media sections c.handleAnswer(signalling.FromProtoSessionDescription(msg.Answer))
+		c.handleMediaSectionsRequirement(msg.MediaSectionsRequirement)
 	}
 	return nil
 }
@@ -532,7 +530,7 @@ func (c *RTCClient) WaitUntilConnected() error {
 			}
 			return fmt.Errorf("%s could not connect after timeout", id)
 		case <-time.After(10 * time.Millisecond):
-			if c.subscriberAsPrimary.Load() || c.protocolVersion.SupportsSinglePeerConnection() {
+			if c.subscriberAsPrimary.Load() {
 				if c.subscriberFullyEstablished.Load() {
 					return nil
 				}
@@ -608,10 +606,12 @@ func (c *RTCClient) Stop() {
 	c.publisherFullyEstablished.Store(false)
 	c.subscriberFullyEstablished.Store(false)
 	_ = c.conn.Close()
-	if !c.protocolVersion.SupportsSinglePeerConnection() {
+	if c.publisher != nil {
 		c.publisher.Close()
 	}
-	c.subscriber.Close()
+	if c.subscriber != nil {
+		c.subscriber.Close()
+	}
 	c.cancel()
 }
 
@@ -680,7 +680,7 @@ func (c *RTCClient) SetAttributes(attrs map[string]string) error {
 }
 
 func (c *RTCClient) hasPrimaryEverConnected() bool {
-	if c.subscriberAsPrimary.Load() || c.protocolVersion.SupportsSinglePeerConnection() {
+	if c.subscriberAsPrimary.Load() {
 		return c.subscriber.HasEverConnected()
 	} else {
 		return c.publisher.HasEverConnected()
@@ -709,12 +709,7 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string, 
 		trackType = livekit.TrackType_VIDEO
 	}
 
-	var sender *webrtc.RTPSender
-	if c.protocolVersion.SupportsSinglePeerConnection() {
-		sender, _, err = c.subscriber.AddTrack(track, types.AddTrackParams{})
-	} else {
-		sender, _, err = c.publisher.AddTrack(track, types.AddTrackParams{})
-	}
+	sender, _, err := c.publisher.AddTrack(track, types.AddTrackParams{})
 	if err != nil {
 		logger.Errorw(
 			"add track failed", err,
@@ -755,9 +750,7 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string, 
 
 	c.localTracks[ti.Sid] = track
 	c.trackSenders[ti.Sid] = sender
-	if !c.protocolVersion.SupportsSinglePeerConnection() {
-		c.publisher.Negotiate(false)
-	}
+	c.publisher.Negotiate(false)
 
 	if !params.NoWriter {
 		writer = NewTrackWriter(c.ctx, track, path)
@@ -807,6 +800,8 @@ func (c *RTCClient) AddFileTrack(path string, id string, label string) (writer *
 	return c.AddTrack(track, path)
 }
 
+/* RAJA-REMOVE
+// RAJA-TODO: check if this is needed
 func (c *RTCClient) AddTransceiverOfKind(kind webrtc.RTPCodecType) error {
 	pc := c.publisher
 	if c.protocolVersion.SupportsSinglePeerConnection() {
@@ -837,6 +832,7 @@ func (c *RTCClient) AddTransceiverOfKind(kind webrtc.RTPCodecType) error {
 	}
 	return nil
 }
+*/
 
 // send AddTrack command to server to initiate server-side negotiation
 func (c *RTCClient) SendAddTrack(cid string, mimeType string, name string, trackType livekit.TrackType) error {
@@ -858,10 +854,8 @@ func (c *RTCClient) SendAddTrack(cid string, mimeType string, name string, track
 }
 
 func (c *RTCClient) PublishData(data []byte, kind livekit.DataPacket_Kind) error {
-	if !c.protocolVersion.SupportsSinglePeerConnection() {
-		if err := c.ensurePublisherConnected(); err != nil {
-			return err
-		}
+	if err := c.ensurePublisherConnected(); err != nil {
+		return err
 	}
 
 	dpData, err := proto.Marshal(&livekit.DataPacket{
@@ -873,23 +867,15 @@ func (c *RTCClient) PublishData(data []byte, kind livekit.DataPacket_Kind) error
 		return err
 	}
 
-	if !c.protocolVersion.SupportsSinglePeerConnection() {
-		return c.publisher.SendDataMessage(kind, dpData)
-	} else {
-		return c.subscriber.SendDataMessage(kind, dpData)
-	}
+	return c.publisher.SendDataMessage(kind, dpData)
 }
 
 func (c *RTCClient) PublishDataUnlabeled(data []byte) error {
-	if !c.protocolVersion.SupportsSinglePeerConnection() {
-		if err := c.ensurePublisherConnected(); err != nil {
-			return err
-		}
-
-		return c.publisher.SendDataMessageUnlabeled(data, true, "test")
+	if err := c.ensurePublisherConnected(); err != nil {
+		return err
 	}
 
-	return c.subscriber.SendDataMessageUnlabeled(data, true, "test")
+	return c.publisher.SendDataMessageUnlabeled(data, true, "test")
 }
 
 func (c *RTCClient) GetPublishedTrackIDs() []string {
@@ -902,10 +888,12 @@ func (c *RTCClient) GetPublishedTrackIDs() []string {
 	return trackIDs
 }
 
+/* RAJA-REMOVE
 // LastOffer return SDP of the last offer for the subscriber connection
 func (c *RTCClient) LastOffer() *webrtc.SessionDescription {
 	return c.subscriber.CurrentRemoteDescription()
 }
+*/
 
 // LastAnswer return SDP of the last answer for the publisher connection
 func (c *RTCClient) LastAnswer() *webrtc.SessionDescription {
@@ -967,6 +955,30 @@ func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription, answerId uint32
 
 	// remote answered the offer, establish connection
 	c.publisher.HandleRemoteDescription(desc, answerId)
+}
+
+// the client handles media sections requirement on the publisher PC
+func (c *RTCClient) handleMediaSectionsRequirement(mediaSectionsRequirement *livekit.MediaSectionsRequirement) {
+	addTransceivers := func(kind webrtc.RTPCodecType, count uint32) {
+		for i := uint32(0); i < count; i++ {
+			if _, err := c.publisher.AddTransceiverFromKind(
+				kind,
+				webrtc.RTPTransceiverInit{
+					Direction: webrtc.RTPTransceiverDirectionRecvonly,
+				},
+			); err != nil {
+				logger.Warnw(
+					"could not add transceiver", err,
+					"participant", c.localParticipant.Identity,
+					"kind", kind,
+				)
+			}
+		}
+	}
+
+	addTransceivers(webrtc.RTPCodecTypeAudio, mediaSectionsRequirement.NumAudios)
+	addTransceivers(webrtc.RTPCodecTypeVideo, mediaSectionsRequirement.NumVideos)
+	c.publisher.Negotiate(false)
 }
 
 func (c *RTCClient) onOffer(offer webrtc.SessionDescription, offerId uint32) error {

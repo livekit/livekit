@@ -40,7 +40,6 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/observability"
 	"github.com/livekit/protocol/observability/roomobs"
-	lksdp "github.com/livekit/protocol/sdp"
 	sdpHelper "github.com/livekit/protocol/sdp"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
@@ -1148,6 +1147,7 @@ func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription, unma
 	}
 }
 
+/* RAJA-REMOVE
 func (p *ParticipantImpl) updateRidsFromSDPByMid(parsed *sdp.SessionDescription) {
 	getRids := func(m *sdp.MediaDescription, inRids buffer.VideoLayersRid) buffer.VideoLayersRid {
 		var outRids buffer.VideoLayersRid
@@ -1226,6 +1226,7 @@ func (p *ParticipantImpl) updateRidsFromSDPByMid(parsed *sdp.SessionDescription)
 		}
 	}
 }
+*/
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
 func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription, offerId uint32) error {
@@ -1336,6 +1337,7 @@ func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription, answerI
 	signalConnCost := time.Since(p.ConnectedAt()).Milliseconds()
 	p.TransportManager.UpdateSignalingRTT(uint32(signalConnCost))
 
+	/* RAJA-REMOVE
 	if p.ProtocolVersion().SupportsSinglePeerConnection() {
 		parsedAnswer, err := answer.Unmarshal()
 		if err != nil {
@@ -1351,6 +1353,7 @@ func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription, answerI
 		p.populateSdpCidByMid(parsedAnswer)
 		p.updateRidsFromSDPByMid(parsedAnswer)
 	}
+	*/
 
 	p.TransportManager.HandleAnswer(answer, answerId)
 }
@@ -2017,7 +2020,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	var pth transport.Handler = PublisherTransportHandler{ath}
 	var sth transport.Handler = SubscriberTransportHandler{ath}
 
-	subscriberAsPrimary := !p.params.UseOneShotSignallingMode && ((p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe()) || p.ProtocolVersion().SupportsSinglePeerConnection())
+	subscriberAsPrimary := !p.params.UseOneShotSignallingMode && (p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe()) && !p.ProtocolVersion().SupportsSinglePeerConnection()
 	if subscriberAsPrimary {
 		sth = PrimaryTransportHandler{sth, p}
 	} else {
@@ -2235,6 +2238,7 @@ func (p *ParticipantImpl) setIsPublisher(isPublisher bool) {
 
 // when the server has an offer for participant
 func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription, offerId uint32) error {
+	/* RAJA-REMOVE
 	if p.ProtocolVersion().SupportsSinglePeerConnection() {
 		parsedOffer, err := offer.Unmarshal()
 		if err != nil {
@@ -2249,6 +2253,7 @@ func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription, off
 
 		p.populateMid(parsedOffer)
 	}
+	*/
 
 	p.subLogger.Debugw(
 		"sending offer",
@@ -3455,6 +3460,7 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 	return signalCid, utils.CloneProto(pendingInfo.trackInfos[0]), pendingInfo.sdpRids, pendingInfo.migrated, pendingInfo.createdAt
 }
 
+/* RAJA-REMOVE
 func (p *ParticipantImpl) getPendingTrackByTrackTypeWithoutMid(trackType livekit.TrackType) (string, *livekit.TrackInfo, bool) {
 	for cid, pti := range p.pendingTracks {
 		ti := pti.trackInfos[0]
@@ -3485,6 +3491,7 @@ func (p *ParticipantImpl) getPendingTrackByMid(mid string, skipQueued bool) (str
 
 	return "", nil, false
 }
+*/
 
 func (p *ParticipantImpl) getPendingTrackPrimaryBySdpCid(sdpCid string) *pendingTrackInfo {
 	for _, pti := range p.pendingTracks {
@@ -3500,6 +3507,7 @@ func (p *ParticipantImpl) getPendingTrackPrimaryBySdpCid(sdpCid string) *pending
 	return nil
 }
 
+/* RAJA-REMOVE
 func (p *ParticipantImpl) getPendingTrackPrimaryByMid(mid string) *pendingTrackInfo {
 	for _, pti := range p.pendingTracks {
 		ti := pti.trackInfos[0]
@@ -3513,6 +3521,7 @@ func (p *ParticipantImpl) getPendingTrackPrimaryByMid(mid string) *pendingTrackI
 
 	return nil
 }
+*/
 
 // setTrackID either generates a new TrackID for an AddTrackRequest
 func (p *ParticipantImpl) setTrackID(cid string, info *livekit.TrackInfo) {
@@ -3586,6 +3595,7 @@ func (p *ParticipantImpl) getPublishedTrackPendingMid() types.MediaTrack {
 	return nil
 }
 
+/* RAJA-REMOVE
 func (p *ParticipantImpl) getPublishedTrackByMid(mid string) types.MediaTrack {
 	for _, publishedTrack := range p.GetPublishedTracks() {
 		ti := publishedTrack.ToProto()
@@ -3599,6 +3609,7 @@ func (p *ParticipantImpl) getPublishedTrackByMid(mid string) types.MediaTrack {
 
 	return nil
 }
+*/
 
 func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 	info := map[string]interface{}{

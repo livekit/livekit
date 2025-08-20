@@ -101,7 +101,7 @@ var (
 	ErrNoBundleMid                       = errors.New("could not get bundle mid")
 	ErrMidMismatch                       = errors.New("media mid does not match bundle mid")
 	ErrICECredentialMismatch             = errors.New("ice credential mismatch")
-	ErrUnsupportedRemoteTrackType        = errors.New("unsupported remote track type")
+	// RAJA-REMOVE ErrUnsupportedRemoteTrackType        = errors.New("unsupported remote track type")
 )
 
 // -------------------------------------------------------------------------
@@ -1181,7 +1181,11 @@ func (t *PCTransport) GetRTPTransceiverDirection(mid string) webrtc.RTPTransceiv
 }
 
 // RAJA-TODO: check if this API is needed and correct one
-func (t *PCTransport) getNumUnmatchedTransceivers() (uint32, uint32) {
+func (t *PCTransport) getNumUnmatchedTransceivers() (uint32, uint32, bool) {
+	if t.isClosed.Load() || t.pc.ConnectionState() == webrtc.PeerConnectionStateClosed {
+		return 0, 0, false
+	}
+
 	numAudios := uint32(0)
 	numVideos := uint32(0)
 	for _, tr := range t.pc.GetTransceivers() {
@@ -1198,7 +1202,7 @@ func (t *PCTransport) getNumUnmatchedTransceivers() (uint32, uint32) {
 		}
 	}
 
-	return numAudios, numVideos
+	return numAudios, numVideos, true
 }
 
 func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelInit) error {
@@ -2397,6 +2401,19 @@ func (t *PCTransport) setupSignalStateCheckTimer() {
 	})
 }
 
+func (t *PCTransport) sendUnmatchedMediaRequirement(force bool) error {
+	// if there are unmatched media sections, notify remote peer to generate offer with
+	// enough media section in subsequent offers
+	numAudios, numVideos, shouldSend := t.getNumUnmatchedTransceivers()
+	if shouldSend || force {
+		if err := t.params.Handler.OnUnmatchedMedia(numAudios, numVideos); err != nil {
+			return errors.Wrap(err, "could not send unmatched media requirements")
+		}
+	}
+
+	return nil
+}
+
 func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	if t.pc.ConnectionState() == webrtc.PeerConnectionStateClosed {
 		t.params.Logger.Warnw("trying to send offer on closed peer connection", nil)
@@ -2497,17 +2514,14 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	}
 	prometheus.ServiceOperationCounter.WithLabelValues("offer", "success", "").Add(1)
 
-	// if there are unmatched media sections, notify remote peer to generate offer with
-	// enough media section in subsequent offers
-	numAudios, numVideos := t.getNumUnmatchedTransceivers()
-	if err := t.params.Handler.OnUnmatchedMedia(numAudios, numVideos); err != nil {
-		return errors.Wrap(err, "could not send unmatched media requirements")
-	}
-
 	return t.localDescriptionSent()
 }
 
 func (t *PCTransport) handleSendOffer(_ event) error {
+	if !t.params.IsOfferer {
+		return t.sendUnmatchedMediaRequirement(true)
+	}
+
 	return t.createAndSendOffer(nil)
 }
 
@@ -2630,8 +2644,12 @@ func (t *PCTransport) createAndSendAnswer() error {
 		return errors.Wrap(err, "could not send answer")
 	}
 	t.localAnswerId.Store(answerId)
-
 	prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
+
+	if err := t.sendUnmatchedMediaRequirement(false); err != nil {
+		return err
+	}
+
 	return t.localDescriptionSent()
 }
 

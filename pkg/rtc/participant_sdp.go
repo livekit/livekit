@@ -172,6 +172,7 @@ func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([
 	return unmatchAudios, unmatchVideos
 }
 
+/* RAJA-REMOVE
 func (p *ParticipantImpl) populateMid(parsedOffer *sdp.SessionDescription) {
 	processUnmatch := func(unmatches []*sdp.MediaDescription, trackType livekit.TrackType) {
 		for _, unmatch := range unmatches {
@@ -312,6 +313,7 @@ func (p *ParticipantImpl) populateSdpCidByMid(parsedAnswer *sdp.SessionDescripti
 		p.pendingTracksLock.Unlock()
 	}
 }
+*/
 
 func (p *ParticipantImpl) setCodecPreferencesForPublisher(
 	parsedOffer *sdp.SessionDescription,
