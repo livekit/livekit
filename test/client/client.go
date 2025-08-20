@@ -993,6 +993,12 @@ func (c *RTCClient) handleMediaSectionsRequirement(mediaSectionsRequirement *liv
 					"participant", c.localParticipant.Identity,
 					"kind", kind,
 				)
+			} else {
+				logger.Infow(
+					"added transceiver of kind",
+					"participant", c.localParticipant.Identity,
+					"kind", kind,
+				)
 			}
 		}
 	}
@@ -1020,18 +1026,45 @@ func (c *RTCClient) onOffer(offer webrtc.SessionDescription, offerId uint32) err
 
 func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 	lastUpdate := time.Time{}
-	pID, trackID := rtc.UnpackStreamID(track.StreamID())
+
+	// because of FireOnTrackBySdp, it is possible get an empty streamID
+	// if media comes before SDP, so wait for streamID to be set
+	startTime := time.Now()
+	streamID := ""
+	for streamID == "" {
+		streamID = track.StreamID()
+		if streamID != "" {
+			break
+		}
+		if time.Since(startTime) > 15*time.Second {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if streamID == "" {
+		logger.Infow(
+			"client aborted track",
+			"participant", c.localParticipant.Identity,
+			"pID", c.ID(),
+			"codec", track.Codec(),
+			"ssrc", track.SSRC(),
+		)
+		return
+	}
+
+	publisherID, trackID := rtc.UnpackStreamID(streamID)
 	if trackID == "" {
 		trackID = livekit.TrackID(track.ID())
 	}
 	c.lock.Lock()
-	c.subscribedTracks[pID] = append(c.subscribedTracks[pID], track)
+	c.subscribedTracks[publisherID] = append(c.subscribedTracks[publisherID], track)
 	c.lock.Unlock()
 
 	logger.Infow(
 		"client added track",
 		"participant", c.localParticipant.Identity,
-		"pID", pID,
+		"pID", c.ID(),
+		"publisherID", publisherID,
 		"trackID", trackID,
 		"codec", track.Codec(),
 		"ssrc", track.SSRC(),
@@ -1039,7 +1072,7 @@ func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 
 	defer func() {
 		c.lock.Lock()
-		c.subscribedTracks[pID] = funk.Without(c.subscribedTracks[pID], track).([]*webrtc.TrackRemote)
+		c.subscribedTracks[publisherID] = funk.Without(c.subscribedTracks[publisherID], track).([]*webrtc.TrackRemote)
 		c.lock.Unlock()
 	}()
 
@@ -1050,6 +1083,15 @@ func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 			break
 		}
 		if rtc.IsEOF(err) {
+			logger.Infow(
+				"client track removed",
+				"participant", c.localParticipant.Identity,
+				"pID", c.ID(),
+				"publisherID", publisherID,
+				"trackID", trackID,
+				"codec", track.Codec(),
+				"ssrc", track.SSRC(),
+			)
 			break
 		}
 		if err != nil {
@@ -1057,14 +1099,16 @@ func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 			continue
 		}
 		c.lock.Lock()
-		c.lastPackets[pID] = pkt
-		c.bytesReceived[pID] += uint64(pkt.MarshalSize())
+		c.lastPackets[publisherID] = pkt
+		c.bytesReceived[publisherID] += uint64(pkt.MarshalSize())
 		c.lock.Unlock()
 		numBytes += pkt.MarshalSize()
 		if time.Since(lastUpdate) > 30*time.Second {
 			logger.Infow(
 				"consumed from participant",
-				"pID", pID,
+				"participant", c.localParticipant.Identity,
+				"pID", c.ID(),
+				"publisherID", publisherID,
 				"trackID", trackID,
 				"size", numBytes,
 			)
