@@ -1281,6 +1281,7 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription, offerId u
 		}
 	}
 
+	p.handlePendingRemoteTracks()
 	return err
 }
 

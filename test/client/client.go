@@ -85,6 +85,9 @@ type RTCClient struct {
 	// tracks waiting to be acked, cid => trackInfo
 	pendingPublishedTracks map[string]*livekit.TrackInfo
 
+	// remote tracks waiting to be processed
+	pendingRemoteTracks []*webrtc.TrackRemote
+
 	pendingTrackWriters     []*TrackWriter
 	OnConnected             func()
 	OnDataReceived          func(data []byte, sid string)
@@ -280,7 +283,7 @@ func NewRTCClient(conn *websocket.Conn, protocolVersion types.ProtocolVersion, o
 		return c.SendIceCandidate(ic, livekit.SignalTarget_PUBLISHER)
 	})
 	publisherHandler.OnTrackCalls(func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
-		go c.processTrack(track)
+		go c.processRemoteTrack(track)
 	})
 	publisherHandler.OnDataMessageCalls(c.handleDataMessage)
 	publisherHandler.OnDataMessageUnlabeledCalls(c.handleDataMessageUnlabeled)
@@ -358,7 +361,7 @@ func NewRTCClient(conn *websocket.Conn, protocolVersion types.ProtocolVersion, o
 			return c.SendIceCandidate(ic, livekit.SignalTarget_SUBSCRIBER)
 		})
 		subscriberHandler.OnTrackCalls(func(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
-			go c.processTrack(track)
+			go c.processRemoteTrack(track)
 		})
 		subscriberHandler.OnDataMessageCalls(c.handleDataMessage)
 		subscriberHandler.OnDataMessageUnlabeledCalls(c.handleDataMessageUnlabeled)
@@ -755,10 +758,12 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string, 
 		default:
 			c.lock.Lock()
 			ti = c.pendingPublishedTracks[track.ID()]
-			c.lock.Unlock()
 			if ti != nil {
+				delete(c.pendingPublishedTracks, track.ID())
+				c.lock.Unlock()
 				break
 			}
+			c.lock.Unlock()
 			time.Sleep(50 * time.Millisecond)
 		}
 		if ti != nil {
@@ -968,6 +973,7 @@ func (c *RTCClient) handleDataMessageUnlabeled(data []byte) {
 func (c *RTCClient) handleOffer(desc webrtc.SessionDescription, offerId uint32) {
 	logger.Infow("handling server offer", "participant", c.localParticipant.Identity)
 	c.subscriber.HandleRemoteDescription(desc, offerId)
+	c.processPendingRemoteTracks()
 }
 
 // the client handles answer on the publisher PC
@@ -976,6 +982,7 @@ func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription, answerId uint32
 
 	// remote answered the offer, establish connection
 	c.publisher.HandleRemoteDescription(desc, answerId)
+	c.processPendingRemoteTracks()
 }
 
 // the client handles media sections requirement on the publisher PC
@@ -1024,11 +1031,37 @@ func (c *RTCClient) onOffer(offer webrtc.SessionDescription, offerId uint32) err
 	})
 }
 
-func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
+func (c *RTCClient) processPendingRemoteTracks() {
+	c.lock.Lock()
+	pendingRemoteTracks := c.pendingRemoteTracks
+	c.pendingRemoteTracks = nil
+	c.lock.Unlock()
+
+	for _, pendingRemoteTrack := range pendingRemoteTracks {
+		go c.processRemoteTrack(pendingRemoteTrack)
+	}
+}
+
+func (c *RTCClient) processRemoteTrack(track *webrtc.TrackRemote) {
 	lastUpdate := time.Time{}
 
 	// because of FireOnTrackBySdp, it is possible get an empty streamID
-	// if media comes before SDP, so wait for streamID to be set
+	// if media comes before SDP, cache and try later
+	streamID := track.StreamID()
+	if streamID == "" {
+		logger.Infow(
+			"client caching track",
+			"participant", c.localParticipant.Identity,
+			"pID", c.ID(),
+			"codec", track.Codec(),
+			"ssrc", track.SSRC(),
+		)
+		c.lock.Lock()
+		c.pendingRemoteTracks = append(c.pendingRemoteTracks, track)
+		c.lock.Unlock()
+		return
+	}
+	/* RAJA-REMOVE
 	startTime := time.Now()
 	streamID := ""
 	for streamID == "" {
@@ -1051,6 +1084,7 @@ func (c *RTCClient) processTrack(track *webrtc.TrackRemote) {
 		)
 		return
 	}
+	*/
 
 	publisherID, trackID := rtc.UnpackStreamID(streamID)
 	if trackID == "" {
