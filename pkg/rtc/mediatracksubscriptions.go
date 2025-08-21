@@ -16,6 +16,7 @@ package rtc
 
 import (
 	"errors"
+	"slices"
 	"sync"
 
 	"github.com/pion/rtcp"
@@ -309,7 +310,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	if transceiver == nil {
 		info := t.params.MediaTrack.ToProto()
 		addTrackParams := types.AddTrackParams{
-			Stereo: info.Stereo,
+			Stereo: slices.Contains(info.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO),
 			Red:    !info.DisableRed,
 		}
 		if addTrackParams.Red && (len(codecs) == 1 && mime.IsMimeTypeStringOpus(codecs[0].MimeType)) {

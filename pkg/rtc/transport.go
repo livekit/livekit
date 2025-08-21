@@ -19,6 +19,7 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -101,6 +102,7 @@ var (
 	ErrNoBundleMid                       = errors.New("could not get bundle mid")
 	ErrMidMismatch                       = errors.New("media mid does not match bundle mid")
 	ErrICECredentialMismatch             = errors.New("ice credential mismatch")
+	ErrUnsupportedRemoteTrackType        = errors.New("unsupported remote track type")
 )
 
 // -------------------------------------------------------------------------
@@ -932,7 +934,6 @@ func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal, params types.AddTra
 		return
 	}
 
-	// as there is no way to get transceiver from sender, search
 	for _, tr := range t.pc.GetTransceivers() {
 		if tr.Sender() == sender {
 			transceiver = tr
@@ -970,8 +971,180 @@ func (t *PCTransport) AddTransceiverFromTrack(trackLocal webrtc.TrackLocal, para
 	return
 }
 
+func (t *PCTransport) AddTransceiverFromKind(
+	kind webrtc.RTPCodecType,
+	init webrtc.RTPTransceiverInit,
+) (*webrtc.RTPTransceiver, error) {
+	return t.pc.AddTransceiverFromKind(kind, init)
+}
+
+func (t *PCTransport) AddRemoteTrackAndNegotiate(
+	ti *livekit.TrackInfo,
+	publishDisabledCodecs []*livekit.Codec,
+	rtcpFeedbackConfig RTCPFeedbackConfig,
+) error {
+	if ti.Type != livekit.TrackType_AUDIO && ti.Type != livekit.TrackType_VIDEO {
+		return ErrUnsupportedRemoteTrackType
+	}
+
+	rtpCodecType := webrtc.RTPCodecTypeVideo
+	if ti.Type == livekit.TrackType_AUDIO {
+		rtpCodecType = webrtc.RTPCodecTypeAudio
+	}
+	transceiver, err := t.pc.AddTransceiverFromKind(
+		rtpCodecType,
+		webrtc.RTPTransceiverInit{
+			Direction: webrtc.RTPTransceiverDirectionRecvonly,
+		},
+	)
+	if err != nil {
+		t.params.Logger.Warnw(
+			"could not add transceiver from kind", err,
+			"trackID", ti.Sid,
+			"track", logger.Proto(ti),
+		)
+		return err
+	}
+
+	codecs := transceiver.Receiver().GetParameters().Codecs
+	enabledCodecs := make([]*webrtc.RTPCodecParameters, 0, len(codecs))
+	disabledPayloads := make([]webrtc.PayloadType, 0, len(codecs))
+	for _, c := range codecs {
+		disabled := false
+		for _, disabledCodec := range publishDisabledCodecs {
+			if mime.NormalizeMimeType(disabledCodec.Mime) == mime.NormalizeMimeType(c.RTPCodecCapability.MimeType) {
+				disabled = true
+				disabledPayloads = append(disabledPayloads, c.PayloadType)
+				break
+			}
+		}
+		if !disabled && !mime.IsMimeTypeStringRTX(c.RTPCodecCapability.MimeType) {
+			// SINGLE-PEER-CONNECTION-TOOD: remove `nack` for RED?
+			if rtpCodecType == webrtc.RTPCodecTypeVideo {
+				c.RTPCodecCapability.RTCPFeedback = rtcpFeedbackConfig.Video
+			} else {
+				c.RTPCodecCapability.RTCPFeedback = rtcpFeedbackConfig.Audio
+			}
+			enabledCodecs = append(enabledCodecs, &c)
+		}
+	}
+
+	if len(disabledPayloads) != 0 {
+		// remove RTX of disabled payloads
+		for _, c := range codecs {
+			if !mime.IsMimeTypeStringRTX(c.RTPCodecCapability.MimeType) {
+				continue
+			}
+
+			index := strings.Index(c.SDPFmtpLine, "apt=")
+			if index == -1 {
+				continue
+			}
+
+			endIndex := strings.Index(c.SDPFmtpLine[index:], ";")
+			if endIndex == -1 {
+				endIndex = len(c.SDPFmtpLine)
+			}
+			aptPayload, err := strconv.Atoi(c.SDPFmtpLine[index+len("apt=") : endIndex])
+			if err != nil {
+				continue
+			}
+			if aptPayload < 0 || aptPayload > 255 {
+				continue
+			}
+
+			if !slices.Contains(disabledPayloads, webrtc.PayloadType(aptPayload)) {
+				enabledCodecs = append(enabledCodecs, &c)
+			}
+		}
+	} else {
+		for _, c := range codecs {
+			if mime.IsMimeTypeStringRTX(c.RTPCodecCapability.MimeType) {
+				enabledCodecs = append(enabledCodecs, &c)
+			}
+		}
+	}
+
+	// enable dtx, stereo for Opus if needed
+	opusPayload := webrtc.PayloadType(0)
+	for _, enabledCodec := range enabledCodecs {
+		if mime.IsMimeTypeStringOpus(enabledCodec.RTPCodecCapability.MimeType) {
+			opusPayload = enabledCodec.PayloadType
+			if !ti.DisableDtx {
+				enabledCodec.RTPCodecCapability.SDPFmtpLine += ";usedtx=1"
+			}
+			if slices.Contains(ti.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO) {
+				enabledCodec.RTPCodecCapability.SDPFmtpLine += ";stereo=1;maxaveragebitrate=510000"
+			}
+			break
+		}
+	}
+
+	// arrange enabled by preference in TrackInfo
+	// SINGLE-PEER-CONNECTION-TODO: have to figure out which codec index
+	mimeType := ""
+	if len(ti.Codecs) != 0 {
+		mimeType = ti.Codecs[0].MimeType
+	}
+	preferredCodecs := make([]*webrtc.RTPCodecParameters, 0, len(enabledCodecs))
+	leftCodecs := make([]*webrtc.RTPCodecParameters, 0, len(enabledCodecs))
+	for _, enabledCodec := range enabledCodecs {
+		if mimeType == "" || mime.NormalizeMimeType(enabledCodec.RTPCodecCapability.MimeType) == mime.NormalizeMimeType(mimeType) {
+			preferredCodecs = append(preferredCodecs, enabledCodec)
+		} else {
+			leftCodecs = append(leftCodecs, enabledCodec)
+		}
+	}
+
+	enabledCodecs = append(append([]*webrtc.RTPCodecParameters{}, preferredCodecs...), leftCodecs...)
+
+	// prioritize audio/red if not disabled and available
+	if opusPayload != 0 {
+		preferredCodecs = nil
+		leftCodecs = nil
+		for _, enabledCodec := range enabledCodecs {
+			if !ti.DisableRed && mime.IsMimeTypeStringRED(enabledCodec.RTPCodecCapability.MimeType) && strings.Contains(enabledCodec.RTPCodecCapability.SDPFmtpLine, strconv.FormatInt(int64(opusPayload), 10)) {
+				preferredCodecs = append(preferredCodecs, enabledCodec)
+			} else {
+				leftCodecs = append(leftCodecs, enabledCodec)
+			}
+		}
+
+		enabledCodecs = append(append([]*webrtc.RTPCodecParameters{}, preferredCodecs...), leftCodecs...)
+	}
+
+	preferences := make([]webrtc.RTPCodecParameters, 0, len(enabledCodecs))
+	for _, enabledCodec := range enabledCodecs {
+		preferences = append(preferences, *enabledCodec)
+	}
+	transceiver.SetCodecPreferences(preferences)
+
+	t.Negotiate(true)
+	return nil
+}
+
 func (t *PCTransport) RemoveTrack(sender *webrtc.RTPSender) error {
 	return t.pc.RemoveTrack(sender)
+}
+
+func (t *PCTransport) CurrentLocalDescription() *webrtc.SessionDescription {
+	cld := t.pc.CurrentLocalDescription()
+	if cld == nil {
+		return nil
+	}
+
+	ld := *cld
+	return &ld
+}
+
+func (t *PCTransport) CurrentRemoteDescription() *webrtc.SessionDescription {
+	crd := t.pc.CurrentRemoteDescription()
+	if crd == nil {
+		return nil
+	}
+
+	rd := *crd
+	return &rd
 }
 
 func (t *PCTransport) GetMid(rtpReceiver *webrtc.RTPReceiver) string {
@@ -994,6 +1167,16 @@ func (t *PCTransport) GetRTPReceiver(mid string) *webrtc.RTPReceiver {
 	return nil
 }
 
+func (t *PCTransport) GetRTPTransceiverDirection(mid string) webrtc.RTPTransceiverDirection {
+	for _, tr := range t.pc.GetTransceivers() {
+		if tr.Mid() == mid {
+			return tr.Direction()
+		}
+	}
+
+	return webrtc.RTPTransceiverDirectionUnknown
+}
+
 func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelInit) error {
 	dc, err := t.pc.CreateDataChannel(label, dci)
 	if err != nil {
@@ -1003,6 +1186,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 		dcPtr       **datachannel.DataChannelWriter[*webrtc.DataChannel]
 		dcReady     *bool
 		isUnlabeled bool
+		kind        livekit.DataPacket_Kind
 	)
 	switch dc.Label() {
 	default:
@@ -1011,9 +1195,11 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 	case ReliableDataChannel:
 		dcPtr = &t.reliableDC
 		dcReady = &t.reliableDCOpened
+		kind = livekit.DataPacket_RELIABLE
 	case LossyDataChannel:
 		dcPtr = &t.lossyDC
 		dcReady = &t.lossyDCOpened
+		kind = livekit.DataPacket_LOSSY
 	}
 
 	dc.OnOpen(func() {
@@ -1043,6 +1229,28 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 		}
 		t.lock.Unlock()
 		t.params.Logger.Debugw(dc.Label() + " data channel open")
+
+		go func() {
+			defer rawDC.Close()
+			buffer := make([]byte, dataChannelBufferSize)
+			for {
+				n, _, err := rawDC.ReadDataChannel(buffer)
+				if err != nil {
+					if !errors.Is(err, io.EOF) && !strings.Contains(err.Error(), "state=Closed") {
+						t.params.Logger.Warnw("error reading data channel", err, "label", dc.Label())
+					}
+					return
+				}
+
+				switch {
+				case isUnlabeled:
+					t.params.Handler.OnDataMessageUnlabeled(buffer[:n])
+
+				default:
+					t.params.Handler.OnDataMessage(kind, buffer[:n])
+				}
+			}
+		}()
 
 		t.maybeNotifyFullyEstablished()
 	})
@@ -1131,7 +1339,6 @@ func (t *PCTransport) GetRTT() (float64, bool) {
 	return scps.CurrentRoundTripTime, true
 }
 
-// IsEstablished returns true if the PeerConnection has been established
 func (t *PCTransport) IsEstablished() bool {
 	return t.pc.ConnectionState() != webrtc.PeerConnectionStateNew
 }
@@ -2484,6 +2691,20 @@ func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription, 
 		// by the SubscriptionManager unsubscribe the failure DownTrack. So don't treat this error as negotiation failure.
 		if !errors.Is(err, webrtc.ErrUnsupportedCodec) {
 			return err
+		}
+	}
+
+	// SINGLE-PEER-CONNECTION-TODO: do this parsing and RTX deduction only for single peer connection mode
+	parsed, err := sd.Unmarshal()
+	if err != nil {
+		return err
+	}
+
+	rtxRepairs := nonSimulcastRTXRepairsFromSDP(parsed, t.params.Logger)
+	if len(rtxRepairs) > 0 {
+		t.params.Logger.Debugw("rtx pairs found from sdp", "ssrcs", rtxRepairs)
+		for repair, base := range rtxRepairs {
+			t.params.Config.BufferFactory.SetRTXPair(repair, base)
 		}
 	}
 
