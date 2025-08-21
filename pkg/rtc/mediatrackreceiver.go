@@ -119,17 +119,18 @@ func (r *simulcastReceiver) IsRegressed() bool {
 // -----------------------------------------------------
 
 type MediaTrackReceiverParams struct {
-	MediaTrack            types.MediaTrack
-	IsRelayed             bool
-	ParticipantID         func() livekit.ParticipantID
-	ParticipantIdentity   livekit.ParticipantIdentity
-	ParticipantVersion    uint32
-	ReceiverConfig        ReceiverConfig
-	SubscriberConfig      DirectionConfig
-	AudioConfig           sfu.AudioConfig
-	Telemetry             telemetry.TelemetryService
-	Logger                logger.Logger
-	RegressionTargetCodec mime.MimeType
+	MediaTrack               types.MediaTrack
+	IsRelayed                bool
+	ParticipantID            func() livekit.ParticipantID
+	ParticipantIdentity      livekit.ParticipantIdentity
+	ParticipantVersion       uint32
+	ReceiverConfig           ReceiverConfig
+	SubscriberConfig         DirectionConfig
+	AudioConfig              sfu.AudioConfig
+	Telemetry                telemetry.TelemetryService
+	Logger                   logger.Logger
+	RegressionTargetCodec    mime.MimeType
+	PreferVideoSizeFromMedia bool
 }
 
 type MediaTrackReceiver struct {
@@ -924,7 +925,12 @@ func (t *MediaTrackReceiver) GetQualityForDimension(mimeType mime.MimeType, widt
 
 	trackInfo := t.TrackInfo()
 
-	if trackInfo.Height == 0 {
+	var mediaSizes []buffer.VideoSize
+	if receiver := t.Receiver(mimeType); receiver != nil {
+		mediaSizes = receiver.VideoSizes()
+	}
+
+	if trackInfo.Height == 0 && len(mediaSizes) == 0 {
 		return quality
 	}
 	origSize := trackInfo.Height
@@ -935,12 +941,36 @@ func (t *MediaTrackReceiver) GetQualityForDimension(mimeType mime.MimeType, widt
 		requestedSize = width
 	}
 
+	if origSize == 0 {
+		for i := len(mediaSizes) - 1; i >= 0; i-- {
+			if mediaSizes[i].Height > 0 {
+				origSize = mediaSizes[i].Height
+				if mediaSizes[i].Width < mediaSizes[i].Height {
+					origSize = mediaSizes[i].Width
+				}
+				break
+			}
+		}
+	}
+
 	// default sizes representing qualities low - high
 	layerSizes := []uint32{180, 360, origSize}
 	var providedSizes []uint32
 	for _, layer := range buffer.GetVideoLayersForMimeType(mimeType, trackInfo) {
 		providedSizes = append(providedSizes, layer.Height)
 	}
+
+	if len(providedSizes) == 0 || providedSizes[0] == 0 || t.params.PreferVideoSizeFromMedia {
+		if len(mediaSizes) > 0 {
+			providedSizes = providedSizes[:0]
+			for _, size := range mediaSizes {
+				providedSizes = append(providedSizes, size.Height)
+			}
+		} else {
+			t.params.Logger.Debugw("no video sizes provided by receiver, using track info sizes")
+		}
+	}
+
 	if len(providedSizes) > 0 {
 		layerSizes = providedSizes
 		// comparing height always
