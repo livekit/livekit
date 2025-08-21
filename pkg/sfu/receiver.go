@@ -141,6 +141,9 @@ type TrackReceiver interface {
 
 	AddOnCodecStateChange(func(webrtc.RTPCodecParameters, ReceiverCodecState))
 	CodecState() ReceiverCodecState
+
+	// VideoSizes returns the video size parsed from rtp packet for each spatial layer.
+	VideoSizes() []buffer.VideoSize
 }
 
 type REDTransformer interface {
@@ -181,10 +184,13 @@ type WebRTCReceiver struct {
 
 	onRTCP func([]rtcp.Packet)
 
-	bufferMu sync.RWMutex
-	buffers  [buffer.DefaultMaxLayerSpatial + 1]*buffer.Buffer
-	upTracks [buffer.DefaultMaxLayerSpatial + 1]TrackRemote
-	rtt      uint32
+	bufferMu           sync.RWMutex
+	buffers            [buffer.DefaultMaxLayerSpatial + 1]*buffer.Buffer
+	upTracks           [buffer.DefaultMaxLayerSpatial + 1]TrackRemote
+	videoSizeMu        sync.RWMutex
+	videoSizes         [buffer.DefaultMaxLayerSpatial + 1]buffer.VideoSize
+	onVideoSizeChanged func()
+	rtt                uint32
 
 	lbThreshold int
 
@@ -413,6 +419,21 @@ func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) erro
 
 		if rt := w.redTransformer.Load(); rt != nil {
 			rt.(REDTransformer).ForwardRTCPSenderReport(w.codec.PayloadType, layer, srData)
+		}
+	})
+	buff.OnVideoSizeChanged(func(videoSize []buffer.VideoSize) {
+		w.videoSizeMu.Lock()
+		if w.videoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM {
+			copy(w.videoSizes[:], videoSize)
+		} else {
+			w.videoSizes[layer] = videoSize[0]
+		}
+		w.logger.Debugw("video size changed", "size", w.videoSizes)
+		cb := w.onVideoSizeChanged
+		w.videoSizeMu.Unlock()
+
+		if cb != nil {
+			cb()
 		}
 	})
 
@@ -972,6 +993,26 @@ func (w *WebRTCReceiver) SetCodecState(state ReceiverCodecState) {
 	for _, f := range fns {
 		f(w.codec, state)
 	}
+}
+
+func (w *WebRTCReceiver) VideoSizes() []buffer.VideoSize {
+	var sizes []buffer.VideoSize
+	w.videoSizeMu.RLock()
+	defer w.videoSizeMu.RUnlock()
+	for _, v := range w.videoSizes {
+		if v.Width == 0 || v.Height == 0 {
+			break
+		}
+		sizes = append(sizes, v)
+	}
+
+	return sizes
+}
+
+func (w *WebRTCReceiver) OnVideoSizeChanged(f func()) {
+	w.videoSizeMu.Lock()
+	w.onVideoSizeChanged = f
+	w.videoSizeMu.Unlock()
 }
 
 // -----------------------------------------------------------

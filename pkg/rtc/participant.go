@@ -209,6 +209,7 @@ type ParticipantParams struct {
 	DisableCodecRegression         bool
 	LastPubReliableSeq             uint32
 	Country                        string
+	PreferVideoSizeFromMedia       bool
 }
 
 type ParticipantImpl struct {
@@ -3291,6 +3292,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 		ShouldRegressCodec: func() bool {
 			return p.helper().ShouldRegressCodec()
 		},
+		PreferVideoSizeFromMedia: p.params.PreferVideoSizeFromMedia,
 	}, ti)
 
 	mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
