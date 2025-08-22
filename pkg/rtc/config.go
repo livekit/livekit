@@ -129,11 +129,9 @@ func (c *WebRTCConfig) UpdatePublisherConfig(protocolVersion types.ProtocolVersi
 	c.Publisher = getPublisherConfig(protocolVersion)
 }
 
-/* RAJA-REMOVE
-func (c *WebRTCConfig) UpdateSubscriberConfig(protocolVersion types.ProtocolVersion, ccConf config.CongestionControlConfig) {
-	c.Subscriber = getSubscriberConfig(protocolVersion, ccConf.UseSendSideBWEInterceptor || ccConf.UseSendSideBWE)
+func (c *WebRTCConfig) UpdateSubscriberConfig(ccConf config.CongestionControlConfig) {
+	c.Subscriber = getSubscriberConfig(ccConf.UseSendSideBWEInterceptor || ccConf.UseSendSideBWE)
 }
-*/
 
 func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
 	c.BufferFactory = factory
