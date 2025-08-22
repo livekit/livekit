@@ -2042,11 +2042,11 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 		return err
 	}
 
-	// replace client's fingerprint into dump pc's answer, for pion's dtls process, it will
+	// replace client's fingerprint into dummy pc's answer, for pion's dtls process, it will
 	// keep the fingerprint at first call of SetRemoteDescription, if dummy pc and client pc use
 	// different fingerprint, that will cause pion denied dtls data after handshake with client
 	// complete (can't pass fingerprint change).
-	// in this step, we don't established connection with dump pc(no candidate swap), just use
+	// in this step, we don't established connection with dummy pc(no candidate swap), just use
 	// sdp negotiation to sticky data channel and keep client's fingerprint
 	parsedAns, _ := ans.Unmarshal()
 	fpLine := fpHahs + " " + fp
@@ -2086,7 +2086,7 @@ func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDesc
 		case "application":
 			// for pion generate unmatched sdp, it always appends data channel to last m-lines,
 			// that not consistent with our previous answer that data channel might at middle-line
-			// because sdp can negotiate multi times before migration.(it will sticky to the last m-line atfirst negotiate)
+			// because sdp can negotiate multi times before migration.(it will sticky to the last m-line at first negotiate)
 			// so use a dummy pc to negotiate sdp to fixed the datachannel's mid at same position with previous answer
 			if err := t.preparePC(previousAnswer); err != nil {
 				t.params.Logger.Warnw("prepare pc for migration failed", err)
@@ -2119,7 +2119,7 @@ func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDesc
 func (t *PCTransport) SetPreviousSdp(offer, answer *webrtc.SessionDescription) {
 	// when there is no previous answer, cannot migrate, force a full reconnect
 	if answer == nil {
-		t.onNegotiationFailed(true, "no previous answer for previous sdp")
+		t.onNegotiationFailed(true, "no previous answer")
 		return
 	}
 

@@ -608,6 +608,10 @@ func (r *Room) Join(
 		} else {
 			participant.Negotiate(true)
 		}
+	} else {
+		if participant.ProtocolVersion().SupportsSinglePeerConnection() {
+			go r.subscribeToExistingTracks(participant, false)
+		}
 	}
 
 	prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
