@@ -364,7 +364,7 @@ var DefaultConfig = Config{
 			{Mime: mime.MimeTypeVP9.String()},
 			{Mime: mime.MimeTypeAV1.String()},
 			{Mime: mime.MimeTypeRTX.String()},
-			{Mime: mime.MimeTypeH265.String()},
+			// RAJA-TODO {Mime: mime.MimeTypeH265.String()},
 		},
 		EmptyTimeout:       5 * 60,
 		DepartureTimeout:   20,

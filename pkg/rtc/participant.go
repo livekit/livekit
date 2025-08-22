@@ -2032,6 +2032,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	params := TransportManagerParams{
 		// primary connection does not change, canSubscribe can change if permission was updated
 		// after the participant has joined
+		Identity:                     string(p.Identity()), // REMOVE
 		SubscriberAsPrimary:          subscriberAsPrimary,
 		SinglePeerConnection:         p.ProtocolVersion().SupportsSinglePeerConnection(),
 		Config:                       p.params.Config,

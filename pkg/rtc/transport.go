@@ -266,6 +266,7 @@ type PCTransport struct {
 }
 
 type TransportParams struct {
+	Identity                     string
 	Handler                      transport.Handler
 	ProtocolVersion              types.ProtocolVersion
 	Config                       *WebRTCConfig
@@ -474,6 +475,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		webrtc.WithInterceptorRegistry(ir),
 	)
 	pc, err := api.NewPeerConnection(params.Config.Configuration)
+	fmt.Printf("RAJA pc: %p, identity: %s\n", pc, params.Identity) // REMOVE
 	return pc, me, err
 }
 

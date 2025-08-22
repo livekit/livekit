@@ -96,6 +96,7 @@ type TransportManagerParams struct {
 	DataChannelStats             *telemetry.BytesTrackStats
 	UseOneShotSignallingMode     bool
 	FireOnTrackBySdp             bool
+	Identity                     string
 }
 
 type TransportManager struct {
@@ -138,6 +139,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 
 	lgr := LoggerWithPCTarget(params.Logger, livekit.SignalTarget_PUBLISHER)
 	publisher, err := NewPCTransport(TransportParams{
+		Identity:                     params.Identity,
 		ProtocolVersion:              params.ProtocolVersion,
 		Config:                       params.Config,
 		Twcc:                         params.Twcc,
