@@ -2595,7 +2595,7 @@ func (p *ParticipantImpl) onPublisherInitialConnected() {
 		p.supervisor.SetPublisherPeerConnectionConnected(true)
 	}
 
-	if p.params.UseOneShotSignallingMode {
+	if p.params.UseOneShotSignallingMode || p.ProtocolVersion().SupportsSinglePeerConnection() {
 		go p.subscriberRTCPWorker()
 
 		p.setDownTracksConnected()
