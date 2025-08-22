@@ -19,6 +19,7 @@ import (
 	"github.com/pion/webrtc/v4"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
@@ -79,6 +80,7 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 		rtcConf.PacketBufferSizeAudio = rtcConf.PacketBufferSize
 	}
 
+	/* RAJA-REMOVE
 	// publisher configuration
 	publisherConfig := DirectionConfig{
 		RTPHeaderExtension: RTPHeaderExtensionConfig{
@@ -110,6 +112,7 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 			},
 		},
 	}
+	*/
 
 	return &WebRTCConfig{
 		WebRTCConfig: *webRTCConfig,
@@ -117,9 +120,13 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 			PacketBufferSizeVideo: rtcConf.PacketBufferSizeVideo,
 			PacketBufferSizeAudio: rtcConf.PacketBufferSizeAudio,
 		},
-		Publisher:  publisherConfig,
+		Publisher:  getPublisherConfig(types.CurrentProtocol),
 		Subscriber: getSubscriberConfig(rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE),
 	}, nil
+}
+
+func (c *WebRTCConfig) UpdatePublisherConfig(protocolVersion types.ProtocolVersion) {
+	c.Publisher = getPublisherConfig(protocolVersion)
 }
 
 /* RAJA-REMOVE
@@ -203,6 +210,74 @@ func getSubscriberConfig(protocolVersion types.ProtocolVersion, enableTWCC bool)
 	return subscriberConfig
 }
 */
+
+func getPublisherConfig(protocolVersion types.ProtocolVersion) DirectionConfig {
+	if protocolVersion.SupportsSinglePeerConnection() {
+		return DirectionConfig{
+			RTPHeaderExtension: RTPHeaderExtensionConfig{
+				Audio: []string{
+					sdp.SDESMidURI,
+					sdp.SDESRTPStreamIDURI,
+					sdp.AudioLevelURI,
+					//act.AbsCaptureTimeURI,
+				},
+				Video: []string{
+					sdp.SDESMidURI,
+					sdp.SDESRTPStreamIDURI,
+					sdp.TransportCCURI,
+					sdp.ABSSendTimeURI,
+					frameMarkingURI,
+					dd.ExtensionURI,
+					repairedRTPStreamIDURI,
+					//act.AbsCaptureTimeURI,
+				},
+			},
+			RTCPFeedback: RTCPFeedbackConfig{
+				Audio: []webrtc.RTCPFeedback{
+					{Type: webrtc.TypeRTCPFBNACK},
+				},
+				Video: []webrtc.RTCPFeedback{
+					{Type: webrtc.TypeRTCPFBTransportCC},
+					{Type: webrtc.TypeRTCPFBGoogREMB},
+					{Type: webrtc.TypeRTCPFBCCM, Parameter: "fir"},
+					{Type: webrtc.TypeRTCPFBNACK},
+					{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"},
+				},
+			},
+		}
+	}
+
+	return DirectionConfig{
+		RTPHeaderExtension: RTPHeaderExtensionConfig{
+			Audio: []string{
+				sdp.SDESMidURI,
+				sdp.SDESRTPStreamIDURI,
+				sdp.AudioLevelURI,
+				//act.AbsCaptureTimeURI,
+			},
+			Video: []string{
+				sdp.SDESMidURI,
+				sdp.SDESRTPStreamIDURI,
+				sdp.TransportCCURI,
+				frameMarkingURI,
+				dd.ExtensionURI,
+				repairedRTPStreamIDURI,
+				//act.AbsCaptureTimeURI,
+			},
+		},
+		RTCPFeedback: RTCPFeedbackConfig{
+			Audio: []webrtc.RTCPFeedback{
+				{Type: webrtc.TypeRTCPFBNACK},
+			},
+			Video: []webrtc.RTCPFeedback{
+				{Type: webrtc.TypeRTCPFBTransportCC},
+				{Type: webrtc.TypeRTCPFBCCM, Parameter: "fir"},
+				{Type: webrtc.TypeRTCPFBNACK},
+				{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"},
+			},
+		},
+	}
+}
 
 func getSubscriberConfig(enableTWCC bool) DirectionConfig {
 	subscriberConfig := DirectionConfig{
