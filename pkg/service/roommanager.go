@@ -416,7 +416,7 @@ func (r *RoomManager) StartSession(
 	if pi.DisableICELite {
 		rtcConf.SettingEngine.SetLite(false)
 	}
-	rtcConf.UpdateSubscriberConfig(pv, r.config.RTC.CongestionControl)
+	// RAJA-REMOVE rtcConf.UpdateSubscriberConfig(pv, r.config.RTC.CongestionControl)
 
 	// default allow forceTCP
 	allowFallback := true

@@ -360,6 +360,9 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		// As Firefox does not support migration, ICE Lite can be disabled.
 		se.SetLite(false)
 	}
+	if params.ProtocolVersion.SupportsSinglePeerConnection() {
+		se.SetDisableTransceiverReuseInRecvonly(true)
+	}
 	se.SetDTLSRetransmissionInterval(dtlsRetransmissionInterval)
 	se.SetICETimeouts(iceDisconnectedTimeout, iceFailedTimeout, iceKeepaliveInterval)
 
@@ -469,6 +472,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		params.Logger.Debugw("rtx pair found from extension", "repair", repair, "base", base)
 		params.Config.BufferFactory.SetRTXPair(repair, base)
 	}, params.Logger))
+
 	api := webrtc.NewAPI(
 		webrtc.WithMediaEngine(me),
 		webrtc.WithSettingEngine(se),

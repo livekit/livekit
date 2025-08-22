@@ -19,7 +19,6 @@ import (
 	"github.com/pion/webrtc/v4"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
@@ -119,19 +118,22 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 			PacketBufferSizeAudio: rtcConf.PacketBufferSizeAudio,
 		},
 		Publisher:  publisherConfig,
-		Subscriber: getSubscriberConfig(types.CurrentProtocol, rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE),
+		Subscriber: getSubscriberConfig(rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE),
 	}, nil
 }
 
+/* RAJA-REMOVE
 func (c *WebRTCConfig) UpdateSubscriberConfig(protocolVersion types.ProtocolVersion, ccConf config.CongestionControlConfig) {
 	c.Subscriber = getSubscriberConfig(protocolVersion, ccConf.UseSendSideBWEInterceptor || ccConf.UseSendSideBWE)
 }
+*/
 
 func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
 	c.BufferFactory = factory
 	c.SettingEngine.BufferFactory = factory.GetOrNew
 }
 
+/* RAJA-REMOVE
 func getSubscriberConfig(protocolVersion types.ProtocolVersion, enableTWCC bool) DirectionConfig {
 	if protocolVersion.SupportsSinglePeerConnection() {
 		return DirectionConfig{
@@ -168,6 +170,41 @@ func getSubscriberConfig(protocolVersion types.ProtocolVersion, enableTWCC bool)
 		}
 	}
 
+	subscriberConfig := DirectionConfig{
+		RTPHeaderExtension: RTPHeaderExtensionConfig{
+			Video: []string{
+				dd.ExtensionURI,
+				//act.AbsCaptureTimeURI,
+			},
+			Audio: []string{
+				//act.AbsCaptureTimeURI,
+			},
+		},
+		RTCPFeedback: RTCPFeedbackConfig{
+			Audio: []webrtc.RTCPFeedback{
+				// always enable NACK for audio but disable it later for red enabled transceiver. https://github.com/pion/webrtc/pull/2972
+				{Type: webrtc.TypeRTCPFBNACK},
+			},
+			Video: []webrtc.RTCPFeedback{
+				{Type: webrtc.TypeRTCPFBCCM, Parameter: "fir"},
+				{Type: webrtc.TypeRTCPFBNACK},
+				{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"},
+			},
+		},
+	}
+	if enableTWCC {
+		subscriberConfig.RTPHeaderExtension.Video = append(subscriberConfig.RTPHeaderExtension.Video, sdp.TransportCCURI)
+		subscriberConfig.RTCPFeedback.Video = append(subscriberConfig.RTCPFeedback.Video, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBTransportCC})
+	} else {
+		subscriberConfig.RTPHeaderExtension.Video = append(subscriberConfig.RTPHeaderExtension.Video, sdp.ABSSendTimeURI)
+		subscriberConfig.RTCPFeedback.Video = append(subscriberConfig.RTCPFeedback.Video, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBGoogREMB})
+	}
+
+	return subscriberConfig
+}
+*/
+
+func getSubscriberConfig(enableTWCC bool) DirectionConfig {
 	subscriberConfig := DirectionConfig{
 		RTPHeaderExtension: RTPHeaderExtensionConfig{
 			Video: []string{
