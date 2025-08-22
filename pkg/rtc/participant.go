@@ -2825,8 +2825,6 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 
 		track.(*MediaTrack).UpdateCodecInfo(req.SimulcastCodecs)
 		return track.ToProto()
-
-		// SINGLE-PEER-CONNECTION-TODO: AddRemoteTrack
 	}
 
 	backupCodecPolicy := req.BackupCodecPolicy
@@ -3355,7 +3353,6 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 
 		p.pendingTracksLock.Lock()
 		if pti := p.pendingTracks[signalCid]; pti != nil {
-			// SINGLE-PEER-CONNECTION-TODO: need to add remote track when dequeuing
 			p.sendTrackPublished(signalCid, pti.trackInfos[0])
 			pti.queued = false
 		}
