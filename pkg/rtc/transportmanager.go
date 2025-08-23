@@ -807,7 +807,13 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 	}, false)
 }
 
-func (t *TransportManager) SetMigrateInfo(previousOffer, previousAnswer *webrtc.SessionDescription, dataChannels []*livekit.DataChannelInfo) {
+func (t *TransportManager) SetMigrateInfo(
+	previousPublisherOffer *webrtc.SessionDescription,
+	previousPublisherAnswer *webrtc.SessionDescription,
+	previousSubscriberOffer *webrtc.SessionDescription,
+	previousSubscriberAnswer *webrtc.SessionDescription,
+	dataChannels []*livekit.DataChannelInfo,
+) {
 	t.lock.Lock()
 	t.pendingDataChannelsPublisher = make([]*livekit.DataChannelInfo, 0, len(dataChannels))
 	pendingDataChannelsSubscriber := make([]*livekit.DataChannelInfo, 0, len(dataChannels))
@@ -827,9 +833,9 @@ func (t *TransportManager) SetMigrateInfo(previousOffer, previousAnswer *webrtc.
 	}
 
 	if t.params.SinglePeerConnection {
-		t.publisher.SetPreviousSdp(previousOffer, previousAnswer) // SINGLE-PEER-CONNECTION-TODO: is this correct to do for single peer connection migration, this may not be needed
+		t.publisher.SetPreviousSdp(previousPublisherOffer, previousPublisherAnswer) // SINGLE-PEER-CONNECTION-TODO: is this correct to do for single peer connection migration, this may not be needed
 	} else {
-		t.subscriber.SetPreviousSdp(previousOffer, previousAnswer)
+		t.subscriber.SetPreviousSdp(previousSubscriberOffer, previousSubscriberAnswer)
 	}
 }
 

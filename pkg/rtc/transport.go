@@ -2084,19 +2084,26 @@ func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDesc
 		case "audio":
 			codecType = webrtc.RTPCodecTypeAudio
 		case "application":
-			// for pion generate unmatched sdp, it always appends data channel to last m-lines,
-			// that not consistent with our previous answer that data channel might at middle-line
-			// because sdp can negotiate multi times before migration.(it will sticky to the last m-line at first negotiate)
-			// so use a dummy pc to negotiate sdp to fixed the datachannel's mid at same position with previous answer
-			if err := t.preparePC(previousAnswer); err != nil {
-				t.params.Logger.Warnw("prepare pc for migration failed", err)
-				return senders, err
+			if t.params.IsOfferer {
+				// for pion generate unmatched sdp, it always appends data channel to last m-lines,
+				// that not consistent with our previous answer that data channel might at middle-line
+				// because sdp can negotiate multi times before migration.(it will sticky to the last m-line at first negotiate)
+				// so use a dummy pc to negotiate sdp to fixed the datachannel's mid at same position with previous answer
+				if err := t.preparePC(previousAnswer); err != nil {
+					t.params.Logger.Warnw("prepare pc for migration failed", err)
+					return senders, err
+				}
 			}
 			continue
 		default:
 			continue
 		}
-		tr, err := t.pc.AddTransceiverFromKind(codecType, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly})
+		tr, err := t.pc.AddTransceiverFromKind(
+			codecType,
+			webrtc.RTPTransceiverInit{
+				Direction: webrtc.RTPTransceiverDirectionSendonly,
+			},
+		)
 		if err != nil {
 			return senders, err
 		}
@@ -2125,7 +2132,9 @@ func (t *PCTransport) SetPreviousSdp(offer, answer *webrtc.SessionDescription) {
 
 	t.lock.Lock()
 	if t.pc.RemoteDescription() == nil && t.previousAnswer == nil {
-		t.previousAnswer = answer
+		if t.params.IsOfferer {
+			t.previousAnswer = answer
+		}
 		if senders, err := t.initPCWithPreviousAnswer(*t.previousAnswer); err != nil {
 			t.lock.Unlock()
 
@@ -2146,8 +2155,8 @@ func (t *PCTransport) SetPreviousSdp(offer, answer *webrtc.SessionDescription) {
 	t.lock.Unlock()
 }
 
-func (t *PCTransport) parseTrackMid(offer webrtc.SessionDescription, senders map[string]*webrtc.RTPSender) error {
-	parsed, err := offer.Unmarshal()
+func (t *PCTransport) parseTrackMid(sd webrtc.SessionDescription, senders map[string]*webrtc.RTPSender) error {
+	parsed, err := sd.Unmarshal()
 	if err != nil {
 		return err
 	}
@@ -2652,6 +2661,11 @@ func (t *PCTransport) createAndSendAnswer() error {
 
 	if err := t.sendUnmatchedMediaRequirement(false); err != nil {
 		return err
+	}
+
+	if !t.canReuseTransceiver {
+		t.canReuseTransceiver = true
+		t.previousTrackDescription = make(map[string]*trackDescription)
 	}
 
 	return t.localDescriptionSent()

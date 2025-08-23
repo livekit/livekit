@@ -490,7 +490,10 @@ type LocalParticipant interface {
 	SetMigrateState(s MigrateState)
 	MigrateState() MigrateState
 	SetMigrateInfo(
-		previousOffer, previousAnswer *webrtc.SessionDescription,
+		previousPublisherffer *webrtc.SessionDescription,
+		previousPublisherAnswer *webrtc.SessionDescription,
+		previousSubcriberOffer *webrtc.SessionDescription,
+		previousSubscriberAnswer *webrtc.SessionDescription,
 		mediaTracks []*livekit.TrackPublishedResponse,
 		dataChannels []*livekit.DataChannelInfo,
 		dataChannelReceiveState []*livekit.DataChannelReceiveState,
