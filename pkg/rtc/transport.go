@@ -299,7 +299,6 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	// Some of the browser clients do not handle H.264 High Profile in signalling properly.
 	// They still decode if the actual stream is H.264 High Profile, but do not handle it well in signalling.
 	// So, disable H.264 High Profile for SUBSCRIBER peer connection to ensure it is not offered.
-	// SINGLE-PEER-CONNECTION-TODO: need to filter out H.264 high profile in subscriber track m-lines
 	me, err := createMediaEngine(params.EnabledCodecs, directionConfig, params.IsOfferer)
 	if err != nil {
 		return nil, nil, err
@@ -912,7 +911,12 @@ func (t *PCTransport) AddICECandidate(candidate webrtc.ICECandidateInit) {
 	})
 }
 
-func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal, params types.AddTrackParams) (sender *webrtc.RTPSender, transceiver *webrtc.RTPTransceiver, err error) {
+func (t *PCTransport) AddTrack(
+	trackLocal webrtc.TrackLocal,
+	params types.AddTrackParams,
+	enabledCodecs []*livekit.Codec,
+	rtcpFeedbackConfig RTCPFeedbackConfig,
+) (sender *webrtc.RTPSender, transceiver *webrtc.RTPTransceiver, err error) {
 	t.lock.Lock()
 	canReuse := t.canReuseTransceiver
 	td, ok := t.previousTrackDescription[trackLocal.ID()]
@@ -923,8 +927,10 @@ func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal, params types.AddTra
 
 	// keep track use same mid after migration if possible
 	if td != nil && td.sender != nil {
+		t.params.Logger.Infow("RAJA trying to re-use", "mid", td.mid, "trackID", trackLocal.ID()) // REMOVE
 		for _, tr := range t.pc.GetTransceivers() {
 			if tr.Mid() == td.mid {
+				t.params.Logger.Infow("RAJA re-using mid", "mid", td.mid, "trackID", trackLocal.ID()) // REMOVE
 				return td.sender, tr, tr.SetSender(td.sender, trackLocal)
 			}
 		}
@@ -932,7 +938,7 @@ func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal, params types.AddTra
 
 	// if never negotiated with client, can't reuse transceiver for track not subscribed before migration
 	if !canReuse {
-		return t.AddTransceiverFromTrack(trackLocal, params)
+		return t.AddTransceiverFromTrack(trackLocal, params, enabledCodecs, rtcpFeedbackConfig)
 	}
 
 	sender, err = t.pc.AddTrack(trackLocal)
@@ -955,10 +961,16 @@ func (t *PCTransport) AddTrack(trackLocal webrtc.TrackLocal, params types.AddTra
 	if trackLocal.Kind() == webrtc.RTPCodecTypeAudio {
 		configureAudioTransceiver(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
 	}
+	configureTransceiverCodecs(transceiver, enabledCodecs, rtcpFeedbackConfig, !t.params.IsOfferer)
 	return
 }
 
-func (t *PCTransport) AddTransceiverFromTrack(trackLocal webrtc.TrackLocal, params types.AddTrackParams) (sender *webrtc.RTPSender, transceiver *webrtc.RTPTransceiver, err error) {
+func (t *PCTransport) AddTransceiverFromTrack(
+	trackLocal webrtc.TrackLocal,
+	params types.AddTrackParams,
+	enabledCodecs []*livekit.Codec,
+	rtcpFeedbackConfig RTCPFeedbackConfig,
+) (sender *webrtc.RTPSender, transceiver *webrtc.RTPTransceiver, err error) {
 	transceiver, err = t.pc.AddTransceiverFromTrack(trackLocal)
 	if err != nil {
 		return
@@ -973,7 +985,7 @@ func (t *PCTransport) AddTransceiverFromTrack(trackLocal webrtc.TrackLocal, para
 	if trackLocal.Kind() == webrtc.RTPCodecTypeAudio {
 		configureAudioTransceiver(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
 	}
-
+	configureTransceiverCodecs(transceiver, enabledCodecs, rtcpFeedbackConfig, !t.params.IsOfferer)
 	return
 }
 
@@ -2070,9 +2082,9 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 	return t.pc.SetRemoteDescription(ans)
 }
 
-func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDescription) (map[string]*webrtc.RTPSender, error) {
+func (t *PCTransport) initPCWithPreviousRemoteDescription(previousRemoteDescription webrtc.SessionDescription) (map[string]*webrtc.RTPSender, error) {
 	senders := make(map[string]*webrtc.RTPSender)
-	parsed, err := previousAnswer.Unmarshal()
+	parsed, err := previousRemoteDescription.Unmarshal()
 	if err != nil {
 		return senders, err
 	}
@@ -2089,7 +2101,7 @@ func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDesc
 				// that not consistent with our previous answer that data channel might at middle-line
 				// because sdp can negotiate multi times before migration.(it will sticky to the last m-line at first negotiate)
 				// so use a dummy pc to negotiate sdp to fixed the datachannel's mid at same position with previous answer
-				if err := t.preparePC(previousAnswer); err != nil {
+				if err := t.preparePC(previousRemoteDescription); err != nil {
 					t.params.Logger.Warnw("prepare pc for migration failed", err)
 					return senders, err
 				}
@@ -2098,6 +2110,13 @@ func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDesc
 		default:
 			continue
 		}
+
+		_, ok1 := m.Attribute(webrtc.RTPTransceiverDirectionSendrecv.String())
+		_, ok2 := m.Attribute(webrtc.RTPTransceiverDirectionRecvonly.String())
+		if !ok1 && !ok2 {
+			continue
+		}
+
 		tr, err := t.pc.AddTransceiverFromKind(
 			codecType,
 			webrtc.RTPTransceiverInit{
@@ -2118,36 +2137,41 @@ func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDesc
 		senders[mid] = sender
 
 		// set transceiver to inactive
-		tr.SetSender(tr.Sender(), nil)
+		tr.SetSender(sender, nil)
+		t.params.Logger.Infow("RAJA added transceiver", "mid", mid, "sender", sender) // REMOVE
 	}
 	return senders, nil
 }
 
-func (t *PCTransport) SetPreviousSdp(offer, answer *webrtc.SessionDescription) {
-	// when there is no previous answer, cannot migrate, force a full reconnect
-	if answer == nil {
-		t.onNegotiationFailed(true, "no previous answer")
+func (t *PCTransport) SetPreviousSdp(localDescription, remoteDescription *webrtc.SessionDescription) {
+	// when there is no remote description, cannot migrate, force a full reconnect
+	if remoteDescription == nil {
+		t.onNegotiationFailed(true, "no previous remote description")
 		return
 	}
 
 	t.lock.Lock()
 	if t.pc.RemoteDescription() == nil && t.previousAnswer == nil {
 		if t.params.IsOfferer {
-			t.previousAnswer = answer
+			t.previousAnswer = remoteDescription
 		}
-		if senders, err := t.initPCWithPreviousAnswer(*t.previousAnswer); err != nil {
+		if senders, err := t.initPCWithPreviousRemoteDescription(*remoteDescription); err != nil {
 			t.lock.Unlock()
 
 			t.onNegotiationFailed(true, fmt.Sprintf("initPCWithPreviousAnswer failed, error: %s", err))
 			return
-		} else if offer != nil {
+		} else if localDescription != nil {
 			// in migration case, can't reuse transceiver before negotiated except track subscribed at previous node
 			t.canReuseTransceiver = false
-			if err := t.parseTrackMid(*offer, senders); err != nil {
-				t.params.Logger.Warnw("parse previous offer failed", err, "offer", offer.SDP)
+			if err := t.parseTrackMid(*localDescription, senders); err != nil {
+				t.params.Logger.Warnw(
+					"parse previous local description failed", err,
+					"localDescription", localDescription.SDP,
+				)
 			}
 		}
 	}
+	// SINGLE-PEER-CONNECTION-TODO: how does transceiver re-use happen in single peer connection case
 	// disable fast negotiation temporarily after migration to avoid sending offer
 	// contains part of subscribed tracks before migration, let the subscribed track
 	// resume at the same time.
@@ -2174,9 +2198,9 @@ func (t *PCTransport) parseTrackMid(sd webrtc.SessionDescription, senders map[st
 			if mid == "" {
 				return ErrMidNotFound
 			}
-			t.previousTrackDescription[trackID] = &trackDescription{
-				mid:    mid,
-				sender: senders[mid],
+			if sender, ok := senders[mid]; ok {
+				t.params.Logger.Infow("RAJA storing mid", "mid", mid, "trackID", trackID) // REMOVE
+				t.previousTrackDescription[trackID] = &trackDescription{mid, sender}
 			}
 		}
 	}
@@ -2930,6 +2954,36 @@ func configureAudioTransceiver(tr *webrtc.RTPTransceiver, stereo bool, nack bool
 	}
 
 	tr.SetCodecPreferences(configCodecs)
+}
+
+// In single peer connection mode, set up enebled codecs,
+// the config provides config of direction, for publisher peer connection, it is publish enabled codecs
+// and for subscriber peer connection, it is subscribe enabled codecs.
+//
+// But, in single peer connection mode, if setting up a transceiver where the media is
+// flowing in the other direction, the other direction codec config needs to be set.
+func configureTransceiverCodecs(
+	tr *webrtc.RTPTransceiver,
+	enabledCodecs []*livekit.Codec,
+	rtcpFeedbackConfig RTCPFeedbackConfig,
+	filterOutH264HighProfile bool,
+) {
+	if len(enabledCodecs) == 0 {
+		return
+	}
+
+	sender := tr.Sender()
+	if sender == nil {
+		return
+	}
+
+	filteredCodecs := filterCodecs(
+		sender.GetParameters().Codecs,
+		enabledCodecs,
+		rtcpFeedbackConfig,
+		filterOutH264HighProfile,
+	)
+	tr.SetCodecPreferences(filteredCodecs)
 }
 
 func nonSimulcastRTXRepairsFromSDP(s *sdp.SessionDescription, logger logger.Logger) map[uint32]uint32 {

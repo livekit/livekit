@@ -271,3 +271,47 @@ func selectAlternativeAudioCodec(enabledCodecs []*livekit.Codec) string {
 	// no viable codec in the list of enabled codecs, fall back to the most widely supported codec
 	return mime.MimeTypeOpus.String()
 }
+
+func filterCodecs(
+	codecs []webrtc.RTPCodecParameters,
+	enabledCodecs []*livekit.Codec,
+	rtcpFeedbackConfig RTCPFeedbackConfig,
+	filterOutH264HighProfile bool,
+) []webrtc.RTPCodecParameters {
+	filteredCodecs := make([]webrtc.RTPCodecParameters, 0, len(codecs))
+	for _, c := range codecs {
+		if filterOutH264HighProfile && isH264HighProfile(c.RTPCodecCapability.SDPFmtpLine) {
+			continue
+		}
+
+		for _, enabledCodec := range enabledCodecs {
+			if mime.NormalizeMimeType(enabledCodec.Mime) == mime.NormalizeMimeType(c.RTPCodecCapability.MimeType) {
+				// SINGLE-PEER-CONNECTION-TOOD: remove `nack` for RED?
+				if mime.IsMimeTypeStringVideo(c.RTPCodecCapability.MimeType) {
+					c.RTPCodecCapability.RTCPFeedback = rtcpFeedbackConfig.Video
+				} else {
+					c.RTPCodecCapability.RTCPFeedback = rtcpFeedbackConfig.Audio
+				}
+				filteredCodecs = append(filteredCodecs, c)
+				break
+			}
+		}
+	}
+	return filteredCodecs
+}
+
+func isH264HighProfile(fmtp string) bool {
+	params := strings.Split(fmtp, ";")
+	for _, param := range params {
+		parts := strings.Split(param, "=")
+		if len(parts) == 2 {
+			if parts[0] == "profile-level-id" {
+				// https://datatracker.ietf.org/doc/html/rfc6184#section-8.1
+				// hex value 0x64 for profile_idc is high profile
+				return strings.HasPrefix(parts[1], "64")
+			}
+		}
+	}
+
+	return false
+}

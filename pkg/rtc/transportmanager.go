@@ -258,22 +258,26 @@ func (t *TransportManager) HasSubscriberEverConnected() bool {
 func (t *TransportManager) AddTrackLocal(
 	trackLocal webrtc.TrackLocal,
 	params types.AddTrackParams,
+	enabledCodecs []*livekit.Codec,
+	rtcpFeedbackConfig RTCPFeedbackConfig,
 ) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
 	if t.params.UseOneShotSignallingMode || t.params.SinglePeerConnection {
-		return t.publisher.AddTrack(trackLocal, params)
+		return t.publisher.AddTrack(trackLocal, params, enabledCodecs, rtcpFeedbackConfig)
 	} else {
-		return t.subscriber.AddTrack(trackLocal, params)
+		return t.subscriber.AddTrack(trackLocal, params, enabledCodecs, rtcpFeedbackConfig)
 	}
 }
 
 func (t *TransportManager) AddTransceiverFromTrackLocal(
 	trackLocal webrtc.TrackLocal,
 	params types.AddTrackParams,
+	enabledCodecs []*livekit.Codec,
+	rtcpFeedbackConfig RTCPFeedbackConfig,
 ) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
 	if t.params.UseOneShotSignallingMode || t.params.SinglePeerConnection {
-		return t.publisher.AddTransceiverFromTrack(trackLocal, params)
+		return t.publisher.AddTransceiverFromTrack(trackLocal, params, enabledCodecs, rtcpFeedbackConfig)
 	} else {
-		return t.subscriber.AddTransceiverFromTrack(trackLocal, params)
+		return t.subscriber.AddTransceiverFromTrack(trackLocal, params, enabledCodecs, rtcpFeedbackConfig)
 	}
 }
 
@@ -427,8 +431,6 @@ func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels [
 	return nil
 }
 
-// SINGLE-PEER-CONNECTION-TODO: this needs to check only for publish tracks unmatched,
-// this could have unmatched slots meant for subscribed tracks in single peer connection mode
 func (t *TransportManager) GetUnmatchMediaForOffer(parsedOffer *sdp.SessionDescription, mediaType string) (unmatched []*sdp.MediaDescription, err error) {
 	var lastMatchedMid string
 	if lastAnswer := t.publisher.CurrentLocalDescription(); lastAnswer != nil {
@@ -833,7 +835,7 @@ func (t *TransportManager) SetMigrateInfo(
 	}
 
 	if t.params.SinglePeerConnection {
-		t.publisher.SetPreviousSdp(previousPublisherOffer, previousPublisherAnswer) // SINGLE-PEER-CONNECTION-TODO: is this correct to do for single peer connection migration, this may not be needed
+		t.publisher.SetPreviousSdp(previousPublisherAnswer, previousPublisherOffer)
 	} else {
 		t.subscriber.SetPreviousSdp(previousSubscriberOffer, previousSubscriberAnswer)
 	}

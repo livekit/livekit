@@ -1571,6 +1571,10 @@ func (p *ParticipantImpl) clearMigrationTimer() {
 }
 
 func (p *ParticipantImpl) setupMigrationTimerLocked() {
+	if p.ProtocolVersion().SupportsSinglePeerConnection() {
+		return
+	}
+
 	//
 	// On subscriber peer connection, remote side will try ICE on both
 	// pre- and post-migration ICE candidates as the migrating out
@@ -3933,9 +3937,9 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 	p.enabledSubscribeCodecs = subscribeCodecs
 	p.params.Logger.Debugw(
 		"setup enabled codecs",
-		"publish", p.enabledPublishCodecs,
-		"subscribe", p.enabledSubscribeCodecs,
-		"disabled", disabledCodecs,
+		"publish", logger.ProtoSlice(p.enabledPublishCodecs),
+		"subscribe", logger.ProtoSlice(p.enabledSubscribeCodecs),
+		"disabled", logger.Proto(disabledCodecs),
 	)
 }
 
@@ -3968,6 +3972,7 @@ func (p *ParticipantImpl) GetEnabledPublishCodecs() []*livekit.Codec {
 	return codecs
 }
 
+/* RAJA-REMOVE
 func (p *ParticipantImpl) getDisabledPublishCodecs() []*livekit.Codec {
 	var codecs []*livekit.Codec
 	for _, c := range p.params.ClientConf.GetDisabledCodecs().GetCodecs() {
@@ -3996,6 +4001,7 @@ func (p *ParticipantImpl) getDisabledPublishCodecs() []*livekit.Codec {
 	}
 	return codecs
 }
+*/
 
 func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack) error {
 	if track := p.UpTrackManager.UpdatePublishedAudioTrack(update); track != nil {
@@ -4185,4 +4191,41 @@ func (p *ParticipantImpl) HandleLeaveRequest(reason types.ParticipantCloseReason
 
 func (p *ParticipantImpl) HandleSignalMessage(msg proto.Message) error {
 	return p.signalHandler.HandleMessage(msg)
+}
+
+func (p *ParticipantImpl) AddTrackLocal(
+	trackLocal webrtc.TrackLocal,
+	params types.AddTrackParams,
+) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
+	if p.params.ProtocolVersion.SupportsSinglePeerConnection() {
+		return p.TransportManager.AddTrackLocal(
+			trackLocal,
+			params,
+			p.enabledSubscribeCodecs,
+			p.params.Config.Subscriber.RTCPFeedback,
+		)
+	} else {
+		return p.TransportManager.AddTrackLocal(trackLocal, params, nil, RTCPFeedbackConfig{})
+	}
+}
+
+func (p *ParticipantImpl) AddTransceiverFromTrackLocal(
+	trackLocal webrtc.TrackLocal,
+	params types.AddTrackParams,
+) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
+	if p.params.ProtocolVersion.SupportsSinglePeerConnection() {
+		return p.TransportManager.AddTransceiverFromTrackLocal(
+			trackLocal,
+			params,
+			p.enabledSubscribeCodecs,
+			p.params.Config.Subscriber.RTCPFeedback,
+		)
+	} else {
+		return p.TransportManager.AddTransceiverFromTrackLocal(
+			trackLocal,
+			params,
+			nil,
+			RTCPFeedbackConfig{},
+		)
+	}
 }
