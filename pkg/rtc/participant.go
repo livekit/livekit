@@ -1868,10 +1868,6 @@ func (h SubscriberTransportHandler) OnOffer(sd webrtc.SessionDescription, offerI
 	return h.p.onSubscriberOffer(sd, offerId)
 }
 
-func (h SubscriberTransportHandler) OnTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {
-	h.p.onMediaTrack(track, rtpReceiver)
-}
-
 func (h SubscriberTransportHandler) OnStreamStateChange(update *streamallocator.StreamStateUpdate) error {
 	return h.p.onStreamStateChange(update)
 }
