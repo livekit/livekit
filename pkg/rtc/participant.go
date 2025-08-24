@@ -3407,24 +3407,6 @@ func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.Media
 	return nil
 }
 
-func (p *ParticipantImpl) getPublishedTrackPendingMid() types.MediaTrack {
-	for _, publishedTrack := range p.GetPublishedTracks() {
-		ti := publishedTrack.ToProto()
-		for _, c := range ti.Codecs {
-			if c.Mid == "" && c.Cid != "" {
-				p.pubLogger.Debugw(
-					"found track pending mid",
-					"trackID", publishedTrack.ID(),
-					"track", logger.Proto(publishedTrack.ToProto()),
-				)
-				return publishedTrack
-			}
-		}
-	}
-
-	return nil
-}
-
 func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 	info := map[string]interface{}{
 		"ID":    p.ID(),

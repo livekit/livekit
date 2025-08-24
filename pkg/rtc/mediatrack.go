@@ -221,16 +221,6 @@ func (t *MediaTrack) GetMimeTypeForSdpCid(cid string) mime.MimeType {
 	return mime.MimeTypeUnknown
 }
 
-func (t *MediaTrack) GetMimeTypeForMid(mid string) mime.MimeType {
-	ti := t.MediaTrackReceiver.TrackInfoClone()
-	for _, c := range ti.Codecs {
-		if c.Mid == mid {
-			return mime.NormalizeMimeType(c.MimeType)
-		}
-	}
-	return mime.MimeTypeUnknown
-}
-
 func (t *MediaTrack) GetCidsForMimeType(mimeType mime.MimeType) (string, string) {
 	ti := t.MediaTrackReceiver.TrackInfoClone()
 	for _, c := range ti.Codecs {
