@@ -660,65 +660,11 @@ func TestDeviceCodecOverride(t *testing.T) {
 			defer c1.Stop()
 			waitUntilConnected(t, c1)
 
-			/* RAJA-REMOVE
-			err := c1.AddTransceiverOfKind(webrtc.RTPCodecTypeVideo)
-			require.NoError(t, err)
-
-			var sd *webrtc.SessionDescription
-			// wait for server to receive track
-			if !c1.ProtocolVersion().SupportsSinglePeerConnection() {
-				require.Eventually(t, func() bool {
-					return c1.LastAnswer() != nil
-				}, waitTimeout, waitTick, "did not receive answer")
-
-				sd = &webrtc.SessionDescription{
-					Type: webrtc.SDPTypeAnswer,
-					SDP:  c1.LastAnswer().SDP,
-				}
-			} else {
-				require.Eventually(t, func() bool {
-					return c1.LastOffer() != nil
-				}, waitTimeout, waitTick, "did not receive offer")
-
-				sd = &webrtc.SessionDescription{
-					Type: webrtc.SDPTypeOffer,
-					SDP:  c1.LastOffer().SDP,
-				}
-			}
-			unmarshaled, err := sd.Unmarshal()
-			require.NoError(t, err)
-
-			// video and data channel
-			require.Len(t, unmarshaled.MediaDescriptions, 2)
-			var desc *sdp.MediaDescription
-			for _, md := range unmarshaled.MediaDescriptions {
-				if md.MediaName.Media == "video" {
-					desc = md
-					break
-				}
-			}
-			*/
 			// it doesn't really matter what the codec set here is, uses default Pion MediaEngine codecs
 			tw, err := c1.AddStaticTrack("video/h264", "video", "webcam")
 			require.NoError(t, err)
 			defer stopWriters(tw)
 
-			// wait for server to receive track
-			/* RAJA-REMOVE
-			require.Eventually(t, func() bool {
-				return c1.LastAnswer() != nil
-			}, waitTimeout, waitTick, "did not receive answer")
-
-			sd := webrtc.SessionDescription{
-				Type: webrtc.SDPTypeAnswer,
-				SDP:  c1.LastAnswer().SDP,
-			}
-			answer, err := sd.Unmarshal()
-			require.NoError(t, err)
-
-			// video and data channel
-			require.Len(t, answer.MediaDescriptions, 2)
-			*/
 			var desc *sdp.MediaDescription
 			require.Eventually(t, func() bool {
 				lastAnswer := c1.LastAnswer()

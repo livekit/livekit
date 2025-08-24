@@ -80,40 +80,6 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 		rtcConf.PacketBufferSizeAudio = rtcConf.PacketBufferSize
 	}
 
-	/* RAJA-REMOVE
-	// publisher configuration
-	publisherConfig := DirectionConfig{
-		RTPHeaderExtension: RTPHeaderExtensionConfig{
-			Audio: []string{
-				sdp.SDESMidURI,
-				sdp.SDESRTPStreamIDURI,
-				sdp.AudioLevelURI,
-				//act.AbsCaptureTimeURI,
-			},
-			Video: []string{
-				sdp.SDESMidURI,
-				sdp.SDESRTPStreamIDURI,
-				sdp.TransportCCURI,
-				frameMarkingURI,
-				dd.ExtensionURI,
-				repairedRTPStreamIDURI,
-				//act.AbsCaptureTimeURI,
-			},
-		},
-		RTCPFeedback: RTCPFeedbackConfig{
-			Audio: []webrtc.RTCPFeedback{
-				{Type: webrtc.TypeRTCPFBNACK},
-			},
-			Video: []webrtc.RTCPFeedback{
-				{Type: webrtc.TypeRTCPFBTransportCC},
-				{Type: webrtc.TypeRTCPFBCCM, Parameter: "fir"},
-				{Type: webrtc.TypeRTCPFBNACK},
-				{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"},
-			},
-		},
-	}
-	*/
-
 	return &WebRTCConfig{
 		WebRTCConfig: *webRTCConfig,
 		Receiver: ReceiverConfig{
@@ -137,77 +103,6 @@ func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
 	c.BufferFactory = factory
 	c.SettingEngine.BufferFactory = factory.GetOrNew
 }
-
-/* RAJA-REMOVE
-func getSubscriberConfig(protocolVersion types.ProtocolVersion, enableTWCC bool) DirectionConfig {
-	if protocolVersion.SupportsSinglePeerConnection() {
-		return DirectionConfig{
-			RTPHeaderExtension: RTPHeaderExtensionConfig{
-				Audio: []string{
-					sdp.SDESMidURI,
-					sdp.SDESRTPStreamIDURI,
-					sdp.AudioLevelURI,
-					//act.AbsCaptureTimeURI,
-				},
-				Video: []string{
-					sdp.SDESMidURI,
-					sdp.SDESRTPStreamIDURI,
-					sdp.TransportCCURI,
-					sdp.ABSSendTimeURI,
-					frameMarkingURI,
-					dd.ExtensionURI,
-					repairedRTPStreamIDURI,
-					//act.AbsCaptureTimeURI,
-				},
-			},
-			RTCPFeedback: RTCPFeedbackConfig{
-				Audio: []webrtc.RTCPFeedback{
-					{Type: webrtc.TypeRTCPFBNACK},
-				},
-				Video: []webrtc.RTCPFeedback{
-					{Type: webrtc.TypeRTCPFBTransportCC},
-					{Type: webrtc.TypeRTCPFBGoogREMB},
-					{Type: webrtc.TypeRTCPFBCCM, Parameter: "fir"},
-					{Type: webrtc.TypeRTCPFBNACK},
-					{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"},
-				},
-			},
-		}
-	}
-
-	subscriberConfig := DirectionConfig{
-		RTPHeaderExtension: RTPHeaderExtensionConfig{
-			Video: []string{
-				dd.ExtensionURI,
-				//act.AbsCaptureTimeURI,
-			},
-			Audio: []string{
-				//act.AbsCaptureTimeURI,
-			},
-		},
-		RTCPFeedback: RTCPFeedbackConfig{
-			Audio: []webrtc.RTCPFeedback{
-				// always enable NACK for audio but disable it later for red enabled transceiver. https://github.com/pion/webrtc/pull/2972
-				{Type: webrtc.TypeRTCPFBNACK},
-			},
-			Video: []webrtc.RTCPFeedback{
-				{Type: webrtc.TypeRTCPFBCCM, Parameter: "fir"},
-				{Type: webrtc.TypeRTCPFBNACK},
-				{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"},
-			},
-		},
-	}
-	if enableTWCC {
-		subscriberConfig.RTPHeaderExtension.Video = append(subscriberConfig.RTPHeaderExtension.Video, sdp.TransportCCURI)
-		subscriberConfig.RTCPFeedback.Video = append(subscriberConfig.RTCPFeedback.Video, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBTransportCC})
-	} else {
-		subscriberConfig.RTPHeaderExtension.Video = append(subscriberConfig.RTPHeaderExtension.Video, sdp.ABSSendTimeURI)
-		subscriberConfig.RTCPFeedback.Video = append(subscriberConfig.RTCPFeedback.Video, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBGoogREMB})
-	}
-
-	return subscriberConfig
-}
-*/
 
 func getPublisherConfig(protocolVersion types.ProtocolVersion) DirectionConfig {
 	if protocolVersion.SupportsSinglePeerConnection() {

@@ -143,9 +143,9 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		ProtocolVersion:              params.ProtocolVersion,
 		Config:                       params.Config,
 		Twcc:                         params.Twcc,
-		DirectionConfig:              params.Config.Publisher, // SINGLE-PEER-CONNECTION-TODO: probably need to do union of publisher and subscriber config
+		DirectionConfig:              params.Config.Publisher,
 		CongestionControlConfig:      params.CongestionControlConfig,
-		EnabledCodecs:                params.EnabledPublishCodecs, // SINGLE-PEER-CONNECTION-TODO: probably need to do union of publisher and subscriber config
+		EnabledCodecs:                params.EnabledPublishCodecs,
 		Logger:                       lgr,
 		SimTracks:                    params.SimTracks,
 		ClientInfo:                   params.ClientInfo,
@@ -230,11 +230,6 @@ func (t *TransportManager) GetPublisherRTPReceiver(mid string) *webrtc.RTPReceiv
 	return t.publisher.GetRTPReceiver(mid)
 }
 
-// RAJA-TODO: is this needed?
-func (t *TransportManager) GetPublisherRTPTransceiverDirection(mid string) webrtc.RTPTransceiverDirection {
-	return t.publisher.GetRTPTransceiverDirection(mid)
-}
-
 func (t *TransportManager) WritePublisherRTCP(pkts []rtcp.Packet) error {
 	return t.publisher.WriteRTCP(pkts)
 }
@@ -280,16 +275,6 @@ func (t *TransportManager) AddTransceiverFromTrackLocal(
 		return t.subscriber.AddTransceiverFromTrack(trackLocal, params, enabledCodecs, rtcpFeedbackConfig)
 	}
 }
-
-/* RAJA-REMOVE
-func (t *TransportManager) AddRemoteTrackAndNegotiate(
-	ti *livekit.TrackInfo,
-	publishDisabledCodecs []*livekit.Codec,
-	rtcpFeedbackConfig RTCPFeedbackConfig,
-) error {
-	return t.subscriber.AddRemoteTrackAndNegotiate(ti, publishDisabledCodecs, rtcpFeedbackConfig)
-}
-*/
 
 func (t *TransportManager) RemoveTrackLocal(sender *webrtc.RTPSender) error {
 	if t.params.UseOneShotSignallingMode || t.params.SinglePeerConnection {

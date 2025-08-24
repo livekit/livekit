@@ -41,7 +41,7 @@ require (
 	github.com/pion/sdp/v3 v3.0.15
 	github.com/pion/transport/v3 v3.0.7
 	github.com/pion/turn/v4 v4.1.1
-	github.com/pion/webrtc/v4 v4.1.4-0.20250821130658-8efd17e592a9
+	github.com/pion/webrtc/v4 v4.1.5-0.20250824161441-469ca2cf1b8e
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.23.0
 	github.com/redis/go-redis/v9 v9.12.1
@@ -146,5 +146,3 @@ require (
 )
 
 replace github.com/livekit/protocol => ../protocol
-
-replace github.com/pion/webrtc/v4 => ../webrtc

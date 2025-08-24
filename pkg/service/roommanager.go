@@ -417,7 +417,6 @@ func (r *RoomManager) StartSession(
 		rtcConf.SettingEngine.SetLite(false)
 	}
 	rtcConf.UpdatePublisherConfig(pv)
-	// RAJA-REMOVE rtcConf.UpdateSubscriberConfig(pv, r.config.RTC.CongestionControl)
 
 	// default allow forceTCP
 	allowFallback := true

@@ -733,7 +733,7 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string, 
 		trackType = livekit.TrackType_VIDEO
 	}
 
-	sender, _, err := c.publisher.AddTrack(track, types.AddTrackParams{})
+	sender, _, err := c.publisher.AddTrack(track, types.AddTrackParams{}, nil, rtc.RTCPFeedbackConfig{})
 	if err != nil {
 		logger.Errorw(
 			"add track failed", err,
@@ -826,40 +826,6 @@ func (c *RTCClient) AddFileTrack(path string, id string, label string) (writer *
 	return c.AddTrack(track, path)
 }
 
-/* RAJA-REMOVE
-// RAJA-TODO: check if this is needed
-func (c *RTCClient) AddTransceiverOfKind(kind webrtc.RTPCodecType) error {
-	pc := c.publisher
-	if c.protocolVersion.SupportsSinglePeerConnection() {
-		pc = c.subscriber
-	}
-	if _, err := pc.AddTransceiverFromKind(
-		kind,
-		webrtc.RTPTransceiverInit{
-			Direction: webrtc.RTPTransceiverDirectionSendrecv,
-		},
-	); err != nil {
-		return err
-	}
-
-	// send AddTrackRequest with some mock parameters to trigger a negotiation
-	mimeType := "video/vp8"
-	trackType := livekit.TrackType_VIDEO
-	if kind == webrtc.RTPCodecTypeAudio {
-		mimeType = "audio/opus"
-		trackType = livekit.TrackType_AUDIO
-	}
-	if err := c.SendAddTrack(kind.String(), mimeType, kind.String(), trackType); err != nil {
-		return err
-	}
-
-	if !c.protocolVersion.SupportsSinglePeerConnection() {
-		c.publisher.Negotiate(false)
-	}
-	return nil
-}
-*/
-
 // send AddTrack command to server to initiate server-side negotiation
 func (c *RTCClient) SendAddTrack(cid string, mimeType string, name string, trackType livekit.TrackType) error {
 	return c.SendRequest(&livekit.SignalRequest{
@@ -913,13 +879,6 @@ func (c *RTCClient) GetPublishedTrackIDs() []string {
 	}
 	return trackIDs
 }
-
-/* RAJA-REMOVE
-// LastOffer return SDP of the last offer for the subscriber connection
-func (c *RTCClient) LastOffer() *webrtc.SessionDescription {
-	return c.subscriber.CurrentRemoteDescription()
-}
-*/
 
 // LastAnswer return SDP of the last answer for the publisher connection
 func (c *RTCClient) LastAnswer() *webrtc.SessionDescription {
@@ -1061,30 +1020,6 @@ func (c *RTCClient) processRemoteTrack(track *webrtc.TrackRemote) {
 		c.lock.Unlock()
 		return
 	}
-	/* RAJA-REMOVE
-	startTime := time.Now()
-	streamID := ""
-	for streamID == "" {
-		streamID = track.StreamID()
-		if streamID != "" {
-			break
-		}
-		if time.Since(startTime) > 15*time.Second {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if streamID == "" {
-		logger.Infow(
-			"client aborted track",
-			"participant", c.localParticipant.Identity,
-			"pID", c.ID(),
-			"codec", track.Codec(),
-			"ssrc", track.SSRC(),
-		)
-		return
-	}
-	*/
 
 	publisherID, trackID := rtc.UnpackStreamID(streamID)
 	if trackID == "" {

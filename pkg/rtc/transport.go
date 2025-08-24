@@ -101,7 +101,6 @@ var (
 	ErrNoBundleMid                       = errors.New("could not get bundle mid")
 	ErrMidMismatch                       = errors.New("media mid does not match bundle mid")
 	ErrICECredentialMismatch             = errors.New("ice credential mismatch")
-	// RAJA-REMOVE ErrUnsupportedRemoteTrackType        = errors.New("unsupported remote track type")
 )
 
 // -------------------------------------------------------------------------
@@ -478,7 +477,6 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		webrtc.WithInterceptorRegistry(ir),
 	)
 	pc, err := api.NewPeerConnection(params.Config.Configuration)
-	fmt.Printf("RAJA pc: %p, identity: %s\n", pc, params.Identity) // REMOVE
 	return pc, me, err
 }
 
@@ -927,10 +925,8 @@ func (t *PCTransport) AddTrack(
 
 	// keep track use same mid after migration if possible
 	if td != nil && td.sender != nil {
-		t.params.Logger.Infow("RAJA trying to re-use", "mid", td.mid, "trackID", trackLocal.ID()) // REMOVE
 		for _, tr := range t.pc.GetTransceivers() {
 			if tr.Mid() == td.mid {
-				t.params.Logger.Infow("RAJA re-using mid", "mid", td.mid, "trackID", trackLocal.ID()) // REMOVE
 				return td.sender, tr, tr.SetSender(td.sender, trackLocal)
 			}
 		}
@@ -996,153 +992,6 @@ func (t *PCTransport) AddTransceiverFromKind(
 	return t.pc.AddTransceiverFromKind(kind, init)
 }
 
-/* RAJA-REMOVE
-func (t *PCTransport) AddRemoteTrackAndNegotiate(
-	ti *livekit.TrackInfo,
-	publishDisabledCodecs []*livekit.Codec,
-	rtcpFeedbackConfig RTCPFeedbackConfig,
-) error {
-	if ti.Type != livekit.TrackType_AUDIO && ti.Type != livekit.TrackType_VIDEO {
-		return ErrUnsupportedRemoteTrackType
-	}
-
-	rtpCodecType := webrtc.RTPCodecTypeVideo
-	if ti.Type == livekit.TrackType_AUDIO {
-		rtpCodecType = webrtc.RTPCodecTypeAudio
-	}
-	transceiver, err := t.pc.AddTransceiverFromKind(
-		rtpCodecType,
-		webrtc.RTPTransceiverInit{
-			Direction: webrtc.RTPTransceiverDirectionRecvonly,
-		},
-	)
-	if err != nil {
-		t.params.Logger.Warnw(
-			"could not add transceiver from kind", err,
-			"trackID", ti.Sid,
-			"track", logger.Proto(ti),
-		)
-		return err
-	}
-
-	codecs := transceiver.Receiver().GetParameters().Codecs
-	enabledCodecs := make([]*webrtc.RTPCodecParameters, 0, len(codecs))
-	disabledPayloads := make([]webrtc.PayloadType, 0, len(codecs))
-	for _, c := range codecs {
-		disabled := false
-		for _, disabledCodec := range publishDisabledCodecs {
-			if mime.NormalizeMimeType(disabledCodec.Mime) == mime.NormalizeMimeType(c.RTPCodecCapability.MimeType) {
-				disabled = true
-				disabledPayloads = append(disabledPayloads, c.PayloadType)
-				break
-			}
-		}
-		if !disabled && !mime.IsMimeTypeStringRTX(c.RTPCodecCapability.MimeType) {
-			// SINGLE-PEER-CONNECTION-TOOD: remove `nack` for RED?
-			if rtpCodecType == webrtc.RTPCodecTypeVideo {
-				c.RTPCodecCapability.RTCPFeedback = rtcpFeedbackConfig.Video
-			} else {
-				c.RTPCodecCapability.RTCPFeedback = rtcpFeedbackConfig.Audio
-			}
-			enabledCodecs = append(enabledCodecs, &c)
-		}
-	}
-
-	if len(disabledPayloads) != 0 {
-		// remove RTX of disabled payloads
-		for _, c := range codecs {
-			if !mime.IsMimeTypeStringRTX(c.RTPCodecCapability.MimeType) {
-				continue
-			}
-
-			index := strings.Index(c.SDPFmtpLine, "apt=")
-			if index == -1 {
-				continue
-			}
-
-			endIndex := strings.Index(c.SDPFmtpLine[index:], ";")
-			if endIndex == -1 {
-				endIndex = len(c.SDPFmtpLine)
-			}
-			aptPayload, err := strconv.Atoi(c.SDPFmtpLine[index+len("apt=") : endIndex])
-			if err != nil {
-				continue
-			}
-			if aptPayload < 0 || aptPayload > 255 {
-				continue
-			}
-
-			if !slices.Contains(disabledPayloads, webrtc.PayloadType(aptPayload)) {
-				enabledCodecs = append(enabledCodecs, &c)
-			}
-		}
-	} else {
-		for _, c := range codecs {
-			if mime.IsMimeTypeStringRTX(c.RTPCodecCapability.MimeType) {
-				enabledCodecs = append(enabledCodecs, &c)
-			}
-		}
-	}
-
-	// enable dtx, stereo for Opus if needed
-	opusPayload := webrtc.PayloadType(0)
-	for _, enabledCodec := range enabledCodecs {
-		if mime.IsMimeTypeStringOpus(enabledCodec.RTPCodecCapability.MimeType) {
-			opusPayload = enabledCodec.PayloadType
-			if !ti.DisableDtx {
-				enabledCodec.RTPCodecCapability.SDPFmtpLine += ";usedtx=1"
-			}
-			if slices.Contains(ti.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO) {
-				enabledCodec.RTPCodecCapability.SDPFmtpLine += ";stereo=1;maxaveragebitrate=510000"
-			}
-			break
-		}
-	}
-
-	// arrange enabled by preference in TrackInfo
-	// SINGLE-PEER-CONNECTION-TODO: have to figure out which codec index
-	mimeType := ""
-	if len(ti.Codecs) != 0 {
-		mimeType = ti.Codecs[0].MimeType
-	}
-	preferredCodecs := make([]*webrtc.RTPCodecParameters, 0, len(enabledCodecs))
-	leftCodecs := make([]*webrtc.RTPCodecParameters, 0, len(enabledCodecs))
-	for _, enabledCodec := range enabledCodecs {
-		if mimeType == "" || mime.NormalizeMimeType(enabledCodec.RTPCodecCapability.MimeType) == mime.NormalizeMimeType(mimeType) {
-			preferredCodecs = append(preferredCodecs, enabledCodec)
-		} else {
-			leftCodecs = append(leftCodecs, enabledCodec)
-		}
-	}
-
-	enabledCodecs = append(append([]*webrtc.RTPCodecParameters{}, preferredCodecs...), leftCodecs...)
-
-	// prioritize audio/red if not disabled and available
-	if opusPayload != 0 {
-		preferredCodecs = nil
-		leftCodecs = nil
-		for _, enabledCodec := range enabledCodecs {
-			if !ti.DisableRed && mime.IsMimeTypeStringRED(enabledCodec.RTPCodecCapability.MimeType) && strings.Contains(enabledCodec.RTPCodecCapability.SDPFmtpLine, strconv.FormatInt(int64(opusPayload), 10)) {
-				preferredCodecs = append(preferredCodecs, enabledCodec)
-			} else {
-				leftCodecs = append(leftCodecs, enabledCodec)
-			}
-		}
-
-		enabledCodecs = append(append([]*webrtc.RTPCodecParameters{}, preferredCodecs...), leftCodecs...)
-	}
-
-	preferences := make([]webrtc.RTPCodecParameters, 0, len(enabledCodecs))
-	for _, enabledCodec := range enabledCodecs {
-		preferences = append(preferences, *enabledCodec)
-	}
-	transceiver.SetCodecPreferences(preferences)
-
-	t.Negotiate(true)
-	return nil
-}
-*/
-
 func (t *PCTransport) RemoveTrack(sender *webrtc.RTPSender) error {
 	return t.pc.RemoveTrack(sender)
 }
@@ -1187,18 +1036,6 @@ func (t *PCTransport) GetRTPReceiver(mid string) *webrtc.RTPReceiver {
 	return nil
 }
 
-// RAJA-TODO: is this needed?
-func (t *PCTransport) GetRTPTransceiverDirection(mid string) webrtc.RTPTransceiverDirection {
-	for _, tr := range t.pc.GetTransceivers() {
-		if tr.Mid() == mid {
-			return tr.Direction()
-		}
-	}
-
-	return webrtc.RTPTransceiverDirectionUnknown
-}
-
-// RAJA-TODO: check if this API is needed and correct one
 func (t *PCTransport) getNumUnmatchedTransceivers() (uint32, uint32) {
 	if t.isClosed.Load() || t.pc.ConnectionState() == webrtc.PeerConnectionStateClosed {
 		return 0, 0
@@ -2138,7 +1975,6 @@ func (t *PCTransport) initPCWithPreviousRemoteDescription(previousRemoteDescript
 
 		// set transceiver to inactive
 		tr.SetSender(sender, nil)
-		t.params.Logger.Infow("RAJA added transceiver", "mid", mid, "sender", sender) // REMOVE
 	}
 	return senders, nil
 }
@@ -2199,7 +2035,6 @@ func (t *PCTransport) parseTrackMid(sd webrtc.SessionDescription, senders map[st
 				return ErrMidNotFound
 			}
 			if sender, ok := senders[mid]; ok {
-				t.params.Logger.Infow("RAJA storing mid", "mid", mid, "trackID", trackID) // REMOVE
 				t.previousTrackDescription[trackID] = &trackDescription{mid, sender}
 			}
 		}
@@ -2786,22 +2621,6 @@ func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription, 
 			return err
 		}
 	}
-
-	/* RAJA-REMOVE
-	// SINGLE-PEER-CONNECTION-TODO: do this parsing and RTX deduction only for single peer connection mode
-	parsed, err := sd.Unmarshal()
-	if err != nil {
-		return err
-	}
-
-	rtxRepairs := nonSimulcastRTXRepairsFromSDP(parsed, t.params.Logger)
-	if len(rtxRepairs) > 0 {
-		t.params.Logger.Debugw("rtx pairs found from sdp", "ssrcs", rtxRepairs)
-		for repair, base := range rtxRepairs {
-			t.params.Config.BufferFactory.SetRTXPair(repair, base)
-		}
-	}
-	*/
 
 	if t.negotiationState == transport.NegotiationStateRetry {
 		t.setNegotiationState(transport.NegotiationStateNone)
