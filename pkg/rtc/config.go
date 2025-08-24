@@ -19,7 +19,6 @@ import (
 	"github.com/pion/webrtc/v4"
 
 	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
@@ -86,13 +85,13 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 			PacketBufferSizeVideo: rtcConf.PacketBufferSizeVideo,
 			PacketBufferSizeAudio: rtcConf.PacketBufferSizeAudio,
 		},
-		Publisher:  getPublisherConfig(types.CurrentProtocol),
+		Publisher:  getPublisherConfig(false),
 		Subscriber: getSubscriberConfig(rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE),
 	}, nil
 }
 
-func (c *WebRTCConfig) UpdatePublisherConfig(protocolVersion types.ProtocolVersion) {
-	c.Publisher = getPublisherConfig(protocolVersion)
+func (c *WebRTCConfig) UpdatePublisherConfig(consolidated bool) {
+	c.Publisher = getPublisherConfig(consolidated)
 }
 
 func (c *WebRTCConfig) UpdateSubscriberConfig(ccConf config.CongestionControlConfig) {
@@ -104,8 +103,8 @@ func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
 	c.SettingEngine.BufferFactory = factory.GetOrNew
 }
 
-func getPublisherConfig(protocolVersion types.ProtocolVersion) DirectionConfig {
-	if protocolVersion.SupportsSinglePeerConnection() {
+func getPublisherConfig(consolidated bool) DirectionConfig {
+	if consolidated {
 		return DirectionConfig{
 			RTPHeaderExtension: RTPHeaderExtensionConfig{
 				Audio: []string{

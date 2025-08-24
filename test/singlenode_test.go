@@ -38,7 +38,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc"
-	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/testutils"
@@ -59,10 +58,10 @@ func TestClientCouldConnect(t *testing.T) {
 	_, finish := setupSingleNodeTest("TestClientCouldConnect")
 	defer finish()
 
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
-			c1 := createRTCClient("c1", defaultServerPort, pv, nil)
-			c2 := createRTCClient("c2", defaultServerPort, pv, nil)
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+			c1 := createRTCClient("c1", defaultServerPort, useSinglePeerConnection, nil)
+			c2 := createRTCClient("c2", defaultServerPort, useSinglePeerConnection, nil)
 			waitUntilConnected(t, c1, c2)
 
 			// ensure they both see each other
@@ -88,13 +87,13 @@ func TestClientConnectDuplicate(t *testing.T) {
 	_, finish := setupSingleNodeTest("TestClientConnectDuplicate")
 	defer finish()
 
-	for _, pv := range []types.ProtocolVersion{ /* types.MaxProtocolDualPeerConnection, */ types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
 			grant := &auth.VideoGrant{RoomJoin: true, Room: testRoom}
 			grant.SetCanPublish(true)
 			grant.SetCanSubscribe(true)
 			token := joinTokenWithGrant("c1", grant)
-			c1 := createRTCClientWithToken(token, defaultServerPort, pv, nil)
+			c1 := createRTCClientWithToken(token, defaultServerPort, useSinglePeerConnection, nil)
 
 			// publish 2 tracks
 			t1, err := c1.AddStaticTrack("audio/opus", "audio", "webcam")
@@ -104,7 +103,7 @@ func TestClientConnectDuplicate(t *testing.T) {
 			require.NoError(t, err)
 			defer t2.Stop()
 
-			c2 := createRTCClient("c2", defaultServerPort, pv, nil)
+			c2 := createRTCClient("c2", defaultServerPort, useSinglePeerConnection, nil)
 			waitUntilConnected(t, c1, c2)
 
 			opts := &testclient.Options{
@@ -129,7 +128,7 @@ func TestClientConnectDuplicate(t *testing.T) {
 				return ""
 			})
 
-			c1Dup := createRTCClientWithToken(token, defaultServerPort, pv, opts)
+			c1Dup := createRTCClientWithToken(token, defaultServerPort, useSinglePeerConnection, opts)
 
 			waitUntilConnected(t, c1Dup)
 
@@ -161,10 +160,10 @@ func TestSinglePublisher(t *testing.T) {
 	s, finish := setupSingleNodeTest("TestSinglePublisher")
 	defer finish()
 
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
-			c1 := createRTCClient("c1", defaultServerPort, pv, nil)
-			c2 := createRTCClient("c2", defaultServerPort, pv, nil)
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+			c1 := createRTCClient("c1", defaultServerPort, useSinglePeerConnection, nil)
+			c2 := createRTCClient("c2", defaultServerPort, useSinglePeerConnection, nil)
 			waitUntilConnected(t, c1, c2)
 
 			// publish a track and ensure clients receive it ok
@@ -197,7 +196,7 @@ func TestSinglePublisher(t *testing.T) {
 			require.Equal(t, "audio/opus", audioTrack.MimeType)
 
 			// a new client joins and should get the initial stream
-			c3 := createRTCClient("c3", defaultServerPort, pv, nil)
+			c3 := createRTCClient("c3", defaultServerPort, useSinglePeerConnection, nil)
 
 			// ensure that new client that has joined also received tracks
 			waitUntilConnected(t, c3)
@@ -246,11 +245,11 @@ func Test_WhenAutoSubscriptionDisabled_ClientShouldNotReceiveAnyPublishedTracks(
 	_, finish := setupSingleNodeTest("Test_WhenAutoSubscriptionDisabled_ClientShouldNotReceiveAnyPublishedTracks")
 	defer finish()
 
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
 			opts := testclient.Options{AutoSubscribe: false}
-			publisher := createRTCClient("publisher", defaultServerPort, pv, &opts)
-			client := createRTCClient("client", defaultServerPort, pv, &opts)
+			publisher := createRTCClient("publisher", defaultServerPort, useSinglePeerConnection, &opts)
+			client := createRTCClient("client", defaultServerPort, useSinglePeerConnection, &opts)
 			defer publisher.Stop()
 			defer client.Stop()
 			waitUntilConnected(t, publisher, client)
@@ -275,10 +274,10 @@ func Test_RenegotiationWithDifferentCodecs(t *testing.T) {
 	_, finish := setupSingleNodeTest("TestRenegotiationWithDifferentCodecs")
 	defer finish()
 
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
-			c1 := createRTCClient("c1", defaultServerPort, pv, nil)
-			c2 := createRTCClient("c2", defaultServerPort, pv, nil)
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+			c1 := createRTCClient("c1", defaultServerPort, useSinglePeerConnection, nil)
+			c2 := createRTCClient("c2", defaultServerPort, useSinglePeerConnection, nil)
 			waitUntilConnected(t, c1, c2)
 
 			// publish a vp8 video track and ensure clients receive it ok
@@ -421,9 +420,9 @@ func TestPingPong(t *testing.T) {
 	_, finish := setupSingleNodeTest("TestPingPong")
 	defer finish()
 
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
-			c1 := createRTCClient("c1", defaultServerPort, pv, nil)
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+			c1 := createRTCClient("c1", defaultServerPort, useSinglePeerConnection, nil)
 			waitUntilConnected(t, c1)
 
 			require.NoError(t, c1.SendPing())
@@ -477,15 +476,15 @@ func TestAutoCreate(t *testing.T) {
 
 		waitForServerToStart(s)
 
-		for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-			t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
+		for _, useSinglePeerConnection := range []bool{false, true} {
+			t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
 				token := joinToken(testRoom, "start-before-create", nil)
-				_, err := testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", defaultServerPort), token, pv, nil)
+				_, err := testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", defaultServerPort), token, &testclient.Options{UseJoinRequestQueryParam: useSinglePeerConnection})
 				require.Error(t, err)
 
 				// second join should also fail
 				token = joinToken(testRoom, "start-before-create-2", nil)
-				_, err = testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", defaultServerPort), token, pv, nil)
+				_, err = testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", defaultServerPort), token, &testclient.Options{UseJoinRequestQueryParam: useSinglePeerConnection})
 				require.Error(t, err)
 			})
 		}
@@ -506,9 +505,9 @@ func TestAutoCreate(t *testing.T) {
 		_, err := roomClient.CreateRoom(contextWithToken(createRoomToken()), &livekit.CreateRoomRequest{Name: testRoom})
 		require.NoError(t, err)
 
-		for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-			t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
-				c1 := createRTCClient("join-after-create", defaultServerPort, pv, nil)
+		for _, useSinglePeerConnection := range []bool{false, true} {
+			t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+				c1 := createRTCClient("join-after-create", defaultServerPort, useSinglePeerConnection, nil)
 				waitUntilConnected(t, c1)
 
 				c1.Stop()
@@ -526,9 +525,9 @@ func TestSingleNodeUpdateSubscriptionPermissions(t *testing.T) {
 	_, finish := setupSingleNodeTest("TestSingleNodeUpdateSubscriptionPermissions")
 	defer finish()
 
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
-			pub := createRTCClient("pub", defaultServerPort, pv, nil)
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+			pub := createRTCClient("pub", defaultServerPort, useSinglePeerConnection, nil)
 
 			grant := &auth.VideoGrant{RoomJoin: true, Room: testRoom}
 			grant.SetCanSubscribe(false)
@@ -537,7 +536,7 @@ func TestSingleNodeUpdateSubscriptionPermissions(t *testing.T) {
 				SetIdentity("sub")
 			token, err := at.ToJWT()
 			require.NoError(t, err)
-			sub := createRTCClientWithToken(token, defaultServerPort, pv, nil)
+			sub := createRTCClientWithToken(token, defaultServerPort, useSinglePeerConnection, nil)
 
 			waitUntilConnected(t, pub, sub)
 
@@ -588,9 +587,9 @@ func TestSingleNodeAttributes(t *testing.T) {
 	_, finish := setupSingleNodeTest("TestSingleNodeAttributes")
 	defer finish()
 
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
-			pub := createRTCClient("pub", defaultServerPort, pv, &testclient.Options{
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+			pub := createRTCClient("pub", defaultServerPort, useSinglePeerConnection, &testclient.Options{
 				Attributes: map[string]string{
 					"b": "2",
 					"c": "3",
@@ -603,7 +602,6 @@ func TestSingleNodeAttributes(t *testing.T) {
 						"b": "1",
 					})
 				},
-				UseJoinRequestQueryParam: true,
 			})
 
 			grant := &auth.VideoGrant{RoomJoin: true, Room: testRoom}
@@ -613,7 +611,7 @@ func TestSingleNodeAttributes(t *testing.T) {
 				SetIdentity("sub")
 			token, err := at.ToJWT()
 			require.NoError(t, err)
-			sub := createRTCClientWithToken(token, defaultServerPort, pv, nil)
+			sub := createRTCClientWithToken(token, defaultServerPort, useSinglePeerConnection, nil)
 
 			waitUntilConnected(t, pub, sub)
 
@@ -648,10 +646,10 @@ func TestDeviceCodecOverride(t *testing.T) {
 	_, finish := setupSingleNodeTest("TestDeviceCodecOverride")
 	defer finish()
 
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
 			// simulate device that isn't compatible with H.264
-			c1 := createRTCClient("c1", defaultServerPort, pv, &testclient.Options{
+			c1 := createRTCClient("c1", defaultServerPort, useSinglePeerConnection, &testclient.Options{
 				ClientInfo: &livekit.ClientInfo{
 					Os:          "android",
 					DeviceModel: "Xiaomi 2201117TI",
@@ -720,13 +718,11 @@ func TestSubscribeToCodecUnsupported(t *testing.T) {
 	_, finish := setupSingleNodeTest("TestSubscribeToCodecUnsupported")
 	defer finish()
 
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
-			c1 := createRTCClient("c1", defaultServerPort, pv, &testclient.Options{
-				UseJoinRequestQueryParam: true,
-			})
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+			c1 := createRTCClient("c1", defaultServerPort, useSinglePeerConnection, nil)
 			// create a client that doesn't support H264
-			c2 := createRTCClient("c2", defaultServerPort, pv, &testclient.Options{
+			c2 := createRTCClient("c2", defaultServerPort, useSinglePeerConnection, &testclient.Options{
 				AutoSubscribe: true,
 				DisabledCodecs: []webrtc.RTPCodecCapability{
 					{MimeType: "video/H264"},
@@ -849,12 +845,12 @@ func TestDataPublishSlowSubscriber(t *testing.T) {
 		logger.Infow("----------------FINISHING TEST----------------", "test", t.Name())
 	}()
 
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
-			pub := createRTCClient("pub", defaultServerPort, pv, nil)
-			fastSub := createRTCClient("fastSub", defaultServerPort, pv, nil)
-			slowSubNotDrop := createRTCClient("slowSubNotDrop", defaultServerPort, pv, nil)
-			slowSubDrop := createRTCClient("slowSubDrop", defaultServerPort, pv, nil)
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+			pub := createRTCClient("pub", defaultServerPort, useSinglePeerConnection, nil)
+			fastSub := createRTCClient("fastSub", defaultServerPort, useSinglePeerConnection, nil)
+			slowSubNotDrop := createRTCClient("slowSubNotDrop", defaultServerPort, useSinglePeerConnection, nil)
+			slowSubDrop := createRTCClient("slowSubDrop", defaultServerPort, useSinglePeerConnection, nil)
 			waitUntilConnected(t, pub, fastSub, slowSubDrop, slowSubNotDrop)
 			defer func() {
 				pub.Stop()
@@ -975,14 +971,14 @@ func TestFireTrackBySdp(t *testing.T) {
 	for _, c := range cases {
 		codecs, sdk := c.codecs, c.pubSDK
 		t.Run(c.name, func(t *testing.T) {
-			for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-				t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
-					c1 := createRTCClient(c.name+"_c1", defaultServerPort, pv, &testclient.Options{
+			for _, useSinglePeerConnection := range []bool{false, true} {
+				t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+					c1 := createRTCClient(c.name+"_c1", defaultServerPort, useSinglePeerConnection, &testclient.Options{
 						ClientInfo: &livekit.ClientInfo{
 							Sdk: sdk,
 						},
 					})
-					c2 := createRTCClient(c.name+"_c2", defaultServerPort, pv, &testclient.Options{
+					c2 := createRTCClient(c.name+"_c2", defaultServerPort, useSinglePeerConnection, &testclient.Options{
 						AutoSubscribe: true,
 						ClientInfo: &livekit.ClientInfo{
 							Sdk: livekit.ClientInfo_JS,
@@ -1028,14 +1024,14 @@ func TestSinglePeerConnection(t *testing.T) {
 	_, finish := setupSingleNodeTest("TestSinglePeerConnection")
 	defer finish()
 
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
-			c1 := createRTCClient("c1", defaultServerPort, pv, &testclient.Options{
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+			c1 := createRTCClient("c1", defaultServerPort, useSinglePeerConnection, &testclient.Options{
 				ClientInfo: &livekit.ClientInfo{
 					Sdk: livekit.ClientInfo_GO,
 				},
 			})
-			c2 := createRTCClient("c2", defaultServerPort, pv, &testclient.Options{
+			c2 := createRTCClient("c2", defaultServerPort, useSinglePeerConnection, &testclient.Options{
 				AutoSubscribe: true,
 				ClientInfo: &livekit.ClientInfo{
 					Sdk: livekit.ClientInfo_GO,

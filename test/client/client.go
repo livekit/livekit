@@ -55,11 +55,11 @@ type SignalResponseHandler func(msg *livekit.SignalResponse) error
 type SignalResponseInterceptor func(msg *livekit.SignalResponse, next SignalResponseHandler) error
 
 type RTCClient struct {
-	protocolVersion types.ProtocolVersion
-	id              livekit.ParticipantID
-	conn            *websocket.Conn
-	publisher       *rtc.PCTransport
-	subscriber      *rtc.PCTransport
+	useSinglePeerConnection bool
+	id                      livekit.ParticipantID
+	conn                    *websocket.Conn
+	publisher               *rtc.PCTransport
+	subscriber              *rtc.PCTransport
 	// sid => track
 	localTracks        map[string]webrtc.TrackLocal
 	trackSenders       map[string]*webrtc.RTPSender
@@ -129,7 +129,7 @@ type Options struct {
 	UseJoinRequestQueryParam  bool
 }
 
-func NewWebSocketConn(host, token string, protocolVersion types.ProtocolVersion, opts *Options) (*websocket.Conn, error) {
+func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
 	u, err := url.Parse(host + "/rtc")
 	if err != nil {
 		return nil, err
@@ -142,7 +142,7 @@ func NewWebSocketConn(host, token string, protocolVersion types.ProtocolVersion,
 		clientInfo := &livekit.ClientInfo{
 			Os:       runtime.GOOS,
 			Sdk:      livekit.ClientInfo_GO,
-			Protocol: int32(protocolVersion),
+			Protocol: int32(types.CurrentProtocol),
 		}
 		if opts.ClientInfo != nil {
 			clientInfo = opts.ClientInfo
@@ -167,7 +167,7 @@ func NewWebSocketConn(host, token string, protocolVersion types.ProtocolVersion,
 			}
 		}
 	} else {
-		connectUrl += fmt.Sprintf("?protocol=%d", protocolVersion)
+		connectUrl += fmt.Sprintf("?protocol=%d", types.CurrentProtocol)
 
 		sdk := "go"
 		if opts != nil {
@@ -205,20 +205,20 @@ func SetAuthorizationToken(header http.Header, token string) {
 	header.Set("Authorization", "Bearer "+token)
 }
 
-func NewRTCClient(conn *websocket.Conn, protocolVersion types.ProtocolVersion, opts *Options) (*RTCClient, error) {
+func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Options) (*RTCClient, error) {
 	var err error
 
 	c := &RTCClient{
-		protocolVersion:        protocolVersion,
-		conn:                   conn,
-		localTracks:            make(map[string]webrtc.TrackLocal),
-		trackSenders:           make(map[string]*webrtc.RTPSender),
-		pendingPublishedTracks: make(map[string]*livekit.TrackInfo),
-		subscribedTracks:       make(map[livekit.ParticipantID][]*webrtc.TrackRemote),
-		remoteParticipants:     make(map[livekit.ParticipantID]*livekit.ParticipantInfo),
-		me:                     &webrtc.MediaEngine{},
-		lastPackets:            make(map[livekit.ParticipantID]*rtp.Packet),
-		bytesReceived:          make(map[livekit.ParticipantID]uint64),
+		useSinglePeerConnection: useSinglePeerConnection,
+		conn:                    conn,
+		localTracks:             make(map[string]webrtc.TrackLocal),
+		trackSenders:            make(map[string]*webrtc.RTPSender),
+		pendingPublishedTracks:  make(map[string]*livekit.TrackInfo),
+		subscribedTracks:        make(map[livekit.ParticipantID][]*webrtc.TrackRemote),
+		remoteParticipants:      make(map[livekit.ParticipantID]*livekit.ParticipantInfo),
+		me:                      &webrtc.MediaEngine{},
+		lastPackets:             make(map[livekit.ParticipantID]*rtp.Packet),
+		bytesReceived:           make(map[livekit.ParticipantID]uint64),
 	}
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 
@@ -332,7 +332,7 @@ func NewRTCClient(conn *websocket.Conn, protocolVersion types.ProtocolVersion, o
 		return nil, err
 	}
 
-	if !c.protocolVersion.SupportsSinglePeerConnection() {
+	if !c.useSinglePeerConnection {
 		subscriberHandler := &transportfakes.FakeHandler{}
 		c.subscriber, err = rtc.NewPCTransport(rtc.TransportParams{
 			Config:                           &conf,
@@ -413,9 +413,11 @@ func (c *RTCClient) ID() livekit.ParticipantID {
 	return c.id
 }
 
+/* RAJA-REMOVE
 func (c *RTCClient) ProtocolVersion() types.ProtocolVersion {
 	return c.protocolVersion
 }
+*/
 
 // create an offer for the server
 func (c *RTCClient) Run() error {

@@ -209,6 +209,7 @@ type ParticipantParams struct {
 	LastPubReliableSeq             uint32
 	Country                        string
 	PreferVideoSizeFromMedia       bool
+	UseSinglePeerConnection        bool
 }
 
 type ParticipantImpl struct {
@@ -1471,7 +1472,7 @@ func (p *ParticipantImpl) clearMigrationTimer() {
 }
 
 func (p *ParticipantImpl) setupMigrationTimerLocked() {
-	if p.ProtocolVersion().SupportsSinglePeerConnection() {
+	if p.params.UseSinglePeerConnection {
 		return
 	}
 
@@ -1924,7 +1925,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	var pth transport.Handler = PublisherTransportHandler{ath}
 	var sth transport.Handler = SubscriberTransportHandler{ath}
 
-	subscriberAsPrimary := !p.params.UseOneShotSignallingMode && (p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe()) && !p.ProtocolVersion().SupportsSinglePeerConnection()
+	subscriberAsPrimary := !p.params.UseOneShotSignallingMode && (p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe()) && !p.params.UseSinglePeerConnection
 	if subscriberAsPrimary {
 		sth = PrimaryTransportHandler{sth, p}
 	} else {
@@ -1935,7 +1936,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		// primary connection does not change, canSubscribe can change if permission was updated
 		// after the participant has joined
 		SubscriberAsPrimary:          subscriberAsPrimary,
-		SinglePeerConnection:         p.ProtocolVersion().SupportsSinglePeerConnection(),
+		UseSinglePeerConnection:      p.params.UseSinglePeerConnection,
 		Config:                       p.params.Config,
 		Twcc:                         p.twcc,
 		ProtocolVersion:              p.params.ProtocolVersion,
@@ -2479,7 +2480,7 @@ func (p *ParticipantImpl) onPublisherInitialConnected() {
 		p.supervisor.SetPublisherPeerConnectionConnected(true)
 	}
 
-	if p.params.UseOneShotSignallingMode || p.ProtocolVersion().SupportsSinglePeerConnection() {
+	if p.params.UseOneShotSignallingMode || p.params.UseSinglePeerConnection {
 		go p.subscriberRTCPWorker()
 
 		p.setDownTracksConnected()
@@ -3945,11 +3946,15 @@ func (p *ParticipantImpl) HandleSignalMessage(msg proto.Message) error {
 	return p.signalHandler.HandleMessage(msg)
 }
 
+func (p *ParticipantImpl) IsUsingSinglePeerConnection() bool {
+	return p.params.UseSinglePeerConnection
+}
+
 func (p *ParticipantImpl) AddTrackLocal(
 	trackLocal webrtc.TrackLocal,
 	params types.AddTrackParams,
 ) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
-	if p.params.ProtocolVersion.SupportsSinglePeerConnection() {
+	if p.params.UseSinglePeerConnection {
 		return p.TransportManager.AddTrackLocal(
 			trackLocal,
 			params,
@@ -3965,7 +3970,7 @@ func (p *ParticipantImpl) AddTransceiverFromTrackLocal(
 	trackLocal webrtc.TrackLocal,
 	params types.AddTrackParams,
 ) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
-	if p.params.ProtocolVersion.SupportsSinglePeerConnection() {
+	if p.params.UseSinglePeerConnection {
 		return p.TransportManager.AddTransceiverFromTrackLocal(
 			trackLocal,
 			params,

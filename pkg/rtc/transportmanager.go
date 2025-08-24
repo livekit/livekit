@@ -73,7 +73,7 @@ func (h TransportManagerTransportHandler) OnFailed(isShortLived bool, iceConnect
 
 type TransportManagerParams struct {
 	SubscriberAsPrimary          bool
-	SinglePeerConnection         bool
+	UseSinglePeerConnection      bool
 	Config                       *WebRTCConfig
 	Twcc                         *twcc.Responder
 	ProtocolVersion              types.ProtocolVersion
@@ -96,7 +96,6 @@ type TransportManagerParams struct {
 	DataChannelStats             *telemetry.BytesTrackStats
 	UseOneShotSignallingMode     bool
 	FireOnTrackBySdp             bool
-	Identity                     string
 }
 
 type TransportManager struct {
@@ -139,48 +138,49 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 
 	lgr := LoggerWithPCTarget(params.Logger, livekit.SignalTarget_PUBLISHER)
 	publisher, err := NewPCTransport(TransportParams{
-		Identity:                     params.Identity,
-		ProtocolVersion:              params.ProtocolVersion,
-		Config:                       params.Config,
-		Twcc:                         params.Twcc,
-		DirectionConfig:              params.Config.Publisher,
-		CongestionControlConfig:      params.CongestionControlConfig,
-		EnabledCodecs:                params.EnabledPublishCodecs,
-		Logger:                       lgr,
-		SimTracks:                    params.SimTracks,
-		ClientInfo:                   params.ClientInfo,
-		IsSendSide:                   params.SinglePeerConnection,
-		AllowPlayoutDelay:            params.AllowPlayoutDelay,
-		Transport:                    livekit.SignalTarget_PUBLISHER,
-		Handler:                      params.PublisherHandler,
-		UseOneShotSignallingMode:     params.UseOneShotSignallingMode,
-		DataChannelMaxBufferedAmount: params.DataChannelMaxBufferedAmount,
-		DatachannelSlowThreshold:     params.DatachannelSlowThreshold,
-		FireOnTrackBySdp:             params.FireOnTrackBySdp,
+		ProtocolVersion:                 params.ProtocolVersion,
+		Config:                          params.Config,
+		Twcc:                            params.Twcc,
+		DirectionConfig:                 params.Config.Publisher,
+		CongestionControlConfig:         params.CongestionControlConfig,
+		EnabledCodecs:                   params.EnabledPublishCodecs,
+		Logger:                          lgr,
+		SimTracks:                       params.SimTracks,
+		ClientInfo:                      params.ClientInfo,
+		IsSendSide:                      params.UseSinglePeerConnection,
+		AllowPlayoutDelay:               params.AllowPlayoutDelay,
+		Transport:                       livekit.SignalTarget_PUBLISHER,
+		Handler:                         params.PublisherHandler,
+		UseOneShotSignallingMode:        params.UseOneShotSignallingMode,
+		DataChannelMaxBufferedAmount:    params.DataChannelMaxBufferedAmount,
+		DatachannelSlowThreshold:        params.DatachannelSlowThreshold,
+		FireOnTrackBySdp:                params.FireOnTrackBySdp,
+		DisableRecvonlyTransceiverReuse: params.UseSinglePeerConnection,
 	})
 	if err != nil {
 		return nil, err
 	}
 	t.publisher = publisher
 
-	if !t.params.UseOneShotSignallingMode && !t.params.SinglePeerConnection {
+	if !t.params.UseOneShotSignallingMode && !t.params.UseSinglePeerConnection {
 		lgr := LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER)
 		subscriber, err := NewPCTransport(TransportParams{
-			ProtocolVersion:              params.ProtocolVersion,
-			Config:                       params.Config,
-			DirectionConfig:              params.Config.Subscriber,
-			CongestionControlConfig:      params.CongestionControlConfig,
-			EnabledCodecs:                params.EnabledSubscribeCodecs,
-			Logger:                       lgr,
-			ClientInfo:                   params.ClientInfo,
-			IsOfferer:                    true,
-			IsSendSide:                   true,
-			AllowPlayoutDelay:            params.AllowPlayoutDelay,
-			DataChannelMaxBufferedAmount: params.DataChannelMaxBufferedAmount,
-			DatachannelSlowThreshold:     params.DatachannelSlowThreshold,
-			Transport:                    livekit.SignalTarget_SUBSCRIBER,
-			Handler:                      TransportManagerTransportHandler{params.SubscriberHandler, t, lgr},
-			FireOnTrackBySdp:             params.FireOnTrackBySdp,
+			ProtocolVersion:                 params.ProtocolVersion,
+			Config:                          params.Config,
+			DirectionConfig:                 params.Config.Subscriber,
+			CongestionControlConfig:         params.CongestionControlConfig,
+			EnabledCodecs:                   params.EnabledSubscribeCodecs,
+			Logger:                          lgr,
+			ClientInfo:                      params.ClientInfo,
+			IsOfferer:                       true,
+			IsSendSide:                      true,
+			AllowPlayoutDelay:               params.AllowPlayoutDelay,
+			DataChannelMaxBufferedAmount:    params.DataChannelMaxBufferedAmount,
+			DatachannelSlowThreshold:        params.DatachannelSlowThreshold,
+			Transport:                       livekit.SignalTarget_SUBSCRIBER,
+			Handler:                         TransportManagerTransportHandler{params.SubscriberHandler, t, lgr},
+			FireOnTrackBySdp:                params.FireOnTrackBySdp,
+			DisableRecvonlyTransceiverReuse: params.UseSinglePeerConnection,
 		})
 		if err != nil {
 			return nil, err
@@ -235,7 +235,7 @@ func (t *TransportManager) WritePublisherRTCP(pkts []rtcp.Packet) error {
 }
 
 func (t *TransportManager) GetSubscriberRTT() (float64, bool) {
-	if t.params.SinglePeerConnection {
+	if t.params.UseSinglePeerConnection {
 		return t.publisher.GetRTT()
 	} else {
 		return t.subscriber.GetRTT()
@@ -243,7 +243,7 @@ func (t *TransportManager) GetSubscriberRTT() (float64, bool) {
 }
 
 func (t *TransportManager) HasSubscriberEverConnected() bool {
-	if t.params.SinglePeerConnection {
+	if t.params.UseSinglePeerConnection {
 		return t.publisher.HasEverConnected()
 	} else {
 		return t.subscriber.HasEverConnected()
@@ -256,7 +256,7 @@ func (t *TransportManager) AddTrackLocal(
 	enabledCodecs []*livekit.Codec,
 	rtcpFeedbackConfig RTCPFeedbackConfig,
 ) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
-	if t.params.UseOneShotSignallingMode || t.params.SinglePeerConnection {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
 		return t.publisher.AddTrack(trackLocal, params, enabledCodecs, rtcpFeedbackConfig)
 	} else {
 		return t.subscriber.AddTrack(trackLocal, params, enabledCodecs, rtcpFeedbackConfig)
@@ -269,7 +269,7 @@ func (t *TransportManager) AddTransceiverFromTrackLocal(
 	enabledCodecs []*livekit.Codec,
 	rtcpFeedbackConfig RTCPFeedbackConfig,
 ) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
-	if t.params.UseOneShotSignallingMode || t.params.SinglePeerConnection {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
 		return t.publisher.AddTransceiverFromTrack(trackLocal, params, enabledCodecs, rtcpFeedbackConfig)
 	} else {
 		return t.subscriber.AddTransceiverFromTrack(trackLocal, params, enabledCodecs, rtcpFeedbackConfig)
@@ -277,7 +277,7 @@ func (t *TransportManager) AddTransceiverFromTrackLocal(
 }
 
 func (t *TransportManager) RemoveTrackLocal(sender *webrtc.RTPSender) error {
-	if t.params.UseOneShotSignallingMode || t.params.SinglePeerConnection {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
 		return t.publisher.RemoveTrack(sender)
 	} else {
 		return t.subscriber.RemoveTrack(sender)
@@ -285,7 +285,7 @@ func (t *TransportManager) RemoveTrackLocal(sender *webrtc.RTPSender) error {
 }
 
 func (t *TransportManager) WriteSubscriberRTCP(pkts []rtcp.Packet) error {
-	if t.params.UseOneShotSignallingMode || t.params.SinglePeerConnection {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
 		return t.publisher.WriteRTCP(pkts)
 	} else {
 		return t.subscriber.WriteRTCP(pkts)
@@ -293,7 +293,7 @@ func (t *TransportManager) WriteSubscriberRTCP(pkts []rtcp.Packet) error {
 }
 
 func (t *TransportManager) GetSubscriberPacer() pacer.Pacer {
-	if t.params.SinglePeerConnection {
+	if t.params.UseSinglePeerConnection {
 		return t.publisher.GetPacer()
 	} else {
 		return t.subscriber.GetPacer()
@@ -301,7 +301,7 @@ func (t *TransportManager) GetSubscriberPacer() pacer.Pacer {
 }
 
 func (t *TransportManager) AddSubscribedTrack(subTrack types.SubscribedTrack) {
-	if t.params.SinglePeerConnection {
+	if t.params.UseSinglePeerConnection {
 		t.publisher.AddTrackToStreamAllocator(subTrack)
 	} else {
 		t.subscriber.AddTrackToStreamAllocator(subTrack)
@@ -309,7 +309,7 @@ func (t *TransportManager) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 }
 
 func (t *TransportManager) RemoveSubscribedTrack(subTrack types.SubscribedTrack) {
-	if t.params.SinglePeerConnection {
+	if t.params.UseSinglePeerConnection {
 		t.publisher.RemoveTrackFromStreamAllocator(subTrack)
 	} else {
 		t.subscriber.RemoveTrackFromStreamAllocator(subTrack)
@@ -819,7 +819,7 @@ func (t *TransportManager) SetMigrateInfo(
 		}
 	}
 
-	if t.params.SinglePeerConnection {
+	if t.params.UseSinglePeerConnection {
 		t.publisher.SetPreviousSdp(previousPublisherAnswer, previousPublisherOffer)
 	} else {
 		t.subscriber.SetPreviousSdp(previousSubscriberOffer, previousSubscriberAnswer)
@@ -888,7 +888,7 @@ func (t *TransportManager) onMediaLossUpdate(loss uint8) {
 				t.lock.Unlock()
 
 				t.params.Logger.Infow("udp connection unstable, switch to tcp", "signalingRTT", t.signalingRTT)
-				if t.params.SinglePeerConnection {
+				if t.params.UseSinglePeerConnection {
 					t.params.PublisherHandler.OnFailed(true, t.publisher.GetICEConnectionInfo())
 				} else {
 					t.params.SubscriberHandler.OnFailed(true, t.subscriber.GetICEConnectionInfo())
@@ -954,7 +954,7 @@ func (t *TransportManager) SetSignalSourceValid(valid bool) {
 }
 
 func (t *TransportManager) SetSubscriberAllowPause(allowPause bool) {
-	if t.params.SinglePeerConnection {
+	if t.params.UseSinglePeerConnection {
 		t.publisher.SetAllowPauseOfStreamAllocator(allowPause)
 	} else {
 		t.subscriber.SetAllowPauseOfStreamAllocator(allowPause)
@@ -962,7 +962,7 @@ func (t *TransportManager) SetSubscriberAllowPause(allowPause bool) {
 }
 
 func (t *TransportManager) SetSubscriberChannelCapacity(channelCapacity int64) {
-	if t.params.SinglePeerConnection {
+	if t.params.UseSinglePeerConnection {
 		t.publisher.SetChannelCapacityOfStreamAllocator(channelCapacity)
 	} else {
 		t.subscriber.SetChannelCapacityOfStreamAllocator(channelCapacity)

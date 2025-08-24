@@ -609,7 +609,7 @@ func (r *Room) Join(
 			participant.Negotiate(true)
 		}
 	} else {
-		if participant.ProtocolVersion().SupportsSinglePeerConnection() {
+		if participant.IsUsingSinglePeerConnection() {
 			go r.subscribeToExistingTracks(participant, false)
 		}
 	}

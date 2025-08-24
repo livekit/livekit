@@ -21,9 +21,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/testutils"
-	testclient "github.com/livekit/livekit-server/test/client"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 )
@@ -34,8 +32,8 @@ var (
 )
 
 func TestAgents(t *testing.T) {
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
 			_, finish := setupSingleNodeTest("TestAgents")
 			defer finish()
 
@@ -72,8 +70,8 @@ func TestAgents(t *testing.T) {
 				return ""
 			}, RegisterTimeout)
 
-			c1 := createRTCClient("c1", defaultServerPort, pv, nil)
-			c2 := createRTCClient("c2", defaultServerPort, pv, &testclient.Options{UseJoinRequestQueryParam: true})
+			c1 := createRTCClient("c1", defaultServerPort, useSinglePeerConnection, nil)
+			c2 := createRTCClient("c2", defaultServerPort, useSinglePeerConnection, nil)
 			waitUntilConnected(t, c1, c2)
 
 			// publish 2 tracks
@@ -128,8 +126,8 @@ func TestAgents(t *testing.T) {
 }
 
 func TestAgentNamespaces(t *testing.T) {
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
 			_, finish := setupSingleNodeTest("TestAgentNamespaces")
 			defer finish()
 
@@ -160,7 +158,7 @@ func TestAgentNamespaces(t *testing.T) {
 				return ""
 			}, RegisterTimeout)
 
-			c1 := createRTCClient("c1", defaultServerPort, pv, nil)
+			c1 := createRTCClient("c1", defaultServerPort, useSinglePeerConnection, nil)
 			waitUntilConnected(t, c1)
 
 			testutils.WithTimeout(t, func() string {
@@ -190,8 +188,8 @@ func TestAgentNamespaces(t *testing.T) {
 }
 
 func TestAgentMultiNode(t *testing.T) {
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
 			_, _, finish := setupMultiNodeTest("TestAgentMultiNode")
 			defer finish()
 
@@ -211,7 +209,7 @@ func TestAgentMultiNode(t *testing.T) {
 				return ""
 			}, RegisterTimeout)
 
-			c1 := createRTCClient("c1", secondServerPort, pv, nil) // Create a room on the second node
+			c1 := createRTCClient("c1", secondServerPort, useSinglePeerConnection, nil) // Create a room on the second node
 			waitUntilConnected(t, c1)
 
 			t1, err := c1.AddStaticTrack("audio/opus", "audio", "micro")

@@ -25,7 +25,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
-	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	"github.com/livekit/livekit-server/test/client"
 )
@@ -45,11 +44,11 @@ func TestMultiNodeRouting(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
 			// one node connecting to node 1, and another connecting to node 2
-			c1 := createRTCClient("c1", defaultServerPort, pv, nil)
-			c2 := createRTCClient("c2", secondServerPort, pv, nil)
+			c1 := createRTCClient("c1", defaultServerPort, useSinglePeerConnection, nil)
+			c2 := createRTCClient("c2", secondServerPort, useSinglePeerConnection, nil)
 			waitUntilConnected(t, c1, c2)
 			defer stopClients(c1, c2)
 
@@ -89,9 +88,9 @@ func TestConnectWithoutCreation(t *testing.T) {
 	_, _, finish := setupMultiNodeTest("TestConnectWithoutCreation")
 	defer finish()
 
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
-			c1 := createRTCClient("c1", defaultServerPort, pv, nil)
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+			c1 := createRTCClient("c1", defaultServerPort, useSinglePeerConnection, nil)
 			waitUntilConnected(t, c1)
 
 			c1.Stop()
@@ -129,8 +128,8 @@ func TestMultinodeReconnectAfterNodeShutdown(t *testing.T) {
 		return
 	}
 
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
 			_, s2, finish := setupMultiNodeTest("TestMultinodeReconnectAfterNodeShutdown")
 			defer finish()
 
@@ -142,8 +141,8 @@ func TestMultinodeReconnectAfterNodeShutdown(t *testing.T) {
 			require.NoError(t, err)
 
 			// one node connecting to node 1, and another connecting to node 2
-			c1 := createRTCClient("c1", defaultServerPort, pv, nil)
-			c2 := createRTCClient("c2", secondServerPort, pv, nil)
+			c1 := createRTCClient("c1", defaultServerPort, useSinglePeerConnection, nil)
+			c2 := createRTCClient("c2", secondServerPort, useSinglePeerConnection, nil)
 
 			waitUntilConnected(t, c1, c2)
 			stopClients(c1, c2)
@@ -153,7 +152,7 @@ func TestMultinodeReconnectAfterNodeShutdown(t *testing.T) {
 
 			time.Sleep(syncDelay)
 
-			c3 := createRTCClient("c3", defaultServerPort, pv, nil)
+			c3 := createRTCClient("c3", defaultServerPort, useSinglePeerConnection, nil)
 			waitUntilConnected(t, c3)
 		})
 	}
@@ -201,10 +200,10 @@ func TestMultiNodeRefreshToken(t *testing.T) {
 	_, _, finish := setupMultiNodeTest("TestMultiNodeJoinAfterClose")
 	defer finish()
 
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
 			// a participant joining with full permissions
-			c1 := createRTCClient("c1", defaultServerPort, pv, nil)
+			c1 := createRTCClient("c1", defaultServerPort, useSinglePeerConnection, nil)
 			waitUntilConnected(t, c1)
 
 			// update permissions and metadata
@@ -259,16 +258,16 @@ func TestMultiNodeUpdateAttributes(t *testing.T) {
 	_, _, finish := setupMultiNodeTest("TestMultiNodeUpdateAttributes")
 	defer finish()
 
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
-			c1 := createRTCClient("au1", defaultServerPort, pv, &client.Options{
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+			c1 := createRTCClient("au1", defaultServerPort, useSinglePeerConnection, &client.Options{
 				TokenCustomizer: func(token *auth.AccessToken, grants *auth.VideoGrant) {
 					token.SetAttributes(map[string]string{
 						"mykey": "au1",
 					})
 				},
 			})
-			c2 := createRTCClient("au2", secondServerPort, pv, &client.Options{
+			c2 := createRTCClient("au2", secondServerPort, useSinglePeerConnection, &client.Options{
 				TokenCustomizer: func(token *auth.AccessToken, grants *auth.VideoGrant) {
 					token.SetAttributes(map[string]string{
 						"mykey": "au2",
@@ -332,10 +331,10 @@ func TestMultiNodeRevokePublishPermission(t *testing.T) {
 	_, _, finish := setupMultiNodeTest("TestMultiNodeRevokePublishPermission")
 	defer finish()
 
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
-			c1 := createRTCClient("c1", defaultServerPort, pv, nil)
-			c2 := createRTCClient("c2", secondServerPort, pv, nil)
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+			c1 := createRTCClient("c1", defaultServerPort, useSinglePeerConnection, nil)
+			c2 := createRTCClient("c2", secondServerPort, useSinglePeerConnection, nil)
 			waitUntilConnected(t, c1, c2)
 
 			// c1 publishes a track for c2
@@ -384,12 +383,12 @@ func TestCloseDisconnectedParticipantOnSignalClose(t *testing.T) {
 	_, _, finish := setupMultiNodeTest("TestCloseDisconnectedParticipantOnSignalClose")
 	defer finish()
 
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
-			c1 := createRTCClient("c1", secondServerPort, pv, nil)
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+			c1 := createRTCClient("c1", secondServerPort, useSinglePeerConnection, nil)
 			waitUntilConnected(t, c1)
 
-			c2 := createRTCClient("c2", defaultServerPort, pv, &client.Options{
+			c2 := createRTCClient("c2", defaultServerPort, useSinglePeerConnection, &client.Options{
 				SignalRequestInterceptor: func(msg *livekit.SignalRequest, next client.SignalRequestHandler) error {
 					switch msg.Message.(type) {
 					case *livekit.SignalRequest_Offer, *livekit.SignalRequest_Answer, *livekit.SignalRequest_Leave:

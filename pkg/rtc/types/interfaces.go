@@ -360,6 +360,7 @@ type LocalParticipant interface {
 	ProtocolVersion() ProtocolVersion
 	SupportsSyncStreamID() bool
 	SupportsTransceiverReuse() bool
+	IsUsingSinglePeerConnection() bool
 	IsClosed() bool
 	IsReady() bool
 	IsDisconnected() bool

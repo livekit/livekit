@@ -416,7 +416,7 @@ func (r *RoomManager) StartSession(
 	if pi.DisableICELite {
 		rtcConf.SettingEngine.SetLite(false)
 	}
-	rtcConf.UpdatePublisherConfig(pv)
+	rtcConf.UpdatePublisherConfig(pi.UseSinglePeerConnection)
 
 	// default allow forceTCP
 	allowFallback := true
@@ -493,6 +493,7 @@ func (r *RoomManager) StartSession(
 		DataChannelMaxBufferedAmount: r.config.RTC.DataChannelMaxBufferedAmount,
 		DatachannelSlowThreshold:     r.config.RTC.DatachannelSlowThreshold,
 		FireOnTrackBySdp:             true,
+		UseSinglePeerConnection:      pi.UseSinglePeerConnection,
 	})
 	if err != nil {
 		return err

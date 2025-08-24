@@ -45,9 +45,9 @@ func TestWebhooks(t *testing.T) {
 	require.NoError(t, err)
 	defer finish()
 
-	for _, pv := range []types.ProtocolVersion{types.MaxProtocolDualPeerConnection, types.CurrentProtocol} {
-		t.Run(fmt.Sprintf("protocolVersion=%d", pv), func(t *testing.T) {
-			c1 := createRTCClient("c1", defaultServerPort, pv, nil)
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+			c1 := createRTCClient("c1", defaultServerPort, useSinglePeerConnection, nil)
 			waitUntilConnected(t, c1)
 			testutils.WithTimeout(t, func() string {
 				if ts.GetEvent(webhook.EventRoomStarted) == nil {
@@ -70,7 +70,7 @@ func TestWebhooks(t *testing.T) {
 			ts.ClearEvents()
 
 			// another participant joins
-			c2 := createRTCClient("c2", defaultServerPort, pv, nil)
+			c2 := createRTCClient("c2", defaultServerPort, useSinglePeerConnection, nil)
 			waitUntilConnected(t, c2)
 			defer c2.Stop()
 			testutils.WithTimeout(t, func() string {

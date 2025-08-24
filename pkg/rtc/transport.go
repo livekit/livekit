@@ -265,25 +265,25 @@ type PCTransport struct {
 }
 
 type TransportParams struct {
-	Identity                     string
-	Handler                      transport.Handler
-	ProtocolVersion              types.ProtocolVersion
-	Config                       *WebRTCConfig
-	Twcc                         *lktwcc.Responder
-	DirectionConfig              DirectionConfig
-	CongestionControlConfig      config.CongestionControlConfig
-	EnabledCodecs                []*livekit.Codec
-	Logger                       logger.Logger
-	Transport                    livekit.SignalTarget
-	SimTracks                    map[uint32]SimulcastTrackInfo
-	ClientInfo                   ClientInfo
-	IsOfferer                    bool
-	IsSendSide                   bool
-	AllowPlayoutDelay            bool
-	UseOneShotSignallingMode     bool
-	FireOnTrackBySdp             bool
-	DataChannelMaxBufferedAmount uint64
-	DatachannelSlowThreshold     int
+	Handler                         transport.Handler
+	ProtocolVersion                 types.ProtocolVersion
+	Config                          *WebRTCConfig
+	Twcc                            *lktwcc.Responder
+	DirectionConfig                 DirectionConfig
+	CongestionControlConfig         config.CongestionControlConfig
+	EnabledCodecs                   []*livekit.Codec
+	Logger                          logger.Logger
+	Transport                       livekit.SignalTarget
+	SimTracks                       map[uint32]SimulcastTrackInfo
+	ClientInfo                      ClientInfo
+	IsOfferer                       bool
+	IsSendSide                      bool
+	AllowPlayoutDelay               bool
+	UseOneShotSignallingMode        bool
+	FireOnTrackBySdp                bool
+	DataChannelMaxBufferedAmount    uint64
+	DatachannelSlowThreshold        int
+	DisableRecvonlyTransceiverReuse bool
 
 	// for development test
 	DatachannelMaxReceiverBufferSize int
@@ -358,9 +358,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		// As Firefox does not support migration, ICE Lite can be disabled.
 		se.SetLite(false)
 	}
-	if params.ProtocolVersion.SupportsSinglePeerConnection() {
-		se.SetDisableTransceiverReuseInRecvonly(true)
-	}
+	se.SetDisableTransceiverReuseInRecvonly(params.DisableRecvonlyTransceiverReuse)
 	se.SetDTLSRetransmissionInterval(dtlsRetransmissionInterval)
 	se.SetICETimeouts(iceDisconnectedTimeout, iceFailedTimeout, iceKeepaliveInterval)
 
