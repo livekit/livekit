@@ -413,12 +413,6 @@ func (c *RTCClient) ID() livekit.ParticipantID {
 	return c.id
 }
 
-/* RAJA-REMOVE
-func (c *RTCClient) ProtocolVersion() types.ProtocolVersion {
-	return c.protocolVersion
-}
-*/
-
 // create an offer for the server
 func (c *RTCClient) Run() error {
 	c.conn.SetCloseHandler(func(code int, text string) error {

@@ -210,30 +210,14 @@ func createRTCClient(name string, port int, useSinglePeerConnection bool, opts *
 	token := joinToken(testRoom, name, customizer)
 
 	return createRTCClientWithToken(token, port, useSinglePeerConnection, opts)
-	/* RAJA-REMOVE
-	if useSinglePeerConnection {
-		opts.UseJoinRequestQueryParam = true
-	}
-	ws, err := testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", port), token, opts)
-	if err != nil {
-		panic(err)
-	}
-
-	c, err := testclient.NewRTCClient(ws, useSinglePeerConnection, opts)
-	if err != nil {
-		panic(err)
-	}
-
-	go c.Run()
-
-	return c
-	*/
 }
 
 // creates a client and runs against server
 func createRTCClientWithToken(token string, port int, useSinglePeerConnection bool, opts *testclient.Options) *testclient.RTCClient {
 	if opts == nil {
-		opts = &testclient.Options{}
+		opts = &testclient.Options{
+			AutoSubscribe: true,
+		}
 	}
 	if useSinglePeerConnection {
 		opts.UseJoinRequestQueryParam = true
