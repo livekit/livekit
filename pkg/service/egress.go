@@ -310,8 +310,7 @@ func (s *EgressService) ListEgress(ctx context.Context, req *livekit.ListEgressR
 	return s.io.ListEgress(ctx, req)
 }
 
-func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressRequest) (*livekit.EgressInfo, error) {
-	var err error
+func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressRequest) (info *livekit.EgressInfo, err error) {
 	defer func() {
 		if errors.Is(err, psrpc.ErrNoResponse) {
 			// Do not map cases where the context times out to 503
@@ -328,7 +327,7 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 		return nil, ErrEgressNotConnected
 	}
 
-	info, err := s.client.StopEgress(ctx, req.EgressId, req)
+	info, err = s.client.StopEgress(ctx, req.EgressId, req)
 	if err != nil {
 		var loadErr error
 		info, loadErr = s.io.GetEgress(ctx, &rpc.GetEgressRequest{EgressId: req.EgressId})
