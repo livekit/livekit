@@ -45,78 +45,82 @@ func TestWebhooks(t *testing.T) {
 	require.NoError(t, err)
 	defer finish()
 
-	c1 := createRTCClient("c1", defaultServerPort, nil)
-	waitUntilConnected(t, c1)
-	testutils.WithTimeout(t, func() string {
-		if ts.GetEvent(webhook.EventRoomStarted) == nil {
-			return "did not receive RoomStarted"
-		}
-		if ts.GetEvent(webhook.EventParticipantJoined) == nil {
-			return "did not receive ParticipantJoined"
-		}
-		return ""
-	})
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+			c1 := createRTCClient("c1", defaultServerPort, useSinglePeerConnection, nil)
+			waitUntilConnected(t, c1)
+			testutils.WithTimeout(t, func() string {
+				if ts.GetEvent(webhook.EventRoomStarted) == nil {
+					return "did not receive RoomStarted"
+				}
+				if ts.GetEvent(webhook.EventParticipantJoined) == nil {
+					return "did not receive ParticipantJoined"
+				}
+				return ""
+			})
 
-	// first participant join should have started the room
-	started := ts.GetEvent(webhook.EventRoomStarted)
-	require.Equal(t, testRoom, started.Room.Name)
-	require.NotEmpty(t, started.Id)
-	require.Greater(t, started.CreatedAt, time.Now().Unix()-100)
-	require.GreaterOrEqual(t, time.Now().Unix(), started.CreatedAt)
-	joined := ts.GetEvent(webhook.EventParticipantJoined)
-	require.Equal(t, "c1", joined.Participant.Identity)
-	ts.ClearEvents()
+			// first participant join should have started the room
+			started := ts.GetEvent(webhook.EventRoomStarted)
+			require.Equal(t, testRoom, started.Room.Name)
+			require.NotEmpty(t, started.Id)
+			require.Greater(t, started.CreatedAt, time.Now().Unix()-100)
+			require.GreaterOrEqual(t, time.Now().Unix(), started.CreatedAt)
+			joined := ts.GetEvent(webhook.EventParticipantJoined)
+			require.Equal(t, "c1", joined.Participant.Identity)
+			ts.ClearEvents()
 
-	// another participant joins
-	c2 := createRTCClient("c2", defaultServerPort, nil)
-	waitUntilConnected(t, c2)
-	defer c2.Stop()
-	testutils.WithTimeout(t, func() string {
-		if ts.GetEvent(webhook.EventParticipantJoined) == nil {
-			return "did not receive ParticipantJoined"
-		}
-		return ""
-	})
-	joined = ts.GetEvent(webhook.EventParticipantJoined)
-	require.Equal(t, "c2", joined.Participant.Identity)
-	ts.ClearEvents()
+			// another participant joins
+			c2 := createRTCClient("c2", defaultServerPort, useSinglePeerConnection, nil)
+			waitUntilConnected(t, c2)
+			defer c2.Stop()
+			testutils.WithTimeout(t, func() string {
+				if ts.GetEvent(webhook.EventParticipantJoined) == nil {
+					return "did not receive ParticipantJoined"
+				}
+				return ""
+			})
+			joined = ts.GetEvent(webhook.EventParticipantJoined)
+			require.Equal(t, "c2", joined.Participant.Identity)
+			ts.ClearEvents()
 
-	// track published
-	writers := publishTracksForClients(t, c1)
-	defer stopWriters(writers...)
-	testutils.WithTimeout(t, func() string {
-		ev := ts.GetEvent(webhook.EventTrackPublished)
-		if ev == nil {
-			return "did not receive TrackPublished"
-		}
-		require.NotNil(t, ev.Track, "TrackPublished did not include trackInfo")
-		require.Equal(t, string(c1.ID()), ev.Participant.Sid)
-		return ""
-	})
-	ts.ClearEvents()
+			// track published
+			writers := publishTracksForClients(t, c1)
+			defer stopWriters(writers...)
+			testutils.WithTimeout(t, func() string {
+				ev := ts.GetEvent(webhook.EventTrackPublished)
+				if ev == nil {
+					return "did not receive TrackPublished"
+				}
+				require.NotNil(t, ev.Track, "TrackPublished did not include trackInfo")
+				require.Equal(t, string(c1.ID()), ev.Participant.Sid)
+				return ""
+			})
+			ts.ClearEvents()
 
-	// first participant leaves
-	c1.Stop()
-	testutils.WithTimeout(t, func() string {
-		if ts.GetEvent(webhook.EventParticipantLeft) == nil {
-			return "did not receive ParticipantLeft"
-		}
-		return ""
-	})
-	left := ts.GetEvent(webhook.EventParticipantLeft)
-	require.Equal(t, "c1", left.Participant.Identity)
-	ts.ClearEvents()
+			// first participant leaves
+			c1.Stop()
+			testutils.WithTimeout(t, func() string {
+				if ts.GetEvent(webhook.EventParticipantLeft) == nil {
+					return "did not receive ParticipantLeft"
+				}
+				return ""
+			})
+			left := ts.GetEvent(webhook.EventParticipantLeft)
+			require.Equal(t, "c1", left.Participant.Identity)
+			ts.ClearEvents()
 
-	// room closed
-	rm := server.RoomManager().GetRoom(context.Background(), testRoom)
-	rm.Close(types.ParticipantCloseReasonNone)
-	testutils.WithTimeout(t, func() string {
-		if ts.GetEvent(webhook.EventRoomFinished) == nil {
-			return "did not receive RoomFinished"
-		}
-		return ""
-	})
-	require.Equal(t, testRoom, ts.GetEvent(webhook.EventRoomFinished).Room.Name)
+			// room closed
+			rm := server.RoomManager().GetRoom(context.Background(), testRoom)
+			rm.Close(types.ParticipantCloseReasonNone)
+			testutils.WithTimeout(t, func() string {
+				if ts.GetEvent(webhook.EventRoomFinished) == nil {
+					return "did not receive RoomFinished"
+				}
+				return ""
+			})
+			require.Equal(t, testRoom, ts.GetEvent(webhook.EventRoomFinished).Room.Name)
+		})
+	}
 }
 
 func setupServerWithWebhook() (server *service.LivekitServer, testServer *webhookTestServer, finishFunc func(), err error) {

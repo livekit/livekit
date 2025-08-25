@@ -47,6 +47,7 @@ type Handler interface {
 	OnNegotiationStateChanged(state NegotiationState)
 	OnNegotiationFailed()
 	OnStreamStateChange(update *streamallocator.StreamStateUpdate) error
+	OnUnmatchedMedia(numAudios uint32, numVideos uint32) error
 }
 
 type UnimplementedHandler struct{}
@@ -70,5 +71,8 @@ func (h UnimplementedHandler) OnAnswer(sd webrtc.SessionDescription, answerId ui
 func (h UnimplementedHandler) OnNegotiationStateChanged(state NegotiationState) {}
 func (h UnimplementedHandler) OnNegotiationFailed()                             {}
 func (h UnimplementedHandler) OnStreamStateChange(update *streamallocator.StreamStateUpdate) error {
+	return nil
+}
+func (h UnimplementedHandler) OnUnmatchedMedia(numAudios uint32, numVideos uint32) error {
 	return nil
 }

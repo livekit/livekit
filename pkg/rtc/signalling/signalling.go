@@ -220,3 +220,11 @@ func (s *signalling) SignalSubscriptionPermissionUpdate(subscriptionPermissionUp
 		},
 	}
 }
+
+func (u *signalling) SignalMediaSectionsRequirement(mediaSectionsRequirement *livekit.MediaSectionsRequirement) proto.Message {
+	return &livekit.SignalResponse{
+		Message: &livekit.SignalResponse_MediaSectionsRequirement{
+			MediaSectionsRequirement: mediaSectionsRequirement,
+		},
+	}
+}

@@ -416,30 +416,37 @@ func (r *RoomManager) StartSession(
 	if pi.DisableICELite {
 		rtcConf.SettingEngine.SetLite(false)
 	}
+	rtcConf.UpdatePublisherConfig(pi.UseSinglePeerConnection)
+
 	// default allow forceTCP
 	allowFallback := true
 	if r.config.RTC.AllowTCPFallback != nil {
 		allowFallback = *r.config.RTC.AllowTCPFallback
 	}
+
 	// default do not force full reconnect on a publication error
 	reconnectOnPublicationError := false
 	if r.config.RTC.ReconnectOnPublicationError != nil {
 		reconnectOnPublicationError = *r.config.RTC.ReconnectOnPublicationError
 	}
+
 	// default do not force full reconnect on a subscription error
 	reconnectOnSubscriptionError := false
 	if r.config.RTC.ReconnectOnSubscriptionError != nil {
 		reconnectOnSubscriptionError = *r.config.RTC.ReconnectOnSubscriptionError
 	}
+
 	// default do not force full reconnect on a data channel error
 	reconnectOnDataChannelError := false
 	if r.config.RTC.ReconnectOnDataChannelError != nil {
 		reconnectOnDataChannelError = *r.config.RTC.ReconnectOnDataChannelError
 	}
+
 	subscriberAllowPause := r.config.RTC.CongestionControl.AllowPause
 	if pi.SubscriberAllowPause != nil {
 		subscriberAllowPause = *pi.SubscriberAllowPause
 	}
+
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:                pi.Identity,
 		Name:                    pi.Name,
@@ -486,6 +493,7 @@ func (r *RoomManager) StartSession(
 		DataChannelMaxBufferedAmount: r.config.RTC.DataChannelMaxBufferedAmount,
 		DatachannelSlowThreshold:     r.config.RTC.DatachannelSlowThreshold,
 		FireOnTrackBySdp:             true,
+		UseSinglePeerConnection:      pi.UseSinglePeerConnection,
 	})
 	if err != nil {
 		return err

@@ -41,7 +41,7 @@ require (
 	github.com/pion/sdp/v3 v3.0.15
 	github.com/pion/transport/v3 v3.0.7
 	github.com/pion/turn/v4 v4.1.1
-	github.com/pion/webrtc/v4 v4.1.3
+	github.com/pion/webrtc/v4 v4.1.5-0.20250825162555-4b37165dcc27
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.23.0
 	github.com/redis/go-redis/v9 v9.12.1
@@ -144,3 +144,5 @@ require (
 	google.golang.org/grpc v1.74.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
+
+replace github.com/livekit/protocol => ../protocol

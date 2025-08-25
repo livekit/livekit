@@ -799,6 +799,16 @@ type FakeLocalParticipant struct {
 	isTrackNameSubscribedReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	IsUsingSinglePeerConnectionStub        func() bool
+	isUsingSinglePeerConnectionMutex       sync.RWMutex
+	isUsingSinglePeerConnectionArgsForCall []struct {
+	}
+	isUsingSinglePeerConnectionReturns struct {
+		result1 bool
+	}
+	isUsingSinglePeerConnectionReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	IssueFullReconnectStub        func(types.ParticipantCloseReason)
 	issueFullReconnectMutex       sync.RWMutex
 	issueFullReconnectArgsForCall []struct {
@@ -1116,14 +1126,16 @@ type FakeLocalParticipant struct {
 	setMetadataArgsForCall []struct {
 		arg1 string
 	}
-	SetMigrateInfoStub        func(*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo, []*livekit.DataChannelReceiveState)
+	SetMigrateInfoStub        func(*webrtc.SessionDescription, *webrtc.SessionDescription, *webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo, []*livekit.DataChannelReceiveState)
 	setMigrateInfoMutex       sync.RWMutex
 	setMigrateInfoArgsForCall []struct {
 		arg1 *webrtc.SessionDescription
 		arg2 *webrtc.SessionDescription
-		arg3 []*livekit.TrackPublishedResponse
-		arg4 []*livekit.DataChannelInfo
-		arg5 []*livekit.DataChannelReceiveState
+		arg3 *webrtc.SessionDescription
+		arg4 *webrtc.SessionDescription
+		arg5 []*livekit.TrackPublishedResponse
+		arg6 []*livekit.DataChannelInfo
+		arg7 []*livekit.DataChannelReceiveState
 	}
 	SetMigrateStateStub        func(types.MigrateState)
 	setMigrateStateMutex       sync.RWMutex
@@ -5521,6 +5533,59 @@ func (fake *FakeLocalParticipant) IsTrackNameSubscribedReturnsOnCall(i int, resu
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) IsUsingSinglePeerConnection() bool {
+	fake.isUsingSinglePeerConnectionMutex.Lock()
+	ret, specificReturn := fake.isUsingSinglePeerConnectionReturnsOnCall[len(fake.isUsingSinglePeerConnectionArgsForCall)]
+	fake.isUsingSinglePeerConnectionArgsForCall = append(fake.isUsingSinglePeerConnectionArgsForCall, struct {
+	}{})
+	stub := fake.IsUsingSinglePeerConnectionStub
+	fakeReturns := fake.isUsingSinglePeerConnectionReturns
+	fake.recordInvocation("IsUsingSinglePeerConnection", []interface{}{})
+	fake.isUsingSinglePeerConnectionMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) IsUsingSinglePeerConnectionCallCount() int {
+	fake.isUsingSinglePeerConnectionMutex.RLock()
+	defer fake.isUsingSinglePeerConnectionMutex.RUnlock()
+	return len(fake.isUsingSinglePeerConnectionArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) IsUsingSinglePeerConnectionCalls(stub func() bool) {
+	fake.isUsingSinglePeerConnectionMutex.Lock()
+	defer fake.isUsingSinglePeerConnectionMutex.Unlock()
+	fake.IsUsingSinglePeerConnectionStub = stub
+}
+
+func (fake *FakeLocalParticipant) IsUsingSinglePeerConnectionReturns(result1 bool) {
+	fake.isUsingSinglePeerConnectionMutex.Lock()
+	defer fake.isUsingSinglePeerConnectionMutex.Unlock()
+	fake.IsUsingSinglePeerConnectionStub = nil
+	fake.isUsingSinglePeerConnectionReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsUsingSinglePeerConnectionReturnsOnCall(i int, result1 bool) {
+	fake.isUsingSinglePeerConnectionMutex.Lock()
+	defer fake.isUsingSinglePeerConnectionMutex.Unlock()
+	fake.IsUsingSinglePeerConnectionStub = nil
+	if fake.isUsingSinglePeerConnectionReturnsOnCall == nil {
+		fake.isUsingSinglePeerConnectionReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isUsingSinglePeerConnectionReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) IssueFullReconnect(arg1 types.ParticipantCloseReason) {
 	fake.issueFullReconnectMutex.Lock()
 	fake.issueFullReconnectArgsForCall = append(fake.issueFullReconnectArgsForCall, struct {
@@ -7359,35 +7424,37 @@ func (fake *FakeLocalParticipant) SetMetadataArgsForCall(i int) string {
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) SetMigrateInfo(arg1 *webrtc.SessionDescription, arg2 *webrtc.SessionDescription, arg3 []*livekit.TrackPublishedResponse, arg4 []*livekit.DataChannelInfo, arg5 []*livekit.DataChannelReceiveState) {
-	var arg3Copy []*livekit.TrackPublishedResponse
-	if arg3 != nil {
-		arg3Copy = make([]*livekit.TrackPublishedResponse, len(arg3))
-		copy(arg3Copy, arg3)
-	}
-	var arg4Copy []*livekit.DataChannelInfo
-	if arg4 != nil {
-		arg4Copy = make([]*livekit.DataChannelInfo, len(arg4))
-		copy(arg4Copy, arg4)
-	}
-	var arg5Copy []*livekit.DataChannelReceiveState
+func (fake *FakeLocalParticipant) SetMigrateInfo(arg1 *webrtc.SessionDescription, arg2 *webrtc.SessionDescription, arg3 *webrtc.SessionDescription, arg4 *webrtc.SessionDescription, arg5 []*livekit.TrackPublishedResponse, arg6 []*livekit.DataChannelInfo, arg7 []*livekit.DataChannelReceiveState) {
+	var arg5Copy []*livekit.TrackPublishedResponse
 	if arg5 != nil {
-		arg5Copy = make([]*livekit.DataChannelReceiveState, len(arg5))
+		arg5Copy = make([]*livekit.TrackPublishedResponse, len(arg5))
 		copy(arg5Copy, arg5)
+	}
+	var arg6Copy []*livekit.DataChannelInfo
+	if arg6 != nil {
+		arg6Copy = make([]*livekit.DataChannelInfo, len(arg6))
+		copy(arg6Copy, arg6)
+	}
+	var arg7Copy []*livekit.DataChannelReceiveState
+	if arg7 != nil {
+		arg7Copy = make([]*livekit.DataChannelReceiveState, len(arg7))
+		copy(arg7Copy, arg7)
 	}
 	fake.setMigrateInfoMutex.Lock()
 	fake.setMigrateInfoArgsForCall = append(fake.setMigrateInfoArgsForCall, struct {
 		arg1 *webrtc.SessionDescription
 		arg2 *webrtc.SessionDescription
-		arg3 []*livekit.TrackPublishedResponse
-		arg4 []*livekit.DataChannelInfo
-		arg5 []*livekit.DataChannelReceiveState
-	}{arg1, arg2, arg3Copy, arg4Copy, arg5Copy})
+		arg3 *webrtc.SessionDescription
+		arg4 *webrtc.SessionDescription
+		arg5 []*livekit.TrackPublishedResponse
+		arg6 []*livekit.DataChannelInfo
+		arg7 []*livekit.DataChannelReceiveState
+	}{arg1, arg2, arg3, arg4, arg5Copy, arg6Copy, arg7Copy})
 	stub := fake.SetMigrateInfoStub
-	fake.recordInvocation("SetMigrateInfo", []interface{}{arg1, arg2, arg3Copy, arg4Copy, arg5Copy})
+	fake.recordInvocation("SetMigrateInfo", []interface{}{arg1, arg2, arg3, arg4, arg5Copy, arg6Copy, arg7Copy})
 	fake.setMigrateInfoMutex.Unlock()
 	if stub != nil {
-		fake.SetMigrateInfoStub(arg1, arg2, arg3, arg4, arg5)
+		fake.SetMigrateInfoStub(arg1, arg2, arg3, arg4, arg5, arg6, arg7)
 	}
 }
 
@@ -7397,17 +7464,17 @@ func (fake *FakeLocalParticipant) SetMigrateInfoCallCount() int {
 	return len(fake.setMigrateInfoArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) SetMigrateInfoCalls(stub func(*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo, []*livekit.DataChannelReceiveState)) {
+func (fake *FakeLocalParticipant) SetMigrateInfoCalls(stub func(*webrtc.SessionDescription, *webrtc.SessionDescription, *webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo, []*livekit.DataChannelReceiveState)) {
 	fake.setMigrateInfoMutex.Lock()
 	defer fake.setMigrateInfoMutex.Unlock()
 	fake.SetMigrateInfoStub = stub
 }
 
-func (fake *FakeLocalParticipant) SetMigrateInfoArgsForCall(i int) (*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo, []*livekit.DataChannelReceiveState) {
+func (fake *FakeLocalParticipant) SetMigrateInfoArgsForCall(i int) (*webrtc.SessionDescription, *webrtc.SessionDescription, *webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo, []*livekit.DataChannelReceiveState) {
 	fake.setMigrateInfoMutex.RLock()
 	defer fake.setMigrateInfoMutex.RUnlock()
 	argsForCall := fake.setMigrateInfoArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5, argsForCall.arg6, argsForCall.arg7
 }
 
 func (fake *FakeLocalParticipant) SetMigrateState(arg1 types.MigrateState) {
