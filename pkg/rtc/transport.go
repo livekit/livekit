@@ -246,6 +246,16 @@ type PCTransport struct {
 
 	eventsQueue *utils.TypedOpsQueue[event]
 
+	connectionDetails      *types.ICEConnectionDetails
+	selectedPair           atomic.Pointer[webrtc.ICECandidatePair]
+	mayFailedICEStats      []iceCandidatePairStats
+	mayFailedICEStatsTimer *time.Timer
+
+	numOutstandingAudios uint32
+	numRequestSentAudios uint32
+	numOutstandingVideos uint32
+	numRequestSentVideos uint32
+
 	// the following should be accessed only in event processing go routine
 	cacheLocalCandidates      bool
 	cachedLocalCandidates     []*webrtc.ICECandidate
@@ -253,37 +263,31 @@ type PCTransport struct {
 	restartAfterGathering     bool
 	restartAtNextOffer        bool
 	negotiationState          transport.NegotiationState
-	negotiateCounter          atomic.Int32
+	negotiateCounter          int32
 	signalStateCheckTimer     *time.Timer
 	currentOfferIceCredential string // ice user:pwd, for publish side ice restart checking
 	pendingRestartIceOffer    *webrtc.SessionDescription
-
-	connectionDetails      *types.ICEConnectionDetails
-	selectedPair           atomic.Pointer[webrtc.ICECandidatePair]
-	mayFailedICEStats      []iceCandidatePairStats
-	mayFailedICEStatsTimer *time.Timer
 }
 
 type TransportParams struct {
-	Handler                         transport.Handler
-	ProtocolVersion                 types.ProtocolVersion
-	Config                          *WebRTCConfig
-	Twcc                            *lktwcc.Responder
-	DirectionConfig                 DirectionConfig
-	CongestionControlConfig         config.CongestionControlConfig
-	EnabledCodecs                   []*livekit.Codec
-	Logger                          logger.Logger
-	Transport                       livekit.SignalTarget
-	SimTracks                       map[uint32]SimulcastTrackInfo
-	ClientInfo                      ClientInfo
-	IsOfferer                       bool
-	IsSendSide                      bool
-	AllowPlayoutDelay               bool
-	UseOneShotSignallingMode        bool
-	FireOnTrackBySdp                bool
-	DataChannelMaxBufferedAmount    uint64
-	DatachannelSlowThreshold        int
-	DisableRecvonlyTransceiverReuse bool
+	Handler                      transport.Handler
+	ProtocolVersion              types.ProtocolVersion
+	Config                       *WebRTCConfig
+	Twcc                         *lktwcc.Responder
+	DirectionConfig              DirectionConfig
+	CongestionControlConfig      config.CongestionControlConfig
+	EnabledCodecs                []*livekit.Codec
+	Logger                       logger.Logger
+	Transport                    livekit.SignalTarget
+	SimTracks                    map[uint32]SimulcastTrackInfo
+	ClientInfo                   ClientInfo
+	IsOfferer                    bool
+	IsSendSide                   bool
+	AllowPlayoutDelay            bool
+	UseOneShotSignallingMode     bool
+	FireOnTrackBySdp             bool
+	DataChannelMaxBufferedAmount uint64
+	DatachannelSlowThreshold     int
 
 	// for development test
 	DatachannelMaxReceiverBufferSize int
@@ -358,7 +362,6 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		// As Firefox does not support migration, ICE Lite can be disabled.
 		se.SetLite(false)
 	}
-	se.SetDisableTransceiverReuseInRecvonly(params.DisableRecvonlyTransceiverReuse)
 	se.SetDTLSRetransmissionInterval(dtlsRetransmissionInterval)
 	se.SetICETimeouts(iceDisconnectedTimeout, iceFailedTimeout, iceKeepaliveInterval)
 
@@ -956,6 +959,7 @@ func (t *PCTransport) AddTrack(
 		configureAudioTransceiver(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
 	}
 	configureTransceiverCodecs(transceiver, enabledCodecs, rtcpFeedbackConfig, !t.params.IsOfferer)
+	t.adjustNumOutstandingMedia(transceiver)
 	return
 }
 
@@ -980,6 +984,7 @@ func (t *PCTransport) AddTransceiverFromTrack(
 		configureAudioTransceiver(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
 	}
 	configureTransceiverCodecs(transceiver, enabledCodecs, rtcpFeedbackConfig, !t.params.IsOfferer)
+	t.adjustNumOutstandingMedia(transceiver)
 	return
 }
 
@@ -2005,11 +2010,13 @@ func (t *PCTransport) SetPreviousSdp(localDescription, remoteDescription *webrtc
 			}
 		}
 	}
-	// SINGLE-PEER-CONNECTION-TODO: how does transceiver re-use happen in single peer connection case
-	// disable fast negotiation temporarily after migration to avoid sending offer
-	// contains part of subscribed tracks before migration, let the subscribed track
-	// resume at the same time.
-	t.lastNegotiate = time.Now().Add(iceFailedTimeoutTotal)
+
+	if t.params.IsOfferer {
+		// disable fast negotiation temporarily after migration to avoid sending offer
+		// contains part of subscribed tracks before migration, let the subscribed track
+		// resume at the same time.
+		t.lastNegotiate = time.Now().Add(iceFailedTimeoutTotal)
+	}
 	t.lock.Unlock()
 }
 
@@ -2259,22 +2266,44 @@ func (t *PCTransport) clearSignalStateCheckTimer() {
 func (t *PCTransport) setupSignalStateCheckTimer() {
 	t.clearSignalStateCheckTimer()
 
-	negotiateVersion := t.negotiateCounter.Inc()
+	negotiateVersion := t.negotiateCounter
+	t.negotiateCounter++
 	t.signalStateCheckTimer = time.AfterFunc(negotiationFailedTimeout, func() {
 		t.clearSignalStateCheckTimer()
 
 		failed := t.negotiationState != transport.NegotiationStateNone
 
-		if t.negotiateCounter.Load() == negotiateVersion && failed && t.pc.ConnectionState() == webrtc.PeerConnectionStateConnected {
+		if t.negotiateCounter == negotiateVersion && failed && t.pc.ConnectionState() == webrtc.PeerConnectionStateConnected {
 			t.onNegotiationFailed(false, "negotiation timed out")
 		}
 	})
 }
 
+func (t *PCTransport) adjustNumOutstandingMedia(transceiver *webrtc.RTPTransceiver) {
+	if transceiver.Mid() != "" {
+		return
+	}
+
+	t.lock.Lock()
+	if transceiver.Kind() == webrtc.RTPCodecTypeAudio {
+		t.numOutstandingAudios++
+	} else {
+		t.numOutstandingVideos++
+	}
+	t.lock.Unlock()
+}
+
 func (t *PCTransport) sendUnmatchedMediaRequirement(force bool) error {
 	// if there are unmatched media sections, notify remote peer to generate offer with
 	// enough media section in subsequent offers
-	numAudios, numVideos := t.getNumUnmatchedTransceivers()
+	t.lock.Lock()
+	numAudios := t.numOutstandingAudios - t.numRequestSentAudios
+	t.numRequestSentAudios += numAudios
+
+	numVideos := t.numOutstandingVideos - t.numRequestSentVideos
+	t.numRequestSentVideos += numVideos
+	t.lock.Unlock()
+
 	if force || (numAudios+numVideos) != 0 {
 		if err := t.params.Handler.OnUnmatchedMedia(numAudios, numVideos); err != nil {
 			return errors.Wrap(err, "could not send unmatched media requirements")
@@ -2467,6 +2496,12 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 }
 
 func (t *PCTransport) createAndSendAnswer() error {
+	numOutstandingAudios, numOutstandingVideos := t.getNumUnmatchedTransceivers()
+	t.lock.Lock()
+	t.numOutstandingAudios, t.numOutstandingVideos = numOutstandingAudios, numOutstandingVideos
+	t.numRequestSentAudios, t.numRequestSentVideos = 0, 0
+	t.lock.Unlock()
+
 	answer, err := t.pc.CreateAnswer(nil)
 	if err != nil {
 		if errors.Is(err, webrtc.ErrConnectionClosed) {
@@ -2520,10 +2555,12 @@ func (t *PCTransport) createAndSendAnswer() error {
 		return err
 	}
 
+	t.lock.Lock()
 	if !t.canReuseTransceiver {
 		t.canReuseTransceiver = true
 		t.previousTrackDescription = make(map[string]*trackDescription)
 	}
+	t.lock.Unlock()
 
 	return t.localDescriptionSent()
 }
