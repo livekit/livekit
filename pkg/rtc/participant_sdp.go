@@ -293,19 +293,17 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 		}
 		p.pendingTracksLock.RUnlock()
 
-		if ti != nil {
-			for _, c := range ti.Codecs {
-				if c.Cid == streamID || c.SdpCid == streamID {
-					mimeType = c.MimeType
-					break
-				}
-			}
-		}
 		if ti == nil {
 			unprocessed = append(unprocessed, unmatch)
 			continue
 		}
 
+		for _, c := range ti.Codecs {
+			if c.Cid == streamID || c.SdpCid == streamID {
+				mimeType = c.MimeType
+				break
+			}
+		}
 		if mimeType == "" && len(ti.Codecs) > 0 {
 			mimeType = ti.Codecs[0].MimeType
 		}
@@ -375,9 +373,6 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 // configure publisher answer for audio track's dtx and stereo settings
 func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescription) webrtc.SessionDescription {
 	offer := p.TransportManager.LastPublisherOffer()
-	if offer == nil {
-		return answer
-	}
 	parsedOffer, err := offer.Unmarshal()
 	if err != nil {
 		return answer
