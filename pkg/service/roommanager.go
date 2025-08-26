@@ -1016,6 +1016,7 @@ func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
 	token := auth.NewAccessToken(key, secret)
 	token.SetName(grants.Name).
 		SetIdentity(string(participant.Identity())).
+		SetKind(grants.GetParticipantKind()).
 		SetValidFor(tokenDefaultTTL).
 		SetMetadata(grants.Metadata).
 		SetAttributes(grants.Attributes).
