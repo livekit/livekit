@@ -1328,8 +1328,7 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 }
 
 func (p *ParticipantImpl) SetMigrateInfo(
-	previousPublisherOffer, previousPublisherAnswer *webrtc.SessionDescription,
-	previousSubscriberOffer, previousSubscriberAnswer *webrtc.SessionDescription,
+	previousOffer, previousAnswer *webrtc.SessionDescription,
 	mediaTracks []*livekit.TrackPublishedResponse,
 	dataChannels []*livekit.DataChannelInfo,
 	dataChannelReceiveState []*livekit.DataChannelReceiveState,
@@ -1367,13 +1366,7 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	}
 	p.reliableDataInfo.joiningMessageLock.Unlock()
 
-	p.TransportManager.SetMigrateInfo(
-		previousPublisherOffer,
-		previousPublisherAnswer,
-		previousSubscriberOffer,
-		previousSubscriberAnswer,
-		dataChannels,
-	)
+	p.TransportManager.SetMigrateInfo(previousOffer, previousAnswer, dataChannels)
 }
 
 func (p *ParticipantImpl) IsReconnect() bool {

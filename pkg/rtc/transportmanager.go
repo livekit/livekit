@@ -793,10 +793,8 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 }
 
 func (t *TransportManager) SetMigrateInfo(
-	previousPublisherOffer *webrtc.SessionDescription,
-	previousPublisherAnswer *webrtc.SessionDescription,
-	previousSubscriberOffer *webrtc.SessionDescription,
-	previousSubscriberAnswer *webrtc.SessionDescription,
+	previousOffer *webrtc.SessionDescription,
+	previousAnswer *webrtc.SessionDescription,
 	dataChannels []*livekit.DataChannelInfo,
 ) {
 	t.lock.Lock()
@@ -818,9 +816,9 @@ func (t *TransportManager) SetMigrateInfo(
 	}
 
 	if t.params.UseSinglePeerConnection {
-		t.publisher.SetPreviousSdp(previousPublisherAnswer, previousPublisherOffer)
+		t.publisher.SetPreviousSdp(previousAnswer, previousOffer)
 	} else {
-		t.subscriber.SetPreviousSdp(previousSubscriberOffer, previousSubscriberAnswer)
+		t.subscriber.SetPreviousSdp(previousOffer, previousAnswer)
 	}
 }
 
