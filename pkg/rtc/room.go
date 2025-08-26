@@ -59,6 +59,8 @@ const (
 
 	dataMessageCacheTTL  = 2 * time.Second
 	dataMessageCacheSize = 100_000
+
+	roomUpdateBatchTarget = 128 * 1024 // target room participant update batch chunk size in bytes
 )
 
 var (
@@ -1992,15 +1994,19 @@ func SendParticipantUpdates(updates []*ParticipantUpdate, participants []types.L
 		fullUpdates = append(fullUpdates, update.ParticipantInfo)
 	}
 
+	filteredUpdateChunks := ChunkProtoBatch(filteredUpdates, roomUpdateBatchTarget)
+	fullUpdateChunks := ChunkProtoBatch(fullUpdates, roomUpdateBatchTarget)
+
 	for _, op := range participants {
-		var err error
+		updateChunks := fullUpdateChunks
 		if op.ProtocolVersion().SupportsIdentityBasedReconnection() {
-			err = op.SendParticipantUpdate(filteredUpdates)
-		} else {
-			err = op.SendParticipantUpdate(fullUpdates)
+			updateChunks = filteredUpdateChunks
 		}
-		if err != nil {
-			op.GetLogger().Errorw("could not send update to participant", err)
+		for _, chunk := range updateChunks {
+			if err := op.SendParticipantUpdate(chunk); err != nil {
+				op.GetLogger().Errorw("could not send update to participant", err)
+				break
+			}
 		}
 	}
 }
