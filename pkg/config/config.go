@@ -174,6 +174,8 @@ type RoomConfig struct {
 	CreateRoomEnabled  bool               `yaml:"create_room_enabled,omitempty"`
 	CreateRoomTimeout  time.Duration      `yaml:"create_room_timeout,omitempty"`
 	CreateRoomAttempts int                `yaml:"create_room_attempts,omitempty"`
+	// target room participant update batch chunk size in bytes
+	UpdateBatchTargetSize int `yaml:"update_batch_target_size,omitempty"`
 	// deprecated, moved to limits
 	MaxMetadataSize uint32 `yaml:"max_metadata_size,omitempty"`
 	// deprecated, moved to limits
@@ -366,11 +368,12 @@ var DefaultConfig = Config{
 			{Mime: mime.MimeTypeRTX.String()},
 			{Mime: mime.MimeTypeH265.String()},
 		},
-		EmptyTimeout:       5 * 60,
-		DepartureTimeout:   20,
-		CreateRoomEnabled:  true,
-		CreateRoomTimeout:  10 * time.Second,
-		CreateRoomAttempts: 3,
+		EmptyTimeout:          5 * 60,
+		DepartureTimeout:      20,
+		CreateRoomEnabled:     true,
+		CreateRoomTimeout:     10 * time.Second,
+		CreateRoomAttempts:    3,
+		UpdateBatchTargetSize: 128 * 1024,
 	},
 	Limit: LimitConfig{
 		MaxMetadataSize:              64000,
