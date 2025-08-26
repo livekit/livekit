@@ -59,8 +59,6 @@ const (
 
 	dataMessageCacheTTL  = 2 * time.Second
 	dataMessageCacheSize = 100_000
-
-	roomUpdateBatchTarget = 128 * 1024 // target room participant update batch chunk size in bytes
 )
 
 var (
@@ -108,6 +106,7 @@ type Room struct {
 	logger     logger.Logger
 
 	config          WebRTCConfig
+	roomConfig      config.RoomConfig
 	audioConfig     *sfu.AudioConfig
 	serverInfo      *livekit.ServerInfo
 	telemetry       telemetry.TelemetryService
@@ -255,6 +254,7 @@ func NewRoom(
 			livekit.RoomID(room.Sid),
 		),
 		config:                               config,
+		roomConfig:                           roomConfig,
 		audioConfig:                          audioConfig,
 		telemetry:                            telemetry,
 		egressLauncher:                       egressLauncher,
@@ -1433,7 +1433,7 @@ func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcas
 	r.batchedUpdatesMu.Unlock()
 	if len(updates) != 0 {
 		selfSent = true
-		SendParticipantUpdates(updates, r.GetParticipants())
+		SendParticipantUpdates(updates, r.GetParticipants(), r.roomConfig.UpdateBatchTargetSize)
 	}
 }
 
@@ -1490,7 +1490,7 @@ func (r *Room) changeUpdateWorker() {
 			r.batchedUpdates = make(map[livekit.ParticipantIdentity]*ParticipantUpdate)
 			r.batchedUpdatesMu.Unlock()
 
-			SendParticipantUpdates(maps.Values(updatesMap), r.GetParticipants())
+			SendParticipantUpdates(maps.Values(updatesMap), r.GetParticipants(), r.roomConfig.UpdateBatchTargetSize)
 
 		case <-cleanDataMessageTicker.C:
 			r.dataMessageCache.Prune()
@@ -1970,7 +1970,7 @@ func PushAndDequeueUpdates(
 	return updates
 }
 
-func SendParticipantUpdates(updates []*ParticipantUpdate, participants []types.LocalParticipant) {
+func SendParticipantUpdates(updates []*ParticipantUpdate, participants []types.LocalParticipant, batchTargetSize int) {
 	if len(updates) == 0 {
 		return
 	}
@@ -1994,8 +1994,8 @@ func SendParticipantUpdates(updates []*ParticipantUpdate, participants []types.L
 		fullUpdates = append(fullUpdates, update.ParticipantInfo)
 	}
 
-	filteredUpdateChunks := ChunkProtoBatch(filteredUpdates, roomUpdateBatchTarget)
-	fullUpdateChunks := ChunkProtoBatch(fullUpdates, roomUpdateBatchTarget)
+	filteredUpdateChunks := ChunkProtoBatch(filteredUpdates, batchTargetSize)
+	fullUpdateChunks := ChunkProtoBatch(fullUpdates, batchTargetSize)
 
 	for _, op := range participants {
 		updateChunks := fullUpdateChunks
