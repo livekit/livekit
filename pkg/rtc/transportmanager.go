@@ -147,7 +147,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		Logger:                       lgr,
 		SimTracks:                    params.SimTracks,
 		ClientInfo:                   params.ClientInfo,
-		IsSendSide:                   params.UseSinglePeerConnection,
+		IsSendSide:                   params.UseOneShotSignallingMode || params.UseSinglePeerConnection,
 		AllowPlayoutDelay:            params.AllowPlayoutDelay,
 		Transport:                    livekit.SignalTarget_PUBLISHER,
 		Handler:                      params.PublisherHandler,
@@ -233,7 +233,7 @@ func (t *TransportManager) WritePublisherRTCP(pkts []rtcp.Packet) error {
 }
 
 func (t *TransportManager) GetSubscriberRTT() (float64, bool) {
-	if t.params.UseSinglePeerConnection {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
 		return t.publisher.GetRTT()
 	} else {
 		return t.subscriber.GetRTT()
@@ -241,7 +241,7 @@ func (t *TransportManager) GetSubscriberRTT() (float64, bool) {
 }
 
 func (t *TransportManager) HasSubscriberEverConnected() bool {
-	if t.params.UseSinglePeerConnection {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
 		return t.publisher.HasEverConnected()
 	} else {
 		return t.subscriber.HasEverConnected()
