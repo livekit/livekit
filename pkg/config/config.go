@@ -373,7 +373,7 @@ var DefaultConfig = Config{
 		CreateRoomEnabled:     true,
 		CreateRoomTimeout:     10 * time.Second,
 		CreateRoomAttempts:    3,
-		UpdateBatchTargetSize: 256 * 1024,
+		UpdateBatchTargetSize: 128 * 1024,
 	},
 	Limit: LimitConfig{
 		MaxMetadataSize:              64000,
