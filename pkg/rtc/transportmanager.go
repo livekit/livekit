@@ -950,7 +950,7 @@ func (t *TransportManager) SetSignalSourceValid(valid bool) {
 }
 
 func (t *TransportManager) SetSubscriberAllowPause(allowPause bool) {
-	if t.params.UseSinglePeerConnection {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
 		t.publisher.SetAllowPauseOfStreamAllocator(allowPause)
 	} else {
 		t.subscriber.SetAllowPauseOfStreamAllocator(allowPause)
@@ -958,7 +958,7 @@ func (t *TransportManager) SetSubscriberAllowPause(allowPause bool) {
 }
 
 func (t *TransportManager) SetSubscriberChannelCapacity(channelCapacity int64) {
-	if t.params.UseSinglePeerConnection {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
 		t.publisher.SetChannelCapacityOfStreamAllocator(channelCapacity)
 	} else {
 		t.subscriber.SetChannelCapacityOfStreamAllocator(channelCapacity)
