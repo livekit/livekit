@@ -291,7 +291,7 @@ func (t *TransportManager) WriteSubscriberRTCP(pkts []rtcp.Packet) error {
 }
 
 func (t *TransportManager) GetSubscriberPacer() pacer.Pacer {
-	if t.params.UseSinglePeerConnection {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
 		return t.publisher.GetPacer()
 	} else {
 		return t.subscriber.GetPacer()
@@ -299,7 +299,7 @@ func (t *TransportManager) GetSubscriberPacer() pacer.Pacer {
 }
 
 func (t *TransportManager) AddSubscribedTrack(subTrack types.SubscribedTrack) {
-	if t.params.UseSinglePeerConnection {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
 		t.publisher.AddTrackToStreamAllocator(subTrack)
 	} else {
 		t.subscriber.AddTrackToStreamAllocator(subTrack)
@@ -307,7 +307,7 @@ func (t *TransportManager) AddSubscribedTrack(subTrack types.SubscribedTrack) {
 }
 
 func (t *TransportManager) RemoveSubscribedTrack(subTrack types.SubscribedTrack) {
-	if t.params.UseSinglePeerConnection {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
 		t.publisher.RemoveTrackFromStreamAllocator(subTrack)
 	} else {
 		t.subscriber.RemoveTrackFromStreamAllocator(subTrack)
