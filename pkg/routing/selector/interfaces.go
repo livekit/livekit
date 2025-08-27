@@ -37,19 +37,21 @@ func CreateNodeSelector(conf *config.Config) (NodeSelector, error) {
 	}
 	switch kind {
 	case "any":
-		return &AnySelector{conf.NodeSelector.SortBy}, nil
+		return &AnySelector{conf.NodeSelector.SortBy, conf.NodeSelector.Algorithm}, nil
 	case "cpuload":
 		return &CPULoadSelector{
 			CPULoadLimit: conf.NodeSelector.CPULoadLimit,
-			SortBy: conf.NodeSelector.SortBy,
+			SortBy:       conf.NodeSelector.SortBy,
+			Algorithm:    conf.NodeSelector.Algorithm,
 		}, nil
 	case "sysload":
 		return &SystemLoadSelector{
 			SysloadLimit: conf.NodeSelector.SysloadLimit,
-			SortBy: conf.NodeSelector.SortBy,
+			SortBy:       conf.NodeSelector.SortBy,
+			Algorithm:    conf.NodeSelector.Algorithm,
 		}, nil
 	case "regionaware":
-		s, err := NewRegionAwareSelector(conf.Region, conf.NodeSelector.Regions, conf.NodeSelector.SortBy)
+		s, err := NewRegionAwareSelector(conf.Region, conf.NodeSelector.Regions, conf.NodeSelector.SortBy, conf.NodeSelector.Algorithm)
 		if err != nil {
 			return nil, err
 		}
@@ -57,7 +59,7 @@ func CreateNodeSelector(conf *config.Config) (NodeSelector, error) {
 		return s, nil
 	case "random":
 		logger.Warnw("random node selector is deprecated, please switch to \"any\" or another selector", nil)
-		return &AnySelector{conf.NodeSelector.SortBy}, nil
+		return &AnySelector{conf.NodeSelector.SortBy, conf.NodeSelector.Algorithm}, nil
 	default:
 		return nil, ErrUnsupportedSelector
 	}
