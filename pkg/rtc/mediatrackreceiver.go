@@ -742,6 +742,20 @@ func (t *MediaTrackReceiver) UpdateCodecSdpCid(mimeType mime.MimeType, sdpCid st
 	t.updateTrackInfoOfReceivers()
 }
 
+func (t *MediaTrackReceiver) UpdateCodecMid(mimeType mime.MimeType, mid string) {
+	t.lock.Lock()
+	trackInfo := t.TrackInfoClone()
+	for _, origin := range trackInfo.Codecs {
+		if mime.NormalizeMimeType(origin.MimeType) == mimeType {
+			origin.Mid = mid
+		}
+	}
+	t.trackInfo.Store(trackInfo)
+	t.lock.Unlock()
+
+	t.updateTrackInfoOfReceivers()
+}
+
 func (t *MediaTrackReceiver) UpdateCodecRids(mimeType mime.MimeType, rids buffer.VideoLayersRid) {
 	t.lock.Lock()
 	trackInfo := t.TrackInfoClone()

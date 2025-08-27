@@ -16,6 +16,7 @@ package rtc
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	lksdp "github.com/livekit/protocol/sdp"
 	"github.com/livekit/protocol/utils"
 )
@@ -91,6 +93,11 @@ func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([
 						)
 					}
 					unmatchedTrack.(*MediaTrack).UpdateCodecSdpCid(unmatchedSdpMimeType, streamID)
+					p.pubLogger.Debugw(
+						"published track SDP cid updated",
+						"trackID", unmatchedTrack.ID(),
+						"track", logger.Proto(unmatchedTrack.ToProto()),
+					)
 				}
 				continue
 			}
@@ -165,6 +172,147 @@ func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([
 	return unmatchAudios, unmatchVideos
 }
 
+func (p *ParticipantImpl) populateMid(parsedOffer *sdp.SessionDescription) {
+	processUnmatch := func(unmatches []*sdp.MediaDescription, trackType livekit.TrackType) {
+		for _, unmatch := range unmatches {
+			mid := lksdp.GetMidValue(unmatch)
+			if mid == "" {
+				continue
+			}
+
+			if p.TransportManager.GetPublisherRTPTransceiverDirection(mid) != webrtc.RTPTransceiverDirectionRecvonly {
+				continue
+			}
+
+			p.pendingTracksLock.Lock()
+			signalCid, ti, migrated := p.getPendingTrackByTrackTypeWithoutMid(trackType)
+			if migrated || ti == nil || signalCid == "" {
+				p.pendingTracksLock.Unlock()
+
+				// check for back up codec pending publish
+				publishedTrack := p.getPublishedTrackByMid(mid)
+				if publishedTrack != nil {
+					var mimeType mime.MimeType
+					updated := false
+
+					ti := publishedTrack.ToProto()
+					for _, c := range ti.Codecs {
+						if c.Mid == "" && c.Cid != "" {
+							mimeType = mime.NormalizeMimeType(c.MimeType)
+							updated = true
+						}
+					}
+					publishedTrack.(*MediaTrack).UpdateCodecMid(mimeType, mid)
+					if updated {
+						p.pubLogger.Debugw(
+							"published track mid updated",
+							"trackID", publishedTrack.ID(),
+							"track", logger.Proto(publishedTrack.ToProto()),
+						)
+					}
+				}
+				continue
+			}
+
+			updated := false
+			for _, c := range ti.Codecs {
+				if c.Mid == "" {
+					c.Mid = mid
+					updated = true
+				}
+			}
+
+			if updated {
+				p.pendingTracks[signalCid].trackInfos[0] = utils.CloneProto(ti)
+				p.pubLogger.Debugw(
+					"pending track mid updated",
+					"signalCid", signalCid,
+					"trackID", ti.Sid,
+					"pendingTrack", p.pendingTracks[signalCid],
+				)
+			}
+			p.pendingTracksLock.Unlock()
+		}
+	}
+
+	unmatchAudios, err := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "audio")
+	if err != nil {
+		p.pubLogger.Warnw("could not get unmatch audios", err)
+		return
+	}
+
+	unmatchVideos, err := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "video")
+	if err != nil {
+		p.pubLogger.Warnw("could not get unmatch audios", err)
+		return
+	}
+
+	processUnmatch(unmatchAudios, livekit.TrackType_AUDIO)
+	processUnmatch(unmatchVideos, livekit.TrackType_VIDEO)
+}
+
+func (p *ParticipantImpl) populateSdpCidByMid(parsedAnswer *sdp.SessionDescription) {
+	for _, md := range parsedAnswer.MediaDescriptions {
+		mid := lksdp.GetMidValue(md)
+		if mid == "" {
+			continue
+		}
+
+		streamID, ok := lksdp.ExtractStreamID(md)
+		if !ok {
+			continue
+		}
+
+		p.pendingTracksLock.Lock()
+		signalCid, ti, migrated := p.getPendingTrackByMid(mid, true)
+		if migrated || ti == nil || signalCid == "" {
+			p.pendingTracksLock.Unlock()
+
+			publishedTrack := p.getPublishedTrackByMid(mid)
+			if publishedTrack != nil {
+				var mimeType mime.MimeType
+				updated := false
+
+				ti := publishedTrack.ToProto()
+				for _, c := range ti.Codecs {
+					if c.Mid == mid && c.Cid != streamID {
+						mimeType = mime.NormalizeMimeType(c.MimeType)
+						updated = true
+					}
+				}
+				publishedTrack.(*MediaTrack).UpdateCodecSdpCid(mimeType, streamID)
+				if updated {
+					p.pubLogger.Debugw(
+						"published track SDP cid updated",
+						"trackID", publishedTrack.ID(),
+						"track", logger.Proto(publishedTrack.ToProto()),
+					)
+				}
+			}
+			continue
+		}
+
+		updated := false
+		for _, c := range ti.Codecs {
+			if c.Mid == mid && c.Cid != streamID {
+				c.SdpCid = streamID
+				updated = true
+			}
+		}
+
+		if updated {
+			p.pendingTracks[signalCid].trackInfos[0] = utils.CloneProto(ti)
+			p.pubLogger.Debugw(
+				"pending track SDP cid updated",
+				"signalCid", signalCid,
+				"trackID", ti.Sid,
+				"pendingTrack", p.pendingTracks[signalCid],
+			)
+		}
+		p.pendingTracksLock.Unlock()
+	}
+}
+
 func (p *ParticipantImpl) setCodecPreferencesForPublisher(
 	parsedOffer *sdp.SessionDescription,
 	unmatchAudios []*sdp.MediaDescription,
@@ -176,7 +324,11 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisher(
 		livekit.TrackType_AUDIO,
 	)
 	parsedOffer = p.setCodecPreferencesOpusRedForPublisher(parsedOffer, unprocessedUnmatchAudios)
-	parsedOffer, _ = p.setCodecPreferencesForPublisherMedia(parsedOffer, unmatchVideos, livekit.TrackType_VIDEO)
+	parsedOffer, _ = p.setCodecPreferencesForPublisherMedia(
+		parsedOffer,
+		unmatchVideos,
+		livekit.TrackType_VIDEO,
+	)
 	return parsedOffer
 }
 
@@ -191,10 +343,11 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(
 		}
 
 		p.pendingTracksLock.RLock()
-		_, info, _, _, _ := p.getPendingTrack(streamID, livekit.TrackType_AUDIO, false)
-		// if RED is disabled for this track, don't prefer RED codec in offer
-		disableRed := info != nil && info.DisableRed
+		_, ti, _, _, _ := p.getPendingTrack(streamID, livekit.TrackType_AUDIO, false)
 		p.pendingTracksLock.RUnlock()
+		if ti == nil {
+			continue
+		}
 
 		codecs, err := lksdp.CodecsFromMediaDescription(unmatchAudio)
 		if err != nil {
@@ -217,10 +370,11 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(
 			continue
 		}
 
+		// if RED is disabled for this track, don't prefer RED codec in offer
 		var preferredCodecs, leftCodecs []string
 		for _, codec := range codecs {
 			// codec contain opus/red
-			if !disableRed && mime.IsMimeTypeCodecStringRED(codec.Name) && strings.Contains(codec.Fmtp, strconv.FormatInt(int64(opusPayload), 10)) {
+			if !ti.DisableRed && mime.IsMimeTypeCodecStringRED(codec.Name) && strings.Contains(codec.Fmtp, strconv.FormatInt(int64(opusPayload), 10)) {
 				preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
 			} else {
 				leftCodecs = append(leftCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
@@ -262,38 +416,40 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 	unprocessed := make([]*sdp.MediaDescription, 0, len(unmatches))
 	// unmatched media is pending for publish, set codec preference
 	for _, unmatch := range unmatches {
+		var ti *livekit.TrackInfo
+		var mimeType string
+
 		streamID, ok := lksdp.ExtractStreamID(unmatch)
 		if !ok {
 			unprocessed = append(unprocessed, unmatch)
 			continue
 		}
 
-		var info *livekit.TrackInfo
 		p.pendingTracksLock.RLock()
 		mt := p.getPublishedTrackBySdpCid(streamID)
 		if mt != nil {
-			info = mt.ToProto()
+			ti = mt.ToProto()
 		} else {
-			_, info, _, _, _ = p.getPendingTrack(streamID, trackType, false)
+			_, ti, _, _, _ = p.getPendingTrack(streamID, trackType, false)
 		}
+		p.pendingTracksLock.RUnlock()
 
-		if info == nil {
-			p.pendingTracksLock.RUnlock()
+		if ti != nil {
+			for _, c := range ti.Codecs {
+				if c.Cid == streamID || c.SdpCid == streamID {
+					mimeType = c.MimeType
+					break
+				}
+			}
+		}
+		if ti == nil {
 			unprocessed = append(unprocessed, unmatch)
 			continue
 		}
 
-		var mimeType string
-		for _, c := range info.Codecs {
-			if c.Cid == streamID || c.SdpCid == streamID {
-				mimeType = c.MimeType
-				break
-			}
+		if mimeType == "" && len(ti.Codecs) > 0 {
+			mimeType = ti.Codecs[0].MimeType
 		}
-		if mimeType == "" && len(info.Codecs) > 0 {
-			mimeType = info.Codecs[0].MimeType
-		}
-		p.pendingTracksLock.RUnlock()
 
 		if mimeType == "" {
 			unprocessed = append(unprocessed, unmatch)
@@ -360,6 +516,9 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 // configure publisher answer for audio track's dtx and stereo settings
 func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescription) webrtc.SessionDescription {
 	offer := p.TransportManager.LastPublisherOffer()
+	if offer == nil {
+		return answer
+	}
 	parsedOffer, err := offer.Unmarshal()
 	if err != nil {
 		return answer
@@ -422,7 +581,7 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 					if !ti.DisableDtx {
 						attr.Value += ";usedtx=1"
 					}
-					if ti.Stereo {
+					if slices.Contains(ti.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO) {
 						attr.Value += ";stereo=1;maxaveragebitrate=510000"
 					}
 					m.Attributes[i] = attr

@@ -63,16 +63,10 @@ func NewWrappedReceiver(params WrappedReceiverParams) *WrappedReceiver {
 		normalizedMimeType := mime.NormalizeMimeType(codecs[0].MimeType)
 		if normalizedMimeType == mime.MimeTypeRED {
 			// if upstream is opus/red, then add opus to match clients that don't support red
-			codecs = append(codecs, webrtc.RTPCodecParameters{
-				RTPCodecCapability: OpusCodecCapability,
-				PayloadType:        111,
-			})
+			codecs = append(codecs, OpusCodecParameters)
 		} else if !params.DisableRed && normalizedMimeType == mime.MimeTypeOpus {
 			// if upstream is opus only and red enabled, add red to match clients that support red
-			codecs = append(codecs, webrtc.RTPCodecParameters{
-				RTPCodecCapability: RedCodecCapability,
-				PayloadType:        63,
-			})
+			codecs = append(codecs, RedCodecParameters)
 			// prefer red codec
 			codecs[0], codecs[1] = codecs[1], codecs[0]
 		}
