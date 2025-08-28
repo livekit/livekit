@@ -112,9 +112,16 @@ func TestNegotiationTiming(t *testing.T) {
 	require.False(t, transportB.IsEstablished())
 
 	handleICEExchange(t, transportA, transportB, handlerA, handlerB)
-	offer := atomic.Value{}
-	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription, _offerId uint32) error {
-		offer.Store(&sd)
+	firstOffer := atomic.Value{}
+	firstOfferId := atomic.Uint32{}
+	secondOffer := atomic.Value{}
+	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription, offerId uint32) error {
+		if _, ok := firstOffer.Load().(*webrtc.SessionDescription); !ok {
+			firstOffer.Store(&sd)
+			firstOfferId.Store(offerId)
+		} else {
+			secondOffer.Store(&sd)
+		}
 		return nil
 	})
 
@@ -157,15 +164,22 @@ func TestNegotiationTiming(t *testing.T) {
 		return state == transport.NegotiationStateRetry
 	}, 10*time.Second, 10*time.Millisecond, "negotiation state does not match NegotiateStateRetry")
 
-	time.Sleep(5 * time.Millisecond)
-	actualOffer, ok := offer.Load().(*webrtc.SessionDescription)
-	require.True(t, ok)
+	require.Eventually(t, func() bool {
+		_, ok := firstOffer.Load().(*webrtc.SessionDescription)
+		if !ok {
+			return false
+		}
+		if firstOfferId.Load() == 0 {
+			return false
+		}
+		return true
+	}, 10*time.Second, 10*time.Millisecond, "first offer not received yet")
 
 	handlerB.OnAnswerCalls(func(answer webrtc.SessionDescription, answerId uint32) error {
 		transportA.HandleRemoteDescription(answer, answerId)
 		return nil
 	})
-	transportB.HandleRemoteDescription(*actualOffer, 10)
+	transportB.HandleRemoteDescription(*firstOffer.Load().(*webrtc.SessionDescription), firstOfferId.Load())
 
 	require.Eventually(t, func() bool {
 		return transportA.IsEstablished()
@@ -174,11 +188,18 @@ func TestNegotiationTiming(t *testing.T) {
 		return transportB.IsEstablished()
 	}, 10*time.Second, time.Millisecond*10, "transportB is not established")
 
-	// it should still be negotiating again
-	require.Equal(t, transport.NegotiationStateRemote, negotiationState.Load().(transport.NegotiationState))
-	offer2, ok := offer.Load().(*webrtc.SessionDescription)
+	// offerer should send another offer after processing the answer
+	// as there were forced negotiations a couple of time above
+	require.Eventually(t, func() bool {
+		state, ok := negotiationState.Load().(transport.NegotiationState)
+		if !ok {
+			return false
+		}
+
+		return state == transport.NegotiationStateRemote
+	}, 10*time.Second, 10*time.Millisecond, "negotiation state does not match NegotiateStateRemote")
+	_, ok := secondOffer.Load().(*webrtc.SessionDescription)
 	require.True(t, ok)
-	require.False(t, offer2 == actualOffer)
 
 	transportA.Close()
 	transportB.Close()
@@ -361,7 +382,9 @@ func TestNegotiationFailed(t *testing.T) {
 	connectTransports(t, transportA, transportB, handlerA, handlerB, false, 1, 1)
 
 	// reset OnOffer to force a negotiation failure
-	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription, offerId uint32) error { return nil })
+	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription, offerId uint32) error {
+		return nil
+	})
 	var failed atomic.Int32
 	handlerA.OnNegotiationFailedCalls(func() {
 		failed.Inc()

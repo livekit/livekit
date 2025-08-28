@@ -263,7 +263,7 @@ type PCTransport struct {
 	restartAfterGathering     bool
 	restartAtNextOffer        bool
 	negotiationState          transport.NegotiationState
-	negotiateCounter          int32
+	negotiateCounter          atomic.Int32
 	signalStateCheckTimer     *time.Timer
 	currentOfferIceCredential string // ice user:pwd, for publish side ice restart checking
 	pendingRestartIceOffer    *webrtc.SessionDescription
@@ -1997,7 +1997,7 @@ func (t *PCTransport) SetPreviousSdp(localDescription, remoteDescription *webrtc
 		if senders, err := t.initPCWithPreviousRemoteDescription(*remoteDescription); err != nil {
 			t.lock.Unlock()
 
-			t.onNegotiationFailed(true, fmt.Sprintf("initPCWithPreviousAnswer failed, error: %s", err))
+			t.onNegotiationFailed(true, fmt.Sprintf("initPCWithPreviousRemoteDescription failed, error: %s", err))
 			return
 		} else if localDescription != nil {
 			// in migration case, can't reuse transceiver before negotiated except track subscribed at previous node
@@ -2266,14 +2266,13 @@ func (t *PCTransport) clearSignalStateCheckTimer() {
 func (t *PCTransport) setupSignalStateCheckTimer() {
 	t.clearSignalStateCheckTimer()
 
-	negotiateVersion := t.negotiateCounter
-	t.negotiateCounter++
+	negotiateVersion := t.negotiateCounter.Inc()
 	t.signalStateCheckTimer = time.AfterFunc(negotiationFailedTimeout, func() {
 		t.clearSignalStateCheckTimer()
 
 		failed := t.negotiationState != transport.NegotiationStateNone
 
-		if t.negotiateCounter == negotiateVersion && failed && t.pc.ConnectionState() == webrtc.PeerConnectionStateConnected {
+		if t.negotiateCounter.Load() == negotiateVersion && failed && t.pc.ConnectionState() == webrtc.PeerConnectionStateConnected {
 			t.onNegotiationFailed(false, "negotiation timed out")
 		}
 	})
