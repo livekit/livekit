@@ -24,6 +24,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+
+	"github.com/ua-parser/uap-go/uaparser"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -33,7 +36,6 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/ua-parser/uap-go/uaparser"
 )
 
 func handleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...interface{}) {
@@ -155,6 +157,18 @@ func ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 	return ci
 }
 
+var (
+	userAgentParserCache *uaparser.Parser
+	userAgentParserInit  sync.Once
+)
+
+func getUserAgentParser() *uaparser.Parser {
+	userAgentParserInit.Do(func() {
+		userAgentParserCache = uaparser.NewFromSaved()
+	})
+	return userAgentParserCache
+}
+
 func AugmentClientInfo(ci *livekit.ClientInfo, req *http.Request) {
 	// get real address (forwarded http header) - check Cloudflare headers first, fall back to X-Forwarded-For
 	ci.Address = GetClientIP(req)
@@ -164,7 +178,7 @@ func AugmentClientInfo(ci *livekit.ClientInfo, req *http.Request) {
 		ci.Sdk == livekit.ClientInfo_REACT_NATIVE ||
 		ci.Sdk == livekit.ClientInfo_FLUTTER ||
 		ci.Sdk == livekit.ClientInfo_UNITY {
-		client := uaparser.NewFromSaved().Parse(req.UserAgent())
+		client := getUserAgentParser().Parse(req.UserAgent())
 		if ci.Browser == "" {
 			ci.Browser = client.UserAgent.Family
 			ci.BrowserVersion = client.UserAgent.ToVersionString()

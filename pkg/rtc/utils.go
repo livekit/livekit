@@ -177,15 +177,15 @@ func ChunkProtoBatch[T proto.Message](batch []T, target int) [][]T {
 	var chunks [][]T
 	var start, size int
 	for i, m := range batch {
-		if s := proto.Size(m); size+s > target {
+		s := proto.Size(m)
+		if size+s > target {
 			if start < i {
 				chunks = append(chunks, batch[start:i])
 			}
 			start = i
-			size = s
-		} else {
-			size += s
+			size = 0
 		}
+		size += s
 	}
 	if start < len(batch) {
 		chunks = append(chunks, batch[start:])

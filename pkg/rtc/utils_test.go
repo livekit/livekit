@@ -15,7 +15,6 @@
 package rtc
 
 import (
-	"fmt"
 	"math/rand/v2"
 	"strings"
 	"testing"
@@ -63,12 +62,14 @@ func TestChunkProtoBatch(t *testing.T) {
 
 	target := 64 * 1024
 	batches := ChunkProtoBatch(updates, target)
+	var count int
 	for _, b := range batches {
 		var sum int
 		for _, m := range b {
 			sum += proto.Size(m)
+			count++
 		}
 		require.True(t, sum < target || len(b) == 1, "batch size exceeds target")
 	}
-	fmt.Println(len(batches))
+	require.Equal(t, len(updates), count)
 }
