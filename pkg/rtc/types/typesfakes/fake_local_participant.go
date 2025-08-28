@@ -799,6 +799,16 @@ type FakeLocalParticipant struct {
 	isTrackNameSubscribedReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	IsUsingSinglePeerConnectionStub        func() bool
+	isUsingSinglePeerConnectionMutex       sync.RWMutex
+	isUsingSinglePeerConnectionArgsForCall []struct {
+	}
+	isUsingSinglePeerConnectionReturns struct {
+		result1 bool
+	}
+	isUsingSinglePeerConnectionReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	IssueFullReconnectStub        func(types.ParticipantCloseReason)
 	issueFullReconnectMutex       sync.RWMutex
 	issueFullReconnectArgsForCall []struct {
@@ -5517,6 +5527,59 @@ func (fake *FakeLocalParticipant) IsTrackNameSubscribedReturnsOnCall(i int, resu
 		})
 	}
 	fake.isTrackNameSubscribedReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsUsingSinglePeerConnection() bool {
+	fake.isUsingSinglePeerConnectionMutex.Lock()
+	ret, specificReturn := fake.isUsingSinglePeerConnectionReturnsOnCall[len(fake.isUsingSinglePeerConnectionArgsForCall)]
+	fake.isUsingSinglePeerConnectionArgsForCall = append(fake.isUsingSinglePeerConnectionArgsForCall, struct {
+	}{})
+	stub := fake.IsUsingSinglePeerConnectionStub
+	fakeReturns := fake.isUsingSinglePeerConnectionReturns
+	fake.recordInvocation("IsUsingSinglePeerConnection", []interface{}{})
+	fake.isUsingSinglePeerConnectionMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) IsUsingSinglePeerConnectionCallCount() int {
+	fake.isUsingSinglePeerConnectionMutex.RLock()
+	defer fake.isUsingSinglePeerConnectionMutex.RUnlock()
+	return len(fake.isUsingSinglePeerConnectionArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) IsUsingSinglePeerConnectionCalls(stub func() bool) {
+	fake.isUsingSinglePeerConnectionMutex.Lock()
+	defer fake.isUsingSinglePeerConnectionMutex.Unlock()
+	fake.IsUsingSinglePeerConnectionStub = stub
+}
+
+func (fake *FakeLocalParticipant) IsUsingSinglePeerConnectionReturns(result1 bool) {
+	fake.isUsingSinglePeerConnectionMutex.Lock()
+	defer fake.isUsingSinglePeerConnectionMutex.Unlock()
+	fake.IsUsingSinglePeerConnectionStub = nil
+	fake.isUsingSinglePeerConnectionReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsUsingSinglePeerConnectionReturnsOnCall(i int, result1 bool) {
+	fake.isUsingSinglePeerConnectionMutex.Lock()
+	defer fake.isUsingSinglePeerConnectionMutex.Unlock()
+	fake.IsUsingSinglePeerConnectionStub = nil
+	if fake.isUsingSinglePeerConnectionReturnsOnCall == nil {
+		fake.isUsingSinglePeerConnectionReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isUsingSinglePeerConnectionReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }

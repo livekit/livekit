@@ -71,19 +71,9 @@ func (h TransportManagerTransportHandler) OnFailed(isShortLived bool, iceConnect
 
 // -------------------------------
 
-type TransportManagerPublisherTransportHandler struct {
-	TransportManagerTransportHandler
-}
-
-func (h TransportManagerPublisherTransportHandler) OnAnswer(sd webrtc.SessionDescription, answerId uint32) error {
-	h.t.lastPublisherAnswer.Store(sd)
-	return h.Handler.OnAnswer(sd, answerId)
-}
-
-// -------------------------------
-
 type TransportManagerParams struct {
 	SubscriberAsPrimary          bool
+	UseSinglePeerConnection      bool
 	Config                       *WebRTCConfig
 	Twcc                         *twcc.Responder
 	ProtocolVersion              types.ProtocolVersion
@@ -124,8 +114,6 @@ type TransportManager struct {
 	pendingOfferPublisher        *webrtc.SessionDescription
 	pendingOfferIdPublisher      uint32
 	pendingDataChannelsPublisher []*livekit.DataChannelInfo
-	lastPublisherAnswer          atomic.Value
-	lastPublisherOffer           atomic.Value
 	iceConfig                    *livekit.ICEConfig
 
 	mediaLossProxy       *MediaLossProxy
@@ -159,8 +147,10 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		Logger:                       lgr,
 		SimTracks:                    params.SimTracks,
 		ClientInfo:                   params.ClientInfo,
+		IsSendSide:                   params.UseOneShotSignallingMode || params.UseSinglePeerConnection,
+		AllowPlayoutDelay:            params.AllowPlayoutDelay,
 		Transport:                    livekit.SignalTarget_PUBLISHER,
-		Handler:                      TransportManagerPublisherTransportHandler{TransportManagerTransportHandler{params.PublisherHandler, t, lgr}},
+		Handler:                      params.PublisherHandler,
 		UseOneShotSignallingMode:     params.UseOneShotSignallingMode,
 		DataChannelMaxBufferedAmount: params.DataChannelMaxBufferedAmount,
 		DatachannelSlowThreshold:     params.DatachannelSlowThreshold,
@@ -171,27 +161,31 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 	}
 	t.publisher = publisher
 
-	lgr = LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER)
-	subscriber, err := NewPCTransport(TransportParams{
-		ProtocolVersion:          params.ProtocolVersion,
-		Config:                   params.Config,
-		DirectionConfig:          params.Config.Subscriber,
-		CongestionControlConfig:  params.CongestionControlConfig,
-		EnabledCodecs:            params.EnabledSubscribeCodecs,
-		Logger:                   lgr,
-		ClientInfo:               params.ClientInfo,
-		IsOfferer:                true,
-		IsSendSide:               true,
-		AllowPlayoutDelay:        params.AllowPlayoutDelay,
-		DatachannelSlowThreshold: params.DatachannelSlowThreshold,
-		Transport:                livekit.SignalTarget_SUBSCRIBER,
-		Handler:                  TransportManagerTransportHandler{params.SubscriberHandler, t, lgr},
-	})
-	if err != nil {
-		return nil, err
+	if !t.params.UseOneShotSignallingMode && !t.params.UseSinglePeerConnection {
+		lgr := LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER)
+		subscriber, err := NewPCTransport(TransportParams{
+			ProtocolVersion:              params.ProtocolVersion,
+			Config:                       params.Config,
+			DirectionConfig:              params.Config.Subscriber,
+			CongestionControlConfig:      params.CongestionControlConfig,
+			EnabledCodecs:                params.EnabledSubscribeCodecs,
+			Logger:                       lgr,
+			ClientInfo:                   params.ClientInfo,
+			IsOfferer:                    true,
+			IsSendSide:                   true,
+			AllowPlayoutDelay:            params.AllowPlayoutDelay,
+			DataChannelMaxBufferedAmount: params.DataChannelMaxBufferedAmount,
+			DatachannelSlowThreshold:     params.DatachannelSlowThreshold,
+			Transport:                    livekit.SignalTarget_SUBSCRIBER,
+			Handler:                      TransportManagerTransportHandler{params.SubscriberHandler, t, lgr},
+			FireOnTrackBySdp:             params.FireOnTrackBySdp,
+		})
+		if err != nil {
+			return nil, err
+		}
+		t.subscriber = subscriber
 	}
-	t.subscriber = subscriber
-	if !t.params.Migration {
+	if !t.params.Migration && t.params.SubscriberAsPrimary {
 		if err := t.createDataChannelsForSubscriber(nil); err != nil {
 			return nil, err
 		}
@@ -202,8 +196,12 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 }
 
 func (t *TransportManager) Close() {
-	t.publisher.Close()
-	t.subscriber.Close()
+	if t.publisher != nil {
+		t.publisher.Close()
+	}
+	if t.subscriber != nil {
+		t.subscriber.Close()
+	}
 }
 
 func (t *TransportManager) SubscriberClose() {
@@ -235,37 +233,49 @@ func (t *TransportManager) WritePublisherRTCP(pkts []rtcp.Packet) error {
 }
 
 func (t *TransportManager) GetSubscriberRTT() (float64, bool) {
-	return t.subscriber.GetRTT()
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
+		return t.publisher.GetRTT()
+	} else {
+		return t.subscriber.GetRTT()
+	}
 }
 
 func (t *TransportManager) HasSubscriberEverConnected() bool {
-	return t.subscriber.HasEverConnected()
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
+		return t.publisher.HasEverConnected()
+	} else {
+		return t.subscriber.HasEverConnected()
+	}
 }
 
 func (t *TransportManager) AddTrackLocal(
 	trackLocal webrtc.TrackLocal,
 	params types.AddTrackParams,
+	enabledCodecs []*livekit.Codec,
+	rtcpFeedbackConfig RTCPFeedbackConfig,
 ) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
-	if t.params.UseOneShotSignallingMode {
-		return t.publisher.AddTrack(trackLocal, params)
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
+		return t.publisher.AddTrack(trackLocal, params, enabledCodecs, rtcpFeedbackConfig)
 	} else {
-		return t.subscriber.AddTrack(trackLocal, params)
+		return t.subscriber.AddTrack(trackLocal, params, enabledCodecs, rtcpFeedbackConfig)
 	}
 }
 
 func (t *TransportManager) AddTransceiverFromTrackLocal(
 	trackLocal webrtc.TrackLocal,
 	params types.AddTrackParams,
+	enabledCodecs []*livekit.Codec,
+	rtcpFeedbackConfig RTCPFeedbackConfig,
 ) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error) {
-	if t.params.UseOneShotSignallingMode {
-		return t.publisher.AddTransceiverFromTrack(trackLocal, params)
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
+		return t.publisher.AddTransceiverFromTrack(trackLocal, params, enabledCodecs, rtcpFeedbackConfig)
 	} else {
-		return t.subscriber.AddTransceiverFromTrack(trackLocal, params)
+		return t.subscriber.AddTransceiverFromTrack(trackLocal, params, enabledCodecs, rtcpFeedbackConfig)
 	}
 }
 
 func (t *TransportManager) RemoveTrackLocal(sender *webrtc.RTPSender) error {
-	if t.params.UseOneShotSignallingMode {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
 		return t.publisher.RemoveTrack(sender)
 	} else {
 		return t.subscriber.RemoveTrack(sender)
@@ -273,7 +283,7 @@ func (t *TransportManager) RemoveTrackLocal(sender *webrtc.RTPSender) error {
 }
 
 func (t *TransportManager) WriteSubscriberRTCP(pkts []rtcp.Packet) error {
-	if t.params.UseOneShotSignallingMode {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
 		return t.publisher.WriteRTCP(pkts)
 	} else {
 		return t.subscriber.WriteRTCP(pkts)
@@ -281,15 +291,27 @@ func (t *TransportManager) WriteSubscriberRTCP(pkts []rtcp.Packet) error {
 }
 
 func (t *TransportManager) GetSubscriberPacer() pacer.Pacer {
-	return t.subscriber.GetPacer()
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
+		return t.publisher.GetPacer()
+	} else {
+		return t.subscriber.GetPacer()
+	}
 }
 
 func (t *TransportManager) AddSubscribedTrack(subTrack types.SubscribedTrack) {
-	t.subscriber.AddTrackToStreamAllocator(subTrack)
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
+		t.publisher.AddTrackToStreamAllocator(subTrack)
+	} else {
+		t.subscriber.AddTrackToStreamAllocator(subTrack)
+	}
 }
 
 func (t *TransportManager) RemoveSubscribedTrack(subTrack types.SubscribedTrack) {
-	t.subscriber.RemoveTrackFromStreamAllocator(subTrack)
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
+		t.publisher.RemoveTrackFromStreamAllocator(subTrack)
+	} else {
+		t.subscriber.RemoveTrackFromStreamAllocator(subTrack)
+	}
 }
 
 func (t *TransportManager) SendDataMessage(kind livekit.DataPacket_Kind, data []byte) error {
@@ -393,12 +415,9 @@ func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels [
 }
 
 func (t *TransportManager) GetUnmatchMediaForOffer(parsedOffer *sdp.SessionDescription, mediaType string) (unmatched []*sdp.MediaDescription, err error) {
-	// prefer codec from offer for clients that don't support setCodecPreferences
 	var lastMatchedMid string
-	lastAnswer := t.lastPublisherAnswer.Load()
-	if lastAnswer != nil {
-		answer := lastAnswer.(webrtc.SessionDescription)
-		parsedAnswer, err1 := answer.Unmarshal()
+	if lastAnswer := t.publisher.CurrentLocalDescription(); lastAnswer != nil {
+		parsedAnswer, err1 := lastAnswer.Unmarshal()
 		if err1 != nil {
 			// should not happen
 			t.params.Logger.Errorw("failed to parse last answer", err1)
@@ -428,11 +447,8 @@ func (t *TransportManager) GetUnmatchMediaForOffer(parsedOffer *sdp.SessionDescr
 	return
 }
 
-func (t *TransportManager) LastPublisherOffer() webrtc.SessionDescription {
-	if sd := t.lastPublisherOffer.Load(); sd != nil {
-		return sd.(webrtc.SessionDescription)
-	}
-	return webrtc.SessionDescription{}
+func (t *TransportManager) LastPublisherOffer() *webrtc.SessionDescription {
+	return t.publisher.CurrentRemoteDescription()
 }
 
 func (t *TransportManager) HandleOffer(offer webrtc.SessionDescription, offerId uint32, shouldPend bool) error {
@@ -444,17 +460,12 @@ func (t *TransportManager) HandleOffer(offer webrtc.SessionDescription, offerId 
 		return nil
 	}
 	t.lock.Unlock()
-	t.lastPublisherOffer.Store(offer)
 
 	return t.publisher.HandleRemoteDescription(offer, offerId)
 }
 
 func (t *TransportManager) GetAnswer() (webrtc.SessionDescription, uint32, error) {
-	answer, answerId, err := t.publisher.GetAnswer()
-	if err == nil {
-		t.lastPublisherAnswer.Store(answer)
-	}
-	return answer, answerId, err
+	return t.publisher.GetAnswer()
 }
 
 func (t *TransportManager) GetPublisherICESessionUfrag() (string, error) {
@@ -501,7 +512,11 @@ func (t *TransportManager) AddICECandidate(candidate webrtc.ICECandidateInit, ta
 }
 
 func (t *TransportManager) NegotiateSubscriber(force bool) {
-	t.subscriber.Negotiate(force)
+	if t.subscriber != nil {
+		t.subscriber.Negotiate(force)
+	} else {
+		t.publisher.Negotiate(force)
+	}
 }
 
 func (t *TransportManager) HandleClientReconnect(reason livekit.ReconnectReason) {
@@ -512,12 +527,16 @@ func (t *TransportManager) HandleClientReconnect(reason livekit.ReconnectReason)
 	)
 	switch reason {
 	case livekit.ReconnectReason_RR_PUBLISHER_FAILED:
-		resetShortConnection = true
-		isShort, duration = t.publisher.IsShortConnection(time.Now())
+		if t.publisher != nil {
+			resetShortConnection = true
+			isShort, duration = t.publisher.IsShortConnection(time.Now())
+		}
 
 	case livekit.ReconnectReason_RR_SUBSCRIBER_FAILED:
-		resetShortConnection = true
-		isShort, duration = t.subscriber.IsShortConnection(time.Now())
+		if t.subscriber != nil {
+			resetShortConnection = true
+			isShort, duration = t.subscriber.IsShortConnection(time.Now())
+		}
 	}
 
 	if isShort {
@@ -529,15 +548,23 @@ func (t *TransportManager) HandleClientReconnect(reason livekit.ReconnectReason)
 	}
 
 	if resetShortConnection {
-		t.publisher.ResetShortConnOnICERestart()
-		t.subscriber.ResetShortConnOnICERestart()
+		if t.publisher != nil {
+			t.publisher.ResetShortConnOnICERestart()
+		}
+		if t.subscriber != nil {
+			t.subscriber.ResetShortConnOnICERestart()
+		}
 	}
 }
 
 func (t *TransportManager) ICERestart(iceConfig *livekit.ICEConfig) error {
 	t.SetICEConfig(iceConfig)
 
-	return t.subscriber.ICERestart()
+	if t.subscriber != nil {
+		return t.subscriber.ICERestart()
+	}
+
+	return nil
 }
 
 func (t *TransportManager) OnICEConfigChanged(f func(iceConfig *livekit.ICEConfig)) {
@@ -589,8 +616,12 @@ func (t *TransportManager) configureICE(iceConfig *livekit.ICEConfig, reset bool
 		t.mediaLossProxy.OnMediaLossUpdate(nil)
 	}
 
-	t.publisher.SetPreferTCP(iceConfig.PreferencePublisher == livekit.ICECandidateType_ICT_TCP)
-	t.subscriber.SetPreferTCP(iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TCP)
+	if t.publisher != nil {
+		t.publisher.SetPreferTCP(iceConfig.PreferencePublisher == livekit.ICECandidateType_ICT_TCP)
+	}
+	if t.subscriber != nil {
+		t.subscriber.SetPreferTCP(iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TCP)
+	}
 
 	if onICEConfigChanged != nil {
 		onICEConfigChanged(iceConfig)
@@ -604,6 +635,10 @@ func (t *TransportManager) SubscriberAsPrimary() bool {
 func (t *TransportManager) GetICEConnectionInfo() []*types.ICEConnectionInfo {
 	infos := make([]*types.ICEConnectionInfo, 0, 2)
 	for _, pc := range []*PCTransport{t.publisher, t.subscriber} {
+		if pc == nil {
+			continue
+		}
+
 		info := pc.GetICEConnectionInfo()
 		if info.HasCandidates() {
 			infos = append(infos, info)
@@ -613,20 +648,38 @@ func (t *TransportManager) GetICEConnectionInfo() []*types.ICEConnectionInfo {
 }
 
 func (t *TransportManager) getTransport(isPrimary bool) *PCTransport {
-	pcTransport := t.publisher
-	if (isPrimary && t.params.SubscriberAsPrimary) || (!isPrimary && !t.params.SubscriberAsPrimary) {
-		pcTransport = t.subscriber
-	}
+	switch {
+	case t.publisher == nil:
+		return t.subscriber
 
-	return pcTransport
+	case t.subscriber == nil:
+		return t.publisher
+
+	default:
+		pcTransport := t.publisher
+		if (isPrimary && t.params.SubscriberAsPrimary) || (!isPrimary && !t.params.SubscriberAsPrimary) {
+			pcTransport = t.subscriber
+		}
+
+		return pcTransport
+	}
 }
 
 func (t *TransportManager) getLowestPriorityConnectionType() types.ICEConnectionType {
-	ctype := t.publisher.GetICEConnectionType()
-	if stype := t.subscriber.GetICEConnectionType(); stype > ctype {
-		ctype = stype
+	switch {
+	case t.publisher == nil:
+		return t.subscriber.GetICEConnectionType()
+
+	case t.subscriber == nil:
+		return t.publisher.GetICEConnectionType()
+
+	default:
+		ctype := t.publisher.GetICEConnectionType()
+		if stype := t.subscriber.GetICEConnectionType(); stype > ctype {
+			ctype = stype
+		}
+		return ctype
 	}
-	return ctype
 }
 
 func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
@@ -739,7 +792,11 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 	}, false)
 }
 
-func (t *TransportManager) SetMigrateInfo(previousOffer, previousAnswer *webrtc.SessionDescription, dataChannels []*livekit.DataChannelInfo) {
+func (t *TransportManager) SetMigrateInfo(
+	previousOffer *webrtc.SessionDescription,
+	previousAnswer *webrtc.SessionDescription,
+	dataChannels []*livekit.DataChannelInfo,
+) {
 	t.lock.Lock()
 	t.pendingDataChannelsPublisher = make([]*livekit.DataChannelInfo, 0, len(dataChannels))
 	pendingDataChannelsSubscriber := make([]*livekit.DataChannelInfo, 0, len(dataChannels))
@@ -758,7 +815,11 @@ func (t *TransportManager) SetMigrateInfo(previousOffer, previousAnswer *webrtc.
 		}
 	}
 
-	t.subscriber.SetPreviousSdp(previousOffer, previousAnswer)
+	if t.params.UseSinglePeerConnection {
+		t.publisher.SetPreviousSdp(previousAnswer, previousOffer)
+	} else {
+		t.subscriber.SetPreviousSdp(previousOffer, previousAnswer)
+	}
 }
 
 func (t *TransportManager) ProcessPendingPublisherDataChannels() {
@@ -823,7 +884,11 @@ func (t *TransportManager) onMediaLossUpdate(loss uint8) {
 				t.lock.Unlock()
 
 				t.params.Logger.Infow("udp connection unstable, switch to tcp", "signalingRTT", t.signalingRTT)
-				t.params.SubscriberHandler.OnFailed(true, t.subscriber.GetICEConnectionInfo())
+				if t.params.UseSinglePeerConnection {
+					t.params.PublisherHandler.OnFailed(true, t.publisher.GetICEConnectionInfo())
+				} else {
+					t.params.SubscriberHandler.OnFailed(true, t.subscriber.GetICEConnectionInfo())
+				}
 				return
 			}
 		}
@@ -835,8 +900,12 @@ func (t *TransportManager) UpdateSignalingRTT(rtt uint32) {
 	t.lock.Lock()
 	t.signalingRTT = rtt
 	t.lock.Unlock()
-	t.publisher.SetSignalingRTT(rtt)
-	t.subscriber.SetSignalingRTT(rtt)
+	if t.publisher != nil {
+		t.publisher.SetSignalingRTT(rtt)
+	}
+	if t.subscriber != nil {
+		t.subscriber.SetSignalingRTT(rtt)
+	}
 
 	// TODO: considering using tcp rtt to calculate ice connection cost, if ice connection can't be established
 	// within 5 * tcp rtt(at least 5s), means udp traffic might be block/dropped, switch to tcp.
@@ -881,11 +950,19 @@ func (t *TransportManager) SetSignalSourceValid(valid bool) {
 }
 
 func (t *TransportManager) SetSubscriberAllowPause(allowPause bool) {
-	t.subscriber.SetAllowPauseOfStreamAllocator(allowPause)
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
+		t.publisher.SetAllowPauseOfStreamAllocator(allowPause)
+	} else {
+		t.subscriber.SetAllowPauseOfStreamAllocator(allowPause)
+	}
 }
 
 func (t *TransportManager) SetSubscriberChannelCapacity(channelCapacity int64) {
-	t.subscriber.SetChannelCapacityOfStreamAllocator(channelCapacity)
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
+		t.publisher.SetChannelCapacityOfStreamAllocator(channelCapacity)
+	} else {
+		t.subscriber.SetChannelCapacityOfStreamAllocator(channelCapacity)
+	}
 }
 
 func (t *TransportManager) hasRecentSignalLocked() bool {

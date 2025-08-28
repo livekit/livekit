@@ -360,6 +360,7 @@ type LocalParticipant interface {
 	ProtocolVersion() ProtocolVersion
 	SupportsSyncStreamID() bool
 	SupportsTransceiverReuse() bool
+	IsUsingSinglePeerConnection() bool
 	IsClosed() bool
 	IsReady() bool
 	IsDisconnected() bool
@@ -490,7 +491,8 @@ type LocalParticipant interface {
 	SetMigrateState(s MigrateState)
 	MigrateState() MigrateState
 	SetMigrateInfo(
-		previousOffer, previousAnswer *webrtc.SessionDescription,
+		previousOffer *webrtc.SessionDescription,
+		previousAnswer *webrtc.SessionDescription,
 		mediaTracks []*livekit.TrackPublishedResponse,
 		dataChannels []*livekit.DataChannelInfo,
 		dataChannelReceiveState []*livekit.DataChannelReceiveState,

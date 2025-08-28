@@ -610,6 +610,10 @@ func (r *Room) Join(
 		} else {
 			participant.Negotiate(true)
 		}
+	} else {
+		if participant.IsUsingSinglePeerConnection() {
+			go r.subscribeToExistingTracks(participant, false)
+		}
 	}
 
 	prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
@@ -1114,13 +1118,12 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 			continue
 		}
 
-		r.logger.Debugw(
+		existingParticipant.GetLogger().Debugw(
 			"subscribing to new track",
-			"participant", existingParticipant.Identity(),
-			"pID", existingParticipant.ID(),
 			"publisher", participant.Identity(),
 			"publisherID", participant.ID(),
-			"trackID", track.ID())
+			"trackID", track.ID(),
+		)
 		existingParticipant.SubscribeToTrack(track.ID(), false)
 	}
 	onParticipantChanged := r.onParticipantChanged
@@ -1393,7 +1396,7 @@ func (r *Room) subscribeToExistingTracks(p types.LocalParticipant, isSync bool) 
 		}
 	}
 	if len(trackIDs) > 0 {
-		r.logger.Debugw("subscribed participant to existing tracks", "trackID", trackIDs)
+		p.GetLogger().Debugw("subscribed participant to existing tracks", "trackID", trackIDs)
 	}
 }
 

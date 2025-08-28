@@ -609,10 +609,7 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 
 	me := webrtc.MediaEngine{}
 	me.RegisterDefaultCodecs()
-	require.NoError(t, me.RegisterCodec(webrtc.RTPCodecParameters{
-		RTPCodecCapability: RedCodecCapability,
-		PayloadType:        63,
-	}, webrtc.RTPCodecTypeAudio))
+	require.NoError(t, me.RegisterCodec(RedCodecParameters, webrtc.RTPCodecTypeAudio))
 
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(&me))
 	pc, err := api.NewPeerConnection(webrtc.Configuration{})
