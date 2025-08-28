@@ -867,19 +867,19 @@ func TestNormalizeVideoLayersRid(t *testing.T) {
 			VideoLayersRid{"q", "h", ""},
 		},
 		{
-			"012",
-			videoLayersRid012,
-			videoLayersRid012,
+			"210",
+			videoLayersRid210,
+			videoLayersRid210,
 		},
 		{
-			"scrambled 012",
+			"scrambled 210",
 			VideoLayersRid{"2", "0", "1"},
-			videoLayersRid012,
+			videoLayersRid210,
 		},
 		{
-			"partial 012",
-			VideoLayersRid{"2", "1"},
-			VideoLayersRid{"1", "2", ""},
+			"partial 210",
+			VideoLayersRid{"1", "2"},
+			VideoLayersRid{"2", "1", ""},
 		},
 	}
 
