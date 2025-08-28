@@ -27,16 +27,16 @@ const (
 	halfResolutionH    = "h"
 	fullResolutionF    = "f"
 
-	quarterResolution0 = "0"
+	quarterResolution2 = "2"
 	halfResolution1    = "1"
-	fullResolution2    = "2"
+	fullResolution0    = "0"
 )
 
 type VideoLayersRid [DefaultMaxLayerSpatial + 1]string
 
 var (
 	videoLayersRidQHF     = VideoLayersRid{quarterResolutionQ, halfResolutionH, fullResolutionF}
-	videoLayersRid012     = VideoLayersRid{quarterResolution0, halfResolution1, fullResolution2}
+	videoLayersRid210     = VideoLayersRid{quarterResolution2, halfResolution1, fullResolution0}
 	DefaultVideoLayersRid = videoLayersRidQHF
 )
 
@@ -511,8 +511,8 @@ func NormalizeVideoLayersRid(rids VideoLayersRid) VideoLayersRid {
 		normalize(videoLayersRidQHF)
 	}
 
-	if isVideoLayersRidKnown(rids, videoLayersRid012) {
-		normalize(videoLayersRid012)
+	if isVideoLayersRidKnown(rids, videoLayersRid210) {
+		normalize(videoLayersRid210)
 	}
 
 	return out
