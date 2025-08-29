@@ -816,7 +816,7 @@ func (t *TransportManager) SetMigrateInfo(
 	}
 
 	if t.params.UseSinglePeerConnection {
-		t.publisher.SetPreviousSdp(previousAnswer, previousOffer)
+		t.publisher.SetPreviousSdp(previousOffer, previousAnswer)
 	} else {
 		t.subscriber.SetPreviousSdp(previousOffer, previousAnswer)
 	}
