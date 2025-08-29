@@ -1922,9 +1922,9 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 	return t.pc.SetRemoteDescription(ans)
 }
 
-func (t *PCTransport) initPCWithPreviousRemoteDescription(previousRemoteDescription webrtc.SessionDescription) (map[string]*webrtc.RTPSender, error) {
+func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDescription) (map[string]*webrtc.RTPSender, error) {
 	senders := make(map[string]*webrtc.RTPSender)
-	parsed, err := previousRemoteDescription.Unmarshal()
+	parsed, err := previousAnswer.Unmarshal()
 	if err != nil {
 		return senders, err
 	}
@@ -1941,19 +1941,13 @@ func (t *PCTransport) initPCWithPreviousRemoteDescription(previousRemoteDescript
 				// that not consistent with our previous answer that data channel might at middle-line
 				// because sdp can negotiate multi times before migration.(it will sticky to the last m-line at first negotiate)
 				// so use a dummy pc to negotiate sdp to fixed the datachannel's mid at same position with previous answer
-				if err := t.preparePC(previousRemoteDescription); err != nil {
+				if err := t.preparePC(previousAnswer); err != nil {
 					t.params.Logger.Warnw("prepare pc for migration failed", err)
 					return senders, err
 				}
 			}
 			continue
 		default:
-			continue
-		}
-
-		_, ok1 := m.Attribute(webrtc.RTPTransceiverDirectionSendrecv.String())
-		_, ok2 := m.Attribute(webrtc.RTPTransceiverDirectionRecvonly.String())
-		if !ok1 && !ok2 {
 			continue
 		}
 
@@ -1982,30 +1976,33 @@ func (t *PCTransport) initPCWithPreviousRemoteDescription(previousRemoteDescript
 	return senders, nil
 }
 
-func (t *PCTransport) SetPreviousSdp(localDescription, remoteDescription *webrtc.SessionDescription) {
-	// when there is no remote description, cannot migrate, force a full reconnect
-	if remoteDescription == nil {
-		t.onNegotiationFailed(true, "no previous remote description")
+func (t *PCTransport) SetPreviousSdp(offer, answer *webrtc.SessionDescription) {
+	// when there is no answer, cannot migrate, force a full reconnect
+	if answer == nil {
+		t.onNegotiationFailed(true, "no previous answer")
 		return
 	}
 
 	t.lock.Lock()
 	if t.pc.RemoteDescription() == nil && t.previousAnswer == nil {
 		if t.params.IsOfferer {
-			t.previousAnswer = remoteDescription
+			t.previousAnswer = answer
 		}
-		if senders, err := t.initPCWithPreviousRemoteDescription(*remoteDescription); err != nil {
+		senders, err := t.initPCWithPreviousAnswer(*answer)
+		if err != nil {
 			t.lock.Unlock()
 
-			t.onNegotiationFailed(true, fmt.Sprintf("initPCWithPreviousRemoteDescription failed, error: %s", err))
+			t.onNegotiationFailed(true, fmt.Sprintf("initPCWithPreviousAnswer failed, error: %s", err))
 			return
-		} else if localDescription != nil {
+		}
+
+		if offer != nil {
 			// in migration case, can't reuse transceiver before negotiated except track subscribed at previous node
 			t.canReuseTransceiver = false
-			if err := t.parseTrackMid(*localDescription, senders); err != nil {
+			if err := t.parseTrackMid(*offer, senders); err != nil {
 				t.params.Logger.Warnw(
-					"parse previous local description failed", err,
-					"localDescription", localDescription.SDP,
+					"parse previous offer failed", err,
+					"offer", offer.SDP,
 				)
 			}
 		}
