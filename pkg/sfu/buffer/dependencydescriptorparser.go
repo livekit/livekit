@@ -17,6 +17,7 @@ package buffer
 import (
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/pion/rtp"
 	"go.uber.org/atomic"
@@ -25,6 +26,14 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 
 	"github.com/livekit/protocol/logger"
+)
+
+const (
+	ddRestartThreshold = 30 * time.Second
+
+	// frame integrity check 2 seconds for L3T3 30fps video
+	integrityCheckFrame = 180
+	integrityCheckPkt   = 1024
 )
 
 var (
@@ -48,16 +57,22 @@ type DependencyDescriptorParser struct {
 	frameChecker              *FrameIntegrityChecker
 
 	ddNotFoundCount atomic.Uint32
+
+	// restart detection
+	restartGeneration int
+	enableRestart     bool
+	lastPacketAt      time.Time
 }
 
-func NewDependencyDescriptorParser(ddExtID uint8, logger logger.Logger, onMaxLayerChanged func(int32, int32)) *DependencyDescriptorParser {
+func NewDependencyDescriptorParser(ddExtID uint8, logger logger.Logger, onMaxLayerChanged func(int32, int32), enableRestart bool) *DependencyDescriptorParser {
 	return &DependencyDescriptorParser{
 		ddExtID:           ddExtID,
 		logger:            logger,
 		onMaxLayerChanged: onMaxLayerChanged,
 		seqWrapAround:     utils.NewWrapAround[uint16, uint64](utils.WrapAroundParams{IsRestartAllowed: false}),
 		frameWrapAround:   utils.NewWrapAround[uint16, uint64](utils.WrapAroundParams{IsRestartAllowed: false}),
-		frameChecker:      NewFrameIntegrityChecker(180, 1024), // 2seconds for L3T3 30fps video
+		frameChecker:      NewFrameIntegrityChecker(integrityCheckFrame, integrityCheckPkt),
+		enableRestart:     enableRestart,
 	}
 }
 
@@ -71,6 +86,10 @@ type ExtDependencyDescriptor struct {
 	ExtFrameNum                uint64
 	// the frame number of the keyframe which the current frame depends on
 	ExtKeyFrameNum uint64
+
+	// increase when the stream restarts, clear and reinitialize all dd state includes
+	// attached structure, frame chain, decode target.
+	RestartGeneration int
 }
 
 func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescriptor, VideoLayer, error) {
@@ -82,6 +101,16 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 			r.logger.Warnw("dependency descriptor extension is not present", nil, "seq", pkt.SequenceNumber, "count", ddNotFoundCount)
 		}
 		return nil, videoLayer, ErrDDExtentionNotFound
+	}
+
+	var restart bool
+	if r.enableRestart {
+		if !r.lastPacketAt.IsZero() && time.Since(r.lastPacketAt) > ddRestartThreshold {
+			r.restart()
+			restart = true
+			r.logger.Debugw("dependency descriptor parser restart stream", "generation", r.restartGeneration)
+		}
+		r.lastPacketAt = time.Now()
 	}
 
 	var ddVal dd.DependencyDescriptor
@@ -103,7 +132,8 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 		videoLayer.Spatial, videoLayer.Temporal = int32(ddVal.FrameDependencies.SpatialId), int32(ddVal.FrameDependencies.TemporalId)
 	}
 
-	unwrapped := r.frameWrapAround.Update(ddVal.FrameNumber)
+	// assume the packet is in-order when stream restarting
+	unwrapped := r.frameWrapAround.UpdateWithOrderKnown(ddVal.FrameNumber, restart)
 	extFN := unwrapped.ExtendedVal
 
 	if extFN < r.structureExtFrameNum {
@@ -114,9 +144,10 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	r.frameChecker.AddPacket(extSeq, extFN, &ddVal)
 
 	extDD := &ExtDependencyDescriptor{
-		Descriptor:  &ddVal,
-		ExtFrameNum: extFN,
-		Integrity:   r.frameChecker.FrameIntegrity(extFN),
+		Descriptor:        &ddVal,
+		ExtFrameNum:       extFN,
+		Integrity:         r.frameChecker.FrameIntegrity(extFN),
+		RestartGeneration: r.restartGeneration,
 	}
 
 	if ddVal.AttachedStructure != nil {
@@ -165,6 +196,16 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	extDD.ExtKeyFrameNum = r.structureExtFrameNum
 
 	return extDD, videoLayer, nil
+}
+
+func (r *DependencyDescriptorParser) restart() {
+	r.frameChecker = NewFrameIntegrityChecker(integrityCheckFrame, integrityCheckPkt)
+	r.structure = nil
+	r.structureExtFrameNum = 0
+	r.activeDecodeTargetsExtSeq = 0
+	r.activeDecodeTargetsMask = 0
+	r.decodeTargets = r.decodeTargets[:0]
+	r.restartGeneration++
 }
 
 // ------------------------------------------------------------------------------

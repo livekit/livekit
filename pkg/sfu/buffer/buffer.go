@@ -338,7 +338,7 @@ func (b *Buffer) createDDParserAndFrameRateCalculator() {
 		}
 		b.ddParser = NewDependencyDescriptorParser(b.ddExtID, b.logger, func(spatial, temporal int32) {
 			frc.SetMaxLayer(spatial, temporal)
-		})
+		}, false)
 	}
 }
 
