@@ -213,12 +213,11 @@ func (r *StandardRoomAllocator) applyNamedRoomConfiguration(req *livekit.CreateR
 
 	clone := utils.CloneProto(req)
 
-	// Request overwrites conf
 	if clone.EmptyTimeout == 0 {
 		clone.EmptyTimeout = conf.EmptyTimeout
 	}
 	if clone.DepartureTimeout == 0 {
-		clone.DepartureTimeout = req.DepartureTimeout
+		clone.DepartureTimeout = conf.DepartureTimeout
 	}
 	if clone.MaxParticipants == 0 {
 		clone.MaxParticipants = conf.MaxParticipants
