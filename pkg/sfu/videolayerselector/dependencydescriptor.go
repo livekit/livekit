@@ -70,19 +70,6 @@ func (d *DependencyDescriptor) IsOvershootOkay() bool {
 }
 
 func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerSelectorResult) {
-	if extPkt.DependencyDescriptor.RestartGeneration > d.restartGeneration {
-		d.logger.Debugw("stream restarted", "packet",
-			extPkt.DependencyDescriptor.RestartGeneration,
-			"current", d.restartGeneration,
-			"structureKeyFrame", d.extKeyFrameNum,
-			"efn", extPkt.DependencyDescriptor.ExtFrameNum,
-			"lastEfn", d.fnWrapper.LastOrigin(),
-		)
-		d.restart(extPkt.DependencyDescriptor.RestartGeneration)
-	} else if extPkt.DependencyDescriptor.RestartGeneration < d.restartGeneration {
-		// must not happen
-		d.logger.Warnw("packet from old generation", nil, "packet", extPkt.DependencyDescriptor.RestartGeneration, "current", d.restartGeneration)
-	}
 	// a packet is always relevant for the svc codec
 	if d.currentLayer.IsValid() {
 		result.IsRelevant = true
@@ -93,6 +80,20 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		// packet doesn't have dependency descriptor
 		// d.logger.Debugw(fmt.Sprintf("drop packet, no DD, incoming %v, sn: %d, isKeyFrame: %v", extPkt.VideoLayer, extPkt.Packet.SequenceNumber, extPkt.KeyFrame))
 		return
+	}
+
+	if ddwdt.RestartGeneration > d.restartGeneration {
+		d.logger.Debugw("stream restarted", "packet",
+			ddwdt.RestartGeneration,
+			"current", d.restartGeneration,
+			"structureKeyFrame", d.extKeyFrameNum,
+			"efn", ddwdt.ExtFrameNum,
+			"lastEfn", d.fnWrapper.LastOrigin(),
+		)
+		d.restart(ddwdt.RestartGeneration)
+	} else if ddwdt.RestartGeneration < d.restartGeneration {
+		// must not happen
+		d.logger.Warnw("packet from old generation", nil, "packet", ddwdt.RestartGeneration, "current", d.restartGeneration)
 	}
 
 	dd := ddwdt.Descriptor
