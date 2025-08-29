@@ -80,7 +80,7 @@ func (w *WrapAroundUpdateResult[ET]) MarshalLogObject(e zapcore.ObjectEncoder) e
 	return nil
 }
 
-func (w *WrapAround[T, ET]) Update(val T) (result WrapAroundUpdateResult[ET]) {
+func (w *WrapAround[T, ET]) UpdateWithOrderKnown(val T, orderKnown bool) (result WrapAroundUpdateResult[ET]) {
 	if !w.initialized {
 		result.PreExtendedHighest = ET(val) - 1
 		result.ExtendedVal = ET(val)
@@ -92,10 +92,12 @@ func (w *WrapAround[T, ET]) Update(val T) (result WrapAroundUpdateResult[ET]) {
 		return
 	}
 
-	gap := val - w.highest
-	if gap > T(w.fullRange>>1) {
-		// out-of-order
-		return w.maybeAdjustStart(val)
+	if !orderKnown {
+		gap := val - w.highest
+		if gap > T(w.fullRange>>1) {
+			// out-of-order
+			return w.maybeAdjustStart(val)
+		}
 	}
 
 	// in-order
@@ -109,6 +111,10 @@ func (w *WrapAround[T, ET]) Update(val T) (result WrapAroundUpdateResult[ET]) {
 	w.updateExtendedHighest()
 	result.ExtendedVal = w.extendedHighest
 	return
+}
+
+func (w *WrapAround[T, ET]) Update(val T) (result WrapAroundUpdateResult[ET]) {
+	return w.UpdateWithOrderKnown(val, false)
 }
 
 func (w *WrapAround[T, ET]) UndoUpdate(result WrapAroundUpdateResult[ET]) {

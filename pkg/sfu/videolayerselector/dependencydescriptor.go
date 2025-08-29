@@ -24,6 +24,11 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+const (
+	decisionCacheMaxElements = 256
+	decisionCacheNackEntries = 80
+)
+
 type DependencyDescriptor struct {
 	*Base
 
@@ -40,12 +45,14 @@ type DependencyDescriptor struct {
 	decodeTargetsLock sync.RWMutex
 	decodeTargets     []*DecodeTarget
 	fnWrapper         FrameNumberWrapper
+
+	restartGeneration int
 }
 
 func NewDependencyDescriptor(logger logger.Logger) *DependencyDescriptor {
 	return &DependencyDescriptor{
 		Base:      NewBase(logger),
-		decisions: NewSelectorDecisionCache(256, 80),
+		decisions: NewSelectorDecisionCache(decisionCacheMaxElements, decisionCacheNackEntries),
 		fnWrapper: FrameNumberWrapper{logger: logger},
 	}
 }
@@ -63,6 +70,19 @@ func (d *DependencyDescriptor) IsOvershootOkay() bool {
 }
 
 func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerSelectorResult) {
+	if extPkt.DependencyDescriptor.RestartGeneration > d.restartGeneration {
+		d.logger.Debugw("stream restarted", "packet",
+			extPkt.DependencyDescriptor.RestartGeneration,
+			"current", d.restartGeneration,
+			"structureKeyFrame", d.extKeyFrameNum,
+			"efn", extPkt.DependencyDescriptor.ExtFrameNum,
+			"lastEfn", d.fnWrapper.LastOrigin(),
+		)
+		d.restart(extPkt.DependencyDescriptor.RestartGeneration)
+	} else if extPkt.DependencyDescriptor.RestartGeneration < d.restartGeneration {
+		// must not happen
+		d.logger.Warnw("packet from old generation", nil, "packet", extPkt.DependencyDescriptor.RestartGeneration, "current", d.restartGeneration)
+	}
 	// a packet is always relevant for the svc codec
 	if d.currentLayer.IsValid() {
 		result.IsRelevant = true
@@ -433,4 +453,10 @@ func (d *DependencyDescriptor) CheckSync() (locked bool, layer int32) {
 	}
 
 	return false, layer
+}
+
+func (d *DependencyDescriptor) restart(generation int) {
+	d.restartGeneration = generation
+	d.invalidateKeyFrame()
+	d.decisions = NewSelectorDecisionCache(decisionCacheMaxElements, decisionCacheNackEntries)
 }
