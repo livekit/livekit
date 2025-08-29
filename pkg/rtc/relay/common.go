@@ -14,4 +14,5 @@ type RelayConfig struct {
 	BufferFactory *buffer.Factory
 	RelayUDPMux   ice.UDPMux
 	RelayPort     uint32
+	Side          string
 }

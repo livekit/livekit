@@ -102,6 +102,7 @@ var vp8RtxCodec = webrtc.RTPCodecParameters{
 
 type PcRelay struct {
 	id             string
+	side           string
 	pc             *webrtc.PeerConnection
 	rand           *rand.Rand
 	bufferFactory  *buffer.Factory
@@ -137,8 +138,13 @@ func NewRelay(logger logger.Logger, conf *relay.RelayConfig) (*PcRelay, error) {
 	if err := me.RegisterCodec(vp8RtxCodec, webrtc.RTPCodecTypeVideo); err != nil {
 		return nil, fmt.Errorf("RegisterCodec error: %w", err)
 	}
-	if conf.RelayPort != 0 {
-		conf.SettingEngine.SetICEUDPMux(conf.RelayUDPMux)
+	if conf.RelayPort != 0 && conf.Side == "in" {
+		if conf.Side == "in" {
+			conf.SettingEngine.SetICEUDPMux(conf.RelayUDPMux)
+			conf.SettingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleServer)
+		} else {
+			conf.SettingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleClient)
+		}
 	}
 
 	pc, pcErr := webrtc.
@@ -152,6 +158,7 @@ func NewRelay(logger logger.Logger, conf *relay.RelayConfig) (*PcRelay, error) {
 
 	r := &PcRelay{
 		id:            conf.ID,
+		side:          conf.Side,
 		pc:            pc,
 		bufferFactory: conf.BufferFactory,
 		logger:        logger,
