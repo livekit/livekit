@@ -2050,11 +2050,6 @@ func (t *PCTransport) parseTrackMid(sd webrtc.SessionDescription, senders map[st
 	for _, m := range parsed.MediaDescriptions {
 		msid, ok := m.Attribute(sdp.AttrKeyMsid)
 		if !ok {
-			if mid := lksdp.GetMidValue(m); mid != "" {
-				if sender, ok := senders[mid]; ok {
-					t.pc.RemoveTrack(sender)
-				}
-			}
 			continue
 		}
 
