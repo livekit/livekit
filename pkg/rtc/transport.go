@@ -1951,6 +1951,18 @@ func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDesc
 			continue
 		}
 
+		if !t.params.IsOfferer {
+			// `sendrecv` or `sendonly` means this transceiver is used for sending
+
+			// Note that a transceiver previously used to send could be `inactive`.
+			// Let those transceivers be created when remote description is set.
+			_, ok1 := m.Attribute(webrtc.RTPTransceiverDirectionSendrecv.String())
+			_, ok2 := m.Attribute(webrtc.RTPTransceiverDirectionSendonly.String())
+			if !ok1 && !ok2 {
+				continue
+			}
+		}
+
 		tr, err := t.pc.AddTransceiverFromKind(
 			codecType,
 			webrtc.RTPTransceiverInit{
@@ -1976,35 +1988,46 @@ func (t *PCTransport) initPCWithPreviousAnswer(previousAnswer webrtc.SessionDesc
 	return senders, nil
 }
 
-func (t *PCTransport) SetPreviousSdp(offer, answer *webrtc.SessionDescription) {
+func (t *PCTransport) SetPreviousSdp(localDescription, remoteDescription *webrtc.SessionDescription) {
 	// when there is no answer, cannot migrate, force a full reconnect
-	if answer == nil {
+	if (t.params.IsOfferer && remoteDescription == nil) || (!t.params.IsOfferer && localDescription == nil) {
 		t.onNegotiationFailed(true, "no previous answer")
 		return
 	}
 
 	t.lock.Lock()
-	if t.pc.RemoteDescription() == nil && t.previousAnswer == nil {
-		if t.params.IsOfferer {
-			t.previousAnswer = answer
+	var (
+		senders   map[string]*webrtc.RTPSender
+		err       error
+		parseMids bool
+	)
+	if t.params.IsOfferer {
+		if t.pc.RemoteDescription() == nil && t.previousAnswer == nil {
+			t.previousAnswer = remoteDescription
+			senders, err = t.initPCWithPreviousAnswer(*remoteDescription)
+			parseMids = true
 		}
-		senders, err := t.initPCWithPreviousAnswer(*answer)
-		if err != nil {
-			t.lock.Unlock()
-
-			t.onNegotiationFailed(true, fmt.Sprintf("initPCWithPreviousAnswer failed, error: %s", err))
-			return
+	} else {
+		if t.pc.LocalDescription() == nil {
+			senders, err = t.initPCWithPreviousAnswer(*localDescription)
+			parseMids = true
 		}
+	}
+	if err != nil {
+		t.lock.Unlock()
+		t.onNegotiationFailed(true, fmt.Sprintf("initPCWithPreviousAnswer failed, error: %s", err))
+		return
+	}
 
-		if offer != nil {
-			// in migration case, can't reuse transceiver before negotiated except track subscribed at previous node
-			t.canReuseTransceiver = false
-			if err := t.parseTrackMid(*offer, senders); err != nil {
-				t.params.Logger.Warnw(
-					"parse previous offer failed", err,
-					"offer", offer.SDP,
-				)
-			}
+	if localDescription != nil && parseMids {
+		// in migration case, can't reuse transceiver before negotiating excepted tracks
+		// that were subscribed at previous node
+		t.canReuseTransceiver = false
+		if err := t.parseTrackMid(*localDescription, senders); err != nil {
+			t.params.Logger.Warnw(
+				"parse previous local description failed", err,
+				"localDescription", localDescription.SDP,
+			)
 		}
 	}
 
