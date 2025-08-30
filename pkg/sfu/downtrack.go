@@ -192,6 +192,8 @@ type DownTrackStreamAllocatorListener interface {
 
 	// check if track should participate in BWE
 	IsBWEEnabled(dt *DownTrack) bool
+
+	// get the BWE type in use
 	BWEType() bwe.BWEType
 
 	// check if subscription mute can be applied
