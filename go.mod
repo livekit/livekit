@@ -11,7 +11,7 @@ replace github.com/livekit/psrpc v0.2.10 => github.com/dTelecom/psrpc v1.0.16
 require (
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.14.0
-	github.com/dTelecom/p2p-database v1.0.5
+	github.com/dTelecom/p2p-database v1.0.6
 	github.com/elliotchance/orderedmap/v2 v2.2.0
 	github.com/florianl/go-tc v0.4.2
 	github.com/frostbyte73/core v0.0.5
@@ -134,6 +134,7 @@ require (
 	github.com/libp2p/go-netroute v0.2.1 // indirect
 	github.com/libp2p/go-reuseport v0.4.0 // indirect
 	github.com/libp2p/go-yamux/v4 v4.0.1 // indirect
+	github.com/libp2p/zeroconf/v2 v2.2.0 // indirect
 	github.com/lithammer/shortuuid/v3 v3.0.7 // indirect
 	github.com/lithammer/shortuuid/v4 v4.0.0 // indirect
 	github.com/logrusorgru/aurora v2.0.3+incompatible // indirect
