@@ -424,7 +424,8 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 				}
 			}
 		}
-	} else {
+	}
+	if !params.IsOfferer {
 		// sfu only use interceptor to send XR but don't read response from it (use buffer instead),
 		// so use a empty callback here
 		ir.Add(lkinterceptor.NewRTTFromXRFactory(func(rtt uint32) {}))

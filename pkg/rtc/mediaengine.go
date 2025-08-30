@@ -286,7 +286,6 @@ func filterCodecs(
 
 		for _, enabledCodec := range enabledCodecs {
 			if mime.NormalizeMimeType(enabledCodec.Mime) == mime.NormalizeMimeType(c.RTPCodecCapability.MimeType) {
-				// SINGLE-PEER-CONNECTION-TOOD: remove `nack` for RED?
 				if mime.IsMimeTypeStringVideo(c.RTPCodecCapability.MimeType) {
 					c.RTPCodecCapability.RTCPFeedback = rtcpFeedbackConfig.Video
 				} else {

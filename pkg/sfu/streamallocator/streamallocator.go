@@ -557,6 +557,10 @@ func (s *StreamAllocator) IsBWEEnabled(downTrack *sfu.DownTrack) bool {
 	return true
 }
 
+func (s *StreamAllocator) BWEType() bwe.BWEType {
+	return s.params.BWE.Type()
+}
+
 // called to check if track subscription mute can be applied
 func (s *StreamAllocator) IsSubscribeMutable(downTrack *sfu.DownTrack) bool {
 	s.videoTracksMu.Lock()
