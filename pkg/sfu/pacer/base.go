@@ -82,6 +82,19 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 // patch just abs-send-time and transport-cc extensions if applicable
 func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 	sendingAt := mono.Now()
+	if p.AbsSendTimeExtID != 0 {
+		absSendTime := rtp.NewAbsSendTimeExtension(sendingAt)
+		absSendTimeBytes, err := absSendTime.Marshal()
+		if err != nil {
+			return err
+		}
+
+		if err = p.Header.SetExtension(p.AbsSendTimeExtID, absSendTimeBytes); err != nil {
+			return err
+		}
+
+		b.lastPacketSentAt.Store(sendingAt.UnixNano())
+	}
 
 	packetSize := p.HeaderSize + len(p.Payload)
 	if p.TransportWideExtID != 0 && b.bwe != nil {
@@ -101,18 +114,6 @@ func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 		}
 
 		if err = p.Header.SetExtension(p.TransportWideExtID, twccExtBytes); err != nil {
-			return err
-		}
-
-		b.lastPacketSentAt.Store(sendingAt.UnixNano())
-	} else if p.AbsSendTimeExtID != 0 {
-		absSendTime := rtp.NewAbsSendTimeExtension(sendingAt)
-		absSendTimeBytes, err := absSendTime.Marshal()
-		if err != nil {
-			return err
-		}
-
-		if err = p.Header.SetExtension(p.AbsSendTimeExtID, absSendTimeBytes); err != nil {
 			return err
 		}
 

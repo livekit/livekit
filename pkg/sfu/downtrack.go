@@ -38,6 +38,7 @@ import (
 	"github.com/livekit/protocol/utils/mono"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
@@ -191,6 +192,7 @@ type DownTrackStreamAllocatorListener interface {
 
 	// check if track should participate in BWE
 	IsBWEEnabled(dt *DownTrack) bool
+	BWEType() bwe.BWEType
 
 	// check if subscription mute can be applied
 	IsSubscribeMutable(dt *DownTrack) bool
@@ -793,13 +795,15 @@ func (d *DownTrack) SetReceiver(r TrackReceiver) {
 // Sets RTP header extensions for this track
 func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeaderExtensionParameter) {
 	isBWEEnabled := true
+	bweType := bwe.BWETypeNone
 	if sal := d.getStreamAllocatorListener(); sal != nil {
 		isBWEEnabled = sal.IsBWEEnabled(d)
+		bweType = sal.BWEType()
 	}
 	for _, ext := range rtpHeaderExtensions {
 		switch ext.URI {
 		case sdp.ABSSendTimeURI:
-			if isBWEEnabled {
+			if isBWEEnabled && bweType == bwe.BWETypeRemote {
 				d.absSendTimeExtID = ext.ID
 			} else {
 				d.absSendTimeExtID = 0
@@ -809,7 +813,7 @@ func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeade
 		case pd.PlayoutDelayURI:
 			d.playoutDelayExtID = ext.ID
 		case sdp.TransportCCURI:
-			if isBWEEnabled {
+			if isBWEEnabled && bweType == bwe.BWETypeSendSide {
 				d.transportWideExtID = ext.ID
 			} else {
 				d.transportWideExtID = 0

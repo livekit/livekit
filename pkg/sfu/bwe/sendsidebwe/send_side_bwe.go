@@ -23,6 +23,8 @@ import (
 	"github.com/pion/rtcp"
 )
 
+var _ bwe.BWE = (*SendSideBWE)(nil)
+
 //
 // Based on a simplified/modified version of JitterPath paper
 // (https://homepage.iis.sinica.edu.tw/papers/lcs/2114-F.pdf)
@@ -86,6 +88,10 @@ func NewSendSideBWE(params SendSideBWEParams) *SendSideBWE {
 			Logger: params.Logger,
 		}),
 	}
+}
+
+func (r *SendSideBWE) Type() bwe.BWEType {
+	return bwe.BWETypeSendSide
 }
 
 func (s *SendSideBWE) SetBWEListener(bweListener bwe.BWEListener) {
