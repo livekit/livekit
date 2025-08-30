@@ -955,10 +955,10 @@ func (t *PCTransport) AddTrack(
 		return
 	}
 
+	configureTransceiverCodecs(transceiver, enabledCodecs, rtcpFeedbackConfig, !t.params.IsOfferer)
 	if trackLocal.Kind() == webrtc.RTPCodecTypeAudio {
 		configureAudioTransceiver(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
 	}
-	configureTransceiverCodecs(transceiver, enabledCodecs, rtcpFeedbackConfig, !t.params.IsOfferer)
 	t.adjustNumOutstandingMedia(transceiver)
 	return
 }
@@ -980,10 +980,10 @@ func (t *PCTransport) AddTransceiverFromTrack(
 		return
 	}
 
+	configureTransceiverCodecs(transceiver, enabledCodecs, rtcpFeedbackConfig, !t.params.IsOfferer)
 	if trackLocal.Kind() == webrtc.RTPCodecTypeAudio {
 		configureAudioTransceiver(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
 	}
-	configureTransceiverCodecs(transceiver, enabledCodecs, rtcpFeedbackConfig, !t.params.IsOfferer)
 	t.adjustNumOutstandingMedia(transceiver)
 	return
 }
