@@ -489,15 +489,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	}
 
 	// Bind is called under RTPSender.mu lock, call the RTPSender.GetParameters in goroutine to avoid deadlock
-	go func() {
-		if tr := d.transceiver.Load(); tr != nil {
-			if sender := tr.Sender(); sender != nil {
-				extensions := sender.GetParameters().HeaderExtensions
-				d.params.Logger.Debugw("negotiated downtrack extensions", "extensions", extensions)
-				d.SetRTPHeaderExtensions(extensions)
-			}
-		}
-	}()
+	go d.setRTPHeaderExtensions()
 
 	doBind := func() {
 		d.bindLock.Lock()
@@ -714,12 +706,9 @@ func (d *DownTrack) SetStreamAllocatorListener(listener DownTrackStreamAllocator
 	d.streamAllocatorListener = listener
 	d.streamAllocatorLock.Unlock()
 
-	if listener != nil {
-		if !listener.IsBWEEnabled(d) {
-			d.absSendTimeExtID = 0
-			d.transportWideExtID = 0
-		}
+	d.setRTPHeaderExtensions()
 
+	if listener != nil {
 		// kick off a gratuitous allocation
 		listener.OnSubscriptionChanged(d)
 	}
@@ -795,14 +784,27 @@ func (d *DownTrack) SetReceiver(r TrackReceiver) {
 }
 
 // Sets RTP header extensions for this track
-func (d *DownTrack) SetRTPHeaderExtensions(rtpHeaderExtensions []webrtc.RTPHeaderExtensionParameter) {
-	isBWEEnabled := true
-	bweType := bwe.BWETypeNone
-	if sal := d.getStreamAllocatorListener(); sal != nil {
-		isBWEEnabled = sal.IsBWEEnabled(d)
-		bweType = sal.BWEType()
+func (d *DownTrack) setRTPHeaderExtensions() {
+	d.bindLock.Lock()
+	defer d.bindLock.Unlock()
+
+	sal := d.getStreamAllocatorListener()
+	if sal == nil {
+		return
 	}
-	for _, ext := range rtpHeaderExtensions {
+
+	var extensions []webrtc.RTPHeaderExtensionParameter
+	if tr := d.transceiver.Load(); tr != nil {
+		if sender := tr.Sender(); sender != nil {
+			extensions = sender.GetParameters().HeaderExtensions
+			d.params.Logger.Debugw("negotiated downtrack extensions", "extensions", extensions)
+		}
+	}
+
+	isBWEEnabled := sal.IsBWEEnabled(d)
+	bweType := sal.BWEType()
+
+	for _, ext := range extensions {
 		switch ext.URI {
 		case sdp.ABSSendTimeURI:
 			if isBWEEnabled && bweType == bwe.BWETypeRemote {
