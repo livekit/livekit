@@ -29,6 +29,9 @@ type Node struct {
 	City         string  `json:"city"`
 	Latitude     float64 `json:"latitude"`
 	Longitude    float64 `json:"longitude"`
+	GeoContinentNameID uint `json:"geoContinentNameID"`
+	GeoCountryNameID uint `json:"geoCountryNameID"`
+	GeoCityNameID uint `json:"geoCityNameID"`
 }
 
 type nodeMessage struct {
@@ -41,9 +44,14 @@ func (v *nodeMessage) isExpired() bool {
 }
 
 const (
-	weightEqualsCountries    = 1.0
-	weightParticipantsCount  = -0.1
+	weightEqualsCity    = 1.0
+	weightEqualsCountry    = 0.5
+	weightEqualsContinent    = 0.25
+
+	weightIsolated  = -10.0
+	weightParticipantsCount  = -0.025
 	weightDistance           = -0.001
+
 	defaultNodeTtl           = 30 * time.Second
 	nodeRefreshInterval      = 10 * time.Second
 	topicNodeValuesStreaming = "nodes_values"
@@ -128,7 +136,10 @@ func (p *NodeProvider) FetchRelevantNodes(ctx context.Context, clientIP string) 
 	}
 	clientLat := city.Location.Latitude
 	clientLon := city.Location.Longitude
-	clientCountry := city.Country.IsoCode
+
+	clientGeoContinentNameID := city.Continent.GeoNameID
+	clientGeoCountryNameID := city.Country.GeoNameID
+	clientGeoCityNameID := city.City.GeoNameID
 
 	type nodeRow struct {
 		node   Node
@@ -147,19 +158,40 @@ func (p *NodeProvider) FetchRelevantNodes(ctx context.Context, clientIP string) 
 
 	for _, xNode := range xNodes {
 		var weight float64
-		if clientCountry == xNode.Country {
-			weight += weightEqualsCountries
+
+		if clientGeoCityNameID == xNode.GeoCityNameID {
+			weight += weightEqualsCity
 		}
+
+		if clientGeoCountryNameID == xNode.GeoCountryNameID {
+			weight += weightEqualsCountry
+		}
+
+		if clientGeoContinentNameID == xNode.GeoContinentNameID {
+			weight += weightEqualsContinent
+		}
+
+		if xNode.GeoCountryNameID == 2017370 && clientGeoCountryNameID != 2017370 {
+			weight += weightIsolated
+		}
+
 		dist := distance(xNode.Latitude, xNode.Longitude, clientLat, clientLon)
-		weight = dist*weightDistance + float64(xNode.Participants)*weightParticipantsCount
+		weight += dist*weightDistance
+
+        weight += float64(xNode.Participants)*weightParticipantsCount
 
 		logger.Infow(
 			"calculated weight for",
 			"node id", xNode.Id,
 			"distance", dist,
-			"client country", clientCountry,
-			"node country", xNode.Country,
+			"client continent", clientGeoContinentNameID,
+			"client country", clientGeoCountryNameID,
+			"client city", clientGeoCityNameID,
+			"node continent", xNode.GeoContinentNameID,
+			"node country", xNode.GeoCountryNameID,
+			"node city", xNode.GeoCityNameID,
 			"node participants", xNode.Participants,
+			"weight", weight,
 		)
 
 		nodes = append(nodes, nodeRow{node: xNode, weight: weight})
@@ -184,20 +216,23 @@ func (p *NodeProvider) FetchRelevantNodes(ctx context.Context, clientIP string) 
 func (p *NodeProvider) Save(ctx context.Context, node Node) error {
 	ip := net.ParseIP(node.IP)
 
-	country, err := p.geo.Country(ip)
-	if err != nil {
-		return errors.Wrap(err, "fetch country")
-	}
-
 	city, err := p.geo.City(ip)
 	if err != nil {
 		return errors.Wrap(err, "fetch city")
 	}
 
-	node.Country = country.Country.Names["en"]
+	logger.Infow(
+		"current node geo",
+		"data", city,
+	)
+
+	node.Country = city.Country.Names["en"]
 	node.City = city.City.Names["en"]
 	node.Latitude = city.Location.Latitude
 	node.Longitude = city.Location.Longitude
+	node.GeoContinentNameID = city.Continent.GeoNameID
+	node.GeoCountryNameID = city.Country.GeoNameID
+	node.GeoCityNameID = city.City.GeoNameID
 	node.Participants = p.localNode.Stats.NumClients
 	node.Id = p.db.GetHost().ID().String()
 	p.current = node
