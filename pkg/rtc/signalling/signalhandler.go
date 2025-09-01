@@ -64,12 +64,7 @@ func (s *signalhandler) HandleMessage(msg proto.Message) error {
 		s.params.Participant.HandleAnswer(protosignalling.FromProtoSessionDescription(msg.Answer))
 
 	case *livekit.SignalRequest_Trickle:
-		candidateInit, err := protosignalling.FromProtoTrickle(msg.Trickle)
-		if err != nil {
-			s.params.Logger.Warnw("could not decode trickle", err)
-			return err
-		}
-		s.params.Participant.AddICECandidate(candidateInit, msg.Trickle.Target)
+		s.params.Participant.HandleICETrickle(msg.Trickle)
 
 	case *livekit.SignalRequest_AddTrack:
 		s.params.Participant.AddTrack(msg.AddTrack)

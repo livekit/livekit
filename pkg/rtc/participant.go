@@ -64,6 +64,8 @@ import (
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 )
 
+var _ types.LocalParticipant = (*ParticipantImpl)(nil)
+
 const (
 	sdBatchSize       = 30
 	rttUpdateInterval = 5 * time.Second
@@ -585,7 +587,7 @@ func (p *ParticipantImpl) UpdateMetadata(update *livekit.UpdateParticipantMetada
 	sendRequestResponse := func() error {
 		if !fromAdmin || (update.RequestId != 0 || err != nil) {
 			requestResponse.Request = &livekit.RequestResponse_UpdateMetadata{
-				UpdateMetadata: update,
+				UpdateMetadata: utils.CloneProto(update),
 			}
 			p.sendRequestResponse(requestResponse)
 		}
@@ -1210,9 +1212,26 @@ func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription, unma
 	}
 }
 
+func (p *ParticipantImpl) HandleICETrickle(trickleRequest *livekit.TrickleRequest) {
+	candidateInit, err := protosignalling.FromProtoTrickle(trickleRequest)
+	if err != nil {
+		p.params.Logger.Warnw("could not decode trickle", err)
+		p.sendRequestResponse(&livekit.RequestResponse{
+			Reason:  livekit.RequestResponse_UNCLASSIFIED_ERROR,
+			Message: err.Error(),
+			Request: &livekit.RequestResponse_Trickle{
+				Trickle: utils.CloneProto(trickleRequest),
+			},
+		})
+		return
+	}
+
+	p.TransportManager.AddICECandidate(candidateInit, trickleRequest.Target)
+}
+
 // HandleOffer an offer from remote participant, used when clients make the initial connection
-func (p *ParticipantImpl) HandleOffer(req *livekit.SessionDescription) error {
-	offer, offerId := protosignalling.FromProtoSessionDescription(req)
+func (p *ParticipantImpl) HandleOffer(sd) *livekit.SessionDescription) error {
+	offer, offerId := protosignalling.FromProtoSessionDescription(sd)
 	lgr := p.pubLogger.WithUnlikelyValues(
 		"transport", livekit.SignalTarget_PUBLISHER,
 		"offer", offer,
@@ -1303,7 +1322,8 @@ func (p *ParticipantImpl) GetAnswer() (webrtc.SessionDescription, uint32, error)
 
 // HandleAnswer handles a client answer response, with subscriber PC, server initiates the
 // offer and client answers
-func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription, answerId uint32) {
+func (p *ParticipantImpl) HandleAnswer(sd *livekit.SessionDescription) {
+	answer, answerId := protosignalling.FromProtoSessionDescription(sd)
 	p.subLogger.Debugw(
 		"received answer",
 		"transport", livekit.SignalTarget_SUBSCRIBER,
@@ -2933,6 +2953,12 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 			"request", logger.Proto(req),
 			"pendingTrack", p.pendingTracks[req.Cid],
 		)
+		p.sendRequestResponse(&livekit.RequestResponse{
+			Reason: livekit.RequestResponse_QUEUED,
+			Request: &livekit.RequestResponse_AddTrack{
+				AddTrack: utils.CloneProto(req),
+			},
+		})
 		return nil
 	}
 

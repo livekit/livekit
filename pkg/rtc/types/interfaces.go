@@ -403,15 +403,15 @@ type LocalParticipant interface {
 	CanPublishData() bool
 
 	// PeerConnection
-	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget)
-	HandleOffer(offer *livekit.SessionDescription) error
+	HandleICETrickle(trickleRequest *livekit.TrickleRequest)
+	HandleOffer(sd *livekit.SessionDescription) error
 	GetAnswer() (webrtc.SessionDescription, uint32, error)
 	HandleICETrickleSDPFragment(sdpFragment string) error
 	HandleICERestartSDPFragment(sdpFragment string) (string, error)
 	AddTrack(req *livekit.AddTrackRequest)
 	SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool) *livekit.TrackInfo
 
-	HandleAnswer(sdp webrtc.SessionDescription, answerId uint32)
+	HandleAnswer(sd *livekit.SessionDescription)
 	Negotiate(force bool)
 	ICERestart(iceConfig *livekit.ICEConfig)
 	AddTrackLocal(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)

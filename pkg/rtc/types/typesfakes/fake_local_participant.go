@@ -21,12 +21,6 @@ import (
 )
 
 type FakeLocalParticipant struct {
-	AddICECandidateStub        func(webrtc.ICECandidateInit, livekit.SignalTarget)
-	addICECandidateMutex       sync.RWMutex
-	addICECandidateArgsForCall []struct {
-		arg1 webrtc.ICECandidateInit
-		arg2 livekit.SignalTarget
-	}
 	AddTrackStub        func(*livekit.AddTrackRequest)
 	addTrackMutex       sync.RWMutex
 	addTrackArgsForCall []struct {
@@ -502,6 +496,17 @@ type FakeLocalParticipant struct {
 	handleICERestartSDPFragmentReturnsOnCall map[int]struct {
 		result1 string
 		result2 error
+	}
+	HandleICETrickleStub        func(*livekit.TrickleRequest) error
+	handleICETrickleMutex       sync.RWMutex
+	handleICETrickleArgsForCall []struct {
+		arg1 *livekit.TrickleRequest
+	}
+	handleICETrickleReturns struct {
+		result1 error
+	}
+	handleICETrickleReturnsOnCall map[int]struct {
+		result1 error
 	}
 	HandleICETrickleSDPFragmentStub        func(string) error
 	handleICETrickleSDPFragmentMutex       sync.RWMutex
@@ -1427,39 +1432,6 @@ type FakeLocalParticipant struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
-}
-
-func (fake *FakeLocalParticipant) AddICECandidate(arg1 webrtc.ICECandidateInit, arg2 livekit.SignalTarget) {
-	fake.addICECandidateMutex.Lock()
-	fake.addICECandidateArgsForCall = append(fake.addICECandidateArgsForCall, struct {
-		arg1 webrtc.ICECandidateInit
-		arg2 livekit.SignalTarget
-	}{arg1, arg2})
-	stub := fake.AddICECandidateStub
-	fake.recordInvocation("AddICECandidate", []interface{}{arg1, arg2})
-	fake.addICECandidateMutex.Unlock()
-	if stub != nil {
-		fake.AddICECandidateStub(arg1, arg2)
-	}
-}
-
-func (fake *FakeLocalParticipant) AddICECandidateCallCount() int {
-	fake.addICECandidateMutex.RLock()
-	defer fake.addICECandidateMutex.RUnlock()
-	return len(fake.addICECandidateArgsForCall)
-}
-
-func (fake *FakeLocalParticipant) AddICECandidateCalls(stub func(webrtc.ICECandidateInit, livekit.SignalTarget)) {
-	fake.addICECandidateMutex.Lock()
-	defer fake.addICECandidateMutex.Unlock()
-	fake.AddICECandidateStub = stub
-}
-
-func (fake *FakeLocalParticipant) AddICECandidateArgsForCall(i int) (webrtc.ICECandidateInit, livekit.SignalTarget) {
-	fake.addICECandidateMutex.RLock()
-	defer fake.addICECandidateMutex.RUnlock()
-	argsForCall := fake.addICECandidateArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) AddTrack(arg1 *livekit.AddTrackRequest) {
@@ -3923,6 +3895,67 @@ func (fake *FakeLocalParticipant) HandleICERestartSDPFragmentReturnsOnCall(i int
 		result1 string
 		result2 error
 	}{result1, result2}
+}
+
+func (fake *FakeLocalParticipant) HandleICETrickle(arg1 *livekit.TrickleRequest) error {
+	fake.handleICETrickleMutex.Lock()
+	ret, specificReturn := fake.handleICETrickleReturnsOnCall[len(fake.handleICETrickleArgsForCall)]
+	fake.handleICETrickleArgsForCall = append(fake.handleICETrickleArgsForCall, struct {
+		arg1 *livekit.TrickleRequest
+	}{arg1})
+	stub := fake.HandleICETrickleStub
+	fakeReturns := fake.handleICETrickleReturns
+	fake.recordInvocation("HandleICETrickle", []interface{}{arg1})
+	fake.handleICETrickleMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) HandleICETrickleCallCount() int {
+	fake.handleICETrickleMutex.RLock()
+	defer fake.handleICETrickleMutex.RUnlock()
+	return len(fake.handleICETrickleArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) HandleICETrickleCalls(stub func(*livekit.TrickleRequest) error) {
+	fake.handleICETrickleMutex.Lock()
+	defer fake.handleICETrickleMutex.Unlock()
+	fake.HandleICETrickleStub = stub
+}
+
+func (fake *FakeLocalParticipant) HandleICETrickleArgsForCall(i int) *livekit.TrickleRequest {
+	fake.handleICETrickleMutex.RLock()
+	defer fake.handleICETrickleMutex.RUnlock()
+	argsForCall := fake.handleICETrickleArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) HandleICETrickleReturns(result1 error) {
+	fake.handleICETrickleMutex.Lock()
+	defer fake.handleICETrickleMutex.Unlock()
+	fake.HandleICETrickleStub = nil
+	fake.handleICETrickleReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) HandleICETrickleReturnsOnCall(i int, result1 error) {
+	fake.handleICETrickleMutex.Lock()
+	defer fake.handleICETrickleMutex.Unlock()
+	fake.HandleICETrickleStub = nil
+	if fake.handleICETrickleReturnsOnCall == nil {
+		fake.handleICETrickleReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.handleICETrickleReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
 }
 
 func (fake *FakeLocalParticipant) HandleICETrickleSDPFragment(arg1 string) error {

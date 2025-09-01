@@ -49,7 +49,7 @@ func (c ClientInfo) SupportsAudioRED() bool {
 	return !c.isFirefox() && !c.isSafari()
 }
 
-func (c ClientInfo) SupportPrflxOverRelay() bool {
+func (c ClientInfo) SupportsPrflxOverRelay() bool {
 	return !c.isFirefox()
 }
 
@@ -97,15 +97,15 @@ func (c ClientInfo) ComplyWithCodecOrderInSDPAnswer() bool {
 }
 
 // Rust SDK can't decode unknown signal message (TrackSubscribed and ErrorResponse)
-func (c ClientInfo) SupportTrackSubscribedEvent() bool {
+func (c ClientInfo) SupportsTrackSubscribedEvent() bool {
 	return !(c.ClientInfo.GetSdk() == livekit.ClientInfo_RUST && c.ClientInfo.GetProtocol() < 10)
 }
 
-func (c ClientInfo) SupportErrorResponse() bool {
-	return c.SupportTrackSubscribedEvent()
+func (c ClientInfo) SupportsRequestResponse() bool {
+	return c.SupportsTrackSubscribedEvent()
 }
 
-func (c ClientInfo) SupportSctpZeroChecksum() bool {
+func (c ClientInfo) SupportsSctpZeroChecksum() bool {
 	return !(c.ClientInfo.GetSdk() == livekit.ClientInfo_UNKNOWN ||
 		(c.isGo() && c.compareVersion("2.4.0") < 0))
 }
