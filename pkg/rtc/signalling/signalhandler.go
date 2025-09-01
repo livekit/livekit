@@ -19,7 +19,6 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	protosignalling "github.com/livekit/protocol/signalling"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -61,7 +60,7 @@ func (s *signalhandler) HandleMessage(msg proto.Message) error {
 		s.params.Participant.HandleOffer(msg.Offer)
 
 	case *livekit.SignalRequest_Answer:
-		s.params.Participant.HandleAnswer(protosignalling.FromProtoSessionDescription(msg.Answer))
+		s.params.Participant.HandleAnswer(msg.Answer)
 
 	case *livekit.SignalRequest_Trickle:
 		s.params.Participant.HandleICETrickle(msg.Trickle)

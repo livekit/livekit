@@ -183,7 +183,7 @@ func (p *ParticipantImpl) HandleReconnectAndSendResponse(reconnectReason livekit
 		return err
 	}
 
-	if p.params.ProtocolVersion.SupportHandlesDisconnectedUpdate() {
+	if p.params.ProtocolVersion.SupportsDisconnectedUpdate() {
 		return p.sendDisconnectUpdatesForReconnect()
 	}
 

@@ -68,7 +68,7 @@ func (v ProtocolVersion) SupportFastStart() bool {
 	return v > 7
 }
 
-func (v ProtocolVersion) SupportsHandlesDisconnectedUpdate() bool {
+func (v ProtocolVersion) SupportsDisconnectedUpdate() bool {
 	return v > 8
 }
 

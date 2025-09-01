@@ -1230,7 +1230,7 @@ func (p *ParticipantImpl) HandleICETrickle(trickleRequest *livekit.TrickleReques
 }
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
-func (p *ParticipantImpl) HandleOffer(sd) *livekit.SessionDescription) error {
+func (p *ParticipantImpl) HandleOffer(sd *livekit.SessionDescription) error {
 	offer, offerId := protosignalling.FromProtoSessionDescription(sd)
 	lgr := p.pubLogger.WithUnlikelyValues(
 		"transport", livekit.SignalTarget_PUBLISHER,
@@ -3688,7 +3688,7 @@ func (p *ParticipantImpl) GetPlayoutDelayConfig() *livekit.PlayoutDelay {
 }
 
 func (p *ParticipantImpl) SupportsSyncStreamID() bool {
-	return p.ProtocolVersion().SupportSyncStreamID() && !p.params.ClientInfo.isFirefox() && p.params.SyncStreams
+	return p.ProtocolVersion().SupportsSyncStreamID() && !p.params.ClientInfo.isFirefox() && p.params.SyncStreams
 }
 
 func (p *ParticipantImpl) SupportsTransceiverReuse() bool {

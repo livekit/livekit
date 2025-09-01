@@ -478,11 +478,10 @@ type FakeLocalParticipant struct {
 	getTrailerReturnsOnCall map[int]struct {
 		result1 []byte
 	}
-	HandleAnswerStub        func(webrtc.SessionDescription, uint32)
+	HandleAnswerStub        func(*livekit.SessionDescription)
 	handleAnswerMutex       sync.RWMutex
 	handleAnswerArgsForCall []struct {
-		arg1 webrtc.SessionDescription
-		arg2 uint32
+		arg1 *livekit.SessionDescription
 	}
 	HandleICERestartSDPFragmentStub        func(string) (string, error)
 	handleICERestartSDPFragmentMutex       sync.RWMutex
@@ -497,16 +496,10 @@ type FakeLocalParticipant struct {
 		result1 string
 		result2 error
 	}
-	HandleICETrickleStub        func(*livekit.TrickleRequest) error
+	HandleICETrickleStub        func(*livekit.TrickleRequest)
 	handleICETrickleMutex       sync.RWMutex
 	handleICETrickleArgsForCall []struct {
 		arg1 *livekit.TrickleRequest
-	}
-	handleICETrickleReturns struct {
-		result1 error
-	}
-	handleICETrickleReturnsOnCall map[int]struct {
-		result1 error
 	}
 	HandleICETrickleSDPFragmentStub        func(string) error
 	handleICETrickleSDPFragmentMutex       sync.RWMutex
@@ -3800,17 +3793,16 @@ func (fake *FakeLocalParticipant) GetTrailerReturnsOnCall(i int, result1 []byte)
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) HandleAnswer(arg1 webrtc.SessionDescription, arg2 uint32) {
+func (fake *FakeLocalParticipant) HandleAnswer(arg1 *livekit.SessionDescription) {
 	fake.handleAnswerMutex.Lock()
 	fake.handleAnswerArgsForCall = append(fake.handleAnswerArgsForCall, struct {
-		arg1 webrtc.SessionDescription
-		arg2 uint32
-	}{arg1, arg2})
+		arg1 *livekit.SessionDescription
+	}{arg1})
 	stub := fake.HandleAnswerStub
-	fake.recordInvocation("HandleAnswer", []interface{}{arg1, arg2})
+	fake.recordInvocation("HandleAnswer", []interface{}{arg1})
 	fake.handleAnswerMutex.Unlock()
 	if stub != nil {
-		fake.HandleAnswerStub(arg1, arg2)
+		fake.HandleAnswerStub(arg1)
 	}
 }
 
@@ -3820,17 +3812,17 @@ func (fake *FakeLocalParticipant) HandleAnswerCallCount() int {
 	return len(fake.handleAnswerArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) HandleAnswerCalls(stub func(webrtc.SessionDescription, uint32)) {
+func (fake *FakeLocalParticipant) HandleAnswerCalls(stub func(*livekit.SessionDescription)) {
 	fake.handleAnswerMutex.Lock()
 	defer fake.handleAnswerMutex.Unlock()
 	fake.HandleAnswerStub = stub
 }
 
-func (fake *FakeLocalParticipant) HandleAnswerArgsForCall(i int) (webrtc.SessionDescription, uint32) {
+func (fake *FakeLocalParticipant) HandleAnswerArgsForCall(i int) *livekit.SessionDescription {
 	fake.handleAnswerMutex.RLock()
 	defer fake.handleAnswerMutex.RUnlock()
 	argsForCall := fake.handleAnswerArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1
 }
 
 func (fake *FakeLocalParticipant) HandleICERestartSDPFragment(arg1 string) (string, error) {
@@ -3897,23 +3889,17 @@ func (fake *FakeLocalParticipant) HandleICERestartSDPFragmentReturnsOnCall(i int
 	}{result1, result2}
 }
 
-func (fake *FakeLocalParticipant) HandleICETrickle(arg1 *livekit.TrickleRequest) error {
+func (fake *FakeLocalParticipant) HandleICETrickle(arg1 *livekit.TrickleRequest) {
 	fake.handleICETrickleMutex.Lock()
-	ret, specificReturn := fake.handleICETrickleReturnsOnCall[len(fake.handleICETrickleArgsForCall)]
 	fake.handleICETrickleArgsForCall = append(fake.handleICETrickleArgsForCall, struct {
 		arg1 *livekit.TrickleRequest
 	}{arg1})
 	stub := fake.HandleICETrickleStub
-	fakeReturns := fake.handleICETrickleReturns
 	fake.recordInvocation("HandleICETrickle", []interface{}{arg1})
 	fake.handleICETrickleMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		fake.HandleICETrickleStub(arg1)
 	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
 }
 
 func (fake *FakeLocalParticipant) HandleICETrickleCallCount() int {
@@ -3922,7 +3908,7 @@ func (fake *FakeLocalParticipant) HandleICETrickleCallCount() int {
 	return len(fake.handleICETrickleArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) HandleICETrickleCalls(stub func(*livekit.TrickleRequest) error) {
+func (fake *FakeLocalParticipant) HandleICETrickleCalls(stub func(*livekit.TrickleRequest)) {
 	fake.handleICETrickleMutex.Lock()
 	defer fake.handleICETrickleMutex.Unlock()
 	fake.HandleICETrickleStub = stub
@@ -3933,29 +3919,6 @@ func (fake *FakeLocalParticipant) HandleICETrickleArgsForCall(i int) *livekit.Tr
 	defer fake.handleICETrickleMutex.RUnlock()
 	argsForCall := fake.handleICETrickleArgsForCall[i]
 	return argsForCall.arg1
-}
-
-func (fake *FakeLocalParticipant) HandleICETrickleReturns(result1 error) {
-	fake.handleICETrickleMutex.Lock()
-	defer fake.handleICETrickleMutex.Unlock()
-	fake.HandleICETrickleStub = nil
-	fake.handleICETrickleReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeLocalParticipant) HandleICETrickleReturnsOnCall(i int, result1 error) {
-	fake.handleICETrickleMutex.Lock()
-	defer fake.handleICETrickleMutex.Unlock()
-	fake.HandleICETrickleStub = nil
-	if fake.handleICETrickleReturnsOnCall == nil {
-		fake.handleICETrickleReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.handleICETrickleReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
 }
 
 func (fake *FakeLocalParticipant) HandleICETrickleSDPFragment(arg1 string) error {
