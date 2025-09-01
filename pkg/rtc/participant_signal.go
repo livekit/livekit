@@ -157,7 +157,7 @@ func (p *ParticipantImpl) SendRefreshToken(token string) error {
 	return p.signaller.WriteMessage(p.signalling.SignalRefreshToken(token))
 }
 
-func (p *ParticipantImpl) SendRequestResponse(requestResponse *livekit.RequestResponse) error {
+func (p *ParticipantImpl) sendRequestResponse(requestResponse *livekit.RequestResponse) error {
 	if requestResponse.RequestId == 0 || !p.params.ClientInfo.SupportErrorResponse() {
 		return nil
 	}

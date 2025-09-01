@@ -53,7 +53,11 @@ func (s whipService) Create(ctx context.Context, req *rpc.WHIPCreateRequest) (*r
 		return nil, ErrParticipantNotFound
 	}
 
-	if err := lp.HandleOffer(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: req.OfferSdp}, 0); err != nil {
+	if err := lp.HandleOffer(&livekit.SessionDescription{
+		Type: webrtc.SDPTypeOffer.String(),
+		Sdp:  req.OfferSdp,
+		Id:   0,
+	}); err != nil {
 		lp.GetLogger().Errorw("whip service: could not handle offer", err)
 		return nil, err
 	}

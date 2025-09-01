@@ -387,7 +387,7 @@ type LocalParticipant interface {
 	HandleSignalSourceClose()
 
 	// updates
-	CheckMetadataLimits(name string, metadata string, attributes map[string]string) error
+	UpdateMetadata(update *livekit.UpdateParticipantMetadata, fromAdmin bool) error
 	SetName(name string)
 	SetMetadata(metadata string)
 	SetAttributes(attributes map[string]string)
@@ -404,7 +404,7 @@ type LocalParticipant interface {
 
 	// PeerConnection
 	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget)
-	HandleOffer(sdp webrtc.SessionDescription, offerId uint32) error
+	HandleOffer(offer *livekit.SessionDescription) error
 	GetAnswer() (webrtc.SessionDescription, uint32, error)
 	HandleICETrickleSDPFragment(sdpFragment string) error
 	HandleICERestartSDPFragment(sdpFragment string) (string, error)
@@ -450,7 +450,7 @@ type LocalParticipant interface {
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
 	SendSubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool) error
 	SendRefreshToken(token string) error
-	SendRequestResponse(requestResponse *livekit.RequestResponse) error
+	// RAJA-REMOVE SendRequestResponse(requestResponse *livekit.RequestResponse) error
 	HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse) error
 	IssueFullReconnect(reason ParticipantCloseReason)
 	SendRoomMovedResponse(moved *livekit.RoomMovedResponse) error

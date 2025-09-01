@@ -40,7 +40,8 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/observability"
 	"github.com/livekit/protocol/observability/roomobs"
-	sdpHelper "github.com/livekit/protocol/sdp"
+	protosdp "github.com/livekit/protocol/sdp"
+	protosignalling "github.com/livekit/protocol/signalling"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/protocol/utils/pointer"
@@ -549,8 +550,8 @@ func (p *ParticipantImpl) GetBufferFactory() *buffer.Factory {
 	return p.params.Config.BufferFactory
 }
 
-// CheckMetadataLimits check if name/metadata/attributes of a participant is within configured limits
-func (p *ParticipantImpl) CheckMetadataLimits(
+// checkMetadataLimits check if name/metadata/attributes of a participant is within configured limits
+func (p *ParticipantImpl) checkMetadataLimits(
 	name string,
 	metadata string,
 	attributes map[string]string,
@@ -568,6 +569,66 @@ func (p *ParticipantImpl) CheckMetadataLimits(
 	}
 
 	return nil
+}
+
+func (p *ParticipantImpl) UpdateMetadata(update *livekit.UpdateParticipantMetadata, fromAdmin bool) error {
+	lgr := p.params.Logger.WithUnlikelyValues(
+		"update", logger.Proto(update),
+		"fromAdmin", fromAdmin,
+	)
+	lgr.Debugw("updating participant metadata")
+
+	var (
+		err             error
+		requestResponse *livekit.RequestResponse
+	)
+	sendRequestResponse := func() error {
+		if !fromAdmin || (update.RequestId != 0 || err != nil) {
+			requestResponse.Request = &livekit.RequestResponse_UpdateMetadata{
+				UpdateMetadata: update,
+			}
+			p.sendRequestResponse(requestResponse)
+		}
+		if err != nil {
+			lgr.Warnw("could not update metadata", err)
+		}
+		return err
+	}
+
+	if !fromAdmin && !p.ClaimGrants().Video.GetCanUpdateOwnMetadata() {
+		requestResponse.Reason = livekit.RequestResponse_NOT_ALLOWED
+		requestResponse.Message = "does not have permission to update own metadata"
+		err = signalling.ErrUpdateOwnMetadataNotAllowed
+		return sendRequestResponse()
+	}
+
+	if err = p.checkMetadataLimits(update.Name, update.Metadata, update.Attributes); err != nil {
+		switch err {
+		case signalling.ErrNameExceedsLimits:
+			requestResponse.Reason = livekit.RequestResponse_LIMIT_EXCEEDED
+			requestResponse.Message = "exceeds name length limit"
+
+		case signalling.ErrMetadataExceedsLimits:
+			requestResponse.Reason = livekit.RequestResponse_LIMIT_EXCEEDED
+			requestResponse.Message = "exceeds metadata size limit"
+
+		case signalling.ErrAttributesExceedsLimits:
+			requestResponse.Reason = livekit.RequestResponse_LIMIT_EXCEEDED
+			requestResponse.Message = "exceeds attributes size limit"
+		}
+		return sendRequestResponse()
+	}
+
+	if update.Name != "" {
+		p.SetName(update.Name)
+	}
+	if update.Metadata != "" {
+		p.SetMetadata(update.Metadata)
+	}
+	if update.Attributes != nil {
+		p.SetAttributes(update.Attributes)
+	}
+	return sendRequestResponse()
 }
 
 // SetName attaches name to the participant
@@ -1018,12 +1079,12 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(parsedOffer *sdp.SessionDes
 			continue
 		}
 
-		cid := sdpHelper.GetMediaStreamTrack(m)
+		cid := protosdp.GetMediaStreamTrack(m)
 		if cid == "" {
 			cid = guid.New(utils.TrackPrefix)
 		}
 
-		rids, ridsOk := sdpHelper.GetSimulcastRids(m)
+		rids, ridsOk := protosdp.GetSimulcastRids(m)
 
 		var (
 			name        string
@@ -1072,14 +1133,14 @@ func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription, unma
 			continue
 		}
 
-		mst := sdpHelper.GetMediaStreamTrack(m)
+		mst := protosdp.GetMediaStreamTrack(m)
 		if mst == "" {
 			continue
 		}
 
 		getRids := func(inRids buffer.VideoLayersRid) buffer.VideoLayersRid {
 			var outRids buffer.VideoLayersRid
-			rids, ok := sdpHelper.GetSimulcastRids(m)
+			rids, ok := protosdp.GetSimulcastRids(m)
 			if ok {
 				n := min(len(rids), len(inRids))
 				for i := 0; i < n; i++ {
@@ -1150,27 +1211,25 @@ func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription, unma
 }
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
-func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription, offerId uint32) error {
-	p.pubLogger.Debugw(
-		"received offer",
+func (p *ParticipantImpl) HandleOffer(req *livekit.SessionDescription) error {
+	offer, offerId := protosignalling.FromProtoSessionDescription(req)
+	lgr := p.pubLogger.WithUnlikelyValues(
 		"transport", livekit.SignalTarget_PUBLISHER,
 		"offer", offer,
 		"offerId", offerId,
 	)
 
+	lgr.Debugw("received offer")
+
 	parsedOffer, err := offer.Unmarshal()
 	if err != nil {
-		p.pubLogger.Warnw(
-			"could not parse offer", err,
-			"transport", livekit.SignalTarget_PUBLISHER,
-			"offer", offer,
-			"offerId", offerId,
-		)
+		lgr.Warnw("could not parse offer", err)
 		return err
 	}
 
 	if p.params.UseOneShotSignallingMode {
 		if err := p.synthesizeAddTrackRequests(parsedOffer); err != nil {
+			lgr.Warnw("could not synthesize add track requests", err)
 			return err
 		}
 	}
@@ -1182,7 +1241,7 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription, offerId u
 	// put together munged offer after setting codec preferences
 	bytes, err := parsedOffer.Marshal()
 	if err != nil {
-		p.pubLogger.Errorw("failed to marshal offer", err)
+		lgr.Errorw("failed to marshal offer", err, "parsedOffer", parsedOffer)
 		return err
 	}
 
@@ -1193,6 +1252,7 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription, offerId u
 
 	err = p.TransportManager.HandleOffer(offer, offerId, p.MigrateState() == types.MigrateStateInit)
 	if err != nil {
+		lgr.Warnw("could not handle offer", err, "mungedOffer", offer)
 		return err
 	}
 
@@ -1203,7 +1263,7 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription, offerId u
 	}
 
 	p.handlePendingRemoteTracks()
-	return err
+	return nil
 }
 
 func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription, answerId uint32) error {

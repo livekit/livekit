@@ -122,19 +122,6 @@ type FakeLocalParticipant struct {
 	canSubscribeReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	CheckMetadataLimitsStub        func(string, string, map[string]string) error
-	checkMetadataLimitsMutex       sync.RWMutex
-	checkMetadataLimitsArgsForCall []struct {
-		arg1 string
-		arg2 string
-		arg3 map[string]string
-	}
-	checkMetadataLimitsReturns struct {
-		result1 error
-	}
-	checkMetadataLimitsReturnsOnCall map[int]struct {
-		result1 error
-	}
 	ClaimGrantsStub        func() *auth.ClaimGrants
 	claimGrantsMutex       sync.RWMutex
 	claimGrantsArgsForCall []struct {
@@ -544,11 +531,10 @@ type FakeLocalParticipant struct {
 	handleMetricsReturnsOnCall map[int]struct {
 		result1 error
 	}
-	HandleOfferStub        func(webrtc.SessionDescription, uint32) error
+	HandleOfferStub        func(*livekit.SessionDescription) error
 	handleOfferMutex       sync.RWMutex
 	handleOfferArgsForCall []struct {
-		arg1 webrtc.SessionDescription
-		arg2 uint32
+		arg1 *livekit.SessionDescription
 	}
 	handleOfferReturns struct {
 		result1 error
@@ -1053,17 +1039,6 @@ type FakeLocalParticipant struct {
 	sendRefreshTokenReturnsOnCall map[int]struct {
 		result1 error
 	}
-	SendRequestResponseStub        func(*livekit.RequestResponse) error
-	sendRequestResponseMutex       sync.RWMutex
-	sendRequestResponseArgsForCall []struct {
-		arg1 *livekit.RequestResponse
-	}
-	sendRequestResponseReturns struct {
-		result1 error
-	}
-	sendRequestResponseReturnsOnCall map[int]struct {
-		result1 error
-	}
 	SendRoomMovedResponseStub        func(*livekit.RoomMovedResponse) error
 	sendRoomMovedResponseMutex       sync.RWMutex
 	sendRoomMovedResponseArgsForCall []struct {
@@ -1341,6 +1316,18 @@ type FakeLocalParticipant struct {
 	updateMediaRTTMutex       sync.RWMutex
 	updateMediaRTTArgsForCall []struct {
 		arg1 uint32
+	}
+	UpdateMetadataStub        func(*livekit.UpdateParticipantMetadata, bool) error
+	updateMetadataMutex       sync.RWMutex
+	updateMetadataArgsForCall []struct {
+		arg1 *livekit.UpdateParticipantMetadata
+		arg2 bool
+	}
+	updateMetadataReturns struct {
+		result1 error
+	}
+	updateMetadataReturnsOnCall map[int]struct {
+		result1 error
 	}
 	UpdateSignalingRTTStub        func(uint32)
 	updateSignalingRTTMutex       sync.RWMutex
@@ -1947,69 +1934,6 @@ func (fake *FakeLocalParticipant) CanSubscribeReturnsOnCall(i int, result1 bool)
 	}
 	fake.canSubscribeReturnsOnCall[i] = struct {
 		result1 bool
-	}{result1}
-}
-
-func (fake *FakeLocalParticipant) CheckMetadataLimits(arg1 string, arg2 string, arg3 map[string]string) error {
-	fake.checkMetadataLimitsMutex.Lock()
-	ret, specificReturn := fake.checkMetadataLimitsReturnsOnCall[len(fake.checkMetadataLimitsArgsForCall)]
-	fake.checkMetadataLimitsArgsForCall = append(fake.checkMetadataLimitsArgsForCall, struct {
-		arg1 string
-		arg2 string
-		arg3 map[string]string
-	}{arg1, arg2, arg3})
-	stub := fake.CheckMetadataLimitsStub
-	fakeReturns := fake.checkMetadataLimitsReturns
-	fake.recordInvocation("CheckMetadataLimits", []interface{}{arg1, arg2, arg3})
-	fake.checkMetadataLimitsMutex.Unlock()
-	if stub != nil {
-		return stub(arg1, arg2, arg3)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeLocalParticipant) CheckMetadataLimitsCallCount() int {
-	fake.checkMetadataLimitsMutex.RLock()
-	defer fake.checkMetadataLimitsMutex.RUnlock()
-	return len(fake.checkMetadataLimitsArgsForCall)
-}
-
-func (fake *FakeLocalParticipant) CheckMetadataLimitsCalls(stub func(string, string, map[string]string) error) {
-	fake.checkMetadataLimitsMutex.Lock()
-	defer fake.checkMetadataLimitsMutex.Unlock()
-	fake.CheckMetadataLimitsStub = stub
-}
-
-func (fake *FakeLocalParticipant) CheckMetadataLimitsArgsForCall(i int) (string, string, map[string]string) {
-	fake.checkMetadataLimitsMutex.RLock()
-	defer fake.checkMetadataLimitsMutex.RUnlock()
-	argsForCall := fake.checkMetadataLimitsArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
-}
-
-func (fake *FakeLocalParticipant) CheckMetadataLimitsReturns(result1 error) {
-	fake.checkMetadataLimitsMutex.Lock()
-	defer fake.checkMetadataLimitsMutex.Unlock()
-	fake.CheckMetadataLimitsStub = nil
-	fake.checkMetadataLimitsReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeLocalParticipant) CheckMetadataLimitsReturnsOnCall(i int, result1 error) {
-	fake.checkMetadataLimitsMutex.Lock()
-	defer fake.checkMetadataLimitsMutex.Unlock()
-	fake.CheckMetadataLimitsStub = nil
-	if fake.checkMetadataLimitsReturnsOnCall == nil {
-		fake.checkMetadataLimitsReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.checkMetadataLimitsReturnsOnCall[i] = struct {
-		result1 error
 	}{result1}
 }
 
@@ -4156,19 +4080,18 @@ func (fake *FakeLocalParticipant) HandleMetricsReturnsOnCall(i int, result1 erro
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) HandleOffer(arg1 webrtc.SessionDescription, arg2 uint32) error {
+func (fake *FakeLocalParticipant) HandleOffer(arg1 *livekit.SessionDescription) error {
 	fake.handleOfferMutex.Lock()
 	ret, specificReturn := fake.handleOfferReturnsOnCall[len(fake.handleOfferArgsForCall)]
 	fake.handleOfferArgsForCall = append(fake.handleOfferArgsForCall, struct {
-		arg1 webrtc.SessionDescription
-		arg2 uint32
-	}{arg1, arg2})
+		arg1 *livekit.SessionDescription
+	}{arg1})
 	stub := fake.HandleOfferStub
 	fakeReturns := fake.handleOfferReturns
-	fake.recordInvocation("HandleOffer", []interface{}{arg1, arg2})
+	fake.recordInvocation("HandleOffer", []interface{}{arg1})
 	fake.handleOfferMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1)
 	}
 	if specificReturn {
 		return ret.result1
@@ -4182,17 +4105,17 @@ func (fake *FakeLocalParticipant) HandleOfferCallCount() int {
 	return len(fake.handleOfferArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) HandleOfferCalls(stub func(webrtc.SessionDescription, uint32) error) {
+func (fake *FakeLocalParticipant) HandleOfferCalls(stub func(*livekit.SessionDescription) error) {
 	fake.handleOfferMutex.Lock()
 	defer fake.handleOfferMutex.Unlock()
 	fake.HandleOfferStub = stub
 }
 
-func (fake *FakeLocalParticipant) HandleOfferArgsForCall(i int) (webrtc.SessionDescription, uint32) {
+func (fake *FakeLocalParticipant) HandleOfferArgsForCall(i int) *livekit.SessionDescription {
 	fake.handleOfferMutex.RLock()
 	defer fake.handleOfferMutex.RUnlock()
 	argsForCall := fake.handleOfferArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1
 }
 
 func (fake *FakeLocalParticipant) HandleOfferReturns(result1 error) {
@@ -7013,67 +6936,6 @@ func (fake *FakeLocalParticipant) SendRefreshTokenReturnsOnCall(i int, result1 e
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) SendRequestResponse(arg1 *livekit.RequestResponse) error {
-	fake.sendRequestResponseMutex.Lock()
-	ret, specificReturn := fake.sendRequestResponseReturnsOnCall[len(fake.sendRequestResponseArgsForCall)]
-	fake.sendRequestResponseArgsForCall = append(fake.sendRequestResponseArgsForCall, struct {
-		arg1 *livekit.RequestResponse
-	}{arg1})
-	stub := fake.SendRequestResponseStub
-	fakeReturns := fake.sendRequestResponseReturns
-	fake.recordInvocation("SendRequestResponse", []interface{}{arg1})
-	fake.sendRequestResponseMutex.Unlock()
-	if stub != nil {
-		return stub(arg1)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeLocalParticipant) SendRequestResponseCallCount() int {
-	fake.sendRequestResponseMutex.RLock()
-	defer fake.sendRequestResponseMutex.RUnlock()
-	return len(fake.sendRequestResponseArgsForCall)
-}
-
-func (fake *FakeLocalParticipant) SendRequestResponseCalls(stub func(*livekit.RequestResponse) error) {
-	fake.sendRequestResponseMutex.Lock()
-	defer fake.sendRequestResponseMutex.Unlock()
-	fake.SendRequestResponseStub = stub
-}
-
-func (fake *FakeLocalParticipant) SendRequestResponseArgsForCall(i int) *livekit.RequestResponse {
-	fake.sendRequestResponseMutex.RLock()
-	defer fake.sendRequestResponseMutex.RUnlock()
-	argsForCall := fake.sendRequestResponseArgsForCall[i]
-	return argsForCall.arg1
-}
-
-func (fake *FakeLocalParticipant) SendRequestResponseReturns(result1 error) {
-	fake.sendRequestResponseMutex.Lock()
-	defer fake.sendRequestResponseMutex.Unlock()
-	fake.SendRequestResponseStub = nil
-	fake.sendRequestResponseReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeLocalParticipant) SendRequestResponseReturnsOnCall(i int, result1 error) {
-	fake.sendRequestResponseMutex.Lock()
-	defer fake.sendRequestResponseMutex.Unlock()
-	fake.SendRequestResponseStub = nil
-	if fake.sendRequestResponseReturnsOnCall == nil {
-		fake.sendRequestResponseReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.sendRequestResponseReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
-}
-
 func (fake *FakeLocalParticipant) SendRoomMovedResponse(arg1 *livekit.RoomMovedResponse) error {
 	fake.sendRoomMovedResponseMutex.Lock()
 	ret, specificReturn := fake.sendRoomMovedResponseReturnsOnCall[len(fake.sendRoomMovedResponseArgsForCall)]
@@ -8600,6 +8462,68 @@ func (fake *FakeLocalParticipant) UpdateMediaRTTArgsForCall(i int) uint32 {
 	defer fake.updateMediaRTTMutex.RUnlock()
 	argsForCall := fake.updateMediaRTTArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) UpdateMetadata(arg1 *livekit.UpdateParticipantMetadata, arg2 bool) error {
+	fake.updateMetadataMutex.Lock()
+	ret, specificReturn := fake.updateMetadataReturnsOnCall[len(fake.updateMetadataArgsForCall)]
+	fake.updateMetadataArgsForCall = append(fake.updateMetadataArgsForCall, struct {
+		arg1 *livekit.UpdateParticipantMetadata
+		arg2 bool
+	}{arg1, arg2})
+	stub := fake.UpdateMetadataStub
+	fakeReturns := fake.updateMetadataReturns
+	fake.recordInvocation("UpdateMetadata", []interface{}{arg1, arg2})
+	fake.updateMetadataMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) UpdateMetadataCallCount() int {
+	fake.updateMetadataMutex.RLock()
+	defer fake.updateMetadataMutex.RUnlock()
+	return len(fake.updateMetadataArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) UpdateMetadataCalls(stub func(*livekit.UpdateParticipantMetadata, bool) error) {
+	fake.updateMetadataMutex.Lock()
+	defer fake.updateMetadataMutex.Unlock()
+	fake.UpdateMetadataStub = stub
+}
+
+func (fake *FakeLocalParticipant) UpdateMetadataArgsForCall(i int) (*livekit.UpdateParticipantMetadata, bool) {
+	fake.updateMetadataMutex.RLock()
+	defer fake.updateMetadataMutex.RUnlock()
+	argsForCall := fake.updateMetadataArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeLocalParticipant) UpdateMetadataReturns(result1 error) {
+	fake.updateMetadataMutex.Lock()
+	defer fake.updateMetadataMutex.Unlock()
+	fake.UpdateMetadataStub = nil
+	fake.updateMetadataReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) UpdateMetadataReturnsOnCall(i int, result1 error) {
+	fake.updateMetadataMutex.Lock()
+	defer fake.updateMetadataMutex.Unlock()
+	fake.UpdateMetadataStub = nil
+	if fake.updateMetadataReturnsOnCall == nil {
+		fake.updateMetadataReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.updateMetadataReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
 }
 
 func (fake *FakeLocalParticipant) UpdateSignalingRTT(arg1 uint32) {
