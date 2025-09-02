@@ -580,10 +580,8 @@ func (p *ParticipantImpl) UpdateMetadata(update *livekit.UpdateParticipantMetada
 	)
 	lgr.Debugw("updating participant metadata")
 
-	var (
-		err             error
-		requestResponse *livekit.RequestResponse
-	)
+	var err error
+	requestResponse := &livekit.RequestResponse{}
 	sendRequestResponse := func() error {
 		if !fromAdmin || (update.RequestId != 0 || err != nil) {
 			requestResponse.Request = &livekit.RequestResponse_UpdateMetadata{
