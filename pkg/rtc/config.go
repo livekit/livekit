@@ -141,11 +141,24 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		}
 
 		var err error
-		relayUdpMux, err = ice.NewMultiUDPMuxFromPort(int(rtcConf.RelayPort), opts...)
+		relayUdpMuxFixedPort, err := ice.NewMultiUDPMuxFromPort(int(rtcConf.RelayPort), opts...)
 		if err != nil {
 			return nil, err
 		}
 		logger.Infow("using udp mux for relay port", "port", rtcConf.RelayPort)
+
+		r := rand.New(rand.NewSource(time.Now().UnixNano()))
+		randomPort := r.Intn(int(conf.RTC.ICEPortRangeEnd-conf.RTC.ICEPortRangeStart+1)) + int(conf.RTC.ICEPortRangeStart)
+
+		relayUdpMuxRandomPort, err := ice.NewMultiUDPMuxFromPort(randomPort, opts...)
+		if err != nil {
+			return nil, err
+		}
+		logger.Infow("using udp mux for relay additional random port", "port", randomPort)
+
+		relayUdpMux = ice.NewMultiUDPMuxDefault(relayUdpMuxFixedPort, relayUdpMuxRandomPort)
+		addresses := relayUdpMux.GetListenAddresses()
+		logger.Infow("relay udp mux addresses", "addresses", fmt.Sprintf("%+v", addresses))
 	}
 
 	var udpMux ice.UDPMux
