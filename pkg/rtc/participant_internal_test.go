@@ -278,7 +278,10 @@ func TestMuteSetting(t *testing.T) {
 		ti := &livekit.TrackInfo{Sid: "testTrack"}
 		p.pendingTracks["cid"] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}}
 
-		p.SetTrackMuted(livekit.TrackID(ti.Sid), true, false)
+		p.SetTrackMuted(&livekit.MuteTrackRequest{
+			Sid:   ti.Sid,
+			Muted: true,
+		}, false)
 		require.True(t, p.pendingTracks["cid"].trackInfos[0].Muted)
 	})
 
@@ -384,7 +387,11 @@ func TestDisableCodecs(t *testing.T) {
 		}
 		return nil
 	})
-	participant.HandleOffer(sdp, offerId)
+	participant.HandleOffer(&livekit.SessionDescription{
+		Type: webrtc.SDPTypeOffer.String(),
+		Sdp:  sdp.SDP,
+		Id:   offerId,
+	})
 
 	testutils.WithTimeout(t, func() string {
 		if answerReceived.Load() && answerIdReceived.Load() == offerId {
@@ -573,7 +580,11 @@ func TestPreferMediaCodecForPublisher(t *testing.T) {
 					}
 					return nil
 				})
-				participant.HandleOffer(sdp, offerId)
+				participant.HandleOffer(&livekit.SessionDescription{
+					Type: webrtc.SDPTypeOffer.String(),
+					Sdp:  sdp.SDP,
+					Id:   offerId,
+				})
 
 				require.Eventually(t, func() bool { return answerReceived.Load() && answerIdReceived.Load() == offerId }, 5*time.Second, 10*time.Millisecond)
 
@@ -660,7 +671,11 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 				}
 				return nil
 			})
-			participant.HandleOffer(sdp, offerId)
+			participant.HandleOffer(&livekit.SessionDescription{
+				Type: webrtc.SDPTypeOffer.String(),
+				Sdp:  sdp.SDP,
+				Id:   offerId,
+			})
 
 			require.Eventually(t, func() bool { return answerReceived.Load() && answerIdReceived.Load() == offerId }, 5*time.Second, 10*time.Millisecond)
 
