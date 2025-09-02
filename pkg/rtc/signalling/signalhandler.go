@@ -69,7 +69,7 @@ func (s *signalhandler) HandleMessage(msg proto.Message) error {
 		s.params.Participant.AddTrack(msg.AddTrack)
 
 	case *livekit.SignalRequest_Mute:
-		s.params.Participant.SetTrackMuted(livekit.TrackID(msg.Mute.Sid), msg.Mute.Muted, false)
+		s.params.Participant.SetTrackMuted(msg.Mute, false)
 
 	case *livekit.SignalRequest_Subscription:
 		// allow participant to indicate their interest in the subscription

@@ -1149,12 +1149,11 @@ type FakeLocalParticipant struct {
 	setSubscriberChannelCapacityArgsForCall []struct {
 		arg1 int64
 	}
-	SetTrackMutedStub        func(livekit.TrackID, bool, bool) *livekit.TrackInfo
+	SetTrackMutedStub        func(*livekit.MuteTrackRequest, bool) *livekit.TrackInfo
 	setTrackMutedMutex       sync.RWMutex
 	setTrackMutedArgsForCall []struct {
-		arg1 livekit.TrackID
+		arg1 *livekit.MuteTrackRequest
 		arg2 bool
-		arg3 bool
 	}
 	setTrackMutedReturns struct {
 		result1 *livekit.TrackInfo
@@ -7584,20 +7583,19 @@ func (fake *FakeLocalParticipant) SetSubscriberChannelCapacityArgsForCall(i int)
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) SetTrackMuted(arg1 livekit.TrackID, arg2 bool, arg3 bool) *livekit.TrackInfo {
+func (fake *FakeLocalParticipant) SetTrackMuted(arg1 *livekit.MuteTrackRequest, arg2 bool) *livekit.TrackInfo {
 	fake.setTrackMutedMutex.Lock()
 	ret, specificReturn := fake.setTrackMutedReturnsOnCall[len(fake.setTrackMutedArgsForCall)]
 	fake.setTrackMutedArgsForCall = append(fake.setTrackMutedArgsForCall, struct {
-		arg1 livekit.TrackID
+		arg1 *livekit.MuteTrackRequest
 		arg2 bool
-		arg3 bool
-	}{arg1, arg2, arg3})
+	}{arg1, arg2})
 	stub := fake.SetTrackMutedStub
 	fakeReturns := fake.setTrackMutedReturns
-	fake.recordInvocation("SetTrackMuted", []interface{}{arg1, arg2, arg3})
+	fake.recordInvocation("SetTrackMuted", []interface{}{arg1, arg2})
 	fake.setTrackMutedMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2, arg3)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1
@@ -7611,17 +7609,17 @@ func (fake *FakeLocalParticipant) SetTrackMutedCallCount() int {
 	return len(fake.setTrackMutedArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) SetTrackMutedCalls(stub func(livekit.TrackID, bool, bool) *livekit.TrackInfo) {
+func (fake *FakeLocalParticipant) SetTrackMutedCalls(stub func(*livekit.MuteTrackRequest, bool) *livekit.TrackInfo) {
 	fake.setTrackMutedMutex.Lock()
 	defer fake.setTrackMutedMutex.Unlock()
 	fake.SetTrackMutedStub = stub
 }
 
-func (fake *FakeLocalParticipant) SetTrackMutedArgsForCall(i int) (livekit.TrackID, bool, bool) {
+func (fake *FakeLocalParticipant) SetTrackMutedArgsForCall(i int) (*livekit.MuteTrackRequest, bool) {
 	fake.setTrackMutedMutex.RLock()
 	defer fake.setTrackMutedMutex.RUnlock()
 	argsForCall := fake.setTrackMutedArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) SetTrackMutedReturns(result1 *livekit.TrackInfo) {

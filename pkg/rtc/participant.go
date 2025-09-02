@@ -1387,11 +1387,23 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 	p.params.Logger.Debugw("add track request", "trackID", req.Cid, "request", logger.Proto(req))
 	if !p.CanPublishSource(req.Source) {
 		p.pubLogger.Warnw("no permission to publish track", nil, "trackID", req.Sid, "kind", req.Type)
+		p.sendRequestResponse(&livekit.RequestResponse{
+			Reason: livekit.RequestResponse_NOT_ALLOWED,
+			Request: &livekit.RequestResponse_AddTrack{
+				AddTrack: utils.CloneProto(req),
+			},
+		})
 		return
 	}
 
 	if req.Type != livekit.TrackType_AUDIO && req.Type != livekit.TrackType_VIDEO {
 		p.pubLogger.Warnw("unsupported track type", nil, "trackID", req.Sid, "kind", req.Type)
+		p.sendRequestResponse(&livekit.RequestResponse{
+			Reason: livekit.RequestResponse_UNSUPPORTED_TYPE,
+			Request: &livekit.RequestResponse_AddTrack{
+				AddTrack: utils.CloneProto(req),
+			},
+		})
 		return
 	}
 
@@ -2774,6 +2786,12 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		track := p.GetPublishedTrack(livekit.TrackID(req.Sid))
 		if track == nil {
 			p.pubLogger.Infow("could not find existing track for multi-codec simulcast", "trackID", req.Sid)
+			p.sendRequestResponse(&livekit.RequestResponse{
+				Reason: livekit.RequestResponse_NOT_FOUND,
+				Request: &livekit.RequestResponse_AddTrack{
+					AddTrack: utils.CloneProto(req),
+				},
+			})
 			return nil
 		}
 
@@ -2996,22 +3014,23 @@ func (p *ParticipantImpl) HasConnected() bool {
 	return p.TransportManager.HasSubscriberEverConnected() || p.TransportManager.HasPublisherEverConnected()
 }
 
-func (p *ParticipantImpl) SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool) *livekit.TrackInfo {
+func (p *ParticipantImpl) SetTrackMuted(mute *livekit.MuteTrackRequest, fromAdmin bool) *livekit.TrackInfo {
 	// when request is coming from admin, send message to current participant
 	if fromAdmin {
-		p.sendTrackMuted(trackID, muted)
+		p.sendTrackMuted(livekit.TrackID(mute.Sid), mute.Muted)
 	}
 
-	return p.setTrackMuted(trackID, muted)
+	return p.setTrackMuted(mute, fromAdmin)
 }
 
-func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) *livekit.TrackInfo {
+func (p *ParticipantImpl) setTrackMuted(mute *livekit.MuteTrackRequest, fromAdmin bool) *livekit.TrackInfo {
+	trackID := livekit.TrackID(mute.Sid)
 	p.dirty.Store(true)
 	if p.supervisor != nil {
-		p.supervisor.SetPublicationMute(trackID, muted)
+		p.supervisor.SetPublicationMute(trackID, mute.Muted)
 	}
 
-	track, changed := p.UpTrackManager.SetPublishedTrackMuted(trackID, muted)
+	track, changed := p.UpTrackManager.SetPublishedTrackMuted(trackID, mute.Muted)
 	var trackInfo *livekit.TrackInfo
 	if track != nil {
 		trackInfo = track.ToProto()
@@ -3023,8 +3042,8 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) *li
 		for i, ti := range pti.trackInfos {
 			if livekit.TrackID(ti.Sid) == trackID {
 				ti = utils.CloneProto(ti)
-				changed = changed || ti.Muted != muted
-				ti.Muted = muted
+				changed = changed || ti.Muted != mute.Muted
+				ti.Muted = mute.Muted
 				pti.trackInfos[i] = ti
 				if trackInfo == nil {
 					trackInfo = ti
@@ -3035,11 +3054,20 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) *li
 	p.pendingTracksLock.RUnlock()
 
 	if trackInfo != nil && changed {
-		if muted {
+		if mute.Muted {
 			p.params.Telemetry.TrackMuted(context.Background(), p.ID(), trackInfo)
 		} else {
 			p.params.Telemetry.TrackUnmuted(context.Background(), p.ID(), trackInfo)
 		}
+	}
+
+	if trackInfo == nil && !fromAdmin {
+		p.sendRequestResponse(&livekit.RequestResponse{
+			Reason: livekit.RequestResponse_NOT_FOUND,
+			Request: &livekit.RequestResponse_Mute{
+				Mute: utils.CloneProto(mute),
+			},
+		})
 	}
 
 	return trackInfo
@@ -3865,6 +3893,12 @@ func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack
 	}
 
 	p.pubLogger.Debugw("could not locate track", "trackID", update.TrackSid)
+	p.sendRequestResponse(&livekit.RequestResponse{
+		Reason: livekit.RequestResponse_NOT_FOUND,
+		Request: &livekit.RequestResponse_UpdateAudioTrack{
+			UpdateAudioTrack: utils.CloneProto(update),
+		},
+	})
 	return errors.New("could not find track")
 }
 
@@ -3891,6 +3925,12 @@ func (p *ParticipantImpl) UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack
 	}
 
 	p.pubLogger.Debugw("could not locate track", "trackID", update.TrackSid)
+	p.sendRequestResponse(&livekit.RequestResponse{
+		Reason: livekit.RequestResponse_NOT_FOUND,
+		Request: &livekit.RequestResponse_UpdateVideoTrack{
+			UpdateVideoTrack: utils.CloneProto(update),
+		},
+	})
 	return errors.New("could not find track")
 }
 

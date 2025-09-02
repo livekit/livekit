@@ -778,7 +778,10 @@ func (r *RoomManager) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 		participant.GetLogger().Errorw("cannot unmute track, remote unmute is disabled", nil)
 		return nil, ErrRemoteUnmuteNoteEnabled
 	}
-	track := participant.SetTrackMuted(livekit.TrackID(req.TrackSid), req.Muted, true)
+	track := participant.SetTrackMuted(&livekit.MuteTrackRequest{
+		Sid:   req.TrackSid,
+		Muted: req.Muted,
+	}, true)
 	return &livekit.MuteRoomTrackResponse{Track: track}, nil
 }
 
