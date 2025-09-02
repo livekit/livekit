@@ -2600,7 +2600,7 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, o
 
 	parsed, err := sd.Unmarshal()
 	if err != nil {
-		return nil
+		return err
 	}
 
 	t.lock.Lock()
@@ -2661,7 +2661,11 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, o
 func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription, answerId uint32) error {
 	t.params.Logger.Debugw("processing answer", "answerId", answerId)
 	if answerId != 0 && answerId != t.localOfferId.Load() {
-		t.params.Logger.Warnw("sdp state: answer id mismatch", nil, "expected", t.localOfferId.Load(), "got", answerId)
+		t.params.Logger.Warnw(
+			"sdp state: answer id mismatch", nil,
+			"expected", t.localOfferId.Load(),
+			"got", answerId,
+		)
 	}
 	t.remoteAnswerId.Store(answerId)
 
