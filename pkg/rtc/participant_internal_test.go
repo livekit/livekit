@@ -132,7 +132,8 @@ func TestTrackPublishing(t *testing.T) {
 			Type: livekit.TrackType_AUDIO,
 		})
 
-		require.Equal(t, 1, sink.WriteMessageCallCount())
+		// error response on duplicate adds a message
+		require.Equal(t, 2, sink.WriteMessageCallCount())
 	})
 
 	t.Run("should queue adding of duplicate tracks if already published by client id in signalling", func(t *testing.T) {
@@ -150,7 +151,8 @@ func TestTrackPublishing(t *testing.T) {
 			Name: "webcam",
 			Type: livekit.TrackType_VIDEO,
 		})
-		require.Equal(t, 0, sink.WriteMessageCallCount())
+		// `queued` `RequestResponse` should add a message
+		require.Equal(t, 1, sink.WriteMessageCallCount())
 		require.Equal(t, 1, len(p.pendingTracks["cid"].trackInfos))
 
 		// add again - it should be added to the queue
@@ -181,7 +183,8 @@ func TestTrackPublishing(t *testing.T) {
 			Name: "webcam",
 			Type: livekit.TrackType_VIDEO,
 		})
-		require.Equal(t, 0, sink.WriteMessageCallCount())
+		// `queued` `RequestResponse` should add a message
+		require.Equal(t, 1, sink.WriteMessageCallCount())
 		require.Equal(t, 1, len(p.pendingTracks["cid"].trackInfos))
 
 		// add again - it should be added to the queue
@@ -220,7 +223,8 @@ func TestTrackPublishing(t *testing.T) {
 			Type:   livekit.TrackType_AUDIO,
 			Source: livekit.TrackSource_MICROPHONE,
 		})
-		require.Equal(t, 1, sink.WriteMessageCallCount())
+		// an error response for disallowed source should send a `RequestResponse`.
+		require.Equal(t, 2, sink.WriteMessageCallCount())
 	})
 }
 
