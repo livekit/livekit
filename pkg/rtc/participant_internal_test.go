@@ -161,7 +161,8 @@ func TestTrackPublishing(t *testing.T) {
 			Name: "webcam",
 			Type: livekit.TrackType_VIDEO,
 		})
-		require.Equal(t, 0, sink.WriteMessageCallCount())
+		// `queued` `RequestResponse`s should have been sent for duplicate additions
+		require.Equal(t, 2, sink.WriteMessageCallCount())
 		require.Equal(t, 2, len(p.pendingTracks["cid"].trackInfos))
 
 		// check SID is the same
@@ -193,7 +194,8 @@ func TestTrackPublishing(t *testing.T) {
 			Name: "webcam",
 			Type: livekit.TrackType_VIDEO,
 		})
-		require.Equal(t, 0, sink.WriteMessageCallCount())
+		// `queued` `RequestResponse`s should have been sent for duplicate additions
+		require.Equal(t, 2, sink.WriteMessageCallCount())
 		require.Equal(t, 2, len(p.pendingTracks["cid"].trackInfos))
 
 		// check SID is the same
