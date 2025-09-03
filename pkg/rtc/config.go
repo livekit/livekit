@@ -39,7 +39,7 @@ type WebRTCConfig struct {
 	Subscriber     DirectionConfig
 	NAT1To1IPs     []string
 	UseMDNS        bool
-	RelayPort      uint32
+	RelayUdpPort   uint32
 }
 
 type ReceiverConfig struct {
@@ -124,7 +124,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 	}
 
 	var relayUdpMux ice.UDPMux
-	if rtcConf.RelayPort != 0 {
+	if rtcConf.RelayUdpPort != 0 {
 		opts := []ice.UDPMuxFromPortOption{
 			ice.UDPMuxFromPortWithReadBufferSize(defaultUDPBufferSize),
 			ice.UDPMuxFromPortWithWriteBufferSize(defaultUDPBufferSize),
@@ -141,20 +141,20 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		}
 
 		var err error
-		relayUdpMuxFixedPort, err := ice.NewMultiUDPMuxFromPort(int(rtcConf.RelayPort), opts...)
+		relayUdpMuxFixedPort, err := ice.NewMultiUDPMuxFromPort(int(rtcConf.RelayUdpPort), opts...)
 		if err != nil {
 			return nil, err
 		}
-		logger.Infow("using udp mux for relay port", "port", rtcConf.RelayPort)
+		logger.Infow("using udp mux for relay port", "port", rtcConf.RelayUdpPort)
 
 		r := rand.New(rand.NewSource(time.Now().UnixNano()))
-		randomPort := r.Intn(int(conf.RTC.ICEPortRangeEnd-conf.RTC.ICEPortRangeStart+1)) + int(conf.RTC.ICEPortRangeStart)
+		randomPort := r.Intn(int(conf.RTC.RelayPortRangeEnd-conf.RTC.RelayPortRangeStart+1)) + int(conf.RTC.RelayPortRangeStart)
 
 		relayUdpMuxRandomPort, err := ice.NewMultiUDPMuxFromPort(randomPort, opts...)
 		if err != nil {
 			return nil, err
 		}
-		logger.Infow("using udp mux for relay additional random port", "port", randomPort)
+		logger.Infow("using udp mux for in-relay additional random port", "port", randomPort)
 
 		relayUdpMux = ice.NewMultiUDPMuxDefault(relayUdpMuxFixedPort, relayUdpMuxRandomPort)
 		addresses := relayUdpMux.GetListenAddresses()
@@ -169,7 +169,11 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		networkTypes = append(networkTypes,
 			webrtc.NetworkTypeUDP4, webrtc.NetworkTypeUDP6,
 		)
-		if rtcConf.ICEPortRangeStart != 0 && rtcConf.ICEPortRangeEnd != 0 {
+		if rtcConf.RelayUdpPort != 0 && rtcConf.RelayPortRangeStart != 0 && rtcConf.RelayPortRangeEnd != 0 {
+			if err := s.SetEphemeralUDPPortRange(uint16(rtcConf.RelayPortRangeStart), uint16(rtcConf.RelayPortRangeEnd)); err != nil {
+				return nil, err
+			}
+		} else if rtcConf.ICEPortRangeStart != 0 && rtcConf.ICEPortRangeEnd != 0 {
 			if err := s.SetEphemeralUDPPortRange(uint16(rtcConf.ICEPortRangeStart), uint16(rtcConf.ICEPortRangeEnd)); err != nil {
 				return nil, err
 			}
@@ -311,7 +315,7 @@ func NewWebRTCConfig(conf *config.Config, externalIP string) (*WebRTCConfig, err
 		Subscriber:     subscriberConfig,
 		NAT1To1IPs:     nat1to1IPs,
 		UseMDNS:        rtcConf.UseMDNS,
-		RelayPort:      rtcConf.RelayPort,
+		RelayUdpPort:   rtcConf.RelayUdpPort,
 	}, nil
 }
 

@@ -560,7 +560,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 			SettingEngine: rtcConfig.SettingEngine,
 			ICEServers:    rtcConfig.Configuration.ICEServers,
 			RelayUDPMux:   rtcConfig.RelayUDPMux,
-			RelayPort:     rtcConfig.RelayPort,
+			RelayUdpPort:     rtcConfig.RelayUdpPort,
 			Side:          "out",
 		})
 		if err != nil {
@@ -663,7 +663,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 				SettingEngine: rtcConfig.SettingEngine,
 				ICEServers:    rtcConfig.Configuration.ICEServers,
 				RelayUDPMux:   rtcConfig.RelayUDPMux,
-				RelayPort:     rtcConfig.RelayPort,
+				RelayUdpPort:     rtcConfig.RelayUdpPort,
 				Side:          "in",
 			})
 			if err != nil {

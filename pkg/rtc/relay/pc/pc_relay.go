@@ -138,7 +138,7 @@ func NewRelay(logger logger.Logger, conf *relay.RelayConfig) (*PcRelay, error) {
 	if err := me.RegisterCodec(vp8RtxCodec, webrtc.RTPCodecTypeVideo); err != nil {
 		return nil, fmt.Errorf("RegisterCodec error: %w", err)
 	}
-	if conf.RelayPort != 0 && conf.Side == "in" {
+	if conf.RelayUdpPort != 0 && conf.Side == "in" {
 		if conf.Side == "in" {
 			conf.SettingEngine.SetICEUDPMux(conf.RelayUDPMux)
 			conf.SettingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleServer)

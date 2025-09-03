@@ -13,6 +13,6 @@ type RelayConfig struct {
 	ICEServers    []webrtc.ICEServer
 	BufferFactory *buffer.Factory
 	RelayUDPMux   ice.UDPMux
-	RelayPort     uint32
+	RelayUdpPort  uint32
 	Side          string
 }
