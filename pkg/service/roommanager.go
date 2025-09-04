@@ -952,7 +952,7 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 			urls = append(urls, fmt.Sprintf("turn:%s:%d?transport=udp", r.config.RTC.NodeIP, r.config.TURN.UDPPort))
 		}
 		if r.config.TURN.TLSPort > 0 {
-			urls = append(urls, fmt.Sprintf("turns:%s:443?transport=tcp", r.config.TURN.Domain))
+			urls = append(urls, fmt.Sprintf("turns:%s:%d?transport=tcp", r.config.TURN.Domain, r.config.TURN.TLSPort))
 		}
 		if len(urls) > 0 {
 			username := r.turnAuthHandler.CreateUsername(apiKey, participant.ID())
