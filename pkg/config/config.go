@@ -86,6 +86,19 @@ type P2PConfig struct {
 	DatabaseName   string `yaml:"database_name"`
 }
 
+type RelayConfig struct {
+	TCPPort                 uint32 `yaml:"tcp_port,omitempty"`
+	UdpPort                 uint32 `yaml:"udp_port,omitempty"`
+	PortRangeStart          uint32 `yaml:"port_range_start,omitempty"`
+	PortRangeEnd            uint32 `yaml:"port_range_end,omitempty"`
+	UseMDNS                 bool   `yaml:"use_mdns"`
+	UseExternalIP           bool   `yaml:"use_external_ip"`
+	UseICELite              bool   `yaml:"use_ice_lite"`
+	EnableLoopbackCandidate bool   `yaml:"enable_loopback_candidate"`
+	PacketBufferSize        int    `yaml:"packet_buffer_size,omitempty"`
+	ForceTCP                bool   `yaml:"force_tcp"`
+}
+
 type RTCConfig struct {
 	UDPPort                 uint32           `yaml:"udp_port,omitempty"`
 	TCPPort                 uint32           `yaml:"tcp_port,omitempty"`
@@ -102,9 +115,7 @@ type RTCConfig struct {
 	EnableLoopbackCandidate bool             `yaml:"enable_loopback_candidate"`
 	UseMDNS                 bool             `yaml:"use_mdns"`
 	StrictACKs              bool             `yaml:"strict_acks"`
-	RelayUdpPort            uint32           `yaml:"relay_udp_port,omitempty"`
-	RelayPortRangeStart     uint32           `yaml:"relay_port_range_start,omitempty"`
-	RelayPortRangeEnd       uint32           `yaml:"relay_port_range_end,omitempty"`
+	Relay                   RelayConfig      `yaml:"relay,omitempty"`
 
 	// Number of packets to buffer for NACK
 	PacketBufferSize int `yaml:"packet_buffer_size,omitempty"`
@@ -298,12 +309,21 @@ func NewConfig(confString string, strictMode bool, c *cli.Context, baseFlags []c
 	conf := &Config{
 		Port: 7880,
 		RTC: RTCConfig{
-			UseExternalIP:     false,
-			TCPPort:           7881,
-			UDPPort:           0,
-			RelayUdpPort:     0,
-			RelayPortRangeStart: 0,
-			RelayPortRangeEnd:   0,
+			UseExternalIP: false,
+			TCPPort:       7881,
+			UDPPort:       0,
+			Relay: RelayConfig{
+				TCPPort:                 0,
+				UdpPort:                 0,
+				PortRangeStart:          0,
+				PortRangeEnd:            0,
+				UseMDNS:                 false,
+				UseExternalIP:           false,
+				UseICELite:              false,
+				EnableLoopbackCandidate: false,
+				PacketBufferSize:        0,
+				ForceTCP:                false,
+			},
 			ICEPortRangeStart: 0,
 			ICEPortRangeEnd:   0,
 			STUNServers:       []string{},
