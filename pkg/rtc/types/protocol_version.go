@@ -68,11 +68,11 @@ func (v ProtocolVersion) SupportFastStart() bool {
 	return v > 7
 }
 
-func (v ProtocolVersion) SupportHandlesDisconnectedUpdate() bool {
+func (v ProtocolVersion) SupportsDisconnectedUpdate() bool {
 	return v > 8
 }
 
-func (v ProtocolVersion) SupportSyncStreamID() bool {
+func (v ProtocolVersion) SupportsSyncStreamID() bool {
 	return v > 9
 }
 

@@ -40,7 +40,8 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/observability"
 	"github.com/livekit/protocol/observability/roomobs"
-	sdpHelper "github.com/livekit/protocol/sdp"
+	protosdp "github.com/livekit/protocol/sdp"
+	protosignalling "github.com/livekit/protocol/signalling"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/protocol/utils/pointer"
@@ -62,6 +63,8 @@ import (
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 )
+
+var _ types.LocalParticipant = (*ParticipantImpl)(nil)
 
 const (
 	sdBatchSize       = 30
@@ -549,8 +552,8 @@ func (p *ParticipantImpl) GetBufferFactory() *buffer.Factory {
 	return p.params.Config.BufferFactory
 }
 
-// CheckMetadataLimits check if name/metadata/attributes of a participant is within configured limits
-func (p *ParticipantImpl) CheckMetadataLimits(
+// checkMetadataLimits check if name/metadata/attributes of a participant is within configured limits
+func (p *ParticipantImpl) checkMetadataLimits(
 	name string,
 	metadata string,
 	attributes map[string]string,
@@ -568,6 +571,64 @@ func (p *ParticipantImpl) CheckMetadataLimits(
 	}
 
 	return nil
+}
+
+func (p *ParticipantImpl) UpdateMetadata(update *livekit.UpdateParticipantMetadata, fromAdmin bool) error {
+	lgr := p.params.Logger.WithUnlikelyValues(
+		"update", logger.Proto(update),
+		"fromAdmin", fromAdmin,
+	)
+	lgr.Debugw("updating participant metadata")
+
+	var err error
+	requestResponse := &livekit.RequestResponse{}
+	sendRequestResponse := func() error {
+		if !fromAdmin || (update.RequestId != 0 || err != nil) {
+			requestResponse.Request = &livekit.RequestResponse_UpdateMetadata{
+				UpdateMetadata: utils.CloneProto(update),
+			}
+			p.sendRequestResponse(requestResponse)
+		}
+		if err != nil {
+			lgr.Warnw("could not update metadata", err)
+		}
+		return err
+	}
+
+	if !fromAdmin && !p.ClaimGrants().Video.GetCanUpdateOwnMetadata() {
+		requestResponse.Reason = livekit.RequestResponse_NOT_ALLOWED
+		requestResponse.Message = "does not have permission to update own metadata"
+		err = signalling.ErrUpdateOwnMetadataNotAllowed
+		return sendRequestResponse()
+	}
+
+	if err = p.checkMetadataLimits(update.Name, update.Metadata, update.Attributes); err != nil {
+		switch err {
+		case signalling.ErrNameExceedsLimits:
+			requestResponse.Reason = livekit.RequestResponse_LIMIT_EXCEEDED
+			requestResponse.Message = "exceeds name length limit"
+
+		case signalling.ErrMetadataExceedsLimits:
+			requestResponse.Reason = livekit.RequestResponse_LIMIT_EXCEEDED
+			requestResponse.Message = "exceeds metadata size limit"
+
+		case signalling.ErrAttributesExceedsLimits:
+			requestResponse.Reason = livekit.RequestResponse_LIMIT_EXCEEDED
+			requestResponse.Message = "exceeds attributes size limit"
+		}
+		return sendRequestResponse()
+	}
+
+	if update.Name != "" {
+		p.SetName(update.Name)
+	}
+	if update.Metadata != "" {
+		p.SetMetadata(update.Metadata)
+	}
+	if update.Attributes != nil {
+		p.SetAttributes(update.Attributes)
+	}
+	return sendRequestResponse()
 }
 
 // SetName attaches name to the participant
@@ -1018,12 +1079,12 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(parsedOffer *sdp.SessionDes
 			continue
 		}
 
-		cid := sdpHelper.GetMediaStreamTrack(m)
+		cid := protosdp.GetMediaStreamTrack(m)
 		if cid == "" {
 			cid = guid.New(utils.TrackPrefix)
 		}
 
-		rids, ridsOk := sdpHelper.GetSimulcastRids(m)
+		rids, ridsOk := protosdp.GetSimulcastRids(m)
 
 		var (
 			name        string
@@ -1072,14 +1133,14 @@ func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription, unma
 			continue
 		}
 
-		mst := sdpHelper.GetMediaStreamTrack(m)
+		mst := protosdp.GetMediaStreamTrack(m)
 		if mst == "" {
 			continue
 		}
 
 		getRids := func(inRids buffer.VideoLayersRid) buffer.VideoLayersRid {
 			var outRids buffer.VideoLayersRid
-			rids, ok := sdpHelper.GetSimulcastRids(m)
+			rids, ok := protosdp.GetSimulcastRids(m)
 			if ok {
 				n := min(len(rids), len(inRids))
 				for i := 0; i < n; i++ {
@@ -1149,28 +1210,43 @@ func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription, unma
 	}
 }
 
+func (p *ParticipantImpl) HandleICETrickle(trickleRequest *livekit.TrickleRequest) {
+	candidateInit, err := protosignalling.FromProtoTrickle(trickleRequest)
+	if err != nil {
+		p.params.Logger.Warnw("could not decode trickle", err)
+		p.sendRequestResponse(&livekit.RequestResponse{
+			Reason:  livekit.RequestResponse_UNCLASSIFIED_ERROR,
+			Message: err.Error(),
+			Request: &livekit.RequestResponse_Trickle{
+				Trickle: utils.CloneProto(trickleRequest),
+			},
+		})
+		return
+	}
+
+	p.TransportManager.AddICECandidate(candidateInit, trickleRequest.Target)
+}
+
 // HandleOffer an offer from remote participant, used when clients make the initial connection
-func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription, offerId uint32) error {
-	p.pubLogger.Debugw(
-		"received offer",
+func (p *ParticipantImpl) HandleOffer(sd *livekit.SessionDescription) error {
+	offer, offerId := protosignalling.FromProtoSessionDescription(sd)
+	lgr := p.pubLogger.WithUnlikelyValues(
 		"transport", livekit.SignalTarget_PUBLISHER,
 		"offer", offer,
 		"offerId", offerId,
 	)
 
+	lgr.Debugw("received offer")
+
 	parsedOffer, err := offer.Unmarshal()
 	if err != nil {
-		p.pubLogger.Warnw(
-			"could not parse offer", err,
-			"transport", livekit.SignalTarget_PUBLISHER,
-			"offer", offer,
-			"offerId", offerId,
-		)
+		lgr.Warnw("could not parse offer", err)
 		return err
 	}
 
 	if p.params.UseOneShotSignallingMode {
 		if err := p.synthesizeAddTrackRequests(parsedOffer); err != nil {
+			lgr.Warnw("could not synthesize add track requests", err)
 			return err
 		}
 	}
@@ -1182,7 +1258,7 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription, offerId u
 	// put together munged offer after setting codec preferences
 	bytes, err := parsedOffer.Marshal()
 	if err != nil {
-		p.pubLogger.Errorw("failed to marshal offer", err)
+		lgr.Errorw("failed to marshal offer", err, "parsedOffer", parsedOffer)
 		return err
 	}
 
@@ -1193,6 +1269,7 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription, offerId u
 
 	err = p.TransportManager.HandleOffer(offer, offerId, p.MigrateState() == types.MigrateStateInit)
 	if err != nil {
+		lgr.Warnw("could not handle offer", err, "mungedOffer", offer)
 		return err
 	}
 
@@ -1203,7 +1280,7 @@ func (p *ParticipantImpl) HandleOffer(offer webrtc.SessionDescription, offerId u
 	}
 
 	p.handlePendingRemoteTracks()
-	return err
+	return nil
 }
 
 func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription, answerId uint32) error {
@@ -1243,7 +1320,8 @@ func (p *ParticipantImpl) GetAnswer() (webrtc.SessionDescription, uint32, error)
 
 // HandleAnswer handles a client answer response, with subscriber PC, server initiates the
 // offer and client answers
-func (p *ParticipantImpl) HandleAnswer(answer webrtc.SessionDescription, answerId uint32) {
+func (p *ParticipantImpl) HandleAnswer(sd *livekit.SessionDescription) {
+	answer, answerId := protosignalling.FromProtoSessionDescription(sd)
 	p.subLogger.Debugw(
 		"received answer",
 		"transport", livekit.SignalTarget_SUBSCRIBER,
@@ -1307,11 +1385,23 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 	p.params.Logger.Debugw("add track request", "trackID", req.Cid, "request", logger.Proto(req))
 	if !p.CanPublishSource(req.Source) {
 		p.pubLogger.Warnw("no permission to publish track", nil, "trackID", req.Sid, "kind", req.Type)
+		p.sendRequestResponse(&livekit.RequestResponse{
+			Reason: livekit.RequestResponse_NOT_ALLOWED,
+			Request: &livekit.RequestResponse_AddTrack{
+				AddTrack: utils.CloneProto(req),
+			},
+		})
 		return
 	}
 
 	if req.Type != livekit.TrackType_AUDIO && req.Type != livekit.TrackType_VIDEO {
 		p.pubLogger.Warnw("unsupported track type", nil, "trackID", req.Sid, "kind", req.Type)
+		p.sendRequestResponse(&livekit.RequestResponse{
+			Reason: livekit.RequestResponse_UNSUPPORTED_TYPE,
+			Request: &livekit.RequestResponse_AddTrack{
+				AddTrack: utils.CloneProto(req),
+			},
+		})
 		return
 	}
 
@@ -2290,9 +2380,13 @@ func (p *ParticipantImpl) onReceivedDataMessage(kind livekit.DataPacket_Kind, da
 				// waiting time out, handle all cached messages
 				cachedMsgs := migrationCache.Get()
 				if len(cachedMsgs) == 0 {
-					p.pubLogger.Warnw("migration data cache timed out, no cached messages received", nil, "lastPubReliableSeq", p.params.LastPubReliableSeq)
+					p.pubLogger.Warnw(
+						"migration data cache timed out, no cached messages received", nil,
+						"lastPubReliableSeq", p.params.LastPubReliableSeq,
+					)
 				} else {
-					p.pubLogger.Warnw("migration data cache timed out, handling cached messages", nil,
+					p.pubLogger.Warnw(
+						"migration data cache timed out, handling cached messages", nil,
 						"cachedFirstSeq", cachedMsgs[0].Sequence,
 						"cachedLastSeq", cachedMsgs[len(cachedMsgs)-1].Sequence,
 						"lastPubReliableSeq", p.params.LastPubReliableSeq,
@@ -2316,7 +2410,11 @@ func (p *ParticipantImpl) onReceivedDataMessage(kind livekit.DataPacket_Kind, da
 func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind, dp *livekit.DataPacket) {
 	if kind == livekit.DataPacket_RELIABLE && dp.Sequence > 0 {
 		if p.reliableDataInfo.lastPubReliableSeq.Load() >= dp.Sequence {
-			p.params.Logger.Infow("received out of order reliable data packet", "lastPubReliableSeq", p.reliableDataInfo.lastPubReliableSeq.Load(), "dpSequence", dp.Sequence)
+			p.params.Logger.Infow(
+				"received out of order reliable data packet",
+				"lastPubReliableSeq", p.reliableDataInfo.lastPubReliableSeq.Load(),
+				"dpSequence", dp.Sequence,
+			)
 			return
 		}
 
@@ -2694,6 +2792,12 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		track := p.GetPublishedTrack(livekit.TrackID(req.Sid))
 		if track == nil {
 			p.pubLogger.Infow("could not find existing track for multi-codec simulcast", "trackID", req.Sid)
+			p.sendRequestResponse(&livekit.RequestResponse{
+				Reason: livekit.RequestResponse_NOT_FOUND,
+				Request: &livekit.RequestResponse_AddTrack{
+					AddTrack: utils.CloneProto(req),
+				},
+			})
 			return nil
 		}
 
@@ -2873,6 +2977,12 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 			"request", logger.Proto(req),
 			"pendingTrack", p.pendingTracks[req.Cid],
 		)
+		p.sendRequestResponse(&livekit.RequestResponse{
+			Reason: livekit.RequestResponse_QUEUED,
+			Request: &livekit.RequestResponse_AddTrack{
+				AddTrack: utils.CloneProto(req),
+			},
+		})
 		return nil
 	}
 
@@ -2910,22 +3020,23 @@ func (p *ParticipantImpl) HasConnected() bool {
 	return p.TransportManager.HasSubscriberEverConnected() || p.TransportManager.HasPublisherEverConnected()
 }
 
-func (p *ParticipantImpl) SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool) *livekit.TrackInfo {
+func (p *ParticipantImpl) SetTrackMuted(mute *livekit.MuteTrackRequest, fromAdmin bool) *livekit.TrackInfo {
 	// when request is coming from admin, send message to current participant
 	if fromAdmin {
-		p.sendTrackMuted(trackID, muted)
+		p.sendTrackMuted(livekit.TrackID(mute.Sid), mute.Muted)
 	}
 
-	return p.setTrackMuted(trackID, muted)
+	return p.setTrackMuted(mute, fromAdmin)
 }
 
-func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) *livekit.TrackInfo {
+func (p *ParticipantImpl) setTrackMuted(mute *livekit.MuteTrackRequest, fromAdmin bool) *livekit.TrackInfo {
+	trackID := livekit.TrackID(mute.Sid)
 	p.dirty.Store(true)
 	if p.supervisor != nil {
-		p.supervisor.SetPublicationMute(trackID, muted)
+		p.supervisor.SetPublicationMute(trackID, mute.Muted)
 	}
 
-	track, changed := p.UpTrackManager.SetPublishedTrackMuted(trackID, muted)
+	track, changed := p.UpTrackManager.SetPublishedTrackMuted(trackID, mute.Muted)
 	var trackInfo *livekit.TrackInfo
 	if track != nil {
 		trackInfo = track.ToProto()
@@ -2937,8 +3048,8 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) *li
 		for i, ti := range pti.trackInfos {
 			if livekit.TrackID(ti.Sid) == trackID {
 				ti = utils.CloneProto(ti)
-				changed = changed || ti.Muted != muted
-				ti.Muted = muted
+				changed = changed || ti.Muted != mute.Muted
+				ti.Muted = mute.Muted
 				pti.trackInfos[i] = ti
 				if trackInfo == nil {
 					trackInfo = ti
@@ -2949,11 +3060,20 @@ func (p *ParticipantImpl) setTrackMuted(trackID livekit.TrackID, muted bool) *li
 	p.pendingTracksLock.RUnlock()
 
 	if trackInfo != nil && changed {
-		if muted {
+		if mute.Muted {
 			p.params.Telemetry.TrackMuted(context.Background(), p.ID(), trackInfo)
 		} else {
 			p.params.Telemetry.TrackUnmuted(context.Background(), p.ID(), trackInfo)
 		}
+	}
+
+	if trackInfo == nil && !fromAdmin {
+		p.sendRequestResponse(&livekit.RequestResponse{
+			Reason: livekit.RequestResponse_NOT_FOUND,
+			Request: &livekit.RequestResponse_Mute{
+				Mute: utils.CloneProto(mute),
+			},
+		})
 	}
 
 	return trackInfo
@@ -3602,7 +3722,7 @@ func (p *ParticipantImpl) GetPlayoutDelayConfig() *livekit.PlayoutDelay {
 }
 
 func (p *ParticipantImpl) SupportsSyncStreamID() bool {
-	return p.ProtocolVersion().SupportSyncStreamID() && !p.params.ClientInfo.isFirefox() && p.params.SyncStreams
+	return p.ProtocolVersion().SupportsSyncStreamID() && !p.params.ClientInfo.isFirefox() && p.params.SyncStreams
 }
 
 func (p *ParticipantImpl) SupportsTransceiverReuse() bool {
@@ -3779,6 +3899,12 @@ func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack
 	}
 
 	p.pubLogger.Debugw("could not locate track", "trackID", update.TrackSid)
+	p.sendRequestResponse(&livekit.RequestResponse{
+		Reason: livekit.RequestResponse_NOT_FOUND,
+		Request: &livekit.RequestResponse_UpdateAudioTrack{
+			UpdateAudioTrack: utils.CloneProto(update),
+		},
+	})
 	return errors.New("could not find track")
 }
 
@@ -3805,6 +3931,12 @@ func (p *ParticipantImpl) UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack
 	}
 
 	p.pubLogger.Debugw("could not locate track", "trackID", update.TrackSid)
+	p.sendRequestResponse(&livekit.RequestResponse{
+		Reason: livekit.RequestResponse_NOT_FOUND,
+		Request: &livekit.RequestResponse_UpdateVideoTrack{
+			UpdateVideoTrack: utils.CloneProto(update),
+		},
+	})
 	return errors.New("could not find track")
 }
 

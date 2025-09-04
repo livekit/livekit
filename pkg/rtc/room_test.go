@@ -179,7 +179,7 @@ func TestParticipantUpdate(t *testing.T) {
 			"track mutes are sent to everyone",
 			true,
 			func(p types.LocalParticipant) {
-				p.SetTrackMuted("", true, false)
+				p.SetTrackMuted(&livekit.MuteTrackRequest{Muted: true}, false)
 			},
 		},
 		{

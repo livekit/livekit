@@ -329,7 +329,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		se.SetFireOnTrackBeforeFirstRTP(true)
 	}
 
-	if params.ClientInfo.SupportSctpZeroChecksum() {
+	if params.ClientInfo.SupportsSctpZeroChecksum() {
 		se.EnableSCTPZeroChecksum(true)
 	}
 
@@ -352,7 +352,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	//
 	se.DisableSRTPReplayProtection(true)
 	se.DisableSRTCPReplayProtection(true)
-	if !params.ProtocolVersion.SupportsICELite() || !params.ClientInfo.SupportPrflxOverRelay() {
+	if !params.ProtocolVersion.SupportsICELite() || !params.ClientInfo.SupportsPrflxOverRelay() {
 		// if client don't support prflx over relay which is only Firefox, disable ICE Lite to ensure that
 		// aggressive nomination is handled properly. Firefox does aggressive nomination even if peer is
 		// ICE Lite (see comment as to historical reasons: https://github.com/pion/ice/pull/739#issuecomment-2452245066).
@@ -366,7 +366,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	se.SetICETimeouts(iceDisconnectedTimeout, iceFailedTimeout, iceKeepaliveInterval)
 
 	// if client don't support prflx over relay, we should not expose private address to it, use single external ip as host candidate
-	if !params.ClientInfo.SupportPrflxOverRelay() && len(params.Config.NAT1To1IPs) > 0 {
+	if !params.ClientInfo.SupportsPrflxOverRelay() && len(params.Config.NAT1To1IPs) > 0 {
 		var nat1to1Ips []string
 		var includeIps []string
 		for _, mapping := range params.Config.NAT1To1IPs {
@@ -2600,7 +2600,7 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, o
 
 	parsed, err := sd.Unmarshal()
 	if err != nil {
-		return nil
+		return err
 	}
 
 	t.lock.Lock()
@@ -2661,7 +2661,11 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, o
 func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription, answerId uint32) error {
 	t.params.Logger.Debugw("processing answer", "answerId", answerId)
 	if answerId != 0 && answerId != t.localOfferId.Load() {
-		t.params.Logger.Warnw("sdp state: answer id mismatch", nil, "expected", t.localOfferId.Load(), "got", answerId)
+		t.params.Logger.Warnw(
+			"sdp state: answer id mismatch", nil,
+			"expected", t.localOfferId.Load(),
+			"got", answerId,
+		)
 	}
 	t.remoteAnswerId.Store(answerId)
 

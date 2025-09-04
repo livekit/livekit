@@ -19,7 +19,6 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	protosignalling "github.com/livekit/protocol/signalling"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -58,24 +57,19 @@ func (s *signalhandler) HandleMessage(msg proto.Message) error {
 	s.params.Logger.Debugw("handling signal request", "request", logger.Proto(req))
 	switch msg := req.GetMessage().(type) {
 	case *livekit.SignalRequest_Offer:
-		s.params.Participant.HandleOffer(protosignalling.FromProtoSessionDescription(msg.Offer))
+		s.params.Participant.HandleOffer(msg.Offer)
 
 	case *livekit.SignalRequest_Answer:
-		s.params.Participant.HandleAnswer(protosignalling.FromProtoSessionDescription(msg.Answer))
+		s.params.Participant.HandleAnswer(msg.Answer)
 
 	case *livekit.SignalRequest_Trickle:
-		candidateInit, err := protosignalling.FromProtoTrickle(msg.Trickle)
-		if err != nil {
-			s.params.Logger.Warnw("could not decode trickle", err)
-			return err
-		}
-		s.params.Participant.AddICECandidate(candidateInit, msg.Trickle.Target)
+		s.params.Participant.HandleICETrickle(msg.Trickle)
 
 	case *livekit.SignalRequest_AddTrack:
 		s.params.Participant.AddTrack(msg.AddTrack)
 
 	case *livekit.SignalRequest_Mute:
-		s.params.Participant.SetTrackMuted(livekit.TrackID(msg.Mute.Sid), msg.Mute.Muted, false)
+		s.params.Participant.SetTrackMuted(msg.Mute, false)
 
 	case *livekit.SignalRequest_Subscription:
 		// allow participant to indicate their interest in the subscription
@@ -137,48 +131,7 @@ func (s *signalhandler) HandleMessage(msg proto.Message) error {
 		}
 
 	case *livekit.SignalRequest_UpdateMetadata:
-		requestResponse := &livekit.RequestResponse{
-			RequestId: msg.UpdateMetadata.RequestId,
-			Reason:    livekit.RequestResponse_OK,
-		}
-		if s.params.Participant.ClaimGrants().Video.GetCanUpdateOwnMetadata() {
-			if err := s.params.Participant.CheckMetadataLimits(
-				msg.UpdateMetadata.Name,
-				msg.UpdateMetadata.Metadata,
-				msg.UpdateMetadata.Attributes,
-			); err == nil {
-				if msg.UpdateMetadata.Name != "" {
-					s.params.Participant.SetName(msg.UpdateMetadata.Name)
-				}
-				if msg.UpdateMetadata.Metadata != "" {
-					s.params.Participant.SetMetadata(msg.UpdateMetadata.Metadata)
-				}
-				if msg.UpdateMetadata.Attributes != nil {
-					s.params.Participant.SetAttributes(msg.UpdateMetadata.Attributes)
-				}
-			} else {
-				s.params.Logger.Warnw("could not update metadata", err)
-
-				switch err {
-				case ErrNameExceedsLimits:
-					requestResponse.Reason = livekit.RequestResponse_LIMIT_EXCEEDED
-					requestResponse.Message = "exceeds name length limit"
-
-				case ErrMetadataExceedsLimits:
-					requestResponse.Reason = livekit.RequestResponse_LIMIT_EXCEEDED
-					requestResponse.Message = "exceeds metadata size limit"
-
-				case ErrAttributesExceedsLimits:
-					requestResponse.Reason = livekit.RequestResponse_LIMIT_EXCEEDED
-					requestResponse.Message = "exceeds attributes size limit"
-				}
-
-			}
-		} else {
-			requestResponse.Reason = livekit.RequestResponse_NOT_ALLOWED
-			requestResponse.Message = "does not have permission to update own metadata"
-		}
-		s.params.Participant.SendRequestResponse(requestResponse)
+		s.params.Participant.UpdateMetadata(msg.UpdateMetadata, false)
 
 	case *livekit.SignalRequest_UpdateAudioTrack:
 		if err := s.params.Participant.UpdateAudioTrack(msg.UpdateAudioTrack); err != nil {

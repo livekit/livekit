@@ -34,7 +34,6 @@ import (
 	"github.com/livekit/protocol/observability"
 	"github.com/livekit/protocol/observability/roomobs"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/protocol/signalling"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/protocol/utils/must"
@@ -577,7 +576,7 @@ func (r *RoomManager) StartSession(
 		participant.AddTrack(addTrackRequest)
 	}
 	if pi.PublisherOffer != nil {
-		participant.HandleOffer(signalling.FromProtoSessionDescription(pi.PublisherOffer))
+		participant.HandleOffer(pi.PublisherOffer)
 	}
 
 	go r.rtcSessionWorker(room, participant, requestSource)
@@ -779,7 +778,10 @@ func (r *RoomManager) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 		participant.GetLogger().Errorw("cannot unmute track, remote unmute is disabled", nil)
 		return nil, ErrRemoteUnmuteNoteEnabled
 	}
-	track := participant.SetTrackMuted(livekit.TrackID(req.TrackSid), req.Muted, true)
+	track := participant.SetTrackMuted(&livekit.MuteTrackRequest{
+		Sid:   req.TrackSid,
+		Muted: req.Muted,
+	}, true)
 	return &livekit.MuteRoomTrackResponse{Track: track}, nil
 }
 
@@ -789,28 +791,23 @@ func (r *RoomManager) UpdateParticipant(ctx context.Context, req *livekit.Update
 		return nil, err
 	}
 
-	participant.GetLogger().Debugw("updating participant",
-		"metadata", req.Metadata,
-		"permission", req.Permission,
-		"attributes", req.Attributes,
-	)
-	if err = participant.CheckMetadataLimits(req.Name, req.Metadata, req.Attributes); err != nil {
+	if err = participant.UpdateMetadata(&livekit.UpdateParticipantMetadata{
+		Name:       req.Name,
+		Metadata:   req.Metadata,
+		Attributes: req.Attributes,
+	}, true); err != nil {
 		return nil, err
 	}
 
-	if req.Name != "" {
-		participant.SetName(req.Name)
-	}
-	if req.Metadata != "" {
-		participant.SetMetadata(req.Metadata)
-	}
-	if req.Attributes != nil {
-		participant.SetAttributes(req.Attributes)
-	}
-
 	if req.Permission != nil {
+		participant.GetLogger().Debugw(
+			"updating participant permission",
+			"permission", req.Permission,
+		)
+
 		participant.SetPermission(req.Permission)
 	}
+
 	return participant.ToProto(), nil
 }
 

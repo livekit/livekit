@@ -68,7 +68,7 @@ func NewMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 		}
 	}
 
-	p.SetTrackMutedCalls(func(sid livekit.TrackID, muted bool, fromServer bool) *livekit.TrackInfo {
+	p.SetTrackMutedCalls(func(mute *livekit.MuteTrackRequest, fromServer bool) *livekit.TrackInfo {
 		updateTrack()
 		return nil
 	})

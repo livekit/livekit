@@ -387,7 +387,7 @@ type LocalParticipant interface {
 	HandleSignalSourceClose()
 
 	// updates
-	CheckMetadataLimits(name string, metadata string, attributes map[string]string) error
+	UpdateMetadata(update *livekit.UpdateParticipantMetadata, fromAdmin bool) error
 	SetName(name string)
 	SetMetadata(metadata string)
 	SetAttributes(attributes map[string]string)
@@ -403,15 +403,15 @@ type LocalParticipant interface {
 	CanPublishData() bool
 
 	// PeerConnection
-	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget)
-	HandleOffer(sdp webrtc.SessionDescription, offerId uint32) error
+	HandleICETrickle(trickleRequest *livekit.TrickleRequest)
+	HandleOffer(sd *livekit.SessionDescription) error
 	GetAnswer() (webrtc.SessionDescription, uint32, error)
 	HandleICETrickleSDPFragment(sdpFragment string) error
 	HandleICERestartSDPFragment(sdpFragment string) (string, error)
 	AddTrack(req *livekit.AddTrackRequest)
-	SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool) *livekit.TrackInfo
+	SetTrackMuted(mute *livekit.MuteTrackRequest, fromAdmin bool) *livekit.TrackInfo
 
-	HandleAnswer(sdp webrtc.SessionDescription, answerId uint32)
+	HandleAnswer(sd *livekit.SessionDescription)
 	Negotiate(force bool)
 	ICERestart(iceConfig *livekit.ICEConfig)
 	AddTrackLocal(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
@@ -450,7 +450,7 @@ type LocalParticipant interface {
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
 	SendSubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool) error
 	SendRefreshToken(token string) error
-	SendRequestResponse(requestResponse *livekit.RequestResponse) error
+	// RAJA-REMOVE SendRequestResponse(requestResponse *livekit.RequestResponse) error
 	HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse) error
 	IssueFullReconnect(reason ParticipantCloseReason)
 	SendRoomMovedResponse(moved *livekit.RoomMovedResponse) error

@@ -157,8 +157,8 @@ func (p *ParticipantImpl) SendRefreshToken(token string) error {
 	return p.signaller.WriteMessage(p.signalling.SignalRefreshToken(token))
 }
 
-func (p *ParticipantImpl) SendRequestResponse(requestResponse *livekit.RequestResponse) error {
-	if requestResponse.RequestId == 0 || !p.params.ClientInfo.SupportErrorResponse() {
+func (p *ParticipantImpl) sendRequestResponse(requestResponse *livekit.RequestResponse) error {
+	if !p.params.ClientInfo.SupportsRequestResponse() {
 		return nil
 	}
 
@@ -183,7 +183,7 @@ func (p *ParticipantImpl) HandleReconnectAndSendResponse(reconnectReason livekit
 		return err
 	}
 
-	if p.params.ProtocolVersion.SupportHandlesDisconnectedUpdate() {
+	if p.params.ProtocolVersion.SupportsDisconnectedUpdate() {
 		return p.sendDisconnectUpdatesForReconnect()
 	}
 
@@ -248,7 +248,7 @@ func (p *ParticipantImpl) sendTrackUnpublished(trackID livekit.TrackID) {
 }
 
 func (p *ParticipantImpl) sendTrackHasBeenSubscribed(trackID livekit.TrackID) {
-	if !p.params.ClientInfo.SupportTrackSubscribedEvent() {
+	if !p.params.ClientInfo.SupportsTrackSubscribedEvent() {
 		return
 	}
 	_ = p.signaller.WriteMessage(p.signalling.SignalTrackSubscribed(&livekit.TrackSubscribed{

@@ -19,8 +19,9 @@ import (
 )
 
 var (
-	ErrInvalidMessageType      = errors.New("invalid message type")
-	ErrNameExceedsLimits       = errors.New("name length exceeds limits")
-	ErrMetadataExceedsLimits   = errors.New("metadata size exceeds limits")
-	ErrAttributesExceedsLimits = errors.New("attributes size exceeds limits")
+	ErrInvalidMessageType          = errors.New("invalid message type")
+	ErrNameExceedsLimits           = errors.New("name length exceeds limits")
+	ErrMetadataExceedsLimits       = errors.New("metadata size exceeds limits")
+	ErrAttributesExceedsLimits     = errors.New("attributes size exceeds limits")
+	ErrUpdateOwnMetadataNotAllowed = errors.New("update own metadata not allowed")
 )
