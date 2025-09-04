@@ -20,6 +20,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc/relay"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -53,6 +54,7 @@ type Room struct {
 	Logger    logger.Logger
 
 	Config         WebRTCConfig
+	RelayRtcConfig relay.WebRTCRelayConfig
 	audioConfig    *config.AudioConfig
 	serverInfo     *livekit.ServerInfo
 	telemetry      telemetry.TelemetryService
@@ -94,6 +96,7 @@ func NewRoom(
 	room *livekit.Room,
 	internal *livekit.RoomInternal,
 	config WebRTCConfig,
+	relayRtcConfig relay.WebRTCRelayConfig,
 	audioConfig *config.AudioConfig,
 	serverInfo *livekit.ServerInfo,
 	telemetry telemetry.TelemetryService,
@@ -106,6 +109,7 @@ func NewRoom(
 		internal:                  internal,
 		Logger:                    logger,
 		Config:                    config,
+		RelayRtcConfig:            relayRtcConfig,
 		audioConfig:               audioConfig,
 		telemetry:                 telemetry,
 		egressLauncher:            egressLauncher,

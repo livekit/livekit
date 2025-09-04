@@ -52,6 +52,7 @@ type RoomManager struct {
 
 	config            *config.Config
 	rtcConfig         *rtc.WebRTCConfig
+	relayRtcConfig    *relay.WebRTCRelayConfig
 	serverInfo        *livekit.ServerInfo
 	currentNode       routing.LocalNode
 	router            routing.Router
@@ -82,9 +83,15 @@ func NewLocalRoomManager(
 		return nil, err
 	}
 
+	relayRtcConf, err := relay.NewWebRTCRelayConfig(conf, currentNode.Ip)
+	if err != nil {
+		return nil, err
+	}
+
 	r := &RoomManager{
 		config:            conf,
 		rtcConfig:         rtcConf,
+		relayRtcConfig:    relayRtcConf,
 		currentNode:       currentNode,
 		router:            router,
 		roomStore:         roomStore,
@@ -452,9 +459,10 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 
 	outRelayCollection := relay.NewCollection()
 	rtcConfig := *r.rtcConfig
+	relayRtcConfig := *r.relayRtcConfig
 
 	// construct ice servers
-	newRoom := rtc.NewRoom(ri, internal, rtcConfig, &r.config.Audio, r.serverInfo, r.telemetry, r.egressLauncher)
+	newRoom := rtc.NewRoom(ri, internal, rtcConfig, relayRtcConfig, &r.config.Audio, r.serverInfo, r.telemetry, r.egressLauncher)
 
 	newRoom.OnClose(func() {
 		roomInfo := newRoom.ToProto()
@@ -557,10 +565,10 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 		rel, err := pc.NewRelay(newRoom.Logger, &relay.RelayConfig{
 			ID:            peerId,
 			BufferFactory: newRoom.GetBufferFactory(),
-			SettingEngine: rtcConfig.SettingEngine,
-			ICEServers:    rtcConfig.Configuration.ICEServers,
-			RelayUDPMux:   rtcConfig.RelayUDPMux,
-			RelayPort:     rtcConfig.RelayPort,
+			SettingEngine: relayRtcConfig.SettingEngine,
+			ICEServers:    relayRtcConfig.Configuration.ICEServers,
+			RelayUDPMux:   relayRtcConfig.RelayUDPMux,
+			RelayUdpPort:  relayRtcConfig.RelayUdpPort,
 			Side:          "out",
 		})
 		if err != nil {
@@ -660,10 +668,10 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 			rel, err := pc.NewRelay(newRoom.Logger, &relay.RelayConfig{
 				ID:            fromPeerId,
 				BufferFactory: newRoom.GetBufferFactory(),
-				SettingEngine: rtcConfig.SettingEngine,
-				ICEServers:    rtcConfig.Configuration.ICEServers,
-				RelayUDPMux:   rtcConfig.RelayUDPMux,
-				RelayPort:     rtcConfig.RelayPort,
+				SettingEngine: relayRtcConfig.SettingEngine,
+				ICEServers:    relayRtcConfig.Configuration.ICEServers,
+				RelayUDPMux:   relayRtcConfig.RelayUDPMux,
+				RelayUdpPort:  relayRtcConfig.RelayUdpPort,
 				Side:          "in",
 			})
 			if err != nil {
