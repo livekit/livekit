@@ -160,6 +160,9 @@ type RTCConfig struct {
 
 	// enable rtp stream restart detection for published tracks
 	EnableRTPStreamRestartDetection bool `yaml:"enable_rtp_stream_restart_detection,omitempty"`
+
+	// Force relay mode for all clients
+	ForceRelay *bool `yaml:"force_relay,omitempty"`
 }
 
 type TURNServer struct {
