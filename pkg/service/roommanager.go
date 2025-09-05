@@ -117,6 +117,16 @@ func NewLocalRoomManager(
 		return nil, err
 	}
 
+	// Create dynamic client configuration manager
+	var clientConfManager clientconfiguration.ClientConfigurationManager
+	dynamicManager, err := clientconfiguration.NewDynamicClientConfigurationManager(&conf.ClientConfiguration)
+	if err != nil {
+		logger.Errorw("failed to create dynamic client configuration manager, falling back to static", err)
+		clientConfManager = clientconfiguration.NewStaticClientConfigurationManager(clientconfiguration.StaticConfigurations)
+	} else {
+		clientConfManager = dynamicManager
+	}
+
 	r := &RoomManager{
 		config:            conf,
 		rtcConfig:         rtcConf,
@@ -125,7 +135,7 @@ func NewLocalRoomManager(
 		roomAllocator:     roomAllocator,
 		roomStore:         roomStore,
 		telemetry:         telemetry,
-		clientConfManager: clientconfiguration.NewStaticClientConfigurationManager(clientconfiguration.StaticConfigurations),
+		clientConfManager: clientConfManager,
 		egressLauncher:    egressLauncher,
 		agentClient:       agentClient,
 		agentStore:        agentStore,
@@ -256,6 +266,13 @@ func (r *RoomManager) Stop() {
 	if r.forwardStats != nil {
 		r.forwardStats.Stop()
 	}
+}
+
+func (r *RoomManager) UpdateClientConfiguration(conf *config.ClientConfigurationConfig) error {
+	if dynamicManager, ok := r.clientConfManager.(*clientconfiguration.DynamicClientConfigurationManager); ok {
+		return dynamicManager.UpdateConfiguration(conf)
+	}
+	return errors.New("client configuration manager does not support dynamic updates")
 }
 
 func (r *RoomManager) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error) {
