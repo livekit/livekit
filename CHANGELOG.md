@@ -101,7 +101,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 -   forward agent id to job state (3786)
 -   Map ErrNoResponse to ErrRequestTimedOut in StopEgress to avoid returning 503 (#3788)
 -   Set participant active when peerconnection connected (#3790)
--   Handle Metadata field from RoomConfig by @biglittlebigben in https://github.com/livekit/livekit/pull/3798
+-   Handle Metadata field from RoomConfig (#3798)
 -   [🤖 readme-manager] Update README (#3808)
 -   [🤖 readme-manager] Update README (#3809)
 -   Rename RTCRest -> WHIP (#3829)
