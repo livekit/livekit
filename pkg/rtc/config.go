@@ -36,6 +36,7 @@ type WebRTCConfig struct {
 	Receiver      ReceiverConfig
 	Publisher     DirectionConfig
 	Subscriber    DirectionConfig
+	ForceRelay    *bool
 }
 
 type ReceiverConfig struct {
@@ -87,6 +88,7 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 		},
 		Publisher:  getPublisherConfig(false),
 		Subscriber: getSubscriberConfig(rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE),
+		ForceRelay: rtcConf.ForceRelay,
 	}, nil
 }
 
