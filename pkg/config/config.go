@@ -123,6 +123,9 @@ type RTCConfig struct {
 	DatachannelSlowThreshold int `yaml:"datachannel_slow_threshold,omitempty"`
 
 	ForwardStats ForwardStatsConfig `yaml:"forward_stats,omitempty"`
+
+	// Force relay mode for all clients
+	ForceRelay *bool `yaml:"force_relay,omitempty"`
 }
 
 type TURNServer struct {
