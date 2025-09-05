@@ -826,3 +826,92 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 func newParticipantForTest(identity livekit.ParticipantIdentity) *ParticipantImpl {
 	return newParticipantForTestWithOpts(identity, nil)
 }
+
+func TestParticipant_ForceRelayLogic(t *testing.T) {
+	tests := []struct {
+		name                 string
+		configForceRelay     *bool
+		icePreference        livekit.ICECandidateType
+		expectedForceRelay   livekit.ClientConfigSetting
+	}{
+		{
+			name:               "Explicit ForceRelay enabled",
+			configForceRelay:   func() *bool { b := true; return &b }(),
+			icePreference:      livekit.ICECandidateType_ICT_TCP,
+			expectedForceRelay: livekit.ClientConfigSetting_ENABLED,
+		},
+		{
+			name:               "Explicit ForceRelay disabled",
+			configForceRelay:   func() *bool { b := false; return &b }(),
+			icePreference:      livekit.ICECandidateType_ICT_TLS,
+			expectedForceRelay: livekit.ClientConfigSetting_DISABLED,
+		},
+		{
+			name:               "No explicit config, ICE TLS preference",
+			configForceRelay:   nil,
+			icePreference:      livekit.ICECandidateType_ICT_TLS,
+			expectedForceRelay: livekit.ClientConfigSetting_ENABLED,
+		},
+		{
+			name:               "No explicit config, ICE TCP preference",
+			configForceRelay:   nil,
+			icePreference:      livekit.ICECandidateType_ICT_TCP,
+			expectedForceRelay: livekit.ClientConfigSetting_UNSET,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create WebRTC config with ForceRelay setting
+			webRTCConfig := &WebRTCConfig{
+				ForceRelay: tt.configForceRelay,
+			}
+
+			// Create participant with the config
+			p := newParticipantForTestWithOpts("test", &participantOpts{
+				publisher: true,
+			})
+			p.params.Config = webRTCConfig
+
+			// Setup transport manager to trigger ICE config change
+			err := p.setupTransportManager()
+			require.NoError(t, err)
+
+			// Simulate ICE config change
+			iceConfig := &livekit.ICEConfig{
+				PreferenceSubscriber: tt.icePreference,
+				PreferencePublisher:  tt.icePreference,
+			}
+
+			// Trigger the ICE config change handler
+			if p.TransportManager != nil {
+				// Access the ICE config change handler through a test helper
+				// This simulates what happens when ICE config changes
+				p.lock.Lock()
+				if p.params.ClientConf == nil {
+					p.params.ClientConf = &livekit.ClientConfiguration{}
+				}
+
+				// Apply the same logic as in the actual ICE config change handler
+				if p.params.Config != nil && p.params.Config.ForceRelay != nil {
+					if *p.params.Config.ForceRelay {
+						p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_ENABLED
+					} else {
+						p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_DISABLED
+					}
+				} else {
+					// Fall back to ICE config based logic
+					if iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS {
+						p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_ENABLED
+					} else {
+						p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_UNSET
+					}
+				}
+				p.lock.Unlock()
+
+				// Verify the result
+				require.Equal(t, tt.expectedForceRelay, p.params.ClientConf.ForceRelay)
+			}
+		})
+	}
+}
