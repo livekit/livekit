@@ -168,3 +168,8 @@ func (s *IOInfoService) UpdateSIPCallState(ctx context.Context, req *rpc.UpdateS
 	// TODO: placeholder
 	return &emptypb.Empty{}, nil
 }
+
+func (s *IOInfoService) RecordCallContext(context.Context, *rpc.RecordCallContextRequest) (*emptypb.Empty, error) {
+	// TODO: placeholder
+	return &emptypb.Empty{}, nil
+}
