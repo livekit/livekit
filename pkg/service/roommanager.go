@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"golang.org/x/exp/maps"
 
@@ -86,6 +87,9 @@ type RoomManager struct {
 
 	rooms map[livekit.RoomName]*rtc.Room
 
+	rpcPendingAcks      map[string]*sutils.RpcPendingAckHandler
+	rpcPendingResponses map[string]*sutils.RpcPendingResponseHandler
+
 	roomServers                  utils.MultitonService[rpc.RoomTopic]
 	agentDispatchServers         utils.MultitonService[rpc.RoomTopic]
 	participantServers           utils.MultitonService[rpc.ParticipantTopic]
@@ -147,6 +151,9 @@ func NewLocalRoomManager(
 			NodeId:        string(currentNode.NodeID()),
 		},
 	}
+
+	r.rpcPendingAcks = make(map[string]*sutils.RpcPendingAckHandler)
+	r.rpcPendingResponses = make(map[string]*sutils.RpcPendingResponseHandler)
 
 	r.roomManagerServer, err = rpc.NewTypedRoomManagerServer(r, bus, rpc.WithServerLogger(logger.GetLogger()), middleware.WithServerMetrics(rpc.PSRPCMetricsObserver{}), psrpc.WithServerChannelSize(conf.PSRPC.BufferSize))
 	if err != nil {
@@ -660,6 +667,19 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 			if err := r.roomStore.StoreParticipant(ctx, roomName, p.ToProto()); err != nil {
 				newRoom.Logger().Errorw("could not handle participant change", err)
 			}
+		} else {
+			r.lock.Lock()
+			for id, handler := range r.rpcPendingAcks {
+				if handler.ParticipantIdentity == string(p.Identity()) {
+					delete(r.rpcPendingAcks, id)
+				}
+			}
+			for id, handler := range r.rpcPendingResponses {
+				if handler.ParticipantIdentity == string(p.Identity()) {
+					delete(r.rpcPendingResponses, id)
+				}
+			}
+			r.lock.Unlock()
 		}
 	})
 
@@ -817,6 +837,131 @@ func (r *RoomManager) ForwardParticipant(ctx context.Context, req *livekit.Forwa
 
 func (r *RoomManager) MoveParticipant(ctx context.Context, req *livekit.MoveParticipantRequest) (*livekit.MoveParticipantResponse, error) {
 	return nil, errors.New("not implemented")
+}
+
+func (r *RoomManager) handleIncomingRpcAck(requestId string) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	handler, ok := r.rpcPendingAcks[requestId]
+	if !ok {
+		return
+	}
+
+	handler.Resolve()
+	delete(r.rpcPendingAcks, requestId)
+}
+
+func (r *RoomManager) handleIncomingRpcResponse(requestId string, payload *string, err *sutils.RpcError) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	handler, ok := r.rpcPendingResponses[requestId]
+	if !ok {
+		return
+	}
+
+	handler.Resolve(payload, err)
+	delete(r.rpcPendingResponses, requestId)
+}
+
+func (r *RoomManager) PerformRpc(ctx context.Context, req *livekit.PerformRpcRequest) (*livekit.PerformRpcResponse, error) {
+	room := r.GetRoom(ctx, livekit.RoomName(req.GetRoom()))
+	if room == nil {
+		return nil, ErrRoomNotFound
+	}
+
+	responseTimeout := req.GetResponseTimeoutMs()
+	if responseTimeout <= 0 {
+		responseTimeout = 10000
+	}
+	responseTimeoutWithoutRTT := max(0, responseTimeout-uint32(sutils.RpcMaxRoundTripLatency))
+
+	room.OnRpcAck(r.handleIncomingRpcAck)
+	room.OnRpcResponse(r.handleIncomingRpcResponse)
+
+	resultChan := make(chan *string, 1)
+	errorChan := make(chan error, 1)
+
+	go func() {
+		if len([]byte(req.GetPayload())) > sutils.RpcMaxPayloadBytes {
+			errorChan <- &sutils.RpcError{Code: sutils.RpcRequestPayloadTooLarge}
+			return
+		}
+
+		id := uuid.New().String()
+		responseTimer := time.AfterFunc(time.Duration(responseTimeout)*time.Millisecond, func() {
+			delete(r.rpcPendingResponses, id)
+
+			select {
+			case errorChan <- &sutils.RpcError{Code: sutils.RpcResponseTimeout}:
+			default:
+			}
+		})
+
+		ackTimer := time.AfterFunc(sutils.RpcMaxRoundTripLatency, func() {
+			delete(r.rpcPendingAcks, id)
+			delete(r.rpcPendingResponses, id)
+			responseTimer.Stop()
+
+			select {
+			case errorChan <- &sutils.RpcError{Code: sutils.RpcConnectionTimeout}:
+			default:
+			}
+		})
+
+		rpcRequest := &livekit.RpcRequest{
+			Id:                id,
+			Method:            req.GetMethod(),
+			Payload:           req.GetPayload(),
+			ResponseTimeoutMs: responseTimeoutWithoutRTT,
+			Version:           1,
+		}
+
+		err := room.PerformRpc(req.GetDestinationIdentity(), rpcRequest)
+		if err != nil {
+			errorChan <- err
+			return
+		}
+
+		r.lock.Lock()
+		r.rpcPendingAcks[id] = &sutils.RpcPendingAckHandler{
+			Resolve: func() {
+				ackTimer.Stop()
+			},
+			ParticipantIdentity: req.GetDestinationIdentity(),
+		}
+		r.rpcPendingResponses[id] = &sutils.RpcPendingResponseHandler{
+			Resolve: func(payload *string, error *sutils.RpcError) {
+				responseTimer.Stop()
+				if _, ok := r.rpcPendingAcks[id]; ok {
+					r.rpcPendingAcks[id].Resolve()
+					ackTimer.Stop()
+				}
+
+				if error != nil {
+					errorChan <- error
+				} else {
+					if payload != nil {
+						resultChan <- payload
+					} else {
+						emptyStr := ""
+						resultChan <- &emptyStr
+					}
+				}
+			},
+			ParticipantIdentity: req.GetDestinationIdentity(),
+		}
+		r.lock.Unlock()
+	}()
+
+	select {
+	case result := <-resultChan:
+		return &livekit.PerformRpcResponse{Payload: *result}, nil
+	case err := <-errorChan:
+		// AM-TODO: the errors returned here have "twirp error unknown"
+		return nil, err
+	}
 }
 
 func (r *RoomManager) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomRequest) (*livekit.DeleteRoomResponse, error) {
