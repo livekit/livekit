@@ -139,7 +139,7 @@ type Room struct {
 	onRoomUpdated        func()
 	onClose              func()
 	onRpcAck             func(requestId string)
-	onRpcResponse        func(requestId string, payload *string, err *sutils.RpcError)
+	onRpcResponse        func(requestId string, payload string, err *sutils.RpcError)
 
 	simulationLock                                 sync.Mutex
 	disconnectSignalOnResumeParticipants           map[livekit.ParticipantIdentity]time.Time
@@ -1234,17 +1234,15 @@ func (r *Room) onDataPacket(source types.LocalParticipant, kind livekit.DataPack
 			rpcResponse := dp.GetRpcResponse()
 			switch res := rpcResponse.Value.(type) {
 			case *livekit.RpcResponse_Payload:
-				payload := res.Payload
-				r.onRpcResponse(rpcResponse.GetRequestId(), &payload, nil)
+				r.onRpcResponse(rpcResponse.GetRequestId(), res.Payload, nil)
 			case *livekit.RpcResponse_Error:
 				rpcError := res.Error
-				errData := rpcError.GetData()
 				rpcErr := &sutils.RpcError{
 					Code:    sutils.RpcErrorCode(rpcError.GetCode()),
 					Message: rpcError.GetMessage(),
-					Data:    &errData,
+					Data:    rpcError.GetData(),
 				}
-				r.onRpcResponse(rpcResponse.GetRequestId(), nil, rpcErr)
+				r.onRpcResponse(rpcResponse.GetRequestId(), "", rpcErr)
 			}
 		}
 	}
@@ -1819,7 +1817,7 @@ func (r *Room) OnRpcAck(f func(requestId string)) {
 	r.onRpcAck = f
 }
 
-func (r *Room) OnRpcResponse(f func(requestId string, payload *string, err *sutils.RpcError)) {
+func (r *Room) OnRpcResponse(f func(requestId string, payload string, err *sutils.RpcError)) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 

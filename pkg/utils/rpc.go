@@ -34,7 +34,7 @@ const (
 type RpcError struct {
 	Code    RpcErrorCode
 	Message string
-	Data    *string
+	Data    string
 }
 
 func (e *RpcError) Error() string {
@@ -47,6 +47,6 @@ type RpcPendingAckHandler struct {
 }
 
 type RpcPendingResponseHandler struct {
-	Resolve             func(payload *string, err *RpcError)
+	Resolve             func(payload string, err *RpcError)
 	ParticipantIdentity string
 }

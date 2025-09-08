@@ -87,6 +87,7 @@ type RoomManager struct {
 
 	rooms map[livekit.RoomName]*rtc.Room
 
+	rpcLock             sync.Mutex
 	rpcPendingAcks      map[string]*sutils.RpcPendingAckHandler
 	rpcPendingResponses map[string]*sutils.RpcPendingResponseHandler
 
@@ -624,6 +625,8 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 
 	// construct ice servers
 	newRoom := rtc.NewRoom(ri, internal, *r.rtcConfig, r.config.Room, &r.config.Audio, r.serverInfo, r.telemetry, r.agentClient, r.agentStore, r.egressLauncher)
+	newRoom.OnRpcAck(r.handleIncomingRpcAck)
+	newRoom.OnRpcResponse(r.handleIncomingRpcResponse)
 
 	roomTopic := rpc.FormatRoomTopic(roomName)
 	roomServer := must.Get(rpc.NewTypedRoomServer(r, r.bus))
@@ -840,8 +843,8 @@ func (r *RoomManager) MoveParticipant(ctx context.Context, req *livekit.MovePart
 }
 
 func (r *RoomManager) handleIncomingRpcAck(requestId string) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.rpcLock.Lock()
+	defer r.rpcLock.Unlock()
 
 	handler, ok := r.rpcPendingAcks[requestId]
 	if !ok {
@@ -852,9 +855,9 @@ func (r *RoomManager) handleIncomingRpcAck(requestId string) {
 	delete(r.rpcPendingAcks, requestId)
 }
 
-func (r *RoomManager) handleIncomingRpcResponse(requestId string, payload *string, err *sutils.RpcError) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+func (r *RoomManager) handleIncomingRpcResponse(requestId string, payload string, err *sutils.RpcError) {
+	r.rpcLock.Lock()
+	defer r.rpcLock.Unlock()
 
 	handler, ok := r.rpcPendingResponses[requestId]
 	if !ok {
@@ -877,10 +880,7 @@ func (r *RoomManager) PerformRpc(ctx context.Context, req *livekit.PerformRpcReq
 	}
 	responseTimeoutWithoutRTT := max(0, responseTimeout-uint32(sutils.RpcMaxRoundTripLatency))
 
-	room.OnRpcAck(r.handleIncomingRpcAck)
-	room.OnRpcResponse(r.handleIncomingRpcResponse)
-
-	resultChan := make(chan *string, 1)
+	resultChan := make(chan string, 1)
 	errorChan := make(chan error, 1)
 
 	go func() {
@@ -891,7 +891,9 @@ func (r *RoomManager) PerformRpc(ctx context.Context, req *livekit.PerformRpcReq
 
 		id := uuid.New().String()
 		responseTimer := time.AfterFunc(time.Duration(responseTimeout)*time.Millisecond, func() {
+			r.rpcLock.Lock()
 			delete(r.rpcPendingResponses, id)
+			r.rpcLock.Unlock()
 
 			select {
 			case errorChan <- &sutils.RpcError{Code: sutils.RpcResponseTimeout}:
@@ -900,8 +902,10 @@ func (r *RoomManager) PerformRpc(ctx context.Context, req *livekit.PerformRpcReq
 		})
 
 		ackTimer := time.AfterFunc(sutils.RpcMaxRoundTripLatency, func() {
+			r.rpcLock.Lock()
 			delete(r.rpcPendingAcks, id)
 			delete(r.rpcPendingResponses, id)
+			r.rpcLock.Unlock()
 			responseTimer.Stop()
 
 			select {
@@ -924,7 +928,7 @@ func (r *RoomManager) PerformRpc(ctx context.Context, req *livekit.PerformRpcReq
 			return
 		}
 
-		r.lock.Lock()
+		r.rpcLock.Lock()
 		r.rpcPendingAcks[id] = &sutils.RpcPendingAckHandler{
 			Resolve: func() {
 				ackTimer.Stop()
@@ -932,7 +936,7 @@ func (r *RoomManager) PerformRpc(ctx context.Context, req *livekit.PerformRpcReq
 			ParticipantIdentity: req.GetDestinationIdentity(),
 		}
 		r.rpcPendingResponses[id] = &sutils.RpcPendingResponseHandler{
-			Resolve: func(payload *string, error *sutils.RpcError) {
+			Resolve: func(payload string, error *sutils.RpcError) {
 				responseTimer.Stop()
 				if _, ok := r.rpcPendingAcks[id]; ok {
 					r.rpcPendingAcks[id].Resolve()
@@ -942,22 +946,17 @@ func (r *RoomManager) PerformRpc(ctx context.Context, req *livekit.PerformRpcReq
 				if error != nil {
 					errorChan <- error
 				} else {
-					if payload != nil {
-						resultChan <- payload
-					} else {
-						emptyStr := ""
-						resultChan <- &emptyStr
-					}
+					resultChan <- payload
 				}
 			},
 			ParticipantIdentity: req.GetDestinationIdentity(),
 		}
-		r.lock.Unlock()
+		r.rpcLock.Unlock()
 	}()
 
 	select {
 	case result := <-resultChan:
-		return &livekit.PerformRpcResponse{Payload: *result}, nil
+		return &livekit.PerformRpcResponse{Payload: result}, nil
 	case err := <-errorChan:
 		// AM-TODO: the errors returned here have "twirp error unknown"
 		return nil, err
