@@ -16,7 +16,6 @@ package rtc
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -138,8 +137,6 @@ type Room struct {
 	onParticipantChanged func(p types.LocalParticipant)
 	onRoomUpdated        func()
 	onClose              func()
-	onRpcAck             func(requestId string)
-	onRpcResponse        func(requestId string, payload string, err *sutils.RpcError)
 
 	simulationLock                                 sync.Mutex
 	disconnectSignalOnResumeParticipants           map[livekit.ParticipantIdentity]time.Time
@@ -1222,32 +1219,6 @@ func (r *Room) onDataPacket(source types.LocalParticipant, kind livekit.DataPack
 			DestIdentities: livekit.StringsAsIDs[livekit.ParticipantIdentity](dp.DestinationIdentities),
 		}, len(data))
 	}
-
-	r.lock.Lock()
-	switch dp.Value.(type) {
-	case *livekit.DataPacket_RpcAck:
-		if r.onRpcAck != nil {
-			r.onRpcAck(dp.GetRpcAck().GetRequestId())
-		}
-	case *livekit.DataPacket_RpcResponse:
-		if r.onRpcResponse != nil {
-			rpcResponse := dp.GetRpcResponse()
-			switch res := rpcResponse.Value.(type) {
-			case *livekit.RpcResponse_Payload:
-				r.onRpcResponse(rpcResponse.GetRequestId(), res.Payload, nil)
-			case *livekit.RpcResponse_Error:
-				rpcError := res.Error
-				rpcErr := &sutils.RpcError{
-					Code:    sutils.RpcErrorCode(rpcError.GetCode()),
-					Message: rpcError.GetMessage(),
-					Data:    rpcError.GetData(),
-				}
-				r.onRpcResponse(rpcResponse.GetRequestId(), "", rpcErr)
-			}
-		}
-	}
-	r.lock.Unlock()
-
 	BroadcastDataPacketForRoom(r, source, kind, dp, r.logger)
 }
 
@@ -1808,46 +1779,6 @@ func (r *Room) GetCachedReliableDataMessage(seqs map[livekit.ParticipantID]uint3
 		}
 	}
 	return msgs
-}
-
-func (r *Room) OnRpcAck(f func(requestId string)) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-
-	r.onRpcAck = f
-}
-
-func (r *Room) OnRpcResponse(f func(requestId string, payload string, err *sutils.RpcError)) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-
-	r.onRpcResponse = f
-}
-
-func (r *Room) PerformRpc(participantName string, rpc *livekit.RpcRequest) error {
-	participant := r.GetParticipant(livekit.ParticipantIdentity(participantName))
-	if participant == nil {
-		return errors.New("participant not found")
-	}
-
-	dp := &livekit.DataPacket{
-		Kind: livekit.DataPacket_RELIABLE,
-		Value: &livekit.DataPacket_RpcRequest{
-			RpcRequest: rpc,
-		},
-	}
-	data, err := proto.Marshal(dp)
-	if err != nil {
-		return err
-	}
-
-	// using RPC ID as the unique ID for server to identify the response
-	err = participant.SendDataMessage(livekit.DataPacket_RELIABLE, data, livekit.ParticipantID(rpc.GetId()), 0)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // ------------------------------------------------------------

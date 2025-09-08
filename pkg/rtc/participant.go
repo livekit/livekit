@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/frostbyte73/core"
+	"github.com/google/uuid"
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/pion/rtcp"
 	"github.com/pion/sdp/v3"
@@ -327,6 +328,10 @@ type ParticipantImpl struct {
 	// loggers for publisher and subscriber
 	pubLogger logger.Logger
 	subLogger logger.Logger
+
+	rpcLock             sync.Mutex
+	rpcPendingAcks      map[string]*sutils.RpcPendingAckHandler
+	rpcPendingResponses map[string]*sutils.RpcPendingResponseHandler
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -359,6 +364,8 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			joiningMessageFirstSeqs:       make(map[livekit.ParticipantID]uint32),
 			joiningMessageLastWrittenSeqs: make(map[livekit.ParticipantID]uint32),
 		},
+		rpcPendingAcks:      make(map[string]*sutils.RpcPendingAckHandler),
+		rpcPendingResponses: make(map[string]*sutils.RpcPendingResponseHandler),
 	}
 	p.setupSignalling()
 
@@ -1499,6 +1506,11 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 
 	p.UpTrackManager.Close(isExpectedToResume)
 
+	p.rpcLock.Lock()
+	clear(p.rpcPendingAcks)
+	clear(p.rpcPendingResponses)
+	p.rpcLock.Unlock()
+
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
 	close(p.disconnected)
 
@@ -2481,10 +2493,24 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		if payload.RpcResponse == nil {
 			return
 		}
+
+		rpcResponse := payload.RpcResponse
+		switch res := rpcResponse.Value.(type) {
+		case *livekit.RpcResponse_Payload:
+			shouldForwardData = !p.handleIncomingRpcResponse(payload.RpcResponse.GetRequestId(), res.Payload, nil)
+		case *livekit.RpcResponse_Error:
+			shouldForwardData = !p.handleIncomingRpcResponse(payload.RpcResponse.GetRequestId(), "", &sutils.RpcError{
+				Code:    sutils.RpcErrorCode(res.Error.GetCode()),
+				Message: res.Error.GetMessage(),
+				Data:    res.Error.GetData(),
+			})
+		}
 	case *livekit.DataPacket_RpcAck:
 		if payload.RpcAck == nil {
 			return
 		}
+
+		shouldForwardData = !p.handleIncomingRpcAck(payload.RpcAck.GetRequestId())
 	case *livekit.DataPacket_StreamHeader:
 		if payload.StreamHeader == nil {
 			return
@@ -4106,4 +4132,126 @@ func (p *ParticipantImpl) AddTransceiverFromTrackLocal(
 			RTCPFeedbackConfig{},
 		)
 	}
+}
+
+func (p *ParticipantImpl) handleIncomingRpcAck(requestId string) bool {
+	p.rpcLock.Lock()
+	defer p.rpcLock.Unlock()
+
+	handler, ok := p.rpcPendingAcks[requestId]
+	if !ok {
+		return false
+	}
+
+	handler.Resolve()
+	delete(p.rpcPendingAcks, requestId)
+	return true
+}
+
+func (p *ParticipantImpl) handleIncomingRpcResponse(requestId string, payload string, err *sutils.RpcError) bool {
+	p.rpcLock.Lock()
+	defer p.rpcLock.Unlock()
+
+	handler, ok := p.rpcPendingResponses[requestId]
+	if !ok {
+		return false
+	}
+
+	handler.Resolve(payload, err)
+	delete(p.rpcPendingResponses, requestId)
+	return true
+}
+
+func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh chan string, errorCh chan error) {
+	responseTimeout := req.GetResponseTimeoutMs()
+	if responseTimeout <= 0 {
+		responseTimeout = 10000
+	}
+	responseTimeoutWithoutRTT := max(0, responseTimeout-uint32(sutils.RpcMaxRoundTripLatency))
+
+	go func() {
+		if len([]byte(req.GetPayload())) > sutils.RpcMaxPayloadBytes {
+			errorCh <- &sutils.RpcError{Code: sutils.RpcRequestPayloadTooLarge}
+			return
+		}
+
+		id := uuid.New().String()
+
+		responseTimer := time.AfterFunc(time.Duration(responseTimeout)*time.Millisecond, func() {
+			p.rpcLock.Lock()
+			delete(p.rpcPendingResponses, id)
+			p.rpcLock.Unlock()
+
+			select {
+			case errorCh <- &sutils.RpcError{Code: sutils.RpcResponseTimeout}:
+			default:
+			}
+		})
+		ackTimer := time.AfterFunc(sutils.RpcMaxRoundTripLatency, func() {
+			p.rpcLock.Lock()
+			delete(p.rpcPendingAcks, id)
+			delete(p.rpcPendingResponses, id)
+			p.rpcLock.Unlock()
+			responseTimer.Stop()
+
+			select {
+			case errorCh <- &sutils.RpcError{Code: sutils.RpcConnectionTimeout}:
+			default:
+			}
+		})
+
+		rpcRequest := &livekit.DataPacket{
+			Kind: livekit.DataPacket_RELIABLE,
+			Value: &livekit.DataPacket_RpcRequest{
+				RpcRequest: &livekit.RpcRequest{
+					Id:                id,
+					Method:            req.GetMethod(),
+					Payload:           req.GetPayload(),
+					ResponseTimeoutMs: responseTimeoutWithoutRTT,
+					Version:           1,
+				},
+			},
+		}
+		data, err := proto.Marshal(rpcRequest)
+		if err != nil {
+			ackTimer.Stop()
+			responseTimer.Stop()
+			errorCh <- err
+			return
+		}
+
+		// using RPC ID as the unique ID for server to identify the response
+		err = p.SendDataMessage(livekit.DataPacket_RELIABLE, data, livekit.ParticipantID(id), 0)
+		if err != nil {
+			ackTimer.Stop()
+			responseTimer.Stop()
+			errorCh <- err
+			return
+		}
+
+		p.rpcLock.Lock()
+		p.rpcPendingAcks[id] = &sutils.RpcPendingAckHandler{
+			Resolve: func() {
+				ackTimer.Stop()
+			},
+			ParticipantIdentity: req.GetDestinationIdentity(),
+		}
+		p.rpcPendingResponses[id] = &sutils.RpcPendingResponseHandler{
+			Resolve: func(payload string, error *sutils.RpcError) {
+				responseTimer.Stop()
+				if _, ok := p.rpcPendingAcks[id]; ok {
+					p.rpcPendingAcks[id].Resolve()
+					ackTimer.Stop()
+				}
+
+				if error != nil {
+					errorCh <- error
+				} else {
+					resultCh <- payload
+				}
+			},
+			ParticipantIdentity: req.GetDestinationIdentity(),
+		}
+		p.rpcLock.Unlock()
+	}()
 }

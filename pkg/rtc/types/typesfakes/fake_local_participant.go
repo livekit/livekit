@@ -939,6 +939,13 @@ type FakeLocalParticipant struct {
 	onUpdateSubscriptionsArgsForCall []struct {
 		arg1 func(types.LocalParticipant, []livekit.TrackID, []*livekit.ParticipantTracks, bool)
 	}
+	PerformRpcStub        func(*livekit.PerformRpcRequest, chan string, chan error)
+	performRpcMutex       sync.RWMutex
+	performRpcArgsForCall []struct {
+		arg1 *livekit.PerformRpcRequest
+		arg2 chan string
+		arg3 chan error
+	}
 	ProtocolVersionStub        func() types.ProtocolVersion
 	protocolVersionMutex       sync.RWMutex
 	protocolVersionArgsForCall []struct {
@@ -6396,6 +6403,40 @@ func (fake *FakeLocalParticipant) OnUpdateSubscriptionsArgsForCall(i int) func(t
 	defer fake.onUpdateSubscriptionsMutex.RUnlock()
 	argsForCall := fake.onUpdateSubscriptionsArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) PerformRpc(arg1 *livekit.PerformRpcRequest, arg2 chan string, arg3 chan error) {
+	fake.performRpcMutex.Lock()
+	fake.performRpcArgsForCall = append(fake.performRpcArgsForCall, struct {
+		arg1 *livekit.PerformRpcRequest
+		arg2 chan string
+		arg3 chan error
+	}{arg1, arg2, arg3})
+	stub := fake.PerformRpcStub
+	fake.recordInvocation("PerformRpc", []interface{}{arg1, arg2, arg3})
+	fake.performRpcMutex.Unlock()
+	if stub != nil {
+		fake.PerformRpcStub(arg1, arg2, arg3)
+	}
+}
+
+func (fake *FakeLocalParticipant) PerformRpcCallCount() int {
+	fake.performRpcMutex.RLock()
+	defer fake.performRpcMutex.RUnlock()
+	return len(fake.performRpcArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) PerformRpcCalls(stub func(*livekit.PerformRpcRequest, chan string, chan error)) {
+	fake.performRpcMutex.Lock()
+	defer fake.performRpcMutex.Unlock()
+	fake.PerformRpcStub = stub
+}
+
+func (fake *FakeLocalParticipant) PerformRpcArgsForCall(i int) (*livekit.PerformRpcRequest, chan string, chan error) {
+	fake.performRpcMutex.RLock()
+	defer fake.performRpcMutex.RUnlock()
+	argsForCall := fake.performRpcArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeLocalParticipant) ProtocolVersion() types.ProtocolVersion {
