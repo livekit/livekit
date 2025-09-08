@@ -31,7 +31,6 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/observability"
 	"github.com/livekit/protocol/observability/roomobs"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
@@ -75,7 +74,6 @@ type RoomManager struct {
 	whipServer        rpc.WHIPServer[livekit.NodeID]
 	roomStore         ObjectStore
 	telemetry         telemetry.TelemetryService
-	recorder          observability.Reporter
 	clientConfManager clientconfiguration.ClientConfigurationManager
 	agentClient       agent.Client
 	agentStore        AgentStore

@@ -45,7 +45,6 @@ var _ types.LocalMediaTrack = (*MediaTrack)(nil)
 // Implements MediaTrack and PublishedTrack interface
 type MediaTrack struct {
 	params         MediaTrackParams
-	numUpTracks    atomic.Uint32
 	buffer         *buffer.Buffer
 	everSubscribed atomic.Bool
 

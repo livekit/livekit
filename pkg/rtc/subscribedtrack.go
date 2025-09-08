@@ -23,33 +23,43 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/pkg/telemetry"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/observability/roomobs"
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
 )
 
 const (
 	subscriptionDebounceInterval = 100 * time.Millisecond
 )
 
+var _ types.SubscribedTrack = (*SubscribedTrack)(nil)
+
 type SubscribedTrackParams struct {
-	PublisherID       livekit.ParticipantID
-	PublisherIdentity livekit.ParticipantIdentity
-	PublisherVersion  uint32
-	Subscriber        types.LocalParticipant
-	MediaTrack        types.MediaTrack
-	DownTrack         *sfu.DownTrack
-	AdaptiveStream    bool
+	ReceiverConfig               ReceiverConfig
+	SubscriberConfig             DirectionConfig
+	Subscriber                   types.LocalParticipant
+	MediaTrack                   types.MediaTrack
+	AdaptiveStream               bool
+	Telemetry                    telemetry.TelemetryService
+	WrappedReceiver              *WrappedReceiver
+	IsRelayed                    bool
+	OnDownTrackCreated           func(downTrack *sfu.DownTrack)
+	OnDownTrackClosed            func(subscriberID livekit.ParticipantID)
+	OnSubscriberMaxQualityChange func(subscriberID livekit.ParticipantID, mime mime.MimeType, layer int32)
 }
 
 type SubscribedTrack struct {
 	params           SubscribedTrackParams
 	logger           logger.Logger
+	downTrack        *sfu.DownTrack
 	sender           atomic.Pointer[webrtc.RTPSender]
 	needsNegotiation atomic.Bool
 
@@ -65,21 +75,91 @@ type SubscribedTrack struct {
 	onClose atomic.Value // func(bool)
 
 	debouncer func(func())
+
+	statsKey telemetry.StatsKey
+	reporter roomobs.TrackReporter
 }
 
-func NewSubscribedTrack(params SubscribedTrackParams) *SubscribedTrack {
+func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) {
 	s := &SubscribedTrack{
 		params: params,
 		logger: params.Subscriber.GetLogger().WithComponent(sutils.ComponentSub).WithValues(
-			"trackID", params.DownTrack.ID(),
-			"publisherID", params.PublisherID,
-			"publisher", params.PublisherIdentity,
+			"trackID", params.MediaTrack.ID(),
+			"publisherID", params.MediaTrack.PublisherID(),
+			"publisher", params.MediaTrack.PublisherIdentity(),
 		),
 		versionGenerator: utils.NewDefaultTimedVersionGenerator(),
 		debouncer:        debounce.New(subscriptionDebounceInterval),
+		statsKey: telemetry.StatsKeyForTrack(
+			params.Subscriber.GetCountry(),
+			livekit.StreamType_DOWNSTREAM,
+			params.Subscriber.ID(),
+			params.MediaTrack.ID(),
+			params.MediaTrack.Source(),
+			params.MediaTrack.Kind(),
+		),
+		reporter: params.Subscriber.GetReporter().WithTrack(params.MediaTrack.ID().String()),
 	}
 
-	return s
+	var rtcpFeedback []webrtc.RTCPFeedback
+	var maxTrack int
+	switch params.MediaTrack.Kind() {
+	case livekit.TrackType_AUDIO:
+		rtcpFeedback = params.SubscriberConfig.RTCPFeedback.Audio
+		maxTrack = params.ReceiverConfig.PacketBufferSizeAudio
+	case livekit.TrackType_VIDEO:
+		rtcpFeedback = params.SubscriberConfig.RTCPFeedback.Video
+		maxTrack = params.ReceiverConfig.PacketBufferSizeVideo
+	default:
+		s.logger.Warnw("unexpected track type", nil, "kind", params.MediaTrack.Kind())
+	}
+	codecs := params.WrappedReceiver.Codecs()
+	for _, c := range codecs {
+		c.RTCPFeedback = rtcpFeedback
+	}
+
+	streamID := params.WrappedReceiver.StreamID()
+	if params.Subscriber.SupportsSyncStreamID() && params.MediaTrack.Stream() != "" {
+		streamID = PackSyncStreamID(params.MediaTrack.PublisherID(), params.MediaTrack.Stream())
+	}
+
+	var trailer []byte
+	if params.MediaTrack.IsEncrypted() {
+		trailer = params.Subscriber.GetTrailer()
+	}
+	downTrack, err := sfu.NewDownTrack(sfu.DownTrackParams{
+		Codecs:            codecs,
+		Source:            params.MediaTrack.Source(),
+		Receiver:          params.WrappedReceiver,
+		BufferFactory:     params.Subscriber.GetBufferFactory(),
+		SubID:             params.Subscriber.ID(),
+		StreamID:          streamID,
+		MaxTrack:          maxTrack,
+		PlayoutDelayLimit: params.Subscriber.GetPlayoutDelayConfig(),
+		Pacer:             params.Subscriber.GetPacer(),
+		Trailer:           trailer,
+		Logger: LoggerWithTrack(
+			params.Subscriber.GetLogger().WithComponent(sutils.ComponentSub),
+			params.MediaTrack.ID(),
+			params.IsRelayed,
+		),
+		RTCPWriter:                     params.Subscriber.WriteSubscriberRTCP,
+		DisableSenderReportPassThrough: params.Subscriber.GetDisableSenderReportPassThrough(),
+		SupportsCodecChange:            params.Subscriber.SupportsCodecChange(),
+		Listener:                       s,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if params.OnDownTrackCreated != nil {
+		params.OnDownTrackCreated(downTrack)
+	}
+
+	downTrack.AddReceiverReportListener(params.Subscriber.HandleReceiverReport)
+
+	s.downTrack = downTrack
+	return s, nil
 }
 
 func (t *SubscribedTrack) AddOnBind(f func(error)) {
@@ -159,19 +239,19 @@ func (t *SubscribedTrack) IsBound() bool {
 }
 
 func (t *SubscribedTrack) ID() livekit.TrackID {
-	return livekit.TrackID(t.params.DownTrack.ID())
+	return livekit.TrackID(t.downTrack.ID())
 }
 
 func (t *SubscribedTrack) PublisherID() livekit.ParticipantID {
-	return t.params.PublisherID
+	return t.params.MediaTrack.PublisherID()
 }
 
 func (t *SubscribedTrack) PublisherIdentity() livekit.ParticipantIdentity {
-	return t.params.PublisherIdentity
+	return t.params.MediaTrack.PublisherIdentity()
 }
 
 func (t *SubscribedTrack) PublisherVersion() uint32 {
-	return t.params.PublisherVersion
+	return t.params.MediaTrack.PublisherVersion()
 }
 
 func (t *SubscribedTrack) SubscriberID() livekit.ParticipantID {
@@ -187,7 +267,7 @@ func (t *SubscribedTrack) Subscriber() types.LocalParticipant {
 }
 
 func (t *SubscribedTrack) DownTrack() *sfu.DownTrack {
-	return t.params.DownTrack
+	return t.downTrack
 }
 
 func (t *SubscribedTrack) MediaTrack() types.MediaTrack {
@@ -211,7 +291,7 @@ func (t *SubscribedTrack) isMutedLocked() bool {
 }
 
 func (t *SubscribedTrack) SetPublisherMuted(muted bool) {
-	t.DownTrack().PubMute(muted)
+	t.downTrack.PubMute(muted)
 }
 
 func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings, isImmediate bool) {
@@ -306,4 +386,83 @@ func (t *SubscribedTrack) RTPSender() *webrtc.RTPSender {
 
 func (t *SubscribedTrack) SetRTPSender(sender *webrtc.RTPSender) {
 	t.sender.Store(sender)
+}
+
+// DownTrackListener implementation
+var _ sfu.DownTrackListener = (*SubscribedTrack)(nil)
+
+func (t *SubscribedTrack) OnBindAndConnected() {
+	if t.params.Subscriber.Hidden() {
+		return
+	}
+
+	t.params.MediaTrack.OnTrackSubscribed()
+}
+
+func (t *SubscribedTrack) OnStatsUpdate(stat *livekit.AnalyticsStat) {
+	t.params.Telemetry.TrackStats(t.statsKey, stat)
+
+	if cs, ok := telemetry.CondenseStat(stat); ok {
+		ti := t.params.WrappedReceiver.TrackInfo()
+		t.reporter.Tx(func(tx roomobs.TrackTx) {
+			tx.ReportName(ti.Name)
+			tx.ReportKind(roomobs.TrackKindSub)
+			tx.ReportType(roomobs.TrackTypeFromProto(ti.Type))
+			tx.ReportSource(roomobs.TrackSourceFromProto(ti.Source))
+			tx.ReportMime(mime.NormalizeMimeType(ti.MimeType).ReporterType())
+			tx.ReportLayer(roomobs.PackTrackLayer(ti.Height, ti.Width))
+			tx.ReportDuration(uint16(cs.EndTime.Sub(cs.StartTime).Milliseconds()))
+			tx.ReportFrames(uint16(cs.Frames))
+			tx.ReportSendBytes(uint32(cs.Bytes))
+			tx.ReportSendPackets(cs.Packets)
+			tx.ReportPacketsLost(cs.PacketsLost)
+			tx.ReportScore(stat.Score)
+		})
+	}
+}
+
+func (t *SubscribedTrack) OnMaxSubscribedLayerChanged(layer int32) {
+	if t.params.OnSubscriberMaxQualityChange != nil {
+		t.params.OnSubscriberMaxQualityChange(t.downTrack.SubscriberID(), t.downTrack.Mime(), layer)
+	}
+}
+
+func (t *SubscribedTrack) OnRttUpdate(rtt uint32) {
+	go t.params.Subscriber.UpdateMediaRTT(rtt)
+}
+
+func (t *SubscribedTrack) OnCodecNegotiated(codec webrtc.RTPCodecCapability) {
+	if t.params.WrappedReceiver.DetermineReceiver(codec) {
+		return
+	}
+
+	if t.params.OnSubscriberMaxQualityChange != nil {
+		go func() {
+			mimeType := mime.NormalizeMimeType(codec.MimeType)
+			spatial := buffer.GetSpatialLayerForVideoQuality(
+				mimeType,
+				livekit.VideoQuality_HIGH,
+				t.params.MediaTrack.ToProto(),
+			)
+			t.params.OnSubscriberMaxQualityChange(t.downTrack.SubscriberID(), mimeType, spatial)
+		}()
+	}
+}
+
+func (t *SubscribedTrack) OnDownTrackClose(isExpectedToResume bool) {
+	// Cache transceiver for potential re-use on resume.
+	// To ensure subscription manager does not re-subscribe before caching,
+	// delete the subscribed track only after caching.
+	if isExpectedToResume {
+		if tr := t.downTrack.GetTransceiver(); tr != nil {
+			t.params.Subscriber.CacheDownTrack(t.ID(), tr, t.downTrack.GetState())
+		}
+	}
+
+	go func() {
+		if t.params.OnDownTrackClosed != nil {
+			t.params.OnDownTrackClosed(t.params.Subscriber.ID())
+		}
+		t.Close(isExpectedToResume)
+	}()
 }
