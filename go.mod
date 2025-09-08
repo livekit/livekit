@@ -4,6 +4,8 @@ go 1.24.0
 
 toolchain go1.24.6
 
+replace github.com/livekit/protocol => ../protocol
+
 require (
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.17.0

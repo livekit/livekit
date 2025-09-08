@@ -48,4 +48,5 @@ var (
 	ErrInvalidMessageType               = psrpc.NewErrorf(psrpc.Internal, "invalid message type")
 	ErrNoConnectRequest                 = psrpc.NewErrorf(psrpc.InvalidArgument, "no connect request")
 	ErrNoConnectResponse                = psrpc.NewErrorf(psrpc.InvalidArgument, "no connect response")
+	ErrDestinationIdentityRequired      = psrpc.NewErrorf(psrpc.InvalidArgument, "destination identity is required")
 )
