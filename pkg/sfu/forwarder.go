@@ -37,6 +37,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
+	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector"
 	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector/temporallayerselector"
 )
@@ -302,6 +303,10 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
+	if videoLayerMode == livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM_INCOMPLETE_RTCP_SR {
+		f.skipReferenceTS = true
+	}
+
 	toMimeType := mime.NormalizeMimeType(codec.MimeType)
 	codecChanged := f.mime != mime.MimeTypeUnknown && f.mime != toMimeType
 	if codecChanged {
@@ -346,7 +351,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		}
 
 	case mime.MimeTypeVP9:
-		if videoLayerMode == livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM {
+		if sfuutils.IsSimulcastMode(videoLayerMode) {
 			if f.vls != nil {
 				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
 			} else {
@@ -370,7 +375,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		}
 
 	case mime.MimeTypeAV1:
-		if videoLayerMode == livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM {
+		if sfuutils.IsSimulcastMode(videoLayerMode) {
 			if f.vls != nil {
 				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
 			} else {

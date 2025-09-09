@@ -156,7 +156,11 @@ func NewLocalRoomManager(
 		return nil, err
 	}
 
-	r.whipServer, err = rpc.NewWHIPServer[livekit.NodeID](whipService{r}, bus, rpc.WithDefaultServerOptions(conf.PSRPC, logger.GetLogger()))
+	whipService, err := newWhipService(r)
+	if err != nil {
+		return nil, err
+	}
+	r.whipServer, err = rpc.NewWHIPServer[livekit.NodeID](whipService, bus, rpc.WithDefaultServerOptions(conf.PSRPC, logger.GetLogger()))
 	if err != nil {
 		return nil, err
 	}
@@ -550,7 +554,7 @@ func (r *RoomManager) StartSession(
 
 	clientMeta := &livekit.AnalyticsClientMeta{Region: r.currentNode.Region(), Node: string(r.currentNode.NodeID())}
 	r.telemetry.ParticipantJoined(ctx, protoRoom, participant.ToProto(), pi.Client, clientMeta, true)
-	participant.OnClose(func(p types.LocalParticipant) {
+	participant.AddOnClose(types.ParticipantCloseKeyNormal, func(p types.LocalParticipant) {
 		participantServerClosers.Close()
 
 		if err := r.roomStore.DeleteParticipant(ctx, room.Name(), p.Identity()); err != nil {

@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/pion/webrtc/v4"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/types/known/emptypb"
+
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -12,13 +16,23 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
-	"github.com/pion/webrtc/v4"
-	"golang.org/x/sync/errgroup"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type whipService struct {
 	*RoomManager
+
+	ingressRpcCli rpc.IngressHandlerClient
+}
+
+func newWhipService(rm *RoomManager) (*whipService, error) {
+	cli, err := rpc.NewIngressHandlerClient(rm.bus, rpc.WithDefaultClientOptions(logger.GetLogger()))
+	if err != nil {
+		return nil, err
+	}
+	return &whipService{
+		RoomManager:   rm,
+		ingressRpcCli: cli,
+	}, nil
 }
 
 func (s whipService) Create(ctx context.Context, req *rpc.WHIPCreateRequest) (*rpc.WHIPCreateResponse, error) {
@@ -95,6 +109,21 @@ func (s whipService) Create(ctx context.Context, req *rpc.WHIPCreateRequest) (*r
 	if err != nil {
 		lp.GetLogger().Errorw("whip service: could not get ICE session ID", err)
 		return nil, err
+	}
+
+	if req.FromIngress {
+		lp.AddOnClose(types.ParticipantCloseKeyWHIP, func(lp types.LocalParticipant) {
+			go func() {
+				lp.GetLogger().Debugw("whip service: notify participant closed")
+				_, err := s.ingressRpcCli.WHIPRTCConnectionNotify(context.Background(), string(lp.ID()), &rpc.WHIPRTCConnectionNotifyRequest{
+					ParticipantId: string(lp.ID()),
+					Closed:        true,
+				}, psrpc.WithRequestTimeout(rpc.DefaultPSRPCConfig.Timeout))
+				if err != nil {
+					lp.GetLogger().Warnw("whip service: could not notify ingress of participant closed", err)
+				}
+			}()
+		})
 	}
 
 	var iceServers []*livekit.ICEServer
@@ -185,12 +214,19 @@ func (r whipParticipantService) DeleteSession(ctx context.Context, req *rpc.WHIP
 		return nil, ErrRoomNotFound
 	}
 
+	reason := types.ParticipantCloseReasonClientRequestLeave
 	lp := room.GetParticipantByID(livekit.ParticipantID(req.ParticipantId))
+	if lp == nil && req.FromSweeper && req.ParticipantId == "" {
+		lp = room.GetParticipant(livekit.ParticipantIdentity(req.ParticipantIdentity))
+		reason = types.ParticipantCloseReasonStale
+	}
+
 	if lp != nil {
+		lp.AddOnClose(types.ParticipantCloseKeyWHIP, nil)
 		room.RemoveParticipant(
 			lp.Identity(),
 			lp.ID(),
-			types.ParticipantCloseReasonClientRequestLeave,
+			reason,
 		)
 	}
 
