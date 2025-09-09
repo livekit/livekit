@@ -20,7 +20,8 @@ import (
 
 // AnySelector selects any available node with no limitations
 type AnySelector struct {
-	SortBy string
+	SortBy    string
+	Algorithm string
 }
 
 func (s *AnySelector) SelectNode(nodes []*livekit.Node) (*livekit.Node, error) {
@@ -29,5 +30,5 @@ func (s *AnySelector) SelectNode(nodes []*livekit.Node) (*livekit.Node, error) {
 		return nil, ErrNoAvailableNodes
 	}
 
-	return SelectSortedNode(nodes, s.SortBy)
+	return SelectSortedNode(nodes, s.SortBy, s.Algorithm)
 }
