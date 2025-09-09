@@ -116,6 +116,10 @@ func decodeAttributes(str string) (map[string]string, error) {
 	return attrs, nil
 }
 
+var gzipReaderPool = sync.Pool{
+	New: func() any { return &gzip.Reader{} },
+}
+
 func (s *RTCService) validateInternal(lgr logger.Logger, r *http.Request, strict bool) (livekit.RoomName, routing.ParticipantInit, int, error) {
 	var params ValidateConnectRequestParams
 	useSinglePeerConnection := false
@@ -154,19 +158,16 @@ func (s *RTCService) validateInternal(lgr logger.Logger, r *http.Request, strict
 				}
 
 			case livekit.WrappedJoinRequest_GZIP:
-				b := bytes.NewReader(wrappedJoinRequest.JoinRequest)
-				if reader, err := gzip.NewReader(b); err != nil {
-					return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot decompress join request")
-				} else {
-					protoBytes, err := io.ReadAll(reader)
-					reader.Close()
-					if err != nil {
-						return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot read decompressed join request")
-					}
+				reader := gzipReaderPool.Get().(*gzip.Reader)
+				defer gzipReaderPool.Put(reader)
+				reader.Reset(bytes.NewReader(wrappedJoinRequest.JoinRequest))
+				protoBytes, err := io.ReadAll(reader)
+				if err != nil {
+					return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot read decompressed join request")
+				}
 
-					if err := proto.Unmarshal(protoBytes, joinRequest); err != nil {
-						return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot unmarshal join request")
-					}
+				if err := proto.Unmarshal(protoBytes, joinRequest); err != nil {
+					return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot unmarshal join request")
 				}
 			}
 
