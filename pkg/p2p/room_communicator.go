@@ -3,15 +3,16 @@ package p2p
 import (
 	"context"
 	"fmt"
-	"go.uber.org/atomic"
-	"log"
 	"sync"
 	"time"
+
+	"go.uber.org/atomic"
 
 	"github.com/dTelecom/p2p-database/pubsub"
 
 	p2p_common "github.com/dTelecom/p2p-database/common"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/pkg/errors"
 )
 
@@ -37,6 +38,7 @@ type RoomCommunicatorImpl struct {
 	messageHandlers []func(message interface{}, fromPeerId string, eventId string)
 
 	mu sync.Mutex
+	logger logger.Logger
 }
 
 func NewRoomCommunicatorImpl(key livekit.RoomKey, mainDatabase *pubsub.DB) (*RoomCommunicatorImpl, error) {
@@ -48,6 +50,7 @@ func NewRoomCommunicatorImpl(key livekit.RoomKey, mainDatabase *pubsub.DB) (*Roo
 		cancel:       cancel,
 		mainDatabase: mainDatabase,
 		peers:        make(map[string]struct{}),
+		logger:       logger.GetLogger(),
 	}
 
 	err := roomCommunicator.init()
@@ -66,9 +69,9 @@ func (c *RoomCommunicatorImpl) Close() {
 	incomingMessagesTopic := formatIncomingMessagesTopic(c.key, c.mainDatabase.GetHost().ID().String())
 	err := c.mainDatabase.Unsubscribe(ctx1, incomingMessagesTopic)
 	if err != nil {
-		log.Printf("unsubscrib from topic err %v %v", incomingMessagesTopic, err)
+		c.logger.Errorw("Failed to unsubscribe from topic", err, "topic", incomingMessagesTopic, "roomKey", c.key)
 	} else {
-		log.Printf("unsubscribed from topic %v", incomingMessagesTopic)
+		c.logger.Debugw("Unsubscribed from incoming messages topic", "topic", incomingMessagesTopic, "roomKey", c.key)
 	}
 
 	ctx2, cancel2 := context.WithTimeout(context.Background(), time.Second*15)
@@ -77,9 +80,9 @@ func (c *RoomCommunicatorImpl) Close() {
 	roomMessagesTopic := formatRoomMessageTopic(c.key)
 	err = c.mainDatabase.Unsubscribe(ctx2, roomMessagesTopic)
 	if err != nil {
-		log.Printf("unsubscrib from topic err %v %v", roomMessagesTopic, err)
+		c.logger.Errorw("Failed to unsubscribe from topic", err, "topic", roomMessagesTopic, "roomKey", c.key)
 	} else {
-		log.Printf("unsubscribed from topic %v", roomMessagesTopic)
+		c.logger.Debugw("Unsubscribed from room messages topic", "topic", roomMessagesTopic, "roomKey", c.key)
 	}
 }
 
@@ -89,13 +92,13 @@ func (c *RoomCommunicatorImpl) init() error {
 	if err := c.mainDatabase.Subscribe(context.Background(), incomingMessagesTopic, c.incomingMessageHandler); err != nil {
 		return errors.Wrap(err, "cannot subscribe to incoming messages topic")
 	}
-	log.Printf("subscribed to topic %v", incomingMessagesTopic)
+	c.logger.Debugw("Subscribed to incoming messages topic", "topic", incomingMessagesTopic, "roomKey", c.key)
 
 	roomMessagesTopic := formatRoomMessageTopic(c.key)
 	if err := c.mainDatabase.Subscribe(context.Background(), roomMessagesTopic, c.roomMessageHandler); err != nil {
 		return errors.Wrap(err, "cannot subscribe to room messages topic")
 	}
-	log.Printf("subscribed to topic %v", roomMessagesTopic)
+	c.logger.Debugw("Subscribed to room messages topic", "topic", roomMessagesTopic, "roomKey", c.key)
 
 	go func() {
 		for {
@@ -114,7 +117,7 @@ func (c *RoomCommunicatorImpl) init() error {
 
 func (c *RoomCommunicatorImpl) publishAd(roomMessagesTopic string) {
 	if c.closed.Load() {
-		log.Printf("RoomCommunicatorImpl closed %v", c.key)
+		c.logger.Debugw("Room communicator closed, skipping publish", "roomKey", c.key)
 		return
 	}
 
@@ -122,7 +125,9 @@ func (c *RoomCommunicatorImpl) publishAd(roomMessagesTopic string) {
 	defer cancel()
 
 	if _, err := c.mainDatabase.Publish(ctx, roomMessagesTopic, adMessage); err != nil {
-		log.Printf("cannot publish ad message: %v", err)
+		c.logger.Errorw("Failed to publish ad message", err, "topic", roomMessagesTopic, "roomKey", c.key)
+	} else {
+		c.logger.Debugw("Published ad message", "topic", roomMessagesTopic, "roomKey", c.key)
 	}
 }
 
@@ -131,27 +136,26 @@ func (c *RoomCommunicatorImpl) checkPeer(peerId string) {
 	if _, ok := c.peers[peerId]; ok {
 		c.mu.Unlock()
 	} else {
-		log.Printf("New key added peer not exist %v", peerId)
+		c.logger.Infow("Discovered new peer", "peerId", peerId, "roomKey", c.key)
 		c.peers[peerId] = struct{}{}
 		for _, peerHandler := range c.peerHandlers {
 			go peerHandler(peerId)
 		}
 		c.mu.Unlock()
-		log.Printf("New key added peer added %v", peerId)
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
 		defer cancel()
 
 		if c.closed.Load() {
-			log.Printf("RoomCommunicatorImpl closed %v", c.key)
+			c.logger.Debugw("Room communicator closed", "roomKey", c.key)
 			return
 		}
 
 		incomingMessageTopic := formatIncomingMessagesTopic(c.key, peerId)
 		if _, err := c.mainDatabase.Publish(ctx, incomingMessageTopic, pingMessage); err != nil {
-			log.Printf("cannot send ping message for node %s in db %s: %s", peerId, c.key, err)
+			c.logger.Errorw("Failed to send ping message", err, "peerId", peerId, "roomKey", c.key)
 		} else {
-			log.Printf("PING message sent to %v", peerId)
+			c.logger.Debugw("Ping message sent", "peerId", peerId, "roomKey", c.key)
 		}
 	}
 }
@@ -163,10 +167,10 @@ func (c *RoomCommunicatorImpl) incomingMessageHandler(event p2p_common.Event) {
 	}
 
 	if event.Message == pingMessage {
-		log.Println("PING message received")
+		c.logger.Debugw("Ping message received", "fromPeerId", event.FromPeerId, "roomKey", c.key)
 
 		if c.closed.Load() {
-			log.Printf("RoomCommunicatorImpl closed %v", c.key)
+			c.logger.Debugw("Room communicator closed", "roomKey", c.key)
 			return
 		}
 
@@ -175,12 +179,12 @@ func (c *RoomCommunicatorImpl) incomingMessageHandler(event p2p_common.Event) {
 
 		incomingMessageTopic := formatIncomingMessagesTopic(c.key, event.FromPeerId)
 		if _, err := c.mainDatabase.Publish(ctx, incomingMessageTopic, pongMessage); err != nil {
-			log.Printf("cannot send pong message for node %s in db %s: %s", event.FromPeerId, c.key, err)
+			c.logger.Errorw("Failed to send pong message", err, "peerId", event.FromPeerId, "roomKey", c.key)
 		} else {
-			log.Printf("PONG message sent to %v", event.FromPeerId)
+			c.logger.Debugw("Pong message sent", "peerId", event.FromPeerId, "roomKey", c.key)
 		}
 	} else if event.Message == pongMessage {
-		log.Printf("PONG message received from %v", event.FromPeerId)
+		c.logger.Debugw("Pong message received", "fromPeerId", event.FromPeerId, "roomKey", c.key)
 	} else if event.Message == adMessage {
 		c.checkPeer(event.FromPeerId)
 	} else {
@@ -205,18 +209,18 @@ func (c *RoomCommunicatorImpl) roomMessageHandler(event p2p_common.Event) {
 		defer cancel()
 
 		if c.closed.Load() {
-			log.Printf("RoomCommunicatorImpl closed %v", c.key)
+			c.logger.Debugw("Room communicator closed", "roomKey", c.key)
 			return
 		}
 
 		incomingMessageTopic := formatIncomingMessagesTopic(c.key, event.FromPeerId)
 		if _, err := c.mainDatabase.Publish(ctx, incomingMessageTopic, adMessage); err != nil {
-			log.Printf("cannot send ad message for node %s in db %s: %s", event.FromPeerId, c.key, err)
+			c.logger.Errorw("Failed to send ad message", err, "peerId", event.FromPeerId, "roomKey", c.key)
 		} else {
-			log.Printf("ad message sent to %v", event.FromPeerId)
+			c.logger.Debugw("Ad message sent", "peerId", event.FromPeerId, "roomKey", c.key)
 		}
 	} else {
-		log.Printf("unknown room message from peer: %v", event.FromPeerId)
+		c.logger.Warnw("Unknown room message received", nil, "fromPeerId", event.FromPeerId, "roomKey", c.key)
 	}
 }
 
@@ -233,7 +237,7 @@ func (c *RoomCommunicatorImpl) ForEachPeer(peerHandler func(peerId string)) {
 func (c *RoomCommunicatorImpl) SendMessage(peerId string, message interface{}) (string, error) {
 
 	if c.closed.Load() {
-		return "", fmt.Errorf("RoomCommunicatorImpl closed %v", c.key)
+		return "", fmt.Errorf("room communicator closed for room %v", c.key)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)

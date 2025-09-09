@@ -24,13 +24,12 @@ import (
 	"github.com/livekit/livekit-server/version"
 
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
-	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 
-	cfg "github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/config"
 )
 
 const (
@@ -128,7 +127,7 @@ func (r *RoomManager) GetRoom(_ context.Context, roomKey livekit.RoomKey) *rtc.R
 
 // DeleteRoom completely deletes all room information, including active sessions, room store, and routing info
 func (r *RoomManager) DeleteRoom(ctx context.Context, roomKey livekit.RoomKey) error {
-	logger.Infow("deleting room state", "room", roomKey)
+	logger.Infow("Deleting room state", "room", roomKey, "nodeID", r.currentNode.Id)
 	r.lock.Lock()
 	delete(r.rooms, roomKey)
 	delete(r.outRelayCollections, roomKey)
@@ -254,7 +253,7 @@ func (r *RoomManager) StartSession(
 		// When reconnecting, it means WS has interrupted by underlying peer connection is still ok
 		// in this mode, we'll keep the participant SID, and just swap the sink for the underlying connection
 		if pi.Reconnect {
-			logger.Infow("resuming RTC session",
+			logger.Infow("Resuming RTC session",
 				"room", roomKey,
 				"nodeID", r.currentNode.Id,
 				"participant", pi.Identity,
@@ -267,7 +266,7 @@ func (r *RoomManager) StartSession(
 			if err = room.ResumeParticipant(participant, requestSource, responseSink,
 				r.iceServersForRoom(protoRoom, iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS),
 				pi.ReconnectReason); err != nil {
-				logger.Warnw("could not resume participant", err, "participant", pi.Identity)
+				logger.Warnw("Could not resume participant", err, "participant", pi.Identity)
 				return err
 			}
 			r.telemetry.ParticipantResumed(ctx, room.ToProto(), participant.ToProto(), livekit.NodeID(r.currentNode.Id), pi.ReconnectReason)
@@ -292,7 +291,7 @@ func (r *RoomManager) StartSession(
 		return errors.New("could not restart participant")
 	}
 
-	logger.Debugw("starting RTC session",
+	logger.Debugw("Starting RTC session",
 		"room", roomKey,
 		"nodeID", r.currentNode.Id,
 		"participant", pi.Identity,
@@ -469,25 +468,25 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 		r.telemetry.RoomEnded(ctx, roomInfo)
 		prometheus.RoomEnded(time.Unix(roomInfo.CreationTime, 0))
 		if err := r.DeleteRoom(ctx, roomKey); err != nil {
-			newRoom.Logger.Errorw("could not delete room", err)
+			newRoom.Logger.Errorw("Could not delete room", err)
 		}
 		outRelayCollection.ForEach(func(relay relay.Relay) {
 			relay.Close()
 		})
 
-		newRoom.Logger.Infow("room closed")
+		newRoom.Logger.Infow("Room closed", "roomID", roomInfo.Sid, "roomName", roomInfo.Name)
 	})
 
 	newRoom.OnMetadataUpdate(func(metadata string) {
 		if err := r.roomStore.StoreRoom(ctx, newRoom.ToProto(), roomKey, newRoom.Internal()); err != nil {
-			newRoom.Logger.Errorw("could not handle metadata update", err)
+			newRoom.Logger.Errorw("Could not handle metadata update", err)
 		}
 	})
 
 	newRoom.OnParticipantChanged(func(p types.LocalParticipant) {
 		if !p.IsDisconnected() {
 			if err := r.roomStore.StoreParticipant(ctx, roomKey, p.ToProto()); err != nil {
-				newRoom.Logger.Errorw("could not handle participant change", err)
+				newRoom.Logger.Errorw("Could not handle participant change", err)
 			}
 		}
 	})
@@ -498,11 +497,11 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 		}
 
 		if updatesForRelay, err := getUpdatesPayloadForRelay(newRoom, updates); err != nil {
-			newRoom.Logger.Errorw("could not create updates for relay", err)
+			newRoom.Logger.Errorw("Could not create updates for relay", err)
 		} else if len(updatesForRelay) > 0 {
 			outRelayCollection.ForEach(func(relay relay.Relay) {
 				if err := relay.SendMessage(updatesForRelay); err != nil {
-					newRoom.Logger.Errorw("could not send participant updates to relay", err)
+					newRoom.Logger.Errorw("Could not send participant updates to relay", err)
 				}
 			})
 		}
@@ -511,15 +510,15 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 	newRoom.OnBroadcastDataPacket(func(dp *livekit.DataPacket) {
 		dpData, err := proto.Marshal(dp)
 		if err != nil {
-			newRoom.Logger.Errorw("could not marshal data packet", err)
+			newRoom.Logger.Errorw("Could not marshal data packet", err)
 			return
 		}
 		if messageData, err := json.Marshal(relayMessage{DataPacket: dpData}); err != nil {
-			newRoom.Logger.Errorw("could not create data packet message for relay", err)
+			newRoom.Logger.Errorw("Could not create data packet message for relay", err)
 		} else {
 			outRelayCollection.ForEach(func(relay relay.Relay) {
 				if err := relay.SendMessage(messageData); err != nil {
-					newRoom.Logger.Errorw("could not send data packet to relay", err, "relayId", relay.ID())
+					newRoom.Logger.Errorw("Could not send data packet to relay", err, "relayId", relay.ID())
 				}
 			})
 		}
@@ -531,11 +530,11 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 		}
 
 		if speakersForRelay, err := getSpeakersPayloadForRelay(newRoom, speakers); err != nil {
-			newRoom.Logger.Errorw("could not create speakers payload for relay", err)
+			newRoom.Logger.Errorw("Could not create speakers payload for relay", err)
 		} else if len(speakersForRelay) > 0 {
 			outRelayCollection.ForEach(func(relay relay.Relay) {
 				if err := relay.SendMessage(speakersForRelay); err != nil {
-					newRoom.Logger.Errorw("could not send speakers to relay", err)
+					newRoom.Logger.Errorw("Could not send speakers to relay", err)
 				}
 			})
 		}
@@ -547,11 +546,11 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 		}
 
 		if connQualitiesForRelay, err := getConnQualitiesPayloadForRelay(newRoom, qualityInfos); err != nil {
-			newRoom.Logger.Errorw("could not create connection qualities payload for relay", err)
+			newRoom.Logger.Errorw("Could not create connection qualities payload for relay", err)
 		} else if len(connQualitiesForRelay) > 0 {
 			outRelayCollection.ForEach(func(relay relay.Relay) {
 				if err := relay.SendMessage(connQualitiesForRelay); err != nil {
-					newRoom.Logger.Errorw("could not send connection qualities to relay", err)
+					newRoom.Logger.Errorw("Could not send connection qualities to relay", err)
 				}
 			})
 		}
@@ -561,7 +560,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 	pendingAnswersMu := sync.Mutex{}
 
 	roomCommunicator.ForEachPeer(func(peerId string) {
-		logger.Infow("New p2p peer", "peerId", peerId)
+		logger.Infow("New p2p peer", "peerId", peerId, "roomKey", roomKey, "nodeID", r.currentNode.Id)
 		rel, err := pc.NewRelay(newRoom.Logger, &relay.RelayConfig{
 			ID:            peerId,
 			BufferFactory: newRoom.GetBufferFactory(),
@@ -572,20 +571,20 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 			Side:          "out",
 		})
 		if err != nil {
-			logger.Errorw("New out relay", err)
+			logger.Errorw("Failed to create out relay", err, "peerId", peerId, "roomKey", roomKey, "nodeID", r.currentNode.Id)
 			return
 		}
 
 		rel.OnReady(func() {
-			logger.Infow("Out relay is ready")
+			logger.Infow("Out relay is ready", "relayID", rel.ID(), "roomKey", roomKey, "nodeID", r.currentNode.Id)
 
 			// todo: combine messages
 			updates := rtc.ToProtoParticipants(newRoom.GetParticipants())
 			if len(updates) > 0 {
 				if updatesForRelay, err := getUpdatesPayloadForRelay(newRoom, updates); err != nil {
-					newRoom.Logger.Errorw("could not create participant update for relay", err)
+					newRoom.Logger.Errorw("failed to create participant update for relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
 				} else if err := rel.SendMessage(updatesForRelay); err != nil {
-					newRoom.Logger.Errorw("could not send participant updates to relay", err)
+					newRoom.Logger.Errorw("failed to send participant updates to relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
 				}
 			}
 
@@ -593,9 +592,9 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 			speakers := newRoom.GetActiveSpeakers()
 			if len(speakers) > 0 {
 				if speakersForRelay, err := getSpeakersPayloadForRelay(newRoom, speakers); err != nil {
-					newRoom.Logger.Errorw("could not create speakers for relay", err)
+					newRoom.Logger.Errorw("failed to create speakers payload for relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
 				} else if err := rel.SendMessage(speakersForRelay); err != nil {
-					newRoom.Logger.Errorw("could not send speakers to relay", err)
+					newRoom.Logger.Errorw("failed to send speakers to relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
 				}
 			}
 
@@ -603,9 +602,9 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 			connQualities := newRoom.GetConnectionInfos()
 			if len(connQualities) > 0 {
 				if connQualitiesForRelay, err := getConnQualitiesPayloadForRelay(newRoom, connQualities); err != nil {
-					newRoom.Logger.Errorw("could not create connection qualities for relay", err)
+					newRoom.Logger.Errorw("failed to create connection qualities payload for relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
 				} else if err := rel.SendMessage(connQualitiesForRelay); err != nil {
-					newRoom.Logger.Errorw("could not send speakers to relay", err)
+					newRoom.Logger.Errorw("failed to send connection qualities to relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
 				}
 			}
 
@@ -613,7 +612,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 		})
 
 		rel.OnConnectionStateChange(func(state webrtc.ICEConnectionState) {
-			logger.Infow("Out relay connection state changed", "state", state)
+			logger.Infow("Out relay connection state changed", "state", state.String(), "relayID", rel.ID(), "roomKey", roomKey, "nodeID", r.currentNode.Id)
 		})
 
 		signalFn := func(offer []byte) ([]byte, error) {
@@ -625,7 +624,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 				pendingAnswersMu.Unlock()
 				return nil, fmt.Errorf("cannot send message to room commmunicator: %w", sendErr)
 			}
-			logger.Infow("offer sent")
+			logger.Infow("Offer sent", "peerId", peerId, "relayID", rel.ID(), "roomKey", roomKey)
 			pendingAnswers[msgId] = answer
 			pendingAnswersMu.Unlock()
 
@@ -646,14 +645,14 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 			}
 		}
 		if err := rel.Offer(signalFn); err != nil {
-			logger.Errorw("Relay Offer", err)
+			logger.Errorw("Failed to create relay offer", err, "peerId", peerId, "relayID", rel.ID(), "roomKey", roomKey)
 		}
 	})
 
 	roomCommunicator.OnMessage(func(message interface{}, fromPeerId string, eventId string) {
 		replyTo, signal, err := unpackSignalPeerMessage(message)
 		if err != nil {
-			logger.Errorw("Unmarshal signal peer message", err)
+			logger.Errorw("Failed to unmarshal signal peer message", err, "fromPeerId", fromPeerId, "roomKey", roomKey)
 			return
 		}
 		if len(replyTo) > 0 {
@@ -675,38 +674,38 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 				Side:          "in",
 			})
 			if err != nil {
-				logger.Errorw("New in-relay", err)
+				logger.Errorw("Failed to create in-relay", err, "fromPeerId", fromPeerId, "roomKey", roomKey, "nodeID", r.currentNode.Id)
 				return
 			}
 
 			rel.OnReady(func() {
-				logger.Infow("In-relay is ready")
+				logger.Infow("In-relay is ready", "relayID", rel.ID(), "fromPeerId", fromPeerId, "roomKey", roomKey, "nodeID", r.currentNode.Id)
 				// TODO
 			})
 
 			rel.OnConnectionStateChange(func(state webrtc.ICEConnectionState) {
-				logger.Infow("In-relay connection state changed", "state", state)
+				logger.Infow("In-relay connection state changed", "state", state.String(), "relayID", rel.ID(), "fromPeerId", fromPeerId, "roomKey", roomKey, "nodeID", r.currentNode.Id)
 			})
 
 			answer, answerErr := rel.Answer(signal)
 			if answerErr != nil {
-				logger.Errorw("In-relay answer", answerErr)
+				logger.Errorw("Failed to create in-relay answer", answerErr, "relayID", rel.ID(), "fromPeerId", fromPeerId, "roomKey", roomKey)
 				return
 			}
 
 			if _, err := roomCommunicator.SendMessage(fromPeerId, packSignalPeerMessage(eventId, answer)); err != nil {
-				logger.Errorw("can not send answer", err)
+				logger.Errorw("Failed to send answer", err, "relayID", rel.ID(), "fromPeerId", fromPeerId, "roomKey", roomKey)
 				return
 			}
 
-			logger.Infow("answer sent")
+			logger.Infow("Answer sent", "relayID", rel.ID(), "fromPeerId", fromPeerId, "roomKey", roomKey)
 
 			rel.OnMessage(func(id uint64, payload []byte) {
-				logger.Debugw("Relay message received")
+				logger.Debugw("Relay message received", "relayID", rel.ID(), "fromPeerId", fromPeerId, "roomKey", roomKey)
 				var msg relayMessage
 
 				if err := json.Unmarshal(payload, &msg); err != nil {
-					newRoom.Logger.Errorw("could not unmarshal relay message", err)
+					newRoom.Logger.Errorw("Failed to unmarshal relay message", err, "relayID", rel.ID(), "fromPeerId", fromPeerId, "roomID", newRoom.ID())
 					return
 				}
 				if len(msg.Updates) > 0 {
@@ -718,15 +717,15 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 							continue
 						}
 						if err := op.SendParticipantUpdate(msg.Updates); err != nil {
-							newRoom.Logger.Errorw("could not send update to participant", err,
-								"participant", op.Identity(), "pID", op.ID())
+							newRoom.Logger.Errorw("Failed to send update to participant", err,
+								"participant", op.Identity(), "pID", op.ID(), "roomID", newRoom.ID())
 						}
 					}
 				}
 				if len(msg.DataPacket) > 0 {
 					dp := livekit.DataPacket{}
 					if err := proto.Unmarshal(msg.DataPacket, &dp); err != nil {
-						newRoom.Logger.Errorw("could not unmarshal relay data packet", err)
+						newRoom.Logger.Errorw("Failed to unmarshal relay data packet", err, "relayID", rel.ID(), "fromPeerId", fromPeerId, "roomID", newRoom.ID())
 						return
 					} else {
 						rtc.BroadcastDataPacketForRoom(newRoom, nil, &dp, newRoom.Logger)
@@ -741,10 +740,10 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 			})
 
 			rel.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, mid string, rid string, meta []byte) {
-				logger.Infow("Relay track published", "mid", mid, "rid", rid)
+				logger.Infow("Relay track published", "mid", mid, "rid", rid, "relayID", rel.ID(), "fromPeerId", fromPeerId, "roomKey", roomKey)
 				var addTrackSignal relay.AddTrackSignal
 				if err := json.Unmarshal(meta, &addTrackSignal); err != nil {
-					newRoom.Logger.Errorw("unmarshal err", err)
+					newRoom.Logger.Errorw("Failed to unmarshal add track signal", err, "relayID", rel.ID(), "fromPeerId", fromPeerId, "roomID", newRoom.ID())
 					return
 				}
 				onRelayAddTrack(newRoom, track, receiver, mid, rid, addTrackSignal)
@@ -831,14 +830,14 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomKey livekit.Room
 	if room == nil {
 		if _, ok := msg.Message.(*livekit.RTCNodeMessage_DeleteRoom); ok {
 			// special case of a non-RTC room e.g. room created but no participants joined
-			logger.Debugw("Deleting non-rtc room, loading from roomstore")
+			logger.Debugw("Deleting non-rtc room", "room", roomKey, "nodeID", r.currentNode.Id)
 			err := r.roomStore.DeleteRoom(ctx, roomKey)
 			if err != nil {
-				logger.Debugw("Error deleting non-rtc room", "err", err)
+				logger.Debugw("Failed to delete non-rtc room", "err", err, "room", roomKey, "nodeID", r.currentNode.Id)
 			}
 			return
 		} else {
-			logger.Warnw("Could not find room", nil, "room", roomKey)
+			logger.Warnw("Could not find room", nil, "room", roomKey, "nodeID", r.currentNode.Id)
 			return
 		}
 	}
@@ -860,17 +859,17 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomKey livekit.Room
 		if participant == nil {
 			return
 		}
-		pLogger.Infow("removing participant")
+		pLogger.Infow("Removing participant", "identity", identity, "roomKey", roomKey, "nodeID", r.currentNode.Id)
 		// remove participant by identity, any SID
 		room.RemoveParticipant(identity, "", types.ParticipantCloseReasonServiceRequestRemoveParticipant)
 	case *livekit.RTCNodeMessage_MuteTrack:
 		if participant == nil {
 			return
 		}
-		pLogger.Debugw("setting track muted",
-			"trackID", rm.MuteTrack.TrackSid, "muted", rm.MuteTrack.Muted)
+		pLogger.Debugw("Setting track muted",
+			"trackID", rm.MuteTrack.TrackSid, "muted", rm.MuteTrack.Muted, "participant", identity, "roomKey", roomKey)
 		if !rm.MuteTrack.Muted && !r.config.Room.EnableRemoteUnmute {
-			pLogger.Errorw("cannot unmute track, remote unmute is disabled", nil)
+			pLogger.Errorw("Cannot unmute track, remote unmute is disabled", nil, "trackID", rm.MuteTrack.TrackSid, "participant", identity, "roomKey", roomKey)
 			return
 		}
 		participant.SetTrackMuted(livekit.TrackID(rm.MuteTrack.TrackSid), rm.MuteTrack.Muted, true)
@@ -878,8 +877,8 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomKey livekit.Room
 		if participant == nil {
 			return
 		}
-		pLogger.Debugw("updating participant", "metadata", rm.UpdateParticipant.Metadata,
-			"permission", rm.UpdateParticipant.Permission)
+		pLogger.Debugw("Updating participant", "metadata", rm.UpdateParticipant.Metadata,
+			"permission", rm.UpdateParticipant.Permission, "identity", identity, "roomKey", roomKey)
 		if rm.UpdateParticipant.Name != "" {
 			participant.SetName(rm.UpdateParticipant.Name)
 		}
@@ -890,7 +889,7 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomKey livekit.Room
 			participant.SetPermission(rm.UpdateParticipant.Permission)
 		}
 	case *livekit.RTCNodeMessage_DeleteRoom:
-		room.Logger.Infow("deleting room")
+		room.Logger.Infow("Deleting room", "roomKey", roomKey, "roomID", room.ID(), "nodeID", r.currentNode.Id)
 		for _, p := range room.GetParticipants() {
 			_ = p.Close(true, types.ParticipantCloseReasonServiceRequestDeleteRoom)
 		}
@@ -899,7 +898,7 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomKey livekit.Room
 		if participant == nil {
 			return
 		}
-		pLogger.Debugw("updating participant subscriptions")
+		pLogger.Debugw("Updating participant subscriptions", "participant", identity, "roomKey", roomKey)
 		room.UpdateSubscriptions(
 			participant,
 			livekit.StringsAsTrackIDs(rm.UpdateSubscriptions.TrackSids),
@@ -907,7 +906,7 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomKey livekit.Room
 			rm.UpdateSubscriptions.Subscribe,
 		)
 	case *livekit.RTCNodeMessage_SendData:
-		pLogger.Debugw("api send data", "size", len(rm.SendData.Data))
+		pLogger.Debugw("API send data", "size", len(rm.SendData.Data), "kind", rm.SendData.Kind, "roomKey", roomKey)
 		up := &livekit.UserPacket{
 			Payload:         rm.SendData.Data,
 			DestinationSids: rm.SendData.DestinationSids,
@@ -915,7 +914,7 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomKey livekit.Room
 		}
 		room.SendDataPacket(up, rm.SendData.Kind)
 	case *livekit.RTCNodeMessage_UpdateRoomMetadata:
-		pLogger.Debugw("updating room")
+		pLogger.Debugw("Updating room metadata", "roomKey", roomKey, "roomID", room.ID())
 		room.SetMetadata(rm.UpdateRoomMetadata.Metadata)
 	}
 }
@@ -925,7 +924,7 @@ func (r *RoomManager) iceServersForRoom(ri *livekit.Room, tlsOnly bool) []*livek
 	rtcConf := r.config.RTC
 
 	if tlsOnly && r.config.TURN.TLSPort == 0 {
-		logger.Warnw("tls only enabled but no turn tls config", nil)
+		logger.Warnw("TLS only enabled but no TURN TLS config", nil, "room", ri.Name, "roomID", ri.Sid)
 		tlsOnly = false
 	}
 
@@ -1142,7 +1141,7 @@ func (r *RoomManager) onRelayParticipantUpdate(room *rtc.Room, rel relay.Relay, 
 				// SimTracks: nil,
 				// InitialVersion: 0,
 				Telemetry: r.telemetry,
-				PLIThrottleConfig: cfg.PLIThrottleConfig{
+				PLIThrottleConfig: config.PLIThrottleConfig{
 					LowQuality:  500 * time.Millisecond,
 					MidQuality:  time.Second,
 					HighQuality: time.Second,
@@ -1154,24 +1153,24 @@ func (r *RoomManager) onRelayParticipantUpdate(room *rtc.Room, rel relay.Relay, 
 				AutoSubscribe: false,
 			}
 			if err := room.Join(participant, nil, &opts, nil); err != nil {
-				logger.Errorw("Can not join remote participant", err, "Identity", participant.Identity())
+				logger.Errorw("Failed to join remote participant", err, "identity", participant.Identity(), "roomKey", room.Key(), "roomID", room.ID())
 				return
 			}
 			if err := r.roomStore.StoreParticipant(context.TODO(), room.Key(), participant.ToProto()); err != nil {
-				logger.Errorw("could not store remote participant", err)
+				logger.Errorw("Failed to store remote participant", err, "identity", participant.Identity(), "roomKey", room.Key(), "roomID", room.ID())
 			}
 
 			clientMeta := &livekit.AnalyticsClientMeta{Region: r.currentNode.Region, Node: r.currentNode.Id}
 			r.telemetry.ParticipantJoined(context.TODO(), room.ToProto(), participant.ToProto(), nil, clientMeta, true)
 			participant.OnClose(func(p types.LocalParticipant, m map[livekit.TrackID]livekit.ParticipantID) {
 				if err := r.roomStore.DeleteParticipant(context.TODO(), room.Key(), p.Identity()); err != nil {
-					logger.Errorw("could not delete remote participant", err)
+					logger.Errorw("Failed to delete remote participant", err, "identity", p.Identity(), "roomKey", room.Key(), "roomID", room.ID())
 				}
 				r.telemetry.ParticipantLeft(context.TODO(), room.ToProto(), p.ToProto(), true, p.ClaimGrants().WebHookURL)
 			})
-			logger.Infow("Remote participant joined", "Identity", participant.Identity())
+			logger.Infow("Remote participant joined", "identity", participant.Identity(), "roomKey", room.Key(), "roomID", room.ID())
 		} else if _, ok := participant.(*rtc.RelayedParticipantImpl); !ok {
-			logger.Errorw("Non relayed participant is already joined", nil, "Identity", participant.Identity())
+			logger.Errorw("Non-relayed participant is already joined", nil, "identity", participant.Identity(), "roomKey", room.Key(), "roomID", room.ID())
 			return
 		}
 		relayedParticipant := participant.(*rtc.RelayedParticipantImpl)
@@ -1207,7 +1206,7 @@ func onRelayAddTrack(room *rtc.Room, track *webrtc.TrackRemote, receiver *webrtc
 	if relayedParticipant, ok := room.GetParticipant(participantIdentity).(*rtc.RelayedParticipantImpl); ok {
 		relayedParticipant.OnMediaTrack(track, receiver, mid, rid, addTrackSignal.Track)
 	} else {
-		room.Logger.Errorw("unknown relayed participant", nil)
+		room.Logger.Errorw("Unknown relayed participant", nil, "identity", participantIdentity, "roomID", room.ID())
 	}
 }
 
