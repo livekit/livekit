@@ -45,6 +45,10 @@ func (c ClientInfo) isAndroid() bool {
 	return c.ClientInfo != nil && strings.EqualFold(c.ClientInfo.Os, "android")
 }
 
+func (c ClientInfo) isOBS() bool {
+	return c.ClientInfo != nil && strings.Contains(c.ClientInfo.Browser, "OBS")
+}
+
 func (c ClientInfo) SupportsAudioRED() bool {
 	return !c.isFirefox() && !c.isSafari()
 }

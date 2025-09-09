@@ -266,6 +266,12 @@ func (s SignallingCloseReason) String() string {
 }
 
 // ---------------------------------------------
+const (
+	ParticipantCloseKeyNormal = "normal"
+	ParticipantCloseKeyWHIP   = "whip"
+)
+
+// ---------------------------------------------
 
 //counterfeiter:generate . Participant
 type Participant interface {
@@ -470,7 +476,7 @@ type LocalParticipant interface {
 	OnDataPacket(callback func(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket))
 	OnDataMessage(callback func(LocalParticipant, []byte))
 	OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool))
-	OnClose(callback func(LocalParticipant))
+	AddOnClose(key string, callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
 	OnUpdateSubscriptions(func(
 		LocalParticipant,

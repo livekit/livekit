@@ -18,10 +18,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/pion/interceptor"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
+
+	"github.com/livekit/livekit-server/pkg/sfu/mime"
+	"github.com/livekit/protocol/livekit"
 )
 
 // Do a fuzzy find for a codec in the list of codecs
@@ -88,4 +90,8 @@ func ValidateRTPPacket(pkt *rtp.Packet, expectedPayloadType uint8, expectedSSRC 
 	}
 
 	return nil
+}
+
+func IsSimulcastMode(m livekit.VideoLayer_Mode) bool {
+	return m == livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM || m == livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM_INCOMPLETE_RTCP_SR
 }
