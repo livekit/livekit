@@ -163,7 +163,7 @@ func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([
 
 	unmatchVideos, err := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "video")
 	if err != nil {
-		p.pubLogger.Warnw("could not get unmatch audios", err)
+		p.pubLogger.Warnw("could not get unmatch videos", err)
 		return nil, nil
 	}
 
@@ -172,6 +172,7 @@ func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([
 	return unmatchAudios, unmatchVideos
 }
 
+/* RAJA-REMOVE
 func (p *ParticipantImpl) setCodecPreferencesForPublisher(
 	parsedOffer *sdp.SessionDescription,
 	unmatchAudios []*sdp.MediaDescription,
@@ -369,6 +370,154 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 
 	return parsedOffer, unprocessed
 }
+*/
+
+func (p *ParticipantImpl) setCodecPreferencesForPublisher(
+	parsedOffer *sdp.SessionDescription,
+	unmatchAudios []*sdp.MediaDescription,
+	unmatchVideos []*sdp.MediaDescription,
+) {
+	unprocessedUnmatchAudios := p.setCodecPreferencesForPublisherMedia(
+		parsedOffer,
+		unmatchAudios,
+		livekit.TrackType_AUDIO,
+	)
+	p.setCodecPreferencesOpusRedForPublisher(parsedOffer, unprocessedUnmatchAudios)
+	_ = p.setCodecPreferencesForPublisherMedia(
+		parsedOffer,
+		unmatchVideos,
+		livekit.TrackType_VIDEO,
+	)
+}
+
+func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
+	parsedOffer *sdp.SessionDescription,
+	unmatches []*sdp.MediaDescription,
+	trackType livekit.TrackType,
+) []*sdp.MediaDescription {
+	unprocessed := make([]*sdp.MediaDescription, 0, len(unmatches))
+	for _, unmatch := range unmatches {
+		var ti *livekit.TrackInfo
+		var mimeType string
+
+		mid := lksdp.GetMidValue(unmatch)
+		if mid == "" {
+			unprocessed = append(unprocessed, unmatch)
+			continue
+		}
+		p.params.Logger.Debugw("RAJA got mid", "mid", mid) // REMOVE
+		transceiver := p.TransportManager.GetPublisherRTPTransceiver(mid)
+		if transceiver == nil {
+			unprocessed = append(unprocessed, unmatch)
+			continue
+		}
+		p.params.Logger.Debugw("RAJA got transceiver", "mid", transceiver.Mid()) // REMOVE
+
+		streamID, ok := lksdp.ExtractStreamID(unmatch)
+		if !ok {
+			unprocessed = append(unprocessed, unmatch)
+			continue
+		}
+
+		p.pendingTracksLock.RLock()
+		mt := p.getPublishedTrackBySdpCid(streamID)
+		if mt != nil {
+			ti = mt.ToProto()
+		} else {
+			_, ti, _, _, _ = p.getPendingTrack(streamID, trackType, false)
+		}
+		p.pendingTracksLock.RUnlock()
+
+		if ti == nil {
+			unprocessed = append(unprocessed, unmatch)
+			continue
+		}
+
+		for _, c := range ti.Codecs {
+			if c.Cid == streamID || c.SdpCid == streamID {
+				mimeType = c.MimeType
+				break
+			}
+		}
+		if mimeType == "" && len(ti.Codecs) > 0 {
+			mimeType = ti.Codecs[0].MimeType
+		}
+
+		if mimeType == "" {
+			unprocessed = append(unprocessed, unmatch)
+			continue
+		}
+
+		configureReceiverCodecs(
+			transceiver,
+			mimeType, p.params.ClientInfo.ComplyWithCodecOrderInSDPAnswer(),
+		)
+	}
+
+	return unprocessed
+}
+
+func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(
+	parsedOffer *sdp.SessionDescription,
+	unmatchAudios []*sdp.MediaDescription,
+) {
+	for _, unmatchAudio := range unmatchAudios {
+		mid := lksdp.GetMidValue(unmatchAudio)
+		if mid == "" {
+			continue
+		}
+		p.params.Logger.Debugw("RAJA opus red got mid", "mid", mid) // REMOVE
+		transceiver := p.TransportManager.GetPublisherRTPTransceiver(mid)
+		if transceiver == nil {
+			continue
+		}
+		p.params.Logger.Debugw("RAJA opus red got transceiver", "mid", transceiver.Mid()) // REMOVE
+
+		streamID, ok := lksdp.ExtractStreamID(unmatchAudio)
+		if !ok {
+			continue
+		}
+
+		p.pendingTracksLock.RLock()
+		_, ti, _, _, _ := p.getPendingTrack(streamID, livekit.TrackType_AUDIO, false)
+		p.pendingTracksLock.RUnlock()
+		if ti == nil {
+			continue
+		}
+
+		codecs, err := lksdp.CodecsFromMediaDescription(unmatchAudio)
+		if err != nil {
+			p.pubLogger.Errorw(
+				"extract codecs from media section failed", err,
+				"media", unmatchAudio,
+				"parsedOffer", parsedOffer,
+			)
+			continue
+		}
+
+		var opusPayload uint8
+		for _, codec := range codecs {
+			if mime.IsMimeTypeCodecStringOpus(codec.Name) {
+				opusPayload = codec.PayloadType
+				break
+			}
+		}
+		if opusPayload == 0 {
+			continue
+		}
+
+		// if RED is disabled for this track, don't prefer RED codec in offer
+		for _, codec := range codecs {
+			// codec contain opus/red
+			if !ti.DisableRed &&
+				mime.IsMimeTypeCodecStringRED(codec.Name) &&
+				strings.Contains(codec.Fmtp, strconv.FormatInt(int64(opusPayload), 10)) {
+				configureReceiverCodecs(transceiver, "audio/red", true)
+				break
+			}
+		}
+	}
+}
 
 // configure publisher answer for audio track's dtx and stereo settings
 func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescription) webrtc.SessionDescription {
@@ -419,7 +568,7 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 				}
 			}
 
-			if ti == nil || (ti.DisableDtx && !ti.Stereo) {
+			if ti == nil || (ti.DisableDtx && !slices.Contains(ti.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO)) {
 				// no need to configure
 				continue
 			}
