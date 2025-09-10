@@ -163,7 +163,7 @@ func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([
 
 	unmatchVideos, err := p.TransportManager.GetUnmatchMediaForOffer(parsedOffer, "video")
 	if err != nil {
-		p.pubLogger.Warnw("could not get unmatch audios", err)
+		p.pubLogger.Warnw("could not get unmatch videos", err)
 		return nil, nil
 	}
 
@@ -176,107 +176,40 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisher(
 	parsedOffer *sdp.SessionDescription,
 	unmatchAudios []*sdp.MediaDescription,
 	unmatchVideos []*sdp.MediaDescription,
-) *sdp.SessionDescription {
-	parsedOffer, unprocessedUnmatchAudios := p.setCodecPreferencesForPublisherMedia(
+) {
+	unprocessedUnmatchAudios := p.setCodecPreferencesForPublisherMedia(
 		parsedOffer,
 		unmatchAudios,
 		livekit.TrackType_AUDIO,
 	)
-	parsedOffer = p.setCodecPreferencesOpusRedForPublisher(parsedOffer, unprocessedUnmatchAudios)
-	parsedOffer, _ = p.setCodecPreferencesForPublisherMedia(
+	p.setCodecPreferencesOpusRedForPublisher(parsedOffer, unprocessedUnmatchAudios)
+	_ = p.setCodecPreferencesForPublisherMedia(
 		parsedOffer,
 		unmatchVideos,
 		livekit.TrackType_VIDEO,
 	)
-	return parsedOffer
-}
-
-func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(
-	parsedOffer *sdp.SessionDescription,
-	unmatchAudios []*sdp.MediaDescription,
-) *sdp.SessionDescription {
-	for _, unmatchAudio := range unmatchAudios {
-		streamID, ok := lksdp.ExtractStreamID(unmatchAudio)
-		if !ok {
-			continue
-		}
-
-		p.pendingTracksLock.RLock()
-		_, ti, _, _, _ := p.getPendingTrack(streamID, livekit.TrackType_AUDIO, false)
-		p.pendingTracksLock.RUnlock()
-		if ti == nil {
-			continue
-		}
-
-		codecs, err := lksdp.CodecsFromMediaDescription(unmatchAudio)
-		if err != nil {
-			p.pubLogger.Errorw(
-				"extract codecs from media section failed", err,
-				"media", unmatchAudio,
-				"parsedOffer", parsedOffer,
-			)
-			continue
-		}
-
-		var opusPayload uint8
-		for _, codec := range codecs {
-			if mime.IsMimeTypeCodecStringOpus(codec.Name) {
-				opusPayload = codec.PayloadType
-				break
-			}
-		}
-		if opusPayload == 0 {
-			continue
-		}
-
-		// if RED is disabled for this track, don't prefer RED codec in offer
-		var preferredCodecs, leftCodecs []string
-		for _, codec := range codecs {
-			// codec contain opus/red
-			if !ti.DisableRed && mime.IsMimeTypeCodecStringRED(codec.Name) && strings.Contains(codec.Fmtp, strconv.FormatInt(int64(opusPayload), 10)) {
-				preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
-			} else {
-				leftCodecs = append(leftCodecs, strconv.FormatInt(int64(codec.PayloadType), 10))
-			}
-		}
-
-		// ensure nack enabled for audio in publisher offer
-		var nackFound bool
-		for _, attr := range unmatchAudio.Attributes {
-			if attr.Key == "rtcp-fb" && strings.Contains(attr.Value, fmt.Sprintf("%d nack", opusPayload)) {
-				nackFound = true
-				break
-			}
-		}
-		if !nackFound {
-			unmatchAudio.Attributes = append(unmatchAudio.Attributes, sdp.Attribute{
-				Key:   "rtcp-fb",
-				Value: fmt.Sprintf("%d nack", opusPayload),
-			})
-		}
-
-		// no opus/red found
-		if len(preferredCodecs) == 0 {
-			continue
-		}
-
-		unmatchAudio.MediaName.Formats = append(unmatchAudio.MediaName.Formats[:0], preferredCodecs...)
-		unmatchAudio.MediaName.Formats = append(unmatchAudio.MediaName.Formats, leftCodecs...)
-	}
-
-	return parsedOffer
 }
 
 func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 	parsedOffer *sdp.SessionDescription,
 	unmatches []*sdp.MediaDescription,
 	trackType livekit.TrackType,
-) (*sdp.SessionDescription, []*sdp.MediaDescription) {
+) []*sdp.MediaDescription {
 	unprocessed := make([]*sdp.MediaDescription, 0, len(unmatches))
-	// unmatched media is pending for publish, set codec preference
 	for _, unmatch := range unmatches {
 		var ti *livekit.TrackInfo
 		var mimeType string
+
+		mid := lksdp.GetMidValue(unmatch)
+		if mid == "" {
+			unprocessed = append(unprocessed, unmatch)
+			continue
+		}
+		transceiver := p.TransportManager.GetPublisherRTPTransceiver(mid)
+		if transceiver == nil {
+			unprocessed = append(unprocessed, unmatch)
+			continue
+		}
 
 		streamID, ok := lksdp.ExtractStreamID(unmatch)
 		if !ok {
@@ -313,61 +246,74 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 			continue
 		}
 
-		codecs, err := lksdp.CodecsFromMediaDescription(unmatch)
+		configureReceiverCodecs(
+			transceiver,
+			mimeType,
+			p.params.ClientInfo.ComplyWithCodecOrderInSDPAnswer(),
+		)
+	}
+
+	return unprocessed
+}
+
+func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(
+	parsedOffer *sdp.SessionDescription,
+	unmatchAudios []*sdp.MediaDescription,
+) {
+	for _, unmatchAudio := range unmatchAudios {
+		mid := lksdp.GetMidValue(unmatchAudio)
+		if mid == "" {
+			continue
+		}
+		transceiver := p.TransportManager.GetPublisherRTPTransceiver(mid)
+		if transceiver == nil {
+			continue
+		}
+
+		streamID, ok := lksdp.ExtractStreamID(unmatchAudio)
+		if !ok {
+			continue
+		}
+
+		p.pendingTracksLock.RLock()
+		_, ti, _, _, _ := p.getPendingTrack(streamID, livekit.TrackType_AUDIO, false)
+		p.pendingTracksLock.RUnlock()
+		if ti == nil {
+			continue
+		}
+
+		codecs, err := lksdp.CodecsFromMediaDescription(unmatchAudio)
 		if err != nil {
 			p.pubLogger.Errorw(
 				"extract codecs from media section failed", err,
-				"media", unmatch,
+				"media", unmatchAudio,
 				"parsedOffer", parsedOffer,
 			)
-			unprocessed = append(unprocessed, unmatch)
 			continue
 		}
 
-		var codecIdx int
-		var preferredCodecs, leftCodecs []string
-		for idx, c := range codecs {
-			if mime.GetMimeTypeCodec(mimeType) == mime.NormalizeMimeTypeCodec(c.Name) {
-				preferredCodecs = append(preferredCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
-				codecIdx = idx
-			} else {
-				leftCodecs = append(leftCodecs, strconv.FormatInt(int64(c.PayloadType), 10))
+		var opusPayload uint8
+		for _, codec := range codecs {
+			if mime.IsMimeTypeCodecStringOpus(codec.Name) {
+				opusPayload = codec.PayloadType
+				break
 			}
 		}
-
-		// could not find preferred mime in the offer
-		if len(preferredCodecs) == 0 {
-			unprocessed = append(unprocessed, unmatch)
+		if opusPayload == 0 {
 			continue
 		}
 
-		unmatch.MediaName.Formats = append(unmatch.MediaName.Formats[:0], preferredCodecs...)
-		if trackType == livekit.TrackType_VIDEO {
-			// if the client don't comply with codec order in SDP answer, only keep preferred codecs to force client to use it
-			if p.params.ClientInfo.ComplyWithCodecOrderInSDPAnswer() {
-				unmatch.MediaName.Formats = append(unmatch.MediaName.Formats, leftCodecs...)
+		// if RED is disabled for this track, don't prefer RED codec in offer
+		for _, codec := range codecs {
+			// codec contain opus/red
+			if !ti.DisableRed &&
+				mime.IsMimeTypeCodecStringRED(codec.Name) &&
+				strings.Contains(codec.Fmtp, strconv.FormatInt(int64(opusPayload), 10)) {
+				configureReceiverCodecs(transceiver, "audio/red", true)
+				break
 			}
-		} else {
-			// ensure nack enabled for audio in publisher offer
-			var nackFound bool
-			for _, attr := range unmatch.Attributes {
-				if attr.Key == "rtcp-fb" && strings.Contains(attr.Value, fmt.Sprintf("%d nack", codecs[codecIdx].PayloadType)) {
-					nackFound = true
-					break
-				}
-			}
-			if !nackFound {
-				unmatch.Attributes = append(unmatch.Attributes, sdp.Attribute{
-					Key:   "rtcp-fb",
-					Value: fmt.Sprintf("%d nack", codecs[codecIdx].PayloadType),
-				})
-			}
-
-			unmatch.MediaName.Formats = append(unmatch.MediaName.Formats, leftCodecs...)
 		}
 	}
-
-	return parsedOffer, unprocessed
 }
 
 // configure publisher answer for audio track's dtx and stereo settings
@@ -419,7 +365,7 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 				}
 			}
 
-			if ti == nil || (ti.DisableDtx && !ti.Stereo) {
+			if ti == nil || (ti.DisableDtx && !slices.Contains(ti.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO)) {
 				// no need to configure
 				continue
 			}

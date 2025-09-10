@@ -956,9 +956,9 @@ func (t *PCTransport) AddTrack(
 		return
 	}
 
-	configureTransceiverCodecs(transceiver, enabledCodecs, rtcpFeedbackConfig, !t.params.IsOfferer)
+	configureSenderCodecs(transceiver, enabledCodecs, rtcpFeedbackConfig, !t.params.IsOfferer)
 	if trackLocal.Kind() == webrtc.RTPCodecTypeAudio {
-		configureAudioTransceiver(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
+		configureSenderAudio(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
 	}
 	t.adjustNumOutstandingMedia(transceiver)
 	return
@@ -981,9 +981,9 @@ func (t *PCTransport) AddTransceiverFromTrack(
 		return
 	}
 
-	configureTransceiverCodecs(transceiver, enabledCodecs, rtcpFeedbackConfig, !t.params.IsOfferer)
+	configureSenderCodecs(transceiver, enabledCodecs, rtcpFeedbackConfig, !t.params.IsOfferer)
 	if trackLocal.Kind() == webrtc.RTPCodecTypeAudio {
-		configureAudioTransceiver(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
+		configureSenderAudio(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
 	}
 	t.adjustNumOutstandingMedia(transceiver)
 	return
@@ -1020,6 +1020,16 @@ func (t *PCTransport) CurrentRemoteDescription() *webrtc.SessionDescription {
 	return &rd
 }
 
+func (t *PCTransport) PendingRemoteDescription() *webrtc.SessionDescription {
+	prd := t.pc.PendingRemoteDescription()
+	if prd == nil {
+		return nil
+	}
+
+	rd := *prd
+	return &rd
+}
+
 func (t *PCTransport) GetMid(rtpReceiver *webrtc.RTPReceiver) string {
 	for _, tr := range t.pc.GetTransceivers() {
 		if tr.Receiver() == rtpReceiver {
@@ -1028,6 +1038,16 @@ func (t *PCTransport) GetMid(rtpReceiver *webrtc.RTPReceiver) string {
 	}
 
 	return ""
+}
+
+func (t *PCTransport) GetRTPTransceiver(mid string) *webrtc.RTPTransceiver {
+	for _, tr := range t.pc.GetTransceivers() {
+		if tr.Mid() == mid {
+			return tr
+		}
+	}
+
+	return nil
 }
 
 func (t *PCTransport) GetRTPReceiver(mid string) *webrtc.RTPReceiver {
@@ -2124,6 +2144,7 @@ func (t *PCTransport) handleICEGatheringCompleteAnswerer() error {
 	if err := t.setRemoteDescription(offer); err != nil {
 		return err
 	}
+	t.params.Handler.OnSetRemoteDescriptionOffer()
 
 	return t.createAndSendAnswer()
 }
@@ -2643,6 +2664,8 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, o
 	if err := t.setRemoteDescription(*sd); err != nil {
 		return err
 	}
+	t.params.Handler.OnSetRemoteDescriptionOffer()
+
 	rtxRepairs := nonSimulcastRTXRepairsFromSDP(parsed, t.params.Logger)
 	if len(rtxRepairs) > 0 {
 		t.params.Logger.Debugw("rtx pairs found from sdp", "ssrcs", rtxRepairs)
@@ -2805,7 +2828,7 @@ func (t *PCTransport) outputAndClearICEStats() {
 // configure subscriber transceiver for audio stereo and nack
 // pion doesn't support per transciver codec configuration, so the nack of this session will be disabled
 // forever once it is first disabled by a transceiver.
-func configureAudioTransceiver(tr *webrtc.RTPTransceiver, stereo bool, nack bool) {
+func configureSenderAudio(tr *webrtc.RTPTransceiver, stereo bool, nack bool) {
 	sender := tr.Sender()
 	if sender == nil {
 		return
@@ -2834,13 +2857,14 @@ func configureAudioTransceiver(tr *webrtc.RTPTransceiver, stereo bool, nack bool
 	tr.SetCodecPreferences(configCodecs)
 }
 
-// In single peer connection mode, set up enebled codecs,
-// the config provides config of direction, for publisher peer connection, it is publish enabled codecs
-// and for subscriber peer connection, it is subscribe enabled codecs.
+// In single peer connection mode, set up enebled codecs for sender.
+// The config provides config of direction.
+// For publisher peer connection those are publish enabled codecs
+// and for subscriber peer connection those are subscribe enabled codecs.
 //
 // But, in single peer connection mode, if setting up a transceiver where the media is
 // flowing in the other direction, the other direction codec config needs to be set.
-func configureTransceiverCodecs(
+func configureSenderCodecs(
 	tr *webrtc.RTPTransceiver,
 	enabledCodecs []*livekit.Codec,
 	rtcpFeedbackConfig RTCPFeedbackConfig,
@@ -2862,6 +2886,54 @@ func configureTransceiverCodecs(
 		filterOutH264HighProfile,
 	)
 	tr.SetCodecPreferences(filteredCodecs)
+}
+
+func configureReceiverCodecs(
+	tr *webrtc.RTPTransceiver,
+	preferredMimeType string,
+	compliesWithCodecOrderInSDPAnswer bool,
+) {
+	receiver := tr.Receiver()
+	if receiver == nil {
+		return
+	}
+
+	var preferredCodecs, leftCodecs []webrtc.RTPCodecParameters
+	for _, c := range receiver.GetParameters().Codecs {
+		if tr.Kind() == webrtc.RTPCodecTypeAudio {
+			nackFound := false
+			for _, fb := range c.RTCPFeedback {
+				if fb.Type == webrtc.TypeRTCPFBNACK {
+					nackFound = true
+					break
+				}
+			}
+
+			if !nackFound {
+				c.RTCPFeedback = append(c.RTCPFeedback, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBNACK})
+			}
+		}
+
+		if mime.GetMimeTypeCodec(preferredMimeType) == mime.GetMimeTypeCodec(c.RTPCodecCapability.MimeType) {
+			preferredCodecs = append(preferredCodecs, c)
+		} else {
+			leftCodecs = append(leftCodecs, c)
+		}
+	}
+	if len(preferredCodecs) == 0 {
+		return
+	}
+
+	reorderedCodecs := append([]webrtc.RTPCodecParameters{}, preferredCodecs...)
+	if tr.Kind() == webrtc.RTPCodecTypeVideo {
+		// if the client don't comply with codec order in SDP answer, only keep preferred codecs to force client to use it
+		if compliesWithCodecOrderInSDPAnswer {
+			reorderedCodecs = append(reorderedCodecs, leftCodecs...)
+		}
+	} else {
+		reorderedCodecs = append(reorderedCodecs, leftCodecs...)
+	}
+	tr.SetCodecPreferences(reorderedCodecs)
 }
 
 func nonSimulcastRTXRepairsFromSDP(s *sdp.SessionDescription, logger logger.Logger) map[uint32]uint32 {
