@@ -4167,7 +4167,6 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 	if responseTimeout <= 0 {
 		responseTimeout = 10000
 	}
-	responseTimeoutWithoutRTT := max(0, responseTimeout-uint32(sutils.RpcMaxRoundTripLatency))
 
 	go func() {
 		if len([]byte(req.GetPayload())) > sutils.RpcMaxPayloadBytes {
@@ -4200,6 +4199,15 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 			}
 		})
 
+		stopTimers := func(ack bool, response bool) {
+			if ack {
+				ackTimer.Stop()
+			}
+			if response {
+				responseTimer.Stop()
+			}
+		}
+
 		rpcRequest := &livekit.DataPacket{
 			Kind: livekit.DataPacket_RELIABLE,
 			Value: &livekit.DataPacket_RpcRequest{
@@ -4207,15 +4215,14 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 					Id:                id,
 					Method:            req.GetMethod(),
 					Payload:           req.GetPayload(),
-					ResponseTimeoutMs: responseTimeoutWithoutRTT,
+					ResponseTimeoutMs: responseTimeout - uint32(sutils.RpcMaxRoundTripLatency),
 					Version:           1,
 				},
 			},
 		}
 		data, err := proto.Marshal(rpcRequest)
 		if err != nil {
-			ackTimer.Stop()
-			responseTimer.Stop()
+			stopTimers(true, true)
 			errorCh <- err
 			return
 		}
@@ -4223,8 +4230,7 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 		// using RPC ID as the unique ID for server to identify the response
 		err = p.SendDataMessage(livekit.DataPacket_RELIABLE, data, livekit.ParticipantID(id), 0)
 		if err != nil {
-			ackTimer.Stop()
-			responseTimer.Stop()
+			stopTimers(true, true)
 			errorCh <- err
 			return
 		}
@@ -4232,16 +4238,16 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 		p.rpcLock.Lock()
 		p.rpcPendingAcks[id] = &sutils.RpcPendingAckHandler{
 			Resolve: func() {
-				ackTimer.Stop()
+				stopTimers(true, false)
 			},
 			ParticipantIdentity: req.GetDestinationIdentity(),
 		}
 		p.rpcPendingResponses[id] = &sutils.RpcPendingResponseHandler{
 			Resolve: func(payload string, error *sutils.RpcError) {
-				responseTimer.Stop()
+				stopTimers(false, true)
 				if _, ok := p.rpcPendingAcks[id]; ok {
 					p.rpcPendingAcks[id].Resolve()
-					ackTimer.Stop()
+					stopTimers(true, false)
 				}
 
 				if error != nil {
