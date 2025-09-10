@@ -87,6 +87,10 @@ type FakeHandler struct {
 	onOfferReturnsOnCall map[int]struct {
 		result1 error
 	}
+	OnSetRemoteDescriptionOfferStub        func()
+	onSetRemoteDescriptionOfferMutex       sync.RWMutex
+	onSetRemoteDescriptionOfferArgsForCall []struct {
+	}
 	OnStreamStateChangeStub        func(*streamallocator.StreamStateUpdate) error
 	onStreamStateChangeMutex       sync.RWMutex
 	onStreamStateChangeArgsForCall []struct {
@@ -548,6 +552,30 @@ func (fake *FakeHandler) OnOfferReturnsOnCall(i int, result1 error) {
 	fake.onOfferReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
+}
+
+func (fake *FakeHandler) OnSetRemoteDescriptionOffer() {
+	fake.onSetRemoteDescriptionOfferMutex.Lock()
+	fake.onSetRemoteDescriptionOfferArgsForCall = append(fake.onSetRemoteDescriptionOfferArgsForCall, struct {
+	}{})
+	stub := fake.OnSetRemoteDescriptionOfferStub
+	fake.recordInvocation("OnSetRemoteDescriptionOffer", []interface{}{})
+	fake.onSetRemoteDescriptionOfferMutex.Unlock()
+	if stub != nil {
+		fake.OnSetRemoteDescriptionOfferStub()
+	}
+}
+
+func (fake *FakeHandler) OnSetRemoteDescriptionOfferCallCount() int {
+	fake.onSetRemoteDescriptionOfferMutex.RLock()
+	defer fake.onSetRemoteDescriptionOfferMutex.RUnlock()
+	return len(fake.onSetRemoteDescriptionOfferArgsForCall)
+}
+
+func (fake *FakeHandler) OnSetRemoteDescriptionOfferCalls(stub func()) {
+	fake.onSetRemoteDescriptionOfferMutex.Lock()
+	defer fake.onSetRemoteDescriptionOfferMutex.Unlock()
+	fake.OnSetRemoteDescriptionOfferStub = stub
 }
 
 func (fake *FakeHandler) OnStreamStateChange(arg1 *streamallocator.StreamStateUpdate) error {
