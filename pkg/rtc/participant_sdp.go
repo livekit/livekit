@@ -205,13 +205,11 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 			unprocessed = append(unprocessed, unmatch)
 			continue
 		}
-		p.params.Logger.Debugw("RAJA got mid", "mid", mid) // REMOVE
 		transceiver := p.TransportManager.GetPublisherRTPTransceiver(mid)
 		if transceiver == nil {
 			unprocessed = append(unprocessed, unmatch)
 			continue
 		}
-		p.params.Logger.Debugw("RAJA got transceiver", "mid", transceiver.Mid()) // REMOVE
 
 		streamID, ok := lksdp.ExtractStreamID(unmatch)
 		if !ok {
@@ -267,12 +265,10 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(
 		if mid == "" {
 			continue
 		}
-		p.params.Logger.Debugw("RAJA opus red got mid", "mid", mid) // REMOVE
 		transceiver := p.TransportManager.GetPublisherRTPTransceiver(mid)
 		if transceiver == nil {
 			continue
 		}
-		p.params.Logger.Debugw("RAJA opus red got transceiver", "mid", transceiver.Mid()) // REMOVE
 
 		streamID, ok := lksdp.ExtractStreamID(unmatchAudio)
 		if !ok {
