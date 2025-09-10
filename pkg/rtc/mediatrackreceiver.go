@@ -578,6 +578,7 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 		UpstreamCodecs: potentialCodecs,
 		Logger:         tLogger,
 		DisableRed:     t.TrackInfo().GetDisableRed() || !t.params.AudioConfig.ActiveREDEncoding,
+		IsEncrypted:    t.IsEncrypted(),
 	})
 	subID := sub.ID()
 	subTrack, err := t.MediaTrackSubscriptions.AddSubscriber(sub, wr)

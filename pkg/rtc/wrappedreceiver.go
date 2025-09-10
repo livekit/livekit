@@ -40,6 +40,7 @@ type WrappedReceiverParams struct {
 	UpstreamCodecs []webrtc.RTPCodecParameters
 	Logger         logger.Logger
 	DisableRed     bool
+	IsEncrypted    bool
 }
 
 type WrappedReceiver struct {
@@ -59,7 +60,7 @@ func NewWrappedReceiver(params WrappedReceiverParams) *WrappedReceiver {
 	}
 
 	codecs := params.UpstreamCodecs
-	if len(codecs) == 1 {
+	if len(codecs) == 1 && !params.IsEncrypted {
 		normalizedMimeType := mime.NormalizeMimeType(codecs[0].MimeType)
 		if normalizedMimeType == mime.MimeTypeRED {
 			// if upstream is opus/red, then add opus to match clients that don't support red
@@ -98,13 +99,17 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) boo
 		if receiverMimeType == codecMimeType {
 			trackReceiver = receiver
 			break
-		} else if receiverMimeType == mime.MimeTypeRED && codecMimeType == mime.MimeTypeOpus {
-			// audio opus/red can match opus only
-			trackReceiver = receiver.GetPrimaryReceiverForRed()
-			break
-		} else if receiverMimeType == mime.MimeTypeOpus && codecMimeType == mime.MimeTypeRED {
-			trackReceiver = receiver.GetRedReceiver()
-			break
+		}
+
+		if !r.params.IsEncrypted {
+			if receiverMimeType == mime.MimeTypeRED && codecMimeType == mime.MimeTypeOpus {
+				// audio opus/red can match opus only
+				trackReceiver = receiver.GetPrimaryReceiverForRed()
+				break
+			} else if receiverMimeType == mime.MimeTypeOpus && codecMimeType == mime.MimeTypeRED {
+				trackReceiver = receiver.GetRedReceiver()
+				break
+			}
 		}
 	}
 	if trackReceiver == nil {

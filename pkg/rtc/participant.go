@@ -1260,7 +1260,9 @@ func (p *ParticipantImpl) HandleOffer(sd *livekit.SessionDescription) error {
 	}
 
 	unmatchAudios, unmatchVideos := p.populateSdpCid(parsedOffer)
+	// p.params.Logger.Infow("RAJA unmatch", "videos", unmatchVideos) // REMOVE
 	parsedOffer = p.setCodecPreferencesForPublisher(parsedOffer, unmatchAudios, unmatchVideos)
+	// p.params.Logger.Infow("RAJA parsed offer", "offer", parsedOffer) // REMOVE
 	p.updateRidsFromSDP(parsedOffer, unmatchVideos)
 
 	// put together munged offer after setting codec preferences
@@ -1274,6 +1276,7 @@ func (p *ParticipantImpl) HandleOffer(sd *livekit.SessionDescription) error {
 		Type: offer.Type,
 		SDP:  string(bytes),
 	}
+	// p.params.Logger.Infow("RAJA munged offer", "offer", offer) // REMOVE
 
 	err = p.TransportManager.HandleOffer(offer, offerId, p.MigrateState() == types.MigrateStateInit)
 	if err != nil {

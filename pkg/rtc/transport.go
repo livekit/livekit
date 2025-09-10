@@ -308,7 +308,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	}
 
 	se := params.Config.SettingEngine
-	se.DisableMediaEngineCopy(true)
+	//se.DisableMediaEngineCopy(true)
 
 	// Change elliptic curve to improve connectivity
 	// https://github.com/pion/dtls/pull/474
@@ -479,6 +479,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		webrtc.WithInterceptorRegistry(ir),
 	)
 	pc, err := api.NewPeerConnection(params.Config.Configuration)
+	params.Logger.Infow("RAJA created peer conection", "pc", fmt.Sprintf("%p", pc)) // REMOVE
 	return pc, me, err
 }
 

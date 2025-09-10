@@ -437,6 +437,7 @@ func (t *SubscribedTrack) OnCodecNegotiated(codec webrtc.RTPCodecCapability) {
 	}
 
 	if t.params.OnSubscriberMaxQualityChange != nil {
+		// RAJA-TODO: probably do a separate method for audio simulcast, maybe a different protocol message?
 		go func() {
 			mimeType := mime.NormalizeMimeType(codec.MimeType)
 			spatial := buffer.GetSpatialLayerForVideoQuality(

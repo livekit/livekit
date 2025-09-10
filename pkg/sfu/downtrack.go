@@ -542,8 +542,8 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.payloadTypeRTX.Store(uint32(utils.FindRTXPayloadType(codec.PayloadType, d.negotiatedCodecParameters)))
 		logFields = append(
 			logFields,
-			"payloadType", d.payloadType,
-			"payloadTypeRTX", d.payloadTypeRTX,
+			"payloadType", d.payloadType.Load(),
+			"payloadTypeRTX", d.payloadTypeRTX.Load(),
 			"codecParameters", d.negotiatedCodecParameters,
 		)
 		d.params.Logger.Debugw("DownTrack.Bind", logFields...)
