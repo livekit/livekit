@@ -250,7 +250,8 @@ func (p *ParticipantImpl) setCodecPreferencesForPublisherMedia(
 
 		configureReceiverCodecs(
 			transceiver,
-			mimeType, p.params.ClientInfo.ComplyWithCodecOrderInSDPAnswer(),
+			mimeType,
+			p.params.ClientInfo.ComplyWithCodecOrderInSDPAnswer(),
 		)
 	}
 

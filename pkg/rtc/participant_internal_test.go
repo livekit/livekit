@@ -625,8 +625,12 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 	participant.SetMigrateState(types.MigrateStateComplete)
 
 	me := webrtc.MediaEngine{}
-	me.RegisterDefaultCodecs()
-	require.NoError(t, me.RegisterCodec(RedCodecParameters, webrtc.RTPCodecTypeAudio))
+	opusCodecParameters := OpusCodecParameters
+	opusCodecParameters.RTPCodecCapability.RTCPFeedback = []webrtc.RTCPFeedback{{Type: webrtc.TypeRTCPFBNACK}}
+	require.NoError(t, me.RegisterCodec(opusCodecParameters, webrtc.RTPCodecTypeAudio))
+	redCodecParameters := RedCodecParameters
+	redCodecParameters.RTPCodecCapability.RTCPFeedback = []webrtc.RTCPFeedback{{Type: webrtc.TypeRTCPFBNACK}}
+	require.NoError(t, me.RegisterCodec(redCodecParameters, webrtc.RTPCodecTypeAudio))
 
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(&me))
 	pc, err := api.NewPeerConnection(webrtc.Configuration{})
@@ -641,9 +645,17 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 				DisableRed: disableRed,
 				Cid:        trackCid,
 			})
-			track, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: "audio/opus"}, trackCid, trackCid)
+			track, err := webrtc.NewTrackLocalStaticRTP(
+				webrtc.RTPCodecCapability{MimeType: "audio/opus"},
+				trackCid,
+				trackCid,
+			)
 			require.NoError(t, err)
-			transceiver, err := pc.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendrecv})
+
+			transceiver, err := pc.AddTransceiverFromTrack(
+				track,
+				webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendrecv},
+			)
 			require.NoError(t, err)
 			codecs := transceiver.Sender().GetParameters().Codecs
 			for i, c := range codecs {
@@ -683,7 +695,14 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 				Id:   offerId,
 			})
 
-			require.Eventually(t, func() bool { return answerReceived.Load() && answerIdReceived.Load() == offerId }, 5*time.Second, 10*time.Millisecond)
+			require.Eventually(
+				t,
+				func() bool {
+					return answerReceived.Load() && answerIdReceived.Load() == offerId
+				},
+				5*time.Second,
+				10*time.Millisecond,
+			)
 
 			var redPreferred bool
 			parsed, err := answer.Unmarshal()

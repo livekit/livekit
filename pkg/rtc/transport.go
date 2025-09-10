@@ -2900,17 +2900,11 @@ func configureReceiverCodecs(
 
 	var preferredCodecs, leftCodecs []webrtc.RTPCodecParameters
 	for _, c := range receiver.GetParameters().Codecs {
-		if mime.GetMimeTypeCodec(preferredMimeType) == mime.GetMimeTypeCodec(c.RTPCodecCapability.MimeType) {
-			preferredCodecs = append(preferredCodecs, c)
-		} else {
-			leftCodecs = append(leftCodecs, c)
-		}
-
 		if tr.Kind() == webrtc.RTPCodecTypeAudio {
 			nackFound := false
 			for _, fb := range c.RTCPFeedback {
 				if fb.Type == webrtc.TypeRTCPFBNACK {
-					nackFound = false
+					nackFound = true
 					break
 				}
 			}
@@ -2918,6 +2912,12 @@ func configureReceiverCodecs(
 			if !nackFound {
 				c.RTCPFeedback = append(c.RTCPFeedback, webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBNACK})
 			}
+		}
+
+		if mime.GetMimeTypeCodec(preferredMimeType) == mime.GetMimeTypeCodec(c.RTPCodecCapability.MimeType) {
+			preferredCodecs = append(preferredCodecs, c)
+		} else {
+			leftCodecs = append(leftCodecs, c)
 		}
 	}
 	if len(preferredCodecs) == 0 {
