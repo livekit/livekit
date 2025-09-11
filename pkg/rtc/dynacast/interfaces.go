@@ -73,7 +73,7 @@ type DynacastManager interface {
 	)
 	NotifySubscriptionNode(
 		nodeID livekit.NodeID,
-		codecs []types.SubscribedAudioCodec,
+		codecs []*livekit.SubscribedAudioCodec,
 	)
 	ClearSubscriberNodes()
 }
@@ -109,7 +109,7 @@ func (d *dynacastManagerNull) NotifySubscriberNodeMaxQuality(
 }
 func (d *dynacastManagerNull) NotifySubscriptionNode(
 	nodeID livekit.NodeID,
-	codecs []types.SubscribedAudioCodec,
+	codecs []*livekit.SubscribedAudioCodec,
 ) {
 }
 func (d *dynacastManagerNull) ClearSubscriberNodes() {}

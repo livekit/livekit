@@ -18,7 +18,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
-	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 )
 
@@ -105,10 +104,10 @@ func (d *dynacastManagerAudio) NotifySubscription(
 
 func (d *dynacastManagerAudio) NotifySubscriptionNode(
 	nodeID livekit.NodeID,
-	codecs []types.SubscribedAudioCodec,
+	codecs []*livekit.SubscribedAudioCodec,
 ) {
 	for _, codec := range codecs {
-		dq := d.getOrCreateDynacastQuality(codec.CodecMime)
+		dq := d.getOrCreateDynacastQuality(mime.NormalizeMimeType(codec.Codec))
 		if dq != nil {
 			dq.NotifySubscriptionNode(nodeID, codec.Enabled)
 		}
