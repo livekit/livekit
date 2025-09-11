@@ -224,6 +224,10 @@ func (t *TransportManager) GetPublisherMid(rtpReceiver *webrtc.RTPReceiver) stri
 	return t.publisher.GetMid(rtpReceiver)
 }
 
+func (t *TransportManager) GetPublisherRTPTransceiver(mid string) *webrtc.RTPTransceiver {
+	return t.publisher.GetRTPTransceiver(mid)
+}
+
 func (t *TransportManager) GetPublisherRTPReceiver(mid string) *webrtc.RTPReceiver {
 	return t.publisher.GetRTPReceiver(mid)
 }
@@ -449,6 +453,10 @@ func (t *TransportManager) GetUnmatchMediaForOffer(parsedOffer *sdp.SessionDescr
 
 func (t *TransportManager) LastPublisherOffer() *webrtc.SessionDescription {
 	return t.publisher.CurrentRemoteDescription()
+}
+
+func (t *TransportManager) LastPublisherOfferPending() *webrtc.SessionDescription {
+	return t.publisher.PendingRemoteDescription()
 }
 
 func (t *TransportManager) HandleOffer(offer webrtc.SessionDescription, offerId uint32, shouldPend bool) error {

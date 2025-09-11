@@ -1259,25 +1259,6 @@ func (p *ParticipantImpl) HandleOffer(sd *livekit.SessionDescription) error {
 		}
 	}
 
-	unmatchAudios, unmatchVideos := p.populateSdpCid(parsedOffer)
-	// p.params.Logger.Infow("RAJA unmatch", "videos", unmatchVideos) // REMOVE
-	parsedOffer = p.setCodecPreferencesForPublisher(parsedOffer, unmatchAudios, unmatchVideos)
-	// p.params.Logger.Infow("RAJA parsed offer", "offer", parsedOffer) // REMOVE
-	p.updateRidsFromSDP(parsedOffer, unmatchVideos)
-
-	// put together munged offer after setting codec preferences
-	bytes, err := parsedOffer.Marshal()
-	if err != nil {
-		lgr.Errorw("failed to marshal offer", err, "parsedOffer", parsedOffer)
-		return err
-	}
-
-	offer = webrtc.SessionDescription{
-		Type: offer.Type,
-		SDP:  string(bytes),
-	}
-	// p.params.Logger.Infow("RAJA munged offer", "offer", offer) // REMOVE
-
 	err = p.TransportManager.HandleOffer(offer, offerId, p.MigrateState() == types.MigrateStateInit)
 	if err != nil {
 		lgr.Warnw("could not handle offer", err, "mungedOffer", offer)
@@ -1292,6 +1273,21 @@ func (p *ParticipantImpl) HandleOffer(sd *livekit.SessionDescription) error {
 
 	p.handlePendingRemoteTracks()
 	return nil
+}
+
+func (p *ParticipantImpl) onPublisherSetRemoteDescription() {
+	offer := p.TransportManager.LastPublisherOfferPending()
+	parsedOffer, err := offer.Unmarshal()
+	if err != nil {
+		p.pubLogger.Warnw("could not parse offer", err)
+		return
+	}
+
+	// set publish codec preferences after remote description is set
+	// and required transceivers are created
+	unmatchAudios, unmatchVideos := p.populateSdpCid(parsedOffer)
+	p.setCodecPreferencesForPublisher(parsedOffer, unmatchAudios, unmatchVideos)
+	p.updateRidsFromSDP(parsedOffer, unmatchVideos)
 }
 
 func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription, answerId uint32) error {
@@ -1922,6 +1918,10 @@ func (h AnyTransportHandler) OnICECandidate(c *webrtc.ICECandidate, target livek
 
 type PublisherTransportHandler struct {
 	AnyTransportHandler
+}
+
+func (h PublisherTransportHandler) OnSetRemoteDescriptionOffer() {
+	h.p.onPublisherSetRemoteDescription()
 }
 
 func (h PublisherTransportHandler) OnAnswer(sd webrtc.SessionDescription, answerId uint32) error {
