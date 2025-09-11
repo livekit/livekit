@@ -2816,8 +2816,8 @@ func (p *ParticipantImpl) onSubscribedAudioCodecChange(
 	}
 
 	subscribedAudioCodecUpdate := &livekit.SubscribedAudioCodecUpdate{
-		TrackSid:         string(trackID),
-		SubscribedCodecs: codecs,
+		TrackSid:              string(trackID),
+		SubscribedAudioCodecs: codecs,
 	}
 	p.pubLogger.Debugw(
 		"sending subscribed audio codec update",
