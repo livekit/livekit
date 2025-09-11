@@ -216,19 +216,13 @@ func (r whipParticipantService) DeleteSession(ctx context.Context, req *rpc.WHIP
 		return nil, ErrRoomNotFound
 	}
 
-	reason := types.ParticipantCloseReasonClientRequestLeave
 	lp := room.GetParticipantByID(livekit.ParticipantID(req.ParticipantId))
-	if lp == nil && req.FromSweeper && req.ParticipantId == "" {
-		lp = room.GetParticipant(livekit.ParticipantIdentity(req.ParticipantIdentity))
-		reason = types.ParticipantCloseReasonStale
-	}
-
 	if lp != nil {
 		lp.AddOnClose(types.ParticipantCloseKeyWHIP, nil)
 		room.RemoveParticipant(
 			lp.Identity(),
 			lp.ID(),
-			reason,
+			types.ParticipantCloseReasonClientRequestLeave,
 		)
 	}
 

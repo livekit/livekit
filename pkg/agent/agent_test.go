@@ -12,6 +12,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/agent/testutils"
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils/guid"
@@ -20,6 +21,7 @@ import (
 )
 
 func TestAgent(t *testing.T) {
+	testAgentName := "test_agent"
 	t.Run("dispatched jobs are assigned to a worker", func(t *testing.T) {
 		bus := psrpc.NewLocalMessageBus()
 
@@ -28,7 +30,7 @@ func TestAgent(t *testing.T) {
 		t.Cleanup(server.Close)
 
 		worker := server.SimulateAgentWorker()
-		worker.Register("test", livekit.JobType_JT_ROOM)
+		worker.Register(testAgentName, livekit.JobType_JT_ROOM)
 		jobAssignments := worker.JobAssignments.Observe()
 
 		job := &livekit.Job{
@@ -36,14 +38,19 @@ func TestAgent(t *testing.T) {
 			DispatchId: guid.New(guid.AgentDispatchPrefix),
 			Type:       livekit.JobType_JT_ROOM,
 			Room:       &livekit.Room{},
-			AgentName:  "test",
+			AgentName:  testAgentName,
 		}
-		_, err := client.JobRequest(context.Background(), "test", agent.RoomAgentTopic, job)
+		_, err := client.JobRequest(context.Background(), testAgentName, agent.RoomAgentTopic, job)
 		require.NoError(t, err)
 
 		select {
 		case a := <-jobAssignments.Events():
 			require.EqualValues(t, job.Id, a.Job.Id)
+			v, err := auth.ParseAPIToken(a.Token)
+			require.NoError(t, err)
+			claims, err := v.Verify(server.TestAPISecret)
+			require.NoError(t, err)
+			require.Equal(t, testAgentName, claims.Attributes[agent.AgentNameAttributeKey])
 		case <-time.After(time.Second):
 			require.Fail(t, "job assignment timeout")
 		}
