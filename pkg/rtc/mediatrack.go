@@ -133,7 +133,6 @@ func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 		t.MediaTrackReceiver.OnMediaLossFeedback(t.MediaLossProxy.HandleMaxLossFeedback)
 	}
 
-	// RAJA-TODO - all these potentially need to be setup for audio also, use a simpler dynacast manager
 	switch ti.Type {
 	case livekit.TrackType_VIDEO:
 		t.dynacastManager = dynacast.NewDynacastManagerVideo(dynacast.DynacastManagerVideoParams{

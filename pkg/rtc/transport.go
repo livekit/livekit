@@ -308,7 +308,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	}
 
 	se := params.Config.SettingEngine
-	//se.DisableMediaEngineCopy(true)
+	se.DisableMediaEngineCopy(true)
 
 	// Change elliptic curve to improve connectivity
 	// https://github.com/pion/dtls/pull/474
