@@ -479,7 +479,6 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		webrtc.WithInterceptorRegistry(ir),
 	)
 	pc, err := api.NewPeerConnection(params.Config.Configuration)
-	params.Logger.Infow("RAJA created peer conection", "pc", fmt.Sprintf("%p", pc)) // REMOVE
 	return pc, me, err
 }
 
