@@ -93,6 +93,10 @@ type RoomManager struct {
 	iceConfigCache *sutils.IceConfigCache[iceConfigCacheKey]
 
 	forwardStats *sfu.ForwardStats
+
+	rpc.UnimplementedParticipantServer
+	rpc.UnimplementedRoomServer
+	rpc.UnimplementedRoomManagerServer
 }
 
 func NewLocalRoomManager(
