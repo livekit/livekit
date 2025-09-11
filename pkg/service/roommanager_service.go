@@ -22,6 +22,8 @@ type whipService struct {
 	*RoomManager
 
 	ingressRpcCli rpc.IngressHandlerClient
+
+	rpc.UnimplementedWHIPServer
 }
 
 func newWhipService(rm *RoomManager) (*whipService, error) {

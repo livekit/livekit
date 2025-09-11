@@ -41,6 +41,9 @@ type RoomService struct {
 	topicFormatter    rpc.TopicFormatter
 	roomClient        rpc.TypedRoomClient
 	participantClient rpc.TypedParticipantClient
+
+	rpc.UnimplementedRoomServer
+	rpc.UnimplementedParticipantServer
 }
 
 func NewRoomService(
