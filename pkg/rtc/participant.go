@@ -2798,6 +2798,35 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(
 	return p.sendSubscribedQualityUpdate(subscribedQualityUpdate)
 }
 
+func (p *ParticipantImpl) onSubscribedAudioCodecChange(
+	trackID livekit.TrackID,
+	codecs []*livekit.SubscribedAudioCodec,
+) error {
+	if p.params.DisableDynacast {
+		return nil
+	}
+
+	if len(codecs) == 0 {
+		return nil
+	}
+
+	// normalize the codec name
+	for _, codec := range codecs {
+		codec.Codec = strings.ToLower(strings.TrimPrefix(codec.Codec, mime.MimeTypePrefixAudio))
+	}
+
+	subscribedAudioCodecUpdate := &livekit.SubscribedAudioCodecUpdate{
+		TrackSid:         string(trackID),
+		SubscribedCodecs: codecs,
+	}
+	p.pubLogger.Debugw(
+		"sending subscribed audio codec update",
+		"trackID", trackID,
+		"update", logger.Proto(subscribedAudioCodecUpdate),
+	)
+	return p.sendSubscribedAudioCodecUpdate(subscribedAudioCodecUpdate)
+}
+
 func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *livekit.TrackInfo {
 	if req.Sid != "" {
 		track := p.GetPublishedTrack(livekit.TrackID(req.Sid))
@@ -3317,6 +3346,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 	}, ti)
 
 	mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
+	mt.OnSubscribedAudioCodecChange(p.onSubscribedAudioCodecChange)
 
 	// add to published and clean up pending
 	if p.supervisor != nil {

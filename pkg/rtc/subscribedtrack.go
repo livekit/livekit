@@ -54,6 +54,7 @@ type SubscribedTrackParams struct {
 	OnDownTrackCreated           func(downTrack *sfu.DownTrack)
 	OnDownTrackClosed            func(subscriberID livekit.ParticipantID)
 	OnSubscriberMaxQualityChange func(subscriberID livekit.ParticipantID, mime mime.MimeType, layer int32)
+	OnSubscriberAudioCodecChange func(subscriberID livekit.ParticipantID, mime mime.MimeType, enabled bool)
 }
 
 type SubscribedTrack struct {
@@ -436,16 +437,21 @@ func (t *SubscribedTrack) OnCodecNegotiated(codec webrtc.RTPCodecCapability) {
 		return
 	}
 
-	if t.params.OnSubscriberMaxQualityChange != nil {
-		// RAJA-TODO: probably do a separate method for audio simulcast, maybe a different protocol message?
+	if t.params.OnSubscriberMaxQualityChange != nil || t.params.OnSubscriberAudioCodecChange != nil {
 		go func() {
 			mimeType := mime.NormalizeMimeType(codec.MimeType)
-			spatial := buffer.GetSpatialLayerForVideoQuality(
-				mimeType,
-				livekit.VideoQuality_HIGH,
-				t.params.MediaTrack.ToProto(),
-			)
-			t.params.OnSubscriberMaxQualityChange(t.downTrack.SubscriberID(), mimeType, spatial)
+			switch t.params.MediaTrack.Kind() {
+			case livekit.TrackType_VIDEO:
+				spatial := buffer.GetSpatialLayerForVideoQuality(
+					mimeType,
+					livekit.VideoQuality_HIGH,
+					t.params.MediaTrack.ToProto(),
+				)
+				t.params.OnSubscriberMaxQualityChange(t.downTrack.SubscriberID(), mimeType, spatial)
+
+			case livekit.TrackType_AUDIO:
+				t.params.OnSubscriberAudioCodecChange(t.downTrack.SubscriberID(), mimeType, true)
+			}
 		}()
 	}
 }

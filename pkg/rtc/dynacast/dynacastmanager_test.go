@@ -27,16 +27,36 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-func TestSubscribedMaxQuality(t *testing.T) {
+type testDynacastManagerListener struct {
+	onSubscribedMaxQualityChange func(subscribedQualties []*livekit.SubscribedCodec)
+}
 
+func (t *testDynacastManagerListener) OnDynacastSubscribedMaxQualityChange(
+	subscribedQualities []*livekit.SubscribedCodec,
+	_maxSubscribedQualities []types.SubscribedCodecQuality,
+) {
+	t.onSubscribedMaxQualityChange(subscribedQualities)
+}
+
+func (t *testDynacastManagerListener) OnDynacastSubscribedAudioCodecChange(
+	codecs []*livekit.SubscribedAudioCodec,
+) {
+	// RAJA-TODO
+}
+
+func TestSubscribedMaxQuality(t *testing.T) {
 	t.Run("subscribers muted", func(t *testing.T) {
-		dm := NewDynacastManager(DynacastManagerParams{})
 		var lock sync.Mutex
 		actualSubscribedQualities := make([]*livekit.SubscribedCodec, 0)
-		dm.OnSubscribedMaxQualityChange(func(subscribedQualities []*livekit.SubscribedCodec, _maxSubscribedQualities []types.SubscribedCodecQuality) {
-			lock.Lock()
-			actualSubscribedQualities = subscribedQualities
-			lock.Unlock()
+
+		dm := NewDynacastManagerVideo(DynacastManagerVideoParams{
+			Listener: &testDynacastManagerListener{
+				onSubscribedMaxQualityChange: func(subscribedQualities []*livekit.SubscribedCodec) {
+					lock.Lock()
+					actualSubscribedQualities = subscribedQualities
+					lock.Unlock()
+				},
+			},
 		})
 
 		dm.NotifySubscriberMaxQuality("s1", mime.MimeTypeVP8, livekit.VideoQuality_HIGH)
@@ -72,21 +92,20 @@ func TestSubscribedMaxQuality(t *testing.T) {
 	})
 
 	t.Run("subscribers max quality", func(t *testing.T) {
-		dm := NewDynacastManager(DynacastManagerParams{
-			DynacastPauseDelay: 100 * time.Millisecond,
-		})
-
 		lock := sync.RWMutex{}
-		lock.Lock()
 		actualSubscribedQualities := make([]*livekit.SubscribedCodec, 0)
-		lock.Unlock()
-		dm.OnSubscribedMaxQualityChange(func(subscribedQualities []*livekit.SubscribedCodec, _maxSubscribedQualities []types.SubscribedCodecQuality) {
-			lock.Lock()
-			actualSubscribedQualities = subscribedQualities
-			lock.Unlock()
+
+		dm := NewDynacastManagerVideo(DynacastManagerVideoParams{
+			Listener: &testDynacastManagerListener{
+				onSubscribedMaxQualityChange: func(subscribedQualities []*livekit.SubscribedCodec) {
+					lock.Lock()
+					actualSubscribedQualities = subscribedQualities
+					lock.Unlock()
+				},
+			},
 		})
 
-		dm.maxSubscribedQuality = map[mime.MimeType]livekit.VideoQuality{
+		dm.(*dynacastManagerVideo).maxSubscribedQuality = map[mime.MimeType]livekit.VideoQuality{
 			mime.MimeTypeVP8: livekit.VideoQuality_LOW,
 			mime.MimeTypeAV1: livekit.VideoQuality_LOW,
 		}
@@ -279,13 +298,17 @@ func TestSubscribedMaxQuality(t *testing.T) {
 }
 
 func TestCodecRegression(t *testing.T) {
-	dm := NewDynacastManager(DynacastManagerParams{})
 	var lock sync.Mutex
 	actualSubscribedQualities := make([]*livekit.SubscribedCodec, 0)
-	dm.OnSubscribedMaxQualityChange(func(subscribedQualities []*livekit.SubscribedCodec, _maxSubscribedQualities []types.SubscribedCodecQuality) {
-		lock.Lock()
-		actualSubscribedQualities = subscribedQualities
-		lock.Unlock()
+
+	dm := NewDynacastManagerVideo(DynacastManagerVideoParams{
+		Listener: &testDynacastManagerListener{
+			onSubscribedMaxQualityChange: func(subscribedQualities []*livekit.SubscribedCodec) {
+				lock.Lock()
+				actualSubscribedQualities = subscribedQualities
+				lock.Unlock()
+			},
+		},
 	})
 
 	dm.NotifySubscriberMaxQuality("s1", mime.MimeTypeAV1, livekit.VideoQuality_HIGH)

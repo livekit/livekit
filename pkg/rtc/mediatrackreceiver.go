@@ -305,7 +305,11 @@ func (t *MediaTrackReceiver) HandleReceiverCodecChange(r sfu.TrackReceiver, code
 		return
 	}
 
-	t.params.Logger.Infow("regressing codec", "from", codec.MimeType, "to", backupCodecReceiver.Codec().MimeType)
+	t.params.Logger.Infow(
+		"regressing codec",
+		"from", codec.MimeType,
+		"to", backupCodecReceiver.Codec().MimeType,
+	)
 
 	// remove old codec from potential codecs
 	for i, c := range t.potentialCodecs {

@@ -84,6 +84,13 @@ type SubscribedCodecQuality struct {
 
 // ---------------------------------------------
 
+type SubscribedAudioCodec struct {
+	CodecMime mime.MimeType
+	Enabled   bool
+}
+
+// ---------------------------------------------
+
 type ParticipantCloseReason int
 
 const (
