@@ -3756,6 +3756,17 @@ func (p *ParticipantImpl) UpdateSubscribedQuality(nodeID livekit.NodeID, trackID
 	return nil
 }
 
+func (p *ParticipantImpl) UpdateSubscribedAudioCodecs(nodeID livekit.NodeID, trackID livekit.TrackID, codecs []*livekit.SubscribedAudioCodec) error {
+	track := p.GetPublishedTrack(trackID)
+	if track == nil {
+		p.pubLogger.Debugw("could not find track", "trackID", trackID)
+		return errors.New("could not find published track")
+	}
+
+	track.(types.LocalMediaTrack).NotifySubscriptionNode(nodeID, codecs)
+	return nil
+}
+
 func (p *ParticipantImpl) UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error {
 	track := p.GetPublishedTrack(trackID)
 	if track == nil {
@@ -4036,9 +4047,9 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 	for _, track := range p.GetPublishedTracks() {
 		for _, sub := range track.GetAllSubscribers() {
 			track.RemoveSubscriber(sub, false)
-			// clear the subscriber node max quality as the remote quality notify
+			// clear the subscriber node max quality/audio codecs as the remote quality notify
 			// from source room would not reach the moving out participant.
-			track.(types.LocalMediaTrack).ClearSubscriberNodesMaxQuality()
+			track.(types.LocalMediaTrack).ClearSubscriberNodes()
 		}
 		trackInfo := track.ToProto()
 		p.params.Telemetry.TrackUnpublished(

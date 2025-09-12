@@ -219,7 +219,13 @@ func (t *MediaTrack) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, quali
 	}
 }
 
-func (t *MediaTrack) ClearSubscriberNodesMaxQuality() {
+func (t *MediaTrack) NotifySubscriptionNode(nodeID livekit.NodeID, codecs []*livekit.SubscribedAudioCodec) {
+	if t.dynacastManager != nil {
+		t.dynacastManager.NotifySubscriptionNode(nodeID, codecs)
+	}
+}
+
+func (t *MediaTrack) ClearSubscriberNodes() {
 	if t.dynacastManager != nil {
 		t.dynacastManager.ClearSubscriberNodes()
 	}
