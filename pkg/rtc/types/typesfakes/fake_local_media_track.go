@@ -35,9 +35,9 @@ type FakeLocalMediaTrack struct {
 	clearAllReceiversArgsForCall []struct {
 		arg1 bool
 	}
-	ClearSubscriberNodesMaxQualityStub        func()
-	clearSubscriberNodesMaxQualityMutex       sync.RWMutex
-	clearSubscriberNodesMaxQualityArgsForCall []struct {
+	ClearSubscriberNodesStub        func()
+	clearSubscriberNodesMutex       sync.RWMutex
+	clearSubscriberNodesArgsForCall []struct {
 	}
 	CloseStub        func(bool)
 	closeMutex       sync.RWMutex
@@ -238,6 +238,12 @@ type FakeLocalMediaTrack struct {
 	notifySubscriberNodeMediaLossArgsForCall []struct {
 		arg1 livekit.NodeID
 		arg2 uint8
+	}
+	NotifySubscriptionNodeStub        func(livekit.NodeID, []*livekit.SubscribedAudioCodec)
+	notifySubscriptionNodeMutex       sync.RWMutex
+	notifySubscriptionNodeArgsForCall []struct {
+		arg1 livekit.NodeID
+		arg2 []*livekit.SubscribedAudioCodec
 	}
 	OnTrackSubscribedStub        func()
 	onTrackSubscribedMutex       sync.RWMutex
@@ -491,28 +497,28 @@ func (fake *FakeLocalMediaTrack) ClearAllReceiversArgsForCall(i int) bool {
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalMediaTrack) ClearSubscriberNodesMaxQuality() {
-	fake.clearSubscriberNodesMaxQualityMutex.Lock()
-	fake.clearSubscriberNodesMaxQualityArgsForCall = append(fake.clearSubscriberNodesMaxQualityArgsForCall, struct {
+func (fake *FakeLocalMediaTrack) ClearSubscriberNodes() {
+	fake.clearSubscriberNodesMutex.Lock()
+	fake.clearSubscriberNodesArgsForCall = append(fake.clearSubscriberNodesArgsForCall, struct {
 	}{})
-	stub := fake.ClearSubscriberNodesMaxQualityStub
-	fake.recordInvocation("ClearSubscriberNodesMaxQuality", []interface{}{})
-	fake.clearSubscriberNodesMaxQualityMutex.Unlock()
+	stub := fake.ClearSubscriberNodesStub
+	fake.recordInvocation("ClearSubscriberNodes", []interface{}{})
+	fake.clearSubscriberNodesMutex.Unlock()
 	if stub != nil {
-		fake.ClearSubscriberNodesMaxQualityStub()
+		fake.ClearSubscriberNodesStub()
 	}
 }
 
-func (fake *FakeLocalMediaTrack) ClearSubscriberNodesMaxQualityCallCount() int {
-	fake.clearSubscriberNodesMaxQualityMutex.RLock()
-	defer fake.clearSubscriberNodesMaxQualityMutex.RUnlock()
-	return len(fake.clearSubscriberNodesMaxQualityArgsForCall)
+func (fake *FakeLocalMediaTrack) ClearSubscriberNodesCallCount() int {
+	fake.clearSubscriberNodesMutex.RLock()
+	defer fake.clearSubscriberNodesMutex.RUnlock()
+	return len(fake.clearSubscriberNodesArgsForCall)
 }
 
-func (fake *FakeLocalMediaTrack) ClearSubscriberNodesMaxQualityCalls(stub func()) {
-	fake.clearSubscriberNodesMaxQualityMutex.Lock()
-	defer fake.clearSubscriberNodesMaxQualityMutex.Unlock()
-	fake.ClearSubscriberNodesMaxQualityStub = stub
+func (fake *FakeLocalMediaTrack) ClearSubscriberNodesCalls(stub func()) {
+	fake.clearSubscriberNodesMutex.Lock()
+	defer fake.clearSubscriberNodesMutex.Unlock()
+	fake.ClearSubscriberNodesStub = stub
 }
 
 func (fake *FakeLocalMediaTrack) Close(arg1 bool) {
@@ -1566,6 +1572,44 @@ func (fake *FakeLocalMediaTrack) NotifySubscriberNodeMediaLossArgsForCall(i int)
 	fake.notifySubscriberNodeMediaLossMutex.RLock()
 	defer fake.notifySubscriberNodeMediaLossMutex.RUnlock()
 	argsForCall := fake.notifySubscriberNodeMediaLossArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeLocalMediaTrack) NotifySubscriptionNode(arg1 livekit.NodeID, arg2 []*livekit.SubscribedAudioCodec) {
+	var arg2Copy []*livekit.SubscribedAudioCodec
+	if arg2 != nil {
+		arg2Copy = make([]*livekit.SubscribedAudioCodec, len(arg2))
+		copy(arg2Copy, arg2)
+	}
+	fake.notifySubscriptionNodeMutex.Lock()
+	fake.notifySubscriptionNodeArgsForCall = append(fake.notifySubscriptionNodeArgsForCall, struct {
+		arg1 livekit.NodeID
+		arg2 []*livekit.SubscribedAudioCodec
+	}{arg1, arg2Copy})
+	stub := fake.NotifySubscriptionNodeStub
+	fake.recordInvocation("NotifySubscriptionNode", []interface{}{arg1, arg2Copy})
+	fake.notifySubscriptionNodeMutex.Unlock()
+	if stub != nil {
+		fake.NotifySubscriptionNodeStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeLocalMediaTrack) NotifySubscriptionNodeCallCount() int {
+	fake.notifySubscriptionNodeMutex.RLock()
+	defer fake.notifySubscriptionNodeMutex.RUnlock()
+	return len(fake.notifySubscriptionNodeArgsForCall)
+}
+
+func (fake *FakeLocalMediaTrack) NotifySubscriptionNodeCalls(stub func(livekit.NodeID, []*livekit.SubscribedAudioCodec)) {
+	fake.notifySubscriptionNodeMutex.Lock()
+	defer fake.notifySubscriptionNodeMutex.Unlock()
+	fake.NotifySubscriptionNodeStub = stub
+}
+
+func (fake *FakeLocalMediaTrack) NotifySubscriptionNodeArgsForCall(i int) (livekit.NodeID, []*livekit.SubscribedAudioCodec) {
+	fake.notifySubscriptionNodeMutex.RLock()
+	defer fake.notifySubscriptionNodeMutex.RUnlock()
+	argsForCall := fake.notifySubscriptionNodeArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
 }
 
