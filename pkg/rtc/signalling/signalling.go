@@ -228,3 +228,11 @@ func (u *signalling) SignalMediaSectionsRequirement(mediaSectionsRequirement *li
 		},
 	}
 }
+
+func (s *signalling) SignalSubscribedAudioCodecUpdate(subscribedAudioCodecUpdate *livekit.SubscribedAudioCodecUpdate) proto.Message {
+	return &livekit.SignalResponse{
+		Message: &livekit.SignalResponse_SubscribedAudioCodecUpdate{
+			SubscribedAudioCodecUpdate: subscribedAudioCodecUpdate,
+		},
+	}
+}

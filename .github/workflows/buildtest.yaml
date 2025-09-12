@@ -45,7 +45,7 @@ jobs:
           go get github.com/sasha-s/go-deadlock
           grep -rl sync.Mutex ./pkg | xargs sed -i 's/sync\.Mutex/deadlock\.Mutex/g'
           grep -rl sync.RWMutex ./pkg | xargs sed -i 's/sync\.RWMutex/deadlock\.RWMutex/g'
-          go install golang.org/x/tools/cmd/goimports
+          go install golang.org/x/tools/cmd/goimports@latest
           grep -rl deadlock.Mutex ./pkg | xargs goimports -w
           grep -rl deadlock.RWMutex ./pkg | xargs goimports -w
           go mod tidy

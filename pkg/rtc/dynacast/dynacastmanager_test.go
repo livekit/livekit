@@ -27,16 +27,37 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-func TestSubscribedMaxQuality(t *testing.T) {
+type testDynacastManagerListener struct {
+	onSubscribedMaxQualityChange func(subscribedQualties []*livekit.SubscribedCodec)
+	onSubscribedAudioCodecChange func(subscribedCodecs []*livekit.SubscribedAudioCodec)
+}
 
+func (t *testDynacastManagerListener) OnDynacastSubscribedMaxQualityChange(
+	subscribedQualities []*livekit.SubscribedCodec,
+	_maxSubscribedQualities []types.SubscribedCodecQuality,
+) {
+	t.onSubscribedMaxQualityChange(subscribedQualities)
+}
+
+func (t *testDynacastManagerListener) OnDynacastSubscribedAudioCodecChange(
+	codecs []*livekit.SubscribedAudioCodec,
+) {
+	t.onSubscribedAudioCodecChange(codecs)
+}
+
+func TestSubscribedMaxQuality(t *testing.T) {
 	t.Run("subscribers muted", func(t *testing.T) {
-		dm := NewDynacastManager(DynacastManagerParams{})
 		var lock sync.Mutex
 		actualSubscribedQualities := make([]*livekit.SubscribedCodec, 0)
-		dm.OnSubscribedMaxQualityChange(func(subscribedQualities []*livekit.SubscribedCodec, _maxSubscribedQualities []types.SubscribedCodecQuality) {
-			lock.Lock()
-			actualSubscribedQualities = subscribedQualities
-			lock.Unlock()
+
+		dm := NewDynacastManagerVideo(DynacastManagerVideoParams{
+			Listener: &testDynacastManagerListener{
+				onSubscribedMaxQualityChange: func(subscribedQualities []*livekit.SubscribedCodec) {
+					lock.Lock()
+					actualSubscribedQualities = subscribedQualities
+					lock.Unlock()
+				},
+			},
 		})
 
 		dm.NotifySubscriberMaxQuality("s1", mime.MimeTypeVP8, livekit.VideoQuality_HIGH)
@@ -72,21 +93,20 @@ func TestSubscribedMaxQuality(t *testing.T) {
 	})
 
 	t.Run("subscribers max quality", func(t *testing.T) {
-		dm := NewDynacastManager(DynacastManagerParams{
-			DynacastPauseDelay: 100 * time.Millisecond,
-		})
-
 		lock := sync.RWMutex{}
-		lock.Lock()
 		actualSubscribedQualities := make([]*livekit.SubscribedCodec, 0)
-		lock.Unlock()
-		dm.OnSubscribedMaxQualityChange(func(subscribedQualities []*livekit.SubscribedCodec, _maxSubscribedQualities []types.SubscribedCodecQuality) {
-			lock.Lock()
-			actualSubscribedQualities = subscribedQualities
-			lock.Unlock()
+
+		dm := NewDynacastManagerVideo(DynacastManagerVideoParams{
+			Listener: &testDynacastManagerListener{
+				onSubscribedMaxQualityChange: func(subscribedQualities []*livekit.SubscribedCodec) {
+					lock.Lock()
+					actualSubscribedQualities = subscribedQualities
+					lock.Unlock()
+				},
+			},
 		})
 
-		dm.maxSubscribedQuality = map[mime.MimeType]livekit.VideoQuality{
+		dm.(*dynacastManagerVideo).maxSubscribedQuality = map[mime.MimeType]livekit.VideoQuality{
 			mime.MimeTypeVP8: livekit.VideoQuality_LOW,
 			mime.MimeTypeAV1: livekit.VideoQuality_LOW,
 		}
@@ -279,94 +299,214 @@ func TestSubscribedMaxQuality(t *testing.T) {
 }
 
 func TestCodecRegression(t *testing.T) {
-	dm := NewDynacastManager(DynacastManagerParams{})
-	var lock sync.Mutex
-	actualSubscribedQualities := make([]*livekit.SubscribedCodec, 0)
-	dm.OnSubscribedMaxQualityChange(func(subscribedQualities []*livekit.SubscribedCodec, _maxSubscribedQualities []types.SubscribedCodecQuality) {
-		lock.Lock()
-		actualSubscribedQualities = subscribedQualities
-		lock.Unlock()
+	t.Run("codec regression video", func(t *testing.T) {
+		var lock sync.Mutex
+		actualSubscribedQualities := make([]*livekit.SubscribedCodec, 0)
+
+		dm := NewDynacastManagerVideo(DynacastManagerVideoParams{
+			Listener: &testDynacastManagerListener{
+				onSubscribedMaxQualityChange: func(subscribedQualities []*livekit.SubscribedCodec) {
+					lock.Lock()
+					actualSubscribedQualities = subscribedQualities
+					lock.Unlock()
+				},
+			},
+		})
+
+		dm.NotifySubscriberMaxQuality("s1", mime.MimeTypeAV1, livekit.VideoQuality_HIGH)
+
+		expectedSubscribedQualities := []*livekit.SubscribedCodec{
+			{
+				Codec: mime.MimeTypeAV1.String(),
+				Qualities: []*livekit.SubscribedQuality{
+					{Quality: livekit.VideoQuality_LOW, Enabled: true},
+					{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
+					{Quality: livekit.VideoQuality_HIGH, Enabled: true},
+				},
+			},
+		}
+		require.Eventually(t, func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+
+			return subscribedCodecsAsString(expectedSubscribedQualities) == subscribedCodecsAsString(actualSubscribedQualities)
+		}, 10*time.Second, 100*time.Millisecond)
+
+		dm.HandleCodecRegression(mime.MimeTypeAV1, mime.MimeTypeVP8)
+
+		expectedSubscribedQualities = []*livekit.SubscribedCodec{
+			{
+				Codec: mime.MimeTypeAV1.String(),
+				Qualities: []*livekit.SubscribedQuality{
+					{Quality: livekit.VideoQuality_LOW, Enabled: false},
+					{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+					{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+				},
+			},
+			{
+				Codec: mime.MimeTypeVP8.String(),
+				Qualities: []*livekit.SubscribedQuality{
+					{Quality: livekit.VideoQuality_LOW, Enabled: true},
+					{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
+					{Quality: livekit.VideoQuality_HIGH, Enabled: true},
+				},
+			},
+		}
+		require.Eventually(t, func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+
+			return subscribedCodecsAsString(expectedSubscribedQualities) == subscribedCodecsAsString(actualSubscribedQualities)
+		}, 10*time.Second, 100*time.Millisecond)
+
+		// av1 quality change should be forwarded to vp8
+		// av1 quality change of node should be ignored
+		dm.NotifySubscriberMaxQuality("s1", mime.MimeTypeAV1, livekit.VideoQuality_MEDIUM)
+		dm.NotifySubscriberNodeMaxQuality("n1", []types.SubscribedCodecQuality{
+			{CodecMime: mime.MimeTypeAV1, Quality: livekit.VideoQuality_HIGH},
+		})
+		expectedSubscribedQualities = []*livekit.SubscribedCodec{
+			{
+				Codec: mime.MimeTypeAV1.String(),
+				Qualities: []*livekit.SubscribedQuality{
+					{Quality: livekit.VideoQuality_LOW, Enabled: false},
+					{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
+					{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+				},
+			},
+			{
+				Codec: mime.MimeTypeVP8.String(),
+				Qualities: []*livekit.SubscribedQuality{
+					{Quality: livekit.VideoQuality_LOW, Enabled: true},
+					{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
+					{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+				},
+			},
+		}
+		require.Eventually(t, func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+
+			return subscribedCodecsAsString(expectedSubscribedQualities) == subscribedCodecsAsString(actualSubscribedQualities)
+		}, 10*time.Second, 100*time.Millisecond)
 	})
 
-	dm.NotifySubscriberMaxQuality("s1", mime.MimeTypeAV1, livekit.VideoQuality_HIGH)
+	t.Run("codec regression audio", func(t *testing.T) {
+		var lock sync.Mutex
+		actualSubscribedCodecs := make([]*livekit.SubscribedAudioCodec, 0)
 
-	expectedSubscribedQualities := []*livekit.SubscribedCodec{
-		{
-			Codec: mime.MimeTypeAV1.String(),
-			Qualities: []*livekit.SubscribedQuality{
-				{Quality: livekit.VideoQuality_LOW, Enabled: true},
-				{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
-				{Quality: livekit.VideoQuality_HIGH, Enabled: true},
+		dm := NewDynacastManagerAudio(DynacastManagerAudioParams{
+			Listener: &testDynacastManagerListener{
+				onSubscribedAudioCodecChange: func(subscribedCodecs []*livekit.SubscribedAudioCodec) {
+					lock.Lock()
+					actualSubscribedCodecs = subscribedCodecs
+					lock.Unlock()
+				},
 			},
-		},
-	}
-	require.Eventually(t, func() bool {
-		lock.Lock()
-		defer lock.Unlock()
+		})
 
-		return subscribedCodecsAsString(expectedSubscribedQualities) == subscribedCodecsAsString(actualSubscribedQualities)
-	}, 10*time.Second, 100*time.Millisecond)
+		dm.NotifySubscription("s1", mime.MimeTypeRED, true)
 
-	dm.HandleCodecRegression(mime.MimeTypeAV1, mime.MimeTypeVP8)
-
-	expectedSubscribedQualities = []*livekit.SubscribedCodec{
-		{
-			Codec: mime.MimeTypeAV1.String(),
-			Qualities: []*livekit.SubscribedQuality{
-				{Quality: livekit.VideoQuality_LOW, Enabled: false},
-				{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
-				{Quality: livekit.VideoQuality_HIGH, Enabled: false},
+		expectedSubscribedCodecs := []*livekit.SubscribedAudioCodec{
+			{
+				Codec:   mime.MimeTypeRED.String(),
+				Enabled: true,
 			},
-		},
-		{
-			Codec: mime.MimeTypeVP8.String(),
-			Qualities: []*livekit.SubscribedQuality{
-				{Quality: livekit.VideoQuality_LOW, Enabled: true},
-				{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
-				{Quality: livekit.VideoQuality_HIGH, Enabled: true},
+		}
+		require.Eventually(t, func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+
+			return subscribedAudioCodecsAsString(expectedSubscribedCodecs) == subscribedAudioCodecsAsString(actualSubscribedCodecs)
+		}, 10*time.Second, 100*time.Millisecond)
+
+		dm.HandleCodecRegression(mime.MimeTypeRED, mime.MimeTypeOpus)
+
+		expectedSubscribedCodecs = []*livekit.SubscribedAudioCodec{
+			{
+				Codec:   mime.MimeTypeRED.String(),
+				Enabled: false,
 			},
-		},
-	}
-	require.Eventually(t, func() bool {
-		lock.Lock()
-		defer lock.Unlock()
+			{
+				Codec:   mime.MimeTypeOpus.String(),
+				Enabled: true,
+			},
+		}
+		require.Eventually(t, func() bool {
+			lock.Lock()
+			defer lock.Unlock()
 
-		return subscribedCodecsAsString(expectedSubscribedQualities) == subscribedCodecsAsString(actualSubscribedQualities)
-	}, 10*time.Second, 100*time.Millisecond)
+			return subscribedAudioCodecsAsString(expectedSubscribedCodecs) == subscribedAudioCodecsAsString(actualSubscribedCodecs)
+		}, 10*time.Second, 100*time.Millisecond)
 
-	// av1 quality change should be forwarded to vp8
-	// av1 quality change of node should be ignored
-	dm.NotifySubscriberMaxQuality("s1", mime.MimeTypeAV1, livekit.VideoQuality_MEDIUM)
-	dm.NotifySubscriberNodeMaxQuality("n1", []types.SubscribedCodecQuality{
-		{CodecMime: mime.MimeTypeAV1, Quality: livekit.VideoQuality_HIGH},
+		// RED disable as subscriber or subscriber node should be ignored as it has been regressed
+		dm.NotifySubscription("s1", mime.MimeTypeRED, false)
+		dm.NotifySubscriptionNode("n1", []*livekit.SubscribedAudioCodec{
+			{Codec: mime.MimeTypeRED.String(), Enabled: false},
+		})
+		require.Eventually(t, func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+
+			return subscribedAudioCodecsAsString(expectedSubscribedCodecs) == subscribedAudioCodecsAsString(actualSubscribedCodecs)
+		}, 10*time.Second, 100*time.Millisecond)
+
+		// `s1` unsubscription should turn off `opus`
+		dm.NotifySubscription("s1", mime.MimeTypeOpus, false)
+		expectedSubscribedCodecs = []*livekit.SubscribedAudioCodec{
+			{
+				Codec:   mime.MimeTypeRED.String(),
+				Enabled: false,
+			},
+			{
+				Codec:   mime.MimeTypeOpus.String(),
+				Enabled: false,
+			},
+		}
+		require.Eventually(t, func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+
+			return subscribedAudioCodecsAsString(expectedSubscribedCodecs) == subscribedAudioCodecsAsString(actualSubscribedCodecs)
+		}, 10*time.Second, 100*time.Millisecond)
+
+		// a node subscription should turn `opus` back on
+		dm.NotifySubscriptionNode("n1", []*livekit.SubscribedAudioCodec{
+			{
+				Codec:   mime.MimeTypeOpus.String(),
+				Enabled: true,
+			},
+		})
+		expectedSubscribedCodecs = []*livekit.SubscribedAudioCodec{
+			{
+				Codec:   mime.MimeTypeRED.String(),
+				Enabled: false,
+			},
+			{
+				Codec:   mime.MimeTypeOpus.String(),
+				Enabled: true,
+			},
+		}
+		require.Eventually(t, func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+
+			return subscribedAudioCodecsAsString(expectedSubscribedCodecs) == subscribedAudioCodecsAsString(actualSubscribedCodecs)
+		}, 10*time.Second, 100*time.Millisecond)
+
 	})
-	expectedSubscribedQualities = []*livekit.SubscribedCodec{
-		{
-			Codec: mime.MimeTypeAV1.String(),
-			Qualities: []*livekit.SubscribedQuality{
-				{Quality: livekit.VideoQuality_LOW, Enabled: false},
-				{Quality: livekit.VideoQuality_MEDIUM, Enabled: false},
-				{Quality: livekit.VideoQuality_HIGH, Enabled: false},
-			},
-		},
-		{
-			Codec: mime.MimeTypeVP8.String(),
-			Qualities: []*livekit.SubscribedQuality{
-				{Quality: livekit.VideoQuality_LOW, Enabled: true},
-				{Quality: livekit.VideoQuality_MEDIUM, Enabled: true},
-				{Quality: livekit.VideoQuality_HIGH, Enabled: false},
-			},
-		},
-	}
-	require.Eventually(t, func() bool {
-		lock.Lock()
-		defer lock.Unlock()
-
-		return subscribedCodecsAsString(expectedSubscribedQualities) == subscribedCodecsAsString(actualSubscribedQualities)
-	}, 10*time.Second, 100*time.Millisecond)
 }
 
 func subscribedCodecsAsString(c1 []*livekit.SubscribedCodec) string {
+	sort.Slice(c1, func(i, j int) bool { return c1[i].Codec < c1[j].Codec })
+	var s1 string
+	for _, c := range c1 {
+		s1 += c.String()
+	}
+	return s1
+}
+
+func subscribedAudioCodecsAsString(c1 []*livekit.SubscribedAudioCodec) string {
 	sort.Slice(c1, func(i, j int) bool { return c1[i].Codec < c1[j].Codec })
 	var s1 string
 	for _, c := range c1 {

@@ -44,6 +44,7 @@ type MediaTrackSubscriptions struct {
 
 	onDownTrackCreated           func(downTrack *sfu.DownTrack)
 	onSubscriberMaxQualityChange func(subscriberID livekit.ParticipantID, mime mime.MimeType, layer int32)
+	onSubscriberAudioCodecChange func(subscriberID livekit.ParticipantID, mime mime.MimeType, enabled bool)
 }
 
 type MediaTrackSubscriptionsParams struct {
@@ -71,6 +72,10 @@ func (t *MediaTrackSubscriptions) OnDownTrackCreated(f func(downTrack *sfu.DownT
 
 func (t *MediaTrackSubscriptions) OnSubscriberMaxQualityChange(f func(subscriberID livekit.ParticipantID, mime mime.MimeType, layer int32)) {
 	t.onSubscriberMaxQualityChange = f
+}
+
+func (t *MediaTrackSubscriptions) OnSubscriberAudioCodecChange(f func(subscriberID livekit.ParticipantID, mime mime.MimeType, enabled bool)) {
+	t.onSubscriberAudioCodecChange = f
 }
 
 func (t *MediaTrackSubscriptions) SetMuted(muted bool) {
@@ -117,6 +122,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 			t.subscribedTracksMu.Unlock()
 		},
 		OnSubscriberMaxQualityChange: t.onSubscriberMaxQualityChange,
+		OnSubscriberAudioCodecChange: t.onSubscriberAudioCodecChange,
 	})
 	if err != nil {
 		return nil, err

@@ -305,7 +305,11 @@ func (t *MediaTrackReceiver) HandleReceiverCodecChange(r sfu.TrackReceiver, code
 		return
 	}
 
-	t.params.Logger.Infow("regressing codec", "from", codec.MimeType, "to", backupCodecReceiver.Codec().MimeType)
+	t.params.Logger.Infow(
+		"regressing codec",
+		"from", codec.MimeType,
+		"to", backupCodecReceiver.Codec().MimeType,
+	)
 
 	// remove old codec from potential codecs
 	for i, c := range t.potentialCodecs {
@@ -578,6 +582,7 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 		UpstreamCodecs: potentialCodecs,
 		Logger:         tLogger,
 		DisableRed:     t.TrackInfo().GetDisableRed() || !t.params.AudioConfig.ActiveREDEncoding,
+		IsEncrypted:    t.IsEncrypted(),
 	})
 	subID := sub.ID()
 	subTrack, err := t.MediaTrackSubscriptions.AddSubscriber(sub, wr)
