@@ -286,10 +286,12 @@ func filterCodecs(
 
 		for _, enabledCodec := range enabledCodecs {
 			if mime.NormalizeMimeType(enabledCodec.Mime) == mime.NormalizeMimeType(c.RTPCodecCapability.MimeType) {
-				if mime.IsMimeTypeStringVideo(c.RTPCodecCapability.MimeType) {
-					c.RTPCodecCapability.RTCPFeedback = rtcpFeedbackConfig.Video
-				} else {
-					c.RTPCodecCapability.RTCPFeedback = rtcpFeedbackConfig.Audio
+				if !mime.IsMimeTypeStringEqual(c.RTPCodecCapability.MimeType, mime.MimeTypeRTX.String()) {
+					if mime.IsMimeTypeStringVideo(c.RTPCodecCapability.MimeType) {
+						c.RTPCodecCapability.RTCPFeedback = rtcpFeedbackConfig.Video
+					} else {
+						c.RTPCodecCapability.RTCPFeedback = rtcpFeedbackConfig.Audio
+					}
 				}
 				filteredCodecs = append(filteredCodecs, c)
 				break
