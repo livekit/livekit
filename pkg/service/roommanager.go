@@ -63,6 +63,7 @@ type RoomManager struct {
 
 	rooms               map[livekit.RoomKey]*rtc.Room
 	outRelayCollections map[livekit.RoomKey]*relay.Collection
+	inRelayCollections  map[livekit.RoomKey]*relay.Collection
 
 	iceConfigCache map[livekit.ParticipantID]*iceConfigCacheEntry
 }
@@ -101,6 +102,7 @@ func NewLocalRoomManager(
 
 		rooms:               make(map[livekit.RoomKey]*rtc.Room),
 		outRelayCollections: make(map[livekit.RoomKey]*relay.Collection),
+		inRelayCollections:  make(map[livekit.RoomKey]*relay.Collection),
 
 		iceConfigCache: make(map[livekit.ParticipantID]*iceConfigCacheEntry),
 
@@ -131,6 +133,7 @@ func (r *RoomManager) DeleteRoom(ctx context.Context, roomKey livekit.RoomKey) e
 	r.lock.Lock()
 	delete(r.rooms, roomKey)
 	delete(r.outRelayCollections, roomKey)
+	delete(r.inRelayCollections, roomKey)
 	r.lock.Unlock()
 
 	var err, err2 error
@@ -235,7 +238,7 @@ func (r *RoomManager) StartSession(
 	responseSink routing.MessageSink,
 ) error {
 
-	room, outRelayCollection, err := r.getOrCreateRoom(ctx, roomKey)
+	room, outRelayCollection, _, err := r.getOrCreateRoom(ctx, roomKey)
 	if err != nil {
 		return err
 	}
@@ -424,39 +427,44 @@ func (r *RoomManager) StartSession(
 }
 
 // create the actual room object, to be used on RTC node
-func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomKey) (*rtc.Room, *relay.Collection, error) {
+func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomKey) (*rtc.Room, *relay.Collection, *relay.Collection, error) {
 	r.lock.RLock()
 	lastSeenRoom := r.rooms[roomKey]
 	lastSeenOutRelayCollection := r.outRelayCollections[roomKey]
+	lastSeenInRelayCollection := r.inRelayCollections[roomKey]
 	r.lock.RUnlock()
 
 	if lastSeenRoom != nil && lastSeenRoom.Hold() {
-		return lastSeenRoom, lastSeenOutRelayCollection, nil
+		return lastSeenRoom, lastSeenOutRelayCollection, lastSeenInRelayCollection, nil
 	}
 
 	// create new room, get details first
 	ri, internal, roomCommunicator, err := r.roomStore.LoadRoom(ctx, roomKey, true)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	r.lock.Lock()
 
 	currentRoom := r.rooms[roomKey]
 	currentOutRelayCollection := r.outRelayCollections[roomKey]
+	currentInRelayCollection := r.inRelayCollections[roomKey]
+
 	for currentRoom != lastSeenRoom {
 		r.lock.Unlock()
 		if currentRoom != nil && currentRoom.Hold() {
-			return currentRoom, currentOutRelayCollection, nil
+			return currentRoom, currentOutRelayCollection, currentInRelayCollection, nil
 		}
 
 		lastSeenRoom = currentRoom
 		r.lock.Lock()
 		currentRoom = r.rooms[roomKey]
 		currentOutRelayCollection = r.outRelayCollections[roomKey]
+		currentInRelayCollection = r.inRelayCollections[roomKey]
 	}
 
 	outRelayCollection := relay.NewCollection()
+	inRelayCollection := relay.NewCollection()
 	rtcConfig := *r.rtcConfig
 	relayRtcConfig := *r.relayRtcConfig
 
@@ -465,14 +473,50 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 
 	newRoom.OnClose(func() {
 		roomInfo := newRoom.ToProto()
+
+		// graceful close all relays with timeout
+		var wg sync.WaitGroup
+		ctx, cancel := context.WithTimeout(context.Background(), 5 * time.Second)
+		defer cancel()
+
+		outRelayCollection.ForEach(func(rel relay.Relay) {
+			wg.Add(1)
+			go func(rel relay.Relay) {
+				defer wg.Done()
+				if pr, ok := rel.(*pc.PcRelay); ok {
+					pr.Close()
+					select {
+					case <-pr.Closed():
+					case <-ctx.Done():
+					}
+				} else {
+					rel.Close()
+				}
+			}(rel)
+		})
+		inRelayCollection.ForEach(func(rel relay.Relay) {
+			wg.Add(1)
+			go func(rel relay.Relay) {
+				defer wg.Done()
+				if pr, ok := rel.(*pc.PcRelay); ok {
+					pr.Close()
+					select {
+					case <-pr.Closed():
+					case <-ctx.Done():
+					}
+				} else {
+					rel.Close()
+				}
+			}(rel)
+		})
+
+		wg.Wait()
+
 		r.telemetry.RoomEnded(ctx, roomInfo)
 		prometheus.RoomEnded(time.Unix(roomInfo.CreationTime, 0))
 		if err := r.DeleteRoom(ctx, roomKey); err != nil {
 			newRoom.Logger.Errorw("Could not delete room", err)
 		}
-		outRelayCollection.ForEach(func(relay relay.Relay) {
-			relay.Close()
-		})
 
 		newRoom.Logger.Infow("Room closed", "roomID", roomInfo.Sid, "roomName", roomInfo.Name)
 	})
@@ -680,6 +724,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 
 			rel.OnReady(func() {
 				logger.Infow("In-relay is ready", "relayID", rel.ID(), "fromPeerId", fromPeerId, "roomKey", roomKey, "nodeID", r.currentNode.Id)
+				inRelayCollection.AddRelay(rel)
 				// TODO
 			})
 
@@ -753,6 +798,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 
 	r.rooms[roomKey] = newRoom
 	r.outRelayCollections[roomKey] = outRelayCollection
+	r.inRelayCollections[roomKey] = inRelayCollection
 
 	r.lock.Unlock()
 
@@ -761,7 +807,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 	r.telemetry.RoomStarted(ctx, newRoom.ToProto())
 	prometheus.RoomStarted()
 
-	return newRoom, outRelayCollection, nil
+	return newRoom, outRelayCollection, inRelayCollection, nil
 }
 
 // manages an RTC session for a participant, runs on the RTC node

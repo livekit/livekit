@@ -26,9 +26,20 @@ const (
 type eventType string
 
 const (
-	eventTypeAddTrack eventType = "add_rack"
-	eventTypeOffer    eventType = "offer"
-	eventTypeMessage  eventType = "message"
+	eventTypeAddTrack     eventType = "add_rack"
+	eventTypeOffer        eventType = "offer"
+	eventTypeMessage      eventType = "message"
+	eventTypeRoomClose    eventType = "room_close"
+	eventTypeRoomCloseAck eventType = "room_close_ack"
+)
+
+type relayState int32
+
+const (
+	relayStateConnecting relayState = iota
+	relayStateOpen
+	relayStateClosing
+	relayStateClosed
 )
 
 type addTrackSignal struct {
@@ -82,8 +93,8 @@ var redCodec = webrtc.RTPCodecParameters{
 
 var vp8Codec = webrtc.RTPCodecParameters{
 	RTPCodecCapability: webrtc.RTPCodecCapability{
-		MimeType:     webrtc.MimeTypeVP8,
-		ClockRate:    90000,
+		MimeType:  webrtc.MimeTypeVP8,
+		ClockRate: 90000,
 		RTCPFeedback: []webrtc.RTCPFeedback{
 			{Type: "nack", Parameter: ""},
 			{Type: "nack", Parameter: "pli"},
@@ -116,9 +127,15 @@ type PcRelay struct {
 	pendingWebrtcTracks map[webrtc.SSRC]pendingWebrtcTrack
 	pendingTracksMu     sync.Mutex
 
-	onReady   atomic.Value // func()
-	onTrack   atomic.Value // func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, meta *TrackMeta)
-	onMessage atomic.Value // func(message []byte)
+	onReady   atomic.Value  // func()
+	onTrack   atomic.Value  // func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, meta *TrackMeta)
+	onMessage atomic.Value  // func(message []byte)
+
+	state     atomic.Int32  // relayState
+	ackCh     chan struct{}
+	ackOnce   atomic.Bool
+	closedCh  chan struct{}
+	closeOnce sync.Once
 
 	offerMu sync.Mutex
 
@@ -170,14 +187,17 @@ func NewRelay(logger logger.Logger, conf *relay.RelayConfig) (*PcRelay, error) {
 
 		pendingInfoTracks:   map[webrtc.SSRC]pendingInfoTrack{},
 		pendingWebrtcTracks: map[webrtc.SSRC]pendingWebrtcTrack{},
+		ackCh:               nil,
+		closedCh:            make(chan struct{}),
 	}
+	r.state.Store(int32(relayStateConnecting))
 
 	pc.OnTrack(r.onPeerConnectionTrack)
 
 	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
-		r.logger.Infow("ICE connection state changed", 
-			"state", state.String(), 
-			"relayID", r.id, 
+		r.logger.Infow("ICE connection state changed",
+			"state", state.String(),
+			"relayID", r.id,
 			"side", r.side)
 	})
 
@@ -189,6 +209,7 @@ func NewRelay(logger logger.Logger, conf *relay.RelayConfig) (*PcRelay, error) {
 			channel.OnMessage(r.onSignalingDataChannelMessage)
 			channel.OnOpen(func() {
 				r.logger.Infow("Signaling data channel opened", "relayID", r.id, "side", r.side)
+				r.state.Store(int32(relayStateOpen))
 				if f := r.onReady.Load(); f != nil {
 					f.(func())()
 				}
@@ -468,6 +489,19 @@ func (r *PcRelay) SendMessage(payload []byte) error {
 	return err
 }
 
+func (r *PcRelay) SendRoomCloseMessage() error {
+	if r.signalingDC == nil || r.signalingDC.ReadyState() != webrtc.DataChannelStateOpen {
+		return nil
+	}
+
+	event := dcEvent{
+		ID:   r.rand.Uint64(),
+		Type: eventTypeRoomClose,
+	}
+	_, err := r.send(event, false)
+	return err
+}
+
 func (r *PcRelay) SendReplyMessage(replyForID uint64, payload []byte) error {
 	event := dcEvent{
 		ID:         r.rand.Uint64(),
@@ -490,12 +524,12 @@ func (r *PcRelay) SendMessageAndExpectReply(payload []byte) (<-chan []byte, erro
 
 func (r *PcRelay) DebugInfo() map[string]interface{} {
 	stats := map[string]interface{}{
-		"id": r.id,
-		"side": r.side,
+		"id":                 r.id,
+		"side":               r.side,
 		"iceConnectionState": r.pc.ICEConnectionState().String(),
-		"connectionState": r.pc.ConnectionState().String(),
-		"signalingState": r.pc.SignalingState().String(),
-		"hasPendingTracks": len(r.pendingInfoTracks) > 0 || len(r.pendingWebrtcTracks) > 0,
+		"connectionState":    r.pc.ConnectionState().String(),
+		"signalingState":     r.pc.SignalingState().String(),
+		"hasPendingTracks":   len(r.pendingInfoTracks) > 0 || len(r.pendingWebrtcTracks) > 0,
 	}
 	return stats
 }
@@ -664,6 +698,22 @@ func (r *PcRelay) onSignalingDataChannelMessage(msg webrtc.DataChannelMessage) {
 		if f := r.onMessage.Load(); f != nil {
 			f.(func(id uint64, payload []byte))(event.ID, event.Payload)
 		}
+	} else if event.Type == eventTypeRoomClose {
+		r.logger.Debugw("Room close message received", "relayID", r.id, "side", r.side)
+		_, err := r.send(dcEvent{ID: r.rand.Uint64(), Type: eventTypeRoomCloseAck}, false)
+		if err != nil {
+			r.logger.Errorw("Failed to send room close ack", err, "relayID", r.id, "side", r.side)
+		}
+		r.logger.Debugw("Room close ack sent", "relayID", r.id, "side", r.side)
+
+		go func() {
+			time.AfterFunc(200*time.Millisecond, func() {
+				r.CloseLocal()
+			})
+		}()
+	} else if event.Type == eventTypeRoomCloseAck {
+		r.logger.Debugw("Room close ack message received", "relayID", r.id, "side", r.side)
+		r.onCloseAck()
 	}
 }
 
@@ -671,7 +721,69 @@ func (r *PcRelay) OnMessage(f func(id uint64, payload []byte)) {
 	r.onMessage.Store(f)
 }
 
+func (r *PcRelay) Closed() <-chan struct{} { return r.closedCh }
+
+func (r *PcRelay) signalClosed() {
+	r.closeOnce.Do(func() { close(r.closedCh) })
+}
+
+func (r *PcRelay) ensureAckCh() {
+	if r.ackCh == nil {
+		r.ackCh = make(chan struct{}, 1)
+	}
+}
+
+func (r *PcRelay) onCloseAck() {
+	if !r.ackOnce.Swap(true) && r.ackCh != nil {
+		select {
+		case r.ackCh <- struct{}{}:
+		default:
+		}
+	}
+}
+
 func (r *PcRelay) Close() {
-	r.logger.Infow("Closing relay connection", "relayID", r.id, "side", r.side)
-	_ = r.pc.Close()
+	r.tryStartClosing(true)
+}
+
+func (r *PcRelay) CloseLocal() {
+	r.tryStartClosing(false)
+}
+
+func (r *PcRelay) tryStartClosing(notifyPeer bool) {
+	prev := relayState(r.state.Swap(int32(relayStateClosing)))
+	if prev == relayStateClosing || prev == relayStateClosed {
+		r.logger.Debugw("Relay already closing", "relayID", r.id, "side", r.side)
+		return
+	}
+
+	if notifyPeer {
+		if dc := r.signalingDC; dc != nil && dc.ReadyState() == webrtc.DataChannelStateOpen {
+			r.logger.Debugw("Sending room close message", "relayID", r.id, "side", r.side)
+			r.ensureAckCh()
+
+			if err := r.SendRoomCloseMessage(); err != nil {
+				r.logger.Errorw("Failed to send room close message", err, "relayID", r.id, "side", r.side)
+			}
+
+			go func() {
+				select {
+				case <-r.ackCh:
+					r.logger.Debugw("Room close ACK received", "relayID", r.id, "side", r.side)
+				case <-time.After(500 * time.Millisecond):
+					r.logger.Debugw("Room close ACK timeout", "relayID", r.id, "side", r.side)
+				}
+				_ = r.pc.Close()
+				r.state.Store(int32(relayStateClosed))
+				r.signalClosed()
+			}()
+			return
+		}
+	}
+
+	go func() {
+		_ = r.pc.Close()
+		r.state.Store(int32(relayStateClosed))
+		r.signalClosed()
+	}()
 }
