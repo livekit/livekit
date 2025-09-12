@@ -228,6 +228,18 @@ type PCTransport struct {
 	bwe   bwe.BWE
 	pacer pacer.Pacer
 
+	// transceivers (senders) waiting for SetRemoteDescription (offer) to happen before
+	// SetCodecPreferences can be invoked on them.
+	// Pion adapts codecs/payload types from remote description.
+	// If SetCodecPreferences are done before the remote desctiption is processed,
+	// it is possible that the transceiver gets payload types from media engine.
+	// Subssequently if the peer sends an offer with different payload type for the
+	// same codec, there could be two payload types for the same codec and the wrong
+	// one could be used in the forwarding path. So, wait for `SetRemoteDescription`
+	// to happen so that remote side payload types are adapted.
+	sendersPendingConfigMu sync.Mutex
+	sendersPendingConfig   []configureSenderParams
+
 	previousAnswer *webrtc.SessionDescription
 	// track id -> description map in previous offer sdp
 	previousTrackDescription map[string]*trackDescription
@@ -911,6 +923,54 @@ func (t *PCTransport) AddICECandidate(candidate webrtc.ICECandidateInit) {
 	})
 }
 
+func (t *PCTransport) queueOrConfigureSender(
+	transceiver *webrtc.RTPTransceiver,
+	enabledCodecs []*livekit.Codec,
+	rtcpFeedbackConfig RTCPFeedbackConfig,
+	enableAudioStereo bool,
+	enableAudioNACK bool,
+) {
+	params := configureSenderParams{
+		transceiver,
+		enabledCodecs,
+		rtcpFeedbackConfig,
+		!t.params.IsOfferer,
+		enableAudioStereo,
+		enableAudioNACK,
+	}
+	if !t.params.IsOfferer {
+		t.sendersPendingConfigMu.Lock()
+		t.sendersPendingConfig = append(t.sendersPendingConfig, params)
+		t.sendersPendingConfigMu.Unlock()
+		return
+	}
+
+	configureSender(params)
+}
+
+func (t *PCTransport) processSendersPendingConfig() {
+	t.sendersPendingConfigMu.Lock()
+	pending := t.sendersPendingConfig
+	t.sendersPendingConfig = nil
+	t.sendersPendingConfigMu.Unlock()
+
+	var unprocessed []configureSenderParams
+	for _, p := range pending {
+		if p.transceiver.Mid() == "" {
+			unprocessed = append(unprocessed, p)
+			continue
+		}
+
+		configureSender(p)
+	}
+
+	if len(unprocessed) != 0 {
+		t.sendersPendingConfigMu.Lock()
+		t.sendersPendingConfig = append(t.sendersPendingConfig, unprocessed...)
+		t.sendersPendingConfigMu.Unlock()
+	}
+}
+
 func (t *PCTransport) AddTrack(
 	trackLocal webrtc.TrackLocal,
 	params types.AddTrackParams,
@@ -956,10 +1016,14 @@ func (t *PCTransport) AddTrack(
 		return
 	}
 
-	configureSenderCodecs(transceiver, enabledCodecs, rtcpFeedbackConfig, !t.params.IsOfferer)
-	if trackLocal.Kind() == webrtc.RTPCodecTypeAudio {
-		configureSenderAudio(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
-	}
+	t.queueOrConfigureSender(
+		transceiver,
+		enabledCodecs,
+		rtcpFeedbackConfig,
+		params.Stereo,
+		!params.Red || !t.params.ClientInfo.SupportsAudioRED(),
+	)
+
 	t.adjustNumOutstandingMedia(transceiver)
 	return
 }
@@ -981,10 +1045,14 @@ func (t *PCTransport) AddTransceiverFromTrack(
 		return
 	}
 
-	configureSenderCodecs(transceiver, enabledCodecs, rtcpFeedbackConfig, !t.params.IsOfferer)
-	if trackLocal.Kind() == webrtc.RTPCodecTypeAudio {
-		configureSenderAudio(transceiver, params.Stereo, !params.Red || !t.params.ClientInfo.SupportsAudioRED())
-	}
+	t.queueOrConfigureSender(
+		transceiver,
+		enabledCodecs,
+		rtcpFeedbackConfig,
+		params.Stereo,
+		!params.Red || !t.params.ClientInfo.SupportsAudioRED(),
+	)
+
 	t.adjustNumOutstandingMedia(transceiver)
 	return
 }
@@ -2145,6 +2213,7 @@ func (t *PCTransport) handleICEGatheringCompleteAnswerer() error {
 		return err
 	}
 	t.params.Handler.OnSetRemoteDescriptionOffer()
+	t.processSendersPendingConfig()
 
 	return t.createAndSendAnswer()
 }
@@ -2665,6 +2734,7 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, o
 		return err
 	}
 	t.params.Handler.OnSetRemoteDescriptionOffer()
+	t.processSendersPendingConfig()
 
 	rtxRepairs := nonSimulcastRTXRepairsFromSDP(parsed, t.params.Logger)
 	if len(rtxRepairs) > 0 {
@@ -2825,6 +2895,28 @@ func (t *PCTransport) outputAndClearICEStats() {
 
 // ----------------------
 
+type configureSenderParams struct {
+	transceiver              *webrtc.RTPTransceiver
+	enabledCodecs            []*livekit.Codec
+	rtcpFeedbackConfig       RTCPFeedbackConfig
+	filterOutH264HighProfile bool
+	enableAudioStereo        bool
+	enableAudioNACK          bool
+}
+
+func configureSender(params configureSenderParams) {
+	configureSenderCodecs(
+		params.transceiver,
+		params.enabledCodecs,
+		params.rtcpFeedbackConfig,
+		params.filterOutH264HighProfile,
+	)
+
+	if params.transceiver.Kind() == webrtc.RTPCodecTypeAudio {
+		configureSenderAudio(params.transceiver, params.enableAudioStereo, params.enableAudioNACK)
+	}
+}
+
 // configure subscriber transceiver for audio stereo and nack
 // pion doesn't support per transciver codec configuration, so the nack of this session will be disabled
 // forever once it is first disabled by a transceiver.
@@ -2833,6 +2925,7 @@ func configureSenderAudio(tr *webrtc.RTPTransceiver, stereo bool, nack bool) {
 	if sender == nil {
 		return
 	}
+
 	// enable stereo
 	codecs := sender.GetParameters().Codecs
 	configCodecs := make([]webrtc.RTPCodecParameters, 0, len(codecs))
