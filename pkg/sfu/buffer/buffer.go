@@ -331,7 +331,7 @@ func (b *Buffer) OnCodecChange(fn func(webrtc.RTPCodecParameters)) {
 }
 
 func (b *Buffer) createDDParserAndFrameRateCalculator() {
-	if mime.IsMimeTypeSVC(b.mime) || b.mime == mime.MimeTypeVP8 {
+	if mime.IsMimeTypeSVCCapable(b.mime) || b.mime == mime.MimeTypeVP8 {
 		frc := NewFrameRateCalculatorDD(b.clockRate, b.logger)
 		for i := range b.frameRateCalculator {
 			b.frameRateCalculator[i] = frc.GetFrameRateCalculatorForSpatial(int32(i))

@@ -637,14 +637,29 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 	require.NoError(t, err)
 	defer pc.Close()
 
-	for i, disableRed := range []bool{false, true} {
+	for idx, disableRed := range []bool{false, true, false, true} {
 		t.Run(fmt.Sprintf("disableRed=%v", disableRed), func(t *testing.T) {
-			trackCid := fmt.Sprintf("audiotrack%d", i)
-			participant.AddTrack(&livekit.AddTrackRequest{
-				Type:       livekit.TrackType_AUDIO,
-				DisableRed: disableRed,
-				Cid:        trackCid,
-			})
+			trackCid := fmt.Sprintf("audiotrack%d", idx)
+			req := &livekit.AddTrackRequest{
+				Type: livekit.TrackType_AUDIO,
+				Cid:  trackCid,
+			}
+			if idx < 2 {
+				req.DisableRed = disableRed
+			} else {
+				codec := "red"
+				if disableRed {
+					codec = "opus"
+				}
+				req.SimulcastCodecs = []*livekit.SimulcastCodec{
+					{
+						Codec: codec,
+						Cid:   trackCid,
+					},
+				}
+			}
+			participant.AddTrack(req)
+
 			track, err := webrtc.NewTrackLocalStaticRTP(
 				webrtc.RTPCodecCapability{MimeType: "audio/opus"},
 				trackCid,
@@ -659,8 +674,10 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 			require.NoError(t, err)
 			codecs := transceiver.Sender().GetParameters().Codecs
 			for i, c := range codecs {
-				if c.MimeType == "audio/opus" && i != 0 {
-					codecs[0], codecs[i] = codecs[i], codecs[0]
+				if c.MimeType == "audio/opus" {
+					if i != 0 {
+						codecs[0], codecs[i] = codecs[i], codecs[0]
+					}
 					break
 				}
 			}
@@ -694,7 +711,6 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 				Sdp:  sdp.SDP,
 				Id:   offerId,
 			})
-
 			require.Eventually(
 				t,
 				func() bool {
@@ -710,7 +726,7 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 			var audioSectionIndex int
 			for _, m := range parsed.MediaDescriptions {
 				if m.MediaName.Media == "audio" {
-					if audioSectionIndex == i {
+					if audioSectionIndex == idx {
 						codecs, err := lksdp.CodecsFromMediaDescription(m)
 						require.NoError(t, err)
 						// nack is always enabled. if red is preferred, server will not generate nack request

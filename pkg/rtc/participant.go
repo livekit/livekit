@@ -2930,7 +2930,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 					mimeType = altCodec
 				}
 				if videoLayerMode == livekit.VideoLayer_MODE_UNUSED {
-					if mime.IsMimeTypeStringSVC(mimeType) {
+					if mime.IsMimeTypeStringSVCCapable(mimeType) {
 						videoLayerMode = livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM
 					} else {
 						if p.params.ClientInfo.isOBS() {

@@ -433,7 +433,9 @@ func (t *SubscribedTrack) OnRttUpdate(rtt uint32) {
 }
 
 func (t *SubscribedTrack) OnCodecNegotiated(codec webrtc.RTPCodecCapability) {
-	if t.params.WrappedReceiver.DetermineReceiver(codec) {
+	t.logger.Infow("RAJA, got codec negotiated", "codec", codec) // REMOVE
+	if !t.params.WrappedReceiver.DetermineReceiver(codec) {
+		t.logger.Infow("RAJA, got codec negotiated could not determine receiver", "codec", codec) // REMOVE
 		return
 	}
 
@@ -447,10 +449,16 @@ func (t *SubscribedTrack) OnCodecNegotiated(codec webrtc.RTPCodecCapability) {
 					livekit.VideoQuality_HIGH,
 					t.params.MediaTrack.ToProto(),
 				)
-				t.params.OnSubscriberMaxQualityChange(t.downTrack.SubscriberID(), mimeType, spatial)
+				if t.params.OnSubscriberMaxQualityChange != nil {
+					t.params.OnSubscriberMaxQualityChange(t.downTrack.SubscriberID(), mimeType, spatial)
+				}
 
 			case livekit.TrackType_AUDIO:
-				t.params.OnSubscriberAudioCodecChange(t.downTrack.SubscriberID(), mimeType, true)
+				t.logger.Infow("RAJA, got codec negotiated notifying trying", "codec", codec) // REMOVE
+				if t.params.OnSubscriberAudioCodecChange != nil {
+					t.logger.Infow("RAJA, got codec negotiated notifying", "codec", codec) // REMOVE
+					t.params.OnSubscriberAudioCodecChange(t.downTrack.SubscriberID(), mimeType, true)
+				}
 			}
 		}()
 	}
