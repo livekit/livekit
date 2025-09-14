@@ -60,7 +60,6 @@ func NewWrappedReceiver(params WrappedReceiverParams) *WrappedReceiver {
 	}
 
 	codecs := params.UpstreamCodecs
-	/* RAJA-TODO
 	if len(codecs) == 1 && !params.IsEncrypted {
 		normalizedMimeType := mime.NormalizeMimeType(codecs[0].MimeType)
 		if normalizedMimeType == mime.MimeTypeRED {
@@ -73,7 +72,6 @@ func NewWrappedReceiver(params WrappedReceiverParams) *WrappedReceiver {
 			codecs[0], codecs[1] = codecs[1], codecs[0]
 		}
 	}
-	*/
 
 	return &WrappedReceiver{
 		params:    params,
@@ -96,15 +94,13 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) boo
 
 	codecMimeType := mime.NormalizeMimeType(codec.MimeType)
 	var trackReceiver sfu.TrackReceiver
-	for idx, receiver := range r.receivers {
+	for _, receiver := range r.receivers {
 		receiverMimeType := receiver.Mime()
-		r.params.Logger.Infow("RAJA receiver mime", "mime", receiverMimeType, "idx", idx) // REMOVE
 		if receiverMimeType == codecMimeType {
 			trackReceiver = receiver
 			break
 		}
 
-		/* RAJA-TODO
 		if !r.params.IsEncrypted {
 			if receiverMimeType == mime.MimeTypeRED && codecMimeType == mime.MimeTypeOpus {
 				// audio opus/red can match opus only
@@ -115,15 +111,10 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) boo
 				break
 			}
 		}
-		*/
 	}
 	if trackReceiver == nil {
-		r.params.Logger.Errorw("can't determine receiver for codec", nil, "codec", codec.MimeType)
-		/* RAJA-REMOVE
-		if len(r.receivers) > 0 {
-			trackReceiver = r.receivers[0]
-		}
-		*/
+		r.lock.Unlock()
+		r.params.Logger.Warnw("can't determine receiver for codec", nil, "codec", codec.MimeType)
 		return false
 	}
 	r.TrackReceiver = trackReceiver
@@ -136,13 +127,6 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) boo
 		trackReceiver.AddOnReady(f)
 	}
 
-	/* RAJA-REMOVE
-	if s, ok := trackReceiver.(*simulcastReceiver); ok {
-		if d, ok := s.TrackReceiver.(*DummyReceiver); ok {
-			return d.IsReady()
-		}
-	}
-	*/
 	return true
 }
 
@@ -454,12 +438,6 @@ func (d *DummyReceiver) AddOnReady(f func()) {
 		receiver.AddOnReady(f)
 	}
 }
-
-/* RAJA-REMOVE
-func (d *DummyReceiver) IsReady() bool {
-	return d.receiver.Load() != nil
-}
-*/
 
 func (d *DummyReceiver) AddOnCodecStateChange(f func(codec webrtc.RTPCodecParameters, state sfu.ReceiverCodecState)) {
 	var receiver sfu.TrackReceiver

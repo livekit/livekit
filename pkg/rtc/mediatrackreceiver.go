@@ -566,7 +566,6 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 			potentialCodecs = append(potentialCodecs, codec)
 		}
 	}
-	t.params.Logger.Infow("potential codecs", "codecs", potentialCodecs) // REMOVE
 
 	streamId := string(t.PublisherID())
 	if sub.ProtocolVersion().SupportsPackedStreamId() {
