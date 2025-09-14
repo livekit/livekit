@@ -303,10 +303,11 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(
 			continue
 		}
 
-		// if RED is disabled for this track, don't prefer RED codec in offer
+		preferRED := IsRedEnabled(ti)
+		// if RED is enabled for this track, prefer RED codec in offer
 		for _, codec := range codecs {
 			// codec contain opus/red
-			if !ti.DisableRed &&
+			if preferRED &&
 				mime.IsMimeTypeCodecStringRED(codec.Name) &&
 				strings.Contains(codec.Fmtp, strconv.FormatInt(int64(opusPayload), 10)) {
 				configureReceiverCodecs(transceiver, "audio/red", true)

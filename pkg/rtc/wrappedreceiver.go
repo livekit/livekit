@@ -88,7 +88,7 @@ func (r *WrappedReceiver) StreamID() string {
 	return r.params.StreamId
 }
 
-// DetermineReceiver determines the receiver of negotiated codec and return ready state of the receiver
+// DetermineReceiver determines the receiver of negotiated codec and return if there is a match
 func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) bool {
 	r.lock.Lock()
 
@@ -113,33 +113,21 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) boo
 		}
 	}
 	if trackReceiver == nil {
-		r.params.Logger.Errorw("can't determine receiver for codec", nil, "codec", codec.MimeType)
-		if len(r.receivers) > 0 {
-			trackReceiver = r.receivers[0]
-		}
+		r.lock.Unlock()
+		r.params.Logger.Warnw("can't determine receiver for codec", nil, "codec", codec.MimeType)
+		return false
 	}
 	r.TrackReceiver = trackReceiver
 
-	var onReadyCallbacks []func()
-	if trackReceiver != nil {
-		onReadyCallbacks = r.onReadyCallbacks
-		r.onReadyCallbacks = nil
-	}
+	onReadyCallbacks := r.onReadyCallbacks
+	r.onReadyCallbacks = nil
 	r.lock.Unlock()
 
-	if trackReceiver != nil {
-		for _, f := range onReadyCallbacks {
-			trackReceiver.AddOnReady(f)
-		}
-
-		if s, ok := trackReceiver.(*simulcastReceiver); ok {
-			if d, ok := s.TrackReceiver.(*DummyReceiver); ok {
-				return d.IsReady()
-			}
-		}
-		return true
+	for _, f := range onReadyCallbacks {
+		trackReceiver.AddOnReady(f)
 	}
-	return false
+
+	return true
 }
 
 func (r *WrappedReceiver) Codecs() []webrtc.RTPCodecParameters {
@@ -449,10 +437,6 @@ func (d *DummyReceiver) AddOnReady(f func()) {
 	if receiver != nil {
 		receiver.AddOnReady(f)
 	}
-}
-
-func (d *DummyReceiver) IsReady() bool {
-	return d.receiver.Load() != nil
 }
 
 func (d *DummyReceiver) AddOnCodecStateChange(f func(codec webrtc.RTPCodecParameters, state sfu.ReceiverCodecState)) {

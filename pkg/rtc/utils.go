@@ -192,3 +192,11 @@ func ChunkProtoBatch[T proto.Message](batch []T, target int) [][]T {
 	}
 	return chunks
 }
+
+func IsRedEnabled(ti *livekit.TrackInfo) bool {
+	if len(ti.Codecs) != 0 && ti.Codecs[0].MimeType != "" {
+		return mime.IsMimeTypeStringRED(ti.Codecs[0].MimeType)
+	}
+
+	return !ti.GetDisableRed()
+}

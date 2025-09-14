@@ -207,7 +207,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		info := t.params.MediaTrack.ToProto()
 		addTrackParams := types.AddTrackParams{
 			Stereo: slices.Contains(info.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO),
-			Red:    !info.DisableRed,
+			Red:    IsRedEnabled(info),
 		}
 		codecs := wr.Codecs()
 		if addTrackParams.Red && (len(codecs) == 1 && mime.IsMimeTypeStringOpus(codecs[0].MimeType)) {

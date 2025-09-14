@@ -581,7 +581,7 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 		StreamId:       streamId,
 		UpstreamCodecs: potentialCodecs,
 		Logger:         tLogger,
-		DisableRed:     t.TrackInfo().GetDisableRed() || !t.params.AudioConfig.ActiveREDEncoding,
+		DisableRed:     !IsRedEnabled(t.TrackInfo()) || !t.params.AudioConfig.ActiveREDEncoding,
 		IsEncrypted:    t.IsEncrypted(),
 	})
 	subID := sub.ID()
@@ -598,7 +598,11 @@ func (t *MediaTrackReceiver) AddSubscriber(sub types.LocalParticipant) (types.Su
 	t.lock.RUnlock()
 
 	if remove {
-		t.params.Logger.Debugw("removing subscriber on a not-open track", "subscriberID", subID, "isExpectedToResume", isExpectedToResume)
+		t.params.Logger.Debugw(
+			"removing subscriber on a not-open track",
+			"subscriberID", subID,
+			"isExpectedToResume", isExpectedToResume,
+		)
 		_ = t.MediaTrackSubscriptions.RemoveSubscriber(subID, isExpectedToResume)
 		return nil, ErrNotOpen
 	}

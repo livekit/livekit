@@ -433,7 +433,7 @@ func (t *SubscribedTrack) OnRttUpdate(rtt uint32) {
 }
 
 func (t *SubscribedTrack) OnCodecNegotiated(codec webrtc.RTPCodecCapability) {
-	if t.params.WrappedReceiver.DetermineReceiver(codec) {
+	if !t.params.WrappedReceiver.DetermineReceiver(codec) {
 		return
 	}
 
@@ -447,10 +447,14 @@ func (t *SubscribedTrack) OnCodecNegotiated(codec webrtc.RTPCodecCapability) {
 					livekit.VideoQuality_HIGH,
 					t.params.MediaTrack.ToProto(),
 				)
-				t.params.OnSubscriberMaxQualityChange(t.downTrack.SubscriberID(), mimeType, spatial)
+				if t.params.OnSubscriberMaxQualityChange != nil {
+					t.params.OnSubscriberMaxQualityChange(t.downTrack.SubscriberID(), mimeType, spatial)
+				}
 
 			case livekit.TrackType_AUDIO:
-				t.params.OnSubscriberAudioCodecChange(t.downTrack.SubscriberID(), mimeType, true)
+				if t.params.OnSubscriberAudioCodecChange != nil {
+					t.params.OnSubscriberAudioCodecChange(t.downTrack.SubscriberID(), mimeType, true)
+				}
 			}
 		}()
 	}

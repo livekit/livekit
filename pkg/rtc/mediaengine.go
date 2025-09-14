@@ -45,7 +45,7 @@ var (
 		PayloadType: 63,
 	}
 
-	pcmuCodecParameters = webrtc.RTPCodecParameters{
+	PCMUCodecParameters = webrtc.RTPCodecParameters{
 		RTPCodecCapability: webrtc.RTPCodecCapability{
 			MimeType:  mime.MimeTypePCMU.String(),
 			ClockRate: 8000,
@@ -53,7 +53,7 @@ var (
 		PayloadType: 0,
 	}
 
-	pcmaCodecParameters = webrtc.RTPCodecParameters{
+	PCMACodecParameters = webrtc.RTPCodecParameters{
 		RTPCodecCapability: webrtc.RTPCodecCapability{
 			MimeType:  mime.MimeTypePCMA.String(),
 			ClockRate: 8000,
@@ -166,7 +166,7 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 		}
 	}
 
-	for _, codec := range []webrtc.RTPCodecParameters{pcmuCodecParameters, pcmaCodecParameters} {
+	for _, codec := range []webrtc.RTPCodecParameters{PCMUCodecParameters, PCMACodecParameters} {
 		if !IsCodecEnabled(codecs, codec.RTPCodecCapability) {
 			continue
 		}
