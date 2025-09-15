@@ -474,43 +474,12 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 	newRoom.OnClose(func() {
 		roomInfo := newRoom.ToProto()
 
-		// graceful close all relays with timeout
-		var wg sync.WaitGroup
-		ctx, cancel := context.WithTimeout(context.Background(), 5 * time.Second)
-		defer cancel()
+		// graceful close local relays
+		r.CloseLocalRelayConnections(ctx, roomKey)
 
-		outRelayCollection.ForEach(func(rel relay.Relay) {
-			wg.Add(1)
-			go func(rel relay.Relay) {
-				defer wg.Done()
-				if pr, ok := rel.(*pc.PcRelay); ok {
-					pr.Close()
-					select {
-					case <-pr.Closed():
-					case <-ctx.Done():
-					}
-				} else {
-					rel.Close()
-				}
-			}(rel)
-		})
-		inRelayCollection.ForEach(func(rel relay.Relay) {
-			wg.Add(1)
-			go func(rel relay.Relay) {
-				defer wg.Done()
-				if pr, ok := rel.(*pc.PcRelay); ok {
-					pr.Close()
-					select {
-					case <-pr.Closed():
-					case <-ctx.Done():
-					}
-				} else {
-					rel.Close()
-				}
-			}(rel)
-		})
-
-		wg.Wait()
+		if err := r.SendDeleteRoomMessage(ctx, roomKey); err != nil {
+			newRoom.Logger.Errorw("Could not send graceful shutdown request to outgoing relays", err)
+		}
 
 		r.telemetry.RoomEnded(ctx, roomInfo)
 		prometheus.RoomEnded(time.Unix(roomInfo.CreationTime, 0))
@@ -936,6 +905,9 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomKey livekit.Room
 		}
 	case *livekit.RTCNodeMessage_DeleteRoom:
 		room.Logger.Infow("Deleting room", "roomKey", roomKey, "roomID", room.ID(), "nodeID", r.currentNode.Id)
+
+		r.CloseLocalRelayConnections(ctx, roomKey)
+
 		for _, p := range room.GetParticipants() {
 			_ = p.Close(true, types.ParticipantCloseReasonServiceRequestDeleteRoom)
 		}
@@ -1266,4 +1238,63 @@ type relayMessage struct {
 type signalPeerMessage struct {
 	ReplyTo string `json:"replyTo"`
 	Signal  string `json:"signal"`
+}
+
+func (r *RoomManager) SendDeleteRoomMessage(ctx context.Context, roomKey livekit.RoomKey) error {
+	shutdownMsg := &livekit.RTCNodeMessage{
+		Message: &livekit.RTCNodeMessage_DeleteRoom{
+			DeleteRoom: &livekit.DeleteRoomRequest{
+				Room: string(roomKey),
+			},
+		},
+		SenderTime: time.Now().Unix(),
+	}
+
+	return r.router.WriteRoomRTC(ctx, roomKey, shutdownMsg)
+}
+
+func (r *RoomManager) CloseLocalRelayConnections(ctx context.Context, roomKey livekit.RoomKey) {
+	var wg sync.WaitGroup
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	outRelayCollection := r.outRelayCollections[roomKey]
+	if outRelayCollection != nil {
+		outRelayCollection.ForEach(func(rel relay.Relay) {
+			wg.Add(1)
+			go func(rel relay.Relay) {
+				defer wg.Done()
+				if pr, ok := rel.(*pc.PcRelay); ok {
+					pr.Close()
+					select {
+					case <-pr.Closed():
+					case <-ctx.Done():
+					}
+				} else {
+					rel.Close()
+				}
+			}(rel)
+		})
+	}
+
+	inRelayCollection := r.inRelayCollections[roomKey]
+	if inRelayCollection != nil {
+		inRelayCollection.ForEach(func(rel relay.Relay) {
+			wg.Add(1)
+			go func(rel relay.Relay) {
+				defer wg.Done()
+				if pr, ok := rel.(*pc.PcRelay); ok {
+					pr.Close()
+					select {
+					case <-pr.Closed():
+					case <-ctx.Done():
+					}
+				} else {
+					rel.Close()
+				}
+			}(rel)
+		})
+	}
+
+	wg.Wait()
 }

@@ -132,8 +132,6 @@ type PcRelay struct {
 	onMessage atomic.Value  // func(message []byte)
 
 	state     atomic.Int32  // relayState
-	ackCh     chan struct{}
-	ackOnce   atomic.Bool
 	closedCh  chan struct{}
 	closeOnce sync.Once
 
@@ -187,7 +185,7 @@ func NewRelay(logger logger.Logger, conf *relay.RelayConfig) (*PcRelay, error) {
 
 		pendingInfoTracks:   map[webrtc.SSRC]pendingInfoTrack{},
 		pendingWebrtcTracks: map[webrtc.SSRC]pendingWebrtcTrack{},
-		ackCh:               nil,
+		//ackCh:               nil,
 		closedCh:            make(chan struct{}),
 	}
 	r.state.Store(int32(relayStateConnecting))
@@ -700,20 +698,7 @@ func (r *PcRelay) onSignalingDataChannelMessage(msg webrtc.DataChannelMessage) {
 		}
 	} else if event.Type == eventTypeRoomClose {
 		r.logger.Debugw("Room close message received", "relayID", r.id, "side", r.side)
-		_, err := r.send(dcEvent{ID: r.rand.Uint64(), Type: eventTypeRoomCloseAck}, false)
-		if err != nil {
-			r.logger.Errorw("Failed to send room close ack", err, "relayID", r.id, "side", r.side)
-		}
-		r.logger.Debugw("Room close ack sent", "relayID", r.id, "side", r.side)
-
-		go func() {
-			time.AfterFunc(200*time.Millisecond, func() {
-				r.CloseLocal()
-			})
-		}()
-	} else if event.Type == eventTypeRoomCloseAck {
-		r.logger.Debugw("Room close ack message received", "relayID", r.id, "side", r.side)
-		r.onCloseAck()
+		r.Close()
 	}
 }
 
@@ -727,58 +712,11 @@ func (r *PcRelay) signalClosed() {
 	r.closeOnce.Do(func() { close(r.closedCh) })
 }
 
-func (r *PcRelay) ensureAckCh() {
-	if r.ackCh == nil {
-		r.ackCh = make(chan struct{}, 1)
-	}
-}
-
-func (r *PcRelay) onCloseAck() {
-	if !r.ackOnce.Swap(true) && r.ackCh != nil {
-		select {
-		case r.ackCh <- struct{}{}:
-		default:
-		}
-	}
-}
-
 func (r *PcRelay) Close() {
-	r.tryStartClosing(true)
-}
-
-func (r *PcRelay) CloseLocal() {
-	r.tryStartClosing(false)
-}
-
-func (r *PcRelay) tryStartClosing(notifyPeer bool) {
 	prev := relayState(r.state.Swap(int32(relayStateClosing)))
 	if prev == relayStateClosing || prev == relayStateClosed {
 		r.logger.Debugw("Relay already closing", "relayID", r.id, "side", r.side)
 		return
-	}
-
-	if notifyPeer {
-		if dc := r.signalingDC; dc != nil && dc.ReadyState() == webrtc.DataChannelStateOpen {
-			r.logger.Debugw("Sending room close message", "relayID", r.id, "side", r.side)
-			r.ensureAckCh()
-
-			if err := r.SendRoomCloseMessage(); err != nil {
-				r.logger.Errorw("Failed to send room close message", err, "relayID", r.id, "side", r.side)
-			}
-
-			go func() {
-				select {
-				case <-r.ackCh:
-					r.logger.Debugw("Room close ACK received", "relayID", r.id, "side", r.side)
-				case <-time.After(500 * time.Millisecond):
-					r.logger.Debugw("Room close ACK timeout", "relayID", r.id, "side", r.side)
-				}
-				_ = r.pc.Close()
-				r.state.Store(int32(relayStateClosed))
-				r.signalClosed()
-			}()
-			return
-		}
 	}
 
 	go func() {
