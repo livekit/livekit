@@ -1,13 +1,13 @@
 package relay
 
 import (
-
 	"errors"
 	"fmt"
 	"math/rand"
 	"net"
 	"time"
 
+	"github.com/pion/dtls/v2/pkg/crypto/elliptic"
 	"github.com/pion/ice/v2"
 	"github.com/pion/webrtc/v3"
 
@@ -23,11 +23,11 @@ const (
 )
 
 type WebRTCRelayConfig struct {
-	Configuration  webrtc.Configuration
-	SettingEngine  webrtc.SettingEngine
-	BufferFactory  *buffer.Factory
-	RelayUDPMux    ice.UDPMux
-	RelayUdpPort   uint32
+	Configuration webrtc.Configuration
+	SettingEngine webrtc.SettingEngine
+	BufferFactory *buffer.Factory
+	RelayUDPMux   ice.UDPMux
+	RelayUdpPort  uint32
 }
 
 const (
@@ -45,6 +45,10 @@ func NewWebRTCRelayConfig(conf *config.Config, externalIP string) (*WebRTCRelayC
 	s := webrtc.SettingEngine{
 		LoggerFactory: logging.NewLoggerFactory(logger.GetLogger()),
 	}
+
+	// Change elliptic curve to improve connectivity
+	// https://github.com/pion/dtls/pull/474
+	s.SetDTLSEllipticCurves(elliptic.P256, elliptic.P384)
 
 	var ifFilter func(string) bool
 	if len(conf.RTC.Interfaces.Includes) != 0 || len(conf.RTC.Interfaces.Excludes) != 0 {
@@ -190,7 +194,7 @@ func NewWebRTCRelayConfig(conf *config.Config, externalIP string) (*WebRTCRelayC
 	return &WebRTCRelayConfig{
 		Configuration: c,
 		SettingEngine: s,
-		RelayUDPMux:    relayUdpMux,
-		RelayUdpPort:   rtcConf.UdpPort,
+		RelayUDPMux:   relayUdpMux,
+		RelayUdpPort:  rtcConf.UdpPort,
 	}, nil
 }
