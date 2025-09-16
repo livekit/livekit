@@ -169,8 +169,8 @@ github.com/lithammer/shortuuid/v4 v4.2.0 h1:LMFOzVB3996a7b8aBuEXxqOBflbfPQAiVzkI
 github.com/lithammer/shortuuid/v4 v4.2.0/go.mod h1:D5noHZ2oFw/YaKCfGy0YxyE7M0wMbezmMjPdhyEFe6Y=
 github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731 h1:9x+U2HGLrSw5ATTo469PQPkqzdoU7be46ryiCDO3boc=
 github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731/go.mod h1:Rs3MhFwutWhGwmY1VQsygw28z5bWcnEYmS1OG9OxjOQ=
-github.com/livekit/mediatransportutil v0.0.0-20250916105529-6e24cd41a1b5 h1:3BN2WxaZLf4dBYf7bftco/1KMyJSnN279yFgVWXGOEg=
-github.com/livekit/mediatransportutil v0.0.0-20250916105529-6e24cd41a1b5/go.mod h1:mSNtYzSf6iY9xM3UX42VEI+STHvMgHmrYzEHPcdhB8A=
+github.com/livekit/mediatransportutil v0.0.0-20250916133748-d92844b56a75 h1:ZeVUtT5K5usLeXpBwdVLywK1W4udXOGhuz4rK+C/PMo=
+github.com/livekit/mediatransportutil v0.0.0-20250916133748-d92844b56a75/go.mod h1:mSNtYzSf6iY9xM3UX42VEI+STHvMgHmrYzEHPcdhB8A=
 github.com/livekit/protocol v1.41.1-0.20250911214555-7e8f7f1f9435 h1:Kb7ezfpKQsL9c4xZmME40or6nnbpemmsr/VEviZzbKQ=
 github.com/livekit/protocol v1.41.1-0.20250911214555-7e8f7f1f9435/go.mod h1:vhMS30QoEyH2p34vi6X1eWkC4EMV72ZGZwQb74ajY7A=
 github.com/livekit/psrpc v0.7.0 h1:rtfqfjYN06WJYloE/S0nmkJ/Y04x4pxLQLe8kQ4FVHU=
