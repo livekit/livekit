@@ -332,8 +332,8 @@ type ParticipantImpl struct {
 	subLogger logger.Logger
 
 	rpcLock             sync.Mutex
-	rpcPendingAcks      map[string]*utils.RpcPendingAckHandler
-	rpcPendingResponses map[string]*utils.RpcPendingResponseHandler
+	rpcPendingAcks      map[string]*utils.DataChannelRpcPendingAckHandler
+	rpcPendingResponses map[string]*utils.DataChannelRpcPendingResponseHandler
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -366,8 +366,8 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			joiningMessageFirstSeqs:       make(map[livekit.ParticipantID]uint32),
 			joiningMessageLastWrittenSeqs: make(map[livekit.ParticipantID]uint32),
 		},
-		rpcPendingAcks:      make(map[string]*utils.RpcPendingAckHandler),
-		rpcPendingResponses: make(map[string]*utils.RpcPendingResponseHandler),
+		rpcPendingAcks:      make(map[string]*utils.DataChannelRpcPendingAckHandler),
+		rpcPendingResponses: make(map[string]*utils.DataChannelRpcPendingResponseHandler),
 		onClose:             make(map[string]func(types.LocalParticipant)),
 	}
 	p.setupSignalling()
@@ -1516,7 +1516,10 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 
 	p.rpcLock.Lock()
 	clear(p.rpcPendingAcks)
-	clear(p.rpcPendingResponses)
+	for _, handler := range p.rpcPendingResponses {
+		handler.Resolve("", utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcRecipientDisconnected, nil))
+	}
+	p.rpcPendingResponses = make(map[string]*utils.DataChannelRpcPendingResponseHandler)
 	p.rpcLock.Unlock()
 
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
@@ -2511,8 +2514,8 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		case *livekit.RpcResponse_Payload:
 			shouldForwardData = !p.handleIncomingRpcResponse(payload.RpcResponse.GetRequestId(), res.Payload, nil)
 		case *livekit.RpcResponse_Error:
-			shouldForwardData = !p.handleIncomingRpcResponse(payload.RpcResponse.GetRequestId(), "", &utils.RpcError{
-				Code:    utils.RpcErrorCode(res.Error.GetCode()),
+			shouldForwardData = !p.handleIncomingRpcResponse(payload.RpcResponse.GetRequestId(), "", &utils.DataChannelRpcError{
+				Code:    utils.DataChannelRpcErrorCode(res.Error.GetCode()),
 				Message: res.Error.GetMessage(),
 				Data:    res.Error.GetData(),
 			})
@@ -4212,7 +4215,7 @@ func (p *ParticipantImpl) handleIncomingRpcAck(requestId string) bool {
 	return true
 }
 
-func (p *ParticipantImpl) handleIncomingRpcResponse(requestId string, payload string, err *utils.RpcError) bool {
+func (p *ParticipantImpl) handleIncomingRpcResponse(requestId string, payload string, err *utils.DataChannelRpcError) bool {
 	p.rpcLock.Lock()
 	defer p.rpcLock.Unlock()
 
@@ -4229,12 +4232,12 @@ func (p *ParticipantImpl) handleIncomingRpcResponse(requestId string, payload st
 func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh chan string, errorCh chan error) {
 	responseTimeout := req.GetResponseTimeoutMs()
 	if responseTimeout <= 0 {
-		responseTimeout = uint32(utils.RpcDefaultResponseTimeout.Milliseconds())
+		responseTimeout = uint32(utils.DataChannelRpcDefaultResponseTimeout.Milliseconds())
 	}
 
 	go func() {
-		if len([]byte(req.GetPayload())) > utils.RpcMaxPayloadBytes {
-			errorCh <- utils.RpcErrorFromBuiltInCodes(utils.RpcRequestPayloadTooLarge, nil).PsrpcError()
+		if len([]byte(req.GetPayload())) > utils.DataChannelRpcMaxPayloadBytes {
+			errorCh <- utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcRequestPayloadTooLarge, nil).PsrpcError()
 			return
 		}
 
@@ -4246,11 +4249,11 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 			p.rpcLock.Unlock()
 
 			select {
-			case errorCh <- utils.RpcErrorFromBuiltInCodes(utils.RpcResponseTimeout, nil).PsrpcError():
+			case errorCh <- utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcResponseTimeout, nil).PsrpcError():
 			default:
 			}
 		})
-		ackTimer := time.AfterFunc(utils.RpcMaxRoundTripLatency, func() {
+		ackTimer := time.AfterFunc(utils.DataChannelRpcMaxRoundTripLatency, func() {
 			p.rpcLock.Lock()
 			delete(p.rpcPendingAcks, id)
 			delete(p.rpcPendingResponses, id)
@@ -4258,7 +4261,7 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 			responseTimer.Stop()
 
 			select {
-			case errorCh <- utils.RpcErrorFromBuiltInCodes(utils.RpcConnectionTimeout, nil).PsrpcError():
+			case errorCh <- utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcConnectionTimeout, nil).PsrpcError():
 			default:
 			}
 		})
@@ -4293,14 +4296,14 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 		}
 
 		p.rpcLock.Lock()
-		p.rpcPendingAcks[id] = &utils.RpcPendingAckHandler{
+		p.rpcPendingAcks[id] = &utils.DataChannelRpcPendingAckHandler{
 			Resolve: func() {
 				ackTimer.Stop()
 			},
 			ParticipantIdentity: req.GetDestinationIdentity(),
 		}
-		p.rpcPendingResponses[id] = &utils.RpcPendingResponseHandler{
-			Resolve: func(payload string, error *utils.RpcError) {
+		p.rpcPendingResponses[id] = &utils.DataChannelRpcPendingResponseHandler{
+			Resolve: func(payload string, error *utils.DataChannelRpcError) {
 				responseTimer.Stop()
 				if _, ok := p.rpcPendingAcks[id]; ok {
 					p.rpcPendingAcks[id].Resolve()

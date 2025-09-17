@@ -1,7 +1,11 @@
 buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.9-20250717185734-6c6e0d3c608e.1 h1:u98oQG8CHYBrOWrYdqbyNpKz4Pw02ssv03DsTInnXn8=
 buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.9-20250717185734-6c6e0d3c608e.1/go.mod h1:aY3zbkNan5F+cGm9lITDP6oxJIwu0dn9KjJuJjWaHkg=
+buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.9-20250912141014-52f32327d4b0.1 h1:DQLS/rRxLHuugVzjJU5AvOwD57pdFl9he/0O7e5P294=
+buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.9-20250912141014-52f32327d4b0.1/go.mod h1:aY3zbkNan5F+cGm9lITDP6oxJIwu0dn9KjJuJjWaHkg=
 buf.build/go/protovalidate v0.14.0 h1:kr/rC/no+DtRyYX+8KXLDxNnI1rINz0imk5K44ZpZ3A=
 buf.build/go/protovalidate v0.14.0/go.mod h1:+F/oISho9MO7gJQNYC2VWLzcO1fTPmaTA08SDYJZncA=
+buf.build/go/protovalidate v1.0.0 h1:IAG1etULddAy93fiBsFVhpj7es5zL53AfB/79CVGtyY=
+buf.build/go/protovalidate v1.0.0/go.mod h1:KQmEUrcQuC99hAw+juzOEAmILScQiKBP1Oc36vvCLW8=
 buf.build/go/protoyaml v0.6.0 h1:Nzz1lvcXF8YgNZXk+voPPwdU8FjDPTUV4ndNTXN0n2w=
 buf.build/go/protoyaml v0.6.0/go.mod h1:RgUOsBu/GYKLDSIRgQXniXbNgFlGEZnQpRAUdLAFV2Q=
 cel.dev/expr v0.24.0 h1:56OvJKSH3hDGL0ml5uSxZmz3/3Pq4tJ+fb1unVLAFcY=
@@ -173,6 +177,8 @@ github.com/livekit/mediatransportutil v0.0.0-20250916133748-d92844b56a75 h1:ZeVU
 github.com/livekit/mediatransportutil v0.0.0-20250916133748-d92844b56a75/go.mod h1:mSNtYzSf6iY9xM3UX42VEI+STHvMgHmrYzEHPcdhB8A=
 github.com/livekit/protocol v1.41.1-0.20250911214555-7e8f7f1f9435 h1:Kb7ezfpKQsL9c4xZmME40or6nnbpemmsr/VEviZzbKQ=
 github.com/livekit/protocol v1.41.1-0.20250911214555-7e8f7f1f9435/go.mod h1:vhMS30QoEyH2p34vi6X1eWkC4EMV72ZGZwQb74ajY7A=
+github.com/livekit/protocol v1.41.1-0.20250917143001-0cc456856ed5 h1:FAqAaBCmWn5pipCxzexDNBVgpZg9GNKwEstrijdzWEw=
+github.com/livekit/protocol v1.41.1-0.20250917143001-0cc456856ed5/go.mod h1:vhMS30QoEyH2p34vi6X1eWkC4EMV72ZGZwQb74ajY7A=
 github.com/livekit/psrpc v0.7.0 h1:rtfqfjYN06WJYloE/S0nmkJ/Y04x4pxLQLe8kQ4FVHU=
 github.com/livekit/psrpc v0.7.0/go.mod h1:AuDC5uOoEjQJEc69v4Li3t77Ocz0e0NdjQEuFfO+vfk=
 github.com/mackerelio/go-osstat v0.2.6 h1:gs4U8BZeS1tjrL08tt5VUliVvSWP26Ai2Ob8Lr7f2i0=

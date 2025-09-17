@@ -4,8 +4,6 @@ go 1.24.0
 
 toolchain go1.24.6
 
-replace github.com/livekit/protocol => ../protocol
-
 require (
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.17.0
@@ -25,7 +23,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/mediatransportutil v0.0.0-20250916133748-d92844b56a75
-	github.com/livekit/protocol v1.41.1-0.20250911214555-7e8f7f1f9435
+	github.com/livekit/protocol v1.41.1-0.20250917143001-0cc456856ed5
 	github.com/livekit/psrpc v0.7.0
 	github.com/mackerelio/go-osstat v0.2.6
 	github.com/magefile/mage v1.15.0
@@ -76,8 +74,8 @@ require (
 )
 
 require (
-	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.9-20250717185734-6c6e0d3c608e.1 // indirect
-	buf.build/go/protovalidate v0.14.0 // indirect
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.9-20250912141014-52f32327d4b0.1 // indirect
+	buf.build/go/protovalidate v1.0.0 // indirect
 	buf.build/go/protoyaml v0.6.0 // indirect
 	cel.dev/expr v0.24.0 // indirect
 	dario.cat/mergo v1.0.0 // indirect
