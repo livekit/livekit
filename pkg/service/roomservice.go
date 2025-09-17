@@ -362,7 +362,7 @@ func (s *RoomService) PerformRpc(ctx context.Context, req *livekit.PerformRpcReq
 		return nil, twirpAuthError(err)
 	}
 	if req.DestinationIdentity == "" {
-		return nil, twirp.InvalidArgumentError(ErrDestinationIdentityRequired.Error(), "")
+		return nil, ErrDestinationIdentityRequired
 	}
 
 	res, err := s.participantClient.PerformRpc(ctx, s.topicFormatter.ParticipantTopic(ctx, roomName, livekit.ParticipantIdentity(req.DestinationIdentity)), req)

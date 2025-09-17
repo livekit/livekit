@@ -46,6 +46,7 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/protocol/utils/pointer"
+	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/metric"
@@ -330,8 +331,8 @@ type ParticipantImpl struct {
 	subLogger logger.Logger
 
 	rpcLock             sync.Mutex
-	rpcPendingAcks      map[string]*sutils.RpcPendingAckHandler
-	rpcPendingResponses map[string]*sutils.RpcPendingResponseHandler
+	rpcPendingAcks      map[string]*utils.RpcPendingAckHandler
+	rpcPendingResponses map[string]*utils.RpcPendingResponseHandler
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -364,8 +365,8 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			joiningMessageFirstSeqs:       make(map[livekit.ParticipantID]uint32),
 			joiningMessageLastWrittenSeqs: make(map[livekit.ParticipantID]uint32),
 		},
-		rpcPendingAcks:      make(map[string]*sutils.RpcPendingAckHandler),
-		rpcPendingResponses: make(map[string]*sutils.RpcPendingResponseHandler),
+		rpcPendingAcks:      make(map[string]*utils.RpcPendingAckHandler),
+		rpcPendingResponses: make(map[string]*utils.RpcPendingResponseHandler),
 	}
 	p.setupSignalling()
 
@@ -2499,8 +2500,8 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		case *livekit.RpcResponse_Payload:
 			shouldForwardData = !p.handleIncomingRpcResponse(payload.RpcResponse.GetRequestId(), res.Payload, nil)
 		case *livekit.RpcResponse_Error:
-			shouldForwardData = !p.handleIncomingRpcResponse(payload.RpcResponse.GetRequestId(), "", &sutils.RpcError{
-				Code:    sutils.RpcErrorCode(res.Error.GetCode()),
+			shouldForwardData = !p.handleIncomingRpcResponse(payload.RpcResponse.GetRequestId(), "", &utils.RpcError{
+				Code:    utils.RpcErrorCode(res.Error.GetCode()),
 				Message: res.Error.GetMessage(),
 				Data:    res.Error.GetData(),
 			})
@@ -4148,7 +4149,7 @@ func (p *ParticipantImpl) handleIncomingRpcAck(requestId string) bool {
 	return true
 }
 
-func (p *ParticipantImpl) handleIncomingRpcResponse(requestId string, payload string, err *sutils.RpcError) bool {
+func (p *ParticipantImpl) handleIncomingRpcResponse(requestId string, payload string, err *utils.RpcError) bool {
 	p.rpcLock.Lock()
 	defer p.rpcLock.Unlock()
 
@@ -4165,16 +4166,16 @@ func (p *ParticipantImpl) handleIncomingRpcResponse(requestId string, payload st
 func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh chan string, errorCh chan error) {
 	responseTimeout := req.GetResponseTimeoutMs()
 	if responseTimeout <= 0 {
-		responseTimeout = 10000
+		responseTimeout = uint32(utils.RpcDefaultResponseTimeout.Milliseconds())
 	}
 
 	go func() {
-		if len([]byte(req.GetPayload())) > sutils.RpcMaxPayloadBytes {
-			errorCh <- &sutils.RpcError{Code: sutils.RpcRequestPayloadTooLarge}
+		if len([]byte(req.GetPayload())) > utils.RpcMaxPayloadBytes {
+			errorCh <- utils.RpcErrorFromBuiltInCodes(utils.RpcRequestPayloadTooLarge, nil).PsrpcError()
 			return
 		}
 
-		id := uuid.New().String()
+		id := uuid.NewString()
 
 		responseTimer := time.AfterFunc(time.Duration(responseTimeout)*time.Millisecond, func() {
 			p.rpcLock.Lock()
@@ -4182,11 +4183,11 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 			p.rpcLock.Unlock()
 
 			select {
-			case errorCh <- &sutils.RpcError{Code: sutils.RpcResponseTimeout}:
+			case errorCh <- utils.RpcErrorFromBuiltInCodes(utils.RpcResponseTimeout, nil).PsrpcError():
 			default:
 			}
 		})
-		ackTimer := time.AfterFunc(sutils.RpcMaxRoundTripLatency, func() {
+		ackTimer := time.AfterFunc(utils.RpcMaxRoundTripLatency, func() {
 			p.rpcLock.Lock()
 			delete(p.rpcPendingAcks, id)
 			delete(p.rpcPendingResponses, id)
@@ -4194,19 +4195,10 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 			responseTimer.Stop()
 
 			select {
-			case errorCh <- &sutils.RpcError{Code: sutils.RpcConnectionTimeout}:
+			case errorCh <- utils.RpcErrorFromBuiltInCodes(utils.RpcConnectionTimeout, nil).PsrpcError():
 			default:
 			}
 		})
-
-		stopTimers := func(ack bool, response bool) {
-			if ack {
-				ackTimer.Stop()
-			}
-			if response {
-				responseTimer.Stop()
-			}
-		}
 
 		rpcRequest := &livekit.DataPacket{
 			Kind: livekit.DataPacket_RELIABLE,
@@ -4215,43 +4207,45 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 					Id:                id,
 					Method:            req.GetMethod(),
 					Payload:           req.GetPayload(),
-					ResponseTimeoutMs: responseTimeout - uint32(sutils.RpcMaxRoundTripLatency),
+					ResponseTimeoutMs: responseTimeout - p.lastRTT,
 					Version:           1,
 				},
 			},
 		}
 		data, err := proto.Marshal(rpcRequest)
 		if err != nil {
-			stopTimers(true, true)
-			errorCh <- err
+			ackTimer.Stop()
+			responseTimer.Stop()
+			errorCh <- psrpc.NewError(psrpc.Internal, err)
 			return
 		}
 
 		// using RPC ID as the unique ID for server to identify the response
 		err = p.SendDataMessage(livekit.DataPacket_RELIABLE, data, livekit.ParticipantID(id), 0)
 		if err != nil {
-			stopTimers(true, true)
-			errorCh <- err
+			ackTimer.Stop()
+			responseTimer.Stop()
+			errorCh <- psrpc.NewError(psrpc.Internal, err)
 			return
 		}
 
 		p.rpcLock.Lock()
-		p.rpcPendingAcks[id] = &sutils.RpcPendingAckHandler{
+		p.rpcPendingAcks[id] = &utils.RpcPendingAckHandler{
 			Resolve: func() {
-				stopTimers(true, false)
+				ackTimer.Stop()
 			},
 			ParticipantIdentity: req.GetDestinationIdentity(),
 		}
-		p.rpcPendingResponses[id] = &sutils.RpcPendingResponseHandler{
-			Resolve: func(payload string, error *sutils.RpcError) {
-				stopTimers(false, true)
+		p.rpcPendingResponses[id] = &utils.RpcPendingResponseHandler{
+			Resolve: func(payload string, error *utils.RpcError) {
+				responseTimer.Stop()
 				if _, ok := p.rpcPendingAcks[id]; ok {
 					p.rpcPendingAcks[id].Resolve()
-					stopTimers(true, false)
+					ackTimer.Stop()
 				}
 
 				if error != nil {
-					errorCh <- error
+					errorCh <- error.PsrpcError()
 				} else {
 					resultCh <- payload
 				}
