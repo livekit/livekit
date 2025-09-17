@@ -202,6 +202,17 @@ type DownTrackStreamAllocatorListener interface {
 
 // -------------------------------------------------------------------
 
+type DownTrackListener interface {
+	OnBindAndConnected()
+	OnStatsUpdate(stat *livekit.AnalyticsStat)
+	OnMaxSubscribedLayerChanged(layer int32)
+	OnRttUpdate(rtt uint32)
+	OnCodecNegotiated(webrtc.RTPCodecCapability)
+	OnDownTrackClose(isExpectedToResume bool)
+}
+
+// -------------------------------------------------------------------
+
 type bindState int
 
 const (
@@ -230,7 +241,7 @@ var _ TrackSender = (*DownTrack)(nil)
 
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
-type DowntrackParams struct {
+type DownTrackParams struct {
 	Codecs                         []webrtc.RTPCodecParameters
 	Source                         livekit.TrackSource
 	Receiver                       TrackReceiver
@@ -245,9 +256,10 @@ type DowntrackParams struct {
 	RTCPWriter                     func([]rtcp.Packet) error
 	DisableSenderReportPassThrough bool
 	SupportsCodecChange            bool
+	Listener                       DownTrackListener
 }
 
-// DownTrack implements TrackLocal, is the track used to write packets
+// DownTrack implements webrtc.TrackLocal, is the track used to write packets
 // to SFU Subscriber, the track handle the packets for simple, simulcast
 // and SVC Publisher.
 // A DownTrack has the following lifecycle
@@ -256,7 +268,7 @@ type DowntrackParams struct {
 // - closed
 // once closed, a DownTrack cannot be re-used.
 type DownTrack struct {
-	params            DowntrackParams
+	params            DownTrackParams
 	id                livekit.TrackID
 	kind              webrtc.RTPCodecType
 	ssrc              uint32
@@ -298,7 +310,6 @@ type DownTrack struct {
 	bindState           atomic.Value
 	onBinding           func(error)
 	bindOnReceiverReady func()
-	onBindAndConnected  func()
 
 	isClosed             atomic.Bool
 	connected            atomic.Bool
@@ -339,18 +350,11 @@ type DownTrack struct {
 	keyFrameRequesterCh       chan struct{}
 	keyFrameRequesterChClosed bool
 
-	cbMu                        sync.RWMutex
-	onStatsUpdate               func(dt *DownTrack, stat *livekit.AnalyticsStat)
-	onMaxSubscribedLayerChanged func(dt *DownTrack, layer int32)
-	onRttUpdate                 func(dt *DownTrack, rtt uint32)
-	onCloseHandler              func(isExpectedToResume bool)
-	onCodecNegotiated           func(webrtc.RTPCodecCapability)
-
 	createdAt int64
 }
 
 // NewDownTrack returns a DownTrack.
-func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
+func NewDownTrack(params DownTrackParams) (*DownTrack, error) {
 	codecs := params.Codecs
 	mimeType := mime.NormalizeMimeType(codecs[0].MimeType)
 	var kind webrtc.RTPCodecType
@@ -417,9 +421,7 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 		Logger:         d.params.Logger.WithValues("direction", "down"),
 	})
 	d.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
-		if onStatsUpdate := d.getOnStatsUpdate(); onStatsUpdate != nil {
-			onStatsUpdate(d, stat)
-		}
+		d.params.Listener.OnStatsUpdate(stat)
 	})
 
 	if d.kind == webrtc.RTPCodecTypeVideo {
@@ -439,12 +441,6 @@ func NewDownTrack(params DowntrackParams) (*DownTrack, error) {
 	d.params.Logger.Debugw("downtrack created", "upstreamCodecs", d.upstreamCodecs)
 
 	return d, nil
-}
-
-func (d *DownTrack) OnCodecNegotiated(f func(webrtc.RTPCodecCapability)) {
-	d.bindLock.Lock()
-	d.onCodecNegotiated = f
-	d.bindLock.Unlock()
 }
 
 // Bind is called by the PeerConnection after negotiation is complete
@@ -546,8 +542,8 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.payloadTypeRTX.Store(uint32(utils.FindRTXPayloadType(codec.PayloadType, d.negotiatedCodecParameters)))
 		logFields = append(
 			logFields,
-			"payloadType", d.payloadType,
-			"payloadTypeRTX", d.payloadTypeRTX,
+			"payloadType", d.payloadType.Load(),
+			"payloadTypeRTX", d.payloadTypeRTX.Load(),
 			"codecParameters", d.negotiatedCodecParameters,
 		)
 		d.params.Logger.Debugw("DownTrack.Bind", logFields...)
@@ -589,13 +585,9 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.bindOnReceiverReady = doBind
 		d.setBindStateLocked(bindStateWaitForReceiverReady)
 	}
-
-	onCodecNegotiated := d.onCodecNegotiated
 	d.bindLock.Unlock()
 
-	if onCodecNegotiated != nil {
-		onCodecNegotiated(codec.RTPCodecCapability)
-	}
+	d.params.Listener.OnCodecNegotiated(codec.RTPCodecCapability)
 
 	if isReceiverReady {
 		doBind()
@@ -930,24 +922,20 @@ func (d *DownTrack) maxLayerNotifierWorker() {
 		maxLayerSpatial := d.forwarder.GetMaxSubscribedSpatial()
 		d.params.Logger.Debugw("max subscribed layer processed", "layer", maxLayerSpatial, "event", event)
 
-		if onMaxSubscribedLayerChanged := d.getOnMaxLayerChanged(); onMaxSubscribedLayerChanged != nil {
-			d.params.Logger.Debugw(
-				"notifying max subscribed layer",
-				"layer", maxLayerSpatial,
-				"event", event,
-			)
-			onMaxSubscribedLayerChanged(d, maxLayerSpatial)
-		}
-	}
-
-	if onMaxSubscribedLayerChanged := d.getOnMaxLayerChanged(); onMaxSubscribedLayerChanged != nil {
 		d.params.Logger.Debugw(
 			"notifying max subscribed layer",
-			"layer", buffer.InvalidLayerSpatial,
-			"event", "close",
+			"layer", maxLayerSpatial,
+			"event", event,
 		)
-		onMaxSubscribedLayerChanged(d, buffer.InvalidLayerSpatial)
+		d.params.Listener.OnMaxSubscribedLayerChanged(maxLayerSpatial)
 	}
+
+	d.params.Logger.Debugw(
+		"notifying max subscribed layer",
+		"layer", buffer.InvalidLayerSpatial,
+		"event", "close",
+	)
+	d.params.Listener.OnMaxSubscribedLayerChanged(buffer.InvalidLayerSpatial)
 }
 
 // WriteRTP writes an RTP Packet to the DownTrack
@@ -1345,9 +1333,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	close(d.keyFrameRequesterCh)
 	d.keyFrameRequesterChMu.Unlock()
 
-	if onCloseHandler := d.getOnCloseHandler(); onCloseHandler != nil {
-		onCloseHandler(!flush)
-	}
+	d.params.Listener.OnDownTrackClose(!flush)
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
@@ -1478,21 +1464,6 @@ func (d *DownTrack) UpTrackBitrateReport(availableLayers []int32, bitrates Bitra
 	)
 }
 
-// OnCloseHandler method to be called on remote tracked removed
-func (d *DownTrack) OnCloseHandler(fn func(isExpectedToResume bool)) {
-	d.cbMu.Lock()
-	defer d.cbMu.Unlock()
-
-	d.onCloseHandler = fn
-}
-
-func (d *DownTrack) getOnCloseHandler() func(isExpectedToResume bool) {
-	d.cbMu.RLock()
-	defer d.cbMu.RUnlock()
-
-	return d.onCloseHandler
-}
-
 func (d *DownTrack) OnBinding(fn func(error)) {
 	d.bindLock.Lock()
 	defer d.bindLock.Unlock()
@@ -1500,60 +1471,11 @@ func (d *DownTrack) OnBinding(fn func(error)) {
 	d.onBinding = fn
 }
 
-func (d *DownTrack) OnBindAndConnected(fn func()) {
-	d.bindLock.Lock()
-	defer d.bindLock.Unlock()
-
-	d.onBindAndConnected = fn
-}
-
 func (d *DownTrack) AddReceiverReportListener(listener ReceiverReportListener) {
 	d.listenerLock.Lock()
 	defer d.listenerLock.Unlock()
 
 	d.receiverReportListeners = append(d.receiverReportListeners, listener)
-}
-
-func (d *DownTrack) OnStatsUpdate(fn func(dt *DownTrack, stat *livekit.AnalyticsStat)) {
-	d.cbMu.Lock()
-	defer d.cbMu.Unlock()
-
-	d.onStatsUpdate = fn
-}
-
-func (d *DownTrack) getOnStatsUpdate() func(dt *DownTrack, stat *livekit.AnalyticsStat) {
-	d.cbMu.RLock()
-	defer d.cbMu.RUnlock()
-
-	return d.onStatsUpdate
-}
-
-func (d *DownTrack) OnRttUpdate(fn func(dt *DownTrack, rtt uint32)) {
-	d.cbMu.Lock()
-	defer d.cbMu.Unlock()
-
-	d.onRttUpdate = fn
-}
-
-func (d *DownTrack) getOnRttUpdate() func(dt *DownTrack, rtt uint32) {
-	d.cbMu.RLock()
-	defer d.cbMu.RUnlock()
-
-	return d.onRttUpdate
-}
-
-func (d *DownTrack) OnMaxLayerChanged(fn func(dt *DownTrack, layer int32)) {
-	d.cbMu.Lock()
-	defer d.cbMu.Unlock()
-
-	d.onMaxSubscribedLayerChanged = fn
-}
-
-func (d *DownTrack) getOnMaxLayerChanged() func(dt *DownTrack, layer int32) {
-	d.cbMu.RLock()
-	defer d.cbMu.RUnlock()
-
-	return d.onMaxSubscribedLayerChanged
 }
 
 func (d *DownTrack) IsDeficient() bool {
@@ -2005,9 +1927,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 			d.sequencer.setRTT(rttToReport)
 		}
 
-		if onRttUpdate := d.getOnRttUpdate(); onRttUpdate != nil {
-			onRttUpdate(d, rttToReport)
-		}
+		d.params.Listener.OnRttUpdate(rttToReport)
 	}
 }
 
@@ -2419,9 +2339,8 @@ func (d *DownTrack) onBindAndConnectedChange() {
 	}
 	d.writable.Store(d.connected.Load() && d.bindState.Load() == bindStateBound)
 	if d.connected.Load() && d.bindState.Load() == bindStateBound && !d.bindAndConnectedOnce.Swap(true) {
-		if f := d.onBindAndConnected; f != nil {
-			go f()
-		}
+		go d.params.Listener.OnBindAndConnected()
+
 		if d.activePaddingOnMuteUpTrack.Load() {
 			go d.sendPaddingOnMute()
 		}

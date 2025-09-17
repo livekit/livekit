@@ -21,6 +21,12 @@ import (
 )
 
 type FakeLocalParticipant struct {
+	AddOnCloseStub        func(string, func(types.LocalParticipant))
+	addOnCloseMutex       sync.RWMutex
+	addOnCloseArgsForCall []struct {
+		arg1 string
+		arg2 func(types.LocalParticipant)
+	}
 	AddTrackStub        func(*livekit.AddTrackRequest)
 	addTrackMutex       sync.RWMutex
 	addTrackArgsForCall []struct {
@@ -849,11 +855,6 @@ type FakeLocalParticipant struct {
 	onClaimsChangedArgsForCall []struct {
 		arg1 func(types.LocalParticipant)
 	}
-	OnCloseStub        func(func(types.LocalParticipant))
-	onCloseMutex       sync.RWMutex
-	onCloseArgsForCall []struct {
-		arg1 func(types.LocalParticipant)
-	}
 	OnDataMessageStub        func(func(types.LocalParticipant, []byte))
 	onDataMessageMutex       sync.RWMutex
 	onDataMessageArgsForCall []struct {
@@ -1338,6 +1339,19 @@ type FakeLocalParticipant struct {
 	updateSignalingRTTArgsForCall []struct {
 		arg1 uint32
 	}
+	UpdateSubscribedAudioCodecsStub        func(livekit.NodeID, livekit.TrackID, []*livekit.SubscribedAudioCodec) error
+	updateSubscribedAudioCodecsMutex       sync.RWMutex
+	updateSubscribedAudioCodecsArgsForCall []struct {
+		arg1 livekit.NodeID
+		arg2 livekit.TrackID
+		arg3 []*livekit.SubscribedAudioCodec
+	}
+	updateSubscribedAudioCodecsReturns struct {
+		result1 error
+	}
+	updateSubscribedAudioCodecsReturnsOnCall map[int]struct {
+		result1 error
+	}
 	UpdateSubscribedQualityStub        func(livekit.NodeID, livekit.TrackID, []types.SubscribedCodecQuality) error
 	updateSubscribedQualityMutex       sync.RWMutex
 	updateSubscribedQualityArgsForCall []struct {
@@ -1431,6 +1445,39 @@ type FakeLocalParticipant struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeLocalParticipant) AddOnClose(arg1 string, arg2 func(types.LocalParticipant)) {
+	fake.addOnCloseMutex.Lock()
+	fake.addOnCloseArgsForCall = append(fake.addOnCloseArgsForCall, struct {
+		arg1 string
+		arg2 func(types.LocalParticipant)
+	}{arg1, arg2})
+	stub := fake.AddOnCloseStub
+	fake.recordInvocation("AddOnClose", []interface{}{arg1, arg2})
+	fake.addOnCloseMutex.Unlock()
+	if stub != nil {
+		fake.AddOnCloseStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeLocalParticipant) AddOnCloseCallCount() int {
+	fake.addOnCloseMutex.RLock()
+	defer fake.addOnCloseMutex.RUnlock()
+	return len(fake.addOnCloseArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) AddOnCloseCalls(stub func(string, func(types.LocalParticipant))) {
+	fake.addOnCloseMutex.Lock()
+	defer fake.addOnCloseMutex.Unlock()
+	fake.AddOnCloseStub = stub
+}
+
+func (fake *FakeLocalParticipant) AddOnCloseArgsForCall(i int) (string, func(types.LocalParticipant)) {
+	fake.addOnCloseMutex.RLock()
+	defer fake.addOnCloseMutex.RUnlock()
+	argsForCall := fake.addOnCloseArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) AddTrack(arg1 *livekit.AddTrackRequest) {
@@ -5829,38 +5876,6 @@ func (fake *FakeLocalParticipant) OnClaimsChangedArgsForCall(i int) func(types.L
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) OnClose(arg1 func(types.LocalParticipant)) {
-	fake.onCloseMutex.Lock()
-	fake.onCloseArgsForCall = append(fake.onCloseArgsForCall, struct {
-		arg1 func(types.LocalParticipant)
-	}{arg1})
-	stub := fake.OnCloseStub
-	fake.recordInvocation("OnClose", []interface{}{arg1})
-	fake.onCloseMutex.Unlock()
-	if stub != nil {
-		fake.OnCloseStub(arg1)
-	}
-}
-
-func (fake *FakeLocalParticipant) OnCloseCallCount() int {
-	fake.onCloseMutex.RLock()
-	defer fake.onCloseMutex.RUnlock()
-	return len(fake.onCloseArgsForCall)
-}
-
-func (fake *FakeLocalParticipant) OnCloseCalls(stub func(func(types.LocalParticipant))) {
-	fake.onCloseMutex.Lock()
-	defer fake.onCloseMutex.Unlock()
-	fake.OnCloseStub = stub
-}
-
-func (fake *FakeLocalParticipant) OnCloseArgsForCall(i int) func(types.LocalParticipant) {
-	fake.onCloseMutex.RLock()
-	defer fake.onCloseMutex.RUnlock()
-	argsForCall := fake.onCloseArgsForCall[i]
-	return argsForCall.arg1
-}
-
 func (fake *FakeLocalParticipant) OnDataMessage(arg1 func(types.LocalParticipant, []byte)) {
 	fake.onDataMessageMutex.Lock()
 	fake.onDataMessageArgsForCall = append(fake.onDataMessageArgsForCall, struct {
@@ -8591,6 +8606,74 @@ func (fake *FakeLocalParticipant) UpdateSignalingRTTArgsForCall(i int) uint32 {
 	defer fake.updateSignalingRTTMutex.RUnlock()
 	argsForCall := fake.updateSignalingRTTArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) UpdateSubscribedAudioCodecs(arg1 livekit.NodeID, arg2 livekit.TrackID, arg3 []*livekit.SubscribedAudioCodec) error {
+	var arg3Copy []*livekit.SubscribedAudioCodec
+	if arg3 != nil {
+		arg3Copy = make([]*livekit.SubscribedAudioCodec, len(arg3))
+		copy(arg3Copy, arg3)
+	}
+	fake.updateSubscribedAudioCodecsMutex.Lock()
+	ret, specificReturn := fake.updateSubscribedAudioCodecsReturnsOnCall[len(fake.updateSubscribedAudioCodecsArgsForCall)]
+	fake.updateSubscribedAudioCodecsArgsForCall = append(fake.updateSubscribedAudioCodecsArgsForCall, struct {
+		arg1 livekit.NodeID
+		arg2 livekit.TrackID
+		arg3 []*livekit.SubscribedAudioCodec
+	}{arg1, arg2, arg3Copy})
+	stub := fake.UpdateSubscribedAudioCodecsStub
+	fakeReturns := fake.updateSubscribedAudioCodecsReturns
+	fake.recordInvocation("UpdateSubscribedAudioCodecs", []interface{}{arg1, arg2, arg3Copy})
+	fake.updateSubscribedAudioCodecsMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) UpdateSubscribedAudioCodecsCallCount() int {
+	fake.updateSubscribedAudioCodecsMutex.RLock()
+	defer fake.updateSubscribedAudioCodecsMutex.RUnlock()
+	return len(fake.updateSubscribedAudioCodecsArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) UpdateSubscribedAudioCodecsCalls(stub func(livekit.NodeID, livekit.TrackID, []*livekit.SubscribedAudioCodec) error) {
+	fake.updateSubscribedAudioCodecsMutex.Lock()
+	defer fake.updateSubscribedAudioCodecsMutex.Unlock()
+	fake.UpdateSubscribedAudioCodecsStub = stub
+}
+
+func (fake *FakeLocalParticipant) UpdateSubscribedAudioCodecsArgsForCall(i int) (livekit.NodeID, livekit.TrackID, []*livekit.SubscribedAudioCodec) {
+	fake.updateSubscribedAudioCodecsMutex.RLock()
+	defer fake.updateSubscribedAudioCodecsMutex.RUnlock()
+	argsForCall := fake.updateSubscribedAudioCodecsArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeLocalParticipant) UpdateSubscribedAudioCodecsReturns(result1 error) {
+	fake.updateSubscribedAudioCodecsMutex.Lock()
+	defer fake.updateSubscribedAudioCodecsMutex.Unlock()
+	fake.UpdateSubscribedAudioCodecsStub = nil
+	fake.updateSubscribedAudioCodecsReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) UpdateSubscribedAudioCodecsReturnsOnCall(i int, result1 error) {
+	fake.updateSubscribedAudioCodecsMutex.Lock()
+	defer fake.updateSubscribedAudioCodecsMutex.Unlock()
+	fake.UpdateSubscribedAudioCodecsStub = nil
+	if fake.updateSubscribedAudioCodecsReturnsOnCall == nil {
+		fake.updateSubscribedAudioCodecsReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.updateSubscribedAudioCodecsReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
 }
 
 func (fake *FakeLocalParticipant) UpdateSubscribedQuality(arg1 livekit.NodeID, arg2 livekit.TrackID, arg3 []types.SubscribedCodecQuality) error {

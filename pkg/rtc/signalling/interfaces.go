@@ -58,4 +58,5 @@ type ParticipantSignalling interface {
 	SignalSubscriptionResponse(subscriptionResponse *livekit.SubscriptionResponse) proto.Message
 	SignalSubscriptionPermissionUpdate(subscriptionPermissionUpdate *livekit.SubscriptionPermissionUpdate) proto.Message
 	SignalMediaSectionsRequirement(mediaSectionsRequirement *livekit.MediaSectionsRequirement) proto.Message
+	SignalSubscribedAudioCodecUpdate(subscribedAudioCodecUpdate *livekit.SubscribedAudioCodecUpdate) proto.Message
 }

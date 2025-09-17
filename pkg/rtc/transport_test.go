@@ -617,7 +617,7 @@ func TestConfigureAudioTransceiver(t *testing.T) {
 			tr, err := pc.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly})
 			require.NoError(t, err)
 
-			configureAudioTransceiver(tr, testcase.stereo, testcase.nack)
+			configureSenderAudio(tr, testcase.stereo, testcase.nack)
 			codecs := tr.Sender().GetParameters().Codecs
 			for _, codec := range codecs {
 				if mime.IsMimeTypeStringOpus(codec.MimeType) {

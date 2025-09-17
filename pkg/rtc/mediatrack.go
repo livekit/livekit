@@ -45,14 +45,13 @@ var _ types.LocalMediaTrack = (*MediaTrack)(nil)
 // Implements MediaTrack and PublishedTrack interface
 type MediaTrack struct {
 	params         MediaTrackParams
-	numUpTracks    atomic.Uint32
 	buffer         *buffer.Buffer
 	everSubscribed atomic.Bool
 
 	*MediaTrackReceiver
 	*MediaLossProxy
 
-	dynacastManager *dynacast.DynacastManager
+	dynacastManager dynacast.DynacastManager
 
 	lock sync.RWMutex
 
@@ -61,6 +60,17 @@ type MediaTrack struct {
 	backupCodecPolicy             livekit.BackupCodecPolicy
 	regressionTargetCodec         mime.MimeType
 	regressionTargetCodecReceived bool
+
+	onSubscribedMaxQualityChange func(
+		trackID livekit.TrackID,
+		trackInfo *livekit.TrackInfo,
+		subscribedQualities []*livekit.SubscribedCodec,
+		maxSubscribedQualities []types.SubscribedCodecQuality,
+	) error
+	onSubscribedAudioCodecChange func(
+		trackID livekit.TrackID,
+		codecs []*livekit.SubscribedAudioCodec,
+	) error
 }
 
 type MediaTrackParams struct {
@@ -123,27 +133,57 @@ func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 		t.MediaTrackReceiver.OnMediaLossFeedback(t.MediaLossProxy.HandleMaxLossFeedback)
 	}
 
-	if ti.Type == livekit.TrackType_VIDEO {
-		t.dynacastManager = dynacast.NewDynacastManager(dynacast.DynacastManagerParams{
+	switch ti.Type {
+	case livekit.TrackType_VIDEO:
+		t.dynacastManager = dynacast.NewDynacastManagerVideo(dynacast.DynacastManagerVideoParams{
 			DynacastPauseDelay: params.VideoConfig.DynacastPauseDelay,
+			Listener:           t,
 			Logger:             params.Logger,
 		})
-		t.MediaTrackReceiver.OnSetupReceiver(func(mime mime.MimeType) {
+
+	case livekit.TrackType_AUDIO:
+		if len(ti.Codecs) > 1 {
+			t.dynacastManager = dynacast.NewDynacastManagerAudio(dynacast.DynacastManagerAudioParams{
+				Listener: t,
+				Logger:   params.Logger,
+			})
+		}
+	}
+	t.MediaTrackReceiver.OnSetupReceiver(func(mime mime.MimeType) {
+		if t.dynacastManager != nil {
 			t.dynacastManager.AddCodec(mime)
-		})
-		t.MediaTrackReceiver.OnSubscriberMaxQualityChange(
-			func(subscriberID livekit.ParticipantID, mimeType mime.MimeType, layer int32) {
+		}
+	})
+	t.MediaTrackReceiver.OnSubscriberMaxQualityChange(
+		func(subscriberID livekit.ParticipantID, mimeType mime.MimeType, layer int32) {
+			if t.dynacastManager != nil {
 				t.dynacastManager.NotifySubscriberMaxQuality(
 					subscriberID,
 					mimeType,
-					buffer.GetVideoQualityForSpatialLayer(mimeType, layer, t.MediaTrackReceiver.TrackInfo()),
+					buffer.GetVideoQualityForSpatialLayer(
+						mimeType,
+						layer,
+						t.MediaTrackReceiver.TrackInfo(),
+					),
 				)
-			},
-		)
-		t.MediaTrackReceiver.OnCodecRegression(func(old, new webrtc.RTPCodecParameters) {
-			t.dynacastManager.HandleCodecRegression(mime.NormalizeMimeType(old.MimeType), mime.NormalizeMimeType(new.MimeType))
-		})
-	}
+			}
+		},
+	)
+	t.MediaTrackReceiver.OnSubscriberAudioCodecChange(
+		func(subscriberID livekit.ParticipantID, mimeType mime.MimeType, enabled bool) {
+			if t.dynacastManager != nil {
+				t.dynacastManager.NotifySubscription(subscriberID, mimeType, enabled)
+			}
+		},
+	)
+	t.MediaTrackReceiver.OnCodecRegression(func(old, new webrtc.RTPCodecParameters) {
+		if t.dynacastManager != nil {
+			t.dynacastManager.HandleCodecRegression(
+				mime.NormalizeMimeType(old.MimeType),
+				mime.NormalizeMimeType(new.MimeType),
+			)
+		}
+	})
 
 	t.SetMuted(ti.Muted)
 	return t
@@ -157,26 +197,20 @@ func (t *MediaTrack) OnSubscribedMaxQualityChange(
 		maxSubscribedQualities []types.SubscribedCodecQuality,
 	) error,
 ) {
-	if t.dynacastManager == nil {
-		return
-	}
+	t.lock.Lock()
+	t.onSubscribedMaxQualityChange = f
+	t.lock.Unlock()
+}
 
-	handler := func(subscribedQualities []*livekit.SubscribedCodec, maxSubscribedQualities []types.SubscribedCodecQuality) {
-		if f != nil && !t.IsMuted() {
-			_ = f(t.ID(), t.ToProto(), subscribedQualities, maxSubscribedQualities)
-		}
-
-		for _, q := range maxSubscribedQualities {
-			receiver := t.Receiver(q.CodecMime)
-			if receiver != nil {
-				receiver.SetMaxExpectedSpatialLayer(
-					buffer.GetSpatialLayerForVideoQuality(q.CodecMime, q.Quality, t.MediaTrackReceiver.TrackInfo()),
-				)
-			}
-		}
-	}
-
-	t.dynacastManager.OnSubscribedMaxQualityChange(handler)
+func (t *MediaTrack) OnSubscribedAudioCodecChange(
+	f func(
+		trackID livekit.TrackID,
+		codecs []*livekit.SubscribedAudioCodec,
+	) error,
+) {
+	t.lock.Lock()
+	t.onSubscribedAudioCodecChange = f
+	t.lock.Unlock()
 }
 
 func (t *MediaTrack) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, qualities []types.SubscribedCodecQuality) {
@@ -185,9 +219,15 @@ func (t *MediaTrack) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, quali
 	}
 }
 
-func (t *MediaTrack) ClearSubscriberNodesMaxQuality() {
+func (t *MediaTrack) NotifySubscriptionNode(nodeID livekit.NodeID, codecs []*livekit.SubscribedAudioCodec) {
 	if t.dynacastManager != nil {
-		t.dynacastManager.ClearSubscriberNodesMaxQuality()
+		t.dynacastManager.NotifySubscriptionNode(nodeID, codecs)
+	}
+}
+
+func (t *MediaTrack) ClearSubscriberNodes() {
+	if t.dynacastManager != nil {
+		t.dynacastManager.ClearSubscriberNodes()
 	}
 }
 
@@ -582,4 +622,48 @@ func (t *MediaTrack) enableRegression() bool {
 
 func (t *MediaTrack) Logger() logger.Logger {
 	return t.params.Logger
+}
+
+// dynacast.DynacastManagerListtener implementation
+var _ dynacast.DynacastManagerListener = (*MediaTrack)(nil)
+
+func (t *MediaTrack) OnDynacastSubscribedMaxQualityChange(
+	subscribedQualities []*livekit.SubscribedCodec,
+	maxSubscribedQualities []types.SubscribedCodecQuality,
+) {
+	t.lock.RLock()
+	onSubscribedMaxQualityChange := t.onSubscribedMaxQualityChange
+	t.lock.RUnlock()
+
+	if onSubscribedMaxQualityChange != nil && !t.IsMuted() {
+		_ = onSubscribedMaxQualityChange(
+			t.ID(),
+			t.ToProto(),
+			subscribedQualities,
+			maxSubscribedQualities,
+		)
+	}
+
+	for _, q := range maxSubscribedQualities {
+		receiver := t.Receiver(q.CodecMime)
+		if receiver != nil {
+			receiver.SetMaxExpectedSpatialLayer(
+				buffer.GetSpatialLayerForVideoQuality(
+					q.CodecMime,
+					q.Quality,
+					t.MediaTrackReceiver.TrackInfo(),
+				),
+			)
+		}
+	}
+}
+
+func (t *MediaTrack) OnDynacastSubscribedAudioCodecChange(codecs []*livekit.SubscribedAudioCodec) {
+	t.lock.RLock()
+	onSubscribedAudioCodecChange := t.onSubscribedAudioCodecChange
+	t.lock.RUnlock()
+
+	if onSubscribedAudioCodecChange != nil {
+		_ = onSubscribedAudioCodecChange(t.ID(), codecs)
+	}
 }

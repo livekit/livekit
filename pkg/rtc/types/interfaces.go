@@ -266,6 +266,12 @@ func (s SignallingCloseReason) String() string {
 }
 
 // ---------------------------------------------
+const (
+	ParticipantCloseKeyNormal = "normal"
+	ParticipantCloseKeyWHIP   = "whip"
+)
+
+// ---------------------------------------------
 
 //counterfeiter:generate . Participant
 type Participant interface {
@@ -470,7 +476,7 @@ type LocalParticipant interface {
 	OnDataPacket(callback func(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket))
 	OnDataMessage(callback func(LocalParticipant, []byte))
 	OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool))
-	OnClose(callback func(LocalParticipant))
+	AddOnClose(key string, callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
 	OnUpdateSubscriptions(func(
 		LocalParticipant,
@@ -512,6 +518,7 @@ type LocalParticipant interface {
 	OnICEConfigChanged(callback func(participant LocalParticipant, iceConfig *livekit.ICEConfig))
 
 	UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []SubscribedCodecQuality) error
+	UpdateSubscribedAudioCodecs(nodeID livekit.NodeID, trackID livekit.TrackID, codecs []*livekit.SubscribedAudioCodec) error
 	UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error
 
 	// down stream bandwidth management
@@ -623,7 +630,8 @@ type LocalMediaTrack interface {
 	SetRTT(rtt uint32)
 
 	NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, qualities []SubscribedCodecQuality)
-	ClearSubscriberNodesMaxQuality()
+	NotifySubscriptionNode(nodeID livekit.NodeID, codecs []*livekit.SubscribedAudioCodec)
+	ClearSubscriberNodes()
 	NotifySubscriberNodeMediaLoss(nodeID livekit.NodeID, fractionalLoss uint8)
 }
 

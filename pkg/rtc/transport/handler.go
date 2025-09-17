@@ -43,6 +43,7 @@ type Handler interface {
 	OnDataMessageUnlabeled(data []byte)
 	OnDataSendError(err error)
 	OnOffer(sd webrtc.SessionDescription, offerId uint32) error
+	OnSetRemoteDescriptionOffer()
 	OnAnswer(sd webrtc.SessionDescription, answerId uint32) error
 	OnNegotiationStateChanged(state NegotiationState)
 	OnNegotiationFailed()
@@ -65,6 +66,7 @@ func (h UnimplementedHandler) OnDataSendError(err error)                        
 func (h UnimplementedHandler) OnOffer(sd webrtc.SessionDescription, offerId uint32) error {
 	return ErrNoOfferHandler
 }
+func (h UnimplementedHandler) OnSetRemoteDescriptionOffer() {}
 func (h UnimplementedHandler) OnAnswer(sd webrtc.SessionDescription, answerId uint32) error {
 	return ErrNoAnswerHandler
 }

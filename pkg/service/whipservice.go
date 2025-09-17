@@ -23,6 +23,9 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/pion/webrtc/v4"
+	"github.com/tomnomnom/linkheader"
+
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
@@ -33,8 +36,6 @@ import (
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
-	"github.com/pion/webrtc/v4"
-	"github.com/tomnomnom/linkheader"
 )
 
 const (
@@ -115,6 +116,7 @@ type createRequest struct {
 	ClientIP                        string
 	OfferSDP                        string
 	SubscribedParticipantTrackNames map[string][]string
+	FromIngress                     bool
 }
 
 func (s *WHIPService) validateCreate(r *http.Request) (*createRequest, int, error) {
@@ -151,6 +153,8 @@ func (s *WHIPService) validateCreate(r *http.Request) (*createRequest, int, erro
 			return nil, http.StatusBadRequest, fmt.Errorf("malformed json in client info header: %s", err)
 		}
 	}
+
+	fromIngress := r.Header.Get("X-Livekit-Ingress")
 
 	offerSDPBytes, err := ioutil.ReadAll(r.Body)
 	if err != nil {
@@ -196,6 +200,7 @@ func (s *WHIPService) validateCreate(r *http.Request) (*createRequest, int, erro
 		clientInfo.ClientIP,
 		offerSDP,
 		clientInfo.SubscribedParticipantTrackNames,
+		fromIngress != "",
 	}, http.StatusOK, nil
 }
 
@@ -242,6 +247,7 @@ func (s *WHIPService) handleCreate(w http.ResponseWriter, r *http.Request) {
 		OfferSdp:                    req.OfferSDP,
 		StartSession:                starSession,
 		SubscribedParticipantTracks: subscribedParticipantTracks,
+		FromIngress:                 req.FromIngress,
 	})
 	if err != nil {
 		s.handleError("Create", w, r, http.StatusServiceUnavailable, err)
@@ -298,7 +304,6 @@ func (s *WHIPService) handleCreate(w http.ResponseWriter, r *http.Request) {
 		"status", http.StatusCreated,
 		"response", logger.Proto(res),
 	)
-	return
 }
 
 func (s *WHIPService) handleParticipantGet(w http.ResponseWriter, r *http.Request) {

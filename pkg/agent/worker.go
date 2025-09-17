@@ -43,6 +43,8 @@ var (
 	ErrDuplicateJobAssignment     = errors.New("duplicate job assignment")
 )
 
+const AgentNameAttributeKey = "lk.agent_name"
+
 type WorkerProtocolVersion int
 
 const CurrentProtocol = 1
@@ -365,6 +367,11 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobS
 		}
 
 		job.State.ParticipantIdentity = res.ParticipantIdentity
+		attributes := res.ParticipantAttributes
+		if attributes == nil {
+			attributes = make(map[string]string)
+		}
+		attributes[AgentNameAttributeKey] = w.AgentName
 
 		token, err := pagent.BuildAgentToken(
 			w.apiKey,
@@ -373,7 +380,7 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobS
 			res.ParticipantIdentity,
 			res.ParticipantName,
 			res.ParticipantMetadata,
-			res.ParticipantAttributes,
+			attributes,
 			w.Permissions,
 		)
 		if err != nil {

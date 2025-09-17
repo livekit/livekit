@@ -625,30 +625,59 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 	participant.SetMigrateState(types.MigrateStateComplete)
 
 	me := webrtc.MediaEngine{}
-	me.RegisterDefaultCodecs()
-	require.NoError(t, me.RegisterCodec(RedCodecParameters, webrtc.RTPCodecTypeAudio))
+	opusCodecParameters := OpusCodecParameters
+	opusCodecParameters.RTPCodecCapability.RTCPFeedback = []webrtc.RTCPFeedback{{Type: webrtc.TypeRTCPFBNACK}}
+	require.NoError(t, me.RegisterCodec(opusCodecParameters, webrtc.RTPCodecTypeAudio))
+	redCodecParameters := RedCodecParameters
+	redCodecParameters.RTPCodecCapability.RTCPFeedback = []webrtc.RTCPFeedback{{Type: webrtc.TypeRTCPFBNACK}}
+	require.NoError(t, me.RegisterCodec(redCodecParameters, webrtc.RTPCodecTypeAudio))
 
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(&me))
 	pc, err := api.NewPeerConnection(webrtc.Configuration{})
 	require.NoError(t, err)
 	defer pc.Close()
 
-	for i, disableRed := range []bool{false, true} {
+	for idx, disableRed := range []bool{false, true, false, true} {
 		t.Run(fmt.Sprintf("disableRed=%v", disableRed), func(t *testing.T) {
-			trackCid := fmt.Sprintf("audiotrack%d", i)
-			participant.AddTrack(&livekit.AddTrackRequest{
-				Type:       livekit.TrackType_AUDIO,
-				DisableRed: disableRed,
-				Cid:        trackCid,
-			})
-			track, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: "audio/opus"}, trackCid, trackCid)
+			trackCid := fmt.Sprintf("audiotrack%d", idx)
+			req := &livekit.AddTrackRequest{
+				Type: livekit.TrackType_AUDIO,
+				Cid:  trackCid,
+			}
+			if idx < 2 {
+				req.DisableRed = disableRed
+			} else {
+				codec := "red"
+				if disableRed {
+					codec = "opus"
+				}
+				req.SimulcastCodecs = []*livekit.SimulcastCodec{
+					{
+						Codec: codec,
+						Cid:   trackCid,
+					},
+				}
+			}
+			participant.AddTrack(req)
+
+			track, err := webrtc.NewTrackLocalStaticRTP(
+				webrtc.RTPCodecCapability{MimeType: "audio/opus"},
+				trackCid,
+				trackCid,
+			)
 			require.NoError(t, err)
-			transceiver, err := pc.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendrecv})
+
+			transceiver, err := pc.AddTransceiverFromTrack(
+				track,
+				webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendrecv},
+			)
 			require.NoError(t, err)
 			codecs := transceiver.Sender().GetParameters().Codecs
 			for i, c := range codecs {
-				if c.MimeType == "audio/opus" && i != 0 {
-					codecs[0], codecs[i] = codecs[i], codecs[0]
+				if c.MimeType == "audio/opus" {
+					if i != 0 {
+						codecs[0], codecs[i] = codecs[i], codecs[0]
+					}
 					break
 				}
 			}
@@ -682,8 +711,14 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 				Sdp:  sdp.SDP,
 				Id:   offerId,
 			})
-
-			require.Eventually(t, func() bool { return answerReceived.Load() && answerIdReceived.Load() == offerId }, 5*time.Second, 10*time.Millisecond)
+			require.Eventually(
+				t,
+				func() bool {
+					return answerReceived.Load() && answerIdReceived.Load() == offerId
+				},
+				5*time.Second,
+				10*time.Millisecond,
+			)
 
 			var redPreferred bool
 			parsed, err := answer.Unmarshal()
@@ -691,7 +726,7 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 			var audioSectionIndex int
 			for _, m := range parsed.MediaDescriptions {
 				if m.MediaName.Media == "audio" {
-					if audioSectionIndex == i {
+					if audioSectionIndex == idx {
 						codecs, err := lksdp.CodecsFromMediaDescription(m)
 						require.NoError(t, err)
 						// nack is always enabled. if red is preferred, server will not generate nack request
