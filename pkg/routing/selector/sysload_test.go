@@ -88,7 +88,7 @@ var (
 )
 
 func TestSystemLoadSelector_SelectNode(t *testing.T) {
-	sel := selector.SystemLoadSelector{SysloadLimit: 1.0, SortBy: "random"}
+	sel := selector.SystemLoadSelector{SysloadLimit: 1.0, SortBy: "random", Algorithm: "lowest"}
 
 	var nodes []*livekit.Node
 	_, err := sel.SelectNode(nodes)
