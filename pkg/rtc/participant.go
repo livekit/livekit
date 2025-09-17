@@ -4267,7 +4267,8 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 		})
 
 		rpcRequest := &livekit.DataPacket{
-			Kind: livekit.DataPacket_RELIABLE,
+			Kind:                livekit.DataPacket_RELIABLE,
+			ParticipantIdentity: id,
 			Value: &livekit.DataPacket_RpcRequest{
 				RpcRequest: &livekit.RpcRequest{
 					Id:                id,
