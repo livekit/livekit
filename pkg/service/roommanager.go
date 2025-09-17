@@ -845,7 +845,6 @@ func (r *RoomManager) PerformRpc(ctx context.Context, req *livekit.PerformRpcReq
 	case result := <-resultChan:
 		return &livekit.PerformRpcResponse{Payload: result}, nil
 	case err := <-errorChan:
-		// AM-TODO: the errors returned here have "twirp error unknown"
 		return nil, err
 	}
 }
