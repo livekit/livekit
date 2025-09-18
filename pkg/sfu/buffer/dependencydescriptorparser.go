@@ -103,6 +103,19 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 		return nil, videoLayer, ErrDDExtentionNotFound
 	}
 
+	var ddVal dd.DependencyDescriptor
+	ext := &dd.DependencyDescriptorExtension{
+		Descriptor: &ddVal,
+		Structure:  r.structure,
+	}
+	_, err := ext.Unmarshal(ddBuf)
+	if err != nil {
+		if err != dd.ErrDDReaderNoStructure && err != dd.ErrDDReaderInvalidTemplateIndex {
+			r.logger.Infow("failed to parse generic dependency descriptor", err, "payload", pkt.PayloadType, "ddbufLen", len(ddBuf))
+		}
+		return nil, videoLayer, err
+	}
+
 	var restart bool
 	if r.enableRestart {
 		if !r.lastPacketAt.IsZero() && time.Since(r.lastPacketAt) > ddRestartThreshold {
@@ -119,19 +132,6 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 		r.lastPacketAt = time.Now()
 	}
 
-	var ddVal dd.DependencyDescriptor
-	ext := &dd.DependencyDescriptorExtension{
-		Descriptor: &ddVal,
-		Structure:  r.structure,
-	}
-	_, err := ext.Unmarshal(ddBuf)
-	if err != nil {
-		if err != dd.ErrDDReaderNoStructure && err != dd.ErrDDReaderInvalidTemplateIndex {
-			r.logger.Infow("failed to parse generic dependency descriptor", err, "payload", pkt.PayloadType, "ddbufLen", len(ddBuf))
-		}
-		return nil, videoLayer, err
-	}
-
 	extSeq := r.seqWrapAround.Update(pkt.SequenceNumber).ExtendedVal
 
 	if ddVal.FrameDependencies != nil {
@@ -141,14 +141,6 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	// assume the packet is in-order when stream restarting
 	unwrapped := r.frameWrapAround.UpdateWithOrderKnown(ddVal.FrameNumber, restart)
 	extFN := unwrapped.ExtendedVal
-	if restart {
-		r.logger.Debugw(
-			"restarted stream",
-			"fn", ddVal.FrameNumber,
-			"unwrappedFN", unwrapped,
-			"frameWrapAround", r.frameWrapAround,
-		)
-	}
 
 	if extFN < r.structureExtFrameNum {
 		r.logger.Debugw(
