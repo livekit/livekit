@@ -108,7 +108,12 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 		if !r.lastPacketAt.IsZero() && time.Since(r.lastPacketAt) > ddRestartThreshold {
 			r.restart()
 			restart = true
-			r.logger.Debugw("dependency descriptor parser restart stream", "generation", r.restartGeneration)
+			r.logger.Debugw(
+				"dependency descriptor parser restart stream",
+				"generation", r.restartGeneration,
+				"lastPacketAt", r.lastPacketAt,
+				"sinceLast", time.Since(r.lastPacketAt),
+			)
 		}
 		r.lastPacketAt = time.Now()
 	}
