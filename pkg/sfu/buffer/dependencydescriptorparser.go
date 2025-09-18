@@ -137,7 +137,13 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	extFN := unwrapped.ExtendedVal
 
 	if extFN < r.structureExtFrameNum {
-		r.logger.Debugw("drop frame which is earlier than current structure", "frameNum", extFN, "structureFrameNum", r.structureExtFrameNum)
+		r.logger.Debugw(
+			"drop frame which is earlier than current structure",
+			"extFN", extFN,
+			"structureExtFrameNum", r.structureExtFrameNum,
+			"unwrappedFN", unwrapped,
+			"frameWrapAround", r.frameWrapAround,
+		)
 		return nil, videoLayer, ErrFrameEarlierThanKeyFrame
 	}
 
@@ -152,17 +158,36 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 
 	if ddVal.AttachedStructure != nil {
 		if !ddVal.FirstPacketInFrame {
-			r.logger.Warnw("attached structure is not the first packet in frame", nil, "extSeq", extSeq, "extFN", extFN)
+			r.logger.Warnw(
+				"attached structure is not the first packet in frame", nil,
+				"extSeq", extSeq,
+				"extFN", extFN,
+			)
 			return nil, videoLayer, ErrDDStructureAttachedToNonFirstPacket
 		}
 
 		if r.structure == nil || ddVal.AttachedStructure.StructureId != r.structure.StructureId {
-			r.logger.Debugw("structure updated", "structureID", ddVal.AttachedStructure.StructureId, "extSeq", extSeq, "extFN", extFN, "descriptor", ddVal.String())
+			r.logger.Debugw(
+				"structure updated",
+				"structureID", ddVal.AttachedStructure.StructureId,
+				"extSeq", extSeq,
+				"extFN", extFN,
+				"descriptor", ddVal.String(),
+				"unwrappedFN", unwrapped,
+				"frameWrapAround", r.frameWrapAround,
+			)
 		}
 		r.structure = ddVal.AttachedStructure
 		r.decodeTargets = ProcessFrameDependencyStructure(ddVal.AttachedStructure)
 		if extFN > unwrapped.PreExtendedHighest && extFN-unwrapped.PreExtendedHighest > 1000 {
-			r.logger.Debugw("large frame number jump on structure updating", "extFN", extFN, "preExtendedHighest", unwrapped.PreExtendedHighest, "structureExtFrameNum", r.structureExtFrameNum)
+			r.logger.Debugw(
+				"large frame number jump on structure updating",
+				"extFN", extFN,
+				"preExtendedHighest", unwrapped.PreExtendedHighest,
+				"structureExtFrameNum", r.structureExtFrameNum,
+				"unwrappedFN", unwrapped,
+				"frameWrapAround", r.frameWrapAround,
+			)
 		}
 		r.structureExtFrameNum = extFN
 		extDD.StructureUpdated = true
