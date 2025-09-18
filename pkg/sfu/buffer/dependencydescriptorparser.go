@@ -144,6 +144,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	if extFN < r.structureExtFrameNum {
 		r.logger.Debugw(
 			"drop frame which is earlier than current structure",
+			"fn", ddVal.FrameNumber,
 			"extFN", extFN,
 			"structureExtFrameNum", r.structureExtFrameNum,
 			"unwrappedFN", unwrapped,
@@ -165,7 +166,9 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 		if !ddVal.FirstPacketInFrame {
 			r.logger.Warnw(
 				"attached structure is not the first packet in frame", nil,
+				"sn", pkt.SequenceNumber,
 				"extSeq", extSeq,
+				"fn", ddVal.FrameNumber,
 				"extFN", extFN,
 			)
 			return nil, videoLayer, ErrDDStructureAttachedToNonFirstPacket
@@ -175,7 +178,9 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 			r.logger.Debugw(
 				"structure updated",
 				"structureID", ddVal.AttachedStructure.StructureId,
+				"sn", pkt.SequenceNumber,
 				"extSeq", extSeq,
+				"fn", ddVal.FrameNumber,
 				"extFN", extFN,
 				"descriptor", ddVal.String(),
 				"unwrappedFN", unwrapped,
@@ -187,6 +192,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 		if extFN > unwrapped.PreExtendedHighest && extFN-unwrapped.PreExtendedHighest > 1000 {
 			r.logger.Debugw(
 				"large frame number jump on structure updating",
+				"fn", ddVal.FrameNumber,
 				"extFN", extFN,
 				"preExtendedHighest", unwrapped.PreExtendedHighest,
 				"structureExtFrameNum", r.structureExtFrameNum,
