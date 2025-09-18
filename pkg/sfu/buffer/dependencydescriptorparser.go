@@ -113,6 +113,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 				"generation", r.restartGeneration,
 				"lastPacketAt", r.lastPacketAt,
 				"sinceLast", time.Since(r.lastPacketAt),
+				"frameWrapAround", r.frameWrapAround,
 			)
 		}
 		r.lastPacketAt = time.Now()
@@ -140,6 +141,14 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	// assume the packet is in-order when stream restarting
 	unwrapped := r.frameWrapAround.UpdateWithOrderKnown(ddVal.FrameNumber, restart)
 	extFN := unwrapped.ExtendedVal
+	if restart {
+		r.logger.Debugw(
+			"restarted stream",
+			"fn", ddVal.FrameNumber,
+			"unwrappedFN", unwrapped,
+			"frameWrapAround", r.frameWrapAround,
+		)
+	}
 
 	if extFN < r.structureExtFrameNum {
 		r.logger.Debugw(
