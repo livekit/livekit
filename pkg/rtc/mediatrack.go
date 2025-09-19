@@ -232,30 +232,36 @@ func (t *MediaTrack) ClearSubscriberNodes() {
 }
 
 func (t *MediaTrack) HasSignalCid(cid string) bool {
-	ti := t.MediaTrackReceiver.TrackInfoClone()
-	for _, c := range ti.Codecs {
-		if c.Cid == cid {
-			return true
+	if cid != "" {
+		ti := t.MediaTrackReceiver.TrackInfoClone()
+		for _, c := range ti.Codecs {
+			if c.Cid == cid {
+				return true
+			}
 		}
 	}
 	return false
 }
 
 func (t *MediaTrack) HasSdpCid(cid string) bool {
-	ti := t.MediaTrackReceiver.TrackInfoClone()
-	for _, c := range ti.Codecs {
-		if c.Cid == cid || c.SdpCid == cid {
-			return true
+	if cid != "" {
+		ti := t.MediaTrackReceiver.TrackInfoClone()
+		for _, c := range ti.Codecs {
+			if c.Cid == cid || c.SdpCid == cid {
+				return true
+			}
 		}
 	}
 	return false
 }
 
 func (t *MediaTrack) GetMimeTypeForSdpCid(cid string) mime.MimeType {
-	ti := t.MediaTrackReceiver.TrackInfoClone()
-	for _, c := range ti.Codecs {
-		if c.Cid == cid || c.SdpCid == cid {
-			return mime.NormalizeMimeType(c.MimeType)
+	if cid != "" {
+		ti := t.MediaTrackReceiver.TrackInfoClone()
+		for _, c := range ti.Codecs {
+			if c.Cid == cid || c.SdpCid == cid {
+				return mime.NormalizeMimeType(c.MimeType)
+			}
 		}
 	}
 	return mime.MimeTypeUnknown
