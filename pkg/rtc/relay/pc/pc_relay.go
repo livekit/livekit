@@ -30,7 +30,6 @@ const (
 	eventTypeOffer        eventType = "offer"
 	eventTypeMessage      eventType = "message"
 	eventTypeRoomClose    eventType = "room_close"
-	eventTypeRoomCloseAck eventType = "room_close_ack"
 )
 
 type relayState int32
@@ -127,20 +126,51 @@ type PcRelay struct {
 	pendingWebrtcTracks map[webrtc.SSRC]pendingWebrtcTrack
 	pendingTracksMu     sync.Mutex
 
-	onReady   atomic.Value  // func()
-	onTrack   atomic.Value  // func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, meta *TrackMeta)
-	onMessage atomic.Value  // func(message []byte)
+	onReady      atomic.Value // func()
+	onTrack      atomic.Value // func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, meta *TrackMeta)
+	onMessage    atomic.Value // func(message []byte)
+	onICEChange  atomic.Value // func(webrtc.ICEConnectionState)
 
-	state     atomic.Int32  // relayState
+	state     atomic.Int32 // relayState
 	closedCh  chan struct{}
 	closeOnce sync.Once
 
 	offerMu sync.Mutex
 
+	isReconnecting atomic.Bool
+
+	conf *relay.RelayConfig
+
 	logger logger.Logger
 }
 
 func NewRelay(logger logger.Logger, conf *relay.RelayConfig) (*PcRelay, error) {
+	r := &PcRelay{
+		id:   conf.ID,
+		side: conf.Side,
+		bufferFactory: conf.BufferFactory,
+		logger:        logger,
+		rand:          rand.New(rand.NewSource(time.Now().UnixNano())),
+
+		pendingInfoTracks:   map[webrtc.SSRC]pendingInfoTrack{},
+		pendingWebrtcTracks: map[webrtc.SSRC]pendingWebrtcTrack{},
+		closedCh:            make(chan struct{}),
+
+		conf: conf,
+	}
+
+	pc, pcErr := r.createPeerConnection(conf)
+	if pcErr != nil {
+		return nil, pcErr
+	}
+	r.pc = pc
+
+	r.state.Store(int32(relayStateConnecting))
+
+	return r, nil
+}
+
+func (r *PcRelay) createPeerConnection(conf *relay.RelayConfig) (*webrtc.PeerConnection, error) {
 	conf.SettingEngine.BufferFactory = conf.BufferFactory.GetOrNew
 
 	me := &webrtc.MediaEngine{}
@@ -166,38 +196,16 @@ func NewRelay(logger logger.Logger, conf *relay.RelayConfig) (*PcRelay, error) {
 		logger.Infow("Configured relay UDP port", "port", conf.RelayUdpPort, "side", conf.Side, "relayID", conf.ID)
 	}
 
-	pc, pcErr := webrtc.
+	pc, err := webrtc.
 		NewAPI(webrtc.WithSettingEngine(conf.SettingEngine), webrtc.WithMediaEngine(me)).
 		NewPeerConnection(webrtc.Configuration{
 			ICEServers: conf.ICEServers,
 		})
-	if pcErr != nil {
-		return nil, pcErr
+	if err != nil {
+		return nil, err
 	}
-
-	r := &PcRelay{
-		id:            conf.ID,
-		side:          conf.Side,
-		pc:            pc,
-		bufferFactory: conf.BufferFactory,
-		logger:        logger,
-		rand:          rand.New(rand.NewSource(time.Now().UnixNano())),
-
-		pendingInfoTracks:   map[webrtc.SSRC]pendingInfoTrack{},
-		pendingWebrtcTracks: map[webrtc.SSRC]pendingWebrtcTrack{},
-		//ackCh:               nil,
-		closedCh:            make(chan struct{}),
-	}
-	r.state.Store(int32(relayStateConnecting))
 
 	pc.OnTrack(r.onPeerConnectionTrack)
-
-	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
-		r.logger.Infow("ICE connection state changed",
-			"state", state.String(),
-			"relayID", r.id,
-			"side", r.side)
-	})
 
 	pc.OnDataChannel(func(channel *webrtc.DataChannel) {
 		logger.Debugw("Data channel created", "channelLabel", channel.Label(), "relayID", r.id, "side", r.side)
@@ -216,7 +224,7 @@ func NewRelay(logger logger.Logger, conf *relay.RelayConfig) (*PcRelay, error) {
 		}
 	})
 
-	return r, nil
+	return pc, nil
 }
 
 func (r *PcRelay) resignal() {
@@ -474,6 +482,7 @@ func (r *PcRelay) OnTrack(f func(track *webrtc.TrackRemote, receiver *webrtc.RTP
 }
 
 func (r *PcRelay) OnConnectionStateChange(f func(state webrtc.ICEConnectionState)) {
+	r.onICEChange.Store(f)
 	r.pc.OnICEConnectionStateChange(f)
 }
 
@@ -724,4 +733,54 @@ func (r *PcRelay) Close() {
 		r.state.Store(int32(relayStateClosed))
 		r.signalClosed()
 	}()
+}
+
+func (r *PcRelay) StartReconnect(inSchedule func(peerId string) error) {
+	if r.side != "in" {
+		return
+	}
+
+	if !r.isReconnecting.CompareAndSwap(false, true) {
+		return
+	}
+
+	go func() {
+		defer r.isReconnecting.Store(false)
+
+		_ = r.pc.Close()
+
+		r.pendingTracksMu.Lock()
+		r.pendingInfoTracks = map[webrtc.SSRC]pendingInfoTrack{}
+		r.pendingWebrtcTracks = map[webrtc.SSRC]pendingWebrtcTrack{}
+		r.pendingTracksMu.Unlock()
+
+		pc, err := r.createPeerConnection(r.conf)
+		if err != nil {
+			r.logger.Errorw("recreate PC failed", err, "relayID", r.id, "side", r.side)
+			r.StartReconnect(inSchedule)
+			return
+		}
+		r.pc = pc
+		r.pc.OnICEConnectionStateChange(r.onICEChange.Load().(func(webrtc.ICEConnectionState)))
+		r.state.Store(int32(relayStateConnecting))
+
+		if err := inSchedule(r.id); err != nil {
+			r.logger.Errorw("send RECONNECT_REQUEST failed", err, "relayID", r.id, "side", r.side)
+			r.StartReconnect(inSchedule)
+			return
+		}
+	}()
+}
+
+func (r *PcRelay) RecreatePc() error {
+	_ = r.pc.Close()
+	pc, err := r.createPeerConnection(r.conf)
+	if err != nil {
+		return err
+	}
+	r.pc = pc
+	r.pc.OnICEConnectionStateChange(r.onICEChange.Load().(func(webrtc.ICEConnectionState)))
+
+	r.state.Store(int32(relayStateConnecting))
+	return nil
 }
