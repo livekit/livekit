@@ -41,7 +41,7 @@ require (
 	github.com/pion/sdp/v3 v3.0.16
 	github.com/pion/transport/v3 v3.0.7
 	github.com/pion/turn/v4 v4.1.1
-	github.com/pion/webrtc/v4 v4.1.5-0.20250828044558-c376d0edf977
+	github.com/pion/webrtc/v4 v4.1.5-0.20250919205607-e0181e91e1fd
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.23.0
 	github.com/redis/go-redis/v9 v9.14.0
