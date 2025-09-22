@@ -51,6 +51,20 @@ func NewWrapAround[T number, ET extendedNumber](params WrapAroundParams) *WrapAr
 	}
 }
 
+func (w *WrapAround[T, ET]) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if w == nil {
+		return nil
+	}
+
+	e.AddUint64("fullRange", uint64(w.fullRange))
+	e.AddBool("initialized", w.initialized)
+	e.AddUint64("start", uint64(w.start))
+	e.AddUint64("highest", uint64(w.highest))
+	e.AddUint64("cycles", uint64(w.cycles))
+	e.AddUint64("extendedHighest", uint64(w.extendedHighest))
+	return nil
+}
+
 func (w *WrapAround[T, ET]) Seed(from *WrapAround[T, ET]) {
 	w.initialized = from.initialized
 	w.start = from.start
