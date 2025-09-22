@@ -776,7 +776,10 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 						if state == webrtc.ICEConnectionStateDisconnected || state == webrtc.ICEConnectionStateFailed {
 							logger.Infow("In-relay starting to reconnect", "relayID", rel.ID(), "fromPeerId", fromPeerId, "roomKey", roomKey, "nodeID", r.currentNode.Id)
 							rel.StartReconnect(func(peerId string) error {
-								_, err := roomCommunicator.SendMessage(fromPeerId, packReconnectRequest(peerId))
+								_, err = roomCommunicator.SendMessage(fromPeerId, packReconnectRequest(peerId))
+								if err != nil {
+									prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "send_reconnect_request").Add(1)
+								}
 								return err
 							})
 						}
