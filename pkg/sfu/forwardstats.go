@@ -1,14 +1,12 @@
 package sfu
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
 	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
-	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 )
 
@@ -46,25 +44,19 @@ func (s *ForwardStats) Update(arrival, left int64) {
 	s.latency.Update(time.Duration(arrival), float64(transit))
 }
 
-func (s *ForwardStats) GetStats() (latency, jitter time.Duration) {
+func (s *ForwardStats) GetStats() (time.Duration, time.Duration) {
 	s.lock.Lock()
 	w := s.latency.Summarize()
 	s.lock.Unlock()
-	latency, jitter = time.Duration(w.Mean()), time.Duration(w.StdDev())
-	// TODO: remove this check after debugging unexpected jitter issue
-	if jitter > 10*time.Second {
-		logger.Infow("unexpected forward jitter",
-			"jitter", jitter,
-			"stats", fmt.Sprintf("count %.2f, mean %.2f, stdDev %.2f", w.Count(), w.Mean(), w.StdDev()),
-		)
-	}
-	return
+
+	return time.Duration(w.Mean()), time.Duration(w.StdDev())
 }
 
-func (s *ForwardStats) GetLastStats(duration time.Duration) (latency, jitter time.Duration) {
+func (s *ForwardStats) GetLastStats(duration time.Duration) (time.Duration, time.Duration) {
 	s.lock.Lock()
-	defer s.lock.Unlock()
 	w := s.latency.SummarizeLast(duration)
+	s.lock.Unlock()
+
 	return time.Duration(w.Mean()), time.Duration(w.StdDev())
 }
 
@@ -82,8 +74,8 @@ func (s *ForwardStats) report(reportInterval time.Duration) {
 		case <-ticker.C:
 			latency, jitter := s.GetLastStats(reportInterval)
 			latencySlow, jitterSlow := s.GetStats()
-			prometheus.RecordForwardJitter(uint32(jitter/time.Millisecond), uint32(jitterSlow/time.Millisecond))
-			prometheus.RecordForwardLatency(uint32(latency/time.Millisecond), uint32(latencySlow/time.Millisecond))
+			prometheus.RecordForwardJitter(uint32(jitter.Microseconds()), uint32(jitterSlow.Microseconds()))
+			prometheus.RecordForwardLatency(uint32(latency.Microseconds()), uint32(latencySlow.Microseconds()))
 		}
 	}
 }
