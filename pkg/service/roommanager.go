@@ -447,6 +447,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 	r.lock.Lock()
 
 	currentRoom := r.rooms[roomKey]
+	currentPeerId := roomCommunicator.PeerId()
 	currentOutRelayCollection := r.outRelayCollections[roomKey]
 	currentInRelayCollection := r.inRelayCollections[roomKey]
 
@@ -477,7 +478,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 		// graceful close local relays
 		r.CloseLocalRelayConnections(ctx, roomKey)
 
-		if err := r.SendDeleteRoomMessage(ctx, roomKey); err != nil {
+		if err := r.SendCloseConnectionsMessage(ctx, roomKey, currentPeerId); err != nil {
 			newRoom.Logger.Errorw("Could not send graceful shutdown request to outgoing relays", err)
 		}
 
@@ -572,17 +573,17 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 	pendingAnswers := map[string]chan []byte{}
 	pendingAnswersMu := sync.Mutex{}
 
-	packOffer := func(peerId string, relayId string) func(offer []byte) ([]byte, error) {
+	packOffer := func(receiverPeerId string, relayId string) func(offer []byte) ([]byte, error) {
 		return func(offer []byte) ([]byte, error) {
 			answer := make(chan []byte, 1)
 
 			pendingAnswersMu.Lock()
-			msgId, sendErr := roomCommunicator.SendMessage(peerId, packSignalPeerMessage("", offer))
+			msgId, sendErr := roomCommunicator.SendMessage(receiverPeerId, packSignalPeerMessage("", offer))
 			if sendErr != nil {
 				pendingAnswersMu.Unlock()
 				return nil, fmt.Errorf("cannot send message to room commmunicator: %w", sendErr)
 			}
-			logger.Infow("Offer sent", "peerId", peerId, "relayID", relayId, "roomKey", roomKey)
+			logger.Infow("Offer sent", "receiverPeerID", receiverPeerId, "relayID", relayId, "roomKey", roomKey)
 			pendingAnswers[msgId] = answer
 			pendingAnswersMu.Unlock()
 
@@ -606,59 +607,76 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 
 	roomCommunicator.ForEachPeer(func(peerId string) {
 		logger.Infow("New p2p peer", "peerId", peerId, "roomKey", roomKey, "nodeID", r.currentNode.Id)
-		rel, err := pc.NewRelay(newRoom.Logger, &relay.RelayConfig{
-			ID:            peerId,
-			BufferFactory: newRoom.GetBufferFactory(),
-			SettingEngine: relayRtcConfig.SettingEngine,
-			ICEServers:    relayRtcConfig.Configuration.ICEServers,
-			RelayUDPMux:   relayRtcConfig.RelayUDPMux,
-			RelayUdpPort:  relayRtcConfig.RelayUdpPort,
-			Side:          "out",
+
+		var rel *pc.PcRelay
+		outRelayCollection.ForEach(func(rly relay.Relay) {
+			if rly.ID() == peerId {
+				rel = rly.(*pc.PcRelay)
+			}
 		})
-		if err != nil {
-			logger.Errorw("Failed to create out relay", err, "peerId", peerId, "roomKey", roomKey, "nodeID", r.currentNode.Id)
-			return
+
+		if rel != nil {
+			outRelayCollection.RemoveRelay(rel)
 		}
 
-		rel.OnReady(func() {
-			logger.Infow("Out relay is ready", "relayID", rel.ID(), "roomKey", roomKey, "nodeID", r.currentNode.Id)
-
-			// todo: combine messages
-			updates := rtc.ToProtoParticipants(newRoom.GetParticipants())
-			if len(updates) > 0 {
-				if updatesForRelay, err := getUpdatesPayloadForRelay(newRoom, updates); err != nil {
-					newRoom.Logger.Errorw("failed to create participant update for relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
-				} else if err := rel.SendMessage(updatesForRelay); err != nil {
-					newRoom.Logger.Errorw("failed to send participant updates to relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
-				}
+			rel, err := pc.NewRelay(newRoom.Logger, &relay.RelayConfig{
+				ID:            peerId,
+				BufferFactory: newRoom.GetBufferFactory(),
+				SettingEngine: relayRtcConfig.SettingEngine,
+				ICEServers:    relayRtcConfig.Configuration.ICEServers,
+				RelayUDPMux:   relayRtcConfig.RelayUDPMux,
+				RelayUdpPort:  relayRtcConfig.RelayUdpPort,
+				Side:          "out",
+			})
+			if err != nil {
+				logger.Errorw("Failed to create out relay", err, "peerId", peerId, "roomKey", roomKey, "nodeID", r.currentNode.Id)
+				return
 			}
 
-			// todo: combine messages
-			speakers := newRoom.GetActiveSpeakers()
-			if len(speakers) > 0 {
-				if speakersForRelay, err := getSpeakersPayloadForRelay(newRoom, speakers); err != nil {
-					newRoom.Logger.Errorw("failed to create speakers payload for relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
-				} else if err := rel.SendMessage(speakersForRelay); err != nil {
-					newRoom.Logger.Errorw("failed to send speakers to relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
+			rel.OnReady(func() {
+				logger.Infow("Out relay is ready", "relayID", rel.ID(), "roomKey", roomKey, "nodeID", r.currentNode.Id)
+
+				// todo: combine messages
+				updates := rtc.ToProtoParticipants(newRoom.GetParticipants())
+				if len(updates) > 0 {
+					if updatesForRelay, err := getUpdatesPayloadForRelay(newRoom, updates); err != nil {
+						newRoom.Logger.Errorw("failed to create participant update for relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
+					} else if err := rel.SendMessage(updatesForRelay); err != nil {
+						newRoom.Logger.Errorw("failed to send participant updates to relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
+					}
 				}
-			}
 
-			// todo: combine messages
-			connQualities := newRoom.GetConnectionInfos()
-			if len(connQualities) > 0 {
-				if connQualitiesForRelay, err := getConnQualitiesPayloadForRelay(newRoom, connQualities); err != nil {
-					newRoom.Logger.Errorw("failed to create connection qualities payload for relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
-				} else if err := rel.SendMessage(connQualitiesForRelay); err != nil {
-					newRoom.Logger.Errorw("failed to send connection qualities to relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
+				// todo: combine messages
+				speakers := newRoom.GetActiveSpeakers()
+				if len(speakers) > 0 {
+					if speakersForRelay, err := getSpeakersPayloadForRelay(newRoom, speakers); err != nil {
+						newRoom.Logger.Errorw("failed to create speakers payload for relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
+					} else if err := rel.SendMessage(speakersForRelay); err != nil {
+						newRoom.Logger.Errorw("failed to send speakers to relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
+					}
 				}
-			}
 
-			outRelayCollection.AddRelay(rel)
-		})
+				// todo: combine messages
+				connQualities := newRoom.GetConnectionInfos()
+				if len(connQualities) > 0 {
+					if connQualitiesForRelay, err := getConnQualitiesPayloadForRelay(newRoom, connQualities); err != nil {
+						newRoom.Logger.Errorw("failed to create connection qualities payload for relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
+					} else if err := rel.SendMessage(connQualitiesForRelay); err != nil {
+						newRoom.Logger.Errorw("failed to send connection qualities to relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
+					}
+				}
 
-		rel.OnConnectionStateChange(func(state webrtc.ICEConnectionState) {
-			logger.Infow("Out relay connection state changed", "state", state.String(), "relayID", rel.ID(), "roomKey", roomKey, "nodeID", r.currentNode.Id)
-		})
+				outRelayCollection.AddRelay(rel)
+			})
+
+			rel.OnConnectionStateChange(func(state webrtc.ICEConnectionState) {
+				logger.Infow("Out relay connection state changed", "state", state.String(), "relayID", rel.ID(), "roomKey", roomKey, "nodeID", r.currentNode.Id)
+
+				// TODO: remove peer from room communicator to allow reconnection for rebooted nodes
+				// if state == webrtc.ICEConnectionStateClosed || state == webrtc.ICEConnectionStateFailed {
+				// 	roomCommunicator.RemovePeer(peerId)
+				// }
+			})
 
 		if err := rel.Offer(packOffer(peerId, rel.ID())); err != nil {
 			logger.Errorw("Failed to create relay offer", err, "peerId", peerId, "relayID", rel.ID(), "roomKey", roomKey)
@@ -687,8 +705,8 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 				logger.Infow("Found existing relay", "relayID", currentRelay.ID(), "roomKey", roomKey, "nodeID", r.currentNode.Id)
 				currentRelay.RecreatePc()
 
-				if err := currentRelay.Offer(packOffer(peerId, currentRelay.ID())); err != nil {
-					logger.Errorw("Failed to create relay offer", err, "peerId", peerId, "relayID", currentRelay.ID(), "roomKey", roomKey)
+				if err := currentRelay.Offer(packOffer(fromPeerId, currentRelay.ID())); err != nil {
+					logger.Errorw("Failed to create relay offer", err, "peerId", fromPeerId, "relayID", currentRelay.ID(), "roomKey", roomKey)
 				}
 			}
 			return
@@ -800,6 +818,10 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 						}
 						onRelayAddTrack(newRoom, track, receiver, mid, rid, addTrackSignal)
 					})
+				}
+
+				if rel.State() == pc.RelayStateClosed || rel.State() == pc.RelayStateClosing {
+					rel.RecreatePc()
 				}
 
 				answer, answerErr := rel.Answer(signal)
@@ -965,6 +987,14 @@ func (r *RoomManager) handleRTCMessage(ctx context.Context, roomKey livekit.Room
 			_ = p.Close(true, types.ParticipantCloseReasonServiceRequestDeleteRoom)
 		}
 		room.Close()
+	case *livekit.RTCNodeMessage_Request:
+		peerId := msg.ConnectionId
+		if peerId == "" {
+			return
+		}
+
+		room.Logger.Infow("Close local connections with peer", "roomKey", roomKey, "roomID", room.ID(), "peerID", peerId, "nodeID", r.currentNode.Id)
+		r.CloseLocalRelayConnectionsById(ctx, roomKey, peerId)
 	case *livekit.RTCNodeMessage_UpdateSubscriptions:
 		if participant == nil {
 			return
@@ -1315,14 +1345,32 @@ func (r *RoomManager) SendDeleteRoomMessage(ctx context.Context, roomKey livekit
 	return r.router.WriteRoomRTC(ctx, roomKey, shutdownMsg)
 }
 
-func (r *RoomManager) CloseLocalRelayConnections(ctx context.Context, roomKey livekit.RoomKey) {
+func (r *RoomManager) SendCloseConnectionsMessage(ctx context.Context, roomKey livekit.RoomKey, peerId string) error {
+	closeConnMsg := &livekit.RTCNodeMessage{
+		ConnectionId: peerId,
+		RoomName:     string(roomKey),
+		Message: &livekit.RTCNodeMessage_Request{
+			Request: &livekit.SignalRequest{},
+		},
+	}
+
+	return r.router.WriteRoomRTC(ctx, roomKey, closeConnMsg)
+}
+
+func (r *RoomManager) closeLocalRelayConnectionsFiltered(ctx context.Context, roomKey livekit.RoomKey, filter func(relay.Relay) bool) {
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	outRelayCollection := r.outRelayCollections[roomKey]
-	if outRelayCollection != nil {
-		outRelayCollection.ForEach(func(rel relay.Relay) {
+	closeCollection := func(coll *relay.Collection) {
+		if coll == nil {
+			return
+		}
+		coll.ForEach(func(rel relay.Relay) {
+			if filter != nil && !filter(rel) {
+				return
+			}
+
 			wg.Add(1)
 			go func(rel relay.Relay) {
 				defer wg.Done()
@@ -1339,26 +1387,20 @@ func (r *RoomManager) CloseLocalRelayConnections(ctx context.Context, roomKey li
 		})
 	}
 
-	inRelayCollection := r.inRelayCollections[roomKey]
-	if inRelayCollection != nil {
-		inRelayCollection.ForEach(func(rel relay.Relay) {
-			wg.Add(1)
-			go func(rel relay.Relay) {
-				defer wg.Done()
-				if pr, ok := rel.(*pc.PcRelay); ok {
-					pr.Close()
-					select {
-					case <-pr.Closed():
-					case <-ctx.Done():
-					}
-				} else {
-					rel.Close()
-				}
-			}(rel)
-		})
-	}
+	closeCollection(r.outRelayCollections[roomKey])
+	closeCollection(r.inRelayCollections[roomKey])
 
 	wg.Wait()
+}
+
+func (r *RoomManager) CloseLocalRelayConnections(ctx context.Context, roomKey livekit.RoomKey) {
+	r.closeLocalRelayConnectionsFiltered(ctx, roomKey, nil)
+}
+
+func (r *RoomManager) CloseLocalRelayConnectionsById(ctx context.Context, roomKey livekit.RoomKey, relayId string) {
+	r.closeLocalRelayConnectionsFiltered(ctx, roomKey, func(rel relay.Relay) bool {
+		return rel.ID() == relayId
+	})
 }
 
 type reconnectRequestMsg struct {

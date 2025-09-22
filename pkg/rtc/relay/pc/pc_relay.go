@@ -26,19 +26,19 @@ const (
 type eventType string
 
 const (
-	eventTypeAddTrack     eventType = "add_rack"
-	eventTypeOffer        eventType = "offer"
-	eventTypeMessage      eventType = "message"
-	eventTypeRoomClose    eventType = "room_close"
+	eventTypeAddTrack  eventType = "add_rack"
+	eventTypeOffer     eventType = "offer"
+	eventTypeMessage   eventType = "message"
+	eventTypeRoomClose eventType = "room_close"
 )
 
 type relayState int32
 
 const (
-	relayStateConnecting relayState = iota
-	relayStateOpen
-	relayStateClosing
-	relayStateClosed
+	RelayStateConnecting relayState = iota
+	RelayStateOpen
+	RelayStateClosing
+	RelayStateClosed
 )
 
 type addTrackSignal struct {
@@ -126,10 +126,10 @@ type PcRelay struct {
 	pendingWebrtcTracks map[webrtc.SSRC]pendingWebrtcTrack
 	pendingTracksMu     sync.Mutex
 
-	onReady      atomic.Value // func()
-	onTrack      atomic.Value // func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, meta *TrackMeta)
-	onMessage    atomic.Value // func(message []byte)
-	onICEChange  atomic.Value // func(webrtc.ICEConnectionState)
+	onReady     atomic.Value // func()
+	onTrack     atomic.Value // func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, meta *TrackMeta)
+	onMessage   atomic.Value // func(message []byte)
+	onICEChange atomic.Value // func(webrtc.ICEConnectionState)
 
 	state     atomic.Int32 // relayState
 	closedCh  chan struct{}
@@ -146,8 +146,8 @@ type PcRelay struct {
 
 func NewRelay(logger logger.Logger, conf *relay.RelayConfig) (*PcRelay, error) {
 	r := &PcRelay{
-		id:   conf.ID,
-		side: conf.Side,
+		id:            conf.ID,
+		side:          conf.Side,
 		bufferFactory: conf.BufferFactory,
 		logger:        logger,
 		rand:          rand.New(rand.NewSource(time.Now().UnixNano())),
@@ -165,7 +165,7 @@ func NewRelay(logger logger.Logger, conf *relay.RelayConfig) (*PcRelay, error) {
 	}
 	r.pc = pc
 
-	r.state.Store(int32(relayStateConnecting))
+	r.state.Store(int32(RelayStateConnecting))
 
 	return r, nil
 }
@@ -187,11 +187,11 @@ func (r *PcRelay) createPeerConnection(conf *relay.RelayConfig) (*webrtc.PeerCon
 		return nil, fmt.Errorf("RegisterCodec error: %w", err)
 	}
 	if conf.RelayUdpPort != 0 {
-		if conf.Side == "out" {
+		if conf.Side == "in" {
 			conf.SettingEngine.SetICEUDPMux(conf.RelayUDPMux)
-			conf.SettingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleClient)
-		} else {
 			conf.SettingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleServer)
+		} else {
+			conf.SettingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleClient)
 		}
 		logger.Infow("Configured relay UDP port", "port", conf.RelayUdpPort, "side", conf.Side, "relayID", conf.ID)
 	}
@@ -215,7 +215,7 @@ func (r *PcRelay) createPeerConnection(conf *relay.RelayConfig) (*webrtc.PeerCon
 			channel.OnMessage(r.onSignalingDataChannelMessage)
 			channel.OnOpen(func() {
 				r.logger.Infow("Signaling data channel opened", "relayID", r.id, "side", r.side)
-				r.state.Store(int32(relayStateOpen))
+				r.state.Store(int32(RelayStateOpen))
 				if f := r.onReady.Load(); f != nil {
 					f.(func())()
 				}
@@ -722,15 +722,15 @@ func (r *PcRelay) signalClosed() {
 }
 
 func (r *PcRelay) Close() {
-	prev := relayState(r.state.Swap(int32(relayStateClosing)))
-	if prev == relayStateClosing || prev == relayStateClosed {
+	prev := relayState(r.state.Swap(int32(RelayStateClosing)))
+	if prev == RelayStateClosing || prev == RelayStateClosed {
 		r.logger.Debugw("Relay already closing", "relayID", r.id, "side", r.side)
 		return
 	}
 
 	go func() {
 		_ = r.pc.Close()
-		r.state.Store(int32(relayStateClosed))
+		r.state.Store(int32(RelayStateClosed))
 		r.signalClosed()
 	}()
 }
@@ -762,7 +762,7 @@ func (r *PcRelay) StartReconnect(inSchedule func(peerId string) error) {
 		}
 		r.pc = pc
 		r.pc.OnICEConnectionStateChange(r.onICEChange.Load().(func(webrtc.ICEConnectionState)))
-		r.state.Store(int32(relayStateConnecting))
+		r.state.Store(int32(RelayStateConnecting))
 
 		if err := inSchedule(r.id); err != nil {
 			r.logger.Errorw("send RECONNECT_REQUEST failed", err, "relayID", r.id, "side", r.side)
@@ -773,7 +773,18 @@ func (r *PcRelay) StartReconnect(inSchedule func(peerId string) error) {
 }
 
 func (r *PcRelay) RecreatePc() error {
-	_ = r.pc.Close()
+	if r.pc != nil {
+		_ = r.pc.Close()
+	}
+
+	r.pendingTracksMu.Lock()
+	r.pendingInfoTracks = map[webrtc.SSRC]pendingInfoTrack{}
+	r.pendingWebrtcTracks = map[webrtc.SSRC]pendingWebrtcTrack{}
+	r.pendingTracksMu.Unlock()
+
+	r.signalingDC = nil
+	r.pendingReplies = sync.Map{}
+
 	pc, err := r.createPeerConnection(r.conf)
 	if err != nil {
 		return err
@@ -781,6 +792,10 @@ func (r *PcRelay) RecreatePc() error {
 	r.pc = pc
 	r.pc.OnICEConnectionStateChange(r.onICEChange.Load().(func(webrtc.ICEConnectionState)))
 
-	r.state.Store(int32(relayStateConnecting))
+	r.state.Store(int32(RelayStateConnecting))
 	return nil
+}
+
+func (r *PcRelay) State() relayState {
+	return relayState(r.state.Load())
 }

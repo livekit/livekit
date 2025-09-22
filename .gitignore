@@ -32,3 +32,4 @@ dist/
 config.local.yaml
 config1.yaml
 config2.yaml
+logs/

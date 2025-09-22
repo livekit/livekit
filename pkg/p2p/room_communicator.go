@@ -229,6 +229,17 @@ func (c *RoomCommunicatorImpl) OnMessage(messageHandler func(message interface{}
 	c.messageHandlers = append(c.messageHandlers, messageHandler)
 }
 
+func (c *RoomCommunicatorImpl) PeerId() string {
+	return c.mainDatabase.GetHost().ID().String()
+}
+
 func formatRoomMessageTopic(roomKey string) string {
 	return fmt.Sprintf(roomMessagesTopicFmt, roomKey)
+}
+
+func (c *RoomCommunicatorImpl) RemovePeer(peerId string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	delete(c.peers, peerId)
 }
