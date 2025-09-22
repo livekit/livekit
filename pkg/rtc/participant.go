@@ -1517,7 +1517,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	p.rpcLock.Lock()
 	clear(p.rpcPendingAcks)
 	for _, handler := range p.rpcPendingResponses {
-		handler.Resolve("", utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcRecipientDisconnected, nil))
+		handler.Resolve("", utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcRecipientDisconnected, ""))
 	}
 	p.rpcPendingResponses = make(map[string]*utils.DataChannelRpcPendingResponseHandler)
 	p.rpcLock.Unlock()
@@ -4237,7 +4237,7 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 
 	go func() {
 		if len([]byte(req.GetPayload())) > utils.DataChannelRpcMaxPayloadBytes {
-			errorCh <- utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcRequestPayloadTooLarge, nil).PsrpcError()
+			errorCh <- utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcRequestPayloadTooLarge, "").PsrpcError()
 			return
 		}
 
@@ -4249,7 +4249,7 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 			p.rpcLock.Unlock()
 
 			select {
-			case errorCh <- utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcResponseTimeout, nil).PsrpcError():
+			case errorCh <- utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcResponseTimeout, "").PsrpcError():
 			default:
 			}
 		})
@@ -4261,7 +4261,7 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 			responseTimer.Stop()
 
 			select {
-			case errorCh <- utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcConnectionTimeout, nil).PsrpcError():
+			case errorCh <- utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcConnectionTimeout, "").PsrpcError():
 			default:
 			}
 		})
