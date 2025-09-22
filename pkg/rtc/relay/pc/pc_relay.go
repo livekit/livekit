@@ -17,6 +17,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/relay"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 const (
@@ -202,6 +203,7 @@ func (r *PcRelay) createPeerConnection(conf *relay.RelayConfig) (*webrtc.PeerCon
 			ICEServers: conf.ICEServers,
 		})
 	if err != nil {
+        prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "new_peer_connection").Add(1)
 		return nil, err
 	}
 
@@ -236,17 +238,20 @@ func (r *PcRelay) resignal() {
 	offer, offerErr := r.pc.CreateOffer(nil)
 	if offerErr != nil {
 		r.logger.Errorw("Failed to create offer", offerErr, "relayID", r.id, "side", r.side)
+        prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "create_offer").Add(1)
 		return
 	}
 
 	if err := r.pc.SetLocalDescription(offer); err != nil {
 		r.logger.Errorw("Failed to set local description", err, "relayID", r.id, "side", r.side)
+        prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "set_local_description").Add(1)
 		return
 	}
 
 	offerData, marshalErr := json.Marshal(offer)
 	if marshalErr != nil {
 		r.logger.Errorw("Failed to marshal offer", marshalErr, "relayID", r.id, "side", r.side)
+        prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "marshal_offer").Add(1)
 		return
 	}
 
@@ -259,6 +264,7 @@ func (r *PcRelay) resignal() {
 	replyCh, sendErr := r.send(event, true)
 	if sendErr != nil {
 		r.logger.Errorw("Failed to send offer", sendErr, "relayID", r.id, "side", r.side)
+        prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "send_offer").Add(1)
 		return
 	}
 
@@ -270,15 +276,18 @@ func (r *PcRelay) resignal() {
 		answer := webrtc.SessionDescription{}
 		if err := json.Unmarshal(answerData, &answer); err != nil {
 			r.logger.Errorw("Failed to unmarshal answer", err, "relayID", r.id, "side", r.side)
+            prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "unmarshal_answer").Add(1)
 			return
 		}
 
 		if err := r.pc.SetRemoteDescription(answer); err != nil {
 			r.logger.Errorw("Failed to set remote description", err, "relayID", r.id, "side", r.side)
+            prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "set_remote_description").Add(1)
 			return
 		}
 	case <-ctx.Done():
 		r.logger.Errorw("Timeout waiting for answer", ctx.Err(), "relayID", r.id, "side", r.side, "timeout", "5s")
+        prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "timeout_wait_answer").Add(1)
 	}
 }
 
@@ -289,6 +298,7 @@ func (r *PcRelay) Offer(signalFn func(offerData []byte) ([]byte, error)) error {
 		Ordered: &ordered,
 	})
 	if dcErr != nil {
+        prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "create_data_channel").Add(1)
 		return errors.Wrap(dcErr, "CreateDataChannel error")
 	}
 
@@ -301,6 +311,7 @@ func (r *PcRelay) Offer(signalFn func(offerData []byte) ([]byte, error)) error {
 
 	offer, offerErr := r.pc.CreateOffer(nil)
 	if offerErr != nil {
+        prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "create_offer").Add(1)
 		return errors.Wrap(offerErr, "CreateOffer error")
 	}
 
@@ -316,6 +327,7 @@ func (r *PcRelay) Offer(signalFn func(offerData []byte) ([]byte, error)) error {
 	})
 
 	if err := r.pc.SetLocalDescription(offer); err != nil {
+        prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "set_local_description").Add(1)
 		return errors.Wrap(err, "SetLocalDescription error")
 	}
 
@@ -323,33 +335,39 @@ func (r *PcRelay) Offer(signalFn func(offerData []byte) ([]byte, error)) error {
 	case <-doneCh:
 	case <-time.After(5 * time.Second):
 		r.logger.Warnw("Timeout waiting for ICE candidates", nil, "candidatesCount", len(iceCandidates), "relayID", r.id, "side", r.side)
+		prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "timeout_wait_ice_candidates").Add(1)
 	}
 
 	offerWithIceCandidates := sessionDescriptionWithIceCandidates{offer, iceCandidates}
 	offerData, marshalErr := json.Marshal(offerWithIceCandidates)
 	if marshalErr != nil {
+        prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "marshal_offer").Add(1)
 		return errors.Wrap(marshalErr, "json marshal error")
 	}
 	r.logger.Debugw("Offer created", "value", offerWithIceCandidates)
 
 	answerData, signalErr := signalFn(offerData)
 	if signalErr != nil {
+        prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "signal_offer").Add(1)
 		return errors.Wrap(signalErr, "signalFn error")
 	}
 
 	answerWithIceCandidates := sessionDescriptionWithIceCandidates{}
 	if err := json.Unmarshal(answerData, &answerWithIceCandidates); err != nil {
+        prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "unmarshal_answer").Add(1)
 		return errors.Wrap(err, "json unmarshal error")
 	}
 
 	r.logger.Debugw("Answer received", "value", answerWithIceCandidates)
 
 	if err := r.pc.SetRemoteDescription(answerWithIceCandidates.SessionDescription); err != nil {
+        prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "set_remote_description").Add(1)
 		return errors.Wrap(err, "SetRemoteDescription error")
 	}
 
 	for _, candidate := range answerWithIceCandidates.IceCandidates {
 		if err := r.pc.AddICECandidate(candidate); err != nil {
+            prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "add_ice_candidate").Add(1)
 			return errors.Wrap(err, "AddICECandidate error")
 		}
 	}
@@ -360,6 +378,7 @@ func (r *PcRelay) Offer(signalFn func(offerData []byte) ([]byte, error)) error {
 func (r *PcRelay) Answer(offerData []byte) ([]byte, error) {
 	offerWithIceCandidates := sessionDescriptionWithIceCandidates{}
 	if err := json.Unmarshal(offerData, &offerWithIceCandidates); err != nil {
+        prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "unmarshal_offer").Add(1)
 		return nil, errors.Wrap(err, "json unmarshal error")
 	}
 
@@ -377,20 +396,24 @@ func (r *PcRelay) Answer(offerData []byte) ([]byte, error) {
 	})
 
 	if err := r.pc.SetRemoteDescription(offerWithIceCandidates.SessionDescription); err != nil {
+        prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "set_remote_description").Add(1)
 		return nil, errors.Wrap(err, "SetRemoteDescription error")
 	}
 
 	answer, answerErr := r.pc.CreateAnswer(nil)
 	if answerErr != nil {
+        prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "create_answer").Add(1)
 		return nil, errors.Wrap(answerErr, "CreateAnswer error")
 	}
 
 	if err := r.pc.SetLocalDescription(answer); err != nil {
+        prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "set_local_description").Add(1)
 		return nil, errors.Wrap(err, "SetLocalDescription error")
 	}
 
 	for _, candidate := range offerWithIceCandidates.IceCandidates {
 		if err := r.pc.AddICECandidate(candidate); err != nil {
+            prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "add_ice_candidate").Add(1)
 			return nil, errors.Wrap(err, "AddICECandidate error")
 		}
 	}
@@ -399,6 +422,7 @@ func (r *PcRelay) Answer(offerData []byte) ([]byte, error) {
 	case <-doneCh:
 	case <-time.After(5 * time.Second):
 		r.logger.Warnw("Timeout waiting for ICE candidates", nil, "candidatesCount", len(iceCandidates), "relayID", r.id, "side", r.side)
+		prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "timeout_wait_ice_candidates").Add(1)
 	}
 
 	answerWithIceCandidates := sessionDescriptionWithIceCandidates{answer, iceCandidates}
@@ -545,6 +569,7 @@ func (r *PcRelay) send(event dcEvent, replyExpected bool) (<-chan []byte, error)
 	data, marshalErr := json.Marshal(event)
 	if marshalErr != nil {
 		r.logger.Errorw("Failed to marshal data channel event", marshalErr, "eventType", event.Type, "relayID", r.id, "side", r.side)
+        prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "dc_send_marshal").Add(1)
 		return nil, fmt.Errorf("can not marshal DC event: %w", marshalErr)
 	}
 	var reply chan []byte
@@ -555,6 +580,7 @@ func (r *PcRelay) send(event dcEvent, replyExpected bool) (<-chan []byte, error)
 	if err := r.signalingDC.Send(data); err != nil {
 		r.pendingReplies.Delete(event.ID)
 		r.logger.Errorw("Failed to send data channel event", err, "eventType", event.Type, "relayID", r.id, "side", r.side, "replyExpected", replyExpected)
+        prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "dc_send_send").Add(1)
 		return nil, fmt.Errorf("can not send DC event: %w", err)
 	}
 	return reply, nil
@@ -620,14 +646,17 @@ func (r *PcRelay) onAddTrackOffer(offer webrtc.SessionDescription) ([]byte, erro
 
 	answer, answerErr := r.pc.CreateAnswer(nil)
 	if answerErr != nil {
+		prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "create_answer").Add(1)
 		return nil, fmt.Errorf("create answer error: %w", answerErr)
 	}
 
 	if err := r.pc.SetLocalDescription(answer); err != nil {
+		prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "set_local_description").Add(1)
 		return nil, fmt.Errorf("set local description error: %w", err)
 	}
 
 	if data, err := json.Marshal(answer); err != nil {
+		prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "marshal_answer").Add(1)
 		return nil, fmt.Errorf("marshal error: %w", err)
 	} else {
 		return data, nil
@@ -640,6 +669,7 @@ func (r *PcRelay) onSignalingDataChannelMessage(msg webrtc.DataChannelMessage) {
 	event := &dcEvent{}
 	if err := json.Unmarshal(msg.Data, event); err != nil {
 		r.logger.Errorw("Failed to unmarshal remote message", err, "relayID", r.id, "side", r.side)
+        prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "dc_receive_unmarshal_event").Add(1)
 		return
 	}
 
@@ -658,6 +688,7 @@ func (r *PcRelay) onSignalingDataChannelMessage(msg webrtc.DataChannelMessage) {
 		s := &addTrackSignal{}
 		if err := json.Unmarshal(event.Payload, s); err != nil {
 			r.logger.Errorw("Failed to unmarshal add track signal", err, "relayID", r.id, "side", r.side)
+            prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "dc_receive_unmarshal_add_track").Add(1)
 			return
 		}
 
@@ -671,6 +702,7 @@ func (r *PcRelay) onSignalingDataChannelMessage(msg webrtc.DataChannelMessage) {
 
 		if _, err := r.send(replyEvent, false); err != nil {
 			r.logger.Errorw("Failed to send add track reply", err, "relayID", r.id, "side", r.side)
+            prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "dc_send_add_track_reply").Add(1)
 			return
 		}
 	} else if event.Type == eventTypeOffer {
@@ -679,12 +711,14 @@ func (r *PcRelay) onSignalingDataChannelMessage(msg webrtc.DataChannelMessage) {
 		sdp := webrtc.SessionDescription{}
 		if err := json.Unmarshal(event.Payload, &sdp); err != nil {
 			r.logger.Errorw("Failed to unmarshal offer", err, "relayID", r.id, "side", r.side)
+            prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "dc_receive_unmarshal_offer").Add(1)
 			return
 		}
 
 		answerData, err := r.onAddTrackOffer(sdp)
 		if err != nil {
 			r.logger.Errorw("Failed to process offer", err, "relayID", r.id, "side", r.side)
+            prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "process_add_track_offer").Add(1)
 			return
 		}
 
@@ -697,6 +731,7 @@ func (r *PcRelay) onSignalingDataChannelMessage(msg webrtc.DataChannelMessage) {
 
 		if _, err := r.send(replyEvent, false); err != nil {
 			r.logger.Errorw("Failed to send offer reply", err, "relayID", r.id, "side", r.side)
+            prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "dc_send_offer_reply").Add(1)
 			return
 		}
 	} else if event.Type == eventTypeMessage {

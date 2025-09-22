@@ -480,6 +480,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 
 		if err := r.SendCloseConnectionsMessage(ctx, roomKey, currentPeerId); err != nil {
 			newRoom.Logger.Errorw("Could not send graceful shutdown request to outgoing relays", err)
+			prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "send_close_connections_message").Add(1)
 		}
 
 		r.telemetry.RoomEnded(ctx, roomInfo)
@@ -516,6 +517,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 			outRelayCollection.ForEach(func(relay relay.Relay) {
 				if err := relay.SendMessage(updatesForRelay); err != nil {
 					newRoom.Logger.Errorw("Could not send participant updates to relay", err)
+					prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "participant_updates").Add(1)
 				}
 			})
 		}
@@ -533,6 +535,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 			outRelayCollection.ForEach(func(relay relay.Relay) {
 				if err := relay.SendMessage(messageData); err != nil {
 					newRoom.Logger.Errorw("Could not send data packet to relay", err, "relayId", relay.ID())
+					prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "data_packet").Add(1)
 				}
 			})
 		}
@@ -549,6 +552,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 			outRelayCollection.ForEach(func(relay relay.Relay) {
 				if err := relay.SendMessage(speakersForRelay); err != nil {
 					newRoom.Logger.Errorw("Could not send speakers to relay", err)
+					prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "speakers").Add(1)
 				}
 			})
 		}
@@ -565,6 +569,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 			outRelayCollection.ForEach(func(relay relay.Relay) {
 				if err := relay.SendMessage(connQualitiesForRelay); err != nil {
 					newRoom.Logger.Errorw("Could not send connection qualities to relay", err)
+					prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "conn_qualities").Add(1)
 				}
 			})
 		}
@@ -619,67 +624,72 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 			outRelayCollection.RemoveRelay(rel)
 		}
 
-			rel, err := pc.NewRelay(newRoom.Logger, &relay.RelayConfig{
-				ID:            peerId,
-				BufferFactory: newRoom.GetBufferFactory(),
-				SettingEngine: relayRtcConfig.SettingEngine,
-				ICEServers:    relayRtcConfig.Configuration.ICEServers,
-				RelayUDPMux:   relayRtcConfig.RelayUDPMux,
-				RelayUdpPort:  relayRtcConfig.RelayUdpPort,
-				Side:          "out",
-			})
-			if err != nil {
-				logger.Errorw("Failed to create out relay", err, "peerId", peerId, "roomKey", roomKey, "nodeID", r.currentNode.Id)
-				return
+		rel, err := pc.NewRelay(newRoom.Logger, &relay.RelayConfig{
+			ID:            peerId,
+			BufferFactory: newRoom.GetBufferFactory(),
+			SettingEngine: relayRtcConfig.SettingEngine,
+			ICEServers:    relayRtcConfig.Configuration.ICEServers,
+			RelayUDPMux:   relayRtcConfig.RelayUDPMux,
+			RelayUdpPort:  relayRtcConfig.RelayUdpPort,
+			Side:          "out",
+		})
+		if err != nil {
+			logger.Errorw("Failed to create out relay", err, "peerId", peerId, "roomKey", roomKey, "nodeID", r.currentNode.Id)
+			prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "create_out").Add(1)
+			return
+		}
+
+		rel.OnReady(func() {
+			logger.Infow("Out relay is ready", "relayID", rel.ID(), "roomKey", roomKey, "nodeID", r.currentNode.Id)
+
+			// todo: combine messages
+			updates := rtc.ToProtoParticipants(newRoom.GetParticipants())
+			if len(updates) > 0 {
+				if updatesForRelay, err := getUpdatesPayloadForRelay(newRoom, updates); err != nil {
+					newRoom.Logger.Errorw("failed to create participant update for relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
+				} else if err := rel.SendMessage(updatesForRelay); err != nil {
+					newRoom.Logger.Errorw("failed to send participant updates to relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
+					prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "participant_updates").Add(1)
+				}
 			}
 
-			rel.OnReady(func() {
-				logger.Infow("Out relay is ready", "relayID", rel.ID(), "roomKey", roomKey, "nodeID", r.currentNode.Id)
-
-				// todo: combine messages
-				updates := rtc.ToProtoParticipants(newRoom.GetParticipants())
-				if len(updates) > 0 {
-					if updatesForRelay, err := getUpdatesPayloadForRelay(newRoom, updates); err != nil {
-						newRoom.Logger.Errorw("failed to create participant update for relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
-					} else if err := rel.SendMessage(updatesForRelay); err != nil {
-						newRoom.Logger.Errorw("failed to send participant updates to relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
-					}
+			// todo: combine messages
+			speakers := newRoom.GetActiveSpeakers()
+			if len(speakers) > 0 {
+				if speakersForRelay, err := getSpeakersPayloadForRelay(newRoom, speakers); err != nil {
+					newRoom.Logger.Errorw("failed to create speakers payload for relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
+				} else if err := rel.SendMessage(speakersForRelay); err != nil {
+					newRoom.Logger.Errorw("failed to send speakers to relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
+					prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "speakers").Add(1)
 				}
+			}
 
-				// todo: combine messages
-				speakers := newRoom.GetActiveSpeakers()
-				if len(speakers) > 0 {
-					if speakersForRelay, err := getSpeakersPayloadForRelay(newRoom, speakers); err != nil {
-						newRoom.Logger.Errorw("failed to create speakers payload for relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
-					} else if err := rel.SendMessage(speakersForRelay); err != nil {
-						newRoom.Logger.Errorw("failed to send speakers to relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
-					}
+			// todo: combine messages
+			connQualities := newRoom.GetConnectionInfos()
+			if len(connQualities) > 0 {
+				if connQualitiesForRelay, err := getConnQualitiesPayloadForRelay(newRoom, connQualities); err != nil {
+					newRoom.Logger.Errorw("failed to create connection qualities payload for relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
+				} else if err := rel.SendMessage(connQualitiesForRelay); err != nil {
+					newRoom.Logger.Errorw("failed to send connection qualities to relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
+					prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "conn_qualities").Add(1)
 				}
+			}
 
-				// todo: combine messages
-				connQualities := newRoom.GetConnectionInfos()
-				if len(connQualities) > 0 {
-					if connQualitiesForRelay, err := getConnQualitiesPayloadForRelay(newRoom, connQualities); err != nil {
-						newRoom.Logger.Errorw("failed to create connection qualities payload for relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
-					} else if err := rel.SendMessage(connQualitiesForRelay); err != nil {
-						newRoom.Logger.Errorw("failed to send connection qualities to relay", err, "relayID", rel.ID(), "roomID", newRoom.ID())
-					}
-				}
+			outRelayCollection.AddRelay(rel)
+		})
 
-				outRelayCollection.AddRelay(rel)
-			})
+		rel.OnConnectionStateChange(func(state webrtc.ICEConnectionState) {
+			logger.Infow("Out relay connection state changed", "state", state.String(), "relayID", rel.ID(), "roomKey", roomKey, "nodeID", r.currentNode.Id)
 
-			rel.OnConnectionStateChange(func(state webrtc.ICEConnectionState) {
-				logger.Infow("Out relay connection state changed", "state", state.String(), "relayID", rel.ID(), "roomKey", roomKey, "nodeID", r.currentNode.Id)
-
-				// TODO: remove peer from room communicator to allow reconnection for rebooted nodes
-				// if state == webrtc.ICEConnectionStateClosed || state == webrtc.ICEConnectionStateFailed {
-				// 	roomCommunicator.RemovePeer(peerId)
-				// }
-			})
+			// TODO: remove peer from room communicator to allow reconnection for rebooted nodes
+			// if state == webrtc.ICEConnectionStateClosed || state == webrtc.ICEConnectionStateFailed {
+			// 	roomCommunicator.RemovePeer(peerId)
+			// }
+		})
 
 		if err := rel.Offer(packOffer(peerId, rel.ID())); err != nil {
 			logger.Errorw("Failed to create relay offer", err, "peerId", peerId, "relayID", rel.ID(), "roomKey", roomKey)
+			prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "create_offer").Add(1)
 		}
 	})
 
@@ -707,6 +717,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 
 				if err := currentRelay.Offer(packOffer(fromPeerId, currentRelay.ID())); err != nil {
 					logger.Errorw("Failed to create relay offer", err, "peerId", fromPeerId, "relayID", currentRelay.ID(), "roomKey", roomKey)
+					prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "create_offer").Add(1)
 				}
 			}
 			return
@@ -748,6 +759,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 					})
 					if err != nil {
 						logger.Errorw("Failed to create in-relay", err, "fromPeerId", fromPeerId, "roomKey", roomKey, "nodeID", r.currentNode.Id)
+						prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "create_in").Add(1)
 						return
 					}
 
@@ -776,6 +788,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 
 						if err := json.Unmarshal(payload, &msg); err != nil {
 							newRoom.Logger.Errorw("Failed to unmarshal relay message", err, "relayID", rel.ID(), "fromPeerId", fromPeerId, "roomID", newRoom.ID())
+							prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "dc_receive_unmarshal_event").Add(1)
 							return
 						}
 						if len(msg.Updates) > 0 {
@@ -796,6 +809,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 							dp := livekit.DataPacket{}
 							if err := proto.Unmarshal(msg.DataPacket, &dp); err != nil {
 								newRoom.Logger.Errorw("Failed to unmarshal relay data packet", err, "relayID", rel.ID(), "fromPeerId", fromPeerId, "roomID", newRoom.ID())
+								prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "unmarshal_data_packet").Add(1)
 								return
 							} else {
 								rtc.BroadcastDataPacketForRoom(newRoom, nil, &dp, newRoom.Logger)
@@ -814,6 +828,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 						var addTrackSignal relay.AddTrackSignal
 						if err := json.Unmarshal(meta, &addTrackSignal); err != nil {
 							newRoom.Logger.Errorw("Failed to unmarshal add track signal", err, "relayID", rel.ID(), "fromPeerId", fromPeerId, "roomID", newRoom.ID())
+							prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "unmarshal_add_track_signal").Add(1)
 							return
 						}
 						onRelayAddTrack(newRoom, track, receiver, mid, rid, addTrackSignal)
@@ -827,11 +842,13 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 				answer, answerErr := rel.Answer(signal)
 				if answerErr != nil {
 					logger.Errorw("Failed to create in-relay answer", answerErr, "relayID", rel.ID(), "fromPeerId", fromPeerId, "roomKey", roomKey)
+					prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "create_answer").Add(1)
 					return
 				}
 
 				if _, err := roomCommunicator.SendMessage(fromPeerId, packSignalPeerMessage(eventId, answer)); err != nil {
 					logger.Errorw("Failed to send answer", err, "relayID", rel.ID(), "fromPeerId", fromPeerId, "roomKey", roomKey)
+					prometheus.ServiceOperationCounter.WithLabelValues("pc_relay", "error", "send_answer").Add(1)
 					return
 				}
 
