@@ -49,7 +49,7 @@ func (s *ForwardStats) Update(arrival, left int64) (int64, bool) {
 	return transit, isHighForwardingLatency
 }
 
-func (s *ForwardStats) getStats(shortDuration time.Duration) (time.Duration, time.Duration, time.Duration, time.Duration) {
+func (s *ForwardStats) GetStats(shortDuration time.Duration) (time.Duration, time.Duration, time.Duration, time.Duration) {
 	s.lock.Lock()
 	wLong := s.latency.Summarize()
 	wShort := s.latency.SummarizeLast(shortDuration)
@@ -93,7 +93,7 @@ func (s *ForwardStats) report(reportInterval time.Duration) {
 			return
 
 		case <-ticker.C:
-			latencyLong, jitterLong, latencyShort, jitterShort := s.getStats(reportInterval)
+			latencyLong, jitterLong, latencyShort, jitterShort := s.GetStats(reportInterval)
 			prometheus.RecordForwardJitter(uint32(jitterShort.Microseconds()), uint32(jitterLong.Microseconds()))
 			prometheus.RecordForwardLatency(uint32(latencyShort.Microseconds()), uint32(latencyLong.Microseconds()))
 		}
