@@ -11,7 +11,7 @@ import (
 
 const (
 	highForwardingLatency = 20 * time.Millisecond
-	skewFactor            = 20
+	skewFactor            = 10
 )
 
 type ForwardStats struct {
