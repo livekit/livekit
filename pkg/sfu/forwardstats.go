@@ -1,7 +1,6 @@
 package sfu
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -11,19 +10,22 @@ import (
 )
 
 const (
-	highForwardingLatency = 500 * time.Millisecond
+	highForwardingLatency = 20 * time.Millisecond
 	skewFactor            = 10
 )
 
 type ForwardStats struct {
 	lock    sync.Mutex
 	latency *utils.LatencyAggregate
+	lowest  int64
+	highest int64
 	closeCh chan struct{}
 }
 
 func NewForwardStats(latencyUpdateInterval, reportInterval, latencyWindowLength time.Duration) *ForwardStats {
 	s := &ForwardStats{
 		latency: utils.NewLatencyAggregate(latencyUpdateInterval, latencyWindowLength),
+		lowest:  time.Second.Nanoseconds(),
 		closeCh: make(chan struct{}),
 	}
 
@@ -40,34 +42,41 @@ func (s *ForwardStats) Update(arrival, left int64) (int64, bool) {
 
 	s.lock.Lock()
 	s.latency.Update(time.Duration(arrival), float64(transit))
+	s.lowest = min(transit, s.lowest)
+	s.highest = max(transit, s.highest)
 	s.lock.Unlock()
 
 	return transit, isHighForwardingLatency
 }
 
-func (s *ForwardStats) GetStats() (time.Duration, time.Duration) {
+func (s *ForwardStats) getStats(shortDuration time.Duration) (time.Duration, time.Duration, time.Duration, time.Duration) {
 	s.lock.Lock()
-	w := s.latency.Summarize()
+	wLong := s.latency.Summarize()
+	wShort := s.latency.SummarizeLast(shortDuration)
+
+	lowest := s.lowest
+	s.lowest = time.Second.Nanoseconds()
+
+	highest := s.highest
+	s.highest = 0
 	s.lock.Unlock()
 
-	latency, jitter := time.Duration(w.Mean()), time.Duration(w.StdDev())
-	if jitter > latency*skewFactor {
+	latencyLong, jitterLong := time.Duration(wLong.Mean()), time.Duration(wLong.StdDev())
+	latencyShort, jitterShort := time.Duration(wShort.Mean()), time.Duration(wShort.StdDev())
+	if jitterLong > latencyLong*skewFactor {
 		logger.Infow(
 			"high jitter in forwarding path",
-			"latency", latency,
-			"jitter", jitter,
-			"stats", fmt.Sprintf("count %.2f, mean %.2f, stdDev %.2f", w.Count(), w.Mean(), w.StdDev()),
+			"lowest", time.Duration(lowest),
+			"highest", time.Duration(highest),
+			"countLong", wLong.Count(),
+			"latencyLong", latencyLong,
+			"jitterLong", jitterLong,
+			"countShort", wShort.Count(),
+			"latencyShort", latencyShort,
+			"jitterShort", jitterShort,
 		)
 	}
-	return latency, jitter
-}
-
-func (s *ForwardStats) GetLastStats(duration time.Duration) (time.Duration, time.Duration) {
-	s.lock.Lock()
-	w := s.latency.SummarizeLast(duration)
-	s.lock.Unlock()
-
-	return time.Duration(w.Mean()), time.Duration(w.StdDev())
+	return latencyLong, jitterLong, latencyShort, jitterShort
 }
 
 func (s *ForwardStats) Stop() {
@@ -84,10 +93,9 @@ func (s *ForwardStats) report(reportInterval time.Duration) {
 			return
 
 		case <-ticker.C:
-			latency, jitter := s.GetLastStats(reportInterval)
-			latencySlow, jitterSlow := s.GetStats()
-			prometheus.RecordForwardJitter(uint32(jitter.Microseconds()), uint32(jitterSlow.Microseconds()))
-			prometheus.RecordForwardLatency(uint32(latency.Microseconds()), uint32(latencySlow.Microseconds()))
+			latencyLong, jitterLong, latencyShort, jitterShort := s.getStats(reportInterval)
+			prometheus.RecordForwardJitter(uint32(jitterShort.Microseconds()), uint32(jitterLong.Microseconds()))
+			prometheus.RecordForwardLatency(uint32(latencyShort.Microseconds()), uint32(latencyLong.Microseconds()))
 		}
 	}
 }
