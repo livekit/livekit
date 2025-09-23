@@ -7,6 +7,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/mono"
 )
 
 const (
@@ -15,11 +16,12 @@ const (
 )
 
 type ForwardStats struct {
-	lock    sync.Mutex
-	latency *utils.LatencyAggregate
-	lowest  int64
-	highest int64
-	closeCh chan struct{}
+	lock         sync.Mutex
+	latency      *utils.LatencyAggregate
+	lowest       int64
+	highest      int64
+	lastUpdateAt int64
+	closeCh      chan struct{}
 }
 
 func NewForwardStats(latencyUpdateInterval, reportInterval, latencyWindowLength time.Duration) *ForwardStats {
@@ -44,6 +46,7 @@ func (s *ForwardStats) Update(arrival, left int64) (int64, bool) {
 	s.latency.Update(time.Duration(arrival), float64(transit))
 	s.lowest = min(transit, s.lowest)
 	s.highest = max(transit, s.highest)
+	s.lastUpdateAt = arrival
 	s.lock.Unlock()
 
 	return transit, isHighForwardingLatency
@@ -51,6 +54,12 @@ func (s *ForwardStats) Update(arrival, left int64) (int64, bool) {
 
 func (s *ForwardStats) GetStats(shortDuration time.Duration) (time.Duration, time.Duration, time.Duration, time.Duration) {
 	s.lock.Lock()
+	// a dummy sample to flush the pipe to current time
+	now := mono.UnixNano()
+	if (now - s.lastUpdateAt) > shortDuration.Nanoseconds() {
+		s.latency.Update(time.Duration(now), 0)
+	}
+
 	wLong := s.latency.Summarize()
 	wShort := s.latency.SummarizeLast(shortDuration)
 
