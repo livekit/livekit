@@ -695,7 +695,6 @@ func (s *StreamAllocator) handleSignalFeedback(event Event) {
 }
 
 func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
-	s.params.Logger.Infow("RAJA running ping") // REMOVE
 	// if pause is allowed, there may be no packets sent and BWE could be in congested state,
 	// reset BWE if that persists for a while
 	if s.allowPause && s.state == streamAllocatorStateDeficient && s.params.BWE.CongestionState() != bwe.CongestionStateNone && s.params.Pacer.TimeSinceLastSentPacket() > s.params.Config.PausedMinWait {
