@@ -541,6 +541,8 @@ type LocalParticipant interface {
 	HandleLeaveRequest(reason ParticipantCloseReason)
 
 	HandleSignalMessage(msg proto.Message) error
+
+	PerformRpc(req *livekit.PerformRpcRequest, resultCh chan string, errorCh chan error)
 }
 
 // Room is a container of participants, and can provide room-level actions

@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/frostbyte73/core"
+	"github.com/google/uuid"
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/pion/rtcp"
 	"github.com/pion/sdp/v3"
@@ -46,6 +47,7 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/protocol/utils/pointer"
+	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/metric"
@@ -328,6 +330,10 @@ type ParticipantImpl struct {
 	// loggers for publisher and subscriber
 	pubLogger logger.Logger
 	subLogger logger.Logger
+
+	rpcLock             sync.Mutex
+	rpcPendingAcks      map[string]*utils.DataChannelRpcPendingAckHandler
+	rpcPendingResponses map[string]*utils.DataChannelRpcPendingResponseHandler
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -360,7 +366,9 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			joiningMessageFirstSeqs:       make(map[livekit.ParticipantID]uint32),
 			joiningMessageLastWrittenSeqs: make(map[livekit.ParticipantID]uint32),
 		},
-		onClose: make(map[string]func(types.LocalParticipant)),
+		rpcPendingAcks:      make(map[string]*utils.DataChannelRpcPendingAckHandler),
+		rpcPendingResponses: make(map[string]*utils.DataChannelRpcPendingResponseHandler),
+		onClose:             make(map[string]func(types.LocalParticipant)),
 	}
 	p.setupSignalling()
 
@@ -1506,6 +1514,14 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 
 	p.UpTrackManager.Close(isExpectedToResume)
 
+	p.rpcLock.Lock()
+	clear(p.rpcPendingAcks)
+	for _, handler := range p.rpcPendingResponses {
+		handler.Resolve("", utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcRecipientDisconnected, ""))
+	}
+	p.rpcPendingResponses = make(map[string]*utils.DataChannelRpcPendingResponseHandler)
+	p.rpcLock.Unlock()
+
 	p.updateState(livekit.ParticipantInfo_DISCONNECTED)
 	close(p.disconnected)
 
@@ -2492,10 +2508,24 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		if payload.RpcResponse == nil {
 			return
 		}
+
+		rpcResponse := payload.RpcResponse
+		switch res := rpcResponse.Value.(type) {
+		case *livekit.RpcResponse_Payload:
+			shouldForwardData = !p.handleIncomingRpcResponse(payload.RpcResponse.GetRequestId(), res.Payload, nil)
+		case *livekit.RpcResponse_Error:
+			shouldForwardData = !p.handleIncomingRpcResponse(payload.RpcResponse.GetRequestId(), "", &utils.DataChannelRpcError{
+				Code:    utils.DataChannelRpcErrorCode(res.Error.GetCode()),
+				Message: res.Error.GetMessage(),
+				Data:    res.Error.GetData(),
+			})
+		}
 	case *livekit.DataPacket_RpcAck:
 		if payload.RpcAck == nil {
 			return
 		}
+
+		shouldForwardData = !p.handleIncomingRpcAck(payload.RpcAck.GetRequestId())
 	case *livekit.DataPacket_StreamHeader:
 		if payload.StreamHeader == nil {
 			return
@@ -4169,4 +4199,126 @@ func (p *ParticipantImpl) AddTransceiverFromTrackLocal(
 			RTCPFeedbackConfig{},
 		)
 	}
+}
+
+func (p *ParticipantImpl) handleIncomingRpcAck(requestId string) bool {
+	p.rpcLock.Lock()
+	defer p.rpcLock.Unlock()
+
+	handler, ok := p.rpcPendingAcks[requestId]
+	if !ok {
+		return false
+	}
+
+	handler.Resolve()
+	delete(p.rpcPendingAcks, requestId)
+	return true
+}
+
+func (p *ParticipantImpl) handleIncomingRpcResponse(requestId string, payload string, err *utils.DataChannelRpcError) bool {
+	p.rpcLock.Lock()
+	defer p.rpcLock.Unlock()
+
+	handler, ok := p.rpcPendingResponses[requestId]
+	if !ok {
+		return false
+	}
+
+	handler.Resolve(payload, err)
+	delete(p.rpcPendingResponses, requestId)
+	return true
+}
+
+func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh chan string, errorCh chan error) {
+	responseTimeout := req.GetResponseTimeoutMs()
+	if responseTimeout <= 0 {
+		responseTimeout = uint32(utils.DataChannelRpcDefaultResponseTimeout.Milliseconds())
+	}
+
+	go func() {
+		if len([]byte(req.GetPayload())) > utils.DataChannelRpcMaxPayloadBytes {
+			errorCh <- utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcRequestPayloadTooLarge, "").PsrpcError()
+			return
+		}
+
+		id := uuid.NewString()
+
+		responseTimer := time.AfterFunc(time.Duration(responseTimeout)*time.Millisecond, func() {
+			p.rpcLock.Lock()
+			delete(p.rpcPendingResponses, id)
+			p.rpcLock.Unlock()
+
+			select {
+			case errorCh <- utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcResponseTimeout, "").PsrpcError():
+			default:
+			}
+		})
+		ackTimer := time.AfterFunc(utils.DataChannelRpcMaxRoundTripLatency, func() {
+			p.rpcLock.Lock()
+			delete(p.rpcPendingAcks, id)
+			delete(p.rpcPendingResponses, id)
+			p.rpcLock.Unlock()
+			responseTimer.Stop()
+
+			select {
+			case errorCh <- utils.DataChannelRpcErrorFromBuiltInCodes(utils.DataChannelRpcConnectionTimeout, "").PsrpcError():
+			default:
+			}
+		})
+
+		rpcRequest := &livekit.DataPacket{
+			Kind:                livekit.DataPacket_RELIABLE,
+			ParticipantIdentity: id,
+			Value: &livekit.DataPacket_RpcRequest{
+				RpcRequest: &livekit.RpcRequest{
+					Id:                id,
+					Method:            req.GetMethod(),
+					Payload:           req.GetPayload(),
+					ResponseTimeoutMs: responseTimeout - p.lastRTT,
+					Version:           1,
+				},
+			},
+		}
+		data, err := proto.Marshal(rpcRequest)
+		if err != nil {
+			ackTimer.Stop()
+			responseTimer.Stop()
+			errorCh <- psrpc.NewError(psrpc.Internal, err)
+			return
+		}
+
+		// using RPC ID as the unique ID for server to identify the response
+		err = p.SendDataMessage(livekit.DataPacket_RELIABLE, data, livekit.ParticipantID(id), 0)
+		if err != nil {
+			ackTimer.Stop()
+			responseTimer.Stop()
+			errorCh <- psrpc.NewError(psrpc.Internal, err)
+			return
+		}
+
+		p.rpcLock.Lock()
+		p.rpcPendingAcks[id] = &utils.DataChannelRpcPendingAckHandler{
+			Resolve: func() {
+				ackTimer.Stop()
+			},
+			ParticipantIdentity: req.GetDestinationIdentity(),
+		}
+		p.rpcPendingResponses[id] = &utils.DataChannelRpcPendingResponseHandler{
+			Resolve: func(payload string, error *utils.DataChannelRpcError) {
+				responseTimer.Stop()
+				if _, ok := p.rpcPendingAcks[id]; ok {
+					p.rpcPendingAcks[id].Resolve()
+					ackTimer.Stop()
+				}
+
+				if error != nil {
+					errorCh <- error.PsrpcError()
+				} else {
+					resultCh <- payload
+				}
+			},
+			ParticipantIdentity: req.GetDestinationIdentity(),
+		}
+		p.rpcLock.Unlock()
+	}()
 }
