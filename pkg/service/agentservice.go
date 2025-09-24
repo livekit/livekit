@@ -402,27 +402,29 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 		attempted[selected] = struct{}{}
 
 		state, err := selected.AssignJob(ctx, job)
-		if err != nil {
+		switch state.GetStatus() {
+		case livekit.JobStatus_JS_RUNNING:
+			logger.Infow("assigned job to worker")
+			h.mu.Lock()
+			h.jobToWorker[livekit.JobID(job.Id)] = selected
+			h.mu.Unlock()
+
+			err = h.agentServer.RegisterJobTerminateTopic(job.Id)
+			if err != nil {
+				logger.Errorw("failed to register JobTerminate handler", err)
+			}
+			fallthrough
+		case livekit.JobStatus_JS_SUCCESS:
+			return &rpc.JobRequestResponse{
+				State: state,
+			}, nil
+		default:
 			retry := utils.ErrorIsOneOf(err, agent.ErrWorkerNotAvailable, agent.ErrWorkerClosed)
 			logger.Warnw("failed to assign job to worker", err, "retry", retry)
-			if retry {
-				continue // Try another worker
+			if !retry {
+				return nil, err
 			}
-			return nil, err
 		}
-		logger.Infow("assigned job to worker")
-		h.mu.Lock()
-		h.jobToWorker[livekit.JobID(job.Id)] = selected
-		h.mu.Unlock()
-
-		err = h.agentServer.RegisterJobTerminateTopic(job.Id)
-		if err != nil {
-			logger.Errorw("failed to register JobTerminate handler", err)
-		}
-
-		return &rpc.JobRequestResponse{
-			State: state,
-		}, nil
 	}
 }
 

@@ -362,6 +362,12 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobS
 	// See handleAvailability for the response
 	select {
 	case res := <-availCh:
+		if res.Terminate {
+			job.State.EndedAt = now.UnixNano()
+			job.State.Status = livekit.JobStatus_JS_SUCCESS
+			return job.State, nil
+		}
+
 		if !res.Available {
 			return nil, ErrWorkerNotAvailable
 		}
