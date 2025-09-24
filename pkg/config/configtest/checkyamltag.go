@@ -36,7 +36,11 @@ func checkYAMLTags(t reflect.Type, seen map[reflect.Type]struct{}) error {
 				continue
 			}
 
-			if field.Type.Kind() == reflect.Bool {
+			typ := field.Type
+			if field.Type.Kind() == reflect.Pointer {
+				typ = field.Type.Elem()
+			}
+			if typ.Kind() == reflect.Bool {
 				// ignore boolean fields
 				continue
 			}
