@@ -161,7 +161,7 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 	return redisLiveKit.GetRedisClient(&conf.Redis)
 }
 
-func createTrafficManager(mainDatabase *pubsub.DB, configuration *config.Config) *TrafficManager {
+func createTrafficManager(mainDatabase *pubsub.DB) *TrafficManager {
 	return NewTrafficManager(mainDatabase, logger.GetLogger())
 }
 

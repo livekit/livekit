@@ -98,7 +98,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	clientConfigurationManager := createClientConfiguration()
 	timedVersionGenerator := utils.NewDefaultTimedVersionGenerator()
-	trafficManager := createTrafficManager(db, conf)
+	trafficManager := createTrafficManager(db)
 	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, rtcEgressLauncher, timedVersionGenerator, trafficManager)
 	if err != nil {
 		return nil, err
@@ -214,7 +214,7 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 	return redis2.GetRedisClient(&conf.Redis)
 }
 
-func createTrafficManager(mainDatabase *pubsub.DB, configuration *config.Config) *TrafficManager {
+func createTrafficManager(mainDatabase *pubsub.DB) *TrafficManager {
 	return NewTrafficManager(mainDatabase, logger.GetLogger())
 }
 
