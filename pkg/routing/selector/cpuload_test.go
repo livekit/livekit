@@ -25,7 +25,7 @@ import (
 )
 
 func TestCPULoadSelector_SelectNode(t *testing.T) {
-	sel := selector.CPULoadSelector{CPULoadLimit: 0.8, SortBy: "random"}
+	sel := selector.CPULoadSelector{CPULoadLimit: 0.8, SortBy: "random", Algorithm: "lowest"}
 
 	var nodes []*livekit.Node
 	_, err := sel.SelectNode(nodes)
