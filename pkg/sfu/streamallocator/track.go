@@ -87,9 +87,9 @@ func (t *Track) SetPriority(priority uint8) bool {
 	if priority == 0 {
 		switch t.source {
 		case livekit.TrackSource_SCREEN_SHARE:
-			priority = PriorityDefaultScreenshare
+			priority = cPriorityDefaultScreenshare
 		default:
-			priority = PriorityDefaultVideo
+			priority = cPriorityDefaultVideo
 		}
 	}
 
