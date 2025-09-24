@@ -78,6 +78,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createGeoIP,
 		createRelevantNodesHandler,
 		createMainDebugHandler,
+		createTrafficManager,
 		NewLivekitServer,
 	)
 	return &LivekitServer{}, nil
@@ -158,6 +159,10 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 		return nil, nil
 	}
 	return redisLiveKit.GetRedisClient(&conf.Redis)
+}
+
+func createTrafficManager(mainDatabase *pubsub.DB, configuration *config.Config) *TrafficManager {
+	return NewTrafficManager(mainDatabase, logger.GetLogger())
 }
 
 func createStore(
