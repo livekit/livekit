@@ -128,6 +128,7 @@ func (oq *opsQueueBase[T]) Enqueue(op T) {
 		select {
 		case oq.wake <- struct{}{}:
 		default:
+			oq.params.Logger.Infow("could not wake ops queue", "name", oq.params.Name)
 		}
 	}
 }
