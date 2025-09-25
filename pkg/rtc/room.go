@@ -2028,10 +2028,10 @@ func GetOtherParticipantInfo(
 
 	pInfos := make([]*livekit.ParticipantInfo, 0, len(allParticipants))
 	for _, op := range allParticipants {
-		if !op.Hidden() &&
+		if !(skipSubscriberBroadcast && op.CanSkipBroadcast()) &&
+			!op.Hidden() &&
 			op.Identity() != lpIdentity &&
-			!isMigratingIn &&
-			!(skipSubscriberBroadcast && op.CanSkipBroadcast()) {
+			!isMigratingIn {
 			pInfos = append(pInfos, op.ToProto())
 		}
 	}
