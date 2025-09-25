@@ -60,6 +60,7 @@ type RoomManager struct {
 	clientConfManager clientconfiguration.ClientConfigurationManager
 	egressLauncher    rtc.EgressLauncher
 	versionGenerator  utils.TimedVersionGenerator
+	trafficManager    *TrafficManager
 
 	rooms               map[livekit.RoomKey]*rtc.Room
 	outRelayCollections map[livekit.RoomKey]*relay.Collection
@@ -77,6 +78,7 @@ func NewLocalRoomManager(
 	clientConfManager clientconfiguration.ClientConfigurationManager,
 	egressLauncher rtc.EgressLauncher,
 	versionGenerator utils.TimedVersionGenerator,
+	trafficManager *TrafficManager,
 ) (*RoomManager, error) {
 	rtcConf, err := rtc.NewWebRTCConfig(conf, currentNode.Ip)
 	if err != nil {
@@ -99,6 +101,7 @@ func NewLocalRoomManager(
 		clientConfManager: clientConfManager,
 		egressLauncher:    egressLauncher,
 		versionGenerator:  versionGenerator,
+		trafficManager:    trafficManager,
 
 		rooms:               make(map[livekit.RoomKey]*rtc.Room),
 		outRelayCollections: make(map[livekit.RoomKey]*relay.Collection),
@@ -876,6 +879,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 
 // manages an RTC session for a participant, runs on the RTC node
 func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalParticipant, requestSource routing.MessageSource) {
+    ctx := context.Background()
 	pLogger := rtc.LoggerWithParticipant(
 		rtc.LoggerWithRoom(logger.GetLogger(), room.Key(), room.ID()),
 		participant.Identity(),
@@ -922,6 +926,21 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 			}
 
 			req := obj.(*livekit.SignalRequest)
+			if m, ok := req.Message.(*livekit.SignalRequest_Mute); ok {
+				pLogger.Debugw("Sending track mute to other nodes",
+					"trackID", m.Mute.Sid, "muted", m.Mute.Muted, "participant", participant.Identity(), "roomKey", room.Key())
+				_ = r.router.WriteParticipantRTC(ctx, room.Key(), participant.Identity(), &livekit.RTCNodeMessage{
+					Message: &livekit.RTCNodeMessage_MuteTrack{
+						MuteTrack: &livekit.MuteRoomTrackRequest{
+							Room:     string(room.Name()),
+							Identity: string(participant.Identity()),
+							TrackSid: m.Mute.Sid,
+							Muted:    m.Mute.Muted,
+						},
+					},
+				})
+			}
+
 			if err := rtc.HandleParticipantSignal(room, participant, req, pLogger); err != nil {
 				// more specific errors are already logged
 				// treat errors returned as fatal
@@ -1454,4 +1473,59 @@ func unpackReconnectRequest(message interface{}) (peerId string, err error) {
 	}
 
 	return
+}
+
+func (r *RoomManager) SaveClientsBandwidth() {
+	r.lock.RLock()
+	rooms := make([]*rtc.Room, 0, len(r.rooms))
+	for _, rm := range r.rooms {
+		rooms = append(rooms, rm)
+	}
+	r.lock.RUnlock()
+
+	bandwidthByApiKey := make(map[livekit.ApiKey]int64)
+	for _, room := range rooms {
+		localParticipants := room.GetLocalParticipants()
+		for _, p := range localParticipants {
+			participantBandwidth := int64(0)
+			for _, t := range p.GetSubscribedTracks() {
+				switch t.MediaTrack().Kind() {
+				case livekit.TrackType_AUDIO:
+					if !t.IsPublisherMuted() {
+						if !t.IsMuted() {
+							participantBandwidth += AudioBandwidth
+						}
+					}
+				case livekit.TrackType_VIDEO:
+					if !t.IsPublisherMuted() {
+						if t.MediaTrack().IsSimulcast() {
+							switch t.DownTrack().CurrentLayers().Spatial {
+							case 2:
+								participantBandwidth += VideoBanwithHigh
+							case 1:
+								participantBandwidth += VideoBanwithMedium
+							case 0:
+								participantBandwidth += VideoBanwithLow
+							}
+						} else {
+							if !t.IsMuted() {
+								participantBandwidth += VideoBanwithHigh
+							}
+						}
+					}
+				}
+			}
+			oldBandwidth := bandwidthByApiKey[p.GetApiKey()]
+			bandwidthByApiKey[p.GetApiKey()] = oldBandwidth + participantBandwidth
+			logger.Debugw("bandwidth added for participant", "apiKey", p.GetApiKey(), "bandwidth", participantBandwidth)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	err := r.trafficManager.SetValue(ctx, bandwidthByApiKey)
+	if err != nil {
+		logger.Errorw("could not set bandwidth", err)
+	}
 }

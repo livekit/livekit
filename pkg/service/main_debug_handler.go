@@ -11,13 +11,15 @@ type MainDebugHandler struct {
 	nodeProvider   *NodeProvider
 	clientProvider *ClientProvider
 	db             *pubsub.DB
+	roomManager    *RoomManager
 }
 
-func NewMainDebugHandler(nodeProvider *NodeProvider, clientProvider *ClientProvider, db *pubsub.DB) *MainDebugHandler {
+func NewMainDebugHandler(nodeProvider *NodeProvider, clientProvider *ClientProvider, db *pubsub.DB, roomManager *RoomManager) *MainDebugHandler {
 	return &MainDebugHandler{
 		nodeProvider:   nodeProvider,
 		clientProvider: clientProvider,
 		db:             db,
+		roomManager:    roomManager,
 	}
 }
 
@@ -127,4 +129,35 @@ func (h *MainDebugHandler) peerHTTPHandler(w http.ResponseWriter, r *http.Reques
 
 	table.Render()
 	return
+}
+
+func (h *MainDebugHandler) trafficHTTPHandler(w http.ResponseWriter, r *http.Request) {
+	if h.roomManager == nil || h.roomManager.trafficManager == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("traffic manager unavailable"))
+		return
+	}
+
+	snapshot := h.roomManager.trafficManager.GetAll()
+
+	table := tablewriter.NewWriter(w)
+	table.SetRowLine(true)
+	table.SetAutoWrapText(false)
+	table.SetHeader([]string{
+		"API Key",
+		"Value",
+	})
+	table.SetColumnAlignment([]int{
+		tablewriter.ALIGN_CENTER,
+		tablewriter.ALIGN_CENTER,
+	})
+
+	for apiKey, v := range snapshot {
+		table.Append([]string{
+			string(apiKey),
+			fmt.Sprintf("%d", v),
+		})
+	}
+
+	table.Render()
 }

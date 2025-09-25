@@ -78,6 +78,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createGeoIP,
 		createRelevantNodesHandler,
 		createMainDebugHandler,
+		createTrafficManager,
 		NewLivekitServer,
 	)
 	return &LivekitServer{}, nil
@@ -114,8 +115,8 @@ func createRelevantNodesHandler(nodeProvider *NodeProvider) *RelevantNodesHandle
 	return NewRelevantNodesHandler(nodeProvider)
 }
 
-func createMainDebugHandler(nodeProvider *NodeProvider, clientProvider *ClientProvider, db *pubsub.DB) *MainDebugHandler {
-	return NewMainDebugHandler(nodeProvider, clientProvider, db)
+func createMainDebugHandler(nodeProvider *NodeProvider, clientProvider *ClientProvider, db *pubsub.DB, roomManager *RoomManager) *MainDebugHandler {
+	return NewMainDebugHandler(nodeProvider, clientProvider, db, roomManager)
 }
 
 func createGeoIP() (*geoip2.Reader, error) {
@@ -158,6 +159,10 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 		return nil, nil
 	}
 	return redisLiveKit.GetRedisClient(&conf.Redis)
+}
+
+func createTrafficManager(mainDatabase *pubsub.DB) *TrafficManager {
+	return NewTrafficManager(mainDatabase, logger.GetLogger())
 }
 
 func createStore(

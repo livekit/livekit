@@ -98,7 +98,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	clientConfigurationManager := createClientConfiguration()
 	timedVersionGenerator := utils.NewDefaultTimedVersionGenerator()
-	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, rtcEgressLauncher, timedVersionGenerator)
+	trafficManager := createTrafficManager(db)
+	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, telemetryService, clientConfigurationManager, rtcEgressLauncher, timedVersionGenerator, trafficManager)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +127,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	nodeProvider := createNodeProvider(reader, currentNode, db)
 	relevantNodesHandler := createRelevantNodesHandler(nodeProvider)
-	mainDebugHandler := createMainDebugHandler(nodeProvider, clientProvider, db)
+	mainDebugHandler := createMainDebugHandler(nodeProvider, clientProvider, db, roomManager)
 	livekitServer, err := NewLivekitServer(conf, roomService, egressService, ingressService, rtcService, keyProviderPublicKey, router, roomManager, signalServer, server, currentNode, clientProvider, nodeProvider, relevantNodesHandler, mainDebugHandler, tlsMuxer, manager)
 	if err != nil {
 		return nil, err
@@ -167,8 +168,8 @@ func createRelevantNodesHandler(nodeProvider *NodeProvider) *RelevantNodesHandle
 	return NewRelevantNodesHandler(nodeProvider)
 }
 
-func createMainDebugHandler(nodeProvider *NodeProvider, clientProvider *ClientProvider, db *pubsub.DB) *MainDebugHandler {
-	return NewMainDebugHandler(nodeProvider, clientProvider, db)
+func createMainDebugHandler(nodeProvider *NodeProvider, clientProvider *ClientProvider, db *pubsub.DB, roomManager *RoomManager) *MainDebugHandler {
+	return NewMainDebugHandler(nodeProvider, clientProvider, db, roomManager)
 }
 
 func createGeoIP() (*geoip2.Reader, error) {
@@ -211,6 +212,10 @@ func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
 		return nil, nil
 	}
 	return redis2.GetRedisClient(&conf.Redis)
+}
+
+func createTrafficManager(mainDatabase *pubsub.DB) *TrafficManager {
+	return NewTrafficManager(mainDatabase, logger.GetLogger())
 }
 
 func createStore(

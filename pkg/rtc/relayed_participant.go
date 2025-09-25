@@ -399,8 +399,15 @@ func (p *RelayedParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 }
 
 func (p *RelayedParticipantImpl) SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool) {
-	// TODO implement me
-	// panic("implement me")
+	track := p.UpTrackManager.SetPublishedTrackMuted(trackID, muted)
+	if track != nil {
+		p.lock.RLock()
+		onTrackUpdated := p.onTrackUpdated
+		p.lock.RUnlock()
+		if onTrackUpdated != nil {
+			onTrackUpdated(p, track)
+		}
+	}
 }
 
 func (p *RelayedParticipantImpl) HandleAnswer(sdp webrtc.SessionDescription) {
