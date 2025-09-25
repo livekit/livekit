@@ -21,7 +21,7 @@ set -o errexit
 set -o pipefail
 
 REPO="livekit"
-INSTALL_PATH="/usr/local/bin"
+INSTALL_PATH="${INSTALL_PATH:-/usr/local/bin}"
 
 log()  { printf "%b\n" "$*"; }
 abort() {
