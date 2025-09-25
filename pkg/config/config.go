@@ -86,6 +86,8 @@ type Config struct {
 type RTCConfig struct {
 	rtcconfig.RTCConfig `yaml:",inline"`
 
+	UseTURNDomain bool `yaml:"use_turn_domain,omitempty"`
+
 	TURNServers []TURNServer `yaml:"turn_servers,omitempty"`
 
 	// Deprecated
@@ -332,6 +334,7 @@ var DefaultConfig = Config{
 			ICEPortRangeEnd:   0,
 			STUNServers:       []string{},
 		},
+		UseTURNDomain:         false,
 		PacketBufferSize:      500,
 		PacketBufferSizeVideo: 500,
 		PacketBufferSizeAudio: 200,

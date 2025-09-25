@@ -973,13 +973,29 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 		tlsOnly = false
 	}
 
+	if rtcConf.UseExternalIP && rtcConf.UseTURNDomain {
+		logger.Warnw("using external IP but also using TURN domain", nil)
+		rtcConf.UseTURNDomain = false
+	}
+
+	if rtcConf.UseTURNDomain && r.config.TURN.Domain == "" {
+		logger.Warnw("using TURN domain but no domain configured", nil)
+		rtcConf.UseTURNDomain = false
+	}
+
 	hasSTUN := false
 	if r.config.TURN.Enabled {
 		var urls []string
 		if r.config.TURN.UDPPort > 0 && !tlsOnly {
 			// UDP TURN is used as STUN
 			hasSTUN = true
-			urls = append(urls, fmt.Sprintf("turn:%s:%d?transport=udp", r.config.RTC.NodeIP, r.config.TURN.UDPPort))
+			var host string
+			if rtcConf.UseTURNDomain {
+				host = r.config.TURN.Domain
+			} else {
+				host = r.config.RTC.NodeIP
+			}
+			urls = append(urls, fmt.Sprintf("turn:%s:%d?transport=udp", host, r.config.TURN.UDPPort))
 		}
 		if r.config.TURN.TLSPort > 0 {
 			urls = append(urls, fmt.Sprintf("turns:%s:443?transport=tcp", r.config.TURN.Domain))
