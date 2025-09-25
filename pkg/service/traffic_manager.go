@@ -155,5 +155,24 @@ func (m *TrafficManager) handleTrafficMessage(trafficMsg trafficMessage, fromPee
 			createdAt: trafficMsg.CreatedAt,
 		}
 		m.trafficValuesByApiKey[apiKey] = trafficValueByPeerId
+		m.logger.Debugw("traffic value has been set", "apiKey", apiKey, "value", value, "fromPeerId", fromPeerId)
 	}
+}
+
+func (m *TrafficManager) GetAll() map[livekit.ApiKey]int64 {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
+	out := make(map[livekit.ApiKey]int64, len(m.trafficValuesByApiKey))
+	for apiKey, byPeer := range m.trafficValuesByApiKey {
+		var total int64
+		for _, tv := range byPeer {
+			if tv.isExpired() {
+				continue
+			}
+			total += tv.value
+		}
+		out[apiKey] = total
+	}
+	return out
 }

@@ -115,8 +115,8 @@ func createRelevantNodesHandler(nodeProvider *NodeProvider) *RelevantNodesHandle
 	return NewRelevantNodesHandler(nodeProvider)
 }
 
-func createMainDebugHandler(nodeProvider *NodeProvider, clientProvider *ClientProvider, db *pubsub.DB) *MainDebugHandler {
-	return NewMainDebugHandler(nodeProvider, clientProvider, db)
+func createMainDebugHandler(nodeProvider *NodeProvider, clientProvider *ClientProvider, db *pubsub.DB, roomManager *RoomManager) *MainDebugHandler {
+	return NewMainDebugHandler(nodeProvider, clientProvider, db, roomManager)
 }
 
 func createGeoIP() (*geoip2.Reader, error) {
