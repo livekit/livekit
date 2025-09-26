@@ -381,7 +381,11 @@ func (r *rtpStatsBase) GetRtt() uint32 {
 	return r.rtt
 }
 
-func (r *rtpStatsBase) maybeAdjustFirstPacketTime(srData *livekit.RTCPSenderReportState, tsOffset uint64, extStartTS uint64) (err error, loggingFields []interface{}) {
+func (r *rtpStatsBase) maybeAdjustFirstPacketTime(
+	srData *livekit.RTCPSenderReportState,
+	tsOffset uint64,
+	extStartTS uint64,
+) (adjustment int64, err error, loggingFields []interface{}) {
 	nowNano := mono.UnixNano()
 	if time.Duration(nowNano-r.startTime) > cFirstPacketTimeAdjustWindow {
 		return
@@ -405,6 +409,7 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(srData *livekit.RTCPSenderRepo
 	timeSinceFirst := time.Duration(nowNano - r.firstTime)
 	now := r.firstTime + timeSinceFirst.Nanoseconds()
 	firstTime := now - samplesDuration.Nanoseconds()
+	adjustment = r.firstTime - firstTime
 
 	getFields := func() []interface{} {
 		return []interface{}{
@@ -412,7 +417,7 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(srData *livekit.RTCPSenderRepo
 			"nowTime", time.Unix(0, now),
 			"before", time.Unix(0, r.firstTime),
 			"after", time.Unix(0, firstTime),
-			"adjustment", time.Duration(r.firstTime - firstTime),
+			"adjustment", adjustment,
 			"extNowTS", extNowTS,
 			"extStartTS", extStartTS,
 			"srData", WrappedRTCPSenderReportStateLogger{srData},
@@ -425,15 +430,16 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(srData *livekit.RTCPSenderRepo
 	}
 
 	if firstTime < r.firstTime {
-		if r.firstTime-firstTime > cFirstPacketTimeAdjustThreshold {
+		if adjustment > cFirstPacketTimeAdjustThreshold {
 			err = errors.New("adjusting first packet time, too big, ignoring")
 			loggingFields = getFields()
 		} else {
 			r.logger.Debugw("adjusting first packet time", getFields()...)
-			r.firstTimeAdjustment += time.Duration(r.firstTime - firstTime)
+			r.firstTimeAdjustment += time.Duration(adjustment)
 			r.firstTime = firstTime
 		}
 	}
+
 	return
 }
 

@@ -800,7 +800,7 @@ func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(publisherSRData *livekit.RTC
 		return
 	}
 
-	if err, loggingFields := r.maybeAdjustFirstPacketTime(publisherSRData, tsOffset, r.extStartTS); err != nil {
+	if _, err, loggingFields := r.maybeAdjustFirstPacketTime(publisherSRData, tsOffset, r.extStartTS); err != nil {
 		r.logger.Infow(err.Error(), append(loggingFields, "rtpStats", lockedRTPStatsSenderLogEncoder{r})...)
 	}
 }
@@ -835,11 +835,12 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 		nowRTPExt          uint64
 	)
 	if passThrough {
-		reportTime = publisherSRData.At
-		reportTimeAdjusted = publisherSRData.AtAdjusted
+		timeSincePublisherSR := time.Duration(mono.UnixNano() - publisherSRData.At)
+		reportTime = publisherSRData.At + timeSincePublisherSR.Nanoseconds()
+		reportTimeAdjusted = publisherSRData.AtAdjusted + timeSincePublisherSR.Nanoseconds()
 
-		nowNTP = mediatransportutil.NtpTime(publisherSRData.NtpTimestamp)
-		nowRTPExt = publisherSRData.RtpTimestampExt - tsOffset
+		nowNTP = mediatransportutil.ToNtpTime(mediatransportutil.NtpTime(publisherSRData.NtpTimestamp).Time().Add(timeSincePublisherSR))
+		nowRTPExt = publisherSRData.RtpTimestampExt - tsOffset + uint64(timeSincePublisherSR.Nanoseconds()*int64(r.params.ClockRate)/1e9)
 	} else {
 		timeSincePublisherSRAdjusted := time.Duration(mono.UnixNano() - publisherSRData.AtAdjusted)
 		reportTimeAdjusted = publisherSRData.AtAdjusted + timeSincePublisherSRAdjusted.Nanoseconds()

@@ -3457,7 +3457,6 @@ func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack, isMigrate
 			p.Identity(),
 			track.ToProto(),
 		)
-
 	}
 
 	p.pendingTracksLock.Lock()
