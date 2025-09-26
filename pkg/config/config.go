@@ -81,6 +81,8 @@ type Config struct {
 	Metric metric.MetricConfig `yaml:"metric,omitempty"`
 
 	NodeStats NodeStatsConfig `yaml:"node_stats,omitempty"`
+
+	ClientConfiguration ClientConfigurationConfig `yaml:"client_configuration,omitempty"`
 }
 
 type RTCConfig struct {
@@ -316,6 +318,16 @@ type NodeStatsConfig struct {
 	StatsMaxDelay                 time.Duration   `yaml:"stats_max_delay,omitempty"`
 }
 
+type ClientConfigurationConfig struct {
+	Configurations []ClientConfigurationItem `yaml:"configurations,omitempty"`
+}
+
+type ClientConfigurationItem struct {
+	Match         string `yaml:"match,omitempty"`
+	Configuration string `yaml:"configuration,omitempty"`
+	Merge         bool   `yaml:"merge,omitempty"`
+}
+
 var DefaultNodeStatsConfig = NodeStatsConfig{
 	StatsUpdateInterval:           2 * time.Second,
 	StatsRateMeasurementIntervals: []time.Duration{10 * time.Second},
@@ -406,6 +418,9 @@ var DefaultConfig = Config{
 	Metric:    metric.DefaultMetricConfig,
 	WebHook:   webhook.DefaultWebHookConfig,
 	NodeStats: DefaultNodeStatsConfig,
+	ClientConfiguration: ClientConfigurationConfig{
+		Configurations: []ClientConfigurationItem{},
+	},
 }
 
 func NewConfig(confString string, strictMode bool, c *cli.Command, baseFlags []cli.Flag) (*Config, error) {
