@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	highForwardingLatency = 20 * time.Millisecond
-	skewFactor            = 10
+	cHighForwardingLatency = 20 * time.Millisecond
+	cSkewFactor            = 10
 )
 
 type ForwardStats struct {
@@ -38,7 +38,7 @@ func NewForwardStats(latencyUpdateInterval, reportInterval, latencyWindowLength 
 func (s *ForwardStats) Update(arrival, left int64) (int64, bool) {
 	transit := left - arrival
 	isHighForwardingLatency := false
-	if time.Duration(transit) > highForwardingLatency {
+	if time.Duration(transit) > cHighForwardingLatency {
 		isHighForwardingLatency = true
 	}
 
@@ -72,7 +72,7 @@ func (s *ForwardStats) GetStats(shortDuration time.Duration) (time.Duration, tim
 
 	latencyLong, jitterLong := time.Duration(wLong.Mean()), time.Duration(wLong.StdDev())
 	latencyShort, jitterShort := time.Duration(wShort.Mean()), time.Duration(wShort.StdDev())
-	if jitterLong > latencyLong*skewFactor {
+	if latencyShort > cHighForwardingLatency/2 && jitterLong > latencyLong*cSkewFactor {
 		logger.Infow(
 			"high jitter in forwarding path",
 			"lowest", time.Duration(lowest),
