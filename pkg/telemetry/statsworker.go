@@ -162,7 +162,7 @@ func (s *StatsWorker) Close(guard *ReferenceGuard) bool {
 func (s *StatsWorker) Closed(guard *ReferenceGuard) bool {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	if !s.closedAt.IsZero() {
+	if s.closedAt.IsZero() {
 		s.refCount.Activate(guard)
 		return false
 	}
