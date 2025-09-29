@@ -80,6 +80,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewWHIPService,
 		NewAgentService,
 		NewAgentDispatchService,
+		getAgentConfig,
 		agent.NewAgentClient,
 		getAgentStore,
 		getSignalRelayConfig,
@@ -268,4 +269,8 @@ func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (
 
 func getNodeStatsConfig(config *config.Config) config.NodeStatsConfig {
 	return config.NodeStats
+}
+
+func getAgentConfig(config *config.Config) agent.Config {
+	return config.Agents
 }

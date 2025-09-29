@@ -76,6 +76,7 @@ type Config struct {
 	LogLevel string        `yaml:"log_level,omitempty"`
 	Logging  LoggingConfig `yaml:"logging,omitempty"`
 	Limit    LimitConfig   `yaml:"limit,omitempty"`
+	Agents   agent.Config  `yaml:"agents,omitempty"`
 
 	Development bool `yaml:"development,omitempty"`
 
@@ -175,7 +176,6 @@ type RoomConfig struct {
 	CreateRoomEnabled  bool               `yaml:"create_room_enabled,omitempty"`
 	CreateRoomTimeout  time.Duration      `yaml:"create_room_timeout,omitempty"`
 	CreateRoomAttempts int                `yaml:"create_room_attempts,omitempty"`
-	Agents             agent.Config       `yaml:"agents,omitempty"`
 	// target room participant update batch chunk size in bytes
 	UpdateBatchTargetSize int `yaml:"update_batch_target_size,omitempty"`
 	// deprecated, moved to limits
