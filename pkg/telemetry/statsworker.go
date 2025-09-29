@@ -27,6 +27,30 @@ import (
 	protoutils "github.com/livekit/protocol/utils"
 )
 
+type ReferenceGuard struct {
+	activated, released bool
+}
+
+type ReferenceCount struct {
+	count int
+}
+
+func (s *ReferenceCount) Activate(guard *ReferenceGuard) {
+	if !guard.activated {
+		guard.activated = true
+		s.count++
+	}
+}
+
+func (s *ReferenceCount) Release(guard *ReferenceGuard) bool {
+	if !guard.activated || guard.released {
+		return false
+	}
+	guard.released = true
+	s.count--
+	return s.count == 0
+}
+
 // StatsWorker handles participant stats
 type StatsWorker struct {
 	next *StatsWorker
@@ -42,6 +66,7 @@ type StatsWorker struct {
 	lock             sync.RWMutex
 	outgoingPerTrack map[livekit.TrackID][]*livekit.AnalyticsStat
 	incomingPerTrack map[livekit.TrackID][]*livekit.AnalyticsStat
+	refCount         ReferenceCount
 	closedAt         time.Time
 }
 
@@ -117,9 +142,20 @@ func (s *StatsWorker) Flush(now time.Time) bool {
 	return closed
 }
 
-func (s *StatsWorker) Close() bool {
+func (s *StatsWorker) ActivateGuard(guard *ReferenceGuard) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
+
+	s.refCount.Activate(guard)
+}
+
+func (s *StatsWorker) Close(guard *ReferenceGuard) bool {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if !s.refCount.Release(guard) {
+		return false
+	}
 
 	ok := s.closedAt.IsZero()
 	if ok {

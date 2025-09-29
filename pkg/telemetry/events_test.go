@@ -21,6 +21,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/livekit"
 )
 
@@ -46,9 +47,10 @@ func Test_OnParticipantJoin_EventIsSent(t *testing.T) {
 		ClientConnectTime: 420,
 	}
 	participantInfo := &livekit.ParticipantInfo{Sid: partSID}
+	guard := &telemetry.ReferenceGuard{}
 
 	// do
-	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo, clientMeta, true)
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo, clientMeta, true, guard)
 	time.Sleep(time.Millisecond * 500)
 
 	// test
@@ -81,10 +83,11 @@ func Test_OnParticipantLeft_EventIsSent(t *testing.T) {
 	room := &livekit.Room{Sid: "RoomSid", Name: "RoomName"}
 	partSID := "part1"
 	participantInfo := &livekit.ParticipantInfo{Sid: partSID}
+	guard := &telemetry.ReferenceGuard{}
 
 	// do
-	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, &livekit.AnalyticsClientMeta{}, false)
-	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo, true)
+	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, &livekit.AnalyticsClientMeta{}, false, guard)
+	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo, true, guard)
 	time.Sleep(time.Millisecond * 500)
 
 	// test
@@ -158,9 +161,10 @@ func Test_OnParticipantActive_EventIsSent(t *testing.T) {
 		ClientAddr: "127.0.0.1",
 	}
 	participantInfo := &livekit.ParticipantInfo{Sid: partSID}
+	guard := &telemetry.ReferenceGuard{}
 
 	// do
-	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo, clientMeta, true)
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo, clientMeta, true, guard)
 	time.Sleep(time.Millisecond * 500)
 
 	// test
@@ -173,7 +177,7 @@ func Test_OnParticipantActive_EventIsSent(t *testing.T) {
 		ClientConnectTime: 420,
 	}
 
-	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, clientMetaConnect, false)
+	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, clientMetaConnect, false, guard)
 	time.Sleep(time.Millisecond * 500)
 
 	require.Equal(t, 2, fixture.analytics.SendEventCallCount())
@@ -210,9 +214,10 @@ func Test_OnTrackSubscribed_EventIsSent(t *testing.T) {
 		ClientAddr: "127.0.0.1",
 	}
 	participantInfo := &livekit.ParticipantInfo{Sid: partSID}
+	guard := &telemetry.ReferenceGuard{}
 
 	// do
-	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo, clientMeta, true)
+	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, clientInfo, clientMeta, true, guard)
 	time.Sleep(time.Millisecond * 500)
 
 	// test

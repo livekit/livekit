@@ -491,6 +491,7 @@ func (r *Room) Join(
 				p.ToProto(),
 				meta,
 				false,
+				participant.TelemetryGuard(),
 			)
 
 			participant.GetReporter().Tx(func(tx roomobs.ParticipantSessionTx) {

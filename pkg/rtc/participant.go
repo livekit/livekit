@@ -283,6 +283,9 @@ type ParticipantImpl struct {
 	rttUpdatedAt time.Time
 	lastRTT      uint32
 
+	// idempotent reference guard for telemetry stats worker
+	telemetryGuard *telemetry.ReferenceGuard
+
 	lock utils.RWMutex
 
 	dirty   atomic.Bool
@@ -369,6 +372,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		rpcPendingAcks:      make(map[string]*utils.DataChannelRpcPendingAckHandler),
 		rpcPendingResponses: make(map[string]*utils.DataChannelRpcPendingResponseHandler),
 		onClose:             make(map[string]func(types.LocalParticipant)),
+		telemetryGuard:      &telemetry.ReferenceGuard{},
 	}
 	p.setupSignalling()
 
@@ -882,6 +886,10 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 	pi, _ := p.ToProtoWithVersion()
 	return pi
+}
+
+func (p *ParticipantImpl) TelemetryGuard() *telemetry.ReferenceGuard {
+	return p.telemetryGuard
 }
 
 // callbacks for clients
