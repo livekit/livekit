@@ -36,14 +36,14 @@ type ReferenceCount struct {
 }
 
 func (s *ReferenceCount) Activate(guard *ReferenceGuard) {
-	if !guard.activated {
+	if guard != nil && !guard.activated {
 		guard.activated = true
 		s.count++
 	}
 }
 
 func (s *ReferenceCount) Release(guard *ReferenceGuard) bool {
-	if !guard.activated || guard.released {
+	if guard == nil || !guard.activated || guard.released {
 		return false
 	}
 	guard.released = true
@@ -164,10 +164,14 @@ func (s *StatsWorker) Close(guard *ReferenceGuard) bool {
 	return ok
 }
 
-func (s *StatsWorker) Closed() bool {
+func (s *StatsWorker) Closed(guard *ReferenceGuard) bool {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	return !s.closedAt.IsZero()
+	if !s.closedAt.IsZero() {
+		s.refCount.Activate(guard)
+		return false
+	}
+	return true
 }
 
 func (s *StatsWorker) collectStats(

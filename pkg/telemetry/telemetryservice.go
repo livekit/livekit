@@ -210,10 +210,7 @@ func (t *telemetryService) getOrCreateWorker(
 	defer t.workersMu.Unlock()
 
 	worker, ok := t.workers[participantID]
-	if ok && !worker.Closed() {
-		if guard != nil {
-			worker.ActivateGuard(guard)
-		}
+	if ok && !worker.Closed(guard) {
 		return worker, true
 	}
 
@@ -234,9 +231,7 @@ func (t *telemetryService) getOrCreateWorker(
 		worker.SetConnected()
 	}
 
-	if guard != nil {
-		worker.ActivateGuard(guard)
-	}
+	worker.ActivateGuard(guard)
 
 	t.workers[participantID] = worker
 
