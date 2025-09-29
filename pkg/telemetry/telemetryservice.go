@@ -226,12 +226,11 @@ func (t *telemetryService) getOrCreateWorker(
 		roomName,
 		participantID,
 		participantIdentity,
+		guard,
 	)
 	if existingIsConnected {
 		worker.SetConnected()
 	}
-
-	worker.ActivateGuard(guard)
 
 	t.workers[participantID] = worker
 

@@ -77,6 +77,7 @@ func newStatsWorker(
 	roomName livekit.RoomName,
 	participantID livekit.ParticipantID,
 	identity livekit.ParticipantIdentity,
+	guard *ReferenceGuard,
 ) *StatsWorker {
 	s := &StatsWorker{
 		ctx:                 ctx,
@@ -88,6 +89,7 @@ func newStatsWorker(
 		outgoingPerTrack:    make(map[livekit.TrackID][]*livekit.AnalyticsStat),
 		incomingPerTrack:    make(map[livekit.TrackID][]*livekit.AnalyticsStat),
 	}
+	s.refCount.Activate(guard)
 	return s
 }
 
@@ -140,13 +142,6 @@ func (s *StatsWorker) Flush(now time.Time) bool {
 	}
 
 	return closed
-}
-
-func (s *StatsWorker) ActivateGuard(guard *ReferenceGuard) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	s.refCount.Activate(guard)
 }
 
 func (s *StatsWorker) Close(guard *ReferenceGuard) bool {
