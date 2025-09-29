@@ -879,7 +879,6 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 
 // manages an RTC session for a participant, runs on the RTC node
 func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalParticipant, requestSource routing.MessageSource) {
-    ctx := context.Background()
 	pLogger := rtc.LoggerWithParticipant(
 		rtc.LoggerWithRoom(logger.GetLogger(), room.Key(), room.ID()),
 		participant.Identity(),
@@ -926,20 +925,6 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 			}
 
 			req := obj.(*livekit.SignalRequest)
-			if m, ok := req.Message.(*livekit.SignalRequest_Mute); ok {
-				pLogger.Debugw("Sending track mute to other nodes",
-					"trackID", m.Mute.Sid, "muted", m.Mute.Muted, "participant", participant.Identity(), "roomKey", room.Key())
-				_ = r.router.WriteParticipantRTC(ctx, room.Key(), participant.Identity(), &livekit.RTCNodeMessage{
-					Message: &livekit.RTCNodeMessage_MuteTrack{
-						MuteTrack: &livekit.MuteRoomTrackRequest{
-							Room:     string(room.Name()),
-							Identity: string(participant.Identity()),
-							TrackSid: m.Mute.Sid,
-							Muted:    m.Mute.Muted,
-						},
-					},
-				})
-			}
 
 			if err := rtc.HandleParticipantSignal(room, participant, req, pLogger); err != nil {
 				// more specific errors are already logged
@@ -1317,6 +1302,10 @@ func (r *RoomManager) onRelayParticipantUpdate(room *rtc.Room, rel relay.Relay, 
 		relayedParticipant.SetName(pi.Name)
 		relayedParticipant.UpdateState(pi.State)
 		relayedParticipant.SetMetadata(pi.Metadata)
+
+		for i := range pi.Tracks {
+			relayedParticipant.SetTrackMuted(livekit.TrackID(pi.Tracks[i].Sid), pi.Tracks[i].Muted, false)
+		}
 	}
 }
 
