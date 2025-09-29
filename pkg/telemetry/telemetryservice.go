@@ -204,15 +204,15 @@ func (t *telemetryService) getOrCreateWorker(
 	roomName livekit.RoomName,
 	participantID livekit.ParticipantID,
 	participantIdentity livekit.ParticipantIdentity,
-	claim *ReferenceGuard,
+	guard *ReferenceGuard,
 ) (*StatsWorker, bool) {
 	t.workersMu.Lock()
 	defer t.workersMu.Unlock()
 
 	worker, ok := t.workers[participantID]
 	if ok && !worker.Closed() {
-		if claim != nil {
-			worker.ActivateGuard(claim)
+		if guard != nil {
+			worker.ActivateGuard(guard)
 		}
 		return worker, true
 	}
@@ -234,8 +234,8 @@ func (t *telemetryService) getOrCreateWorker(
 		worker.SetConnected()
 	}
 
-	if claim != nil {
-		worker.ActivateGuard(claim)
+	if guard != nil {
+		worker.ActivateGuard(guard)
 	}
 
 	t.workers[participantID] = worker
