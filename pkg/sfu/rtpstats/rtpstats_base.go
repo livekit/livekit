@@ -418,6 +418,7 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(
 			"before", time.Unix(0, r.firstTime),
 			"after", time.Unix(0, firstTime),
 			"adjustment", time.Duration(adjustment),
+			"firstTimeAdjustment", r.firstTimeAdjustment,
 			"extNowTS", extNowTS,
 			"extStartTS", extStartTS,
 			"srData", WrappedRTCPSenderReportStateLogger{srData},
