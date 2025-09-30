@@ -150,7 +150,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		IsSendSide:                   params.UseOneShotSignallingMode || params.UseSinglePeerConnection,
 		AllowPlayoutDelay:            params.AllowPlayoutDelay,
 		Transport:                    livekit.SignalTarget_PUBLISHER,
-		Handler:                      params.PublisherHandler,
+		Handler:                      TransportManagerTransportHandler{params.PublisherHandler, t, lgr},
 		UseOneShotSignallingMode:     params.UseOneShotSignallingMode,
 		DataChannelMaxBufferedAmount: params.DataChannelMaxBufferedAmount,
 		DatachannelSlowThreshold:     params.DatachannelSlowThreshold,

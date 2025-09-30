@@ -435,8 +435,8 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(
 			err = errors.New("adjusting first packet time, too big, ignoring")
 			loggingFields = getFields()
 		} else {
-			r.logger.Debugw("adjusting first packet time", getFields()...)
 			r.firstTimeAdjustment += time.Duration(adjustment)
+			r.logger.Debugw("adjusting first packet time", getFields()...)
 			r.firstTime = firstTime
 		}
 	}
