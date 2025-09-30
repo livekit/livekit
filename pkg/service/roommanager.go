@@ -745,6 +745,9 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomKey livekit.RoomK
 				inRelayCollection.ForEach(func(relay relay.Relay) {
 					if relay.ID() == fromPeerId {
 						rel = relay.(*pc.PcRelay)
+						if rel.State() == pc.RelayStateClosed || rel.State() == pc.RelayStateClosing {
+							rel = nil
+						}
 					}
 				})
 
