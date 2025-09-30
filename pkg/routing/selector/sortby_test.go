@@ -23,7 +23,7 @@ import (
 )
 
 func SortByTest(t *testing.T, sortBy string) {
-	sel := selector.SystemLoadSelector{SortBy: sortBy}
+	sel := selector.SystemLoadSelector{SortBy: sortBy, Algorithm: "lowest"}
 	nodes := []*livekit.Node{nodeLoadLow, nodeLoadMedium, nodeLoadHigh}
 
 	for i := 0; i < 5; i++ {
@@ -38,7 +38,7 @@ func SortByTest(t *testing.T, sortBy string) {
 }
 
 func TestSortByErrors(t *testing.T) {
-	sel := selector.SystemLoadSelector{}
+	sel := selector.SystemLoadSelector{Algorithm: "lowest"}
 	nodes := []*livekit.Node{nodeLoadLow, nodeLoadMedium, nodeLoadHigh}
 
 	// Test unset sort by option error
