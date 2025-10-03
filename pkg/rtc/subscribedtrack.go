@@ -433,7 +433,7 @@ func (t *SubscribedTrack) OnRttUpdate(rtt uint32) {
 }
 
 func (t *SubscribedTrack) OnCodecNegotiated(codec webrtc.RTPCodecCapability) {
-	if !t.params.WrappedReceiver.DetermineReceiver(codec) {
+	if isAvailable, needsPublish := t.params.WrappedReceiver.DetermineReceiver(codec); !isAvailable || !needsPublish {
 		return
 	}
 

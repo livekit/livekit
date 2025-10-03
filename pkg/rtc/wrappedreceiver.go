@@ -88,8 +88,13 @@ func (r *WrappedReceiver) StreamID() string {
 	return r.params.StreamId
 }
 
-// DetermineReceiver determines the receiver of negotiated codec and return if there is a match
-func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) bool {
+// DetermineReceiver determines the receiver of negotiated codec and returns
+//
+// isAvailable: returns true if given codec is a potential codec from publisher or if an existing published codec can be translated
+// needsPublish: indicates if the codec is needed from publisher, some combinations can be achieved via codec translation internally,
+//
+//	example: unecrypted opus -> RED translation and vice-versa can be done without the need for publisher to send the other codec.
+func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) (isAvailable bool, needsPublish bool) {
 	r.lock.Lock()
 
 	codecMimeType := mime.NormalizeMimeType(codec.MimeType)
@@ -98,6 +103,8 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) boo
 		receiverMimeType := receiver.Mime()
 		if receiverMimeType == codecMimeType {
 			trackReceiver = receiver
+			isAvailable = true
+			needsPublish = true
 			break
 		}
 
@@ -105,9 +112,11 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) boo
 			if receiverMimeType == mime.MimeTypeRED && codecMimeType == mime.MimeTypeOpus {
 				// audio opus/red can match opus only
 				trackReceiver = receiver.GetPrimaryReceiverForRed()
+				isAvailable = true
 				break
 			} else if receiverMimeType == mime.MimeTypeOpus && codecMimeType == mime.MimeTypeRED {
 				trackReceiver = receiver.GetRedReceiver()
+				isAvailable = true
 				break
 			}
 		}
@@ -115,7 +124,7 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) boo
 	if trackReceiver == nil {
 		r.lock.Unlock()
 		r.params.Logger.Warnw("can't determine receiver for codec", nil, "codec", codec.MimeType)
-		return false
+		return
 	}
 	r.TrackReceiver = trackReceiver
 
@@ -127,7 +136,7 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) boo
 		trackReceiver.AddOnReady(f)
 	}
 
-	return true
+	return
 }
 
 func (r *WrappedReceiver) Codecs() []webrtc.RTPCodecParameters {
