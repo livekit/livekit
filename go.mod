@@ -10,6 +10,7 @@ require (
 	github.com/dennwc/iters v1.2.2
 	github.com/dustin/go-humanize v1.0.1
 	github.com/elliotchance/orderedmap/v2 v2.7.0
+	github.com/elliotchance/orderedmap/v3 v3.1.0
 	github.com/florianl/go-tc v0.4.5
 	github.com/frostbyte73/core v0.1.1
 	github.com/gammazero/deque v1.1.0
@@ -29,7 +30,7 @@ require (
 	github.com/magefile/mage v1.15.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.11.3
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/olekukonko/tablewriter v0.0.5
+	github.com/olekukonko/tablewriter v1.1.0
 	github.com/ory/dockertest/v3 v3.12.0
 	github.com/pion/datachannel v1.5.10
 	github.com/pion/dtls/v3 v3.0.7
@@ -63,10 +64,16 @@ require (
 )
 
 require (
+	github.com/fatih/color v1.16.0 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-viper/mapstructure/v2 v2.1.0 // indirect
+	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/moby/sys/user v0.3.0 // indirect
 	github.com/nyaruka/phonenumbers v1.6.5 // indirect
+	github.com/olekukonko/errors v1.1.0 // indirect
+	github.com/olekukonko/ll v0.0.9 // indirect
+	github.com/rivo/uniseg v0.2.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel v1.37.0 // indirect
 	go.opentelemetry.io/otel/metric v1.37.0 // indirect
@@ -109,7 +116,7 @@ require (
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/lithammer/shortuuid/v4 v4.2.0 // indirect
-	github.com/mattn/go-runewidth v0.0.9 // indirect
+	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/mdlayher/netlink v1.7.1 // indirect
 	github.com/mdlayher/socket v0.4.0 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
