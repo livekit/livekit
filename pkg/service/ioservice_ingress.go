@@ -25,6 +25,10 @@ import (
 )
 
 func (s *IOInfoService) CreateIngress(ctx context.Context, info *livekit.IngressInfo) (*emptypb.Empty, error) {
+	if s.is == nil {
+		return nil, ErrIngressNotConnected
+	}
+
 	err := s.is.StoreIngress(ctx, info)
 	if err != nil {
 		return nil, err
@@ -45,6 +49,10 @@ func (s *IOInfoService) GetIngressInfo(ctx context.Context, req *rpc.GetIngressI
 }
 
 func (s *IOInfoService) loadIngressFromInfoRequest(req *rpc.GetIngressInfoRequest) (info *livekit.IngressInfo, err error) {
+	if s.is == nil {
+		return nil, ErrIngressNotConnected
+	}
+
 	if req.IngressId != "" {
 		info, err = s.is.LoadIngress(context.Background(), req.IngressId)
 	} else if req.StreamKey != "" {
@@ -56,6 +64,10 @@ func (s *IOInfoService) loadIngressFromInfoRequest(req *rpc.GetIngressInfoReques
 }
 
 func (s *IOInfoService) UpdateIngressState(ctx context.Context, req *rpc.UpdateIngressStateRequest) (*emptypb.Empty, error) {
+	if s.is == nil {
+		return nil, ErrIngressNotConnected
+	}
+
 	info, err := s.is.LoadIngress(ctx, req.IngressId)
 	if err != nil {
 		return nil, err
