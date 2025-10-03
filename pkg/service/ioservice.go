@@ -86,6 +86,10 @@ func (s *IOInfoService) Stop() {
 }
 
 func (s *IOInfoService) CreateEgress(ctx context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error) {
+	if s.es == nil {
+		return nil, ErrEgressNotConnected
+	}
+
 	// check if egress already exists to avoid duplicate EgressStarted event
 	if _, err := s.es.LoadEgress(ctx, info.EgressId); err == nil {
 		return &emptypb.Empty{}, nil
@@ -103,6 +107,10 @@ func (s *IOInfoService) CreateEgress(ctx context.Context, info *livekit.EgressIn
 }
 
 func (s *IOInfoService) UpdateEgress(ctx context.Context, info *livekit.EgressInfo) (*emptypb.Empty, error) {
+	if s.es == nil {
+		return nil, ErrEgressNotConnected
+	}
+
 	err := s.es.UpdateEgress(ctx, info)
 
 	switch info.Status {
@@ -126,6 +134,10 @@ func (s *IOInfoService) UpdateEgress(ctx context.Context, info *livekit.EgressIn
 }
 
 func (s *IOInfoService) GetEgress(ctx context.Context, req *rpc.GetEgressRequest) (*livekit.EgressInfo, error) {
+	if s.es == nil {
+		return nil, ErrEgressNotConnected
+	}
+
 	info, err := s.es.LoadEgress(ctx, req.EgressId)
 	if err != nil {
 		logger.Errorw("failed to load egress", err)
@@ -136,6 +148,10 @@ func (s *IOInfoService) GetEgress(ctx context.Context, req *rpc.GetEgressRequest
 }
 
 func (s *IOInfoService) ListEgress(ctx context.Context, req *livekit.ListEgressRequest) (*livekit.ListEgressResponse, error) {
+	if s.es == nil {
+		return nil, ErrEgressNotConnected
+	}
+
 	if req.EgressId != "" {
 		info, err := s.es.LoadEgress(ctx, req.EgressId)
 		if err != nil {
