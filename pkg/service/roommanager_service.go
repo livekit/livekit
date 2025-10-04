@@ -210,7 +210,6 @@ func getMediaStateForParticipant(participant types.Participant) (*livekit.InputV
 	var audio *livekit.InputAudioState
 
 	for _, v := range pParticipant.Tracks {
-		fmt.Println("VIDEO", v)
 		if v == nil {
 			continue
 		}
@@ -229,7 +228,6 @@ func getMediaStateForParticipant(participant types.Participant) (*livekit.InputV
 	}
 
 	for _, a := range pParticipant.Tracks {
-		fmt.Println("AUDIO", a)
 		if a == nil {
 			continue
 		}
