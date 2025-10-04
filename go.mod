@@ -2,7 +2,7 @@ module github.com/livekit/livekit-server
 
 go 1.24.0
 
-toolchain go1.24.6
+toolchain go1.25.1
 
 require (
 	github.com/bep/debounce v1.2.1
@@ -10,12 +10,12 @@ require (
 	github.com/dennwc/iters v1.2.2
 	github.com/dustin/go-humanize v1.0.1
 	github.com/elliotchance/orderedmap/v2 v2.7.0
-	github.com/florianl/go-tc v0.4.5
+	github.com/florianl/go-tc v0.4.7
 	github.com/frostbyte73/core v0.1.1
 	github.com/gammazero/deque v1.1.0
 	github.com/gammazero/workerpool v1.1.3
 	github.com/google/uuid v1.6.0
-	github.com/google/wire v0.6.0
+	github.com/google/wire v0.7.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/hashicorp/go-version v1.7.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
@@ -27,7 +27,7 @@ require (
 	github.com/livekit/psrpc v0.7.0
 	github.com/mackerelio/go-osstat v0.2.6
 	github.com/magefile/mage v1.15.0
-	github.com/maxbrunsfeld/counterfeiter/v6 v6.11.3
+	github.com/maxbrunsfeld/counterfeiter/v6 v6.12.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/ory/dockertest/v3 v3.12.0
@@ -43,22 +43,22 @@ require (
 	github.com/pion/turn/v4 v4.1.1
 	github.com/pion/webrtc/v4 v4.1.5-0.20250828044558-c376d0edf977
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v1.23.0
+	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.14.0
 	github.com/rs/cors v1.11.1
 	github.com/stretchr/testify v1.11.1
 	github.com/thoas/go-funk v0.9.3
-	github.com/tomnomnom/linkheader v0.0.0-20180905144013-02ca5825eb80
+	github.com/tomnomnom/linkheader v0.0.0-20250811210735-e5fe3b51442e
 	github.com/twitchtv/twirp v8.1.3+incompatible
-	github.com/ua-parser/uap-go v0.0.0-20250326155420-f7f5a2f9f5bc
+	github.com/ua-parser/uap-go v0.0.0-20250917011043-9c86a9b0f8f0
 	github.com/urfave/negroni/v3 v3.1.1
 	go.uber.org/atomic v1.11.0
 	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.27.0
-	golang.org/x/exp v0.0.0-20250911091902-df9299821621
+	golang.org/x/exp v0.0.0-20251002181428-27f1f14c8bb9
 	golang.org/x/mod v0.28.0
 	golang.org/x/sync v0.17.0
-	google.golang.org/protobuf v1.36.9
+	google.golang.org/protobuf v1.36.10
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -71,6 +71,7 @@ require (
 	go.opentelemetry.io/otel v1.37.0 // indirect
 	go.opentelemetry.io/otel/metric v1.37.0 // indirect
 	go.opentelemetry.io/otel/trace v1.37.0 // indirect
+	go.yaml.in/yaml/v2 v2.4.2 // indirect
 )
 
 require (
@@ -128,12 +129,12 @@ require (
 	github.com/pion/stun/v3 v3.0.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
-	github.com/prometheus/common v0.65.0 // indirect
+	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/puzpuzpuz/xsync/v3 v3.5.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/stoewer/go-strcase v1.3.1 // indirect
-	github.com/urfave/cli/v3 v3.3.9
+	github.com/urfave/cli/v3 v3.4.1
 	github.com/wlynxg/anet v0.0.5 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
