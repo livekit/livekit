@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -16,6 +17,10 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
+)
+
+const (
+	whipSessionNotifyInterval = 10 * time.Second
 )
 
 type whipService struct {
@@ -114,18 +119,32 @@ func (s whipService) Create(ctx context.Context, req *rpc.WHIPCreateRequest) (*r
 	}
 
 	if req.FromIngress {
+		aliveCtx, cancel := context.WithCancel(context.Background())
+
 		lp.AddOnClose(types.ParticipantCloseKeyWHIP, func(lp types.LocalParticipant) {
+			cancel()
+
 			go func() {
 				lp.GetLogger().Debugw("whip service: notify participant closed")
+
+				video, audio := getMediaStateForParticipant(lp)
+
 				_, err := s.ingressRpcCli.WHIPRTCConnectionNotify(context.Background(), string(lp.ID()), &rpc.WHIPRTCConnectionNotifyRequest{
 					ParticipantId: string(lp.ID()),
 					Closed:        true,
+					Audio:         audio,
+					Video:         video,
 				}, psrpc.WithRequestTimeout(rpc.DefaultPSRPCConfig.Timeout))
 				if err != nil {
 					lp.GetLogger().Warnw("whip service: could not notify ingress of participant closed", err)
 				}
 			}()
 		})
+		go func() {
+			if err := s.notifySession(aliveCtx, lp); err != nil {
+				cancel()
+			}
+		}()
 	}
 
 	var iceServers []*livekit.ICEServer
@@ -143,6 +162,92 @@ func (s whipService) Create(ctx context.Context, req *rpc.WHIPCreateRequest) (*r
 		IceServers:    iceServers,
 		IceSessionId:  iceSessionID,
 	}, nil
+}
+
+func (s whipService) notifySession(ctx context.Context, participant types.Participant) error {
+	ticker := time.NewTicker(whipSessionNotifyInterval)
+	defer ticker.Stop()
+
+	err := s.sendConnectionNotify(ctx, participant)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
+	}
+
+	for {
+		select {
+		case <-ticker.C:
+			err := s.sendConnectionNotify(ctx, participant)
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return nil
+				}
+			}
+
+		case <-ctx.Done():
+			return nil
+		}
+	}
+}
+
+func (s whipService) sendConnectionNotify(ctx context.Context, participant types.Participant) error {
+	video, audio := getMediaStateForParticipant(participant)
+
+	_, err := s.ingressRpcCli.WHIPRTCConnectionNotify(ctx, string(participant.ID()), &rpc.WHIPRTCConnectionNotifyRequest{
+		ParticipantId: string(participant.ID()),
+		Video:         video,
+		Audio:         audio,
+	}, psrpc.WithRequestTimeout(rpc.DefaultPSRPCConfig.Timeout))
+
+	return err
+}
+
+func getMediaStateForParticipant(participant types.Participant) (*livekit.InputVideoState, *livekit.InputAudioState) {
+	pParticipant := participant.ToProto()
+
+	var video *livekit.InputVideoState
+	var audio *livekit.InputAudioState
+
+	for _, v := range pParticipant.Tracks {
+		if v == nil {
+			continue
+		}
+
+		if v.Type != livekit.TrackType_VIDEO {
+			continue
+		}
+
+		video = &livekit.InputVideoState{}
+
+		video.MimeType = v.MimeType
+		video.Height = v.Height
+		video.Width = v.Width
+
+		break
+	}
+
+	for _, a := range pParticipant.Tracks {
+		if a == nil {
+			continue
+		}
+
+		if a.Type != livekit.TrackType_AUDIO {
+			continue
+		}
+
+		audio = &livekit.InputAudioState{}
+
+		audio.MimeType = a.MimeType
+		audio.Channels = 1
+		if a.Stereo {
+			audio.Channels = 2
+		}
+
+		break
+	}
+
+	return video, audio
 }
 
 // -------------------------------------------
