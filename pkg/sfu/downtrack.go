@@ -1094,32 +1094,34 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 		return 0
 	}
 
-	if !d.rtpStats.IsActive() && !paddingOnMute {
-		return 0
-	}
+	if !paddingOnMute {
+		if !d.rtpStats.IsActive() {
+			return 0
+		}
 
-	// Ideally should look at header extensions negotiated for
-	// track and decide if padding can be sent. But, browsers behave
-	// in unexpected ways when using audio for bandwidth estimation and
-	// padding is mainly used to probe for excess available bandwidth.
-	// So, to be safe, limit to video tracks
-	if d.kind == webrtc.RTPCodecTypeAudio {
-		return 0
-	}
+		// Ideally should look at header extensions negotiated for
+		// track and decide if padding can be sent. But, browsers behave
+		// in unexpected ways when using audio for bandwidth estimation and
+		// padding is mainly used to probe for excess available bandwidth.
+		// So, to be safe, limit to video tracks
+		if d.kind == webrtc.RTPCodecTypeAudio {
+			return 0
+		}
 
-	// LK-TODO-START
-	// Potentially write padding even if muted. Given that padding
-	// can be sent only on frame boundaries, writing on disabled tracks
-	// will give more options.
-	// LK-TODO-END
-	if d.forwarder.IsMuted() && !paddingOnMute {
-		return 0
-	}
+		// LK-TODO-START
+		// Potentially write padding even if muted. Given that padding
+		// can be sent only on frame boundaries, writing on disabled tracks
+		// will give more options.
+		// LK-TODO-END
+		if d.forwarder.IsMuted() {
+			return 0
+		}
 
-	// Hold sending padding packets till first RTCP-RR is received for this RTP stream.
-	// That is definitive proof that the remote side knows about this RTP stream.
-	if d.rtpStats.LastReceiverReportTime() == 0 && !paddingOnMute {
-		return 0
+		// Hold sending padding packets till first RTCP-RR is received for this RTP stream.
+		// That is definitive proof that the remote side knows about this RTP stream.
+		if d.rtpStats.LastReceiverReportTime() == 0 {
+			return 0
+		}
 	}
 
 	// RTP padding maximum is 255 bytes. Break it up.
@@ -1173,6 +1175,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 			payloadSize,
 			false,
 		)
+
 		d.pacer.Enqueue(&pacer.Packet{
 			Header:             hdr,
 			HeaderSize:         hdrSize,
@@ -2361,14 +2364,6 @@ func (d *DownTrack) sendPaddingOnMute() {
 	// let uptrack have chance to send packet before we send padding
 	time.Sleep(waitBeforeSendPaddingOnMute)
 
-	if d.kind == webrtc.RTPCodecTypeVideo {
-		d.sendPaddingOnMuteForVideo()
-	} else if d.Mime() == mime.MimeTypeOpus {
-		d.sendSilentFrameOnMuteForOpus()
-	}
-}
-
-func (d *DownTrack) sendPaddingOnMuteForVideo() {
 	paddingOnMuteInterval := 100 * time.Millisecond
 	numPackets := maxPaddingOnMuteDuration / paddingOnMuteInterval
 	for i := 0; i < int(numPackets); i++ {
@@ -2380,69 +2375,6 @@ func (d *DownTrack) sendPaddingOnMuteForVideo() {
 		}
 		d.WritePaddingRTP(20, true, true)
 		time.Sleep(paddingOnMuteInterval)
-	}
-}
-
-func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
-	frameRate := uint32(50)
-	frameDuration := time.Duration(1000/frameRate) * time.Millisecond
-	numFrames := frameRate * uint32(maxPaddingOnMuteDuration/time.Second)
-	first := true
-	for {
-		if d.rtpStats.IsActive() || d.IsClosed() || numFrames <= 0 {
-			return
-		}
-		if first {
-			first = false
-			d.params.Logger.Debugw("sending padding on mute")
-		}
-		snts, _, err := d.forwarder.GetSnTsForBlankFrames(frameRate, 1)
-		if err != nil {
-			d.params.Logger.Warnw("could not get SN/TS for blank frame", err)
-			return
-		}
-		for i := 0; i < len(snts); i++ {
-			hdr := &rtp.Header{
-				Version:        2,
-				Padding:        false,
-				Marker:         true,
-				PayloadType:    uint8(d.payloadType.Load()),
-				SequenceNumber: uint16(snts[i].extSequenceNumber),
-				Timestamp:      uint32(snts[i].extTimestamp),
-				SSRC:           d.ssrc,
-			}
-			d.addDummyExtensions(hdr)
-
-			payload, err := d.getOpusBlankFrame(false)
-			if err != nil {
-				d.params.Logger.Warnw("could not get blank frame", err)
-				return
-			}
-
-			headerSize := hdr.MarshalSize()
-			d.rtpStats.Update(
-				mono.UnixNano(),
-				snts[i].extSequenceNumber,
-				snts[i].extTimestamp,
-				hdr.Marker,
-				headerSize,
-				0,
-				len(payload), // although this is using empty frames, mark as padding as these are used to trigger Pion OnTrack only
-				false,
-			)
-			d.pacer.Enqueue(&pacer.Packet{
-				Header:             hdr,
-				HeaderSize:         headerSize,
-				Payload:            payload,
-				ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
-				AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
-				TransportWideExtID: uint8(d.transportWideExtID),
-				WriteStream:        d.writeStream,
-			})
-		}
-
-		numFrames--
-		time.Sleep(frameDuration)
 	}
 }
 
