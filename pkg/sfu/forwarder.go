@@ -42,7 +42,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector/temporallayerselector"
 )
 
-// Forwarder
 const (
 	FlagPauseOnDowngrade  = true
 	FlagFilterRTX         = false
@@ -53,6 +52,11 @@ const (
 	ResumeBehindHighThresholdSeconds  = float64(2.0)   // 2 seconds
 	LayerSwitchBehindThresholdSeconds = float64(0.05)  // 50ms
 	SwitchAheadThresholdSeconds       = float64(0.025) // 25ms
+)
+
+var (
+	errSkipStartOnOutOfOrderPacket = errors.New("skip start on out-of-order packet")
+	errSwitchPointTooFarBehind     = errors.New("switch point too far behind")
 )
 
 // -------------------------------------------------------------------
@@ -1693,6 +1697,10 @@ func (f *Forwarder) getRefLayerRTPTimestamp(ts uint32, refLayer, targetLayer int
 
 func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) error {
 	if !f.started {
+		if extPkt.IsOutOfOrder {
+			return errSkipStartOnOutOfOrderPacket
+		}
+
 		f.started = true
 		f.referenceLayerSpatial = layer
 		f.rtpMunger.SetLastSnTs(extPkt)
@@ -1708,6 +1716,10 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		)
 		return nil
 	} else if f.referenceLayerSpatial == buffer.InvalidLayerSpatial {
+		if extPkt.IsOutOfOrder {
+			return errSkipStartOnOutOfOrderPacket
+		}
+
 		f.referenceLayerSpatial = layer
 		f.codecMunger.SetLast(extPkt)
 		f.logger.Debugw(
@@ -1887,7 +1899,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 				// (like "have waited for too long for layer switch, nothing available, switch to whatever is available" kind of condition).
 				logTransition("layer switch, reference too far behind", extExpectedTS, extRefTS, extLastTS, diffSeconds)
 
-				return errors.New("switch point too far behind")
+				return errSwitchPointTooFarBehind
 			}
 
 			// use a nominal increase to ensure that timestamp is always moving forward
