@@ -570,7 +570,7 @@ func TestIsOnFrameBoundary(t *testing.T) {
 
 	// packet with RTP marker
 	params = &testutils.TestExtPacketParams{
-		SetMarker:      true,
+		Marker:         true,
 		SequenceNumber: 23334,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,

@@ -1273,22 +1273,41 @@ func TestForwarderGetTranslationParamsAudio(t *testing.T) {
 	f := newForwarder(testutils.TestOpusCodec, webrtc.RTPCodecTypeAudio)
 
 	params := &testutils.TestExtPacketParams{
+		SequenceNumber: 23332,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    20,
+		IsOutOfOrder:   true,
+	}
+	extPkt, _ := testutils.GetTestExtPacket(params)
+
+	// should not start on an out-of-order packet
+	expectedTP := TranslationParams{
+		shouldDrop: true,
+	}
+	actualTP, err := f.GetTranslationParams(extPkt, 0)
+	require.NoError(t, err)
+	require.Equal(t, expectedTP, actualTP)
+	require.False(t, f.started)
+	require.Zero(t, f.lastSSRC)
+
+	params = &testutils.TestExtPacketParams{
 		SequenceNumber: 23333,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 		PayloadSize:    20,
 	}
-	extPkt, _ := testutils.GetTestExtPacket(params)
+	extPkt, _ = testutils.GetTestExtPacket(params)
 
-	// should lock onto the first packet
-	expectedTP := TranslationParams{
+	// should lock onto the first in-order packet
+	expectedTP = TranslationParams{
 		rtp: TranslationParamsRTP{
 			snOrdering:        SequenceNumberOrderingContiguous,
 			extSequenceNumber: 23333,
 			extTimestamp:      0xabcdef,
 		},
 	}
-	actualTP, err := f.GetTranslationParams(extPkt, 0)
+	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
 	require.Equal(t, expectedTP, actualTP)
 	require.True(t, f.started)
@@ -1437,11 +1456,12 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
 	params := &testutils.TestExtPacketParams{
-		SequenceNumber: 23333,
+		SequenceNumber: 23332,
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 		PayloadSize:    20,
-		SetMarker:      true,
+		Marker:         true,
+		IsOutOfOrder:   true,
 	}
 	vp8 := &buffer.VP8{
 		FirstByte:  25,
@@ -1460,11 +1480,45 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	}
 	extPkt, _ := testutils.GetTestExtPacketVP8(params, vp8)
 
-	// no target layers, should drop
+	// should not start on an out-of-order packet
 	expectedTP := TranslationParams{
 		shouldDrop: true,
 	}
 	actualTP, err := f.GetTranslationParams(extPkt, 0)
+	require.NoError(t, err)
+	require.Equal(t, expectedTP, actualTP)
+	require.False(t, f.started)
+	require.Zero(t, f.lastSSRC)
+
+	params = &testutils.TestExtPacketParams{
+		SequenceNumber: 23333,
+		Timestamp:      0xabcdef,
+		SSRC:           0x12345678,
+		PayloadSize:    20,
+		Marker:         true,
+	}
+	vp8 = &buffer.VP8{
+		FirstByte:  25,
+		I:          true,
+		M:          true,
+		PictureID:  13467,
+		L:          true,
+		TL0PICIDX:  233,
+		T:          true,
+		TID:        0,
+		Y:          true,
+		K:          true,
+		KEYIDX:     23,
+		HeaderSize: 6,
+		IsKeyFrame: false,
+	}
+	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
+
+	// no target layers, should drop
+	expectedTP = TranslationParams{
+		shouldDrop: true,
+	}
+	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
 	require.Equal(t, expectedTP, actualTP)
 

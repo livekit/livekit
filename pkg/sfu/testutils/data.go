@@ -26,7 +26,7 @@ import (
 // -----------------------------------------------------------
 
 type TestExtPacketParams struct {
-	SetMarker      bool
+	Marker         bool
 	IsKeyFrame     bool
 	PayloadType    uint8
 	SequenceNumber uint16
@@ -38,6 +38,7 @@ type TestExtPacketParams struct {
 	PaddingSize    byte
 	ArrivalTime    time.Time
 	VideoLayer     buffer.VideoLayer
+	IsOutOfOrder   bool
 }
 
 // -----------------------------------------------------------
@@ -47,7 +48,7 @@ func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 		Header: rtp.Header{
 			Version:        2,
 			Padding:        params.PaddingSize != 0,
-			Marker:         params.SetMarker,
+			Marker:         params.Marker,
 			PayloadType:    params.PayloadType,
 			SequenceNumber: params.SequenceNumber,
 			Timestamp:      params.Timestamp,
@@ -70,6 +71,7 @@ func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 		Packet:            &packet,
 		KeyFrame:          params.IsKeyFrame,
 		RawPacket:         raw,
+		IsOutOfOrder:      params.IsOutOfOrder,
 	}
 
 	return ep, nil
