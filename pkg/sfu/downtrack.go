@@ -464,9 +464,19 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			matchedUpstreamCodec = c
 			break
 		} else {
-			// for encrypyted tracks, should match on primary codec, i. e. codec at index 0
+			// for encrypyted tracks, should match on primary codec,
+			// i. e. codec at index 0 if the combination of upstream codecs is opus and RED
 			if d.params.IsEncrypted {
-				break
+				isRedAndOpus := true
+				for _, u := range d.upstreamCodecs {
+					if !mime.IsMimeTypeStringOpus(u.MimeType) || !mime.IsMimeTypeStringRED(u.MimeType) {
+						isRedAndOpus = false
+						break
+					}
+				}
+				if isRedAndOpus {
+					break
+				}
 			}
 		}
 	}
