@@ -269,7 +269,13 @@ func (r *RTPMunger) FilterRTX(nacks []uint16) []uint16 {
 	return filtered
 }
 
-func (r *RTPMunger) UpdateAndGetPaddingSnTs(num int, clockRate uint32, frameRate uint32, forceMarker bool, extRtpTimestamp uint64) ([]SnTs, error) {
+func (r *RTPMunger) UpdateAndGetPaddingSnTs(
+	num int,
+	clockRate uint32,
+	frameRate uint32,
+	forceMarker bool,
+	extRtpTimestamp uint64,
+) ([]SnTs, error) {
 	if num == 0 {
 		return nil, nil
 	}

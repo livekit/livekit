@@ -88,6 +88,7 @@ const (
 
 	waitBeforeSendPaddingOnMute = 100 * time.Millisecond
 	maxPaddingOnMuteDuration    = 5 * time.Second
+	paddingOnMuteInterval       = 100 * time.Millisecond
 )
 
 // -------------------------------------------------------------------
@@ -1148,7 +1149,14 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 		return 0
 	}
 
-	snts, err := d.forwarder.GetSnTsForPadding(num, forceMarker)
+	frameRate := uint32(0)
+	if paddingOnMute {
+		// advance timestamps when sending dummy padding packets to start a stream
+		// to ensure receiver sees proper timestamp and starts the stream
+		frameRate = uint32(time.Second / paddingOnMuteInterval)
+	}
+
+	snts, err := d.forwarder.GetSnTsForPadding(num, frameRate, forceMarker)
 	if err != nil {
 		return 0
 	}
@@ -2381,7 +2389,6 @@ func (d *DownTrack) sendPaddingOnMute() {
 	// let uptrack have chance to send packet before we send padding
 	time.Sleep(waitBeforeSendPaddingOnMute)
 
-	paddingOnMuteInterval := 100 * time.Millisecond
 	numPackets := maxPaddingOnMuteDuration / paddingOnMuteInterval
 	for i := 0; i < int(numPackets); i++ {
 		if d.rtpStats.IsActive() || d.IsClosed() {
