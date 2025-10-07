@@ -243,6 +243,7 @@ type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
 type DownTrackParams struct {
 	Codecs                         []webrtc.RTPCodecParameters
+	IsEncrypted                    bool
 	Source                         livekit.TrackSource
 	Receiver                       TrackReceiver
 	BufferFactory                  *buffer.Factory
@@ -355,8 +356,7 @@ type DownTrack struct {
 
 // NewDownTrack returns a DownTrack.
 func NewDownTrack(params DownTrackParams) (*DownTrack, error) {
-	codecs := params.Codecs
-	mimeType := mime.NormalizeMimeType(codecs[0].MimeType)
+	mimeType := mime.NormalizeMimeType(params.Codecs[0].MimeType)
 	var kind webrtc.RTPCodecType
 	switch {
 	case mime.IsMimeTypeAudio(mimeType):
@@ -367,19 +367,19 @@ func NewDownTrack(params DownTrackParams) (*DownTrack, error) {
 		kind = webrtc.RTPCodecType(0)
 	}
 
+	codec := params.Codecs[0].RTPCodecCapability
 	d := &DownTrack{
 		params:              params,
 		id:                  params.Receiver.TrackID(),
-		upstreamCodecs:      codecs,
+		upstreamCodecs:      params.Codecs,
 		kind:                kind,
-		clockRate:           codecs[0].ClockRate,
+		clockRate:           codec.ClockRate,
 		pacer:               params.Pacer,
 		maxLayerNotifierCh:  make(chan string, 1),
 		keyFrameRequesterCh: make(chan struct{}, 1),
 		createdAt:           time.Now().UnixNano(),
 		receiver:            params.Receiver,
 	}
-	codec := codecs[0].RTPCodecCapability
 	d.codec.Store(codec)
 	d.bindState.Store(bindStateUnbound)
 	d.params.Logger = params.Logger.WithValues(
@@ -452,8 +452,9 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.bindLock.Unlock()
 		return webrtc.RTPCodecParameters{}, ErrDownTrackAlreadyBound
 	}
-	// the context's codec parameters will be set to the binded codec after Bind return so we keep
-	// a copy of the codec parameters here to use it later
+
+	// the TrackLocalContext's codec parameters will be set to the bound codec after Bind returns,
+	// so keep a copy of the codec parameters here to use it later
 	d.negotiatedCodecParameters = append([]webrtc.RTPCodecParameters{}, t.CodecParameters()...)
 	var codec, matchedUpstreamCodec webrtc.RTPCodecParameters
 	for _, c := range d.upstreamCodecs {
@@ -462,6 +463,11 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			codec = matchCodec
 			matchedUpstreamCodec = c
 			break
+		} else {
+			// for encrypyted tracks, should match on primary codec, i. e. codec at index 0
+			if d.params.IsEncrypted {
+				break
+			}
 		}
 	}
 
@@ -469,7 +475,11 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		err := webrtc.ErrUnsupportedCodec
 		onBinding := d.onBinding
 		d.bindLock.Unlock()
-		d.params.Logger.Infow("bind error for unsupported codec", "codecs", d.upstreamCodecs, "remoteParameters", d.negotiatedCodecParameters)
+		d.params.Logger.Infow(
+			"bind error for unsupported codec",
+			"codecs", d.upstreamCodecs,
+			"remoteParameters", d.negotiatedCodecParameters,
+		)
 		if onBinding != nil {
 			onBinding(err)
 		}
@@ -510,12 +520,19 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 				}
 			}
 			if d.upstreamPrimaryPT == 0 {
-				d.params.Logger.Errorw("failed to find upstream primary opus payload type for RED", nil, "matchedCodec", codec, "upstreamCodec", d.upstreamCodecs)
+				d.params.Logger.Errorw(
+					"failed to find upstream primary opus payload type for RED", nil,
+					"matchedCodec", codec,
+					"upstreamCodec", d.upstreamCodecs,
+				)
 			}
 
 			var primaryPT, secondaryPT int
 			if n, err := fmt.Sscanf(codec.SDPFmtpLine, "%d/%d", &primaryPT, &secondaryPT); err != nil || n != 2 {
-				d.params.Logger.Errorw("failed to parse primary and secondary payload type for RED", err, "matchedCodec", codec)
+				d.params.Logger.Errorw(
+					"failed to parse primary and secondary payload type for RED", err,
+					"matchedCodec", codec,
+				)
 			}
 			d.primaryPT = uint8(primaryPT)
 		} else if mime.IsMimeTypeStringAudio(matchedUpstreamCodec.MimeType) {
@@ -2259,10 +2276,10 @@ func (d *DownTrack) addDummyExtensions(hdr *rtp.Header) {
 	}
 }
 
-func (d *DownTrack) getTranslatedPayloadType(src uint8) uint8 {
-	// send primary codec to subscriber if the publisher send primary codec to us when red is negotiated,
+func (d *DownTrack) getTranslatedPayloadType(srcPT uint8) uint8 {
+	// send primary codec to subscriber if the publisher sent primary codec when red is negotiated,
 	// this will happen when the payload is too large to encode into red payload (exceeds mtu).
-	if d.isRED && src == d.upstreamPrimaryPT && d.primaryPT != 0 {
+	if d.isRED && srcPT == d.upstreamPrimaryPT && d.primaryPT != 0 {
 		return d.primaryPT
 	}
 	return uint8(d.payloadType.Load())

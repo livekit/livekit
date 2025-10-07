@@ -60,7 +60,7 @@ func NewWrappedReceiver(params WrappedReceiverParams) *WrappedReceiver {
 	}
 
 	codecs := params.UpstreamCodecs
-	if len(codecs) == 1 && !params.IsEncrypted {
+	if len(codecs) == 1 {
 		normalizedMimeType := mime.NormalizeMimeType(codecs[0].MimeType)
 		if normalizedMimeType == mime.MimeTypeRED {
 			// if upstream is opus/red, then add opus to match clients that don't support red
