@@ -29,6 +29,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/protocol/utils/mono"
 
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -826,7 +827,13 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 
 		// track delay/jitter
 		if writeCount > 0 && w.forwardStats != nil {
-			w.forwardStats.Update(pkt.Arrival, time.Now().UnixNano())
+			if latency, isHigh := w.forwardStats.Update(pkt.Arrival, mono.UnixNano()); isHigh {
+				w.logger.Infow(
+					"high forwarding latency",
+					"latency", latency,
+					"writeCount", writeCount,
+				)
+			}
 		}
 
 		// track video layers

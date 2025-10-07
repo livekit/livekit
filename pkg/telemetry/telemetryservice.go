@@ -37,13 +37,13 @@ type TelemetryService interface {
 	RoomStarted(ctx context.Context, room *livekit.Room)
 	RoomEnded(ctx context.Context, room *livekit.Room)
 	// ParticipantJoined - a participant establishes signal connection to a room
-	ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo, clientMeta *livekit.AnalyticsClientMeta, shouldSendEvent bool)
+	ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo, clientMeta *livekit.AnalyticsClientMeta, shouldSendEvent bool, guard *ReferenceGuard)
 	// ParticipantActive - a participant establishes media connection
-	ParticipantActive(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientMeta *livekit.AnalyticsClientMeta, isMigration bool)
+	ParticipantActive(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientMeta *livekit.AnalyticsClientMeta, isMigration bool, guard *ReferenceGuard)
 	// ParticipantResumed - there has been an ICE restart or connection resume attempt, and we've received their signal connection
 	ParticipantResumed(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, nodeID livekit.NodeID, reason livekit.ReconnectReason)
 	// ParticipantLeft - the participant leaves the room, only sent if ParticipantActive has been called before
-	ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, shouldSendEvent bool)
+	ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, shouldSendEvent bool, guard *ReferenceGuard)
 	// TrackPublishRequested - a publication attempt has been received
 	TrackPublishRequested(ctx context.Context, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo)
 	// TrackPublished - a publication attempt has been successful
@@ -204,12 +204,13 @@ func (t *telemetryService) getOrCreateWorker(
 	roomName livekit.RoomName,
 	participantID livekit.ParticipantID,
 	participantIdentity livekit.ParticipantIdentity,
+	guard *ReferenceGuard,
 ) (*StatsWorker, bool) {
 	t.workersMu.Lock()
 	defer t.workersMu.Unlock()
 
 	worker, ok := t.workers[participantID]
-	if ok && !worker.Closed() {
+	if ok && !worker.Closed(guard) {
 		return worker, true
 	}
 
@@ -225,6 +226,7 @@ func (t *telemetryService) getOrCreateWorker(
 		roomName,
 		participantID,
 		participantIdentity,
+		guard,
 	)
 	if existingIsConnected {
 		worker.SetConnected()

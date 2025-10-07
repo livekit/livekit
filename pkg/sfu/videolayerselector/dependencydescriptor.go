@@ -24,6 +24,11 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+const (
+	decisionCacheMaxElements = 256
+	decisionCacheNackEntries = 80
+)
+
 type DependencyDescriptor struct {
 	*Base
 
@@ -40,12 +45,14 @@ type DependencyDescriptor struct {
 	decodeTargetsLock sync.RWMutex
 	decodeTargets     []*DecodeTarget
 	fnWrapper         FrameNumberWrapper
+
+	restartGeneration int
 }
 
 func NewDependencyDescriptor(logger logger.Logger) *DependencyDescriptor {
 	return &DependencyDescriptor{
 		Base:      NewBase(logger),
-		decisions: NewSelectorDecisionCache(256, 80),
+		decisions: NewSelectorDecisionCache(decisionCacheMaxElements, decisionCacheNackEntries),
 		fnWrapper: FrameNumberWrapper{logger: logger},
 	}
 }
@@ -73,6 +80,20 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 		// packet doesn't have dependency descriptor
 		// d.logger.Debugw(fmt.Sprintf("drop packet, no DD, incoming %v, sn: %d, isKeyFrame: %v", extPkt.VideoLayer, extPkt.Packet.SequenceNumber, extPkt.KeyFrame))
 		return
+	}
+
+	if ddwdt.RestartGeneration > d.restartGeneration {
+		d.logger.Debugw("stream restarted",
+			"packet", ddwdt.RestartGeneration,
+			"current", d.restartGeneration,
+			"structureKeyFrame", d.extKeyFrameNum,
+			"efn", ddwdt.ExtFrameNum,
+			"lastEfn", d.fnWrapper.LastOrigin(),
+		)
+		d.restart(ddwdt.RestartGeneration)
+	} else if ddwdt.RestartGeneration < d.restartGeneration {
+		// must not happen
+		d.logger.Warnw("packet from old generation", nil, "packet", ddwdt.RestartGeneration, "current", d.restartGeneration)
 	}
 
 	dd := ddwdt.Descriptor
@@ -433,4 +454,10 @@ func (d *DependencyDescriptor) CheckSync() (locked bool, layer int32) {
 	}
 
 	return false, layer
+}
+
+func (d *DependencyDescriptor) restart(generation int) {
+	d.restartGeneration = generation
+	d.invalidateKeyFrame()
+	d.decisions = NewSelectorDecisionCache(decisionCacheMaxElements, decisionCacheNackEntries)
 }

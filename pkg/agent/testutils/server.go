@@ -33,6 +33,8 @@ type AgentService interface {
 
 type TestServer struct {
 	AgentService
+	TestAPIKey    string
+	TestAPISecret string
 }
 
 func NewTestServer(bus psrpc.MessageBus) *TestServer {
@@ -46,7 +48,7 @@ func NewTestServer(bus psrpc.MessageBus) *TestServer {
 }
 
 func NewTestServerWithService(s AgentService) *TestServer {
-	return &TestServer{s}
+	return &TestServer{s, "test", "verysecretsecret"}
 }
 
 type SimulatedWorkerOptions struct {

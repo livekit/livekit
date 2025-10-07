@@ -24,6 +24,8 @@ import (
 	"github.com/livekit/protocol/utils/mono"
 )
 
+var _ bwe.BWE = (*RemoteBWE)(nil)
+
 // ---------------------------------------------------------------------------
 
 type RemoteBWEConfig struct {
@@ -79,6 +81,10 @@ func NewRemoteBWE(params RemoteBWEParams) *RemoteBWE {
 
 	r.Reset()
 	return r
+}
+
+func (r *RemoteBWE) Type() bwe.BWEType {
+	return bwe.BWETypeRemote
 }
 
 func (r *RemoteBWE) SetBWEListener(bweListener bwe.BWEListener) {

@@ -17,6 +17,7 @@ package buffer
 import (
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/pion/rtp"
 	"go.uber.org/atomic"
@@ -25,6 +26,14 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 
 	"github.com/livekit/protocol/logger"
+)
+
+const (
+	ddRestartThreshold = 30 * time.Second
+
+	// frame integrity check 2 seconds for L3T3 30fps video
+	integrityCheckFrame = 180
+	integrityCheckPkt   = 1024
 )
 
 var (
@@ -48,16 +57,22 @@ type DependencyDescriptorParser struct {
 	frameChecker              *FrameIntegrityChecker
 
 	ddNotFoundCount atomic.Uint32
+
+	// restart detection
+	restartGeneration int
+	enableRestart     bool
+	lastPacketAt      time.Time
 }
 
-func NewDependencyDescriptorParser(ddExtID uint8, logger logger.Logger, onMaxLayerChanged func(int32, int32)) *DependencyDescriptorParser {
+func NewDependencyDescriptorParser(ddExtID uint8, logger logger.Logger, onMaxLayerChanged func(int32, int32), enableRestart bool) *DependencyDescriptorParser {
 	return &DependencyDescriptorParser{
 		ddExtID:           ddExtID,
 		logger:            logger,
 		onMaxLayerChanged: onMaxLayerChanged,
 		seqWrapAround:     utils.NewWrapAround[uint16, uint64](utils.WrapAroundParams{IsRestartAllowed: false}),
 		frameWrapAround:   utils.NewWrapAround[uint16, uint64](utils.WrapAroundParams{IsRestartAllowed: false}),
-		frameChecker:      NewFrameIntegrityChecker(180, 1024), // 2seconds for L3T3 30fps video
+		frameChecker:      NewFrameIntegrityChecker(integrityCheckFrame, integrityCheckPkt),
+		enableRestart:     enableRestart,
 	}
 }
 
@@ -71,6 +86,10 @@ type ExtDependencyDescriptor struct {
 	ExtFrameNum                uint64
 	// the frame number of the keyframe which the current frame depends on
 	ExtKeyFrameNum uint64
+
+	// increase when the stream restarts, clear and reinitialize all dd state includes
+	// attached structure, frame chain, decode target.
+	RestartGeneration int
 }
 
 func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescriptor, VideoLayer, error) {
@@ -97,41 +116,90 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 		return nil, videoLayer, err
 	}
 
+	var restart bool
+	if r.enableRestart {
+		if !r.lastPacketAt.IsZero() && time.Since(r.lastPacketAt) > ddRestartThreshold {
+			r.restart()
+			restart = true
+			r.logger.Debugw(
+				"dependency descriptor parser restart stream",
+				"generation", r.restartGeneration,
+				"lastPacketAt", r.lastPacketAt,
+				"sinceLast", time.Since(r.lastPacketAt),
+				"frameWrapAround", r.frameWrapAround,
+			)
+		}
+		r.lastPacketAt = time.Now()
+	}
+
 	extSeq := r.seqWrapAround.Update(pkt.SequenceNumber).ExtendedVal
 
 	if ddVal.FrameDependencies != nil {
 		videoLayer.Spatial, videoLayer.Temporal = int32(ddVal.FrameDependencies.SpatialId), int32(ddVal.FrameDependencies.TemporalId)
 	}
 
-	unwrapped := r.frameWrapAround.Update(ddVal.FrameNumber)
+	// assume the packet is in-order when stream restarting
+	unwrapped := r.frameWrapAround.UpdateWithOrderKnown(ddVal.FrameNumber, restart)
 	extFN := unwrapped.ExtendedVal
 
 	if extFN < r.structureExtFrameNum {
-		r.logger.Debugw("drop frame which is earlier than current structure", "frameNum", extFN, "structureFrameNum", r.structureExtFrameNum)
+		r.logger.Debugw(
+			"drop frame which is earlier than current structure",
+			"fn", ddVal.FrameNumber,
+			"extFN", extFN,
+			"structureExtFrameNum", r.structureExtFrameNum,
+			"unwrappedFN", unwrapped,
+			"frameWrapAround", r.frameWrapAround,
+		)
 		return nil, videoLayer, ErrFrameEarlierThanKeyFrame
 	}
 
 	r.frameChecker.AddPacket(extSeq, extFN, &ddVal)
 
 	extDD := &ExtDependencyDescriptor{
-		Descriptor:  &ddVal,
-		ExtFrameNum: extFN,
-		Integrity:   r.frameChecker.FrameIntegrity(extFN),
+		Descriptor:        &ddVal,
+		ExtFrameNum:       extFN,
+		Integrity:         r.frameChecker.FrameIntegrity(extFN),
+		RestartGeneration: r.restartGeneration,
 	}
 
 	if ddVal.AttachedStructure != nil {
 		if !ddVal.FirstPacketInFrame {
-			r.logger.Warnw("attached structure is not the first packet in frame", nil, "extSeq", extSeq, "extFN", extFN)
+			r.logger.Warnw(
+				"attached structure is not the first packet in frame", nil,
+				"sn", pkt.SequenceNumber,
+				"extSeq", extSeq,
+				"fn", ddVal.FrameNumber,
+				"extFN", extFN,
+			)
 			return nil, videoLayer, ErrDDStructureAttachedToNonFirstPacket
 		}
 
 		if r.structure == nil || ddVal.AttachedStructure.StructureId != r.structure.StructureId {
-			r.logger.Debugw("structure updated", "structureID", ddVal.AttachedStructure.StructureId, "extSeq", extSeq, "extFN", extFN, "descriptor", ddVal.String())
+			r.logger.Debugw(
+				"structure updated",
+				"structureID", ddVal.AttachedStructure.StructureId,
+				"sn", pkt.SequenceNumber,
+				"extSeq", extSeq,
+				"fn", ddVal.FrameNumber,
+				"extFN", extFN,
+				"descriptor", ddVal.String(),
+				"unwrappedFN", unwrapped,
+				"frameWrapAround", r.frameWrapAround,
+			)
 		}
 		r.structure = ddVal.AttachedStructure
 		r.decodeTargets = ProcessFrameDependencyStructure(ddVal.AttachedStructure)
 		if extFN > unwrapped.PreExtendedHighest && extFN-unwrapped.PreExtendedHighest > 1000 {
-			r.logger.Debugw("large frame number jump on structure updating", "extFN", extFN, "preExtendedHighest", unwrapped.PreExtendedHighest, "structureExtFrameNum", r.structureExtFrameNum)
+			r.logger.Debugw(
+				"large frame number jump on structure updating",
+				"fn", ddVal.FrameNumber,
+				"extFN", extFN,
+				"preExtendedHighest", unwrapped.PreExtendedHighest,
+				"structureExtFrameNum", r.structureExtFrameNum,
+				"unwrappedFN", unwrapped,
+				"frameWrapAround", r.frameWrapAround,
+			)
 		}
 		r.structureExtFrameNum = extFN
 		extDD.StructureUpdated = true
@@ -165,6 +233,16 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	extDD.ExtKeyFrameNum = r.structureExtFrameNum
 
 	return extDD, videoLayer, nil
+}
+
+func (r *DependencyDescriptorParser) restart() {
+	r.frameChecker = NewFrameIntegrityChecker(integrityCheckFrame, integrityCheckPkt)
+	r.structure = nil
+	r.structureExtFrameNum = 0
+	r.activeDecodeTargetsExtSeq = 0
+	r.activeDecodeTargetsMask = 0
+	r.decodeTargets = r.decodeTargets[:0]
+	r.restartGeneration++
 }
 
 // ------------------------------------------------------------------------------

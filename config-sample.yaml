@@ -65,6 +65,10 @@ rtc:
   # this is useful for cloud environments such as AWS & Google where hosts have an internal IP
   # that maps to an external one
   use_external_ip: true
+  # # there are cases where the public IP determined via STUN is not the correct one
+  # # in such cases, use this setting to set the public IP of the node
+  # # use_external_ip takes precedence, for this to take effect, set use_external_ip to false
+  # node_ip: <external-ip-of-node>
   # # when set, LiveKit will attempt to use a UDP mux so all UDP traffic goes through
   # # listed port(s). To maximize system performance, we recommend using a range of ports
   # # greater or equal to the number of vCPUs on the machine.

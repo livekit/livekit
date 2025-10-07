@@ -32,6 +32,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
+	"github.com/livekit/livekit-server/pkg/telemetry"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -266,6 +267,12 @@ func (s SignallingCloseReason) String() string {
 }
 
 // ---------------------------------------------
+const (
+	ParticipantCloseKeyNormal = "normal"
+	ParticipantCloseKeyWHIP   = "whip"
+)
+
+// ---------------------------------------------
 
 //counterfeiter:generate . Participant
 type Participant interface {
@@ -347,6 +354,7 @@ type LocalParticipantHelper interface {
 type LocalParticipant interface {
 	Participant
 
+	TelemetryGuard() *telemetry.ReferenceGuard
 	ToProtoWithVersion() (*livekit.ParticipantInfo, utils.TimedVersion)
 
 	// getters
@@ -360,6 +368,7 @@ type LocalParticipant interface {
 	ProtocolVersion() ProtocolVersion
 	SupportsSyncStreamID() bool
 	SupportsTransceiverReuse() bool
+	IsUsingSinglePeerConnection() bool
 	IsClosed() bool
 	IsReady() bool
 	IsDisconnected() bool
@@ -386,7 +395,7 @@ type LocalParticipant interface {
 	HandleSignalSourceClose()
 
 	// updates
-	CheckMetadataLimits(name string, metadata string, attributes map[string]string) error
+	UpdateMetadata(update *livekit.UpdateParticipantMetadata, fromAdmin bool) error
 	SetName(name string)
 	SetMetadata(metadata string)
 	SetAttributes(attributes map[string]string)
@@ -402,15 +411,15 @@ type LocalParticipant interface {
 	CanPublishData() bool
 
 	// PeerConnection
-	AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget)
-	HandleOffer(sdp webrtc.SessionDescription, offerId uint32) error
+	HandleICETrickle(trickleRequest *livekit.TrickleRequest)
+	HandleOffer(sd *livekit.SessionDescription) error
 	GetAnswer() (webrtc.SessionDescription, uint32, error)
 	HandleICETrickleSDPFragment(sdpFragment string) error
 	HandleICERestartSDPFragment(sdpFragment string) (string, error)
 	AddTrack(req *livekit.AddTrackRequest)
-	SetTrackMuted(trackID livekit.TrackID, muted bool, fromAdmin bool) *livekit.TrackInfo
+	SetTrackMuted(mute *livekit.MuteTrackRequest, fromAdmin bool) *livekit.TrackInfo
 
-	HandleAnswer(sdp webrtc.SessionDescription, answerId uint32)
+	HandleAnswer(sd *livekit.SessionDescription)
 	Negotiate(force bool)
 	ICERestart(iceConfig *livekit.ICEConfig)
 	AddTrackLocal(trackLocal webrtc.TrackLocal, params AddTrackParams) (*webrtc.RTPSender, *webrtc.RTPTransceiver, error)
@@ -449,7 +458,7 @@ type LocalParticipant interface {
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
 	SendSubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool) error
 	SendRefreshToken(token string) error
-	SendRequestResponse(requestResponse *livekit.RequestResponse) error
+	// RAJA-REMOVE SendRequestResponse(requestResponse *livekit.RequestResponse) error
 	HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse) error
 	IssueFullReconnect(reason ParticipantCloseReason)
 	SendRoomMovedResponse(moved *livekit.RoomMovedResponse) error
@@ -469,7 +478,7 @@ type LocalParticipant interface {
 	OnDataPacket(callback func(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket))
 	OnDataMessage(callback func(LocalParticipant, []byte))
 	OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool))
-	OnClose(callback func(LocalParticipant))
+	AddOnClose(key string, callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
 	OnUpdateSubscriptions(func(
 		LocalParticipant,
@@ -490,7 +499,8 @@ type LocalParticipant interface {
 	SetMigrateState(s MigrateState)
 	MigrateState() MigrateState
 	SetMigrateInfo(
-		previousOffer, previousAnswer *webrtc.SessionDescription,
+		previousOffer *webrtc.SessionDescription,
+		previousAnswer *webrtc.SessionDescription,
 		mediaTracks []*livekit.TrackPublishedResponse,
 		dataChannels []*livekit.DataChannelInfo,
 		dataChannelReceiveState []*livekit.DataChannelReceiveState,
@@ -510,6 +520,7 @@ type LocalParticipant interface {
 	OnICEConfigChanged(callback func(participant LocalParticipant, iceConfig *livekit.ICEConfig))
 
 	UpdateSubscribedQuality(nodeID livekit.NodeID, trackID livekit.TrackID, maxQualities []SubscribedCodecQuality) error
+	UpdateSubscribedAudioCodecs(nodeID livekit.NodeID, trackID livekit.TrackID, codecs []*livekit.SubscribedAudioCodec) error
 	UpdateMediaLoss(nodeID livekit.NodeID, trackID livekit.TrackID, fractionalLoss uint32) error
 
 	// down stream bandwidth management
@@ -532,6 +543,8 @@ type LocalParticipant interface {
 	HandleLeaveRequest(reason ParticipantCloseReason)
 
 	HandleSignalMessage(msg proto.Message) error
+
+	PerformRpc(req *livekit.PerformRpcRequest, resultCh chan string, errorCh chan error)
 }
 
 // Room is a container of participants, and can provide room-level actions
@@ -619,7 +632,8 @@ type LocalMediaTrack interface {
 	SetRTT(rtt uint32)
 
 	NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, qualities []SubscribedCodecQuality)
-	ClearSubscriberNodesMaxQuality()
+	NotifySubscriptionNode(nodeID livekit.NodeID, codecs []*livekit.SubscribedAudioCodec)
+	ClearSubscriberNodes()
 	NotifySubscriberNodeMediaLoss(nodeID livekit.NodeID, fractionalLoss uint8)
 }
 

@@ -31,6 +31,29 @@ const (
 
 // ------------------------------------------------
 
+type BWEType int
+
+const (
+	BWETypeNone BWEType = iota
+	BWETypeRemote
+	BWETypeSendSide
+)
+
+func (b BWEType) String() string {
+	switch b {
+	case BWETypeNone:
+		return "NONE"
+	case BWETypeRemote:
+		return "REMOTE"
+	case BWETypeSendSide:
+		return "SEND_SIDE"
+	default:
+		return fmt.Sprintf("%d", int(b))
+	}
+}
+
+// ------------------------------------------------
+
 type CongestionState int
 
 const (
@@ -55,6 +78,8 @@ func (c CongestionState) String() string {
 // ------------------------------------------------
 
 type BWE interface {
+	Type() BWEType
+
 	SetBWEListener(bweListner BWEListener)
 
 	Reset()

@@ -116,8 +116,13 @@ func decodeAttributes(str string) (map[string]string, error) {
 	return attrs, nil
 }
 
+var gzipReaderPool = sync.Pool{
+	New: func() any { return &gzip.Reader{} },
+}
+
 func (s *RTCService) validateInternal(lgr logger.Logger, r *http.Request, strict bool) (livekit.RoomName, routing.ParticipantInit, int, error) {
 	var params ValidateConnectRequestParams
+	useSinglePeerConnection := false
 	joinRequest := &livekit.JoinRequest{}
 
 	wrappedJoinRequestBase64 := r.FormValue("join_request")
@@ -137,6 +142,7 @@ func (s *RTCService) validateInternal(lgr logger.Logger, r *http.Request, strict
 			params.attributes = attrs
 		}
 	} else {
+		useSinglePeerConnection = true
 		if wrappedProtoBytes, err := base64.URLEncoding.DecodeString(wrappedJoinRequestBase64); err != nil {
 			return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot base64 decode wrapped join request")
 		} else {
@@ -152,19 +158,16 @@ func (s *RTCService) validateInternal(lgr logger.Logger, r *http.Request, strict
 				}
 
 			case livekit.WrappedJoinRequest_GZIP:
-				b := bytes.NewReader(wrappedJoinRequest.JoinRequest)
-				if reader, err := gzip.NewReader(b); err != nil {
-					return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot decompress join request")
-				} else {
-					protoBytes, err := io.ReadAll(reader)
-					reader.Close()
-					if err != nil {
-						return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot read decompressed join request")
-					}
+				reader := gzipReaderPool.Get().(*gzip.Reader)
+				defer gzipReaderPool.Put(reader)
+				reader.Reset(bytes.NewReader(wrappedJoinRequest.JoinRequest))
+				protoBytes, err := io.ReadAll(reader)
+				if err != nil {
+					return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot read decompressed join request")
+				}
 
-					if err := proto.Unmarshal(protoBytes, joinRequest); err != nil {
-						return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot unmarshal join request")
-					}
+				if err := proto.Unmarshal(protoBytes, joinRequest); err != nil {
+					return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot unmarshal join request")
 				}
 			}
 
@@ -186,11 +189,12 @@ func (s *RTCService) validateInternal(lgr logger.Logger, r *http.Request, strict
 	}
 
 	pi := routing.ParticipantInit{
-		Identity:   livekit.ParticipantIdentity(res.grants.Identity),
-		Name:       livekit.ParticipantName(res.grants.Name),
-		Grants:     res.grants,
-		Region:     res.region,
-		CreateRoom: res.createRoomRequest,
+		Identity:                livekit.ParticipantIdentity(res.grants.Identity),
+		Name:                    livekit.ParticipantName(res.grants.Name),
+		Grants:                  res.grants,
+		Region:                  res.region,
+		CreateRoom:              res.createRoomRequest,
+		UseSinglePeerConnection: useSinglePeerConnection,
 	}
 
 	if wrappedJoinRequestBase64 == "" {

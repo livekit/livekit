@@ -331,14 +331,14 @@ func (b *Buffer) OnCodecChange(fn func(webrtc.RTPCodecParameters)) {
 }
 
 func (b *Buffer) createDDParserAndFrameRateCalculator() {
-	if mime.IsMimeTypeSVC(b.mime) || b.mime == mime.MimeTypeVP8 {
+	if mime.IsMimeTypeSVCCapable(b.mime) || b.mime == mime.MimeTypeVP8 {
 		frc := NewFrameRateCalculatorDD(b.clockRate, b.logger)
 		for i := range b.frameRateCalculator {
 			b.frameRateCalculator[i] = frc.GetFrameRateCalculatorForSpatial(int32(i))
 		}
 		b.ddParser = NewDependencyDescriptorParser(b.ddExtID, b.logger, func(spatial, temporal int32) {
 			frc.SetMaxLayer(spatial, temporal)
-		})
+		}, false)
 	}
 }
 
@@ -1343,6 +1343,14 @@ func (b *Buffer) seedKeyFrame(keyFrameSeederGeneration int32) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
+	initialCount := uint32(0)
+	b.RLock()
+	rtpStats := b.rtpStats
+	b.RUnlock()
+	if rtpStats != nil {
+		initialCount, _ = rtpStats.KeyFrame()
+	}
+
 	for {
 		if b.closed.Load() || b.keyFrameSeederGeneration.Load() != keyFrameSeederGeneration {
 			return
@@ -1354,15 +1362,12 @@ func (b *Buffer) seedKeyFrame(keyFrameSeederGeneration int32) {
 			return
 
 		case <-ticker.C:
-			b.RLock()
-			rtpStats := b.rtpStats
-			b.RUnlock()
-
 			if rtpStats != nil {
 				cnt, last := rtpStats.KeyFrame()
-				if cnt > 0 {
+				if cnt > initialCount {
 					b.logger.Debugw(
 						"stopping key frame seeder: received key frame",
+						"keyFrameCountInitial", initialCount,
 						"keyFrameCount", cnt,
 						"lastKeyFrame", last,
 					)

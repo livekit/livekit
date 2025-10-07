@@ -25,8 +25,8 @@ import (
 )
 
 const (
-	frameMarking        = "urn:ietf:params:rtp-hdrext:framemarking"
-	repairedRTPStreamID = "urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id"
+	frameMarkingURI        = "urn:ietf:params:rtp-hdrext:framemarking"
+	repairedRTPStreamIDURI = "urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id"
 )
 
 type WebRTCConfig struct {
@@ -79,8 +79,67 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 		rtcConf.PacketBufferSizeAudio = rtcConf.PacketBufferSize
 	}
 
-	// publisher configuration
-	publisherConfig := DirectionConfig{
+	return &WebRTCConfig{
+		WebRTCConfig: *webRTCConfig,
+		Receiver: ReceiverConfig{
+			PacketBufferSizeVideo: rtcConf.PacketBufferSizeVideo,
+			PacketBufferSizeAudio: rtcConf.PacketBufferSizeAudio,
+		},
+		Publisher:  getPublisherConfig(false),
+		Subscriber: getSubscriberConfig(rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE),
+	}, nil
+}
+
+func (c *WebRTCConfig) UpdatePublisherConfig(consolidated bool) {
+	c.Publisher = getPublisherConfig(consolidated)
+}
+
+func (c *WebRTCConfig) UpdateSubscriberConfig(ccConf config.CongestionControlConfig) {
+	c.Subscriber = getSubscriberConfig(ccConf.UseSendSideBWEInterceptor || ccConf.UseSendSideBWE)
+}
+
+func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
+	c.BufferFactory = factory
+	c.SettingEngine.BufferFactory = factory.GetOrNew
+}
+
+func getPublisherConfig(consolidated bool) DirectionConfig {
+	if consolidated {
+		return DirectionConfig{
+			RTPHeaderExtension: RTPHeaderExtensionConfig{
+				Audio: []string{
+					sdp.SDESMidURI,
+					sdp.SDESRTPStreamIDURI,
+					sdp.AudioLevelURI,
+					//act.AbsCaptureTimeURI,
+				},
+				Video: []string{
+					sdp.SDESMidURI,
+					sdp.SDESRTPStreamIDURI,
+					sdp.TransportCCURI,
+					sdp.ABSSendTimeURI,
+					frameMarkingURI,
+					dd.ExtensionURI,
+					repairedRTPStreamIDURI,
+					//act.AbsCaptureTimeURI,
+				},
+			},
+			RTCPFeedback: RTCPFeedbackConfig{
+				Audio: []webrtc.RTCPFeedback{
+					{Type: webrtc.TypeRTCPFBNACK},
+				},
+				Video: []webrtc.RTCPFeedback{
+					{Type: webrtc.TypeRTCPFBTransportCC},
+					{Type: webrtc.TypeRTCPFBGoogREMB},
+					{Type: webrtc.TypeRTCPFBCCM, Parameter: "fir"},
+					{Type: webrtc.TypeRTCPFBNACK},
+					{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"},
+				},
+			},
+		}
+	}
+
+	return DirectionConfig{
 		RTPHeaderExtension: RTPHeaderExtensionConfig{
 			Audio: []string{
 				sdp.SDESMidURI,
@@ -92,9 +151,9 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 				sdp.SDESMidURI,
 				sdp.SDESRTPStreamIDURI,
 				sdp.TransportCCURI,
-				frameMarking,
+				frameMarkingURI,
 				dd.ExtensionURI,
-				repairedRTPStreamID,
+				repairedRTPStreamIDURI,
 				//act.AbsCaptureTimeURI,
 			},
 		},
@@ -110,25 +169,6 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 			},
 		},
 	}
-
-	return &WebRTCConfig{
-		WebRTCConfig: *webRTCConfig,
-		Receiver: ReceiverConfig{
-			PacketBufferSizeVideo: rtcConf.PacketBufferSizeVideo,
-			PacketBufferSizeAudio: rtcConf.PacketBufferSizeAudio,
-		},
-		Publisher:  publisherConfig,
-		Subscriber: getSubscriberConfig(rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE),
-	}, nil
-}
-
-func (c *WebRTCConfig) UpdateCongestionControl(ccConf config.CongestionControlConfig) {
-	c.Subscriber = getSubscriberConfig(ccConf.UseSendSideBWEInterceptor || ccConf.UseSendSideBWE)
-}
-
-func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
-	c.BufferFactory = factory
-	c.SettingEngine.BufferFactory = factory.GetOrNew
 }
 
 func getSubscriberConfig(enableTWCC bool) DirectionConfig {

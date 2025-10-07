@@ -31,179 +31,199 @@ import (
 
 // a scenario with lots of clients connecting, publishing, and leaving at random periods
 func scenarioPublishingUponJoining(t *testing.T) {
-	c1 := createRTCClient("puj_1", defaultServerPort, nil)
-	c2 := createRTCClient("puj_2", secondServerPort, &testclient.Options{AutoSubscribe: true})
-	c3 := createRTCClient("puj_3", defaultServerPort, &testclient.Options{AutoSubscribe: true})
-	defer stopClients(c1, c2, c3)
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+			c1 := createRTCClient("puj_1", defaultServerPort, useSinglePeerConnection, nil)
+			c2 := createRTCClient("puj_2", secondServerPort, useSinglePeerConnection, &testclient.Options{AutoSubscribe: true})
+			c3 := createRTCClient("puj_3", defaultServerPort, useSinglePeerConnection, &testclient.Options{AutoSubscribe: true})
+			defer stopClients(c1, c2, c3)
 
-	waitUntilConnected(t, c1, c2, c3)
+			waitUntilConnected(t, c1, c2, c3)
 
-	// c1 and c2 publishing, c3 just receiving
-	writers := publishTracksForClients(t, c1, c2)
-	defer stopWriters(writers...)
+			// c1 and c2 publishing, c3 just receiving
+			writers := publishTracksForClients(t, c1, c2)
+			defer stopWriters(writers...)
 
-	logger.Infow("waiting to receive tracks from c1 and c2")
-	testutils.WithTimeout(t, func() string {
-		tracks := c3.SubscribedTracks()
-		if len(tracks[c1.ID()]) != 2 {
-			return "did not receive tracks from c1"
-		}
-		if len(tracks[c2.ID()]) != 2 {
-			return "did not receive tracks from c2"
-		}
-		return ""
-	})
+			logger.Infow("waiting to receive tracks from c1 and c2")
+			testutils.WithTimeout(t, func() string {
+				tracks := c3.SubscribedTracks()
+				if len(tracks[c1.ID()]) != 2 {
+					return "did not receive tracks from c1"
+				}
+				if len(tracks[c2.ID()]) != 2 {
+					return "did not receive tracks from c2"
+				}
+				return ""
+			})
 
-	// after a delay, c2 reconnects, then publishing
-	time.Sleep(syncDelay)
-	c2.Stop()
+			// after a delay, c2 reconnects, then publishing
+			time.Sleep(syncDelay)
+			c2.Stop()
 
-	logger.Infow("waiting for c2 tracks to be gone")
-	testutils.WithTimeout(t, func() string {
-		tracks := c3.SubscribedTracks()
+			logger.Infow("waiting for c2 tracks to be gone")
+			testutils.WithTimeout(t, func() string {
+				tracks := c3.SubscribedTracks()
 
-		if len(tracks[c1.ID()]) != 2 {
-			return fmt.Sprintf("c3 should be subscribed to 2 tracks from c1, actual: %d", len(tracks[c1.ID()]))
-		}
-		if len(tracks[c2.ID()]) != 0 {
-			return fmt.Sprintf("c3 should be subscribed to 0 tracks from c2, actual: %d", len(tracks[c2.ID()]))
-		}
-		if len(c1.SubscribedTracks()[c2.ID()]) != 0 {
-			return fmt.Sprintf("c3 should be subscribed to 0 tracks from c2, actual: %d", len(c1.SubscribedTracks()[c2.ID()]))
-		}
-		return ""
-	})
+				if len(tracks[c1.ID()]) != 2 {
+					return fmt.Sprintf("c3 should be subscribed to 2 tracks from c1, actual: %d", len(tracks[c1.ID()]))
+				}
+				if len(tracks[c2.ID()]) != 0 {
+					return fmt.Sprintf("c3 should be subscribed to 0 tracks from c2, actual: %d", len(tracks[c2.ID()]))
+				}
+				if len(c1.SubscribedTracks()[c2.ID()]) != 0 {
+					return fmt.Sprintf("c3 should be subscribed to 0 tracks from c2, actual: %d", len(c1.SubscribedTracks()[c2.ID()]))
+				}
+				return ""
+			})
 
-	logger.Infow("c2 reconnecting")
-	// connect to a diff port
-	c2 = createRTCClient("puj_2", defaultServerPort, nil)
-	defer c2.Stop()
-	waitUntilConnected(t, c2)
-	writers = publishTracksForClients(t, c2)
-	defer stopWriters(writers...)
+			logger.Infow("c2 reconnecting")
+			// connect to a diff port
+			c2 = createRTCClient("puj_2", defaultServerPort, useSinglePeerConnection, nil)
+			defer c2.Stop()
+			waitUntilConnected(t, c2)
+			writers = publishTracksForClients(t, c2)
+			defer stopWriters(writers...)
 
-	testutils.WithTimeout(t, func() string {
-		tracks := c3.SubscribedTracks()
-		// "new c2 tracks should be published again",
-		if len(tracks[c2.ID()]) != 2 {
-			return fmt.Sprintf("c3 should be subscribed to 2 tracks from c2, actual: %d", len(tracks[c2.ID()]))
-		}
-		if len(c1.SubscribedTracks()[c2.ID()]) != 2 {
-			return fmt.Sprintf("c1 should be subscribed to 2 tracks from c2, actual: %d", len(c1.SubscribedTracks()[c2.ID()]))
-		}
-		return ""
-	})
+			testutils.WithTimeout(t, func() string {
+				tracks := c3.SubscribedTracks()
+				// "new c2 tracks should be published again",
+				if len(tracks[c2.ID()]) != 2 {
+					return fmt.Sprintf("c3 should be subscribed to 2 tracks from c2, actual: %d", len(tracks[c2.ID()]))
+				}
+				if len(c1.SubscribedTracks()[c2.ID()]) != 2 {
+					return fmt.Sprintf("c1 should be subscribed to 2 tracks from c2, actual: %d", len(c1.SubscribedTracks()[c2.ID()]))
+				}
+				return ""
+			})
+		})
+	}
 }
 
 func scenarioReceiveBeforePublish(t *testing.T) {
-	c1 := createRTCClient("rbp_1", defaultServerPort, nil)
-	c2 := createRTCClient("rbp_2", defaultServerPort, nil)
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+			c1 := createRTCClient("rbp_1", defaultServerPort, useSinglePeerConnection, nil)
+			c2 := createRTCClient("rbp_2", defaultServerPort, useSinglePeerConnection, nil)
 
-	waitUntilConnected(t, c1, c2)
-	defer stopClients(c1, c2)
+			waitUntilConnected(t, c1, c2)
+			defer stopClients(c1, c2)
 
-	// c1 publishes
-	writers := publishTracksForClients(t, c1)
-	defer stopWriters(writers...)
+			// c1 publishes
+			writers := publishTracksForClients(t, c1)
+			defer stopWriters(writers...)
 
-	// c2 should see some bytes flowing through
-	testutils.WithTimeout(t, func() string {
-		if c2.BytesReceived() > 20 {
-			return ""
-		} else {
-			return fmt.Sprintf("c2 only received %d bytes", c2.BytesReceived())
-		}
-	})
+			// c2 should see some bytes flowing through
+			testutils.WithTimeout(t, func() string {
+				if c2.BytesReceived() > 20 {
+					return ""
+				} else {
+					return fmt.Sprintf("c2 only received %d bytes", c2.BytesReceived())
+				}
+			})
 
-	// now publish on C2
-	writers = publishTracksForClients(t, c2)
-	defer stopWriters(writers...)
+			// now publish on C2
+			writers = publishTracksForClients(t, c2)
+			defer stopWriters(writers...)
 
-	testutils.WithTimeout(t, func() string {
-		if len(c1.SubscribedTracks()[c2.ID()]) == 2 {
-			return ""
-		} else {
-			return fmt.Sprintf("expected c1 to receive 2 tracks from c2, actual: %d", len(c1.SubscribedTracks()[c2.ID()]))
-		}
-	})
+			testutils.WithTimeout(t, func() string {
+				if len(c1.SubscribedTracks()[c2.ID()]) == 2 {
+					return ""
+				} else {
+					return fmt.Sprintf("expected c1 to receive 2 tracks from c2, actual: %d", len(c1.SubscribedTracks()[c2.ID()]))
+				}
+			})
 
-	// now leave, and ensure that it's immediate
-	c2.Stop()
+			// now leave, and ensure that it's immediate
+			c2.Stop()
 
-	testutils.WithTimeout(t, func() string {
-		if len(c1.RemoteParticipants()) > 0 {
-			return fmt.Sprintf("expected no remote participants, actual: %v", c1.RemoteParticipants())
-		}
-		return ""
-	})
+			testutils.WithTimeout(t, func() string {
+				if len(c1.RemoteParticipants()) > 0 {
+					return fmt.Sprintf("expected no remote participants, actual: %v", c1.RemoteParticipants())
+				}
+				return ""
+			})
+		})
+	}
 }
 
 func scenarioDataPublish(t *testing.T) {
-	c1 := createRTCClient("dp1", defaultServerPort, nil)
-	c2 := createRTCClient("dp2", secondServerPort, nil)
-	waitUntilConnected(t, c1, c2)
-	defer stopClients(c1, c2)
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+			c1 := createRTCClient("dp1", defaultServerPort, useSinglePeerConnection, nil)
+			c2 := createRTCClient("dp2", secondServerPort, useSinglePeerConnection, nil)
+			waitUntilConnected(t, c1, c2)
+			defer stopClients(c1, c2)
 
-	payload := "test bytes"
+			payload := "test bytes"
 
-	received := atomic.NewBool(false)
-	c2.OnDataReceived = func(data []byte, sid string) {
-		if string(data) == payload && livekit.ParticipantID(sid) == c1.ID() {
-			received.Store(true)
-		}
+			received := atomic.NewBool(false)
+			c2.OnDataReceived = func(data []byte, sid string) {
+				if string(data) == payload && livekit.ParticipantID(sid) == c1.ID() {
+					received.Store(true)
+				}
+			}
+
+			require.NoError(t, c1.PublishData([]byte(payload), livekit.DataPacket_RELIABLE))
+
+			testutils.WithTimeout(t, func() string {
+				if received.Load() {
+					return ""
+				} else {
+					return "c2 did not receive published data"
+				}
+			})
+		})
 	}
-
-	require.NoError(t, c1.PublishData([]byte(payload), livekit.DataPacket_RELIABLE))
-
-	testutils.WithTimeout(t, func() string {
-		if received.Load() {
-			return ""
-		} else {
-			return "c2 did not receive published data"
-		}
-	})
 }
 
 func scenarioDataUnlabeledPublish(t *testing.T) {
-	c1 := createRTCClient("dp1", defaultServerPort, nil)
-	c2 := createRTCClient("dp2", secondServerPort, nil)
-	waitUntilConnected(t, c1, c2)
-	defer stopClients(c1, c2)
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+			c1 := createRTCClient("dp1", defaultServerPort, useSinglePeerConnection, nil)
+			c2 := createRTCClient("dp2", secondServerPort, useSinglePeerConnection, nil)
+			waitUntilConnected(t, c1, c2)
+			defer stopClients(c1, c2)
 
-	payload := "test unlabeled bytes"
+			payload := "test unlabeled bytes"
 
-	received := atomic.NewBool(false)
-	c2.OnDataReceived = func(data []byte, _sid string) {
-		if string(data) == payload {
-			received.Store(true)
-		}
+			received := atomic.NewBool(false)
+			c2.OnDataReceived = func(data []byte, _sid string) {
+				if string(data) == payload {
+					received.Store(true)
+				}
+			}
+
+			require.NoError(t, c1.PublishDataUnlabeled([]byte(payload)))
+
+			testutils.WithTimeout(t, func() string {
+				if received.Load() {
+					return ""
+				} else {
+					return "c2 did not receive published data unlabeled"
+				}
+			})
+		})
 	}
-
-	require.NoError(t, c1.PublishDataUnlabeled([]byte(payload)))
-
-	testutils.WithTimeout(t, func() string {
-		if received.Load() {
-			return ""
-		} else {
-			return "c2 did not receive published data unlabeled"
-		}
-	})
 }
 
 func scenarioJoinClosedRoom(t *testing.T) {
-	c1 := createRTCClient("jcr1", defaultServerPort, nil)
-	waitUntilConnected(t, c1)
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+			c1 := createRTCClient("jcr1", defaultServerPort, useSinglePeerConnection, nil)
+			waitUntilConnected(t, c1)
 
-	// close room with room client
-	_, err := roomClient.DeleteRoom(contextWithToken(createRoomToken()), &livekit.DeleteRoomRequest{
-		Room: testRoom,
-	})
-	require.NoError(t, err)
+			// close room with room client
+			_, err := roomClient.DeleteRoom(contextWithToken(createRoomToken()), &livekit.DeleteRoomRequest{
+				Room: testRoom,
+			})
+			require.NoError(t, err)
 
-	// now join again
-	c2 := createRTCClient("jcr2", defaultServerPort, nil)
-	waitUntilConnected(t, c2)
-	stopClients(c2)
+			// now join again
+			c2 := createRTCClient("jcr2", defaultServerPort, useSinglePeerConnection, nil)
+			waitUntilConnected(t, c2)
+			stopClients(c2)
+		})
+	}
 }
 
 // close a room that has been created, but no participant has joined

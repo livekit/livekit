@@ -220,3 +220,19 @@ func (s *signalling) SignalSubscriptionPermissionUpdate(subscriptionPermissionUp
 		},
 	}
 }
+
+func (u *signalling) SignalMediaSectionsRequirement(mediaSectionsRequirement *livekit.MediaSectionsRequirement) proto.Message {
+	return &livekit.SignalResponse{
+		Message: &livekit.SignalResponse_MediaSectionsRequirement{
+			MediaSectionsRequirement: mediaSectionsRequirement,
+		},
+	}
+}
+
+func (s *signalling) SignalSubscribedAudioCodecUpdate(subscribedAudioCodecUpdate *livekit.SubscribedAudioCodecUpdate) proto.Message {
+	return &livekit.SignalResponse{
+		Message: &livekit.SignalResponse_SubscribedAudioCodecUpdate{
+			SubscribedAudioCodecUpdate: subscribedAudioCodecUpdate,
+		},
+	}
+}

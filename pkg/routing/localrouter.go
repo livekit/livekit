@@ -16,7 +16,6 @@ package routing
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"go.uber.org/atomic"
@@ -35,7 +34,6 @@ type LocalRouter struct {
 	roomManagerClient RoomManagerClient
 	nodeStatsConfig   config.NodeStatsConfig
 
-	lock sync.RWMutex
 	// channels for each participant
 	requestChannels  map[string]*MessageChannel
 	responseChannels map[string]*MessageChannel

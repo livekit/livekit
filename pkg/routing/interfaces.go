@@ -184,22 +184,23 @@ func CreateRouter(
 // ------------------------------------------------
 
 type ParticipantInit struct {
-	Identity             livekit.ParticipantIdentity
-	Name                 livekit.ParticipantName
-	Reconnect            bool
-	ReconnectReason      livekit.ReconnectReason
-	AutoSubscribe        bool
-	Client               *livekit.ClientInfo
-	Grants               *auth.ClaimGrants
-	Region               string
-	AdaptiveStream       bool
-	ID                   livekit.ParticipantID
-	SubscriberAllowPause *bool
-	DisableICELite       bool
-	CreateRoom           *livekit.CreateRoomRequest
-	AddTrackRequests     []*livekit.AddTrackRequest
-	PublisherOffer       *livekit.SessionDescription
-	SyncState            *livekit.SyncState
+	Identity                livekit.ParticipantIdentity
+	Name                    livekit.ParticipantName
+	Reconnect               bool
+	ReconnectReason         livekit.ReconnectReason
+	AutoSubscribe           bool
+	Client                  *livekit.ClientInfo
+	Grants                  *auth.ClaimGrants
+	Region                  string
+	AdaptiveStream          bool
+	ID                      livekit.ParticipantID
+	SubscriberAllowPause    *bool
+	DisableICELite          bool
+	CreateRoom              *livekit.CreateRoomRequest
+	AddTrackRequests        []*livekit.AddTrackRequest
+	PublisherOffer          *livekit.SessionDescription
+	SyncState               *livekit.SyncState
+	UseSinglePeerConnection bool
 }
 
 func (pi *ParticipantInit) MarshalLogObject(e zapcore.ObjectEncoder) error {
@@ -230,6 +231,7 @@ func (pi *ParticipantInit) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddArray("AddTrackRequests", logger.ProtoSlice(pi.AddTrackRequests))
 	e.AddObject("PublisherOffer", logger.Proto(pi.PublisherOffer))
 	e.AddObject("SyncState", logger.Proto(pi.SyncState))
+	logBoolPtr("UseSinglePeerConnection", &pi.UseSinglePeerConnection)
 	return nil
 }
 
@@ -240,22 +242,23 @@ func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionI
 	}
 
 	ss := &livekit.StartSession{
-		RoomName:         string(roomName),
-		Identity:         string(pi.Identity),
-		Name:             string(pi.Name),
-		ConnectionId:     string(connectionID),
-		Reconnect:        pi.Reconnect,
-		ReconnectReason:  pi.ReconnectReason,
-		AutoSubscribe:    pi.AutoSubscribe,
-		Client:           pi.Client,
-		GrantsJson:       string(claims),
-		AdaptiveStream:   pi.AdaptiveStream,
-		ParticipantId:    string(pi.ID),
-		DisableIceLite:   pi.DisableICELite,
-		CreateRoom:       pi.CreateRoom,
-		AddTrackRequests: pi.AddTrackRequests,
-		PublisherOffer:   pi.PublisherOffer,
-		SyncState:        pi.SyncState,
+		RoomName:                string(roomName),
+		Identity:                string(pi.Identity),
+		Name:                    string(pi.Name),
+		ConnectionId:            string(connectionID),
+		Reconnect:               pi.Reconnect,
+		ReconnectReason:         pi.ReconnectReason,
+		AutoSubscribe:           pi.AutoSubscribe,
+		Client:                  pi.Client,
+		GrantsJson:              string(claims),
+		AdaptiveStream:          pi.AdaptiveStream,
+		ParticipantId:           string(pi.ID),
+		DisableIceLite:          pi.DisableICELite,
+		CreateRoom:              pi.CreateRoom,
+		AddTrackRequests:        pi.AddTrackRequests,
+		PublisherOffer:          pi.PublisherOffer,
+		SyncState:               pi.SyncState,
+		UseSinglePeerConnection: pi.UseSinglePeerConnection,
 	}
 	if pi.SubscriberAllowPause != nil {
 		subscriberAllowPause := *pi.SubscriberAllowPause
@@ -272,21 +275,22 @@ func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*
 	}
 
 	pi := &ParticipantInit{
-		Identity:         livekit.ParticipantIdentity(ss.Identity),
-		Name:             livekit.ParticipantName(ss.Name),
-		Reconnect:        ss.Reconnect,
-		ReconnectReason:  ss.ReconnectReason,
-		Client:           ss.Client,
-		AutoSubscribe:    ss.AutoSubscribe,
-		Grants:           claims,
-		Region:           region,
-		AdaptiveStream:   ss.AdaptiveStream,
-		ID:               livekit.ParticipantID(ss.ParticipantId),
-		DisableICELite:   ss.DisableIceLite,
-		CreateRoom:       ss.CreateRoom,
-		AddTrackRequests: ss.AddTrackRequests,
-		PublisherOffer:   ss.PublisherOffer,
-		SyncState:        ss.SyncState,
+		Identity:                livekit.ParticipantIdentity(ss.Identity),
+		Name:                    livekit.ParticipantName(ss.Name),
+		Reconnect:               ss.Reconnect,
+		ReconnectReason:         ss.ReconnectReason,
+		Client:                  ss.Client,
+		AutoSubscribe:           ss.AutoSubscribe,
+		Grants:                  claims,
+		Region:                  region,
+		AdaptiveStream:          ss.AdaptiveStream,
+		ID:                      livekit.ParticipantID(ss.ParticipantId),
+		DisableICELite:          ss.DisableIceLite,
+		CreateRoom:              ss.CreateRoom,
+		AddTrackRequests:        ss.AddTrackRequests,
+		PublisherOffer:          ss.PublisherOffer,
+		SyncState:               ss.SyncState,
+		UseSinglePeerConnection: ss.UseSinglePeerConnection,
 	}
 	if ss.SubscriberAllowPause != nil {
 		subscriberAllowPause := *ss.SubscriberAllowPause

@@ -52,3 +52,7 @@ func (f *FrameNumberWrapper) UpdateAndGet(new uint64, updateOffset bool) uint64 
 	f.last = new
 	return new + f.offset
 }
+
+func (f *FrameNumberWrapper) LastOrigin() uint64 {
+	return f.last
+}

@@ -2,8 +2,13 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/pion/webrtc/v4"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
@@ -12,13 +17,29 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
-	"github.com/pion/webrtc/v4"
-	"golang.org/x/sync/errgroup"
-	"google.golang.org/protobuf/types/known/emptypb"
+)
+
+const (
+	whipSessionNotifyInterval = 10 * time.Second
 )
 
 type whipService struct {
 	*RoomManager
+
+	ingressRpcCli rpc.IngressHandlerClient
+
+	rpc.UnimplementedWHIPServer
+}
+
+func newWhipService(rm *RoomManager) (*whipService, error) {
+	cli, err := rpc.NewIngressHandlerClient(rm.bus, rpc.WithDefaultClientOptions(logger.GetLogger()))
+	if err != nil {
+		return nil, err
+	}
+	return &whipService{
+		RoomManager:   rm,
+		ingressRpcCli: cli,
+	}, nil
 }
 
 func (s whipService) Create(ctx context.Context, req *rpc.WHIPCreateRequest) (*rpc.WHIPCreateResponse, error) {
@@ -53,7 +74,11 @@ func (s whipService) Create(ctx context.Context, req *rpc.WHIPCreateRequest) (*r
 		return nil, ErrParticipantNotFound
 	}
 
-	if err := lp.HandleOffer(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: req.OfferSdp}, 0); err != nil {
+	if err := lp.HandleOffer(&livekit.SessionDescription{
+		Type: webrtc.SDPTypeOffer.String(),
+		Sdp:  req.OfferSdp,
+		Id:   0,
+	}); err != nil {
 		lp.GetLogger().Errorw("whip service: could not handle offer", err)
 		return nil, err
 	}
@@ -93,6 +118,35 @@ func (s whipService) Create(ctx context.Context, req *rpc.WHIPCreateRequest) (*r
 		return nil, err
 	}
 
+	if req.FromIngress {
+		aliveCtx, cancel := context.WithCancel(context.Background())
+
+		lp.AddOnClose(types.ParticipantCloseKeyWHIP, func(lp types.LocalParticipant) {
+			cancel()
+
+			go func() {
+				lp.GetLogger().Debugw("whip service: notify participant closed")
+
+				video, audio := getMediaStateForParticipant(lp)
+
+				_, err := s.ingressRpcCli.WHIPRTCConnectionNotify(context.Background(), string(lp.ID()), &rpc.WHIPRTCConnectionNotifyRequest{
+					ParticipantId: string(lp.ID()),
+					Closed:        true,
+					Audio:         audio,
+					Video:         video,
+				}, psrpc.WithRequestTimeout(rpc.DefaultPSRPCConfig.Timeout))
+				if err != nil {
+					lp.GetLogger().Warnw("whip service: could not notify ingress of participant closed", err)
+				}
+			}()
+		})
+		go func() {
+			if err := s.notifySession(aliveCtx, lp); err != nil {
+				cancel()
+			}
+		}()
+	}
+
 	var iceServers []*livekit.ICEServer
 	apiKey, _, err := s.RoomManager.getFirstKeyPair()
 	if err != nil {
@@ -108,6 +162,92 @@ func (s whipService) Create(ctx context.Context, req *rpc.WHIPCreateRequest) (*r
 		IceServers:    iceServers,
 		IceSessionId:  iceSessionID,
 	}, nil
+}
+
+func (s whipService) notifySession(ctx context.Context, participant types.Participant) error {
+	ticker := time.NewTicker(whipSessionNotifyInterval)
+	defer ticker.Stop()
+
+	err := s.sendConnectionNotify(ctx, participant)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
+	}
+
+	for {
+		select {
+		case <-ticker.C:
+			err := s.sendConnectionNotify(ctx, participant)
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return nil
+				}
+			}
+
+		case <-ctx.Done():
+			return nil
+		}
+	}
+}
+
+func (s whipService) sendConnectionNotify(ctx context.Context, participant types.Participant) error {
+	video, audio := getMediaStateForParticipant(participant)
+
+	_, err := s.ingressRpcCli.WHIPRTCConnectionNotify(ctx, string(participant.ID()), &rpc.WHIPRTCConnectionNotifyRequest{
+		ParticipantId: string(participant.ID()),
+		Video:         video,
+		Audio:         audio,
+	}, psrpc.WithRequestTimeout(rpc.DefaultPSRPCConfig.Timeout))
+
+	return err
+}
+
+func getMediaStateForParticipant(participant types.Participant) (*livekit.InputVideoState, *livekit.InputAudioState) {
+	pParticipant := participant.ToProto()
+
+	var video *livekit.InputVideoState
+	var audio *livekit.InputAudioState
+
+	for _, v := range pParticipant.Tracks {
+		if v == nil {
+			continue
+		}
+
+		if v.Type != livekit.TrackType_VIDEO {
+			continue
+		}
+
+		video = &livekit.InputVideoState{}
+
+		video.MimeType = v.MimeType
+		video.Height = v.Height
+		video.Width = v.Width
+
+		break
+	}
+
+	for _, a := range pParticipant.Tracks {
+		if a == nil {
+			continue
+		}
+
+		if a.Type != livekit.TrackType_AUDIO {
+			continue
+		}
+
+		audio = &livekit.InputAudioState{}
+
+		audio.MimeType = a.MimeType
+		audio.Channels = 1
+		if a.Stereo {
+			audio.Channels = 2
+		}
+
+		break
+	}
+
+	return video, audio
 }
 
 // -------------------------------------------
@@ -183,6 +323,7 @@ func (r whipParticipantService) DeleteSession(ctx context.Context, req *rpc.WHIP
 
 	lp := room.GetParticipantByID(livekit.ParticipantID(req.ParticipantId))
 	if lp != nil {
+		lp.AddOnClose(types.ParticipantCloseKeyWHIP, nil)
 		room.RemoveParticipant(
 			lp.Identity(),
 			lp.ID(),

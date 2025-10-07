@@ -132,7 +132,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	client, err := agent.NewAgentClient(messageBus)
+	agentConfig := getAgentConfig(conf)
+	client, err := agent.NewAgentClient(messageBus, agentConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -334,4 +335,8 @@ func newInProcessTurnServer(conf *config.Config, authHandler turn.AuthHandler) (
 
 func getNodeStatsConfig(config2 *config.Config) config.NodeStatsConfig {
 	return config2.NodeStats
+}
+
+func getAgentConfig(config2 *config.Config) agent.Config {
+	return config2.Agents
 }

@@ -37,11 +37,11 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
+	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector"
 	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector/temporallayerselector"
 )
 
-// Forwarder
 const (
 	FlagPauseOnDowngrade  = true
 	FlagFilterRTX         = false
@@ -52,6 +52,11 @@ const (
 	ResumeBehindHighThresholdSeconds  = float64(2.0)   // 2 seconds
 	LayerSwitchBehindThresholdSeconds = float64(0.05)  // 50ms
 	SwitchAheadThresholdSeconds       = float64(0.025) // 25ms
+)
+
+var (
+	errSkipStartOnOutOfOrderPacket = errors.New("skip start on out-of-order packet")
+	errSwitchPointTooFarBehind     = errors.New("switch point too far behind")
 )
 
 // -------------------------------------------------------------------
@@ -302,6 +307,10 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
+	if videoLayerMode == livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM_INCOMPLETE_RTCP_SR {
+		f.skipReferenceTS = true
+	}
+
 	toMimeType := mime.NormalizeMimeType(codec.MimeType)
 	codecChanged := f.mime != mime.MimeTypeUnknown && f.mime != toMimeType
 	if codecChanged {
@@ -346,7 +355,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		}
 
 	case mime.MimeTypeVP9:
-		if videoLayerMode == livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM {
+		if sfuutils.IsSimulcastMode(videoLayerMode) {
 			if f.vls != nil {
 				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
 			} else {
@@ -370,7 +379,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		}
 
 	case mime.MimeTypeAV1:
-		if videoLayerMode == livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM {
+		if sfuutils.IsSimulcastMode(videoLayerMode) {
 			if f.vls != nil {
 				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
 			} else {
@@ -1688,6 +1697,10 @@ func (f *Forwarder) getRefLayerRTPTimestamp(ts uint32, refLayer, targetLayer int
 
 func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) error {
 	if !f.started {
+		if extPkt.IsOutOfOrder {
+			return errSkipStartOnOutOfOrderPacket
+		}
+
 		f.started = true
 		f.referenceLayerSpatial = layer
 		f.rtpMunger.SetLastSnTs(extPkt)
@@ -1703,6 +1716,10 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 		)
 		return nil
 	} else if f.referenceLayerSpatial == buffer.InvalidLayerSpatial {
+		if extPkt.IsOutOfOrder {
+			return errSkipStartOnOutOfOrderPacket
+		}
+
 		f.referenceLayerSpatial = layer
 		f.codecMunger.SetLast(extPkt)
 		f.logger.Debugw(
@@ -1882,7 +1899,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) e
 				// (like "have waited for too long for layer switch, nothing available, switch to whatever is available" kind of condition).
 				logTransition("layer switch, reference too far behind", extExpectedTS, extRefTS, extLastTS, diffSeconds)
 
-				return errors.New("switch point too far behind")
+				return errSwitchPointTooFarBehind
 			}
 
 			// use a nominal increase to ensure that timestamp is always moving forward

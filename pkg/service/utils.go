@@ -24,6 +24,10 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+
+	"github.com/ua-parser/uap-go/uaparser"
+	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -33,7 +37,6 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/ua-parser/uap-go/uaparser"
 )
 
 func handleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...interface{}) {
@@ -155,6 +158,46 @@ func ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 	return ci
 }
 
+var (
+	userAgentParserCache *uaparser.Parser
+	userAgentParserInit  sync.Once
+)
+
+func createUserAgentParserWithCustomRules() (*uaparser.Parser, error) {
+	defaultYaml := uaparser.DefinitionYaml
+
+	rules := make(map[string]interface{})
+	err := yaml.Unmarshal(defaultYaml, rules)
+	if err != nil {
+		return nil, err
+	}
+
+	rules["user_agent_parsers"] = append(rules["user_agent_parsers"].([]interface{}), map[string]interface{}{
+		"regex":              "OBS-Studio\\/([0-9\\.]+)",
+		"family_replacement": "OBS Studio",
+		"v1_replacement":     "$1",
+	})
+
+	customYaml, err := yaml.Marshal(rules)
+	if err != nil {
+		return nil, err
+	}
+
+	return uaparser.NewFromBytes([]byte(customYaml))
+}
+
+func getUserAgentParser() *uaparser.Parser {
+	userAgentParserInit.Do(func() {
+		if parser, err := createUserAgentParserWithCustomRules(); err != nil {
+			logger.Warnw("could not create user agent parser with custom rules, using default", err)
+			userAgentParserCache = uaparser.NewFromSaved()
+		} else {
+			userAgentParserCache = parser
+		}
+	})
+	return userAgentParserCache
+}
+
 func AugmentClientInfo(ci *livekit.ClientInfo, req *http.Request) {
 	// get real address (forwarded http header) - check Cloudflare headers first, fall back to X-Forwarded-For
 	ci.Address = GetClientIP(req)
@@ -163,8 +206,9 @@ func AugmentClientInfo(ci *livekit.ClientInfo, req *http.Request) {
 	if ci.Sdk == livekit.ClientInfo_JS ||
 		ci.Sdk == livekit.ClientInfo_REACT_NATIVE ||
 		ci.Sdk == livekit.ClientInfo_FLUTTER ||
-		ci.Sdk == livekit.ClientInfo_UNITY {
-		client := uaparser.NewFromSaved().Parse(req.UserAgent())
+		ci.Sdk == livekit.ClientInfo_UNITY ||
+		ci.Sdk == livekit.ClientInfo_UNKNOWN {
+		client := getUserAgentParser().Parse(req.UserAgent())
 		if ci.Browser == "" {
 			ci.Browser = client.UserAgent.Family
 			ci.BrowserVersion = client.UserAgent.ToVersionString()

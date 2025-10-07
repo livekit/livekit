@@ -26,6 +26,7 @@ import (
 	"github.com/urfave/cli/v3"
 	"gopkg.in/yaml.v3"
 
+	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/metric"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/remotebwe"
@@ -75,6 +76,7 @@ type Config struct {
 	LogLevel string        `yaml:"log_level,omitempty"`
 	Logging  LoggingConfig `yaml:"logging,omitempty"`
 	Limit    LimitConfig   `yaml:"limit,omitempty"`
+	Agents   agent.Config  `yaml:"agents,omitempty"`
 
 	Development bool `yaml:"development,omitempty"`
 
@@ -174,6 +176,8 @@ type RoomConfig struct {
 	CreateRoomEnabled  bool               `yaml:"create_room_enabled,omitempty"`
 	CreateRoomTimeout  time.Duration      `yaml:"create_room_timeout,omitempty"`
 	CreateRoomAttempts int                `yaml:"create_room_attempts,omitempty"`
+	// target room participant update batch chunk size in bytes
+	UpdateBatchTargetSize int `yaml:"update_batch_target_size,omitempty"`
 	// deprecated, moved to limits
 	MaxMetadataSize uint32 `yaml:"max_metadata_size,omitempty"`
 	// deprecated, moved to limits
@@ -363,14 +367,15 @@ var DefaultConfig = Config{
 			{Mime: mime.MimeTypeH264.String()},
 			{Mime: mime.MimeTypeVP9.String()},
 			{Mime: mime.MimeTypeAV1.String()},
-			{Mime: mime.MimeTypeRTX.String()},
 			{Mime: mime.MimeTypeH265.String()},
+			{Mime: mime.MimeTypeRTX.String()},
 		},
-		EmptyTimeout:       5 * 60,
-		DepartureTimeout:   20,
-		CreateRoomEnabled:  true,
-		CreateRoomTimeout:  10 * time.Second,
-		CreateRoomAttempts: 3,
+		EmptyTimeout:          5 * 60,
+		DepartureTimeout:      20,
+		CreateRoomEnabled:     true,
+		CreateRoomTimeout:     10 * time.Second,
+		CreateRoomAttempts:    3,
+		UpdateBatchTargetSize: 128 * 1024,
 	},
 	Limit: LimitConfig{
 		MaxMetadataSize:              64000,

@@ -132,7 +132,8 @@ func TestTrackPublishing(t *testing.T) {
 			Type: livekit.TrackType_AUDIO,
 		})
 
-		require.Equal(t, 1, sink.WriteMessageCallCount())
+		// error response on duplicate adds a message
+		require.Equal(t, 2, sink.WriteMessageCallCount())
 	})
 
 	t.Run("should queue adding of duplicate tracks if already published by client id in signalling", func(t *testing.T) {
@@ -150,7 +151,8 @@ func TestTrackPublishing(t *testing.T) {
 			Name: "webcam",
 			Type: livekit.TrackType_VIDEO,
 		})
-		require.Equal(t, 0, sink.WriteMessageCallCount())
+		// `queued` `RequestResponse` should add a message
+		require.Equal(t, 1, sink.WriteMessageCallCount())
 		require.Equal(t, 1, len(p.pendingTracks["cid"].trackInfos))
 
 		// add again - it should be added to the queue
@@ -159,7 +161,8 @@ func TestTrackPublishing(t *testing.T) {
 			Name: "webcam",
 			Type: livekit.TrackType_VIDEO,
 		})
-		require.Equal(t, 0, sink.WriteMessageCallCount())
+		// `queued` `RequestResponse`s should have been sent for duplicate additions
+		require.Equal(t, 2, sink.WriteMessageCallCount())
 		require.Equal(t, 2, len(p.pendingTracks["cid"].trackInfos))
 
 		// check SID is the same
@@ -181,7 +184,8 @@ func TestTrackPublishing(t *testing.T) {
 			Name: "webcam",
 			Type: livekit.TrackType_VIDEO,
 		})
-		require.Equal(t, 0, sink.WriteMessageCallCount())
+		// `queued` `RequestResponse` should add a message
+		require.Equal(t, 1, sink.WriteMessageCallCount())
 		require.Equal(t, 1, len(p.pendingTracks["cid"].trackInfos))
 
 		// add again - it should be added to the queue
@@ -190,7 +194,8 @@ func TestTrackPublishing(t *testing.T) {
 			Name: "webcam",
 			Type: livekit.TrackType_VIDEO,
 		})
-		require.Equal(t, 0, sink.WriteMessageCallCount())
+		// `queued` `RequestResponse`s should have been sent for duplicate additions
+		require.Equal(t, 2, sink.WriteMessageCallCount())
 		require.Equal(t, 2, len(p.pendingTracks["cid"].trackInfos))
 
 		// check SID is the same
@@ -220,7 +225,8 @@ func TestTrackPublishing(t *testing.T) {
 			Type:   livekit.TrackType_AUDIO,
 			Source: livekit.TrackSource_MICROPHONE,
 		})
-		require.Equal(t, 1, sink.WriteMessageCallCount())
+		// an error response for disallowed source should send a `RequestResponse`.
+		require.Equal(t, 2, sink.WriteMessageCallCount())
 	})
 }
 
@@ -278,7 +284,10 @@ func TestMuteSetting(t *testing.T) {
 		ti := &livekit.TrackInfo{Sid: "testTrack"}
 		p.pendingTracks["cid"] = &pendingTrackInfo{trackInfos: []*livekit.TrackInfo{ti}}
 
-		p.SetTrackMuted(livekit.TrackID(ti.Sid), true, false)
+		p.SetTrackMuted(&livekit.MuteTrackRequest{
+			Sid:   ti.Sid,
+			Muted: true,
+		}, false)
 		require.True(t, p.pendingTracks["cid"].trackInfos[0].Muted)
 	})
 
@@ -384,7 +393,11 @@ func TestDisableCodecs(t *testing.T) {
 		}
 		return nil
 	})
-	participant.HandleOffer(sdp, offerId)
+	participant.HandleOffer(&livekit.SessionDescription{
+		Type: webrtc.SDPTypeOffer.String(),
+		Sdp:  sdp.SDP,
+		Id:   offerId,
+	})
 
 	testutils.WithTimeout(t, func() string {
 		if answerReceived.Load() && answerIdReceived.Load() == offerId {
@@ -573,7 +586,11 @@ func TestPreferMediaCodecForPublisher(t *testing.T) {
 					}
 					return nil
 				})
-				participant.HandleOffer(sdp, offerId)
+				participant.HandleOffer(&livekit.SessionDescription{
+					Type: webrtc.SDPTypeOffer.String(),
+					Sdp:  sdp.SDP,
+					Id:   offerId,
+				})
 
 				require.Eventually(t, func() bool { return answerReceived.Load() && answerIdReceived.Load() == offerId }, 5*time.Second, 10*time.Millisecond)
 
@@ -608,33 +625,59 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 	participant.SetMigrateState(types.MigrateStateComplete)
 
 	me := webrtc.MediaEngine{}
-	me.RegisterDefaultCodecs()
-	require.NoError(t, me.RegisterCodec(webrtc.RTPCodecParameters{
-		RTPCodecCapability: RedCodecCapability,
-		PayloadType:        63,
-	}, webrtc.RTPCodecTypeAudio))
+	opusCodecParameters := OpusCodecParameters
+	opusCodecParameters.RTPCodecCapability.RTCPFeedback = []webrtc.RTCPFeedback{{Type: webrtc.TypeRTCPFBNACK}}
+	require.NoError(t, me.RegisterCodec(opusCodecParameters, webrtc.RTPCodecTypeAudio))
+	redCodecParameters := RedCodecParameters
+	redCodecParameters.RTPCodecCapability.RTCPFeedback = []webrtc.RTCPFeedback{{Type: webrtc.TypeRTCPFBNACK}}
+	require.NoError(t, me.RegisterCodec(redCodecParameters, webrtc.RTPCodecTypeAudio))
 
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(&me))
 	pc, err := api.NewPeerConnection(webrtc.Configuration{})
 	require.NoError(t, err)
 	defer pc.Close()
 
-	for i, disableRed := range []bool{false, true} {
+	for idx, disableRed := range []bool{false, true, false, true} {
 		t.Run(fmt.Sprintf("disableRed=%v", disableRed), func(t *testing.T) {
-			trackCid := fmt.Sprintf("audiotrack%d", i)
-			participant.AddTrack(&livekit.AddTrackRequest{
-				Type:       livekit.TrackType_AUDIO,
-				DisableRed: disableRed,
-				Cid:        trackCid,
-			})
-			track, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: "audio/opus"}, trackCid, trackCid)
+			trackCid := fmt.Sprintf("audiotrack%d", idx)
+			req := &livekit.AddTrackRequest{
+				Type: livekit.TrackType_AUDIO,
+				Cid:  trackCid,
+			}
+			if idx < 2 {
+				req.DisableRed = disableRed
+			} else {
+				codec := "red"
+				if disableRed {
+					codec = "opus"
+				}
+				req.SimulcastCodecs = []*livekit.SimulcastCodec{
+					{
+						Codec: codec,
+						Cid:   trackCid,
+					},
+				}
+			}
+			participant.AddTrack(req)
+
+			track, err := webrtc.NewTrackLocalStaticRTP(
+				webrtc.RTPCodecCapability{MimeType: "audio/opus"},
+				trackCid,
+				trackCid,
+			)
 			require.NoError(t, err)
-			transceiver, err := pc.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendrecv})
+
+			transceiver, err := pc.AddTransceiverFromTrack(
+				track,
+				webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendrecv},
+			)
 			require.NoError(t, err)
 			codecs := transceiver.Sender().GetParameters().Codecs
 			for i, c := range codecs {
-				if c.MimeType == "audio/opus" && i != 0 {
-					codecs[0], codecs[i] = codecs[i], codecs[0]
+				if c.MimeType == "audio/opus" {
+					if i != 0 {
+						codecs[0], codecs[i] = codecs[i], codecs[0]
+					}
 					break
 				}
 			}
@@ -663,9 +706,19 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 				}
 				return nil
 			})
-			participant.HandleOffer(sdp, offerId)
-
-			require.Eventually(t, func() bool { return answerReceived.Load() && answerIdReceived.Load() == offerId }, 5*time.Second, 10*time.Millisecond)
+			participant.HandleOffer(&livekit.SessionDescription{
+				Type: webrtc.SDPTypeOffer.String(),
+				Sdp:  sdp.SDP,
+				Id:   offerId,
+			})
+			require.Eventually(
+				t,
+				func() bool {
+					return answerReceived.Load() && answerIdReceived.Load() == offerId
+				},
+				5*time.Second,
+				10*time.Millisecond,
+			)
 
 			var redPreferred bool
 			parsed, err := answer.Unmarshal()
@@ -673,7 +726,7 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 			var audioSectionIndex int
 			for _, m := range parsed.MediaDescriptions {
 				if m.MediaName.Media == "audio" {
-					if audioSectionIndex == i {
+					if audioSectionIndex == idx {
 						codecs, err := lksdp.CodecsFromMediaDescription(m)
 						require.NoError(t, err)
 						// nack is always enabled. if red is preferred, server will not generate nack request

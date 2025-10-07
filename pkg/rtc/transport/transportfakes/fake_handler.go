@@ -87,6 +87,10 @@ type FakeHandler struct {
 	onOfferReturnsOnCall map[int]struct {
 		result1 error
 	}
+	OnSetRemoteDescriptionOfferStub        func()
+	onSetRemoteDescriptionOfferMutex       sync.RWMutex
+	onSetRemoteDescriptionOfferArgsForCall []struct {
+	}
 	OnStreamStateChangeStub        func(*streamallocator.StreamStateUpdate) error
 	onStreamStateChangeMutex       sync.RWMutex
 	onStreamStateChangeArgsForCall []struct {
@@ -103,6 +107,18 @@ type FakeHandler struct {
 	onTrackArgsForCall []struct {
 		arg1 *webrtc.TrackRemote
 		arg2 *webrtc.RTPReceiver
+	}
+	OnUnmatchedMediaStub        func(uint32, uint32) error
+	onUnmatchedMediaMutex       sync.RWMutex
+	onUnmatchedMediaArgsForCall []struct {
+		arg1 uint32
+		arg2 uint32
+	}
+	onUnmatchedMediaReturns struct {
+		result1 error
+	}
+	onUnmatchedMediaReturnsOnCall map[int]struct {
+		result1 error
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
@@ -538,6 +554,30 @@ func (fake *FakeHandler) OnOfferReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
+func (fake *FakeHandler) OnSetRemoteDescriptionOffer() {
+	fake.onSetRemoteDescriptionOfferMutex.Lock()
+	fake.onSetRemoteDescriptionOfferArgsForCall = append(fake.onSetRemoteDescriptionOfferArgsForCall, struct {
+	}{})
+	stub := fake.OnSetRemoteDescriptionOfferStub
+	fake.recordInvocation("OnSetRemoteDescriptionOffer", []interface{}{})
+	fake.onSetRemoteDescriptionOfferMutex.Unlock()
+	if stub != nil {
+		fake.OnSetRemoteDescriptionOfferStub()
+	}
+}
+
+func (fake *FakeHandler) OnSetRemoteDescriptionOfferCallCount() int {
+	fake.onSetRemoteDescriptionOfferMutex.RLock()
+	defer fake.onSetRemoteDescriptionOfferMutex.RUnlock()
+	return len(fake.onSetRemoteDescriptionOfferArgsForCall)
+}
+
+func (fake *FakeHandler) OnSetRemoteDescriptionOfferCalls(stub func()) {
+	fake.onSetRemoteDescriptionOfferMutex.Lock()
+	defer fake.onSetRemoteDescriptionOfferMutex.Unlock()
+	fake.OnSetRemoteDescriptionOfferStub = stub
+}
+
 func (fake *FakeHandler) OnStreamStateChange(arg1 *streamallocator.StreamStateUpdate) error {
 	fake.onStreamStateChangeMutex.Lock()
 	ret, specificReturn := fake.onStreamStateChangeReturnsOnCall[len(fake.onStreamStateChangeArgsForCall)]
@@ -630,6 +670,68 @@ func (fake *FakeHandler) OnTrackArgsForCall(i int) (*webrtc.TrackRemote, *webrtc
 	defer fake.onTrackMutex.RUnlock()
 	argsForCall := fake.onTrackArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeHandler) OnUnmatchedMedia(arg1 uint32, arg2 uint32) error {
+	fake.onUnmatchedMediaMutex.Lock()
+	ret, specificReturn := fake.onUnmatchedMediaReturnsOnCall[len(fake.onUnmatchedMediaArgsForCall)]
+	fake.onUnmatchedMediaArgsForCall = append(fake.onUnmatchedMediaArgsForCall, struct {
+		arg1 uint32
+		arg2 uint32
+	}{arg1, arg2})
+	stub := fake.OnUnmatchedMediaStub
+	fakeReturns := fake.onUnmatchedMediaReturns
+	fake.recordInvocation("OnUnmatchedMedia", []interface{}{arg1, arg2})
+	fake.onUnmatchedMediaMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeHandler) OnUnmatchedMediaCallCount() int {
+	fake.onUnmatchedMediaMutex.RLock()
+	defer fake.onUnmatchedMediaMutex.RUnlock()
+	return len(fake.onUnmatchedMediaArgsForCall)
+}
+
+func (fake *FakeHandler) OnUnmatchedMediaCalls(stub func(uint32, uint32) error) {
+	fake.onUnmatchedMediaMutex.Lock()
+	defer fake.onUnmatchedMediaMutex.Unlock()
+	fake.OnUnmatchedMediaStub = stub
+}
+
+func (fake *FakeHandler) OnUnmatchedMediaArgsForCall(i int) (uint32, uint32) {
+	fake.onUnmatchedMediaMutex.RLock()
+	defer fake.onUnmatchedMediaMutex.RUnlock()
+	argsForCall := fake.onUnmatchedMediaArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeHandler) OnUnmatchedMediaReturns(result1 error) {
+	fake.onUnmatchedMediaMutex.Lock()
+	defer fake.onUnmatchedMediaMutex.Unlock()
+	fake.OnUnmatchedMediaStub = nil
+	fake.onUnmatchedMediaReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeHandler) OnUnmatchedMediaReturnsOnCall(i int, result1 error) {
+	fake.onUnmatchedMediaMutex.Lock()
+	defer fake.onUnmatchedMediaMutex.Unlock()
+	fake.OnUnmatchedMediaStub = nil
+	if fake.onUnmatchedMediaReturnsOnCall == nil {
+		fake.onUnmatchedMediaReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.onUnmatchedMediaReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
 }
 
 func (fake *FakeHandler) Invocations() map[string][][]interface{} {

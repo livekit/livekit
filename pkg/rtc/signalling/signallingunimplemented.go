@@ -107,3 +107,11 @@ func (u *signallingUnimplemented) SignalSubscriptionResponse(subscriptionRespons
 func (u *signallingUnimplemented) SignalSubscriptionPermissionUpdate(subscriptionPermissionUpdate *livekit.SubscriptionPermissionUpdate) proto.Message {
 	return nil
 }
+
+func (u *signallingUnimplemented) SignalMediaSectionsRequirement(mediaSectionsRequirement *livekit.MediaSectionsRequirement) proto.Message {
+	return nil
+}
+
+func (u *signallingUnimplemented) SignalSubscribedAudioCodecUpdate(subscribedAudioCodecUpdate *livekit.SubscribedAudioCodecUpdate) proto.Message {
+	return nil
+}

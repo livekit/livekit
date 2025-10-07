@@ -27,6 +27,30 @@ import (
 	protoutils "github.com/livekit/protocol/utils"
 )
 
+type ReferenceGuard struct {
+	activated, released bool
+}
+
+type ReferenceCount struct {
+	count int
+}
+
+func (s *ReferenceCount) Activate(guard *ReferenceGuard) {
+	if guard != nil && !guard.activated {
+		guard.activated = true
+		s.count++
+	}
+}
+
+func (s *ReferenceCount) Release(guard *ReferenceGuard) bool {
+	if guard == nil || !guard.activated || guard.released {
+		return false
+	}
+	guard.released = true
+	s.count--
+	return s.count == 0
+}
+
 // StatsWorker handles participant stats
 type StatsWorker struct {
 	next *StatsWorker
@@ -42,6 +66,7 @@ type StatsWorker struct {
 	lock             sync.RWMutex
 	outgoingPerTrack map[livekit.TrackID][]*livekit.AnalyticsStat
 	incomingPerTrack map[livekit.TrackID][]*livekit.AnalyticsStat
+	refCount         ReferenceCount
 	closedAt         time.Time
 }
 
@@ -52,6 +77,7 @@ func newStatsWorker(
 	roomName livekit.RoomName,
 	participantID livekit.ParticipantID,
 	identity livekit.ParticipantIdentity,
+	guard *ReferenceGuard,
 ) *StatsWorker {
 	s := &StatsWorker{
 		ctx:                 ctx,
@@ -63,6 +89,7 @@ func newStatsWorker(
 		outgoingPerTrack:    make(map[livekit.TrackID][]*livekit.AnalyticsStat),
 		incomingPerTrack:    make(map[livekit.TrackID][]*livekit.AnalyticsStat),
 	}
+	s.refCount.Activate(guard)
 	return s
 }
 
@@ -117,9 +144,13 @@ func (s *StatsWorker) Flush(now time.Time) bool {
 	return closed
 }
 
-func (s *StatsWorker) Close() bool {
+func (s *StatsWorker) Close(guard *ReferenceGuard) bool {
 	s.lock.Lock()
 	defer s.lock.Unlock()
+
+	if !s.refCount.Release(guard) {
+		return false
+	}
 
 	ok := s.closedAt.IsZero()
 	if ok {
@@ -128,10 +159,14 @@ func (s *StatsWorker) Close() bool {
 	return ok
 }
 
-func (s *StatsWorker) Closed() bool {
+func (s *StatsWorker) Closed(guard *ReferenceGuard) bool {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	return !s.closedAt.IsZero()
+	if s.closedAt.IsZero() {
+		s.refCount.Activate(guard)
+		return false
+	}
+	return true
 }
 
 func (s *StatsWorker) collectStats(

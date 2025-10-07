@@ -542,9 +542,11 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *livekit.RTCPSenderRep
 	r.updatePropagationDelayAndRecordSenderReport(srDataExt)
 	r.checkRTPClockSkewAgainstMediaPathForSenderReport(srDataExt)
 
-	if err, loggingFields := r.maybeAdjustFirstPacketTime(r.srNewest, 0, r.timestamp.GetExtendedStart()); err != nil {
+	adjustment, err, loggingFields := r.maybeAdjustFirstPacketTime(r.srNewest, 0, r.timestamp.GetExtendedStart())
+	if err != nil {
 		r.logger.Infow(err.Error(), append(loggingFields, "rtpStats", lockedRTPStatsReceiverLogEncoder{r})...)
 	}
+	r.propagationDelayEstimator.InitialAdjustment(adjustment)
 	return true
 }
 

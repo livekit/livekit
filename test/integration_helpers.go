@@ -202,35 +202,32 @@ func createMultiNodeServer(nodeID string, port uint32) *service.LivekitServer {
 }
 
 // creates a client and runs against server
-func createRTCClient(name string, port int, opts *testclient.Options) *testclient.RTCClient {
+func createRTCClient(name string, port int, useSinglePeerConnection bool, opts *testclient.Options) *testclient.RTCClient {
 	var customizer func(token *auth.AccessToken, grants *auth.VideoGrant)
 	if opts != nil {
 		customizer = opts.TokenCustomizer
 	}
 	token := joinToken(testRoom, name, customizer)
-	ws, err := testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", port), token, opts)
-	if err != nil {
-		panic(err)
-	}
 
-	c, err := testclient.NewRTCClient(ws, opts)
-	if err != nil {
-		panic(err)
-	}
-
-	go c.Run()
-
-	return c
+	return createRTCClientWithToken(token, port, useSinglePeerConnection, opts)
 }
 
 // creates a client and runs against server
-func createRTCClientWithToken(token string, port int, opts *testclient.Options) *testclient.RTCClient {
+func createRTCClientWithToken(token string, port int, useSinglePeerConnection bool, opts *testclient.Options) *testclient.RTCClient {
+	if opts == nil {
+		opts = &testclient.Options{
+			AutoSubscribe: true,
+		}
+	}
+	if useSinglePeerConnection {
+		opts.UseJoinRequestQueryParam = true
+	}
 	ws, err := testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", port), token, opts)
 	if err != nil {
 		panic(err)
 	}
 
-	c, err := testclient.NewRTCClient(ws, opts)
+	c, err := testclient.NewRTCClient(ws, useSinglePeerConnection, opts)
 	if err != nil {
 		panic(err)
 	}

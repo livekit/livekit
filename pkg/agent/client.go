@@ -67,6 +67,7 @@ type JobRequest struct {
 
 type agentClient struct {
 	client rpc.AgentInternalClient
+	config Config
 
 	mu sync.RWMutex
 
@@ -87,7 +88,7 @@ type agentClient struct {
 	subDone       chan struct{}
 }
 
-func NewAgentClient(bus psrpc.MessageBus) (Client, error) {
+func NewAgentClient(bus psrpc.MessageBus, config Config) (Client, error) {
 	client, err := rpc.NewAgentInternalClient(bus)
 	if err != nil {
 		return nil, err
@@ -95,6 +96,7 @@ func NewAgentClient(bus psrpc.MessageBus) (Client, error) {
 
 	c := &agentClient{
 		client:  client,
+		config:  config,
 		workers: workerpool.New(50),
 		subDone: make(chan struct{}),
 	}
@@ -159,14 +161,15 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverut
 			defer wg.Done()
 			// The cached agent parameters do not provide the exact combination of available job type/agent name/namespace, so some of the JobRequest RPC may not trigger any worker
 			job := &livekit.Job{
-				Id:          utils.NewGuid(utils.AgentJobPrefix),
-				DispatchId:  desc.DispatchId,
-				Type:        desc.JobType,
-				Room:        desc.Room,
-				Participant: desc.Participant,
-				Namespace:   curNs,
-				AgentName:   desc.AgentName,
-				Metadata:    desc.Metadata,
+				Id:              utils.NewGuid(utils.AgentJobPrefix),
+				DispatchId:      desc.DispatchId,
+				Type:            desc.JobType,
+				Room:            desc.Room,
+				Participant:     desc.Participant,
+				Namespace:       curNs,
+				AgentName:       desc.AgentName,
+				Metadata:        desc.Metadata,
+				EnableRecording: c.config.EnableUserDataRecording,
 			}
 			resp, err := c.client.JobRequest(context.Background(), topic, jobTypeTopic, job)
 			if err != nil {

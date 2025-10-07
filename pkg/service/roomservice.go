@@ -41,6 +41,9 @@ type RoomService struct {
 	topicFormatter    rpc.TopicFormatter
 	roomClient        rpc.TypedRoomClient
 	participantClient rpc.TypedParticipantClient
+
+	rpc.UnimplementedRoomServer
+	rpc.UnimplementedParticipantServer
 }
 
 func NewRoomService(
@@ -348,6 +351,24 @@ func (s *RoomService) MoveParticipant(ctx context.Context, req *livekit.MovePart
 	}
 
 	res, err := s.participantClient.MoveParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
+	RecordResponse(ctx, res)
+	return res, err
+}
+
+func (s *RoomService) PerformRpc(ctx context.Context, req *livekit.PerformRpcRequest) (*livekit.PerformRpcResponse, error) {
+	RecordRequest(ctx, req)
+
+	roomName := livekit.RoomName(req.Room)
+	AppendLogFields(ctx, "room", roomName, "participant", req.DestinationIdentity)
+
+	if err := EnsureAdminPermission(ctx, roomName); err != nil {
+		return nil, twirpAuthError(err)
+	}
+	if req.DestinationIdentity == "" {
+		return nil, ErrDestinationIdentityRequired
+	}
+
+	res, err := s.participantClient.PerformRpc(ctx, s.topicFormatter.ParticipantTopic(ctx, roomName, livekit.ParticipantIdentity(req.DestinationIdentity)), req)
 	RecordResponse(ctx, res)
 	return res, err
 }

@@ -34,7 +34,7 @@ type OWDEstimatorParams struct {
 }
 
 var OWDEstimatorParamsDefault = OWDEstimatorParams{
-	// OWD (One-Way-Delay) Estimator is used to estimate propagation delay between sender and receicer.
+	// OWD (One-Way-Delay) Estimator is used to estimate propagation delay between sender and receiver.
 	// As they operate on different clock domains, it is not possible to get exact propagation delay easily.
 	// So, this module is an estimator using a simple approach explained below. It should not be used for
 	// things that require high accuracy.
@@ -72,6 +72,7 @@ type OWDEstimator struct {
 	params OWDEstimatorParams
 
 	initialized                        bool
+	initialAdjustmentDone              bool
 	lastSenderClockTimeNs              int64
 	lastPropagationDelayNs             int64
 	lastDeltaPropagationDelayNs        int64
@@ -172,6 +173,22 @@ func (o *OWDEstimator) Update(senderClockTimeNs int64, receiverClockTimeNs int64
 	}
 	o.lastSenderClockTimeNs = senderClockTimeNs
 	return o.estimatedPropagationDelayNs, stepChange
+}
+
+func (o *OWDEstimator) InitialAdjustment(adjustmentNs int64) int64 {
+	if o.initialAdjustmentDone {
+		return o.estimatedPropagationDelayNs
+	}
+
+	o.initialAdjustmentDone = true
+	// one time adjustment at init
+	// example: when this is used to measure one-way-delay of RTCP sender reports,
+	// it is possible that the first sender report is delayed and experiences more
+	// than existing propagation delay. This allows adjustment of initial estimate.
+	if adjustmentNs < 0 && -adjustmentNs < o.estimatedPropagationDelayNs {
+		o.estimatedPropagationDelayNs += adjustmentNs
+	}
+	return o.estimatedPropagationDelayNs
 }
 
 func (o *OWDEstimator) EstimatedPropagationDelay() int64 {

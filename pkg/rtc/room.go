@@ -106,6 +106,7 @@ type Room struct {
 	logger     logger.Logger
 
 	config          WebRTCConfig
+	roomConfig      config.RoomConfig
 	audioConfig     *sfu.AudioConfig
 	serverInfo      *livekit.ServerInfo
 	telemetry       telemetry.TelemetryService
@@ -253,6 +254,7 @@ func NewRoom(
 			livekit.RoomID(room.Sid),
 		),
 		config:                               config,
+		roomConfig:                           roomConfig,
 		audioConfig:                          audioConfig,
 		telemetry:                            telemetry,
 		egressLauncher:                       egressLauncher,
@@ -489,6 +491,7 @@ func (r *Room) Join(
 				p.ToProto(),
 				meta,
 				false,
+				participant.TelemetryGuard(),
 			)
 
 			participant.GetReporter().Tx(func(tx roomobs.ParticipantSessionTx) {
@@ -607,6 +610,10 @@ func (r *Room) Join(
 			}()
 		} else {
 			participant.Negotiate(true)
+		}
+	} else {
+		if participant.IsUsingSinglePeerConnection() {
+			go r.subscribeToExistingTracks(participant, false)
 		}
 	}
 
@@ -1112,13 +1119,12 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 			continue
 		}
 
-		r.logger.Debugw(
+		existingParticipant.GetLogger().Debugw(
 			"subscribing to new track",
-			"participant", existingParticipant.Identity(),
-			"pID", existingParticipant.ID(),
 			"publisher", participant.Identity(),
 			"publisherID", participant.ID(),
-			"trackID", track.ID())
+			"trackID", track.ID(),
+		)
 		existingParticipant.SubscribeToTrack(track.ID(), false)
 	}
 	onParticipantChanged := r.onParticipantChanged
@@ -1391,7 +1397,7 @@ func (r *Room) subscribeToExistingTracks(p types.LocalParticipant, isSync bool) 
 		}
 	}
 	if len(trackIDs) > 0 {
-		r.logger.Debugw("subscribed participant to existing tracks", "trackID", trackIDs)
+		p.GetLogger().Debugw("subscribed participant to existing tracks", "trackID", trackIDs)
 	}
 }
 
@@ -1431,7 +1437,7 @@ func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcas
 	r.batchedUpdatesMu.Unlock()
 	if len(updates) != 0 {
 		selfSent = true
-		SendParticipantUpdates(updates, r.GetParticipants())
+		SendParticipantUpdates(updates, r.GetParticipants(), r.roomConfig.UpdateBatchTargetSize)
 	}
 }
 
@@ -1488,7 +1494,7 @@ func (r *Room) changeUpdateWorker() {
 			r.batchedUpdates = make(map[livekit.ParticipantIdentity]*ParticipantUpdate)
 			r.batchedUpdatesMu.Unlock()
 
-			SendParticipantUpdates(maps.Values(updatesMap), r.GetParticipants())
+			SendParticipantUpdates(maps.Values(updatesMap), r.GetParticipants(), r.roomConfig.UpdateBatchTargetSize)
 
 		case <-cleanDataMessageTicker.C:
 			r.dataMessageCache.Prune()
@@ -1968,7 +1974,7 @@ func PushAndDequeueUpdates(
 	return updates
 }
 
-func SendParticipantUpdates(updates []*ParticipantUpdate, participants []types.LocalParticipant) {
+func SendParticipantUpdates(updates []*ParticipantUpdate, participants []types.LocalParticipant, batchTargetSize int) {
 	if len(updates) == 0 {
 		return
 	}
@@ -1992,15 +1998,19 @@ func SendParticipantUpdates(updates []*ParticipantUpdate, participants []types.L
 		fullUpdates = append(fullUpdates, update.ParticipantInfo)
 	}
 
+	filteredUpdateChunks := ChunkProtoBatch(filteredUpdates, batchTargetSize)
+	fullUpdateChunks := ChunkProtoBatch(fullUpdates, batchTargetSize)
+
 	for _, op := range participants {
-		var err error
+		updateChunks := fullUpdateChunks
 		if op.ProtocolVersion().SupportsIdentityBasedReconnection() {
-			err = op.SendParticipantUpdate(filteredUpdates)
-		} else {
-			err = op.SendParticipantUpdate(fullUpdates)
+			updateChunks = filteredUpdateChunks
 		}
-		if err != nil {
-			op.GetLogger().Errorw("could not send update to participant", err)
+		for _, chunk := range updateChunks {
+			if err := op.SendParticipantUpdate(chunk); err != nil {
+				op.GetLogger().Errorw("could not send update to participant", err)
+				break
+			}
 		}
 	}
 }
@@ -2019,10 +2029,10 @@ func GetOtherParticipantInfo(
 
 	pInfos := make([]*livekit.ParticipantInfo, 0, len(allParticipants))
 	for _, op := range allParticipants {
-		if !op.Hidden() &&
+		if !(skipSubscriberBroadcast && op.CanSkipBroadcast()) &&
+			!op.Hidden() &&
 			op.Identity() != lpIdentity &&
-			!isMigratingIn &&
-			!(skipSubscriberBroadcast && op.CanSkipBroadcast()) {
+			!isMigratingIn {
 			pInfos = append(pInfos, op.ToProto())
 		}
 	}
