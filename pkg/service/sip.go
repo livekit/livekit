@@ -625,10 +625,14 @@ func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livek
 		log = log.WithValues("projectID", projectID)
 	}
 
-	trunk, err := s.store.LoadSIPOutboundTrunk(ctx, req.SipTrunkId)
-	if err != nil {
-		log.Errorw("cannot get trunk to update sip participant", err)
-		return nil, err
+	var trunk *livekit.SIPOutboundTrunkInfo
+	if req.SipTrunkId != "" {
+		var err error
+		trunk, err = s.store.LoadSIPOutboundTrunk(ctx, req.SipTrunkId)
+		if err != nil {
+			log.Errorw("cannot get trunk to update sip participant", err)
+			return nil, err
+		}
 	}
 	return rpc.NewCreateSIPParticipantRequest(projectID, callID, host, wsUrl, token, req, trunk)
 }
