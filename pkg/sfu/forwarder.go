@@ -2153,7 +2153,7 @@ func (f *Forwarder) maybeStart() {
 	)
 }
 
-func (f *Forwarder) GetSnTsForPadding(num int, forceMarker bool) ([]SnTs, error) {
+func (f *Forwarder) GetSnTsForPadding(num int, frameRate uint32, forceMarker bool) ([]SnTs, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -2167,7 +2167,13 @@ func (f *Forwarder) GetSnTsForPadding(num int, forceMarker bool) ([]SnTs, error)
 	if !f.vls.GetTarget().IsValid() {
 		forceMarker = true
 	}
-	return f.rtpMunger.UpdateAndGetPaddingSnTs(num, 0, 0, forceMarker, 0)
+	return f.rtpMunger.UpdateAndGetPaddingSnTs(
+		num,
+		f.clockRate,
+		frameRate,
+		forceMarker,
+		f.rtpMunger.GetState().ExtLastTimestamp,
+	)
 }
 
 func (f *Forwarder) GetSnTsForBlankFrames(frameRate uint32, numPackets int) ([]SnTs, bool, error) {
@@ -2192,7 +2198,13 @@ func (f *Forwarder) GetSnTsForBlankFrames(frameRate uint32, numPackets int) ([]S
 	if int64(extExpectedTS-extLastTS) <= 0 {
 		extExpectedTS = extLastTS + 1
 	}
-	snts, err := f.rtpMunger.UpdateAndGetPaddingSnTs(numPackets, f.clockRate, frameRate, frameEndNeeded, extExpectedTS)
+	snts, err := f.rtpMunger.UpdateAndGetPaddingSnTs(
+		numPackets,
+		f.clockRate,
+		frameRate,
+		frameEndNeeded,
+		extExpectedTS,
+	)
 	return snts, frameEndNeeded, err
 }
 
