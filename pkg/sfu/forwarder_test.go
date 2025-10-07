@@ -1943,7 +1943,7 @@ func TestForwarderGetSnTsForPadding(t *testing.T) {
 	disable(f)
 
 	// should get back frame end needed as the last packet did not have RTP marker set
-	snts, err := f.GetSnTsForPadding(5, false)
+	snts, err := f.GetSnTsForPadding(5, 0, false)
 	require.NoError(t, err)
 
 	numPadding := 5
@@ -1959,7 +1959,7 @@ func TestForwarderGetSnTsForPadding(t *testing.T) {
 	require.Equal(t, sntsExpected, snts)
 
 	// now that there is a marker, timestamp should jump on first padding when asked again
-	snts, err = f.GetSnTsForPadding(numPadding, false)
+	snts, err = f.GetSnTsForPadding(numPadding, 0, false)
 	require.NoError(t, err)
 
 	for i := 0; i < numPadding; i++ {
