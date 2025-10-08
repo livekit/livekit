@@ -254,6 +254,7 @@ github.com/pion/rtcp v1.2.15 h1:LZQi2JbdipLOj4eBjK4wlVoQWfrZbh3Q6eHtWtJBZBo=
 github.com/pion/rtcp v1.2.15/go.mod h1:jlGuAjHMEXwMUHK78RgX0UmEJFV4zUKOFHR7OP+D3D0=
 github.com/pion/rtp v1.8.22 h1:8NCVDDF+uSJmMUkjLJVnIr/HX7gPesyMV1xFt5xozXc=
 github.com/pion/rtp v1.8.22/go.mod h1:rF5nS1GqbR7H/TCpKwylzeq6yDM+MM6k+On5EgeThEM=
+github.com/pion/rtp/v2 v2.0.0/go.mod h1:Vj+rrFbJCT3yxqE/VSwaOo9DQ2pMKGPxuE7hplGOlOs=
 github.com/pion/sctp v1.8.39 h1:PJma40vRHa3UTO3C4MyeJDQ+KIobVYRZQZ0Nt7SjQnE=
 github.com/pion/sctp v1.8.39/go.mod h1:cNiLdchXra8fHQwmIoqw0MbLLMs+f7uQ+dGMG2gWebE=
 github.com/pion/sdp/v3 v3.0.16 h1:0dKzYO6gTAvuLaAKQkC02eCPjMIi4NuAr/ibAwrGDCo=
