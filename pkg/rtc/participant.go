@@ -2511,11 +2511,20 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		if payload.RpcRequest == nil {
 			return
 		}
-		p.pubLogger.Infow("received RPC request data packet", "method", payload.RpcRequest.Method, "rpc_request_id", payload.RpcRequest.Id)
+		p.pubLogger.Infow(
+			"received RPC request",
+			"method", payload.RpcRequest.Method,
+			"rpc_request_id", payload.RpcRequest.Id,
+			"destinationIdentities", dp.DestinationIdentities,
+		)
 	case *livekit.DataPacket_RpcResponse:
 		if payload.RpcResponse == nil {
 			return
 		}
+		p.pubLogger.Infow(
+			"received RPC response",
+			"rpc_request_id", payload.RpcResponse.RequestId,
+		)
 
 		rpcResponse := payload.RpcResponse
 		switch res := rpcResponse.Value.(type) {
@@ -2532,6 +2541,10 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		if payload.RpcAck == nil {
 			return
 		}
+		p.pubLogger.Infow(
+			"received RPC ack",
+			"rpc_request_id", payload.RpcAck.RequestId,
+		)
 
 		shouldForwardData = !p.handleIncomingRpcAck(payload.RpcAck.GetRequestId())
 	case *livekit.DataPacket_StreamHeader:

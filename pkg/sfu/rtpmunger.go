@@ -328,6 +328,7 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(
 	r.tsOffset -= extLastTS - r.extLastTS
 	r.extLastTS = extLastTS
 
+	r.secondLastMarker = r.lastMarker
 	if forceMarker {
 		r.lastMarker = true
 	}
