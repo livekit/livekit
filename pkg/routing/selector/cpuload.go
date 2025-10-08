@@ -23,6 +23,7 @@ import (
 type CPULoadSelector struct {
 	CPULoadLimit float32
 	SortBy       string
+	Algorithm    string
 }
 
 func (s *CPULoadSelector) filterNodes(nodes []*livekit.Node) ([]*livekit.Node, error) {
@@ -50,5 +51,5 @@ func (s *CPULoadSelector) SelectNode(nodes []*livekit.Node) (*livekit.Node, erro
 		return nil, err
 	}
 
-	return SelectSortedNode(nodes, s.SortBy)
+	return SelectSortedNode(nodes, s.SortBy, s.Algorithm)
 }

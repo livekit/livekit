@@ -21,5 +21,7 @@ var (
 	ErrCurrentRegionNotSet        = errors.New("current region cannot be blank")
 	ErrCurrentRegionUnknownLatLon = errors.New("unknown lat and lon for the current region")
 	ErrSortByNotSet               = errors.New("sort by option cannot be blank")
+	ErrAlgorithmNotSet            = errors.New("node selector algorithm option cannot be blank")
 	ErrSortByUnknown              = errors.New("unknown sort by option")
+	ErrAlgorithmUnknown           = errors.New("unknown node selector algorithm option")
 )
