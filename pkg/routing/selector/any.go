@@ -31,3 +31,7 @@ func (s *AnySelector) SelectNode(nodes []*livekit.Node) (*livekit.Node, error) {
 
 	return SelectSortedNode(nodes, s.SortBy)
 }
+
+func (s *AnySelector) filterNodes(nodes []*livekit.Node) ([]*livekit.Node, error) {
+	return nodes, nil
+}

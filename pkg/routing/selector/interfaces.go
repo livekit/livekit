@@ -28,6 +28,7 @@ var ErrUnsupportedSelector = errors.New("unsupported node selector")
 // NodeSelector selects an appropriate node to run the current session
 type NodeSelector interface {
 	SelectNode(nodes []*livekit.Node) (*livekit.Node, error)
+	filterNodes(nodes []*livekit.Node) ([]*livekit.Node, error)
 }
 
 func CreateNodeSelector(conf *config.Config) (NodeSelector, error) {
@@ -41,19 +42,20 @@ func CreateNodeSelector(conf *config.Config) (NodeSelector, error) {
 	case "cpuload":
 		return &CPULoadSelector{
 			CPULoadLimit: conf.NodeSelector.CPULoadLimit,
-			SortBy: conf.NodeSelector.SortBy,
+			SortBy:       conf.NodeSelector.SortBy,
 		}, nil
 	case "sysload":
 		return &SystemLoadSelector{
 			SysloadLimit: conf.NodeSelector.SysloadLimit,
-			SortBy: conf.NodeSelector.SortBy,
+			SortBy:       conf.NodeSelector.SortBy,
 		}, nil
 	case "regionaware":
-		s, err := NewRegionAwareSelector(conf.Region, conf.NodeSelector.Regions, conf.NodeSelector.SortBy)
+		s, err := NewRegionAwareSelector(conf.Region, conf.NodeSelector.Regions, conf.NodeSelector.SortBy, &SystemLoadSelector{
+			SysloadLimit: conf.NodeSelector.SysloadLimit,
+		})
 		if err != nil {
 			return nil, err
 		}
-		s.SysloadLimit = conf.NodeSelector.SysloadLimit
 		return s, nil
 	case "random":
 		logger.Warnw("random node selector is deprecated, please switch to \"any\" or another selector", nil)
