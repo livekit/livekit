@@ -149,9 +149,18 @@ func (s *IOInfoService) GetSIPTrunkAuthentication(ctx context.Context, req *rpc.
 		return &rpc.GetSIPTrunkAuthenticationResponse{}, nil
 	}
 	log.Debugw("SIP trunk matched for auth", "sipTrunk", trunk.SipTrunkId)
+
+	// Create provider info for the trunk
+	providerInfo := &livekit.ProviderInfo{
+		Id:   trunk.SipTrunkId,
+		Name: trunk.Name,
+		Type: livekit.ProviderType_PROVIDER_TYPE_EXTERNAL, // External trunk
+	}
+
 	return &rpc.GetSIPTrunkAuthenticationResponse{
-		SipTrunkId: trunk.SipTrunkId,
-		Username:   trunk.AuthUsername,
-		Password:   trunk.AuthPassword,
+		SipTrunkId:   trunk.SipTrunkId,
+		Username:     trunk.AuthUsername,
+		Password:     trunk.AuthPassword,
+		ProviderInfo: providerInfo,
 	}, nil
 }
