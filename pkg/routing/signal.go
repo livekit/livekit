@@ -102,14 +102,14 @@ func (r *signalClient) StartParticipantSignal(
 
 	stream, err := r.client.RelaySignal(ctx, nodeID)
 	if err != nil {
-		prometheus.MessageCounter.WithLabelValues("signal", "failure").Add(1)
+		prometheus.RecordSignalRequestFailure()
 		return
 	}
 
 	err = stream.Send(&rpc.RelaySignalRequest{StartSession: ss})
 	if err != nil {
 		stream.Close(err)
-		prometheus.MessageCounter.WithLabelValues("signal", "failure").Add(1)
+		prometheus.RecordSignalRequestFailure()
 		return
 	}
 
@@ -133,6 +133,8 @@ func (r *signalClient) StartParticipantSignal(
 			resChan,
 			signalResponseMessageReader{},
 			r.config,
+			prometheus.RecordSignalRequestSuccess,
+			prometheus.RecordSignalRequestFailure,
 		)
 		l.Debugw("signal stream closed", "error", err)
 
@@ -191,6 +193,8 @@ func CopySignalStreamToMessageChannel[SendType, RecvType RelaySignalMessage](
 	ch *MessageChannel,
 	reader SignalMessageReader[RecvType],
 	config config.SignalRelayConfig,
+	promSignalSuccess func(),
+	promSignalFailure func(),
 ) error {
 	r := &signalMessageReader[SendType, RecvType]{
 		reader: reader,
@@ -199,16 +203,16 @@ func CopySignalStreamToMessageChannel[SendType, RecvType RelaySignalMessage](
 	for msg := range stream.Channel() {
 		res, err := r.Read(msg)
 		if err != nil {
-			prometheus.MessageCounter.WithLabelValues("signal", "failure").Add(1)
+			promSignalFailure()
 			return err
 		}
 
 		for _, r := range res {
 			if err = ch.WriteMessage(r); err != nil {
-				prometheus.MessageCounter.WithLabelValues("signal", "failure").Add(1)
+				promSignalFailure()
 				return err
 			}
-			prometheus.MessageCounter.WithLabelValues("signal", "success").Add(1)
+			promSignalSuccess()
 		}
 
 		if msg.GetClose() {

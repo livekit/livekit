@@ -229,10 +229,8 @@ func (s *LocalStore) ListAgentDispatches(ctx context.Context, roomName livekit.R
 	agentJobs := s.agentJobs[roomName]
 
 	var js []*livekit.Job
-	if agentJobs != nil {
-		for _, j := range agentJobs {
-			js = append(js, utils.CloneProto(j))
-		}
+	for _, j := range agentJobs {
+		js = append(js, utils.CloneProto(j))
 	}
 	var ds []*livekit.AgentDispatch
 

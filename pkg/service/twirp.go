@@ -203,7 +203,7 @@ func statusReporterResponseSent(ctx context.Context) {
 		code = r.error.Code()
 	}
 
-	prometheus.TwirpRequestStatusCounter.WithLabelValues(r.service, r.method, statusFamily, string(code)).Add(1)
+	prometheus.RecordTwirpRequestStatus(r.service, r.method, statusFamily, code)
 }
 
 func statusReporterErrorReceived(ctx context.Context, e twirp.Error) context.Context {
