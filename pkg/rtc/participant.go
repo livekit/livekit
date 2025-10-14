@@ -3574,7 +3574,7 @@ func (p *ParticipantImpl) getPendingTrackPrimaryBySdpCid(sdpCid string) *pending
 func (p *ParticipantImpl) setTrackID(cid string, info *livekit.TrackInfo) {
 	var trackID string
 	// if already pending, use the same SID
-	// should not happen as this means multiple `AddTrack` requests have been called, but check anyway
+	// it is possible to have multiple AddTrackRequests for the same track
 	if pti := p.pendingTracks[cid]; pti != nil {
 		trackID = pti.trackInfos[0].Sid
 	}
@@ -3582,11 +3582,13 @@ func (p *ParticipantImpl) setTrackID(cid string, info *livekit.TrackInfo) {
 	// otherwise generate
 	if trackID == "" {
 		trackPrefix := utils.TrackPrefix
-		if info.Type == livekit.TrackType_VIDEO {
+		switch info.Type {
+		case livekit.TrackType_VIDEO:
 			trackPrefix += "V"
-		} else if info.Type == livekit.TrackType_AUDIO {
+		case livekit.TrackType_AUDIO:
 			trackPrefix += "A"
 		}
+
 		switch info.Source {
 		case livekit.TrackSource_CAMERA:
 			trackPrefix += "C"

@@ -439,6 +439,7 @@ func GetSpatialLayerForRid(mimeType mime.MimeType, rid string, ti *livekit.Track
 		"invalid layer for rid, returning default",
 		"trackID", ti.Sid,
 		"rid", rid,
+		"mimeType", mimeType,
 		"trackInfo", logger.Proto(ti),
 	)
 	return 0
@@ -462,7 +463,7 @@ func GetSpatialLayerForVideoQuality(mimeType mime.MimeType, quality livekit.Vide
 	}
 
 	// requested quality is higher than available layers, return the highest available layer
-	return layers[len(layers)-1].SpatialLayer
+	return VideoQualityToSpatialLayer(mimeType, quality, ti)
 }
 
 func GetVideoQualityForSpatialLayer(mimeType mime.MimeType, spatialLayer int32, ti *livekit.TrackInfo) livekit.VideoQuality {
