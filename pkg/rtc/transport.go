@@ -756,7 +756,7 @@ func (t *PCTransport) setConnectedAt(at time.Time) bool {
 	}
 
 	t.firstConnectedAt = at
-	prometheus.ServiceOperationCounter.WithLabelValues("peer_connection", "success", "").Add(1)
+	prometheus.RecordServiceOperationSuccess("peer_connection")
 	t.lock.Unlock()
 	return true
 }
@@ -2472,7 +2472,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 			return nil
 		}
 
-		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "create").Add(1)
+		prometheus.RecordServiceOperationError("offer", "create")
 		return errors.Wrap(err, "create offer failed")
 	}
 
@@ -2488,7 +2488,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 			return nil
 		}
 
-		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "local_description").Add(1)
+		prometheus.RecordServiceOperationError("offer", "local_description")
 		return errors.Wrap(err, "setting local description failed")
 	}
 
@@ -2518,10 +2518,10 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	}
 
 	if err := t.params.Handler.OnOffer(offer, t.localOfferId.Inc()); err != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "write_message").Add(1)
+		prometheus.RecordServiceOperationError("offer", "write_message")
 		return errors.Wrap(err, "could not send offer")
 	}
-	prometheus.ServiceOperationCounter.WithLabelValues("offer", "success", "").Add(1)
+	prometheus.RecordServiceOperationSuccess("offer")
 
 	return t.localDescriptionSent()
 }
@@ -2581,7 +2581,7 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 		if sd.Type == webrtc.SDPTypeAnswer {
 			sdpType = "answer"
 		}
-		prometheus.ServiceOperationCounter.WithLabelValues(sdpType, "error", "remote_description").Add(1)
+		prometheus.RecordServiceOperationError(sdpType, "remote_description")
 		return errors.Wrap(err, "setting remote description failed")
 	} else if sd.Type == webrtc.SDPTypeAnswer {
 		t.lock.Lock()
@@ -2619,7 +2619,7 @@ func (t *PCTransport) createAndSendAnswer() error {
 			return nil
 		}
 
-		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "create").Add(1)
+		prometheus.RecordServiceOperationError("answer", "create")
 		return errors.Wrap(err, "create answer failed")
 	}
 
@@ -2629,7 +2629,7 @@ func (t *PCTransport) createAndSendAnswer() error {
 	}
 
 	if err = t.pc.SetLocalDescription(answer); err != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "local_description").Add(1)
+		prometheus.RecordServiceOperationError("answer", "local_description")
 		return errors.Wrap(err, "setting local description failed")
 	}
 
@@ -2655,11 +2655,11 @@ func (t *PCTransport) createAndSendAnswer() error {
 
 	answerId := t.remoteOfferId.Load()
 	if err := t.params.Handler.OnAnswer(answer, answerId); err != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("answer", "error", "write_message").Add(1)
+		prometheus.RecordServiceOperationError("answer", "write_message")
 		return errors.Wrap(err, "could not send answer")
 	}
 	t.localAnswerId.Store(answerId)
-	prometheus.ServiceOperationCounter.WithLabelValues("answer", "success", "").Add(1)
+	prometheus.RecordServiceOperationSuccess("asnwer")
 
 	if err := t.sendUnmatchedMediaRequirement(false); err != nil {
 		return err
@@ -2838,9 +2838,9 @@ func (t *PCTransport) doICERestart() error {
 
 			err := t.params.Handler.OnOffer(*offer, t.localOfferId.Inc())
 			if err != nil {
-				prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "write_message").Add(1)
+				prometheus.RecordServiceOperationError("offer", "write_message")
 			} else {
-				prometheus.ServiceOperationCounter.WithLabelValues("offer", "success", "").Add(1)
+				prometheus.RecordServiceOperationSuccess("offer")
 			}
 			return err
 		}
@@ -2848,7 +2848,7 @@ func (t *PCTransport) doICERestart() error {
 		// recover by re-applying the last answer
 		t.params.Logger.Infow("recovering from client negotiation state on ICE restart")
 		if err := t.pc.SetRemoteDescription(*currentRemoteDescription); err != nil {
-			prometheus.ServiceOperationCounter.WithLabelValues("offer", "error", "remote_description").Add(1)
+			prometheus.RecordServiceOperationError("offer", "remote_description")
 			return errors.Wrap(err, "set remote description failed")
 		} else {
 			t.setNegotiationState(transport.NegotiationStateNone)

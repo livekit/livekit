@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/twitchtv/twirp"
 	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/livekit"
@@ -33,15 +34,13 @@ const (
 var (
 	initialized atomic.Bool
 
-	MessageCounter            *prometheus.CounterVec
-	MessageBytes              *prometheus.CounterVec
-	ServiceOperationCounter   *prometheus.CounterVec
-	TwirpRequestStatusCounter *prometheus.CounterVec
+	promMessageCounter            *prometheus.CounterVec
+	promServiceOperationCounter   *prometheus.CounterVec
+	promTwirpRequestStatusCounter *prometheus.CounterVec
 
-	sysPacketsStart              uint32
-	sysDroppedPacketsStart       uint32
-	promSysPacketGauge           *prometheus.GaugeVec
-	promSysDroppedPacketPctGauge prometheus.Gauge
+	sysPacketsStart        uint32
+	sysDroppedPacketsStart uint32
+	promSysPacketGauge     *prometheus.GaugeVec
 
 	cpuStats    *hwstats.CPUStats
 	memoryStats *hwstats.MemoryStats
@@ -52,27 +51,17 @@ func Init(nodeID string, nodeType livekit.NodeType) error {
 		return nil
 	}
 
-	MessageCounter = prometheus.NewCounterVec(
+	promMessageCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
 			Name:        "messages",
 			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		},
-		[]string{"type", "status"},
+		[]string{"type", "status", "direction"},
 	)
 
-	MessageBytes = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace:   livekitNamespace,
-			Subsystem:   "node",
-			Name:        "message_bytes",
-			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
-		},
-		[]string{"type", "message_type"},
-	)
-
-	ServiceOperationCounter = prometheus.NewCounterVec(
+	promServiceOperationCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
@@ -82,7 +71,7 @@ func Init(nodeID string, nodeType livekit.NodeType) error {
 		[]string{"type", "status", "error_type"},
 	)
 
-	TwirpRequestStatusCounter = prometheus.NewCounterVec(
+	promTwirpRequestStatusCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace:   livekitNamespace,
 			Subsystem:   "node",
@@ -103,10 +92,9 @@ func Init(nodeID string, nodeType livekit.NodeType) error {
 		[]string{"type"},
 	)
 
-	prometheus.MustRegister(MessageCounter)
-	prometheus.MustRegister(MessageBytes)
-	prometheus.MustRegister(ServiceOperationCounter)
-	prometheus.MustRegister(TwirpRequestStatusCounter)
+	prometheus.MustRegister(promMessageCounter)
+	prometheus.MustRegister(promServiceOperationCounter)
+	prometheus.MustRegister(promTwirpRequestStatusCounter)
 	prometheus.MustRegister(promSysPacketGauge)
 
 	sysPacketsStart, sysDroppedPacketsStart, _ = getTCStats()
@@ -263,4 +251,32 @@ func getNodeStatsRate(statsHistory []*livekit.NodeStats) *livekit.NodeStatsRate 
 
 func perSec(prev, curr uint64, secs int64) float32 {
 	return float32(curr-prev) / float32(secs)
+}
+
+func RecordSignalRequestSuccess() {
+	promMessageCounter.WithLabelValues("signal", "success", "request").Add(1)
+}
+
+func RecordSignalRequestFailure() {
+	promMessageCounter.WithLabelValues("signal", "failure", "request").Add(1)
+}
+
+func RecordSignalResponseSuccess() {
+	promMessageCounter.WithLabelValues("signal", "success", "response").Add(1)
+}
+
+func RecordSignalResponseFailure() {
+	promMessageCounter.WithLabelValues("signal", "failure", "response").Add(1)
+}
+
+func RecordServiceOperationSuccess(op string) {
+	promServiceOperationCounter.WithLabelValues(op, "success", "").Add(1)
+}
+
+func RecordServiceOperationError(op string, error string) {
+	promServiceOperationCounter.WithLabelValues(op, "error", error).Add(1)
+}
+
+func RecordTwirpRequestStatus(service string, method string, statusFamily string, code twirp.ErrorCode) {
+	promTwirpRequestStatusCounter.WithLabelValues(service, method, statusFamily, string(code)).Add(1)
 }

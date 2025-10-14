@@ -95,7 +95,7 @@ type NullMessageSource struct {
 func NewNullMessageSource(connID livekit.ConnectionID) *NullMessageSource {
 	return &NullMessageSource{
 		connID:  connID,
-		msgChan: make(chan proto.Message, 0),
+		msgChan: make(chan proto.Message),
 	}
 }
 

@@ -595,7 +595,7 @@ func (r *Room) Join(
 
 	joinResponse := r.createJoinResponseLocked(participant, iceServers)
 	if err := participant.SendJoinResponse(joinResponse); err != nil {
-		prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "error", "send_response").Add(1)
+		prometheus.RecordServiceOperationError("participant_join", "send_response")
 		return err
 	}
 
@@ -617,7 +617,7 @@ func (r *Room) Join(
 		}
 	}
 
-	prometheus.ServiceOperationCounter.WithLabelValues("participant_join", "success", "").Add(1)
+	prometheus.RecordServiceOperationSuccess("participant_join")
 
 	return nil
 }
