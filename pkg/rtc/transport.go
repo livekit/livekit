@@ -688,6 +688,10 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 }
 
 func (t *PCTransport) logMayFailedICEStats() {
+	if t.pc.ConnectionState() == webrtc.PeerConnectionStateClosed {
+		return
+	}
+
 	var candidatePairStats []webrtc.ICECandidatePairStats
 	pairStats := t.pc.GetStats()
 	candidateStats := make(map[string]webrtc.ICECandidateStats)
@@ -1441,6 +1445,13 @@ func (t *PCTransport) Close() {
 		t.pacer.Stop()
 	}
 
+	t.lock.Lock()
+	if t.mayFailedICEStatsTimer != nil {
+		t.mayFailedICEStatsTimer.Stop()
+		t.mayFailedICEStatsTimer = nil
+	}
+	t.lock.Unlock()
+
 	_ = t.pc.Close()
 
 	t.clearConnTimer()
@@ -1460,12 +1471,8 @@ func (t *PCTransport) Close() {
 		dc.Close()
 	}
 	t.unlabeledDataChannels = nil
-
-	if t.mayFailedICEStatsTimer != nil {
-		t.mayFailedICEStatsTimer.Stop()
-		t.mayFailedICEStatsTimer = nil
-	}
 	t.lock.Unlock()
+
 	t.outputAndClearICEStats()
 }
 
