@@ -2914,6 +2914,9 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		for _, l := range layers {
 			clonedLayers = append(clonedLayers, utils.CloneProto(l))
 		}
+		slices.SortFunc(clonedLayers, func(i, j *livekit.VideoLayer) int {
+			return int(i.Quality) - int(j.Quality)
+		})
 		return clonedLayers
 	}
 
