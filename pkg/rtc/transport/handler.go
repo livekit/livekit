@@ -42,7 +42,7 @@ type Handler interface {
 	OnDataMessage(kind livekit.DataPacket_Kind, data []byte)
 	OnDataMessageUnlabeled(data []byte)
 	OnDataSendError(err error)
-	OnOffer(sd webrtc.SessionDescription, offerId uint32) error
+	OnOffer(sd webrtc.SessionDescription, offerId uint32, midToTrackID map[string]string) error
 	OnSetRemoteDescriptionOffer()
 	OnAnswer(sd webrtc.SessionDescription, answerId uint32, midToTrackID map[string]string) error
 	OnNegotiationStateChanged(state NegotiationState)
@@ -63,7 +63,7 @@ func (h UnimplementedHandler) OnTrack(track *webrtc.TrackRemote, rtpReceiver *we
 func (h UnimplementedHandler) OnDataMessage(kind livekit.DataPacket_Kind, data []byte)            {}
 func (h UnimplementedHandler) OnDataMessageUnlabeled(data []byte)                                 {}
 func (h UnimplementedHandler) OnDataSendError(err error)                                          {}
-func (h UnimplementedHandler) OnOffer(sd webrtc.SessionDescription, offerId uint32) error {
+func (h UnimplementedHandler) OnOffer(sd webrtc.SessionDescription, offerId uint32, midToTrackID map[string]string) error {
 	return ErrNoOfferHandler
 }
 func (h UnimplementedHandler) OnSetRemoteDescriptionOffer() {}

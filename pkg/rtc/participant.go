@@ -1253,7 +1253,7 @@ func (p *ParticipantImpl) HandleICETrickle(trickleRequest *livekit.TrickleReques
 
 // HandleOffer an offer from remote participant, used when clients make the initial connection
 func (p *ParticipantImpl) HandleOffer(sd *livekit.SessionDescription) error {
-	offer, offerId := protosignalling.FromProtoSessionDescription(sd)
+	offer, offerId, _ := protosignalling.FromProtoSessionDescription(sd)
 	lgr := p.pubLogger.WithUnlikelyValues(
 		"transport", livekit.SignalTarget_PUBLISHER,
 		"offer", offer,
@@ -1317,13 +1317,10 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription, an
 		"transport", livekit.SignalTarget_PUBLISHER,
 		"answer", answer,
 		"answerId", answerId,
+		"midToTrackID", midToTrackID,
 	)
 
-	if p.params.UseSinglePeerConnection {
-		return p.sendMappedSdpAnswer(answer, answerId, midToTrackID)
-	}
-
-	return p.sendSdpAnswer(answer, answerId)
+	return p.sendSdpAnswer(answer, answerId, midToTrackID)
 }
 
 func (p *ParticipantImpl) GetAnswer() (webrtc.SessionDescription, uint32, error) {
@@ -1349,7 +1346,7 @@ func (p *ParticipantImpl) GetAnswer() (webrtc.SessionDescription, uint32, error)
 // HandleAnswer handles a client answer response, with subscriber PC, server initiates the
 // offer and client answers
 func (p *ParticipantImpl) HandleAnswer(sd *livekit.SessionDescription) {
-	answer, answerId := protosignalling.FromProtoSessionDescription(sd)
+	answer, answerId, _ := protosignalling.FromProtoSessionDescription(sd)
 	p.subLogger.Debugw(
 		"received answer",
 		"transport", livekit.SignalTarget_SUBSCRIBER,
@@ -1987,8 +1984,8 @@ type SubscriberTransportHandler struct {
 	AnyTransportHandler
 }
 
-func (h SubscriberTransportHandler) OnOffer(sd webrtc.SessionDescription, offerId uint32) error {
-	return h.p.onSubscriberOffer(sd, offerId)
+func (h SubscriberTransportHandler) OnOffer(sd webrtc.SessionDescription, offerId uint32, midToTrackID map[string]string) error {
+	return h.p.onSubscriberOffer(sd, offerId, midToTrackID)
 }
 
 func (h SubscriberTransportHandler) OnStreamStateChange(update *streamallocator.StreamStateUpdate) error {
@@ -2261,14 +2258,15 @@ func (p *ParticipantImpl) setIsPublisher(isPublisher bool) {
 }
 
 // when the server has an offer for participant
-func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription, offerId uint32) error {
+func (p *ParticipantImpl) onSubscriberOffer(offer webrtc.SessionDescription, offerId uint32, midToTrackID map[string]string) error {
 	p.subLogger.Debugw(
 		"sending offer",
 		"transport", livekit.SignalTarget_SUBSCRIBER,
 		"offer", offer,
 		"offerId", offerId,
+		"midToTrackID", midToTrackID,
 	)
-	return p.sendSdpOffer(offer, offerId)
+	return p.sendSdpOffer(offer, offerId, midToTrackID)
 }
 
 func (p *ParticipantImpl) removePublishedTrack(track types.MediaTrack) {

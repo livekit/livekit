@@ -386,7 +386,7 @@ func TestDisableCodecs(t *testing.T) {
 	sink.WriteMessageCalls(func(msg proto.Message) error {
 		if res, ok := msg.(*livekit.SignalResponse); ok {
 			if res.GetAnswer() != nil {
-				answer, answerId = signalling.FromProtoSessionDescription(res.GetAnswer())
+				answer, answerId, _ = signalling.FromProtoSessionDescription(res.GetAnswer())
 				answerReceived.Store(true)
 				answerIdReceived.Store(answerId)
 			}
@@ -578,7 +578,7 @@ func TestPreferMediaCodecForPublisher(t *testing.T) {
 				sink.WriteMessageCalls(func(msg proto.Message) error {
 					if res, ok := msg.(*livekit.SignalResponse); ok {
 						if res.GetAnswer() != nil {
-							answer, answerId = signalling.FromProtoSessionDescription(res.GetAnswer())
+							answer, answerId, _ = signalling.FromProtoSessionDescription(res.GetAnswer())
 							pc.SetRemoteDescription(answer)
 							answerReceived.Store(true)
 							answerIdReceived.Store(answerId)
@@ -698,7 +698,7 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 			sink.WriteMessageCalls(func(msg proto.Message) error {
 				if res, ok := msg.(*livekit.SignalResponse); ok {
 					if res.GetAnswer() != nil {
-						answer, answerId = signalling.FromProtoSessionDescription(res.GetAnswer())
+						answer, answerId, _ = signalling.FromProtoSessionDescription(res.GetAnswer())
 						pc.SetRemoteDescription(answer)
 						answerReceived.Store(true)
 						answerIdReceived.Store(answerId)
