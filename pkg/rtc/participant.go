@@ -1306,7 +1306,7 @@ func (p *ParticipantImpl) onPublisherSetRemoteDescription() {
 	p.updateRidsFromSDP(parsedOffer, unmatchVideos)
 }
 
-func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription, answerId uint32) error {
+func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription, answerId uint32, midToTrackID map[string]string) error {
 	if p.IsClosed() || p.IsDisconnected() {
 		return nil
 	}
@@ -1318,6 +1318,11 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription, an
 		"answer", answer,
 		"answerId", answerId,
 	)
+
+	if p.params.UseSinglePeerConnection {
+		return p.sendMappedSdpAnswer(answer, answerId, midToTrackID)
+	}
+
 	return p.sendSdpAnswer(answer, answerId)
 }
 
@@ -1948,8 +1953,8 @@ func (h PublisherTransportHandler) OnSetRemoteDescriptionOffer() {
 	h.p.onPublisherSetRemoteDescription()
 }
 
-func (h PublisherTransportHandler) OnAnswer(sd webrtc.SessionDescription, answerId uint32) error {
-	return h.p.onPublisherAnswer(sd, answerId)
+func (h PublisherTransportHandler) OnAnswer(sd webrtc.SessionDescription, answerId uint32, midToTrackID map[string]string) error {
+	return h.p.onPublisherAnswer(sd, answerId, midToTrackID)
 }
 
 func (h PublisherTransportHandler) OnTrack(track *webrtc.TrackRemote, rtpReceiver *webrtc.RTPReceiver) {

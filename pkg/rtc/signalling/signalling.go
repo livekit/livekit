@@ -173,6 +173,14 @@ func (s *signalling) SignalLeaveRequest(leave *livekit.LeaveRequest) proto.Messa
 	}
 }
 
+func (s *signalling) SignalMappedSdpAnswer(mappedAnswer *livekit.MappedSessionDescription) proto.Message {
+	return &livekit.SignalResponse{
+		Message: &livekit.SignalResponse_MappedAnswer{
+			MappedAnswer: mappedAnswer,
+		},
+	}
+}
+
 func (s *signalling) SignalSdpAnswer(answer *livekit.SessionDescription) proto.Message {
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_Answer{
