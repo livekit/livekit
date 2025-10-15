@@ -34,14 +34,14 @@ require (
 	github.com/pion/datachannel v1.5.10
 	github.com/pion/dtls/v3 v3.0.7
 	github.com/pion/ice/v4 v4.0.10
-	github.com/pion/interceptor v0.1.40
+	github.com/pion/interceptor v0.1.41
 	github.com/pion/rtcp v1.2.15
-	github.com/pion/rtp v1.8.22
-	github.com/pion/sctp v1.8.39
+	github.com/pion/rtp v1.8.23
+	github.com/pion/sctp v1.8.40
 	github.com/pion/sdp/v3 v3.0.16
-	github.com/pion/transport/v3 v3.0.7
+	github.com/pion/transport/v3 v3.0.8
 	github.com/pion/turn/v4 v4.1.1
-	github.com/pion/webrtc/v4 v4.1.5-0.20250828044558-c376d0edf977
+	github.com/pion/webrtc/v4 v4.1.6-0.20251015073003-f35dc4efd0ac
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.23.0
 	github.com/redis/go-redis/v9 v9.14.0
@@ -140,10 +140,10 @@ require (
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
 	go.uber.org/zap/exp v0.3.0 // indirect
-	golang.org/x/crypto v0.42.0 // indirect
-	golang.org/x/net v0.44.0 // indirect
-	golang.org/x/sys v0.36.0 // indirect
-	golang.org/x/text v0.29.0 // indirect
+	golang.org/x/crypto v0.43.0 // indirect
+	golang.org/x/net v0.46.0 // indirect
+	golang.org/x/sys v0.37.0 // indirect
+	golang.org/x/text v0.30.0 // indirect
 	golang.org/x/tools v0.37.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250922171735-9219d122eba9 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250922171735-9219d122eba9 // indirect
