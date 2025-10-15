@@ -468,6 +468,13 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 			"answer", msg.Answer.Sdp,
 		)
 		c.handleAnswer(signalling.FromProtoSessionDescription(msg.Answer))
+	case *livekit.SignalResponse_MappedAnswer:
+		logger.Infow(
+			"received mapped server answer",
+			"participant", c.localParticipant.Identity,
+			"answer", msg.MappedAnswer.SessionDescription.Sdp,
+		)
+		c.handleAnswer(signalling.FromProtoSessionDescription(msg.MappedAnswer.SessionDescription))
 	case *livekit.SignalResponse_Offer:
 		desc, offerId := signalling.FromProtoSessionDescription(msg.Offer)
 		logger.Infow(
