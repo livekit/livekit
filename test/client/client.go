@@ -386,7 +386,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 			logger.Debugw("subscriber fully established", "participant", c.localParticipant.Identity, "pID", c.localParticipant.Sid)
 			c.subscriberFullyEstablished.Store(true)
 		})
-		subscriberHandler.OnAnswerCalls(func(answer webrtc.SessionDescription, answerId uint32) error {
+		subscriberHandler.OnAnswerCalls(func(answer webrtc.SessionDescription, answerId uint32, _midToTrackID map[string]string) error {
 			// send remote an answer
 			logger.Infow(
 				"sending subscriber answer",
@@ -468,6 +468,13 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 			"answer", msg.Answer.Sdp,
 		)
 		c.handleAnswer(signalling.FromProtoSessionDescription(msg.Answer))
+	case *livekit.SignalResponse_MappedAnswer:
+		logger.Infow(
+			"received mapped server answer",
+			"participant", c.localParticipant.Identity,
+			"answer", msg.MappedAnswer.SessionDescription.Sdp,
+		)
+		c.handleAnswer(signalling.FromProtoSessionDescription(msg.MappedAnswer.SessionDescription))
 	case *livekit.SignalResponse_Offer:
 		desc, offerId := signalling.FromProtoSessionDescription(msg.Offer)
 		logger.Infow(

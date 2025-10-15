@@ -12,11 +12,12 @@ import (
 )
 
 type FakeHandler struct {
-	OnAnswerStub        func(webrtc.SessionDescription, uint32) error
+	OnAnswerStub        func(webrtc.SessionDescription, uint32, map[string]string) error
 	onAnswerMutex       sync.RWMutex
 	onAnswerArgsForCall []struct {
 		arg1 webrtc.SessionDescription
 		arg2 uint32
+		arg3 map[string]string
 	}
 	onAnswerReturns struct {
 		result1 error
@@ -124,19 +125,20 @@ type FakeHandler struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeHandler) OnAnswer(arg1 webrtc.SessionDescription, arg2 uint32) error {
+func (fake *FakeHandler) OnAnswer(arg1 webrtc.SessionDescription, arg2 uint32, arg3 map[string]string) error {
 	fake.onAnswerMutex.Lock()
 	ret, specificReturn := fake.onAnswerReturnsOnCall[len(fake.onAnswerArgsForCall)]
 	fake.onAnswerArgsForCall = append(fake.onAnswerArgsForCall, struct {
 		arg1 webrtc.SessionDescription
 		arg2 uint32
-	}{arg1, arg2})
+		arg3 map[string]string
+	}{arg1, arg2, arg3})
 	stub := fake.OnAnswerStub
 	fakeReturns := fake.onAnswerReturns
-	fake.recordInvocation("OnAnswer", []interface{}{arg1, arg2})
+	fake.recordInvocation("OnAnswer", []interface{}{arg1, arg2, arg3})
 	fake.onAnswerMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
 		return ret.result1
@@ -150,17 +152,17 @@ func (fake *FakeHandler) OnAnswerCallCount() int {
 	return len(fake.onAnswerArgsForCall)
 }
 
-func (fake *FakeHandler) OnAnswerCalls(stub func(webrtc.SessionDescription, uint32) error) {
+func (fake *FakeHandler) OnAnswerCalls(stub func(webrtc.SessionDescription, uint32, map[string]string) error) {
 	fake.onAnswerMutex.Lock()
 	defer fake.onAnswerMutex.Unlock()
 	fake.OnAnswerStub = stub
 }
 
-func (fake *FakeHandler) OnAnswerArgsForCall(i int) (webrtc.SessionDescription, uint32) {
+func (fake *FakeHandler) OnAnswerArgsForCall(i int) (webrtc.SessionDescription, uint32, map[string]string) {
 	fake.onAnswerMutex.RLock()
 	defer fake.onAnswerMutex.RUnlock()
 	argsForCall := fake.onAnswerArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeHandler) OnAnswerReturns(result1 error) {

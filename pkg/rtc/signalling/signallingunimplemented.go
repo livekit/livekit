@@ -88,6 +88,10 @@ func (u *signallingUnimplemented) SignalSdpAnswer(answer *livekit.SessionDescrip
 	return nil
 }
 
+func (u *signallingUnimplemented) SignalMappedSdpAnswer(answer *livekit.MappedSessionDescription) proto.Message {
+	return nil
+}
+
 func (u *signallingUnimplemented) SignalSdpOffer(offer *livekit.SessionDescription) proto.Message {
 	return nil
 }

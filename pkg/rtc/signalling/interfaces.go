@@ -52,6 +52,7 @@ type ParticipantSignalling interface {
 	SignalTrackSubscribed(trackSubscribed *livekit.TrackSubscribed) proto.Message
 	SignalLeaveRequest(leave *livekit.LeaveRequest) proto.Message
 	SignalSdpAnswer(answer *livekit.SessionDescription) proto.Message
+	SignalMappedSdpAnswer(mappedAnswer *livekit.MappedSessionDescription) proto.Message
 	SignalSdpOffer(offer *livekit.SessionDescription) proto.Message
 	SignalStreamStateUpdate(streamStateUpdate *livekit.StreamStateUpdate) proto.Message
 	SignalSubscribedQualityUpdate(subscribedQualityUpdate *livekit.SubscribedQualityUpdate) proto.Message

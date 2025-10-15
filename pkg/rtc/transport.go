@@ -2640,6 +2640,13 @@ func (t *PCTransport) createAndSendAnswer() error {
 		return errors.Wrap(err, "setting local description failed")
 	}
 
+	midToTrackID := map[string]string{}
+	for _, tr := range t.pc.GetTransceivers() {
+		if tr.Sender() != nil && tr.Mid() != "" {
+			midToTrackID[tr.Mid()] = tr.Sender().Track().ID()
+		}
+	}
+
 	//
 	// Filter after setting local description as pion expects the answer
 	// to match between CreateAnswer and SetLocalDescription.
@@ -2661,7 +2668,7 @@ func (t *PCTransport) createAndSendAnswer() error {
 	}
 
 	answerId := t.remoteOfferId.Load()
-	if err := t.params.Handler.OnAnswer(answer, answerId); err != nil {
+	if err := t.params.Handler.OnAnswer(answer, answerId, midToTrackID); err != nil {
 		prometheus.RecordServiceOperationError("answer", "write_message")
 		return errors.Wrap(err, "could not send answer")
 	}

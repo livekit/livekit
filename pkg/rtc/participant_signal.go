@@ -299,6 +299,10 @@ func (p *ParticipantImpl) sendSdpAnswer(answer webrtc.SessionDescription, answer
 	return p.signaller.WriteMessage(p.signalling.SignalSdpAnswer(protosignalling.ToProtoSessionDescription(answer, answerId)))
 }
 
+func (p *ParticipantImpl) sendMappedSdpAnswer(answer webrtc.SessionDescription, answerId uint32, midToTrackID map[string]string) error {
+	return p.signaller.WriteMessage(p.signalling.SignalMappedSdpAnswer(protosignalling.ToProtoMappedSessionDescription(answer, answerId, midToTrackID)))
+}
+
 func (p *ParticipantImpl) sendSdpOffer(offer webrtc.SessionDescription, offerId uint32) error {
 	return p.signaller.WriteMessage(p.signalling.SignalSdpOffer(protosignalling.ToProtoSessionDescription(offer, offerId)))
 }
