@@ -556,7 +556,12 @@ func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, buffer.VideoLa
 
 	f.logger.Debugw("setting max spatial layer", "layer", spatialLayer)
 	f.vls.SetMaxSpatial(spatialLayer)
-	return true, f.vls.GetMax()
+	newMax := f.vls.GetMax()
+	if f.vls.GetTarget().Spatial == buffer.InvalidLayerSpatial && !f.isDeficientLocked() {
+		f.logger.Debugw("opportunistically setting target spatial layer", "layer", newMax.Spatial)
+		f.vls.SetTarget(newMax)
+	}
+	return true, newMax
 }
 
 func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) (bool, buffer.VideoLayer) {
