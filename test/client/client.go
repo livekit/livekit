@@ -386,7 +386,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 			logger.Debugw("subscriber fully established", "participant", c.localParticipant.Identity, "pID", c.localParticipant.Sid)
 			c.subscriberFullyEstablished.Store(true)
 		})
-		subscriberHandler.OnAnswerCalls(func(answer webrtc.SessionDescription, answerId uint32) error {
+		subscriberHandler.OnAnswerCalls(func(answer webrtc.SessionDescription, answerId uint32, _midToTrackID map[string]string) error {
 			// send remote an answer
 			logger.Infow(
 				"sending subscriber answer",

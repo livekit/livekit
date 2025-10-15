@@ -175,7 +175,7 @@ func TestNegotiationTiming(t *testing.T) {
 		return true
 	}, 10*time.Second, 10*time.Millisecond, "first offer not received yet")
 
-	handlerB.OnAnswerCalls(func(answer webrtc.SessionDescription, answerId uint32) error {
+	handlerB.OnAnswerCalls(func(answer webrtc.SessionDescription, answerId uint32, _midToTrackID map[string]string) error {
 		transportA.HandleRemoteDescription(answer, answerId)
 		return nil
 	})
@@ -243,7 +243,7 @@ func TestFirstOfferMissedDuringICERestart(t *testing.T) {
 	// set offer/answer with restart ICE, will negotiate twice,
 	// first one is recover from missed offer
 	// second one is restartICE
-	handlerB.OnAnswerCalls(func(answer webrtc.SessionDescription, answerId uint32) error {
+	handlerB.OnAnswerCalls(func(answer webrtc.SessionDescription, answerId uint32, _midToTrackID map[string]string) error {
 		transportA.HandleRemoteDescription(answer, answerId)
 		return nil
 	})
@@ -303,7 +303,7 @@ func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 
 	// first answer missed
 	var firstAnswerReceived atomic.Bool
-	handlerB.OnAnswerCalls(func(sd webrtc.SessionDescription, answerId uint32) error {
+	handlerB.OnAnswerCalls(func(sd webrtc.SessionDescription, answerId uint32, _midToTrackID map[string]string) error {
 		if firstAnswerReceived.Load() {
 			transportA.HandleRemoteDescription(sd, answerId)
 		} else {
@@ -538,7 +538,7 @@ func handleICEExchange(t *testing.T, a, b *PCTransport, ah, bh *transportfakes.F
 func connectTransports(t *testing.T, offerer, answerer *PCTransport, offererHandler, answererHandler *transportfakes.FakeHandler, isICERestart bool, expectedOfferCount int32, expectedAnswerCount int32) {
 	var offerCount atomic.Int32
 	var answerCount atomic.Int32
-	answererHandler.OnAnswerCalls(func(answer webrtc.SessionDescription, answerId uint32) error {
+	answererHandler.OnAnswerCalls(func(answer webrtc.SessionDescription, answerId uint32, _midToTrackID map[string]string) error {
 		answerCount.Inc()
 		offerer.HandleRemoteDescription(answer, answerId)
 		return nil
