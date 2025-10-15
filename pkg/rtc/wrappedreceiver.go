@@ -246,7 +246,6 @@ func (d *DummyReceiver) Upgrade(receiver sfu.TrackReceiver) {
 		receiver.SetUpTrackPaused(d.paused)
 	}
 
-	// RAJA-TODO
 	d.settingsLock.Lock()
 	if d.primaryReceiver != nil {
 		d.primaryReceiver.upgrade(receiver)
