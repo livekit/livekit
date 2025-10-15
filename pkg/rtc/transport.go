@@ -1445,18 +1445,14 @@ func (t *PCTransport) Close() {
 		t.pacer.Stop()
 	}
 
+	t.clearConnTimer()
+
 	t.lock.Lock()
 	if t.mayFailedICEStatsTimer != nil {
 		t.mayFailedICEStatsTimer.Stop()
 		t.mayFailedICEStatsTimer = nil
 	}
-	t.lock.Unlock()
 
-	_ = t.pc.Close()
-
-	t.clearConnTimer()
-
-	t.lock.Lock()
 	if t.reliableDC != nil {
 		t.reliableDC.Close()
 		t.reliableDC = nil
@@ -1473,16 +1469,20 @@ func (t *PCTransport) Close() {
 	t.unlabeledDataChannels = nil
 	t.lock.Unlock()
 
+	_ = t.pc.Close()
+
 	t.outputAndClearICEStats()
 }
 
 func (t *PCTransport) clearConnTimer() {
 	t.lock.Lock()
 	defer t.lock.Unlock()
+
 	if t.connectAfterICETimer != nil {
 		t.connectAfterICETimer.Stop()
 		t.connectAfterICETimer = nil
 	}
+
 	if t.tcpICETimer != nil {
 		t.tcpICETimer.Stop()
 		t.tcpICETimer = nil
