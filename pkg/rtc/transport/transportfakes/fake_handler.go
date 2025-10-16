@@ -76,11 +76,12 @@ type FakeHandler struct {
 	onNegotiationStateChangedArgsForCall []struct {
 		arg1 transport.NegotiationState
 	}
-	OnOfferStub        func(webrtc.SessionDescription, uint32) error
+	OnOfferStub        func(webrtc.SessionDescription, uint32, map[string]string) error
 	onOfferMutex       sync.RWMutex
 	onOfferArgsForCall []struct {
 		arg1 webrtc.SessionDescription
 		arg2 uint32
+		arg3 map[string]string
 	}
 	onOfferReturns struct {
 		result1 error
@@ -494,19 +495,20 @@ func (fake *FakeHandler) OnNegotiationStateChangedArgsForCall(i int) transport.N
 	return argsForCall.arg1
 }
 
-func (fake *FakeHandler) OnOffer(arg1 webrtc.SessionDescription, arg2 uint32) error {
+func (fake *FakeHandler) OnOffer(arg1 webrtc.SessionDescription, arg2 uint32, arg3 map[string]string) error {
 	fake.onOfferMutex.Lock()
 	ret, specificReturn := fake.onOfferReturnsOnCall[len(fake.onOfferArgsForCall)]
 	fake.onOfferArgsForCall = append(fake.onOfferArgsForCall, struct {
 		arg1 webrtc.SessionDescription
 		arg2 uint32
-	}{arg1, arg2})
+		arg3 map[string]string
+	}{arg1, arg2, arg3})
 	stub := fake.OnOfferStub
 	fakeReturns := fake.onOfferReturns
-	fake.recordInvocation("OnOffer", []interface{}{arg1, arg2})
+	fake.recordInvocation("OnOffer", []interface{}{arg1, arg2, arg3})
 	fake.onOfferMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
 		return ret.result1
@@ -520,17 +522,17 @@ func (fake *FakeHandler) OnOfferCallCount() int {
 	return len(fake.onOfferArgsForCall)
 }
 
-func (fake *FakeHandler) OnOfferCalls(stub func(webrtc.SessionDescription, uint32) error) {
+func (fake *FakeHandler) OnOfferCalls(stub func(webrtc.SessionDescription, uint32, map[string]string) error) {
 	fake.onOfferMutex.Lock()
 	defer fake.onOfferMutex.Unlock()
 	fake.OnOfferStub = stub
 }
 
-func (fake *FakeHandler) OnOfferArgsForCall(i int) (webrtc.SessionDescription, uint32) {
+func (fake *FakeHandler) OnOfferArgsForCall(i int) (webrtc.SessionDescription, uint32, map[string]string) {
 	fake.onOfferMutex.RLock()
 	defer fake.onOfferMutex.RUnlock()
 	argsForCall := fake.onOfferArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeHandler) OnOfferReturns(result1 error) {

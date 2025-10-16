@@ -68,7 +68,7 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 
 	// offer again, but missed
 	var offerReceived atomic.Bool
-	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription, _offerId uint32) error {
+	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription, _offerId uint32, _midToTrackID map[string]string) error {
 		require.Equal(t, webrtc.SignalingStateHaveLocalOffer, transportA.pc.SignalingState())
 		require.Equal(t, transport.NegotiationStateRemote, negotiationState.Load().(transport.NegotiationState))
 		offerReceived.Store(true)
@@ -115,7 +115,7 @@ func TestNegotiationTiming(t *testing.T) {
 	firstOffer := atomic.Value{}
 	firstOfferId := atomic.Uint32{}
 	secondOffer := atomic.Value{}
-	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription, offerId uint32) error {
+	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription, offerId uint32, _midToTrackID map[string]string) error {
 		if _, ok := firstOffer.Load().(*webrtc.SessionDescription); !ok {
 			firstOffer.Store(&sd)
 			firstOfferId.Store(offerId)
@@ -231,7 +231,7 @@ func TestFirstOfferMissedDuringICERestart(t *testing.T) {
 
 	// first offer missed
 	var firstOfferReceived atomic.Bool
-	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription, _offerId uint32) error {
+	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription, _offerId uint32, _midToTrackID map[string]string) error {
 		firstOfferReceived.Store(true)
 		return nil
 	})
@@ -249,7 +249,7 @@ func TestFirstOfferMissedDuringICERestart(t *testing.T) {
 	})
 
 	var offerCount atomic.Int32
-	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription, offerId uint32) error {
+	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription, offerId uint32, _midToTrackID map[string]string) error {
 		offerCount.Inc()
 
 		// the second offer is a ice restart offer, so we wait transportB complete the ice gathering
@@ -312,7 +312,7 @@ func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 		}
 		return nil
 	})
-	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription, offerId uint32) error {
+	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription, offerId uint32, _midToTrackID map[string]string) error {
 		transportB.HandleRemoteDescription(sd, offerId)
 		return nil
 	})
@@ -326,7 +326,7 @@ func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 	// first one is recover from missed offer
 	// second one is restartICE
 	var offerCount atomic.Int32
-	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription, offerId uint32) error {
+	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription, offerId uint32, _midToTrackID map[string]string) error {
 		offerCount.Inc()
 
 		// the second offer is a ice restart offer, so we wait for transportB to complete ICE gathering
@@ -382,7 +382,7 @@ func TestNegotiationFailed(t *testing.T) {
 	connectTransports(t, transportA, transportB, handlerA, handlerB, false, 1, 1)
 
 	// reset OnOffer to force a negotiation failure
-	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription, offerId uint32) error {
+	handlerA.OnOfferCalls(func(sd webrtc.SessionDescription, offerId uint32, _midToTrackID map[string]string) error {
 		return nil
 	})
 	var failed atomic.Int32
@@ -544,7 +544,7 @@ func connectTransports(t *testing.T, offerer, answerer *PCTransport, offererHand
 		return nil
 	})
 
-	offererHandler.OnOfferCalls(func(offer webrtc.SessionDescription, offerId uint32) error {
+	offererHandler.OnOfferCalls(func(offer webrtc.SessionDescription, offerId uint32, _midToTrackID map[string]string) error {
 		offerCount.Inc()
 		answerer.HandleRemoteDescription(offer, offerId)
 		return nil

@@ -2524,7 +2524,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		)
 	}
 
-	if err := t.params.Handler.OnOffer(offer, t.localOfferId.Inc()); err != nil {
+	if err := t.params.Handler.OnOffer(offer, t.localOfferId.Inc(), t.getMidToTrackIDMapping()); err != nil {
 		prometheus.RecordServiceOperationError("offer", "write_message")
 		return errors.Wrap(err, "could not send offer")
 	}
@@ -2640,13 +2640,6 @@ func (t *PCTransport) createAndSendAnswer() error {
 		return errors.Wrap(err, "setting local description failed")
 	}
 
-	midToTrackID := map[string]string{}
-	for _, tr := range t.pc.GetTransceivers() {
-		if tr.Sender() != nil && tr.Mid() != "" {
-			midToTrackID[tr.Mid()] = tr.Sender().Track().ID()
-		}
-	}
-
 	//
 	// Filter after setting local description as pion expects the answer
 	// to match between CreateAnswer and SetLocalDescription.
@@ -2668,7 +2661,8 @@ func (t *PCTransport) createAndSendAnswer() error {
 	}
 
 	answerId := t.remoteOfferId.Load()
-	if err := t.params.Handler.OnAnswer(answer, answerId, midToTrackID); err != nil {
+
+	if err := t.params.Handler.OnAnswer(answer, answerId, t.getMidToTrackIDMapping()); err != nil {
 		prometheus.RecordServiceOperationError("answer", "write_message")
 		return errors.Wrap(err, "could not send answer")
 	}
@@ -2850,7 +2844,7 @@ func (t *PCTransport) doICERestart() error {
 				)
 			}
 
-			err := t.params.Handler.OnOffer(*offer, t.localOfferId.Inc())
+			err := t.params.Handler.OnOffer(*offer, t.localOfferId.Inc(), t.getMidToTrackIDMapping())
 			if err != nil {
 				prometheus.RecordServiceOperationError("offer", "write_message")
 			} else {
@@ -2905,6 +2899,17 @@ func (t *PCTransport) outputAndClearICEStats() {
 	if len(stats) > 0 {
 		t.params.Logger.Infow("ICE candidate pair stats", "stats", iceCandidatePairStatsEncoder{stats})
 	}
+}
+
+func (t *PCTransport) getMidToTrackIDMapping() map[string]string {
+	transceivers := t.pc.GetTransceivers()
+	midToTrackID := make(map[string]string, len(transceivers))
+	for _, tr := range transceivers {
+		if tr.Sender() != nil && tr.Sender().Track() != nil && tr.Mid() != "" {
+			midToTrackID[tr.Mid()] = tr.Sender().Track().ID()
+		}
+	}
+	return midToTrackID
 }
 
 // ----------------------

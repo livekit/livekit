@@ -395,7 +395,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 			)
 			return c.SendRequest(&livekit.SignalRequest{
 				Message: &livekit.SignalRequest_Answer{
-					Answer: signalling.ToProtoSessionDescription(answer, answerId),
+					Answer: signalling.ToProtoSessionDescription(answer, answerId, nil),
 				},
 			})
 		})
@@ -468,22 +468,16 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 			"answer", msg.Answer.Sdp,
 		)
 		c.handleAnswer(signalling.FromProtoSessionDescription(msg.Answer))
-	case *livekit.SignalResponse_MappedAnswer:
-		logger.Infow(
-			"received mapped server answer",
-			"participant", c.localParticipant.Identity,
-			"answer", msg.MappedAnswer.SessionDescription.Sdp,
-		)
-		c.handleAnswer(signalling.FromProtoSessionDescription(msg.MappedAnswer.SessionDescription))
 	case *livekit.SignalResponse_Offer:
-		desc, offerId := signalling.FromProtoSessionDescription(msg.Offer)
+		desc, offerId, midToTrackID := signalling.FromProtoSessionDescription(msg.Offer)
 		logger.Infow(
 			"received server offer",
 			"participant", c.localParticipant.Identity,
 			"sdp", desc,
 			"offerId", offerId,
+			"midToTrackID", midToTrackID,
 		)
-		c.handleOffer(desc, offerId)
+		c.handleOffer(desc, offerId, midToTrackID)
 	case *livekit.SignalResponse_Trickle:
 		candidateInit, err := signalling.FromProtoTrickle(msg.Trickle)
 		if err != nil {
@@ -932,14 +926,14 @@ func (c *RTCClient) handleDataMessageUnlabeled(data []byte) {
 }
 
 // handles a server initiated offer, handle on subscriber PC
-func (c *RTCClient) handleOffer(desc webrtc.SessionDescription, offerId uint32) {
+func (c *RTCClient) handleOffer(desc webrtc.SessionDescription, offerId uint32, _midToTrackID map[string]string) {
 	logger.Infow("handling server offer", "participant", c.localParticipant.Identity)
 	c.subscriber.HandleRemoteDescription(desc, offerId)
 	c.processPendingRemoteTracks()
 }
 
 // the client handles answer on the publisher PC
-func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription, answerId uint32) {
+func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription, answerId uint32, _midToTrackID map[string]string) {
 	logger.Infow("handling server answer", "participant", c.localParticipant.Identity)
 
 	// remote answered the offer, establish connection
@@ -977,18 +971,19 @@ func (c *RTCClient) handleMediaSectionsRequirement(mediaSectionsRequirement *liv
 	c.publisher.Negotiate(false)
 }
 
-func (c *RTCClient) onOffer(offer webrtc.SessionDescription, offerId uint32) error {
+func (c *RTCClient) onOffer(offer webrtc.SessionDescription, offerId uint32, midToTrackID map[string]string) error {
 	if c.localParticipant != nil {
 		logger.Infow("starting negotiation", "participant", c.localParticipant.Identity)
 		logger.Infow(
 			"sending publisher offer",
 			"participant", c.localParticipant.Identity,
 			"offer", offer,
+			"midToTrackID", midToTrackID,
 		)
 	}
 	return c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_Offer{
-			Offer: signalling.ToProtoSessionDescription(offer, offerId),
+			Offer: signalling.ToProtoSessionDescription(offer, offerId, nil),
 		},
 	})
 }
