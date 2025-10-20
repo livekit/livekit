@@ -604,14 +604,10 @@ func (f *Forwarder) GetMaxSubscribedSpatial() int32 {
 
 	layer := buffer.InvalidLayerSpatial // covers muted case
 	if !f.muted {
-		layer = f.vls.GetMax().Spatial
-
 		// If current is higher, mark the current layer as max subscribed layer
 		// to prevent the current layer from stopping before forwarder switches
 		// to the new and lower max layer,
-		if layer < f.vls.GetCurrent().Spatial {
-			layer = f.vls.GetCurrent().Spatial
-		}
+		layer = max(f.vls.GetMax().Spatial, f.vls.GetCurrent().Spatial)
 
 		// if reference layer is higher, hold there until an RTCP Sender Report from
 		// publisher is available as that is used for reference time stamp between layers.
@@ -1605,7 +1601,7 @@ func (f *Forwarder) Restart() {
 	f.referenceLayerSpatial = buffer.InvalidLayerSpatial
 	f.lastReferencePayloadType = -1
 
-	for layer := 0; layer < len(f.refInfos); layer++ {
+	for layer := range len(f.refInfos) {
 		f.refInfos[layer] = refInfo{}
 	}
 	f.lastSwitchExtIncomingTS = 0
@@ -1633,7 +1629,7 @@ func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLaye
 	if FlagFilterRTXLayers {
 		currentLayer := f.vls.GetCurrent()
 		targetLayer := f.vls.GetTarget()
-		for layer := int32(0); layer < buffer.DefaultMaxLayerSpatial+1; layer++ {
+		for layer := range buffer.DefaultMaxLayerSpatial + 1 {
 			if f.isDeficientLocked() && (targetLayer.Spatial < currentLayer.Spatial || layer > currentLayer.Spatial) {
 				disallowedLayers[layer] = true
 			}

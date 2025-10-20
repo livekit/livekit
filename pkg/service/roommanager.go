@@ -1006,9 +1006,10 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 		for _, s := range r.config.RTC.TURNServers {
 			scheme := "turn"
 			transport := "tcp"
-			if s.Protocol == "tls" {
+			switch s.Protocol {
+			case "tls":
 				scheme = "turns"
-			} else if s.Protocol == "udp" {
+			case "udp":
 				transport = "udp"
 			}
 			is := &livekit.ICEServer{
