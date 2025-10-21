@@ -658,6 +658,10 @@ func (s *SIPService) TransferSIPParticipant(ctx context.Context, req *livekit.Tr
 	}
 
 	timeout := 30 * time.Second
+	if req.RingingTimeout != nil {
+		timeout = req.RingingTimeout.AsDuration()
+	}
+
 	if deadline, ok := ctx.Deadline(); ok {
 		timeout = time.Until(deadline)
 	} else {
