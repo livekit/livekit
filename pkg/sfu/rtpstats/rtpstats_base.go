@@ -25,6 +25,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/mono"
+	"github.com/livekit/protocol/utils/rtputil"
 )
 
 const (
@@ -205,7 +206,7 @@ func RTCPSenderReportPropagationDelay(rsrs *livekit.RTCPSenderReportState, passT
 type rtpStatsBase struct {
 	*rtpStatsBaseLite
 
-	rtpConverter *utils.RTPConverter
+	rtpConverter *rtputil.RTPConverter
 
 	firstTime           int64
 	firstTimeAdjustment time.Duration
@@ -248,7 +249,7 @@ type rtpStatsBase struct {
 func newRTPStatsBase(params RTPStatsParams) *rtpStatsBase {
 	return &rtpStatsBase{
 		rtpStatsBaseLite: newRTPStatsBaseLite(params),
-		rtpConverter:     utils.NewRTPConverter(int64(params.ClockRate)),
+		rtpConverter:     rtputil.NewRTPConverter(int64(params.ClockRate)),
 		nextSnapshotID:   cFirstSnapshotID,
 		snapshots:        make([]snapshot, 2),
 	}
