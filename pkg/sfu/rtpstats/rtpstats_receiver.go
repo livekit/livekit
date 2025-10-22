@@ -116,10 +116,7 @@ func (r *RTPStatsReceiver) getTSRolloverCount(diffNano int64, ts uint32) int {
 	}
 
 	excess := (diffNano - r.tsRolloverThreshold*2) * int64(r.params.ClockRate) / 1e9
-	roc := excess / (1 << 32)
-	if roc < 0 {
-		roc = 0
-	}
+	roc := max(excess/(1<<32), 0)
 	if r.timestamp.GetHighest() > ts {
 		roc++
 	}
@@ -230,7 +227,7 @@ func (r *RTPStatsReceiver) Update(
 		//    to before mute, but it appears like it has rolled over.
 		//  Use a threshold against expected to ignore these.
 		if gapSN < 0 && gapTS > 0 {
-			expectedTSJump = timeSinceHighest * int64(r.params.ClockRate) / 1e9
+			expectedTSJump = int64(r.rtpConverter.ToRTPExt(time.Duration(timeSinceHighest)))
 			if gapTS > int64(float64(expectedTSJump)*cTSJumpTooHighFactor) {
 				r.sequenceNumber.UndoUpdate(resSN)
 				r.timestamp.UndoUpdate(resTS)
@@ -364,7 +361,7 @@ func (r *RTPStatsReceiver) getExtendedSenderReport(srData *livekit.RTCPSenderRep
 		// use time since last sender report to ensure long gaps where the time stamp might
 		// jump more than half the range
 		timeSinceLastReport := mediatransportutil.NtpTime(srData.NtpTimestamp).Time().Sub(mediatransportutil.NtpTime(r.srNewest.NtpTimestamp).Time())
-		expectedRTPTimestampExt := r.srNewest.RtpTimestampExt + uint64(timeSinceLastReport.Nanoseconds()*int64(r.params.ClockRate)/1e9)
+		expectedRTPTimestampExt := r.srNewest.RtpTimestampExt + r.rtpConverter.ToRTPExt(timeSinceLastReport)
 		lbound := expectedRTPTimestampExt - uint64(cReportSlack*float64(r.params.ClockRate))
 		ubound := expectedRTPTimestampExt + uint64(cReportSlack*float64(r.params.ClockRate))
 		isInRange := (srData.RtpTimestamp-uint32(lbound) < (1 << 31)) && (uint32(ubound)-srData.RtpTimestamp < (1 << 31))
@@ -463,14 +460,14 @@ func (r *RTPStatsReceiver) checkRTPClockSkewAgainstMediaPathForSenderReport(srDa
 
 	nowNano := mono.UnixNano()
 	timeSinceSR := time.Duration(nowNano - srData.AtAdjusted)
-	extNowTSSR := srData.RtpTimestampExt + uint64(timeSinceSR.Nanoseconds()*int64(r.params.ClockRate)/1e9)
+	extNowTSSR := srData.RtpTimestampExt + r.rtpConverter.ToRTPExt(timeSinceSR)
 
 	timeSinceHighest := time.Duration(nowNano - r.highestTime)
-	extNowTSHighest := r.timestamp.GetExtendedHighest() + uint64(timeSinceHighest.Nanoseconds()*int64(r.params.ClockRate)/1e9)
+	extNowTSHighest := r.timestamp.GetExtendedHighest() + r.rtpConverter.ToRTPExt(timeSinceHighest)
 	diffHighest := extNowTSSR - extNowTSHighest
 
 	timeSinceFirst := time.Duration(nowNano - r.firstTime)
-	extNowTSFirst := r.timestamp.GetExtendedStart() + uint64(timeSinceFirst.Nanoseconds()*int64(r.params.ClockRate)/1e9)
+	extNowTSFirst := r.timestamp.GetExtendedStart() + r.rtpConverter.ToRTPExt(timeSinceFirst)
 	diffFirst := extNowTSSR - extNowTSFirst
 
 	// is it more than 5 seconds off?
