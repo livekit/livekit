@@ -319,7 +319,7 @@ func (r *rtpStatsBaseLite) deltaInfoLite(
 		packetsExpected = 0
 	}
 	if packetsExpected > cNumSequenceNumbers {
-		loggingFields = []interface{}{
+		loggingFields = []any{
 			"snapshotLiteID", snapshotLiteID,
 			"snapshotLiteNow", now,
 			"snapshotLiteThen", then,
@@ -342,7 +342,7 @@ func (r *rtpStatsBaseLite) deltaInfoLite(
 		packetsLost = 0
 	}
 	if packetsLost > packetsExpected {
-		loggingFields = []interface{}{
+		loggingFields = []any{
 			"snapshotLiteID", snapshotLiteID,
 			"snapshotLiteNow", now,
 			"snapshotLiteThen", then,
@@ -474,7 +474,7 @@ func (r *rtpStatsBaseLite) toProto(packetsExpected, packetsSeenMinusPadding, pac
 	}
 
 	gapsPresent := false
-	for i := 0; i < len(r.gapHistogram); i++ {
+	for i := range len(r.gapHistogram) {
 		if r.gapHistogram[i] == 0 {
 			continue
 		}
@@ -485,7 +485,7 @@ func (r *rtpStatsBaseLite) toProto(packetsExpected, packetsSeenMinusPadding, pac
 
 	if gapsPresent {
 		p.GapHistogram = make(map[int32]uint32, len(r.gapHistogram))
-		for i := 0; i < len(r.gapHistogram); i++ {
+		for i := range len(r.gapHistogram) {
 			if r.gapHistogram[i] == 0 {
 				continue
 			}

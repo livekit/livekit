@@ -815,8 +815,7 @@ func (r *RTPStatsSender) GetExpectedRTPTimestamp(at time.Time) (expectedTSExt ui
 	}
 
 	timeDiff := at.Sub(time.Unix(0, r.firstTime))
-	expectedRTPDiff := timeDiff.Nanoseconds() * int64(r.params.ClockRate) / 1e9
-	expectedTSExt = r.extStartTS + uint64(expectedRTPDiff)
+	expectedTSExt = r.extStartTS + r.rtpConverter.ToRTPExt(timeDiff)
 	return
 }
 
@@ -834,20 +833,21 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 		nowNTP             mediatransportutil.NtpTime
 		nowRTPExt          uint64
 	)
+	nowNano := mono.UnixNano()
 	if passThrough {
-		timeSincePublisherSR := time.Duration(mono.UnixNano() - publisherSRData.At)
+		timeSincePublisherSR := time.Duration(nowNano - publisherSRData.At)
 		reportTime = publisherSRData.At + timeSincePublisherSR.Nanoseconds()
 		reportTimeAdjusted = publisherSRData.AtAdjusted + timeSincePublisherSR.Nanoseconds()
 
 		nowNTP = mediatransportutil.ToNtpTime(mediatransportutil.NtpTime(publisherSRData.NtpTimestamp).Time().Add(timeSincePublisherSR))
-		nowRTPExt = publisherSRData.RtpTimestampExt - tsOffset + uint64(timeSincePublisherSR.Nanoseconds()*int64(r.params.ClockRate)/1e9)
+		nowRTPExt = publisherSRData.RtpTimestampExt - tsOffset + r.rtpConverter.ToRTPExt(timeSincePublisherSR)
 	} else {
-		timeSincePublisherSRAdjusted := time.Duration(mono.UnixNano() - publisherSRData.AtAdjusted)
+		timeSincePublisherSRAdjusted := time.Duration(nowNano - publisherSRData.AtAdjusted)
 		reportTimeAdjusted = publisherSRData.AtAdjusted + timeSincePublisherSRAdjusted.Nanoseconds()
 		reportTime = reportTimeAdjusted
 
 		nowNTP = mediatransportutil.ToNtpTime(time.Unix(0, reportTime))
-		nowRTPExt = publisherSRData.RtpTimestampExt - tsOffset + uint64(timeSincePublisherSRAdjusted.Nanoseconds()*int64(r.params.ClockRate)/1e9)
+		nowRTPExt = publisherSRData.RtpTimestampExt - tsOffset + r.rtpConverter.ToRTPExt(timeSincePublisherSRAdjusted)
 	}
 
 	packetCount := uint32(r.getPacketsSeenPlusDuplicates(r.extStartSN, r.extHighestSN))
@@ -863,7 +863,6 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 	}
 
 	ulgr := func() logger.UnlikelyLogger {
-		nowNano := mono.UnixNano()
 		return r.logger.WithUnlikelyValues(
 			"curr", WrappedRTCPSenderReportStateLogger{srData},
 			"feed", WrappedRTCPSenderReportStateLogger{publisherSRData},
