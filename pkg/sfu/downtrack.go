@@ -847,6 +847,14 @@ func (d *DownTrack) setRTPHeaderExtensions() {
 			d.absCaptureTimeExtID = ext.ID
 		}
 	}
+	d.params.Logger.Debugw(
+		"negotiated extension ids",
+		"absSendTimeExtID", d.absSendTimeExtID,
+		"dependencyDescriptorExtID", d.dependencyDescriptorExtID,
+		"playoutDelayExtID", d.playoutDelayExtID,
+		"transportWideExtID", d.transportWideExtID,
+		"absCaptureTimeExtID", d.absCaptureTimeExtID,
+	)
 	d.bindLock.Unlock()
 }
 
