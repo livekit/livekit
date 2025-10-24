@@ -26,14 +26,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/go-logr/zapr"
 	"github.com/urfave/cli/v3"
-	"go.uber.org/zap"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -210,12 +207,6 @@ func getConfig(c *cli.Command) (*config.Config, error) {
 		return nil, err
 	}
 	config.InitLoggerFromConfig(&conf.Logging)
-
-	zapLog, err := zap.NewDevelopment()
-	if err != nil {
-		panic(fmt.Sprintf("who watches the watchmen (%v)?", err))
-	}
-	psrpc.SetLogger(zapr.NewLogger(zapLog))
 
 	if conf.Development {
 		logger.Infow("starting in development mode")

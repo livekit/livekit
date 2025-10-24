@@ -21,11 +21,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/zapr"
 	"github.com/mitchellh/go-homedir"
 	"github.com/pkg/errors"
 	"github.com/urfave/cli/v3"
-	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/livekit-server/pkg/agent"
@@ -42,7 +40,6 @@ import (
 	redisLiveKit "github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/webhook"
-	"github.com/livekit/psrpc"
 )
 
 const (
@@ -769,12 +766,6 @@ func (conf *Config) unmarshalKeys(keys string) error {
 // Note: only pass in logr.Logger with default depth
 func SetLogger(l logger.Logger) {
 	logger.SetLogger(l, "livekit")
-
-	zapLog, err := zap.NewDevelopment()
-	if err != nil {
-		panic(fmt.Sprintf("who watches the watchmen (%v)?", err))
-	}
-	psrpc.SetLogger(zapr.NewLogger(zapLog))
 }
 
 func InitLoggerFromConfig(config *LoggingConfig) {
