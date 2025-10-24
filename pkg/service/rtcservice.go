@@ -316,6 +316,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err == nil || errors.Is(err, context.Canceled) {
 			break
 		}
+		pLogger.Errorw("RAJA could not start connection", err, "attempt", attempt) // REMOVE
 	}
 
 	if err != nil {

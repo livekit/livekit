@@ -133,8 +133,8 @@ func (r *signalClient) StartParticipantSignal(
 			resChan,
 			signalResponseMessageReader{},
 			r.config,
-			prometheus.RecordSignalRequestSuccess,
-			prometheus.RecordSignalRequestFailure,
+			prometheus.RecordSignalResponseSuccess,
+			prometheus.RecordSignalResponseFailure,
 		)
 		l.Debugw("signal stream closed", "error", err)
 

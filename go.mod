@@ -64,6 +64,7 @@ require (
 
 require (
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/go-logr/zapr v1.3.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.1.0 // indirect
 	github.com/moby/sys/user v0.3.0 // indirect
 	github.com/nyaruka/phonenumbers v1.6.5 // indirect
@@ -152,3 +153,7 @@ require (
 )
 
 replace golang.org/x/tools => golang.org/x/tools v0.37.0 // counterfeiter is broken
+
+replace github.com/livekit/protocol => ../protocol
+
+replace github.com/livekit/psrpc => ../psrpc
