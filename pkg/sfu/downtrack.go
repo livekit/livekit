@@ -414,6 +414,7 @@ func NewDownTrack(params DownTrackParams) (*DownTrack, error) {
 		d.kind,
 		d.params.Logger,
 		false,
+		false,
 		d.rtpStats,
 	)
 
