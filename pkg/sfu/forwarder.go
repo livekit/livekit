@@ -214,13 +214,14 @@ func (r refInfo) MarshalLogObject(e zapcore.ObjectEncoder) error {
 // -------------------------------------------------------------------
 
 type Forwarder struct {
-	lock            sync.RWMutex
-	mime            mime.MimeType
-	clockRate       uint32
-	kind            webrtc.RTPCodecType
-	logger          logger.Logger
-	skipReferenceTS bool
-	rtpStats        *rtpstats.RTPStatsSender
+	lock                           sync.RWMutex
+	mime                           mime.MimeType
+	clockRate                      uint32
+	kind                           webrtc.RTPCodecType
+	logger                         logger.Logger
+	skipReferenceTS                bool
+	disableOpportunisticAllocation bool
+	rtpStats                       *rtpstats.RTPStatsSender
 
 	muted                 bool
 	pubMuted              bool
@@ -253,20 +254,22 @@ func NewForwarder(
 	kind webrtc.RTPCodecType,
 	logger logger.Logger,
 	skipReferenceTS bool,
+	disableOpportunisticAllocation bool,
 	rtpStats *rtpstats.RTPStatsSender,
 ) *Forwarder {
 	f := &Forwarder{
-		mime:                     mime.MimeTypeUnknown,
-		kind:                     kind,
-		logger:                   logger,
-		skipReferenceTS:          skipReferenceTS,
-		rtpStats:                 rtpStats,
-		referenceLayerSpatial:    buffer.InvalidLayerSpatial,
-		lastAllocation:           VideoAllocationDefault,
-		lastReferencePayloadType: -1,
-		rtpMunger:                NewRTPMunger(logger),
-		vls:                      videolayerselector.NewNull(logger),
-		codecMunger:              codecmunger.NewNull(logger),
+		mime:                           mime.MimeTypeUnknown,
+		kind:                           kind,
+		logger:                         logger,
+		skipReferenceTS:                skipReferenceTS,
+		disableOpportunisticAllocation: disableOpportunisticAllocation,
+		rtpStats:                       rtpStats,
+		referenceLayerSpatial:          buffer.InvalidLayerSpatial,
+		lastAllocation:                 VideoAllocationDefault,
+		lastReferencePayloadType:       -1,
+		rtpMunger:                      NewRTPMunger(logger),
+		vls:                            videolayerselector.NewNull(logger),
+		codecMunger:                    codecmunger.NewNull(logger),
 	}
 
 	if f.kind == webrtc.RTPCodecTypeVideo {
@@ -556,12 +559,11 @@ func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, buffer.VideoLa
 
 	f.logger.Debugw("setting max spatial layer", "layer", spatialLayer)
 	f.vls.SetMaxSpatial(spatialLayer)
-	newMax := f.vls.GetMax()
-	if f.vls.GetTarget().Spatial == buffer.InvalidLayerSpatial && !f.isDeficientLocked() {
-		f.logger.Debugw("opportunistically setting target spatial layer", "layer", newMax.Spatial)
-		f.vls.SetTarget(newMax)
+	if !f.disableOpportunisticAllocation && f.vls.GetTarget().Spatial == buffer.InvalidLayerSpatial && !f.isDeficientLocked() {
+		f.logger.Debugw("opportunistically setting target spatial layer", "layer", spatialLayer)
+		f.allocateOptimalLocked(nil, Bitrates{}, true, false)
 	}
-	return true, newMax
+	return true, f.vls.GetMax()
 }
 
 func (f *Forwarder) SetMaxTemporalLayer(temporalLayer int32) (bool, buffer.VideoLayer) {
@@ -757,6 +759,10 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
+	return f.allocateOptimalLocked(availableLayers, brs, allowOvershoot, hold)
+}
+
+func (f *Forwarder) allocateOptimalLocked(availableLayers []int32, brs Bitrates, allowOvershoot bool, hold bool) VideoAllocation {
 	if f.kind == webrtc.RTPCodecTypeAudio {
 		return f.lastAllocation
 	}

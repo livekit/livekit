@@ -413,7 +413,8 @@ func NewDownTrack(params DownTrackParams) (*DownTrack, error) {
 	d.forwarder = NewForwarder(
 		d.kind,
 		d.params.Logger,
-		false,
+		false, // skipReferenceTS
+		false, // disableOpportunisticAllocation
 		d.rtpStats,
 	)
 
