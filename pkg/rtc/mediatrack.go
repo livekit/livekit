@@ -529,6 +529,17 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 	if layer >= 0 && len(layers) > int(layer) {
 		bitrates = int(layers[layer].GetBitrate())
 	}
+	if err := buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability, bitrates); err != nil {
+		t.params.Logger.Warnw(
+			"binding buffer failed", err,
+			"rid", track.RID(),
+			"layer", layer,
+			"ssrc", track.SSRC(),
+			"newCodec", newCodec,
+		)
+		buff.Close()
+		return newCodec, false
+	}
 
 	t.MediaTrackReceiver.SetLayerSsrc(mimeType, track.RID(), uint32(track.SSRC()))
 
@@ -546,8 +557,6 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			}
 		}
 	}
-
-	buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability, bitrates)
 
 	// if subscriber request fps before fps calculated, update them after fps updated.
 	buff.OnFpsChanged(func() {
