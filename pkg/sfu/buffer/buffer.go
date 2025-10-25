@@ -53,6 +53,10 @@ const (
 	InitPacketBufferSizeAudio = 70
 )
 
+var (
+	errInvalidCodec = errors.New("invalid codec")
+)
+
 type pendingPacket struct {
 	arrivalTime int64
 	packet      []byte
@@ -214,11 +218,16 @@ func (b *Buffer) SetAudioLossProxying(enable bool) {
 	b.enableAudioLossProxying = enable
 }
 
-func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapability, bitrates int) {
+func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapability, bitrates int) error {
 	b.Lock()
 	defer b.Unlock()
 	if b.bound {
-		return
+		return nil
+	}
+
+	if codec.ClockRate == 0 {
+		b.logger.Warnw("invalid codec", nil, "params", params, "codec", codec, "bitrates", bitrates)
+		return errInvalidCodec
 	}
 
 	b.rtpStats = rtpstats.NewRTPStatsReceiver(rtpstats.RTPStatsParams{
@@ -322,6 +331,8 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	if mime.IsMimeTypeVideo(b.mime) {
 		go b.seedKeyFrame(b.keyFrameSeederGeneration.Inc())
 	}
+
+	return nil
 }
 
 func (b *Buffer) OnCodecChange(fn func(webrtc.RTPCodecParameters)) {
@@ -458,6 +469,11 @@ func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime int64) (n int, err err
 
 	if b.rtxPktBuf == nil {
 		b.rtxPktBuf = make([]byte, bucket.MaxPktSize)
+	}
+
+	if len(rtxPkt.Payload) < 2 {
+		b.logger.Warnw("rtx payload too short", nil, "size", len(rtxPkt.Payload))
+		return
 	}
 
 	repairedPkt := *rtxPkt
