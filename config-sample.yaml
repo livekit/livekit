@@ -324,3 +324,23 @@ keys:
 #   max_room_name_length: 0
 #   # limit length of participant identity
 #   max_participant_identity_length: 0
+
+# Dynamic client configuration
+# Allows server-side configuration of client behaviors based on match rules
+# This supplements the built-in static configurations
+client_configuration:
+  configurations:
+    # Example: Disable AV1 codec for older Safari versions
+    - match: 'c.browser == "safari" && c.browser_version < "17.0"'
+      configuration: '{"disabled_codecs": {"codecs": [{"mime": "video/AV1"}]}}'
+      merge: true
+    
+    # Example: Enable hardware encoder for Android devices
+    - match: 'c.os == "android" && c.sdk == "android"'
+      configuration: '{"video": {"hardware_encoder": 1}}'
+      merge: true
+    
+    # Example: Disable resume connection for specific devices
+    - match: 'c.device_model == "problematic-device" || c.browser_version < "90"'
+      configuration: '{"resume_connection": 2}'  # 2 = DISABLED
+      merge: false  # Don't merge, override everything
