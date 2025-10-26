@@ -1168,7 +1168,12 @@ func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription, unma
 			if ok {
 				n := min(len(rids), len(inRids))
 				for i := 0; i < n; i++ {
-					outRids[i] = rids[i]
+					// disabled layers will have a `~` prefix, remove it while determining actual rid
+					if len(rids[i]) != 0 && rids[i][0] == '~' {
+						outRids[i] = rids[i][1:]
+					} else {
+						outRids[i] = rids[i]
+					}
 				}
 				for i := n; i < len(inRids); i++ {
 					outRids[i] = ""
