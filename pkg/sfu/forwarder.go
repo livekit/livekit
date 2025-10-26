@@ -581,6 +581,7 @@ func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, buffer.VideoLa
 
 	alloc.TargetLayer = f.vls.GetMax()
 	alloc.RequestLayerSpatial = f.vls.GetMax().Spatial
+	alloc.MaxLayer = f.vls.GetMax()
 
 	alloc.DistanceToDesired = getDistanceToDesired(
 		f.muted,
