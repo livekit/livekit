@@ -559,10 +559,40 @@ func (f *Forwarder) SetMaxSpatialLayer(spatialLayer int32) (bool, buffer.VideoLa
 
 	f.logger.Debugw("setting max spatial layer", "layer", spatialLayer)
 	f.vls.SetMaxSpatial(spatialLayer)
-	if !f.disableOpportunisticAllocation && f.vls.GetTarget().Spatial == buffer.InvalidLayerSpatial && !f.isDeficientLocked() {
-		f.logger.Debugw("opportunistically setting target spatial layer", "layer", spatialLayer)
-		f.allocateOptimalLocked(nil, Bitrates{}, true, false)
+	if f.disableOpportunisticAllocation {
+		return true, f.vls.GetMax()
 	}
+
+	if f.vls.GetTarget().Spatial != buffer.InvalidLayerSpatial ||
+		f.isDeficientLocked() ||
+		f.lastAllocation.PauseReason == VideoPauseReasonMuted ||
+		f.lastAllocation.PauseReason == VideoPauseReasonPubMuted {
+		return true, f.vls.GetMax()
+	}
+
+	f.logger.Debugw("opportunistically setting target spatial layer", "layer", spatialLayer)
+
+	alloc := f.lastAllocation
+
+	// bitrates are not known
+	alloc.BandwidthRequested = 0
+	alloc.BandwidthDelta = 0
+	alloc.Bitrates = Bitrates{}
+
+	alloc.TargetLayer = f.vls.GetMax()
+	alloc.RequestLayerSpatial = f.vls.GetMax().Spatial
+
+	alloc.DistanceToDesired = getDistanceToDesired(
+		f.muted,
+		f.pubMuted,
+		f.vls.GetMaxSeen(),
+		nil,
+		alloc.Bitrates,
+		alloc.TargetLayer,
+		f.vls.GetMax(),
+	)
+
+	f.updateAllocation(alloc, "opportunistic")
 	return true, f.vls.GetMax()
 }
 
@@ -759,10 +789,6 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	return f.allocateOptimalLocked(availableLayers, brs, allowOvershoot, hold)
-}
-
-func (f *Forwarder) allocateOptimalLocked(availableLayers []int32, brs Bitrates, allowOvershoot bool, hold bool) VideoAllocation {
 	if f.kind == webrtc.RTPCodecTypeAudio {
 		return f.lastAllocation
 	}
