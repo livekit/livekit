@@ -310,6 +310,10 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
+	f.DetermineCodec(codec, extensions, videoLayerMode)
+}
+
+func (f *Forwarder) determineCodecLocked(codec webrtc.RTPCodecCapability, extensions []webrtc.RTPHeaderExtensionParameter, videoLayerMode livekit.VideoLayer_Mode) {
 	if videoLayerMode == livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM_INCOMPLETE_RTCP_SR {
 		f.skipReferenceTS = true
 	}
@@ -1630,7 +1634,7 @@ func (f *Forwarder) CheckSync() (bool, int32) {
 	return f.vls.CheckSync()
 }
 
-func (f *Forwarder) Restart() {
+func (f *Forwarder) Restart(codec webrtc.RTPCodecCapability, extensions []webrtc.RTPHeaderExtensionParameter, videoLayerMode livekit.VideoLayer_Mode) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -1644,6 +1648,8 @@ func (f *Forwarder) Restart() {
 	}
 	f.lastSwitchExtIncomingTS = 0
 	f.refVideoLayerMode = livekit.VideoLayer_MODE_UNUSED
+
+	f.determineCodecLocked(codec, extensions, videoLayerMode)
 }
 
 func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLayers [buffer.DefaultMaxLayerSpatial + 1]bool) {
