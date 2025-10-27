@@ -657,9 +657,22 @@ func (s *SIPService) TransferSIPParticipant(ctx context.Context, req *livekit.Tr
 		return nil, err
 	}
 
+	// by default we set the timeout to be 30 seconds.
+	// this timeout covers:
+	//  - a network failure between this process and the LiveKit SIP bridge
+	//  - the SIP transfer target not returning 200 OK fast enough.
+	// WARN: any timeout/cancellation of a SIP transfer risks leaving
+	// either the SIP bridge, or the SIP REFER exchange, in a "unknown" state.
 	timeout := 30 * time.Second
+	if req.RingingTimeout != nil {
+		timeout = req.RingingTimeout.AsDuration()
+	}
+
+	// it's also possible the ctx has a Deadline.
+	// in that case we want to use that deadline,
+	// or our timeout, whichover is soonest.
 	if deadline, ok := ctx.Deadline(); ok {
-		timeout = time.Until(deadline)
+		timeout = min(timeout, time.Until(deadline))
 	} else {
 		var cancel func()
 		ctx, cancel = context.WithTimeout(ctx, timeout)
