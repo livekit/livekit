@@ -710,7 +710,8 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 	)
 
 	receiver := d.Receiver()
-	d.forwarder.Restart(codec.RTPCodecCapability, receiver.HeaderExtensions(), receiver.VideoLayerMode())
+	d.forwarder.Restart()
+	d.forwarder.DetermineCodec(codec.RTPCodecCapability, receiver.HeaderExtensions(), receiver.VideoLayerMode())
 
 	d.connectionStats.UpdateCodec(d.Mime(), isFECEnabled)
 }
@@ -794,13 +795,17 @@ func (d *DownTrack) SetReceiver(r TrackReceiver) {
 	d.receiverLock.Unlock()
 
 	old.DeleteDownTrack(d.SubscriberID())
+	d.bindLock.Unlock()
+
+	r.AddOnReady(d.handleReceiverReady)
+	d.handleUpstreamCodecChange(r.Codec().MimeType)
+
+	d.bindLock.Lock()
 	if err := r.AddDownTrack(d); err != nil {
 		d.params.Logger.Warnw("failed to add downtrack to receiver", err)
 	}
 	d.bindLock.Unlock()
 
-	r.AddOnReady(d.handleReceiverReady)
-	d.handleUpstreamCodecChange(r.Codec().MimeType)
 	if sal := d.getStreamAllocatorListener(); sal != nil {
 		sal.OnSubscribedLayerChanged(d, d.forwarder.MaxLayer())
 	}
