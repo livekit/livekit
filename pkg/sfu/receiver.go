@@ -602,7 +602,7 @@ func (w *WebRTCReceiver) GetLayeredBitrate() ([]int32, Bitrates) {
 	return w.streamTrackerManager.GetLayeredBitrate()
 }
 
-// OnCloseHandler method to be called on remote tracked removed
+// OnCloseHandler method to be called on remote track removed
 func (w *WebRTCReceiver) OnCloseHandler(fn func()) {
 	w.onCloseHandler = fn
 }
