@@ -711,6 +711,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 
 	receiver := d.Receiver()
 	d.forwarder.Restart(codec.RTPCodecCapability, receiver.HeaderExtensions(), receiver.VideoLayerMode())
+
 	d.connectionStats.UpdateCodec(d.Mime(), isFECEnabled)
 }
 
