@@ -344,6 +344,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			"codec", track.Codec(),
 			"trackInfo", logger.Proto(ti),
 		)
+		t.lock.Unlock()
 		return newCodec, false
 	}
 
