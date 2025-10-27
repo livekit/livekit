@@ -310,7 +310,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	f.DetermineCodec(codec, extensions, videoLayerMode)
+	f.determineCodecLocked(codec, extensions, videoLayerMode)
 }
 
 func (f *Forwarder) determineCodecLocked(codec webrtc.RTPCodecCapability, extensions []webrtc.RTPHeaderExtensionParameter, videoLayerMode livekit.VideoLayer_Mode) {
