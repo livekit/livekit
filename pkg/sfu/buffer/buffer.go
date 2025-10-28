@@ -249,7 +249,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		}
 	}
 
-	if b.payloadType == 0 {
+	if b.payloadType == 0 && !mime.IsMimeTypeStringEqual(codec.MimeType, webrtc.MimeTypePCMU) {
 		b.logger.Warnw("could not find payload type for codec", nil, "codec", codec.MimeType, "parameters", params)
 		b.payloadType = uint8(params.Codecs[0].PayloadType)
 	}
