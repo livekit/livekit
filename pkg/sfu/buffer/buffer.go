@@ -488,6 +488,7 @@ func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime int64) (n int, err err
 	}
 
 	b.calc(b.rtxPktBuf[:n], &repairedPkt, arrivalTime, true)
+	b.readCond.Broadcast()
 	return
 }
 
