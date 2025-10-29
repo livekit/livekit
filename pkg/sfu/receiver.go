@@ -791,6 +791,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 			return
 		}
 		dequeuedAt := mono.UnixNano()
+		w.logger.Infow("TRACE routing packet", "sn", pkt.Packet.SequenceNumber, "ts", pkt.Packet.Timestamp)
 
 		if pkt.Packet.PayloadType != uint8(w.codec.PayloadType) {
 			// drop packets as we don't support codec fallback directly

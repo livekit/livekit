@@ -726,6 +726,7 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, i
 		return
 	}
 	b.extPackets.PushBack(ep)
+	b.logger.Infow("TRACE received packet", "sn", ep.Packet.SequenceNumber, "ts", ep.Packet.Timestamp)
 
 	if b.extPackets.Len() > b.bucket.Capacity() {
 		if (b.extPacketTooMuchCount.Inc()-1)%100 == 0 {

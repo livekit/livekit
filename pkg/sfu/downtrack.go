@@ -1126,6 +1126,11 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			sal.OnResume(d)
 		}
 	}
+	d.params.Logger.Infow(
+		"TRACE forwarding packet",
+		"isn", extPkt.Packet.SequenceNumber, "its", extPkt.Packet.Timestamp,
+		"osn", hdr.SequenceNumber, "ots", hdr.Timestamp,
+	)
 	return nil
 }
 

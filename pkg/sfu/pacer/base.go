@@ -75,6 +75,7 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 		}
 		return 0, err
 	}
+	b.logger.Infow("TRACE sent packet", "sn", p.Header.SequenceNumber, "ts", p.Header.Timestamp)
 
 	return written, nil
 }
