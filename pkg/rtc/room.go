@@ -1204,7 +1204,37 @@ func (r *Room) onDataTrackPublished(participant types.LocalParticipant, dt types
 	// publish participant update, since a new data track was published
 	r.broadcastParticipantState(participant, broadcastOptions{skipSource: true})
 
-	// DT-TODO: auto-subscribe
+	r.lock.RLock()
+	// subscribe all existing participants to this DataTrack
+	for _, existingParticipant := range r.participants {
+		if existingParticipant == participant {
+			// skip publishing participant
+			continue
+		}
+		if existingParticipant.State() != livekit.ParticipantInfo_ACTIVE {
+			// not fully joined. don't subscribe yet
+			continue
+		}
+		if !r.autoSubscribe(existingParticipant) {
+			continue
+		}
+
+		existingParticipant.GetLogger().Debugw(
+			"subscribing to new data track",
+			"publisher", participant.Identity(),
+			"publisherID", participant.ID(),
+			"trackID", dt.ID(),
+		)
+		// DT-TODO existingParticipant.SubscribeToTrack(track.ID(), false)
+	}
+	onParticipantChanged := r.onParticipantChanged
+	r.lock.RUnlock()
+
+	if onParticipantChanged != nil {
+		onParticipantChanged(participant)
+	}
+
+	// DT-TODO r.trackManager.AddTrack(track, participant.Identity(), participant.ID())
 }
 
 func (r *Room) onDataTrackUnpublished(p types.LocalParticipant, dt types.DataTrack) {

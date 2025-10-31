@@ -722,7 +722,7 @@ func (o OperationMonitorEvent) String() string {
 	}
 }
 
-type OperationMonitorData interface{}
+type OperationMonitorData any
 
 type OperationMonitor interface {
 	PostEvent(ome OperationMonitorEvent, omd OperationMonitorData)

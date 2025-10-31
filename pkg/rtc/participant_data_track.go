@@ -184,6 +184,18 @@ func (p *ParticipantImpl) GetPublishedDataTracks() []*DataTrack {
 	return maps.Values(p.dataTracks)
 }
 
+func (p *ParticipantImpl) dataTracksToProto() []*livekit.DataTrackInfo {
+	p.dataTracksLock.RLock()
+	defer p.dataTracksLock.RUnlock()
+
+	var dataTrackInfos []*livekit.DataTrackInfo
+	for _, dt := range p.dataTracks {
+		dataTrackInfos = append(dataTrackInfos, dt.ToProto())
+	}
+
+	return dataTrackInfos
+}
+
 func (p *ParticipantImpl) removePublishedDataTrack(dt *DataTrack) {
 	var found bool
 	pubHandle := dt.PubHandle()

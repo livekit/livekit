@@ -893,6 +893,8 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 	}
 	p.pendingTracksLock.RUnlock()
 
+	pi.DataTracks = p.dataTracksToProto()
+
 	return pi, piv
 }
 
