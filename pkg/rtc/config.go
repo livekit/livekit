@@ -20,6 +20,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 )
@@ -111,7 +112,7 @@ func getPublisherConfig(consolidated bool) DirectionConfig {
 					sdp.SDESMidURI,
 					sdp.SDESRTPStreamIDURI,
 					sdp.AudioLevelURI,
-					//act.AbsCaptureTimeURI,
+					act.AbsCaptureTimeURI,
 				},
 				Video: []string{
 					sdp.SDESMidURI,
@@ -121,7 +122,7 @@ func getPublisherConfig(consolidated bool) DirectionConfig {
 					frameMarkingURI,
 					dd.ExtensionURI,
 					repairedRTPStreamIDURI,
-					//act.AbsCaptureTimeURI,
+					act.AbsCaptureTimeURI,
 				},
 			},
 			RTCPFeedback: RTCPFeedbackConfig{
@@ -145,7 +146,7 @@ func getPublisherConfig(consolidated bool) DirectionConfig {
 				sdp.SDESMidURI,
 				sdp.SDESRTPStreamIDURI,
 				sdp.AudioLevelURI,
-				//act.AbsCaptureTimeURI,
+				act.AbsCaptureTimeURI,
 			},
 			Video: []string{
 				sdp.SDESMidURI,
@@ -154,7 +155,7 @@ func getPublisherConfig(consolidated bool) DirectionConfig {
 				frameMarkingURI,
 				dd.ExtensionURI,
 				repairedRTPStreamIDURI,
-				//act.AbsCaptureTimeURI,
+				act.AbsCaptureTimeURI,
 			},
 		},
 		RTCPFeedback: RTCPFeedbackConfig{
@@ -176,10 +177,10 @@ func getSubscriberConfig(enableTWCC bool) DirectionConfig {
 		RTPHeaderExtension: RTPHeaderExtensionConfig{
 			Video: []string{
 				dd.ExtensionURI,
-				//act.AbsCaptureTimeURI,
+				act.AbsCaptureTimeURI,
 			},
 			Audio: []string{
-				//act.AbsCaptureTimeURI,
+				act.AbsCaptureTimeURI,
 			},
 		},
 		RTCPFeedback: RTCPFeedbackConfig{
