@@ -2926,7 +2926,10 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 
 	backupCodecPolicy := req.BackupCodecPolicy
-	if backupCodecPolicy != livekit.BackupCodecPolicy_SIMULCAST && p.params.DisableCodecRegression {
+
+	// enable simulcast codec for audio by default
+	if (backupCodecPolicy != livekit.BackupCodecPolicy_REGRESSION && req.Type == livekit.TrackType_AUDIO) ||
+		(backupCodecPolicy != livekit.BackupCodecPolicy_SIMULCAST && p.params.DisableCodecRegression) {
 		backupCodecPolicy = livekit.BackupCodecPolicy_SIMULCAST
 	}
 
