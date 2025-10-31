@@ -41,6 +41,11 @@ type FakeHandler struct {
 	onDataSendErrorArgsForCall []struct {
 		arg1 error
 	}
+	OnDataTrackMessageStub        func([]byte)
+	onDataTrackMessageMutex       sync.RWMutex
+	onDataTrackMessageArgsForCall []struct {
+		arg1 []byte
+	}
 	OnFailedStub        func(bool, *types.ICEConnectionInfo)
 	onFailedMutex       sync.RWMutex
 	onFailedArgsForCall []struct {
@@ -293,6 +298,43 @@ func (fake *FakeHandler) OnDataSendErrorArgsForCall(i int) error {
 	fake.onDataSendErrorMutex.RLock()
 	defer fake.onDataSendErrorMutex.RUnlock()
 	argsForCall := fake.onDataSendErrorArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeHandler) OnDataTrackMessage(arg1 []byte) {
+	var arg1Copy []byte
+	if arg1 != nil {
+		arg1Copy = make([]byte, len(arg1))
+		copy(arg1Copy, arg1)
+	}
+	fake.onDataTrackMessageMutex.Lock()
+	fake.onDataTrackMessageArgsForCall = append(fake.onDataTrackMessageArgsForCall, struct {
+		arg1 []byte
+	}{arg1Copy})
+	stub := fake.OnDataTrackMessageStub
+	fake.recordInvocation("OnDataTrackMessage", []interface{}{arg1Copy})
+	fake.onDataTrackMessageMutex.Unlock()
+	if stub != nil {
+		fake.OnDataTrackMessageStub(arg1)
+	}
+}
+
+func (fake *FakeHandler) OnDataTrackMessageCallCount() int {
+	fake.onDataTrackMessageMutex.RLock()
+	defer fake.onDataTrackMessageMutex.RUnlock()
+	return len(fake.onDataTrackMessageArgsForCall)
+}
+
+func (fake *FakeHandler) OnDataTrackMessageCalls(stub func([]byte)) {
+	fake.onDataTrackMessageMutex.Lock()
+	defer fake.onDataTrackMessageMutex.Unlock()
+	fake.OnDataTrackMessageStub = stub
+}
+
+func (fake *FakeHandler) OnDataTrackMessageArgsForCall(i int) []byte {
+	fake.onDataTrackMessageMutex.RLock()
+	defer fake.onDataTrackMessageMutex.RUnlock()
+	argsForCall := fake.onDataTrackMessageArgsForCall[i]
 	return argsForCall.arg1
 }
 

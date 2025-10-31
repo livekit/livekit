@@ -295,6 +295,8 @@ type ParticipantImpl struct {
 	onTrackPublished               func(types.LocalParticipant, types.MediaTrack)
 	onTrackUpdated                 func(types.LocalParticipant, types.MediaTrack)
 	onTrackUnpublished             func(types.LocalParticipant, types.MediaTrack)
+	onDataTrackPublished           func(types.LocalParticipant, types.DataTrack)
+	onDataTrackUnpublished         func(types.LocalParticipant, types.DataTrack)
 	onStateChange                  func(p types.LocalParticipant)
 	onSubscriberReady              func(p types.LocalParticipant)
 	onMigrateStateChange           func(p types.LocalParticipant, migrateState types.MigrateState)
@@ -304,6 +306,7 @@ type ParticipantImpl struct {
 	onMetrics                      func(types.Participant, *livekit.DataPacket)
 	onUpdateSubscriptions          func(types.LocalParticipant, []livekit.TrackID, []*livekit.ParticipantTracks, bool)
 	onUpdateSubscriptionPermission func(types.LocalParticipant, *livekit.SubscriptionPermission) error
+	onUpdateDataSubscriptions      func(types.LocalParticipant, *livekit.UpdateDataSubscription)
 	onSyncState                    func(types.LocalParticipant, *livekit.SyncState) error
 	onSimulateScenario             func(types.LocalParticipant, *livekit.SimulateScenario) error
 	onLeave                        func(types.LocalParticipant, types.ParticipantCloseReason)
@@ -337,6 +340,9 @@ type ParticipantImpl struct {
 	rpcLock             sync.Mutex
 	rpcPendingAcks      map[string]*utils.DataChannelRpcPendingAckHandler
 	rpcPendingResponses map[string]*utils.DataChannelRpcPendingResponseHandler
+
+	dataTracksLock sync.RWMutex
+	dataTracks     map[uint16]*DataTrack
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -784,6 +790,13 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 		// revoke all subscriptions
 		for _, st := range p.SubscriptionManager.GetSubscribedTracks() {
 			st.MediaTrack().RemoveSubscriber(p.ID(), false)
+		}
+	}
+
+	// DT-TODO: remove published data tracks if data publish permission is revoked and send UnpublishDataTrackResponse
+	if !grants.Video.GetCanPublishData() {
+		for _, dt := range p.GetPublishedDataTracks() {
+			p.removePublishedDataTrack(dt)
 		}
 	}
 
@@ -1973,6 +1986,10 @@ func (h PublisherTransportHandler) OnDataMessage(kind livekit.DataPacket_Kind, d
 
 func (h PublisherTransportHandler) OnDataMessageUnlabeled(data []byte) {
 	h.p.onReceivedDataMessageUnlabeled(data)
+}
+
+func (h PublisherTransportHandler) OnDataTrackMessage(data []byte) {
+	h.p.onDataTrackMessage(data)
 }
 
 func (h PublisherTransportHandler) OnDataSendError(err error) {

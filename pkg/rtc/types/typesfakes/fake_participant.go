@@ -54,15 +54,15 @@ type FakeParticipant struct {
 	connectedAtReturnsOnCall map[int]struct {
 		result1 time.Time
 	}
-	DebugInfoStub        func() map[string]interface{}
+	DebugInfoStub        func() map[string]any
 	debugInfoMutex       sync.RWMutex
 	debugInfoArgsForCall []struct {
 	}
 	debugInfoReturns struct {
-		result1 map[string]interface{}
+		result1 map[string]any
 	}
 	debugInfoReturnsOnCall map[int]struct {
-		result1 map[string]interface{}
+		result1 map[string]any
 	}
 	GetAudioLevelStub        func() (float64, bool)
 	getAudioLevelMutex       sync.RWMutex
@@ -481,7 +481,7 @@ func (fake *FakeParticipant) ConnectedAtReturnsOnCall(i int, result1 time.Time) 
 	}{result1}
 }
 
-func (fake *FakeParticipant) DebugInfo() map[string]interface{} {
+func (fake *FakeParticipant) DebugInfo() map[string]any {
 	fake.debugInfoMutex.Lock()
 	ret, specificReturn := fake.debugInfoReturnsOnCall[len(fake.debugInfoArgsForCall)]
 	fake.debugInfoArgsForCall = append(fake.debugInfoArgsForCall, struct {
@@ -505,32 +505,32 @@ func (fake *FakeParticipant) DebugInfoCallCount() int {
 	return len(fake.debugInfoArgsForCall)
 }
 
-func (fake *FakeParticipant) DebugInfoCalls(stub func() map[string]interface{}) {
+func (fake *FakeParticipant) DebugInfoCalls(stub func() map[string]any) {
 	fake.debugInfoMutex.Lock()
 	defer fake.debugInfoMutex.Unlock()
 	fake.DebugInfoStub = stub
 }
 
-func (fake *FakeParticipant) DebugInfoReturns(result1 map[string]interface{}) {
+func (fake *FakeParticipant) DebugInfoReturns(result1 map[string]any) {
 	fake.debugInfoMutex.Lock()
 	defer fake.debugInfoMutex.Unlock()
 	fake.DebugInfoStub = nil
 	fake.debugInfoReturns = struct {
-		result1 map[string]interface{}
+		result1 map[string]any
 	}{result1}
 }
 
-func (fake *FakeParticipant) DebugInfoReturnsOnCall(i int, result1 map[string]interface{}) {
+func (fake *FakeParticipant) DebugInfoReturnsOnCall(i int, result1 map[string]any) {
 	fake.debugInfoMutex.Lock()
 	defer fake.debugInfoMutex.Unlock()
 	fake.DebugInfoStub = nil
 	if fake.debugInfoReturnsOnCall == nil {
 		fake.debugInfoReturnsOnCall = make(map[int]struct {
-			result1 map[string]interface{}
+			result1 map[string]any
 		})
 	}
 	fake.debugInfoReturnsOnCall[i] = struct {
-		result1 map[string]interface{}
+		result1 map[string]any
 	}{result1}
 }
 

@@ -517,6 +517,8 @@ func (r *Room) Join(
 	participant.OnTrackPublished(r.onTrackPublished)
 	participant.OnTrackUpdated(r.onTrackUpdated)
 	participant.OnTrackUnpublished(r.onTrackUnpublished)
+	participant.OnDataTrackPublished(r.onDataTrackPublished)
+	participant.OnDataTrackUnpublished(r.onDataTrackUnpublished)
 	participant.OnParticipantUpdate(r.onParticipantUpdate)
 	participant.OnDataPacket(r.onDataPacket)
 	participant.OnDataMessage(r.onDataMessage)
@@ -557,6 +559,7 @@ func (r *Room) Join(
 	})
 	participant.OnUpdateSubscriptions(r.onUpdateSubscriptions)
 	participant.OnUpdateSubscriptionPermission(r.onUpdateSubscriptionPermission)
+	participant.OnUpdateDataSubscriptions(r.onUpdateDataSubscriptions)
 	participant.OnSyncState(r.onSyncState)
 	participant.OnSimulateScenario(r.onSimulateScenario)
 	participant.OnLeave(r.onLeave)
@@ -1197,6 +1200,23 @@ func (r *Room) onTrackUnpublished(p types.LocalParticipant, track types.MediaTra
 	}
 }
 
+func (r *Room) onDataTrackPublished(participant types.LocalParticipant, dt types.DataTrack) {
+	// publish participant update, since a new data track was published
+	r.broadcastParticipantState(participant, broadcastOptions{skipSource: true})
+
+	// DT-TODO: auto-subscribe
+}
+
+func (r *Room) onDataTrackUnpublished(p types.LocalParticipant, dt types.DataTrack) {
+	// DT-TODO r.trackManager.RemoveTrack(track)
+	if !p.IsClosed() {
+		r.broadcastParticipantState(p, broadcastOptions{skipSource: true})
+	}
+	if r.onParticipantChanged != nil {
+		r.onParticipantChanged(p)
+	}
+}
+
 func (r *Room) onParticipantUpdate(p types.LocalParticipant) {
 	r.protoProxy.MarkDirty(false)
 	// immediately notify when permissions or metadata changed
@@ -1264,6 +1284,10 @@ func (r *Room) UpdateSubscriptions(
 			}
 		}
 	}
+}
+
+func (r *Room) onUpdateDataSubscriptions(participant types.LocalParticipant, req *livekit.UpdateDataSubscription) {
+	// DT-TODO
 }
 
 func (r *Room) onLeave(p types.LocalParticipant, reason types.ParticipantCloseReason) {
@@ -1349,6 +1373,8 @@ func (r *Room) RemoveParticipant(
 	p.OnTrackUpdated(nil)
 	p.OnTrackPublished(nil)
 	p.OnTrackUnpublished(nil)
+	p.OnDataTrackPublished(nil)
+	p.OnDataTrackUnpublished(nil)
 	p.OnStateChange(nil)
 	p.OnSubscriberReady(nil)
 	p.OnParticipantUpdate(nil)
@@ -1358,6 +1384,7 @@ func (r *Room) RemoveParticipant(
 	p.OnSubscribeStatusChanged(nil)
 	p.OnUpdateSubscriptions(nil)
 	p.OnUpdateSubscriptionPermission(nil)
+	p.OnUpdateDataSubscriptions(nil)
 	p.OnSyncState(nil)
 	p.OnSimulateScenario(nil)
 	p.OnLeave(nil)

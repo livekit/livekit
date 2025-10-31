@@ -315,7 +315,7 @@ type Participant interface {
 		resolverBySid func(participantID livekit.ParticipantID) LocalParticipant,
 	) error
 
-	DebugInfo() map[string]interface{}
+	DebugInfo() map[string]any
 
 	OnMetrics(callback func(Participant, *livekit.DataPacket))
 }
@@ -473,7 +473,8 @@ type LocalParticipant interface {
 	OnTrackUpdated(callback func(LocalParticipant, MediaTrack))
 	// OnTrackUnpublished - a track was unpublished
 	OnTrackUnpublished(callback func(LocalParticipant, MediaTrack))
-	// OnParticipantUpdate - metadata or permission is updated
+	OnDataTrackPublished(func(LocalParticipant, DataTrack))
+	OnDataTrackUnpublished(func(LocalParticipant, DataTrack))
 	OnParticipantUpdate(callback func(LocalParticipant))
 	OnDataPacket(callback func(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket))
 	OnDataMessage(callback func(LocalParticipant, []byte))
@@ -487,6 +488,7 @@ type LocalParticipant interface {
 		bool,
 	))
 	OnUpdateSubscriptionPermission(func(LocalParticipant, *livekit.SubscriptionPermission) error)
+	OnUpdateDataSubscriptions(func(LocalParticipant, *livekit.UpdateDataSubscription))
 	OnSyncState(func(LocalParticipant, *livekit.SyncState) error)
 	OnSimulateScenario(func(LocalParticipant, *livekit.SimulateScenario) error)
 	OnLeave(func(LocalParticipant, ParticipantCloseReason))
@@ -541,6 +543,10 @@ type LocalParticipant interface {
 	HandleSyncState(*livekit.SyncState) error
 	HandleSimulateScenario(*livekit.SimulateScenario) error
 	HandleLeaveRequest(reason ParticipantCloseReason)
+
+	HandlePublishDataTrackRequest(*livekit.PublishDataTrackRequest)
+	HandleUnpublishDataTrackRequest(*livekit.UnpublishDataTrackRequest)
+	HandleUpdateDataSubscription(*livekit.UpdateDataSubscription)
 
 	HandleSignalMessage(msg proto.Message) error
 
@@ -635,6 +641,13 @@ type LocalMediaTrack interface {
 	NotifySubscriptionNode(nodeID livekit.NodeID, codecs []*livekit.SubscribedAudioCodec)
 	ClearSubscriberNodes()
 	NotifySubscriberNodeMediaLoss(nodeID livekit.NodeID, fractionalLoss uint8)
+}
+
+// DataTrack represents a data track
+//
+//counterfeiter:generate . DataTrack
+type DataTrack interface {
+	ID() livekit.DataTrackID
 }
 
 //counterfeiter:generate . SubscribedTrack
