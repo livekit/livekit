@@ -182,7 +182,7 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "ns",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		// 1ms, 2ms, 3ms, 4ms, 5ms, 10ms, 20ms
-		Buckets: []float64{1000, 2000, 3000, 4000, 5000, 10000, 20000},
+		Buckets: []float64{1000000, 2000000, 3000000, 4000000, 5000000, 10000000, 20000000},
 	})
 	promForwardJitterHist = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
@@ -190,7 +190,7 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "ns",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		// 1ms, 2ms, 3ms, 4ms, 5ms, 10ms, 20ms
-		Buckets: []float64{1000, 2000, 3000, 4000, 5000, 10000, 20000},
+		Buckets: []float64{1000000, 2000000, 3000000, 4000000, 5000000, 10000000, 20000000},
 	})
 
 	prometheus.MustRegister(promPacketTotal)
