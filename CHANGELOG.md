@@ -2,6 +2,29 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.3] - 2025-11-02
+
+### Added
+- Opportunistic video layer allocation on setting max spatial layer. (#4003, #4030, #4031, #4033)
+- use env var for GOARCH. (#4012)
+- Use simulcast codec as default policy for audio track. (#4040)
+- Enable AbsCaptureTimeURI in RTC configuration. (#4043)
+- Add prom histogram for forwarding latency and jitter. (#4044, #4045)
+
+### Fixed
+- Correct direction for request/response for prom counters. (#4027)
+- Do not bind buffer if codec is invalid. (#4028)
+- Remove ~ from rid which indicates disabled layer to get the actual rid. (#4032)
+- Prevent leakage of previous codec after codec regression. (#4035, #4037)
+- fix: add missing Unlock() in AddReceiver. (#4036)
+
+### Changed
+- Some golang modernisation bits. (#4106)
+- Use rtp converter from protocol/utils. (#4019, #4020)
+- High forwarding latency. (#4034, #4038)
+- if RingingTimeout is provided, deadline should be set to that timeout. (#4018)
+- Don't warn 0 payload type for PCMU. (#4039)
+
 ## [1.9.2] - 2025-10-17
 
 ### Added
