@@ -2949,8 +2949,12 @@ func (t *PCTransport) getMidToTrackIDMapping() map[string]string {
 	transceivers := t.pc.GetTransceivers()
 	midToTrackID := make(map[string]string, len(transceivers))
 	for _, tr := range transceivers {
-		if tr.Sender() != nil && tr.Sender().Track() != nil && tr.Mid() != "" {
-			midToTrackID[tr.Mid()] = tr.Sender().Track().ID()
+		if mid := tr.Mid(); mid != "" {
+			if sender := tr.Sender(); sender != nil {
+				if track := sender.Track(); track != nil {
+					midToTrackID[mid] = track.ID()
+				}
+			}
 		}
 	}
 	return midToTrackID

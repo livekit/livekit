@@ -12,7 +12,7 @@ require (
 	github.com/elliotchance/orderedmap/v2 v2.7.0
 	github.com/florianl/go-tc v0.4.5
 	github.com/frostbyte73/core v0.1.1
-	github.com/gammazero/deque v1.1.0
+	github.com/gammazero/deque v1.2.0
 	github.com/gammazero/workerpool v1.1.3
 	github.com/google/uuid v1.6.0
 	github.com/google/wire v0.6.0
@@ -24,7 +24,7 @@ require (
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/mediatransportutil v0.0.0-20250922175932-f537f0880397
 	github.com/livekit/protocol v1.42.3-0.20251022084609-f19569a346e2
-	github.com/livekit/psrpc v0.7.1-0.20251021235041-bdebea7dacf4
+	github.com/livekit/psrpc v0.7.1-0.20251105165826-1016ad610a7e
 	github.com/mackerelio/go-osstat v0.2.6
 	github.com/magefile/mage v1.15.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.12.0
@@ -44,7 +44,7 @@ require (
 	github.com/pion/webrtc/v4 v4.1.6
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.23.0
-	github.com/redis/go-redis/v9 v9.14.1
+	github.com/redis/go-redis/v9 v9.16.0
 	github.com/rs/cors v1.11.1
 	github.com/stretchr/testify v1.11.1
 	github.com/thoas/go-funk v0.9.3
@@ -55,7 +55,7 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.27.0
-	golang.org/x/exp v0.0.0-20251017212417-90e834f514db
+	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546
 	golang.org/x/mod v0.29.0
 	golang.org/x/sync v0.17.0
 	google.golang.org/protobuf v1.36.10
@@ -146,7 +146,7 @@ require (
 	golang.org/x/text v0.30.0 // indirect
 	golang.org/x/tools v0.38.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20251020155222-88f65dc88635 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20251020155222-88f65dc88635 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20251103181224-f26f9409b101 // indirect
 	google.golang.org/grpc v1.76.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
