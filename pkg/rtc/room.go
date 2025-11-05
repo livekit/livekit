@@ -503,6 +503,7 @@ func (r *Room) Join(
 			fields := append(
 				connectionDetailsFields(infos),
 				"clientInfo", logger.Proto(sutils.ClientInfoWithoutAddress(p.GetClientInfo())),
+				"connectTime", connectTime,
 			)
 			p.GetLogger().Infow("participant active", fields...)
 		} else if state == livekit.ParticipantInfo_DISCONNECTED {
