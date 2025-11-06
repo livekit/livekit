@@ -835,7 +835,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 				w.logger.Infow(
 					"high forwarding latency",
 					"latency", latency,
-					"writeCount", writeCount,
+					"writeCount", writeCount.Load(),
 					"queuingLatency", dequeuedAt-pkt.Arrival,
 					"isOutOfOrder", pkt.IsOutOfOrder,
 				)
