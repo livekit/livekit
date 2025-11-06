@@ -148,7 +148,7 @@ type TrackReceiver interface {
 }
 
 type REDTransformer interface {
-	ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int
+	ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int32
 	ForwardRTCPSenderReport(
 		payloadType webrtc.PayloadType,
 		layer int32,
@@ -818,16 +818,19 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 			continue
 		}
 
-		writeCount := w.downTrackSpreader.Broadcast(func(dt TrackSender) {
-			_ = dt.WriteRTP(pkt, spatialLayer)
+		var writeCount atomic.Int32
+		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
+			if dt.WriteRTP(pkt, spatialLayer) {
+				writeCount.Inc()
+			}
 		})
 
 		if rt := w.redTransformer.Load(); rt != nil {
-			writeCount += rt.(REDTransformer).ForwardRTP(pkt, spatialLayer)
+			writeCount.Add(rt.(REDTransformer).ForwardRTP(pkt, spatialLayer))
 		}
 
 		// track delay/jitter
-		if writeCount > 0 && w.forwardStats != nil {
+		if writeCount.Load() > 0 && w.forwardStats != nil {
 			if latency, isHigh := w.forwardStats.Update(pkt.Arrival, mono.UnixNano()); isHigh {
 				w.logger.Infow(
 					"high forwarding latency",
