@@ -2571,14 +2571,27 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 				overrideSenderIdentity = true
 			}
 		}
+		p.params.Logger.Infow("STREAM_DBG: received StreamHeader", "streamID", payload.StreamHeader.GetStreamId(), "topic", payload.StreamHeader.GetTopic(), "mimeType", payload.StreamHeader.GetMimeType())
 	case *livekit.DataPacket_StreamChunk:
 		if payload.StreamChunk == nil {
 			return
 		}
+		p.params.Logger.Infow(
+			"STREAM_DBG: received StreamChunk",
+			"streamID", payload.StreamChunk.GetStreamId(),
+			"chunkIndex", payload.StreamChunk.GetChunkIndex(),
+			"chunkSize", len(payload.StreamChunk.GetContent()),
+		)
 	case *livekit.DataPacket_StreamTrailer:
 		if payload.StreamTrailer == nil {
 			return
 		}
+		p.params.Logger.Infow(
+			"STREAM_DBG: received StreamTrailer",
+			"streamID", payload.StreamTrailer.GetStreamId(),
+			"attributes", payload.StreamTrailer.GetAttributes(),
+			"reason", payload.StreamTrailer.GetReason(),
+		)
 	case *livekit.DataPacket_EncryptedPacket:
 		if payload.EncryptedPacket == nil {
 			return
@@ -3869,6 +3882,7 @@ func (p *ParticipantImpl) SendDataMessage(kind livekit.DataPacket_Kind, data []b
 		if p.State() != livekit.ParticipantInfo_ACTIVE {
 			return ErrDataChannelUnavailable
 		}
+		p.params.Logger.Infow("STREAM_DBG: sending data message old", "kind", kind, "dataLen", len(data), "sender", sender, "seq", seq)
 		return p.TransportManager.SendDataMessage(kind, data)
 	}
 
@@ -3878,6 +3892,7 @@ func (p *ParticipantImpl) SendDataMessage(kind livekit.DataPacket_Kind, data []b
 			p.reliableDataInfo.joiningMessageFirstSeqs[sender] = seq
 		}
 		p.reliableDataInfo.joiningMessageLock.Unlock()
+		p.params.Logger.Infow("STREAM_DBG: caching data message", "kind", kind, "dataLen", len(data), "sender", sender, "seq", seq)
 		return nil
 	}
 
@@ -3886,14 +3901,15 @@ func (p *ParticipantImpl) SendDataMessage(kind livekit.DataPacket_Kind, data []b
 		if seq <= lastWrittenSeq {
 			// already sent by replayJoiningReliableMessages
 			p.reliableDataInfo.joiningMessageLock.Unlock()
+			p.params.Logger.Infow("STREAM_DBG: skip sending old data message as replay should have played it", "kind", kind, "dataLen", len(data), "sender", sender, "seq", seq)
 			return nil
 		} else {
 			delete(p.reliableDataInfo.joiningMessageLastWrittenSeqs, sender)
 		}
 	}
-
 	p.reliableDataInfo.joiningMessageLock.Unlock()
 
+	p.params.Logger.Infow("STREAM_DBG: sending data message", "kind", kind, "dataLen", len(data), "sender", sender, "seq", seq)
 	return p.TransportManager.SendDataMessage(kind, data)
 }
 
@@ -3970,6 +3986,7 @@ func (p *ParticipantImpl) setupEnabledCodecs(publishEnabledCodecs []*livekit.Cod
 func (p *ParticipantImpl) replayJoiningReliableMessages() {
 	p.reliableDataInfo.joiningMessageLock.Lock()
 	for _, msgCache := range p.helper().GetCachedReliableDataMessage(p.reliableDataInfo.joiningMessageFirstSeqs) {
+		p.params.Logger.Infow("STREAM_DBG: replaying cached reliable data channel message", "destIdentities", msgCache.DestIdentities, "senderID", msgCache.SenderID, "seq", msgCache.Seq, "dataLen", len(msgCache.Data))
 		if len(msgCache.DestIdentities) != 0 && !slices.Contains(msgCache.DestIdentities, p.Identity()) {
 			continue
 		}
@@ -3977,6 +3994,7 @@ func (p *ParticipantImpl) replayJoiningReliableMessages() {
 			p.reliableDataInfo.joiningMessageLastWrittenSeqs[msgCache.SenderID] = msgCache.Seq
 		}
 
+		p.params.Logger.Infow("STREAM_DBG: replayed cached reliable data channel message", "destIdentities", msgCache.DestIdentities, "senderID", msgCache.SenderID, "seq", msgCache.Seq, "dataLen", len(msgCache.Data))
 		p.TransportManager.SendDataMessage(livekit.DataPacket_RELIABLE, msgCache.Data)
 	}
 
