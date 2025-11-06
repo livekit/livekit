@@ -57,7 +57,7 @@ type TrackSender interface {
 	UpTrackMaxPublishedLayerChange(maxPublishedLayer int32)
 	UpTrackMaxTemporalLayerSeenChange(maxTemporalLayerSeen int32)
 	UpTrackBitrateReport(availableLayers []int32, bitrates Bitrates)
-	WriteRTP(p *buffer.ExtPacket, layer int32) error
+	WriteRTP(p *buffer.ExtPacket, layer int32) bool
 	Close()
 	IsClosed() bool
 	// ID is the globally unique identifier for this Track.
@@ -94,13 +94,13 @@ const (
 // -------------------------------------------------------------------
 
 var (
-	ErrUnknownKind                       = errors.New("unknown kind of codec")
-	ErrOutOfOrderSequenceNumberCacheMiss = errors.New("out-of-order sequence number not found in cache")
-	ErrPaddingOnlyPacket                 = errors.New("padding only packet that need not be forwarded")
-	ErrDuplicatePacket                   = errors.New("duplicate packet")
-	ErrPaddingNotOnFrameBoundary         = errors.New("padding cannot send on non-frame boundary")
-	ErrDownTrackAlreadyBound             = errors.New("already bound")
-	ErrPayloadOverflow                   = errors.New("payload overflow")
+	errUnknownKind                       = errors.New("unknown kind of codec")
+	errOutOfOrderSequenceNumberCacheMiss = errors.New("out-of-order sequence number not found in cache")
+	errPaddingOnlyPacket                 = errors.New("padding only packet that need not be forwarded")
+	errDuplicatePacket                   = errors.New("duplicate packet")
+	errPaddingNotOnFrameBoundary         = errors.New("padding cannot send on non-frame boundary")
+	errDownTrackAlreadyBound             = errors.New("already bound")
+	errPayloadOverflow                   = errors.New("payload overflow")
 )
 
 var (
@@ -452,7 +452,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 	d.bindLock.Lock()
 	if d.bindState.Load() != bindStateUnbound {
 		d.bindLock.Unlock()
-		return webrtc.RTPCodecParameters{}, ErrDownTrackAlreadyBound
+		return webrtc.RTPCodecParameters{}, errDownTrackAlreadyBound
 	}
 
 	// the TrackLocalContext's codec parameters will be set to the bound codec after Bind returns,
@@ -984,9 +984,9 @@ func (d *DownTrack) maxLayerNotifierWorker() {
 }
 
 // WriteRTP writes an RTP Packet to the DownTrack
-func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
+func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) bool {
 	if !d.writable.Load() {
-		return nil
+		return false
 	}
 
 	tp, err := d.forwarder.GetTranslationParams(extPkt, layer)
@@ -994,7 +994,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 		if err != nil {
 			d.params.Logger.Errorw("could not get translation params", err)
 		}
-		return err
+		return false
 	}
 
 	poolEntity := PacketFactory.Get().(*[]byte)
@@ -1003,12 +1003,12 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 	n := copy(payload[len(tp.codecBytes):], extPkt.Packet.Payload[tp.incomingHeaderSize:])
 	if n != len(extPkt.Packet.Payload[tp.incomingHeaderSize:]) {
 		d.params.Logger.Errorw(
-			"payload overflow", nil,
+			"payload overflow", errPayloadOverflow,
 			"want", len(extPkt.Packet.Payload[tp.incomingHeaderSize:]),
 			"have", n,
 		)
 		PacketFactory.Put(poolEntity)
-		return ErrPayloadOverflow
+		return false
 	}
 	payload = payload[:len(tp.codecBytes)+n]
 
@@ -1126,7 +1126,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) error {
 			sal.OnResume(d)
 		}
 	}
-	return nil
+	return true
 }
 
 // WritePaddingRTP tries to write as many padding only RTP packets as necessary

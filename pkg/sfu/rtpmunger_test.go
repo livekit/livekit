@@ -228,7 +228,7 @@ func TestOutOfOrderSequenceNumber(t *testing.T) {
 	}
 
 	tp, err = r.UpdateAndGetSnTs(extPkt, extPkt.Packet.Marker)
-	require.Error(t, err, ErrOutOfOrderSequenceNumberCacheMiss)
+	require.Error(t, err, errOutOfOrderSequenceNumberCacheMiss)
 	require.Equal(t, tpExpected, tp)
 }
 
@@ -252,7 +252,7 @@ func TestDuplicateSequenceNumber(t *testing.T) {
 	}
 
 	tp, err := r.UpdateAndGetSnTs(extPkt, extPkt.Packet.Marker)
-	require.ErrorIs(t, err, ErrDuplicatePacket)
+	require.ErrorIs(t, err, errDuplicatePacket)
 	require.Equal(t, tpExpected, tp)
 }
 
@@ -274,7 +274,7 @@ func TestPaddingOnlyPacket(t *testing.T) {
 
 	tp, err := r.UpdateAndGetSnTs(extPkt, extPkt.Packet.Marker)
 	require.Error(t, err)
-	require.ErrorIs(t, err, ErrPaddingOnlyPacket)
+	require.ErrorIs(t, err, errPaddingOnlyPacket)
 	require.Equal(t, tpExpected, tp)
 	require.Equal(t, uint64(23333), r.extHighestIncomingSN)
 	require.Equal(t, uint64(23333), r.extLastSN)
@@ -366,7 +366,7 @@ func TestGapInSequenceNumber(t *testing.T) {
 	}
 
 	tp, err = r.UpdateAndGetSnTs(extPkt, extPkt.Packet.Marker)
-	require.ErrorIs(t, err, ErrPaddingOnlyPacket)
+	require.ErrorIs(t, err, errPaddingOnlyPacket)
 	require.Equal(t, tpExpected, tp)
 	require.Equal(t, uint64(65536+2), r.extHighestIncomingSN)
 	require.Equal(t, uint64(65536+1), r.extLastSN)
@@ -417,7 +417,7 @@ func TestGapInSequenceNumber(t *testing.T) {
 	}
 
 	tp, err = r.UpdateAndGetSnTs(extPkt, extPkt.Packet.Marker)
-	require.ErrorIs(t, err, ErrPaddingOnlyPacket)
+	require.ErrorIs(t, err, errPaddingOnlyPacket)
 	require.Equal(t, tpExpected, tp)
 	require.Equal(t, uint64(65536+5), r.extHighestIncomingSN)
 	require.Equal(t, uint64(65536+3), r.extLastSN)
@@ -521,7 +521,7 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	// getting padding without forcing marker should fail
 	_, err := r.UpdateAndGetPaddingSnTs(10, 10, 5, false, 0)
 	require.Error(t, err)
-	require.ErrorIs(t, err, ErrPaddingNotOnFrameBoundary)
+	require.ErrorIs(t, err, errPaddingNotOnFrameBoundary)
 
 	// forcing a marker should not error out.
 	// And timestamp on first padding should be the same as the last one.

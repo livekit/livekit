@@ -207,7 +207,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket, marker bool) (Tra
 		if err != nil {
 			return TranslationParamsRTP{
 				snOrdering: SequenceNumberOrderingOutOfOrder,
-			}, ErrOutOfOrderSequenceNumberCacheMiss
+			}, errOutOfOrderSequenceNumberCacheMiss
 		}
 
 		extSequenceNumber := extPkt.ExtSequenceNumber - snOffset
@@ -223,7 +223,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket, marker bool) (Tra
 			)
 			return TranslationParamsRTP{
 				snOrdering: SequenceNumberOrderingOutOfOrder,
-			}, ErrOutOfOrderSequenceNumberCacheMiss
+			}, errOutOfOrderSequenceNumberCacheMiss
 		}
 
 		return TranslationParamsRTP{
@@ -245,13 +245,13 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket, marker bool) (Tra
 
 		return TranslationParamsRTP{
 			snOrdering: SequenceNumberOrderingContiguous,
-		}, ErrPaddingOnlyPacket
+		}, errPaddingOnlyPacket
 	}
 
 	// can get duplicate packet due to FEC
 	return TranslationParamsRTP{
 		snOrdering: SequenceNumberOrderingDuplicate,
-	}, ErrDuplicatePacket
+	}, errDuplicatePacket
 }
 
 func (r *RTPMunger) FilterRTX(nacks []uint16) []uint16 {
@@ -284,7 +284,7 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(
 	tsOffset := 0
 	if !r.lastMarker {
 		if !forceMarker {
-			return nil, ErrPaddingNotOnFrameBoundary
+			return nil, errPaddingNotOnFrameBoundary
 		}
 
 		// if forcing frame end, use timestamp of latest received frame for the first one
