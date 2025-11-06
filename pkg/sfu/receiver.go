@@ -820,9 +820,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 
 		var writeCount atomic.Int32
 		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
-			if dt.WriteRTP(pkt, spatialLayer) {
-				writeCount.Inc()
-			}
+			writeCount.Add(dt.WriteRTP(pkt, spatialLayer))
 		})
 
 		if rt := w.redTransformer.Load(); rt != nil {

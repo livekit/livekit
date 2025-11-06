@@ -57,7 +57,7 @@ type TrackSender interface {
 	UpTrackMaxPublishedLayerChange(maxPublishedLayer int32)
 	UpTrackMaxTemporalLayerSeenChange(maxTemporalLayerSeen int32)
 	UpTrackBitrateReport(availableLayers []int32, bitrates Bitrates)
-	WriteRTP(p *buffer.ExtPacket, layer int32) bool
+	WriteRTP(p *buffer.ExtPacket, layer int32) int32
 	Close()
 	IsClosed() bool
 	// ID is the globally unique identifier for this Track.
@@ -984,9 +984,9 @@ func (d *DownTrack) maxLayerNotifierWorker() {
 }
 
 // WriteRTP writes an RTP Packet to the DownTrack
-func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) bool {
+func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	if !d.writable.Load() {
-		return false
+		return 0
 	}
 
 	tp, err := d.forwarder.GetTranslationParams(extPkt, layer)
@@ -994,7 +994,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) bool {
 		if err != nil {
 			d.params.Logger.Errorw("could not get translation params", err)
 		}
-		return false
+		return 0
 	}
 
 	poolEntity := PacketFactory.Get().(*[]byte)
@@ -1008,7 +1008,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) bool {
 			"have", n,
 		)
 		PacketFactory.Put(poolEntity)
-		return false
+		return 0
 	}
 	payload = payload[:len(tp.codecBytes)+n]
 
@@ -1126,7 +1126,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) bool {
 			sal.OnResume(d)
 		}
 	}
-	return true
+	return 1
 }
 
 // WritePaddingRTP tries to write as many padding only RTP packets as necessary

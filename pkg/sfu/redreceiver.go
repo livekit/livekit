@@ -68,9 +68,7 @@ func (r *RedReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int3
 	if len(pkt.Packet.Payload) >= maxRedPayload {
 		var writeCount atomic.Int32
 		r.downTrackSpreader.Broadcast(func(dt TrackSender) {
-			if dt.WriteRTP(pkt, spatialLayer) {
-				writeCount.Inc()
-			}
+			writeCount.Add(dt.WriteRTP(pkt, spatialLayer))
 		})
 		return writeCount.Load()
 	}
@@ -91,9 +89,7 @@ func (r *RedReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int3
 	// otherwise it should be set to the correct value (marshal the primary rtp packet)
 	var writeCount atomic.Int32
 	r.downTrackSpreader.Broadcast(func(dt TrackSender) {
-		if dt.WriteRTP(&pPkt, spatialLayer) {
-			writeCount.Inc()
-		}
+		writeCount.Add(dt.WriteRTP(&pPkt, spatialLayer))
 	})
 	return writeCount.Load()
 }
