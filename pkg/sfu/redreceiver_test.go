@@ -36,10 +36,10 @@ type dummyDowntrack struct {
 	receivedPkts    []*rtp.Packet
 }
 
-func (dt *dummyDowntrack) WriteRTP(p *buffer.ExtPacket, _ int32) bool {
+func (dt *dummyDowntrack) WriteRTP(p *buffer.ExtPacket, _ int32) int32 {
 	dt.lastReceivedPkt = p.Packet
 	dt.receivedPkts = append(dt.receivedPkts, p.Packet)
-	return true
+	return 1
 }
 
 func (dt *dummyDowntrack) TrackInfoAvailable() {}

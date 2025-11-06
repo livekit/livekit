@@ -66,9 +66,7 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 		// forward non-red packet directly
 		var writeCount atomic.Int32
 		r.downTrackSpreader.Broadcast(func(dt TrackSender) {
-			if dt.WriteRTP(pkt, spatialLayer) {
-				writeCount.Inc()
-			}
+			writeCount.Add(dt.WriteRTP(pkt, spatialLayer))
 		})
 		return writeCount.Load()
 	}
@@ -93,9 +91,7 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 		// not modify the ExtPacket.RawPacket here for performance since it is not used by the DownTrack,
 		// otherwise it should be set to the correct value (marshal the primary rtp packet)
 		r.downTrackSpreader.Broadcast(func(dt TrackSender) {
-			if dt.WriteRTP(&pPkt, spatialLayer) {
-				writeCount.Inc()
-			}
+			writeCount.Add(dt.WriteRTP(&pPkt, spatialLayer))
 		})
 	}
 	return writeCount.Load()
