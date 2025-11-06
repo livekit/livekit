@@ -58,7 +58,7 @@ func NewRedReceiver(receiver TrackReceiver, dsp DownTrackSpreaderParams) *RedRec
 	}
 }
 
-func (r *RedReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int {
+func (r *RedReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int32 {
 	// encode RED payload from primary payload and forward to downtracks
 	if r.downTrackSpreader.DownTrackCount() == 0 {
 		return 0
@@ -66,9 +66,13 @@ func (r *RedReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int 
 
 	// fallback to primary codec if payload size exceeds redundant block length
 	if len(pkt.Packet.Payload) >= maxRedPayload {
-		return r.downTrackSpreader.Broadcast(func(dt TrackSender) {
-			_ = dt.WriteRTP(pkt, spatialLayer)
+		var writeCount atomic.Int32
+		r.downTrackSpreader.Broadcast(func(dt TrackSender) {
+			if dt.WriteRTP(pkt, spatialLayer) {
+				writeCount.Inc()
+			}
 		})
+		return writeCount.Load()
 	}
 
 	redLen, err := r.encodeRedForPrimary(pkt.Packet, r.redPayloadBuf[:])
@@ -85,9 +89,13 @@ func (r *RedReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int 
 
 	// not modify the ExtPacket.RawPacket here for performance since it is not used by the DownTrack,
 	// otherwise it should be set to the correct value (marshal the primary rtp packet)
-	return r.downTrackSpreader.Broadcast(func(dt TrackSender) {
-		_ = dt.WriteRTP(&pPkt, spatialLayer)
+	var writeCount atomic.Int32
+	r.downTrackSpreader.Broadcast(func(dt TrackSender) {
+		if dt.WriteRTP(&pPkt, spatialLayer) {
+			writeCount.Inc()
+		}
 	})
+	return writeCount.Load()
 }
 
 func (r *RedReceiver) ForwardRTCPSenderReport(
