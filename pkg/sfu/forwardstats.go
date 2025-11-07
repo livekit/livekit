@@ -86,7 +86,7 @@ func (s *ForwardStats) GetStats(shortDuration time.Duration) (time.Duration, tim
 	latencyShort, jitterShort := time.Duration(wShort.Mean()), time.Duration(wShort.StdDev())
 	if latencyShort > cHighForwardingLatency/2 && jitterLong > latencyLong*cSkewFactor {
 		logger.Infow(
-			"high jitter in forwarding path",
+			"high jitter in forwarding path - trigger",
 			"lowest", time.Duration(lowest),
 			"highest", time.Duration(highest),
 			"countLong", wLong.Count(),
