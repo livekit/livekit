@@ -51,6 +51,7 @@ func (s *ForwardStats) Update(arrival, left int64) (int64, bool) {
 			"latency", time.Duration(transit),
 			"highest", time.Duration(s.highest),
 			"lowest", time.Duration(s.lowest),
+			"isHighForwardingLatency", isHighForwardingLatency,
 		)
 	}
 	s.highest = max(transit, s.highest)
