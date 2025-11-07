@@ -471,6 +471,7 @@ func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) erro
 	buff.SetPaused(w.streamTrackerManager.IsPaused())
 
 	go w.forwardRTP(layer, buff)
+	w.logger.Debugw("starting forwarder", "layer", layer)
 	return nil
 }
 
