@@ -47,7 +47,7 @@ func (s *ForwardStats) Update(arrival, left int64) (int64, bool) {
 	s.lowest = min(transit, s.lowest)
 	//if isHighForwardingLatency || (s.highest != 0 && transit > s.highest) {
 	logger.Errorw(
-		"high forwarding latency", nil,
+		"recording forwarding latency", nil,
 		"latency", time.Duration(transit),
 		"highest", time.Duration(s.highest),
 		"lowest", time.Duration(s.lowest),
