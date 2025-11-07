@@ -45,6 +45,14 @@ func (s *ForwardStats) Update(arrival, left int64) (int64, bool) {
 	s.lock.Lock()
 	s.latency.Update(time.Duration(arrival), float64(transit))
 	s.lowest = min(transit, s.lowest)
+	if isHighForwardingLatency {
+		logger.Errorw(
+			"high forwarding latency", nil,
+			"latency", time.Duration(transit),
+			"highest", time.Duration(s.highest),
+			"lowest", time.Duration(s.lowest),
+		)
+	}
 	s.highest = max(transit, s.highest)
 	s.lastUpdateAt = arrival
 	s.lock.Unlock()

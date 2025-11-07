@@ -832,7 +832,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 			if latency, isHigh := w.forwardStats.Update(pkt.Arrival, mono.UnixNano()); isHigh {
 				w.logger.Infow(
 					"high forwarding latency",
-					"latency", latency,
+					"latency", time.Duration(latency),
 					"writeCount", writeCount.Load(),
 					"queuingLatency", dequeuedAt-pkt.Arrival,
 					"isOutOfOrder", pkt.IsOutOfOrder,
