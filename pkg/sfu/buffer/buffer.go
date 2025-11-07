@@ -420,6 +420,10 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		packet := make([]byte, len(pkt))
 		copy(packet, pkt)
 
+		if len(b.pPackets) == 0 {
+			b.logger.Debugw("received first packet")
+		}
+
 		startIdx := 0
 		overflow := len(b.pPackets) - max(b.maxVideoPkts, b.maxAudioPkts)
 		if overflow > 0 {
