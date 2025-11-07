@@ -830,7 +830,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 		}
 
 		// track delay/jitter
-		if writeCount.Load() > 0 && w.forwardStats != nil {
+		if writeCount.Load() > 0 && w.forwardStats != nil && !pkt.IsBuffered {
 			if latency, isHigh := w.forwardStats.Update(pkt.Arrival, mono.UnixNano()); isHigh {
 				w.logger.Infow(
 					"high forwarding latency",
