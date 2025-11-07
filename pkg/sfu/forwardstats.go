@@ -84,9 +84,21 @@ func (s *ForwardStats) GetStats(shortDuration time.Duration) (time.Duration, tim
 
 	latencyLong, jitterLong := time.Duration(wLong.Mean()), time.Duration(wLong.StdDev())
 	latencyShort, jitterShort := time.Duration(wShort.Mean()), time.Duration(wShort.StdDev())
-	//if latencyShort > cHighForwardingLatency/2 && jitterLong > latencyLong*cSkewFactor {
+	if latencyShort > cHighForwardingLatency/2 && jitterLong > latencyLong*cSkewFactor {
+		logger.Infow(
+			"high jitter in forwarding path",
+			"lowest", time.Duration(lowest),
+			"highest", time.Duration(highest),
+			"countLong", wLong.Count(),
+			"latencyLong", latencyLong,
+			"jitterLong", jitterLong,
+			"countShort", wShort.Count(),
+			"latencyShort", latencyShort,
+			"jitterShort", jitterShort,
+		)
+	}
 	logger.Infow(
-		"high jitter in forwarding path",
+		"DBG high jitter in forwarding path",
 		"lowest", time.Duration(lowest),
 		"highest", time.Duration(highest),
 		"countLong", wLong.Count(),
@@ -96,7 +108,6 @@ func (s *ForwardStats) GetStats(shortDuration time.Duration) (time.Duration, tim
 		"latencyShort", latencyShort,
 		"jitterShort", jitterShort,
 	)
-	//}
 	return latencyLong, jitterLong, latencyShort, jitterShort
 }
 
