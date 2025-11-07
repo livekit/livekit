@@ -45,15 +45,17 @@ func (s *ForwardStats) Update(arrival, left int64) (int64, bool) {
 	s.lock.Lock()
 	s.latency.Update(time.Duration(arrival), float64(transit))
 	s.lowest = min(transit, s.lowest)
-	if isHighForwardingLatency || (s.highest != 0 && transit > s.highest) {
-		logger.Errorw(
-			"high forwarding latency", nil,
-			"latency", time.Duration(transit),
-			"highest", time.Duration(s.highest),
-			"lowest", time.Duration(s.lowest),
-			"isHighForwardingLatency", isHighForwardingLatency,
-		)
-	}
+	//if isHighForwardingLatency || (s.highest != 0 && transit > s.highest) {
+	logger.Errorw(
+		"high forwarding latency", nil,
+		"latency", time.Duration(transit),
+		"highest", time.Duration(s.highest),
+		"lowest", time.Duration(s.lowest),
+		"isHighForwardingLatency", isHighForwardingLatency,
+		"arrival", arrival,
+		"left", left,
+	)
+	//}
 	s.highest = max(transit, s.highest)
 	s.lastUpdateAt = arrival
 	s.lock.Unlock()
@@ -66,6 +68,7 @@ func (s *ForwardStats) GetStats(shortDuration time.Duration) (time.Duration, tim
 	// a dummy sample to flush the pipe to current time
 	now := mono.UnixNano()
 	if (now - s.lastUpdateAt) > shortDuration.Nanoseconds() {
+		logger.Infow("adding dummy sample", "now", now, "lastUpdateAt", s.lastUpdateAt, "diff", now-s.lastUpdateAt) // REMOVE
 		s.latency.Update(time.Duration(now), 0)
 	}
 
@@ -81,19 +84,19 @@ func (s *ForwardStats) GetStats(shortDuration time.Duration) (time.Duration, tim
 
 	latencyLong, jitterLong := time.Duration(wLong.Mean()), time.Duration(wLong.StdDev())
 	latencyShort, jitterShort := time.Duration(wShort.Mean()), time.Duration(wShort.StdDev())
-	if latencyShort > cHighForwardingLatency/2 && jitterLong > latencyLong*cSkewFactor {
-		logger.Infow(
-			"high jitter in forwarding path",
-			"lowest", time.Duration(lowest),
-			"highest", time.Duration(highest),
-			"countLong", wLong.Count(),
-			"latencyLong", latencyLong,
-			"jitterLong", jitterLong,
-			"countShort", wShort.Count(),
-			"latencyShort", latencyShort,
-			"jitterShort", jitterShort,
-		)
-	}
+	//if latencyShort > cHighForwardingLatency/2 && jitterLong > latencyLong*cSkewFactor {
+	logger.Infow(
+		"high jitter in forwarding path",
+		"lowest", time.Duration(lowest),
+		"highest", time.Duration(highest),
+		"countLong", wLong.Count(),
+		"latencyLong", latencyLong,
+		"jitterLong", jitterLong,
+		"countShort", wShort.Count(),
+		"latencyShort", latencyShort,
+		"jitterShort", jitterShort,
+	)
+	//}
 	return latencyLong, jitterLong, latencyShort, jitterShort
 }
 
