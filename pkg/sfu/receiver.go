@@ -785,6 +785,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 	}
 
 	pktBuf := make([]byte, bucket.MaxPktSize)
+	w.logger.Debugw("starting forwarding", "layer", layer)
 	for {
 		pkt, err := buff.ReadExtended(pktBuf)
 		if err == io.EOF {
@@ -833,9 +834,10 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 				w.logger.Infow(
 					"high forwarding latency",
 					"latency", time.Duration(latency),
+					"queuingLatency", time.Duration(dequeuedAt-pkt.Arrival),
 					"writeCount", writeCount.Load(),
-					"queuingLatency", dequeuedAt-pkt.Arrival,
 					"isOutOfOrder", pkt.IsOutOfOrder,
+					"layer", layer,
 				)
 			}
 		}
