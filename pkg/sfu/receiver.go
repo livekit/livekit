@@ -471,6 +471,7 @@ func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) erro
 	buff.SetPaused(w.streamTrackerManager.IsPaused())
 
 	go w.forwardRTP(layer, buff)
+	w.logger.Debugw("starting forwarder", "layer", layer)
 	return nil
 }
 
@@ -785,6 +786,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 	}
 
 	pktBuf := make([]byte, bucket.MaxPktSize)
+	w.logger.Debugw("starting forwarding", "layer", layer)
 	for {
 		pkt, err := buff.ReadExtended(pktBuf)
 		if err == io.EOF {
@@ -832,10 +834,11 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 			if latency, isHigh := w.forwardStats.Update(pkt.Arrival, mono.UnixNano()); isHigh {
 				w.logger.Infow(
 					"high forwarding latency",
-					"latency", latency,
+					"latency", time.Duration(latency),
+					"queuingLatency", time.Duration(dequeuedAt-pkt.Arrival),
 					"writeCount", writeCount.Load(),
-					"queuingLatency", dequeuedAt-pkt.Arrival,
 					"isOutOfOrder", pkt.IsOutOfOrder,
+					"layer", layer,
 				)
 			}
 		}

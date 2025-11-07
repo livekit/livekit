@@ -225,6 +225,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		return nil
 	}
 
+	b.logger.Debugw("binding track")
 	if codec.ClockRate == 0 {
 		b.logger.Warnw("invalid codec", nil, "params", params, "codec", codec, "bitrates", bitrates)
 		return errInvalidCodec
@@ -322,6 +323,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		}
 	}
 
+	b.logger.Debugw("releasing queued packets on bind")
 	for _, pp := range b.pPackets {
 		b.calc(pp.packet, nil, pp.arrivalTime, false)
 	}
@@ -414,6 +416,10 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 	if !b.bound {
 		packet := make([]byte, len(pkt))
 		copy(packet, pkt)
+
+		if len(b.pPackets) == 0 {
+			b.logger.Debugw("received first packet")
+		}
 
 		startIdx := 0
 		overflow := len(b.pPackets) - max(b.maxVideoPkts, b.maxAudioPkts)
