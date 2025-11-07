@@ -74,6 +74,7 @@ type ExtPacket struct {
 	DependencyDescriptor *ExtDependencyDescriptor
 	AbsCaptureTimeExt    *act.AbsCaptureTime
 	IsOutOfOrder         bool
+	IsBuffered           bool
 }
 
 // VideoSize represents video resolution
@@ -323,9 +324,11 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		}
 	}
 
-	b.logger.Debugw("releasing queued packets on bind")
+	if len(b.pPackets) != 0 {
+		b.logger.Debugw("releasing queued packets on bind")
+	}
 	for _, pp := range b.pPackets {
-		b.calc(pp.packet, nil, pp.arrivalTime, false)
+		b.calc(pp.packet, nil, pp.arrivalTime, false, true)
 	}
 	b.pPackets = nil
 	b.bound = true
@@ -417,10 +420,6 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		packet := make([]byte, len(pkt))
 		copy(packet, pkt)
 
-		if len(b.pPackets) == 0 {
-			b.logger.Debugw("received first packet")
-		}
-
 		startIdx := 0
 		overflow := len(b.pPackets) - max(b.maxVideoPkts, b.maxAudioPkts)
 		if overflow > 0 {
@@ -436,7 +435,7 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		return
 	}
 
-	b.calc(pkt, &rtpPacket, now, false)
+	b.calc(pkt, &rtpPacket, now, false, false)
 	b.readCond.Broadcast()
 	b.Unlock()
 	return
@@ -493,7 +492,7 @@ func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime int64) {
 		return
 	}
 
-	b.calc(b.rtxPktBuf[:n], &repairedPkt, arrivalTime, true)
+	b.calc(b.rtxPktBuf[:n], &repairedPkt, arrivalTime, true, false)
 	b.readCond.Broadcast()
 }
 
@@ -624,7 +623,7 @@ func (b *Buffer) SetRTT(rtt uint32) {
 	}
 }
 
-func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, isRTX bool) {
+func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, isRTX bool, isBuffered bool) {
 	defer func() {
 		b.doNACKs()
 
@@ -727,7 +726,7 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, i
 		return
 	}
 
-	ep := b.getExtPacket(rtpPacket, arrivalTime, flowState)
+	ep := b.getExtPacket(rtpPacket, arrivalTime, isBuffered, flowState)
 	if ep == nil {
 		return
 	}
@@ -899,7 +898,7 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64, isRTX
 	}
 }
 
-func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowState rtpstats.RTPFlowState) *ExtPacket {
+func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, isBuffered bool, flowState rtpstats.RTPFlowState) *ExtPacket {
 	ep := &ExtPacket{
 		Arrival:           arrivalTime,
 		ExtSequenceNumber: flowState.ExtSequenceNumber,
@@ -910,6 +909,7 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowStat
 			Temporal: InvalidLayerTemporal,
 		},
 		IsOutOfOrder: flowState.IsOutOfOrder,
+		IsBuffered:   isBuffered,
 	}
 
 	if len(rtpPacket.Payload) == 0 {
