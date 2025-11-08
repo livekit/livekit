@@ -2571,7 +2571,14 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 				overrideSenderIdentity = true
 			}
 		}
-		p.params.Logger.Infow("STREAM_DBG: received StreamHeader", "streamID", payload.StreamHeader.GetStreamId(), "topic", payload.StreamHeader.GetTopic(), "mimeType", payload.StreamHeader.GetMimeType())
+		p.params.Logger.Infow(
+			"STREAM_DBG: received StreamHeader",
+			"streamID", payload.StreamHeader.GetStreamId(),
+			"topic", payload.StreamHeader.GetTopic(),
+			"mimeType", payload.StreamHeader.GetMimeType(),
+			"seq", dp.GetSequence(),
+			"destinationIdentities", dp.GetDestinationIdentities(),
+		)
 	case *livekit.DataPacket_StreamChunk:
 		if payload.StreamChunk == nil {
 			return
@@ -2581,6 +2588,8 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 			"streamID", payload.StreamChunk.GetStreamId(),
 			"chunkIndex", payload.StreamChunk.GetChunkIndex(),
 			"chunkSize", len(payload.StreamChunk.GetContent()),
+			"seq", dp.GetSequence(),
+			"destinationIdentities", dp.GetDestinationIdentities(),
 		)
 	case *livekit.DataPacket_StreamTrailer:
 		if payload.StreamTrailer == nil {
@@ -2591,6 +2600,8 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 			"streamID", payload.StreamTrailer.GetStreamId(),
 			"attributes", payload.StreamTrailer.GetAttributes(),
 			"reason", payload.StreamTrailer.GetReason(),
+			"seq", dp.GetSequence(),
+			"destinationIdentities", dp.GetDestinationIdentities(),
 		)
 	case *livekit.DataPacket_EncryptedPacket:
 		if payload.EncryptedPacket == nil {
