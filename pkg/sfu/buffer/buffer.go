@@ -925,14 +925,9 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64, isRTX
 	}
 }
 
-<<<<<<< Updated upstream
 func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, isBuffered bool, flowState rtpstats.RTPFlowState) *ExtPacket {
-	ep := &ExtPacket{
-=======
-func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowState rtpstats.RTPFlowState) *ExtPacket {
 	ep := ExtPacketFactory.Get().(*ExtPacket)
 	*ep = ExtPacket{
->>>>>>> Stashed changes
 		Arrival:           arrivalTime,
 		ExtSequenceNumber: flowState.ExtSequenceNumber,
 		ExtTimestamp:      flowState.ExtTimestamp,
