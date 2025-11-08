@@ -23,6 +23,19 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
+var (
+	PacketFactory *sync.Pool
+)
+
+func init() {
+	PacketFactory = &sync.Pool{
+		New: func() interface{} {
+			return &Packet{}
+		},
+	}
+}
+
+// --------------------------------------
 type PacerBehavior string
 
 const (
@@ -33,6 +46,7 @@ const (
 
 type Packet struct {
 	Header             *rtp.Header
+	HeaderPool         *sync.Pool
 	HeaderSize         int
 	Payload            []byte
 	IsRTX              bool

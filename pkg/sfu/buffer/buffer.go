@@ -46,6 +46,20 @@ import (
 	"github.com/livekit/protocol/utils/mono"
 )
 
+var (
+	ExtPacketFactory *sync.Pool
+)
+
+func init() {
+	ExtPacketFactory = &sync.Pool{
+		New: func() interface{} {
+			return &ExtPacket{}
+		},
+	}
+}
+
+// --------------------------------------
+
 const (
 	ReportDelta = 1e9
 
@@ -543,6 +557,15 @@ func (b *Buffer) ReadExtended(buf []byte) (*ExtPacket, error) {
 	}
 }
 
+func (b *Buffer) ReleaseExtPacket(extPkt *ExtPacket) {
+	if b.ddParser != nil {
+		b.ddParser.ReleaseExtDependencyDescriptor(extPkt.DependencyDescriptor)
+	}
+
+	*extPkt = ExtPacket{}
+	ExtPacketFactory.Put(extPkt)
+}
+
 func (b *Buffer) Close() error {
 	b.closeOnce.Do(func() {
 		b.closed.Store(true)
@@ -902,8 +925,14 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64, isRTX
 	}
 }
 
+<<<<<<< Updated upstream
 func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, isBuffered bool, flowState rtpstats.RTPFlowState) *ExtPacket {
 	ep := &ExtPacket{
+=======
+func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, flowState rtpstats.RTPFlowState) *ExtPacket {
+	ep := ExtPacketFactory.Get().(*ExtPacket)
+	*ep = ExtPacket{
+>>>>>>> Stashed changes
 		Arrival:           arrivalTime,
 		ExtSequenceNumber: flowState.ExtSequenceNumber,
 		ExtTimestamp:      flowState.ExtTimestamp,
