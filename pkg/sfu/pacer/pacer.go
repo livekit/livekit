@@ -24,18 +24,15 @@ import (
 )
 
 var (
-	PacketFactory *sync.Pool
-)
-
-func init() {
 	PacketFactory = &sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return &Packet{}
 		},
 	}
-}
+)
 
 // --------------------------------------
+
 type PacerBehavior string
 
 const (

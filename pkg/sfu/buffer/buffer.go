@@ -47,16 +47,12 @@ import (
 )
 
 var (
-	ExtPacketFactory *sync.Pool
-)
-
-func init() {
 	ExtPacketFactory = &sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return &ExtPacket{}
 		},
 	}
-}
+)
 
 // --------------------------------------
 

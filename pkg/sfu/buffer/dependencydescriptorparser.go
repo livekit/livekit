@@ -30,16 +30,12 @@ import (
 )
 
 var (
-	ExtDependencyDescriptorFactory *sync.Pool
-)
-
-func init() {
 	ExtDependencyDescriptorFactory = &sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return &ExtDependencyDescriptor{}
 		},
 	}
-}
+)
 
 // --------------------------------------
 

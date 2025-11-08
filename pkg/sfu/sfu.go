@@ -21,21 +21,16 @@ import (
 )
 
 var (
-	PacketFactory    *sync.Pool
-	RTPHeaderFactory *sync.Pool
-)
-
-func init() {
 	PacketFactory = &sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			b := make([]byte, 1460)
 			return &b
 		},
 	}
 
 	RTPHeaderFactory = &sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return &rtp.Header{}
 		},
 	}
-}
+)
