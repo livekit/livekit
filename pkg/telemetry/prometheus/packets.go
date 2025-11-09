@@ -68,7 +68,6 @@ var (
 	promForwardLatency        prometheus.Gauge
 	promForwardJitter         prometheus.Gauge
 	promForwardLatencyHist    prometheus.Histogram
-	promForwardJitterHist     prometheus.Histogram
 
 	promPacketTotalIncomingInitial    prometheus.Counter
 	promPacketTotalIncomingRetransmit prometheus.Counter
@@ -181,16 +180,19 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Subsystem:   "forward_latency",
 		Name:        "ns",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
-		// 1ms, 2ms, 3ms, 4ms, 5ms, 10ms, 20ms
-		Buckets: []float64{1000000, 2000000, 3000000, 4000000, 5000000, 10000000, 20000000},
-	})
-	promForwardJitterHist = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Namespace:   livekitNamespace,
-		Subsystem:   "forward_jitter",
-		Name:        "ns",
-		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
-		// 1ms, 2ms, 3ms, 4ms, 5ms, 10ms, 20ms
-		Buckets: []float64{1000000, 2000000, 3000000, 4000000, 5000000, 10000000, 20000000},
+		// 50us, 100us, 250us, 500us, 1ms, 2ms, 3ms, 5ms, 10ms, 20ms
+		Buckets: []float64{
+			50 * 1000,
+			100 * 1000,
+			250 * 1000,
+			500 * 1000,
+			1 * 000 * 1000,
+			2 * 1000 * 1000,
+			3 * 3000 * 1000,
+			5 * 1000 * 1000,
+			10 * 1000 * 1000,
+			20 * 1000 * 1000,
+		},
 	})
 
 	prometheus.MustRegister(promPacketTotal)
@@ -209,7 +211,6 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promForwardLatency)
 	prometheus.MustRegister(promForwardJitter)
 	prometheus.MustRegister(promForwardLatencyHist)
-	prometheus.MustRegister(promForwardJitterHist)
 }
 
 func IncrementPackets(country string, direction Direction, count uint64, retransmit bool) {
@@ -335,14 +336,16 @@ func SubConnection(direction Direction) {
 	promConnections.WithLabelValues(string(direction)).Sub(1)
 }
 
+func RecordForwardLatencySample(forwardLatency int64) {
+	promForwardLatencyHist.Observe(float64(forwardLatency))
+}
+
 func RecordForwardLatency(shortTermLatencyAvg, longTermLatencyAvg uint32) {
 	forwardLatency.Store(longTermLatencyAvg)
 	promForwardLatency.Set(float64(longTermLatencyAvg))
-	promForwardLatencyHist.Observe(float64(shortTermLatencyAvg))
 }
 
 func RecordForwardJitter(shortTermJitterAvg, longTermJitterAvg uint32) {
 	forwardJitter.Store(longTermJitterAvg)
 	promForwardJitter.Set(float64(longTermJitterAvg))
-	promForwardJitterHist.Observe(float64(shortTermJitterAvg))
 }
