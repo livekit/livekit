@@ -49,6 +49,7 @@ func (s *ForwardStats) Update(arrival, left int64) (int64, bool) {
 	s.lastUpdateAt = arrival
 	s.lock.Unlock()
 
+	prometheus.RecordForwardLatencySample(transit)
 	return transit, isHighForwardingLatency
 }
 
