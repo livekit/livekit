@@ -1,0 +1,40 @@
+{
+  "name": "@bufbuild/protobuf",
+  "version": "1.10.1",
+  "license": "(Apache-2.0 AND BSD-3-Clause)",
+  "description": "A complete implementation of Protocol Buffers in TypeScript, suitable for web browsers and Node.js.",
+  "keywords": [
+    "protobuf",
+    "schema",
+    "typescript",
+    "ecmascript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bufbuild/protobuf-es.git",
+    "directory": "packages/protobuf"
+  },
+  "scripts": {
+    "clean": "rm -rf ./dist/*",
+    "build": "npm run build:cjs && npm run build:esm",
+    "build:cjs": "../../node_modules/typescript/bin/tsc --project tsconfig.json --module commonjs --verbatimModuleSyntax false --moduleResolution node10 --outDir ./dist/cjs --declaration --declarationDir ./dist/cjs && echo >./dist/cjs/package.json '{\"type\":\"commonjs\"}'",
+    "build:esm": "../../node_modules/typescript/bin/tsc --project tsconfig.json --outDir ./dist/esm --declaration --declarationDir ./dist/esm",
+    "bootstrap:featureset-defaults": "upstream-inject-feature-defaults src/private/feature-set.ts",
+    "prebootstrap:wkt": "rm -rf .tmp && mkdir -p .tmp/google/protobuf && cp -rp src/google/protobuf/* .tmp/google/protobuf",
+    "bootstrap:wkt": "protoc --es_out=src --es_opt=bootstrap_wkt=true,ts_nocheck=false,target=ts --proto_path $(upstream-include wkt) $(upstream-files wkt) && license-header src/google/protobuf",
+    "postbootstrap:wkt": "diff >/dev/null -r .tmp/google/protobuf src/google/protobuf && cp -rp .tmp/google/protobuf/* src/google/protobuf || true",
+    "attw": "attw --pack"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/cjs/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },
+  "devDependencies": {
+    "upstream-protobuf": "*"
+  }
+}

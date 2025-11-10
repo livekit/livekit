@@ -324,3 +324,44 @@ keys:
 #   max_room_name_length: 0
 #   # limit length of participant identity
 #   max_participant_identity_length: 0
+
+# # agent configuration
+# # Agents can be either WebSocket-based (traditional Python agents) or HTTP-based (external agents)
+# # External agents enable integration with AI SDK, TypeScript, and other HTTP-capable services
+# agents:
+#   # Enable user data recording for agents
+#   enable_user_data_recording: false
+#   
+#   # External HTTP-based agents (for AI SDK integration, TypeScript, etc.)
+#   external_agents:
+#     # Example: AI SDK agent running as a web service
+#     - name: "ai-sdk-agent"
+#       enabled: true
+#       # HTTP webhook URL where job notifications will be sent
+#       webhook_url: "https://your-ai-service.com/livekit/agent"
+#       # Job types this agent can handle: JT_ROOM, JT_PUBLISHER, JT_PARTICIPANT
+#       job_types:
+#         - "JT_ROOM"
+#         - "JT_PUBLISHER"
+#       # Secret for HMAC signature validation (keep this secure!)
+#       secret: "your-webhook-secret-key"
+#       # Request timeout (default: 10s)
+#       timeout: 10s
+#       # Retry configuration for failed webhook deliveries
+#       retry:
+#         max_retries: 3
+#         initial_wait: 1s
+#         max_wait: 10s
+#       # Optional custom headers to include in webhook requests
+#       headers:
+#         X-Custom-Header: "custom-value"
+#         Authorization: "Bearer your-optional-token"
+#     
+#     # Example: Another external agent for different use case
+#     - name: "transcription-agent"
+#       enabled: true
+#       webhook_url: "https://transcription-service.com/webhook"
+#       job_types:
+#         - "JT_PARTICIPANT"
+#       secret: "transcription-secret"
+#       timeout: 15s

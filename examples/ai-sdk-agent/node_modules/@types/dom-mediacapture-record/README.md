@@ -1,0 +1,15 @@
+# Installation
+> `npm install --save @types/dom-mediacapture-record`
+
+# Summary
+This package contains type definitions for dom-mediacapture-record (https://w3c.github.io/mediacapture-record).
+
+# Details
+Files were exported from https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/dom-mediacapture-record.
+
+### Additional Details
+ * Last updated: Tue, 01 Apr 2025 16:38:24 GMT
+ * Dependencies: none
+
+# Credits
+These definitions were written by [Elias Meire](https://github.com/elsmr), and [AppLover69](https://github.com/AppLover69).
