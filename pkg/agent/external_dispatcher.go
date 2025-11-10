@@ -112,8 +112,7 @@ func (d *ExternalDispatcher) DispatchJob(
 
 			job, err := d.dispatchToClient(ctx, c, desc)
 			if err != nil {
-				d.logger.Warnw("failed to dispatch job to external agent",
-					"error", err,
+				d.logger.Warnw("failed to dispatch job to external agent", err,
 					"agent", c.GetName(),
 					"jobID", desc.DispatchId)
 				return
@@ -150,11 +149,8 @@ func (d *ExternalDispatcher) dispatchToClient(
 	}
 
 	// Initialize job state
-	now := time.Now()
 	job.State = &livekit.JobState{
-		Status:    livekit.JobStatus_JS_PENDING,
-		UpdatedAt: now.UnixNano(),
-		CreatedAt: now.UnixNano(),
+		Status: livekit.JobStatus_JS_PENDING,
 	}
 
 	// Generate access token for the agent to join the room
