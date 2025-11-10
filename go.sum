@@ -171,8 +171,10 @@ github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731 h1:9x+U2HGLrSw5AT
 github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731/go.mod h1:Rs3MhFwutWhGwmY1VQsygw28z5bWcnEYmS1OG9OxjOQ=
 github.com/livekit/mediatransportutil v0.0.0-20250922175932-f537f0880397 h1:Z7j2mY+bvG05UC80MpnJkitlJju8sSDWsr0Bb4dPceo=
 github.com/livekit/mediatransportutil v0.0.0-20250922175932-f537f0880397/go.mod h1:mSNtYzSf6iY9xM3UX42VEI+STHvMgHmrYzEHPcdhB8A=
-github.com/livekit/protocol v1.43.0 h1:cXxfORrHrXiqWD5mGXOIWQa0lyprT6VDvlw6/suiAIg=
-github.com/livekit/protocol v1.43.0/go.mod h1:TpqU2qCI1ES4Lk7PAWSgYO4RaexfVXb54ZO2hXv0Bmc=
+github.com/livekit/protocol v1.42.3-0.20251110024447-7fc3ededb442 h1:tQ51UupfMOaYpbBCovJFEDSBXjtEq6Uj4jr0AaEWID8=
+github.com/livekit/protocol v1.42.3-0.20251110024447-7fc3ededb442/go.mod h1:TpqU2qCI1ES4Lk7PAWSgYO4RaexfVXb54ZO2hXv0Bmc=
+github.com/livekit/protocol v1.43.1-0.20251110033935-dbdb72e565ca h1:JtDD6fM8oKeTStX6wYBe7KM83l/mryFFRHnLUPRfKxs=
+github.com/livekit/protocol v1.43.1-0.20251110033935-dbdb72e565ca/go.mod h1:TpqU2qCI1ES4Lk7PAWSgYO4RaexfVXb54ZO2hXv0Bmc=
 github.com/livekit/psrpc v0.7.1-0.20251105165826-1016ad610a7e h1:K6GKMFGJW8U2RoEyi8Zar7pPwUB7RMsn3AEJXf/Mgfc=
 github.com/livekit/psrpc v0.7.1-0.20251105165826-1016ad610a7e/go.mod h1:bZ4iHFQptTkbPnB0LasvRNu/OBYXEu1NA6O5BMFo9kk=
 github.com/mackerelio/go-osstat v0.2.6 h1:gs4U8BZeS1tjrL08tt5VUliVvSWP26Ai2Ob8Lr7f2i0=
