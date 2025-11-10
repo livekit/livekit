@@ -149,6 +149,7 @@ func (d *ExternalDispatcher) dispatchToClient(
 	}
 
 	// Initialize job state
+	now := time.Now()
 	job.State = &livekit.JobState{
 		Status: livekit.JobStatus_JS_PENDING,
 	}
