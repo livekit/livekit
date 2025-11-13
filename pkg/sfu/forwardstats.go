@@ -53,7 +53,7 @@ func (s *ForwardStats) Update(arrival, left int64) (int64, bool) {
 	return transit, isHighForwardingLatency
 }
 
-func (s *ForwardStats) GetStats(shortDuration time.Duration) (time.Duration, time.Duration, time.Duration, time.Duration) {
+func (s *ForwardStats) GetStats(shortDuration time.Duration) (time.Duration, time.Duration) {
 	s.lock.Lock()
 	// a dummy sample to flush the pipe to current time
 	now := mono.UnixNano()
@@ -62,7 +62,6 @@ func (s *ForwardStats) GetStats(shortDuration time.Duration) (time.Duration, tim
 	}
 
 	wLong := s.latency.Summarize()
-	wShort := s.latency.SummarizeLast(shortDuration)
 
 	lowest := s.lowest
 	s.lowest = time.Second.Nanoseconds()
@@ -72,8 +71,7 @@ func (s *ForwardStats) GetStats(shortDuration time.Duration) (time.Duration, tim
 	s.lock.Unlock()
 
 	latencyLong, jitterLong := time.Duration(wLong.Mean()), time.Duration(wLong.StdDev())
-	latencyShort, jitterShort := time.Duration(wShort.Mean()), time.Duration(wShort.StdDev())
-	if latencyShort > cHighForwardingLatency/2 && jitterLong > latencyLong*cSkewFactor {
+	if jitterLong > latencyLong*cSkewFactor {
 		logger.Infow(
 			"high jitter in forwarding path",
 			"lowest", time.Duration(lowest),
@@ -81,12 +79,9 @@ func (s *ForwardStats) GetStats(shortDuration time.Duration) (time.Duration, tim
 			"countLong", wLong.Count(),
 			"latencyLong", latencyLong,
 			"jitterLong", jitterLong,
-			"countShort", wShort.Count(),
-			"latencyShort", latencyShort,
-			"jitterShort", jitterShort,
 		)
 	}
-	return latencyLong, jitterLong, latencyShort, jitterShort
+	return latencyLong, jitterLong
 }
 
 func (s *ForwardStats) Stop() {
@@ -103,9 +98,9 @@ func (s *ForwardStats) report(reportInterval time.Duration) {
 			return
 
 		case <-ticker.C:
-			latencyLong, jitterLong, latencyShort, jitterShort := s.GetStats(reportInterval)
-			prometheus.RecordForwardJitter(uint32(jitterShort.Microseconds()), uint32(jitterLong.Microseconds()))
-			prometheus.RecordForwardLatency(uint32(latencyShort.Microseconds()), uint32(latencyLong.Microseconds()))
+			latencyLong, jitterLong := s.GetStats(reportInterval)
+			prometheus.RecordForwardJitter(uint32(jitterLong.Nanoseconds()))
+			prometheus.RecordForwardLatency(uint32(latencyLong.Nanoseconds()))
 		}
 	}
 }
