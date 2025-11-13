@@ -84,6 +84,14 @@ func (s *ForwardStats) GetStats(shortDuration time.Duration) (time.Duration, tim
 	return latencyLong, jitterLong
 }
 
+func (s *ForwardStats) GetShortStats(shortDuration time.Duration) (time.Duration, time.Duration) {
+	s.lock.Lock()
+	wShort := s.latency.SummarizeLast(shortDuration)
+	s.lock.Unlock()
+
+	return time.Duration(wShort.Mean()), time.Duration(wShort.StdDev())
+}
+
 func (s *ForwardStats) Stop() {
 	close(s.closeCh)
 }
