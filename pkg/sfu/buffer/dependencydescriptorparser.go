@@ -17,6 +17,7 @@ package buffer
 import (
 	"fmt"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/pion/rtp"
@@ -27,6 +28,16 @@ import (
 
 	"github.com/livekit/protocol/logger"
 )
+
+var (
+	ExtDependencyDescriptorFactory = &sync.Pool{
+		New: func() any {
+			return &ExtDependencyDescriptor{}
+		},
+	}
+)
+
+// --------------------------------------
 
 const (
 	ddRestartThreshold = 30 * time.Second
@@ -156,7 +167,8 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 
 	r.frameChecker.AddPacket(extSeq, extFN, &ddVal)
 
-	extDD := &ExtDependencyDescriptor{
+	extDD := ExtDependencyDescriptorFactory.Get().(*ExtDependencyDescriptor)
+	*extDD = ExtDependencyDescriptor{
 		Descriptor:        &ddVal,
 		ExtFrameNum:       extFN,
 		Integrity:         r.frameChecker.FrameIntegrity(extFN),
@@ -233,6 +245,15 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	extDD.ExtKeyFrameNum = r.structureExtFrameNum
 
 	return extDD, videoLayer, nil
+}
+
+func (r *DependencyDescriptorParser) ReleaseExtDependencyDescriptor(extDD *ExtDependencyDescriptor) {
+	if extDD == nil {
+		return
+	}
+
+	*extDD = ExtDependencyDescriptor{}
+	ExtDependencyDescriptorFactory.Put(extDD)
 }
 
 func (r *DependencyDescriptorParser) restart() {
