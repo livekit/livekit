@@ -2,6 +2,22 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.4] - 2025-11-15
+
+### Added
+- Log reason for subscriber not being able to determine codec. (#4071)
+- Kind details for connector (#4072)
+
+### Fixed
+- Prevent invalid track access while peer connection is shutting down. (#4054)
+
+### Changed
+- Update PsRPC to get redis pipeliner implementation (#4055)
+- Forwarding latency measurement. (#4056. #4057, #4059, #4061, #4062, #4067, #4080)
+- Update pion/transport to v3.1.1 (to get batch I/O ping-pong buffer) (#4070)
+- Use sync.Pool for objects in packet path. (#4066)
+- Bump protocol to pull sip validation changes and error mapping (#4081)
+
 ## [1.9.3] - 2025-11-02
 
 ### Added
