@@ -150,5 +150,3 @@ require (
 	google.golang.org/grpc v1.76.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
-
-replace golang.org/x/tools => golang.org/x/tools v0.37.0 // counterfeiter is broken
