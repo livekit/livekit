@@ -87,6 +87,10 @@ rtc:
   #     port: 443
   #     # tls, tcp, or udp
   #     protocol: tls
+  #     # Shared secret for TURN server authentication
+  #     secret: ""
+  #     ttl: 14400 # seconds
+  #     # Insecure username/password authentication
   #     username: ""
   #     credential: ""
   # # allows LiveKit to monitor congestion when sending streams and automatically
