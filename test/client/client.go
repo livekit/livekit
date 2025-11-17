@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -99,6 +100,10 @@ type RTCClient struct {
 	bytesReceived map[livekit.ParticipantID]uint64
 
 	subscriptionResponse atomic.Pointer[livekit.SubscriptionResponse]
+
+	nextDataTrackHandle        atomic.Uint32
+	pendingPublishedDataTracks map[uint16]*livekit.DataTrackInfo
+	pendingDataTrackWriters    []*DataTrackWriter
 }
 
 var (
@@ -209,17 +214,19 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 	var err error
 
 	c := &RTCClient{
-		useSinglePeerConnection: useSinglePeerConnection,
-		conn:                    conn,
-		localTracks:             make(map[string]webrtc.TrackLocal),
-		trackSenders:            make(map[string]*webrtc.RTPSender),
-		pendingPublishedTracks:  make(map[string]*livekit.TrackInfo),
-		subscribedTracks:        make(map[livekit.ParticipantID][]*webrtc.TrackRemote),
-		remoteParticipants:      make(map[livekit.ParticipantID]*livekit.ParticipantInfo),
-		me:                      &webrtc.MediaEngine{},
-		lastPackets:             make(map[livekit.ParticipantID]*rtp.Packet),
-		bytesReceived:           make(map[livekit.ParticipantID]uint64),
+		useSinglePeerConnection:    useSinglePeerConnection,
+		conn:                       conn,
+		localTracks:                make(map[string]webrtc.TrackLocal),
+		trackSenders:               make(map[string]*webrtc.RTPSender),
+		pendingPublishedTracks:     make(map[string]*livekit.TrackInfo),
+		subscribedTracks:           make(map[livekit.ParticipantID][]*webrtc.TrackRemote),
+		remoteParticipants:         make(map[livekit.ParticipantID]*livekit.ParticipantInfo),
+		me:                         &webrtc.MediaEngine{},
+		lastPackets:                make(map[livekit.ParticipantID]*rtp.Packet),
+		bytesReceived:              make(map[livekit.ParticipantID]uint64),
+		pendingPublishedDataTracks: make(map[uint16]*livekit.DataTrackInfo),
 	}
+	c.nextDataTrackHandle.Store(uint32(rand.IntN(8192)))
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 
 	conf := rtc.WebRTCConfig{
@@ -297,8 +304,14 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 				logger.Errorw("track writer error", err)
 			}
 		}
-
 		c.pendingTrackWriters = nil
+
+		for _, dtw := range c.pendingDataTrackWriters {
+			if err := dtw.Start(); err != nil {
+				logger.Errorw("data track writer error", err)
+			}
+		}
+		c.pendingDataTrackWriters = nil
 
 		if c.OnConnected != nil {
 			go c.OnConnected()
@@ -375,8 +388,14 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 					logger.Errorw("track writer error", err)
 				}
 			}
-
 			c.pendingTrackWriters = nil
+
+			for _, dtw := range c.pendingDataTrackWriters {
+				if err := dtw.Start(); err != nil {
+					logger.Errorw("data track writer error", err)
+				}
+			}
+			c.pendingDataTrackWriters = nil
 
 			if c.OnConnected != nil {
 				go c.OnConnected()
@@ -502,8 +521,13 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 		c.lock.Unlock()
 
 	case *livekit.SignalResponse_TrackPublished:
-		logger.Debugw("track published", "trackID", msg.TrackPublished.Track.Name, "participant", c.localParticipant.Sid,
-			"cid", msg.TrackPublished.Cid, "trackSid", msg.TrackPublished.Track.Sid)
+		logger.Debugw(
+			"track published",
+			"participant", c.localParticipant.Sid,
+			"cid", msg.TrackPublished.Cid,
+			"trackID", msg.TrackPublished.Track.Sid,
+			"trackName", msg.TrackPublished.Track.Name,
+		)
 		c.lock.Lock()
 		c.pendingPublishedTracks[msg.TrackPublished.Cid] = msg.TrackPublished.Track
 		c.lock.Unlock()
@@ -535,6 +559,17 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 			"numVideos", msg.MediaSectionsRequirement.NumVideos,
 		)
 		c.handleMediaSectionsRequirement(msg.MediaSectionsRequirement)
+	case *livekit.SignalResponse_PublishDataTrack:
+		logger.Debugw(
+			"data track published",
+			"participant", c.localParticipant.Sid,
+			"trackID", msg.PublishDataTrack.Info.Sid,
+			"trackHandle", msg.PublishDataTrack.Info.PubHandle,
+			"trackName", msg.PublishDataTrack.Info.Name,
+		)
+		c.lock.Lock()
+		c.pendingPublishedDataTracks[uint16(msg.PublishDataTrack.Info.PubHandle)] = msg.PublishDataTrack.Info
+		c.lock.Unlock()
 	}
 	return nil
 }
@@ -865,6 +900,57 @@ func (c *RTCClient) PublishDataUnlabeled(data []byte) error {
 	}
 
 	return c.publisher.SendDataMessageUnlabeled(data, true, "test")
+}
+
+// DT-TODO: add data track traffic
+func (c *RTCClient) PublishDataTrack() (writer *DataTrackWriter, err error) {
+	dataTrackHandle := uint16(c.nextDataTrackHandle.Inc())
+	if err = c.SendRequest(&livekit.SignalRequest{
+		Message: &livekit.SignalRequest_PublishDataTrack{
+			PublishDataTrack: &livekit.PublishDataTrackRequest{
+				PubHandle: uint32(dataTrackHandle),
+				Name:      fmt.Sprintf("data_track_%d", dataTrackHandle),
+			},
+		},
+	}); err != nil {
+		return
+	}
+
+	// wait till data track published message is received
+	timeout := time.After(5 * time.Second)
+	var dti *livekit.DataTrackInfo
+	for {
+		select {
+		case <-timeout:
+			return nil, errors.New("could not publish data track after timeout")
+		default:
+			c.lock.Lock()
+			dti = c.pendingPublishedDataTracks[dataTrackHandle]
+			if dti != nil {
+				delete(c.pendingPublishedDataTracks, dataTrackHandle)
+				c.lock.Unlock()
+				break
+			}
+			c.lock.Unlock()
+			time.Sleep(50 * time.Millisecond)
+		}
+		if dti != nil {
+			break
+		}
+	}
+
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	writer = NewDataTrackWriter()
+
+	// write data tracks only after connection established
+	if c.hasPrimaryEverConnected() {
+		err = writer.Start()
+	} else {
+		c.pendingDataTrackWriters = append(c.pendingDataTrackWriters, writer)
+	}
+	return
 }
 
 func (c *RTCClient) GetPublishedTrackIDs() []string {

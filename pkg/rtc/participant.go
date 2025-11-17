@@ -379,6 +379,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		rpcPendingResponses: make(map[string]*utils.DataChannelRpcPendingResponseHandler),
 		onClose:             make(map[string]func(types.LocalParticipant)),
 		telemetryGuard:      &telemetry.ReferenceGuard{},
+		dataTracks:          make(map[uint16]*DataTrack),
 	}
 	p.setupSignalling()
 
@@ -793,9 +794,8 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 		}
 	}
 
-	// DT-TODO: remove published data tracks if data publish permission is revoked and send UnpublishDataTrackResponse
 	if !grants.Video.GetCanPublishData() {
-		for _, dt := range p.GetPublishedDataTracks() {
+		for _, dt := range p.getPublishedDataTracks() {
 			p.removePublishedDataTrack(dt)
 		}
 	}

@@ -144,11 +144,13 @@ func (s *signalhandler) HandleMessage(msg proto.Message) error {
 		}
 
 	case *livekit.SignalRequest_PublishDataTrack:
-	// DT-TODO
+		s.params.Participant.HandlePublishDataTrackRequest(msg.PublishDataTrack)
+
 	case *livekit.SignalRequest_UnpublishDataTrack:
-	// DT-TODO
+		s.params.Participant.HandleUnpublishDataTrackRequest(msg.UnpublishDataTrack)
+
 	case *livekit.SignalRequest_UpdateDataSubscription:
-		// DT-TODO
+		s.params.Participant.HandleUpdateDataSubscription(msg.UpdateDataSubscription)
 	}
 
 	return nil

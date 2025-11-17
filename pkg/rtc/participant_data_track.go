@@ -84,7 +84,6 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 		return
 	}
 
-	// DT-TODO: is 0 length not allowed?
 	if len(req.Name) == 0 || len(req.Name) > 256 {
 		p.pubLogger.Warnw("invalid data track name", nil, "req", logger.Proto(req))
 		p.sendRequestResponse(&livekit.RequestResponse{
@@ -100,11 +99,14 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 	p.dataTracksLock.Lock()
 	for _, dt := range p.dataTracks {
 		message := ""
+		reason := livekit.RequestResponse_OK
 		switch {
 		case dt.PubHandle() == uint16(req.PubHandle):
 			message = "a data track with same handle already exists"
+			reason = livekit.RequestResponse_DUPLICATE_HANDLE
 		case dt.Name() == req.Name:
 			message = "a data track with same name already exists"
+			reason = livekit.RequestResponse_DUPLICATE_NAME
 		}
 		if message != "" {
 			p.dataTracksLock.Unlock()
@@ -115,7 +117,7 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 				"existing", logger.Proto(dt.ToProto()),
 			)
 			p.sendRequestResponse(&livekit.RequestResponse{
-				Reason:  livekit.RequestResponse_NOT_ALLOWED, // DT-TODO replace with DUPLICATE_*
+				Reason:  reason,
 				Message: message,
 				Request: &livekit.RequestResponse_PublishDataTrack{
 					PublishDataTrack: utils.CloneProto(req),
@@ -176,8 +178,7 @@ func (p *ParticipantImpl) HandleUpdateDataSubscription(req *livekit.UpdateDataSu
 	}
 }
 
-// DT-TODO is this needed?
-func (p *ParticipantImpl) GetPublishedDataTracks() []*DataTrack {
+func (p *ParticipantImpl) getPublishedDataTracks() []*DataTrack {
 	p.dataTracksLock.RLock()
 	defer p.dataTracksLock.RUnlock()
 

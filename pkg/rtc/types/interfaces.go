@@ -458,7 +458,6 @@ type LocalParticipant interface {
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
 	SendSubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool) error
 	SendRefreshToken(token string) error
-	// RAJA-REMOVE SendRequestResponse(requestResponse *livekit.RequestResponse) error
 	HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse) error
 	IssueFullReconnect(reason ParticipantCloseReason)
 	SendRoomMovedResponse(moved *livekit.RoomMovedResponse) error

@@ -35,6 +35,7 @@ type DataTrackParams struct {
 func NewDataTrack(params DataTrackParams, dti *livekit.DataTrackInfo) *DataTrack {
 	return &DataTrack{
 		params: params,
+		dti:    dti,
 	}
 }
 
