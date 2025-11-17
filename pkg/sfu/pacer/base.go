@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
+	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/mono"
 	"github.com/pion/rtp"
@@ -56,9 +57,17 @@ func (b *Base) TimeSinceLastSentPacket() time.Duration {
 
 func (b *Base) SendPacket(p *Packet) (int, error) {
 	defer func() {
+		if p.HeaderPool != nil && p.Header != nil {
+			*p.Header = rtp.Header{}
+			p.HeaderPool.Put(p.Header)
+		}
+
 		if p.Pool != nil && p.PoolEntity != nil {
 			p.Pool.Put(p.PoolEntity)
 		}
+
+		*p = Packet{}
+		PacketFactory.Put(p)
 	}()
 
 	err := b.patchRTPHeaderExtensions(p)
@@ -83,8 +92,10 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 	sendingAt := mono.Now()
 	if p.AbsSendTimeExtID != 0 {
-		absSendTime := rtp.NewAbsSendTimeExtension(sendingAt)
-		absSendTimeBytes, err := absSendTime.Marshal()
+		absSendTimeExt := rtp.AbsSendTimeExtension{
+			Timestamp: uint64(mediatransportutil.ToNtpTime(sendingAt) >> 14),
+		}
+		absSendTimeBytes, err := absSendTimeExt.Marshal()
 		if err != nil {
 			return err
 		}

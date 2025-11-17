@@ -433,3 +433,12 @@ func BenchmarkMemcpu(b *testing.B) {
 		copy(buf2, buf)
 	}
 }
+
+func BenchmarkExtPacketFactory(b *testing.B) {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		extPkt := ExtPacketFactory.Get().(*ExtPacket)
+		*extPkt = ExtPacket{}
+		ExtPacketFactory.Put(extPkt)
+	}
+}

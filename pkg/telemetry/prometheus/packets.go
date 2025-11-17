@@ -28,11 +28,11 @@ const (
 	Outgoing Direction = "outgoing"
 )
 
-type transmissionType string
+type TransmissionType string
 
 const (
-	transmissionInitial    transmissionType = "initial"
-	transmissionRetransmit transmissionType = "retransmit"
+	TransmissionInitial    TransmissionType = "initial"
+	TransmissionRetransmit TransmissionType = "retransmit"
 )
 
 var (
@@ -214,11 +214,11 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 }
 
 func IncrementPackets(country string, direction Direction, count uint64, retransmit bool) {
-	var transmission transmissionType
+	var transmission TransmissionType
 	if retransmit {
-		transmission = transmissionRetransmit
+		transmission = TransmissionRetransmit
 	} else {
-		transmission = transmissionInitial
+		transmission = TransmissionInitial
 	}
 	promPacketTotal.WithLabelValues(string(direction), string(transmission), country).Add(float64(count))
 
@@ -233,11 +233,11 @@ func IncrementPackets(country string, direction Direction, count uint64, retrans
 }
 
 func IncrementBytes(country string, direction Direction, count uint64, retransmit bool) {
-	var transmission transmissionType
+	var transmission TransmissionType
 	if retransmit {
-		transmission = transmissionRetransmit
+		transmission = TransmissionRetransmit
 	} else {
-		transmission = transmissionInitial
+		transmission = TransmissionInitial
 	}
 	promPacketBytes.WithLabelValues(string(direction), string(transmission), country).Add(float64(count))
 
@@ -340,12 +340,12 @@ func RecordForwardLatencySample(forwardLatency int64) {
 	promForwardLatencyHist.Observe(float64(forwardLatency))
 }
 
-func RecordForwardLatency(shortTermLatencyAvg, longTermLatencyAvg uint32) {
+func RecordForwardLatency(longTermLatencyAvg uint32) {
 	forwardLatency.Store(longTermLatencyAvg)
 	promForwardLatency.Set(float64(longTermLatencyAvg))
 }
 
-func RecordForwardJitter(shortTermJitterAvg, longTermJitterAvg uint32) {
+func RecordForwardJitter(longTermJitterAvg uint32) {
 	forwardJitter.Store(longTermJitterAvg)
 	promForwardJitter.Set(float64(longTermJitterAvg))
 }

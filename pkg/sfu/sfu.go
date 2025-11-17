@@ -16,18 +16,21 @@ package sfu
 
 import (
 	"sync"
+
+	"github.com/pion/rtp"
 )
 
 var (
-	PacketFactory *sync.Pool
-)
-
-func init() {
-	// Init packet factory
 	PacketFactory = &sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			b := make([]byte, 1460)
 			return &b
 		},
 	}
-}
+
+	RTPHeaderFactory = &sync.Pool{
+		New: func() any {
+			return &rtp.Header{}
+		},
+	}
+)

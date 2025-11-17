@@ -97,6 +97,7 @@ func (r *WrappedReceiver) StreamID() string {
 func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) (isAvailable bool, needsPublish bool) {
 	r.lock.Lock()
 
+	reason := "no matching receiver"
 	codecMimeType := mime.NormalizeMimeType(codec.MimeType)
 	var trackReceiver sfu.TrackReceiver
 	for _, receiver := range r.receivers {
@@ -108,22 +109,33 @@ func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) (is
 			break
 		}
 
-		if !r.params.IsEncrypted {
-			if receiverMimeType == mime.MimeTypeRED && codecMimeType == mime.MimeTypeOpus {
-				// audio opus/red can match opus only
+		if receiverMimeType == mime.MimeTypeRED && codecMimeType == mime.MimeTypeOpus {
+			// audio opus/red can match opus only
+			if !r.params.IsEncrypted { // cannot match encrypted source
 				trackReceiver = receiver.GetPrimaryReceiverForRed()
 				isAvailable = true
 				break
-			} else if receiverMimeType == mime.MimeTypeOpus && codecMimeType == mime.MimeTypeRED {
+			} else {
+				reason = "encrypted source"
+			}
+		} else if receiverMimeType == mime.MimeTypeOpus && codecMimeType == mime.MimeTypeRED {
+			if !r.params.IsEncrypted { // cannot match encrypted source
 				trackReceiver = receiver.GetRedReceiver()
 				isAvailable = true
 				break
+			} else {
+				reason = "encrypted source"
 			}
 		}
+
 	}
 	if trackReceiver == nil {
 		r.lock.Unlock()
-		r.params.Logger.Warnw("can't determine receiver for codec", nil, "codec", codec.MimeType)
+		r.params.Logger.Warnw(
+			"can't determine receiver for codec", nil,
+			"codec", codec.MimeType,
+			"reason", reason,
+		)
 		return
 	}
 	r.TrackReceiver = trackReceiver
