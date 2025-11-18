@@ -34,7 +34,7 @@ type DataChannelWriter[T BufferedAmountGetter] struct {
 	minBufferedAmount uint64
 }
 
-// NewDataChannelWriterReliable creates a new DataChannelWriter for reliabled data channel by
+// NewDataChannelWriterReliable creates a new DataChannelWriter for reliable data channel by
 // detaching it, when writing to the datachanel times out, it will block and retry if the
 // receiver's bitrate is above the slowThreshold or drop the data if it's below the threshold.
 // If the slowThreshold is 0, it will never retry on write timeout.
