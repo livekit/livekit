@@ -84,7 +84,8 @@ const (
 
 	shortConnectionThreshold = 90 * time.Second
 
-	dataChannelBufferSize = 65535
+	dataChannelBufferSize             = 65535
+	lossyDataChannelMinBufferedAmount = 8 * 1024
 )
 
 var (
@@ -282,24 +283,25 @@ type PCTransport struct {
 }
 
 type TransportParams struct {
-	Handler                      transport.Handler
-	ProtocolVersion              types.ProtocolVersion
-	Config                       *WebRTCConfig
-	Twcc                         *lktwcc.Responder
-	DirectionConfig              DirectionConfig
-	CongestionControlConfig      config.CongestionControlConfig
-	EnabledCodecs                []*livekit.Codec
-	Logger                       logger.Logger
-	Transport                    livekit.SignalTarget
-	SimTracks                    map[uint32]SimulcastTrackInfo
-	ClientInfo                   ClientInfo
-	IsOfferer                    bool
-	IsSendSide                   bool
-	AllowPlayoutDelay            bool
-	UseOneShotSignallingMode     bool
-	FireOnTrackBySdp             bool
-	DataChannelMaxBufferedAmount uint64
-	DatachannelSlowThreshold     int
+	Handler                       transport.Handler
+	ProtocolVersion               types.ProtocolVersion
+	Config                        *WebRTCConfig
+	Twcc                          *lktwcc.Responder
+	DirectionConfig               DirectionConfig
+	CongestionControlConfig       config.CongestionControlConfig
+	EnabledCodecs                 []*livekit.Codec
+	Logger                        logger.Logger
+	Transport                     livekit.SignalTarget
+	SimTracks                     map[uint32]SimulcastTrackInfo
+	ClientInfo                    ClientInfo
+	IsOfferer                     bool
+	IsSendSide                    bool
+	AllowPlayoutDelay             bool
+	UseOneShotSignallingMode      bool
+	FireOnTrackBySdp              bool
+	DataChannelMaxBufferedAmount  uint64
+	DatachannelSlowThreshold      int
+	DatachannelLossyTargetLatency time.Duration
 
 	// for development test
 	DatachannelMaxReceiverBufferSize int
@@ -852,7 +854,7 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 			t.lock.Lock()
 			t.unlabeledDataChannels = append(
 				t.unlabeledDataChannels,
-				datachannel.NewDataChannelWriter(dc, rawDC, t.params.DatachannelSlowThreshold),
+				datachannel.NewDataChannelWriterReliable(dc, rawDC, t.params.DatachannelSlowThreshold),
 			)
 			t.lock.Unlock()
 
@@ -861,7 +863,7 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 			if t.reliableDC != nil {
 				t.reliableDC.Close()
 			}
-			t.reliableDC = datachannel.NewDataChannelWriter(dc, rawDC, t.params.DatachannelSlowThreshold)
+			t.reliableDC = datachannel.NewDataChannelWriterReliable(dc, rawDC, t.params.DatachannelSlowThreshold)
 			t.reliableDCOpened = true
 			t.lock.Unlock()
 
@@ -870,7 +872,8 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 			if t.lossyDC != nil {
 				t.lossyDC.Close()
 			}
-			t.lossyDC = datachannel.NewDataChannelWriter(dc, rawDC, 0)
+			t.params.Logger.Debugw("creating lossy data channel writer", "targetLatency", t.params.DatachannelLossyTargetLatency, "minBufferedAmount", lossyDataChannelMinBufferedAmount)
+			t.lossyDC = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, t.params.DatachannelLossyTargetLatency, uint64(lossyDataChannelMinBufferedAmount))
 			t.lossyDCOpened = true
 			t.lock.Unlock()
 		}
@@ -1197,13 +1200,13 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 		if isUnlabeled {
 			t.unlabeledDataChannels = append(
 				t.unlabeledDataChannels,
-				datachannel.NewDataChannelWriter(dc, rawDC, slowThreshold),
+				datachannel.NewDataChannelWriterReliable(dc, rawDC, slowThreshold),
 			)
 		} else {
 			if *dcPtr != nil {
 				(*dcPtr).Close()
 			}
-			*dcPtr = datachannel.NewDataChannelWriter(dc, rawDC, slowThreshold)
+			*dcPtr = datachannel.NewDataChannelWriterReliable(dc, rawDC, slowThreshold)
 			*dcReady = true
 		}
 		t.lock.Unlock()
@@ -1255,7 +1258,7 @@ func (t *PCTransport) CreateReadableDataChannel(label string, dci *webrtc.DataCh
 		t.lock.Lock()
 		t.unlabeledDataChannels = append(
 			t.unlabeledDataChannels,
-			datachannel.NewDataChannelWriter(dc, rawDC, t.params.DatachannelSlowThreshold),
+			datachannel.NewDataChannelWriterReliable(dc, rawDC, t.params.DatachannelSlowThreshold),
 		)
 		t.lock.Unlock()
 

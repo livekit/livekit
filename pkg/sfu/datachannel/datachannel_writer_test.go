@@ -13,7 +13,7 @@ import (
 func TestDataChannelWriter(t *testing.T) {
 	mockDC := newMockDataChannelWriter()
 	// slow threshold is 1000B/s
-	w := NewDataChannelWriter(mockDC, mockDC, 8000)
+	w := NewDataChannelWriterReliable(mockDC, mockDC, 8000)
 	require.Equal(t, mockDC, w.BufferedAmountGetter())
 	buf := make([]byte, 2000)
 	// write 2000 bytes so it should not drop in 2 seconds
@@ -38,7 +38,7 @@ func TestDataChannelWriter(t *testing.T) {
 
 func TestDataChannelWriter_NoSlowThreshold(t *testing.T) {
 	mockDC := newMockDataChannelWriter()
-	w := NewDataChannelWriter(mockDC, mockDC, 0)
+	w := NewDataChannelWriterReliable(mockDC, mockDC, 0)
 	buf := make([]byte, 2000)
 	n, err := w.Write(buf)
 	require.NoError(t, err)
