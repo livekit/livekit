@@ -124,6 +124,9 @@ type RTCConfig struct {
 	// be dropped for a slow data channel to avoid blocking the room.
 	DatachannelSlowThreshold int `yaml:"datachannel_slow_threshold,omitempty"`
 
+	// Target latency for lossy data channels, used to drop packets to reduce latency.
+	DatachannelLossyTargetLatency time.Duration `yaml:"datachannel_lossy_target_latency,omitempty"`
+
 	ForwardStats ForwardStatsConfig `yaml:"forward_stats,omitempty"`
 }
 

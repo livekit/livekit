@@ -75,7 +75,7 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	redactedReq := redactCreateRoomRequest(req)
 	RecordRequest(ctx, redactedReq)
 
-	AppendLogFields(ctx, "room", req.Name, "request", logger.Proto(redactedReq))
+	AppendLogFields(ctx, "room", req.Name, "request", logger.Proto(req))
 	if err := EnsureCreatePermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	} else if req.Egress != nil && s.egressLauncher == nil {
@@ -439,7 +439,7 @@ func redactSendDataRequest(req *livekit.SendDataRequest) *livekit.SendDataReques
 	clone := utils.CloneProto(req)
 
 	// replace with size of data to provide visibility on request size
-	clone.Data = []byte(fmt.Sprintf("__size: %d", len(clone.Data)))
+	clone.Data = fmt.Appendf(nil, "__size: %d", len(clone.Data))
 
 	return clone
 }
