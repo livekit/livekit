@@ -872,7 +872,6 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 			if t.lossyDC != nil {
 				t.lossyDC.Close()
 			}
-			t.params.Logger.Debugw("creating lossy data channel writer", "targetLatency", t.params.DatachannelLossyTargetLatency, "minBufferedAmount", lossyDataChannelMinBufferedAmount)
 			t.lossyDC = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, t.params.DatachannelLossyTargetLatency, uint64(lossyDataChannelMinBufferedAmount))
 			t.lossyDCOpened = true
 			t.lock.Unlock()
