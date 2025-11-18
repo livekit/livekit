@@ -237,26 +237,26 @@ func (s *signalling) SignalSubscribedAudioCodecUpdate(subscribedAudioCodecUpdate
 	}
 }
 
-func (u *signalling) SignalPublishDataTrack(publishDataTrack *livekit.PublishDataTrackResponse) proto.Message {
+func (u *signalling) SignalPublishDataTrackResponse(publishDataTrackResponse *livekit.PublishDataTrackResponse) proto.Message {
 	return &livekit.SignalResponse{
-		Message: &livekit.SignalResponse_PublishDataTrack{
-			PublishDataTrack: publishDataTrack,
+		Message: &livekit.SignalResponse_PublishDataTrackResponse{
+			PublishDataTrackResponse: publishDataTrackResponse,
 		},
 	}
 }
 
-func (u *signalling) SignalUnpublishDataTrack(unpublishDataTrack *livekit.UnpublishDataTrackResponse) proto.Message {
+func (u *signalling) SignalUnpublishDataTrackResponse(unpublishDataTrackResponse *livekit.UnpublishDataTrackResponse) proto.Message {
 	return &livekit.SignalResponse{
-		Message: &livekit.SignalResponse_UnpublishDataTrack{
-			UnpublishDataTrack: unpublishDataTrack,
+		Message: &livekit.SignalResponse_UnpublishDataTrackResponse{
+			UnpublishDataTrackResponse: unpublishDataTrackResponse,
 		},
 	}
 }
 
-func (u *signalling) SignalDataTrackSubscriberHandles(dataTrackHandles *livekit.DataTrackSubscriberHandles) proto.Message {
+func (u *signalling) SignalDataTrackSubscriberHandles(dataTrackSubscriberHandles *livekit.DataTrackSubscriberHandles) proto.Message {
 	return &livekit.SignalResponse{
-		Message: &livekit.SignalResponse_DataTrackHandles{
-			DataTrackHandles: dataTrackHandles,
+		Message: &livekit.SignalResponse_DataTrackSubscriberHandles{
+			DataTrackSubscriberHandles: dataTrackSubscriberHandles,
 		},
 	}
 }

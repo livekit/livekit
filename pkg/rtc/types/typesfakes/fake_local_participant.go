@@ -392,6 +392,16 @@ type FakeLocalParticipant struct {
 	getPlayoutDelayConfigReturnsOnCall map[int]struct {
 		result1 *livekit.PlayoutDelay
 	}
+	GetPublishedDataTracksStub        func() []types.DataTrack
+	getPublishedDataTracksMutex       sync.RWMutex
+	getPublishedDataTracksArgsForCall []struct {
+	}
+	getPublishedDataTracksReturns struct {
+		result1 []types.DataTrack
+	}
+	getPublishedDataTracksReturnsOnCall map[int]struct {
+		result1 []types.DataTrack
+	}
 	GetPublishedTrackStub        func(livekit.TrackID) types.MediaTrack
 	getPublishedTrackMutex       sync.RWMutex
 	getPublishedTrackArgsForCall []struct {
@@ -988,6 +998,11 @@ type FakeLocalParticipant struct {
 	protocolVersionReturnsOnCall map[int]struct {
 		result1 types.ProtocolVersion
 	}
+	RemovePublishedDataTrackStub        func(types.DataTrack)
+	removePublishedDataTrackMutex       sync.RWMutex
+	removePublishedDataTrackArgsForCall []struct {
+		arg1 types.DataTrack
+	}
 	RemovePublishedTrackStub        func(types.MediaTrack, bool)
 	removePublishedTrackMutex       sync.RWMutex
 	removePublishedTrackArgsForCall []struct {
@@ -1041,6 +1056,17 @@ type FakeLocalParticipant struct {
 		result1 error
 	}
 	sendDataMessageUnlabeledReturnsOnCall map[int]struct {
+		result1 error
+	}
+	SendDataTrackSubscriberHandlesStub        func(map[uint32]*livekit.DataTrackSubscriberHandles_PublishedDataTrack) error
+	sendDataTrackSubscriberHandlesMutex       sync.RWMutex
+	sendDataTrackSubscriberHandlesArgsForCall []struct {
+		arg1 map[uint32]*livekit.DataTrackSubscriberHandles_PublishedDataTrack
+	}
+	sendDataTrackSubscriberHandlesReturns struct {
+		result1 error
+	}
+	sendDataTrackSubscriberHandlesReturnsOnCall map[int]struct {
 		result1 error
 	}
 	SendJoinResponseStub        func(*livekit.JoinResponse) error
@@ -1220,6 +1246,11 @@ type FakeLocalParticipant struct {
 	stopAndGetSubscribedTracksForwarderStateReturnsOnCall map[int]struct {
 		result1 map[livekit.TrackID]*livekit.RTPForwarderState
 	}
+	SubscribeToDataTrackStub        func(livekit.TrackID)
+	subscribeToDataTrackMutex       sync.RWMutex
+	subscribeToDataTrackArgsForCall []struct {
+		arg1 livekit.TrackID
+	}
 	SubscribeToTrackStub        func(livekit.TrackID, bool)
 	subscribeToTrackMutex       sync.RWMutex
 	subscribeToTrackArgsForCall []struct {
@@ -1324,6 +1355,11 @@ type FakeLocalParticipant struct {
 	uncacheDownTrackMutex       sync.RWMutex
 	uncacheDownTrackArgsForCall []struct {
 		arg1 *webrtc.RTPTransceiver
+	}
+	UnsubscribeFromDataTrackStub        func(livekit.TrackID)
+	unsubscribeFromDataTrackMutex       sync.RWMutex
+	unsubscribeFromDataTrackArgsForCall []struct {
+		arg1 livekit.TrackID
 	}
 	UnsubscribeFromTrackStub        func(livekit.TrackID)
 	unsubscribeFromTrackMutex       sync.RWMutex
@@ -3396,6 +3432,59 @@ func (fake *FakeLocalParticipant) GetPlayoutDelayConfigReturnsOnCall(i int, resu
 	}
 	fake.getPlayoutDelayConfigReturnsOnCall[i] = struct {
 		result1 *livekit.PlayoutDelay
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetPublishedDataTracks() []types.DataTrack {
+	fake.getPublishedDataTracksMutex.Lock()
+	ret, specificReturn := fake.getPublishedDataTracksReturnsOnCall[len(fake.getPublishedDataTracksArgsForCall)]
+	fake.getPublishedDataTracksArgsForCall = append(fake.getPublishedDataTracksArgsForCall, struct {
+	}{})
+	stub := fake.GetPublishedDataTracksStub
+	fakeReturns := fake.getPublishedDataTracksReturns
+	fake.recordInvocation("GetPublishedDataTracks", []interface{}{})
+	fake.getPublishedDataTracksMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetPublishedDataTracksCallCount() int {
+	fake.getPublishedDataTracksMutex.RLock()
+	defer fake.getPublishedDataTracksMutex.RUnlock()
+	return len(fake.getPublishedDataTracksArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetPublishedDataTracksCalls(stub func() []types.DataTrack) {
+	fake.getPublishedDataTracksMutex.Lock()
+	defer fake.getPublishedDataTracksMutex.Unlock()
+	fake.GetPublishedDataTracksStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetPublishedDataTracksReturns(result1 []types.DataTrack) {
+	fake.getPublishedDataTracksMutex.Lock()
+	defer fake.getPublishedDataTracksMutex.Unlock()
+	fake.GetPublishedDataTracksStub = nil
+	fake.getPublishedDataTracksReturns = struct {
+		result1 []types.DataTrack
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetPublishedDataTracksReturnsOnCall(i int, result1 []types.DataTrack) {
+	fake.getPublishedDataTracksMutex.Lock()
+	defer fake.getPublishedDataTracksMutex.Unlock()
+	fake.GetPublishedDataTracksStub = nil
+	if fake.getPublishedDataTracksReturnsOnCall == nil {
+		fake.getPublishedDataTracksReturnsOnCall = make(map[int]struct {
+			result1 []types.DataTrack
+		})
+	}
+	fake.getPublishedDataTracksReturnsOnCall[i] = struct {
+		result1 []types.DataTrack
 	}{result1}
 }
 
@@ -6740,6 +6829,38 @@ func (fake *FakeLocalParticipant) ProtocolVersionReturnsOnCall(i int, result1 ty
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) RemovePublishedDataTrack(arg1 types.DataTrack) {
+	fake.removePublishedDataTrackMutex.Lock()
+	fake.removePublishedDataTrackArgsForCall = append(fake.removePublishedDataTrackArgsForCall, struct {
+		arg1 types.DataTrack
+	}{arg1})
+	stub := fake.RemovePublishedDataTrackStub
+	fake.recordInvocation("RemovePublishedDataTrack", []interface{}{arg1})
+	fake.removePublishedDataTrackMutex.Unlock()
+	if stub != nil {
+		fake.RemovePublishedDataTrackStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) RemovePublishedDataTrackCallCount() int {
+	fake.removePublishedDataTrackMutex.RLock()
+	defer fake.removePublishedDataTrackMutex.RUnlock()
+	return len(fake.removePublishedDataTrackArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) RemovePublishedDataTrackCalls(stub func(types.DataTrack)) {
+	fake.removePublishedDataTrackMutex.Lock()
+	defer fake.removePublishedDataTrackMutex.Unlock()
+	fake.RemovePublishedDataTrackStub = stub
+}
+
+func (fake *FakeLocalParticipant) RemovePublishedDataTrackArgsForCall(i int) types.DataTrack {
+	fake.removePublishedDataTrackMutex.RLock()
+	defer fake.removePublishedDataTrackMutex.RUnlock()
+	argsForCall := fake.removePublishedDataTrackArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeLocalParticipant) RemovePublishedTrack(arg1 types.MediaTrack, arg2 bool) {
 	fake.removePublishedTrackMutex.Lock()
 	fake.removePublishedTrackArgsForCall = append(fake.removePublishedTrackArgsForCall, struct {
@@ -7028,6 +7149,67 @@ func (fake *FakeLocalParticipant) SendDataMessageUnlabeledReturnsOnCall(i int, r
 		})
 	}
 	fake.sendDataMessageUnlabeledReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) SendDataTrackSubscriberHandles(arg1 map[uint32]*livekit.DataTrackSubscriberHandles_PublishedDataTrack) error {
+	fake.sendDataTrackSubscriberHandlesMutex.Lock()
+	ret, specificReturn := fake.sendDataTrackSubscriberHandlesReturnsOnCall[len(fake.sendDataTrackSubscriberHandlesArgsForCall)]
+	fake.sendDataTrackSubscriberHandlesArgsForCall = append(fake.sendDataTrackSubscriberHandlesArgsForCall, struct {
+		arg1 map[uint32]*livekit.DataTrackSubscriberHandles_PublishedDataTrack
+	}{arg1})
+	stub := fake.SendDataTrackSubscriberHandlesStub
+	fakeReturns := fake.sendDataTrackSubscriberHandlesReturns
+	fake.recordInvocation("SendDataTrackSubscriberHandles", []interface{}{arg1})
+	fake.sendDataTrackSubscriberHandlesMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) SendDataTrackSubscriberHandlesCallCount() int {
+	fake.sendDataTrackSubscriberHandlesMutex.RLock()
+	defer fake.sendDataTrackSubscriberHandlesMutex.RUnlock()
+	return len(fake.sendDataTrackSubscriberHandlesArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) SendDataTrackSubscriberHandlesCalls(stub func(map[uint32]*livekit.DataTrackSubscriberHandles_PublishedDataTrack) error) {
+	fake.sendDataTrackSubscriberHandlesMutex.Lock()
+	defer fake.sendDataTrackSubscriberHandlesMutex.Unlock()
+	fake.SendDataTrackSubscriberHandlesStub = stub
+}
+
+func (fake *FakeLocalParticipant) SendDataTrackSubscriberHandlesArgsForCall(i int) map[uint32]*livekit.DataTrackSubscriberHandles_PublishedDataTrack {
+	fake.sendDataTrackSubscriberHandlesMutex.RLock()
+	defer fake.sendDataTrackSubscriberHandlesMutex.RUnlock()
+	argsForCall := fake.sendDataTrackSubscriberHandlesArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) SendDataTrackSubscriberHandlesReturns(result1 error) {
+	fake.sendDataTrackSubscriberHandlesMutex.Lock()
+	defer fake.sendDataTrackSubscriberHandlesMutex.Unlock()
+	fake.SendDataTrackSubscriberHandlesStub = nil
+	fake.sendDataTrackSubscriberHandlesReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) SendDataTrackSubscriberHandlesReturnsOnCall(i int, result1 error) {
+	fake.sendDataTrackSubscriberHandlesMutex.Lock()
+	defer fake.sendDataTrackSubscriberHandlesMutex.Unlock()
+	fake.SendDataTrackSubscriberHandlesStub = nil
+	if fake.sendDataTrackSubscriberHandlesReturnsOnCall == nil {
+		fake.sendDataTrackSubscriberHandlesReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.sendDataTrackSubscriberHandlesReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
 }
@@ -8040,6 +8222,38 @@ func (fake *FakeLocalParticipant) StopAndGetSubscribedTracksForwarderStateReturn
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) SubscribeToDataTrack(arg1 livekit.TrackID) {
+	fake.subscribeToDataTrackMutex.Lock()
+	fake.subscribeToDataTrackArgsForCall = append(fake.subscribeToDataTrackArgsForCall, struct {
+		arg1 livekit.TrackID
+	}{arg1})
+	stub := fake.SubscribeToDataTrackStub
+	fake.recordInvocation("SubscribeToDataTrack", []interface{}{arg1})
+	fake.subscribeToDataTrackMutex.Unlock()
+	if stub != nil {
+		fake.SubscribeToDataTrackStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) SubscribeToDataTrackCallCount() int {
+	fake.subscribeToDataTrackMutex.RLock()
+	defer fake.subscribeToDataTrackMutex.RUnlock()
+	return len(fake.subscribeToDataTrackArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) SubscribeToDataTrackCalls(stub func(livekit.TrackID)) {
+	fake.subscribeToDataTrackMutex.Lock()
+	defer fake.subscribeToDataTrackMutex.Unlock()
+	fake.SubscribeToDataTrackStub = stub
+}
+
+func (fake *FakeLocalParticipant) SubscribeToDataTrackArgsForCall(i int) livekit.TrackID {
+	fake.subscribeToDataTrackMutex.RLock()
+	defer fake.subscribeToDataTrackMutex.RUnlock()
+	argsForCall := fake.subscribeToDataTrackArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeLocalParticipant) SubscribeToTrack(arg1 livekit.TrackID, arg2 bool) {
 	fake.subscribeToTrackMutex.Lock()
 	fake.subscribeToTrackArgsForCall = append(fake.subscribeToTrackArgsForCall, struct {
@@ -8585,6 +8799,38 @@ func (fake *FakeLocalParticipant) UncacheDownTrackArgsForCall(i int) *webrtc.RTP
 	fake.uncacheDownTrackMutex.RLock()
 	defer fake.uncacheDownTrackMutex.RUnlock()
 	argsForCall := fake.uncacheDownTrackArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) UnsubscribeFromDataTrack(arg1 livekit.TrackID) {
+	fake.unsubscribeFromDataTrackMutex.Lock()
+	fake.unsubscribeFromDataTrackArgsForCall = append(fake.unsubscribeFromDataTrackArgsForCall, struct {
+		arg1 livekit.TrackID
+	}{arg1})
+	stub := fake.UnsubscribeFromDataTrackStub
+	fake.recordInvocation("UnsubscribeFromDataTrack", []interface{}{arg1})
+	fake.unsubscribeFromDataTrackMutex.Unlock()
+	if stub != nil {
+		fake.UnsubscribeFromDataTrackStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) UnsubscribeFromDataTrackCallCount() int {
+	fake.unsubscribeFromDataTrackMutex.RLock()
+	defer fake.unsubscribeFromDataTrackMutex.RUnlock()
+	return len(fake.unsubscribeFromDataTrackArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) UnsubscribeFromDataTrackCalls(stub func(livekit.TrackID)) {
+	fake.unsubscribeFromDataTrackMutex.Lock()
+	defer fake.unsubscribeFromDataTrackMutex.Unlock()
+	fake.UnsubscribeFromDataTrackStub = stub
+}
+
+func (fake *FakeLocalParticipant) UnsubscribeFromDataTrackArgsForCall(i int) livekit.TrackID {
+	fake.unsubscribeFromDataTrackMutex.RLock()
+	defer fake.unsubscribeFromDataTrackMutex.RUnlock()
+	argsForCall := fake.unsubscribeFromDataTrackArgsForCall[i]
 	return argsForCall.arg1
 }
 

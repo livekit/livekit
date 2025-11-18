@@ -1252,7 +1252,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 					t.params.Handler.OnDataMessageUnlabeled(buffer[:n])
 
 				case isDataTrack:
-					// DT-TODO
+					t.params.Handler.OnDataTrackMessage(buffer[:n])
 
 				default:
 					t.params.Handler.OnDataMessage(kind, buffer[:n])

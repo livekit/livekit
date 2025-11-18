@@ -168,7 +168,7 @@ func TestMultinodeDataPublishing(t *testing.T) {
 
 	scenarioDataPublish(t)
 	scenarioDataUnlabeledPublish(t)
-	// DT-TODO: add a data track test scenario
+	scenarioDataTracksPublishingUponJoining(t)
 }
 
 func TestMultiNodeJoinAfterClose(t *testing.T) {

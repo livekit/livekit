@@ -342,7 +342,7 @@ type ParticipantImpl struct {
 	rpcPendingResponses map[string]*utils.DataChannelRpcPendingResponseHandler
 
 	dataTracksLock sync.RWMutex
-	dataTracks     map[uint16]*DataTrack
+	dataTracks     map[uint16]types.DataTrack
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -379,7 +379,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		rpcPendingResponses: make(map[string]*utils.DataChannelRpcPendingResponseHandler),
 		onClose:             make(map[string]func(types.LocalParticipant)),
 		telemetryGuard:      &telemetry.ReferenceGuard{},
-		dataTracks:          make(map[uint16]*DataTrack),
+		dataTracks:          make(map[uint16]types.DataTrack),
 	}
 	p.setupSignalling()
 
@@ -795,8 +795,8 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 	}
 
 	if !grants.Video.GetCanPublishData() {
-		for _, dt := range p.getPublishedDataTracks() {
-			p.removePublishedDataTrack(dt)
+		for _, dt := range p.GetPublishedDataTracks() {
+			p.RemovePublishedDataTrack(dt)
 		}
 	}
 
@@ -1183,7 +1183,7 @@ func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription, unma
 			rids, ok := protosdp.GetSimulcastRids(m)
 			if ok {
 				n := min(len(rids), len(inRids))
-				for i := 0; i < n; i++ {
+				for i := range n {
 					// disabled layers will have a `~` prefix, remove it while determining actual rid
 					if len(rids[i]) != 0 && rids[i][0] == '~' {
 						outRids[i] = rids[i][1:]
@@ -2158,6 +2158,9 @@ func (p *ParticipantImpl) setupSubscriptionManager() {
 		Logger:      p.subLogger.WithoutSampler(),
 		TrackResolver: func(lp types.LocalParticipant, ti livekit.TrackID) types.MediaResolverResult {
 			return p.helper().ResolveMediaTrack(lp, ti)
+		},
+		DataTrackResolver: func(lp types.LocalParticipant, ti livekit.TrackID) types.DataResolverResult {
+			return p.helper().ResolveDataTrack(lp, ti)
 		},
 		Telemetry:                p.params.Telemetry,
 		OnTrackSubscribed:        p.onTrackSubscribed,

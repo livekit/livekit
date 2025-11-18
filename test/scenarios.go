@@ -206,6 +206,81 @@ func scenarioDataUnlabeledPublish(t *testing.T) {
 	}
 }
 
+func scenarioDataTracksPublishingUponJoining(t *testing.T) {
+	for _, useSinglePeerConnection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+			c1 := createRTCClient("dtpuj_1", defaultServerPort, useSinglePeerConnection, nil)
+			c2 := createRTCClient("dtpuj_2", secondServerPort, useSinglePeerConnection, &testclient.Options{AutoSubscribe: true})
+			c3 := createRTCClient("dtpuj_3", defaultServerPort, useSinglePeerConnection, &testclient.Options{AutoSubscribe: true})
+			defer stopClients(c1, c2, c3)
+
+			waitUntilConnected(t, c1, c2, c3)
+
+			// c1 and c2 publishing, c3 just receiving
+			writers := publishDataTracksForClients(t, c1, c2)
+			defer stopWriters(writers...)
+
+			/* DT-TODO
+			logger.Infow("waiting to receive tracks from c1 and c2")
+			testutils.WithTimeout(t, func() string {
+				tracks := c3.SubscribedTracks()
+				if len(tracks[c1.ID()]) != 2 {
+					return "did not receive tracks from c1"
+				}
+				if len(tracks[c2.ID()]) != 2 {
+					return "did not receive tracks from c2"
+				}
+				return ""
+			})
+			*/
+
+			// after a delay, c2 reconnects, then publishing
+			time.Sleep(syncDelay)
+			c2.Stop()
+
+			/* DT-TODO
+			logger.Infow("waiting for c2 tracks to be gone")
+			testutils.WithTimeout(t, func() string {
+				tracks := c3.SubscribedTracks()
+
+				if len(tracks[c1.ID()]) != 2 {
+					return fmt.Sprintf("c3 should be subscribed to 2 tracks from c1, actual: %d", len(tracks[c1.ID()]))
+				}
+				if len(tracks[c2.ID()]) != 0 {
+					return fmt.Sprintf("c3 should be subscribed to 0 tracks from c2, actual: %d", len(tracks[c2.ID()]))
+				}
+				if len(c1.SubscribedTracks()[c2.ID()]) != 0 {
+					return fmt.Sprintf("c3 should be subscribed to 0 tracks from c2, actual: %d", len(c1.SubscribedTracks()[c2.ID()]))
+				}
+				return ""
+			})
+			*/
+
+			logger.Infow("c2 reconnecting")
+			// connect to a diff port
+			c2 = createRTCClient("puj_2", defaultServerPort, useSinglePeerConnection, nil)
+			defer c2.Stop()
+			waitUntilConnected(t, c2)
+			writers = publishDataTracksForClients(t, c2)
+			defer stopWriters(writers...)
+
+			/* DT-TODO
+			testutils.WithTimeout(t, func() string {
+				tracks := c3.SubscribedTracks()
+				// "new c2 tracks should be published again",
+				if len(tracks[c2.ID()]) != 2 {
+					return fmt.Sprintf("c3 should be subscribed to 2 tracks from c2, actual: %d", len(tracks[c2.ID()]))
+				}
+				if len(c1.SubscribedTracks()[c2.ID()]) != 2 {
+					return fmt.Sprintf("c1 should be subscribed to 2 tracks from c2, actual: %d", len(c1.SubscribedTracks()[c2.ID()]))
+				}
+				return ""
+			})
+			*/
+		})
+	}
+}
+
 func scenarioJoinClosedRoom(t *testing.T) {
 	for _, useSinglePeerConnection := range []bool{false, true} {
 		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
@@ -240,18 +315,34 @@ func closeNonRTCRoom(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func publishTracksForClients(t *testing.T, clients ...*testclient.RTCClient) []*testclient.TrackWriter {
+func publishTracksForClients(t *testing.T, clients ...*testclient.RTCClient) []testclient.TrackWriter {
 	logger.Infow("publishing tracks for clients")
-	var writers []*testclient.TrackWriter
+	var writers []testclient.TrackWriter
 	for i := range clients {
 		c := clients[i]
 		tw, err := c.AddStaticTrack("audio/opus", "audio", "webcam")
 		require.NoError(t, err)
-
 		writers = append(writers, tw)
+
 		tw, err = c.AddStaticTrack("video/vp8", "video", "webcam")
 		require.NoError(t, err)
 		writers = append(writers, tw)
+	}
+	return writers
+}
+
+func publishDataTracksForClients(t *testing.T, clients ...*testclient.RTCClient) []testclient.TrackWriter {
+	logger.Infow("publishing data tracks for clients")
+	var writers []testclient.TrackWriter
+	for i := range clients {
+		c := clients[i]
+		dtw, err := c.PublishDataTrack()
+		require.NoError(t, err)
+		writers = append(writers, dtw)
+
+		dtw, err = c.PublishDataTrack()
+		require.NoError(t, err)
+		writers = append(writers, dtw)
 	}
 	return writers
 }

@@ -295,6 +295,9 @@ type Participant interface {
 	GetPublishedTracks() []MediaTrack
 	RemovePublishedTrack(track MediaTrack, isExpectedToResume bool)
 
+	GetPublishedDataTracks() []DataTrack
+	RemovePublishedDataTrack(track DataTrack)
+
 	GetAudioLevel() (smoothedLevel float64, active bool)
 
 	// HasPermission checks permission of the subscriber by identity. Returns true if subscriber is allowed to subscribe
@@ -343,6 +346,7 @@ type DataMessageCache struct {
 //counterfeiter:generate . LocalParticipantHelper
 type LocalParticipantHelper interface {
 	ResolveMediaTrack(LocalParticipant, livekit.TrackID) MediaResolverResult
+	ResolveDataTrack(LocalParticipant, livekit.TrackID) DataResolverResult
 	GetParticipantInfo(pID livekit.ParticipantID) *livekit.ParticipantInfo
 	GetRegionSettings(ip string) *livekit.RegionSettings
 	GetSubscriberForwarderState(p LocalParticipant) (map[livekit.TrackID]*livekit.RTPForwarderState, error)
@@ -434,6 +438,8 @@ type LocalParticipant interface {
 	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings)
 	GetSubscribedTracks() []SubscribedTrack
 	IsTrackNameSubscribed(publisherIdentity livekit.ParticipantIdentity, trackName string) bool
+	SubscribeToDataTrack(trackID livekit.TrackID)
+	UnsubscribeFromDataTrack(trackID livekit.TrackID)
 	Verify() bool
 	VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32)
 	// WaitUntilSubscribed waits until all subscriptions have been settled, or if the timeout
@@ -461,6 +467,7 @@ type LocalParticipant interface {
 	HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse) error
 	IssueFullReconnect(reason ParticipantCloseReason)
 	SendRoomMovedResponse(moved *livekit.RoomMovedResponse) error
+	SendDataTrackSubscriberHandles(handles map[uint32]*livekit.DataTrackSubscriberHandles_PublishedDataTrack) error
 
 	// callbacks
 	OnStateChange(func(p LocalParticipant))
@@ -566,6 +573,7 @@ type Room interface {
 		subscribe bool,
 	)
 	ResolveMediaTrackForSubscriber(sub LocalParticipant, trackID livekit.TrackID) MediaResolverResult
+	ResolveDataTrackForSubscriber(sub LocalParticipant, trackID livekit.TrackID) DataResolverResult
 	GetLocalParticipants() []LocalParticipant
 	IsDataMessageUserPacketDuplicate(ip *livekit.UserPacket) bool
 }
@@ -646,7 +654,22 @@ type LocalMediaTrack interface {
 //
 //counterfeiter:generate . DataTrack
 type DataTrack interface {
-	ID() livekit.DataTrackID
+	ID() livekit.TrackID
+	PubHandle() uint16
+	Name() string
+	ToProto() *livekit.DataTrackInfo
+
+	AddSubscriber(sub LocalParticipant) (DataDownTrack, error)
+	RemoveSubscriber(participantID livekit.ParticipantID)
+	IsSubscriber(subID livekit.ParticipantID) bool
+
+	Close()
+}
+
+//counterfeiter:generate . DataDownTrack
+type DataDownTrack interface {
+	Handle() uint16
+	PublishDataTrack() DataTrack
 }
 
 //counterfeiter:generate . SubscribedTrack
@@ -690,8 +713,19 @@ type MediaResolverResult struct {
 	PublisherIdentity livekit.ParticipantIdentity
 }
 
+type DataResolverResult struct {
+	TrackChangedNotifier ChangeNotifier
+	TrackRemovedNotifier ChangeNotifier
+	DataTrack            DataTrack
+	PublisherID          livekit.ParticipantID
+	PublisherIdentity    livekit.ParticipantIdentity
+}
+
 // MediaTrackResolver locates a specific media track for a subscriber
 type MediaTrackResolver func(LocalParticipant, livekit.TrackID) MediaResolverResult
+
+// DataTrackResolver locates a specific data track for a subscriber
+type DataTrackResolver func(LocalParticipant, livekit.TrackID) DataResolverResult
 
 // Supervisor/operation monitor related definitions
 type OperationMonitorEvent int

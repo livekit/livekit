@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand/v2"
 	"net/http"
 	"net/url"
@@ -89,7 +90,7 @@ type RTCClient struct {
 	// remote tracks waiting to be processed
 	pendingRemoteTracks []*webrtc.TrackRemote
 
-	pendingTrackWriters     []*TrackWriter
+	pendingTrackWriters     []TrackWriter
 	OnConnected             func()
 	OnDataReceived          func(data []byte, sid string)
 	OnDataUnlabeledReceived func(data []byte)
@@ -103,7 +104,8 @@ type RTCClient struct {
 
 	nextDataTrackHandle        atomic.Uint32
 	pendingPublishedDataTracks map[uint16]*livekit.DataTrackInfo
-	pendingDataTrackWriters    []*DataTrackWriter
+	pendingDataTrackWriters    []TrackWriter
+	subscribedDataTracks       map[livekit.ParticipantID][]livekit.TrackID // DT-TODO: make this DataTrackRemote
 }
 
 var (
@@ -345,6 +347,13 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		return nil, err
 	}
 
+	if err := c.publisher.CreateDataChannel(rtc.DataTrackDataChannel, &webrtc.DataChannelInit{
+		Ordered:        &ordered,
+		MaxRetransmits: &maxRetransmits,
+	}); err != nil {
+		return nil, err
+	}
+
 	if !c.useSinglePeerConnection {
 		subscriberHandler := &transportfakes.FakeHandler{}
 		c.subscriber, err = rtc.NewPCTransport(rtc.TransportParams{
@@ -523,7 +532,7 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 	case *livekit.SignalResponse_TrackPublished:
 		logger.Debugw(
 			"track published",
-			"participant", c.localParticipant.Sid,
+			"participant", c.localParticipant.Identity,
 			"cid", msg.TrackPublished.Cid,
 			"trackID", msg.TrackPublished.Track.Sid,
 			"trackName", msg.TrackPublished.Track.Name,
@@ -559,16 +568,29 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 			"numVideos", msg.MediaSectionsRequirement.NumVideos,
 		)
 		c.handleMediaSectionsRequirement(msg.MediaSectionsRequirement)
-	case *livekit.SignalResponse_PublishDataTrack:
+	case *livekit.SignalResponse_PublishDataTrackResponse:
 		logger.Debugw(
 			"data track published",
-			"participant", c.localParticipant.Sid,
-			"trackID", msg.PublishDataTrack.Info.Sid,
-			"trackHandle", msg.PublishDataTrack.Info.PubHandle,
-			"trackName", msg.PublishDataTrack.Info.Name,
+			"participant", c.localParticipant.Identity,
+			"trackID", msg.PublishDataTrackResponse.Info.Sid,
+			"trackHandle", msg.PublishDataTrackResponse.Info.PubHandle,
+			"trackName", msg.PublishDataTrackResponse.Info.Name,
 		)
 		c.lock.Lock()
-		c.pendingPublishedDataTracks[uint16(msg.PublishDataTrack.Info.PubHandle)] = msg.PublishDataTrack.Info
+		c.pendingPublishedDataTracks[uint16(msg.PublishDataTrackResponse.Info.PubHandle)] = msg.PublishDataTrackResponse.Info
+		c.lock.Unlock()
+	case *livekit.SignalResponse_DataTrackSubscriberHandles:
+		logger.Infow(
+			"received data track subscriber handles",
+			"particiapnt", c.localParticipant.Identity,
+			"handles", msg.DataTrackSubscriberHandles.SubHandles,
+		)
+		c.lock.Lock()
+		c.subscribedDataTracks = make(map[livekit.ParticipantID][]livekit.TrackID, len(msg.DataTrackSubscriberHandles.SubHandles))
+		for _, publishedDataTrack := range msg.DataTrackSubscriberHandles.SubHandles {
+			publisherID := livekit.ParticipantID(publishedDataTrack.PublisherSid)
+			c.subscribedDataTracks[publisherID] = append(c.subscribedDataTracks[publisherID], livekit.TrackID(publishedDataTrack.TrackSid))
+		}
 		c.lock.Unlock()
 	}
 	return nil
@@ -631,9 +653,16 @@ func (c *RTCClient) SubscribedTracks() map[livekit.ParticipantID][]*webrtc.Track
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	tracks := make(map[livekit.ParticipantID][]*webrtc.TrackRemote, len(c.subscribedTracks))
-	for key, val := range c.subscribedTracks {
-		tracks[key] = val
-	}
+	maps.Copy(tracks, c.subscribedTracks)
+	return tracks
+}
+
+func (c *RTCClient) SubscribedDataTracks() map[livekit.ParticipantID][]livekit.TrackID {
+	// create a copy of this
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	tracks := make(map[livekit.ParticipantID][]livekit.TrackID, len(c.subscribedDataTracks))
+	maps.Copy(tracks, c.subscribedDataTracks)
 	return tracks
 }
 
@@ -755,7 +784,7 @@ func AddTrackNoWriter() AddTrackOption {
 	}
 }
 
-func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string, opts ...AddTrackOption) (writer *TrackWriter, err error) {
+func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string, opts ...AddTrackOption) (writer TrackWriter, err error) {
 	var params AddTrackParams
 	for _, opt := range opts {
 		opt(&params)
@@ -824,11 +853,11 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string, 
 	return
 }
 
-func (c *RTCClient) AddStaticTrack(mime string, id string, label string, opts ...AddTrackOption) (writer *TrackWriter, err error) {
+func (c *RTCClient) AddStaticTrack(mime string, id string, label string, opts ...AddTrackOption) (writer TrackWriter, err error) {
 	return c.AddStaticTrackWithCodec(webrtc.RTPCodecCapability{MimeType: mime}, id, label, opts...)
 }
 
-func (c *RTCClient) AddStaticTrackWithCodec(codec webrtc.RTPCodecCapability, id string, label string, opts ...AddTrackOption) (writer *TrackWriter, err error) {
+func (c *RTCClient) AddStaticTrackWithCodec(codec webrtc.RTPCodecCapability, id string, label string, opts ...AddTrackOption) (writer TrackWriter, err error) {
 	track, err := webrtc.NewTrackLocalStaticSample(codec, id, label)
 	if err != nil {
 		return
@@ -837,7 +866,7 @@ func (c *RTCClient) AddStaticTrackWithCodec(codec webrtc.RTPCodecCapability, id 
 	return c.AddTrack(track, "", opts...)
 }
 
-func (c *RTCClient) AddFileTrack(path string, id string, label string) (writer *TrackWriter, err error) {
+func (c *RTCClient) AddFileTrack(path string, id string, label string) (writer TrackWriter, err error) {
 	// determine file mime
 	mime, ok := extMimeMapping[filepath.Ext(path)]
 	if !ok {
@@ -903,11 +932,11 @@ func (c *RTCClient) PublishDataUnlabeled(data []byte) error {
 }
 
 // DT-TODO: add data track traffic
-func (c *RTCClient) PublishDataTrack() (writer *DataTrackWriter, err error) {
+func (c *RTCClient) PublishDataTrack() (writer TrackWriter, err error) {
 	dataTrackHandle := uint16(c.nextDataTrackHandle.Inc())
 	if err = c.SendRequest(&livekit.SignalRequest{
-		Message: &livekit.SignalRequest_PublishDataTrack{
-			PublishDataTrack: &livekit.PublishDataTrackRequest{
+		Message: &livekit.SignalRequest_PublishDataTrackRequest{
+			PublishDataTrackRequest: &livekit.PublishDataTrackRequest{
 				PubHandle: uint32(dataTrackHandle),
 				Name:      fmt.Sprintf("data_track_%d", dataTrackHandle),
 			},
@@ -1030,7 +1059,7 @@ func (c *RTCClient) handleAnswer(desc webrtc.SessionDescription, answerId uint32
 // the client handles media sections requirement on the publisher PC
 func (c *RTCClient) handleMediaSectionsRequirement(mediaSectionsRequirement *livekit.MediaSectionsRequirement) {
 	addTransceivers := func(kind webrtc.RTPCodecType, count uint32) {
-		for i := uint32(0); i < count; i++ {
+		for range count {
 			if _, err := c.publisher.AddTransceiverFromKind(
 				kind,
 				webrtc.RTPTransceiverInit{

@@ -76,6 +76,16 @@ type FakeParticipant struct {
 		result1 float64
 		result2 bool
 	}
+	GetPublishedDataTracksStub        func() []types.DataTrack
+	getPublishedDataTracksMutex       sync.RWMutex
+	getPublishedDataTracksArgsForCall []struct {
+	}
+	getPublishedDataTracksReturns struct {
+		result1 []types.DataTrack
+	}
+	getPublishedDataTracksReturnsOnCall map[int]struct {
+		result1 []types.DataTrack
+	}
 	GetPublishedTrackStub        func(livekit.TrackID) types.MediaTrack
 	getPublishedTrackMutex       sync.RWMutex
 	getPublishedTrackArgsForCall []struct {
@@ -193,6 +203,11 @@ type FakeParticipant struct {
 	onMetricsMutex       sync.RWMutex
 	onMetricsArgsForCall []struct {
 		arg1 func(types.Participant, *livekit.DataPacket)
+	}
+	RemovePublishedDataTrackStub        func(types.DataTrack)
+	removePublishedDataTrackMutex       sync.RWMutex
+	removePublishedDataTrackArgsForCall []struct {
+		arg1 types.DataTrack
 	}
 	RemovePublishedTrackStub        func(types.MediaTrack, bool)
 	removePublishedTrackMutex       sync.RWMutex
@@ -588,6 +603,59 @@ func (fake *FakeParticipant) GetAudioLevelReturnsOnCall(i int, result1 float64, 
 		result1 float64
 		result2 bool
 	}{result1, result2}
+}
+
+func (fake *FakeParticipant) GetPublishedDataTracks() []types.DataTrack {
+	fake.getPublishedDataTracksMutex.Lock()
+	ret, specificReturn := fake.getPublishedDataTracksReturnsOnCall[len(fake.getPublishedDataTracksArgsForCall)]
+	fake.getPublishedDataTracksArgsForCall = append(fake.getPublishedDataTracksArgsForCall, struct {
+	}{})
+	stub := fake.GetPublishedDataTracksStub
+	fakeReturns := fake.getPublishedDataTracksReturns
+	fake.recordInvocation("GetPublishedDataTracks", []interface{}{})
+	fake.getPublishedDataTracksMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) GetPublishedDataTracksCallCount() int {
+	fake.getPublishedDataTracksMutex.RLock()
+	defer fake.getPublishedDataTracksMutex.RUnlock()
+	return len(fake.getPublishedDataTracksArgsForCall)
+}
+
+func (fake *FakeParticipant) GetPublishedDataTracksCalls(stub func() []types.DataTrack) {
+	fake.getPublishedDataTracksMutex.Lock()
+	defer fake.getPublishedDataTracksMutex.Unlock()
+	fake.GetPublishedDataTracksStub = stub
+}
+
+func (fake *FakeParticipant) GetPublishedDataTracksReturns(result1 []types.DataTrack) {
+	fake.getPublishedDataTracksMutex.Lock()
+	defer fake.getPublishedDataTracksMutex.Unlock()
+	fake.GetPublishedDataTracksStub = nil
+	fake.getPublishedDataTracksReturns = struct {
+		result1 []types.DataTrack
+	}{result1}
+}
+
+func (fake *FakeParticipant) GetPublishedDataTracksReturnsOnCall(i int, result1 []types.DataTrack) {
+	fake.getPublishedDataTracksMutex.Lock()
+	defer fake.getPublishedDataTracksMutex.Unlock()
+	fake.GetPublishedDataTracksStub = nil
+	if fake.getPublishedDataTracksReturnsOnCall == nil {
+		fake.getPublishedDataTracksReturnsOnCall = make(map[int]struct {
+			result1 []types.DataTrack
+		})
+	}
+	fake.getPublishedDataTracksReturnsOnCall[i] = struct {
+		result1 []types.DataTrack
+	}{result1}
 }
 
 func (fake *FakeParticipant) GetPublishedTrack(arg1 livekit.TrackID) types.MediaTrack {
@@ -1219,6 +1287,38 @@ func (fake *FakeParticipant) OnMetricsArgsForCall(i int) func(types.Participant,
 	fake.onMetricsMutex.RLock()
 	defer fake.onMetricsMutex.RUnlock()
 	argsForCall := fake.onMetricsArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeParticipant) RemovePublishedDataTrack(arg1 types.DataTrack) {
+	fake.removePublishedDataTrackMutex.Lock()
+	fake.removePublishedDataTrackArgsForCall = append(fake.removePublishedDataTrackArgsForCall, struct {
+		arg1 types.DataTrack
+	}{arg1})
+	stub := fake.RemovePublishedDataTrackStub
+	fake.recordInvocation("RemovePublishedDataTrack", []interface{}{arg1})
+	fake.removePublishedDataTrackMutex.Unlock()
+	if stub != nil {
+		fake.RemovePublishedDataTrackStub(arg1)
+	}
+}
+
+func (fake *FakeParticipant) RemovePublishedDataTrackCallCount() int {
+	fake.removePublishedDataTrackMutex.RLock()
+	defer fake.removePublishedDataTrackMutex.RUnlock()
+	return len(fake.removePublishedDataTrackArgsForCall)
+}
+
+func (fake *FakeParticipant) RemovePublishedDataTrackCalls(stub func(types.DataTrack)) {
+	fake.removePublishedDataTrackMutex.Lock()
+	defer fake.removePublishedDataTrackMutex.Unlock()
+	fake.RemovePublishedDataTrackStub = stub
+}
+
+func (fake *FakeParticipant) RemovePublishedDataTrackArgsForCall(i int) types.DataTrack {
+	fake.removePublishedDataTrackMutex.RLock()
+	defer fake.removePublishedDataTrackMutex.RUnlock()
+	argsForCall := fake.removePublishedDataTrackArgsForCall[i]
 	return argsForCall.arg1
 }
 

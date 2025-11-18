@@ -1115,6 +1115,10 @@ func (h *roomManagerParticipantHelper) ResolveMediaTrack(lp types.LocalParticipa
 	return h.room.ResolveMediaTrackForSubscriber(lp, trackID)
 }
 
+func (h *roomManagerParticipantHelper) ResolveDataTrack(lp types.LocalParticipant, trackID livekit.TrackID) types.DataResolverResult {
+	return h.room.ResolveDataTrackForSubscriber(lp, trackID)
+}
+
 func (h *roomManagerParticipantHelper) ShouldRegressCodec() bool {
 	return h.codecRegressionThreshold == 0 || h.room.GetParticipantCount() < h.codecRegressionThreshold
 }

@@ -31,6 +31,7 @@ type RoomTrackManager struct {
 	changedNotifier *utils.ChangeNotifierManager
 	removedNotifier *utils.ChangeNotifierManager
 	tracks          map[livekit.TrackID][]*TrackInfo
+	dataTracks      map[livekit.TrackID][]*DataTrackInfo
 }
 
 type TrackInfo struct {
@@ -39,9 +40,16 @@ type TrackInfo struct {
 	PublisherID       livekit.ParticipantID
 }
 
+type DataTrackInfo struct {
+	DataTrack         types.DataTrack
+	PublisherIdentity livekit.ParticipantIdentity
+	PublisherID       livekit.ParticipantID
+}
+
 func NewRoomTrackManager() *RoomTrackManager {
 	return &RoomTrackManager{
 		tracks:          make(map[livekit.TrackID][]*TrackInfo),
+		dataTracks:      make(map[livekit.TrackID][]*DataTrackInfo),
 		changedNotifier: utils.NewChangeNotifierManager(),
 		removedNotifier: utils.NewChangeNotifierManager(),
 	}
@@ -144,4 +152,66 @@ func (r *RoomTrackManager) GetOrCreateTrackChangeNotifier(trackID livekit.TrackI
 
 func (r *RoomTrackManager) GetOrCreateTrackRemoveNotifier(trackID livekit.TrackID) *utils.ChangeNotifier {
 	return r.removedNotifier.GetOrCreateNotifier(string(trackID))
+}
+
+func (r *RoomTrackManager) AddDataTrack(dataTrack types.DataTrack, publisherIdentity livekit.ParticipantIdentity, publisherID livekit.ParticipantID) {
+	trackID := dataTrack.ID()
+	r.lock.Lock()
+	r.dataTracks[trackID] = append(r.dataTracks[trackID], &DataTrackInfo{
+		DataTrack:         dataTrack,
+		PublisherIdentity: publisherIdentity,
+		PublisherID:       publisherID,
+	})
+	r.lock.Unlock()
+
+	r.NotifyTrackChanged(trackID)
+}
+
+func (r *RoomTrackManager) RemoveDataTrack(dataTrack types.DataTrack) {
+	trackID := dataTrack.ID()
+	r.lock.Lock()
+	// ensure we are removing the same track as added
+	infos, ok := r.dataTracks[trackID]
+	if !ok {
+		r.lock.Unlock()
+		return
+	}
+
+	found := false
+	for idx, info := range infos {
+		if info.DataTrack == dataTrack {
+			r.dataTracks[trackID] = slices.Delete(r.dataTracks[trackID], idx, idx+1)
+			if len(r.dataTracks[trackID]) == 0 {
+				delete(r.dataTracks, trackID)
+			}
+			found = true
+			break
+		}
+	}
+	r.lock.Unlock()
+
+	if !found {
+		return
+	}
+
+	n := r.removedNotifier.GetNotifier(string(trackID))
+	if n != nil {
+		n.NotifyChanged()
+	}
+
+	r.changedNotifier.RemoveNotifier(string(trackID), true)
+	r.removedNotifier.RemoveNotifier(string(trackID), true)
+}
+
+func (r *RoomTrackManager) GetDataTrackInfo(trackID livekit.TrackID) *DataTrackInfo {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	infos := r.dataTracks[trackID]
+	if len(infos) == 0 {
+		return nil
+	}
+
+	// earliest added track is used till it is removed
+	return infos[0]
 }

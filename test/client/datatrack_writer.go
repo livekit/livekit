@@ -16,16 +16,16 @@ package client
 
 // Writes packets to a data track.
 // DT-TODO - write packets in loop
-type DataTrackWriter struct {
+type dataTrackWriter struct {
 }
 
-func NewDataTrackWriter() *DataTrackWriter {
-	return &DataTrackWriter{}
+func NewDataTrackWriter() TrackWriter {
+	return &dataTrackWriter{}
 }
 
-func (d *DataTrackWriter) Start() error {
+func (d *dataTrackWriter) Start() error {
 	return nil
 }
 
-func (d *DataTrackWriter) Stop() {
+func (d *dataTrackWriter) Stop() {
 }

@@ -133,14 +133,14 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 		Name:       req.Name,
 		Encryption: req.Encryption,
 	}
-	dt := NewDataTrack(DataTrackParams{}, dti)
+	dt := NewDataTrack(DataTrackParams{Logger: p.params.Logger}, dti)
 
 	p.dataTracks[uint16(req.PubHandle)] = dt
 	p.dataTracksLock.Unlock()
 
 	p.sendPublishDataTrackResponse(dti)
 
-	if onDataTrackPublished := p.getOnDataTrackUnpublished(); onDataTrackPublished != nil {
+	if onDataTrackPublished := p.getOnDataTrackPublished(); onDataTrackPublished != nil {
 		onDataTrackPublished(p, dt)
 	}
 }
@@ -178,26 +178,14 @@ func (p *ParticipantImpl) HandleUpdateDataSubscription(req *livekit.UpdateDataSu
 	}
 }
 
-func (p *ParticipantImpl) getPublishedDataTracks() []*DataTrack {
+func (p *ParticipantImpl) GetPublishedDataTracks() []types.DataTrack {
 	p.dataTracksLock.RLock()
 	defer p.dataTracksLock.RUnlock()
 
 	return maps.Values(p.dataTracks)
 }
 
-func (p *ParticipantImpl) dataTracksToProto() []*livekit.DataTrackInfo {
-	p.dataTracksLock.RLock()
-	defer p.dataTracksLock.RUnlock()
-
-	var dataTrackInfos []*livekit.DataTrackInfo
-	for _, dt := range p.dataTracks {
-		dataTrackInfos = append(dataTrackInfos, dt.ToProto())
-	}
-
-	return dataTrackInfos
-}
-
-func (p *ParticipantImpl) removePublishedDataTrack(dt *DataTrack) {
+func (p *ParticipantImpl) RemovePublishedDataTrack(dt types.DataTrack) {
 	var found bool
 	pubHandle := dt.PubHandle()
 	p.dataTracksLock.Lock()
@@ -211,6 +199,18 @@ func (p *ParticipantImpl) removePublishedDataTrack(dt *DataTrack) {
 		dt.Close()
 		p.sendUnpublishDataTrackResponse(dt.ToProto())
 	}
+}
+
+func (p *ParticipantImpl) dataTracksToProto() []*livekit.DataTrackInfo {
+	p.dataTracksLock.RLock()
+	defer p.dataTracksLock.RUnlock()
+
+	var dataTrackInfos []*livekit.DataTrackInfo
+	for _, dt := range p.dataTracks {
+		dataTrackInfos = append(dataTrackInfos, dt.ToProto())
+	}
+
+	return dataTrackInfos
 }
 
 func (p *ParticipantImpl) onDataTrackMessage(data []byte) {

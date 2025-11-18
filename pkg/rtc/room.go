@@ -803,6 +803,23 @@ func (r *Room) ResolveMediaTrackForSubscriber(sub types.LocalParticipant, trackI
 	return res
 }
 
+func (r *Room) ResolveDataTrackForSubscriber(sub types.LocalParticipant, trackID livekit.TrackID) types.DataResolverResult {
+	res := types.DataResolverResult{}
+
+	info := r.trackManager.GetDataTrackInfo(trackID)
+	res.TrackChangedNotifier = r.trackManager.GetOrCreateTrackChangeNotifier(trackID)
+
+	if info == nil {
+		return res
+	}
+
+	res.DataTrack = info.DataTrack
+	res.TrackRemovedNotifier = r.trackManager.GetOrCreateTrackRemoveNotifier(trackID)
+	res.PublisherIdentity = info.PublisherIdentity
+	res.PublisherID = info.PublisherID
+	return res
+}
+
 func (r *Room) IsClosed() bool {
 	select {
 	case <-r.closed:
@@ -1226,7 +1243,7 @@ func (r *Room) onDataTrackPublished(participant types.LocalParticipant, dt types
 			"publisherID", participant.ID(),
 			"trackID", dt.ID(),
 		)
-		// DT-TODO existingParticipant.SubscribeToTrack(track.ID(), false)
+		existingParticipant.SubscribeToDataTrack(dt.ID())
 	}
 	onParticipantChanged := r.onParticipantChanged
 	r.lock.RUnlock()
@@ -1235,11 +1252,11 @@ func (r *Room) onDataTrackPublished(participant types.LocalParticipant, dt types
 		onParticipantChanged(participant)
 	}
 
-	// DT-TODO r.trackManager.AddTrack(track, participant.Identity(), participant.ID())
+	r.trackManager.AddDataTrack(dt, participant.Identity(), participant.ID())
 }
 
 func (r *Room) onDataTrackUnpublished(p types.LocalParticipant, dt types.DataTrack) {
-	// DT-TODO r.trackManager.RemoveTrack(track)
+	r.trackManager.RemoveDataTrack(dt)
 	if !p.IsClosed() {
 		r.broadcastParticipantState(p, broadcastOptions{skipSource: true})
 	}
@@ -1390,6 +1407,12 @@ func (r *Room) RemoveParticipant(
 		r.trackManager.RemoveTrack(t)
 	}
 
+	// remove all published data tracks
+	for _, t := range p.GetPublishedDataTracks() {
+		p.RemovePublishedDataTrack(t)
+		r.trackManager.RemoveDataTrack(t)
+	}
+
 	if agentJob != nil {
 		agentJob.participantLeft()
 
@@ -1452,6 +1475,11 @@ func (r *Room) subscribeToExistingTracks(p types.LocalParticipant, isSync bool) 
 		for _, track := range op.GetPublishedTracks() {
 			trackIDs = append(trackIDs, track.ID())
 			p.SubscribeToTrack(track.ID(), isSync)
+		}
+
+		for _, track := range op.GetPublishedDataTracks() {
+			trackIDs = append(trackIDs, track.ID())
+			p.SubscribeToDataTrack(track.ID())
 		}
 	}
 	if len(trackIDs) > 0 {

@@ -116,14 +116,14 @@ func (u *signallingUnimplemented) SignalSubscribedAudioCodecUpdate(subscribedAud
 	return nil
 }
 
-func (u *signallingUnimplemented) SignalPublishDataTrack(publishDataTrack *livekit.PublishDataTrackResponse) proto.Message {
+func (u *signallingUnimplemented) SignalPublishDataTrackResponse(publishDataTrackResponse *livekit.PublishDataTrackResponse) proto.Message {
 	return nil
 }
 
-func (u *signallingUnimplemented) SignalUnpublishDataTrack(unpublishDataTrack *livekit.UnpublishDataTrackResponse) proto.Message {
+func (u *signallingUnimplemented) SignalUnpublishDataTrackResponse(unpublishDataTrackResponse *livekit.UnpublishDataTrackResponse) proto.Message {
 	return nil
 }
 
-func (u *signallingUnimplemented) SignalDataTrackSubscriberHandles(dataTrackHandles *livekit.DataTrackSubscriberHandles) proto.Message {
+func (u *signallingUnimplemented) SignalDataTrackSubscriberHandles(dataTrackSubscriberHandles *livekit.DataTrackSubscriberHandles) proto.Message {
 	return nil
 }

@@ -352,24 +352,20 @@ func (p *ParticipantImpl) sendMediaSectionsRequirement(numAudios uint32, numVide
 }
 
 func (p *ParticipantImpl) sendPublishDataTrackResponse(dti *livekit.DataTrackInfo) error {
-	return p.signaller.WriteMessage(p.signalling.SignalPublishDataTrack(&livekit.PublishDataTrackResponse{
+	return p.signaller.WriteMessage(p.signalling.SignalPublishDataTrackResponse(&livekit.PublishDataTrackResponse{
 		Info: dti,
 	}))
 }
 
 // DT-TODO just pass in handle here if protocol is not going to be changed
 func (p *ParticipantImpl) sendUnpublishDataTrackResponse(dti *livekit.DataTrackInfo) error {
-	return p.signaller.WriteMessage(p.signalling.SignalUnpublishDataTrack(&livekit.UnpublishDataTrackResponse{
+	return p.signaller.WriteMessage(p.signalling.SignalUnpublishDataTrackResponse(&livekit.UnpublishDataTrackResponse{
 		PubHandle: dti.PubHandle,
 	}))
 }
 
-func (p *ParticipantImpl) sendDataTrackSubscriberHandles(handles map[uint16]livekit.DataTrackID) error {
-	mapping := make(map[uint32]string, len(handles))
-	for id, trackID := range handles {
-		mapping[uint32(id)] = string(trackID)
-	}
+func (p *ParticipantImpl) SendDataTrackSubscriberHandles(handles map[uint32]*livekit.DataTrackSubscriberHandles_PublishedDataTrack) error {
 	return p.signaller.WriteMessage(p.signalling.SignalDataTrackSubscriberHandles(&livekit.DataTrackSubscriberHandles{
-		SubHandles: mapping,
+		SubHandles: handles,
 	}))
 }
