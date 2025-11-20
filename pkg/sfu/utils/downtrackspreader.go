@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sfu
+package utils
 
 import (
 	"sync"
@@ -22,55 +22,59 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
+type sender interface {
+	SubscriberID() livekit.ParticipantID
+}
+
 type DownTrackSpreaderParams struct {
 	Threshold int
 	Logger    logger.Logger
 }
 
-type DownTrackSpreader struct {
+type DownTrackSpreader[T sender] struct {
 	params DownTrackSpreaderParams
 
 	downTrackMu      sync.RWMutex
-	downTracks       map[livekit.ParticipantID]TrackSender
-	downTracksShadow []TrackSender
+	downTracks       map[livekit.ParticipantID]T
+	downTracksShadow []T
 }
 
-func NewDownTrackSpreader(params DownTrackSpreaderParams) *DownTrackSpreader {
-	d := &DownTrackSpreader{
+func NewDownTrackSpreader[T sender](params DownTrackSpreaderParams) *DownTrackSpreader[T] {
+	d := &DownTrackSpreader[T]{
 		params:     params,
-		downTracks: make(map[livekit.ParticipantID]TrackSender),
+		downTracks: make(map[livekit.ParticipantID]T),
 	}
 
 	return d
 }
 
-func (d *DownTrackSpreader) GetDownTracks() []TrackSender {
+func (d *DownTrackSpreader[T]) GetDownTracks() []T {
 	d.downTrackMu.RLock()
 	defer d.downTrackMu.RUnlock()
 	return d.downTracksShadow
 }
 
-func (d *DownTrackSpreader) ResetAndGetDownTracks() []TrackSender {
+func (d *DownTrackSpreader[T]) ResetAndGetDownTracks() []T {
 	d.downTrackMu.Lock()
 	defer d.downTrackMu.Unlock()
 
 	downTracks := d.downTracksShadow
 
-	d.downTracks = make(map[livekit.ParticipantID]TrackSender)
+	d.downTracks = make(map[livekit.ParticipantID]T)
 	d.downTracksShadow = nil
 
 	return downTracks
 }
 
-func (d *DownTrackSpreader) Store(ts TrackSender) {
+func (d *DownTrackSpreader[T]) Store(sender T) {
 	d.downTrackMu.Lock()
 	defer d.downTrackMu.Unlock()
 
-	d.downTracks[ts.SubscriberID()] = ts
+	d.downTracks[sender.SubscriberID()] = sender
 	d.shadowDownTracks()
 }
 
-func (d *DownTrackSpreader) Free(subscriberID livekit.ParticipantID) {
+func (d *DownTrackSpreader[T]) Free(subscriberID livekit.ParticipantID) {
 	d.downTrackMu.Lock()
 	defer d.downTrackMu.Unlock()
 
@@ -78,7 +82,7 @@ func (d *DownTrackSpreader) Free(subscriberID livekit.ParticipantID) {
 	d.shadowDownTracks()
 }
 
-func (d *DownTrackSpreader) HasDownTrack(subscriberID livekit.ParticipantID) bool {
+func (d *DownTrackSpreader[T]) HasDownTrack(subscriberID livekit.ParticipantID) bool {
 	d.downTrackMu.RLock()
 	defer d.downTrackMu.RUnlock()
 
@@ -86,7 +90,7 @@ func (d *DownTrackSpreader) HasDownTrack(subscriberID livekit.ParticipantID) boo
 	return ok
 }
 
-func (d *DownTrackSpreader) Broadcast(writer func(TrackSender)) {
+func (d *DownTrackSpreader[T]) Broadcast(writer func(T)) {
 	downTracks := d.GetDownTracks()
 	if len(downTracks) == 0 {
 		return
@@ -103,14 +107,14 @@ func (d *DownTrackSpreader) Broadcast(writer func(TrackSender)) {
 	utils.ParallelExec(downTracks, threshold, step, writer)
 }
 
-func (d *DownTrackSpreader) DownTrackCount() int {
+func (d *DownTrackSpreader[T]) DownTrackCount() int {
 	d.downTrackMu.RLock()
 	defer d.downTrackMu.RUnlock()
 	return len(d.downTracksShadow)
 }
 
-func (d *DownTrackSpreader) shadowDownTracks() {
-	d.downTracksShadow = make([]TrackSender, 0, len(d.downTracks))
+func (d *DownTrackSpreader[T]) shadowDownTracks() {
+	d.downTracksShadow = make([]T, 0, len(d.downTracks))
 	for _, dt := range d.downTracks {
 		d.downTracksShadow = append(d.downTracksShadow, dt)
 	}

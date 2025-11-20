@@ -9,6 +9,17 @@ import (
 )
 
 type FakeDataTrack struct {
+	AddDataDownTrackStub        func(types.DataTrackSender) error
+	addDataDownTrackMutex       sync.RWMutex
+	addDataDownTrackArgsForCall []struct {
+		arg1 types.DataTrackSender
+	}
+	addDataDownTrackReturns struct {
+		result1 error
+	}
+	addDataDownTrackReturnsOnCall map[int]struct {
+		result1 error
+	}
 	AddSubscriberStub        func(types.LocalParticipant) (types.DataDownTrack, error)
 	addSubscriberMutex       sync.RWMutex
 	addSubscriberArgsForCall []struct {
@@ -25,6 +36,11 @@ type FakeDataTrack struct {
 	CloseStub        func()
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct {
+	}
+	DeleteDataDownTrackStub        func(livekit.ParticipantID)
+	deleteDataDownTrackMutex       sync.RWMutex
+	deleteDataDownTrackArgsForCall []struct {
+		arg1 livekit.ParticipantID
 	}
 	IDStub        func() livekit.TrackID
 	iDMutex       sync.RWMutex
@@ -84,6 +100,67 @@ type FakeDataTrack struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeDataTrack) AddDataDownTrack(arg1 types.DataTrackSender) error {
+	fake.addDataDownTrackMutex.Lock()
+	ret, specificReturn := fake.addDataDownTrackReturnsOnCall[len(fake.addDataDownTrackArgsForCall)]
+	fake.addDataDownTrackArgsForCall = append(fake.addDataDownTrackArgsForCall, struct {
+		arg1 types.DataTrackSender
+	}{arg1})
+	stub := fake.AddDataDownTrackStub
+	fakeReturns := fake.addDataDownTrackReturns
+	fake.recordInvocation("AddDataDownTrack", []interface{}{arg1})
+	fake.addDataDownTrackMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeDataTrack) AddDataDownTrackCallCount() int {
+	fake.addDataDownTrackMutex.RLock()
+	defer fake.addDataDownTrackMutex.RUnlock()
+	return len(fake.addDataDownTrackArgsForCall)
+}
+
+func (fake *FakeDataTrack) AddDataDownTrackCalls(stub func(types.DataTrackSender) error) {
+	fake.addDataDownTrackMutex.Lock()
+	defer fake.addDataDownTrackMutex.Unlock()
+	fake.AddDataDownTrackStub = stub
+}
+
+func (fake *FakeDataTrack) AddDataDownTrackArgsForCall(i int) types.DataTrackSender {
+	fake.addDataDownTrackMutex.RLock()
+	defer fake.addDataDownTrackMutex.RUnlock()
+	argsForCall := fake.addDataDownTrackArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeDataTrack) AddDataDownTrackReturns(result1 error) {
+	fake.addDataDownTrackMutex.Lock()
+	defer fake.addDataDownTrackMutex.Unlock()
+	fake.AddDataDownTrackStub = nil
+	fake.addDataDownTrackReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeDataTrack) AddDataDownTrackReturnsOnCall(i int, result1 error) {
+	fake.addDataDownTrackMutex.Lock()
+	defer fake.addDataDownTrackMutex.Unlock()
+	fake.AddDataDownTrackStub = nil
+	if fake.addDataDownTrackReturnsOnCall == nil {
+		fake.addDataDownTrackReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.addDataDownTrackReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
 }
 
 func (fake *FakeDataTrack) AddSubscriber(arg1 types.LocalParticipant) (types.DataDownTrack, error) {
@@ -172,6 +249,38 @@ func (fake *FakeDataTrack) CloseCalls(stub func()) {
 	fake.closeMutex.Lock()
 	defer fake.closeMutex.Unlock()
 	fake.CloseStub = stub
+}
+
+func (fake *FakeDataTrack) DeleteDataDownTrack(arg1 livekit.ParticipantID) {
+	fake.deleteDataDownTrackMutex.Lock()
+	fake.deleteDataDownTrackArgsForCall = append(fake.deleteDataDownTrackArgsForCall, struct {
+		arg1 livekit.ParticipantID
+	}{arg1})
+	stub := fake.DeleteDataDownTrackStub
+	fake.recordInvocation("DeleteDataDownTrack", []interface{}{arg1})
+	fake.deleteDataDownTrackMutex.Unlock()
+	if stub != nil {
+		fake.DeleteDataDownTrackStub(arg1)
+	}
+}
+
+func (fake *FakeDataTrack) DeleteDataDownTrackCallCount() int {
+	fake.deleteDataDownTrackMutex.RLock()
+	defer fake.deleteDataDownTrackMutex.RUnlock()
+	return len(fake.deleteDataDownTrackArgsForCall)
+}
+
+func (fake *FakeDataTrack) DeleteDataDownTrackCalls(stub func(livekit.ParticipantID)) {
+	fake.deleteDataDownTrackMutex.Lock()
+	defer fake.deleteDataDownTrackMutex.Unlock()
+	fake.DeleteDataDownTrackStub = stub
+}
+
+func (fake *FakeDataTrack) DeleteDataDownTrackArgsForCall(i int) livekit.ParticipantID {
+	fake.deleteDataDownTrackMutex.RLock()
+	defer fake.deleteDataDownTrackMutex.RUnlock()
+	argsForCall := fake.deleteDataDownTrackArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeDataTrack) ID() livekit.TrackID {

@@ -213,6 +213,10 @@ func (p *ParticipantImpl) dataTracksToProto() []*livekit.DataTrackInfo {
 	return dataTrackInfos
 }
 
-func (p *ParticipantImpl) onDataTrackMessage(data []byte) {
-	// DT-TODO
+func (p *ParticipantImpl) onReceivedDataTrackMessage(data []byte) {
+	// DT-TODO - look up data track by handle and send to that data for forwarding to subscribers
+
+	if onDataTrackMessage := p.getOnDataTrackMessage(); onDataTrackMessage != nil {
+		onDataTrackMessage(p, data)
+	}
 }

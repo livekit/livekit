@@ -484,6 +484,7 @@ type LocalParticipant interface {
 	OnParticipantUpdate(callback func(LocalParticipant))
 	OnDataPacket(callback func(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket))
 	OnDataMessage(callback func(LocalParticipant, []byte))
+	OnDataTrackMessage(callback func(LocalParticipant, []byte))
 	OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool))
 	AddOnClose(key string, callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
@@ -663,6 +664,9 @@ type DataTrack interface {
 	RemoveSubscriber(participantID livekit.ParticipantID)
 	IsSubscriber(subID livekit.ParticipantID) bool
 
+	AddDataDownTrack(sender DataTrackSender) error
+	DeleteDataDownTrack(subscriberID livekit.ParticipantID)
+
 	Close()
 }
 
@@ -670,6 +674,11 @@ type DataTrack interface {
 type DataDownTrack interface {
 	Handle() uint16
 	PublishDataTrack() DataTrack
+}
+
+//counterfeiter:generate . DataTrackSender
+type DataTrackSender interface {
+	SubscriberID() livekit.ParticipantID
 }
 
 //counterfeiter:generate . SubscribedTrack

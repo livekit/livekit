@@ -891,6 +891,11 @@ type FakeLocalParticipant struct {
 	onDataPacketArgsForCall []struct {
 		arg1 func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
 	}
+	OnDataTrackMessageStub        func(func(types.LocalParticipant, []byte))
+	onDataTrackMessageMutex       sync.RWMutex
+	onDataTrackMessageArgsForCall []struct {
+		arg1 func(types.LocalParticipant, []byte)
+	}
 	OnDataTrackPublishedStub        func(func(types.LocalParticipant, types.DataTrack))
 	onDataTrackPublishedMutex       sync.RWMutex
 	onDataTrackPublishedArgsForCall []struct {
@@ -6163,6 +6168,38 @@ func (fake *FakeLocalParticipant) OnDataPacketArgsForCall(i int) func(types.Loca
 	fake.onDataPacketMutex.RLock()
 	defer fake.onDataPacketMutex.RUnlock()
 	argsForCall := fake.onDataPacketArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) OnDataTrackMessage(arg1 func(types.LocalParticipant, []byte)) {
+	fake.onDataTrackMessageMutex.Lock()
+	fake.onDataTrackMessageArgsForCall = append(fake.onDataTrackMessageArgsForCall, struct {
+		arg1 func(types.LocalParticipant, []byte)
+	}{arg1})
+	stub := fake.OnDataTrackMessageStub
+	fake.recordInvocation("OnDataTrackMessage", []interface{}{arg1})
+	fake.onDataTrackMessageMutex.Unlock()
+	if stub != nil {
+		fake.OnDataTrackMessageStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) OnDataTrackMessageCallCount() int {
+	fake.onDataTrackMessageMutex.RLock()
+	defer fake.onDataTrackMessageMutex.RUnlock()
+	return len(fake.onDataTrackMessageArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) OnDataTrackMessageCalls(stub func(func(types.LocalParticipant, []byte))) {
+	fake.onDataTrackMessageMutex.Lock()
+	defer fake.onDataTrackMessageMutex.Unlock()
+	fake.OnDataTrackMessageStub = stub
+}
+
+func (fake *FakeLocalParticipant) OnDataTrackMessageArgsForCall(i int) func(types.LocalParticipant, []byte) {
+	fake.onDataTrackMessageMutex.RLock()
+	defer fake.onDataTrackMessageMutex.RUnlock()
+	argsForCall := fake.onDataTrackMessageArgsForCall[i]
 	return argsForCall.arg1
 }
 

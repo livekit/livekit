@@ -15,12 +15,19 @@
 package rtc
 
 import (
+	"errors"
 	"sync"
 
+	"github.com/frostbyte73/core"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
+)
+
+var (
+	errReceiverClosed = errors.New("datatrack is closed")
 )
 
 type DataTrackParams struct {
@@ -33,6 +40,10 @@ type DataTrack struct {
 	lock             sync.Mutex
 	dti              *livekit.DataTrackInfo
 	subscribedTracks map[livekit.ParticipantID]*DataDownTrack
+
+	downTrackSpreader *sfuutils.DownTrackSpreader[types.DataTrackSender]
+
+	closed core.Fuse
 }
 
 func NewDataTrack(params DataTrackParams, dti *livekit.DataTrackInfo) *DataTrack {
@@ -40,11 +51,16 @@ func NewDataTrack(params DataTrackParams, dti *livekit.DataTrackInfo) *DataTrack
 		params:           params,
 		dti:              dti,
 		subscribedTracks: make(map[livekit.ParticipantID]*DataDownTrack),
+		downTrackSpreader: sfuutils.NewDownTrackSpreader[types.DataTrackSender](sfuutils.DownTrackSpreaderParams{
+			Threshold: 20,
+			Logger:    params.Logger,
+		}),
 	}
 }
 
 func (d *DataTrack) Close() {
 	d.params.Logger.Infow("closing data track", "id", d.ID(), "name", d.Name())
+	d.closed.Break()
 }
 
 func (d *DataTrack) ToProto() *livekit.DataTrackInfo {
@@ -65,7 +81,9 @@ func (d *DataTrack) Name() string {
 
 func (d *DataTrack) OnMessage(data []byte) {
 	d.params.Logger.Infow("received data track message", "id", d.ID(), "name", d.Name(), "size", len(data))
-	// DT-TODO
+	d.downTrackSpreader.Broadcast(func(dts types.DataTrackSender) {
+		// DT-TODO
+	})
 }
 
 func (d *DataTrack) AddSubscriber(sub types.LocalParticipant) (types.DataDownTrack, error) {
@@ -76,7 +94,7 @@ func (d *DataTrack) AddSubscriber(sub types.LocalParticipant) (types.DataDownTra
 		return nil, errAlreadySubscribed
 	}
 
-	dataDownTrack := NewDataDownTrack(
+	dataDownTrack, err := NewDataDownTrack(
 		DataDownTrackParams{
 			Logger:           d.params.Logger,
 			SubscriberID:     sub.ID(),
@@ -84,6 +102,10 @@ func (d *DataTrack) AddSubscriber(sub types.LocalParticipant) (types.DataDownTra
 		},
 		d.dti,
 	)
+	if err != nil {
+		return nil, err
+	}
+
 	d.subscribedTracks[sub.ID()] = dataDownTrack
 	return dataDownTrack, nil
 }
@@ -105,4 +127,23 @@ func (d *DataTrack) IsSubscriber(subID livekit.ParticipantID) bool {
 
 	_, ok := d.subscribedTracks[subID]
 	return ok
+}
+
+func (d *DataTrack) AddDataDownTrack(dts types.DataTrackSender) error {
+	if d.closed.IsBroken() {
+		return errReceiverClosed
+	}
+
+	if d.downTrackSpreader.HasDownTrack(dts.SubscriberID()) {
+		d.params.Logger.Infow("subscriberID already exists, replacing data downtrack", "subscriberID", dts.SubscriberID())
+	}
+
+	d.downTrackSpreader.Store(dts)
+	d.params.Logger.Infow("data downtrack added", "subscriberID", dts.SubscriberID())
+	return nil
+}
+
+func (d *DataTrack) DeleteDataDownTrack(subscriberID livekit.ParticipantID) {
+	d.downTrackSpreader.Free(subscriberID)
+	d.params.Logger.Infow("data downtrack deleted", "subscriberID", subscriberID)
 }

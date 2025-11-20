@@ -15,7 +15,9 @@
 package rtc
 
 import (
+	"fmt"
 	"math/rand"
+	"time"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/livekit"
@@ -29,21 +31,31 @@ type DataDownTrackParams struct {
 }
 
 type DataDownTrack struct {
-	params DataDownTrackParams
-	dti    *livekit.DataTrackInfo
-	handle uint16
+	params    DataDownTrackParams
+	dti       *livekit.DataTrackInfo
+	handle    uint16
+	createdAt int64
 }
 
-func NewDataDownTrack(params DataDownTrackParams, dti *livekit.DataTrackInfo) *DataDownTrack {
-	return &DataDownTrack{
-		params: params,
-		dti:    dti,
-		handle: uint16(rand.Intn(256)),
+func NewDataDownTrack(params DataDownTrackParams, dti *livekit.DataTrackInfo) (*DataDownTrack, error) {
+	d := &DataDownTrack{
+		params:    params,
+		dti:       dti,
+		handle:    uint16(rand.Intn(256)),
+		createdAt: time.Now().UnixNano(),
 	}
+
+	if err := d.params.PublishDataTrack.AddDataDownTrack(d); err != nil {
+		d.params.Logger.Warnw("could not add data down track", err)
+		return nil, err
+	}
+
+	return d, nil
 }
 
 func (d *DataDownTrack) Close() {
 	d.params.Logger.Infow("closing data down track", "id", d.ID(), "name", d.Name())
+	d.params.PublishDataTrack.DeleteDataDownTrack(d.SubscriberID())
 }
 
 func (d *DataDownTrack) Handle() uint16 {
@@ -64,4 +76,9 @@ func (d *DataDownTrack) ID() livekit.TrackID {
 
 func (d *DataDownTrack) Name() string {
 	return d.dti.Name
+}
+
+func (d *DataDownTrack) SubscriberID() livekit.ParticipantID {
+	// add `createdAt` to ensure repeated subscriptions from same subscriber to same publisher does not collide
+	return livekit.ParticipantID(fmt.Sprintf("%s:%d", d.params.SubscriberID, d.createdAt))
 }
