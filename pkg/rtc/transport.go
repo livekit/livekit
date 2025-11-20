@@ -864,6 +864,14 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 			)
 			t.lock.Unlock()
 
+		case isDataTrack:
+			t.lock.Lock()
+			if t.dataTrackDC != nil {
+				t.dataTrackDC.Close()
+			}
+			t.dataTrackDC = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, 0, 0)
+			t.lock.Unlock()
+
 		case kind == livekit.DataPacket_RELIABLE:
 			t.lock.Lock()
 			if t.reliableDC != nil {
@@ -880,14 +888,6 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 			}
 			t.lossyDC = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, t.params.DatachannelLossyTargetLatency, uint64(lossyDataChannelMinBufferedAmount))
 			t.lossyDCOpened = true
-			t.lock.Unlock()
-
-		case isDataTrack:
-			t.lock.Lock()
-			if t.dataTrackDC != nil {
-				t.dataTrackDC.Close()
-			}
-			t.dataTrackDC = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, 0, 0)
 			t.lock.Unlock()
 		}
 
@@ -1229,7 +1229,14 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 			if *dcPtr != nil {
 				(*dcPtr).Close()
 			}
-			*dcPtr = datachannel.NewDataChannelWriterReliable(dc, rawDC, slowThreshold)
+			switch {
+			case dcPtr == &t.reliableDC:
+				*dcPtr = datachannel.NewDataChannelWriterReliable(dc, rawDC, slowThreshold)
+			case dcPtr == &t.lossyDC:
+				*dcPtr = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, t.params.DatachannelLossyTargetLatency, uint64(lossyDataChannelMinBufferedAmount))
+			case dcPtr == &t.dataTrackDC:
+				*dcPtr = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, 0, 0)
+			}
 			if dcReady != nil {
 				*dcReady = true
 			}

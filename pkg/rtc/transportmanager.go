@@ -376,8 +376,8 @@ func (t *TransportManager) handleSendDataResult(err error, kind string, size int
 
 func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels []*livekit.DataChannelInfo) error {
 	var (
-		reliableID, lossyID       uint16
-		reliableIDPtr, lossyIDPtr *uint16
+		reliableID, lossyID, dataTrackID          uint16
+		reliableIDPtr, lossyIDPtr, dataTrackIDPtr *uint16
 	)
 
 	//
@@ -388,13 +388,17 @@ func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels [
 	// For new version migration clients, we create data channels with new ID and negotiate with client
 	//
 	for _, dc := range pendingDataChannels {
-		if dc.Label == ReliableDataChannel {
-			// pion use step 2 for auto generated ID, so we need to add 4 to avoid conflict
-			reliableID = uint16(dc.Id) + 4
+		switch dc.Label {
+		case ReliableDataChannel:
+			// pion use step 2 for auto generated ID, so we need to add 6 to avoid conflict
+			reliableID = uint16(dc.Id) + 6
 			reliableIDPtr = &reliableID
-		} else if dc.Label == LossyDataChannel {
-			lossyID = uint16(dc.Id) + 4
+		case LossyDataChannel:
+			lossyID = uint16(dc.Id) + 6
 			lossyIDPtr = &lossyID
+		case DataTrackDataChannel:
+			dataTrackID = uint16(dc.Id) + 6
+			dataTrackIDPtr = &dataTrackID
 		}
 	}
 
@@ -419,6 +423,17 @@ func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels [
 	}); err != nil {
 		return err
 	}
+
+	negotiated = t.params.Migration && dataTrackIDPtr == nil
+	if err := t.subscriber.CreateDataChannel(DataTrackDataChannel, &webrtc.DataChannelInit{
+		Ordered:        &ordered,
+		MaxRetransmits: &retransmits,
+		ID:             dataTrackIDPtr,
+		Negotiated:     &negotiated,
+	}); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -854,7 +869,15 @@ func (t *TransportManager) ProcessPendingPublisherDataChannels() {
 			dcExisting bool
 			err        error
 		)
-		if ci.Label == LossyDataChannel {
+		switch ci.Label {
+		case ReliableDataChannel:
+			id := uint16(ci.GetId())
+			dcLabel, dcID, dcExisting, err = t.publisher.CreateDataChannelIfEmpty(ReliableDataChannel, &webrtc.DataChannelInit{
+				Ordered:    &ordered,
+				Negotiated: &negotiated,
+				ID:         &id,
+			})
+		case LossyDataChannel:
 			ordered = false
 			retransmits := uint16(0)
 			id := uint16(ci.GetId())
@@ -864,12 +887,15 @@ func (t *TransportManager) ProcessPendingPublisherDataChannels() {
 				Negotiated:     &negotiated,
 				ID:             &id,
 			})
-		} else if ci.Label == ReliableDataChannel {
+		case DataTrackDataChannel:
+			ordered = false
+			retransmits := uint16(0)
 			id := uint16(ci.GetId())
-			dcLabel, dcID, dcExisting, err = t.publisher.CreateDataChannelIfEmpty(ReliableDataChannel, &webrtc.DataChannelInit{
-				Ordered:    &ordered,
-				Negotiated: &negotiated,
-				ID:         &id,
+			dcLabel, dcID, dcExisting, err = t.publisher.CreateDataChannelIfEmpty(DataTrackDataChannel, &webrtc.DataChannelInit{
+				Ordered:        &ordered,
+				MaxRetransmits: &retransmits,
+				Negotiated:     &negotiated,
+				ID:             &id,
 			})
 		}
 		if err != nil {

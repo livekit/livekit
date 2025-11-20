@@ -335,17 +335,17 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		return nil, err
 	}
 
+	if err := c.publisher.CreateDataChannel("pubraw", &webrtc.DataChannelInit{
+		Ordered: &ordered,
+	}); err != nil {
+		return nil, err
+	}
+
 	ordered = false
 	maxRetransmits := uint16(0)
 	if err := c.publisher.CreateDataChannel(rtc.LossyDataChannel, &webrtc.DataChannelInit{
 		Ordered:        &ordered,
 		MaxRetransmits: &maxRetransmits,
-	}); err != nil {
-		return nil, err
-	}
-
-	if err := c.publisher.CreateDataChannel("pubraw", &webrtc.DataChannelInit{
-		Ordered: &ordered,
 	}); err != nil {
 		return nil, err
 	}
@@ -372,7 +372,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 			return nil, err
 		}
 
-		ordered := false
+		ordered := true
 		if err := c.subscriber.CreateReadableDataChannel("subraw", &webrtc.DataChannelInit{
 			Ordered: &ordered,
 		}); err != nil {
