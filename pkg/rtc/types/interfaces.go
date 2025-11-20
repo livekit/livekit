@@ -28,6 +28,7 @@ import (
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
@@ -558,6 +559,8 @@ type LocalParticipant interface {
 	HandleSignalMessage(msg proto.Message) error
 
 	PerformRpc(req *livekit.PerformRpcRequest, resultCh chan string, errorCh chan error)
+
+	GetDataTrackTransport() DataTrackTransport
 }
 
 // Room is a container of participants, and can provide room-level actions
@@ -667,6 +670,8 @@ type DataTrack interface {
 	AddDataDownTrack(sender DataTrackSender) error
 	DeleteDataDownTrack(subscriberID livekit.ParticipantID)
 
+	HandlePacket(data []byte, packet *datatrack.Packet)
+
 	Close()
 }
 
@@ -679,6 +684,13 @@ type DataDownTrack interface {
 //counterfeiter:generate . DataTrackSender
 type DataTrackSender interface {
 	SubscriberID() livekit.ParticipantID
+
+	WritePacket(data []byte, packet *datatrack.Packet)
+}
+
+//counterfeiter:generate . DataTrackTransport
+type DataTrackTransport interface {
+	SendDataTrackMessage(data []byte) error
 }
 
 //counterfeiter:generate . SubscribedTrack

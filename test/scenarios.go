@@ -148,7 +148,7 @@ func scenarioReceiveBeforePublish(t *testing.T) {
 
 func scenarioDataPublish(t *testing.T) {
 	for _, useSinglePeerConnection := range []bool{false, true} {
-		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+		t.Run(fmt.Sprintf("scenarioDataPublish/singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
 			c1 := createRTCClient("dp1", defaultServerPort, useSinglePeerConnection, nil)
 			c2 := createRTCClient("dp2", secondServerPort, useSinglePeerConnection, nil)
 			waitUntilConnected(t, c1, c2)
@@ -158,6 +158,7 @@ func scenarioDataPublish(t *testing.T) {
 
 			received := atomic.NewBool(false)
 			c2.OnDataReceived = func(data []byte, sid string) {
+				logger.Infow("RAJA received data", "data", string(data), "sid", sid, "c1.ID()", c1.ID(), "c2.ID()", c2.ID()) // RAJA-REMOVE
 				if string(data) == payload && livekit.ParticipantID(sid) == c1.ID() {
 					received.Store(true)
 				}
@@ -178,7 +179,7 @@ func scenarioDataPublish(t *testing.T) {
 
 func scenarioDataUnlabeledPublish(t *testing.T) {
 	for _, useSinglePeerConnection := range []bool{false, true} {
-		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+		t.Run(fmt.Sprintf("scenarioDataUnlabeledPublish/singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
 			c1 := createRTCClient("dp1", defaultServerPort, useSinglePeerConnection, nil)
 			c2 := createRTCClient("dp2", secondServerPort, useSinglePeerConnection, nil)
 			waitUntilConnected(t, c1, c2)
@@ -208,7 +209,7 @@ func scenarioDataUnlabeledPublish(t *testing.T) {
 
 func scenarioDataTracksPublishingUponJoining(t *testing.T) {
 	for _, useSinglePeerConnection := range []bool{false, true} {
-		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+		t.Run(fmt.Sprintf("scenarioDataTracksPublishingUponJoining/singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
 			c1 := createRTCClient("dtpuj_1", defaultServerPort, useSinglePeerConnection, nil)
 			c2 := createRTCClient("dtpuj_2", secondServerPort, useSinglePeerConnection, &testclient.Options{AutoSubscribe: true})
 			c3 := createRTCClient("dtpuj_3", defaultServerPort, useSinglePeerConnection, &testclient.Options{AutoSubscribe: true})
@@ -220,7 +221,6 @@ func scenarioDataTracksPublishingUponJoining(t *testing.T) {
 			writers := publishDataTracksForClients(t, c1, c2)
 			defer stopWriters(writers...)
 
-			/* DT-TODO
 			logger.Infow("waiting to receive tracks from c1 and c2")
 			testutils.WithTimeout(t, func() string {
 				tracks := c3.SubscribedTracks()
@@ -232,13 +232,11 @@ func scenarioDataTracksPublishingUponJoining(t *testing.T) {
 				}
 				return ""
 			})
-			*/
 
 			// after a delay, c2 reconnects, then publishing
 			time.Sleep(syncDelay)
 			c2.Stop()
 
-			/* DT-TODO
 			logger.Infow("waiting for c2 tracks to be gone")
 			testutils.WithTimeout(t, func() string {
 				tracks := c3.SubscribedTracks()
@@ -254,7 +252,6 @@ func scenarioDataTracksPublishingUponJoining(t *testing.T) {
 				}
 				return ""
 			})
-			*/
 
 			logger.Infow("c2 reconnecting")
 			// connect to a diff port
@@ -264,7 +261,6 @@ func scenarioDataTracksPublishingUponJoining(t *testing.T) {
 			writers = publishDataTracksForClients(t, c2)
 			defer stopWriters(writers...)
 
-			/* DT-TODO
 			testutils.WithTimeout(t, func() string {
 				tracks := c3.SubscribedTracks()
 				// "new c2 tracks should be published again",
@@ -276,7 +272,6 @@ func scenarioDataTracksPublishingUponJoining(t *testing.T) {
 				}
 				return ""
 			})
-			*/
 		})
 	}
 }

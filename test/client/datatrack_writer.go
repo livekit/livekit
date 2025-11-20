@@ -14,18 +14,53 @@
 
 package client
 
-// Writes packets to a data track.
-// DT-TODO - write packets in loop
+import (
+	"context"
+	"math/rand"
+	"time"
+
+	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
+)
+
 type dataTrackWriter struct {
+	ctx       context.Context
+	cancel    context.CancelFunc
+	handle    uint16
+	transport types.DataTrackTransport
 }
 
-func NewDataTrackWriter() TrackWriter {
-	return &dataTrackWriter{}
+func NewDataTrackWriter(ctx context.Context, handle uint16, transport types.DataTrackTransport) TrackWriter {
+	ctx, cancel := context.WithCancel(ctx)
+	return &dataTrackWriter{
+		ctx:       ctx,
+		cancel:    cancel,
+		handle:    handle,
+		transport: transport,
+	}
 }
 
 func (d *dataTrackWriter) Start() error {
+	go d.writeFrames()
 	return nil
 }
 
 func (d *dataTrackWriter) Stop() {
+	d.cancel()
+}
+
+func (d *dataTrackWriter) writeFrames() {
+	for {
+		select {
+		case <-d.ctx.Done():
+			return
+
+		default:
+			packets := datatrack.GenerateRawDataPackets(d.handle, 1, rand.Intn(2048), 33*time.Millisecond)
+			for _, packet := range packets {
+				d.transport.SendDataTrackMessage(packet)
+			}
+			time.Sleep(33 * time.Millisecond)
+		}
+	}
 }

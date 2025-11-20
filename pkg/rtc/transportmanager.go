@@ -659,6 +659,10 @@ func (t *TransportManager) GetICEConnectionInfo() []*types.ICEConnectionInfo {
 	return infos
 }
 
+func (t *TransportManager) GetDataTrackTransport() types.DataTrackTransport {
+	return t.getTransport(true)
+}
+
 func (t *TransportManager) getTransport(isPrimary bool) *PCTransport {
 	switch {
 	case t.publisher == nil:

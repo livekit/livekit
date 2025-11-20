@@ -19,6 +19,7 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -28,6 +29,7 @@ type DataDownTrackParams struct {
 	Logger           logger.Logger
 	SubscriberID     livekit.ParticipantID
 	PublishDataTrack types.DataTrack
+	Transport        types.DataTrackTransport
 }
 
 type DataDownTrack struct {
@@ -81,4 +83,8 @@ func (d *DataDownTrack) Name() string {
 func (d *DataDownTrack) SubscriberID() livekit.ParticipantID {
 	// add `createdAt` to ensure repeated subscriptions from same subscriber to same publisher does not collide
 	return livekit.ParticipantID(fmt.Sprintf("%s:%d", d.params.SubscriberID, d.createdAt))
+}
+
+func (d *DataDownTrack) WritePacket(data []byte, packet *datatrack.Packet) {
+	d.params.Transport.SendDataTrackMessage(data)
 }

@@ -290,6 +290,16 @@ type FakeLocalParticipant struct {
 	getCountryReturnsOnCall map[int]struct {
 		result1 string
 	}
+	GetDataTrackTransportStub        func() types.DataTrackTransport
+	getDataTrackTransportMutex       sync.RWMutex
+	getDataTrackTransportArgsForCall []struct {
+	}
+	getDataTrackTransportReturns struct {
+		result1 types.DataTrackTransport
+	}
+	getDataTrackTransportReturnsOnCall map[int]struct {
+		result1 types.DataTrackTransport
+	}
 	GetDisableSenderReportPassThroughStub        func() bool
 	getDisableSenderReportPassThroughMutex       sync.RWMutex
 	getDisableSenderReportPassThroughArgsForCall []struct {
@@ -2891,6 +2901,59 @@ func (fake *FakeLocalParticipant) GetCountryReturnsOnCall(i int, result1 string)
 	}
 	fake.getCountryReturnsOnCall[i] = struct {
 		result1 string
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetDataTrackTransport() types.DataTrackTransport {
+	fake.getDataTrackTransportMutex.Lock()
+	ret, specificReturn := fake.getDataTrackTransportReturnsOnCall[len(fake.getDataTrackTransportArgsForCall)]
+	fake.getDataTrackTransportArgsForCall = append(fake.getDataTrackTransportArgsForCall, struct {
+	}{})
+	stub := fake.GetDataTrackTransportStub
+	fakeReturns := fake.getDataTrackTransportReturns
+	fake.recordInvocation("GetDataTrackTransport", []interface{}{})
+	fake.getDataTrackTransportMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetDataTrackTransportCallCount() int {
+	fake.getDataTrackTransportMutex.RLock()
+	defer fake.getDataTrackTransportMutex.RUnlock()
+	return len(fake.getDataTrackTransportArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetDataTrackTransportCalls(stub func() types.DataTrackTransport) {
+	fake.getDataTrackTransportMutex.Lock()
+	defer fake.getDataTrackTransportMutex.Unlock()
+	fake.GetDataTrackTransportStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetDataTrackTransportReturns(result1 types.DataTrackTransport) {
+	fake.getDataTrackTransportMutex.Lock()
+	defer fake.getDataTrackTransportMutex.Unlock()
+	fake.GetDataTrackTransportStub = nil
+	fake.getDataTrackTransportReturns = struct {
+		result1 types.DataTrackTransport
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetDataTrackTransportReturnsOnCall(i int, result1 types.DataTrackTransport) {
+	fake.getDataTrackTransportMutex.Lock()
+	defer fake.getDataTrackTransportMutex.Unlock()
+	fake.GetDataTrackTransportStub = nil
+	if fake.getDataTrackTransportReturnsOnCall == nil {
+		fake.getDataTrackTransportReturnsOnCall = make(map[int]struct {
+			result1 types.DataTrackTransport
+		})
+	}
+	fake.getDataTrackTransportReturnsOnCall[i] = struct {
+		result1 types.DataTrackTransport
 	}{result1}
 }
 

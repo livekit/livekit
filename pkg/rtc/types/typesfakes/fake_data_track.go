@@ -4,6 +4,7 @@ package typesfakes
 import (
 	"sync"
 
+	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/livekit"
 )
@@ -41,6 +42,12 @@ type FakeDataTrack struct {
 	deleteDataDownTrackMutex       sync.RWMutex
 	deleteDataDownTrackArgsForCall []struct {
 		arg1 livekit.ParticipantID
+	}
+	HandlePacketStub        func([]byte, *datatrack.Packet)
+	handlePacketMutex       sync.RWMutex
+	handlePacketArgsForCall []struct {
+		arg1 []byte
+		arg2 *datatrack.Packet
 	}
 	IDStub        func() livekit.TrackID
 	iDMutex       sync.RWMutex
@@ -281,6 +288,44 @@ func (fake *FakeDataTrack) DeleteDataDownTrackArgsForCall(i int) livekit.Partici
 	defer fake.deleteDataDownTrackMutex.RUnlock()
 	argsForCall := fake.deleteDataDownTrackArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakeDataTrack) HandlePacket(arg1 []byte, arg2 *datatrack.Packet) {
+	var arg1Copy []byte
+	if arg1 != nil {
+		arg1Copy = make([]byte, len(arg1))
+		copy(arg1Copy, arg1)
+	}
+	fake.handlePacketMutex.Lock()
+	fake.handlePacketArgsForCall = append(fake.handlePacketArgsForCall, struct {
+		arg1 []byte
+		arg2 *datatrack.Packet
+	}{arg1Copy, arg2})
+	stub := fake.HandlePacketStub
+	fake.recordInvocation("HandlePacket", []interface{}{arg1Copy, arg2})
+	fake.handlePacketMutex.Unlock()
+	if stub != nil {
+		fake.HandlePacketStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeDataTrack) HandlePacketCallCount() int {
+	fake.handlePacketMutex.RLock()
+	defer fake.handlePacketMutex.RUnlock()
+	return len(fake.handlePacketArgsForCall)
+}
+
+func (fake *FakeDataTrack) HandlePacketCalls(stub func([]byte, *datatrack.Packet)) {
+	fake.handlePacketMutex.Lock()
+	defer fake.handlePacketMutex.Unlock()
+	fake.HandlePacketStub = stub
+}
+
+func (fake *FakeDataTrack) HandlePacketArgsForCall(i int) ([]byte, *datatrack.Packet) {
+	fake.handlePacketMutex.RLock()
+	defer fake.handlePacketMutex.RUnlock()
+	argsForCall := fake.handlePacketArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeDataTrack) ID() livekit.TrackID {

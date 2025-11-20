@@ -19,6 +19,7 @@ import (
 	"sync"
 
 	"github.com/frostbyte73/core"
+	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/protocol/livekit"
@@ -79,13 +80,6 @@ func (d *DataTrack) Name() string {
 	return d.dti.Name
 }
 
-func (d *DataTrack) OnMessage(data []byte) {
-	d.params.Logger.Infow("received data track message", "id", d.ID(), "name", d.Name(), "size", len(data))
-	d.downTrackSpreader.Broadcast(func(dts types.DataTrackSender) {
-		// DT-TODO
-	})
-}
-
 func (d *DataTrack) AddSubscriber(sub types.LocalParticipant) (types.DataDownTrack, error) {
 	d.lock.Lock()
 	defer d.lock.Unlock()
@@ -99,6 +93,7 @@ func (d *DataTrack) AddSubscriber(sub types.LocalParticipant) (types.DataDownTra
 			Logger:           d.params.Logger,
 			SubscriberID:     sub.ID(),
 			PublishDataTrack: d,
+			Transport:        sub.GetDataTrackTransport(),
 		},
 		d.dti,
 	)
@@ -146,4 +141,11 @@ func (d *DataTrack) AddDataDownTrack(dts types.DataTrackSender) error {
 func (d *DataTrack) DeleteDataDownTrack(subscriberID livekit.ParticipantID) {
 	d.downTrackSpreader.Free(subscriberID)
 	d.params.Logger.Infow("data downtrack deleted", "subscriberID", subscriberID)
+}
+
+func (d *DataTrack) HandlePacket(data []byte, packet *datatrack.Packet) {
+	d.params.Logger.Infow("received data track message", "id", d.ID(), "name", d.Name(), "size", len(data))
+	d.downTrackSpreader.Broadcast(func(dts types.DataTrackSender) {
+		dts.WritePacket(data, packet)
+	})
 }

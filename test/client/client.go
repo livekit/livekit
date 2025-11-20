@@ -45,6 +45,7 @@ import (
 	"github.com/livekit/protocol/signalling"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/transport/transportfakes"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -105,7 +106,7 @@ type RTCClient struct {
 	nextDataTrackHandle        atomic.Uint32
 	pendingPublishedDataTracks map[uint16]*livekit.DataTrackInfo
 	pendingDataTrackWriters    []TrackWriter
-	subscribedDataTracks       map[livekit.ParticipantID][]livekit.TrackID // DT-TODO: make this DataTrackRemote
+	subscribedDataTracks       map[livekit.ParticipantID]map[uint16]*DataTrackRemote
 }
 
 var (
@@ -227,6 +228,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		lastPackets:                make(map[livekit.ParticipantID]*rtp.Packet),
 		bytesReceived:              make(map[livekit.ParticipantID]uint64),
 		pendingPublishedDataTracks: make(map[uint16]*livekit.DataTrackInfo),
+		subscribedDataTracks:       make(map[livekit.ParticipantID]map[uint16]*DataTrackRemote),
 	}
 	c.nextDataTrackHandle.Store(uint32(rand.IntN(8192)))
 	c.ctx, c.cancel = context.WithCancel(context.Background())
@@ -296,6 +298,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 	})
 	publisherHandler.OnDataMessageCalls(c.handleDataMessage)
 	publisherHandler.OnDataMessageUnlabeledCalls(c.handleDataMessageUnlabeled)
+	publisherHandler.OnDataTrackMessageCalls(c.handleDataTrackMessage)
 	publisherHandler.OnInitialConnectedCalls(func() {
 		logger.Debugw("publisher initial connected", "participant", c.localParticipant.Identity)
 
@@ -387,6 +390,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		})
 		subscriberHandler.OnDataMessageCalls(c.handleDataMessage)
 		subscriberHandler.OnDataMessageUnlabeledCalls(c.handleDataMessageUnlabeled)
+		subscriberHandler.OnDataTrackMessageCalls(c.handleDataTrackMessage)
 		subscriberHandler.OnInitialConnectedCalls(func() {
 			logger.Debugw("subscriber initial connected", "participant", c.localParticipant.Identity)
 
@@ -586,10 +590,35 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 			"handles", msg.DataTrackSubscriberHandles.SubHandles,
 		)
 		c.lock.Lock()
-		c.subscribedDataTracks = make(map[livekit.ParticipantID][]livekit.TrackID, len(msg.DataTrackSubscriberHandles.SubHandles))
-		for _, publishedDataTrack := range msg.DataTrackSubscriberHandles.SubHandles {
+		// create new remote data tracks if one does not exist for a handle
+		for handle, publishedDataTrack := range msg.DataTrackSubscriberHandles.SubHandles {
 			publisherID := livekit.ParticipantID(publishedDataTrack.PublisherSid)
-			c.subscribedDataTracks[publisherID] = append(c.subscribedDataTracks[publisherID], livekit.TrackID(publishedDataTrack.TrackSid))
+			tracks := c.subscribedDataTracks[publisherID]
+			if tracks == nil {
+				c.subscribedDataTracks[publisherID] = make(map[uint16]*DataTrackRemote)
+				tracks = c.subscribedDataTracks[publisherID]
+			}
+			if tracks[uint16(handle)] == nil {
+				tracks[uint16(handle)] = NewDataTrackRemote(
+					livekit.ParticipantIdentity(publishedDataTrack.PublisherIdentity),
+					livekit.ParticipantID(publishedDataTrack.PublisherSid),
+					uint16(handle),
+					livekit.TrackID(publishedDataTrack.TrackSid),
+				)
+			}
+		}
+
+		// delete remote data tracks that have gone away
+		for publisherID, tracks := range c.subscribedDataTracks {
+			for handle, dataTrackRemote := range tracks {
+				if msg.DataTrackSubscriberHandles.SubHandles[uint32(handle)] == nil {
+					dataTrackRemote.Close()
+					delete(tracks, handle)
+					if len(tracks) == 0 {
+						delete(c.subscribedDataTracks, publisherID)
+					}
+				}
+			}
 		}
 		c.lock.Unlock()
 	}
@@ -657,11 +686,11 @@ func (c *RTCClient) SubscribedTracks() map[livekit.ParticipantID][]*webrtc.Track
 	return tracks
 }
 
-func (c *RTCClient) SubscribedDataTracks() map[livekit.ParticipantID][]livekit.TrackID {
+func (c *RTCClient) SubscribedDataTracks() map[livekit.ParticipantID]map[uint16]*DataTrackRemote {
 	// create a copy of this
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	tracks := make(map[livekit.ParticipantID][]livekit.TrackID, len(c.subscribedDataTracks))
+	tracks := make(map[livekit.ParticipantID]map[uint16]*DataTrackRemote, len(c.subscribedDataTracks))
 	maps.Copy(tracks, c.subscribedDataTracks)
 	return tracks
 }
@@ -920,6 +949,7 @@ func (c *RTCClient) PublishData(data []byte, kind livekit.DataPacket_Kind) error
 		return err
 	}
 
+	logger.Infow("RAJA sending data message", "data", string(data), "kind", kind, "pID", c.localParticipant.Sid, "participant", c.localParticipant.Identity) // RAJA-REMOVE
 	return c.publisher.SendDataMessage(kind, dpData)
 }
 
@@ -931,7 +961,6 @@ func (c *RTCClient) PublishDataUnlabeled(data []byte) error {
 	return c.publisher.SendDataMessageUnlabeled(data, true, "test")
 }
 
-// DT-TODO: add data track traffic
 func (c *RTCClient) PublishDataTrack() (writer TrackWriter, err error) {
 	dataTrackHandle := uint16(c.nextDataTrackHandle.Inc())
 	if err = c.SendRequest(&livekit.SignalRequest{
@@ -971,7 +1000,7 @@ func (c *RTCClient) PublishDataTrack() (writer TrackWriter, err error) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	writer = NewDataTrackWriter()
+	writer = NewDataTrackWriter(c.ctx, dataTrackHandle, c.publisher)
 
 	// write data tracks only after connection established
 	if c.hasPrimaryEverConnected() {
@@ -1037,6 +1066,27 @@ func (c *RTCClient) handleDataMessage(kind livekit.DataPacket_Kind, data []byte)
 func (c *RTCClient) handleDataMessageUnlabeled(data []byte) {
 	if c.OnDataUnlabeledReceived != nil {
 		c.OnDataUnlabeledReceived(data)
+	}
+}
+
+func (c *RTCClient) handleDataTrackMessage(data []byte) {
+	var packet datatrack.Packet
+	if err := packet.Unmarshal(data); err != nil {
+		return
+	}
+
+	var dataTrackRemote *DataTrackRemote
+	c.lock.Lock()
+	for _, tracks := range c.subscribedDataTracks {
+		if tracks[packet.Handle] != nil {
+			dataTrackRemote = tracks[packet.Handle]
+			break
+		}
+	}
+	c.lock.Unlock()
+
+	if dataTrackRemote != nil {
+		dataTrackRemote.PacketReceived(&packet)
 	}
 }
 
