@@ -158,7 +158,6 @@ func scenarioDataPublish(t *testing.T) {
 
 			received := atomic.NewBool(false)
 			c2.OnDataReceived = func(data []byte, sid string) {
-				logger.Infow("RAJA received data", "data", string(data), "sid", sid, "c1.ID()", c1.ID(), "c2.ID()", c2.ID()) // RAJA-REMOVE
 				if string(data) == payload && livekit.ParticipantID(sid) == c1.ID() {
 					received.Store(true)
 				}
@@ -223,12 +222,19 @@ func scenarioDataTracksPublishingUponJoining(t *testing.T) {
 
 			logger.Infow("waiting to receive tracks from c1 and c2")
 			testutils.WithTimeout(t, func() string {
-				tracks := c3.SubscribedTracks()
+				tracks := c3.SubscribedDataTracks()
 				if len(tracks[c1.ID()]) != 2 {
 					return "did not receive tracks from c1"
 				}
 				if len(tracks[c2.ID()]) != 2 {
 					return "did not receive tracks from c2"
+				}
+				for _, dts := range tracks {
+					for _, dt := range dts {
+						if dt.NumReceivedPackets() == 0 {
+							return fmt.Sprintf("no packets received from %s", dt.ID())
+						}
+					}
 				}
 				return ""
 			})
@@ -239,7 +245,7 @@ func scenarioDataTracksPublishingUponJoining(t *testing.T) {
 
 			logger.Infow("waiting for c2 tracks to be gone")
 			testutils.WithTimeout(t, func() string {
-				tracks := c3.SubscribedTracks()
+				tracks := c3.SubscribedDataTracks()
 
 				if len(tracks[c1.ID()]) != 2 {
 					return fmt.Sprintf("c3 should be subscribed to 2 tracks from c1, actual: %d", len(tracks[c1.ID()]))
@@ -247,7 +253,7 @@ func scenarioDataTracksPublishingUponJoining(t *testing.T) {
 				if len(tracks[c2.ID()]) != 0 {
 					return fmt.Sprintf("c3 should be subscribed to 0 tracks from c2, actual: %d", len(tracks[c2.ID()]))
 				}
-				if len(c1.SubscribedTracks()[c2.ID()]) != 0 {
+				if len(c1.SubscribedDataTracks()[c2.ID()]) != 0 {
 					return fmt.Sprintf("c3 should be subscribed to 0 tracks from c2, actual: %d", len(c1.SubscribedTracks()[c2.ID()]))
 				}
 				return ""
@@ -255,20 +261,31 @@ func scenarioDataTracksPublishingUponJoining(t *testing.T) {
 
 			logger.Infow("c2 reconnecting")
 			// connect to a diff port
-			c2 = createRTCClient("puj_2", defaultServerPort, useSinglePeerConnection, nil)
+			c2 = createRTCClient("dtpuj_2", defaultServerPort, useSinglePeerConnection, nil)
 			defer c2.Stop()
 			waitUntilConnected(t, c2)
 			writers = publishDataTracksForClients(t, c2)
 			defer stopWriters(writers...)
 
 			testutils.WithTimeout(t, func() string {
-				tracks := c3.SubscribedTracks()
-				// "new c2 tracks should be published again",
+				tracks := c3.SubscribedDataTracks()
+				// new c2 data tracks should be published again
 				if len(tracks[c2.ID()]) != 2 {
 					return fmt.Sprintf("c3 should be subscribed to 2 tracks from c2, actual: %d", len(tracks[c2.ID()]))
 				}
-				if len(c1.SubscribedTracks()[c2.ID()]) != 2 {
+				for _, dt := range tracks[c2.ID()] {
+					if dt.NumReceivedPackets() == 0 {
+						return fmt.Sprintf("no packets received from %s", dt.ID())
+					}
+				}
+
+				if len(c1.SubscribedDataTracks()[c2.ID()]) != 2 {
 					return fmt.Sprintf("c1 should be subscribed to 2 tracks from c2, actual: %d", len(c1.SubscribedTracks()[c2.ID()]))
+				}
+				for _, dt := range c1.SubscribedDataTracks()[c2.ID()] {
+					if dt.NumReceivedPackets() == 0 {
+						return fmt.Sprintf("no packets received from %s", dt.ID())
+					}
 				}
 				return ""
 			})

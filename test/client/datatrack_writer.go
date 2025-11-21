@@ -21,6 +21,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/protocol/logger"
 )
 
 type dataTrackWriter struct {
@@ -58,7 +59,9 @@ func (d *dataTrackWriter) writeFrames() {
 		default:
 			packets := datatrack.GenerateRawDataPackets(d.handle, 1, rand.Intn(2048), 33*time.Millisecond)
 			for _, packet := range packets {
-				d.transport.SendDataTrackMessage(packet)
+				if err := d.transport.SendDataTrackMessage(packet); err != nil {
+					logger.Errorw("could not send data track packet", err)
+				}
 			}
 			time.Sleep(33 * time.Millisecond)
 		}

@@ -586,7 +586,7 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 	case *livekit.SignalResponse_DataTrackSubscriberHandles:
 		logger.Infow(
 			"received data track subscriber handles",
-			"particiapnt", c.localParticipant.Identity,
+			"participant", c.localParticipant.Identity,
 			"handles", msg.DataTrackSubscriberHandles.SubHandles,
 		)
 		c.lock.Lock()
@@ -604,6 +604,7 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 					livekit.ParticipantID(publishedDataTrack.PublisherSid),
 					uint16(handle),
 					livekit.TrackID(publishedDataTrack.TrackSid),
+					logger.GetLogger().WithValues("participant", c.localParticipant.Identity, "pID", c.localParticipant.Sid),
 				)
 			}
 		}
@@ -949,7 +950,6 @@ func (c *RTCClient) PublishData(data []byte, kind livekit.DataPacket_Kind) error
 		return err
 	}
 
-	logger.Infow("RAJA sending data message", "data", string(data), "kind", kind, "pID", c.localParticipant.Sid, "participant", c.localParticipant.Identity) // RAJA-REMOVE
 	return c.publisher.SendDataMessage(kind, dpData)
 }
 
@@ -962,6 +962,10 @@ func (c *RTCClient) PublishDataUnlabeled(data []byte) error {
 }
 
 func (c *RTCClient) PublishDataTrack() (writer TrackWriter, err error) {
+	if err = c.ensurePublisherConnected(); err != nil {
+		return
+	}
+
 	dataTrackHandle := uint16(c.nextDataTrackHandle.Inc())
 	if err = c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_PublishDataTrackRequest{
@@ -1072,9 +1076,11 @@ func (c *RTCClient) handleDataMessageUnlabeled(data []byte) {
 func (c *RTCClient) handleDataTrackMessage(data []byte) {
 	var packet datatrack.Packet
 	if err := packet.Unmarshal(data); err != nil {
+		logger.Errorw("could not unmarshal data track message", err) // RAJA-REMOVE
 		return
 	}
 
+	logger.Infow("got data track message", "size", len(data), "handle", packet.Handle) // RAJA-REMOVE
 	var dataTrackRemote *DataTrackRemote
 	c.lock.Lock()
 	for _, tracks := range c.subscribedDataTracks {

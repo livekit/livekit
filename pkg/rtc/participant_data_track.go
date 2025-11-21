@@ -134,7 +134,7 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 		Name:       req.Name,
 		Encryption: req.Encryption,
 	}
-	dt := NewDataTrack(DataTrackParams{Logger: p.params.Logger}, dti)
+	dt := NewDataTrack(DataTrackParams{Logger: p.params.Logger.WithValues("trackID", dti.Sid)}, dti)
 
 	p.dataTracks[uint16(req.PubHandle)] = dt
 	p.dataTracksLock.Unlock()

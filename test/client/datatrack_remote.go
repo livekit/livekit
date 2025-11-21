@@ -12,6 +12,7 @@ type DataTrackRemote struct {
 	publisherID        livekit.ParticipantID
 	handle             uint16
 	trackID            livekit.TrackID
+	logger             logger.Logger
 	numReceivedPackets int
 
 	closed core.Fuse
@@ -22,6 +23,7 @@ func NewDataTrackRemote(
 	publisherID livekit.ParticipantID,
 	handle uint16,
 	trackID livekit.TrackID,
+	logger logger.Logger,
 ) *DataTrackRemote {
 	logger.Infow(
 		"creating data track remote",
@@ -35,11 +37,12 @@ func NewDataTrackRemote(
 		publisherID:       publisherID,
 		handle:            handle,
 		trackID:           trackID,
+		logger:            logger,
 	}
 }
 
 func (d *DataTrackRemote) Close() {
-	logger.Infow(
+	d.logger.Infow(
 		"closing data track remote",
 		"publisherIdentity", d.publisherIdentity,
 		"publisherID", d.publisherID,

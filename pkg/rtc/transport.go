@@ -831,6 +831,7 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 	dc.OnOpen(func() {
 		t.params.Logger.Debugw(dc.Label() + " data channel open")
+		t.params.Logger.Infow("RAJA incoming " + dc.Label() + " data channel open") // RAJA-REMOVE
 		var kind livekit.DataPacket_Kind
 		var isDataTrack bool
 		var isUnlabeled bool
@@ -855,41 +856,35 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 			return
 		}
 
+		t.lock.Lock()
 		switch {
 		case isUnlabeled:
-			t.lock.Lock()
 			t.unlabeledDataChannels = append(
 				t.unlabeledDataChannels,
 				datachannel.NewDataChannelWriterReliable(dc, rawDC, t.params.DatachannelSlowThreshold),
 			)
-			t.lock.Unlock()
 
 		case isDataTrack:
-			t.lock.Lock()
 			if t.dataTrackDC != nil {
 				t.dataTrackDC.Close()
 			}
 			t.dataTrackDC = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, 0, 0)
-			t.lock.Unlock()
 
 		case kind == livekit.DataPacket_RELIABLE:
-			t.lock.Lock()
 			if t.reliableDC != nil {
 				t.reliableDC.Close()
 			}
 			t.reliableDC = datachannel.NewDataChannelWriterReliable(dc, rawDC, t.params.DatachannelSlowThreshold)
 			t.reliableDCOpened = true
-			t.lock.Unlock()
 
 		case kind == livekit.DataPacket_LOSSY:
-			t.lock.Lock()
 			if t.lossyDC != nil {
 				t.lossyDC.Close()
 			}
 			t.lossyDC = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, t.params.DatachannelLossyTargetLatency, uint64(lossyDataChannelMinBufferedAmount))
 			t.lossyDCOpened = true
-			t.lock.Unlock()
 		}
+		t.lock.Unlock()
 
 		go func() {
 			defer rawDC.Close()
@@ -908,6 +903,7 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 					t.params.Handler.OnDataMessageUnlabeled(buffer[:n])
 
 				case isDataTrack:
+					t.params.Logger.Infow("RAJA got data track message", "label", dc.Label(), "size", n) // RAJA-REMOVE
 					t.params.Handler.OnDataTrackMessage(buffer[:n])
 
 				default:
@@ -1459,7 +1455,10 @@ func (t *PCTransport) SendDataTrackMessage(data []byte) error {
 	dc := t.dataTrackDC
 	t.lock.RUnlock()
 
-	return t.sendDataMessage(dc, data)
+	// RAJA-TODO return t.sendDataMessage(dc, data)
+	err := t.sendDataMessage(dc, data)
+	t.params.Logger.Infow("RAJA wrote data track message", "error", err)
+	return err
 }
 
 func (t *PCTransport) sendDataMessage(dc *datachannel.DataChannelWriter[*webrtc.DataChannel], data []byte) error {

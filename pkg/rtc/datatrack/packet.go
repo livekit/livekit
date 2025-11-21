@@ -129,6 +129,11 @@ func (h *Header) MarshalTo(buf []byte) (int, error) {
 		// DT-TODO marshal extensions
 	}
 
+	binary.BigEndian.PutUint16(buf[handleOffset:handleOffset+handleLength], h.Handle)
+	binary.BigEndian.PutUint16(buf[seqNumOffset:seqNumOffset+seqNumLength], h.SequenceNumber)
+	binary.BigEndian.PutUint16(buf[frameNumOffset:frameNumOffset+frameNumLength], h.FrameNumber)
+	binary.BigEndian.PutUint32(buf[timestampOffset:timestampOffset+timestampLength], h.Timestamp)
+
 	return headerLength, nil
 }
 

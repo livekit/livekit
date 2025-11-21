@@ -167,8 +167,8 @@ func TestMultinodeDataPublishing(t *testing.T) {
 	defer finish()
 
 	scenarioDataPublish(t)
-	// RAJA-TODO scenarioDataUnlabeledPublish(t)
-	// RAJA-TODO scenarioDataTracksPublishingUponJoining(t)
+	scenarioDataUnlabeledPublish(t)
+	scenarioDataTracksPublishingUponJoining(t)
 }
 
 func TestMultiNodeJoinAfterClose(t *testing.T) {

@@ -86,5 +86,9 @@ func (d *DataDownTrack) SubscriberID() livekit.ParticipantID {
 }
 
 func (d *DataDownTrack) WritePacket(data []byte, packet *datatrack.Packet) {
-	d.params.Transport.SendDataTrackMessage(data)
+	if err := d.params.Transport.SendDataTrackMessage(data); err != nil {
+		d.params.Logger.Warnw("could not send data track message", err)
+	} else {
+		d.params.Logger.Infow("sent data track message", "size", len(data)) // RAJA-REMOVE
+	}
 }

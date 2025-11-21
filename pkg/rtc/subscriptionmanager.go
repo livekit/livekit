@@ -589,6 +589,7 @@ func (m *SubscriptionManager) reconcileDataTrackSubscription(s *dataTrackSubscri
 			}
 		} else {
 			s.recordAttempt(true)
+			m.notifyDataTrackSubscriberHandles()
 		}
 
 		return
@@ -602,6 +603,7 @@ func (m *SubscriptionManager) reconcileDataTrackSubscription(s *dataTrackSubscri
 		m.lock.Lock()
 		delete(m.dataTrackSubscriptions, s.trackID)
 		m.lock.Unlock()
+		m.notifyDataTrackSubscriberHandles()
 		return
 	}
 
@@ -609,6 +611,7 @@ func (m *SubscriptionManager) reconcileDataTrackSubscription(s *dataTrackSubscri
 	if s.needsCleanup() {
 		s.logger.Debugw("cleanup removing data track subscription")
 		delete(m.dataTrackSubscriptions, s.trackID)
+		m.notifyDataTrackSubscriberHandles()
 	}
 	m.lock.Unlock()
 }
@@ -1033,7 +1036,6 @@ func (m *SubscriptionManager) subscribeDataTrack(sub *dataTrackSubscription) err
 		sub.logger.Debugw("subscribed to data track")
 	}
 
-	m.notifyDataTrackSubscriberHandles()
 	m.markSubscribedTo(sub.getPublisherID(), trackID)
 	return nil
 }
@@ -1050,7 +1052,6 @@ func (m *SubscriptionManager) unsubscribeDataTrack(s *dataTrackSubscription) err
 	dataTrack := dataDownTrack.PublishDataTrack()
 	dataTrack.RemoveSubscriber(s.subscriberID)
 
-	m.notifyDataTrackSubscriberHandles()
 	m.unmarkSubscribedTo(s.getPublisherID(), s.trackID)
 	return nil
 }
@@ -1059,6 +1060,9 @@ func (m *SubscriptionManager) notifyDataTrackSubscriberHandles() {
 	m.lock.Lock()
 	handles := make(map[uint32]*livekit.DataTrackSubscriberHandles_PublishedDataTrack, len(m.dataTrackSubscriptions))
 	for _, sub := range m.dataTrackSubscriptions {
+		if !sub.isDesired() {
+			continue
+		}
 		dataDownTrack := sub.getDataDownTrack()
 		if dataDownTrack == nil {
 			continue

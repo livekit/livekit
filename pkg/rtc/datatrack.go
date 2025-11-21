@@ -48,7 +48,7 @@ type DataTrack struct {
 }
 
 func NewDataTrack(params DataTrackParams, dti *livekit.DataTrackInfo) *DataTrack {
-	return &DataTrack{
+	d := &DataTrack{
 		params:           params,
 		dti:              dti,
 		subscribedTracks: make(map[livekit.ParticipantID]*DataDownTrack),
@@ -57,6 +57,8 @@ func NewDataTrack(params DataTrackParams, dti *livekit.DataTrackInfo) *DataTrack
 			Logger:    params.Logger,
 		}),
 	}
+	d.params.Logger.Infow("created data track", "id", d.ID(), "name", d.Name())
+	return d
 }
 
 func (d *DataTrack) Close() {
@@ -90,7 +92,7 @@ func (d *DataTrack) AddSubscriber(sub types.LocalParticipant) (types.DataDownTra
 
 	dataDownTrack, err := NewDataDownTrack(
 		DataDownTrackParams{
-			Logger:           d.params.Logger,
+			Logger:           sub.GetLogger().WithValues("trackID", d.ID()),
 			SubscriberID:     sub.ID(),
 			PublishDataTrack: d,
 			Transport:        sub.GetDataTrackTransport(),
