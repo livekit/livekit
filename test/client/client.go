@@ -431,6 +431,8 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 				},
 			})
 		})
+	} else {
+		go c.ensurePublisherConnected()
 	}
 
 	if opts != nil {
@@ -492,7 +494,12 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 			c.subscriberAsPrimary.Store(true)
 		}
 
-		logger.Infow("join accepted, awaiting offer", "participant", msg.Join.Participant.Identity)
+		if c.subscriber != nil {
+			logger.Infow("join accepted, awaiting offer", "participant", msg.Join.Participant.Identity)
+		} else {
+			logger.Infow("join accepted", "participant", msg.Join.Participant.Identity)
+		}
+
 	case *livekit.SignalResponse_Answer:
 		logger.Infow(
 			"received server answer",
@@ -500,6 +507,7 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 			"answer", msg.Answer.Sdp,
 		)
 		c.handleAnswer(signalling.FromProtoSessionDescription(msg.Answer))
+
 	case *livekit.SignalResponse_Offer:
 		desc, offerId, midToTrackID := signalling.FromProtoSessionDescription(msg.Offer)
 		logger.Infow(
@@ -510,6 +518,7 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 			"midToTrackID", midToTrackID,
 		)
 		c.handleOffer(desc, offerId, midToTrackID)
+
 	case *livekit.SignalResponse_Trickle:
 		candidateInit, err := signalling.FromProtoTrickle(msg.Trickle)
 		if err != nil {
@@ -520,6 +529,7 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 		} else {
 			c.subscriber.AddICECandidate(candidateInit)
 		}
+
 	case *livekit.SignalResponse_Update:
 		c.lock.Lock()
 		for _, p := range msg.Update.Participants {
@@ -544,10 +554,12 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 		c.lock.Lock()
 		c.pendingPublishedTracks[msg.TrackPublished.Cid] = msg.TrackPublished.Track
 		c.lock.Unlock()
+
 	case *livekit.SignalResponse_RefreshToken:
 		c.lock.Lock()
 		c.refreshToken = msg.RefreshToken
 		c.lock.Unlock()
+
 	case *livekit.SignalResponse_TrackUnpublished:
 		sid := msg.TrackUnpublished.TrackSid
 		c.lock.Lock()
@@ -560,10 +572,13 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 		delete(c.trackSenders, sid)
 		delete(c.localTracks, sid)
 		c.lock.Unlock()
+
 	case *livekit.SignalResponse_Pong:
 		c.pongReceivedAt.Store(msg.Pong)
+
 	case *livekit.SignalResponse_SubscriptionResponse:
 		c.subscriptionResponse.Store(msg.SubscriptionResponse)
+
 	case *livekit.SignalResponse_MediaSectionsRequirement:
 		logger.Infow(
 			"received media sections requirement",
@@ -572,6 +587,7 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 			"numVideos", msg.MediaSectionsRequirement.NumVideos,
 		)
 		c.handleMediaSectionsRequirement(msg.MediaSectionsRequirement)
+
 	case *livekit.SignalResponse_PublishDataTrackResponse:
 		logger.Debugw(
 			"data track published",
@@ -583,6 +599,7 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 		c.lock.Lock()
 		c.pendingPublishedDataTracks[uint16(msg.PublishDataTrackResponse.Info.PubHandle)] = msg.PublishDataTrackResponse.Info
 		c.lock.Unlock()
+
 	case *livekit.SignalResponse_DataTrackSubscriberHandles:
 		logger.Infow(
 			"received data track subscriber handles",
@@ -1076,11 +1093,9 @@ func (c *RTCClient) handleDataMessageUnlabeled(data []byte) {
 func (c *RTCClient) handleDataTrackMessage(data []byte) {
 	var packet datatrack.Packet
 	if err := packet.Unmarshal(data); err != nil {
-		logger.Errorw("could not unmarshal data track message", err) // RAJA-REMOVE
 		return
 	}
 
-	logger.Infow("got data track message", "size", len(data), "handle", packet.Handle) // RAJA-REMOVE
 	var dataTrackRemote *DataTrackRemote
 	c.lock.Lock()
 	for _, tracks := range c.subscribedDataTracks {

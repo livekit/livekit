@@ -5,6 +5,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"go.uber.org/atomic"
 )
 
 type DataTrackRemote struct {
@@ -13,7 +14,7 @@ type DataTrackRemote struct {
 	handle             uint16
 	trackID            livekit.TrackID
 	logger             logger.Logger
-	numReceivedPackets int
+	numReceivedPackets atomic.Uint32
 
 	closed core.Fuse
 }
@@ -76,10 +77,10 @@ func (d *DataTrackRemote) PacketReceived(packet *datatrack.Packet) {
 		}
 	}
 	if valid {
-		d.numReceivedPackets++
+		d.numReceivedPackets.Inc()
 	}
 }
 
-func (d *DataTrackRemote) NumReceivedPackets() int {
-	return d.numReceivedPackets
+func (d *DataTrackRemote) NumReceivedPackets() uint32 {
+	return d.numReceivedPackets.Load()
 }

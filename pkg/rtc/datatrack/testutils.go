@@ -19,9 +19,13 @@ import (
 	"time"
 )
 
-func GenerateRawDataPackets(handle uint16, numFrames int, frameSize int, frameDuration time.Duration) [][]byte {
-	seqNum := uint16(rand.Intn(256))
-	frameNum := uint16(rand.Intn(256))
+func GenerateRawDataPackets(handle uint16, seqNum uint16, frameNum uint16, numFrames int, frameSize int, frameDuration time.Duration) [][]byte {
+	if seqNum == 0 {
+		seqNum = uint16(rand.Intn(256) + 1)
+	}
+	if frameNum == 0 {
+		frameNum = uint16(rand.Intn(256) + 1)
+	}
 	timestamp := uint32(rand.Intn(1024))
 
 	packetsPerFrame := (frameSize + 255) / 256 // using 256 bytes of payload per packet

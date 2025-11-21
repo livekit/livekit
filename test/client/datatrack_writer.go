@@ -51,19 +51,27 @@ func (d *dataTrackWriter) Stop() {
 }
 
 func (d *dataTrackWriter) writeFrames() {
+	seqNum := uint16(0)
+	frameNum := uint16(0)
 	for {
 		select {
 		case <-d.ctx.Done():
 			return
 
 		default:
-			packets := datatrack.GenerateRawDataPackets(d.handle, 1, rand.Intn(2048), 33*time.Millisecond)
+			packets := datatrack.GenerateRawDataPackets(d.handle, seqNum, frameNum, 1, rand.Intn(2048)+1, 100*time.Millisecond)
 			for _, packet := range packets {
 				if err := d.transport.SendDataTrackMessage(packet); err != nil {
 					logger.Errorw("could not send data track packet", err)
 				}
 			}
-			time.Sleep(33 * time.Millisecond)
+
+			var lastPacket datatrack.Packet
+			if err := lastPacket.Unmarshal(packets[len(packets)-1]); err == nil {
+				seqNum = lastPacket.SequenceNumber + 1
+				frameNum = lastPacket.FrameNumber + 1
+			}
+			time.Sleep(100 * time.Millisecond)
 		}
 	}
 }

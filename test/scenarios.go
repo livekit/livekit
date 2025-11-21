@@ -220,14 +220,14 @@ func scenarioDataTracksPublishingUponJoining(t *testing.T) {
 			writers := publishDataTracksForClients(t, c1, c2)
 			defer stopWriters(writers...)
 
-			logger.Infow("waiting to receive tracks from c1 and c2")
+			logger.Infow("waiting to receive data tracks from c1 and c2")
 			testutils.WithTimeout(t, func() string {
 				tracks := c3.SubscribedDataTracks()
 				if len(tracks[c1.ID()]) != 2 {
-					return "did not receive tracks from c1"
+					return "did not receive data tracks from c1"
 				}
 				if len(tracks[c2.ID()]) != 2 {
-					return "did not receive tracks from c2"
+					return "did not receive data tracks from c2"
 				}
 				for _, dts := range tracks {
 					for _, dt := range dts {
@@ -243,18 +243,18 @@ func scenarioDataTracksPublishingUponJoining(t *testing.T) {
 			time.Sleep(syncDelay)
 			c2.Stop()
 
-			logger.Infow("waiting for c2 tracks to be gone")
+			logger.Infow("waiting for c2 data tracks to be gone")
 			testutils.WithTimeout(t, func() string {
 				tracks := c3.SubscribedDataTracks()
 
 				if len(tracks[c1.ID()]) != 2 {
-					return fmt.Sprintf("c3 should be subscribed to 2 tracks from c1, actual: %d", len(tracks[c1.ID()]))
+					return fmt.Sprintf("c3 should be subscribed to 2 data tracks from c1, actual: %d", len(tracks[c1.ID()]))
 				}
 				if len(tracks[c2.ID()]) != 0 {
-					return fmt.Sprintf("c3 should be subscribed to 0 tracks from c2, actual: %d", len(tracks[c2.ID()]))
+					return fmt.Sprintf("c3 should be subscribed to 0 data tracks from c2, actual: %d", len(tracks[c2.ID()]))
 				}
 				if len(c1.SubscribedDataTracks()[c2.ID()]) != 0 {
-					return fmt.Sprintf("c3 should be subscribed to 0 tracks from c2, actual: %d", len(c1.SubscribedTracks()[c2.ID()]))
+					return fmt.Sprintf("c3 should be subscribed to 0 data tracks from c2, actual: %d", len(c1.SubscribedTracks()[c2.ID()]))
 				}
 				return ""
 			})
@@ -271,20 +271,20 @@ func scenarioDataTracksPublishingUponJoining(t *testing.T) {
 				tracks := c3.SubscribedDataTracks()
 				// new c2 data tracks should be published again
 				if len(tracks[c2.ID()]) != 2 {
-					return fmt.Sprintf("c3 should be subscribed to 2 tracks from c2, actual: %d", len(tracks[c2.ID()]))
+					return fmt.Sprintf("c3 should be subscribed to 2 data tracks from c2, actual: %d", len(tracks[c2.ID()]))
 				}
 				for _, dt := range tracks[c2.ID()] {
 					if dt.NumReceivedPackets() == 0 {
-						return fmt.Sprintf("no packets received from %s", dt.ID())
+						return fmt.Sprintf("c3 did not receive packets from c2 data track after reconnecting %s", dt.ID())
 					}
 				}
 
 				if len(c1.SubscribedDataTracks()[c2.ID()]) != 2 {
-					return fmt.Sprintf("c1 should be subscribed to 2 tracks from c2, actual: %d", len(c1.SubscribedTracks()[c2.ID()]))
+					return fmt.Sprintf("c1 should be subscribed to 2 data tracks from c2, actual: %d", len(c1.SubscribedTracks()[c2.ID()]))
 				}
 				for _, dt := range c1.SubscribedDataTracks()[c2.ID()] {
 					if dt.NumReceivedPackets() == 0 {
-						return fmt.Sprintf("no packets received from %s", dt.ID())
+						return fmt.Sprintf("c1 did not receive packets from c2 data track after reconnecting %s", dt.ID())
 					}
 				}
 				return ""

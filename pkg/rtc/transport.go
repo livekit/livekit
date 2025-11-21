@@ -831,7 +831,6 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 	dc.OnOpen(func() {
 		t.params.Logger.Debugw(dc.Label() + " data channel open")
-		t.params.Logger.Infow("RAJA incoming " + dc.Label() + " data channel open") // RAJA-REMOVE
 		var kind livekit.DataPacket_Kind
 		var isDataTrack bool
 		var isUnlabeled bool
@@ -903,7 +902,6 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 					t.params.Handler.OnDataMessageUnlabeled(buffer[:n])
 
 				case isDataTrack:
-					t.params.Logger.Infow("RAJA got data track message", "label", dc.Label(), "size", n) // RAJA-REMOVE
 					t.params.Handler.OnDataTrackMessage(buffer[:n])
 
 				default:
@@ -1455,10 +1453,7 @@ func (t *PCTransport) SendDataTrackMessage(data []byte) error {
 	dc := t.dataTrackDC
 	t.lock.RUnlock()
 
-	// RAJA-TODO return t.sendDataMessage(dc, data)
-	err := t.sendDataMessage(dc, data)
-	t.params.Logger.Infow("RAJA wrote data track message", "error", err)
-	return err
+	return t.sendDataMessage(dc, data)
 }
 
 func (t *PCTransport) sendDataMessage(dc *datachannel.DataChannelWriter[*webrtc.DataChannel], data []byte) error {

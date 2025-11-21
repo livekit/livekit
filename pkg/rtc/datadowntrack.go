@@ -52,6 +52,7 @@ func NewDataDownTrack(params DataDownTrackParams, dti *livekit.DataTrackInfo) (*
 		return nil, err
 	}
 
+	d.params.Logger.Infow("created data down track", "id", d.ID(), "name", d.Name())
 	return d, nil
 }
 
@@ -86,9 +87,14 @@ func (d *DataDownTrack) SubscriberID() livekit.ParticipantID {
 }
 
 func (d *DataDownTrack) WritePacket(data []byte, packet *datatrack.Packet) {
-	if err := d.params.Transport.SendDataTrackMessage(data); err != nil {
-		d.params.Logger.Warnw("could not send data track message", err)
-	} else {
-		d.params.Logger.Infow("sent data track message", "size", len(data)) // RAJA-REMOVE
+	forwardedPacket := *packet
+	forwardedPacket.Handle = d.handle
+	buf, err := forwardedPacket.Marshal()
+	if err != nil {
+		d.params.Logger.Warnw("could not marshal data track message", err)
+		return
+	}
+	if err := d.params.Transport.SendDataTrackMessage(buf); err != nil {
+		d.params.Logger.Warnw("could not send data track message", err, "handle", d.handle)
 	}
 }
