@@ -15,6 +15,7 @@
 package rtc
 
 import (
+	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -133,7 +134,7 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 		Name:       req.Name,
 		Encryption: req.Encryption,
 	}
-	dt := NewDataTrack(DataTrackParams{Logger: p.params.Logger}, dti)
+	dt := NewDataTrack(DataTrackParams{Logger: p.params.Logger.WithValues("trackID", dti.Sid)}, dti)
 
 	p.dataTracks[uint16(req.PubHandle)] = dt
 	p.dataTracksLock.Unlock()
@@ -213,6 +214,23 @@ func (p *ParticipantImpl) dataTracksToProto() []*livekit.DataTrackInfo {
 	return dataTrackInfos
 }
 
-func (p *ParticipantImpl) onDataTrackMessage(data []byte) {
-	// DT-TODO
+func (p *ParticipantImpl) onReceivedDataTrackMessage(data []byte) {
+	var packet datatrack.Packet
+	if err := packet.Unmarshal(data); err != nil {
+		p.params.Logger.Errorw("could not unmarshal data track message", err)
+		return
+	}
+
+	p.dataTracksLock.RLock()
+	dt := p.dataTracks[packet.Handle]
+	p.dataTracksLock.RUnlock()
+	if dt == nil {
+		return
+	}
+
+	dt.HandlePacket(data, &packet)
+
+	if onDataTrackMessage := p.getOnDataTrackMessage(); onDataTrackMessage != nil {
+		onDataTrackMessage(p, data)
+	}
 }

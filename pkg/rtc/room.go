@@ -1122,6 +1122,8 @@ func (r *Room) createJoinResponseLocked(
 
 // a ParticipantImpl in the room added a new track, subscribe other participants to it
 func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.MediaTrack) {
+	r.trackManager.AddTrack(track, participant.Identity(), participant.ID())
+
 	// publish participant update, since track state is changed
 	r.broadcastParticipantState(participant, broadcastOptions{skipSource: true})
 
@@ -1154,8 +1156,6 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 	if onParticipantChanged != nil {
 		onParticipantChanged(participant)
 	}
-
-	r.trackManager.AddTrack(track, participant.Identity(), participant.ID())
 
 	// launch jobs
 	r.lock.Lock()
@@ -1219,6 +1219,8 @@ func (r *Room) onTrackUnpublished(p types.LocalParticipant, track types.MediaTra
 }
 
 func (r *Room) onDataTrackPublished(participant types.LocalParticipant, dt types.DataTrack) {
+	r.trackManager.AddDataTrack(dt, participant.Identity(), participant.ID())
+
 	// publish participant update, since a new data track was published
 	r.broadcastParticipantState(participant, broadcastOptions{skipSource: true})
 
@@ -1251,8 +1253,6 @@ func (r *Room) onDataTrackPublished(participant types.LocalParticipant, dt types
 	if onParticipantChanged != nil {
 		onParticipantChanged(participant)
 	}
-
-	r.trackManager.AddDataTrack(dt, participant.Identity(), participant.ID())
 }
 
 func (r *Room) onDataTrackUnpublished(p types.LocalParticipant, dt types.DataTrack) {

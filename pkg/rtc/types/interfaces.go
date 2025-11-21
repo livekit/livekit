@@ -28,6 +28,7 @@ import (
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
@@ -484,6 +485,7 @@ type LocalParticipant interface {
 	OnParticipantUpdate(callback func(LocalParticipant))
 	OnDataPacket(callback func(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket))
 	OnDataMessage(callback func(LocalParticipant, []byte))
+	OnDataTrackMessage(callback func(LocalParticipant, []byte))
 	OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool))
 	AddOnClose(key string, callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
@@ -557,6 +559,8 @@ type LocalParticipant interface {
 	HandleSignalMessage(msg proto.Message) error
 
 	PerformRpc(req *livekit.PerformRpcRequest, resultCh chan string, errorCh chan error)
+
+	GetDataTrackTransport() DataTrackTransport
 }
 
 // Room is a container of participants, and can provide room-level actions
@@ -663,6 +667,11 @@ type DataTrack interface {
 	RemoveSubscriber(participantID livekit.ParticipantID)
 	IsSubscriber(subID livekit.ParticipantID) bool
 
+	AddDataDownTrack(sender DataTrackSender) error
+	DeleteDataDownTrack(subscriberID livekit.ParticipantID)
+
+	HandlePacket(data []byte, packet *datatrack.Packet)
+
 	Close()
 }
 
@@ -670,6 +679,18 @@ type DataTrack interface {
 type DataDownTrack interface {
 	Handle() uint16
 	PublishDataTrack() DataTrack
+}
+
+//counterfeiter:generate . DataTrackSender
+type DataTrackSender interface {
+	SubscriberID() livekit.ParticipantID
+
+	WritePacket(data []byte, packet *datatrack.Packet)
+}
+
+//counterfeiter:generate . DataTrackTransport
+type DataTrackTransport interface {
+	SendDataTrackMessage(data []byte) error
 }
 
 //counterfeiter:generate . SubscribedTrack

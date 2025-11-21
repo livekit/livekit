@@ -855,41 +855,35 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 			return
 		}
 
+		t.lock.Lock()
 		switch {
 		case isUnlabeled:
-			t.lock.Lock()
 			t.unlabeledDataChannels = append(
 				t.unlabeledDataChannels,
 				datachannel.NewDataChannelWriterReliable(dc, rawDC, t.params.DatachannelSlowThreshold),
 			)
-			t.lock.Unlock()
 
 		case isDataTrack:
-			t.lock.Lock()
 			if t.dataTrackDC != nil {
 				t.dataTrackDC.Close()
 			}
 			t.dataTrackDC = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, 0, 0)
-			t.lock.Unlock()
 
 		case kind == livekit.DataPacket_RELIABLE:
-			t.lock.Lock()
 			if t.reliableDC != nil {
 				t.reliableDC.Close()
 			}
 			t.reliableDC = datachannel.NewDataChannelWriterReliable(dc, rawDC, t.params.DatachannelSlowThreshold)
 			t.reliableDCOpened = true
-			t.lock.Unlock()
 
 		case kind == livekit.DataPacket_LOSSY:
-			t.lock.Lock()
 			if t.lossyDC != nil {
 				t.lossyDC.Close()
 			}
 			t.lossyDC = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, t.params.DatachannelLossyTargetLatency, uint64(lossyDataChannelMinBufferedAmount))
 			t.lossyDCOpened = true
-			t.lock.Unlock()
 		}
+		t.lock.Unlock()
 
 		go func() {
 			defer rawDC.Close()

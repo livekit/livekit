@@ -212,6 +212,6 @@ func (r *RoomTrackManager) GetDataTrackInfo(trackID livekit.TrackID) *DataTrackI
 		return nil
 	}
 
-	// earliest added track is used till it is removed
+	// earliest added data track is used till it is removed
 	return infos[0]
 }

@@ -14,18 +14,66 @@
 
 package client
 
-// Writes packets to a data track.
-// DT-TODO - write packets in loop
+import (
+	"context"
+	"math/rand"
+	"time"
+
+	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/protocol/logger"
+)
+
 type dataTrackWriter struct {
+	ctx       context.Context
+	cancel    context.CancelFunc
+	handle    uint16
+	transport types.DataTrackTransport
 }
 
-func NewDataTrackWriter() TrackWriter {
-	return &dataTrackWriter{}
+func NewDataTrackWriter(ctx context.Context, handle uint16, transport types.DataTrackTransport) TrackWriter {
+	ctx, cancel := context.WithCancel(ctx)
+	return &dataTrackWriter{
+		ctx:       ctx,
+		cancel:    cancel,
+		handle:    handle,
+		transport: transport,
+	}
 }
 
 func (d *dataTrackWriter) Start() error {
+	go d.writeFrames()
 	return nil
 }
 
 func (d *dataTrackWriter) Stop() {
+	d.cancel()
+}
+
+func (d *dataTrackWriter) writeFrames() {
+	seqNum := uint16(0)
+	frameNum := uint16(0)
+	for {
+		select {
+		case <-d.ctx.Done():
+			return
+
+		default:
+			packets := datatrack.GenerateRawDataPackets(d.handle, seqNum, frameNum, 1, rand.Intn(2048)+1, 100*time.Millisecond)
+			for _, packet := range packets {
+				if err := d.transport.SendDataTrackMessage(packet); err != nil {
+					logger.Errorw("could not send data track packet", err)
+				}
+			}
+
+			if len(packets) != 0 {
+				var lastPacket datatrack.Packet
+				if err := lastPacket.Unmarshal(packets[len(packets)-1]); err == nil {
+					seqNum = lastPacket.SequenceNumber + 1
+					frameNum = lastPacket.FrameNumber + 1
+				}
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
 }

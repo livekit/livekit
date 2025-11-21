@@ -304,6 +304,7 @@ type ParticipantImpl struct {
 	onParticipantUpdate            func(types.LocalParticipant)
 	onDataPacket                   func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
 	onDataMessage                  func(types.LocalParticipant, []byte)
+	onDataTrackMessage             func(types.LocalParticipant, []byte)
 	onMetrics                      func(types.Participant, *livekit.DataPacket)
 	onUpdateSubscriptions          func(types.LocalParticipant, []livekit.TrackID, []*livekit.ParticipantTracks, bool)
 	onUpdateSubscriptionPermission func(types.LocalParticipant, *livekit.SubscriptionPermission) error
@@ -1011,6 +1012,18 @@ func (p *ParticipantImpl) getOnDataMessage() func(types.LocalParticipant, []byte
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	return p.onDataMessage
+}
+
+func (p *ParticipantImpl) OnDataTrackMessage(callback func(types.LocalParticipant, []byte)) {
+	p.lock.Lock()
+	p.onDataTrackMessage = callback
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) getOnDataTrackMessage() func(types.LocalParticipant, []byte) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.onDataTrackMessage
 }
 
 func (p *ParticipantImpl) OnMetrics(callback func(types.Participant, *livekit.DataPacket)) {
@@ -1993,7 +2006,7 @@ func (h PublisherTransportHandler) OnDataMessageUnlabeled(data []byte) {
 }
 
 func (h PublisherTransportHandler) OnDataTrackMessage(data []byte) {
-	h.p.onDataTrackMessage(data)
+	h.p.onReceivedDataTrackMessage(data)
 }
 
 func (h PublisherTransportHandler) OnDataSendError(err error) {
