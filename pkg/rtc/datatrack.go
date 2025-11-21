@@ -146,7 +146,6 @@ func (d *DataTrack) DeleteDataDownTrack(subscriberID livekit.ParticipantID) {
 }
 
 func (d *DataTrack) HandlePacket(data []byte, packet *datatrack.Packet) {
-	d.params.Logger.Infow("received data track message", "id", d.ID(), "name", d.Name(), "size", len(data))
 	d.downTrackSpreader.Broadcast(func(dts types.DataTrackSender) {
 		dts.WritePacket(data, packet)
 	})

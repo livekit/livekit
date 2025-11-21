@@ -66,10 +66,12 @@ func (d *dataTrackWriter) writeFrames() {
 				}
 			}
 
-			var lastPacket datatrack.Packet
-			if err := lastPacket.Unmarshal(packets[len(packets)-1]); err == nil {
-				seqNum = lastPacket.SequenceNumber + 1
-				frameNum = lastPacket.FrameNumber + 1
+			if len(packets) != 0 {
+				var lastPacket datatrack.Packet
+				if err := lastPacket.Unmarshal(packets[len(packets)-1]); err == nil {
+					seqNum = lastPacket.SequenceNumber + 1
+					frameNum = lastPacket.FrameNumber + 1
+				}
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
