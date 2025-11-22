@@ -15,6 +15,7 @@
 package rtc
 
 import (
+	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -143,9 +144,15 @@ func (p *ParticipantImpl) HandleUpdateDataSubscription(req *livekit.UpdateDataSu
 }
 
 func (p *ParticipantImpl) onReceivedDataTrackMessage(data []byte) {
-	p.UpDataTrackManager.HandleReceivedDataTrackMessage(data)
+	var packet datatrack.Packet
+	if err := packet.Unmarshal(data); err != nil {
+		p.params.Logger.Errorw("could not unmarshal data track message", err)
+		return
+	}
+
+	p.UpDataTrackManager.HandleReceivedDataTrackMessage(data, &packet)
 
 	if onDataTrackMessage := p.getOnDataTrackMessage(); onDataTrackMessage != nil {
-		onDataTrackMessage(p, data)
+		onDataTrackMessage(p, data, &packet)
 	}
 }

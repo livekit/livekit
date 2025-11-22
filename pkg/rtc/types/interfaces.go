@@ -339,7 +339,7 @@ type Participant interface {
 	OnDataTrackUnpublished(func(Participant, DataTrack))
 	OnMetrics(callback func(Participant, *livekit.DataPacket))
 
-	HandleReceivedDataTrackMessage([]byte)
+	HandleReceivedDataTrackMessage([]byte, *datatrack.Packet)
 }
 
 // -------------------------------------------------------
@@ -492,7 +492,7 @@ type LocalParticipant interface {
 	OnParticipantUpdate(callback func(LocalParticipant))
 	OnDataPacket(callback func(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket))
 	OnDataMessage(callback func(LocalParticipant, []byte))
-	OnDataTrackMessage(callback func(LocalParticipant, []byte))
+	OnDataTrackMessage(callback func(LocalParticipant, []byte, *datatrack.Packet))
 	OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool))
 	AddOnClose(key string, callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))

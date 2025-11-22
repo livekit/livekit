@@ -45,14 +45,19 @@ func GenerateRawDataPackets(handle uint16, seqNum uint16, frameNum uint16, numFr
 			packet := &Packet{
 				Header: Header{
 					Version:        0,
-					IsStartOfFrame: packetIdx == 0,
-					IsEndOfFrame:   packetIdx == packetsPerFrame-1,
+					IsFirstOfFrame: packetIdx == 0,
+					IsLastOfFrame:  packetIdx == packetsPerFrame-1,
 					Handle:         handle,
 					SequenceNumber: seqNum,
 					FrameNumber:    frameNum,
 					Timestamp:      timestamp,
 				},
 				Payload: payload,
+			}
+			if extParticipantSid, err := NewExtensionParticipantSid("test_participant"); err == nil {
+				if ext, err := extParticipantSid.Marshal(); err == nil {
+					packet.AddExtension(ext)
+				}
 			}
 			rawPacket, err := packet.Marshal()
 			if err == nil {

@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -129,10 +130,11 @@ type FakeParticipant struct {
 	getPublishedTracksReturnsOnCall map[int]struct {
 		result1 []types.MediaTrack
 	}
-	HandleReceivedDataTrackMessageStub        func([]byte)
+	HandleReceivedDataTrackMessageStub        func([]byte, *datatrack.Packet)
 	handleReceivedDataTrackMessageMutex       sync.RWMutex
 	handleReceivedDataTrackMessageArgsForCall []struct {
 		arg1 []byte
+		arg2 *datatrack.Packet
 	}
 	HasPermissionStub        func(livekit.TrackID, livekit.ParticipantIdentity) bool
 	hasPermissionMutex       sync.RWMutex
@@ -980,7 +982,7 @@ func (fake *FakeParticipant) GetPublishedTracksReturnsOnCall(i int, result1 []ty
 	}{result1}
 }
 
-func (fake *FakeParticipant) HandleReceivedDataTrackMessage(arg1 []byte) {
+func (fake *FakeParticipant) HandleReceivedDataTrackMessage(arg1 []byte, arg2 *datatrack.Packet) {
 	var arg1Copy []byte
 	if arg1 != nil {
 		arg1Copy = make([]byte, len(arg1))
@@ -989,12 +991,13 @@ func (fake *FakeParticipant) HandleReceivedDataTrackMessage(arg1 []byte) {
 	fake.handleReceivedDataTrackMessageMutex.Lock()
 	fake.handleReceivedDataTrackMessageArgsForCall = append(fake.handleReceivedDataTrackMessageArgsForCall, struct {
 		arg1 []byte
-	}{arg1Copy})
+		arg2 *datatrack.Packet
+	}{arg1Copy, arg2})
 	stub := fake.HandleReceivedDataTrackMessageStub
-	fake.recordInvocation("HandleReceivedDataTrackMessage", []interface{}{arg1Copy})
+	fake.recordInvocation("HandleReceivedDataTrackMessage", []interface{}{arg1Copy, arg2})
 	fake.handleReceivedDataTrackMessageMutex.Unlock()
 	if stub != nil {
-		fake.HandleReceivedDataTrackMessageStub(arg1)
+		fake.HandleReceivedDataTrackMessageStub(arg1, arg2)
 	}
 }
 
@@ -1004,17 +1007,17 @@ func (fake *FakeParticipant) HandleReceivedDataTrackMessageCallCount() int {
 	return len(fake.handleReceivedDataTrackMessageArgsForCall)
 }
 
-func (fake *FakeParticipant) HandleReceivedDataTrackMessageCalls(stub func([]byte)) {
+func (fake *FakeParticipant) HandleReceivedDataTrackMessageCalls(stub func([]byte, *datatrack.Packet)) {
 	fake.handleReceivedDataTrackMessageMutex.Lock()
 	defer fake.handleReceivedDataTrackMessageMutex.Unlock()
 	fake.HandleReceivedDataTrackMessageStub = stub
 }
 
-func (fake *FakeParticipant) HandleReceivedDataTrackMessageArgsForCall(i int) []byte {
+func (fake *FakeParticipant) HandleReceivedDataTrackMessageArgsForCall(i int) ([]byte, *datatrack.Packet) {
 	fake.handleReceivedDataTrackMessageMutex.RLock()
 	defer fake.handleReceivedDataTrackMessageMutex.RUnlock()
 	argsForCall := fake.handleReceivedDataTrackMessageArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeParticipant) HasPermission(arg1 livekit.TrackID, arg2 livekit.ParticipantIdentity) bool {

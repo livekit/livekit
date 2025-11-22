@@ -52,6 +52,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/metric"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/signalling"
 	"github.com/livekit/livekit-server/pkg/rtc/supervisor"
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
@@ -303,7 +304,7 @@ type ParticipantImpl struct {
 	onParticipantUpdate            func(types.LocalParticipant)
 	onDataPacket                   func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
 	onDataMessage                  func(types.LocalParticipant, []byte)
-	onDataTrackMessage             func(types.LocalParticipant, []byte)
+	onDataTrackMessage             func(types.LocalParticipant, []byte, *datatrack.Packet)
 	onMetrics                      func(types.Participant, *livekit.DataPacket)
 	onUpdateSubscriptions          func(types.LocalParticipant, []livekit.TrackID, []*livekit.ParticipantTracks, bool)
 	onUpdateSubscriptionPermission func(types.LocalParticipant, *livekit.SubscriptionPermission) error
@@ -1010,13 +1011,13 @@ func (p *ParticipantImpl) getOnDataMessage() func(types.LocalParticipant, []byte
 	return p.onDataMessage
 }
 
-func (p *ParticipantImpl) OnDataTrackMessage(callback func(types.LocalParticipant, []byte)) {
+func (p *ParticipantImpl) OnDataTrackMessage(callback func(types.LocalParticipant, []byte, *datatrack.Packet)) {
 	p.lock.Lock()
 	p.onDataTrackMessage = callback
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) getOnDataTrackMessage() func(types.LocalParticipant, []byte) {
+func (p *ParticipantImpl) getOnDataTrackMessage() func(types.LocalParticipant, []byte, *datatrack.Packet) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	return p.onDataTrackMessage

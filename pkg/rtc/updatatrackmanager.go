@@ -113,13 +113,7 @@ func (u *UpDataTrackManager) GetPublishedDataTrack(handle uint16) types.DataTrac
 	return u.dataTracks[handle]
 }
 
-func (u *UpDataTrackManager) HandleReceivedDataTrackMessage(data []byte) {
-	var packet datatrack.Packet
-	if err := packet.Unmarshal(data); err != nil {
-		u.params.Logger.Errorw("could not unmarshal data track message", err)
-		return
-	}
-
+func (u *UpDataTrackManager) HandleReceivedDataTrackMessage(data []byte, packet *datatrack.Packet) {
 	u.lock.RLock()
 	dt := u.dataTracks[packet.Handle]
 	u.lock.RUnlock()
@@ -127,7 +121,7 @@ func (u *UpDataTrackManager) HandleReceivedDataTrackMessage(data []byte) {
 		return
 	}
 
-	dt.HandlePacket(data, &packet)
+	dt.HandlePacket(data, packet)
 }
 
 func (u *UpDataTrackManager) ToProto() []*livekit.DataTrackInfo {
