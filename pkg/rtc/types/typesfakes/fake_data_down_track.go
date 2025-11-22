@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/protocol/livekit"
 )
 
 type FakeDataDownTrack struct {
@@ -27,6 +28,11 @@ type FakeDataDownTrack struct {
 	}
 	publishDataTrackReturnsOnCall map[int]struct {
 		result1 types.DataTrack
+	}
+	UpdateSubscriptionOptionsStub        func(*livekit.DataTrackSubscriptionOptions)
+	updateSubscriptionOptionsMutex       sync.RWMutex
+	updateSubscriptionOptionsArgsForCall []struct {
+		arg1 *livekit.DataTrackSubscriptionOptions
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
@@ -136,6 +142,38 @@ func (fake *FakeDataDownTrack) PublishDataTrackReturnsOnCall(i int, result1 type
 	fake.publishDataTrackReturnsOnCall[i] = struct {
 		result1 types.DataTrack
 	}{result1}
+}
+
+func (fake *FakeDataDownTrack) UpdateSubscriptionOptions(arg1 *livekit.DataTrackSubscriptionOptions) {
+	fake.updateSubscriptionOptionsMutex.Lock()
+	fake.updateSubscriptionOptionsArgsForCall = append(fake.updateSubscriptionOptionsArgsForCall, struct {
+		arg1 *livekit.DataTrackSubscriptionOptions
+	}{arg1})
+	stub := fake.UpdateSubscriptionOptionsStub
+	fake.recordInvocation("UpdateSubscriptionOptions", []interface{}{arg1})
+	fake.updateSubscriptionOptionsMutex.Unlock()
+	if stub != nil {
+		fake.UpdateSubscriptionOptionsStub(arg1)
+	}
+}
+
+func (fake *FakeDataDownTrack) UpdateSubscriptionOptionsCallCount() int {
+	fake.updateSubscriptionOptionsMutex.RLock()
+	defer fake.updateSubscriptionOptionsMutex.RUnlock()
+	return len(fake.updateSubscriptionOptionsArgsForCall)
+}
+
+func (fake *FakeDataDownTrack) UpdateSubscriptionOptionsCalls(stub func(*livekit.DataTrackSubscriptionOptions)) {
+	fake.updateSubscriptionOptionsMutex.Lock()
+	defer fake.updateSubscriptionOptionsMutex.Unlock()
+	fake.UpdateSubscriptionOptionsStub = stub
+}
+
+func (fake *FakeDataDownTrack) UpdateSubscriptionOptionsArgsForCall(i int) *livekit.DataTrackSubscriptionOptions {
+	fake.updateSubscriptionOptionsMutex.RLock()
+	defer fake.updateSubscriptionOptionsMutex.RUnlock()
+	argsForCall := fake.updateSubscriptionOptionsArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeDataDownTrack) Invocations() map[string][][]interface{} {

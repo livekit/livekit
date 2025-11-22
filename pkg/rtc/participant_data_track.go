@@ -111,6 +111,9 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 	p.UpDataTrackManager.AddPublishedDataTrack(dt)
 
 	p.sendPublishDataTrackResponse(dti)
+
+	p.setIsPublisher(true)
+	p.dirty.Store(true)
 }
 
 func (p *ParticipantImpl) HandleUnpublishDataTrackRequest(req *livekit.UnpublishDataTrackRequest) {
@@ -129,6 +132,8 @@ func (p *ParticipantImpl) HandleUnpublishDataTrackRequest(req *livekit.Unpublish
 	p.UpDataTrackManager.RemovePublishedDataTrack(dt)
 
 	p.sendUnpublishDataTrackResponse(dt.ToProto())
+
+	p.dirty.Store(true)
 }
 
 func (p *ParticipantImpl) HandleUpdateDataSubscription(req *livekit.UpdateDataSubscription) {

@@ -98,3 +98,7 @@ func (d *DataDownTrack) WritePacket(data []byte, packet *datatrack.Packet) {
 		d.params.Logger.Warnw("could not send data track message", err, "handle", d.handle)
 	}
 }
+
+func (d *DataDownTrack) UpdateSubscriptionOptions(subscriptionOptions *livekit.DataTrackSubscriptionOptions) {
+	// DT-TODO
+}

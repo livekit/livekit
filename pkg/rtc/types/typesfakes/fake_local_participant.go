@@ -1195,7 +1195,7 @@ type FakeLocalParticipant struct {
 	setMetadataArgsForCall []struct {
 		arg1 string
 	}
-	SetMigrateInfoStub        func(*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo, []*livekit.DataChannelReceiveState)
+	SetMigrateInfoStub        func(*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo, []*livekit.DataChannelReceiveState, []*livekit.PublishDataTrackResponse)
 	setMigrateInfoMutex       sync.RWMutex
 	setMigrateInfoArgsForCall []struct {
 		arg1 *webrtc.SessionDescription
@@ -1203,6 +1203,7 @@ type FakeLocalParticipant struct {
 		arg3 []*livekit.TrackPublishedResponse
 		arg4 []*livekit.DataChannelInfo
 		arg5 []*livekit.DataChannelReceiveState
+		arg6 []*livekit.PublishDataTrackResponse
 	}
 	SetMigrateStateStub        func(types.MigrateState)
 	setMigrateStateMutex       sync.RWMutex
@@ -1407,6 +1408,12 @@ type FakeLocalParticipant struct {
 	}
 	updateAudioTrackReturnsOnCall map[int]struct {
 		result1 error
+	}
+	UpdateDataTrackSubscriptionOptionsStub        func(livekit.TrackID, *livekit.DataTrackSubscriptionOptions)
+	updateDataTrackSubscriptionOptionsMutex       sync.RWMutex
+	updateDataTrackSubscriptionOptionsArgsForCall []struct {
+		arg1 livekit.TrackID
+		arg2 *livekit.DataTrackSubscriptionOptions
 	}
 	UpdateLastSeenSignalStub        func()
 	updateLastSeenSignalMutex       sync.RWMutex
@@ -7964,7 +7971,7 @@ func (fake *FakeLocalParticipant) SetMetadataArgsForCall(i int) string {
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) SetMigrateInfo(arg1 *webrtc.SessionDescription, arg2 *webrtc.SessionDescription, arg3 []*livekit.TrackPublishedResponse, arg4 []*livekit.DataChannelInfo, arg5 []*livekit.DataChannelReceiveState) {
+func (fake *FakeLocalParticipant) SetMigrateInfo(arg1 *webrtc.SessionDescription, arg2 *webrtc.SessionDescription, arg3 []*livekit.TrackPublishedResponse, arg4 []*livekit.DataChannelInfo, arg5 []*livekit.DataChannelReceiveState, arg6 []*livekit.PublishDataTrackResponse) {
 	var arg3Copy []*livekit.TrackPublishedResponse
 	if arg3 != nil {
 		arg3Copy = make([]*livekit.TrackPublishedResponse, len(arg3))
@@ -7980,6 +7987,11 @@ func (fake *FakeLocalParticipant) SetMigrateInfo(arg1 *webrtc.SessionDescription
 		arg5Copy = make([]*livekit.DataChannelReceiveState, len(arg5))
 		copy(arg5Copy, arg5)
 	}
+	var arg6Copy []*livekit.PublishDataTrackResponse
+	if arg6 != nil {
+		arg6Copy = make([]*livekit.PublishDataTrackResponse, len(arg6))
+		copy(arg6Copy, arg6)
+	}
 	fake.setMigrateInfoMutex.Lock()
 	fake.setMigrateInfoArgsForCall = append(fake.setMigrateInfoArgsForCall, struct {
 		arg1 *webrtc.SessionDescription
@@ -7987,12 +7999,13 @@ func (fake *FakeLocalParticipant) SetMigrateInfo(arg1 *webrtc.SessionDescription
 		arg3 []*livekit.TrackPublishedResponse
 		arg4 []*livekit.DataChannelInfo
 		arg5 []*livekit.DataChannelReceiveState
-	}{arg1, arg2, arg3Copy, arg4Copy, arg5Copy})
+		arg6 []*livekit.PublishDataTrackResponse
+	}{arg1, arg2, arg3Copy, arg4Copy, arg5Copy, arg6Copy})
 	stub := fake.SetMigrateInfoStub
-	fake.recordInvocation("SetMigrateInfo", []interface{}{arg1, arg2, arg3Copy, arg4Copy, arg5Copy})
+	fake.recordInvocation("SetMigrateInfo", []interface{}{arg1, arg2, arg3Copy, arg4Copy, arg5Copy, arg6Copy})
 	fake.setMigrateInfoMutex.Unlock()
 	if stub != nil {
-		fake.SetMigrateInfoStub(arg1, arg2, arg3, arg4, arg5)
+		fake.SetMigrateInfoStub(arg1, arg2, arg3, arg4, arg5, arg6)
 	}
 }
 
@@ -8002,17 +8015,17 @@ func (fake *FakeLocalParticipant) SetMigrateInfoCallCount() int {
 	return len(fake.setMigrateInfoArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) SetMigrateInfoCalls(stub func(*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo, []*livekit.DataChannelReceiveState)) {
+func (fake *FakeLocalParticipant) SetMigrateInfoCalls(stub func(*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo, []*livekit.DataChannelReceiveState, []*livekit.PublishDataTrackResponse)) {
 	fake.setMigrateInfoMutex.Lock()
 	defer fake.setMigrateInfoMutex.Unlock()
 	fake.SetMigrateInfoStub = stub
 }
 
-func (fake *FakeLocalParticipant) SetMigrateInfoArgsForCall(i int) (*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo, []*livekit.DataChannelReceiveState) {
+func (fake *FakeLocalParticipant) SetMigrateInfoArgsForCall(i int) (*webrtc.SessionDescription, *webrtc.SessionDescription, []*livekit.TrackPublishedResponse, []*livekit.DataChannelInfo, []*livekit.DataChannelReceiveState, []*livekit.PublishDataTrackResponse) {
 	fake.setMigrateInfoMutex.RLock()
 	defer fake.setMigrateInfoMutex.RUnlock()
 	argsForCall := fake.setMigrateInfoArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5, argsForCall.arg6
 }
 
 func (fake *FakeLocalParticipant) SetMigrateState(arg1 types.MigrateState) {
@@ -9139,6 +9152,39 @@ func (fake *FakeLocalParticipant) UpdateAudioTrackReturnsOnCall(i int, result1 e
 	fake.updateAudioTrackReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
+}
+
+func (fake *FakeLocalParticipant) UpdateDataTrackSubscriptionOptions(arg1 livekit.TrackID, arg2 *livekit.DataTrackSubscriptionOptions) {
+	fake.updateDataTrackSubscriptionOptionsMutex.Lock()
+	fake.updateDataTrackSubscriptionOptionsArgsForCall = append(fake.updateDataTrackSubscriptionOptionsArgsForCall, struct {
+		arg1 livekit.TrackID
+		arg2 *livekit.DataTrackSubscriptionOptions
+	}{arg1, arg2})
+	stub := fake.UpdateDataTrackSubscriptionOptionsStub
+	fake.recordInvocation("UpdateDataTrackSubscriptionOptions", []interface{}{arg1, arg2})
+	fake.updateDataTrackSubscriptionOptionsMutex.Unlock()
+	if stub != nil {
+		fake.UpdateDataTrackSubscriptionOptionsStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeLocalParticipant) UpdateDataTrackSubscriptionOptionsCallCount() int {
+	fake.updateDataTrackSubscriptionOptionsMutex.RLock()
+	defer fake.updateDataTrackSubscriptionOptionsMutex.RUnlock()
+	return len(fake.updateDataTrackSubscriptionOptionsArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) UpdateDataTrackSubscriptionOptionsCalls(stub func(livekit.TrackID, *livekit.DataTrackSubscriptionOptions)) {
+	fake.updateDataTrackSubscriptionOptionsMutex.Lock()
+	defer fake.updateDataTrackSubscriptionOptionsMutex.Unlock()
+	fake.UpdateDataTrackSubscriptionOptionsStub = stub
+}
+
+func (fake *FakeLocalParticipant) UpdateDataTrackSubscriptionOptionsArgsForCall(i int) (livekit.TrackID, *livekit.DataTrackSubscriptionOptions) {
+	fake.updateDataTrackSubscriptionOptionsMutex.RLock()
+	defer fake.updateDataTrackSubscriptionOptionsMutex.RUnlock()
+	argsForCall := fake.updateDataTrackSubscriptionOptionsArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) UpdateLastSeenSignal() {

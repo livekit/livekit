@@ -1478,6 +1478,7 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	mediaTracks []*livekit.TrackPublishedResponse,
 	dataChannels []*livekit.DataChannelInfo,
 	dataChannelReceiveState []*livekit.DataChannelReceiveState,
+	dataTracks []*livekit.PublishDataTrackResponse,
 ) {
 	p.pendingTracksLock.Lock()
 	for _, t := range mediaTracks {
@@ -1502,7 +1503,13 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	}
 	p.pendingTracksLock.Unlock()
 
-	if len(mediaTracks) != 0 {
+	for _, t := range dataTracks {
+		dti := t.GetInfo()
+		dt := NewDataTrack(DataTrackParams{Logger: p.params.Logger.WithValues("trackID", dti.Sid)}, dti)
+		p.UpDataTrackManager.AddPublishedDataTrack(dt)
+	}
+
+	if len(mediaTracks) != 0 || len(dataTracks) != 0 {
 		p.setIsPublisher(true)
 	}
 

@@ -455,6 +455,7 @@ type LocalParticipant interface {
 	IsTrackNameSubscribed(publisherIdentity livekit.ParticipantIdentity, trackName string) bool
 	SubscribeToDataTrack(trackID livekit.TrackID)
 	UnsubscribeFromDataTrack(trackID livekit.TrackID)
+	UpdateDataTrackSubscriptionOptions(trackID livekit.TrackID, subscriptionOptions *livekit.DataTrackSubscriptionOptions)
 	Verify() bool
 	VerifySubscribeParticipantInfo(pID livekit.ParticipantID, version uint32)
 	// WaitUntilSubscribed waits until all subscriptions have been settled, or if the timeout
@@ -519,6 +520,7 @@ type LocalParticipant interface {
 		mediaTracks []*livekit.TrackPublishedResponse,
 		dataChannels []*livekit.DataChannelInfo,
 		dataChannelReceiveState []*livekit.DataChannelReceiveState,
+		dataTracks []*livekit.PublishDataTrackResponse,
 	)
 	IsReconnect() bool
 	MoveToRoom(params MoveToRoomParams)
@@ -684,6 +686,8 @@ type DataTrack interface {
 type DataDownTrack interface {
 	Handle() uint16
 	PublishDataTrack() DataTrack
+
+	UpdateSubscriptionOptions(subscriptionOptions *livekit.DataTrackSubscriptionOptions)
 }
 
 //counterfeiter:generate . DataTrackSender

@@ -347,6 +347,21 @@ func (m *SubscriptionManager) UpdateSubscribedTrackSettings(trackID livekit.Trac
 	sub.setSettings(settings)
 }
 
+func (m *SubscriptionManager) UpdateDataTrackSubscriptionOptions(trackID livekit.TrackID, subscriptionOptions *livekit.DataTrackSubscriptionOptions) {
+	m.lock.Lock()
+	sub, ok := m.dataTrackSubscriptions[trackID]
+	if !ok {
+		sLogger := m.params.Logger.WithValues(
+			"trackID", trackID,
+		)
+		sub = newDataTrackSubscription(m.params.Participant.ID(), trackID, sLogger)
+		m.dataTrackSubscriptions[trackID] = sub
+	}
+	m.lock.Unlock()
+
+	sub.setSubscriptionOptions(subscriptionOptions)
+}
+
 // OnSubscribeStatusChanged callback will be notified when a participant subscribes or unsubscribes to another participant
 // it will only fire once per publisher. If current participant is subscribed to multiple tracks from another, this
 // callback will only fire once.
@@ -1456,6 +1471,8 @@ func (s *mediaTrackSubscription) needsCleanup() bool {
 type dataTrackSubscription struct {
 	trackSubscription
 
+	subscriptionOptions *livekit.DataTrackSubscriptionOptions
+
 	dataDownTrack types.DataDownTrack
 }
 
@@ -1493,9 +1510,13 @@ func (s *dataTrackSubscription) needsCleanup() bool {
 func (s *dataTrackSubscription) setDataDownTrack(dataDownTrack types.DataDownTrack) {
 	s.lock.Lock()
 	s.dataDownTrack = dataDownTrack
+	subscriptionOptions := s.subscriptionOptions
 	s.lock.Unlock()
 
-	// DT-TODO - transfer susbcriber settings?, see setSubscribedTrack for example
+	if dataDownTrack != nil {
+		s.logger.Debugw("restoring data track subscription options", "subscriptionOptions", logger.Proto(subscriptionOptions))
+		dataDownTrack.UpdateSubscriptionOptions(subscriptionOptions)
+	}
 
 	// DT-TODO - DataTrack close callback on previous if not nil?, see setSubscribedTrack for example
 }
@@ -1504,4 +1525,14 @@ func (s *dataTrackSubscription) getDataDownTrack() types.DataDownTrack {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	return s.dataDownTrack
+}
+
+func (s *dataTrackSubscription) setSubscriptionOptions(subscriptionOptions *livekit.DataTrackSubscriptionOptions) {
+	s.lock.Lock()
+	s.subscriptionOptions = subscriptionOptions
+	dataDownTrack := s.dataDownTrack
+	s.lock.Unlock()
+	if dataDownTrack != nil {
+		dataDownTrack.UpdateSubscriptionOptions(subscriptionOptions)
+	}
 }

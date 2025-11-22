@@ -1340,7 +1340,6 @@ func (r *Room) UpdateSubscriptions(
 	participantTracks []*livekit.ParticipantTracks,
 	subscribe bool,
 ) {
-	// handle subscription changes
 	for _, trackID := range trackIDs {
 		if subscribe {
 			participant.SubscribeToTrack(trackID, false)
@@ -1361,7 +1360,16 @@ func (r *Room) UpdateSubscriptions(
 }
 
 func (r *Room) onUpdateDataSubscriptions(participant types.LocalParticipant, req *livekit.UpdateDataSubscription) {
-	// DT-TODO
+	for _, update := range req.Updates {
+		trackID := livekit.TrackID(update.TrackSid)
+		if update.Subscribe {
+			participant.SubscribeToDataTrack(trackID)
+			participant.UpdateDataTrackSubscriptionOptions(trackID, update.Options)
+		} else {
+			participant.UnsubscribeFromDataTrack(trackID)
+			participant.UpdateDataTrackSubscriptionOptions(trackID, nil)
+		}
+	}
 }
 
 func (r *Room) onLeave(p types.LocalParticipant, reason types.ParticipantCloseReason) {
