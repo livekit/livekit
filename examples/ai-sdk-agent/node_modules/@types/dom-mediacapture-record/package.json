@@ -1,0 +1,39 @@
+{
+    "name": "@types/dom-mediacapture-record",
+    "version": "1.0.22",
+    "description": "TypeScript definitions for dom-mediacapture-record",
+    "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/dom-mediacapture-record",
+    "license": "MIT",
+    "contributors": [
+        {
+            "name": "Elias Meire",
+            "githubUsername": "elsmr",
+            "url": "https://github.com/elsmr"
+        },
+        {
+            "name": "AppLover69",
+            "githubUsername": "AppLover69",
+            "url": "https://github.com/AppLover69"
+        }
+    ],
+    "main": "",
+    "types": "index.d.ts",
+    "typesVersions": {
+        "<=5.6": {
+            "*": [
+                "ts5.6/*"
+            ]
+        }
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git",
+        "directory": "types/dom-mediacapture-record"
+    },
+    "scripts": {},
+    "dependencies": {},
+    "peerDependencies": {},
+    "typesPublisherContentHash": "89261fa0147374add823dab9ac2fea4dc00f455f5dba815fd7e1bbda4cfc1af3",
+    "typeScriptVersion": "5.1",
+    "nonNpm": true
+}

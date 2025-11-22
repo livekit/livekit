@@ -69,6 +69,9 @@ type agentClient struct {
 	client rpc.AgentInternalClient
 	config Config
 
+	// externalDispatcher handles HTTP-based external agents (AI SDK integration)
+	externalDispatcher *ExternalDispatcher
+
 	mu sync.RWMutex
 
 	// cache response to avoid constantly checking with controllers
@@ -89,6 +92,17 @@ type agentClient struct {
 }
 
 func NewAgentClient(bus psrpc.MessageBus, config Config) (Client, error) {
+	return NewAgentClientWithExternal(bus, config, "", "", "")
+}
+
+// NewAgentClientWithExternal creates an agent client with optional external agent support
+func NewAgentClientWithExternal(
+	bus psrpc.MessageBus,
+	config Config,
+	apiKey string,
+	apiSecret string,
+	serverURL string,
+) (Client, error) {
 	client, err := rpc.NewAgentInternalClient(bus)
 	if err != nil {
 		return nil, err
@@ -99,6 +113,19 @@ func NewAgentClient(bus psrpc.MessageBus, config Config) (Client, error) {
 		config:  config,
 		workers: workerpool.New(50),
 		subDone: make(chan struct{}),
+	}
+
+	// Initialize external dispatcher if external agents are configured
+	if len(config.ExternalAgents) > 0 && apiKey != "" && apiSecret != "" && serverURL != "" {
+		c.externalDispatcher = NewExternalDispatcher(
+			config,
+			apiKey,
+			apiSecret,
+			serverURL,
+			logger.GetLogger(),
+		)
+		logger.Infow("initialized external agent dispatcher",
+			"count", len(config.ExternalAgents))
 	}
 
 	sub, err := c.client.SubscribeWorkerRegistered(context.Background(), DefaultHandlerNamespace)
@@ -142,14 +169,30 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverut
 		return ret
 	}
 
+	// First, try dispatching to external HTTP agents (AI SDK integration)
+	if c.externalDispatcher != nil && c.externalDispatcher.HasExternalAgents() {
+		wg.Add(1)
+		c.workers.Submit(func() {
+			defer wg.Done()
+			externalJobs := c.externalDispatcher.DispatchJob(ctx, desc)
+			externalJobs.ForEach(func(job *livekit.Job) {
+				ret.Add(job)
+			})
+		})
+	}
+
+	// Then dispatch to traditional WebSocket-based agents
 	dispatcher := c.getDispatcher(desc.AgentName, desc.JobType)
 
 	if dispatcher == nil {
-		logger.Infow("not dispatching agent job since no worker is available",
-			"agentName", desc.AgentName,
-			"jobType", desc.JobType,
-			"room", desc.Room.Name,
-			"roomID", desc.Room.Sid)
+		// If no WebSocket workers available and no external agents dispatched
+		if c.externalDispatcher == nil || !c.externalDispatcher.HasExternalAgents() {
+			logger.Infow("not dispatching agent job since no worker is available",
+				"agentName", desc.AgentName,
+				"jobType", desc.JobType,
+				"room", desc.Room.Name,
+				"roomID", desc.Room.Sid)
+		}
 		return ret
 	}
 
