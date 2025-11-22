@@ -264,6 +264,7 @@ type ParticipantImpl struct {
 
 	*TransportManager
 	*UpTrackManager
+	*UpDataTrackManager
 	*SubscriptionManager
 
 	icQueue [2]atomic.Pointer[webrtc.ICECandidate]
@@ -293,11 +294,9 @@ type ParticipantImpl struct {
 	version atomic.Uint32
 
 	// callbacks & handlers
-	onTrackPublished               func(types.LocalParticipant, types.MediaTrack)
-	onTrackUpdated                 func(types.LocalParticipant, types.MediaTrack)
-	onTrackUnpublished             func(types.LocalParticipant, types.MediaTrack)
-	onDataTrackPublished           func(types.LocalParticipant, types.DataTrack)
-	onDataTrackUnpublished         func(types.LocalParticipant, types.DataTrack)
+	onTrackPublished               func(types.Participant, types.MediaTrack)
+	onTrackUpdated                 func(types.Participant, types.MediaTrack)
+	onTrackUnpublished             func(types.Participant, types.MediaTrack)
 	onStateChange                  func(p types.LocalParticipant)
 	onSubscriberReady              func(p types.LocalParticipant)
 	onMigrateStateChange           func(p types.LocalParticipant, migrateState types.MigrateState)
@@ -342,9 +341,6 @@ type ParticipantImpl struct {
 	rpcLock             sync.Mutex
 	rpcPendingAcks      map[string]*utils.DataChannelRpcPendingAckHandler
 	rpcPendingResponses map[string]*utils.DataChannelRpcPendingResponseHandler
-
-	dataTracksLock sync.RWMutex
-	dataTracks     map[uint16]types.DataTrack
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -381,7 +377,6 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		rpcPendingResponses: make(map[string]*utils.DataChannelRpcPendingResponseHandler),
 		onClose:             make(map[string]func(types.LocalParticipant)),
 		telemetryGuard:      &telemetry.ReferenceGuard{},
-		dataTracks:          make(map[uint16]types.DataTrack),
 	}
 	p.setupSignalling()
 
@@ -439,6 +434,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	}
 
 	p.setupUpTrackManager()
+	p.setupUpDataTrackManager()
 	p.setupSubscriptionManager()
 	p.setupMetrics()
 
@@ -797,8 +793,8 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 	}
 
 	if !grants.Video.GetCanPublishData() {
-		for _, dt := range p.GetPublishedDataTracks() {
-			p.RemovePublishedDataTrack(dt)
+		for _, dt := range p.UpDataTrackManager.GetPublishedDataTracks() {
+			p.UpDataTrackManager.RemovePublishedDataTrack(dt)
 		}
 	}
 
@@ -896,7 +892,7 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 	}
 	p.pendingTracksLock.RUnlock()
 
-	pi.DataTracks = p.dataTracksToProto()
+	pi.DataTracks = p.UpDataTrackManager.ToProto()
 
 	return pi, piv
 }
@@ -912,25 +908,25 @@ func (p *ParticipantImpl) TelemetryGuard() *telemetry.ReferenceGuard {
 
 // callbacks for clients
 
-func (p *ParticipantImpl) OnTrackPublished(callback func(types.LocalParticipant, types.MediaTrack)) {
+func (p *ParticipantImpl) OnTrackPublished(callback func(types.Participant, types.MediaTrack)) {
 	p.lock.Lock()
 	p.onTrackPublished = callback
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) getOnTrackPublished() func(types.LocalParticipant, types.MediaTrack) {
+func (p *ParticipantImpl) getOnTrackPublished() func(types.Participant, types.MediaTrack) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	return p.onTrackPublished
 }
 
-func (p *ParticipantImpl) OnTrackUnpublished(callback func(types.LocalParticipant, types.MediaTrack)) {
+func (p *ParticipantImpl) OnTrackUnpublished(callback func(types.Participant, types.MediaTrack)) {
 	p.lock.Lock()
 	p.onTrackUnpublished = callback
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) getOnTrackUnpublished() func(types.LocalParticipant, types.MediaTrack) {
+func (p *ParticipantImpl) getOnTrackUnpublished() func(types.Participant, types.MediaTrack) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	return p.onTrackUnpublished
@@ -972,13 +968,13 @@ func (p *ParticipantImpl) getOnMigrateStateChange() func(p types.LocalParticipan
 	return p.onMigrateStateChange
 }
 
-func (p *ParticipantImpl) OnTrackUpdated(callback func(types.LocalParticipant, types.MediaTrack)) {
+func (p *ParticipantImpl) OnTrackUpdated(callback func(types.Participant, types.MediaTrack)) {
 	p.lock.Lock()
 	p.onTrackUpdated = callback
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) getOnTrackUpdated() func(types.LocalParticipant, types.MediaTrack) {
+func (p *ParticipantImpl) getOnTrackUpdated() func(types.Participant, types.MediaTrack) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	return p.onTrackUpdated
@@ -2165,6 +2161,13 @@ func (p *ParticipantImpl) setupUpTrackManager() {
 	})
 
 	p.UpTrackManager.OnUpTrackManagerClose(p.onUpTrackManagerClose)
+}
+
+func (p *ParticipantImpl) setupUpDataTrackManager() {
+	p.UpDataTrackManager = NewUpDataTrackManager(UpDataTrackManagerParams{
+		Logger:      p.pubLogger,
+		Participant: p,
+	})
 }
 
 func (p *ParticipantImpl) setupSubscriptionManager() {

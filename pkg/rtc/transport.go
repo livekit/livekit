@@ -1447,7 +1447,6 @@ func (t *PCTransport) SendDataMessageUnlabeled(data []byte, useRaw bool, sender 
 	return t.sendDataMessage(dc, data)
 }
 
-// DT-TODO plumb this in for sending data track messages
 func (t *PCTransport) SendDataTrackMessage(data []byte) error {
 	t.lock.RLock()
 	dc := t.dataTrackDC

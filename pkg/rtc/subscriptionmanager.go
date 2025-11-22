@@ -1492,15 +1492,12 @@ func (s *dataTrackSubscription) needsCleanup() bool {
 
 func (s *dataTrackSubscription) setDataDownTrack(dataDownTrack types.DataDownTrack) {
 	s.lock.Lock()
-	// DT-TODO oldTrack := s.dataDownTrack
 	s.dataDownTrack = dataDownTrack
 	s.lock.Unlock()
 
-	/* DT-TODO
-	if oldTrack != nil {
-		oldTrack.OnClose(nil)
-	}
-	*/
+	// DT-TODO - transfer susbcriber settings?, see setSubscribedTrack for example
+
+	// DT-TODO - DataTrack close callback on previous if not nil?, see setSubscribedTrack for example
 }
 
 func (s *dataTrackSubscription) getDataDownTrack() types.DataDownTrack {

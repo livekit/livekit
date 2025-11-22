@@ -15,38 +15,12 @@
 package rtc
 
 import (
-	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
-	"golang.org/x/exp/maps"
 )
-
-func (p *ParticipantImpl) OnDataTrackPublished(callback func(types.LocalParticipant, types.DataTrack)) {
-	p.lock.Lock()
-	p.onDataTrackPublished = callback
-	p.lock.Unlock()
-}
-
-func (p *ParticipantImpl) getOnDataTrackPublished() func(types.LocalParticipant, types.DataTrack) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	return p.onDataTrackPublished
-}
-
-func (p *ParticipantImpl) OnDataTrackUnpublished(callback func(types.LocalParticipant, types.DataTrack)) {
-	p.lock.Lock()
-	p.onDataTrackUnpublished = callback
-	p.lock.Unlock()
-}
-
-func (p *ParticipantImpl) getOnDataTrackUnpublished() func(types.LocalParticipant, types.DataTrack) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	return p.onDataTrackUnpublished
-}
 
 func (p *ParticipantImpl) OnUpdateDataSubscriptions(callback func(types.LocalParticipant, *livekit.UpdateDataSubscription)) {
 	p.lock.Lock()
@@ -97,8 +71,8 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 		return
 	}
 
-	p.dataTracksLock.Lock()
-	for _, dt := range p.dataTracks {
+	publishedDataTracks := p.UpDataTrackManager.GetPublishedDataTracks()
+	for _, dt := range publishedDataTracks {
 		message := ""
 		reason := livekit.RequestResponse_OK
 		switch {
@@ -110,8 +84,6 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 			reason = livekit.RequestResponse_DUPLICATE_NAME
 		}
 		if message != "" {
-			p.dataTracksLock.Unlock()
-
 			p.pubLogger.Warnw(
 				"cannot publish duplicate data track", nil,
 				"req", logger.Proto(req),
@@ -136,22 +108,14 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 	}
 	dt := NewDataTrack(DataTrackParams{Logger: p.params.Logger.WithValues("trackID", dti.Sid)}, dti)
 
-	p.dataTracks[uint16(req.PubHandle)] = dt
-	p.dataTracksLock.Unlock()
+	p.UpDataTrackManager.AddPublishedDataTrack(dt)
 
 	p.sendPublishDataTrackResponse(dti)
-
-	if onDataTrackPublished := p.getOnDataTrackPublished(); onDataTrackPublished != nil {
-		onDataTrackPublished(p, dt)
-	}
 }
 
 func (p *ParticipantImpl) HandleUnpublishDataTrackRequest(req *livekit.UnpublishDataTrackRequest) {
-	p.dataTracksLock.Lock()
-	dt := p.dataTracks[uint16(req.PubHandle)]
+	dt := p.UpDataTrackManager.GetPublishedDataTrack(uint16(req.PubHandle))
 	if dt == nil {
-		p.dataTracksLock.Unlock()
-
 		p.pubLogger.Warnw("unpublish data track not found", nil, "req", logger.Proto(req))
 		p.sendRequestResponse(&livekit.RequestResponse{
 			Reason: livekit.RequestResponse_NOT_FOUND,
@@ -162,15 +126,9 @@ func (p *ParticipantImpl) HandleUnpublishDataTrackRequest(req *livekit.Unpublish
 		return
 	}
 
-	delete(p.dataTracks, uint16(req.PubHandle))
-	p.dataTracksLock.Unlock()
+	p.UpDataTrackManager.RemovePublishedDataTrack(dt)
 
-	dt.Close()
 	p.sendUnpublishDataTrackResponse(dt.ToProto())
-
-	if onDataTrackUnpublished := p.getOnDataTrackUnpublished(); onDataTrackUnpublished != nil {
-		onDataTrackUnpublished(p, dt)
-	}
 }
 
 func (p *ParticipantImpl) HandleUpdateDataSubscription(req *livekit.UpdateDataSubscription) {
@@ -179,56 +137,8 @@ func (p *ParticipantImpl) HandleUpdateDataSubscription(req *livekit.UpdateDataSu
 	}
 }
 
-func (p *ParticipantImpl) GetPublishedDataTracks() []types.DataTrack {
-	p.dataTracksLock.RLock()
-	defer p.dataTracksLock.RUnlock()
-
-	return maps.Values(p.dataTracks)
-}
-
-func (p *ParticipantImpl) RemovePublishedDataTrack(dt types.DataTrack) {
-	var found bool
-	pubHandle := dt.PubHandle()
-	p.dataTracksLock.Lock()
-	if p.dataTracks[pubHandle] == dt {
-		delete(p.dataTracks, pubHandle)
-		found = true
-	}
-	p.dataTracksLock.Unlock()
-
-	if found {
-		dt.Close()
-		p.sendUnpublishDataTrackResponse(dt.ToProto())
-	}
-}
-
-func (p *ParticipantImpl) dataTracksToProto() []*livekit.DataTrackInfo {
-	p.dataTracksLock.RLock()
-	defer p.dataTracksLock.RUnlock()
-
-	var dataTrackInfos []*livekit.DataTrackInfo
-	for _, dt := range p.dataTracks {
-		dataTrackInfos = append(dataTrackInfos, dt.ToProto())
-	}
-
-	return dataTrackInfos
-}
-
 func (p *ParticipantImpl) onReceivedDataTrackMessage(data []byte) {
-	var packet datatrack.Packet
-	if err := packet.Unmarshal(data); err != nil {
-		p.params.Logger.Errorw("could not unmarshal data track message", err)
-		return
-	}
-
-	p.dataTracksLock.RLock()
-	dt := p.dataTracks[packet.Handle]
-	p.dataTracksLock.RUnlock()
-	if dt == nil {
-		return
-	}
-
-	dt.HandlePacket(data, &packet)
+	p.UpDataTrackManager.HandleReceivedDataTrackMessage(data)
 
 	if onDataTrackMessage := p.getOnDataTrackMessage(); onDataTrackMessage != nil {
 		onDataTrackMessage(p, data)

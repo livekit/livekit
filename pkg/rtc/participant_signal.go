@@ -357,10 +357,9 @@ func (p *ParticipantImpl) sendPublishDataTrackResponse(dti *livekit.DataTrackInf
 	}))
 }
 
-// DT-TODO just pass in handle here if protocol is not going to be changed
 func (p *ParticipantImpl) sendUnpublishDataTrackResponse(dti *livekit.DataTrackInfo) error {
 	return p.signaller.WriteMessage(p.signalling.SignalUnpublishDataTrackResponse(&livekit.UnpublishDataTrackResponse{
-		PubHandle: dti.PubHandle,
+		Info: dti,
 	}))
 }
 

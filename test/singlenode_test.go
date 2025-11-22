@@ -688,11 +688,7 @@ func TestDeviceCodecOverride(t *testing.T) {
 						break
 					}
 				}
-				if desc == nil {
-					return false
-				}
-
-				return true
+				return desc != nil
 			}, waitTimeout, waitTick, "did not receive answer")
 
 			hasSeenVP8 := false

@@ -287,9 +287,12 @@ type Participant interface {
 	IsDependent() bool
 	IsAgent() bool
 
+	GetLogger() logger.Logger
+
 	CanSkipBroadcast() bool
 	Version() utils.TimedVersion
 	ToProto() *livekit.ParticipantInfo
+	ToProtoWithVersion() (*livekit.ParticipantInfo, utils.TimedVersion)
 
 	IsPublisher() bool
 	GetPublishedTrack(trackID livekit.TrackID) MediaTrack
@@ -297,6 +300,7 @@ type Participant interface {
 	RemovePublishedTrack(track MediaTrack, isExpectedToResume bool)
 
 	GetPublishedDataTracks() []DataTrack
+	GetPublishedDataTrack(handle uint16) DataTrack
 	RemovePublishedDataTrack(track DataTrack)
 
 	GetAudioLevel() (smoothedLevel float64, active bool)
@@ -308,7 +312,11 @@ type Participant interface {
 	// permissions
 	Hidden() bool
 
+	MigrateState() MigrateState
+
 	Close(sendLeave bool, reason ParticipantCloseReason, isExpectedToResume bool) error
+	IsClosed() bool
+	IsDisconnected() bool
 
 	SubscriptionPermission() (*livekit.SubscriptionPermission, utils.TimedVersion)
 
@@ -321,7 +329,17 @@ type Participant interface {
 
 	DebugInfo() map[string]any
 
+	// OnTrackPublished - remote added a track
+	OnTrackPublished(func(Participant, MediaTrack))
+	// OnTrackUpdated - one of its publishedTracks changed in status
+	OnTrackUpdated(callback func(Participant, MediaTrack))
+	// OnTrackUnpublished - a track was unpublished
+	OnTrackUnpublished(callback func(Participant, MediaTrack))
+	OnDataTrackPublished(func(Participant, DataTrack))
+	OnDataTrackUnpublished(func(Participant, DataTrack))
 	OnMetrics(callback func(Participant, *livekit.DataPacket))
+
+	HandleReceivedDataTrackMessage([]byte)
 }
 
 // -------------------------------------------------------
@@ -360,12 +378,10 @@ type LocalParticipant interface {
 	Participant
 
 	TelemetryGuard() *telemetry.ReferenceGuard
-	ToProtoWithVersion() (*livekit.ParticipantInfo, utils.TimedVersion)
 
 	// getters
 	GetCountry() string
 	GetTrailer() []byte
-	GetLogger() logger.Logger
 	GetLoggerResolver() logger.DeferredFieldResolver
 	GetReporter() roomobs.ParticipantSessionReporter
 	GetReporterResolver() roomobs.ParticipantReporterResolver
@@ -374,9 +390,7 @@ type LocalParticipant interface {
 	SupportsSyncStreamID() bool
 	SupportsTransceiverReuse() bool
 	IsUsingSinglePeerConnection() bool
-	IsClosed() bool
 	IsReady() bool
-	IsDisconnected() bool
 	Disconnected() <-chan struct{}
 	IsIdle() bool
 	SubscriberAsPrimary() bool
@@ -474,14 +488,6 @@ type LocalParticipant interface {
 	OnStateChange(func(p LocalParticipant))
 	OnSubscriberReady(callback func(LocalParticipant))
 	OnMigrateStateChange(func(p LocalParticipant, migrateState MigrateState))
-	// OnTrackPublished - remote added a track
-	OnTrackPublished(func(LocalParticipant, MediaTrack))
-	// OnTrackUpdated - one of its publishedTracks changed in status
-	OnTrackUpdated(callback func(LocalParticipant, MediaTrack))
-	// OnTrackUnpublished - a track was unpublished
-	OnTrackUnpublished(callback func(LocalParticipant, MediaTrack))
-	OnDataTrackPublished(func(LocalParticipant, DataTrack))
-	OnDataTrackUnpublished(func(LocalParticipant, DataTrack))
 	OnParticipantUpdate(callback func(LocalParticipant))
 	OnDataPacket(callback func(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket))
 	OnDataMessage(callback func(LocalParticipant, []byte))
@@ -507,7 +513,6 @@ type LocalParticipant interface {
 	MaybeStartMigration(force bool, onStart func()) bool
 	NotifyMigration()
 	SetMigrateState(s MigrateState)
-	MigrateState() MigrateState
 	SetMigrateInfo(
 		previousOffer *webrtc.SessionDescription,
 		previousAnswer *webrtc.SessionDescription,

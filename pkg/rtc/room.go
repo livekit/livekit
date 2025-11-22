@@ -134,7 +134,7 @@ type Room struct {
 
 	trailer []byte
 
-	onParticipantChanged func(p types.LocalParticipant)
+	onParticipantChanged func(p types.Participant)
 	onRoomUpdated        func()
 	onClose              func()
 
@@ -748,6 +748,32 @@ func (r *Room) onSyncState(participant types.LocalParticipant, state *livekit.Sy
 			break
 		}
 	}
+
+	pubDataTracks := state.GetPublishDataTracks()
+	existingPubDataTracks := participant.GetPublishedDataTracks()
+	for _, pubDataTrack := range pubDataTracks {
+		// client may not have sent DataTrackInfo for each published data track
+		dti := pubDataTrack.Info
+		if dti == nil {
+			pLogger.Warnw("DataTrackInfo not sent during resume", nil)
+			shouldReconnect = true
+			break
+		}
+
+		found := false
+		for _, existingPubDataTrack := range existingPubDataTracks {
+			if existingPubDataTrack.ID() == livekit.TrackID(dti.Sid) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			pLogger.Warnw("unknown data track during resume", nil, "trackID", dti.Sid)
+			shouldReconnect = true
+			break
+		}
+	}
+
 	if shouldReconnect {
 		pLogger.Warnw("unable to resume due to missing published tracks, starting full reconnect", nil)
 		participant.IssueFullReconnect(types.ParticipantCloseReasonPublicationError)
@@ -894,7 +920,7 @@ func (r *Room) OnClose(f func()) {
 	r.onClose = f
 }
 
-func (r *Room) OnParticipantChanged(f func(participant types.LocalParticipant)) {
+func (r *Room) OnParticipantChanged(f func(participant types.Participant)) {
 	r.onParticipantChanged = f
 }
 
@@ -1121,7 +1147,7 @@ func (r *Room) createJoinResponseLocked(
 }
 
 // a ParticipantImpl in the room added a new track, subscribe other participants to it
-func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.MediaTrack) {
+func (r *Room) onTrackPublished(participant types.Participant, track types.MediaTrack) {
 	r.trackManager.AddTrack(track, participant.Identity(), participant.ID())
 
 	// publish participant update, since track state is changed
@@ -1200,7 +1226,7 @@ func (r *Room) onTrackPublished(participant types.LocalParticipant, track types.
 	}
 }
 
-func (r *Room) onTrackUpdated(p types.LocalParticipant, _ types.MediaTrack) {
+func (r *Room) onTrackUpdated(p types.Participant, _ types.MediaTrack) {
 	// send track updates to everyone, especially if track was updated by admin
 	r.broadcastParticipantState(p, broadcastOptions{})
 	if r.onParticipantChanged != nil {
@@ -1208,7 +1234,7 @@ func (r *Room) onTrackUpdated(p types.LocalParticipant, _ types.MediaTrack) {
 	}
 }
 
-func (r *Room) onTrackUnpublished(p types.LocalParticipant, track types.MediaTrack) {
+func (r *Room) onTrackUnpublished(p types.Participant, track types.MediaTrack) {
 	r.trackManager.RemoveTrack(track)
 	if !p.IsClosed() {
 		r.broadcastParticipantState(p, broadcastOptions{skipSource: true})
@@ -1218,7 +1244,7 @@ func (r *Room) onTrackUnpublished(p types.LocalParticipant, track types.MediaTra
 	}
 }
 
-func (r *Room) onDataTrackPublished(participant types.LocalParticipant, dt types.DataTrack) {
+func (r *Room) onDataTrackPublished(participant types.Participant, dt types.DataTrack) {
 	r.trackManager.AddDataTrack(dt, participant.Identity(), participant.ID())
 
 	// publish participant update, since a new data track was published
@@ -1255,7 +1281,7 @@ func (r *Room) onDataTrackPublished(participant types.LocalParticipant, dt types
 	}
 }
 
-func (r *Room) onDataTrackUnpublished(p types.LocalParticipant, dt types.DataTrack) {
+func (r *Room) onDataTrackUnpublished(p types.Participant, dt types.DataTrack) {
 	r.trackManager.RemoveDataTrack(dt)
 	if !p.IsClosed() {
 		r.broadcastParticipantState(p, broadcastOptions{skipSource: true})
@@ -1403,14 +1429,14 @@ func (r *Room) RemoveParticipant(
 
 	// remove all published tracks
 	for _, t := range p.GetPublishedTracks() {
-		p.RemovePublishedTrack(t, false)
 		r.trackManager.RemoveTrack(t)
+		p.RemovePublishedTrack(t, false)
 	}
 
 	// remove all published data tracks
 	for _, t := range p.GetPublishedDataTracks() {
-		p.RemovePublishedDataTrack(t)
 		r.trackManager.RemoveDataTrack(t)
+		p.RemovePublishedDataTrack(t)
 	}
 
 	if agentJob != nil {
@@ -1488,7 +1514,7 @@ func (r *Room) subscribeToExistingTracks(p types.LocalParticipant, isSync bool) 
 }
 
 // broadcast an update about participant p
-func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcastOptions) {
+func (r *Room) broadcastParticipantState(p types.Participant, opts broadcastOptions) {
 	pi := p.ToProto()
 
 	// send it to the same participant immediately
@@ -1499,9 +1525,11 @@ func (r *Room) broadcastParticipantState(p types.LocalParticipant, opts broadcas
 				return
 			}
 
-			err := p.SendParticipantUpdate([]*livekit.ParticipantInfo{pi})
-			if err != nil {
-				p.GetLogger().Errorw("could not send update to participant", err)
+			if lp, ok := p.(types.LocalParticipant); ok {
+				err := lp.SendParticipantUpdate([]*livekit.ParticipantInfo{pi})
+				if err != nil {
+					lp.GetLogger().Errorw("could not send update to participant", err)
+				}
 			}
 		}()
 	}

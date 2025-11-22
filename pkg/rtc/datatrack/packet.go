@@ -22,6 +22,7 @@ import (
 
 var (
 	errHeaderSizeInsufficient = errors.New("data track packet header size insufficient")
+	errBufferSizeInsufficient = errors.New("data track packet buffer size insufficient")
 )
 
 const (
@@ -156,11 +157,24 @@ func (p *Packet) Unmarshal(buf []byte) error {
 
 func (p *Packet) Marshal() ([]byte, error) {
 	buf := make([]byte, p.Header.MarshalSize()+len(p.Payload))
-	hdrSize, err := p.Header.MarshalTo(buf)
-	if err != nil {
+	if err := p.MarshalTo(buf); err != nil {
 		return nil, err
 	}
 
-	copy(buf[hdrSize:], p.Payload)
 	return buf, nil
+}
+
+func (p *Packet) MarshalTo(buf []byte) error {
+	size := p.Header.MarshalSize() + len(p.Payload)
+	if len(buf) < size {
+		return fmt.Errorf("%w: %d < %d", errBufferSizeInsufficient, len(buf), size)
+	}
+
+	hdrSize, err := p.Header.MarshalTo(buf)
+	if err != nil {
+		return err
+	}
+
+	copy(buf[hdrSize:], p.Payload)
+	return nil
 }
