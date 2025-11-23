@@ -63,8 +63,9 @@ import (
 )
 
 const (
-	LossyDataChannel    = "_lossy"
-	ReliableDataChannel = "_reliable"
+	LossyDataChannel     = "_lossy"
+	ReliableDataChannel  = "_reliable"
+	DataTrackDataChannel = "_data_track"
 
 	fastNegotiationFrequency   = 10 * time.Millisecond
 	negotiationFrequency       = 150 * time.Millisecond
@@ -205,6 +206,7 @@ type PCTransport struct {
 	reliableDCOpened        bool
 	lossyDC                 *datachannel.DataChannelWriter[*webrtc.DataChannel]
 	lossyDCOpened           bool
+	dataTrackDC             *datachannel.DataChannelWriter[*webrtc.DataChannel]
 	unlabeledDataChannels   []*datachannel.DataChannelWriter[*webrtc.DataChannel]
 
 	iceStartedAt               time.Time
@@ -830,6 +832,7 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 	dc.OnOpen(func() {
 		t.params.Logger.Debugw(dc.Label() + " data channel open")
 		var kind livekit.DataPacket_Kind
+		var isDataTrack bool
 		var isUnlabeled bool
 		switch dc.Label() {
 		case ReliableDataChannel:
@@ -837,6 +840,9 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 
 		case LossyDataChannel:
 			kind = livekit.DataPacket_LOSSY
+
+		case DataTrackDataChannel:
+			isDataTrack = true
 
 		default:
 			t.params.Logger.Infow("unlabeled datachannel added", "label", dc.Label())
@@ -849,33 +855,35 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 			return
 		}
 
+		t.lock.Lock()
 		switch {
 		case isUnlabeled:
-			t.lock.Lock()
 			t.unlabeledDataChannels = append(
 				t.unlabeledDataChannels,
 				datachannel.NewDataChannelWriterReliable(dc, rawDC, t.params.DatachannelSlowThreshold),
 			)
-			t.lock.Unlock()
+
+		case isDataTrack:
+			if t.dataTrackDC != nil {
+				t.dataTrackDC.Close()
+			}
+			t.dataTrackDC = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, 0, 0)
 
 		case kind == livekit.DataPacket_RELIABLE:
-			t.lock.Lock()
 			if t.reliableDC != nil {
 				t.reliableDC.Close()
 			}
 			t.reliableDC = datachannel.NewDataChannelWriterReliable(dc, rawDC, t.params.DatachannelSlowThreshold)
 			t.reliableDCOpened = true
-			t.lock.Unlock()
 
 		case kind == livekit.DataPacket_LOSSY:
-			t.lock.Lock()
 			if t.lossyDC != nil {
 				t.lossyDC.Close()
 			}
 			t.lossyDC = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, t.params.DatachannelLossyTargetLatency, uint64(lossyDataChannelMinBufferedAmount))
 			t.lossyDCOpened = true
-			t.lock.Unlock()
 		}
+		t.lock.Unlock()
 
 		go func() {
 			defer rawDC.Close()
@@ -892,6 +900,9 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 				switch {
 				case isUnlabeled:
 					t.params.Handler.OnDataMessageUnlabeled(buffer[:n])
+
+				case isDataTrack:
+					t.params.Handler.OnDataTrackMessage(buffer[:n])
 
 				default:
 					t.params.Handler.OnDataMessage(kind, buffer[:n])
@@ -1166,6 +1177,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 	var (
 		dcPtr       **datachannel.DataChannelWriter[*webrtc.DataChannel]
 		dcReady     *bool
+		isDataTrack bool
 		isUnlabeled bool
 		kind        livekit.DataPacket_Kind
 	)
@@ -1173,14 +1185,20 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 	default:
 		isUnlabeled = true
 		t.params.Logger.Infow("unlabeled datachannel added", "label", dc.Label())
+
 	case ReliableDataChannel:
 		dcPtr = &t.reliableDC
 		dcReady = &t.reliableDCOpened
 		kind = livekit.DataPacket_RELIABLE
+
 	case LossyDataChannel:
 		dcPtr = &t.lossyDC
 		dcReady = &t.lossyDCOpened
 		kind = livekit.DataPacket_LOSSY
+
+	case DataTrackDataChannel:
+		dcPtr = &t.dataTrackDC
+		isDataTrack = true
 	}
 
 	dc.OnOpen(func() {
@@ -1205,8 +1223,17 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 			if *dcPtr != nil {
 				(*dcPtr).Close()
 			}
-			*dcPtr = datachannel.NewDataChannelWriterReliable(dc, rawDC, slowThreshold)
-			*dcReady = true
+			switch {
+			case dcPtr == &t.reliableDC:
+				*dcPtr = datachannel.NewDataChannelWriterReliable(dc, rawDC, slowThreshold)
+			case dcPtr == &t.lossyDC:
+				*dcPtr = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, t.params.DatachannelLossyTargetLatency, uint64(lossyDataChannelMinBufferedAmount))
+			case dcPtr == &t.dataTrackDC:
+				*dcPtr = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, 0, 0)
+			}
+			if dcReady != nil {
+				*dcReady = true
+			}
 		}
 		t.lock.Unlock()
 		t.params.Logger.Debugw(dc.Label() + " data channel open")
@@ -1226,6 +1253,9 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 				switch {
 				case isUnlabeled:
 					t.params.Handler.OnDataMessageUnlabeled(buffer[:n])
+
+				case isDataTrack:
+					t.params.Handler.OnDataTrackMessage(buffer[:n])
 
 				default:
 					t.params.Handler.OnDataMessage(kind, buffer[:n])
@@ -1288,6 +1318,8 @@ func (t *PCTransport) CreateDataChannelIfEmpty(dcLabel string, dci *webrtc.DataC
 		dcw = t.reliableDC
 	case LossyDataChannel:
 		dcw = t.lossyDC
+	case DataTrackDataChannel:
+		dcw = t.dataTrackDC
 	default:
 		t.params.Logger.Warnw("unknown data channel label", nil, "label", label)
 		err = errors.New("unknown data channel label")
@@ -1415,6 +1447,14 @@ func (t *PCTransport) SendDataMessageUnlabeled(data []byte, useRaw bool, sender 
 	return t.sendDataMessage(dc, data)
 }
 
+func (t *PCTransport) SendDataTrackMessage(data []byte) error {
+	t.lock.RLock()
+	dc := t.dataTrackDC
+	t.lock.RUnlock()
+
+	return t.sendDataMessage(dc, data)
+}
+
 func (t *PCTransport) sendDataMessage(dc *datachannel.DataChannelWriter[*webrtc.DataChannel], data []byte) error {
 	if dc == nil {
 		return ErrDataChannelUnavailable
@@ -1428,7 +1468,6 @@ func (t *PCTransport) sendDataMessage(dc *datachannel.DataChannelWriter[*webrtc.
 		return ErrDataChannelBufferFull
 	}
 	_, err := dc.Write(data)
-
 	return err
 }
 
@@ -1463,6 +1502,11 @@ func (t *PCTransport) Close() {
 	if t.lossyDC != nil {
 		t.lossyDC.Close()
 		t.lossyDC = nil
+	}
+
+	if t.dataTrackDC != nil {
+		t.dataTrackDC.Close()
+		t.dataTrackDC = nil
 	}
 
 	for _, dc := range t.unlabeledDataChannels {

@@ -30,9 +30,14 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+type TrackWriter interface {
+	Start() error
+	Stop()
+}
+
 // Writes a file to an RTP track.
 // makes it easier to debug and create RTP streams
-type TrackWriter struct {
+type trackWriter struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	track    *webrtc.TrackLocalStaticSample
@@ -45,9 +50,9 @@ type TrackWriter struct {
 	h264      *h264reader.H264Reader
 }
 
-func NewTrackWriter(ctx context.Context, track *webrtc.TrackLocalStaticSample, filePath string) *TrackWriter {
+func NewTrackWriter(ctx context.Context, track *webrtc.TrackLocalStaticSample, filePath string) TrackWriter {
 	ctx, cancel := context.WithCancel(ctx)
-	return &TrackWriter{
+	return &trackWriter{
 		ctx:      ctx,
 		cancel:   cancel,
 		track:    track,
@@ -56,7 +61,7 @@ func NewTrackWriter(ctx context.Context, track *webrtc.TrackLocalStaticSample, f
 	}
 }
 
-func (w *TrackWriter) Start() error {
+func (w *trackWriter) Start() error {
 	if w.filePath == "" {
 		go w.writeNull()
 		return nil
@@ -95,11 +100,11 @@ func (w *TrackWriter) Start() error {
 	return nil
 }
 
-func (w *TrackWriter) Stop() {
+func (w *trackWriter) Stop() {
 	w.cancel()
 }
 
-func (w *TrackWriter) writeNull() {
+func (w *trackWriter) writeNull() {
 	defer w.onWriteComplete()
 	sample := media.Sample{Data: []byte{0x0, 0xff, 0xff, 0xff, 0xff}, Duration: 30 * time.Millisecond}
 	h264Sample := media.Sample{Data: []byte{0x00, 0x00, 0x00, 0x01, 0x7, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01, 0x8, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01, 0x5, 0xff, 0xff, 0xff, 0xff}, Duration: 30 * time.Millisecond}
@@ -117,7 +122,7 @@ func (w *TrackWriter) writeNull() {
 	}
 }
 
-func (w *TrackWriter) writeOgg() {
+func (w *trackWriter) writeOgg() {
 	// Keep track of last granule, the difference is the amount of samples in the buffer
 	var lastGranule uint64
 	for {
@@ -150,7 +155,7 @@ func (w *TrackWriter) writeOgg() {
 	}
 }
 
-func (w *TrackWriter) writeVP8() {
+func (w *trackWriter) writeVP8() {
 	// Send our video file frame at a time. Pace our sending such that we send it at the same speed it should be played back as.
 	// This isn't required since the video is timestamped, but we will such much higher loss if we send all at once.
 	sleepTime := time.Millisecond * time.Duration((float32(w.ivfheader.TimebaseNumerator)/float32(w.ivfheader.TimebaseDenominator))*1000)
@@ -178,10 +183,9 @@ func (w *TrackWriter) writeVP8() {
 	}
 }
 
-func (w *TrackWriter) writeH264() {
+func (w *trackWriter) writeH264() {
 	// TODO: this is harder
 }
 
-func (w *TrackWriter) onWriteComplete() {
-
+func (w *trackWriter) onWriteComplete() {
 }

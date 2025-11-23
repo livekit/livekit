@@ -152,3 +152,5 @@ require (
 )
 
 replace golang.org/x/tools => golang.org/x/tools v0.37.0 // counterfeiter is broken
+
+replace github.com/livekit/protocol => ../protocol

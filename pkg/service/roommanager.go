@@ -662,7 +662,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 		}
 	})
 
-	newRoom.OnParticipantChanged(func(p types.LocalParticipant) {
+	newRoom.OnParticipantChanged(func(p types.Participant) {
 		if !p.IsDisconnected() {
 			if err := r.roomStore.StoreParticipant(ctx, roomName, p.ToProto()); err != nil {
 				newRoom.Logger().Errorw("could not handle participant change", err)
@@ -1114,6 +1114,10 @@ func (h *roomManagerParticipantHelper) GetSubscriberForwarderState(lp types.Loca
 
 func (h *roomManagerParticipantHelper) ResolveMediaTrack(lp types.LocalParticipant, trackID livekit.TrackID) types.MediaResolverResult {
 	return h.room.ResolveMediaTrackForSubscriber(lp, trackID)
+}
+
+func (h *roomManagerParticipantHelper) ResolveDataTrack(lp types.LocalParticipant, trackID livekit.TrackID) types.DataResolverResult {
+	return h.room.ResolveDataTrackForSubscriber(lp, trackID)
 }
 
 func (h *roomManagerParticipantHelper) ShouldRegressCodec() bool {

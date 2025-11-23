@@ -55,6 +55,18 @@ type FakeLocalParticipantHelper struct {
 		result1 map[livekit.TrackID]*livekit.RTPForwarderState
 		result2 error
 	}
+	ResolveDataTrackStub        func(types.LocalParticipant, livekit.TrackID) types.DataResolverResult
+	resolveDataTrackMutex       sync.RWMutex
+	resolveDataTrackArgsForCall []struct {
+		arg1 types.LocalParticipant
+		arg2 livekit.TrackID
+	}
+	resolveDataTrackReturns struct {
+		result1 types.DataResolverResult
+	}
+	resolveDataTrackReturnsOnCall map[int]struct {
+		result1 types.DataResolverResult
+	}
 	ResolveMediaTrackStub        func(types.LocalParticipant, livekit.TrackID) types.MediaResolverResult
 	resolveMediaTrackMutex       sync.RWMutex
 	resolveMediaTrackArgsForCall []struct {
@@ -326,6 +338,68 @@ func (fake *FakeLocalParticipantHelper) GetSubscriberForwarderStateReturnsOnCall
 		result1 map[livekit.TrackID]*livekit.RTPForwarderState
 		result2 error
 	}{result1, result2}
+}
+
+func (fake *FakeLocalParticipantHelper) ResolveDataTrack(arg1 types.LocalParticipant, arg2 livekit.TrackID) types.DataResolverResult {
+	fake.resolveDataTrackMutex.Lock()
+	ret, specificReturn := fake.resolveDataTrackReturnsOnCall[len(fake.resolveDataTrackArgsForCall)]
+	fake.resolveDataTrackArgsForCall = append(fake.resolveDataTrackArgsForCall, struct {
+		arg1 types.LocalParticipant
+		arg2 livekit.TrackID
+	}{arg1, arg2})
+	stub := fake.ResolveDataTrackStub
+	fakeReturns := fake.resolveDataTrackReturns
+	fake.recordInvocation("ResolveDataTrack", []interface{}{arg1, arg2})
+	fake.resolveDataTrackMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipantHelper) ResolveDataTrackCallCount() int {
+	fake.resolveDataTrackMutex.RLock()
+	defer fake.resolveDataTrackMutex.RUnlock()
+	return len(fake.resolveDataTrackArgsForCall)
+}
+
+func (fake *FakeLocalParticipantHelper) ResolveDataTrackCalls(stub func(types.LocalParticipant, livekit.TrackID) types.DataResolverResult) {
+	fake.resolveDataTrackMutex.Lock()
+	defer fake.resolveDataTrackMutex.Unlock()
+	fake.ResolveDataTrackStub = stub
+}
+
+func (fake *FakeLocalParticipantHelper) ResolveDataTrackArgsForCall(i int) (types.LocalParticipant, livekit.TrackID) {
+	fake.resolveDataTrackMutex.RLock()
+	defer fake.resolveDataTrackMutex.RUnlock()
+	argsForCall := fake.resolveDataTrackArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeLocalParticipantHelper) ResolveDataTrackReturns(result1 types.DataResolverResult) {
+	fake.resolveDataTrackMutex.Lock()
+	defer fake.resolveDataTrackMutex.Unlock()
+	fake.ResolveDataTrackStub = nil
+	fake.resolveDataTrackReturns = struct {
+		result1 types.DataResolverResult
+	}{result1}
+}
+
+func (fake *FakeLocalParticipantHelper) ResolveDataTrackReturnsOnCall(i int, result1 types.DataResolverResult) {
+	fake.resolveDataTrackMutex.Lock()
+	defer fake.resolveDataTrackMutex.Unlock()
+	fake.ResolveDataTrackStub = nil
+	if fake.resolveDataTrackReturnsOnCall == nil {
+		fake.resolveDataTrackReturnsOnCall = make(map[int]struct {
+			result1 types.DataResolverResult
+		})
+	}
+	fake.resolveDataTrackReturnsOnCall[i] = struct {
+		result1 types.DataResolverResult
+	}{result1}
 }
 
 func (fake *FakeLocalParticipantHelper) ResolveMediaTrack(arg1 types.LocalParticipant, arg2 livekit.TrackID) types.MediaResolverResult {

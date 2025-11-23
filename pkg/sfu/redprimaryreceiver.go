@@ -24,6 +24,7 @@ import (
 	"github.com/pion/webrtc/v4"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -35,7 +36,7 @@ var (
 
 type RedPrimaryReceiver struct {
 	TrackReceiver
-	downTrackSpreader *DownTrackSpreader
+	downTrackSpreader *utils.DownTrackSpreader[TrackSender]
 	logger            logger.Logger
 	closed            atomic.Bool
 	redPT             uint8
@@ -47,10 +48,10 @@ type RedPrimaryReceiver struct {
 	pktHistory byte
 }
 
-func NewRedPrimaryReceiver(receiver TrackReceiver, dsp DownTrackSpreaderParams) *RedPrimaryReceiver {
+func NewRedPrimaryReceiver(receiver TrackReceiver, dsp utils.DownTrackSpreaderParams) *RedPrimaryReceiver {
 	return &RedPrimaryReceiver{
 		TrackReceiver:     receiver,
-		downTrackSpreader: NewDownTrackSpreader(dsp),
+		downTrackSpreader: utils.NewDownTrackSpreader[TrackSender](dsp),
 		logger:            dsp.Logger,
 		redPT:             uint8(receiver.Codec().PayloadType),
 	}

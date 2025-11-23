@@ -302,7 +302,7 @@ func listRoomToken() string {
 	return t
 }
 
-func stopWriters(writers ...*testclient.TrackWriter) {
+func stopWriters(writers ...testclient.TrackWriter) {
 	for _, w := range writers {
 		w.Stop()
 	}
