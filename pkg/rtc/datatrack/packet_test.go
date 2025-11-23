@@ -55,7 +55,7 @@ func TestPacket(t *testing.T) {
 		require.Equal(t, packet, &unmarshaled)
 	})
 
-	t.Run("marshal with extension", func(t *testing.T) {
+	t.Run("with extension", func(t *testing.T) {
 		payload := make([]byte, 4)
 		for i := range len(payload) {
 			payload[i] = byte(255 - i)
@@ -147,6 +147,71 @@ func TestPacket(t *testing.T) {
 		var extParticipantSid ExtensionParticipantSid
 		require.NoError(t, extParticipantSid.Unmarshal(ext))
 		require.Equal(t, livekit.ParticipantID("participant"), extParticipantSid.ParticipantID())
+	})
+
+	t.Run("replace extension", func(t *testing.T) {
+		payload := make([]byte, 4)
+		for i := range len(payload) {
+			payload[i] = byte(255 - i)
+		}
+		packet := &Packet{
+			Header: Header{
+				Version:        0,
+				IsFirstOfFrame: true,
+				IsLastOfFrame:  false,
+				Handle:         3333,
+				SequenceNumber: 6666,
+				FrameNumber:    9999,
+				Timestamp:      0xdeadbeef,
+			},
+			Payload: payload,
+		}
+		if extParticipantSid, err := NewExtensionParticipantSid("participant"); err == nil {
+			if ext, err := extParticipantSid.Marshal(); err == nil {
+				packet.AddExtension(ext)
+			}
+		}
+		rawPacket, err := packet.Marshal()
+		require.NoError(t, err)
+
+		expectedRawPacket := []byte{
+			0x14, 0x00, 0x0d, 0x05, 0x1a, 0x0a, 0x27, 0x0f,
+			0xde, 0xad, 0xbe, 0xef, 0x00, 0x03, 0x00, 0x01,
+			0x00, 0x0b, 0x70, 0x61, 0x72, 0x74, 0x69, 0x63,
+			0x69, 0x70, 0x61, 0x6e, 0x74, 0x00, 0xff, 0xfe,
+			0xfd, 0xfc,
+		}
+		require.Equal(t, expectedRawPacket, rawPacket)
+
+		// replace existing extension ID and ensure that marshalled packet is updated
+		if extParticipantSid, err := NewExtensionParticipantSid("test_participant"); err == nil {
+			if ext, err := extParticipantSid.Marshal(); err == nil {
+				packet.AddExtension(ext)
+			}
+		}
+		rawPacket, err = packet.Marshal()
+		require.NoError(t, err)
+
+		expectedRawPacket = []byte{
+			0x14, 0x00, 0x0d, 0x05, 0x1a, 0x0a, 0x27, 0x0f,
+			0xde, 0xad, 0xbe, 0xef, 0x00, 0x04, 0x00, 0x01,
+			0x00, 0x10, 0x74, 0x65, 0x73, 0x74, 0x5f, 0x70,
+			0x61, 0x72, 0x74, 0x69, 0x63, 0x69, 0x70, 0x61,
+			0x6e, 0x74, 0xff, 0xfe, 0xfd, 0xfc,
+		}
+		require.Equal(t, expectedRawPacket, rawPacket)
+
+		var unmarshaled Packet
+		err = unmarshaled.Unmarshal(rawPacket)
+		require.NoError(t, err)
+		require.Equal(t, packet, &unmarshaled)
+
+		ext, err := unmarshaled.GetExtension(uint16(livekit.DataTrackExtensionID_DTEI_PARTICIPANT_SID))
+		require.NoError(t, err)
+
+		var extParticipantSid ExtensionParticipantSid
+		require.NoError(t, extParticipantSid.Unmarshal(ext))
+		require.Equal(t, livekit.ParticipantID("test_participant"), extParticipantSid.ParticipantID())
 	})
 
 	t.Run("bad pcaket", func(t *testing.T) {

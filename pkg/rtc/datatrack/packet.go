@@ -204,11 +204,11 @@ func (h *Header) MarshalTo(buf []byte) (int, error) {
 }
 
 func (h *Header) AddExtension(ext Extension) {
-	for _, existingExt := range h.Extensions {
+	for i, existingExt := range h.Extensions {
 		if existingExt.id == ext.id {
 			h.ExtensionsSize -= uint16((len(existingExt.data)+3)/4*4 + 2 /* extension ID field */ + 2 /* extension length field */)
-			existingExt.data = ext.data
-			h.ExtensionsSize += uint16((len(existingExt.data)+3)/4*4 + 2 /* extension ID field */ + 2 /* extension length field */)
+			h.Extensions[i].data = ext.data
+			h.ExtensionsSize += uint16((len(h.Extensions[i].data)+3)/4*4 + 2 /* extension ID field */ + 2 /* extension length field */)
 			return
 		}
 	}
