@@ -199,16 +199,44 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 }
 
 func (t *TransportManager) Close() {
+	var publisherClosed atomic.Bool
+	var subscriberClosed atomic.Bool
+	go func() { // CLOSE-DEBUG-CLEANUP
+		time.AfterFunc(time.Minute, func() {
+			if !publisherClosed.Load() || !subscriberClosed.Load() {
+				t.params.Logger.Infow(
+					"transport maanager close timeout",
+					"publisherClosed", publisherClosed.Load(),
+					"subscriberClosed", subscriberClosed.Load(),
+				)
+			}
+		})
+	}()
+
 	if t.publisher != nil {
 		t.publisher.Close()
 	}
+	publisherClosed.Store(true)
 	if t.subscriber != nil {
 		t.subscriber.Close()
 	}
+	subscriberClosed.Store(true)
 }
 
 func (t *TransportManager) SubscriberClose() {
+	var subscriberClosed atomic.Bool
+	go func() { // CLOSE-DEBUG-CLEANUP
+		time.AfterFunc(time.Minute, func() {
+			if !subscriberClosed.Load() {
+				t.params.Logger.Infow(
+					"transport maanager close timeout",
+					"subscriberClosed", subscriberClosed.Load(),
+				)
+			}
+		})
+	}()
 	t.subscriber.Close()
+	subscriberClosed.Store(true)
 }
 
 func (t *TransportManager) HasPublisherEverConnected() bool {
