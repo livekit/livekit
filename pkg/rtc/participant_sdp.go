@@ -325,12 +325,12 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 		return answer
 	}
 
-	parsed, err := answer.Unmarshal()
+	parsedAnswer, err := answer.Unmarshal()
 	if err != nil {
 		return answer
 	}
 
-	for _, m := range parsed.MediaDescriptions {
+	for _, m := range parsedAnswer.MediaDescriptions {
 		switch m.MediaName.Media {
 		case "audio":
 			_, ok := m.Attribute(sdp.AttrKeyInactive)
@@ -366,12 +366,12 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 				}
 			}
 
-			if ti == nil || (ti.DisableDtx && !slices.Contains(ti.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO)) {
+			if ti == nil {
 				// no need to configure
 				continue
 			}
 
-			opusPT, err := parsed.GetPayloadTypeForCodec(sdp.Codec{Name: mime.MimeTypeCodecOpus.String()})
+			opusPT, err := parsedAnswer.GetPayloadTypeForCodec(sdp.Codec{Name: mime.MimeTypeCodecOpus.String()})
 			if err != nil {
 				p.pubLogger.Infow("failed to get opus payload type", "error", err, "trackID", ti.Sid)
 				continue
@@ -379,11 +379,15 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 
 			for i, attr := range m.Attributes {
 				if strings.HasPrefix(attr.String(), fmt.Sprintf("fmtp:%d", opusPT)) {
-					if !ti.DisableDtx {
+					if !slices.Contains(ti.AudioFeatures, livekit.AudioTrackFeature_TF_NO_DTX) {
 						attr.Value += ";usedtx=1"
+					} else {
+						attr.Value = strings.ReplaceAll(attr.Value, ";usedtx=1", "")
 					}
 					if slices.Contains(ti.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO) {
 						attr.Value += ";stereo=1;maxaveragebitrate=510000"
+					} else {
+						attr.Value = strings.ReplaceAll(attr.Value, ";stereo=1", "")
 					}
 					m.Attributes[i] = attr
 				}
@@ -394,7 +398,7 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 		}
 	}
 
-	bytes, err := parsed.Marshal()
+	bytes, err := parsedAnswer.Marshal()
 	if err != nil {
 		p.pubLogger.Infow("failed to marshal answer", "error", err)
 		return answer
