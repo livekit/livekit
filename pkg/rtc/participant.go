@@ -1558,19 +1558,18 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		var tmClosed atomic.Bool
 		var mcClosed atomic.Bool
 		var mrClosed atomic.Bool
-		go func() { // CLOSE-DEBUG-CLEANUP
-			time.AfterFunc(time.Minute, func() {
-				if !smClosed.Load() || !tmClosed.Load() || !mcClosed.Load() || !mrClosed.Load() {
-					p.params.Logger.Infow(
-						"participant close timeout",
-						"smClosed", smClosed.Load(),
-						"tmClosed", tmClosed.Load(),
-						"mcClosed", mcClosed.Load(),
-						"mrClosed", mrClosed.Load(),
-					)
-				}
-			})
-		}()
+		time.AfterFunc(time.Minute, func() { // CLOSE-DEBUG-CLEANUP
+			if !smClosed.Load() || !tmClosed.Load() || !mcClosed.Load() || !mrClosed.Load() {
+				p.params.Logger.Infow(
+					"participant close timeout",
+					"smClosed", smClosed.Load(),
+					"tmClosed", tmClosed.Load(),
+					"mcClosed", mcClosed.Load(),
+					"mrClosed", mrClosed.Load(),
+				)
+			}
+		})
+
 		p.SubscriptionManager.Close(isExpectedToResume)
 		smClosed.Store(true)
 		p.TransportManager.Close()

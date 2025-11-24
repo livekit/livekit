@@ -1455,36 +1455,34 @@ func (t *PCTransport) Close() {
 	var lossyDataChannelClosed atomic.Bool
 	var unlabeledDataChannelClosed atomic.Bool
 	var peerConnectionClosed atomic.Bool
-	go func() { // CLOSE-DEBUG-CLEANUP
-		time.AfterFunc(time.Minute, func() {
-			if !eventsQueueDone.Load() || !streamAllocatorStopped.Load() || !pacerStopped.Load() || !reliableDataChannelClosed.Load() || !lossyDataChannelClosed.Load() || !unlabeledDataChannelClosed.Load() || !peerConnectionClosed.Load() {
-				t.lock.Lock()
-				iceStartedAt := t.iceStartedAt
-				iceConnectedAt := t.iceConnectedAt
-				iceStats := t.mayFailedICEStats
-				t.lock.Unlock()
+	time.AfterFunc(time.Minute, func() { // CLOSE-DEBUG-CLEANUP
+		if !eventsQueueDone.Load() || !streamAllocatorStopped.Load() || !pacerStopped.Load() || !reliableDataChannelClosed.Load() || !lossyDataChannelClosed.Load() || !unlabeledDataChannelClosed.Load() || !peerConnectionClosed.Load() {
+			t.lock.Lock()
+			iceStartedAt := t.iceStartedAt
+			iceConnectedAt := t.iceConnectedAt
+			iceStats := t.mayFailedICEStats
+			t.lock.Unlock()
 
-				t.params.Logger.Infow(
-					"transport maanager close timeout",
-					"eventsQueueDone", eventsQueueDone.Load(),
-					"streamAllocatorStopped", streamAllocatorStopped.Load(),
-					"pacerStopped", pacerStopped.Load(),
-					"reliableDataChannelClosed", reliableDataChannelClosed.Load(),
-					"lossyDataChannelClosed", lossyDataChannelClosed.Load(),
-					"unlabeledDataChannelClosed", unlabeledDataChannelClosed.Load(),
-					"peerConnectionClosed", peerConnectionClosed.Load(),
-					"iceStartedAt", iceStartedAt,
-					"iceConnectedAt", iceConnectedAt,
-					"iceGatheringState", t.iceGatheringState.Load().(webrtc.ICEGatheringState).String(),
-					"iceConnectionState", t.iceConnectionState.Load().(webrtc.ICEConnectionState).String(),
-					"peerConnectionState", t.peerConnectionState.Load().(webrtc.PeerConnectionState).String(),
-					"iceStats", iceCandidatePairStatsEncoder{iceStats},
-					"iceConnectionInfo", t.GetICEConnectionInfo(),
-					"connectionType", t.connectionDetails.GetConnectionType(),
-				)
-			}
-		})
-	}()
+			t.params.Logger.Infow(
+				"transport maanager close timeout",
+				"eventsQueueDone", eventsQueueDone.Load(),
+				"streamAllocatorStopped", streamAllocatorStopped.Load(),
+				"pacerStopped", pacerStopped.Load(),
+				"reliableDataChannelClosed", reliableDataChannelClosed.Load(),
+				"lossyDataChannelClosed", lossyDataChannelClosed.Load(),
+				"unlabeledDataChannelClosed", unlabeledDataChannelClosed.Load(),
+				"peerConnectionClosed", peerConnectionClosed.Load(),
+				"iceStartedAt", iceStartedAt,
+				"iceConnectedAt", iceConnectedAt,
+				"iceGatheringState", t.iceGatheringState.Load().(webrtc.ICEGatheringState).String(),
+				"iceConnectionState", t.iceConnectionState.Load().(webrtc.ICEConnectionState).String(),
+				"peerConnectionState", t.peerConnectionState.Load().(webrtc.PeerConnectionState).String(),
+				"iceStats", iceCandidatePairStatsEncoder{iceStats},
+				"iceConnectionInfo", t.GetICEConnectionInfo(),
+				"connectionType", t.connectionDetails.GetConnectionType(),
+			)
+		}
+	})
 
 	<-t.eventsQueue.Stop()
 	eventsQueueDone.Store(true)

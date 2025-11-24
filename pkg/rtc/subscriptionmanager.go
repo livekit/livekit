@@ -106,18 +106,16 @@ func (m *SubscriptionManager) Close(isExpectedToResume bool) {
 
 	var done atomic.Bool
 	var downTracksClosed atomic.Bool
-	go func() { // CLOSE-DEBUG-CLEANUP
-		time.AfterFunc(time.Minute, func() {
-			if !done.Load() || !downTracksClosed.Load() {
-				m.params.Logger.Infow(
-					"subscription maanager close timeout",
-					"done", done.Load(),
-					"downTracksClosed", downTracksClosed.Load(),
-					"numSubscribedTracks", len(m.GetSubscribedTracks()),
-				)
-			}
-		})
-	}()
+	time.AfterFunc(time.Minute, func() { // CLOSE-DEBUG-CLEANUP
+		if !done.Load() || !downTracksClosed.Load() {
+			m.params.Logger.Infow(
+				"subscription maanager close timeout",
+				"done", done.Load(),
+				"downTracksClosed", downTracksClosed.Load(),
+				"numSubscribedTracks", len(m.GetSubscribedTracks()),
+			)
+		}
+	})
 
 	<-m.doneCh
 	done.Store(true)

@@ -201,17 +201,15 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 func (t *TransportManager) Close() {
 	var publisherClosed atomic.Bool
 	var subscriberClosed atomic.Bool
-	go func() { // CLOSE-DEBUG-CLEANUP
-		time.AfterFunc(time.Minute, func() {
-			if !publisherClosed.Load() || !subscriberClosed.Load() {
-				t.params.Logger.Infow(
-					"transport maanager close timeout",
-					"publisherClosed", publisherClosed.Load(),
-					"subscriberClosed", subscriberClosed.Load(),
-				)
-			}
-		})
-	}()
+	time.AfterFunc(time.Minute, func() { // CLOSE-DEBUG-CLEANUP
+		if !publisherClosed.Load() || !subscriberClosed.Load() {
+			t.params.Logger.Infow(
+				"transport maanager close timeout",
+				"publisherClosed", publisherClosed.Load(),
+				"subscriberClosed", subscriberClosed.Load(),
+			)
+		}
+	})
 
 	if t.publisher != nil {
 		t.publisher.Close()
