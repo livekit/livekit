@@ -519,8 +519,8 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		connectionDetails:        types.NewICEConnectionDetails(params.Transport, params.Logger),
 		lastNegotiate:            time.Now(),
 	}
-	t.iceGatheringState.Store(webrtc.ICEConnectionStateUnknown)
-	t.iceConnectionState.Store(webrtc.ICEGatheringStateUnknown)
+	t.iceGatheringState.Store(webrtc.ICEGatheringStateUnknown)
+	t.iceConnectionState.Store(webrtc.ICEConnectionStateUnknown)
 	t.peerConnectionState.Store(webrtc.PeerConnectionStateUnknown)
 	t.localOfferId.Store(uint32(rand.Intn(1<<8) + 1))
 
