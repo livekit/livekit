@@ -223,16 +223,14 @@ func (t *TransportManager) Close() {
 
 func (t *TransportManager) SubscriberClose() {
 	var subscriberClosed atomic.Bool
-	go func() { // CLOSE-DEBUG-CLEANUP
-		time.AfterFunc(time.Minute, func() {
-			if !subscriberClosed.Load() {
-				t.params.Logger.Infow(
-					"transport maanager close timeout",
-					"subscriberClosed", subscriberClosed.Load(),
-				)
-			}
-		})
-	}()
+	time.AfterFunc(time.Minute, func() { // CLOSE-DEBUG-CLEANUP
+		if !subscriberClosed.Load() {
+			t.params.Logger.Infow(
+				"transport maanager subscriber close timeout",
+				"subscriberClosed", subscriberClosed.Load(),
+			)
+		}
+	})
 	t.subscriber.Close()
 	subscriberClosed.Store(true)
 }

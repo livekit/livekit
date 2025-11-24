@@ -1464,7 +1464,7 @@ func (t *PCTransport) Close() {
 			t.lock.Unlock()
 
 			t.params.Logger.Infow(
-				"transport maanager close timeout",
+				"transport close timeout",
 				"eventsQueueDone", eventsQueueDone.Load(),
 				"streamAllocatorStopped", streamAllocatorStopped.Load(),
 				"pacerStopped", pacerStopped.Load(),
