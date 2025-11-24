@@ -141,7 +141,7 @@ func (s signal) String() string {
 type event struct {
 	*PCTransport
 	signal signal
-	data   interface{}
+	data   any
 }
 
 func (e event) String() string {
@@ -280,6 +280,11 @@ type PCTransport struct {
 	signalStateCheckTimer     *time.Timer
 	currentOfferIceCredential string // ice user:pwd, for publish side ice restart checking
 	pendingRestartIceOffer    *webrtc.SessionDescription
+
+	// CLOSE-DEBUG-CLEANUP
+	iceGatheringState   atomic.Value // webrtc.ICEGatheringState
+	iceConnectionState  atomic.Value // webrtc.ICEConnectionState
+	peerConnectionState atomic.Value // webrtc.PeerConnectionState
 }
 
 type TransportParams struct {
@@ -514,6 +519,9 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		connectionDetails:        types.NewICEConnectionDetails(params.Transport, params.Logger),
 		lastNegotiate:            time.Now(),
 	}
+	t.iceGatheringState.Store(webrtc.ICEGatheringStateUnknown)
+	t.iceConnectionState.Store(webrtc.ICEConnectionStateUnknown)
+	t.peerConnectionState.Store(webrtc.PeerConnectionStateUnknown)
 	t.localOfferId.Store(uint32(rand.Intn(1<<8) + 1))
 
 	bwe, err := t.createPeerConnection()
@@ -768,6 +776,7 @@ func (t *PCTransport) setConnectedAt(at time.Time) bool {
 }
 
 func (t *PCTransport) onICEGatheringStateChange(state webrtc.ICEGatheringState) {
+	t.iceGatheringState.Store(state)
 	t.params.Logger.Debugw("ice gathering state change", "state", state.String())
 	if state != webrtc.ICEGatheringStateComplete {
 		return
@@ -799,6 +808,7 @@ func (t *PCTransport) handleConnectionFailed(forceShortConn bool) {
 }
 
 func (t *PCTransport) onICEConnectionStateChange(state webrtc.ICEConnectionState) {
+	t.iceConnectionState.Store(state)
 	t.params.Logger.Debugw("ice connection state change", "state", state.String())
 	switch state {
 	case webrtc.ICEConnectionStateConnected:
@@ -810,6 +820,7 @@ func (t *PCTransport) onICEConnectionStateChange(state webrtc.ICEConnectionState
 }
 
 func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionState) {
+	t.peerConnectionState.Store(state)
 	t.params.Logger.Debugw("peer connection state change", "state", state.String())
 	switch state {
 	case webrtc.PeerConnectionStateConnected:
@@ -1437,15 +1448,54 @@ func (t *PCTransport) Close() {
 		return
 	}
 
+	var eventsQueueDone atomic.Bool
+	var streamAllocatorStopped atomic.Bool
+	var pacerStopped atomic.Bool
+	var reliableDataChannelClosed atomic.Bool
+	var lossyDataChannelClosed atomic.Bool
+	var unlabeledDataChannelClosed atomic.Bool
+	var peerConnectionClosed atomic.Bool
+	time.AfterFunc(time.Minute, func() { // CLOSE-DEBUG-CLEANUP
+		if !eventsQueueDone.Load() || !streamAllocatorStopped.Load() || !pacerStopped.Load() || !reliableDataChannelClosed.Load() || !lossyDataChannelClosed.Load() || !unlabeledDataChannelClosed.Load() || !peerConnectionClosed.Load() {
+			t.lock.Lock()
+			iceStartedAt := t.iceStartedAt
+			iceConnectedAt := t.iceConnectedAt
+			iceStats := t.mayFailedICEStats
+			t.lock.Unlock()
+
+			t.params.Logger.Infow(
+				"transport close timeout",
+				"eventsQueueDone", eventsQueueDone.Load(),
+				"streamAllocatorStopped", streamAllocatorStopped.Load(),
+				"pacerStopped", pacerStopped.Load(),
+				"reliableDataChannelClosed", reliableDataChannelClosed.Load(),
+				"lossyDataChannelClosed", lossyDataChannelClosed.Load(),
+				"unlabeledDataChannelClosed", unlabeledDataChannelClosed.Load(),
+				"peerConnectionClosed", peerConnectionClosed.Load(),
+				"iceStartedAt", iceStartedAt,
+				"iceConnectedAt", iceConnectedAt,
+				"iceGatheringState", t.iceGatheringState.Load().(webrtc.ICEGatheringState).String(),
+				"iceConnectionState", t.iceConnectionState.Load().(webrtc.ICEConnectionState).String(),
+				"peerConnectionState", t.peerConnectionState.Load().(webrtc.PeerConnectionState).String(),
+				"iceStats", iceCandidatePairStatsEncoder{iceStats},
+				"iceConnectionInfo", t.GetICEConnectionInfo(),
+				"connectionType", t.connectionDetails.GetConnectionType(),
+			)
+		}
+	})
+
 	<-t.eventsQueue.Stop()
+	eventsQueueDone.Store(true)
 	t.clearSignalStateCheckTimer()
 
 	if t.streamAllocator != nil {
 		t.streamAllocator.Stop()
 	}
+	streamAllocatorStopped.Store(true)
 	if t.pacer != nil {
 		t.pacer.Stop()
 	}
+	pacerStopped.Store(true)
 
 	t.clearConnTimer()
 
@@ -1459,19 +1509,23 @@ func (t *PCTransport) Close() {
 		t.reliableDC.Close()
 		t.reliableDC = nil
 	}
+	reliableDataChannelClosed.Store(true)
 
 	if t.lossyDC != nil {
 		t.lossyDC.Close()
 		t.lossyDC = nil
 	}
+	lossyDataChannelClosed.Store(true)
 
 	for _, dc := range t.unlabeledDataChannels {
 		dc.Close()
 	}
 	t.unlabeledDataChannels = nil
+	unlabeledDataChannelClosed.Store(true)
 	t.lock.Unlock()
 
 	_ = t.pc.Close()
+	peerConnectionClosed.Store(true)
 
 	t.outputAndClearICEStats()
 }
@@ -2873,7 +2927,7 @@ func (t *PCTransport) handleICERestart(_ event) error {
 }
 
 func (t *PCTransport) onNegotiationFailed(warning bool, reason string) {
-	logFields := []interface{}{
+	logFields := []any{
 		"reason", reason,
 		"localCurrent", t.pc.CurrentLocalDescription(),
 		"localPending", t.pc.PendingLocalDescription(),
