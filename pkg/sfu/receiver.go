@@ -37,6 +37,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/streamtracker"
+	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
 )
 
 var (
@@ -197,7 +198,7 @@ type WebRTCReceiver struct {
 
 	streamTrackerManager *StreamTrackerManager
 
-	downTrackSpreader *DownTrackSpreader
+	downTrackSpreader *sfuutils.DownTrackSpreader[TrackSender]
 
 	connectionStats *connectionquality.ConnectionStats
 
@@ -274,7 +275,7 @@ func NewWebRTCReceiver(
 	}
 	w.trackInfo.Store(utils.CloneProto(trackInfo))
 
-	w.downTrackSpreader = NewDownTrackSpreader(DownTrackSpreaderParams{
+	w.downTrackSpreader = sfuutils.NewDownTrackSpreader[TrackSender](sfuutils.DownTrackSpreaderParams{
 		Threshold: w.lbThreshold,
 		Logger:    logger,
 	})
@@ -921,7 +922,7 @@ func (w *WebRTCReceiver) GetPrimaryReceiverForRed() TrackReceiver {
 
 	rt := w.redTransformer.Load()
 	if rt == nil {
-		pr := NewRedPrimaryReceiver(w, DownTrackSpreaderParams{
+		pr := NewRedPrimaryReceiver(w, sfuutils.DownTrackSpreaderParams{
 			Threshold: w.lbThreshold,
 			Logger:    w.logger,
 		})
@@ -945,7 +946,7 @@ func (w *WebRTCReceiver) GetRedReceiver() TrackReceiver {
 
 	rt := w.redTransformer.Load()
 	if rt == nil {
-		pr := NewRedReceiver(w, DownTrackSpreaderParams{
+		pr := NewRedReceiver(w, sfuutils.DownTrackSpreaderParams{
 			Threshold: w.lbThreshold,
 			Logger:    w.logger,
 		})

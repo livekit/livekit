@@ -59,7 +59,7 @@ func NewMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 		}
 	})
 	updateTrack := func() {
-		var f func(participant types.LocalParticipant, track types.MediaTrack)
+		var f func(participant types.Participant, track types.MediaTrack)
 		if p.OnTrackUpdatedCallCount() > 0 {
 			f = p.OnTrackUpdatedArgsForCall(p.OnTrackUpdatedCallCount() - 1)
 		}
