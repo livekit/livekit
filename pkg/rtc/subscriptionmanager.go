@@ -120,6 +120,8 @@ func (m *SubscriptionManager) Close(isExpectedToResume bool) {
 	<-m.doneCh
 	done.Store(true)
 
+	prometheus.RecordTrackSubscribeCancels(int32(m.getNumCancellations()))
+
 	subTracks := m.GetSubscribedTracks()
 	downTracksToClose := make([]*sfu.DownTrack, 0, len(subTracks))
 	for _, st := range subTracks {
@@ -891,6 +893,19 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *trackSubscription, i
 	}
 }
 
+func (m *SubscriptionManager) getNumCancellations() int {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
+	numCancellations := 0
+	for _, sub := range m.subscriptions {
+		if sub.isCanceled() {
+			numCancellations++
+		}
+	}
+	return numCancellations
+}
+
 // --------------------------------------------------------------------------------------
 
 type trackSubscription struct {
@@ -1171,6 +1186,10 @@ func (s *trackSubscription) maybeRecordSuccess(ts telemetry.TelemetryService, pI
 		Sid:      string(subTrack.PublisherID()),
 	}
 	ts.TrackSubscribed(context.Background(), pID, mediaTrack.ToProto(), pi, !eventSent)
+}
+
+func (s *trackSubscription) isCanceled() bool {
+	return !s.eventSent.Load() && s.isDesired()
 }
 
 func (s *trackSubscription) durationSinceStart() time.Duration {

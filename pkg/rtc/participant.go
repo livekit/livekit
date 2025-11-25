@@ -1525,6 +1525,12 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	}
 
 	p.pendingTracksLock.Lock()
+	for _, pti := range p.pendingTracks {
+		if len(pti.trackInfos) == 0 {
+			continue
+		}
+		prometheus.RecordTrackPublishCancels(pti.trackInfos[0].Type.String(), int32(len(pti.trackInfos)))
+	}
 	p.pendingTracks = make(map[string]*pendingTrackInfo)
 	p.pendingPublishingTracks = make(map[livekit.TrackID]*pendingTrackInfo)
 	p.pendingTracksLock.Unlock()
@@ -3006,7 +3012,8 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 
 			mimeType := codec.Codec
 			videoLayerMode := codec.VideoLayerMode
-			if req.Type == livekit.TrackType_VIDEO {
+			switch req.Type {
+			case livekit.TrackType_VIDEO:
 				if !mime.IsMimeTypeStringVideo(mimeType) {
 					mimeType = mime.MimeTypePrefixVideo + mimeType
 				}
@@ -3032,7 +3039,8 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 						}
 					}
 				}
-			} else if req.Type == livekit.TrackType_AUDIO {
+
+			case livekit.TrackType_AUDIO:
 				if !mime.IsMimeTypeStringAudio(mimeType) {
 					mimeType = mime.MimeTypePrefixAudio + mimeType
 				}
