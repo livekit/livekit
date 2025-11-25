@@ -2162,8 +2162,8 @@ func GetOtherParticipantInfo(
 	return pInfos
 }
 
-func connectionDetailsFields(infos []*types.ICEConnectionInfo) []interface{} {
-	var fields []interface{}
+func connectionDetailsFields(infos []*types.ICEConnectionInfo) []any {
+	var fields []any
 	connectionType := types.ICEConnectionTypeUnknown
 	for _, info := range infos {
 		candidates := make([]string, 0, len(info.Remote)+len(info.Local))

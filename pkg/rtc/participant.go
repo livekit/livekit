@@ -1586,11 +1586,31 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	// Close peer connections without blocking participant Close. If peer connections are gathering candidates
 	// Close will block.
 	go func() {
+		var smClosed atomic.Bool
+		var tmClosed atomic.Bool
+		var mcClosed atomic.Bool
+		var mrClosed atomic.Bool
+		time.AfterFunc(time.Minute, func() { // CLOSE-DEBUG-CLEANUP
+			if !smClosed.Load() || !tmClosed.Load() || !mcClosed.Load() || !mrClosed.Load() {
+				p.params.Logger.Infow(
+					"participant close timeout",
+					"smClosed", smClosed.Load(),
+					"tmClosed", tmClosed.Load(),
+					"mcClosed", mcClosed.Load(),
+					"mrClosed", mrClosed.Load(),
+				)
+			}
+		})
+
 		p.SubscriptionManager.Close(isExpectedToResume)
+		smClosed.Store(true)
 		p.TransportManager.Close()
+		tmClosed.Store(true)
 
 		p.metricsCollector.Stop()
+		mcClosed.Store(true)
 		p.metricsReporter.Stop()
+		mrClosed.Store(true)
 	}()
 
 	p.dataChannelStats.Stop()
