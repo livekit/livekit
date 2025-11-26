@@ -282,9 +282,10 @@ type PCTransport struct {
 	pendingRestartIceOffer    *webrtc.SessionDescription
 
 	// CLOSE-DEBUG-CLEANUP
-	iceGatheringState   atomic.Value // webrtc.ICEGatheringState
-	iceConnectionState  atomic.Value // webrtc.ICEConnectionState
-	peerConnectionState atomic.Value // webrtc.PeerConnectionState
+	iceGatheringState          atomic.Value // webrtc.ICEGatheringState
+	iceConnectionState         atomic.Value // webrtc.ICEConnectionState
+	iceConnectionStateChangeAt atomic.Time
+	peerConnectionState        atomic.Value // webrtc.PeerConnectionState
 }
 
 type TransportParams struct {
@@ -809,6 +810,7 @@ func (t *PCTransport) handleConnectionFailed(forceShortConn bool) {
 
 func (t *PCTransport) onICEConnectionStateChange(state webrtc.ICEConnectionState) {
 	t.iceConnectionState.Store(state)
+	t.iceConnectionStateChangeAt.Store(time.Now())
 	t.params.Logger.Debugw("ice connection state change", "state", state.String())
 	switch state {
 	case webrtc.ICEConnectionStateConnected:
@@ -1463,6 +1465,16 @@ func (t *PCTransport) Close() {
 			iceStats := t.mayFailedICEStats
 			t.lock.Unlock()
 
+			numActiveTransceivers := 0
+			numInactiveTransceivers := 0
+			for _, tr := range t.pc.GetTransceivers() {
+				if tr.Direction() == webrtc.RTPTransceiverDirectionInactive {
+					numInactiveTransceivers++
+				} else {
+					numActiveTransceivers++
+				}
+			}
+
 			t.params.Logger.Infow(
 				"transport close timeout",
 				"eventsQueueDone", eventsQueueDone.Load(),
@@ -1476,10 +1488,17 @@ func (t *PCTransport) Close() {
 				"iceConnectedAt", iceConnectedAt,
 				"iceGatheringState", t.iceGatheringState.Load().(webrtc.ICEGatheringState).String(),
 				"iceConnectionState", t.iceConnectionState.Load().(webrtc.ICEConnectionState).String(),
+				"icceConnectionStateChangedAt", t.iceConnectionStateChangeAt.Load(),
 				"peerConnectionState", t.peerConnectionState.Load().(webrtc.PeerConnectionState).String(),
+				"signalingState", t.pc.SignalingState().String(),
 				"iceStats", iceCandidatePairStatsEncoder{iceStats},
 				"iceConnectionInfo", t.GetICEConnectionInfo(),
 				"connectionType", t.connectionDetails.GetConnectionType(),
+				"sctpTransportState", t.pc.SCTP().State().String(),
+				"dltsTransportState", t.pc.SCTP().Transport().State().String(),
+				"iceTransportState", t.iceTransport.State().String(),
+				"numInactiveTransceivers", numInactiveTransceivers,
+				"numActiveTransceivers", numActiveTransceivers,
 			)
 		}
 	})
@@ -1524,7 +1543,9 @@ func (t *PCTransport) Close() {
 	unlabeledDataChannelClosed.Store(true)
 	t.lock.Unlock()
 
-	_ = t.pc.Close()
+	if err := t.pc.Close(); err != nil {
+		t.params.Logger.Warnw("unclean close of peer connection", err)
+	}
 	peerConnectionClosed.Store(true)
 
 	t.outputAndClearICEStats()
