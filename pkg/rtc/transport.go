@@ -192,10 +192,12 @@ type trackDescription struct {
 
 // PCTransport is a wrapper around PeerConnection, with some helper methods
 type PCTransport struct {
-	params       TransportParams
-	pc           *webrtc.PeerConnection
-	iceTransport *webrtc.ICETransport
-	me           *webrtc.MediaEngine
+	params        TransportParams
+	pc            *webrtc.PeerConnection
+	sctpTransport *webrtc.SCTPTransport // CLOSE-DEBUG-CLEANUP
+	dtlsTransport *webrtc.DTLSTransport // CLOSE-DEBUG-CLEANUP
+	iceTransport  *webrtc.ICETransport
+	me            *webrtc.MediaEngine
 
 	lock sync.RWMutex
 
@@ -594,6 +596,8 @@ func (t *PCTransport) createPeerConnection() (cc.BandwidthEstimator, error) {
 	t.pc.OnDataChannel(t.onDataChannel)
 	t.pc.OnTrack(t.params.Handler.OnTrack)
 
+	t.sctpTransport = t.pc.SCTP()
+	t.dtlsTransport = t.sctpTransport.Transport()
 	t.iceTransport = t.pc.SCTP().Transport().ICETransport()
 	if t.iceTransport == nil {
 		return bwe, ErrNoICETransport
@@ -1465,16 +1469,6 @@ func (t *PCTransport) Close() {
 			iceStats := t.mayFailedICEStats
 			t.lock.Unlock()
 
-			numActiveTransceivers := 0
-			numInactiveTransceivers := 0
-			for _, tr := range t.pc.GetTransceivers() {
-				if tr.Direction() == webrtc.RTPTransceiverDirectionInactive {
-					numInactiveTransceivers++
-				} else {
-					numActiveTransceivers++
-				}
-			}
-
 			t.params.Logger.Infow(
 				"transport close timeout",
 				"eventsQueueDone", eventsQueueDone.Load(),
@@ -1490,16 +1484,49 @@ func (t *PCTransport) Close() {
 				"iceConnectionState", t.iceConnectionState.Load().(webrtc.ICEConnectionState).String(),
 				"icceConnectionStateChangedAt", t.iceConnectionStateChangeAt.Load(),
 				"peerConnectionState", t.peerConnectionState.Load().(webrtc.PeerConnectionState).String(),
-				"signalingState", t.pc.SignalingState().String(),
 				"iceStats", iceCandidatePairStatsEncoder{iceStats},
 				"iceConnectionInfo", t.GetICEConnectionInfo(),
 				"connectionType", t.connectionDetails.GetConnectionType(),
-				"sctpTransportState", t.pc.SCTP().State().String(),
-				"dltsTransportState", t.pc.SCTP().Transport().State().String(),
+			)
+
+			t.params.Logger.Infow(
+				"transport close timeout - signalling state",
+				"signalingState", t.pc.SignalingState().String(),
+			)
+
+			t.params.Logger.Infow(
+				"transport close timeout - iceTransport state",
 				"iceTransportState", t.iceTransport.State().String(),
+			)
+
+			if t.sctpTransport != nil {
+				t.params.Logger.Infow(
+					"transport close timeout - sctpTransport state",
+					"sctpTransportState", t.sctpTransport.State().String(),
+				)
+			}
+
+			numActiveTransceivers := 0
+			numInactiveTransceivers := 0
+			for _, tr := range t.pc.GetTransceivers() {
+				if tr.Direction() == webrtc.RTPTransceiverDirectionInactive {
+					numInactiveTransceivers++
+				} else {
+					numActiveTransceivers++
+				}
+			}
+			t.params.Logger.Infow(
+				"transport close timeout - transceivers state",
 				"numInactiveTransceivers", numInactiveTransceivers,
 				"numActiveTransceivers", numActiveTransceivers,
 			)
+
+			if t.dtlsTransport != nil {
+				t.params.Logger.Infow(
+					"transport close timeout - dtlsTransport state",
+					"dltsTransportState", t.dtlsTransport.State().String(),
+				)
+			}
 		}
 	})
 
