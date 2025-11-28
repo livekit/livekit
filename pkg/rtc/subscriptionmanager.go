@@ -104,21 +104,7 @@ func (m *SubscriptionManager) Close(isExpectedToResume bool) {
 	close(m.closeCh)
 	m.lock.Unlock()
 
-	var done atomic.Bool
-	var downTracksClosed atomic.Bool
-	time.AfterFunc(time.Minute, func() { // CLOSE-DEBUG-CLEANUP
-		if !done.Load() || !downTracksClosed.Load() {
-			m.params.Logger.Infow(
-				"subscription maanager close timeout",
-				"done", done.Load(),
-				"downTracksClosed", downTracksClosed.Load(),
-				"numSubscribedTracks", len(m.GetSubscribedTracks()),
-			)
-		}
-	})
-
 	<-m.doneCh
-	done.Store(true)
 
 	prometheus.RecordTrackSubscribeCancels(int32(m.getNumCancellations()))
 
@@ -143,7 +129,6 @@ func (m *SubscriptionManager) Close(isExpectedToResume bool) {
 			go dt.CloseWithFlush(true)
 		}
 	}
-	downTracksClosed.Store(true)
 }
 
 func (m *SubscriptionManager) isClosed() bool {
