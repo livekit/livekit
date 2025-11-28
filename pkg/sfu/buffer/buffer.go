@@ -78,7 +78,7 @@ type ExtPacket struct {
 	ExtSequenceNumber    uint64
 	ExtTimestamp         uint64
 	Packet               *rtp.Packet
-	Payload              interface{}
+	Payload              any
 	KeyFrame             bool
 	RawPacket            []byte
 	DependencyDescriptor *ExtDependencyDescriptor
@@ -97,7 +97,7 @@ type VideoSize struct {
 type Buffer struct {
 	sync.RWMutex
 	readCond        *sync.Cond
-	bucket          *bucket.Bucket[uint64]
+	bucket          *bucket.Bucket[uint64, uint16]
 	nacker          *nack.NackQueue
 	maxVideoPkts    int
 	maxAudioPkts    int
@@ -296,11 +296,11 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	switch {
 	case mime.IsMimeTypeAudio(b.mime):
 		b.codecType = webrtc.RTPCodecTypeAudio
-		b.bucket = bucket.NewBucket[uint64](InitPacketBufferSizeAudio)
+		b.bucket = bucket.NewBucket[uint64, uint16](InitPacketBufferSizeAudio, bucket.RTPMaxPktSize, bucket.RTPSeqNumOffset)
 
 	case mime.IsMimeTypeVideo(b.mime):
 		b.codecType = webrtc.RTPCodecTypeVideo
-		b.bucket = bucket.NewBucket[uint64](InitPacketBufferSizeVideo)
+		b.bucket = bucket.NewBucket[uint64, uint16](InitPacketBufferSizeVideo, bucket.RTPMaxPktSize, bucket.RTPSeqNumOffset)
 		if b.frameRateCalculator[0] == nil {
 			b.createFrameRateCalculator()
 		}
@@ -487,7 +487,7 @@ func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime int64) {
 	}
 
 	if b.rtxPktBuf == nil {
-		b.rtxPktBuf = make([]byte, bucket.MaxPktSize)
+		b.rtxPktBuf = make([]byte, bucket.RTPMaxPktSize)
 	}
 
 	if len(rtxPkt.Payload) < 2 {

@@ -24,6 +24,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/mediatransportutil"
+	"github.com/livekit/mediatransportutil/pkg/latency"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	protoutils "github.com/livekit/protocol/utils"
@@ -81,7 +82,7 @@ type RTPStatsReceiver struct {
 
 	history *protoutils.Bitmap[uint64]
 
-	propagationDelayEstimator *utils.OWDEstimator
+	propagationDelayEstimator *latency.OWDEstimator
 
 	clockSkewCount              int
 	clockSkewMediaPathCount     int
@@ -98,7 +99,7 @@ func NewRTPStatsReceiver(params RTPStatsParams) *RTPStatsReceiver {
 		tsRolloverThreshold:       (1 << 31) * 1e9 / int64(params.ClockRate),
 		timestamp:                 utils.NewWrapAround[uint32, uint64](utils.WrapAroundParams{IsRestartAllowed: false}),
 		history:                   protoutils.NewBitmap[uint64](cHistorySize),
-		propagationDelayEstimator: utils.NewOWDEstimator(utils.OWDEstimatorParamsDefault),
+		propagationDelayEstimator: latency.NewOWDEstimator(latency.OWDEstimatorParamsDefault),
 	}
 }
 

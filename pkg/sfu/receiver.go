@@ -785,7 +785,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 		return
 	}
 
-	pktBuf := make([]byte, bucket.MaxPktSize)
+	pktBuf := make([]byte, bucket.RTPMaxPktSize)
 	w.logger.Debugw("starting forwarding", "layer", layer)
 	for {
 		pkt, err := buff.ReadExtended(pktBuf)
