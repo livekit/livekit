@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/sfu/utils"
+	"github.com/livekit/mediatransportutil/pkg/latency"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/mono"
@@ -49,7 +49,7 @@ type MetricTimestamperParams struct {
 type MetricTimestamper struct {
 	params                          MetricTimestamperParams
 	lock                            sync.Mutex
-	owdEstimator                    *utils.OWDEstimator
+	owdEstimator                    *latency.OWDEstimator
 	lastOWDEstimatorRunAt           time.Time
 	batchesSinceLastOWDEstimatorRun int
 }
@@ -57,7 +57,7 @@ type MetricTimestamper struct {
 func NewMetricTimestamper(params MetricTimestamperParams) *MetricTimestamper {
 	return &MetricTimestamper{
 		params:                params,
-		owdEstimator:          utils.NewOWDEstimator(utils.OWDEstimatorParamsDefault),
+		owdEstimator:          latency.NewOWDEstimator(latency.OWDEstimatorParamsDefault),
 		lastOWDEstimatorRunAt: time.Now().Add(-params.Config.OneWayDelayEstimatorMinInterval),
 	}
 }
