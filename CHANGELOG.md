@@ -2,7 +2,7 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.9.5] - 2025-12-01
+## [1.9.6] - 2025-12-01
 
 ### Added
 - Control latency of lossy data channel (#4088)
@@ -17,6 +17,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Changed
 - Switch forwarding latency log to Debugw (#4098)
 - Update mediatransportutil to get OWD estimator relocation (#4115)
+
+## [1.9.6] - 2025-12-01 - scratched
 
 ## [1.9.4] - 2025-11-15
 
