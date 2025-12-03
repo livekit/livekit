@@ -1120,7 +1120,14 @@ func (b *Buffer) mayGrowBucket() {
 				cap = b.bucket.Grow()
 			}
 			if cap > oldCap {
-				b.logger.Debugw("grow bucket", "from", oldCap, "to", cap, "pps", pps)
+				b.logger.Infow(
+					"grow bucket",
+					"from", oldCap,
+					"to", cap,
+					"pps", pps,
+					"deltaInfo", deltaInfo,
+					"rtpStats", b.rtpStats,
+				)
 			}
 		}
 	}
