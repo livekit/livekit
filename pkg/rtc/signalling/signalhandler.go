@@ -142,6 +142,15 @@ func (s *signalhandler) HandleMessage(msg proto.Message) error {
 		if err := s.params.Participant.UpdateVideoTrack(msg.UpdateVideoTrack); err != nil {
 			s.params.Logger.Warnw("could not update video track", err, "update", msg.UpdateVideoTrack)
 		}
+
+	case *livekit.SignalRequest_PublishDataTrackRequest:
+		s.params.Participant.HandlePublishDataTrackRequest(msg.PublishDataTrackRequest)
+
+	case *livekit.SignalRequest_UnpublishDataTrackRequest:
+		s.params.Participant.HandleUnpublishDataTrackRequest(msg.UnpublishDataTrackRequest)
+
+	case *livekit.SignalRequest_UpdateDataSubscription:
+		s.params.Participant.HandleUpdateDataSubscription(msg.UpdateDataSubscription)
 	}
 
 	return nil

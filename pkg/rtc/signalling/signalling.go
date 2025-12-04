@@ -236,3 +236,27 @@ func (s *signalling) SignalSubscribedAudioCodecUpdate(subscribedAudioCodecUpdate
 		},
 	}
 }
+
+func (u *signalling) SignalPublishDataTrackResponse(publishDataTrackResponse *livekit.PublishDataTrackResponse) proto.Message {
+	return &livekit.SignalResponse{
+		Message: &livekit.SignalResponse_PublishDataTrackResponse{
+			PublishDataTrackResponse: publishDataTrackResponse,
+		},
+	}
+}
+
+func (u *signalling) SignalUnpublishDataTrackResponse(unpublishDataTrackResponse *livekit.UnpublishDataTrackResponse) proto.Message {
+	return &livekit.SignalResponse{
+		Message: &livekit.SignalResponse_UnpublishDataTrackResponse{
+			UnpublishDataTrackResponse: unpublishDataTrackResponse,
+		},
+	}
+}
+
+func (u *signalling) SignalDataTrackSubscriberHandles(dataTrackSubscriberHandles *livekit.DataTrackSubscriberHandles) proto.Message {
+	return &livekit.SignalResponse{
+		Message: &livekit.SignalResponse_DataTrackSubscriberHandles{
+			DataTrackSubscriberHandles: dataTrackSubscriberHandles,
+		},
+	}
+}

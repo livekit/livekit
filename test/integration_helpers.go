@@ -154,6 +154,7 @@ func createSingleNodeServer(configUpdater func(*config.Config)) *service.Livekit
 		panic(fmt.Sprintf("could not create config: %v", err))
 	}
 	conf.Keys = map[string]string{testApiKey: testApiSecret}
+	conf.EnableDataTracks = true
 	if configUpdater != nil {
 		configUpdater(conf)
 	}
@@ -184,6 +185,7 @@ func createMultiNodeServer(nodeID string, port uint32) *service.LivekitServer {
 	conf.RTC.TCPPort = port + 2
 	conf.Redis.Address = "localhost:6379"
 	conf.Keys = map[string]string{testApiKey: testApiSecret}
+	conf.EnableDataTracks = true
 
 	currentNode, err := routing.NewLocalNode(conf)
 	if err != nil {
@@ -302,7 +304,7 @@ func listRoomToken() string {
 	return t
 }
 
-func stopWriters(writers ...*testclient.TrackWriter) {
+func stopWriters(writers ...testclient.TrackWriter) {
 	for _, w := range writers {
 		w.Stop()
 	}

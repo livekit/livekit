@@ -84,10 +84,10 @@ func TestTrackPublishing(t *testing.T) {
 		track.IDReturns("id")
 		published := false
 		updated := false
-		p.OnTrackUpdated(func(p types.LocalParticipant, track types.MediaTrack) {
+		p.OnTrackUpdated(func(p types.Participant, track types.MediaTrack) {
 			updated = true
 		})
-		p.OnTrackPublished(func(p types.LocalParticipant, track types.MediaTrack) {
+		p.OnTrackPublished(func(p types.Participant, track types.MediaTrack) {
 			published = true
 		})
 		p.UpTrackManager.AddPublishedTrack(track)

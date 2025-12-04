@@ -265,7 +265,7 @@ func TestFractionLostReport(t *testing.T) {
 		HeaderExtensions: nil,
 		Codecs:           []webrtc.RTPCodecParameters{opusCodec},
 	}, opusCodec.RTPCodecCapability, 0)
-	for i := 0; i < 15; i++ {
+	for i := range 15 {
 		pkt := rtp.Packet{
 			Header: rtp.Header{
 				Version:        2,
@@ -303,7 +303,7 @@ func TestFractionLostReport(t *testing.T) {
 		HeaderExtensions: nil,
 		Codecs:           []webrtc.RTPCodecParameters{opusCodec},
 	}, opusCodec.RTPCodecCapability, 0)
-	for i := 0; i < 15; i++ {
+	for i := range 15 {
 		pkt := rtp.Packet{
 			Header: rtp.Header{
 				Version:        2,

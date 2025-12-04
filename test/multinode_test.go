@@ -98,7 +98,6 @@ func TestConnectWithoutCreation(t *testing.T) {
 	}
 }
 
-// testing multiple scenarios  rooms
 func TestMultinodePublishingUponJoining(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
@@ -169,6 +168,7 @@ func TestMultinodeDataPublishing(t *testing.T) {
 
 	scenarioDataPublish(t)
 	scenarioDataUnlabeledPublish(t)
+	scenarioDataTracksPublishingUponJoining(t)
 }
 
 func TestMultiNodeJoinAfterClose(t *testing.T) {

@@ -130,7 +130,7 @@ func TestRoomJoin(t *testing.T) {
 	t.Run("participant state change is broadcasted to others", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numParticipants})
 		var changedParticipant types.Participant
-		rm.OnParticipantChanged(func(participant types.LocalParticipant) {
+		rm.OnParticipantChanged(func(participant types.Participant) {
 			changedParticipant = participant
 		})
 		participants := rm.GetParticipants()
