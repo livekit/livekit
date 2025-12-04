@@ -711,7 +711,10 @@ func (c *RTCClient) SubscribedDataTracks() map[livekit.ParticipantID]map[uint16]
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	tracks := make(map[livekit.ParticipantID]map[uint16]*DataTrackRemote, len(c.subscribedDataTracks))
-	maps.Copy(tracks, c.subscribedDataTracks)
+	for publisherID, sts := range c.subscribedDataTracks {
+		tracks[publisherID] = make(map[uint16]*DataTrackRemote)
+		maps.Copy(tracks[publisherID], sts)
+	}
 	return tracks
 }
 
