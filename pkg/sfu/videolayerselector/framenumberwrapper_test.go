@@ -21,7 +21,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/livekit/livekit-server/pkg/sfu/utils"
+	"github.com/livekit/mediatransportutil/pkg/utils"
 	"github.com/livekit/protocol/logger"
 )
 

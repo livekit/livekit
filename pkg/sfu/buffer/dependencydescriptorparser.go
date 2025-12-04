@@ -24,8 +24,7 @@ import (
 	"go.uber.org/atomic"
 
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
-	"github.com/livekit/livekit-server/pkg/sfu/utils"
-
+	"github.com/livekit/mediatransportutil/pkg/utils"
 	"github.com/livekit/protocol/logger"
 )
 
