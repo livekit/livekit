@@ -1438,13 +1438,11 @@ func (r *Room) RemoveParticipant(
 	// remove all published tracks
 	for _, t := range p.GetPublishedTracks() {
 		r.trackManager.RemoveTrack(t)
-		p.RemovePublishedTrack(t, false)
 	}
 
 	// remove all published data tracks
 	for _, t := range p.GetPublishedDataTracks() {
 		r.trackManager.RemoveDataTrack(t)
-		p.RemovePublishedDataTrack(t)
 	}
 
 	if agentJob != nil {
