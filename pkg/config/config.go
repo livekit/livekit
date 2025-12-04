@@ -83,6 +83,8 @@ type Config struct {
 	Metric metric.MetricConfig `yaml:"metric,omitempty"`
 
 	NodeStats NodeStatsConfig `yaml:"node_stats,omitempty"`
+
+	EnableDataTracks bool `yaml:"enable_data_tracks,omitempty"`
 }
 
 type RTCConfig struct {

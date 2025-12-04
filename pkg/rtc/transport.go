@@ -19,6 +19,7 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -312,6 +313,8 @@ type TransportParams struct {
 
 	// for development test
 	DatachannelMaxReceiverBufferSize int
+
+	EnableDataTracks bool
 }
 
 func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
@@ -406,12 +409,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 					return true
 				}
 				ipstr := ip.String()
-				for _, inc := range includeIps {
-					if inc == ipstr {
-						return true
-					}
-				}
-				return false
+				return slices.Contains(includeIps, ipstr)
 			})
 		}
 	}
@@ -667,13 +665,7 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 
 		// set failure timer for dtls handshake
 		iceDuration := at.Sub(t.iceStartedAt)
-		connTimeoutAfterICE := minConnectTimeoutAfterICE
-		if connTimeoutAfterICE < 3*iceDuration {
-			connTimeoutAfterICE = 3 * iceDuration
-		}
-		if connTimeoutAfterICE > maxConnectTimeoutAfterICE {
-			connTimeoutAfterICE = maxConnectTimeoutAfterICE
-		}
+		connTimeoutAfterICE := min(max(minConnectTimeoutAfterICE, 3*iceDuration), maxConnectTimeoutAfterICE)
 		t.params.Logger.Debugw("setting connection timer after ICE connected", "timeout", connTimeoutAfterICE, "iceDuration", iceDuration)
 		t.connectAfterICETimer = time.AfterFunc(connTimeoutAfterICE, func() {
 			state := t.pc.ConnectionState()
@@ -866,6 +858,7 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 			return
 		}
 
+		isHandled := true
 		t.lock.Lock()
 		switch {
 		case isUnlabeled:
@@ -875,10 +868,15 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 			)
 
 		case isDataTrack:
-			if t.dataTrackDC != nil {
-				t.dataTrackDC.Close()
+			if !t.params.EnableDataTracks {
+				t.params.Logger.Infow("data tracks not enabled")
+				isHandled = false
+			} else {
+				if t.dataTrackDC != nil {
+					t.dataTrackDC.Close()
+				}
+				t.dataTrackDC = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, 0, 0)
 			}
-			t.dataTrackDC = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, 0, 0)
 
 		case kind == livekit.DataPacket_RELIABLE:
 			if t.reliableDC != nil {
@@ -895,6 +893,11 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 			t.lossyDCOpened = true
 		}
 		t.lock.Unlock()
+
+		if !isHandled {
+			rawDC.Close()
+			return
+		}
 
 		go func() {
 			defer rawDC.Close()
@@ -1181,6 +1184,11 @@ func (t *PCTransport) getNumUnmatchedTransceivers() (uint32, uint32) {
 }
 
 func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelInit) error {
+	if label == DataTrackDataChannel && !t.params.EnableDataTracks {
+		t.params.Logger.Infow("data tracks not enabled")
+		return nil
+	}
+
 	dc, err := t.pc.CreateDataChannel(label, dci)
 	if err != nil {
 		return err
@@ -1322,6 +1330,12 @@ func (t *PCTransport) CreateReadableDataChannel(label string, dci *webrtc.DataCh
 }
 
 func (t *PCTransport) CreateDataChannelIfEmpty(dcLabel string, dci *webrtc.DataChannelInit) (label string, id uint16, existing bool, err error) {
+	if dcLabel == DataTrackDataChannel && !t.params.EnableDataTracks {
+		t.params.Logger.Infow("data tracks not enabled")
+		err = errors.New("data tracks not enabled")
+		return
+	}
+
 	t.lock.RLock()
 	var dcw *datachannel.DataChannelWriter[*webrtc.DataChannel]
 	switch dcLabel {

@@ -36,7 +36,7 @@ func (p *ParticipantImpl) getOnUpdateDataSubscriptions() func(types.LocalPartici
 }
 
 func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishDataTrackRequest) {
-	if !p.CanPublishData() {
+	if !p.CanPublishData() || !p.params.EnableDataTracks {
 		p.pubLogger.Warnw("no permission to publish data track", nil, "req", logger.Proto(req))
 		p.sendRequestResponse(&livekit.RequestResponse{
 			Reason:  livekit.RequestResponse_NOT_ALLOWED,

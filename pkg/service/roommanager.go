@@ -500,6 +500,7 @@ func (r *RoomManager) StartSession(
 		DatachannelLossyTargetLatency: r.config.RTC.DatachannelLossyTargetLatency,
 		FireOnTrackBySdp:              true,
 		UseSinglePeerConnection:       pi.UseSinglePeerConnection,
+		EnableDataTracks:              r.config.EnableDataTracks,
 	})
 	if err != nil {
 		return err

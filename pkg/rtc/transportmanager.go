@@ -97,6 +97,7 @@ type TransportManagerParams struct {
 	DataChannelStats              *telemetry.BytesTrackStats
 	UseOneShotSignallingMode      bool
 	FireOnTrackBySdp              bool
+	EnableDataTracks              bool
 }
 
 type TransportManager struct {
@@ -157,6 +158,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		DatachannelSlowThreshold:      params.DatachannelSlowThreshold,
 		DatachannelLossyTargetLatency: params.DatachannelLossyTargetLatency,
 		FireOnTrackBySdp:              params.FireOnTrackBySdp,
+		EnableDataTracks:              params.EnableDataTracks,
 	})
 	if err != nil {
 		return nil, err
@@ -182,6 +184,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 			Transport:                     livekit.SignalTarget_SUBSCRIBER,
 			Handler:                       TransportManagerTransportHandler{params.SubscriberHandler, t, lgr},
 			FireOnTrackBySdp:              params.FireOnTrackBySdp,
+			EnableDataTracks:              params.EnableDataTracks,
 		})
 		if err != nil {
 			return nil, err

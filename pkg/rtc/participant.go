@@ -218,6 +218,7 @@ type ParticipantParams struct {
 	Country                        string
 	PreferVideoSizeFromMedia       bool
 	UseSinglePeerConnection        bool
+	EnableDataTracks               bool
 }
 
 type ParticipantImpl struct {
@@ -2139,6 +2140,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		DataChannelStats:              p.dataChannelStats,
 		UseOneShotSignallingMode:      p.params.UseOneShotSignallingMode,
 		FireOnTrackBySdp:              p.params.FireOnTrackBySdp,
+		EnableDataTracks:              p.params.EnableDataTracks,
 	}
 	if p.params.SyncStreams && p.params.PlayoutDelay.GetEnabled() && p.params.ClientInfo.isFirefox() {
 		// we will disable playout delay for Firefox if the user is expecting

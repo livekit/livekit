@@ -285,6 +285,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		DatachannelMaxReceiverBufferSize: 1500,
 		DatachannelSlowThreshold:         1024 * 1024 * 1024,
 		FireOnTrackBySdp:                 true,
+		EnableDataTracks:                 true,
 	})
 	if err != nil {
 		return nil, err
@@ -367,6 +368,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 			DatachannelMaxReceiverBufferSize: 1500,
 			DatachannelSlowThreshold:         1024 * 1024 * 1024,
 			FireOnTrackBySdp:                 true,
+			EnableDataTracks:                 true,
 		})
 		if err != nil {
 			return nil, err
