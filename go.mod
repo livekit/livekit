@@ -22,7 +22,7 @@ require (
 	github.com/jellydator/ttlcache/v3 v3.4.0
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
-	github.com/livekit/mediatransportutil v0.0.0-20250922175932-f537f0880397
+	github.com/livekit/mediatransportutil v0.0.0-20251201055132-772504244e19
 	github.com/livekit/protocol v1.43.3-0.20251204035522-21f690495229
 	github.com/livekit/psrpc v0.7.1
 	github.com/mackerelio/go-osstat v0.2.6
@@ -145,10 +145,8 @@ require (
 	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/text v0.31.0 // indirect
 	golang.org/x/tools v0.39.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20251202230838-ff82c1b0f217 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20251124214823-79d6a2a48846 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20251124214823-79d6a2a48846 // indirect
 	google.golang.org/grpc v1.77.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
-
-replace golang.org/x/tools => golang.org/x/tools v0.37.0 // counterfeiter is broken

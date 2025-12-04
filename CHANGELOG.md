@@ -2,6 +2,24 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.6] - 2025-12-01
+
+### Added
+- Control latency of lossy data channel (#4088)
+- logger proto redaction. (#4090)
+- Record join/publish/subscribe cancellations (#4102, #4104)
+
+### Fixed
+- Fix "address" typo in transport logs (addddress → address) (#4097)
+- Clear stereo=1 if stereo is not enabled. (#4101)
+- Participant session close deadlock fixes (#4107, #4113, #4116)
+
+### Changed
+- Switch forwarding latency log to Debugw (#4098)
+- Update mediatransportutil to get OWD estimator relocation (#4115)
+
+## [1.9.5] - 2025-12-01 - scratched
+
 ## [1.9.4] - 2025-11-15
 
 ### Added

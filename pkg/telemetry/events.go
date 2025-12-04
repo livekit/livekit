@@ -221,7 +221,7 @@ func (t *telemetryService) TrackPublishRequested(
 	track *livekit.TrackInfo,
 ) {
 	t.enqueue(func() {
-		prometheus.AddPublishAttempt(track.Type.String())
+		prometheus.RecordTrackPublishAttempt(track.Type.String())
 		room := t.getRoomDetails(participantID)
 		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_PUBLISH_REQUESTED, room, participantID, track)
 		if ev.Participant != nil {
@@ -239,7 +239,7 @@ func (t *telemetryService) TrackPublished(
 ) {
 	t.enqueue(func() {
 		prometheus.AddPublishedTrack(track.Type.String())
-		prometheus.AddPublishSuccess(track.Type.String())
+		prometheus.RecordTrackPublishSuccess(track.Type.String())
 
 		room := t.getRoomDetails(participantID)
 		participant := &livekit.ParticipantInfo{

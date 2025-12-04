@@ -46,6 +46,7 @@ var (
 	participantSignalConnected atomic.Uint64
 	participantRTCConnected    atomic.Uint64
 	participantRTCInit         atomic.Uint64
+	participantRTCCanceled     atomic.Uint64
 	forwardLatency             atomic.Uint32
 	forwardJitter              atomic.Uint32
 
@@ -325,6 +326,13 @@ func IncrementParticipantRtcConnected(join uint32) {
 	if join > 0 {
 		participantRTCConnected.Add(uint64(join))
 		promParticipantJoin.WithLabelValues("rtc_connected").Add(float64(join))
+	}
+}
+
+func IncrementParticipantRtcCanceled(numCancels uint64) {
+	if numCancels > 0 {
+		participantRTCConnected.Add(numCancels)
+		promParticipantJoin.WithLabelValues("rtc_canceled").Add(float64(numCancels))
 	}
 }
 

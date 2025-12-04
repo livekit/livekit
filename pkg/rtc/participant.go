@@ -1558,6 +1558,12 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	}
 
 	p.pendingTracksLock.Lock()
+	for _, pti := range p.pendingTracks {
+		if len(pti.trackInfos) == 0 {
+			continue
+		}
+		prometheus.RecordTrackPublishCancels(pti.trackInfos[0].Type.String(), int32(len(pti.trackInfos)))
+	}
 	p.pendingTracks = make(map[string]*pendingTrackInfo)
 	p.pendingPublishingTracks = make(map[livekit.TrackID]*pendingTrackInfo)
 	p.pendingTracksLock.Unlock()
@@ -1587,31 +1593,11 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	// Close peer connections without blocking participant Close. If peer connections are gathering candidates
 	// Close will block.
 	go func() {
-		var smClosed atomic.Bool
-		var tmClosed atomic.Bool
-		var mcClosed atomic.Bool
-		var mrClosed atomic.Bool
-		time.AfterFunc(time.Minute, func() { // CLOSE-DEBUG-CLEANUP
-			if !smClosed.Load() || !tmClosed.Load() || !mcClosed.Load() || !mrClosed.Load() {
-				p.params.Logger.Infow(
-					"participant close timeout",
-					"smClosed", smClosed.Load(),
-					"tmClosed", tmClosed.Load(),
-					"mcClosed", mcClosed.Load(),
-					"mrClosed", mrClosed.Load(),
-				)
-			}
-		})
-
 		p.SubscriptionManager.Close(isExpectedToResume)
-		smClosed.Store(true)
 		p.TransportManager.Close()
-		tmClosed.Store(true)
 
 		p.metricsCollector.Stop()
-		mcClosed.Store(true)
 		p.metricsReporter.Stop()
-		mrClosed.Store(true)
 	}()
 
 	p.dataChannelStats.Stop()
@@ -3054,7 +3040,8 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 
 			mimeType := codec.Codec
 			videoLayerMode := codec.VideoLayerMode
-			if req.Type == livekit.TrackType_VIDEO {
+			switch req.Type {
+			case livekit.TrackType_VIDEO:
 				if !mime.IsMimeTypeStringVideo(mimeType) {
 					mimeType = mime.MimeTypePrefixVideo + mimeType
 				}
@@ -3080,7 +3067,8 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 						}
 					}
 				}
-			} else if req.Type == livekit.TrackType_AUDIO {
+
+			case livekit.TrackType_AUDIO:
 				if !mime.IsMimeTypeStringAudio(mimeType) {
 					mimeType = mime.MimeTypePrefixAudio + mimeType
 				}

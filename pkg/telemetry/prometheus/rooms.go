@@ -31,8 +31,10 @@ var (
 	trackSubscribedCurrent atomic.Int32
 	trackPublishAttempts   atomic.Int32
 	trackPublishSuccess    atomic.Int32
+	trackPublishCancels    atomic.Int32
 	trackSubscribeAttempts atomic.Int32
 	trackSubscribeSuccess  atomic.Int32
+	trackSubscribeCancels  atomic.Int32
 	// count the number of failures that are due to user error (permissions, track doesn't exist), so we could compute
 	// success rate by subtracting this from total attempts
 	trackSubscribeUserError atomic.Int32
@@ -162,14 +164,19 @@ func SubPublishedTrack(kind string) {
 	trackPublishedCurrent.Dec()
 }
 
-func AddPublishAttempt(kind string) {
+func RecordTrackPublishAttempt(kind string) {
 	trackPublishAttempts.Inc()
 	promTrackPublishCounter.WithLabelValues(kind, "attempt").Inc()
 }
 
-func AddPublishSuccess(kind string) {
+func RecordTrackPublishSuccess(kind string) {
 	trackPublishSuccess.Inc()
 	promTrackPublishCounter.WithLabelValues(kind, "success").Inc()
+}
+
+func RecordTrackPublishCancels(kind string, numCancels int32) {
+	trackPublishCancels.Add(numCancels)
+	promTrackPublishCounter.WithLabelValues(kind, "cancel").Add(float64(numCancels))
 }
 
 func RecordPublishTime(
@@ -246,7 +253,13 @@ func RecordTrackSubscribeFailure(err error, isUserError bool) {
 
 	if isUserError {
 		trackSubscribeUserError.Inc()
+		trackSubscribeCancels.Inc()
 	}
+}
+
+func RecordTrackSubscribeCancels(numCancels int32) {
+	trackSubscribeCancels.Add(numCancels)
+	promTrackSubscribeCounter.WithLabelValues("cancel", "").Add(float64(numCancels))
 }
 
 func RecordSessionStartTime(protocolVersion int, d time.Duration) {

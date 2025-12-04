@@ -111,21 +111,9 @@ func (m *SubscriptionManager) Close(isExpectedToResume bool) {
 	close(m.closeCh)
 	m.lock.Unlock()
 
-	var done atomic.Bool
-	var downTracksClosed atomic.Bool
-	time.AfterFunc(time.Minute, func() { // CLOSE-DEBUG-CLEANUP
-		if !done.Load() || !downTracksClosed.Load() {
-			m.params.Logger.Infow(
-				"subscription maanager close timeout",
-				"done", done.Load(),
-				"downTracksClosed", downTracksClosed.Load(),
-				"numSubscribedTracks", len(m.GetSubscribedTracks()),
-			)
-		}
-	})
-
 	<-m.doneCh
-	done.Store(true)
+
+	prometheus.RecordTrackSubscribeCancels(int32(m.getNumCancellations()))
 
 	subTracks := m.GetSubscribedTracks()
 	downTracksToClose := make([]*sfu.DownTrack, 0, len(subTracks))
@@ -166,7 +154,6 @@ func (m *SubscriptionManager) Close(isExpectedToResume bool) {
 	}
 	m.lock.Unlock()
 	m.notifyDataTrackSubscriberHandles()
-	downTracksClosed.Store(true)
 }
 
 func (m *SubscriptionManager) isClosed() bool {
@@ -216,6 +203,10 @@ func (m *SubscriptionManager) UnsubscribeFromTrack(trackID livekit.TrackID) {
 		return
 	}
 
+	if sub.isCanceled() {
+		prometheus.RecordTrackSubscribeCancels(1)
+	}
+
 	sub.logger.Debugw("unsubscribing from track")
 	m.queueReconcile(trackID)
 }
@@ -262,8 +253,12 @@ func (m *SubscriptionManager) ClearAllSubscriptions() {
 		// no synchronous data tracks
 	}
 
+	numCancellations := 0
 	m.lock.RLock()
 	for _, sub := range m.subscriptions {
+		if sub.isCanceled() {
+			numCancellations++
+		}
 		sub.setDesired(false)
 	}
 
@@ -271,6 +266,8 @@ func (m *SubscriptionManager) ClearAllSubscriptions() {
 		sub.setDesired(false)
 	}
 	m.lock.RUnlock()
+	prometheus.RecordTrackSubscribeCancels(int32(numCancellations))
+
 	m.ReconcileAll()
 }
 
@@ -903,6 +900,10 @@ func (m *SubscriptionManager) unsubscribeSynchronous(trackID livekit.TrackID) er
 
 	sub.logger.Debugw("executing unsubscribe synchronous")
 
+	if sub.isCanceled() {
+		prometheus.RecordTrackSubscribeCancels(1)
+	}
+
 	subTrack := sub.getSubscribedTrack()
 	if subTrack == nil {
 		// already unsubscribed
@@ -920,6 +921,9 @@ func (m *SubscriptionManager) handleSourceTrackRemoved(trackID livekit.TrackID) 
 	m.lock.Unlock()
 
 	if sub != nil {
+		if sub.isCanceled() {
+			prometheus.RecordTrackSubscribeCancels(1)
+		}
 		sub.handleSourceTrackRemoved()
 	}
 }
@@ -1154,6 +1158,19 @@ func (m *SubscriptionManager) unmarkSubscribedTo(publisherID livekit.Participant
 	if changedCB != nil && lastSubscription {
 		go changedCB(publisherID, false)
 	}
+}
+
+func (m *SubscriptionManager) getNumCancellations() int {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
+	numCancellations := 0
+	for _, sub := range m.subscriptions {
+		if sub.isCanceled() {
+			numCancellations++
+		}
+	}
+	return numCancellations
 }
 
 // --------------------------------------------------------------------------------------
@@ -1455,6 +1472,10 @@ func (s *mediaTrackSubscription) maybeRecordSuccess(ts telemetry.TelemetryServic
 		Sid:      string(subTrack.PublisherID()),
 	}
 	ts.TrackSubscribed(context.Background(), pID, mediaTrack.ToProto(), pi, !eventSent)
+}
+
+func (s *mediaTrackSubscription) isCanceled() bool {
+	return !s.eventSent.Load() && s.isDesired()
 }
 
 func (s *mediaTrackSubscription) needsSubscribe() bool {
