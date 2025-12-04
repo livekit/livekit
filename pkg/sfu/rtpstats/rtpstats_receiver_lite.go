@@ -17,7 +17,7 @@ package rtpstats
 import (
 	"go.uber.org/zap/zapcore"
 
-	"github.com/livekit/livekit-server/pkg/sfu/utils"
+	"github.com/livekit/mediatransportutil/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils/mono"
 )
