@@ -1846,9 +1846,9 @@ func (r *Room) createAgentDispatch(dispatch *livekit.AgentDispatch) (*agentDispa
 	}
 	ad := newAgentDispatch(dispatch)
 
-	r.lock.RLock()
+	r.lock.Lock()
 	r.agentDispatches[ad.Id] = ad
-	r.lock.RUnlock()
+	r.lock.Unlock()
 	if r.agentStore != nil {
 		err := r.agentStore.StoreAgentDispatch(context.Background(), ad.AgentDispatch)
 		if err != nil {
