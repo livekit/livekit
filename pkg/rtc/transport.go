@@ -117,6 +117,7 @@ const (
 	signalSendOffer
 	signalRemoteDescriptionReceived
 	signalICERestart
+	signalClose
 )
 
 func (s signal) String() string {
@@ -133,6 +134,8 @@ func (s signal) String() string {
 		return "REMOTE_DESCRIPTION_RECEIVED"
 	case signalICERestart:
 		return "ICE_RESTART"
+	case signalClose:
+		return "CLOSE"
 	default:
 		return fmt.Sprintf("%d", int(s))
 	}
@@ -508,9 +511,10 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		debouncedNegotiate: sfuutils.NewDebouncer(negotiationFrequency),
 		negotiationState:   transport.NegotiationStateNone,
 		eventsQueue: utils.NewTypedOpsQueue[event](utils.OpsQueueParams{
-			Name:    "transport",
-			MinSize: 64,
-			Logger:  params.Logger,
+			Name:        "transport",
+			MinSize:     64,
+			Logger:      params.Logger,
+			FlushOnStop: true,
 		}),
 		previousTrackDescription: make(map[string]*trackDescription),
 		canReuseTransceiver:      true,
@@ -1493,51 +1497,12 @@ func (t *PCTransport) Close() {
 		return
 	}
 
+	t.postEvent(event{
+		signal: signalClose,
+	})
+
 	<-t.eventsQueue.Stop()
-	t.clearSignalStateCheckTimer()
-
-	if t.streamAllocator != nil {
-		t.streamAllocator.Stop()
-	}
-
-	if t.pacer != nil {
-		t.pacer.Stop()
-	}
-
-	t.clearConnTimer()
-
-	t.lock.Lock()
-	if t.mayFailedICEStatsTimer != nil {
-		t.mayFailedICEStatsTimer.Stop()
-		t.mayFailedICEStatsTimer = nil
-	}
-
-	if t.reliableDC != nil {
-		t.reliableDC.Close()
-		t.reliableDC = nil
-	}
-
-	if t.lossyDC != nil {
-		t.lossyDC.Close()
-		t.lossyDC = nil
-	}
-
-	if t.dataTrackDC != nil {
-		t.dataTrackDC.Close()
-		t.dataTrackDC = nil
-	}
-
-	for _, dc := range t.unlabeledDataChannels {
-		dc.Close()
-	}
-	t.unlabeledDataChannels = nil
-	t.lock.Unlock()
-
-	if err := t.pc.Close(); err != nil {
-		t.params.Logger.Warnw("unclean close of peer connection", err)
-	}
-
-	t.outputAndClearICEStats()
+	t.params.Logger.Debugw("transport closed")
 }
 
 func (t *PCTransport) clearConnTimer() {
@@ -2247,6 +2212,8 @@ func (t *PCTransport) postEvent(e event) {
 			err = e.handleRemoteDescriptionReceived(e)
 		case signalICERestart:
 			err = e.handleICERestart(e)
+		case signalClose:
+			_ = e.handleClose(e)
 		}
 		if err != nil {
 			if !e.isClosed.Load() {
@@ -2935,6 +2902,54 @@ func (t *PCTransport) doICERestart() error {
 
 func (t *PCTransport) handleICERestart(_ event) error {
 	return t.doICERestart()
+}
+
+func (t *PCTransport) handleClose(_ event) error {
+	t.clearSignalStateCheckTimer()
+
+	if t.streamAllocator != nil {
+		t.streamAllocator.Stop()
+	}
+
+	if t.pacer != nil {
+		t.pacer.Stop()
+	}
+
+	t.clearConnTimer()
+
+	t.lock.Lock()
+	if t.mayFailedICEStatsTimer != nil {
+		t.mayFailedICEStatsTimer.Stop()
+		t.mayFailedICEStatsTimer = nil
+	}
+
+	if t.reliableDC != nil {
+		t.reliableDC.Close()
+		t.reliableDC = nil
+	}
+
+	if t.lossyDC != nil {
+		t.lossyDC.Close()
+		t.lossyDC = nil
+	}
+
+	if t.dataTrackDC != nil {
+		t.dataTrackDC.Close()
+		t.dataTrackDC = nil
+	}
+
+	for _, dc := range t.unlabeledDataChannels {
+		dc.Close()
+	}
+	t.unlabeledDataChannels = nil
+	t.lock.Unlock()
+
+	if err := t.pc.Close(); err != nil {
+		t.params.Logger.Warnw("unclean close of peer connection", err)
+	}
+
+	t.outputAndClearICEStats()
+	return nil
 }
 
 func (t *PCTransport) onNegotiationFailed(warning bool, reason string) {
