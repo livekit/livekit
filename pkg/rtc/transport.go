@@ -328,6 +328,9 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 
 	se := params.Config.SettingEngine
 	se.DisableMediaEngineCopy(true)
+	// simulcast layer disable/enable signalled via signalling channel,
+	// so disable rid pause in SDP
+	se.SetIgnoreRidPauseForRecv(true)
 
 	// Change elliptic curve to improve connectivity
 	// https://github.com/pion/dtls/pull/474
@@ -2033,6 +2036,7 @@ func (t *PCTransport) preparePC(previousAnswer webrtc.SessionDescription) error 
 	//
 	se := webrtc.SettingEngine{}
 	_ = se.SetAnsweringDTLSRole(lksdp.ExtractDTLSRole(parsed))
+	se.SetIgnoreRidPauseForRecv(true)
 	api := webrtc.NewAPI(
 		webrtc.WithSettingEngine(se),
 		webrtc.WithMediaEngine(t.me),

@@ -335,7 +335,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	}
 
 	if len(b.pPackets) != 0 {
-		b.logger.Debugw("releasing queued packets on bind")
+		b.logger.Debugw("releasing queued packets on bind", "count", len(b.pPackets))
 	}
 	for _, pp := range b.pPackets {
 		b.calc(pp.packet, nil, pp.arrivalTime, false, true)
