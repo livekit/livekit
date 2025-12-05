@@ -2,6 +2,20 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.7] - 2025-12-05
+
+### Added
+- Data tracks (experimental and not ready for use) (#4089)
+
+### Changed
+- log bucket growth (#4122)
+- Update pion/ice to stop gather first on close (#4123)
+- move utils.WrapAround to mediatransportutil (#4124)
+- Let participant close remove the published tracks. (#4125)
+
+### Fixed
+- Fix concurrent map access for https://github.com/livekit/livekit/issues/4126. (#4127)
+
 ## [1.9.6] - 2025-12-01
 
 ### Added
