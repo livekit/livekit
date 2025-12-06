@@ -1,0 +1,66 @@
+{
+  "name": "livekit-server-sdk",
+  "version": "2.14.0",
+  "description": "Server-side SDK for LiveKit",
+  "main": "dist/index.js",
+  "require": "dist/index.cjs",
+  "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/livekit/server-sdk-js.git"
+  },
+  "author": "David Zhao <david@davidzhao.com>",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "dependencies": {
+    "@bufbuild/protobuf": "^1.10.1",
+    "@livekit/protocol": "^1.42.0",
+    "camelcase-keys": "^9.0.0",
+    "jose": "^5.1.2"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.1",
+    "@edge-runtime/vm": "^5.0.0",
+    "@livekit/changesets-changelog-github": "^0.0.4",
+    "@types/node": "^20.10.1",
+    "happy-dom": "^17.0.0",
+    "prettier": "^3.0.0",
+    "tsup": "^8.3.5",
+    "typedoc": "^0.28.0",
+    "typescript": "5.8.2",
+    "vite": "^5.2.9",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup --onSuccess \"tsc --declaration --emitDeclarationOnly\"",
+    "build:watch": "tsc --watch",
+    "build-docs": "typedoc",
+    "changeset": "changeset",
+    "ci:publish": "pnpm build && changeset publish",
+    "lint": "eslint src",
+    "format": "prettier --write src",
+    "format:check": "prettier --check src",
+    "test": "vitest --environment node run",
+    "test:browser": "vitest --environment happy-dom run",
+    "test:edge": "vitest --environment edge-runtime run"
+  }
+}
