@@ -1399,7 +1399,7 @@ func (d *DownTrack) CloseWithFlush(flush bool, isEnding bool) {
 	close(d.keyFrameRequesterCh)
 	d.keyFrameRequesterChMu.Unlock()
 
-	d.params.Listener.OnDownTrackClose(!flush)
+	d.params.Listener.OnDownTrackClose(!isEnding)
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
