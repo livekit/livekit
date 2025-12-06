@@ -287,10 +287,10 @@ func (t *MediaTrackSubscriptions) closeSubscribedTrack(subTrack types.Subscribed
 	}
 
 	if isExpectedToResume {
-		dt.CloseWithFlush(false)
+		dt.CloseWithFlush(false, false)
 	} else {
 		// flushing blocks, avoid blocking when publisher removes all its subscribers
-		go dt.CloseWithFlush(true)
+		go dt.CloseWithFlush(true, true)
 	}
 }
 
