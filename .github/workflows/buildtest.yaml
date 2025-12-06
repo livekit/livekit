@@ -25,7 +25,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: shogo82148/actions-setup-redis@v1
         with:
           redis-version: "6.x"
@@ -33,7 +33,7 @@ jobs:
       - run: redis-cli ping
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: "^1.24"
 
@@ -69,7 +69,7 @@ jobs:
 
       # Upload the original go test log as an artifact for later review.
       - name: Upload test log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         if: always()
         with:
           name: test-log
