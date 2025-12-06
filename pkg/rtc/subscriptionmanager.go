@@ -128,12 +128,12 @@ func (m *SubscriptionManager) Close(isExpectedToResume bool) {
 
 	if isExpectedToResume {
 		for _, dt := range downTracksToClose {
-			dt.CloseWithFlush(false)
+			dt.CloseWithFlush(false, true)
 		}
 	} else {
 		// flush blocks, so execute in parallel
 		for _, dt := range downTracksToClose {
-			go dt.CloseWithFlush(true)
+			go dt.CloseWithFlush(true, true)
 		}
 	}
 
