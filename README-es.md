@@ -64,7 +64,41 @@ Abre https://example.livekit.io y pega el token generado para conectarte a tu se
 - La forma más rápida y gestionada: LiveKit Cloud (https://cloud.livekit.io)
 - Para auto-hospedado: consulta la guía de despliegue https://docs.livekit.io/deploy/
 
-## Docker (Ubuntu)
+## Docker
+
+### Imagen universal para cualquier cloud
+Usa `Dockerfile.cloud` - funciona en Railway, Render, Fly.io, Heroku, AWS, GCP, Azure:
+
+```bash
+docker build -f Dockerfile.cloud -t livekit-cloud .
+```
+
+**Variables de entorno soportadas:**
+- `PORT` - Puerto HTTP (auto-detectado en la mayoría de clouds)
+- `LIVEKIT_API_KEY` - API key (default: `devkey`)
+- `LIVEKIT_API_SECRET` - API secret (default: `secret`)
+- `LIVEKIT_DOMAIN` - Dominio público (ej: `tuapp.com`)
+- `LIVEKIT_NODE_IP` - IP externa fija (opcional)
+- `PUBLIC_URL_OVERRIDE` - URL pública manual
+
+**Detección automática de plataforma:**
+- Railway: usa `RAILWAY_PUBLIC_DOMAIN`
+- Render: usa `RENDER_EXTERNAL_HOSTNAME`
+- Fly.io: usa `FLY_APP_NAME`
+- Heroku: usa `HEROKU_APP_NAME`
+
+**Ejecutar localmente:**
+```bash
+docker run --rm -p 7880:7880 -p 7881:7881 -p 7882:7882/udp livekit-cloud --dev
+```
+
+**Desplegar en cualquier cloud:**
+1. Sube la imagen: `docker push tuusuario/livekit-cloud:latest`
+2. Configura el servicio con la imagen
+3. El entrypoint detecta automáticamente la plataforma
+4. Revisa logs para obtener el token JWT generado
+
+### Imagen Ubuntu básica
 Construir la imagen Ubuntu desde este repo (usa `Dockerfile.ubuntu`):
 
 ```bash

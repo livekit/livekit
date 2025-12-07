@@ -1,0 +1,52 @@
+# Docker Compose para LiveKit con IP pública detectada
+version: '3.8'
+
+services:
+  livekit:
+    build:
+      context: .
+      dockerfile: Dockerfile.cloud
+    image: livekit-cloud
+    container_name: livekit-server
+    
+    # Usar red host para evitar problemas de NAT (Linux) 
+    # En Windows/Mac, los puertos se exponen manualmente
+    # network_mode: host  # Descomentar en Linux
+    
+    ports:
+      - "7880:7880"      # HTTP/WebSocket
+      - "7881:7881"      # RTC TCP
+      - "7882:7882/udp"  # RTC UDP principal
+    
+    environment:
+      # Puerto HTTP
+      - PORT=7880
+      
+      # API Credentials (CAMBIAR EN PRODUCCIÓN)
+      - LIVEKIT_API_KEY=APIQmrHaqpJjwXs
+      - LIVEKIT_API_SECRET=2j4uCefeStZIjOAoYoVBSSAexGZhrm0aWk7N7mpAYaOA
+      
+      # Bind a todas las interfaces
+      - LIVEKIT_BIND=0.0.0.0
+      
+      # Configuración RTC
+      - LIVEKIT_RTC_TCP_PORT=7881
+      - LIVEKIT_RTC_UDP_PORT=7882
+      
+      # IP del host - localhost para desarrollo local
+      - LIVEKIT_NODE_IP=127.0.0.1
+      
+      # Desactivar uso de IP externa (solo para desarrollo local)
+      # - LIVEKIT_RTC_USE_EXTERNAL_IP=true
+      
+      # Dominio público (opcional, para HTTPS)
+      # - LIVEKIT_DOMAIN=tu-dominio.com
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7880/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
