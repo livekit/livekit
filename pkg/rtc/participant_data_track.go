@@ -16,13 +16,13 @@ package rtc
 
 import (
 	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
-	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 )
 
+/* RAJA-REMOVE
 func (p *ParticipantImpl) OnUpdateDataSubscriptions(callback func(types.LocalParticipant, *livekit.UpdateDataSubscription)) {
 	p.lock.Lock()
 	p.onUpdateDataSubscriptions = callback
@@ -34,6 +34,7 @@ func (p *ParticipantImpl) getOnUpdateDataSubscriptions() func(types.LocalPartici
 	defer p.lock.RUnlock()
 	return p.onUpdateDataSubscriptions
 }
+*/
 
 func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishDataTrackRequest) {
 	if !p.CanPublishData() || !p.params.EnableDataTracks {
@@ -138,9 +139,12 @@ func (p *ParticipantImpl) HandleUnpublishDataTrackRequest(req *livekit.Unpublish
 }
 
 func (p *ParticipantImpl) HandleUpdateDataSubscription(req *livekit.UpdateDataSubscription) {
+	/* RAJA-REMOVE
 	if onUpdateDataSubscriptions := p.getOnUpdateDataSubscriptions(); onUpdateDataSubscriptions != nil {
 		onUpdateDataSubscriptions(p, req)
 	}
+	*/
+	p.listener().OnUpdateDataSubscriptions(p, req)
 }
 
 func (p *ParticipantImpl) onReceivedDataTrackMessage(data []byte) {
@@ -152,7 +156,10 @@ func (p *ParticipantImpl) onReceivedDataTrackMessage(data []byte) {
 
 	p.UpDataTrackManager.HandleReceivedDataTrackMessage(data, &packet)
 
+	/* RAJA-REMOVE
 	if onDataTrackMessage := p.getOnDataTrackMessage(); onDataTrackMessage != nil {
 		onDataTrackMessage(p, data, &packet)
 	}
+	*/
+	p.listener().OnDataTrackMessage(p, data, &packet)
 }

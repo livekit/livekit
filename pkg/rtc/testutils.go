@@ -25,7 +25,12 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 )
 
-func NewMockParticipant(identity livekit.ParticipantIdentity, protocol types.ProtocolVersion, hidden bool, publisher bool) *typesfakes.FakeLocalParticipant {
+func NewMockParticipant(
+	identity livekit.ParticipantIdentity,
+	protocol types.ProtocolVersion,
+	hidden bool,
+	publisher bool,
+) *typesfakes.FakeLocalParticipant {
 	p := &typesfakes.FakeLocalParticipant{}
 	sid := guid.New(utils.ParticipantPrefix)
 	p.IDReturns(livekit.ParticipantID(sid))
@@ -49,6 +54,7 @@ func NewMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 		IsPublisher: publisher,
 	}, utils.TimedVersion(0))
 
+	/* RAJA-TODO
 	p.SetMetadataCalls(func(m string) {
 		var f func(participant types.LocalParticipant)
 		if p.OnParticipantUpdateCallCount() > 0 {
@@ -75,6 +81,7 @@ func NewMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 	p.AddTrackCalls(func(req *livekit.AddTrackRequest) {
 		updateTrack()
 	})
+	*/
 	p.GetLoggerReturns(logger.GetLogger())
 	p.GetReporterReturns(roomobs.NewNoopParticipantSessionReporter())
 

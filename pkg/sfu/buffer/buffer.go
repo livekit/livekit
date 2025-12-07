@@ -385,6 +385,8 @@ func (b *Buffer) createFrameRateCalculator() {
 }
 
 // Write adds an RTP Packet, ordering is not guaranteed, newer packets may arrive later
+//
+//go:noinline
 func (b *Buffer) Write(pkt []byte) (n int, err error) {
 	var rtpPacket rtp.Packet
 	err = rtpPacket.Unmarshal(pkt)

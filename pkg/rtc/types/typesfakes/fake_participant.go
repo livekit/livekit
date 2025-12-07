@@ -23,6 +23,10 @@ type FakeParticipant struct {
 	canSkipBroadcastReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	ClearParticipantListenerStub        func()
+	clearParticipantListenerMutex       sync.RWMutex
+	clearParticipantListenerArgsForCall []struct {
+	}
 	CloseStub        func(bool, types.ParticipantCloseReason, bool) error
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct {
@@ -258,36 +262,6 @@ type FakeParticipant struct {
 	migrateStateReturnsOnCall map[int]struct {
 		result1 types.MigrateState
 	}
-	OnDataTrackPublishedStub        func(func(types.Participant, types.DataTrack))
-	onDataTrackPublishedMutex       sync.RWMutex
-	onDataTrackPublishedArgsForCall []struct {
-		arg1 func(types.Participant, types.DataTrack)
-	}
-	OnDataTrackUnpublishedStub        func(func(types.Participant, types.DataTrack))
-	onDataTrackUnpublishedMutex       sync.RWMutex
-	onDataTrackUnpublishedArgsForCall []struct {
-		arg1 func(types.Participant, types.DataTrack)
-	}
-	OnMetricsStub        func(func(types.Participant, *livekit.DataPacket))
-	onMetricsMutex       sync.RWMutex
-	onMetricsArgsForCall []struct {
-		arg1 func(types.Participant, *livekit.DataPacket)
-	}
-	OnTrackPublishedStub        func(func(types.Participant, types.MediaTrack))
-	onTrackPublishedMutex       sync.RWMutex
-	onTrackPublishedArgsForCall []struct {
-		arg1 func(types.Participant, types.MediaTrack)
-	}
-	OnTrackUnpublishedStub        func(func(types.Participant, types.MediaTrack))
-	onTrackUnpublishedMutex       sync.RWMutex
-	onTrackUnpublishedArgsForCall []struct {
-		arg1 func(types.Participant, types.MediaTrack)
-	}
-	OnTrackUpdatedStub        func(func(types.Participant, types.MediaTrack))
-	onTrackUpdatedMutex       sync.RWMutex
-	onTrackUpdatedArgsForCall []struct {
-		arg1 func(types.Participant, types.MediaTrack)
-	}
 	RemovePublishedDataTrackStub        func(types.DataTrack)
 	removePublishedDataTrackMutex       sync.RWMutex
 	removePublishedDataTrackArgsForCall []struct {
@@ -421,6 +395,30 @@ func (fake *FakeParticipant) CanSkipBroadcastReturnsOnCall(i int, result1 bool) 
 	fake.canSkipBroadcastReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
+}
+
+func (fake *FakeParticipant) ClearParticipantListener() {
+	fake.clearParticipantListenerMutex.Lock()
+	fake.clearParticipantListenerArgsForCall = append(fake.clearParticipantListenerArgsForCall, struct {
+	}{})
+	stub := fake.ClearParticipantListenerStub
+	fake.recordInvocation("ClearParticipantListener", []interface{}{})
+	fake.clearParticipantListenerMutex.Unlock()
+	if stub != nil {
+		fake.ClearParticipantListenerStub()
+	}
+}
+
+func (fake *FakeParticipant) ClearParticipantListenerCallCount() int {
+	fake.clearParticipantListenerMutex.RLock()
+	defer fake.clearParticipantListenerMutex.RUnlock()
+	return len(fake.clearParticipantListenerArgsForCall)
+}
+
+func (fake *FakeParticipant) ClearParticipantListenerCalls(stub func()) {
+	fake.clearParticipantListenerMutex.Lock()
+	defer fake.clearParticipantListenerMutex.Unlock()
+	fake.ClearParticipantListenerStub = stub
 }
 
 func (fake *FakeParticipant) Close(arg1 bool, arg2 types.ParticipantCloseReason, arg3 bool) error {
@@ -1663,198 +1661,6 @@ func (fake *FakeParticipant) MigrateStateReturnsOnCall(i int, result1 types.Migr
 	fake.migrateStateReturnsOnCall[i] = struct {
 		result1 types.MigrateState
 	}{result1}
-}
-
-func (fake *FakeParticipant) OnDataTrackPublished(arg1 func(types.Participant, types.DataTrack)) {
-	fake.onDataTrackPublishedMutex.Lock()
-	fake.onDataTrackPublishedArgsForCall = append(fake.onDataTrackPublishedArgsForCall, struct {
-		arg1 func(types.Participant, types.DataTrack)
-	}{arg1})
-	stub := fake.OnDataTrackPublishedStub
-	fake.recordInvocation("OnDataTrackPublished", []interface{}{arg1})
-	fake.onDataTrackPublishedMutex.Unlock()
-	if stub != nil {
-		fake.OnDataTrackPublishedStub(arg1)
-	}
-}
-
-func (fake *FakeParticipant) OnDataTrackPublishedCallCount() int {
-	fake.onDataTrackPublishedMutex.RLock()
-	defer fake.onDataTrackPublishedMutex.RUnlock()
-	return len(fake.onDataTrackPublishedArgsForCall)
-}
-
-func (fake *FakeParticipant) OnDataTrackPublishedCalls(stub func(func(types.Participant, types.DataTrack))) {
-	fake.onDataTrackPublishedMutex.Lock()
-	defer fake.onDataTrackPublishedMutex.Unlock()
-	fake.OnDataTrackPublishedStub = stub
-}
-
-func (fake *FakeParticipant) OnDataTrackPublishedArgsForCall(i int) func(types.Participant, types.DataTrack) {
-	fake.onDataTrackPublishedMutex.RLock()
-	defer fake.onDataTrackPublishedMutex.RUnlock()
-	argsForCall := fake.onDataTrackPublishedArgsForCall[i]
-	return argsForCall.arg1
-}
-
-func (fake *FakeParticipant) OnDataTrackUnpublished(arg1 func(types.Participant, types.DataTrack)) {
-	fake.onDataTrackUnpublishedMutex.Lock()
-	fake.onDataTrackUnpublishedArgsForCall = append(fake.onDataTrackUnpublishedArgsForCall, struct {
-		arg1 func(types.Participant, types.DataTrack)
-	}{arg1})
-	stub := fake.OnDataTrackUnpublishedStub
-	fake.recordInvocation("OnDataTrackUnpublished", []interface{}{arg1})
-	fake.onDataTrackUnpublishedMutex.Unlock()
-	if stub != nil {
-		fake.OnDataTrackUnpublishedStub(arg1)
-	}
-}
-
-func (fake *FakeParticipant) OnDataTrackUnpublishedCallCount() int {
-	fake.onDataTrackUnpublishedMutex.RLock()
-	defer fake.onDataTrackUnpublishedMutex.RUnlock()
-	return len(fake.onDataTrackUnpublishedArgsForCall)
-}
-
-func (fake *FakeParticipant) OnDataTrackUnpublishedCalls(stub func(func(types.Participant, types.DataTrack))) {
-	fake.onDataTrackUnpublishedMutex.Lock()
-	defer fake.onDataTrackUnpublishedMutex.Unlock()
-	fake.OnDataTrackUnpublishedStub = stub
-}
-
-func (fake *FakeParticipant) OnDataTrackUnpublishedArgsForCall(i int) func(types.Participant, types.DataTrack) {
-	fake.onDataTrackUnpublishedMutex.RLock()
-	defer fake.onDataTrackUnpublishedMutex.RUnlock()
-	argsForCall := fake.onDataTrackUnpublishedArgsForCall[i]
-	return argsForCall.arg1
-}
-
-func (fake *FakeParticipant) OnMetrics(arg1 func(types.Participant, *livekit.DataPacket)) {
-	fake.onMetricsMutex.Lock()
-	fake.onMetricsArgsForCall = append(fake.onMetricsArgsForCall, struct {
-		arg1 func(types.Participant, *livekit.DataPacket)
-	}{arg1})
-	stub := fake.OnMetricsStub
-	fake.recordInvocation("OnMetrics", []interface{}{arg1})
-	fake.onMetricsMutex.Unlock()
-	if stub != nil {
-		fake.OnMetricsStub(arg1)
-	}
-}
-
-func (fake *FakeParticipant) OnMetricsCallCount() int {
-	fake.onMetricsMutex.RLock()
-	defer fake.onMetricsMutex.RUnlock()
-	return len(fake.onMetricsArgsForCall)
-}
-
-func (fake *FakeParticipant) OnMetricsCalls(stub func(func(types.Participant, *livekit.DataPacket))) {
-	fake.onMetricsMutex.Lock()
-	defer fake.onMetricsMutex.Unlock()
-	fake.OnMetricsStub = stub
-}
-
-func (fake *FakeParticipant) OnMetricsArgsForCall(i int) func(types.Participant, *livekit.DataPacket) {
-	fake.onMetricsMutex.RLock()
-	defer fake.onMetricsMutex.RUnlock()
-	argsForCall := fake.onMetricsArgsForCall[i]
-	return argsForCall.arg1
-}
-
-func (fake *FakeParticipant) OnTrackPublished(arg1 func(types.Participant, types.MediaTrack)) {
-	fake.onTrackPublishedMutex.Lock()
-	fake.onTrackPublishedArgsForCall = append(fake.onTrackPublishedArgsForCall, struct {
-		arg1 func(types.Participant, types.MediaTrack)
-	}{arg1})
-	stub := fake.OnTrackPublishedStub
-	fake.recordInvocation("OnTrackPublished", []interface{}{arg1})
-	fake.onTrackPublishedMutex.Unlock()
-	if stub != nil {
-		fake.OnTrackPublishedStub(arg1)
-	}
-}
-
-func (fake *FakeParticipant) OnTrackPublishedCallCount() int {
-	fake.onTrackPublishedMutex.RLock()
-	defer fake.onTrackPublishedMutex.RUnlock()
-	return len(fake.onTrackPublishedArgsForCall)
-}
-
-func (fake *FakeParticipant) OnTrackPublishedCalls(stub func(func(types.Participant, types.MediaTrack))) {
-	fake.onTrackPublishedMutex.Lock()
-	defer fake.onTrackPublishedMutex.Unlock()
-	fake.OnTrackPublishedStub = stub
-}
-
-func (fake *FakeParticipant) OnTrackPublishedArgsForCall(i int) func(types.Participant, types.MediaTrack) {
-	fake.onTrackPublishedMutex.RLock()
-	defer fake.onTrackPublishedMutex.RUnlock()
-	argsForCall := fake.onTrackPublishedArgsForCall[i]
-	return argsForCall.arg1
-}
-
-func (fake *FakeParticipant) OnTrackUnpublished(arg1 func(types.Participant, types.MediaTrack)) {
-	fake.onTrackUnpublishedMutex.Lock()
-	fake.onTrackUnpublishedArgsForCall = append(fake.onTrackUnpublishedArgsForCall, struct {
-		arg1 func(types.Participant, types.MediaTrack)
-	}{arg1})
-	stub := fake.OnTrackUnpublishedStub
-	fake.recordInvocation("OnTrackUnpublished", []interface{}{arg1})
-	fake.onTrackUnpublishedMutex.Unlock()
-	if stub != nil {
-		fake.OnTrackUnpublishedStub(arg1)
-	}
-}
-
-func (fake *FakeParticipant) OnTrackUnpublishedCallCount() int {
-	fake.onTrackUnpublishedMutex.RLock()
-	defer fake.onTrackUnpublishedMutex.RUnlock()
-	return len(fake.onTrackUnpublishedArgsForCall)
-}
-
-func (fake *FakeParticipant) OnTrackUnpublishedCalls(stub func(func(types.Participant, types.MediaTrack))) {
-	fake.onTrackUnpublishedMutex.Lock()
-	defer fake.onTrackUnpublishedMutex.Unlock()
-	fake.OnTrackUnpublishedStub = stub
-}
-
-func (fake *FakeParticipant) OnTrackUnpublishedArgsForCall(i int) func(types.Participant, types.MediaTrack) {
-	fake.onTrackUnpublishedMutex.RLock()
-	defer fake.onTrackUnpublishedMutex.RUnlock()
-	argsForCall := fake.onTrackUnpublishedArgsForCall[i]
-	return argsForCall.arg1
-}
-
-func (fake *FakeParticipant) OnTrackUpdated(arg1 func(types.Participant, types.MediaTrack)) {
-	fake.onTrackUpdatedMutex.Lock()
-	fake.onTrackUpdatedArgsForCall = append(fake.onTrackUpdatedArgsForCall, struct {
-		arg1 func(types.Participant, types.MediaTrack)
-	}{arg1})
-	stub := fake.OnTrackUpdatedStub
-	fake.recordInvocation("OnTrackUpdated", []interface{}{arg1})
-	fake.onTrackUpdatedMutex.Unlock()
-	if stub != nil {
-		fake.OnTrackUpdatedStub(arg1)
-	}
-}
-
-func (fake *FakeParticipant) OnTrackUpdatedCallCount() int {
-	fake.onTrackUpdatedMutex.RLock()
-	defer fake.onTrackUpdatedMutex.RUnlock()
-	return len(fake.onTrackUpdatedArgsForCall)
-}
-
-func (fake *FakeParticipant) OnTrackUpdatedCalls(stub func(func(types.Participant, types.MediaTrack))) {
-	fake.onTrackUpdatedMutex.Lock()
-	defer fake.onTrackUpdatedMutex.Unlock()
-	fake.OnTrackUpdatedStub = stub
-}
-
-func (fake *FakeParticipant) OnTrackUpdatedArgsForCall(i int) func(types.Participant, types.MediaTrack) {
-	fake.onTrackUpdatedMutex.RLock()
-	defer fake.onTrackUpdatedMutex.RUnlock()
-	argsForCall := fake.onTrackUpdatedArgsForCall[i]
-	return argsForCall.arg1
 }
 
 func (fake *FakeParticipant) RemovePublishedDataTrack(arg1 types.DataTrack) {

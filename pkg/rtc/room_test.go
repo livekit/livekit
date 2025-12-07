@@ -110,10 +110,14 @@ func TestRoomJoin(t *testing.T) {
 		err := rm.Join(p, nil, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
 		require.NoError(t, err)
 
+		/* RAJA-REMOVE
 		stateChangeCB := p.OnStateChangeArgsForCall(0)
 		require.NotNil(t, stateChangeCB)
 		p.StateReturns(livekit.ParticipantInfo_ACTIVE)
 		stateChangeCB(p)
+		*/
+		p.StateReturns(livekit.ParticipantInfo_ACTIVE)
+		rm.OnStateChange(p)
 
 		// it should become a subscriber when connectivity changes
 		numTracks := 0
@@ -437,9 +441,13 @@ func TestNewTrack(t *testing.T) {
 
 		// pub adds track
 		track := NewMockTrack(livekit.TrackType_VIDEO, "webcam")
+		/* RAJA-REMOVE
 		trackCB := pub.OnTrackPublishedArgsForCall(0)
 		require.NotNil(t, trackCB)
 		trackCB(pub, track)
+		*/
+		rm.OnTrackPublished(pub, track)
+
 		// only p1 should've been subscribed to
 		require.Equal(t, 0, p0.SubscribeToTrackCallCount())
 		require.Equal(t, 1, p1.SubscribeToTrackCallCount())
@@ -641,7 +649,8 @@ func TestDataChannel(t *testing.T) {
 				}
 
 				encoded, _ := proto.Marshal(packetExp)
-				p.OnDataPacketArgsForCall(0)(p, packet.Kind, packet)
+				// RAJA-REMOVE p.OnDataPacketArgsForCall(0)(p, packet.Kind, packet)
+				rm.OnDataPacket(p, packet.Kind, packet)
 
 				// ensure everyone has received the packet
 				for _, op := range participants {
@@ -688,7 +697,8 @@ func TestDataChannel(t *testing.T) {
 				}
 
 				encoded, _ := proto.Marshal(packetExp)
-				p.OnDataPacketArgsForCall(0)(p, packet.Kind, packet)
+				// RAJA-REMOVE p.OnDataPacketArgsForCall(0)(p, packet.Kind, packet)
+				rm.OnDataPacket(p, packet.Kind, packet)
 
 				// only p1 should receive the data
 				for _, op := range participants {
@@ -720,7 +730,8 @@ func TestDataChannel(t *testing.T) {
 			},
 		}
 		if p.CanPublishData() {
-			p.OnDataPacketArgsForCall(0)(p, packet.Kind, &packet)
+			// RAJA-REMOVE p.OnDataPacketArgsForCall(0)(p, packet.Kind, &packet)
+			rm.OnDataPacket(p, packet.Kind, &packet)
 		}
 
 		// no one should've been sent packet
@@ -755,10 +766,14 @@ func TestHiddenParticipants(t *testing.T) {
 		err := rm.Join(hidden, nil, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
 		require.NoError(t, err)
 
+		/* RAJA-REMOVE
 		stateChangeCB := hidden.OnStateChangeArgsForCall(0)
 		require.NotNil(t, stateChangeCB)
 		hidden.StateReturns(livekit.ParticipantInfo_ACTIVE)
 		stateChangeCB(hidden)
+		*/
+		hidden.StateReturns(livekit.ParticipantInfo_ACTIVE)
+		rm.OnStateChange(hidden)
 
 		require.Eventually(t, func() bool { return hidden.SubscribeToTrackCallCount() == 2 }, 5*time.Second, 10*time.Millisecond)
 	})

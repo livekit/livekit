@@ -45,6 +45,27 @@ import (
 	"github.com/livekit/livekit-server/pkg/testutils"
 )
 
+/* RAJA-REMOVE
+// ------------------------------------------
+
+type participantListener struct {
+	types.NullLocalParticipantListener
+
+	tracksUpdated   int
+	tracksPublished int
+}
+
+func (pl *participantListener) OnTrackUpdated(p types.Participant, track types.MediaTrack) {
+	pl.tracksUpdated++
+}
+
+func (pl *participantListener) OnTrackPublished(p types.Participant, track types.MediaTrack) {
+	pl.tracksPublished++
+}
+
+// ------------------------------------------
+*/
+
 func TestIsReady(t *testing.T) {
 	tests := []struct {
 		state livekit.ParticipantInfo_State
@@ -84,10 +105,19 @@ func TestTrackPublishing(t *testing.T) {
 		track.IDReturns("id")
 		published := false
 		updated := false
+		/* RAJA-TODO
 		p.OnTrackUpdated(func(p types.Participant, track types.MediaTrack) {
 			updated = true
 		})
 		p.OnTrackPublished(func(p types.Participant, track types.MediaTrack) {
+			published = true
+		})
+		*/
+		participantListener := &typesfakes.FakeLocalParticipantListener{}
+		participantListener.OnTrackUpdatedCalls(func(p types.Participant, track types.MediaTrack) {
+			updated = true
+		})
+		participantListener.OnTrackPublishedCalls(func(p types.Participant, track types.MediaTrack) {
 			published = true
 		})
 		p.UpTrackManager.AddPublishedTrack(track)
