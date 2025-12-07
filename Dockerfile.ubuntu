@@ -1,0 +1,31 @@
+# LiveKit server build targeting Ubuntu runtime
+FROM golang:1.25-bookworm AS builder
+
+ARG TARGETARCH
+WORKDIR /workspace
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY cmd/ cmd/
+COPY pkg/ pkg/
+COPY test/ test/
+COPY tools/ tools/
+COPY version/ version/
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} GO111MODULE=on go build -a -o /workspace/livekit-server ./cmd/server
+
+FROM ubuntu:22.04
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates openssl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /workspace/livekit-server /usr/local/bin/livekit-server
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+EXPOSE 7880 7881
+EXPOSE 7882/udp
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
