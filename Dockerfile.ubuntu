@@ -18,14 +18,15 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} GO111MODULE=on go build -a -o 
 FROM ubuntu:22.04
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates openssl \
+    && apt-get install -y --no-install-recommends ca-certificates openssl bash \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /workspace/livekit-server /usr/local/bin/livekit-server
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/livekit-server
 
 EXPOSE 7880 7881
 EXPOSE 7882/udp
 
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+# Default para Railway (puede sobreescribirse)
+CMD ["/usr/local/bin/docker-entrypoint.sh", "--dev"]
