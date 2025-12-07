@@ -335,7 +335,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	}
 
 	if len(b.pPackets) != 0 {
-		b.logger.Debugw("releasing queued packets on bind")
+		b.logger.Debugw("releasing queued packets on bind", "count", len(b.pPackets))
 	}
 	for _, pp := range b.pPackets {
 		b.calc(pp.packet, nil, pp.arrivalTime, false, true)
@@ -1120,7 +1120,14 @@ func (b *Buffer) mayGrowBucket() {
 				cap = b.bucket.Grow()
 			}
 			if cap > oldCap {
-				b.logger.Debugw("grow bucket", "from", oldCap, "to", cap, "pps", pps)
+				b.logger.Infow(
+					"grow bucket",
+					"from", oldCap,
+					"to", cap,
+					"pps", pps,
+					"deltaInfo", deltaInfo,
+					"rtpStats", b.rtpStats,
+				)
 			}
 		}
 	}

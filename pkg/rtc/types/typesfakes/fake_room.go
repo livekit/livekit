@@ -57,6 +57,18 @@ type FakeRoom struct {
 		arg2 livekit.ParticipantID
 		arg3 types.ParticipantCloseReason
 	}
+	ResolveDataTrackForSubscriberStub        func(types.LocalParticipant, livekit.TrackID) types.DataResolverResult
+	resolveDataTrackForSubscriberMutex       sync.RWMutex
+	resolveDataTrackForSubscriberArgsForCall []struct {
+		arg1 types.LocalParticipant
+		arg2 livekit.TrackID
+	}
+	resolveDataTrackForSubscriberReturns struct {
+		result1 types.DataResolverResult
+	}
+	resolveDataTrackForSubscriberReturnsOnCall map[int]struct {
+		result1 types.DataResolverResult
+	}
 	ResolveMediaTrackForSubscriberStub        func(types.LocalParticipant, livekit.TrackID) types.MediaResolverResult
 	resolveMediaTrackForSubscriberMutex       sync.RWMutex
 	resolveMediaTrackForSubscriberArgsForCall []struct {
@@ -333,6 +345,68 @@ func (fake *FakeRoom) RemoveParticipantArgsForCall(i int) (livekit.ParticipantId
 	defer fake.removeParticipantMutex.RUnlock()
 	argsForCall := fake.removeParticipantArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeRoom) ResolveDataTrackForSubscriber(arg1 types.LocalParticipant, arg2 livekit.TrackID) types.DataResolverResult {
+	fake.resolveDataTrackForSubscriberMutex.Lock()
+	ret, specificReturn := fake.resolveDataTrackForSubscriberReturnsOnCall[len(fake.resolveDataTrackForSubscriberArgsForCall)]
+	fake.resolveDataTrackForSubscriberArgsForCall = append(fake.resolveDataTrackForSubscriberArgsForCall, struct {
+		arg1 types.LocalParticipant
+		arg2 livekit.TrackID
+	}{arg1, arg2})
+	stub := fake.ResolveDataTrackForSubscriberStub
+	fakeReturns := fake.resolveDataTrackForSubscriberReturns
+	fake.recordInvocation("ResolveDataTrackForSubscriber", []interface{}{arg1, arg2})
+	fake.resolveDataTrackForSubscriberMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeRoom) ResolveDataTrackForSubscriberCallCount() int {
+	fake.resolveDataTrackForSubscriberMutex.RLock()
+	defer fake.resolveDataTrackForSubscriberMutex.RUnlock()
+	return len(fake.resolveDataTrackForSubscriberArgsForCall)
+}
+
+func (fake *FakeRoom) ResolveDataTrackForSubscriberCalls(stub func(types.LocalParticipant, livekit.TrackID) types.DataResolverResult) {
+	fake.resolveDataTrackForSubscriberMutex.Lock()
+	defer fake.resolveDataTrackForSubscriberMutex.Unlock()
+	fake.ResolveDataTrackForSubscriberStub = stub
+}
+
+func (fake *FakeRoom) ResolveDataTrackForSubscriberArgsForCall(i int) (types.LocalParticipant, livekit.TrackID) {
+	fake.resolveDataTrackForSubscriberMutex.RLock()
+	defer fake.resolveDataTrackForSubscriberMutex.RUnlock()
+	argsForCall := fake.resolveDataTrackForSubscriberArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeRoom) ResolveDataTrackForSubscriberReturns(result1 types.DataResolverResult) {
+	fake.resolveDataTrackForSubscriberMutex.Lock()
+	defer fake.resolveDataTrackForSubscriberMutex.Unlock()
+	fake.ResolveDataTrackForSubscriberStub = nil
+	fake.resolveDataTrackForSubscriberReturns = struct {
+		result1 types.DataResolverResult
+	}{result1}
+}
+
+func (fake *FakeRoom) ResolveDataTrackForSubscriberReturnsOnCall(i int, result1 types.DataResolverResult) {
+	fake.resolveDataTrackForSubscriberMutex.Lock()
+	defer fake.resolveDataTrackForSubscriberMutex.Unlock()
+	fake.ResolveDataTrackForSubscriberStub = nil
+	if fake.resolveDataTrackForSubscriberReturnsOnCall == nil {
+		fake.resolveDataTrackForSubscriberReturnsOnCall = make(map[int]struct {
+			result1 types.DataResolverResult
+		})
+	}
+	fake.resolveDataTrackForSubscriberReturnsOnCall[i] = struct {
+		result1 types.DataResolverResult
+	}{result1}
 }
 
 func (fake *FakeRoom) ResolveMediaTrackForSubscriber(arg1 types.LocalParticipant, arg2 livekit.TrackID) types.MediaResolverResult {

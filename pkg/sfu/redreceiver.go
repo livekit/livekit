@@ -24,6 +24,7 @@ import (
 	"github.com/pion/webrtc/v4"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/mediatransportutil/pkg/bucket"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -43,17 +44,17 @@ const (
 
 type RedReceiver struct {
 	TrackReceiver
-	downTrackSpreader *DownTrackSpreader
+	downTrackSpreader *utils.DownTrackSpreader[TrackSender]
 	logger            logger.Logger
 	closed            atomic.Bool
 	pktBuff           [maxRedCount]*rtp.Packet
 	redPayloadBuf     [mtuSize]byte
 }
 
-func NewRedReceiver(receiver TrackReceiver, dsp DownTrackSpreaderParams) *RedReceiver {
+func NewRedReceiver(receiver TrackReceiver, dsp utils.DownTrackSpreaderParams) *RedReceiver {
 	return &RedReceiver{
 		TrackReceiver:     receiver,
-		downTrackSpreader: NewDownTrackSpreader(dsp),
+		downTrackSpreader: utils.NewDownTrackSpreader[TrackSender](dsp),
 		logger:            dsp.Logger,
 	}
 }

@@ -1319,7 +1319,7 @@ func (d *DownTrack) IsClosed() bool {
 }
 
 func (d *DownTrack) Close() {
-	d.CloseWithFlush(true)
+	d.CloseWithFlush(true, true)
 }
 
 // CloseWithFlush - flush used to indicate whether send blank frame to flush
@@ -1328,7 +1328,7 @@ func (d *DownTrack) Close() {
 //     set flush=true to avoid previous video shows before new stream is displayed.
 //  2. in case of session migration, participant migrate from other node, video track should
 //     be resumed with same participant, set flush=false since we don't need to flush decoder.
-func (d *DownTrack) CloseWithFlush(flush bool) {
+func (d *DownTrack) CloseWithFlush(flush bool, isEnding bool) {
 	d.bindLock.Lock()
 	if d.isClosed.Swap(true) {
 		// already closed
@@ -1364,12 +1364,12 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	d.setBindStateLocked(bindStateUnbound)
 	d.Receiver().DeleteDownTrack(d.SubscriberID())
 
-	if d.rtcpReader != nil && flush {
+	if d.rtcpReader != nil && isEnding {
 		d.params.Logger.Debugw("downtrack close rtcp reader")
 		d.rtcpReader.Close()
 		d.rtcpReader.OnPacket(nil)
 	}
-	if d.rtcpReaderRTX != nil && flush {
+	if d.rtcpReaderRTX != nil && isEnding {
 		d.params.Logger.Debugw("downtrack close rtcp rtx reader")
 		d.rtcpReaderRTX.Close()
 		d.rtcpReaderRTX.OnPacket(nil)
@@ -1380,7 +1380,8 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 
 	d.rtpStats.Stop()
 	d.rtpStatsRTX.Stop()
-	d.params.Logger.Debugw("rtp stats",
+	d.params.Logger.Debugw(
+		"rtp stats",
 		"direction", "downstream",
 		"mime", d.Mime().String(),
 		"ssrc", d.ssrc,
@@ -1398,7 +1399,7 @@ func (d *DownTrack) CloseWithFlush(flush bool) {
 	close(d.keyFrameRequesterCh)
 	d.keyFrameRequesterChMu.Unlock()
 
-	d.params.Listener.OnDownTrackClose(!flush)
+	d.params.Listener.OnDownTrackClose(!isEnding)
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {

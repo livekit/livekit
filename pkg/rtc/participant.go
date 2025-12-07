@@ -52,6 +52,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/metric"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/signalling"
 	"github.com/livekit/livekit-server/pkg/rtc/supervisor"
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
@@ -217,6 +218,7 @@ type ParticipantParams struct {
 	Country                        string
 	PreferVideoSizeFromMedia       bool
 	UseSinglePeerConnection        bool
+	EnableDataTracks               bool
 }
 
 type ParticipantImpl struct {
@@ -264,6 +266,7 @@ type ParticipantImpl struct {
 
 	*TransportManager
 	*UpTrackManager
+	*UpDataTrackManager
 	*SubscriptionManager
 
 	icQueue [2]atomic.Pointer[webrtc.ICECandidate]
@@ -293,18 +296,20 @@ type ParticipantImpl struct {
 	version atomic.Uint32
 
 	// callbacks & handlers
-	onTrackPublished               func(types.LocalParticipant, types.MediaTrack)
-	onTrackUpdated                 func(types.LocalParticipant, types.MediaTrack)
-	onTrackUnpublished             func(types.LocalParticipant, types.MediaTrack)
+	onTrackPublished               func(types.Participant, types.MediaTrack)
+	onTrackUpdated                 func(types.Participant, types.MediaTrack)
+	onTrackUnpublished             func(types.Participant, types.MediaTrack)
 	onStateChange                  func(p types.LocalParticipant)
 	onSubscriberReady              func(p types.LocalParticipant)
 	onMigrateStateChange           func(p types.LocalParticipant, migrateState types.MigrateState)
 	onParticipantUpdate            func(types.LocalParticipant)
 	onDataPacket                   func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
 	onDataMessage                  func(types.LocalParticipant, []byte)
+	onDataTrackMessage             func(types.LocalParticipant, []byte, *datatrack.Packet)
 	onMetrics                      func(types.Participant, *livekit.DataPacket)
 	onUpdateSubscriptions          func(types.LocalParticipant, []livekit.TrackID, []*livekit.ParticipantTracks, bool)
 	onUpdateSubscriptionPermission func(types.LocalParticipant, *livekit.SubscriptionPermission) error
+	onUpdateDataSubscriptions      func(types.LocalParticipant, *livekit.UpdateDataSubscription)
 	onSyncState                    func(types.LocalParticipant, *livekit.SyncState) error
 	onSimulateScenario             func(types.LocalParticipant, *livekit.SimulateScenario) error
 	onLeave                        func(types.LocalParticipant, types.ParticipantCloseReason)
@@ -431,6 +436,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	}
 
 	p.setupUpTrackManager()
+	p.setupUpDataTrackManager()
 	p.setupSubscriptionManager()
 	p.setupMetrics()
 
@@ -788,6 +794,12 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 		}
 	}
 
+	if !grants.Video.GetCanPublishData() {
+		for _, dt := range p.UpDataTrackManager.GetPublishedDataTracks() {
+			p.UpDataTrackManager.RemovePublishedDataTrack(dt)
+		}
+	}
+
 	// update isPublisher attribute
 	p.isPublisher.Store(isPublisher)
 
@@ -882,6 +894,8 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 	}
 	p.pendingTracksLock.RUnlock()
 
+	pi.DataTracks = p.UpDataTrackManager.ToProto()
+
 	return pi, piv
 }
 
@@ -896,25 +910,25 @@ func (p *ParticipantImpl) TelemetryGuard() *telemetry.ReferenceGuard {
 
 // callbacks for clients
 
-func (p *ParticipantImpl) OnTrackPublished(callback func(types.LocalParticipant, types.MediaTrack)) {
+func (p *ParticipantImpl) OnTrackPublished(callback func(types.Participant, types.MediaTrack)) {
 	p.lock.Lock()
 	p.onTrackPublished = callback
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) getOnTrackPublished() func(types.LocalParticipant, types.MediaTrack) {
+func (p *ParticipantImpl) getOnTrackPublished() func(types.Participant, types.MediaTrack) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	return p.onTrackPublished
 }
 
-func (p *ParticipantImpl) OnTrackUnpublished(callback func(types.LocalParticipant, types.MediaTrack)) {
+func (p *ParticipantImpl) OnTrackUnpublished(callback func(types.Participant, types.MediaTrack)) {
 	p.lock.Lock()
 	p.onTrackUnpublished = callback
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) getOnTrackUnpublished() func(types.LocalParticipant, types.MediaTrack) {
+func (p *ParticipantImpl) getOnTrackUnpublished() func(types.Participant, types.MediaTrack) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	return p.onTrackUnpublished
@@ -956,13 +970,13 @@ func (p *ParticipantImpl) getOnMigrateStateChange() func(p types.LocalParticipan
 	return p.onMigrateStateChange
 }
 
-func (p *ParticipantImpl) OnTrackUpdated(callback func(types.LocalParticipant, types.MediaTrack)) {
+func (p *ParticipantImpl) OnTrackUpdated(callback func(types.Participant, types.MediaTrack)) {
 	p.lock.Lock()
 	p.onTrackUpdated = callback
 	p.lock.Unlock()
 }
 
-func (p *ParticipantImpl) getOnTrackUpdated() func(types.LocalParticipant, types.MediaTrack) {
+func (p *ParticipantImpl) getOnTrackUpdated() func(types.Participant, types.MediaTrack) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	return p.onTrackUpdated
@@ -996,6 +1010,18 @@ func (p *ParticipantImpl) getOnDataMessage() func(types.LocalParticipant, []byte
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	return p.onDataMessage
+}
+
+func (p *ParticipantImpl) OnDataTrackMessage(callback func(types.LocalParticipant, []byte, *datatrack.Packet)) {
+	p.lock.Lock()
+	p.onDataTrackMessage = callback
+	p.lock.Unlock()
+}
+
+func (p *ParticipantImpl) getOnDataTrackMessage() func(types.LocalParticipant, []byte, *datatrack.Packet) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.onDataTrackMessage
 }
 
 func (p *ParticipantImpl) OnMetrics(callback func(types.Participant, *livekit.DataPacket)) {
@@ -1169,7 +1195,7 @@ func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription, unma
 			rids, ok := protosdp.GetSimulcastRids(m)
 			if ok {
 				n := min(len(rids), len(inRids))
-				for i := 0; i < n; i++ {
+				for i := range n {
 					// disabled layers will have a `~` prefix, remove it while determining actual rid
 					if len(rids[i]) != 0 && rids[i][0] == '~' {
 						outRids[i] = rids[i][1:]
@@ -1454,6 +1480,7 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	mediaTracks []*livekit.TrackPublishedResponse,
 	dataChannels []*livekit.DataChannelInfo,
 	dataChannelReceiveState []*livekit.DataChannelReceiveState,
+	dataTracks []*livekit.PublishDataTrackResponse,
 ) {
 	p.pendingTracksLock.Lock()
 	for _, t := range mediaTracks {
@@ -1478,7 +1505,13 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	}
 	p.pendingTracksLock.Unlock()
 
-	if len(mediaTracks) != 0 {
+	for _, t := range dataTracks {
+		dti := t.GetInfo()
+		dt := NewDataTrack(DataTrackParams{Logger: p.params.Logger.WithValues("trackID", dti.Sid)}, dti)
+		p.UpDataTrackManager.AddPublishedDataTrack(dt)
+	}
+
+	if len(mediaTracks) != 0 || len(dataTracks) != 0 {
 		p.setIsPublisher(true)
 	}
 
@@ -1983,6 +2016,10 @@ func (h PublisherTransportHandler) OnDataMessageUnlabeled(data []byte) {
 	h.p.onReceivedDataMessageUnlabeled(data)
 }
 
+func (h PublisherTransportHandler) OnDataTrackMessage(data []byte) {
+	h.p.onReceivedDataTrackMessage(data)
+}
+
 func (h PublisherTransportHandler) OnDataSendError(err error) {
 	h.p.onDataSendError(err)
 }
@@ -2089,6 +2126,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		DataChannelStats:              p.dataChannelStats,
 		UseOneShotSignallingMode:      p.params.UseOneShotSignallingMode,
 		FireOnTrackBySdp:              p.params.FireOnTrackBySdp,
+		EnableDataTracks:              p.params.EnableDataTracks,
 	}
 	if p.params.SyncStreams && p.params.PlayoutDelay.GetEnabled() && p.params.ClientInfo.isFirefox() {
 		// we will disable playout delay for Firefox if the user is expecting
@@ -2141,12 +2179,22 @@ func (p *ParticipantImpl) setupUpTrackManager() {
 	p.UpTrackManager.OnUpTrackManagerClose(p.onUpTrackManagerClose)
 }
 
+func (p *ParticipantImpl) setupUpDataTrackManager() {
+	p.UpDataTrackManager = NewUpDataTrackManager(UpDataTrackManagerParams{
+		Logger:      p.pubLogger,
+		Participant: p,
+	})
+}
+
 func (p *ParticipantImpl) setupSubscriptionManager() {
 	p.SubscriptionManager = NewSubscriptionManager(SubscriptionManagerParams{
 		Participant: p,
 		Logger:      p.subLogger.WithoutSampler(),
 		TrackResolver: func(lp types.LocalParticipant, ti livekit.TrackID) types.MediaResolverResult {
 			return p.helper().ResolveMediaTrack(lp, ti)
+		},
+		DataTrackResolver: func(lp types.LocalParticipant, ti livekit.TrackID) types.DataResolverResult {
+			return p.helper().ResolveDataTrack(lp, ti)
 		},
 		Telemetry:                p.params.Telemetry,
 		OnTrackSubscribed:        p.onTrackSubscribed,

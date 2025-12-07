@@ -197,15 +197,17 @@ func TestUnsubscribe(t *testing.T) {
 
 	resolver := newTestResolver(true, true, "pub", "pubID")
 
-	s := &trackSubscription{
-		trackID:           "track",
-		desired:           true,
-		subscriberID:      sm.params.Participant.ID(),
-		publisherID:       "pubID",
-		publisherIdentity: "pub",
-		hasPermission:     true,
-		bound:             true,
-		logger:            logger.GetLogger(),
+	s := &mediaTrackSubscription{
+		trackSubscription: trackSubscription{
+			trackID:           "track",
+			desired:           true,
+			subscriberID:      sm.params.Participant.ID(),
+			publisherID:       "pubID",
+			publisherIdentity: "pub",
+			logger:            logger.GetLogger(),
+		},
+		hasPermission: true,
+		bound:         true,
 	}
 	// a bunch of unfortunate manual wiring
 	res := resolver.Resolve(nil, s.trackID)
