@@ -21,8 +21,13 @@ if [[ "$*" == *"--dev"* ]]; then
     # Detectar entorno
     if [ -n "$RAILWAY_ENVIRONMENT" ] || [ -n "$PORT" ]; then
         echo "☁️  Entorno: Railway/Cloud detectado"
-        echo "🌐 Servidor WebSocket: Puerto $HTTP_PORT (asignado dinámicamente)"
-        echo "   URL pública: usar el dominio proporcionado por Railway"
+        echo "🌐 Puerto HTTP asignado: $HTTP_PORT"
+        echo "   Bind: 0.0.0.0:$HTTP_PORT (escuchando en todas las interfaces)"
+        if [ -n "$RAILWAY_PUBLIC_DOMAIN" ]; then
+            echo "   URL pública: https://$RAILWAY_PUBLIC_DOMAIN"
+        else
+            echo "   URL pública: usar el dominio proporcionado por Railway"
+        fi
     else
         echo "🌐 Servidor WebSocket: ws://localhost:$HTTP_PORT"
         echo "   (usa la IP/dominio del host si accedes remotamente)"
@@ -68,9 +73,11 @@ echo "🚀 Iniciando LiveKit Server..."
 echo "========================================"
 echo ""
 
-# Si estamos en modo dev y hay PORT definido (Railway/Cloud), agregar --port
+# Si estamos en modo dev y hay PORT definido (Railway/Cloud), configurar correctamente
 if [[ "$*" == *"--dev"* ]] && [ -n "$PORT" ]; then
-    exec /usr/local/bin/livekit-server --dev --port "$HTTP_PORT"
+    echo "🔧 Configurando para Railway/Cloud..."
+    # Railway: usar puerto dinámico y bind a 0.0.0.0
+    exec /usr/local/bin/livekit-server --dev --port "$HTTP_PORT" --bind 0.0.0.0
 else
     # Ejecutar el servidor con los argumentos proporcionados
     exec /usr/local/bin/livekit-server "$@"
