@@ -101,6 +101,27 @@ docker run --rm `
   livekit-ubuntu --config /config.yaml
 ```
 
+### Desplegar en Railway
+El contenedor detecta automáticamente el entorno Railway y usa el puerto asignado dinámicamente:
+
+1. **Sube la imagen a Docker Hub o GitHub Container Registry:**
+```bash
+docker tag livekit-ubuntu tuusuario/livekit-ubuntu:latest
+docker push tuusuario/livekit-ubuntu:latest
+```
+
+2. **En Railway:**
+   - Crea un nuevo proyecto desde Docker image
+   - Imagen: `tuusuario/livekit-ubuntu:latest`
+   - Start Command: `--dev` (o deja vacío si está en ENTRYPOINT)
+   - Railway asignará automáticamente un dominio público
+
+3. **Variables de entorno opcionales en Railway:**
+   - `PORT` - Railway lo asigna automáticamente
+   - Railway expondrá el servicio en su dominio (ej: `tuapp.up.railway.app`)
+
+El servidor detectará Railway y ajustará su configuración automáticamente. Revisa los logs para obtener el token JWT generado.
+
 ### Generar token
 Con LiveKit CLI en contenedor (sin instalar nada local):
 

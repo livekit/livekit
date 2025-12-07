@@ -1,6 +1,11 @@
 #!/bin/bash
 # Entrypoint script para LiveKit - muestra info de conexión al iniciar
 
+# Detectar si estamos en Railway u otro servicio cloud (tienen PORT definido)
+HTTP_PORT=${PORT:-7880}
+RTC_TCP_PORT=${RTC_TCP_PORT:-7881}
+RTC_UDP_START=${RTC_UDP_START:-7882}
+
 echo "========================================"
 echo "  LiveKit Server - Información de Conexión"
 echo "========================================"
@@ -12,11 +17,19 @@ if [[ "$*" == *"--dev"* ]]; then
     echo "📍 API Key: devkey"
     echo "🔑 API Secret: secret"
     echo ""
-    echo "🌐 Servidor WebSocket: ws://localhost:7880"
-    echo "   (usa la IP/dominio del host si accedes remotamente)"
+    
+    # Detectar entorno
+    if [ -n "$RAILWAY_ENVIRONMENT" ] || [ -n "$PORT" ]; then
+        echo "☁️  Entorno: Railway/Cloud detectado"
+        echo "🌐 Servidor WebSocket: Puerto $HTTP_PORT (asignado dinámicamente)"
+        echo "   URL pública: usar el dominio proporcionado por Railway"
+    else
+        echo "🌐 Servidor WebSocket: ws://localhost:$HTTP_PORT"
+        echo "   (usa la IP/dominio del host si accedes remotamente)"
+    fi
     echo ""
     
-    # Generar token usando JWT firmado manualmente (Python en contenedor)
+    # Generar token usando JWT firmado manualmente
     echo "🎟️  Generando token de acceso (válido indefinidamente)..."
     
     # Crear token JWT usando openssl (ya disponible en Ubuntu)
@@ -46,14 +59,19 @@ else
     echo ""
 fi
 
-echo "📡 Puertos expuestos:"
-echo "   - 7880 (HTTP/WebSocket)"
-echo "   - 7881 (RTC TCP)"
-echo "   - 7882 (RTC UDP)"
+echo "📡 Puertos configurados:"
+echo "   - $HTTP_PORT (HTTP/WebSocket)"
+echo "   - $RTC_TCP_PORT (RTC TCP)"
+echo "   - $RTC_UDP_START (RTC UDP)"
 echo ""
 echo "🚀 Iniciando LiveKit Server..."
 echo "========================================"
 echo ""
 
-# Ejecutar el servidor con los argumentos proporcionados
-exec /usr/local/bin/livekit-server "$@"
+# Si estamos en modo dev y hay PORT definido (Railway/Cloud), agregar --port
+if [[ "$*" == *"--dev"* ]] && [ -n "$PORT" ]; then
+    exec /usr/local/bin/livekit-server --dev --port "$HTTP_PORT"
+else
+    # Ejecutar el servidor con los argumentos proporcionados
+    exec /usr/local/bin/livekit-server "$@"
+fi
