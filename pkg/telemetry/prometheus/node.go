@@ -105,6 +105,7 @@ func Init(nodeID string, nodeType livekit.NodeType) error {
 	webhook.InitWebhookStats(prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()})
 	initQualityStats(nodeID, nodeType)
 	initDataPacketStats(nodeID, nodeType)
+	initDebugStats(nodeID, nodeType)
 
 	var err error
 	cpuStats, err = hwstats.NewCPUStats(nil)
