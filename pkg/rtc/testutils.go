@@ -30,6 +30,7 @@ func NewMockParticipant(
 	protocol types.ProtocolVersion,
 	hidden bool,
 	publisher bool,
+	participantListener types.LocalParticipantListener,
 ) *typesfakes.FakeLocalParticipant {
 	p := &typesfakes.FakeLocalParticipant{}
 	sid := guid.New(utils.ParticipantPrefix)
@@ -54,24 +55,11 @@ func NewMockParticipant(
 		IsPublisher: publisher,
 	}, utils.TimedVersion(0))
 
-	/* RAJA-TODO
 	p.SetMetadataCalls(func(m string) {
-		var f func(participant types.LocalParticipant)
-		if p.OnParticipantUpdateCallCount() > 0 {
-			f = p.OnParticipantUpdateArgsForCall(p.OnParticipantUpdateCallCount() - 1)
-		}
-		if f != nil {
-			f(p)
-		}
+		participantListener.OnParticipantUpdate(p)
 	})
 	updateTrack := func() {
-		var f func(participant types.Participant, track types.MediaTrack)
-		if p.OnTrackUpdatedCallCount() > 0 {
-			f = p.OnTrackUpdatedArgsForCall(p.OnTrackUpdatedCallCount() - 1)
-		}
-		if f != nil {
-			f(p, NewMockTrack(livekit.TrackType_VIDEO, "testcam"))
-		}
+		participantListener.OnTrackUpdated(p, NewMockTrack(livekit.TrackType_VIDEO, "testcam"))
 	}
 
 	p.SetTrackMutedCalls(func(mute *livekit.MuteTrackRequest, fromServer bool) *livekit.TrackInfo {
@@ -81,7 +69,6 @@ func NewMockParticipant(
 	p.AddTrackCalls(func(req *livekit.AddTrackRequest) {
 		updateTrack()
 	})
-	*/
 	p.GetLoggerReturns(logger.GetLogger())
 	p.GetReporterReturns(roomobs.NewNoopParticipantSessionReporter())
 

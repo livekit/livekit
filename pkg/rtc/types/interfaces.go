@@ -329,21 +329,9 @@ type Participant interface {
 
 	DebugInfo() map[string]any
 
-	/* RAJA-REMOVE
-	// OnTrackPublished - remote added a track
-	OnTrackPublished(func(Participant, MediaTrack))
-	// OnTrackUpdated - one of its publishedTracks changed in status
-	OnTrackUpdated(callback func(Participant, MediaTrack))
-	// OnTrackUnpublished - a track was unpublished
-	OnTrackUnpublished(callback func(Participant, MediaTrack))
-	OnDataTrackPublished(func(Participant, DataTrack))
-	OnDataTrackUnpublished(func(Participant, DataTrack))
-	OnMetrics(callback func(Participant, *livekit.DataPacket))
-	*/
-
 	HandleReceivedDataTrackMessage([]byte, *datatrack.Packet)
 
-	ClearParticipantListener() // RAJA-TODO: check if needed
+	ClearParticipantListener()
 }
 
 // -------------------------------------------------------
@@ -490,32 +478,8 @@ type LocalParticipant interface {
 	SendRoomMovedResponse(moved *livekit.RoomMovedResponse) error
 	SendDataTrackSubscriberHandles(handles map[uint32]*livekit.DataTrackSubscriberHandles_PublishedDataTrack) error
 
-	/* RAJA-REMOVE
-	// callbacks
-	OnStateChange(func(p LocalParticipant))
-	OnSubscriberReady(callback func(LocalParticipant))
-	OnMigrateStateChange(func(p LocalParticipant, migrateState MigrateState))
-	OnParticipantUpdate(callback func(LocalParticipant))
-	OnDataPacket(callback func(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket))
-	OnDataMessage(callback func(LocalParticipant, []byte))
-	OnDataTrackMessage(callback func(LocalParticipant, []byte, *datatrack.Packet))
-	OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool))
-	*/
 	AddOnClose(key string, callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
-	/* RAJA-REMOVE
-	OnUpdateSubscriptions(func(
-		LocalParticipant,
-		[]livekit.TrackID,
-		[]*livekit.ParticipantTracks,
-		bool,
-	))
-	OnUpdateSubscriptionPermission(func(LocalParticipant, *livekit.SubscriptionPermission) error)
-	OnUpdateDataSubscriptions(func(LocalParticipant, *livekit.UpdateDataSubscription))
-	OnSyncState(func(LocalParticipant, *livekit.SyncState) error)
-	OnSimulateScenario(func(LocalParticipant, *livekit.SimulateScenario) error)
-	OnLeave(func(LocalParticipant, ParticipantCloseReason))
-	*/
 
 	HandleReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
 
@@ -616,8 +580,6 @@ type LocalParticipantListener interface {
 	OnDataMessage(LocalParticipant, []byte)
 	OnDataTrackMessage(LocalParticipant, []byte, *datatrack.Packet)
 	OnSubscribeStatusChanged(LocalParticipant, livekit.ParticipantID, bool)
-	// RAJA-REMOVE AddOnClose(string, func(LocalParticipant))
-	// RAJA-REMOVE OnClaimsChanged(LocalParticipant)
 	OnUpdateSubscriptions(
 		LocalParticipant,
 		[]livekit.TrackID,

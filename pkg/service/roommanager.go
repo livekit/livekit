@@ -481,6 +481,7 @@ func (r *RoomManager) StartSession(
 		AdaptiveStream:          pi.AdaptiveStream,
 		AllowTCPFallback:        allowFallback,
 		TURNSEnabled:            r.config.IsTURNSEnabled(),
+		ParticipantListener:     room,
 		ParticipantHelper: &roomManagerParticipantHelper{
 			room:                     room,
 			codecRegressionThreshold: r.config.Video.CodecRegressionThreshold,

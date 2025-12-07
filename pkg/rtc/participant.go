@@ -296,27 +296,6 @@ type ParticipantImpl struct {
 	dirty   atomic.Bool
 	version atomic.Uint32
 
-	/* RAJA-REMOVE
-	// callbacks & handlers
-	onTrackPublished               func(types.Participant, types.MediaTrack)
-	onTrackUpdated                 func(types.Participant, types.MediaTrack)
-	onTrackUnpublished             func(types.Participant, types.MediaTrack)
-	onStateChange                  func(p types.LocalParticipant)
-	onSubscriberReady              func(p types.LocalParticipant)
-	onMigrateStateChange           func(p types.LocalParticipant, migrateState types.MigrateState)
-	onParticipantUpdate            func(types.LocalParticipant)
-	onDataPacket                   func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
-	onDataMessage                  func(types.LocalParticipant, []byte)
-	onDataTrackMessage             func(types.LocalParticipant, []byte, *datatrack.Packet)
-	onMetrics                      func(types.Participant, *livekit.DataPacket)
-	onUpdateSubscriptions          func(types.LocalParticipant, []livekit.TrackID, []*livekit.ParticipantTracks, bool)
-	onUpdateSubscriptionPermission func(types.LocalParticipant, *livekit.SubscriptionPermission) error
-	onUpdateDataSubscriptions      func(types.LocalParticipant, *livekit.UpdateDataSubscription)
-	onSyncState                    func(types.LocalParticipant, *livekit.SyncState) error
-	onSimulateScenario             func(types.LocalParticipant, *livekit.SimulateScenario) error
-	onLeave                        func(types.LocalParticipant, types.ParticipantCloseReason)
-	*/
-
 	migrateState                atomic.Value // types.MigrateState
 	migratedTracksPublishedFuse core.Fuse
 
@@ -676,15 +655,9 @@ func (p *ParticipantImpl) SetName(name string) {
 	p.grants.Store(grants)
 	p.dirty.Store(true)
 
-	// RAJA-REMOVE onParticipantUpdate := p.onParticipantUpdate
 	onClaimsChanged := p.onClaimsChanged
 	p.lock.Unlock()
 
-	/* RAJA-REMOVE
-	if onParticipantUpdate != nil {
-		onParticipantUpdate(p)
-	}
-	*/
 	p.listener().OnParticipantUpdate(p)
 
 	if onClaimsChanged != nil {
@@ -707,15 +680,9 @@ func (p *ParticipantImpl) SetMetadata(metadata string) {
 	p.requireBroadcast = p.requireBroadcast || metadata != ""
 	p.dirty.Store(true)
 
-	// RAJA-REMOVE onParticipantUpdate := p.onParticipantUpdate
 	onClaimsChanged := p.onClaimsChanged
 	p.lock.Unlock()
 
-	/* RAJA-REMOVE
-	if onParticipantUpdate != nil {
-		onParticipantUpdate(p)
-	}
-	*/
 	p.listener().OnParticipantUpdate(p)
 
 	if onClaimsChanged != nil {
@@ -748,15 +715,9 @@ func (p *ParticipantImpl) SetAttributes(attrs map[string]string) {
 	p.requireBroadcast = true // already checked above
 	p.dirty.Store(true)
 
-	// RAJA-REMOVE onParticipantUpdate := p.onParticipantUpdate
 	onClaimsChanged := p.onClaimsChanged
 	p.lock.Unlock()
 
-	/* RAJA-REMOVE
-	if onParticipantUpdate != nil {
-		onParticipantUpdate(p)
-	}
-	*/
 	p.listener().OnParticipantUpdate(p)
 
 	if onClaimsChanged != nil {
@@ -790,7 +751,6 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 	canPublish := grants.Video.GetCanPublish()
 	canSubscribe := grants.Video.GetCanSubscribe()
 
-	// onParticipantUpdate := p.onParticipantUpdate
 	onClaimsChanged := p.onClaimsChanged
 
 	isPublisher := canPublish && p.TransportManager.IsPublisherEstablished()
@@ -823,11 +783,6 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 	// update isPublisher attribute
 	p.isPublisher.Store(isPublisher)
 
-	/* RAJA-REMOVE
-	if onParticipantUpdate != nil {
-		onParticipantUpdate(p)
-	}
-	*/
 	p.listener().OnParticipantUpdate(p)
 
 	if onClaimsChanged != nil {
@@ -931,196 +886,6 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 func (p *ParticipantImpl) TelemetryGuard() *telemetry.ReferenceGuard {
 	return p.telemetryGuard
 }
-
-/* RAJA-REMOVE
-// callbacks for clients
-
-func (p *ParticipantImpl) OnTrackPublished(callback func(types.Participant, types.MediaTrack)) {
-	p.lock.Lock()
-	p.onTrackPublished = callback
-	p.lock.Unlock()
-}
-
-func (p *ParticipantImpl) getOnTrackPublished() func(types.Participant, types.MediaTrack) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	return p.onTrackPublished
-}
-
-func (p *ParticipantImpl) OnTrackUnpublished(callback func(types.Participant, types.MediaTrack)) {
-	p.lock.Lock()
-	p.onTrackUnpublished = callback
-	p.lock.Unlock()
-}
-
-func (p *ParticipantImpl) getOnTrackUnpublished() func(types.Participant, types.MediaTrack) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	return p.onTrackUnpublished
-}
-
-func (p *ParticipantImpl) OnStateChange(callback func(p types.LocalParticipant)) {
-	p.lock.Lock()
-	p.onStateChange = callback
-	p.lock.Unlock()
-}
-
-func (p *ParticipantImpl) getOnStateChange() func(p types.LocalParticipant) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	return p.onStateChange
-}
-
-func (p *ParticipantImpl) OnSubscriberReady(callback func(p types.LocalParticipant)) {
-	p.lock.Lock()
-	p.onSubscriberReady = callback
-	p.lock.Unlock()
-}
-
-func (p *ParticipantImpl) getOnSubscriberReady() func(p types.LocalParticipant) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	return p.onSubscriberReady
-}
-
-func (p *ParticipantImpl) OnMigrateStateChange(callback func(p types.LocalParticipant, state types.MigrateState)) {
-	p.lock.Lock()
-	p.onMigrateStateChange = callback
-	p.lock.Unlock()
-}
-
-func (p *ParticipantImpl) getOnMigrateStateChange() func(p types.LocalParticipant, state types.MigrateState) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	return p.onMigrateStateChange
-}
-
-func (p *ParticipantImpl) OnTrackUpdated(callback func(types.Participant, types.MediaTrack)) {
-	p.lock.Lock()
-	p.onTrackUpdated = callback
-	p.lock.Unlock()
-}
-
-func (p *ParticipantImpl) getOnTrackUpdated() func(types.Participant, types.MediaTrack) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	return p.onTrackUpdated
-}
-
-func (p *ParticipantImpl) OnParticipantUpdate(callback func(types.LocalParticipant)) {
-	p.lock.Lock()
-	p.onParticipantUpdate = callback
-	p.lock.Unlock()
-}
-
-func (p *ParticipantImpl) OnDataPacket(callback func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)) {
-	p.lock.Lock()
-	p.onDataPacket = callback
-	p.lock.Unlock()
-}
-
-func (p *ParticipantImpl) getOnDataPacket() func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	return p.onDataPacket
-}
-
-func (p *ParticipantImpl) OnDataMessage(callback func(types.LocalParticipant, []byte)) {
-	p.lock.Lock()
-	p.onDataMessage = callback
-	p.lock.Unlock()
-}
-
-func (p *ParticipantImpl) getOnDataMessage() func(types.LocalParticipant, []byte) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	return p.onDataMessage
-}
-
-func (p *ParticipantImpl) OnDataTrackMessage(callback func(types.LocalParticipant, []byte, *datatrack.Packet)) {
-	p.lock.Lock()
-	p.onDataTrackMessage = callback
-	p.lock.Unlock()
-}
-
-func (p *ParticipantImpl) getOnDataTrackMessage() func(types.LocalParticipant, []byte, *datatrack.Packet) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	return p.onDataTrackMessage
-}
-
-func (p *ParticipantImpl) OnMetrics(callback func(types.Participant, *livekit.DataPacket)) {
-	p.lock.Lock()
-	p.onMetrics = callback
-	p.lock.Unlock()
-}
-
-func (p *ParticipantImpl) getOnMetrics() func(types.Participant, *livekit.DataPacket) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	return p.onMetrics
-}
-
-func (p *ParticipantImpl) OnUpdateSubscriptions(callback func(types.LocalParticipant, []livekit.TrackID, []*livekit.ParticipantTracks, bool)) {
-	p.lock.Lock()
-	p.onUpdateSubscriptions = callback
-	p.lock.Unlock()
-}
-
-func (p *ParticipantImpl) getOnUpdateSubscriptions() func(types.LocalParticipant, []livekit.TrackID, []*livekit.ParticipantTracks, bool) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	return p.onUpdateSubscriptions
-}
-
-func (p *ParticipantImpl) OnUpdateSubscriptionPermission(callback func(types.LocalParticipant, *livekit.SubscriptionPermission) error) {
-	p.lock.Lock()
-	p.onUpdateSubscriptionPermission = callback
-	p.lock.Unlock()
-}
-
-func (p *ParticipantImpl) getOnUpdateSubscriptionPermission() func(types.LocalParticipant, *livekit.SubscriptionPermission) error {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	return p.onUpdateSubscriptionPermission
-}
-
-func (p *ParticipantImpl) OnSyncState(callback func(types.LocalParticipant, *livekit.SyncState) error) {
-	p.lock.Lock()
-	p.onSyncState = callback
-	p.lock.Unlock()
-}
-
-func (p *ParticipantImpl) getOnSyncState() func(types.LocalParticipant, *livekit.SyncState) error {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	return p.onSyncState
-}
-
-func (p *ParticipantImpl) OnSimulateScenario(callback func(types.LocalParticipant, *livekit.SimulateScenario) error) {
-	p.lock.Lock()
-	p.onSimulateScenario = callback
-	p.lock.Unlock()
-}
-
-func (p *ParticipantImpl) getOnSimulateScenario() func(types.LocalParticipant, *livekit.SimulateScenario) error {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	return p.onSimulateScenario
-}
-
-func (p *ParticipantImpl) OnLeave(callback func(types.LocalParticipant, types.ParticipantCloseReason)) {
-	p.lock.Lock()
-	p.onLeave = callback
-	p.lock.Unlock()
-}
-
-func (p *ParticipantImpl) getOnLeave() func(types.LocalParticipant, types.ParticipantCloseReason) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	return p.onLeave
-}
-*/
 
 func (p *ParticipantImpl) AddOnClose(key string, callback func(types.LocalParticipant)) {
 	if p.isClosed.Load() {
@@ -1341,11 +1106,6 @@ func (p *ParticipantImpl) HandleOffer(sd *livekit.SessionDescription) error {
 	}
 
 	if p.params.UseOneShotSignallingMode {
-		/* RAJA-REMOVE
-		if onSubscriberReady := p.getOnSubscriberReady(); onSubscriberReady != nil {
-			go onSubscriberReady(p)
-		}
-		*/
 		go p.listener().OnSubscriberReady(p)
 	}
 
@@ -1813,11 +1573,6 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 			<-p.migratedTracksPublishedFuse.Watch()
 		}
 
-		/* RAJA-REMOVE
-		if onMigrateStateChange := p.getOnMigrateStateChange(); onMigrateStateChange != nil {
-			onMigrateStateChange(p, s)
-		}
-		*/
 		p.listener().OnMigrateStateChange(p, s)
 	}()
 }
@@ -2203,11 +1958,6 @@ func (p *ParticipantImpl) setupUpTrackManager() {
 
 	p.UpTrackManager.OnPublishedTrackUpdated(func(track types.MediaTrack) {
 		p.dirty.Store(true)
-		/* RAJA-REMOVE
-		if onTrackUpdated := p.getOnTrackUpdated(); onTrackUpdated != nil {
-			onTrackUpdated(p, track)
-		}
-		*/
 		p.listener().OnTrackUpdated(p, track)
 	})
 
@@ -2254,16 +2004,6 @@ func (p *ParticipantImpl) MetricsCollectorTimeToCollectMetrics() {
 }
 
 func (p *ParticipantImpl) MetricsCollectorBatchReady(mb *livekit.MetricsBatch) {
-	/* RAJA-REMOVE
-	if onMetrics := p.getOnMetrics(); onMetrics != nil {
-		onMetrics(p, &livekit.DataPacket{
-			ParticipantIdentity: string(p.Identity()),
-			Value: &livekit.DataPacket_Metrics{
-				Metrics: mb,
-			},
-		})
-	}
-	*/
 	p.listener().OnMetrics(p, &livekit.DataPacket{
 		ParticipantIdentity: string(p.Identity()),
 		Value: &livekit.DataPacket_Metrics{
@@ -2329,11 +2069,6 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 	p.params.Logger.Debugw("updating participant state", "state", state.String())
 	p.dirty.Store(true)
 
-	/* RAJA-REMOVE
-	if onStateChange := p.getOnStateChange(); onStateChange != nil {
-		go onStateChange(p)
-	}
-	*/
 	p.listener().OnStateChange(p)
 
 	if state == livekit.ParticipantInfo_DISCONNECTED && oldState == livekit.ParticipantInfo_ACTIVE {
@@ -2355,15 +2090,6 @@ func (p *ParticipantImpl) setIsPublisher(isPublisher bool) {
 
 	// trigger update as well if participant is already fully connected
 	if p.State() == livekit.ParticipantInfo_ACTIVE {
-		/* RAJA-REMOVE
-		p.lock.RLock()
-		onParticipantUpdate := p.onParticipantUpdate
-		p.lock.RUnlock()
-
-		if onParticipantUpdate != nil {
-			onParticipantUpdate(p)
-		}
-		*/
 		p.listener().OnParticipantUpdate(p)
 	}
 }
@@ -2483,11 +2209,6 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 	)
 
 	if !isNewTrack && !publishedTrack.HasPendingCodec() && p.IsReady() {
-		/* RAJA-REMOVE
-		if onTrackUpdated := p.getOnTrackUpdated(); onTrackUpdated != nil {
-			onTrackUpdated(p, publishedTrack)
-		}
-		*/
 		p.listener().OnTrackUpdated(p, publishedTrack)
 	}
 }
@@ -2708,19 +2429,9 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 	}
 
 	if shouldForwardData {
-		/* RAJA-REMOVE
-		if onDataPacket := p.getOnDataPacket(); onDataPacket != nil {
-			onDataPacket(p, kind, dp)
-		}
-		*/
 		p.listener().OnDataPacket(p, kind, dp)
 	}
 	if shouldForwardMetrics {
-		/* RAJA-REMOVE
-		if onMetrics := p.getOnMetrics(); onMetrics != nil {
-			onMetrics(p, dp)
-		}
-		*/
 		p.listener().OnMetrics(p, dp)
 	}
 }
@@ -2732,11 +2443,6 @@ func (p *ParticipantImpl) onReceivedDataMessageUnlabeled(data []byte) {
 
 	p.dataChannelStats.AddBytes(uint64(len(data)), false)
 
-	/* RAJA-REMOVE
-	if onDataMessage := p.getOnDataMessage(); onDataMessage != nil {
-		onDataMessage(p, data)
-	}
-	*/
 	p.listener().OnDataMessage(p, data)
 }
 
@@ -3594,11 +3300,6 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 			"expectedToResume", isExpectedToResume,
 			"track", logger.Proto(ti),
 		)
-		/* RAJA-REMOVE
-		if onTrackUnpublished := p.getOnTrackUnpublished(); onTrackUnpublished != nil {
-			onTrackUnpublished(p, mt)
-		}
-		*/
 		p.listener().OnTrackUnpublished(p, mt)
 	})
 
@@ -3606,11 +3307,6 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 }
 
 func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack, isMigrated bool) {
-	/* RAJA-REMOVE
-	if onTrackPublished := p.getOnTrackPublished(); onTrackPublished != nil {
-		onTrackPublished(p, track)
-	}
-	*/
 	p.listener().OnTrackPublished(p, track)
 
 	// send webhook after callbacks are complete, persistence and state handling happens
@@ -4292,53 +3988,22 @@ func (p *ParticipantImpl) HandleUpdateSubscriptions(
 	participantTracks []*livekit.ParticipantTracks,
 	subscribe bool,
 ) {
-	/* RAJA-REMOVE
-	if onUpdateSubscriptions := p.getOnUpdateSubscriptions(); onUpdateSubscriptions != nil {
-		onUpdateSubscriptions(p, trackIDs, participantTracks, subscribe)
-	}
-	*/
 	p.listener().OnUpdateSubscriptions(p, trackIDs, participantTracks, subscribe)
 }
 
 func (p *ParticipantImpl) HandleUpdateSubscriptionPermission(subscriptionPermission *livekit.SubscriptionPermission) error {
-	/* RAJA-REMOVE
-	if onUpdateSubscriptionPermission := p.getOnUpdateSubscriptionPermission(); onUpdateSubscriptionPermission != nil {
-		return onUpdateSubscriptionPermission(p, subscriptionPermission)
-	}
-
-	return errors.New("no handler")
-	*/
 	return p.listener().OnUpdateSubscriptionPermission(p, subscriptionPermission)
 }
 
 func (p *ParticipantImpl) HandleSyncState(syncState *livekit.SyncState) error {
-	/* RAJA-REMOVE
-	if onSyncState := p.getOnSyncState(); onSyncState != nil {
-		return onSyncState(p, syncState)
-	}
-
-	return errors.New("no handler")
-	*/
 	return p.listener().OnSyncState(p, syncState)
 }
 
 func (p *ParticipantImpl) HandleSimulateScenario(simulateScenario *livekit.SimulateScenario) error {
-	/* RAJA-REMOVE
-	if onSimulateScenario := p.getOnSimulateScenario(); onSimulateScenario != nil {
-		return onSimulateScenario(p, simulateScenario)
-	}
-
-	return errors.New("no handler")
-	*/
 	return p.listener().OnSimulateScenario(p, simulateScenario)
 }
 
 func (p *ParticipantImpl) HandleLeaveRequest(reason types.ParticipantCloseReason) {
-	/* RAJA-REMOVE
-	if onLeave := p.getOnLeave(); onLeave != nil {
-		onLeave(p, reason)
-	}
-	*/
 	p.listener().OnLeave(p, reason)
 }
 
