@@ -22,20 +22,6 @@ import (
 	"github.com/livekit/protocol/utils/guid"
 )
 
-/* RAJA-REMOVE
-func (p *ParticipantImpl) OnUpdateDataSubscriptions(callback func(types.LocalParticipant, *livekit.UpdateDataSubscription)) {
-	p.lock.Lock()
-	p.onUpdateDataSubscriptions = callback
-	p.lock.Unlock()
-}
-
-func (p *ParticipantImpl) getOnUpdateDataSubscriptions() func(types.LocalParticipant, *livekit.UpdateDataSubscription) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-	return p.onUpdateDataSubscriptions
-}
-*/
-
 func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishDataTrackRequest) {
 	if !p.CanPublishData() || !p.params.EnableDataTracks {
 		p.pubLogger.Warnw("no permission to publish data track", nil, "req", logger.Proto(req))
@@ -139,11 +125,6 @@ func (p *ParticipantImpl) HandleUnpublishDataTrackRequest(req *livekit.Unpublish
 }
 
 func (p *ParticipantImpl) HandleUpdateDataSubscription(req *livekit.UpdateDataSubscription) {
-	/* RAJA-REMOVE
-	if onUpdateDataSubscriptions := p.getOnUpdateDataSubscriptions(); onUpdateDataSubscriptions != nil {
-		onUpdateDataSubscriptions(p, req)
-	}
-	*/
 	p.listener().OnUpdateDataSubscriptions(p, req)
 }
 
@@ -156,10 +137,5 @@ func (p *ParticipantImpl) onReceivedDataTrackMessage(data []byte) {
 
 	p.UpDataTrackManager.HandleReceivedDataTrackMessage(data, &packet)
 
-	/* RAJA-REMOVE
-	if onDataTrackMessage := p.getOnDataTrackMessage(); onDataTrackMessage != nil {
-		onDataTrackMessage(p, data, &packet)
-	}
-	*/
 	p.listener().OnDataTrackMessage(p, data, &packet)
 }
