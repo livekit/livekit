@@ -442,6 +442,10 @@ func (p *ParticipantImpl) listener() types.LocalParticipantListener {
 	return p.participantListener
 }
 
+func (p *ParticipantImpl) GetParticipantListener() types.ParticipantListener {
+	return p.listener()
+}
+
 func (p *ParticipantImpl) ClearParticipantListener() {
 	p.setListener(&types.NullLocalParticipantListener{})
 }

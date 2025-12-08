@@ -331,6 +331,7 @@ type Participant interface {
 
 	HandleReceivedDataTrackMessage([]byte, *datatrack.Packet)
 
+	GetParticipantListener() ParticipantListener
 	ClearParticipantListener()
 }
 

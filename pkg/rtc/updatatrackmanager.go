@@ -46,38 +46,12 @@ func NewUpDataTrackManager(params UpDataTrackManagerParams) *UpDataTrackManager 
 	}
 }
 
-func (u *UpDataTrackManager) OnDataTrackPublished(callback func(types.Participant, types.DataTrack)) {
-	u.lock.Lock()
-	u.onDataTrackPublished = callback
-	u.lock.Unlock()
-}
-
-func (u *UpDataTrackManager) GetOnDataTrackPublished() func(types.Participant, types.DataTrack) {
-	u.lock.RLock()
-	defer u.lock.RUnlock()
-	return u.onDataTrackPublished
-}
-
-func (u *UpDataTrackManager) OnDataTrackUnpublished(callback func(types.Participant, types.DataTrack)) {
-	u.lock.Lock()
-	u.onDataTrackUnpublished = callback
-	u.lock.Unlock()
-}
-
-func (u *UpDataTrackManager) GetOnDataTrackUnpublished() func(types.Participant, types.DataTrack) {
-	u.lock.RLock()
-	defer u.lock.RUnlock()
-	return u.onDataTrackUnpublished
-}
-
 func (u *UpDataTrackManager) AddPublishedDataTrack(dt types.DataTrack) {
 	u.lock.Lock()
 	u.dataTracks[dt.PubHandle()] = dt
 	u.lock.Unlock()
 
-	if onDataTrackPublished := u.GetOnDataTrackPublished(); onDataTrackPublished != nil {
-		onDataTrackPublished(u.params.Participant, dt)
-	}
+	u.params.Participant.GetParticipantListener().OnDataTrackPublished(u.params.Participant, dt)
 }
 
 func (u *UpDataTrackManager) RemovePublishedDataTrack(dt types.DataTrack) {
@@ -93,9 +67,7 @@ func (u *UpDataTrackManager) RemovePublishedDataTrack(dt types.DataTrack) {
 	if found {
 		dt.Close()
 
-		if onDataTrackUnpublished := u.GetOnDataTrackUnpublished(); onDataTrackUnpublished != nil {
-			onDataTrackUnpublished(u.params.Participant, dt)
-		}
+		u.params.Participant.GetParticipantListener().OnDataTrackUnpublished(u.params.Participant, dt)
 	}
 }
 

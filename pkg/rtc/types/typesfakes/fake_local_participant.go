@@ -386,6 +386,16 @@ type FakeLocalParticipant struct {
 	getPacerReturnsOnCall map[int]struct {
 		result1 pacer.Pacer
 	}
+	GetParticipantListenerStub        func() types.ParticipantListener
+	getParticipantListenerMutex       sync.RWMutex
+	getParticipantListenerArgsForCall []struct {
+	}
+	getParticipantListenerReturns struct {
+		result1 types.ParticipantListener
+	}
+	getParticipantListenerReturnsOnCall map[int]struct {
+		result1 types.ParticipantListener
+	}
 	GetPendingTrackStub        func(livekit.TrackID) *livekit.TrackInfo
 	getPendingTrackMutex       sync.RWMutex
 	getPendingTrackArgsForCall []struct {
@@ -3339,6 +3349,59 @@ func (fake *FakeLocalParticipant) GetPacerReturnsOnCall(i int, result1 pacer.Pac
 	}
 	fake.getPacerReturnsOnCall[i] = struct {
 		result1 pacer.Pacer
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetParticipantListener() types.ParticipantListener {
+	fake.getParticipantListenerMutex.Lock()
+	ret, specificReturn := fake.getParticipantListenerReturnsOnCall[len(fake.getParticipantListenerArgsForCall)]
+	fake.getParticipantListenerArgsForCall = append(fake.getParticipantListenerArgsForCall, struct {
+	}{})
+	stub := fake.GetParticipantListenerStub
+	fakeReturns := fake.getParticipantListenerReturns
+	fake.recordInvocation("GetParticipantListener", []interface{}{})
+	fake.getParticipantListenerMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetParticipantListenerCallCount() int {
+	fake.getParticipantListenerMutex.RLock()
+	defer fake.getParticipantListenerMutex.RUnlock()
+	return len(fake.getParticipantListenerArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetParticipantListenerCalls(stub func() types.ParticipantListener) {
+	fake.getParticipantListenerMutex.Lock()
+	defer fake.getParticipantListenerMutex.Unlock()
+	fake.GetParticipantListenerStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetParticipantListenerReturns(result1 types.ParticipantListener) {
+	fake.getParticipantListenerMutex.Lock()
+	defer fake.getParticipantListenerMutex.Unlock()
+	fake.GetParticipantListenerStub = nil
+	fake.getParticipantListenerReturns = struct {
+		result1 types.ParticipantListener
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetParticipantListenerReturnsOnCall(i int, result1 types.ParticipantListener) {
+	fake.getParticipantListenerMutex.Lock()
+	defer fake.getParticipantListenerMutex.Unlock()
+	fake.GetParticipantListenerStub = nil
+	if fake.getParticipantListenerReturnsOnCall == nil {
+		fake.getParticipantListenerReturnsOnCall = make(map[int]struct {
+			result1 types.ParticipantListener
+		})
+	}
+	fake.getParticipantListenerReturnsOnCall[i] = struct {
+		result1 types.ParticipantListener
 	}{result1}
 }
 
