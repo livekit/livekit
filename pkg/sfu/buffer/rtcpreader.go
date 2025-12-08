@@ -31,6 +31,7 @@ func NewRTCPReader(ssrc uint32) *RTCPReader {
 	return &RTCPReader{ssrc: ssrc}
 }
 
+//go:noinline
 func (r *RTCPReader) Write(p []byte) (n int, err error) {
 	if r.closed.Load() {
 		err = io.EOF
