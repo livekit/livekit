@@ -562,13 +562,13 @@ var _ ParticipantListener = (*NullParticipantListener)(nil)
 
 type NullParticipantListener struct{}
 
-func (n NullParticipantListener) OnParticipantUpdate(Participant)               {}
-func (n NullParticipantListener) OnTrackPublished(Participant, MediaTrack)      {}
-func (n NullParticipantListener) OnTrackUpdated(Participant, MediaTrack)        {}
-func (n NullParticipantListener) OnTrackUnpublished(Participant, MediaTrack)    {}
-func (n NullParticipantListener) OnDataTrackPublished(Participant, DataTrack)   {}
-func (n NullParticipantListener) OnDataTrackUnpublished(Participant, DataTrack) {}
-func (n NullParticipantListener) OnMetrics(Participant, *livekit.DataPacket)    {}
+func (*NullParticipantListener) OnParticipantUpdate(Participant)               {}
+func (*NullParticipantListener) OnTrackPublished(Participant, MediaTrack)      {}
+func (*NullParticipantListener) OnTrackUpdated(Participant, MediaTrack)        {}
+func (*NullParticipantListener) OnTrackUnpublished(Participant, MediaTrack)    {}
+func (*NullParticipantListener) OnDataTrackPublished(Participant, DataTrack)   {}
+func (*NullParticipantListener) OnDataTrackUnpublished(Participant, DataTrack) {}
+func (*NullParticipantListener) OnMetrics(Participant, *livekit.DataPacket)    {}
 
 // ---------------------------------------------
 
@@ -602,35 +602,35 @@ type NullLocalParticipantListener struct {
 	NullParticipantListener
 }
 
-func (n NullLocalParticipantListener) OnStateChange(LocalParticipant)                      {}
-func (n NullLocalParticipantListener) OnSubscriberReady(LocalParticipant)                  {}
-func (n NullLocalParticipantListener) OnMigrateStateChange(LocalParticipant, MigrateState) {}
-func (n NullLocalParticipantListener) OnDataPacket(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket) {
+func (*NullLocalParticipantListener) OnStateChange(LocalParticipant)                      {}
+func (*NullLocalParticipantListener) OnSubscriberReady(LocalParticipant)                  {}
+func (*NullLocalParticipantListener) OnMigrateStateChange(LocalParticipant, MigrateState) {}
+func (*NullLocalParticipantListener) OnDataPacket(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket) {
 }
-func (n NullLocalParticipantListener) OnDataMessage(LocalParticipant, []byte) {}
-func (n NullLocalParticipantListener) OnDataTrackMessage(LocalParticipant, []byte, *datatrack.Packet) {
+func (*NullLocalParticipantListener) OnDataMessage(LocalParticipant, []byte) {}
+func (*NullLocalParticipantListener) OnDataTrackMessage(LocalParticipant, []byte, *datatrack.Packet) {
 }
-func (n NullLocalParticipantListener) OnSubscribeStatusChanged(LocalParticipant, livekit.ParticipantID, bool) {
+func (*NullLocalParticipantListener) OnSubscribeStatusChanged(LocalParticipant, livekit.ParticipantID, bool) {
 }
-func (n NullLocalParticipantListener) OnUpdateSubscriptions(
+func (*NullLocalParticipantListener) OnUpdateSubscriptions(
 	LocalParticipant,
 	[]livekit.TrackID,
 	[]*livekit.ParticipantTracks,
 	bool,
 ) {
 }
-func (n NullLocalParticipantListener) OnUpdateSubscriptionPermission(LocalParticipant, *livekit.SubscriptionPermission) error {
+func (*NullLocalParticipantListener) OnUpdateSubscriptionPermission(LocalParticipant, *livekit.SubscriptionPermission) error {
 	return nil
 }
-func (n NullLocalParticipantListener) OnUpdateDataSubscriptions(LocalParticipant, *livekit.UpdateDataSubscription) {
+func (*NullLocalParticipantListener) OnUpdateDataSubscriptions(LocalParticipant, *livekit.UpdateDataSubscription) {
 }
-func (n NullLocalParticipantListener) OnSyncState(LocalParticipant, *livekit.SyncState) error {
+func (*NullLocalParticipantListener) OnSyncState(LocalParticipant, *livekit.SyncState) error {
 	return nil
 }
-func (n NullLocalParticipantListener) OnSimulateScenario(LocalParticipant, *livekit.SimulateScenario) error {
+func (*NullLocalParticipantListener) OnSimulateScenario(LocalParticipant, *livekit.SimulateScenario) error {
 	return nil
 }
-func (n NullLocalParticipantListener) OnLeave(LocalParticipant, ParticipantCloseReason) {}
+func (*NullLocalParticipantListener) OnLeave(LocalParticipant, ParticipantCloseReason) {}
 
 // ---------------------------------------------
 

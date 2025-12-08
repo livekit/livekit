@@ -228,11 +228,9 @@ type ParticipantImpl struct {
 
 	params ParticipantParams
 
-	participantListenerLock sync.Mutex
-	participantListener     types.LocalParticipantListener
-
-	participantHelper atomic.Value // types.LocalParticipantHelper
-	id                atomic.Value // types.ParticipantID
+	participantListener atomic.Pointer[types.LocalParticipantListener]
+	participantHelper   atomic.Value // types.LocalParticipantHelper
+	id                  atomic.Value // types.ParticipantID
 
 	isClosed    atomic.Bool
 	closeReason atomic.Value // types.ParticipantCloseReason
@@ -429,17 +427,18 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 }
 
 func (p *ParticipantImpl) setListener(listener types.LocalParticipantListener) {
-	p.participantListenerLock.Lock()
-	defer p.participantListenerLock.Unlock()
-
-	p.participantListener = listener
+	if listener == nil {
+		p.participantListener.Store(nil)
+		return
+	}
+	p.participantListener.Store(&listener)
 }
 
 func (p *ParticipantImpl) listener() types.LocalParticipantListener {
-	p.participantListenerLock.Lock()
-	defer p.participantListenerLock.Unlock()
-
-	return p.participantListener
+	if l := p.participantListener.Load(); l != nil {
+		return *l
+	}
+	return &types.NullLocalParticipantListener{}
 }
 
 func (p *ParticipantImpl) GetParticipantListener() types.ParticipantListener {
@@ -447,7 +446,7 @@ func (p *ParticipantImpl) GetParticipantListener() types.ParticipantListener {
 }
 
 func (p *ParticipantImpl) ClearParticipantListener() {
-	p.setListener(&types.NullLocalParticipantListener{})
+	p.setListener(nil)
 }
 
 func (p *ParticipantImpl) GetCountry() string {
