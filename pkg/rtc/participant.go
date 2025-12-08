@@ -228,9 +228,11 @@ type ParticipantImpl struct {
 
 	params ParticipantParams
 
-	participantListener atomic.Value // types.LocalParticipantListener
-	participantHelper   atomic.Value // types.LocalParticipantHelper
-	id                  atomic.Value // types.ParticipantID
+	participantListenerLock sync.Mutex
+	participantListener     types.LocalParticipantListener
+
+	participantHelper atomic.Value // types.LocalParticipantHelper
+	id                atomic.Value // types.ParticipantID
 
 	isClosed    atomic.Bool
 	closeReason atomic.Value // types.ParticipantCloseReason
@@ -373,7 +375,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		params.Reporter,
 	)
 	p.reliableDataInfo.lastPubReliableSeq.Store(params.LastPubReliableSeq)
-	p.participantListener.Store(params.ParticipantListener)
+	p.setListener(params.ParticipantListener)
 	p.participantHelper.Store(params.ParticipantHelper)
 	if !params.DisableSupervisor {
 		p.supervisor = supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger})
@@ -426,8 +428,22 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	return p, nil
 }
 
+func (p *ParticipantImpl) setListener(listener types.LocalParticipantListener) {
+	p.participantListenerLock.Lock()
+	defer p.participantListenerLock.Unlock()
+
+	p.participantListener = listener
+}
+
+func (p *ParticipantImpl) listener() types.LocalParticipantListener {
+	p.participantListenerLock.Lock()
+	defer p.participantListenerLock.Unlock()
+
+	return p.participantListener
+}
+
 func (p *ParticipantImpl) ClearParticipantListener() {
-	p.participantListener.Store(&types.NullLocalParticipantListener{})
+	p.setListener(&types.NullLocalParticipantListener{})
 }
 
 func (p *ParticipantImpl) GetCountry() string {
@@ -2069,7 +2085,7 @@ func (p *ParticipantImpl) updateState(state livekit.ParticipantInfo_State) {
 	p.params.Logger.Debugw("updating participant state", "state", state.String())
 	p.dirty.Store(true)
 
-	p.listener().OnStateChange(p)
+	go p.listener().OnStateChange(p)
 
 	if state == livekit.ParticipantInfo_DISCONNECTED && oldState == livekit.ParticipantInfo_ACTIVE {
 		p.disconnectedAt.Store(pointer.To(time.Now()))
@@ -3959,17 +3975,13 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 
 	p.params.LoggerResolver.Reset()
 	p.params.ReporterResolver.Reset()
-	p.participantListener.Store(params.Listener)
+	p.setListener(params.Listener)
 	p.participantHelper.Store(params.Helper)
 	p.SubscriptionManager.ClearAllSubscriptions()
 	p.id.Store(params.ParticipantID)
 	grants := p.grants.Load().Clone()
 	grants.Video.Room = string(params.RoomName)
 	p.grants.Store(grants)
-}
-
-func (p *ParticipantImpl) listener() types.LocalParticipantListener {
-	return p.participantListener.Load().(types.LocalParticipantListener)
 }
 
 func (p *ParticipantImpl) helper() types.LocalParticipantHelper {

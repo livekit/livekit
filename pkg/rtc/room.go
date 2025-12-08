@@ -1587,7 +1587,9 @@ func (r *Room) OnStateChange(p types.LocalParticipant) {
 
 	r.onStateChangeMu.Lock()
 	defer r.onStateChangeMu.Unlock()
-	if state := p.State(); state == livekit.ParticipantInfo_ACTIVE {
+
+	switch p.State() {
+	case livekit.ParticipantInfo_ACTIVE:
 		// subscribe participant to existing published tracks
 		r.subscribeToExistingTracks(p, false)
 
@@ -1624,7 +1626,8 @@ func (r *Room) OnStateChange(p types.LocalParticipant) {
 			"connectTime", connectTime,
 		)
 		p.GetLogger().Infow("participant active", fields...)
-	} else if state == livekit.ParticipantInfo_DISCONNECTED {
+
+	case livekit.ParticipantInfo_DISCONNECTED:
 		// remove participant from room
 		go r.RemoveParticipant(p.Identity(), p.ID(), p.CloseReason())
 	}
@@ -1694,7 +1697,7 @@ func (r *Room) OnSubscribeStatusChanged(p types.LocalParticipant, publisherID li
 			}
 		}
 	} else {
-		// no longer subscribed to the publisher, clear speaker status
+		// no longer subscribed to the publisher, Pclear speaker status
 		_ = p.SendSpeakerUpdate([]*livekit.SpeakerInfo{
 			{
 				Sid:    string(publisherID),
