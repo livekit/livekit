@@ -84,10 +84,10 @@ func TestTrackPublishing(t *testing.T) {
 		track.IDReturns("id")
 		published := false
 		updated := false
-		p.OnTrackUpdated(func(p types.Participant, track types.MediaTrack) {
+		p.listener().(*typesfakes.FakeLocalParticipantListener).OnTrackUpdatedCalls(func(p types.Participant, track types.MediaTrack) {
 			updated = true
 		})
-		p.OnTrackPublished(func(p types.Participant, track types.MediaTrack) {
+		p.listener().(*typesfakes.FakeLocalParticipantListener).OnTrackPublishedCalls(func(p types.Participant, track types.MediaTrack) {
 			published = true
 		})
 		p.UpTrackManager.AddPublishedTrack(track)
@@ -814,6 +814,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		Reporter:               roomobs.NewNoopParticipantSessionReporter(),
 		Telemetry:              &telemetryfakes.FakeTelemetryService{},
 		VersionGenerator:       utils.NewDefaultTimedVersionGenerator(),
+		ParticipantListener:    &typesfakes.FakeLocalParticipantListener{},
 		ParticipantHelper:      &typesfakes.FakeLocalParticipantHelper{},
 	})
 	p.isPublisher.Store(opts.publisher)

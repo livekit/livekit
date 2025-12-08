@@ -25,7 +25,13 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 )
 
-func NewMockParticipant(identity livekit.ParticipantIdentity, protocol types.ProtocolVersion, hidden bool, publisher bool) *typesfakes.FakeLocalParticipant {
+func NewMockParticipant(
+	identity livekit.ParticipantIdentity,
+	protocol types.ProtocolVersion,
+	hidden bool,
+	publisher bool,
+	participantListener types.LocalParticipantListener,
+) *typesfakes.FakeLocalParticipant {
 	p := &typesfakes.FakeLocalParticipant{}
 	sid := guid.New(utils.ParticipantPrefix)
 	p.IDReturns(livekit.ParticipantID(sid))
@@ -50,22 +56,10 @@ func NewMockParticipant(identity livekit.ParticipantIdentity, protocol types.Pro
 	}, utils.TimedVersion(0))
 
 	p.SetMetadataCalls(func(m string) {
-		var f func(participant types.LocalParticipant)
-		if p.OnParticipantUpdateCallCount() > 0 {
-			f = p.OnParticipantUpdateArgsForCall(p.OnParticipantUpdateCallCount() - 1)
-		}
-		if f != nil {
-			f(p)
-		}
+		participantListener.OnParticipantUpdate(p)
 	})
 	updateTrack := func() {
-		var f func(participant types.Participant, track types.MediaTrack)
-		if p.OnTrackUpdatedCallCount() > 0 {
-			f = p.OnTrackUpdatedArgsForCall(p.OnTrackUpdatedCallCount() - 1)
-		}
-		if f != nil {
-			f(p, NewMockTrack(livekit.TrackType_VIDEO, "testcam"))
-		}
+		participantListener.OnTrackUpdated(p, NewMockTrack(livekit.TrackType_VIDEO, "testcam"))
 	}
 
 	p.SetTrackMutedCalls(func(mute *livekit.MuteTrackRequest, fromServer bool) *livekit.TrackInfo {

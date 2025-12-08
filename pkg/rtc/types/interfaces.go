@@ -329,17 +329,9 @@ type Participant interface {
 
 	DebugInfo() map[string]any
 
-	// OnTrackPublished - remote added a track
-	OnTrackPublished(func(Participant, MediaTrack))
-	// OnTrackUpdated - one of its publishedTracks changed in status
-	OnTrackUpdated(callback func(Participant, MediaTrack))
-	// OnTrackUnpublished - a track was unpublished
-	OnTrackUnpublished(callback func(Participant, MediaTrack))
-	OnDataTrackPublished(func(Participant, DataTrack))
-	OnDataTrackUnpublished(func(Participant, DataTrack))
-	OnMetrics(callback func(Participant, *livekit.DataPacket))
-
 	HandleReceivedDataTrackMessage([]byte, *datatrack.Packet)
+
+	GetParticipantListener() ParticipantListener
 }
 
 // -------------------------------------------------------
@@ -352,6 +344,7 @@ type AddTrackParams struct {
 type MoveToRoomParams struct {
 	RoomName      livekit.RoomName
 	ParticipantID livekit.ParticipantID
+	Listener      LocalParticipantListener
 	Helper        LocalParticipantHelper
 }
 
@@ -485,28 +478,8 @@ type LocalParticipant interface {
 	SendRoomMovedResponse(moved *livekit.RoomMovedResponse) error
 	SendDataTrackSubscriberHandles(handles map[uint32]*livekit.DataTrackSubscriberHandles_PublishedDataTrack) error
 
-	// callbacks
-	OnStateChange(func(p LocalParticipant))
-	OnSubscriberReady(callback func(LocalParticipant))
-	OnMigrateStateChange(func(p LocalParticipant, migrateState MigrateState))
-	OnParticipantUpdate(callback func(LocalParticipant))
-	OnDataPacket(callback func(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket))
-	OnDataMessage(callback func(LocalParticipant, []byte))
-	OnDataTrackMessage(callback func(LocalParticipant, []byte, *datatrack.Packet))
-	OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool))
 	AddOnClose(key string, callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
-	OnUpdateSubscriptions(func(
-		LocalParticipant,
-		[]livekit.TrackID,
-		[]*livekit.ParticipantTracks,
-		bool,
-	))
-	OnUpdateSubscriptionPermission(func(LocalParticipant, *livekit.SubscriptionPermission) error)
-	OnUpdateDataSubscriptions(func(LocalParticipant, *livekit.UpdateDataSubscription))
-	OnSyncState(func(LocalParticipant, *livekit.SyncState) error)
-	OnSimulateScenario(func(LocalParticipant, *livekit.SimulateScenario) error)
-	OnLeave(func(LocalParticipant, ParticipantCloseReason))
 
 	HandleReceiverReport(dt *sfu.DownTrack, report *rtcp.ReceiverReport)
 
@@ -568,7 +541,98 @@ type LocalParticipant interface {
 	PerformRpc(req *livekit.PerformRpcRequest, resultCh chan string, errorCh chan error)
 
 	GetDataTrackTransport() DataTrackTransport
+
+	ClearParticipantListener()
 }
+
+// ---------------------------------------------
+
+//counterfeiter:generate . ParticipantListener
+type ParticipantListener interface {
+	OnParticipantUpdate(Participant)
+	OnTrackPublished(Participant, MediaTrack)
+	OnTrackUpdated(Participant, MediaTrack)
+	OnTrackUnpublished(Participant, MediaTrack)
+	OnDataTrackPublished(Participant, DataTrack)
+	OnDataTrackUnpublished(Participant, DataTrack)
+	OnMetrics(Participant, *livekit.DataPacket)
+}
+
+var _ ParticipantListener = (*NullParticipantListener)(nil)
+
+type NullParticipantListener struct{}
+
+func (*NullParticipantListener) OnParticipantUpdate(Participant)               {}
+func (*NullParticipantListener) OnTrackPublished(Participant, MediaTrack)      {}
+func (*NullParticipantListener) OnTrackUpdated(Participant, MediaTrack)        {}
+func (*NullParticipantListener) OnTrackUnpublished(Participant, MediaTrack)    {}
+func (*NullParticipantListener) OnDataTrackPublished(Participant, DataTrack)   {}
+func (*NullParticipantListener) OnDataTrackUnpublished(Participant, DataTrack) {}
+func (*NullParticipantListener) OnMetrics(Participant, *livekit.DataPacket)    {}
+
+// ---------------------------------------------
+
+//counterfeiter:generate . LocalParticipantListener
+type LocalParticipantListener interface {
+	ParticipantListener
+
+	OnStateChange(LocalParticipant)
+	OnSubscriberReady(LocalParticipant)
+	OnMigrateStateChange(LocalParticipant, MigrateState)
+	OnDataPacket(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
+	OnDataMessage(LocalParticipant, []byte)
+	OnDataTrackMessage(LocalParticipant, []byte, *datatrack.Packet)
+	OnSubscribeStatusChanged(LocalParticipant, livekit.ParticipantID, bool)
+	OnUpdateSubscriptions(
+		LocalParticipant,
+		[]livekit.TrackID,
+		[]*livekit.ParticipantTracks,
+		bool,
+	)
+	OnUpdateSubscriptionPermission(LocalParticipant, *livekit.SubscriptionPermission) error
+	OnUpdateDataSubscriptions(LocalParticipant, *livekit.UpdateDataSubscription)
+	OnSyncState(LocalParticipant, *livekit.SyncState) error
+	OnSimulateScenario(LocalParticipant, *livekit.SimulateScenario) error
+	OnLeave(LocalParticipant, ParticipantCloseReason)
+}
+
+var _ LocalParticipantListener = (*NullLocalParticipantListener)(nil)
+
+type NullLocalParticipantListener struct {
+	NullParticipantListener
+}
+
+func (*NullLocalParticipantListener) OnStateChange(LocalParticipant)                      {}
+func (*NullLocalParticipantListener) OnSubscriberReady(LocalParticipant)                  {}
+func (*NullLocalParticipantListener) OnMigrateStateChange(LocalParticipant, MigrateState) {}
+func (*NullLocalParticipantListener) OnDataPacket(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket) {
+}
+func (*NullLocalParticipantListener) OnDataMessage(LocalParticipant, []byte) {}
+func (*NullLocalParticipantListener) OnDataTrackMessage(LocalParticipant, []byte, *datatrack.Packet) {
+}
+func (*NullLocalParticipantListener) OnSubscribeStatusChanged(LocalParticipant, livekit.ParticipantID, bool) {
+}
+func (*NullLocalParticipantListener) OnUpdateSubscriptions(
+	LocalParticipant,
+	[]livekit.TrackID,
+	[]*livekit.ParticipantTracks,
+	bool,
+) {
+}
+func (*NullLocalParticipantListener) OnUpdateSubscriptionPermission(LocalParticipant, *livekit.SubscriptionPermission) error {
+	return nil
+}
+func (*NullLocalParticipantListener) OnUpdateDataSubscriptions(LocalParticipant, *livekit.UpdateDataSubscription) {
+}
+func (*NullLocalParticipantListener) OnSyncState(LocalParticipant, *livekit.SyncState) error {
+	return nil
+}
+func (*NullLocalParticipantListener) OnSimulateScenario(LocalParticipant, *livekit.SimulateScenario) error {
+	return nil
+}
+func (*NullLocalParticipantListener) OnLeave(LocalParticipant, ParticipantCloseReason) {}
+
+// ---------------------------------------------
 
 // Room is a container of participants, and can provide room-level actions
 //

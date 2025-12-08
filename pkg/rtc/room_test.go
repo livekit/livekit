@@ -90,7 +90,7 @@ func TestJoinedState(t *testing.T) {
 func TestRoomJoin(t *testing.T) {
 	t.Run("joining returns existing participant data", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numParticipants})
-		pNew := NewMockParticipant("new", types.CurrentProtocol, false, false)
+		pNew := NewMockParticipant("new", types.CurrentProtocol, false, false, rm.LocalParticipantListener())
 
 		_ = rm.Join(pNew, nil, nil, iceServersForRoom)
 
@@ -105,15 +105,14 @@ func TestRoomJoin(t *testing.T) {
 	t.Run("subscribe to existing channels upon join", func(t *testing.T) {
 		numExisting := 3
 		rm := newRoomWithParticipants(t, testRoomOpts{num: numExisting})
-		p := NewMockParticipant("new", types.CurrentProtocol, false, false)
+		lpl := rm.LocalParticipantListener()
+		p := NewMockParticipant("new", types.CurrentProtocol, false, false, lpl)
 
 		err := rm.Join(p, nil, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
 		require.NoError(t, err)
 
-		stateChangeCB := p.OnStateChangeArgsForCall(0)
-		require.NotNil(t, stateChangeCB)
 		p.StateReturns(livekit.ParticipantInfo_ACTIVE)
-		stateChangeCB(p)
+		lpl.OnStateChange(p)
 
 		// it should become a subscriber when connectivity changes
 		numTracks := 0
@@ -161,7 +160,7 @@ func TestRoomJoin(t *testing.T) {
 		rm.lock.Lock()
 		rm.protoRoom.MaxParticipants = 1
 		rm.lock.Unlock()
-		p := NewMockParticipant("second", types.ProtocolVersion(0), false, false)
+		p := NewMockParticipant("second", types.ProtocolVersion(0), false, false, rm.LocalParticipantListener())
 
 		err := rm.Join(p, nil, nil, iceServersForRoom)
 		require.Equal(t, ErrMaxParticipantsExceeded, err)
@@ -427,6 +426,8 @@ func TestRoomClosure(t *testing.T) {
 func TestNewTrack(t *testing.T) {
 	t.Run("new track should be added to ready participants", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 3})
+		lpl := rm.LocalParticipantListener()
+
 		participants := rm.GetParticipants()
 		p0 := participants[0].(*typesfakes.FakeLocalParticipant)
 		p0.StateReturns(livekit.ParticipantInfo_JOINED)
@@ -437,9 +438,8 @@ func TestNewTrack(t *testing.T) {
 
 		// pub adds track
 		track := NewMockTrack(livekit.TrackType_VIDEO, "webcam")
-		trackCB := pub.OnTrackPublishedArgsForCall(0)
-		require.NotNil(t, trackCB)
-		trackCB(pub, track)
+		lpl.OnTrackPublished(pub, track)
+
 		// only p1 should've been subscribed to
 		require.Equal(t, 0, p0.SubscribeToTrackCallCount())
 		require.Equal(t, 1, p1.SubscribeToTrackCallCount())
@@ -528,6 +528,7 @@ func TestActiveSpeakers(t *testing.T) {
 	t.Run("audio level is smoothed", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, protocol: 3, audioSmoothIntervals: 3})
 		defer rm.Close(types.ParticipantCloseReasonNone)
+
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
 		op := participants[1].(*typesfakes.FakeLocalParticipant)
@@ -621,6 +622,9 @@ func TestDataChannel(t *testing.T) {
 			t.Run(modeNames[mode], func(t *testing.T) {
 				rm := newRoomWithParticipants(t, testRoomOpts{num: 3})
 				defer rm.Close(types.ParticipantCloseReasonNone)
+
+				lpl := rm.LocalParticipantListener()
+
 				participants := rm.GetParticipants()
 				p := participants[0].(*typesfakes.FakeLocalParticipant)
 
@@ -641,7 +645,7 @@ func TestDataChannel(t *testing.T) {
 				}
 
 				encoded, _ := proto.Marshal(packetExp)
-				p.OnDataPacketArgsForCall(0)(p, packet.Kind, packet)
+				lpl.OnDataPacket(p, packet.Kind, packet)
 
 				// ensure everyone has received the packet
 				for _, op := range participants {
@@ -664,6 +668,9 @@ func TestDataChannel(t *testing.T) {
 			t.Run(modeNames[mode], func(t *testing.T) {
 				rm := newRoomWithParticipants(t, testRoomOpts{num: 4})
 				defer rm.Close(types.ParticipantCloseReasonNone)
+
+				lpl := rm.LocalParticipantListener()
+
 				participants := rm.GetParticipants()
 				p := participants[0].(*typesfakes.FakeLocalParticipant)
 				p1 := participants[1].(*typesfakes.FakeLocalParticipant)
@@ -688,7 +695,7 @@ func TestDataChannel(t *testing.T) {
 				}
 
 				encoded, _ := proto.Marshal(packetExp)
-				p.OnDataPacketArgsForCall(0)(p, packet.Kind, packet)
+				lpl.OnDataPacket(p, packet.Kind, packet)
 
 				// only p1 should receive the data
 				for _, op := range participants {
@@ -707,6 +714,7 @@ func TestDataChannel(t *testing.T) {
 	t.Run("publishing disallowed", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
 		defer rm.Close(types.ParticipantCloseReasonNone)
+
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
 		p.CanPublishDataReturns(false)
@@ -720,7 +728,8 @@ func TestDataChannel(t *testing.T) {
 			},
 		}
 		if p.CanPublishData() {
-			p.OnDataPacketArgsForCall(0)(p, packet.Kind, &packet)
+			lpl := rm.LocalParticipantListener()
+			lpl.OnDataPacket(p, packet.Kind, &packet)
 		}
 
 		// no one should've been sent packet
@@ -736,7 +745,7 @@ func TestHiddenParticipants(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, numHidden: 1})
 		defer rm.Close(types.ParticipantCloseReasonNone)
 
-		pNew := NewMockParticipant("new", types.CurrentProtocol, false, false)
+		pNew := NewMockParticipant("new", types.CurrentProtocol, false, false, rm.LocalParticipantListener())
 		rm.Join(pNew, nil, nil, iceServersForRoom)
 
 		// expect new participant to get a JoinReply
@@ -750,15 +759,14 @@ func TestHiddenParticipants(t *testing.T) {
 
 	t.Run("hidden participant subscribes to tracks", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
-		hidden := NewMockParticipant("hidden", types.CurrentProtocol, true, false)
+		lpl := rm.LocalParticipantListener()
+		hidden := NewMockParticipant("hidden", types.CurrentProtocol, true, false, lpl)
 
 		err := rm.Join(hidden, nil, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
 		require.NoError(t, err)
 
-		stateChangeCB := hidden.OnStateChangeArgsForCall(0)
-		require.NotNil(t, stateChangeCB)
 		hidden.StateReturns(livekit.ParticipantInfo_ACTIVE)
-		stateChangeCB(hidden)
+		lpl.OnStateChange(hidden)
 
 		require.Eventually(t, func() bool { return hidden.SubscribeToTrackCallCount() == 2 }, 5*time.Second, 10*time.Millisecond)
 	})
@@ -772,7 +780,7 @@ func TestRoomUpdate(t *testing.T) {
 		p1 := rm.GetParticipants()[0].(*typesfakes.FakeLocalParticipant)
 		require.Equal(t, 0, p1.SendRoomUpdateCallCount())
 
-		p2 := NewMockParticipant("p2", types.CurrentProtocol, false, false)
+		p2 := NewMockParticipant("p2", types.CurrentProtocol, false, false, rm.LocalParticipantListener())
 		require.NoError(t, rm.Join(p2, nil, nil, iceServersForRoom))
 
 		// p1 should have received an update
@@ -838,7 +846,7 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 	)
 	for i := 0; i < opts.num+opts.numHidden; i++ {
 		identity := livekit.ParticipantIdentity(fmt.Sprintf("p%d", i))
-		participant := NewMockParticipant(identity, opts.protocol, i >= opts.num, true)
+		participant := NewMockParticipant(identity, opts.protocol, i >= opts.num, true, rm.LocalParticipantListener())
 		err := rm.Join(participant, nil, &ParticipantOptions{AutoSubscribe: true}, iceServersForRoom)
 		require.NoError(t, err)
 		participant.StateReturns(livekit.ParticipantInfo_ACTIVE)

@@ -39,6 +39,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -145,6 +146,9 @@ type Room struct {
 	userPacketDeduper *UserPacketDeduper
 
 	dataMessageCache *utils.TimeSizeCache[types.DataMessageCache]
+
+	onStateChangeMu          sync.Mutex
+	localParticipantListener types.LocalParticipantListener
 }
 
 type ParticipantOptions struct {
@@ -280,6 +284,7 @@ func NewRoom(
 			MaxSize: dataMessageCacheSize,
 		}),
 	}
+	r.localParticipantListener = &localParticipantListener{room: r}
 
 	if r.protoRoom.EmptyTimeout == 0 {
 		r.protoRoom.EmptyTimeout = roomConfig.EmptyTimeout
@@ -459,111 +464,6 @@ func (r *Room) Join(
 	if r.FirstJoinedAt() == 0 && !participant.IsDependent() {
 		r.joinedAt.Store(time.Now().Unix())
 	}
-
-	var onStateChangeMu sync.Mutex
-	participant.OnStateChange(func(p types.LocalParticipant) {
-		if r.onParticipantChanged != nil {
-			r.onParticipantChanged(p)
-		}
-		r.broadcastParticipantState(p, broadcastOptions{skipSource: true})
-
-		onStateChangeMu.Lock()
-		defer onStateChangeMu.Unlock()
-		if state := p.State(); state == livekit.ParticipantInfo_ACTIVE {
-			// subscribe participant to existing published tracks
-			r.subscribeToExistingTracks(p, false)
-
-			connectTime := time.Since(p.ConnectedAt())
-			meta := &livekit.AnalyticsClientMeta{
-				ClientConnectTime: uint32(connectTime.Milliseconds()),
-			}
-			infos := p.GetICEConnectionInfo()
-			var connectionType roomobs.ConnectionType
-			for _, info := range infos {
-				if info.Type != types.ICEConnectionTypeUnknown {
-					meta.ConnectionType = info.Type.String()
-					connectionType = info.Type.ReporterType()
-					break
-				}
-			}
-			r.telemetry.ParticipantActive(context.Background(),
-				r.ToProto(),
-				p.ToProto(),
-				meta,
-				false,
-				participant.TelemetryGuard(),
-			)
-
-			participant.GetReporter().Tx(func(tx roomobs.ParticipantSessionTx) {
-				tx.ReportClientConnectTime(uint16(connectTime.Milliseconds()))
-				tx.ReportConnectResult(roomobs.ConnectionResultSuccess)
-				tx.ReportConnectionType(connectionType)
-			})
-
-			fields := append(
-				connectionDetailsFields(infos),
-				"clientInfo", logger.Proto(sutils.ClientInfoWithoutAddress(p.GetClientInfo())),
-				"connectTime", connectTime,
-			)
-			p.GetLogger().Infow("participant active", fields...)
-		} else if state == livekit.ParticipantInfo_DISCONNECTED {
-			// remove participant from room
-			go r.RemoveParticipant(p.Identity(), p.ID(), p.CloseReason())
-		}
-	})
-	participant.OnSubscriberReady(func(p types.LocalParticipant) {
-		r.subscribeToExistingTracks(p, false)
-	})
-	// it's important to set this before connection, we don't want to miss out on any published tracks
-	participant.OnTrackPublished(r.onTrackPublished)
-	participant.OnTrackUpdated(r.onTrackUpdated)
-	participant.OnTrackUnpublished(r.onTrackUnpublished)
-	participant.OnDataTrackPublished(r.onDataTrackPublished)
-	participant.OnDataTrackUnpublished(r.onDataTrackUnpublished)
-	participant.OnParticipantUpdate(r.onParticipantUpdate)
-	participant.OnDataPacket(r.onDataPacket)
-	participant.OnDataMessage(r.onDataMessage)
-	participant.OnMetrics(r.onMetrics)
-	participant.OnSubscribeStatusChanged(func(publisherID livekit.ParticipantID, subscribed bool) {
-		if subscribed {
-			pub := r.GetParticipantByID(publisherID)
-			if pub != nil && pub.State() == livekit.ParticipantInfo_ACTIVE {
-				// when a participant subscribes to another participant,
-				// send speaker update if the subscribed to participant is active.
-				level, active := pub.GetAudioLevel()
-				if active {
-					_ = participant.SendSpeakerUpdate([]*livekit.SpeakerInfo{
-						{
-							Sid:    string(pub.ID()),
-							Level:  float32(level),
-							Active: active,
-						},
-					}, false)
-				}
-
-				if cq := pub.GetConnectionQuality(); cq != nil {
-					update := &livekit.ConnectionQualityUpdate{}
-					update.Updates = append(update.Updates, cq)
-					_ = participant.SendConnectionQualityUpdate(update)
-				}
-			}
-		} else {
-			// no longer subscribed to the publisher, clear speaker status
-			_ = participant.SendSpeakerUpdate([]*livekit.SpeakerInfo{
-				{
-					Sid:    string(publisherID),
-					Level:  0,
-					Active: false,
-				},
-			}, true)
-		}
-	})
-	participant.OnUpdateSubscriptions(r.onUpdateSubscriptions)
-	participant.OnUpdateSubscriptionPermission(r.onUpdateSubscriptionPermission)
-	participant.OnUpdateDataSubscriptions(r.onUpdateDataSubscriptions)
-	participant.OnSyncState(r.onSyncState)
-	participant.OnSimulateScenario(r.onSimulateScenario)
-	participant.OnLeave(r.onLeave)
 
 	r.launchTargetAgents(maps.Values(r.agentDispatches), participant, livekit.JobType_JT_PARTICIPANT)
 
@@ -1291,7 +1191,7 @@ func (r *Room) onDataTrackUnpublished(p types.Participant, dt types.DataTrack) {
 	}
 }
 
-func (r *Room) onParticipantUpdate(p types.LocalParticipant) {
+func (r *Room) onParticipantUpdate(p types.Participant) {
 	r.protoProxy.MarkDirty(false)
 	// immediately notify when permissions or metadata changed
 	r.broadcastParticipantState(p, broadcastOptions{immediate: true})
@@ -1300,6 +1200,59 @@ func (r *Room) onParticipantUpdate(p types.LocalParticipant) {
 	}
 }
 
+func (r *Room) onStateChange(p types.LocalParticipant) {
+	if r.onParticipantChanged != nil {
+		r.onParticipantChanged(p)
+	}
+	r.broadcastParticipantState(p, broadcastOptions{skipSource: true})
+
+	r.onStateChangeMu.Lock()
+	defer r.onStateChangeMu.Unlock()
+
+	switch p.State() {
+	case livekit.ParticipantInfo_ACTIVE:
+		// subscribe participant to existing published tracks
+		r.subscribeToExistingTracks(p, false)
+
+		connectTime := time.Since(p.ConnectedAt())
+		meta := &livekit.AnalyticsClientMeta{
+			ClientConnectTime: uint32(connectTime.Milliseconds()),
+		}
+		infos := p.GetICEConnectionInfo()
+		var connectionType roomobs.ConnectionType
+		for _, info := range infos {
+			if info.Type != types.ICEConnectionTypeUnknown {
+				meta.ConnectionType = info.Type.String()
+				connectionType = info.Type.ReporterType()
+				break
+			}
+		}
+		r.telemetry.ParticipantActive(context.Background(),
+			r.ToProto(),
+			p.ToProto(),
+			meta,
+			false,
+			p.TelemetryGuard(),
+		)
+
+		p.GetReporter().Tx(func(tx roomobs.ParticipantSessionTx) {
+			tx.ReportClientConnectTime(uint16(connectTime.Milliseconds()))
+			tx.ReportConnectResult(roomobs.ConnectionResultSuccess)
+			tx.ReportConnectionType(connectionType)
+		})
+
+		fields := append(
+			connectionDetailsFields(infos),
+			"clientInfo", logger.Proto(sutils.ClientInfoWithoutAddress(p.GetClientInfo())),
+			"connectTime", connectTime,
+		)
+		p.GetLogger().Infow("participant active", fields...)
+
+	case livekit.ParticipantInfo_DISCONNECTED:
+		// remove participant from room
+		go r.RemoveParticipant(p.Identity(), p.ID(), p.CloseReason())
+	}
+}
 func (r *Room) onDataPacket(source types.LocalParticipant, kind livekit.DataPacket_Kind, dp *livekit.DataPacket) {
 	if kind == livekit.DataPacket_RELIABLE && source != nil && dp.GetSequence() > 0 {
 		data, err := proto.Marshal(dp)
@@ -1323,6 +1276,41 @@ func (r *Room) onDataMessage(source types.LocalParticipant, data []byte) {
 
 func (r *Room) onMetrics(source types.Participant, dp *livekit.DataPacket) {
 	BroadcastMetricsForRoom(r, source, dp, r.logger)
+}
+
+func (r *Room) onSubscribeStatusChanged(participant types.LocalParticipant, publisherID livekit.ParticipantID, subscribed bool) {
+	if subscribed {
+		pub := r.GetParticipantByID(publisherID)
+		if pub != nil && pub.State() == livekit.ParticipantInfo_ACTIVE {
+			// when a participant subscribes to another participant,
+			// send speaker update if the subscribed to participant is active.
+			level, active := pub.GetAudioLevel()
+			if active {
+				_ = participant.SendSpeakerUpdate([]*livekit.SpeakerInfo{
+					{
+						Sid:    string(pub.ID()),
+						Level:  float32(level),
+						Active: active,
+					},
+				}, false)
+			}
+
+			if cq := pub.GetConnectionQuality(); cq != nil {
+				update := &livekit.ConnectionQualityUpdate{}
+				update.Updates = append(update.Updates, cq)
+				_ = participant.SendConnectionQualityUpdate(update)
+			}
+		}
+	} else {
+		// no longer subscribed to the publisher, clear speaker status
+		_ = participant.SendSpeakerUpdate([]*livekit.SpeakerInfo{
+			{
+				Sid:    string(publisherID),
+				Level:  0,
+				Active: false,
+			},
+		}, true)
+	}
 }
 
 func (r *Room) onUpdateSubscriptions(
@@ -1456,24 +1444,7 @@ func (r *Room) RemoveParticipant(
 		}()
 	}
 
-	p.OnTrackUpdated(nil)
-	p.OnTrackPublished(nil)
-	p.OnTrackUnpublished(nil)
-	p.OnDataTrackPublished(nil)
-	p.OnDataTrackUnpublished(nil)
-	p.OnStateChange(nil)
-	p.OnSubscriberReady(nil)
-	p.OnParticipantUpdate(nil)
-	p.OnDataPacket(nil)
-	p.OnDataMessage(nil)
-	p.OnMetrics(nil)
-	p.OnSubscribeStatusChanged(nil)
-	p.OnUpdateSubscriptions(nil)
-	p.OnUpdateSubscriptionPermission(nil)
-	p.OnUpdateDataSubscriptions(nil)
-	p.OnSyncState(nil)
-	p.OnSimulateScenario(nil)
-	p.OnLeave(nil)
+	p.ClearParticipantListener()
 
 	// close participant as well
 	_ = p.Close(true, reason, false)
@@ -1900,6 +1871,101 @@ func (r *Room) GetCachedReliableDataMessage(seqs map[livekit.ParticipantID]uint3
 		}
 	}
 	return msgs
+}
+
+func (r *Room) LocalParticipantListener() types.LocalParticipantListener {
+	return r.localParticipantListener
+}
+
+// ------------------------------------------------------------
+
+var _ types.LocalParticipantListener = (*localParticipantListener)(nil)
+
+type localParticipantListener struct {
+	room *Room
+}
+
+func (l *localParticipantListener) OnParticipantUpdate(p types.Participant) {
+	l.room.onParticipantUpdate(p)
+}
+
+func (l *localParticipantListener) OnTrackPublished(p types.Participant, track types.MediaTrack) {
+	l.room.onTrackPublished(p, track)
+}
+
+func (l *localParticipantListener) OnTrackUpdated(p types.Participant, track types.MediaTrack) {
+	l.room.onTrackUpdated(p, track)
+}
+
+func (l *localParticipantListener) OnTrackUnpublished(p types.Participant, track types.MediaTrack) {
+	l.room.onTrackUnpublished(p, track)
+}
+
+func (l *localParticipantListener) OnDataTrackPublished(p types.Participant, track types.DataTrack) {
+	l.room.onDataTrackPublished(p, track)
+}
+
+func (l *localParticipantListener) OnDataTrackUnpublished(p types.Participant, track types.DataTrack) {
+	l.room.onDataTrackUnpublished(p, track)
+}
+
+func (l *localParticipantListener) OnMetrics(p types.Participant, dp *livekit.DataPacket) {
+	l.room.onMetrics(p, dp)
+}
+
+func (l *localParticipantListener) OnStateChange(p types.LocalParticipant) {
+	l.room.onStateChange(p)
+}
+
+func (l *localParticipantListener) OnSubscriberReady(p types.LocalParticipant) {
+	l.room.subscribeToExistingTracks(p, false)
+}
+
+func (l *localParticipantListener) OnMigrateStateChange(_p types.LocalParticipant, _migrateState types.MigrateState) {
+}
+
+func (l *localParticipantListener) OnDataPacket(p types.LocalParticipant, kind livekit.DataPacket_Kind, dp *livekit.DataPacket) {
+	l.room.onDataPacket(p, kind, dp)
+}
+
+func (l *localParticipantListener) OnDataMessage(p types.LocalParticipant, data []byte) {
+	l.room.onDataMessage(p, data)
+}
+
+func (l *localParticipantListener) OnDataTrackMessage(_p types.LocalParticipant, _data []byte, _packet *datatrack.Packet) {
+}
+
+func (l *localParticipantListener) OnSubscribeStatusChanged(p types.LocalParticipant, publisherID livekit.ParticipantID, subscribed bool) {
+	l.room.onSubscribeStatusChanged(p, publisherID, subscribed)
+}
+
+func (l *localParticipantListener) OnUpdateSubscriptions(
+	p types.LocalParticipant,
+	trackIDs []livekit.TrackID,
+	participantTracks []*livekit.ParticipantTracks,
+	subscribe bool,
+) {
+	l.room.onUpdateSubscriptions(p, trackIDs, participantTracks, subscribe)
+}
+
+func (l *localParticipantListener) OnUpdateSubscriptionPermission(p types.LocalParticipant, subscriptionPermission *livekit.SubscriptionPermission) error {
+	return l.room.onUpdateSubscriptionPermission(p, subscriptionPermission)
+}
+
+func (l *localParticipantListener) OnUpdateDataSubscriptions(p types.LocalParticipant, req *livekit.UpdateDataSubscription) {
+	l.room.onUpdateDataSubscriptions(p, req)
+}
+
+func (l *localParticipantListener) OnSyncState(p types.LocalParticipant, state *livekit.SyncState) error {
+	return l.room.onSyncState(p, state)
+}
+
+func (l *localParticipantListener) OnSimulateScenario(p types.LocalParticipant, simulateScenario *livekit.SimulateScenario) error {
+	return l.room.onSimulateScenario(p, simulateScenario)
+}
+
+func (l *localParticipantListener) OnLeave(p types.LocalParticipant, closeReason types.ParticipantCloseReason) {
+	l.room.onLeave(p, closeReason)
 }
 
 // ------------------------------------------------------------

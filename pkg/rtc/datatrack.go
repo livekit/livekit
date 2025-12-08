@@ -57,12 +57,12 @@ func NewDataTrack(params DataTrackParams, dti *livekit.DataTrackInfo) *DataTrack
 			Logger:    params.Logger,
 		}),
 	}
-	d.params.Logger.Infow("created data track", "id", d.ID(), "name", d.Name())
+	d.params.Logger.Infow("created data track", "name", d.Name())
 	return d
 }
 
 func (d *DataTrack) Close() {
-	d.params.Logger.Infow("closing data track", "id", d.ID(), "name", d.Name())
+	d.params.Logger.Infow("closing data track", "name", d.Name())
 	d.closed.Break()
 }
 
