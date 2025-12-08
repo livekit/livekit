@@ -1430,7 +1430,15 @@ func (r *Room) GetCachedReliableDataMessage(seqs map[livekit.ParticipantID]uint3
 // types.LocalParticipantListener implementation
 
 // types.ParticipantListener implementation
-// a ParticipantImpl in the room added a new track, subscribe other participants to it
+func (r *Room) OnParticipantUpdate(p types.Participant) {
+	r.protoProxy.MarkDirty(false)
+	// immediately notify when permissions or metadata changed
+	r.broadcastParticipantState(p, broadcastOptions{immediate: true})
+	if r.onParticipantChanged != nil {
+		r.onParticipantChanged(p)
+	}
+}
+
 func (r *Room) OnTrackPublished(participant types.Participant, track types.MediaTrack) {
 	r.trackManager.AddTrack(track, participant.Identity(), participant.ID())
 
@@ -1638,15 +1646,6 @@ func (r *Room) OnSubscriberReady(p types.LocalParticipant) {
 }
 
 func (r *Room) OnMigrateStateChange(_p types.LocalParticipant, _migrateState types.MigrateState) {
-}
-
-func (r *Room) OnParticipantUpdate(p types.LocalParticipant) {
-	r.protoProxy.MarkDirty(false)
-	// immediately notify when permissions or metadata changed
-	r.broadcastParticipantState(p, broadcastOptions{immediate: true})
-	if r.onParticipantChanged != nil {
-		r.onParticipantChanged(p)
-	}
 }
 
 func (r *Room) OnDataPacket(source types.LocalParticipant, kind livekit.DataPacket_Kind, dp *livekit.DataPacket) {

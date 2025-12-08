@@ -332,7 +332,6 @@ type Participant interface {
 	HandleReceivedDataTrackMessage([]byte, *datatrack.Packet)
 
 	GetParticipantListener() ParticipantListener
-	ClearParticipantListener()
 }
 
 // -------------------------------------------------------
@@ -542,12 +541,15 @@ type LocalParticipant interface {
 	PerformRpc(req *livekit.PerformRpcRequest, resultCh chan string, errorCh chan error)
 
 	GetDataTrackTransport() DataTrackTransport
+
+	ClearParticipantListener()
 }
 
 // ---------------------------------------------
 
 //counterfeiter:generate . ParticipantListener
 type ParticipantListener interface {
+	OnParticipantUpdate(Participant)
 	OnTrackPublished(Participant, MediaTrack)
 	OnTrackUpdated(Participant, MediaTrack)
 	OnTrackUnpublished(Participant, MediaTrack)
@@ -560,6 +562,7 @@ var _ ParticipantListener = (*NullParticipantListener)(nil)
 
 type NullParticipantListener struct{}
 
+func (n NullParticipantListener) OnParticipantUpdate(Participant)               {}
 func (n NullParticipantListener) OnTrackPublished(Participant, MediaTrack)      {}
 func (n NullParticipantListener) OnTrackUpdated(Participant, MediaTrack)        {}
 func (n NullParticipantListener) OnTrackUnpublished(Participant, MediaTrack)    {}
@@ -576,7 +579,6 @@ type LocalParticipantListener interface {
 	OnStateChange(LocalParticipant)
 	OnSubscriberReady(LocalParticipant)
 	OnMigrateStateChange(LocalParticipant, MigrateState)
-	OnParticipantUpdate(LocalParticipant)
 	OnDataPacket(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
 	OnDataMessage(LocalParticipant, []byte)
 	OnDataTrackMessage(LocalParticipant, []byte, *datatrack.Packet)
@@ -603,7 +605,6 @@ type NullLocalParticipantListener struct {
 func (n NullLocalParticipantListener) OnStateChange(LocalParticipant)                      {}
 func (n NullLocalParticipantListener) OnSubscriberReady(LocalParticipant)                  {}
 func (n NullLocalParticipantListener) OnMigrateStateChange(LocalParticipant, MigrateState) {}
-func (n NullLocalParticipantListener) OnParticipantUpdate(LocalParticipant)                {}
 func (n NullLocalParticipantListener) OnDataPacket(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket) {
 }
 func (n NullLocalParticipantListener) OnDataMessage(LocalParticipant, []byte) {}

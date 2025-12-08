@@ -60,10 +60,10 @@ type FakeLocalParticipantListener struct {
 		arg1 types.LocalParticipant
 		arg2 types.MigrateState
 	}
-	OnParticipantUpdateStub        func(types.LocalParticipant)
+	OnParticipantUpdateStub        func(types.Participant)
 	onParticipantUpdateMutex       sync.RWMutex
 	onParticipantUpdateArgsForCall []struct {
-		arg1 types.LocalParticipant
+		arg1 types.Participant
 	}
 	OnSimulateScenarioStub        func(types.LocalParticipant, *livekit.SimulateScenario) error
 	onSimulateScenarioMutex       sync.RWMutex
@@ -430,10 +430,10 @@ func (fake *FakeLocalParticipantListener) OnMigrateStateChangeArgsForCall(i int)
 	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakeLocalParticipantListener) OnParticipantUpdate(arg1 types.LocalParticipant) {
+func (fake *FakeLocalParticipantListener) OnParticipantUpdate(arg1 types.Participant) {
 	fake.onParticipantUpdateMutex.Lock()
 	fake.onParticipantUpdateArgsForCall = append(fake.onParticipantUpdateArgsForCall, struct {
-		arg1 types.LocalParticipant
+		arg1 types.Participant
 	}{arg1})
 	stub := fake.OnParticipantUpdateStub
 	fake.recordInvocation("OnParticipantUpdate", []interface{}{arg1})
@@ -449,13 +449,13 @@ func (fake *FakeLocalParticipantListener) OnParticipantUpdateCallCount() int {
 	return len(fake.onParticipantUpdateArgsForCall)
 }
 
-func (fake *FakeLocalParticipantListener) OnParticipantUpdateCalls(stub func(types.LocalParticipant)) {
+func (fake *FakeLocalParticipantListener) OnParticipantUpdateCalls(stub func(types.Participant)) {
 	fake.onParticipantUpdateMutex.Lock()
 	defer fake.onParticipantUpdateMutex.Unlock()
 	fake.OnParticipantUpdateStub = stub
 }
 
-func (fake *FakeLocalParticipantListener) OnParticipantUpdateArgsForCall(i int) types.LocalParticipant {
+func (fake *FakeLocalParticipantListener) OnParticipantUpdateArgsForCall(i int) types.Participant {
 	fake.onParticipantUpdateMutex.RLock()
 	defer fake.onParticipantUpdateMutex.RUnlock()
 	argsForCall := fake.onParticipantUpdateArgsForCall[i]

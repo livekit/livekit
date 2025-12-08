@@ -27,6 +27,11 @@ type FakeParticipantListener struct {
 		arg1 types.Participant
 		arg2 *livekit.DataPacket
 	}
+	OnParticipantUpdateStub        func(types.Participant)
+	onParticipantUpdateMutex       sync.RWMutex
+	onParticipantUpdateArgsForCall []struct {
+		arg1 types.Participant
+	}
 	OnTrackPublishedStub        func(types.Participant, types.MediaTrack)
 	onTrackPublishedMutex       sync.RWMutex
 	onTrackPublishedArgsForCall []struct {
@@ -146,6 +151,38 @@ func (fake *FakeParticipantListener) OnMetricsArgsForCall(i int) (types.Particip
 	defer fake.onMetricsMutex.RUnlock()
 	argsForCall := fake.onMetricsArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeParticipantListener) OnParticipantUpdate(arg1 types.Participant) {
+	fake.onParticipantUpdateMutex.Lock()
+	fake.onParticipantUpdateArgsForCall = append(fake.onParticipantUpdateArgsForCall, struct {
+		arg1 types.Participant
+	}{arg1})
+	stub := fake.OnParticipantUpdateStub
+	fake.recordInvocation("OnParticipantUpdate", []interface{}{arg1})
+	fake.onParticipantUpdateMutex.Unlock()
+	if stub != nil {
+		fake.OnParticipantUpdateStub(arg1)
+	}
+}
+
+func (fake *FakeParticipantListener) OnParticipantUpdateCallCount() int {
+	fake.onParticipantUpdateMutex.RLock()
+	defer fake.onParticipantUpdateMutex.RUnlock()
+	return len(fake.onParticipantUpdateArgsForCall)
+}
+
+func (fake *FakeParticipantListener) OnParticipantUpdateCalls(stub func(types.Participant)) {
+	fake.onParticipantUpdateMutex.Lock()
+	defer fake.onParticipantUpdateMutex.Unlock()
+	fake.OnParticipantUpdateStub = stub
+}
+
+func (fake *FakeParticipantListener) OnParticipantUpdateArgsForCall(i int) types.Participant {
+	fake.onParticipantUpdateMutex.RLock()
+	defer fake.onParticipantUpdateMutex.RUnlock()
+	argsForCall := fake.onParticipantUpdateArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeParticipantListener) OnTrackPublished(arg1 types.Participant, arg2 types.MediaTrack) {

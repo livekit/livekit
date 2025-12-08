@@ -23,10 +23,6 @@ type FakeParticipant struct {
 	canSkipBroadcastReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	ClearParticipantListenerStub        func()
-	clearParticipantListenerMutex       sync.RWMutex
-	clearParticipantListenerArgsForCall []struct {
-	}
 	CloseStub        func(bool, types.ParticipantCloseReason, bool) error
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct {
@@ -405,30 +401,6 @@ func (fake *FakeParticipant) CanSkipBroadcastReturnsOnCall(i int, result1 bool) 
 	fake.canSkipBroadcastReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
-}
-
-func (fake *FakeParticipant) ClearParticipantListener() {
-	fake.clearParticipantListenerMutex.Lock()
-	fake.clearParticipantListenerArgsForCall = append(fake.clearParticipantListenerArgsForCall, struct {
-	}{})
-	stub := fake.ClearParticipantListenerStub
-	fake.recordInvocation("ClearParticipantListener", []interface{}{})
-	fake.clearParticipantListenerMutex.Unlock()
-	if stub != nil {
-		fake.ClearParticipantListenerStub()
-	}
-}
-
-func (fake *FakeParticipant) ClearParticipantListenerCallCount() int {
-	fake.clearParticipantListenerMutex.RLock()
-	defer fake.clearParticipantListenerMutex.RUnlock()
-	return len(fake.clearParticipantListenerArgsForCall)
-}
-
-func (fake *FakeParticipant) ClearParticipantListenerCalls(stub func()) {
-	fake.clearParticipantListenerMutex.Lock()
-	defer fake.clearParticipantListenerMutex.Unlock()
-	fake.ClearParticipantListenerStub = stub
 }
 
 func (fake *FakeParticipant) Close(arg1 bool, arg2 types.ParticipantCloseReason, arg3 bool) error {
