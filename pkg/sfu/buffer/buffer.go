@@ -956,7 +956,7 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, isBuffer
 		if err != nil {
 			if errors.Is(err, ErrDDExtentionNotFound) {
 				if b.mime == mime.MimeTypeVP8 || b.mime == mime.MimeTypeVP9 {
-					b.logger.Infow("dd extension not found,  disable dd parser")
+					b.logger.Infow("dd extension not found, disable dd parser")
 					b.ddParser.Store(nil)
 					b.createFrameRateCalculator()
 				}
