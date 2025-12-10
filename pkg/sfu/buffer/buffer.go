@@ -1439,6 +1439,10 @@ func (b *Buffer) seedKeyFrame(keyFrameSeederGeneration int32) {
 // ---------------------------------------------------------------
 
 func ReleaseExtPacket(extPkt *ExtPacket) {
+	if extPkt == nil {
+		return
+	}
+
 	ReleaseExtDependencyDescriptor(extPkt.DependencyDescriptor)
 
 	*extPkt = ExtPacket{}
