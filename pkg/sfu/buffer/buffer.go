@@ -156,7 +156,7 @@ type Buffer struct {
 
 	// dependency descriptor
 	ddExtID  uint8
-	ddParser *DependencyDescriptorParser
+	ddParser atomic.Pointer[DependencyDescriptorParser]
 
 	paused              bool
 	frameRateCalculator [DefaultMaxLayerSpatial + 1]FrameRateCalculator
@@ -362,9 +362,14 @@ func (b *Buffer) createDDParserAndFrameRateCalculator() {
 		for i := range b.frameRateCalculator {
 			b.frameRateCalculator[i] = frc.GetFrameRateCalculatorForSpatial(int32(i))
 		}
-		b.ddParser = NewDependencyDescriptorParser(b.ddExtID, b.logger, func(spatial, temporal int32) {
-			frc.SetMaxLayer(spatial, temporal)
-		}, false)
+		b.ddParser.Store(NewDependencyDescriptorParser(
+			b.ddExtID,
+			b.logger,
+			func(spatial, temporal int32) {
+				frc.SetMaxLayer(spatial, temporal)
+			},
+			false,
+		))
 	}
 }
 
@@ -557,8 +562,8 @@ func (b *Buffer) ReadExtended(buf []byte) (*ExtPacket, error) {
 }
 
 func (b *Buffer) ReleaseExtPacket(extPkt *ExtPacket) {
-	if b.ddParser != nil {
-		b.ddParser.ReleaseExtDependencyDescriptor(extPkt.DependencyDescriptor)
+	if ddParser := b.ddParser.Load(); ddParser != nil {
+		ddParser.ReleaseExtDependencyDescriptor(extPkt.DependencyDescriptor)
 	}
 
 	*extPkt = ExtPacket{}
@@ -946,13 +951,13 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, isBuffer
 
 	ep.Temporal = 0
 	var videoSize []VideoSize
-	if b.ddParser != nil {
-		ddVal, videoLayer, err := b.ddParser.Parse(ep.Packet)
+	if ddParser := b.ddParser.Load(); ddParser != nil {
+		ddVal, videoLayer, err := ddParser.Parse(ep.Packet)
 		if err != nil {
 			if errors.Is(err, ErrDDExtentionNotFound) {
 				if b.mime == mime.MimeTypeVP8 || b.mime == mime.MimeTypeVP9 {
 					b.logger.Infow("dd extension not found,  disable dd parser")
-					b.ddParser = nil
+					b.ddParser.Store(nil)
 					b.createFrameRateCalculator()
 				}
 			} else {
