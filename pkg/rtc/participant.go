@@ -1951,11 +1951,22 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		if p.params.ClientConf == nil {
 			p.params.ClientConf = &livekit.ClientConfiguration{}
 		}
-		if iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS {
-			p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_ENABLED
+
+		// Check if ForceRelay is explicitly set in config first
+		if p.params.Config != nil && p.params.Config.ForceRelay != nil {
+			if *p.params.Config.ForceRelay {
+				p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_ENABLED
+			} else {
+				p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_DISABLED
+			}
 		} else {
-			// UNSET indicates that clients could override RTCConfiguration to forceRelay
-			p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_UNSET
+			// Fall back to ICE config based logic
+			if iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS {
+				p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_ENABLED
+			} else {
+				// UNSET indicates that clients could override RTCConfiguration to forceRelay
+				p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_UNSET
+			}
 		}
 		p.lock.Unlock()
 

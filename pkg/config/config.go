@@ -130,6 +130,9 @@ type RTCConfig struct {
 	DatachannelLossyTargetLatency time.Duration `yaml:"datachannel_lossy_target_latency,omitempty"`
 
 	ForwardStats ForwardStatsConfig `yaml:"forward_stats,omitempty"`
+
+	// Force relay mode for all clients
+	ForceRelay *bool `yaml:"force_relay,omitempty"`
 }
 
 type TURNServer struct {
