@@ -543,13 +543,14 @@ func (b *Buffer) ReadExtended(buf []byte) (*ExtPacket, error) {
 		}
 		if b.extPackets.Len() > 0 {
 			ep := b.extPackets.PopFront()
-			ep = b.patchExtPacket(ep, buf)
-			if ep == nil {
+			patched := b.patchExtPacket(ep, buf)
+			if patched == nil {
+				b.ReleaseExtPacket(ep)
 				continue
 			}
 
 			b.Unlock()
-			return ep, nil
+			return patched, nil
 		}
 		b.readCond.Wait()
 	}
