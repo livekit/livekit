@@ -869,7 +869,7 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 
 		numPacketsForwarded++
 
-		buff.ReleaseExtPacket(pkt)
+		buffer.ReleaseExtPacket(pkt)
 	}
 }
 

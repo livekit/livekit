@@ -362,9 +362,14 @@ func (b *Buffer) createDDParserAndFrameRateCalculator() {
 		for i := range b.frameRateCalculator {
 			b.frameRateCalculator[i] = frc.GetFrameRateCalculatorForSpatial(int32(i))
 		}
-		b.ddParser = NewDependencyDescriptorParser(b.ddExtID, b.logger, func(spatial, temporal int32) {
-			frc.SetMaxLayer(spatial, temporal)
-		}, false)
+		b.ddParser = NewDependencyDescriptorParser(
+			b.ddExtID,
+			b.logger,
+			func(spatial, temporal int32) {
+				frc.SetMaxLayer(spatial, temporal)
+			},
+			false,
+		)
 	}
 }
 
@@ -545,7 +550,7 @@ func (b *Buffer) ReadExtended(buf []byte) (*ExtPacket, error) {
 			ep := b.extPackets.PopFront()
 			patched := b.patchExtPacket(ep, buf)
 			if patched == nil {
-				b.ReleaseExtPacket(ep)
+				ReleaseExtPacket(ep)
 				continue
 			}
 
@@ -554,15 +559,6 @@ func (b *Buffer) ReadExtended(buf []byte) (*ExtPacket, error) {
 		}
 		b.readCond.Wait()
 	}
-}
-
-func (b *Buffer) ReleaseExtPacket(extPkt *ExtPacket) {
-	if b.ddParser != nil {
-		b.ddParser.ReleaseExtDependencyDescriptor(extPkt.DependencyDescriptor)
-	}
-
-	*extPkt = ExtPacket{}
-	ExtPacketFactory.Put(extPkt)
 }
 
 func (b *Buffer) Close() error {
@@ -951,12 +947,12 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, isBuffer
 		if err != nil {
 			if errors.Is(err, ErrDDExtentionNotFound) {
 				if b.mime == mime.MimeTypeVP8 || b.mime == mime.MimeTypeVP9 {
-					b.logger.Infow("dd extension not found,  disable dd parser")
+					b.logger.Infow("dd extension not found, disable dd parser")
 					b.ddParser = nil
 					b.createFrameRateCalculator()
 				}
 			} else {
-				b.ReleaseExtPacket(ep)
+				ReleaseExtPacket(ep)
 				return nil
 			}
 		} else if ddVal != nil {
@@ -972,7 +968,7 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, isBuffer
 		vp8Packet := VP8{}
 		if err := vp8Packet.Unmarshal(rtpPacket.Payload); err != nil {
 			b.logger.Warnw("could not unmarshal VP8 packet", err)
-			b.ReleaseExtPacket(ep)
+			ReleaseExtPacket(ep)
 			return nil
 		}
 		ep.KeyFrame = vp8Packet.IsKeyFrame
@@ -997,7 +993,7 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, isBuffer
 			_, err := vp9Packet.Unmarshal(rtpPacket.Payload)
 			if err != nil {
 				b.logger.Warnw("could not unmarshal VP9 packet", err)
-				b.ReleaseExtPacket(ep)
+				ReleaseExtPacket(ep)
 				return nil
 			}
 			ep.VideoLayer = VideoLayer{
@@ -1038,7 +1034,7 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, isBuffer
 		if ep.DependencyDescriptor == nil {
 			if len(rtpPacket.Payload) < 2 {
 				b.logger.Warnw("invalid H265 packet", nil)
-				b.ReleaseExtPacket(ep)
+				ReleaseExtPacket(ep)
 				return nil
 			}
 			ep.VideoLayer = VideoLayer{
@@ -1441,3 +1437,10 @@ func (b *Buffer) seedKeyFrame(keyFrameSeederGeneration int32) {
 }
 
 // ---------------------------------------------------------------
+
+func ReleaseExtPacket(extPkt *ExtPacket) {
+	ReleaseExtDependencyDescriptor(extPkt.DependencyDescriptor)
+
+	*extPkt = ExtPacket{}
+	ExtPacketFactory.Put(extPkt)
+}
