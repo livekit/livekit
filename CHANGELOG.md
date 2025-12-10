@@ -2,6 +2,22 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.8] - 2025-12-10
+
+### Added
+- Mark RTCP buffer Write as noinline. (for better heap attribution) (#4138)
+- add debug metric for tracking references (#4134)
+
+### Changed
+- Use isEnding to indicate if down track could be resumed. (#4132)
+- switch participant callbacks to room to listener interface (#4136)
+- protocol deps to get inactive file adjusted memory usage. (#4137)
+- update webrtc to 4.1.8 to pick up DTLS fingerprint check during handshake (#4140)
+
+### Fixed
+- Do not pause rid in SDP to prevent race with adaptive streaming (#4129)
+- leak fixes (#4131, #4141, #4142, #4143, #4144)
+
 ## [1.9.7] - 2025-12-05
 
 ### Added
