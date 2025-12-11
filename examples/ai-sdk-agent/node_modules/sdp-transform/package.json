@@ -1,0 +1,34 @@
+{
+  "name": "sdp-transform",
+  "description": "A simple parser/writer for the Session Description Protocol",
+  "author": "Eirik Albrigtsen <sszynrae@gmail.com>",
+  "version": "2.15.0",
+  "repository": {
+    "type": "git",
+    "url": "clux/sdp-transform"
+  },
+  "keywords": [
+    "sdp",
+    "webrtc",
+    "serializer"
+  ],
+  "main": "./lib/",
+  "bin": {
+    "sdp-verify": "./checker.js"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "test": "bndg test/*.test.js",
+    "coverage": "nyc --reporter=lcov npm run test"
+  },
+  "devDependencies": {
+    "bandage": "^0.5.0",
+    "co-fs": "^1.2.0",
+    "eslint": "^5.10.0",
+    "nyc": "^15.1.0"
+  },
+  "bugs": {
+    "url": "https://github.com/clux/sdp-transform/issues"
+  },
+  "license": "MIT"
+}
