@@ -199,10 +199,6 @@ func (r *RTPStatsReceiver) Update(
 		)
 	} else {
 		resSN = r.sequenceNumber.Update(sequenceNumber)
-		if resSN.IsUnhandled {
-			flowState.IsNotHandled = true
-			return
-		}
 		gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
 
 		timeSinceHighest = packetTime - r.highestTime
@@ -249,7 +245,7 @@ func (r *RTPStatsReceiver) Update(
 		}
 
 		// it is possible that sequence number has rolled over too
-		if gapSN < 0 && gapTS > 0 && payloadSize > 0 {
+		if (gapSN < 0 || gapSN > (1<<15)) && gapTS > 0 && payloadSize > 0 {
 			// not possible to know how many cycles of sequence number roll over could have happened,
 			// ensure that it at least does not go backwards
 			snRolloverCount = 0
@@ -263,6 +259,12 @@ func (r *RTPStatsReceiver) Update(
 			}
 
 			logger().Warnw("forcing sequence number rollover", nil)
+		}
+
+		if resSN.IsUnhandled {
+			flowState.IsNotHandled = true
+			logger().Warnw("dropping packet, cannot find sequence", nil)
+			return
 		}
 	}
 	gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
