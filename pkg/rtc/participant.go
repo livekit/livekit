@@ -2290,7 +2290,7 @@ func (p *ParticipantImpl) onReceivedDataMessage(kind livekit.DataPacket_Kind, da
 				return
 
 			case MigrationDataCacheStateDone:
-				// see the continous message, drop the cache
+				// see the continuous message, drop the cache
 				p.reliableDataInfo.migrateInPubDataCache.Store(nil)
 			}
 		}
@@ -3130,7 +3130,7 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 
 		// if the addTrackRequest is sent before participant active then it means the client tries to publish
 		// before fully connected, in this case we only record the time when the participant is active since
-		// we want this metric to represent the time cost by pubilshing.
+		// we want this metric to represent the time cost by publishing.
 		if activeAt := p.lastActiveAt.Load(); activeAt != nil && createdAt.Before(*activeAt) {
 			createdAt = *activeAt
 		}

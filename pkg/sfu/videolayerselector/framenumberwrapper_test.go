@@ -65,7 +65,7 @@ func TestFrameNumberWrapper(t *testing.T) {
 		// frame out of order
 		firstF = secondF
 		secondF = getFrame(firstF, false)
-		// it is possile that an out of order non-keyframe has been converted to in order frame number if the diff is 32768
+		// it is possible that an out of order non-keyframe has been converted to in order frame number if the diff is 32768
 		// that is ok because the client can't decode in such case and always need to wait for the key frame.
 		// so it is just a failure of test case and increase the frame number here.
 		if secondF-firstF == 0x8000 {

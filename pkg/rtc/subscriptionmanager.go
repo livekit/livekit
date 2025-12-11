@@ -539,7 +539,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *mediaTrackSubscription) {
 		// and the clean up path to handle removing subscription from the subscription map.
 		// It is possible that the track is re-published before subscribed track is closed.
 		// That could create a new subscription and a duplicate entry in SDP.
-		// Waiting for susbcribed track close would ensure that the track is removed from
+		// Waiting for subscribed track close would ensure that the track is removed from
 		// the peer connection before re-published track is re-subscribed and added back to the SDP.
 		return
 	}

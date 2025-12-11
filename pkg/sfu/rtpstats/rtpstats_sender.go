@@ -645,7 +645,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 		// should not roll over for long time, for e. g. it will approximately take 100 days at 500 pps).
 		// So, there seems to be a remote reporter issue where the sequence number rollover is missed.
 		//
-		// catch up till diffrence between highest sent and highest received via receiver report is
+		// catch up till difference between highest sent and highest received via receiver report is
 		// less than full 16-bit range.
 		//
 		// in a different flavor, there are clients that do not report properly,

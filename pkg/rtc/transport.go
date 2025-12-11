@@ -235,7 +235,7 @@ type PCTransport struct {
 	// transceivers (senders) waiting for SetRemoteDescription (offer) to happen before
 	// SetCodecPreferences can be invoked on them.
 	// Pion adapts codecs/payload types from remote description.
-	// If SetCodecPreferences are done before the remote desctiption is processed,
+	// If SetCodecPreferences are done before the remote description is processed,
 	// it is possible that the transceiver gets payload types from media engine.
 	// Subssequently if the peer sends an offer with different payload type for the
 	// same codec, there could be two payload types for the same codec and the wrong
