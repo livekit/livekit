@@ -217,7 +217,7 @@ func (s *IngressService) LaunchPullIngress(ctx context.Context, info *livekit.In
 }
 
 func updateEnableTranscoding(info *livekit.IngressInfo) {
-	// Set BypassTranscoding as well for backward compatiblity
+	// Set BypassTranscoding as well for backward compatibility
 	if info.EnableTranscoding != nil {
 		info.BypassTranscoding = !*info.EnableTranscoding
 		return

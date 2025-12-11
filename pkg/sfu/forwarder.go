@@ -701,7 +701,7 @@ func (f *Forwarder) SetRefSenderReport(layer int32, srData *livekit.RTCPSenderRe
 		//
 		// It could happen like this
 		//   1. Normal operation: publisher sending sender reports and
-		//      suscribers use reports from publisher to calculate and send
+		//      subscribers use reports from publisher to calculate and send
 		//      RTCP sender report.
 		//   2. Publisher pauses: there are no more reports.
 		//   3. When paused, subscriber can still use the publisher side sender

@@ -430,7 +430,7 @@ func IsH265KeyFrame(payload []byte) (kf bool) {
 	case naluType == 48: // AP
 		idx := 2
 		for idx < len(payload)-2 {
-			// TODO: check the DONL field (controled by sprop-max-don-diff)
+			// TODO: check the DONL field (controlled by sprop-max-don-diff)
 			size := binary.BigEndian.Uint16(payload[idx:])
 			idx += 2
 			if idx >= len(payload) {

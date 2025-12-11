@@ -352,7 +352,7 @@ func (t *SubscribedTrack) applySettings() {
 
 	t.settingsLock.Lock()
 	if settingsVersion != t.settingsVersion {
-		// a newer settings has superceded this one
+		// a newer settings has superseded this one
 		t.settingsLock.Unlock()
 		return
 	}

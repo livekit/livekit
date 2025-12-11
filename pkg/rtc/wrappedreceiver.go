@@ -93,7 +93,7 @@ func (r *WrappedReceiver) StreamID() string {
 // isAvailable: returns true if given codec is a potential codec from publisher or if an existing published codec can be translated
 // needsPublish: indicates if the codec is needed from publisher, some combinations can be achieved via codec translation internally,
 //
-//	example: unecrypted opus -> RED translation and vice-versa can be done without the need for publisher to send the other codec.
+//	example: unencrypted opus -> RED translation and vice-versa can be done without the need for publisher to send the other codec.
 func (r *WrappedReceiver) DetermineReceiver(codec webrtc.RTPCodecCapability) (isAvailable bool, needsPublish bool) {
 	r.lock.Lock()
 
