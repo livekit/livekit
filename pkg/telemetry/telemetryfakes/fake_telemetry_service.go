@@ -4,6 +4,7 @@ package telemetryfakes
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/telemetry"
@@ -168,6 +169,11 @@ type FakeTelemetryService struct {
 	sendStatsArgsForCall []struct {
 		arg1 context.Context
 		arg2 []*livekit.AnalyticsStat
+	}
+	SetWorkerCleanupWaitDurationStub        func(time.Duration)
+	setWorkerCleanupWaitDurationMutex       sync.RWMutex
+	setWorkerCleanupWaitDurationArgsForCall []struct {
+		arg1 time.Duration
 	}
 	TrackMaxSubscribedVideoQualityStub        func(context.Context, livekit.ParticipantID, *livekit.TrackInfo, mime.MimeType, livekit.VideoQuality)
 	trackMaxSubscribedVideoQualityMutex       sync.RWMutex
@@ -1089,6 +1095,38 @@ func (fake *FakeTelemetryService) SendStatsArgsForCall(i int) (context.Context, 
 	defer fake.sendStatsMutex.RUnlock()
 	argsForCall := fake.sendStatsArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeTelemetryService) SetWorkerCleanupWaitDuration(arg1 time.Duration) {
+	fake.setWorkerCleanupWaitDurationMutex.Lock()
+	fake.setWorkerCleanupWaitDurationArgsForCall = append(fake.setWorkerCleanupWaitDurationArgsForCall, struct {
+		arg1 time.Duration
+	}{arg1})
+	stub := fake.SetWorkerCleanupWaitDurationStub
+	fake.recordInvocation("SetWorkerCleanupWaitDuration", []interface{}{arg1})
+	fake.setWorkerCleanupWaitDurationMutex.Unlock()
+	if stub != nil {
+		fake.SetWorkerCleanupWaitDurationStub(arg1)
+	}
+}
+
+func (fake *FakeTelemetryService) SetWorkerCleanupWaitDurationCallCount() int {
+	fake.setWorkerCleanupWaitDurationMutex.RLock()
+	defer fake.setWorkerCleanupWaitDurationMutex.RUnlock()
+	return len(fake.setWorkerCleanupWaitDurationArgsForCall)
+}
+
+func (fake *FakeTelemetryService) SetWorkerCleanupWaitDurationCalls(stub func(time.Duration)) {
+	fake.setWorkerCleanupWaitDurationMutex.Lock()
+	defer fake.setWorkerCleanupWaitDurationMutex.Unlock()
+	fake.SetWorkerCleanupWaitDurationStub = stub
+}
+
+func (fake *FakeTelemetryService) SetWorkerCleanupWaitDurationArgsForCall(i int) time.Duration {
+	fake.setWorkerCleanupWaitDurationMutex.RLock()
+	defer fake.setWorkerCleanupWaitDurationMutex.RUnlock()
+	argsForCall := fake.setWorkerCleanupWaitDurationArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeTelemetryService) TrackMaxSubscribedVideoQuality(arg1 context.Context, arg2 livekit.ParticipantID, arg3 *livekit.TrackInfo, arg4 mime.MimeType, arg5 livekit.VideoQuality) {

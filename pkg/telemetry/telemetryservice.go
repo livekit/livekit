@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/webhook"
+	"go.uber.org/atomic"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -85,6 +86,7 @@ type TelemetryService interface {
 	AnalyticsService
 	NotifyEgressEvent(ctx context.Context, event string, info *livekit.EgressInfo)
 	FlushStats()
+	SetWorkerCleanupWaitDuration(wait time.Duration)
 }
 
 const (
@@ -105,6 +107,8 @@ type telemetryService struct {
 	workerList *StatsWorker
 
 	flushMu sync.Mutex
+
+	workerCleanupWait atomic.Duration
 }
 
 func NewTelemetryService(notifier webhook.QueuedNotifier, analytics AnalyticsService) TelemetryService {
@@ -119,6 +123,7 @@ func NewTelemetryService(notifier webhook.QueuedNotifier, analytics AnalyticsSer
 		}),
 		workers: make(map[livekit.ParticipantID]*StatsWorker),
 	}
+	t.workerCleanupWait.Store(workerCleanupWait)
 	if t.notifier != nil {
 		t.notifier.RegisterProcessedHook(func(ctx context.Context, whi *livekit.WebhookInfo) {
 			t.Webhook(ctx, whi)
@@ -143,7 +148,7 @@ func (t *telemetryService) FlushStats() {
 	var prev, reap *StatsWorker
 	for worker != nil {
 		next := worker.next
-		if closed := worker.Flush(now); closed {
+		if closed := worker.Flush(now, t.workerCleanupWait.Load()); closed {
 			if prev == nil {
 				// this worker was at the head of the list
 				t.workersMu.Lock()
@@ -178,6 +183,10 @@ func (t *telemetryService) FlushStats() {
 		}
 		t.workersMu.Unlock()
 	}
+}
+
+func (t *telemetryService) SetWorkerCleanupWaitDuration(wait time.Duration) {
+	t.workerCleanupWait.Store(max(workerCleanupWait, wait))
 }
 
 func (t *telemetryService) run() {

@@ -120,7 +120,7 @@ func (s *StatsWorker) IsConnected() bool {
 	return s.isConnected
 }
 
-func (s *StatsWorker) Flush(now time.Time) bool {
+func (s *StatsWorker) Flush(now time.Time, closeWait time.Duration) bool {
 	ts := timestamppb.New(now)
 
 	s.lock.Lock()
@@ -132,7 +132,7 @@ func (s *StatsWorker) Flush(now time.Time) bool {
 	outgoingPerTrack := s.outgoingPerTrack
 	s.outgoingPerTrack = make(map[livekit.TrackID][]*livekit.AnalyticsStat)
 
-	closed := !s.closedAt.IsZero() && now.Sub(s.closedAt) > workerCleanupWait
+	closed := !s.closedAt.IsZero() && now.Sub(s.closedAt) > closeWait
 	s.lock.Unlock()
 
 	stats = s.collectStats(ts, livekit.StreamType_UPSTREAM, incomingPerTrack, stats)
