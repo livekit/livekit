@@ -1409,12 +1409,13 @@ func (b *Buffer) seedKeyFrame(keyFrameSeederGeneration int32) {
 
 	for {
 		if b.closed.Load() || b.keyFrameSeederGeneration.Load() != keyFrameSeederGeneration {
+			b.logger.Debugw("stopping key frame seeder: stopped")
 			return
 		}
 
 		select {
 		case <-timer.C:
-			b.logger.Infow("stopping key frame seeder: timeout")
+			b.logger.Debugw("stopping key frame seeder: timeout")
 			return
 
 		case <-ticker.C:
