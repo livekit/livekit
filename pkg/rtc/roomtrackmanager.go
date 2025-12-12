@@ -23,7 +23,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"golang.org/x/exp/slices"
 )
 
 // RoomTrackManager holds tracks that are published to the room
@@ -92,25 +91,29 @@ func (r *RoomTrackManager) RemoveTrack(track types.MediaTrack) {
 		return
 	}
 
-	found := false
 	numRemoved := 0
-	for idx, info := range infos {
+	idx := 0
+	for _, info := range infos {
 		if info.Track == track {
-			r.tracks[trackID] = slices.Delete(r.tracks[trackID], idx, idx+1)
-			if len(r.tracks[trackID]) == 0 {
-				delete(r.tracks, trackID)
-			}
-			found = true
 			numRemoved++
+		} else {
+			r.tracks[trackID][idx] = info
+			idx++
 		}
 	}
+	for j := idx; j < len(infos); j++ {
+		r.tracks[trackID][idx] = nil
+	}
+	r.tracks[trackID] = r.tracks[trackID][:idx]
+	if len(r.tracks[trackID]) == 0 {
+		delete(r.tracks, trackID)
+	}
 	r.lock.Unlock()
+	if numRemoved == 0 {
+		return
+	}
 	if numRemoved > 1 {
 		r.logger.Warnw("removed multiple tracks", nil, "trackID", trackID, "numRemoved", numRemoved)
-	}
-
-	if !found {
-		return
 	}
 
 	n := r.removedNotifier.GetNotifier(string(trackID))
@@ -205,25 +208,29 @@ func (r *RoomTrackManager) RemoveDataTrack(dataTrack types.DataTrack) {
 		return
 	}
 
-	found := false
 	numRemoved := 0
-	for idx, info := range infos {
+	idx := 0
+	for _, info := range infos {
 		if info.DataTrack == dataTrack {
-			r.dataTracks[trackID] = slices.Delete(r.dataTracks[trackID], idx, idx+1)
-			if len(r.dataTracks[trackID]) == 0 {
-				delete(r.dataTracks, trackID)
-			}
-			found = true
 			numRemoved++
+		} else {
+			r.dataTracks[trackID][idx] = info
+			idx++
 		}
 	}
+	for j := idx; j < len(infos); j++ {
+		r.dataTracks[trackID][idx] = nil
+	}
+	r.dataTracks[trackID] = r.dataTracks[trackID][:idx]
+	if len(r.dataTracks[trackID]) == 0 {
+		delete(r.dataTracks, trackID)
+	}
 	r.lock.Unlock()
+	if numRemoved == 0 {
+		return
+	}
 	if numRemoved > 1 {
 		r.logger.Warnw("removed multiple data tracks", nil, "trackID", trackID, "numRemoved", numRemoved)
-	}
-
-	if !found {
-		return
 	}
 
 	n := r.removedNotifier.GetNotifier(string(trackID))
