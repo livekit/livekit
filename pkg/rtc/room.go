@@ -265,7 +265,6 @@ func NewRoom(
 		agentClient:                          agentClient,
 		agentStore:                           agentStore,
 		agentDispatches:                      make(map[string]*agentDispatch),
-		trackManager:                         NewRoomTrackManager(),
 		serverInfo:                           serverInfo,
 		participants:                         make(map[livekit.ParticipantIdentity]types.LocalParticipant),
 		participantOpts:                      make(map[livekit.ParticipantIdentity]*ParticipantOptions),
@@ -284,6 +283,7 @@ func NewRoom(
 			MaxSize: dataMessageCacheSize,
 		}),
 	}
+	r.trackManager = NewRoomTrackManager(r.logger)
 	r.localParticipantListener = &localParticipantListener{room: r}
 
 	if r.protoRoom.EmptyTimeout == 0 {
