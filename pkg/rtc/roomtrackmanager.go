@@ -247,3 +247,10 @@ func (r *RoomTrackManager) GetDataTrackInfo(trackID livekit.TrackID) *DataTrackI
 	// earliest added data track is used till it is removed
 	return infos[0]
 }
+
+func (r *RoomTrackManager) Report() {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	r.logger.Infow("room track manager report", "numTracks", len(r.tracks), "numDataTracks", len(r.dataTracks))
+}
