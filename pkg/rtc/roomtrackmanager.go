@@ -22,11 +22,14 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"golang.org/x/exp/slices"
 )
 
 // RoomTrackManager holds tracks that are published to the room
 type RoomTrackManager struct {
+	logger logger.Logger
+
 	lock            sync.RWMutex
 	changedNotifier *utils.ChangeNotifierManager
 	removedNotifier *utils.ChangeNotifierManager
@@ -46,8 +49,9 @@ type DataTrackInfo struct {
 	PublisherID       livekit.ParticipantID
 }
 
-func NewRoomTrackManager() *RoomTrackManager {
+func NewRoomTrackManager(logger logger.Logger) *RoomTrackManager {
 	return &RoomTrackManager{
+		logger:          logger,
 		tracks:          make(map[livekit.TrackID][]*TrackInfo),
 		dataTracks:      make(map[livekit.TrackID][]*DataTrackInfo),
 		changedNotifier: utils.NewChangeNotifierManager(),
@@ -58,6 +62,16 @@ func NewRoomTrackManager() *RoomTrackManager {
 func (r *RoomTrackManager) AddTrack(track types.MediaTrack, publisherIdentity livekit.ParticipantIdentity, publisherID livekit.ParticipantID) {
 	trackID := track.ID()
 	r.lock.Lock()
+	infos, ok := r.tracks[trackID]
+	if ok {
+		for _, info := range infos {
+			if info.Track == track {
+				r.lock.Unlock()
+				r.logger.Infow("not adding duplicate track", "trackID", trackID)
+				return
+			}
+		}
+	}
 	r.tracks[trackID] = append(r.tracks[trackID], &TrackInfo{
 		Track:             track,
 		PublisherIdentity: publisherIdentity,
@@ -79,6 +93,7 @@ func (r *RoomTrackManager) RemoveTrack(track types.MediaTrack) {
 	}
 
 	found := false
+	numRemoved := 0
 	for idx, info := range infos {
 		if info.Track == track {
 			r.tracks[trackID] = slices.Delete(r.tracks[trackID], idx, idx+1)
@@ -86,10 +101,13 @@ func (r *RoomTrackManager) RemoveTrack(track types.MediaTrack) {
 				delete(r.tracks, trackID)
 			}
 			found = true
-			break
+			numRemoved++
 		}
 	}
 	r.lock.Unlock()
+	if numRemoved > 1 {
+		r.logger.Warnw("removed multiple tracks", nil, "trackID", trackID, "numRemoved", numRemoved)
+	}
 
 	if !found {
 		return
@@ -157,6 +175,16 @@ func (r *RoomTrackManager) GetOrCreateTrackRemoveNotifier(trackID livekit.TrackI
 func (r *RoomTrackManager) AddDataTrack(dataTrack types.DataTrack, publisherIdentity livekit.ParticipantIdentity, publisherID livekit.ParticipantID) {
 	trackID := dataTrack.ID()
 	r.lock.Lock()
+	infos, ok := r.dataTracks[trackID]
+	if ok {
+		for _, info := range infos {
+			if info.DataTrack == dataTrack {
+				r.lock.Unlock()
+				r.logger.Infow("not adding duplicate data track", "trackID", trackID)
+				return
+			}
+		}
+	}
 	r.dataTracks[trackID] = append(r.dataTracks[trackID], &DataTrackInfo{
 		DataTrack:         dataTrack,
 		PublisherIdentity: publisherIdentity,
@@ -178,6 +206,7 @@ func (r *RoomTrackManager) RemoveDataTrack(dataTrack types.DataTrack) {
 	}
 
 	found := false
+	numRemoved := 0
 	for idx, info := range infos {
 		if info.DataTrack == dataTrack {
 			r.dataTracks[trackID] = slices.Delete(r.dataTracks[trackID], idx, idx+1)
@@ -185,10 +214,13 @@ func (r *RoomTrackManager) RemoveDataTrack(dataTrack types.DataTrack) {
 				delete(r.dataTracks, trackID)
 			}
 			found = true
-			break
+			numRemoved++
 		}
 	}
 	r.lock.Unlock()
+	if numRemoved > 1 {
+		r.logger.Warnw("removed multiple data tracks", nil, "trackID", trackID, "numRemoved", numRemoved)
+	}
 
 	if !found {
 		return
