@@ -171,6 +171,11 @@ func (r *RTPStatsReceiver) Update(
 		)
 	}
 
+	undoUpdates := func() {
+		r.sequenceNumber.UndoUpdate(resSN)
+		r.timestamp.UndoUpdate(resTS)
+	}
+
 	if !r.initialized {
 		if payloadSize == 0 {
 			// do not start on a padding only packet
@@ -208,6 +213,8 @@ func (r *RTPStatsReceiver) Update(
 		}
 		resTS = r.timestamp.Rollover(timestamp, tsRolloverCount)
 		if resTS.IsUnhandled {
+			undoUpdates()
+
 			flowState.IsNotHandled = true
 			return
 		}
@@ -226,9 +233,10 @@ func (r *RTPStatsReceiver) Update(
 		if gapSN < 0 && gapTS > 0 {
 			expectedTSJump = int64(r.rtpConverter.ToRTPExt(time.Duration(timeSinceHighest)))
 			if gapTS > int64(float64(expectedTSJump)*cTSJumpTooHighFactor) {
-				r.sequenceNumber.UndoUpdate(resSN)
-				r.timestamp.UndoUpdate(resTS)
+				undoUpdates()
+
 				logger().Warnw("dropping old packet, timestamp", nil)
+
 				flowState.IsNotHandled = true
 				return
 			}
@@ -237,9 +245,10 @@ func (r *RTPStatsReceiver) Update(
 		// Case 2:
 		//  Sequence number looks like it is moving forward, but it is actually a very old packet.
 		if gapTS < 0 && gapSN > 0 {
-			r.sequenceNumber.UndoUpdate(resSN)
-			r.timestamp.UndoUpdate(resTS)
+			undoUpdates()
+
 			logger().Warnw("dropping old packet, sequence number", nil)
+
 			flowState.IsNotHandled = true
 			return
 		}
@@ -253,17 +262,17 @@ func (r *RTPStatsReceiver) Update(
 				snRolloverCount = 1
 			}
 			resSN = r.sequenceNumber.Rollover(sequenceNumber, snRolloverCount)
-			if resSN.IsUnhandled {
-				flowState.IsNotHandled = true
-				return
+			if !resSN.IsUnhandled {
+				logger().Warnw("forcing sequence number rollover", nil)
 			}
-
-			logger().Warnw("forcing sequence number rollover", nil)
 		}
 
 		if resSN.IsUnhandled {
-			flowState.IsNotHandled = true
+			undoUpdates()
+
 			logger().Warnw("dropping packet, cannot find sequence", nil)
+
+			flowState.IsNotHandled = true
 			return
 		}
 	}
