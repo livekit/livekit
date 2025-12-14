@@ -404,7 +404,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		tx.ReportDuration(uint16(millis))
 		tx.ReportDurationMinutes(uint8(mins))
 
-		return !p.isClosed.Load()
+		return !p.IsClosed()
 	})
 
 	var err error
