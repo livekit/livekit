@@ -504,6 +504,8 @@ func (r *RoomManager) StartSession(
 		FireOnTrackBySdp:              true,
 		UseSinglePeerConnection:       pi.UseSinglePeerConnection,
 		EnableDataTracks:              r.config.EnableDataTracks,
+		DataMessageRateLimit:          r.config.Limit.DataMessageRateLimit,
+		DataMessageRateBurst:          r.config.Limit.DataMessageRateBurst,
 	})
 	if err != nil {
 		return err
