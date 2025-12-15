@@ -505,6 +505,8 @@ func (r *RoomManager) StartSession(
 		UseSinglePeerConnection:         pi.UseSinglePeerConnection,
 		EnableDataTracks:                r.config.EnableDataTracks,
 		EnableRTPStreamRestartDetection: r.config.RTC.EnableRTPStreamRestartDetection,
+		DataMessageRateLimit:          	 r.config.Limit.DataMessageRateLimit,
+		DataMessageRateBurst:          	 r.config.Limit.DataMessageRateBurst,
 	})
 	if err != nil {
 		return err
