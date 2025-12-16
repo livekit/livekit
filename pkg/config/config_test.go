@@ -62,6 +62,7 @@ func TestGeneratedFlags(t *testing.T) {
 	c.Set("rtc.allow_tcp_fallback", "true")
 	c.Set("rtc.reconnect_on_publication_error", "true")
 	c.Set("rtc.reconnect_on_subscription_error", "false")
+	c.Set("rtc.force_relay", "true")
 
 	conf, err := NewConfig("", true, c, nil)
 	require.NoError(t, err)
@@ -78,6 +79,49 @@ func TestGeneratedFlags(t *testing.T) {
 
 	require.NotNil(t, conf.RTC.ReconnectOnSubscriptionError)
 	require.False(t, *conf.RTC.ReconnectOnSubscriptionError)
+
+	require.NotNil(t, conf.RTC.ForceRelay)
+	require.True(t, *conf.RTC.ForceRelay)
+}
+
+func TestForceRelayConfig(t *testing.T) {
+	tests := []struct {
+		name           string
+		configContent  string
+		expectedValue  *bool
+	}{
+		{
+			name: "ForceRelay enabled",
+			configContent: `rtc:
+  force_relay: true`,
+			expectedValue: func() *bool { b := true; return &b }(),
+		},
+		{
+			name: "ForceRelay disabled",
+			configContent: `rtc:
+  force_relay: false`,
+			expectedValue: func() *bool { b := false; return &b }(),
+		},
+		{
+			name:          "ForceRelay not set",
+			configContent: `rtc: {}`,
+			expectedValue: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conf, err := NewConfig(tt.configContent, true, nil, nil)
+			require.NoError(t, err)
+
+			if tt.expectedValue == nil {
+				require.Nil(t, conf.RTC.ForceRelay)
+			} else {
+				require.NotNil(t, conf.RTC.ForceRelay)
+				require.Equal(t, *tt.expectedValue, *conf.RTC.ForceRelay)
+			}
+		})
+	}
 }
 
 func TestYAMLTag(t *testing.T) {

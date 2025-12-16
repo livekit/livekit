@@ -98,6 +98,11 @@ rtc:
   #   allow_pause: true
   # # allows automatic connection fallback to TCP and TURN/TLS (if configured) when UDP has been unstable, default true
   # allow_tcp_fallback: true
+  # # Force all clients to use relay (TURN) servers only, bypassing direct P2P connections
+  # # When set to true, clients will be forced to use TURN servers for media traffic
+  # # When set to false, clients will not be forced to use relay
+  # # When not set (default), force relay behavior is determined by ICE configuration
+  # force_relay: false
   # # number of packets to buffer in the SFU for video, defaults to 500
   # packet_buffer_size_video: 500
   # # number of packets to buffer in the SFU for audio, defaults to 200
