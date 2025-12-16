@@ -141,6 +141,12 @@ func (r *RedPrimaryReceiver) ResyncDownTracks() {
 	})
 }
 
+func (r *RedPrimaryReceiver) OnStreamRestart() {
+	r.downTrackSpreader.Broadcast(func(dt TrackSender) {
+		dt.ReceiverRestart()
+	})
+}
+
 func (r *RedPrimaryReceiver) IsClosed() bool {
 	return r.closed.Load()
 }

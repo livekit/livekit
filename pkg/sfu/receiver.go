@@ -122,7 +122,7 @@ type TrackReceiver interface {
 	DeleteDownTrack(participantID livekit.ParticipantID)
 	GetDownTracks() []TrackSender
 
-	DebugInfo() map[string]interface{}
+	DebugInfo() map[string]any
 
 	TrackInfo() *livekit.TrackInfo
 	UpdateTrackInfo(ti *livekit.TrackInfo)
@@ -156,6 +156,7 @@ type REDTransformer interface {
 		publisherSRData *livekit.RTCPSenderReportState,
 	)
 	ResyncDownTracks()
+	OnStreamRestart()
 	CanClose() bool
 	Close()
 }
@@ -166,8 +167,9 @@ var _ TrackReceiver = (*WebRTCReceiver)(nil)
 type WebRTCReceiver struct {
 	logger logger.Logger
 
-	pliThrottleConfig PLIThrottleConfig
-	audioConfig       AudioConfig
+	pliThrottleConfig               PLIThrottleConfig
+	audioConfig                     AudioConfig
+	enableRTPStreamRestartDetection bool
 
 	trackID            livekit.TrackID
 	streamID           string
@@ -224,6 +226,13 @@ func WithPliThrottleConfig(pliThrottleConfig PLIThrottleConfig) ReceiverOpts {
 func WithAudioConfig(audioConfig AudioConfig) ReceiverOpts {
 	return func(w *WebRTCReceiver) *WebRTCReceiver {
 		w.audioConfig = audioConfig
+		return w
+	}
+}
+
+func WithEnableRTPStreamRestartDetection(enable bool) ReceiverOpts {
+	return func(w *WebRTCReceiver) *WebRTCReceiver {
+		w.enableRTPStreamRestartDetection = enable
 		return w
 	}
 }
@@ -412,6 +421,7 @@ func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) erro
 		Config: w.audioConfig.AudioLevelConfig,
 	})
 	buff.SetAudioLossProxying(w.audioConfig.EnableLossProxying)
+	buff.SetStreamRestartDetection(w.enableRTPStreamRestartDetection)
 	buff.OnRtcpFeedback(w.sendRTCP)
 	buff.OnRtcpSenderReport(func() {
 		srData := buff.GetSenderReportData()
@@ -438,7 +448,6 @@ func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) erro
 			cb()
 		}
 	})
-
 	if w.Kind() == webrtc.RTPCodecTypeVideo && layer == 0 {
 		buff.OnCodecChange(w.handleCodecChange)
 	}
@@ -794,6 +803,17 @@ func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
 			return
 		}
 		dequeuedAt := mono.UnixNano()
+
+		if pkt.IsRestart {
+			w.logger.Infow("stream restarted", "layer", layer)
+			w.downTrackSpreader.Broadcast(func(dt TrackSender) {
+				dt.ReceiverRestart()
+			})
+
+			if rt := w.redTransformer.Load(); rt != nil {
+				rt.(REDTransformer).OnStreamRestart()
+			}
+		}
 
 		if pkt.Packet.PayloadType != uint8(w.codec.PayloadType) {
 			// drop packets as we don't support codec fallback directly
