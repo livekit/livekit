@@ -685,7 +685,6 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, i
 			return
 		}
 
-		// restart sequence tracker and range map
 		b.rtpStats.Stop()
 		b.logger.Infow("stream restart - rtp stats", b.rtpStats)
 

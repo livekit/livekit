@@ -794,7 +794,6 @@ func (r *RTPStatsReceiver) ExtendedHighestSequenceNumber() uint64 {
 	return r.sequenceNumber.GetExtendedHighest()
 }
 
-// RAJA-TODO: write tests for maybeRestart
 func (r *RTPStatsReceiver) maybeRestart(sn uint16, ts uint32, payloadSize int) bool {
 	if payloadSize > 0 {
 		r.restartPackets = append(r.restartPackets, packet{sn, ts})

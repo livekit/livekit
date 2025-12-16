@@ -218,7 +218,7 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 		len(packet.Payload),
 		0,
 	)
-	require.Equal(t, RTPFlowUnhandledReasonRestart, flowState.UnhandledReason)
+	require.Equal(t, RTPFlowUnhandledReasonOldSequenceNumber, flowState.UnhandledReason)
 	require.Equal(t, sequenceNumber, r.sequenceNumber.GetHighest())
 	require.Equal(t, sequenceNumber, uint16(r.sequenceNumber.GetExtendedHighest()))
 	require.Equal(t, timestamp, r.timestamp.GetHighest())
