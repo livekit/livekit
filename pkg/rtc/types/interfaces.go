@@ -543,6 +543,8 @@ type LocalParticipant interface {
 	GetDataTrackTransport() DataTrackTransport
 
 	ClearParticipantListener()
+
+	GetNextSubscribedDataTrackHandle() uint16
 }
 
 // ---------------------------------------------

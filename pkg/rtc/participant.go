@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"slices"
 	"strings"
@@ -271,6 +272,8 @@ type ParticipantImpl struct {
 	*UpDataTrackManager
 	*SubscriptionManager
 
+	nextSubscribedDataTrackHandle uint16
+
 	icQueue [2]atomic.Pointer[webrtc.ICECandidate]
 
 	requireBroadcast bool
@@ -358,10 +361,11 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			joiningMessageFirstSeqs:       make(map[livekit.ParticipantID]uint32),
 			joiningMessageLastWrittenSeqs: make(map[livekit.ParticipantID]uint32),
 		},
-		rpcPendingAcks:      make(map[string]*utils.DataChannelRpcPendingAckHandler),
-		rpcPendingResponses: make(map[string]*utils.DataChannelRpcPendingResponseHandler),
-		onClose:             make(map[string]func(types.LocalParticipant)),
-		telemetryGuard:      &telemetry.ReferenceGuard{},
+		rpcPendingAcks:                make(map[string]*utils.DataChannelRpcPendingAckHandler),
+		rpcPendingResponses:           make(map[string]*utils.DataChannelRpcPendingResponseHandler),
+		onClose:                       make(map[string]func(types.LocalParticipant)),
+		telemetryGuard:                &telemetry.ReferenceGuard{},
+		nextSubscribedDataTrackHandle: uint16(rand.Intn(256)),
 	}
 	p.setupSignalling()
 

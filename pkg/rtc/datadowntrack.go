@@ -16,7 +16,6 @@ package rtc
 
 import (
 	"fmt"
-	"math/rand"
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
@@ -29,13 +28,13 @@ type DataDownTrackParams struct {
 	Logger           logger.Logger
 	SubscriberID     livekit.ParticipantID
 	PublishDataTrack types.DataTrack
+	Handle           uint16
 	Transport        types.DataTrackTransport
 }
 
 type DataDownTrack struct {
 	params    DataDownTrackParams
 	dti       *livekit.DataTrackInfo
-	handle    uint16
 	createdAt int64
 }
 
@@ -43,7 +42,6 @@ func NewDataDownTrack(params DataDownTrackParams, dti *livekit.DataTrackInfo) (*
 	d := &DataDownTrack{
 		params:    params,
 		dti:       dti,
-		handle:    uint16(rand.Intn(256)),
 		createdAt: time.Now().UnixNano(),
 	}
 
@@ -62,7 +60,7 @@ func (d *DataDownTrack) Close() {
 }
 
 func (d *DataDownTrack) Handle() uint16 {
-	return d.handle
+	return d.params.Handle
 }
 
 func (d *DataDownTrack) PublishDataTrack() types.DataTrack {
@@ -88,14 +86,14 @@ func (d *DataDownTrack) SubscriberID() livekit.ParticipantID {
 
 func (d *DataDownTrack) WritePacket(data []byte, packet *datatrack.Packet) {
 	forwardedPacket := *packet
-	forwardedPacket.Handle = d.handle
+	forwardedPacket.Handle = d.params.Handle
 	buf, err := forwardedPacket.Marshal()
 	if err != nil {
 		d.params.Logger.Warnw("could not marshal data track message", err)
 		return
 	}
 	if err := d.params.Transport.SendDataTrackMessage(buf); err != nil {
-		d.params.Logger.Warnw("could not send data track message", err, "handle", d.handle)
+		d.params.Logger.Warnw("could not send data track message", err, "handle", d.params.Handle)
 	}
 }
 

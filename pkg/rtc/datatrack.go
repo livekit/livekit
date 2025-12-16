@@ -95,6 +95,7 @@ func (d *DataTrack) AddSubscriber(sub types.LocalParticipant) (types.DataDownTra
 			Logger:           sub.GetLogger().WithValues("trackID", d.ID()),
 			SubscriberID:     sub.ID(),
 			PublishDataTrack: d,
+			Handle:           sub.GetNextSubscribedDataTrackHandle(),
 			Transport:        sub.GetDataTrackTransport(),
 		},
 		d.dti,
