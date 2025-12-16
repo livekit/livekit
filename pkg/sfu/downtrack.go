@@ -70,6 +70,7 @@ type TrackSender interface {
 	) error
 	Resync()
 	SetReceiver(TrackReceiver)
+	ReceiverRestart()
 }
 
 // -------------------------------------------------------------------
@@ -669,7 +670,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 		return
 	}
 
-	oldPT, oldRtxPT, oldCodec := d.payloadType.Load(), d.payloadTypeRTX.Load(), d.codec
+	oldPT, oldRtxPT, oldCodec := d.payloadType.Load(), d.payloadTypeRTX.Load(), d.codec.Load().(webrtc.RTPCodecCapability)
 
 	var codec webrtc.RTPCodecParameters
 	for _, c := range d.upstreamCodecs {
@@ -908,13 +909,7 @@ func (d *DownTrack) postKeyFrameRequestEvent() {
 
 func (d *DownTrack) keyFrameRequester() {
 	getInterval := func() time.Duration {
-		interval := 2 * d.rtpStats.GetRtt()
-		if interval < keyFrameIntervalMin {
-			interval = keyFrameIntervalMin
-		}
-		if interval > keyFrameIntervalMax {
-			interval = keyFrameIntervalMax
-		}
+		interval := min(max(2*d.rtpStats.GetRtt(), keyFrameIntervalMin), keyFrameIntervalMax)
 		return time.Duration(interval) * time.Millisecond
 	}
 
@@ -1638,6 +1633,18 @@ func (d *DownTrack) Pause() VideoAllocation {
 
 func (d *DownTrack) Resync() {
 	d.forwarder.Resync()
+}
+
+func (d *DownTrack) ReceiverRestart() {
+	d.bindLock.Lock()
+	codec := d.codec.Load().(webrtc.RTPCodecCapability)
+	d.bindLock.Unlock()
+
+	d.params.Logger.Infow("upstream receiver restart")
+
+	receiver := d.Receiver()
+	d.forwarder.Restart()
+	d.forwarder.DetermineCodec(codec, receiver.HeaderExtensions(), receiver.VideoLayerMode())
 }
 
 func (d *DownTrack) CreateSourceDescriptionChunks() []rtcp.SourceDescriptionChunk {

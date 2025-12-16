@@ -130,6 +130,9 @@ type RTCConfig struct {
 	DatachannelLossyTargetLatency time.Duration `yaml:"datachannel_lossy_target_latency,omitempty"`
 
 	ForwardStats ForwardStatsConfig `yaml:"forward_stats,omitempty"`
+
+	// enable rtp stream restart detection for published tracks
+	EnableRTPStreamRestartDetection bool `yaml:"enable_rtp_stream_restart_detection,omitempty"`
 }
 
 type TURNServer struct {

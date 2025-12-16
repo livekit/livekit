@@ -80,10 +80,7 @@ func (r *RangeMap[RT, VT]) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddInt("numRanges", len(r.ranges))
 
 	// just the last 10 ranges max
-	startIdx := len(r.ranges) - 10
-	if startIdx < 0 {
-		startIdx = 0
-	}
+	startIdx := max(len(r.ranges)-10, 0)
 	for i := startIdx; i < len(r.ranges); i++ {
 		e.AddObject(fmt.Sprintf("range[%d]", i), r.ranges[i])
 	}
