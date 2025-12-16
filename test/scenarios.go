@@ -348,13 +348,11 @@ func publishDataTracksForClients(t *testing.T, clients ...*testclient.RTCClient)
 	var writers []testclient.TrackWriter
 	for i := range clients {
 		c := clients[i]
-		dtw, err := c.PublishDataTrack()
-		require.NoError(t, err)
-		writers = append(writers, dtw)
-
-		dtw, err = c.PublishDataTrack()
-		require.NoError(t, err)
-		writers = append(writers, dtw)
+		for range 2 {
+			dtw, err := c.PublishDataTrack()
+			require.NoError(t, err)
+			writers = append(writers, dtw)
+		}
 	}
 	return writers
 }

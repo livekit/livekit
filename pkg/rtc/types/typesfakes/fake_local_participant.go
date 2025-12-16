@@ -376,6 +376,16 @@ type FakeLocalParticipant struct {
 	getLoggerResolverReturnsOnCall map[int]struct {
 		result1 logger.DeferredFieldResolver
 	}
+	GetNextSubscribedDataTrackHandleStub        func() uint16
+	getNextSubscribedDataTrackHandleMutex       sync.RWMutex
+	getNextSubscribedDataTrackHandleArgsForCall []struct {
+	}
+	getNextSubscribedDataTrackHandleReturns struct {
+		result1 uint16
+	}
+	getNextSubscribedDataTrackHandleReturnsOnCall map[int]struct {
+		result1 uint16
+	}
 	GetPacerStub        func() pacer.Pacer
 	getPacerMutex       sync.RWMutex
 	getPacerArgsForCall []struct {
@@ -3296,6 +3306,59 @@ func (fake *FakeLocalParticipant) GetLoggerResolverReturnsOnCall(i int, result1 
 	}
 	fake.getLoggerResolverReturnsOnCall[i] = struct {
 		result1 logger.DeferredFieldResolver
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetNextSubscribedDataTrackHandle() uint16 {
+	fake.getNextSubscribedDataTrackHandleMutex.Lock()
+	ret, specificReturn := fake.getNextSubscribedDataTrackHandleReturnsOnCall[len(fake.getNextSubscribedDataTrackHandleArgsForCall)]
+	fake.getNextSubscribedDataTrackHandleArgsForCall = append(fake.getNextSubscribedDataTrackHandleArgsForCall, struct {
+	}{})
+	stub := fake.GetNextSubscribedDataTrackHandleStub
+	fakeReturns := fake.getNextSubscribedDataTrackHandleReturns
+	fake.recordInvocation("GetNextSubscribedDataTrackHandle", []interface{}{})
+	fake.getNextSubscribedDataTrackHandleMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetNextSubscribedDataTrackHandleCallCount() int {
+	fake.getNextSubscribedDataTrackHandleMutex.RLock()
+	defer fake.getNextSubscribedDataTrackHandleMutex.RUnlock()
+	return len(fake.getNextSubscribedDataTrackHandleArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetNextSubscribedDataTrackHandleCalls(stub func() uint16) {
+	fake.getNextSubscribedDataTrackHandleMutex.Lock()
+	defer fake.getNextSubscribedDataTrackHandleMutex.Unlock()
+	fake.GetNextSubscribedDataTrackHandleStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetNextSubscribedDataTrackHandleReturns(result1 uint16) {
+	fake.getNextSubscribedDataTrackHandleMutex.Lock()
+	defer fake.getNextSubscribedDataTrackHandleMutex.Unlock()
+	fake.GetNextSubscribedDataTrackHandleStub = nil
+	fake.getNextSubscribedDataTrackHandleReturns = struct {
+		result1 uint16
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetNextSubscribedDataTrackHandleReturnsOnCall(i int, result1 uint16) {
+	fake.getNextSubscribedDataTrackHandleMutex.Lock()
+	defer fake.getNextSubscribedDataTrackHandleMutex.Unlock()
+	fake.GetNextSubscribedDataTrackHandleStub = nil
+	if fake.getNextSubscribedDataTrackHandleReturnsOnCall == nil {
+		fake.getNextSubscribedDataTrackHandleReturnsOnCall = make(map[int]struct {
+			result1 uint16
+		})
+	}
+	fake.getNextSubscribedDataTrackHandleReturnsOnCall[i] = struct {
+		result1 uint16
 	}{result1}
 }
 
