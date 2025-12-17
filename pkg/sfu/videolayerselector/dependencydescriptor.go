@@ -83,7 +83,8 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	}
 
 	if ddwdt.RestartGeneration > d.restartGeneration {
-		d.logger.Debugw("stream restarted",
+		d.logger.Debugw(
+			"stream restarted",
 			"packet", ddwdt.RestartGeneration,
 			"current", d.restartGeneration,
 			"structureKeyFrame", d.extKeyFrameNum,
