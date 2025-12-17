@@ -636,6 +636,18 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 	}
 
 	extReceivedRRSN := extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000)
+	if int64(r.extHighestSN-extReceivedRRSN) < 0 || int64(r.extHighestSN-extReceivedRRSN) > 4*(1<<16) {
+		r.logger.Infow(
+			"receiver report runaway, dropping",
+			"timeSinceLastRR", timeSinceLastRR(),
+			"receivedRR", rr,
+			"extHighestSNFromRR", extHighestSNFromRR,
+			"extReceivedRRSN", extReceivedRRSN,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
+		)
+		return
+	}
+
 	if r.extHighestSNFromRR != extHighestSNFromRR && int64(r.extHighestSN-extReceivedRRSN) >= (1<<16) {
 		// there are cases where remote does not send RTCP Receiver Report for extended periods of time,
 		// some times several minutes, in that interval the sequence number rolls over,
