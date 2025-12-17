@@ -24,11 +24,9 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
-	"github.com/livekit/protocol/egress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/protocol/utils"
 )
 
 type RoomService struct {
@@ -72,8 +70,7 @@ func NewRoomService(
 }
 
 func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error) {
-	redactedReq := redactCreateRoomRequest(req)
-	RecordRequest(ctx, redactedReq)
+	RecordRequest(ctx, req)
 
 	AppendLogFields(ctx, "room", req.Name, "request", logger.Proto(req))
 	if err := EnsureCreatePermission(ctx); err != nil {
@@ -223,7 +220,7 @@ func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 }
 
 func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.UpdateParticipantRequest) (*livekit.ParticipantInfo, error) {
-	RecordRequest(ctx, redactUpdateParticipantRequest(req))
+	RecordRequest(ctx, req)
 
 	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity)
 
@@ -276,7 +273,7 @@ func (s *RoomService) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 }
 
 func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest) (*livekit.SendDataResponse, error) {
-	RecordRequest(ctx, redactSendDataRequest(req))
+	RecordRequest(ctx, req)
 
 	roomName := livekit.RoomName(req.Room)
 	AppendLogFields(ctx, "room", roomName, "size", len(req.Data))
@@ -295,7 +292,7 @@ func (s *RoomService) SendData(ctx context.Context, req *livekit.SendDataRequest
 }
 
 func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.UpdateRoomMetadataRequest) (*livekit.Room, error) {
-	RecordRequest(ctx, redactUpdateRoomMetadataRequest(req))
+	RecordRequest(ctx, req)
 
 	AppendLogFields(ctx, "room", req.Room, "size", len(req.Metadata))
 	maxMetadataSize := int(s.limitConf.MaxMetadataSize)
@@ -373,88 +370,4 @@ func (s *RoomService) PerformRpc(ctx context.Context, req *livekit.PerformRpcReq
 	res, err := s.participantClient.PerformRpc(ctx, s.topicFormatter.ParticipantTopic(ctx, roomName, livekit.ParticipantIdentity(req.DestinationIdentity)), req)
 	RecordResponse(ctx, res)
 	return res, err
-}
-
-func redactCreateRoomRequest(req *livekit.CreateRoomRequest) *livekit.CreateRoomRequest {
-	if req.Egress == nil && req.Metadata == "" {
-		// nothing to redact
-		return req
-	}
-
-	clone := utils.CloneProto(req)
-
-	if clone.Egress != nil {
-		if clone.Egress.Room != nil {
-			egress.RedactEncodedOutputs(clone.Egress.Room)
-		}
-		if clone.Egress.Participant != nil {
-			egress.RedactAutoEncodedOutput(clone.Egress.Participant)
-		}
-		if clone.Egress.Tracks != nil {
-			egress.RedactUpload(clone.Egress.Tracks)
-		}
-	}
-
-	// replace with size of metadata to provide visibility on request size
-	if clone.Metadata != "" {
-		clone.Metadata = fmt.Sprintf("__size: %d", len(clone.Metadata))
-	}
-
-	return clone
-}
-
-func redactUpdateParticipantRequest(req *livekit.UpdateParticipantRequest) *livekit.UpdateParticipantRequest {
-	if req.Metadata == "" && len(req.Attributes) == 0 {
-		return req
-	}
-
-	clone := utils.CloneProto(req)
-
-	// replace with size of metadata/attributes to provide visibility on request size
-	if clone.Metadata != "" {
-		clone.Metadata = fmt.Sprintf("__size: %d", len(clone.Metadata))
-	}
-
-	if len(clone.Attributes) != 0 {
-		keysSize := 0
-		valuesSize := 0
-		for k, v := range clone.Attributes {
-			keysSize += len(k)
-			valuesSize += len(v)
-		}
-
-		clone.Attributes = map[string]string{
-			"__num_elements": fmt.Sprintf("%d", len(clone.Attributes)),
-			"__keys_size":    fmt.Sprintf("%d", keysSize),
-			"__values_size":  fmt.Sprintf("%d", valuesSize),
-		}
-	}
-
-	return clone
-}
-
-func redactSendDataRequest(req *livekit.SendDataRequest) *livekit.SendDataRequest {
-	if len(req.Data) == 0 {
-		return req
-	}
-
-	clone := utils.CloneProto(req)
-
-	// replace with size of data to provide visibility on request size
-	clone.Data = fmt.Appendf(nil, "__size: %d", len(clone.Data))
-
-	return clone
-}
-
-func redactUpdateRoomMetadataRequest(req *livekit.UpdateRoomMetadataRequest) *livekit.UpdateRoomMetadataRequest {
-	if req.Metadata == "" {
-		return req
-	}
-
-	clone := utils.CloneProto(req)
-
-	// replace with size of metadata to provide visibility on request size
-	clone.Metadata = fmt.Sprintf("__size: %d", len(clone.Metadata))
-
-	return clone
 }

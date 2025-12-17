@@ -175,6 +175,8 @@ github.com/livekit/mediatransportutil v0.0.0-20251213100503-cc390ae365e9 h1:ciqz
 github.com/livekit/mediatransportutil v0.0.0-20251213100503-cc390ae365e9/go.mod h1:mSNtYzSf6iY9xM3UX42VEI+STHvMgHmrYzEHPcdhB8A=
 github.com/livekit/protocol v1.43.5-0.20251208162321-aa4dc2f24b2a h1:juIQhMi8GNCLI+26BWZJirytNjCHFh+7XDWsajG4spM=
 github.com/livekit/protocol v1.43.5-0.20251208162321-aa4dc2f24b2a/go.mod h1:n00Ul4P6o2YILGhxw+O57B0h/bF3Je9PzRN36fElCmw=
+github.com/livekit/protocol v1.43.5-0.20251217061713-5a6eb7fbb20c h1:VThIzk8PEogP8H+dLLVt3O61S235R0O5UAmg8n2Gol4=
+github.com/livekit/protocol v1.43.5-0.20251217061713-5a6eb7fbb20c/go.mod h1:n00Ul4P6o2YILGhxw+O57B0h/bF3Je9PzRN36fElCmw=
 github.com/livekit/psrpc v0.7.1 h1:ms37az0QTD3UXIWuUC5D/SkmKOlRMVRsI261eBWu/Vw=
 github.com/livekit/psrpc v0.7.1/go.mod h1:bZ4iHFQptTkbPnB0LasvRNu/OBYXEu1NA6O5BMFo9kk=
 github.com/mackerelio/go-osstat v0.2.6 h1:gs4U8BZeS1tjrL08tt5VUliVvSWP26Ai2Ob8Lr7f2i0=
