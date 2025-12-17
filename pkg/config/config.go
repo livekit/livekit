@@ -253,6 +253,11 @@ type LimitConfig struct {
 	MaxRoomNameLength            int    `yaml:"max_room_name_length,omitempty"`
 	MaxParticipantIdentityLength int    `yaml:"max_participant_identity_length,omitempty"`
 	MaxParticipantNameLength     int    `yaml:"max_participant_name_length,omitempty"`
+	// per-IP data message rate limiting at room level
+	// maximum number of data messages per second per IP within a room, 0 for no limit
+	DataMessageRoomIPRateLimit float64 `yaml:"data_message_room_ip_rate_limit,omitempty"`
+	// burst size for room-level IP rate limiting
+	DataMessageRoomIPRateBurst int `yaml:"data_message_room_ip_rate_burst,omitempty"`
 }
 
 func (l LimitConfig) CheckRoomNameLength(name string) bool {

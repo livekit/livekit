@@ -149,6 +149,9 @@ type Room struct {
 
 	onStateChangeMu          sync.Mutex
 	localParticipantListener types.LocalParticipantListener
+
+	// IP-based rate limiter for data messages (room-level)
+	ipRateLimiter *IPRateLimiter
 }
 
 type ParticipantOptions struct {
@@ -248,6 +251,7 @@ func NewRoom(
 	agentClient agent.Client,
 	agentStore AgentStore,
 	egressLauncher EgressLauncher,
+	limitConfig config.LimitConfig,
 ) *Room {
 	r := &Room{
 		protoRoom: utils.CloneProto(room),
@@ -282,6 +286,11 @@ func NewRoom(
 			TTL:     dataMessageCacheTTL,
 			MaxSize: dataMessageCacheSize,
 		}),
+		// initialize room-level IP rate limiter
+		ipRateLimiter: NewIPRateLimiter(
+			limitConfig.DataMessageRoomIPRateLimit,
+			limitConfig.DataMessageRoomIPRateBurst,
+		),
 	}
 	r.trackManager = NewRoomTrackManager(r.logger)
 	r.localParticipantListener = &localParticipantListener{room: r}
@@ -334,6 +343,11 @@ func (r *Room) Trailer() []byte {
 	trailer := make([]byte, len(r.trailer))
 	copy(trailer, r.trailer)
 	return trailer
+}
+
+// IPRateLimiter returns the room-level IP rate limiter for data messages
+func (r *Room) IPRateLimiter() *IPRateLimiter {
+	return r.ipRateLimiter
 }
 
 func (r *Room) GetParticipant(identity livekit.ParticipantIdentity) types.LocalParticipant {
