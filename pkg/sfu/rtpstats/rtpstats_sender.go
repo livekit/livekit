@@ -1274,9 +1274,9 @@ func (r *RTPStatsSender) getIntervalStats(
 		lowerBound = ehsn - n + 1
 	}
 	extStartInclusiveClamped := max(min(extStartInclusive, upperBound), lowerBound)
-	extEndExclusiveClamped := max(min(extEndExclusive, upperBound), extStartInclusive)
+	extEndExclusiveClamped := max(min(extEndExclusive, upperBound), extStartInclusiveClamped)
 
-	intervalStats.packetsNotFoundMetadata += (extEndExclusive - extStartInclusive) - (extEndExclusiveClamped - extStartInclusiveClamped)
+	intervalStats.packetsNotFoundMetadata = (extEndExclusive - extStartInclusive) - (extEndExclusiveClamped - extStartInclusiveClamped)
 
 	for esn := extStartInclusiveClamped; esn != extEndExclusiveClamped; esn++ {
 		slot := r.getSnInfoOutOfOrderSlot(esn, ehsn)
