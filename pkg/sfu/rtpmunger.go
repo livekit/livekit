@@ -295,7 +295,7 @@ func (r *RTPMunger) UpdateAndGetPaddingSnTs(
 	extLastSN := r.extLastSN
 	extLastTS := r.extLastTS
 	vals := make([]SnTs, num)
-	for i := 0; i < num; i++ {
+	for i := range num {
 		extLastSN++
 		vals[i].extSequenceNumber = extLastSN
 
