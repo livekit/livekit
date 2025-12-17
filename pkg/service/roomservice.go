@@ -146,7 +146,9 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		return nil, err
 	}
 
-	err = s.roomStore.DeleteRoom(ctx, livekit.RoomName(req.Room))
+	if os, ok := s.roomStore.(OSSServiceStore); ok {
+		err = os.DeleteRoom(ctx, livekit.RoomName(req.Room))
+	}
 	res := &livekit.DeleteRoomResponse{}
 	RecordResponse(ctx, room)
 	return res, err
