@@ -102,7 +102,7 @@ func (r *RoomTrackManager) RemoveTrack(track types.MediaTrack) {
 		}
 	}
 	for j := idx; j < len(infos); j++ {
-		r.tracks[trackID][idx] = nil
+		r.tracks[trackID][j] = nil
 	}
 	r.tracks[trackID] = r.tracks[trackID][:idx]
 	if len(r.tracks[trackID]) == 0 {
@@ -219,7 +219,7 @@ func (r *RoomTrackManager) RemoveDataTrack(dataTrack types.DataTrack) {
 		}
 	}
 	for j := idx; j < len(infos); j++ {
-		r.dataTracks[trackID][idx] = nil
+		r.dataTracks[trackID][j] = nil
 	}
 	r.dataTracks[trackID] = r.dataTracks[trackID][:idx]
 	if len(r.dataTracks[trackID]) == 0 {

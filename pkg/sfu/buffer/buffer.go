@@ -85,6 +85,7 @@ type ExtPacket struct {
 	AbsCaptureTimeExt    *act.AbsCaptureTime
 	IsOutOfOrder         bool
 	IsBuffered           bool
+	IsRestart            bool
 }
 
 // VideoSize represents video resolution
@@ -123,10 +124,11 @@ type Buffer struct {
 	latestTSForAudioLevelInitialized bool
 	latestTSForAudioLevel            uint32
 
-	twcc                    *twcc.Responder
-	audioLevelParams        audio.AudioLevelParams
-	audioLevel              *audio.AudioLevel
-	enableAudioLossProxying bool
+	twcc                         *twcc.Responder
+	audioLevelParams             audio.AudioLevelParams
+	audioLevel                   *audio.AudioLevel
+	enableAudioLossProxying      bool
+	enableStreamRestartDetection bool
 
 	lastPacketRead int
 
@@ -229,6 +231,13 @@ func (b *Buffer) SetAudioLossProxying(enable bool) {
 	b.enableAudioLossProxying = enable
 }
 
+func (b *Buffer) SetStreamRestartDetection(enable bool) {
+	b.Lock()
+	defer b.Unlock()
+
+	b.enableStreamRestartDetection = enable
+}
+
 func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapability, bitrates int) error {
 	b.Lock()
 	defer b.Unlock()
@@ -242,13 +251,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		return errInvalidCodec
 	}
 
-	b.rtpStats = rtpstats.NewRTPStatsReceiver(rtpstats.RTPStatsParams{
-		ClockRate: codec.ClockRate,
-		Logger:    b.logger,
-	})
-	b.rrSnapshotId = b.rtpStats.NewSnapshotId()
-	b.deltaStatsSnapshotId = b.rtpStats.NewSnapshotId()
-	b.ppsSnapshotId = b.rtpStats.NewSnapshotId()
+	b.setupRTPStats(codec.ClockRate)
 
 	b.clockRate = codec.ClockRate
 	b.lastReport = mono.UnixNano()
@@ -354,6 +357,16 @@ func (b *Buffer) OnCodecChange(fn func(webrtc.RTPCodecParameters)) {
 	b.Lock()
 	b.onCodecChange = fn
 	b.Unlock()
+}
+
+func (b *Buffer) setupRTPStats(clockRate uint32) {
+	b.rtpStats = rtpstats.NewRTPStatsReceiver(rtpstats.RTPStatsParams{
+		ClockRate: clockRate,
+		Logger:    b.logger,
+	})
+	b.rrSnapshotId = b.rtpStats.NewSnapshotId()
+	b.deltaStatsSnapshotId = b.rtpStats.NewSnapshotId()
+	b.ppsSnapshotId = b.rtpStats.NewSnapshotId()
 }
 
 func (b *Buffer) createDDParserAndFrameRateCalculator() {
@@ -663,8 +676,29 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, i
 	// process header extensions always as padding packets could be used for probing
 	b.processHeaderExtensions(rtpPacket, arrivalTime, isRTX)
 
+	isRestart := false
 	flowState := b.updateStreamState(rtpPacket, arrivalTime)
-	if flowState.IsNotHandled {
+	switch flowState.UnhandledReason {
+	case rtpstats.RTPFlowUnhandledReasonNone:
+	case rtpstats.RTPFlowUnhandledReasonRestart:
+		if !b.enableStreamRestartDetection {
+			return
+		}
+
+		b.rtpStats.Stop()
+		b.logger.Infow("stream restart - rtp stats", b.rtpStats)
+
+		b.snRangeMap = utils.NewRangeMap[uint64, uint64](100)
+		b.setupRTPStats(b.clockRate)
+		b.bucket.ResyncOnNextPacket()
+		if b.nacker != nil {
+			b.nacker = nack.NewNACKQueue(nack.NackQueueParamsDefault)
+		}
+		b.extPackets.Clear()
+
+		flowState = b.updateStreamState(rtpPacket, arrivalTime)
+		isRestart = true
+	default:
 		return
 	}
 
@@ -748,7 +782,7 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, i
 		return
 	}
 
-	ep := b.getExtPacket(rtpPacket, arrivalTime, isBuffered, flowState)
+	ep := b.getExtPacket(rtpPacket, arrivalTime, isBuffered, isRestart, flowState)
 	if ep == nil {
 		return
 	}
@@ -920,7 +954,7 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64, isRTX
 	}
 }
 
-func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, isBuffered bool, flowState rtpstats.RTPFlowState) *ExtPacket {
+func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, isBuffered bool, isRestart bool, flowState rtpstats.RTPFlowState) *ExtPacket {
 	ep := ExtPacketFactory.Get().(*ExtPacket)
 	*ep = ExtPacket{
 		Arrival:           arrivalTime,
@@ -933,6 +967,7 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, isBuffer
 		},
 		IsOutOfOrder: flowState.IsOutOfOrder,
 		IsBuffered:   isBuffered,
+		IsRestart:    isRestart,
 	}
 
 	if len(rtpPacket.Payload) == 0 {

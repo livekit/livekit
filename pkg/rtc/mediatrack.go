@@ -74,25 +74,26 @@ type MediaTrack struct {
 }
 
 type MediaTrackParams struct {
-	ParticipantID            func() livekit.ParticipantID
-	ParticipantIdentity      livekit.ParticipantIdentity
-	ParticipantVersion       uint32
-	ParticipantCountry       string
-	BufferFactory            *buffer.Factory
-	ReceiverConfig           ReceiverConfig
-	SubscriberConfig         DirectionConfig
-	PLIThrottleConfig        sfu.PLIThrottleConfig
-	AudioConfig              sfu.AudioConfig
-	VideoConfig              config.VideoConfig
-	Telemetry                telemetry.TelemetryService
-	Logger                   logger.Logger
-	Reporter                 roomobs.TrackReporter
-	SimTracks                map[uint32]SimulcastTrackInfo
-	OnRTCP                   func([]rtcp.Packet)
-	ForwardStats             *sfu.ForwardStats
-	OnTrackEverSubscribed    func(livekit.TrackID)
-	ShouldRegressCodec       func() bool
-	PreferVideoSizeFromMedia bool
+	ParticipantID                   func() livekit.ParticipantID
+	ParticipantIdentity             livekit.ParticipantIdentity
+	ParticipantVersion              uint32
+	ParticipantCountry              string
+	BufferFactory                   *buffer.Factory
+	ReceiverConfig                  ReceiverConfig
+	SubscriberConfig                DirectionConfig
+	PLIThrottleConfig               sfu.PLIThrottleConfig
+	AudioConfig                     sfu.AudioConfig
+	VideoConfig                     config.VideoConfig
+	Telemetry                       telemetry.TelemetryService
+	Logger                          logger.Logger
+	Reporter                        roomobs.TrackReporter
+	SimTracks                       map[uint32]SimulcastTrackInfo
+	OnRTCP                          func([]rtcp.Packet)
+	ForwardStats                    *sfu.ForwardStats
+	OnTrackEverSubscribed           func(livekit.TrackID)
+	ShouldRegressCodec              func() bool
+	PreferVideoSizeFromMedia        bool
+	EnableRTPStreamRestartDetection bool
 }
 
 func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
@@ -403,6 +404,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			sfu.WithAudioConfig(t.params.AudioConfig),
 			sfu.WithLoadBalanceThreshold(20),
 			sfu.WithForwardStats(t.params.ForwardStats),
+			sfu.WithEnableRTPStreamRestartDetection(t.params.EnableRTPStreamRestartDetection),
 		)
 		newWR.OnCloseHandler(func() {
 			t.MediaTrackReceiver.SetClosing(false)

@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"slices"
 	"strings"
@@ -172,53 +173,54 @@ type ParticipantParams struct {
 	PLIThrottleConfig       sfu.PLIThrottleConfig
 	CongestionControlConfig config.CongestionControlConfig
 	// codecs that are enabled for this room
-	PublishEnabledCodecs           []*livekit.Codec
-	SubscribeEnabledCodecs         []*livekit.Codec
-	Logger                         logger.Logger
-	LoggerResolver                 logger.DeferredFieldResolver
-	Reporter                       roomobs.ParticipantSessionReporter
-	ReporterResolver               roomobs.ParticipantReporterResolver
-	SimTracks                      map[uint32]SimulcastTrackInfo
-	Grants                         *auth.ClaimGrants
-	InitialVersion                 uint32
-	ClientConf                     *livekit.ClientConfiguration
-	ClientInfo                     ClientInfo
-	Region                         string
-	Migration                      bool
-	Reconnect                      bool
-	AdaptiveStream                 bool
-	AllowTCPFallback               bool
-	TCPFallbackRTTThreshold        int
-	AllowUDPUnstableFallback       bool
-	TURNSEnabled                   bool
-	ParticipantListener            types.LocalParticipantListener
-	ParticipantHelper              types.LocalParticipantHelper
-	DisableSupervisor              bool
-	ReconnectOnPublicationError    bool
-	ReconnectOnSubscriptionError   bool
-	ReconnectOnDataChannelError    bool
-	VersionGenerator               utils.TimedVersionGenerator
-	DisableDynacast                bool
-	SubscriberAllowPause           bool
-	SubscriptionLimitAudio         int32
-	SubscriptionLimitVideo         int32
-	PlayoutDelay                   *livekit.PlayoutDelay
-	SyncStreams                    bool
-	ForwardStats                   *sfu.ForwardStats
-	DisableSenderReportPassThrough bool
-	MetricConfig                   metric.MetricConfig
-	UseOneShotSignallingMode       bool
-	EnableMetrics                  bool
-	DataChannelMaxBufferedAmount   uint64
-	DatachannelSlowThreshold       int
-	DatachannelLossyTargetLatency  time.Duration
-	FireOnTrackBySdp               bool
-	DisableCodecRegression         bool
-	LastPubReliableSeq             uint32
-	Country                        string
-	PreferVideoSizeFromMedia       bool
-	UseSinglePeerConnection        bool
-	EnableDataTracks               bool
+	PublishEnabledCodecs            []*livekit.Codec
+	SubscribeEnabledCodecs          []*livekit.Codec
+	Logger                          logger.Logger
+	LoggerResolver                  logger.DeferredFieldResolver
+	Reporter                        roomobs.ParticipantSessionReporter
+	ReporterResolver                roomobs.ParticipantReporterResolver
+	SimTracks                       map[uint32]SimulcastTrackInfo
+	Grants                          *auth.ClaimGrants
+	InitialVersion                  uint32
+	ClientConf                      *livekit.ClientConfiguration
+	ClientInfo                      ClientInfo
+	Region                          string
+	Migration                       bool
+	Reconnect                       bool
+	AdaptiveStream                  bool
+	AllowTCPFallback                bool
+	TCPFallbackRTTThreshold         int
+	AllowUDPUnstableFallback        bool
+	TURNSEnabled                    bool
+	ParticipantListener             types.LocalParticipantListener
+	ParticipantHelper               types.LocalParticipantHelper
+	DisableSupervisor               bool
+	ReconnectOnPublicationError     bool
+	ReconnectOnSubscriptionError    bool
+	ReconnectOnDataChannelError     bool
+	VersionGenerator                utils.TimedVersionGenerator
+	DisableDynacast                 bool
+	SubscriberAllowPause            bool
+	SubscriptionLimitAudio          int32
+	SubscriptionLimitVideo          int32
+	PlayoutDelay                    *livekit.PlayoutDelay
+	SyncStreams                     bool
+	ForwardStats                    *sfu.ForwardStats
+	DisableSenderReportPassThrough  bool
+	MetricConfig                    metric.MetricConfig
+	UseOneShotSignallingMode        bool
+	EnableMetrics                   bool
+	DataChannelMaxBufferedAmount    uint64
+	DatachannelSlowThreshold        int
+	DatachannelLossyTargetLatency   time.Duration
+	FireOnTrackBySdp                bool
+	DisableCodecRegression          bool
+	LastPubReliableSeq              uint32
+	Country                         string
+	PreferVideoSizeFromMedia        bool
+	UseSinglePeerConnection         bool
+	EnableDataTracks                bool
+	EnableRTPStreamRestartDetection bool
 }
 
 type ParticipantImpl struct {
@@ -269,6 +271,8 @@ type ParticipantImpl struct {
 	*UpTrackManager
 	*UpDataTrackManager
 	*SubscriptionManager
+
+	nextSubscribedDataTrackHandle uint16
 
 	icQueue [2]atomic.Pointer[webrtc.ICECandidate]
 
@@ -357,10 +361,11 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			joiningMessageFirstSeqs:       make(map[livekit.ParticipantID]uint32),
 			joiningMessageLastWrittenSeqs: make(map[livekit.ParticipantID]uint32),
 		},
-		rpcPendingAcks:      make(map[string]*utils.DataChannelRpcPendingAckHandler),
-		rpcPendingResponses: make(map[string]*utils.DataChannelRpcPendingResponseHandler),
-		onClose:             make(map[string]func(types.LocalParticipant)),
-		telemetryGuard:      &telemetry.ReferenceGuard{},
+		rpcPendingAcks:                make(map[string]*utils.DataChannelRpcPendingAckHandler),
+		rpcPendingResponses:           make(map[string]*utils.DataChannelRpcPendingResponseHandler),
+		onClose:                       make(map[string]func(types.LocalParticipant)),
+		telemetryGuard:                &telemetry.ReferenceGuard{},
+		nextSubscribedDataTrackHandle: uint16(rand.Intn(256)),
 	}
 	p.setupSignalling()
 
@@ -3256,7 +3261,8 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 		ShouldRegressCodec: func() bool {
 			return p.helper().ShouldRegressCodec()
 		},
-		PreferVideoSizeFromMedia: p.params.PreferVideoSizeFromMedia,
+		PreferVideoSizeFromMedia:        p.params.PreferVideoSizeFromMedia,
+		EnableRTPStreamRestartDetection: p.params.EnableRTPStreamRestartDetection,
 	}, ti)
 
 	mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)

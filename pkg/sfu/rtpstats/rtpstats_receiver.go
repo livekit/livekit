@@ -38,12 +38,50 @@ const (
 	cReportSlack = float64(60.0)
 
 	cTSJumpTooHighFactor = float64(1.5)
+
+	restartThreshold = 5
 )
 
 // ---------------------------------------------------------------------
 
+type RTPFlowUnhandledReason int
+
+const (
+	RTPFlowUnhandledReasonNone RTPFlowUnhandledReason = iota
+	RTPFlowUnhandledReasonEnded
+	RTPFlowUnhandledReasonPaddingOnly
+	RTPFlowUnhandledReasonPreStartTimestamp
+	RTPFlowUnhandledReasonOldTimestamp
+	RTPFlowUnhandledReasonPreStartSequenceNumber
+	RTPFlowUnhandledReasonOldSequenceNumber
+	RTPFlowUnhandledReasonRestart
+)
+
+func (r RTPFlowUnhandledReason) String() string {
+	switch r {
+	case RTPFlowUnhandledReasonNone:
+		return "NONE"
+	case RTPFlowUnhandledReasonEnded:
+		return "ENDED"
+	case RTPFlowUnhandledReasonPaddingOnly:
+		return "PADDING_ONLY"
+	case RTPFlowUnhandledReasonPreStartTimestamp:
+		return "PRE_START_TIMESTAMP"
+	case RTPFlowUnhandledReasonOldTimestamp:
+		return "OLD_TIMESTAMP"
+	case RTPFlowUnhandledReasonPreStartSequenceNumber:
+		return "PRE_START_SEQUENCE_NUMBER"
+	case RTPFlowUnhandledReasonOldSequenceNumber:
+		return "OLD_SEQUENCE_NUMBER"
+	case RTPFlowUnhandledReasonRestart:
+		return "RESTART"
+	default:
+		return fmt.Sprintf("UNKNOWN: %d", int(r))
+	}
+}
+
 type RTPFlowState struct {
-	IsNotHandled bool
+	UnhandledReason RTPFlowUnhandledReason
 
 	LossStartInclusive uint64
 	LossEndExclusive   uint64
@@ -60,13 +98,26 @@ func (r *RTPFlowState) MarshalLogObject(e zapcore.ObjectEncoder) error {
 		return nil
 	}
 
-	e.AddBool("IsNotHandled", r.IsNotHandled)
+	e.AddString("UnhandledReason", r.UnhandledReason.String())
 	e.AddUint64("LossStartInclusive", r.LossStartInclusive)
 	e.AddUint64("LossEndExclusive", r.LossEndExclusive)
 	e.AddBool("IsDuplicate", r.IsDuplicate)
 	e.AddBool("IsOutOfOrder", r.IsOutOfOrder)
 	e.AddUint64("ExtSequenceNumber", r.ExtSequenceNumber)
 	e.AddUint64("ExtTimestamp", r.ExtTimestamp)
+	return nil
+}
+
+// ---------------------------------------------------------------------
+
+type packet struct {
+	sequenceNumber uint16
+	timestamp      uint32
+}
+
+func (p packet) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddUint16("sequenceNumber", p.sequenceNumber)
+	e.AddUint32("timestamp", p.timestamp)
 	return nil
 }
 
@@ -90,6 +141,13 @@ type RTPStatsReceiver struct {
 	largeJumpCount              int
 	largeJumpNegativeCount      int
 	timeReversedCount           int
+
+	packetsDroppedPreStartTimestamp      int
+	packetsDroppedOldTimestamp           int
+	packetsDroppedPreStartSequenceNumber int
+	packetsDroppedOldSequenceNumber      int
+
+	restartPackets []packet
 }
 
 func NewRTPStatsReceiver(params RTPStatsParams) *RTPStatsReceiver {
@@ -137,7 +195,7 @@ func (r *RTPStatsReceiver) Update(
 	defer r.lock.Unlock()
 
 	if r.endTime != 0 {
-		flowState.IsNotHandled = true
+		flowState.UnhandledReason = RTPFlowUnhandledReasonEnded
 		return
 	}
 
@@ -179,7 +237,7 @@ func (r *RTPStatsReceiver) Update(
 	if !r.initialized {
 		if payloadSize == 0 {
 			// do not start on a padding only packet
-			flowState.IsNotHandled = true
+			flowState.UnhandledReason = RTPFlowUnhandledReasonPaddingOnly
 			return
 		}
 
@@ -215,42 +273,69 @@ func (r *RTPStatsReceiver) Update(
 		if resTS.IsUnhandled {
 			undoUpdates()
 
-			flowState.IsNotHandled = true
+			r.packetsDroppedPreStartTimestamp++
+			logger().Warnw("dropping packet, pre-start timestamp", nil)
+
+			if r.maybeRestart(sequenceNumber, timestamp, payloadSize) {
+				logger().Infow("potential restart")
+				r.resetRestart()
+				flowState.UnhandledReason = RTPFlowUnhandledReasonRestart
+			} else {
+				flowState.UnhandledReason = RTPFlowUnhandledReasonPreStartTimestamp
+			}
 			return
 		}
 		gapTS = int64(resTS.ExtendedVal - resTS.PreExtendedHighest)
 
-		// it is possible to receive old packets in two different scenarios
-		// as it is not possible to detect how far to roll back, ignore old packets
-		//
-		// Case 1:
-		//  Very old time stamp, happens under the following conditions
-		//  - resume after long mute, big time stamp jump
-		//  - an out of order packet from before the mute arrives (unsure what causes this
-		//    very old packet to be transmitted from remote), causing time stamp to jump back
-		//    to before mute, but it appears like it has rolled over.
-		//  Use a threshold against expected to ignore these.
-		if gapSN < 0 && gapTS > 0 {
-			expectedTSJump = int64(r.rtpConverter.ToRTPExt(time.Duration(timeSinceHighest)))
-			if gapTS > int64(float64(expectedTSJump)*cTSJumpTooHighFactor) {
+		if !resSN.IsUnhandled {
+			// it is possible to receive old packets in two different scenarios
+			// as it is not possible to detect how far to roll back, ignore old packets
+			//
+			// Case 1:
+			//  Very old time stamp, happens under the following conditions
+			//  - resume after long mute, this casues big time stamp jump ahead for the packets
+			//    after unmute
+			//  - an out of order packet from before the mute arrives (unsure what causes this
+			//    very old packet to be transmitted from remote), causing time stamp to jump back
+			//    to before mute, but it appears like it has rolled over.
+			//  Use a threshold against expected to ignore these.
+			if gapSN < 0 && gapTS > 0 {
+				expectedTSJump = int64(r.rtpConverter.ToRTPExt(time.Duration(timeSinceHighest)))
+				if gapTS > int64(float64(expectedTSJump)*cTSJumpTooHighFactor) {
+					undoUpdates()
+
+					r.packetsDroppedOldTimestamp++
+					logger().Warnw("dropping packet, old timestamp", nil)
+
+					if r.maybeRestart(sequenceNumber, timestamp, payloadSize) {
+						logger().Infow("potential restart")
+						r.resetRestart()
+						flowState.UnhandledReason = RTPFlowUnhandledReasonRestart
+					} else {
+						flowState.UnhandledReason = RTPFlowUnhandledReasonOldTimestamp
+					}
+					return
+				}
+			}
+
+			// Case 2:
+			//  Sequence number looks like it is moving forward, but it is actually a very old packet.
+			if gapTS < 0 && gapSN > 0 {
 				undoUpdates()
 
-				logger().Warnw("dropping old packet, timestamp", nil)
+				r.packetsDroppedOldSequenceNumber++
+				expectedTSJump = int64(r.rtpConverter.ToRTPExt(time.Duration(timeSinceHighest)))
+				logger().Warnw("dropping packet, old sequence number", nil)
 
-				flowState.IsNotHandled = true
+				if r.maybeRestart(sequenceNumber, timestamp, payloadSize) {
+					logger().Infow("potential restart")
+					r.resetRestart()
+					flowState.UnhandledReason = RTPFlowUnhandledReasonRestart
+				} else {
+					flowState.UnhandledReason = RTPFlowUnhandledReasonOldSequenceNumber
+				}
 				return
 			}
-		}
-
-		// Case 2:
-		//  Sequence number looks like it is moving forward, but it is actually a very old packet.
-		if gapTS < 0 && gapSN > 0 {
-			undoUpdates()
-
-			logger().Warnw("dropping old packet, sequence number", nil)
-
-			flowState.IsNotHandled = true
-			return
 		}
 
 		// it is possible that sequence number has rolled over too
@@ -270,9 +355,16 @@ func (r *RTPStatsReceiver) Update(
 		if resSN.IsUnhandled {
 			undoUpdates()
 
-			logger().Warnw("dropping packet, cannot find sequence", nil)
+			r.packetsDroppedPreStartSequenceNumber++
+			logger().Warnw("dropping packet, pre-start sequence number", nil)
 
-			flowState.IsNotHandled = true
+			if r.maybeRestart(sequenceNumber, timestamp, payloadSize) {
+				logger().Infow("potential restart")
+				r.resetRestart()
+				flowState.UnhandledReason = RTPFlowUnhandledReasonRestart
+			} else {
+				flowState.UnhandledReason = RTPFlowUnhandledReasonPreStartSequenceNumber
+			}
 			return
 		}
 	}
@@ -364,6 +456,7 @@ func (r *RTPStatsReceiver) Update(
 			r.updateJitter(resTS.ExtendedVal, packetTime)
 		}
 	}
+	r.resetRestart()
 	return
 }
 
@@ -605,15 +698,9 @@ func (r *RTPStatsReceiver) GetRtcpReceptionReport(ssrc uint32, proxyFracLost uin
 		packetsLost = 0
 	}
 	lossRate := float32(packetsLost) / float32(packetsExpected)
-	fracLost := uint8(lossRate * 256.0)
-	if proxyFracLost > fracLost {
-		fracLost = proxyFracLost
-	}
+	fracLost := max(proxyFracLost, uint8(lossRate*256.0))
 
-	totalLost := r.packetsLost
-	if totalLost > 0xffffff { // 24-bits max
-		totalLost = 0xffffff
-	}
+	totalLost := min(r.packetsLost, 0xffffff) // 24-bits max
 
 	lastSR := uint32(0)
 	dlsr := uint32(0)
@@ -707,6 +794,31 @@ func (r *RTPStatsReceiver) ExtendedHighestSequenceNumber() uint64 {
 	return r.sequenceNumber.GetExtendedHighest()
 }
 
+func (r *RTPStatsReceiver) maybeRestart(sn uint16, ts uint32, payloadSize int) bool {
+	if payloadSize > 0 {
+		r.restartPackets = append(r.restartPackets, packet{sn, ts})
+	}
+	if len(r.restartPackets) < restartThreshold {
+		return false
+	}
+
+	r.restartPackets = r.restartPackets[max(len(r.restartPackets)-restartThreshold, 0):]
+	// check for contiguous sequence numbers and equal or increasing timestamps
+	for i := 1; i < len(r.restartPackets); i++ {
+		p := &r.restartPackets[i]
+		prev := &r.restartPackets[i-1]
+		if p.sequenceNumber != prev.sequenceNumber+1 || (p.timestamp-prev.timestamp) > (1<<31) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (r *RTPStatsReceiver) resetRestart() {
+	r.restartPackets = r.restartPackets[:0]
+}
+
 // ----------------------------------
 
 type lockedRTPStatsReceiverLogEncoder struct {
@@ -736,6 +848,20 @@ func (r lockedRTPStatsReceiverLogEncoder) MarshalLogObject(e zapcore.ObjectEncod
 	e.AddUint64("extHighestTS", extHighestTS)
 
 	e.AddObject("propagationDelayEstimator", r.propagationDelayEstimator)
+
+	e.AddInt("clockSkewCount", r.clockSkewCount)
+	e.AddInt("clockSkewMediaPathCount", r.clockSkewMediaPathCount)
+	e.AddInt("outOfOrderSenderReportCount", r.outOfOrderSenderReportCount)
+	e.AddInt("largeJumpCount", r.largeJumpCount)
+	e.AddInt("largeJumpNegativeCount", r.largeJumpNegativeCount)
+	e.AddInt("timeReversedCount", r.timeReversedCount)
+
+	e.AddInt("packetsDroppedBadTimestamp", r.packetsDroppedPreStartTimestamp)
+	e.AddInt("packetsDroppedOldTimestamp", r.packetsDroppedOldTimestamp)
+	e.AddInt("packetsDroppedOldSequenceNumber", r.packetsDroppedOldSequenceNumber)
+	e.AddInt("packetsDroppedBadSequenceNumber", r.packetsDroppedPreStartSequenceNumber)
+
+	e.AddArray("restartPackets", logger.ObjectSlice(r.restartPackets))
 	return nil
 }
 

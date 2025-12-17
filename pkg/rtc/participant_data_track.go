@@ -139,3 +139,15 @@ func (p *ParticipantImpl) onReceivedDataTrackMessage(data []byte) {
 
 	p.listener().OnDataTrackMessage(p, data, &packet)
 }
+
+func (p *ParticipantImpl) GetNextSubscribedDataTrackHandle() uint16 {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	p.nextSubscribedDataTrackHandle++
+	if p.nextSubscribedDataTrackHandle == 0 {
+		p.nextSubscribedDataTrackHandle++
+	}
+
+	return p.nextSubscribedDataTrackHandle
+}

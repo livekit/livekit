@@ -89,7 +89,7 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 		len(packet.Payload),
 		0,
 	)
-	require.True(t, flowState.IsNotHandled)
+	require.Equal(t, RTPFlowUnhandledReasonPreStartTimestamp, flowState.UnhandledReason)
 	require.Equal(t, sequenceNumber, r.sequenceNumber.GetHighest())
 	require.Equal(t, sequenceNumber, uint16(r.sequenceNumber.GetExtendedHighest()))
 	require.Equal(t, timestamp, r.timestamp.GetHighest())
@@ -108,7 +108,7 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 		len(packet.Payload),
 		0,
 	)
-	require.True(t, flowState.IsNotHandled)
+	require.Equal(t, RTPFlowUnhandledReasonPreStartTimestamp, flowState.UnhandledReason)
 	require.Equal(t, sequenceNumber, r.sequenceNumber.GetHighest())
 	require.Equal(t, sequenceNumber, uint16(r.sequenceNumber.GetExtendedHighest()))
 	require.Equal(t, timestamp, r.timestamp.GetHighest())
@@ -218,11 +218,41 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 		len(packet.Payload),
 		0,
 	)
-	require.True(t, flowState.IsNotHandled)
+	require.Equal(t, RTPFlowUnhandledReasonOldSequenceNumber, flowState.UnhandledReason)
 	require.Equal(t, sequenceNumber, r.sequenceNumber.GetHighest())
 	require.Equal(t, sequenceNumber, uint16(r.sequenceNumber.GetExtendedHighest()))
 	require.Equal(t, timestamp, r.timestamp.GetHighest())
 	require.Equal(t, timestamp, uint32(r.timestamp.GetExtendedHighest()))
+
+	r.Stop()
+}
+
+func Test_RTPStatsReceiver_Restart(t *testing.T) {
+	clockRate := uint32(90000)
+	r := NewRTPStatsReceiver(RTPStatsParams{
+		ClockRate: clockRate,
+		Logger:    logger.GetLogger(),
+	})
+
+	// should not restart till there are at least threshold packets
+	require.False(t, r.maybeRestart(10, 20, 1000))
+	require.False(t, r.maybeRestart(11, 20, 1000))
+	require.False(t, r.maybeRestart(13, 20, 1000))
+	require.False(t, r.maybeRestart(14, 20, 1000))
+	// although adding 5th packet should have enough packets for a check,
+	// still should not restart as there is a sequence number gap between 11 and 13
+	require.False(t, r.maybeRestart(15, 20, 1000))
+	require.False(t, r.maybeRestart(16, 19, 1000))
+	// has enough packets, but still cannot restart because timestamps are not increasing
+	require.False(t, r.maybeRestart(17, 21, 1000))
+	require.False(t, r.maybeRestart(18, 21, 1000))
+	require.False(t, r.maybeRestart(19, 21, 1000))
+	// can restart as there are enough packets with proper sequencing
+	require.True(t, r.maybeRestart(20, 21, 1000))
+	require.Equal(t, restartThreshold, len(r.restartPackets))
+
+	r.resetRestart()
+	require.Zero(t, len(r.restartPackets))
 
 	r.Stop()
 }
