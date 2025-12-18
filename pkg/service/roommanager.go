@@ -16,6 +16,9 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"sync"
@@ -1018,12 +1021,35 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 			case "udp":
 				transport = "udp"
 			}
+
+			var username, credential string
+			if s.Secret != "" {
+				// Generate dynamic credentials using TURN static auth secrets
+				ttl := s.TTL
+				if ttl == 0 {
+					ttl = 14400 // Default 4 hours
+				}
+
+				expiry := time.Now().Add(time.Duration(ttl) * time.Second).Unix()
+				participantID := string(participant.ID())
+				username = fmt.Sprintf("%d:%s", expiry, participantID)
+
+				// HMAC-SHA1 signature
+				h := hmac.New(sha1.New, []byte(s.Secret))
+				h.Write([]byte(username))
+				credential = base64.StdEncoding.EncodeToString(h.Sum(nil))
+			} else {
+				// Use static credentials
+				username = s.Username
+				credential = s.Credential
+			}
+
 			is := &livekit.ICEServer{
 				Urls: []string{
 					fmt.Sprintf("%s:%s:%d?transport=%s", scheme, s.Host, s.Port, transport),
 				},
-				Username:   s.Username,
-				Credential: s.Credential,
+				Username:   username,
+				Credential: credential,
 			}
 			iceServers = append(iceServers, is)
 		}
