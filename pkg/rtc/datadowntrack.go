@@ -68,10 +68,6 @@ func (d *DataDownTrack) PublishDataTrack() types.DataTrack {
 	return d.params.PublishDataTrack
 }
 
-func (d *DataDownTrack) PubHandle() uint16 {
-	return d.params.PublishDataTrack.PubHandle()
-}
-
 func (d *DataDownTrack) ID() livekit.TrackID {
 	return d.params.PublishDataTrack.ID()
 }
