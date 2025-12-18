@@ -2,6 +2,26 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.9] - 2025-12-18
+
+### Added
+- Add support for RTP stream restart. (#4161)
+
+### Changed
+- Avoid duplicate track add to room track manager.  (#4152, #4153)
+- Consistently undo update to sequence number and timestamp when the incoming packet cannot be sequenced. (#4156)
+- deregister observability function when participant is closed (#4157)
+- Ensure subscribe data track handles are unique (#4162)
+- move delete to oss service store (#4164)
+- clean up manual roomservice log redaction (#4165)
+- skip lost sequence number ranges in getIntervalStats (#4166, #4169)
+
+### Fixed
+- chore: fix a large number of spelling issues (#4147)
+- Handle case of sequence number jump just after start. (#4150)
+- Drop run away receiver reports. (#4170)
+- Publish/Unpublish counter match. (#4173)
+
 ## [1.9.8] - 2025-12-10
 
 ### Added
