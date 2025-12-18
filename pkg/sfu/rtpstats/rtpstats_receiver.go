@@ -856,10 +856,10 @@ func (r lockedRTPStatsReceiverLogEncoder) MarshalLogObject(e zapcore.ObjectEncod
 	e.AddInt("largeJumpNegativeCount", r.largeJumpNegativeCount)
 	e.AddInt("timeReversedCount", r.timeReversedCount)
 
-	e.AddInt("packetsDroppedBadTimestamp", r.packetsDroppedPreStartTimestamp)
+	e.AddInt("packetsDroppedPreStartTimestamp", r.packetsDroppedPreStartTimestamp)
 	e.AddInt("packetsDroppedOldTimestamp", r.packetsDroppedOldTimestamp)
+	e.AddInt("packetsDroppedPreStartSequenceNumber", r.packetsDroppedPreStartSequenceNumber)
 	e.AddInt("packetsDroppedOldSequenceNumber", r.packetsDroppedOldSequenceNumber)
-	e.AddInt("packetsDroppedBadSequenceNumber", r.packetsDroppedPreStartSequenceNumber)
 
 	e.AddArray("restartPackets", logger.ObjectSlice(r.restartPackets))
 	return nil
