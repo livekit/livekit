@@ -42,7 +42,7 @@ type DataTrack struct {
 
 	lock             sync.Mutex
 	dti              *livekit.DataTrackInfo
-	subscribedTracks map[livekit.ParticipantID]*DataDownTrack
+	subscribedTracks map[livekit.ParticipantID]types.DataDownTrack
 
 	downTrackSpreader *sfuutils.DownTrackSpreader[types.DataTrackSender]
 
@@ -53,7 +53,7 @@ func NewDataTrack(params DataTrackParams, dti *livekit.DataTrackInfo) *DataTrack
 	d := &DataTrack{
 		params:           params,
 		dti:              dti,
-		subscribedTracks: make(map[livekit.ParticipantID]*DataDownTrack),
+		subscribedTracks: make(map[livekit.ParticipantID]types.DataDownTrack),
 		downTrackSpreader: sfuutils.NewDownTrackSpreader[types.DataTrackSender](sfuutils.DownTrackSpreaderParams{
 			Threshold: 20,
 			Logger:    params.Logger,

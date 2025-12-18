@@ -750,6 +750,8 @@ type DataTrack interface {
 
 //counterfeiter:generate . DataDownTrack
 type DataDownTrack interface {
+	Close()
+
 	Handle() uint16
 	PublishDataTrack() DataTrack
 
