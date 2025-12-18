@@ -24,6 +24,8 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+var _ types.DataTrackSender = (*DataDownTrack)(nil)
+
 type DataDownTrackParams struct {
 	Logger           logger.Logger
 	SubscriberID     livekit.ParticipantID

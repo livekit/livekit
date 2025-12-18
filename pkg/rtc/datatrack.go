@@ -31,6 +31,8 @@ var (
 	errReceiverClosed = errors.New("datatrack is closed")
 )
 
+var _ types.DataTrack = (*DataTrack)(nil)
+
 type DataTrackParams struct {
 	Logger logger.Logger
 }
