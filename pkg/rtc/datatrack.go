@@ -90,16 +90,13 @@ func (d *DataTrack) AddSubscriber(sub types.LocalParticipant) (types.DataDownTra
 		return nil, errAlreadySubscribed
 	}
 
-	dataDownTrack, err := NewDataDownTrack(
-		DataDownTrackParams{
-			Logger:           sub.GetLogger().WithValues("trackID", d.ID()),
-			SubscriberID:     sub.ID(),
-			PublishDataTrack: d,
-			Handle:           sub.GetNextSubscribedDataTrackHandle(),
-			Transport:        sub.GetDataTrackTransport(),
-		},
-		d.dti,
-	)
+	dataDownTrack, err := NewDataDownTrack(DataDownTrackParams{
+		Logger:           sub.GetLogger().WithValues("trackID", d.ID()),
+		SubscriberID:     sub.ID(),
+		PublishDataTrack: d,
+		Handle:           sub.GetNextSubscribedDataTrackHandle(),
+		Transport:        sub.GetDataTrackTransport(),
+	})
 	if err != nil {
 		return nil, err
 	}

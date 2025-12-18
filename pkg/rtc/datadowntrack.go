@@ -34,14 +34,12 @@ type DataDownTrackParams struct {
 
 type DataDownTrack struct {
 	params    DataDownTrackParams
-	dti       *livekit.DataTrackInfo
 	createdAt int64
 }
 
-func NewDataDownTrack(params DataDownTrackParams, dti *livekit.DataTrackInfo) (*DataDownTrack, error) {
+func NewDataDownTrack(params DataDownTrackParams) (*DataDownTrack, error) {
 	d := &DataDownTrack{
 		params:    params,
-		dti:       dti,
 		createdAt: time.Now().UnixNano(),
 	}
 
@@ -68,15 +66,15 @@ func (d *DataDownTrack) PublishDataTrack() types.DataTrack {
 }
 
 func (d *DataDownTrack) PubHandle() uint16 {
-	return uint16(d.dti.PubHandle)
+	return d.params.PublishDataTrack.PubHandle()
 }
 
 func (d *DataDownTrack) ID() livekit.TrackID {
-	return livekit.TrackID(d.dti.Sid)
+	return d.params.PublishDataTrack.ID()
 }
 
 func (d *DataDownTrack) Name() string {
-	return d.dti.Name
+	return d.params.PublishDataTrack.Name()
 }
 
 func (d *DataDownTrack) SubscriberID() livekit.ParticipantID {
