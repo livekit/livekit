@@ -3299,15 +3299,13 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 			p.supervisor.ClearPublishedTrack(trackID, mt)
 		}
 
-		if !isExpectedToResume {
-			p.params.Telemetry.TrackUnpublished(
-				context.Background(),
-				p.ID(),
-				p.Identity(),
-				mt.ToProto(),
-				true,
-			)
-		}
+		p.params.Telemetry.TrackUnpublished(
+			context.Background(),
+			p.ID(),
+			p.Identity(),
+			mt.ToProto(),
+			!isExpectedToResume,
+		)
 
 		p.pendingTracksLock.Lock()
 		if pti := p.pendingTracks[signalCid]; pti != nil {
@@ -3336,14 +3334,13 @@ func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack, isMigrate
 
 	// send webhook after callbacks are complete, persistence and state handling happens
 	// in `onTrackPublished` cb
-	if !isMigrated {
-		p.params.Telemetry.TrackPublished(
-			context.Background(),
-			p.ID(),
-			p.Identity(),
-			track.ToProto(),
-		)
-	}
+	p.params.Telemetry.TrackPublished(
+		context.Background(),
+		p.ID(),
+		p.Identity(),
+		track.ToProto(),
+		!isMigrated,
+	)
 
 	p.pendingTracksLock.Lock()
 	delete(p.pendingPublishingTracks, track.ID())

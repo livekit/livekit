@@ -236,10 +236,14 @@ func (t *telemetryService) TrackPublished(
 	participantID livekit.ParticipantID,
 	identity livekit.ParticipantIdentity,
 	track *livekit.TrackInfo,
+	shouldSendEvent bool,
 ) {
 	t.enqueue(func() {
 		prometheus.AddPublishedTrack(track.Type.String())
 		prometheus.RecordTrackPublishSuccess(track.Type.String())
+		if !shouldSendEvent {
+			return
+		}
 
 		room := t.getRoomDetails(participantID)
 		participant := &livekit.ParticipantInfo{
