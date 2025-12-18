@@ -50,7 +50,7 @@ func NewDataDownTrack(params DataDownTrackParams) (*DataDownTrack, error) {
 		return nil, err
 	}
 
-	d.params.Logger.Infow("created data down track", "id", d.ID(), "name", d.Name())
+	d.params.Logger.Infow("created data down track", "name", d.Name())
 	return d, nil
 }
 
