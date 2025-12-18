@@ -56,7 +56,7 @@ func NewDataDownTrack(params DataDownTrackParams) (*DataDownTrack, error) {
 }
 
 func (d *DataDownTrack) Close() {
-	d.params.Logger.Infow("closing data down track", "id", d.ID(), "name", d.Name())
+	d.params.Logger.Infow("closing data down track", "name", d.Name())
 	d.params.PublishDataTrack.DeleteDataDownTrack(d.SubscriberID())
 }
 
