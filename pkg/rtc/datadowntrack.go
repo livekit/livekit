@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+var _ types.DataDownTrack = (*DataDownTrack)(nil)
 var _ types.DataTrackSender = (*DataDownTrack)(nil)
 
 type DataDownTrackParams struct {
