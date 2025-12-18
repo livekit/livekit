@@ -126,6 +126,20 @@ type FakeObjectStore struct {
 		result1 string
 		result2 error
 	}
+	RoomExistsStub        func(context.Context, livekit.RoomName) (bool, error)
+	roomExistsMutex       sync.RWMutex
+	roomExistsArgsForCall []struct {
+		arg1 context.Context
+		arg2 livekit.RoomName
+	}
+	roomExistsReturns struct {
+		result1 bool
+		result2 error
+	}
+	roomExistsReturnsOnCall map[int]struct {
+		result1 bool
+		result2 error
+	}
 	StoreParticipantStub        func(context.Context, livekit.RoomName, *livekit.ParticipantInfo) error
 	storeParticipantMutex       sync.RWMutex
 	storeParticipantArgsForCall []struct {
@@ -692,6 +706,71 @@ func (fake *FakeObjectStore) LockRoomReturnsOnCall(i int, result1 string, result
 	}
 	fake.lockRoomReturnsOnCall[i] = struct {
 		result1 string
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeObjectStore) RoomExists(arg1 context.Context, arg2 livekit.RoomName) (bool, error) {
+	fake.roomExistsMutex.Lock()
+	ret, specificReturn := fake.roomExistsReturnsOnCall[len(fake.roomExistsArgsForCall)]
+	fake.roomExistsArgsForCall = append(fake.roomExistsArgsForCall, struct {
+		arg1 context.Context
+		arg2 livekit.RoomName
+	}{arg1, arg2})
+	stub := fake.RoomExistsStub
+	fakeReturns := fake.roomExistsReturns
+	fake.recordInvocation("RoomExists", []interface{}{arg1, arg2})
+	fake.roomExistsMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeObjectStore) RoomExistsCallCount() int {
+	fake.roomExistsMutex.RLock()
+	defer fake.roomExistsMutex.RUnlock()
+	return len(fake.roomExistsArgsForCall)
+}
+
+func (fake *FakeObjectStore) RoomExistsCalls(stub func(context.Context, livekit.RoomName) (bool, error)) {
+	fake.roomExistsMutex.Lock()
+	defer fake.roomExistsMutex.Unlock()
+	fake.RoomExistsStub = stub
+}
+
+func (fake *FakeObjectStore) RoomExistsArgsForCall(i int) (context.Context, livekit.RoomName) {
+	fake.roomExistsMutex.RLock()
+	defer fake.roomExistsMutex.RUnlock()
+	argsForCall := fake.roomExistsArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeObjectStore) RoomExistsReturns(result1 bool, result2 error) {
+	fake.roomExistsMutex.Lock()
+	defer fake.roomExistsMutex.Unlock()
+	fake.RoomExistsStub = nil
+	fake.roomExistsReturns = struct {
+		result1 bool
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeObjectStore) RoomExistsReturnsOnCall(i int, result1 bool, result2 error) {
+	fake.roomExistsMutex.Lock()
+	defer fake.roomExistsMutex.Unlock()
+	fake.RoomExistsStub = nil
+	if fake.roomExistsReturnsOnCall == nil {
+		fake.roomExistsReturnsOnCall = make(map[int]struct {
+			result1 bool
+			result2 error
+		})
+	}
+	fake.roomExistsReturnsOnCall[i] = struct {
+		result1 bool
 		result2 error
 	}{result1, result2}
 }

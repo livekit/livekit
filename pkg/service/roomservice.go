@@ -127,9 +127,11 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		return nil, twirpAuthError(err)
 	}
 
-	_, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
+	exists, err := s.roomStore.RoomExists(ctx, livekit.RoomName(req.Room))
 	if err != nil {
 		return nil, err
+	} else if !exists {
+		return nil, ErrRoomNotFound
 	}
 
 	// ensure at least one node is available to handle the request
@@ -304,9 +306,11 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 		return nil, twirpAuthError(err)
 	}
 
-	_, _, err := s.roomStore.LoadRoom(ctx, livekit.RoomName(req.Room), false)
+	exists, err := s.roomStore.RoomExists(ctx, livekit.RoomName(req.Room))
 	if err != nil {
 		return nil, err
+	} else if !exists {
+		return nil, ErrRoomNotFound
 	}
 
 	room, err := s.roomClient.UpdateRoomMetadata(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
