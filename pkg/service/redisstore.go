@@ -195,6 +195,16 @@ func (s *RedisStore) LoadRoom(_ context.Context, roomName livekit.RoomName, incl
 	return room, internal, nil
 }
 
+func (s *RedisStore) RoomExists(ctx context.Context, roomName livekit.RoomName) (bool, error) {
+	_, _, err := s.LoadRoom(ctx, roomName, false)
+	if err == ErrRoomNotFound {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (s *RedisStore) ListRooms(_ context.Context, roomNames []livekit.RoomName) ([]*livekit.Room, error) {
 	var items []string
 	var err error

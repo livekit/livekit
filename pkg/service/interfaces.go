@@ -44,6 +44,7 @@ type ObjectStore interface {
 //counterfeiter:generate . ServiceStore
 type ServiceStore interface {
 	LoadRoom(ctx context.Context, roomName livekit.RoomName, includeInternal bool) (*livekit.Room, *livekit.RoomInternal, error)
+	RoomExists(ctx context.Context, roomName livekit.RoomName) (bool, error)
 
 	// ListRooms returns currently active rooms. if names is not nil, it'll filter and return
 	// only rooms that match
