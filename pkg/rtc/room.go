@@ -825,7 +825,7 @@ func (r *Room) OnParticipantChanged(f func(participant types.Participant)) {
 }
 
 func (r *Room) SendDataPacket(dp *livekit.DataPacket, kind livekit.DataPacket_Kind) {
-	r.onDataPacket(nil, kind, dp)
+	r.onDataMessage(nil, kind, dp)
 }
 
 func (r *Room) SetMetadata(metadata string) <-chan struct{} {
@@ -1253,7 +1253,8 @@ func (r *Room) onStateChange(p types.LocalParticipant) {
 		go r.RemoveParticipant(p.Identity(), p.ID(), p.CloseReason())
 	}
 }
-func (r *Room) onDataPacket(source types.LocalParticipant, kind livekit.DataPacket_Kind, dp *livekit.DataPacket) {
+
+func (r *Room) onDataMessage(source types.LocalParticipant, kind livekit.DataPacket_Kind, dp *livekit.DataPacket) {
 	if kind == livekit.DataPacket_RELIABLE && source != nil && dp.GetSequence() > 0 {
 		data, err := proto.Marshal(dp)
 		if err != nil {
@@ -1270,7 +1271,7 @@ func (r *Room) onDataPacket(source types.LocalParticipant, kind livekit.DataPack
 	BroadcastDataPacketForRoom(r, source, kind, dp, r.logger)
 }
 
-func (r *Room) onDataMessage(source types.LocalParticipant, data []byte) {
+func (r *Room) onDataMessageUnlabeled(source types.LocalParticipant, data []byte) {
 	BroadcastDataMessageForRoom(r, source, data, r.logger)
 }
 
@@ -1924,12 +1925,12 @@ func (l *localParticipantListener) OnSubscriberReady(p types.LocalParticipant) {
 func (l *localParticipantListener) OnMigrateStateChange(_p types.LocalParticipant, _migrateState types.MigrateState) {
 }
 
-func (l *localParticipantListener) OnDataPacket(p types.LocalParticipant, kind livekit.DataPacket_Kind, dp *livekit.DataPacket) {
-	l.room.onDataPacket(p, kind, dp)
+func (l *localParticipantListener) OnDataMessage(p types.LocalParticipant, kind livekit.DataPacket_Kind, dp *livekit.DataPacket) {
+	l.room.onDataMessage(p, kind, dp)
 }
 
-func (l *localParticipantListener) OnDataMessage(p types.LocalParticipant, data []byte) {
-	l.room.onDataMessage(p, data)
+func (l *localParticipantListener) OnDataMessageUnlabeled(p types.LocalParticipant, data []byte) {
+	l.room.onDataMessageUnlabeled(p, data)
 }
 
 func (l *localParticipantListener) OnDataTrackMessage(_p types.LocalParticipant, _data []byte, _packet *datatrack.Packet) {

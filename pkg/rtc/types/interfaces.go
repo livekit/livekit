@@ -581,8 +581,8 @@ type LocalParticipantListener interface {
 	OnStateChange(LocalParticipant)
 	OnSubscriberReady(LocalParticipant)
 	OnMigrateStateChange(LocalParticipant, MigrateState)
-	OnDataPacket(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
-	OnDataMessage(LocalParticipant, []byte)
+	OnDataMessage(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
+	OnDataMessageUnlabeled(LocalParticipant, []byte)
 	OnDataTrackMessage(LocalParticipant, []byte, *datatrack.Packet)
 	OnSubscribeStatusChanged(LocalParticipant, livekit.ParticipantID, bool)
 	OnUpdateSubscriptions(
@@ -607,9 +607,9 @@ type NullLocalParticipantListener struct {
 func (*NullLocalParticipantListener) OnStateChange(LocalParticipant)                      {}
 func (*NullLocalParticipantListener) OnSubscriberReady(LocalParticipant)                  {}
 func (*NullLocalParticipantListener) OnMigrateStateChange(LocalParticipant, MigrateState) {}
-func (*NullLocalParticipantListener) OnDataPacket(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket) {
+func (*NullLocalParticipantListener) OnDataMessage(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket) {
 }
-func (*NullLocalParticipantListener) OnDataMessage(LocalParticipant, []byte) {}
+func (*NullLocalParticipantListener) OnDataMessageUnlabeled(LocalParticipant, []byte) {}
 func (*NullLocalParticipantListener) OnDataTrackMessage(LocalParticipant, []byte, *datatrack.Packet) {
 }
 func (*NullLocalParticipantListener) OnSubscribeStatusChanged(LocalParticipant, livekit.ParticipantID, bool) {

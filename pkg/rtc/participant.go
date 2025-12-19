@@ -2460,7 +2460,7 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 	}
 
 	if shouldForwardData {
-		p.listener().OnDataPacket(p, kind, dp)
+		p.listener().OnDataMessage(p, kind, dp)
 	}
 	if shouldForwardMetrics {
 		p.listener().OnMetrics(p, dp)
@@ -2474,7 +2474,7 @@ func (p *ParticipantImpl) onReceivedDataMessageUnlabeled(data []byte) {
 
 	p.dataChannelStats.AddBytes(uint64(len(data)), false)
 
-	p.listener().OnDataMessage(p, data)
+	p.listener().OnDataMessageUnlabeled(p, data)
 }
 
 func (p *ParticipantImpl) onICECandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) error {
