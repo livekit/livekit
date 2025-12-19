@@ -92,8 +92,8 @@ func NewRTCService(
 func (s *RTCService) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/rtc", s.v1)
 	mux.HandleFunc("/rtc/validate", s.v1_validate)
-	mux.HandleFunc("/rtc1", s.v1_5)
-	mux.HandleFunc("/rtc1/validate", s.v1_5_validate)
+	mux.HandleFunc("/rtc/v1", s.v1_5)
+	mux.HandleFunc("/rtc/v1/validate", s.v1_5_validate)
 }
 
 func (s *RTCService) v1_validate(w http.ResponseWriter, r *http.Request) {

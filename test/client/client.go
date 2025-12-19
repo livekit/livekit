@@ -144,7 +144,7 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 		err       error
 	)
 	if opts != nil && opts.UseV1_5Path {
-		parsedURL, err = url.Parse(host + "/rtc1")
+		parsedURL, err = url.Parse(host + "/rtc/v1")
 	} else {
 		parsedURL, err = url.Parse(host + "/rtc")
 	}
