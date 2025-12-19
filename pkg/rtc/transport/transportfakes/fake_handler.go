@@ -41,10 +41,11 @@ type FakeHandler struct {
 	onDataSendErrorArgsForCall []struct {
 		arg1 error
 	}
-	OnDataTrackMessageStub        func([]byte)
+	OnDataTrackMessageStub        func([]byte, int64)
 	onDataTrackMessageMutex       sync.RWMutex
 	onDataTrackMessageArgsForCall []struct {
 		arg1 []byte
+		arg2 int64
 	}
 	OnFailedStub        func(bool, *types.ICEConnectionInfo)
 	onFailedMutex       sync.RWMutex
@@ -301,7 +302,7 @@ func (fake *FakeHandler) OnDataSendErrorArgsForCall(i int) error {
 	return argsForCall.arg1
 }
 
-func (fake *FakeHandler) OnDataTrackMessage(arg1 []byte) {
+func (fake *FakeHandler) OnDataTrackMessage(arg1 []byte, arg2 int64) {
 	var arg1Copy []byte
 	if arg1 != nil {
 		arg1Copy = make([]byte, len(arg1))
@@ -310,12 +311,13 @@ func (fake *FakeHandler) OnDataTrackMessage(arg1 []byte) {
 	fake.onDataTrackMessageMutex.Lock()
 	fake.onDataTrackMessageArgsForCall = append(fake.onDataTrackMessageArgsForCall, struct {
 		arg1 []byte
-	}{arg1Copy})
+		arg2 int64
+	}{arg1Copy, arg2})
 	stub := fake.OnDataTrackMessageStub
-	fake.recordInvocation("OnDataTrackMessage", []interface{}{arg1Copy})
+	fake.recordInvocation("OnDataTrackMessage", []interface{}{arg1Copy, arg2})
 	fake.onDataTrackMessageMutex.Unlock()
 	if stub != nil {
-		fake.OnDataTrackMessageStub(arg1)
+		fake.OnDataTrackMessageStub(arg1, arg2)
 	}
 }
 
@@ -325,17 +327,17 @@ func (fake *FakeHandler) OnDataTrackMessageCallCount() int {
 	return len(fake.onDataTrackMessageArgsForCall)
 }
 
-func (fake *FakeHandler) OnDataTrackMessageCalls(stub func([]byte)) {
+func (fake *FakeHandler) OnDataTrackMessageCalls(stub func([]byte, int64)) {
 	fake.onDataTrackMessageMutex.Lock()
 	defer fake.onDataTrackMessageMutex.Unlock()
 	fake.OnDataTrackMessageStub = stub
 }
 
-func (fake *FakeHandler) OnDataTrackMessageArgsForCall(i int) []byte {
+func (fake *FakeHandler) OnDataTrackMessageArgsForCall(i int) ([]byte, int64) {
 	fake.onDataTrackMessageMutex.RLock()
 	defer fake.onDataTrackMessageMutex.RUnlock()
 	argsForCall := fake.onDataTrackMessageArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeHandler) OnFailed(arg1 bool, arg2 *types.ICEConnectionInfo) {

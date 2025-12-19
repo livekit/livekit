@@ -1320,7 +1320,14 @@ func (p *ParticipantImpl) SetMigrateInfo(
 
 	for _, t := range dataTracks {
 		dti := t.GetInfo()
-		dt := NewDataTrack(DataTrackParams{Logger: p.params.Logger.WithValues("trackID", dti.Sid)}, dti)
+		dt := NewDataTrack(
+			DataTrackParams{
+				Logger:              p.params.Logger.WithValues("trackID", dti.Sid),
+				ParticipantID:       p.ID,
+				ParticipantIdentity: p.params.Identity,
+			},
+			dti,
+		)
 		p.UpDataTrackManager.AddPublishedDataTrack(dt)
 	}
 
@@ -1827,8 +1834,8 @@ func (h PublisherTransportHandler) OnDataMessageUnlabeled(data []byte) {
 	h.p.onReceivedDataMessageUnlabeled(data)
 }
 
-func (h PublisherTransportHandler) OnDataTrackMessage(data []byte) {
-	h.p.onReceivedDataTrackMessage(data)
+func (h PublisherTransportHandler) OnDataTrackMessage(data []byte, arrivalTime int64) {
+	h.p.onReceivedDataTrackMessage(data, arrivalTime)
 }
 
 func (h PublisherTransportHandler) OnDataSendError(err error) {

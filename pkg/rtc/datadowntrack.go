@@ -81,7 +81,7 @@ func (d *DataDownTrack) SubscriberID() livekit.ParticipantID {
 	return livekit.ParticipantID(fmt.Sprintf("%s:%d", d.params.SubscriberID, d.createdAt))
 }
 
-func (d *DataDownTrack) WritePacket(data []byte, packet *datatrack.Packet) {
+func (d *DataDownTrack) WritePacket(data []byte, packet *datatrack.Packet, _arrivalTime int64) {
 	forwardedPacket := *packet
 	forwardedPacket.Handle = d.params.Handle
 	buf, err := forwardedPacket.Marshal()

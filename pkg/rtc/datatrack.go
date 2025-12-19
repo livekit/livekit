@@ -34,7 +34,9 @@ var (
 var _ types.DataTrack = (*DataTrack)(nil)
 
 type DataTrackParams struct {
-	Logger logger.Logger
+	Logger              logger.Logger
+	ParticipantID       func() livekit.ParticipantID
+	ParticipantIdentity livekit.ParticipantIdentity
 }
 
 type DataTrack struct {
@@ -66,6 +68,14 @@ func NewDataTrack(params DataTrackParams, dti *livekit.DataTrackInfo) *DataTrack
 func (d *DataTrack) Close() {
 	d.params.Logger.Infow("closing data track", "name", d.Name())
 	d.closed.Break()
+}
+
+func (d *DataTrack) PublisherID() livekit.ParticipantID {
+	return d.params.ParticipantID()
+}
+
+func (d *DataTrack) PublisherIdentity() livekit.ParticipantIdentity {
+	return d.params.ParticipantIdentity
 }
 
 func (d *DataTrack) ToProto() *livekit.DataTrackInfo {
@@ -145,8 +155,8 @@ func (d *DataTrack) DeleteDataDownTrack(subscriberID livekit.ParticipantID) {
 	d.params.Logger.Infow("data downtrack deleted", "subscriberID", subscriberID)
 }
 
-func (d *DataTrack) HandlePacket(data []byte, packet *datatrack.Packet) {
+func (d *DataTrack) HandlePacket(data []byte, packet *datatrack.Packet, arrivalTime int64) {
 	d.downTrackSpreader.Broadcast(func(dts types.DataTrackSender) {
-		dts.WritePacket(data, packet)
+		dts.WritePacket(data, packet, arrivalTime)
 	})
 }

@@ -608,11 +608,12 @@ type FakeLocalParticipant struct {
 	handlePublishDataTrackRequestArgsForCall []struct {
 		arg1 *livekit.PublishDataTrackRequest
 	}
-	HandleReceivedDataTrackMessageStub        func([]byte, *datatrack.Packet)
+	HandleReceivedDataTrackMessageStub        func([]byte, *datatrack.Packet, int64)
 	handleReceivedDataTrackMessageMutex       sync.RWMutex
 	handleReceivedDataTrackMessageArgsForCall []struct {
 		arg1 []byte
 		arg2 *datatrack.Packet
+		arg3 int64
 	}
 	HandleReceiverReportStub        func(*sfu.DownTrack, *rtcp.ReceiverReport)
 	handleReceiverReportMutex       sync.RWMutex
@@ -4560,7 +4561,7 @@ func (fake *FakeLocalParticipant) HandlePublishDataTrackRequestArgsForCall(i int
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) HandleReceivedDataTrackMessage(arg1 []byte, arg2 *datatrack.Packet) {
+func (fake *FakeLocalParticipant) HandleReceivedDataTrackMessage(arg1 []byte, arg2 *datatrack.Packet, arg3 int64) {
 	var arg1Copy []byte
 	if arg1 != nil {
 		arg1Copy = make([]byte, len(arg1))
@@ -4570,12 +4571,13 @@ func (fake *FakeLocalParticipant) HandleReceivedDataTrackMessage(arg1 []byte, ar
 	fake.handleReceivedDataTrackMessageArgsForCall = append(fake.handleReceivedDataTrackMessageArgsForCall, struct {
 		arg1 []byte
 		arg2 *datatrack.Packet
-	}{arg1Copy, arg2})
+		arg3 int64
+	}{arg1Copy, arg2, arg3})
 	stub := fake.HandleReceivedDataTrackMessageStub
-	fake.recordInvocation("HandleReceivedDataTrackMessage", []interface{}{arg1Copy, arg2})
+	fake.recordInvocation("HandleReceivedDataTrackMessage", []interface{}{arg1Copy, arg2, arg3})
 	fake.handleReceivedDataTrackMessageMutex.Unlock()
 	if stub != nil {
-		fake.HandleReceivedDataTrackMessageStub(arg1, arg2)
+		fake.HandleReceivedDataTrackMessageStub(arg1, arg2, arg3)
 	}
 }
 
@@ -4585,17 +4587,17 @@ func (fake *FakeLocalParticipant) HandleReceivedDataTrackMessageCallCount() int 
 	return len(fake.handleReceivedDataTrackMessageArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) HandleReceivedDataTrackMessageCalls(stub func([]byte, *datatrack.Packet)) {
+func (fake *FakeLocalParticipant) HandleReceivedDataTrackMessageCalls(stub func([]byte, *datatrack.Packet, int64)) {
 	fake.handleReceivedDataTrackMessageMutex.Lock()
 	defer fake.handleReceivedDataTrackMessageMutex.Unlock()
 	fake.HandleReceivedDataTrackMessageStub = stub
 }
 
-func (fake *FakeLocalParticipant) HandleReceivedDataTrackMessageArgsForCall(i int) ([]byte, *datatrack.Packet) {
+func (fake *FakeLocalParticipant) HandleReceivedDataTrackMessageArgsForCall(i int) ([]byte, *datatrack.Packet, int64) {
 	fake.handleReceivedDataTrackMessageMutex.RLock()
 	defer fake.handleReceivedDataTrackMessageMutex.RUnlock()
 	argsForCall := fake.handleReceivedDataTrackMessageArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeLocalParticipant) HandleReceiverReport(arg1 *sfu.DownTrack, arg2 *rtcp.ReceiverReport) {
