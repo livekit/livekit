@@ -90,13 +90,25 @@ func NewRTCService(
 }
 
 func (s *RTCService) SetupRoutes(mux *http.ServeMux) {
-	mux.Handle("/rtc", s)
-	mux.HandleFunc("/rtc/validate", s.validate)
+	mux.HandleFunc("/rtc", s.v1)
+	mux.HandleFunc("/rtc/validate", s.v1_validate)
+	mux.HandleFunc("/rtc1", s.v1_5)
+	mux.HandleFunc("/rtc1/validate", s.v1_5_validate)
 }
 
-func (s *RTCService) validate(w http.ResponseWriter, r *http.Request) {
+func (s *RTCService) v1_validate(w http.ResponseWriter, r *http.Request) {
 	lgr := utils.GetLogger(r.Context())
-	_, _, code, err := s.validateInternal(lgr, r, true)
+	_, _, code, err := s.validateInternal(lgr, r, false, true)
+	if err != nil {
+		HandleError(w, r, code, err)
+		return
+	}
+	_, _ = w.Write([]byte("success"))
+}
+
+func (s *RTCService) v1_5_validate(w http.ResponseWriter, r *http.Request) {
+	lgr := utils.GetLogger(r.Context())
+	_, _, code, err := s.validateInternal(lgr, r, true, true)
 	if err != nil {
 		HandleError(w, r, code, err)
 		return
@@ -120,13 +132,22 @@ var gzipReaderPool = sync.Pool{
 	New: func() any { return &gzip.Reader{} },
 }
 
-func (s *RTCService) validateInternal(lgr logger.Logger, r *http.Request, strict bool) (livekit.RoomName, routing.ParticipantInit, int, error) {
+func (s *RTCService) validateInternal(
+	lgr logger.Logger,
+	r *http.Request,
+	needsJoinRequest bool,
+	strict bool,
+) (livekit.RoomName, routing.ParticipantInit, int, error) {
 	var params ValidateConnectRequestParams
 	useSinglePeerConnection := false
 	joinRequest := &livekit.JoinRequest{}
 
 	wrappedJoinRequestBase64 := r.FormValue("join_request")
 	if wrappedJoinRequestBase64 == "" {
+		if needsJoinRequest {
+			return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("join_request is required")
+		}
+
 		params.publish = r.FormValue("publish")
 
 		attributesStrParam := r.FormValue("attributes")
@@ -244,7 +265,15 @@ func (s *RTCService) validateInternal(lgr logger.Logger, r *http.Request, strict
 	return res.roomName, pi, code, err
 }
 
-func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *RTCService) v1(w http.ResponseWriter, r *http.Request) {
+	s.serve(w, r, false)
+}
+
+func (s *RTCService) v1_5(w http.ResponseWriter, r *http.Request) {
+	s.serve(w, r, true)
+}
+
+func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequest bool) {
 	// reject non websocket requests
 	if !websocket.IsWebSocketUpgrade(r) {
 		w.WriteHeader(404)
@@ -295,7 +324,7 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		loggerResolved = false
 	}
 
-	roomName, pi, code, err = s.validateInternal(pLogger, r, false)
+	roomName, pi, code, err = s.validateInternal(pLogger, r, needsJoinRequest, false)
 	if err != nil {
 		HandleError(w, r, code, err)
 		return
