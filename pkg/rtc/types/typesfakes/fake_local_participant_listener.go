@@ -10,18 +10,18 @@ import (
 )
 
 type FakeLocalParticipantListener struct {
-	OnDataMessageStub        func(types.LocalParticipant, []byte)
+	OnDataMessageStub        func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
 	onDataMessageMutex       sync.RWMutex
 	onDataMessageArgsForCall []struct {
 		arg1 types.LocalParticipant
-		arg2 []byte
-	}
-	OnDataPacketStub        func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
-	onDataPacketMutex       sync.RWMutex
-	onDataPacketArgsForCall []struct {
-		arg1 types.LocalParticipant
 		arg2 livekit.DataPacket_Kind
 		arg3 *livekit.DataPacket
+	}
+	OnDataMessageUnlabeledStub        func(types.LocalParticipant, []byte)
+	onDataMessageUnlabeledMutex       sync.RWMutex
+	onDataMessageUnlabeledArgsForCall []struct {
+		arg1 types.LocalParticipant
+		arg2 []byte
 	}
 	OnDataTrackMessageStub        func(types.LocalParticipant, []byte, *datatrack.Packet)
 	onDataTrackMessageMutex       sync.RWMutex
@@ -154,22 +154,18 @@ type FakeLocalParticipantListener struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeLocalParticipantListener) OnDataMessage(arg1 types.LocalParticipant, arg2 []byte) {
-	var arg2Copy []byte
-	if arg2 != nil {
-		arg2Copy = make([]byte, len(arg2))
-		copy(arg2Copy, arg2)
-	}
+func (fake *FakeLocalParticipantListener) OnDataMessage(arg1 types.LocalParticipant, arg2 livekit.DataPacket_Kind, arg3 *livekit.DataPacket) {
 	fake.onDataMessageMutex.Lock()
 	fake.onDataMessageArgsForCall = append(fake.onDataMessageArgsForCall, struct {
 		arg1 types.LocalParticipant
-		arg2 []byte
-	}{arg1, arg2Copy})
+		arg2 livekit.DataPacket_Kind
+		arg3 *livekit.DataPacket
+	}{arg1, arg2, arg3})
 	stub := fake.OnDataMessageStub
-	fake.recordInvocation("OnDataMessage", []interface{}{arg1, arg2Copy})
+	fake.recordInvocation("OnDataMessage", []interface{}{arg1, arg2, arg3})
 	fake.onDataMessageMutex.Unlock()
 	if stub != nil {
-		fake.OnDataMessageStub(arg1, arg2)
+		fake.OnDataMessageStub(arg1, arg2, arg3)
 	}
 }
 
@@ -179,51 +175,55 @@ func (fake *FakeLocalParticipantListener) OnDataMessageCallCount() int {
 	return len(fake.onDataMessageArgsForCall)
 }
 
-func (fake *FakeLocalParticipantListener) OnDataMessageCalls(stub func(types.LocalParticipant, []byte)) {
+func (fake *FakeLocalParticipantListener) OnDataMessageCalls(stub func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)) {
 	fake.onDataMessageMutex.Lock()
 	defer fake.onDataMessageMutex.Unlock()
 	fake.OnDataMessageStub = stub
 }
 
-func (fake *FakeLocalParticipantListener) OnDataMessageArgsForCall(i int) (types.LocalParticipant, []byte) {
+func (fake *FakeLocalParticipantListener) OnDataMessageArgsForCall(i int) (types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket) {
 	fake.onDataMessageMutex.RLock()
 	defer fake.onDataMessageMutex.RUnlock()
 	argsForCall := fake.onDataMessageArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
-func (fake *FakeLocalParticipantListener) OnDataPacket(arg1 types.LocalParticipant, arg2 livekit.DataPacket_Kind, arg3 *livekit.DataPacket) {
-	fake.onDataPacketMutex.Lock()
-	fake.onDataPacketArgsForCall = append(fake.onDataPacketArgsForCall, struct {
+func (fake *FakeLocalParticipantListener) OnDataMessageUnlabeled(arg1 types.LocalParticipant, arg2 []byte) {
+	var arg2Copy []byte
+	if arg2 != nil {
+		arg2Copy = make([]byte, len(arg2))
+		copy(arg2Copy, arg2)
+	}
+	fake.onDataMessageUnlabeledMutex.Lock()
+	fake.onDataMessageUnlabeledArgsForCall = append(fake.onDataMessageUnlabeledArgsForCall, struct {
 		arg1 types.LocalParticipant
-		arg2 livekit.DataPacket_Kind
-		arg3 *livekit.DataPacket
-	}{arg1, arg2, arg3})
-	stub := fake.OnDataPacketStub
-	fake.recordInvocation("OnDataPacket", []interface{}{arg1, arg2, arg3})
-	fake.onDataPacketMutex.Unlock()
+		arg2 []byte
+	}{arg1, arg2Copy})
+	stub := fake.OnDataMessageUnlabeledStub
+	fake.recordInvocation("OnDataMessageUnlabeled", []interface{}{arg1, arg2Copy})
+	fake.onDataMessageUnlabeledMutex.Unlock()
 	if stub != nil {
-		fake.OnDataPacketStub(arg1, arg2, arg3)
+		fake.OnDataMessageUnlabeledStub(arg1, arg2)
 	}
 }
 
-func (fake *FakeLocalParticipantListener) OnDataPacketCallCount() int {
-	fake.onDataPacketMutex.RLock()
-	defer fake.onDataPacketMutex.RUnlock()
-	return len(fake.onDataPacketArgsForCall)
+func (fake *FakeLocalParticipantListener) OnDataMessageUnlabeledCallCount() int {
+	fake.onDataMessageUnlabeledMutex.RLock()
+	defer fake.onDataMessageUnlabeledMutex.RUnlock()
+	return len(fake.onDataMessageUnlabeledArgsForCall)
 }
 
-func (fake *FakeLocalParticipantListener) OnDataPacketCalls(stub func(types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)) {
-	fake.onDataPacketMutex.Lock()
-	defer fake.onDataPacketMutex.Unlock()
-	fake.OnDataPacketStub = stub
+func (fake *FakeLocalParticipantListener) OnDataMessageUnlabeledCalls(stub func(types.LocalParticipant, []byte)) {
+	fake.onDataMessageUnlabeledMutex.Lock()
+	defer fake.onDataMessageUnlabeledMutex.Unlock()
+	fake.OnDataMessageUnlabeledStub = stub
 }
 
-func (fake *FakeLocalParticipantListener) OnDataPacketArgsForCall(i int) (types.LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket) {
-	fake.onDataPacketMutex.RLock()
-	defer fake.onDataPacketMutex.RUnlock()
-	argsForCall := fake.onDataPacketArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+func (fake *FakeLocalParticipantListener) OnDataMessageUnlabeledArgsForCall(i int) (types.LocalParticipant, []byte) {
+	fake.onDataMessageUnlabeledMutex.RLock()
+	defer fake.onDataMessageUnlabeledMutex.RUnlock()
+	argsForCall := fake.onDataMessageUnlabeledArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipantListener) OnDataTrackMessage(arg1 types.LocalParticipant, arg2 []byte, arg3 *datatrack.Packet) {
