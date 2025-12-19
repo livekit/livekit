@@ -597,6 +597,8 @@ func (b *Buffer) Close() error {
 		if cb := b.getOnClose(); cb != nil {
 			cb()
 		}
+
+		go b.flushExtPackets()
 	})
 	return nil
 }
@@ -694,7 +696,7 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, i
 		if b.nacker != nil {
 			b.nacker = nack.NewNACKQueue(nack.NackQueueParamsDefault)
 		}
-		b.extPackets.Clear()
+		b.flushExtPacketsLocked()
 
 		flowState = b.updateStreamState(rtpPacket, arrivalTime)
 		isRestart = true
@@ -954,7 +956,13 @@ func (b *Buffer) processHeaderExtensions(p *rtp.Packet, arrivalTime int64, isRTX
 	}
 }
 
-func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, isBuffered bool, isRestart bool, flowState rtpstats.RTPFlowState) *ExtPacket {
+func (b *Buffer) getExtPacket(
+	rtpPacket *rtp.Packet,
+	arrivalTime int64,
+	isBuffered bool,
+	isRestart bool,
+	flowState rtpstats.RTPFlowState,
+) *ExtPacket {
 	ep := ExtPacketFactory.Get().(*ExtPacket)
 	*ep = ExtPacket{
 		Arrival:           arrivalTime,
@@ -1105,6 +1113,20 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, isBuffer
 	}
 
 	return ep
+}
+
+func (b *Buffer) flushExtPackets() {
+	b.Lock()
+	defer b.Unlock()
+	b.flushExtPacketsLocked()
+}
+
+func (b *Buffer) flushExtPacketsLocked() {
+	for b.extPackets.Len() > 0 {
+		ep := b.extPackets.PopFront()
+		ReleaseExtPacket(ep)
+	}
+	b.extPackets.Clear()
 }
 
 func (b *Buffer) doNACKs() {
