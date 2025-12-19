@@ -32,8 +32,8 @@ var (
 )
 
 func TestAgents(t *testing.T) {
-	for _, useSinglePeerConnection := range []bool{false, true} {
-		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
 			_, finish := setupSingleNodeTest("TestAgents")
 			defer finish()
 
@@ -70,8 +70,8 @@ func TestAgents(t *testing.T) {
 				return ""
 			}, RegisterTimeout)
 
-			c1 := createRTCClient("c1", defaultServerPort, useSinglePeerConnection, nil)
-			c2 := createRTCClient("c2", defaultServerPort, useSinglePeerConnection, nil)
+			c1 := createRTCClient("c1", defaultServerPort, testRTCServicePath, nil)
+			c2 := createRTCClient("c2", defaultServerPort, testRTCServicePath, nil)
 			waitUntilConnected(t, c1, c2)
 
 			// publish 2 tracks
@@ -126,8 +126,8 @@ func TestAgents(t *testing.T) {
 }
 
 func TestAgentNamespaces(t *testing.T) {
-	for _, useSinglePeerConnection := range []bool{false, true} {
-		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
 			_, finish := setupSingleNodeTest("TestAgentNamespaces")
 			defer finish()
 
@@ -158,7 +158,7 @@ func TestAgentNamespaces(t *testing.T) {
 				return ""
 			}, RegisterTimeout)
 
-			c1 := createRTCClient("c1", defaultServerPort, useSinglePeerConnection, nil)
+			c1 := createRTCClient("c1", defaultServerPort, testRTCServicePath, nil)
 			waitUntilConnected(t, c1)
 
 			testutils.WithTimeout(t, func() string {
@@ -188,8 +188,8 @@ func TestAgentNamespaces(t *testing.T) {
 }
 
 func TestAgentMultiNode(t *testing.T) {
-	for _, useSinglePeerConnection := range []bool{false, true} {
-		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
 			_, _, finish := setupMultiNodeTest("TestAgentMultiNode")
 			defer finish()
 
@@ -209,7 +209,7 @@ func TestAgentMultiNode(t *testing.T) {
 				return ""
 			}, RegisterTimeout)
 
-			c1 := createRTCClient("c1", secondServerPort, useSinglePeerConnection, nil) // Create a room on the second node
+			c1 := createRTCClient("c1", secondServerPort, testRTCServicePath, nil) // Create a room on the second node
 			waitUntilConnected(t, c1)
 
 			t1, err := c1.AddStaticTrack("audio/opus", "audio", "micro")
