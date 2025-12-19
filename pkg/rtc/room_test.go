@@ -645,7 +645,7 @@ func TestDataChannel(t *testing.T) {
 				}
 
 				encoded, _ := proto.Marshal(packetExp)
-				lpl.OnDataPacket(p, packet.Kind, packet)
+				lpl.OnDataMessage(p, packet.Kind, packet)
 
 				// ensure everyone has received the packet
 				for _, op := range participants {
@@ -695,7 +695,7 @@ func TestDataChannel(t *testing.T) {
 				}
 
 				encoded, _ := proto.Marshal(packetExp)
-				lpl.OnDataPacket(p, packet.Kind, packet)
+				lpl.OnDataMessage(p, packet.Kind, packet)
 
 				// only p1 should receive the data
 				for _, op := range participants {
@@ -729,7 +729,7 @@ func TestDataChannel(t *testing.T) {
 		}
 		if p.CanPublishData() {
 			lpl := rm.LocalParticipantListener()
-			lpl.OnDataPacket(p, packet.Kind, &packet)
+			lpl.OnDataMessage(p, packet.Kind, &packet)
 		}
 
 		// no one should've been sent packet
