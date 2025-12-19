@@ -85,7 +85,7 @@ func (u *UpDataTrackManager) GetPublishedDataTrack(handle uint16) types.DataTrac
 	return u.dataTracks[handle]
 }
 
-func (u *UpDataTrackManager) HandleReceivedDataTrackMessage(data []byte, packet *datatrack.Packet) {
+func (u *UpDataTrackManager) HandleReceivedDataTrackMessage(data []byte, packet *datatrack.Packet, arrivalTime int64) {
 	u.lock.RLock()
 	dt := u.dataTracks[packet.Handle]
 	u.lock.RUnlock()
@@ -93,7 +93,7 @@ func (u *UpDataTrackManager) HandleReceivedDataTrackMessage(data []byte, packet 
 		return
 	}
 
-	dt.HandlePacket(data, packet)
+	dt.HandlePacket(data, packet, arrivalTime)
 }
 
 func (u *UpDataTrackManager) ToProto() []*livekit.DataTrackInfo {

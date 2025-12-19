@@ -94,7 +94,14 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 		Name:       req.Name,
 		Encryption: req.Encryption,
 	}
-	dt := NewDataTrack(DataTrackParams{Logger: p.params.Logger.WithValues("trackID", dti.Sid)}, dti)
+	dt := NewDataTrack(
+		DataTrackParams{
+			Logger:              p.params.Logger.WithValues("trackID", dti.Sid),
+			ParticipantID:       p.ID,
+			ParticipantIdentity: p.params.Identity,
+		},
+		dti,
+	)
 
 	p.UpDataTrackManager.AddPublishedDataTrack(dt)
 
@@ -128,14 +135,14 @@ func (p *ParticipantImpl) HandleUpdateDataSubscription(req *livekit.UpdateDataSu
 	p.listener().OnUpdateDataSubscriptions(p, req)
 }
 
-func (p *ParticipantImpl) onReceivedDataTrackMessage(data []byte) {
+func (p *ParticipantImpl) onReceivedDataTrackMessage(data []byte, arrivalTime int64) {
 	var packet datatrack.Packet
 	if err := packet.Unmarshal(data); err != nil {
 		p.params.Logger.Errorw("could not unmarshal data track message", err)
 		return
 	}
 
-	p.UpDataTrackManager.HandleReceivedDataTrackMessage(data, &packet)
+	p.UpDataTrackManager.HandleReceivedDataTrackMessage(data, &packet, arrivalTime)
 
 	p.listener().OnDataTrackMessage(p, data, &packet)
 }

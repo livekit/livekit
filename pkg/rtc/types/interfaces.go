@@ -329,7 +329,7 @@ type Participant interface {
 
 	DebugInfo() map[string]any
 
-	HandleReceivedDataTrackMessage([]byte, *datatrack.Packet)
+	HandleReceivedDataTrackMessage([]byte, *datatrack.Packet, int64)
 
 	GetParticipantListener() ParticipantListener
 }
@@ -736,6 +736,9 @@ type DataTrack interface {
 	Name() string
 	ToProto() *livekit.DataTrackInfo
 
+	PublisherID() livekit.ParticipantID
+	PublisherIdentity() livekit.ParticipantIdentity
+
 	AddSubscriber(sub LocalParticipant) (DataDownTrack, error)
 	RemoveSubscriber(participantID livekit.ParticipantID)
 	IsSubscriber(subID livekit.ParticipantID) bool
@@ -743,13 +746,15 @@ type DataTrack interface {
 	AddDataDownTrack(sender DataTrackSender) error
 	DeleteDataDownTrack(subscriberID livekit.ParticipantID)
 
-	HandlePacket(data []byte, packet *datatrack.Packet)
+	HandlePacket(data []byte, packet *datatrack.Packet, arrivalTime int64)
 
 	Close()
 }
 
 //counterfeiter:generate . DataDownTrack
 type DataDownTrack interface {
+	Close()
+
 	Handle() uint16
 	PublishDataTrack() DataTrack
 
@@ -760,7 +765,7 @@ type DataDownTrack interface {
 type DataTrackSender interface {
 	SubscriberID() livekit.ParticipantID
 
-	WritePacket(data []byte, packet *datatrack.Packet)
+	WritePacket(data []byte, packet *datatrack.Packet, arrivalTime int64)
 }
 
 //counterfeiter:generate . DataTrackTransport

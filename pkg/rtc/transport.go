@@ -61,6 +61,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/logger/pionlogger"
 	lksdp "github.com/livekit/protocol/sdp"
+	"github.com/livekit/protocol/utils/mono"
 )
 
 const (
@@ -908,7 +909,7 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 					t.params.Handler.OnDataMessageUnlabeled(buffer[:n])
 
 				case isDataTrack:
-					t.params.Handler.OnDataTrackMessage(buffer[:n])
+					t.params.Handler.OnDataTrackMessage(buffer[:n], mono.UnixNano())
 
 				default:
 					t.params.Handler.OnDataMessage(kind, buffer[:n])
@@ -1266,7 +1267,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 					t.params.Handler.OnDataMessageUnlabeled(buffer[:n])
 
 				case isDataTrack:
-					t.params.Handler.OnDataTrackMessage(buffer[:n])
+					t.params.Handler.OnDataTrackMessage(buffer[:n], mono.UnixNano())
 
 				default:
 					t.params.Handler.OnDataMessage(kind, buffer[:n])
