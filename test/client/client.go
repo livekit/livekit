@@ -1095,7 +1095,7 @@ func (c *RTCClient) handleDataMessageUnlabeled(data []byte) {
 	}
 }
 
-func (c *RTCClient) handleDataTrackMessage(data []byte) {
+func (c *RTCClient) handleDataTrackMessage(data []byte, _arrivalTime int64) {
 	var packet datatrack.Packet
 	if err := packet.Unmarshal(data); err != nil {
 		return
