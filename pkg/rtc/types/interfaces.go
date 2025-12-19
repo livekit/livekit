@@ -557,6 +557,7 @@ type ParticipantListener interface {
 	OnTrackUnpublished(Participant, MediaTrack)
 	OnDataTrackPublished(Participant, DataTrack)
 	OnDataTrackUnpublished(Participant, DataTrack)
+	OnDataTrackMessage(Participant, []byte, *datatrack.Packet)
 	OnMetrics(Participant, *livekit.DataPacket)
 }
 
@@ -564,13 +565,14 @@ var _ ParticipantListener = (*NullParticipantListener)(nil)
 
 type NullParticipantListener struct{}
 
-func (*NullParticipantListener) OnParticipantUpdate(Participant)               {}
-func (*NullParticipantListener) OnTrackPublished(Participant, MediaTrack)      {}
-func (*NullParticipantListener) OnTrackUpdated(Participant, MediaTrack)        {}
-func (*NullParticipantListener) OnTrackUnpublished(Participant, MediaTrack)    {}
-func (*NullParticipantListener) OnDataTrackPublished(Participant, DataTrack)   {}
-func (*NullParticipantListener) OnDataTrackUnpublished(Participant, DataTrack) {}
-func (*NullParticipantListener) OnMetrics(Participant, *livekit.DataPacket)    {}
+func (*NullParticipantListener) OnParticipantUpdate(Participant)                           {}
+func (*NullParticipantListener) OnTrackPublished(Participant, MediaTrack)                  {}
+func (*NullParticipantListener) OnTrackUpdated(Participant, MediaTrack)                    {}
+func (*NullParticipantListener) OnTrackUnpublished(Participant, MediaTrack)                {}
+func (*NullParticipantListener) OnDataTrackPublished(Participant, DataTrack)               {}
+func (*NullParticipantListener) OnDataTrackUnpublished(Participant, DataTrack)             {}
+func (*NullParticipantListener) OnDataTrackMessage(Participant, []byte, *datatrack.Packet) {}
+func (*NullParticipantListener) OnMetrics(Participant, *livekit.DataPacket)                {}
 
 // ---------------------------------------------
 
@@ -583,7 +585,6 @@ type LocalParticipantListener interface {
 	OnMigrateStateChange(LocalParticipant, MigrateState)
 	OnDataMessage(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket)
 	OnDataMessageUnlabeled(LocalParticipant, []byte)
-	OnDataTrackMessage(LocalParticipant, []byte, *datatrack.Packet)
 	OnSubscribeStatusChanged(LocalParticipant, livekit.ParticipantID, bool)
 	OnUpdateSubscriptions(
 		LocalParticipant,
@@ -610,8 +611,6 @@ func (*NullLocalParticipantListener) OnMigrateStateChange(LocalParticipant, Migr
 func (*NullLocalParticipantListener) OnDataMessage(LocalParticipant, livekit.DataPacket_Kind, *livekit.DataPacket) {
 }
 func (*NullLocalParticipantListener) OnDataMessageUnlabeled(LocalParticipant, []byte) {}
-func (*NullLocalParticipantListener) OnDataTrackMessage(LocalParticipant, []byte, *datatrack.Packet) {
-}
 func (*NullLocalParticipantListener) OnSubscribeStatusChanged(LocalParticipant, livekit.ParticipantID, bool) {
 }
 func (*NullLocalParticipantListener) OnUpdateSubscriptions(

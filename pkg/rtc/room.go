@@ -1910,6 +1910,9 @@ func (l *localParticipantListener) OnDataTrackUnpublished(p types.Participant, t
 	l.room.onDataTrackUnpublished(p, track)
 }
 
+func (l *localParticipantListener) OnDataTrackMessage(_p types.Participant, _data []byte, _packet *datatrack.Packet) {
+}
+
 func (l *localParticipantListener) OnMetrics(p types.Participant, dp *livekit.DataPacket) {
 	l.room.onMetrics(p, dp)
 }
@@ -1931,9 +1934,6 @@ func (l *localParticipantListener) OnDataMessage(p types.LocalParticipant, kind 
 
 func (l *localParticipantListener) OnDataMessageUnlabeled(p types.LocalParticipant, data []byte) {
 	l.room.onDataMessageUnlabeled(p, data)
-}
-
-func (l *localParticipantListener) OnDataTrackMessage(_p types.LocalParticipant, _data []byte, _packet *datatrack.Packet) {
 }
 
 func (l *localParticipantListener) OnSubscribeStatusChanged(p types.LocalParticipant, publisherID livekit.ParticipantID, subscribed bool) {

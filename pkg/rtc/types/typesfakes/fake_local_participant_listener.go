@@ -23,10 +23,10 @@ type FakeLocalParticipantListener struct {
 		arg1 types.LocalParticipant
 		arg2 []byte
 	}
-	OnDataTrackMessageStub        func(types.LocalParticipant, []byte, *datatrack.Packet)
+	OnDataTrackMessageStub        func(types.Participant, []byte, *datatrack.Packet)
 	onDataTrackMessageMutex       sync.RWMutex
 	onDataTrackMessageArgsForCall []struct {
-		arg1 types.LocalParticipant
+		arg1 types.Participant
 		arg2 []byte
 		arg3 *datatrack.Packet
 	}
@@ -226,7 +226,7 @@ func (fake *FakeLocalParticipantListener) OnDataMessageUnlabeledArgsForCall(i in
 	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakeLocalParticipantListener) OnDataTrackMessage(arg1 types.LocalParticipant, arg2 []byte, arg3 *datatrack.Packet) {
+func (fake *FakeLocalParticipantListener) OnDataTrackMessage(arg1 types.Participant, arg2 []byte, arg3 *datatrack.Packet) {
 	var arg2Copy []byte
 	if arg2 != nil {
 		arg2Copy = make([]byte, len(arg2))
@@ -234,7 +234,7 @@ func (fake *FakeLocalParticipantListener) OnDataTrackMessage(arg1 types.LocalPar
 	}
 	fake.onDataTrackMessageMutex.Lock()
 	fake.onDataTrackMessageArgsForCall = append(fake.onDataTrackMessageArgsForCall, struct {
-		arg1 types.LocalParticipant
+		arg1 types.Participant
 		arg2 []byte
 		arg3 *datatrack.Packet
 	}{arg1, arg2Copy, arg3})
@@ -252,13 +252,13 @@ func (fake *FakeLocalParticipantListener) OnDataTrackMessageCallCount() int {
 	return len(fake.onDataTrackMessageArgsForCall)
 }
 
-func (fake *FakeLocalParticipantListener) OnDataTrackMessageCalls(stub func(types.LocalParticipant, []byte, *datatrack.Packet)) {
+func (fake *FakeLocalParticipantListener) OnDataTrackMessageCalls(stub func(types.Participant, []byte, *datatrack.Packet)) {
 	fake.onDataTrackMessageMutex.Lock()
 	defer fake.onDataTrackMessageMutex.Unlock()
 	fake.OnDataTrackMessageStub = stub
 }
 
-func (fake *FakeLocalParticipantListener) OnDataTrackMessageArgsForCall(i int) (types.LocalParticipant, []byte, *datatrack.Packet) {
+func (fake *FakeLocalParticipantListener) OnDataTrackMessageArgsForCall(i int) (types.Participant, []byte, *datatrack.Packet) {
 	fake.onDataTrackMessageMutex.RLock()
 	defer fake.onDataTrackMessageMutex.RUnlock()
 	argsForCall := fake.onDataTrackMessageArgsForCall[i]
