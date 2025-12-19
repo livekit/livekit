@@ -135,19 +135,15 @@ type Options struct {
 	SignalRequestInterceptor  SignalRequestInterceptor
 	SignalResponseInterceptor SignalResponseInterceptor
 	UseJoinRequestQueryParam  bool
-	UseV1_5Path               bool
+	RTCServicePath            string
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
-	var (
-		parsedURL *url.URL
-		err       error
-	)
-	if opts != nil && opts.UseV1_5Path {
-		parsedURL, err = url.Parse(host + "/rtc/v1")
-	} else {
-		parsedURL, err = url.Parse(host + "/rtc")
+	rtcServicePath := "/rtc"
+	if opts != nil && opts.RTCServicePath != "" {
+		rtcServicePath = opts.RTCServicePath
 	}
+	parsedURL, err := url.Parse(host + rtcServicePath)
 	if err != nil {
 		return nil, err
 	}

@@ -90,13 +90,13 @@ func NewRTCService(
 }
 
 func (s *RTCService) SetupRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/rtc", s.v1)
-	mux.HandleFunc("/rtc/validate", s.v1_validate)
-	mux.HandleFunc("/rtc/v1", s.v1_5)
-	mux.HandleFunc("/rtc/v1/validate", s.v1_5_validate)
+	mux.HandleFunc("/rtc", s.v0)
+	mux.HandleFunc("/rtc/validate", s.v0Validate)
+	mux.HandleFunc("/rtc/v1", s.v1)
+	mux.HandleFunc("/rtc/v1/validate", s.v1Validate)
 }
 
-func (s *RTCService) v1_validate(w http.ResponseWriter, r *http.Request) {
+func (s *RTCService) v0Validate(w http.ResponseWriter, r *http.Request) {
 	lgr := utils.GetLogger(r.Context())
 	_, _, code, err := s.validateInternal(lgr, r, false, true)
 	if err != nil {
@@ -106,7 +106,7 @@ func (s *RTCService) v1_validate(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("success"))
 }
 
-func (s *RTCService) v1_5_validate(w http.ResponseWriter, r *http.Request) {
+func (s *RTCService) v1Validate(w http.ResponseWriter, r *http.Request) {
 	lgr := utils.GetLogger(r.Context())
 	_, _, code, err := s.validateInternal(lgr, r, true, true)
 	if err != nil {
@@ -265,11 +265,11 @@ func (s *RTCService) validateInternal(
 	return res.roomName, pi, code, err
 }
 
-func (s *RTCService) v1(w http.ResponseWriter, r *http.Request) {
+func (s *RTCService) v0(w http.ResponseWriter, r *http.Request) {
 	s.serve(w, r, false)
 }
 
-func (s *RTCService) v1_5(w http.ResponseWriter, r *http.Request) {
+func (s *RTCService) v1(w http.ResponseWriter, r *http.Request) {
 	s.serve(w, r, true)
 }
 

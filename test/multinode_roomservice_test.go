@@ -61,12 +61,12 @@ func TestMultiNodeUpdateRoomMetadata(t *testing.T) {
 	})
 
 	t.Run("when room has a participant", func(t *testing.T) {
-		for _, useSinglePeerConnection := range []bool{false, true} {
-			t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+		for _, testRTCServicePath := range testRTCServicePaths {
+			t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
 				_, _, finish := setupMultiNodeTest("TestMultiNodeUpdateRoomMetadata_with_participant")
 				defer finish()
 
-				c1 := createRTCClient("c1", defaultServerPort, useSinglePeerConnection, nil)
+				c1 := createRTCClient("c1", defaultServerPort, testRTCServicePath, nil)
 				waitUntilConnected(t, c1)
 				defer c1.Stop()
 
@@ -93,12 +93,12 @@ func TestMultiNodeRemoveParticipant(t *testing.T) {
 		return
 	}
 
-	for _, useSinglePeerConnection := range []bool{false, true} {
-		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
 			_, _, finish := setupMultiNodeTest("TestMultiNodeRemoveParticipant")
 			defer finish()
 
-			c1 := createRTCClient("mn_remove_participant", defaultServerPort, useSinglePeerConnection, nil)
+			c1 := createRTCClient("mn_remove_participant", defaultServerPort, testRTCServicePath, nil)
 			defer c1.Stop()
 			waitUntilConnected(t, c1)
 
@@ -121,12 +121,12 @@ func TestMultiNodeRemoveParticipant(t *testing.T) {
 
 // update participant metadata
 func TestMultiNodeUpdateParticipantMetadata(t *testing.T) {
-	for _, useSinglePeerConnection := range []bool{false, true} {
-		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
 			_, _, finish := setupMultiNodeTest("TestMultiNodeUpdateParticipantMetadata")
 			defer finish()
 
-			c1 := createRTCClient("update_participant_metadata", defaultServerPort, useSinglePeerConnection, nil)
+			c1 := createRTCClient("update_participant_metadata", defaultServerPort, testRTCServicePath, nil)
 			defer c1.Stop()
 			waitUntilConnected(t, c1)
 
@@ -144,13 +144,13 @@ func TestMultiNodeUpdateParticipantMetadata(t *testing.T) {
 
 // admin mute published track
 func TestMultiNodeMutePublishedTrack(t *testing.T) {
-	for _, useSinglePeerConnection := range []bool{false, true} {
-		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
 			_, _, finish := setupMultiNodeTest("TestMultiNodeMutePublishedTrack")
 			defer finish()
 
 			identity := "mute_published_track"
-			c1 := createRTCClient(identity, defaultServerPort, useSinglePeerConnection, nil)
+			c1 := createRTCClient(identity, defaultServerPort, testRTCServicePath, nil)
 			defer c1.Stop()
 			waitUntilConnected(t, c1)
 
