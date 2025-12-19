@@ -17,6 +17,7 @@ package test
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"sync"
 	"testing"
@@ -223,6 +224,9 @@ func createRTCClientWithToken(token string, port int, useSinglePeerConnection bo
 	}
 	if useSinglePeerConnection {
 		opts.UseJoinRequestQueryParam = true
+		if rand.Intn(256) < 128 {
+			opts.UseV1_5Path = true
+		}
 	}
 	ws, err := testclient.NewWebSocketConn(fmt.Sprintf("ws://localhost:%d", port), token, opts)
 	if err != nil {

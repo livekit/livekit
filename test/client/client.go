@@ -135,17 +135,26 @@ type Options struct {
 	SignalRequestInterceptor  SignalRequestInterceptor
 	SignalResponseInterceptor SignalResponseInterceptor
 	UseJoinRequestQueryParam  bool
+	UseV1_5Path               bool
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
-	u, err := url.Parse(host + "/rtc")
+	var (
+		parsedURL *url.URL
+		err       error
+	)
+	if opts != nil && opts.UseV1_5Path {
+		parsedURL, err = url.Parse(host + "/rtc1")
+	} else {
+		parsedURL, err = url.Parse(host + "/rtc")
+	}
 	if err != nil {
 		return nil, err
 	}
 	requestHeader := make(http.Header)
 	SetAuthorizationToken(requestHeader, token)
 
-	connectUrl := u.String()
+	connectUrl := parsedURL.String()
 	if opts != nil && opts.UseJoinRequestQueryParam {
 		clientInfo := &livekit.ClientInfo{
 			Os:       runtime.GOOS,
@@ -205,6 +214,7 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 		connectUrl += encodeQueryParam("sdk", sdk)
 	}
 
+	logger.Infow("connecting to", "url", parsedURL.String())
 	conn, _, err := websocket.DefaultDialer.Dial(connectUrl, requestHeader)
 	return conn, err
 }
