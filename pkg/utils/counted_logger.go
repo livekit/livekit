@@ -159,7 +159,7 @@ func (p *periodicLogger) check() bool {
 // -----------------------------------
 
 // logs samples `(counter % Base^n) == 0` for `n = 0, 1, 2, ...`
-// for example with `Base = 5`, it will log samples at 1, 2, 3, 4, 5, 10, 15, 20, 25, 125, 250, 375, ...
+// for example with `Base = 5`, it will log samples at 1, 2, 3, 4, 5, 10, 15, 20, 25, 50, 75, 100, 125, 250, 375, ...
 type ExponentialLoggerParams struct {
 	Base int
 }
