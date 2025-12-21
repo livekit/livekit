@@ -164,9 +164,9 @@ type Buffer struct {
 	frameRateCalculator [DefaultMaxLayerSpatial + 1]FrameRateCalculator
 	frameRateCalculated bool
 
-	packetNotFoundCount   atomic.Uint32
-	packetTooOldCount     atomic.Uint32
-	extPacketTooMuchCount atomic.Uint32
+	packetNotFoundLogger   sutils.CountedLogger
+	packetTooOldLogger     sutils.CountedLogger
+	extPacketTooMuchLogger sutils.CountedLogger
 
 	primaryBufferForRTX *Buffer
 	rtxPktBuf           []byte
@@ -187,6 +187,30 @@ func NewBuffer(ssrc uint32, maxVideoPkts, maxAudioPkts int) *Buffer {
 		pliThrottle:  int64(500 * time.Millisecond),
 		logger:       l.WithComponent(sutils.ComponentPub).WithComponent(sutils.ComponentSFU),
 	}
+	b.packetNotFoundLogger = sutils.NewPeriodicLogger(
+		b.logger,
+		sutils.CountedLoggerLevelWarn,
+		sutils.PeriodicLoggerParams{
+			Initial: 10,
+			Then:    20,
+		},
+	)
+	b.packetTooOldLogger = sutils.NewPeriodicLogger(
+		b.logger,
+		sutils.CountedLoggerLevelWarn,
+		sutils.PeriodicLoggerParams{
+			Initial: 10,
+			Then:    100,
+		},
+	)
+	b.extPacketTooMuchLogger = sutils.NewPeriodicLogger(
+		b.logger,
+		sutils.CountedLoggerLevelWarn,
+		sutils.PeriodicLoggerParams{
+			Initial: 10,
+			Then:    100,
+		},
+	)
 	b.readCond = sync.NewCond(&b.RWMutex)
 	b.extPackets.SetBaseCap(128)
 	return b
@@ -200,6 +224,9 @@ func (b *Buffer) SetLogger(logger logger.Logger) {
 	if b.rtpStats != nil {
 		b.rtpStats.SetLogger(b.logger)
 	}
+	b.packetNotFoundLogger.SetLogger(b.logger)
+	b.packetTooOldLogger.SetLogger(b.logger)
+	b.extPacketTooMuchLogger.SetLogger(b.logger)
 }
 
 func (b *Buffer) SetPaused(paused bool) {
@@ -758,18 +785,14 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, i
 	if err != nil {
 		if !flowState.IsDuplicate {
 			if errors.Is(err, bucket.ErrPacketTooOld) {
-				packetTooOldCount := b.packetTooOldCount.Inc()
-				if (packetTooOldCount-1)%100 == 0 {
-					b.logger.Warnw(
-						"could not add packet to bucket", err,
-						"count", packetTooOldCount,
-						"flowState", &flowState,
-						"snAdjustment", snAdjustment,
-						"incomingSequenceNumber", flowState.ExtSequenceNumber+snAdjustment,
-						"rtpStats", b.rtpStats,
-						"snRangeMap", b.snRangeMap,
-					)
-				}
+				b.packetTooOldLogger.ErrorLog(
+					"could not add packet to bucket", err,
+					"flowState", &flowState,
+					"snAdjustment", snAdjustment,
+					"incomingSequenceNumber", flowState.ExtSequenceNumber+snAdjustment,
+					"rtpStats", b.rtpStats,
+					"snRangeMap", b.snRangeMap,
+				)
 			} else if err != bucket.ErrRTXPacket {
 				b.logger.Warnw(
 					"could not add packet to bucket", err,
@@ -791,9 +814,7 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, i
 	b.extPackets.PushBack(ep)
 
 	if b.extPackets.Len() > b.bucket.Capacity() {
-		if (b.extPacketTooMuchCount.Inc()-1)%100 == 0 {
-			b.logger.Warnw("too much ext packets", nil, "count", b.extPackets.Len())
-		}
+		b.extPacketTooMuchLogger.ErrorLog("too much ext packets", nil, "packetCount", b.extPackets.Len())
 	}
 
 	b.doFpsCalc(ep)
@@ -802,17 +823,13 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, i
 func (b *Buffer) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
 	n, err := b.getPacket(buf, ep.ExtSequenceNumber)
 	if err != nil {
-		packetNotFoundCount := b.packetNotFoundCount.Inc()
-		if (packetNotFoundCount-1)%20 == 0 {
-			b.logger.Warnw(
-				"could not get packet from bucket", err,
-				"sn", ep.Packet.SequenceNumber,
-				"headSN", b.bucket.HeadSequenceNumber(),
-				"count", packetNotFoundCount,
-				"rtpStats", b.rtpStats,
-				"snRangeMap", b.snRangeMap,
-			)
-		}
+		b.packetNotFoundLogger.ErrorLog(
+			"could not get packet from bucket", err,
+			"sn", ep.Packet.SequenceNumber,
+			"headSN", b.bucket.HeadSequenceNumber(),
+			"rtpStats", b.rtpStats,
+			"snRangeMap", b.snRangeMap,
+		)
 		return nil
 	}
 	ep.RawPacket = buf[:n]

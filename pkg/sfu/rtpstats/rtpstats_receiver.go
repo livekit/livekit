@@ -22,6 +22,7 @@ import (
 	"github.com/pion/rtcp"
 	"go.uber.org/zap/zapcore"
 
+	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/mediatransportutil/pkg/latency"
 	"github.com/livekit/mediatransportutil/pkg/utils"
@@ -142,10 +143,10 @@ type RTPStatsReceiver struct {
 	largeJumpNegativeCount      int
 	timeReversedCount           int
 
-	packetsDroppedPreStartTimestamp      int
-	packetsDroppedOldTimestamp           int
-	packetsDroppedPreStartSequenceNumber int
-	packetsDroppedOldSequenceNumber      int
+	packetsDroppedPreStartTimestamp            int
+	packetsDroppedOldTimestamp                 int
+	packetsDroppedPreStartSequenceNumberLogger sutils.CountedLogger
+	packetsDroppedOldSequenceNumber            int
 
 	restartPackets []packet
 }
@@ -158,7 +159,17 @@ func NewRTPStatsReceiver(params RTPStatsParams) *RTPStatsReceiver {
 		timestamp:                 utils.NewWrapAround[uint32, uint64](utils.WrapAroundParams{IsRestartAllowed: false}),
 		history:                   protoutils.NewBitmap[uint64](cHistorySize),
 		propagationDelayEstimator: latency.NewOWDEstimator(latency.OWDEstimatorParamsDefault),
+		packetsDroppedPreStartSequenceNumberLogger: sutils.NewExponentialLogger(
+			params.Logger,
+			sutils.CountedLoggerLevelWarn,
+			sutils.ExponentialLoggerParams{Base: 5},
+		),
 	}
+}
+
+func (r *RTPStatsReceiver) SetLogger(lgr logger.Logger) {
+	r.SetLogger(lgr)
+	r.packetsDroppedPreStartSequenceNumberLogger.SetLogger(lgr)
 }
 
 func (r *RTPStatsReceiver) NewSnapshotId() uint32 {
@@ -227,6 +238,27 @@ func (r *RTPStatsReceiver) Update(
 			"paddingSize", paddingSize,
 			"rtpStats", lockedRTPStatsReceiverLogEncoder{r},
 		)
+	}
+
+	loggerFields := func() []any {
+		return []any{
+			"resSN", resSN,
+			"gapSN", gapSN,
+			"resTS", resTS,
+			"gapTS", gapTS,
+			"snRolloverCount", snRolloverCount,
+			"expectedTSJump", expectedTSJump,
+			"tsRolloverCount", tsRolloverCount,
+			"packetTime", time.Unix(0, packetTime),
+			"timeSinceHighest", time.Duration(timeSinceHighest),
+			"sequenceNumber", sequenceNumber,
+			"timestamp", timestamp,
+			"marker", marker,
+			"hdrSize", hdrSize,
+			"payloadSize", payloadSize,
+			"paddingSize", paddingSize,
+			"rtpStats", lockedRTPStatsReceiverLogEncoder{r},
+		}
 	}
 
 	undoUpdates := func() {
@@ -355,8 +387,10 @@ func (r *RTPStatsReceiver) Update(
 		if resSN.IsUnhandled {
 			undoUpdates()
 
-			r.packetsDroppedPreStartSequenceNumber++
-			logger().Warnw("dropping packet, pre-start sequence number", nil)
+			r.packetsDroppedPreStartSequenceNumberLogger.ErrorLog(
+				"dropping packet, pre-start sequence number", nil,
+				loggerFields()...,
+			)
 
 			if r.maybeRestart(sequenceNumber, timestamp, payloadSize) {
 				logger().Infow("potential restart")
@@ -858,7 +892,7 @@ func (r lockedRTPStatsReceiverLogEncoder) MarshalLogObject(e zapcore.ObjectEncod
 
 	e.AddInt("packetsDroppedPreStartTimestamp", r.packetsDroppedPreStartTimestamp)
 	e.AddInt("packetsDroppedOldTimestamp", r.packetsDroppedOldTimestamp)
-	e.AddInt("packetsDroppedPreStartSequenceNumber", r.packetsDroppedPreStartSequenceNumber)
+	e.AddInt("packetsDroppedPreStartSequenceNumber", r.packetsDroppedPreStartSequenceNumberLogger.Counter())
 	e.AddInt("packetsDroppedOldSequenceNumber", r.packetsDroppedOldSequenceNumber)
 
 	e.AddArray("restartPackets", logger.ObjectSlice(r.restartPackets))

@@ -21,9 +21,9 @@ import (
 	"time"
 
 	"github.com/pion/rtp"
-	"go.uber.org/atomic"
 
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
+	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/mediatransportutil/pkg/utils"
 	"github.com/livekit/protocol/logger"
 )
@@ -66,7 +66,7 @@ type DependencyDescriptorParser struct {
 	activeDecodeTargetsMask   uint32
 	frameChecker              *FrameIntegrityChecker
 
-	ddNotFoundCount atomic.Uint32
+	ddNotFoundLogger sutils.CountedLogger
 
 	// restart detection
 	restartGeneration int
@@ -75,7 +75,7 @@ type DependencyDescriptorParser struct {
 }
 
 func NewDependencyDescriptorParser(ddExtID uint8, logger logger.Logger, onMaxLayerChanged func(int32, int32), enableRestart bool) *DependencyDescriptorParser {
-	return &DependencyDescriptorParser{
+	d := &DependencyDescriptorParser{
 		ddExtID:           ddExtID,
 		logger:            logger,
 		onMaxLayerChanged: onMaxLayerChanged,
@@ -84,6 +84,20 @@ func NewDependencyDescriptorParser(ddExtID uint8, logger logger.Logger, onMaxLay
 		frameChecker:      NewFrameIntegrityChecker(integrityCheckFrame, integrityCheckPkt),
 		enableRestart:     enableRestart,
 	}
+	d.ddNotFoundLogger = sutils.NewPeriodicLogger(
+		d.logger,
+		sutils.CountedLoggerLevelWarn,
+		sutils.PeriodicLoggerParams{
+			Initial: 10,
+			Then:    100,
+		},
+	)
+	return d
+}
+
+func (d *DependencyDescriptorParser) SetLogger(lgr logger.Logger) {
+	d.logger = lgr
+	d.ddNotFoundLogger.SetLogger(lgr)
 }
 
 type ExtDependencyDescriptor struct {
@@ -102,81 +116,78 @@ type ExtDependencyDescriptor struct {
 	RestartGeneration int
 }
 
-func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescriptor, VideoLayer, error) {
+func (d *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescriptor, VideoLayer, error) {
 	var videoLayer VideoLayer
-	ddBuf := pkt.GetExtension(r.ddExtID)
+	ddBuf := pkt.GetExtension(d.ddExtID)
 	if ddBuf == nil {
-		ddNotFoundCount := r.ddNotFoundCount.Inc()
-		if ddNotFoundCount%100 == 0 {
-			r.logger.Warnw("dependency descriptor extension is not present", nil, "seq", pkt.SequenceNumber, "count", ddNotFoundCount)
-		}
+		d.ddNotFoundLogger.ErrorLog("dependency descriptor extension is not present", nil, "seq", pkt.SequenceNumber)
 		return nil, videoLayer, ErrDDExtentionNotFound
 	}
 
 	var ddVal dd.DependencyDescriptor
 	ext := &dd.DependencyDescriptorExtension{
 		Descriptor: &ddVal,
-		Structure:  r.structure,
+		Structure:  d.structure,
 	}
 	_, err := ext.Unmarshal(ddBuf)
 	if err != nil {
 		if err != dd.ErrDDReaderNoStructure && err != dd.ErrDDReaderInvalidTemplateIndex {
-			r.logger.Infow("failed to parse generic dependency descriptor", err, "payload", pkt.PayloadType, "ddbufLen", len(ddBuf))
+			d.logger.Infow("failed to parse generic dependency descriptor", err, "payload", pkt.PayloadType, "ddbufLen", len(ddBuf))
 		}
 		return nil, videoLayer, err
 	}
 
 	var restart bool
-	if r.enableRestart {
-		if !r.lastPacketAt.IsZero() && time.Since(r.lastPacketAt) > ddRestartThreshold {
-			r.restart()
+	if d.enableRestart {
+		if !d.lastPacketAt.IsZero() && time.Since(d.lastPacketAt) > ddRestartThreshold {
+			d.restart()
 			restart = true
-			r.logger.Debugw(
+			d.logger.Debugw(
 				"dependency descriptor parser restart stream",
-				"generation", r.restartGeneration,
-				"lastPacketAt", r.lastPacketAt,
-				"sinceLast", time.Since(r.lastPacketAt),
-				"frameWrapAround", r.frameWrapAround,
+				"generation", d.restartGeneration,
+				"lastPacketAt", d.lastPacketAt,
+				"sinceLast", time.Since(d.lastPacketAt),
+				"frameWrapAround", d.frameWrapAround,
 			)
 		}
-		r.lastPacketAt = time.Now()
+		d.lastPacketAt = time.Now()
 	}
 
-	extSeq := r.seqWrapAround.Update(pkt.SequenceNumber).ExtendedVal
+	extSeq := d.seqWrapAround.Update(pkt.SequenceNumber).ExtendedVal
 
 	if ddVal.FrameDependencies != nil {
 		videoLayer.Spatial, videoLayer.Temporal = int32(ddVal.FrameDependencies.SpatialId), int32(ddVal.FrameDependencies.TemporalId)
 	}
 
 	// assume the packet is in-order when stream restarting
-	unwrapped := r.frameWrapAround.UpdateWithOrderKnown(ddVal.FrameNumber, restart)
+	unwrapped := d.frameWrapAround.UpdateWithOrderKnown(ddVal.FrameNumber, restart)
 	extFN := unwrapped.ExtendedVal
 
-	if extFN < r.structureExtFrameNum {
-		r.logger.Debugw(
+	if extFN < d.structureExtFrameNum {
+		d.logger.Debugw(
 			"drop frame which is earlier than current structure",
 			"fn", ddVal.FrameNumber,
 			"extFN", extFN,
-			"structureExtFrameNum", r.structureExtFrameNum,
+			"structureExtFrameNum", d.structureExtFrameNum,
 			"unwrappedFN", unwrapped,
-			"frameWrapAround", r.frameWrapAround,
+			"frameWrapAround", d.frameWrapAround,
 		)
 		return nil, videoLayer, ErrFrameEarlierThanKeyFrame
 	}
 
-	r.frameChecker.AddPacket(extSeq, extFN, &ddVal)
+	d.frameChecker.AddPacket(extSeq, extFN, &ddVal)
 
 	extDD := ExtDependencyDescriptorFactory.Get().(*ExtDependencyDescriptor)
 	*extDD = ExtDependencyDescriptor{
 		Descriptor:        &ddVal,
 		ExtFrameNum:       extFN,
-		Integrity:         r.frameChecker.FrameIntegrity(extFN),
-		RestartGeneration: r.restartGeneration,
+		Integrity:         d.frameChecker.FrameIntegrity(extFN),
+		RestartGeneration: d.restartGeneration,
 	}
 
 	if ddVal.AttachedStructure != nil {
 		if !ddVal.FirstPacketInFrame {
-			r.logger.Warnw(
+			d.logger.Warnw(
 				"attached structure is not the first packet in frame", nil,
 				"sn", pkt.SequenceNumber,
 				"extSeq", extSeq,
@@ -187,8 +198,8 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 			return nil, videoLayer, ErrDDStructureAttachedToNonFirstPacket
 		}
 
-		if r.structure == nil || ddVal.AttachedStructure.StructureId != r.structure.StructureId {
-			r.logger.Debugw(
+		if d.structure == nil || ddVal.AttachedStructure.StructureId != d.structure.StructureId {
+			d.logger.Debugw(
 				"structure updated",
 				"structureID", ddVal.AttachedStructure.StructureId,
 				"sn", pkt.SequenceNumber,
@@ -197,36 +208,36 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 				"extFN", extFN,
 				"descriptor", ddVal.String(),
 				"unwrappedFN", unwrapped,
-				"frameWrapAround", r.frameWrapAround,
+				"frameWrapAround", d.frameWrapAround,
 			)
 		}
-		r.structure = ddVal.AttachedStructure
-		r.decodeTargets = ProcessFrameDependencyStructure(ddVal.AttachedStructure)
+		d.structure = ddVal.AttachedStructure
+		d.decodeTargets = ProcessFrameDependencyStructure(ddVal.AttachedStructure)
 		if extFN > unwrapped.PreExtendedHighest && extFN-unwrapped.PreExtendedHighest > 1000 {
-			r.logger.Debugw(
+			d.logger.Debugw(
 				"large frame number jump on structure updating",
 				"fn", ddVal.FrameNumber,
 				"extFN", extFN,
 				"preExtendedHighest", unwrapped.PreExtendedHighest,
-				"structureExtFrameNum", r.structureExtFrameNum,
+				"structureExtFrameNum", d.structureExtFrameNum,
 				"unwrappedFN", unwrapped,
-				"frameWrapAround", r.frameWrapAround,
+				"frameWrapAround", d.frameWrapAround,
 			)
 		}
-		r.structureExtFrameNum = extFN
+		d.structureExtFrameNum = extFN
 		extDD.StructureUpdated = true
 		extDD.ActiveDecodeTargetsUpdated = true
 		// The dependency descriptor reader will always set ActiveDecodeTargetsBitmask for TemplateDependencyStructure is present,
 		// so don't need to notify max layer change here.
 	}
 
-	if mask := ddVal.ActiveDecodeTargetsBitmask; mask != nil && extSeq > r.activeDecodeTargetsExtSeq {
-		r.activeDecodeTargetsExtSeq = extSeq
-		if *mask != r.activeDecodeTargetsMask {
-			r.activeDecodeTargetsMask = *mask
+	if mask := ddVal.ActiveDecodeTargetsBitmask; mask != nil && extSeq > d.activeDecodeTargetsExtSeq {
+		d.activeDecodeTargetsExtSeq = extSeq
+		if *mask != d.activeDecodeTargetsMask {
+			d.activeDecodeTargetsMask = *mask
 			extDD.ActiveDecodeTargetsUpdated = true
 			var maxSpatial, maxTemporal int32
-			for _, dt := range r.decodeTargets {
+			for _, dt := range d.decodeTargets {
 				if *mask&(1<<dt.Target) != uint32(dd.DecodeTargetNotPresent) {
 					if maxSpatial < dt.Layer.Spatial {
 						maxSpatial = dt.Layer.Spatial
@@ -236,25 +247,25 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 					}
 				}
 			}
-			r.logger.Debugw("max layer changed", "maxSpatial", maxSpatial, "maxTemporal", maxTemporal)
-			r.onMaxLayerChanged(maxSpatial, maxTemporal)
+			d.logger.Debugw("max layer changed", "maxSpatial", maxSpatial, "maxTemporal", maxTemporal)
+			d.onMaxLayerChanged(maxSpatial, maxTemporal)
 		}
 	}
 
-	extDD.DecodeTargets = r.decodeTargets
-	extDD.ExtKeyFrameNum = r.structureExtFrameNum
+	extDD.DecodeTargets = d.decodeTargets
+	extDD.ExtKeyFrameNum = d.structureExtFrameNum
 
 	return extDD, videoLayer, nil
 }
 
-func (r *DependencyDescriptorParser) restart() {
-	r.frameChecker = NewFrameIntegrityChecker(integrityCheckFrame, integrityCheckPkt)
-	r.structure = nil
-	r.structureExtFrameNum = 0
-	r.activeDecodeTargetsExtSeq = 0
-	r.activeDecodeTargetsMask = 0
-	r.decodeTargets = r.decodeTargets[:0]
-	r.restartGeneration++
+func (d *DependencyDescriptorParser) restart() {
+	d.frameChecker = NewFrameIntegrityChecker(integrityCheckFrame, integrityCheckPkt)
+	d.structure = nil
+	d.structureExtFrameNum = 0
+	d.activeDecodeTargetsExtSeq = 0
+	d.activeDecodeTargetsMask = 0
+	d.decodeTargets = d.decodeTargets[:0]
+	d.restartGeneration++
 }
 
 // ------------------------------------------------------------------------------
