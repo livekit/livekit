@@ -862,7 +862,7 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 
 		case isDataTrack:
 			if !t.params.EnableDataTracks {
-				t.params.Logger.Infow("data tracks not enabled")
+				t.params.Logger.Debugw("data tracks not enabled")
 				isHandled = false
 			} else {
 				if t.dataTrackDC != nil {
@@ -1178,7 +1178,7 @@ func (t *PCTransport) getNumUnmatchedTransceivers() (uint32, uint32) {
 
 func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelInit) error {
 	if label == DataTrackDataChannel && !t.params.EnableDataTracks {
-		t.params.Logger.Infow("data tracks not enabled")
+		t.params.Logger.Debugw("data tracks not enabled")
 		return nil
 	}
 
@@ -1324,7 +1324,7 @@ func (t *PCTransport) CreateReadableDataChannel(label string, dci *webrtc.DataCh
 
 func (t *PCTransport) CreateDataChannelIfEmpty(dcLabel string, dci *webrtc.DataChannelInit) (label string, id uint16, existing bool, err error) {
 	if dcLabel == DataTrackDataChannel && !t.params.EnableDataTracks {
-		t.params.Logger.Infow("data tracks not enabled")
+		t.params.Logger.Debugw("data tracks not enabled")
 		err = errors.New("data tracks not enabled")
 		return
 	}
