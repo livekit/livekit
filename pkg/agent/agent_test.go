@@ -48,7 +48,7 @@ func TestAgent(t *testing.T) {
 			require.EqualValues(t, job.Id, a.Job.Id)
 			v, err := auth.ParseAPIToken(a.Token)
 			require.NoError(t, err)
-			claims, err := v.Verify(server.TestAPISecret)
+			_, claims, err := v.Verify(server.TestAPISecret)
 			require.NoError(t, err)
 			require.Equal(t, testAgentName, claims.Attributes[agent.AgentNameAttributeKey])
 		case <-time.After(time.Second):

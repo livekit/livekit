@@ -227,7 +227,7 @@ func TestMultiNodeRefreshToken(t *testing.T) {
 				verifier, err := auth.ParseAPIToken(c1.RefreshToken())
 				require.NoError(t, err)
 
-				grants, err := verifier.Verify(testApiSecret)
+				_, grants, err := verifier.Verify(testApiSecret)
 				require.NoError(t, err)
 
 				if grants.Metadata != "metadata" {
