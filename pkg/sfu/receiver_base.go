@@ -248,12 +248,14 @@ func NewReceiverBase(params ReceiverBaseParams, trackInfo *livekit.TrackInfo, co
 	return r
 }
 
-func (r *ReceiverBase) Close(reason string) {
+func (r *ReceiverBase) Close(reason string, clearBuffers bool) {
 	if r.isClosed.Swap(true) {
 		return
 	}
 
-	r.ClearAllBuffers(reason)
+	if clearBuffers {
+		r.ClearAllBuffers(reason)
+	}
 	r.streamTrackerManager.Close()
 
 	closeTrackSenders(r.downTrackSpreader.ResetAndGetDownTracks())
@@ -781,8 +783,8 @@ func (r *ReceiverBase) forwardRTP(layer int32, buff buffer.BufferProvider) {
 	numPacketsDropped := 0
 	defer func() {
 		if r.params.IsSelfClosing {
-			r.Close("forwarder-done")
-		} else {
+			r.Close("forwarder-done", false)
+
 			r.streamTrackerManager.RemoveTracker(layer)
 			if r.videoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM {
 				r.streamTrackerManager.RemoveAllTrackers()

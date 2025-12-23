@@ -42,8 +42,6 @@ func (dt *dummyDowntrack) WriteRTP(p *buffer.ExtPacket, _ int32) int32 {
 	return 1
 }
 
-func (dt *dummyDowntrack) TrackInfoAvailable() {}
-
 func TestRedReceiver(t *testing.T) {
 	dt := &dummyDowntrack{TrackSender: &DownTrack{}}
 
@@ -57,7 +55,7 @@ func TestRedReceiver(t *testing.T) {
 				isRED: true,
 			},
 		}
-		require.Equal(t, w.GetRedReceiver(), w)
+		require.Equal(t, w.GetRedReceiver(), w.ReceiverBase)
 		w.isRED = false
 		red := w.GetRedReceiver().(*RedReceiver)
 		require.NotNil(t, red)
@@ -178,7 +176,7 @@ func TestRedReceiver(t *testing.T) {
 				isRED: true,
 			},
 		}
-		require.Equal(t, w.GetRedReceiver(), w)
+		require.Equal(t, w.GetRedReceiver(), w.ReceiverBase)
 		w.isRED = false
 		red := w.GetRedReceiver().(*RedReceiver)
 		require.NotNil(t, red)
@@ -207,7 +205,7 @@ func TestRedReceiver(t *testing.T) {
 				isRED: true,
 			},
 		}
-		require.Equal(t, w.GetRedReceiver(), w)
+		require.Equal(t, w.GetRedReceiver(), w.ReceiverBase)
 		w.isRED = false
 		red := w.GetRedReceiver().(*RedReceiver)
 		require.NotNil(t, red)
