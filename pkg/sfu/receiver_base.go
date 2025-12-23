@@ -1018,7 +1018,7 @@ func (r *ReceiverBase) SetCodecState(state ReceiverCodecState) {
 func (r *ReceiverBase) SetCodecWithState(codec webrtc.RTPCodecParameters, headerExtensions []webrtc.RTPHeaderExtensionParameter, codecState ReceiverCodecState) {
 	r.checkCodecChanged(codec, headerExtensions)
 
-	r.codecStateLock.Unlock()
+	r.codecStateLock.Lock()
 	if codecState == r.codecState {
 		r.codecStateLock.Unlock()
 		return
