@@ -434,11 +434,9 @@ func (r *ReceiverBase) AddBuffer(buff buffer.BufferProvider, layer int32) {
 			cb()
 		}
 	})
-	/* RAJA-TODO
 	if r.Kind() == webrtc.RTPCodecTypeVideo && layer == 0 {
-		buff.OnCodecChange(w.handleCodecChange)
+		buff.OnCodecChange(r.handleCodecChange)
 	}
-	*/
 
 	var duration time.Duration
 	switch layer {
@@ -1059,12 +1057,11 @@ func (r *ReceiverBase) AddOnReady(fn func()) {
 	fn()
 }
 
-/* RAJA-TODO
-func (w *WebRTCReceiver) handleCodecChange(newCodec webrtc.RTPCodecParameters) {
-	// we don't support the codec fallback directly, set the codec state to invalid once it happens
+func (w *ReceiverBase) handleCodecChange(newCodec webrtc.RTPCodecParameters) {
+	// codec fallback is not supported mid-session, i.e. change of codec via payload type change,
+	// set the codec state to invalid once it happens
 	w.SetCodecState(ReceiverCodecStateInvalid)
 }
-*/
 
 // RAJA-TODO: relayreceiver has this in params, that should pass it on to base
 func (r *ReceiverBase) AddOnCodecStateChange(f func(webrtc.RTPCodecParameters, ReceiverCodecState)) {

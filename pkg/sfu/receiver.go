@@ -223,12 +223,10 @@ func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) erro
 			cb()
 		}
 	})
-	*/
 	if w.Kind() == webrtc.RTPCodecTypeVideo && layer == 0 {
 		buff.OnCodecChange(w.handleCodecChange)
 	}
 
-	/* RAJA-TODO
 	var duration time.Duration
 	switch layer {
 	case 2:
@@ -555,13 +553,12 @@ func (w *WebRTCReceiver) DebugInfo() map[string]any {
 	return info
 }
 
-// RAJA-TODO: move this to base
+/* RAJA-TODO
 func (w *WebRTCReceiver) handleCodecChange(newCodec webrtc.RTPCodecParameters) {
 	// we don't support the codec fallback directly, set the codec state to invalid once it happens
 	w.SetCodecState(ReceiverCodecStateInvalid)
 }
 
-/* RAJA-TODO
 func (w *WebRTCReceiver) SetCodecState(state ReceiverCodecState) {
 	w.codecStateLock.Lock()
 	if w.codecState == state || w.codecState == ReceiverCodecStateInvalid {

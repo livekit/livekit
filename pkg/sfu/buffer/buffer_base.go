@@ -104,6 +104,7 @@ type BufferProvider interface {
 	GetSenderReportData() *livekit.RTCPSenderReportState
 	OnRtcpSenderReport(fn func())
 	OnVideoSizeChanged(fn func([]VideoSize))
+	OnCodecChange(fn func(webrtc.RTPCodecParameters))
 	StartKeyFrameSeeder()
 	StopKeyFrameSeeder()
 	CloseWithReason(reason string) (*livekit.RTPStats, error)
@@ -249,10 +250,17 @@ func (b *BufferBase) SetLogger(lgr logger.Logger) {
 	}
 }
 
-func (b *BufferBase) BindLocked(params webrtc.RTPParameters, codec webrtc.RTPCodecCapability, bitrates int) error {
+func (b *BufferBase) Bind(rtpParameters webrtc.RTPParameters, codec webrtc.RTPCodecCapability, bitrate int) error {
+	b.Lock()
+	defer b.Unlock()
+
+	return b.BindLocked(rtpParameters, codec, bitrate)
+}
+
+func (b *BufferBase) BindLocked(rtpParameters webrtc.RTPParameters, codec webrtc.RTPCodecCapability, bitrate int) error {
 	b.logger.Debugw("binding track")
 	if codec.ClockRate == 0 {
-		b.logger.Warnw("invalid codec", nil, "params", params, "codec", codec, "bitrates", bitrates)
+		b.logger.Warnw("invalid codec", nil, "rtpParameters", rtpParameters, "codec", codec, "bitrate", bitrate)
 		return errInvalidCodec
 	}
 
@@ -260,8 +268,8 @@ func (b *BufferBase) BindLocked(params webrtc.RTPParameters, codec webrtc.RTPCod
 
 	b.clockRate = codec.ClockRate
 	b.mime = mime.NormalizeMimeType(codec.MimeType)
-	b.rtpParameters = params
-	for _, codecParameter := range params.Codecs {
+	b.rtpParameters = rtpParameters
+	for _, codecParameter := range rtpParameters.Codecs {
 		if mime.IsMimeTypeStringEqual(codecParameter.MimeType, codec.MimeType) {
 			b.payloadType = uint8(codecParameter.PayloadType)
 			break
@@ -269,23 +277,31 @@ func (b *BufferBase) BindLocked(params webrtc.RTPParameters, codec webrtc.RTPCod
 	}
 
 	if b.payloadType == 0 && !mime.IsMimeTypeStringEqual(codec.MimeType, webrtc.MimeTypePCMU) {
-		b.logger.Warnw("could not find payload type for codec", nil, "codec", codec.MimeType, "parameters", params)
-		b.payloadType = uint8(params.Codecs[0].PayloadType)
+		b.logger.Warnw(
+			"could not find payload type for codec", nil,
+			"codec", codec.MimeType,
+			"rtpParameters", rtpParameters,
+		)
+		b.payloadType = uint8(rtpParameters.Codecs[0].PayloadType)
 	}
 
 	// find RTX payload type
-	for _, codec := range params.Codecs {
+	for _, codec := range rtpParameters.Codecs {
 		if mime.IsMimeTypeStringRTX(codec.MimeType) && strings.Contains(codec.SDPFmtpLine, fmt.Sprintf("apt=%d", b.payloadType)) {
 			b.rtxPayloadType = uint8(codec.PayloadType)
 			break
 		}
 	}
 
-	for _, ext := range params.HeaderExtensions {
+	for _, ext := range rtpParameters.HeaderExtensions {
 		switch ext.URI {
 		case dd.ExtensionURI:
 			if b.ddExtID != 0 {
-				b.logger.Warnw("multiple dependency descriptor extensions found", nil, "id", ext.ID, "previous", b.ddExtID)
+				b.logger.Warnw(
+					"multiple dependency descriptor extensions found", nil,
+					"id", ext.ID,
+					"previous", b.ddExtID,
+				)
 				continue
 			}
 			b.ddExtID = uint8(ext.ID)
@@ -303,16 +319,26 @@ func (b *BufferBase) BindLocked(params webrtc.RTPParameters, codec webrtc.RTPCod
 	switch {
 	case mime.IsMimeTypeAudio(b.mime):
 		b.codecType = webrtc.RTPCodecTypeAudio
-		b.bucket = bucket.NewBucket[uint64, uint16](InitPacketBufferSizeAudio, bucket.RTPMaxPktSize, bucket.RTPSeqNumOffset)
+		b.bucket = bucket.NewBucket[uint64, uint16](
+			InitPacketBufferSizeAudio,
+			bucket.RTPMaxPktSize,
+			bucket.RTPSeqNumOffset,
+		)
 
 	case mime.IsMimeTypeVideo(b.mime):
 		b.codecType = webrtc.RTPCodecTypeVideo
-		b.bucket = bucket.NewBucket[uint64, uint16](InitPacketBufferSizeVideo, bucket.RTPMaxPktSize, bucket.RTPSeqNumOffset)
+		b.bucket = bucket.NewBucket[uint64, uint16](
+			InitPacketBufferSizeVideo,
+			bucket.RTPMaxPktSize,
+			bucket.RTPSeqNumOffset,
+		)
+
 		if b.frameRateCalculator[0] == nil {
 			b.createFrameRateCalculator()
 		}
-		if bitrates > 0 {
-			pps := bitrates / 8 / 1200
+
+		if bitrate > 0 {
+			pps := bitrate / 8 / 1200
 			for pps > b.bucket.Capacity() {
 				if b.bucket.Grow() >= b.params.MaxVideoPkts {
 					break
@@ -329,6 +355,7 @@ func (b *BufferBase) BindLocked(params webrtc.RTPParameters, codec webrtc.RTPCod
 		case webrtc.TypeRTCPFBGoogREMB:
 			b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBGoogREMB)
 			b.logger.Debugw("REMB not supported, RTCP feedback will not be generated")
+
 		case webrtc.TypeRTCPFBNACK:
 			// pion uses a single mediaengine to manage negotiated codecs of peerconnection, that means we can't have different
 			// codec settings at track level for same codec type, so enable nack for all audio receivers but don't create nack queue
@@ -336,6 +363,7 @@ func (b *BufferBase) BindLocked(params webrtc.RTPParameters, codec webrtc.RTPCod
 			if b.mime == mime.MimeTypeRED {
 				break
 			}
+
 			b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
 			b.nacker = nack.NewNACKQueue(nack.NackQueueParamsDefault)
 		}
@@ -824,7 +852,11 @@ func (b *BufferBase) handleCodecChange(newPT uint8) {
 		}
 	}
 	if !codecFound {
-		b.logger.Errorw("could not find codec for new payload type", nil, "pt", newPT, "rtpParameters", b.rtpParameters)
+		b.logger.Errorw(
+			"could not find codec for new payload type", nil,
+			"pt", newPT,
+			"rtpParameters", b.rtpParameters,
+		)
 		return
 	}
 	b.logger.Infow(
@@ -1380,6 +1412,13 @@ func (b *BufferBase) seedKeyFrame(keyFrameSeederGeneration int32) {
 			b.SendPLI(false)
 		}
 	}
+}
+
+func (b *BufferBase) GetNACKPairs() []rtcp.NackPair {
+	b.RLock()
+	defer b.RUnlock()
+
+	return b.GetNACKPairsLocked()
 }
 
 func (b *BufferBase) GetNACKPairsLocked() []rtcp.NackPair {
