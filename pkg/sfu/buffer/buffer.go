@@ -93,6 +93,7 @@ func NewBuffer(ssrc uint32, maxVideoPkts, maxAudioPkts int) *Buffer {
 		[]string{sutils.ComponentPub, sutils.ComponentSFU},
 		b.sendPLI,
 		true,
+		false,
 	)
 	return b
 }
@@ -320,7 +321,6 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 	}
 
 	b.calc(pkt, &rtpPacket, now, false)
-	b.BufferBase.NotifyRead()
 	b.Unlock()
 	return
 }
@@ -378,7 +378,6 @@ func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime int64) {
 	}
 
 	b.calc(b.rtxPktBuf[:n], &repairedPkt, arrivalTime, false)
-	b.BufferBase.NotifyRead()
 }
 
 func (b *Buffer) Read(buff []byte) (n int, err error) {
@@ -492,210 +491,7 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, i
 	b.doNACKs()
 
 	b.doReports(arrivalTime)
-
-	/* RAJA-REMOVE
-	if rtpPacket == nil {
-		rtpPacket = &rtp.Packet{}
-		if err := rtpPacket.Unmarshal(rawPkt); err != nil {
-			b.logger.Errorw("could not unmarshal RTP packet", err)
-			return
-		}
-	}
-
-	b.BufferBase.ProcessAudioSsrcLevelHeaderExtensionLocked(rtpPacket, arrivalTime)
-
-	isRestart := false
-	flowState := b.updateStreamState(rtpPacket, arrivalTime)
-	switch flowState.UnhandledReason {
-	case rtpstats.RTPFlowUnhandledReasonNone:
-	case rtpstats.RTPFlowUnhandledReasonRestart:
-		if !b.enableStreamRestartDetection {
-			return
-		}
-
-		b.BufferBase.StopKeyFrameSeeder()
-
-		b.rtpStats.Stop()
-		b.logger.Infow("stream restart - rtp stats", b.rtpStats)
-
-		b.snRangeMap = utils.NewRangeMap[uint64, uint64](100)
-		b.setupRTPStats(b.clockRate)
-		b.bucket.ResyncOnNextPacket()
-		if b.nacker != nil {
-			b.nacker = nack.NewNACKQueue(nack.NackQueueParamsDefault)
-		}
-		b.flushExtPacketsLocked()
-
-		flowState = b.updateStreamState(rtpPacket, arrivalTime)
-		isRestart = true
-	default:
-		return
-	}
-
-	if len(rtpPacket.Payload) == 0 && (!flowState.IsOutOfOrder || flowState.IsDuplicate) {
-		// drop padding only in-order or duplicate packet
-		if !flowState.IsOutOfOrder {
-			// in-order packet - increment sequence number offset for subsequent packets
-			// Example:
-			//   40 - regular packet - pass through as sequence number 40
-			//   41 - missing packet - don't know what it is, could be padding or not
-			//   42 - padding only packet - in-order - drop - increment sequence number offset to 1 -
-			//        range[0, 42] = 0 offset
-			//   41 - arrives out of order - get offset 0 from cache - passed through as sequence number 41
-			//   43 - regular packet - offset = 1 (running offset) - passes through as sequence number 42
-			//   44 - padding only - in order - drop - increment sequence number offset to 2
-			//        range[0, 42] = 0 offset, range[43, 44] = 1 offset
-			//   43 - regular packet - out of order + duplicate - offset = 1 from cache -
-			//        adjusted sequence number is 42, will be dropped by RTX buffer AddPacket method as duplicate
-			//   45 - regular packet - offset = 2 (running offset) - passed through with adjusted sequence number as 43
-			//   44 - padding only - out-of-order + duplicate - dropped as duplicate
-			//
-			if err := b.snRangeMap.ExcludeRange(flowState.ExtSequenceNumber, flowState.ExtSequenceNumber+1); err != nil {
-				b.logger.Errorw(
-					"could not exclude range", err,
-					"sn", rtpPacket.SequenceNumber,
-					"esn", flowState.ExtSequenceNumber,
-					"rtpStats", b.rtpStats,
-					"snRangeMap", b.snRangeMap,
-				)
-			}
-		}
-		return
-	}
-
-	if !flowState.IsOutOfOrder && rtpPacket.PayloadType != b.payloadType && b.codecType == webrtc.RTPCodecTypeVideo {
-		b.handleCodecChange(rtpPacket.PayloadType)
-	}
-
-	// add to RTX buffer using sequence number after accounting for dropped padding only packets
-	snAdjustment, err := b.snRangeMap.GetValue(flowState.ExtSequenceNumber)
-	if err != nil {
-		b.logger.Errorw(
-			"could not get sequence number adjustment", err,
-			"sn", rtpPacket.SequenceNumber,
-			"esn", flowState.ExtSequenceNumber,
-			"payloadSize", len(rtpPacket.Payload),
-			"rtpStats", b.rtpStats,
-			"snRangeMap", b.snRangeMap,
-		)
-		return
-	}
-	flowState.ExtSequenceNumber -= snAdjustment
-	rtpPacket.Header.SequenceNumber = uint16(flowState.ExtSequenceNumber)
-	_, err = b.bucket.AddPacketWithSequenceNumber(rawPkt, flowState.ExtSequenceNumber)
-	if err != nil {
-		if !flowState.IsDuplicate {
-			if errors.Is(err, bucket.ErrPacketTooOld) {
-				packetTooOldCount := b.packetTooOldCount.Inc()
-				if (packetTooOldCount-1)%100 == 0 {
-					b.logger.Warnw(
-						"could not add packet to bucket", err,
-						"count", packetTooOldCount,
-						"flowState", &flowState,
-						"snAdjustment", snAdjustment,
-						"incomingSequenceNumber", flowState.ExtSequenceNumber+snAdjustment,
-						"rtpStats", b.rtpStats,
-						"snRangeMap", b.snRangeMap,
-					)
-				}
-			} else if err != bucket.ErrRTXPacket {
-				b.logger.Warnw(
-					"could not add packet to bucket", err,
-					"flowState", &flowState,
-					"snAdjustment", snAdjustment,
-					"incomingSequenceNumber", flowState.ExtSequenceNumber+snAdjustment,
-					"rtpStats", b.rtpStats,
-					"snRangeMap", b.snRangeMap,
-				)
-			}
-		}
-		return
-	}
-
-	ep := b.getExtPacket(rtpPacket, arrivalTime, isBuffered, isRestart, flowState)
-	if ep == nil {
-		return
-	}
-	b.extPackets.PushBack(ep)
-
-	if b.extPackets.Len() > b.bucket.Capacity() {
-		if (b.extPacketTooMuchCount.Inc()-1)%100 == 0 {
-			b.logger.Warnw("too much ext packets", nil, "count", b.extPackets.Len())
-		}
-	}
-
-	b.doFpsCalc(ep)
-	*/
 }
-
-/* RAJA-TODO
-func (b *Buffer) handleCodecChange(newPT uint8) {
-	var (
-		codecFound, rtxFound bool
-		rtxPt                uint8
-		newCodec             webrtc.RTPCodecParameters
-	)
-	for _, codec := range b.rtpParameters.Codecs {
-		if !codecFound && uint8(codec.PayloadType) == newPT {
-			newCodec = codec
-			codecFound = true
-		}
-
-		if mime.IsMimeTypeStringRTX(codec.MimeType) && strings.Contains(codec.SDPFmtpLine, fmt.Sprintf("apt=%d", newPT)) {
-			rtxFound = true
-			rtxPt = uint8(codec.PayloadType)
-		}
-
-		if codecFound && rtxFound {
-			break
-		}
-	}
-	if !codecFound {
-		b.logger.Errorw("could not find codec for new payload type", nil, "pt", newPT, "rtpParameters", b.rtpParameters)
-		return
-	}
-	b.logger.Infow(
-		"codec changed",
-		"oldPayload", b.payloadType, "newPayload", newPT,
-		"oldRtxPayload", b.rtxPayloadType, "newRtxPayload", rtxPt,
-		"oldMime", b.mime, "newMime", newCodec.MimeType,
-	)
-	b.payloadType = newPT
-	b.rtxPayloadType = rtxPt
-	b.mime = mime.NormalizeMimeType(newCodec.MimeType)
-	b.frameRateCalculated = false
-
-	if b.ddExtID != 0 {
-		b.createDDParserAndFrameRateCalculator()
-	}
-
-	if b.frameRateCalculator[0] == nil {
-		b.createFrameRateCalculator()
-	}
-
-	b.bucket.ResyncOnNextPacket()
-
-	if f := b.onCodecChange; f != nil {
-		go f(newCodec)
-	}
-
-	b.BufferBase.StartKeyFrameSeeder()
-}
-
-func (b *Buffer) updateStreamState(p *rtp.Packet, arrivalTime int64) rtpstats.RTPFlowState {
-	flowState := b.BufferBase.updateStreamState(p, arrivalTime)
-
-	if b.nacker != nil {
-		b.nacker.Remove(p.SequenceNumber)
-
-		for lost := flowState.LossStartInclusive; lost != flowState.LossEndExclusive; lost++ {
-			b.nacker.Push(uint16(lost))
-		}
-	}
-
-	return flowState
-}
-*/
 
 func (b *Buffer) doNACKs() {
 	if r := b.buildNACKPacket(); r != nil {

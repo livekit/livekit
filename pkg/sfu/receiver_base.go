@@ -182,11 +182,11 @@ type ReceiverBase struct {
 	isRED bool
 	// RAJA-TODO onCloseHandler     func()
 	// RAJA-TODO closeOnce          sync.Once
-	trackInfo      atomic.Pointer[livekit.TrackInfo]
 	videoLayerMode livekit.VideoLayer_Mode
 
-	bufferMu sync.RWMutex
-	buffers  [buffer.DefaultMaxLayerSpatial + 1]buffer.BufferProvider
+	bufferMu  sync.RWMutex
+	buffers   [buffer.DefaultMaxLayerSpatial + 1]buffer.BufferProvider
+	trackInfo *livekit.TrackInfo
 
 	videoSizeMu        sync.RWMutex
 	videoSizes         [buffer.DefaultMaxLayerSpatial + 1]buffer.VideoSize
@@ -226,10 +226,9 @@ func NewReceiverBase(
 		codecState:                   ReceiverCodecStateNormal,
 		streamTrackerManagerListener: streamTrackerManagerListener,
 		isRED:                        mime.IsMimeTypeStringRED(codec.MimeType),
+		trackInfo:                    utils.CloneProto(trackInfo),
 		videoLayerMode:               buffer.GetVideoLayerModeForMimeType(mime.NormalizeMimeType(codec.MimeType), trackInfo),
 	}
-
-	r.trackInfo.Store(utils.CloneProto(trackInfo))
 
 	r.downTrackSpreader = sfuutils.NewDownTrackSpreader[TrackSender](sfuutils.DownTrackSpreaderParams{
 		Threshold: r.lbThreshold,
@@ -269,12 +268,62 @@ func (r *ReceiverBase) SetForwardStats(forwardStats *ForwardStats) {
 }
 
 func (r *ReceiverBase) TrackInfo() *livekit.TrackInfo {
-	return r.trackInfo.Load()
+	r.bufferMu.RLock()
+	defer r.bufferMu.RUnlock()
+
+	return utils.CloneProto(r.trackInfo)
 }
 
+/* RAJA-TODO - replaced below
 func (r *ReceiverBase) UpdateTrackInfo(ti *livekit.TrackInfo) {
 	r.trackInfo.Store(utils.CloneProto(ti))
 	r.streamTrackerManager.UpdateTrackInfo(ti)
+}
+*/
+
+func (r *ReceiverBase) UpdateTrackInfo(ti *livekit.TrackInfo) {
+	r.bufferMu.Lock()
+	existingVersion := utils.TimedVersionFromProto(r.trackInfo.Version)
+	updateVersion := utils.TimedVersionFromProto(ti.Version)
+	if updateVersion.Compare(existingVersion) < 0 {
+		r.bufferMu.Unlock()
+		r.logger.Debugw(
+			"not updating to older version",
+			"existing", logger.Proto(r.trackInfo),
+			"updated", logger.Proto(ti),
+		)
+		return
+	}
+
+	shouldResync := utils.TimedVersionFromProto(r.trackInfo.Version) != utils.TimedVersionFromProto(ti.Version)
+	if shouldResync {
+		r.logger.Debugw(
+			"updating track info",
+			"existing", logger.Proto(r.trackInfo),
+			"updated", logger.Proto(ti),
+			"shouldResync", shouldResync,
+		)
+	}
+	r.trackInfo = utils.CloneProto(ti)
+	// MUTABLE-TRACKINFO-TODO: notify buffers, buffers may need to resize retransmission buffer if there is layer change
+
+	if shouldResync {
+		r.resyncLocked("update-track-info")
+	}
+	r.bufferMu.Unlock()
+}
+
+func (r *ReceiverBase) resyncLocked(reason string) {
+	// resync to avoid gaps in the forwarded sequence number
+	r.logger.Debugw("resync receiver", "reason", reason)
+	r.clearAllBuffersLocked("resync")
+
+	r.downTrackSpreader.Broadcast(func(dt sfu.TrackSender) {
+		dt.Resync()
+	})
+	if rt := r.redTransformer.Load(); rt != nil {
+		rt.(sfu.REDTransformer).ResyncDownTracks()
+	}
 }
 
 func (r *ReceiverBase) OnMaxLayerChange(fn func(mimeType mime.MimeType, maxLayer int32)) {
@@ -558,7 +607,6 @@ func (r *ReceiverBase) GetDownTracks() []TrackSender {
 	//return r.downTrackSpreader.GetDownTracks()
 }
 
-/* RAJA-TODO
 func (r *ReceiverBase) HasDownTracks() bool {
 	if r.downTrackSpreader.DownTrackCount() != 0 {
 		return true
@@ -571,10 +619,32 @@ func (r *ReceiverBase) HasDownTracks() bool {
 
 	return false
 }
+
+/* RAJA-TODO - replaced by below?
+func (r *ReceiverBase) SetMaxExpectedSpatialLayer(layer int32) {
+	r.streamTrackerManager.SetMaxExpectedSpatialLayer(layer)
+}
 */
 
 func (r *ReceiverBase) SetMaxExpectedSpatialLayer(layer int32) {
-	r.streamTrackerManager.SetMaxExpectedSpatialLayer(layer)
+	prevMax := r.streamTrackerManager.SetMaxExpectedSpatialLayer(layer)
+	r.logger.Debugw("max expected layer change", "layer", layer, "prevMax", prevMax)
+
+	r.bufferMu.RLock()
+	// stop key frame seeders of stopped layers
+	for idx := layer + 1; idx <= prevMax; idx++ {
+		if r.buffers[idx] != nil {
+			r.buffers[idx].StopKeyFrameSeeder()
+		}
+	}
+
+	// start key frame seeders of newly expected layers
+	for idx := prevMax + 1; idx <= layer; idx++ {
+		if r.buffers[idx] != nil {
+			r.buffers[idx].StartKeyFrameSeeder()
+		}
+	}
+	r.bufferMu.RUnlock()
 }
 
 // StreamTrackerManagerListener.OnAvailableLayersChanged
@@ -699,13 +769,18 @@ func (r *ReceiverBase) GetAllBuffers() [buffer.DefaultMaxLayerSpatial + 1]buffer
 
 func (r *ReceiverBase) ClearAllBuffers(reason string) {
 	r.bufferMu.Lock()
+	defer r.bufferMu.Unlock()
+
+	r.clearAllBuffersLocked(reason)
+}
+
+func (r *ReceiverBase) clearAllBuffersLocked(reason string) {
 	for idx := 0; idx < len(r.buffers); idx++ {
 		if r.buffers[idx] != nil {
 			r.buffers[idx].CloseWithReason(reason)
 		}
 		r.buffers[idx] = nil
 	}
-	r.bufferMu.Unlock()
 
 	r.streamTrackerManager.RemoveAllTrackers()
 }
@@ -760,6 +835,8 @@ func (r *ReceiverBase) GetAudioLevel() (float64, bool) {
 }
 
 func (r *ReceiverBase) forwardRTP(layer int32, buff buffer.BufferProvider) {
+	// RAJA-TODO: relay Buffer does rb.ReadLoopDone()
+
 	numPacketsForwarded := 0
 	numPacketsDropped := 0
 	defer func() {
