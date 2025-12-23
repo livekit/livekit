@@ -311,6 +311,11 @@ func (b *Buffer) getOnClose() func() {
 
 func (b *Buffer) sendPLI() {
 	ssrc := b.BufferBase.SSRC()
+	if ssrc == 0 {
+		return
+	}
+
+	b.logger.Debugw("send pli", "mediaSSRC", ssrc)
 	pli := []rtcp.Packet{
 		&rtcp.PictureLossIndication{
 			SenderSSRC: ssrc,
