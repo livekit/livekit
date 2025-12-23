@@ -16,7 +16,10 @@ package sfu
 
 import (
 	"errors"
+	"fmt"
 	"io"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -1090,6 +1093,66 @@ func (r *ReceiverBase) SetCodecState(state ReceiverCodecState) {
 
 	for _, f := range fns {
 		f(r.params.Codec, state)
+	}
+}
+
+func (r *ReceiverBase) SetCodecWithState(codec webrtc.RTPCodecParameters, headerExtensions []webrtc.RTPHeaderExtensionParameter, codecState ReceiverCodecState) {
+	r.checkCodecChanged(codec, headerExtensions)
+
+	r.codecStateLock.Unlock()
+	if codecState == r.codecState {
+		r.codecStateLock.Unlock()
+		return
+	}
+
+	var fireChange bool
+	var reason string
+	onCodecStateChange := r.onCodecStateChange
+	r.params.Logger.Infow("codec state changed", "from", r.codecState, "to", codecState)
+	switch codecState {
+	case ReceiverCodecStateNormal:
+		// TODO: support codec recovery
+		r.codecStateLock.Unlock()
+		return
+
+	case ReceiverCodecStateSuspended:
+		reason = "codec suspended"
+		fallthrough
+
+	case ReceiverCodecStateInvalid:
+		r.codecState = codecState
+		fireChange = true
+		reason = "codec invalid"
+	}
+	r.codecStateLock.Unlock()
+
+	if fireChange {
+		r.ClearAllBuffers(reason)
+
+		for _, fn := range onCodecStateChange {
+			fn(r.params.Codec, codecState)
+		}
+	}
+}
+
+func (r *ReceiverBase) checkCodecChanged(codec webrtc.RTPCodecParameters, headerExtensions []webrtc.RTPHeaderExtensionParameter) {
+	existingFmtp := strings.Split(r.params.Codec.SDPFmtpLine, ";")
+	slices.Sort(existingFmtp)
+	checkFmtp := strings.Split(codec.SDPFmtpLine, ";")
+	slices.Sort(checkFmtp)
+	if !mime.IsMimeTypeStringEqual(r.params.Codec.MimeType, codec.MimeType) || !slices.Equal(existingFmtp, checkFmtp) ||
+		r.params.Codec.ClockRate != codec.ClockRate {
+		err := fmt.Errorf("mime: %s -> %s, fmtp: %s -> %s, clockRate: %d -> %d",
+			r.params.Codec.MimeType, codec.MimeType,
+			r.params.Codec.SDPFmtpLine, codec.SDPFmtpLine,
+			r.params.Codec.ClockRate, codec.ClockRate,
+		)
+		r.params.Logger.Errorw("unexpected change in codec", err)
+	}
+
+	if len(r.params.HeaderExtensions) != len(headerExtensions) {
+		err := fmt.Errorf("extensions: %d -> %d", len(r.params.HeaderExtensions), len(headerExtensions))
+		r.params.Logger.Errorw("unexpected change in extensions length", err)
 	}
 }
 
