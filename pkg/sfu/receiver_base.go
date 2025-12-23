@@ -182,6 +182,8 @@ type ReceiverBaseParams struct {
 	Logger                       logger.Logger
 	StreamTrackerManagerConfig   StreamTrackerManagerConfig
 	StreamTrackerManagerListener StreamTrackerManagerListener
+	IsSelfClosing                bool
+	OnClosed                     func()
 }
 
 type ReceiverBase struct {
@@ -197,9 +199,7 @@ type ReceiverBase struct {
 	codecStateLock     sync.Mutex
 	onCodecStateChange []func(webrtc.RTPCodecParameters, ReceiverCodecState)
 
-	isRED bool
-	// RAJA-TODO onCloseHandler     func()
-	// RAJA-TODO closeOnce          sync.Once
+	isRED          bool
 	videoLayerMode livekit.VideoLayer_Mode
 
 	bufferMu  sync.RWMutex
@@ -249,6 +249,25 @@ func NewReceiverBase(params ReceiverBaseParams, trackInfo *livekit.TrackInfo) *R
 	return r
 }
 
+func (r *ReceiverBase) Close() {
+	if r.isClosed.Swap(true) {
+		return
+	}
+
+	r.streamTrackerManager.RemoveAllTrackers()
+	r.streamTrackerManager.Close()
+
+	closeTrackSenders(r.downTrackSpreader.ResetAndGetDownTracks())
+
+	if rt := r.redTransformer.Load(); rt != nil {
+		rt.(REDTransformer).Close()
+	}
+
+	if r.params.OnClosed != nil {
+		r.params.OnClosed()
+	}
+}
+
 func (r *ReceiverBase) SetPLIThrottleConfig(pliThrottleConfig PLIThrottleConfig) {
 	r.pliThrottleConfig = pliThrottleConfig
 }
@@ -279,13 +298,6 @@ func (r *ReceiverBase) TrackInfo() *livekit.TrackInfo {
 
 	return utils.CloneProto(r.trackInfo)
 }
-
-/* RAJA-TODO - replaced below
-func (r *ReceiverBase) UpdateTrackInfo(ti *livekit.TrackInfo) {
-	r.trackInfo.Store(utils.CloneProto(ti))
-	r.streamTrackerManager.UpdateTrackInfo(ti)
-}
-*/
 
 func (r *ReceiverBase) UpdateTrackInfo(ti *livekit.TrackInfo) {
 	r.bufferMu.Lock()
@@ -468,94 +480,6 @@ func (r *ReceiverBase) StartBuffer(buff buffer.BufferProvider, layer int32) {
 	go r.forwardRTP(layer, buff)
 }
 
-/* RAJA-TODO
-func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) error {
-	if w.closed.Load() {
-		return ErrReceiverClosed
-	}
-
-	layer := int32(0)
-	if w.Kind() == webrtc.RTPCodecTypeVideo && w.videoLayerMode != livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM {
-		layer = buffer.GetSpatialLayerForRid(w.Mime(), track.RID(), w.trackInfo.Load())
-	}
-	if layer < 0 {
-		w.logger.Warnw(
-			"invalid layer", nil,
-			"rid", track.RID(),
-			"trackInfo", logger.Proto(w.trackInfo.Load()),
-		)
-		return ErrInvalidLayer
-	}
-	buff.SetLogger(w.logger.WithValues("layer", layer))
-	buff.SetAudioLevelParams(audio.AudioLevelParams{
-		Config: w.audioConfig.AudioLevelConfig,
-	})
-	buff.SetAudioLossProxying(w.audioConfig.EnableLossProxying)
-	buff.SetStreamRestartDetection(w.enableRTPStreamRestartDetection)
-	buff.OnRtcpFeedback(w.sendRTCP)
-	buff.OnRtcpSenderReport(func() {
-		srData := buff.GetSenderReportData()
-		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
-			_ = dt.HandleRTCPSenderReportData(w.codec.PayloadType, layer, srData)
-		})
-
-		if rt := w.redTransformer.Load(); rt != nil {
-			rt.(REDTransformer).ForwardRTCPSenderReport(w.codec.PayloadType, layer, srData)
-		}
-	})
-	buff.OnVideoSizeChanged(func(videoSize []buffer.VideoSize) {
-		w.videoSizeMu.Lock()
-		if w.videoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM {
-			copy(w.videoSizes[:], videoSize)
-		} else {
-			w.videoSizes[layer] = videoSize[0]
-		}
-		w.logger.Debugw("video size changed", "size", w.videoSizes)
-		cb := w.onVideoSizeChanged
-		w.videoSizeMu.Unlock()
-
-		if cb != nil {
-			cb()
-		}
-	})
-	if w.Kind() == webrtc.RTPCodecTypeVideo && layer == 0 {
-		buff.OnCodecChange(w.handleCodecChange)
-	}
-
-	var duration time.Duration
-	switch layer {
-	case 2:
-		duration = w.pliThrottleConfig.HighQuality
-	case 1:
-		duration = w.pliThrottleConfig.MidQuality
-	case 0:
-		duration = w.pliThrottleConfig.LowQuality
-	default:
-		duration = w.pliThrottleConfig.MidQuality
-	}
-	if duration != 0 {
-		buff.SetPLIThrottle(duration.Nanoseconds())
-	}
-
-	w.bufferMu.Lock()
-	if w.upTracks[layer] != nil {
-		w.bufferMu.Unlock()
-		return ErrDuplicateLayer
-	}
-	w.upTracks[layer] = track
-	w.buffers[layer] = buff
-	rtt := w.rtt
-	w.bufferMu.Unlock()
-
-	buff.SetRTT(rtt)
-	buff.SetPaused(w.streamTrackerManager.IsPaused())
-
-	go w.forwardRTP(layer, buff)
-	w.logger.Debugw("starting forwarder", "layer", layer)
-	return nil
-}
-*/
-
 // SetUpTrackPaused indicates upstream will not be sending any data.
 // this will reflect the "muted" status and will pause streamtracker to ensure we don't turn off
 // the layer
@@ -574,7 +498,7 @@ func (r *ReceiverBase) SetUpTrackPaused(paused bool) {
 }
 
 func (r *ReceiverBase) AddDownTrack(track TrackSender) error {
-	if r.isClosed.Load() {
+	if r.IsClosed() {
 		return ErrReceiverClosed
 	}
 
@@ -591,10 +515,6 @@ func (r *ReceiverBase) AddDownTrack(track TrackSender) error {
 }
 
 func (r *ReceiverBase) DeleteDownTrack(subscriberID livekit.ParticipantID) {
-	if r.isClosed.Load() {
-		return
-	}
-
 	r.downTrackSpreader.Free(subscriberID)
 	r.params.Logger.Debugw("downtrack deleted", "subscriberID", subscriberID)
 }
@@ -618,12 +538,6 @@ func (r *ReceiverBase) HasDownTracks() bool {
 
 	return false
 }
-
-/* RAJA-TODO - replaced by below?
-func (r *ReceiverBase) SetMaxExpectedSpatialLayer(layer int32) {
-	r.streamTrackerManager.SetMaxExpectedSpatialLayer(layer)
-}
-*/
 
 func (r *ReceiverBase) SetMaxExpectedSpatialLayer(layer int32) {
 	prevMax := r.streamTrackerManager.SetMaxExpectedSpatialLayer(layer)
@@ -715,13 +629,6 @@ func (r *ReceiverBase) OnBitrateReport(availableLayers []int32, bitrates Bitrate
 func (r *ReceiverBase) GetLayeredBitrate() ([]int32, Bitrates) {
 	return r.streamTrackerManager.GetLayeredBitrate()
 }
-
-/* RAJA-TODO
-// OnCloseHandler method to be called on remote track removed
-func (w *WebRTCReceiver) OnCloseHandler(fn func()) {
-	w.onCloseHandler = fn
-}
-*/
 
 func (r *ReceiverBase) SendPLI(layer int32, force bool) {
 	// SVC-TODO :  should send LRR (Layer Refresh Request) instead of PLI
@@ -834,24 +741,16 @@ func (r *ReceiverBase) GetAudioLevel() (float64, bool) {
 }
 
 func (r *ReceiverBase) forwardRTP(layer int32, buff buffer.BufferProvider) {
-	// RAJA-TODO: relay Buffer does rb.ReadLoopDone()
-
 	numPacketsForwarded := 0
 	numPacketsDropped := 0
 	defer func() {
-		/* RAJA-TODO
-		r.closeOnce.Do(func() {
-			r.isClosed.Store(true)
-			r.closeTracks()
-			if rt := r.redTransformer.Load(); rt != nil {
-				rt.(REDTransformer).Close()
+		if r.params.IsSelfClosing {
+			r.Close()
+		} else {
+			r.streamTrackerManager.RemoveTracker(layer)
+			if r.videoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM {
+				r.streamTrackerManager.RemoveAllTrackers()
 			}
-		})
-		*/
-
-		r.streamTrackerManager.RemoveTracker(layer)
-		if r.videoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM {
-			r.streamTrackerManager.RemoveAllTrackers()
 		}
 
 		r.params.Logger.Debugw(
@@ -966,21 +865,6 @@ func (r *ReceiverBase) forwardRTP(layer int32, buff buffer.BufferProvider) {
 	}
 }
 
-// RAJA-TODO - this is not in relay receiver, can this be re-used
-// closeTracks close all tracks from Receiver
-func (r *ReceiverBase) closeTracks() {
-	// RAJA-TODO w.connectionStats.Close()
-	r.streamTrackerManager.Close()
-
-	// RAJA-TODO closeTrackSenders(r.downTrackSpreader.ResetAndGetDownTracks())
-
-	/* RAJA-TODO
-	if w.onCloseHandler != nil {
-		w.onCloseHandler()
-	}
-	*/
-}
-
 func (r *ReceiverBase) DebugInfo() map[string]any {
 	videoLayerMode := buffer.GetVideoLayerModeForMimeType(r.Mime(), r.TrackInfo())
 	info := map[string]any{
@@ -995,7 +879,7 @@ func (r *ReceiverBase) GetPrimaryReceiverForRed() TrackReceiver {
 	r.bufferMu.Lock()
 	defer r.bufferMu.Unlock()
 
-	if !r.isRED || r.isClosed.Load() {
+	if !r.isRED || r.IsClosed() {
 		return r
 	}
 
@@ -1019,7 +903,7 @@ func (r *ReceiverBase) GetRedReceiver() TrackReceiver {
 	r.bufferMu.Lock()
 	defer r.bufferMu.Unlock()
 
-	if r.isRED || r.isClosed.Load() {
+	if r.isRED || r.IsClosed() {
 		return r
 	}
 
@@ -1176,7 +1060,6 @@ func (r *ReceiverBase) OnVideoSizeChanged(f func()) {
 
 // -----------------------------------------------------------
 
-/* RAJA-TODO
 // closes all track senders in parallel, returns when all are closed
 func closeTrackSenders(senders []TrackSender) {
 	wg := sync.WaitGroup{}
@@ -1190,4 +1073,3 @@ func closeTrackSenders(senders []TrackSender) {
 	}
 	wg.Wait()
 }
-*/

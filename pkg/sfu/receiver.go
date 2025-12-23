@@ -39,7 +39,6 @@ type WebRTCReceiver struct {
 
 	receiver       *webrtc.RTPReceiver
 	onCloseHandler func()
-	closeOnce      sync.Once
 
 	onRTCP func([]rtcp.Packet)
 
@@ -119,6 +118,8 @@ func NewWebRTCReceiver(
 			Logger:                       logger,
 			StreamTrackerManagerConfig:   streamTrackerManagerConfig,
 			StreamTrackerManagerListener: w,
+			IsSelfClosing:                true,
+			OnClosed:                     w.onClosed,
 		},
 		trackInfo,
 	)
@@ -387,145 +388,8 @@ func (w *WebRTCReceiver) GetLastSenderReportTime() time.Time {
 	return latestSRTime
 }
 
-/* RAJA-TODO
-- check if this works for relay also in base
-- have to deal with different type of closes between this and relay
-func (w *WebRTCReceiver) forwardRTP(layer int32, buff *buffer.Buffer) {
-	numPacketsForwarded := 0
-	numPacketsDropped := 0
-	defer func() {
-		w.closeOnce.Do(func() {
-			w.closed.Store(true)
-			w.closeTracks()
-			if rt := w.redTransformer.Load(); rt != nil {
-				rt.(REDTransformer).Close()
-			}
-		})
-
-		w.streamTrackerManager.RemoveTracker(layer)
-		if w.videoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM {
-			w.streamTrackerManager.RemoveAllTrackers()
-		}
-
-		w.logger.Debugw(
-			"closing forwarder",
-			"layer", layer,
-			"numPacketsForwarded", numPacketsForwarded,
-			"numPacketsDropped", numPacketsDropped,
-		)
-	}()
-
-	var spatialTrackers [buffer.DefaultMaxLayerSpatial + 1]streamtracker.StreamTrackerWorker
-	if layer < 0 || int(layer) >= len(spatialTrackers) {
-		w.logger.Errorw("invalid layer", nil, "layer", layer)
-		return
-	}
-
-	pktBuf := make([]byte, bucket.RTPMaxPktSize)
-	w.logger.Debugw("starting forwarding", "layer", layer)
-	for {
-		pkt, err := buff.ReadExtended(pktBuf)
-		if err == io.EOF {
-			return
-		}
-		dequeuedAt := mono.UnixNano()
-
-		if pkt.IsRestart {
-			w.logger.Infow("stream restarted", "layer", layer)
-			w.downTrackSpreader.Broadcast(func(dt TrackSender) {
-				dt.ReceiverRestart()
-			})
-
-			if rt := w.redTransformer.Load(); rt != nil {
-				rt.(REDTransformer).OnStreamRestart()
-			}
-		}
-
-		if pkt.Packet.PayloadType != uint8(w.codec.PayloadType) {
-			// drop packets as we don't support codec fallback directly
-			w.logger.Debugw(
-				"dropping packet - payload mismatch",
-				"packetPayloadType", pkt.Packet.PayloadType,
-				"payloadType", w.codec.PayloadType,
-			)
-			numPacketsDropped++
-			continue
-		}
-
-		spatialLayer := layer
-		if pkt.Spatial >= 0 {
-			// svc packet, take spatial layer info from packet
-			spatialLayer = pkt.Spatial
-		}
-		if int(spatialLayer) >= len(spatialTrackers) {
-			w.logger.Errorw(
-				"unexpected spatial layer", nil,
-				"spatialLayer", spatialLayer,
-				"pktSpatialLayer", pkt.Spatial,
-			)
-			numPacketsDropped++
-			continue
-		}
-
-		var writeCount atomic.Int32
-		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
-			writeCount.Add(dt.WriteRTP(pkt, spatialLayer))
-		})
-
-		if rt := w.redTransformer.Load(); rt != nil {
-			writeCount.Add(rt.(REDTransformer).ForwardRTP(pkt, spatialLayer))
-		}
-
-		// track delay/jitter
-		if writeCount.Load() > 0 && w.forwardStats != nil && !pkt.IsBuffered {
-			if latency, isHigh := w.forwardStats.Update(pkt.Arrival, mono.UnixNano()); isHigh {
-				w.logger.Debugw(
-					"high forwarding latency",
-					"latency", time.Duration(latency),
-					"queuingLatency", time.Duration(dequeuedAt-pkt.Arrival),
-					"writeCount", writeCount.Load(),
-					"isOutOfOrder", pkt.IsOutOfOrder,
-					"layer", layer,
-				)
-			}
-		}
-
-		// track video layers
-		if w.Kind() == webrtc.RTPCodecTypeVideo {
-			if spatialTrackers[spatialLayer] == nil {
-				spatialTrackers[spatialLayer] = w.streamTrackerManager.GetTracker(spatialLayer)
-				if spatialTrackers[spatialLayer] == nil {
-					if w.videoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM && pkt.DependencyDescriptor != nil {
-						w.streamTrackerManager.AddDependencyDescriptorTrackers()
-					}
-					spatialTrackers[spatialLayer] = w.streamTrackerManager.AddTracker(spatialLayer)
-				}
-			}
-			if spatialTrackers[spatialLayer] != nil {
-				spatialTrackers[spatialLayer].Observe(
-					pkt.Temporal,
-					len(pkt.RawPacket),
-					len(pkt.Packet.Payload),
-					pkt.Packet.Marker,
-					pkt.Packet.Timestamp,
-					pkt.DependencyDescriptor,
-				)
-			}
-		}
-
-		numPacketsForwarded++
-
-		buffer.ReleaseExtPacket(pkt)
-	}
-}
-*/
-
-// closeTracks close all tracks from Receiver
-func (w *WebRTCReceiver) closeTracks() {
+func (w *WebRTCReceiver) onClosed() {
 	w.connectionStats.Close()
-	w.streamTrackerManager.Close() // RAJA-TODO: move this to base Close
-
-	closeTrackSenders(w.downTrackSpreader.ResetAndGetDownTracks()) // RAJA-TODO move this to base, will this work for relay also
 
 	if w.onCloseHandler != nil {
 		w.onCloseHandler()
@@ -553,41 +417,4 @@ func (w *WebRTCReceiver) DebugInfo() map[string]any {
 	return info
 }
 
-/* RAJA-TODO
-func (w *WebRTCReceiver) handleCodecChange(newCodec webrtc.RTPCodecParameters) {
-	// we don't support the codec fallback directly, set the codec state to invalid once it happens
-	w.SetCodecState(ReceiverCodecStateInvalid)
-}
-
-func (w *WebRTCReceiver) SetCodecState(state ReceiverCodecState) {
-	w.codecStateLock.Lock()
-	if w.codecState == state || w.codecState == ReceiverCodecStateInvalid {
-		w.codecStateLock.Unlock()
-		return
-	}
-
-	w.codecState = state
-	fns := w.onCodecStateChange
-	w.codecStateLock.Unlock()
-
-	for _, f := range fns {
-		f(w.codec, state)
-	}
-}
-*/
-
 // -----------------------------------------------------------
-
-// closes all track senders in parallel, returns when all are closed
-func closeTrackSenders(senders []TrackSender) {
-	wg := sync.WaitGroup{}
-	for _, dt := range senders {
-		dt := dt
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			dt.Close()
-		}()
-	}
-	wg.Wait()
-}
