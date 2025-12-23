@@ -122,6 +122,7 @@ func NewWebRTCReceiver(
 			OnClosed:                     w.onClosed,
 		},
 		trackInfo,
+		ReceiverCodecStateNormal,
 	)
 
 	for _, opt := range opts {
@@ -189,76 +190,7 @@ func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) erro
 	w.upTracksMu.Unlock()
 
 	w.ReceiverBase.AddBuffer(buff, layer)
-	/* RAJA-TODO: move setting up buffer to Base? Would that fit with relay receiver also?
-	buff.SetLogger(w.logger.WithValues("layer", layer))
-	buff.SetAudioLevelParams(audio.AudioLevelParams{
-		Config: w.audioConfig.AudioLevelConfig,
-	})
-	buff.SetAudioLossProxying(w.audioConfig.EnableLossProxying)
-	buff.SetStreamRestartDetection(w.enableRTPStreamRestartDetection)
-	*/
 	buff.OnRtcpFeedback(w.sendRTCP)
-	/* RAJA-TODO
-	buff.OnRtcpSenderReport(func() {
-		srData := buff.GetSenderReportData()
-		w.downTrackSpreader.Broadcast(func(dt TrackSender) {
-			_ = dt.HandleRTCPSenderReportData(w.codec.PayloadType, layer, srData)
-		})
-
-		if rt := w.redTransformer.Load(); rt != nil {
-			rt.(REDTransformer).ForwardRTCPSenderReport(w.codec.PayloadType, layer, srData)
-		}
-	})
-	buff.OnVideoSizeChanged(func(videoSize []buffer.VideoSize) {
-		w.videoSizeMu.Lock()
-		if w.videoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM {
-			copy(w.videoSizes[:], videoSize)
-		} else {
-			w.videoSizes[layer] = videoSize[0]
-		}
-		w.logger.Debugw("video size changed", "size", w.videoSizes)
-		cb := w.onVideoSizeChanged
-		w.videoSizeMu.Unlock()
-
-		if cb != nil {
-			cb()
-		}
-	})
-	if w.Kind() == webrtc.RTPCodecTypeVideo && layer == 0 {
-		buff.OnCodecChange(w.handleCodecChange)
-	}
-
-	var duration time.Duration
-	switch layer {
-	case 2:
-		duration = w.pliThrottleConfig.HighQuality
-	case 1:
-		duration = w.pliThrottleConfig.MidQuality
-	case 0:
-		duration = w.pliThrottleConfig.LowQuality
-	default:
-		duration = w.pliThrottleConfig.MidQuality
-	}
-	if duration != 0 {
-		buff.SetPLIThrottle(duration.Nanoseconds())
-	}
-
-	w.bufferMu.Lock()
-	if w.upTracks[layer] != nil {
-		w.bufferMu.Unlock()
-		return ErrDuplicateLayer
-	}
-	w.upTracks[layer] = track
-	w.buffers[layer] = buff
-	rtt := w.rtt
-	w.bufferMu.Unlock()
-
-	buff.SetRTT(rtt)
-	buff.SetPaused(w.streamTrackerManager.IsPaused())
-
-	go w.forwardRTP(layer, buff)
-	w.logger.Debugw("starting forwarder", "layer", layer)
-	*/
 	w.ReceiverBase.StartBuffer(buff, layer)
 	return nil
 }

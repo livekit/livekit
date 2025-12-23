@@ -93,21 +93,41 @@ type BufferProvider interface {
 	SetPLIThrottle(duration int64)
 	SetRTT(rtt uint32)
 	SetPaused(paused bool)
+
+	SendPLI(force bool)
+
+	ReadExtended(buf []byte) (*ExtPacket, error)
 	GetPacket(buf []byte, esn uint64) (int, error)
+
 	GetAudioLevel() (float64, bool)
 	GetTemporalLayerFpsForSpatial(layer int32) []float32
-	SendPLI(force bool)
 	GetStats() *livekit.RTPStats
 	GetDeltaStats() *StreamStatsWithLayers
 	GetDeltaStatsLite() *rtpstats.RTPDeltaInfoLite
 	GetLastSenderReportTime() time.Time
-	ReadExtended(buf []byte) (*ExtPacket, error)
+	GetNACKPairs() []rtcp.NackPair
+
+	SetSenderReportData(srData *livekit.RTCPSenderReportState)
 	GetSenderReportData() *livekit.RTCPSenderReportState
+
 	OnRtcpSenderReport(fn func())
+	OnFpsChanged(f func())
 	OnVideoSizeChanged(fn func([]VideoSize))
 	OnCodecChange(fn func(webrtc.RTPCodecParameters))
+
 	StartKeyFrameSeeder()
 	StopKeyFrameSeeder()
+
+	HandleIncomingPacket(
+		rawPkt []byte,
+		rtpPacket *rtp.Packet,
+		arrivalTime int64,
+		isBuffered bool,
+		isRTX bool,
+		skippedSeqs []uint16,
+		oobSequenceNumber uint16,
+	) (*ExtPacket, error)
+
 	CloseWithReason(reason string) (*livekit.RTPStats, error)
 }
 
@@ -141,12 +161,10 @@ type BufferBase struct {
 
 	extPackets deque.Deque[*ExtPacket]
 
-	codecType webrtc.RTPCodecType // RAJA-TODO? - maybe consolidate all this into codec webrtc.Codec
-	closeOnce sync.Once           // RAJA-TODO use this in relayBuffer also?
-	clockRate uint32              // RAJA-TODO - this needs to be populated properly
+	codecType webrtc.RTPCodecType
+	closeOnce sync.Once
+	clockRate uint32
 	mime      mime.MimeType
-
-	// RAJA-REMOVE bound           bool
 
 	rtpParameters  webrtc.RTPParameters
 	payloadType    uint8
@@ -154,7 +172,6 @@ type BufferBase struct {
 
 	snRangeMap *utils.RangeMap[uint64, uint64]
 
-	// RAJA-REMOVE twcc                         *twcc.Responder
 	audioLevelParams                 audio.AudioLevelParams
 	audioLevel                       *audio.AudioLevel
 	audioLevelExtID                  uint8
@@ -171,7 +188,6 @@ type BufferBase struct {
 	deltaStatsSnapshotId uint32
 
 	// callbacks
-	// RAJA-TODO onClose            func()
 	onRtcpSenderReport func()
 	onFpsChanged       func()
 	onVideoSizeChanged func([]VideoSize)
@@ -389,6 +405,7 @@ func (b *BufferBase) CloseWithReason(reason string) (stats *livekit.RTPStats, er
 
 		if rtpStats != nil {
 			rtpStats.Stop()
+			stats = rtpStats.ToProto()
 		}
 		if rtpStatsLite != nil {
 			rtpStatsLite.Stop()
@@ -401,7 +418,6 @@ func (b *BufferBase) CloseWithReason(reason string) (stats *livekit.RTPStats, er
 			"statsLite", rtpStatsLite,
 			"reason", reason,
 		)
-		stats = rtpStats.ToProto()
 
 		go b.flushExtPackets()
 	})
@@ -412,18 +428,6 @@ func (b *BufferBase) IsClosed() bool {
 	return b.isClosed.Load()
 }
 
-func (b *BufferBase) IsReceiving() bool {
-	b.Lock()
-	defer b.Unlock()
-
-	if b.rtpStats != nil {
-		return b.rtpStats.IsActive()
-	}
-
-	return true
-}
-
-// RAJA-TODO - set this properly in relay buffer too
 func (b *BufferBase) SetPaused(paused bool) {
 	b.Lock()
 	defer b.Unlock()
@@ -569,18 +573,47 @@ func (b *BufferBase) NotifyRead() {
 	b.readCond.Broadcast()
 }
 
+func (b *BufferBase) HandleIncomingPacket(
+	rawPkt []byte,
+	rtpPacket *rtp.Packet,
+	arrivalTime int64,
+	isBuffered bool,
+	isRTX bool,
+	skippedSeqs []uint16,
+	oobSequenceNumber uint16,
+) (*ExtPacket, error) {
+	b.Lock()
+	defer b.Unlock()
+
+	if b.isClosed.Load() {
+		return nil, io.EOF
+	}
+
+	return b.HandleIncomingPacketLocked(
+		rawPkt,
+		rtpPacket,
+		arrivalTime,
+		isBuffered,
+		isRTX,
+		skippedSeqs,
+		oobSequenceNumber,
+	)
+}
+
 func (b *BufferBase) HandleIncomingPacketLocked(
 	rawPkt []byte,
 	rtpPacket *rtp.Packet,
 	arrivalTime int64,
 	isBuffered bool,
+	isRTX bool,
 	skippedSeqs []uint16,
-) (*rtp.Packet, rtpstats.RTPFlowState, *ExtPacket, error) {
+	oobSequenceNumber uint16,
+) (*ExtPacket, error) {
 	if rtpPacket == nil {
 		rtpPacket = &rtp.Packet{}
 		if err := rtpPacket.Unmarshal(rawPkt); err != nil {
 			b.logger.Errorw("could not unmarshal RTP packet", err)
-			return nil, rtpstats.RTPFlowState{}, nil, err
+			return nil, err
 		}
 	}
 
@@ -611,7 +644,6 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 				if err := b.snRangeMap.ExcludeRange(flowState.ExtSequenceNumber, flowState.ExtSequenceNumber+1); err != nil {
 					b.logger.Errorw(
 						"could not exclude range", err,
-						// RAJA-TODO "spatialLayer", tr.Layer,
 						"sequenceNumber", sn,
 						"extSequenceNumber", flowState.ExtSequenceNumber,
 						"rtpStats", b.rtpStats,
@@ -622,6 +654,11 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 				}
 			}
 		}
+	}
+
+	// do not start on an RTX packet
+	if isRTX && !b.rtpStats.IsActive() {
+		return nil, errors.New("cannot start on rtx packet")
 	}
 
 	isRestart := false
@@ -638,7 +675,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 	case rtpstats.RTPFlowUnhandledReasonNone:
 	case rtpstats.RTPFlowUnhandledReasonRestart:
 		if !b.enableStreamRestartDetection {
-			return rtpPacket, flowState, nil, fmt.Errorf("unhandled reason: %s", flowState.UnhandledReason.String())
+			return nil, fmt.Errorf("unhandled reason: %s", flowState.UnhandledReason.String())
 		}
 
 		b.StopKeyFrameSeeder()
@@ -665,7 +702,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 		)
 		isRestart = true
 	default:
-		return rtpPacket, flowState, nil, fmt.Errorf("unhandled reason: %s", flowState.UnhandledReason.String())
+		return nil, fmt.Errorf("unhandled reason: %s", flowState.UnhandledReason.String())
 	}
 
 	if len(rtpPacket.Payload) == 0 && (!flowState.IsOutOfOrder || flowState.IsDuplicate) {
@@ -696,11 +733,11 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 				)
 			}
 		}
-		return rtpPacket, flowState, nil, errors.New("padding only packet")
+		return nil, errors.New("padding only packet")
 	}
 
-	// RAJA-TODO: ensure this does not get triggered in relay path
 	if !flowState.IsOutOfOrder && rtpPacket.PayloadType != b.payloadType && b.codecType == webrtc.RTPCodecTypeVideo {
+		b.logger.Infow("possible codec change", "oldPT", b.payloadType, "receivedPT", rtpPacket.PayloadType)
 		b.handleCodecChange(rtpPacket.PayloadType)
 	}
 
@@ -709,7 +746,6 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 	if err != nil {
 		b.logger.Errorw(
 			"could not get sequence number adjustment", err,
-			// RAJA-TODO "spatialLayer", tr.Layer,
 			"sequenceNumber", rtpPacket.SequenceNumber,
 			"extSequenceNumber", flowState.ExtSequenceNumber,
 			"timestamp", rtpPacket.Timestamp,
@@ -720,7 +756,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 			"rtpStatsLite", b.rtpStatsLite,
 			"snRangeMap", b.snRangeMap,
 		)
-		return rtpPacket, flowState, nil, err
+		return nil, err
 	}
 
 	flowState.ExtSequenceNumber -= snAdjustment
@@ -733,7 +769,6 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 					b.logger.Warnw(
 						"could not add packet to bucket", err,
 						"count", packetTooOldCount,
-						// RAJA-TODO "spatialLayer", tr.Layer,
 						"flowState", &flowState,
 						"snAdjustment", snAdjustment,
 						"incomingSequenceNumber", flowState.ExtSequenceNumber+snAdjustment,
@@ -746,7 +781,6 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 			} else if err != bucket.ErrRTXPacket {
 				b.logger.Warnw(
 					"could not add packet to bucket", err,
-					// RAJA-TODO "spatialLayer", tr.Layer,
 					"flowState", &flowState,
 					"snAdjustment", snAdjustment,
 					"incomingSequenceNumber", flowState.ExtSequenceNumber+snAdjustment,
@@ -757,12 +791,12 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 				)
 			}
 		}
-		return rtpPacket, flowState, nil, err
+		return nil, err
 	}
 
 	ep := b.getExtPacket(rtpPacket, arrivalTime, isBuffered, isRestart, flowState)
 	if ep == nil {
-		return rtpPacket, flowState, nil, errors.New("could not get ext packet")
+		return nil, errors.New("could not get ext packet")
 	}
 	b.extPackets.PushBack(ep)
 	b.readCond.Broadcast()
@@ -775,10 +809,16 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 
 	b.maybeGrowBucket(arrivalTime)
 
-	return rtpPacket, flowState, ep, nil
+	if b.params.IsOOBSequenceNumber {
+		b.updateOOBNACKState(oobSequenceNumber, arrivalTime, len(rawPkt))
+	} else {
+		b.updateNACKState(rtpPacket.SequenceNumber, flowState)
+	}
+
+	return ep, nil
 }
 
-func (b *BufferBase) UpdateNACKStateLocked(sequenceNumber uint16, flowState rtpstats.RTPFlowState) {
+func (b *BufferBase) updateNACKState(sequenceNumber uint16, flowState rtpstats.RTPFlowState) {
 	if b.nacker == nil {
 		return
 	}
@@ -790,7 +830,7 @@ func (b *BufferBase) UpdateNACKStateLocked(sequenceNumber uint16, flowState rtps
 	}
 }
 
-func (b *BufferBase) UpdateOOBNACKStateLocked(sequenceNumber uint16, arrivalTime int64, size int) {
+func (b *BufferBase) updateOOBNACKState(sequenceNumber uint16, arrivalTime int64, size int) {
 	if b.nacker == nil || !b.params.IsOOBSequenceNumber {
 		return
 	}
@@ -1059,7 +1099,7 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 }
 
 func (b *BufferBase) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
-	n, err := b.getPacket(buf, ep.ExtSequenceNumber)
+	n, err := b.getPacketLocked(buf, ep.ExtSequenceNumber)
 	if err != nil {
 		packetNotFoundCount := b.packetNotFoundCount.Inc()
 		if (packetNotFoundCount-1)%20 == 0 {
@@ -1143,7 +1183,6 @@ func (b *BufferBase) maybeGrowBucket(now int64) {
 }
 
 func (b *BufferBase) doFpsCalc(ep *ExtPacket) {
-	// RAJA-TODO: b.isPaused in different for relay buffer, check if it is okay
 	if b.isPaused || b.frameRateCalculated || len(ep.Packet.Payload) == 0 {
 		return
 	}
@@ -1172,8 +1211,6 @@ func (b *BufferBase) doFpsCalc(ep *ExtPacket) {
 }
 
 func (b *BufferBase) SetSenderReportData(srData *livekit.RTCPSenderReportState) {
-	/* RAJA-TODO - there is no callback in relay because packets comes in via receiver
-	need to think about making a callback or keep implementation out of base? */
 	srData.At = mono.UnixNano()
 	b.RLock()
 	didSet := false
@@ -1200,15 +1237,14 @@ func (b *BufferBase) GetSenderReportData() *livekit.RTCPSenderReportState {
 	return nil
 }
 
-/* RAJA-TODO - relayBuffer checks for stopped buffer - should add here also */
 func (b *BufferBase) GetPacket(buff []byte, esn uint64) (int, error) {
 	b.Lock()
 	defer b.Unlock()
 
-	return b.getPacket(buff, esn)
+	return b.getPacketLocked(buff, esn)
 }
 
-func (b *BufferBase) getPacket(buff []byte, esn uint64) (int, error) {
+func (b *BufferBase) getPacketLocked(buff []byte, esn uint64) (int, error) {
 	if b.isClosed.Load() {
 		return 0, io.EOF
 	}

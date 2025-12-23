@@ -132,12 +132,6 @@ func (r *RedReceiver) GetDownTracks() []TrackSender {
 	return r.downTrackSpreader.GetDownTracks()
 }
 
-/* RAJA-REMOVE
-func (r *RedReceiver) HasDownTracks() bool {
-	return r.downTrackSpreader.DownTrackCount() != 0
-}
-*/
-
 func (r *RedReceiver) ResyncDownTracks() {
 	r.downTrackSpreader.Broadcast(func(dt TrackSender) {
 		dt.Resync()

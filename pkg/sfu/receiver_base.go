@@ -126,7 +126,6 @@ type TrackReceiver interface {
 	AddDownTrack(track TrackSender) error
 	DeleteDownTrack(participantID livekit.ParticipantID)
 	GetDownTracks() []TrackSender
-	// RAJA-REMOVE HasDownTracks() bool
 
 	DebugInfo() map[string]any
 
@@ -195,8 +194,8 @@ type ReceiverBase struct {
 	lbThreshold                     int
 	forwardStats                    *ForwardStats
 
-	codecState         ReceiverCodecState
 	codecStateLock     sync.Mutex
+	codecState         ReceiverCodecState
 	onCodecStateChange []func(webrtc.RTPCodecParameters, ReceiverCodecState)
 
 	isRED          bool
@@ -223,10 +222,10 @@ type ReceiverBase struct {
 	isClosed atomic.Bool
 }
 
-func NewReceiverBase(params ReceiverBaseParams, trackInfo *livekit.TrackInfo) *ReceiverBase {
+func NewReceiverBase(params ReceiverBaseParams, trackInfo *livekit.TrackInfo, codecState ReceiverCodecState) *ReceiverBase {
 	r := &ReceiverBase{
 		params:         params,
-		codecState:     ReceiverCodecStateNormal,
+		codecState:     codecState,
 		isRED:          mime.IsMimeTypeStringRED(params.Codec.MimeType),
 		trackInfo:      utils.CloneProto(trackInfo),
 		videoLayerMode: buffer.GetVideoLayerModeForMimeType(mime.NormalizeMimeType(params.Codec.MimeType), trackInfo),
@@ -431,71 +430,6 @@ func (r *ReceiverBase) StreamTrackerManager() *StreamTrackerManager {
 	return r.streamTrackerManager
 }
 
-func (r *ReceiverBase) AddBuffer(buff buffer.BufferProvider, layer int32) {
-	buff.SetLogger(r.params.Logger.WithValues("layer", layer))
-	buff.SetAudioLevelParams(audio.AudioLevelParams{
-		Config: r.audioConfig.AudioLevelConfig,
-	})
-	buff.SetStreamRestartDetection(r.enableRTPStreamRestartDetection)
-	buff.OnRtcpSenderReport(func() {
-		srData := buff.GetSenderReportData()
-		r.downTrackSpreader.Broadcast(func(dt TrackSender) {
-			_ = dt.HandleRTCPSenderReportData(r.params.Codec.PayloadType, layer, srData)
-		})
-
-		if rt := r.redTransformer.Load(); rt != nil {
-			rt.(REDTransformer).ForwardRTCPSenderReport(r.params.Codec.PayloadType, layer, srData)
-		}
-	})
-	buff.OnVideoSizeChanged(func(videoSize []buffer.VideoSize) {
-		r.videoSizeMu.Lock()
-		if r.videoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM {
-			copy(r.videoSizes[:], videoSize)
-		} else {
-			r.videoSizes[layer] = videoSize[0]
-		}
-		r.params.Logger.Debugw("video size changed", "size", r.videoSizes)
-		cb := r.onVideoSizeChanged
-		r.videoSizeMu.Unlock()
-
-		if cb != nil {
-			cb()
-		}
-	})
-	if r.Kind() == webrtc.RTPCodecTypeVideo && layer == 0 {
-		buff.OnCodecChange(r.handleCodecChange)
-	}
-
-	var duration time.Duration
-	switch layer {
-	case 2:
-		duration = r.pliThrottleConfig.HighQuality
-	case 1:
-		duration = r.pliThrottleConfig.MidQuality
-	case 0:
-		duration = r.pliThrottleConfig.LowQuality
-	default:
-		duration = r.pliThrottleConfig.MidQuality
-	}
-	if duration != 0 {
-		buff.SetPLIThrottle(duration.Nanoseconds())
-	}
-
-	r.bufferMu.Lock()
-	r.buffers[layer] = buff
-	rtt := r.rtt
-	r.bufferMu.Unlock()
-
-	buff.SetRTT(rtt)
-	buff.SetPaused(r.streamTrackerManager.IsPaused())
-}
-
-// RAJA-TODO: maybe look up buffer given layer?
-func (r *ReceiverBase) StartBuffer(buff buffer.BufferProvider, layer int32) {
-	r.params.Logger.Debugw("starting forwarder", "layer", layer)
-	go r.forwardRTP(layer, buff)
-}
-
 // SetUpTrackPaused indicates upstream will not be sending any data.
 // this will reflect the "muted" status and will pause streamtracker to ensure we don't turn off
 // the layer
@@ -542,20 +476,6 @@ func (r *ReceiverBase) GetDownTracks() []TrackSender {
 	}
 	return downTracks
 }
-
-/* RAJA-REMOVE
-func (r *ReceiverBase) HasDownTracks() bool {
-	if r.downTrackSpreader.DownTrackCount() != 0 {
-		return true
-	}
-
-	if rt := r.redTransformer.Load(); rt != nil {
-		return rt.(REDTransformer).HasDownTracks()
-	}
-
-	return false
-}
-*/
 
 func (r *ReceiverBase) SetMaxExpectedSpatialLayer(layer int32) {
 	prevMax := r.streamTrackerManager.SetMaxExpectedSpatialLayer(layer)
@@ -677,6 +597,104 @@ func (r *ReceiverBase) getBufferLocked(layer int32) buffer.BufferProvider {
 	}
 
 	return r.buffers[layer]
+}
+
+func (r *ReceiverBase) GetOrCreateBuffer(
+	layer int32,
+	creatorFn func() (buffer.BufferProvider, error),
+) (buffer.BufferProvider, bool) {
+	r.bufferMu.Lock()
+
+	if r.IsClosed() {
+		r.bufferMu.Unlock()
+		return nil, false
+	}
+
+	if buff := r.getBufferLocked(layer); buff != nil {
+		r.bufferMu.Unlock()
+		return buff, false
+	}
+
+	buff, err := creatorFn()
+	if err != nil {
+		r.bufferMu.Unlock()
+		r.params.Logger.Errorw("could not create buffer", err)
+		return nil, false
+	}
+
+	rtt := r.rtt
+	r.bufferMu.Unlock()
+
+	r.setupBuffer(buff, layer, rtt)
+	return buff, true
+}
+
+func (r *ReceiverBase) setupBuffer(buff buffer.BufferProvider, layer int32, rtt uint32) {
+	buff.SetLogger(r.params.Logger.WithValues("layer", layer))
+	buff.SetAudioLevelParams(audio.AudioLevelParams{
+		Config: r.audioConfig.AudioLevelConfig,
+	})
+	buff.SetStreamRestartDetection(r.enableRTPStreamRestartDetection)
+	buff.OnRtcpSenderReport(func() {
+		srData := buff.GetSenderReportData()
+		r.downTrackSpreader.Broadcast(func(dt TrackSender) {
+			_ = dt.HandleRTCPSenderReportData(r.params.Codec.PayloadType, layer, srData)
+		})
+
+		if rt := r.redTransformer.Load(); rt != nil {
+			rt.(REDTransformer).ForwardRTCPSenderReport(r.params.Codec.PayloadType, layer, srData)
+		}
+	})
+	buff.OnVideoSizeChanged(func(videoSize []buffer.VideoSize) {
+		r.videoSizeMu.Lock()
+		if r.videoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM {
+			copy(r.videoSizes[:], videoSize)
+		} else {
+			r.videoSizes[layer] = videoSize[0]
+		}
+		r.params.Logger.Debugw("video size changed", "size", r.videoSizes)
+		cb := r.onVideoSizeChanged
+		r.videoSizeMu.Unlock()
+
+		if cb != nil {
+			cb()
+		}
+	})
+	if r.Kind() == webrtc.RTPCodecTypeVideo && layer == 0 {
+		buff.OnCodecChange(r.handleCodecChange)
+	}
+
+	var duration time.Duration
+	switch layer {
+	case 2:
+		duration = r.pliThrottleConfig.HighQuality
+	case 1:
+		duration = r.pliThrottleConfig.MidQuality
+	case 0:
+		duration = r.pliThrottleConfig.LowQuality
+	default:
+		duration = r.pliThrottleConfig.MidQuality
+	}
+	if duration != 0 {
+		buff.SetPLIThrottle(duration.Nanoseconds())
+	}
+
+	buff.SetRTT(rtt)
+	buff.SetPaused(r.streamTrackerManager.IsPaused())
+}
+
+func (r *ReceiverBase) AddBuffer(buff buffer.BufferProvider, layer int32) {
+	r.bufferMu.Lock()
+	r.buffers[layer] = buff
+	rtt := r.rtt
+	r.bufferMu.Unlock()
+
+	r.setupBuffer(buff, layer, rtt)
+}
+
+func (r *ReceiverBase) StartBuffer(buff buffer.BufferProvider, layer int32) {
+	r.params.Logger.Debugw("starting forwarder", "layer", layer)
+	go r.forwardRTP(layer, buff)
 }
 
 func (r *ReceiverBase) GetAllBuffers() [buffer.DefaultMaxLayerSpatial + 1]buffer.BufferProvider {
@@ -965,7 +983,6 @@ func (w *ReceiverBase) handleCodecChange(newCodec webrtc.RTPCodecParameters) {
 	w.SetCodecState(ReceiverCodecStateInvalid)
 }
 
-// RAJA-TODO: relayreceiver has this in params, that should pass it on to base
 func (r *ReceiverBase) AddOnCodecStateChange(f func(webrtc.RTPCodecParameters, ReceiverCodecState)) {
 	r.codecStateLock.Lock()
 	r.onCodecStateChange = append(r.onCodecStateChange, f)
@@ -1069,7 +1086,6 @@ func (r *ReceiverBase) VideoSizes() []buffer.VideoSize {
 	return sizes
 }
 
-// RAJA-TODO: relay receiver is using params - make this works with that
 func (r *ReceiverBase) OnVideoSizeChanged(f func()) {
 	r.videoSizeMu.Lock()
 	r.onVideoSizeChanged = f

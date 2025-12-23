@@ -56,12 +56,6 @@ type Buffer struct {
 	lastReportAt int64
 	isBound      bool
 
-	/* RAJA-REMOVE
-	rtpParameters  webrtc.RTPParameters
-	payloadType    uint8
-	rtxPayloadType uint8
-	*/
-
 	twcc      *twcc.Responder
 	twccExtID uint8
 
@@ -70,13 +64,9 @@ type Buffer struct {
 
 	lastPacketRead int
 
-	// RAJA-TODO rrSnapshotId         uint32
-	// RAJA-TODO deltaStatsSnapshotId uint32
-
 	// callbacks
-	onClose        func()
-	onRtcpFeedback func([]rtcp.Packet)
-	// RAJA-TODO onRtcpSenderReport func()
+	onClose         func()
+	onRtcpFeedback  func([]rtcp.Packet)
 	onFinalRtpStats func(*livekit.RTPStats)
 
 	primaryBufferForRTX *Buffer
@@ -111,118 +101,12 @@ func (b *Buffer) SetAudioLossProxying(enable bool) {
 	b.enableAudioLossProxying = enable
 }
 
-// RAJA-TODO: somehow move a bunch of this to base
 func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapability, bitrates int) error {
 	b.Lock()
 	defer b.Unlock()
 	if b.isBound {
 		return nil
 	}
-
-	/* RAJA-TODO
-	b.logger.Debugw("binding track")
-	if codec.ClockRate == 0 {
-		b.logger.Warnw("invalid codec", nil, "params", params, "codec", codec, "bitrates", bitrates)
-		return errInvalidCodec
-	}
-
-	b.setupRTPStats(codec.ClockRate)
-
-	b.clockRate = codec.ClockRate
-	b.lastReportAt = mono.UnixNano()
-	b.mime = mime.NormalizeMimeType(codec.MimeType)
-	b.rtpParameters = params
-	for _, codecParameter := range params.Codecs {
-		if mime.IsMimeTypeStringEqual(codecParameter.MimeType, codec.MimeType) {
-			b.payloadType = uint8(codecParameter.PayloadType)
-			break
-		}
-	}
-
-	if b.payloadType == 0 && !mime.IsMimeTypeStringEqual(codec.MimeType, webrtc.MimeTypePCMU) {
-		b.logger.Warnw("could not find payload type for codec", nil, "codec", codec.MimeType, "parameters", params)
-		b.payloadType = uint8(params.Codecs[0].PayloadType)
-	}
-
-	// find RTX payload type
-	for _, codec := range params.Codecs {
-		if mime.IsMimeTypeStringRTX(codec.MimeType) && strings.Contains(codec.SDPFmtpLine, fmt.Sprintf("apt=%d", b.payloadType)) {
-			b.rtxPayloadType = uint8(codec.PayloadType)
-			break
-		}
-	}
-
-	for _, ext := range params.HeaderExtensions {
-		switch ext.URI {
-		case dd.ExtensionURI:
-			if b.ddExtID != 0 {
-				b.logger.Warnw("multiple dependency descriptor extensions found", nil, "id", ext.ID, "previous", b.ddExtID)
-				continue
-			}
-			b.ddExtID = uint8(ext.ID)
-			b.createDDParserAndFrameRateCalculator()
-
-		case sdp.AudioLevelURI:
-			b.audioLevelExtID = uint8(ext.ID)
-			b.audioLevel = audio.NewAudioLevel(b.audioLevelParams)
-
-		case act.AbsCaptureTimeURI:
-			b.absCaptureTimeExtID = uint8(ext.ID)
-		}
-	}
-
-	switch {
-	case mime.IsMimeTypeAudio(b.mime):
-		b.codecType = webrtc.RTPCodecTypeAudio
-		b.bucket = bucket.NewBucket[uint64, uint16](InitPacketBufferSizeAudio, bucket.RTPMaxPktSize, bucket.RTPSeqNumOffset)
-
-	case mime.IsMimeTypeVideo(b.mime):
-		b.codecType = webrtc.RTPCodecTypeVideo
-		b.bucket = bucket.NewBucket[uint64, uint16](InitPacketBufferSizeVideo, bucket.RTPMaxPktSize, bucket.RTPSeqNumOffset)
-		if b.frameRateCalculator[0] == nil {
-			b.createFrameRateCalculator()
-		}
-		if bitrates > 0 {
-			pps := bitrates / 8 / 1200
-			for pps > b.bucket.Capacity() {
-				if b.bucket.Grow() >= b.maxVideoPkts {
-					break
-				}
-			}
-		}
-
-	default:
-		b.codecType = webrtc.RTPCodecType(0)
-	}
-
-	for _, fb := range codec.RTCPFeedback {
-		switch fb.Type {
-		case webrtc.TypeRTCPFBGoogREMB:
-			b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBGoogREMB)
-			b.logger.Debugw("REMB not supported, RTCP feedback will not be generated")
-		case webrtc.TypeRTCPFBNACK:
-			// pion use a single mediaengine to manage negotiated codecs of peerconnection, that means we can't have different
-			// codec settings at track level for same codec type, so enable nack for all audio receivers but don't create nack queue
-			// for red codec.
-			if b.mime == mime.MimeTypeRED {
-				break
-			}
-			b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
-			b.nacker = nack.NewNACKQueue(nack.NackQueueParamsDefault)
-		}
-	}
-
-	if len(b.pPackets) != 0 {
-		b.logger.Debugw("releasing queued packets on bind", "count", len(b.pPackets))
-	}
-	for _, pp := range b.pPackets {
-		b.calc(pp.packet, nil, pp.arrivalTime, true)
-	}
-	b.pPackets = nil
-	b.isBound = true
-
-	b.BufferBase.StartKeyFrameSeeder()
-	*/
 
 	if err := b.BufferBase.BindLocked(params, codec, bitrates); err != nil {
 		return err
@@ -234,7 +118,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		b.logger.Debugw("releasing queued packets on bind", "count", len(b.pPackets))
 	}
 	for _, pp := range b.pPackets {
-		b.calc(pp.packet, nil, pp.arrivalTime, true)
+		b.calc(pp.packet, nil, pp.arrivalTime, true, false)
 	}
 	b.pPackets = nil
 
@@ -310,7 +194,7 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		return
 	}
 
-	b.calc(pkt, &rtpPacket, now, false)
+	b.calc(pkt, &rtpPacket, now, false, false)
 	b.Unlock()
 	return
 }
@@ -367,7 +251,7 @@ func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime int64) {
 		return
 	}
 
-	b.calc(b.rtxPktBuf[:n], &repairedPkt, arrivalTime, false)
+	b.calc(b.rtxPktBuf[:n], &repairedPkt, arrivalTime, false, true)
 }
 
 func (b *Buffer) Read(buff []byte) (n int, err error) {
@@ -393,37 +277,7 @@ func (b *Buffer) Read(buff []byte) (n int, err error) {
 	}
 }
 
-// RAJA-TODO: move to BufferBase?
 func (b *Buffer) Close() error {
-	/* RAJA-TODO
-	b.closeOnce.Do(func() {
-		b.BufferBase.Close()
-
-		b.BufferBase.StopKeyFrameSeeder()
-
-		b.RLock()
-		rtpStats := b.rtpStats
-		b.BufferBase.NotifyRead()
-		b.RUnlock()
-
-		if rtpStats != nil {
-			rtpStats.Stop()
-			b.logger.Debugw("rtp stats",
-				"direction", "upstream",
-				"stats", rtpStats,
-			)
-			if cb := b.getOnFinalRtpStats(); cb != nil {
-				cb(rtpStats.ToProto())
-			}
-		}
-
-		if cb := b.getOnClose(); cb != nil {
-			cb()
-		}
-
-		go b.flushExtPackets()
-	})
-	*/
 	stats, err := b.BufferBase.CloseWithReason("close")
 	if err != nil {
 		return err
@@ -469,19 +323,17 @@ func (b *Buffer) sendPLI() {
 	}
 }
 
-func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, isBuffered bool) {
-	rtpPacket, flowState, _, err := b.BufferBase.HandleIncomingPacketLocked(
+func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, isBuffered bool, isRTX bool) {
+	b.BufferBase.HandleIncomingPacketLocked(
 		rawPkt,
 		rtpPacket,
 		arrivalTime,
 		isBuffered,
+		isRTX,
 		nil,
+		0,
 	)
-	if err != nil {
-		return
-	}
 
-	b.BufferBase.UpdateNACKStateLocked(rtpPacket.SequenceNumber, flowState)
 	b.doNACKs()
 
 	b.doReports(arrivalTime)
