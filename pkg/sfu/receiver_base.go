@@ -151,6 +151,8 @@ type TrackReceiver interface {
 	VideoSizes() []buffer.VideoSize
 }
 
+// --------------------------------------
+
 type REDTransformer interface {
 	ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int32
 	ForwardRTCPSenderReport(
@@ -166,26 +168,31 @@ type REDTransformer interface {
 	Close()
 }
 
+// --------------------------------------
+
+type ReceiverBaseParams struct {
+	TrackID                      livekit.TrackID
+	StreamID                     string
+	Kind                         webrtc.RTPCodecType
+	Codec                        webrtc.RTPCodecParameters
+	HeaderExtensions             []webrtc.RTPHeaderExtensionParameter
+	Logger                       logger.Logger
+	StreamTrackerManagerConfig   StreamTrackerManagerConfig
+	StreamTrackerManagerListener StreamTrackerManagerListener
+}
+
 type ReceiverBase struct {
-	logger logger.Logger
+	params ReceiverBaseParams
 
 	pliThrottleConfig               PLIThrottleConfig
 	audioConfig                     AudioConfig
 	enableRTPStreamRestartDetection bool
-	lbThreshold                     int // RAJA-TODO: this needs to be passed in properly
+	lbThreshold                     int
 	forwardStats                    *ForwardStats
-
-	trackID          livekit.TrackID
-	streamID         string
-	kind             webrtc.RTPCodecType
-	codec            webrtc.RTPCodecParameters
-	headerExtensions []webrtc.RTPHeaderExtensionParameter
 
 	codecState         ReceiverCodecState
 	codecStateLock     sync.Mutex
 	onCodecStateChange []func(webrtc.RTPCodecParameters, ReceiverCodecState)
-
-	streamTrackerManagerListener StreamTrackerManagerListener
 
 	isRED bool
 	// RAJA-TODO onCloseHandler     func()
@@ -213,42 +220,26 @@ type ReceiverBase struct {
 	isClosed atomic.Bool
 }
 
-func NewReceiverBase(
-	trackID livekit.TrackID,
-	streamID string,
-	kind webrtc.RTPCodecType,
-	codec webrtc.RTPCodecParameters,
-	headerExtensions []webrtc.RTPHeaderExtensionParameter,
-	trackInfo *livekit.TrackInfo,
-	logger logger.Logger,
-	streamTrackerManagerConfig StreamTrackerManagerConfig,
-	streamTrackerManagerListener StreamTrackerManagerListener,
-) *ReceiverBase {
+func NewReceiverBase(params ReceiverBaseParams, trackInfo *livekit.TrackInfo) *ReceiverBase {
 	r := &ReceiverBase{
-		logger:                       logger,
-		trackID:                      trackID,
-		streamID:                     streamID,
-		kind:                         kind,
-		codec:                        codec,
-		headerExtensions:             headerExtensions,
-		codecState:                   ReceiverCodecStateNormal,
-		streamTrackerManagerListener: streamTrackerManagerListener,
-		isRED:                        mime.IsMimeTypeStringRED(codec.MimeType),
-		trackInfo:                    utils.CloneProto(trackInfo),
-		videoLayerMode:               buffer.GetVideoLayerModeForMimeType(mime.NormalizeMimeType(codec.MimeType), trackInfo),
+		params:         params,
+		codecState:     ReceiverCodecStateNormal,
+		isRED:          mime.IsMimeTypeStringRED(params.Codec.MimeType),
+		trackInfo:      utils.CloneProto(trackInfo),
+		videoLayerMode: buffer.GetVideoLayerModeForMimeType(mime.NormalizeMimeType(params.Codec.MimeType), trackInfo),
 	}
 
 	r.downTrackSpreader = sfuutils.NewDownTrackSpreader[TrackSender](sfuutils.DownTrackSpreaderParams{
 		Threshold: r.lbThreshold,
-		Logger:    logger,
+		Logger:    params.Logger,
 	})
 
 	r.streamTrackerManager = NewStreamTrackerManager(
-		logger,
+		params.Logger,
 		trackInfo,
 		r.Mime(),
-		r.codec.ClockRate,
-		streamTrackerManagerConfig,
+		r.params.Codec.ClockRate,
+		params.StreamTrackerManagerConfig,
 	)
 	r.streamTrackerManager.SetListener(r)
 
@@ -275,6 +266,10 @@ func (r *ReceiverBase) SetForwardStats(forwardStats *ForwardStats) {
 	r.forwardStats = forwardStats
 }
 
+func (r *ReceiverBase) Logger() logger.Logger {
+	return r.params.Logger
+}
+
 func (r *ReceiverBase) TrackInfo() *livekit.TrackInfo {
 	r.bufferMu.RLock()
 	defer r.bufferMu.RUnlock()
@@ -295,7 +290,7 @@ func (r *ReceiverBase) UpdateTrackInfo(ti *livekit.TrackInfo) {
 	updateVersion := utils.TimedVersionFromProto(ti.Version)
 	if updateVersion.Compare(existingVersion) < 0 {
 		r.bufferMu.Unlock()
-		r.logger.Debugw(
+		r.params.Logger.Debugw(
 			"not updating to older version",
 			"existing", logger.Proto(r.trackInfo),
 			"updated", logger.Proto(ti),
@@ -305,7 +300,7 @@ func (r *ReceiverBase) UpdateTrackInfo(ti *livekit.TrackInfo) {
 
 	shouldResync := utils.TimedVersionFromProto(r.trackInfo.Version) != utils.TimedVersionFromProto(ti.Version)
 	if shouldResync {
-		r.logger.Debugw(
+		r.params.Logger.Debugw(
 			"updating track info",
 			"existing", logger.Proto(r.trackInfo),
 			"updated", logger.Proto(ti),
@@ -319,11 +314,13 @@ func (r *ReceiverBase) UpdateTrackInfo(ti *livekit.TrackInfo) {
 		r.resyncLocked("update-track-info")
 	}
 	r.bufferMu.Unlock()
+
+	r.streamTrackerManager.UpdateTrackInfo(ti)
 }
 
 func (r *ReceiverBase) resyncLocked(reason string) {
 	// resync to avoid gaps in the forwarded sequence number
-	r.logger.Debugw("resync receiver", "reason", reason)
+	r.params.Logger.Debugw("resync receiver", "reason", reason)
 	r.clearAllBuffersLocked("resync")
 
 	r.downTrackSpreader.Broadcast(func(dt TrackSender) {
@@ -353,12 +350,7 @@ func (r *ReceiverBase) IsClosed() bool {
 
 func (r *ReceiverBase) SetRTT(rtt uint32) {
 	r.bufferMu.Lock()
-	if r.rtt == rtt {
-		r.bufferMu.Unlock()
-		return
-	}
-
-	if rtt == 0 {
+	if r.rtt == rtt || rtt == 0 {
 		r.bufferMu.Unlock()
 		return
 	}
@@ -377,19 +369,19 @@ func (r *ReceiverBase) SetRTT(rtt uint32) {
 }
 
 func (r *ReceiverBase) TrackID() livekit.TrackID {
-	return r.trackID
+	return r.params.TrackID
 }
 
 func (r *ReceiverBase) StreamID() string {
-	return r.streamID
+	return r.params.StreamID
 }
 
 func (r *ReceiverBase) Codec() webrtc.RTPCodecParameters {
-	return r.codec
+	return r.params.Codec
 }
 
 func (r *ReceiverBase) Mime() mime.MimeType {
-	return mime.NormalizeMimeType(r.codec.MimeType)
+	return mime.NormalizeMimeType(r.params.Codec.MimeType)
 }
 
 func (r *ReceiverBase) VideoLayerMode() livekit.VideoLayer_Mode {
@@ -397,11 +389,11 @@ func (r *ReceiverBase) VideoLayerMode() livekit.VideoLayer_Mode {
 }
 
 func (r *ReceiverBase) HeaderExtensions() []webrtc.RTPHeaderExtensionParameter {
-	return r.headerExtensions
+	return r.params.HeaderExtensions
 }
 
 func (r *ReceiverBase) Kind() webrtc.RTPCodecType {
-	return r.kind
+	return r.params.Kind
 }
 
 func (r *ReceiverBase) StreamTrackerManager() *StreamTrackerManager {
@@ -409,7 +401,7 @@ func (r *ReceiverBase) StreamTrackerManager() *StreamTrackerManager {
 }
 
 func (r *ReceiverBase) AddBuffer(buff buffer.BufferProvider, layer int32) {
-	buff.SetLogger(r.logger.WithValues("layer", layer))
+	buff.SetLogger(r.params.Logger.WithValues("layer", layer))
 	buff.SetAudioLevelParams(audio.AudioLevelParams{
 		Config: r.audioConfig.AudioLevelConfig,
 	})
@@ -417,11 +409,11 @@ func (r *ReceiverBase) AddBuffer(buff buffer.BufferProvider, layer int32) {
 	buff.OnRtcpSenderReport(func() {
 		srData := buff.GetSenderReportData()
 		r.downTrackSpreader.Broadcast(func(dt TrackSender) {
-			_ = dt.HandleRTCPSenderReportData(r.codec.PayloadType, layer, srData)
+			_ = dt.HandleRTCPSenderReportData(r.params.Codec.PayloadType, layer, srData)
 		})
 
 		if rt := r.redTransformer.Load(); rt != nil {
-			rt.(REDTransformer).ForwardRTCPSenderReport(r.codec.PayloadType, layer, srData)
+			rt.(REDTransformer).ForwardRTCPSenderReport(r.params.Codec.PayloadType, layer, srData)
 		}
 	})
 	buff.OnVideoSizeChanged(func(videoSize []buffer.VideoSize) {
@@ -431,7 +423,7 @@ func (r *ReceiverBase) AddBuffer(buff buffer.BufferProvider, layer int32) {
 		} else {
 			r.videoSizes[layer] = videoSize[0]
 		}
-		r.logger.Debugw("video size changed", "size", r.videoSizes)
+		r.params.Logger.Debugw("video size changed", "size", r.videoSizes)
 		cb := r.onVideoSizeChanged
 		r.videoSizeMu.Unlock()
 
@@ -471,8 +463,8 @@ func (r *ReceiverBase) AddBuffer(buff buffer.BufferProvider, layer int32) {
 
 // RAJA-TODO: maybe look up buffer given layer?
 func (r *ReceiverBase) StartBuffer(buff buffer.BufferProvider, layer int32) {
+	r.params.Logger.Debugw("starting forwarder", "layer", layer)
 	go r.forwardRTP(layer, buff)
-	r.logger.Debugw("starting forwarder", "layer", layer)
 }
 
 /* RAJA-TODO
@@ -586,14 +578,14 @@ func (r *ReceiverBase) AddDownTrack(track TrackSender) error {
 	}
 
 	if r.downTrackSpreader.HasDownTrack(track.SubscriberID()) {
-		r.logger.Infow("subscriberID already exists, replacing downtrack", "subscriberID", track.SubscriberID())
+		r.params.Logger.Infow("subscriberID already exists, replacing downtrack", "subscriberID", track.SubscriberID())
 	}
 
 	track.UpTrackMaxPublishedLayerChange(r.streamTrackerManager.GetMaxPublishedLayer())
 	track.UpTrackMaxTemporalLayerSeenChange(r.streamTrackerManager.GetMaxTemporalLayerSeen())
 
 	r.downTrackSpreader.Store(track)
-	r.logger.Debugw("downtrack added", "subscriberID", track.SubscriberID())
+	r.params.Logger.Debugw("downtrack added", "subscriberID", track.SubscriberID())
 	return nil
 }
 
@@ -603,7 +595,7 @@ func (r *ReceiverBase) DeleteDownTrack(subscriberID livekit.ParticipantID) {
 	}
 
 	r.downTrackSpreader.Free(subscriberID)
-	r.logger.Debugw("downtrack deleted", "subscriberID", subscriberID)
+	r.params.Logger.Debugw("downtrack deleted", "subscriberID", subscriberID)
 }
 
 func (r *ReceiverBase) GetDownTracks() []TrackSender {
@@ -619,7 +611,6 @@ func (r *ReceiverBase) HasDownTracks() bool {
 		return true
 	}
 
-	// check if there are downtracks attached to red transformer
 	if rt := r.redTransformer.Load(); rt != nil {
 		return rt.(REDTransformer).HasDownTracks()
 	}
@@ -635,7 +626,7 @@ func (r *ReceiverBase) SetMaxExpectedSpatialLayer(layer int32) {
 
 func (r *ReceiverBase) SetMaxExpectedSpatialLayer(layer int32) {
 	prevMax := r.streamTrackerManager.SetMaxExpectedSpatialLayer(layer)
-	r.logger.Debugw("max expected layer change", "layer", layer, "prevMax", prevMax)
+	r.params.Logger.Debugw("max expected layer change", "layer", layer, "prevMax", prevMax)
 
 	r.bufferMu.RLock()
 	// stop key frame seeders of stopped layers
@@ -660,8 +651,8 @@ func (r *ReceiverBase) OnAvailableLayersChanged() {
 		dt.UpTrackLayersChange()
 	})
 
-	if r.streamTrackerManagerListener != nil {
-		r.streamTrackerManagerListener.OnAvailableLayersChanged()
+	if r.params.StreamTrackerManagerListener != nil {
+		r.params.StreamTrackerManagerListener.OnAvailableLayersChanged()
 	}
 }
 
@@ -671,8 +662,8 @@ func (r *ReceiverBase) OnBitrateAvailabilityChanged() {
 		dt.UpTrackBitrateAvailabilityChange()
 	})
 
-	if r.streamTrackerManagerListener != nil {
-		r.streamTrackerManagerListener.OnBitrateAvailabilityChanged()
+	if r.params.StreamTrackerManagerListener != nil {
+		r.params.StreamTrackerManagerListener.OnBitrateAvailabilityChanged()
 	}
 }
 
@@ -682,8 +673,8 @@ func (r *ReceiverBase) OnMaxPublishedLayerChanged(maxPublishedLayer int32) {
 		dt.UpTrackMaxPublishedLayerChange(maxPublishedLayer)
 	})
 
-	if r.streamTrackerManagerListener != nil {
-		r.streamTrackerManagerListener.OnMaxPublishedLayerChanged(maxPublishedLayer)
+	if r.params.StreamTrackerManagerListener != nil {
+		r.params.StreamTrackerManagerListener.OnMaxPublishedLayerChanged(maxPublishedLayer)
 	}
 }
 
@@ -693,8 +684,8 @@ func (r *ReceiverBase) OnMaxTemporalLayerSeenChanged(maxTemporalLayerSeen int32)
 		dt.UpTrackMaxTemporalLayerSeenChange(maxTemporalLayerSeen)
 	})
 
-	if r.streamTrackerManagerListener != nil {
-		r.streamTrackerManagerListener.OnMaxTemporalLayerSeenChanged(maxTemporalLayerSeen)
+	if r.params.StreamTrackerManagerListener != nil {
+		r.params.StreamTrackerManagerListener.OnMaxTemporalLayerSeenChanged(maxTemporalLayerSeen)
 	}
 }
 
@@ -704,8 +695,8 @@ func (r *ReceiverBase) OnMaxAvailableLayerChanged(maxAvailableLayer int32) {
 		onMaxLayerChange(r.Mime(), maxAvailableLayer)
 	}
 
-	if r.streamTrackerManagerListener != nil {
-		r.streamTrackerManagerListener.OnMaxAvailableLayerChanged(maxAvailableLayer)
+	if r.params.StreamTrackerManagerListener != nil {
+		r.params.StreamTrackerManagerListener.OnMaxAvailableLayerChanged(maxAvailableLayer)
 	}
 }
 
@@ -715,8 +706,8 @@ func (r *ReceiverBase) OnBitrateReport(availableLayers []int32, bitrates Bitrate
 		dt.UpTrackBitrateReport(availableLayers, bitrates)
 	})
 
-	if r.streamTrackerManagerListener != nil {
-		r.streamTrackerManagerListener.OnBitrateReport(availableLayers, bitrates)
+	if r.params.StreamTrackerManagerListener != nil {
+		r.params.StreamTrackerManagerListener.OnBitrateReport(availableLayers, bitrates)
 	}
 }
 
@@ -782,7 +773,7 @@ func (r *ReceiverBase) ClearAllBuffers(reason string) {
 }
 
 func (r *ReceiverBase) clearAllBuffersLocked(reason string) {
-	for idx := 0; idx < len(r.buffers); idx++ {
+	for idx := range len(r.buffers) {
 		if r.buffers[idx] != nil {
 			r.buffers[idx].CloseWithReason(reason)
 		}
@@ -862,7 +853,7 @@ func (r *ReceiverBase) forwardRTP(layer int32, buff buffer.BufferProvider) {
 			r.streamTrackerManager.RemoveAllTrackers()
 		}
 
-		r.logger.Debugw(
+		r.params.Logger.Debugw(
 			"closing forwarder",
 			"layer", layer,
 			"numPacketsForwarded", numPacketsForwarded,
@@ -872,12 +863,12 @@ func (r *ReceiverBase) forwardRTP(layer int32, buff buffer.BufferProvider) {
 
 	var spatialTrackers [buffer.DefaultMaxLayerSpatial + 1]streamtracker.StreamTrackerWorker
 	if layer < 0 || int(layer) >= len(spatialTrackers) {
-		r.logger.Errorw("invalid layer", nil, "layer", layer)
+		r.params.Logger.Errorw("invalid layer", nil, "layer", layer)
 		return
 	}
 
 	pktBuf := make([]byte, bucket.RTPMaxPktSize)
-	r.logger.Debugw("starting forwarding", "layer", layer)
+	r.params.Logger.Debugw("starting forwarding", "layer", layer)
 	for {
 		pkt, err := buff.ReadExtended(pktBuf)
 		if err == io.EOF {
@@ -886,7 +877,7 @@ func (r *ReceiverBase) forwardRTP(layer int32, buff buffer.BufferProvider) {
 		dequeuedAt := mono.UnixNano()
 
 		if pkt.IsRestart {
-			r.logger.Infow("stream restarted", "layer", layer)
+			r.params.Logger.Infow("stream restarted", "layer", layer)
 			r.downTrackSpreader.Broadcast(func(dt TrackSender) {
 				dt.ReceiverRestart()
 			})
@@ -896,12 +887,12 @@ func (r *ReceiverBase) forwardRTP(layer int32, buff buffer.BufferProvider) {
 			}
 		}
 
-		if pkt.Packet.PayloadType != uint8(r.codec.PayloadType) {
+		if pkt.Packet.PayloadType != uint8(r.params.Codec.PayloadType) {
 			// drop packets as we don't support codec fallback directly
-			r.logger.Debugw(
+			r.params.Logger.Debugw(
 				"dropping packet - payload mismatch",
 				"packetPayloadType", pkt.Packet.PayloadType,
-				"payloadType", r.codec.PayloadType,
+				"payloadType", r.params.Codec.PayloadType,
 			)
 			numPacketsDropped++
 			continue
@@ -913,7 +904,7 @@ func (r *ReceiverBase) forwardRTP(layer int32, buff buffer.BufferProvider) {
 			spatialLayer = pkt.Spatial
 		}
 		if int(spatialLayer) >= len(spatialTrackers) {
-			r.logger.Errorw(
+			r.params.Logger.Errorw(
 				"unexpected spatial layer", nil,
 				"spatialLayer", spatialLayer,
 				"pktSpatialLayer", pkt.Spatial,
@@ -934,7 +925,7 @@ func (r *ReceiverBase) forwardRTP(layer int32, buff buffer.BufferProvider) {
 		// track delay/jitter
 		if writeCount.Load() > 0 && r.forwardStats != nil && !pkt.IsBuffered {
 			if latency, isHigh := r.forwardStats.Update(pkt.Arrival, mono.UnixNano()); isHigh {
-				r.logger.Debugw(
+				r.params.Logger.Debugw(
 					"high forwarding latency",
 					"latency", time.Duration(latency),
 					"queuingLatency", time.Duration(dequeuedAt-pkt.Arrival),
@@ -1011,7 +1002,7 @@ func (r *ReceiverBase) GetPrimaryReceiverForRed() TrackReceiver {
 	if rt == nil {
 		pr := NewRedPrimaryReceiver(r, sfuutils.DownTrackSpreaderParams{
 			Threshold: r.lbThreshold,
-			Logger:    r.logger,
+			Logger:    r.params.Logger,
 		})
 		r.redTransformer.Store(pr)
 		return pr
@@ -1035,7 +1026,7 @@ func (r *ReceiverBase) GetRedReceiver() TrackReceiver {
 	if rt == nil {
 		pr := NewRedReceiver(r, sfuutils.DownTrackSpreaderParams{
 			Threshold: r.lbThreshold,
-			Logger:    r.logger,
+			Logger:    r.params.Logger,
 		})
 		r.redTransformer.Store(pr)
 		return pr
@@ -1098,7 +1089,7 @@ func (r *ReceiverBase) SetCodecState(state ReceiverCodecState) {
 	r.codecStateLock.Unlock()
 
 	for _, f := range fns {
-		f(r.codec, state)
+		f(r.params.Codec, state)
 	}
 }
 

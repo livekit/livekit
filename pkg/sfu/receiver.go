@@ -110,15 +110,17 @@ func NewWebRTCReceiver(
 	}
 
 	w.ReceiverBase = NewReceiverBase(
-		livekit.TrackID(track.ID()),
-		track.StreamID(),
-		track.Kind(),
-		track.Codec(),
-		receiver.GetParameters().HeaderExtensions,
+		ReceiverBaseParams{
+			TrackID:                      livekit.TrackID(track.ID()),
+			StreamID:                     track.StreamID(),
+			Kind:                         track.Kind(),
+			Codec:                        track.Codec(),
+			HeaderExtensions:             receiver.GetParameters().HeaderExtensions,
+			Logger:                       logger,
+			StreamTrackerManagerConfig:   streamTrackerManagerConfig,
+			StreamTrackerManagerListener: w,
+		},
 		trackInfo,
-		logger,
-		streamTrackerManagerConfig,
-		w,
 	)
 
 	for _, opt := range opts {
@@ -127,17 +129,18 @@ func NewWebRTCReceiver(
 
 	w.connectionStats = connectionquality.NewConnectionStats(connectionquality.ConnectionStatsParams{
 		ReceiverProvider: w,
-		Logger:           w.logger.WithValues("direction", "up"),
+		Logger:           logger.WithValues("direction", "up"),
 	})
 	w.connectionStats.OnStatsUpdate(func(_cs *connectionquality.ConnectionStats, stat *livekit.AnalyticsStat) {
 		if w.onStatsUpdate != nil {
 			w.onStatsUpdate(w, stat)
 		}
 	})
+	codec := track.Codec()
 	w.connectionStats.Start(
-		mime.NormalizeMimeType(w.codec.MimeType),
+		mime.NormalizeMimeType(codec.MimeType),
 		// TODO: technically not correct to declare FEC on when RED. Need the primary codec's fmtp line to check.
-		mime.IsMimeTypeStringRED(w.codec.MimeType) || strings.Contains(strings.ToLower(w.codec.SDPFmtpLine), "useinbandfec=1"),
+		mime.IsMimeTypeStringRED(codec.MimeType) || strings.Contains(strings.ToLower(codec.SDPFmtpLine), "useinbandfec=1"),
 	)
 
 	return w
@@ -168,7 +171,7 @@ func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) erro
 		layer = buffer.GetSpatialLayerForRid(w.Mime(), track.RID(), w.ReceiverBase.TrackInfo())
 	}
 	if layer < 0 {
-		w.logger.Warnw(
+		w.ReceiverBase.Logger().Warnw(
 			"invalid layer", nil,
 			"rid", track.RID(),
 			"trackInfo", logger.Proto(w.ReceiverBase.TrackInfo()),
