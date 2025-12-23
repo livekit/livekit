@@ -309,7 +309,7 @@ func testRedRedPrimaryReceiver(t *testing.T, maxPktCount, redCount int, sendPktI
 			},
 		},
 	}
-	require.Equal(t, w.GetPrimaryReceiverForRed(), w)
+	require.Equal(t, w.GetPrimaryReceiverForRed(), w.ReceiverBase)
 	w.isRED = true
 	red := w.GetPrimaryReceiverForRed().(*RedPrimaryReceiver)
 	require.NotNil(t, red)
@@ -342,7 +342,7 @@ func TestRedPrimaryReceiver(t *testing.T) {
 			},
 		},
 	}
-	require.Equal(t, w.GetPrimaryReceiverForRed(), w)
+	require.Equal(t, w.GetPrimaryReceiverForRed(), w.ReceiverBase)
 	w.isRED = true
 	red := w.GetPrimaryReceiverForRed().(*RedPrimaryReceiver)
 	require.NotNil(t, red)
@@ -417,7 +417,7 @@ func TestRedPrimaryReceiver(t *testing.T) {
 				},
 			},
 		}
-		require.Equal(t, w.GetPrimaryReceiverForRed(), w)
+		require.Equal(t, w.GetPrimaryReceiverForRed(), w.ReceiverBase)
 		w.isRED = true
 		red := w.GetPrimaryReceiverForRed().(*RedPrimaryReceiver)
 		require.NotNil(t, red)
