@@ -113,18 +113,27 @@ const (
 	bucketCapCheckInterval = 1e9
 )
 
+type BufferBaseParams struct {
+	SSRC               uint32
+	MaxVideoPkts       int
+	MaxAudioPkts       int
+	LoggerComponents   []string
+	SendPLI            func()
+	IsReportingEnabled bool
+	IsOOBNACK          bool
+}
+
 type BufferBase struct {
 	sync.RWMutex
 
+	params BufferBaseParams
+
 	readCond *sync.Cond
 
-	maxVideoPkts         int
-	maxAudioPkts         int
 	bucket               *bucket.Bucket[uint64, uint16]
 	lastBucketCapCheckAt int64
 
 	nacker              *nack.NackQueue
-	isOOBNACK           bool // RAJA-TODO: set this properly from relay
 	rtpStatsLite        *rtpstats.RTPStatsReceiverLite
 	liteStatsSnapshotId uint32
 
@@ -132,8 +141,7 @@ type BufferBase struct {
 
 	codecType webrtc.RTPCodecType // RAJA-TODO? - maybe consolidate all this into codec webrtc.Codec
 	closeOnce sync.Once           // RAJA-TODO use this in relayBuffer also?
-	mediaSSRC uint32
-	clockRate uint32 // RAJA-TODO - this needs to be populated properly
+	clockRate uint32              // RAJA-TODO - this needs to be populated properly
 	mime      mime.MimeType
 
 	// RAJA-REMOVE bound           bool
@@ -154,9 +162,7 @@ type BufferBase struct {
 	enableStreamRestartDetection bool
 
 	pliThrottle int64
-	sendPLI     func()
 
-	isReportingEnabled   bool
 	rtpStats             *rtpstats.RTPStatsReceiver
 	ppsSnapshotId        uint32
 	rrSnapshotId         uint32
@@ -172,8 +178,7 @@ type BufferBase struct {
 	// video size tracking for multiple spatial layers
 	currentVideoSize [DefaultMaxLayerSpatial + 1]VideoSize
 
-	loggerComponents []string
-	logger           logger.Logger
+	logger logger.Logger
 
 	// dependency descriptor
 	ddExtID  uint8
@@ -194,32 +199,18 @@ type BufferBase struct {
 	isClosed atomic.Bool
 }
 
-func NewBufferBase(
-	ssrc uint32,
-	maxVideoPkts int,
-	maxAudioPkts int,
-	loggerComponents []string,
-	sendPLI func(),
-	isReportingEnabled bool,
-	isOOBNACK bool,
-) *BufferBase {
+func NewBufferBase(params BufferBaseParams) *BufferBase {
 	l := logger.GetLogger() // will be reset with correct context via SetLogger
-	for _, component := range loggerComponents {
+	for _, component := range params.LoggerComponents {
 		l = l.WithComponent(component)
 	}
-	l = l.WithValues("ssrc", ssrc)
+	l = l.WithValues("ssrc", params.SSRC)
 
 	b := &BufferBase{
-		mediaSSRC:            ssrc,
-		maxVideoPkts:         maxVideoPkts,
-		maxAudioPkts:         maxAudioPkts,
+		params:               params,
 		lastBucketCapCheckAt: mono.UnixNano(),
 		snRangeMap:           utils.NewRangeMap[uint64, uint64](100),
 		pliThrottle:          int64(500 * time.Millisecond),
-		sendPLI:              sendPLI,
-		isReportingEnabled:   isReportingEnabled,
-		isOOBNACK:            isOOBNACK,
-		loggerComponents:     loggerComponents,
 		logger:               l,
 	}
 	b.readCond = sync.NewCond(&b.RWMutex)
@@ -227,14 +218,26 @@ func NewBufferBase(
 	return b
 }
 
+func (b *BufferBase) SSRC() uint32 {
+	return b.params.SSRC
+}
+
+func (b *BufferBase) MaxVideoPkts() int {
+	return b.params.MaxVideoPkts
+}
+
+func (b *BufferBase) MaxAudioPkts() int {
+	return b.params.MaxAudioPkts
+}
+
 func (b *BufferBase) SetLogger(lgr logger.Logger) {
 	b.Lock()
 	defer b.Unlock()
 
-	for _, component := range b.loggerComponents {
+	for _, component := range b.params.LoggerComponents {
 		lgr = lgr.WithComponent(component)
 	}
-	lgr = lgr.WithValues("ssrc", b.mediaSSRC)
+	lgr = lgr.WithValues("ssrc", b.params.SSRC)
 	b.logger = lgr
 
 	if b.rtpStats != nil {
@@ -311,7 +314,7 @@ func (b *BufferBase) BindLocked(params webrtc.RTPParameters, codec webrtc.RTPCod
 		if bitrates > 0 {
 			pps := bitrates / 8 / 1200
 			for pps > b.bucket.Capacity() {
-				if b.bucket.Grow() >= b.maxVideoPkts {
+				if b.bucket.Grow() >= b.params.MaxVideoPkts {
 					break
 				}
 			}
@@ -419,12 +422,12 @@ func (b *BufferBase) setupRTPStats(clockRate uint32) {
 		Logger:    b.logger,
 	})
 	b.ppsSnapshotId = b.rtpStats.NewSnapshotId()
-	if b.isReportingEnabled {
+	if b.params.IsReportingEnabled {
 		b.rrSnapshotId = b.rtpStats.NewSnapshotId()
 		b.deltaStatsSnapshotId = b.rtpStats.NewSnapshotId()
 	}
 
-	if b.isOOBNACK {
+	if b.params.IsOOBNACK {
 		b.rtpStatsLite = rtpstats.NewRTPStatsReceiverLite(rtpstats.RTPStatsParams{
 			ClockRate: clockRate,
 			Logger:    b.logger,
@@ -507,8 +510,8 @@ func (b *BufferBase) SendPLI(force bool) {
 		return
 	}
 
-	if b.sendPLI != nil {
-		b.sendPLI()
+	if b.params.SendPLI != nil {
+		b.params.SendPLI()
 	}
 }
 
@@ -548,7 +551,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 		rtpPacket = &rtp.Packet{}
 		if err := rtpPacket.Unmarshal(rawPkt); err != nil {
 			b.logger.Errorw("could not unmarshal RTP packet", err)
-			return nil, rtpstats.RTPFlowState{}, err
+			return nil, rtpstats.RTPFlowState{}, nil, err
 		}
 	}
 
@@ -606,7 +609,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 	case rtpstats.RTPFlowUnhandledReasonNone:
 	case rtpstats.RTPFlowUnhandledReasonRestart:
 		if !b.enableStreamRestartDetection {
-			return rtpPacket, flowState, fmt.Errorf("unhandled reason: %s", flowState.UnhandledReason.String())
+			return rtpPacket, flowState, nil, fmt.Errorf("unhandled reason: %s", flowState.UnhandledReason.String())
 		}
 
 		b.StopKeyFrameSeeder()
@@ -633,7 +636,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 		)
 		isRestart = true
 	default:
-		return rtpPacket, flowState, fmt.Errorf("unhandled reason: %s", flowState.UnhandledReason.String())
+		return rtpPacket, flowState, nil, fmt.Errorf("unhandled reason: %s", flowState.UnhandledReason.String())
 	}
 
 	if len(rtpPacket.Payload) == 0 && (!flowState.IsOutOfOrder || flowState.IsDuplicate) {
@@ -664,7 +667,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 				)
 			}
 		}
-		return rtpPacket, flowState, errors.New("padding only packet")
+		return rtpPacket, flowState, nil, errors.New("padding only packet")
 	}
 
 	// RAJA-TODO: ensure this does not get triggered in relay path
@@ -688,7 +691,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 			"rtpStatsLite", b.rtpStatsLite,
 			"snRangeMap", b.snRangeMap,
 		)
-		return rtpPacket, flowState, err
+		return rtpPacket, flowState, nil, err
 	}
 
 	flowState.ExtSequenceNumber -= snAdjustment
@@ -725,12 +728,12 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 				)
 			}
 		}
-		return rtpPacket, flowState, err
+		return rtpPacket, flowState, nil, err
 	}
 
 	ep := b.getExtPacket(rtpPacket, arrivalTime, isBuffered, isRestart, flowState)
 	if ep == nil {
-		return rtpPacket, flowState, errors.New("could not get ext packet")
+		return rtpPacket, flowState, nil, errors.New("could not get ext packet")
 	}
 	b.extPackets.PushBack(ep)
 	b.readCond.Broadcast()
@@ -743,7 +746,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 
 	b.maybeGrowBucket(arrivalTime)
 
-	return rtpPacket, flowState, nil
+	return rtpPacket, flowState, ep, nil
 }
 
 func (b *BufferBase) UpdateNACKStateLocked(sequenceNumber uint16, flowState rtpstats.RTPFlowState) {
@@ -759,17 +762,19 @@ func (b *BufferBase) UpdateNACKStateLocked(sequenceNumber uint16, flowState rtps
 }
 
 func (b *BufferBase) UpdateOOBNACKStateLocked(sequenceNumber uint16, arrivalTime int64, size int) {
-	if b.nacker != nil || !b.isOOBNACK {
+	if b.nacker == nil || !b.params.IsOOBNACK {
 		return
 	}
 
 	fsLite := b.rtpStatsLite.Update(arrivalTime, size, sequenceNumber)
-	if !fsLite.IsNotHandled {
-		b.nacker.Remove(sequenceNumber)
+	if fsLite.IsNotHandled {
+		return
+	}
 
-		for lost := fsLite.LossStartInclusive; lost != fsLite.LossEndExclusive; lost++ {
-			b.nacker.Push(uint16(lost))
-		}
+	b.nacker.Remove(sequenceNumber)
+
+	for lost := fsLite.LossStartInclusive; lost != fsLite.LossEndExclusive; lost++ {
+		b.nacker.Push(uint16(lost))
 	}
 }
 
@@ -850,22 +855,6 @@ func (b *BufferBase) handleCodecChange(newPT uint8) {
 	b.StartKeyFrameSeeder()
 }
 
-/* RAJA-TODO  - relayBuffer uses rtpStatsLite for NACKs, need some way to differentiate */
-/* RAJA-REMOVE
-func (b *BufferBase) updateStreamState(p *rtp.Packet, arrivalTime int64) rtpstats.RTPFlowState {
-	return b.rtpStats.Update(
-		arrivalTime,
-		p.Header.SequenceNumber,
-		p.Header.Timestamp,
-		p.Header.Marker,
-		p.Header.MarshalSize(),
-		len(p.Payload),
-		int(p.PaddingSize),
-	)
-}
-*/
-
-/* RAJA-TODO - this one split up as AddPacket and processVideoPkt in relayBuffer */
 func (b *BufferBase) getExtPacket(
 	rtpPacket *rtp.Packet,
 	arrivalTime int64,
@@ -1090,9 +1079,9 @@ func (b *BufferBase) maybeGrowBucket(now int64) {
 	b.lastBucketCapCheckAt = now
 
 	cap := b.bucket.Capacity()
-	maxPkts := b.maxVideoPkts
+	maxPkts := b.params.MaxVideoPkts
 	if b.codecType == webrtc.RTPCodecTypeAudio {
-		maxPkts = b.maxAudioPkts
+		maxPkts = b.params.MaxAudioPkts
 	}
 	if cap >= maxPkts {
 		return
@@ -1278,7 +1267,7 @@ func (b *BufferBase) OnVideoSizeChanged(fn func([]VideoSize)) {
 	b.Unlock()
 }
 
-func (b *Buffer) OnCodecChange(fn func(webrtc.RTPCodecParameters)) {
+func (b *BufferBase) OnCodecChange(fn func(webrtc.RTPCodecParameters)) {
 	b.Lock()
 	b.onCodecChange = fn
 	b.Unlock()
@@ -1399,7 +1388,7 @@ func (b *BufferBase) GetNACKPairsLocked() []rtcp.NackPair {
 	}
 
 	pairs, numSeqNumsNacked := b.nacker.Pairs()
-	if !b.isOOBNACK {
+	if !b.params.IsOOBNACK {
 		if b.rtpStats != nil {
 			b.rtpStats.UpdateNack(uint32(numSeqNumsNacked))
 		}
@@ -1417,7 +1406,7 @@ func (b *BufferBase) GetRtcpReceptionReportLocked(proxyLoss uint8) *rtcp.Recepti
 		return nil
 	}
 
-	return b.rtpStats.GetRtcpReceptionReport(b.mediaSSRC, proxyLoss, b.rrSnapshotId)
+	return b.rtpStats.GetRtcpReceptionReport(b.params.SSRC, proxyLoss, b.rrSnapshotId)
 }
 
 // ---------------------------------------------------------------

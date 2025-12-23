@@ -78,7 +78,6 @@ type Buffer struct {
 	onRtcpFeedback func([]rtcp.Packet)
 	// RAJA-TODO onRtcpSenderReport func()
 	onFinalRtpStats func(*livekit.RTPStats)
-	// RAJA-TODO onCodecChange   func(webrtc.RTPCodecParameters)
 
 	primaryBufferForRTX *Buffer
 	rtxPktBuf           []byte
@@ -86,15 +85,14 @@ type Buffer struct {
 
 func NewBuffer(ssrc uint32, maxVideoPkts, maxAudioPkts int) *Buffer {
 	b := &Buffer{}
-	b.BufferBase = NewBufferBase(
-		ssrc,
-		maxVideoPkts,
-		maxAudioPkts,
-		[]string{sutils.ComponentPub, sutils.ComponentSFU},
-		b.sendPLI,
-		true,
-		false,
-	)
+	b.BufferBase = NewBufferBase(BufferBaseParams{
+		SSRC:               ssrc,
+		MaxVideoPkts:       maxVideoPkts,
+		MaxAudioPkts:       maxAudioPkts,
+		LoggerComponents:   []string{sutils.ComponentPub, sutils.ComponentSFU},
+		SendPLI:            b.sendPLI,
+		IsReportingEnabled: true,
+	})
 	return b
 }
 
@@ -245,14 +243,6 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	return nil
 }
 
-/* RAJA-TODO
-func (b *Buffer) OnCodecChange(fn func(webrtc.RTPCodecParameters)) {
-	b.Lock()
-	b.onCodecChange = fn
-	b.Unlock()
-}
-*/
-
 // Write adds an RTP Packet, ordering is not guaranteed, newer packets may arrive later
 //
 //go:noinline
@@ -306,7 +296,7 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		}
 
 		startIdx := 0
-		overflow := len(b.pPackets) - max(b.maxVideoPkts, b.maxAudioPkts)
+		overflow := len(b.pPackets) - max(b.BufferBase.MaxVideoPkts(), b.BufferBase.MaxAudioPkts())
 		if overflow > 0 {
 			startIdx = overflow
 		}
@@ -369,11 +359,11 @@ func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime int64) {
 	repairedPkt := *rtxPkt
 	repairedPkt.PayloadType = b.payloadType
 	repairedPkt.SequenceNumber = binary.BigEndian.Uint16(rtxPkt.Payload[:2])
-	repairedPkt.SSRC = b.mediaSSRC
+	repairedPkt.SSRC = b.BufferBase.SSRC()
 	repairedPkt.Payload = rtxPkt.Payload[2:]
 	n, err := repairedPkt.MarshalTo(b.rtxPktBuf)
 	if err != nil {
-		b.logger.Errorw("could not marshal repaired packet", err, "ssrc", b.mediaSSRC, "sn", repairedPkt.SequenceNumber)
+		b.logger.Errorw("could not marshal repaired packet", err, "ssrc", b.BufferBase.SSRC(), "sn", repairedPkt.SequenceNumber)
 		return
 	}
 
@@ -466,8 +456,12 @@ func (b *Buffer) getOnClose() func() {
 }
 
 func (b *Buffer) sendPLI() {
+	ssrc := b.BufferBase.SSRC()
 	pli := []rtcp.Packet{
-		&rtcp.PictureLossIndication{SenderSSRC: b.mediaSSRC, MediaSSRC: b.mediaSSRC},
+		&rtcp.PictureLossIndication{
+			SenderSSRC: ssrc,
+			MediaSSRC:  ssrc,
+		},
 	}
 
 	if cb := b.getOnRtcpFeedback(); cb != nil {
@@ -476,7 +470,7 @@ func (b *Buffer) sendPLI() {
 }
 
 func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, isBuffered bool) {
-	rtpPacket, flowState, err := b.BufferBase.HandleIncomingPacketLocked(
+	rtpPacket, flowState, _, err := b.BufferBase.HandleIncomingPacketLocked(
 		rawPkt,
 		rtpPacket,
 		arrivalTime,
@@ -503,9 +497,10 @@ func (b *Buffer) doNACKs() {
 
 func (b *Buffer) buildNACKPacket() []rtcp.Packet {
 	if nacks := b.BufferBase.GetNACKPairsLocked(); len(nacks) > 0 {
+		ssrc := b.BufferBase.SSRC()
 		pkts := []rtcp.Packet{&rtcp.TransportLayerNack{
-			SenderSSRC: b.mediaSSRC,
-			MediaSSRC:  b.mediaSSRC,
+			SenderSSRC: ssrc,
+			MediaSSRC:  ssrc,
 			Nacks:      nacks,
 		}}
 		return pkts
@@ -534,7 +529,7 @@ func (b *Buffer) getRTCP() []rtcp.Packet {
 	rr := b.buildReceptionReport()
 	if rr != nil {
 		pkts = append(pkts, &rtcp.ReceiverReport{
-			SSRC:    b.mediaSSRC,
+			SSRC:    b.BufferBase.SSRC(),
 			Reports: []rtcp.ReceptionReport{*rr},
 		})
 	}

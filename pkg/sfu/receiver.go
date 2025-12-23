@@ -165,13 +165,13 @@ func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) erro
 
 	layer := int32(0)
 	if w.Kind() == webrtc.RTPCodecTypeVideo && w.videoLayerMode != livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM {
-		layer = buffer.GetSpatialLayerForRid(w.Mime(), track.RID(), w.trackInfo.Load())
+		layer = buffer.GetSpatialLayerForRid(w.Mime(), track.RID(), w.ReceiverBase.TrackInfo())
 	}
 	if layer < 0 {
 		w.logger.Warnw(
 			"invalid layer", nil,
 			"rid", track.RID(),
-			"trackInfo", logger.Proto(w.trackInfo.Load()),
+			"trackInfo", logger.Proto(w.ReceiverBase.TrackInfo()),
 		)
 		return ErrInvalidLayer
 	}

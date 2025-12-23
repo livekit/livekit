@@ -135,6 +135,10 @@ func (r *RedPrimaryReceiver) GetDownTracks() []TrackSender {
 	return r.downTrackSpreader.GetDownTracks()
 }
 
+func (r *RedPrimaryReceiver) HasDownTracks() bool {
+	return r.downTrackSpreader.DownTrackCount() != 0
+}
+
 func (r *RedPrimaryReceiver) ResyncDownTracks() {
 	r.downTrackSpreader.Broadcast(func(dt TrackSender) {
 		dt.Resync()

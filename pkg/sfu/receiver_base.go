@@ -29,7 +29,6 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/mono"
 
-	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
@@ -82,7 +81,11 @@ var (
 
 type AudioLevelHandle func(level uint8, duration uint32)
 
+// --------------------------------------
+
 type Bitrates [buffer.DefaultMaxLayerSpatial + 1][buffer.DefaultMaxLayerTemporal + 1]int64
+
+// --------------------------------------
 
 type ReceiverCodecState int
 
@@ -91,6 +94,8 @@ const (
 	ReceiverCodecStateSuspended
 	ReceiverCodecStateInvalid
 )
+
+// --------------------------------------
 
 // TrackReceiver defines an interface receive media from remote peer
 type TrackReceiver interface {
@@ -118,6 +123,7 @@ type TrackReceiver interface {
 	AddDownTrack(track TrackSender) error
 	DeleteDownTrack(participantID livekit.ParticipantID)
 	GetDownTracks() []TrackSender
+	HasDownTracks() bool
 
 	DebugInfo() map[string]any
 
@@ -152,6 +158,8 @@ type REDTransformer interface {
 		layer int32,
 		publisherSRData *livekit.RTCPSenderReportState,
 	)
+	GetDownTracks() []TrackSender
+	HasDownTracks() bool
 	ResyncDownTracks()
 	OnStreamRestart()
 	CanClose() bool
@@ -318,11 +326,11 @@ func (r *ReceiverBase) resyncLocked(reason string) {
 	r.logger.Debugw("resync receiver", "reason", reason)
 	r.clearAllBuffersLocked("resync")
 
-	r.downTrackSpreader.Broadcast(func(dt sfu.TrackSender) {
+	r.downTrackSpreader.Broadcast(func(dt TrackSender) {
 		dt.Resync()
 	})
 	if rt := r.redTransformer.Load(); rt != nil {
-		rt.(sfu.REDTransformer).ResyncDownTracks()
+		rt.(REDTransformer).ResyncDownTracks()
 	}
 }
 
@@ -601,10 +609,9 @@ func (r *ReceiverBase) DeleteDownTrack(subscriberID livekit.ParticipantID) {
 func (r *ReceiverBase) GetDownTracks() []TrackSender {
 	downTracks := r.downTrackSpreader.GetDownTracks()
 	if rt := r.redTransformer.Load(); rt != nil {
-		downTracks = append(downTracks, rt.(sfu.REDTransformer).GetDownTracks()...)
+		downTracks = append(downTracks, rt.(REDTransformer).GetDownTracks()...)
 	}
 	return downTracks
-	//return r.downTrackSpreader.GetDownTracks()
 }
 
 func (r *ReceiverBase) HasDownTracks() bool {
@@ -613,8 +620,8 @@ func (r *ReceiverBase) HasDownTracks() bool {
 	}
 
 	// check if there are downtracks attached to red transformer
-	if rt := r.redTransformer.Load(); rt != nil && !rt.(sfu.REDTransformer).CanClose() {
-		return true
+	if rt := r.redTransformer.Load(); rt != nil {
+		return rt.(REDTransformer).HasDownTracks()
 	}
 
 	return false
@@ -983,10 +990,7 @@ func (r *ReceiverBase) closeTracks() {
 }
 
 func (r *ReceiverBase) DebugInfo() map[string]any {
-	var videoLayerMode livekit.VideoLayer_Mode
-	if ti := r.trackInfo.Load(); ti != nil {
-		videoLayerMode = buffer.GetVideoLayerModeForMimeType(r.Mime(), ti)
-	}
+	videoLayerMode := buffer.GetVideoLayerModeForMimeType(r.Mime(), r.TrackInfo())
 	info := map[string]any{
 		"Mime":           r.Mime().String(),
 		"VideoLayerMode": videoLayerMode.String(),
