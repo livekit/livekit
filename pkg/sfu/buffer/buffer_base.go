@@ -386,6 +386,10 @@ func (b *BufferBase) BindLocked(rtpParameters webrtc.RTPParameters, codec webrtc
 		}
 	}
 
+	if b.nacker == nil && b.params.IsOOBSequenceNumber {
+		b.nacker = nack.NewNACKQueue(nack.NackQueueParamsDefault)
+	}
+
 	b.StartKeyFrameSeeder()
 
 	return nil
