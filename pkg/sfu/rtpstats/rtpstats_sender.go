@@ -1125,7 +1125,7 @@ func (r *RTPStatsSender) ToProto() *livekit.RTPStats {
 }
 
 func (r *RTPStatsSender) getAndResetSenderSnapshotWindow(senderSnapshotID uint32) (*senderSnapshotWindow, *senderSnapshotWindow) {
-	if !r.initialized {
+	if !r.initialized || senderSnapshotID < cFirstSnapshotID {
 		return nil, nil
 	}
 
@@ -1166,7 +1166,7 @@ func (r *RTPStatsSender) getSenderSnapshotWindow(startTime int64) senderSnapshot
 }
 
 func (r *RTPStatsSender) getAndResetSenderSnapshotReceiverView(senderSnapshotID uint32) (*senderSnapshotReceiverView, *senderSnapshotReceiverView) {
-	if !r.initialized || r.lastRRTime == 0 {
+	if !r.initialized || r.lastRRTime == 0 || senderSnapshotID < cFirstSnapshotID {
 		return nil, nil
 	}
 

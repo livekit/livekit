@@ -751,6 +751,10 @@ func (r *RTPStatsReceiver) MarshalLogObject(e zapcore.ObjectEncoder) error {
 }
 
 func (r *RTPStatsReceiver) ToProto() *livekit.RTPStats {
+	if r == nil {
+		return nil
+	}
+
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 

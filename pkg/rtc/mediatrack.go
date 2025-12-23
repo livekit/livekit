@@ -306,7 +306,12 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			case *rtcp.SourceDescription:
 			case *rtcp.SenderReport:
 				if pkt.SSRC == uint32(track.SSRC()) {
-					buff.SetSenderReportData(pkt.RTPTime, pkt.NTPTime, pkt.PacketCount, pkt.OctetCount)
+					buff.SetSenderReportData(&livekit.RTCPSenderReportState{
+						RtpTimestamp: pkt.RTPTime,
+						NtpTimestamp: pkt.NTPTime,
+						Packets:      pkt.PacketCount,
+						Octets:       uint64(pkt.OctetCount),
+					})
 				}
 			case *rtcp.ExtendedReport:
 			rttFromXR:
@@ -527,12 +532,12 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		return newCodec, false
 	}
 
-	var bitrates int
+	var expectedBitrate int
 	layers := buffer.GetVideoLayersForMimeType(mimeType, ti)
 	if layer >= 0 && len(layers) > int(layer) {
-		bitrates = int(layers[layer].GetBitrate())
+		expectedBitrate = int(layers[layer].GetBitrate())
 	}
-	if err := buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability, bitrates); err != nil {
+	if err := buff.Bind(receiver.GetParameters(), track.Codec().RTPCodecCapability, expectedBitrate); err != nil {
 		t.params.Logger.Warnw(
 			"binding buffer failed", err,
 			"rid", track.RID(),
