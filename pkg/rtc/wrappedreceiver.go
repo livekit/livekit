@@ -396,6 +396,7 @@ func (d *DummyReceiver) GetDownTracks() []sfu.TrackSender {
 	return maps.Values(d.downTracks)
 }
 
+/* RAJA-REMOVE
 func (d *DummyReceiver) HasDownTracks() bool {
 	d.downTrackLock.Lock()
 	defer d.downTrackLock.Unlock()
@@ -405,6 +406,7 @@ func (d *DummyReceiver) HasDownTracks() bool {
 	}
 	return len(d.downTracks) != 0
 }
+*/
 
 func (d *DummyReceiver) DebugInfo() map[string]any {
 	if receiver := d.getReceiver(); receiver != nil {
@@ -573,6 +575,7 @@ func (d *DummyRedReceiver) GetDownTracks() []sfu.TrackSender {
 	return maps.Values(d.downTracks)
 }
 
+/* RAJA-REMOVE
 func (d *DummyRedReceiver) HasDownTracks() bool {
 	d.downTrackLock.Lock()
 	defer d.downTrackLock.Unlock()
@@ -582,6 +585,7 @@ func (d *DummyRedReceiver) HasDownTracks() bool {
 	}
 	return len(d.downTracks) != 0
 }
+*/
 
 func (d *DummyRedReceiver) ReadRTP(buf []byte, layer uint8, esn uint64) (int, error) {
 	if r, ok := d.redReceiver.Load().(sfu.TrackReceiver); ok {

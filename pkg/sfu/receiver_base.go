@@ -126,7 +126,7 @@ type TrackReceiver interface {
 	AddDownTrack(track TrackSender) error
 	DeleteDownTrack(participantID livekit.ParticipantID)
 	GetDownTracks() []TrackSender
-	HasDownTracks() bool
+	// RAJA-REMOVE HasDownTracks() bool
 
 	DebugInfo() map[string]any
 
@@ -249,12 +249,12 @@ func NewReceiverBase(params ReceiverBaseParams, trackInfo *livekit.TrackInfo) *R
 	return r
 }
 
-func (r *ReceiverBase) Close() {
+func (r *ReceiverBase) Close(reason string) {
 	if r.isClosed.Swap(true) {
 		return
 	}
 
-	r.streamTrackerManager.RemoveAllTrackers()
+	r.ClearAllBuffers(reason)
 	r.streamTrackerManager.Close()
 
 	closeTrackSenders(r.downTrackSpreader.ResetAndGetDownTracks())
@@ -266,6 +266,22 @@ func (r *ReceiverBase) Close() {
 	if r.params.OnClosed != nil {
 		r.params.OnClosed()
 	}
+}
+
+func (r *ReceiverBase) CanClose() bool {
+	if r.IsClosed() {
+		return true
+	}
+
+	if r.downTrackSpreader.DownTrackCount() != 0 {
+		return false
+	}
+
+	if rt := r.redTransformer.Load(); rt != nil {
+		return rt.(REDTransformer).CanClose()
+	}
+
+	return true
 }
 
 func (r *ReceiverBase) SetPLIThrottleConfig(pliThrottleConfig PLIThrottleConfig) {
@@ -527,6 +543,7 @@ func (r *ReceiverBase) GetDownTracks() []TrackSender {
 	return downTracks
 }
 
+/* RAJA-REMOVE
 func (r *ReceiverBase) HasDownTracks() bool {
 	if r.downTrackSpreader.DownTrackCount() != 0 {
 		return true
@@ -538,6 +555,7 @@ func (r *ReceiverBase) HasDownTracks() bool {
 
 	return false
 }
+*/
 
 func (r *ReceiverBase) SetMaxExpectedSpatialLayer(layer int32) {
 	prevMax := r.streamTrackerManager.SetMaxExpectedSpatialLayer(layer)
@@ -745,7 +763,7 @@ func (r *ReceiverBase) forwardRTP(layer int32, buff buffer.BufferProvider) {
 	numPacketsDropped := 0
 	defer func() {
 		if r.params.IsSelfClosing {
-			r.Close()
+			r.Close("forwarder-done")
 		} else {
 			r.streamTrackerManager.RemoveTracker(layer)
 			if r.videoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM {
