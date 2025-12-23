@@ -603,7 +603,7 @@ func (r *ReceiverBase) getBufferLocked(layer int32) buffer.BufferProvider {
 
 func (r *ReceiverBase) GetOrCreateBuffer(
 	layer int32,
-	creatorFn func() (buffer.BufferProvider, error),
+	creatorFn func(*livekit.TrackInfo) (buffer.BufferProvider, error),
 ) (buffer.BufferProvider, bool) {
 	r.bufferMu.Lock()
 
@@ -617,13 +617,14 @@ func (r *ReceiverBase) GetOrCreateBuffer(
 		return buff, false
 	}
 
-	buff, err := creatorFn()
+	buff, err := creatorFn(r.trackInfo)
 	if err != nil {
 		r.bufferMu.Unlock()
 		r.params.Logger.Errorw("could not create buffer", err)
 		return nil, false
 	}
 
+	r.buffers[layer] = buff
 	rtt := r.rtt
 	r.bufferMu.Unlock()
 
