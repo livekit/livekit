@@ -99,6 +99,7 @@ type BufferProvider interface {
 	SendPLI(force bool)
 	GetStats() *livekit.RTPStats
 	GetDeltaStats() *StreamStatsWithLayers
+	GetDeltaStatsLite() *rtpstats.RTPDeltaInfoLite
 	GetLastSenderReportTime() time.Time
 	ReadExtended(buf []byte) (*ExtPacket, error)
 	GetSenderReportData() *livekit.RTCPSenderReportState
@@ -115,13 +116,13 @@ const (
 )
 
 type BufferBaseParams struct {
-	SSRC               uint32
-	MaxVideoPkts       int
-	MaxAudioPkts       int
-	LoggerComponents   []string
-	SendPLI            func()
-	IsReportingEnabled bool
-	IsOOBNACK          bool
+	SSRC                uint32
+	MaxVideoPkts        int
+	MaxAudioPkts        int
+	LoggerComponents    []string
+	SendPLI             func()
+	IsReportingEnabled  bool
+	IsOOBSequenceNumber bool
 }
 
 type BufferBase struct {
@@ -455,7 +456,7 @@ func (b *BufferBase) setupRTPStats(clockRate uint32) {
 		b.deltaStatsSnapshotId = b.rtpStats.NewSnapshotId()
 	}
 
-	if b.params.IsOOBNACK {
+	if b.params.IsOOBSequenceNumber {
 		b.rtpStatsLite = rtpstats.NewRTPStatsReceiverLite(rtpstats.RTPStatsParams{
 			ClockRate: clockRate,
 			Logger:    b.logger,
@@ -790,7 +791,7 @@ func (b *BufferBase) UpdateNACKStateLocked(sequenceNumber uint16, flowState rtps
 }
 
 func (b *BufferBase) UpdateOOBNACKStateLocked(sequenceNumber uint16, arrivalTime int64, size int) {
-	if b.nacker == nil || !b.params.IsOOBNACK {
+	if b.nacker == nil || !b.params.IsOOBSequenceNumber {
 		return
 	}
 
@@ -1139,15 +1140,6 @@ func (b *BufferBase) maybeGrowBucket(now int64) {
 			}
 		}
 	}
-
-	/* RAJA-TODO - have to somehow slow this in for relay
-		if r.packetCounter != nil {
-		if deltaInfoLite := r.rtpStatsLite.DeltaInfoLite(r.liteStatsSnapshotId); deltaInfoLite != nil {
-			r.packetCounter.AddLoss(deltaInfoLite.PacketsLost, deltaInfoLite.Packets)
-			r.packetCounter.AddOutOfOrder(deltaInfoLite.PacketsOutOfOrder, deltaInfoLite.Packets)
-		}
-	}
-	*/
 }
 
 func (b *BufferBase) doFpsCalc(ep *ExtPacket) {
@@ -1235,6 +1227,9 @@ func (b *BufferBase) GetStats() *livekit.RTPStats {
 }
 
 func (b *BufferBase) GetDeltaStats() *StreamStatsWithLayers {
+	b.RLock()
+	defer b.RUnlock()
+
 	if b.rtpStats == nil {
 		return nil
 	}
@@ -1250,6 +1245,17 @@ func (b *BufferBase) GetDeltaStats() *StreamStatsWithLayers {
 			0: deltaStats,
 		},
 	}
+}
+
+func (b *BufferBase) GetDeltaStatsLite() *rtpstats.RTPDeltaInfoLite {
+	b.RLock()
+	defer b.RUnlock()
+
+	if b.rtpStatsLite == nil {
+		return nil
+	}
+
+	return b.rtpStatsLite.DeltaInfoLite(b.liteStatsSnapshotId)
 }
 
 func (b *BufferBase) GetLastSenderReportTime() time.Time {
@@ -1427,7 +1433,7 @@ func (b *BufferBase) GetNACKPairsLocked() []rtcp.NackPair {
 	}
 
 	pairs, numSeqNumsNacked := b.nacker.Pairs()
-	if !b.params.IsOOBNACK {
+	if !b.params.IsOOBSequenceNumber {
 		if b.rtpStats != nil {
 			b.rtpStats.UpdateNack(uint32(numSeqNumsNacked))
 		}
