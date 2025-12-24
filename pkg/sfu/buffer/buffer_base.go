@@ -401,27 +401,10 @@ func (b *BufferBase) CloseWithReason(reason string) (stats *livekit.RTPStats, er
 
 		b.StopKeyFrameSeeder()
 
-		b.RLock()
-		rtpStats := b.rtpStats
-		rtpStatsLite := b.rtpStatsLite
+		b.Lock()
+		b.stopRTPStats(reason)
 		b.readCond.Broadcast()
-		b.RUnlock()
-
-		if rtpStats != nil {
-			rtpStats.Stop()
-			stats = rtpStats.ToProto()
-		}
-		if rtpStatsLite != nil {
-			rtpStatsLite.Stop()
-		}
-
-		b.logger.Debugw(
-			"rtp stats",
-			"direction", "upstream",
-			"stats", rtpStats,
-			"statsLite", rtpStatsLite,
-			"reason", reason,
-		)
+		b.Unlock()
 
 		go b.flushExtPackets()
 	})
@@ -471,6 +454,26 @@ func (b *BufferBase) setupRTPStats(clockRate uint32) {
 		})
 		b.liteStatsSnapshotId = b.rtpStatsLite.NewSnapshotLiteId()
 	}
+}
+
+func (b *BufferBase) stopRTPStats(reason string) (stats *livekit.RTPStats, statsLite *livekit.RTPStats) {
+	if b.rtpStats != nil {
+		b.rtpStats.Stop()
+		stats = b.rtpStats.ToProto()
+	}
+	if b.rtpStatsLite != nil {
+		b.rtpStatsLite.Stop()
+		statsLite = b.rtpStatsLite.ToProto()
+	}
+
+	b.logger.Debugw(
+		"rtp stats",
+		"direction", "upstream",
+		"stats", b.rtpStats,
+		"statsLite", b.rtpStatsLite,
+		"reason", reason,
+	)
+	return
 }
 
 func (b *BufferBase) createDDParserAndFrameRateCalculator() {
@@ -683,9 +686,8 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 		}
 
 		b.StopKeyFrameSeeder()
-
-		b.rtpStats.Stop()
-		b.logger.Infow("stream restart - rtp stats", b.rtpStats)
+		b.stopRTPStats("stream-restart")
+		b.flushExtPacketsLocked()
 
 		b.snRangeMap = utils.NewRangeMap[uint64, uint64](100)
 		b.setupRTPStats(b.clockRate)
@@ -693,7 +695,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 		if b.nacker != nil {
 			b.nacker = nack.NewNACKQueue(nack.NackQueueParamsDefault)
 		}
-		b.flushExtPacketsLocked()
+		b.StartKeyFrameSeeder()
 
 		flowState = b.rtpStats.Update(
 			arrivalTime,
