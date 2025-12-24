@@ -1153,21 +1153,30 @@ func (b *BufferBase) maybeGrowBucket(now int64) {
 	if now-b.lastBucketCapCheckAt < bucketCapCheckInterval {
 		return
 	}
-	b.lastBucketCapCheckAt = now
 
-	cap := b.bucket.Capacity()
-	maxPkts := b.params.MaxVideoPkts
-	if b.codecType == webrtc.RTPCodecTypeAudio {
-		maxPkts = b.params.MaxAudioPkts
-	}
-	if cap >= maxPkts {
-		return
-	}
+	// check and allocate in a go routine, away from the forwarding path
+	go func() {
+		b.Lock()
+		defer b.Unlock()
 
-	oldCap := cap
-	if deltaInfo := b.rtpStats.DeltaInfo(b.ppsSnapshotId); deltaInfo != nil {
-		duration := deltaInfo.EndTime.Sub(deltaInfo.StartTime)
-		if duration > 500*time.Millisecond {
+		b.lastBucketCapCheckAt = now
+
+		cap := b.bucket.Capacity()
+		maxPkts := b.params.MaxVideoPkts
+		if b.codecType == webrtc.RTPCodecTypeAudio {
+			maxPkts = b.params.MaxAudioPkts
+		}
+		if cap >= maxPkts {
+			return
+		}
+
+		oldCap := cap
+		if deltaInfo := b.rtpStats.DeltaInfo(b.ppsSnapshotId); deltaInfo != nil {
+			duration := deltaInfo.EndTime.Sub(deltaInfo.StartTime)
+			if duration < 500*time.Millisecond {
+				return
+			}
+
 			pps := int(time.Duration(deltaInfo.Packets) * time.Second / duration)
 			for pps > cap && cap < maxPkts {
 				cap = b.bucket.Grow()
@@ -1183,7 +1192,7 @@ func (b *BufferBase) maybeGrowBucket(now int64) {
 				)
 			}
 		}
-	}
+	}()
 }
 
 func (b *BufferBase) doFpsCalc(ep *ExtPacket) {
