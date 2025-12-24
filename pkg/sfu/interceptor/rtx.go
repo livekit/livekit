@@ -126,7 +126,6 @@ func (u *RTXInfoExtractor) BindRemoteStream(info *interceptor.StreamInfo, reader
 	}
 
 	return &rtxInfoReader{
-		ssrc:      info.SSRC,
 		tryTimes:  rtxProbeCount,
 		reader:    reader,
 		midExtID:  uint8(midExtensionID),
@@ -138,7 +137,6 @@ func (u *RTXInfoExtractor) BindRemoteStream(info *interceptor.StreamInfo, reader
 }
 
 type rtxInfoReader struct {
-	ssrc      uint32
 	tryTimes  int
 	reader    interceptor.RTPReader
 	midExtID  uint8
