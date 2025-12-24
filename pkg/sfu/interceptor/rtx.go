@@ -61,9 +61,14 @@ func (f *RTXInfoExtractorFactory) NewInterceptor(id string) (interceptor.Interce
 	}, nil
 }
 
-func (f *RTXInfoExtractorFactory) setStreamInfo(ssrc uint32, mid, rid, rsid string) {
+func (f *RTXInfoExtractorFactory) SetStreamInfo(ssrc uint32, mid, rid, rsid string) {
 	var repairSsrc, baseSsrc uint32
 	f.lock.Lock()
+
+	if mid == "" || (rid == "" && rsid == "") {
+		f.lock.Unlock()
+		return
+	}
 
 	if rsid != "" {
 		// repair stream found, find base stream
@@ -121,6 +126,7 @@ func (u *RTXInfoExtractor) BindRemoteStream(info *interceptor.StreamInfo, reader
 	}
 
 	return &rtxInfoReader{
+		ssrc:      info.SSRC,
 		tryTimes:  rtxProbeCount,
 		reader:    reader,
 		midExtID:  uint8(midExtensionID),
@@ -132,6 +138,7 @@ func (u *RTXInfoExtractor) BindRemoteStream(info *interceptor.StreamInfo, reader
 }
 
 type rtxInfoReader struct {
+	ssrc      uint32
 	tryTimes  int
 	reader    interceptor.RTPReader
 	midExtID  uint8
@@ -171,7 +178,7 @@ func (r *rtxInfoReader) Read(b []byte, a interceptor.Attributes) (int, intercept
 	if mid != "" && (rid != "" || rsid != "") {
 		r.logger.Debugw("stream found", "mid", mid, "rid", rid, "rsid", rsid, "ssrc", header.SSRC)
 		r.tryTimes = -1
-		go r.factory.setStreamInfo(header.SSRC, mid, rid, rsid)
+		go r.factory.SetStreamInfo(header.SSRC, mid, rid, rsid)
 	} else {
 		// ignore padding only packet for probe count
 		if !(header.Padding && n-header.MarshalSize()-int(b[n-1]) == 0) {

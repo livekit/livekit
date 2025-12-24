@@ -1023,3 +1023,11 @@ func (t *TransportManager) SetSubscriberChannelCapacity(channelCapacity int64) {
 func (t *TransportManager) hasRecentSignalLocked() bool {
 	return time.Since(t.lastSignalAt) < PingTimeoutSeconds*time.Second
 }
+
+func (t *TransportManager) RTPStreamPublished(ssrc uint32, mid, rid string) {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
+		t.publisher.RTPStreamPublished(ssrc, mid, rid)
+	} else {
+		t.subscriber.RTPStreamPublished(ssrc, mid, rid)
+	}
+}

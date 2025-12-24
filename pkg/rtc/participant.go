@@ -2206,7 +2206,8 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 			"kind", track.Kind().String(),
 			"webrtcTrackID", track.ID(),
 			"rid", track.RID(),
-			"SSRC", track.SSRC(),
+			"ssrc", track.SSRC(),
+			"rtxSsrc", track.RtxSSRC(),
 			"mime", mime.NormalizeMimeType(codec.MimeType),
 			"isReceiverAdded", isReceiverAdded,
 			"sdpRids", logger.StringSlice(sdpRids[:]),
@@ -2222,6 +2223,12 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 		return
 	}
 
+	p.TransportManager.RTPStreamPublished(
+		uint32(track.SSRC()),
+		p.TransportManager.GetPublisherMid(rtpReceiver),
+		track.RID(),
+	)
+
 	p.setIsPublisher(true)
 	p.dirty.Store(true)
 
@@ -2231,7 +2238,8 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 		"trackID", publishedTrack.ID(),
 		"webrtcTrackID", track.ID(),
 		"rid", track.RID(),
-		"SSRC", track.SSRC(),
+		"ssrc", track.SSRC(),
+		"rtxSsrc", track.RtxSSRC(),
 		"mime", mime.NormalizeMimeType(codec.MimeType),
 		"trackInfo", logger.Proto(publishedTrack.ToProto()),
 		"fromSdp", fromSdp,
@@ -3069,7 +3077,8 @@ func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver 
 		"kind", track.Kind().String(),
 		"trackID", track.ID(),
 		"rid", track.RID(),
-		"SSRC", track.SSRC(),
+		"ssrc", track.SSRC(),
+		"rtxSsrc", track.RtxSSRC(),
 		"mime", mime.NormalizeMimeType(track.Codec().MimeType),
 		"mid", mid,
 	)
