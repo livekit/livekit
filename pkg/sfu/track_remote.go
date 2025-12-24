@@ -21,6 +21,7 @@ type TrackRemote interface {
 	RID() string
 	Msid() string
 	SSRC() webrtc.SSRC
+	RtxSSRC() webrtc.SSRC
 	StreamID() string
 	Kind() webrtc.RTPCodecType
 	Codec() webrtc.RTPCodecParameters
