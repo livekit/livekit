@@ -126,7 +126,7 @@ type BufferProvider interface {
 		isRTX bool,
 		skippedSeqs []uint16,
 		oobSequenceNumber uint16,
-	) (*ExtPacket, error)
+	) (uint64, error)
 
 	CloseWithReason(reason string) (*livekit.RTPStats, error)
 }
@@ -585,12 +585,12 @@ func (b *BufferBase) HandleIncomingPacket(
 	isRTX bool,
 	skippedSeqs []uint16,
 	oobSequenceNumber uint16,
-) (*ExtPacket, error) {
+) (uint64, error) {
 	b.Lock()
 	defer b.Unlock()
 
 	if b.isClosed.Load() {
-		return nil, io.EOF
+		return 0, io.EOF
 	}
 
 	return b.HandleIncomingPacketLocked(
@@ -612,12 +612,12 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 	isRTX bool,
 	skippedSeqs []uint16,
 	oobSequenceNumber uint16,
-) (*ExtPacket, error) {
+) (uint64, error) {
 	if rtpPacket == nil {
 		rtpPacket = &rtp.Packet{}
 		if err := rtpPacket.Unmarshal(rawPkt); err != nil {
 			b.logger.Errorw("could not unmarshal RTP packet", err)
-			return nil, err
+			return 0, err
 		}
 	}
 
@@ -662,7 +662,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 
 	// do not start on an RTX packet
 	if isRTX && !b.rtpStats.IsActive() {
-		return nil, errors.New("cannot start on rtx packet")
+		return 0, errors.New("cannot start on rtx packet")
 	}
 
 	isRestart := false
@@ -679,7 +679,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 	case rtpstats.RTPFlowUnhandledReasonNone:
 	case rtpstats.RTPFlowUnhandledReasonRestart:
 		if !b.enableStreamRestartDetection {
-			return nil, fmt.Errorf("unhandled reason: %s", flowState.UnhandledReason.String())
+			return 0, fmt.Errorf("unhandled reason: %s", flowState.UnhandledReason.String())
 		}
 
 		b.StopKeyFrameSeeder()
@@ -706,7 +706,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 		)
 		isRestart = true
 	default:
-		return nil, fmt.Errorf("unhandled reason: %s", flowState.UnhandledReason.String())
+		return 0, fmt.Errorf("unhandled reason: %s", flowState.UnhandledReason.String())
 	}
 
 	if len(rtpPacket.Payload) == 0 && (!flowState.IsOutOfOrder || flowState.IsDuplicate) {
@@ -737,7 +737,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 				)
 			}
 		}
-		return nil, errors.New("padding only packet")
+		return 0, errors.New("padding only packet")
 	}
 
 	if !flowState.IsOutOfOrder && rtpPacket.PayloadType != b.payloadType && b.codecType == webrtc.RTPCodecTypeVideo {
@@ -760,7 +760,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 			"rtpStatsLite", b.rtpStatsLite,
 			"snRangeMap", b.snRangeMap,
 		)
-		return nil, err
+		return 0, err
 	}
 
 	flowState.ExtSequenceNumber -= snAdjustment
@@ -795,12 +795,12 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 				)
 			}
 		}
-		return nil, err
+		return 0, err
 	}
 
 	ep := b.getExtPacket(rtpPacket, arrivalTime, isBuffered, isRestart, flowState)
 	if ep == nil {
-		return nil, errors.New("could not get ext packet")
+		return 0, errors.New("could not get ext packet")
 	}
 	b.extPackets.PushBack(ep)
 	b.readCond.Broadcast()
@@ -819,7 +819,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 		b.updateNACKState(rtpPacket.SequenceNumber, flowState)
 	}
 
-	return ep, nil
+	return ep.ExtSequenceNumber, nil
 }
 
 func (b *BufferBase) updateNACKState(sequenceNumber uint16, flowState rtpstats.RTPFlowState) {
@@ -1153,21 +1153,30 @@ func (b *BufferBase) maybeGrowBucket(now int64) {
 	if now-b.lastBucketCapCheckAt < bucketCapCheckInterval {
 		return
 	}
-	b.lastBucketCapCheckAt = now
 
-	cap := b.bucket.Capacity()
-	maxPkts := b.params.MaxVideoPkts
-	if b.codecType == webrtc.RTPCodecTypeAudio {
-		maxPkts = b.params.MaxAudioPkts
-	}
-	if cap >= maxPkts {
-		return
-	}
+	// check and allocate in a go routine, away from the forwarding path
+	go func() {
+		b.Lock()
+		defer b.Unlock()
 
-	oldCap := cap
-	if deltaInfo := b.rtpStats.DeltaInfo(b.ppsSnapshotId); deltaInfo != nil {
-		duration := deltaInfo.EndTime.Sub(deltaInfo.StartTime)
-		if duration > 500*time.Millisecond {
+		b.lastBucketCapCheckAt = now
+
+		cap := b.bucket.Capacity()
+		maxPkts := b.params.MaxVideoPkts
+		if b.codecType == webrtc.RTPCodecTypeAudio {
+			maxPkts = b.params.MaxAudioPkts
+		}
+		if cap >= maxPkts {
+			return
+		}
+
+		oldCap := cap
+		if deltaInfo := b.rtpStats.DeltaInfo(b.ppsSnapshotId); deltaInfo != nil {
+			duration := deltaInfo.EndTime.Sub(deltaInfo.StartTime)
+			if duration < 500*time.Millisecond {
+				return
+			}
+
 			pps := int(time.Duration(deltaInfo.Packets) * time.Second / duration)
 			for pps > cap && cap < maxPkts {
 				cap = b.bucket.Grow()
@@ -1183,7 +1192,7 @@ func (b *BufferBase) maybeGrowBucket(now int64) {
 				)
 			}
 		}
-	}
+	}()
 }
 
 func (b *BufferBase) doFpsCalc(ep *ExtPacket) {
