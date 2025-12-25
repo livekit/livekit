@@ -493,7 +493,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		t.MediaTrackReceiver.SetupReceiver(newWR, priority, mid)
 
 		for ssrc, info := range t.params.SimTracks {
-			if info.Mid == mid && info.IsRepairStream {
+			if info.Mid == mid && !info.IsRepairStream {
 				t.MediaTrackReceiver.SetLayerSsrcsForRid(mimeType, info.StreamID, ssrc, info.RepairSSRC)
 			}
 		}
