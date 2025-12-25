@@ -59,7 +59,7 @@ func TestDataChannelWriter_NoSlowThreshold(t *testing.T) {
 func TestDataChannelWriter_Unreliable(t *testing.T) {
 	mockDC := newMockLossyDataChannelWriter(8192)
 	w := NewDataChannelWriterUnreliable(mockDC, mockDC, 100*time.Millisecond, 2000)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		buf := make([]byte, 128)
 		_, err := w.Write(buf)
 		require.NoError(t, err)

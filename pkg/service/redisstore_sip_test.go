@@ -320,7 +320,7 @@ func testIter[T listItem](
 ) {
 	ctx := context.Background()
 	var all []string
-	for i := 0; i < 250; i++ {
+	for i := range 250 {
 		id := fmt.Sprintf("%05d", i)
 		all = append(all, id)
 		err := create(ctx, id)

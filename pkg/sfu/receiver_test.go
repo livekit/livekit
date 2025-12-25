@@ -102,15 +102,15 @@ func BenchmarkWriteRTP(b *testing.B) {
 }
 
 func benchmarkNoPool(b *testing.B, downTracks int) {
-	for i := 0; i < b.N; i++ {
-		for dt := 0; dt < downTracks; dt++ {
+	for b.Loop() {
+		for range downTracks {
 			writeRTP()
 		}
 	}
 }
 
 func benchmarkPool(b *testing.B, wp *workerpool.WorkerPool, buckets []int) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		var wg sync.WaitGroup
 		for j := range buckets {
 			downTracks := buckets[j]
@@ -130,7 +130,7 @@ func benchmarkPool(b *testing.B, wp *workerpool.WorkerPool, buckets []int) {
 }
 
 func benchmarkGoroutine(b *testing.B, buckets []int) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		var wg sync.WaitGroup
 		for j := range buckets {
 			downTracks := buckets[j]
@@ -150,7 +150,7 @@ func benchmarkGoroutine(b *testing.B, buckets []int) {
 }
 
 func benchmarkLoadBalanced(b *testing.B, numProcs, step, downTracks int) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		start := atomic.NewUint64(0)
 		step := uint64(step)
 		end := uint64(downTracks)
@@ -177,7 +177,7 @@ func benchmarkLoadBalanced(b *testing.B, numProcs, step, downTracks int) {
 }
 
 func benchmarkLoadBalancedPool(b *testing.B, wp *workerpool.WorkerPool, numProcs, step, downTracks int) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		start := atomic.NewUint64(0)
 		step := uint64(step)
 		end := uint64(downTracks)

@@ -567,7 +567,7 @@ func (q *qualityScorer) getAdjustedPacketLossWeight(stat *windowStat) float64 {
 	//  2. enough time has elapsed since last calculation
 	if q.numPPSReadings > cPPSMinReadings && time.Since(q.modeCalculatedAt) > cModeCalculationInterval {
 		q.ppsMode = 0
-		for i := 0; i < len(q.ppsHistogram); i++ {
+		for i := range len(q.ppsHistogram) {
 			if q.ppsHistogram[i] > q.ppsMode {
 				q.ppsMode = i
 			}

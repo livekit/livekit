@@ -117,7 +117,7 @@ func createAudioLevel(activeLevel uint8, minPercentile uint8, observeDuration ui
 }
 
 func observeSamples(a *AudioLevel, level uint8, count int, baseTime time.Time) {
-	for i := 0; i < count; i++ {
+	for i := range count {
 		a.Observe(level, 20, baseTime.Add(+time.Duration(i*20)*time.Millisecond).UnixNano())
 	}
 }

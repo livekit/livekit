@@ -89,7 +89,7 @@ func TestRedReceiver(t *testing.T) {
 
 		header := rtp.Header{SequenceNumber: 65534, Timestamp: (uint32(1) << 31) - 2*tsStep, PayloadType: 111}
 		expectPkt := make([]*rtp.Packet, 0, maxRedCount+1)
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			if i%2 == 0 {
 				header.SequenceNumber++
 				header.Timestamp += tsStep
@@ -265,7 +265,7 @@ func verifyEncodingEqual(t *testing.T, p1, p2 *rtp.Packet) {
 
 func generatePkts(header rtp.Header, count int, tsStep uint32) []*rtp.Packet {
 	pkts := make([]*rtp.Packet, 0, count)
-	for i := 0; i < count; i++ {
+	for range count {
 		hbuf, _ := header.Marshal()
 		pkts = append(pkts, &rtp.Packet{
 			Header:  header,
@@ -350,7 +350,7 @@ func TestRedPrimaryReceiver(t *testing.T) {
 	t.Run("packet should send only once", func(t *testing.T) {
 		maxPktCount := 19
 		var sendPktIndex []int
-		for i := 0; i < maxPktCount; i++ {
+		for i := range maxPktCount {
 			sendPktIndex = append(sendPktIndex, i)
 		}
 		testRedRedPrimaryReceiver(t, maxPktCount, maxRedCount, sendPktIndex, sendPktIndex)
@@ -359,7 +359,7 @@ func TestRedPrimaryReceiver(t *testing.T) {
 	t.Run("packet duplicate and unorder", func(t *testing.T) {
 		maxPktCount := 19
 		var sendPktIndex []int
-		for i := 0; i < maxPktCount; i++ {
+		for i := range maxPktCount {
 			sendPktIndex = append(sendPktIndex, i)
 			if i > 0 {
 				sendPktIndex = append(sendPktIndex, i-1)
@@ -372,7 +372,7 @@ func TestRedPrimaryReceiver(t *testing.T) {
 	t.Run("full recover", func(t *testing.T) {
 		maxPktCount := 19
 		var sendPktIndex, recvPktIndex []int
-		for i := 0; i < maxPktCount; i++ {
+		for i := range maxPktCount {
 			recvPktIndex = append(recvPktIndex, i)
 
 			// drop packets covered by red encoding

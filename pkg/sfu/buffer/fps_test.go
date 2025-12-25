@@ -75,7 +75,7 @@ func createFrames(startFrameNumber uint16, startTs uint32, startSeq uint16, tota
 
 	nextTs := make([][]uint32, spatials)
 	tsStep := make([][]uint32, spatials)
-	for i := 0; i < spatials; i++ {
+	for i := range spatials {
 		nextTs[i] = make([]uint32, temporals)
 		tsStep[i] = make([]uint32, temporals)
 		for j := 0; j < temporals; j++ {
@@ -85,11 +85,11 @@ func createFrames(startFrameNumber uint16, startTs uint32, startSeq uint16, tota
 	}
 
 	currentTs := make([]uint32, spatials)
-	for i := 0; i < spatials; i++ {
+	for i := range spatials {
 		currentTs[i] = startTs
 	}
-	for i := 0; i < totalFramesPerSpatial; i++ {
-		for s := 0; s < spatials; s++ {
+	for range totalFramesPerSpatial {
+		for s := range spatials {
 			frame := &testFrameInfo{
 				header:      rtp.Header{Timestamp: currentTs[s], SequenceNumber: startSeq},
 				framenumber: fn,
@@ -134,7 +134,7 @@ func createFrames(startFrameNumber uint16, startTs uint32, startSeq uint16, tota
 
 func verifyFps(t *testing.T, expect, got []float32) {
 	require.Equal(t, len(expect), len(got))
-	for i := 0; i < len(expect); i++ {
+	for i := range expect {
 		require.GreaterOrEqual(t, got[i], expect[i]*0.9, "expect %v, got %v", expect, got)
 		require.LessOrEqual(t, got[i], expect[i]*1.1, "expect %v, got %v", expect, got)
 	}

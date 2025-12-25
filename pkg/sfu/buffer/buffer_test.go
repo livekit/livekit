@@ -82,7 +82,7 @@ func TestNack(t *testing.T) {
 		}, vp8Codec.RTPCodecCapability, 0)
 		rtt := uint32(20)
 		buff.nacker.SetRTT(rtt)
-		for i := 0; i < 15; i++ {
+		for i := range 15 {
 			if i == 1 {
 				continue
 			}
@@ -147,7 +147,7 @@ func TestNack(t *testing.T) {
 		}, vp8Codec.RTPCodecCapability, 0)
 		rtt := uint32(30)
 		buff.nacker.SetRTT(rtt)
-		for i := 0; i < 15; i++ {
+		for i := range 15 {
 			if i > 0 && i < 5 {
 				continue
 			}
@@ -428,15 +428,14 @@ func BenchmarkMemcpu(b *testing.B) {
 	buf := make([]byte, 1500*1500*10)
 	buf2 := make([]byte, 1500*1500*20)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		copy(buf2, buf)
 	}
 }
 
 func BenchmarkExtPacketFactory(b *testing.B) {
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		extPkt := ExtPacketFactory.Get().(*ExtPacket)
 		*extPkt = ExtPacket{}
 		ExtPacketFactory.Put(extPkt)

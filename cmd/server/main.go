@@ -304,7 +304,7 @@ func startServer(_ context.Context, c *cli.Command) error {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
 	go func() {
-		for i := 0; i < 2; i++ {
+		for i := range 2 {
 			sig := <-sigChan
 			force := i > 0
 			logger.Infow("exit requested, shutting down", "signal", sig, "force", force)

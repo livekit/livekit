@@ -1296,7 +1296,7 @@ func (c *RTCClient) SendNacks(count int) {
 	c.lock.Lock()
 	for _, pkt := range c.lastPackets {
 		seqs := make([]uint16, 0, count)
-		for i := 0; i < count; i++ {
+		for i := range count {
 			seqs = append(seqs, pkt.SequenceNumber-uint16(i))
 		}
 		packets = append(packets, &rtcp.TransportLayerNack{

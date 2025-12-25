@@ -53,7 +53,7 @@ func TestConcurrentConsumption(t *testing.T) {
 	sums := make([]atomic.Int32, numConsumers)
 	var wg sync.WaitGroup
 
-	for i := 0; i < numConsumers; i++ {
+	for i := range numConsumers {
 		wg.Add(1)
 		i := i
 		go func() {
@@ -66,12 +66,12 @@ func TestConcurrentConsumption(t *testing.T) {
 
 	// Add items
 	expectedSum := 0
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		expectedSum += i
 		producer.Add(i)
 	}
 
-	for i := 0; i < numConsumers; i++ {
+	for i := range numConsumers {
 		testutils.WithTimeout(t, func() string {
 			if sums[i].Load() != int32(expectedSum) {
 				return fmt.Sprintf("consumer %d did not consume all the items. expected %d, actual: %d",
@@ -91,7 +91,7 @@ func TestConcurrentConsumption(t *testing.T) {
 	producer.Done()
 	wg.Wait()
 
-	for i := 0; i < numConsumers; i++ {
+	for i := range numConsumers {
 		require.Equal(t, int32(expectedSum), sums[i].Load(), "consumer %d did not match", i)
 	}
 }
