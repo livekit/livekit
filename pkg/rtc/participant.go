@@ -60,6 +60,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	"github.com/livekit/livekit-server/pkg/sfu/interceptor"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
@@ -179,7 +180,7 @@ type ParticipantParams struct {
 	LoggerResolver                  logger.DeferredFieldResolver
 	Reporter                        roomobs.ParticipantSessionReporter
 	ReporterResolver                roomobs.ParticipantReporterResolver
-	SimTracks                       map[uint32]SimulcastTrackInfo
+	SimTracks                       map[uint32]interceptor.SimulcastTrackInfo
 	Grants                          *auth.ClaimGrants
 	InitialVersion                  uint32
 	ClientConf                      *livekit.ClientConfiguration
@@ -980,7 +981,7 @@ func (p *ParticipantImpl) synthesizeAddTrackRequests(parsedOffer *sdp.SessionDes
 			if ridsOk {
 				// add simulcast layers, NOTE: only quality can be set as dimensions/fps is not available
 				n := min(len(rids), int(buffer.DefaultMaxLayerSpatial)+1)
-				for i := 0; i < n; i++ {
+				for i := range n {
 					// WARN: casting int -> protobuf enum
 					req.Layers = append(req.Layers, &livekit.VideoLayer{Quality: livekit.VideoQuality(i)})
 				}
@@ -1023,7 +1024,7 @@ func (p *ParticipantImpl) updateRidsFromSDP(parsed *sdp.SessionDescription, unma
 				}
 				outRids = buffer.NormalizeVideoLayersRid(outRids)
 			} else {
-				for i := 0; i < len(inRids); i++ {
+				for i := range len(inRids) {
 					outRids[i] = ""
 				}
 			}
@@ -3062,12 +3063,10 @@ func (p *ParticipantImpl) setTrackMuted(mute *livekit.MuteTrackRequest, fromAdmi
 	return trackInfo
 }
 
-func (p *ParticipantImpl) mediaTrackReceived(track sfu.TrackRemote, rtpReceiver *webrtc.RTPReceiver) (
-	*MediaTrack,
-	bool,
-	bool,
-	buffer.VideoLayersRid,
-) {
+func (p *ParticipantImpl) mediaTrackReceived(
+	track sfu.TrackRemote,
+	rtpReceiver *webrtc.RTPReceiver,
+) (*MediaTrack, bool, bool, buffer.VideoLayersRid) {
 	p.pendingTracksLock.Lock()
 	newTrack := false
 
@@ -3246,8 +3245,8 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 
 	for _, codec := range ti.Codecs {
 		for ssrc, info := range p.params.SimTracks {
-			if info.Mid == codec.Mid {
-				mt.SetLayerSsrc(mime.NormalizeMimeType(codec.MimeType), info.Rid, ssrc)
+			if info.Mid == codec.Mid && !info.IsRepairStream {
+				mt.SetLayerSsrcsForRid(mime.NormalizeMimeType(codec.MimeType), info.StreamID, ssrc, info.RepairSSRC)
 			}
 		}
 	}

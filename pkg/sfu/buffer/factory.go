@@ -118,7 +118,7 @@ func (f *Factory) GetRTCPReader(ssrc uint32) *RTCPReader {
 	return f.rtcpReaders[ssrc]
 }
 
-func (f *Factory) SetRTXPair(repair, base uint32) {
+func (f *Factory) SetRTXPair(repair, base uint32, rsid string) {
 	f.Lock()
 	repairBuffer, baseBuffer := f.rtpBuffers[repair], f.rtpBuffers[base]
 	if repairBuffer == nil || baseBuffer == nil {
@@ -127,5 +127,8 @@ func (f *Factory) SetRTXPair(repair, base uint32) {
 	f.Unlock()
 	if repairBuffer != nil && baseBuffer != nil {
 		repairBuffer.SetPrimaryBufferForRTX(baseBuffer)
+		if rsid != "" {
+			baseBuffer.NotifyRTX(base, repair, rsid)
+		}
 	}
 }

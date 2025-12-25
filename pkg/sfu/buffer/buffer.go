@@ -68,6 +68,7 @@ type Buffer struct {
 	onClose         func()
 	onRtcpFeedback  func([]rtcp.Packet)
 	onFinalRtpStats func(*livekit.RTPStats)
+	onNotifyRTX     func(uint32, uint32, string)
 
 	primaryBufferForRTX *Buffer
 	rtxPktBuf           []byte
@@ -216,6 +217,12 @@ func (b *Buffer) SetPrimaryBufferForRTX(primaryBuffer *Buffer) {
 			continue
 		}
 		primaryBuffer.writeRTX(&rtpPacket, pp.arrivalTime)
+	}
+}
+
+func (b *Buffer) NotifyRTX(ssrc uint32, repairSSRC uint32, rsid string) {
+	if onNotifyRTX := b.getOnNotifyRTX(); onNotifyRTX != nil {
+		onNotifyRTX(ssrc, repairSSRC, rsid)
 	}
 }
 
@@ -434,4 +441,17 @@ func (b *Buffer) getOnFinalRtpStats() func(*livekit.RTPStats) {
 	defer b.RUnlock()
 
 	return b.onFinalRtpStats
+}
+
+func (b *Buffer) OnNotifyRTX(fn func(ssrc uint32, repairSSRC uint32, rsid string)) {
+	b.Lock()
+	b.onNotifyRTX = fn
+	b.Unlock()
+}
+
+func (b *Buffer) getOnNotifyRTX() func(ssrc uint32, repairSSRC uint32, rsid string) {
+	b.RLock()
+	defer b.RUnlock()
+
+	return b.onNotifyRTX
 }
