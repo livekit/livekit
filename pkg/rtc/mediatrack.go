@@ -34,6 +34,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
+	"github.com/livekit/livekit-server/pkg/sfu/interceptor"
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	util "github.com/livekit/mediatransportutil"
@@ -87,7 +88,7 @@ type MediaTrackParams struct {
 	Telemetry                       telemetry.TelemetryService
 	Logger                          logger.Logger
 	Reporter                        roomobs.TrackReporter
-	SimTracks                       map[uint32]SimulcastTrackInfo
+	SimTracks                       map[uint32]interceptor.SimulcastTrackInfo
 	OnRTCP                          func([]rtcp.Packet)
 	ForwardStats                    *sfu.ForwardStats
 	OnTrackEverSubscribed           func(livekit.TrackID)
@@ -492,8 +493,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		t.MediaTrackReceiver.SetupReceiver(newWR, priority, mid)
 
 		for ssrc, info := range t.params.SimTracks {
-			if info.Mid == mid {
-				t.MediaTrackReceiver.SetLayerSsrc(mimeType, info.Rid, ssrc)
+			if info.Mid == mid && !info.IsRepairStream {
+				t.MediaTrackReceiver.SetLayerSsrcsForRid(mimeType, info.StreamID, ssrc, info.RepairSSRC)
 			}
 		}
 		wr = newWR
@@ -549,7 +550,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		return newCodec, false
 	}
 
-	t.MediaTrackReceiver.SetLayerSsrc(mimeType, track.RID(), uint32(track.SSRC()))
+	t.MediaTrackReceiver.SetLayerSsrcsForRid(mimeType, track.RID(), uint32(track.SSRC()), 0)
 
 	if regressCodec {
 		for _, c := range ti.Codecs {
@@ -565,6 +566,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			}
 		}
 	}
+
+	buff.OnNotifyRTX(t.MediaTrackReceiver.setLayerRtxInfo)
 
 	// if subscriber request fps before fps calculated, update them after fps updated.
 	buff.OnFpsChanged(func() {

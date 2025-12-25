@@ -402,7 +402,7 @@ func (b *BufferBase) CloseWithReason(reason string) (stats *livekit.RTPStats, er
 		b.StopKeyFrameSeeder()
 
 		b.Lock()
-		b.stopRTPStats(reason)
+		stats, _ = b.stopRTPStats(reason)
 		b.readCond.Broadcast()
 		b.Unlock()
 

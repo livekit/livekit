@@ -39,13 +39,17 @@ type streamInfo struct {
 
 type RTXInfoExtractorFactory struct {
 	onStreamFound  func(*interceptor.StreamInfo)
-	onRTXPairFound func(repair, base uint32)
+	onRTXPairFound func(repair, base uint32, rsid string)
 	lock           sync.Mutex
 	streams        map[uint32]streamInfo
 	logger         logger.Logger
 }
 
-func NewRTXInfoExtractorFactory(onStreamFound func(*interceptor.StreamInfo), onRTXPairFound func(repair, base uint32), logger logger.Logger) *RTXInfoExtractorFactory {
+func NewRTXInfoExtractorFactory(
+	onStreamFound func(*interceptor.StreamInfo),
+	onRTXPairFound func(repair, base uint32, rsid string),
+	logger logger.Logger,
+) *RTXInfoExtractorFactory {
 	return &RTXInfoExtractorFactory{
 		onStreamFound:  onStreamFound,
 		onRTXPairFound: onRTXPairFound,
@@ -63,6 +67,7 @@ func (f *RTXInfoExtractorFactory) NewInterceptor(id string) (interceptor.Interce
 
 func (f *RTXInfoExtractorFactory) SetStreamInfo(ssrc uint32, mid, rid, rsid string) {
 	var repairSsrc, baseSsrc uint32
+	var repairSid string
 	f.lock.Lock()
 
 	if mid == "" || (rid == "" && rsid == "") {
@@ -76,6 +81,7 @@ func (f *RTXInfoExtractorFactory) SetStreamInfo(ssrc uint32, mid, rid, rsid stri
 			if info.mid == mid && info.rid == rsid {
 				repairSsrc = ssrc
 				baseSsrc = base
+				repairSid = rsid
 				delete(f.streams, base)
 				break
 			}
@@ -86,6 +92,7 @@ func (f *RTXInfoExtractorFactory) SetStreamInfo(ssrc uint32, mid, rid, rsid stri
 			if info.mid == mid && info.rsid == rid {
 				repairSsrc = repair
 				baseSsrc = ssrc
+				repairSid = info.rid
 				delete(f.streams, repair)
 				break
 			}
@@ -104,7 +111,7 @@ func (f *RTXInfoExtractorFactory) SetStreamInfo(ssrc uint32, mid, rid, rsid stri
 	f.lock.Unlock()
 
 	if repairSsrc != 0 && baseSsrc != 0 {
-		f.onRTXPairFound(repairSsrc, baseSsrc)
+		f.onRTXPairFound(repairSsrc, baseSsrc, repairSid)
 	}
 }
 

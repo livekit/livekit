@@ -184,11 +184,6 @@ func (w wrappedICECandidatePairLogger) MarshalLogObject(e zapcore.ObjectEncoder)
 
 // -------------------------------------------------------------------
 
-type SimulcastTrackInfo struct {
-	Mid string
-	Rid string
-}
-
 type trackDescription struct {
 	mid    string
 	sender *webrtc.RTPSender
@@ -299,7 +294,7 @@ type TransportParams struct {
 	EnabledCodecs                 []*livekit.Codec
 	Logger                        logger.Logger
 	Transport                     livekit.SignalTarget
-	SimTracks                     map[uint32]SimulcastTrackInfo
+	SimTracks                     map[uint32]sfuinterceptor.SimulcastTrackInfo
 	ClientInfo                    ClientInfo
 	IsOfferer                     bool
 	IsSendSide                    bool
@@ -455,7 +450,7 @@ func newPeerConnection(
 		ir.Add(lkinterceptor.NewRTTFromXRFactory(func(rtt uint32) {}))
 	}
 	if len(params.SimTracks) > 0 {
-		f, err := NewUnhandleSimulcastInterceptorFactory(UnhandleSimulcastTracks(params.SimTracks))
+		f, err := sfuinterceptor.NewUnhandleSimulcastInterceptorFactory(sfuinterceptor.UnhandleSimulcastTracks(params.Logger, params.SimTracks))
 		if err != nil {
 			params.Logger.Warnw("NewUnhandleSimulcastInterceptorFactory failed", err)
 		} else {
@@ -498,9 +493,9 @@ func newPeerConnection(
 	}
 	rtxInfoExtractorFactory := sfuinterceptor.NewRTXInfoExtractorFactory(
 		setTWCCForVideo,
-		func(repair, base uint32) {
-			params.Logger.Debugw("rtx pair found from extension", "repair", repair, "base", base)
-			params.Config.BufferFactory.SetRTXPair(repair, base)
+		func(repair, base uint32, rsid string) {
+			params.Logger.Debugw("rtx pair found from extension", "repair", repair, "base", base, "rsid", rsid)
+			params.Config.BufferFactory.SetRTXPair(repair, base, rsid)
 		},
 		params.Logger,
 	)
@@ -1628,7 +1623,7 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remo
 		if len(rtxRepairs) > 0 {
 			t.params.Logger.Debugw("rtx pairs found from sdp", "ssrcs", rtxRepairs)
 			for repair, base := range rtxRepairs {
-				t.params.Config.BufferFactory.SetRTXPair(repair, base)
+				t.params.Config.BufferFactory.SetRTXPair(repair, base, "")
 			}
 		}
 		return nil
@@ -2837,7 +2832,7 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, o
 	if len(rtxRepairs) > 0 {
 		t.params.Logger.Debugw("rtx pairs found from sdp", "ssrcs", rtxRepairs)
 		for repair, base := range rtxRepairs {
-			t.params.Config.BufferFactory.SetRTXPair(repair, base)
+			t.params.Config.BufferFactory.SetRTXPair(repair, base, "")
 		}
 	}
 
