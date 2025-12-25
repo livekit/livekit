@@ -1965,7 +1965,7 @@ func TestForwarderGetSnTsForPadding(t *testing.T) {
 	clockRate := uint32(0)
 	frameRate := uint32(5)
 	var sntsExpected = make([]SnTs, numPadding)
-	for i := 0; i < numPadding; i++ {
+	for i := range numPadding {
 		sntsExpected[i] = SnTs{
 			extSequenceNumber: 23333 + uint64(i) + 1,
 			extTimestamp:      0xabcdef + (uint64(i)*uint64(clockRate))/uint64(frameRate),
@@ -1977,7 +1977,7 @@ func TestForwarderGetSnTsForPadding(t *testing.T) {
 	snts, err = f.GetSnTsForPadding(numPadding, 0, false)
 	require.NoError(t, err)
 
-	for i := 0; i < numPadding; i++ {
+	for i := range numPadding {
 		sntsExpected[i] = SnTs{
 			extSequenceNumber: 23338 + uint64(i) + 1,
 			extTimestamp:      0xabcdef + (uint64(i+1)*uint64(clockRate))/uint64(frameRate),

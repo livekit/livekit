@@ -1193,7 +1193,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 
 	bytesSent := 0
 	payloads := make([]byte, RTPPaddingMaxPayloadSize*len(snts))
-	for i := 0; i < len(snts); i++ {
+	for i := range snts {
 		hdr := RTPHeaderFactory.Get().(*rtp.Header)
 		*hdr = rtp.Header{
 			Version:        2,
@@ -1732,7 +1732,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 				return
 			}
 
-			for i := 0; i < len(snts); i++ {
+			for i := range snts {
 				hdr := &rtp.Header{
 					Version:        2,
 					Padding:        false,
@@ -2242,7 +2242,7 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 		}
 
 		payloads := make([]byte, RTPPaddingMaxPayloadSize*num)
-		for i := 0; i < num; i++ {
+		for i := range num {
 			rtxExtSequenceNumber := d.rtxSequenceNumber.Inc()
 			hdr := RTPHeaderFactory.Get().(*rtp.Header)
 			*hdr = rtp.Header{

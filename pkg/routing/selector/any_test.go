@@ -213,7 +213,7 @@ func TestAnySelector_SelectNode_TwoChoice_Probabilistic_Behavior(t *testing.T) {
 	lowLoadSelections := 0
 	higestLoadSelections := 0
 
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		node, err := selector.SelectNode(nodes)
 		require.NoError(t, err)
 		require.NotNil(t, node)

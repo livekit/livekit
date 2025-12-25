@@ -600,7 +600,7 @@ func (s *RedisStore) storeIngress(_ context.Context, info *livekit.IngressInfo) 
 	}
 
 	// Retry if the key has been changed.
-	for i := 0; i < maxRetries; i++ {
+	for range maxRetries {
 		err := s.rc.Watch(s.ctx, txf, IngressKey)
 		switch err {
 		case redis.TxFailedErr:
@@ -675,7 +675,7 @@ func (s *RedisStore) storeIngressState(_ context.Context, ingressId string, stat
 	}
 
 	// Retry if the key has been changed.
-	for i := 0; i < maxRetries; i++ {
+	for range maxRetries {
 		err := s.rc.Watch(s.ctx, txf, IngressStatePrefix+ingressId)
 		switch err {
 		case redis.TxFailedErr:

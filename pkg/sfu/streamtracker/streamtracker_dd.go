@@ -107,13 +107,13 @@ func (s *StreamTrackerDependencyDescriptor) resetLocked() {
 	// bump generation to trigger exit of current worker
 	s.generation.Inc()
 
-	for i := 0; i < len(s.bytesForBitrate); i++ {
-		for j := 0; j < len(s.bytesForBitrate[i]); j++ {
+	for i := range len(s.bytesForBitrate) {
+		for j := range len(s.bytesForBitrate[i]) {
 			s.bytesForBitrate[i][j] = 0
 		}
 	}
-	for i := 0; i < len(s.bitrate); i++ {
-		for j := 0; j < len(s.bitrate[i]); j++ {
+	for i := range len(s.bitrate) {
+		for j := range len(s.bitrate[i]) {
 			s.bitrate[i][j] = 0
 		}
 	}
@@ -248,11 +248,11 @@ func (s *StreamTrackerDependencyDescriptor) bitrateReport() {
 	s.lastBitrateReport = now
 
 	var availableChangedFns []func()
-	for spatial := 0; spatial < len(s.bytesForBitrate); spatial++ {
+	for spatial := range len(s.bytesForBitrate) {
 		bytesForBitrate := s.bytesForBitrate[spatial][:]
 		bitrateAvailabilityChanged := false
 		bitrates := s.bitrate[spatial][:]
-		for i := 0; i < len(bytesForBitrate); i++ {
+		for i := range bytesForBitrate {
 			bitrate := int64(float64(bytesForBitrate[i]*8) / diff.Seconds())
 			if (bitrates[i] == 0 && bitrate > 0) || (bitrates[i] > 0 && bitrate == 0) {
 				bitrateAvailabilityChanged = true
