@@ -856,7 +856,7 @@ func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 
 	t.lock.Lock()
 	trackInfo := t.TrackInfo()
-	// patch Mid/Rid/Rsid and Ssrc/RtxSsrc of codecs/layers by keeping original if available
+	// patch Mid/Rid and Ssrc/RtxSsrc of codecs/layers by keeping original if available
 	for i, ci := range clonedInfo.Codecs {
 		for _, originCi := range trackInfo.Codecs {
 			if !mime.IsMimeTypeStringEqual(ci.MimeType, originCi.MimeType) {
