@@ -480,6 +480,8 @@ func (b *BufferBase) stopRTPStats(reason string) (stats *livekit.RTPStats, stats
 }
 
 func (b *BufferBase) restartStream() {
+	b.logger.Infow("stream restart")
+
 	// stop
 	b.StopKeyFrameSeeder()
 	b.stopRTPStats("stream-restart")
