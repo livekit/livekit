@@ -173,7 +173,7 @@ type BufferBase struct {
 	snRangeMap *utils.RangeMap[uint64, uint64]
 
 	audioLevelConfig audio.AudioLevelConfig
-	audioLevel       *audio.AudioLevel // RAJA-TODO: restart stream
+	audioLevel       *audio.AudioLevel
 	audioLevelExtID  uint8
 
 	enableStreamRestartDetection bool
@@ -196,7 +196,7 @@ type BufferBase struct {
 
 	logger logger.Logger
 
-	// dependency descriptor	// RAJA-TODO: restart stream
+	// dependency descriptor
 	ddExtID  uint8
 	ddParser *DependencyDescriptorParser
 
