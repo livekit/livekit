@@ -541,11 +541,12 @@ func (b *BufferBase) SetPLIThrottle(duration int64) {
 }
 
 func (b *BufferBase) SendPLI(force bool) {
+	b.RLock()
 	if b.codecType != webrtc.RTPCodecTypeVideo {
+		b.RUnlock()
 		return
 	}
 
-	b.RLock()
 	rtpStats := b.rtpStats
 	pliThrottle := b.pliThrottle
 	b.RUnlock()
