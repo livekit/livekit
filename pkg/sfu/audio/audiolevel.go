@@ -51,7 +51,8 @@ var (
 // --------------------------------------
 
 type AudioLevelParams struct {
-	Config AudioLevelConfig
+	Config    AudioLevelConfig
+	ClockRate uint32
 }
 
 // keeps track of audio level for a participant
@@ -69,6 +70,9 @@ type AudioLevel struct {
 	activeDuration       uint32 // ms
 	observedDuration     uint32 // ms
 	lastObservedAt       int64
+
+	highestRTPTimestamp            uint32
+	highestRTPTimestampInitialized bool
 }
 
 func NewAudioLevel(params AudioLevelParams) *AudioLevel {
@@ -93,6 +97,10 @@ func (l *AudioLevel) Observe(level uint8, durationMs uint32, arrivalTime int64) 
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
+	l.observeLocked(level, durationMs, arrivalTime)
+}
+
+func (l *AudioLevel) observeLocked(level uint8, durationMs uint32, arrivalTime int64) {
 	l.lastObservedAt = arrivalTime
 
 	l.observedDuration += durationMs
@@ -120,6 +128,23 @@ func (l *AudioLevel) Observe(level uint8, durationMs uint32, arrivalTime int64) 
 			smoothedLevel = l.smoothedLevel + (linearLevel-l.smoothedLevel)*l.smoothFactor
 		}
 		l.resetLocked(smoothedLevel)
+	}
+}
+
+func (l *AudioLevel) ObserveWithRTPTimestamp(level uint8, ts uint32, arrivalTime int64) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
+	if !l.highestRTPTimestampInitialized {
+		l.highestRTPTimestampInitialized = true
+		l.highestRTPTimestamp = ts
+	}
+
+	if (ts - l.highestRTPTimestamp) < (1 << 31) {
+		durationMs := (ts - l.highestRTPTimestamp) * 1e3 / l.params.ClockRate
+		l.observeLocked(level, durationMs, arrivalTime)
+
+		l.highestRTPTimestamp = ts
 	}
 }
 

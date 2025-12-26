@@ -88,7 +88,7 @@ type VideoSize struct {
 
 type BufferProvider interface {
 	SetLogger(lgr logger.Logger)
-	SetAudioLevelParams(audioLevelParams audio.AudioLevelParams)
+	SetAudioLevelConfig(audioLevelConfig audio.AudioLevelConfig)
 	SetStreamRestartDetection(enable bool)
 	SetPLIThrottle(duration int64)
 	SetRTT(rtt uint32)
@@ -172,11 +172,9 @@ type BufferBase struct {
 
 	snRangeMap *utils.RangeMap[uint64, uint64]
 
-	audioLevelParams                 audio.AudioLevelParams
-	audioLevel                       *audio.AudioLevel
-	audioLevelExtID                  uint8
-	latestTSForAudioLevelInitialized bool
-	latestTSForAudioLevel            uint32
+	audioLevelConfig audio.AudioLevelConfig
+	audioLevel       *audio.AudioLevel // RAJA-TODO: restart stream
+	audioLevelExtID  uint8
 
 	enableStreamRestartDetection bool
 
@@ -198,7 +196,7 @@ type BufferBase struct {
 
 	logger logger.Logger
 
-	// dependency descriptor
+	// dependency descriptor	// RAJA-TODO: restart stream
 	ddExtID  uint8
 	ddParser *DependencyDescriptorParser
 
@@ -213,6 +211,8 @@ type BufferBase struct {
 	absCaptureTimeExtID uint8
 
 	keyFrameSeederGeneration atomic.Int32
+
+	restartOnNextPacket bool
 
 	isClosed atomic.Bool
 }
@@ -326,7 +326,10 @@ func (b *BufferBase) BindLocked(rtpParameters webrtc.RTPParameters, codec webrtc
 
 		case sdp.AudioLevelURI:
 			b.audioLevelExtID = uint8(ext.ID)
-			b.audioLevel = audio.NewAudioLevel(b.audioLevelParams)
+			b.audioLevel = audio.NewAudioLevel(audio.AudioLevelParams{
+				Config:    b.audioLevelConfig,
+				ClockRate: b.clockRate,
+			})
 
 		case act.AbsCaptureTimeURI:
 			b.absCaptureTimeExtID = uint8(ext.ID)
@@ -422,11 +425,11 @@ func (b *BufferBase) SetPaused(paused bool) {
 	b.isPaused = paused
 }
 
-func (b *BufferBase) SetAudioLevelParams(audioLevelParams audio.AudioLevelParams) {
+func (b *BufferBase) SetAudioLevelConfig(audioLevelConfig audio.AudioLevelConfig) {
 	b.Lock()
 	defer b.Unlock()
 
-	b.audioLevelParams = audioLevelParams
+	b.audioLevelConfig = audioLevelConfig
 }
 
 func (b *BufferBase) SetStreamRestartDetection(enable bool) {
@@ -474,6 +477,43 @@ func (b *BufferBase) stopRTPStats(reason string) (stats *livekit.RTPStats, stats
 		"reason", reason,
 	)
 	return
+}
+
+func (b *BufferBase) restartStream() {
+	// stop
+	b.StopKeyFrameSeeder()
+	b.stopRTPStats("stream-restart")
+	b.flushExtPacketsLocked()
+
+	// restart
+	b.snRangeMap = utils.NewRangeMap[uint64, uint64](100)
+	b.setupRTPStats(b.clockRate)
+
+	b.bucket.ResyncOnNextPacket()
+	b.lastBucketCapCheckAt = mono.UnixNano()
+
+	if b.nacker != nil {
+		b.nacker = nack.NewNACKQueue(nack.NackQueueParamsDefault)
+	}
+
+	if b.audioLevel != nil {
+		b.audioLevel = audio.NewAudioLevel(audio.AudioLevelParams{
+			Config:    b.audioLevelConfig,
+			ClockRate: b.clockRate,
+		})
+	}
+
+	if b.ddExtID != 0 {
+		b.createDDParserAndFrameRateCalculator()
+	}
+
+	if b.frameRateCalculator[0] == nil {
+		b.createFrameRateCalculator()
+	}
+
+	b.StartKeyFrameSeeder()
+
+	b.restartOnNextPacket = true
 }
 
 func (b *BufferBase) createDDParserAndFrameRateCalculator() {
@@ -673,7 +713,6 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 		return 0, errors.New("cannot start on rtx packet")
 	}
 
-	isRestart := false
 	flowState := b.rtpStats.Update(
 		arrivalTime,
 		rtpPacket.Header.SequenceNumber,
@@ -690,17 +729,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 			return 0, fmt.Errorf("unhandled reason: %s", flowState.UnhandledReason.String())
 		}
 
-		b.StopKeyFrameSeeder()
-		b.stopRTPStats("stream-restart")
-		b.flushExtPacketsLocked()
-
-		b.snRangeMap = utils.NewRangeMap[uint64, uint64](100)
-		b.setupRTPStats(b.clockRate)
-		b.bucket.ResyncOnNextPacket()
-		if b.nacker != nil {
-			b.nacker = nack.NewNACKQueue(nack.NackQueueParamsDefault)
-		}
-		b.StartKeyFrameSeeder()
+		b.restartStream()
 
 		flowState = b.rtpStats.Update(
 			arrivalTime,
@@ -711,7 +740,6 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 			len(rtpPacket.Payload),
 			int(rtpPacket.PaddingSize),
 		)
-		isRestart = true
 	default:
 		return 0, fmt.Errorf("unhandled reason: %s", flowState.UnhandledReason.String())
 	}
@@ -805,7 +833,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 		return 0, err
 	}
 
-	ep := b.getExtPacket(rtpPacket, arrivalTime, isBuffered, isRestart, flowState)
+	ep := b.getExtPacket(rtpPacket, arrivalTime, isBuffered, b.restartOnNextPacket, flowState)
 	if ep == nil {
 		return 0, errors.New("could not get ext packet")
 	}
@@ -826,6 +854,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 		b.updateNACKState(rtpPacket.SequenceNumber, flowState)
 	}
 
+	b.restartOnNextPacket = false
 	return ep.ExtSequenceNumber, nil
 }
 
@@ -863,21 +892,10 @@ func (b *BufferBase) processAudioSsrcLevelHeaderExtension(p *rtp.Packet, arrival
 		return
 	}
 
-	if !b.latestTSForAudioLevelInitialized {
-		b.latestTSForAudioLevelInitialized = true
-		b.latestTSForAudioLevel = p.Timestamp
-	}
 	if e := p.GetExtension(b.audioLevelExtID); e != nil {
 		ext := rtp.AudioLevelExtension{}
 		if err := ext.Unmarshal(e); err == nil {
-			if (p.Timestamp - b.latestTSForAudioLevel) < (1 << 31) {
-				duration := (int64(p.Timestamp) - int64(b.latestTSForAudioLevel)) * 1e3 / int64(b.clockRate)
-				if duration > 0 {
-					b.audioLevel.Observe(ext.Level, uint32(duration), arrivalTime)
-				}
-
-				b.latestTSForAudioLevel = p.Timestamp
-			}
+			b.audioLevel.ObserveWithRTPTimestamp(ext.Level, p.Timestamp, arrivalTime)
 		}
 	}
 }
