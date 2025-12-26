@@ -151,6 +151,10 @@ type TrackReceiver interface {
 
 	// VideoSizes returns the video size parsed from rtp packet for each spatial layer.
 	VideoSizes() []buffer.VideoSize
+
+	// closes all associated buffers and issues a resync to all attached downtracks so that
+	// they can resync and have proper sequncing without gaps in sequence numbers / timestamps
+	Restart(reason string)
 }
 
 // --------------------------------------
@@ -348,6 +352,13 @@ func (r *ReceiverBase) UpdateTrackInfo(ti *livekit.TrackInfo) {
 	r.bufferMu.Unlock()
 
 	r.streamTrackerManager.UpdateTrackInfo(ti)
+}
+
+func (r *ReceiverBase) Restart(reason string) {
+	r.bufferMu.Lock()
+	defer r.bufferMu.Unlock()
+
+	r.resyncLocked(reason)
 }
 
 func (r *ReceiverBase) resyncLocked(reason string) {

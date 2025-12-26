@@ -501,6 +501,12 @@ func (d *DummyReceiver) VideoSizes() []buffer.VideoSize {
 	return nil
 }
 
+func (d *DummyReceiver) Restart(reason string) {
+	if receiver := d.getReceiver(); receiver != nil {
+		receiver.Restart(reason)
+	}
+}
+
 func (d *DummyReceiver) getReceiver() sfu.TrackReceiver {
 	if receiver, ok := d.receiver.Load().(sfu.TrackReceiver); ok {
 		return receiver
