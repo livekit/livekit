@@ -634,9 +634,7 @@ func (r *ReceiverBase) GetOrCreateBuffer(
 
 func (r *ReceiverBase) setupBuffer(buff buffer.BufferProvider, layer int32, rtt uint32) {
 	buff.SetLogger(r.params.Logger.WithValues("layer", layer))
-	buff.SetAudioLevelParams(audio.AudioLevelParams{
-		Config: r.audioConfig.AudioLevelConfig,
-	})
+	buff.SetAudioLevelConfig(r.audioConfig.AudioLevelConfig)
 	buff.SetStreamRestartDetection(r.enableRTPStreamRestartDetection)
 	buff.OnRtcpSenderReport(func() {
 		srData := buff.GetSenderReportData()
