@@ -82,10 +82,6 @@ var (
 
 // --------------------------------------
 
-type AudioLevelHandle func(level uint8, duration uint32)
-
-// --------------------------------------
-
 type Bitrates [buffer.DefaultMaxLayerSpatial + 1][buffer.DefaultMaxLayerTemporal + 1]int64
 
 // --------------------------------------
@@ -223,6 +219,10 @@ type ReceiverBase struct {
 
 	redTransformer atomic.Value // redTransformer interface
 
+	forwardersGeneration atomic.Uint32
+	forwardersWaitGroup  *sync.WaitGroup
+	restartInProgress    bool
+
 	isClosed atomic.Bool
 }
 
@@ -248,6 +248,8 @@ func NewReceiverBase(params ReceiverBaseParams, trackInfo *livekit.TrackInfo, co
 		params.StreamTrackerManagerConfig,
 	)
 	r.streamTrackerManager.SetListener(r)
+
+	r.startForwarderGeneration()
 
 	return r
 }
@@ -345,33 +347,81 @@ func (r *ReceiverBase) UpdateTrackInfo(ti *livekit.TrackInfo) {
 	}
 	r.trackInfo = utils.CloneProto(ti)
 	// MUTABLE-TRACKINFO-TODO: notify buffers, buffers may need to resize retransmission buffer if there is layer change
-
-	if shouldResync {
-		r.resyncLocked("update-track-info")
-	}
 	r.bufferMu.Unlock()
 
 	r.streamTrackerManager.UpdateTrackInfo(ti)
+
+	if shouldResync {
+		r.Restart("update-track-info")
+	}
 }
 
 func (r *ReceiverBase) Restart(reason string) {
-	r.bufferMu.Lock()
-	defer r.bufferMu.Unlock()
-
-	r.resyncLocked(reason)
+	r.params.Logger.Infow("restarting receiver", "reason", reason)
+	r.restartInternal(reason, false)
 }
 
-func (r *ReceiverBase) resyncLocked(reason string) {
-	// resync to avoid gaps in the forwarded sequence number
-	r.params.Logger.Debugw("resync receiver", "reason", reason)
-	r.clearAllBuffersLocked("resync")
+func (r *ReceiverBase) restartInternal(reason string, isDetected bool) {
+	if r.IsClosed() {
+		return
+	}
 
+	// 1. guard against concurrent restarts
+	r.bufferMu.Lock()
+	if r.restartInProgress {
+		r.bufferMu.Unlock()
+		return
+	}
+	r.restartInProgress = true
+	r.bufferMu.Unlock()
+
+	// 2. restart all the buffers
+	// if a stream was detected, skip external restart
+	//
+	// NOTE: The case of external restart and detected restart (which usually comes from one buffer)
+	//       racing will miss restart on all buffers if detected restart from one buffer adds the guard
+	//       against concurrent restart. But, that condition should be very rare if at all.
+	//       External restart happens when the underlying track changes or when seeking
+	if !isDetected {
+		for _, buff := range r.GetAllBuffers() {
+			if buff == nil {
+				continue
+			}
+
+			buff.RestartStream(reason)
+		}
+	}
+
+	// 3. wait for the forwarders to finish
+	r.stopForwarderGeneration()
+
+	// 4. reset stream tracker
+	r.streamTrackerManager.RemoveAllTrackers()
+
+	// 5. signal attached downtracks to resync so that they can have proper sequencing on a receiver restart
 	r.downTrackSpreader.Broadcast(func(dt TrackSender) {
-		dt.Resync()
+		dt.ReceiverRestart()
 	})
 	if rt := r.redTransformer.Load(); rt != nil {
-		rt.(REDTransformer).ResyncDownTracks()
+		rt.(REDTransformer).OnStreamRestart()
 	}
+
+	// 6. move forwarder generation ahead
+	r.startForwarderGeneration()
+
+	r.bufferMu.Lock()
+	// 7. release restart hold
+	r.restartInProgress = false
+
+	// 8. restart forwarders
+	for layer, buff := range r.buffers {
+		if buff == nil {
+			continue
+		}
+
+		r.startForwarderForBufferLocked(int32(layer), buff)
+	}
+	r.bufferMu.Unlock()
 }
 
 func (r *ReceiverBase) OnMaxLayerChange(fn func(mimeType mime.MimeType, maxLayer int32)) {
@@ -675,6 +725,9 @@ func (r *ReceiverBase) setupBuffer(buff buffer.BufferProvider, layer int32, rtt 
 	if r.Kind() == webrtc.RTPCodecTypeVideo && layer == 0 {
 		buff.OnCodecChange(r.handleCodecChange)
 	}
+	buff.OnStreamRestart(func(reason string) {
+		r.restartInternal(reason, true)
+	})
 
 	var duration time.Duration
 	switch layer {
@@ -705,8 +758,9 @@ func (r *ReceiverBase) AddBuffer(buff buffer.BufferProvider, layer int32) {
 }
 
 func (r *ReceiverBase) StartBuffer(buff buffer.BufferProvider, layer int32) {
-	r.params.Logger.Debugw("starting forwarder", "layer", layer)
-	go r.forwardRTP(layer, buff)
+	r.bufferMu.Lock()
+	r.startForwarderForBufferLocked(layer, buff)
+	r.bufferMu.Unlock()
 }
 
 func (r *ReceiverBase) GetAllBuffers() [buffer.DefaultMaxLayerSpatial + 1]buffer.BufferProvider {
@@ -723,17 +777,17 @@ func (r *ReceiverBase) GetAllBuffers() [buffer.DefaultMaxLayerSpatial + 1]buffer
 
 func (r *ReceiverBase) ClearAllBuffers(reason string) {
 	r.bufferMu.Lock()
-	defer r.bufferMu.Unlock()
-
-	r.clearAllBuffersLocked(reason)
-}
-
-func (r *ReceiverBase) clearAllBuffersLocked(reason string) {
-	for idx := range len(r.buffers) {
-		if r.buffers[idx] != nil {
-			r.buffers[idx].CloseWithReason(reason)
-		}
+	buffers := r.buffers
+	for idx := range r.buffers {
 		r.buffers[idx] = nil
+	}
+	r.bufferMu.Unlock()
+
+	for _, buff := range buffers {
+		if buff == nil {
+			continue
+		}
+		buff.CloseWithReason(reason)
 	}
 
 	r.streamTrackerManager.RemoveAllTrackers()
@@ -788,16 +842,58 @@ func (r *ReceiverBase) GetAudioLevel() (float64, bool) {
 	return 0, false
 }
 
-func (r *ReceiverBase) forwardRTP(layer int32, buff buffer.BufferProvider) {
+func (r *ReceiverBase) startForwarderGeneration() {
+	r.bufferMu.Lock()
+	defer r.bufferMu.Unlock()
+
+	r.forwardersGeneration.Inc()
+	r.forwardersWaitGroup = &sync.WaitGroup{}
+}
+
+func (r *ReceiverBase) stopForwarderGeneration() {
+	r.bufferMu.Lock()
+	r.forwardersGeneration.Inc()
+	forwarderWaitGroup := r.forwardersWaitGroup
+	r.bufferMu.Unlock()
+
+	if forwarderWaitGroup != nil {
+		forwarderWaitGroup.Wait()
+	}
+}
+
+func (r *ReceiverBase) startForwarderForBufferLocked(layer int32, buff buffer.BufferProvider) {
+	if r.restartInProgress {
+		return
+	}
+
+	r.forwardersWaitGroup.Add(1)
+
+	r.params.Logger.Debugw("starting forwarder", "layer", layer)
+	go r.forwardRTP(layer, buff, r.forwardersGeneration.Load(), r.forwardersWaitGroup)
+}
+
+func (r *ReceiverBase) forwardRTP(
+	layer int32,
+	buff buffer.BufferProvider,
+	forwarderGeneration uint32,
+	wg *sync.WaitGroup,
+) {
+	var (
+		extPkt *buffer.ExtPacket
+		err    error
+	)
+
 	numPacketsForwarded := 0
 	numPacketsDropped := 0
 	defer func() {
-		if r.params.IsSelfClosing {
-			r.Close("forwarder-done", false)
+		if err == io.EOF {
+			if r.params.IsSelfClosing {
+				r.Close("forwarder-done", false)
 
-			r.streamTrackerManager.RemoveTracker(layer)
-			if r.videoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM {
-				r.streamTrackerManager.RemoveAllTrackers()
+				r.streamTrackerManager.RemoveTracker(layer)
+				if r.videoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM {
+					r.streamTrackerManager.RemoveAllTrackers()
+				}
 			}
 		}
 
@@ -807,6 +903,7 @@ func (r *ReceiverBase) forwardRTP(layer int32, buff buffer.BufferProvider) {
 			"numPacketsForwarded", numPacketsForwarded,
 			"numPacketsDropped", numPacketsDropped,
 		)
+		wg.Done()
 	}()
 
 	var spatialTrackers [buffer.DefaultMaxLayerSpatial + 1]streamtracker.StreamTrackerWorker
@@ -817,29 +914,22 @@ func (r *ReceiverBase) forwardRTP(layer int32, buff buffer.BufferProvider) {
 
 	pktBuf := make([]byte, bucket.RTPMaxPktSize)
 	r.params.Logger.Debugw("starting forwarding", "layer", layer)
-	for {
-		pkt, err := buff.ReadExtended(pktBuf)
+
+	for r.forwardersGeneration.Load() == forwarderGeneration {
+		extPkt, err = buff.ReadExtended(pktBuf)
 		if err == io.EOF {
 			return
 		}
+		if extPkt == nil {
+			continue
+		}
 		dequeuedAt := mono.UnixNano()
 
-		if pkt.IsRestart {
-			r.params.Logger.Infow("stream restarted", "layer", layer)
-			r.downTrackSpreader.Broadcast(func(dt TrackSender) {
-				dt.ReceiverRestart()
-			})
-
-			if rt := r.redTransformer.Load(); rt != nil {
-				rt.(REDTransformer).OnStreamRestart()
-			}
-		}
-
-		if pkt.Packet.PayloadType != uint8(r.params.Codec.PayloadType) {
+		if extPkt.Packet.PayloadType != uint8(r.params.Codec.PayloadType) {
 			// drop packets as we don't support codec fallback directly
 			r.params.Logger.Debugw(
 				"dropping packet - payload mismatch",
-				"packetPayloadType", pkt.Packet.PayloadType,
+				"packetPayloadType", extPkt.Packet.PayloadType,
 				"payloadType", r.params.Codec.PayloadType,
 			)
 			numPacketsDropped++
@@ -847,15 +937,15 @@ func (r *ReceiverBase) forwardRTP(layer int32, buff buffer.BufferProvider) {
 		}
 
 		spatialLayer := layer
-		if pkt.Spatial >= 0 {
+		if extPkt.Spatial >= 0 {
 			// svc packet, take spatial layer info from packet
-			spatialLayer = pkt.Spatial
+			spatialLayer = extPkt.Spatial
 		}
 		if int(spatialLayer) >= len(spatialTrackers) {
 			r.params.Logger.Errorw(
 				"unexpected spatial layer", nil,
 				"spatialLayer", spatialLayer,
-				"pktSpatialLayer", pkt.Spatial,
+				"pktSpatialLayer", extPkt.Spatial,
 			)
 			numPacketsDropped++
 			continue
@@ -863,22 +953,21 @@ func (r *ReceiverBase) forwardRTP(layer int32, buff buffer.BufferProvider) {
 
 		var writeCount atomic.Int32
 		r.downTrackSpreader.Broadcast(func(dt TrackSender) {
-			writeCount.Add(dt.WriteRTP(pkt, spatialLayer))
+			writeCount.Add(dt.WriteRTP(extPkt, spatialLayer))
 		})
-
 		if rt := r.redTransformer.Load(); rt != nil {
-			writeCount.Add(rt.(REDTransformer).ForwardRTP(pkt, spatialLayer))
+			writeCount.Add(rt.(REDTransformer).ForwardRTP(extPkt, spatialLayer))
 		}
 
 		// track delay/jitter
-		if writeCount.Load() > 0 && r.forwardStats != nil && !pkt.IsBuffered {
-			if latency, isHigh := r.forwardStats.Update(pkt.Arrival, mono.UnixNano()); isHigh {
+		if writeCount.Load() > 0 && r.forwardStats != nil && !extPkt.IsBuffered {
+			if latency, isHigh := r.forwardStats.Update(extPkt.Arrival, mono.UnixNano()); isHigh {
 				r.params.Logger.Debugw(
 					"high forwarding latency",
 					"latency", time.Duration(latency),
-					"queuingLatency", time.Duration(dequeuedAt-pkt.Arrival),
+					"queuingLatency", time.Duration(dequeuedAt-extPkt.Arrival),
 					"writeCount", writeCount.Load(),
-					"isOutOfOrder", pkt.IsOutOfOrder,
+					"isOutOfOrder", extPkt.IsOutOfOrder,
 					"layer", layer,
 				)
 			}
@@ -889,7 +978,7 @@ func (r *ReceiverBase) forwardRTP(layer int32, buff buffer.BufferProvider) {
 			if spatialTrackers[spatialLayer] == nil {
 				spatialTrackers[spatialLayer] = r.streamTrackerManager.GetTracker(spatialLayer)
 				if spatialTrackers[spatialLayer] == nil {
-					if r.videoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM && pkt.DependencyDescriptor != nil {
+					if r.videoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM && extPkt.DependencyDescriptor != nil {
 						r.streamTrackerManager.AddDependencyDescriptorTrackers()
 					}
 					spatialTrackers[spatialLayer] = r.streamTrackerManager.AddTracker(spatialLayer)
@@ -897,19 +986,19 @@ func (r *ReceiverBase) forwardRTP(layer int32, buff buffer.BufferProvider) {
 			}
 			if spatialTrackers[spatialLayer] != nil {
 				spatialTrackers[spatialLayer].Observe(
-					pkt.Temporal,
-					len(pkt.RawPacket),
-					len(pkt.Packet.Payload),
-					pkt.Packet.Marker,
-					pkt.Packet.Timestamp,
-					pkt.DependencyDescriptor,
+					extPkt.Temporal,
+					len(extPkt.RawPacket),
+					len(extPkt.Packet.Payload),
+					extPkt.Packet.Marker,
+					extPkt.Packet.Timestamp,
+					extPkt.DependencyDescriptor,
 				)
 			}
 		}
 
 		numPacketsForwarded++
 
-		buffer.ReleaseExtPacket(pkt)
+		buffer.ReleaseExtPacket(extPkt)
 	}
 }
 
