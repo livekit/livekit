@@ -66,7 +66,7 @@ func NewVP8FromNull(cm CodecMunger, logger logger.Logger) *VP8 {
 	return v
 }
 
-func (v *VP8) GetState() interface{} {
+func (v *VP8) GetState() any {
 	return &livekit.VP8MungerState{
 		ExtLastPictureId: v.extLastPictureId,
 		PictureIdUsed:    v.pictureIdUsed,
@@ -78,7 +78,7 @@ func (v *VP8) GetState() interface{} {
 	}
 }
 
-func (v *VP8) SeedState(seed interface{}) {
+func (v *VP8) SeedState(seed any) {
 	switch cm := seed.(type) {
 	case *livekit.RTPForwarderState_Vp8Munger:
 		state := cm.Vp8Munger

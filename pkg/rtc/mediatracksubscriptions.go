@@ -355,8 +355,8 @@ func (t *MediaTrackSubscriptions) getAllSubscribedTracksLocked() []types.Subscri
 	return subTracks
 }
 
-func (t *MediaTrackSubscriptions) DebugInfo() []map[string]interface{} {
-	subscribedTrackInfo := make([]map[string]interface{}, 0)
+func (t *MediaTrackSubscriptions) DebugInfo() []map[string]any {
+	subscribedTrackInfo := make([]map[string]any, 0)
 	for _, val := range t.getAllSubscribedTracks() {
 		if st, ok := val.(*SubscribedTrack); ok {
 			subscribedTrackInfo = append(subscribedTrackInfo, st.DownTrack().DebugInfo())

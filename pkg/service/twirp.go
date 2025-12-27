@@ -46,9 +46,9 @@ type twirpLoggerKey struct{}
 // License: Apache-2.0
 func TwirpLogger() *twirp.ServerHooks {
 	loggerPool := &sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return &twirpLogger{
-				fieldsOrig: make([]interface{}, 0, 30),
+				fieldsOrig: make([]any, 0, 30),
 			}
 		},
 	}
@@ -67,12 +67,12 @@ func TwirpLogger() *twirp.ServerHooks {
 type twirpLogger struct {
 	twirpRequestFields
 
-	fieldsOrig []interface{}
-	fields     []interface{}
+	fieldsOrig []any
+	fields     []any
 	startedAt  time.Time
 }
 
-func AppendLogFields(ctx context.Context, fields ...interface{}) {
+func AppendLogFields(ctx context.Context, fields ...any) {
 	r, ok := ctx.Value(twirpLoggerKey{}).(*twirpLogger)
 	if !ok || r == nil {
 		return

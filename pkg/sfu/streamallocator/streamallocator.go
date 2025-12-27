@@ -136,7 +136,7 @@ type Event struct {
 	*StreamAllocator
 	Signal  streamAllocatorSignal
 	TrackID livekit.TrackID
-	Data    interface{}
+	Data    any
 }
 
 func (e Event) String() string {

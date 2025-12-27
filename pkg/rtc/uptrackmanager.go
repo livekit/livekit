@@ -398,16 +398,16 @@ func (u *UpTrackManager) maybeRevokeSubscriptions() {
 	}
 }
 
-func (u *UpTrackManager) DebugInfo() map[string]interface{} {
-	info := map[string]interface{}{}
-	publishedTrackInfo := make(map[livekit.TrackID]interface{})
+func (u *UpTrackManager) DebugInfo() map[string]any {
+	info := map[string]any{}
+	publishedTrackInfo := make(map[livekit.TrackID]any)
 
 	u.lock.RLock()
 	for trackID, track := range u.publishedTracks {
 		if mt, ok := track.(*MediaTrack); ok {
 			publishedTrackInfo[trackID] = mt.DebugInfo()
 		} else {
-			publishedTrackInfo[trackID] = map[string]interface{}{
+			publishedTrackInfo[trackID] = map[string]any{
 				"ID":       track.ID(),
 				"Kind":     track.Kind().String(),
 				"PubMuted": track.IsMuted(),
