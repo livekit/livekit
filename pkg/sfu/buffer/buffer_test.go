@@ -15,6 +15,7 @@
 package buffer
 
 import (
+	"fmt"
 	"math"
 	"sync"
 	"testing"
@@ -330,12 +331,24 @@ func TestCodecChange(t *testing.T) {
 	buff := NewBuffer(123, 1, 1)
 	require.NotNil(t, buff)
 	changedCodec := make(chan webrtc.RTPCodecParameters, 1)
+	restartCleared := make(chan struct{}, 1)
 	buff.OnCodecChange(func(rp webrtc.RTPCodecParameters) {
 		select {
 		case changedCodec <- rp:
 		default:
 			t.Fatalf("codec change not consumed")
 		}
+	})
+	buff.OnStreamRestart(func(reason string) {
+		require.Equal(t, "codec-change", reason)
+
+		// read once to clear pending restart
+		var buf [1500]byte
+		extPkt, err := buff.ReadExtended(buf[:])
+		require.NoError(t, err)
+		require.Nil(t, extPkt)
+
+		restartCleared <- struct{}{}
 	})
 
 	h265Pkt := rtp.Packet{
@@ -359,20 +372,28 @@ func TestCodecChange(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	buff.Bind(webrtc.RTPParameters{
-		HeaderExtensions: nil,
-		Codecs:           []webrtc.RTPCodecParameters{vp8Codec, h265Codec},
-	}, vp8Codec.RTPCodecCapability, 0)
+	// Bind sets up VP8 as expected codec,
+	// packet written to the buffer above before Bind is H.265,
+	// that should trigger a codec change and a stream restart
+	// when the queued packets from Write before Bind get flushed
+	buff.Bind(
+		webrtc.RTPParameters{
+			HeaderExtensions: nil,
+			Codecs:           []webrtc.RTPCodecParameters{vp8Codec, h265Codec},
+		},
+		vp8Codec.RTPCodecCapability,
+		0,
+	)
 
 	select {
 	case c := <-changedCodec:
 		require.Equal(t, h265Codec, c)
-
 	case <-time.After(1 * time.Second):
 		t.Fatalf("expected codec change")
 	}
+	<-restartCleared
 
-	// codec change after bind
+	// second codec change - writing VP8 packet after Bind should trigger another codec change
 	vp8Pkt := rtp.Packet{
 		Header: rtp.Header{
 			Version:        2,
@@ -391,12 +412,17 @@ func TestCodecChange(t *testing.T) {
 	select {
 	case c := <-changedCodec:
 		require.Equal(t, vp8Codec, c)
-
 	case <-time.After(1 * time.Second):
 		t.Fatalf("expected codec change")
 	}
+	fmt.Printf("done second codec change\n") // REMOVE
+	<-restartCleared
 
 	// out of order pkts can't cause codec change
+	// rewrite the VP8 packet to start the sequence after a stream restart
+	_, err = buff.Write(buf)
+	require.NoError(t, err)
+
 	h265Pkt.SequenceNumber = 2
 	h265Pkt.Timestamp = 2
 	buf, err = h265Pkt.Marshal()
@@ -409,7 +435,7 @@ func TestCodecChange(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	// unknown codec should not cause change
+	// unknown codec should not cause change even if it is in order
 	h265Pkt.SequenceNumber = 4
 	h265Pkt.Timestamp = 4
 	h265Pkt.PayloadType = 117
@@ -422,6 +448,22 @@ func TestCodecChange(t *testing.T) {
 		t.Fatalf("unexpected codec change")
 	case <-time.After(100 * time.Millisecond):
 	}
+
+	// an in-order packet should change codec again
+	h265Pkt.SequenceNumber = 5
+	h265Pkt.Timestamp = 5
+	h265Pkt.PayloadType = 116
+	buf, err = h265Pkt.Marshal()
+	require.NoError(t, err)
+	_, err = buff.Write(buf)
+	require.NoError(t, err)
+	select {
+	case c := <-changedCodec:
+		require.Equal(t, h265Codec, c)
+	case <-time.After(1 * time.Second):
+		t.Fatalf("expected codec change")
+	}
+	<-restartCleared
 }
 
 func BenchmarkMemcpu(b *testing.B) {
