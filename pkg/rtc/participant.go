@@ -222,6 +222,8 @@ type ParticipantParams struct {
 	UseSinglePeerConnection         bool
 	EnableDataTracks                bool
 	EnableRTPStreamRestartDetection bool
+	// IP-based rate limiter for data messages (room-level)
+	IPRateLimiter *IPRateLimiter
 }
 
 type ParticipantImpl struct {
@@ -379,6 +381,13 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		params.Reporter,
 	)
 	p.reliableDataInfo.lastPubReliableSeq.Store(params.LastPubReliableSeq)
+
+	// add ref to IP rate limiter for cleanup tracking
+	clientIP := params.ClientInfo.GetAddress()
+	if clientIP != "" && params.IPRateLimiter != nil {
+		params.IPRateLimiter.AddRef(clientIP)
+	}
+
 	p.setListener(params.ParticipantListener)
 	p.participantHelper.Store(params.ParticipantHelper)
 	if !params.DisableSupervisor {
@@ -1365,6 +1374,12 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	p.clearDisconnectTimer()
 	p.clearMigrationTimer()
 
+	// remove ref from IP rate limiter for cleanup
+	clientIP := p.params.ClientInfo.GetAddress()
+	if clientIP != "" && p.params.IPRateLimiter != nil {
+		p.params.IPRateLimiter.RemoveRef(clientIP)
+	}
+
 	if sendLeave {
 		p.sendLeaveRequest(
 			reason,
@@ -2265,6 +2280,17 @@ func (p *ParticipantImpl) handlePendingRemoteTracks() {
 
 func (p *ParticipantImpl) onReceivedDataMessage(kind livekit.DataPacket_Kind, data []byte) {
 	if p.IsDisconnected() || !p.CanPublishData() {
+		return
+	}
+
+	// check IP-based rate limit (room-level)
+	clientIP := p.params.ClientInfo.GetAddress()
+	if clientIP != "" && p.params.IPRateLimiter != nil && !p.params.IPRateLimiter.Allow(clientIP) {
+		p.pubLogger.Warnw("IP rate limit exceeded, dropping message", nil,
+			"identity", p.Identity(),
+			"clientIP", clientIP,
+			"messageSize", len(data),
+		)
 		return
 	}
 
