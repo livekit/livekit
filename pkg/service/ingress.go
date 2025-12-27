@@ -85,7 +85,7 @@ func NewIngressService(
 }
 
 func (s *IngressService) CreateIngress(ctx context.Context, req *livekit.CreateIngressRequest) (*livekit.IngressInfo, error) {
-	fields := []interface{}{
+	fields := []any{
 		"inputType", req.InputType,
 		"name", req.Name,
 	}
@@ -275,7 +275,7 @@ func updateInfoUsingRequest(req *livekit.UpdateIngressRequest, info *livekit.Ing
 }
 
 func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateIngressRequest) (*livekit.IngressInfo, error) {
-	fields := []interface{}{
+	fields := []any{
 		"ingress", req.IngressId,
 		"name", req.Name,
 	}

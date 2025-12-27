@@ -1795,15 +1795,15 @@ func (r *Room) handleNewJobs(ad *livekit.AgentDispatch, inc *sutils.IncrementalD
 	})
 }
 
-func (r *Room) DebugInfo() map[string]interface{} {
-	info := map[string]interface{}{
+func (r *Room) DebugInfo() map[string]any {
+	info := map[string]any{
 		"Name":      r.protoRoom.Name,
 		"Sid":       r.protoRoom.Sid,
 		"CreatedAt": r.protoRoom.CreationTime,
 	}
 
 	participants := r.GetParticipants()
-	participantInfo := make(map[string]interface{})
+	participantInfo := make(map[string]any)
 	for _, p := range participants {
 		participantInfo[string(p.Identity())] = p.DebugInfo()
 	}

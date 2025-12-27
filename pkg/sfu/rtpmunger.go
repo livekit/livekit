@@ -77,8 +77,8 @@ func NewRTPMunger(logger logger.Logger) *RTPMunger {
 	}
 }
 
-func (r *RTPMunger) DebugInfo() map[string]interface{} {
-	return map[string]interface{}{
+func (r *RTPMunger) DebugInfo() map[string]any {
+	return map[string]any{
 		"ExtHighestIncomingSN": r.extHighestIncomingSN,
 		"ExtLastSN":            r.extLastSN,
 		"ExtSecondLastSN":      r.extSecondLastSN,

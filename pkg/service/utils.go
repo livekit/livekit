@@ -39,7 +39,7 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-func handleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...interface{}) {
+func handleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...any) {
 	keysAndValues = append(keysAndValues, "status", status)
 	if r != nil && r.URL != nil {
 		keysAndValues = append(keysAndValues, "method", r.Method, "path", r.URL.Path)
@@ -50,12 +50,12 @@ func handleError(w http.ResponseWriter, r *http.Request, status int, err error, 
 	w.WriteHeader(status)
 }
 
-func HandleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...interface{}) {
+func HandleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...any) {
 	handleError(w, r, status, err, keysAndValues...)
 	_, _ = w.Write([]byte(err.Error()))
 }
 
-func HandleErrorJson(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...interface{}) {
+func HandleErrorJson(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...any) {
 	handleError(w, r, status, err, keysAndValues...)
 	json.NewEncoder(w).Encode(struct {
 		Error string `json:"error"`
@@ -166,13 +166,13 @@ var (
 func createUserAgentParserWithCustomRules() (*uaparser.Parser, error) {
 	defaultYaml := uaparser.DefinitionYaml
 
-	rules := make(map[string]interface{})
+	rules := make(map[string]any)
 	err := yaml.Unmarshal(defaultYaml, rules)
 	if err != nil {
 		return nil, err
 	}
 
-	rules["user_agent_parsers"] = append(rules["user_agent_parsers"].([]interface{}), map[string]interface{}{
+	rules["user_agent_parsers"] = append(rules["user_agent_parsers"].([]any), map[string]any{
 		"regex":              "OBS-Studio\\/([0-9\\.]+)",
 		"family_replacement": "OBS Studio",
 		"v1_replacement":     "$1",

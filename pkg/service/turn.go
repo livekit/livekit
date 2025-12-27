@@ -69,7 +69,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 	if standalone {
 		relayAddrGen = telemetry.NewRelayAddressGenerator(relayAddrGen)
 	}
-	var logValues []interface{}
+	var logValues []any
 
 	logValues = append(logValues, "turn.relay_range_start", turnConf.RelayPortRangeStart)
 	logValues = append(logValues, "turn.relay_range_end", turnConf.RelayPortRangeEnd)

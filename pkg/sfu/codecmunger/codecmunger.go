@@ -27,8 +27,8 @@ var (
 )
 
 type CodecMunger interface {
-	GetState() interface{}
-	SeedState(state interface{})
+	GetState() any
+	SeedState(state any)
 
 	SetLast(extPkt *buffer.ExtPacket)
 	UpdateOffsets(extPkt *buffer.ExtPacket)

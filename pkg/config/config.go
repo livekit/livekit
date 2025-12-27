@@ -762,7 +762,7 @@ func (conf *Config) updateFromCLI(c *cli.Command, baseFlags []cli.Flag) error {
 }
 
 func (conf *Config) unmarshalKeys(keys string) error {
-	temp := make(map[string]interface{})
+	temp := make(map[string]any)
 	if err := yaml.Unmarshal([]byte(keys), temp); err != nil {
 		return err
 	}

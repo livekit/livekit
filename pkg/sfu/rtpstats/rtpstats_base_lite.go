@@ -305,7 +305,7 @@ func (r *rtpStatsBaseLite) deltaInfoLite(
 	snapshotLiteID uint32,
 	extStartSN uint64,
 	extHighestSN uint64,
-) (deltaInfoLite *RTPDeltaInfoLite, err error, loggingFields []interface{}) {
+) (deltaInfoLite *RTPDeltaInfoLite, err error, loggingFields []any) {
 	then, now := r.getAndResetSnapshotLite(snapshotLiteID, extStartSN, extHighestSN)
 	if now == nil || then == nil {
 		return
