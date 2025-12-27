@@ -77,7 +77,6 @@ type ExtPacket struct {
 	AbsCaptureTimeExt    *act.AbsCaptureTime
 	IsOutOfOrder         bool
 	IsBuffered           bool
-	IsRestart            bool
 }
 
 // VideoSize represents video resolution
@@ -111,9 +110,10 @@ type BufferProvider interface {
 	GetSenderReportData() *livekit.RTCPSenderReportState
 
 	OnRtcpSenderReport(fn func())
-	OnFpsChanged(f func())
+	OnFpsChanged(fn func())
 	OnVideoSizeChanged(fn func([]VideoSize))
 	OnCodecChange(fn func(webrtc.RTPCodecParameters))
+	OnStreamRestart(fn func(string))
 
 	StartKeyFrameSeeder()
 	StopKeyFrameSeeder()
@@ -127,6 +127,8 @@ type BufferProvider interface {
 		skippedSeqs []uint16,
 		oobSequenceNumber uint16,
 	) (uint64, error)
+
+	RestartStream(reason string)
 
 	CloseWithReason(reason string) (*livekit.RTPStats, error)
 }
@@ -190,6 +192,7 @@ type BufferBase struct {
 	onFpsChanged       func()
 	onVideoSizeChanged func([]VideoSize)
 	onCodecChange      func(webrtc.RTPCodecParameters)
+	onStreamRestart    func(string)
 
 	// video size tracking for multiple spatial layers
 	currentVideoSize [DefaultMaxLayerSpatial + 1]VideoSize
@@ -212,7 +215,7 @@ type BufferBase struct {
 
 	keyFrameSeederGeneration atomic.Int32
 
-	restartOnNextPacket bool
+	isRestartPending bool
 
 	isClosed atomic.Bool
 }
@@ -479,8 +482,16 @@ func (b *BufferBase) stopRTPStats(reason string) (stats *livekit.RTPStats, stats
 	return
 }
 
-func (b *BufferBase) restartStream() {
-	b.logger.Infow("stream restart")
+func (b *BufferBase) RestartStream(reason string) {
+	b.Lock()
+	defer b.Unlock()
+
+	b.restartStreamLocked(reason)
+	b.readCond.Broadcast()
+}
+
+func (b *BufferBase) restartStreamLocked(reason string) {
+	b.logger.Infow("stream restart", "reason", reason)
 
 	// stop
 	b.StopKeyFrameSeeder()
@@ -509,13 +520,18 @@ func (b *BufferBase) restartStream() {
 		b.createDDParserAndFrameRateCalculator()
 	}
 
+	b.frameRateCalculated = false
 	if b.frameRateCalculator[0] == nil {
 		b.createFrameRateCalculator()
 	}
 
 	b.StartKeyFrameSeeder()
 
-	b.restartOnNextPacket = true
+	b.isRestartPending = true
+
+	if f := b.onStreamRestart; f != nil {
+		go f(reason)
+	}
 }
 
 func (b *BufferBase) createDDParserAndFrameRateCalculator() {
@@ -557,6 +573,12 @@ func (b *BufferBase) ReadExtended(buf []byte) (*ExtPacket, error) {
 		if b.isClosed.Load() {
 			b.Unlock()
 			return nil, io.EOF
+		}
+
+		if b.isRestartPending {
+			b.isRestartPending = false
+			b.Unlock()
+			return nil, nil
 		}
 
 		if b.extPackets.Len() > 0 {
@@ -731,7 +753,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 			return 0, fmt.Errorf("unhandled reason: %s", flowState.UnhandledReason.String())
 		}
 
-		b.restartStream()
+		b.restartStreamLocked("discontinuity")
 
 		flowState = b.rtpStats.Update(
 			arrivalTime,
@@ -835,7 +857,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 		return 0, err
 	}
 
-	ep := b.getExtPacket(rtpPacket, arrivalTime, isBuffered, b.restartOnNextPacket, flowState)
+	ep := b.getExtPacket(rtpPacket, arrivalTime, isBuffered, flowState)
 	if ep == nil {
 		return 0, errors.New("could not get ext packet")
 	}
@@ -856,7 +878,6 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 		b.updateNACKState(rtpPacket.SequenceNumber, flowState)
 	}
 
-	b.restartOnNextPacket = false
 	return ep.ExtSequenceNumber, nil
 }
 
@@ -931,6 +952,7 @@ func (b *BufferBase) handleCodecChange(newPT uint8) {
 		)
 		return
 	}
+
 	b.logger.Infow(
 		"codec changed",
 		"oldPayload", b.payloadType, "newPayload", newPT,
@@ -940,30 +962,18 @@ func (b *BufferBase) handleCodecChange(newPT uint8) {
 	b.payloadType = newPT
 	b.rtxPayloadType = rtxPt
 	b.mime = mime.NormalizeMimeType(newCodec.MimeType)
-	b.frameRateCalculated = false
 
-	if b.ddExtID != 0 {
-		b.createDDParserAndFrameRateCalculator()
-	}
-
-	if b.frameRateCalculator[0] == nil {
-		b.createFrameRateCalculator()
-	}
-
-	b.bucket.ResyncOnNextPacket()
+	b.restartStreamLocked("codec-change")
 
 	if f := b.onCodecChange; f != nil {
 		go f(newCodec)
 	}
-
-	b.StartKeyFrameSeeder()
 }
 
 func (b *BufferBase) getExtPacket(
 	rtpPacket *rtp.Packet,
 	arrivalTime int64,
 	isBuffered bool,
-	isRestart bool,
 	flowState rtpstats.RTPFlowState,
 ) *ExtPacket {
 	ep := ExtPacketFactory.Get().(*ExtPacket)
@@ -978,7 +988,6 @@ func (b *BufferBase) getExtPacket(
 		},
 		IsOutOfOrder: flowState.IsOutOfOrder,
 		IsBuffered:   isBuffered,
-		IsRestart:    isRestart,
 	}
 
 	if len(ep.Packet.Payload) == 0 {
@@ -1384,6 +1393,12 @@ func (b *BufferBase) OnVideoSizeChanged(fn func([]VideoSize)) {
 func (b *BufferBase) OnCodecChange(fn func(webrtc.RTPCodecParameters)) {
 	b.Lock()
 	b.onCodecChange = fn
+	b.Unlock()
+}
+
+func (b *BufferBase) OnStreamRestart(fn func(string)) {
+	b.Lock()
+	b.onStreamRestart = fn
 	b.Unlock()
 }
 

@@ -1276,8 +1276,8 @@ func (d *DownTrack) handleMute(muted bool, changed bool) {
 	// no layers required due to publisher mute (bit of circular dependency),
 	// there will be a delay in layers turning back on when unmute happens.
 	// Unmute path will require
-	//   1. unmute signalling out-of-band from publisher received by down track(s)
-	//   2. down track(s) notifying max layer
+	//   1. unmute signalling out-of-band from publisher received by downtrack(s)
+	//   2. downtrack(s) notifying max layer
 	//   3. out-of-band notification about max layer sent back to the publisher
 	//   4. publisher starts layer(s)
 	// Ideally, on publisher mute, whatever layers were active remain active and
@@ -1331,7 +1331,7 @@ func (d *DownTrack) CloseWithFlush(flush bool, isEnding bool) {
 		return
 	}
 
-	d.params.Logger.Debugw("close down track", "flushBlankFrame", flush)
+	d.params.Logger.Debugw("close downtrack", "flushBlankFrame", flush)
 	if d.bindState.Load() == bindStateBound {
 		d.forwarder.Mute(true, true)
 
@@ -1447,7 +1447,7 @@ func (d *DownTrack) SeedState(state DownTrackState) {
 	}
 
 	if state.RTPStats != nil || state.ForwarderState != nil {
-		d.params.Logger.Debugw("seeding down track state", "state", state)
+		d.params.Logger.Debugw("seeding downtrack state", "state", state)
 	}
 	if state.RTPStats != nil {
 		d.rtpStats.Seed(state.RTPStats)
