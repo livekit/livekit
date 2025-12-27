@@ -552,7 +552,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			isFECEnabled = strings.Contains(strings.ToLower(matchedUpstreamCodec.SDPFmtpLine), "fec")
 		}
 
-		logFields := []interface{}{
+		logFields := []any{
 			"codecs", d.upstreamCodecs,
 			"matchCodec", codec,
 			"ssrc", t.SSRC(),
@@ -2341,8 +2341,8 @@ func (d *DownTrack) getTranslatedPayloadType(srcPT uint8) uint8 {
 	return uint8(d.payloadType.Load())
 }
 
-func (d *DownTrack) DebugInfo() map[string]interface{} {
-	stats := map[string]interface{}{
+func (d *DownTrack) DebugInfo() map[string]any {
+	stats := map[string]any{
 		"LastPli": d.rtpStats.LastPli(),
 	}
 	stats["RTPMunger"] = d.forwarder.RTPMungerDebugInfo()
@@ -2354,7 +2354,7 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 		stats["PacketCount"] = senderReport.PacketCount
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"SubscriberID":        d.params.SubID,
 		"TrackID":             d.id,
 		"StreamID":            d.params.StreamID,

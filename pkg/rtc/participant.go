@@ -3496,13 +3496,13 @@ func (p *ParticipantImpl) getPublishedTrackBySdpCid(clientId string) types.Media
 	return nil
 }
 
-func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
-	info := map[string]interface{}{
+func (p *ParticipantImpl) DebugInfo() map[string]any {
+	info := map[string]any{
 		"ID":    p.ID(),
 		"State": p.State().String(),
 	}
 
-	pendingTrackInfo := make(map[string]interface{})
+	pendingTrackInfo := make(map[string]any)
 	p.pendingTracksLock.RLock()
 	for clientID, pti := range p.pendingTracks {
 		var trackInfos []string
@@ -3510,7 +3510,7 @@ func (p *ParticipantImpl) DebugInfo() map[string]interface{} {
 			trackInfos = append(trackInfos, ti.String())
 		}
 
-		pendingTrackInfo[clientID] = map[string]interface{}{
+		pendingTrackInfo[clientID] = map[string]any{
 			"TrackInfos": trackInfos,
 			"Migrated":   pti.migrated,
 		}

@@ -38,6 +38,21 @@ type AnalyticsService interface {
 	RoomProjectReporter(ctx context.Context) roomobs.ProjectReporter
 }
 
+// ----------------------------
+
+var _ AnalyticsService = &NullAnalyticService{}
+
+type NullAnalyticService struct{}
+
+func (n NullAnalyticService) SendStats(_ context.Context, _ []*livekit.AnalyticsStat)             {}
+func (n NullAnalyticService) SendEvent(_ context.Context, _ *livekit.AnalyticsEvent)              {}
+func (n NullAnalyticService) SendNodeRoomStates(_ context.Context, _ *livekit.AnalyticsNodeRooms) {}
+func (n NullAnalyticService) RoomProjectReporter(_ctx context.Context) roomobs.ProjectReporter {
+	return nil
+}
+
+// ----------------------------
+
 type analyticsService struct {
 	analyticsKey   string
 	nodeID         string

@@ -73,7 +73,7 @@ func NewEgressLauncher(client rpc.EgressClient, io IOClient, store ServiceStore)
 }
 
 func (s *EgressService) StartRoomCompositeEgress(ctx context.Context, req *livekit.RoomCompositeEgressRequest) (*livekit.EgressInfo, error) {
-	fields := []interface{}{
+	fields := []any{
 		"room", req.RoomName,
 		"baseUrl", req.CustomBaseUrl,
 		"outputType", egress.GetOutputType(req),
@@ -94,7 +94,7 @@ func (s *EgressService) StartRoomCompositeEgress(ctx context.Context, req *livek
 }
 
 func (s *EgressService) StartWebEgress(ctx context.Context, req *livekit.WebEgressRequest) (*livekit.EgressInfo, error) {
-	fields := []interface{}{
+	fields := []any{
 		"url", req.Url,
 		"outputType", egress.GetOutputType(req),
 	}
@@ -114,7 +114,7 @@ func (s *EgressService) StartWebEgress(ctx context.Context, req *livekit.WebEgre
 }
 
 func (s *EgressService) StartParticipantEgress(ctx context.Context, req *livekit.ParticipantEgressRequest) (*livekit.EgressInfo, error) {
-	fields := []interface{}{
+	fields := []any{
 		"room", req.RoomName,
 		"identity", req.Identity,
 		"outputType", egress.GetOutputType(req),
@@ -135,7 +135,7 @@ func (s *EgressService) StartParticipantEgress(ctx context.Context, req *livekit
 }
 
 func (s *EgressService) StartTrackCompositeEgress(ctx context.Context, req *livekit.TrackCompositeEgressRequest) (*livekit.EgressInfo, error) {
-	fields := []interface{}{
+	fields := []any{
 		"room", req.RoomName,
 		"audioTrackID", req.AudioTrackId,
 		"videoTrackID", req.VideoTrackId,
@@ -157,7 +157,7 @@ func (s *EgressService) StartTrackCompositeEgress(ctx context.Context, req *live
 }
 
 func (s *EgressService) StartTrackEgress(ctx context.Context, req *livekit.TrackEgressRequest) (*livekit.EgressInfo, error) {
-	fields := []interface{}{"room", req.RoomName, "trackID", req.TrackId}
+	fields := []any{"room", req.RoomName, "trackID", req.TrackId}
 	if t := reflect.TypeOf(req.Output); t != nil {
 		fields = append(fields, "outputType", t.String())
 	}

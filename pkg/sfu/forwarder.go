@@ -2263,7 +2263,7 @@ func (f *Forwarder) GetPadding(frameEndNeeded bool) ([]byte, error) {
 	return f.codecMunger.UpdateAndGetPadding(!frameEndNeeded)
 }
 
-func (f *Forwarder) RTPMungerDebugInfo() map[string]interface{} {
+func (f *Forwarder) RTPMungerDebugInfo() map[string]any {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 

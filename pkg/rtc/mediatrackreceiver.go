@@ -1093,8 +1093,8 @@ func (t *MediaTrackReceiver) onDownTrackCreated(downTrack *sfu.DownTrack) {
 	}
 }
 
-func (t *MediaTrackReceiver) DebugInfo() map[string]interface{} {
-	info := map[string]interface{}{
+func (t *MediaTrackReceiver) DebugInfo() map[string]any {
+	info := map[string]any{
 		"ID":       t.ID(),
 		"Kind":     t.Kind().String(),
 		"PubMuted": t.IsMuted(),
