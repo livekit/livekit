@@ -326,7 +326,7 @@ func (b *BufferBase) BindLocked(rtpParameters webrtc.RTPParameters, codec webrtc
 				continue
 			}
 			b.ddExtID = uint8(ext.ID)
-			b.createDDParserAndFrameRateCalculator(b.params.IsDDRestartEnabled)
+			b.createDDParserAndFrameRateCalculator()
 
 		case sdp.AudioLevelURI:
 			b.audioLevelExtID = uint8(ext.ID)
@@ -518,7 +518,7 @@ func (b *BufferBase) restartStreamLocked(reason string) {
 	}
 
 	if b.ddExtID != 0 {
-		b.createDDParserAndFrameRateCalculator(b.params.IsDDRestartEnabled)
+		b.createDDParserAndFrameRateCalculator()
 	}
 
 	b.frameRateCalculated = false
@@ -535,7 +535,7 @@ func (b *BufferBase) restartStreamLocked(reason string) {
 	}
 }
 
-func (b *BufferBase) createDDParserAndFrameRateCalculator(isDDRestartEnabled bool) {
+func (b *BufferBase) createDDParserAndFrameRateCalculator() {
 	if mime.IsMimeTypeSVCCapable(b.mime) || b.mime == mime.MimeTypeVP8 {
 		frc := NewFrameRateCalculatorDD(b.clockRate, b.logger)
 		for i := range b.frameRateCalculator {
@@ -547,7 +547,7 @@ func (b *BufferBase) createDDParserAndFrameRateCalculator(isDDRestartEnabled boo
 			func(spatial, temporal int32) {
 				frc.SetMaxLayer(spatial, temporal)
 			},
-			isDDRestartEnabled,
+			b.params.IsDDRestartEnabled,
 		)
 	}
 }
