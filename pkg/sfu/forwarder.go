@@ -691,7 +691,11 @@ func (f *Forwarder) SetRefSenderReport(layer int32, srData *livekit.RTCPSenderRe
 
 	if layer >= 0 && int(layer) < len(f.refInfos) {
 		if layer == f.referenceLayerSpatial && f.refInfos[layer].senderReport == nil {
-			f.logger.Debugw("received RTCP sender report for reference layer spatial", "layer", layer)
+			f.logger.Debugw(
+				"received RTCP sender report for reference layer spatial",
+				"layer", layer,
+				"srData", rtpstats.WrappedRTCPSenderReportStateLogger{RTCPSenderReportState: srData},
+			)
 		}
 		f.refInfos[layer] = refInfo{srData, 0, false}
 

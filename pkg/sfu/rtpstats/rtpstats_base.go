@@ -193,6 +193,8 @@ func (w WrappedRTCPSenderReportStateLogger) MarshalLogObject(e zapcore.ObjectEnc
 	return nil
 }
 
+// ------------------------------------------------------------------
+
 func RTCPSenderReportPropagationDelay(rsrs *livekit.RTCPSenderReportState, passThrough bool) time.Duration {
 	if passThrough {
 		return 0

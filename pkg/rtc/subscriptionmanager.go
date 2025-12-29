@@ -548,7 +548,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *mediaTrackSubscription) {
 		// check bound status, notify error callback if it's not bound
 		// if a publisher leaves or closes the source track, SubscribedTrack will be closed as well and it will go
 		// back to needsSubscribe state
-		if s.durationSinceStart() > subscriptionTimeout {
+		if m.params.Participant.IsReady() && s.durationSinceStart() > subscriptionTimeout {
 			s.logger.Warnw("track not bound after timeout", nil)
 			s.maybeRecordError(m.params.Telemetry, s.subscriberID, ErrTrackNotBound, false)
 			m.params.OnSubscriptionError(s.trackID, true, ErrTrackNotBound)

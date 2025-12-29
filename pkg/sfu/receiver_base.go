@@ -902,6 +902,8 @@ func (r *ReceiverBase) forwardRTP(
 			"layer", layer,
 			"numPacketsForwarded", numPacketsForwarded,
 			"numPacketsDropped", numPacketsDropped,
+			"forwarderGeneration", forwarderGeneration,
+			"forwardersGeneration", r.forwardersGeneration.Load(),
 		)
 		wg.Done()
 	}()
