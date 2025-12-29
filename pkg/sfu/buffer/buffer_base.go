@@ -71,7 +71,7 @@ type ExtPacket struct {
 	ExtTimestamp         uint64
 	Packet               *rtp.Packet
 	Payload              any
-	KeyFrame             bool
+	IsKeyFrame           bool
 	RawPacket            []byte
 	DependencyDescriptor *ExtDependencyDescriptor
 	AbsCaptureTimeExt    *act.AbsCaptureTime
@@ -145,6 +145,7 @@ type BufferBaseParams struct {
 	SendPLI             func()
 	IsReportingEnabled  bool
 	IsOOBSequenceNumber bool
+	IsDDRestartEnabled  bool
 }
 
 type BufferBase struct {
@@ -546,7 +547,7 @@ func (b *BufferBase) createDDParserAndFrameRateCalculator() {
 			func(spatial, temporal int32) {
 				frc.SetMaxLayer(spatial, temporal)
 			},
-			false,
+			b.params.IsDDRestartEnabled,
 		)
 	}
 }
@@ -1046,11 +1047,11 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 			b.logger.Warnw("could not unmarshal VP8 packet", err)
 			return err
 		}
-		ep.KeyFrame = vp8Packet.IsKeyFrame
+		ep.IsKeyFrame = vp8Packet.IsKeyFrame
 		if ep.DependencyDescriptor == nil {
 			ep.Temporal = int32(vp8Packet.TID)
 
-			if ep.KeyFrame {
+			if ep.IsKeyFrame {
 				if sz := ExtractVP8VideoSize(&vp8Packet, ep.Packet.Payload); sz.Width > 0 && sz.Height > 0 {
 					videoSize = append(videoSize, sz)
 				}
@@ -1075,9 +1076,9 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 				Temporal: int32(vp9Packet.TID),
 			}
 			ep.Payload = vp9Packet
-			ep.KeyFrame = IsVP9KeyFrame(&vp9Packet, ep.Packet.Payload)
+			ep.IsKeyFrame = IsVP9KeyFrame(&vp9Packet, ep.Packet.Payload)
 
-			if ep.KeyFrame {
+			if ep.IsKeyFrame {
 				for i := 0; i < len(vp9Packet.Width); i++ {
 					videoSize = append(videoSize, VideoSize{
 						Width:  uint32(vp9Packet.Width[i]),
@@ -1086,25 +1087,25 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 				}
 			}
 		} else {
-			ep.KeyFrame = IsVP9KeyFrame(nil, ep.Packet.Payload)
+			ep.IsKeyFrame = IsVP9KeyFrame(nil, ep.Packet.Payload)
 		}
 
 	case mime.MimeTypeH264:
-		ep.KeyFrame = IsH264KeyFrame(ep.Packet.Payload)
+		ep.IsKeyFrame = IsH264KeyFrame(ep.Packet.Payload)
 		ep.Spatial = InvalidLayerSpatial // h.264 don't have spatial scalability, reset to invalid
 
 		// Check H264 key frame video size
-		if ep.KeyFrame {
+		if ep.IsKeyFrame {
 			if sz := ExtractH264VideoSize(ep.Packet.Payload); sz.Width > 0 && sz.Height > 0 {
 				videoSize = append(videoSize, sz)
 			}
 		}
 
 	case mime.MimeTypeAV1:
-		ep.KeyFrame = IsAV1KeyFrame(ep.Packet.Payload)
+		ep.IsKeyFrame = IsAV1KeyFrame(ep.Packet.Payload)
 
 	case mime.MimeTypeH265:
-		ep.KeyFrame = IsH265KeyFrame(ep.Packet.Payload)
+		ep.IsKeyFrame = IsH265KeyFrame(ep.Packet.Payload)
 		if ep.DependencyDescriptor == nil {
 			if len(ep.Packet.Payload) < 2 {
 				b.logger.Warnw("invalid H265 packet", nil, "payloadLen", len(ep.Packet.Payload))
@@ -1115,7 +1116,7 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 			}
 			ep.Spatial = InvalidLayerSpatial
 
-			if ep.KeyFrame {
+			if ep.IsKeyFrame {
 				if sz := ExtractH265VideoSize(ep.Packet.Payload); sz.Width > 0 && sz.Height > 0 {
 					videoSize = append(videoSize, sz)
 				}
@@ -1123,7 +1124,7 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 		}
 	}
 
-	if ep.KeyFrame {
+	if ep.IsKeyFrame {
 		if b.rtpStats != nil {
 			b.rtpStats.UpdateKeyFrame(1)
 		}

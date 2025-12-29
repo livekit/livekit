@@ -291,7 +291,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 				"fn", dd.FrameNumber,
 				"efn", extFrameNum,
 				"sn", extPkt.Packet.SequenceNumber,
-				"isKeyFrame", extPkt.KeyFrame,
+				"isKeyFrame", extPkt.IsKeyFrame,
 			)
 		}
 
@@ -308,7 +308,7 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 			"fn", dd.FrameNumber,
 			"efn", extFrameNum,
 			"sn", extPkt.Packet.SequenceNumber,
-			"isKeyFrame", extPkt.KeyFrame,
+			"isKeyFrame", extPkt.IsKeyFrame,
 		)
 
 		result.IsRelevant = true
