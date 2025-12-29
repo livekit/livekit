@@ -1103,7 +1103,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	}
 	d.pacer.Enqueue(pacerPacket)
 
-	if extPkt.KeyFrame {
+	if extPkt.IsKeyFrame {
 		d.isNACKThrottled.Store(false)
 		d.rtpStats.UpdateKeyFrame(1)
 		d.params.Logger.Debugw(

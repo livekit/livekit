@@ -185,7 +185,7 @@ func (r *RTPMunger) UpdateAndGetSnTs(extPkt *buffer.ExtPacket, marker bool) (Tra
 		r.secondLastMarker = r.lastMarker
 		r.lastMarker = marker
 
-		if extPkt.KeyFrame {
+		if extPkt.IsKeyFrame {
 			r.extRtxGateSn = extMungedSN
 			r.isInRtxGateRegion = true
 		}

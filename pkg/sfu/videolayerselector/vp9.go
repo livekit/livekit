@@ -50,7 +50,7 @@ func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerS
 		updatedLayer := v.currentLayer
 
 		if !v.currentLayer.IsValid() {
-			if !extPkt.KeyFrame {
+			if !extPkt.IsKeyFrame {
 				return
 			}
 

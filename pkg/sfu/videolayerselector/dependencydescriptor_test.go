@@ -143,7 +143,7 @@ func TestDependencyDescriptor(t *testing.T) {
 
 	// non key frame, dropped
 	ret = ddSelector.Select(&buffer.ExtPacket{
-		KeyFrame: false,
+		IsKeyFrame: false,
 		DependencyDescriptor: &buffer.ExtDependencyDescriptor{
 			Descriptor: &dd.DependencyDescriptor{
 				FrameNumber: 1,
@@ -308,7 +308,7 @@ func createDDFrames(maxLayer buffer.VideoLayer, startFrameNumber uint16) []*buff
 		}
 	}
 	keyFrame := &buffer.ExtPacket{
-		KeyFrame: true,
+		IsKeyFrame: true,
 		DependencyDescriptor: &buffer.ExtDependencyDescriptor{
 			Descriptor: &dd.DependencyDescriptor{
 				FrameNumber: startFrameNumber,

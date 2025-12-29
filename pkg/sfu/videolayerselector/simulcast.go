@@ -93,7 +93,7 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 		isActive := s.currentLayer.IsValid()
 		found := false
 		reason := ""
-		if extPkt.KeyFrame {
+		if extPkt.IsKeyFrame {
 			if layer > s.currentLayer.Spatial && layer <= s.targetLayer.Spatial {
 				reason = "upgrading layer"
 				found = true
@@ -124,7 +124,7 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 	}
 
 	// if locked to higher than max layer due to overshoot, check if it can be dialed back
-	if s.currentLayer.Spatial > s.maxLayer.Spatial && layer <= s.maxLayer.Spatial && extPkt.KeyFrame {
+	if s.currentLayer.Spatial > s.maxLayer.Spatial && layer <= s.maxLayer.Spatial && extPkt.IsKeyFrame {
 		s.previousLayer = s.currentLayer
 		s.currentLayer.Spatial = layer
 
