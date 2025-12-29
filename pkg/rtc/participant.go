@@ -569,6 +569,14 @@ func (p *ParticipantImpl) ConnectedAt() time.Time {
 	return p.connectedAt
 }
 
+func (p *ParticipantImpl) ActiveAt() time.Time {
+	if activeAt := p.lastActiveAt.Load(); activeAt != nil {
+		return *activeAt
+	}
+
+	return time.Time{}
+}
+
 func (p *ParticipantImpl) GetClientInfo() *livekit.ClientInfo {
 	p.lock.RLock()
 	defer p.lock.RUnlock()

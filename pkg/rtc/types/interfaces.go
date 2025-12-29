@@ -384,6 +384,7 @@ type LocalParticipant interface {
 	SupportsTransceiverReuse() bool
 	IsUsingSinglePeerConnection() bool
 	IsReady() bool
+	ActiveAt() time.Time
 	Disconnected() <-chan struct{}
 	IsIdle() bool
 	SubscriberAsPrimary() bool

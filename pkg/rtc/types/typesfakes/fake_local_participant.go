@@ -23,6 +23,16 @@ import (
 )
 
 type FakeLocalParticipant struct {
+	ActiveAtStub        func() time.Time
+	activeAtMutex       sync.RWMutex
+	activeAtArgsForCall []struct {
+	}
+	activeAtReturns struct {
+		result1 time.Time
+	}
+	activeAtReturnsOnCall map[int]struct {
+		result1 time.Time
+	}
 	AddOnCloseStub        func(string, func(types.LocalParticipant))
 	addOnCloseMutex       sync.RWMutex
 	addOnCloseArgsForCall []struct {
@@ -1487,6 +1497,59 @@ type FakeLocalParticipant struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeLocalParticipant) ActiveAt() time.Time {
+	fake.activeAtMutex.Lock()
+	ret, specificReturn := fake.activeAtReturnsOnCall[len(fake.activeAtArgsForCall)]
+	fake.activeAtArgsForCall = append(fake.activeAtArgsForCall, struct {
+	}{})
+	stub := fake.ActiveAtStub
+	fakeReturns := fake.activeAtReturns
+	fake.recordInvocation("ActiveAt", []interface{}{})
+	fake.activeAtMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) ActiveAtCallCount() int {
+	fake.activeAtMutex.RLock()
+	defer fake.activeAtMutex.RUnlock()
+	return len(fake.activeAtArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) ActiveAtCalls(stub func() time.Time) {
+	fake.activeAtMutex.Lock()
+	defer fake.activeAtMutex.Unlock()
+	fake.ActiveAtStub = stub
+}
+
+func (fake *FakeLocalParticipant) ActiveAtReturns(result1 time.Time) {
+	fake.activeAtMutex.Lock()
+	defer fake.activeAtMutex.Unlock()
+	fake.ActiveAtStub = nil
+	fake.activeAtReturns = struct {
+		result1 time.Time
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) ActiveAtReturnsOnCall(i int, result1 time.Time) {
+	fake.activeAtMutex.Lock()
+	defer fake.activeAtMutex.Unlock()
+	fake.ActiveAtStub = nil
+	if fake.activeAtReturnsOnCall == nil {
+		fake.activeAtReturnsOnCall = make(map[int]struct {
+			result1 time.Time
+		})
+	}
+	fake.activeAtReturnsOnCall[i] = struct {
+		result1 time.Time
+	}{result1}
 }
 
 func (fake *FakeLocalParticipant) AddOnClose(arg1 string, arg2 func(types.LocalParticipant)) {
