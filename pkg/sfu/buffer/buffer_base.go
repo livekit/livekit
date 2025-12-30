@@ -530,7 +530,7 @@ func (b *BufferBase) restartStreamLocked(reason string, isDetected bool) {
 
 	b.isRestartPending = true
 
-	if f := b.onStreamRestart; f != nil && !isDetected {
+	if f := b.onStreamRestart; f != nil && isDetected {
 		go f(reason)
 	}
 }
