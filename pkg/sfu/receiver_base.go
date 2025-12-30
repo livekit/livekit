@@ -904,6 +904,7 @@ func (r *ReceiverBase) forwardRTP(
 			"numPacketsDropped", numPacketsDropped,
 			"forwarderGeneration", forwarderGeneration,
 			"forwardersGeneration", r.forwardersGeneration.Load(),
+			"errror", err,
 		)
 		wg.Done()
 	}()
@@ -915,7 +916,7 @@ func (r *ReceiverBase) forwardRTP(
 	}
 
 	pktBuf := make([]byte, bucket.RTPMaxPktSize)
-	r.params.Logger.Debugw("starting forwarding", "layer", layer)
+	r.params.Logger.Debugw("starting forwarding", "layer", layer, "forwarderGeneration", forwarderGeneration)
 
 	for r.forwardersGeneration.Load() == forwarderGeneration {
 		extPkt, err = buff.ReadExtended(pktBuf)

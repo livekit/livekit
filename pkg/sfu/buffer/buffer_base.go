@@ -487,11 +487,11 @@ func (b *BufferBase) RestartStream(reason string) {
 	b.Lock()
 	defer b.Unlock()
 
-	b.restartStreamLocked(reason)
+	b.restartStreamLocked(reason, false)
 	b.readCond.Broadcast()
 }
 
-func (b *BufferBase) restartStreamLocked(reason string) {
+func (b *BufferBase) restartStreamLocked(reason string, isDetected bool) {
 	b.logger.Infow("stream restart", "reason", reason)
 
 	// stop
@@ -530,7 +530,7 @@ func (b *BufferBase) restartStreamLocked(reason string) {
 
 	b.isRestartPending = true
 
-	if f := b.onStreamRestart; f != nil {
+	if f := b.onStreamRestart; f != nil && isDetected {
 		go f(reason)
 	}
 }
@@ -754,7 +754,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 			return 0, fmt.Errorf("unhandled reason: %s", flowState.UnhandledReason.String())
 		}
 
-		b.restartStreamLocked("discontinuity")
+		b.restartStreamLocked("discontinuity", true)
 
 		flowState = b.rtpStats.Update(
 			arrivalTime,
@@ -964,7 +964,7 @@ func (b *BufferBase) handleCodecChange(newPT uint8) {
 	b.rtxPayloadType = rtxPt
 	b.mime = mime.NormalizeMimeType(newCodec.MimeType)
 
-	b.restartStreamLocked("codec-change")
+	b.restartStreamLocked("codec-change", true)
 
 	if f := b.onCodecChange; f != nil {
 		go f(newCodec)
