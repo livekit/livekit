@@ -1,0 +1,56 @@
+# LiveKit Cloud Configuration Template
+# Minimal config for cloud deployments
+
+port: ${PORT:-7880}
+
+# Bind to all interfaces for cloud environments
+bind_addresses:
+  - "0.0.0.0"
+
+# API Keys (override with environment variables)
+keys:
+  ${LIVEKIT_API_KEY:-APIQmrHaqpJjwXs}: ${LIVEKIT_API_SECRET:-2j4uCefeStZIjOAoYoVBSSAexGZhrm0aWk7N7mpAYaOA}
+
+# WebRTC configuration for cloud
+rtc:
+  # Use single UDP port for cloud (simpler firewall configuration)
+  udp_port: ${LIVEKIT_RTC_UDP_PORT:-7882}
+  
+  # TCP fallback
+  tcp_port: ${LIVEKIT_RTC_TCP_PORT:-7881}
+  
+  # Auto-detect external IP via STUN
+  use_external_ip: true
+  
+  # Override if auto-detection fails (set via LIVEKIT_NODE_IP env var)
+  node_ip: ${LIVEKIT_NODE_IP:-}
+  
+  # STUN servers for IP detection
+  stun_servers:
+    - stun:stun.l.google.com:19302
+    - stun:stun1.l.google.com:19302
+  
+  # Use ICE Lite for faster connections (disable if behind NAT)
+  use_ice_lite: false
+  
+  # Allow TCP fallback for restrictive networks
+  allow_tcp_fallback: true
+
+# Logging
+logging:
+  level: ${LIVEKIT_LOG_LEVEL:-info}
+  sample: false
+
+# TURN servers (optional, for NAT traversal)
+# turn_servers:
+#   - host: ${TURN_HOST}
+#     port: ${TURN_PORT:-443}
+#     protocol: ${TURN_PROTOCOL:-tls}
+#     username: ${TURN_USERNAME}
+#     credential: ${TURN_CREDENTIAL}
+
+# Redis for multi-node (optional)
+# redis:
+#   address: ${REDIS_URL}
+#   username: ${REDIS_USERNAME}
+#   password: ${REDIS_PASSWORD}
