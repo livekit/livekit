@@ -149,7 +149,7 @@ func (s whipService) Create(ctx context.Context, req *rpc.WHIPCreateRequest) (*r
 
 	var iceServers []*livekit.ICEServer
 	apiKey, _, err := s.RoomManager.getFirstKeyPair()
-	if err != nil {
+	if err == nil {
 		iceServers = s.RoomManager.iceServersForParticipant(
 			apiKey,
 			lp,
