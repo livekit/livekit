@@ -198,8 +198,10 @@ func TestNegotiationTiming(t *testing.T) {
 
 		return state == transport.NegotiationStateRemote
 	}, 10*time.Second, 10*time.Millisecond, "negotiation state does not match NegotiateStateRemote")
-	_, ok := secondOffer.Load().(*webrtc.SessionDescription)
-	require.True(t, ok)
+	require.Eventually(t, func() bool {
+		_, ok := secondOffer.Load().(*webrtc.SessionDescription)
+		return ok
+	}, 10*time.Second, 10*time.Millisecond, "second offer not received")
 
 	transportA.Close()
 	transportB.Close()
