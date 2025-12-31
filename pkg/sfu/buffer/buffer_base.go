@@ -1261,7 +1261,6 @@ func (b *BufferBase) doFpsCalc(ep *ExtPacket) {
 }
 
 func (b *BufferBase) SetSenderReportData(srData *livekit.RTCPSenderReportState) {
-	srData.At = mono.UnixNano()
 	b.RLock()
 	didSet := false
 	if b.rtpStats != nil {
