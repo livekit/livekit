@@ -3284,8 +3284,9 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 		ShouldRegressCodec: func() bool {
 			return p.helper().ShouldRegressCodec()
 		},
-		PreferVideoSizeFromMedia:        p.params.PreferVideoSizeFromMedia,
-		EnableRTPStreamRestartDetection: p.params.EnableRTPStreamRestartDetection,
+		PreferVideoSizeFromMedia:         p.params.PreferVideoSizeFromMedia,
+		EnableRTPStreamRestartDetection:  p.params.EnableRTPStreamRestartDetection,
+		UpdateTrackInfoByVideoSizeChange: p.params.UseOneShotSignallingMode,
 	}, ti)
 
 	mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
