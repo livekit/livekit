@@ -27,6 +27,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/observability/roomobs"
+	"github.com/livekit/protocol/utils/mono"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/dynacast"
@@ -313,6 +314,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 						NtpTimestamp: pkt.NTPTime,
 						Packets:      pkt.PacketCount,
 						Octets:       uint64(pkt.OctetCount),
+						At:           mono.UnixNano(),
 					})
 				}
 			case *rtcp.ExtendedReport:
