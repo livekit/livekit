@@ -1466,7 +1466,7 @@ func (b *BufferBase) seedKeyFrame(keyFrameSeederGeneration int32) {
 	//
 	// send gratuitous PLIs for some time or until a key frame is seen to
 	// get the engine rolling
-	b.logger.Debugw("starting key frame seeder", "generattion", keyFrameSeederGeneration)
+	b.logger.Debugw("starting key frame seeder", "generation", keyFrameSeederGeneration)
 	timer := time.NewTimer(30 * time.Second)
 	defer timer.Stop()
 
