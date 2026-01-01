@@ -5,13 +5,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [1.9.10] - 2026-01-01
 
 ### Added
+- add explicit room exists servicestore op (#4175)
 - Add support for TURN static auth secret credentials (#3796)
 - Make new path for signalling v1.5 support. (#4180)
 - report video size from media data for whip (#4211)
 - Support preserving external supplied time. (#4212)
 
 ### Changed
-- add explicit room exists servicestore op (#4175)
 - Use published track for model access in data down track. (#4176)
 - Refactor receiver and buffer into Base and higher layer. (#4185, #4186, #4187, #4189, #4196, #4198, #4207)
 - Update pion/webrtc to v4.2.1 (#4191)
