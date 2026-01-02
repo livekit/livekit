@@ -27,8 +27,8 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
 
-func (p *ParticipantImpl) SetResponseSink(sink routing.MessageSink) {
-	p.signaller.SetResponseSink(sink)
+func (p *ParticipantImpl) SwapResponseSink(sink routing.MessageSink, reason types.SignallingCloseReason) {
+	p.signaller.SwapResponseSink(sink, reason)
 }
 
 func (p *ParticipantImpl) GetResponseSink() routing.MessageSink {

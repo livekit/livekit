@@ -392,7 +392,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 
 	p.state.Store(livekit.ParticipantInfo_JOINING)
 	p.grants.Store(params.Grants.Clone())
-	p.SetResponseSink(params.Sink)
+	p.SwapResponseSink(params.Sink, types.SignallingCloseReasonUnknown)
 	p.setupEnabledCodecs(params.PublishEnabledCodecs, params.SubscribeEnabledCodecs, params.ClientConf.GetDisabledCodecs())
 
 	if p.supervisor != nil {
