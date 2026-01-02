@@ -400,7 +400,7 @@ type LocalParticipant interface {
 	SupportsMoving() error
 	GetLastReliableSequence(migrateOut bool) uint32
 
-	SetResponseSink(sink routing.MessageSink)
+	SwapResponseSink(sink routing.MessageSink, reason SignallingCloseReason)
 	GetResponseSink() routing.MessageSink
 	CloseSignalConnection(reason SignallingCloseReason)
 	UpdateLastSeenSignal()

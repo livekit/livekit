@@ -42,10 +42,29 @@ func newSignallerAsyncBase(params signallerAsyncBaseParams) *signallerAsyncBase 
 	}
 }
 
-func (s *signallerAsyncBase) SetResponseSink(sink routing.MessageSink) {
+func (s *signallerAsyncBase) SwapResponseSink(sink routing.MessageSink, reason types.SignallingCloseReason) {
 	s.resSinkMu.Lock()
-	defer s.resSinkMu.Unlock()
+	oldSink := s.resSink
 	s.resSink = sink
+	s.resSinkMu.Unlock()
+
+	if oldSink != nil {
+		if sink != nil {
+			s.params.Logger.Debugw(
+				"swapping signal connection",
+				"reason", reason,
+				"connID", oldSink.ConnectionID(),
+				"newConnID", sink.ConnectionID(),
+			)
+		} else {
+			s.params.Logger.Debugw(
+				"closing signal connection",
+				"reason", reason,
+				"connID", oldSink.ConnectionID(),
+			)
+		}
+		oldSink.Close()
+	}
 }
 
 func (s *signallerAsyncBase) GetResponseSink() routing.MessageSink {
@@ -56,12 +75,5 @@ func (s *signallerAsyncBase) GetResponseSink() routing.MessageSink {
 
 // closes signal connection to notify client to resume/reconnect
 func (s *signallerAsyncBase) CloseSignalConnection(reason types.SignallingCloseReason) {
-	sink := s.GetResponseSink()
-	if sink == nil {
-		return
-	}
-
-	s.params.Logger.Debugw("closing signal connection", "reason", reason, "connID", sink.ConnectionID())
-	sink.Close()
-	s.SetResponseSink(nil)
+	s.SwapResponseSink(nil, reason)
 }

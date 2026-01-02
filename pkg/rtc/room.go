@@ -551,8 +551,7 @@ func (r *Room) ResumeParticipant(
 ) error {
 	r.ReplaceParticipantRequestSource(p.Identity(), requestSource)
 	// close previous sink, and link to new one
-	p.CloseSignalConnection(types.SignallingCloseReasonResume)
-	p.SetResponseSink(responseSink)
+	p.SwapResponseSink(responseSink, types.SignallingCloseReasonResume)
 
 	p.SetSignalSourceValid(true)
 

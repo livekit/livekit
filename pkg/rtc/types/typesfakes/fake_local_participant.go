@@ -1163,11 +1163,6 @@ type FakeLocalParticipant struct {
 	setPermissionReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	SetResponseSinkStub        func(routing.MessageSink)
-	setResponseSinkMutex       sync.RWMutex
-	setResponseSinkArgsForCall []struct {
-		arg1 routing.MessageSink
-	}
 	SetSignalSourceValidStub        func(bool)
 	setSignalSourceValidMutex       sync.RWMutex
 	setSignalSourceValidArgsForCall []struct {
@@ -1287,6 +1282,12 @@ type FakeLocalParticipant struct {
 	}
 	supportsTransceiverReuseReturnsOnCall map[int]struct {
 		result1 bool
+	}
+	SwapResponseSinkStub        func(routing.MessageSink, types.SignallingCloseReason)
+	swapResponseSinkMutex       sync.RWMutex
+	swapResponseSinkArgsForCall []struct {
+		arg1 routing.MessageSink
+		arg2 types.SignallingCloseReason
 	}
 	TelemetryGuardStub        func() *telemetry.ReferenceGuard
 	telemetryGuardMutex       sync.RWMutex
@@ -7635,38 +7636,6 @@ func (fake *FakeLocalParticipant) SetPermissionReturnsOnCall(i int, result1 bool
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) SetResponseSink(arg1 routing.MessageSink) {
-	fake.setResponseSinkMutex.Lock()
-	fake.setResponseSinkArgsForCall = append(fake.setResponseSinkArgsForCall, struct {
-		arg1 routing.MessageSink
-	}{arg1})
-	stub := fake.SetResponseSinkStub
-	fake.recordInvocation("SetResponseSink", []interface{}{arg1})
-	fake.setResponseSinkMutex.Unlock()
-	if stub != nil {
-		fake.SetResponseSinkStub(arg1)
-	}
-}
-
-func (fake *FakeLocalParticipant) SetResponseSinkCallCount() int {
-	fake.setResponseSinkMutex.RLock()
-	defer fake.setResponseSinkMutex.RUnlock()
-	return len(fake.setResponseSinkArgsForCall)
-}
-
-func (fake *FakeLocalParticipant) SetResponseSinkCalls(stub func(routing.MessageSink)) {
-	fake.setResponseSinkMutex.Lock()
-	defer fake.setResponseSinkMutex.Unlock()
-	fake.SetResponseSinkStub = stub
-}
-
-func (fake *FakeLocalParticipant) SetResponseSinkArgsForCall(i int) routing.MessageSink {
-	fake.setResponseSinkMutex.RLock()
-	defer fake.setResponseSinkMutex.RUnlock()
-	argsForCall := fake.setResponseSinkArgsForCall[i]
-	return argsForCall.arg1
-}
-
 func (fake *FakeLocalParticipant) SetSignalSourceValid(arg1 bool) {
 	fake.setSignalSourceValidMutex.Lock()
 	fake.setSignalSourceValidArgsForCall = append(fake.setSignalSourceValidArgsForCall, struct {
@@ -8315,6 +8284,39 @@ func (fake *FakeLocalParticipant) SupportsTransceiverReuseReturnsOnCall(i int, r
 	fake.supportsTransceiverReuseReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
+}
+
+func (fake *FakeLocalParticipant) SwapResponseSink(arg1 routing.MessageSink, arg2 types.SignallingCloseReason) {
+	fake.swapResponseSinkMutex.Lock()
+	fake.swapResponseSinkArgsForCall = append(fake.swapResponseSinkArgsForCall, struct {
+		arg1 routing.MessageSink
+		arg2 types.SignallingCloseReason
+	}{arg1, arg2})
+	stub := fake.SwapResponseSinkStub
+	fake.recordInvocation("SwapResponseSink", []interface{}{arg1, arg2})
+	fake.swapResponseSinkMutex.Unlock()
+	if stub != nil {
+		fake.SwapResponseSinkStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeLocalParticipant) SwapResponseSinkCallCount() int {
+	fake.swapResponseSinkMutex.RLock()
+	defer fake.swapResponseSinkMutex.RUnlock()
+	return len(fake.swapResponseSinkArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) SwapResponseSinkCalls(stub func(routing.MessageSink, types.SignallingCloseReason)) {
+	fake.swapResponseSinkMutex.Lock()
+	defer fake.swapResponseSinkMutex.Unlock()
+	fake.SwapResponseSinkStub = stub
+}
+
+func (fake *FakeLocalParticipant) SwapResponseSinkArgsForCall(i int) (routing.MessageSink, types.SignallingCloseReason) {
+	fake.swapResponseSinkMutex.RLock()
+	defer fake.swapResponseSinkMutex.RUnlock()
+	argsForCall := fake.swapResponseSinkArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) TelemetryGuard() *telemetry.ReferenceGuard {

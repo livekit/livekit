@@ -378,7 +378,7 @@ func TestDisableCodecs(t *testing.T) {
 
 	// negotiated codec should not contain h264
 	sink := &routingfakes.FakeMessageSink{}
-	participant.SetResponseSink(sink)
+	participant.SwapResponseSink(sink, types.SignallingCloseReasonUnknown)
 	var answer webrtc.SessionDescription
 	var answerId uint32
 	var answerReceived atomic.Bool
@@ -435,7 +435,7 @@ func TestDisablePublishCodec(t *testing.T) {
 	}
 
 	sink := &routingfakes.FakeMessageSink{}
-	participant.SetResponseSink(sink)
+	participant.SwapResponseSink(sink, types.SignallingCloseReasonUnknown)
 	var publishReceived atomic.Bool
 	sink.WriteMessageCalls(func(msg proto.Message) error {
 		if res, ok := msg.(*livekit.SignalResponse); ok {
@@ -570,7 +570,7 @@ func TestPreferMediaCodecForPublisher(t *testing.T) {
 				offerId := uint32(23)
 
 				sink := &routingfakes.FakeMessageSink{}
-				participant.SetResponseSink(sink)
+				participant.SwapResponseSink(sink, types.SignallingCloseReasonUnknown)
 				var answer webrtc.SessionDescription
 				var answerId uint32
 				var answerReceived atomic.Bool
@@ -690,7 +690,7 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 			offerId := uint32(0xffffff)
 
 			sink := &routingfakes.FakeMessageSink{}
-			participant.SetResponseSink(sink)
+			participant.SwapResponseSink(sink, types.SignallingCloseReasonUnknown)
 			var answer webrtc.SessionDescription
 			var answerId uint32
 			var answerReceived atomic.Bool
