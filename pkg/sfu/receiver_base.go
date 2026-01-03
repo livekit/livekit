@@ -173,17 +173,16 @@ type REDTransformer interface {
 // --------------------------------------
 
 type ReceiverBaseParams struct {
-	TrackID                           livekit.TrackID
-	StreamID                          string
-	Kind                              webrtc.RTPCodecType
-	Codec                             webrtc.RTPCodecParameters
-	HeaderExtensions                  []webrtc.RTPHeaderExtensionParameter
-	Logger                            logger.Logger
-	StreamTrackerManagerConfig        StreamTrackerManagerConfig
-	StreamTrackerManagerListener      StreamTrackerManagerListener
-	IsSelfClosing                     bool
-	IsForwardPacketArrivalTimeEnabled bool
-	OnClosed                          func()
+	TrackID                      livekit.TrackID
+	StreamID                     string
+	Kind                         webrtc.RTPCodecType
+	Codec                        webrtc.RTPCodecParameters
+	HeaderExtensions             []webrtc.RTPHeaderExtensionParameter
+	Logger                       logger.Logger
+	StreamTrackerManagerConfig   StreamTrackerManagerConfig
+	StreamTrackerManagerListener StreamTrackerManagerListener
+	IsSelfClosing                bool
+	OnClosed                     func()
 }
 
 type ReceiverBase struct {
@@ -522,7 +521,6 @@ func (r *ReceiverBase) AddDownTrack(track TrackSender) error {
 
 	track.UpTrackMaxPublishedLayerChange(r.streamTrackerManager.GetMaxPublishedLayer())
 	track.UpTrackMaxTemporalLayerSeenChange(r.streamTrackerManager.GetMaxTemporalLayerSeen())
-	track.EnableForwardPacketArrivalTime(r.params.IsForwardPacketArrivalTimeEnabled)
 
 	r.downTrackSpreader.Store(track)
 	r.params.Logger.Debugw("downtrack added", "subscriberID", track.SubscriberID())
