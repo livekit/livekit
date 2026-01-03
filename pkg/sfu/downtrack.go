@@ -71,7 +71,6 @@ type TrackSender interface {
 	Resync()
 	SetReceiver(TrackReceiver)
 	ReceiverRestart()
-	EnableForwardPacketArrivalTime(enable bool)
 }
 
 // -------------------------------------------------------------------
@@ -1646,9 +1645,6 @@ func (d *DownTrack) ReceiverRestart() {
 	receiver := d.Receiver()
 	d.forwarder.Restart()
 	d.forwarder.DetermineCodec(codec, receiver.HeaderExtensions(), receiver.VideoLayerMode())
-}
-
-func (d *DownTrack) EnableForwardPacketArrivalTime(_enable bool) {
 }
 
 func (d *DownTrack) CreateSourceDescriptionChunks() []rtcp.SourceDescriptionChunk {
