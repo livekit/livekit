@@ -163,7 +163,6 @@ type REDTransformer interface {
 		publisherSRData *livekit.RTCPSenderReportState,
 	)
 	GetDownTracks() []TrackSender
-	HasDownTracks() bool
 	ResyncDownTracks()
 	OnStreamRestart()
 	CanClose() bool
@@ -904,7 +903,7 @@ func (r *ReceiverBase) forwardRTP(
 			"numPacketsDropped", numPacketsDropped,
 			"forwarderGeneration", forwarderGeneration,
 			"forwardersGeneration", r.forwardersGeneration.Load(),
-			"errror", err,
+			"error", err,
 		)
 		wg.Done()
 	}()

@@ -30,6 +30,8 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+var _ REDTransformer = (*RedReceiver)(nil)
+
 const (
 	maxRedCount   = 2
 	mtuSize       = 1500
