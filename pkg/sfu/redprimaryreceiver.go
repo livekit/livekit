@@ -29,6 +29,8 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+var _ REDTransformer = (*RedPrimaryReceiver)(nil)
+
 var (
 	ErrIncompleteRedHeader = errors.New("incomplete red block header")
 	ErrIncompleteRedBlock  = errors.New("incomplete red block payload")
