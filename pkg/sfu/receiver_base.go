@@ -156,6 +156,7 @@ type TrackReceiver interface {
 // --------------------------------------
 
 type REDTransformer interface {
+	TrackReceiver
 	ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int32
 	ForwardRTCPSenderReport(
 		payloadType webrtc.PayloadType,
@@ -216,7 +217,7 @@ type ReceiverBase struct {
 
 	onMaxLayerChange func(mimeType mime.MimeType, maxLayer int32)
 
-	redTransformer atomic.Value // redTransformer interface
+	redTransformer atomic.Pointer[REDTransformer]
 
 	forwardersGeneration atomic.Uint32
 	forwardersWaitGroup  *sync.WaitGroup
@@ -265,8 +266,8 @@ func (r *ReceiverBase) Close(reason string, clearBuffers bool) {
 
 	closeTrackSenders(r.downTrackSpreader.ResetAndGetDownTracks())
 
-	if rt := r.redTransformer.Load(); rt != nil {
-		rt.(REDTransformer).Close()
+	if rt := r.loadREDTransformer(); rt != nil {
+		rt.Close()
 	}
 
 	if r.params.OnClosed != nil {
@@ -283,8 +284,8 @@ func (r *ReceiverBase) CanClose() bool {
 		return false
 	}
 
-	if rt := r.redTransformer.Load(); rt != nil {
-		return rt.(REDTransformer).CanClose()
+	if rt := r.loadREDTransformer(); rt != nil {
+		return rt.CanClose()
 	}
 
 	return true
@@ -401,8 +402,8 @@ func (r *ReceiverBase) restartInternal(reason string, isDetected bool) {
 	r.downTrackSpreader.Broadcast(func(dt TrackSender) {
 		dt.ReceiverRestart()
 	})
-	if rt := r.redTransformer.Load(); rt != nil {
-		rt.(REDTransformer).OnStreamRestart()
+	if rt := r.loadREDTransformer(); rt != nil {
+		rt.OnStreamRestart()
 	}
 
 	// 6. move forwarder generation ahead
@@ -533,8 +534,8 @@ func (r *ReceiverBase) DeleteDownTrack(subscriberID livekit.ParticipantID) {
 
 func (r *ReceiverBase) GetDownTracks() []TrackSender {
 	downTracks := r.downTrackSpreader.GetDownTracks()
-	if rt := r.redTransformer.Load(); rt != nil {
-		downTracks = append(downTracks, rt.(REDTransformer).GetDownTracks()...)
+	if rt := r.loadREDTransformer(); rt != nil {
+		downTracks = append(downTracks, rt.GetDownTracks()...)
 	}
 	return downTracks
 }
@@ -702,8 +703,8 @@ func (r *ReceiverBase) setupBuffer(buff buffer.BufferProvider, layer int32, rtt 
 			_ = dt.HandleRTCPSenderReportData(r.params.Codec.PayloadType, layer, srData)
 		})
 
-		if rt := r.redTransformer.Load(); rt != nil {
-			rt.(REDTransformer).ForwardRTCPSenderReport(r.params.Codec.PayloadType, layer, srData)
+		if rt := r.loadREDTransformer(); rt != nil {
+			rt.ForwardRTCPSenderReport(r.params.Codec.PayloadType, layer, srData)
 		}
 	})
 	buff.OnVideoSizeChanged(func(videoSize []buffer.VideoSize) {
@@ -957,8 +958,8 @@ func (r *ReceiverBase) forwardRTP(
 		r.downTrackSpreader.Broadcast(func(dt TrackSender) {
 			writeCount.Add(dt.WriteRTP(extPkt, spatialLayer))
 		})
-		if rt := r.redTransformer.Load(); rt != nil {
-			writeCount.Add(rt.(REDTransformer).ForwardRTP(extPkt, spatialLayer))
+		if rt := r.loadREDTransformer(); rt != nil {
+			writeCount.Add(rt.ForwardRTP(extPkt, spatialLayer))
 		}
 
 		// track delay/jitter
@@ -1022,13 +1023,13 @@ func (r *ReceiverBase) GetPrimaryReceiverForRed() TrackReceiver {
 		return r
 	}
 
-	rt := r.redTransformer.Load()
+	rt := r.loadREDTransformer()
 	if rt == nil {
 		pr := NewRedPrimaryReceiver(r, sfuutils.DownTrackSpreaderParams{
 			Threshold: r.lbThreshold,
 			Logger:    r.params.Logger,
 		})
-		r.redTransformer.Store(pr)
+		r.redTransformer.Store(&pr)
 		return pr
 	} else {
 		if pr, ok := rt.(*RedPrimaryReceiver); ok {
@@ -1046,13 +1047,13 @@ func (r *ReceiverBase) GetRedReceiver() TrackReceiver {
 		return r
 	}
 
-	rt := r.redTransformer.Load()
+	rt := r.loadREDTransformer()
 	if rt == nil {
 		pr := NewRedReceiver(r, sfuutils.DownTrackSpreaderParams{
 			Threshold: r.lbThreshold,
 			Logger:    r.params.Logger,
 		})
-		r.redTransformer.Store(pr)
+		r.redTransformer.Store(&pr)
 		return pr
 	} else {
 		if pr, ok := rt.(*RedReceiver); ok {
@@ -1193,6 +1194,14 @@ func (r *ReceiverBase) OnVideoSizeChanged(f func()) {
 	r.videoSizeMu.Lock()
 	r.onVideoSizeChanged = f
 	r.videoSizeMu.Unlock()
+}
+
+func (r *ReceiverBase) loadREDTransformer() REDTransformer {
+	if rt := r.redTransformer.Load(); rt != nil {
+		return *rt
+	}
+
+	return nil
 }
 
 // -----------------------------------------------------------
