@@ -23,6 +23,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
+	"github.com/livekit/psrpc/pkg/middleware/otelpsrpc"
 
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
@@ -54,7 +55,9 @@ func NewIOInfoService(
 	}
 
 	if bus != nil {
-		ioServer, err := rpc.NewIOInfoServer(s, bus)
+		ioServer, err := rpc.NewIOInfoServer(s, bus,
+			otelpsrpc.ServerOptions(otelpsrpc.Config{}),
+		)
 		if err != nil {
 			return nil, err
 		}

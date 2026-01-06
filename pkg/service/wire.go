@@ -27,11 +27,6 @@ import (
 	"github.com/redis/go-redis/v9"
 	"gopkg.in/yaml.v3"
 
-	"github.com/livekit/livekit-server/pkg/agent"
-	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -40,6 +35,13 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 	"github.com/livekit/psrpc"
+	"github.com/livekit/psrpc/pkg/middleware/otelpsrpc"
+
+	"github.com/livekit/livekit-server/pkg/agent"
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
 func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
@@ -70,7 +72,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		getIngressStore,
 		getIngressConfig,
 		NewIngressService,
-		rpc.NewSIPClient,
+		rpc.NewSIPClientWithParams,
 		getSIPStore,
 		getSIPConfig,
 		NewSIPService,
@@ -253,7 +255,9 @@ func getPSRPCConfig(config *config.Config) rpc.PSRPCConfig {
 }
 
 func getPSRPCClientParams(config rpc.PSRPCConfig, bus psrpc.MessageBus) rpc.ClientParams {
-	return rpc.NewClientParams(config, bus, logger.GetLogger(), rpc.PSRPCMetricsObserver{})
+	return rpc.NewClientParams(config, bus, logger.GetLogger(), rpc.PSRPCMetricsObserver{},
+		otelpsrpc.ClientOptions(otelpsrpc.Config{}),
+	)
 }
 
 func createForwardStats(conf *config.Config) *sfu.ForwardStats {
