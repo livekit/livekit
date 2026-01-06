@@ -328,3 +328,8 @@ keys:
 #   max_room_name_length: 0
 #   # limit length of participant identity
 #   max_participant_identity_length: 0
+#   # per-IP data message rate limiting at room level (messages per second), 0 for no limit
+#   # limits all participants from the same IP within a single room
+#   data_message_room_ip_rate_limit: 0
+#   # burst size for room-level IP rate limiting
+#   data_message_room_ip_rate_burst: 10

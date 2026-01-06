@@ -508,6 +508,7 @@ func (r *RoomManager) StartSession(
 		UseSinglePeerConnection:         pi.UseSinglePeerConnection,
 		EnableDataTracks:                r.config.EnableDataTracks,
 		EnableRTPStreamRestartDetection: r.config.RTC.EnableRTPStreamRestartDetection,
+		IPRateLimiter:                    room.IPRateLimiter(),
 	})
 	if err != nil {
 		return err
@@ -631,7 +632,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 	}
 
 	// construct ice servers
-	newRoom := rtc.NewRoom(ri, internal, *r.rtcConfig, r.config.Room, &r.config.Audio, r.serverInfo, r.telemetry, r.agentClient, r.agentStore, r.egressLauncher)
+	newRoom := rtc.NewRoom(ri, internal, *r.rtcConfig, r.config.Room, &r.config.Audio, r.serverInfo, r.telemetry, r.agentClient, r.agentStore, r.egressLauncher, r.config.Limit)
 
 	roomTopic := rpc.FormatRoomTopic(roomName)
 	roomServer := must.Get(rpc.NewTypedRoomServer(r, r.bus))

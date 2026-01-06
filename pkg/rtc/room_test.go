@@ -843,6 +843,7 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 		},
 		telemetry.NewTelemetryService(n, &telemetryfakes.FakeAnalyticsService{}),
 		nil, nil, nil,
+		config.LimitConfig{},
 	)
 	for i := 0; i < opts.num+opts.numHidden; i++ {
 		identity := livekit.ParticipantIdentity(fmt.Sprintf("p%d", i))
