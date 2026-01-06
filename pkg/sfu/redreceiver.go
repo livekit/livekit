@@ -53,7 +53,7 @@ type RedReceiver struct {
 	redPayloadBuf     [mtuSize]byte
 }
 
-func NewRedReceiver(receiver TrackReceiver, dsp utils.DownTrackSpreaderParams) *RedReceiver {
+func NewRedReceiver(receiver TrackReceiver, dsp utils.DownTrackSpreaderParams) REDTransformer {
 	return &RedReceiver{
 		TrackReceiver:     receiver,
 		downTrackSpreader: utils.NewDownTrackSpreader[TrackSender](dsp),

@@ -50,7 +50,7 @@ type RedPrimaryReceiver struct {
 	pktHistory byte
 }
 
-func NewRedPrimaryReceiver(receiver TrackReceiver, dsp utils.DownTrackSpreaderParams) *RedPrimaryReceiver {
+func NewRedPrimaryReceiver(receiver TrackReceiver, dsp utils.DownTrackSpreaderParams) REDTransformer {
 	return &RedPrimaryReceiver{
 		TrackReceiver:     receiver,
 		downTrackSpreader: utils.NewDownTrackSpreader[TrackSender](dsp),
