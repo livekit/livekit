@@ -28,13 +28,14 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"github.com/livekit/livekit-server/pkg/rtc"
-	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/tracer/jaeger"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/service"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/version"
 )
 
@@ -246,10 +247,13 @@ func getConfig(c *cli.Command) (*config.Config, error) {
 	return conf, nil
 }
 
-func startServer(_ context.Context, c *cli.Command) error {
+func startServer(ctx context.Context, c *cli.Command) error {
 	conf, err := getConfig(c)
 	if err != nil {
 		return err
+	}
+	if url := conf.Trace.JaegerURL; url != "" {
+		jaeger.Configure(ctx, url, "livekit")
 	}
 
 	// validate API key length

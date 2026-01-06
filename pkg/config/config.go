@@ -26,6 +26,13 @@ import (
 	"github.com/urfave/cli/v3"
 	"gopkg.in/yaml.v3"
 
+	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+	redisLiveKit "github.com/livekit/protocol/redis"
+	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/webhook"
+
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/metric"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -34,12 +41,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
-	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
-	redisLiveKit "github.com/livekit/protocol/redis"
-	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/protocol/webhook"
 )
 
 const (
@@ -81,6 +82,7 @@ type Config struct {
 	Development bool `yaml:"development,omitempty"`
 
 	Metric metric.MetricConfig `yaml:"metric,omitempty"`
+	Trace  TracingConfig       `yaml:"trace,omitempty"`
 
 	NodeStats NodeStatsConfig `yaml:"node_stats,omitempty"`
 
@@ -317,6 +319,13 @@ type ForwardStatsConfig struct {
 	SummaryInterval time.Duration `yaml:"summary_interval,omitempty"`
 	ReportInterval  time.Duration `yaml:"report_interval,omitempty"`
 	ReportWindow    time.Duration `yaml:"report_window,omitempty"`
+}
+
+type TracingConfig struct {
+	// JaegerURL configures Jaeger as a global tracer.
+	//
+	// The following formats are supported: <hostname>, <host>:<port>, http(s)://<host>/<path>
+	JaegerURL string `yaml:"jaeger_url,omitempty"`
 }
 
 func DefaultAPIConfig() APIConfig {
