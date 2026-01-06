@@ -769,6 +769,12 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 		return 0, fmt.Errorf("unhandled reason: %s", flowState.UnhandledReason.String())
 	}
 
+	if b.params.IsOOBSequenceNumber {
+		b.updateOOBNACKState(oobSequenceNumber, arrivalTime, len(rawPkt))
+	} else {
+		b.updateNACKState(rtpPacket.SequenceNumber, flowState)
+	}
+
 	if len(rtpPacket.Payload) == 0 && (!flowState.IsOutOfOrder || flowState.IsDuplicate) {
 		// drop padding only in-order or duplicate packet
 		if !flowState.IsOutOfOrder {
@@ -872,12 +878,6 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 	}
 
 	b.maybeGrowBucket(arrivalTime)
-
-	if b.params.IsOOBSequenceNumber {
-		b.updateOOBNACKState(oobSequenceNumber, arrivalTime, len(rawPkt))
-	} else {
-		b.updateNACKState(rtpPacket.SequenceNumber, flowState)
-	}
 
 	return ep.ExtSequenceNumber, nil
 }
