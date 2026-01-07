@@ -97,12 +97,17 @@ type MediaTrackParams struct {
 	PreferVideoSizeFromMedia         bool
 	EnableRTPStreamRestartDetection  bool
 	UpdateTrackInfoByVideoSizeChange bool
+	ForceBackupCodecPolicySimulcast  bool
 }
 
 func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 	t := &MediaTrack{
 		params:            params,
 		backupCodecPolicy: ti.BackupCodecPolicy,
+	}
+
+	if t.params.ForceBackupCodecPolicySimulcast {
+		t.backupCodecPolicy = livekit.BackupCodecPolicy_SIMULCAST
 	}
 
 	if t.backupCodecPolicy != livekit.BackupCodecPolicy_SIMULCAST && len(ti.Codecs) > 1 {
