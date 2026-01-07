@@ -964,8 +964,6 @@ func (b *BufferBase) handleCodecChange(newPT uint8) {
 	b.rtxPayloadType = rtxPt
 	b.mime = mime.NormalizeMimeType(newCodec.MimeType)
 
-	b.restartStreamLocked("codec-change", true)
-
 	if f := b.onCodecChange; f != nil {
 		go f(newCodec)
 	}

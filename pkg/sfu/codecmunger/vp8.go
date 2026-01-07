@@ -60,9 +60,14 @@ func NewVP8(logger logger.Logger) *VP8 {
 	}
 }
 
-func NewVP8FromNull(cm CodecMunger, logger logger.Logger) *VP8 {
+func NewVP8FromOther(cm CodecMunger, logger logger.Logger) *VP8 {
 	v := NewVP8(logger)
-	v.SeedState(cm.(*Null).GetSeededState())
+	switch cm := cm.(type) {
+	case *Null:
+		v.SeedState(cm.GetSeededState())
+	case *VP8:
+		v.SeedState(cm.GetState())
+	}
 	return v
 }
 
@@ -79,9 +84,14 @@ func (v *VP8) GetState() any {
 }
 
 func (v *VP8) SeedState(seed any) {
+	var state *livekit.VP8MungerState
 	switch cm := seed.(type) {
 	case *livekit.RTPForwarderState_Vp8Munger:
-		state := cm.Vp8Munger
+		state = cm.Vp8Munger
+	case *livekit.VP8MungerState:
+		state = cm
+	}
+	if state != nil {
 		v.extLastPictureId = state.ExtLastPictureId
 		v.pictureIdUsed = state.PictureIdUsed
 		v.lastTl0PicIdx = uint8(state.LastTl0PicIdx)
