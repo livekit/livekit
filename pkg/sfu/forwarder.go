@@ -334,7 +334,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 
 	switch f.mime {
 	case mime.MimeTypeVP8:
-		f.codecMunger = codecmunger.NewVP8FromNull(f.codecMunger, f.logger)
+		f.codecMunger = codecmunger.NewVP8FromOther(f.codecMunger, f.logger)
 		if f.vls != nil {
 			if vls := videolayerselector.NewSimulcastFromOther(f.vls); vls != nil {
 				f.vls = vls
@@ -347,6 +347,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		f.vls.SetTemporalLayerSelector(temporallayerselector.NewVP8(f.logger))
 
 	case mime.MimeTypeH264, mime.MimeTypeH265:
+		f.codecMunger = codecmunger.NewNull(f.logger)
 		if f.vls != nil {
 			if vls := videolayerselector.NewSimulcastFromOther(f.vls); vls != nil {
 				f.vls = vls
@@ -358,6 +359,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		}
 
 	case mime.MimeTypeVP9:
+		f.codecMunger = codecmunger.NewNull(f.logger)
 		if sfuutils.IsSimulcastMode(videoLayerMode) {
 			if f.vls != nil {
 				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
@@ -382,6 +384,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		}
 
 	case mime.MimeTypeAV1:
+		f.codecMunger = codecmunger.NewNull(f.logger)
 		if sfuutils.IsSimulcastMode(videoLayerMode) {
 			if f.vls != nil {
 				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
