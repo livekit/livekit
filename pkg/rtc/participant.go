@@ -222,6 +222,7 @@ type ParticipantParams struct {
 	UseSinglePeerConnection         bool
 	EnableDataTracks                bool
 	EnableRTPStreamRestartDetection bool
+	ForceBackupCodecPolicySimulcast bool
 }
 
 type ParticipantImpl struct {
@@ -3287,6 +3288,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 		PreferVideoSizeFromMedia:         p.params.PreferVideoSizeFromMedia,
 		EnableRTPStreamRestartDetection:  p.params.EnableRTPStreamRestartDetection,
 		UpdateTrackInfoByVideoSizeChange: p.params.UseOneShotSignallingMode,
+		ForceBackupCodecPolicySimulcast:  p.params.ForceBackupCodecPolicySimulcast,
 	}, ti)
 
 	mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
