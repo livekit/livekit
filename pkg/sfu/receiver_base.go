@@ -633,7 +633,7 @@ func (r *ReceiverBase) GetLayeredBitrate() ([]int32, Bitrates) {
 
 func (r *ReceiverBase) SendPLI(layer int32, force bool) {
 	// SVC-TODO :  should send LRR (Layer Refresh Request) instead of PLI
-	buff := r.getBuffer(layer)
+	buff, _ := r.getBuffer(layer)
 	if buff == nil {
 		return
 	}
@@ -641,14 +641,14 @@ func (r *ReceiverBase) SendPLI(layer int32, force bool) {
 	buff.SendPLI(force)
 }
 
-func (r *ReceiverBase) getBuffer(layer int32) buffer.BufferProvider {
+func (r *ReceiverBase) getBuffer(layer int32) (buffer.BufferProvider, int32) {
 	r.bufferMu.RLock()
 	defer r.bufferMu.RUnlock()
 
 	return r.getBufferLocked(layer)
 }
 
-func (r *ReceiverBase) getBufferLocked(layer int32) buffer.BufferProvider {
+func (r *ReceiverBase) getBufferLocked(layer int32) (buffer.BufferProvider, int32) {
 	// for svc codecs, use layer = 0 always.
 	// spatial layers are in-built and handled by single buffer
 	if r.videoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM {
@@ -656,10 +656,10 @@ func (r *ReceiverBase) getBufferLocked(layer int32) buffer.BufferProvider {
 	}
 
 	if layer < 0 || int(layer) >= len(r.buffers) {
-		return nil
+		return nil, layer
 	}
 
-	return r.buffers[layer]
+	return r.buffers[layer], layer
 }
 
 func (r *ReceiverBase) GetOrCreateBuffer(
@@ -673,7 +673,8 @@ func (r *ReceiverBase) GetOrCreateBuffer(
 		return nil, false
 	}
 
-	if buff := r.getBufferLocked(layer); buff != nil {
+	var buff buffer.BufferProvider
+	if buff, layer = r.getBufferLocked(layer); buff != nil {
 		r.bufferMu.Unlock()
 		return buff, false
 	}
@@ -794,7 +795,7 @@ func (r *ReceiverBase) ClearAllBuffers(reason string) {
 }
 
 func (r *ReceiverBase) ReadRTP(buf []byte, layer uint8, esn uint64) (int, error) {
-	b := r.getBuffer(int32(layer))
+	b, _ := r.getBuffer(int32(layer))
 	if b == nil {
 		return 0, bucket.ErrPacketMismatch
 	}
@@ -1064,7 +1065,7 @@ func (r *ReceiverBase) GetRedReceiver() TrackReceiver {
 }
 
 func (r *ReceiverBase) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
-	b := r.getBuffer(layer)
+	b, _ := r.getBuffer(layer)
 	if b == nil {
 		return nil
 	}
