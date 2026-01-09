@@ -1058,6 +1058,12 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 					hdr.SetExtension(uint8(d.absCaptureTimeExtID), actBytes)
 				}
 			}
+		} else {
+			// forward ACT without normalization if no sender report yet (e.g., early audio packets)
+			actBytes, err = extPkt.AbsCaptureTimeExt.Marshal()
+			if err == nil {
+				hdr.SetExtension(uint8(d.absCaptureTimeExtID), actBytes)
+			}
 		}
 	}
 	d.addDummyExtensions(hdr)
