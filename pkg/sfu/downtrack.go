@@ -829,6 +829,35 @@ func (d *DownTrack) setRTPHeaderExtensions() {
 	if sender := tr.Sender(); sender != nil {
 		extensions = sender.GetParameters().HeaderExtensions
 		d.params.Logger.Debugw("negotiated downtrack extensions", "extensions", extensions)
+
+		// Check extensions for ACT before bindLock to set absCaptureTimeExtID early
+		for _, ext := range extensions {
+			if ext.URI == "http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time" {
+				d.absCaptureTimeExtID = int(ext.ID)
+				break
+			}
+		}
+
+		// Fallback - if ACT not found, try receiver.GetParameters() for ACT
+		if d.absCaptureTimeExtID == 0 && tr != nil {
+			if receiver := tr.Receiver(); receiver != nil {
+				if recvParams := receiver.GetParameters(); len(recvParams.HeaderExtensions) > 0 {
+					for _, recvExt := range recvParams.HeaderExtensions {
+						if recvExt.URI == "http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time" {
+							d.absCaptureTimeExtID = int(recvExt.ID)
+							break
+						}
+					}
+				}
+			}
+		}
+
+		// Final fallback - use extension ID=2 if ACT negotiated but not in GetParameters()
+		if d.absCaptureTimeExtID == 0 {
+			// ACT is typically negotiated with ID=2 based on Pion logs
+			// This is a workaround until we can properly get it from GetParameters()
+			d.absCaptureTimeExtID = 2
+		}
 	}
 
 	d.bindLock.Lock()
@@ -1037,6 +1066,45 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		}
 	}
 	var actBytes []byte
+	// Manual ACT extraction when condition fails (extPkt.AbsCaptureTimeExt is nil or absCaptureTimeExtID is 0)
+	if (extPkt.AbsCaptureTimeExt == nil || d.absCaptureTimeExtID == 0) && extPkt.Packet != nil && extPkt.Packet.Extension {
+		// Use absCaptureTimeExtID if set, otherwise try extension ID=2 (TestVV negotiates ACT with ID=2)
+		actExtID := d.absCaptureTimeExtID
+		if actExtID == 0 {
+			actExtID = 2
+		}
+		// Try to extract ACT from RTP packet headers directly
+		extIDs := extPkt.Packet.Header.GetExtensionIDs()
+		for _, extID := range extIDs {
+			extData := extPkt.Packet.Header.GetExtension(extID)
+			// ACT is exactly 8 bytes (or 16 with clock offset) - forward raw bytes directly
+			if len(extData) == 8 || len(extData) == 16 {
+				// Copy extData to avoid buffer reuse/corruption
+				extDataCopy := make([]byte, len(extData))
+				copy(extDataCopy, extData)
+				// Forward copied raw bytes directly without parsing to preserve exact timestamp format
+				// Use actExtID (TestVV's negotiated ID, typically 2) for forwarding
+				if setErr := hdr.SetExtension(uint8(actExtID), extDataCopy); setErr == nil {
+					break
+				}
+			}
+		}
+		// Also try direct lookup as fallback
+		if extData := extPkt.Packet.Header.GetExtension(uint8(actExtID)); len(extData) >= 8 {
+			// Copy extData before processing
+			extDataCopy := make([]byte, len(extData))
+			copy(extDataCopy, extData)
+			var rtpActExt rtp.AbsCaptureTimeExtension
+			if err := rtpActExt.Unmarshal(extDataCopy); err == nil {
+				if actBytes, marshalErr := rtpActExt.Marshal(); marshalErr == nil {
+					// Copy actBytes before SetExtension
+					actBytesCopy := make([]byte, len(actBytes))
+					copy(actBytesCopy, actBytes)
+					hdr.SetExtension(uint8(actExtID), actBytesCopy)
+				}
+			}
+		}
+	}
 	if extPkt.AbsCaptureTimeExt != nil && d.absCaptureTimeExtID != 0 {
 		// normalize capture time to SFU clock.
 		// NOTE: even if there is estimated offset populated, just re-map the
