@@ -2158,11 +2158,11 @@ func PushAndDequeueUpdates(
 		// include any queued update, and return
 		delete(cache, identity)
 		updates = append(updates, &ParticipantUpdate{ParticipantInfo: pi, CloseReason: closeReason})
-		lgr.Infow("DBG: sending participant update", "identity", identity) // REMOVE
+		lgr.Infow("DBG: sending participant update", "identity", identity, "pi", logger.Proto(pi)) // REMOVE
 	} else {
 		// enqueue for batch
 		cache[identity] = &ParticipantUpdate{ParticipantInfo: pi, CloseReason: closeReason}
-		lgr.Infow("DBG: queued participant update", "identity", identity) // REMOVE
+		lgr.Infow("DBG: queued participant update", "identity", identity, "pi", logger.Proto(pi)) // REMOVE
 	}
 
 	return updates
