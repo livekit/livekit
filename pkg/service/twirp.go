@@ -127,7 +127,10 @@ func loggerResponseSent(ctx context.Context, twirpLoggerPool *sync.Pool) {
 
 	r.fields = append(r.fields, "duration", time.Since(r.startedAt))
 	if !r.deadline.IsZero() {
-		r.fields = append(r.fields, "timeout", r.deadline.Sub(r.startedAt))
+		r.fields = append(r.fields, "requestedTimeout", r.deadline.Sub(r.startedAt))
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		r.fields = append(r.fields, "modifiedTimeout", deadline.Sub(r.startedAt))
 	}
 
 	if status, ok := twirp.StatusCode(ctx); ok {
