@@ -2122,6 +2122,7 @@ func PushAndDequeueUpdates(
 			// same participant session
 			if pi.Version < existing.ParticipantInfo.Version {
 				// out of order update
+				logger.Infow("DBG: skipping out-of-order update", "identity", identity, "epi", logger.Proto(existing.ParticipantInfo), "pi", logger.Proto(pi)) // REMOVE
 				return nil
 			}
 		} else {
@@ -2135,6 +2136,7 @@ func PushAndDequeueUpdates(
 				updates = append(updates, existing)
 			} else {
 				// older session update, newer session has already become active, so nothing to do
+				logger.Infow("DBG: skipping older session 1", "identity", identity, "epi", logger.Proto(existing.ParticipantInfo), "pi", logger.Proto(pi)) // REMOVE
 				return nil
 			}
 		}
@@ -2143,6 +2145,7 @@ func PushAndDequeueUpdates(
 			epi := existingParticipant.ToProto()
 			if CompareParticipant(epi, pi) > 0 {
 				// older session update, newer session has already become active, so nothing to do
+				logger.Infow("DBG: skipping older session 2", "identity", identity, "epi", logger.Proto(epi), "pi", logger.Proto(pi)) // REMOVE
 				return nil
 			}
 		}
@@ -2155,6 +2158,7 @@ func PushAndDequeueUpdates(
 	} else {
 		// enqueue for batch
 		cache[identity] = &ParticipantUpdate{ParticipantInfo: pi, CloseReason: closeReason}
+		logger.Infow("DBG: queued participant update", "identity", identity) // REMOVE
 	}
 
 	return updates
