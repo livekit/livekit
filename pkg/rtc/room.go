@@ -2195,6 +2195,7 @@ func SendParticipantUpdates(updates []*ParticipantUpdate, participants []types.L
 
 	filteredUpdateChunks := ChunkProtoBatch(filteredUpdates, batchTargetSize)
 	fullUpdateChunks := ChunkProtoBatch(fullUpdates, batchTargetSize)
+	lgr.Infow("DBG, sending chunked participant updates", "filteredUpdates", filteredUpdateChunks, "fullUpdates", fullUpdateChunks) // REMOVE
 
 	for _, op := range participants {
 		updateChunks := fullUpdateChunks
@@ -2202,6 +2203,7 @@ func SendParticipantUpdates(updates []*ParticipantUpdate, participants []types.L
 			updateChunks = filteredUpdateChunks
 		}
 		for _, chunk := range updateChunks {
+			lgr.Infow("DBG, trying to send participant updates", "identity", op.Identity(), "chunk", chunk) // REMOVE
 			if err := op.SendParticipantUpdate(chunk); err != nil {
 				op.GetLogger().Errorw("could not send update to participant", err)
 				break
