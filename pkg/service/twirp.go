@@ -70,6 +70,7 @@ type twirpLogger struct {
 	fieldsOrig []any
 	fields     []any
 	startedAt  time.Time
+	deadline   time.Time
 }
 
 func AppendLogFields(ctx context.Context, fields ...any) {
@@ -84,6 +85,9 @@ func AppendLogFields(ctx context.Context, fields ...any) {
 func loggerRequestReceived(ctx context.Context, twirpLoggerPool *sync.Pool) (context.Context, error) {
 	r := twirpLoggerPool.Get().(*twirpLogger)
 	r.startedAt = time.Now()
+	if deadline, ok := ctx.Deadline(); ok {
+		r.deadline = deadline
+	}
 	r.fields = r.fieldsOrig
 	r.error = nil
 
@@ -115,6 +119,9 @@ func loggerResponseSent(ctx context.Context, twirpLoggerPool *sync.Pool) {
 	}
 
 	r.fields = append(r.fields, "duration", time.Since(r.startedAt))
+	if !r.deadline.IsZero() {
+		r.fields = append(r.fields, "timeout", r.deadline.Sub(r.startedAt))
+	}
 
 	if status, ok := twirp.StatusCode(ctx); ok {
 		r.fields = append(r.fields, "status", status)
@@ -127,8 +134,11 @@ func loggerResponseSent(ctx context.Context, twirpLoggerPool *sync.Pool) {
 	serviceMethod := "API " + r.service + "." + r.method
 	utils.GetLogger(ctx).WithComponent(utils.ComponentAPI).Infow(serviceMethod, r.fields...)
 
+	// reset fields and return to pool
 	r.fields = r.fieldsOrig
 	r.error = nil
+	r.startedAt = time.Time{}
+	r.deadline = time.Time{}
 
 	twirpLoggerPool.Put(r)
 }

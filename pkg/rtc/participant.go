@@ -2867,6 +2867,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 						"falling back to alternative video codec",
 						"codec", mimeType,
 						"altCodec", altCodec,
+						"enabledPublishCodecs", logger.ProtoSlice(p.enabledPublishCodecs),
 						"trackID", ti.Sid,
 					)
 					// select an alternative MIME type that's generally supported
@@ -2894,6 +2895,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 						"falling back to alternative audio codec",
 						"codec", mimeType,
 						"altCodec", altCodec,
+						"enabledPublishCodecs", logger.ProtoSlice(p.enabledPublishCodecs),
 						"trackID", ti.Sid,
 					)
 					// select an alternative MIME type that's generally supported
