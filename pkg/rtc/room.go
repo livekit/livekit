@@ -2130,6 +2130,7 @@ func PushAndDequeueUpdates(
 			if CompareParticipant(existing.ParticipantInfo, pi) < 0 {
 				// existing is older, synthesize a DISCONNECT for older and
 				// send immediately along with newer session to signal switch
+				logger.Infow("DBG: synthesizing DISCONNECT", "identity", identity, "epi", logger.Proto(existing.ParticipantInfo), "pi", logger.Proto(pi)) // REMOVE
 				shouldSend = true
 				existing.ParticipantInfo.State = livekit.ParticipantInfo_DISCONNECTED
 				existing.IsSynthesizedDisconnect = true
@@ -2155,6 +2156,7 @@ func PushAndDequeueUpdates(
 		// include any queued update, and return
 		delete(cache, identity)
 		updates = append(updates, &ParticipantUpdate{ParticipantInfo: pi, CloseReason: closeReason})
+		logger.Infow("DBG: sending participant update", "identity", identity) // REMOVE
 	} else {
 		// enqueue for batch
 		cache[identity] = &ParticipantUpdate{ParticipantInfo: pi, CloseReason: closeReason}
