@@ -73,6 +73,13 @@ type twirpLogger struct {
 	deadline   time.Time
 }
 
+func (t *twirpLogger) reset() {
+	t.fields = t.fieldsOrig
+	t.error = nil
+	t.startedAt = time.Time{}
+	t.deadline = time.Time{}
+}
+
 func AppendLogFields(ctx context.Context, fields ...any) {
 	r, ok := ctx.Value(twirpLoggerKey{}).(*twirpLogger)
 	if !ok || r == nil {
@@ -135,11 +142,7 @@ func loggerResponseSent(ctx context.Context, twirpLoggerPool *sync.Pool) {
 	utils.GetLogger(ctx).WithComponent(utils.ComponentAPI).Infow(serviceMethod, r.fields...)
 
 	// reset fields and return to pool
-	r.fields = r.fieldsOrig
-	r.error = nil
-	r.startedAt = time.Time{}
-	r.deadline = time.Time{}
-
+	r.reset()
 	twirpLoggerPool.Put(r)
 }
 
