@@ -2112,7 +2112,6 @@ func PushAndDequeueUpdates(
 	isImmediate bool,
 	existingParticipant types.Participant,
 	cache map[livekit.ParticipantIdentity]*ParticipantUpdate,
-	lgr logger.Logger,
 ) []*ParticipantUpdate {
 	var updates []*ParticipantUpdate
 	identity := livekit.ParticipantIdentity(pi.Identity)
@@ -2124,7 +2123,6 @@ func PushAndDequeueUpdates(
 			// same participant session
 			if pi.Version < existing.ParticipantInfo.Version {
 				// out of order update
-				lgr.Infow("DBG: skipping out-of-order update", "identity", identity, "epi", logger.Proto(existing.ParticipantInfo), "pi", logger.Proto(pi)) // REMOVE
 				return nil
 			}
 		} else {
@@ -2132,14 +2130,12 @@ func PushAndDequeueUpdates(
 			if CompareParticipant(existing.ParticipantInfo, pi) < 0 {
 				// existing is older, synthesize a DISCONNECT for older and
 				// send immediately along with newer session to signal switch
-				lgr.Infow("DBG: synthesizing DISCONNECT", "identity", identity, "epi", logger.Proto(existing.ParticipantInfo), "pi", logger.Proto(pi)) // REMOVE
 				shouldSend = true
 				existing.ParticipantInfo.State = livekit.ParticipantInfo_DISCONNECTED
 				existing.IsSynthesizedDisconnect = true
 				updates = append(updates, existing)
 			} else {
 				// older session update, newer session has already become active, so nothing to do
-				lgr.Infow("DBG: skipping older session 1", "identity", identity, "epi", logger.Proto(existing.ParticipantInfo), "pi", logger.Proto(pi)) // REMOVE
 				return nil
 			}
 		}
@@ -2148,7 +2144,6 @@ func PushAndDequeueUpdates(
 			epi := existingParticipant.ToProto()
 			if CompareParticipant(epi, pi) > 0 {
 				// older session update, newer session has already become active, so nothing to do
-				lgr.Infow("DBG: skipping older session 2", "identity", identity, "epi", logger.Proto(epi), "pi", logger.Proto(pi)) // REMOVE
 				return nil
 			}
 		}
@@ -2158,17 +2153,15 @@ func PushAndDequeueUpdates(
 		// include any queued update, and return
 		delete(cache, identity)
 		updates = append(updates, &ParticipantUpdate{ParticipantInfo: pi, CloseReason: closeReason})
-		lgr.Infow("DBG: sending participant update", "identity", identity, "pi", logger.Proto(pi)) // REMOVE
 	} else {
 		// enqueue for batch
 		cache[identity] = &ParticipantUpdate{ParticipantInfo: pi, CloseReason: closeReason}
-		lgr.Infow("DBG: queued participant update", "identity", identity, "pi", logger.Proto(pi)) // REMOVE
 	}
 
 	return updates
 }
 
-func SendParticipantUpdates(updates []*ParticipantUpdate, participants []types.LocalParticipant, batchTargetSize int, lgr logger.Logger) {
+func SendParticipantUpdates(updates []*ParticipantUpdate, participants []types.LocalParticipant, batchTargetSize int) {
 	if len(updates) == 0 {
 		return
 	}
@@ -2191,11 +2184,9 @@ func SendParticipantUpdates(updates []*ParticipantUpdate, participants []types.L
 	for _, update := range updates {
 		fullUpdates = append(fullUpdates, update.ParticipantInfo)
 	}
-	lgr.Infow("DBG, sending participant updates", "filteredUpdates", logger.ProtoSlice(filteredUpdates), "fullUpdates", logger.ProtoSlice(fullUpdates)) // REMOVE
 
 	filteredUpdateChunks := ChunkProtoBatch(filteredUpdates, batchTargetSize)
 	fullUpdateChunks := ChunkProtoBatch(fullUpdates, batchTargetSize)
-	lgr.Infow("DBG, sending chunked participant updates", "filteredUpdates", filteredUpdateChunks, "fullUpdates", fullUpdateChunks) // REMOVE
 
 	for _, op := range participants {
 		updateChunks := fullUpdateChunks
@@ -2203,7 +2194,6 @@ func SendParticipantUpdates(updates []*ParticipantUpdate, participants []types.L
 			updateChunks = filteredUpdateChunks
 		}
 		for _, chunk := range updateChunks {
-			lgr.Infow("DBG, trying to send participant updates", "identity", op.Identity(), "chunk", chunk) // REMOVE
 			if err := op.SendParticipantUpdate(chunk); err != nil {
 				op.GetLogger().Errorw("could not send update to participant", err)
 				break
