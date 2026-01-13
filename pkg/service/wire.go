@@ -62,6 +62,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		telemetry.NewAnalyticsService,
 		telemetry.NewTelemetryService,
 		getMessageBus,
+
 		NewIOInfoService,
 		wire.Bind(new(IOClient), new(*IOInfoService)),
 		rpc.NewEgressClient,

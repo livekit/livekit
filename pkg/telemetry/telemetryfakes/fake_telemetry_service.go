@@ -169,6 +169,12 @@ type FakeTelemetryService struct {
 		arg1 context.Context
 		arg2 []*livekit.AnalyticsStat
 	}
+	SIPCallStateUpdateStub        func(context.Context, *livekit.SIPCallInfo)
+	sIPCallStateUpdateMutex       sync.RWMutex
+	sIPCallStateUpdateArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.SIPCallInfo
+	}
 	TrackMaxSubscribedVideoQualityStub        func(context.Context, livekit.ParticipantID, *livekit.TrackInfo, mime.MimeType, livekit.VideoQuality)
 	trackMaxSubscribedVideoQualityMutex       sync.RWMutex
 	trackMaxSubscribedVideoQualityArgsForCall []struct {
@@ -1089,6 +1095,39 @@ func (fake *FakeTelemetryService) SendStatsArgsForCall(i int) (context.Context, 
 	fake.sendStatsMutex.RLock()
 	defer fake.sendStatsMutex.RUnlock()
 	argsForCall := fake.sendStatsArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeTelemetryService) SIPCallStateUpdate(arg1 context.Context, arg2 *livekit.SIPCallInfo) {
+	fake.sIPCallStateUpdateMutex.Lock()
+	fake.sIPCallStateUpdateArgsForCall = append(fake.sIPCallStateUpdateArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.SIPCallInfo
+	}{arg1, arg2})
+	stub := fake.SIPCallStateUpdateStub
+	fake.recordInvocation("SIPCallStateUpdate", []interface{}{arg1, arg2})
+	fake.sIPCallStateUpdateMutex.Unlock()
+	if stub != nil {
+		fake.SIPCallStateUpdateStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeTelemetryService) SIPCallStateUpdateCallCount() int {
+	fake.sIPCallStateUpdateMutex.RLock()
+	defer fake.sIPCallStateUpdateMutex.RUnlock()
+	return len(fake.sIPCallStateUpdateArgsForCall)
+}
+
+func (fake *FakeTelemetryService) SIPCallStateUpdateCalls(stub func(context.Context, *livekit.SIPCallInfo)) {
+	fake.sIPCallStateUpdateMutex.Lock()
+	defer fake.sIPCallStateUpdateMutex.Unlock()
+	fake.SIPCallStateUpdateStub = stub
+}
+
+func (fake *FakeTelemetryService) SIPCallStateUpdateArgsForCall(i int) (context.Context, *livekit.SIPCallInfo) {
+	fake.sIPCallStateUpdateMutex.RLock()
+	defer fake.sIPCallStateUpdateMutex.RUnlock()
+	argsForCall := fake.sIPCallStateUpdateArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
 }
 
