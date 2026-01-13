@@ -39,6 +39,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
+	"github.com/livekit/livekit-server/pkg/sfu/interceptor"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 )
@@ -80,7 +81,7 @@ type TransportManagerParams struct {
 	CongestionControlConfig       config.CongestionControlConfig
 	EnabledSubscribeCodecs        []*livekit.Codec
 	EnabledPublishCodecs          []*livekit.Codec
-	SimTracks                     map[uint32]SimulcastTrackInfo
+	SimTracks                     map[uint32]interceptor.SimulcastTrackInfo
 	ClientInfo                    ClientInfo
 	Migration                     bool
 	AllowTCPFallback              bool
@@ -1022,4 +1023,12 @@ func (t *TransportManager) SetSubscriberChannelCapacity(channelCapacity int64) {
 
 func (t *TransportManager) hasRecentSignalLocked() bool {
 	return time.Since(t.lastSignalAt) < PingTimeoutSeconds*time.Second
+}
+
+func (t *TransportManager) RTPStreamPublished(ssrc uint32, mid, rid string) {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
+		t.publisher.RTPStreamPublished(ssrc, mid, rid)
+	} else {
+		t.subscriber.RTPStreamPublished(ssrc, mid, rid)
+	}
 }

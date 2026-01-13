@@ -4,11 +4,19 @@ package typesfakes
 import (
 	"sync"
 
+	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/livekit"
 )
 
 type FakeParticipantListener struct {
+	OnDataTrackMessageStub        func(types.Participant, []byte, *datatrack.Packet)
+	onDataTrackMessageMutex       sync.RWMutex
+	onDataTrackMessageArgsForCall []struct {
+		arg1 types.Participant
+		arg2 []byte
+		arg3 *datatrack.Packet
+	}
 	OnDataTrackPublishedStub        func(types.Participant, types.DataTrack)
 	onDataTrackPublishedMutex       sync.RWMutex
 	onDataTrackPublishedArgsForCall []struct {
@@ -52,6 +60,45 @@ type FakeParticipantListener struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeParticipantListener) OnDataTrackMessage(arg1 types.Participant, arg2 []byte, arg3 *datatrack.Packet) {
+	var arg2Copy []byte
+	if arg2 != nil {
+		arg2Copy = make([]byte, len(arg2))
+		copy(arg2Copy, arg2)
+	}
+	fake.onDataTrackMessageMutex.Lock()
+	fake.onDataTrackMessageArgsForCall = append(fake.onDataTrackMessageArgsForCall, struct {
+		arg1 types.Participant
+		arg2 []byte
+		arg3 *datatrack.Packet
+	}{arg1, arg2Copy, arg3})
+	stub := fake.OnDataTrackMessageStub
+	fake.recordInvocation("OnDataTrackMessage", []interface{}{arg1, arg2Copy, arg3})
+	fake.onDataTrackMessageMutex.Unlock()
+	if stub != nil {
+		fake.OnDataTrackMessageStub(arg1, arg2, arg3)
+	}
+}
+
+func (fake *FakeParticipantListener) OnDataTrackMessageCallCount() int {
+	fake.onDataTrackMessageMutex.RLock()
+	defer fake.onDataTrackMessageMutex.RUnlock()
+	return len(fake.onDataTrackMessageArgsForCall)
+}
+
+func (fake *FakeParticipantListener) OnDataTrackMessageCalls(stub func(types.Participant, []byte, *datatrack.Packet)) {
+	fake.onDataTrackMessageMutex.Lock()
+	defer fake.onDataTrackMessageMutex.Unlock()
+	fake.OnDataTrackMessageStub = stub
+}
+
+func (fake *FakeParticipantListener) OnDataTrackMessageArgsForCall(i int) (types.Participant, []byte, *datatrack.Packet) {
+	fake.onDataTrackMessageMutex.RLock()
+	defer fake.onDataTrackMessageMutex.RUnlock()
+	argsForCall := fake.onDataTrackMessageArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeParticipantListener) OnDataTrackPublished(arg1 types.Participant, arg2 types.DataTrack) {

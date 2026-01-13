@@ -158,10 +158,10 @@ func (s *StreamTracker) resetLocked() {
 
 	s.setStatusLocked(StreamStatusStopped)
 
-	for i := 0; i < len(s.bytesForBitrate); i++ {
+	for i := range len(s.bytesForBitrate) {
 		s.bytesForBitrate[i] = 0
 	}
-	for i := 0; i < len(s.bitrate); i++ {
+	for i := range len(s.bitrate) {
 		s.bitrate[i] = 0
 	}
 
@@ -235,7 +235,7 @@ func (s *StreamTracker) BitrateTemporalCumulative() []int64 {
 	}
 
 	// clear higher layers
-	for i := 0; i < len(brs); i++ {
+	for i := range brs {
 		if brs[i] == 0 {
 			for j := i + 1; j < len(brs); j++ {
 				brs[j] = 0
@@ -291,7 +291,7 @@ func (s *StreamTracker) bitrateReport() {
 	s.lastBitrateReport = now
 
 	bitrateAvailabilityChanged := false
-	for i := 0; i < len(s.bytesForBitrate); i++ {
+	for i := range len(s.bytesForBitrate) {
 		bitrate := int64(float64(s.bytesForBitrate[i]*8) / diff.Seconds())
 		if (s.bitrate[i] == 0 && bitrate > 0) || (s.bitrate[i] > 0 && bitrate == 0) {
 			bitrateAvailabilityChanged = true

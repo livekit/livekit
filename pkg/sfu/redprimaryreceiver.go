@@ -29,6 +29,8 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+var _ REDTransformer = (*RedPrimaryReceiver)(nil)
+
 var (
 	ErrIncompleteRedHeader = errors.New("incomplete red block header")
 	ErrIncompleteRedBlock  = errors.New("incomplete red block payload")
@@ -48,7 +50,7 @@ type RedPrimaryReceiver struct {
 	pktHistory byte
 }
 
-func NewRedPrimaryReceiver(receiver TrackReceiver, dsp utils.DownTrackSpreaderParams) *RedPrimaryReceiver {
+func NewRedPrimaryReceiver(receiver TrackReceiver, dsp utils.DownTrackSpreaderParams) REDTransformer {
 	return &RedPrimaryReceiver{
 		TrackReceiver:     receiver,
 		downTrackSpreader: utils.NewDownTrackSpreader[TrackSender](dsp),
@@ -211,7 +213,7 @@ func (r *RedPrimaryReceiver) getSendPktsFromRed(rtp *rtp.Packet) ([]*rtp.Packet,
 	var recoverBits byte
 	if needRecover {
 		bitIndex := r.lastSeq - rtp.SequenceNumber
-		for i := 0; i < maxRedCount; i++ {
+		for i := range maxRedCount {
 			if bitIndex > 7 {
 				break
 			}

@@ -23,6 +23,16 @@ import (
 )
 
 type FakeLocalParticipant struct {
+	ActiveAtStub        func() time.Time
+	activeAtMutex       sync.RWMutex
+	activeAtArgsForCall []struct {
+	}
+	activeAtReturns struct {
+		result1 time.Time
+	}
+	activeAtReturnsOnCall map[int]struct {
+		result1 time.Time
+	}
 	AddOnCloseStub        func(string, func(types.LocalParticipant))
 	addOnCloseMutex       sync.RWMutex
 	addOnCloseArgsForCall []struct {
@@ -608,11 +618,12 @@ type FakeLocalParticipant struct {
 	handlePublishDataTrackRequestArgsForCall []struct {
 		arg1 *livekit.PublishDataTrackRequest
 	}
-	HandleReceivedDataTrackMessageStub        func([]byte, *datatrack.Packet)
+	HandleReceivedDataTrackMessageStub        func([]byte, *datatrack.Packet, int64)
 	handleReceivedDataTrackMessageMutex       sync.RWMutex
 	handleReceivedDataTrackMessageArgsForCall []struct {
 		arg1 []byte
 		arg2 *datatrack.Packet
+		arg3 int64
 	}
 	HandleReceiverReportStub        func(*sfu.DownTrack, *rtcp.ReceiverReport)
 	handleReceiverReportMutex       sync.RWMutex
@@ -1152,11 +1163,6 @@ type FakeLocalParticipant struct {
 	setPermissionReturnsOnCall map[int]struct {
 		result1 bool
 	}
-	SetResponseSinkStub        func(routing.MessageSink)
-	setResponseSinkMutex       sync.RWMutex
-	setResponseSinkArgsForCall []struct {
-		arg1 routing.MessageSink
-	}
 	SetSignalSourceValidStub        func(bool)
 	setSignalSourceValidMutex       sync.RWMutex
 	setSignalSourceValidArgsForCall []struct {
@@ -1276,6 +1282,12 @@ type FakeLocalParticipant struct {
 	}
 	supportsTransceiverReuseReturnsOnCall map[int]struct {
 		result1 bool
+	}
+	SwapResponseSinkStub        func(routing.MessageSink, types.SignallingCloseReason)
+	swapResponseSinkMutex       sync.RWMutex
+	swapResponseSinkArgsForCall []struct {
+		arg1 routing.MessageSink
+		arg2 types.SignallingCloseReason
 	}
 	TelemetryGuardStub        func() *telemetry.ReferenceGuard
 	telemetryGuardMutex       sync.RWMutex
@@ -1486,6 +1498,59 @@ type FakeLocalParticipant struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeLocalParticipant) ActiveAt() time.Time {
+	fake.activeAtMutex.Lock()
+	ret, specificReturn := fake.activeAtReturnsOnCall[len(fake.activeAtArgsForCall)]
+	fake.activeAtArgsForCall = append(fake.activeAtArgsForCall, struct {
+	}{})
+	stub := fake.ActiveAtStub
+	fakeReturns := fake.activeAtReturns
+	fake.recordInvocation("ActiveAt", []interface{}{})
+	fake.activeAtMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) ActiveAtCallCount() int {
+	fake.activeAtMutex.RLock()
+	defer fake.activeAtMutex.RUnlock()
+	return len(fake.activeAtArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) ActiveAtCalls(stub func() time.Time) {
+	fake.activeAtMutex.Lock()
+	defer fake.activeAtMutex.Unlock()
+	fake.ActiveAtStub = stub
+}
+
+func (fake *FakeLocalParticipant) ActiveAtReturns(result1 time.Time) {
+	fake.activeAtMutex.Lock()
+	defer fake.activeAtMutex.Unlock()
+	fake.ActiveAtStub = nil
+	fake.activeAtReturns = struct {
+		result1 time.Time
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) ActiveAtReturnsOnCall(i int, result1 time.Time) {
+	fake.activeAtMutex.Lock()
+	defer fake.activeAtMutex.Unlock()
+	fake.ActiveAtStub = nil
+	if fake.activeAtReturnsOnCall == nil {
+		fake.activeAtReturnsOnCall = make(map[int]struct {
+			result1 time.Time
+		})
+	}
+	fake.activeAtReturnsOnCall[i] = struct {
+		result1 time.Time
+	}{result1}
 }
 
 func (fake *FakeLocalParticipant) AddOnClose(arg1 string, arg2 func(types.LocalParticipant)) {
@@ -4560,7 +4625,7 @@ func (fake *FakeLocalParticipant) HandlePublishDataTrackRequestArgsForCall(i int
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) HandleReceivedDataTrackMessage(arg1 []byte, arg2 *datatrack.Packet) {
+func (fake *FakeLocalParticipant) HandleReceivedDataTrackMessage(arg1 []byte, arg2 *datatrack.Packet, arg3 int64) {
 	var arg1Copy []byte
 	if arg1 != nil {
 		arg1Copy = make([]byte, len(arg1))
@@ -4570,12 +4635,13 @@ func (fake *FakeLocalParticipant) HandleReceivedDataTrackMessage(arg1 []byte, ar
 	fake.handleReceivedDataTrackMessageArgsForCall = append(fake.handleReceivedDataTrackMessageArgsForCall, struct {
 		arg1 []byte
 		arg2 *datatrack.Packet
-	}{arg1Copy, arg2})
+		arg3 int64
+	}{arg1Copy, arg2, arg3})
 	stub := fake.HandleReceivedDataTrackMessageStub
-	fake.recordInvocation("HandleReceivedDataTrackMessage", []interface{}{arg1Copy, arg2})
+	fake.recordInvocation("HandleReceivedDataTrackMessage", []interface{}{arg1Copy, arg2, arg3})
 	fake.handleReceivedDataTrackMessageMutex.Unlock()
 	if stub != nil {
-		fake.HandleReceivedDataTrackMessageStub(arg1, arg2)
+		fake.HandleReceivedDataTrackMessageStub(arg1, arg2, arg3)
 	}
 }
 
@@ -4585,17 +4651,17 @@ func (fake *FakeLocalParticipant) HandleReceivedDataTrackMessageCallCount() int 
 	return len(fake.handleReceivedDataTrackMessageArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) HandleReceivedDataTrackMessageCalls(stub func([]byte, *datatrack.Packet)) {
+func (fake *FakeLocalParticipant) HandleReceivedDataTrackMessageCalls(stub func([]byte, *datatrack.Packet, int64)) {
 	fake.handleReceivedDataTrackMessageMutex.Lock()
 	defer fake.handleReceivedDataTrackMessageMutex.Unlock()
 	fake.HandleReceivedDataTrackMessageStub = stub
 }
 
-func (fake *FakeLocalParticipant) HandleReceivedDataTrackMessageArgsForCall(i int) ([]byte, *datatrack.Packet) {
+func (fake *FakeLocalParticipant) HandleReceivedDataTrackMessageArgsForCall(i int) ([]byte, *datatrack.Packet, int64) {
 	fake.handleReceivedDataTrackMessageMutex.RLock()
 	defer fake.handleReceivedDataTrackMessageMutex.RUnlock()
 	argsForCall := fake.handleReceivedDataTrackMessageArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeLocalParticipant) HandleReceiverReport(arg1 *sfu.DownTrack, arg2 *rtcp.ReceiverReport) {
@@ -7570,38 +7636,6 @@ func (fake *FakeLocalParticipant) SetPermissionReturnsOnCall(i int, result1 bool
 	}{result1}
 }
 
-func (fake *FakeLocalParticipant) SetResponseSink(arg1 routing.MessageSink) {
-	fake.setResponseSinkMutex.Lock()
-	fake.setResponseSinkArgsForCall = append(fake.setResponseSinkArgsForCall, struct {
-		arg1 routing.MessageSink
-	}{arg1})
-	stub := fake.SetResponseSinkStub
-	fake.recordInvocation("SetResponseSink", []interface{}{arg1})
-	fake.setResponseSinkMutex.Unlock()
-	if stub != nil {
-		fake.SetResponseSinkStub(arg1)
-	}
-}
-
-func (fake *FakeLocalParticipant) SetResponseSinkCallCount() int {
-	fake.setResponseSinkMutex.RLock()
-	defer fake.setResponseSinkMutex.RUnlock()
-	return len(fake.setResponseSinkArgsForCall)
-}
-
-func (fake *FakeLocalParticipant) SetResponseSinkCalls(stub func(routing.MessageSink)) {
-	fake.setResponseSinkMutex.Lock()
-	defer fake.setResponseSinkMutex.Unlock()
-	fake.SetResponseSinkStub = stub
-}
-
-func (fake *FakeLocalParticipant) SetResponseSinkArgsForCall(i int) routing.MessageSink {
-	fake.setResponseSinkMutex.RLock()
-	defer fake.setResponseSinkMutex.RUnlock()
-	argsForCall := fake.setResponseSinkArgsForCall[i]
-	return argsForCall.arg1
-}
-
 func (fake *FakeLocalParticipant) SetSignalSourceValid(arg1 bool) {
 	fake.setSignalSourceValidMutex.Lock()
 	fake.setSignalSourceValidArgsForCall = append(fake.setSignalSourceValidArgsForCall, struct {
@@ -8250,6 +8284,39 @@ func (fake *FakeLocalParticipant) SupportsTransceiverReuseReturnsOnCall(i int, r
 	fake.supportsTransceiverReuseReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
+}
+
+func (fake *FakeLocalParticipant) SwapResponseSink(arg1 routing.MessageSink, arg2 types.SignallingCloseReason) {
+	fake.swapResponseSinkMutex.Lock()
+	fake.swapResponseSinkArgsForCall = append(fake.swapResponseSinkArgsForCall, struct {
+		arg1 routing.MessageSink
+		arg2 types.SignallingCloseReason
+	}{arg1, arg2})
+	stub := fake.SwapResponseSinkStub
+	fake.recordInvocation("SwapResponseSink", []interface{}{arg1, arg2})
+	fake.swapResponseSinkMutex.Unlock()
+	if stub != nil {
+		fake.SwapResponseSinkStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeLocalParticipant) SwapResponseSinkCallCount() int {
+	fake.swapResponseSinkMutex.RLock()
+	defer fake.swapResponseSinkMutex.RUnlock()
+	return len(fake.swapResponseSinkArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) SwapResponseSinkCalls(stub func(routing.MessageSink, types.SignallingCloseReason)) {
+	fake.swapResponseSinkMutex.Lock()
+	defer fake.swapResponseSinkMutex.Unlock()
+	fake.SwapResponseSinkStub = stub
+}
+
+func (fake *FakeLocalParticipant) SwapResponseSinkArgsForCall(i int) (routing.MessageSink, types.SignallingCloseReason) {
+	fake.swapResponseSinkMutex.RLock()
+	defer fake.swapResponseSinkMutex.RUnlock()
+	argsForCall := fake.swapResponseSinkArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipant) TelemetryGuard() *telemetry.ReferenceGuard {

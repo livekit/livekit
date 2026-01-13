@@ -38,7 +38,7 @@ func (br *BitReader) ReadBits(n int) (uint, error) {
 		return 0, errors.New("not enough bits")
 	}
 	var v uint
-	for i := 0; i < n; i++ {
+	for range n {
 		bytePos := br.pos / 8
 		bitPos := 7 - (br.pos % 8)
 		bit := (br.data[bytePos] >> bitPos) & 1
@@ -108,7 +108,7 @@ func stripStartCode(b []byte) []byte {
 // removeEmulationPreventionBytes removes 0x03 after 0x0000
 func removeEmulationPreventionBytes(data []byte) []byte {
 	out := make([]byte, 0, len(data))
-	for i := 0; i < len(data); i++ {
+	for i := range data {
 		if i > 1 && data[i] == 0x03 && data[i-1] == 0x00 && data[i-2] == 0x00 {
 			continue
 		}
@@ -181,7 +181,7 @@ func parseH265SPS(nal []byte) (*SPSInfo, error) {
 
 	subLayerProfilePresentFlag := make([]bool, maxSubLayersMinus1)
 	subLayerLevelPresentFlag := make([]bool, maxSubLayersMinus1)
-	for i := uint(0); i < maxSubLayersMinus1; i++ {
+	for i := range maxSubLayersMinus1 {
 		f1, err := br.ReadFlag()
 		if err != nil {
 			return nil, err
@@ -201,7 +201,7 @@ func parseH265SPS(nal []byte) (*SPSInfo, error) {
 			}
 		}
 	}
-	for i := uint(0); i < maxSubLayersMinus1; i++ {
+	for i := range maxSubLayersMinus1 {
 		if subLayerProfilePresentFlag[i] {
 			if _, err = br.ReadBits(2 + 1 + 5); err != nil {
 				return nil, err
@@ -387,7 +387,7 @@ func parseH264SPS(nal []byte) (*SPSInfo, error) {
 		br.ReadUE()                   // bit_depth_chroma_minus8
 		br.ReadFlag()                 // qpprime_y_zero_transform_bypass_flag
 		if v, _ := br.ReadFlag(); v { // seq_scaling_matrix_present_flag
-			for i := 0; i < 8; i++ {
+			for range 8 {
 				br.ReadFlag()
 			}
 		}
@@ -402,7 +402,7 @@ func parseH264SPS(nal []byte) (*SPSInfo, error) {
 		br.ReadSE()
 		br.ReadSE()
 		cnt, _ := br.ReadUE()
-		for i := uint(0); i < cnt; i++ {
+		for range cnt {
 			br.ReadSE()
 		}
 	}

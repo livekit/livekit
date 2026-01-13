@@ -551,8 +551,7 @@ func (r *Room) ResumeParticipant(
 ) error {
 	r.ReplaceParticipantRequestSource(p.Identity(), requestSource)
 	// close previous sink, and link to new one
-	p.CloseSignalConnection(types.SignallingCloseReasonResume)
-	p.SetResponseSink(responseSink)
+	p.SwapResponseSink(responseSink, types.SignallingCloseReasonResume)
 
 	p.SetSignalSourceValid(true)
 
@@ -825,7 +824,7 @@ func (r *Room) OnParticipantChanged(f func(participant types.Participant)) {
 }
 
 func (r *Room) SendDataPacket(dp *livekit.DataPacket, kind livekit.DataPacket_Kind) {
-	r.onDataPacket(nil, kind, dp)
+	r.onDataMessage(nil, kind, dp)
 }
 
 func (r *Room) SetMetadata(metadata string) <-chan struct{} {
@@ -1253,7 +1252,8 @@ func (r *Room) onStateChange(p types.LocalParticipant) {
 		go r.RemoveParticipant(p.Identity(), p.ID(), p.CloseReason())
 	}
 }
-func (r *Room) onDataPacket(source types.LocalParticipant, kind livekit.DataPacket_Kind, dp *livekit.DataPacket) {
+
+func (r *Room) onDataMessage(source types.LocalParticipant, kind livekit.DataPacket_Kind, dp *livekit.DataPacket) {
 	if kind == livekit.DataPacket_RELIABLE && source != nil && dp.GetSequence() > 0 {
 		data, err := proto.Marshal(dp)
 		if err != nil {
@@ -1270,7 +1270,7 @@ func (r *Room) onDataPacket(source types.LocalParticipant, kind livekit.DataPack
 	BroadcastDataPacketForRoom(r, source, kind, dp, r.logger)
 }
 
-func (r *Room) onDataMessage(source types.LocalParticipant, data []byte) {
+func (r *Room) onDataMessageUnlabeled(source types.LocalParticipant, data []byte) {
 	BroadcastDataMessageForRoom(r, source, data, r.logger)
 }
 
@@ -1794,15 +1794,15 @@ func (r *Room) handleNewJobs(ad *livekit.AgentDispatch, inc *sutils.IncrementalD
 	})
 }
 
-func (r *Room) DebugInfo() map[string]interface{} {
-	info := map[string]interface{}{
+func (r *Room) DebugInfo() map[string]any {
+	info := map[string]any{
 		"Name":      r.protoRoom.Name,
 		"Sid":       r.protoRoom.Sid,
 		"CreatedAt": r.protoRoom.CreationTime,
 	}
 
 	participants := r.GetParticipants()
-	participantInfo := make(map[string]interface{})
+	participantInfo := make(map[string]any)
 	for _, p := range participants {
 		participantInfo[string(p.Identity())] = p.DebugInfo()
 	}
@@ -1909,6 +1909,9 @@ func (l *localParticipantListener) OnDataTrackUnpublished(p types.Participant, t
 	l.room.onDataTrackUnpublished(p, track)
 }
 
+func (l *localParticipantListener) OnDataTrackMessage(_p types.Participant, _data []byte, _packet *datatrack.Packet) {
+}
+
 func (l *localParticipantListener) OnMetrics(p types.Participant, dp *livekit.DataPacket) {
 	l.room.onMetrics(p, dp)
 }
@@ -1924,15 +1927,12 @@ func (l *localParticipantListener) OnSubscriberReady(p types.LocalParticipant) {
 func (l *localParticipantListener) OnMigrateStateChange(_p types.LocalParticipant, _migrateState types.MigrateState) {
 }
 
-func (l *localParticipantListener) OnDataPacket(p types.LocalParticipant, kind livekit.DataPacket_Kind, dp *livekit.DataPacket) {
-	l.room.onDataPacket(p, kind, dp)
+func (l *localParticipantListener) OnDataMessage(p types.LocalParticipant, kind livekit.DataPacket_Kind, dp *livekit.DataPacket) {
+	l.room.onDataMessage(p, kind, dp)
 }
 
-func (l *localParticipantListener) OnDataMessage(p types.LocalParticipant, data []byte) {
-	l.room.onDataMessage(p, data)
-}
-
-func (l *localParticipantListener) OnDataTrackMessage(_p types.LocalParticipant, _data []byte, _packet *datatrack.Packet) {
+func (l *localParticipantListener) OnDataMessageUnlabeled(p types.LocalParticipant, data []byte) {
+	l.room.onDataMessageUnlabeled(p, data)
 }
 
 func (l *localParticipantListener) OnSubscribeStatusChanged(p types.LocalParticipant, publisherID livekit.ParticipantID, subscribed bool) {

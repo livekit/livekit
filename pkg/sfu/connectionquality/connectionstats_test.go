@@ -319,7 +319,7 @@ func TestConnectionQuality(t *testing.T) {
 		// unmute and send packets to bring quality back up
 		now = now.Add(duration)
 		cs.UpdateMuteAt(false, now.Add(2*time.Second))
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{
 				1: {
 					RTPStats: &rtpstats.RTPDeltaInfo{

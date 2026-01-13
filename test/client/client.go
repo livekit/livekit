@@ -135,17 +135,22 @@ type Options struct {
 	SignalRequestInterceptor  SignalRequestInterceptor
 	SignalResponseInterceptor SignalResponseInterceptor
 	UseJoinRequestQueryParam  bool
+	RTCServicePath            string
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
-	u, err := url.Parse(host + "/rtc")
+	rtcServicePath := "/rtc"
+	if opts != nil && opts.RTCServicePath != "" {
+		rtcServicePath = opts.RTCServicePath
+	}
+	parsedURL, err := url.Parse(host + rtcServicePath)
 	if err != nil {
 		return nil, err
 	}
 	requestHeader := make(http.Header)
 	SetAuthorizationToken(requestHeader, token)
 
-	connectUrl := u.String()
+	connectUrl := parsedURL.String()
 	if opts != nil && opts.UseJoinRequestQueryParam {
 		clientInfo := &livekit.ClientInfo{
 			Os:       runtime.GOOS,
@@ -205,6 +210,7 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 		connectUrl += encodeQueryParam("sdk", sdk)
 	}
 
+	logger.Infow("connecting to", "url", parsedURL.String())
 	conn, _, err := websocket.DefaultDialer.Dial(connectUrl, requestHeader)
 	return conn, err
 }
@@ -1095,7 +1101,7 @@ func (c *RTCClient) handleDataMessageUnlabeled(data []byte) {
 	}
 }
 
-func (c *RTCClient) handleDataTrackMessage(data []byte) {
+func (c *RTCClient) handleDataTrackMessage(data []byte, _arrivalTime int64) {
 	var packet datatrack.Packet
 	if err := packet.Unmarshal(data); err != nil {
 		return
@@ -1290,7 +1296,7 @@ func (c *RTCClient) SendNacks(count int) {
 	c.lock.Lock()
 	for _, pkt := range c.lastPackets {
 		seqs := make([]uint16, 0, count)
-		for i := 0; i < count; i++ {
+		for i := range count {
 			seqs = append(seqs, pkt.SequenceNumber-uint16(i))
 		}
 		packets = append(packets, &rtcp.TransportLayerNack{

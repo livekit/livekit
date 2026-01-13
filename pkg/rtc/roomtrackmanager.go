@@ -255,9 +255,9 @@ func (r *RoomTrackManager) GetDataTrackInfo(trackID livekit.TrackID) *DataTrackI
 	return infos[0]
 }
 
-func (r *RoomTrackManager) Report() {
+func (r *RoomTrackManager) Report() (int, int) {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	r.logger.Infow("room track manager report", "numTracks", len(r.tracks), "numDataTracks", len(r.dataTracks))
+	return len(r.tracks), len(r.dataTracks)
 }

@@ -465,6 +465,7 @@ func (s *WHIPService) handleParticipantPatch(w http.ResponseWriter, r *http.Requ
 	sdpFragmentBytes, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		s.handleError("Patch", w, r, http.StatusBadRequest, fmt.Errorf("body does not have SDP fragment: %s", err))
+		return
 	}
 	sdpFragment := string(sdpFragmentBytes)
 

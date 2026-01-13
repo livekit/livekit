@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -25,7 +26,6 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
@@ -314,7 +314,7 @@ func (t *MediaTrackReceiver) HandleReceiverCodecChange(r sfu.TrackReceiver, code
 	// remove old codec from potential codecs
 	for i, c := range t.potentialCodecs {
 		if strings.EqualFold(c.MimeType, codec.MimeType) {
-			slices.Delete(t.potentialCodecs, i, i+1)
+			t.potentialCodecs = slices.Delete(t.potentialCodecs, i, i+1)
 			break
 		}
 	}
@@ -632,14 +632,7 @@ func (t *MediaTrackReceiver) RevokeDisallowedSubscribers(allowedSubscriberIdenti
 			continue
 		}
 
-		found := false
-		for _, allowedIdentity := range allowedSubscriberIdentities {
-			if subTrack.SubscriberIdentity() == allowedIdentity {
-				found = true
-				break
-			}
-		}
-
+		found := slices.Contains(allowedSubscriberIdentities, subTrack.SubscriberIdentity())
 		if !found {
 			t.params.Logger.Infow("revoking subscription",
 				"subscriber", subTrack.SubscriberIdentity(),
@@ -660,7 +653,7 @@ func (t *MediaTrackReceiver) updateTrackInfoOfReceivers() {
 	}
 }
 
-func (t *MediaTrackReceiver) SetLayerSsrc(mimeType mime.MimeType, rid string, ssrc uint32) {
+func (t *MediaTrackReceiver) SetLayerSsrcsForRid(mimeType mime.MimeType, rid string, ssrc uint32, repairSSRC uint32) {
 	t.lock.Lock()
 	trackInfo := t.TrackInfoClone()
 	layer := buffer.GetSpatialLayerForRid(mimeType, rid, trackInfo)
@@ -689,6 +682,20 @@ func (t *MediaTrackReceiver) SetLayerSsrc(mimeType mime.MimeType, rid string, ss
 		}
 		if !ssrcFound && matchingLayer != nil {
 			matchingLayer.Ssrc = ssrc
+			if repairSSRC != 0 {
+				matchingLayer.RepairSsrc = repairSSRC
+			}
+		}
+		if ssrcFound {
+			t.params.Logger.Warnw(
+				"not overriding ssrc", nil,
+				"rid", rid,
+				"ssrc", ssrc,
+				"existingSSRC", matchingLayer.Ssrc,
+				"repairSSRC", repairSSRC,
+				"existingRepairSSRC", matchingLayer.RepairSsrc,
+				"trackInfo", trackInfo,
+			)
 		}
 
 		// for client don't use simulcast codecs (old client version or single codec)
@@ -701,6 +708,77 @@ func (t *MediaTrackReceiver) SetLayerSsrc(mimeType mime.MimeType, rid string, ss
 	t.lock.Unlock()
 
 	t.updateTrackInfoOfReceivers()
+}
+
+func (t *MediaTrackReceiver) setLayerRtxInfo(ssrc uint32, repairSSRC uint32, rsid string) {
+	t.params.Logger.Debugw("rtx notification", "ssrc", ssrc, "repairSSRC", repairSSRC, "rsid", rsid)
+	if ssrc == 0 || repairSSRC == 0 || rsid == "" {
+		return
+	}
+
+	t.lock.Lock()
+	trackInfo := t.TrackInfoClone()
+
+done:
+	for _, ci := range trackInfo.Codecs {
+		for _, l := range ci.Layers {
+			if l.Ssrc == ssrc {
+				if (l.RepairSsrc != 0 && l.RepairSsrc != repairSSRC) || (l.Rid != "" && l.Rid != rsid) {
+					t.params.Logger.Warnw(
+						"not overriding rtx info", nil,
+						"ssrc", ssrc,
+						"repairSSRC", repairSSRC,
+						"existingRepairSSRC", l.RepairSsrc,
+						"rsid", rsid,
+						"existingRid", l.Rid,
+						"trackInfo", logger.Proto(trackInfo),
+					)
+				} else {
+					l.RepairSsrc = repairSSRC
+					t.params.Logger.Debugw(
+						"set rtx info",
+						"ssrc", ssrc,
+						"repairSSRC", repairSSRC,
+						"rsid", rsid,
+						"trackInfo", logger.Proto(trackInfo),
+					)
+				}
+				break done
+			}
+		}
+	}
+
+	// backwards compatibility
+	for _, l := range trackInfo.Layers {
+		if l.Ssrc == ssrc {
+			if (l.RepairSsrc != 0 && l.RepairSsrc != repairSSRC) || (l.Rid != "" && l.Rid != rsid) {
+				t.params.Logger.Warnw(
+					"not overriding rtx info", nil,
+					"ssrc", ssrc,
+					"repairSSRC", repairSSRC,
+					"existingRepairSSRC", l.RepairSsrc,
+					"rsid", rsid,
+					"existingRid", l.Rid,
+					"trackInfo", logger.Proto(trackInfo),
+				)
+			} else {
+				l.RepairSsrc = repairSSRC
+				t.params.Logger.Debugw(
+					"set rtx info",
+					"ssrc", ssrc,
+					"repairSSRC", repairSSRC,
+					"rsid", rsid,
+					"trackInfo", logger.Proto(trackInfo),
+				)
+			}
+			break
+		}
+	}
+
+	t.trackInfo.Store(trackInfo)
+	t.lock.Unlock()
+
+	// change not propagated as it is internal
 }
 
 func (t *MediaTrackReceiver) UpdateCodecInfo(codecs []*livekit.SimulcastCodec) {
@@ -778,7 +856,7 @@ func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 
 	t.lock.Lock()
 	trackInfo := t.TrackInfo()
-	// patch Mid and SSRC of codecs/layers by keeping original if available
+	// patch Mid/Rid and Ssrc/RtxSsrc of codecs/layers by keeping original if available
 	for i, ci := range clonedInfo.Codecs {
 		for _, originCi := range trackInfo.Codecs {
 			if !mime.IsMimeTypeStringEqual(ci.MimeType, originCi.MimeType) {
@@ -794,6 +872,13 @@ func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 					if layer.Quality == originLayer.Quality {
 						if originLayer.Ssrc != 0 {
 							layer.Ssrc = originLayer.Ssrc
+						}
+						if originLayer.Rid != "" {
+							layer.Rid = originLayer.Rid
+						}
+
+						if originLayer.RepairSsrc != 0 {
+							layer.RepairSsrc = originLayer.RepairSsrc
 						}
 						break
 					}
@@ -878,6 +963,52 @@ func (t *MediaTrackReceiver) UpdateVideoTrack(update *livekit.UpdateLocalVideoTr
 
 	t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(), clonedInfo)
 	t.params.Logger.Debugw("updated video track", "before", logger.Proto(trackInfo), "after", logger.Proto(clonedInfo))
+}
+
+func (t *MediaTrackReceiver) UpdateVideoSize(mimeType mime.MimeType, sizes []buffer.VideoSize) {
+	var changed bool
+	t.lock.Lock()
+	trackInfo := t.TrackInfo()
+	clonedInfo := utils.CloneProto(trackInfo)
+	var maxWidth, maxHeight uint32
+	for _, size := range sizes {
+		if size.Width > maxWidth {
+			maxWidth = size.Width
+			maxHeight = size.Height
+		}
+	}
+
+	if clonedInfo.Width != maxWidth || clonedInfo.Height != maxHeight {
+		clonedInfo.Width = maxWidth
+		clonedInfo.Height = maxHeight
+		changed = true
+	}
+
+	for _, c := range clonedInfo.Codecs {
+		if mime.NormalizeMimeType(c.MimeType) == mimeType {
+			for i, l := range c.Layers {
+				if i < len(sizes) && (sizes[i].Width != 0 || sizes[i].Height != 0) &&
+					(l.Width != sizes[i].Width || l.Height != sizes[i].Height) {
+					l.Width = sizes[i].Width
+					l.Height = sizes[i].Height
+					changed = true
+				}
+			}
+		}
+	}
+
+	if !changed {
+		t.lock.Unlock()
+		return
+	}
+
+	t.trackInfo.Store(clonedInfo)
+	t.lock.Unlock()
+
+	t.updateTrackInfoOfReceivers()
+
+	t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(), clonedInfo)
+	t.params.Logger.Debugw("updated video sizes", "before", logger.Proto(trackInfo), "after", logger.Proto(clonedInfo))
 }
 
 func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {
@@ -1008,8 +1139,8 @@ func (t *MediaTrackReceiver) onDownTrackCreated(downTrack *sfu.DownTrack) {
 	}
 }
 
-func (t *MediaTrackReceiver) DebugInfo() map[string]interface{} {
-	info := map[string]interface{}{
+func (t *MediaTrackReceiver) DebugInfo() map[string]any {
+	info := map[string]any{
 		"ID":       t.ID(),
 		"Kind":     t.Kind().String(),
 		"PubMuted": t.IsMuted(),

@@ -39,13 +39,17 @@ type streamInfo struct {
 
 type RTXInfoExtractorFactory struct {
 	onStreamFound  func(*interceptor.StreamInfo)
-	onRTXPairFound func(repair, base uint32)
+	onRTXPairFound func(repair, base uint32, rsid string)
 	lock           sync.Mutex
 	streams        map[uint32]streamInfo
 	logger         logger.Logger
 }
 
-func NewRTXInfoExtractorFactory(onStreamFound func(*interceptor.StreamInfo), onRTXPairFound func(repair, base uint32), logger logger.Logger) *RTXInfoExtractorFactory {
+func NewRTXInfoExtractorFactory(
+	onStreamFound func(*interceptor.StreamInfo),
+	onRTXPairFound func(repair, base uint32, rsid string),
+	logger logger.Logger,
+) *RTXInfoExtractorFactory {
 	return &RTXInfoExtractorFactory{
 		onStreamFound:  onStreamFound,
 		onRTXPairFound: onRTXPairFound,
@@ -61,9 +65,15 @@ func (f *RTXInfoExtractorFactory) NewInterceptor(id string) (interceptor.Interce
 	}, nil
 }
 
-func (f *RTXInfoExtractorFactory) setStreamInfo(ssrc uint32, mid, rid, rsid string) {
+func (f *RTXInfoExtractorFactory) SetStreamInfo(ssrc uint32, mid, rid, rsid string) {
 	var repairSsrc, baseSsrc uint32
+	var repairSid string
 	f.lock.Lock()
+
+	if mid == "" || (rid == "" && rsid == "") {
+		f.lock.Unlock()
+		return
+	}
 
 	if rsid != "" {
 		// repair stream found, find base stream
@@ -71,6 +81,7 @@ func (f *RTXInfoExtractorFactory) setStreamInfo(ssrc uint32, mid, rid, rsid stri
 			if info.mid == mid && info.rid == rsid {
 				repairSsrc = ssrc
 				baseSsrc = base
+				repairSid = rsid
 				delete(f.streams, base)
 				break
 			}
@@ -81,6 +92,7 @@ func (f *RTXInfoExtractorFactory) setStreamInfo(ssrc uint32, mid, rid, rsid stri
 			if info.mid == mid && info.rsid == rid {
 				repairSsrc = repair
 				baseSsrc = ssrc
+				repairSid = info.rid
 				delete(f.streams, repair)
 				break
 			}
@@ -99,7 +111,7 @@ func (f *RTXInfoExtractorFactory) setStreamInfo(ssrc uint32, mid, rid, rsid stri
 	f.lock.Unlock()
 
 	if repairSsrc != 0 && baseSsrc != 0 {
-		f.onRTXPairFound(repairSsrc, baseSsrc)
+		f.onRTXPairFound(repairSsrc, baseSsrc, repairSid)
 	}
 }
 
@@ -171,7 +183,7 @@ func (r *rtxInfoReader) Read(b []byte, a interceptor.Attributes) (int, intercept
 	if mid != "" && (rid != "" || rsid != "") {
 		r.logger.Debugw("stream found", "mid", mid, "rid", rid, "rsid", rsid, "ssrc", header.SSRC)
 		r.tryTimes = -1
-		go r.factory.setStreamInfo(header.SSRC, mid, rid, rsid)
+		go r.factory.SetStreamInfo(header.SSRC, mid, rid, rsid)
 	} else {
 		// ignore padding only packet for probe count
 		if !(header.Padding && n-header.MarshalSize()-int(b[n-1]) == 0) {

@@ -48,7 +48,7 @@ func TestAgent(t *testing.T) {
 			require.EqualValues(t, job.Id, a.Job.Id)
 			v, err := auth.ParseAPIToken(a.Token)
 			require.NoError(t, err)
-			claims, err := v.Verify(server.TestAPISecret)
+			_, claims, err := v.Verify(server.TestAPISecret)
 			require.NoError(t, err)
 			require.Equal(t, testAgentName, claims.Attributes[agent.AgentNameAttributeKey])
 		case <-time.After(time.Second):
@@ -115,7 +115,7 @@ func TestAgentLoadBalancing(t *testing.T) {
 		t.Cleanup(server.Close)
 
 		agents := make([]*testutils.AgentWorker, totalWorkers)
-		for i := 0; i < totalWorkers; i++ {
+		for i := range totalWorkers {
 			agents[i] = server.SimulateAgentWorker(
 				testutils.WithLabel(fmt.Sprintf("agent-%d", i)),
 				testutils.WithJobLoad(testutils.NewStableJobLoad(0.01)),
@@ -135,7 +135,7 @@ func TestAgentLoadBalancing(t *testing.T) {
 		}
 
 		// check that jobs are distributed normally
-		for i := 0; i < totalWorkers; i++ {
+		for i := range totalWorkers {
 			label := fmt.Sprintf("agent-%d", i)
 			require.GreaterOrEqual(t, jobCount[label], 0)
 			require.Less(t, jobCount[label], 35) // three std deviations from the mean is 32
@@ -154,7 +154,7 @@ func TestAgentLoadBalancing(t *testing.T) {
 		t.Cleanup(server.Close)
 
 		agents := make([]*testutils.AgentWorker, totalWorkers)
-		for i := 0; i < totalWorkers; i++ {
+		for i := range totalWorkers {
 			label := fmt.Sprintf("agent-%d", i)
 			if i%2 == 0 {
 				// make sure we have some workers that can accept jobs
@@ -176,7 +176,7 @@ func TestAgentLoadBalancing(t *testing.T) {
 			jobCount[w.Label] = len(w.Jobs())
 		}
 
-		for i := 0; i < totalWorkers; i++ {
+		for i := range totalWorkers {
 			label := fmt.Sprintf("agent-%d", i)
 
 			if i%2 == 0 {

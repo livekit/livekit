@@ -70,7 +70,7 @@ func (d *DataTrackRemote) PacketReceived(packet *datatrack.Packet) {
 	if len(packet.Payload) == 0 {
 		valid = false
 	}
-	for i := range len(packet.Payload) {
+	for i := range packet.Payload {
 		if packet.Payload[i] != byte(255-i) {
 			valid = false
 			break

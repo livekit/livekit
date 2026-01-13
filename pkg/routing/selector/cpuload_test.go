@@ -39,7 +39,7 @@ func TestCPULoadSelector_SelectNode(t *testing.T) {
 
 	// Select a node with low load when available
 	nodes = []*livekit.Node{nodeLoadLow, nodeLoadHigh}
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		node, err := sel.SelectNode(nodes)
 		if err != nil {
 			t.Error(err)

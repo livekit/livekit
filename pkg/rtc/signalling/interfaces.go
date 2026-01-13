@@ -28,7 +28,7 @@ type ParticipantSignalHandler interface {
 }
 
 type ParticipantSignaller interface {
-	SetResponseSink(sink routing.MessageSink)
+	SwapResponseSink(sink routing.MessageSink, reason types.SignallingCloseReason)
 	GetResponseSink() routing.MessageSink
 	CloseSignalConnection(reason types.SignallingCloseReason)
 

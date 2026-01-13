@@ -28,7 +28,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/sdp/v3"
-	"github.com/pion/transport/v3/packetio"
+	"github.com/pion/transport/v4/packetio"
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
 	"go.uber.org/zap/zapcore"
@@ -552,7 +552,7 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 			isFECEnabled = strings.Contains(strings.ToLower(matchedUpstreamCodec.SDPFmtpLine), "fec")
 		}
 
-		logFields := []interface{}{
+		logFields := []any{
 			"codecs", d.upstreamCodecs,
 			"matchCodec", codec,
 			"ssrc", t.SSRC(),
@@ -1103,7 +1103,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	}
 	d.pacer.Enqueue(pacerPacket)
 
-	if extPkt.KeyFrame {
+	if extPkt.IsKeyFrame {
 		d.isNACKThrottled.Store(false)
 		d.rtpStats.UpdateKeyFrame(1)
 		d.params.Logger.Debugw(
@@ -1193,7 +1193,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 
 	bytesSent := 0
 	payloads := make([]byte, RTPPaddingMaxPayloadSize*len(snts))
-	for i := 0; i < len(snts); i++ {
+	for i := range snts {
 		hdr := RTPHeaderFactory.Get().(*rtp.Header)
 		*hdr = rtp.Header{
 			Version:        2,
@@ -1276,8 +1276,8 @@ func (d *DownTrack) handleMute(muted bool, changed bool) {
 	// no layers required due to publisher mute (bit of circular dependency),
 	// there will be a delay in layers turning back on when unmute happens.
 	// Unmute path will require
-	//   1. unmute signalling out-of-band from publisher received by down track(s)
-	//   2. down track(s) notifying max layer
+	//   1. unmute signalling out-of-band from publisher received by downtrack(s)
+	//   2. downtrack(s) notifying max layer
 	//   3. out-of-band notification about max layer sent back to the publisher
 	//   4. publisher starts layer(s)
 	// Ideally, on publisher mute, whatever layers were active remain active and
@@ -1331,7 +1331,7 @@ func (d *DownTrack) CloseWithFlush(flush bool, isEnding bool) {
 		return
 	}
 
-	d.params.Logger.Debugw("close down track", "flushBlankFrame", flush)
+	d.params.Logger.Debugw("close downtrack", "flushBlankFrame", flush)
 	if d.bindState.Load() == bindStateBound {
 		d.forwarder.Mute(true, true)
 
@@ -1447,7 +1447,7 @@ func (d *DownTrack) SeedState(state DownTrackState) {
 	}
 
 	if state.RTPStats != nil || state.ForwarderState != nil {
-		d.params.Logger.Debugw("seeding down track state", "state", state)
+		d.params.Logger.Debugw("seeding downtrack state", "state", state)
 	}
 	if state.RTPStats != nil {
 		d.rtpStats.Seed(state.RTPStats)
@@ -1732,7 +1732,7 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 				return
 			}
 
-			for i := 0; i < len(snts); i++ {
+			for i := range snts {
 				hdr := &rtp.Header{
 					Version:        2,
 					Padding:        false,
@@ -2242,7 +2242,7 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 		}
 
 		payloads := make([]byte, RTPPaddingMaxPayloadSize*num)
-		for i := 0; i < num; i++ {
+		for i := range num {
 			rtxExtSequenceNumber := d.rtxSequenceNumber.Inc()
 			hdr := RTPHeaderFactory.Get().(*rtp.Header)
 			*hdr = rtp.Header{
@@ -2341,8 +2341,8 @@ func (d *DownTrack) getTranslatedPayloadType(srcPT uint8) uint8 {
 	return uint8(d.payloadType.Load())
 }
 
-func (d *DownTrack) DebugInfo() map[string]interface{} {
-	stats := map[string]interface{}{
+func (d *DownTrack) DebugInfo() map[string]any {
+	stats := map[string]any{
 		"LastPli": d.rtpStats.LastPli(),
 	}
 	stats["RTPMunger"] = d.forwarder.RTPMungerDebugInfo()
@@ -2354,7 +2354,7 @@ func (d *DownTrack) DebugInfo() map[string]interface{} {
 		stats["PacketCount"] = senderReport.PacketCount
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"SubscriberID":        d.params.SubID,
 		"TrackID":             d.id,
 		"StreamID":            d.params.StreamID,

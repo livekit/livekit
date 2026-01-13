@@ -529,7 +529,7 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	clockRate := uint64(10)
 	frameRate := uint64(5)
 	var sntsExpected = make([]SnTs, numPadding)
-	for i := 0; i < numPadding; i++ {
+	for i := range numPadding {
 		sntsExpected[i] = SnTs{
 			extSequenceNumber: uint64(params.SequenceNumber) + uint64(i) + 1,
 			extTimestamp:      uint64(params.Timestamp) + ((uint64(i)*clockRate)+frameRate-1)/frameRate,
@@ -540,7 +540,7 @@ func TestUpdateAndGetPaddingSnTs(t *testing.T) {
 	require.Equal(t, sntsExpected, snts)
 
 	// now that there is a marker, timestamp should jump on first padding when asked again
-	for i := 0; i < numPadding; i++ {
+	for i := range numPadding {
 		sntsExpected[i] = SnTs{
 			extSequenceNumber: uint64(params.SequenceNumber) + uint64(len(snts)) + uint64(i) + 1,
 			extTimestamp:      snts[len(snts)-1].extTimestamp + ((uint64(i+1)*clockRate)+frameRate-1)/frameRate,

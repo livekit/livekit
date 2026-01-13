@@ -26,7 +26,7 @@ func SortByTest(t *testing.T, sortBy string) {
 	sel := selector.SystemLoadSelector{SortBy: sortBy, Algorithm: "lowest"}
 	nodes := []*livekit.Node{nodeLoadLow, nodeLoadMedium, nodeLoadHigh}
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		node, err := sel.SelectNode(nodes)
 		if err != nil {
 			t.Error(err)

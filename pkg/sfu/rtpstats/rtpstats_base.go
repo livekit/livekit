@@ -193,6 +193,8 @@ func (w WrappedRTCPSenderReportStateLogger) MarshalLogObject(e zapcore.ObjectEnc
 	return nil
 }
 
+// ------------------------------------------------------------------
+
 func RTCPSenderReportPropagationDelay(rsrs *livekit.RTCPSenderReportState, passThrough bool) time.Duration {
 	if passThrough {
 		return 0
@@ -680,7 +682,7 @@ func (r *rtpStatsBase) updateJitter(ets uint64, packetTime int64) float64 {
 }
 
 func (r *rtpStatsBase) getAndResetSnapshot(snapshotID uint32, extStartSN uint64, extHighestSN uint64) (*snapshot, *snapshot) {
-	if !r.initialized {
+	if !r.initialized || snapshotID < cFirstSnapshotID {
 		return nil, nil
 	}
 

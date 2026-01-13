@@ -256,3 +256,11 @@ func Test_RTPStatsReceiver_Restart(t *testing.T) {
 
 	r.Stop()
 }
+
+func Test_RTPStatsSender_getIntervalStats(t *testing.T) {
+	t.Run("packetsNotFoundMetadata should match lost packets", func(t *testing.T) {
+		r := NewRTPStatsSender(RTPStatsParams{}, 1024)
+		stats := r.getIntervalStats(0, 10000, 10000)
+		require.EqualValues(t, 8977, stats.packetsNotFoundMetadata)
+	})
+}

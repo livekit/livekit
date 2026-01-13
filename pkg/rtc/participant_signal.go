@@ -27,8 +27,8 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
 
-func (p *ParticipantImpl) SetResponseSink(sink routing.MessageSink) {
-	p.signaller.SetResponseSink(sink)
+func (p *ParticipantImpl) SwapResponseSink(sink routing.MessageSink, reason types.SignallingCloseReason) {
+	p.signaller.SwapResponseSink(sink, reason)
 }
 
 func (p *ParticipantImpl) GetResponseSink() routing.MessageSink {
@@ -117,6 +117,10 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 				updatedAt: time.Now(),
 			})
 			validUpdates = append(validUpdates, pi)
+		}
+
+		if pi.State == livekit.ParticipantInfo_DISCONNECTED {
+			p.updateCache.Remove(pID)
 		}
 	}
 	p.updateLock.Unlock()

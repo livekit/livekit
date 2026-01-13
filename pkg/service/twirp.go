@@ -46,9 +46,9 @@ type twirpLoggerKey struct{}
 // License: Apache-2.0
 func TwirpLogger() *twirp.ServerHooks {
 	loggerPool := &sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return &twirpLogger{
-				fieldsOrig: make([]interface{}, 0, 30),
+				fieldsOrig: make([]any, 0, 30),
 			}
 		},
 	}
@@ -67,12 +67,20 @@ func TwirpLogger() *twirp.ServerHooks {
 type twirpLogger struct {
 	twirpRequestFields
 
-	fieldsOrig []interface{}
-	fields     []interface{}
+	fieldsOrig []any
+	fields     []any
 	startedAt  time.Time
+	deadline   time.Time
 }
 
-func AppendLogFields(ctx context.Context, fields ...interface{}) {
+func (t *twirpLogger) reset() {
+	t.fields = t.fieldsOrig
+	t.error = nil
+	t.startedAt = time.Time{}
+	t.deadline = time.Time{}
+}
+
+func AppendLogFields(ctx context.Context, fields ...any) {
 	r, ok := ctx.Value(twirpLoggerKey{}).(*twirpLogger)
 	if !ok || r == nil {
 		return
@@ -84,6 +92,9 @@ func AppendLogFields(ctx context.Context, fields ...interface{}) {
 func loggerRequestReceived(ctx context.Context, twirpLoggerPool *sync.Pool) (context.Context, error) {
 	r := twirpLoggerPool.Get().(*twirpLogger)
 	r.startedAt = time.Now()
+	if deadline, ok := ctx.Deadline(); ok {
+		r.deadline = deadline
+	}
 	r.fields = r.fieldsOrig
 	r.error = nil
 
@@ -115,6 +126,12 @@ func loggerResponseSent(ctx context.Context, twirpLoggerPool *sync.Pool) {
 	}
 
 	r.fields = append(r.fields, "duration", time.Since(r.startedAt))
+	if !r.deadline.IsZero() {
+		r.fields = append(r.fields, "requestedTimeout", r.deadline.Sub(r.startedAt))
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		r.fields = append(r.fields, "modifiedTimeout", deadline.Sub(r.startedAt))
+	}
 
 	if status, ok := twirp.StatusCode(ctx); ok {
 		r.fields = append(r.fields, "status", status)
@@ -127,9 +144,8 @@ func loggerResponseSent(ctx context.Context, twirpLoggerPool *sync.Pool) {
 	serviceMethod := "API " + r.service + "." + r.method
 	utils.GetLogger(ctx).WithComponent(utils.ComponentAPI).Infow(serviceMethod, r.fields...)
 
-	r.fields = r.fieldsOrig
-	r.error = nil
-
+	// reset fields and return to pool
+	r.reset()
 	twirpLoggerPool.Put(r)
 }
 

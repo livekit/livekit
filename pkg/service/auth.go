@@ -58,7 +58,7 @@ func NewAPIKeyAuthMiddleware(provider auth.KeyProvider) *APIKeyAuthMiddleware {
 }
 
 func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-	if r.URL != nil && r.URL.Path == "/rtc/validate" {
+	if r.URL != nil && (r.URL.Path == "/rtc/validate" || r.URL.Path == "/rtc/v1/validate") {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 	}
 
@@ -90,7 +90,7 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 			return
 		}
 
-		grants, err := v.Verify(secret)
+		_, grants, err := v.Verify(secret)
 		if err != nil {
 			HandleError(w, r, http.StatusUnauthorized, errors.New("invalid token: "+authToken+", error: "+err.Error()))
 			return

@@ -17,6 +17,7 @@ package rtc
 import (
 	"fmt"
 	"io"
+	"maps"
 	"math/rand"
 	"net"
 	"slices"
@@ -61,6 +62,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/logger/pionlogger"
 	lksdp "github.com/livekit/protocol/sdp"
+	"github.com/livekit/protocol/utils/mono"
 )
 
 const (
@@ -182,11 +184,6 @@ func (w wrappedICECandidatePairLogger) MarshalLogObject(e zapcore.ObjectEncoder)
 
 // -------------------------------------------------------------------
 
-type SimulcastTrackInfo struct {
-	Mid string
-	Rid string
-}
-
 type trackDescription struct {
 	mid    string
 	sender *webrtc.RTPSender
@@ -224,6 +221,8 @@ type PCTransport struct {
 	lastNegotiate      time.Time
 
 	onNegotiationStateChanged func(state transport.NegotiationState)
+
+	rtxInfoExtractorFactory *sfuinterceptor.RTXInfoExtractorFactory
 
 	// stream allocator for subscriber PC
 	streamAllocator *streamallocator.StreamAllocator
@@ -295,7 +294,7 @@ type TransportParams struct {
 	EnabledCodecs                 []*livekit.Codec
 	Logger                        logger.Logger
 	Transport                     livekit.SignalTarget
-	SimTracks                     map[uint32]SimulcastTrackInfo
+	SimTracks                     map[uint32]sfuinterceptor.SimulcastTrackInfo
 	ClientInfo                    ClientInfo
 	IsOfferer                     bool
 	IsSendSide                    bool
@@ -312,7 +311,10 @@ type TransportParams struct {
 	EnableDataTracks bool
 }
 
-func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimator cc.BandwidthEstimator)) (*webrtc.PeerConnection, *webrtc.MediaEngine, error) {
+func newPeerConnection(
+	params TransportParams,
+	onBandwidthEstimator func(estimator cc.BandwidthEstimator),
+) (*webrtc.PeerConnection, *webrtc.MediaEngine, *sfuinterceptor.RTXInfoExtractorFactory, error) {
 	directionConfig := params.DirectionConfig
 	if params.AllowPlayoutDelay {
 		directionConfig.RTPHeaderExtension.Video = append(directionConfig.RTPHeaderExtension.Video, pd.PlayoutDelayURI)
@@ -323,7 +325,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 	// So, disable H.264 High Profile for SUBSCRIBER peer connection to ensure it is not offered.
 	me, err := createMediaEngine(params.EnabledCodecs, directionConfig, params.IsOfferer)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	se := params.Config.SettingEngine
@@ -448,7 +450,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		ir.Add(lkinterceptor.NewRTTFromXRFactory(func(rtt uint32) {}))
 	}
 	if len(params.SimTracks) > 0 {
-		f, err := NewUnhandleSimulcastInterceptorFactory(UnhandleSimulcastTracks(params.SimTracks))
+		f, err := sfuinterceptor.NewUnhandleSimulcastInterceptorFactory(sfuinterceptor.UnhandleSimulcastTracks(params.Logger, params.SimTracks))
 		if err != nil {
 			params.Logger.Warnw("NewUnhandleSimulcastInterceptorFactory failed", err)
 		} else {
@@ -477,18 +479,28 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		twccExtID := sfuutils.GetHeaderExtensionID(info.RTPHeaderExtensions, webrtc.RTPHeaderExtensionCapability{URI: sdp.TransportCCURI})
 		if twccExtID != 0 {
 			if buffer := params.Config.BufferFactory.GetBuffer(info.SSRC); buffer != nil {
-				params.Logger.Debugw("set rtx twcc and ext id", "ssrc", info.SSRC, "twccExtID", twccExtID)
+				params.Logger.Debugw(
+					"set twcc and ext id",
+					"ssrc", info.SSRC,
+					"isRTX", mime.GetMimeTypeCodec(info.MimeType) == mime.MimeTypeCodecRTX,
+					"twccExtID", twccExtID,
+				)
 				buffer.SetTWCCAndExtID(params.Twcc, uint8(twccExtID))
 			} else {
-				params.Logger.Warnw("failed to get buffer for rtx stream", nil, "ssrc", info.SSRC)
+				params.Logger.Warnw("failed to get buffer for stream", nil, "ssrc", info.SSRC)
 			}
 		}
 	}
+	rtxInfoExtractorFactory := sfuinterceptor.NewRTXInfoExtractorFactory(
+		setTWCCForVideo,
+		func(repair, base uint32, rsid string) {
+			params.Logger.Debugw("rtx pair found from extension", "repair", repair, "base", base, "rsid", rsid)
+			params.Config.BufferFactory.SetRTXPair(repair, base, rsid)
+		},
+		params.Logger,
+	)
 	// put rtx interceptor behind unhandle simulcast interceptor so it can get the correct mid & rid
-	ir.Add(sfuinterceptor.NewRTXInfoExtractorFactory(setTWCCForVideo, func(repair, base uint32) {
-		params.Logger.Debugw("rtx pair found from extension", "repair", repair, "base", base)
-		params.Config.BufferFactory.SetRTXPair(repair, base)
-	}, params.Logger))
+	ir.Add(rtxInfoExtractorFactory)
 
 	api := webrtc.NewAPI(
 		webrtc.WithMediaEngine(me),
@@ -496,7 +508,7 @@ func newPeerConnection(params TransportParams, onBandwidthEstimator func(estimat
 		webrtc.WithInterceptorRegistry(ir),
 	)
 	pc, err := api.NewPeerConnection(params.Config.Configuration)
-	return pc, me, err
+	return pc, me, rtxInfoExtractorFactory, err
 }
 
 func NewPCTransport(params TransportParams) (*PCTransport, error) {
@@ -569,7 +581,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 
 func (t *PCTransport) createPeerConnection() (cc.BandwidthEstimator, error) {
 	var bwe cc.BandwidthEstimator
-	pc, me, err := newPeerConnection(t.params, func(estimator cc.BandwidthEstimator) {
+	pc, me, rtxInfoExtractorFactory, err := newPeerConnection(t.params, func(estimator cc.BandwidthEstimator) {
 		bwe = estimator
 	})
 	if err != nil {
@@ -606,7 +618,13 @@ func (t *PCTransport) createPeerConnection() (cc.BandwidthEstimator, error) {
 	})
 
 	t.me = me
+
+	t.rtxInfoExtractorFactory = rtxInfoExtractorFactory
 	return bwe, nil
+}
+
+func (t *PCTransport) RTPStreamPublished(ssrc uint32, mid, rid string) {
+	t.rtxInfoExtractorFactory.SetStreamInfo(ssrc, mid, rid, "")
 }
 
 func (t *PCTransport) GetPacer() pacer.Pacer {
@@ -861,7 +879,7 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 
 		case isDataTrack:
 			if !t.params.EnableDataTracks {
-				t.params.Logger.Infow("data tracks not enabled")
+				t.params.Logger.Debugw("data tracks not enabled")
 				isHandled = false
 			} else {
 				if t.dataTrackDC != nil {
@@ -908,7 +926,7 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 					t.params.Handler.OnDataMessageUnlabeled(buffer[:n])
 
 				case isDataTrack:
-					t.params.Handler.OnDataTrackMessage(buffer[:n])
+					t.params.Handler.OnDataTrackMessage(buffer[:n], mono.UnixNano())
 
 				default:
 					t.params.Handler.OnDataMessage(kind, buffer[:n])
@@ -1122,10 +1140,9 @@ func (t *PCTransport) PendingRemoteDescription() *webrtc.SessionDescription {
 }
 
 func (t *PCTransport) GetMid(rtpReceiver *webrtc.RTPReceiver) string {
-	for _, tr := range t.pc.GetTransceivers() {
-		if tr.Receiver() == rtpReceiver {
-			return tr.Mid()
-		}
+	tr := rtpReceiver.RTPTransceiver()
+	if tr != nil {
+		return tr.Mid()
 	}
 
 	return ""
@@ -1177,7 +1194,7 @@ func (t *PCTransport) getNumUnmatchedTransceivers() (uint32, uint32) {
 
 func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelInit) error {
 	if label == DataTrackDataChannel && !t.params.EnableDataTracks {
-		t.params.Logger.Infow("data tracks not enabled")
+		t.params.Logger.Debugw("data tracks not enabled")
 		return nil
 	}
 
@@ -1266,7 +1283,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 					t.params.Handler.OnDataMessageUnlabeled(buffer[:n])
 
 				case isDataTrack:
-					t.params.Handler.OnDataTrackMessage(buffer[:n])
+					t.params.Handler.OnDataTrackMessage(buffer[:n], mono.UnixNano())
 
 				default:
 					t.params.Handler.OnDataMessage(kind, buffer[:n])
@@ -1323,7 +1340,7 @@ func (t *PCTransport) CreateReadableDataChannel(label string, dci *webrtc.DataCh
 
 func (t *PCTransport) CreateDataChannelIfEmpty(dcLabel string, dci *webrtc.DataChannelInit) (label string, id uint16, existing bool, err error) {
 	if dcLabel == DataTrackDataChannel && !t.params.EnableDataTracks {
-		t.params.Logger.Infow("data tracks not enabled")
+		t.params.Logger.Debugw("data tracks not enabled")
 		err = errors.New("data tracks not enabled")
 		return
 	}
@@ -1606,7 +1623,7 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remo
 		if len(rtxRepairs) > 0 {
 			t.params.Logger.Debugw("rtx pairs found from sdp", "ssrcs", rtxRepairs)
 			for repair, base := range rtxRepairs {
-				t.params.Config.BufferFactory.SetRTXPair(repair, base)
+				t.params.Config.BufferFactory.SetRTXPair(repair, base, "")
 			}
 		}
 		return nil
@@ -2815,7 +2832,7 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, o
 	if len(rtxRepairs) > 0 {
 		t.params.Logger.Debugw("rtx pairs found from sdp", "ssrcs", rtxRepairs)
 		for repair, base := range rtxRepairs {
-			t.params.Config.BufferFactory.SetRTXPair(repair, base)
+			t.params.Config.BufferFactory.SetRTXPair(repair, base, "")
 		}
 	}
 
@@ -3155,9 +3172,7 @@ func nonSimulcastRTXRepairsFromSDP(s *sdp.SessionDescription, logger logger.Logg
 			}
 		}
 		if !ridFound {
-			for rtx, base := range rtxPairs {
-				rtxRepairFlows[rtx] = base
-			}
+			maps.Copy(rtxRepairFlows, rtxPairs)
 		}
 	}
 

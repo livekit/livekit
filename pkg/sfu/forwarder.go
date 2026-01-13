@@ -334,7 +334,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 
 	switch f.mime {
 	case mime.MimeTypeVP8:
-		f.codecMunger = codecmunger.NewVP8FromNull(f.codecMunger, f.logger)
+		f.codecMunger = codecmunger.NewVP8FromOther(f.codecMunger, f.logger)
 		if f.vls != nil {
 			if vls := videolayerselector.NewSimulcastFromOther(f.vls); vls != nil {
 				f.vls = vls
@@ -347,6 +347,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		f.vls.SetTemporalLayerSelector(temporallayerselector.NewVP8(f.logger))
 
 	case mime.MimeTypeH264, mime.MimeTypeH265:
+		f.codecMunger = codecmunger.NewNull(f.logger)
 		if f.vls != nil {
 			if vls := videolayerselector.NewSimulcastFromOther(f.vls); vls != nil {
 				f.vls = vls
@@ -358,6 +359,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		}
 
 	case mime.MimeTypeVP9:
+		f.codecMunger = codecmunger.NewNull(f.logger)
 		if sfuutils.IsSimulcastMode(videoLayerMode) {
 			if f.vls != nil {
 				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
@@ -382,6 +384,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		}
 
 	case mime.MimeTypeAV1:
+		f.codecMunger = codecmunger.NewNull(f.logger)
 		if sfuutils.IsSimulcastMode(videoLayerMode) {
 			if f.vls != nil {
 				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
@@ -490,7 +493,12 @@ func (f *Forwarder) Mute(muted bool, isSubscribeMutable bool) bool {
 	// It could result in some bandwidth consumed for stream without visibility in
 	// the case of intentional mute.
 	if muted && !isSubscribeMutable {
-		f.logger.Debugw("ignoring forwarder mute, paused due to congestion")
+		f.logger.Infow(
+			"ignoring forwarder mute, paused due to congestion",
+			"targetLayers", f.vls.GetTarget(),
+			"currentLayers", f.vls.GetCurrent(),
+			"lastAllocation", f.lastAllocation,
+		)
 		return false
 	}
 
@@ -686,7 +694,11 @@ func (f *Forwarder) SetRefSenderReport(layer int32, srData *livekit.RTCPSenderRe
 
 	if layer >= 0 && int(layer) < len(f.refInfos) {
 		if layer == f.referenceLayerSpatial && f.refInfos[layer].senderReport == nil {
-			f.logger.Debugw("received RTCP sender report for reference layer spatial", "layer", layer)
+			f.logger.Debugw(
+				"received RTCP sender report for reference layer spatial",
+				"layer", layer,
+				"srData", rtpstats.WrappedRTCPSenderReportStateLogger{RTCPSenderReportState: srData},
+			)
 		}
 		f.refInfos[layer] = refInfo{srData, 0, false}
 
@@ -2075,6 +2087,15 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	result := f.vls.Select(extPkt, layer)
 	if !result.IsSelected {
 		if f.isDDAvailable && extPkt.DependencyDescriptor == nil {
+			f.logger.Infow(
+				"turning off dependency descriptor",
+				"layer", layer,
+				"refInfos", logger.ObjectSlice(f.refInfos[:]),
+				"lastSwitchExtIncomingTS", f.lastSwitchExtIncomingTS,
+				"currentLayer", f.vls.GetCurrent(),
+				"targetLayer", f.vls.GetCurrent(),
+				"maxLayer", f.vls.GetMax(),
+			)
 			f.isDDAvailable = false
 			switch f.mime {
 			case mime.MimeTypeVP9:
@@ -2249,7 +2270,7 @@ func (f *Forwarder) GetPadding(frameEndNeeded bool) ([]byte, error) {
 	return f.codecMunger.UpdateAndGetPadding(!frameEndNeeded)
 }
 
-func (f *Forwarder) RTPMungerDebugInfo() map[string]interface{} {
+func (f *Forwarder) RTPMungerDebugInfo() map[string]any {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 

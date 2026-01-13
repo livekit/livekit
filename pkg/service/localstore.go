@@ -84,6 +84,16 @@ func (s *LocalStore) LoadRoom(_ context.Context, roomName livekit.RoomName, incl
 	return room, internal, nil
 }
 
+func (s *LocalStore) RoomExists(ctx context.Context, roomName livekit.RoomName) (bool, error) {
+	_, _, err := s.LoadRoom(ctx, roomName, false)
+	if err == ErrRoomNotFound {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (s *LocalStore) ListRooms(_ context.Context, roomNames []livekit.RoomName) ([]*livekit.Room, error) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()

@@ -636,6 +636,18 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 	}
 
 	extReceivedRRSN := extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000)
+	if int64(r.extHighestSN-extReceivedRRSN) < 0 || int64(r.extHighestSN-extReceivedRRSN) > 4*(1<<16) {
+		r.logger.Infow(
+			"receiver report runaway, dropping",
+			"timeSinceLastRR", timeSinceLastRR(),
+			"receivedRR", rr,
+			"extHighestSNFromRR", extHighestSNFromRR,
+			"extReceivedRRSN", extReceivedRRSN,
+			"rtpStats", lockedRTPStatsSenderLogEncoder{r},
+		)
+		return
+	}
+
 	if r.extHighestSNFromRR != extHighestSNFromRR && int64(r.extHighestSN-extReceivedRRSN) >= (1<<16) {
 		// there are cases where remote does not send RTCP Receiver Report for extended periods of time,
 		// some times several minutes, in that interval the sequence number rolls over,
@@ -1113,7 +1125,7 @@ func (r *RTPStatsSender) ToProto() *livekit.RTPStats {
 }
 
 func (r *RTPStatsSender) getAndResetSenderSnapshotWindow(senderSnapshotID uint32) (*senderSnapshotWindow, *senderSnapshotWindow) {
-	if !r.initialized {
+	if !r.initialized || senderSnapshotID < cFirstSnapshotID {
 		return nil, nil
 	}
 
@@ -1154,7 +1166,7 @@ func (r *RTPStatsSender) getSenderSnapshotWindow(startTime int64) senderSnapshot
 }
 
 func (r *RTPStatsSender) getAndResetSenderSnapshotReceiverView(senderSnapshotID uint32) (*senderSnapshotReceiverView, *senderSnapshotReceiverView) {
-	if !r.initialized || r.lastRRTime == 0 {
+	if !r.initialized || r.lastRRTime == 0 || senderSnapshotID < cFirstSnapshotID {
 		return nil, nil
 	}
 
@@ -1268,13 +1280,18 @@ func (r *RTPStatsSender) getIntervalStats(
 	extEndExclusive uint64,
 	ehsn uint64,
 ) (intervalStats intervalStats) {
-	processESN := func(esn uint64, ehsn uint64) {
-		slot := r.getSnInfoOutOfOrderSlot(esn, ehsn)
-		if slot < 0 {
-			intervalStats.packetsNotFoundMetadata++
-			return
-		}
+	upperBound := ehsn + 1
+	lowerBound := uint64(0)
+	if n := uint64(len(r.snInfos)); n != 0 && ehsn >= n-1 {
+		lowerBound = ehsn - n + 1
+	}
+	extStartInclusiveClamped := max(min(extStartInclusive, upperBound), lowerBound)
+	extEndExclusiveClamped := max(min(extEndExclusive, upperBound), extStartInclusiveClamped)
 
+	intervalStats.packetsNotFoundMetadata = (extEndExclusive - extStartInclusive) - (extEndExclusiveClamped - extStartInclusiveClamped)
+
+	for esn := extStartInclusiveClamped; esn != extEndExclusiveClamped; esn++ {
+		slot := r.getSnInfoOutOfOrderSlot(esn, ehsn)
 		snInfo := &r.snInfos[slot]
 		switch {
 		case snInfo.pktSize == 0:
@@ -1297,10 +1314,6 @@ func (r *RTPStatsSender) getIntervalStats(
 		if (snInfo.flags & snInfoFlagMarker) != 0 {
 			intervalStats.frames++
 		}
-	}
-
-	for esn := extStartInclusive; esn != extEndExclusive; esn++ {
-		processESN(esn, ehsn)
 	}
 	return
 }

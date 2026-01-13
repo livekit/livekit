@@ -36,6 +36,21 @@ type FakeObjectStore struct {
 	deleteRoomReturnsOnCall map[int]struct {
 		result1 error
 	}
+	HasParticipantStub        func(context.Context, livekit.RoomName, livekit.ParticipantIdentity) (bool, error)
+	hasParticipantMutex       sync.RWMutex
+	hasParticipantArgsForCall []struct {
+		arg1 context.Context
+		arg2 livekit.RoomName
+		arg3 livekit.ParticipantIdentity
+	}
+	hasParticipantReturns struct {
+		result1 bool
+		result2 error
+	}
+	hasParticipantReturnsOnCall map[int]struct {
+		result1 bool
+		result2 error
+	}
 	ListParticipantsStub        func(context.Context, livekit.RoomName) ([]*livekit.ParticipantInfo, error)
 	listParticipantsMutex       sync.RWMutex
 	listParticipantsArgsForCall []struct {
@@ -109,6 +124,20 @@ type FakeObjectStore struct {
 	}
 	lockRoomReturnsOnCall map[int]struct {
 		result1 string
+		result2 error
+	}
+	RoomExistsStub        func(context.Context, livekit.RoomName) (bool, error)
+	roomExistsMutex       sync.RWMutex
+	roomExistsArgsForCall []struct {
+		arg1 context.Context
+		arg2 livekit.RoomName
+	}
+	roomExistsReturns struct {
+		result1 bool
+		result2 error
+	}
+	roomExistsReturnsOnCall map[int]struct {
+		result1 bool
 		result2 error
 	}
 	StoreParticipantStub        func(context.Context, livekit.RoomName, *livekit.ParticipantInfo) error
@@ -277,6 +306,72 @@ func (fake *FakeObjectStore) DeleteRoomReturnsOnCall(i int, result1 error) {
 	fake.deleteRoomReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
+}
+
+func (fake *FakeObjectStore) HasParticipant(arg1 context.Context, arg2 livekit.RoomName, arg3 livekit.ParticipantIdentity) (bool, error) {
+	fake.hasParticipantMutex.Lock()
+	ret, specificReturn := fake.hasParticipantReturnsOnCall[len(fake.hasParticipantArgsForCall)]
+	fake.hasParticipantArgsForCall = append(fake.hasParticipantArgsForCall, struct {
+		arg1 context.Context
+		arg2 livekit.RoomName
+		arg3 livekit.ParticipantIdentity
+	}{arg1, arg2, arg3})
+	stub := fake.HasParticipantStub
+	fakeReturns := fake.hasParticipantReturns
+	fake.recordInvocation("HasParticipant", []interface{}{arg1, arg2, arg3})
+	fake.hasParticipantMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeObjectStore) HasParticipantCallCount() int {
+	fake.hasParticipantMutex.RLock()
+	defer fake.hasParticipantMutex.RUnlock()
+	return len(fake.hasParticipantArgsForCall)
+}
+
+func (fake *FakeObjectStore) HasParticipantCalls(stub func(context.Context, livekit.RoomName, livekit.ParticipantIdentity) (bool, error)) {
+	fake.hasParticipantMutex.Lock()
+	defer fake.hasParticipantMutex.Unlock()
+	fake.HasParticipantStub = stub
+}
+
+func (fake *FakeObjectStore) HasParticipantArgsForCall(i int) (context.Context, livekit.RoomName, livekit.ParticipantIdentity) {
+	fake.hasParticipantMutex.RLock()
+	defer fake.hasParticipantMutex.RUnlock()
+	argsForCall := fake.hasParticipantArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeObjectStore) HasParticipantReturns(result1 bool, result2 error) {
+	fake.hasParticipantMutex.Lock()
+	defer fake.hasParticipantMutex.Unlock()
+	fake.HasParticipantStub = nil
+	fake.hasParticipantReturns = struct {
+		result1 bool
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeObjectStore) HasParticipantReturnsOnCall(i int, result1 bool, result2 error) {
+	fake.hasParticipantMutex.Lock()
+	defer fake.hasParticipantMutex.Unlock()
+	fake.HasParticipantStub = nil
+	if fake.hasParticipantReturnsOnCall == nil {
+		fake.hasParticipantReturnsOnCall = make(map[int]struct {
+			result1 bool
+			result2 error
+		})
+	}
+	fake.hasParticipantReturnsOnCall[i] = struct {
+		result1 bool
+		result2 error
+	}{result1, result2}
 }
 
 func (fake *FakeObjectStore) ListParticipants(arg1 context.Context, arg2 livekit.RoomName) ([]*livekit.ParticipantInfo, error) {
@@ -611,6 +706,71 @@ func (fake *FakeObjectStore) LockRoomReturnsOnCall(i int, result1 string, result
 	}
 	fake.lockRoomReturnsOnCall[i] = struct {
 		result1 string
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeObjectStore) RoomExists(arg1 context.Context, arg2 livekit.RoomName) (bool, error) {
+	fake.roomExistsMutex.Lock()
+	ret, specificReturn := fake.roomExistsReturnsOnCall[len(fake.roomExistsArgsForCall)]
+	fake.roomExistsArgsForCall = append(fake.roomExistsArgsForCall, struct {
+		arg1 context.Context
+		arg2 livekit.RoomName
+	}{arg1, arg2})
+	stub := fake.RoomExistsStub
+	fakeReturns := fake.roomExistsReturns
+	fake.recordInvocation("RoomExists", []interface{}{arg1, arg2})
+	fake.roomExistsMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeObjectStore) RoomExistsCallCount() int {
+	fake.roomExistsMutex.RLock()
+	defer fake.roomExistsMutex.RUnlock()
+	return len(fake.roomExistsArgsForCall)
+}
+
+func (fake *FakeObjectStore) RoomExistsCalls(stub func(context.Context, livekit.RoomName) (bool, error)) {
+	fake.roomExistsMutex.Lock()
+	defer fake.roomExistsMutex.Unlock()
+	fake.RoomExistsStub = stub
+}
+
+func (fake *FakeObjectStore) RoomExistsArgsForCall(i int) (context.Context, livekit.RoomName) {
+	fake.roomExistsMutex.RLock()
+	defer fake.roomExistsMutex.RUnlock()
+	argsForCall := fake.roomExistsArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeObjectStore) RoomExistsReturns(result1 bool, result2 error) {
+	fake.roomExistsMutex.Lock()
+	defer fake.roomExistsMutex.Unlock()
+	fake.RoomExistsStub = nil
+	fake.roomExistsReturns = struct {
+		result1 bool
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeObjectStore) RoomExistsReturnsOnCall(i int, result1 bool, result2 error) {
+	fake.roomExistsMutex.Lock()
+	defer fake.roomExistsMutex.Unlock()
+	fake.RoomExistsStub = nil
+	if fake.roomExistsReturnsOnCall == nil {
+		fake.roomExistsReturnsOnCall = make(map[int]struct {
+			result1 bool
+			result2 error
+		})
+	}
+	fake.roomExistsReturnsOnCall[i] = struct {
+		result1 bool
 		result2 error
 	}{result1, result2}
 }

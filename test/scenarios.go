@@ -31,11 +31,11 @@ import (
 
 // a scenario with lots of clients connecting, publishing, and leaving at random periods
 func scenarioPublishingUponJoining(t *testing.T) {
-	for _, useSinglePeerConnection := range []bool{false, true} {
-		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
-			c1 := createRTCClient("puj_1", defaultServerPort, useSinglePeerConnection, nil)
-			c2 := createRTCClient("puj_2", secondServerPort, useSinglePeerConnection, &testclient.Options{AutoSubscribe: true})
-			c3 := createRTCClient("puj_3", defaultServerPort, useSinglePeerConnection, &testclient.Options{AutoSubscribe: true})
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
+			c1 := createRTCClient("puj_1", defaultServerPort, testRTCServicePath, nil)
+			c2 := createRTCClient("puj_2", secondServerPort, testRTCServicePath, &testclient.Options{AutoSubscribe: true})
+			c3 := createRTCClient("puj_3", defaultServerPort, testRTCServicePath, &testclient.Options{AutoSubscribe: true})
 			defer stopClients(c1, c2, c3)
 
 			waitUntilConnected(t, c1, c2, c3)
@@ -78,7 +78,7 @@ func scenarioPublishingUponJoining(t *testing.T) {
 
 			logger.Infow("c2 reconnecting")
 			// connect to a diff port
-			c2 = createRTCClient("puj_2", defaultServerPort, useSinglePeerConnection, nil)
+			c2 = createRTCClient("puj_2", defaultServerPort, testRTCServicePath, nil)
 			defer c2.Stop()
 			waitUntilConnected(t, c2)
 			writers = publishTracksForClients(t, c2)
@@ -100,10 +100,10 @@ func scenarioPublishingUponJoining(t *testing.T) {
 }
 
 func scenarioReceiveBeforePublish(t *testing.T) {
-	for _, useSinglePeerConnection := range []bool{false, true} {
-		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
-			c1 := createRTCClient("rbp_1", defaultServerPort, useSinglePeerConnection, nil)
-			c2 := createRTCClient("rbp_2", defaultServerPort, useSinglePeerConnection, nil)
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
+			c1 := createRTCClient("rbp_1", defaultServerPort, testRTCServicePath, nil)
+			c2 := createRTCClient("rbp_2", defaultServerPort, testRTCServicePath, nil)
 
 			waitUntilConnected(t, c1, c2)
 			defer stopClients(c1, c2)
@@ -147,10 +147,10 @@ func scenarioReceiveBeforePublish(t *testing.T) {
 }
 
 func scenarioDataPublish(t *testing.T) {
-	for _, useSinglePeerConnection := range []bool{false, true} {
-		t.Run(fmt.Sprintf("scenarioDataPublish/singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
-			c1 := createRTCClient("dp1", defaultServerPort, useSinglePeerConnection, nil)
-			c2 := createRTCClient("dp2", secondServerPort, useSinglePeerConnection, nil)
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("scenarioDataPublish/testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
+			c1 := createRTCClient("dp1", defaultServerPort, testRTCServicePath, nil)
+			c2 := createRTCClient("dp2", secondServerPort, testRTCServicePath, nil)
 			waitUntilConnected(t, c1, c2)
 			defer stopClients(c1, c2)
 
@@ -177,10 +177,10 @@ func scenarioDataPublish(t *testing.T) {
 }
 
 func scenarioDataUnlabeledPublish(t *testing.T) {
-	for _, useSinglePeerConnection := range []bool{false, true} {
-		t.Run(fmt.Sprintf("scenarioDataUnlabeledPublish/singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
-			c1 := createRTCClient("dp1", defaultServerPort, useSinglePeerConnection, nil)
-			c2 := createRTCClient("dp2", secondServerPort, useSinglePeerConnection, nil)
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("scenarioDataUnlabeledPublish/testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
+			c1 := createRTCClient("dp1", defaultServerPort, testRTCServicePath, nil)
+			c2 := createRTCClient("dp2", secondServerPort, testRTCServicePath, nil)
 			waitUntilConnected(t, c1, c2)
 			defer stopClients(c1, c2)
 
@@ -207,11 +207,11 @@ func scenarioDataUnlabeledPublish(t *testing.T) {
 }
 
 func scenarioDataTracksPublishingUponJoining(t *testing.T) {
-	for _, useSinglePeerConnection := range []bool{false, true} {
-		t.Run(fmt.Sprintf("scenarioDataTracksPublishingUponJoining/singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
-			c1 := createRTCClient("dtpuj_1", defaultServerPort, useSinglePeerConnection, nil)
-			c2 := createRTCClient("dtpuj_2", secondServerPort, useSinglePeerConnection, &testclient.Options{AutoSubscribe: true})
-			c3 := createRTCClient("dtpuj_3", defaultServerPort, useSinglePeerConnection, &testclient.Options{AutoSubscribe: true})
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("scenarioDataTracksPublishingUponJoining/testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
+			c1 := createRTCClient("dtpuj_1", defaultServerPort, testRTCServicePath, nil)
+			c2 := createRTCClient("dtpuj_2", secondServerPort, testRTCServicePath, &testclient.Options{AutoSubscribe: true})
+			c3 := createRTCClient("dtpuj_3", defaultServerPort, testRTCServicePath, &testclient.Options{AutoSubscribe: true})
 			defer stopClients(c1, c2, c3)
 
 			waitUntilConnected(t, c1, c2, c3)
@@ -261,7 +261,7 @@ func scenarioDataTracksPublishingUponJoining(t *testing.T) {
 
 			logger.Infow("c2 reconnecting")
 			// connect to a diff port
-			c2 = createRTCClient("dtpuj_2", defaultServerPort, useSinglePeerConnection, nil)
+			c2 = createRTCClient("dtpuj_2", defaultServerPort, testRTCServicePath, nil)
 			defer c2.Stop()
 			waitUntilConnected(t, c2)
 			writers = publishDataTracksForClients(t, c2)
@@ -294,9 +294,9 @@ func scenarioDataTracksPublishingUponJoining(t *testing.T) {
 }
 
 func scenarioJoinClosedRoom(t *testing.T) {
-	for _, useSinglePeerConnection := range []bool{false, true} {
-		t.Run(fmt.Sprintf("singlePeerConnection=%+v", useSinglePeerConnection), func(t *testing.T) {
-			c1 := createRTCClient("jcr1", defaultServerPort, useSinglePeerConnection, nil)
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
+			c1 := createRTCClient("jcr1", defaultServerPort, testRTCServicePath, nil)
 			waitUntilConnected(t, c1)
 
 			// close room with room client
@@ -306,7 +306,7 @@ func scenarioJoinClosedRoom(t *testing.T) {
 			require.NoError(t, err)
 
 			// now join again
-			c2 := createRTCClient("jcr2", defaultServerPort, useSinglePeerConnection, nil)
+			c2 := createRTCClient("jcr2", defaultServerPort, testRTCServicePath, nil)
 			waitUntilConnected(t, c2)
 			stopClients(c2)
 		})

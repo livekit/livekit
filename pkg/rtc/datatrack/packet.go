@@ -33,11 +33,11 @@ const (
 	versionShift = 5
 	versionMask  = (1 << 3) - 1
 
-	firstOfFrameShift = 4
-	firstOfFrameMask  = (1 << 1) - 1
+	startOfFrameShift = 4
+	startOfFrameMask  = (1 << 1) - 1
 
-	lastOfFrameShift = 3
-	lastOfFrameMask  = (1 << 1) - 1
+	finalOfFrameShift = 3
+	finalOfFrameMask  = (1 << 1) - 1
 
 	extensionsShift = 2
 	extensionsMask  = (1 << 1) - 1
@@ -68,8 +68,8 @@ type Extension struct {
 
 type Header struct {
 	Version        uint8
-	IsFirstOfFrame bool
-	IsLastOfFrame  bool
+	IsStartOfFrame bool
+	IsFinalOfFrame bool
 	HasExtensions  bool
 	Handle         uint16
 	SequenceNumber uint16
@@ -111,8 +111,8 @@ func (h *Header) Unmarshal(buf []byte) (int, error) {
 
 	hdrSize := headerLength
 	h.Version = buf[0] >> versionShift & versionMask
-	h.IsFirstOfFrame = (buf[0] >> firstOfFrameShift & firstOfFrameMask) > 0
-	h.IsLastOfFrame = (buf[0] >> lastOfFrameShift & lastOfFrameMask) > 0
+	h.IsStartOfFrame = (buf[0] >> startOfFrameShift & startOfFrameMask) > 0
+	h.IsFinalOfFrame = (buf[0] >> finalOfFrameShift & finalOfFrameMask) > 0
 	h.HasExtensions = (buf[0] >> extensionsShift & extensionsMask) > 0
 
 	h.Handle = binary.BigEndian.Uint16(buf[handleOffset : handleOffset+handleLength])
@@ -170,11 +170,11 @@ func (h *Header) MarshalTo(buf []byte) (int, error) {
 
 	hdrSize := headerLength
 	buf[0] = h.Version << versionShift
-	if h.IsFirstOfFrame {
-		buf[0] |= (1 << firstOfFrameShift)
+	if h.IsStartOfFrame {
+		buf[0] |= (1 << startOfFrameShift)
 	}
-	if h.IsLastOfFrame {
-		buf[0] |= (1 << lastOfFrameShift)
+	if h.IsFinalOfFrame {
+		buf[0] |= (1 << finalOfFrameShift)
 	}
 	if h.HasExtensions {
 		buf[0] |= (1 << extensionsShift)

@@ -396,7 +396,7 @@ func (d *DummyReceiver) GetDownTracks() []sfu.TrackSender {
 	return maps.Values(d.downTracks)
 }
 
-func (d *DummyReceiver) DebugInfo() map[string]interface{} {
+func (d *DummyReceiver) DebugInfo() map[string]any {
 	if receiver := d.getReceiver(); receiver != nil {
 		return receiver.DebugInfo()
 	}
@@ -499,6 +499,12 @@ func (d *DummyReceiver) VideoSizes() []buffer.VideoSize {
 	}
 
 	return nil
+}
+
+func (d *DummyReceiver) Restart(reason string) {
+	if receiver := d.getReceiver(); receiver != nil {
+		receiver.Restart(reason)
+	}
 }
 
 func (d *DummyReceiver) getReceiver() sfu.TrackReceiver {

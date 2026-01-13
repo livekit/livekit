@@ -69,7 +69,7 @@ func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 		ExtTimestamp:      uint64(params.TSCycles<<32) + uint64(params.Timestamp),
 		Arrival:           params.ArrivalTime.UnixNano(),
 		Packet:            &packet,
-		KeyFrame:          params.IsKeyFrame,
+		IsKeyFrame:          params.IsKeyFrame,
 		RawPacket:         raw,
 		IsOutOfOrder:      params.IsOutOfOrder,
 	}
@@ -85,7 +85,7 @@ func GetTestExtPacketVP8(params *TestExtPacketParams, vp8 *buffer.VP8) (*buffer.
 		return nil, err
 	}
 
-	ep.KeyFrame = vp8.IsKeyFrame
+	ep.IsKeyFrame = vp8.IsKeyFrame
 	ep.Payload = *vp8
 	if ep.DependencyDescriptor == nil {
 		ep.Temporal = int32(vp8.TID)

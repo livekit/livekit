@@ -195,6 +195,16 @@ func (s *RedisStore) LoadRoom(_ context.Context, roomName livekit.RoomName, incl
 	return room, internal, nil
 }
 
+func (s *RedisStore) RoomExists(ctx context.Context, roomName livekit.RoomName) (bool, error) {
+	_, _, err := s.LoadRoom(ctx, roomName, false)
+	if err == ErrRoomNotFound {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (s *RedisStore) ListRooms(_ context.Context, roomNames []livekit.RoomName) ([]*livekit.Room, error) {
 	var items []string
 	var err error
@@ -205,7 +215,7 @@ func (s *RedisStore) ListRooms(_ context.Context, roomNames []livekit.RoomName) 
 		}
 	} else {
 		names := livekit.IDsAsStrings(roomNames)
-		var results []interface{}
+		var results []any
 		results, err = s.rc.HMGet(s.ctx, RoomsKey, names...).Result()
 		if err != nil && err != redis.Nil {
 			return nil, errors.Wrap(err, "could not get rooms by names")
@@ -590,7 +600,7 @@ func (s *RedisStore) storeIngress(_ context.Context, info *livekit.IngressInfo) 
 	}
 
 	// Retry if the key has been changed.
-	for i := 0; i < maxRetries; i++ {
+	for range maxRetries {
 		err := s.rc.Watch(s.ctx, txf, IngressKey)
 		switch err {
 		case redis.TxFailedErr:
@@ -665,7 +675,7 @@ func (s *RedisStore) storeIngressState(_ context.Context, ingressId string, stat
 	}
 
 	// Retry if the key has been changed.
-	for i := 0; i < maxRetries; i++ {
+	for range maxRetries {
 		err := s.rc.Watch(s.ctx, txf, IngressStatePrefix+ingressId)
 		switch err {
 		case redis.TxFailedErr:

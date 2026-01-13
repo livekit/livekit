@@ -20,22 +20,22 @@ import (
 )
 
 type Null struct {
-	seededState interface{}
+	seededState any
 }
 
 func NewNull(_logger logger.Logger) *Null {
 	return &Null{}
 }
 
-func (n *Null) GetState() interface{} {
+func (n *Null) GetState() any {
 	return nil
 }
 
-func (n *Null) SeedState(state interface{}) {
+func (n *Null) SeedState(state any) {
 	n.seededState = state
 }
 
-func (n *Null) GetSeededState() interface{} {
+func (n *Null) GetSeededState() any {
 	return n.seededState
 }
 
