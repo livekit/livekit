@@ -1524,12 +1524,11 @@ func (r *Room) broadcastParticipantState(p types.Participant, opts broadcastOpti
 		opts.immediate,
 		r.GetParticipant(livekit.ParticipantIdentity(pi.Identity)),
 		r.batchedUpdates,
-		r.logger,
 	)
 	r.batchedUpdatesMu.Unlock()
 	if len(updates) != 0 {
 		selfSent = true
-		SendParticipantUpdates(updates, r.GetParticipants(), r.roomConfig.UpdateBatchTargetSize, r.logger)
+		SendParticipantUpdates(updates, r.GetParticipants(), r.roomConfig.UpdateBatchTargetSize)
 	}
 }
 
@@ -1586,7 +1585,7 @@ func (r *Room) changeUpdateWorker() {
 			r.batchedUpdates = make(map[livekit.ParticipantIdentity]*ParticipantUpdate)
 			r.batchedUpdatesMu.Unlock()
 
-			SendParticipantUpdates(maps.Values(updatesMap), r.GetParticipants(), r.roomConfig.UpdateBatchTargetSize, r.logger)
+			SendParticipantUpdates(maps.Values(updatesMap), r.GetParticipants(), r.roomConfig.UpdateBatchTargetSize)
 
 		case <-cleanDataMessageTicker.C:
 			r.dataMessageCache.Prune()
