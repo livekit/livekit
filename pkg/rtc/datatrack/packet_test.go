@@ -30,8 +30,8 @@ func TestPacket(t *testing.T) {
 		packet := &Packet{
 			Header: Header{
 				Version:        0,
-				IsFirstOfFrame: true,
-				IsLastOfFrame:  true,
+				IsStartOfFrame: true,
+				IsFinalOfFrame: true,
 				Handle:         3333,
 				SequenceNumber: 6666,
 				FrameNumber:    9999,
@@ -63,8 +63,8 @@ func TestPacket(t *testing.T) {
 		packet := &Packet{
 			Header: Header{
 				Version:        0,
-				IsFirstOfFrame: true,
-				IsLastOfFrame:  false,
+				IsStartOfFrame: true,
+				IsFinalOfFrame: false,
 				Handle:         3333,
 				SequenceNumber: 6666,
 				FrameNumber:    9999,
@@ -110,8 +110,8 @@ func TestPacket(t *testing.T) {
 		packet := &Packet{
 			Header: Header{
 				Version:        0,
-				IsFirstOfFrame: true,
-				IsLastOfFrame:  false,
+				IsStartOfFrame: true,
+				IsFinalOfFrame: false,
 				Handle:         3333,
 				SequenceNumber: 6666,
 				FrameNumber:    9999,
@@ -157,8 +157,8 @@ func TestPacket(t *testing.T) {
 		packet := &Packet{
 			Header: Header{
 				Version:        0,
-				IsFirstOfFrame: true,
-				IsLastOfFrame:  false,
+				IsStartOfFrame: true,
+				IsFinalOfFrame: false,
 				Handle:         3333,
 				SequenceNumber: 6666,
 				FrameNumber:    9999,
