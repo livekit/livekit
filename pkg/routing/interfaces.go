@@ -262,6 +262,10 @@ func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionI
 		SyncState:               pi.SyncState,
 		UseSinglePeerConnection: pi.UseSinglePeerConnection,
 	}
+	if pi.AutoSubscribeDataTrack != nil {
+		autoSubscribeDataTrack := *pi.AutoSubscribeDataTrack
+		ss.AutoSubscribeDataTrack = &autoSubscribeDataTrack
+	}
 	if pi.SubscriberAllowPause != nil {
 		subscriberAllowPause := *pi.SubscriberAllowPause
 		ss.SubscriberAllowPause = &subscriberAllowPause
@@ -293,6 +297,10 @@ func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*
 		PublisherOffer:          ss.PublisherOffer,
 		SyncState:               ss.SyncState,
 		UseSinglePeerConnection: ss.UseSinglePeerConnection,
+	}
+	if ss.AutoSubscribeDataTrack != nil {
+		autoSubscribeDataTrack := *ss.AutoSubscribeDataTrack
+		pi.AutoSubscribeDataTrack = &autoSubscribeDataTrack
 	}
 	if ss.SubscriberAllowPause != nil {
 		subscriberAllowPause := *ss.SubscriberAllowPause

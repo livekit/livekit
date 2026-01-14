@@ -221,7 +221,17 @@ func (s *RTCService) validateInternal(
 	if wrappedJoinRequestBase64 == "" {
 		pi.Reconnect = boolValue(r.FormValue("reconnect"))
 		pi.Client = ParseClientInfo(r)
+
 		pi.AutoSubscribe = true
+		if autoSubscribeParam := r.FormValue("auto_subscribe"); autoSubscribeParam != "" {
+			pi.AutoSubscribe = boolValue(autoSubscribeParam)
+		}
+
+		if autoSubscribeDataTrackParam := r.FormValue("auto_subscribe_data_track"); autoSubscribeDataTrackParam != "" {
+			autoSubscribeDataTrack := boolValue(autoSubscribeDataTrackParam)
+			pi.AutoSubscribeDataTrack = &autoSubscribeDataTrack
+		}
+
 		pi.AdaptiveStream = boolValue(r.FormValue("adaptive_stream"))
 		pi.DisableICELite = boolValue(r.FormValue("disable_ice_lite"))
 
@@ -232,16 +242,7 @@ func (s *RTCService) validateInternal(
 			pi.ID = livekit.ParticipantID(r.FormValue("sid"))
 		}
 
-		if autoSubscribe := r.FormValue("auto_subscribe"); autoSubscribe != "" {
-			pi.AutoSubscribe = boolValue(autoSubscribe)
-		}
-		if autoSubscribeDataTrack := r.FormValue("auto_subscribe_data_track"); autoSubscribeDataTrack != "" {
-			autoSubscribeDataTrackSettinng := boolValue(autoSubscribeDataTrack)
-			pi.AutoSubscribeDataTrack = &autoSubscribeDataTrackSettinng
-		}
-
-		subscriberAllowPauseParam := r.FormValue("subscriber_allow_pause")
-		if subscriberAllowPauseParam != "" {
+		if subscriberAllowPauseParam := r.FormValue("subscriber_allow_pause"); subscriberAllowPauseParam != "" {
 			subscriberAllowPause := boolValue(subscriberAllowPauseParam)
 			pi.SubscriberAllowPause = &subscriberAllowPause
 		}

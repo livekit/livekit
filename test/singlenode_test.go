@@ -1036,8 +1036,8 @@ func TestSinglePublisherDataTrack(t *testing.T) {
 
 	for _, testRTCServicePath := range testRTCServicePaths {
 		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
-			c1 := createRTCClient("c1", defaultServerPort, testRTCServicePath, nil)
-			c2 := createRTCClient("c2", defaultServerPort, testRTCServicePath, nil)
+			c1 := createRTCClient("c1", defaultServerPort, testRTCServicePath, &testclient.Options{AutoSubscribeDataTrack: true})
+			c2 := createRTCClient("c2", defaultServerPort, testRTCServicePath, &testclient.Options{AutoSubscribeDataTrack: true})
 			waitUntilConnected(t, c1, c2)
 
 			// publish a couple of data tracks and ensure clients receive it ok
@@ -1061,7 +1061,7 @@ func TestSinglePublisherDataTrack(t *testing.T) {
 			})
 
 			// a new client joins and should get the initial stream
-			c3 := createRTCClient("c3", defaultServerPort, testRTCServicePath, nil)
+			c3 := createRTCClient("c3", defaultServerPort, testRTCServicePath, &testclient.Options{AutoSubscribeDataTrack: true})
 
 			// ensure that new client that has joined also received data tracks
 			waitUntilConnected(t, c3)
