@@ -118,10 +118,6 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 			})
 			validUpdates = append(validUpdates, pi)
 		}
-
-		if pi.State == livekit.ParticipantInfo_DISCONNECTED {
-			p.updateCache.Remove(pID)
-		}
 	}
 	p.updateLock.Unlock()
 
