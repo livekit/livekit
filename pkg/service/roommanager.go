@@ -516,7 +516,8 @@ func (r *RoomManager) StartSession(
 
 	// join room
 	opts := rtc.ParticipantOptions{
-		AutoSubscribe: pi.AutoSubscribe,
+		AutoSubscribe:                 pi.AutoSubscribe,
+		DisableAutoSubscribeDataTrack: true,
 	}
 	iceServers := r.iceServersForParticipant(apiKey, participant, iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS)
 	if err = room.Join(participant, requestSource, &opts, iceServers); err != nil {
