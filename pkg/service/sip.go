@@ -612,7 +612,7 @@ func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livek
 		return nil, ErrSIPNotConnected
 	}
 	if err := req.Validate(); err != nil {
-		return nil, err
+		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 	callID := sip.NewCallID()
 	log := logger.GetLogger().WithUnlikelyValues(
