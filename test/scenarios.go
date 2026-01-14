@@ -210,8 +210,8 @@ func scenarioDataTracksPublishingUponJoining(t *testing.T) {
 	for _, testRTCServicePath := range testRTCServicePaths {
 		t.Run(fmt.Sprintf("scenarioDataTracksPublishingUponJoining/testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
 			c1 := createRTCClient("dtpuj_1", defaultServerPort, testRTCServicePath, nil)
-			c2 := createRTCClient("dtpuj_2", secondServerPort, testRTCServicePath, &testclient.Options{AutoSubscribe: true})
-			c3 := createRTCClient("dtpuj_3", defaultServerPort, testRTCServicePath, &testclient.Options{AutoSubscribe: true})
+			c2 := createRTCClient("dtpuj_2", secondServerPort, testRTCServicePath, &testclient.Options{AutoSubscribeDataTrack: true})
+			c3 := createRTCClient("dtpuj_3", defaultServerPort, testRTCServicePath, &testclient.Options{AutoSubscribeDataTrack: true})
 			defer stopClients(c1, c2, c3)
 
 			waitUntilConnected(t, c1, c2, c3)

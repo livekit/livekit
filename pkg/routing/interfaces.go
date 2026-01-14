@@ -189,6 +189,7 @@ type ParticipantInit struct {
 	Reconnect               bool
 	ReconnectReason         livekit.ReconnectReason
 	AutoSubscribe           bool
+	AutoSubscribeDataTrack  *bool
 	Client                  *livekit.ClientInfo
 	Grants                  *auth.ClaimGrants
 	Region                  string
@@ -220,6 +221,7 @@ func (pi *ParticipantInit) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	logBoolPtr("Reconnect", &pi.Reconnect)
 	e.AddString("ReconnectReason", pi.ReconnectReason.String())
 	logBoolPtr("AutoSubscribe", &pi.AutoSubscribe)
+	logBoolPtr("AutoSubscribeDataTrack", pi.AutoSubscribeDataTrack)
 	e.AddObject("Client", logger.Proto(utils.ClientInfoWithoutAddress(pi.Client)))
 	e.AddObject("Grants", pi.Grants)
 	e.AddString("Region", pi.Region)

@@ -152,8 +152,8 @@ type Room struct {
 }
 
 type ParticipantOptions struct {
-	AutoSubscribe                 bool
-	DisableAutoSubscribeDataTrack bool
+	AutoSubscribe          bool
+	AutoSubscribeDataTrack bool
 }
 
 type agentDispatch struct {
@@ -1018,11 +1018,11 @@ func (r *Room) autoSubscribe(participant types.LocalParticipant) bool {
 // checks if participant should be auto subscribed to new data tracks, assumes lock is already acquired
 func (r *Room) autoSubscribeDataTrack(participant types.LocalParticipant) bool {
 	opts := r.participantOpts[participant.Identity()]
-	// fall back to autoSubscribe if not explicitly disabled
-	if opts != nil && opts.DisableAutoSubscribeDataTrack {
+	// default to true if no options are set
+	if opts != nil && !opts.AutoSubscribeDataTrack {
 		return false
 	}
-	return r.autoSubscribe(participant)
+	return true
 }
 
 func (r *Room) createJoinResponseLocked(

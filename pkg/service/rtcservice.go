@@ -235,6 +235,10 @@ func (s *RTCService) validateInternal(
 		if autoSubscribe := r.FormValue("auto_subscribe"); autoSubscribe != "" {
 			pi.AutoSubscribe = boolValue(autoSubscribe)
 		}
+		if autoSubscribeDataTrack := r.FormValue("auto_subscribe_data_track"); autoSubscribeDataTrack != "" {
+			autoSubscribeDataTrackSettinng := boolValue(autoSubscribeDataTrack)
+			pi.AutoSubscribeDataTrack = &autoSubscribeDataTrackSettinng
+		}
 
 		subscriberAllowPauseParam := r.FormValue("subscriber_allow_pause")
 		if subscriberAllowPauseParam != "" {
@@ -248,6 +252,10 @@ func (s *RTCService) validateInternal(
 		pi.Client = joinRequest.ClientInfo
 
 		pi.AutoSubscribe = joinRequest.GetConnectionSettings().GetAutoSubscribe()
+
+		autoSubscribeDataTrack := joinRequest.GetConnectionSettings().GetAutoSubscribeDataTrack()
+		pi.AutoSubscribeDataTrack = &autoSubscribeDataTrack
+
 		pi.AdaptiveStream = joinRequest.GetConnectionSettings().GetAdaptiveStream()
 		pi.DisableICELite = joinRequest.GetConnectionSettings().GetDisableIceLite()
 
