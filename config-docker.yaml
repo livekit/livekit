@@ -1,0 +1,36 @@
+# Configuración LiveKit para Docker con IP/dominio externo
+port: 7880
+bind_addresses:
+  - "0.0.0.0"
+
+rtc:
+  # Puerto TCP para conexiones WebRTC
+  port_range_start: 7882
+  port_range_end: 7882
+  tcp_port: 7881
+  
+  # IMPORTANTE: Configura tu IP pública o dominio aquí
+  # Cambia estos valores según tu entorno:
+  use_external_ip: true
+  
+  # Opción 1: IP pública fija
+  # external_ip: "203.0.113.45"  # Tu IP pública
+  
+  # Opción 2: Dominio/hostname
+  # external_hostname: "livekit.tudominio.com"
+  
+  # Opción 3: Detectar IP automáticamente (NAT traversal)
+  node_ip: ""  # vacío = autodetección
+
+# Credenciales de desarrollo (cámbialas en producción)
+keys:
+  devkey: secret
+
+# Logging
+logging:
+  level: info
+  
+# Permitir orígenes para CORS (ajusta según necesites)
+# cors:
+#   allow_origins:
+#     - "*"

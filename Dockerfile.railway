@@ -1,0 +1,44 @@
+# LiveKit server build targeting Ubuntu runtime
+FROM golang:1.25-bookworm AS builder
+
+ARG TARGETARCH
+WORKDIR /workspace
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY cmd/ cmd/
+COPY pkg/ pkg/
+COPY test/ test/
+COPY tools/ tools/
+COPY version/ version/
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} GO111MODULE=on go build -a -o /workspace/livekit-server ./cmd/server
+
+FROM ubuntu:22.04
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /workspace/livekit-server /usr/local/bin/livekit-server
+RUN chmod +x /usr/local/bin/livekit-server
+
+# Railway asigna PORT dinámicamente
+ENV PORT=7880
+
+EXPOSE 7880 7881
+EXPOSE 7882/udp
+
+# Mostrar info y arrancar
+CMD echo "========================================" && \
+    echo "LiveKit Server - Railway Deployment" && \
+    echo "========================================" && \
+    echo "API Key: devkey" && \
+    echo "API Secret: secret" && \
+    echo "Puerto: $PORT" && \
+    echo "Token (válido hasta 2099):" && \
+    echo "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjQxMDI0NDQ4MDAsImlkZW50aXR5IjoidXNlcjEiLCJpc3MiOiJkZXZrZXkiLCJuYW1lIjoidXNlcjEiLCJuYmYiOjE3MDAwMDAwMDAsInN1YiI6InVzZXIxIiwidmlkZW8iOnsicm9vbSI6InRlc3Qtcm9vbSIsInJvb21Kb2luIjp0cnVlfX0.XNxYmGb6xQCXlIvY9PFLwGQ-Zx5n8eJMp7HqK2gQZbI" && \
+    echo "Sala: test-room | Usuario: user1" && \
+    echo "========================================" && \
+    exec /usr/local/bin/livekit-server --dev --port "$PORT" --bind 0.0.0.0

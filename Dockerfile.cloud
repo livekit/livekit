@@ -1,0 +1,67 @@
+# LiveKit Cloud-Ready Dockerfile
+# Compatible con Railway, Render, Fly.io, AWS, GCP, Azure, etc.
+
+FROM golang:1.25-bookworm AS builder
+
+ARG TARGETARCH
+WORKDIR /workspace
+
+# Cache dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Build LiveKit server
+COPY cmd/ cmd/
+COPY pkg/ pkg/
+COPY test/ test/
+COPY tools/ tools/
+COPY version/ version/
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} GO111MODULE=on \
+    go build -a -ldflags '-extldflags "-static"' -o /workspace/livekit-server ./cmd/server
+
+# Runtime stage - minimal Ubuntu
+FROM ubuntu:22.04
+
+# Install runtime dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        jq \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy binary
+COPY --from=builder /workspace/livekit-server /usr/local/bin/livekit-server
+RUN chmod +x /usr/local/bin/livekit-server
+
+# Copy startup script
+COPY docker-cloud-entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Default environment variables (overridable)
+ENV PORT=7880 \
+    LIVEKIT_API_KEY=APIQmrHaqpJjwXs \
+    LIVEKIT_API_SECRET=2j4uCefeStZIjOAoYoVBSSAexGZhrm0aWk7N7mpAYaOA \
+    LIVEKIT_BIND=0.0.0.0 \
+    LIVEKIT_RTC_TCP_PORT=7881 \
+    LIVEKIT_RTC_UDP_PORT=7882 \
+    LIVEKIT_USE_EXTERNAL_IP=true \
+    LIVEKIT_NODE_IP="" \
+    LIVEKIT_DOMAIN=""
+
+# Cloud platform detection support
+# Railway: RAILWAY_PUBLIC_DOMAIN, RAILWAY_ENVIRONMENT
+# Render: RENDER_EXTERNAL_HOSTNAME, RENDER_EXTERNAL_URL
+# Fly.io: FLY_APP_NAME, FLY_PUBLIC_IP
+# Heroku: DYNO, HEROKU_APP_NAME
+# Generic: PUBLIC_URL, DOMAIN
+
+EXPOSE 7880 7881 7882/udp
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/ || exit 1
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+# No usar --dev en producción para que use las credenciales reales
+CMD []
