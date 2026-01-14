@@ -189,6 +189,7 @@ type ParticipantInit struct {
 	Reconnect               bool
 	ReconnectReason         livekit.ReconnectReason
 	AutoSubscribe           bool
+	AutoSubscribeDataTrack  *bool
 	Client                  *livekit.ClientInfo
 	Grants                  *auth.ClaimGrants
 	Region                  string
@@ -220,6 +221,7 @@ func (pi *ParticipantInit) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	logBoolPtr("Reconnect", &pi.Reconnect)
 	e.AddString("ReconnectReason", pi.ReconnectReason.String())
 	logBoolPtr("AutoSubscribe", &pi.AutoSubscribe)
+	logBoolPtr("AutoSubscribeDataTrack", pi.AutoSubscribeDataTrack)
 	e.AddObject("Client", logger.Proto(utils.ClientInfoWithoutAddress(pi.Client)))
 	e.AddObject("Grants", pi.Grants)
 	e.AddString("Region", pi.Region)
@@ -260,6 +262,10 @@ func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionI
 		SyncState:               pi.SyncState,
 		UseSinglePeerConnection: pi.UseSinglePeerConnection,
 	}
+	if pi.AutoSubscribeDataTrack != nil {
+		autoSubscribeDataTrack := *pi.AutoSubscribeDataTrack
+		ss.AutoSubscribeDataTrack = &autoSubscribeDataTrack
+	}
 	if pi.SubscriberAllowPause != nil {
 		subscriberAllowPause := *pi.SubscriberAllowPause
 		ss.SubscriberAllowPause = &subscriberAllowPause
@@ -291,6 +297,10 @@ func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*
 		PublisherOffer:          ss.PublisherOffer,
 		SyncState:               ss.SyncState,
 		UseSinglePeerConnection: ss.UseSinglePeerConnection,
+	}
+	if ss.AutoSubscribeDataTrack != nil {
+		autoSubscribeDataTrack := *ss.AutoSubscribeDataTrack
+		pi.AutoSubscribeDataTrack = &autoSubscribeDataTrack
 	}
 	if ss.SubscriberAllowPause != nil {
 		subscriberAllowPause := *ss.SubscriberAllowPause

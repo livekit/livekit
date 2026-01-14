@@ -152,7 +152,8 @@ type Room struct {
 }
 
 type ParticipantOptions struct {
-	AutoSubscribe bool
+	AutoSubscribe          bool
+	AutoSubscribeDataTrack bool
 }
 
 type agentDispatch struct {
@@ -1004,11 +1005,21 @@ func (r *Room) onSimulateScenario(participant types.LocalParticipant, simulateSc
 	return nil
 }
 
-// checks if participant should be autosubscribed to new tracks, assumes lock is already acquired
+// checks if participant should be auto subscribed to new tracks, assumes lock is already acquired
 func (r *Room) autoSubscribe(participant types.LocalParticipant) bool {
 	opts := r.participantOpts[participant.Identity()]
 	// default to true if no options are set
 	if opts != nil && !opts.AutoSubscribe {
+		return false
+	}
+	return true
+}
+
+// checks if participant should be auto subscribed to new data tracks, assumes lock is already acquired
+func (r *Room) autoSubscribeDataTrack(participant types.LocalParticipant) bool {
+	opts := r.participantOpts[participant.Identity()]
+	// default to true if no options are set
+	if opts != nil && !opts.AutoSubscribeDataTrack {
 		return false
 	}
 	return true
@@ -1160,7 +1171,7 @@ func (r *Room) onDataTrackPublished(participant types.Participant, dt types.Data
 			// not fully joined. don't subscribe yet
 			continue
 		}
-		if !r.autoSubscribe(existingParticipant) {
+		if !r.autoSubscribeDataTrack(existingParticipant) {
 			continue
 		}
 
@@ -1461,11 +1472,9 @@ func (r *Room) RemoveParticipant(
 
 func (r *Room) subscribeToExistingTracks(p types.LocalParticipant, isSync bool) {
 	r.lock.RLock()
-	shouldSubscribe := r.autoSubscribe(p)
+	autoSubscribe := r.autoSubscribe(p)
+	autoSubscribeDataTrack := r.autoSubscribeDataTrack(p)
 	r.lock.RUnlock()
-	if !shouldSubscribe {
-		return
-	}
 
 	var trackIDs []livekit.TrackID
 	for _, op := range r.GetParticipants() {
@@ -1475,14 +1484,18 @@ func (r *Room) subscribeToExistingTracks(p types.LocalParticipant, isSync bool) 
 		}
 
 		// subscribe to all
-		for _, track := range op.GetPublishedTracks() {
-			trackIDs = append(trackIDs, track.ID())
-			p.SubscribeToTrack(track.ID(), isSync)
+		if autoSubscribe {
+			for _, track := range op.GetPublishedTracks() {
+				trackIDs = append(trackIDs, track.ID())
+				p.SubscribeToTrack(track.ID(), isSync)
+			}
 		}
 
-		for _, track := range op.GetPublishedDataTracks() {
-			trackIDs = append(trackIDs, track.ID())
-			p.SubscribeToDataTrack(track.ID())
+		if autoSubscribeDataTrack {
+			for _, track := range op.GetPublishedDataTracks() {
+				trackIDs = append(trackIDs, track.ID())
+				p.SubscribeToDataTrack(track.ID())
+			}
 		}
 	}
 	if len(trackIDs) > 0 {

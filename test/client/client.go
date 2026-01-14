@@ -127,6 +127,7 @@ var (
 
 type Options struct {
 	AutoSubscribe             bool
+	AutoSubscribeDataTrack    bool
 	Publish                   string
 	Attributes                map[string]string
 	ClientInfo                *livekit.ClientInfo
@@ -162,7 +163,8 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 		}
 
 		connectionSettings := &livekit.ConnectionSettings{
-			AutoSubscribe: opts.AutoSubscribe,
+			AutoSubscribe:          opts.AutoSubscribe,
+			AutoSubscribeDataTrack: &opts.AutoSubscribeDataTrack,
 		}
 
 		joinRequest := &livekit.JoinRequest{
@@ -185,6 +187,7 @@ func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error
 		sdk := "go"
 		if opts != nil {
 			connectUrl += fmt.Sprintf("&auto_subscribe=%t", opts.AutoSubscribe)
+			connectUrl += fmt.Sprintf("&auto_subscribe_data_track=%t", opts.AutoSubscribeDataTrack)
 			if opts.Publish != "" {
 				connectUrl += encodeQueryParam("publish", opts.Publish)
 			}
