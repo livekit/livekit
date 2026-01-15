@@ -97,6 +97,23 @@ func TestWebhooks(t *testing.T) {
 			})
 			ts.ClearEvents()
 
+			// room metadata updated
+			_, err := server.RoomManager().UpdateRoomMetadata(context.Background(), &livekit.UpdateRoomMetadataRequest{
+				Room:     testRoom,
+				Metadata: "updated metadata",
+			})
+			require.NoError(t, err)
+			testutils.WithTimeout(t, func() string {
+				if ts.GetEvent(webhook.EventRoomMetadataChanged) == nil {
+					return "did not receive RoomMetadataChanged"
+				}
+				return ""
+			})
+			metadataChanged := ts.GetEvent(webhook.EventRoomMetadataChanged)
+			require.Equal(t, testRoom, metadataChanged.Room.Name)
+			require.Equal(t, "updated metadata", metadataChanged.Room.Metadata)
+			ts.ClearEvents()
+
 			// first participant leaves
 			c1.Stop()
 			testutils.WithTimeout(t, func() string {

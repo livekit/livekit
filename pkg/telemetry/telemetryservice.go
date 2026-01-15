@@ -36,6 +36,7 @@ type TelemetryService interface {
 	// events
 	RoomStarted(ctx context.Context, room *livekit.Room)
 	RoomEnded(ctx context.Context, room *livekit.Room)
+	RoomMetadataUpdated(ctx context.Context, room *livekit.Room)
 	// ParticipantJoined - a participant establishes signal connection to a room
 	ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo, clientMeta *livekit.AnalyticsClientMeta, shouldSendEvent bool, guard *ReferenceGuard)
 	// ParticipantActive - a participant establishes media connection
@@ -95,9 +96,10 @@ type NullTelemetryService struct {
 	NullAnalyticService
 }
 
-func (n NullTelemetryService) TrackStats(key StatsKey, stat *livekit.AnalyticsStat) {}
-func (n NullTelemetryService) RoomStarted(ctx context.Context, room *livekit.Room)  {}
-func (n NullTelemetryService) RoomEnded(ctx context.Context, room *livekit.Room)    {}
+func (n NullTelemetryService) TrackStats(key StatsKey, stat *livekit.AnalyticsStat)        {}
+func (n NullTelemetryService) RoomStarted(ctx context.Context, room *livekit.Room)         {}
+func (n NullTelemetryService) RoomEnded(ctx context.Context, room *livekit.Room)           {}
+func (n NullTelemetryService) RoomMetadataUpdated(ctx context.Context, room *livekit.Room) {}
 func (n NullTelemetryService) ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo, clientMeta *livekit.AnalyticsClientMeta, shouldSendEvent bool, guard *ReferenceGuard) {
 }
 func (n NullTelemetryService) ParticipantActive(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientMeta *livekit.AnalyticsClientMeta, isMigration bool, guard *ReferenceGuard) {
