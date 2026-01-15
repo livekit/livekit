@@ -70,7 +70,7 @@ type TrackSender interface {
 	) error
 	Resync()
 	SetReceiver(TrackReceiver)
-	ReceiverRestart()
+	ReceiverRestart(TrackReceiver)
 }
 
 // -------------------------------------------------------------------
@@ -1635,14 +1635,17 @@ func (d *DownTrack) Resync() {
 	d.forwarder.Resync()
 }
 
-func (d *DownTrack) ReceiverRestart() {
+func (d *DownTrack) ReceiverRestart(receiver TrackReceiver) {
+	if receiver != d.Receiver() {
+		return
+	}
+
 	d.bindLock.Lock()
 	codec := d.codec.Load().(webrtc.RTPCodecCapability)
 	d.bindLock.Unlock()
 
 	d.params.Logger.Infow("upstream receiver restart")
 
-	receiver := d.Receiver()
 	d.forwarder.Restart()
 	d.forwarder.DetermineCodec(codec, receiver.HeaderExtensions(), receiver.VideoLayerMode())
 }

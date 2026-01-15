@@ -402,7 +402,7 @@ func (r *ReceiverBase) restartInternal(reason string, isDetected bool) {
 
 	// 5. signal attached downtracks to resync so that they can have proper sequencing on a receiver restart
 	r.downTrackSpreader.Broadcast(func(dt TrackSender) {
-		dt.ReceiverRestart()
+		dt.ReceiverRestart(r)
 	})
 	if rt := r.loadREDTransformer(); rt != nil {
 		rt.OnStreamRestart()
