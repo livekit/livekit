@@ -2,7 +2,34 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.11] - 2026-01-15
+
+## PLEASE NOTE: The previous release tag v1.9.10 hit a panic under some conditions. Sincerely regret the inconvenience caused. Although we do test rigorously, it is not guaranteed to cover all scenarios. We request you to report any issues you encounter. Thank you.
+
+### Added
+- Support OpenTelemetry tracing. Add Jaeger support. (#4222)
+- Add option to force simuclast codec. (#4226)
+- Log timeout in API (#4231, #4232)
+- Add participant option for data track auto-subscribe. (#4240)
+
+### Changed
+- Remove enable arrival time forwarding method. (#4217)
+- sfu/receiver and sfu/buffer refactor (#4221, #4224, #4225)
+- Change some logs to debugw (#4229)
+- Changing field naming of data track packet (#4235)
+- Update Pion transport package. (#4237)
+- Wrapping the invalid request errors for CreateSipParticipant (#4239)
+
+### Fixed
+- Swap result sink atomically rather than closing and setting (#4216)
+- Address crash in v1.9.10 (#4219, #4220)
+- Return on SDP fragment read error. (#4228)
+
+## What's Changed
+
 ## [1.9.10] - 2026-01-01
+
+## WARNING: Please do not use this release. There is a run time issue which causes the server to panic. The issue has been addressed in #4219 and #4220.
 
 ### Added
 - add explicit room exists servicestore op (#4175)
