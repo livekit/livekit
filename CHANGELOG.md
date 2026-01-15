@@ -25,8 +25,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Address crash in v1.9.10 (#4219, #4220)
 - Return on SDP fragment read error. (#4228)
 
-## What's Changed
-
 ## [1.9.10] - 2026-01-01
 
 ## WARNING: Please do not use this release. There is a run time issue which causes the server to panic. The issue has been addressed in #4219 and #4220.
