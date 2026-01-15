@@ -95,14 +95,13 @@ func (s *snapshotLite) MarshalLogObject(e zapcore.ObjectEncoder) error {
 // ------------------------------------------------------------------
 
 type RTPStatsParams struct {
-	ClockRate uint32
-	IsRTX     bool
-	Logger    logger.Logger
+	IsRTX bool
 }
 
 type rtpStatsBaseLite struct {
-	params RTPStatsParams
-	logger logger.Logger
+	params    RTPStatsParams
+	clockRate uint32
+	logger    logger.Logger
 
 	lock sync.RWMutex
 
@@ -134,7 +133,7 @@ type rtpStatsBaseLite struct {
 func newRTPStatsBaseLite(params RTPStatsParams) *rtpStatsBaseLite {
 	return &rtpStatsBaseLite{
 		params:             params,
-		logger:             params.Logger,
+		logger:             logger.GetLogger(),
 		nextSnapshotLiteID: cFirstSnapshotID,
 		snapshotLites:      make([]snapshotLite, 2),
 	}
@@ -172,7 +171,21 @@ func (r *rtpStatsBaseLite) seed(from *rtpStatsBaseLite) bool {
 	return true
 }
 
+func (r *rtpStatsBaseLite) SetClockRate(clockRate uint32) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	r.setClockRateLocked(clockRate)
+}
+
+func (r *rtpStatsBaseLite) setClockRateLocked(clockRate uint32) {
+	r.clockRate = clockRate
+}
+
 func (r *rtpStatsBaseLite) SetLogger(logger logger.Logger) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
 	r.logger = logger
 }
 
@@ -366,7 +379,7 @@ func (r *rtpStatsBaseLite) deltaInfoLite(
 }
 
 func (r *rtpStatsBaseLite) marshalLogObject(e zapcore.ObjectEncoder, packetsExpected, packetsSeenMinusPadding uint64) (float64, error) {
-	if r == nil || !r.initialized {
+	if r == nil || !r.initialized || r.clockRate == 0 {
 		return 0, errors.New("not initialized")
 	}
 
@@ -431,7 +444,7 @@ func (r *rtpStatsBaseLite) marshalLogObject(e zapcore.ObjectEncoder, packetsExpe
 }
 
 func (r *rtpStatsBaseLite) toProto(packetsExpected, packetsSeenMinusPadding, packetsLost uint64) *livekit.RTPStats {
-	if r.startTime == 0 {
+	if r.startTime == 0 || r.clockRate == 0 {
 		return nil
 	}
 

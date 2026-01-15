@@ -399,7 +399,7 @@ func (r *RTPStatsSender) Update(
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if r.endTime != 0 {
+	if r.endTime != 0 || r.clockRate == 0 {
 		return
 	}
 
@@ -808,7 +808,7 @@ func (r *RTPStatsSender) MaybeAdjustFirstPacketTime(publisherSRData *livekit.RTC
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if !r.initialized || publisherSRData == nil {
+	if !r.initialized || publisherSRData == nil || r.clockRate == 0 {
 		return
 	}
 
@@ -821,7 +821,7 @@ func (r *RTPStatsSender) GetExpectedRTPTimestamp(at time.Time) (expectedTSExt ui
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	if r.firstTime == 0 {
+	if r.firstTime == 0 || r.clockRate == 0 {
 		err = errors.New("uninitialized")
 		return
 	}
@@ -835,7 +835,7 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if !r.initialized || publisherSRData == nil {
+	if !r.initialized || publisherSRData == nil || r.clockRate == 0 {
 		return nil
 	}
 
@@ -891,11 +891,11 @@ func (r *RTPStatsSender) GetRtcpSenderReport(ssrc uint32, publisherSRData *livek
 		)
 	}
 
-	if r.srNewest != nil && nowRTPExt >= r.srNewest.RtpTimestampExt {
+	if r.srNewest != nil && nowRTPExt >= r.srNewest.RtpTimestampExt && r.clockRate != 0 {
 		timeSinceLastReport := nowNTP.Time().Sub(mediatransportutil.NtpTime(r.srNewest.NtpTimestamp).Time())
 		rtpDiffSinceLastReport := nowRTPExt - r.srNewest.RtpTimestampExt
 		windowClockRate := float64(rtpDiffSinceLastReport) / timeSinceLastReport.Seconds()
-		if timeSinceLastReport.Seconds() > 0.2 && math.Abs(float64(r.params.ClockRate)-windowClockRate) > 0.2*float64(r.params.ClockRate) {
+		if timeSinceLastReport.Seconds() > 0.2 && math.Abs(float64(r.clockRate)-windowClockRate) > 0.2*float64(r.clockRate) {
 			r.clockSkewCount++
 			if (r.clockSkewCount-1)%100 == 0 {
 				ulgr().Infow(
@@ -955,6 +955,10 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) (*RTPDeltaInfo
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
+	if r.clockRate == 0 {
+		return nil, nil
+	}
+
 	var deltaStatsSenderView *RTPDeltaInfo
 	thenSenderView, nowSenderView := r.getAndResetSenderSnapshotWindow(senderSnapshotID)
 	if thenSenderView != nil && nowSenderView != nil {
@@ -991,7 +995,7 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) (*RTPDeltaInfo
 				packetsLostFeed = packetsExpected
 			}
 
-			maxJitterTime := thenSenderView.maxJitterFeed / float64(r.params.ClockRate) * 1e6
+			maxJitterTime := thenSenderView.maxJitterFeed / float64(r.clockRate) * 1e6
 
 			deltaStatsSenderView = &RTPDeltaInfo{
 				StartTime:            time.Unix(0, startTime),
@@ -1060,7 +1064,7 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) (*RTPDeltaInfo
 					packetsLost = packetsExpected
 				}
 
-				maxJitterTime := thenReceiverView.maxJitter / float64(r.params.ClockRate) * 1e6
+				maxJitterTime := thenReceiverView.maxJitter / float64(r.clockRate) * 1e6
 
 				deltaStatsReceiverView = &RTPDeltaInfo{
 					StartTime:            time.Unix(0, startTime),

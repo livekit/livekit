@@ -49,6 +49,7 @@ type RTPFlowUnhandledReason int
 const (
 	RTPFlowUnhandledReasonNone RTPFlowUnhandledReason = iota
 	RTPFlowUnhandledReasonEnded
+	RTPFlowUnhandledReasonUnconfigured
 	RTPFlowUnhandledReasonPaddingOnly
 	RTPFlowUnhandledReasonPreStartTimestamp
 	RTPFlowUnhandledReasonOldTimestamp
@@ -63,6 +64,8 @@ func (r RTPFlowUnhandledReason) String() string {
 		return "NONE"
 	case RTPFlowUnhandledReasonEnded:
 		return "ENDED"
+	case RTPFlowUnhandledReasonUnconfigured:
+		return "UNCONFIGURED"
 	case RTPFlowUnhandledReasonPaddingOnly:
 		return "PADDING_ONLY"
 	case RTPFlowUnhandledReasonPreStartTimestamp:
@@ -154,11 +157,18 @@ func NewRTPStatsReceiver(params RTPStatsParams) *RTPStatsReceiver {
 	return &RTPStatsReceiver{
 		rtpStatsBase:              newRTPStatsBase(params),
 		sequenceNumber:            utils.NewWrapAround[uint16, uint64](utils.WrapAroundParams{IsRestartAllowed: false}),
-		tsRolloverThreshold:       (1 << 31) * 1e9 / int64(params.ClockRate),
 		timestamp:                 utils.NewWrapAround[uint32, uint64](utils.WrapAroundParams{IsRestartAllowed: false}),
 		history:                   protoutils.NewBitmap[uint64](cHistorySize),
 		propagationDelayEstimator: latency.NewOWDEstimator(latency.OWDEstimatorParamsDefault),
 	}
+}
+
+func (r *RTPStatsReceiver) SetClockRate(clockRate uint32) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	r.tsRolloverThreshold = (1 << 31) * 1e9 / int64(clockRate)
+	r.rtpStatsBase.setClockRateLocked(clockRate)
 }
 
 func (r *RTPStatsReceiver) NewSnapshotId() uint32 {
@@ -174,7 +184,7 @@ func (r *RTPStatsReceiver) getTSRolloverCount(diffNano int64, ts uint32) int {
 		return -1
 	}
 
-	excess := (diffNano - r.tsRolloverThreshold*2) * int64(r.params.ClockRate) / 1e9
+	excess := (diffNano - r.tsRolloverThreshold*2) * int64(r.clockRate) / 1e9
 	roc := max(excess/(1<<32), 0)
 	if r.timestamp.GetHighest() > ts {
 		roc++
@@ -196,6 +206,10 @@ func (r *RTPStatsReceiver) Update(
 
 	if r.endTime != 0 {
 		flowState.UnhandledReason = RTPFlowUnhandledReasonEnded
+		return
+	}
+	if r.clockRate == 0 {
+		flowState.UnhandledReason = RTPFlowUnhandledReasonUnconfigured
 		return
 	}
 
@@ -467,8 +481,8 @@ func (r *RTPStatsReceiver) getExtendedSenderReport(srData *livekit.RTCPSenderRep
 		// jump more than half the range
 		timeSinceLastReport := mediatransportutil.NtpTime(srData.NtpTimestamp).Time().Sub(mediatransportutil.NtpTime(r.srNewest.NtpTimestamp).Time())
 		expectedRTPTimestampExt := r.srNewest.RtpTimestampExt + r.rtpConverter.ToRTPExt(timeSinceLastReport)
-		lbound := expectedRTPTimestampExt - uint64(cReportSlack*float64(r.params.ClockRate))
-		ubound := expectedRTPTimestampExt + uint64(cReportSlack*float64(r.params.ClockRate))
+		lbound := expectedRTPTimestampExt - uint64(cReportSlack*float64(r.clockRate))
+		ubound := expectedRTPTimestampExt + uint64(cReportSlack*float64(r.clockRate))
 		isInRange := (srData.RtpTimestamp-uint32(lbound) < (1 << 31)) && (uint32(ubound)-srData.RtpTimestamp < (1 << 31))
 		if isInRange {
 			lbTSCycles := lbound & 0xFFFF_FFFF_0000_0000
@@ -538,8 +552,8 @@ func (r *RTPStatsReceiver) checkRTPClockSkewForSenderReport(srData *livekit.RTCP
 	rtpDiffSinceFirst := srData.RtpTimestampExt - r.srFirst.RtpTimestampExt
 	calculatedClockRateFromFirst := float64(rtpDiffSinceFirst) / timeSinceFirst
 
-	if (timeSinceLast > 0.2 && math.Abs(float64(r.params.ClockRate)-calculatedClockRateFromLast) > 0.2*float64(r.params.ClockRate)) ||
-		(timeSinceFirst > 0.2 && math.Abs(float64(r.params.ClockRate)-calculatedClockRateFromFirst) > 0.2*float64(r.params.ClockRate)) {
+	if (timeSinceLast > 0.2 && math.Abs(float64(r.clockRate)-calculatedClockRateFromLast) > 0.2*float64(r.clockRate)) ||
+		(timeSinceFirst > 0.2 && math.Abs(float64(r.clockRate)-calculatedClockRateFromFirst) > 0.2*float64(r.clockRate)) {
 		r.clockSkewCount++
 		if (r.clockSkewCount-1)%100 == 0 {
 			r.logger.Infow(
@@ -576,7 +590,7 @@ func (r *RTPStatsReceiver) checkRTPClockSkewAgainstMediaPathForSenderReport(srDa
 	diffFirst := extNowTSSR - extNowTSFirst
 
 	// is it more than 5 seconds off?
-	if uint32(math.Abs(float64(int64(diffHighest)))) > 5*r.params.ClockRate || uint32(math.Abs(float64(int64(diffFirst)))) > 5*r.params.ClockRate {
+	if uint32(math.Abs(float64(int64(diffHighest)))) > 5*r.clockRate || uint32(math.Abs(float64(int64(diffFirst)))) > 5*r.clockRate {
 		r.clockSkewMediaPathCount++
 		if (r.clockSkewMediaPathCount-1)%100 == 0 {
 			r.logger.Infow(
@@ -620,7 +634,7 @@ func (r *RTPStatsReceiver) SetRtcpSenderReportData(srData *livekit.RTCPSenderRep
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	if srData == nil || !r.initialized {
+	if srData == nil || !r.initialized || r.clockRate == 0 {
 		return false
 	}
 

@@ -394,21 +394,14 @@ func NewDownTrack(params DownTrackParams) (*DownTrack, error) {
 	} else {
 		mdCacheSize, mdCacheSizeRTX = 8192, 1024
 	}
-	d.rtpStats = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{
-		ClockRate: codec.ClockRate,
-		Logger: d.params.Logger.WithValues(
-			"stream", "primary",
-		),
-	}, mdCacheSize)
+	d.rtpStats = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{}, mdCacheSize)
+	// clock rate will be set on bind or codec change with matching codec's clock rate
+	d.rtpStats.SetLogger(d.params.Logger.WithValues("stream", "primary"))
 	d.deltaStatsSenderSnapshotId = d.rtpStats.NewSenderSnapshotId()
 
-	d.rtpStatsRTX = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{
-		ClockRate: codec.ClockRate,
-		IsRTX:     true,
-		Logger: d.params.Logger.WithValues(
-			"stream", "rtx",
-		),
-	}, mdCacheSizeRTX)
+	d.rtpStatsRTX = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{IsRTX: true}, mdCacheSizeRTX)
+	// clock rate will be set on bind or codec change with matching codec's clock rate
+	d.rtpStatsRTX.SetLogger(d.params.Logger.WithValues("stream", "rtx"))
 	d.deltaStatsRTXSenderSnapshotId = d.rtpStatsRTX.NewSenderSnapshotId()
 
 	d.forwarder = NewForwarder(
@@ -599,6 +592,9 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.sequencer = newSequencer(d.params.MaxTrack, d.kind == webrtc.RTPCodecTypeVideo, d.params.Logger)
 
 		d.codec.Store(codec.RTPCodecCapability)
+		d.rtpStats.SetClockRate(codec.RTPCodecCapability.ClockRate)
+		d.rtpStatsRTX.SetClockRate(codec.RTPCodecCapability.ClockRate)
+
 		if d.onBinding != nil {
 			d.onBinding(nil)
 		}
@@ -699,7 +695,11 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 
 	d.payloadType.Store(uint32(codec.PayloadType))
 	d.payloadTypeRTX.Store(uint32(utils.FindRTXPayloadType(codec.PayloadType, d.negotiatedCodecParameters)))
+
 	d.codec.Store(codec.RTPCodecCapability)
+	d.rtpStats.SetClockRate(codec.RTPCodecCapability.ClockRate)
+	d.rtpStatsRTX.SetClockRate(codec.RTPCodecCapability.ClockRate)
+
 	isFECEnabled := strings.Contains(strings.ToLower(codec.SDPFmtpLine), "fec")
 	d.bindLock.Unlock()
 

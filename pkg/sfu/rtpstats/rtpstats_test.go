@@ -21,8 +21,6 @@ import (
 
 	"github.com/pion/rtp"
 	"github.com/stretchr/testify/require"
-
-	"github.com/livekit/protocol/logger"
 )
 
 func getPacket(sn uint16, ts uint32, payloadSize int) *rtp.Packet {
@@ -37,10 +35,8 @@ func getPacket(sn uint16, ts uint32, payloadSize int) *rtp.Packet {
 
 func Test_RTPStatsReceiver_Update(t *testing.T) {
 	clockRate := uint32(90000)
-	r := NewRTPStatsReceiver(RTPStatsParams{
-		ClockRate: clockRate,
-		Logger:    logger.GetLogger(),
-	})
+	r := NewRTPStatsReceiver(RTPStatsParams{})
+	r.SetClockRate(clockRate)
 
 	sequenceNumber := uint16(rand.Float64() * float64(1<<16))
 	timestamp := uint32(rand.Float64() * float64(1<<32))
@@ -229,10 +225,8 @@ func Test_RTPStatsReceiver_Update(t *testing.T) {
 
 func Test_RTPStatsReceiver_Restart(t *testing.T) {
 	clockRate := uint32(90000)
-	r := NewRTPStatsReceiver(RTPStatsParams{
-		ClockRate: clockRate,
-		Logger:    logger.GetLogger(),
-	})
+	r := NewRTPStatsReceiver(RTPStatsParams{})
+	r.SetClockRate(clockRate)
 
 	// should not restart till there are at least threshold packets
 	require.False(t, r.maybeRestart(10, 20, 1000))
