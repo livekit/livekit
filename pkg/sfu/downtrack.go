@@ -70,7 +70,7 @@ type TrackSender interface {
 	) error
 	Resync()
 	SetReceiver(TrackReceiver)
-	ReceiverRestart()
+	ReceiverRestart(TrackReceiver)
 }
 
 // -------------------------------------------------------------------
@@ -1635,14 +1635,18 @@ func (d *DownTrack) Resync() {
 	d.forwarder.Resync()
 }
 
-func (d *DownTrack) ReceiverRestart() {
+func (d *DownTrack) ReceiverRestart(rcvr TrackReceiver) {
+	if rcvr.Mime() != d.Receiver().Mime() {
+		d.params.Logger.Infow("upstream receiver restart - skipped", "mime", d.Receiver().Mime().String(), "newMime", rcvr.Mime().String())
+		return
+	}
+
 	d.bindLock.Lock()
 	codec := d.codec.Load().(webrtc.RTPCodecCapability)
 	d.bindLock.Unlock()
 
-	d.params.Logger.Infow("upstream receiver restart")
-
 	receiver := d.Receiver()
+	d.params.Logger.Infow("upstream receiver restart", "mime", receiver.Mime().String())
 	d.forwarder.Restart()
 	d.forwarder.DetermineCodec(codec, receiver.HeaderExtensions(), receiver.VideoLayerMode())
 }

@@ -145,7 +145,7 @@ func (r *RedPrimaryReceiver) ResyncDownTracks() {
 
 func (r *RedPrimaryReceiver) OnStreamRestart() {
 	r.downTrackSpreader.Broadcast(func(dt TrackSender) {
-		dt.ReceiverRestart()
+		dt.ReceiverRestart(r)
 	})
 }
 
