@@ -529,7 +529,6 @@ func (b *BufferBase) restartStreamLocked(reason string, isDetected bool) {
 	b.StartKeyFrameSeeder()
 
 	b.isRestartPending = true
-	b.logger.Debugw("DBG setting pending restart") // REMOVE
 
 	if f := b.onStreamRestart; f != nil && isDetected {
 		go f(reason)
@@ -578,7 +577,6 @@ func (b *BufferBase) ReadExtended(buf []byte) (*ExtPacket, error) {
 		}
 
 		if b.isRestartPending {
-			b.logger.Debugw("DBG, returning restart") // REMOVE
 			b.isRestartPending = false
 			b.Unlock()
 			return nil, nil

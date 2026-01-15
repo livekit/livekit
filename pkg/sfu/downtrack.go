@@ -1635,8 +1635,9 @@ func (d *DownTrack) Resync() {
 	d.forwarder.Resync()
 }
 
-func (d *DownTrack) ReceiverRestart(receiver TrackReceiver) {
-	if receiver.Mime() != d.Receiver().Mime() {
+func (d *DownTrack) ReceiverRestart(rcvr TrackReceiver) {
+	if rcvr.Mime() != d.Receiver().Mime() {
+		d.params.Logger.Infow("upstream receiver restart - skipped", "mime", d.Receiver().Mime().String(), "newMime", rcvr.Mime().String())
 		return
 	}
 
@@ -1644,8 +1645,8 @@ func (d *DownTrack) ReceiverRestart(receiver TrackReceiver) {
 	codec := d.codec.Load().(webrtc.RTPCodecCapability)
 	d.bindLock.Unlock()
 
-	d.params.Logger.Infow("upstream receiver restart")
-
+	receiver := d.Receiver()
+	d.params.Logger.Infow("upstream receiver restart", "mime", receiver.Mime().String())
 	d.forwarder.Restart()
 	d.forwarder.DetermineCodec(codec, receiver.HeaderExtensions(), receiver.VideoLayerMode())
 }

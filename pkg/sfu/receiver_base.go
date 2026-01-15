@@ -395,10 +395,8 @@ func (r *ReceiverBase) restartInternal(reason string, isDetected bool) {
 		}
 	}
 
-	r.params.Logger.Debugw("DBG, waiting for stop") // REMOVE
 	// 4. wait for the forwarders to finish
 	r.waitForForwardersStop()
-	r.params.Logger.Debugw("DBG, waited for stop") // REMOVE
 
 	// 5. reset stream tracker
 	r.streamTrackerManager.RemoveAllTrackers()
@@ -862,9 +860,7 @@ func (r *ReceiverBase) waitForForwardersStop() {
 	r.bufferMu.Unlock()
 
 	if forwarderWaitGroup != nil {
-		r.params.Logger.Debugw("DBG, waiting for stop wg") // REMOVE
 		forwarderWaitGroup.Wait()
-		r.params.Logger.Debugw("DBG, waited for stop wg") // REMOVE
 	}
 }
 
@@ -937,7 +933,6 @@ func (r *ReceiverBase) forwardRTP(
 			return
 		}
 		if extPkt == nil {
-			r.params.Logger.Debugw("DBG, got nil", "layer", layer, "fg", forwarderGeneration, "fsg", r.forwardersGeneration.Load()) // REMOVE
 			continue
 		}
 		dequeuedAt := mono.UnixNano()
