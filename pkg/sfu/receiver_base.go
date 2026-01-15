@@ -869,8 +869,9 @@ func (r *ReceiverBase) startForwarderForBufferLocked(layer int32, buff buffer.Bu
 
 	r.forwardersWaitGroup.Add(1)
 
-	r.params.Logger.Debugw("starting forwarder", "layer", layer)
-	go r.forwardRTP(layer, buff, r.forwardersGeneration.Load(), r.forwardersWaitGroup)
+	forwarderGeneration := r.forwardersGeneration.Load()
+	r.params.Logger.Debugw("starting forwarder", "layer", layer, "forwarderGeneration", forwarderGeneration)
+	go r.forwardRTP(layer, buff, forwarderGeneration, r.forwardersWaitGroup)
 }
 
 func (r *ReceiverBase) forwardRTP(
@@ -925,6 +926,7 @@ func (r *ReceiverBase) forwardRTP(
 			return
 		}
 		if extPkt == nil {
+			r.params.Logger.Debugw("DBG, got nil", "fg", forwarderGeneration, "fsg", r.forwardersGeneration.Load()) // REMOVE
 			continue
 		}
 		dequeuedAt := mono.UnixNano()
