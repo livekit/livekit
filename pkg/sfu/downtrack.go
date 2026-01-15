@@ -1636,7 +1636,7 @@ func (d *DownTrack) Resync() {
 }
 
 func (d *DownTrack) ReceiverRestart(receiver TrackReceiver) {
-	if receiver != d.Receiver() {
+	if receiver.Mime() != d.Receiver().Mime() {
 		return
 	}
 
