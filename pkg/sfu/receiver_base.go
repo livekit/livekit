@@ -373,9 +373,12 @@ func (r *ReceiverBase) restartInternal(reason string, isDetected bool) {
 		return
 	}
 	r.restartInProgress = true
+
+	// 2. advance forwarder generation
+	r.forwardersGeneration.Inc()
 	r.bufferMu.Unlock()
 
-	// 2. restart all the buffers
+	// 3. restart all the buffers
 	// if a stream was detected, skip external restart
 	//
 	// NOTE: The case of external restart and detected restart (which usually comes from one buffer)
@@ -393,14 +396,14 @@ func (r *ReceiverBase) restartInternal(reason string, isDetected bool) {
 	}
 
 	r.params.Logger.Debugw("DBG, waiting for stop") // REMOVE
-	// 3. wait for the forwarders to finish
-	r.stopForwarderGeneration()
+	// 4. wait for the forwarders to finish
+	r.waitForForwardersStop()
 	r.params.Logger.Debugw("DBG, waited for stop") // REMOVE
 
-	// 4. reset stream tracker
+	// 5. reset stream tracker
 	r.streamTrackerManager.RemoveAllTrackers()
 
-	// 5. signal attached downtracks to resync so that they can have proper sequencing on a receiver restart
+	// 6. signal attached downtracks to resync so that they can have proper sequencing on a receiver restart
 	r.downTrackSpreader.Broadcast(func(dt TrackSender) {
 		dt.ReceiverRestart(r)
 	})
@@ -408,14 +411,14 @@ func (r *ReceiverBase) restartInternal(reason string, isDetected bool) {
 		rt.OnStreamRestart()
 	}
 
-	// 6. move forwarder generation ahead
+	// 7. move forwarder generation ahead
 	r.startForwarderGeneration()
 
 	r.bufferMu.Lock()
-	// 7. release restart hold
+	// 8. release restart hold
 	r.restartInProgress = false
 
-	// 8. restart forwarders
+	// 9. restart forwarders
 	for layer, buff := range r.buffers {
 		if buff == nil {
 			continue
@@ -853,9 +856,8 @@ func (r *ReceiverBase) startForwarderGeneration() {
 	r.forwardersWaitGroup = &sync.WaitGroup{}
 }
 
-func (r *ReceiverBase) stopForwarderGeneration() {
+func (r *ReceiverBase) waitForForwardersStop() {
 	r.bufferMu.Lock()
-	r.forwardersGeneration.Inc()
 	forwarderWaitGroup := r.forwardersWaitGroup
 	r.bufferMu.Unlock()
 
@@ -922,7 +924,12 @@ func (r *ReceiverBase) forwardRTP(
 	}
 
 	pktBuf := make([]byte, bucket.RTPMaxPktSize)
-	r.params.Logger.Debugw("starting forwarding", "layer", layer, "forwarderGeneration", forwarderGeneration)
+	r.params.Logger.Debugw(
+		"starting forwarding",
+		"layer", layer,
+		"forwarderGeneration", forwarderGeneration,
+		"forwardersGeneration", r.forwardersGeneration.Load(),
+	)
 
 	for r.forwardersGeneration.Load() == forwarderGeneration {
 		extPkt, err = buff.ReadExtended(pktBuf)
@@ -930,7 +937,7 @@ func (r *ReceiverBase) forwardRTP(
 			return
 		}
 		if extPkt == nil {
-			r.params.Logger.Debugw("DBG, got nil", "fg", forwarderGeneration, "fsg", r.forwardersGeneration.Load()) // REMOVE
+			r.params.Logger.Debugw("DBG, got nil", "layer", layer, "fg", forwarderGeneration, "fsg", r.forwardersGeneration.Load()) // REMOVE
 			continue
 		}
 		dequeuedAt := mono.UnixNano()
