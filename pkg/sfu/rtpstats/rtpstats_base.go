@@ -251,10 +251,21 @@ type rtpStatsBase struct {
 func newRTPStatsBase(params RTPStatsParams) *rtpStatsBase {
 	return &rtpStatsBase{
 		rtpStatsBaseLite: newRTPStatsBaseLite(params),
-		rtpConverter:     rtputil.NewRTPConverter(int64(params.ClockRate)),
 		nextSnapshotID:   cFirstSnapshotID,
 		snapshots:        make([]snapshot, 2),
 	}
+}
+
+func (r *rtpStatsBase) SetClockRate(clockRate uint32) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	r.setClockRateLocked(clockRate)
+}
+
+func (r *rtpStatsBase) setClockRateLocked(clockRate uint32) {
+	r.rtpConverter = rtputil.NewRTPConverter(int64(clockRate))
+	r.rtpStatsBaseLite.setClockRateLocked(clockRate)
 }
 
 func (r *rtpStatsBase) seed(from *rtpStatsBase) bool {
@@ -468,6 +479,10 @@ func (r *rtpStatsBase) deltaInfo(
 	extStartSN uint64,
 	extHighestSN uint64,
 ) (deltaInfo *RTPDeltaInfo, err error, loggingFields []any) {
+	if r.clockRate == 0 {
+		return
+	}
+
 	then, now := r.getAndResetSnapshot(snapshotID, extStartSN, extHighestSN)
 	if now == nil || then == nil {
 		return
@@ -538,7 +553,7 @@ func (r *rtpStatsBase) deltaInfo(
 		PacketsOutOfOrder:    uint32(now.packetsOutOfOrder - then.packetsOutOfOrder),
 		Frames:               now.frames - then.frames,
 		RttMax:               then.maxRtt,
-		JitterMax:            then.maxJitter / float64(r.params.ClockRate) * 1e6,
+		JitterMax:            then.maxJitter / float64(r.clockRate) * 1e6,
 		Nacks:                now.nacks - then.nacks,
 		Plis:                 now.plis - then.plis,
 		Firs:                 now.firs - then.firs,
@@ -634,8 +649,8 @@ func (r *rtpStatsBase) toProto(
 	p.KeyFrames = r.keyFrames
 	p.LastKeyFrame = timestamppb.New(r.lastKeyFrame)
 
-	p.JitterCurrent = jitter / float64(r.params.ClockRate) * 1e6
-	p.JitterMax = maxJitter / float64(r.params.ClockRate) * 1e6
+	p.JitterCurrent = jitter / float64(r.clockRate) * 1e6
+	p.JitterMax = maxJitter / float64(r.clockRate) * 1e6
 
 	p.Firs = r.firs
 	p.LastFir = timestamppb.New(r.lastFir)
@@ -655,7 +670,7 @@ func (r *rtpStatsBase) updateJitter(ets uint64, packetTime int64) float64 {
 	//          p1f1 -> p1f2 -> p2f1
 	//       In this case, p2f1 (packet 2, frame 1) will still be used in jitter calculation
 	//       although it is the second packet of a frame because of out-of-order receival.
-	if r.lastJitterExtTimestamp != ets {
+	if r.lastJitterExtTimestamp != ets && r.rtpConverter != nil {
 		timeSinceFirst := packetTime - r.firstTime
 		packetTimeRTP := r.rtpConverter.ToRTPExt(time.Duration(timeSinceFirst))
 		transit := packetTimeRTP - ets
@@ -718,7 +733,7 @@ func (r *rtpStatsBase) getDrift(extStartTS, extHighestTS uint64) (
 				EndTimestamp:   extHighestTS,
 				RtpClockTicks:  rtpClockTicks,
 				DriftSamples:   driftSamples,
-				DriftMs:        (float64(driftSamples) * 1000) / float64(r.params.ClockRate),
+				DriftMs:        (float64(driftSamples) * 1000) / float64(r.clockRate),
 				ClockRate:      float64(rtpClockTicks) / elapsed.Seconds(),
 			}
 		}
@@ -738,7 +753,7 @@ func (r *rtpStatsBase) getDrift(extStartTS, extHighestTS uint64) (
 				EndTimestamp:   r.srNewest.RtpTimestampExt,
 				RtpClockTicks:  rtpClockTicks,
 				DriftSamples:   driftSamples,
-				DriftMs:        (float64(driftSamples) * 1000) / float64(r.params.ClockRate),
+				DriftMs:        (float64(driftSamples) * 1000) / float64(r.clockRate),
 				ClockRate:      float64(rtpClockTicks) / elapsed.Seconds(),
 			}
 		}
@@ -754,7 +769,7 @@ func (r *rtpStatsBase) getDrift(extStartTS, extHighestTS uint64) (
 				EndTimestamp:   r.srNewest.RtpTimestampExt,
 				RtpClockTicks:  rtpClockTicks,
 				DriftSamples:   driftSamples,
-				DriftMs:        (float64(driftSamples) * 1000) / float64(r.params.ClockRate),
+				DriftMs:        (float64(driftSamples) * 1000) / float64(r.clockRate),
 				ClockRate:      float64(rtpClockTicks) / elapsed.Seconds(),
 			}
 		}
@@ -770,7 +785,7 @@ func (r *rtpStatsBase) getDrift(extStartTS, extHighestTS uint64) (
 				EndTimestamp:   r.srNewest.RtpTimestampExt,
 				RtpClockTicks:  rtpClockTicks,
 				DriftSamples:   driftSamples,
-				DriftMs:        (float64(driftSamples) * 1000) / float64(r.params.ClockRate),
+				DriftMs:        (float64(driftSamples) * 1000) / float64(r.clockRate),
 				ClockRate:      float64(rtpClockTicks) / elapsed.Seconds(),
 			}
 		}
