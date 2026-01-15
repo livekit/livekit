@@ -392,8 +392,10 @@ func (r *ReceiverBase) restartInternal(reason string, isDetected bool) {
 		}
 	}
 
+	r.params.Logger.Debugw("DBG, waiting for stop") // REMOVE
 	// 3. wait for the forwarders to finish
 	r.stopForwarderGeneration()
+	r.params.Logger.Debugw("DBG, waited for stop") // REMOVE
 
 	// 4. reset stream tracker
 	r.streamTrackerManager.RemoveAllTrackers()
@@ -858,7 +860,9 @@ func (r *ReceiverBase) stopForwarderGeneration() {
 	r.bufferMu.Unlock()
 
 	if forwarderWaitGroup != nil {
+		r.params.Logger.Debugw("DBG, waiting for stop wg") // REMOVE
 		forwarderWaitGroup.Wait()
+		r.params.Logger.Debugw("DBG, waited for stop wg") // REMOVE
 	}
 }
 
