@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -31,10 +32,11 @@ import (
 type IOInfoService struct {
 	ioServer rpc.IOInfoServer
 
-	es        EgressStore
-	is        IngressStore
-	ss        SIPStore
-	telemetry telemetry.TelemetryService
+	es          EgressStore
+	is          IngressStore
+	ss          SIPStore
+	roomManager *RoomManager
+	telemetry   telemetry.TelemetryService
 
 	shutdown chan struct{}
 }
@@ -65,6 +67,10 @@ func NewIOInfoService(
 	}
 
 	return s, nil
+}
+
+func (s *IOInfoService) SetRoomManager(rm *RoomManager) {
+	s.roomManager = rm
 }
 
 func (s *IOInfoService) Start() error {
@@ -184,7 +190,35 @@ func (s *IOInfoService) UpdateMetrics(ctx context.Context, req *rpc.UpdateMetric
 }
 
 func (s *IOInfoService) UpdateSIPCallState(ctx context.Context, req *rpc.UpdateSIPCallStateRequest) (*emptypb.Empty, error) {
-	// TODO: placeholder
+	if req.CallInfo == nil {
+		return &emptypb.Empty{}, nil
+	}
+	s.telemetry.SIPCallStateUpdate(ctx, req.CallInfo)
+
+	if s.roomManager != nil {
+		room := s.roomManager.GetRoom(ctx, livekit.RoomName(req.CallInfo.RoomName))
+		if room != nil {
+			// create a data packet
+			data, err := json.Marshal(req.CallInfo)
+			if err != nil {
+				logger.Errorw("could not marshal sip call info", err)
+				return &emptypb.Empty{}, nil
+			}
+
+			topic := "sip.call.update"
+			payload := &livekit.DataPacket{
+				Kind: livekit.DataPacket_RELIABLE,
+				Value: &livekit.DataPacket_User{
+					User: &livekit.UserPacket{
+						Topic:   &topic,
+						Payload: data,
+					},
+				},
+			}
+
+			room.SendDataPacket(payload, livekit.DataPacket_RELIABLE)
+		}
+	}
 	return &emptypb.Empty{}, nil
 }
 

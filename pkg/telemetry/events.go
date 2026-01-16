@@ -16,6 +16,7 @@ package telemetry
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -614,4 +615,28 @@ func newIngressEvent(event livekit.AnalyticsEventType, ingress *livekit.IngressI
 		IngressId: ingress.IngressId,
 		Ingress:   ingress,
 	}
+}
+
+func (t *telemetryService) SIPCallStateUpdate(ctx context.Context, info *livekit.SIPCallInfo) {
+	t.enqueue(func() {
+		attrs := map[string]string{
+			"sip_call_id": info.CallId,
+		}
+		if info.CallStatusCode != nil {
+			attrs["sip_status_code"] = strconv.Itoa(int(info.CallStatusCode.Code))
+			attrs["sip_status_text"] = info.CallStatusCode.Status
+		}
+
+		t.NotifyEvent(ctx, &livekit.WebhookEvent{
+			Event: "sip_call_update",
+			Room: &livekit.Room{
+				Sid:  info.RoomId,
+				Name: info.RoomName,
+			},
+			Participant: &livekit.ParticipantInfo{
+				Identity:   info.ParticipantIdentity,
+				Attributes: attrs,
+			},
+		})
+	})
 }

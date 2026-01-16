@@ -80,6 +80,7 @@ type TelemetryService interface {
 	Report(ctx context.Context, reportInfo *livekit.ReportInfo)
 	APICall(ctx context.Context, apiCallInfo *livekit.APICallInfo)
 	Webhook(ctx context.Context, webhookInfo *livekit.WebhookInfo)
+	SIPCallStateUpdate(ctx context.Context, info *livekit.SIPCallInfo)
 
 	// helpers
 	AnalyticsService
@@ -146,7 +147,8 @@ func (n NullTelemetryService) APICall(ctx context.Context, apiCallInfo *livekit.
 func (n NullTelemetryService) Webhook(ctx context.Context, webhookInfo *livekit.WebhookInfo)        {}
 func (n NullTelemetryService) NotifyEgressEvent(ctx context.Context, event string, info *livekit.EgressInfo) {
 }
-func (n NullTelemetryService) FlushStats() {}
+func (n NullTelemetryService) SIPCallStateUpdate(ctx context.Context, info *livekit.SIPCallInfo) {}
+func (n NullTelemetryService) FlushStats()                                                       {}
 
 // -----------------------------
 
