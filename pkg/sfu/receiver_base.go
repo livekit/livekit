@@ -27,6 +27,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/mediatransportutil/pkg/bucket"
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
@@ -34,7 +35,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/streamtracker"
 	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"

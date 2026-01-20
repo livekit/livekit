@@ -20,153 +20,28 @@ import (
 
 	"github.com/pion/webrtc/v4"
 
-	"github.com/livekit/livekit-server/pkg/sfu/mime"
+	protoCodecs "github.com/livekit/protocol/codecs"
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
-)
-
-var (
-	OpusCodecParameters = webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:    mime.MimeTypeOpus.String(),
-			ClockRate:   48000,
-			Channels:    2,
-			SDPFmtpLine: "minptime=10;useinbandfec=1",
-		},
-		PayloadType: 111,
-	}
-
-	RedCodecParameters = webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:    mime.MimeTypeRED.String(),
-			ClockRate:   48000,
-			Channels:    2,
-			SDPFmtpLine: "111/111",
-		},
-		PayloadType: 63,
-	}
-
-	PCMUCodecParameters = webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:  mime.MimeTypePCMU.String(),
-			ClockRate: 8000,
-		},
-		PayloadType: 0,
-	}
-
-	PCMACodecParameters = webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:  mime.MimeTypePCMA.String(),
-			ClockRate: 8000,
-		},
-		PayloadType: 8,
-	}
-
-	videoRTXCodecParameters = webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:  mime.MimeTypeRTX.String(),
-			ClockRate: 90000,
-		},
-	}
-
-	vp8CodecParameters = webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:  mime.MimeTypeVP8.String(),
-			ClockRate: 90000,
-		},
-		PayloadType: 96,
-	}
-
-	vp9ProfileId0CodecParameters = webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:    mime.MimeTypeVP9.String(),
-			ClockRate:   90000,
-			SDPFmtpLine: "profile-id=0",
-		},
-		PayloadType: 98,
-	}
-
-	vp9ProfileId1CodecParameters = webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:    mime.MimeTypeVP9.String(),
-			ClockRate:   90000,
-			SDPFmtpLine: "profile-id=1",
-		},
-		PayloadType: 100,
-	}
-
-	h264ProfileLevelId42e01fPacketizationMode0CodecParameters = webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:    mime.MimeTypeH264.String(),
-			ClockRate:   90000,
-			SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
-		},
-		PayloadType: 125,
-	}
-
-	h264ProfileLevelId42e01fPacketizationMode1CodecParameters = webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:    mime.MimeTypeH264.String(),
-			ClockRate:   90000,
-			SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42e01f",
-		},
-		PayloadType: 108,
-	}
-
-	h264HighProfileFmtp            = "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=640032"
-	h264HighProfileCodecParameters = webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:    mime.MimeTypeH264.String(),
-			ClockRate:   90000,
-			SDPFmtpLine: h264HighProfileFmtp,
-		},
-		PayloadType: 123,
-	}
-
-	av1CodecParameters = webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:  mime.MimeTypeAV1.String(),
-			ClockRate: 90000,
-		},
-		PayloadType: 35,
-	}
-
-	h265CodecParameters = webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:  mime.MimeTypeH265.String(),
-			ClockRate: 90000,
-		},
-		PayloadType: 116,
-	}
-
-	videoCodecsParameters = []webrtc.RTPCodecParameters{
-		vp8CodecParameters,
-		vp9ProfileId0CodecParameters,
-		vp9ProfileId1CodecParameters,
-		h264ProfileLevelId42e01fPacketizationMode0CodecParameters,
-		h264ProfileLevelId42e01fPacketizationMode1CodecParameters,
-		h264HighProfileCodecParameters,
-		av1CodecParameters,
-		h265CodecParameters,
-	}
 )
 
 func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedback RTCPFeedbackConfig, filterOutH264HighProfile bool) error {
 	// audio codecs
-	if IsCodecEnabled(codecs, OpusCodecParameters.RTPCodecCapability) {
-		cp := OpusCodecParameters
+	if IsCodecEnabled(codecs, protoCodecs.OpusCodecParameters.RTPCodecCapability) {
+		cp := protoCodecs.OpusCodecParameters
 		cp.RTPCodecCapability.RTCPFeedback = rtcpFeedback.Audio
 		if err := me.RegisterCodec(cp, webrtc.RTPCodecTypeAudio); err != nil {
 			return err
 		}
 
-		if IsCodecEnabled(codecs, RedCodecParameters.RTPCodecCapability) {
-			if err := me.RegisterCodec(RedCodecParameters, webrtc.RTPCodecTypeAudio); err != nil {
+		if IsCodecEnabled(codecs, protoCodecs.RedCodecParameters.RTPCodecCapability) {
+			if err := me.RegisterCodec(protoCodecs.RedCodecParameters, webrtc.RTPCodecTypeAudio); err != nil {
 				return err
 			}
 		}
 	}
 
-	for _, codec := range []webrtc.RTPCodecParameters{PCMUCodecParameters, PCMACodecParameters} {
+	for _, codec := range []webrtc.RTPCodecParameters{protoCodecs.PCMUCodecParameters, protoCodecs.PCMACodecParameters} {
 		if !IsCodecEnabled(codecs, codec.RTPCodecCapability) {
 			continue
 		}
@@ -179,9 +54,9 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 	}
 
 	// video codecs
-	rtxEnabled := IsCodecEnabled(codecs, videoRTXCodecParameters.RTPCodecCapability)
-	for _, codec := range videoCodecsParameters {
-		if filterOutH264HighProfile && codec.RTPCodecCapability.SDPFmtpLine == h264HighProfileFmtp {
+	rtxEnabled := IsCodecEnabled(codecs, protoCodecs.VideoRTXCodecParameters.RTPCodecCapability)
+	for _, codec := range protoCodecs.VideoCodecsParameters {
+		if filterOutH264HighProfile && codec.RTPCodecCapability.SDPFmtpLine == protoCodecs.H264HighProfileFmtp {
 			continue
 		}
 		if mime.IsMimeTypeStringRTX(codec.MimeType) {
@@ -201,7 +76,7 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 			continue
 		}
 
-		cp = videoRTXCodecParameters
+		cp = protoCodecs.VideoRTXCodecParameters
 		cp.RTPCodecCapability.SDPFmtpLine = fmt.Sprintf("apt=%d", codec.PayloadType)
 		cp.PayloadType = codec.PayloadType + 1
 		if err := me.RegisterCodec(cp, webrtc.RTPCodecTypeVideo); err != nil {

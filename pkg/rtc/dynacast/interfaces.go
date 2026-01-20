@@ -15,10 +15,10 @@
 package dynacast
 
 import (
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/sfu/mime"
 )
 
 type DynacastManagerListener interface {

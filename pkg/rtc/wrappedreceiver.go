@@ -23,12 +23,13 @@ import (
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
 
+	protoCodecs "github.com/livekit/protocol/codecs"
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/mime"
 )
 
 // wrapper around WebRTC receiver, overriding its ID
@@ -64,10 +65,10 @@ func NewWrappedReceiver(params WrappedReceiverParams) *WrappedReceiver {
 		normalizedMimeType := mime.NormalizeMimeType(codecs[0].MimeType)
 		if normalizedMimeType == mime.MimeTypeRED {
 			// if upstream is opus/red, then add opus to match clients that don't support red
-			codecs = append(codecs, OpusCodecParameters)
+			codecs = append(codecs, protoCodecs.OpusCodecParameters)
 		} else if !params.DisableRed && normalizedMimeType == mime.MimeTypeOpus {
 			// if upstream is opus only and red enabled, add red to match clients that support red
-			codecs = append(codecs, RedCodecParameters)
+			codecs = append(codecs, protoCodecs.RedCodecParameters)
 			// prefer red codec
 			codecs[0], codecs[1] = codecs[1], codecs[0]
 		}
