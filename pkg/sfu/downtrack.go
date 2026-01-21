@@ -2500,7 +2500,7 @@ func (d *DownTrack) sendPaddingOnMute() {
 
 	if d.kind == webrtc.RTPCodecTypeVideo {
 		d.sendPaddingOnMuteForVideo()
-	} else if d.Mime() == mime.MimeTypeOpus {
+	} else {
 		d.sendSilentFrameOnMuteForAudio()
 	}
 }
@@ -2520,6 +2520,28 @@ func (d *DownTrack) sendPaddingOnMuteForVideo() {
 }
 
 func (d *DownTrack) sendSilentFrameOnMuteForAudio() {
+	var (
+		payload []byte
+		err     error
+	)
+	switch d.Mime() {
+	case mime.MimeTypeOpus:
+		payload, err = d.getAudioBlankFrameFunc(OpusSilenceFrame)(false)
+	case mime.MimeTypeRED:
+		payload, err = d.getOpusRedBlankFrame(false)
+	case mime.MimeTypePCMU:
+		payload, err = d.getAudioBlankFrameFunc(PCMUSilenceFrame)(false)
+	case mime.MimeTypePCMA:
+		payload, err = d.getAudioBlankFrameFunc(PCMASilenceFrame)(false)
+	default:
+		d.params.Logger.Infow("unsupported mime type for silent frame on mute", "mimeType", d.Mime())
+		return
+	}
+	if err != nil {
+		d.params.Logger.Warnw("could not get blank frame", err)
+		return
+	}
+
 	frameRate := uint32(50)
 	frameDuration := time.Duration(1000/frameRate) * time.Millisecond
 	numFrames := frameRate * uint32(maxPaddingOnMuteDuration/time.Second)
@@ -2537,25 +2559,6 @@ func (d *DownTrack) sendSilentFrameOnMuteForAudio() {
 			d.params.Logger.Warnw("could not get SN/TS for blank frame", err)
 			return
 		}
-		var payload []byte
-		switch d.Mime() {
-		case mime.MimeTypeOpus:
-			payload, err = d.getAudioBlankFrameFunc(OpusSilenceFrame)(false)
-		case mime.MimeTypeRED:
-			payload, err = d.getOpusRedBlankFrame(false)
-		case mime.MimeTypePCMU:
-			payload, err = d.getAudioBlankFrameFunc(PCMUSilenceFrame)(false)
-		case mime.MimeTypePCMA:
-			payload, err = d.getAudioBlankFrameFunc(PCMASilenceFrame)(false)
-		default:
-			d.params.Logger.Infow("unsupported mime type for silent frame on mute", "mimeType", d.Mime())
-			return
-		}
-		if err != nil {
-			d.params.Logger.Warnw("could not get blank frame", err)
-			return
-		}
-
 		for i := range len(snts) {
 			hdr := &rtp.Header{
 				Version:        2,
