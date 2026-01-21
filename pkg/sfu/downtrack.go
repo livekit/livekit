@@ -2539,8 +2539,10 @@ func (d *DownTrack) sendSilentFrameOnMuteForAudio() {
 		}
 		var payload []byte
 		switch d.Mime() {
-		case mime.MimeTypeOpus, mime.MimeTypeRED:
+		case mime.MimeTypeOpus:
 			payload, err = d.getAudioBlankFrameFunc(OpusSilenceFrame)(false)
+		case mime.MimeTypeRED:
+			payload, err = d.getOpusRedBlankFrame(false)
 		case mime.MimeTypePCMU:
 			payload, err = d.getAudioBlankFrameFunc(PCMUSilenceFrame)(false)
 		case mime.MimeTypePCMA:
