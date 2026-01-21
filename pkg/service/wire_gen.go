@@ -8,6 +8,8 @@ package service
 
 import (
 	"fmt"
+	"os"
+
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -26,10 +28,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
 	"gopkg.in/yaml.v3"
-	"os"
-)
 
-import (
 	_ "net/http/pprof"
 )
 
