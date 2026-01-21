@@ -134,6 +134,12 @@ type FakeTelemetryService struct {
 		arg1 context.Context
 		arg2 *livekit.Room
 	}
+	RoomMetadataUpdatedStub        func(context.Context, *livekit.Room)
+	roomMetadataUpdatedMutex       sync.RWMutex
+	roomMetadataUpdatedArgsForCall []struct {
+		arg1 context.Context
+		arg2 *livekit.Room
+	}
 	RoomProjectReporterStub        func(context.Context) roomobs.ProjectReporter
 	roomProjectReporterMutex       sync.RWMutex
 	roomProjectReporterArgsForCall []struct {
@@ -891,6 +897,39 @@ func (fake *FakeTelemetryService) RoomEndedArgsForCall(i int) (context.Context, 
 	fake.roomEndedMutex.RLock()
 	defer fake.roomEndedMutex.RUnlock()
 	argsForCall := fake.roomEndedArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeTelemetryService) RoomMetadataUpdated(arg1 context.Context, arg2 *livekit.Room) {
+	fake.roomMetadataUpdatedMutex.Lock()
+	fake.roomMetadataUpdatedArgsForCall = append(fake.roomMetadataUpdatedArgsForCall, struct {
+		arg1 context.Context
+		arg2 *livekit.Room
+	}{arg1, arg2})
+	stub := fake.RoomMetadataUpdatedStub
+	fake.recordInvocation("RoomMetadataUpdated", []interface{}{arg1, arg2})
+	fake.roomMetadataUpdatedMutex.Unlock()
+	if stub != nil {
+		fake.RoomMetadataUpdatedStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeTelemetryService) RoomMetadataUpdatedCallCount() int {
+	fake.roomMetadataUpdatedMutex.RLock()
+	defer fake.roomMetadataUpdatedMutex.RUnlock()
+	return len(fake.roomMetadataUpdatedArgsForCall)
+}
+
+func (fake *FakeTelemetryService) RoomMetadataUpdatedCalls(stub func(context.Context, *livekit.Room)) {
+	fake.roomMetadataUpdatedMutex.Lock()
+	defer fake.roomMetadataUpdatedMutex.Unlock()
+	fake.RoomMetadataUpdatedStub = stub
+}
+
+func (fake *FakeTelemetryService) RoomMetadataUpdatedArgsForCall(i int) (context.Context, *livekit.Room) {
+	fake.roomMetadataUpdatedMutex.RLock()
+	defer fake.roomMetadataUpdatedMutex.RUnlock()
+	argsForCall := fake.roomMetadataUpdatedArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
 }
 
