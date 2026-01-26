@@ -368,6 +368,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		onClose:                       make(map[string]func(types.LocalParticipant)),
 		telemetryGuard:                &telemetry.ReferenceGuard{},
 		nextSubscribedDataTrackHandle: uint16(rand.Intn(256)),
+		requireBroadcast:              params.Grants.Metadata != "" || len(params.Grants.Attributes) != 0,
 	}
 	p.setupSignalling()
 
