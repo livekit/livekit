@@ -2389,7 +2389,10 @@ func (t *PCTransport) handleRemoteICECandidate(e event) error {
 
 	if err := t.pc.AddICECandidate(*c); err != nil {
 		t.params.Logger.Warnw("failed to add ICE candidate", err, "candidate", c)
-		return errors.Wrap(err, "add ice candidate failed")
+		// ignore ParseAddr error as it does not affect ICE connectivity
+		if !strings.Contains(err.Error(), "ParseAddr") {
+			return errors.Wrap(err, "add ice candidate failed")
+		}
 	} else {
 		t.params.Logger.Debugw("added ICE candidate", "candidate", c)
 	}
