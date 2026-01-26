@@ -67,6 +67,13 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 		return nil, err
 	}
 
+	// When use_external_ip is false and turn_servers are configured,
+	// don't use STUN servers to respect the use_external_ip setting.
+	// TURN servers provide relay capability without needing STUN for external IP discovery.
+	if !rtcConf.UseExternalIP && len(rtcConf.TURNServers) > 0 {
+		webRTCConfig.Configuration.ICEServers = nil
+	}
+
 	// we don't want to use active TCP on a server, clients should be dialing
 	webRTCConfig.SettingEngine.DisableActiveTCP(true)
 
