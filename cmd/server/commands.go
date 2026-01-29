@@ -92,7 +92,11 @@ func helpVerbose(_ context.Context, c *cli.Command) error {
 		return err
 	}
 
-	c.Flags = append(baseFlags, generatedFlags...)
+	flags := append([]cli.Flag{}, baseFlags...)
+	flags = append(flags, generatedFlags...)
+	root := c.Root()
+	root.Flags = flags
+	c.Flags = flags
 	return cli.ShowAppHelp(c)
 }
 
