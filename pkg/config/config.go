@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -618,9 +619,9 @@ func (conf *Config) ValidateKeys() error {
 }
 
 func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error) {
-	blankConfig := &Config{}
+	defaultConfig := &DefaultConfig
 	flags := make([]cli.Flag, 0)
-	for name, value := range blankConfig.ToCLIFlagNames(existingFlags) {
+	for name, value := range (defaultConfig).ToCLIFlagNames(existingFlags) {
 		kind := value.Kind()
 		if kind == reflect.Ptr {
 			kind = value.Type().Elem().Kind()
@@ -628,63 +629,72 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 
 		var flag cli.Flag
 		envVar := fmt.Sprintf("LIVEKIT_%s", strings.ToUpper(strings.Replace(name, ".", "_", -1)))
+		defaultText := cliDefaultText(value)
 
 		switch kind {
 		case reflect.Bool:
 			flag = &cli.BoolFlag{
-				Name:    name,
-				Sources: cli.EnvVars(envVar),
-				Usage:   generatedCLIFlagUsage,
-				Hidden:  hidden,
+				Name:        name,
+				Sources:     cli.EnvVars(envVar),
+				Usage:       generatedCLIFlagUsage,
+				DefaultText: defaultText,
+				Hidden:      hidden,
 			}
 		case reflect.String:
 			flag = &cli.StringFlag{
-				Name:    name,
-				Sources: cli.EnvVars(envVar),
-				Usage:   generatedCLIFlagUsage,
-				Hidden:  hidden,
+				Name:        name,
+				Sources:     cli.EnvVars(envVar),
+				Usage:       generatedCLIFlagUsage,
+				DefaultText: defaultText,
+				Hidden:      hidden,
 			}
 		case reflect.Int, reflect.Int32:
 			flag = &cli.IntFlag{
-				Name:    name,
-				Sources: cli.EnvVars(envVar),
-				Usage:   generatedCLIFlagUsage,
-				Hidden:  hidden,
+				Name:        name,
+				Sources:     cli.EnvVars(envVar),
+				Usage:       generatedCLIFlagUsage,
+				DefaultText: defaultText,
+				Hidden:      hidden,
 			}
 		case reflect.Int64:
 			flag = &cli.Int64Flag{
-				Name:    name,
-				Sources: cli.EnvVars(envVar),
-				Usage:   generatedCLIFlagUsage,
-				Hidden:  hidden,
+				Name:        name,
+				Sources:     cli.EnvVars(envVar),
+				Usage:       generatedCLIFlagUsage,
+				DefaultText: defaultText,
+				Hidden:      hidden,
 			}
 		case reflect.Uint8, reflect.Uint16, reflect.Uint32:
 			flag = &cli.UintFlag{
-				Name:    name,
-				Sources: cli.EnvVars(envVar),
-				Usage:   generatedCLIFlagUsage,
-				Hidden:  hidden,
+				Name:        name,
+				Sources:     cli.EnvVars(envVar),
+				Usage:       generatedCLIFlagUsage,
+				DefaultText: defaultText,
+				Hidden:      hidden,
 			}
 		case reflect.Uint64:
 			flag = &cli.Uint64Flag{
-				Name:    name,
-				Sources: cli.EnvVars(envVar),
-				Usage:   generatedCLIFlagUsage,
-				Hidden:  hidden,
+				Name:        name,
+				Sources:     cli.EnvVars(envVar),
+				Usage:       generatedCLIFlagUsage,
+				DefaultText: defaultText,
+				Hidden:      hidden,
 			}
 		case reflect.Float32:
 			flag = &cli.Float64Flag{
-				Name:    name,
-				Sources: cli.EnvVars(envVar),
-				Usage:   generatedCLIFlagUsage,
-				Hidden:  hidden,
+				Name:        name,
+				Sources:     cli.EnvVars(envVar),
+				Usage:       generatedCLIFlagUsage,
+				DefaultText: defaultText,
+				Hidden:      hidden,
 			}
 		case reflect.Float64:
 			flag = &cli.Float64Flag{
-				Name:    name,
-				Sources: cli.EnvVars(envVar),
-				Usage:   generatedCLIFlagUsage,
-				Hidden:  hidden,
+				Name:        name,
+				Sources:     cli.EnvVars(envVar),
+				Usage:       generatedCLIFlagUsage,
+				DefaultText: defaultText,
+				Hidden:      hidden,
 			}
 		case reflect.Slice:
 			// TODO
@@ -703,6 +713,33 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 	}
 
 	return flags, nil
+}
+
+func cliDefaultText(value reflect.Value) string {
+	if value.Kind() == reflect.Ptr {
+		if value.IsNil() {
+			return ""
+		}
+		value = value.Elem()
+	}
+
+	switch value.Kind() {
+	case reflect.Bool:
+		return strconv.FormatBool(value.Bool())
+	case reflect.String:
+		return value.String()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		if value.Type() == reflect.TypeOf(time.Duration(0)) {
+			return value.Interface().(time.Duration).String()
+		}
+		return strconv.FormatInt(value.Int(), 10)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return strconv.FormatUint(value.Uint(), 10)
+	case reflect.Float32, reflect.Float64:
+		return strconv.FormatFloat(value.Float(), 'f', -1, 64)
+	default:
+		return ""
+	}
 }
 
 func (conf *Config) updateFromCLI(c *cli.Command, baseFlags []cli.Flag) error {
