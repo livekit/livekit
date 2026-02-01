@@ -2399,7 +2399,7 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		if payload.RpcRequest == nil {
 			return
 		}
-		p.pubLogger.Infow(
+		p.pubLogger.Debugw(
 			"received RPC request",
 			"method", payload.RpcRequest.Method,
 			"rpc_request_id", payload.RpcRequest.Id,
@@ -2409,7 +2409,7 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		if payload.RpcResponse == nil {
 			return
 		}
-		p.pubLogger.Infow(
+		p.pubLogger.Debugw(
 			"received RPC response",
 			"rpc_request_id", payload.RpcResponse.RequestId,
 		)
@@ -2429,7 +2429,7 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		if payload.RpcAck == nil {
 			return
 		}
-		p.pubLogger.Infow(
+		p.pubLogger.Debugw(
 			"received RPC ack",
 			"rpc_request_id", payload.RpcAck.RequestId,
 		)
