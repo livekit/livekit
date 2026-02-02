@@ -636,7 +636,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 	}
 
 	extReceivedRRSN := extHighestSNFromRR + (r.extStartSN & 0xFFFF_FFFF_FFFF_0000)
-	if int64(r.extHighestSN-extReceivedRRSN) < 0 || int64(r.extHighestSN-extReceivedRRSN) > 4*(1<<16) {
+	if int64(r.extHighestSN-extReceivedRRSN) < 0 || int64(r.extHighestSN-extReceivedRRSN) > (1<<32) {
 		r.logger.Infow(
 			"receiver report runaway, dropping",
 			"timeSinceLastRR", timeSinceLastRR(),
@@ -713,7 +713,7 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 	}
 
 	if r.extHighestSNFromRR > extHighestSNFromRR {
-		r.logger.Infow(
+		r.logger.Debugw(
 			"receiver report out-of-order, dropping",
 			"timeSinceLastRR", timeSinceLastRR(),
 			"receivedRR", rr,
