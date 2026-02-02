@@ -445,6 +445,7 @@ func (b *BufferBase) SetStreamRestartDetection(enable bool) {
 
 func (b *BufferBase) setupRTPStats(clockRate uint32) {
 	b.rtpStats = rtpstats.NewRTPStatsReceiver(rtpstats.RTPStatsParams{})
+	b.rtpStats.SetLogger(b.logger)
 	b.rtpStats.SetClockRate(clockRate)
 
 	b.ppsSnapshotId = b.rtpStats.NewSnapshotId()
@@ -455,6 +456,7 @@ func (b *BufferBase) setupRTPStats(clockRate uint32) {
 
 	if b.params.IsOOBSequenceNumber {
 		b.rtpStatsLite = rtpstats.NewRTPStatsReceiverLite(rtpstats.RTPStatsParams{})
+		b.rtpStatsLite.SetLogger(b.logger)
 		b.rtpStatsLite.SetClockRate(clockRate)
 
 		b.liteStatsSnapshotId = b.rtpStatsLite.NewSnapshotLiteId()
