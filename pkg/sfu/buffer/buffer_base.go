@@ -620,9 +620,7 @@ func (b *BufferBase) SendPLI(force bool) {
 		return
 	}
 
-	b.logger.Debugw("sending pli", "force", force) // REMOVE
 	if b.params.SendPLI != nil {
-		b.logger.Debugw("actually sending pli", "force", force) // REMOVE
 		b.params.SendPLI()
 	}
 }

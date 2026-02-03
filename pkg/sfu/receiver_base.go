@@ -707,7 +707,6 @@ func (r *ReceiverBase) GetOrCreateBuffer(layer int32) buffer.BufferProvider {
 	r.bufferMu.Unlock()
 
 	buff, err := r.params.OnNewBufferNeeded(layer, ti)
-	r.params.Logger.Debugw("base created buffer", "layer", layer, "err", err, "buff", buff != nil) // REMOVE
 	if err != nil {
 		r.params.Logger.Errorw("could not create buffer", err)
 		return nil
@@ -720,7 +719,6 @@ func (r *ReceiverBase) GetOrCreateBuffer(layer int32) buffer.BufferProvider {
 
 	r.setupBuffer(buff, layer, rtt)
 	close(bp.ready)
-	r.params.Logger.Debugw("base created buffer returning", "layer", layer, "err", err, "buff", buff != nil) // REMOVE
 	return buff
 }
 
