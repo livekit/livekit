@@ -706,6 +706,8 @@ func (r *ReceiverBase) GetOrCreateBuffer(layer int32) buffer.BufferProvider {
 	ti := utils.CloneProto(r.trackInfo)
 	r.bufferMu.Unlock()
 
+	defer close(bp.ready)
+
 	buff, err := r.params.OnNewBufferNeeded(layer, ti)
 	if err != nil {
 		r.params.Logger.Errorw("could not create buffer", err)
@@ -714,7 +716,6 @@ func (r *ReceiverBase) GetOrCreateBuffer(layer int32) buffer.BufferProvider {
 		r.bufferPromises[layer] = nil
 		r.bufferMu.Unlock()
 
-		close(bp.ready)
 		return nil
 	}
 
@@ -724,7 +725,6 @@ func (r *ReceiverBase) GetOrCreateBuffer(layer int32) buffer.BufferProvider {
 	r.bufferMu.Unlock()
 
 	r.setupBuffer(buff, layer, rtt)
-	close(bp.ready)
 	return buff
 }
 
