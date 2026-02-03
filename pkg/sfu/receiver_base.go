@@ -642,7 +642,7 @@ func (r *ReceiverBase) GetLayeredBitrate() ([]int32, Bitrates) {
 
 func (r *ReceiverBase) SendPLI(layer int32, force bool) {
 	// SVC-TODO :  should send LRR (Layer Refresh Request) instead of PLI
-	buff, _ := r.GetOrCreateBuffer(layer)
+	buff := r.GetOrCreateBuffer(layer)
 	if buff == nil {
 		return
 	}
@@ -671,23 +671,23 @@ func (r *ReceiverBase) getBufferLocked(layer int32) (buffer.BufferProvider, int3
 	return r.buffers[layer], layer
 }
 
-func (r *ReceiverBase) GetOrCreateBuffer(layer int32) (buffer.BufferProvider, bool) {
+func (r *ReceiverBase) GetOrCreateBuffer(layer int32) buffer.BufferProvider {
 	r.bufferMu.Lock()
 
 	if r.IsClosed() {
 		r.bufferMu.Unlock()
-		return nil, false
+		return nil
 	}
 
 	var buff buffer.BufferProvider
 	if buff, layer = r.getBufferLocked(layer); buff != nil {
 		r.bufferMu.Unlock()
-		return buff, false
+		return buff
 	}
 
 	if r.params.OnNewBufferNeeded == nil {
 		r.bufferMu.Unlock()
-		return nil, false
+		return nil
 	}
 
 	if bp := r.bufferPromises[layer]; bp != nil {
@@ -695,7 +695,7 @@ func (r *ReceiverBase) GetOrCreateBuffer(layer int32) (buffer.BufferProvider, bo
 		<-bp.ready
 
 		buff, _ := r.getBuffer(layer)
-		return buff, false
+		return buff
 	}
 
 	bp := &bufferPromise{
@@ -710,7 +710,7 @@ func (r *ReceiverBase) GetOrCreateBuffer(layer int32) (buffer.BufferProvider, bo
 	r.params.Logger.Debugw("base created buffer", "layer", layer, "err", err, "buff", buff != nil) // REMOVE
 	if err != nil {
 		r.params.Logger.Errorw("could not create buffer", err)
-		return nil, false
+		return nil
 	}
 
 	r.bufferMu.Lock()
@@ -721,7 +721,7 @@ func (r *ReceiverBase) GetOrCreateBuffer(layer int32) (buffer.BufferProvider, bo
 	r.setupBuffer(buff, layer, rtt)
 	close(bp.ready)
 	r.params.Logger.Debugw("base created buffer returning", "layer", layer, "err", err, "buff", buff != nil) // REMOVE
-	return buff, true
+	return buff
 }
 
 func (r *ReceiverBase) setupBuffer(buff buffer.BufferProvider, layer int32, rtt uint32) {
