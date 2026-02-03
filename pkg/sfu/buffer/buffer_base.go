@@ -1464,7 +1464,6 @@ func (b *BufferBase) seedKeyFrame(keyFrameSeederGeneration int32) {
 	//
 	// send gratuitous PLIs for some time or until a key frame is seen to
 	// get the engine rolling
-	b.logger.Debugw("starting key frame seeder", "generation", keyFrameSeederGeneration)
 	timer := time.NewTimer(30 * time.Second)
 	defer timer.Stop()
 
@@ -1474,16 +1473,18 @@ func (b *BufferBase) seedKeyFrame(keyFrameSeederGeneration int32) {
 	initialCount := uint32(0)
 	b.RLock()
 	rtpStats := b.rtpStats
+	lgr := b.logger
 	b.RUnlock()
+	lgr.Debugw("starting key frame seeder", "generation", keyFrameSeederGeneration)
 	if rtpStats == nil {
-		b.logger.Debugw("cannot do key frame seeding without stats", "generation", keyFrameSeederGeneration)
+		lgr.Debugw("cannot do key frame seeding without stats", "generation", keyFrameSeederGeneration)
 		return
 	}
 	initialCount, _ = rtpStats.KeyFrame()
 
 	for {
 		if b.isClosed.Load() || b.keyFrameSeederGeneration.Load() != keyFrameSeederGeneration {
-			b.logger.Debugw(
+			lgr.Debugw(
 				"stopping key frame seeder: stopped",
 				"generation", keyFrameSeederGeneration,
 				"currentGeneration", b.keyFrameSeederGeneration.Load(),
@@ -1493,13 +1494,13 @@ func (b *BufferBase) seedKeyFrame(keyFrameSeederGeneration int32) {
 
 		select {
 		case <-timer.C:
-			b.logger.Debugw("stopping key frame seeder: timeout", "generation", keyFrameSeederGeneration)
+			lgr.Debugw("stopping key frame seeder: timeout", "generation", keyFrameSeederGeneration)
 			return
 
 		case <-ticker.C:
 			cnt, last := rtpStats.KeyFrame()
 			if cnt > initialCount {
-				b.logger.Debugw(
+				lgr.Debugw(
 					"stopping key frame seeder: received key frame",
 					"generation", keyFrameSeederGeneration,
 					"keyFrameCountInitial", initialCount,
