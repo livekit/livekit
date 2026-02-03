@@ -1365,11 +1365,18 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		return nil
 	}
 
+	var sessionDuration time.Duration
+	if activeAt := p.ActiveAt(); !activeAt.IsZero() {
+		sessionDuration = time.Since(activeAt)
+	}
 	p.params.Logger.Infow(
 		"participant closing",
 		"sendLeave", sendLeave,
 		"reason", reason.String(),
 		"isExpectedToResume", isExpectedToResume,
+		"clientInfo", logger.Proto(sutils.ClientInfoWithoutAddress(p.GetClientInfo())),
+		"kind", p.Kind(),
+		"sessionDuration", sessionDuration,
 	)
 	p.closeReason.Store(reason)
 	p.clearDisconnectTimer()
