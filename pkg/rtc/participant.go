@@ -919,6 +919,9 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 }
 
 func (p *ParticipantImpl) TelemetryGuard() *telemetry.ReferenceGuard {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
 	return p.telemetryGuard
 }
 
@@ -4014,6 +4017,10 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 	}
 
 	p.params.Logger.Infow("move participant to new room", "newRoomName", params.RoomName, "newID", params.ParticipantID)
+
+	p.lock.Lock()
+	p.telemetryGuard = &telemetry.ReferenceGuard{}
+	p.lock.Unlock()
 
 	p.params.LoggerResolver.Reset()
 	p.params.ReporterResolver.Reset()
