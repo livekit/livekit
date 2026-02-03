@@ -709,6 +709,12 @@ func (r *ReceiverBase) GetOrCreateBuffer(layer int32) buffer.BufferProvider {
 	buff, err := r.params.OnNewBufferNeeded(layer, ti)
 	if err != nil {
 		r.params.Logger.Errorw("could not create buffer", err)
+
+		r.bufferMu.Lock()
+		r.bufferPromises[layer] = nil
+		r.bufferMu.Unlock()
+
+		close(bp.ready)
 		return nil
 	}
 
