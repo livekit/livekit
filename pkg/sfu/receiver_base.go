@@ -182,6 +182,7 @@ type ReceiverBaseParams struct {
 	StreamTrackerManagerConfig   StreamTrackerManagerConfig
 	StreamTrackerManagerListener StreamTrackerManagerListener
 	IsSelfClosing                bool
+	OnNewBufferNeeded            func(int32, *livekit.TrackInfo) (buffer.BufferProvider, error)
 	OnClosed                     func()
 }
 
@@ -636,7 +637,7 @@ func (r *ReceiverBase) GetLayeredBitrate() ([]int32, Bitrates) {
 
 func (r *ReceiverBase) SendPLI(layer int32, force bool) {
 	// SVC-TODO :  should send LRR (Layer Refresh Request) instead of PLI
-	buff, _ := r.getBuffer(layer)
+	buff, _ := r.GetOrCreateBuffer(layer)
 	if buff == nil {
 		return
 	}
@@ -665,10 +666,7 @@ func (r *ReceiverBase) getBufferLocked(layer int32) (buffer.BufferProvider, int3
 	return r.buffers[layer], layer
 }
 
-func (r *ReceiverBase) GetOrCreateBuffer(
-	layer int32,
-	creatorFn func(*livekit.TrackInfo) (buffer.BufferProvider, error),
-) (buffer.BufferProvider, bool) {
+func (r *ReceiverBase) GetOrCreateBuffer(layer int32) (buffer.BufferProvider, bool) {
 	r.bufferMu.Lock()
 
 	if r.IsClosed() {
@@ -682,7 +680,12 @@ func (r *ReceiverBase) GetOrCreateBuffer(
 		return buff, false
 	}
 
-	buff, err := creatorFn(r.trackInfo)
+	if r.params.OnNewBufferNeeded == nil {
+		r.bufferMu.Unlock()
+		return nil, false
+	}
+
+	buff, err := r.params.OnNewBufferNeeded(layer, r.trackInfo)
 	if err != nil {
 		r.bufferMu.Unlock()
 		r.params.Logger.Errorw("could not create buffer", err)
