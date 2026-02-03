@@ -235,6 +235,7 @@ func (s *BytesSignalStats) Reset() {
 		<-s.stopped
 		s.stopped = nil
 		s.done = core.Fuse{}
+		s.guard = ReferenceGuard{}
 	}
 	s.ri = nil
 	s.pi = nil
