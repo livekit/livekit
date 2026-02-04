@@ -612,7 +612,7 @@ func (conf *Config) ValidateKeys() error {
 		}
 		conf.Keys[conf.APIKey] = conf.APISecret
 	}
-	
+
 	if len(conf.Keys) == 0 {
 		return ErrKeysNotSet
 	}
