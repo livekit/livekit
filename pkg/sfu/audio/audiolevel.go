@@ -109,6 +109,10 @@ func (l *AudioLevel) Observe(level uint8, durationMs uint32, arrivalTime int64) 
 }
 
 func (l *AudioLevel) observeLocked(level uint8, durationMs uint32, arrivalTime int64) {
+	if l.config.UpdateInterval == 0 {
+		return
+	}
+
 	l.lastObservedAt = arrivalTime
 
 	l.observedDuration += durationMs
