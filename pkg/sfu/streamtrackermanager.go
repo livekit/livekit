@@ -16,7 +16,6 @@ package sfu
 
 import (
 	"slices"
-	"sort"
 	"sync"
 	"time"
 
@@ -162,7 +161,8 @@ func NewStreamTrackerManager(
 		s.trackerConfig = config.Video
 	}
 
-	s.maxExpectedLayerFromTrackInfo()
+	s.maxExpectedLayer = buffer.InvalidLayerSpatial
+	s.maxExpectedLayerFromTrackInfo(true)
 
 	if trackInfo.Type == livekit.TrackType_VIDEO {
 		go s.bitrateReporter()
@@ -333,8 +333,12 @@ func (s *StreamTrackerManager) RemoveAllTrackers() {
 		s.trackers[layer] = nil
 	}
 	s.availableLayers = make([]int32, 0)
-	s.maxExpectedLayerFromTrackInfoLocked()
+
+	s.maxExpectedLayer = buffer.InvalidLayerSpatial
+	s.maxExpectedLayerFromTrackInfoLocked(true)
+
 	s.paused = false
+
 	ddTracker := s.ddTracker
 	s.ddTracker = nil
 	s.lock.Unlock()
@@ -382,7 +386,7 @@ func (s *StreamTrackerManager) IsPaused() bool {
 
 func (s *StreamTrackerManager) UpdateTrackInfo(ti *livekit.TrackInfo) {
 	s.trackInfo.Store(utils.CloneProto(ti))
-	s.maxExpectedLayerFromTrackInfo()
+	s.maxExpectedLayerFromTrackInfo(false)
 }
 
 func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) int32 {
@@ -488,7 +492,7 @@ func (s *StreamTrackerManager) getLayeredBitrateLocked() ([]int32, Bitrates) {
 				tls = tracker.BitrateTemporalCumulative()
 			}
 
-			for j := 0; j < len(br[i]); j++ {
+			for j := range len(br[i]) {
 				br[i][j] = tls[j]
 			}
 		}
@@ -515,20 +519,13 @@ func (s *StreamTrackerManager) getLayeredBitrateLocked() ([]int32, Bitrates) {
 
 func (s *StreamTrackerManager) addAvailableLayer(layer int32) {
 	s.lock.Lock()
-	hasLayer := false
-	for _, l := range s.availableLayers {
-		if l == layer {
-			hasLayer = true
-			break
-		}
-	}
-	if hasLayer {
+	if slices.Contains(s.availableLayers, layer) {
 		s.lock.Unlock()
 		return
 	}
 
 	s.availableLayers = append(s.availableLayers, layer)
-	sort.Slice(s.availableLayers, func(i, j int) bool { return s.availableLayers[i] < s.availableLayers[j] })
+	slices.Sort(s.availableLayers)
 
 	// check if new layer is the max layer
 	isMaxLayerChange := s.availableLayers[len(s.availableLayers)-1] == layer
@@ -562,7 +559,7 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 			newLayers = append(newLayers, l)
 		}
 	}
-	sort.Slice(newLayers, func(i, j int) bool { return newLayers[i] < newLayers[j] })
+	slices.Sort(newLayers)
 	s.availableLayers = newLayers
 
 	s.logger.Debugw(
@@ -588,22 +585,29 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 	}
 }
 
-func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfo() {
+func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfo(force bool) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	s.maxExpectedLayerFromTrackInfoLocked()
+	s.maxExpectedLayerFromTrackInfoLocked(force)
 }
 
-func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfoLocked() {
-	s.maxExpectedLayer = buffer.InvalidLayerSpatial
+func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfoLocked(force bool) {
+	maxExpectedLayer := buffer.InvalidLayerSpatial
 	ti := s.trackInfo.Load()
 	if ti != nil {
 		for _, layer := range buffer.GetVideoLayersForMimeType(s.mimeType, ti) {
-			if layer.SpatialLayer > s.maxExpectedLayer {
-				s.maxExpectedLayer = layer.SpatialLayer
+			if layer.SpatialLayer > maxExpectedLayer {
+				maxExpectedLayer = layer.SpatialLayer
 			}
 		}
+	}
+
+	// when max expected is higher than current max, trackers are reset
+	// which allows a layer start to be detected on initial packets from that higher layer,
+	// so update max only on track info max being lower than current max
+	if force || maxExpectedLayer < s.maxExpectedLayer {
+		s.maxExpectedLayer = maxExpectedLayer
 	}
 }
 
