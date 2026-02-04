@@ -94,6 +94,8 @@ func (l *AudioLevel) SetConfig(config AudioLevelConfig) {
 	if l.config.SmoothIntervals > 0 {
 		// exponential moving average (EMA), same center of mass with simple moving average (SMA)
 		l.smoothFactor = float64(2) / (float64(l.config.SmoothIntervals + 1))
+	} else {
+		l.smoothFactor = 1
 	}
 	l.activeThreshold = ConvertAudioLevel(float64(l.config.ActiveLevel))
 }
