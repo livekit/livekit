@@ -50,7 +50,7 @@ const (
 
 var (
 	ErrKeyFileIncorrectPermission = errors.New("key file others permissions must be set to 0")
-	ErrKeysNotSet                 = errors.New("one of key-file or keys must be provided")
+	ErrKeysNotSet                 = errors.New("one of key-file, keys or api-key & api-secret must be provided")
 )
 
 type Config struct {
