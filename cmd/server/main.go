@@ -63,6 +63,16 @@ var baseFlags = []cli.Flag{
 		Sources: cli.EnvVars("LIVEKIT_KEYS"),
 	},
 	&cli.StringFlag{
+		Name:    "api-key",
+		Usage:   "standalone api key. requires --api-secret to be provided",
+		Sources: cli.EnvVars("LIVEKIT_API_KEY"),
+	},
+	&cli.StringFlag{
+		Name:    "api-secret",
+		Usage:   "standalone api secret. requires --api-key to be provided",
+		Sources: cli.EnvVars("LIVEKIT_API_SECRET"),
+	},
+	&cli.StringFlag{
 		Name:    "region",
 		Usage:   "region of the current node. Used by regionaware node selector",
 		Sources: cli.EnvVars("LIVEKIT_REGION"),
