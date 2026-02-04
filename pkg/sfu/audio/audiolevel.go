@@ -165,6 +165,10 @@ func (l *AudioLevel) GetLevel(now int64) (float64, bool) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
+	if l.config.UpdateInterval == 0 {
+		return 0.0, false
+	}
+
 	l.resetIfStaleLocked(now)
 
 	return l.smoothedLevel, l.smoothedLevel >= l.activeThreshold
