@@ -148,7 +148,6 @@ func NewStreamTrackerManager(
 		videoLayerMode:       buffer.GetVideoLayerModeForMimeType(mimeType, trackInfo),
 		maxPublishedLayer:    buffer.InvalidLayerSpatial,
 		maxTemporalLayerSeen: buffer.InvalidLayerTemporal,
-		maxExpectedLayer:     buffer.InvalidLayerSpatial,
 		clockRate:            clockRate,
 	}
 	s.trackInfo.Store(utils.CloneProto(trackInfo))
@@ -162,7 +161,8 @@ func NewStreamTrackerManager(
 		s.trackerConfig = config.Video
 	}
 
-	s.maxExpectedLayerFromTrackInfo()
+	s.maxExpectedLayer = buffer.InvalidLayerSpatial
+	s.maxExpectedLayerFromTrackInfo(true)
 
 	if trackInfo.Type == livekit.TrackType_VIDEO {
 		go s.bitrateReporter()
@@ -335,7 +335,7 @@ func (s *StreamTrackerManager) RemoveAllTrackers() {
 	s.availableLayers = make([]int32, 0)
 
 	s.maxExpectedLayer = buffer.InvalidLayerSpatial
-	s.maxExpectedLayerFromTrackInfoLocked()
+	s.maxExpectedLayerFromTrackInfoLocked(true)
 
 	s.paused = false
 
@@ -386,7 +386,7 @@ func (s *StreamTrackerManager) IsPaused() bool {
 
 func (s *StreamTrackerManager) UpdateTrackInfo(ti *livekit.TrackInfo) {
 	s.trackInfo.Store(utils.CloneProto(ti))
-	s.maxExpectedLayerFromTrackInfo()
+	s.maxExpectedLayerFromTrackInfo(false)
 }
 
 func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) int32 {
@@ -585,14 +585,14 @@ func (s *StreamTrackerManager) removeAvailableLayer(layer int32) {
 	}
 }
 
-func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfo() {
+func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfo(force bool) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	s.maxExpectedLayerFromTrackInfoLocked()
+	s.maxExpectedLayerFromTrackInfoLocked(force)
 }
 
-func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfoLocked() {
+func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfoLocked(force bool) {
 	maxExpectedLayer := buffer.InvalidLayerSpatial
 	ti := s.trackInfo.Load()
 	if ti != nil {
@@ -606,7 +606,7 @@ func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfoLocked() {
 	// when max expected is higher than current max, trackers are reset
 	// which allows a layer start to be detected on initial packets from that higher layer,
 	// so update max only on track info max being lower than current max
-	if maxExpectedLayer < s.maxExpectedLayer {
+	if force || maxExpectedLayer < s.maxExpectedLayer {
 		s.maxExpectedLayer = maxExpectedLayer
 	}
 }
