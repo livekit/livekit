@@ -859,6 +859,10 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 	v := p.version.Load()
 	piv := p.timedVersion
 
+	var clientProtocol int32
+	if p.params.ClientInfo.ClientInfo != nil {
+		clientProtocol = p.params.ClientInfo.ClientInfo.GetClientProtocol()
+	}
 	pi := &livekit.ParticipantInfo{
 		Sid:              string(p.ID()),
 		Identity:         string(p.params.Identity),
@@ -875,6 +879,7 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 		Kind:             grants.GetParticipantKind(),
 		KindDetails:      grants.GetKindDetails(),
 		DisconnectReason: p.CloseReason().ToDisconnectReason(),
+		ClientProtocol:   clientProtocol,
 	}
 	p.lock.RUnlock()
 
