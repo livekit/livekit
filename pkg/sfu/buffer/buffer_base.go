@@ -331,9 +331,9 @@ func (b *BufferBase) BindLocked(rtpParameters webrtc.RTPParameters, codec webrtc
 		case sdp.AudioLevelURI:
 			b.audioLevelExtID = uint8(ext.ID)
 			b.audioLevel = audio.NewAudioLevel(audio.AudioLevelParams{
-				Config:    b.audioLevelConfig,
 				ClockRate: b.clockRate,
 			})
+			b.audioLevel.SetConfig(b.audioLevelConfig)
 
 		case act.AbsCaptureTimeURI:
 			b.absCaptureTimeExtID = uint8(ext.ID)
@@ -434,6 +434,9 @@ func (b *BufferBase) SetAudioLevelConfig(audioLevelConfig audio.AudioLevelConfig
 	defer b.Unlock()
 
 	b.audioLevelConfig = audioLevelConfig
+	if b.audioLevel != nil {
+		b.audioLevel.SetConfig(b.audioLevelConfig)
+	}
 }
 
 func (b *BufferBase) SetStreamRestartDetection(enable bool) {
@@ -512,9 +515,9 @@ func (b *BufferBase) restartStreamLocked(reason string, isDetected bool) {
 
 	if b.audioLevel != nil {
 		b.audioLevel = audio.NewAudioLevel(audio.AudioLevelParams{
-			Config:    b.audioLevelConfig,
 			ClockRate: b.clockRate,
 		})
+		b.audioLevel.SetConfig(b.audioLevelConfig)
 	}
 
 	if b.ddExtID != 0 {
