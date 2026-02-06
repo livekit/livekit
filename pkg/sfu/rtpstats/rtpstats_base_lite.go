@@ -17,6 +17,7 @@ package rtpstats
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -412,25 +413,18 @@ func (r *rtpStatsBaseLite) marshalLogObject(e zapcore.ObjectEncoder, packetsExpe
 		e.AddFloat32("packetLostPercentage", float32(r.packetsLost)/float32(packetsExpected)*100.0)
 	}
 
-	hasLoss := false
-	first := true
-	str := "["
+	var sb strings.Builder
 	for burst, count := range r.gapHistogram {
 		if count == 0 {
 			continue
 		}
-
-		hasLoss = true
-
-		if !first {
-			str += ", "
+		if sb.Len() > 0 {
+			sb.WriteString(", ")
 		}
-		first = false
-		str += fmt.Sprintf("%d:%d", burst+1, count)
+		sb.WriteString(fmt.Sprintf("%d:%d", burst+1, count))
 	}
-	str += "]"
-	if hasLoss {
-		e.AddString("gapHistogram", str)
+	if sb.Len() > 0 {
+		e.AddString("gapHistogram", "["+sb.String()+"]")
 	}
 
 	e.AddUint32("nacks", r.nacks)
@@ -486,25 +480,14 @@ func (r *rtpStatsBaseLite) toProto(packetsExpected, packetsSeenMinusPadding, pac
 		LastPli:              timestamppb.New(time.Unix(0, r.lastPli)),
 	}
 
-	gapsPresent := false
 	for i := range len(r.gapHistogram) {
 		if r.gapHistogram[i] == 0 {
 			continue
 		}
-
-		gapsPresent = true
-		break
-	}
-
-	if gapsPresent {
-		p.GapHistogram = make(map[int32]uint32, len(r.gapHistogram))
-		for i := range len(r.gapHistogram) {
-			if r.gapHistogram[i] == 0 {
-				continue
-			}
-
-			p.GapHistogram[int32(i+1)] = r.gapHistogram[i]
+		if p.GapHistogram == nil {
+			p.GapHistogram = make(map[int32]uint32, len(r.gapHistogram))
 		}
+		p.GapHistogram[int32(i+1)] = r.gapHistogram[i]
 	}
 
 	return p

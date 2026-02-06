@@ -428,37 +428,37 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(
 	firstTime := now - samplesDuration.Nanoseconds()
 	adjustment = r.firstTime - firstTime
 
-	getFields := func() []any {
-		return []any{
-			"startTime", time.Unix(0, r.startTime),
-			"nowTime", time.Unix(0, now),
-			"before", time.Unix(0, r.firstTime),
-			"after", time.Unix(0, firstTime),
-			"adjustment", time.Duration(adjustment),
-			"firstTimeAdjustment", r.firstTimeAdjustment,
-			"extNowTS", extNowTS,
-			"extStartTS", extStartTS,
-			"srData", WrappedRTCPSenderReportStateLogger{srData},
-			"tsOffset", tsOffset,
-			"timeSinceReceive", timeSinceReceive,
-			"timeSinceFirst", timeSinceFirst,
-			"samplesDiff", samplesDiff,
-			"samplesDuration", samplesDuration,
-		}
-	}
-
 	if firstTime < r.firstTime {
 		if adjustment > cFirstPacketTimeAdjustThreshold {
 			err = errors.New("adjusting first packet time, too big, ignoring")
-			loggingFields = getFields()
+			loggingFields = r.firstPacketTimeAdjustLogFields(now, firstTime, adjustment, extNowTS, extStartTS, srData, tsOffset, timeSinceReceive, timeSinceFirst, samplesDuration, samplesDiff)
 		} else {
 			r.firstTimeAdjustment += time.Duration(adjustment)
-			r.logger.Debugw("adjusting first packet time", getFields()...)
+			r.logger.Debugw("adjusting first packet time", r.firstPacketTimeAdjustLogFields(now, firstTime, adjustment, extNowTS, extStartTS, srData, tsOffset, timeSinceReceive, timeSinceFirst, samplesDuration, samplesDiff)...)
 			r.firstTime = firstTime
 		}
 	}
 
 	return
+}
+
+func (r *rtpStatsBase) firstPacketTimeAdjustLogFields(now, firstTime int64, adjustment int64, extNowTS, extStartTS uint64, srData *livekit.RTCPSenderReportState, tsOffset uint64, timeSinceReceive, timeSinceFirst, samplesDuration time.Duration, samplesDiff int64) []any {
+	return []any{
+		"startTime", time.Unix(0, r.startTime),
+		"nowTime", time.Unix(0, now),
+		"before", time.Unix(0, r.firstTime),
+		"after", time.Unix(0, firstTime),
+		"adjustment", time.Duration(adjustment),
+		"firstTimeAdjustment", r.firstTimeAdjustment,
+		"extNowTS", extNowTS,
+		"extStartTS", extStartTS,
+		"srData", WrappedRTCPSenderReportStateLogger{srData},
+		"tsOffset", tsOffset,
+		"timeSinceReceive", timeSinceReceive,
+		"timeSinceFirst", timeSinceFirst,
+		"samplesDiff", samplesDiff,
+		"samplesDuration", samplesDuration,
+	}
 }
 
 func (r *rtpStatsBase) getPacketsSeenMinusPadding(extStartSN, extHighestSN uint64) uint64 {
@@ -742,12 +742,14 @@ func (r *rtpStatsBase) getDrift(extStartTS, extHighestTS uint64) (
 	if r.srFirst != nil && r.srNewest != nil && r.srFirst.RtpTimestamp != r.srNewest.RtpTimestamp {
 		rtpClockTicks := r.srNewest.RtpTimestampExt - r.srFirst.RtpTimestampExt
 
-		elapsed := mediatransportutil.NtpTime(r.srNewest.NtpTimestamp).Time().Sub(mediatransportutil.NtpTime(r.srFirst.NtpTimestamp).Time())
+		srFirstTime := mediatransportutil.NtpTime(r.srFirst.NtpTimestamp).Time()
+		srNewestTime := mediatransportutil.NtpTime(r.srNewest.NtpTimestamp).Time()
+		elapsed := srNewestTime.Sub(srFirstTime)
 		if elapsed.Seconds() > 0.0 {
 			driftSamples := int64(rtpClockTicks - r.rtpConverter.ToRTPExt(elapsed))
 			ntpReportDrift = &livekit.RTPDrift{
-				StartTime:      timestamppb.New(mediatransportutil.NtpTime(r.srFirst.NtpTimestamp).Time()),
-				EndTime:        timestamppb.New(mediatransportutil.NtpTime(r.srNewest.NtpTimestamp).Time()),
+				StartTime:      timestamppb.New(srFirstTime),
+				EndTime:        timestamppb.New(srNewestTime),
 				Duration:       elapsed.Seconds(),
 				StartTimestamp: r.srFirst.RtpTimestampExt,
 				EndTimestamp:   r.srNewest.RtpTimestampExt,
