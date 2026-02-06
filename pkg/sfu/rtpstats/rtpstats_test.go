@@ -243,10 +243,10 @@ func Test_RTPStatsReceiver_Restart(t *testing.T) {
 	require.False(t, r.maybeRestart(19, 21, 1000))
 	// can restart as there are enough packets with proper sequencing
 	require.True(t, r.maybeRestart(20, 21, 1000))
-	require.Equal(t, restartThreshold, len(r.restartPackets))
+	require.Equal(t, restartThreshold, r.restartPacketsN)
 
 	r.resetRestart()
-	require.Zero(t, len(r.restartPackets))
+	require.Zero(t, r.restartPacketsN)
 
 	r.Stop()
 }
