@@ -117,6 +117,9 @@ func ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 	if pv, err := strconv.Atoi(values.Get("protocol")); err == nil {
 		ci.Protocol = int32(pv)
 	}
+	if cp, err := strconv.Atoi(values.Get("client_protocol")); err == nil {
+		ci.ClientProtocol = int32(cp)
+	}
 	sdkString := values.Get("sdk")
 	switch sdkString {
 	case "js":
