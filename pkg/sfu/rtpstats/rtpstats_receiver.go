@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/pion/rtcp"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
 	"github.com/livekit/mediatransportutil"
@@ -126,6 +127,49 @@ func (p packet) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 // ---------------------------------------------------------------------
 
+type updateLoggingFields struct {
+	packetTime       int64
+	sequenceNumber   uint16
+	timestamp        uint32
+	marker           bool
+	hdrSize          int
+	payloadSize      int
+	paddingSize      int
+	resSN            *utils.WrapAroundUpdateResult[uint64]
+	gapSN            int64
+	resTS            *utils.WrapAroundUpdateResult[uint64]
+	gapTS            int64
+	snRolloverCount  int
+	expectedTSJump   int64
+	tsRolloverCount  int
+	timeSinceHighest int64
+	rtpStats         *RTPStatsReceiver
+}
+
+func (ulf *updateLoggingFields) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if ulf != nil {
+		e.AddObject("resSN", ulf.resSN)
+		e.AddInt64("gapSN", ulf.gapSN)
+		e.AddObject("resTS", ulf.resTS)
+		e.AddInt64("gapTS", ulf.gapTS)
+		e.AddInt("snRolloverCount", ulf.snRolloverCount)
+		e.AddInt64("expectedTSJump", ulf.expectedTSJump)
+		e.AddInt("tsRolloverCount", ulf.tsRolloverCount)
+		e.AddTime("packetTime", time.Unix(0, ulf.packetTime))
+		e.AddDuration("timeSinceHighest", time.Duration(ulf.timeSinceHighest))
+		e.AddUint16("sequenceNumber", ulf.sequenceNumber)
+		e.AddUint32("timestamp", ulf.timestamp)
+		e.AddBool("marker", ulf.marker)
+		e.AddInt("hdrSize", ulf.hdrSize)
+		e.AddInt("payloadSize", ulf.payloadSize)
+		e.AddInt("paddingSize", ulf.paddingSize)
+		e.AddObject("rtpStats", lockedRTPStatsReceiverLogEncoder{ulf.rtpStats})
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------
+
 type RTPStatsReceiver struct {
 	*rtpStatsBase
 
@@ -191,45 +235,6 @@ func (r *RTPStatsReceiver) getTSRolloverCount(diffNano int64, ts uint32) int {
 		roc++
 	}
 	return int(roc)
-}
-
-type updateLoggingFields struct {
-	packetTime       int64
-	sequenceNumber   uint16
-	timestamp        uint32
-	marker           bool
-	hdrSize          int
-	payloadSize      int
-	paddingSize      int
-	resSN            utils.WrapAroundUpdateResult[uint64]
-	gapSN            int64
-	resTS            utils.WrapAroundUpdateResult[uint64]
-	gapTS            int64
-	snRolloverCount  int
-	expectedTSJump   int64
-	tsRolloverCount  int
-	timeSinceHighest int64
-}
-
-func (r *RTPStatsReceiver) updateLoggerLocked(ulf *updateLoggingFields) logger.UnlikelyLogger {
-	return r.logger.WithUnlikelyValues(
-		"resSN", ulf.resSN,
-		"gapSN", ulf.gapSN,
-		"resTS", ulf.resTS,
-		"gapTS", ulf.gapTS,
-		"snRolloverCount", ulf.snRolloverCount,
-		"expectedTSJump", ulf.expectedTSJump,
-		"tsRolloverCount", ulf.tsRolloverCount,
-		"packetTime", time.Unix(0, ulf.packetTime),
-		"timeSinceHighest", time.Duration(ulf.timeSinceHighest),
-		"sequenceNumber", ulf.sequenceNumber,
-		"timestamp", ulf.timestamp,
-		"marker", ulf.marker,
-		"hdrSize", ulf.hdrSize,
-		"payloadSize", ulf.payloadSize,
-		"paddingSize", ulf.paddingSize,
-		"rtpStats", lockedRTPStatsReceiverLogEncoder{r},
-	)
 }
 
 func (r *RTPStatsReceiver) undoUpdatesLocked(resSN utils.WrapAroundUpdateResult[uint64], resTS utils.WrapAroundUpdateResult[uint64]) {
@@ -308,16 +313,17 @@ func (r *RTPStatsReceiver) Update(
 				hdrSize:          hdrSize,
 				payloadSize:      payloadSize,
 				paddingSize:      paddingSize,
-				resSN:            resSN,
+				resSN:            &resSN,
 				gapSN:            gapSN,
-				resTS:            resTS,
+				resTS:            &resTS,
 				gapTS:            gapTS,
 				snRolloverCount:  snRolloverCount,
 				expectedTSJump:   expectedTSJump,
 				tsRolloverCount:  tsRolloverCount,
 				timeSinceHighest: timeSinceHighest,
+				rtpStats:         r,
 			}
-			r.updateLoggerLocked(ulf).Warnw("potential time stamp roll over", nil)
+			r.logger.Warnw("potential time stamp roll over", nil, zap.Inline(ulf))
 		}
 		resTS = r.timestamp.Rollover(timestamp, tsRolloverCount)
 		if resTS.IsUnhandled {
@@ -333,19 +339,20 @@ func (r *RTPStatsReceiver) Update(
 				hdrSize:          hdrSize,
 				payloadSize:      payloadSize,
 				paddingSize:      paddingSize,
-				resSN:            resSN,
+				resSN:            &resSN,
 				gapSN:            gapSN,
-				resTS:            resTS,
+				resTS:            &resTS,
 				gapTS:            gapTS,
 				snRolloverCount:  snRolloverCount,
 				expectedTSJump:   expectedTSJump,
 				tsRolloverCount:  tsRolloverCount,
 				timeSinceHighest: timeSinceHighest,
+				rtpStats:         r,
 			}
-			r.updateLoggerLocked(ulf).Warnw("dropping packet, pre-start timestamp", nil)
+			r.logger.Warnw("dropping packet, pre-start timestamp", nil, zap.Inline(ulf))
 
 			if r.maybeRestart(sequenceNumber, timestamp, payloadSize) {
-				r.updateLoggerLocked(ulf).Infow("potential restart")
+				r.logger.Infow("potential restart", zap.Inline(ulf))
 				r.resetRestart()
 				flowState.UnhandledReason = RTPFlowUnhandledReasonRestart
 			} else {
@@ -382,19 +389,20 @@ func (r *RTPStatsReceiver) Update(
 						hdrSize:          hdrSize,
 						payloadSize:      payloadSize,
 						paddingSize:      paddingSize,
-						resSN:            resSN,
+						resSN:            &resSN,
 						gapSN:            gapSN,
-						resTS:            resTS,
+						resTS:            &resTS,
 						gapTS:            gapTS,
 						snRolloverCount:  snRolloverCount,
 						expectedTSJump:   expectedTSJump,
 						tsRolloverCount:  tsRolloverCount,
 						timeSinceHighest: timeSinceHighest,
+						rtpStats:         r,
 					}
-					r.updateLoggerLocked(ulf).Warnw("dropping packet, old timestamp", nil)
+					r.logger.Warnw("dropping packet, old timestamp", nil, zap.Inline(ulf))
 
 					if r.maybeRestart(sequenceNumber, timestamp, payloadSize) {
-						r.updateLoggerLocked(ulf).Infow("potential restart")
+						r.logger.Infow("potential restart", zap.Inline(ulf))
 						r.resetRestart()
 						flowState.UnhandledReason = RTPFlowUnhandledReasonRestart
 					} else {
@@ -420,19 +428,20 @@ func (r *RTPStatsReceiver) Update(
 					hdrSize:          hdrSize,
 					payloadSize:      payloadSize,
 					paddingSize:      paddingSize,
-					resSN:            resSN,
+					resSN:            &resSN,
 					gapSN:            gapSN,
-					resTS:            resTS,
+					resTS:            &resTS,
 					gapTS:            gapTS,
 					snRolloverCount:  snRolloverCount,
 					expectedTSJump:   expectedTSJump,
 					tsRolloverCount:  tsRolloverCount,
 					timeSinceHighest: timeSinceHighest,
+					rtpStats:         r,
 				}
-				r.updateLoggerLocked(ulf).Warnw("dropping packet, old sequence number", nil)
+				r.logger.Warnw("dropping packet, old sequence number", nil, zap.Inline(ulf))
 
 				if r.maybeRestart(sequenceNumber, timestamp, payloadSize) {
-					r.updateLoggerLocked(ulf).Infow("potential restart")
+					r.logger.Infow("potential restart", zap.Inline(ulf))
 					r.resetRestart()
 					flowState.UnhandledReason = RTPFlowUnhandledReasonRestart
 				} else {
@@ -460,16 +469,17 @@ func (r *RTPStatsReceiver) Update(
 					hdrSize:          hdrSize,
 					payloadSize:      payloadSize,
 					paddingSize:      paddingSize,
-					resSN:            resSN,
+					resSN:            &resSN,
 					gapSN:            gapSN,
-					resTS:            resTS,
+					resTS:            &resTS,
 					gapTS:            gapTS,
 					snRolloverCount:  snRolloverCount,
 					expectedTSJump:   expectedTSJump,
 					tsRolloverCount:  tsRolloverCount,
 					timeSinceHighest: timeSinceHighest,
+					rtpStats:         r,
 				}
-				r.updateLoggerLocked(ulf).Warnw("forcing sequence number rollover", nil)
+				r.logger.Warnw("forcing sequence number rollover", nil, zap.Inline(ulf))
 			}
 		}
 
@@ -486,19 +496,20 @@ func (r *RTPStatsReceiver) Update(
 				hdrSize:          hdrSize,
 				payloadSize:      payloadSize,
 				paddingSize:      paddingSize,
-				resSN:            resSN,
+				resSN:            &resSN,
 				gapSN:            gapSN,
-				resTS:            resTS,
+				resTS:            &resTS,
 				gapTS:            gapTS,
 				snRolloverCount:  snRolloverCount,
 				expectedTSJump:   expectedTSJump,
 				tsRolloverCount:  tsRolloverCount,
 				timeSinceHighest: timeSinceHighest,
+				rtpStats:         r,
 			}
-			r.updateLoggerLocked(ulf).Warnw("dropping packet, pre-start sequence number", nil)
+			r.logger.Warnw("dropping packet, pre-start sequence number", nil, zap.Inline(ulf))
 
 			if r.maybeRestart(sequenceNumber, timestamp, payloadSize) {
-				r.updateLoggerLocked(ulf).Infow("potential restart")
+				r.logger.Infow("potential restart", zap.Inline(ulf))
 				r.resetRestart()
 				flowState.UnhandledReason = RTPFlowUnhandledReasonRestart
 			} else {
@@ -539,17 +550,19 @@ func (r *RTPStatsReceiver) Update(
 					hdrSize:          hdrSize,
 					payloadSize:      payloadSize,
 					paddingSize:      paddingSize,
-					resSN:            resSN,
+					resSN:            &resSN,
 					gapSN:            gapSN,
-					resTS:            resTS,
+					resTS:            &resTS,
 					gapTS:            gapTS,
 					snRolloverCount:  snRolloverCount,
 					expectedTSJump:   expectedTSJump,
 					tsRolloverCount:  tsRolloverCount,
 					timeSinceHighest: timeSinceHighest,
+					rtpStats:         r,
 				}
-				r.updateLoggerLocked(ulf).Warnw(
+				r.logger.Warnw(
 					"large sequence number gap negative", nil,
+					zap.Inline(ulf),
 					"count", r.largeJumpNegativeCount,
 				)
 			}
@@ -566,17 +579,19 @@ func (r *RTPStatsReceiver) Update(
 					hdrSize:          hdrSize,
 					payloadSize:      payloadSize,
 					paddingSize:      paddingSize,
-					resSN:            resSN,
+					resSN:            &resSN,
 					gapSN:            gapSN,
-					resTS:            resTS,
+					resTS:            &resTS,
 					gapTS:            gapTS,
 					snRolloverCount:  snRolloverCount,
 					expectedTSJump:   expectedTSJump,
 					tsRolloverCount:  tsRolloverCount,
 					timeSinceHighest: timeSinceHighest,
+					rtpStats:         r,
 				}
-				r.updateLoggerLocked(ulf).Warnw(
+				r.logger.Warnw(
 					"large sequence number gap", nil,
+					zap.Inline(ulf),
 					"count", r.largeJumpCount,
 				)
 			}
@@ -593,17 +608,19 @@ func (r *RTPStatsReceiver) Update(
 					hdrSize:          hdrSize,
 					payloadSize:      payloadSize,
 					paddingSize:      paddingSize,
-					resSN:            resSN,
+					resSN:            &resSN,
 					gapSN:            gapSN,
-					resTS:            resTS,
+					resTS:            &resTS,
 					gapTS:            gapTS,
 					snRolloverCount:  snRolloverCount,
 					expectedTSJump:   expectedTSJump,
 					tsRolloverCount:  tsRolloverCount,
 					timeSinceHighest: timeSinceHighest,
+					rtpStats:         r,
 				}
-				r.updateLoggerLocked(ulf).Warnw(
+				r.logger.Warnw(
 					"time reversed", nil,
+					zap.Inline(ulf),
 					"count", r.timeReversedCount,
 				)
 			}
