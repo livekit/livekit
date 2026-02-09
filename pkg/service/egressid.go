@@ -16,7 +16,7 @@ func TwirpEgressID() *twirp.ServerHooks {
 	return &twirp.ServerHooks{
 		RequestRouted: func(ctx context.Context) (context.Context, error) {
 			// generate egressID for all Start*Egress methods
-			if methodName, ok := twirp.MethodName(ctx); ok && strings.HasPrefix(methodName, "Start") && strings.HasSuffix(methodName, "Egress") {
+			if isStartEgressMethod(ctx) {
 				egressID := guid.New(guid.EgressPrefix)
 				ctx = WithEgressID(ctx, egressID)
 				AppendLogFields(ctx, "egressID", egressID)
@@ -37,4 +37,11 @@ func EgressID(ctx context.Context) (string, bool) {
 	}
 	id, ok := head.Metadata[egressIDKey]
 	return id, ok
+}
+
+func isStartEgressMethod(ctx context.Context) bool {
+	if methodName, ok := twirp.MethodName(ctx); ok && strings.HasPrefix(methodName, "Start") && strings.HasSuffix(methodName, "Egress") {
+		return true
+	}
+	return false
 }
