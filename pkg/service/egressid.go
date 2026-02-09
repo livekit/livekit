@@ -7,10 +7,9 @@ import (
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/protocol/utils/guid"
-	"github.com/livekit/psrpc/pkg/metadata"
 )
 
-const egressIDKey = "egressID"
+type egressIDKey struct{}
 
 func TwirpEgressID() *twirp.ServerHooks {
 	return &twirp.ServerHooks{
@@ -27,16 +26,14 @@ func TwirpEgressID() *twirp.ServerHooks {
 }
 
 func WithEgressID(ctx context.Context, egressID string) context.Context {
-	return metadata.AppendMetadataToOutgoingContext(ctx, egressIDKey, egressID)
+	return context.WithValue(ctx, egressIDKey{}, egressID)
 }
 
 func EgressID(ctx context.Context) (string, bool) {
-	head := metadata.IncomingHeader(ctx)
-	if head == nil {
-		return "", false
+	if egressID, ok := ctx.Value(egressIDKey{}).(string); ok && egressID != "" {
+		return egressID, true
 	}
-	id, ok := head.Metadata[egressIDKey]
-	return id, ok
+	return "", false
 }
 
 func isStartEgressMethod(ctx context.Context) bool {
