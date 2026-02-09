@@ -258,3 +258,29 @@ func Test_RTPStatsSender_getIntervalStats(t *testing.T) {
 		require.EqualValues(t, 8977, stats.packetsNotFoundMetadata)
 	})
 }
+
+func BenchmarkRTPStatsReceiver_Update(b *testing.B) {
+	const clockRate = 90000
+	const hdrSize = 12
+	const payloadSize = 1200
+	const paddingSize = 0
+	const tsIncrement = 3000 // ~33ms at 90kHz
+
+	r := NewRTPStatsReceiver(RTPStatsParams{})
+	r.SetClockRate(clockRate)
+
+	// initialize before running benchmark loop
+	packetTime := time.Now().UnixNano()
+	sn := uint16(0)
+	ts := uint32(0)
+	r.Update(packetTime, sn, ts, false, hdrSize, payloadSize, paddingSize)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sn++
+		ts += tsIncrement
+		packetTime += 33 * int64(time.Millisecond) // ~30fps
+		marker := (i+1)%100 == 0                   // marker every 100 packets
+		r.Update(packetTime, sn, ts, marker, hdrSize, payloadSize, paddingSize)
+	}
+}

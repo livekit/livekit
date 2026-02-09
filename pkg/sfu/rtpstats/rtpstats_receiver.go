@@ -135,9 +135,9 @@ type receiverUpdateLoggingFields struct {
 	hdrSize          int
 	payloadSize      int
 	paddingSize      int
-	resSN            *utils.WrapAroundUpdateResult[uint64]
+	resSN            utils.WrapAroundUpdateResult[uint64]
 	gapSN            int64
-	resTS            *utils.WrapAroundUpdateResult[uint64]
+	resTS            utils.WrapAroundUpdateResult[uint64]
 	gapTS            int64
 	snRolloverCount  int
 	expectedTSJump   int64
@@ -148,9 +148,9 @@ type receiverUpdateLoggingFields struct {
 
 func (rulf *receiverUpdateLoggingFields) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	if rulf != nil {
-		e.AddObject("resSN", rulf.resSN)
+		e.AddObject("resSN", &rulf.resSN)
 		e.AddInt64("gapSN", rulf.gapSN)
-		e.AddObject("resTS", rulf.resTS)
+		e.AddObject("resTS", &rulf.resTS)
 		e.AddInt64("gapTS", rulf.gapTS)
 		e.AddInt("snRolloverCount", rulf.snRolloverCount)
 		e.AddInt64("expectedTSJump", rulf.expectedTSJump)
@@ -313,9 +313,9 @@ func (r *RTPStatsReceiver) Update(
 				hdrSize:          hdrSize,
 				payloadSize:      payloadSize,
 				paddingSize:      paddingSize,
-				resSN:            &resSN,
+				resSN:            resSN,
 				gapSN:            gapSN,
-				resTS:            &resTS,
+				resTS:            resTS,
 				gapTS:            gapTS,
 				snRolloverCount:  snRolloverCount,
 				expectedTSJump:   expectedTSJump,
@@ -339,9 +339,9 @@ func (r *RTPStatsReceiver) Update(
 				hdrSize:          hdrSize,
 				payloadSize:      payloadSize,
 				paddingSize:      paddingSize,
-				resSN:            &resSN,
+				resSN:            resSN,
 				gapSN:            gapSN,
-				resTS:            &resTS,
+				resTS:            resTS,
 				gapTS:            gapTS,
 				snRolloverCount:  snRolloverCount,
 				expectedTSJump:   expectedTSJump,
@@ -389,9 +389,9 @@ func (r *RTPStatsReceiver) Update(
 						hdrSize:          hdrSize,
 						payloadSize:      payloadSize,
 						paddingSize:      paddingSize,
-						resSN:            &resSN,
+						resSN:            resSN,
 						gapSN:            gapSN,
-						resTS:            &resTS,
+						resTS:            resTS,
 						gapTS:            gapTS,
 						snRolloverCount:  snRolloverCount,
 						expectedTSJump:   expectedTSJump,
@@ -428,9 +428,9 @@ func (r *RTPStatsReceiver) Update(
 					hdrSize:          hdrSize,
 					payloadSize:      payloadSize,
 					paddingSize:      paddingSize,
-					resSN:            &resSN,
+					resSN:            resSN,
 					gapSN:            gapSN,
-					resTS:            &resTS,
+					resTS:            resTS,
 					gapTS:            gapTS,
 					snRolloverCount:  snRolloverCount,
 					expectedTSJump:   expectedTSJump,
@@ -469,9 +469,9 @@ func (r *RTPStatsReceiver) Update(
 					hdrSize:          hdrSize,
 					payloadSize:      payloadSize,
 					paddingSize:      paddingSize,
-					resSN:            &resSN,
+					resSN:            resSN,
 					gapSN:            gapSN,
-					resTS:            &resTS,
+					resTS:            resTS,
 					gapTS:            gapTS,
 					snRolloverCount:  snRolloverCount,
 					expectedTSJump:   expectedTSJump,
@@ -496,9 +496,9 @@ func (r *RTPStatsReceiver) Update(
 				hdrSize:          hdrSize,
 				payloadSize:      payloadSize,
 				paddingSize:      paddingSize,
-				resSN:            &resSN,
+				resSN:            resSN,
 				gapSN:            gapSN,
-				resTS:            &resTS,
+				resTS:            resTS,
 				gapTS:            gapTS,
 				snRolloverCount:  snRolloverCount,
 				expectedTSJump:   expectedTSJump,
@@ -550,9 +550,9 @@ func (r *RTPStatsReceiver) Update(
 					hdrSize:          hdrSize,
 					payloadSize:      payloadSize,
 					paddingSize:      paddingSize,
-					resSN:            &resSN,
+					resSN:            resSN,
 					gapSN:            gapSN,
-					resTS:            &resTS,
+					resTS:            resTS,
 					gapTS:            gapTS,
 					snRolloverCount:  snRolloverCount,
 					expectedTSJump:   expectedTSJump,
@@ -579,9 +579,9 @@ func (r *RTPStatsReceiver) Update(
 					hdrSize:          hdrSize,
 					payloadSize:      payloadSize,
 					paddingSize:      paddingSize,
-					resSN:            &resSN,
+					resSN:            resSN,
 					gapSN:            gapSN,
-					resTS:            &resTS,
+					resTS:            resTS,
 					gapTS:            gapTS,
 					snRolloverCount:  snRolloverCount,
 					expectedTSJump:   expectedTSJump,
@@ -608,9 +608,9 @@ func (r *RTPStatsReceiver) Update(
 					hdrSize:          hdrSize,
 					payloadSize:      payloadSize,
 					paddingSize:      paddingSize,
-					resSN:            &resSN,
+					resSN:            resSN,
 					gapSN:            gapSN,
-					resTS:            &resTS,
+					resTS:            resTS,
 					gapTS:            gapTS,
 					snRolloverCount:  snRolloverCount,
 					expectedTSJump:   expectedTSJump,
