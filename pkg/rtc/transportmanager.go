@@ -1026,9 +1026,5 @@ func (t *TransportManager) hasRecentSignalLocked() bool {
 }
 
 func (t *TransportManager) RTPStreamPublished(ssrc uint32, mid, rid string) {
-	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
-		t.publisher.RTPStreamPublished(ssrc, mid, rid)
-	} else {
-		t.subscriber.RTPStreamPublished(ssrc, mid, rid)
-	}
+	t.publisher.RTPStreamPublished(ssrc, mid, rid)
 }
