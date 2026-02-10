@@ -14,7 +14,7 @@ type egressIDKey struct{}
 func TwirpEgressID() *twirp.ServerHooks {
 	return &twirp.ServerHooks{
 		RequestRouted: func(ctx context.Context) (context.Context, error) {
-			// generate egressID for all Start*Egress methods
+			// generate egressID for start egress methods for tracing egress failure before it reaches egress service.
 			if isStartEgressMethod(ctx) {
 				egressID := guid.New(guid.EgressPrefix)
 				ctx = WithEgressID(ctx, egressID)
