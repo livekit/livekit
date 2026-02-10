@@ -115,7 +115,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	ingressService := NewIngressService(ingressConfig, nodeID, messageBus, ingressClient, ingressStore, ioInfoService, telemetryService)
 	sipConfig := getSIPConfig(conf)
-	sipClient, err := rpc.NewSIPClientWithParams(clientParams)
+	sipClientParams := clientParams
+	sipClientParams.MaxAttempts = 0
+	sipClientParams.Timeout = 0
+	sipClientParams.Backoff = 0
+	sipClient, err := rpc.NewSIPClientWithParams(sipClientParams)
 	if err != nil {
 		return nil, err
 	}
