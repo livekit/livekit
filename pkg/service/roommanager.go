@@ -27,9 +27,6 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/exp/maps"
 
-	"github.com/livekit/livekit-server/pkg/agent"
-	"github.com/livekit/livekit-server/pkg/sfu"
-	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -41,6 +38,10 @@ import (
 	"github.com/livekit/protocol/utils/must"
 	"github.com/livekit/psrpc"
 	"github.com/livekit/psrpc/pkg/middleware"
+
+	"github.com/livekit/livekit-server/pkg/agent"
+	"github.com/livekit/livekit-server/pkg/sfu"
+	sutils "github.com/livekit/livekit-server/pkg/utils"
 
 	"github.com/livekit/livekit-server/pkg/clientconfiguration"
 	"github.com/livekit/livekit-server/pkg/config"
@@ -1003,7 +1004,7 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 				participant.GetLogger().Warnw("could not create turn password", err)
 				hasSTUN = false
 			} else {
-				logger.Infow("created TURN password", "username", username, "password", password)
+				logger.Infow("created TURN password")
 				iceServers = append(iceServers, &livekit.ICEServer{
 					Urls:       urls,
 					Username:   username,
