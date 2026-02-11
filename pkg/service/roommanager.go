@@ -1004,7 +1004,6 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 				participant.GetLogger().Warnw("could not create turn password", err)
 				hasSTUN = false
 			} else {
-				logger.Infow("created TURN password")
 				iceServers = append(iceServers, &livekit.ICEServer{
 					Urls:       urls,
 					Username:   username,
