@@ -37,25 +37,12 @@ import (
 	"github.com/livekit/livekit-server/pkg/service"
 )
 
-func generateKeyFile(_ context.Context, c *cli.Command) error {
-	filename := c.String("key-file")
-
-	file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
+func generateKeys(_ context.Context, _ *cli.Command) error {
 	apiKey := guid.New(utils.APIKeyPrefix)
 	secret := utils.RandomSecret()
-
-	file.WriteString(fmt.Sprintf("%s: %s", apiKey, secret))
-
+	fmt.Println("API Key: ", apiKey)
+	fmt.Println("API Secret: ", secret)
 	return nil
-}
-
-func generateKeys(_ context.Context, _ *cli.Command) error {
-	return fmt.Errorf("DEPRECATED. Use generete-key-file instead")
 }
 
 func printPorts(_ context.Context, c *cli.Command) error {
