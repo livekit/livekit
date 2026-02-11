@@ -146,6 +146,8 @@ func ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 		ci.Sdk = livekit.ClientInfo_UNITY_WEB
 	case "node":
 		ci.Sdk = livekit.ClientInfo_NODE
+	case "esp32":
+		ci.Sdk = livekit.ClientInfo_ESP32
 	}
 
 	ci.Version = values.Get("version")
