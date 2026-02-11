@@ -73,6 +73,15 @@ func (t *telemetryService) RoomEnded(ctx context.Context, room *livekit.Room) {
 	})
 }
 
+func (t *telemetryService) RoomMetadataUpdated(ctx context.Context, room *livekit.Room) {
+	t.enqueue(func() {
+		t.NotifyEvent(ctx, &livekit.WebhookEvent{
+			Event: webhook.EventRoomMetadataChanged,
+			Room:  room,
+		})
+	})
+}
+
 func (t *telemetryService) ParticipantJoined(
 	ctx context.Context,
 	room *livekit.Room,

@@ -928,7 +928,9 @@ func (r *RoomManager) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	done := room.SetMetadata(req.Metadata)
 	// wait till the update is applied
 	<-done
-	return room.ToProto(), nil
+	roomInfo := room.ToProto()
+	r.telemetry.RoomMetadataUpdated(ctx, roomInfo)
+	return roomInfo, nil
 }
 
 func (r *RoomManager) ListDispatch(ctx context.Context, req *livekit.ListAgentDispatchRequest) (*livekit.ListAgentDispatchResponse, error) {
