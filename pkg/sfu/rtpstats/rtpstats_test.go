@@ -243,10 +243,10 @@ func Test_RTPStatsReceiver_Restart(t *testing.T) {
 	require.False(t, r.maybeRestart(19, 21, 1000))
 	// can restart as there are enough packets with proper sequencing
 	require.True(t, r.maybeRestart(20, 21, 1000))
-	require.Equal(t, restartThreshold, len(r.restartPackets))
+	require.Equal(t, restartThreshold, r.restartPacketsN)
 
 	r.resetRestart()
-	require.Zero(t, len(r.restartPackets))
+	require.Zero(t, r.restartPacketsN)
 
 	r.Stop()
 }
@@ -257,4 +257,30 @@ func Test_RTPStatsSender_getIntervalStats(t *testing.T) {
 		stats := r.getIntervalStats(0, 10000, 10000)
 		require.EqualValues(t, 8977, stats.packetsNotFoundMetadata)
 	})
+}
+
+func BenchmarkRTPStatsReceiver_Update(b *testing.B) {
+	const clockRate = 90000
+	const hdrSize = 12
+	const payloadSize = 1200
+	const paddingSize = 0
+	const tsIncrement = 3000 // ~33ms at 90kHz
+
+	r := NewRTPStatsReceiver(RTPStatsParams{})
+	r.SetClockRate(clockRate)
+
+	// initialize before running benchmark loop
+	packetTime := time.Now().UnixNano()
+	sn := uint16(0)
+	ts := uint32(0)
+	r.Update(packetTime, sn, ts, false, hdrSize, payloadSize, paddingSize)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sn++
+		ts += tsIncrement
+		packetTime += 33 * int64(time.Millisecond) // ~30fps
+		marker := (i+1)%100 == 0                   // marker every 100 packets
+		r.Update(packetTime, sn, ts, marker, hdrSize, payloadSize, paddingSize)
+	}
 }

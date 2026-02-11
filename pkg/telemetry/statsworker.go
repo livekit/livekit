@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/livekit/livekit-server/pkg/utils"
@@ -50,6 +51,13 @@ func (s *ReferenceCount) Release(guard *ReferenceGuard) bool {
 	s.count--
 	return s.count == 0
 }
+
+func (s ReferenceCount) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddInt("count", s.count)
+	return nil
+}
+
+// ----------------------------------------
 
 // StatsWorker handles participant stats
 type StatsWorker struct {
@@ -190,6 +198,20 @@ func (s *StatsWorker) collectStats(
 		stats = append(stats, coalesced)
 	}
 	return stats
+}
+
+func (s *StatsWorker) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	e.AddString("room", string(s.roomName))
+	e.AddString("roomID", string(s.roomID))
+	e.AddString("participant", string(s.participantIdentity))
+	e.AddString("pID", string(s.participantID))
+	e.AddBool("isConnected", s.isConnected)
+	e.AddTime("closedAt", s.closedAt)
+	e.AddObject("refCount", s.refCount)
+	return nil
 }
 
 // -------------------------------------------------------------------------

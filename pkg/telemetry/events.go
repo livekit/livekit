@@ -132,7 +132,6 @@ func (t *telemetryService) ParticipantActive(
 			guard,
 		)
 		if !found {
-			// need to also account for participant count
 			prometheus.AddParticipant()
 		}
 		worker.SetConnected()
@@ -193,6 +192,15 @@ func (t *telemetryService) ParticipantLeft(ctx context.Context,
 			isConnected = worker.IsConnected()
 			if worker.Close(guard) {
 				prometheus.SubParticipant()
+			} else {
+				logger.Infow(
+					"stats worker active",
+					"room", room.Name,
+					"roomID", room.Sid,
+					"participant", participant.Identity,
+					"pID", participant.Sid,
+					"worker", worker,
+				)
 			}
 		}
 

@@ -859,6 +859,10 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 	v := p.version.Load()
 	piv := p.timedVersion
 
+	var clientProtocol int32
+	if p.params.ClientInfo.ClientInfo != nil {
+		clientProtocol = p.params.ClientInfo.ClientInfo.GetClientProtocol()
+	}
 	pi := &livekit.ParticipantInfo{
 		Sid:              string(p.ID()),
 		Identity:         string(p.params.Identity),
@@ -875,6 +879,7 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 		Kind:             grants.GetParticipantKind(),
 		KindDetails:      grants.GetKindDetails(),
 		DisconnectReason: p.CloseReason().ToDisconnectReason(),
+		ClientProtocol:   clientProtocol,
 	}
 	p.lock.RUnlock()
 
@@ -919,6 +924,9 @@ func (p *ParticipantImpl) ToProto() *livekit.ParticipantInfo {
 }
 
 func (p *ParticipantImpl) TelemetryGuard() *telemetry.ReferenceGuard {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
 	return p.telemetryGuard
 }
 
@@ -1365,11 +1373,18 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		return nil
 	}
 
+	var sessionDuration time.Duration
+	if activeAt := p.ActiveAt(); !activeAt.IsZero() {
+		sessionDuration = time.Since(activeAt)
+	}
 	p.params.Logger.Infow(
 		"participant closing",
 		"sendLeave", sendLeave,
 		"reason", reason.String(),
 		"isExpectedToResume", isExpectedToResume,
+		"clientInfo", logger.Proto(sutils.ClientInfoWithoutAddress(p.GetClientInfo())),
+		"kind", p.Kind(),
+		"sessionDuration", sessionDuration,
 	)
 	p.closeReason.Store(reason)
 	p.clearDisconnectTimer()
@@ -2399,7 +2414,7 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		if payload.RpcRequest == nil {
 			return
 		}
-		p.pubLogger.Infow(
+		p.pubLogger.Debugw(
 			"received RPC request",
 			"method", payload.RpcRequest.Method,
 			"rpc_request_id", payload.RpcRequest.Id,
@@ -2409,7 +2424,7 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		if payload.RpcResponse == nil {
 			return
 		}
-		p.pubLogger.Infow(
+		p.pubLogger.Debugw(
 			"received RPC response",
 			"rpc_request_id", payload.RpcResponse.RequestId,
 		)
@@ -2429,7 +2444,7 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 		if payload.RpcAck == nil {
 			return
 		}
-		p.pubLogger.Infow(
+		p.pubLogger.Debugw(
 			"received RPC ack",
 			"rpc_request_id", payload.RpcAck.RequestId,
 		)
@@ -4007,6 +4022,10 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 	}
 
 	p.params.Logger.Infow("move participant to new room", "newRoomName", params.RoomName, "newID", params.ParticipantID)
+
+	p.lock.Lock()
+	p.telemetryGuard = &telemetry.ReferenceGuard{}
+	p.lock.Unlock()
 
 	p.params.LoggerResolver.Reset()
 	p.params.ReporterResolver.Reset()

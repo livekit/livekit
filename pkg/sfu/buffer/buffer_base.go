@@ -331,9 +331,9 @@ func (b *BufferBase) BindLocked(rtpParameters webrtc.RTPParameters, codec webrtc
 		case sdp.AudioLevelURI:
 			b.audioLevelExtID = uint8(ext.ID)
 			b.audioLevel = audio.NewAudioLevel(audio.AudioLevelParams{
-				Config:    b.audioLevelConfig,
 				ClockRate: b.clockRate,
 			})
+			b.audioLevel.SetConfig(b.audioLevelConfig)
 
 		case act.AbsCaptureTimeURI:
 			b.absCaptureTimeExtID = uint8(ext.ID)
@@ -434,6 +434,9 @@ func (b *BufferBase) SetAudioLevelConfig(audioLevelConfig audio.AudioLevelConfig
 	defer b.Unlock()
 
 	b.audioLevelConfig = audioLevelConfig
+	if b.audioLevel != nil {
+		b.audioLevel.SetConfig(b.audioLevelConfig)
+	}
 }
 
 func (b *BufferBase) SetStreamRestartDetection(enable bool) {
@@ -445,6 +448,7 @@ func (b *BufferBase) SetStreamRestartDetection(enable bool) {
 
 func (b *BufferBase) setupRTPStats(clockRate uint32) {
 	b.rtpStats = rtpstats.NewRTPStatsReceiver(rtpstats.RTPStatsParams{})
+	b.rtpStats.SetLogger(b.logger)
 	b.rtpStats.SetClockRate(clockRate)
 
 	b.ppsSnapshotId = b.rtpStats.NewSnapshotId()
@@ -455,6 +459,7 @@ func (b *BufferBase) setupRTPStats(clockRate uint32) {
 
 	if b.params.IsOOBSequenceNumber {
 		b.rtpStatsLite = rtpstats.NewRTPStatsReceiverLite(rtpstats.RTPStatsParams{})
+		b.rtpStatsLite.SetLogger(b.logger)
 		b.rtpStatsLite.SetClockRate(clockRate)
 
 		b.liteStatsSnapshotId = b.rtpStatsLite.NewSnapshotLiteId()
@@ -510,9 +515,9 @@ func (b *BufferBase) restartStreamLocked(reason string, isDetected bool) {
 
 	if b.audioLevel != nil {
 		b.audioLevel = audio.NewAudioLevel(audio.AudioLevelParams{
-			Config:    b.audioLevelConfig,
 			ClockRate: b.clockRate,
 		})
+		b.audioLevel.SetConfig(b.audioLevelConfig)
 	}
 
 	if b.ddExtID != 0 {
@@ -1462,7 +1467,6 @@ func (b *BufferBase) seedKeyFrame(keyFrameSeederGeneration int32) {
 	//
 	// send gratuitous PLIs for some time or until a key frame is seen to
 	// get the engine rolling
-	b.logger.Debugw("starting key frame seeder", "generation", keyFrameSeederGeneration)
 	timer := time.NewTimer(30 * time.Second)
 	defer timer.Stop()
 
@@ -1472,16 +1476,18 @@ func (b *BufferBase) seedKeyFrame(keyFrameSeederGeneration int32) {
 	initialCount := uint32(0)
 	b.RLock()
 	rtpStats := b.rtpStats
+	lgr := b.logger
 	b.RUnlock()
+	lgr.Debugw("starting key frame seeder", "generation", keyFrameSeederGeneration)
 	if rtpStats == nil {
-		b.logger.Debugw("cannot do key frame seeding without stats", "generation", keyFrameSeederGeneration)
+		lgr.Debugw("cannot do key frame seeding without stats", "generation", keyFrameSeederGeneration)
 		return
 	}
 	initialCount, _ = rtpStats.KeyFrame()
 
 	for {
 		if b.isClosed.Load() || b.keyFrameSeederGeneration.Load() != keyFrameSeederGeneration {
-			b.logger.Debugw(
+			lgr.Debugw(
 				"stopping key frame seeder: stopped",
 				"generation", keyFrameSeederGeneration,
 				"currentGeneration", b.keyFrameSeederGeneration.Load(),
@@ -1491,13 +1497,13 @@ func (b *BufferBase) seedKeyFrame(keyFrameSeederGeneration int32) {
 
 		select {
 		case <-timer.C:
-			b.logger.Debugw("stopping key frame seeder: timeout", "generation", keyFrameSeederGeneration)
+			lgr.Debugw("stopping key frame seeder: timeout", "generation", keyFrameSeederGeneration)
 			return
 
 		case <-ticker.C:
 			cnt, last := rtpStats.KeyFrame()
 			if cnt > initialCount {
-				b.logger.Debugw(
+				lgr.Debugw(
 					"stopping key frame seeder: received key frame",
 					"generation", keyFrameSeederGeneration,
 					"keyFrameCountInitial", initialCount,

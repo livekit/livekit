@@ -172,6 +172,10 @@ type REDTransformer interface {
 
 // --------------------------------------
 
+type bufferPromise struct {
+	ready chan struct{}
+}
+
 type ReceiverBaseParams struct {
 	TrackID                      livekit.TrackID
 	StreamID                     string
@@ -182,6 +186,7 @@ type ReceiverBaseParams struct {
 	StreamTrackerManagerConfig   StreamTrackerManagerConfig
 	StreamTrackerManagerListener StreamTrackerManagerListener
 	IsSelfClosing                bool
+	OnNewBufferNeeded            func(int32, *livekit.TrackInfo) (buffer.BufferProvider, error)
 	OnClosed                     func()
 }
 
@@ -201,9 +206,10 @@ type ReceiverBase struct {
 	isRED          bool
 	videoLayerMode livekit.VideoLayer_Mode
 
-	bufferMu  sync.RWMutex
-	buffers   [buffer.DefaultMaxLayerSpatial + 1]buffer.BufferProvider
-	trackInfo *livekit.TrackInfo
+	bufferMu       sync.RWMutex
+	buffers        [buffer.DefaultMaxLayerSpatial + 1]buffer.BufferProvider
+	bufferPromises [buffer.DefaultMaxLayerSpatial + 1]*bufferPromise
+	trackInfo      *livekit.TrackInfo
 
 	videoSizeMu        sync.RWMutex
 	videoSizes         [buffer.DefaultMaxLayerSpatial + 1]buffer.VideoSize
@@ -636,7 +642,7 @@ func (r *ReceiverBase) GetLayeredBitrate() ([]int32, Bitrates) {
 
 func (r *ReceiverBase) SendPLI(layer int32, force bool) {
 	// SVC-TODO :  should send LRR (Layer Refresh Request) instead of PLI
-	buff, _ := r.getBuffer(layer)
+	buff := r.GetOrCreateBuffer(layer)
 	if buff == nil {
 		return
 	}
@@ -665,36 +671,61 @@ func (r *ReceiverBase) getBufferLocked(layer int32) (buffer.BufferProvider, int3
 	return r.buffers[layer], layer
 }
 
-func (r *ReceiverBase) GetOrCreateBuffer(
-	layer int32,
-	creatorFn func(*livekit.TrackInfo) (buffer.BufferProvider, error),
-) (buffer.BufferProvider, bool) {
+func (r *ReceiverBase) GetOrCreateBuffer(layer int32) buffer.BufferProvider {
 	r.bufferMu.Lock()
 
 	if r.IsClosed() {
 		r.bufferMu.Unlock()
-		return nil, false
+		return nil
 	}
 
 	var buff buffer.BufferProvider
 	if buff, layer = r.getBufferLocked(layer); buff != nil {
 		r.bufferMu.Unlock()
-		return buff, false
+		return buff
 	}
 
-	buff, err := creatorFn(r.trackInfo)
-	if err != nil {
+	if r.params.OnNewBufferNeeded == nil {
 		r.bufferMu.Unlock()
-		r.params.Logger.Errorw("could not create buffer", err)
-		return nil, false
+		return nil
 	}
 
+	if bp := r.bufferPromises[layer]; bp != nil {
+		r.bufferMu.Unlock()
+		<-bp.ready
+
+		buff, _ := r.getBuffer(layer)
+		return buff
+	}
+
+	bp := &bufferPromise{
+		ready: make(chan struct{}),
+	}
+	r.bufferPromises[layer] = bp
+
+	ti := utils.CloneProto(r.trackInfo)
+	r.bufferMu.Unlock()
+
+	defer close(bp.ready)
+
+	buff, err := r.params.OnNewBufferNeeded(layer, ti)
+	if err != nil {
+		r.params.Logger.Errorw("could not create buffer", err)
+
+		r.bufferMu.Lock()
+		r.bufferPromises[layer] = nil
+		r.bufferMu.Unlock()
+
+		return nil
+	}
+
+	r.bufferMu.Lock()
 	r.buffers[layer] = buff
 	rtt := r.rtt
 	r.bufferMu.Unlock()
 
 	r.setupBuffer(buff, layer, rtt)
-	return buff, true
+	return buff
 }
 
 func (r *ReceiverBase) setupBuffer(buff buffer.BufferProvider, layer int32, rtt uint32) {
@@ -784,6 +815,7 @@ func (r *ReceiverBase) ClearAllBuffers(reason string) {
 	buffers := r.buffers
 	for idx := range r.buffers {
 		r.buffers[idx] = nil
+		r.bufferPromises[idx] = nil
 	}
 	r.bufferMu.Unlock()
 

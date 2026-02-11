@@ -114,8 +114,11 @@ func SetRoomConfiguration(createRequest *livekit.CreateRoomRequest, conf *liveki
 func ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 	values := r.Form
 	ci := &livekit.ClientInfo{}
-	if pv, err := strconv.Atoi(values.Get("protocol")); err == nil {
+	if pv, err := strconv.ParseInt(values.Get("protocol"), 10, 32); err == nil {
 		ci.Protocol = int32(pv)
+	}
+	if cp, err := strconv.ParseInt(values.Get("client_protocol"), 10, 32); err == nil {
+		ci.ClientProtocol = int32(cp)
 	}
 	sdkString := values.Get("sdk")
 	switch sdkString {
@@ -143,6 +146,8 @@ func ParseClientInfo(r *http.Request) *livekit.ClientInfo {
 		ci.Sdk = livekit.ClientInfo_UNITY_WEB
 	case "node":
 		ci.Sdk = livekit.ClientInfo_NODE
+	case "esp32":
+		ci.Sdk = livekit.ClientInfo_ESP32
 	}
 
 	ci.Version = values.Get("version")
