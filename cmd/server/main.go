@@ -145,6 +145,18 @@ func main() {
 				Action: generateKeys,
 			},
 			{
+				Name:   "generate-key-file",
+				Usage:  "generates an API key and secret pair and write them to a key file",
+				Action: generateKeyFile,
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "key-file",
+						Usage:    "filename for the key file",
+						Required: true,
+					},
+				},
+			},
+			{
 				Name:   "ports",
 				Usage:  "print ports that server is configured to use",
 				Action: printPorts,
