@@ -15,7 +15,6 @@
 package rtc
 
 import (
-	"context"
 	"math"
 	"sync"
 	"time"
@@ -86,7 +85,7 @@ type MediaTrackParams struct {
 	PLIThrottleConfig                sfu.PLIThrottleConfig
 	AudioConfig                      sfu.AudioConfig
 	VideoConfig                      config.VideoConfig
-	Telemetry                        telemetry.TelemetryService
+	TelemetryListener                types.ParticipantTelemetryListener
 	Logger                           logger.Logger
 	Reporter                         roomobs.TrackReporter
 	SimTracks                        map[uint32]interceptor.SimulcastTrackInfo
@@ -124,7 +123,7 @@ func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 		ReceiverConfig:           params.ReceiverConfig,
 		SubscriberConfig:         params.SubscriberConfig,
 		AudioConfig:              params.AudioConfig,
-		Telemetry:                params.Telemetry,
+		TelemetryListener:        params.TelemetryListener,
 		Logger:                   params.Logger,
 		RegressionTargetCodec:    t.regressionTargetCodec,
 		PreferVideoSizeFromMedia: params.PreferVideoSizeFromMedia,
@@ -445,7 +444,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			regressionTargetCodecReceived := t.regressionTargetCodecReceived
 			t.lock.RUnlock()
 			if priority == 0 || regressionTargetCodecReceived {
-				t.params.Telemetry.TrackStats(statsKey, stat)
+				t.params.TelemetryListener.OnTrackStats(statsKey, stat)
 
 				if cs, ok := telemetry.CondenseStat(stat); ok {
 					t.params.Reporter.Tx(func(tx roomobs.TrackTx) {
@@ -587,8 +586,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 	})
 
 	buff.OnFinalRtpStats(func(stats *livekit.RTPStats) {
-		t.params.Telemetry.TrackPublishRTPStats(
-			context.Background(),
+		t.params.TelemetryListener.OnTrackPublishRTPStats(
 			t.params.ParticipantID(),
 			t.ID(),
 			mimeType,

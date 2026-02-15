@@ -50,8 +50,9 @@ type TrafficTotals struct {
 // stats for signal and data channel
 type BytesTrackStats struct {
 	country                              string
-	trackID                              livekit.TrackID
+	roomID                               livekit.RoomID
 	pID                                  livekit.ParticipantID
+	trackID                              livekit.TrackID
 	send, recv                           atomic.Uint64
 	sendMessages, recvMessages           atomic.Uint32
 	totalSendBytes, totalRecvBytes       atomic.Uint64
@@ -63,15 +64,17 @@ type BytesTrackStats struct {
 
 func NewBytesTrackStats(
 	country string,
-	trackID livekit.TrackID,
+	roomID livekit.RoomID,
 	pID livekit.ParticipantID,
+	trackID livekit.TrackID,
 	telemetry TelemetryService,
 	participantReporter roomobs.ParticipantSessionReporter,
 ) *BytesTrackStats {
 	s := &BytesTrackStats{
 		country:   country,
-		trackID:   trackID,
+		roomID:    roomID,
 		pID:       pID,
+		trackID:   trackID,
 		telemetry: telemetry,
 		reporter:  participantReporter.WithTrack(trackID.String()),
 	}
@@ -123,6 +126,7 @@ func (s *BytesTrackStats) report() {
 	if recv := s.recv.Swap(0); recv > 0 {
 		packets := s.recvMessages.Swap(0)
 		s.telemetry.TrackStats(
+			s.roomID,
 			StatsKeyForData(s.country, livekit.StreamType_UPSTREAM, s.pID, s.trackID),
 			&livekit.AnalyticsStat{
 				Streams: []*livekit.AnalyticsStream{
@@ -138,6 +142,7 @@ func (s *BytesTrackStats) report() {
 	if send := s.send.Swap(0); send > 0 {
 		packets := s.sendMessages.Swap(0)
 		s.telemetry.TrackStats(
+			s.roomID,
 			StatsKeyForData(s.country, livekit.StreamType_DOWNSTREAM, s.pID, s.trackID),
 			&livekit.AnalyticsStat{
 				Streams: []*livekit.AnalyticsStream{
@@ -250,6 +255,7 @@ func (s *BytesSignalStats) maybeStart() {
 		return
 	}
 
+	s.roomID = livekit.RoomID(s.ri.Sid)
 	s.pID = livekit.ParticipantID(s.pi.Sid)
 	s.trackID = BytesTrackIDForParticipantID(BytesTrackTypeSignal, s.pID)
 

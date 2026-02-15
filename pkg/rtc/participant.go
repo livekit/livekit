@@ -15,7 +15,6 @@
 package rtc
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"math/rand"
@@ -169,7 +168,7 @@ type ParticipantParams struct {
 	LimitConfig             config.LimitConfig
 	ProtocolVersion         types.ProtocolVersion
 	SessionStartTime        time.Time
-	Telemetry               telemetry.TelemetryService
+	TelemetryListener       types.ParticipantTelemetryListener
 	Trailer                 []byte
 	PLIThrottleConfig       sfu.PLIThrottleConfig
 	CongestionControlConfig config.CongestionControlConfig
@@ -373,13 +372,15 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.setupSignalling()
 
 	p.id.Store(params.SID)
+	/* RAJA-TODO
 	p.dataChannelStats = telemetry.NewBytesTrackStats(
 		p.params.Country,
 		telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeData, p.ID()),
 		p.ID(),
-		params.Telemetry,
+		params.TelemetryListener,
 		params.Reporter,
 	)
+	*/
 	p.reliableDataInfo.lastPubReliableSeq.Store(params.LastPubReliableSeq)
 	p.setListener(params.ParticipantListener)
 	p.participantHelper.Store(params.ParticipantHelper)
@@ -2038,7 +2039,7 @@ func (p *ParticipantImpl) setupSubscriptionManager() {
 		DataTrackResolver: func(lp types.LocalParticipant, ti livekit.TrackID) types.DataResolverResult {
 			return p.helper().ResolveDataTrack(lp, ti)
 		},
-		Telemetry:                p.params.Telemetry,
+		TelemetryListener:        p.params.TelemetryListener,
 		OnTrackSubscribed:        p.onTrackSubscribed,
 		OnTrackUnsubscribed:      p.onTrackUnsubscribed,
 		OnSubscriptionError:      p.onSubscriptionError,
@@ -2721,8 +2722,7 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(
 				break
 			}
 		}
-		p.params.Telemetry.TrackMaxSubscribedVideoQuality(
-			context.Background(),
+		p.params.TelemetryListener.OnTrackMaxSubscribedVideoQuality(
 			p.ID(),
 			ti,
 			maxSubscribedQuality.CodecMime,
@@ -2961,7 +2961,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 		}
 	}
 
-	p.params.Telemetry.TrackPublishRequested(context.Background(), p.ID(), p.Identity(), utils.CloneProto(ti))
+	p.params.TelemetryListener.OnTrackPublishRequested(p.ID(), p.Identity(), utils.CloneProto(ti))
 
 	if p.supervisor != nil {
 		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
@@ -3072,9 +3072,9 @@ func (p *ParticipantImpl) setTrackMuted(mute *livekit.MuteTrackRequest, fromAdmi
 
 	if trackInfo != nil && changed {
 		if mute.Muted {
-			p.params.Telemetry.TrackMuted(context.Background(), p.ID(), trackInfo)
+			p.params.TelemetryListener.OnTrackMuted(p.ID(), trackInfo)
 		} else {
-			p.params.Telemetry.TrackUnmuted(context.Background(), p.ID(), trackInfo)
+			p.params.TelemetryListener.OnTrackUnmuted(p.ID(), trackInfo)
 		}
 	}
 
@@ -3291,7 +3291,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 		ReceiverConfig:        p.params.Config.Receiver,
 		AudioConfig:           p.params.AudioConfig,
 		VideoConfig:           p.params.VideoConfig,
-		Telemetry:             p.params.Telemetry,
+		TelemetryListener:     p.params.TelemetryListener,
 		Logger:                LoggerWithTrack(p.pubLogger, livekit.TrackID(ti.Sid), false),
 		Reporter:              p.params.Reporter.WithTrack(ti.Sid),
 		SubscriberConfig:      p.params.Config.Subscriber,
@@ -3343,8 +3343,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 			p.supervisor.ClearPublishedTrack(trackID, mt)
 		}
 
-		p.params.Telemetry.TrackUnpublished(
-			context.Background(),
+		p.params.TelemetryListener.OnTrackUnpublished(
 			p.ID(),
 			p.Identity(),
 			mt.ToProto(),
@@ -3378,8 +3377,7 @@ func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack, isMigrate
 
 	// send webhook after callbacks are complete, persistence and state handling happens
 	// in `onTrackPublished` cb
-	p.params.Telemetry.TrackPublished(
-		context.Background(),
+	p.params.TelemetryListener.OnTrackPublished(
 		p.ID(),
 		p.Identity(),
 		track.ToProto(),
@@ -4012,8 +4010,7 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 		track.(types.LocalMediaTrack).ClearSubscriberNodes()
 
 		trackInfo := track.ToProto()
-		p.params.Telemetry.TrackUnpublished(
-			context.Background(),
+		p.params.TelemetryListener.OnTrackUnpublished(
 			p.ID(),
 			p.Identity(),
 			trackInfo,

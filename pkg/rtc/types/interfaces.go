@@ -636,6 +636,61 @@ func (*NullLocalParticipantListener) OnLeave(LocalParticipant, ParticipantCloseR
 
 // ---------------------------------------------
 
+//counterfeiter:generate . ParticipantTelemetryListener
+type ParticipantTelemetryListener interface {
+	OnTrackPublishRequested(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo)
+	OnTrackPublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool)
+	OnTrackUnpublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool)
+	OnTrackSubscribeRequested(pID livekit.ParticipantID, ti *livekit.TrackInfo)
+	OnTrackSubscribed(pID livekit.ParticipantID, ti *livekit.TrackInfo, publisherInfo *livekit.ParticipantInfo, shouldSendEvent bool)
+	OnTrackUnsubscribed(pID livekit.ParticipantID, ti *livekit.TrackInfo, shouldSendEvent bool)
+	OnTrackSubscribeFailed(pID livekit.ParticipantID, ti livekit.TrackID, err error, isUserError bool)
+	OnTrackMuted(pID livekit.ParticipantID, ti *livekit.TrackInfo)
+	OnTrackUnmuted(pID livekit.ParticipantID, ti *livekit.TrackInfo)
+	OnTrackPublishedUpdate(pID livekit.ParticipantID, ti *livekit.TrackInfo)
+	OnTrackMaxSubscribedVideoQuality(pID livekit.ParticipantID, ti *livekit.TrackInfo, mime mime.MimeType, maxQuality livekit.VideoQuality)
+	OnTrackPublishRTPStats(pID livekit.ParticipantID, trackID livekit.TrackID, mimeType mime.MimeType, layer int, stats *livekit.RTPStats)
+	OnTrackSubscribeRTPStats(pID livekit.ParticipantID, trackID livekit.TrackID, mimeType mime.MimeType, stats *livekit.RTPStats)
+
+	OnTrackStats(key telemetry.StatsKey, stat *livekit.AnalyticsStat)
+}
+
+var _ ParticipantTelemetryListener = (*NullParticipantTelemetryListener)(nil)
+
+type NullParticipantTelemetryListener struct{}
+
+func (*NullParticipantTelemetryListener) OnTrackPublishRequested(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo) {
+}
+func (*NullParticipantTelemetryListener) OnTrackPublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool) {
+}
+func (*NullParticipantTelemetryListener) OnTrackUnpublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool) {
+}
+func (*NullParticipantTelemetryListener) OnTrackSubscribeRequested(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
+}
+func (*NullParticipantTelemetryListener) OnTrackSubscribed(pID livekit.ParticipantID, ti *livekit.TrackInfo, publisherInfo *livekit.ParticipantInfo, shouldSendEvent bool) {
+}
+func (*NullParticipantTelemetryListener) OnTrackUnsubscribed(pID livekit.ParticipantID, ti *livekit.TrackInfo, shouldSendEvent bool) {
+}
+func (*NullParticipantTelemetryListener) OnTrackSubscribeFailed(pID livekit.ParticipantID, ti livekit.TrackID, err error, isUserError bool) {
+}
+func (*NullParticipantTelemetryListener) OnTrackMuted(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
+}
+func (*NullParticipantTelemetryListener) OnTrackUnmuted(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
+}
+func (*NullParticipantTelemetryListener) OnTrackPublishedUpdate(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
+}
+func (*NullParticipantTelemetryListener) OnTrackMaxSubscribedVideoQuality(pID livekit.ParticipantID, ti *livekit.TrackInfo, mime mime.MimeType, maxQuality livekit.VideoQuality) {
+}
+func (*NullParticipantTelemetryListener) OnTrackPublishRTPStats(pID livekit.ParticipantID, trackID livekit.TrackID, mimeType mime.MimeType, layer int, stats *livekit.RTPStats) {
+}
+func (*NullParticipantTelemetryListener) OnTrackSubscribeRTPStats(pID livekit.ParticipantID, trackID livekit.TrackID, mimeType mime.MimeType, stats *livekit.RTPStats) {
+}
+
+func (*NullParticipantTelemetryListener) OnTrackStats(key telemetry.StatsKey, stat *livekit.AnalyticsStat) {
+}
+
+// ---------------------------------------------
+
 // Room is a container of participants, and can provide room-level actions
 //
 //counterfeiter:generate . Room

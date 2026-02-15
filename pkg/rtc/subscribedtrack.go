@@ -48,7 +48,7 @@ type SubscribedTrackParams struct {
 	Subscriber                   types.LocalParticipant
 	MediaTrack                   types.MediaTrack
 	AdaptiveStream               bool
-	Telemetry                    telemetry.TelemetryService
+	TelemetryListener            types.ParticipantTelemetryListener
 	WrappedReceiver              *WrappedReceiver
 	IsRelayed                    bool
 	OnDownTrackCreated           func(downTrack *sfu.DownTrack)
@@ -403,7 +403,7 @@ func (t *SubscribedTrack) OnBindAndConnected() {
 }
 
 func (t *SubscribedTrack) OnStatsUpdate(stat *livekit.AnalyticsStat) {
-	t.params.Telemetry.TrackStats(t.statsKey, stat)
+	t.params.TelemetryListener.OnTrackStats(t.statsKey, stat)
 
 	if cs, ok := telemetry.CondenseStat(stat); ok {
 		ti := t.params.WrappedReceiver.TrackInfo()
