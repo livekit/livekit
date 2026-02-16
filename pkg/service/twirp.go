@@ -26,10 +26,11 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/livekit/protocol/livekit"
+
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/utils"
-	"github.com/livekit/protocol/livekit"
 )
 
 type twirpRequestFields struct {
@@ -407,7 +408,7 @@ func telemetryResponseSent(
 	}
 	a.NodeId = string(nodeID)
 	if statusCode, ok := twirp.StatusCode(ctx); ok {
-		if status, err := strconv.Atoi(statusCode); err == nil {
+		if status, err := strconv.ParseInt(statusCode, 10, 32); err == nil {
 			a.Status = int32(status)
 		}
 	}

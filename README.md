@@ -277,7 +277,7 @@ Sign up for [LiveKit Cloud](https://cloud.livekit.io/).
 
 ### Self-host
 
-Read our [deployment docs](https://docs.livekit.io/deploy/) for more information.
+Read our [deployment docs](https://docs.livekit.io/transport/self-hosting/) for more information.
 
 ## Building from source
 
