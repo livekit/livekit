@@ -286,7 +286,7 @@ type ParticipantImpl struct {
 	updateCache *lru.Cache[livekit.ParticipantID, participantUpdateInfo]
 	updateLock  utils.Mutex
 
-	dataChannelStats *telemetry.BytesTrackStats
+	dataChannelStats *BytesTrackStats
 
 	reliableDataInfo reliableDataInfo
 
@@ -372,15 +372,13 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.setupSignalling()
 
 	p.id.Store(params.SID)
-	/* RAJA-TODO
-	p.dataChannelStats = telemetry.NewBytesTrackStats(
+	p.dataChannelStats = NewBytesTrackStats(
 		p.params.Country,
-		telemetry.BytesTrackIDForParticipantID(telemetry.BytesTrackTypeData, p.ID()),
+		BytesTrackIDForParticipantID(BytesTrackTypeData, p.ID()),
 		p.ID(),
 		params.TelemetryListener,
 		params.Reporter,
 	)
-	*/
 	p.reliableDataInfo.lastPubReliableSeq.Store(params.LastPubReliableSeq)
 	p.setListener(params.ParticipantListener)
 	p.participantHelper.Store(params.ParticipantHelper)
