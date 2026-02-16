@@ -15,7 +15,6 @@
 package rtc
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -37,7 +36,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
-	"github.com/livekit/livekit-server/pkg/telemetry"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 )
 
@@ -127,7 +125,7 @@ type MediaTrackReceiverParams struct {
 	ReceiverConfig           ReceiverConfig
 	SubscriberConfig         DirectionConfig
 	AudioConfig              sfu.AudioConfig
-	Telemetry                telemetry.TelemetryService
+	TelemetryListener        types.ParticipantTelemetryListener
 	Logger                   logger.Logger
 	RegressionTargetCodec    mime.MimeType
 	PreferVideoSizeFromMedia bool
@@ -159,12 +157,12 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams, ti *livekit.TrackInf
 	t.trackInfo.Store(utils.CloneProto(ti))
 
 	t.MediaTrackSubscriptions = NewMediaTrackSubscriptions(MediaTrackSubscriptionsParams{
-		MediaTrack:       params.MediaTrack,
-		IsRelayed:        params.IsRelayed,
-		ReceiverConfig:   params.ReceiverConfig,
-		SubscriberConfig: params.SubscriberConfig,
-		Telemetry:        params.Telemetry,
-		Logger:           params.Logger,
+		MediaTrack:        params.MediaTrack,
+		IsRelayed:         params.IsRelayed,
+		ReceiverConfig:    params.ReceiverConfig,
+		SubscriberConfig:  params.SubscriberConfig,
+		TelemetryListener: params.TelemetryListener,
+		Logger:            params.Logger,
 	})
 	t.MediaTrackSubscriptions.OnDownTrackCreated(t.onDownTrackCreated)
 	return t
@@ -937,7 +935,7 @@ func (t *MediaTrackReceiver) UpdateAudioTrack(update *livekit.UpdateLocalAudioTr
 
 	t.updateTrackInfoOfReceivers()
 
-	t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(), clonedInfo)
+	t.params.TelemetryListener.OnTrackPublishedUpdate(t.PublisherID(), clonedInfo)
 	t.params.Logger.Debugw("updated audio track", "before", logger.Proto(trackInfo), "after", logger.Proto(clonedInfo))
 }
 
@@ -961,7 +959,7 @@ func (t *MediaTrackReceiver) UpdateVideoTrack(update *livekit.UpdateLocalVideoTr
 
 	t.updateTrackInfoOfReceivers()
 
-	t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(), clonedInfo)
+	t.params.TelemetryListener.OnTrackPublishedUpdate(t.PublisherID(), clonedInfo)
 	t.params.Logger.Debugw("updated video track", "before", logger.Proto(trackInfo), "after", logger.Proto(clonedInfo))
 }
 
@@ -1007,7 +1005,7 @@ func (t *MediaTrackReceiver) UpdateVideoSize(mimeType mime.MimeType, sizes []buf
 
 	t.updateTrackInfoOfReceivers()
 
-	t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(), clonedInfo)
+	t.params.TelemetryListener.OnTrackPublishedUpdate(t.PublisherID(), clonedInfo)
 	t.params.Logger.Debugw("updated video sizes", "before", logger.Proto(trackInfo), "after", logger.Proto(clonedInfo))
 }
 
@@ -1038,7 +1036,7 @@ func (t *MediaTrackReceiver) NotifyMaxLayerChange(mimeType mime.MimeType, maxLay
 		}
 	}
 
-	t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(), ti)
+	t.params.TelemetryListener.OnTrackPublishedUpdate(t.PublisherID(), ti)
 }
 
 // GetQualityForDimension finds the closest quality to use for desired dimensions

@@ -26,7 +26,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
 	"github.com/livekit/protocol/auth"
 	protoCodecs "github.com/livekit/protocol/codecs"
 	"github.com/livekit/protocol/codecs/mime"
@@ -813,7 +812,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		ClientInfo:             ClientInfo{ClientInfo: opts.clientInfo},
 		Logger:                 LoggerWithParticipant(logger.GetLogger(), identity, sid, false),
 		Reporter:               roomobs.NewNoopParticipantSessionReporter(),
-		Telemetry:              &telemetryfakes.FakeTelemetryService{},
+		TelemetryListener:      &typesfakes.FakeParticipantTelemetryListener{},
 		VersionGenerator:       utils.NewDefaultTimedVersionGenerator(),
 		ParticipantListener:    &typesfakes.FakeLocalParticipantListener{},
 		ParticipantHelper:      &typesfakes.FakeLocalParticipantHelper{},

@@ -382,7 +382,7 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 		resolveLogger(false)
 	}
 
-	signalStats := telemetry.NewBytesSignalStats(r.Context(), s.telemetry)
+	signalStats := rtc.NewBytesSignalStats(r.Context(), s.telemetry)
 	if join := initialResponse.GetJoin(); join != nil {
 		signalStats.ResolveRoom(join.GetRoom())
 		signalStats.ResolveParticipant(join.GetParticipant())
