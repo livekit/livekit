@@ -104,6 +104,7 @@ func Test_OnTrackUpdate_EventIsSent(t *testing.T) {
 
 	// prepare
 	roomID := "room1"
+	roomName := "RoomName"
 	partID := "part1"
 	trackID := "track1"
 	layer := &livekit.VideoLayer{
@@ -123,7 +124,7 @@ func Test_OnTrackUpdate_EventIsSent(t *testing.T) {
 	}
 
 	// do
-	fixture.sut.TrackPublishedUpdate(context.Background(), livekit.RoomID(roomID), livekit.ParticipantID(partID), trackInfo)
+	fixture.sut.TrackPublishedUpdate(context.Background(), livekit.RoomID(roomID), livekit.RoomName(roomName), livekit.ParticipantID(partID), trackInfo)
 	time.Sleep(time.Millisecond * 500)
 
 	// test
@@ -227,7 +228,7 @@ func Test_OnTrackSubscribed_EventIsSent(t *testing.T) {
 	require.Equal(t, room, event.Room)
 
 	// do
-	fixture.sut.TrackSubscribed(context.Background(), livekit.RoomID(room.Sid), livekit.ParticipantID(partSID), trackInfo, publisherInfo, true)
+	fixture.sut.TrackSubscribed(context.Background(), livekit.RoomID(room.Sid), livekit.RoomName(room.Name), livekit.ParticipantID(partSID), trackInfo, publisherInfo, true)
 	time.Sleep(time.Millisecond * 500)
 
 	require.Eventually(t, func() bool {

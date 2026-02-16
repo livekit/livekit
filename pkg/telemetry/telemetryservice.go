@@ -31,7 +31,7 @@ import (
 //counterfeiter:generate . TelemetryService
 type TelemetryService interface {
 	// TrackStats is called periodically for each track in both directions (published/subscribed)
-	TrackStats(roomID livekit.RoomID, key StatsKey, stat *livekit.AnalyticsStat)
+	TrackStats(roomID livekit.RoomID, roomName livekit.RoomName, key StatsKey, stat *livekit.AnalyticsStat)
 
 	// events
 	RoomStarted(ctx context.Context, room *livekit.Room)
@@ -46,29 +46,29 @@ type TelemetryService interface {
 	// ParticipantLeft - the participant leaves the room, only sent if ParticipantActive has been called before
 	ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, shouldSendEvent bool, guard *ReferenceGuard)
 	// TrackPublishRequested - a publication attempt has been received
-	TrackPublishRequested(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo)
+	TrackPublishRequested(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo)
 	// TrackPublished - a publication attempt has been successful
-	TrackPublished(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool)
+	TrackPublished(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool)
 	// TrackUnpublished - a participant unpublished a track
-	TrackUnpublished(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool)
+	TrackUnpublished(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool)
 	// TrackSubscribeRequested - a participant requested to subscribe to a track
-	TrackSubscribeRequested(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	TrackSubscribeRequested(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, track *livekit.TrackInfo)
 	// TrackSubscribed - a participant subscribed to a track successfully
-	TrackSubscribed(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, track *livekit.TrackInfo, publisher *livekit.ParticipantInfo, shouldSendEvent bool)
+	TrackSubscribed(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, track *livekit.TrackInfo, publisher *livekit.ParticipantInfo, shouldSendEvent bool)
 	// TrackUnsubscribed - a participant unsubscribed from a track successfully
-	TrackUnsubscribed(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, track *livekit.TrackInfo, shouldSendEvent bool)
+	TrackUnsubscribed(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, track *livekit.TrackInfo, shouldSendEvent bool)
 	// TrackSubscribeFailed - failure to subscribe to a track
-	TrackSubscribeFailed(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, trackID livekit.TrackID, err error, isUserError bool)
+	TrackSubscribeFailed(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, trackID livekit.TrackID, err error, isUserError bool)
 	// TrackMuted - the publisher has muted the Track
-	TrackMuted(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	TrackMuted(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, track *livekit.TrackInfo)
 	// TrackUnmuted - the publisher has muted the Track
-	TrackUnmuted(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	TrackUnmuted(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, track *livekit.TrackInfo)
 	// TrackPublishedUpdate - track metadata has been updated
-	TrackPublishedUpdate(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, track *livekit.TrackInfo)
+	TrackPublishedUpdate(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, track *livekit.TrackInfo)
 	// TrackMaxSubscribedVideoQuality - publisher is notified of the max quality subscribers desire
-	TrackMaxSubscribedVideoQuality(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, track *livekit.TrackInfo, mime mime.MimeType, maxQuality livekit.VideoQuality)
-	TrackPublishRTPStats(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, trackID livekit.TrackID, mimeType mime.MimeType, layer int, stats *livekit.RTPStats)
-	TrackSubscribeRTPStats(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, trackID livekit.TrackID, mimeType mime.MimeType, stats *livekit.RTPStats)
+	TrackMaxSubscribedVideoQuality(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, track *livekit.TrackInfo, mime mime.MimeType, maxQuality livekit.VideoQuality)
+	TrackPublishRTPStats(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, trackID livekit.TrackID, mimeType mime.MimeType, layer int, stats *livekit.RTPStats)
+	TrackSubscribeRTPStats(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, trackID livekit.TrackID, mimeType mime.MimeType, stats *livekit.RTPStats)
 
 	EgressStarted(ctx context.Context, info *livekit.EgressInfo)
 	EgressUpdated(ctx context.Context, info *livekit.EgressInfo)
@@ -102,7 +102,7 @@ type NullTelemetryService struct {
 	NullAnalyticService
 }
 
-func (n NullTelemetryService) TrackStats(roomID livekit.RoomID, key StatsKey, stat *livekit.AnalyticsStat) {
+func (n NullTelemetryService) TrackStats(roomID livekit.RoomID, roomName livekit.RoomName, key StatsKey, stat *livekit.AnalyticsStat) {
 }
 func (n NullTelemetryService) RoomStarted(ctx context.Context, room *livekit.Room) {}
 func (n NullTelemetryService) RoomEnded(ctx context.Context, room *livekit.Room)   {}
@@ -114,31 +114,31 @@ func (n NullTelemetryService) ParticipantResumed(ctx context.Context, room *live
 }
 func (n NullTelemetryService) ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, shouldSendEvent bool, guard *ReferenceGuard) {
 }
-func (n NullTelemetryService) TrackPublishRequested(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo) {
+func (n NullTelemetryService) TrackPublishRequested(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo) {
 }
-func (n NullTelemetryService) TrackPublished(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool) {
+func (n NullTelemetryService) TrackPublished(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool) {
 }
-func (n NullTelemetryService) TrackUnpublished(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool) {
+func (n NullTelemetryService) TrackUnpublished(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool) {
 }
-func (n NullTelemetryService) TrackSubscribeRequested(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
+func (n NullTelemetryService) TrackSubscribeRequested(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
 }
-func (n NullTelemetryService) TrackSubscribed(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, track *livekit.TrackInfo, publisher *livekit.ParticipantInfo, shouldSendEvent bool) {
+func (n NullTelemetryService) TrackSubscribed(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, track *livekit.TrackInfo, publisher *livekit.ParticipantInfo, shouldSendEvent bool) {
 }
-func (n NullTelemetryService) TrackUnsubscribed(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, track *livekit.TrackInfo, shouldSendEvent bool) {
+func (n NullTelemetryService) TrackUnsubscribed(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, track *livekit.TrackInfo, shouldSendEvent bool) {
 }
-func (n NullTelemetryService) TrackSubscribeFailed(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, trackID livekit.TrackID, err error, isUserError bool) {
+func (n NullTelemetryService) TrackSubscribeFailed(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, trackID livekit.TrackID, err error, isUserError bool) {
 }
-func (n NullTelemetryService) TrackMuted(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
+func (n NullTelemetryService) TrackMuted(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
 }
-func (n NullTelemetryService) TrackUnmuted(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
+func (n NullTelemetryService) TrackUnmuted(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
 }
-func (n NullTelemetryService) TrackPublishedUpdate(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
+func (n NullTelemetryService) TrackPublishedUpdate(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
 }
-func (n NullTelemetryService) TrackMaxSubscribedVideoQuality(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, track *livekit.TrackInfo, mime mime.MimeType, maxQuality livekit.VideoQuality) {
+func (n NullTelemetryService) TrackMaxSubscribedVideoQuality(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, track *livekit.TrackInfo, mime mime.MimeType, maxQuality livekit.VideoQuality) {
 }
-func (n NullTelemetryService) TrackPublishRTPStats(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, trackID livekit.TrackID, mimeType mime.MimeType, layer int, stats *livekit.RTPStats) {
+func (n NullTelemetryService) TrackPublishRTPStats(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, trackID livekit.TrackID, mimeType mime.MimeType, layer int, stats *livekit.RTPStats) {
 }
-func (n NullTelemetryService) TrackSubscribeRTPStats(ctx context.Context, roomID livekit.RoomID, participantID livekit.ParticipantID, trackID livekit.TrackID, mimeType mime.MimeType, stats *livekit.RTPStats) {
+func (n NullTelemetryService) TrackSubscribeRTPStats(ctx context.Context, roomID livekit.RoomID, roomName livekit.RoomName, participantID livekit.ParticipantID, trackID livekit.TrackID, mimeType mime.MimeType, stats *livekit.RTPStats) {
 }
 func (n NullTelemetryService) EgressStarted(ctx context.Context, info *livekit.EgressInfo)          {}
 func (n NullTelemetryService) EgressUpdated(ctx context.Context, info *livekit.EgressInfo)          {}

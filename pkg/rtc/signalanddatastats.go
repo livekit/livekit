@@ -282,7 +282,8 @@ func (s *BytesSignalStats) worker() {
 }
 
 func (s *BytesSignalStats) OnTrackStats(key telemetry.StatsKey, stat *livekit.AnalyticsStat) {
-	s.telemetry.TrackStats(livekit.RoomID(s.ri.Sid), key, stat)
+	stat.RoomId, stat.RoomName = s.ri.Sid, s.ri.Name
+	s.telemetry.TrackStats(livekit.RoomID(s.ri.Sid), livekit.RoomName(s.ri.Name), key, stat)
 }
 
 // -----------------------------------------------------------------------
