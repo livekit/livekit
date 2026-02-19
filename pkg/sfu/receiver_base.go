@@ -369,7 +369,7 @@ func (r *ReceiverBase) Restart(reason string) {
 
 func (r *ReceiverBase) restartInternal(reason string, isDetected bool) {
 	r.params.Logger.Debugw(
-		"restarting receiver",
+		"restart receiver",
 		"reason", reason,
 		"isDetected", isDetected,
 		"isClosed", r.IsClosed(),
@@ -409,7 +409,7 @@ func (r *ReceiverBase) restartInternal(reason string, isDetected bool) {
 				continue
 			}
 
-			r.params.Logger.Debugw("restarting receiver, restarting buffer", "layer", layer)
+			r.params.Logger.Debugw("restart receiver, restarting buffer", "layer", layer)
 			buff.RestartStream(reason)
 		}
 		r.params.Logger.Debugw("restart receiver, restarted buffers")
@@ -449,10 +449,10 @@ func (r *ReceiverBase) restartInternal(reason string, isDetected bool) {
 			continue
 		}
 
-		r.params.Logger.Debugw("restarting receiver, restarting forwarder", "layer", layer)
+		r.params.Logger.Debugw("restart receiver, restarting forwarder", "layer", layer)
 		r.startForwarderForBufferLocked(int32(layer), buff)
 	}
-	r.params.Logger.Debugw("restarting receiver, restarted forwarders")
+	r.params.Logger.Debugw("restart receiver, restarted forwarders")
 	r.bufferMu.Unlock()
 }
 
