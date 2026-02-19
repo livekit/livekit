@@ -272,6 +272,8 @@ func (b *BufferBase) SetLogger(lgr logger.Logger) {
 }
 
 func (b *BufferBase) Bind(rtpParameters webrtc.RTPParameters, codec webrtc.RTPCodecCapability, bitrate int) error {
+	b.logger.Debugw("binding track")
+
 	b.Lock()
 	defer b.Unlock()
 
@@ -487,6 +489,8 @@ func (b *BufferBase) stopRTPStats(reason string) (stats *livekit.RTPStats, stats
 }
 
 func (b *BufferBase) RestartStream(reason string) {
+	b.logger.Infow("stream restart", "reason", reason)
+
 	b.Lock()
 	defer b.Unlock()
 
