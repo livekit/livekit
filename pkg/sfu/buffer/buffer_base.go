@@ -128,6 +128,7 @@ type BufferProvider interface {
 		oobSequenceNumber uint16,
 	) (uint64, error)
 
+	MarkForRestartStream(reason string)
 	RestartStream(reason string)
 
 	CloseWithReason(reason string) (*livekit.RTPStats, error)
@@ -488,8 +489,18 @@ func (b *BufferBase) stopRTPStats(reason string) (stats *livekit.RTPStats, stats
 	return
 }
 
+func (b *BufferBase) MarkForRestartStream(reason string) {
+	b.logger.Debugw("marking for stream restart", "reason", reason)
+
+	b.Lock()
+	defer b.Unlock()
+
+	b.isRestartPending = true
+	b.readCond.Broadcast()
+}
+
 func (b *BufferBase) RestartStream(reason string) {
-	b.logger.Infow("stream restart", "reason", reason)
+	b.logger.Debugw("stream restart", "reason", reason)
 
 	b.Lock()
 	defer b.Unlock()
@@ -535,10 +546,12 @@ func (b *BufferBase) restartStreamLocked(reason string, isDetected bool) {
 
 	b.StartKeyFrameSeeder()
 
-	b.isRestartPending = true
+	if isDetected {
+		b.isRestartPending = true
 
-	if f := b.onStreamRestart; f != nil && isDetected {
-		go f(reason)
+		if f := b.onStreamRestart; f != nil {
+			go f(reason)
+		}
 	}
 }
 
