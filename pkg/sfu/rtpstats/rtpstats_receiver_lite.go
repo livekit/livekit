@@ -102,7 +102,9 @@ func (r *RTPStatsReceiverLite) Update(packetTime int64, packetSize int, sequence
 	gapSN := int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
 	if gapSN <= 0 { // duplicate OR out-of-order
 		r.packetsOutOfOrder++ // counting duplicate as out-of-order
-		r.packetsLost--
+		if gapSN != 0 && r.packetsLost > 0 {
+			r.packetsLost--
+		}
 	} else { // in-order
 		r.updateGapHistogram(int(gapSN))
 		r.packetsLost += uint64(gapSN - 1)
