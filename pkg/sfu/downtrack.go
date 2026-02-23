@@ -838,14 +838,6 @@ func (d *DownTrack) setRTPHeaderExtensions() {
 	if sender := tr.Sender(); sender != nil {
 		extensions = sender.GetParameters().HeaderExtensions
 		d.params.Logger.Debugw("negotiated downtrack extensions", "extensions", extensions)
-
-		// check extensions for ACT before bindLock to set absCaptureTimeExtID early
-		for _, ext := range extensions {
-			if ext.URI == "http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time" {
-				d.absCaptureTimeExtID = int(ext.ID)
-				break
-			}
-		}
 	}
 
 	d.bindLock.Lock()
