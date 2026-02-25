@@ -1047,29 +1047,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		}
 	}
 	var actBytes []byte
-	if extPkt.AbsCaptureTimeExt == nil && d.absCaptureTimeExtID != 0 && extPkt.Packet != nil && extPkt.Packet.Extension {
-		if d.incomingAbsCaptureTimeExtID != 0 {
-			if extData := extPkt.Packet.Header.GetExtension(uint8(d.incomingAbsCaptureTimeExtID)); extData != nil {
-				var actExt act.AbsCaptureTime
-				if err := actExt.Unmarshal(extData); err == nil {
-					extPkt.AbsCaptureTimeExt = &actExt
-				}
-			}
-		}
-		if extPkt.AbsCaptureTimeExt == nil {
-			for _, extID := range extPkt.Packet.Header.GetExtensionIDs() {
-				extData := extPkt.Packet.Header.GetExtension(extID)
-				var actExt act.AbsCaptureTime
-				if err := actExt.Unmarshal(extData); err == nil {
-					extPkt.AbsCaptureTimeExt = &actExt
-					if d.incomingAbsCaptureTimeExtID == 0 {
-						d.incomingAbsCaptureTimeExtID = int(extID)
-					}
-					break
-				}
-			}
-		}
-	}
 	if extPkt.AbsCaptureTimeExt != nil && d.absCaptureTimeExtID != 0 {
 		// normalize capture time to SFU clock.
 		// NOTE: even if there is estimated offset populated, just re-map the

@@ -1091,12 +1091,25 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, isBuffer
 		}
 	}
 
-	if b.absCaptureTimeExtID != 0 {
-		extData := rtpPacket.GetExtension(b.absCaptureTimeExtID)
+	if rtpPacket.Extension {
+		if b.absCaptureTimeExtID != 0 {
+			extData := rtpPacket.GetExtension(b.absCaptureTimeExtID)
 
-		var actExt act.AbsCaptureTime
-		if err := actExt.Unmarshal(extData); err == nil {
-			ep.AbsCaptureTimeExt = &actExt
+			var actExt act.AbsCaptureTime
+			if err := actExt.Unmarshal(extData); err == nil {
+				ep.AbsCaptureTimeExt = &actExt
+			}
+		} else {
+			for _, extID := range rtpPacket.Header.GetExtensionIDs() {
+				extData := rtpPacket.Header.GetExtension(extID)
+				var actExt act.AbsCaptureTime
+				if err := actExt.Unmarshal(extData); err == nil {
+					b.absCaptureTimeExtID = extID
+					ep.AbsCaptureTimeExt = &actExt
+					b.logger.Debugw("detected abs-capture-time extension id from upstream packet", "id", extID)
+					break
+				}
+			}
 		}
 	}
 
