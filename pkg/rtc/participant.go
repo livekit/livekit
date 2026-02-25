@@ -3989,15 +3989,6 @@ func (p *ParticipantImpl) SupportsMoving() error {
 }
 
 func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
-	// fire onClose callback for original room
-	p.lock.Lock()
-	onClose := p.onClose
-	p.onClose = make(map[string]func(types.LocalParticipant))
-	p.lock.Unlock()
-	for _, cb := range onClose {
-		cb(p)
-	}
-
 	for _, track := range p.GetPublishedTracks() {
 		for _, sub := range track.GetAllSubscribers() {
 			track.RemoveSubscriber(sub, false)
@@ -4014,6 +4005,15 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 			trackInfo,
 			true,
 		)
+	}
+
+	// fire onClose callback for original room
+	p.lock.Lock()
+	onClose := p.onClose
+	p.onClose = make(map[string]func(types.LocalParticipant))
+	p.lock.Unlock()
+	for _, cb := range onClose {
+		cb(p)
 	}
 
 	p.params.Logger.Infow("move participant to new room", "newRoomName", params.RoomName, "newID", params.ParticipantID)
