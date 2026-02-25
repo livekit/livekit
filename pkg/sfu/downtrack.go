@@ -346,15 +346,16 @@ type DownTrack struct {
 	upstreamPrimaryPT uint8
 	primaryPT         uint8
 
-	absSendTimeExtID          int
-	transportWideExtID        int
-	dependencyDescriptorExtID int
-	playoutDelayExtID         int
-	absCaptureTimeExtID       int
-	transceiver               atomic.Pointer[webrtc.RTPTransceiver]
-	writeStream               webrtc.TrackLocalWriter
-	rtcpReader                *buffer.RTCPReader
-	rtcpReaderRTX             *buffer.RTCPReader
+	absSendTimeExtID            int
+	transportWideExtID          int
+	dependencyDescriptorExtID   int
+	playoutDelayExtID           int
+	absCaptureTimeExtID         int
+	incomingAbsCaptureTimeExtID int
+	transceiver                 atomic.Pointer[webrtc.RTPTransceiver]
+	writeStream                 webrtc.TrackLocalWriter
+	rtcpReader                  *buffer.RTCPReader
+	rtcpReaderRTX               *buffer.RTCPReader
 
 	listenerLock            sync.RWMutex
 	receiverReportListeners []ReceiverReportListener
@@ -652,6 +653,13 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.bindLock.Unlock()
 
 		receiver := d.Receiver()
+		for _, ext := range receiver.HeaderExtensions() {
+			if ext.URI == act.AbsCaptureTimeURI {
+				d.incomingAbsCaptureTimeExtID = ext.ID
+				break
+			}
+		}
+
 		d.forwarder.DetermineCodec(codec.RTPCodecCapability, receiver.HeaderExtensions(), receiver.VideoLayerMode())
 		d.connectionStats.Start(d.Mime(), isFECEnabled)
 		d.params.Logger.Debugw("downtrack bound")
@@ -865,11 +873,12 @@ func (d *DownTrack) SetReceiver(r TrackReceiver) {
 // Sets RTP header extensions for this track
 func (d *DownTrack) setRTPHeaderExtensions() {
 	sal := d.getStreamAllocatorListener()
-	if sal == nil {
-		return
+	isBWEEnabled := false
+	bweType := bwe.BWETypeNone
+	if sal != nil {
+		isBWEEnabled = sal.IsBWEEnabled(d)
+		bweType = sal.BWEType()
 	}
-	isBWEEnabled := sal.IsBWEEnabled(d)
-	bweType := sal.BWEType()
 
 	tr := d.transceiver.Load()
 	if tr == nil {
@@ -911,6 +920,7 @@ func (d *DownTrack) setRTPHeaderExtensions() {
 		"playoutDelayExtID", d.playoutDelayExtID,
 		"transportWideExtID", d.transportWideExtID,
 		"absCaptureTimeExtID", d.absCaptureTimeExtID,
+		"incomingAbsCaptureTimeExtID", d.incomingAbsCaptureTimeExtID,
 	)
 	d.bindLock.Unlock()
 }
@@ -1087,6 +1097,29 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		}
 	}
 	var actBytes []byte
+	if extPkt.AbsCaptureTimeExt == nil && d.absCaptureTimeExtID != 0 && extPkt.Packet != nil && extPkt.Packet.Extension {
+		if d.incomingAbsCaptureTimeExtID != 0 {
+			if extData := extPkt.Packet.Header.GetExtension(uint8(d.incomingAbsCaptureTimeExtID)); extData != nil {
+				var actExt act.AbsCaptureTime
+				if err := actExt.Unmarshal(extData); err == nil {
+					extPkt.AbsCaptureTimeExt = &actExt
+				}
+			}
+		}
+		if extPkt.AbsCaptureTimeExt == nil {
+			for _, extID := range extPkt.Packet.Header.GetExtensionIDs() {
+				extData := extPkt.Packet.Header.GetExtension(extID)
+				var actExt act.AbsCaptureTime
+				if err := actExt.Unmarshal(extData); err == nil {
+					extPkt.AbsCaptureTimeExt = &actExt
+					if d.incomingAbsCaptureTimeExtID == 0 {
+						d.incomingAbsCaptureTimeExtID = int(extID)
+					}
+					break
+				}
+			}
+		}
+	}
 	if extPkt.AbsCaptureTimeExt != nil && d.absCaptureTimeExtID != 0 {
 		// normalize capture time to SFU clock.
 		// NOTE: even if there is estimated offset populated, just re-map the
