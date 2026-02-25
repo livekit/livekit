@@ -296,6 +296,18 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		}
 	}
 
+	if b.absCaptureTimeExtID == 0 {
+		b.logger.Debugw(
+			"abs-capture-time extension not negotiated on upstream receiver",
+			"headerExtensions", params.HeaderExtensions,
+		)
+	} else {
+		b.logger.Debugw(
+			"abs-capture-time extension negotiated on upstream receiver",
+			"id", b.absCaptureTimeExtID,
+		)
+	}
+
 	switch {
 	case mime.IsMimeTypeAudio(b.mime):
 		b.codecType = webrtc.RTPCodecTypeAudio
