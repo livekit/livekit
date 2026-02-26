@@ -98,6 +98,16 @@ type FakeMediaTrack struct {
 	getTemporalLayerForSpatialFpsReturnsOnCall map[int]struct {
 		result1 int32
 	}
+	HasUserTimestampStub        func() bool
+	hasUserTimestampMutex       sync.RWMutex
+	hasUserTimestampArgsForCall []struct {
+	}
+	hasUserTimestampReturns struct {
+		result1 bool
+	}
+	hasUserTimestampReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	IDStub        func() livekit.TrackID
 	iDMutex       sync.RWMutex
 	iDArgsForCall []struct {
@@ -739,6 +749,59 @@ func (fake *FakeMediaTrack) GetTemporalLayerForSpatialFpsReturnsOnCall(i int, re
 	}
 	fake.getTemporalLayerForSpatialFpsReturnsOnCall[i] = struct {
 		result1 int32
+	}{result1}
+}
+
+func (fake *FakeMediaTrack) HasUserTimestamp() bool {
+	fake.hasUserTimestampMutex.Lock()
+	ret, specificReturn := fake.hasUserTimestampReturnsOnCall[len(fake.hasUserTimestampArgsForCall)]
+	fake.hasUserTimestampArgsForCall = append(fake.hasUserTimestampArgsForCall, struct {
+	}{})
+	stub := fake.HasUserTimestampStub
+	fakeReturns := fake.hasUserTimestampReturns
+	fake.recordInvocation("HasUserTimestamp", []interface{}{})
+	fake.hasUserTimestampMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeMediaTrack) HasUserTimestampCallCount() int {
+	fake.hasUserTimestampMutex.RLock()
+	defer fake.hasUserTimestampMutex.RUnlock()
+	return len(fake.hasUserTimestampArgsForCall)
+}
+
+func (fake *FakeMediaTrack) HasUserTimestampCalls(stub func() bool) {
+	fake.hasUserTimestampMutex.Lock()
+	defer fake.hasUserTimestampMutex.Unlock()
+	fake.HasUserTimestampStub = stub
+}
+
+func (fake *FakeMediaTrack) HasUserTimestampReturns(result1 bool) {
+	fake.hasUserTimestampMutex.Lock()
+	defer fake.hasUserTimestampMutex.Unlock()
+	fake.HasUserTimestampStub = nil
+	fake.hasUserTimestampReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeMediaTrack) HasUserTimestampReturnsOnCall(i int, result1 bool) {
+	fake.hasUserTimestampMutex.Lock()
+	defer fake.hasUserTimestampMutex.Unlock()
+	fake.HasUserTimestampStub = nil
+	if fake.hasUserTimestampReturnsOnCall == nil {
+		fake.hasUserTimestampReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.hasUserTimestampReturnsOnCall[i] = struct {
+		result1 bool
 	}{result1}
 }
 

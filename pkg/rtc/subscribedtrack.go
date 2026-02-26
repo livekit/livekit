@@ -129,18 +129,21 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 	if isEncrypted {
 		trailer = params.Subscriber.GetTrailer()
 	}
+	stripUserTimestamp := params.MediaTrack.HasUserTimestamp() &&
+		!params.Subscriber.ProtocolVersion().SupportsUserTimestampStripping()
 	downTrack, err := sfu.NewDownTrack(sfu.DownTrackParams{
-		Codecs:            codecs,
-		IsEncrypted:       isEncrypted,
-		Source:            params.MediaTrack.Source(),
-		Receiver:          params.WrappedReceiver,
-		BufferFactory:     params.Subscriber.GetBufferFactory(),
-		SubID:             params.Subscriber.ID(),
-		StreamID:          streamID,
-		MaxTrack:          maxTrack,
-		PlayoutDelayLimit: params.Subscriber.GetPlayoutDelayConfig(),
-		Pacer:             params.Subscriber.GetPacer(),
-		Trailer:           trailer,
+		Codecs:             codecs,
+		IsEncrypted:        isEncrypted,
+		Source:             params.MediaTrack.Source(),
+		Receiver:           params.WrappedReceiver,
+		BufferFactory:      params.Subscriber.GetBufferFactory(),
+		SubID:              params.Subscriber.ID(),
+		StreamID:           streamID,
+		MaxTrack:           maxTrack,
+		PlayoutDelayLimit:  params.Subscriber.GetPlayoutDelayConfig(),
+		Pacer:              params.Subscriber.GetPacer(),
+		Trailer:            trailer,
+		StripUserTimestamp: stripUserTimestamp,
 		Logger: LoggerWithTrack(
 			params.Subscriber.GetLogger().WithComponent(sutils.ComponentSub),
 			params.MediaTrack.ID(),
