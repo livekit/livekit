@@ -130,7 +130,7 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 		trailer = params.Subscriber.GetTrailer()
 	}
 	stripUserTimestamp := params.MediaTrack.HasUserTimestamp() &&
-		!params.Subscriber.ProtocolVersion().SupportsUserTimestampStripping()
+		!params.Subscriber.ProtocolVersion().SupportsUserTimestamp()
 	downTrack, err := sfu.NewDownTrack(sfu.DownTrackParams{
 		Codecs:             codecs,
 		IsEncrypted:        isEncrypted,
