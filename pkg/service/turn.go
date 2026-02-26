@@ -40,8 +40,6 @@ const (
 	LivekitRealm = "livekit"
 
 	allocateRetries = 50
-	turnMinPort     = 1024
-	turnMaxPort     = 30000
 )
 
 func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone bool) (*turn.Server, error) {
@@ -72,7 +70,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 	logValues = append(logValues, "turn.relay_range_start", turnConf.RelayPortRangeStart)
 	logValues = append(logValues, "turn.relay_range_end", turnConf.RelayPortRangeEnd)
 
-	for _, addr := range conf.BindAddresses {
+	for _, addr := range conf.TURN.BindAddresses {
 		var relayAddrGen turn.RelayAddressGenerator = &turn.RelayAddressGeneratorPortRange{
 			RelayAddress: net.ParseIP(conf.RTC.NodeIP),
 			Address:      addr,
