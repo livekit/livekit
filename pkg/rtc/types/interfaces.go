@@ -761,6 +761,7 @@ type MediaTrack interface {
 	ClearAllReceivers(isExpectedToResume bool)
 
 	IsEncrypted() bool
+	HasUserTimestamp() bool
 }
 
 //counterfeiter:generate . LocalMediaTrack
