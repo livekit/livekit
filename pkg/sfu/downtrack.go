@@ -297,6 +297,9 @@ var userTimestampMagic = [4]byte{'L', 'K', 'T', 'S'}
 
 const userTimestampTrailerSize = 12
 
+// stripUserTimestampTrailer returns the number of bytes to strip from the end of
+// an RTP payload if it contains a user-timestamp trailer (magic suffix "LKTS").
+// Trailers only appear on marker packets; returns 0 if absent or ineligible.
 func stripUserTimestampTrailer(payload []byte, marker bool) int {
 	if !marker || len(payload) < userTimestampTrailerSize {
 		return 0

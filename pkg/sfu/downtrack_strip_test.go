@@ -1,4 +1,4 @@
-// Copyright 2023 LiveKit, Inc.
+// Copyright 2026 LiveKit, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -31,9 +31,9 @@ func makePayloadWithTrailer(videoLen int, timestampUs int64) []byte {
 
 func TestStripUserTimestampTrailer(t *testing.T) {
 	tests := []struct {
-		name     string
-		payload  []byte
-		marker   bool
+		name      string
+		payload   []byte
+		marker    bool
 		wantStrip int
 	}{
 		{
