@@ -100,6 +100,6 @@ func (v ProtocolVersion) SupportsMoving() bool {
 	return v > 15
 }
 
-func (v ProtocolVersion) SupportsUserTimestampStripping() bool {
+func (v ProtocolVersion) SupportsUserTimestamp() bool {
 	return v > 16
 }
