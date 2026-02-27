@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/netip"
 
 	"github.com/dennwc/iters"
@@ -37,19 +38,38 @@ func (s *IOInfoService) matchSIPTrunk(ctx context.Context, trunkID string, call 
 	if trunkID != "" {
 		// This is a best-effort optimization. Fallthrough to listing trunks if it doesn't work.
 		if tr, err := s.ss.LoadSIPInboundTrunk(ctx, trunkID); err == nil {
-			tr, err = sip.MatchTrunkIter(iters.Slice([]*livekit.SIPInboundTrunkInfo{tr}), call)
-			if err == nil {
-				return tr, nil
+			result, err := sip.MatchTrunkDetailed(iters.Slice([]*livekit.SIPInboundTrunkInfo{tr}), call)
+			if err == nil && result.MatchType != sip.TrunkMatchNone {
+				return result.Trunk, nil
 			}
 		}
 	}
-	it := s.SelectSIPInboundTrunk(ctx, call.To.User)
-	return sip.MatchTrunkIter(it, call)
+	it := s.ListAllSIPInboundTrunks(ctx, call.To.User)
+	result, err := sip.MatchTrunkDetailed(it, call)
+	if err != nil {
+		return nil, err
+	}
+	// If trunks exist but none matched, return a specific error
+	if result.MatchType == sip.TrunkMatchNone {
+		return nil, ErrSIPTrunkNotFound
+	}
+	// If no trunks were defined at all, return nil (this is different from TrunkMatchNone)
+	if result.MatchType == sip.TrunkMatchEmpty {
+		return nil, nil
+	}
+	return result.Trunk, nil
 }
 
 func (s *IOInfoService) SelectSIPInboundTrunk(ctx context.Context, called string) iters.Iter[*livekit.SIPInboundTrunkInfo] {
 	it := livekit.ListPageIter(s.ss.ListSIPInboundTrunk, &livekit.ListSIPInboundTrunkRequest{
 		Numbers: []string{called},
+	})
+	return iters.PagesAsIter(ctx, it)
+}
+
+func (s *IOInfoService) ListAllSIPInboundTrunks(ctx context.Context, called string) iters.Iter[*livekit.SIPInboundTrunkInfo] {
+	it := livekit.ListPageIter(s.ss.ListSIPInboundTrunk, &livekit.ListSIPInboundTrunkRequest{
+		Numbers: nil,
 	})
 	return iters.PagesAsIter(ctx, it)
 }
@@ -142,11 +162,18 @@ func (s *IOInfoService) GetSIPTrunkAuthentication(ctx context.Context, req *rpc.
 	}
 	trunk, err := s.matchSIPTrunk(ctx, "", call)
 	if err != nil {
+		// Check if this is the specific "no SIP trunk matched" error
+		if err == ErrSIPTrunkNotFound {
+			err := twirp.NotFoundError(fmt.Sprintf("sip trunk not found for destination %q", req.Call.To))
+			log.Errorw("No SIP trunk matched for auth", err, "sipTrunk", "", "to", req.Call.To)
+			return nil, err
+		}
 		return nil, err
 	}
 	if trunk == nil {
-		log.Debugw("No SIP trunk matched for auth", "sipTrunk", "")
-		return &rpc.GetSIPTrunkAuthenticationResponse{}, nil
+		// This case is for TrunkMatchEmpty (no trunks defined at all)
+		// We don't return an error in this case
+		return nil, nil
 	}
 	log.Debugw("SIP trunk matched for auth", "sipTrunk", trunk.SipTrunkId)
 
