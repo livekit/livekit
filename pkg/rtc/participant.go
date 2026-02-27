@@ -34,6 +34,7 @@ import (
 	"go.uber.org/atomic"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/exp/maps"
+	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/mediatransportutil/pkg/twcc"
@@ -221,6 +222,8 @@ type ParticipantParams struct {
 	UseSinglePeerConnection         bool
 	EnableDataTracks                bool
 	EnableRTPStreamRestartDetection bool
+	DataMessageRateLimit float64
+	DataMessageRateBurst int
 	ForceBackupCodecPolicySimulcast bool
 }
 
@@ -287,6 +290,9 @@ type ParticipantImpl struct {
 	updateLock  utils.Mutex
 
 	dataChannelStats *BytesTrackStats
+
+	// rate limiter for incoming data messages (nil if disabled)
+	dataMessageRateLimiter *rate.Limiter
 
 	reliableDataInfo reliableDataInfo
 
@@ -380,6 +386,16 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		params.Reporter,
 	)
 	p.reliableDataInfo.lastPubReliableSeq.Store(params.LastPubReliableSeq)
+
+	// initialize data message rate limiter if configured
+	if params.DataMessageRateLimit > 0 {
+		burst := params.DataMessageRateBurst
+		if burst <= 0 {
+			burst = 1
+		}
+		p.dataMessageRateLimiter = rate.NewLimiter(rate.Limit(params.DataMessageRateLimit), burst)
+	}
+
 	p.setListener(params.ParticipantListener)
 	p.participantHelper.Store(params.ParticipantHelper)
 	if !params.DisableSupervisor {
@@ -2289,6 +2305,15 @@ func (p *ParticipantImpl) handlePendingRemoteTracks() {
 
 func (p *ParticipantImpl) onReceivedDataMessage(kind livekit.DataPacket_Kind, data []byte) {
 	if p.IsDisconnected() || !p.CanPublishData() {
+		return
+	}
+
+	// check rate limit for data messages
+	if p.dataMessageRateLimiter != nil && !p.dataMessageRateLimiter.Allow() {
+		p.pubLogger.Warnw("data message rate limit exceeded, dropping message", nil,
+			"identity", p.Identity(),
+			"messageSize", len(data),
+		)
 		return
 	}
 
