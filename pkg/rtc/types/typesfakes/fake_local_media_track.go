@@ -124,6 +124,17 @@ type FakeLocalMediaTrack struct {
 	getTrackStatsReturnsOnCall map[int]struct {
 		result1 *livekit.RTPStats
 	}
+	HasRTPTrailerFeatureStub        func(livekit.RTPTrailerFeature) bool
+	hasRTPTrailerFeatureMutex       sync.RWMutex
+	hasRTPTrailerFeatureArgsForCall []struct {
+		arg1 livekit.RTPTrailerFeature
+	}
+	hasRTPTrailerFeatureReturns struct {
+		result1 bool
+	}
+	hasRTPTrailerFeatureReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	HasSdpCidStub        func(string) bool
 	hasSdpCidMutex       sync.RWMutex
 	hasSdpCidArgsForCall []struct {
@@ -144,16 +155,6 @@ type FakeLocalMediaTrack struct {
 		result1 bool
 	}
 	hasSignalCidReturnsOnCall map[int]struct {
-		result1 bool
-	}
-	HasUserTimestampStub        func() bool
-	hasUserTimestampMutex       sync.RWMutex
-	hasUserTimestampArgsForCall []struct {
-	}
-	hasUserTimestampReturns struct {
-		result1 bool
-	}
-	hasUserTimestampReturnsOnCall map[int]struct {
 		result1 bool
 	}
 	IDStub        func() livekit.TrackID
@@ -960,6 +961,67 @@ func (fake *FakeLocalMediaTrack) GetTrackStatsReturnsOnCall(i int, result1 *live
 	}{result1}
 }
 
+func (fake *FakeLocalMediaTrack) HasRTPTrailerFeature(arg1 livekit.RTPTrailerFeature) bool {
+	fake.hasRTPTrailerFeatureMutex.Lock()
+	ret, specificReturn := fake.hasRTPTrailerFeatureReturnsOnCall[len(fake.hasRTPTrailerFeatureArgsForCall)]
+	fake.hasRTPTrailerFeatureArgsForCall = append(fake.hasRTPTrailerFeatureArgsForCall, struct {
+		arg1 livekit.RTPTrailerFeature
+	}{arg1})
+	stub := fake.HasRTPTrailerFeatureStub
+	fakeReturns := fake.hasRTPTrailerFeatureReturns
+	fake.recordInvocation("HasRTPTrailerFeature", []interface{}{arg1})
+	fake.hasRTPTrailerFeatureMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalMediaTrack) HasRTPTrailerFeatureCallCount() int {
+	fake.hasRTPTrailerFeatureMutex.RLock()
+	defer fake.hasRTPTrailerFeatureMutex.RUnlock()
+	return len(fake.hasRTPTrailerFeatureArgsForCall)
+}
+
+func (fake *FakeLocalMediaTrack) HasRTPTrailerFeatureCalls(stub func(livekit.RTPTrailerFeature) bool) {
+	fake.hasRTPTrailerFeatureMutex.Lock()
+	defer fake.hasRTPTrailerFeatureMutex.Unlock()
+	fake.HasRTPTrailerFeatureStub = stub
+}
+
+func (fake *FakeLocalMediaTrack) HasRTPTrailerFeatureArgsForCall(i int) livekit.RTPTrailerFeature {
+	fake.hasRTPTrailerFeatureMutex.RLock()
+	defer fake.hasRTPTrailerFeatureMutex.RUnlock()
+	argsForCall := fake.hasRTPTrailerFeatureArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalMediaTrack) HasRTPTrailerFeatureReturns(result1 bool) {
+	fake.hasRTPTrailerFeatureMutex.Lock()
+	defer fake.hasRTPTrailerFeatureMutex.Unlock()
+	fake.HasRTPTrailerFeatureStub = nil
+	fake.hasRTPTrailerFeatureReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalMediaTrack) HasRTPTrailerFeatureReturnsOnCall(i int, result1 bool) {
+	fake.hasRTPTrailerFeatureMutex.Lock()
+	defer fake.hasRTPTrailerFeatureMutex.Unlock()
+	fake.HasRTPTrailerFeatureStub = nil
+	if fake.hasRTPTrailerFeatureReturnsOnCall == nil {
+		fake.hasRTPTrailerFeatureReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.hasRTPTrailerFeatureReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
 func (fake *FakeLocalMediaTrack) HasSdpCid(arg1 string) bool {
 	fake.hasSdpCidMutex.Lock()
 	ret, specificReturn := fake.hasSdpCidReturnsOnCall[len(fake.hasSdpCidArgsForCall)]
@@ -1078,59 +1140,6 @@ func (fake *FakeLocalMediaTrack) HasSignalCidReturnsOnCall(i int, result1 bool) 
 		})
 	}
 	fake.hasSignalCidReturnsOnCall[i] = struct {
-		result1 bool
-	}{result1}
-}
-
-func (fake *FakeLocalMediaTrack) HasUserTimestamp() bool {
-	fake.hasUserTimestampMutex.Lock()
-	ret, specificReturn := fake.hasUserTimestampReturnsOnCall[len(fake.hasUserTimestampArgsForCall)]
-	fake.hasUserTimestampArgsForCall = append(fake.hasUserTimestampArgsForCall, struct {
-	}{})
-	stub := fake.HasUserTimestampStub
-	fakeReturns := fake.hasUserTimestampReturns
-	fake.recordInvocation("HasUserTimestamp", []interface{}{})
-	fake.hasUserTimestampMutex.Unlock()
-	if stub != nil {
-		return stub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fakeReturns.result1
-}
-
-func (fake *FakeLocalMediaTrack) HasUserTimestampCallCount() int {
-	fake.hasUserTimestampMutex.RLock()
-	defer fake.hasUserTimestampMutex.RUnlock()
-	return len(fake.hasUserTimestampArgsForCall)
-}
-
-func (fake *FakeLocalMediaTrack) HasUserTimestampCalls(stub func() bool) {
-	fake.hasUserTimestampMutex.Lock()
-	defer fake.hasUserTimestampMutex.Unlock()
-	fake.HasUserTimestampStub = stub
-}
-
-func (fake *FakeLocalMediaTrack) HasUserTimestampReturns(result1 bool) {
-	fake.hasUserTimestampMutex.Lock()
-	defer fake.hasUserTimestampMutex.Unlock()
-	fake.HasUserTimestampStub = nil
-	fake.hasUserTimestampReturns = struct {
-		result1 bool
-	}{result1}
-}
-
-func (fake *FakeLocalMediaTrack) HasUserTimestampReturnsOnCall(i int, result1 bool) {
-	fake.hasUserTimestampMutex.Lock()
-	defer fake.hasUserTimestampMutex.Unlock()
-	fake.HasUserTimestampStub = nil
-	if fake.hasUserTimestampReturnsOnCall == nil {
-		fake.hasUserTimestampReturnsOnCall = make(map[int]struct {
-			result1 bool
-		})
-	}
-	fake.hasUserTimestampReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }

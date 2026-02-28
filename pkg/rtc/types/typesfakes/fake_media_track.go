@@ -98,14 +98,15 @@ type FakeMediaTrack struct {
 	getTemporalLayerForSpatialFpsReturnsOnCall map[int]struct {
 		result1 int32
 	}
-	HasUserTimestampStub        func() bool
-	hasUserTimestampMutex       sync.RWMutex
-	hasUserTimestampArgsForCall []struct {
+	HasRTPTrailerFeatureStub        func(livekit.RTPTrailerFeature) bool
+	hasRTPTrailerFeatureMutex       sync.RWMutex
+	hasRTPTrailerFeatureArgsForCall []struct {
+		arg1 livekit.RTPTrailerFeature
 	}
-	hasUserTimestampReturns struct {
+	hasRTPTrailerFeatureReturns struct {
 		result1 bool
 	}
-	hasUserTimestampReturnsOnCall map[int]struct {
+	hasRTPTrailerFeatureReturnsOnCall map[int]struct {
 		result1 bool
 	}
 	IDStub        func() livekit.TrackID
@@ -752,17 +753,18 @@ func (fake *FakeMediaTrack) GetTemporalLayerForSpatialFpsReturnsOnCall(i int, re
 	}{result1}
 }
 
-func (fake *FakeMediaTrack) HasUserTimestamp() bool {
-	fake.hasUserTimestampMutex.Lock()
-	ret, specificReturn := fake.hasUserTimestampReturnsOnCall[len(fake.hasUserTimestampArgsForCall)]
-	fake.hasUserTimestampArgsForCall = append(fake.hasUserTimestampArgsForCall, struct {
-	}{})
-	stub := fake.HasUserTimestampStub
-	fakeReturns := fake.hasUserTimestampReturns
-	fake.recordInvocation("HasUserTimestamp", []interface{}{})
-	fake.hasUserTimestampMutex.Unlock()
+func (fake *FakeMediaTrack) HasRTPTrailerFeature(arg1 livekit.RTPTrailerFeature) bool {
+	fake.hasRTPTrailerFeatureMutex.Lock()
+	ret, specificReturn := fake.hasRTPTrailerFeatureReturnsOnCall[len(fake.hasRTPTrailerFeatureArgsForCall)]
+	fake.hasRTPTrailerFeatureArgsForCall = append(fake.hasRTPTrailerFeatureArgsForCall, struct {
+		arg1 livekit.RTPTrailerFeature
+	}{arg1})
+	stub := fake.HasRTPTrailerFeatureStub
+	fakeReturns := fake.hasRTPTrailerFeatureReturns
+	fake.recordInvocation("HasRTPTrailerFeature", []interface{}{arg1})
+	fake.hasRTPTrailerFeatureMutex.Unlock()
 	if stub != nil {
-		return stub()
+		return stub(arg1)
 	}
 	if specificReturn {
 		return ret.result1
@@ -770,37 +772,44 @@ func (fake *FakeMediaTrack) HasUserTimestamp() bool {
 	return fakeReturns.result1
 }
 
-func (fake *FakeMediaTrack) HasUserTimestampCallCount() int {
-	fake.hasUserTimestampMutex.RLock()
-	defer fake.hasUserTimestampMutex.RUnlock()
-	return len(fake.hasUserTimestampArgsForCall)
+func (fake *FakeMediaTrack) HasRTPTrailerFeatureCallCount() int {
+	fake.hasRTPTrailerFeatureMutex.RLock()
+	defer fake.hasRTPTrailerFeatureMutex.RUnlock()
+	return len(fake.hasRTPTrailerFeatureArgsForCall)
 }
 
-func (fake *FakeMediaTrack) HasUserTimestampCalls(stub func() bool) {
-	fake.hasUserTimestampMutex.Lock()
-	defer fake.hasUserTimestampMutex.Unlock()
-	fake.HasUserTimestampStub = stub
+func (fake *FakeMediaTrack) HasRTPTrailerFeatureCalls(stub func(livekit.RTPTrailerFeature) bool) {
+	fake.hasRTPTrailerFeatureMutex.Lock()
+	defer fake.hasRTPTrailerFeatureMutex.Unlock()
+	fake.HasRTPTrailerFeatureStub = stub
 }
 
-func (fake *FakeMediaTrack) HasUserTimestampReturns(result1 bool) {
-	fake.hasUserTimestampMutex.Lock()
-	defer fake.hasUserTimestampMutex.Unlock()
-	fake.HasUserTimestampStub = nil
-	fake.hasUserTimestampReturns = struct {
+func (fake *FakeMediaTrack) HasRTPTrailerFeatureArgsForCall(i int) livekit.RTPTrailerFeature {
+	fake.hasRTPTrailerFeatureMutex.RLock()
+	defer fake.hasRTPTrailerFeatureMutex.RUnlock()
+	argsForCall := fake.hasRTPTrailerFeatureArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeMediaTrack) HasRTPTrailerFeatureReturns(result1 bool) {
+	fake.hasRTPTrailerFeatureMutex.Lock()
+	defer fake.hasRTPTrailerFeatureMutex.Unlock()
+	fake.HasRTPTrailerFeatureStub = nil
+	fake.hasRTPTrailerFeatureReturns = struct {
 		result1 bool
 	}{result1}
 }
 
-func (fake *FakeMediaTrack) HasUserTimestampReturnsOnCall(i int, result1 bool) {
-	fake.hasUserTimestampMutex.Lock()
-	defer fake.hasUserTimestampMutex.Unlock()
-	fake.HasUserTimestampStub = nil
-	if fake.hasUserTimestampReturnsOnCall == nil {
-		fake.hasUserTimestampReturnsOnCall = make(map[int]struct {
+func (fake *FakeMediaTrack) HasRTPTrailerFeatureReturnsOnCall(i int, result1 bool) {
+	fake.hasRTPTrailerFeatureMutex.Lock()
+	defer fake.hasRTPTrailerFeatureMutex.Unlock()
+	fake.HasRTPTrailerFeatureStub = nil
+	if fake.hasRTPTrailerFeatureReturnsOnCall == nil {
+		fake.hasRTPTrailerFeatureReturnsOnCall = make(map[int]struct {
 			result1 bool
 		})
 	}
-	fake.hasUserTimestampReturnsOnCall[i] = struct {
+	fake.hasRTPTrailerFeatureReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }
