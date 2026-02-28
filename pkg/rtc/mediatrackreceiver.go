@@ -519,8 +519,8 @@ func (t *MediaTrackReceiver) IsEncrypted() bool {
 	return t.TrackInfo().Encryption != livekit.Encryption_NONE
 }
 
-func (t *MediaTrackReceiver) HasUserTimestamp() bool {
-	return t.TrackInfo().GetHasUserTimestamp()
+func (t *MediaTrackReceiver) HasRTPTrailerFeature(feature livekit.RTPTrailerFeature) bool {
+	return slices.Contains(t.TrackInfo().GetRtpTrailerFeatures(), feature)
 }
 
 func (t *MediaTrackReceiver) AddOnClose(f func(isExpectedToResume bool)) {

@@ -760,7 +760,7 @@ type MediaTrack interface {
 	ClearAllReceivers(isExpectedToResume bool)
 
 	IsEncrypted() bool
-	HasUserTimestamp() bool
+	HasRTPTrailerFeature(livekit.RTPTrailerFeature) bool
 }
 
 //counterfeiter:generate . LocalMediaTrack

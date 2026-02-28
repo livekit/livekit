@@ -2819,20 +2819,21 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 	}
 
 	ti := &livekit.TrackInfo{
-		Type:              req.Type,
-		Name:              req.Name,
-		Width:             req.Width,
-		Height:            req.Height,
-		Muted:             req.Muted,
-		DisableDtx:        req.DisableDtx,
-		Source:            req.Source,
-		Layers:            cloneLayers(req.Layers),
-		DisableRed:        req.DisableRed,
-		Stereo:            req.Stereo,
-		Encryption:        req.Encryption,
-		Stream:            req.Stream,
-		BackupCodecPolicy: backupCodecPolicy,
-		AudioFeatures:     sutils.DedupeSlice(req.AudioFeatures),
+		Type:               req.Type,
+		Name:               req.Name,
+		Width:              req.Width,
+		Height:             req.Height,
+		Muted:              req.Muted,
+		DisableDtx:         req.DisableDtx,
+		Source:             req.Source,
+		Layers:             cloneLayers(req.Layers),
+		DisableRed:         req.DisableRed,
+		Stereo:             req.Stereo,
+		Encryption:         req.Encryption,
+		Stream:             req.Stream,
+		BackupCodecPolicy:  backupCodecPolicy,
+		AudioFeatures:      sutils.DedupeSlice(req.AudioFeatures),
+		RtpTrailerFeatures: sutils.DedupeSlice(req.RtpTrailerFeatures),
 	}
 	if req.Stereo && !slices.Contains(ti.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO) {
 		ti.AudioFeatures = append(ti.AudioFeatures, livekit.AudioTrackFeature_TF_STEREO)

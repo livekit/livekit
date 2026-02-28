@@ -129,7 +129,7 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 	if isEncrypted {
 		trailer = params.Subscriber.GetTrailer()
 	}
-	stripUserTimestamp := params.MediaTrack.HasUserTimestamp() &&
+	stripUserTimestamp := params.MediaTrack.HasRTPTrailerFeature(livekit.RTPTrailerFeature_USER_TIMESTAMP) &&
 		!params.Subscriber.ProtocolVersion().SupportsUserTimestamp()
 	downTrack, err := sfu.NewDownTrack(sfu.DownTrackParams{
 		Codecs:             codecs,
