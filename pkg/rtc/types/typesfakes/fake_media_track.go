@@ -98,15 +98,15 @@ type FakeMediaTrack struct {
 	getTemporalLayerForSpatialFpsReturnsOnCall map[int]struct {
 		result1 int32
 	}
-	HasRTPTrailerFeatureStub        func(livekit.RTPTrailerFeature) bool
-	hasRTPTrailerFeatureMutex       sync.RWMutex
-	hasRTPTrailerFeatureArgsForCall []struct {
-		arg1 livekit.RTPTrailerFeature
+	HasPacketTrailerFeatureStub        func(livekit.PacketTrailerFeature) bool
+	hasPacketTrailerFeatureMutex       sync.RWMutex
+	hasPacketTrailerFeatureArgsForCall []struct {
+		arg1 livekit.PacketTrailerFeature
 	}
-	hasRTPTrailerFeatureReturns struct {
+	hasPacketTrailerFeatureReturns struct {
 		result1 bool
 	}
-	hasRTPTrailerFeatureReturnsOnCall map[int]struct {
+	hasPacketTrailerFeatureReturnsOnCall map[int]struct {
 		result1 bool
 	}
 	IDStub        func() livekit.TrackID
@@ -753,16 +753,16 @@ func (fake *FakeMediaTrack) GetTemporalLayerForSpatialFpsReturnsOnCall(i int, re
 	}{result1}
 }
 
-func (fake *FakeMediaTrack) HasRTPTrailerFeature(arg1 livekit.RTPTrailerFeature) bool {
-	fake.hasRTPTrailerFeatureMutex.Lock()
-	ret, specificReturn := fake.hasRTPTrailerFeatureReturnsOnCall[len(fake.hasRTPTrailerFeatureArgsForCall)]
-	fake.hasRTPTrailerFeatureArgsForCall = append(fake.hasRTPTrailerFeatureArgsForCall, struct {
-		arg1 livekit.RTPTrailerFeature
+func (fake *FakeMediaTrack) HasPacketTrailerFeature(arg1 livekit.PacketTrailerFeature) bool {
+	fake.hasPacketTrailerFeatureMutex.Lock()
+	ret, specificReturn := fake.hasPacketTrailerFeatureReturnsOnCall[len(fake.hasPacketTrailerFeatureArgsForCall)]
+	fake.hasPacketTrailerFeatureArgsForCall = append(fake.hasPacketTrailerFeatureArgsForCall, struct {
+		arg1 livekit.PacketTrailerFeature
 	}{arg1})
-	stub := fake.HasRTPTrailerFeatureStub
-	fakeReturns := fake.hasRTPTrailerFeatureReturns
-	fake.recordInvocation("HasRTPTrailerFeature", []interface{}{arg1})
-	fake.hasRTPTrailerFeatureMutex.Unlock()
+	stub := fake.HasPacketTrailerFeatureStub
+	fakeReturns := fake.hasPacketTrailerFeatureReturns
+	fake.recordInvocation("HasPacketTrailerFeature", []interface{}{arg1})
+	fake.hasPacketTrailerFeatureMutex.Unlock()
 	if stub != nil {
 		return stub(arg1)
 	}
@@ -772,44 +772,44 @@ func (fake *FakeMediaTrack) HasRTPTrailerFeature(arg1 livekit.RTPTrailerFeature)
 	return fakeReturns.result1
 }
 
-func (fake *FakeMediaTrack) HasRTPTrailerFeatureCallCount() int {
-	fake.hasRTPTrailerFeatureMutex.RLock()
-	defer fake.hasRTPTrailerFeatureMutex.RUnlock()
-	return len(fake.hasRTPTrailerFeatureArgsForCall)
+func (fake *FakeMediaTrack) HasPacketTrailerFeatureCallCount() int {
+	fake.hasPacketTrailerFeatureMutex.RLock()
+	defer fake.hasPacketTrailerFeatureMutex.RUnlock()
+	return len(fake.hasPacketTrailerFeatureArgsForCall)
 }
 
-func (fake *FakeMediaTrack) HasRTPTrailerFeatureCalls(stub func(livekit.RTPTrailerFeature) bool) {
-	fake.hasRTPTrailerFeatureMutex.Lock()
-	defer fake.hasRTPTrailerFeatureMutex.Unlock()
-	fake.HasRTPTrailerFeatureStub = stub
+func (fake *FakeMediaTrack) HasPacketTrailerFeatureCalls(stub func(livekit.PacketTrailerFeature) bool) {
+	fake.hasPacketTrailerFeatureMutex.Lock()
+	defer fake.hasPacketTrailerFeatureMutex.Unlock()
+	fake.HasPacketTrailerFeatureStub = stub
 }
 
-func (fake *FakeMediaTrack) HasRTPTrailerFeatureArgsForCall(i int) livekit.RTPTrailerFeature {
-	fake.hasRTPTrailerFeatureMutex.RLock()
-	defer fake.hasRTPTrailerFeatureMutex.RUnlock()
-	argsForCall := fake.hasRTPTrailerFeatureArgsForCall[i]
+func (fake *FakeMediaTrack) HasPacketTrailerFeatureArgsForCall(i int) livekit.PacketTrailerFeature {
+	fake.hasPacketTrailerFeatureMutex.RLock()
+	defer fake.hasPacketTrailerFeatureMutex.RUnlock()
+	argsForCall := fake.hasPacketTrailerFeatureArgsForCall[i]
 	return argsForCall.arg1
 }
 
-func (fake *FakeMediaTrack) HasRTPTrailerFeatureReturns(result1 bool) {
-	fake.hasRTPTrailerFeatureMutex.Lock()
-	defer fake.hasRTPTrailerFeatureMutex.Unlock()
-	fake.HasRTPTrailerFeatureStub = nil
-	fake.hasRTPTrailerFeatureReturns = struct {
+func (fake *FakeMediaTrack) HasPacketTrailerFeatureReturns(result1 bool) {
+	fake.hasPacketTrailerFeatureMutex.Lock()
+	defer fake.hasPacketTrailerFeatureMutex.Unlock()
+	fake.HasPacketTrailerFeatureStub = nil
+	fake.hasPacketTrailerFeatureReturns = struct {
 		result1 bool
 	}{result1}
 }
 
-func (fake *FakeMediaTrack) HasRTPTrailerFeatureReturnsOnCall(i int, result1 bool) {
-	fake.hasRTPTrailerFeatureMutex.Lock()
-	defer fake.hasRTPTrailerFeatureMutex.Unlock()
-	fake.HasRTPTrailerFeatureStub = nil
-	if fake.hasRTPTrailerFeatureReturnsOnCall == nil {
-		fake.hasRTPTrailerFeatureReturnsOnCall = make(map[int]struct {
+func (fake *FakeMediaTrack) HasPacketTrailerFeatureReturnsOnCall(i int, result1 bool) {
+	fake.hasPacketTrailerFeatureMutex.Lock()
+	defer fake.hasPacketTrailerFeatureMutex.Unlock()
+	fake.HasPacketTrailerFeatureStub = nil
+	if fake.hasPacketTrailerFeatureReturnsOnCall == nil {
+		fake.hasPacketTrailerFeatureReturnsOnCall = make(map[int]struct {
 			result1 bool
 		})
 	}
-	fake.hasRTPTrailerFeatureReturnsOnCall[i] = struct {
+	fake.hasPacketTrailerFeatureReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }
