@@ -94,6 +94,8 @@ func (s *signalhandler) HandleMessage(msg proto.Message) error {
 			reason = types.ParticipantCloseReasonUserUnavailable
 		case livekit.DisconnectReason_USER_REJECTED:
 			reason = types.ParticipantCloseReasonUserRejected
+		case livekit.DisconnectReason_AGENT_ERROR:
+			reason = types.ParticipantCloseReasonAgentError
 		}
 		s.params.Logger.Debugw("client leaving room", "reason", reason)
 		s.params.Participant.HandleLeaveRequest(reason)
