@@ -93,19 +93,19 @@ func TestMultiNodeRemoveParticipant(t *testing.T) {
 		return
 	}
 
-	for _, testRTCServicePath := range testRTCServicePaths {
+	for i, testRTCServicePath := range testRTCServicePaths {
 		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
 			_, _, finish := setupMultiNodeTest("TestMultiNodeRemoveParticipant")
 			defer finish()
 
-			c1 := createRTCClient("mn_remove_participant", defaultServerPort, testRTCServicePath, nil)
+			c1 := createRTCClient(fmt.Sprintf("mn_remove_participant_%d", i), defaultServerPort, testRTCServicePath, nil)
 			defer c1.Stop()
 			waitUntilConnected(t, c1)
 
 			ctx := contextWithToken(adminRoomToken(testRoom))
 			_, err := roomClient.RemoveParticipant(ctx, &livekit.RoomParticipantIdentity{
 				Room:     testRoom,
-				Identity: "mn_remove_participant",
+				Identity: fmt.Sprintf("mn_remove_participant_%d", i),
 			})
 			require.NoError(t, err)
 

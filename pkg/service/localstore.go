@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +27,11 @@ import (
 )
 
 var _ OSSServiceStore = (*LocalStore)(nil)
+
+type roomParticipantRevocationMapEntry struct {
+	ttl            time.Time
+	revocationTime time.Time
+}
 
 // encapsulates CRUD operations for room settings
 type LocalStore struct {
@@ -38,18 +44,22 @@ type LocalStore struct {
 	agentDispatches map[livekit.RoomName]map[string]*livekit.AgentDispatch
 	agentJobs       map[livekit.RoomName]map[string]*livekit.Job
 
+	roomParticipantRevocationMap map[string]roomParticipantRevocationMapEntry
+
 	lock       sync.RWMutex
 	globalLock sync.Mutex
 }
 
 func NewLocalStore() *LocalStore {
 	return &LocalStore{
-		rooms:           make(map[livekit.RoomName]*livekit.Room),
-		roomInternal:    make(map[livekit.RoomName]*livekit.RoomInternal),
-		participants:    make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
-		agentDispatches: make(map[livekit.RoomName]map[string]*livekit.AgentDispatch),
-		agentJobs:       make(map[livekit.RoomName]map[string]*livekit.Job),
-		lock:            sync.RWMutex{},
+		rooms:                        make(map[livekit.RoomName]*livekit.Room),
+		roomInternal:                 make(map[livekit.RoomName]*livekit.RoomInternal),
+		participants:                 make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
+		agentDispatches:              make(map[livekit.RoomName]map[string]*livekit.AgentDispatch),
+		agentJobs:                    make(map[livekit.RoomName]map[string]*livekit.Job),
+		roomParticipantRevocationMap: make(map[string]roomParticipantRevocationMapEntry),
+
+		lock: sync.RWMutex{},
 	}
 }
 
@@ -295,4 +305,42 @@ func (s *LocalStore) DeleteAgentJob(ctx context.Context, job *livekit.Job) error
 	}
 
 	return nil
+}
+
+func (s *LocalStore) RevokeRoomParticipant(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	revocationTime := time.Now()
+	s.roomParticipantRevocationMap[room.String()+":"+identity.String()] = roomParticipantRevocationMapEntry{
+		ttl:            revocationTime.Add(time.Minute * 11),
+		revocationTime: revocationTime,
+	}
+
+	return nil
+}
+
+func (s *LocalStore) IsRoomParticipantRevoked(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) (bool, *time.Time, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	revocationEntry, exists := s.roomParticipantRevocationMap[room.String()+":"+identity.String()]
+
+	return exists, &revocationEntry.revocationTime, nil
+}
+
+func (s *LocalStore) CleanupForRoom(ctx context.Context, room livekit.RoomName) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	entries := []string{}
+	for identifier := range s.roomParticipantRevocationMap {
+		if s.roomParticipantRevocationMap[identifier].ttl.Unix() < time.Now().Unix() || strings.HasPrefix(identifier, room.String()+":") {
+			entries = append(entries, identifier)
+		}
+	}
+
+	for i := range entries {
+		delete(s.roomParticipantRevocationMap, entries[i])
+	}
 }
