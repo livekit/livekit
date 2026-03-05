@@ -761,6 +761,7 @@ type MediaTrack interface {
 	ClearAllReceivers(isExpectedToResume bool)
 
 	IsEncrypted() bool
+	HasPacketTrailerFeature(livekit.PacketTrailerFeature) bool
 }
 
 //counterfeiter:generate . LocalMediaTrack
