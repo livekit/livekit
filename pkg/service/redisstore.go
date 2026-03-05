@@ -65,6 +65,10 @@ const (
 	AgentDispatchPrefix = "agent_dispatch:"
 	AgentJobPrefix      = "agent_job:"
 
+	// TokenRevocation
+	TokensKey           = "tokens"
+	TokenRevocationsKey = "token_revocations"
+
 	maxRetries = 5
 )
 
@@ -939,6 +943,78 @@ func (s *RedisStore) DeleteAgentJob(_ context.Context, job *livekit.Job) error {
 
 	key := AgentJobPrefix + string(job.Room.Name)
 	return s.rc.HDel(s.ctx, key, job.Id).Err()
+}
+
+func (s *RedisStore) StoreAccessToken(ctx context.Context, token string, tokenIdentifier string, ttl int64) error {
+	pp := s.rc.Pipeline()
+	pp.HSet(s.ctx, TokensKey, tokenIdentifier, fmt.Sprintf("%s|%s|%d", tokenIdentifier, token, ttl))
+	now := time.Now().Unix()
+	ttlDuration := time.Duration(ttl+1600-now) * time.Second
+	pp.HExpire(s.ctx, TokenRevocationsKey, ttlDuration, tokenIdentifier)
+
+	if _, err := pp.Exec(s.ctx); err != nil {
+		return errors.Wrap(err, "could not create store access token")
+	}
+	return nil
+}
+
+func (s *RedisStore) RevokeAccessToken(ctx context.Context, tokenIdentifier string) error {
+	pp := s.rc.Pipeline()
+	pp.HGet(s.ctx, TokensKey, tokenIdentifier)
+
+	res, err := pp.Exec(s.ctx)
+	if err != nil && err != redis.Nil {
+		return err
+	}
+
+	if len(res) > 0 {
+
+		tokenStr, err := res[0].(*redis.StatusCmd).Result()
+		if err != nil {
+			return err
+		}
+
+		tokenValuesList := strings.Split(tokenStr, "|")
+		if len(tokenValuesList) == 3 {
+			now := time.Now().Unix()
+			ttl, err := strconv.ParseInt(tokenValuesList[2], 10, 64)
+			if err != nil {
+				return err
+			}
+
+			ttlDuration := time.Duration(ttl+1600-now) * time.Second
+			pp := s.rc.Pipeline()
+			pp.HSet(s.ctx, TokenRevocationsKey, tokenValuesList[1], tokenStr)
+			pp.HExpire(s.ctx, TokenRevocationsKey, ttlDuration, tokenValuesList[1])
+			_, err = pp.Exec(s.ctx)
+			if err != nil && err != redis.Nil {
+				return err
+			}
+		}
+
+	}
+
+	return nil
+}
+
+func (s *RedisStore) IsTokenRevoked(ctx context.Context, token string) (bool, error) {
+	pp := s.rc.Pipeline()
+	pp.HExists(s.ctx, TokenRevocationsKey, token)
+
+	res, err := pp.Exec(s.ctx)
+	if err != nil && err != redis.Nil {
+		return false, nil
+	}
+
+	if len(res) > 0 {
+		return res[0].(*redis.BoolCmd).Result()
+	}
+
+	return false, nil
+}
+
+func (s *RedisStore) Cleanup(ctx context.Context) {
+	// Not needed in the redis implementation
 }
 
 func redisStoreOne(ctx context.Context, s *RedisStore, key, id string, p proto.Message) error {

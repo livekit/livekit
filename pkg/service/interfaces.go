@@ -113,3 +113,10 @@ type AgentStore interface {
 	StoreAgentJob(ctx context.Context, job *livekit.Job) error
 	DeleteAgentJob(ctx context.Context, job *livekit.Job) error
 }
+
+type TokenRevocationStore interface {
+	StoreAccessToken(ctx context.Context, token string, tokenIdentifier string, ttl int64) error
+	RevokeAccessToken(ctx context.Context, tokenIdentifier string) error
+	IsTokenRevoked(ctx context.Context, token string) (bool, error)
+	Cleanup(ctx context.Context)
+}

@@ -19,6 +19,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/twitchtv/twirp"
 
@@ -48,12 +49,27 @@ var (
 
 // authentication middleware
 type APIKeyAuthMiddleware struct {
-	provider auth.KeyProvider
+	provider             auth.KeyProvider
+	tokenRevocationStore TokenRevocationStore
 }
 
-func NewAPIKeyAuthMiddleware(provider auth.KeyProvider) *APIKeyAuthMiddleware {
+type TokenEntry struct {
+	token string
+	ttl   int64
+}
+
+func NewAPIKeyAuthMiddleware(provider auth.KeyProvider, tokenRevocationStore TokenRevocationStore) *APIKeyAuthMiddleware {
+
+	go func() {
+		for {
+			tokenRevocationStore.Cleanup(context.Background())
+			time.Sleep(5 * time.Second)
+		}
+	}()
+
 	return &APIKeyAuthMiddleware{
-		provider: provider,
+		provider:             provider,
+		tokenRevocationStore: tokenRevocationStore,
 	}
 }
 
@@ -90,14 +106,24 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 			return
 		}
 
-		_, grants, err := v.Verify(secret)
+		claims, grants, err := v.Verify(secret)
 		if err != nil {
 			HandleError(w, r, http.StatusUnauthorized, errors.New("invalid token: "+authToken+", error: "+err.Error()))
 			return
 		}
 
-		// set grants in context
 		ctx := r.Context()
+		if r.URL != nil && len(grants.Identity) > 0 && len(grants.Video.Room) > 0 {
+			tokenIdentifier := grants.Identity + ":" + grants.Video.Room
+
+			m.tokenRevocationStore.StoreAccessToken(ctx, authToken, tokenIdentifier, claims.Expiry.Time().Unix())
+			if revoked, _ := m.tokenRevocationStore.IsTokenRevoked(ctx, authToken); revoked {
+				HandleError(w, r, http.StatusUnauthorized, errors.New("invalid token"))
+				return
+			}
+		}
+
+		// set grants in context
 		r = r.WithContext(context.WithValue(ctx, grantsKey{}, &grantsValue{
 			claims: grants,
 			apiKey: v.APIKey(),
