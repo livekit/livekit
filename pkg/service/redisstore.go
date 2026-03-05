@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-jose/go-jose/v3/jwt"
 	goversion "github.com/hashicorp/go-version"
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
@@ -64,6 +65,9 @@ const (
 	// Agents
 	AgentDispatchPrefix = "agent_dispatch:"
 	AgentJobPrefix      = "agent_job:"
+
+	// TokenRevocation
+	RoomParticipentRevocationsKey = "room_participents_revocations"
 
 	maxRetries = 5
 )
@@ -941,6 +945,52 @@ func (s *RedisStore) DeleteAgentJob(_ context.Context, job *livekit.Job) error {
 
 	key := AgentJobPrefix + string(job.Room.Name)
 	return s.rc.HDel(s.ctx, key, job.Id).Err()
+}
+
+func (s *RedisStore) RevokeRoomParticipent(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) error {
+
+	revocationTime := jwt.NewNumericDate(time.Now())
+
+	ttlDuration := time.Duration(revocationTime.Time().Unix()+int64(10*time.Hour.Seconds())) * time.Second
+	pp := s.rc.Pipeline()
+	identifier := room.String() + ":" + identity.String()
+	pp.HSet(s.ctx, RoomParticipentRevocationsKey, identifier, revocationTime.Time().Unix())
+	pp.HExpire(s.ctx, RoomParticipentRevocationsKey, ttlDuration, identifier)
+	_, err := pp.Exec(s.ctx)
+	if err != nil && err != redis.Nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *RedisStore) IsRoomParticipentRevoked(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) (bool, *jwt.NumericDate, error) {
+	pp := s.rc.Pipeline()
+	pp.HGet(s.ctx, RoomParticipentRevocationsKey, room.String()+":"+identity.String())
+
+	res, err := pp.Exec(s.ctx)
+	if err != nil && err != redis.Nil {
+		return false, nil, nil
+	}
+
+	if len(res) > 0 {
+		switch v := res[0].(type) {
+		case *redis.IntCmd:
+			{
+				revocationTime, err := v.Result()
+				if err != nil {
+					return false, nil, err
+				}
+				return true, jwt.NewNumericDate(time.Unix(revocationTime, 0)), nil
+			}
+		}
+	}
+
+	return false, nil, nil
+}
+
+func (s *RedisStore) CleanupForRoom(ctx context.Context, room livekit.RoomName) {
+	// Not needed in the redis implementation
 }
 
 func redisStoreOne(ctx context.Context, s *RedisStore, key, id string, p proto.Message) error {
