@@ -24,6 +24,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -414,4 +415,8 @@ func IsAgentWorkerPath(path string) bool {
 
 func IsAgentPath(path string) bool {
 	return strings.HasPrefix(path, "/agent")
+}
+
+func GenRoomParticipantRevocationIdentifier(identity livekit.ParticipantIdentity, room livekit.RoomName) string {
+	return fmt.Sprintf("%s:room:%s:participant:%s", PARTICIPANT_REVOCATION_PREFIX, url.QueryEscape(room.String()), url.QueryEscape(identity.String()))
 }
