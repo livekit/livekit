@@ -15,7 +15,6 @@
 package sendsidebwe
 
 import (
-	"errors"
 	"time"
 
 	"github.com/livekit/protocol/logger"
@@ -31,12 +30,6 @@ const (
 
 	cReferenceTimeMask       = (1 << 24) - 1
 	cReferenceTimeResolution = 64 // 64 ms
-)
-
-// ------------------------------------------------------
-
-var (
-	errFeedbackReportOutOfOrder = errors.New("feedback report out-of-order")
 )
 
 // ------------------------------------------------------
@@ -78,6 +71,12 @@ func (t *twccFeedback) ProcessReport(report *rtcp.TransportLayerCC, at time.Time
 	if (report.FbPktCount - t.highestFeedbackCount) > (1 << 7) {
 		t.numReportsOutOfOrder++
 		isOutOfOrder = true
+		t.params.Logger.Infow(
+			"send side bwe: received out-of-order feedback report",
+			"highestFeedbackCount", t.highestFeedbackCount,
+			"fbPktCount", report.FbPktCount,
+			"numReportsOutOfOrder", t.numReportsOutOfOrder,
+		)
 	}
 
 	// reference time wrap around handling
