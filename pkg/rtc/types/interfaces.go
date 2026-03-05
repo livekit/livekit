@@ -117,6 +117,7 @@ const (
 	ParticipantCloseReasonUserUnavailable
 	ParticipantCloseReasonUserRejected
 	ParticipantCloseReasonMoveFailed
+	ParticipantCloseReasonAgentError
 )
 
 func (p ParticipantCloseReason) String() string {
@@ -177,6 +178,8 @@ func (p ParticipantCloseReason) String() string {
 		return "USER_REJECTED"
 	case ParticipantCloseReasonMoveFailed:
 		return "MOVE_FAILED"
+	case ParticipantCloseReasonAgentError:
+		return "AGENT_ERROR"
 	default:
 		return fmt.Sprintf("%d", int(p))
 	}
@@ -214,6 +217,8 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		return livekit.DisconnectReason_USER_UNAVAILABLE
 	case ParticipantCloseReasonUserRejected:
 		return livekit.DisconnectReason_USER_REJECTED
+	case ParticipantCloseReasonAgentError:
+		return livekit.DisconnectReason_AGENT_ERROR
 	default:
 		// the other types will map to unknown reason
 		return livekit.DisconnectReason_UNKNOWN_REASON
