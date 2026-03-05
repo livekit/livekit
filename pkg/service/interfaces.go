@@ -113,3 +113,11 @@ type AgentStore interface {
 	StoreAgentJob(ctx context.Context, job *livekit.Job) error
 	DeleteAgentJob(ctx context.Context, job *livekit.Job) error
 }
+
+var PARTICIPANT_REVOCATION_PREFIX = "token_revocation"
+
+type TokenRevocationStore interface {
+	RevokeRoomParticipant(ctx context.Context, identity *livekit.RoomParticipantIdentity) error
+	IsRoomParticipantRevoked(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) (bool, *time.Time, error)
+	CleanupForRoom(ctx context.Context, room livekit.RoomName)
+}

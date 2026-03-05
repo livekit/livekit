@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/twitchtv/twirp"
 
@@ -31,15 +32,16 @@ import (
 )
 
 type RoomService struct {
-	limitConf         config.LimitConfig
-	apiConf           config.APIConfig
-	router            routing.MessageRouter
-	roomAllocator     RoomAllocator
-	roomStore         ServiceStore
-	egressLauncher    rtc.EgressLauncher
-	topicFormatter    rpc.TopicFormatter
-	roomClient        rpc.TypedRoomClient
-	participantClient rpc.TypedParticipantClient
+	limitConf            config.LimitConfig
+	apiConf              config.APIConfig
+	router               routing.MessageRouter
+	roomAllocator        RoomAllocator
+	roomStore            ServiceStore
+	egressLauncher       rtc.EgressLauncher
+	topicFormatter       rpc.TopicFormatter
+	tokenRevocationStore TokenRevocationStore
+	roomClient           rpc.TypedRoomClient
+	participantClient    rpc.TypedParticipantClient
 
 	rpc.UnimplementedRoomServer
 	rpc.UnimplementedParticipantServer
@@ -55,17 +57,19 @@ func NewRoomService(
 	topicFormatter rpc.TopicFormatter,
 	roomClient rpc.TypedRoomClient,
 	participantClient rpc.TypedParticipantClient,
+	tokenRevocationStore TokenRevocationStore,
 ) (svc *RoomService, err error) {
 	svc = &RoomService{
-		limitConf:         limitConf,
-		apiConf:           apiConf,
-		router:            router,
-		roomAllocator:     roomAllocator,
-		roomStore:         serviceStore,
-		egressLauncher:    egressLauncher,
-		topicFormatter:    topicFormatter,
-		roomClient:        roomClient,
-		participantClient: participantClient,
+		limitConf:            limitConf,
+		apiConf:              apiConf,
+		router:               router,
+		roomAllocator:        roomAllocator,
+		roomStore:            serviceStore,
+		egressLauncher:       egressLauncher,
+		topicFormatter:       topicFormatter,
+		tokenRevocationStore: tokenRevocationStore,
+		roomClient:           roomClient,
+		participantClient:    participantClient,
 	}
 	return
 }
@@ -149,6 +153,8 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	if os, ok := s.roomStore.(OSSServiceStore); ok {
 		err = os.DeleteRoom(ctx, livekit.RoomName(req.Room))
 	}
+
+	s.tokenRevocationStore.CleanupForRoom(ctx, livekit.RoomName(req.Room))
 	res := &livekit.DeleteRoomResponse{}
 	RecordResponse(ctx, room)
 	return res, err
@@ -217,6 +223,9 @@ func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomPa
 		return nil, twirpAuthError(err)
 	}
 
+	// revoke access tokens
+	req.RevokeTokenTs = time.Now().Unix()
+	s.tokenRevocationStore.RevokeRoomParticipant(ctx, req)
 	if os, ok := s.roomStore.(OSSServiceStore); ok {
 		found, err := os.HasParticipant(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity))
 		if err != nil {
