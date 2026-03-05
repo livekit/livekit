@@ -80,6 +80,9 @@ const (
 
 	PingIntervalSeconds = 5
 	PingTimeoutSeconds  = 15
+
+	audioSectionsCountWithJoinResponse = 3
+	videoSectionsCountWithJoinResponse = 3
 )
 
 var (
@@ -173,55 +176,56 @@ type ParticipantParams struct {
 	PLIThrottleConfig       sfu.PLIThrottleConfig
 	CongestionControlConfig config.CongestionControlConfig
 	// codecs that are enabled for this room
-	PublishEnabledCodecs            []*livekit.Codec
-	SubscribeEnabledCodecs          []*livekit.Codec
-	Logger                          logger.Logger
-	LoggerResolver                  logger.DeferredFieldResolver
-	Reporter                        roomobs.ParticipantSessionReporter
-	ReporterResolver                roomobs.ParticipantReporterResolver
-	SimTracks                       map[uint32]interceptor.SimulcastTrackInfo
-	Grants                          *auth.ClaimGrants
-	InitialVersion                  uint32
-	ClientConf                      *livekit.ClientConfiguration
-	ClientInfo                      ClientInfo
-	Region                          string
-	Migration                       bool
-	Reconnect                       bool
-	AdaptiveStream                  bool
-	AllowTCPFallback                bool
-	TCPFallbackRTTThreshold         int
-	AllowUDPUnstableFallback        bool
-	TURNSEnabled                    bool
-	ParticipantListener             types.LocalParticipantListener
-	ParticipantHelper               types.LocalParticipantHelper
-	DisableSupervisor               bool
-	ReconnectOnPublicationError     bool
-	ReconnectOnSubscriptionError    bool
-	ReconnectOnDataChannelError     bool
-	VersionGenerator                utils.TimedVersionGenerator
-	DisableDynacast                 bool
-	SubscriberAllowPause            bool
-	SubscriptionLimitAudio          int32
-	SubscriptionLimitVideo          int32
-	PlayoutDelay                    *livekit.PlayoutDelay
-	SyncStreams                     bool
-	ForwardStats                    *sfu.ForwardStats
-	DisableSenderReportPassThrough  bool
-	MetricConfig                    metric.MetricConfig
-	UseOneShotSignallingMode        bool
-	EnableMetrics                   bool
-	DataChannelMaxBufferedAmount    uint64
-	DatachannelSlowThreshold        int
-	DatachannelLossyTargetLatency   time.Duration
-	FireOnTrackBySdp                bool
-	DisableCodecRegression          bool
-	LastPubReliableSeq              uint32
-	Country                         string
-	PreferVideoSizeFromMedia        bool
-	UseSinglePeerConnection         bool
-	EnableDataTracks                bool
-	EnableRTPStreamRestartDetection bool
-	ForceBackupCodecPolicySimulcast bool
+	PublishEnabledCodecs                []*livekit.Codec
+	SubscribeEnabledCodecs              []*livekit.Codec
+	Logger                              logger.Logger
+	LoggerResolver                      logger.DeferredFieldResolver
+	Reporter                            roomobs.ParticipantSessionReporter
+	ReporterResolver                    roomobs.ParticipantReporterResolver
+	SimTracks                           map[uint32]interceptor.SimulcastTrackInfo
+	Grants                              *auth.ClaimGrants
+	InitialVersion                      uint32
+	ClientConf                          *livekit.ClientConfiguration
+	ClientInfo                          ClientInfo
+	Region                              string
+	Migration                           bool
+	Reconnect                           bool
+	AdaptiveStream                      bool
+	AllowTCPFallback                    bool
+	TCPFallbackRTTThreshold             int
+	AllowUDPUnstableFallback            bool
+	TURNSEnabled                        bool
+	ParticipantListener                 types.LocalParticipantListener
+	ParticipantHelper                   types.LocalParticipantHelper
+	DisableSupervisor                   bool
+	ReconnectOnPublicationError         bool
+	ReconnectOnSubscriptionError        bool
+	ReconnectOnDataChannelError         bool
+	VersionGenerator                    utils.TimedVersionGenerator
+	DisableDynacast                     bool
+	SubscriberAllowPause                bool
+	SubscriptionLimitAudio              int32
+	SubscriptionLimitVideo              int32
+	PlayoutDelay                        *livekit.PlayoutDelay
+	SyncStreams                         bool
+	ForwardStats                        *sfu.ForwardStats
+	DisableSenderReportPassThrough      bool
+	MetricConfig                        metric.MetricConfig
+	UseOneShotSignallingMode            bool
+	EnableMetrics                       bool
+	DataChannelMaxBufferedAmount        uint64
+	DatachannelSlowThreshold            int
+	DatachannelLossyTargetLatency       time.Duration
+	FireOnTrackBySdp                    bool
+	DisableCodecRegression              bool
+	LastPubReliableSeq                  uint32
+	Country                             string
+	PreferVideoSizeFromMedia            bool
+	UseSinglePeerConnection             bool
+	EnableDataTracks                    bool
+	EnableRTPStreamRestartDetection     bool
+	ForceBackupCodecPolicySimulcast     bool
+	RequireMediaSectionWithJoinResponse bool
 }
 
 type ParticipantImpl struct {
