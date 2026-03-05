@@ -2604,11 +2604,13 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 
 	remoteAnswerId := t.remoteAnswerId.Load()
 	if remoteAnswerId != 0 && remoteAnswerId != t.localOfferId.Load() {
-		t.params.Logger.Warnw(
-			"sdp state: sending offer before receiving answer", nil,
-			"localOfferId", t.localOfferId.Load(),
-			"remoteAnswerId", remoteAnswerId,
-		)
+		if options == nil || !options.ICERestart {
+			t.params.Logger.Warnw(
+				"sdp state: sending offer before receiving answer", nil,
+				"localOfferId", t.localOfferId.Load(),
+				"remoteAnswerId", remoteAnswerId,
+			)
+		}
 	}
 
 	if err := t.params.Handler.OnOffer(offer, t.localOfferId.Inc(), t.getMidToTrackIDMapping()); err != nil {
