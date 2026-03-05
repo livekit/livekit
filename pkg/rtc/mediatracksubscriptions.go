@@ -53,8 +53,6 @@ type MediaTrackSubscriptionsParams struct {
 	ReceiverConfig   ReceiverConfig
 	SubscriberConfig DirectionConfig
 
-	TelemetryListener types.ParticipantTelemetryListener
-
 	Logger logger.Logger
 }
 
@@ -111,7 +109,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		Subscriber:         sub,
 		MediaTrack:         t.params.MediaTrack,
 		AdaptiveStream:     sub.GetAdaptiveStream(),
-		TelemetryListener:  t.params.TelemetryListener,
+		TelemetryListener:  sub.GetTelemetryListener(),
 		WrappedReceiver:    wr,
 		IsRelayed:          t.params.IsRelayed,
 		OnDownTrackCreated: t.onDownTrackCreated,

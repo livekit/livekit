@@ -929,6 +929,14 @@ func (p *ParticipantImpl) TelemetryGuard() *telemetry.ReferenceGuard {
 	return p.telemetryGuard
 }
 
+func (p *ParticipantImpl) GetTelemetryListener() types.ParticipantTelemetryListener {
+	if p.params.TelemetryListener == nil {
+		return &types.NullParticipantTelemetryListener{}
+	}
+
+	return p.params.TelemetryListener
+}
+
 func (p *ParticipantImpl) AddOnClose(key string, callback func(types.LocalParticipant)) {
 	if p.isClosed.Load() {
 		go callback(p)
