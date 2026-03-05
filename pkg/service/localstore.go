@@ -18,6 +18,7 @@ import (
 	"context"
 	"sync"
 	"time"
+	"weak"
 
 	"github.com/thoas/go-funk"
 	"google.golang.org/protobuf/proto"
@@ -27,6 +28,13 @@ import (
 )
 
 var _ OSSServiceStore = (*LocalStore)(nil)
+
+const tokenRevocationCleanupInterval = time.Minute
+
+type roomParticipantRevocationMapEntry struct {
+	expiresAt      time.Time
+	revocationTime time.Time
+}
 
 // encapsulates CRUD operations for room settings
 type LocalStore struct {
@@ -39,18 +47,40 @@ type LocalStore struct {
 	agentDispatches map[livekit.RoomName]map[string]*livekit.AgentDispatch
 	agentJobs       map[livekit.RoomName]map[string]*livekit.Job
 
+	tokenRevocationMap map[string]roomParticipantRevocationMapEntry
+
 	lock       sync.RWMutex
 	globalLock sync.Mutex
 }
 
 func NewLocalStore() *LocalStore {
-	return &LocalStore{
-		rooms:           make(map[livekit.RoomName]*livekit.Room),
-		roomInternal:    make(map[livekit.RoomName]*livekit.RoomInternal),
-		participants:    make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
-		agentDispatches: make(map[livekit.RoomName]map[string]*livekit.AgentDispatch),
-		agentJobs:       make(map[livekit.RoomName]map[string]*livekit.Job),
-		lock:            sync.RWMutex{},
+	store := &LocalStore{
+		rooms:              make(map[livekit.RoomName]*livekit.Room),
+		roomInternal:       make(map[livekit.RoomName]*livekit.RoomInternal),
+		participants:       make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
+		agentDispatches:    make(map[livekit.RoomName]map[string]*livekit.AgentDispatch),
+		agentJobs:          make(map[livekit.RoomName]map[string]*livekit.Job),
+		tokenRevocationMap: make(map[string]roomParticipantRevocationMapEntry),
+
+		lock: sync.RWMutex{},
+	}
+
+	go cleanupRevokedTokensWorker(weak.Make(store), tokenRevocationCleanupInterval)
+
+	return store
+}
+
+// The worker only holds a weak reference, so it stops once the store is no longer referenced.
+func cleanupRevokedTokensWorker(store weak.Pointer[LocalStore], interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		s := store.Value()
+		if s == nil {
+			return
+		}
+		s.CleanupRevokedTokens()
 	}
 }
 
@@ -296,4 +326,41 @@ func (s *LocalStore) DeleteAgentJob(ctx context.Context, job *livekit.Job) error
 	}
 
 	return nil
+}
+
+func (s *LocalStore) RevokeRoomParticipant(ctx context.Context, identity *livekit.RoomParticipantIdentity, ttl time.Duration) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	s.tokenRevocationMap[GenRoomParticipantRevocationIdentifier(livekit.ParticipantIdentity(identity.Identity), livekit.RoomName(identity.Room))] = roomParticipantRevocationMapEntry{
+		expiresAt:      time.Now().Add(ttl),
+		revocationTime: time.Unix(identity.RevokeTokenTs, 0),
+	}
+
+	return nil
+}
+
+func (s *LocalStore) IsRoomParticipantRevoked(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) (bool, *time.Time, error) {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	entry, exists := s.tokenRevocationMap[GenRoomParticipantRevocationIdentifier(identity, room)]
+	if !exists || !time.Now().Before(entry.expiresAt) {
+		return false, nil, nil
+	}
+
+	revocationTime := entry.revocationTime
+	return true, &revocationTime, nil
+}
+
+func (s *LocalStore) CleanupRevokedTokens() {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	now := time.Now()
+	for identifier, entry := range s.tokenRevocationMap {
+		if !now.Before(entry.expiresAt) {
+			delete(s.tokenRevocationMap, identifier)
+		}
+	}
 }

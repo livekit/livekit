@@ -130,6 +130,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
+	tokenRevocationStore := getTokenRevocationStore(objectStore)
 	agentConfig := getAgentConfig(conf)
 	client, err := agent.NewAgentClient(v, agentConfig)
 	if err != nil {
@@ -139,7 +140,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	timedVersionGenerator := utils.NewDefaultTimedVersionGenerator()
 	turnAuthHandler := NewTURNAuthHandler(keyProvider)
 	forwardStats := createForwardStats(conf)
-	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, roomAllocator, telemetryService, client, agentStore, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, v, forwardStats)
+	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, roomAllocator, telemetryService, tokenRevocationStore, client, agentStore, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, v, forwardStats)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +153,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, serviceWHIPService, agentService, keyProvider, router, roomManager, signalServer, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, serviceWHIPService, agentService, keyProvider, router, roomManager, signalServer, server, tokenRevocationStore, currentNode)
 	if err != nil {
 		return nil, err
 	}
@@ -282,6 +283,17 @@ func getIngressStore(s ObjectStore) IngressStore {
 }
 
 func getAgentStore(s ObjectStore) AgentStore {
+	switch store := s.(type) {
+	case *RedisStore:
+		return store
+	case *LocalStore:
+		return store
+	default:
+		return nil
+	}
+}
+
+func getTokenRevocationStore(s ObjectStore) TokenRevocationStore {
 	switch store := s.(type) {
 	case *RedisStore:
 		return store

@@ -943,6 +943,28 @@ func (s *RedisStore) DeleteAgentJob(_ context.Context, job *livekit.Job) error {
 	return s.rc.HDel(s.ctx, key, job.Id).Err()
 }
 
+func (s *RedisStore) RevokeRoomParticipant(ctx context.Context, identity *livekit.RoomParticipantIdentity, ttl time.Duration) error {
+	key := GenRoomParticipantRevocationIdentifier(livekit.ParticipantIdentity(identity.Identity), livekit.RoomName(identity.Room))
+	return s.rc.SetEx(s.ctx, key, identity.RevokeTokenTs, ttl).Err()
+}
+
+func (s *RedisStore) IsRoomParticipantRevoked(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) (bool, *time.Time, error) {
+	revocationTimeInt, err := s.rc.Get(s.ctx, GenRoomParticipantRevocationIdentifier(identity, room)).Int64()
+	if err == redis.Nil {
+		return false, nil, nil
+	}
+	if err != nil {
+		return false, nil, err
+	}
+
+	revocationTime := time.Unix(revocationTimeInt, 0)
+	return true, &revocationTime, nil
+}
+
+func (s *RedisStore) CleanupRevokedTokens() {
+	// Not needed in the redis implementation
+}
+
 func redisStoreOne(ctx context.Context, s *RedisStore, key, id string, p proto.Message) error {
 	if id == "" {
 		return errors.New("id is not set")
