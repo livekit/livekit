@@ -609,10 +609,7 @@ func (c *congestionDetector) getBWEListener() bwe.BWEListener {
 
 func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 	c.lock.Lock()
-	recvRefTime, isOutOfOrder := c.twccFeedback.ProcessReport(report, mono.Now())
-	if isOutOfOrder {
-		c.params.Logger.Infow("send side bwe: received out-of-order feedback report")
-	}
+	recvRefTime, _ := c.twccFeedback.ProcessReport(report, mono.Now())
 
 	if len(c.packetGroups) == 0 {
 		c.packetGroups = append(
