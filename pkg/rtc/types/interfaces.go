@@ -371,6 +371,7 @@ type LocalParticipant interface {
 	Participant
 
 	TelemetryGuard() *telemetry.ReferenceGuard
+	GetTelemetryListener() ParticipantTelemetryListener
 
 	// getters
 	GetCountry() string

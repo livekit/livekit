@@ -157,12 +157,11 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams, ti *livekit.TrackInf
 	t.trackInfo.Store(utils.CloneProto(ti))
 
 	t.MediaTrackSubscriptions = NewMediaTrackSubscriptions(MediaTrackSubscriptionsParams{
-		MediaTrack:        params.MediaTrack,
-		IsRelayed:         params.IsRelayed,
-		ReceiverConfig:    params.ReceiverConfig,
-		SubscriberConfig:  params.SubscriberConfig,
-		TelemetryListener: params.TelemetryListener,
-		Logger:            params.Logger,
+		MediaTrack:       params.MediaTrack,
+		IsRelayed:        params.IsRelayed,
+		ReceiverConfig:   params.ReceiverConfig,
+		SubscriberConfig: params.SubscriberConfig,
+		Logger:           params.Logger,
 	})
 	t.MediaTrackSubscriptions.OnDownTrackCreated(t.onDownTrackCreated)
 	return t
