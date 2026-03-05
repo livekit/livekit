@@ -2,6 +2,45 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.12] - 2026-03-05
+
+### Added
+- Add silent frame for pcmu/a (#4258)
+- adds a test to ensure agent worker errors cause disconnection (#4273)
+- Populate client_protocol field in ParticipantInfo (#4293)
+- Read client protocol from query param (#4294)
+- generate & log egressID for start egress request (#4303)
+- ESP32 Client Info (#4267)
+- feat: make INSTALL_PATH overridable in install script (#3954)
+
+### Changed
+- Defer setting clock rate in RTPStats module till codec is bound. (#4250)
+- Wrapping SIP errors for invalid argument and not found (#4253)
+- Ignore parse addr error when add remote candidate (#4264)
+- Generate config flags (#4268)
+- clear reference guard when resetting signal stats (#4279)
+- refresh telemetry guard on participant move (#4280)
+- use separate allocation for signal stats telemetry guard (#4281)
+- Set up audio config in audio level module when config is updated. (#4290)
+- Update self-hosting deployment documentation link (#4312)
+- Key telemetry stats worker using combination of roomID, participantID (#4323)
+- Two phase restart when doing external restart of receiver. (#4329)
+- Send participant left event after track unpublished for moved (#4334)
+
+### Fixed
+- Fix receiver restart race (#4248)
+- require participant broadcast when metadata/attributes are set in token (#4266)
+- Create buffer if needed when a PLI is requested. (#4282)
+- Do not increase max expected layer on track info update. (#4285)
+- Publish is always on publisher peer connection.(#4307)
+- Potential fix for code scanning alert no. 35: Workflow does not contain permissions (#4311)
+- Potential fix for code scanning alert no. 36: Workflow does not contain permissions (#4310)
+- Fix for some CodeQL reported issues (#4314)
+- Protect against incorrect temporal layer. (#4327)
+- do not discount packets lost on duplicate packets (#4333)
+- Use ParticipantTelemetryListener of LocalParticipant. (#4342)
+- Fix SIP client timeout. (#4345)
+
 ## [1.9.11] - 2026-01-15
 
 ## PLEASE NOTE: The previous release tag v1.9.10 hit a panic under some conditions. Sincerely regret the inconvenience caused. Although we do test rigorously, it is not guaranteed to cover all scenarios. We request you to report any issues you encounter. Thank you.
