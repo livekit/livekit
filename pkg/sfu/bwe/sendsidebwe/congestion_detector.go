@@ -22,6 +22,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils/mono"
 	"github.com/pion/rtcp"
 	"go.uber.org/zap/zapcore"
 )
@@ -583,7 +584,7 @@ func (c *congestionDetector) Reset() {
 	c.estimateTrafficStats = nil
 
 	c.congestionState = bwe.CongestionStateNone
-	c.congestionStateSwitchedAt = time.Now()
+	c.congestionStateSwitchedAt = mono.Now()
 
 	c.clearCTRTrend()
 
@@ -608,7 +609,7 @@ func (c *congestionDetector) getBWEListener() bwe.BWEListener {
 
 func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 	c.lock.Lock()
-	recvRefTime, _ := c.twccFeedback.ProcessReport(report, time.Now())
+	recvRefTime, _ := c.twccFeedback.ProcessReport(report, mono.Now())
 
 	if len(c.packetGroups) == 0 {
 		c.packetGroups = append(
@@ -1136,7 +1137,7 @@ func (c *congestionDetector) updateCongestionState(state bwe.CongestionState) (b
 	c.params.Logger.Infow("send side bwe: congestion state change", loggingFields...)
 
 	if state != c.congestionState {
-		c.congestionStateSwitchedAt = time.Now()
+		c.congestionStateSwitchedAt = mono.Now()
 	}
 
 	fromState := c.congestionState
