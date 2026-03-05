@@ -19,6 +19,8 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/twitchtv/twirp"
 
@@ -44,6 +46,9 @@ var (
 	ErrMissingAuthorization      = errors.New("invalid authorization header. Must start with " + bearerPrefix)
 	ErrInvalidAuthorizationToken = errors.New("invalid authorization token")
 	ErrInvalidAPIKey             = errors.New("invalid API key")
+
+	TokenRevocationMap = new(sync.Map)
+	TokenMap           = new(sync.Map)
 )
 
 // authentication middleware
@@ -51,7 +56,33 @@ type APIKeyAuthMiddleware struct {
 	provider auth.KeyProvider
 }
 
+type TokenEntry struct {
+	token string
+	ttl   int64
+}
+
 func NewAPIKeyAuthMiddleware(provider auth.KeyProvider) *APIKeyAuthMiddleware {
+
+	go func() {
+		for {
+			cleanupTokens := []string{}
+			now := time.Now().UTC().Unix()
+			TokenMap.Range(func(key, tokenEntry any) bool {
+				if now > (tokenEntry.(TokenEntry).ttl + 1800) {
+					TokenRevocationMap.Delete(tokenEntry.(TokenEntry).token)
+					cleanupTokens = append(cleanupTokens, key.(string))
+				}
+				return true
+			})
+
+			for i := range cleanupTokens {
+				TokenMap.Delete(cleanupTokens[i])
+			}
+
+			time.Sleep(5 * time.Second)
+		}
+	}()
+
 	return &APIKeyAuthMiddleware{
 		provider: provider,
 	}
@@ -90,10 +121,23 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 			return
 		}
 
-		_, grants, err := v.Verify(secret)
+		claims, grants, err := v.Verify(secret)
 		if err != nil {
 			HandleError(w, r, http.StatusUnauthorized, errors.New("invalid token: "+authToken+", error: "+err.Error()))
 			return
+		}
+
+		if r.URL != nil && len(grants.Identity) > 0 && len(grants.Video.Room) > 0 {
+			tokenIdentifier := grants.Identity + ":" + grants.Video.Room
+
+			if _, exists := TokenMap.Load(tokenIdentifier); !exists {
+				TokenMap.Store(tokenIdentifier, TokenEntry{token: authToken, ttl: claims.Expiry.Time().Unix()})
+			}
+
+			if _, exists := TokenRevocationMap.Load(authToken); exists {
+				HandleError(w, r, http.StatusUnauthorized, errors.New("invalid token"))
+				return
+			}
 		}
 
 		// set grants in context
@@ -145,6 +189,12 @@ func SetAuthorizationToken(r *http.Request, token string) {
 
 func EnsureJoinPermission(ctx context.Context) (name livekit.RoomName, err error) {
 	claims := GetGrants(ctx)
+	if token, exists := TokenMap.Load(claims.Identity + ":" + claims.Video.Room); exists {
+		if _, exists := TokenRevocationMap.Load(token); exists {
+			err = ErrPermissionDenied
+			return
+		}
+	}
 	if claims == nil || claims.Video == nil {
 		err = ErrPermissionDenied
 		return

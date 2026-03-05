@@ -780,6 +780,13 @@ func (r *RoomManager) RemoveParticipant(ctx context.Context, req *livekit.RoomPa
 		return nil, err
 	}
 
+	// Add current active access token to the revocationMap
+	if tokenEntry, exists := TokenMap.Load(participant.Identity().String() + ":" + room.Name().String()); exists {
+		TokenRevocationMap.Store(tokenEntry.(TokenEntry).token, tokenEntry)
+	} else {
+		participant.GetLogger().Errorw("token not exist "+participant.Identity().String()+":"+room.Name().String(), nil)
+	}
+
 	participant.GetLogger().Infow("removing participant")
 	room.RemoveParticipant(livekit.ParticipantIdentity(req.Identity), "", types.ParticipantCloseReasonServiceRequestRemoveParticipant)
 	return &livekit.RemoveParticipantResponse{}, nil
