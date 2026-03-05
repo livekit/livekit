@@ -115,7 +115,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	ingressService := NewIngressService(ingressConfig, nodeID, messageBus, ingressClient, ingressStore, ioInfoService, telemetryService)
 	sipConfig := getSIPConfig(conf)
-	sipClient, err := rpc.NewSIPClientWithParams(clientParams)
+	sipClient, err := newSIPClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
@@ -288,6 +288,14 @@ func getAgentStore(s ObjectStore) AgentStore {
 
 func getIngressConfig(conf *config.Config) *config.IngressConfig {
 	return &conf.Ingress
+}
+
+func newSIPClient(p rpc.ClientParams) (rpc.SIPClient, error) {
+
+	return rpc.NewSIPClientWithParams(rpc.ClientParams{
+		Bus:           p.Bus,
+		ClientOptions: []psrpc.ClientOption{rpc.WithClientLogger(p.Logger), otelpsrpc.ClientOptions(otelpsrpc.Config{})},
+	})
 }
 
 func getSIPStore(s ObjectStore) SIPStore {
