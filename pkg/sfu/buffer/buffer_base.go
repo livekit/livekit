@@ -1209,12 +1209,12 @@ func (b *BufferBase) maybeGrowBucket(now int64) {
 		return
 	}
 
+	b.lastBucketCapCheckAt = now
+
 	// check and allocate in a go routine, away from the forwarding path
 	go func() {
 		b.Lock()
 		defer b.Unlock()
-
-		b.lastBucketCapCheckAt = now
 
 		cap := b.bucket.Capacity()
 		maxPkts := b.params.MaxVideoPkts
