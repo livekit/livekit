@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -543,6 +544,15 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 			return
 		}
 		signalStats.AddBytes(uint64(count), false)
+
+		// check if token revoked
+		tokenHeader := strings.Split(r.Header.Get(authorizationHeader), " ")
+		if len(tokenHeader) > 1 {
+			if _, exists := TokenRevocationMap.Load(tokenHeader[1]); exists {
+				pLogger.Warnw("error token revoked", err)
+				return
+			}
+		}
 
 		switch m := req.Message.(type) {
 		case *livekit.SignalRequest_Ping:
