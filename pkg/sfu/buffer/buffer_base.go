@@ -135,7 +135,7 @@ type BufferProvider interface {
 }
 
 const (
-	bucketCapCheckInterval = 1e9
+	bucketCapCheckInterval = 1e9 / 2
 )
 
 type BufferBaseParams struct {
@@ -1228,6 +1228,10 @@ func (b *BufferBase) maybeGrowBucket(now int64) {
 		oldCap := cap
 		if deltaInfo := b.rtpStats.DeltaInfo(b.ppsSnapshotId); deltaInfo != nil {
 			duration := deltaInfo.EndTime.Sub(deltaInfo.StartTime)
+			b.logger.Infow("DBG delta stats",
+				"duration", duration,
+				"deltaInfo", deltaInfo,
+			)
 			if duration < 500*time.Millisecond {
 				return
 			}

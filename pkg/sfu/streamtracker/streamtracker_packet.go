@@ -83,7 +83,8 @@ type StreamTrackerPacket struct {
 
 func NewStreamTrackerPacket(params StreamTrackerPacketParams) StreamTrackerImpl {
 	return &StreamTrackerPacket{
-		params: params,
+		params:    params,
+		lastCheck: time.Now(),
 	}
 }
 
@@ -126,6 +127,7 @@ func (s *StreamTrackerPacket) CheckStatus() StreamStatusChange {
 	s.params.Logger.Infow(
 		"DBG check status",
 		"countSinceLast", s.countSinceLast,
+		"cycleCount", s.cycleCount,
 		"samplesRequired", s.params.Config.SamplesRequired,
 		"timeSinceLast", time.Since(s.lastCheck),
 	)
