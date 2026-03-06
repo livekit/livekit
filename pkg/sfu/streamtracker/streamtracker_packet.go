@@ -78,13 +78,11 @@ type StreamTrackerPacket struct {
 	initialized bool
 
 	cycleCount uint32
-	lastCheck  time.Time
 }
 
 func NewStreamTrackerPacket(params StreamTrackerPacketParams) StreamTrackerImpl {
 	return &StreamTrackerPacket{
-		params:    params,
-		lastCheck: time.Now(),
+		params: params,
 	}
 }
 
@@ -119,19 +117,10 @@ func (s *StreamTrackerPacket) Observe(_hasMarker bool, _ts uint32) StreamStatusC
 
 func (s *StreamTrackerPacket) CheckStatus() StreamStatusChange {
 	if !s.initialized {
-		s.lastCheck = time.Now()
 		// should not be getting called when not initialized, but be safe
 		return StreamStatusChangeNone
 	}
 
-	s.params.Logger.Infow(
-		"DBG check status",
-		"countSinceLast", s.countSinceLast,
-		"cycleCount", s.cycleCount,
-		"samplesRequired", s.params.Config.SamplesRequired,
-		"timeSinceLast", time.Since(s.lastCheck),
-	)
-	s.lastCheck = time.Now()
 	if s.countSinceLast >= s.params.Config.SamplesRequired {
 		s.cycleCount++
 	} else {
