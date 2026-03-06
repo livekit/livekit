@@ -655,6 +655,11 @@ func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livek
 			return nil, err
 		}
 	}
+	if trunk != nil && trunk.FromHost != "" {
+		host = trunk.FromHost
+	} else if t := req.Trunk; t != nil && t.FromHost != "" {
+		host = t.FromHost
+	}
 	return rpc.NewCreateSIPParticipantRequest(projectID, callID, host, wsUrl, token, req, trunk)
 }
 
