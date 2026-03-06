@@ -224,14 +224,6 @@ func registerHeaderExtensions(me *webrtc.MediaEngine, rtpHeaderExtension RTPHead
 		}
 	}
 
-	// ideally the URIs would be declared in https://github.com/pion/sdp/blob/master/extmap.go
-	if err := me.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{URI: "http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time"}, webrtc.RTPCodecTypeAudio); err != nil {
-		return err
-	}
-	if err := me.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{URI: "http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time"}, webrtc.RTPCodecTypeVideo); err != nil {
-		return err
-	}
-
 	return nil
 }
 

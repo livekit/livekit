@@ -296,16 +296,15 @@ type DownTrack struct {
 	upstreamPrimaryPT uint8
 	primaryPT         uint8
 
-	absSendTimeExtID            int
-	transportWideExtID          int
-	dependencyDescriptorExtID   int
-	playoutDelayExtID           int
-	absCaptureTimeExtID         int
-	incomingAbsCaptureTimeExtID int
-	transceiver                 atomic.Pointer[webrtc.RTPTransceiver]
-	writeStream                 webrtc.TrackLocalWriter
-	rtcpReader                  *buffer.RTCPReader
-	rtcpReaderRTX               *buffer.RTCPReader
+	absSendTimeExtID          int
+	transportWideExtID        int
+	dependencyDescriptorExtID int
+	playoutDelayExtID         int
+	absCaptureTimeExtID       int
+	transceiver               atomic.Pointer[webrtc.RTPTransceiver]
+	writeStream               webrtc.TrackLocalWriter
+	rtcpReader                *buffer.RTCPReader
+	rtcpReaderRTX             *buffer.RTCPReader
 
 	listenerLock            sync.RWMutex
 	receiverReportListeners []ReceiverReportListener
@@ -607,13 +606,6 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.bindLock.Unlock()
 
 		receiver := d.Receiver()
-		for _, ext := range receiver.HeaderExtensions() {
-			if ext.URI == act.AbsCaptureTimeURI {
-				d.incomingAbsCaptureTimeExtID = ext.ID
-				break
-			}
-		}
-
 		d.forwarder.DetermineCodec(codec.RTPCodecCapability, receiver.HeaderExtensions(), receiver.VideoLayerMode())
 		d.connectionStats.Start(d.Mime(), isFECEnabled)
 		d.params.Logger.Debugw("downtrack bound")
@@ -870,7 +862,6 @@ func (d *DownTrack) setRTPHeaderExtensions() {
 		"playoutDelayExtID", d.playoutDelayExtID,
 		"transportWideExtID", d.transportWideExtID,
 		"absCaptureTimeExtID", d.absCaptureTimeExtID,
-		"incomingAbsCaptureTimeExtID", d.incomingAbsCaptureTimeExtID,
 	)
 	d.bindLock.Unlock()
 }

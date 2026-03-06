@@ -171,7 +171,8 @@ type Buffer struct {
 	primaryBufferForRTX *Buffer
 	rtxPktBuf           []byte
 
-	absCaptureTimeExtID uint8
+	absCaptureTimeExtID        uint8
+	absCaptureTimeExtIDChecked bool
 
 	keyFrameSeederGeneration atomic.Int32
 }
@@ -295,6 +296,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 			b.absCaptureTimeExtID = uint8(ext.ID)
 		}
 	}
+	b.absCaptureTimeExtIDChecked = b.absCaptureTimeExtID != 0
 
 	if b.absCaptureTimeExtID == 0 {
 		b.logger.Debugw(
@@ -1111,7 +1113,8 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, isBuffer
 			if err := actExt.Unmarshal(extData); err == nil {
 				ep.AbsCaptureTimeExt = &actExt
 			}
-		} else {
+		} else if !b.absCaptureTimeExtIDChecked {
+			b.absCaptureTimeExtIDChecked = true
 			for _, extID := range rtpPacket.Header.GetExtensionIDs() {
 				extData := rtpPacket.Header.GetExtension(extID)
 				var actExt act.AbsCaptureTime
