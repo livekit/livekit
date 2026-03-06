@@ -40,8 +40,6 @@ const (
 	LivekitRealm = "livekit"
 
 	allocateRetries = 50
-	turnMinPort     = 1024
-	turnMaxPort     = 30000
 )
 
 func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone bool) (*turn.Server, error) {
@@ -52,29 +50,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 
 	if turnConf.TLSPort <= 0 && turnConf.UDPPort <= 0 {
 		return nil, errors.New("invalid TURN ports")
-	}
-
-	serverConfig := turn.ServerConfig{
-		Realm:         LivekitRealm,
-		AuthHandler:   authHandler,
-		LoggerFactory: pionlogger.NewLoggerFactory(logger.GetLogger()),
-	}
-	var relayAddrGen turn.RelayAddressGenerator = &turn.RelayAddressGeneratorPortRange{
-		RelayAddress: net.ParseIP(conf.RTC.NodeIP),
-		Address:      "0.0.0.0",
-		MinPort:      turnConf.RelayPortRangeStart,
-		MaxPort:      turnConf.RelayPortRangeEnd,
-		MaxRetries:   allocateRetries,
-	}
-	if standalone {
-		relayAddrGen = telemetry.NewRelayAddressGenerator(relayAddrGen)
-	}
-	var logValues []any
-
-	logValues = append(logValues, "turn.relay_range_start", turnConf.RelayPortRangeStart)
-	logValues = append(logValues, "turn.relay_range_end", turnConf.RelayPortRangeEnd)
-
-	if turnConf.TLSPort > 0 {
+	} else if turnConf.TLSPort > 0 {
 		if turnConf.Domain == "" {
 			return nil, errors.New("TURN domain required")
 		}
@@ -82,64 +58,82 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 		if !IsValidDomain(turnConf.Domain) {
 			return nil, errors.New("TURN domain is not correct")
 		}
-
-		if !turnConf.ExternalTLS {
-			cert, err := tls.LoadX509KeyPair(turnConf.CertFile, turnConf.KeyFile)
-			if err != nil {
-				return nil, errors.Wrap(err, "TURN tls cert required")
-			}
-
-			tlsListener, err := tls.Listen("tcp4", "0.0.0.0:"+strconv.Itoa(turnConf.TLSPort),
-				&tls.Config{
-					MinVersion:   tls.VersionTLS12,
-					Certificates: []tls.Certificate{cert},
-				})
-			if err != nil {
-				return nil, errors.Wrap(err, "could not listen on TURN TCP port")
-			}
-			if standalone {
-				tlsListener = telemetry.NewListener(tlsListener)
-			}
-
-			listenerConfig := turn.ListenerConfig{
-				Listener:              tlsListener,
-				RelayAddressGenerator: relayAddrGen,
-			}
-			serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
-		} else {
-			tcpListener, err := net.Listen("tcp4", "0.0.0.0:"+strconv.Itoa(turnConf.TLSPort))
-			if err != nil {
-				return nil, errors.Wrap(err, "could not listen on TURN TCP port")
-			}
-			if standalone {
-				tcpListener = telemetry.NewListener(tcpListener)
-			}
-
-			listenerConfig := turn.ListenerConfig{
-				Listener:              tcpListener,
-				RelayAddressGenerator: relayAddrGen,
-			}
-			serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
-		}
-		logValues = append(logValues, "turn.portTLS", turnConf.TLSPort, "turn.externalTLS", turnConf.ExternalTLS)
 	}
 
-	if turnConf.UDPPort > 0 {
-		udpListener, err := net.ListenPacket("udp4", "0.0.0.0:"+strconv.Itoa(turnConf.UDPPort))
-		if err != nil {
-			return nil, errors.Wrap(err, "could not listen on TURN UDP port")
-		}
+	serverConfig := turn.ServerConfig{
+		Realm:         LivekitRealm,
+		AuthHandler:   authHandler,
+		LoggerFactory: pionlogger.NewLoggerFactory(logger.GetLogger()),
+	}
 
+	var logValues []any
+	logValues = append(logValues, "turn.relay_range_start", turnConf.RelayPortRangeStart)
+	logValues = append(logValues, "turn.relay_range_end", turnConf.RelayPortRangeEnd)
+
+	for _, addr := range conf.TURN.BindAddresses {
+		var relayAddrGen turn.RelayAddressGenerator = &turn.RelayAddressGeneratorPortRange{
+			RelayAddress: net.ParseIP(conf.RTC.NodeIP),
+			Address:      addr,
+			MinPort:      turnConf.RelayPortRangeStart,
+			MaxPort:      turnConf.RelayPortRangeEnd,
+			MaxRetries:   allocateRetries,
+		}
 		if standalone {
-			udpListener = telemetry.NewPacketConn(udpListener, prometheus.Incoming)
+			relayAddrGen = telemetry.NewRelayAddressGenerator(relayAddrGen)
 		}
 
-		packetConfig := turn.PacketConnConfig{
-			PacketConn:            udpListener,
-			RelayAddressGenerator: relayAddrGen,
+		if turnConf.TLSPort > 0 {
+			var listener net.Listener
+			var listenerErr error
+
+			if turnConf.ExternalTLS {
+				listener, listenerErr = net.Listen("tcp", net.JoinHostPort(addr, strconv.Itoa(turnConf.TLSPort)))
+			} else {
+				cert, err := tls.LoadX509KeyPair(turnConf.CertFile, turnConf.KeyFile)
+				if err != nil {
+					return nil, errors.Wrap(err, "TURN tls cert required")
+				}
+
+				listener, listenerErr = tls.Listen("tcp", net.JoinHostPort(addr, strconv.Itoa(turnConf.TLSPort)),
+					&tls.Config{
+						MinVersion:   tls.VersionTLS12,
+						Certificates: []tls.Certificate{cert},
+					})
+			}
+
+			if listenerErr != nil {
+				return nil, errors.Wrap(listenerErr, "could not listen on TURN TCP port")
+			}
+			if standalone {
+				listener = telemetry.NewListener(listener)
+			}
+
+			listenerConfig := turn.ListenerConfig{
+				Listener:              listener,
+				RelayAddressGenerator: relayAddrGen,
+			}
+			serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
+
+			logValues = append(logValues, "turn.portTLS", turnConf.TLSPort, "turn.externalTLS", turnConf.ExternalTLS)
 		}
-		serverConfig.PacketConnConfigs = append(serverConfig.PacketConnConfigs, packetConfig)
-		logValues = append(logValues, "turn.portUDP", turnConf.UDPPort)
+
+		if turnConf.UDPPort > 0 {
+			udpListener, err := net.ListenPacket("udp", net.JoinHostPort(addr, strconv.Itoa(turnConf.UDPPort)))
+			if err != nil {
+				return nil, errors.Wrap(err, "could not listen on TURN UDP port")
+			}
+
+			if standalone {
+				udpListener = telemetry.NewPacketConn(udpListener, prometheus.Incoming)
+			}
+
+			packetConfig := turn.PacketConnConfig{
+				PacketConn:            udpListener,
+				RelayAddressGenerator: relayAddrGen,
+			}
+			serverConfig.PacketConnConfigs = append(serverConfig.PacketConnConfigs, packetConfig)
+			logValues = append(logValues, "turn.portUDP", turnConf.UDPPort)
+		}
 	}
 
 	logger.Infow("Starting TURN server", logValues...)
