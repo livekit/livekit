@@ -542,9 +542,17 @@ func (t *TransportManager) HandleAnswer(answer webrtc.SessionDescription, answer
 func (t *TransportManager) AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) {
 	switch target {
 	case livekit.SignalTarget_PUBLISHER:
-		t.publisher.AddICECandidate(candidate)
+		if t.publisher != nil {
+			t.publisher.AddICECandidate(candidate)
+		} else {
+			t.params.Logger.Warnw("ice candidate for publisher, but no peer connection", nil, "candidate", candidate)
+		}
 	case livekit.SignalTarget_SUBSCRIBER:
-		t.subscriber.AddICECandidate(candidate)
+		if t.subscriber != nil {
+			t.subscriber.AddICECandidate(candidate)
+		} else {
+			t.params.Logger.Warnw("ice candidate for subscriber, but no peer connection", nil, "candidate", candidate)
+		}
 	default:
 		err := errors.New("unknown signal target")
 		t.params.Logger.Errorw("ice candidate for unknown signal target", err, "target", target)
