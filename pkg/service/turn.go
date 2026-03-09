@@ -60,7 +60,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 		LoggerFactory: pionlogger.NewLoggerFactory(logger.GetLogger()),
 	}
 	var relayAddrGen turn.RelayAddressGenerator = &turn.RelayAddressGeneratorPortRange{
-		RelayAddress: net.ParseIP(conf.RTC.NodeIP),
+		RelayAddress: net.ParseIP(conf.RTC.NodeIP.V4),
 		Address:      "0.0.0.0",
 		MinPort:      turnConf.RelayPortRangeStart,
 		MaxPort:      turnConf.RelayPortRangeEnd,
