@@ -254,6 +254,13 @@ func (s *egressLauncher) StartEgress(ctx context.Context, req *rpc.StartEgressRe
 	return info, nil
 }
 
+func (s *egressLauncher) StopEgress(ctx context.Context, req *livekit.StopEgressRequest) (*livekit.EgressInfo, error) {
+	if s.client == nil {
+		return nil, ErrEgressNotConnected
+	}
+	return s.client.StopEgress(ctx, req.EgressId, req)
+}
+
 type LayoutMetadata struct {
 	Layout string `json:"layout"`
 }
@@ -344,11 +351,7 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 		return nil, twirpAuthError(err)
 	}
 
-	if s.client == nil {
-		return nil, ErrEgressNotConnected
-	}
-
-	info, err = s.client.StopEgress(ctx, req.EgressId, req)
+	info, err = s.launcher.StopEgress(ctx, req)
 	if err != nil {
 		var loadErr error
 		info, loadErr = s.io.GetEgress(ctx, &rpc.GetEgressRequest{EgressId: req.EgressId})
