@@ -796,7 +796,7 @@ func (conf *Config) updateFromCLI(c *cli.Command, baseFlags []cli.Flag) error {
 		conf.TURN.KeyFile = c.String("turn-key")
 	}
 	if c.IsSet("node-ip") {
-		conf.RTC.NodeIP = c.String("node-ip")
+		conf.RTC.NodeIP.UnmarshalString(c.String("node-ip"))
 	}
 	if c.IsSet("udp-port") {
 		conf.RTC.UDPPort.UnmarshalString(c.String("udp-port"))

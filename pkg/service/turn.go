@@ -53,6 +53,9 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 	if turnConf.TLSPort <= 0 && turnConf.UDPPort <= 0 {
 		return nil, errors.New("invalid TURN ports")
 	}
+	if conf.RTC.NodeIP.V4 == "" {
+		return nil, errors.New("invalid node IPv4 for relay")
+	}
 
 	serverConfig := turn.ServerConfig{
 		Realm:         LivekitRealm,
@@ -60,7 +63,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 		LoggerFactory: pionlogger.NewLoggerFactory(logger.GetLogger()),
 	}
 	var relayAddrGen turn.RelayAddressGenerator = &turn.RelayAddressGeneratorPortRange{
-		RelayAddress: net.ParseIP(conf.RTC.NodeIP),
+		RelayAddress: net.ParseIP(conf.RTC.NodeIP.V4),
 		Address:      "0.0.0.0",
 		MinPort:      turnConf.RelayPortRangeStart,
 		MaxPort:      turnConf.RelayPortRangeEnd,
