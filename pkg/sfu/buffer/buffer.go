@@ -171,8 +171,7 @@ type Buffer struct {
 	primaryBufferForRTX *Buffer
 	rtxPktBuf           []byte
 
-	absCaptureTimeExtID        uint8
-	absCaptureTimeExtIDChecked bool
+	absCaptureTimeExtID uint8
 
 	keyFrameSeederGeneration atomic.Int32
 }
@@ -296,8 +295,6 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 			b.absCaptureTimeExtID = uint8(ext.ID)
 		}
 	}
-	b.absCaptureTimeExtIDChecked = b.absCaptureTimeExtID != 0
-
 	if b.absCaptureTimeExtID == 0 {
 		b.logger.Debugw(
 			"abs-capture-time extension not negotiated on upstream receiver",
@@ -1112,18 +1109,6 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, isBuffer
 			var actExt act.AbsCaptureTime
 			if err := actExt.Unmarshal(extData); err == nil {
 				ep.AbsCaptureTimeExt = &actExt
-			}
-		} else if !b.absCaptureTimeExtIDChecked {
-			b.absCaptureTimeExtIDChecked = true
-			for _, extID := range rtpPacket.Header.GetExtensionIDs() {
-				extData := rtpPacket.Header.GetExtension(extID)
-				var actExt act.AbsCaptureTime
-				if err := actExt.Unmarshal(extData); err == nil {
-					b.absCaptureTimeExtID = extID
-					ep.AbsCaptureTimeExt = &actExt
-					b.logger.Debugw("detected abs-capture-time extension id from upstream packet", "id", extID)
-					break
-				}
 			}
 		}
 	}
