@@ -815,12 +815,11 @@ func (d *DownTrack) SetReceiver(r TrackReceiver) {
 // Sets RTP header extensions for this track
 func (d *DownTrack) setRTPHeaderExtensions() {
 	sal := d.getStreamAllocatorListener()
-	isBWEEnabled := false
-	bweType := bwe.BWETypeNone
-	if sal != nil {
-		isBWEEnabled = sal.IsBWEEnabled(d)
-		bweType = sal.BWEType()
+	if sal == nil {
+		return
 	}
+	isBWEEnabled := sal.IsBWEEnabled(d)
+	bweType := sal.BWEType()
 
 	tr := d.transceiver.Load()
 	if tr == nil {

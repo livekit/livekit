@@ -295,17 +295,6 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 			b.absCaptureTimeExtID = uint8(ext.ID)
 		}
 	}
-	if b.absCaptureTimeExtID == 0 {
-		b.logger.Debugw(
-			"abs-capture-time extension not negotiated on upstream receiver",
-			"headerExtensions", params.HeaderExtensions,
-		)
-	} else {
-		b.logger.Debugw(
-			"abs-capture-time extension negotiated on upstream receiver",
-			"id", b.absCaptureTimeExtID,
-		)
-	}
 
 	switch {
 	case mime.IsMimeTypeAudio(b.mime):
@@ -1102,14 +1091,12 @@ func (b *Buffer) getExtPacket(rtpPacket *rtp.Packet, arrivalTime int64, isBuffer
 		}
 	}
 
-	if rtpPacket.Extension {
-		if b.absCaptureTimeExtID != 0 {
-			extData := rtpPacket.GetExtension(b.absCaptureTimeExtID)
+	if b.absCaptureTimeExtID != 0 {
+		extData := rtpPacket.GetExtension(b.absCaptureTimeExtID)
 
-			var actExt act.AbsCaptureTime
-			if err := actExt.Unmarshal(extData); err == nil {
-				ep.AbsCaptureTimeExt = &actExt
-			}
+		var actExt act.AbsCaptureTime
+		if err := actExt.Unmarshal(extData); err == nil {
+			ep.AbsCaptureTimeExt = &actExt
 		}
 	}
 
