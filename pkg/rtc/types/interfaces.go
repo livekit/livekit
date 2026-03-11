@@ -382,7 +382,7 @@ type LocalParticipant interface {
 	GetAdaptiveStream() bool
 	ProtocolVersion() ProtocolVersion
 	SupportsSyncStreamID() bool
-	SupportsTransceiverReuse() bool
+	SupportsTransceiverReuse(mt MediaTrack) bool
 	IsUsingSinglePeerConnection() bool
 	IsReady() bool
 	ActiveAt() time.Time

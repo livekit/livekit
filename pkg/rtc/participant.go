@@ -226,6 +226,7 @@ type ParticipantParams struct {
 	EnableRTPStreamRestartDetection     bool
 	ForceBackupCodecPolicySimulcast     bool
 	RequireMediaSectionWithJoinResponse bool
+	DisableTransceiverReuseForE2EE      bool
 }
 
 type ParticipantImpl struct {
@@ -3752,12 +3753,12 @@ func (p *ParticipantImpl) SupportsSyncStreamID() bool {
 	return p.ProtocolVersion().SupportsSyncStreamID() && !p.params.ClientInfo.isFirefox() && p.params.SyncStreams
 }
 
-func (p *ParticipantImpl) SupportsTransceiverReuse() bool {
+func (p *ParticipantImpl) SupportsTransceiverReuse(mt types.MediaTrack) bool {
 	if p.params.UseOneShotSignallingMode {
 		return p.ProtocolVersion().SupportsTransceiverReuse()
 	}
 
-	return p.ProtocolVersion().SupportsTransceiverReuse() && !p.SupportsSyncStreamID()
+	return p.ProtocolVersion().SupportsTransceiverReuse() && !p.SupportsSyncStreamID() && (!mt.IsEncrypted() || !p.params.DisableTransceiverReuseForE2EE)
 }
 
 func (p *ParticipantImpl) SendDataMessage(kind livekit.DataPacket_Kind, data []byte, sender livekit.ParticipantID, seq uint32) error {
