@@ -124,7 +124,8 @@ type TransportManager struct {
 
 	onICEConfigChanged func(iceConfig *livekit.ICEConfig)
 
-	droppedBySlowReaderCount atomic.Uint32
+	dataChannelSendErrorDroppedBySlowReaderCount atomic.Uint32
+	dataChannelSendErrorCount                    atomic.Uint32
 }
 
 func NewTransportManager(params TransportManagerParams) (*TransportManager, error) {
@@ -355,12 +356,12 @@ func (t *TransportManager) handleSendDataResult(err error, kind string, size int
 			io.ErrClosedPipe,
 			sctp.ErrStreamClosed,
 			ErrTransportFailure,
-			ErrDataChannelBufferFull,
+			ErrDataChannelUnavailable,
 			context.DeadlineExceeded,
 			datachannel.ErrDataDroppedByHighBufferedAmount,
 		) {
 			if errors.Is(err, datachannel.ErrDataDroppedBySlowReader) {
-				droppedBySlowReaderCount := t.droppedBySlowReaderCount.Inc()
+				droppedBySlowReaderCount := t.dataChannelSendErrorDroppedBySlowReaderCount.Inc()
 				if (droppedBySlowReaderCount-1)%100 == 0 {
 					t.params.Logger.Infow(
 						"drop data message by slow reader",
@@ -370,7 +371,15 @@ func (t *TransportManager) handleSendDataResult(err error, kind string, size int
 					)
 				}
 			} else {
-				t.params.Logger.Warnw("send data message error", err)
+				count := t.dataChannelSendErrorCount.Inc()
+				if (count-1)%100 == 0 {
+					t.params.Logger.Infow(
+						"send data message error",
+						"error", err,
+						"kind", kind,
+						"count", count,
+					)
+				}
 			}
 		}
 		if utils.ErrorIsOneOf(err, sctp.ErrStreamClosed, io.ErrClosedPipe) {
