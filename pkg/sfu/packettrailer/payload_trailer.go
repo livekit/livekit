@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package payloadtrailer
+package packettrailer
 
 var Magic = [4]byte{'L', 'K', 'T', 'S'}
 

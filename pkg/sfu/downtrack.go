@@ -39,7 +39,7 @@ import (
 	"github.com/livekit/protocol/utils/mono"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/payloadtrailer"
+	"github.com/livekit/livekit-server/pkg/sfu/packettrailer"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
@@ -1060,7 +1060,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	payload = payload[:len(tp.codecBytes)+n]
 
 	if d.params.StripPayloadTrailer {
-		if strip := payloadtrailer.StripTrailer(payload, tp.marker); strip > 0 {
+		if strip := packettrailer.StripTrailer(payload, tp.marker); strip > 0 {
 			payload = payload[:len(payload)-strip]
 		}
 	}
@@ -2184,7 +2184,7 @@ func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isPro
 	}
 
 	if d.params.StripPayloadTrailer {
-		if strip := payloadtrailer.StripTrailer(payload[rtxOffset:], epm.marker); strip > 0 {
+		if strip := packettrailer.StripTrailer(payload[rtxOffset:], epm.marker); strip > 0 {
 			payload = payload[:len(payload)-strip]
 		}
 	}
