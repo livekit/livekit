@@ -39,6 +39,7 @@ import (
 	"github.com/livekit/protocol/utils/mono"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/payloadtrailer"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
@@ -293,24 +294,6 @@ var _ TrackSender = (*DownTrack)(nil)
 
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
-var userTimestampMagic = [4]byte{'L', 'K', 'T', 'S'}
-
-const userTimestampTrailerSize = 12
-
-// stripUserTimestampTrailer returns the number of bytes to strip from the end of
-// an RTP payload if it contains a user-timestamp trailer (magic suffix "LKTS").
-// Trailers only appear on marker packets; returns 0 if absent or ineligible.
-func stripUserTimestampTrailer(payload []byte, marker bool) int {
-	if !marker || len(payload) < userTimestampTrailerSize {
-		return 0
-	}
-	tail := payload[len(payload)-4:]
-	if tail[0] == userTimestampMagic[0] && tail[1] == userTimestampMagic[1] && tail[2] == userTimestampMagic[2] && tail[3] == userTimestampMagic[3] {
-		return userTimestampTrailerSize
-	}
-	return 0
-}
-
 type DownTrackParams struct {
 	Codecs                         []webrtc.RTPCodecParameters
 	IsEncrypted                    bool
@@ -327,7 +310,7 @@ type DownTrackParams struct {
 	RTCPWriter                     func([]rtcp.Packet) error
 	DisableSenderReportPassThrough bool
 	SupportsCodecChange            bool
-	StripUserTimestamp             bool
+	StripPayloadTrailer            bool
 	Listener                       DownTrackListener
 }
 
@@ -1076,8 +1059,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	}
 	payload = payload[:len(tp.codecBytes)+n]
 
-	if d.params.StripUserTimestamp {
-		if strip := stripUserTimestampTrailer(payload, tp.marker); strip > 0 {
+	if d.params.StripPayloadTrailer {
+		if strip := payloadtrailer.StripTrailer(payload, tp.marker); strip > 0 {
 			payload = payload[:len(payload)-strip]
 		}
 	}
@@ -2200,8 +2183,8 @@ func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isPro
 		payload = payload[:rtxOffset+int(epm.numCodecBytesOut)+len(pkt.Payload)-int(epm.numCodecBytesIn)]
 	}
 
-	if d.params.StripUserTimestamp {
-		if strip := stripUserTimestampTrailer(payload[rtxOffset:], epm.marker); strip > 0 {
+	if d.params.StripPayloadTrailer {
+		if strip := payloadtrailer.StripTrailer(payload[rtxOffset:], epm.marker); strip > 0 {
 			payload = payload[:len(payload)-strip]
 		}
 	}

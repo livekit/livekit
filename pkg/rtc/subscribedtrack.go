@@ -129,8 +129,8 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 	if isEncrypted {
 		trailer = params.Subscriber.GetTrailer()
 	}
-	stripUserTimestamp := params.MediaTrack.HasPacketTrailerFeature(livekit.PacketTrailerFeature_PTF_USER_TIMESTAMP) &&
-		!params.Subscriber.ProtocolVersion().SupportsUserTimestamp()
+	stripPayloadTrailer := params.MediaTrack.HasPacketTrailerFeature(livekit.PacketTrailerFeature_PTF_USER_TIMESTAMP) &&
+		!params.Subscriber.ProtocolVersion().SupportsPayloadTrailer()
 	downTrack, err := sfu.NewDownTrack(sfu.DownTrackParams{
 		Codecs:             codecs,
 		IsEncrypted:        isEncrypted,
@@ -143,7 +143,7 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 		PlayoutDelayLimit:  params.Subscriber.GetPlayoutDelayConfig(),
 		Pacer:              params.Subscriber.GetPacer(),
 		Trailer:            trailer,
-		StripUserTimestamp: stripUserTimestamp,
+		StripPayloadTrailer: stripPayloadTrailer,
 		Logger: LoggerWithTrack(
 			params.Subscriber.GetLogger().WithComponent(sutils.ComponentSub),
 			params.MediaTrack.ID(),
