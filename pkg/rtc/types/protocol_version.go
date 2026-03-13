@@ -100,6 +100,6 @@ func (v ProtocolVersion) SupportsMoving() bool {
 	return v > 15
 }
 
-func (v ProtocolVersion) SupportsPayloadTrailer() bool {
+func (v ProtocolVersion) SupportsPacketTrailer() bool {
 	return v > 16
 }
