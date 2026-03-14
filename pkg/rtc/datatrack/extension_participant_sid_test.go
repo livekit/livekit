@@ -23,7 +23,7 @@ import (
 )
 
 func TestExtensionParticipantSid(t *testing.T) {
-	longTestParticipantID := livekit.ParticipantID(make([]byte, 65536))
+	longTestParticipantID := livekit.ParticipantID(make([]byte, 256))
 	extParticipantSid, err := NewExtensionParticipantSid(longTestParticipantID)
 	require.Error(t, err)
 
@@ -32,7 +32,7 @@ func TestExtensionParticipantSid(t *testing.T) {
 	require.NoError(t, err)
 
 	expectedExt := Extension{
-		id:   uint16(livekit.DataTrackExtensionID_DTEI_PARTICIPANT_SID),
+		id:   uint8(livekit.DataTrackExtensionID_DTEI_PARTICIPANT_SID),
 		data: []byte{'t', 'e', 's', 't'},
 	}
 	ext, err := extParticipantSid.Marshal()

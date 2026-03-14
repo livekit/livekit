@@ -25,7 +25,7 @@ type ExtensionParticipantSid struct {
 }
 
 func NewExtensionParticipantSid(participantID livekit.ParticipantID) (*ExtensionParticipantSid, error) {
-	if len(participantID) >= 65536 {
+	if len(participantID) >= 256 {
 		return nil, errors.New("participantID too long")
 	}
 
@@ -40,13 +40,13 @@ func (e *ExtensionParticipantSid) Marshal() (Extension, error) {
 	data := make([]byte, len(e.participantID))
 	copy(data, e.participantID)
 	return Extension{
-		id:   uint16(livekit.DataTrackExtensionID_DTEI_PARTICIPANT_SID),
+		id:   uint8(livekit.DataTrackExtensionID_DTEI_PARTICIPANT_SID),
 		data: data,
 	}, nil
 }
 
 func (e *ExtensionParticipantSid) Unmarshal(ext Extension) error {
-	if ext.id != uint16(livekit.DataTrackExtensionID_DTEI_PARTICIPANT_SID) {
+	if ext.id != uint8(livekit.DataTrackExtensionID_DTEI_PARTICIPANT_SID) {
 		return errors.New("invalid extension ID")
 	}
 
