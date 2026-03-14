@@ -50,7 +50,7 @@ const (
 
 var (
 	ErrKeyFileIncorrectPermission = errors.New("key file others permissions must be set to 0")
-	ErrKeysNotSet                 = errors.New("one of key-file or keys must be provided")
+	ErrKeysNotSet                 = errors.New("one of key-file, keys or api-key & api-secret must be provided")
 )
 
 type Config struct {
@@ -71,6 +71,8 @@ type Config struct {
 	NodeSelector   NodeSelectorConfig       `yaml:"node_selector,omitempty"`
 	KeyFile        string                   `yaml:"key_file,omitempty"`
 	Keys           map[string]string        `yaml:"keys,omitempty"`
+	APIKey         string					`yaml:"api_key,omitempty"`
+	APISecret      string					`yaml:"api_secret,omitempty"`
 	Region         string                   `yaml:"region,omitempty"`
 	SignalRelay    SignalRelayConfig        `yaml:"signal_relay,omitempty"`
 	PSRPC          rpc.PSRPCConfig          `yaml:"psrpc,omitempty"`
@@ -604,6 +606,13 @@ func (conf *Config) ValidateKeys() error {
 		}
 	}
 
+	if conf.APIKey != "" && conf.APISecret != "" {
+		if conf.Keys == nil {
+			conf.Keys = map[string]string{}
+		}
+		conf.Keys[conf.APIKey] = conf.APISecret
+	}
+
 	if len(conf.Keys) == 0 {
 		return ErrKeysNotSet
 	}
@@ -779,6 +788,12 @@ func (conf *Config) updateFromCLI(c *cli.Command, baseFlags []cli.Flag) error {
 		if err := conf.unmarshalKeys(c.String("keys")); err != nil {
 			return errors.New("Could not parse keys, it needs to be exactly, \"key: secret\", including the space")
 		}
+	}
+	if c.IsSet("api-key") {
+		conf.APIKey = c.String("api-key")
+	}
+	if c.IsSet("api-secret") {
+		conf.APISecret = c.String("api-secret")
 	}
 	if c.IsSet("region") {
 		conf.Region = c.String("region")
