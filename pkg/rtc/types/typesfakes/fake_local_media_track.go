@@ -124,6 +124,17 @@ type FakeLocalMediaTrack struct {
 	getTrackStatsReturnsOnCall map[int]struct {
 		result1 *livekit.RTPStats
 	}
+	HasPacketTrailerFeatureStub        func(livekit.PacketTrailerFeature) bool
+	hasPacketTrailerFeatureMutex       sync.RWMutex
+	hasPacketTrailerFeatureArgsForCall []struct {
+		arg1 livekit.PacketTrailerFeature
+	}
+	hasPacketTrailerFeatureReturns struct {
+		result1 bool
+	}
+	hasPacketTrailerFeatureReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	HasSdpCidStub        func(string) bool
 	hasSdpCidMutex       sync.RWMutex
 	hasSdpCidArgsForCall []struct {
@@ -947,6 +958,67 @@ func (fake *FakeLocalMediaTrack) GetTrackStatsReturnsOnCall(i int, result1 *live
 	}
 	fake.getTrackStatsReturnsOnCall[i] = struct {
 		result1 *livekit.RTPStats
+	}{result1}
+}
+
+func (fake *FakeLocalMediaTrack) HasPacketTrailerFeature(arg1 livekit.PacketTrailerFeature) bool {
+	fake.hasPacketTrailerFeatureMutex.Lock()
+	ret, specificReturn := fake.hasPacketTrailerFeatureReturnsOnCall[len(fake.hasPacketTrailerFeatureArgsForCall)]
+	fake.hasPacketTrailerFeatureArgsForCall = append(fake.hasPacketTrailerFeatureArgsForCall, struct {
+		arg1 livekit.PacketTrailerFeature
+	}{arg1})
+	stub := fake.HasPacketTrailerFeatureStub
+	fakeReturns := fake.hasPacketTrailerFeatureReturns
+	fake.recordInvocation("HasPacketTrailerFeature", []interface{}{arg1})
+	fake.hasPacketTrailerFeatureMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalMediaTrack) HasPacketTrailerFeatureCallCount() int {
+	fake.hasPacketTrailerFeatureMutex.RLock()
+	defer fake.hasPacketTrailerFeatureMutex.RUnlock()
+	return len(fake.hasPacketTrailerFeatureArgsForCall)
+}
+
+func (fake *FakeLocalMediaTrack) HasPacketTrailerFeatureCalls(stub func(livekit.PacketTrailerFeature) bool) {
+	fake.hasPacketTrailerFeatureMutex.Lock()
+	defer fake.hasPacketTrailerFeatureMutex.Unlock()
+	fake.HasPacketTrailerFeatureStub = stub
+}
+
+func (fake *FakeLocalMediaTrack) HasPacketTrailerFeatureArgsForCall(i int) livekit.PacketTrailerFeature {
+	fake.hasPacketTrailerFeatureMutex.RLock()
+	defer fake.hasPacketTrailerFeatureMutex.RUnlock()
+	argsForCall := fake.hasPacketTrailerFeatureArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalMediaTrack) HasPacketTrailerFeatureReturns(result1 bool) {
+	fake.hasPacketTrailerFeatureMutex.Lock()
+	defer fake.hasPacketTrailerFeatureMutex.Unlock()
+	fake.HasPacketTrailerFeatureStub = nil
+	fake.hasPacketTrailerFeatureReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalMediaTrack) HasPacketTrailerFeatureReturnsOnCall(i int, result1 bool) {
+	fake.hasPacketTrailerFeatureMutex.Lock()
+	defer fake.hasPacketTrailerFeatureMutex.Unlock()
+	fake.HasPacketTrailerFeatureStub = nil
+	if fake.hasPacketTrailerFeatureReturnsOnCall == nil {
+		fake.hasPacketTrailerFeatureReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.hasPacketTrailerFeatureReturnsOnCall[i] = struct {
+		result1 bool
 	}{result1}
 }
 

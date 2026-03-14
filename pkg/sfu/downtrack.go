@@ -43,6 +43,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
+	"github.com/livekit/livekit-server/pkg/sfu/packettrailer"
 	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
@@ -309,6 +310,7 @@ type DownTrackParams struct {
 	RTCPWriter                     func([]rtcp.Packet) error
 	DisableSenderReportPassThrough bool
 	SupportsCodecChange            bool
+	StripPacketTrailer             bool
 	Listener                       DownTrackListener
 }
 
@@ -1056,6 +1058,12 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		return 0
 	}
 	payload = payload[:len(tp.codecBytes)+n]
+
+	if d.params.StripPacketTrailer {
+		if strip := packettrailer.StripTrailer(payload, tp.marker); strip > 0 {
+			payload = payload[:len(payload)-strip]
+		}
+	}
 
 	// translate RTP header
 	hdr := RTPHeaderFactory.Get().(*rtp.Header)
@@ -2173,6 +2181,12 @@ func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isPro
 		copy(payload[rtxOffset:], epm.codecBytes[:epm.numCodecBytesOut])
 		copy(payload[rtxOffset+int(epm.numCodecBytesOut):], pkt.Payload[epm.numCodecBytesIn:])
 		payload = payload[:rtxOffset+int(epm.numCodecBytesOut)+len(pkt.Payload)-int(epm.numCodecBytesIn)]
+	}
+
+	if d.params.StripPacketTrailer {
+		if strip := packettrailer.StripTrailer(payload[rtxOffset:], epm.marker); strip > 0 {
+			payload = payload[:len(payload)-strip]
+		}
 	}
 
 	headerSize := hdr.MarshalSize()
