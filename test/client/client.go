@@ -334,7 +334,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 	})
 	publisherHandler.OnOfferCalls(c.onOffer)
 	publisherHandler.OnFullyEstablishedCalls(func() {
-		logger.Debugw("publisher fully established", "participant", c.localParticipant.Identity, "pID", c.localParticipant.Sid)
+		logger.Debugw("publisher fully established", "participant", c.localParticipant.Identity, "participantID", c.localParticipant.Sid)
 		c.publisherFullyEstablished.Store(true)
 	})
 
@@ -426,7 +426,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 			}
 		})
 		subscriberHandler.OnFullyEstablishedCalls(func() {
-			logger.Debugw("subscriber fully established", "participant", c.localParticipant.Identity, "pID", c.localParticipant.Sid)
+			logger.Debugw("subscriber fully established", "participant", c.localParticipant.Identity, "participantID", c.localParticipant.Sid)
 			c.subscriberFullyEstablished.Store(true)
 		})
 		subscriberHandler.OnAnswerCalls(func(answer webrtc.SessionDescription, answerId uint32, _midToTrackID map[string]string) error {
@@ -632,7 +632,7 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 					livekit.ParticipantID(publishedDataTrack.PublisherSid),
 					uint16(handle),
 					livekit.TrackID(publishedDataTrack.TrackSid),
-					logger.GetLogger().WithValues("participant", c.localParticipant.Identity, "pID", c.localParticipant.Sid),
+					logger.GetLogger().WithValues("participant", c.localParticipant.Identity, "participantID", c.localParticipant.Sid),
 				)
 			}
 		}
@@ -860,7 +860,7 @@ func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string, 
 		logger.Errorw(
 			"add track failed", err,
 			"participant", c.localParticipant.Identity,
-			"pID", c.localParticipant.Sid,
+			"participantID", c.localParticipant.Sid,
 			"trackID", track.ID(),
 		)
 		return
@@ -1209,7 +1209,7 @@ func (c *RTCClient) processRemoteTrack(track *webrtc.TrackRemote) {
 		logger.Infow(
 			"client caching track",
 			"participant", c.localParticipant.Identity,
-			"pID", c.ID(),
+			"participantID", c.ID(),
 			"codec", track.Codec(),
 			"ssrc", track.SSRC(),
 		)
@@ -1230,7 +1230,7 @@ func (c *RTCClient) processRemoteTrack(track *webrtc.TrackRemote) {
 	logger.Infow(
 		"client added track",
 		"participant", c.localParticipant.Identity,
-		"pID", c.ID(),
+		"participantID", c.ID(),
 		"publisherID", publisherID,
 		"trackID", trackID,
 		"codec", track.Codec(),
@@ -1253,7 +1253,7 @@ func (c *RTCClient) processRemoteTrack(track *webrtc.TrackRemote) {
 			logger.Infow(
 				"client track removed",
 				"participant", c.localParticipant.Identity,
-				"pID", c.ID(),
+				"participantID", c.ID(),
 				"publisherID", publisherID,
 				"trackID", trackID,
 				"codec", track.Codec(),
@@ -1274,7 +1274,7 @@ func (c *RTCClient) processRemoteTrack(track *webrtc.TrackRemote) {
 			logger.Infow(
 				"consumed from participant",
 				"participant", c.localParticipant.Identity,
-				"pID", c.ID(),
+				"participantID", c.ID(),
 				"publisherID", publisherID,
 				"trackID", trackID,
 				"size", numBytes,

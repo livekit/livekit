@@ -473,7 +473,7 @@ func (r *Room) Join(
 
 	r.logger.Debugw(
 		"new participant joined",
-		"pID", participant.ID(),
+		"participantID", participant.ID(),
 		"participant", participant.Identity(),
 		"clientInfo", logger.Proto(participant.GetClientInfo()),
 		"options", opts,

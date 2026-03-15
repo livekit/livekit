@@ -122,7 +122,7 @@ func LoggerWithParticipant(l logger.Logger, identity livekit.ParticipantIdentity
 		values = append(values, "participant", identity)
 	}
 	if sid != "" {
-		values = append(values, "pID", sid)
+		values = append(values, "participantID", sid)
 	}
 	values = append(values, "remote", isRemote)
 	// enable sampling per participant

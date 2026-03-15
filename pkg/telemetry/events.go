@@ -198,7 +198,7 @@ func (t *telemetryService) ParticipantLeft(ctx context.Context,
 					"room", room.Name,
 					"roomID", room.Sid,
 					"participant", participant.Identity,
-					"pID", participant.Sid,
+					"participantID", participant.Sid,
 					"worker", worker,
 				)
 			}
