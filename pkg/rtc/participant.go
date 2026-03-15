@@ -1528,7 +1528,7 @@ func (p *ParticipantImpl) setupMigrationTimerLocked() {
 }
 
 func (p *ParticipantImpl) MaybeStartMigration(force bool, onStart func()) bool {
-	if p.params.UseOneShotSignallingMode {
+	if p.IsClosed() || p.params.UseOneShotSignallingMode {
 		return false
 	}
 
