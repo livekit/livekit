@@ -98,7 +98,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, roomClient, participantClient)
+	tokenRevocationStore := getTokenrevocationStore(objectStore)
+	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, roomClient, participantClient, tokenRevocationStore)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +121,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	sipService := NewSIPService(sipConfig, nodeID, messageBus, sipClient, sipStore, roomService, telemetryService)
-	rtcService := NewRTCService(conf, roomAllocator, router, telemetryService)
+	rtcService := NewRTCService(conf, roomAllocator, router, telemetryService, tokenRevocationStore)
 	whipParticipantClient, err := rpc.NewTypedWHIPParticipantClient(clientParams)
 	if err != nil {
 		return nil, err
@@ -142,7 +143,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	timedVersionGenerator := utils.NewDefaultTimedVersionGenerator()
 	turnAuthHandler := NewTURNAuthHandler(keyProvider)
 	forwardStats := createForwardStats(conf)
-	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, roomAllocator, telemetryService, client, agentStore, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, messageBus, forwardStats)
+	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, roomAllocator, telemetryService, tokenRevocationStore, client, agentStore, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, messageBus, forwardStats)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +156,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, serviceWHIPService, agentService, keyProvider, router, roomManager, signalServer, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, serviceWHIPService, agentService, keyProvider, router, roomManager, signalServer, server, tokenRevocationStore, currentNode)
 	if err != nil {
 		return nil, err
 	}
@@ -276,6 +277,17 @@ func getIngressStore(s ObjectStore) IngressStore {
 }
 
 func getAgentStore(s ObjectStore) AgentStore {
+	switch store := s.(type) {
+	case *RedisStore:
+		return store
+	case *LocalStore:
+		return store
+	default:
+		return nil
+	}
+}
+
+func getTokenrevocationStore(s ObjectStore) TokenRevocationStore {
 	switch store := s.(type) {
 	case *RedisStore:
 		return store

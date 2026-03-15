@@ -36,6 +36,15 @@ type LocalStore struct {
 	agentDispatches map[livekit.RoomName]map[string]*livekit.AgentDispatch
 	agentJobs       map[livekit.RoomName]map[string]*livekit.Job
 
+	tokenMap map[string][]struct {
+		token string
+		ttl   int64
+	}
+	tokenRevocationMap map[string]struct {
+		token string
+		ttl   int64
+	}
+
 	lock       sync.RWMutex
 	globalLock sync.Mutex
 }
@@ -47,7 +56,15 @@ func NewLocalStore() *LocalStore {
 		participants:    make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
 		agentDispatches: make(map[livekit.RoomName]map[string]*livekit.AgentDispatch),
 		agentJobs:       make(map[livekit.RoomName]map[string]*livekit.Job),
-		lock:            sync.RWMutex{},
+		tokenMap: make(map[string][]struct {
+			token string
+			ttl   int64
+		}),
+		tokenRevocationMap: make(map[string]struct {
+			token string
+			ttl   int64
+		}),
+		lock: sync.RWMutex{},
 	}
 }
 
@@ -293,4 +310,73 @@ func (s *LocalStore) DeleteAgentJob(ctx context.Context, job *livekit.Job) error
 	}
 
 	return nil
+}
+
+func (s *LocalStore) StoreAccessToken(ctx context.Context, token string, tokenIdentifier string, ttl int64) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	s.tokenMap[tokenIdentifier] = append(s.tokenMap[tokenIdentifier], struct {
+		token string
+		ttl   int64
+	}{
+		token: token,
+		ttl:   ttl,
+	})
+
+	return nil
+}
+
+func (s *LocalStore) RevokeAccessToken(ctx context.Context, tokenIdentifier string) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if tokens, exists := s.tokenMap[tokenIdentifier]; exists {
+		for i := range tokens {
+			s.tokenRevocationMap[tokens[i].token] = tokens[i]
+		}
+	}
+
+	return nil
+}
+
+func (s *LocalStore) IsTokenRevoked(ctx context.Context, token string) (bool, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	_, exists := s.tokenRevocationMap[token]
+
+	return exists, nil
+}
+
+func (s *LocalStore) Cleanup(ctx context.Context) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	cleanupTokens := []string{}
+	now := time.Now().UTC().Unix()
+
+	for identifier := range s.tokenMap {
+		identifier := identifier
+		active_tokens := []struct {
+			token string
+			ttl   int64
+		}{}
+		for _, token := range s.tokenMap[identifier] {
+			token := token
+			if now > (token.ttl + 1800) {
+				delete(s.tokenRevocationMap, token.token)
+			} else {
+				active_tokens = append(active_tokens, token)
+			}
+		}
+
+		if len(active_tokens) == 0 {
+			cleanupTokens = append(cleanupTokens, identifier)
+		}
+	}
+
+	for i := range cleanupTokens {
+		delete(s.tokenMap, cleanupTokens[i])
+	}
 }

@@ -30,15 +30,16 @@ import (
 )
 
 type RoomService struct {
-	limitConf         config.LimitConfig
-	apiConf           config.APIConfig
-	router            routing.MessageRouter
-	roomAllocator     RoomAllocator
-	roomStore         ServiceStore
-	egressLauncher    rtc.EgressLauncher
-	topicFormatter    rpc.TopicFormatter
-	roomClient        rpc.TypedRoomClient
-	participantClient rpc.TypedParticipantClient
+	limitConf            config.LimitConfig
+	apiConf              config.APIConfig
+	router               routing.MessageRouter
+	roomAllocator        RoomAllocator
+	roomStore            ServiceStore
+	egressLauncher       rtc.EgressLauncher
+	topicFormatter       rpc.TopicFormatter
+	tokenRevocationStore TokenRevocationStore
+	roomClient           rpc.TypedRoomClient
+	participantClient    rpc.TypedParticipantClient
 
 	rpc.UnimplementedRoomServer
 	rpc.UnimplementedParticipantServer
@@ -54,17 +55,19 @@ func NewRoomService(
 	topicFormatter rpc.TopicFormatter,
 	roomClient rpc.TypedRoomClient,
 	participantClient rpc.TypedParticipantClient,
+	tokenRevocationStore TokenRevocationStore,
 ) (svc *RoomService, err error) {
 	svc = &RoomService{
-		limitConf:         limitConf,
-		apiConf:           apiConf,
-		router:            router,
-		roomAllocator:     roomAllocator,
-		roomStore:         serviceStore,
-		egressLauncher:    egressLauncher,
-		topicFormatter:    topicFormatter,
-		roomClient:        roomClient,
-		participantClient: participantClient,
+		limitConf:            limitConf,
+		apiConf:              apiConf,
+		router:               router,
+		roomAllocator:        roomAllocator,
+		roomStore:            serviceStore,
+		egressLauncher:       egressLauncher,
+		topicFormatter:       topicFormatter,
+		tokenRevocationStore: tokenRevocationStore,
+		roomClient:           roomClient,
+		participantClient:    participantClient,
 	}
 	return
 }
@@ -199,6 +202,7 @@ func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomPa
 		return nil, twirpAuthError(err)
 	}
 
+	s.tokenRevocationStore.RevokeAccessToken(ctx, req.Identity+":"+req.Room)
 	if _, err := s.roomStore.LoadParticipant(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)); err == ErrParticipantNotFound {
 		return nil, twirp.NotFoundError("participant not found")
 	}
