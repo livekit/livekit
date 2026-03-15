@@ -215,15 +215,16 @@ type LoggingConfig struct {
 }
 
 type TURNConfig struct {
-	Enabled             bool   `yaml:"enabled,omitempty"`
-	Domain              string `yaml:"domain,omitempty"`
-	CertFile            string `yaml:"cert_file,omitempty"`
-	KeyFile             string `yaml:"key_file,omitempty"`
-	TLSPort             int    `yaml:"tls_port,omitempty"`
-	UDPPort             int    `yaml:"udp_port,omitempty"`
-	RelayPortRangeStart uint16 `yaml:"relay_range_start,omitempty"`
-	RelayPortRangeEnd   uint16 `yaml:"relay_range_end,omitempty"`
-	ExternalTLS         bool   `yaml:"external_tls,omitempty"`
+	Enabled             bool     `yaml:"enabled,omitempty"`
+	Domain              string   `yaml:"domain,omitempty"`
+	CertFile            string   `yaml:"cert_file,omitempty"`
+	KeyFile             string   `yaml:"key_file,omitempty"`
+	TLSPort             int      `yaml:"tls_port,omitempty"`
+	UDPPort             int      `yaml:"udp_port,omitempty"`
+	RelayPortRangeStart uint16   `yaml:"relay_range_start,omitempty"`
+	RelayPortRangeEnd   uint16   `yaml:"relay_range_end,omitempty"`
+	ExternalTLS         bool     `yaml:"external_tls,omitempty"`
+	BindAddresses       []string `yaml:"bind_addresses,omitempty"`
 }
 
 type NodeSelectorConfig struct {
@@ -413,7 +414,8 @@ var DefaultConfig = Config{
 		PionLevel: "error",
 	},
 	TURN: TURNConfig{
-		Enabled: false,
+		Enabled:       false,
+		BindAddresses: []string{"0.0.0.0"},
 	},
 	NodeSelector: NodeSelectorConfig{
 		Kind:         "any",
