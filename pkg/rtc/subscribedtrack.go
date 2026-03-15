@@ -129,7 +129,7 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 	if isEncrypted {
 		trailer = params.Subscriber.GetTrailer()
 	}
-	stripPacketTrailer := params.MediaTrack.HasPacketTrailerFeature(livekit.PacketTrailerFeature_PTF_USER_TIMESTAMP) &&
+	stripPacketTrailer := params.MediaTrack.HasPacketTrailer() &&
 		!params.Subscriber.ProtocolVersion().SupportsPacketTrailer()
 	downTrack, err := sfu.NewDownTrack(sfu.DownTrackParams{
 		Codecs:             codecs,

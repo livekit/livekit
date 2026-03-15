@@ -518,8 +518,8 @@ func (t *MediaTrackReceiver) IsEncrypted() bool {
 	return t.TrackInfo().Encryption != livekit.Encryption_NONE
 }
 
-func (t *MediaTrackReceiver) HasPacketTrailerFeature(feature livekit.PacketTrailerFeature) bool {
-	return slices.Contains(t.TrackInfo().GetPacketTrailerFeatures(), feature)
+func (t *MediaTrackReceiver) HasPacketTrailer() bool {
+	return len(t.TrackInfo().GetPacketTrailerFeatures()) > 0
 }
 
 func (t *MediaTrackReceiver) AddOnClose(f func(isExpectedToResume bool)) {
