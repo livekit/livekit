@@ -308,7 +308,7 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 			"room", roomName,
 			"roomID", roomID,
 			"participant", participantIdentity,
-			"pID", pID,
+			"participantID", pID,
 		}
 	}
 

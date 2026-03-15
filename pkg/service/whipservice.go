@@ -358,7 +358,7 @@ func (s *WHIPService) iceTrickle(
 		"method", "ice-trickle",
 		"room", roomName,
 		"participant", participantIdentity,
-		"pID", pID,
+		"participantID", pID,
 		"sdpFragment", sdpFragment,
 		"status", http.StatusNoContent,
 	)
@@ -410,7 +410,7 @@ func (s *WHIPService) iceRestart(
 		"method", "ice-restart",
 		"room", roomName,
 		"participant", participantIdentity,
-		"pID", pID,
+		"participantID", pID,
 		"sdpFragment", sdpFragment,
 		"status", http.StatusNoContent,
 		"res", logger.Proto(res),
@@ -514,7 +514,7 @@ func (s *WHIPService) handleParticipantDelete(w http.ResponseWriter, r *http.Req
 	sutils.GetLogger(r.Context()).Infow(
 		"API WHIP.Delete",
 		"participant", claims.Identity,
-		"pID", r.PathValue("participant_id"),
+		"participantID", r.PathValue("participant_id"),
 		"room", roomName,
 		"status", http.StatusOK,
 	)
