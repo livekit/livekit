@@ -864,17 +864,19 @@ func (d *DownTrack) SetReceiver(r TrackReceiver) {
 
 // Sets RTP header extensions for this track
 func (d *DownTrack) setRTPHeaderExtensions() {
+	isBWEEnabled := false
+	bweType := bwe.BWETypeNone
 	sal := d.getStreamAllocatorListener()
-	if sal == nil {
-		return
+	if sal != nil {
+		isBWEEnabled = sal.IsBWEEnabled(d)
+		bweType = sal.BWEType()
 	}
-	isBWEEnabled := sal.IsBWEEnabled(d)
-	bweType := sal.BWEType()
 
 	tr := d.transceiver.Load()
 	if tr == nil {
 		return
 	}
+
 	var extensions []webrtc.RTPHeaderExtensionParameter
 	if sender := tr.Sender(); sender != nil {
 		extensions = sender.GetParameters().HeaderExtensions
@@ -885,22 +887,51 @@ func (d *DownTrack) setRTPHeaderExtensions() {
 	for _, ext := range extensions {
 		switch ext.URI {
 		case sdp.ABSSendTimeURI:
-			if isBWEEnabled && bweType == bwe.BWETypeRemote {
-				d.absSendTimeExtID = ext.ID
-			} else {
-				d.absSendTimeExtID = 0
+			if sal != nil {
+				if isBWEEnabled && bweType == bwe.BWETypeRemote {
+					if d.absSendTimeExtID != 0 && d.absSendTimeExtID != ext.ID {
+						d.params.Logger.Infow("absSendTimeExtID mismatch", "current", d.absSendTimeExtID, "negotiated", ext.ID)
+					}
+					d.absSendTimeExtID = ext.ID
+				} else {
+					if d.absSendTimeExtID != 0 {
+						d.params.Logger.Infow("absSendTimeExtID disabled unexpectedly", "negotiated", ext.ID)
+					}
+					d.absSendTimeExtID = 0
+				}
 			}
+
 		case dd.ExtensionURI:
-			d.dependencyDescriptorExtID = ext.ID
-		case pd.PlayoutDelayURI:
-			d.playoutDelayExtID = ext.ID
-		case sdp.TransportCCURI:
-			if isBWEEnabled && bweType == bwe.BWETypeSendSide {
-				d.transportWideExtID = ext.ID
-			} else {
-				d.transportWideExtID = 0
+			if d.dependencyDescriptorExtID != 0 && d.dependencyDescriptorExtID != ext.ID {
+				d.params.Logger.Infow("dependencyDescriptorExtID mismatch", "current", d.dependencyDescriptorExtID, "negotiated", ext.ID)
 			}
+			d.dependencyDescriptorExtID = ext.ID
+
+		case pd.PlayoutDelayURI:
+			if d.playoutDelayExtID != 0 && d.playoutDelayExtID != ext.ID {
+				d.params.Logger.Infow("playoutDelayExtID mismatch", "current", d.playoutDelayExtID, "negotiated", ext.ID)
+			}
+			d.playoutDelayExtID = ext.ID
+
+		case sdp.TransportCCURI:
+			if sal != nil {
+				if isBWEEnabled && bweType == bwe.BWETypeSendSide {
+					if d.transportWideExtID != 0 && d.transportWideExtID != ext.ID {
+						d.params.Logger.Infow("transportWideExtID mismatch", "current", d.transportWideExtID, "negotiated", ext.ID)
+					}
+					d.transportWideExtID = ext.ID
+				} else {
+					if d.transportWideExtID != 0 {
+						d.params.Logger.Infow("transportWideExtID disabled unexpectedly", "negotiated", ext.ID)
+					}
+					d.transportWideExtID = 0
+				}
+			}
+
 		case act.AbsCaptureTimeURI:
+			if d.absCaptureTimeExtID != 0 && d.absCaptureTimeExtID != ext.ID {
+				d.params.Logger.Infow("absCaptureTimeExtID mismatch", "current", d.absCaptureTimeExtID, "negotiated", ext.ID)
+			}
 			d.absCaptureTimeExtID = ext.ID
 		}
 	}
