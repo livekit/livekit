@@ -460,6 +460,10 @@ func (b *BufferBase) setupRTPStats(clockRate uint32) {
 		b.deltaStatsSnapshotId = b.rtpStats.NewSnapshotId()
 	}
 
+	b.setupRTPStatsLite(clockRate)
+}
+
+func (b *BufferBase) setupRTPStatsLite(clockRate uint32) {
 	if b.params.IsOOBSequenceNumber {
 		b.rtpStatsLite = rtpstats.NewRTPStatsReceiverLite(rtpstats.RTPStatsParams{})
 		b.rtpStatsLite.SetLogger(b.logger)
@@ -474,19 +478,38 @@ func (b *BufferBase) stopRTPStats(reason string) (stats *livekit.RTPStats, stats
 		b.rtpStats.Stop()
 		stats = b.rtpStats.ToProto()
 	}
+	b.logger.Debugw(
+		"rtp stats",
+		"direction", "upstream",
+		"stats", b.rtpStats,
+		"reason", reason,
+	)
+
+	statsLite = b.stopRTPStatsLite(reason)
+	return
+}
+
+func (b *BufferBase) stopRTPStatsLite(reason string) (statsLite *livekit.RTPStats) {
 	if b.rtpStatsLite != nil {
 		b.rtpStatsLite.Stop()
 		statsLite = b.rtpStatsLite.ToProto()
 	}
 
 	b.logger.Debugw(
-		"rtp stats",
+		"rtp stats lite",
 		"direction", "upstream",
-		"stats", b.rtpStats,
 		"statsLite", b.rtpStatsLite,
 		"reason", reason,
 	)
 	return
+}
+
+func (b *BufferBase) RestartStatsLite(reason string) {
+	b.Lock()
+	defer b.Unlock()
+
+	b.stopRTPStatsLite(reason)
+	b.setupRTPStatsLite(b.clockRate)
 }
 
 func (b *BufferBase) MarkForRestartStream(reason string) {
