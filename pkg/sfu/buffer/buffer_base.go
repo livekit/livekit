@@ -477,13 +477,14 @@ func (b *BufferBase) stopRTPStats(reason string) (stats *livekit.RTPStats, stats
 	if b.rtpStats != nil {
 		b.rtpStats.Stop()
 		stats = b.rtpStats.ToProto()
+
+		b.logger.Debugw(
+			"rtp stats",
+			"direction", "upstream",
+			"stats", b.rtpStats,
+			"reason", reason,
+		)
 	}
-	b.logger.Debugw(
-		"rtp stats",
-		"direction", "upstream",
-		"stats", b.rtpStats,
-		"reason", reason,
-	)
 
 	statsLite = b.stopRTPStatsLite(reason)
 	return
@@ -493,23 +494,27 @@ func (b *BufferBase) stopRTPStatsLite(reason string) (statsLite *livekit.RTPStat
 	if b.rtpStatsLite != nil {
 		b.rtpStatsLite.Stop()
 		statsLite = b.rtpStatsLite.ToProto()
-	}
 
-	b.logger.Debugw(
-		"rtp stats lite",
-		"direction", "upstream",
-		"statsLite", b.rtpStatsLite,
-		"reason", reason,
-	)
+		b.logger.Debugw(
+			"rtp stats lite",
+			"direction", "upstream",
+			"statsLite", b.rtpStatsLite,
+			"reason", reason,
+		)
+	}
 	return
 }
 
-func (b *BufferBase) RestartStatsLite(reason string) {
+func (b *BufferBase) RestartOOBSequenceNumber(reason string) {
 	b.Lock()
 	defer b.Unlock()
 
 	b.stopRTPStatsLite(reason)
 	b.setupRTPStatsLite(b.clockRate)
+
+	if b.nacker != nil {
+		b.nacker = nack.NewNACKQueue(nack.NackQueueParamsDefault)
+	}
 }
 
 func (b *BufferBase) MarkForRestartStream(reason string) {
