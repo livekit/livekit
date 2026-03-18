@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/livekit-server/pkg/agent"
@@ -42,10 +43,14 @@ import (
 	"github.com/livekit/psrpc"
 )
 
+// AgentSocketUpgrader wraps websocket.Upgrader to handle agent worker WebSocket connections
+// with authentication and registration.
 type AgentSocketUpgrader struct {
 	websocket.Upgrader
 }
 
+// Upgrade validates the incoming HTTP request for WebSocket upgrade eligibility,
+// checks agent permissions, and returns the upgraded connection with worker registration details.
 func (u AgentSocketUpgrader) Upgrade(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -93,6 +98,8 @@ func (u AgentSocketUpgrader) Upgrade(
 	return conn, registration, true
 }
 
+// DispatchAgentWorkerSignal reads a single message from the worker connection and dispatches it
+// to the signal handler. Returns false if the connection is closed or an error occurs.
 func DispatchAgentWorkerSignal(c agent.SignalConn, h agent.WorkerSignalHandler, l logger.Logger) bool {
 	req, _, err := c.ReadWorkerMessage()
 	if err != nil {
@@ -112,6 +119,8 @@ func DispatchAgentWorkerSignal(c agent.SignalConn, h agent.WorkerSignalHandler, 
 	return true
 }
 
+// HandshakeAgentWorker performs the initial handshake with an agent worker over the given
+// signal connection, returning the completed registration upon success.
 func HandshakeAgentWorker(c agent.SignalConn, serverInfo *livekit.ServerInfo, registration agent.WorkerRegistration, l logger.Logger) (r agent.WorkerRegistration, ok bool) {
 	wr := agent.NewWorkerRegisterer(c, serverInfo, registration)
 	if err := c.SetReadDeadline(wr.Deadline()); err != nil {
@@ -128,15 +137,18 @@ func HandshakeAgentWorker(c agent.SignalConn, serverInfo *livekit.ServerInfo, re
 	return wr.Registration(), true
 }
 
+// AgentService provides the HTTP endpoint for agent worker WebSocket connections
+// and delegates handling to AgentHandler.
 type AgentService struct {
 	upgrader AgentSocketUpgrader
 
 	*AgentHandler
 }
 
+// AgentHandler manages agent workers and handles job requests for LiveKit agents.
 type AgentHandler struct {
 	agentServer rpc.AgentInternalServer
-	mu          sync.Mutex
+	mu          sync.RWMutex
 	logger      logger.Logger
 
 	serverInfo  *livekit.ServerInfo
@@ -162,6 +174,8 @@ type workerKey struct {
 	jobType   livekit.JobType
 }
 
+// NewAgentService creates a new AgentService with the given configuration, registering
+// the internal agent RPC server on the provided message bus.
 func NewAgentService(
 	conf *config.Config,
 	currentNode routing.LocalNode,
@@ -195,6 +209,7 @@ func NewAgentService(
 	return s, nil
 }
 
+// ServeHTTP upgrades incoming HTTP requests to WebSocket connections for agent workers.
 func (s *AgentService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if conn, registration, ok := s.upgrader.Upgrade(w, r, nil); ok {
 		s.HandleConnection(r.Context(), NewWSSignalConnection(conn), registration)
@@ -202,6 +217,8 @@ func (s *AgentService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// NewAgentHandler creates a new AgentHandler that manages agent worker lifecycle
+// and job distribution across the provided RPC topics.
 func NewAgentHandler(
 	agentServer rpc.AgentInternalServer,
 	keyProvider auth.KeyProvider,
@@ -225,6 +242,8 @@ func NewAgentHandler(
 	}
 }
 
+// HandleConnection performs the worker handshake, registers the worker, and processes
+// incoming signals until the connection is closed.
 func (h *AgentHandler) HandleConnection(ctx context.Context, conn agent.SignalConn, registration agent.WorkerRegistration) {
 	registration, ok := HandshakeAgentWorker(conn, h.serverInfo, registration, h.logger)
 	if !ok {
@@ -252,7 +271,6 @@ func (h *AgentHandler) registerWorker(w *agent.Worker) {
 	h.workers[w.ID] = w
 
 	key := workerKey{w.AgentName, w.Namespace, w.JobType}
-
 	workers := h.namespaceWorkers[key]
 	created := len(workers) == 0
 
@@ -286,10 +304,9 @@ func (h *AgentHandler) registerWorker(w *agent.Worker) {
 			h.participantKeyCount++
 		}
 
+		// Keep append under lock, but defer sorting until CheckEnabled.
 		h.namespaces = append(h.namespaces, w.Namespace)
-		sort.Strings(h.namespaces)
 		h.agentNames = append(h.agentNames, w.AgentName)
-		sort.Strings(h.agentNames)
 	}
 
 	h.namespaceWorkers[key] = append(workers, w)
@@ -301,11 +318,21 @@ func (h *AgentHandler) registerWorker(w *agent.Worker) {
 		"agentName", w.AgentName,
 		"workerID", w.ID,
 	)
+
 	if created {
-		err := h.agentServer.PublishWorkerRegistered(context.Background(), agent.DefaultHandlerNamespace, &emptypb.Empty{})
-		// TODO: when this happens, should we disconnect the worker so it'll retry?
+		err := h.agentServer.PublishWorkerRegistered(
+			context.Background(),
+			agent.DefaultHandlerNamespace,
+			&emptypb.Empty{},
+		)
 		if err != nil {
-			w.Logger().Errorw("failed to publish worker registered", err, "namespace", w.Namespace, "jobType", w.JobType, "agentName", w.AgentName)
+			w.Logger().Errorw(
+				"failed to publish worker registered",
+				err,
+				"namespace", w.Namespace,
+				"jobType", w.JobType,
+				"agentName", w.AgentName,
+			)
 		}
 	}
 }
@@ -375,6 +402,8 @@ func (h *AgentHandler) deregisterJob(jobID livekit.JobID) {
 	// TODO update dispatch state
 }
 
+// JobRequest selects an available worker for the given job using weighted load balancing
+// and attempts assignment, retrying with other workers on transient failures.
 func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.JobRequestResponse, error) {
 	logger := h.logger.WithUnlikelyValues(
 		"jobID", job.Id,
@@ -428,9 +457,11 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 	}
 }
 
+// JobRequestAffinity returns a score indicating this node's capacity to handle the given job,
+// based on the aggregate available capacity of matching workers.
 func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job) float32 {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 
 	var affinity float32
 	for _, w := range h.workers {
@@ -446,6 +477,7 @@ func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 	return affinity
 }
 
+// JobTerminate terminates a running job on the worker that owns it, returning the final job state.
 func (h *AgentHandler) JobTerminate(ctx context.Context, req *rpc.JobTerminateRequest) (*rpc.JobTerminateResponse, error) {
 	h.mu.Lock()
 	w := h.jobToWorker[livekit.JobID(req.JobId)]
@@ -465,21 +497,35 @@ func (h *AgentHandler) JobTerminate(ctx context.Context, req *rpc.JobTerminateRe
 	}, nil
 }
 
+// CheckEnabled returns the enabled namespaces, agent names, and job types for the agent handler.
 func (h *AgentHandler) CheckEnabled(ctx context.Context, req *rpc.CheckEnabledRequest) (*rpc.CheckEnabledResponse, error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	h.mu.RLock()
+	namespaces := slices.Clone(h.namespaces)
+	agentNames := slices.Clone(h.agentNames)
+
+	roomEnabled := h.roomKeyCount > 0
+	publisherEnabled := h.publisherKeyCount > 0
+	participantEnabled := h.participantKeyCount > 0
+	h.mu.RUnlock()
+
+	sort.Strings(namespaces)
+	sort.Strings(agentNames)
+
+	namespaces = slices.Compact(namespaces)
+	agentNames = slices.Compact(agentNames)
 
 	// This doesn't return the full agentName -> namespace mapping, which can cause some unnecessary RPC.
 	// namespaces are however deprecated.
 	return &rpc.CheckEnabledResponse{
-		Namespaces:         slices.Compact(slices.Clone(h.namespaces)),
-		AgentNames:         slices.Compact(slices.Clone(h.agentNames)),
-		RoomEnabled:        h.roomKeyCount != 0,
-		PublisherEnabled:   h.publisherKeyCount != 0,
-		ParticipantEnabled: h.participantKeyCount != 0,
+		Namespaces:         namespaces,
+		AgentNames:         agentNames,
+		RoomEnabled:        roomEnabled,
+		PublisherEnabled:   publisherEnabled,
+		ParticipantEnabled: participantEnabled,
 	}, nil
 }
 
+// DrainConnections closes all worker connections with a specified interval between each closure.
 func (h *AgentHandler) DrainConnections(interval time.Duration) {
 	// jitter drain start
 	time.Sleep(time.Duration(rand.Int63n(int64(interval))))
@@ -487,10 +533,11 @@ func (h *AgentHandler) DrainConnections(interval time.Duration) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
 
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	h.mu.RLock()
+	workers := maps.Values(h.workers)
+	h.mu.RUnlock()
 
-	for _, w := range h.workers {
+	for _, w := range workers {
 		w.Close()
 		<-t.C
 	}
