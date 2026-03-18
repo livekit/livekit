@@ -237,7 +237,7 @@ type Worker struct {
 	cancel context.CancelFunc
 	closed chan struct{}
 
-	mu     sync.Mutex
+	mu     sync.RWMutex
 	load   float32
 	status livekit.WorkerStatus
 
@@ -281,14 +281,14 @@ func (w *Worker) sendRequest(req *livekit.ServerMessage) {
 }
 
 func (w *Worker) Status() livekit.WorkerStatus {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	return w.status
 }
 
 func (w *Worker) Load() float32 {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	return w.load
 }
 
@@ -297,8 +297,8 @@ func (w *Worker) Logger() logger.Logger {
 }
 
 func (w *Worker) RunningJobs() map[livekit.JobID]*livekit.Job {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	jobs := make(map[livekit.JobID]*livekit.Job, len(w.runningJobs))
 	for k, v := range w.runningJobs {
 		jobs[k] = v
@@ -307,14 +307,14 @@ func (w *Worker) RunningJobs() map[livekit.JobID]*livekit.Job {
 }
 
 func (w *Worker) RunningJobCount() int {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	return len(w.runningJobs)
 }
 
 func (w *Worker) GetJobState(jobID livekit.JobID) (*livekit.JobState, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	j, ok := w.runningJobs[jobID]
 	if !ok {
 		return nil, ErrJobNotFound
@@ -418,9 +418,9 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobS
 }
 
 func (w *Worker) TerminateJob(jobID livekit.JobID, reason rpc.JobTerminateReason) (*livekit.JobState, error) {
-	w.mu.Lock()
+	w.mu.RLock()
 	_, ok := w.runningJobs[jobID]
-	w.mu.Unlock()
+	w.mu.RUnlock()
 
 	if !ok {
 		return nil, ErrJobNotFound
