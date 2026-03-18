@@ -152,10 +152,12 @@ func TestCreateDispatch_WithMetadata(t *testing.T) {
 	require.Equal(t, expected, resp)
 
 	// verify the dispatch passed to client has the metadata
-	_, _, dispatch, _ := svc.agentClient.CreateDispatchArgsForCall(0)
-	require.Equal(t, "some-metadata", dispatch.Metadata)
+	_, topic, dispatch, _ := svc.agentClient.CreateDispatchArgsForCall(0)
+	require.NotEmpty(t, topic)
 	require.Equal(t, "test-agent", dispatch.AgentName)
 	require.Equal(t, "testroom", dispatch.Room)
+	require.NotEmpty(t, dispatch.Id)
+	require.Equal(t, "some-metadata", dispatch.Metadata)
 }
 
 func TestCreateDispatch_AutoCreateEnabled(t *testing.T) {
