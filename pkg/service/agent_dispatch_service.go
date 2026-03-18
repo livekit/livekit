@@ -24,8 +24,10 @@ import (
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
+	"github.com/twitchtv/twirp"
 )
 
+// AgentDispatchService handles agent dispatch operations for rooms.
 type AgentDispatchService struct {
 	agentDispatchClient rpc.TypedAgentDispatchInternalClient
 	topicFormatter      rpc.TopicFormatter
@@ -33,6 +35,7 @@ type AgentDispatchService struct {
 	router              routing.MessageRouter
 }
 
+// NewAgentDispatchService creates a new AgentDispatchService instance.
 func NewAgentDispatchService(
 	agentDispatchClient rpc.TypedAgentDispatchInternalClient,
 	topicFormatter rpc.TopicFormatter,
@@ -47,7 +50,18 @@ func NewAgentDispatchService(
 	}
 }
 
+// CreateDispatch creates a new agent dispatch request for the specified room.
 func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit.CreateAgentDispatchRequest) (*livekit.AgentDispatch, error) {
+	if req == nil {
+		return nil, twirp.InvalidArgumentError("request", "CreateDispatchrequest is required")
+	}
+	if req.Room == "" {
+		return nil, twirp.InvalidArgumentError("room", "room is required")
+	}
+	if req.AgentName == "" {
+		return nil, twirp.InvalidArgumentError("agent_name", "agent_name is required")
+	}
+
 	AppendLogFields(ctx, "room", req.Room, "request", logger.Proto(redactCreateAgentDispatchRequest(req)))
 	err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room))
 	if err != nil {
@@ -75,7 +89,15 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 	return ag.agentDispatchClient.CreateDispatch(ctx, ag.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), dispatch)
 }
 
+// DeleteDispatch deletes an agent dispatch request for the specified room.
 func (ag *AgentDispatchService) DeleteDispatch(ctx context.Context, req *livekit.DeleteAgentDispatchRequest) (*livekit.AgentDispatch, error) {
+	if req == nil {
+		return nil, twirp.InvalidArgumentError("request", "DeleteDispatch request is required")
+	}
+	if req.Room == "" {
+		return nil, twirp.InvalidArgumentError("room", "room is required")
+	}
+
 	AppendLogFields(ctx, "room", req.Room, "request", logger.Proto(req))
 	err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room))
 	if err != nil {
@@ -85,7 +107,15 @@ func (ag *AgentDispatchService) DeleteDispatch(ctx context.Context, req *livekit
 	return ag.agentDispatchClient.DeleteDispatch(ctx, ag.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
 }
 
+// ListDispatch lists agent dispatch requests for the specified room.
 func (ag *AgentDispatchService) ListDispatch(ctx context.Context, req *livekit.ListAgentDispatchRequest) (*livekit.ListAgentDispatchResponse, error) {
+	if req == nil {
+		return nil, twirp.InvalidArgumentError("request", "ListDispatch request is required")
+	}
+	if req.Room == "" {
+		return nil, twirp.InvalidArgumentError("room", "room is required")
+	}
+
 	AppendLogFields(ctx, "room", req.Room, "request", logger.Proto(req))
 	err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room))
 	if err != nil {
