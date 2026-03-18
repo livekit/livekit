@@ -22,6 +22,7 @@ import (
 	"github.com/pion/webrtc/v4"
 
 	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/observability/roomobs"
@@ -31,7 +32,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 
@@ -376,6 +376,7 @@ type LocalParticipant interface {
 	Participant
 
 	TelemetryGuard() *telemetry.ReferenceGuard
+	GetTelemetryListener() ParticipantTelemetryListener
 
 	// getters
 	GetCountry() string
@@ -386,7 +387,7 @@ type LocalParticipant interface {
 	GetAdaptiveStream() bool
 	ProtocolVersion() ProtocolVersion
 	SupportsSyncStreamID() bool
-	SupportsTransceiverReuse() bool
+	SupportsTransceiverReuse(mt MediaTrack) bool
 	IsUsingSinglePeerConnection() bool
 	IsReady() bool
 	ActiveAt() time.Time
@@ -405,7 +406,7 @@ type LocalParticipant interface {
 	SupportsMoving() error
 	GetLastReliableSequence(migrateOut bool) uint32
 
-	SetResponseSink(sink routing.MessageSink)
+	SwapResponseSink(sink routing.MessageSink, reason SignallingCloseReason)
 	GetResponseSink() routing.MessageSink
 	CloseSignalConnection(reason SignallingCloseReason)
 	UpdateLastSeenSignal()
@@ -638,6 +639,61 @@ func (*NullLocalParticipantListener) OnSimulateScenario(LocalParticipant, *livek
 	return nil
 }
 func (*NullLocalParticipantListener) OnLeave(LocalParticipant, ParticipantCloseReason) {}
+
+// ---------------------------------------------
+
+//counterfeiter:generate . ParticipantTelemetryListener
+type ParticipantTelemetryListener interface {
+	OnTrackPublishRequested(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo)
+	OnTrackPublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool)
+	OnTrackUnpublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool)
+	OnTrackSubscribeRequested(pID livekit.ParticipantID, ti *livekit.TrackInfo)
+	OnTrackSubscribed(pID livekit.ParticipantID, ti *livekit.TrackInfo, publisherInfo *livekit.ParticipantInfo, shouldSendEvent bool)
+	OnTrackUnsubscribed(pID livekit.ParticipantID, ti *livekit.TrackInfo, shouldSendEvent bool)
+	OnTrackSubscribeFailed(pID livekit.ParticipantID, ti livekit.TrackID, err error, isUserError bool)
+	OnTrackMuted(pID livekit.ParticipantID, ti *livekit.TrackInfo)
+	OnTrackUnmuted(pID livekit.ParticipantID, ti *livekit.TrackInfo)
+	OnTrackPublishedUpdate(pID livekit.ParticipantID, ti *livekit.TrackInfo)
+	OnTrackMaxSubscribedVideoQuality(pID livekit.ParticipantID, ti *livekit.TrackInfo, mime mime.MimeType, maxQuality livekit.VideoQuality)
+	OnTrackPublishRTPStats(pID livekit.ParticipantID, trackID livekit.TrackID, mimeType mime.MimeType, layer int, stats *livekit.RTPStats)
+	OnTrackSubscribeRTPStats(pID livekit.ParticipantID, trackID livekit.TrackID, mimeType mime.MimeType, stats *livekit.RTPStats)
+
+	OnTrackStats(key telemetry.StatsKey, stat *livekit.AnalyticsStat)
+}
+
+var _ ParticipantTelemetryListener = (*NullParticipantTelemetryListener)(nil)
+
+type NullParticipantTelemetryListener struct{}
+
+func (NullParticipantTelemetryListener) OnTrackPublishRequested(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo) {
+}
+func (NullParticipantTelemetryListener) OnTrackPublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool) {
+}
+func (NullParticipantTelemetryListener) OnTrackUnpublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool) {
+}
+func (NullParticipantTelemetryListener) OnTrackSubscribeRequested(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
+}
+func (NullParticipantTelemetryListener) OnTrackSubscribed(pID livekit.ParticipantID, ti *livekit.TrackInfo, publisherInfo *livekit.ParticipantInfo, shouldSendEvent bool) {
+}
+func (NullParticipantTelemetryListener) OnTrackUnsubscribed(pID livekit.ParticipantID, ti *livekit.TrackInfo, shouldSendEvent bool) {
+}
+func (NullParticipantTelemetryListener) OnTrackSubscribeFailed(pID livekit.ParticipantID, ti livekit.TrackID, err error, isUserError bool) {
+}
+func (NullParticipantTelemetryListener) OnTrackMuted(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
+}
+func (NullParticipantTelemetryListener) OnTrackUnmuted(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
+}
+func (NullParticipantTelemetryListener) OnTrackPublishedUpdate(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
+}
+func (NullParticipantTelemetryListener) OnTrackMaxSubscribedVideoQuality(pID livekit.ParticipantID, ti *livekit.TrackInfo, mime mime.MimeType, maxQuality livekit.VideoQuality) {
+}
+func (NullParticipantTelemetryListener) OnTrackPublishRTPStats(pID livekit.ParticipantID, trackID livekit.TrackID, mimeType mime.MimeType, layer int, stats *livekit.RTPStats) {
+}
+func (NullParticipantTelemetryListener) OnTrackSubscribeRTPStats(pID livekit.ParticipantID, trackID livekit.TrackID, mimeType mime.MimeType, stats *livekit.RTPStats) {
+}
+
+func (NullParticipantTelemetryListener) OnTrackStats(key telemetry.StatsKey, stat *livekit.AnalyticsStat) {
+}
 
 // ---------------------------------------------
 

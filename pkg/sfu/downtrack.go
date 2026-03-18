@@ -28,11 +28,12 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/sdp/v3"
-	"github.com/pion/transport/v3/packetio"
+	"github.com/pion/transport/v4/packetio"
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
 	"go.uber.org/zap/zapcore"
 
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/mono"
@@ -41,7 +42,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
-	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
@@ -70,7 +70,7 @@ type TrackSender interface {
 	) error
 	Resync()
 	SetReceiver(TrackReceiver)
-	ReceiverRestart()
+	ReceiverRestart(TrackReceiver)
 }
 
 // -------------------------------------------------------------------
@@ -137,6 +137,56 @@ var (
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+
+	// PCMU (G.711 µ-law) silence frame - 0xff represents zero amplitude
+	// 160 samples = 20ms at 8kHz sample rate
+	PCMUSilenceFrame = []byte{
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+	}
+
+	// PCMA (G.711 A-law) silence frame - 0xd5 represents zero amplitude
+	// 160 samples = 20ms at 8kHz sample rate
+	PCMASilenceFrame = []byte{
+		0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5,
+		0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5,
+		0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5,
+		0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5,
+		0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5,
+		0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5,
+		0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5,
+		0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5,
+		0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5,
+		0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5,
+		0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5,
+		0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5,
+		0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5,
+		0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5,
+		0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5,
+		0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5,
+		0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5,
+		0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5,
+		0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5,
+		0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5, 0xd5,
 	}
 
 	dummyAbsSendTimeExt, _ = rtp.NewAbsSendTimeExtension(mono.Now()).Marshal()
@@ -394,21 +444,14 @@ func NewDownTrack(params DownTrackParams) (*DownTrack, error) {
 	} else {
 		mdCacheSize, mdCacheSizeRTX = 8192, 1024
 	}
-	d.rtpStats = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{
-		ClockRate: codec.ClockRate,
-		Logger: d.params.Logger.WithValues(
-			"stream", "primary",
-		),
-	}, mdCacheSize)
+	d.rtpStats = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{}, mdCacheSize)
+	// clock rate will be set on bind or codec change with matching codec's clock rate
+	d.rtpStats.SetLogger(d.params.Logger.WithValues("stream", "primary"))
 	d.deltaStatsSenderSnapshotId = d.rtpStats.NewSenderSnapshotId()
 
-	d.rtpStatsRTX = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{
-		ClockRate: codec.ClockRate,
-		IsRTX:     true,
-		Logger: d.params.Logger.WithValues(
-			"stream", "rtx",
-		),
-	}, mdCacheSizeRTX)
+	d.rtpStatsRTX = rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{IsRTX: true}, mdCacheSizeRTX)
+	// clock rate will be set on bind or codec change with matching codec's clock rate
+	d.rtpStatsRTX.SetLogger(d.params.Logger.WithValues("stream", "rtx"))
 	d.deltaStatsRTXSenderSnapshotId = d.rtpStatsRTX.NewSenderSnapshotId()
 
 	d.forwarder = NewForwarder(
@@ -599,6 +642,9 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.sequencer = newSequencer(d.params.MaxTrack, d.kind == webrtc.RTPCodecTypeVideo, d.params.Logger)
 
 		d.codec.Store(codec.RTPCodecCapability)
+		d.rtpStats.SetClockRate(codec.RTPCodecCapability.ClockRate)
+		d.rtpStatsRTX.SetClockRate(codec.RTPCodecCapability.ClockRate)
+
 		if d.onBinding != nil {
 			d.onBinding(nil)
 		}
@@ -699,7 +745,11 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 
 	d.payloadType.Store(uint32(codec.PayloadType))
 	d.payloadTypeRTX.Store(uint32(utils.FindRTXPayloadType(codec.PayloadType, d.negotiatedCodecParameters)))
+
 	d.codec.Store(codec.RTPCodecCapability)
+	d.rtpStats.SetClockRate(codec.RTPCodecCapability.ClockRate)
+	d.rtpStatsRTX.SetClockRate(codec.RTPCodecCapability.ClockRate)
+
 	isFECEnabled := strings.Contains(strings.ToLower(codec.SDPFmtpLine), "fec")
 	d.bindLock.Unlock()
 
@@ -814,17 +864,19 @@ func (d *DownTrack) SetReceiver(r TrackReceiver) {
 
 // Sets RTP header extensions for this track
 func (d *DownTrack) setRTPHeaderExtensions() {
+	isBWEEnabled := false
+	bweType := bwe.BWETypeNone
 	sal := d.getStreamAllocatorListener()
-	if sal == nil {
-		return
+	if sal != nil {
+		isBWEEnabled = sal.IsBWEEnabled(d)
+		bweType = sal.BWEType()
 	}
-	isBWEEnabled := sal.IsBWEEnabled(d)
-	bweType := sal.BWEType()
 
 	tr := d.transceiver.Load()
 	if tr == nil {
 		return
 	}
+
 	var extensions []webrtc.RTPHeaderExtensionParameter
 	if sender := tr.Sender(); sender != nil {
 		extensions = sender.GetParameters().HeaderExtensions
@@ -835,22 +887,51 @@ func (d *DownTrack) setRTPHeaderExtensions() {
 	for _, ext := range extensions {
 		switch ext.URI {
 		case sdp.ABSSendTimeURI:
-			if isBWEEnabled && bweType == bwe.BWETypeRemote {
-				d.absSendTimeExtID = ext.ID
-			} else {
-				d.absSendTimeExtID = 0
+			if sal != nil {
+				if isBWEEnabled && bweType == bwe.BWETypeRemote {
+					if d.absSendTimeExtID != 0 && d.absSendTimeExtID != ext.ID {
+						d.params.Logger.Infow("absSendTimeExtID mismatch", "current", d.absSendTimeExtID, "negotiated", ext.ID)
+					}
+					d.absSendTimeExtID = ext.ID
+				} else {
+					if d.absSendTimeExtID != 0 {
+						d.params.Logger.Infow("absSendTimeExtID disabled unexpectedly", "negotiated", ext.ID)
+					}
+					d.absSendTimeExtID = 0
+				}
 			}
+
 		case dd.ExtensionURI:
-			d.dependencyDescriptorExtID = ext.ID
-		case pd.PlayoutDelayURI:
-			d.playoutDelayExtID = ext.ID
-		case sdp.TransportCCURI:
-			if isBWEEnabled && bweType == bwe.BWETypeSendSide {
-				d.transportWideExtID = ext.ID
-			} else {
-				d.transportWideExtID = 0
+			if d.dependencyDescriptorExtID != 0 && d.dependencyDescriptorExtID != ext.ID {
+				d.params.Logger.Infow("dependencyDescriptorExtID mismatch", "current", d.dependencyDescriptorExtID, "negotiated", ext.ID)
 			}
+			d.dependencyDescriptorExtID = ext.ID
+
+		case pd.PlayoutDelayURI:
+			if d.playoutDelayExtID != 0 && d.playoutDelayExtID != ext.ID {
+				d.params.Logger.Infow("playoutDelayExtID mismatch", "current", d.playoutDelayExtID, "negotiated", ext.ID)
+			}
+			d.playoutDelayExtID = ext.ID
+
+		case sdp.TransportCCURI:
+			if sal != nil {
+				if isBWEEnabled && bweType == bwe.BWETypeSendSide {
+					if d.transportWideExtID != 0 && d.transportWideExtID != ext.ID {
+						d.params.Logger.Infow("transportWideExtID mismatch", "current", d.transportWideExtID, "negotiated", ext.ID)
+					}
+					d.transportWideExtID = ext.ID
+				} else {
+					if d.transportWideExtID != 0 {
+						d.params.Logger.Infow("transportWideExtID disabled unexpectedly", "negotiated", ext.ID)
+					}
+					d.transportWideExtID = 0
+				}
+			}
+
 		case act.AbsCaptureTimeURI:
+			if d.absCaptureTimeExtID != 0 && d.absCaptureTimeExtID != ext.ID {
+				d.params.Logger.Infow("absCaptureTimeExtID mismatch", "current", d.absCaptureTimeExtID, "negotiated", ext.ID)
+			}
 			d.absCaptureTimeExtID = ext.ID
 		}
 	}
@@ -1635,14 +1716,18 @@ func (d *DownTrack) Resync() {
 	d.forwarder.Resync()
 }
 
-func (d *DownTrack) ReceiverRestart() {
+func (d *DownTrack) ReceiverRestart(rcvr TrackReceiver) {
+	if rcvr.Mime() != d.Receiver().Mime() {
+		d.params.Logger.Infow("upstream receiver restart - skipped", "mime", d.Receiver().Mime().String(), "newMime", rcvr.Mime().String())
+		return
+	}
+
 	d.bindLock.Lock()
 	codec := d.codec.Load().(webrtc.RTPCodecCapability)
 	d.bindLock.Unlock()
 
-	d.params.Logger.Infow("upstream receiver restart")
-
 	receiver := d.Receiver()
+	d.params.Logger.Infow("upstream receiver restart", "mime", receiver.Mime().String())
 	d.forwarder.Restart()
 	d.forwarder.DetermineCodec(codec, receiver.HeaderExtensions(), receiver.VideoLayerMode())
 }
@@ -1693,9 +1778,13 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 		var getBlankFrame func(bool) ([]byte, error)
 		switch mimeType {
 		case mime.MimeTypeOpus:
-			getBlankFrame = d.getOpusBlankFrame
+			getBlankFrame = d.getAudioBlankFrameFunc(OpusSilenceFrame)
 		case mime.MimeTypeRED:
 			getBlankFrame = d.getOpusRedBlankFrame
+		case mime.MimeTypePCMU:
+			getBlankFrame = d.getAudioBlankFrameFunc(PCMUSilenceFrame)
+		case mime.MimeTypePCMA:
+			getBlankFrame = d.getAudioBlankFrameFunc(PCMASilenceFrame)
 		case mime.MimeTypeVP8:
 			getBlankFrame = d.getVP8BlankFrame
 		case mime.MimeTypeH264:
@@ -1706,7 +1795,8 @@ func (d *DownTrack) writeBlankFrameRTP(duration float32, generation uint32) chan
 		}
 
 		frameRate := uint32(30)
-		if mimeType == mime.MimeTypeOpus || mimeType == mime.MimeTypeRED {
+		if mimeType == mime.MimeTypeOpus || mimeType == mime.MimeTypeRED ||
+			mimeType == mime.MimeTypePCMU || mimeType == mime.MimeTypePCMA {
 			frameRate = 50
 		}
 
@@ -1797,15 +1887,17 @@ func (d *DownTrack) maybeAddTrailer(buf []byte) int {
 	return len(d.params.Trailer)
 }
 
-func (d *DownTrack) getOpusBlankFrame(_frameEndNeeded bool) ([]byte, error) {
+func (d *DownTrack) getAudioBlankFrameFunc(silentPayload []byte) func(_frameEndNeeded bool) ([]byte, error) {
 	// silence frame
 	// Used shortly after muting to ensure residual noise does not keep
 	// generating noise at the decoder after the stream is stopped
 	// i. e. comfort noise generation actually not producing something comfortable.
-	payload := make([]byte, 1000)
-	copy(payload[0:], OpusSilenceFrame)
-	trailerLen := d.maybeAddTrailer(payload[len(OpusSilenceFrame):])
-	return payload[:len(OpusSilenceFrame)+trailerLen], nil
+	return func(_frameEndNeeded bool) ([]byte, error) {
+		payload := make([]byte, 1000)
+		copy(payload[0:], silentPayload)
+		trailerLen := d.maybeAddTrailer(payload[len(silentPayload):])
+		return payload[:len(silentPayload)+trailerLen], nil
+	}
 }
 
 func (d *DownTrack) getOpusRedBlankFrame(_frameEndNeeded bool) ([]byte, error) {
@@ -2439,8 +2531,8 @@ func (d *DownTrack) sendPaddingOnMute() {
 
 	if d.kind == webrtc.RTPCodecTypeVideo {
 		d.sendPaddingOnMuteForVideo()
-	} else if d.Mime() == mime.MimeTypeOpus {
-		d.sendSilentFrameOnMuteForOpus()
+	} else {
+		d.sendSilentFrameOnMuteForAudio()
 	}
 }
 
@@ -2458,7 +2550,29 @@ func (d *DownTrack) sendPaddingOnMuteForVideo() {
 	}
 }
 
-func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
+func (d *DownTrack) sendSilentFrameOnMuteForAudio() {
+	var (
+		payload []byte
+		err     error
+	)
+	switch d.Mime() {
+	case mime.MimeTypeOpus:
+		payload, err = d.getAudioBlankFrameFunc(OpusSilenceFrame)(false)
+	case mime.MimeTypeRED:
+		payload, err = d.getOpusRedBlankFrame(false)
+	case mime.MimeTypePCMU:
+		payload, err = d.getAudioBlankFrameFunc(PCMUSilenceFrame)(false)
+	case mime.MimeTypePCMA:
+		payload, err = d.getAudioBlankFrameFunc(PCMASilenceFrame)(false)
+	default:
+		d.params.Logger.Infow("unsupported mime type for silent frame on mute", "mimeType", d.Mime())
+		return
+	}
+	if err != nil {
+		d.params.Logger.Warnw("could not get blank frame", err)
+		return
+	}
+
 	frameRate := uint32(50)
 	frameDuration := time.Duration(1000/frameRate) * time.Millisecond
 	numFrames := frameRate * uint32(maxPaddingOnMuteDuration/time.Second)
@@ -2487,13 +2601,6 @@ func (d *DownTrack) sendSilentFrameOnMuteForOpus() {
 				SSRC:           d.ssrc,
 			}
 			d.addDummyExtensions(hdr)
-
-			payload, err := d.getOpusBlankFrame(false)
-			if err != nil {
-				d.params.Logger.Warnw("could not get blank frame", err)
-				return
-			}
-
 			headerSize := hdr.MarshalSize()
 			d.rtpStats.Update(
 				mono.UnixNano(),

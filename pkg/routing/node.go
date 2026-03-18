@@ -48,7 +48,7 @@ type LocalNodeImpl struct {
 
 func NewLocalNode(conf *config.Config) (*LocalNodeImpl, error) {
 	nodeID := guid.New(utils.NodePrefix)
-	if conf != nil && conf.RTC.NodeIP == "" {
+	if conf != nil && conf.RTC.NodeIP.IsEmpty() {
 		return nil, ErrIPNotSet
 	}
 	nowUnix := time.Now().Unix()
@@ -65,7 +65,7 @@ func NewLocalNode(conf *config.Config) (*LocalNodeImpl, error) {
 	}
 	var nsc *config.NodeStatsConfig
 	if conf != nil {
-		l.node.Ip = conf.RTC.NodeIP
+		l.node.Ip = conf.RTC.NodeIP.PrimaryIP()
 		l.node.Region = conf.Region
 
 		nsc = &conf.NodeStats

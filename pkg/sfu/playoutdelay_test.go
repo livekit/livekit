@@ -26,7 +26,9 @@ import (
 )
 
 func TestPlayoutDelay(t *testing.T) {
-	stats := rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{ClockRate: 900000, Logger: logger.GetLogger()}, 128)
+	stats := rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{}, 128)
+	stats.SetClockRate(90000)
+
 	c, err := NewPlayoutDelayController(100, 120, logger.GetLogger(), stats)
 	require.NoError(t, err)
 

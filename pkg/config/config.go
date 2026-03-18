@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,20 +27,21 @@ import (
 	"github.com/urfave/cli/v3"
 	"gopkg.in/yaml.v3"
 
-	"github.com/livekit/livekit-server/pkg/agent"
-	"github.com/livekit/livekit-server/pkg/metric"
-	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/sfu/bwe/remotebwe"
-	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
-	"github.com/livekit/livekit-server/pkg/sfu/mime"
-	"github.com/livekit/livekit-server/pkg/sfu/pacer"
-	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	redisLiveKit "github.com/livekit/protocol/redis"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/webhook"
+
+	"github.com/livekit/livekit-server/pkg/agent"
+	"github.com/livekit/livekit-server/pkg/metric"
+	"github.com/livekit/livekit-server/pkg/sfu"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe/remotebwe"
+	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
+	"github.com/livekit/livekit-server/pkg/sfu/pacer"
+	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 )
 
 const (
@@ -81,6 +83,7 @@ type Config struct {
 	Development bool `yaml:"development,omitempty"`
 
 	Metric metric.MetricConfig `yaml:"metric,omitempty"`
+	Trace  TracingConfig       `yaml:"trace,omitempty"`
 
 	NodeStats NodeStatsConfig `yaml:"node_stats,omitempty"`
 
@@ -317,6 +320,13 @@ type ForwardStatsConfig struct {
 	SummaryInterval time.Duration `yaml:"summary_interval,omitempty"`
 	ReportInterval  time.Duration `yaml:"report_interval,omitempty"`
 	ReportWindow    time.Duration `yaml:"report_window,omitempty"`
+}
+
+type TracingConfig struct {
+	// JaegerURL configures Jaeger as a global tracer.
+	//
+	// The following formats are supported: <hostname>, <host>:<port>, http(s)://<host>/<path>
+	JaegerURL string `yaml:"jaeger_url,omitempty"`
 }
 
 func DefaultAPIConfig() APIConfig {
@@ -609,9 +619,9 @@ func (conf *Config) ValidateKeys() error {
 }
 
 func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error) {
-	blankConfig := &Config{}
+	defaultConfig := &DefaultConfig
 	flags := make([]cli.Flag, 0)
-	for name, value := range blankConfig.ToCLIFlagNames(existingFlags) {
+	for name, value := range (defaultConfig).ToCLIFlagNames(existingFlags) {
 		kind := value.Kind()
 		if kind == reflect.Ptr {
 			kind = value.Type().Elem().Kind()
@@ -619,63 +629,72 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 
 		var flag cli.Flag
 		envVar := fmt.Sprintf("LIVEKIT_%s", strings.ToUpper(strings.Replace(name, ".", "_", -1)))
+		defaultText := cliDefaultText(value)
 
 		switch kind {
 		case reflect.Bool:
 			flag = &cli.BoolFlag{
-				Name:    name,
-				Sources: cli.EnvVars(envVar),
-				Usage:   generatedCLIFlagUsage,
-				Hidden:  hidden,
+				Name:        name,
+				Sources:     cli.EnvVars(envVar),
+				Usage:       generatedCLIFlagUsage,
+				DefaultText: defaultText,
+				Hidden:      hidden,
 			}
 		case reflect.String:
 			flag = &cli.StringFlag{
-				Name:    name,
-				Sources: cli.EnvVars(envVar),
-				Usage:   generatedCLIFlagUsage,
-				Hidden:  hidden,
+				Name:        name,
+				Sources:     cli.EnvVars(envVar),
+				Usage:       generatedCLIFlagUsage,
+				DefaultText: defaultText,
+				Hidden:      hidden,
 			}
 		case reflect.Int, reflect.Int32:
 			flag = &cli.IntFlag{
-				Name:    name,
-				Sources: cli.EnvVars(envVar),
-				Usage:   generatedCLIFlagUsage,
-				Hidden:  hidden,
+				Name:        name,
+				Sources:     cli.EnvVars(envVar),
+				Usage:       generatedCLIFlagUsage,
+				DefaultText: defaultText,
+				Hidden:      hidden,
 			}
 		case reflect.Int64:
 			flag = &cli.Int64Flag{
-				Name:    name,
-				Sources: cli.EnvVars(envVar),
-				Usage:   generatedCLIFlagUsage,
-				Hidden:  hidden,
+				Name:        name,
+				Sources:     cli.EnvVars(envVar),
+				Usage:       generatedCLIFlagUsage,
+				DefaultText: defaultText,
+				Hidden:      hidden,
 			}
 		case reflect.Uint8, reflect.Uint16, reflect.Uint32:
 			flag = &cli.UintFlag{
-				Name:    name,
-				Sources: cli.EnvVars(envVar),
-				Usage:   generatedCLIFlagUsage,
-				Hidden:  hidden,
+				Name:        name,
+				Sources:     cli.EnvVars(envVar),
+				Usage:       generatedCLIFlagUsage,
+				DefaultText: defaultText,
+				Hidden:      hidden,
 			}
 		case reflect.Uint64:
 			flag = &cli.Uint64Flag{
-				Name:    name,
-				Sources: cli.EnvVars(envVar),
-				Usage:   generatedCLIFlagUsage,
-				Hidden:  hidden,
+				Name:        name,
+				Sources:     cli.EnvVars(envVar),
+				Usage:       generatedCLIFlagUsage,
+				DefaultText: defaultText,
+				Hidden:      hidden,
 			}
 		case reflect.Float32:
 			flag = &cli.Float64Flag{
-				Name:    name,
-				Sources: cli.EnvVars(envVar),
-				Usage:   generatedCLIFlagUsage,
-				Hidden:  hidden,
+				Name:        name,
+				Sources:     cli.EnvVars(envVar),
+				Usage:       generatedCLIFlagUsage,
+				DefaultText: defaultText,
+				Hidden:      hidden,
 			}
 		case reflect.Float64:
 			flag = &cli.Float64Flag{
-				Name:    name,
-				Sources: cli.EnvVars(envVar),
-				Usage:   generatedCLIFlagUsage,
-				Hidden:  hidden,
+				Name:        name,
+				Sources:     cli.EnvVars(envVar),
+				Usage:       generatedCLIFlagUsage,
+				DefaultText: defaultText,
+				Hidden:      hidden,
 			}
 		case reflect.Slice:
 			// TODO
@@ -694,6 +713,33 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 	}
 
 	return flags, nil
+}
+
+func cliDefaultText(value reflect.Value) string {
+	if value.Kind() == reflect.Ptr {
+		if value.IsNil() {
+			return ""
+		}
+		value = value.Elem()
+	}
+
+	switch value.Kind() {
+	case reflect.Bool:
+		return strconv.FormatBool(value.Bool())
+	case reflect.String:
+		return value.String()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		if value.Type() == reflect.TypeOf(time.Duration(0)) {
+			return value.Interface().(time.Duration).String()
+		}
+		return strconv.FormatInt(value.Int(), 10)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return strconv.FormatUint(value.Uint(), 10)
+	case reflect.Float32, reflect.Float64:
+		return strconv.FormatFloat(value.Float(), 'f', -1, 64)
+	default:
+		return ""
+	}
 }
 
 func (conf *Config) updateFromCLI(c *cli.Command, baseFlags []cli.Flag) error {
@@ -750,7 +796,7 @@ func (conf *Config) updateFromCLI(c *cli.Command, baseFlags []cli.Flag) error {
 		conf.TURN.KeyFile = c.String("turn-key")
 	}
 	if c.IsSet("node-ip") {
-		conf.RTC.NodeIP = c.String("node-ip")
+		conf.RTC.NodeIP.UnmarshalString(c.String("node-ip"))
 	}
 	if c.IsSet("udp-port") {
 		conf.RTC.UDPPort.UnmarshalString(c.String("udp-port"))

@@ -45,8 +45,8 @@ func GenerateRawDataPackets(handle uint16, seqNum uint16, frameNum uint16, numFr
 			packet := &Packet{
 				Header: Header{
 					Version:        0,
-					IsFirstOfFrame: packetIdx == 0,
-					IsLastOfFrame:  packetIdx == packetsPerFrame-1,
+					IsStartOfFrame: packetIdx == 0,
+					IsFinalOfFrame: packetIdx == packetsPerFrame-1,
 					Handle:         handle,
 					SequenceNumber: seqNum,
 					FrameNumber:    frameNum,

@@ -26,7 +26,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
-	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -83,8 +82,8 @@ func TestSubscribe(t *testing.T) {
 		require.Equal(t, "pubID", string(sm.GetSubscribedParticipants()[0]))
 
 		// ensure telemetry events are sent
-		tm := sm.params.Telemetry.(*telemetryfakes.FakeTelemetryService)
-		require.Equal(t, 1, tm.TrackSubscribeRequestedCallCount())
+		tl := sm.params.TelemetryListener.(*typesfakes.FakeParticipantTelemetryListener)
+		require.Equal(t, 1, tl.OnTrackSubscribeRequestedCallCount())
 
 		// ensure bound
 		setTestSubscribedTrackBound(t, s.getSubscribedTrack())
@@ -93,7 +92,7 @@ func TestSubscribe(t *testing.T) {
 		}, subSettleTimeout, subCheckInterval, "track was not bound")
 
 		// telemetry event should have been sent
-		require.Equal(t, 1, tm.TrackSubscribedCallCount())
+		require.Equal(t, 1, tl.OnTrackSubscribedCallCount())
 
 		time.Sleep(notFoundTimeout)
 		require.False(t, failed.Load())
@@ -142,9 +141,9 @@ func TestSubscribe(t *testing.T) {
 		require.Len(t, sm.GetSubscribedTracks(), 0)
 
 		// trackSubscribed telemetry not sent
-		tm := sm.params.Telemetry.(*telemetryfakes.FakeTelemetryService)
-		require.Equal(t, 1, tm.TrackSubscribeRequestedCallCount())
-		require.Equal(t, 0, tm.TrackSubscribedCallCount())
+		tl := sm.params.TelemetryListener.(*typesfakes.FakeParticipantTelemetryListener)
+		require.Equal(t, 1, tl.OnTrackSubscribeRequestedCallCount())
+		require.Equal(t, 0, tl.OnTrackSubscribedCallCount())
 
 		// give permissions now
 		resolver.lock.Lock()
@@ -254,8 +253,8 @@ func TestUnsubscribe(t *testing.T) {
 	require.Len(t, sm.GetSubscribedTracks(), 0)
 	require.False(t, res.TrackChangedNotifier.HasObservers())
 
-	tm := sm.params.Telemetry.(*telemetryfakes.FakeTelemetryService)
-	require.Equal(t, 1, tm.TrackUnsubscribedCallCount())
+	tl := sm.params.TelemetryListener.(*typesfakes.FakeParticipantTelemetryListener)
+	require.Equal(t, 1, tl.OnTrackUnsubscribedCallCount())
 }
 
 func TestSubscribeStatusChanged(t *testing.T) {
@@ -394,8 +393,8 @@ func TestSubscriptionLimits(t *testing.T) {
 	require.Equal(t, "pubID", string(sm.GetSubscribedParticipants()[0]))
 
 	// ensure telemetry events are sent
-	tm := sm.params.Telemetry.(*telemetryfakes.FakeTelemetryService)
-	require.Equal(t, 1, tm.TrackSubscribeRequestedCallCount())
+	tl := sm.params.TelemetryListener.(*typesfakes.FakeParticipantTelemetryListener)
+	require.Equal(t, 1, tl.OnTrackSubscribeRequestedCallCount())
 
 	// ensure bound
 	setTestSubscribedTrackBound(t, s.getSubscribedTrack())
@@ -404,15 +403,15 @@ func TestSubscriptionLimits(t *testing.T) {
 	}, subSettleTimeout, subCheckInterval, "track was not bound")
 
 	// telemetry event should have been sent
-	require.Equal(t, 1, tm.TrackSubscribedCallCount())
+	require.Equal(t, 1, tl.OnTrackSubscribedCallCount())
 
 	// reach subscription limit, subscribe pending
 	sm.SubscribeToTrack("track2", false)
 	s2 := sm.subscriptions["track2"]
 	time.Sleep(subscriptionTimeout * 2)
 	require.True(t, s2.needsSubscribe())
-	require.Equal(t, 2, tm.TrackSubscribeRequestedCallCount())
-	require.Equal(t, 1, tm.TrackSubscribeFailedCallCount())
+	require.Equal(t, 2, tl.OnTrackSubscribeRequestedCallCount())
+	require.Equal(t, 1, tl.OnTrackSubscribeFailedCallCount())
 	require.Len(t, sm.GetSubscribedTracks(), 1)
 
 	// unsubscribe track1, then track2 should be subscribed
@@ -429,7 +428,7 @@ func TestSubscriptionLimits(t *testing.T) {
 	require.False(t, s2.needsSubscribe())
 	require.EqualValues(t, 2, subCount.Load())
 	require.NotNil(t, s2.getSubscribedTrack())
-	require.Equal(t, 2, tm.TrackSubscribeRequestedCallCount())
+	require.Equal(t, 2, tl.OnTrackSubscribeRequestedCallCount())
 	require.Len(t, sm.GetSubscribedTracks(), 1)
 
 	// ensure bound
@@ -444,8 +443,8 @@ func TestSubscriptionLimits(t *testing.T) {
 	require.True(t, s.isDesired())
 	time.Sleep(subscriptionTimeout * 2)
 	require.True(t, s.needsSubscribe())
-	require.Equal(t, 3, tm.TrackSubscribeRequestedCallCount())
-	require.Equal(t, 2, tm.TrackSubscribeFailedCallCount())
+	require.Equal(t, 3, tl.OnTrackSubscribeRequestedCallCount())
+	require.Equal(t, 2, tl.OnTrackSubscribeFailedCallCount())
 	require.Len(t, sm.GetSubscribedTracks(), 1)
 }
 
@@ -473,7 +472,7 @@ func newTestSubscriptionManagerWithParams(params testSubscriptionParams) *Subscr
 		TrackResolver: func(sub types.LocalParticipant, trackID livekit.TrackID) types.MediaResolverResult {
 			return types.MediaResolverResult{}
 		},
-		Telemetry:              &telemetryfakes.FakeTelemetryService{},
+		TelemetryListener:      &typesfakes.FakeParticipantTelemetryListener{},
 		SubscriptionLimitAudio: params.SubscriptionLimitAudio,
 		SubscriptionLimitVideo: params.SubscriptionLimitVideo,
 	})

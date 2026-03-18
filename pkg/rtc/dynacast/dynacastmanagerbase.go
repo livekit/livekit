@@ -19,9 +19,9 @@ import (
 
 	"golang.org/x/exp/maps"
 
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/logger"
 
-	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/utils"
 )
 

@@ -62,7 +62,7 @@ func StatsKeyForData(
 	}
 }
 
-func (t *telemetryService) TrackStats(key StatsKey, stat *livekit.AnalyticsStat) {
+func (t *telemetryService) TrackStats(roomID livekit.RoomID, _roomName livekit.RoomName, key StatsKey, stat *livekit.AnalyticsStat) {
 	t.enqueue(func() {
 		direction := prometheus.Incoming
 		if key.streamType == livekit.StreamType_DOWNSTREAM {
@@ -107,7 +107,7 @@ func (t *telemetryService) TrackStats(key StatsKey, stat *livekit.AnalyticsStat)
 			prometheus.IncrementBytes(key.country, direction, retransmitBytes, true)
 		}
 
-		if worker, ok := t.getWorker(key.participantID); ok {
+		if worker, ok := t.getWorker(roomID, key.participantID); ok {
 			worker.OnTrackStat(key.trackID, key.streamType, stat)
 		}
 	})

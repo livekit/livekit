@@ -26,9 +26,9 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/mime"
-	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
 	"github.com/livekit/protocol/auth"
+	protoCodecs "github.com/livekit/protocol/codecs"
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/observability/roomobs"
@@ -378,7 +378,7 @@ func TestDisableCodecs(t *testing.T) {
 
 	// negotiated codec should not contain h264
 	sink := &routingfakes.FakeMessageSink{}
-	participant.SetResponseSink(sink)
+	participant.SwapResponseSink(sink, types.SignallingCloseReasonUnknown)
 	var answer webrtc.SessionDescription
 	var answerId uint32
 	var answerReceived atomic.Bool
@@ -435,7 +435,7 @@ func TestDisablePublishCodec(t *testing.T) {
 	}
 
 	sink := &routingfakes.FakeMessageSink{}
-	participant.SetResponseSink(sink)
+	participant.SwapResponseSink(sink, types.SignallingCloseReasonUnknown)
 	var publishReceived atomic.Bool
 	sink.WriteMessageCalls(func(msg proto.Message) error {
 		if res, ok := msg.(*livekit.SignalResponse); ok {
@@ -570,7 +570,7 @@ func TestPreferMediaCodecForPublisher(t *testing.T) {
 				offerId := uint32(23)
 
 				sink := &routingfakes.FakeMessageSink{}
-				participant.SetResponseSink(sink)
+				participant.SwapResponseSink(sink, types.SignallingCloseReasonUnknown)
 				var answer webrtc.SessionDescription
 				var answerId uint32
 				var answerReceived atomic.Bool
@@ -625,10 +625,10 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 	participant.SetMigrateState(types.MigrateStateComplete)
 
 	me := webrtc.MediaEngine{}
-	opusCodecParameters := OpusCodecParameters
+	opusCodecParameters := protoCodecs.OpusCodecParameters
 	opusCodecParameters.RTPCodecCapability.RTCPFeedback = []webrtc.RTCPFeedback{{Type: webrtc.TypeRTCPFBNACK}}
 	require.NoError(t, me.RegisterCodec(opusCodecParameters, webrtc.RTPCodecTypeAudio))
-	redCodecParameters := RedCodecParameters
+	redCodecParameters := protoCodecs.RedCodecParameters
 	redCodecParameters.RTPCodecCapability.RTCPFeedback = []webrtc.RTCPFeedback{{Type: webrtc.TypeRTCPFBNACK}}
 	require.NoError(t, me.RegisterCodec(redCodecParameters, webrtc.RTPCodecTypeAudio))
 
@@ -690,7 +690,7 @@ func TestPreferAudioCodecForRed(t *testing.T) {
 			offerId := uint32(0xffffff)
 
 			sink := &routingfakes.FakeMessageSink{}
-			participant.SetResponseSink(sink)
+			participant.SwapResponseSink(sink, types.SignallingCloseReasonUnknown)
 			var answer webrtc.SessionDescription
 			var answerId uint32
 			var answerReceived atomic.Bool
@@ -812,7 +812,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		ClientInfo:             ClientInfo{ClientInfo: opts.clientInfo},
 		Logger:                 LoggerWithParticipant(logger.GetLogger(), identity, sid, false),
 		Reporter:               roomobs.NewNoopParticipantSessionReporter(),
-		Telemetry:              &telemetryfakes.FakeTelemetryService{},
+		TelemetryListener:      &typesfakes.FakeParticipantTelemetryListener{},
 		VersionGenerator:       utils.NewDefaultTimedVersionGenerator(),
 		ParticipantListener:    &typesfakes.FakeLocalParticipantListener{},
 		ParticipantHelper:      &typesfakes.FakeLocalParticipantHelper{},

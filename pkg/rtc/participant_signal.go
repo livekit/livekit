@@ -27,8 +27,8 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
 
-func (p *ParticipantImpl) SetResponseSink(sink routing.MessageSink) {
-	p.signaller.SetResponseSink(sink)
+func (p *ParticipantImpl) SwapResponseSink(sink routing.MessageSink, reason types.SignallingCloseReason) {
+	p.signaller.SwapResponseSink(sink, reason)
 }
 
 func (p *ParticipantImpl) GetResponseSink() routing.MessageSink {
@@ -66,6 +66,10 @@ func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) e
 	queuedUpdates := p.queuedUpdates
 	p.queuedUpdates = nil
 	p.updateLock.Unlock()
+
+	if p.params.RequireMediaSectionWithJoinResponse && p.params.UseSinglePeerConnection {
+		p.sendMediaSectionsRequirement(audioSectionsCountWithJoinResponse, videoSectionsCountWithJoinResponse)
+	}
 
 	if len(queuedUpdates) > 0 {
 		return p.SendParticipantUpdate(queuedUpdates)

@@ -49,7 +49,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
 	sfuinterceptor "github.com/livekit/livekit-server/pkg/sfu/interceptor"
-	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
@@ -58,6 +57,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/utils"
 	lkinterceptor "github.com/livekit/mediatransportutil/pkg/interceptor"
 	lktwcc "github.com/livekit/mediatransportutil/pkg/twcc"
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/logger/pionlogger"
@@ -879,7 +879,7 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 
 		case isDataTrack:
 			if !t.params.EnableDataTracks {
-				t.params.Logger.Infow("data tracks not enabled")
+				t.params.Logger.Debugw("data tracks not enabled")
 				isHandled = false
 			} else {
 				if t.dataTrackDC != nil {
@@ -1194,7 +1194,7 @@ func (t *PCTransport) getNumUnmatchedTransceivers() (uint32, uint32) {
 
 func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelInit) error {
 	if label == DataTrackDataChannel && !t.params.EnableDataTracks {
-		t.params.Logger.Infow("data tracks not enabled")
+		t.params.Logger.Debugw("data tracks not enabled")
 		return nil
 	}
 
@@ -1340,7 +1340,7 @@ func (t *PCTransport) CreateReadableDataChannel(label string, dci *webrtc.DataCh
 
 func (t *PCTransport) CreateDataChannelIfEmpty(dcLabel string, dci *webrtc.DataChannelInit) (label string, id uint16, existing bool, err error) {
 	if dcLabel == DataTrackDataChannel && !t.params.EnableDataTracks {
-		t.params.Logger.Infow("data tracks not enabled")
+		t.params.Logger.Debugw("data tracks not enabled")
 		err = errors.New("data tracks not enabled")
 		return
 	}
@@ -2389,7 +2389,10 @@ func (t *PCTransport) handleRemoteICECandidate(e event) error {
 
 	if err := t.pc.AddICECandidate(*c); err != nil {
 		t.params.Logger.Warnw("failed to add ICE candidate", err, "candidate", c)
-		return errors.Wrap(err, "add ice candidate failed")
+		// ignore ParseAddr error as it does not affect ICE connectivity
+		if !strings.Contains(err.Error(), "ParseAddr") {
+			return errors.Wrap(err, "add ice candidate failed")
+		}
 	} else {
 		t.params.Logger.Debugw("added ICE candidate", "candidate", c)
 	}
@@ -2601,11 +2604,13 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 
 	remoteAnswerId := t.remoteAnswerId.Load()
 	if remoteAnswerId != 0 && remoteAnswerId != t.localOfferId.Load() {
-		t.params.Logger.Warnw(
-			"sdp state: sending offer before receiving answer", nil,
-			"localOfferId", t.localOfferId.Load(),
-			"remoteAnswerId", remoteAnswerId,
-		)
+		if options == nil || !options.ICERestart {
+			t.params.Logger.Warnw(
+				"sdp state: sending offer before receiving answer", nil,
+				"localOfferId", t.localOfferId.Load(),
+				"remoteAnswerId", remoteAnswerId,
+			)
+		}
 	}
 
 	if err := t.params.Handler.OnOffer(offer, t.localOfferId.Inc(), t.getMidToTrackIDMapping()); err != nil {

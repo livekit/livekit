@@ -15,7 +15,6 @@
 package rtc
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -28,6 +27,7 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
@@ -35,9 +35,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
-	"github.com/livekit/livekit-server/pkg/telemetry"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 )
 
@@ -127,7 +125,7 @@ type MediaTrackReceiverParams struct {
 	ReceiverConfig           ReceiverConfig
 	SubscriberConfig         DirectionConfig
 	AudioConfig              sfu.AudioConfig
-	Telemetry                telemetry.TelemetryService
+	TelemetryListener        types.ParticipantTelemetryListener
 	Logger                   logger.Logger
 	RegressionTargetCodec    mime.MimeType
 	PreferVideoSizeFromMedia bool
@@ -163,7 +161,6 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams, ti *livekit.TrackInf
 		IsRelayed:        params.IsRelayed,
 		ReceiverConfig:   params.ReceiverConfig,
 		SubscriberConfig: params.SubscriberConfig,
-		Telemetry:        params.Telemetry,
 		Logger:           params.Logger,
 	})
 	t.MediaTrackSubscriptions.OnDownTrackCreated(t.onDownTrackCreated)
@@ -937,7 +934,7 @@ func (t *MediaTrackReceiver) UpdateAudioTrack(update *livekit.UpdateLocalAudioTr
 
 	t.updateTrackInfoOfReceivers()
 
-	t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(), clonedInfo)
+	t.params.TelemetryListener.OnTrackPublishedUpdate(t.PublisherID(), clonedInfo)
 	t.params.Logger.Debugw("updated audio track", "before", logger.Proto(trackInfo), "after", logger.Proto(clonedInfo))
 }
 
@@ -961,8 +958,54 @@ func (t *MediaTrackReceiver) UpdateVideoTrack(update *livekit.UpdateLocalVideoTr
 
 	t.updateTrackInfoOfReceivers()
 
-	t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(), clonedInfo)
+	t.params.TelemetryListener.OnTrackPublishedUpdate(t.PublisherID(), clonedInfo)
 	t.params.Logger.Debugw("updated video track", "before", logger.Proto(trackInfo), "after", logger.Proto(clonedInfo))
+}
+
+func (t *MediaTrackReceiver) UpdateVideoSize(mimeType mime.MimeType, sizes []buffer.VideoSize) {
+	var changed bool
+	t.lock.Lock()
+	trackInfo := t.TrackInfo()
+	clonedInfo := utils.CloneProto(trackInfo)
+	var maxWidth, maxHeight uint32
+	for _, size := range sizes {
+		if size.Width > maxWidth {
+			maxWidth = size.Width
+			maxHeight = size.Height
+		}
+	}
+
+	if clonedInfo.Width != maxWidth || clonedInfo.Height != maxHeight {
+		clonedInfo.Width = maxWidth
+		clonedInfo.Height = maxHeight
+		changed = true
+	}
+
+	for _, c := range clonedInfo.Codecs {
+		if mime.NormalizeMimeType(c.MimeType) == mimeType {
+			for i, l := range c.Layers {
+				if i < len(sizes) && (sizes[i].Width != 0 || sizes[i].Height != 0) &&
+					(l.Width != sizes[i].Width || l.Height != sizes[i].Height) {
+					l.Width = sizes[i].Width
+					l.Height = sizes[i].Height
+					changed = true
+				}
+			}
+		}
+	}
+
+	if !changed {
+		t.lock.Unlock()
+		return
+	}
+
+	t.trackInfo.Store(clonedInfo)
+	t.lock.Unlock()
+
+	t.updateTrackInfoOfReceivers()
+
+	t.params.TelemetryListener.OnTrackPublishedUpdate(t.PublisherID(), clonedInfo)
+	t.params.Logger.Debugw("updated video sizes", "before", logger.Proto(trackInfo), "after", logger.Proto(clonedInfo))
 }
 
 func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {
@@ -992,7 +1035,7 @@ func (t *MediaTrackReceiver) NotifyMaxLayerChange(mimeType mime.MimeType, maxLay
 		}
 	}
 
-	t.params.Telemetry.TrackPublishedUpdate(context.Background(), t.PublisherID(), ti)
+	t.params.TelemetryListener.OnTrackPublishedUpdate(t.PublisherID(), ti)
 }
 
 // GetQualityForDimension finds the closest quality to use for desired dimensions

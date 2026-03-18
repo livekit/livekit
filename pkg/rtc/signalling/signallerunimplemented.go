@@ -25,7 +25,8 @@ var _ ParticipantSignaller = (*signallerUnimplemented)(nil)
 
 type signallerUnimplemented struct{}
 
-func (u *signallerUnimplemented) SetResponseSink(sink routing.MessageSink) {}
+func (u *signallerUnimplemented) SwapResponseSink(sink routing.MessageSink, reason types.SignallingCloseReason) {
+}
 
 func (u *signallerUnimplemented) GetResponseSink() routing.MessageSink {
 	return nil

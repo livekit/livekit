@@ -23,7 +23,7 @@ import (
 	"github.com/pion/webrtc/v4"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/livekit/livekit-server/pkg/sfu/mime"
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -122,7 +122,7 @@ func LoggerWithParticipant(l logger.Logger, identity livekit.ParticipantIdentity
 		values = append(values, "participant", identity)
 	}
 	if sid != "" {
-		values = append(values, "pID", sid)
+		values = append(values, "participantID", sid)
 	}
 	values = append(values, "remote", isRemote)
 	// enable sampling per participant

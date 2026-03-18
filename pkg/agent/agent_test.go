@@ -188,3 +188,33 @@ func TestAgentLoadBalancing(t *testing.T) {
 		}
 	})
 }
+
+func TestConnectionClosedOnDispatchError(t *testing.T) {
+	t.Run("connection closed when unknown message type received", func(t *testing.T) {
+		bus := psrpc.NewLocalMessageBus()
+		server := testutils.NewTestServer(bus)
+		t.Cleanup(server.Close)
+
+		// register agent
+		worker := server.SimulateAgentWorker()
+		worker.Register("test_agent", livekit.JobType_JT_ROOM)
+		responses := worker.RegisterWorkerResponses.Observe()
+		select {
+		case <-responses.Events():
+			// registered
+		case <-time.After(time.Second):
+			require.Fail(t, "registration timeout")
+		}
+		responses.Stop()
+
+		// send invalid message (nil Message field triggers ErrUnknownWorkerSignal)
+		worker.SendMessage(&livekit.WorkerMessage{Message: nil})
+
+		select {
+		case <-worker.Closed():
+			// connection closed
+		case <-time.After(time.Second):
+			require.Fail(t, "connection should have been closed after dispatch error")
+		}
+	})
+}

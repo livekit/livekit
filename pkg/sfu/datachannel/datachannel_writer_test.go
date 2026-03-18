@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/pion/datachannel"
-	"github.com/pion/transport/v3/deadline"
+	"github.com/pion/transport/v4/deadline"
 	"github.com/stretchr/testify/require"
 )
 

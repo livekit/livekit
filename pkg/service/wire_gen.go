@@ -21,6 +21,7 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 	"github.com/livekit/psrpc"
+	"github.com/livekit/psrpc/pkg/middleware/otelpsrpc"
 	"github.com/pion/turn/v4"
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
@@ -114,7 +115,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	ingressService := NewIngressService(ingressConfig, nodeID, messageBus, ingressClient, ingressStore, ioInfoService, telemetryService)
 	sipConfig := getSIPConfig(conf)
-	sipClient, err := rpc.NewSIPClient(messageBus)
+	sipClient, err := newSIPClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
@@ -289,6 +290,14 @@ func getIngressConfig(conf *config.Config) *config.IngressConfig {
 	return &conf.Ingress
 }
 
+func newSIPClient(p rpc.ClientParams) (rpc.SIPClient, error) {
+
+	return rpc.NewSIPClientWithParams(rpc.ClientParams{
+		Bus:           p.Bus,
+		ClientOptions: []psrpc.ClientOption{rpc.WithClientLogger(p.Logger), otelpsrpc.ClientOptions(otelpsrpc.Config{})},
+	})
+}
+
 func getSIPStore(s ObjectStore) SIPStore {
 	switch store := s.(type) {
 	case *RedisStore:
@@ -319,7 +328,7 @@ func getPSRPCConfig(config2 *config.Config) rpc.PSRPCConfig {
 }
 
 func getPSRPCClientParams(config2 rpc.PSRPCConfig, bus psrpc.MessageBus) rpc.ClientParams {
-	return rpc.NewClientParams(config2, bus, logger.GetLogger(), rpc.PSRPCMetricsObserver{})
+	return rpc.NewClientParams(config2, bus, logger.GetLogger(), rpc.PSRPCMetricsObserver{}, otelpsrpc.ClientOptions(otelpsrpc.Config{}))
 }
 
 func createForwardStats(conf *config.Config) *sfu.ForwardStats {

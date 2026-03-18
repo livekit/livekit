@@ -118,6 +118,7 @@ func NewLivekitServer(conf *config.Config,
 	serverOptions := []any{
 		twirp.WithServerHooks(twirp.ChainHooks(
 			TwirpLogger(),
+			TwirpEgressID(),
 			TwirpRequestStatusReporter(),
 		)),
 	}

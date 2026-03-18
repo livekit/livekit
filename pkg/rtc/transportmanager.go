@@ -41,7 +41,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
 	"github.com/livekit/livekit-server/pkg/sfu/interceptor"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
-	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
 const (
@@ -95,7 +94,7 @@ type TransportManagerParams struct {
 	Logger                        logger.Logger
 	PublisherHandler              transport.Handler
 	SubscriberHandler             transport.Handler
-	DataChannelStats              *telemetry.BytesTrackStats
+	DataChannelStats              *BytesTrackStats
 	UseOneShotSignallingMode      bool
 	FireOnTrackBySdp              bool
 	EnableDataTracks              bool
@@ -125,7 +124,8 @@ type TransportManager struct {
 
 	onICEConfigChanged func(iceConfig *livekit.ICEConfig)
 
-	droppedBySlowReaderCount atomic.Uint32
+	dataChannelSendErrorDroppedBySlowReaderCount atomic.Uint32
+	dataChannelSendErrorCount                    atomic.Uint32
 }
 
 func NewTransportManager(params TransportManagerParams) (*TransportManager, error) {
@@ -356,12 +356,12 @@ func (t *TransportManager) handleSendDataResult(err error, kind string, size int
 			io.ErrClosedPipe,
 			sctp.ErrStreamClosed,
 			ErrTransportFailure,
-			ErrDataChannelBufferFull,
+			ErrDataChannelUnavailable,
 			context.DeadlineExceeded,
 			datachannel.ErrDataDroppedByHighBufferedAmount,
 		) {
 			if errors.Is(err, datachannel.ErrDataDroppedBySlowReader) {
-				droppedBySlowReaderCount := t.droppedBySlowReaderCount.Inc()
+				droppedBySlowReaderCount := t.dataChannelSendErrorDroppedBySlowReaderCount.Inc()
 				if (droppedBySlowReaderCount-1)%100 == 0 {
 					t.params.Logger.Infow(
 						"drop data message by slow reader",
@@ -371,7 +371,15 @@ func (t *TransportManager) handleSendDataResult(err error, kind string, size int
 					)
 				}
 			} else {
-				t.params.Logger.Warnw("send data message error", err)
+				count := t.dataChannelSendErrorCount.Inc()
+				if (count-1)%100 == 0 {
+					t.params.Logger.Infow(
+						"send data message error",
+						"error", err,
+						"kind", kind,
+						"count", count,
+					)
+				}
 			}
 		}
 		if utils.ErrorIsOneOf(err, sctp.ErrStreamClosed, io.ErrClosedPipe) {
@@ -543,9 +551,17 @@ func (t *TransportManager) HandleAnswer(answer webrtc.SessionDescription, answer
 func (t *TransportManager) AddICECandidate(candidate webrtc.ICECandidateInit, target livekit.SignalTarget) {
 	switch target {
 	case livekit.SignalTarget_PUBLISHER:
-		t.publisher.AddICECandidate(candidate)
+		if t.publisher != nil {
+			t.publisher.AddICECandidate(candidate)
+		} else {
+			t.params.Logger.Warnw("ice candidate for publisher, but no peer connection", nil, "candidate", candidate)
+		}
 	case livekit.SignalTarget_SUBSCRIBER:
-		t.subscriber.AddICECandidate(candidate)
+		if t.subscriber != nil {
+			t.subscriber.AddICECandidate(candidate)
+		} else {
+			t.params.Logger.Warnw("ice candidate for subscriber, but no peer connection", nil, "candidate", candidate)
+		}
 	default:
 		err := errors.New("unknown signal target")
 		t.params.Logger.Errorw("ice candidate for unknown signal target", err, "target", target)
@@ -1026,9 +1042,5 @@ func (t *TransportManager) hasRecentSignalLocked() bool {
 }
 
 func (t *TransportManager) RTPStreamPublished(ssrc uint32, mid, rid string) {
-	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
-		t.publisher.RTPStreamPublished(ssrc, mid, rid)
-	} else {
-		t.subscriber.RTPStreamPublished(ssrc, mid, rid)
-	}
+	t.publisher.RTPStreamPublished(ssrc, mid, rid)
 }

@@ -19,7 +19,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/livekit/livekit-server/pkg/sfu/mime"
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/pion/webrtc/v4"
@@ -27,7 +27,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
-	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
 var (
@@ -53,8 +52,6 @@ type MediaTrackSubscriptionsParams struct {
 
 	ReceiverConfig   ReceiverConfig
 	SubscriberConfig DirectionConfig
-
-	Telemetry telemetry.TelemetryService
 
 	Logger logger.Logger
 }
@@ -112,7 +109,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		Subscriber:         sub,
 		MediaTrack:         t.params.MediaTrack,
 		AdaptiveStream:     sub.GetAdaptiveStream(),
-		Telemetry:          t.params.Telemetry,
+		TelemetryListener:  sub.GetTelemetryListener(),
 		WrappedReceiver:    wr,
 		IsRelayed:          t.params.IsRelayed,
 		OnDownTrackCreated: t.onDownTrackCreated,
@@ -215,7 +212,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		}
 
 		sub.VerifySubscribeParticipantInfo(subTrack.PublisherID(), subTrack.PublisherVersion())
-		if sub.SupportsTransceiverReuse() {
+		if sub.SupportsTransceiverReuse(t.params.MediaTrack) {
 			//
 			// AddTrack will create a new transceiver or re-use an unused one
 			// if the attributes match. This prevents SDP from bloating

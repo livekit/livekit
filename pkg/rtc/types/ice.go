@@ -446,5 +446,5 @@ func IsICECandidateMDNS(candidate ice.Candidate) bool {
 		return false
 	}
 
-	return strings.HasSuffix(candidate.Address(), ".local")
+	return strings.HasSuffix(candidate.Address(), ".local") || strings.HasSuffix(candidate.Address(), ".invalid")
 }

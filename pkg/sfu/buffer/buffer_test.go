@@ -331,7 +331,6 @@ func TestCodecChange(t *testing.T) {
 	buff := NewBuffer(123, 1, 1)
 	require.NotNil(t, buff)
 	changedCodec := make(chan webrtc.RTPCodecParameters, 1)
-	restartCleared := make(chan struct{}, 1)
 	buff.OnCodecChange(func(rp webrtc.RTPCodecParameters) {
 		select {
 		case changedCodec <- rp:
@@ -347,8 +346,6 @@ func TestCodecChange(t *testing.T) {
 		extPkt, err := buff.ReadExtended(buf[:])
 		require.NoError(t, err)
 		require.Nil(t, extPkt)
-
-		restartCleared <- struct{}{}
 	})
 
 	h265Pkt := rtp.Packet{
@@ -391,7 +388,6 @@ func TestCodecChange(t *testing.T) {
 	case <-time.After(1 * time.Second):
 		t.Fatalf("expected codec change")
 	}
-	<-restartCleared
 
 	// second codec change - writing VP8 packet after Bind should trigger another codec change
 	vp8Pkt := rtp.Packet{
@@ -416,7 +412,6 @@ func TestCodecChange(t *testing.T) {
 		t.Fatalf("expected codec change")
 	}
 	fmt.Printf("done second codec change\n") // REMOVE
-	<-restartCleared
 
 	// out of order pkts can't cause codec change
 	// rewrite the VP8 packet to start the sequence after a stream restart
@@ -463,7 +458,6 @@ func TestCodecChange(t *testing.T) {
 	case <-time.After(1 * time.Second):
 		t.Fatalf("expected codec change")
 	}
-	<-restartCleared
 }
 
 func BenchmarkMemcpu(b *testing.B) {

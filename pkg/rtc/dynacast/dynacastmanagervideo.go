@@ -15,15 +15,16 @@
 package dynacast
 
 import (
+	"maps"
 	"time"
 
 	"github.com/bep/debounce"
 
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/pkg/sfu/mime"
 )
 
 var _ DynacastManager = (*dynacastManagerVideo)(nil)
@@ -216,9 +217,7 @@ func (d *dynacastManagerVideo) update(force bool) {
 
 	// commit change
 	d.committedMaxSubscribedQuality = make(map[mime.MimeType]livekit.VideoQuality, len(d.maxSubscribedQuality))
-	for mime, quality := range d.maxSubscribedQuality {
-		d.committedMaxSubscribedQuality[mime] = quality
-	}
+	maps.Copy(d.committedMaxSubscribedQuality, d.maxSubscribedQuality)
 
 	d.enqueueSubscribedQualityChange()
 	d.lock.Unlock()

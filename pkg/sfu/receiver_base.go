@@ -27,6 +27,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/mediatransportutil/pkg/bucket"
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
@@ -34,7 +35,6 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
-	"github.com/livekit/livekit-server/pkg/sfu/mime"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/streamtracker"
 	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
@@ -156,6 +156,7 @@ type TrackReceiver interface {
 // --------------------------------------
 
 type REDTransformer interface {
+	TrackReceiver
 	ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int32
 	ForwardRTCPSenderReport(
 		payloadType webrtc.PayloadType,
@@ -163,7 +164,6 @@ type REDTransformer interface {
 		publisherSRData *livekit.RTCPSenderReportState,
 	)
 	GetDownTracks() []TrackSender
-	HasDownTracks() bool
 	ResyncDownTracks()
 	OnStreamRestart()
 	CanClose() bool
@@ -171,6 +171,10 @@ type REDTransformer interface {
 }
 
 // --------------------------------------
+
+type bufferPromise struct {
+	ready chan struct{}
+}
 
 type ReceiverBaseParams struct {
 	TrackID                      livekit.TrackID
@@ -182,6 +186,7 @@ type ReceiverBaseParams struct {
 	StreamTrackerManagerConfig   StreamTrackerManagerConfig
 	StreamTrackerManagerListener StreamTrackerManagerListener
 	IsSelfClosing                bool
+	OnNewBufferNeeded            func(int32, *livekit.TrackInfo) (buffer.BufferProvider, error)
 	OnClosed                     func()
 }
 
@@ -201,9 +206,10 @@ type ReceiverBase struct {
 	isRED          bool
 	videoLayerMode livekit.VideoLayer_Mode
 
-	bufferMu  sync.RWMutex
-	buffers   [buffer.DefaultMaxLayerSpatial + 1]buffer.BufferProvider
-	trackInfo *livekit.TrackInfo
+	bufferMu       sync.RWMutex
+	buffers        [buffer.DefaultMaxLayerSpatial + 1]buffer.BufferProvider
+	bufferPromises [buffer.DefaultMaxLayerSpatial + 1]*bufferPromise
+	trackInfo      *livekit.TrackInfo
 
 	videoSizeMu        sync.RWMutex
 	videoSizes         [buffer.DefaultMaxLayerSpatial + 1]buffer.VideoSize
@@ -217,7 +223,7 @@ type ReceiverBase struct {
 
 	onMaxLayerChange func(mimeType mime.MimeType, maxLayer int32)
 
-	redTransformer atomic.Value // redTransformer interface
+	redTransformer atomic.Pointer[REDTransformer]
 
 	forwardersGeneration atomic.Uint32
 	forwardersWaitGroup  *sync.WaitGroup
@@ -249,7 +255,7 @@ func NewReceiverBase(params ReceiverBaseParams, trackInfo *livekit.TrackInfo, co
 	)
 	r.streamTrackerManager.SetListener(r)
 
-	r.startForwarderGeneration()
+	r.startForwardersGeneration()
 
 	return r
 }
@@ -266,8 +272,8 @@ func (r *ReceiverBase) Close(reason string, clearBuffers bool) {
 
 	closeTrackSenders(r.downTrackSpreader.ResetAndGetDownTracks())
 
-	if rt := r.redTransformer.Load(); rt != nil {
-		rt.(REDTransformer).Close()
+	if rt := r.loadREDTransformer(); rt != nil {
+		rt.Close()
 	}
 
 	if r.params.OnClosed != nil {
@@ -284,8 +290,8 @@ func (r *ReceiverBase) CanClose() bool {
 		return false
 	}
 
-	if rt := r.redTransformer.Load(); rt != nil {
-		return rt.(REDTransformer).CanClose()
+	if rt := r.loadREDTransformer(); rt != nil {
+		return rt.CanClose()
 	}
 
 	return true
@@ -362,6 +368,13 @@ func (r *ReceiverBase) Restart(reason string) {
 }
 
 func (r *ReceiverBase) restartInternal(reason string, isDetected bool) {
+	r.params.Logger.Debugw(
+		"restart receiver",
+		"reason", reason,
+		"isDetected", isDetected,
+		"isClosed", r.IsClosed(),
+	)
+
 	if r.IsClosed() {
 		return
 	}
@@ -369,58 +382,92 @@ func (r *ReceiverBase) restartInternal(reason string, isDetected bool) {
 	// 1. guard against concurrent restarts
 	r.bufferMu.Lock()
 	if r.restartInProgress {
+		r.params.Logger.Debugw("restart receiver, skipping duplicate")
 		r.bufferMu.Unlock()
 		return
 	}
 	r.restartInProgress = true
+
+	// 2. advance forwarder generation
+	r.forwardersGeneration.Inc()
+	r.params.Logger.Debugw(
+		"restart receiver, advanced forwarder generation",
+		"forwardersGeneration", r.forwardersGeneration.Load(),
+	)
 	r.bufferMu.Unlock()
 
-	// 2. restart all the buffers
-	// if a stream was detected, skip external restart
+	// 3. mark for restart all the buffers
+	// if a stream restart was detected, skip external restart
 	//
 	// NOTE: The case of external restart and detected restart (which usually comes from one buffer)
 	//       racing will miss restart on all buffers if detected restart from one buffer adds the guard
 	//       against concurrent restart. But, that condition should be very rare if at all.
 	//       External restart happens when the underlying track changes or when seeking
 	if !isDetected {
-		for _, buff := range r.GetAllBuffers() {
+		for layer, buff := range r.GetAllBuffers() {
 			if buff == nil {
 				continue
 			}
 
+			r.params.Logger.Debugw("restart receiver, marking buffer for restart", "layer", layer)
+			buff.MarkForRestartStream(reason)
+		}
+		r.params.Logger.Debugw("restart receiver, marked buffers for restart")
+	}
+
+	// 4. wait for the forwarders to finish
+	r.waitForForwardersStop()
+	r.params.Logger.Debugw("restart receiver, forwarders stopped")
+
+	// 5. restart all the buffers
+	// Two phase restart - mark, followed by restart to ensure
+	// a fresh start after existing forwarder is stopped
+	if !isDetected {
+		for layer, buff := range r.GetAllBuffers() {
+			if buff == nil {
+				continue
+			}
+
+			r.params.Logger.Debugw("restart receiver, restarting buffer", "layer", layer)
 			buff.RestartStream(reason)
 		}
+		r.params.Logger.Debugw("restart receiver, restarted buffers")
 	}
 
-	// 3. wait for the forwarders to finish
-	r.stopForwarderGeneration()
-
-	// 4. reset stream tracker
+	// 6. reset stream tracker
 	r.streamTrackerManager.RemoveAllTrackers()
+	r.params.Logger.Debugw("restart receiver, stream trackers removed")
 
-	// 5. signal attached downtracks to resync so that they can have proper sequencing on a receiver restart
+	// 7. signal attached downtracks to resync so that they can have proper sequencing on a receiver restart
 	r.downTrackSpreader.Broadcast(func(dt TrackSender) {
-		dt.ReceiverRestart()
+		dt.ReceiverRestart(r)
 	})
-	if rt := r.redTransformer.Load(); rt != nil {
-		rt.(REDTransformer).OnStreamRestart()
+	if rt := r.loadREDTransformer(); rt != nil {
+		rt.OnStreamRestart()
 	}
+	r.params.Logger.Debugw("restart receiver, down tracks signalled")
 
-	// 6. move forwarder generation ahead
-	r.startForwarderGeneration()
+	// 8. move forwarder generation ahead
+	r.startForwardersGeneration()
+	r.params.Logger.Debugw(
+		"restart receiver, restarted forwarder generation",
+		"forwardersGeneration", r.forwardersGeneration.Load(),
+	)
 
 	r.bufferMu.Lock()
-	// 7. release restart hold
+	// 9. release restart hold
 	r.restartInProgress = false
 
-	// 8. restart forwarders
+	// 10. restart forwarders
 	for layer, buff := range r.buffers {
 		if buff == nil {
 			continue
 		}
 
+		r.params.Logger.Debugw("restart receiver, restarting forwarder", "layer", layer)
 		r.startForwarderForBufferLocked(int32(layer), buff)
 	}
+	r.params.Logger.Debugw("restart receiver, restarted forwarders")
 	r.bufferMu.Unlock()
 }
 
@@ -534,8 +581,8 @@ func (r *ReceiverBase) DeleteDownTrack(subscriberID livekit.ParticipantID) {
 
 func (r *ReceiverBase) GetDownTracks() []TrackSender {
 	downTracks := r.downTrackSpreader.GetDownTracks()
-	if rt := r.redTransformer.Load(); rt != nil {
-		downTracks = append(downTracks, rt.(REDTransformer).GetDownTracks()...)
+	if rt := r.loadREDTransformer(); rt != nil {
+		downTracks = append(downTracks, rt.GetDownTracks()...)
 	}
 	return downTracks
 }
@@ -633,7 +680,7 @@ func (r *ReceiverBase) GetLayeredBitrate() ([]int32, Bitrates) {
 
 func (r *ReceiverBase) SendPLI(layer int32, force bool) {
 	// SVC-TODO :  should send LRR (Layer Refresh Request) instead of PLI
-	buff := r.getBuffer(layer)
+	buff := r.GetOrCreateBuffer(layer)
 	if buff == nil {
 		return
 	}
@@ -641,14 +688,14 @@ func (r *ReceiverBase) SendPLI(layer int32, force bool) {
 	buff.SendPLI(force)
 }
 
-func (r *ReceiverBase) getBuffer(layer int32) buffer.BufferProvider {
+func (r *ReceiverBase) getBuffer(layer int32) (buffer.BufferProvider, int32) {
 	r.bufferMu.RLock()
 	defer r.bufferMu.RUnlock()
 
 	return r.getBufferLocked(layer)
 }
 
-func (r *ReceiverBase) getBufferLocked(layer int32) buffer.BufferProvider {
+func (r *ReceiverBase) getBufferLocked(layer int32) (buffer.BufferProvider, int32) {
 	// for svc codecs, use layer = 0 always.
 	// spatial layers are in-built and handled by single buffer
 	if r.videoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM {
@@ -656,41 +703,67 @@ func (r *ReceiverBase) getBufferLocked(layer int32) buffer.BufferProvider {
 	}
 
 	if layer < 0 || int(layer) >= len(r.buffers) {
-		return nil
+		return nil, layer
 	}
 
-	return r.buffers[layer]
+	return r.buffers[layer], layer
 }
 
-func (r *ReceiverBase) GetOrCreateBuffer(
-	layer int32,
-	creatorFn func(*livekit.TrackInfo) (buffer.BufferProvider, error),
-) (buffer.BufferProvider, bool) {
+func (r *ReceiverBase) GetOrCreateBuffer(layer int32) buffer.BufferProvider {
 	r.bufferMu.Lock()
 
 	if r.IsClosed() {
 		r.bufferMu.Unlock()
-		return nil, false
+		return nil
 	}
 
-	if buff := r.getBufferLocked(layer); buff != nil {
+	var buff buffer.BufferProvider
+	if buff, layer = r.getBufferLocked(layer); buff != nil {
 		r.bufferMu.Unlock()
-		return buff, false
+		return buff
 	}
 
-	buff, err := creatorFn(r.trackInfo)
+	if r.params.OnNewBufferNeeded == nil {
+		r.bufferMu.Unlock()
+		return nil
+	}
+
+	if bp := r.bufferPromises[layer]; bp != nil {
+		r.bufferMu.Unlock()
+		<-bp.ready
+
+		buff, _ := r.getBuffer(layer)
+		return buff
+	}
+
+	bp := &bufferPromise{
+		ready: make(chan struct{}),
+	}
+	r.bufferPromises[layer] = bp
+
+	ti := utils.CloneProto(r.trackInfo)
+	r.bufferMu.Unlock()
+
+	defer close(bp.ready)
+
+	buff, err := r.params.OnNewBufferNeeded(layer, ti)
 	if err != nil {
-		r.bufferMu.Unlock()
 		r.params.Logger.Errorw("could not create buffer", err)
-		return nil, false
+
+		r.bufferMu.Lock()
+		r.bufferPromises[layer] = nil
+		r.bufferMu.Unlock()
+
+		return nil
 	}
 
+	r.bufferMu.Lock()
 	r.buffers[layer] = buff
 	rtt := r.rtt
 	r.bufferMu.Unlock()
 
 	r.setupBuffer(buff, layer, rtt)
-	return buff, true
+	return buff
 }
 
 func (r *ReceiverBase) setupBuffer(buff buffer.BufferProvider, layer int32, rtt uint32) {
@@ -703,8 +776,8 @@ func (r *ReceiverBase) setupBuffer(buff buffer.BufferProvider, layer int32, rtt 
 			_ = dt.HandleRTCPSenderReportData(r.params.Codec.PayloadType, layer, srData)
 		})
 
-		if rt := r.redTransformer.Load(); rt != nil {
-			rt.(REDTransformer).ForwardRTCPSenderReport(r.params.Codec.PayloadType, layer, srData)
+		if rt := r.loadREDTransformer(); rt != nil {
+			rt.ForwardRTCPSenderReport(r.params.Codec.PayloadType, layer, srData)
 		}
 	})
 	buff.OnVideoSizeChanged(func(videoSize []buffer.VideoSize) {
@@ -780,6 +853,7 @@ func (r *ReceiverBase) ClearAllBuffers(reason string) {
 	buffers := r.buffers
 	for idx := range r.buffers {
 		r.buffers[idx] = nil
+		r.bufferPromises[idx] = nil
 	}
 	r.bufferMu.Unlock()
 
@@ -794,7 +868,7 @@ func (r *ReceiverBase) ClearAllBuffers(reason string) {
 }
 
 func (r *ReceiverBase) ReadRTP(buf []byte, layer uint8, esn uint64) (int, error) {
-	b := r.getBuffer(int32(layer))
+	b, _ := r.getBuffer(int32(layer))
 	if b == nil {
 		return 0, bucket.ErrPacketMismatch
 	}
@@ -842,7 +916,7 @@ func (r *ReceiverBase) GetAudioLevel() (float64, bool) {
 	return 0, false
 }
 
-func (r *ReceiverBase) startForwarderGeneration() {
+func (r *ReceiverBase) startForwardersGeneration() {
 	r.bufferMu.Lock()
 	defer r.bufferMu.Unlock()
 
@@ -850,26 +924,27 @@ func (r *ReceiverBase) startForwarderGeneration() {
 	r.forwardersWaitGroup = &sync.WaitGroup{}
 }
 
-func (r *ReceiverBase) stopForwarderGeneration() {
+func (r *ReceiverBase) waitForForwardersStop() {
 	r.bufferMu.Lock()
-	r.forwardersGeneration.Inc()
-	forwarderWaitGroup := r.forwardersWaitGroup
+	forwardersWaitGroup := r.forwardersWaitGroup
 	r.bufferMu.Unlock()
 
-	if forwarderWaitGroup != nil {
-		forwarderWaitGroup.Wait()
+	if forwardersWaitGroup != nil {
+		forwardersWaitGroup.Wait()
 	}
 }
 
 func (r *ReceiverBase) startForwarderForBufferLocked(layer int32, buff buffer.BufferProvider) {
 	if r.restartInProgress {
+		r.params.Logger.Debugw("restart in progress, deferring starting forwarder", "layer", layer)
 		return
 	}
 
 	r.forwardersWaitGroup.Add(1)
 
-	r.params.Logger.Debugw("starting forwarder", "layer", layer)
-	go r.forwardRTP(layer, buff, r.forwardersGeneration.Load(), r.forwardersWaitGroup)
+	forwarderGeneration := r.forwardersGeneration.Load()
+	r.params.Logger.Debugw("starting forwarder", "layer", layer, "forwarderGeneration", forwarderGeneration)
+	go r.forwardRTP(layer, buff, forwarderGeneration, r.forwardersWaitGroup)
 }
 
 func (r *ReceiverBase) forwardRTP(
@@ -904,6 +979,7 @@ func (r *ReceiverBase) forwardRTP(
 			"numPacketsDropped", numPacketsDropped,
 			"forwarderGeneration", forwarderGeneration,
 			"forwardersGeneration", r.forwardersGeneration.Load(),
+			"error", err,
 		)
 		wg.Done()
 	}()
@@ -915,7 +991,12 @@ func (r *ReceiverBase) forwardRTP(
 	}
 
 	pktBuf := make([]byte, bucket.RTPMaxPktSize)
-	r.params.Logger.Debugw("starting forwarding", "layer", layer)
+	r.params.Logger.Debugw(
+		"starting forwarding",
+		"layer", layer,
+		"forwarderGeneration", forwarderGeneration,
+		"forwardersGeneration", r.forwardersGeneration.Load(),
+	)
 
 	for r.forwardersGeneration.Load() == forwarderGeneration {
 		extPkt, err = buff.ReadExtended(pktBuf)
@@ -957,8 +1038,8 @@ func (r *ReceiverBase) forwardRTP(
 		r.downTrackSpreader.Broadcast(func(dt TrackSender) {
 			writeCount.Add(dt.WriteRTP(extPkt, spatialLayer))
 		})
-		if rt := r.redTransformer.Load(); rt != nil {
-			writeCount.Add(rt.(REDTransformer).ForwardRTP(extPkt, spatialLayer))
+		if rt := r.loadREDTransformer(); rt != nil {
+			writeCount.Add(rt.ForwardRTP(extPkt, spatialLayer))
 		}
 
 		// track delay/jitter
@@ -1022,13 +1103,13 @@ func (r *ReceiverBase) GetPrimaryReceiverForRed() TrackReceiver {
 		return r
 	}
 
-	rt := r.redTransformer.Load()
+	rt := r.loadREDTransformer()
 	if rt == nil {
 		pr := NewRedPrimaryReceiver(r, sfuutils.DownTrackSpreaderParams{
 			Threshold: r.lbThreshold,
 			Logger:    r.params.Logger,
 		})
-		r.redTransformer.Store(pr)
+		r.redTransformer.Store(&pr)
 		return pr
 	} else {
 		if pr, ok := rt.(*RedPrimaryReceiver); ok {
@@ -1046,13 +1127,13 @@ func (r *ReceiverBase) GetRedReceiver() TrackReceiver {
 		return r
 	}
 
-	rt := r.redTransformer.Load()
+	rt := r.loadREDTransformer()
 	if rt == nil {
 		pr := NewRedReceiver(r, sfuutils.DownTrackSpreaderParams{
 			Threshold: r.lbThreshold,
 			Logger:    r.params.Logger,
 		})
-		r.redTransformer.Store(pr)
+		r.redTransformer.Store(&pr)
 		return pr
 	} else {
 		if pr, ok := rt.(*RedReceiver); ok {
@@ -1063,7 +1144,7 @@ func (r *ReceiverBase) GetRedReceiver() TrackReceiver {
 }
 
 func (r *ReceiverBase) GetTemporalLayerFpsForSpatial(layer int32) []float32 {
-	b := r.getBuffer(layer)
+	b, _ := r.getBuffer(layer)
 	if b == nil {
 		return nil
 	}
@@ -1193,6 +1274,14 @@ func (r *ReceiverBase) OnVideoSizeChanged(f func()) {
 	r.videoSizeMu.Lock()
 	r.onVideoSizeChanged = f
 	r.videoSizeMu.Unlock()
+}
+
+func (r *ReceiverBase) loadREDTransformer() REDTransformer {
+	if rt := r.redTransformer.Load(); rt != nil {
+		return *rt
+	}
+
+	return nil
 }
 
 // -----------------------------------------------------------
