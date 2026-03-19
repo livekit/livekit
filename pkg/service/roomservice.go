@@ -161,14 +161,11 @@ func (s *RoomService) ListParticipants(ctx context.Context, req *livekit.ListPar
 		return nil, twirpAuthError(err)
 	}
 
-	participants, err := s.roomStore.ListParticipants(ctx, livekit.RoomName(req.Room))
+	res, err := s.roomClient.ListParticipants(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
 	if err != nil {
 		return nil, err
 	}
 
-	res := &livekit.ListParticipantsResponse{
-		Participants: participants,
-	}
 	RecordResponse(ctx, res)
 	return res, nil
 }
@@ -181,7 +178,7 @@ func (s *RoomService) GetParticipant(ctx context.Context, req *livekit.RoomParti
 		return nil, twirpAuthError(err)
 	}
 
-	participant, err := s.roomStore.LoadParticipant(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity))
+	participant, err := s.roomClient.GetParticipant(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
 	if err != nil {
 		return nil, err
 	}
@@ -199,13 +196,12 @@ func (s *RoomService) RemoveParticipant(ctx context.Context, req *livekit.RoomPa
 		return nil, twirpAuthError(err)
 	}
 
-	if _, err := s.roomStore.LoadParticipant(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)); err == ErrParticipantNotFound {
-		return nil, twirp.NotFoundError("participant not found")
-	}
-
 	res, err := s.participantClient.RemoveParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)
+	if err != nil {
+		return nil, err
+	}
 	RecordResponse(ctx, res)
-	return res, err
+	return res, nil
 }
 
 func (s *RoomService) MutePublishedTrack(ctx context.Context, req *livekit.MuteRoomTrackRequest) (*livekit.MuteRoomTrackResponse, error) {
@@ -240,15 +236,6 @@ func (s *RoomService) UpdateParticipant(ctx context.Context, req *livekit.Update
 
 	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room)); err != nil {
 		return nil, twirpAuthError(err)
-	}
-
-	if os, ok := s.roomStore.(OSSServiceStore); ok {
-		found, err := os.HasParticipant(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity))
-		if err != nil {
-			return nil, err
-		} else if !found {
-			return nil, ErrParticipantNotFound
-		}
 	}
 
 	res, err := s.participantClient.UpdateParticipant(ctx, s.topicFormatter.ParticipantTopic(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity)), req)

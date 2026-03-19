@@ -79,20 +79,33 @@ func setupSingleNodeTest(name string) (*service.LivekitServer, func()) {
 	}
 }
 
-func setupMultiNodeTest(name string) (*service.LivekitServer, *service.LivekitServer, func()) {
+// resolveRedisAddr is set by docker_test.go to provide Docker-based Redis fallback.
+// If nil, falls back to localhost:6379.
+var resolveRedisAddr func(t testing.TB) string
+
+func setupMultiNodeTest(name string, t ...testing.TB) (*service.LivekitServer, *service.LivekitServer, func()) {
 	logger.Infow("----------------STARTING TEST----------------", "test", name)
-	s1 := createMultiNodeServer(guid.New(nodeID1), defaultServerPort)
-	s2 := createMultiNodeServer(guid.New(nodeID2), secondServerPort)
+
+	var addr string
+	if len(t) > 0 && resolveRedisAddr != nil {
+		addr = resolveRedisAddr(t[0])
+	} else {
+		addr = "localhost:6379"
+	}
+
+	s1 := createMultiNodeServer(guid.New(nodeID1), defaultServerPort, addr)
+	s2 := createMultiNodeServer(guid.New(nodeID2), secondServerPort, addr)
 	go s1.Start()
 	go s2.Start()
 
 	waitForServerToStart(s1)
 	waitForServerToStart(s2)
 
+	rc := redisClient(addr)
 	return s1, s2, func() {
 		s1.Stop(true)
 		s2.Stop(true)
-		redisClient().FlushAll(context.Background())
+		rc.FlushAll(context.Background())
 		logger.Infow("----------------FINISHING TEST----------------", "test", name)
 	}
 }
@@ -174,7 +187,7 @@ func createSingleNodeServer(configUpdater func(*config.Config)) *service.Livekit
 	return s
 }
 
-func createMultiNodeServer(nodeID string, port uint32) *service.LivekitServer {
+func createMultiNodeServer(nodeID string, port uint32, redisAddress string) *service.LivekitServer {
 	var err error
 	conf, err := config.NewConfig("", true, nil, nil)
 	if err != nil {
@@ -183,7 +196,7 @@ func createMultiNodeServer(nodeID string, port uint32) *service.LivekitServer {
 	conf.Port = port
 	conf.RTC.UDPPort = rtcconfig.PortRange{Start: int(port) + 1}
 	conf.RTC.TCPPort = port + 2
-	conf.Redis.Address = "localhost:6379"
+	conf.Redis.Address = redisAddress
 	conf.Keys = map[string]string{testApiKey: testApiSecret}
 	conf.EnableDataTracks = true
 
@@ -283,9 +296,9 @@ func createRTCClientWithToken(token string, port int, testRTCServicePath testRTC
 	return c
 }
 
-func redisClient() *redis.Client {
+func redisClient(addr string) *redis.Client {
 	return redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
+		Addr: addr,
 	})
 }
 
