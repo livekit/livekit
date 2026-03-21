@@ -18,7 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -156,7 +156,7 @@ func (s *WHIPService) validateCreate(r *http.Request) (*createRequest, int, erro
 
 	fromIngress := r.Header.Get("X-Livekit-Ingress")
 
-	offerSDPBytes, err := ioutil.ReadAll(r.Body)
+	offerSDPBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, http.StatusBadRequest, fmt.Errorf("body does not have SDP offer: %s", err)
 	}
@@ -462,7 +462,7 @@ func (s *WHIPService) handleParticipantPatch(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	sdpFragmentBytes, err := ioutil.ReadAll(r.Body)
+	sdpFragmentBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		s.handleError("Patch", w, r, http.StatusBadRequest, fmt.Errorf("body does not have SDP fragment: %s", err))
 		return
