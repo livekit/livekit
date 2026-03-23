@@ -23,6 +23,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Do not block all ext ID determination on stream allocator listener (#4364)
 - Rename log field pID to participantID (#4365)
 - Replace deprecated io/ioutil with io in whipservice (#4375)
+- Update grpc to address CVE-2026-33186 (#4381)
 
 ### Fixed
 - Fix repair stream ID reporting for RTX pairing. (#4369)
