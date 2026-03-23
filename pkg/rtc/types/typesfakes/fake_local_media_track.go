@@ -124,6 +124,16 @@ type FakeLocalMediaTrack struct {
 	getTrackStatsReturnsOnCall map[int]struct {
 		result1 *livekit.RTPStats
 	}
+	HasPacketTrailerStub        func() bool
+	hasPacketTrailerMutex       sync.RWMutex
+	hasPacketTrailerArgsForCall []struct {
+	}
+	hasPacketTrailerReturns struct {
+		result1 bool
+	}
+	hasPacketTrailerReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	HasSdpCidStub        func(string) bool
 	hasSdpCidMutex       sync.RWMutex
 	hasSdpCidArgsForCall []struct {
@@ -947,6 +957,59 @@ func (fake *FakeLocalMediaTrack) GetTrackStatsReturnsOnCall(i int, result1 *live
 	}
 	fake.getTrackStatsReturnsOnCall[i] = struct {
 		result1 *livekit.RTPStats
+	}{result1}
+}
+
+func (fake *FakeLocalMediaTrack) HasPacketTrailer() bool {
+	fake.hasPacketTrailerMutex.Lock()
+	ret, specificReturn := fake.hasPacketTrailerReturnsOnCall[len(fake.hasPacketTrailerArgsForCall)]
+	fake.hasPacketTrailerArgsForCall = append(fake.hasPacketTrailerArgsForCall, struct {
+	}{})
+	stub := fake.HasPacketTrailerStub
+	fakeReturns := fake.hasPacketTrailerReturns
+	fake.recordInvocation("HasPacketTrailer", []interface{}{})
+	fake.hasPacketTrailerMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalMediaTrack) HasPacketTrailerCallCount() int {
+	fake.hasPacketTrailerMutex.RLock()
+	defer fake.hasPacketTrailerMutex.RUnlock()
+	return len(fake.hasPacketTrailerArgsForCall)
+}
+
+func (fake *FakeLocalMediaTrack) HasPacketTrailerCalls(stub func() bool) {
+	fake.hasPacketTrailerMutex.Lock()
+	defer fake.hasPacketTrailerMutex.Unlock()
+	fake.HasPacketTrailerStub = stub
+}
+
+func (fake *FakeLocalMediaTrack) HasPacketTrailerReturns(result1 bool) {
+	fake.hasPacketTrailerMutex.Lock()
+	defer fake.hasPacketTrailerMutex.Unlock()
+	fake.HasPacketTrailerStub = nil
+	fake.hasPacketTrailerReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalMediaTrack) HasPacketTrailerReturnsOnCall(i int, result1 bool) {
+	fake.hasPacketTrailerMutex.Lock()
+	defer fake.hasPacketTrailerMutex.Unlock()
+	fake.HasPacketTrailerStub = nil
+	if fake.hasPacketTrailerReturnsOnCall == nil {
+		fake.hasPacketTrailerReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.hasPacketTrailerReturnsOnCall[i] = struct {
+		result1 bool
 	}{result1}
 }
 
