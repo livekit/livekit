@@ -2,6 +2,32 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.9] - 2026-03-23
+
+## PLEASE NOTE: The logging key for participant session ID (a.k.a participant SID) has been changed from `pID` to `participantID` in this release for the sake of clarity. Hence the minor version bump.
+
+### Added
+- Add option to require media sections when participant joining (#4347, #4354)
+- Support originating calls from custom domains (#4349)
+- Add StopEgress function to the EgressLauncher interface (#4353)
+- Add option to not re-use transceiver in e2ee. (#4356)
+- Add API to restart lite stats. (#4366, #4368)
+* handle AGENT_ERROR disconnect reason (#4339)
+
+### Changed
+- Mark last run of grow bucket outside goroutine. (#4348)
+- Refine ipv6 support (#4352)
+- Sample data send error logging. (#4358)
+- Switch data track extension to 1-byte ID/length. (#4362)
+- Do not kick off migration of closed participant (#4363)
+- Do not block all ext ID determination on stream allocator listener (#4364)
+- Rename log field pID to participantID (#4365)
+- Replace deprecated io/ioutil with io in whipservice (#4375)
+- Update grpc to address CVE-2026-33186 (#4381)
+
+### Fixed
+- Fix repair stream ID reporting for RTX pairing. (#4369)
+
 ## [1.9.12] - 2026-03-05
 
 ### Added
