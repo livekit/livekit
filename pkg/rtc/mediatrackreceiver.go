@@ -687,7 +687,7 @@ func (t *MediaTrackReceiver) SetLayerSsrcsForRid(mimeType mime.MimeType, rid str
 				matchingLayer.RepairSsrc = repairSSRC
 			}
 		}
-		if ssrcFound {
+		if ssrcFound && (matchingLayer.Ssrc != ssrc || matchingLayer.RepairSsrc != repairSSRC) {
 			t.params.Logger.Warnw(
 				"not overriding ssrc", nil,
 				"rid", rid,
@@ -695,7 +695,7 @@ func (t *MediaTrackReceiver) SetLayerSsrcsForRid(mimeType mime.MimeType, rid str
 				"existingSSRC", matchingLayer.Ssrc,
 				"repairSSRC", repairSSRC,
 				"existingRepairSSRC", matchingLayer.RepairSsrc,
-				"trackInfo", trackInfo,
+				"trackInfo", logger.Proto(trackInfo),
 			)
 		}
 

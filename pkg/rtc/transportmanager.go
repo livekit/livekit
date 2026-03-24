@@ -211,20 +211,6 @@ func (t *TransportManager) Close() {
 	}
 }
 
-func (t *TransportManager) SubscriberClose() {
-	var subscriberClosed atomic.Bool
-	time.AfterFunc(time.Minute, func() { // CLOSE-DEBUG-CLEANUP
-		if !subscriberClosed.Load() {
-			t.params.Logger.Infow(
-				"transport maanager subscriber close timeout",
-				"subscriberClosed", subscriberClosed.Load(),
-			)
-		}
-	})
-	t.subscriber.Close()
-	subscriberClosed.Store(true)
-}
-
 func (t *TransportManager) HasPublisherEverConnected() bool {
 	return t.publisher.HasEverConnected()
 }
