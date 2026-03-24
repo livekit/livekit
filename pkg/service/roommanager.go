@@ -774,6 +774,37 @@ func (r *RoomManager) roomAndParticipantForReq(ctx context.Context, req particip
 	return room, participant, nil
 }
 
+func (r *RoomManager) ListParticipants(ctx context.Context, req *livekit.ListParticipantsRequest) (*livekit.ListParticipantsResponse, error) {
+	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
+	if room == nil {
+		return nil, ErrRoomNotFound
+	}
+
+	participants := room.GetParticipants()
+	items := make([]*livekit.ParticipantInfo, 0, len(participants))
+	for _, p := range participants {
+		items = append(items, p.ToProto())
+	}
+
+	return &livekit.ListParticipantsResponse{
+		Participants: items,
+	}, nil
+}
+
+func (r *RoomManager) GetParticipant(ctx context.Context, req *livekit.RoomParticipantIdentity) (*livekit.ParticipantInfo, error) {
+	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
+	if room == nil {
+		return nil, ErrRoomNotFound
+	}
+
+	participant := room.GetParticipant(livekit.ParticipantIdentity(req.Identity))
+	if participant == nil {
+		return nil, ErrParticipantNotFound
+	}
+
+	return participant.ToProto(), nil
+}
+
 func (r *RoomManager) RemoveParticipant(ctx context.Context, req *livekit.RoomParticipantIdentity) (*livekit.RemoveParticipantResponse, error) {
 	room, participant, err := r.roomAndParticipantForReq(ctx, req)
 	if err != nil {
