@@ -49,8 +49,6 @@ type ServiceStore interface {
 	// ListRooms returns currently active rooms. if names is not nil, it'll filter and return
 	// only rooms that match
 	ListRooms(ctx context.Context, roomNames []livekit.RoomName) ([]*livekit.Room, error)
-	LoadParticipant(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) (*livekit.ParticipantInfo, error)
-	ListParticipants(ctx context.Context, roomName livekit.RoomName) ([]*livekit.ParticipantInfo, error)
 }
 
 type OSSServiceStore interface {
