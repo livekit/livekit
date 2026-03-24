@@ -1023,7 +1023,9 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 		if r.config.TURN.UDPPort > 0 && !tlsOnly {
 			// UDP TURN is used as STUN
 			hasSTUN = true
-			urls = append(urls, fmt.Sprintf("turn:%s:%d?transport=udp", r.config.RTC.NodeIP, r.config.TURN.UDPPort))
+			for _, ip := range r.config.RTC.NodeIP.ToStringSlice() {
+				urls = append(urls, fmt.Sprintf("turn:%s:%d?transport=udp", ip, r.config.TURN.UDPPort))
+			}
 		}
 		if r.config.TURN.TLSPort > 0 {
 			urls = append(urls, fmt.Sprintf("turns:%s:443?transport=tcp", r.config.TURN.Domain))
