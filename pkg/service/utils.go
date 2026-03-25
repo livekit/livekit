@@ -358,3 +358,15 @@ func ValidateConnectRequest(
 	res.grants = claims
 	return res, http.StatusOK, nil
 }
+
+func IsRTCPath(path string) bool {
+	return path == "/rtc/" || path == "/rtc/v1"
+}
+
+func IsRTCValidatePath(path string) bool {
+	return path == "/rtc/validate" || path == "/rtc/v1/validate"
+}
+
+func IsAgentPath(path string) bool {
+	return strings.HasPrefix(path, "/agent")
+}
