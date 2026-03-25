@@ -360,7 +360,7 @@ func ValidateConnectRequest(
 }
 
 func IsRTCPath(path string) bool {
-	return path == "/rtc/" || path == "/rtc/v1"
+	return path == "/rtc" || path == "/rtc/v1"
 }
 
 func IsRTCValidatePath(path string) bool {
