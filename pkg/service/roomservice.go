@@ -27,6 +27,8 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/protocol/utils"
+	"github.com/livekit/psrpc"
 )
 
 type RoomService struct {
@@ -162,6 +164,18 @@ func (s *RoomService) ListParticipants(ctx context.Context, req *livekit.ListPar
 	}
 
 	res, err := s.roomClient.ListParticipants(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
+	if utils.ErrorIsOneOf(err, psrpc.ErrNoResponse, psrpc.ErrRequestTimedOut) {
+		if store, ok := s.roomStore.(OSSServiceStore); ok {
+			var participants []*livekit.ParticipantInfo
+			participants, err = store.ListParticipants(ctx, livekit.RoomName(req.Room))
+			if err == nil {
+				res = &livekit.ListParticipantsResponse{
+					Participants: participants,
+				}
+			}
+		}
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -179,6 +193,12 @@ func (s *RoomService) GetParticipant(ctx context.Context, req *livekit.RoomParti
 	}
 
 	participant, err := s.roomClient.GetParticipant(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
+	if utils.ErrorIsOneOf(err, psrpc.ErrNoResponse, psrpc.ErrRequestTimedOut) {
+		if store, ok := s.roomStore.(OSSServiceStore); ok {
+			participant, err = store.LoadParticipant(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity))
+		}
+	}
+
 	if err != nil {
 		return nil, err
 	}
