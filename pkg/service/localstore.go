@@ -25,6 +25,8 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
+var _ OSSServiceStore = (*LocalStore)(nil)
+
 // encapsulates CRUD operations for room settings
 type LocalStore struct {
 	// map of roomName => room

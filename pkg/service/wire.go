@@ -56,7 +56,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		getNodeStatsConfig,
 		routing.CreateRouter,
 		getLimitConf,
-		config.DefaultAPIConfig,
+		getAPIConf,
 		wire.Bind(new(routing.MessageRouter), new(routing.Router)),
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
 		telemetry.NewAnalyticsService,
@@ -290,4 +290,8 @@ func getNodeStatsConfig(config *config.Config) config.NodeStatsConfig {
 
 func getAgentConfig(config *config.Config) agent.Config {
 	return config.Agents
+}
+
+func getAPIConf(config *config.Config) config.APIConfig {
+	return config.API
 }

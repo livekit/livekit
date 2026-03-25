@@ -54,6 +54,8 @@ type ServiceStore interface {
 type OSSServiceStore interface {
 	DeleteRoom(ctx context.Context, roomName livekit.RoomName) error
 	HasParticipant(context.Context, livekit.RoomName, livekit.ParticipantIdentity) (bool, error)
+	LoadParticipant(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) (*livekit.ParticipantInfo, error)
+	ListParticipants(ctx context.Context, roomName livekit.RoomName) ([]*livekit.ParticipantInfo, error)
 }
 
 //counterfeiter:generate . EgressStore

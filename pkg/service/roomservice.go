@@ -27,6 +27,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
+	"github.com/livekit/psrpc"
 )
 
 type RoomService struct {
@@ -153,7 +154,7 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	return res, err
 }
 
-func (s *RoomService) ListParticipants(ctx context.Context, req *livekit.ListParticipantsRequest) (*livekit.ListParticipantsResponse, error) {
+func (s *RoomService) ListParticipants(ctx context.Context, req *livekit.ListParticipantsRequest) (res *livekit.ListParticipantsResponse, err error) {
 	RecordRequest(ctx, req)
 
 	AppendLogFields(ctx, "room", req.Room)
@@ -161,7 +162,20 @@ func (s *RoomService) ListParticipants(ctx context.Context, req *livekit.ListPar
 		return nil, twirpAuthError(err)
 	}
 
-	res, err := s.roomClient.ListParticipants(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
+	if s.apiConf.EnablePsrpcForGetListParticpants {
+		res, err = s.roomClient.ListParticipants(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
+	} else if store, ok := s.roomStore.(OSSServiceStore); ok {
+		var participants []*livekit.ParticipantInfo
+		participants, err = store.ListParticipants(ctx, livekit.RoomName(req.Room))
+		if err == nil {
+			res = &livekit.ListParticipantsResponse{
+				Participants: participants,
+			}
+		}
+	} else {
+		err = psrpc.ErrUnimplemented
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +184,7 @@ func (s *RoomService) ListParticipants(ctx context.Context, req *livekit.ListPar
 	return res, nil
 }
 
-func (s *RoomService) GetParticipant(ctx context.Context, req *livekit.RoomParticipantIdentity) (*livekit.ParticipantInfo, error) {
+func (s *RoomService) GetParticipant(ctx context.Context, req *livekit.RoomParticipantIdentity) (participant *livekit.ParticipantInfo, err error) {
 	RecordRequest(ctx, req)
 
 	AppendLogFields(ctx, "room", req.Room, "participant", req.Identity)
@@ -178,7 +192,14 @@ func (s *RoomService) GetParticipant(ctx context.Context, req *livekit.RoomParti
 		return nil, twirpAuthError(err)
 	}
 
-	participant, err := s.roomClient.GetParticipant(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
+	if s.apiConf.EnablePsrpcForGetListParticpants {
+		participant, err = s.roomClient.GetParticipant(ctx, s.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
+	} else if store, ok := s.roomStore.(OSSServiceStore); ok {
+		participant, err = store.LoadParticipant(ctx, livekit.RoomName(req.Room), livekit.ParticipantIdentity(req.Identity))
+	} else {
+		err = psrpc.ErrUnimplemented
+	}
+
 	if err != nil {
 		return nil, err
 	}

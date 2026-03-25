@@ -68,6 +68,8 @@ const (
 	maxRetries = 5
 )
 
+var _ OSSServiceStore = (*RedisStore)(nil)
+
 type RedisStore struct {
 	rc           redis.UniversalClient
 	unlockScript *redis.Script

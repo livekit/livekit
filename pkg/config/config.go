@@ -88,6 +88,8 @@ type Config struct {
 	NodeStats NodeStatsConfig `yaml:"node_stats,omitempty"`
 
 	EnableDataTracks bool `yaml:"enable_data_tracks,omitempty"`
+
+	API APIConfig `yaml:"api,omitempty"`
 }
 
 type RTCConfig struct {
@@ -308,6 +310,9 @@ type APIConfig struct {
 
 	// max amount of time to wait before checking for operation complete
 	MaxCheckInterval time.Duration `yaml:"max_check_interval,omitempty"`
+
+	// Backwards compatibility for room service api calls, will enable by default and remove in a future release
+	EnablePsrpcForGetListParticpants bool `yaml:"enable_psrpc_for_get_list_participants,omitempty"`
 }
 
 type PrometheusConfig struct {
@@ -434,6 +439,7 @@ var DefaultConfig = Config{
 	Metric:    metric.DefaultMetricConfig,
 	WebHook:   webhook.DefaultWebHookConfig,
 	NodeStats: DefaultNodeStatsConfig,
+	API:       DefaultAPIConfig(),
 }
 
 func NewConfig(confString string, strictMode bool, c *cli.Command, baseFlags []cli.Flag) (*Config, error) {
