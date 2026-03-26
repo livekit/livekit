@@ -15,6 +15,7 @@
 package rtc
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"maps"
@@ -74,6 +75,7 @@ const (
 	negotiationFrequency       = 150 * time.Millisecond
 	negotiationFailedTimeout   = 15 * time.Second
 	dtlsRetransmissionInterval = 100 * time.Millisecond
+	dtlsHandshakeTimeout       = time.Minute
 
 	iceDisconnectedTimeout = 10 * time.Second                          // compatible for ice-lite with firefox client
 	iceFailedTimeout       = 5 * time.Second                           // time between disconnected and failed
@@ -387,6 +389,9 @@ func newPeerConnection(
 		se.SetLite(false)
 	}
 	se.SetDTLSRetransmissionInterval(dtlsRetransmissionInterval)
+	se.SetDTLSConnectContextMaker(func() (context.Context, func()) {
+		return context.WithTimeout(context.Background(), dtlsHandshakeTimeout)
+	})
 	se.SetICETimeouts(iceDisconnectedTimeout, iceFailedTimeout, iceKeepaliveInterval)
 
 	// if client don't support prflx over relay, we should not expose private address to it, use single external ip as host candidate
