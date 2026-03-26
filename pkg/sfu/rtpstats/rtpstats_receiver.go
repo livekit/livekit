@@ -303,29 +303,10 @@ func (r *RTPStatsReceiver) Update(
 		gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
 
 		timeSinceHighest = packetTime - r.highestTime
+		expectedTSJump = int64(r.rtpConverter.ToRTPExt(time.Duration(timeSinceHighest)))
 		tsRolloverCount = r.getTSRolloverCount(timeSinceHighest, timestamp)
-		if tsRolloverCount >= 0 {
-			rulf := &receiverUpdateLoggingFields{
-				packetTime:       packetTime,
-				sequenceNumber:   sequenceNumber,
-				timestamp:        timestamp,
-				marker:           marker,
-				hdrSize:          hdrSize,
-				payloadSize:      payloadSize,
-				paddingSize:      paddingSize,
-				resSN:            resSN,
-				gapSN:            gapSN,
-				resTS:            resTS,
-				gapTS:            gapTS,
-				snRolloverCount:  snRolloverCount,
-				expectedTSJump:   expectedTSJump,
-				tsRolloverCount:  tsRolloverCount,
-				timeSinceHighest: timeSinceHighest,
-				rtpStats:         r,
-			}
-			r.logger.Warnw("potential time stamp roll over", nil, zap.Inline(rulf))
-		}
 		resTS = r.timestamp.Rollover(timestamp, tsRolloverCount)
+		gapTS = int64(resTS.ExtendedVal - resTS.PreExtendedHighest)
 		if resTS.IsUnhandled {
 			r.undoUpdatesLocked(resSN, resTS)
 
@@ -360,7 +341,28 @@ func (r *RTPStatsReceiver) Update(
 			}
 			return
 		}
-		gapTS = int64(resTS.ExtendedVal - resTS.PreExtendedHighest)
+
+		if tsRolloverCount >= 0 && payloadSize > 0 {
+			rulf := &receiverUpdateLoggingFields{
+				packetTime:       packetTime,
+				sequenceNumber:   sequenceNumber,
+				timestamp:        timestamp,
+				marker:           marker,
+				hdrSize:          hdrSize,
+				payloadSize:      payloadSize,
+				paddingSize:      paddingSize,
+				resSN:            resSN,
+				gapSN:            gapSN,
+				resTS:            resTS,
+				gapTS:            gapTS,
+				snRolloverCount:  snRolloverCount,
+				expectedTSJump:   expectedTSJump,
+				tsRolloverCount:  tsRolloverCount,
+				timeSinceHighest: timeSinceHighest,
+				rtpStats:         r,
+			}
+			r.logger.Warnw("potential time stamp roll over", nil, zap.Inline(rulf))
+		}
 
 		if !resSN.IsUnhandled {
 			// it is possible to receive old packets in two different scenarios
@@ -375,7 +377,6 @@ func (r *RTPStatsReceiver) Update(
 			//    to before mute, but it appears like it has rolled over.
 			//  Use a threshold against expected to ignore these.
 			if gapSN < 0 && gapTS > 0 {
-				expectedTSJump = int64(r.rtpConverter.ToRTPExt(time.Duration(timeSinceHighest)))
 				if gapTS > int64(float64(expectedTSJump)*cTSJumpTooHighFactor) {
 					r.undoUpdatesLocked(resSN, resTS)
 
