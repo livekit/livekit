@@ -303,6 +303,7 @@ func (r *RTPStatsReceiver) Update(
 		gapSN = int64(resSN.ExtendedVal - resSN.PreExtendedHighest)
 
 		timeSinceHighest = packetTime - r.highestTime
+		expectedTSJump = int64(r.rtpConverter.ToRTPExt(time.Duration(timeSinceHighest)))
 		tsRolloverCount = r.getTSRolloverCount(timeSinceHighest, timestamp)
 		resTS = r.timestamp.Rollover(timestamp, tsRolloverCount)
 		gapTS = int64(resTS.ExtendedVal - resTS.PreExtendedHighest)
@@ -376,7 +377,6 @@ func (r *RTPStatsReceiver) Update(
 			//    to before mute, but it appears like it has rolled over.
 			//  Use a threshold against expected to ignore these.
 			if gapSN < 0 && gapTS > 0 {
-				expectedTSJump = int64(r.rtpConverter.ToRTPExt(time.Duration(timeSinceHighest)))
 				if gapTS > int64(float64(expectedTSJump)*cTSJumpTooHighFactor) {
 					r.undoUpdatesLocked(resSN, resTS)
 
