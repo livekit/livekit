@@ -10,7 +10,7 @@ require (
 	github.com/elliotchance/orderedmap/v2 v2.7.0
 	github.com/florianl/go-tc v0.4.5
 	github.com/frostbyte73/core v0.1.1
-	github.com/gammazero/deque v1.2.0
+	github.com/gammazero/deque v1.2.1
 	github.com/gammazero/workerpool v1.1.3
 	github.com/google/uuid v1.6.0
 	github.com/google/wire v0.7.0
@@ -21,7 +21,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/mediatransportutil v0.0.0-20260309115634-0e2e24b36ee8
-	github.com/livekit/protocol v1.45.2-0.20260324051323-00010b61648f
+	github.com/livekit/protocol v1.45.2-0.20260327155206-4fe5c0ec0268
 	github.com/livekit/psrpc v0.7.1
 	github.com/mackerelio/go-osstat v0.2.6
 	github.com/magefile/mage v1.15.0
@@ -31,18 +31,18 @@ require (
 	github.com/ory/dockertest/v3 v3.12.0
 	github.com/pion/datachannel v1.6.0
 	github.com/pion/dtls/v3 v3.1.2
-	github.com/pion/ice/v4 v4.2.0
+	github.com/pion/ice/v4 v4.2.2
 	github.com/pion/interceptor v0.1.44
 	github.com/pion/rtcp v1.2.16
 	github.com/pion/rtp v1.10.1
-	github.com/pion/sctp v1.9.2
+	github.com/pion/sctp v1.9.4
 	github.com/pion/sdp/v3 v3.0.18
 	github.com/pion/transport/v4 v4.0.1
 	github.com/pion/turn/v4 v4.1.4
-	github.com/pion/webrtc/v4 v4.2.7
+	github.com/pion/webrtc/v4 v4.2.11
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.23.0
-	github.com/redis/go-redis/v9 v9.17.3
+	github.com/redis/go-redis/v9 v9.18.0
 	github.com/rs/cors v1.11.1
 	github.com/stretchr/testify v1.11.1
 	github.com/thoas/go-funk v0.9.3
@@ -53,8 +53,8 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.27.1
-	golang.org/x/exp v0.0.0-20260112195511-716be5621a96
-	golang.org/x/mod v0.33.0
+	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90
+	golang.org/x/mod v0.34.0
 	golang.org/x/sync v0.20.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
@@ -68,19 +68,19 @@ require (
 	github.com/moby/sys/user v0.3.0 // indirect
 	github.com/nyaruka/phonenumbers v1.6.5 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/otel v1.40.0 // indirect
+	go.opentelemetry.io/otel v1.42.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.39.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.39.0 // indirect
-	go.opentelemetry.io/otel/metric v1.40.0 // indirect
+	go.opentelemetry.io/otel/metric v1.42.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.40.0 // indirect
-	go.opentelemetry.io/otel/trace v1.40.0 // indirect
+	go.opentelemetry.io/otel/trace v1.42.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.9.0 // indirect
-	golang.org/x/time v0.14.0 // indirect
+	golang.org/x/time v0.15.0 // indirect
 )
 
 require (
-	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20251209175733-2a1774d88802.1 // indirect
-	buf.build/go/protovalidate v1.1.0 // indirect
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260209202127-80ab13bee0bf.1 // indirect
+	buf.build/go/protovalidate v1.1.3 // indirect
 	buf.build/go/protoyaml v0.6.0 // indirect
 	cel.dev/expr v0.25.1 // indirect
 	dario.cat/mergo v1.0.0 // indirect
@@ -111,7 +111,7 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/josharian/native v1.1.0 // indirect
-	github.com/klauspost/compress v1.18.3 // indirect
+	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/lithammer/shortuuid/v4 v4.2.0 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
@@ -120,7 +120,7 @@ require (
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/term v0.5.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/nats-io/nats.go v1.48.0 // indirect
+	github.com/nats-io/nats.go v1.50.0 // indirect
 	github.com/nats-io/nkeys v0.4.15 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
@@ -148,8 +148,8 @@ require (
 	golang.org/x/net v0.52.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
-	golang.org/x/tools v0.42.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260203192932-546029d2fa20 // indirect
+	golang.org/x/tools v0.43.0 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260319201613-d00831a3d3e7 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260319201613-d00831a3d3e7 // indirect
 	google.golang.org/grpc v1.79.3 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
