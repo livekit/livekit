@@ -88,8 +88,8 @@ type agentClient struct {
 	subDone       chan struct{}
 }
 
-func NewAgentClient(bus psrpc.MessageBus, config Config) (Client, error) {
-	client, err := rpc.NewAgentInternalClient(bus)
+func NewAgentClient(bus psrpc.MessageBus, config Config, opts ...psrpc.ClientOption) (Client, error) {
+	client, err := rpc.NewAgentInternalClient(bus, opts...)
 	if err != nil {
 		return nil, err
 	}
