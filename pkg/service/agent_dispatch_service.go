@@ -67,10 +67,11 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 	}
 
 	dispatch := &livekit.AgentDispatch{
-		Id:        guid.New(guid.AgentDispatchPrefix),
-		AgentName: req.AgentName,
-		Room:      req.Room,
-		Metadata:  req.Metadata,
+		Id:            guid.New(guid.AgentDispatchPrefix),
+		AgentName:     req.AgentName,
+		Room:          req.Room,
+		Metadata:      req.Metadata,
+		RestartPolicy: req.RestartPolicy,
 	}
 	return ag.agentDispatchClient.CreateDispatch(ctx, ag.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), dispatch)
 }
