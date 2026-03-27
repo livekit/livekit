@@ -1846,12 +1846,13 @@ func (r *Room) createAgentDispatch(dispatch *livekit.AgentDispatch) (*agentDispa
 	return ad, nil
 }
 
-func (r *Room) createAgentDispatchFromParams(agentName string, metadata string) (*agentDispatch, error) {
+func (r *Room) createAgentDispatchFromRoomDispatch(rad *livekit.RoomAgentDispatch) (*agentDispatch, error) {
 	return r.createAgentDispatch(&livekit.AgentDispatch{
-		Id:        guid.New(guid.AgentDispatchPrefix),
-		AgentName: agentName,
-		Metadata:  metadata,
-		Room:      r.protoRoom.Name,
+		Id:            guid.New(guid.AgentDispatchPrefix),
+		AgentName:     rad.GetAgentName(),
+		Metadata:      rad.GetMetadata(),
+		Room:          r.protoRoom.Name,
+		RestartPolicy: rad.GetRestartPolicy(),
 	})
 }
 
@@ -1867,7 +1868,7 @@ func (r *Room) createAgentDispatchesFromRoomAgent() {
 	}
 
 	for _, ag := range roomDisp {
-		_, err := r.createAgentDispatchFromParams(ag.AgentName, ag.Metadata)
+		_, err := r.createAgentDispatchFromRoomDispatch(ag)
 		if err != nil {
 			r.logger.Warnw("failed storing room dispatch", err)
 		}
