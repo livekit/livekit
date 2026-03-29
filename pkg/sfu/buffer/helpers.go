@@ -367,6 +367,9 @@ func IsAV1KeyFrame(payload []byte) bool {
 			if len(data) <= offset {
 				return nil, offset, offset > 0
 			}
+			if offset >= 4 {
+				return nil, offset, true
+			}
 			l := data[offset]
 			length |= int(l&0x7f) << (offset * 7)
 			offset++
@@ -377,8 +380,7 @@ func IsAV1KeyFrame(payload []byte) bool {
 		if len(data) < offset+length {
 			return data[offset:], len(data), true
 		}
-		return data[offset : offset+length],
-			offset + length, false
+		return data[offset : offset+length], offset + length, false
 	}
 	offset := 1
 	i := 0
