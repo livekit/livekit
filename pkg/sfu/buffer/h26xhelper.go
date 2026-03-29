@@ -524,10 +524,10 @@ func ExtractH264VideoSize(payload []byte) VideoSize {
 			if offset+naluSize > len(payload) {
 				break
 			}
-			nalu := payload[offset : offset+naluSize]
 			if naluSize == 0 {
 				continue
 			}
+			nalu := payload[offset : offset+naluSize]
 			if nalu[0]&0x1F == 7 { // SPS
 				return parseNAL(nalu)
 			}
