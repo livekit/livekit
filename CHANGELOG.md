@@ -2,21 +2,7 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.11.0] - 2026-03-30
-
-## PLEASE NOTE:
-Room service API methods `GetParticipant` and `ListParticipants` has been moved to use internal RPC (PsRPC) for consistency. By default it is disabled.
-
-To ensure smooth transition if you are using rolling deploys
-- Deploy this version
-- Enable PsRPC based API in config
-```
-api:
-  enable_psrpc_for_get_list_participants: true
-```
-- Re-deploy
-
-Although, redis based operation will be supported for some time, in a future version, PsRPC will be the only supported method for these APIs. Please plan to update as PsRPC based operation will provide more responsive/consistent results.
+## [1.10.1] - 2026-03-30
 
 ### Added
 - add packet trailer stripping support (#4361)
@@ -25,9 +11,7 @@ Although, redis based operation will be supported for some time, in a future ver
 - feat(agent-dispatch): add job restart policy (#4401)
 
 ### Changed
-- route participant reads through PSRPC instead of Redis (#4387)
 - Close both peer connections to aid migration. (#4382)
-- Config to choose servicestore or rpc for participant APIs (#4391)
 
 ### Fixed
 - Fix TURN server URL (#4389)
