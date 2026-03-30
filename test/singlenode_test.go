@@ -1100,3 +1100,38 @@ func TestSinglePublisherDataTrack(t *testing.T) {
 		})
 	}
 }
+
+func TestTurnRelay(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	s := createSingleNodeServer(func(c *config.Config) {
+		c.TURN.Enabled = true
+		c.TURN.UDPPort = 3478
+	})
+	go func() {
+		if err := s.Start(); err != nil {
+			logger.Errorw("server returned error", err)
+		}
+	}()
+	defer s.Stop(true)
+
+	waitForServerToStart(s)
+
+	c1 := createRTCClient("relay_c1", defaultServerPort, testRTCServicePathv0, &testclient.Options{
+		AutoSubscribe: true,
+		ForceRelay:    true,
+	})
+	defer c1.Stop()
+
+	waitUntilConnected(t, c1)
+
+	testutils.WithTimeout(t, func() string {
+		if !c1.IsLocalCandidateRelaySelected() {
+			return "expected local candidate to be relay"
+		}
+		return ""
+	})
+}

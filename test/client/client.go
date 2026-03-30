@@ -63,6 +63,8 @@ type RTCClient struct {
 	conn                    *websocket.Conn
 	publisher               *rtc.PCTransport
 	subscriber              *rtc.PCTransport
+	enabledCodecs           []*livekit.Codec
+	forceRelay              bool
 	// sid => track
 	localTracks        map[string]webrtc.TrackLocal
 	trackSenders       map[string]*webrtc.RTPSender
@@ -137,6 +139,7 @@ type Options struct {
 	SignalResponseInterceptor SignalResponseInterceptor
 	UseJoinRequestQueryParam  bool
 	RTCServicePath            string
+	ForceRelay                bool
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
@@ -223,8 +226,6 @@ func SetAuthorizationToken(header http.Header, token string) {
 }
 
 func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Options) (*RTCClient, error) {
-	var err error
-
 	c := &RTCClient{
 		useSinglePeerConnection:    useSinglePeerConnection,
 		conn:                       conn,
@@ -242,15 +243,6 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 	c.nextDataTrackHandle.Store(uint32(rand.IntN(8192)))
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 
-	conf := rtc.WebRTCConfig{
-		WebRTCConfig: rtcconfig.WebRTCConfig{
-			Configuration: rtcConf,
-		},
-	}
-	conf.SettingEngine.SetLite(false)
-	conf.SettingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleClient)
-	ff := buffer.NewFactoryOfBufferFactory(500, 200)
-	conf.SetBufferFactory(ff.CreateBufferFactory())
 	var codecs []*livekit.Codec
 	for _, codec := range []*livekit.Codec{
 		{
@@ -276,6 +268,29 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 			codecs = append(codecs, codec)
 		}
 	}
+	c.enabledCodecs = codecs
+
+	if opts != nil {
+		c.signalRequestInterceptor = opts.SignalRequestInterceptor
+		c.signalResponseInterceptor = opts.SignalResponseInterceptor
+		c.forceRelay = opts.ForceRelay
+	}
+
+	return c, nil
+}
+
+func (c *RTCClient) createTransport(rtcconf webrtc.Configuration) error {
+	var err error
+
+	conf := rtc.WebRTCConfig{
+		WebRTCConfig: rtcconfig.WebRTCConfig{
+			Configuration: rtcconf,
+		},
+	}
+	conf.SettingEngine.SetLite(false)
+	conf.SettingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleClient)
+	ff := buffer.NewFactoryOfBufferFactory(500, 200)
+	conf.SetBufferFactory(ff.CreateBufferFactory())
 
 	//
 	// The signal targets are from point of view of server.
@@ -287,7 +302,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 	c.publisher, err = rtc.NewPCTransport(rtc.TransportParams{
 		Config:                           &conf,
 		DirectionConfig:                  conf.Subscriber,
-		EnabledCodecs:                    codecs,
+		EnabledCodecs:                    c.enabledCodecs,
 		IsOfferer:                        true,
 		IsSendSide:                       true,
 		Handler:                          publisherHandler,
@@ -297,7 +312,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		EnableDataTracks:                 true,
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	publisherHandler.OnICECandidateCalls(func(ic *webrtc.ICECandidate, t livekit.SignalTarget) error {
@@ -342,13 +357,13 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 	if err := c.publisher.CreateDataChannel(rtc.ReliableDataChannel, &webrtc.DataChannelInit{
 		Ordered: &ordered,
 	}); err != nil {
-		return nil, err
+		return err
 	}
 
 	if err := c.publisher.CreateDataChannel("pubraw", &webrtc.DataChannelInit{
 		Ordered: &ordered,
 	}); err != nil {
-		return nil, err
+		return err
 	}
 
 	ordered = false
@@ -357,14 +372,14 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		Ordered:        &ordered,
 		MaxRetransmits: &maxRetransmits,
 	}); err != nil {
-		return nil, err
+		return err
 	}
 
 	if err := c.publisher.CreateDataChannel(rtc.DataTrackDataChannel, &webrtc.DataChannelInit{
 		Ordered:        &ordered,
 		MaxRetransmits: &maxRetransmits,
 	}); err != nil {
-		return nil, err
+		return err
 	}
 
 	if !c.useSinglePeerConnection {
@@ -372,7 +387,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		c.subscriber, err = rtc.NewPCTransport(rtc.TransportParams{
 			Config:                           &conf,
 			DirectionConfig:                  conf.Publisher,
-			EnabledCodecs:                    codecs,
+			EnabledCodecs:                    c.enabledCodecs,
 			Handler:                          subscriberHandler,
 			DatachannelMaxReceiverBufferSize: 1500,
 			DatachannelSlowThreshold:         1024 * 1024 * 1024,
@@ -380,14 +395,14 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 			EnableDataTracks:                 true,
 		})
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		ordered := true
 		if err := c.subscriber.CreateReadableDataChannel("subraw", &webrtc.DataChannelInit{
 			Ordered: &ordered,
 		}); err != nil {
-			return nil, err
+			return err
 		}
 
 		subscriberHandler.OnICECandidateCalls(func(ic *webrtc.ICECandidate, t livekit.SignalTarget) error {
@@ -446,12 +461,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		go c.ensurePublisherConnected()
 	}
 
-	if opts != nil {
-		c.signalRequestInterceptor = opts.SignalRequestInterceptor
-		c.signalResponseInterceptor = opts.SignalResponseInterceptor
-	}
-
-	return c, nil
+	return nil
 }
 
 func (c *RTCClient) ID() livekit.ParticipantID {
@@ -497,6 +507,28 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 			c.remoteParticipants[livekit.ParticipantID(p.Sid)] = p
 		}
 		c.lock.Unlock()
+
+		var iceServers []webrtc.ICEServer
+		for _, is := range msg.Join.IceServers {
+			iceServers = append(iceServers, webrtc.ICEServer{
+				URLs:       is.Urls,
+				Username:   is.Username,
+				Credential: is.Credential,
+			})
+		}
+		if len(iceServers) == 0 {
+			iceServers = rtcConf.ICEServers
+		}
+		rtcconf := rtcConf
+		rtcconf.ICEServers = iceServers
+		if c.forceRelay {
+			rtcconf.ICETransportPolicy = webrtc.ICETransportPolicyRelay
+		}
+
+		if err := c.createTransport(rtcconf); err != nil {
+			return err
+		}
+
 		// if publish only, negotiate
 		if !msg.Join.SubscriberPrimary {
 			c.subscriberAsPrimary.Store(false)
@@ -1292,6 +1324,41 @@ func (c *RTCClient) BytesReceived() uint64 {
 	}
 	c.lock.Unlock()
 	return total
+}
+
+func (c *RTCClient) GetICEConnectionType() types.ICEConnectionType {
+	if c.subscriberAsPrimary.Load() {
+		if c.subscriber != nil {
+			return c.subscriber.GetICEConnectionType()
+		}
+	} else {
+		if c.publisher != nil {
+			return c.publisher.GetICEConnectionType()
+		}
+	}
+	return types.ICEConnectionTypeUnknown
+}
+
+func (c *RTCClient) IsLocalCandidateRelaySelected() bool {
+	var info *types.ICEConnectionInfo
+	if c.subscriberAsPrimary.Load() {
+		if c.subscriber != nil {
+			info = c.subscriber.GetICEConnectionInfo()
+		}
+	} else {
+		if c.publisher != nil {
+			info = c.publisher.GetICEConnectionInfo()
+		}
+	}
+	if info == nil {
+		return false
+	}
+	for _, local := range info.Local {
+		if local.SelectedOrder > 0 && local.Local != nil && local.Local.Typ == webrtc.ICECandidateTypeRelay {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *RTCClient) SendNacks(count int) {
