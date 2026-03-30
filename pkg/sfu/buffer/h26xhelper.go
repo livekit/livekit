@@ -334,6 +334,9 @@ func ExtractH265VideoSize(payload []byte) VideoSize {
 			if i+nalSize > len(payload) {
 				break
 			}
+			if nalSize == 0 {
+				continue
+			}
 			nalUnit := payload[i : i+nalSize]
 			nt := (nalUnit[0] >> 1) & 0x3F
 			if nt == 33 {
@@ -363,6 +366,9 @@ func parseH264SPS(nal []byte) (*SPSInfo, error) {
 		return nil, errors.New("empty SPS NAL")
 	}
 	nal = stripStartCode(nal)
+	if len(nal) < 1 {
+		return nil, errors.New("empty SPS NAL after stripping start code")
+	}
 	nalType := nal[0] & 0x1F
 	if nalType != 7 {
 		return nil, fmt.Errorf("not an SPS NAL (type=%d)", nalType)
@@ -395,13 +401,17 @@ func parseH264SPS(nal []byte) (*SPSInfo, error) {
 
 	br.ReadUE() // log2_max_frame_num_minus4
 	pocType, _ := br.ReadUE()
-	if pocType == 0 {
+	switch pocType {
+	case 0:
 		br.ReadUE()
-	} else if pocType == 1 {
+	case 1:
 		br.ReadFlag()
 		br.ReadSE()
 		br.ReadSE()
 		cnt, _ := br.ReadUE()
+		if cnt > 255 {
+			return nil, errors.New("SPS: num_ref_frames_in_pic_order_cnt_cycle too large")
+		}
 		for range cnt {
 			br.ReadSE()
 		}
@@ -499,11 +509,12 @@ func ExtractH264VideoSize(payload []byte) VideoSize {
 
 	case 24, 25, 26, 27: // STAP-A/B, MTAP16, MTAP24
 		offset := 1
-		if nalType == 25 { // STAP-B has 16-bit DON
+		switch nalType {
+		case 25: // STAP-B has 16-bit DON
 			offset += 2
-		} else if nalType == 26 { // MTAP16
+		case 26: // MTAP16
 			offset += 3
-		} else if nalType == 27 { // MTAP24
+		case 27: // MTAP24
 			offset += 4
 		}
 
@@ -512,6 +523,9 @@ func ExtractH264VideoSize(payload []byte) VideoSize {
 			offset += 2
 			if offset+naluSize > len(payload) {
 				break
+			}
+			if naluSize == 0 {
+				continue
 			}
 			nalu := payload[offset : offset+naluSize]
 			if nalu[0]&0x1F == 7 { // SPS

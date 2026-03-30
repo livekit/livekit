@@ -3,6 +3,7 @@ package buffer
 import (
 	"encoding/base64"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -36,5 +37,50 @@ func TestExtractH26xVideoSize(t *testing.T) {
 		}
 		require.Equal(t, tc.width, sz.Width)
 		require.Equal(t, tc.height, sz.Height)
+	}
+}
+
+func TestExtractH264VideoSize_ZeroSizeSTAPA(t *testing.T) {
+	payload := []byte{0x38, 0x00, 0x00}
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("panicked: %v", r)
+		}
+	}()
+	_ = ExtractH264VideoSize(payload)
+}
+
+func TestExtractH265VideoSize_ZeroSizeAP(t *testing.T) {
+	payload := []byte{0x61, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("panicked: %v", r)
+		}
+	}()
+	_ = ExtractH265VideoSize(payload)
+}
+
+func TestParseH264SPS_EmptyAfterStripStartCode(t *testing.T) {
+	payload := []byte{0x1c, 0xc0, 0x00, 0x01}
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("panicked: %v", r)
+		}
+	}()
+	_ = ExtractH264VideoSize(payload)
+}
+
+func TestParseH264SPS_UnboundedPocTypeLoop(t *testing.T) {
+	payload := []byte{0x27, 0x08, 0x30, 0x30, 0x30, 0x41, 0x30,
+		0x00, 0x00, 0x00, 0x7f, 0x27, 0x08, 0xff, 0x7f, 0xa8}
+	done := make(chan struct{})
+	go func() {
+		_ = ExtractH264VideoSize(payload)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("ExtractH264VideoSize hung — CPU exhaustion")
 	}
 }
