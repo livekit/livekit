@@ -65,6 +65,7 @@ type RTCClient struct {
 	subscriber              *rtc.PCTransport
 	enabledCodecs           []*livekit.Codec
 	forceRelay              bool
+	transportReady          chan struct{}
 	// sid => track
 	localTracks        map[string]webrtc.TrackLocal
 	trackSenders       map[string]*webrtc.RTPSender
@@ -239,6 +240,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		bytesReceived:              make(map[livekit.ParticipantID]uint64),
 		pendingPublishedDataTracks: make(map[uint16]*livekit.DataTrackInfo),
 		subscribedDataTracks:       make(map[livekit.ParticipantID]map[uint16]*DataTrackRemote),
+		transportReady:             make(chan struct{}),
 	}
 	c.nextDataTrackHandle.Store(uint32(rand.IntN(8192)))
 	c.ctx, c.cancel = context.WithCancel(context.Background())
@@ -528,6 +530,7 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 		if err := c.createTransport(rtcconf); err != nil {
 			return err
 		}
+		close(c.transportReady)
 
 		// if publish only, negotiate
 		if !msg.Join.SubscriberPrimary {
@@ -878,6 +881,11 @@ func AddTrackNoWriter() AddTrackOption {
 }
 
 func (c *RTCClient) AddTrack(track *webrtc.TrackLocalStaticSample, path string, opts ...AddTrackOption) (writer TrackWriter, err error) {
+	select {
+	case <-c.transportReady:
+	case <-c.ctx.Done():
+		return nil, c.ctx.Err()
+	}
 	var params AddTrackParams
 	for _, opt := range opts {
 		opt(&params)
@@ -1094,6 +1102,12 @@ func (c *RTCClient) LastAnswer() *webrtc.SessionDescription {
 }
 
 func (c *RTCClient) ensurePublisherConnected() error {
+	select {
+	case <-c.transportReady:
+	case <-c.ctx.Done():
+		return c.ctx.Err()
+	}
+
 	if c.publisher.HasEverConnected() {
 		return nil
 	}
