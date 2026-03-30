@@ -1326,19 +1326,6 @@ func (c *RTCClient) BytesReceived() uint64 {
 	return total
 }
 
-func (c *RTCClient) GetICEConnectionType() types.ICEConnectionType {
-	if c.subscriberAsPrimary.Load() {
-		if c.subscriber != nil {
-			return c.subscriber.GetICEConnectionType()
-		}
-	} else {
-		if c.publisher != nil {
-			return c.publisher.GetICEConnectionType()
-		}
-	}
-	return types.ICEConnectionTypeUnknown
-}
-
 func (c *RTCClient) IsLocalCandidateRelaySelected() bool {
 	var info *types.ICEConnectionInfo
 	if c.subscriberAsPrimary.Load() {
