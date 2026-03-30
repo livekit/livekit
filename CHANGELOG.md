@@ -2,7 +2,23 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.10.9] - 2026-03-23
+## [1.10.1] - 2026-03-30
+
+### Added
+- add packet trailer stripping support (#4361)
+- Path check helpers (#4392)
+- add deadline to dtls connect context (#4395)
+- feat(agent-dispatch): add job restart policy (#4401)
+
+### Changed
+- Close both peer connections to aid migration. (#4382)
+
+### Fixed
+- Fix TURN server URL (#4389)
+- AV1 parser overflow fix. (#4405)
+- Address malformed H264/H265 parsing issues (#4407)
+
+## [1.10.0] - 2026-03-23
 
 ## PLEASE NOTE: The logging key for participant session ID (a.k.a participant SID) has been changed from `pID` to `participantID` in this release for the sake of clarity. Hence the minor version bump.
 
