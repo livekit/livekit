@@ -2,7 +2,39 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.10.9] - 2026-03-23
+## [1.11.0] - 2026-03-30
+
+## PLEASE NOTE:
+Room service API methods `GetParticipant` and `ListParticipants` has been moved to use internal RPC (PsRPC) for consistency. By default it is disabled.
+
+To ensure smooth transition if you are using rolling deploys
+- Deploy this version
+- Enable PsRPC based API in config
+```
+api:
+  enable_psrpc_for_get_list_participants: true
+```
+- Re-deploy
+
+Although, redis based operation will be supported for some time, in a future version, PsRPC will be the only supported method for these APIs. Please plan to update as PsRPC based operation will provide more responsive/consistent results.
+
+### Added
+- add packet trailer stripping support (#4361)
+- Path check helpers (#4392)
+- add deadline to dtls connect context (#4395)
+- feat(agent-dispatch): add job restart policy (#4401)
+
+### Changed
+- route participant reads through PSRPC instead of Redis (#4387)
+- Close both peer connections to aid migration. (#4382)
+- Config to choose servicestore or rpc for participant APIs (#4391)
+
+### Fixed
+- Fix TURN server URL (#4389)
+- AV1 parser overflow fix. (#4405)
+- Address malformed H264/H265 parsing issues (#4407)
+
+## [1.10.0] - 2026-03-23
 
 ## PLEASE NOTE: The logging key for participant session ID (a.k.a participant SID) has been changed from `pID` to `participantID` in this release for the sake of clarity. Hence the minor version bump.
 
