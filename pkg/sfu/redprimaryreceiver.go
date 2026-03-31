@@ -102,7 +102,7 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 				"primaryETS", pkt.ExtTimestamp,
 				"packetIndex", i,
 				"packetExtractedSN", pkts[i].SequenceNumber,
-				"packetSSN", pPkt.ExtSequenceNumber,
+				"packetESN", pPkt.ExtSequenceNumber,
 				"packetExtractedTS", pkts[i].Timestamp,
 				"packetETS", pPkt.ExtTimestamp,
 				"pktHistory", r.pktHistory,
