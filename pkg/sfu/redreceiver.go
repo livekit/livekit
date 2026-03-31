@@ -84,7 +84,7 @@ func (r *RedReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int3
 
 	pPkt := *pkt
 	redRtpPacket := *pkt.Packet
-	redRtpPacket.PayloadType = 63
+	redRtpPacket.PayloadType = opusRedPT
 	redRtpPacket.Payload = r.redPayloadBuf[:redLen]
 	pPkt.Packet = &redRtpPacket
 

@@ -26,8 +26,7 @@ import (
 )
 
 const (
-	tsStep    = uint32(48000 / 1000 * 10)
-	opusREDPT = 63
+	tsStep = uint32(48000 / 1000 * 10)
 )
 
 type dummyDowntrack struct {
@@ -289,7 +288,7 @@ func generateRedPkts(t *testing.T, pkts []*rtp.Packet, redCount int) []*rtp.Pack
 		}
 		buf := make([]byte, mtuSize)
 		redPkt := *pkt
-		redPkt.PayloadType = opusREDPT
+		redPkt.PayloadType = opusRedPT
 		encoded, err := encodeRedForPrimary(encodingPkts, pkt, buf)
 		require.NoError(t, err)
 		redPkt.Payload = buf[:encoded]
@@ -305,7 +304,7 @@ func testRedRedPrimaryReceiver(t *testing.T, maxPktCount, redCount int, sendPktI
 			params: ReceiverBaseParams{
 				Kind:   webrtc.RTPCodecTypeAudio,
 				Logger: logger.GetLogger(),
-				Codec:  webrtc.RTPCodecParameters{PayloadType: opusREDPT, RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: "audio/red"}},
+				Codec:  webrtc.RTPCodecParameters{PayloadType: opusRedPT, RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: "audio/red"}},
 			},
 		},
 	}
@@ -413,7 +412,7 @@ func TestRedPrimaryReceiver(t *testing.T) {
 				params: ReceiverBaseParams{
 					Kind:   webrtc.RTPCodecTypeAudio,
 					Logger: logger.GetLogger(),
-					Codec:  webrtc.RTPCodecParameters{PayloadType: opusREDPT, RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: "audio/red"}},
+					Codec:  webrtc.RTPCodecParameters{PayloadType: opusRedPT, RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: "audio/red"}},
 				},
 			},
 		}
