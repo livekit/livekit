@@ -117,6 +117,28 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 
 		if r.lastTS != 0 {
 			if pPkt.ExtSequenceNumber > r.lastExtSeq && pPkt.ExtTimestamp < r.lastExtTS {
+				r.logger.Warnw(
+					"timestamp inversion, dropping", nil,
+					"numPackets", len(pkts),
+					"primaryIncomingSN", pkt.Packet.Header.SequenceNumber,
+					"primaryIncomingTS", pkt.Packet.Header.Timestamp,
+					"primaryExtractedSN", pkts[len(pkts)-1].SequenceNumber,
+					"primaryExtractedTS", pkts[len(pkts)-1].Timestamp,
+					"primaryESN", pkt.ExtSequenceNumber,
+					"primaryETS", pkt.ExtTimestamp,
+					"packetIndex", i,
+					"packetExtractedSN", pkts[i].SequenceNumber,
+					"packetESN", pPkt.ExtSequenceNumber,
+					"packetExtractedTS", pkts[i].Timestamp,
+					"packetETS", pPkt.ExtTimestamp,
+					"pktHistory", r.pktHistory,
+					"redHeader", pkt.Packet.Payload[:10],
+					"payloadSize", len(pkt.Packet.Payload),
+					"lastSeq", r.lastSeq,
+					"lastExtSeq", r.lastExtSeq,
+					"lastTS", r.lastTS,
+					"lastExtTS", r.lastExtTS,
+				)
 			}
 		}
 		r.lastTS = pPkt.Packet.Header.Timestamp
