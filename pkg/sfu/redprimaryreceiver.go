@@ -90,6 +90,26 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 			pPkt.ExtTimestamp -= uint64(pkts[len(pkts)-1].Timestamp - pkts[i].Timestamp)
 		}
 		pPkt.Packet = sendPkt
+		if pPkt.ExtSequenceNumber > pkt.ExtSequenceNumber && pPkt.ExtTimestamp < pkt.ExtTimestamp {
+			r.logger.Warnw(
+				"timestamp inversion, dropping", nil,
+				"numPackets", len(pkts),
+				"primaryIncomingSN", pkt.Packet.Header.SequenceNumber,
+				"primaryIncomingTS", pkt.Packet.Header.Timestamp,
+				"primaryExtractedSN", pkts[len(pkts)-1].SequenceNumber,
+				"primaryExtractedTS", pkts[len(pkts)-1].Timestamp,
+				"primaryESN", pkt.ExtSequenceNumber,
+				"primaryETS", pkt.ExtTimestamp,
+				"packetIndex", i,
+				"packetExtractedSN", pkts[i].SequenceNumber,
+				"packetSSN", pPkt.ExtSequenceNumber,
+				"packetExtractedTS", pkts[i].Timestamp,
+				"packetETS", pPkt.ExtTimestamp,
+				"pktHistory", r.pktHistory,
+				"redHeader", pkt.Packet.Payload[:10],
+			)
+			continue // drop the packet which causes the inversion
+		}
 
 		// not modify the ExtPacket.RawPacket here for performance since it is not used by the DownTrack,
 		// otherwise it should be set to the correct value (marshal the primary rtp packet)
@@ -226,6 +246,8 @@ func (r *RedPrimaryReceiver) getSendPktsFromRed(rtp *rtp.Packet) ([]*rtp.Packet,
 
 	return extractPktsFromRed(rtp, recoverBits)
 }
+
+// ---------------------------------------
 
 type block struct {
 	tsOffset uint32
