@@ -118,7 +118,7 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 		if r.lastTS != 0 {
 			if pPkt.ExtSequenceNumber > r.lastExtSeq && pPkt.ExtTimestamp < r.lastExtTS {
 				r.logger.Warnw(
-					"timestamp inversion, dropping", nil,
+					"timestamp inversion", nil,
 					"numPackets", len(pkts),
 					"primaryIncomingSN", pkt.Packet.Header.SequenceNumber,
 					"primaryIncomingTS", pkt.Packet.Header.Timestamp,
