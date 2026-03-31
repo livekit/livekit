@@ -45,6 +45,9 @@ type RedPrimaryReceiver struct {
 
 	firstPktReceived bool
 	lastSeq          uint16
+	lastExtSeq       uint64
+	lastTS           uint32
+	lastExtTS        uint64
 
 	// bitset for upstream packet receive history [lastSeq-8, lastSeq-1], bit 1 represents packet received
 	pktHistory byte
@@ -107,9 +110,18 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 				"packetETS", pPkt.ExtTimestamp,
 				"pktHistory", r.pktHistory,
 				"redHeader", pkt.Packet.Payload[:10],
+				"payloadSize", len(pkt.Packet.Payload),
 			)
 			continue // drop the packet which causes the inversion
 		}
+
+		if r.lastTS != 0 {
+			if pPkt.ExtSequenceNumber > r.lastExtSeq && pPkt.ExtTimestamp < r.lastExtTS {
+			}
+		}
+		r.lastTS = pPkt.Packet.Header.Timestamp
+		r.lastExtTS = pPkt.ExtTimestamp
+		r.lastExtSeq = pPkt.ExtSequenceNumber
 
 		// not modify the ExtPacket.RawPacket here for performance since it is not used by the DownTrack,
 		// otherwise it should be set to the correct value (marshal the primary rtp packet)
