@@ -598,7 +598,7 @@ func (r *RTPStatsReceiver) Update(
 			}
 		}
 
-		if resTS.ExtendedVal < resTS.PreExtendedHighest {
+		if resTS.ExtendedVal < resTS.PreExtendedHighest && r.bytes > 0 {
 			r.timeReversedCount++
 			if (r.timeReversedCount-1)%100 == 0 {
 				rulf := &receiverUpdateLoggingFields{
