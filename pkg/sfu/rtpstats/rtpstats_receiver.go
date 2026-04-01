@@ -185,8 +185,6 @@ type RTPStatsReceiver struct {
 	clockSkewCount              int
 	clockSkewMediaPathCount     int
 	outOfOrderSenderReportCount int
-	largeJumpCount              int
-	largeJumpNegativeCount      int
 	timeReversedCount           int
 
 	packetsDroppedPreStartTimestamp      int
@@ -311,7 +309,6 @@ func (r *RTPStatsReceiver) Update(
 			r.undoUpdatesLocked(resSN, resTS)
 
 			r.packetsDroppedPreStartTimestamp++
-
 			rulf := &receiverUpdateLoggingFields{
 				packetTime:       packetTime,
 				sequenceNumber:   sequenceNumber,
@@ -330,7 +327,9 @@ func (r *RTPStatsReceiver) Update(
 				timeSinceHighest: timeSinceHighest,
 				rtpStats:         r,
 			}
-			r.logger.Warnw("dropping packet, pre-start timestamp", nil, zap.Inline(rulf))
+			if shouldLog(r.packetsDroppedPreStartTimestamp) {
+				r.logger.Warnw("dropping packet, pre-start timestamp", nil, zap.Inline(rulf))
+			}
 
 			if r.maybeRestart(sequenceNumber, timestamp, payloadSize) {
 				r.logger.Infow("potential restart", zap.Inline(rulf))
@@ -381,7 +380,6 @@ func (r *RTPStatsReceiver) Update(
 					r.undoUpdatesLocked(resSN, resTS)
 
 					r.packetsDroppedOldTimestamp++
-
 					rulf := &receiverUpdateLoggingFields{
 						packetTime:       packetTime,
 						sequenceNumber:   sequenceNumber,
@@ -400,7 +398,9 @@ func (r *RTPStatsReceiver) Update(
 						timeSinceHighest: timeSinceHighest,
 						rtpStats:         r,
 					}
-					r.logger.Warnw("dropping packet, old timestamp", nil, zap.Inline(rulf))
+					if shouldLog(r.packetsDroppedOldTimestamp) {
+						r.logger.Warnw("dropping packet, old timestamp", nil, zap.Inline(rulf))
+					}
 
 					if r.maybeRestart(sequenceNumber, timestamp, payloadSize) {
 						r.logger.Infow("potential restart", zap.Inline(rulf))
@@ -418,9 +418,9 @@ func (r *RTPStatsReceiver) Update(
 			if gapTS < 0 && gapSN > 0 {
 				r.undoUpdatesLocked(resSN, resTS)
 
-				r.packetsDroppedOldSequenceNumber++
 				expectedTSJump = int64(r.rtpConverter.ToRTPExt(time.Duration(timeSinceHighest)))
 
+				r.packetsDroppedOldSequenceNumber++
 				rulf := &receiverUpdateLoggingFields{
 					packetTime:       packetTime,
 					sequenceNumber:   sequenceNumber,
@@ -439,7 +439,9 @@ func (r *RTPStatsReceiver) Update(
 					timeSinceHighest: timeSinceHighest,
 					rtpStats:         r,
 				}
-				r.logger.Warnw("dropping packet, old sequence number", nil, zap.Inline(rulf))
+				if shouldLog(r.packetsDroppedOldSequenceNumber) {
+					r.logger.Warnw("dropping packet, old sequence number", nil, zap.Inline(rulf))
+				}
 
 				if r.maybeRestart(sequenceNumber, timestamp, payloadSize) {
 					r.logger.Infow("potential restart", zap.Inline(rulf))
@@ -488,7 +490,6 @@ func (r *RTPStatsReceiver) Update(
 			r.undoUpdatesLocked(resSN, resTS)
 
 			r.packetsDroppedPreStartSequenceNumber++
-
 			rulf := &receiverUpdateLoggingFields{
 				packetTime:       packetTime,
 				sequenceNumber:   sequenceNumber,
@@ -507,7 +508,9 @@ func (r *RTPStatsReceiver) Update(
 				timeSinceHighest: timeSinceHighest,
 				rtpStats:         r,
 			}
-			r.logger.Warnw("dropping packet, pre-start sequence number", nil, zap.Inline(rulf))
+			if shouldLog(r.packetsDroppedPreStartSequenceNumber) {
+				r.logger.Warnw("dropping packet, pre-start sequence number", nil, zap.Inline(rulf))
+			}
 
 			if r.maybeRestart(sequenceNumber, timestamp, payloadSize) {
 				r.logger.Infow("potential restart", zap.Inline(rulf))
@@ -539,68 +542,10 @@ func (r *RTPStatsReceiver) Update(
 		}
 
 		flowState.IsOutOfOrder = true
-
-		if !flowState.IsDuplicate && -gapSN >= cSequenceNumberLargeJumpThreshold {
-			r.largeJumpNegativeCount++
-			if (r.largeJumpNegativeCount-1)%100 == 0 {
-				rulf := &receiverUpdateLoggingFields{
-					packetTime:       packetTime,
-					sequenceNumber:   sequenceNumber,
-					timestamp:        timestamp,
-					marker:           marker,
-					hdrSize:          hdrSize,
-					payloadSize:      payloadSize,
-					paddingSize:      paddingSize,
-					resSN:            resSN,
-					gapSN:            gapSN,
-					resTS:            resTS,
-					gapTS:            gapTS,
-					snRolloverCount:  snRolloverCount,
-					expectedTSJump:   expectedTSJump,
-					tsRolloverCount:  tsRolloverCount,
-					timeSinceHighest: timeSinceHighest,
-					rtpStats:         r,
-				}
-				r.logger.Warnw(
-					"large sequence number gap negative", nil,
-					zap.Inline(rulf),
-					"count", r.largeJumpNegativeCount,
-				)
-			}
-		}
 	} else { // in-order
-		if gapSN >= cSequenceNumberLargeJumpThreshold {
-			r.largeJumpCount++
-			if (r.largeJumpCount-1)%100 == 0 {
-				rulf := &receiverUpdateLoggingFields{
-					packetTime:       packetTime,
-					sequenceNumber:   sequenceNumber,
-					timestamp:        timestamp,
-					marker:           marker,
-					hdrSize:          hdrSize,
-					payloadSize:      payloadSize,
-					paddingSize:      paddingSize,
-					resSN:            resSN,
-					gapSN:            gapSN,
-					resTS:            resTS,
-					gapTS:            gapTS,
-					snRolloverCount:  snRolloverCount,
-					expectedTSJump:   expectedTSJump,
-					tsRolloverCount:  tsRolloverCount,
-					timeSinceHighest: timeSinceHighest,
-					rtpStats:         r,
-				}
-				r.logger.Warnw(
-					"large sequence number gap", nil,
-					zap.Inline(rulf),
-					"count", r.largeJumpCount,
-				)
-			}
-		}
-
 		if resTS.ExtendedVal < resTS.PreExtendedHighest && r.bytes > 0 {
 			r.timeReversedCount++
-			if (r.timeReversedCount-1)%100 == 0 {
+			if shouldLog(r.timeReversedCount) {
 				rulf := &receiverUpdateLoggingFields{
 					packetTime:       packetTime,
 					sequenceNumber:   sequenceNumber,
@@ -721,7 +666,7 @@ func (r *RTPStatsReceiver) checkOutOfOrderSenderReport(srData *livekit.RTCPSende
 		// Or it could be due bad report generation.
 		// In any case, ignore out-of-order reports.
 		r.outOfOrderSenderReportCount++
-		if (r.outOfOrderSenderReportCount-1)%10 == 0 {
+		if shouldLog(r.outOfOrderSenderReportCount) {
 			r.logger.Infow(
 				"received sender report, out-of-order, skipping",
 				"current", WrappedRTCPSenderReportStateLogger{srData},
@@ -755,7 +700,7 @@ func (r *RTPStatsReceiver) checkRTPClockSkewForSenderReport(srData *livekit.RTCP
 	if (timeSinceLast > 0.2 && math.Abs(float64(r.clockRate)-calculatedClockRateFromLast) > 0.2*float64(r.clockRate)) ||
 		(timeSinceFirst > 0.2 && math.Abs(float64(r.clockRate)-calculatedClockRateFromFirst) > 0.2*float64(r.clockRate)) {
 		r.clockSkewCount++
-		if (r.clockSkewCount-1)%100 == 0 {
+		if shouldLog(r.clockSkewCount) {
 			r.logger.Infow(
 				"received sender report, clock skew",
 				"current", WrappedRTCPSenderReportStateLogger{srData},
@@ -792,7 +737,7 @@ func (r *RTPStatsReceiver) checkRTPClockSkewAgainstMediaPathForSenderReport(srDa
 	// is it more than 5 seconds off?
 	if uint32(math.Abs(float64(int64(diffHighest)))) > 5*r.clockRate || uint32(math.Abs(float64(int64(diffFirst)))) > 5*r.clockRate {
 		r.clockSkewMediaPathCount++
-		if (r.clockSkewMediaPathCount-1)%100 == 0 {
+		if shouldLog(r.clockSkewMediaPathCount) {
 			r.logger.Infow(
 				"received sender report, clock skew against media path",
 				"current", WrappedRTCPSenderReportStateLogger{srData},
@@ -1077,8 +1022,6 @@ func (r lockedRTPStatsReceiverLogEncoder) MarshalLogObject(e zapcore.ObjectEncod
 	e.AddInt("clockSkewCount", r.clockSkewCount)
 	e.AddInt("clockSkewMediaPathCount", r.clockSkewMediaPathCount)
 	e.AddInt("outOfOrderSenderReportCount", r.outOfOrderSenderReportCount)
-	e.AddInt("largeJumpCount", r.largeJumpCount)
-	e.AddInt("largeJumpNegativeCount", r.largeJumpNegativeCount)
 	e.AddInt("timeReversedCount", r.timeReversedCount)
 
 	e.AddInt("packetsDroppedPreStartTimestamp", r.packetsDroppedPreStartTimestamp)
