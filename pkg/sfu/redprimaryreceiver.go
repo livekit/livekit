@@ -43,11 +43,10 @@ type RedPrimaryReceiver struct {
 	closed            atomic.Bool
 	redPT             uint8
 
-	firstPktReceived bool
-	lastSeq          uint16
-	lastExtSeq       uint64
-	lastTS           uint32
-	lastExtTS        uint64
+	firstPktReceived                  bool
+	lastSeq                           uint16
+	highestForwardedExtSequenceNumber uint64
+	highestForwardedExtTimestamp      uint64
 
 	// bitset for upstream packet receive history [lastSeq-8, lastSeq-1], bit 1 represents packet received
 	pktHistory byte
@@ -93,32 +92,12 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 			pPkt.ExtTimestamp -= uint64(pkts[len(pkts)-1].Timestamp - pkts[i].Timestamp)
 		}
 		pPkt.Packet = sendPkt
-		if pPkt.ExtSequenceNumber > pkt.ExtSequenceNumber && pPkt.ExtTimestamp < pkt.ExtTimestamp {
-			r.logger.Warnw(
-				"timestamp inversion, dropping", nil,
-				"numPackets", len(pkts),
-				"primaryIncomingSN", pkt.Packet.Header.SequenceNumber,
-				"primaryIncomingTS", pkt.Packet.Header.Timestamp,
-				"primaryExtractedSN", pkts[len(pkts)-1].SequenceNumber,
-				"primaryExtractedTS", pkts[len(pkts)-1].Timestamp,
-				"primaryESN", pkt.ExtSequenceNumber,
-				"primaryETS", pkt.ExtTimestamp,
-				"packetIndex", i,
-				"packetExtractedSN", pkts[i].SequenceNumber,
-				"packetESN", pPkt.ExtSequenceNumber,
-				"packetExtractedTS", pkts[i].Timestamp,
-				"packetETS", pPkt.ExtTimestamp,
-				"pktHistory", r.pktHistory,
-				"redHeader", pkt.Packet.Payload[:10],
-				"payloadSize", len(pkt.Packet.Payload),
-			)
-			continue // drop the packet which causes the inversion
-		}
 
-		if r.lastTS != 0 {
-			if pPkt.ExtSequenceNumber > r.lastExtSeq && pPkt.ExtTimestamp < r.lastExtTS {
+		if r.highestForwardedExtTimestamp != 0 {
+			if (pPkt.ExtSequenceNumber > r.highestForwardedExtSequenceNumber && pPkt.ExtTimestamp < r.highestForwardedExtTimestamp) ||
+				(pPkt.ExtSequenceNumber < r.highestForwardedExtSequenceNumber && pPkt.ExtTimestamp > r.highestForwardedExtTimestamp) {
 				r.logger.Warnw(
-					"timestamp inversion", nil,
+					"sequence number OR timestamp inversion, dropping", nil,
 					"numPackets", len(pkts),
 					"primaryIncomingSN", pkt.Packet.Header.SequenceNumber,
 					"primaryIncomingTS", pkt.Packet.Header.Timestamp,
@@ -135,15 +114,14 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 					"redHeader", pkt.Packet.Payload[:10],
 					"payloadSize", len(pkt.Packet.Payload),
 					"lastSeq", r.lastSeq,
-					"lastExtSeq", r.lastExtSeq,
-					"lastTS", r.lastTS,
-					"lastExtTS", r.lastExtTS,
+					"highestFowardedExtSequenceNumber", r.highestForwardedExtSequenceNumber,
+					"highestFowardedExtTimestamp", r.highestForwardedExtTimestamp,
 				)
+				continue // drop the packet which causes the inversion
 			}
 		}
-		r.lastTS = pPkt.Packet.Header.Timestamp
-		r.lastExtTS = pPkt.ExtTimestamp
-		r.lastExtSeq = pPkt.ExtSequenceNumber
+		r.highestForwardedExtSequenceNumber = max(r.highestForwardedExtSequenceNumber, pPkt.ExtSequenceNumber)
+		r.highestForwardedExtTimestamp = max(r.highestForwardedExtTimestamp, pPkt.ExtTimestamp)
 
 		// not modify the ExtPacket.RawPacket here for performance since it is not used by the DownTrack,
 		// otherwise it should be set to the correct value (marshal the primary rtp packet)
