@@ -550,4 +550,8 @@ func getPacketsExpected(extStartSN, extHighestSN uint64) uint64 {
 	return extHighestSN - extStartSN + 1
 }
 
+func shouldLog(count int) bool {
+	return count < 20 || count%200 == 0
+}
+
 // ----------------------------------

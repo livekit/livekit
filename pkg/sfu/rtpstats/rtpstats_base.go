@@ -31,8 +31,6 @@ import (
 const (
 	cFirstPacketTimeAdjustWindow    = 2 * time.Minute
 	cFirstPacketTimeAdjustThreshold = 15 * 1e9
-
-	cSequenceNumberLargeJumpThreshold = 100
 )
 
 // -------------------------------------------------------
