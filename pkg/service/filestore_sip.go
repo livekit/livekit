@@ -17,12 +17,17 @@ package service
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"sync/atomic"
+	"time"
 
 	"buf.build/go/protoyaml"
+	"github.com/fsnotify/fsnotify"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	"github.com/livekit/psrpc"
 )
 
@@ -32,25 +37,121 @@ var (
 
 const (
 	DefaultSIPConfigPath = "sip_config.yaml"
+	ConfigReloadInterval = 30 * time.Second // Periodic reload as fallback
 )
 
-type rawConfig struct {
-	InboundTrunks  []yaml.Node `yaml:"inbound_trunks,omitempty"`
-	OutboundTrunks []yaml.Node `yaml:"outbound_trunks,omitempty"`
-	DispatchRules  []yaml.Node `yaml:"dispatch_rules,omitempty"`
+type sipConfigFile struct {
+	InboundTrunks  []*livekit.SIPInboundTrunkInfo  `yaml:"inbound_trunks,omitempty"`
+	OutboundTrunks []*livekit.SIPOutboundTrunkInfo `yaml:"outbound_trunks,omitempty"`
+	DispatchRules  []*livekit.SIPDispatchRuleInfo  `yaml:"dispatch_rules,omitempty"`
 }
 
 type FileSIPStore struct {
-	ConfigPath string
+	configPath string
+	config     atomic.Pointer[sipConfigFile]
+	lastMod    atomic.Int64 // Unix timestamp of last modification
+	watcher    *fsnotify.Watcher
+	cancel     context.CancelFunc
 }
 
-func NewFileSIPStore(configPath string) *FileSIPStore {
+func NewFileSIPStore(configPath string) (*FileSIPStore, error) {
 	if configPath == "" {
 		configPath = DefaultSIPConfigPath
 	}
 
-	return &FileSIPStore{
-		ConfigPath: configPath,
+	store := FileSIPStore{
+		configPath: configPath,
+	}
+
+	err := store.loadConfigFile()
+	if err != nil {
+		return nil, err
+	}
+
+	return &store, nil
+}
+
+func (s *FileSIPStore) Start(ctx context.Context) error {
+	s.Stop()
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return errors.Wrap(err, "failed to create file watcher")
+	}
+
+	// Watch the directory containing the file to handle ConfigMap updates
+	// ConfigMaps use symlinks that get atomically swapped, so we need to watch the parent dir
+	configDir := filepath.Dir(s.configPath)
+	if err := watcher.Add(configDir); err != nil {
+		watcher.Close()
+		return errors.Wrapf(err, "failed to watch directory %s", configDir)
+	}
+
+	watchCtx, cancel := context.WithCancel(ctx)
+	s.watcher = watcher
+	s.cancel = cancel
+
+	go s.watchLoop(watchCtx)
+
+	logger.Infow("started watching SIP config file", "path", s.configPath, "watchDir", configDir)
+	return nil
+}
+
+func (s *FileSIPStore) Stop() {
+	if s.cancel != nil {
+		s.cancel()
+	}
+	if s.watcher != nil {
+		s.watcher.Close()
+	}
+}
+
+func (s *FileSIPStore) watchLoop(ctx context.Context) {
+	configFileName := filepath.Base(s.configPath)
+	ticker := time.NewTicker(ConfigReloadInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// Periodic reload as fallback in case file watcher misses events
+			// Only reload if file has actually changed
+			if info, err := os.Stat(s.configPath); err == nil {
+				modTime := info.ModTime().Unix()
+				if modTime > s.lastMod.Load() {
+					logger.Infow("periodic SIP config reload detected change", "path", s.configPath)
+					if err := s.loadConfigFile(); err != nil {
+						logger.Errorw("failed to periodically reload SIP config file", err, "path", s.configPath)
+					}
+				}
+			}
+		case event, ok := <-s.watcher.Events:
+			if !ok {
+				return
+			}
+			// Only process events for our config file (important when watching directory for ConfigMap support)
+			eventFileName := filepath.Base(event.Name)
+			if eventFileName != configFileName {
+				continue
+			}
+
+			// ConfigMap updates typically trigger CREATE (symlink created) or WRITE events
+			if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
+				logger.Infow("SIP config file changed, reloading", "path", s.configPath, "event", event.Op.String())
+				if err := s.loadConfigFile(); err != nil {
+					logger.Errorw("failed to reload SIP config file", err, "path", s.configPath)
+				} else {
+					logger.Infow("SIP config file reloaded successfully", "path", s.configPath)
+				}
+			}
+		case err, ok := <-s.watcher.Errors:
+			if !ok {
+				return
+			}
+			logger.Errorw("file watcher error", err)
+		}
 	}
 }
 
@@ -67,25 +168,17 @@ func (s *FileSIPStore) StoreSIPOutboundTrunk(ctx context.Context, info *livekit.
 }
 
 func (s *FileSIPStore) LoadSIPTrunk(ctx context.Context, sipTrunkID string) (*livekit.SIPTrunkInfo, error) {
-	// Try inbound trunk
-	inboundTrunks, err := s.loadInboundTrunks()
-	if err != nil {
-		return nil, err
-	}
+	config := s.config.Load()
 
-	for _, trunk := range inboundTrunks {
+	// Try inbound trunk
+	for _, trunk := range config.InboundTrunks {
 		if trunk.SipTrunkId == sipTrunkID {
 			return trunk.AsTrunkInfo(), nil
 		}
 	}
 
 	// Try outbound trunk
-	outboundTrunks, err := s.loadOutboundTrunks()
-	if err != nil {
-		return nil, err
-	}
-
-	for _, trunk := range outboundTrunks {
+	for _, trunk := range config.OutboundTrunks {
 		if trunk.SipTrunkId == sipTrunkID {
 			return trunk.AsTrunkInfo(), nil
 		}
@@ -95,12 +188,9 @@ func (s *FileSIPStore) LoadSIPTrunk(ctx context.Context, sipTrunkID string) (*li
 }
 
 func (s *FileSIPStore) LoadSIPInboundTrunk(ctx context.Context, sipTrunkID string) (*livekit.SIPInboundTrunkInfo, error) {
-	inboundTrunks, err := s.loadInboundTrunks()
-	if err != nil {
-		return nil, err
-	}
+	config := s.config.Load()
 
-	for _, trunk := range inboundTrunks {
+	for _, trunk := range config.InboundTrunks {
 		if trunk.SipTrunkId == sipTrunkID {
 			return trunk, nil
 		}
@@ -110,12 +200,9 @@ func (s *FileSIPStore) LoadSIPInboundTrunk(ctx context.Context, sipTrunkID strin
 }
 
 func (s *FileSIPStore) LoadSIPOutboundTrunk(ctx context.Context, sipTrunkID string) (*livekit.SIPOutboundTrunkInfo, error) {
-	outboundTrunks, err := s.loadOutboundTrunks()
-	if err != nil {
-		return nil, err
-	}
+	config := s.config.Load()
 
-	for _, trunk := range outboundTrunks {
+	for _, trunk := range config.OutboundTrunks {
 		if trunk.SipTrunkId == sipTrunkID {
 			return trunk, nil
 		}
@@ -125,26 +212,18 @@ func (s *FileSIPStore) LoadSIPOutboundTrunk(ctx context.Context, sipTrunkID stri
 }
 
 func (s *FileSIPStore) ListSIPTrunk(ctx context.Context, req *livekit.ListSIPTrunkRequest) (*livekit.ListSIPTrunkResponse, error) {
+	config := s.config.Load()
+
 	var items []*livekit.SIPTrunkInfo
 
-	inboundTrunks, err := s.loadInboundTrunks()
-	if err != nil {
-		return nil, err
-	}
-
-	for _, t := range inboundTrunks {
+	for _, t := range config.InboundTrunks {
 		v := t.AsTrunkInfo()
 		if req.Filter(v) && req.Page.Filter(v) {
 			items = append(items, v)
 		}
 	}
 
-	outboundTrunks, err := s.loadOutboundTrunks()
-	if err != nil {
-		return nil, err
-	}
-
-	for _, t := range outboundTrunks {
+	for _, t := range config.OutboundTrunks {
 		v := t.AsTrunkInfo()
 		if req.Filter(v) && req.Page.Filter(v) {
 			items = append(items, v)
@@ -156,14 +235,11 @@ func (s *FileSIPStore) ListSIPTrunk(ctx context.Context, req *livekit.ListSIPTru
 }
 
 func (s *FileSIPStore) ListSIPInboundTrunk(ctx context.Context, req *livekit.ListSIPInboundTrunkRequest) (*livekit.ListSIPInboundTrunkResponse, error) {
-	inboundTrunks, err := s.loadInboundTrunks()
-	if err != nil {
-		return nil, err
-	}
+	config := s.config.Load()
 
 	var items []*livekit.SIPInboundTrunkInfo
 
-	for _, t := range inboundTrunks {
+	for _, t := range config.InboundTrunks {
 		if req.Filter(t) && req.Page.Filter(t) {
 			items = append(items, t)
 		}
@@ -174,14 +250,11 @@ func (s *FileSIPStore) ListSIPInboundTrunk(ctx context.Context, req *livekit.Lis
 }
 
 func (s *FileSIPStore) ListSIPOutboundTrunk(ctx context.Context, req *livekit.ListSIPOutboundTrunkRequest) (*livekit.ListSIPOutboundTrunkResponse, error) {
-	outboundTrunks, err := s.loadOutboundTrunks()
-	if err != nil {
-		return nil, err
-	}
+	config := s.config.Load()
 
 	var items []*livekit.SIPOutboundTrunkInfo
 
-	for _, t := range outboundTrunks {
+	for _, t := range config.OutboundTrunks {
 		if req.Filter(t) && req.Page.Filter(t) {
 			items = append(items, t)
 		}
@@ -200,12 +273,9 @@ func (s *FileSIPStore) StoreSIPDispatchRule(ctx context.Context, info *livekit.S
 }
 
 func (s *FileSIPStore) LoadSIPDispatchRule(ctx context.Context, sipDispatchRuleID string) (*livekit.SIPDispatchRuleInfo, error) {
-	dispatchRules, err := s.loadDispatchRules()
-	if err != nil {
-		return nil, err
-	}
+	config := s.config.Load()
 
-	for _, rule := range dispatchRules {
+	for _, rule := range config.DispatchRules {
 		if rule.SipDispatchRuleId == sipDispatchRuleID {
 			return rule, nil
 		}
@@ -215,14 +285,11 @@ func (s *FileSIPStore) LoadSIPDispatchRule(ctx context.Context, sipDispatchRuleI
 }
 
 func (s *FileSIPStore) ListSIPDispatchRule(ctx context.Context, req *livekit.ListSIPDispatchRuleRequest) (*livekit.ListSIPDispatchRuleResponse, error) {
-	dispatchRules, err := s.loadDispatchRules()
-	if err != nil {
-		return nil, err
-	}
+	config := s.config.Load()
 
 	var items []*livekit.SIPDispatchRuleInfo
 
-	for _, rule := range dispatchRules {
+	for _, rule := range config.DispatchRules {
 		if req.Filter(rule) && req.Page.Filter(rule) {
 			items = append(items, rule)
 		}
@@ -236,65 +303,52 @@ func (s *FileSIPStore) DeleteSIPDispatchRule(ctx context.Context, sipDispatchRul
 	return ErrReadOnlySIPStore
 }
 
-func (s *FileSIPStore) loadInboundTrunks() ([]*livekit.SIPInboundTrunkInfo, error) {
-	config, err := s.loadRawConfigFile()
+func (s *FileSIPStore) loadConfigFile() error {
+	fileInfo, err := os.Stat(s.configPath)
 	if err != nil {
-		return nil, err
+		return errors.Wrapf(err, "failed to stat %s", s.configPath)
 	}
 
-	inboundTrunks, err := unmarshalSection[livekit.SIPInboundTrunkInfo](config.InboundTrunks)
+	data, err := os.ReadFile(s.configPath)
 	if err != nil {
-		return nil, err
+		return errors.Wrapf(err, "failed to read %s", s.configPath)
 	}
 
-	return inboundTrunks, nil
-}
+	var rawConfig struct {
+		InboundTrunks  []yaml.Node `yaml:"inbound_trunks,omitempty"`
+		OutboundTrunks []yaml.Node `yaml:"outbound_trunks,omitempty"`
+		DispatchRules  []yaml.Node `yaml:"dispatch_rules,omitempty"`
+	}
 
-func (s *FileSIPStore) loadOutboundTrunks() ([]*livekit.SIPOutboundTrunkInfo, error) {
-	config, err := s.loadRawConfigFile()
+	if err := yaml.Unmarshal(data, &rawConfig); err != nil {
+		return errors.Wrapf(err, "failed to parse %s", s.configPath)
+	}
+
+	inboundTrunks, err := unmarshalSection[livekit.SIPInboundTrunkInfo](rawConfig.InboundTrunks)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	outboundTrunks, err := unmarshalSection[livekit.SIPOutboundTrunkInfo](config.OutboundTrunks)
+	outboundTrunks, err := unmarshalSection[livekit.SIPOutboundTrunkInfo](rawConfig.OutboundTrunks)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return outboundTrunks, nil
-}
-
-func (s *FileSIPStore) loadDispatchRules() ([]*livekit.SIPDispatchRuleInfo, error) {
-	config, err := s.loadRawConfigFile()
+	dispatchRules, err := unmarshalSection[livekit.SIPDispatchRuleInfo](rawConfig.OutboundTrunks)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	dispatchRules, err := unmarshalSection[livekit.SIPDispatchRuleInfo](config.OutboundTrunks)
-	if err != nil {
-		return nil, err
-	}
+	s.config.Store(&sipConfigFile{
+		InboundTrunks:  inboundTrunks,
+		OutboundTrunks: outboundTrunks,
+		DispatchRules:  dispatchRules,
+	})
 
-	return dispatchRules, nil
-}
+	// Update modification time
+	s.lastMod.Store(fileInfo.ModTime().Unix())
 
-func (s *FileSIPStore) loadRawConfigFile() (*rawConfig, error) {
-	if _, err := os.Stat(s.ConfigPath); os.IsNotExist(err) {
-		// File doesn't exist, return empty config (not an error)
-		return &rawConfig{}, nil
-	}
-
-	data, err := os.ReadFile(s.ConfigPath)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to read %s", s.ConfigPath)
-	}
-
-	var config rawConfig
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, errors.Wrapf(err, "failed to parse %s", s.ConfigPath)
-	}
-
-	return &config, nil
+	return nil
 }
 
 func unmarshalSection[T any, P protoMsg[T]](section []yaml.Node) ([]P, error) {
