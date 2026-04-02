@@ -229,7 +229,7 @@ func (t *SubscribedTrack) Bound(err error) {
 // for DownTrack callback to notify us that it's closed
 func (t *SubscribedTrack) Close(isExpectedToResume bool) {
 	if onClose := t.onClose.Load(); onClose != nil {
-		go onClose.(func(bool))(isExpectedToResume)
+		onClose.(func(bool))(isExpectedToResume)
 	}
 }
 
@@ -475,10 +475,8 @@ func (t *SubscribedTrack) OnDownTrackClose(isExpectedToResume bool) {
 		}
 	}
 
-	go func() {
-		if t.params.OnDownTrackClosed != nil {
-			t.params.OnDownTrackClosed(t.params.Subscriber.ID())
-		}
-		t.Close(isExpectedToResume)
-	}()
+	if t.params.OnDownTrackClosed != nil {
+		t.params.OnDownTrackClosed(t.params.Subscriber.ID())
+	}
+	t.Close(isExpectedToResume)
 }

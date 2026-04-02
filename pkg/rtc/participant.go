@@ -1620,7 +1620,7 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 			// callback could close the remote participant/tracks before the local track
 			// is fully active.
 			//
-			// that could lead subscribers to unsubscribe due to source
+			// that could lead to subscribers unsubscribing due to source
 			// track going away, i. e. in this case, the remote track close would have
 			// notified the subscription manager, the subscription manager would
 			// re-resolve to check if the track is still active and unsubscribe if none
