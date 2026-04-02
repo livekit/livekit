@@ -1747,6 +1747,19 @@ func (p *ParticipantImpl) CanSubscribeMetrics() bool {
 	return p.grants.Load().Video.GetCanSubscribeMetrics()
 }
 
+func (p *ParticipantImpl) GetMaxSubscribeVideoHeight() uint32 {
+	grants := p.grants.Load()
+	if grants.Video == nil {
+		return 0
+	}
+	// TODO(#4295): Once MaxSubscribeVideoHeight is added to VideoGrant in
+	// livekit-protocol, replace this with:
+	//   return grants.Video.GetMaxSubscribeVideoHeight()
+	// For now, returns 0 (unlimited) as the field does not yet exist.
+	_ = grants
+	return 0
+}
+
 func (p *ParticipantImpl) Verify() bool {
 	state := p.State()
 	isActive := state != livekit.ParticipantInfo_JOINING && state != livekit.ParticipantInfo_JOINED
