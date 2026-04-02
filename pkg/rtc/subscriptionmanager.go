@@ -119,10 +119,15 @@ func (m *SubscriptionManager) Close(isExpectedToResume bool) {
 	// this participant and its transports to be garbage collected.
 	m.lock.Lock()
 	subs := maps.Clone(m.subscriptions)
+	dataTrackSubs := maps.Clone(m.dataTrackSubscriptions)
 	m.lock.Unlock()
 	for _, sub := range subs {
 		sub.setChangedNotifier(nil)
 		sub.setRemovedNotifier(nil)
+	}
+	for _, dataTrackSub := range dataTrackSubs {
+		dataTrackSub.setChangedNotifier(nil)
+		dataTrackSub.setRemovedNotifier(nil)
 	}
 
 	subTracks := m.GetSubscribedTracks()
@@ -1097,6 +1102,9 @@ func (m *SubscriptionManager) unsubscribeDataTrack(s *dataTrackSubscription) err
 
 	dataTrack := dataDownTrack.PublishDataTrack()
 	dataTrack.RemoveSubscriber(s.subscriberID)
+
+	s.setChangedNotifier(nil)
+	s.setRemovedNotifier(nil)
 
 	m.unmarkSubscribedTo(s.getPublisherID(), s.trackID)
 	return nil
