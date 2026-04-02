@@ -247,6 +247,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	// But, the subscription could be removed early if the published track is closed
 	// while adding subscription. In those cases, subscription manager would not have set
 	// the `OnClose` callback. So, set it here to handle cases of early close.
+	// Subscription manager will reset this if this subscription proceeds till that point.
 	subTrack.OnClose(func(isExpectedToResume bool) {
 		if !isExpectedToResume {
 			if err := sub.RemoveTrackLocal(sender); err != nil {
