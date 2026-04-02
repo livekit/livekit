@@ -1406,9 +1406,9 @@ func (d *DownTrack) Close() {
 	d.CloseWithFlush(true, true)
 }
 
-// CloseWithFlush - flush used to indicate whether send blank frame to flush
+// CloseWithFlush - `flush` used to indicate whether send blank frame to flush
 // decoder of client.
-//  1. When transceiver is reused by other participant's video track,
+//  1. When transceiver of this track is reused by some other participant's video track,
 //     set flush=true to avoid previous video shows before new stream is displayed.
 //  2. in case of session migration, participant migrate from other node, video track should
 //     be resumed with same participant, set flush=false since we don't need to flush decoder.
@@ -1483,7 +1483,7 @@ func (d *DownTrack) CloseWithFlush(flush bool, isEnding bool) {
 	close(d.keyFrameRequesterCh)
 	d.keyFrameRequesterChMu.Unlock()
 
-	d.params.Listener.OnDownTrackClose(!isEnding)
+	d.params.Listener.OnDownTrackClose(!flush)
 }
 
 func (d *DownTrack) SetMaxSpatialLayer(spatialLayer int32) {
