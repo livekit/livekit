@@ -53,7 +53,19 @@ func (s *signallerAsync) WriteMessage(msg proto.Message) error {
 		return nil
 	}
 
+	getMessageType := func(msg proto.Message) string {
+		messageType := "unknown"
+		if typed, ok := msg.(*livekit.SignalResponse); ok {
+			messageType = fmt.Sprintf("%T", typed.Message)
+		}
+		return messageType
+	}
+
 	if s.params.Participant.IsDisconnected() {
+		s.params.Logger.Debugw(
+			"counld not send message to participant, participant disconnected",
+			"messageType", getMessageType(msg),
+		)
 		return nil
 	}
 
@@ -72,33 +84,27 @@ func (s *signallerAsync) WriteMessage(msg proto.Message) error {
 
 	sink := s.GetResponseSink()
 	if sink == nil {
-		if typed, ok := msg.(*livekit.SignalResponse); ok {
-			s.params.Logger.Debugw(
-				"could not send message to participant",
-				"messageType", fmt.Sprintf("%T", typed.Message),
-			)
-		}
+		s.params.Logger.Debugw(
+			"could not send message to participant, no sink",
+			"messageType", getMessageType(msg),
+		)
 		return nil
 	}
 
 	err := sink.WriteMessage(msg)
 	if err != nil {
 		if utils.ErrorIsOneOf(err, psrpc.Canceled, routing.ErrChannelClosed) {
-			if typed, ok := msg.(*livekit.SignalResponse); ok {
-				s.params.Logger.Debugw(
-					"could not send message to participant",
-					"error", err,
-					"messageType", fmt.Sprintf("%T", typed.Message),
-				)
-			}
+			s.params.Logger.Debugw(
+				"could not send message to participant",
+				"error", err,
+				"messageType", getMessageType(msg),
+			)
 			return nil
 		} else {
-			if typed, ok := msg.(*livekit.SignalResponse); ok {
-				s.params.Logger.Warnw(
-					"could not send message to participant", err,
-					"messageType", fmt.Sprintf("%T", typed.Message),
-				)
-			}
+			s.params.Logger.Warnw(
+				"could not send message to participant", err,
+				"messageType", getMessageType(msg),
+			)
 			return err
 		}
 	} else {

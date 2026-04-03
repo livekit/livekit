@@ -1513,7 +1513,7 @@ func (p *ParticipantImpl) setupMigrationTimerLocked() {
 		if p.IsClosed() || p.IsDisconnected() {
 			return
 		}
-		p.subLogger.Debugw("closing peer connection(s) to aid migration")
+		p.subLogger.Debugw("closing subscriber peer connection to aid migration")
 
 		//
 		// Close all down tracks before closing subscriber peer connection.
@@ -1523,7 +1523,7 @@ func (p *ParticipantImpl) setupMigrationTimerLocked() {
 		//
 		p.SubscriptionManager.Close(true)
 
-		p.TransportManager.Close()
+		p.TransportManager.SubscriberClose()
 	})
 }
 

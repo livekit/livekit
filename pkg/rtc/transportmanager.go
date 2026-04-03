@@ -211,6 +211,10 @@ func (t *TransportManager) Close() {
 	}
 }
 
+func (t *TransportManager) SubscriberClose() {
+	t.subscriber.Close()
+}
+
 func (t *TransportManager) HasPublisherEverConnected() bool {
 	return t.publisher.HasEverConnected()
 }
