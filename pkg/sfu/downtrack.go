@@ -1420,7 +1420,7 @@ func (d *DownTrack) CloseWithFlush(flush bool, isEnding bool) {
 		return
 	}
 
-	d.params.Logger.Debugw("close downtrack", "flushBlankFrame", flush)
+	d.params.Logger.Debugw("close downtrack", "flushBlankFrame", flush, "isEnding", isEnding)
 	if d.bindState.Load() == bindStateBound {
 		d.forwarder.Mute(true, true)
 

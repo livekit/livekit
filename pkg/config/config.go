@@ -436,12 +436,13 @@ var DefaultConfig = Config{
 		StreamBufferSize: 1000,
 		ConnectAttempts:  3,
 	},
-	PSRPC:     rpc.DefaultPSRPCConfig,
-	Keys:      map[string]string{},
-	Metric:    metric.DefaultMetricConfig,
-	WebHook:   webhook.DefaultWebHookConfig,
-	NodeStats: DefaultNodeStatsConfig,
-	API:       DefaultAPIConfig(),
+	PSRPC:            rpc.DefaultPSRPCConfig,
+	Keys:             map[string]string{},
+	Metric:           metric.DefaultMetricConfig,
+	WebHook:          webhook.DefaultWebHookConfig,
+	NodeStats:        DefaultNodeStatsConfig,
+	API:              DefaultAPIConfig(),
+	EnableDataTracks: true,
 }
 
 func NewConfig(confString string, strictMode bool, c *cli.Command, baseFlags []cli.Flag) (*Config, error) {
