@@ -335,7 +335,7 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 
 	roomName, pi, code, err = s.validateInternal(pLogger, r, needsJoinRequest, false)
 	if err != nil {
-		HandleError(w, r, code, err)
+		HandleError(w, r, code, err, getLoggerFields()...)
 		return
 	}
 
@@ -343,6 +343,7 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 	if pi.ID != "" {
 		pID = pi.ID
 	}
+	pLogger.Debugw("join request validated", append(getLoggerFields(), "participantInit", &pi))
 
 	// give it a few attempts to start session
 	var cr connectionResult
