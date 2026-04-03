@@ -3,8 +3,11 @@ package servicefakes
 
 import (
 	"context"
+	"strings"
 	"sync"
+	"time"
 
+	"github.com/go-jose/go-jose/v3/jwt"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/protocol/livekit"
 )
@@ -55,8 +58,10 @@ type FakeServiceStore struct {
 		result1 bool
 		result2 error
 	}
-	invocations      map[string][][]interface{}
-	invocationsMutex sync.RWMutex
+	roomParticipentRevocationMap map[string]jwt.NumericDate
+	revocationMutex              sync.RWMutex
+	invocations                  map[string][][]interface{}
+	invocationsMutex             sync.RWMutex
 }
 
 func (fake *FakeServiceStore) ListRooms(arg1 context.Context, arg2 []livekit.RoomName) ([]*livekit.Room, error) {
@@ -271,6 +276,42 @@ func (fake *FakeServiceStore) Invocations() map[string][][]interface{} {
 		copiedInvocations[key] = value
 	}
 	return copiedInvocations
+}
+
+func (s *FakeServiceStore) RevokeRoomParticipent(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) error {
+	s.revocationMutex.Lock()
+	defer s.revocationMutex.Unlock()
+
+	revocationTime := jwt.NewNumericDate(time.Now())
+	s.roomParticipentRevocationMap[room.String()+":"+identity.String()] = *revocationTime
+
+	return nil
+}
+
+func (s *FakeServiceStore) IsRoomParticipentRevoked(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) (bool, *jwt.NumericDate, error) {
+	s.revocationMutex.Lock()
+	defer s.revocationMutex.Unlock()
+
+	revocationTime, exists := s.roomParticipentRevocationMap[room.String()+":"+identity.String()]
+
+	return exists, &revocationTime, nil
+}
+
+func (s *FakeServiceStore) CleanupForRoom(ctx context.Context, room livekit.RoomName) {
+	s.revocationMutex.Lock()
+	defer s.revocationMutex.Unlock()
+
+	entries := []string{}
+	for identifier := range s.roomParticipentRevocationMap {
+
+		if strings.HasPrefix(identifier, room.String()+":") {
+			entries = append(entries, identifier)
+		}
+	}
+
+	for i := range entries {
+		delete(s.roomParticipentRevocationMap, entries[i])
+	}
 }
 
 func (fake *FakeServiceStore) recordInvocation(key string, args []interface{}) {

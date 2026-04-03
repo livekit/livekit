@@ -48,16 +48,16 @@ import (
 )
 
 type RTCService struct {
-	router        routing.MessageRouter
-	roomAllocator RoomAllocator
-	upgrader      websocket.Upgrader
-	config        *config.Config
-	isDev         bool
-	limits        config.LimitConfig
-	telemetry     telemetry.TelemetryService
-
-	mu          sync.Mutex
-	connections map[*websocket.Conn]struct{}
+	router               routing.MessageRouter
+	roomAllocator        RoomAllocator
+	upgrader             websocket.Upgrader
+	config               *config.Config
+	isDev                bool
+	limits               config.LimitConfig
+	telemetry            telemetry.TelemetryService
+	tokenRevocationStore TokenRevocationStore
+	mu                   sync.Mutex
+	connections          map[*websocket.Conn]struct{}
 }
 
 func NewRTCService(
@@ -65,15 +65,17 @@ func NewRTCService(
 	ra RoomAllocator,
 	router routing.MessageRouter,
 	telemetry telemetry.TelemetryService,
+	tokenRevocationStore TokenRevocationStore,
 ) *RTCService {
 	s := &RTCService{
-		router:        router,
-		roomAllocator: ra,
-		config:        conf,
-		isDev:         conf.Development,
-		limits:        conf.Limit,
-		telemetry:     telemetry,
-		connections:   map[*websocket.Conn]struct{}{},
+		router:               router,
+		roomAllocator:        ra,
+		config:               conf,
+		isDev:                conf.Development,
+		limits:               conf.Limit,
+		telemetry:            telemetry,
+		tokenRevocationStore: tokenRevocationStore,
+		connections:          map[*websocket.Conn]struct{}{},
 	}
 
 	s.upgrader = websocket.Upgrader{

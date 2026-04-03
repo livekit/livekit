@@ -18,6 +18,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/go-jose/go-jose/v3/jwt"
 	"github.com/livekit/protocol/livekit"
 )
 
@@ -112,4 +113,10 @@ type AgentStore interface {
 
 	StoreAgentJob(ctx context.Context, job *livekit.Job) error
 	DeleteAgentJob(ctx context.Context, job *livekit.Job) error
+}
+
+type TokenRevocationStore interface {
+	RevokeRoomParticipent(ctx context.Context, identity livekit.ParticipantIdentity, roomName livekit.RoomName) error
+	IsRoomParticipentRevoked(ctx context.Context, identity livekit.ParticipantIdentity, roomName livekit.RoomName) (bool, *jwt.NumericDate, error)
+	CleanupForRoom(ctx context.Context, room livekit.RoomName)
 }

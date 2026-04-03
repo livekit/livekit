@@ -16,9 +16,11 @@ package service
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/go-jose/go-jose/v3/jwt"
 	"github.com/thoas/go-funk"
 
 	"github.com/livekit/protocol/livekit"
@@ -38,18 +40,22 @@ type LocalStore struct {
 	agentDispatches map[livekit.RoomName]map[string]*livekit.AgentDispatch
 	agentJobs       map[livekit.RoomName]map[string]*livekit.Job
 
+	roomParticipentRevocationMap map[string]jwt.NumericDate
+
 	lock       sync.RWMutex
 	globalLock sync.Mutex
 }
 
 func NewLocalStore() *LocalStore {
 	return &LocalStore{
-		rooms:           make(map[livekit.RoomName]*livekit.Room),
-		roomInternal:    make(map[livekit.RoomName]*livekit.RoomInternal),
-		participants:    make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
-		agentDispatches: make(map[livekit.RoomName]map[string]*livekit.AgentDispatch),
-		agentJobs:       make(map[livekit.RoomName]map[string]*livekit.Job),
-		lock:            sync.RWMutex{},
+		rooms:                        make(map[livekit.RoomName]*livekit.Room),
+		roomInternal:                 make(map[livekit.RoomName]*livekit.RoomInternal),
+		participants:                 make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
+		agentDispatches:              make(map[livekit.RoomName]map[string]*livekit.AgentDispatch),
+		agentJobs:                    make(map[livekit.RoomName]map[string]*livekit.Job),
+		roomParticipentRevocationMap: make(map[string]jwt.NumericDate),
+
+		lock: sync.RWMutex{},
 	}
 }
 
@@ -295,4 +301,40 @@ func (s *LocalStore) DeleteAgentJob(ctx context.Context, job *livekit.Job) error
 	}
 
 	return nil
+}
+
+func (s *LocalStore) RevokeRoomParticipent(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	revocationTime := jwt.NewNumericDate(time.Now())
+	s.roomParticipentRevocationMap[room.String()+":"+identity.String()] = *revocationTime
+
+	return nil
+}
+
+func (s *LocalStore) IsRoomParticipentRevoked(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) (bool, *jwt.NumericDate, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	revocationTime, exists := s.roomParticipentRevocationMap[room.String()+":"+identity.String()]
+
+	return exists, &revocationTime, nil
+}
+
+func (s *LocalStore) CleanupForRoom(ctx context.Context, room livekit.RoomName) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	entries := []string{}
+	for identifier := range s.roomParticipentRevocationMap {
+
+		if strings.HasPrefix(identifier, room.String()+":") {
+			entries = append(entries, identifier)
+		}
+	}
+
+	for i := range entries {
+		delete(s.roomParticipentRevocationMap, entries[i])
+	}
 }
