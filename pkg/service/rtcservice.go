@@ -290,10 +290,10 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 	}
 
 	var (
-		roomName            livekit.RoomName
-		roomID              livekit.RoomID
-		participantIdentity livekit.ParticipantIdentity
-		pID                 livekit.ParticipantID
+		roomName            livekit.RoomName            = "unresolved"
+		roomID              livekit.RoomID              = "unresolved"
+		participantIdentity livekit.ParticipantIdentity = "unresolved"
+		pID                 livekit.ParticipantID       = "unresolved"
 		loggerResolved      bool
 
 		pi   routing.ParticipantInit

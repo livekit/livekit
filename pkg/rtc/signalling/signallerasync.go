@@ -63,7 +63,7 @@ func (s *signallerAsync) WriteMessage(msg proto.Message) error {
 
 	if s.params.Participant.IsDisconnected() {
 		s.params.Logger.Debugw(
-			"counld not send message to participant, participant disconnected",
+			"could not send message to participant, participant disconnected",
 			"messageType", getMessageType(msg),
 		)
 		return nil
