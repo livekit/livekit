@@ -280,6 +280,10 @@ func (w *Worker) sendRequest(req *livekit.ServerMessage) {
 	}
 }
 
+func (w *Worker) APIKey() string {
+	return w.apiKey
+}
+
 func (w *Worker) Status() livekit.WorkerStatus {
 	w.mu.Lock()
 	defer w.mu.Unlock()
