@@ -238,12 +238,18 @@ func newSIPClient(p rpc.ClientParams) (rpc.SIPClient, error) {
 	})
 }
 
-func getSIPStore(s ObjectStore) SIPStore {
+func getSIPStore(conf *config.Config, s ObjectStore) (SIPStore, error) {
+	// Check if filesystem storage is configured
+	if conf.SIP.ConfigStore == "filesystem" {
+		return NewFileSIPStore(conf.SIP.ConfigPath)
+	}
+
+	// Default to Redis (or nil if Redis is not configured)
 	switch store := s.(type) {
 	case *RedisStore:
-		return store
+		return store, nil
 	default:
-		return nil
+		return nil, nil
 	}
 }
 
