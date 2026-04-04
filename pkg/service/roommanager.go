@@ -568,8 +568,8 @@ func (r *RoomManager) StartSession(
 	persistRoomForParticipantCount(room.ToProto())
 
 	clientMeta := &livekit.AnalyticsClientMeta{Region: r.currentNode.Region(), Node: string(r.currentNode.NodeID())}
-	// Use a fresh room proto so num_participants reflects the newly joined participant
-	r.telemetry.ParticipantJoined(ctx, room.ToProto(), participant.ToProto(), pi.Client, clientMeta, true, participant.TelemetryGuard())
+	// Use a consistent room proto so num_participants reflects the newly joined participant
+	r.telemetry.ParticipantJoined(ctx, room.ToProtoConsistent(), participant.ToProto(), pi.Client, clientMeta, true, participant.TelemetryGuard())
 	participant.AddOnClose(types.ParticipantCloseKeyNormal, func(p types.LocalParticipant) {
 		participantServerClosers.Close()
 
@@ -577,8 +577,8 @@ func (r *RoomManager) StartSession(
 			pLogger.Errorw("could not delete participant", err)
 		}
 
-		// update room store with new numParticipants
-		proto := room.ToProto()
+		// use consistent proto so num_participants is accurate for webhook
+		proto := room.ToProtoConsistent()
 		persistRoomForParticipantCount(proto)
 		r.telemetry.ParticipantLeft(ctx, proto, p.ToProto(), true, participant.TelemetryGuard())
 	})

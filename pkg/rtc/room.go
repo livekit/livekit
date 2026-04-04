@@ -323,6 +323,14 @@ func (r *Room) ToProto() *livekit.Room {
 	return r.protoProxy.Get()
 }
 
+// ToProtoConsistent returns a room proto with participant counts computed
+// directly from the current participants map, bypassing the batched proto
+// proxy. Use this when an accurate num_participants is required immediately,
+// e.g. for webhook or telemetry events.
+func (r *Room) ToProtoConsistent() *livekit.Room {
+	return r.updateProto()
+}
+
 func (r *Room) Name() livekit.RoomName {
 	return livekit.RoomName(r.protoRoom.Name)
 }
@@ -480,17 +488,16 @@ func (r *Room) Join(
 		"numParticipants", len(r.participants),
 	)
 
-	r.participants[participant.Identity()] = participant
-	r.participantOpts[participant.Identity()] = opts
-	r.participantRequestSources[participant.Identity()] = requestSource
-
 	if participant.IsRecorder() && !r.protoRoom.ActiveRecording {
 		r.protoRoom.ActiveRecording = true
 		r.protoProxy.MarkDirty(true)
 	} else {
-		// Mark dirty after adding participant so updateProto() counts them
-		r.protoProxy.MarkDirty(true)
+		r.protoProxy.MarkDirty(false)
 	}
+
+	r.participants[participant.Identity()] = participant
+	r.participantOpts[participant.Identity()] = opts
+	r.participantRequestSources[participant.Identity()] = requestSource
 
 	if r.onParticipantChanged != nil {
 		r.onParticipantChanged(participant)
@@ -1404,10 +1411,7 @@ func (r *Room) RemoveParticipant(
 	delete(r.participantRequestSources, identity)
 	delete(r.hasPublished, identity)
 	delete(r.agentParticpants, identity)
-	// Note: NumParticipants is NOT decremented directly here.
-	// Instead, updateProto() recalculates it from the participants map.
-	// This avoids stale counts in webhook events.
-
+	immediateChange := false
 	if p.IsRecorder() {
 		activeRecording := false
 		for _, op := range r.participants {
@@ -1419,14 +1423,11 @@ func (r *Room) RemoveParticipant(
 
 		if r.protoRoom.ActiveRecording != activeRecording {
 			r.protoRoom.ActiveRecording = activeRecording
+			immediateChange = true
 		}
 	}
 	r.lock.Unlock()
-	// Force immediate proto update so that subsequent ToProto() calls
-	// (e.g., in webhook callbacks triggered by p.Close()) reflect the
-	// correct participant count.
-	done := r.protoProxy.MarkDirty(true)
-	<-done
+	r.protoProxy.MarkDirty(immediateChange)
 
 	if !p.HasConnected() {
 		fields := append(
