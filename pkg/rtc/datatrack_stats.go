@@ -37,7 +37,7 @@ type dataTrackStats struct {
 	numPackets            int
 	numPacketsLost        int
 	numPacketsOutOfOrder  int
-	numFrames             int // count of `L` tagged packets, i. e. packets with last of frame marker
+	numFrames             int // count of `F` tagged packets, i. e. packets with final packet of frame marker
 }
 
 func newDataTrackStats(params dataTrackStatsParams) *dataTrackStats {
