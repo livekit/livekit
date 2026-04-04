@@ -65,6 +65,7 @@ func (d *dataTrackStats) Update(packet *datatrack.Packet, arrivalTime int64) {
 			return
 
 		case diff > (1 << 15): // out of order
+			d.numPackets++
 			d.numPacketsOutOfOrder++
 			if d.numPacketsLost > 0 {
 				d.numPacketsLost--

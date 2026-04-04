@@ -34,6 +34,7 @@ type UpDataTrackManager struct {
 
 	lock       sync.RWMutex
 	dataTracks map[uint16]types.DataTrack
+	closed     bool
 
 	onDataTrackPublished   func(types.Participant, types.DataTrack)
 	onDataTrackUnpublished func(types.Participant, types.DataTrack)
@@ -43,6 +44,24 @@ func NewUpDataTrackManager(params UpDataTrackManagerParams) *UpDataTrackManager 
 	return &UpDataTrackManager{
 		params:     params,
 		dataTracks: make(map[uint16]types.DataTrack),
+	}
+}
+
+func (u *UpDataTrackManager) Close() {
+	u.lock.Lock()
+	if u.closed {
+		u.lock.Unlock()
+		return
+	}
+
+	u.closed = true
+
+	dataTracks := u.dataTracks
+	u.dataTracks = make(map[uint16]types.DataTrack)
+	u.lock.Unlock()
+
+	for _, t := range dataTracks {
+		t.Close()
 	}
 }
 

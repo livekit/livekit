@@ -1427,6 +1427,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	p.pendingTracksLock.Unlock()
 
 	p.UpTrackManager.Close(isExpectedToResume)
+	p.UpDataTrackManager.Close()
 
 	p.rpcLock.Lock()
 	clear(p.rpcPendingAcks)
