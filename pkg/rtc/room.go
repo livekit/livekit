@@ -323,6 +323,14 @@ func (r *Room) ToProto() *livekit.Room {
 	return r.protoProxy.Get()
 }
 
+// ToProtoConsistent returns a room proto with participant counts computed
+// directly from the current participants map, bypassing the batched proto
+// proxy. Use this when an accurate num_participants is required immediately,
+// e.g. for webhook or telemetry events.
+func (r *Room) ToProtoConsistent() *livekit.Room {
+	return r.updateProto()
+}
+
 func (r *Room) Name() livekit.RoomName {
 	return livekit.RoomName(r.protoRoom.Name)
 }
@@ -1403,10 +1411,6 @@ func (r *Room) RemoveParticipant(
 	delete(r.participantRequestSources, identity)
 	delete(r.hasPublished, identity)
 	delete(r.agentParticpants, identity)
-	if !p.Hidden() {
-		r.protoRoom.NumParticipants--
-	}
-
 	immediateChange := false
 	if p.IsRecorder() {
 		activeRecording := false
