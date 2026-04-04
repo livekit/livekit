@@ -48,6 +48,8 @@ type DataTrack struct {
 
 	downTrackSpreader *sfuutils.DownTrackSpreader[types.DataTrackSender]
 
+	stats *dataTrackStats
+
 	closed core.Fuse
 }
 
@@ -60,6 +62,7 @@ func NewDataTrack(params DataTrackParams, dti *livekit.DataTrackInfo) *DataTrack
 			Threshold: 20,
 			Logger:    params.Logger,
 		}),
+		stats: newDataTrackStats(dataTrackStatsParams{Logger: params.Logger}),
 	}
 	d.params.Logger.Infow("created data track", "name", d.Name())
 	return d
@@ -68,6 +71,8 @@ func NewDataTrack(params DataTrackParams, dti *livekit.DataTrackInfo) *DataTrack
 func (d *DataTrack) Close() {
 	d.params.Logger.Infow("closing data track", "name", d.Name())
 	d.closed.Break()
+
+	d.stats.Close()
 }
 
 func (d *DataTrack) PublisherID() livekit.ParticipantID {
@@ -156,6 +161,8 @@ func (d *DataTrack) DeleteDataDownTrack(subscriberID livekit.ParticipantID) {
 }
 
 func (d *DataTrack) HandlePacket(data []byte, packet *datatrack.Packet, arrivalTime int64) {
+	d.stats.Update(packet, arrivalTime)
+
 	d.downTrackSpreader.Broadcast(func(dts types.DataTrackSender) {
 		dts.WritePacket(data, packet, arrivalTime)
 	})
