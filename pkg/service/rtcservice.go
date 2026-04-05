@@ -365,7 +365,7 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 	if pi.ID != "" {
 		pID = pi.ID
 	}
-	pLogger.Debugw("join request validated", append(getLoggerFields(), "participantInit", &pi))
+	pLogger.Debugw("join request validated", append(getLoggerFields(), "participantInit", &pi)...)
 
 	// give it a few attempts to start session
 	var cr connectionResult
