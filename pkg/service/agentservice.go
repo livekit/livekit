@@ -439,7 +439,7 @@ func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 		}
 
 		if w.Status() == livekit.WorkerStatus_WS_AVAILABLE {
-			affinity += max(0, 1-w.Load())
+			affinity = max(affinity, max(0, 1-w.Load()))
 		}
 	}
 
