@@ -40,7 +40,12 @@ type TestServer struct {
 func NewTestServer(bus psrpc.MessageBus) *TestServer {
 	localNode, _ := routing.NewLocalNode(nil)
 	return NewTestServerWithService(must.Get(service.NewAgentService(
-		&config.Config{Region: "test"},
+		&config.Config{
+			Region: "test",
+			Agents: agent.Config{
+				TargetLoad: agent.DefaultTargetLoad,
+			},
+		},
 		localNode,
 		bus,
 		auth.NewSimpleKeyProvider("test", "verysecretsecret"),
