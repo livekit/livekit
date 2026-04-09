@@ -436,7 +436,10 @@ var DefaultConfig = Config{
 		StreamBufferSize: 1000,
 		ConnectAttempts:  3,
 	},
-	PSRPC:            rpc.DefaultPSRPCConfig,
+	Agents: agent.Config{
+		TargetLoad: agent.DefaultTargetLoad,
+	},
+	PSRPC: rpc.DefaultPSRPCConfig,
 	Keys:             map[string]string{},
 	Metric:           metric.DefaultMetricConfig,
 	WebHook:          webhook.DefaultWebHookConfig,

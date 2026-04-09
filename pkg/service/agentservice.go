@@ -143,6 +143,7 @@ type AgentHandler struct {
 	workers     map[string]*agent.Worker
 	jobToWorker map[livekit.JobID]*agent.Worker
 	keyProvider auth.KeyProvider
+	targetLoad  float32
 
 	namespaceWorkers    map[workerKey][]*agent.Worker
 	roomKeyCount        int
@@ -188,6 +189,7 @@ func NewAgentService(
 		keyProvider,
 		logger.GetLogger(),
 		serverInfo,
+		conf.Agents.TargetLoad,
 		agent.RoomAgentTopic,
 		agent.PublisherAgentTopic,
 		agent.ParticipantAgentTopic,
@@ -207,6 +209,7 @@ func NewAgentHandler(
 	keyProvider auth.KeyProvider,
 	logger logger.Logger,
 	serverInfo *livekit.ServerInfo,
+	targetLoad float32,
 	roomTopic string,
 	publisherTopic string,
 	participantTopic string,
@@ -219,6 +222,7 @@ func NewAgentHandler(
 		namespaceWorkers: make(map[workerKey][]*agent.Worker),
 		serverInfo:       serverInfo,
 		keyProvider:      keyProvider,
+		targetLoad:       targetLoad,
 		roomTopic:        roomTopic,
 		publisherTopic:   publisherTopic,
 		participantTopic: participantTopic,
@@ -439,7 +443,7 @@ func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 		}
 
 		if w.Status() == livekit.WorkerStatus_WS_AVAILABLE {
-			affinity += max(0, 1-w.Load())
+			affinity += max(0, h.targetLoad-w.Load())
 		}
 	}
 
