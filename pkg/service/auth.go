@@ -86,13 +86,13 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 
 		secret := m.provider.GetSecret(v.APIKey())
 		if secret == "" {
-			HandleError(w, r, http.StatusUnauthorized, errors.New("invalid API key: "+v.APIKey()))
+			HandleError(w, r, http.StatusUnauthorized, ErrInvalidAPIKey)
 			return
 		}
 
 		_, grants, err := v.Verify(secret)
 		if err != nil {
-			HandleError(w, r, http.StatusUnauthorized, errors.New("invalid token: "+authToken+", error: "+err.Error()))
+			HandleError(w, r, http.StatusUnauthorized, ErrInvalidAuthorizationToken)
 			return
 		}
 
