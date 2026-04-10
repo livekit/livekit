@@ -152,8 +152,9 @@ func (m *SubscriptionManager) Close(isExpectedToResume bool) {
 		}
 	}
 
-	m.lock.Lock()
-	for _, sub := range m.dataTrackSubscriptions {
+	for trackID, sub := range dataTrackSubs {
+		m.setDataTrackDesired(trackID, false)
+
 		dataDownTrack := sub.getDataDownTrack()
 		if dataDownTrack == nil {
 			// already unsubscribed
@@ -167,7 +168,6 @@ func (m *SubscriptionManager) Close(isExpectedToResume bool) {
 
 		dataTrack.RemoveSubscriber(sub.subscriberID)
 	}
-	m.lock.Unlock()
 	m.notifyDataTrackSubscriberHandles()
 }
 
@@ -181,6 +181,10 @@ func (m *SubscriptionManager) isClosed() bool {
 }
 
 func (m *SubscriptionManager) SubscribeToTrack(trackID livekit.TrackID, isSync bool) {
+	if m.isClosed() {
+		return
+	}
+
 	if m.params.UseOneShotSignallingMode || isSync {
 		m.subscribeSynchronous(trackID)
 		return
@@ -227,6 +231,10 @@ func (m *SubscriptionManager) UnsubscribeFromTrack(trackID livekit.TrackID) {
 }
 
 func (m *SubscriptionManager) SubscribeToDataTrack(trackID livekit.TrackID) {
+	if m.isClosed() {
+		return
+	}
+
 	sub, desireChanged := m.setDataTrackDesired(trackID, true)
 	if sub == nil {
 		sLogger := m.params.Logger.WithValues(
