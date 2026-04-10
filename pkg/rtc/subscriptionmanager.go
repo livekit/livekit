@@ -153,7 +153,9 @@ func (m *SubscriptionManager) Close(isExpectedToResume bool) {
 	}
 
 	m.lock.Lock()
-	for _, sub := range m.dataTrackSubscriptions {
+	for trackID, sub := range m.dataTrackSubscriptions {
+		m.setDataTrackDesired(trackID, false)
+
 		dataDownTrack := sub.getDataDownTrack()
 		if dataDownTrack == nil {
 			// already unsubscribed
