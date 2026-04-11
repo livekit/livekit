@@ -15,7 +15,7 @@
 package codecmunger
 
 import (
-	"github.com/elliotchance/orderedmap/v2"
+	"github.com/elliotchance/orderedmap/v3"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
