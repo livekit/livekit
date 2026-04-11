@@ -198,10 +198,7 @@ func getConfig(c *cli.Command) (*config.Config, error) {
 		return nil, err
 	}
 
-	strictMode := true
-	if c.Bool("disable-strict-config") {
-		strictMode = false
-	}
+	strictMode := !c.Bool("disable-strict-config")
 
 	conf, err := config.NewConfig(confString, strictMode, c, baseFlags)
 	if err != nil {

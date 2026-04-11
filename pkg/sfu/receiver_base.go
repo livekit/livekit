@@ -1161,10 +1161,10 @@ func (r *ReceiverBase) AddOnReady(fn func()) {
 	fn()
 }
 
-func (w *ReceiverBase) handleCodecChange(newCodec webrtc.RTPCodecParameters) {
+func (r *ReceiverBase) handleCodecChange(newCodec webrtc.RTPCodecParameters) {
 	// codec fallback is not supported mid-session, i.e. change of codec via payload type change,
 	// set the codec state to invalid once it happens
-	w.SetCodecState(ReceiverCodecStateInvalid)
+	r.SetCodecState(ReceiverCodecStateInvalid)
 }
 
 func (r *ReceiverBase) AddOnCodecStateChange(f func(webrtc.RTPCodecParameters, ReceiverCodecState)) {

@@ -80,8 +80,8 @@ func (l *LeakyBucket) Enqueue(p *Packet) {
 func (l *LeakyBucket) sendWorker() {
 	l.lock.RLock()
 	interval := l.interval
-	bitrate := l.bitrate
 	l.lock.RUnlock()
+	var bitrate int
 
 	timer := time.NewTimer(interval)
 	overage := 0

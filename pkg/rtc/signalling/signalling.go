@@ -221,7 +221,7 @@ func (s *signalling) SignalSubscriptionPermissionUpdate(subscriptionPermissionUp
 	}
 }
 
-func (u *signalling) SignalMediaSectionsRequirement(mediaSectionsRequirement *livekit.MediaSectionsRequirement) proto.Message {
+func (s *signalling) SignalMediaSectionsRequirement(mediaSectionsRequirement *livekit.MediaSectionsRequirement) proto.Message {
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_MediaSectionsRequirement{
 			MediaSectionsRequirement: mediaSectionsRequirement,
@@ -237,7 +237,7 @@ func (s *signalling) SignalSubscribedAudioCodecUpdate(subscribedAudioCodecUpdate
 	}
 }
 
-func (u *signalling) SignalPublishDataTrackResponse(publishDataTrackResponse *livekit.PublishDataTrackResponse) proto.Message {
+func (s *signalling) SignalPublishDataTrackResponse(publishDataTrackResponse *livekit.PublishDataTrackResponse) proto.Message {
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_PublishDataTrackResponse{
 			PublishDataTrackResponse: publishDataTrackResponse,
@@ -245,7 +245,7 @@ func (u *signalling) SignalPublishDataTrackResponse(publishDataTrackResponse *li
 	}
 }
 
-func (u *signalling) SignalUnpublishDataTrackResponse(unpublishDataTrackResponse *livekit.UnpublishDataTrackResponse) proto.Message {
+func (s *signalling) SignalUnpublishDataTrackResponse(unpublishDataTrackResponse *livekit.UnpublishDataTrackResponse) proto.Message {
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_UnpublishDataTrackResponse{
 			UnpublishDataTrackResponse: unpublishDataTrackResponse,
@@ -253,7 +253,7 @@ func (u *signalling) SignalUnpublishDataTrackResponse(unpublishDataTrackResponse
 	}
 }
 
-func (u *signalling) SignalDataTrackSubscriberHandles(dataTrackSubscriberHandles *livekit.DataTrackSubscriberHandles) proto.Message {
+func (s *signalling) SignalDataTrackSubscriberHandles(dataTrackSubscriberHandles *livekit.DataTrackSubscriberHandles) proto.Message {
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_DataTrackSubscriberHandles{
 			DataTrackSubscriberHandles: dataTrackSubscriberHandles,

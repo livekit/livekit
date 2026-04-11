@@ -319,7 +319,7 @@ func (r *rtpStatsBaseLite) deltaInfoLite(
 	snapshotLiteID uint32,
 	extStartSN uint64,
 	extHighestSN uint64,
-) (deltaInfoLite *RTPDeltaInfoLite, err error, loggingFields []any) {
+) (deltaInfoLite *RTPDeltaInfoLite, loggingFields []any, err error) {
 	then, now := r.getAndResetSnapshotLite(snapshotLiteID, extStartSN, extHighestSN)
 	if now == nil || then == nil {
 		return
@@ -421,7 +421,7 @@ func (r *rtpStatsBaseLite) marshalLogObject(e zapcore.ObjectEncoder, packetsExpe
 		if sb.Len() > 0 {
 			sb.WriteString(", ")
 		}
-		sb.WriteString(fmt.Sprintf("%d:%d", burst+1, count))
+		fmt.Fprintf(&sb, "%d:%d", burst+1, count)
 	}
 	if sb.Len() > 0 {
 		e.AddString("gapHistogram", "["+sb.String()+"]")

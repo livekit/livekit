@@ -120,8 +120,8 @@ func (s *SignalServer) Start() error {
 	return s.server.RegisterAllNodeTopics(s.nodeID)
 }
 
-func (r *SignalServer) Stop() {
-	r.server.Kill()
+func (s *SignalServer) Stop() {
+	s.server.Kill()
 }
 
 type signalService struct {

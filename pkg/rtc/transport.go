@@ -2547,11 +2547,12 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	}
 
 	// when there's an ongoing negotiation, let it finish and not disrupt its state
-	if t.negotiationState == transport.NegotiationStateRemote {
+	switch t.negotiationState {
+	case transport.NegotiationStateRemote:
 		t.params.Logger.Debugw("skipping negotiation, trying again later")
 		t.setNegotiationState(transport.NegotiationStateRetry)
 		return nil
-	} else if t.negotiationState == transport.NegotiationStateRetry {
+	case transport.NegotiationStateRetry:
 		// already set to retry, we can safely skip this attempt
 		return nil
 	}

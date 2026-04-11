@@ -37,10 +37,7 @@ func NewForwardStats(latencyUpdateInterval, reportInterval, latencyWindowLength 
 
 func (s *ForwardStats) Update(arrival, left int64) (int64, bool) {
 	transit := left - arrival
-	isHighForwardingLatency := false
-	if time.Duration(transit) > cHighForwardingLatency {
-		isHighForwardingLatency = true
-	}
+	isHighForwardingLatency := time.Duration(transit) > cHighForwardingLatency
 
 	s.lock.Lock()
 	s.latency.Update(time.Duration(arrival), float64(transit))

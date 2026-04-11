@@ -24,11 +24,11 @@ import (
 
 func TestExtensionParticipantSid(t *testing.T) {
 	longTestParticipantID := livekit.ParticipantID(make([]byte, 256))
-	extParticipantSid, err := NewExtensionParticipantSid(longTestParticipantID)
+	_, err := NewExtensionParticipantSid(longTestParticipantID)
 	require.Error(t, err)
 
 	testParticipantID := livekit.ParticipantID("test")
-	extParticipantSid, err = NewExtensionParticipantSid(testParticipantID)
+	extParticipantSid, err := NewExtensionParticipantSid(testParticipantID)
 	require.NoError(t, err)
 
 	expectedExt := Extension{

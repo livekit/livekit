@@ -90,7 +90,7 @@ func NewSendSideBWE(params SendSideBWEParams) *SendSideBWE {
 	}
 }
 
-func (r *SendSideBWE) Type() bwe.BWEType {
+func (s *SendSideBWE) Type() bwe.BWEType {
 	return bwe.BWETypeSendSide
 }
 
