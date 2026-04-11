@@ -71,11 +71,11 @@ func (fc *FrameChain) OnFrame(extFrameNum uint64, fd *dd.FrameDependencyTemplate
 	}
 
 	var intact bool
-	switch {
-	case sd == selectorDecisionForwarded:
+	switch sd {
+	case selectorDecisionForwarded:
 		intact = true
 
-	case sd == selectorDecisionUnknown:
+	case selectorDecisionUnknown:
 		// If the previous frame is unknown, means it has not arrived but could be recovered by NACK / out-of-order arrival,
 		// set up a expected callback here to determine if the chain is broken or intact
 		if fc.decisions.ExpectDecision(prevFrameInChain, fc.OnExpectFrameChanged) {

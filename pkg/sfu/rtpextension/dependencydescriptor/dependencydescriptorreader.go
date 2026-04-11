@@ -229,12 +229,13 @@ func (r *DependencyDescriptorReader) readTemplateLayers() error {
 		}
 		nextLayerIdc = nextLayerIdcType(idc)
 
-		if nextLayerIdc == nextTemporalLayer {
+		switch nextLayerIdc {
+		case nextTemporalLayer:
 			temporalId++
 			if temporalId >= MaxTemporalIds {
 				return ErrDDReaderTooManyTemporalLayers
 			}
-		} else if nextLayerIdc == nextSpatialLayer {
+		case nextSpatialLayer:
 			spatialId++
 			temporalId = 0
 			if spatialId >= MaxSpatialIds {
@@ -242,7 +243,7 @@ func (r *DependencyDescriptorReader) readTemplateLayers() error {
 			}
 		}
 
-		if !(nextLayerIdc != noMoreLayer && r.buffer.Ok()) {
+		if nextLayerIdc == noMoreLayer || !r.buffer.Ok() {
 			break
 		}
 	}

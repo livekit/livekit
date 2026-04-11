@@ -190,7 +190,7 @@ func (r *rtxInfoReader) Read(b []byte, a interceptor.Attributes) (int, intercept
 		go r.factory.SetStreamInfo(header.SSRC, mid, rid, rsid)
 	} else {
 		// ignore padding only packet for probe count
-		if !(header.Padding && n-header.MarshalSize()-int(b[n-1]) == 0) {
+		if !header.Padding || n-header.MarshalSize()-int(b[n-1]) != 0 {
 			r.tryTimes--
 		}
 	}

@@ -19,9 +19,10 @@ import "sort"
 // MedianFloat32 gets median value for an array of float32
 func MedianFloat32(input []float32) float32 {
 	num := len(input)
-	if num == 0 {
+	switch num {
+	case 0:
 		return 0
-	} else if num == 1 {
+	case 1:
 		return input[0]
 	}
 	sort.Slice(input, func(i, j int) bool {

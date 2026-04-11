@@ -121,7 +121,7 @@ func (r *RTPStatsReceiverLite) DeltaInfoLite(snapshotLiteID uint32) *RTPDeltaInf
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	deltaInfoLite, err, loggingFields := r.deltaInfoLite(
+	deltaInfoLite, loggingFields, err := r.deltaInfoLite(
 		snapshotLiteID,
 		r.sequenceNumber.GetExtendedStart(),
 		r.sequenceNumber.GetExtendedHighest(),

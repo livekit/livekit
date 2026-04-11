@@ -637,7 +637,7 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 		}
 
 		var flag cli.Flag
-		envVar := fmt.Sprintf("LIVEKIT_%s", strings.ToUpper(strings.Replace(name, ".", "_", -1)))
+		envVar := fmt.Sprintf("LIVEKIT_%s", strings.ToUpper(strings.ReplaceAll(name, ".", "_")))
 		defaultText := cliDefaultText(value)
 
 		switch kind {

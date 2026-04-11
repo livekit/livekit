@@ -97,12 +97,12 @@ func (c ClientInfo) SupportsChangeRTPSenderEncodingActive() bool {
 }
 
 func (c ClientInfo) ComplyWithCodecOrderInSDPAnswer() bool {
-	return !((c.isLinux() || c.isAndroid()) && c.isFirefox())
+	return (!c.isLinux() && !c.isAndroid()) || !c.isFirefox()
 }
 
 // Rust SDK can't decode unknown signal message (TrackSubscribed and ErrorResponse)
 func (c ClientInfo) SupportsTrackSubscribedEvent() bool {
-	return !(c.ClientInfo.GetSdk() == livekit.ClientInfo_RUST && c.ClientInfo.GetProtocol() < 10)
+	return c.ClientInfo.GetSdk() != livekit.ClientInfo_RUST || c.ClientInfo.GetProtocol() >= 10
 }
 
 func (c ClientInfo) SupportsRequestResponse() bool {
@@ -110,8 +110,8 @@ func (c ClientInfo) SupportsRequestResponse() bool {
 }
 
 func (c ClientInfo) SupportsSctpZeroChecksum() bool {
-	return !(c.ClientInfo.GetSdk() == livekit.ClientInfo_UNKNOWN ||
-		(c.isGo() && c.compareVersion("2.4.0") < 0))
+	return c.ClientInfo.GetSdk() != livekit.ClientInfo_UNKNOWN &&
+		(!c.isGo() || c.compareVersion("2.4.0") >= 0)
 }
 
 // compareVersion compares a semver against the current client SDK version

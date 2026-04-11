@@ -246,8 +246,8 @@ func (w *DependencyDescriptorWriter) writeExtendedFields() error {
 }
 
 func (w *DependencyDescriptorWriter) writeTemplateDependencyStructure() error {
-	if !(w.structure.StructureId >= 0 && w.structure.StructureId < MaxTemplates &&
-		w.structure.NumDecodeTargets > 0 && w.structure.NumDecodeTargets <= MaxDecodeTargets) {
+	if w.structure.StructureId < 0 || w.structure.StructureId >= MaxTemplates ||
+		w.structure.NumDecodeTargets <= 0 || w.structure.NumDecodeTargets > MaxDecodeTargets {
 		return fmt.Errorf("invalid arguments, structureId: %d, numDecodeTargets: %d", w.structure.StructureId, w.structure.NumDecodeTargets)
 	}
 
@@ -283,8 +283,8 @@ func (w *DependencyDescriptorWriter) writeTemplateDependencyStructure() error {
 }
 
 func (w *DependencyDescriptorWriter) writeTemplateLayers() error {
-	if !(len(w.structure.Templates) > 0 && len(w.structure.Templates) <= MaxTemplates &&
-		w.structure.Templates[0].SpatialId == 0 && w.structure.Templates[0].TemporalId == 0) {
+	if len(w.structure.Templates) <= 0 || len(w.structure.Templates) > MaxTemplates ||
+		w.structure.Templates[0].SpatialId != 0 || w.structure.Templates[0].TemporalId != 0 {
 		return fmt.Errorf("invalid templates, len %d, templates[0]: spatialId %d, temporalId %d", len(w.structure.Templates), w.structure.Templates[0].SpatialId, w.structure.Templates[0].TemporalId)
 	}
 	for i := 1; i < len(w.structure.Templates); i++ {

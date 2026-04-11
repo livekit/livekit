@@ -1581,7 +1581,7 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 		HeaderSize: 6,
 		IsKeyFrame: true,
 	}
-	marshalledVP8, err := expectedVP8.Marshal()
+	marshalledVP8, _ := expectedVP8.Marshal()
 	expectedTP = TranslationParams{
 		isSwitching: true,
 		isResuming:  true,

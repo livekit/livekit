@@ -66,7 +66,7 @@ func TestRangeMapUint32(t *testing.T) {
 	require.Equal(t, uint32(1), value)
 
 	// excluded range should return error
-	value, err = r.GetValue(10)
+	_, err = r.GetValue(10)
 	require.ErrorIs(t, err, errKeyExcluded)
 
 	// out-of-order exclusion should return error
@@ -98,11 +98,11 @@ func TestRangeMapUint32(t *testing.T) {
 	require.Equal(t, expectedRanges, r.ranges)
 
 	// excluded range should return error, now is excluded because exclusion range could be extended
-	value, err = r.GetValue(11)
+	_, err = r.GetValue(11)
 	require.ErrorIs(t, err, errKeyExcluded)
 
 	// getting value in old range should return 0
-	value, err = r.GetValue(6)
+	_, err = r.GetValue(6)
 	require.NoError(t, err)
 
 	// newer should return 2
@@ -129,7 +129,7 @@ func TestRangeMapUint32(t *testing.T) {
 	require.Equal(t, expectedRanges, r.ranges)
 
 	// excluded range should return error, now is excluded because exclusion range could be extended
-	value, err = r.GetValue(15)
+	_, err = r.GetValue(15)
 	require.ErrorIs(t, err, errKeyExcluded)
 
 	// newer should return 12
@@ -190,15 +190,15 @@ func TestRangeMapUint32(t *testing.T) {
 	require.Equal(t, expectedRanges, r.ranges)
 
 	// excluded range should return error
-	value, err = r.GetValue(50)
+	_, err = r.GetValue(50)
 	require.ErrorIs(t, err, errKeyExcluded)
-	value, err = r.GetValue(28)
+	_, err = r.GetValue(28)
 	require.ErrorIs(t, err, errKeyExcluded)
-	value, err = r.GetValue(17)
+	_, err = r.GetValue(17)
 	require.ErrorIs(t, err, errKeyTooOld)
 
 	// previously valid, but aged out key should return error
-	value, err = r.GetValue(5)
+	_, err = r.GetValue(5)
 	require.ErrorIs(t, err, errKeyTooOld)
 
 	// valid range access should return values
@@ -279,7 +279,7 @@ func TestRangeMapUint32(t *testing.T) {
 	require.Equal(t, expectedRanges, r.ranges)
 
 	// before first range access
-	value, err = r.GetValue(5)
+	_, err = r.GetValue(5)
 	require.ErrorIs(t, err, errKeyTooOld)
 
 	// first range access
@@ -319,7 +319,7 @@ func TestRangeMapUint32(t *testing.T) {
 	require.Equal(t, expectedRanges, r.ranges)
 
 	// aged out range access
-	value, err = r.GetValue(25)
+	_, err = r.GetValue(25)
 	require.ErrorIs(t, err, errKeyTooOld)
 
 	// access closed range before decrementing value
