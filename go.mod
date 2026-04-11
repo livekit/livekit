@@ -21,7 +21,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/mediatransportutil v0.0.0-20260409104613-0fcb3771c3d5
-	github.com/livekit/protocol v1.45.2-0.20260327155206-4fe5c0ec0268
+	github.com/livekit/protocol v1.45.3
 	github.com/livekit/psrpc v0.7.1
 	github.com/mackerelio/go-osstat v0.2.7
 	github.com/magefile/mage v1.17.0
@@ -109,7 +109,7 @@ require (
 	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
-	github.com/go-jose/go-jose/v3 v3.0.4 // indirect
+	github.com/go-jose/go-jose/v3 v3.0.5 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/cel-go v0.27.0 // indirect
