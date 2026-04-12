@@ -15,9 +15,9 @@
 package dynacast
 
 import (
+	"maps"
+	"slices"
 	"sync"
-
-	"golang.org/x/exp/maps"
 
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/logger"
@@ -161,5 +161,5 @@ func (d *dynacastManagerBase) getOrCreateDynacastQuality(mimeType mime.MimeType)
 }
 
 func (d *dynacastManagerBase) getDynacastQualitiesLocked() []dynacastQuality {
-	return maps.Values(d.dynacastQuality)
+	return slices.Collect(maps.Values(d.dynacastQuality))
 }

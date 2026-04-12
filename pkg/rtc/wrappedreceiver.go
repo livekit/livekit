@@ -16,12 +16,12 @@ package rtc
 
 import (
 	"errors"
+	"maps"
+	"slices"
 	"sync"
 
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/maps"
-	"golang.org/x/exp/slices"
 
 	protoCodecs "github.com/livekit/protocol/codecs"
 	"github.com/livekit/protocol/codecs/mime"
@@ -394,7 +394,7 @@ func (d *DummyReceiver) GetDownTracks() []sfu.TrackSender {
 	if receiver := d.getReceiver(); receiver != nil {
 		return receiver.GetDownTracks()
 	}
-	return maps.Values(d.downTracks)
+	return slices.Collect(maps.Values(d.downTracks))
 }
 
 func (d *DummyReceiver) DebugInfo() map[string]any {
@@ -567,7 +567,7 @@ func (d *DummyRedReceiver) GetDownTracks() []sfu.TrackSender {
 	if r, ok := d.redReceiver.Load().(sfu.TrackReceiver); ok {
 		return r.GetDownTracks()
 	}
-	return maps.Values(d.downTracks)
+	return slices.Collect(maps.Values(d.downTracks))
 }
 
 func (d *DummyRedReceiver) ReadRTP(buf []byte, layer uint8, esn uint64) (int, error) {

@@ -16,8 +16,7 @@ package dependencydescriptor
 
 import (
 	"fmt"
-
-	"golang.org/x/exp/slices"
+	"slices"
 )
 
 type TemplateMatch struct {
