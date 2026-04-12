@@ -15,13 +15,14 @@
 package rtc
 
 import (
+	"maps"
+	"slices"
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"golang.org/x/exp/maps"
 )
 
 type UpDataTrackManagerParams struct {
@@ -94,7 +95,7 @@ func (u *UpDataTrackManager) GetPublishedDataTracks() []types.DataTrack {
 	u.lock.RLock()
 	defer u.lock.RUnlock()
 
-	return maps.Values(u.dataTracks)
+	return slices.Collect(maps.Values(u.dataTracks))
 }
 
 func (u *UpDataTrackManager) GetPublishedDataTrack(handle uint16) types.DataTrack {

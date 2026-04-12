@@ -17,6 +17,7 @@ package rtc
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"sort"
@@ -25,7 +26,6 @@ import (
 	"time"
 
 	"go.uber.org/atomic"
-	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/codecs/mime"
@@ -196,7 +196,7 @@ func (ad *agentDispatch) jobsLaunching() (jobsLaunched func()) {
 
 func (ad *agentDispatch) waitForPendingJobs() {
 	ad.lock.Lock()
-	cs := maps.Keys(ad.pending)
+	cs := slices.Collect(maps.Keys(ad.pending))
 	ad.lock.Unlock()
 
 	for _, c := range cs {
@@ -305,7 +305,7 @@ func NewRoom(
 
 	r.createAgentDispatchesFromRoomAgent()
 
-	r.launchRoomAgents(maps.Values(r.agentDispatches))
+	r.launchRoomAgents(slices.Collect(maps.Values(r.agentDispatches)))
 
 	go r.audioUpdateWorker()
 	go r.connectionQualityWorker()
@@ -364,7 +364,7 @@ func (r *Room) GetParticipants() []types.LocalParticipant {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	return maps.Values(r.participants)
+	return slices.Collect(maps.Values(r.participants))
 }
 
 func (r *Room) GetLocalParticipants() []types.LocalParticipant {
@@ -469,7 +469,7 @@ func (r *Room) Join(
 		r.joinedAt.Store(time.Now().Unix())
 	}
 
-	r.launchTargetAgents(maps.Values(r.agentDispatches), participant, livekit.JobType_JT_PARTICIPANT)
+	r.launchTargetAgents(slices.Collect(maps.Values(r.agentDispatches)), participant, livekit.JobType_JT_PARTICIPANT)
 
 	r.logger.Debugw(
 		"new participant joined",
@@ -1040,7 +1040,7 @@ func (r *Room) createJoinResponseLocked(
 		OtherParticipants: GetOtherParticipantInfo(
 			participant,
 			false, // isMigratingIn
-			toParticipants(maps.Values(r.participants)),
+			toParticipants(slices.Collect(maps.Values(r.participants))),
 			false, // skipSubscriberBroadcast
 		),
 		IceServers: iceServers,
@@ -1104,7 +1104,7 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Media
 
 	if !hasPublished {
 		r.lock.RLock()
-		r.launchTargetAgents(maps.Values(r.agentDispatches), participant, livekit.JobType_JT_PUBLISHER)
+		r.launchTargetAgents(slices.Collect(maps.Values(r.agentDispatches)), participant, livekit.JobType_JT_PUBLISHER)
 		r.lock.RUnlock()
 		if r.internal != nil && r.internal.ParticipantEgress != nil {
 			go func() {
@@ -1601,7 +1601,7 @@ func (r *Room) changeUpdateWorker() {
 			r.batchedUpdates = make(map[livekit.ParticipantIdentity]*ParticipantUpdate)
 			r.batchedUpdatesMu.Unlock()
 
-			SendParticipantUpdates(maps.Values(updatesMap), r.GetParticipants(), r.roomConfig.UpdateBatchTargetSize)
+			SendParticipantUpdates(slices.Collect(maps.Values(updatesMap)), r.GetParticipants(), r.roomConfig.UpdateBatchTargetSize)
 
 		case <-cleanDataMessageTicker.C:
 			r.dataMessageCache.Prune()

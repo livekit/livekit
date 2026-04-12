@@ -17,6 +17,7 @@ package rtc
 import (
 	"fmt"
 	"io"
+	"maps"
 	"math/rand"
 	"os"
 	"slices"
@@ -33,7 +34,6 @@ import (
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
 	"go.uber.org/zap/zapcore"
-	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/mediatransportutil/pkg/twcc"
@@ -1443,7 +1443,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	// ensure this is synchronized
 	p.CloseSignalConnection(types.SignallingCloseReasonParticipantClose)
 	p.lock.RLock()
-	onClose := maps.Values(p.onClose)
+	onClose := slices.Collect(maps.Values(p.onClose))
 	p.lock.RUnlock()
 	for _, cb := range onClose {
 		cb(p)

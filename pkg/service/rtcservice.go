@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand"
 	"net/http"
 	"os"
@@ -32,7 +33,6 @@ import (
 
 	"github.com/gorilla/websocket"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"

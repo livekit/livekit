@@ -16,11 +16,12 @@ package rtc
 
 import (
 	"errors"
+	"maps"
+	"slices"
 	"sync"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"golang.org/x/exp/maps"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/utils"
@@ -146,7 +147,7 @@ func (u *UpTrackManager) GetPublishedTracks() []types.MediaTrack {
 	u.lock.RLock()
 	defer u.lock.RUnlock()
 
-	return maps.Values(u.publishedTracks)
+	return slices.Collect(maps.Values(u.publishedTracks))
 }
 
 func (u *UpTrackManager) UpdateSubscriptionPermission(

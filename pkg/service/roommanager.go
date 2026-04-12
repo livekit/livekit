@@ -20,12 +20,13 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/pkg/errors"
-	"golang.org/x/exp/maps"
 
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/auth"
@@ -214,7 +215,7 @@ func (r *RoomManager) deleteRoom(ctx context.Context, roomName livekit.RoomName)
 
 func (r *RoomManager) CloseIdleRooms() {
 	r.lock.RLock()
-	rooms := maps.Values(r.rooms)
+	rooms := slices.Collect(maps.Values(r.rooms))
 	r.lock.RUnlock()
 
 	for _, room := range rooms {
@@ -237,7 +238,7 @@ func (r *RoomManager) HasParticipants() bool {
 func (r *RoomManager) Stop() {
 	// disconnect all clients
 	r.lock.RLock()
-	rooms := maps.Values(r.rooms)
+	rooms := slices.Collect(maps.Values(r.rooms))
 	r.lock.RUnlock()
 
 	for _, room := range rooms {
