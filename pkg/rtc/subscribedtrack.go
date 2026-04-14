@@ -480,3 +480,7 @@ func (t *SubscribedTrack) OnDownTrackClose(isExpectedToResume bool) {
 	}
 	t.Close(isExpectedToResume)
 }
+
+func (t *SubscribedTrack) OnStreamStarted() {
+	t.params.TelemetryListener.OnTrackSubscribeStreamStarted(t.params.Subscriber.ID(), t.params.MediaTrack.ToProto())
+}
