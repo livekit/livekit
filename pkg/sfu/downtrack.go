@@ -262,6 +262,7 @@ type DownTrackListener interface {
 	OnRttUpdate(rtt uint32)
 	OnCodecNegotiated(webrtc.RTPCodecCapability)
 	OnDownTrackClose(isExpectedToResume bool)
+	OnStreamStarted()
 }
 
 // -------------------------------------------------------------------
@@ -1211,6 +1212,10 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		if sal := d.getStreamAllocatorListener(); sal != nil {
 			sal.OnResume(d)
 		}
+	}
+
+	if tp.isStarting {
+		d.params.Listener.OnStreamStarted()
 	}
 	return 1
 }

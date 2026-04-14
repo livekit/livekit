@@ -83,6 +83,12 @@ type FakeParticipantTelemetryListener struct {
 		arg1 livekit.ParticipantID
 		arg2 *livekit.TrackInfo
 	}
+	OnTrackSubscribeStreamStartedStub        func(livekit.ParticipantID, *livekit.TrackInfo)
+	onTrackSubscribeStreamStartedMutex       sync.RWMutex
+	onTrackSubscribeStreamStartedArgsForCall []struct {
+		arg1 livekit.ParticipantID
+		arg2 *livekit.TrackInfo
+	}
 	OnTrackSubscribedStub        func(livekit.ParticipantID, *livekit.TrackInfo, *livekit.ParticipantInfo, bool)
 	onTrackSubscribedMutex       sync.RWMutex
 	onTrackSubscribedArgsForCall []struct {
@@ -455,6 +461,39 @@ func (fake *FakeParticipantTelemetryListener) OnTrackSubscribeRequestedArgsForCa
 	fake.onTrackSubscribeRequestedMutex.RLock()
 	defer fake.onTrackSubscribeRequestedMutex.RUnlock()
 	argsForCall := fake.onTrackSubscribeRequestedArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeParticipantTelemetryListener) OnTrackSubscribeStreamStarted(arg1 livekit.ParticipantID, arg2 *livekit.TrackInfo) {
+	fake.onTrackSubscribeStreamStartedMutex.Lock()
+	fake.onTrackSubscribeStreamStartedArgsForCall = append(fake.onTrackSubscribeStreamStartedArgsForCall, struct {
+		arg1 livekit.ParticipantID
+		arg2 *livekit.TrackInfo
+	}{arg1, arg2})
+	stub := fake.OnTrackSubscribeStreamStartedStub
+	fake.recordInvocation("OnTrackSubscribeStreamStarted", []interface{}{arg1, arg2})
+	fake.onTrackSubscribeStreamStartedMutex.Unlock()
+	if stub != nil {
+		fake.OnTrackSubscribeStreamStartedStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeParticipantTelemetryListener) OnTrackSubscribeStreamStartedCallCount() int {
+	fake.onTrackSubscribeStreamStartedMutex.RLock()
+	defer fake.onTrackSubscribeStreamStartedMutex.RUnlock()
+	return len(fake.onTrackSubscribeStreamStartedArgsForCall)
+}
+
+func (fake *FakeParticipantTelemetryListener) OnTrackSubscribeStreamStartedCalls(stub func(livekit.ParticipantID, *livekit.TrackInfo)) {
+	fake.onTrackSubscribeStreamStartedMutex.Lock()
+	defer fake.onTrackSubscribeStreamStartedMutex.Unlock()
+	fake.OnTrackSubscribeStreamStartedStub = stub
+}
+
+func (fake *FakeParticipantTelemetryListener) OnTrackSubscribeStreamStartedArgsForCall(i int) (livekit.ParticipantID, *livekit.TrackInfo) {
+	fake.onTrackSubscribeStreamStartedMutex.RLock()
+	defer fake.onTrackSubscribeStreamStartedMutex.RUnlock()
+	argsForCall := fake.onTrackSubscribeStreamStartedArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
 }
 
