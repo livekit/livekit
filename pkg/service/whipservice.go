@@ -119,7 +119,7 @@ type createRequest struct {
 	FromIngress                     bool
 }
 
-func (s *WHIPService) validateCreate(r *http.Request) (*createRequest, int, error) {
+func (s *WHIPService) validateCreate(w http.ResponseWriter, r *http.Request) (*createRequest, int, error) {
 	claims := GetGrants(r.Context())
 	if claims == nil || claims.Video == nil {
 		return nil, http.StatusUnauthorized, rtc.ErrPermissionDenied
@@ -156,8 +156,14 @@ func (s *WHIPService) validateCreate(r *http.Request) (*createRequest, int, erro
 
 	fromIngress := r.Header.Get("X-Livekit-Ingress")
 
-	offerSDPBytes, err := io.ReadAll(r.Body)
+	limit := int64(s.config.Limit.MaxWHIPBodySize)
+	offerSDPBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			return nil, http.StatusRequestEntityTooLarge,
+				fmt.Errorf("request body exceeds %d bytes", maxErr.Limit)
+		}
 		return nil, http.StatusBadRequest, fmt.Errorf("body does not have SDP offer: %s", err)
 	}
 	if len(offerSDPBytes) == 0 {
@@ -212,7 +218,7 @@ func (s *WHIPService) handleCreate(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Add("Content-type", "application/sdp")
 
-	req, status, err := s.validateCreate(r)
+	req, status, err := s.validateCreate(w, r)
 	if err != nil {
 		s.handleError("Create", w, r, status, err)
 		return
@@ -462,9 +468,17 @@ func (s *WHIPService) handleParticipantPatch(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	sdpFragmentBytes, err := io.ReadAll(r.Body)
+	limit := int64(s.config.Limit.MaxWHIPBodySize)
+	sdpFragmentBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 	if err != nil {
-		s.handleError("Patch", w, r, http.StatusBadRequest, fmt.Errorf("body does not have SDP fragment: %s", err))
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			s.handleError("Patch", w, r, http.StatusRequestEntityTooLarge,
+				fmt.Errorf("request body exceeds %d bytes", maxErr.Limit))
+			return
+		}
+		s.handleError("Patch", w, r, http.StatusBadRequest,
+			fmt.Errorf("body does not have SDP fragment: %s", err))
 		return
 	}
 	sdpFragment := string(sdpFragmentBytes)

@@ -132,12 +132,32 @@ var gzipReaderPool = sync.Pool{
 	New: func() any { return &gzip.Reader{} },
 }
 
+func decompressJoinRequest(compressed []byte, maxSize uint32) ([]byte, error) {
+	reader := gzipReaderPool.Get().(*gzip.Reader)
+	defer gzipReaderPool.Put(reader)
+	if err := reader.Reset(bytes.NewReader(compressed)); err != nil {
+		return nil, errors.New("cannot read decompressed join request")
+	}
+	out, err := io.ReadAll(io.LimitReader(reader, int64(maxSize)+1))
+	if err != nil {
+		return nil, errors.New("cannot read decompressed join request")
+	}
+	if uint32(len(out)) > maxSize {
+		return nil, errors.New("decompressed join request too large")
+	}
+	return out, nil
+}
+
 func (s *RTCService) validateInternal(
 	lgr logger.Logger,
 	r *http.Request,
 	needsJoinRequest bool,
 	strict bool,
 ) (livekit.RoomName, routing.ParticipantInit, int, error) {
+	if claims := GetGrants(r.Context()); claims == nil || claims.Video == nil {
+		return "", routing.ParticipantInit{}, http.StatusUnauthorized, rtc.ErrPermissionDenied
+	}
+
 	var params ValidateConnectRequestParams
 	useSinglePeerConnection := false
 	joinRequest := &livekit.JoinRequest{}
@@ -179,12 +199,9 @@ func (s *RTCService) validateInternal(
 				}
 
 			case livekit.WrappedJoinRequest_GZIP:
-				reader := gzipReaderPool.Get().(*gzip.Reader)
-				defer gzipReaderPool.Put(reader)
-				reader.Reset(bytes.NewReader(wrappedJoinRequest.JoinRequest))
-				protoBytes, err := io.ReadAll(reader)
+				protoBytes, err := decompressJoinRequest(wrappedJoinRequest.JoinRequest, s.limits.MaxJoinRequestSize)
 				if err != nil {
-					return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot read decompressed join request")
+					return "", routing.ParticipantInit{}, http.StatusBadRequest, err
 				}
 
 				if err := proto.Unmarshal(protoBytes, joinRequest); err != nil {
