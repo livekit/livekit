@@ -36,9 +36,6 @@ type UpDataTrackManager struct {
 	lock       sync.RWMutex
 	dataTracks map[uint16]types.DataTrack
 	closed     bool
-
-	onDataTrackPublished   func(types.Participant, types.DataTrack)
-	onDataTrackUnpublished func(types.Participant, types.DataTrack)
 }
 
 func NewUpDataTrackManager(params UpDataTrackManagerParams) *UpDataTrackManager {

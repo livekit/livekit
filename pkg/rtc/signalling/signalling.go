@@ -28,8 +28,6 @@ type SignallingParams struct {
 }
 
 type signalling struct {
-	signallingUnimplemented
-
 	params SignallingParams
 }
 

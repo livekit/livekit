@@ -69,15 +69,6 @@ var (
 	promForwardLatency        prometheus.Gauge
 	promForwardJitter         prometheus.Gauge
 	promForwardLatencyHist    prometheus.Histogram
-
-	promPacketTotalIncomingInitial    prometheus.Counter
-	promPacketTotalIncomingRetransmit prometheus.Counter
-	promPacketTotalOutgoingInitial    prometheus.Counter
-	promPacketTotalOutgoingRetransmit prometheus.Counter
-	promPacketBytesIncomingInitial    prometheus.Counter
-	promPacketBytesIncomingRetransmit prometheus.Counter
-	promPacketBytesOutgoingInitial    prometheus.Counter
-	promPacketBytesOutgoingRetransmit prometheus.Counter
 )
 
 func initPacketStats(nodeID string, nodeType livekit.NodeType) {
