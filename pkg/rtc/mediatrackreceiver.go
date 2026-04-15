@@ -506,8 +506,6 @@ func (t *MediaTrackReceiver) SetMuted(muted bool) {
 	t.lock.Unlock()
 
 	t.updateTrackInfoOfReceivers()
-
-	t.MediaTrackSubscriptions.SetMuted(muted)
 }
 
 func (t *MediaTrackReceiver) IsEncrypted() bool {
@@ -648,6 +646,8 @@ func (t *MediaTrackReceiver) updateTrackInfoOfReceivers() {
 	for _, r := range t.loadReceivers() {
 		r.UpdateTrackInfo(ti)
 	}
+
+	t.MediaTrackSubscriptions.SetMuted(ti.GetMuted())
 }
 
 func (t *MediaTrackReceiver) SetLayerSsrcsForRid(mimeType mime.MimeType, rid string, ssrc uint32, repairSSRC uint32) {
