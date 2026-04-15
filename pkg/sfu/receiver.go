@@ -145,6 +145,8 @@ func NewWebRTCReceiver(
 		mime.IsMimeTypeStringRED(codec.MimeType) || strings.Contains(strings.ToLower(codec.SDPFmtpLine), "useinbandfec=1"),
 	)
 
+	w.UpdateTrackInfo(trackInfo)
+
 	return w
 }
 
@@ -195,10 +197,9 @@ func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) erro
 	return nil
 }
 
-func (w *WebRTCReceiver) SetUpTrackPaused(paused bool) {
-	w.ReceiverBase.SetUpTrackPaused(paused)
-
-	w.connectionStats.UpdateMute(paused)
+func (w *WebRTCReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
+	w.ReceiverBase.UpdateTrackInfo(ti)
+	w.connectionStats.UpdateMute(ti.GetMuted())
 }
 
 func (w *WebRTCReceiver) notifyMaxExpectedLayer(layer int32) {

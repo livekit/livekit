@@ -116,7 +116,6 @@ type TrackReceiver interface {
 
 	SendPLI(layer int32, force bool)
 
-	SetUpTrackPaused(paused bool)
 	SetMaxExpectedSpatialLayer(layer int32)
 
 	AddDownTrack(track TrackSender) error
@@ -352,7 +351,15 @@ func (r *ReceiverBase) UpdateTrackInfo(ti *livekit.TrackInfo) {
 		)
 	}
 	r.trackInfo = utils.CloneProto(ti)
-	// MUTABLE-TRACKINFO-TODO: notify buffers, buffers may need to resize retransmission buffer if there is layer change
+
+	paused := r.trackInfo.GetMuted()
+	for _, buff := range r.buffers {
+		if buff == nil {
+			continue
+		}
+
+		buff.SetPaused(paused)
+	}
 	r.bufferMu.Unlock()
 
 	r.streamTrackerManager.UpdateTrackInfo(ti)
@@ -538,23 +545,6 @@ func (r *ReceiverBase) Kind() webrtc.RTPCodecType {
 
 func (r *ReceiverBase) StreamTrackerManager() *StreamTrackerManager {
 	return r.streamTrackerManager
-}
-
-// SetUpTrackPaused indicates upstream will not be sending any data.
-// this will reflect the "muted" status and will pause streamtracker to ensure we don't turn off
-// the layer
-func (r *ReceiverBase) SetUpTrackPaused(paused bool) {
-	r.streamTrackerManager.SetPaused(paused)
-
-	r.bufferMu.RLock()
-	for _, buff := range r.buffers {
-		if buff == nil {
-			continue
-		}
-
-		buff.SetPaused(paused)
-	}
-	r.bufferMu.RUnlock()
 }
 
 func (r *ReceiverBase) AddDownTrack(track TrackSender) error {
@@ -760,13 +750,14 @@ func (r *ReceiverBase) GetOrCreateBuffer(layer int32) buffer.BufferProvider {
 	r.bufferMu.Lock()
 	r.buffers[layer] = buff
 	rtt := r.rtt
+	paused := r.trackInfo.GetMuted()
 	r.bufferMu.Unlock()
 
-	r.setupBuffer(buff, layer, rtt)
+	r.setupBuffer(buff, layer, rtt, paused)
 	return buff
 }
 
-func (r *ReceiverBase) setupBuffer(buff buffer.BufferProvider, layer int32, rtt uint32) {
+func (r *ReceiverBase) setupBuffer(buff buffer.BufferProvider, layer int32, rtt uint32, paused bool) {
 	buff.SetLogger(r.params.Logger.WithValues("layer", layer))
 	buff.SetAudioLevelConfig(r.audioConfig.AudioLevelConfig)
 	buff.SetStreamRestartDetection(r.enableRTPStreamRestartDetection)
@@ -818,16 +809,17 @@ func (r *ReceiverBase) setupBuffer(buff buffer.BufferProvider, layer int32, rtt 
 	}
 
 	buff.SetRTT(rtt)
-	buff.SetPaused(r.streamTrackerManager.IsPaused())
+	buff.SetPaused(paused)
 }
 
 func (r *ReceiverBase) AddBuffer(buff buffer.BufferProvider, layer int32) {
 	r.bufferMu.Lock()
 	r.buffers[layer] = buff
 	rtt := r.rtt
+	paused := r.trackInfo.GetMuted()
 	r.bufferMu.Unlock()
 
-	r.setupBuffer(buff, layer, rtt)
+	r.setupBuffer(buff, layer, rtt, paused)
 }
 
 func (r *ReceiverBase) StartBuffer(buff buffer.BufferProvider, layer int32) {

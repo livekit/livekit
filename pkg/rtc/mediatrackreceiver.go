@@ -503,13 +503,9 @@ func (t *MediaTrackReceiver) SetMuted(muted bool) {
 	trackInfo := t.TrackInfoClone()
 	trackInfo.Muted = muted
 	t.trackInfo.Store(trackInfo)
-
-	receivers := t.receivers
 	t.lock.Unlock()
 
-	for _, receiver := range receivers {
-		receiver.SetUpTrackPaused(muted)
-	}
+	t.updateTrackInfoOfReceivers()
 
 	t.MediaTrackSubscriptions.SetMuted(muted)
 }
@@ -852,7 +848,6 @@ func (t *MediaTrackReceiver) UpdateCodecRids(mimeType mime.MimeType, rids buffer
 }
 
 func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
-	updateMute := false
 	clonedInfo := utils.CloneProto(ti)
 
 	t.lock.Lock()
@@ -893,15 +888,8 @@ func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 			clonedInfo.Layers = ci.Layers
 		}
 	}
-	if trackInfo.Muted != clonedInfo.Muted {
-		updateMute = true
-	}
 	t.trackInfo.Store(clonedInfo)
 	t.lock.Unlock()
-
-	if updateMute {
-		t.SetMuted(clonedInfo.Muted)
-	}
 
 	t.updateTrackInfoOfReceivers()
 }

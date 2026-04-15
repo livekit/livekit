@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/frostbyte73/core"
-	"go.uber.org/atomic"
 
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
@@ -112,7 +111,6 @@ var (
 
 type StreamTrackerManager struct {
 	logger         logger.Logger
-	trackInfo      atomic.Pointer[livekit.TrackInfo]
 	mimeType       mime.MimeType
 	videoLayerMode livekit.VideoLayer_Mode
 	clockRate      uint32
@@ -120,6 +118,7 @@ type StreamTrackerManager struct {
 	trackerConfig StreamTrackerConfig
 
 	lock                 sync.RWMutex
+	trackInfo            *livekit.TrackInfo
 	maxPublishedLayer    int32
 	maxTemporalLayerSeen int32
 
@@ -128,7 +127,6 @@ type StreamTrackerManager struct {
 
 	availableLayers  []int32
 	maxExpectedLayer int32
-	paused           bool
 
 	closed core.Fuse
 
@@ -146,11 +144,11 @@ func NewStreamTrackerManager(
 		logger:               logger,
 		mimeType:             mimeType,
 		videoLayerMode:       buffer.GetVideoLayerModeForMimeType(mimeType, trackInfo),
+		trackInfo:            utils.CloneProto(trackInfo),
 		maxPublishedLayer:    buffer.InvalidLayerSpatial,
 		maxTemporalLayerSeen: buffer.InvalidLayerTemporal,
 		clockRate:            clockRate,
 	}
-	s.trackInfo.Store(utils.CloneProto(trackInfo))
 
 	switch trackInfo.Source {
 	case livekit.TrackSource_SCREEN_SHARE:
@@ -294,7 +292,7 @@ func (s *StreamTrackerManager) AddTracker(layer int32) streamtracker.StreamTrack
 	})
 
 	s.lock.Lock()
-	paused := s.paused
+	paused := s.trackInfo.GetMuted()
 	s.trackers[layer] = tracker
 
 	notify := false
@@ -337,8 +335,6 @@ func (s *StreamTrackerManager) RemoveAllTrackers() {
 	s.maxExpectedLayer = buffer.InvalidLayerSpatial
 	s.maxExpectedLayerFromTrackInfoLocked(true)
 
-	s.paused = false
-
 	ddTracker := s.ddTracker
 	s.ddTracker = nil
 	s.lock.Unlock()
@@ -364,9 +360,8 @@ func (s *StreamTrackerManager) GetTracker(layer int32) streamtracker.StreamTrack
 	return s.trackers[layer]
 }
 
-func (s *StreamTrackerManager) SetPaused(paused bool) {
+func (s *StreamTrackerManager) setPaused(paused bool) {
 	s.lock.Lock()
-	s.paused = paused
 	trackers := s.trackers
 	s.lock.Unlock()
 
@@ -377,16 +372,15 @@ func (s *StreamTrackerManager) SetPaused(paused bool) {
 	}
 }
 
-func (s *StreamTrackerManager) IsPaused() bool {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-
-	return s.paused
-}
-
 func (s *StreamTrackerManager) UpdateTrackInfo(ti *livekit.TrackInfo) {
-	s.trackInfo.Store(utils.CloneProto(ti))
-	s.maxExpectedLayerFromTrackInfo(false)
+	s.lock.Lock()
+	s.trackInfo = utils.CloneProto(ti)
+	s.maxExpectedLayerFromTrackInfoLocked(false)
+
+	paused := s.trackInfo.GetMuted()
+	s.lock.Unlock()
+
+	s.setPaused(paused)
 }
 
 func (s *StreamTrackerManager) SetMaxExpectedSpatialLayer(layer int32) int32 {
@@ -425,7 +419,7 @@ func (s *StreamTrackerManager) DistanceToDesired() float64 {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
-	if s.paused || s.maxExpectedLayer < 0 || s.maxTemporalLayerSeen < 0 {
+	if s.trackInfo.GetMuted() || s.maxExpectedLayer < 0 || s.maxTemporalLayerSeen < 0 {
 		return 0
 	}
 
@@ -594,9 +588,8 @@ func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfo(force bool) {
 
 func (s *StreamTrackerManager) maxExpectedLayerFromTrackInfoLocked(force bool) {
 	maxExpectedLayer := buffer.InvalidLayerSpatial
-	ti := s.trackInfo.Load()
-	if ti != nil {
-		for _, layer := range buffer.GetVideoLayersForMimeType(s.mimeType, ti) {
+	if s.trackInfo != nil {
+		for _, layer := range buffer.GetVideoLayersForMimeType(s.mimeType, s.trackInfo) {
 			if layer.SpatialLayer > maxExpectedLayer {
 				maxExpectedLayer = layer.SpatialLayer
 			}
