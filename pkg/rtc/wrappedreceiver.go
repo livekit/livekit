@@ -196,8 +196,6 @@ type DummyReceiver struct {
 	settingsLock          sync.Mutex
 	maxExpectedLayerValid bool
 	maxExpectedLayer      int32
-	pausedValid           bool
-	paused                bool
 
 	redReceiver, primaryReceiver *DummyRedReceiver
 }
@@ -246,17 +244,10 @@ func (d *DummyReceiver) Upgrade(receiver sfu.TrackReceiver) {
 	d.settingsLock.Lock()
 	maxExpectedLayerValid := d.maxExpectedLayerValid
 	d.maxExpectedLayerValid = false
-
-	pausedValid := d.pausedValid
-	d.pausedValid = false
 	d.settingsLock.Unlock()
 
 	if maxExpectedLayerValid {
 		receiver.SetMaxExpectedSpatialLayer(d.maxExpectedLayer)
-	}
-
-	if pausedValid {
-		receiver.SetUpTrackPaused(d.paused)
 	}
 
 	d.settingsLock.Lock()
@@ -329,22 +320,6 @@ func (d *DummyReceiver) GetAudioLevel() (float64, bool) {
 func (d *DummyReceiver) SendPLI(layer int32, force bool) {
 	if receiver := d.getReceiver(); receiver != nil {
 		receiver.SendPLI(layer, force)
-	}
-}
-
-func (d *DummyReceiver) SetUpTrackPaused(paused bool) {
-	d.settingsLock.Lock()
-	receiver := d.getReceiver()
-	if receiver != nil {
-		d.pausedValid = false
-	} else {
-		d.pausedValid = true
-		d.paused = paused
-	}
-	d.settingsLock.Unlock()
-
-	if receiver != nil {
-		receiver.SetUpTrackPaused(paused)
 	}
 }
 

@@ -193,7 +193,6 @@ func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 		}
 	})
 
-	t.SetMuted(ti.Muted)
 	return t
 }
 
