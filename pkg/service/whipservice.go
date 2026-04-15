@@ -156,7 +156,7 @@ func (s *WHIPService) validateCreate(w http.ResponseWriter, r *http.Request) (*c
 
 	fromIngress := r.Header.Get("X-Livekit-Ingress")
 
-	offerSDPBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxRequestBodySize))
+	offerSDPBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, http.DefaultMaxHeaderBytes))
 	if err != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
@@ -466,7 +466,7 @@ func (s *WHIPService) handleParticipantPatch(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	sdpFragmentBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxRequestBodySize))
+	sdpFragmentBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, http.DefaultMaxHeaderBytes))
 	if err != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {

@@ -125,6 +125,8 @@ func decodeAttributes(str string) (map[string]string, error) {
 	return attrs, nil
 }
 
+var errJoinRequestTooLarge = errors.New("join request too large")
+
 func (s *RTCService) validateInternal(
 	lgr logger.Logger,
 	r *http.Request,
@@ -171,6 +173,9 @@ func (s *RTCService) validateInternal(
 
 			switch wrappedJoinRequest.Compression {
 			case livekit.WrappedJoinRequest_NONE:
+				if len(wrappedJoinRequest.JoinRequest) > http.DefaultMaxHeaderBytes {
+					return "", routing.ParticipantInit{}, http.StatusBadRequest, errJoinRequestTooLarge
+				}
 				if err := proto.Unmarshal(wrappedJoinRequest.JoinRequest, joinRequest); err != nil {
 					return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot unmarshal join request")
 				}
@@ -180,7 +185,7 @@ func (s *RTCService) validateInternal(
 				if err != nil {
 					switch {
 					case errors.Is(err, ErrGzipTooLarge):
-						err = errors.New("decompressed join request too large")
+						err = errJoinRequestTooLarge
 					case errors.Is(err, ErrGzipReadFailed):
 						err = errors.New("cannot read decompressed join request")
 					}

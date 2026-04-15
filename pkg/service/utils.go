@@ -42,10 +42,6 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-// matches net/http's form body cap.
-// https://cs.opensource.google/go/go/+/refs/tags/go1.26.2:src/net/http/server.go;l=895
-const MaxRequestBodySize = int64(10 << 20) // 10 MiB
-
 var (
 	ErrGzipReadFailed = errors.New("cannot read decompressed data")
 	ErrGzipTooLarge   = errors.New("decompressed data too large")
@@ -59,13 +55,14 @@ func DecompressGzip(compressed []byte) ([]byte, error) {
 	reader := gzipReaderPool.Get().(*gzip.Reader)
 	defer gzipReaderPool.Put(reader)
 	if err := reader.Reset(bytes.NewReader(compressed)); err != nil {
-		return nil, ErrGzipReadFailed
+		return nil, fmt.Errorf("%w: %w", ErrGzipReadFailed, err)
 	}
-	out, err := io.ReadAll(io.LimitReader(reader, MaxRequestBodySize+1))
+
+	out, err := io.ReadAll(io.LimitReader(reader, http.DefaultMaxHeaderBytes+1))
 	if err != nil {
-		return nil, ErrGzipReadFailed
+		return nil, fmt.Errorf("%w: %w", ErrGzipReadFailed, err)
 	}
-	if int64(len(out)) > MaxRequestBodySize {
+	if len(out) > http.DefaultMaxHeaderBytes {
 		return nil, ErrGzipTooLarge
 	}
 	return out, nil

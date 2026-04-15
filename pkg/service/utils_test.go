@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"net/http"
 	"testing"
 	"time"
 
@@ -97,17 +98,16 @@ func TestDecompressGzip(t *testing.T) {
 	})
 
 	t.Run("payload exactly at cap", func(t *testing.T) {
-		raw := make([]byte, service.MaxRequestBodySize)
+		raw := make([]byte, http.DefaultMaxHeaderBytes)
 		out, err := service.DecompressGzip(compress(t, raw))
 		require.NoError(t, err)
-		require.Len(t, out, int(service.MaxRequestBodySize))
+		require.Len(t, out, http.DefaultMaxHeaderBytes)
 	})
 
-	t.Run("payload one byte over cap", func(t *testing.T) {
-		raw := make([]byte, service.MaxRequestBodySize+1)
+	t.Run("payload one byte over capd", func(t *testing.T) {
+		raw := make([]byte, http.DefaultMaxHeaderBytes+1)
 		_, err := service.DecompressGzip(compress(t, raw))
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "too large")
+		require.ErrorIs(t, err, service.ErrGzipTooLarge)
 	})
 
 	t.Run("gzip decompression bomb", func(t *testing.T) {
@@ -118,8 +118,7 @@ func TestDecompressGzip(t *testing.T) {
 			"sanity: bomb input should compress dramatically")
 
 		_, err := service.DecompressGzip(compressed)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "too large")
+		require.ErrorIs(t, err, service.ErrGzipTooLarge)
 	})
 
 	t.Run("malformed gzip compression", func(t *testing.T) {
