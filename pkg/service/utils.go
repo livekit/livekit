@@ -39,6 +39,10 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+// Matches net/http's form body cap
+// https://cs.opensource.google/go/go/+/refs/tags/go1.26.2:src/net/http/server.go;l=895
+const maxRequestBodySize = int64(10 << 20) // 10 MiB
+
 func handleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...any) {
 	keysAndValues = append(keysAndValues, "status", status)
 	if r != nil && r.URL != nil {

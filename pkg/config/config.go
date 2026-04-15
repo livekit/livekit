@@ -265,9 +265,6 @@ type LimitConfig struct {
 	MaxRoomNameLength            int    `yaml:"max_room_name_length,omitempty"`
 	MaxParticipantIdentityLength int    `yaml:"max_participant_identity_length,omitempty"`
 	MaxParticipantNameLength     int    `yaml:"max_participant_name_length,omitempty"`
-
-	MaxJoinRequestSize uint32 `yaml:"max_join_request_size,omitempty"`
-	MaxWHIPBodySize    uint32 `yaml:"max_whip_body_size,omitempty"`
 }
 
 func (l LimitConfig) CheckRoomNameLength(name string) bool {
@@ -417,8 +414,6 @@ var DefaultConfig = Config{
 		MaxRoomNameLength:            256,
 		MaxParticipantIdentityLength: 256,
 		MaxParticipantNameLength:     256,
-		MaxJoinRequestSize:           256 * 1024,
-		MaxWHIPBodySize:              64 * 1024,
 	},
 	Logging: LoggingConfig{
 		PionLevel: "error",
@@ -526,15 +521,6 @@ func NewConfig(confString string, strictMode bool, c *cli.Command, baseFlags []c
 	}
 	if conf.Room.MaxRoomNameLength != 0 {
 		conf.Limit.MaxRoomNameLength = conf.Room.MaxRoomNameLength
-	}
-
-	if conf.Limit.MaxJoinRequestSize == 0 {
-		logger.Warnw("limit.max_join_request_size was 0; falling back to default 256 KiB (0 does not mean unlimited for this field)", nil)
-		conf.Limit.MaxJoinRequestSize = 256 * 1024
-	}
-	if conf.Limit.MaxWHIPBodySize == 0 {
-		logger.Warnw("limit.max_whip_body_size was 0; falling back to default 64 KiB (0 does not mean unlimited for this field)", nil)
-		conf.Limit.MaxWHIPBodySize = 64 * 1024
 	}
 
 	return &conf, nil

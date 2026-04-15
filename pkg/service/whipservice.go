@@ -156,13 +156,11 @@ func (s *WHIPService) validateCreate(w http.ResponseWriter, r *http.Request) (*c
 
 	fromIngress := r.Header.Get("X-Livekit-Ingress")
 
-	limit := int64(s.config.Limit.MaxWHIPBodySize)
-	offerSDPBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
+	offerSDPBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBodySize))
 	if err != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
-			return nil, http.StatusRequestEntityTooLarge,
-				fmt.Errorf("request body exceeds %d bytes", maxErr.Limit)
+			return nil, http.StatusRequestEntityTooLarge, fmt.Errorf("request body exceeds %d bytes", maxErr.Limit)
 		}
 		return nil, http.StatusBadRequest, fmt.Errorf("body does not have SDP offer: %s", err)
 	}
@@ -468,8 +466,7 @@ func (s *WHIPService) handleParticipantPatch(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	limit := int64(s.config.Limit.MaxWHIPBodySize)
-	sdpFragmentBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
+	sdpFragmentBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBodySize))
 	if err != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
@@ -477,8 +474,7 @@ func (s *WHIPService) handleParticipantPatch(w http.ResponseWriter, r *http.Requ
 				fmt.Errorf("request body exceeds %d bytes", maxErr.Limit))
 			return
 		}
-		s.handleError("Patch", w, r, http.StatusBadRequest,
-			fmt.Errorf("body does not have SDP fragment: %s", err))
+		s.handleError("Patch", w, r, http.StatusBadRequest, fmt.Errorf("body does not have SDP fragment: %s", err))
 		return
 	}
 	sdpFragment := string(sdpFragmentBytes)
