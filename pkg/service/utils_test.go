@@ -15,6 +15,8 @@
 package service_test
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"testing"
 	"time"
@@ -74,4 +76,55 @@ func TestIsValidDomain(t *testing.T) {
 		service.IsValidDomain(key)
 		require.Equal(t, service.IsValidDomain(key), result)
 	}
+}
+
+func compress(t *testing.T, payload []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gw, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	require.NoError(t, err)
+	_, err = gw.Write(payload)
+	require.NoError(t, err)
+	require.NoError(t, gw.Close())
+	return buf.Bytes()
+}
+
+func TestDecompressGzip(t *testing.T) {
+	t.Run("small payload", func(t *testing.T) {
+		out, err := service.DecompressGzip(compress(t, []byte("hello world")))
+		require.NoError(t, err)
+		require.Equal(t, []byte("hello world"), out)
+	})
+
+	t.Run("payload exactly at cap", func(t *testing.T) {
+		raw := make([]byte, service.MaxRequestBodySize)
+		out, err := service.DecompressGzip(compress(t, raw))
+		require.NoError(t, err)
+		require.Len(t, out, int(service.MaxRequestBodySize))
+	})
+
+	t.Run("payload one byte over cap", func(t *testing.T) {
+		raw := make([]byte, service.MaxRequestBodySize+1)
+		_, err := service.DecompressGzip(compress(t, raw))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "too large")
+	})
+
+	t.Run("gzip decompression bomb", func(t *testing.T) {
+		// 100 MB of zeros
+		raw := make([]byte, 100<<20)
+		compressed := compress(t, raw)
+		require.Less(t, len(compressed), 1<<20,
+			"sanity: bomb input should compress dramatically")
+
+		_, err := service.DecompressGzip(compressed)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "too large")
+	})
+
+	t.Run("malformed gzip compression", func(t *testing.T) {
+		_, err := service.DecompressGzip([]byte("not gzip data"))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "cannot read decompressed")
+	})
 }

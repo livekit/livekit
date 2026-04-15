@@ -15,10 +15,13 @@
 package service
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"regexp"
@@ -39,9 +42,34 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-// Matches net/http's form body cap
+// matches net/http's form body cap.
 // https://cs.opensource.google/go/go/+/refs/tags/go1.26.2:src/net/http/server.go;l=895
-const maxRequestBodySize = int64(10 << 20) // 10 MiB
+const MaxRequestBodySize = int64(10 << 20) // 10 MiB
+
+var (
+	ErrGzipReadFailed = errors.New("cannot read decompressed data")
+	ErrGzipTooLarge   = errors.New("decompressed data too large")
+)
+
+var gzipReaderPool = sync.Pool{
+	New: func() any { return &gzip.Reader{} },
+}
+
+func DecompressGzip(compressed []byte) ([]byte, error) {
+	reader := gzipReaderPool.Get().(*gzip.Reader)
+	defer gzipReaderPool.Put(reader)
+	if err := reader.Reset(bytes.NewReader(compressed)); err != nil {
+		return nil, ErrGzipReadFailed
+	}
+	out, err := io.ReadAll(io.LimitReader(reader, MaxRequestBodySize+1))
+	if err != nil {
+		return nil, ErrGzipReadFailed
+	}
+	if int64(len(out)) > MaxRequestBodySize {
+		return nil, ErrGzipTooLarge
+	}
+	return out, nil
+}
 
 func handleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...any) {
 	keysAndValues = append(keysAndValues, "status", status)

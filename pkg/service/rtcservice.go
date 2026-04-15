@@ -15,14 +15,11 @@
 package service
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"math/rand"
 	"net/http"
@@ -128,26 +125,6 @@ func decodeAttributes(str string) (map[string]string, error) {
 	return attrs, nil
 }
 
-var gzipReaderPool = sync.Pool{
-	New: func() any { return &gzip.Reader{} },
-}
-
-func decompressJoinRequest(compressed []byte) ([]byte, error) {
-	reader := gzipReaderPool.Get().(*gzip.Reader)
-	defer gzipReaderPool.Put(reader)
-	if err := reader.Reset(bytes.NewReader(compressed)); err != nil {
-		return nil, errors.New("cannot read decompressed join request")
-	}
-	out, err := io.ReadAll(io.LimitReader(reader, maxRequestBodySize+1))
-	if err != nil {
-		return nil, errors.New("cannot read decompressed join request")
-	}
-	if int64(len(out)) > maxRequestBodySize {
-		return nil, errors.New("decompressed join request too large")
-	}
-	return out, nil
-}
-
 func (s *RTCService) validateInternal(
 	lgr logger.Logger,
 	r *http.Request,
@@ -199,8 +176,14 @@ func (s *RTCService) validateInternal(
 				}
 
 			case livekit.WrappedJoinRequest_GZIP:
-				protoBytes, err := decompressJoinRequest(wrappedJoinRequest.JoinRequest)
+				protoBytes, err := DecompressGzip(wrappedJoinRequest.JoinRequest)
 				if err != nil {
+					switch {
+					case errors.Is(err, ErrGzipTooLarge):
+						err = errors.New("decompressed join request too large")
+					case errors.Is(err, ErrGzipReadFailed):
+						err = errors.New("cannot read decompressed join request")
+					}
 					return "", routing.ParticipantInit{}, http.StatusBadRequest, err
 				}
 
