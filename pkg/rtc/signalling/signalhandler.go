@@ -32,8 +32,6 @@ type SignalHandlerParams struct {
 }
 
 type signalhandler struct {
-	signalhandlerUnimplemented
-
 	params SignalHandlerParams
 }
 
