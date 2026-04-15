@@ -15,10 +15,13 @@
 package service
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"regexp"
@@ -38,6 +41,32 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
+
+var (
+	ErrGzipReadFailed = errors.New("cannot read decompressed data")
+	ErrGzipTooLarge   = errors.New("decompressed data too large")
+)
+
+var gzipReaderPool = sync.Pool{
+	New: func() any { return &gzip.Reader{} },
+}
+
+func DecompressGzip(compressed []byte) ([]byte, error) {
+	reader := gzipReaderPool.Get().(*gzip.Reader)
+	defer gzipReaderPool.Put(reader)
+	if err := reader.Reset(bytes.NewReader(compressed)); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrGzipReadFailed, err)
+	}
+
+	out, err := io.ReadAll(io.LimitReader(reader, http.DefaultMaxHeaderBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrGzipReadFailed, err)
+	}
+	if len(out) > http.DefaultMaxHeaderBytes {
+		return nil, ErrGzipTooLarge
+	}
+	return out, nil
+}
 
 func handleError(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...any) {
 	keysAndValues = append(keysAndValues, "status", status)

@@ -439,7 +439,7 @@ var DefaultConfig = Config{
 	Agents: agent.Config{
 		TargetLoad: agent.DefaultTargetLoad,
 	},
-	PSRPC: rpc.DefaultPSRPCConfig,
+	PSRPC:            rpc.DefaultPSRPCConfig,
 	Keys:             map[string]string{},
 	Metric:           metric.DefaultMetricConfig,
 	WebHook:          webhook.DefaultWebHookConfig,

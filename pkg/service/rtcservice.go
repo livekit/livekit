@@ -15,14 +15,11 @@
 package service
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"math/rand"
 	"net/http"
@@ -128,9 +125,7 @@ func decodeAttributes(str string) (map[string]string, error) {
 	return attrs, nil
 }
 
-var gzipReaderPool = sync.Pool{
-	New: func() any { return &gzip.Reader{} },
-}
+var errJoinRequestTooLarge = errors.New("join request too large")
 
 func (s *RTCService) validateInternal(
 	lgr logger.Logger,
@@ -138,6 +133,10 @@ func (s *RTCService) validateInternal(
 	needsJoinRequest bool,
 	strict bool,
 ) (livekit.RoomName, routing.ParticipantInit, int, error) {
+	if claims := GetGrants(r.Context()); claims == nil || claims.Video == nil {
+		return "", routing.ParticipantInit{}, http.StatusUnauthorized, rtc.ErrPermissionDenied
+	}
+
 	var params ValidateConnectRequestParams
 	useSinglePeerConnection := false
 	joinRequest := &livekit.JoinRequest{}
@@ -174,17 +173,23 @@ func (s *RTCService) validateInternal(
 
 			switch wrappedJoinRequest.Compression {
 			case livekit.WrappedJoinRequest_NONE:
+				if len(wrappedJoinRequest.JoinRequest) > http.DefaultMaxHeaderBytes {
+					return "", routing.ParticipantInit{}, http.StatusBadRequest, errJoinRequestTooLarge
+				}
 				if err := proto.Unmarshal(wrappedJoinRequest.JoinRequest, joinRequest); err != nil {
 					return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot unmarshal join request")
 				}
 
 			case livekit.WrappedJoinRequest_GZIP:
-				reader := gzipReaderPool.Get().(*gzip.Reader)
-				defer gzipReaderPool.Put(reader)
-				reader.Reset(bytes.NewReader(wrappedJoinRequest.JoinRequest))
-				protoBytes, err := io.ReadAll(reader)
+				protoBytes, err := DecompressGzip(wrappedJoinRequest.JoinRequest)
 				if err != nil {
-					return "", routing.ParticipantInit{}, http.StatusBadRequest, errors.New("cannot read decompressed join request")
+					switch {
+					case errors.Is(err, ErrGzipTooLarge):
+						err = errJoinRequestTooLarge
+					case errors.Is(err, ErrGzipReadFailed):
+						err = errors.New("cannot read decompressed join request")
+					}
+					return "", routing.ParticipantInit{}, http.StatusBadRequest, err
 				}
 
 				if err := proto.Unmarshal(protoBytes, joinRequest); err != nil {
