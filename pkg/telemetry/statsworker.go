@@ -348,7 +348,9 @@ func CondenseStat(stat *livekit.AnalyticsStat) (ps CondensedStat, ok bool) {
 		ps.Bytes += stream.PrimaryBytes
 		ps.Packets += stream.PrimaryPackets
 		ps.PacketsLost += stream.PacketsLost
-		ps.Frames += stream.Frames
+		if stream.Frames > ps.Frames {
+			ps.Frames = stream.Frames
+		}
 	}
 
 	return
