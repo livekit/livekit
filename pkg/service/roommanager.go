@@ -69,23 +69,24 @@ type iceConfigCacheKey struct {
 type RoomManager struct {
 	lock sync.RWMutex
 
-	config            *config.Config
-	rtcConfig         *rtc.WebRTCConfig
-	serverInfo        *livekit.ServerInfo
-	currentNode       routing.LocalNode
-	router            routing.Router
-	roomAllocator     RoomAllocator
-	roomManagerServer rpc.TypedRoomManagerServer
-	whipServer        rpc.WHIPServer[livekit.NodeID]
-	roomStore         ObjectStore
-	telemetry         telemetry.TelemetryService
-	clientConfManager clientconfiguration.ClientConfigurationManager
-	agentClient       agent.Client
-	agentStore        AgentStore
-	egressLauncher    rtc.EgressLauncher
-	versionGenerator  utils.TimedVersionGenerator
-	turnAuthHandler   *TURNAuthHandler
-	bus               psrpc.MessageBus
+	config               *config.Config
+	rtcConfig            *rtc.WebRTCConfig
+	serverInfo           *livekit.ServerInfo
+	currentNode          routing.LocalNode
+	router               routing.Router
+	roomAllocator        RoomAllocator
+	roomManagerServer    rpc.TypedRoomManagerServer
+	whipServer           rpc.WHIPServer[livekit.NodeID]
+	roomStore            ObjectStore
+	telemetry            telemetry.TelemetryService
+	tokenRevocationStore TokenRevocationStore
+	clientConfManager    clientconfiguration.ClientConfigurationManager
+	agentClient          agent.Client
+	agentStore           AgentStore
+	egressLauncher       rtc.EgressLauncher
+	versionGenerator     utils.TimedVersionGenerator
+	turnAuthHandler      *TURNAuthHandler
+	bus                  psrpc.MessageBus
 
 	rooms map[livekit.RoomName]*rtc.Room
 
@@ -111,6 +112,7 @@ func NewLocalRoomManager(
 	router routing.Router,
 	roomAllocator RoomAllocator,
 	telemetry telemetry.TelemetryService,
+	tokenRevocationStore TokenRevocationStore,
 	agentClient agent.Client,
 	agentStore AgentStore,
 	egressLauncher rtc.EgressLauncher,
@@ -125,21 +127,22 @@ func NewLocalRoomManager(
 	}
 
 	r := &RoomManager{
-		config:            conf,
-		rtcConfig:         rtcConf,
-		currentNode:       currentNode,
-		router:            router,
-		roomAllocator:     roomAllocator,
-		roomStore:         roomStore,
-		telemetry:         telemetry,
-		clientConfManager: clientconfiguration.NewStaticClientConfigurationManager(clientconfiguration.StaticConfigurations),
-		egressLauncher:    egressLauncher,
-		agentClient:       agentClient,
-		agentStore:        agentStore,
-		versionGenerator:  versionGenerator,
-		turnAuthHandler:   turnAuthHandler,
-		bus:               bus,
-		forwardStats:      forwardStats,
+		config:               conf,
+		rtcConfig:            rtcConf,
+		currentNode:          currentNode,
+		router:               router,
+		roomAllocator:        roomAllocator,
+		roomStore:            roomStore,
+		telemetry:            telemetry,
+		clientConfManager:    clientconfiguration.NewStaticClientConfigurationManager(clientconfiguration.StaticConfigurations),
+		egressLauncher:       egressLauncher,
+		agentClient:          agentClient,
+		agentStore:           agentStore,
+		versionGenerator:     versionGenerator,
+		turnAuthHandler:      turnAuthHandler,
+		bus:                  bus,
+		forwardStats:         forwardStats,
+		tokenRevocationStore: tokenRevocationStore,
 
 		rooms: make(map[livekit.RoomName]*rtc.Room),
 
@@ -811,6 +814,9 @@ func (r *RoomManager) RemoveParticipant(ctx context.Context, req *livekit.RoomPa
 	if err != nil {
 		return nil, err
 	}
+
+	// Add current active access token to the revocationMap
+	r.tokenRevocationStore.RevokeRoomParticipant(ctx, participant.Identity(), room.Name())
 
 	participant.GetLogger().Infow("removing participant")
 	room.RemoveParticipant(livekit.ParticipantIdentity(req.Identity), "", types.ParticipantCloseReasonServiceRequestRemoveParticipant)

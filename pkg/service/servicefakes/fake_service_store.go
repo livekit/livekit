@@ -3,7 +3,9 @@ package servicefakes
 
 import (
 	"context"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/protocol/livekit"
@@ -55,8 +57,10 @@ type FakeServiceStore struct {
 		result1 bool
 		result2 error
 	}
-	invocations      map[string][][]interface{}
-	invocationsMutex sync.RWMutex
+	roomParticipentRevocationMap map[string]time.Time
+	revocationMutex              sync.RWMutex
+	invocations                  map[string][][]interface{}
+	invocationsMutex             sync.RWMutex
 }
 
 func (fake *FakeServiceStore) ListRooms(arg1 context.Context, arg2 []livekit.RoomName) ([]*livekit.Room, error) {
@@ -271,6 +275,42 @@ func (fake *FakeServiceStore) Invocations() map[string][][]interface{} {
 		copiedInvocations[key] = value
 	}
 	return copiedInvocations
+}
+
+func (s *FakeServiceStore) RevokeRoomParticipant(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) error {
+	s.revocationMutex.Lock()
+	defer s.revocationMutex.Unlock()
+
+	revocationTime := time.Now()
+	s.roomParticipentRevocationMap["r:"+room.String()+":"+identity.String()] = revocationTime
+
+	return nil
+}
+
+func (s *FakeServiceStore) IsRoomParticipantRevoked(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) (bool, *time.Time, error) {
+	s.revocationMutex.Lock()
+	defer s.revocationMutex.Unlock()
+
+	revocationTime, exists := s.roomParticipentRevocationMap["r:"+room.String()+":"+identity.String()]
+
+	return exists, &revocationTime, nil
+}
+
+func (s *FakeServiceStore) CleanupForRoom(ctx context.Context, room livekit.RoomName) {
+	s.revocationMutex.Lock()
+	defer s.revocationMutex.Unlock()
+
+	entries := []string{}
+	for identifier := range s.roomParticipentRevocationMap {
+
+		if strings.HasPrefix(identifier, "r:"+room.String()+":") {
+			entries = append(entries, identifier)
+		}
+	}
+
+	for i := range entries {
+		delete(s.roomParticipentRevocationMap, entries[i])
+	}
 }
 
 func (fake *FakeServiceStore) recordInvocation(key string, args []interface{}) {
