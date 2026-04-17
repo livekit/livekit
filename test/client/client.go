@@ -291,7 +291,7 @@ func (c *RTCClient) createTransport(rtcconf webrtc.Configuration) error {
 	}
 	conf.SettingEngine.SetLite(false)
 	conf.SettingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleClient)
-	ff := buffer.NewFactoryOfBufferFactory(500, 200)
+	ff := buffer.NewFactoryOfBufferFactory(500, 0, 200)
 	conf.SetBufferFactory(ff.CreateBufferFactory())
 
 	//

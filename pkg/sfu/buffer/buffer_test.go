@@ -61,7 +61,7 @@ var opusCodec = webrtc.RTPCodecParameters{
 
 func TestNack(t *testing.T) {
 	t.Run("nack normal", func(t *testing.T) {
-		buff := NewBuffer(123, 1, 1)
+		buff := NewBuffer(123, 1, 0, 1)
 		buff.codecType = webrtc.RTPCodecTypeVideo
 		require.NotNil(t, buff)
 		var wg sync.WaitGroup
@@ -112,7 +112,7 @@ func TestNack(t *testing.T) {
 	})
 
 	t.Run("nack with seq wrap", func(t *testing.T) {
-		buff := NewBuffer(123, 1, 1)
+		buff := NewBuffer(123, 1, 0, 1)
 		buff.codecType = webrtc.RTPCodecTypeVideo
 		require.NotNil(t, buff)
 		var wg sync.WaitGroup
@@ -222,7 +222,7 @@ func TestNewBuffer(t *testing.T) {
 					},
 				},
 			}
-			buff := NewBuffer(123, 1, 1)
+			buff := NewBuffer(123, 1, 0, 1)
 			buff.codecType = webrtc.RTPCodecTypeVideo
 			require.NotNil(t, buff)
 			buff.OnRtcpFeedback(func(_ []rtcp.Packet) {})
@@ -242,7 +242,7 @@ func TestNewBuffer(t *testing.T) {
 }
 
 func TestFractionLostReport(t *testing.T) {
-	buff := NewBuffer(123, 1, 1)
+	buff := NewBuffer(123, 1, 0, 1)
 	require.NotNil(t, buff)
 
 	var wg sync.WaitGroup
@@ -328,7 +328,7 @@ func TestFractionLostReport(t *testing.T) {
 
 func TestCodecChange(t *testing.T) {
 	// codec change before bind
-	buff := NewBuffer(123, 1, 1)
+	buff := NewBuffer(123, 1, 0, 1)
 	require.NotNil(t, buff)
 	changedCodec := make(chan webrtc.RTPCodecParameters, 1)
 	buff.OnCodecChange(func(rp webrtc.RTPCodecParameters) {

@@ -23,12 +23,14 @@ import (
 
 type FactoryOfBufferFactory struct {
 	trackingPacketsVideo int
+	initPacketsVideo     int
 	trackingPacketsAudio int
 }
 
-func NewFactoryOfBufferFactory(trackingPacketsVideo int, trackingPacketsAudio int) *FactoryOfBufferFactory {
+func NewFactoryOfBufferFactory(trackingPacketsVideo int, initPacketsVideo int, trackingPacketsAudio int) *FactoryOfBufferFactory {
 	return &FactoryOfBufferFactory{
 		trackingPacketsVideo: trackingPacketsVideo,
+		initPacketsVideo:     initPacketsVideo,
 		trackingPacketsAudio: trackingPacketsAudio,
 	}
 }
@@ -36,6 +38,7 @@ func NewFactoryOfBufferFactory(trackingPacketsVideo int, trackingPacketsAudio in
 func (f *FactoryOfBufferFactory) CreateBufferFactory() *Factory {
 	return &Factory{
 		trackingPacketsVideo: f.trackingPacketsVideo,
+		initPacketsVideo:     f.initPacketsVideo,
 		trackingPacketsAudio: f.trackingPacketsAudio,
 		rtpBuffers:           make(map[uint32]*Buffer),
 		rtcpReaders:          make(map[uint32]*RTCPReader),
@@ -46,6 +49,7 @@ func (f *FactoryOfBufferFactory) CreateBufferFactory() *Factory {
 type Factory struct {
 	sync.RWMutex
 	trackingPacketsVideo int
+	initPacketsVideo     int
 	trackingPacketsAudio int
 	rtpBuffers           map[uint32]*Buffer
 	rtcpReaders          map[uint32]*RTCPReader
@@ -72,7 +76,7 @@ func (f *Factory) GetOrNew(packetType packetio.BufferPacketType, ssrc uint32) io
 		if reader, ok := f.rtpBuffers[ssrc]; ok {
 			return reader
 		}
-		buffer := NewBuffer(ssrc, f.trackingPacketsVideo, f.trackingPacketsAudio)
+		buffer := NewBuffer(ssrc, f.trackingPacketsVideo, f.initPacketsVideo, f.trackingPacketsAudio)
 		f.rtpBuffers[ssrc] = buffer
 		for repair, base := range f.rtxPair {
 			if repair == ssrc {

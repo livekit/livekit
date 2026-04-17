@@ -102,8 +102,15 @@ type RTCConfig struct {
 
 	// Deprecated: use PacketBufferSizeVideo and PacketBufferSizeAudio
 	PacketBufferSize int `yaml:"packet_buffer_size,omitempty"`
-	// Number of packets to buffer for NACK - video
+	// Number of packets to buffer for NACK - video (max capacity)
 	PacketBufferSizeVideo int `yaml:"packet_buffer_size_video,omitempty"`
+	// Initial bucket size for video packets. If set, the bucket starts at
+	// this size instead of InitPacketBufferSizeVideo (300). Useful for
+	// high-PPS H.264 streams under network delay where burst patterns
+	// exceed the default initial size but the PPS-based growth logic
+	// doesn't detect the need because it uses average PPS, not peak burst.
+	// If not set or zero, falls back to InitPacketBufferSizeVideo.
+	PacketBufferInitVideo int `yaml:"packet_buffer_init_video,omitempty"`
 	// Number of packets to buffer for NACK - audio
 	PacketBufferSizeAudio int `yaml:"packet_buffer_size_audio,omitempty"`
 

@@ -74,11 +74,12 @@ type Buffer struct {
 	rtxPktBuf           []byte
 }
 
-func NewBuffer(ssrc uint32, maxVideoPkts, maxAudioPkts int) *Buffer {
+func NewBuffer(ssrc uint32, maxVideoPkts, initVideoPkts, maxAudioPkts int) *Buffer {
 	b := &Buffer{}
 	b.BufferBase = NewBufferBase(BufferBaseParams{
 		SSRC:               ssrc,
 		MaxVideoPkts:       maxVideoPkts,
+		InitVideoPkts:      initVideoPkts,
 		MaxAudioPkts:       maxAudioPkts,
 		LoggerComponents:   []string{sutils.ComponentPub, sutils.ComponentSFU},
 		SendPLI:            b.sendPLI,
