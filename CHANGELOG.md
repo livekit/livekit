@@ -2,6 +2,39 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2026-04-17
+
+NOTE: Minor version bump that enables data tracks (https://docs.livekit.io/transport/data/data-tracks/) by default.
+
+### Added
+- Embedded turn test (#4412)
+- chore: log API key during worker registration (#4428)
+- Add some simple data track stats (#4431)
+- Add `Close` method for UpDataTrackManager and call it on participant (#4432)
+- Log join duration. (#4433)
+- Add subscriber stream start event notification (#4449)
+
+### Changed
+- Cleaning up some logs and standardising log frequency. (#4420)
+- Keep subscription synchronous when publisher is expected to resume. (#4424, #4425)
+- Do not close publisher peer connection to aid migration. (#4426, #4427)
+- Enable data tracks by default. (#4429)
+- chore: pin GH commits and switch to golangci-lint (#4444)
+- Switch to stdlib maps, slices (#4445)
+- Store concrete ICE candidate for remote candidates. (#4458)
+
+### Fixed
+- clear track notifier observers on subscription teardown (#4413)
+- Guard against timestamp inversion in RED -> Opus conversion. (#4414, #4415, #4418)
+- ensure participant init is correctly serialized for logging (#4417)
+- Clean up data track observers on unsubscribe. (#4421)
+- compute agent dispatch affinity from target load (#4442)
+- Apply IPFilter when get local ip (#4440)
+- Unsubscribe from data track on close (#4443)
+- Use Muted in TrackInfo to propagated published track muted. (#4453)
+- fix: limit join request and WHIP request body to http.DefaultMaxHeaderBytes (#4450)
+- fix publisher frame count reporting for simulcast streams (#4457)
+
 ## [1.10.1] - 2026-03-30
 
 ### Added
