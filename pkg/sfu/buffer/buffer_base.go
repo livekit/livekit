@@ -141,6 +141,7 @@ const (
 type BufferBaseParams struct {
 	SSRC                uint32
 	MaxVideoPkts        int
+	InitVideoPkts       int
 	MaxAudioPkts        int
 	LoggerComponents    []string
 	SendPLI             func()
@@ -354,8 +355,12 @@ func (b *BufferBase) BindLocked(rtpParameters webrtc.RTPParameters, codec webrtc
 
 	case mime.IsMimeTypeVideo(b.mime):
 		b.codecType = webrtc.RTPCodecTypeVideo
+		initSize := InitPacketBufferSizeVideo
+		if b.params.InitVideoPkts > 0 {
+			initSize = b.params.InitVideoPkts
+		}
 		b.bucket = bucket.NewBucket[uint64, uint16](
-			InitPacketBufferSizeVideo,
+			initSize,
 			bucket.RTPMaxPktSize,
 			bucket.RTPSeqNumOffset,
 		)

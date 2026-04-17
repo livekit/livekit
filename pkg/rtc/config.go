@@ -41,6 +41,7 @@ type WebRTCConfig struct {
 
 type ReceiverConfig struct {
 	PacketBufferSizeVideo int
+	PacketBufferInitVideo int // Initial bucket size (0 = use InitPacketBufferSizeVideo)
 	PacketBufferSizeAudio int
 }
 
@@ -84,6 +85,7 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 		WebRTCConfig: *webRTCConfig,
 		Receiver: ReceiverConfig{
 			PacketBufferSizeVideo: rtcConf.PacketBufferSizeVideo,
+			PacketBufferInitVideo: rtcConf.PacketBufferInitVideo,
 			PacketBufferSizeAudio: rtcConf.PacketBufferSizeAudio,
 		},
 		Publisher:  getPublisherConfig(false),
