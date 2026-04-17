@@ -1355,7 +1355,7 @@ func (c *RTCClient) IsLocalCandidateRelaySelected() bool {
 		return false
 	}
 	for _, local := range info.Local {
-		if local.SelectedOrder > 0 && local.Local != nil && local.Local.Typ == webrtc.ICECandidateTypeRelay {
+		if local.SelectedOrder > 0 && local.Candidate != nil && local.Candidate.Typ == webrtc.ICECandidateTypeRelay {
 			return true
 		}
 	}

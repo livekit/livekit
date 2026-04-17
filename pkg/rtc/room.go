@@ -2331,7 +2331,7 @@ func connectionDetailsFields(infos []*types.ICEConnectionInfo) []any {
 			if c.Trickle {
 				cStr += "[trickle]"
 			}
-			cStr += " " + c.Local.String()
+			cStr += " " + c.Candidate.String()
 			candidates = append(candidates, cStr)
 		}
 		for _, c := range info.Remote {
@@ -2344,11 +2344,11 @@ func connectionDetailsFields(infos []*types.ICEConnectionInfo) []any {
 			if c.Trickle {
 				cStr += "[trickle]"
 			}
-			cStr += " " + fmt.Sprintf("%s %s %s:%d", c.Remote.NetworkType(), c.Remote.Type(), MaybeTruncateIP(c.Remote.Address()), c.Remote.Port())
-			if relatedAddress := c.Remote.RelatedAddress(); relatedAddress != nil {
-				relatedAddr := MaybeTruncateIP(relatedAddress.Address)
+			cStr += " " + fmt.Sprintf("%s %s %s:%d", c.Candidate.Protocol.String(), c.Candidate.Typ.String(), MaybeTruncateIP(c.Candidate.Address), c.Candidate.Port)
+			if relatedAddress := c.Candidate.RelatedAddress; relatedAddress != "" {
+				relatedAddr := MaybeTruncateIP(relatedAddress)
 				if relatedAddr != "" {
-					cStr += " " + fmt.Sprintf(" related %s:%d", relatedAddr, relatedAddress.Port)
+					cStr += " " + fmt.Sprintf(" related %s:%d", relatedAddr, c.Candidate.RelatedPort)
 				}
 			}
 			candidates = append(candidates, cStr)
