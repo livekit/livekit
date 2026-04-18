@@ -51,6 +51,7 @@ type LivekitServer struct {
 	rtcService   *RTCService
 	whipService  *WHIPService
 	agentService *AgentService
+	sipService   *SIPService
 	httpServer   *http.Server
 	promServer   *http.Server
 	router       routing.Router
@@ -86,6 +87,7 @@ func NewLivekitServer(conf *config.Config,
 		rtcService:   rtcService,
 		whipService:  whipService,
 		agentService: agentService,
+		sipService:   sipService,
 		router:       router,
 		roomManager:  roomManager,
 		signalServer: signalServer,
@@ -213,6 +215,15 @@ func (s *LivekitServer) Start() error {
 		return err
 	}
 
+	// Start file watcher for FileSIPStore if applicable
+	if s.sipService != nil {
+		if fileStore, ok := s.sipService.GetStore().(*FileSIPStore); ok {
+			if err := fileStore.Start(context.Background()); err != nil {
+				logger.Errorw("failed to start SIP config file watcher", err)
+			}
+		}
+	}
+
 	addresses := s.config.BindAddresses
 	if addresses == nil {
 		addresses = []string{""}
@@ -329,6 +340,13 @@ func (s *LivekitServer) Stop(force bool) {
 
 	if !s.running.Swap(false) {
 		return
+	}
+
+	// Stop file watcher for FileSIPStore if applicable
+	if s.sipService != nil {
+		if fileStore, ok := s.sipService.GetStore().(*FileSIPStore); ok {
+			fileStore.Stop()
+		}
 	}
 
 	s.router.Stop()

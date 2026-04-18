@@ -300,7 +300,16 @@ type IngressConfig struct {
 	WHIPBaseURL string `yaml:"whip_base_url,omitempty"`
 }
 
-type SIPConfig struct{}
+type SIPConfig struct {
+	// ConfigStore specifies where SIP trunk and dispatch rule configs are stored.
+	// Options: "redis" (default), "filesystem"
+	ConfigStore string `yaml:"config_store,omitempty"`
+
+	// ConfigPath is the file path for the SIP configuration file when using filesystem storage.
+	// Only used when ConfigStore is "filesystem". File is expected to be in YAML format.
+	// Default: "sip_config.yaml"
+	ConfigPath string `yaml:"config_path,omitempty"`
+}
 
 type APIConfig struct {
 	// amount of time to wait for API to execute, default 2s
