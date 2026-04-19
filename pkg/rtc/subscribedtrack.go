@@ -347,6 +347,18 @@ func (t *SubscribedTrack) applySettings() {
 			quality = mt.GetQualityForDimension(mimeType, t.settings.Width, t.settings.Height)
 		}
 
+		// Server-side enforcement of max subscribable video quality.
+		// If the subscriber's grants specify a maximum video height,
+		// clamp the quality to not exceed that limit.
+		if maxHeight := t.params.Subscriber.GetMaxSubscribeVideoHeight(); maxHeight > 0 {
+			maxQuality := mt.GetQualityForDimension(mimeType, 0, maxHeight)
+			if quality > maxQuality {
+				t.logger.Debugw("clamping video quality to server-enforced max",
+					"requested", quality, "maxAllowed", maxQuality, "maxHeight", maxHeight)
+				quality = maxQuality
+			}
+		}
+
 		spatial = buffer.GetSpatialLayerForVideoQuality(mimeType, quality, mt.ToProto())
 		if t.settings.Fps > 0 {
 			temporal = mt.GetTemporalLayerForSpatialFps(mimeType, spatial, t.settings.Fps)
