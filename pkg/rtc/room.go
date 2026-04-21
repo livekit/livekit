@@ -1451,7 +1451,11 @@ func (r *Room) RemoveParticipant(
 		agentJob.participantLeft()
 
 		go func() {
-			_, err := r.agentClient.TerminateJob(context.Background(), agentJob.Id, rpc.JobTerminateReason_AGENT_LEFT_ROOM)
+			// Use TERMINATION_REQUESTED when the agent leaves as part of a normal
+			// shutdown (session.shutdown(drain=True)), so that a successful
+			// UpdateJobStatus from the SDK is not overwritten with JS_FAILED.
+			// AGENT_LEFT_ROOM is reserved for unexpected disconnects.
+			_, err := r.agentClient.TerminateJob(context.Background(), agentJob.Id, rpc.JobTerminateReason_TERMINATION_REQUESTED)
 			if err != nil {
 				r.logger.Infow("failed sending TerminateJob RPC", "error", err, "jobID", agentJob.Id, "participant", identity)
 			}
