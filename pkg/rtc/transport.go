@@ -409,6 +409,8 @@ func newPeerConnection(
 
 	// if client don't support prflx over relay, we should not expose private address to it, use single external ip as host candidate
 	if !params.ClientInfo.SupportsPrflxOverRelay() && len(params.Config.NAT1To1IPs) > 0 {
+		var rewriteRules []webrtc.ICEAddressRewriteRule
+		var catchAllExternal []string
 		var nat1to1Ips []string
 		var includeIps []string
 		for _, mapping := range params.Config.NAT1To1IPs {
@@ -416,12 +418,24 @@ func newPeerConnection(
 				if ips[0] != ips[1] {
 					nat1to1Ips = append(nat1to1Ips, mapping)
 					includeIps = append(includeIps, ips[1])
+					rewriteRules = append(rewriteRules, webrtc.ICEAddressRewriteRule{
+						External:        []string{ips[0]},
+						Local:           ips[1],
+						AsCandidateType: webrtc.ICECandidateTypeHost,
+					})
+					catchAllExternal = append(catchAllExternal, ips[0])
 				}
 			}
 		}
-		if len(nat1to1Ips) > 0 {
+		if len(rewriteRules) > 0 {
+			rewriteRules = append(rewriteRules, webrtc.ICEAddressRewriteRule{
+				External:        catchAllExternal,
+				AsCandidateType: webrtc.ICECandidateTypeHost,
+			})
 			params.Logger.Infow("client doesn't support prflx over relay, use external ip only as host candidate", "ips", nat1to1Ips)
-			se.SetNAT1To1IPs(nat1to1Ips, webrtc.ICECandidateTypeHost)
+			if err := se.SetICEAddressRewriteRules(rewriteRules...); err != nil {
+				params.Logger.Warnw("failed to set ICE address rewrite rules", err, "ips", nat1to1Ips)
+			}
 			se.SetIPFilter(func(ip net.IP) bool {
 				if ip.To4() == nil {
 					return true
