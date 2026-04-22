@@ -57,6 +57,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/utils"
 	lkinterceptor "github.com/livekit/mediatransportutil/pkg/interceptor"
+	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	lktwcc "github.com/livekit/mediatransportutil/pkg/twcc"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
@@ -409,8 +410,6 @@ func newPeerConnection(
 
 	// if client don't support prflx over relay, we should not expose private address to it, use single external ip as host candidate
 	if !params.ClientInfo.SupportsPrflxOverRelay() && len(params.Config.NAT1To1IPs) > 0 {
-		var rewriteRules []webrtc.ICEAddressRewriteRule
-		var catchAllExternal []string
 		var nat1to1Ips []string
 		var includeIps []string
 		for _, mapping := range params.Config.NAT1To1IPs {
@@ -418,22 +417,12 @@ func newPeerConnection(
 				if ips[0] != ips[1] {
 					nat1to1Ips = append(nat1to1Ips, mapping)
 					includeIps = append(includeIps, ips[1])
-					rewriteRules = append(rewriteRules, webrtc.ICEAddressRewriteRule{
-						External:        []string{ips[0]},
-						Local:           ips[1],
-						AsCandidateType: webrtc.ICECandidateTypeHost,
-					})
-					catchAllExternal = append(catchAllExternal, ips[0])
 				}
 			}
 		}
-		if len(rewriteRules) > 0 {
-			rewriteRules = append(rewriteRules, webrtc.ICEAddressRewriteRule{
-				External:        catchAllExternal,
-				AsCandidateType: webrtc.ICECandidateTypeHost,
-			})
+		if len(nat1to1Ips) > 0 {
 			params.Logger.Infow("client doesn't support prflx over relay, use external ip only as host candidate", "ips", nat1to1Ips)
-			if err := se.SetICEAddressRewriteRules(rewriteRules...); err != nil {
+			if err := rtcconfig.SetNAT1To1AddressRewriteRules(&se, nat1to1Ips, webrtc.ICECandidateTypeHost); err != nil {
 				params.Logger.Warnw("failed to set ICE address rewrite rules", err, "ips", nat1to1Ips)
 			}
 			se.SetIPFilter(func(ip net.IP) bool {
