@@ -104,12 +104,13 @@ func (b *Buffer) SetAudioLossProxying(enable bool) {
 
 func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapability, bitrates int) error {
 	b.Lock()
-	defer b.Unlock()
 	if b.isBound {
+		b.Unlock()
 		return nil
 	}
 
 	if err := b.BufferBase.BindLocked(params, codec, bitrates); err != nil {
+		b.Unlock()
 		return err
 	}
 
@@ -118,12 +119,20 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	if len(b.pPackets) != 0 {
 		b.logger.Debugw("releasing queued packets on bind", "count", len(b.pPackets))
 	}
+	var rtcpPackets []rtcp.Packet
 	for _, pp := range b.pPackets {
-		b.calc(pp.packet, nil, pp.arrivalTime, true, false)
+		rtcpPackets = append(rtcpPackets, b.calc(pp.packet, nil, pp.arrivalTime, true, false)...)
 	}
 	b.pPackets = nil
 
 	b.isBound = true
+	b.Unlock()
+
+	if len(rtcpPackets) != 0 {
+		if cb := b.getOnRtcpFeedback(); cb != nil {
+			cb(rtcpPackets)
+		}
+	}
 
 	return nil
 }
@@ -195,8 +204,14 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		return
 	}
 
-	b.calc(pkt, &rtpPacket, now, false, false)
+	rtcpPackets := b.calc(pkt, &rtpPacket, now, false, false)
 	b.Unlock()
+
+	if len(rtcpPackets) != 0 {
+		if cb := b.getOnRtcpFeedback(); cb != nil {
+			cb(rtcpPackets)
+		}
+	}
 	return
 }
 
@@ -335,7 +350,7 @@ func (b *Buffer) sendPLI() {
 	}
 }
 
-func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, isBuffered bool, isRTX bool) {
+func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, isBuffered bool, isRTX bool) []rtcp.Packet {
 	b.BufferBase.HandleIncomingPacketLocked(
 		rawPkt,
 		rtpPacket,
@@ -346,68 +361,52 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, i
 		0,
 	)
 
-	b.doNACKs()
-
-	b.doReports(arrivalTime)
+	return b.getRTCPPackets(arrivalTime)
 }
 
-func (b *Buffer) doNACKs() {
-	if r := b.buildNACKPacket(); r != nil {
-		if cb := b.onRtcpFeedback; cb != nil {
-			cb(r)
-		}
-	}
-}
-
-func (b *Buffer) buildNACKPacket() []rtcp.Packet {
-	if nacks := b.BufferBase.GetNACKPairsLocked(); len(nacks) > 0 {
-		ssrc := b.BufferBase.SSRC()
-		pkts := []rtcp.Packet{&rtcp.TransportLayerNack{
-			SenderSSRC: ssrc,
-			MediaSSRC:  ssrc,
-			Nacks:      nacks,
-		}}
-		return pkts
-	}
-	return nil
-}
-
-func (b *Buffer) doReports(arrivalTime int64) {
-	if arrivalTime-b.lastReportAt < rtcpReceiverReportDelta {
-		return
-	}
-	b.lastReportAt = arrivalTime
-
-	// RTCP reports
-	pkts := b.getRTCP()
-	if pkts != nil {
-		if cb := b.onRtcpFeedback; cb != nil {
-			cb(pkts)
-		}
-	}
-}
-
-func (b *Buffer) getRTCP() []rtcp.Packet {
+func (b *Buffer) getRTCPPackets(arrivalTime int64) []rtcp.Packet {
 	var pkts []rtcp.Packet
-
-	rr := b.buildReceptionReport()
-	if rr != nil {
-		pkts = append(pkts, &rtcp.ReceiverReport{
-			SSRC:    b.BufferBase.SSRC(),
-			Reports: []rtcp.ReceptionReport{*rr},
-		})
+	if nackPkt := b.getNACKPacket(); nackPkt != nil {
+		pkts = append(pkts, nackPkt)
+	}
+	if receiverReport := b.getRTCPReceiverReport(arrivalTime); receiverReport != nil {
+		pkts = append(pkts, receiverReport)
 	}
 
 	return pkts
 }
 
-func (b *Buffer) buildReceptionReport() *rtcp.ReceptionReport {
+func (b *Buffer) getNACKPacket() *rtcp.TransportLayerNack {
+	if nacks := b.BufferBase.GetNACKPairsLocked(); len(nacks) > 0 {
+		ssrc := b.BufferBase.SSRC()
+		return &rtcp.TransportLayerNack{
+			SenderSSRC: ssrc,
+			MediaSSRC:  ssrc,
+			Nacks:      nacks,
+		}
+	}
+	return nil
+}
+
+func (b *Buffer) getRTCPReceiverReport(arrivalTime int64) *rtcp.ReceiverReport {
+	if arrivalTime-b.lastReportAt < rtcpReceiverReportDelta {
+		return nil
+	}
+	b.lastReportAt = arrivalTime
+
 	proxyLoss := b.lastFractionLostToReport
 	if b.codecType == webrtc.RTPCodecTypeAudio && !b.enableAudioLossProxying {
 		proxyLoss = 0
 	}
 
-	return b.BufferBase.GetRtcpReceptionReportLocked(proxyLoss)
+	if receptionReport := b.BufferBase.GetRtcpReceptionReportLocked(proxyLoss); receptionReport != nil {
+		return &rtcp.ReceiverReport{
+			SSRC:    b.BufferBase.SSRC(),
+			Reports: []rtcp.ReceptionReport{*receptionReport},
+		}
+	}
+
+	return nil
 }
 
 func (b *Buffer) SetLastFractionLostReport(lost uint8) {
