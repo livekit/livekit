@@ -664,7 +664,7 @@ func (b *BufferBase) SendPLI(force bool) {
 	pliThrottle := b.pliThrottle
 	b.RUnlock()
 
-	if (rtpStats == nil && !force) || !rtpStats.CheckAndUpdatePli(pliThrottle, force) {
+	if rtpStats == nil || !rtpStats.CheckAndUpdatePli(pliThrottle, force) {
 		return
 	}
 

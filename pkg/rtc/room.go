@@ -20,7 +20,6 @@ import (
 	"maps"
 	"math"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -393,8 +392,8 @@ func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
 		})
 	}
 
-	sort.Slice(speakers, func(i, j int) bool {
-		return speakers[i].Level > speakers[j].Level
+	slices.SortFunc(speakers, func(a, b *livekit.SpeakerInfo) int {
+		return sutils.Signum(a.Level - b.Level)
 	})
 
 	// quantize to smooth out small changes
