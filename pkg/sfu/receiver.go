@@ -159,6 +159,9 @@ func (w *WebRTCReceiver) GetConnectionScoreAndQuality() (float32, livekit.Connec
 }
 
 func (w *WebRTCReceiver) ssrc(layer int) uint32 {
+	w.upTracksMu.Lock()
+	defer w.upTracksMu.Unlock()
+
 	if track := w.upTracks[layer]; track != nil {
 		return uint32(track.SSRC())
 	}

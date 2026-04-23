@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 
@@ -207,8 +206,8 @@ func (t *MediaTrackReceiver) SetupReceiver(receiver sfu.TrackReceiver, priority 
 		receivers = append(receivers, &simulcastReceiver{TrackReceiver: receiver, priority: priority})
 	}
 
-	sort.Slice(receivers, func(i, j int) bool {
-		return receivers[i].Priority() < receivers[j].Priority()
+	slices.SortFunc(receivers, func(a, b *simulcastReceiver) int {
+		return sutils.Signum(a.Priority() - b.Priority())
 	})
 
 	if mid != "" {
@@ -349,8 +348,8 @@ func (t *MediaTrackReceiver) SetPotentialCodecs(codecs []webrtc.RTPCodecParamete
 			})
 		}
 	}
-	sort.Slice(receivers, func(i, j int) bool {
-		return receivers[i].Priority() < receivers[j].Priority()
+	slices.SortFunc(receivers, func(a, b *simulcastReceiver) int {
+		return sutils.Signum(a.Priority() - b.Priority())
 	})
 	t.receivers = receivers
 	t.lock.Unlock()
@@ -1090,9 +1089,7 @@ func (t *MediaTrackReceiver) GetQualityForDimension(mimeType mime.MimeType, widt
 		layerSizes = providedSizes
 		// comparing height always
 		requestedSize = height
-		sort.Slice(layerSizes, func(i, j int) bool {
-			return layerSizes[i] < layerSizes[j]
-		})
+		slices.Sort(layerSizes)
 	}
 
 	// finds the highest layer with smallest dimensions that still satisfy client demands

@@ -15,7 +15,8 @@
 package dynacast
 
 import (
-	"sort"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -498,19 +499,25 @@ func TestCodecRegression(t *testing.T) {
 }
 
 func subscribedCodecsAsString(c1 []*livekit.SubscribedCodec) string {
-	sort.Slice(c1, func(i, j int) bool { return c1[i].Codec < c1[j].Codec })
-	var s1 string
+	slices.SortFunc(c1, func(a, b *livekit.SubscribedCodec) int {
+		return strings.Compare(a.Codec, b.Codec)
+	})
+
+	var s1 strings.Builder
 	for _, c := range c1 {
-		s1 += c.String()
+		s1.WriteString(c.String())
 	}
-	return s1
+	return s1.String()
 }
 
 func subscribedAudioCodecsAsString(c1 []*livekit.SubscribedAudioCodec) string {
-	sort.Slice(c1, func(i, j int) bool { return c1[i].Codec < c1[j].Codec })
-	var s1 string
+	slices.SortFunc(c1, func(a, b *livekit.SubscribedAudioCodec) int {
+		return strings.Compare(a.Codec, b.Codec)
+	})
+
+	var s1 strings.Builder
 	for _, c := range c1 {
-		s1 += c.String()
+		s1.WriteString(c.String())
 	}
-	return s1
+	return s1.String()
 }

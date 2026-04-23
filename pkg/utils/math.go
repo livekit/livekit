@@ -14,10 +14,10 @@
 
 package utils
 
-import "sort"
+import "slices"
 
-// MedianFloat32 gets median value for an array of float32
-func MedianFloat32(input []float32) float32 {
+// Median gets median value for an array
+func Median[T float32](input []T) T {
 	num := len(input)
 	switch num {
 	case 0:
@@ -25,13 +25,24 @@ func MedianFloat32(input []float32) float32 {
 	case 1:
 		return input[0]
 	}
-	sort.Slice(input, func(i, j int) bool {
-		return input[i] < input[j]
-	})
+	slices.Sort(input)
 	if num%2 != 0 {
 		return input[num/2]
 	}
 	left := input[num/2-1]
 	right := input[num/2]
 	return (left + right) / 2
+}
+
+func Signum[T int | int32 | float32](val T) int {
+	switch {
+	case val < 0:
+		return -1
+
+	case val > 0:
+		return 1
+
+	default:
+		return 0
+	}
 }

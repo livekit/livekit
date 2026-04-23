@@ -16,7 +16,7 @@ package buffer
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
@@ -288,8 +288,14 @@ func ProcessFrameDependencyStructure(structure *dd.FrameDependencyStructure) []D
 	}
 
 	// sort decode target layer by spatial and temporal from high to low
-	sort.Slice(decodeTargets, func(i, j int) bool {
-		return decodeTargets[i].Layer.GreaterThan(decodeTargets[j].Layer)
+	slices.SortFunc(decodeTargets, func(a, b DependencyDescriptorDecodeTarget) int {
+		if a.Layer.GreaterThan(b.Layer) {
+			return -1
+		}
+		if b.Layer.GreaterThan(a.Layer) {
+			return 1
+		}
+		return 0
 	})
 
 	return decodeTargets
