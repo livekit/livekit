@@ -16,6 +16,7 @@ package streamallocator
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -205,6 +206,7 @@ type StreamAllocator struct {
 
 	videoTracksMu        sync.RWMutex
 	videoTracks          map[livekit.TrackID]*Track
+	videoTracksShadow    []*Track
 	isAllocateAllPending bool
 	rembTrackingSSRC     uint32
 
@@ -296,6 +298,7 @@ func (s *StreamAllocator) AddTrack(downTrack *sfu.DownTrack, params AddTrackPara
 	s.videoTracksMu.Lock()
 	oldTrack := s.videoTracks[trackID]
 	s.videoTracks[trackID] = track
+	s.shadowVideoTracksLocked()
 	s.videoTracksMu.Unlock()
 
 	if oldTrack != nil {
@@ -312,6 +315,7 @@ func (s *StreamAllocator) RemoveTrack(downTrack *sfu.DownTrack) {
 	s.videoTracksMu.Lock()
 	if existing := s.videoTracks[livekit.TrackID(downTrack.ID())]; existing != nil && existing.DownTrack() == downTrack {
 		delete(s.videoTracks, livekit.TrackID(downTrack.ID()))
+		s.shadowVideoTracksLocked()
 	}
 	s.videoTracksMu.Unlock()
 
@@ -390,13 +394,7 @@ func (s *StreamAllocator) OnREMB(downTrack *sfu.DownTrack, remb *rtcp.ReceiverEs
 		downTrackSSRCRTX = track.DownTrack().SSRCRTX()
 	}
 
-	found := false
-	for _, ssrc := range remb.SSRCs {
-		if ssrc == s.rembTrackingSSRC {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(remb.SSRCs, s.rembTrackingSSRC)
 	if !found {
 		if len(remb.SSRCs) == 0 {
 			s.params.Logger.Warnw("stream allocator: no SSRC to track REMB", nil)
@@ -763,7 +761,7 @@ func (s *StreamAllocator) handleSignalProbeClusterSwitch(event Event) {
 
 	s.params.Pacer.StartProbeCluster(pci)
 
-	for _, t := range s.getTracks() {
+	for _, t := range s.getVideoTracks() {
 		t.DownTrack().SetProbeClusterId(pci.Id)
 	}
 }
@@ -775,7 +773,7 @@ func (s *StreamAllocator) handleSignalSendProbe(event Event) {
 	}
 
 	bytesSent := 0
-	for _, track := range s.getTracks() {
+	for _, track := range s.getVideoTracks() {
 		sent := track.WriteProbePackets(bytesToSend)
 		bytesSent += sent
 		bytesToSend -= sent
@@ -791,7 +789,7 @@ func (s *StreamAllocator) handleSignalPacerProbeObserverClusterComplete(event Ev
 	probeClusterId, _ := event.Data.(ccutils.ProbeClusterId)
 	pci := s.params.Pacer.EndProbeCluster(probeClusterId)
 
-	for _, t := range s.getTracks() {
+	for _, t := range s.getVideoTracks() {
 		t.DownTrack().SwapProbeClusterId(pci.Id, ccutils.ProbeClusterIdInvalid)
 	}
 
@@ -837,7 +835,7 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 	// during early warning hold (if there was one)
 	if isHoldableCongestionState(cscd.fromState) && cscd.toState == bwe.CongestionStateNone && s.state == streamAllocatorStateStable {
 		update := NewStreamStateUpdate()
-		for _, track := range s.getTracks() {
+		for _, track := range s.getVideoTracks() {
 			allocation := track.AllocateOptimal(cFlagAllowOvershootWhileOptimal, false)
 			updateStreamStateChange(track, allocation, update)
 		}
@@ -891,7 +889,7 @@ func (s *StreamAllocator) setState(state streamAllocatorState) {
 }
 
 func (s *StreamAllocator) adjustState() {
-	for _, track := range s.getTracks() {
+	for _, track := range s.getVideoTracks() {
 		if track.IsDeficient() {
 			s.setState(streamAllocatorStateDeficient)
 			return
@@ -1014,7 +1012,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	bandwidthAcquired := int64(0)
 	var contributingTracks []*Track
 
-	minDistanceSorted := s.getMinDistanceSorted(track)
+	minDistanceSorted := s.getMinDistanceSortedVideoTracks(track)
 	for _, t := range minDistanceSorted {
 		t.ProvisionalAllocatePrepare()
 	}
@@ -1064,7 +1062,7 @@ func (s *StreamAllocator) maybeStopProbe() {
 
 	pci := s.params.Pacer.EndProbeCluster(s.activeProbeClusterId)
 
-	for _, t := range s.getTracks() {
+	for _, t := range s.getVideoTracks() {
 		t.DownTrack().SwapProbeClusterId(pci.Id, ccutils.ProbeClusterIdInvalid)
 	}
 
@@ -1086,7 +1084,7 @@ func (s *StreamAllocator) maybeBoostDeficientTracks() {
 
 	update := NewStreamStateUpdate()
 
-	sortedTracks := s.getMaxDistanceSortedDeficient()
+	sortedTracks := s.getMaxDistanceSortedDeficientVideoTracks()
 boost_loop:
 	for {
 		for idx, track := range sortedTracks {
@@ -1108,7 +1106,7 @@ boost_loop:
 
 			break // sort again below as the track that was just boosted could still be farthest from its desired
 		}
-		sortedTracks = s.getMaxDistanceSortedDeficient()
+		sortedTracks = s.getMaxDistanceSortedDeficientVideoTracks()
 		if len(sortedTracks) == 0 {
 			break // nothing available to boost
 		}
@@ -1145,7 +1143,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 	// This pass is to find out if there is any leftover channel capacity after allocating exempt tracks.
 	// Exempt tracks are given optimal allocation (i. e. no bandwidth constraint) so that they do not fail allocation.
 	//
-	videoTracks := s.getTracks()
+	videoTracks := s.getVideoTracks()
 	for _, track := range videoTracks {
 		if track.IsManaged() {
 			continue
@@ -1174,7 +1172,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 			updateStreamStateChange(track, allocation, update)
 		}
 	} else {
-		sorted := s.getSorted()
+		sorted := s.getSortedVideoTracks()
 		for _, track := range sorted {
 			track.ProvisionalAllocatePrepare()
 		}
@@ -1251,7 +1249,7 @@ func (s *StreamAllocator) getAvailableChannelCapacity(allowOverride bool) int64 
 
 func (s *StreamAllocator) getExpectedBandwidthUsage() int64 {
 	expected := int64(0)
-	for _, track := range s.getTracks() {
+	for _, track := range s.getVideoTracks() {
 		expected += track.BandwidthRequested()
 	}
 
@@ -1260,14 +1258,8 @@ func (s *StreamAllocator) getExpectedBandwidthUsage() int64 {
 
 func (s *StreamAllocator) getExpectedBandwidthUsageWithoutTracks(filteredTracks []*Track) int64 {
 	expected := int64(0)
-	for _, track := range s.getTracks() {
-		filtered := false
-		for _, ft := range filteredTracks {
-			if ft == track {
-				filtered = true
-				break
-			}
-		}
+	for _, track := range s.getVideoTracks() {
+		filtered := slices.Contains(filteredTracks, track)
 		if !filtered {
 			expected += track.BandwidthRequested()
 		}
@@ -1287,7 +1279,7 @@ func (s *StreamAllocator) getAvailableHeadroomWithoutTracks(allowOverride bool, 
 func (s *StreamAllocator) getNackDelta() (uint32, uint32) {
 	aggPacketDelta := uint32(0)
 	aggRepeatedNackDelta := uint32(0)
-	for _, track := range s.getTracks() {
+	for _, track := range s.getVideoTracks() {
 		packetDelta, nackDelta := track.GetNackDelta()
 		aggPacketDelta += packetDelta
 		aggRepeatedNackDelta += nackDelta
@@ -1317,7 +1309,7 @@ func (s *StreamAllocator) maybeProbe() {
 
 func (s *StreamAllocator) maybeProbeWithMedia() {
 	// boost deficient track farthest from desired layer
-	for _, track := range s.getMaxDistanceSortedDeficient() {
+	for _, track := range s.getMaxDistanceSortedDeficientVideoTracks() {
 		allocation, boosted := track.AllocateNextHigher(cChannelCapacityInfinity, cFlagAllowOvershootInBoost)
 		if !boosted {
 			continue
@@ -1334,17 +1326,14 @@ func (s *StreamAllocator) maybeProbeWithMedia() {
 
 func (s *StreamAllocator) maybeProbeWithPadding() {
 	// use deficient track farthest from desired layer to find how much to probe
-	for _, track := range s.getMaxDistanceSortedDeficient() {
+	for _, track := range s.getMaxDistanceSortedDeficientVideoTracks() {
 		transition, available := track.GetNextHigherTransition(cFlagAllowOvershootInProbe)
 		if !available || transition.BandwidthDelta < 0 {
 			continue
 		}
 
 		// overshoot a bit to account for noise (in measurement/estimate etc)
-		desiredIncreaseBps := (transition.BandwidthDelta * s.params.Config.ProbeOveragePct) / 100
-		if desiredIncreaseBps < s.params.Config.ProbeMinBps {
-			desiredIncreaseBps = s.params.Config.ProbeMinBps
-		}
+		desiredIncreaseBps := max((transition.BandwidthDelta*s.params.Config.ProbeOveragePct)/100, s.params.Config.ProbeMinBps)
 		expectedBandwidthUsage := s.getExpectedBandwidthUsage()
 		pci := s.prober.AddCluster(
 			ccutils.ProbeClusterModeUniform,
@@ -1363,66 +1352,63 @@ func (s *StreamAllocator) maybeProbeWithPadding() {
 	}
 }
 
-func (s *StreamAllocator) getTracks() []*Track {
+func (s *StreamAllocator) getVideoTracks() []*Track {
 	s.videoTracksMu.RLock()
-	tracks := make([]*Track, 0, len(s.videoTracks))
-	for _, track := range s.videoTracks {
-		tracks = append(tracks, track)
-	}
-	s.videoTracksMu.RUnlock()
+	defer s.videoTracksMu.RUnlock()
 
-	return tracks
+	return s.videoTracksShadow
 }
 
-func (s *StreamAllocator) getSorted() TrackSorter {
-	s.videoTracksMu.RLock()
+func (s *StreamAllocator) getSortedVideoTracks() TrackSorter {
 	var trackSorter TrackSorter
-	for _, track := range s.videoTracks {
+	for _, track := range s.getVideoTracks() {
 		if !track.IsManaged() {
 			continue
 		}
 
 		trackSorter = append(trackSorter, track)
 	}
-	s.videoTracksMu.RUnlock()
 
 	sort.Sort(trackSorter)
 
 	return trackSorter
 }
 
-func (s *StreamAllocator) getMinDistanceSorted(exclude *Track) MinDistanceSorter {
-	s.videoTracksMu.RLock()
+func (s *StreamAllocator) getMinDistanceSortedVideoTracks(exclude *Track) MinDistanceSorter {
 	var minDistanceSorter MinDistanceSorter
-	for _, track := range s.videoTracks {
+	for _, track := range s.getVideoTracks() {
 		if !track.IsManaged() || track == exclude {
 			continue
 		}
 
 		minDistanceSorter = append(minDistanceSorter, track)
 	}
-	s.videoTracksMu.RUnlock()
 
 	sort.Sort(minDistanceSorter)
 
 	return minDistanceSorter
 }
 
-func (s *StreamAllocator) getMaxDistanceSortedDeficient() MaxDistanceSorter {
-	s.videoTracksMu.RLock()
+func (s *StreamAllocator) getMaxDistanceSortedDeficientVideoTracks() MaxDistanceSorter {
 	var maxDistanceSorter MaxDistanceSorter
-	for _, track := range s.videoTracks {
+	for _, track := range s.getVideoTracks() {
 		if !track.IsManaged() || !track.IsDeficient() {
 			continue
 		}
 
 		maxDistanceSorter = append(maxDistanceSorter, track)
 	}
-	s.videoTracksMu.RUnlock()
 
 	sort.Sort(maxDistanceSorter)
 
 	return maxDistanceSorter
+}
+
+func (s *StreamAllocator) shadowVideoTracksLocked() {
+	s.videoTracksShadow = make([]*Track, 0, len(s.videoTracks))
+	for _, t := range s.videoTracks {
+		s.videoTracksShadow = append(s.videoTracksShadow, t)
+	}
 }
 
 // ------------------------------------------------
