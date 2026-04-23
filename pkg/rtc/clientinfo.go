@@ -114,6 +114,10 @@ func (c ClientInfo) SupportsSctpZeroChecksum() bool {
 		(!c.isGo() || c.compareVersion("2.4.0") >= 0)
 }
 
+func (c ClientInfo) SupportsTransceiverReuse() bool {
+	return !c.isSafari()
+}
+
 // compareVersion compares a semver against the current client SDK version
 // returning 1 if current version is greater than version
 // 0 if they are the same, and -1 if it's an earlier version
