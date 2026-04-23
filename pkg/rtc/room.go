@@ -393,7 +393,7 @@ func (r *Room) GetActiveSpeakers() []*livekit.SpeakerInfo {
 	}
 
 	slices.SortFunc(speakers, func(a, b *livekit.SpeakerInfo) int {
-		return sutils.Signum(a.Level - b.Level)
+		return sutils.Signum(b.Level - a.Level)
 	})
 
 	// quantize to smooth out small changes
