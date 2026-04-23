@@ -428,6 +428,9 @@ type LocalParticipant interface {
 	CanPublishSource(source livekit.TrackSource) bool
 	CanSubscribe() bool
 	CanPublishData() bool
+	// GetMaxSubscribeVideoHeight returns the maximum video height (in pixels)
+	// that this participant is allowed to subscribe to. Returns 0 for unlimited.
+	GetMaxSubscribeVideoHeight() uint32
 
 	// PeerConnection
 	HandleICETrickle(trickleRequest *livekit.TrickleRequest)
