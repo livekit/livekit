@@ -1,0 +1,5 @@
+[phases.build]
+cmd = "go build -o livekit-server ./cmd/livekit-server"
+
+[start]
+cmd = "./livekit-server"
