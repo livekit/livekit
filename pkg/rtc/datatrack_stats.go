@@ -89,16 +89,18 @@ func (d *dataTrackStats) Close() {
 
 	d.endTime = mono.UnixNano()
 
-	duration := time.Duration(d.endTime - d.startTime).Seconds()
-	fps := float64(d.numFrames) / duration
+	if d.startTime != 0 {
+		duration := time.Duration(d.endTime - d.startTime).Seconds()
+		fps := float64(d.numFrames) / duration
 
-	d.params.Logger.Infow(
-		"data track stats",
-		"duration", duration,
-		"numPackets", d.numPackets,
-		"numPacketsLost", d.numPacketsLost,
-		"numPacketsOutOfOrder", d.numPacketsOutOfOrder,
-		"numFrames", d.numFrames,
-		"fps", fps,
-	)
+		d.params.Logger.Infow(
+			"data track stats",
+			"duration", duration,
+			"numPackets", d.numPackets,
+			"numPacketsLost", d.numPacketsLost,
+			"numPacketsOutOfOrder", d.numPacketsOutOfOrder,
+			"numFrames", d.numFrames,
+			"fps", fps,
+		)
+	}
 }
