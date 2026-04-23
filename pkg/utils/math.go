@@ -34,7 +34,7 @@ func Median[T float32](input []T) T {
 	return (left + right) / 2
 }
 
-func Signum[T int | int32 | float32](val T) int {
+func Signum[T int | int8 | int16 | int32 | int64 | float32 | float64](val T) int {
 	switch {
 	case val < 0:
 		return -1
