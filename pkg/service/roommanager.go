@@ -21,8 +21,10 @@ import (
 	"encoding/base64"
 	"fmt"
 	"maps"
+	"net"
 	"os"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -1025,7 +1027,7 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 			// UDP TURN is used as STUN
 			hasSTUN = true
 			for _, ip := range r.config.RTC.NodeIP.ToStringSlice() {
-				urls = append(urls, fmt.Sprintf("turn:%s:%d?transport=udp", ip, r.config.TURN.UDPPort))
+				urls = append(urls, fmt.Sprintf("turn:%s?transport=udp", net.JoinHostPort(ip, strconv.Itoa(int(r.config.TURN.UDPPort)))))
 			}
 		}
 		if r.config.TURN.TLSPort > 0 {
