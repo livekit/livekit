@@ -102,6 +102,10 @@ func (r *RTPMunger) GetState() *livekit.RTPMungerState {
 	}
 }
 
+func (r *RTPMunger) GetExtLastTimestamp() uint64 {
+	return r.extLastTS
+}
+
 func (r *RTPMunger) GetTSOffset() uint64 {
 	return r.tsOffset
 }

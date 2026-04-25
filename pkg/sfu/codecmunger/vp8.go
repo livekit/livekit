@@ -174,7 +174,7 @@ func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap
 		// when it reaches a certain size.
 
 		mungedPictureId := uint16((extPictureId - pictureIdOffset) & 0x7fff)
-		vp8Packet := &buffer.VP8{
+		vp8Packet := buffer.VP8{
 			FirstByte:  vp8.FirstByte,
 			I:          vp8.I,
 			M:          mungedPictureId > 127,
@@ -281,7 +281,7 @@ func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap
 	v.lastTl0PicIdx = mungedTl0PicIdx
 	v.lastKeyIdx = mungedKeyIdx
 
-	vp8Packet := &buffer.VP8{
+	vp8Packet := buffer.VP8{
 		FirstByte:  vp8.FirstByte,
 		I:          vp8.I,
 		M:          mungedPictureId > 127,
