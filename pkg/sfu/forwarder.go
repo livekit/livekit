@@ -969,18 +969,24 @@ func (f *Forwarder) ProvisionalAllocatePrepare(availableLayers []int32, bitrates
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	f.provisional = &VideoAllocationProvisional{
-		allocatedLayer: buffer.InvalidLayer,
-		muted:          f.muted,
-		pubMuted:       f.pubMuted,
-		maxSeenLayer:   f.vls.GetMaxSeen(),
-		bitrates:       bitrates,
-		maxLayer:       f.vls.GetMax(),
-		currentLayer:   f.vls.GetCurrent(),
+	if f.provisional == nil {
+		f.provisional = &VideoAllocationProvisional{}
 	}
 
-	f.provisional.availableLayers = make([]int32, len(availableLayers))
-	copy(f.provisional.availableLayers, availableLayers)
+	p := f.provisional
+	p.allocatedLayer = buffer.InvalidLayer
+	p.muted = f.muted
+	p.pubMuted = f.pubMuted
+	p.maxSeenLayer = f.vls.GetMaxSeen()
+	p.bitrates = bitrates
+	p.maxLayer = f.vls.GetMax()
+	p.currentLayer = f.vls.GetCurrent()
+	if cap(p.availableLayers) >= len(availableLayers) {
+		p.availableLayers = p.availableLayers[:len(availableLayers)]
+	} else {
+		p.availableLayers = make([]int32, len(availableLayers))
+	}
+	copy(p.availableLayers, availableLayers)
 }
 
 func (f *Forwarder) ProvisionalAllocateReset() {
@@ -1811,8 +1817,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 	//   3. extExpectedTS -> expected timestamp of this packet calculated based on elapsed time since first packet
 	// Ideally, extRefTS and extExpectedTS should be very close and extLastTS should be before both of those.
 	// But, cases like muting/unmuting, clock vagaries, pacing, etc. make them not satisfy those conditions always.
-	rtpMungerState := f.rtpMunger.GetState()
-	extLastTS := rtpMungerState.ExtLastTimestamp
+	extLastTS := f.rtpMunger.GetExtLastTimestamp()
 	extExpectedTS := extLastTS
 	extRefTS := extLastTS
 	refTS := uint32(extRefTS)
@@ -1956,14 +1961,14 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 		"switchingAt", switchingAt,
 		"layer", layer,
 		"extLastTS", extLastTS,
-		"lastMarker", rtpMungerState.LastMarker,
+		"lastMarker", f.rtpMunger.GetState().LastMarker,
 		"extRefTS", extRefTS,
 		"dummyStartTSOffset", f.dummyStartTSOffset,
 		"referenceLayerSpatial", f.referenceLayerSpatial,
 		"extExpectedTS", extExpectedTS,
 		"extNextTS", extNextTS,
 		"tsJump", extNextTS-extLastTS,
-		"nextSN", rtpMungerState.ExtLastSequenceNumber+1,
+		"nextSN", f.rtpMunger.GetState().ExtLastSequenceNumber+1,
 		"extIncomingSN", extPkt.ExtSequenceNumber,
 		"extIncomingTS", extPkt.ExtTimestamp,
 		"rtpStats", f.rtpStats,
@@ -2197,7 +2202,7 @@ func (f *Forwarder) GetSnTsForPadding(num int, frameRate uint32, forceMarker boo
 		f.clockRate,
 		frameRate,
 		forceMarker,
-		f.rtpMunger.GetState().ExtLastTimestamp,
+		f.rtpMunger.GetExtLastTimestamp(),
 	)
 }
 
@@ -2212,7 +2217,7 @@ func (f *Forwarder) GetSnTsForBlankFrames(frameRate uint32, numPackets int) ([]S
 		numPackets++
 	}
 
-	extLastTS := f.rtpMunger.GetState().ExtLastTimestamp
+	extLastTS := f.rtpMunger.GetExtLastTimestamp()
 	extExpectedTS := extLastTS
 	if f.rtpStats != nil {
 		tsExt, err := f.rtpStats.GetExpectedRTPTimestamp(mono.Now())

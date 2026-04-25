@@ -162,16 +162,16 @@ func (v *VP8) Unmarshal(payload []byte) error {
 	return nil
 }
 
-func (v *VP8) Marshal() ([]byte, error) {
-	buf := make([]byte, v.HeaderSize)
-	n, err := v.MarshalTo(buf)
+func (v VP8) Marshal() ([]byte, error) {
+	var buf [8]byte
+	n, err := v.MarshalTo(buf[:])
 	if err != nil {
 		return nil, err
 	}
 	return buf[:n], err
 }
 
-func (v *VP8) MarshalTo(buf []byte) (int, error) {
+func (v VP8) MarshalTo(buf []byte) (int, error) {
 	if len(buf) < v.HeaderSize {
 		return 0, errShortPacket
 	}
