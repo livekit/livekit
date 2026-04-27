@@ -130,8 +130,8 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 		trailer = params.Subscriber.GetTrailer()
 	}
 	subClientInfo := ClientInfo{ClientInfo: params.Subscriber.GetClientInfo()}
-	subSupportsPacketTrailer := subClientInfo.SupportsPacketTrailer() ||
-		params.Subscriber.ProtocolVersion().SupportsPacketTrailer()
+	subSupportsPacketTrailer := subClientInfo.SupportsPacketTrailer()
+	// Strip packet trailer if track has packet trailer but subscriber does not have cap
 	stripPacketTrailer := params.MediaTrack.HasPacketTrailer() && !subSupportsPacketTrailer
 	downTrack, err := sfu.NewDownTrack(sfu.DownTrackParams{
 		Codecs:             codecs,
