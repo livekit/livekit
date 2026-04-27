@@ -1531,6 +1531,10 @@ func (t *PCTransport) Close() {
 		return
 	}
 
+	if err := t.pc.Close(); err != nil {
+		t.params.Logger.Warnw("unclean close of peer connection", err)
+	}
+
 	<-t.eventsQueue.Stop()
 	t.clearSignalStateCheckTimer()
 
@@ -1570,10 +1574,6 @@ func (t *PCTransport) Close() {
 	}
 	t.unlabeledDataChannels = nil
 	t.lock.Unlock()
-
-	if err := t.pc.Close(); err != nil {
-		t.params.Logger.Warnw("unclean close of peer connection", err)
-	}
 
 	t.outputAndClearICEStats()
 }
