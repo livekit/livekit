@@ -31,6 +31,7 @@ type AgentDispatchService struct {
 	topicFormatter      rpc.TopicFormatter
 	roomAllocator       RoomAllocator
 	router              routing.MessageRouter
+	roomStore           ServiceStore
 }
 
 func NewAgentDispatchService(
@@ -38,12 +39,14 @@ func NewAgentDispatchService(
 	topicFormatter rpc.TopicFormatter,
 	roomAllocator RoomAllocator,
 	router routing.MessageRouter,
+	roomStore ServiceStore,
 ) *AgentDispatchService {
 	return &AgentDispatchService{
 		agentDispatchClient: agentDispatchClient,
 		topicFormatter:      topicFormatter,
 		roomAllocator:       roomAllocator,
 		router:              router,
+		roomStore:           roomStore,
 	}
 }
 
@@ -91,6 +94,23 @@ func (ag *AgentDispatchService) ListDispatch(ctx context.Context, req *livekit.L
 	err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room))
 	if err != nil {
 		return nil, twirpAuthError(err)
+	}
+
+	// Short-circuit when the room has not been created yet. The
+	// `agentDispatchClient.ListDispatch` call below publishes onto a
+	// per-room psrpc topic (see `topicFormatter.RoomTopic`); the
+	// matching `AgentDispatchInternal|REQ` subscriber is only
+	// registered inside `RoomManager.getOrCreateRoom` (called by
+	// `CreateDispatch` via `router.CreateRoom`). For a brand-new room
+	// nobody is subscribed yet, so the psrpc client times out at its
+	// default 3s with `503 "no response from servers"`. Since a
+	// non-existent room can have no dispatches, returning an empty
+	// list immediately is both correct and ~3s faster.
+	if ag.roomStore != nil {
+		exists, existsErr := ag.roomStore.RoomExists(ctx, livekit.RoomName(req.Room))
+		if existsErr == nil && !exists {
+			return &livekit.ListAgentDispatchResponse{}, nil
+		}
 	}
 
 	return ag.agentDispatchClient.ListDispatch(ctx, ag.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), req)
