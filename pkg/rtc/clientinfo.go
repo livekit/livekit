@@ -15,6 +15,7 @@
 package rtc
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -116,6 +117,17 @@ func (c ClientInfo) SupportsSctpZeroChecksum() bool {
 
 func (c ClientInfo) SupportsTransceiverReuse() bool {
 	return !c.isSafari()
+}
+
+func (c ClientInfo) HasCapability(cap livekit.ClientInfo_Capability) bool {
+	if c.ClientInfo == nil {
+		return false
+	}
+	return slices.Contains(c.ClientInfo.Capabilities, cap)
+}
+
+func (c ClientInfo) SupportsPacketTrailer() bool {
+	return c.HasCapability(livekit.ClientInfo_CAP_PACKET_TRAILER)
 }
 
 // compareVersion compares a semver against the current client SDK version
