@@ -1170,6 +1170,9 @@ func (p *ParticipantImpl) HandleOffer(sd *livekit.SessionDescription) error {
 
 func (p *ParticipantImpl) onPublisherSetRemoteDescription() {
 	offer := p.TransportManager.LastPublisherOfferPending()
+	if offer == nil {
+		return
+	}
 	parsedOffer, err := offer.Unmarshal()
 	if err != nil {
 		p.pubLogger.Warnw("could not parse offer", err)
