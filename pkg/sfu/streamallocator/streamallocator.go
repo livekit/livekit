@@ -297,7 +297,7 @@ func (s *StreamAllocator) Stop() {
 	// wait for eventsQueue to be done
 	<-s.eventsQueue.Stop()
 
-	s.maybeStopProbe(true)
+	s.maybeStopProbe()
 }
 
 func (s *StreamAllocator) OnStreamStateChange(f func(update *StreamStateUpdate) error) {
@@ -727,7 +727,7 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 	// reset BWE if that persists for a while
 	if s.allowPause && s.state == streamAllocatorStateDeficient && s.params.BWE.CongestionState() != bwe.CongestionStateNone && s.params.Pacer.TimeSinceLastSentPacket() > s.params.Config.PausedMinWait {
 		s.params.Logger.Infow("stream allocator: resetting bwe to enable probing")
-		s.maybeStopProbe(false)
+		s.maybeStopProbe()
 		s.params.BWE.Reset()
 
 		// as BWE is reset, there is no finalizing for active cluster, so reset active cluster id
@@ -741,7 +741,7 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 				"activeProbeClusterId", s.activeProbeClusterId,
 			)
 			s.activeProbeGoalReached = true
-			s.maybeStopProbe(false)
+			s.maybeStopProbe()
 		}
 
 		// finalize any probe that may have finished/aborted
@@ -857,7 +857,7 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 	cscd := event.congestionStateChangeData
 	if cscd.toState != bwe.CongestionStateNone {
 		// end/abort any running probe if channel is not clear
-		s.maybeStopProbe(false)
+		s.maybeStopProbe()
 	}
 
 	// some tracks may have been held at sub-optimal allocation
@@ -906,7 +906,7 @@ func (s *StreamAllocator) setState(state streamAllocatorState) {
 
 	// restart everything when state is STABLE
 	if state == streamAllocatorStateStable {
-		s.maybeStopProbe(false)
+		s.maybeStopProbe()
 
 		s.params.BWE.Reset()
 
@@ -930,7 +930,7 @@ func (s *StreamAllocator) adjustState() {
 
 func (s *StreamAllocator) allocateTrack(track *Track) {
 	// end/abort any probe that may be running when a track specific change needs allocation
-	s.maybeStopProbe(false)
+	s.maybeStopProbe()
 
 	// if not deficient, free pass allocate track
 	bweCongestionState := s.params.BWE.CongestionState()
@@ -1084,8 +1084,8 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	s.adjustState()
 }
 
-func (s *StreamAllocator) maybeStopProbe(force bool) {
-	if s.activeProbeClusterId == ccutils.ProbeClusterIdInvalid && !force {
+func (s *StreamAllocator) maybeStopProbe() {
+	if s.activeProbeClusterId == ccutils.ProbeClusterIdInvalid {
 		return
 	}
 
