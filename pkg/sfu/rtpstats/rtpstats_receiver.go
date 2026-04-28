@@ -835,8 +835,8 @@ func (r *RTPStatsReceiver) GetRtcpReceptionReport(ssrc uint32, proxyFracLost uin
 	defer r.lock.Unlock()
 
 	extHighestSN := r.sequenceNumber.GetExtendedHighest()
-	then, now := r.getAndResetSnapshot(snapshotID, r.sequenceNumber.GetExtendedStart(), extHighestSN)
-	if now == nil || then == nil {
+	then, now, ok := r.getAndResetSnapshot(snapshotID, r.sequenceNumber.GetExtendedStart(), extHighestSN)
+	if !ok {
 		return nil
 	}
 

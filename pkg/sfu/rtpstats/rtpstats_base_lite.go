@@ -320,8 +320,8 @@ func (r *rtpStatsBaseLite) deltaInfoLite(
 	extStartSN uint64,
 	extHighestSN uint64,
 ) (deltaInfoLite *RTPDeltaInfoLite, loggingFields []any, err error) {
-	then, now := r.getAndResetSnapshotLite(snapshotLiteID, extStartSN, extHighestSN)
-	if now == nil || then == nil {
+	then, now, ok := r.getAndResetSnapshotLite(snapshotLiteID, extStartSN, extHighestSN)
+	if !ok {
 		return
 	}
 
@@ -493,9 +493,9 @@ func (r *rtpStatsBaseLite) toProto(packetsExpected, packetsSeenMinusPadding, pac
 	return p
 }
 
-func (r *rtpStatsBaseLite) getAndResetSnapshotLite(snapshotLiteID uint32, extStartSN uint64, extHighestSN uint64) (*snapshotLite, *snapshotLite) {
+func (r *rtpStatsBaseLite) getAndResetSnapshotLite(snapshotLiteID uint32, extStartSN uint64, extHighestSN uint64) (snapshotLite, snapshotLite, bool) {
 	if !r.initialized {
-		return nil, nil
+		return snapshotLite{}, snapshotLite{}, false
 	}
 
 	idx := snapshotLiteID - cFirstSnapshotID
@@ -508,7 +508,7 @@ func (r *rtpStatsBaseLite) getAndResetSnapshotLite(snapshotLiteID uint32, extSta
 	// snapshot now
 	now := r.getSnapshotLite(mono.UnixNano(), extHighestSN+1)
 	r.snapshotLites[idx] = now
-	return &then, &now
+	return then, now, true
 }
 
 func (r *rtpStatsBaseLite) updateGapHistogram(gap int) {
