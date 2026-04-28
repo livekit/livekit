@@ -129,8 +129,10 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 	if isEncrypted {
 		trailer = params.Subscriber.GetTrailer()
 	}
-	stripPacketTrailer := params.MediaTrack.HasPacketTrailer() &&
-		!params.Subscriber.ProtocolVersion().SupportsPacketTrailer()
+	subClientInfo := ClientInfo{ClientInfo: params.Subscriber.GetClientInfo()}
+	subSupportsPacketTrailer := subClientInfo.SupportsPacketTrailer()
+	// Strip packet trailer if track has packet trailer but subscriber does not have cap
+	stripPacketTrailer := params.MediaTrack.HasPacketTrailer() && !subSupportsPacketTrailer
 	downTrack, err := sfu.NewDownTrack(sfu.DownTrackParams{
 		Codecs:             codecs,
 		IsEncrypted:        isEncrypted,
