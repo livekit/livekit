@@ -64,7 +64,10 @@ func NewDataTrack(params DataTrackParams, dti *livekit.DataTrackInfo) *DataTrack
 		}),
 		stats: newDataTrackStats(dataTrackStatsParams{Logger: params.Logger}),
 	}
-	d.params.Logger.Infow("created data track", "name", d.Name())
+	d.params.Logger.Infow("created data track",
+		"name", d.Name(),
+		"uses_e2ee", d.dti.Encryption != livekit.Encryption_NONE,
+	)
 	return d
 }
 
@@ -161,7 +164,7 @@ func (d *DataTrack) DeleteDataDownTrack(subscriberID livekit.ParticipantID) {
 }
 
 func (d *DataTrack) HandlePacket(data []byte, packet *datatrack.Packet, arrivalTime int64) {
-	d.stats.Update(packet, arrivalTime)
+	d.stats.Update(packet, arrivalTime, len(data))
 
 	d.downTrackSpreader.Broadcast(func(dts types.DataTrackSender) {
 		dts.WritePacket(data, packet, arrivalTime)
