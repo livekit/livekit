@@ -38,7 +38,7 @@ type dataTrackStats struct {
 	numPacketsLost        int
 	numPacketsOutOfOrder  int
 	numFrames             int // count of `F` tagged packets, i. e. packets with final packet of frame marker
-	totalBytes            int
+	numBytes              int
 }
 
 func newDataTrackStats(params dataTrackStatsParams) *dataTrackStats {
@@ -51,7 +51,7 @@ func (d *dataTrackStats) Update(packet *datatrack.Packet, arrivalTime int64, pay
 	d.lock.Lock()
 	defer d.lock.Unlock()
 
-	d.totalBytes += payloadLength
+	d.numBytes += payloadLength
 
 	if d.endTime != 0 {
 		return
@@ -104,7 +104,7 @@ func (d *dataTrackStats) Close() {
 			"numPacketsOutOfOrder", d.numPacketsOutOfOrder,
 			"numFrames", d.numFrames,
 			"fps", fps,
-			"totalBytes", d.totalBytes,
+			"numBytes", d.numBytes,
 		)
 	}
 }
