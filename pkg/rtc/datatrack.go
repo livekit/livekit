@@ -64,7 +64,10 @@ func NewDataTrack(params DataTrackParams, dti *livekit.DataTrackInfo) *DataTrack
 		}),
 		stats: newDataTrackStats(dataTrackStatsParams{Logger: params.Logger}),
 	}
-	d.params.Logger.Infow("created data track", "name", d.Name())
+	d.params.Logger.Infow("created data track",
+		"name", d.Name(),
+		"uses_e2ee", d.dti.Encryption != livekit.Encryption_NONE,
+	)
 	return d
 }
 
