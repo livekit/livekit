@@ -481,8 +481,8 @@ func (r *rtpStatsBase) deltaInfo(
 		return
 	}
 
-	then, now := r.getAndResetSnapshot(snapshotID, extStartSN, extHighestSN)
-	if now == nil || then == nil {
+	then, now, ok := r.getAndResetSnapshot(snapshotID, extStartSN, extHighestSN)
+	if !ok {
 		return
 	}
 
@@ -694,9 +694,9 @@ func (r *rtpStatsBase) updateJitter(ets uint64, packetTime int64) float64 {
 	return r.jitter
 }
 
-func (r *rtpStatsBase) getAndResetSnapshot(snapshotID uint32, extStartSN uint64, extHighestSN uint64) (*snapshot, *snapshot) {
+func (r *rtpStatsBase) getAndResetSnapshot(snapshotID uint32, extStartSN uint64, extHighestSN uint64) (snapshot, snapshot, bool) {
 	if !r.initialized || snapshotID < cFirstSnapshotID {
-		return nil, nil
+		return snapshot{}, snapshot{}, false
 	}
 
 	idx := snapshotID - cFirstSnapshotID
@@ -709,7 +709,7 @@ func (r *rtpStatsBase) getAndResetSnapshot(snapshotID uint32, extStartSN uint64,
 	// snapshot now
 	now := r.getSnapshot(mono.UnixNano(), extHighestSN+1)
 	r.snapshots[idx] = now
-	return &then, &now
+	return then, now, true
 }
 
 func (r *rtpStatsBase) getDrift(extStartTS, extHighestTS uint64) (

@@ -106,7 +106,8 @@ type wrappedReceptionReportsLogger struct {
 }
 
 func (w wrappedReceptionReportsLogger) MarshalLogObject(e zapcore.ObjectEncoder) error {
-	for i, rr := range w.senderSnapshotReceiverView.processedReceptionReports {
+	for i := 0; i < w.senderSnapshotReceiverView.processedReceptionReportsSize; i++ {
+		rr := w.senderSnapshotReceiverView.processedReceptionReports[(w.senderSnapshotReceiverView.processedReceptionReportsHead+i)%cMaxProcessedReceptionReports]
 		e.AddReflected(fmt.Sprintf("%d", i), rr)
 	}
 
@@ -195,9 +196,13 @@ type senderSnapshotReceiverView struct {
 	maxRtt    uint32
 	maxJitter float64
 
-	extLastRRSN                uint64
-	intervalStats              intervalStats
-	processedReceptionReports  []rtcp.ReceptionReport
+	extLastRRSN   uint64
+	intervalStats intervalStats
+
+	processedReceptionReports     [cMaxProcessedReceptionReports]rtcp.ReceptionReport
+	processedReceptionReportsHead int
+	processedReceptionReportsSize int
+
 	metadataCacheOverflowCount int
 }
 
@@ -861,12 +866,15 @@ func (r *RTPStatsSender) UpdateFromReceiverReport(rr rtcp.ReceptionReport) (rtt 
 			}
 		}
 		s.receiverView.extLastRRSN = extReceivedRRSN
-		reports := &s.receiverView.processedReceptionReports
-		if len(*reports) >= cMaxProcessedReceptionReports {
-			copy(*reports, (*reports)[1:])
-			(*reports)[len(*reports)-1] = rr
-		} else {
-			*reports = append(*reports, rr)
+
+		s.receiverView.processedReceptionReports[s.receiverView.processedReceptionReportsHead] = rr
+		s.receiverView.processedReceptionReportsHead++
+		if s.receiverView.processedReceptionReportsHead >= cMaxProcessedReceptionReports {
+			s.receiverView.processedReceptionReportsHead = 0
+		}
+		s.receiverView.processedReceptionReportsSize++
+		if s.receiverView.processedReceptionReportsSize > cMaxProcessedReceptionReports {
+			s.receiverView.processedReceptionReportsSize = cMaxProcessedReceptionReports
 		}
 	}
 
@@ -1045,8 +1053,8 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) (*RTPDeltaInfo
 	}
 
 	var deltaStatsSenderView *RTPDeltaInfo
-	thenSenderView, nowSenderView := r.getAndResetSenderSnapshotWindow(senderSnapshotID)
-	if thenSenderView != nil && nowSenderView != nil {
+	thenSenderView, nowSenderView, ok := r.getAndResetSenderSnapshotWindow(senderSnapshotID)
+	if !ok {
 		startTime := thenSenderView.startTime
 		endTime := nowSenderView.startTime
 
@@ -1108,8 +1116,8 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) (*RTPDeltaInfo
 
 	var deltaStatsReceiverView *RTPDeltaInfo
 	if r.lastRRTime != 0 {
-		thenReceiverView, nowReceiverView := r.getAndResetSenderSnapshotReceiverView(senderSnapshotID)
-		if thenReceiverView != nil && nowReceiverView != nil {
+		thenReceiverView, nowReceiverView, ok := r.getAndResetSenderSnapshotReceiverView(senderSnapshotID)
+		if !ok {
 			startTime := thenReceiverView.startTime
 			endTime := nowReceiverView.startTime
 
@@ -1213,9 +1221,9 @@ func (r *RTPStatsSender) ToProto() *livekit.RTPStats {
 	return p
 }
 
-func (r *RTPStatsSender) getAndResetSenderSnapshotWindow(senderSnapshotID uint32) (*senderSnapshotWindow, *senderSnapshotWindow) {
+func (r *RTPStatsSender) getAndResetSenderSnapshotWindow(senderSnapshotID uint32) (senderSnapshotWindow, senderSnapshotWindow, bool) {
 	if !r.initialized || senderSnapshotID < cFirstSnapshotID {
-		return nil, nil
+		return senderSnapshotWindow{}, senderSnapshotWindow{}, false
 	}
 
 	idx := senderSnapshotID - cFirstSnapshotID
@@ -1227,7 +1235,7 @@ func (r *RTPStatsSender) getAndResetSenderSnapshotWindow(senderSnapshotID uint32
 
 	// snapshot now
 	r.senderSnapshots[idx].senderView = r.getSenderSnapshotWindow(mono.UnixNano())
-	return &then.senderView, &r.senderSnapshots[idx].senderView
+	return then.senderView, r.senderSnapshots[idx].senderView, true
 }
 
 func (r *RTPStatsSender) getSenderSnapshotWindow(startTime int64) senderSnapshotWindow {
@@ -1254,9 +1262,9 @@ func (r *RTPStatsSender) getSenderSnapshotWindow(startTime int64) senderSnapshot
 	}
 }
 
-func (r *RTPStatsSender) getAndResetSenderSnapshotReceiverView(senderSnapshotID uint32) (*senderSnapshotReceiverView, *senderSnapshotReceiverView) {
+func (r *RTPStatsSender) getAndResetSenderSnapshotReceiverView(senderSnapshotID uint32) (senderSnapshotReceiverView, senderSnapshotReceiverView, bool) {
 	if !r.initialized || r.lastRRTime == 0 || senderSnapshotID < cFirstSnapshotID {
-		return nil, nil
+		return senderSnapshotReceiverView{}, senderSnapshotReceiverView{}, false
 	}
 
 	idx := senderSnapshotID - cFirstSnapshotID
@@ -1268,7 +1276,7 @@ func (r *RTPStatsSender) getAndResetSenderSnapshotReceiverView(senderSnapshotID 
 
 	// snapshot now
 	r.senderSnapshots[idx].receiverView = r.getSenderSnapshotReceiverView(r.lastRRTime, &then.receiverView)
-	return &then.receiverView, &r.senderSnapshots[idx].receiverView
+	return then.receiverView, r.senderSnapshots[idx].receiverView, true
 }
 
 func (r *RTPStatsSender) getSenderSnapshotReceiverView(startTime int64, s *senderSnapshotReceiverView) senderSnapshotReceiverView {
@@ -1347,11 +1355,13 @@ func (r *RTPStatsSender) clearSnInfos(extStartInclusive uint64, extEndExclusive 
 		return
 	}
 
+	if extEndExclusive-extStartInclusive > uint64(len(r.snInfos)) {
+		clear(r.snInfos)
+		return
+	}
+
 	for esn := extStartInclusive; esn != extEndExclusive; esn++ {
-		snInfo := &r.snInfos[int(esn)%len(r.snInfos)]
-		snInfo.pktSize = 0
-		snInfo.hdrSize = 0
-		snInfo.flags = 0
+		r.snInfos[int(esn)%len(r.snInfos)] = snInfo{}
 	}
 }
 
@@ -1380,8 +1390,7 @@ func (r *RTPStatsSender) getIntervalStats(
 	intervalStats.packetsNotFoundMetadata = (extEndExclusive - extStartInclusive) - (extEndExclusiveClamped - extStartInclusiveClamped)
 
 	for esn := extStartInclusiveClamped; esn != extEndExclusiveClamped; esn++ {
-		slot := r.getSnInfoOutOfOrderSlot(esn, ehsn)
-		snInfo := &r.snInfos[slot]
+		snInfo := &r.snInfos[int(esn)%len(r.snInfos)]
 		switch {
 		case snInfo.pktSize == 0:
 			intervalStats.packetsLostFeed++
