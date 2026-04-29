@@ -147,6 +147,25 @@ func selectAlternativeAudioCodec(enabledCodecs []*livekit.Codec) string {
 	return mime.MimeTypeOpus.String()
 }
 
+// mergeCodecsByMime returns a union b, deduplicated by mime type.
+func mergeCodecsByMime(a, b []*livekit.Codec) []*livekit.Codec {
+	merged := make([]*livekit.Codec, 0, len(a)+len(b))
+	merged = append(merged, a...)
+	for _, c := range b {
+		seen := false
+		for _, existing := range a {
+			if mime.IsMimeTypeStringEqual(c.Mime, existing.Mime) {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			merged = append(merged, c)
+		}
+	}
+	return merged
+}
+
 func filterCodecs(
 	codecs []webrtc.RTPCodecParameters,
 	enabledCodecs []*livekit.Codec,

@@ -705,3 +705,74 @@ func TestSinglePCMediaEngineUnionsCodecs(t *testing.T) {
 	require.True(t, sdpHasH264(videoMSectionCodecs(singlePC)),
 		"single-PC publisher must advertise H.264 from the subscribe list even when it's stripped from the publish list")
 }
+
+// Regression test for restrictReceiverCodecsToPublishList: subscribe-only
+// codecs (e.g., H.264) registered for subscriptions must not leak into the
+// recv-side m-section of an answer, or the peer could publish them.
+func TestSinglePCAnswerStripsSubscribeOnlyCodecsFromRecvSide(t *testing.T) {
+	publishCodecs := []*livekit.Codec{
+		{Mime: mime.MimeTypeOpus.String()},
+		{Mime: mime.MimeTypeVP8.String()},
+	}
+	subscribeCodecs := []*livekit.Codec{
+		{Mime: mime.MimeTypeOpus.String()},
+		{Mime: mime.MimeTypeVP8.String()},
+		{Mime: mime.MimeTypeH264.String()},
+	}
+
+	handler := &transportfakes.FakeHandler{}
+	server, err := NewPCTransport(TransportParams{
+		Config:                 &WebRTCConfig{},
+		EnabledPublishCodecs:   publishCodecs,
+		EnabledSubscribeCodecs: subscribeCodecs,
+		IsSendSide:             true,
+		Handler:                handler,
+	})
+	require.NoError(t, err)
+	defer server.Close()
+
+	var clientME webrtc.MediaEngine
+	require.NoError(t, registerCodecs(&clientME, subscribeCodecs, RTCPFeedbackConfig{}, false))
+	client, err := webrtc.NewAPI(webrtc.WithMediaEngine(&clientME)).NewPeerConnection(webrtc.Configuration{})
+	require.NoError(t, err)
+	defer client.Close()
+
+	_, err = client.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{
+		Direction: webrtc.RTPTransceiverDirectionSendonly,
+	})
+	require.NoError(t, err)
+	offer, err := client.CreateOffer(nil)
+	require.NoError(t, err)
+	require.NoError(t, client.SetLocalDescription(offer))
+
+	var answer atomic.Pointer[webrtc.SessionDescription]
+	handler.OnAnswerCalls(func(sd webrtc.SessionDescription, _ uint32, _ map[string]string) error {
+		answer.Store(&sd)
+		return nil
+	})
+	require.NoError(t, server.HandleRemoteDescription(*client.LocalDescription(), 1))
+
+	require.Eventually(t, func() bool {
+		return answer.Load() != nil
+	}, 5*time.Second, 10*time.Millisecond, "server did not produce answer")
+
+	parsed, err := answer.Load().Unmarshal()
+	require.NoError(t, err)
+
+	var videoSection *sdp.MediaDescription
+	for _, m := range parsed.MediaDescriptions {
+		if m.MediaName.Media == "video" {
+			videoSection = m
+			break
+		}
+	}
+	require.NotNil(t, videoSection, "answer missing video m-section")
+
+	for _, a := range videoSection.Attributes {
+		if a.Key != "rtpmap" {
+			continue
+		}
+		require.NotContains(t, a.Value, "H264/",
+			"answer must not advertise H.264 in recv-side m-section: %s", a.Value)
+	}
+}

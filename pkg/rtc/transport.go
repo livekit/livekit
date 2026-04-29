@@ -341,25 +341,10 @@ func newPeerConnection(
 	// They still decode if the actual stream is H.264 High Profile, but do not handle it well in signalling.
 	// So, disable H.264 High Profile for SUBSCRIBER peer connection to ensure it is not offered.
 	//
-	// In single-PC mode both publish and subscribe codec lists are set on the same
-	// PC; the MediaEngine has to register the union so that codecs disabled for
-	// publish are still negotiable on the subscribe side. Per-direction filtering
-	// then happens at the transceiver level via SetCodecPreferences in
-	// configureSenderCodecs / the publish-side AddTrack flow in participant.go.
-	mediaEngineCodecs := append([]*livekit.Codec{}, params.EnabledPublishCodecs...)
-	for _, c := range params.EnabledSubscribeCodecs {
-		seen := false
-		for _, existing := range params.EnabledPublishCodecs {
-			if mime.IsMimeTypeStringEqual(c.Mime, existing.Mime) {
-				seen = true
-				break
-			}
-		}
-		if !seen {
-			mediaEngineCodecs = append(mediaEngineCodecs, c)
-		}
-	}
-	me, err := createMediaEngine(mediaEngineCodecs, directionConfig, params.IsOfferer)
+	// Single-PC mode registers the union of publish and subscribe codecs so subscriptions
+	// can negotiate subscribe-only codecs; per-direction filtering happens at the transceiver
+	// level (configureSenderCodecs, restrictReceiverCodecsToPublishList).
+	me, err := createMediaEngine(mergeCodecsByMime(params.EnabledPublishCodecs, params.EnabledSubscribeCodecs), directionConfig, params.IsOfferer)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -2756,6 +2741,8 @@ func (t *PCTransport) createAndSendAnswer() error {
 	t.numRequestSentAudios, t.numRequestSentVideos = 0, 0
 	t.lock.Unlock()
 
+	t.restrictReceiverCodecsToPublishList()
+
 	answer, err := t.pc.CreateAnswer(nil)
 	if err != nil {
 		if errors.Is(err, webrtc.ErrConnectionClosed) {
@@ -3140,6 +3127,34 @@ func configureSenderCodecs(
 		filterOutH264HighProfile,
 	)
 	tr.SetCodecPreferences(filteredCodecs)
+}
+
+// restrictReceiverCodecsToPublishList narrows recv-side transceiver codec
+// preferences to the publish list, so the answer doesn't advertise
+// subscribe-only codecs as receivable. No-op in dual-PC mode.
+func (t *PCTransport) restrictReceiverCodecsToPublishList() {
+	for _, tr := range t.pc.GetTransceivers() {
+		if tr.Direction() != webrtc.RTPTransceiverDirectionRecvonly &&
+			tr.Direction() != webrtc.RTPTransceiverDirectionSendrecv {
+			continue
+		}
+		receiver := tr.Receiver()
+		if receiver == nil {
+			continue
+		}
+		filtered := filterCodecs(
+			receiver.GetParameters().Codecs,
+			t.params.EnabledPublishCodecs,
+			t.params.DirectionConfig.RTCPFeedback,
+			false,
+		)
+		if len(filtered) == 0 {
+			continue
+		}
+		if err := tr.SetCodecPreferences(filtered); err != nil {
+			t.params.Logger.Warnw("failed to set recv codec preferences", err, "mid", tr.Mid())
+		}
+	}
 }
 
 func configureReceiverCodecs(
