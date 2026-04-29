@@ -59,6 +59,7 @@ type SignalConn interface {
 	ReadWorkerMessage() (*livekit.WorkerMessage, int, error)
 	SetReadDeadline(time.Time) error
 	Close() error
+	CloseWithReason(reason string) error
 }
 
 func JobStatusIsEnded(s livekit.JobStatus) bool {

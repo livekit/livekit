@@ -212,6 +212,10 @@ func (w *AgentWorker) Close() error {
 	return nil
 }
 
+func (w *AgentWorker) CloseWithReason(_ string) error {
+	return w.Close()
+}
+
 // Closed returns a channel that is closed when the connection is closed by the server
 func (w *AgentWorker) Closed() <-chan struct{} {
 	return w.fuse.Watch()
