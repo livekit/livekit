@@ -650,23 +650,26 @@ func (t *MediaTrackReceiver) updateTrackInfoOfReceivers() {
 }
 
 func (t *MediaTrackReceiver) MaybeSetSimulcast() {
-	receivers := t.loadReceivers()
-	if len(receivers) > 0 {
-		// only primary receiver (i.e. receiver at index 0) for legacy use case
-		if wr, ok := receivers[0].TrackReceiver.(*sfu.WebRTCReceiver); ok && wr.NumUpTracks() > 0 {
-			t.lock.Lock()
-			trackInfo := t.TrackInfoClone()
-			if trackInfo.Simulcast {
-				t.lock.Unlock()
-				return
-			}
-			trackInfo.Simulcast = true
-			t.trackInfo.Store(trackInfo)
-			t.lock.Unlock()
-
-			t.updateTrackInfoOfReceivers()
-		}
+	// only primary receiver (i.e. receiver at index 0) for legacy use case
+	primaryReceiver := t.PrimaryReceiver()
+	if primaryReceiver == nil {
+		return
 	}
+	if wr, ok := primaryReceiver.(*sfu.WebRTCReceiver); !ok || wr.NumUpTracks() < 2 {
+		return
+	}
+
+	t.lock.Lock()
+	trackInfo := t.TrackInfoClone()
+	if trackInfo.Simulcast {
+		t.lock.Unlock()
+		return
+	}
+	trackInfo.Simulcast = true
+	t.trackInfo.Store(trackInfo)
+	t.lock.Unlock()
+
+	t.updateTrackInfoOfReceivers()
 }
 
 func (t *MediaTrackReceiver) SetLayerSsrcsForRid(mimeType mime.MimeType, rid string, ssrc uint32, repairSSRC uint32) {
