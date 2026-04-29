@@ -200,6 +200,20 @@ func (w *WebRTCReceiver) AddUpTrack(track TrackRemote, buff *buffer.Buffer) erro
 	return nil
 }
 
+func (w *WebRTCReceiver) NumUpTracks() int {
+	numUpTracks := 0
+
+	w.upTracksMu.Lock()
+	for _, track := range w.upTracks {
+		if track != nil {
+			numUpTracks++
+		}
+	}
+	w.upTracksMu.Unlock()
+
+	return numUpTracks
+}
+
 func (w *WebRTCReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
 	w.ReceiverBase.UpdateTrackInfo(ti)
 	w.connectionStats.UpdateMute(ti.GetMuted())
