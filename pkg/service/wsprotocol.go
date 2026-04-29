@@ -32,8 +32,9 @@ import (
 )
 
 const (
-	pingFrequency = 10 * time.Second
-	pingTimeout   = 2 * time.Second
+	pingFrequency    = 10 * time.Second
+	pingTimeout      = 2 * time.Second
+	closeWriteTimeout = 5 * time.Second
 )
 
 type WSSignalConnection struct {
@@ -58,7 +59,7 @@ func (c *WSSignalConnection) Close() error {
 
 func (c *WSSignalConnection) CloseWithReason(reason string) error {
 	msg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, reason)
-	_ = c.conn.WriteControl(websocket.CloseMessage, msg, time.Now().Add(5*time.Second))
+	_ = c.conn.WriteControl(websocket.CloseMessage, msg, time.Now().Add(closeWriteTimeout))
 	return c.conn.Close()
 }
 
