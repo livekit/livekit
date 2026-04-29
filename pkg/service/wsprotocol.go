@@ -56,6 +56,12 @@ func (c *WSSignalConnection) Close() error {
 	return c.conn.Close()
 }
 
+func (c *WSSignalConnection) CloseWithReason(reason string) error {
+	msg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, reason)
+	_ = c.conn.WriteControl(websocket.CloseMessage, msg, time.Now().Add(5*time.Second))
+	return c.conn.Close()
+}
+
 func (c *WSSignalConnection) SetReadDeadline(deadline time.Time) error {
 	return c.conn.SetReadDeadline(deadline)
 }
