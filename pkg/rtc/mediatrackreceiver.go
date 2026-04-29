@@ -656,7 +656,7 @@ func (t *MediaTrackReceiver) MaybeSetSimulcast() {
 		if wr, ok := receivers[0].TrackReceiver.(*sfu.WebRTCReceiver); ok && wr.NumUpTracks() > 0 {
 			t.lock.Lock()
 			trackInfo := t.TrackInfoClone()
-			if trackInfo.Simulcast == true {
+			if trackInfo.Simulcast {
 				t.lock.Unlock()
 				return
 			}

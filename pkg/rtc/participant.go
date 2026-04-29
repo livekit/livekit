@@ -2290,6 +2290,7 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 	)
 
 	if !isNewTrack && !publishedTrack.HasPendingCodec() && p.IsReady() {
+		p.dirty.Store(true)
 		p.listener().OnTrackUpdated(p, publishedTrack)
 	}
 }
