@@ -307,7 +307,8 @@ type TransportParams struct {
 	Twcc                          *lktwcc.Responder
 	DirectionConfig               DirectionConfig
 	CongestionControlConfig       config.CongestionControlConfig
-	EnabledCodecs                 []*livekit.Codec
+	EnabledPublishCodecs          []*livekit.Codec
+	EnabledSubscribeCodecs        []*livekit.Codec
 	Logger                        logger.Logger
 	Transport                     livekit.SignalTarget
 	SimTracks                     map[uint32]sfuinterceptor.SimulcastTrackInfo
@@ -339,7 +340,26 @@ func newPeerConnection(
 	// Some of the browser clients do not handle H.264 High Profile in signalling properly.
 	// They still decode if the actual stream is H.264 High Profile, but do not handle it well in signalling.
 	// So, disable H.264 High Profile for SUBSCRIBER peer connection to ensure it is not offered.
-	me, err := createMediaEngine(params.EnabledCodecs, directionConfig, params.IsOfferer)
+	//
+	// In single-PC mode both publish and subscribe codec lists are set on the same
+	// PC; the MediaEngine has to register the union so that codecs disabled for
+	// publish are still negotiable on the subscribe side. Per-direction filtering
+	// then happens at the transceiver level via SetCodecPreferences in
+	// configureSenderCodecs / the publish-side AddTrack flow in participant.go.
+	mediaEngineCodecs := append([]*livekit.Codec{}, params.EnabledPublishCodecs...)
+	for _, c := range params.EnabledSubscribeCodecs {
+		seen := false
+		for _, existing := range params.EnabledPublishCodecs {
+			if mime.IsMimeTypeStringEqual(c.Mime, existing.Mime) {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			mediaEngineCodecs = append(mediaEngineCodecs, c)
+		}
+	}
+	me, err := createMediaEngine(mediaEngineCodecs, directionConfig, params.IsOfferer)
 	if err != nil {
 		return nil, nil, nil, err
 	}

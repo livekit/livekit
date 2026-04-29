@@ -140,13 +140,21 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 	t.mediaLossProxy.OnMediaLossUpdate(t.onMediaLossUpdate)
 
 	lgr := LoggerWithPCTarget(params.Logger, livekit.SignalTarget_PUBLISHER)
+	// In single-PC mode the one PC carries both directions, so it needs both
+	// codec lists registered on its MediaEngine. In dual-PC mode the publisher
+	// PC is recvonly, so subscribe codecs are left nil.
+	var publisherSubscribeCodecs []*livekit.Codec
+	if params.UseSinglePeerConnection || params.UseOneShotSignallingMode {
+		publisherSubscribeCodecs = params.EnabledSubscribeCodecs
+	}
 	publisher, err := NewPCTransport(TransportParams{
 		ProtocolVersion:               params.ProtocolVersion,
 		Config:                        params.Config,
 		Twcc:                          params.Twcc,
 		DirectionConfig:               params.Config.Publisher,
 		CongestionControlConfig:       params.CongestionControlConfig,
-		EnabledCodecs:                 params.EnabledPublishCodecs,
+		EnabledPublishCodecs:          params.EnabledPublishCodecs,
+		EnabledSubscribeCodecs:        publisherSubscribeCodecs,
 		Logger:                        lgr,
 		SimTracks:                     params.SimTracks,
 		ClientInfo:                    params.ClientInfo,
@@ -173,7 +181,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 			Config:                        params.Config,
 			DirectionConfig:               params.Config.Subscriber,
 			CongestionControlConfig:       params.CongestionControlConfig,
-			EnabledCodecs:                 params.EnabledSubscribeCodecs,
+			EnabledSubscribeCodecs:        params.EnabledSubscribeCodecs,
 			Logger:                        lgr,
 			ClientInfo:                    params.ClientInfo,
 			IsOfferer:                     true,

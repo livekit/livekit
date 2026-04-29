@@ -304,7 +304,8 @@ func (c *RTCClient) createTransport(rtcconf webrtc.Configuration) error {
 	c.publisher, err = rtc.NewPCTransport(rtc.TransportParams{
 		Config:                           &conf,
 		DirectionConfig:                  conf.Subscriber,
-		EnabledCodecs:                    c.enabledCodecs,
+		EnabledPublishCodecs:             c.enabledCodecs,
+		EnabledSubscribeCodecs:           c.enabledCodecs,
 		IsOfferer:                        true,
 		IsSendSide:                       true,
 		Handler:                          publisherHandler,
@@ -389,7 +390,8 @@ func (c *RTCClient) createTransport(rtcconf webrtc.Configuration) error {
 		c.subscriber, err = rtc.NewPCTransport(rtc.TransportParams{
 			Config:                           &conf,
 			DirectionConfig:                  conf.Publisher,
-			EnabledCodecs:                    c.enabledCodecs,
+			EnabledPublishCodecs:             c.enabledCodecs,
+			EnabledSubscribeCodecs:           c.enabledCodecs,
 			Handler:                          subscriberHandler,
 			DatachannelMaxReceiverBufferSize: 1500,
 			DatachannelSlowThreshold:         1024 * 1024 * 1024,

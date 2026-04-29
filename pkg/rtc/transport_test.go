@@ -400,7 +400,7 @@ func TestNegotiationFailed(t *testing.T) {
 func TestFilteringCandidates(t *testing.T) {
 	params := TransportParams{
 		Config: &WebRTCConfig{},
-		EnabledCodecs: []*livekit.Codec{
+		EnabledPublishCodecs: []*livekit.Codec{
 			{Mime: mime.MimeTypeOpus.String()},
 			{Mime: mime.MimeTypeVP8.String()},
 			{Mime: mime.MimeTypeH264.String()},
@@ -634,4 +634,74 @@ func TestConfigureAudioTransceiver(t *testing.T) {
 			}
 		})
 	}
+}
+
+// In single-PC mode the publisher PC carries both publish and subscribe
+// directions. If the MediaEngine were built only from the publish codec list,
+// the SDP offer would not advertise some codecs in the m-section even though
+// the subscribe direction is supposed to support it. This regression-tests
+// the union behavior in newPeerConnection: build the MediaEngine from publish +
+// subscribe codec lists.
+func TestSinglePCMediaEngineUnionsCodecs(t *testing.T) {
+	videoMSectionCodecs := func(transport *PCTransport) []string {
+		_, err := transport.pc.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo)
+		require.NoError(t, err)
+		offer, err := transport.pc.CreateOffer(nil)
+		require.NoError(t, err)
+		parsed, err := offer.Unmarshal()
+		require.NoError(t, err)
+		var rtpmaps []string
+		for _, m := range parsed.MediaDescriptions {
+			if m.MediaName.Media != "video" {
+				continue
+			}
+			for _, a := range m.Attributes {
+				if a.Key == "rtpmap" {
+					rtpmaps = append(rtpmaps, a.Value)
+				}
+			}
+		}
+		return rtpmaps
+	}
+
+	sdpHasH264 := func(rtpmaps []string) bool {
+		for _, r := range rtpmaps {
+			if strings.Contains(r, "H264/") {
+				return true
+			}
+		}
+		return false
+	}
+
+	publishOnly := []*livekit.Codec{
+		{Mime: mime.MimeTypeOpus.String()},
+		{Mime: mime.MimeTypeVP8.String()},
+	}
+	subscribeOnly := []*livekit.Codec{
+		{Mime: mime.MimeTypeOpus.String()},
+		{Mime: mime.MimeTypeVP8.String()},
+		{Mime: mime.MimeTypeH264.String()},
+	}
+
+	// Control: only publish codecs set (dual-PC publisher PC). H.264 absent.
+	dualPC, err := NewPCTransport(TransportParams{
+		Config:               &WebRTCConfig{},
+		EnabledPublishCodecs: publishOnly,
+		Handler:              &transportfakes.FakeHandler{},
+	})
+	require.NoError(t, err)
+	require.False(t, sdpHasH264(videoMSectionCodecs(dualPC)),
+		"dual-PC publisher must not advertise H.264 when it's stripped from the publish list")
+
+	// Single-PC publisher PC: both lists set. H.264 must appear.
+	singlePC, err := NewPCTransport(TransportParams{
+		Config:                 &WebRTCConfig{},
+		EnabledPublishCodecs:   publishOnly,
+		EnabledSubscribeCodecs: subscribeOnly,
+		IsSendSide:             true,
+		Handler:                &transportfakes.FakeHandler{},
+	})
+	require.NoError(t, err)
+	require.True(t, sdpHasH264(videoMSectionCodecs(singlePC)),
+		"single-PC publisher must advertise H.264 from the subscribe list even when it's stripped from the publish list")
 }
