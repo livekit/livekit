@@ -649,6 +649,29 @@ func (t *MediaTrackReceiver) updateTrackInfoOfReceivers() {
 	t.MediaTrackSubscriptions.SetMuted(ti.GetMuted())
 }
 
+func (t *MediaTrackReceiver) MaybeSetSimulcast() {
+	// only primary receiver (i.e. receiver at index 0) for legacy use case
+	primaryReceiver := t.PrimaryReceiver()
+	if primaryReceiver == nil {
+		return
+	}
+	if wr, ok := primaryReceiver.(*sfu.WebRTCReceiver); !ok || wr.NumUpTracks() < 2 {
+		return
+	}
+
+	t.lock.Lock()
+	trackInfo := t.TrackInfoClone()
+	if trackInfo.Simulcast {
+		t.lock.Unlock()
+		return
+	}
+	trackInfo.Simulcast = true
+	t.trackInfo.Store(trackInfo)
+	t.lock.Unlock()
+
+	t.updateTrackInfoOfReceivers()
+}
+
 func (t *MediaTrackReceiver) SetLayerSsrcsForRid(mimeType mime.MimeType, rid string, ssrc uint32, repairSSRC uint32) {
 	t.lock.Lock()
 	trackInfo := t.TrackInfoClone()
@@ -1058,10 +1081,7 @@ func (t *MediaTrackReceiver) GetQualityForDimension(mimeType mime.MimeType, widt
 	if origSize == 0 {
 		for i := len(mediaSizes) - 1; i >= 0; i-- {
 			if mediaSizes[i].Height > 0 {
-				origSize = mediaSizes[i].Height
-				if mediaSizes[i].Width < mediaSizes[i].Height {
-					origSize = mediaSizes[i].Width
-				}
+				origSize = min(mediaSizes[i].Width, mediaSizes[i].Height)
 				break
 			}
 		}

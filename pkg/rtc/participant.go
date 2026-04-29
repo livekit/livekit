@@ -2290,6 +2290,7 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 	)
 
 	if !isNewTrack && !publishedTrack.HasPendingCodec() && p.IsReady() {
+		p.dirty.Store(true)
 		p.listener().OnTrackUpdated(p, publishedTrack)
 	}
 }
@@ -2865,7 +2866,7 @@ func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *l
 
 	if len(req.SimulcastCodecs) == 0 {
 		// clients not supporting simulcast codecs, synthesise a codec
-		videoLayerMode := livekit.VideoLayer_MODE_UNUSED
+		videoLayerMode := livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM
 		if p.params.ClientInfo.isOBS() {
 			videoLayerMode = livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM_INCOMPLETE_RTCP_SR
 		}

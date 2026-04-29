@@ -564,6 +564,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		return newCodec, false
 	}
 
+	t.MediaTrackReceiver.MaybeSetSimulcast()
 	t.MediaTrackReceiver.SetLayerSsrcsForRid(mimeType, track.RID(), uint32(track.SSRC()), 0)
 
 	if regressCodec {
