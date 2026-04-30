@@ -400,7 +400,7 @@ func TestNegotiationFailed(t *testing.T) {
 func TestFilteringCandidates(t *testing.T) {
 	params := TransportParams{
 		Config: &WebRTCConfig{},
-		EnabledCodecs: []*livekit.Codec{
+		EnabledPublishCodecs: []*livekit.Codec{
 			{Mime: mime.MimeTypeOpus.String()},
 			{Mime: mime.MimeTypeVP8.String()},
 			{Mime: mime.MimeTypeH264.String()},
@@ -633,5 +633,147 @@ func TestConfigureAudioTransceiver(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// In single-PC mode the publisher PC carries both publish and subscribe
+// directions. If the MediaEngine were built only from the publish codec list,
+// the SDP offer would not advertise some codecs in the m-section even though
+// the subscribe direction is supposed to support it. This regression-tests
+// the union behavior in newPeerConnection: build the MediaEngine from publish +
+// subscribe codec lists.
+func TestSinglePCMediaEngineUnionsCodecs(t *testing.T) {
+	videoMSectionCodecs := func(transport *PCTransport) []string {
+		_, err := transport.pc.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo)
+		require.NoError(t, err)
+		offer, err := transport.pc.CreateOffer(nil)
+		require.NoError(t, err)
+		parsed, err := offer.Unmarshal()
+		require.NoError(t, err)
+		var rtpmaps []string
+		for _, m := range parsed.MediaDescriptions {
+			if m.MediaName.Media != "video" {
+				continue
+			}
+			for _, a := range m.Attributes {
+				if a.Key == "rtpmap" {
+					rtpmaps = append(rtpmaps, a.Value)
+				}
+			}
+		}
+		return rtpmaps
+	}
+
+	sdpHasH264 := func(rtpmaps []string) bool {
+		for _, r := range rtpmaps {
+			if strings.Contains(r, "H264/") {
+				return true
+			}
+		}
+		return false
+	}
+
+	publishOnly := []*livekit.Codec{
+		{Mime: mime.MimeTypeOpus.String()},
+		{Mime: mime.MimeTypeVP8.String()},
+	}
+	subscribeOnly := []*livekit.Codec{
+		{Mime: mime.MimeTypeOpus.String()},
+		{Mime: mime.MimeTypeVP8.String()},
+		{Mime: mime.MimeTypeH264.String()},
+	}
+
+	// Control: only publish codecs set (dual-PC publisher PC). H.264 absent.
+	dualPC, err := NewPCTransport(TransportParams{
+		Config:               &WebRTCConfig{},
+		EnabledPublishCodecs: publishOnly,
+		Handler:              &transportfakes.FakeHandler{},
+	})
+	require.NoError(t, err)
+	require.False(t, sdpHasH264(videoMSectionCodecs(dualPC)),
+		"dual-PC publisher must not advertise H.264 when it's stripped from the publish list")
+
+	// Single-PC publisher PC: both lists set. H.264 must appear.
+	singlePC, err := NewPCTransport(TransportParams{
+		Config:                 &WebRTCConfig{},
+		EnabledPublishCodecs:   publishOnly,
+		EnabledSubscribeCodecs: subscribeOnly,
+		IsSendSide:             true,
+		Handler:                &transportfakes.FakeHandler{},
+	})
+	require.NoError(t, err)
+	require.True(t, sdpHasH264(videoMSectionCodecs(singlePC)),
+		"single-PC publisher must advertise H.264 from the subscribe list even when it's stripped from the publish list")
+}
+
+// Regression test for restrictReceiverCodecsToPublishList: subscribe-only
+// codecs (e.g., H.264) registered for subscriptions must not leak into the
+// recv-side m-section of an answer, or the peer could publish them.
+func TestSinglePCAnswerStripsSubscribeOnlyCodecsFromRecvSide(t *testing.T) {
+	publishCodecs := []*livekit.Codec{
+		{Mime: mime.MimeTypeOpus.String()},
+		{Mime: mime.MimeTypeVP8.String()},
+	}
+	subscribeCodecs := []*livekit.Codec{
+		{Mime: mime.MimeTypeOpus.String()},
+		{Mime: mime.MimeTypeVP8.String()},
+		{Mime: mime.MimeTypeH264.String()},
+	}
+
+	handler := &transportfakes.FakeHandler{}
+	server, err := NewPCTransport(TransportParams{
+		Config:                 &WebRTCConfig{},
+		EnabledPublishCodecs:   publishCodecs,
+		EnabledSubscribeCodecs: subscribeCodecs,
+		IsSendSide:             true,
+		Handler:                handler,
+	})
+	require.NoError(t, err)
+	defer server.Close()
+
+	var clientME webrtc.MediaEngine
+	require.NoError(t, registerCodecs(&clientME, subscribeCodecs, RTCPFeedbackConfig{}, false))
+	client, err := webrtc.NewAPI(webrtc.WithMediaEngine(&clientME)).NewPeerConnection(webrtc.Configuration{})
+	require.NoError(t, err)
+	defer client.Close()
+
+	_, err = client.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{
+		Direction: webrtc.RTPTransceiverDirectionSendonly,
+	})
+	require.NoError(t, err)
+	offer, err := client.CreateOffer(nil)
+	require.NoError(t, err)
+	require.Contains(t, offer.SDP, "H264/", "offer must advertise H.264")
+	require.NoError(t, client.SetLocalDescription(offer))
+
+	var answer atomic.Pointer[webrtc.SessionDescription]
+	handler.OnAnswerCalls(func(sd webrtc.SessionDescription, _ uint32, _ map[string]string) error {
+		answer.Store(&sd)
+		return nil
+	})
+	require.NoError(t, server.HandleRemoteDescription(*client.LocalDescription(), 1))
+
+	require.Eventually(t, func() bool {
+		return answer.Load() != nil
+	}, 5*time.Second, 10*time.Millisecond, "server did not produce answer")
+
+	parsed, err := answer.Load().Unmarshal()
+	require.NoError(t, err)
+
+	var videoSection *sdp.MediaDescription
+	for _, m := range parsed.MediaDescriptions {
+		if m.MediaName.Media == "video" {
+			videoSection = m
+			break
+		}
+	}
+	require.NotNil(t, videoSection, "answer missing video m-section")
+
+	for _, a := range videoSection.Attributes {
+		if a.Key != "rtpmap" {
+			continue
+		}
+		require.NotContains(t, a.Value, "H264/",
+			"answer must not advertise H.264 in recv-side m-section: %s", a.Value)
 	}
 }
