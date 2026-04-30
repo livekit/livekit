@@ -743,6 +743,7 @@ func TestSinglePCAnswerStripsSubscribeOnlyCodecsFromRecvSide(t *testing.T) {
 	require.NoError(t, err)
 	offer, err := client.CreateOffer(nil)
 	require.NoError(t, err)
+	require.Contains(t, offer.SDP, "H264/", "offer must advertise H.264")
 	require.NoError(t, client.SetLocalDescription(offer))
 
 	var answer atomic.Pointer[webrtc.SessionDescription]
