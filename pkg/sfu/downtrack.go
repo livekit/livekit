@@ -2018,6 +2018,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 				if r.SSRC != d.ssrc {
 					continue
 				}
+				rr.Reports = append(rr.Reports, r)
 
 				rtt, isRttChanged := d.rtpStats.UpdateFromReceiverReport(r)
 				if isRttChanged {
