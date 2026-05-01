@@ -19,6 +19,7 @@ import (
 
 	"github.com/pion/rtp/codecs"
 
+	"github.com/livekit/mediatransportutil/pkg/codec"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -209,7 +210,7 @@ func (f *FrameRateCalculatorVP8) RecvPacket(ep *ExtPacket) bool {
 		return true
 	}
 
-	vp8, ok := ep.Payload.(VP8)
+	vp8, ok := ep.Payload.(codec.VP8)
 	if !ok {
 		f.logger.Debugw("no vp8 payload", "sn", ep.Packet.SequenceNumber)
 		return false

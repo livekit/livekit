@@ -20,9 +20,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/mediatransportutil/pkg/codec"
 	"github.com/livekit/protocol/logger"
 
-	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
 )
 
@@ -52,7 +52,7 @@ func TestSetLast(t *testing.T) {
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 	}
-	vp8 := &buffer.VP8{
+	vp8 := &codec.VP8{
 		FirstByte:  25,
 		I:          true,
 		M:          true,
@@ -102,7 +102,7 @@ func TestUpdateOffsets(t *testing.T) {
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 	}
-	vp8 := &buffer.VP8{
+	vp8 := &codec.VP8{
 		FirstByte:  25,
 		I:          true,
 		M:          true,
@@ -125,7 +125,7 @@ func TestUpdateOffsets(t *testing.T) {
 		Timestamp:      0xabcdef,
 		SSRC:           0x87654321,
 	}
-	vp8 = &buffer.VP8{
+	vp8 = &codec.VP8{
 		FirstByte:  25,
 		I:          true,
 		M:          true,
@@ -172,7 +172,7 @@ func TestOutOfOrderPictureId(t *testing.T) {
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 	}
-	vp8 := &buffer.VP8{
+	vp8 := &codec.VP8{
 		FirstByte:  25,
 		I:          true,
 		M:          true,
@@ -205,7 +205,7 @@ func TestOutOfOrderPictureId(t *testing.T) {
 	vp8.PictureID = 13469
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 
-	expectedVP8 := &buffer.VP8{
+	expectedVP8 := &codec.VP8{
 		FirstByte:  25,
 		I:          true,
 		M:          true,
@@ -244,7 +244,7 @@ func TestOutOfOrderPictureId(t *testing.T) {
 	vp8.PictureID = 13468
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 
-	expectedVP8 = &buffer.VP8{
+	expectedVP8 = &codec.VP8{
 		FirstByte:  25,
 		I:          true,
 		M:          true,
@@ -275,7 +275,7 @@ func TestTemporalLayerFiltering(t *testing.T) {
 		Timestamp:      0xabcdef,
 		SSRC:           0x12345678,
 	}
-	vp8 := &buffer.VP8{
+	vp8 := &codec.VP8{
 		FirstByte:  25,
 		I:          true,
 		M:          true,
@@ -341,7 +341,7 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 		SSRC:           0x12345678,
 		PayloadSize:    33,
 	}
-	vp8 := &buffer.VP8{
+	vp8 := &codec.VP8{
 		FirstByte:  25,
 		I:          true,
 		M:          true,
@@ -359,7 +359,7 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 	extPkt, _ := testutils.GetTestExtPacketVP8(params, vp8)
 	v.SetLast(extPkt)
 
-	expectedVP8 := &buffer.VP8{
+	expectedVP8 := &codec.VP8{
 		FirstByte:  25,
 		I:          true,
 		M:          true,
@@ -382,7 +382,7 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 	require.Equal(t, marshalledVP8, buf)
 
 	// telling there is a gap in sequence number will add pictures to missing picture cache
-	expectedVP8 = &buffer.VP8{
+	expectedVP8 = &codec.VP8{
 		FirstByte:  25,
 		I:          true,
 		M:          true,
@@ -418,7 +418,7 @@ func TestUpdateAndGetPadding(t *testing.T) {
 		SSRC:           0x12345678,
 		PayloadSize:    20,
 	}
-	vp8 := &buffer.VP8{
+	vp8 := &codec.VP8{
 		FirstByte:  25,
 		I:          true,
 		M:          true,
@@ -440,7 +440,7 @@ func TestUpdateAndGetPadding(t *testing.T) {
 	// getting padding with repeat of last picture
 	buf, err := v.UpdateAndGetPadding(false)
 	require.NoError(t, err)
-	expectedVP8 := buffer.VP8{
+	expectedVP8 := codec.VP8{
 		FirstByte:  16,
 		I:          true,
 		M:          true,
@@ -462,7 +462,7 @@ func TestUpdateAndGetPadding(t *testing.T) {
 	// getting padding with new picture
 	buf, err = v.UpdateAndGetPadding(true)
 	require.NoError(t, err)
-	expectedVP8 = buffer.VP8{
+	expectedVP8 = codec.VP8{
 		FirstByte:  16,
 		I:          true,
 		M:          true,

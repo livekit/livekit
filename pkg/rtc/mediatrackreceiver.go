@@ -26,6 +26,7 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/mediatransportutil/pkg/codec"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -976,7 +977,7 @@ func (t *MediaTrackReceiver) UpdateVideoTrack(update *livekit.UpdateLocalVideoTr
 	t.params.Logger.Debugw("updated video track", "before", logger.Proto(trackInfo), "after", logger.Proto(clonedInfo))
 }
 
-func (t *MediaTrackReceiver) UpdateVideoSize(mimeType mime.MimeType, sizes []buffer.VideoSize) {
+func (t *MediaTrackReceiver) UpdateVideoSize(mimeType mime.MimeType, sizes []codec.VideoSize) {
 	var changed bool
 	t.lock.Lock()
 	trackInfo := t.TrackInfo()
@@ -1062,7 +1063,7 @@ func (t *MediaTrackReceiver) GetQualityForDimension(mimeType mime.MimeType, widt
 
 	trackInfo := t.TrackInfo()
 
-	var mediaSizes []buffer.VideoSize
+	var mediaSizes []codec.VideoSize
 	if receiver := t.Receiver(mimeType); receiver != nil {
 		mediaSizes = receiver.VideoSizes()
 	}

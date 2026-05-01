@@ -21,6 +21,7 @@ import (
 	"github.com/pion/webrtc/v4"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/mediatransportutil/pkg/codec"
 )
 
 // -----------------------------------------------------------
@@ -69,7 +70,7 @@ func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 		ExtTimestamp:      uint64(params.TSCycles<<32) + uint64(params.Timestamp),
 		Arrival:           params.ArrivalTime.UnixNano(),
 		Packet:            &packet,
-		IsKeyFrame:          params.IsKeyFrame,
+		IsKeyFrame:        params.IsKeyFrame,
 		RawPacket:         raw,
 		IsOutOfOrder:      params.IsOutOfOrder,
 	}
@@ -79,7 +80,7 @@ func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 
 // --------------------------------------
 
-func GetTestExtPacketVP8(params *TestExtPacketParams, vp8 *buffer.VP8) (*buffer.ExtPacket, error) {
+func GetTestExtPacketVP8(params *TestExtPacketParams, vp8 *codec.VP8) (*buffer.ExtPacket, error) {
 	ep, err := GetTestExtPacket(params)
 	if err != nil {
 		return nil, err

@@ -23,6 +23,7 @@ import (
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
 
+	"github.com/livekit/mediatransportutil/pkg/codec"
 	protoCodecs "github.com/livekit/protocol/codecs"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
@@ -469,7 +470,7 @@ func (d *DummyReceiver) CodecState() sfu.ReceiverCodecState {
 	return sfu.ReceiverCodecStateNormal
 }
 
-func (d *DummyReceiver) VideoSizes() []buffer.VideoSize {
+func (d *DummyReceiver) VideoSizes() []codec.VideoSize {
 	if receiver := d.getReceiver(); receiver != nil {
 		return receiver.VideoSizes()
 	}
