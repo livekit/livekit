@@ -36,6 +36,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/mediatransportutil/pkg/bucket"
+	"github.com/livekit/mediatransportutil/pkg/codec"
 	"github.com/livekit/mediatransportutil/pkg/nack"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
@@ -79,12 +80,6 @@ type ExtPacket struct {
 	IsBuffered           bool
 }
 
-// VideoSize represents video resolution
-type VideoSize struct {
-	Width  uint32
-	Height uint32
-}
-
 type BufferProvider interface {
 	SetLogger(lgr logger.Logger)
 	SetAudioLevelConfig(audioLevelConfig audio.AudioLevelConfig)
@@ -111,7 +106,7 @@ type BufferProvider interface {
 
 	OnRtcpSenderReport(fn func())
 	OnFpsChanged(fn func())
-	OnVideoSizeChanged(fn func([]VideoSize))
+	OnVideoSizeChanged(fn func([]codec.VideoSize))
 	OnCodecChange(fn func(webrtc.RTPCodecParameters))
 	OnStreamRestart(fn func(string))
 
@@ -192,12 +187,12 @@ type BufferBase struct {
 	// callbacks
 	onRtcpSenderReport func()
 	onFpsChanged       func()
-	onVideoSizeChanged func([]VideoSize)
+	onVideoSizeChanged func([]codec.VideoSize)
 	onCodecChange      func(webrtc.RTPCodecParameters)
 	onStreamRestart    func(string)
 
 	// video size tracking for multiple spatial layers
-	currentVideoSize [DefaultMaxLayerSpatial + 1]VideoSize
+	currentVideoSize [DefaultMaxLayerSpatial + 1]codec.VideoSize
 
 	logger logger.Logger
 
@@ -1065,7 +1060,7 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 	}
 
 	ep.Temporal = 0
-	var videoSize []VideoSize
+	var videoSize []codec.VideoSize
 	if b.ddParser != nil {
 		ddVal, videoLayer, err := b.ddParser.Parse(ep.Packet)
 		if err != nil {
@@ -1088,7 +1083,7 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 
 	switch b.mime {
 	case mime.MimeTypeVP8:
-		vp8Packet := VP8{}
+		vp8Packet := codec.VP8{}
 		if err := vp8Packet.Unmarshal(ep.Packet.Payload); err != nil {
 			b.logger.Warnw("could not unmarshal VP8 packet", err)
 			return err
@@ -1098,7 +1093,7 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 			ep.Temporal = int32(vp8Packet.TID)
 
 			if ep.IsKeyFrame {
-				if sz := ExtractVP8VideoSize(&vp8Packet, ep.Packet.Payload); sz.Width > 0 && sz.Height > 0 {
+				if sz := codec.ExtractVP8VideoSize(&vp8Packet, ep.Packet.Payload); sz.Width > 0 && sz.Height > 0 {
 					videoSize = append(videoSize, sz)
 				}
 			}
@@ -1122,36 +1117,36 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 				Temporal: int32(vp9Packet.TID),
 			}
 			ep.Payload = vp9Packet
-			ep.IsKeyFrame = IsVP9KeyFrame(&vp9Packet, ep.Packet.Payload)
+			ep.IsKeyFrame = codec.IsVP9KeyFrame(&vp9Packet, ep.Packet.Payload)
 
 			if ep.IsKeyFrame {
 				for i := 0; i < len(vp9Packet.Width); i++ {
-					videoSize = append(videoSize, VideoSize{
+					videoSize = append(videoSize, codec.VideoSize{
 						Width:  uint32(vp9Packet.Width[i]),
 						Height: uint32(vp9Packet.Height[i]),
 					})
 				}
 			}
 		} else {
-			ep.IsKeyFrame = IsVP9KeyFrame(nil, ep.Packet.Payload)
+			ep.IsKeyFrame = codec.IsVP9KeyFrame(nil, ep.Packet.Payload)
 		}
 
 	case mime.MimeTypeH264:
-		ep.IsKeyFrame = IsH264KeyFrame(ep.Packet.Payload)
+		ep.IsKeyFrame = codec.IsH264KeyFrame(ep.Packet.Payload)
 		ep.Spatial = InvalidLayerSpatial // h.264 don't have spatial scalability, reset to invalid
 
 		// Check H264 key frame video size
 		if ep.IsKeyFrame {
-			if sz := ExtractH264VideoSize(ep.Packet.Payload); sz.Width > 0 && sz.Height > 0 {
+			if sz := codec.ExtractH264VideoSize(ep.Packet.Payload); sz.Width > 0 && sz.Height > 0 {
 				videoSize = append(videoSize, sz)
 			}
 		}
 
 	case mime.MimeTypeAV1:
-		ep.IsKeyFrame = IsAV1KeyFrame(ep.Packet.Payload)
+		ep.IsKeyFrame = codec.IsAV1KeyFrame(ep.Packet.Payload)
 
 	case mime.MimeTypeH265:
-		ep.IsKeyFrame = IsH265KeyFrame(ep.Packet.Payload)
+		ep.IsKeyFrame = codec.IsH265KeyFrame(ep.Packet.Payload)
 		if ep.DependencyDescriptor == nil {
 			if len(ep.Packet.Payload) < 2 {
 				b.logger.Warnw("invalid H265 packet", nil, "payloadLen", len(ep.Packet.Payload))
@@ -1163,7 +1158,7 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 			ep.Spatial = InvalidLayerSpatial
 
 			if ep.IsKeyFrame {
-				if sz := ExtractH265VideoSize(ep.Packet.Payload); sz.Width > 0 && sz.Height > 0 {
+				if sz := codec.ExtractH265VideoSize(ep.Packet.Payload); sz.Width > 0 && sz.Height > 0 {
 					videoSize = append(videoSize, sz)
 				}
 			}
@@ -1430,7 +1425,7 @@ func (b *BufferBase) OnFpsChanged(f func()) {
 	b.Unlock()
 }
 
-func (b *BufferBase) OnVideoSizeChanged(fn func([]VideoSize)) {
+func (b *BufferBase) OnVideoSizeChanged(fn func([]codec.VideoSize)) {
 	b.Lock()
 	b.onVideoSizeChanged = fn
 	b.Unlock()
@@ -1449,7 +1444,7 @@ func (b *BufferBase) OnStreamRestart(fn func(string)) {
 }
 
 // checkVideoSizeChange checks if video size has changed for a specific spatial layer and fires callback
-func (b *BufferBase) checkVideoSizeChange(videoSizes []VideoSize) {
+func (b *BufferBase) checkVideoSizeChange(videoSizes []codec.VideoSize) {
 	if len(videoSizes) > len(b.currentVideoSize) {
 		b.logger.Warnw(
 			"video size index out of range", nil,
@@ -1460,7 +1455,7 @@ func (b *BufferBase) checkVideoSizeChange(videoSizes []VideoSize) {
 	}
 
 	if len(videoSizes) < len(b.currentVideoSize) {
-		videoSizes = append(videoSizes, make([]VideoSize, len(b.currentVideoSize)-len(videoSizes))...)
+		videoSizes = append(videoSizes, make([]codec.VideoSize, len(b.currentVideoSize)-len(videoSizes))...)
 	}
 
 	changed := false

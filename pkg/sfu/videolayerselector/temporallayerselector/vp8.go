@@ -16,6 +16,7 @@ package temporallayerselector
 
 import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/mediatransportutil/pkg/codec"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -36,7 +37,7 @@ func (v *VP8) Select(extPkt *buffer.ExtPacket, current int32, target int32) (thi
 		return
 	}
 
-	vp8, ok := extPkt.Payload.(buffer.VP8)
+	vp8, ok := extPkt.Payload.(codec.VP8)
 	if !ok {
 		return
 	}

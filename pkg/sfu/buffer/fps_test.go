@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
+	"github.com/livekit/mediatransportutil/pkg/codec"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -35,7 +36,7 @@ type testFrameInfo struct {
 func (f *testFrameInfo) toVP8() *ExtPacket {
 	return &ExtPacket{
 		Packet: &rtp.Packet{Header: f.header},
-		Payload: VP8{
+		Payload: codec.VP8{
 			PictureID: f.framenumber,
 		},
 		VideoLayer: VideoLayer{Spatial: InvalidLayerSpatial, Temporal: int32(f.temporal)},

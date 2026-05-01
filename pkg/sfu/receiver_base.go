@@ -27,6 +27,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/mediatransportutil/pkg/bucket"
+	"github.com/livekit/mediatransportutil/pkg/codec"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -145,7 +146,7 @@ type TrackReceiver interface {
 	CodecState() ReceiverCodecState
 
 	// VideoSizes returns the video size parsed from rtp packet for each spatial layer.
-	VideoSizes() []buffer.VideoSize
+	VideoSizes() []codec.VideoSize
 
 	// closes all associated buffers and issues a resync to all attached downtracks so that
 	// they can resync and have proper sequncing without gaps in sequence numbers / timestamps
@@ -211,7 +212,7 @@ type ReceiverBase struct {
 	trackInfo      *livekit.TrackInfo
 
 	videoSizeMu        sync.RWMutex
-	videoSizes         [buffer.DefaultMaxLayerSpatial + 1]buffer.VideoSize
+	videoSizes         [buffer.DefaultMaxLayerSpatial + 1]codec.VideoSize
 	onVideoSizeChanged func()
 
 	rtt uint32
@@ -771,7 +772,7 @@ func (r *ReceiverBase) setupBuffer(buff buffer.BufferProvider, layer int32, rtt 
 			rt.ForwardRTCPSenderReport(r.params.Codec.PayloadType, layer, srData)
 		}
 	})
-	buff.OnVideoSizeChanged(func(videoSize []buffer.VideoSize) {
+	buff.OnVideoSizeChanged(func(videoSize []codec.VideoSize) {
 		r.videoSizeMu.Lock()
 		if r.videoLayerMode == livekit.VideoLayer_MULTIPLE_SPATIAL_LAYERS_PER_STREAM {
 			copy(r.videoSizes[:], videoSize)
@@ -1248,8 +1249,8 @@ func (r *ReceiverBase) checkCodecChanged(codec webrtc.RTPCodecParameters, header
 	}
 }
 
-func (r *ReceiverBase) VideoSizes() []buffer.VideoSize {
-	var sizes []buffer.VideoSize
+func (r *ReceiverBase) VideoSizes() []codec.VideoSize {
+	var sizes []codec.VideoSize
 	r.videoSizeMu.RLock()
 	defer r.videoSizeMu.RUnlock()
 	for _, v := range r.videoSizes {
