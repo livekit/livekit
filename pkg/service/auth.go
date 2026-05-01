@@ -48,12 +48,14 @@ var (
 
 // authentication middleware
 type APIKeyAuthMiddleware struct {
-	provider auth.KeyProvider
+	provider             auth.KeyProvider
+	tokenRevocationStore TokenRevocationStore
 }
 
-func NewAPIKeyAuthMiddleware(provider auth.KeyProvider) *APIKeyAuthMiddleware {
+func NewAPIKeyAuthMiddleware(provider auth.KeyProvider, tokenRevocationStore TokenRevocationStore) *APIKeyAuthMiddleware {
 	return &APIKeyAuthMiddleware{
-		provider: provider,
+		provider:             provider,
+		tokenRevocationStore: tokenRevocationStore,
 	}
 }
 
@@ -90,14 +92,22 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 			return
 		}
 
-		_, grants, err := v.Verify(secret)
+		claims, grants, err := v.Verify(secret)
 		if err != nil {
 			HandleError(w, r, http.StatusUnauthorized, errors.New("invalid token: "+authToken+", error: "+err.Error()))
 			return
 		}
 
-		// set grants in context
 		ctx := r.Context()
+		if r.URL != nil && len(grants.Identity) > 0 && len(grants.Video.Room) > 0 {
+			revoked, nbf, _ := m.tokenRevocationStore.IsRoomParticipantRevoked(ctx, livekit.ParticipantIdentity(grants.Identity), livekit.RoomName(grants.Video.Room))
+			if revoked && claims.NotBefore != nil && claims.NotBefore.Time().Unix() < nbf.Unix() {
+				HandleError(w, r, http.StatusUnauthorized, errors.New("invalid token"))
+				return
+			}
+		}
+
+		// set grants in context
 		r = r.WithContext(context.WithValue(ctx, grantsKey{}, &grantsValue{
 			claims: grants,
 			apiKey: v.APIKey(),
