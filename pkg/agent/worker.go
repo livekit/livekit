@@ -518,6 +518,11 @@ func (w *Worker) UpdateJobStatus(update *livekit.UpdateJobStatus) (*livekit.JobS
 		return nil, psrpc.NewErrorf(psrpc.NotFound, "received job update for unknown job")
 	}
 
+	// Don't let a failure reason overwrite a job that already succeeded.
+	if job.State.Status == livekit.JobStatus_JS_SUCCESS && update.Status == livekit.JobStatus_JS_FAILED {
+		return proto.Clone(job.State).(*livekit.JobState), nil
+	}
+
 	now := time.Now()
 	job.State.UpdatedAt = now.UnixNano()
 
