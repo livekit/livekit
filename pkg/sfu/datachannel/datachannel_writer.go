@@ -130,7 +130,7 @@ func (w *DataChannelWriter[T]) writeUnreliable(p []byte) (n int, err error) {
 		return 0, err
 	}
 	n, err = w.rawDC.Write(p)
-	if err != nil {
+	if err == nil {
 		w.rate.AddBytes(n, int(w.bufferGetter.BufferedAmount()), mono.Now())
 	}
 
