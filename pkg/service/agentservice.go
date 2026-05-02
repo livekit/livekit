@@ -158,9 +158,10 @@ type AgentHandler struct {
 }
 
 type workerKey struct {
-	agentName string
-	namespace string
-	jobType   livekit.JobType
+	agentName   string
+	namespace   string
+	jobType     livekit.JobType
+	environment string
 }
 
 func NewAgentService(
@@ -255,13 +256,13 @@ func (h *AgentHandler) registerWorker(w *agent.Worker) {
 
 	h.workers[w.ID] = w
 
-	key := workerKey{w.AgentName, w.Namespace, w.JobType}
+	key := workerKey{w.AgentName, w.Namespace, w.JobType, w.Environment}
 
 	workers := h.namespaceWorkers[key]
 	created := len(workers) == 0
 
 	if created {
-		nameTopic := agent.GetAgentTopic(w.AgentName, w.Namespace)
+		nameTopic := agent.GetAgentTopic(w.AgentName, w.Namespace, w.Environment)
 		var typeTopic string
 		switch w.JobType {
 		case livekit.JobType_JT_ROOM:
@@ -320,7 +321,7 @@ func (h *AgentHandler) deregisterWorker(w *agent.Worker) {
 
 	delete(h.workers, w.ID)
 
-	key := workerKey{w.AgentName, w.Namespace, w.JobType}
+	key := workerKey{w.AgentName, w.Namespace, w.JobType, w.Environment}
 
 	workers, ok := h.namespaceWorkers[key]
 	if !ok {
@@ -342,7 +343,7 @@ func (h *AgentHandler) deregisterWorker(w *agent.Worker) {
 		)
 		delete(h.namespaceWorkers, key)
 
-		topic := agent.GetAgentTopic(w.AgentName, w.Namespace)
+		topic := agent.GetAgentTopic(w.AgentName, w.Namespace, w.Environment)
 
 		switch w.JobType {
 		case livekit.JobType_JT_ROOM:
@@ -393,7 +394,7 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 		logger = logger.WithValues("participant", job.Participant.Identity)
 	}
 
-	key := workerKey{job.AgentName, job.Namespace, job.Type}
+	key := workerKey{job.AgentName, job.Namespace, job.Type, job.Environment}
 	attempted := make(map[*agent.Worker]struct{})
 	for {
 		selected, err := h.selectWorkerWeightedByLoad(key, attempted)
@@ -438,7 +439,7 @@ func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 
 	var affinity float32
 	for _, w := range h.workers {
-		if w.AgentName != job.AgentName || w.Namespace != job.Namespace || w.JobType != job.Type {
+		if w.AgentName != job.AgentName || w.Namespace != job.Namespace || w.JobType != job.Type || w.Environment != job.Environment {
 			continue
 		}
 

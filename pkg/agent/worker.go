@@ -23,7 +23,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	pagent "github.com/livekit/protocol/agent"
+	protoagent "github.com/livekit/protocol/agent"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -150,6 +150,7 @@ type WorkerRegistration struct {
 	JobType     livekit.JobType
 	Permissions *livekit.ParticipantPermission
 	ClientIP    string
+	Environment string
 }
 
 func MakeWorkerRegistration() WorkerRegistration {
@@ -196,6 +197,10 @@ func (h *WorkerRegisterer) HandleRegister(req *livekit.RegisterWorkerRequest) er
 		return ErrUnknownJobType
 	}
 
+	if err := protoagent.ValidateEnvironment(req.GetEnvironment()); err != nil {
+		return err
+	}
+
 	permissions := req.AllowedPermissions
 	if permissions == nil {
 		permissions = &livekit.ParticipantPermission{
@@ -211,6 +216,7 @@ func (h *WorkerRegisterer) HandleRegister(req *livekit.RegisterWorkerRequest) er
 	h.registration.Namespace = req.GetNamespace()
 	h.registration.JobType = req.GetType()
 	h.registration.Permissions = permissions
+	h.registration.Environment = req.GetEnvironment()
 	h.registered = true
 
 	_, err := h.conn.WriteServerMessage(&livekit.ServerMessage{
@@ -384,7 +390,7 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobS
 		}
 		attributes[AgentNameAttributeKey] = w.AgentName
 
-		token, err := pagent.BuildAgentToken(
+		token, err := protoagent.BuildAgentToken(
 			w.apiKey,
 			w.apiSecret,
 			job.Room.Name,

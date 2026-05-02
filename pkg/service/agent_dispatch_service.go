@@ -19,11 +19,13 @@ import (
 	"fmt"
 
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/protocol/agent"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
+	"github.com/livekit/psrpc"
 )
 
 type AgentDispatchService struct {
@@ -54,6 +56,10 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 		return nil, twirpAuthError(err)
 	}
 
+	if err := agent.ValidateEnvironment(req.GetEnvironment()); err != nil {
+		return nil, psrpc.NewError(psrpc.InvalidArgument, err)
+	}
+
 	if ag.roomAllocator.AutoCreateEnabled(ctx) {
 		err := ag.roomAllocator.SelectRoomNode(ctx, livekit.RoomName(req.Room), "")
 		if err != nil {
@@ -72,6 +78,7 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 		Room:          req.Room,
 		Metadata:      req.Metadata,
 		RestartPolicy: req.RestartPolicy,
+		Environment:   req.Environment,
 	}
 	return ag.agentDispatchClient.CreateDispatch(ctx, ag.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), dispatch)
 }
