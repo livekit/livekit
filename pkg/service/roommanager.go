@@ -34,6 +34,7 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/observability"
 	"github.com/livekit/protocol/observability/roomobs"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
@@ -472,6 +473,7 @@ func (r *RoomManager) StartSession(
 		LimitConfig:             r.config.Limit,
 		ProtocolVersion:         pv,
 		SessionStartTime:        sessionStartTime,
+		SessionTimer:            observability.NewSessionTimer(sessionStartTime),
 		TelemetryListener:       room.ParticipantTelemetryListener(),
 		Trailer:                 room.Trailer(),
 		PLIThrottleConfig:       r.config.RTC.PLIThrottle,
