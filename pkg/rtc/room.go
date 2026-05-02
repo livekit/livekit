@@ -27,6 +27,7 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
+	protoagent "github.com/livekit/protocol/agent"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -1762,11 +1763,12 @@ func (r *Room) launchRoomAgents(ads []*agentDispatch) {
 
 		go func() {
 			inc := r.agentClient.LaunchJob(context.Background(), &agent.JobRequest{
-				JobType:    livekit.JobType_JT_ROOM,
-				Room:       r.ToProto(),
-				Metadata:   ad.Metadata,
-				AgentName:  ad.AgentName,
-				DispatchId: ad.Id,
+				JobType:     livekit.JobType_JT_ROOM,
+				Room:        r.ToProto(),
+				Metadata:    ad.Metadata,
+				AgentName:   ad.AgentName,
+				DispatchId:  ad.Id,
+				Environment: ad.Environment,
 			})
 			r.handleNewJobs(ad.AgentDispatch, inc)
 			done()
@@ -1790,6 +1792,7 @@ func (r *Room) launchTargetAgents(ads []*agentDispatch, p types.Participant, job
 				Metadata:    ad.Metadata,
 				AgentName:   ad.AgentName,
 				DispatchId:  ad.Id,
+				Environment: ad.Environment,
 			})
 			r.handleNewJobs(ad.AgentDispatch, inc)
 			done()
@@ -1846,12 +1849,16 @@ func (r *Room) createAgentDispatch(dispatch *livekit.AgentDispatch) (*agentDispa
 }
 
 func (r *Room) createAgentDispatchFromRoomDispatch(rad *livekit.RoomAgentDispatch) (*agentDispatch, error) {
+	if err := protoagent.ValidateEnvironment(rad.GetEnvironment()); err != nil {
+		return nil, err
+	}
 	return r.createAgentDispatch(&livekit.AgentDispatch{
 		Id:            guid.New(guid.AgentDispatchPrefix),
 		AgentName:     rad.GetAgentName(),
 		Metadata:      rad.GetMetadata(),
 		Room:          r.protoRoom.Name,
 		RestartPolicy: rad.GetRestartPolicy(),
+		Environment:   rad.GetEnvironment(),
 	})
 }
 
