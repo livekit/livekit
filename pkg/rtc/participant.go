@@ -171,6 +171,7 @@ type ParticipantParams struct {
 	LimitConfig             config.LimitConfig
 	ProtocolVersion         types.ProtocolVersion
 	SessionStartTime        time.Time
+	SessionTimer            *observability.SessionTimer
 	TelemetryListener       types.ParticipantTelemetryListener
 	Trailer                 []byte
 	PLIThrottleConfig       sfu.PLIThrottleConfig
@@ -405,15 +406,15 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		p.supervisor.OnPublicationError(p.onPublicationError)
 	}
 
-	sessionTimer := observability.NewSessionTimer(p.params.SessionStartTime)
 	params.Reporter.RegisterFunc(func(ts time.Time, tx roomobs.ParticipantSessionTx) bool {
 		if dts := p.disconnectedAt.Load(); dts != nil {
 			ts = *dts
 			tx.ReportEndTime(ts)
 		}
 
-		millis, mins := sessionTimer.Advance(ts)
+		millis, secs, mins := p.params.SessionTimer.Advance(ts)
 		tx.ReportDuration(uint16(millis))
+		tx.ReportDurationSeconds(uint16(secs))
 		tx.ReportDurationMinutes(uint8(mins))
 
 		return !p.IsClosed()
