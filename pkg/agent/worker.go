@@ -23,9 +23,8 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	pagent "github.com/livekit/protocol/agent"
-	"github.com/livekit/protocol/livekit"
 	protoagent "github.com/livekit/protocol/agent"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
@@ -391,7 +390,7 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobS
 		}
 		attributes[AgentNameAttributeKey] = w.AgentName
 
-		token, err := pagent.BuildAgentToken(
+		token, err := protoagent.BuildAgentToken(
 			w.apiKey,
 			w.apiSecret,
 			job.Room.Name,
