@@ -73,7 +73,10 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	egressStore := getEgressStore(objectStore)
 	ingressStore := getIngressStore(objectStore)
-	sipStore := getSIPStore(objectStore)
+	sipStore, err := getSIPStore(conf, objectStore)
+	if err != nil {
+		return nil, err
+	}
 	keyProvider, err := createKeyProvider(conf)
 	if err != nil {
 		return nil, err
@@ -298,12 +301,17 @@ func newSIPClient(p rpc.ClientParams) (rpc.SIPClient, error) {
 	})
 }
 
-func getSIPStore(s ObjectStore) SIPStore {
+func getSIPStore(conf *config.Config, s ObjectStore) (SIPStore, error) {
+
+	if conf.SIP.ConfigStore == "filesystem" {
+		return NewFileSIPStore(conf.SIP.ConfigPath)
+	}
+
 	switch store := s.(type) {
 	case *RedisStore:
-		return store
+		return store, nil
 	default:
-		return nil
+		return nil, nil
 	}
 }
 
