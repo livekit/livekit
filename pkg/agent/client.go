@@ -17,6 +17,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -173,7 +174,11 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverut
 				EnableRecording: c.config.EnableUserDataRecording,
 				Environment:     desc.Environment,
 			}
-			resp, err := c.client.JobRequest(context.Background(), topic, jobTypeTopic, job)
+			resp, err := c.client.JobRequest(context.Background(), topic, jobTypeTopic, job, psrpc.WithSelectionOpts(psrpc.SelectionOpts{
+				AffinityTimeout:     psrpc.DefaultAffinityTimeout,
+				ShortCircuitTimeout: psrpc.DefaultAffinityShortCircuit,
+				SelectionFunc:       weightedRandomSelection,
+			}))
 			if err != nil {
 				logger.Infow("failed to send job request", "error", err, "namespace", curNs, "jobType", desc.JobType, "agentName", desc.AgentName)
 				return
@@ -343,4 +348,29 @@ func GetAgentTopic(agentName, namespace, environment string) string {
 		topic += "_" + environment
 	}
 	return topic
+}
+
+func weightedRandomSelection(claims []*psrpc.Claim) (serverID string, error error) {
+	if len(claims) == 0 {
+		return "", psrpc.ErrNoResponse
+	}
+
+	var totalWeight float32
+	for _, c := range claims {
+		totalWeight += c.Affinity
+	}
+
+	if totalWeight <= 0 {
+		return claims[rand.Intn(len(claims))].ServerID, nil
+	}
+
+	r := rand.Float32() * totalWeight
+	for _, c := range claims {
+		r -= c.Affinity
+		if r <= 0 {
+			return c.ServerID, nil
+		}
+	}
+
+	return claims[len(claims)-1].ServerID, nil
 }
