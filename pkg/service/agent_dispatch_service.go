@@ -25,7 +25,7 @@ import (
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
-	"github.com/twitchtv/twirp"
+	"github.com/livekit/psrpc"
 )
 
 type AgentDispatchService struct {
@@ -57,7 +57,7 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 	}
 
 	if err := agent.ValidateEnvironment(req.GetEnvironment()); err != nil {
-		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
+		return nil, psrpc.NewError(psrpc.InvalidArgument, err)
 	}
 
 	if ag.roomAllocator.AutoCreateEnabled(ctx) {
