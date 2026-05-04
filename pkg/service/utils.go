@@ -408,6 +408,10 @@ func IsRTCValidatePath(path string) bool {
 	return path == "/rtc/validate" || path == "/rtc/v1/validate"
 }
 
+func IsAgentWorkerPath(path string) bool {
+	return path == "/agent"
+}
+
 func IsAgentPath(path string) bool {
 	return strings.HasPrefix(path, "/agent")
 }
