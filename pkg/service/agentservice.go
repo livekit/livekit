@@ -158,10 +158,10 @@ type AgentHandler struct {
 }
 
 type workerKey struct {
-	agentName   string
-	namespace   string
-	jobType     livekit.JobType
-	environment string
+	agentName  string
+	namespace  string
+	jobType    livekit.JobType
+	deployment string
 }
 
 func NewAgentService(
@@ -256,13 +256,13 @@ func (h *AgentHandler) registerWorker(w *agent.Worker) {
 
 	h.workers[w.ID] = w
 
-	key := workerKey{w.AgentName, w.Namespace, w.JobType, w.Environment}
+	key := workerKey{w.AgentName, w.Namespace, w.JobType, w.Deployment}
 
 	workers := h.namespaceWorkers[key]
 	created := len(workers) == 0
 
 	if created {
-		nameTopic := agent.GetAgentTopic(w.AgentName, w.Namespace, w.Environment)
+		nameTopic := agent.GetAgentTopic(w.AgentName, w.Namespace, w.Deployment)
 		var typeTopic string
 		switch w.JobType {
 		case livekit.JobType_JT_ROOM:
@@ -321,7 +321,7 @@ func (h *AgentHandler) deregisterWorker(w *agent.Worker) {
 
 	delete(h.workers, w.ID)
 
-	key := workerKey{w.AgentName, w.Namespace, w.JobType, w.Environment}
+	key := workerKey{w.AgentName, w.Namespace, w.JobType, w.Deployment}
 
 	workers, ok := h.namespaceWorkers[key]
 	if !ok {
@@ -343,7 +343,7 @@ func (h *AgentHandler) deregisterWorker(w *agent.Worker) {
 		)
 		delete(h.namespaceWorkers, key)
 
-		topic := agent.GetAgentTopic(w.AgentName, w.Namespace, w.Environment)
+		topic := agent.GetAgentTopic(w.AgentName, w.Namespace, w.Deployment)
 
 		switch w.JobType {
 		case livekit.JobType_JT_ROOM:
@@ -394,7 +394,7 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 		logger = logger.WithValues("participant", job.Participant.Identity)
 	}
 
-	key := workerKey{job.AgentName, job.Namespace, job.Type, job.Environment}
+	key := workerKey{job.AgentName, job.Namespace, job.Type, job.Deployment}
 	attempted := make(map[*agent.Worker]struct{})
 	for {
 		selected, err := h.selectWorkerWeightedByLoad(key, attempted)
@@ -439,7 +439,7 @@ func (h *AgentHandler) JobRequestAffinity(ctx context.Context, job *livekit.Job)
 
 	var affinity float32
 	for _, w := range h.workers {
-		if w.AgentName != job.AgentName || w.Namespace != job.Namespace || w.JobType != job.Type || w.Environment != job.Environment {
+		if w.AgentName != job.AgentName || w.Namespace != job.Namespace || w.JobType != job.Type || w.Deployment != job.Deployment {
 			continue
 		}
 

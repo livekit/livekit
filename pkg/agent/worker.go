@@ -150,7 +150,7 @@ type WorkerRegistration struct {
 	JobType     livekit.JobType
 	Permissions *livekit.ParticipantPermission
 	ClientIP    string
-	Environment string
+	Deployment  string
 }
 
 func MakeWorkerRegistration() WorkerRegistration {
@@ -197,7 +197,7 @@ func (h *WorkerRegisterer) HandleRegister(req *livekit.RegisterWorkerRequest) er
 		return ErrUnknownJobType
 	}
 
-	if err := protoagent.ValidateEnvironment(req.GetEnvironment()); err != nil {
+	if err := protoagent.ValidateDeployment(req.GetDeployment()); err != nil {
 		return err
 	}
 
@@ -216,7 +216,7 @@ func (h *WorkerRegisterer) HandleRegister(req *livekit.RegisterWorkerRequest) er
 	h.registration.Namespace = req.GetNamespace()
 	h.registration.JobType = req.GetType()
 	h.registration.Permissions = permissions
-	h.registration.Environment = req.GetEnvironment()
+	h.registration.Deployment = req.GetDeployment()
 	h.registered = true
 
 	_, err := h.conn.WriteServerMessage(&livekit.ServerMessage{

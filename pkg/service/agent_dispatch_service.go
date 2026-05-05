@@ -56,7 +56,7 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 		return nil, twirpAuthError(err)
 	}
 
-	if err := agent.ValidateEnvironment(req.GetEnvironment()); err != nil {
+	if err := agent.ValidateDeployment(req.GetDeployment()); err != nil {
 		return nil, psrpc.NewError(psrpc.InvalidArgument, err)
 	}
 
@@ -78,7 +78,7 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 		Room:          req.Room,
 		Metadata:      req.Metadata,
 		RestartPolicy: req.RestartPolicy,
-		Environment:   req.Environment,
+		Deployment:    req.Deployment,
 	}
 	return ag.agentDispatchClient.CreateDispatch(ctx, ag.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), dispatch)
 }
