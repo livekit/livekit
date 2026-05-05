@@ -227,7 +227,10 @@ type TURNConfig struct {
 	RelayPortRangeEnd   uint16   `yaml:"relay_range_end,omitempty"`
 	ExternalTLS         bool     `yaml:"external_tls,omitempty"`
 	BindAddresses       []string `yaml:"bind_addresses,omitempty"`
-	AllowPrivatePeerIPs bool     `yaml:"allow_private_peer_ips,omitempty"`
+	// TTL of the TURN credentials in seconds - defaults to 300
+	TTLSeconds int `yaml:"ttl_seconds,omitempty"`
+	// allow private peer IPs (loopback, link-local, multicast, private, unspecified) - defaults to false
+	AllowPrivatePeerIPs bool `yaml:"allow_private_peer_ips,omitempty"`
 	// list of peer CIDRs to deny access to
 	PeerDenyCIDRs []string `yaml:"peer_deny_cidrs,omitempty"`
 }
@@ -424,6 +427,7 @@ var DefaultConfig = Config{
 	TURN: TURNConfig{
 		Enabled:       false,
 		BindAddresses: []string{"0.0.0.0"},
+		TTLSeconds:    300,
 	},
 	NodeSelector: NodeSelectorConfig{
 		Kind:         "any",

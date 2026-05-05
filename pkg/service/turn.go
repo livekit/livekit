@@ -21,6 +21,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jxskiss/base62"
 	"github.com/pion/turn/v4"
@@ -188,21 +189,30 @@ func NewTURNAuthHandler(keyProvider auth.KeyProvider) *TURNAuthHandler {
 	}
 }
 
-func (h *TURNAuthHandler) CreateUsername(apiKey string, pID livekit.ParticipantID) string {
-	return base62.EncodeToString([]byte(fmt.Sprintf("%s|%s", apiKey, pID)))
+func (h *TURNAuthHandler) CreateUsername(apiKey string, pID livekit.ParticipantID, ttlSeconds int) string {
+	expiry := time.Now().Add(time.Duration(ttlSeconds) * time.Second).Unix()
+	return base62.EncodeToString(fmt.Appendf(nil, "%s|%s|%d", apiKey, pID, expiry))
 }
 
-func (h *TURNAuthHandler) ParseUsername(username string) (apiKey string, pID livekit.ParticipantID, err error) {
+func (h *TURNAuthHandler) ParseUsername(username string) (apiKey string, pID livekit.ParticipantID, expiry time.Time, err error) {
 	decoded, err := base62.DecodeString(username)
 	if err != nil {
-		return "", "", err
+		return "", "", time.Time{}, err
 	}
 	parts := strings.Split(string(decoded), "|")
-	if len(parts) != 2 {
-		return "", "", errors.New("invalid username")
+	if len(parts) != 2 && len(parts) != 3 {
+		return "", "", time.Time{}, errors.New("invalid username")
+	}
+	expiry = time.Time{}
+	if len(parts) == 3 {
+		if unixTime, err := strconv.ParseInt(parts[2], 10, 64); err != nil {
+			return "", "", time.Time{}, err
+		} else {
+			expiry = time.Unix(unixTime, 0)
+		}
 	}
 
-	return parts[0], livekit.ParticipantID(parts[1]), nil
+	return parts[0], livekit.ParticipantID(parts[1]), expiry, nil
 }
 
 func (h *TURNAuthHandler) CreatePassword(apiKey string, pID livekit.ParticipantID) (string, error) {
@@ -221,8 +231,18 @@ func (h *TURNAuthHandler) HandleAuth(username, realm string, srcAddr net.Addr) (
 		return nil, false
 	}
 	parts := strings.Split(string(decoded), "|")
-	if len(parts) != 2 {
+	if len(parts) != 2 && len(parts) != 3 {
 		return nil, false
+	}
+	if len(parts) == 3 {
+		if unixTime, err := strconv.ParseInt(parts[2], 10, 64); err != nil {
+			return nil, false
+		} else {
+			expiry := time.Unix(unixTime, 0)
+			if time.Now().After(expiry) {
+				return nil, false
+			}
+		}
 	}
 	password, err := h.CreatePassword(parts[0], livekit.ParticipantID(parts[1]))
 	if err != nil {
