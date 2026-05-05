@@ -1110,6 +1110,7 @@ func TestTurnRelay(t *testing.T) {
 	s := createSingleNodeServer(func(c *config.Config) {
 		c.TURN.Enabled = true
 		c.TURN.UDPPort = 3478
+		c.TURN.AllowPrivatePeerIPs = true
 	})
 	go func() {
 		if err := s.Start(); err != nil {

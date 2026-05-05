@@ -93,12 +93,13 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 		}
 
 		permissionHandler := func(_clientAddr net.Addr, peerIP net.IP) bool {
-			if peerIP.IsLoopback() ||
-				peerIP.IsLinkLocalUnicast() ||
-				peerIP.IsLinkLocalMulticast() ||
-				peerIP.IsMulticast() ||
-				peerIP.IsPrivate() ||
-				peerIP.IsUnspecified() {
+			if !turnConf.AllowPrivatePeerIPs &&
+				(peerIP.IsLoopback() ||
+					peerIP.IsLinkLocalUnicast() ||
+					peerIP.IsLinkLocalMulticast() ||
+					peerIP.IsMulticast() ||
+					peerIP.IsPrivate() ||
+					peerIP.IsUnspecified()) {
 				return false
 			}
 

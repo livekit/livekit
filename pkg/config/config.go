@@ -227,6 +227,7 @@ type TURNConfig struct {
 	RelayPortRangeEnd   uint16   `yaml:"relay_range_end,omitempty"`
 	ExternalTLS         bool     `yaml:"external_tls,omitempty"`
 	BindAddresses       []string `yaml:"bind_addresses,omitempty"`
+	AllowPrivatePeerIPs bool     `yaml:"allow_private_peer_ips,omitempty"`
 	// list of peer CIDRs to deny access to
 	PeerDenyCIDRs []string `yaml:"peer_deny_cidrs,omitempty"`
 }

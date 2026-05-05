@@ -277,6 +277,8 @@ keys:
 #   # optional (set only if not using external TLS termination)
 #   # cert_file: /path/to/cert.pem
 #   # key_file: /path/to/key.pem
+#   # allow private peer IPs (loopback, link-local, multicast, private, unspecified) - defaults to false
+#   allow_private_peer_ips: false
 #   # list of peer CIDRs to deny access to
 #   peer_deny_cidrs:
 #     - 10.0.0.0/8
