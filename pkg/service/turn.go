@@ -92,6 +92,27 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 			relayAddrGen = telemetry.NewRelayAddressGenerator(relayAddrGen)
 		}
 
+		permissionHandler := func(clientAddr net.Addr, peerIP net.IP) bool {
+			if peerIP.IsLoopback() ||
+				peerIP.IsLinkLocalUnicast() ||
+				peerIP.IsLinkLocalMulticast() ||
+				peerIP.IsMulticast() ||
+				peerIP.IsPrivate() ||
+				peerIP.IsUnspecified() {
+				return false
+			}
+
+			for _, cidr := range turnConf.PeerDenyCIDRs {
+				if _, ipnet, err := net.ParseCIDR(cidr); err == nil {
+					if ipnet.Contains(peerIP) {
+						return false
+					}
+				}
+			}
+
+			return true
+		}
+
 		if turnConf.TLSPort > 0 {
 			var listener net.Listener
 			var listenerErr error
@@ -121,6 +142,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 			listenerConfig := turn.ListenerConfig{
 				Listener:              listener,
 				RelayAddressGenerator: relayAddrGen,
+				PermissionHandler:     permissionHandler,
 			}
 			serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
 
@@ -140,6 +162,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 			packetConfig := turn.PacketConnConfig{
 				PacketConn:            udpListener,
 				RelayAddressGenerator: relayAddrGen,
+				PermissionHandler:     permissionHandler,
 			}
 			serverConfig.PacketConnConfigs = append(serverConfig.PacketConnConfigs, packetConfig)
 			logValues = append(logValues, "turn.portUDP", turnConf.UDPPort)
