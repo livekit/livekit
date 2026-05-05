@@ -92,7 +92,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 			relayAddrGen = telemetry.NewRelayAddressGenerator(relayAddrGen)
 		}
 
-		permissionHandler := func(clientAddr net.Addr, peerIP net.IP) bool {
+		permissionHandler := func(_clientAddr net.Addr, peerIP net.IP) bool {
 			if peerIP.IsLoopback() ||
 				peerIP.IsLinkLocalUnicast() ||
 				peerIP.IsLinkLocalMulticast() ||
