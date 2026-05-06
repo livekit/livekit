@@ -421,6 +421,7 @@ func (s *SIPService) CreateSIPDispatchRule(ctx context.Context, req *livekit.Cre
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
+	req.DispatchRule.Upgrade()
 	if err := req.Validate(); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
@@ -629,6 +630,7 @@ func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livek
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
+	req.Upgrade()
 	if err := req.Validate(); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}

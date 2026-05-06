@@ -123,6 +123,7 @@ func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.E
 	if err != nil {
 		return nil, err
 	}
+	resp.Upgrade()
 	resp.SipTrunkId = trunkID
 	return resp, err
 }
