@@ -39,6 +39,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	testclient "github.com/livekit/livekit-server/test/client"
@@ -228,6 +229,113 @@ func TestSinglePublisher(t *testing.T) {
 				for _, t := range p.GetPublishedTracks() {
 					if t.IsSubscriber(c3.ID()) {
 						return "c3 was not a subscriber of c1's tracks"
+					}
+				}
+				return ""
+			})
+		})
+	}
+}
+
+func TestConnectionStats(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	s, finish := setupSingleNodeTest("TestConnectionStats")
+	defer finish()
+
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
+			c1 := createRTCClient("c1", defaultServerPort, testRTCServicePath, nil)
+			c2 := createRTCClient("c2", defaultServerPort, testRTCServicePath, nil)
+			waitUntilConnected(t, c1, c2)
+			defer func() {
+				c1.Stop()
+				c2.Stop()
+			}()
+
+			// both clients publish audio + video
+			t1, err := c1.AddStaticTrack("audio/opus", "audio", "c1audio")
+			require.NoError(t, err)
+			defer t1.Stop()
+			t2, err := c1.AddStaticTrack("video/vp8", "video", "c1video")
+			require.NoError(t, err)
+			defer t2.Stop()
+
+			t3, err := c2.AddStaticTrack("audio/opus", "audio", "c2audio")
+			require.NoError(t, err)
+			defer t3.Stop()
+			t4, err := c2.AddStaticTrack("video/vp8", "video", "c2video")
+			require.NoError(t, err)
+			defer t4.Stop()
+
+			// wait for cross-subscriptions: each client should receive 2 tracks from the other
+			testutils.WithTimeout(t, func() string {
+				if len(c1.SubscribedTracks()[c2.ID()]) != 2 {
+					return "c1 did not subscribe to both tracks from c2"
+				}
+				if len(c2.SubscribedTracks()[c1.ID()]) != 2 {
+					return "c2 did not subscribe to both tracks from c1"
+				}
+				return ""
+			})
+
+			room := s.RoomManager().GetRoom(context.Background(), testRoom)
+			require.NotNil(t, room)
+
+			// wait for upstream and downstream stats to register packets/bytes for every
+			// published track on both participants
+			testutils.WithTimeout(t, func() string {
+				for _, identity := range []livekit.ParticipantIdentity{"c1", "c2"} {
+					p := room.GetParticipant(identity)
+					if p == nil {
+						return fmt.Sprintf("participant %s not found", identity)
+					}
+
+					// upstream (publisher) stats
+					published := p.GetPublishedTracks()
+					if len(published) != 2 {
+						return fmt.Sprintf("%s expected 2 published tracks, got %d", identity, len(published))
+					}
+					for _, mt := range published {
+						lmt, ok := mt.(types.LocalMediaTrack)
+						if !ok {
+							return fmt.Sprintf("%s published track %s is not a LocalMediaTrack", identity, mt.ID())
+						}
+						stats := lmt.GetTrackStats()
+						if stats == nil {
+							return fmt.Sprintf("%s upstream stats nil for track %s", identity, mt.ID())
+						}
+						if stats.Packets == 0 {
+							return fmt.Sprintf("%s upstream stats has no packets for track %s", identity, mt.ID())
+						}
+						if stats.Bytes == 0 {
+							return fmt.Sprintf("%s upstream stats has no bytes for track %s", identity, mt.ID())
+						}
+					}
+
+					// downstream (subscriber) stats
+					subscribed := p.GetSubscribedTracks()
+					if len(subscribed) != 2 {
+						return fmt.Sprintf("%s expected 2 subscribed tracks, got %d", identity, len(subscribed))
+					}
+					for _, st := range subscribed {
+						dt := st.DownTrack()
+						if dt == nil {
+							return fmt.Sprintf("%s subscribed track %s has no DownTrack", identity, st.ID())
+						}
+						stats := dt.GetTrackStats()
+						if stats == nil {
+							return fmt.Sprintf("%s downstream stats nil for track %s", identity, st.ID())
+						}
+						if stats.Packets == 0 {
+							return fmt.Sprintf("%s downstream stats has no packets for track %s", identity, st.ID())
+						}
+						if stats.Bytes == 0 {
+							return fmt.Sprintf("%s downstream stats has no bytes for track %s", identity, st.ID())
+						}
 					}
 				}
 				return ""
