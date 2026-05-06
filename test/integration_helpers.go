@@ -132,14 +132,30 @@ func waitUntilConnected(t *testing.T, clients ...*testclient.RTCClient) {
 	wg := sync.WaitGroup{}
 	for i := range clients {
 		c := clients[i]
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			err := c.WaitUntilConnected()
+		wg.Go(func() {
+			err := c.WaitUntilConnected(5 * time.Second)
 			if err != nil {
 				t.Error(err)
 			}
-		}()
+		})
+	}
+	wg.Wait()
+	if t.Failed() {
+		t.FailNow()
+	}
+}
+
+func ensureNotConnected(t *testing.T, clients ...*testclient.RTCClient) {
+	logger.Infow("checking if clients connect")
+	wg := sync.WaitGroup{}
+	for i := range clients {
+		c := clients[i]
+		wg.Go(func() {
+			err := c.WaitUntilConnected(5 * time.Second)
+			if err == nil {
+				t.Error(fmt.Errorf("expected client to not connect: %s", c.ID()))
+			}
+		})
 	}
 	wg.Wait()
 	if t.Failed() {

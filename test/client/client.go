@@ -691,8 +691,11 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 	return nil
 }
 
-func (c *RTCClient) WaitUntilConnected() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+func (c *RTCClient) WaitUntilConnected(timeout time.Duration) error {
+	if timeout == 0 {
+		timeout = 20 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	for {
 		select {

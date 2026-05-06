@@ -1107,32 +1107,67 @@ func TestTurnRelay(t *testing.T) {
 		return
 	}
 
-	s := createSingleNodeServer(func(c *config.Config) {
-		c.TURN.Enabled = true
-		c.TURN.UDPPort = 3478
-		c.TURN.AllowPrivatePeerIPs = true
-	})
-	go func() {
-		if err := s.Start(); err != nil {
-			logger.Errorw("server returned error", err)
-		}
-	}()
-	defer s.Stop(true)
+	testCases := []struct {
+		name                     string
+		allowRestrictedPeerCIDRs []string
+		denyPeerCIDRs            []string
+		expectedToConnect        bool
+	}{
+		{
+			"allow",
+			[]string{"10.0.0.0/8", "192.168.0.0/16"},
+			nil,
+			true,
+		},
+		{
+			"not-allowed",
+			nil,
+			nil,
+			false,
+		},
+		{
+			"denied-overrides-allowed",
+			[]string{"10.0.0.0/8", "192.168.0.0/16"},
+			[]string{"10.0.0.0/8", "192.168.0.0/16"},
+			false,
+		},
+	}
 
-	waitForServerToStart(s)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := createSingleNodeServer(func(c *config.Config) {
+				c.TURN.Enabled = true
+				c.TURN.UDPPort = 3478
+				c.TURN.AllowRestrictedPeerCIDRs = tc.allowRestrictedPeerCIDRs
+				c.TURN.DenyPeerCIDRs = tc.denyPeerCIDRs
+			})
+			go func() {
+				if err := s.Start(); err != nil {
+					logger.Errorw("server returned error", err)
+				}
+			}()
+			defer s.Stop(true)
 
-	c1 := createRTCClient("relay_c1", defaultServerPort, testRTCServicePathv0, &testclient.Options{
-		AutoSubscribe: true,
-		ForceRelay:    true,
-	})
-	defer c1.Stop()
+			waitForServerToStart(s)
 
-	waitUntilConnected(t, c1)
+			c1 := createRTCClient("relay_c1", defaultServerPort, testRTCServicePathv0, &testclient.Options{
+				AutoSubscribe: true,
+				ForceRelay:    true,
+			})
+			defer c1.Stop()
 
-	testutils.WithTimeout(t, func() string {
-		if !c1.IsLocalCandidateRelaySelected() {
-			return "expected local candidate to be relay"
-		}
-		return ""
-	})
+			if tc.expectedToConnect {
+				waitUntilConnected(t, c1)
+
+				testutils.WithTimeout(t, func() string {
+					if !c1.IsLocalCandidateRelaySelected() {
+						return "expected local candidate to be relay"
+					}
+					return ""
+				})
+			} else {
+				ensureNotConnected(t, c1)
+			}
+		})
+	}
 }

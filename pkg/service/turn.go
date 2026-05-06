@@ -94,17 +94,30 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 		}
 
 		permissionHandler := func(_clientAddr net.Addr, peerIP net.IP) bool {
-			if !turnConf.AllowPrivatePeerIPs &&
-				(peerIP.IsLoopback() ||
-					peerIP.IsLinkLocalUnicast() ||
-					peerIP.IsLinkLocalMulticast() ||
-					peerIP.IsMulticast() ||
-					peerIP.IsPrivate() ||
-					peerIP.IsUnspecified()) {
-				return false
+			// restricted peer IP is denied by default, unless allowed by the allow list,
+			if peerIP.IsLoopback() ||
+				peerIP.IsLinkLocalUnicast() ||
+				peerIP.IsLinkLocalMulticast() ||
+				peerIP.IsMulticast() ||
+				peerIP.IsPrivate() ||
+				peerIP.IsUnspecified() {
+				allowed := false
+				for _, cidr := range turnConf.AllowRestrictedPeerCIDRs {
+					if _, ipnet, err := net.ParseCIDR(cidr); err == nil {
+						if ipnet.Contains(peerIP) {
+							allowed = true
+							break
+						}
+					}
+				}
+				if !allowed {
+					return false
+				}
+
+				// if allowed, check deny list for overrides
 			}
 
-			for _, cidr := range turnConf.PeerDenyCIDRs {
+			for _, cidr := range turnConf.DenyPeerCIDRs {
 				if _, ipnet, err := net.ParseCIDR(cidr); err == nil {
 					if ipnet.Contains(peerIP) {
 						return false

@@ -279,10 +279,17 @@ keys:
 #   # key_file: /path/to/key.pem
 #   # TTL of the TURN credentials in seconds - defaults to 300
 #   ttl_seconds: 300
-#   # allow private peer IPs (loopback, link-local, multicast, private, unspecified) - defaults to false
-#   allow_private_peer_ips: false
-#   # list of peer CIDRs to deny access to
-#   peer_deny_cidrs:
+#   # list of restricted peer CIDRs (loopback, link-local (unicast, multicast), multicast, private, unspecified) to allow access to.
+#   # By default (i. e. empty list), all restricted peer CIDRs are denied access.
+#   # When not empty, only the specified CIDRs are allowed access.
+#   # Note that this check is applied to restricted peer CIDRs only.
+#   allow_restricted_peer_cidrs:
+#     - 10.0.0.0/8
+#     - 192.168.0.0/16
+#   # list of peer CIDRs to deny access to.
+#   # This applies to all peer CIDRs, including restricted ones.
+#   # Deny list takes precedence over allow list.
+#   deny_peer_cidrs:
 #     - 10.0.0.0/8
 #     - 192.168.0.0/16
 

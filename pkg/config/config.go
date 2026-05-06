@@ -229,10 +229,15 @@ type TURNConfig struct {
 	BindAddresses       []string `yaml:"bind_addresses,omitempty"`
 	// TTL of the TURN credentials in seconds - defaults to 300
 	TTLSeconds int `yaml:"ttl_seconds,omitempty"`
-	// allow private peer IPs (loopback, link-local, multicast, private, unspecified) - defaults to false
-	AllowPrivatePeerIPs bool `yaml:"allow_private_peer_ips,omitempty"`
+	// list of restricted peer CIDRs (loopback, link-local (unicast, multicast), multicast, private, unspecified) to allow access to.
+	// By default (i. e. empty list), all restricted peer CIDRs are denied access.
+	// When not empty, only the specified CIDRs are allowed access.
+	// Note that this check is applied to restricted peer CIDRs only.
+	AllowRestrictedPeerCIDRs []string `yaml:"allow_restricted_peer_cidrs,omitempty"`
 	// list of peer CIDRs to deny access to
-	PeerDenyCIDRs []string `yaml:"peer_deny_cidrs,omitempty"`
+	// This applies to all peer CIDRs, including restricted ones.
+	// Deny list takes precedence over allow list.
+	DenyPeerCIDRs []string `yaml:"deny_peer_cidrs,omitempty"`
 }
 
 type NodeSelectorConfig struct {
