@@ -1054,7 +1054,7 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) (*RTPDeltaInfo
 
 	var deltaStatsSenderView *RTPDeltaInfo
 	thenSenderView, nowSenderView, ok := r.getAndResetSenderSnapshotWindow(senderSnapshotID)
-	if !ok {
+	if ok {
 		startTime := thenSenderView.startTime
 		endTime := nowSenderView.startTime
 
@@ -1117,7 +1117,7 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) (*RTPDeltaInfo
 	var deltaStatsReceiverView *RTPDeltaInfo
 	if r.lastRRTime != 0 {
 		thenReceiverView, nowReceiverView, ok := r.getAndResetSenderSnapshotReceiverView(senderSnapshotID)
-		if !ok {
+		if ok {
 			startTime := thenReceiverView.startTime
 			endTime := nowReceiverView.startTime
 
