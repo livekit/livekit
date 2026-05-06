@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -40,6 +41,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	testclient "github.com/livekit/livekit-server/test/client"
@@ -285,8 +287,87 @@ func TestConnectionStats(t *testing.T) {
 			room := s.RoomManager().GetRoom(context.Background(), testRoom)
 			require.NotNil(t, room)
 
-			// wait for upstream and downstream stats to register packets/bytes for every
-			// published track on both participants
+			// hook the upstream WebRTCReceiver.OnStatsUpdate and downstream DownTrack.OnStatsUpdate
+			// callbacks so we can verify the AnalyticsStat delivered through each carries valid
+			// delta data. MediaTrack.Receivers() returns one entry per potential codec; only those
+			// matching the actually published codec are *sfu.WebRTCReceiver, the rest are
+			// placeholder *rtc.DummyReceiver instances that we skip.
+			type statCapture struct {
+				lock sync.Mutex
+				stat *livekit.AnalyticsStat
+			}
+			receiverCaptures := make(map[livekit.TrackID]*statCapture)
+			downTrackCaptures := make(map[livekit.ParticipantIdentity]map[livekit.TrackID]*statCapture)
+			for _, identity := range []livekit.ParticipantIdentity{"c1", "c2"} {
+				p := room.GetParticipant(identity)
+				require.NotNil(t, p, "participant %s not found", identity)
+				for _, mt := range p.GetPublishedTracks() {
+					rc := &statCapture{}
+					receiverCaptures[mt.ID()] = rc
+					var hooked int
+					for _, r := range mt.Receivers() {
+						if dr, ok := r.(*rtc.DummyReceiver); ok {
+							underlying := dr.Receiver()
+							if underlying == nil {
+								continue
+							}
+							r = underlying
+						}
+						wr, ok := r.(*sfu.WebRTCReceiver)
+						if !ok {
+							continue
+						}
+						wr.OnStatsUpdate(func(_ *sfu.WebRTCReceiver, stat *livekit.AnalyticsStat) {
+							rc.lock.Lock()
+							rc.stat = stat
+							rc.lock.Unlock()
+						})
+						hooked++
+					}
+					require.Greater(t, hooked, 0, "no live WebRTCReceiver found for published track %s", mt.ID())
+				}
+
+				dtCaps := make(map[livekit.TrackID]*statCapture)
+				downTrackCaptures[identity] = dtCaps
+				for _, st := range p.GetSubscribedTracks() {
+					dt := st.DownTrack()
+					require.NotNil(t, dt, "subscribed track %s has no DownTrack", st.ID())
+					dc := &statCapture{}
+					dtCaps[st.ID()] = dc
+					dt.OnStatsUpdate(func(_ *sfu.DownTrack, stat *livekit.AnalyticsStat) {
+						dc.lock.Lock()
+						dc.stat = stat
+						dc.lock.Unlock()
+					})
+				}
+			}
+
+			validateAnalyticsStat := func(stat *livekit.AnalyticsStat) string {
+				if stat == nil {
+					return "stat nil"
+				}
+				if len(stat.Streams) == 0 {
+					return "stat has no streams"
+				}
+				var totalPackets uint32
+				var totalBytes uint64
+				for _, s := range stat.Streams {
+					totalPackets += s.PrimaryPackets
+					totalBytes += s.PrimaryBytes
+				}
+				if totalPackets == 0 {
+					return "stat has no packets across streams"
+				}
+				if totalBytes == 0 {
+					return "stat has no bytes across streams"
+				}
+				return ""
+			}
+
+			// wait for cumulative + delta + OnStatsUpdate-derived stats. the
+			// connection-quality update interval is 5s, so allow plenty of time for
+			// the receiver OnStatsUpdate callback to fire at least once and for
+			// the downstream connection-quality scorer to compute a real score.
 			testutils.WithTimeout(t, func() string {
 				for _, identity := range []livekit.ParticipantIdentity{"c1", "c2"} {
 					p := room.GetParticipant(identity)
@@ -294,7 +375,7 @@ func TestConnectionStats(t *testing.T) {
 						return fmt.Sprintf("participant %s not found", identity)
 					}
 
-					// upstream (publisher) stats
+					// upstream (publisher) cumulative stats
 					published := p.GetPublishedTracks()
 					if len(published) != 2 {
 						return fmt.Sprintf("%s expected 2 published tracks, got %d", identity, len(published))
@@ -306,17 +387,30 @@ func TestConnectionStats(t *testing.T) {
 						}
 						stats := lmt.GetTrackStats()
 						if stats == nil {
-							return fmt.Sprintf("%s upstream stats nil for track %s", identity, mt.ID())
+							return fmt.Sprintf("%s upstream cumulative stats nil for track %s", identity, mt.ID())
 						}
 						if stats.Packets == 0 {
-							return fmt.Sprintf("%s upstream stats has no packets for track %s", identity, mt.ID())
+							return fmt.Sprintf("%s upstream cumulative stats has no packets for track %s", identity, mt.ID())
 						}
 						if stats.Bytes == 0 {
-							return fmt.Sprintf("%s upstream stats has no bytes for track %s", identity, mt.ID())
+							return fmt.Sprintf("%s upstream cumulative stats has no bytes for track %s", identity, mt.ID())
+						}
+
+						// upstream delta stats fed into the receiver OnStatsUpdate path
+						rc, ok := receiverCaptures[mt.ID()]
+						if !ok {
+							return fmt.Sprintf("%s missing receiver capture for track %s", identity, mt.ID())
+						}
+						rc.lock.Lock()
+						stat := rc.stat
+						rc.lock.Unlock()
+						if msg := validateAnalyticsStat(stat); msg != "" {
+							return fmt.Sprintf("%s upstream OnStatsUpdate %s for track %s", identity, msg, mt.ID())
 						}
 					}
 
-					// downstream (subscriber) stats
+					// downstream (subscriber) cumulative stats and DownTrack OnStatsUpdate
+					// delta stats captured from the listener path
 					subscribed := p.GetSubscribedTracks()
 					if len(subscribed) != 2 {
 						return fmt.Sprintf("%s expected 2 subscribed tracks, got %d", identity, len(subscribed))
@@ -328,18 +422,30 @@ func TestConnectionStats(t *testing.T) {
 						}
 						stats := dt.GetTrackStats()
 						if stats == nil {
-							return fmt.Sprintf("%s downstream stats nil for track %s", identity, st.ID())
+							return fmt.Sprintf("%s downstream cumulative stats nil for track %s", identity, st.ID())
 						}
 						if stats.Packets == 0 {
-							return fmt.Sprintf("%s downstream stats has no packets for track %s", identity, st.ID())
+							return fmt.Sprintf("%s downstream cumulative stats has no packets for track %s", identity, st.ID())
 						}
 						if stats.Bytes == 0 {
-							return fmt.Sprintf("%s downstream stats has no bytes for track %s", identity, st.ID())
+							return fmt.Sprintf("%s downstream cumulative stats has no bytes for track %s", identity, st.ID())
+						}
+
+						// downstream delta stats fed into the DownTrack OnStatsUpdate path
+						dc, ok := downTrackCaptures[identity][st.ID()]
+						if !ok {
+							return fmt.Sprintf("%s missing DownTrack capture for track %s", identity, st.ID())
+						}
+						dc.lock.Lock()
+						stat := dc.stat
+						dc.lock.Unlock()
+						if msg := validateAnalyticsStat(stat); msg != "" {
+							return fmt.Sprintf("%s downstream OnStatsUpdate %s for track %s", identity, msg, st.ID())
 						}
 					}
 				}
 				return ""
-			})
+			}, 15*time.Second)
 		})
 	}
 }
