@@ -22,18 +22,18 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils/protojson"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 )
 
 const (
-	pingFrequency    = 10 * time.Second
-	pingTimeout      = 2 * time.Second
+	pingFrequency     = 10 * time.Second
+	pingTimeout       = 2 * time.Second
 	closeWriteTimeout = 5 * time.Second
 )
 

@@ -2,8 +2,15 @@ version: "2"
 linters:
   default: none
   enable:
+    - depguard
     - staticcheck
   settings:
+    depguard:
+      rules:
+        protojson:
+          deny:
+            - pkg: google.golang.org/protobuf/encoding/protojson
+              desc: use github.com/livekit/protocol/utils/protojson instead — it sets DiscardUnknown by default to avoid schema-drift footguns
     staticcheck:
       checks:
         - "all"
@@ -14,3 +21,5 @@ linters:
         - "-ST1022"
         - "-SA1019"
         - "-QF1008"
+  exclusions:
+    generated: strict
