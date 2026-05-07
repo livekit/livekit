@@ -21,7 +21,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/mediatransportutil v0.0.0-20260501135216-8818f1b77e59
-	github.com/livekit/protocol v1.45.9-0.20260507061522-7c27b667f698
+	github.com/livekit/protocol v1.45.9-0.20260507075906-0781956bb0b7
 	github.com/livekit/psrpc v0.7.1
 	github.com/mackerelio/go-osstat v0.2.7
 	github.com/magefile/mage v1.17.0
