@@ -333,7 +333,7 @@ func (w *Worker) GetJobState(jobID livekit.JobID) (*livekit.JobState, error) {
 	return utils.CloneProto(j.State), nil
 }
 
-func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobState, error) {
+func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, url *string) (*livekit.JobState, error) {
 	availCh := make(chan *livekit.AvailabilityResponse, 1)
 	job = utils.CloneProto(job)
 	jobID := livekit.JobID(job.Id)
@@ -405,9 +405,8 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job) (*livekit.JobS
 			return nil, err
 		}
 
-		// In OSS, Url is nil, and the used API Key is the same as the one used to connect the worker
 		w.sendRequest(&livekit.ServerMessage{Message: &livekit.ServerMessage_Assignment{
-			Assignment: &livekit.JobAssignment{Job: job, Url: nil, Token: token},
+			Assignment: &livekit.JobAssignment{Job: job, Url: url, Token: token},
 		}})
 
 		state := utils.CloneProto(job.State)
@@ -560,7 +559,7 @@ func (w *Worker) HandleSimulateJob(simulate *livekit.SimulateJobRequest) error {
 	}
 
 	go func() {
-		_, err := w.AssignJob(w.ctx, job)
+		_, err := w.AssignJob(w.ctx, job, nil)
 		if err != nil {
 			w.logger.Errorw("unable to simulate job", err, "jobID", job.Id)
 		}

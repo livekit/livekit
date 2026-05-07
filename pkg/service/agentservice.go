@@ -406,7 +406,7 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 		logger := logger.WithValues("workerID", selected.ID)
 		attempted[selected] = struct{}{}
 
-		state, err := selected.AssignJob(ctx, job)
+		state, err := selected.AssignJob(ctx, job, nil)
 		switch state.GetStatus() {
 		case livekit.JobStatus_JS_RUNNING:
 			logger.Infow("assigned job to worker", "apiKey", selected.APIKey())
