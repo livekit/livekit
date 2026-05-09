@@ -42,6 +42,8 @@ type DataTrackParams struct {
 type DataTrack struct {
 	params DataTrackParams
 
+	logger logger.Logger
+
 	lock             sync.Mutex
 	dti              *livekit.DataTrackInfo
 	subscribedTracks map[livekit.ParticipantID]types.DataDownTrack
@@ -58,21 +60,19 @@ func NewDataTrack(params DataTrackParams, dti *livekit.DataTrackInfo) *DataTrack
 		params:           params,
 		dti:              dti,
 		subscribedTracks: make(map[livekit.ParticipantID]types.DataDownTrack),
-		downTrackSpreader: sfuutils.NewDownTrackSpreader[types.DataTrackSender](sfuutils.DownTrackSpreaderParams{
-			Threshold: 20,
-			Logger:    params.Logger,
-		}),
-		stats: newDataTrackStats(dataTrackStatsParams{Logger: params.Logger}),
 	}
-	d.params.Logger.Infow("created data track",
-		"name", d.Name(),
-		"uses_e2ee", d.dti.Encryption != livekit.Encryption_NONE,
-	)
+	d.logger = params.Logger.WithValues("name", d.Name(), "handle", dti.PubHandle)
+	d.downTrackSpreader = sfuutils.NewDownTrackSpreader[types.DataTrackSender](sfuutils.DownTrackSpreaderParams{
+		Threshold: 20,
+		Logger:    d.logger,
+	})
+	d.stats = newDataTrackStats(dataTrackStatsParams{Logger: d.logger})
+	d.logger.Infow("created data track", "dataTrackInfo", logger.Proto(d.dti))
 	return d
 }
 
 func (d *DataTrack) Close() {
-	d.params.Logger.Infow("closing data track", "name", d.Name())
+	d.logger.Infow("closing data track")
 	d.closed.Break()
 
 	d.stats.Close()
@@ -150,17 +150,17 @@ func (d *DataTrack) AddDataDownTrack(dts types.DataTrackSender) error {
 	}
 
 	if d.downTrackSpreader.HasDownTrack(dts.SubscriberID()) {
-		d.params.Logger.Infow("subscriberID already exists, replacing data downtrack", "subscriberID", dts.SubscriberID())
+		d.logger.Infow("subscriberID already exists, replacing data downtrack", "subscriberID", dts.SubscriberID())
 	}
 
 	d.downTrackSpreader.Store(dts)
-	d.params.Logger.Infow("data downtrack added", "subscriberID", dts.SubscriberID())
+	d.logger.Infow("data downtrack added", "subscriberID", dts.SubscriberID())
 	return nil
 }
 
 func (d *DataTrack) DeleteDataDownTrack(subscriberID livekit.ParticipantID) {
 	d.downTrackSpreader.Free(subscriberID)
-	d.params.Logger.Infow("data downtrack deleted", "subscriberID", subscriberID)
+	d.logger.Infow("data downtrack deleted", "subscriberID", subscriberID)
 }
 
 func (d *DataTrack) HandlePacket(data []byte, packet *datatrack.Packet, arrivalTime int64) {
