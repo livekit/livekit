@@ -43,6 +43,8 @@ const (
 	allocateRetries = 50
 )
 
+var ErrExpired = errors.New("expired")
+
 func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone bool) (*turn.Server, error) {
 	turnConf := conf.TURN
 	if !turnConf.Enabled {
@@ -202,38 +204,47 @@ func NewTURNAuthHandler(keyProvider auth.KeyProvider) *TURNAuthHandler {
 	}
 }
 
-func (h *TURNAuthHandler) CreateUsername(apiKey string, pID livekit.ParticipantID, ttlSeconds int) string {
+func (h *TURNAuthHandler) CreateUsername(apiKey string, pID livekit.ParticipantID, ttlSeconds int) (string, int64) {
 	expiry := time.Now().Add(time.Duration(ttlSeconds) * time.Second).Unix()
-	return base62.EncodeToString(fmt.Appendf(nil, "%s|%s|%d", apiKey, pID, expiry))
+	return base62.EncodeToString(fmt.Appendf(nil, "%s|%s|%d", apiKey, pID, expiry)), expiry
 }
 
-func (h *TURNAuthHandler) ParseUsername(username string) (apiKey string, pID livekit.ParticipantID, expiry time.Time, err error) {
+func (h *TURNAuthHandler) ParseUsername(username string) (apiKey string, pID livekit.ParticipantID, expiry int64, err error) {
 	decoded, err := base62.DecodeString(username)
 	if err != nil {
-		return "", "", time.Time{}, err
+		return "", "", 0, err
 	}
 	parts := strings.Split(string(decoded), "|")
 	if len(parts) != 2 && len(parts) != 3 {
-		return "", "", time.Time{}, errors.New("invalid username")
+		return "", "", 0, errors.New("invalid username")
 	}
-	expiry = time.Time{}
+	expiry = 0
 	if len(parts) == 3 {
-		if unixTime, err := strconv.ParseInt(parts[2], 10, 64); err != nil {
-			return "", "", time.Time{}, err
-		} else {
-			expiry = time.Unix(unixTime, 0)
+		var err error
+		if expiry, err = strconv.ParseInt(parts[2], 10, 64); err != nil {
+			return "", "", 0, err
 		}
 	}
 
 	return parts[0], livekit.ParticipantID(parts[1]), expiry, nil
 }
 
-func (h *TURNAuthHandler) CreatePassword(apiKey string, pID livekit.ParticipantID) (string, error) {
+func (h *TURNAuthHandler) CreatePassword(apiKey string, pID livekit.ParticipantID, expiry int64) (string, error) {
 	secret := h.keyProvider.GetSecret(apiKey)
 	if secret == "" {
 		return "", ErrInvalidAPIKey
 	}
+
 	keyInput := fmt.Sprintf("%s|%s", secret, pID)
+	if expiry != 0 {
+		expiryTime := time.Unix(expiry, 0)
+		if time.Now().After(expiryTime) {
+			return "", ErrExpired
+		}
+
+		keyInput = fmt.Sprintf("%s|%s|%d", secret, pID, expiry)
+	}
+
 	sum := sha256.Sum256([]byte(keyInput))
 	return base62.EncodeToString(sum[:]), nil
 }
@@ -247,17 +258,18 @@ func (h *TURNAuthHandler) HandleAuth(username, realm string, srcAddr net.Addr) (
 	if len(parts) != 2 && len(parts) != 3 {
 		return nil, false
 	}
+	expiry := int64(0)
 	if len(parts) == 3 {
-		if unixTime, err := strconv.ParseInt(parts[2], 10, 64); err != nil {
+		if expiry, err := strconv.ParseInt(parts[2], 10, 64); err != nil {
 			return nil, false
 		} else {
-			expiry := time.Unix(unixTime, 0)
-			if time.Now().After(expiry) {
+			expiryTime := time.Unix(expiry, 0)
+			if time.Now().After(expiryTime) {
 				return nil, false
 			}
 		}
 	}
-	password, err := h.CreatePassword(parts[0], livekit.ParticipantID(parts[1]))
+	password, err := h.CreatePassword(parts[0], livekit.ParticipantID(parts[1]), expiry)
 	if err != nil {
 		logger.Warnw("could not create TURN password", err, "username", username)
 		return nil, false
