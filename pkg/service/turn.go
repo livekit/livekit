@@ -260,7 +260,8 @@ func (h *TURNAuthHandler) HandleAuth(username, realm string, srcAddr net.Addr) (
 	}
 	expiry := int64(0)
 	if len(parts) == 3 {
-		if expiry, err := strconv.ParseInt(parts[2], 10, 64); err != nil {
+		var err error
+		if expiry, err = strconv.ParseInt(parts[2], 10, 64); err != nil {
 			return nil, false
 		} else {
 			expiryTime := time.Unix(expiry, 0)
