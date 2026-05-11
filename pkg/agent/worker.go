@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/multierr"
 	"google.golang.org/protobuf/proto"
 
 	protoagent "github.com/livekit/protocol/agent"
@@ -458,10 +459,7 @@ func (w *Worker) TerminateJob(jobID livekit.JobID, reason rpc.JobTerminateReason
 		Status: status,
 		Error:  errorStr,
 	})
-	if writeErr != nil {
-		return state, writeErr
-	}
-	return state, updateErr
+	return state, multierr.Combine(writeErr, updateErr)
 }
 
 func (w *Worker) UpdateMetadata(metadata string) {
