@@ -1425,6 +1425,20 @@ func TestTurnAuthFailure(t *testing.T) {
 	// username encoded with an api key the server does not know about.
 	unknownAPIKeyUsername, _ := authHandler.CreateUsername("unknown-api-key", pID, 300)
 
+	// password whose hash was generated for an expiry that doesn't match the
+	// one encoded in the username. The server reconstructs the password using
+	// the username's expiry, so the integrity check fails.
+	mismatchedExpiryPassword, err := authHandler.CreatePassword(testApiKey, pID, validExpiry+60)
+	require.NoError(t, err)
+	require.NotEqual(t, validPassword, mismatchedExpiryPassword)
+
+	// password whose hash was generated without an expiry component (the
+	// pre-expiry form of the username/password pair); should not authenticate
+	// against a username that carries an expiry.
+	passwordWithoutExpiry, err := authHandler.CreatePassword(testApiKey, pID, 0)
+	require.NoError(t, err)
+	require.NotEqual(t, validPassword, passwordWithoutExpiry)
+
 	testCases := []struct {
 		name     string
 		username string
@@ -1449,6 +1463,16 @@ func TestTurnAuthFailure(t *testing.T) {
 			name:     "unknown-api-key",
 			username: unknownAPIKeyUsername,
 			password: validPassword,
+		},
+		{
+			name:     "password-expiry-mismatch",
+			username: validUsername,
+			password: mismatchedExpiryPassword,
+		},
+		{
+			name:     "password-missing-expiry",
+			username: validUsername,
+			password: passwordWithoutExpiry,
 		},
 	}
 
