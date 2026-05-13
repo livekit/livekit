@@ -633,6 +633,9 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		d.writeStream = t.WriteStream()
 		if rr := d.params.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, d.ssrc).(*buffer.RTCPReader); rr != nil {
 			rr.OnPacket(func(pkt []byte) {
+				if len(pkt) > 1400 {
+					d.params.Logger.Infow("large RTCP packet received primary", "size", len(pkt))
+				}
 				d.handleRTCP(pkt)
 			})
 			d.rtcpReader = rr
@@ -640,6 +643,9 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		if d.ssrcRTX != 0 {
 			if rr := d.params.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, d.ssrcRTX).(*buffer.RTCPReader); rr != nil {
 				rr.OnPacket(func(pkt []byte) {
+					if len(pkt) > 1400 {
+						d.params.Logger.Infow("large RTCP packet received rtx", "size", len(pkt))
+					}
 					d.handleRTCPRTX(pkt)
 				})
 				d.rtcpReaderRTX = rr
