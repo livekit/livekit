@@ -76,6 +76,10 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 		return 0, err
 	}
 
+	if (p.HeaderSize + len(p.Payload)) > 1400 {
+		b.logger.Infow("large RTP packet send", "size", p.HeaderSize+len(p.Payload))
+	}
+
 	var written int
 	written, err = p.WriteStream.WriteRTP(p.Header, p.Payload)
 	if err != nil {

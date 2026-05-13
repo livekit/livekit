@@ -138,9 +138,11 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 }
 
 // Write adds an RTP Packet, ordering is not guaranteed, newer packets may arrive later
-//
-//go:noinline
 func (b *Buffer) Write(pkt []byte) (n int, err error) {
+	if len(pkt) > 1400 {
+		b.logger.Infow("large RTP packet received", "size", len(pkt))
+	}
+
 	var rtpPacket rtp.Packet
 	err = rtpPacket.Unmarshal(pkt)
 	if err != nil {

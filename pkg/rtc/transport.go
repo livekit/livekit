@@ -1432,6 +1432,11 @@ func (t *PCTransport) GetICEConnectionType() types.ICEConnectionType {
 }
 
 func (t *PCTransport) WriteRTCP(pkts []rtcp.Packet) error {
+	// TODO-CLEANUP-PACKET-SIZE: remove after checking for large packets
+	raw, _ := rtcp.Marshal(pkts)
+	if len(raw) > 1400 {
+		t.params.Logger.Infow("large RTCP packet send", "size", len(raw))
+	}
 	return t.pc.WriteRTCP(pkts)
 }
 
