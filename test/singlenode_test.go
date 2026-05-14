@@ -19,6 +19,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"reflect"
 	"strings"
@@ -27,6 +28,8 @@ import (
 	"time"
 
 	"github.com/pion/sdp/v3"
+	"github.com/pion/stun/v3"
+	"github.com/pion/turn/v4"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 	"github.com/thoas/go-funk"
@@ -41,6 +44,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
 	"github.com/livekit/livekit-server/pkg/testutils"
@@ -1382,6 +1386,122 @@ func TestTurnRelay(t *testing.T) {
 			} else {
 				ensureNotConnected(t, c1)
 			}
+		})
+	}
+}
+
+func TestTurnAuthFailure(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	const turnUDPPort = 3478
+
+	s := createSingleNodeServer(func(c *config.Config) {
+		c.TURN.Enabled = true
+		c.TURN.UDPPort = turnUDPPort
+	})
+	go func() {
+		if err := s.Start(); err != nil {
+			logger.Errorw("server returned error", err)
+		}
+	}()
+	defer s.Stop(true)
+
+	waitForServerToStart(s)
+
+	// build a known-good username/password pair so individual cases can mutate
+	// only the part they are exercising.
+	pID := livekit.ParticipantID("PA_authfail")
+	authHandler := service.NewTURNAuthHandler(auth.NewSimpleKeyProvider(testApiKey, testApiSecret))
+	validUsername, validExpiry := authHandler.CreateUsername(testApiKey, pID, 300)
+	validPassword, err := authHandler.CreatePassword(testApiKey, pID, validExpiry)
+	require.NoError(t, err)
+
+	// username encoded with an already-expired timestamp.
+	expiredUsername, _ := authHandler.CreateUsername(testApiKey, pID, -10)
+
+	// username encoded with an api key the server does not know about.
+	unknownAPIKeyUsername, _ := authHandler.CreateUsername("unknown-api-key", pID, 300)
+
+	// password whose hash was generated for an expiry that doesn't match the
+	// one encoded in the username. The server reconstructs the password using
+	// the username's expiry, so the integrity check fails.
+	mismatchedExpiryPassword, err := authHandler.CreatePassword(testApiKey, pID, validExpiry+60)
+	require.NoError(t, err)
+	require.NotEqual(t, validPassword, mismatchedExpiryPassword)
+
+	// password whose hash was generated without an expiry component (the
+	// pre-expiry form of the username/password pair); should not authenticate
+	// against a username that carries an expiry.
+	passwordWithoutExpiry, err := authHandler.CreatePassword(testApiKey, pID, 0)
+	require.NoError(t, err)
+	require.NotEqual(t, validPassword, passwordWithoutExpiry)
+
+	testCases := []struct {
+		name     string
+		username string
+		password string
+	}{
+		{
+			name:     "unparseable-username",
+			username: "not-base62!!!",
+			password: validPassword,
+		},
+		{
+			name:     "wrong-password",
+			username: validUsername,
+			password: "wrongpassword",
+		},
+		{
+			name:     "expired-username",
+			username: expiredUsername,
+			password: validPassword,
+		},
+		{
+			name:     "unknown-api-key",
+			username: unknownAPIKeyUsername,
+			password: validPassword,
+		},
+		{
+			name:     "password-expiry-mismatch",
+			username: validUsername,
+			password: mismatchedExpiryPassword,
+		},
+		{
+			name:     "password-missing-expiry",
+			username: validUsername,
+			password: passwordWithoutExpiry,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			conn, err := net.ListenPacket("udp4", "0.0.0.0:0")
+			require.NoError(t, err)
+			defer conn.Close()
+
+			client, err := turn.NewClient(&turn.ClientConfig{
+				TURNServerAddr: fmt.Sprintf("127.0.0.1:%d", turnUDPPort),
+				Username:       tc.username,
+				Password:       tc.password,
+				Realm:          service.LivekitRealm,
+				Conn:           conn,
+			})
+			require.NoError(t, err)
+			defer client.Close()
+			require.NoError(t, client.Listen())
+
+			_, allocErr := client.Allocate()
+			require.Error(t, allocErr)
+
+			// pion's TURN server replies with 400 Bad Request for any
+			// authenticated-allocate failure (unknown user or integrity check
+			// mismatch); the initial unauthenticated probe is what returns 401.
+			var turnErr *stun.TurnError
+			require.ErrorAs(t, allocErr, &turnErr)
+			require.Equal(t, stun.CodeBadRequest, turnErr.ErrorCodeAttr.Code)
 		})
 	}
 }
