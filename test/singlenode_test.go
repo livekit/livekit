@@ -29,7 +29,7 @@ import (
 
 	"github.com/pion/sdp/v3"
 	"github.com/pion/stun/v3"
-	"github.com/pion/turn/v4"
+	"github.com/pion/turn/v5"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 	"github.com/thoas/go-funk"
