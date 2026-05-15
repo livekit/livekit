@@ -387,7 +387,9 @@ func (b *BufferBase) BindLocked(rtpParameters webrtc.RTPParameters, codec webrtc
 			}
 
 			b.logger.Debugw("Setting feedback", "type", webrtc.TypeRTCPFBNACK)
-			b.nacker = nack.NewNACKQueue(nack.NackQueueParamsDefault)
+			if b.nacker == nil {
+				b.nacker = nack.NewNACKQueue(nack.NackQueueParamsDefault)
+			}
 		}
 	}
 
