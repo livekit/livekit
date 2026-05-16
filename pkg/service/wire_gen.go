@@ -134,7 +134,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	agentConfig := getAgentConfig(conf)
-	client, err := agent.NewAgentClient(messageBus, agentConfig)
+	client, err := newAgentClient(clientParams, agentConfig)
 	if err != nil {
 		return nil, err
 	}

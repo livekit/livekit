@@ -83,7 +83,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewAgentService,
 		NewAgentDispatchService,
 		getAgentConfig,
-		agent.NewAgentClient,
+		newAgentClient,
 		getAgentStore,
 		getSignalRelayConfig,
 		NewDefaultSignalServer,
@@ -236,6 +236,10 @@ func newSIPClient(p rpc.ClientParams) (rpc.SIPClient, error) {
 			otelpsrpc.ClientOptions(otelpsrpc.Config{}),
 		},
 	})
+}
+
+func newAgentClient(p rpc.ClientParams, config agent.Config) (agent.Client, error) {
+	return agent.NewAgentClient(p.Bus, config, p.Options()...)
 }
 
 func getSIPStore(s ObjectStore) SIPStore {
