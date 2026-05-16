@@ -35,7 +35,7 @@ Relevant PRs: #4505
 
 ### TURN authentication handling changes
 
-TURN credentials now have a TTL (Time-To-Live) beyond which they are not valid to join a room. We recommend rotating your TURN authentication secrets to ensure older credentials are rendered stale andnot usable.
+TURN credentials now have a TTL (Time-To-Live) beyond which they are not valid to join a room. We recommend rotating your TURN authentication secrets to ensure older credentials are rendered stale and not usable.
 
 ```
 #   # TTL of the TURN credentials in seconds - defaults to 300
