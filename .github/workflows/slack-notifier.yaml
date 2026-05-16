@@ -19,7 +19,7 @@ jobs:
   notify-devs:
     runs-on: ubuntu-latest
     steps:
-      - uses: livekit/slack-notifier-action@main
+      - uses: livekit/slack-notifier-action@34d9e973391fe5e4afacba015c4d144eb912e7ea # main
         with:
           config_json: ${{ secrets.SLACK_NOTIFY_CONFIG_JSON }}
           slack_token: ${{ secrets.SLACK_PR_NOTIFIER_TOKEN }}
