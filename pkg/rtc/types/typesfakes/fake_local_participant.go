@@ -386,6 +386,16 @@ type FakeLocalParticipant struct {
 	getLoggerResolverReturnsOnCall map[int]struct {
 		result1 logger.DeferredFieldResolver
 	}
+	GetMaxSubscribeVideoHeightStub        func() uint32
+	getMaxSubscribeVideoHeightMutex       sync.RWMutex
+	getMaxSubscribeVideoHeightArgsForCall []struct {
+	}
+	getMaxSubscribeVideoHeightReturns struct {
+		result1 uint32
+	}
+	getMaxSubscribeVideoHeightReturnsOnCall map[int]struct {
+		result1 uint32
+	}
 	GetNextSubscribedDataTrackHandleStub        func() uint16
 	getNextSubscribedDataTrackHandleMutex       sync.RWMutex
 	getNextSubscribedDataTrackHandleArgsForCall []struct {
@@ -3382,6 +3392,59 @@ func (fake *FakeLocalParticipant) GetLoggerResolverReturnsOnCall(i int, result1 
 	}
 	fake.getLoggerResolverReturnsOnCall[i] = struct {
 		result1 logger.DeferredFieldResolver
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetMaxSubscribeVideoHeight() uint32 {
+	fake.getMaxSubscribeVideoHeightMutex.Lock()
+	ret, specificReturn := fake.getMaxSubscribeVideoHeightReturnsOnCall[len(fake.getMaxSubscribeVideoHeightArgsForCall)]
+	fake.getMaxSubscribeVideoHeightArgsForCall = append(fake.getMaxSubscribeVideoHeightArgsForCall, struct {
+	}{})
+	stub := fake.GetMaxSubscribeVideoHeightStub
+	fakeReturns := fake.getMaxSubscribeVideoHeightReturns
+	fake.recordInvocation("GetMaxSubscribeVideoHeight", []interface{}{})
+	fake.getMaxSubscribeVideoHeightMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetMaxSubscribeVideoHeightCallCount() int {
+	fake.getMaxSubscribeVideoHeightMutex.RLock()
+	defer fake.getMaxSubscribeVideoHeightMutex.RUnlock()
+	return len(fake.getMaxSubscribeVideoHeightArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetMaxSubscribeVideoHeightCalls(stub func() uint32) {
+	fake.getMaxSubscribeVideoHeightMutex.Lock()
+	defer fake.getMaxSubscribeVideoHeightMutex.Unlock()
+	fake.GetMaxSubscribeVideoHeightStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetMaxSubscribeVideoHeightReturns(result1 uint32) {
+	fake.getMaxSubscribeVideoHeightMutex.Lock()
+	defer fake.getMaxSubscribeVideoHeightMutex.Unlock()
+	fake.GetMaxSubscribeVideoHeightStub = nil
+	fake.getMaxSubscribeVideoHeightReturns = struct {
+		result1 uint32
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetMaxSubscribeVideoHeightReturnsOnCall(i int, result1 uint32) {
+	fake.getMaxSubscribeVideoHeightMutex.Lock()
+	defer fake.getMaxSubscribeVideoHeightMutex.Unlock()
+	fake.GetMaxSubscribeVideoHeightStub = nil
+	if fake.getMaxSubscribeVideoHeightReturnsOnCall == nil {
+		fake.getMaxSubscribeVideoHeightReturnsOnCall = make(map[int]struct {
+			result1 uint32
+		})
+	}
+	fake.getMaxSubscribeVideoHeightReturnsOnCall[i] = struct {
+		result1 uint32
 	}{result1}
 }
 
