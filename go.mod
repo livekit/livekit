@@ -35,6 +35,7 @@ require (
 	github.com/pion/interceptor v0.1.44
 	github.com/pion/rtcp v1.2.16
 	github.com/pion/rtp v1.10.1
+	github.com/pion/rtp/v2 v2.0.0
 	github.com/pion/sctp v1.9.5
 	github.com/pion/sdp/v3 v3.0.18
 	github.com/pion/transport/v4 v4.0.1
