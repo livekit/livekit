@@ -97,6 +97,8 @@ type RTCConfig struct {
 
 	TURNServers []TURNServer `yaml:"turn_servers,omitempty"`
 
+	CloudflareTURN `yaml:"cloudflare_turn,omitempty"`
+
 	// Deprecated
 	StrictACKs bool `yaml:"strict_acks,omitempty"`
 
@@ -152,6 +154,11 @@ type TURNServer struct {
 	// TTL is the time-to-live in seconds for generated credentials when using Secret.
 	// Defaults to 14400 seconds (4 hours) if not specified
 	TTL int `yaml:"ttl,omitempty"`
+}
+
+type CloudflareTURN struct {
+	KeyID    string `yaml:"key_id,omitempty"`
+	APIToken string `yaml:"api_token,omitempty"`
 }
 
 type CongestionControlConfig struct {
