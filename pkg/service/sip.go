@@ -63,6 +63,10 @@ func NewSIPService(
 	}
 }
 
+func (s *SIPService) GetStore() SIPStore {
+	return s.store
+}
+
 func (s *SIPService) CreateSIPTrunk(ctx context.Context, req *livekit.CreateSIPTrunkRequest) (*livekit.SIPTrunkInfo, error) {
 	if err := EnsureSIPAdminPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)

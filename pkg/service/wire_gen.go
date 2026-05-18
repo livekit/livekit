@@ -73,7 +73,10 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	egressStore := getEgressStore(objectStore)
 	ingressStore := getIngressStore(objectStore)
-	sipStore := getSIPStore(objectStore)
+	sipStore, err := getSIPStore(conf, objectStore)
+	if err != nil {
+		return nil, err
+	}
 	keyProvider, err := createKeyProvider(conf)
 	if err != nil {
 		return nil, err
@@ -90,23 +93,23 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	rtcEgressLauncher := NewEgressLauncher(egressClient, ioInfoService, objectStore)
 	topicFormatter := rpc.NewTopicFormatter()
-	roomClient, err := rpc.NewTypedRoomClient(clientParams)
+	v, err := rpc.NewTypedRoomClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	participantClient, err := rpc.NewTypedParticipantClient(clientParams)
+	v2, err := rpc.NewTypedParticipantClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, roomClient, participantClient)
+	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, v, v2)
 	if err != nil {
 		return nil, err
 	}
-	agentDispatchInternalClient, err := rpc.NewTypedAgentDispatchInternalClient(clientParams)
+	v3, err := rpc.NewTypedAgentDispatchInternalClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	agentDispatchService := NewAgentDispatchService(agentDispatchInternalClient, topicFormatter, roomAllocator, router)
+	agentDispatchService := NewAgentDispatchService(v3, topicFormatter, roomAllocator, router)
 	egressService := NewEgressService(egressClient, rtcEgressLauncher, ioInfoService, roomService)
 	ingressConfig := getIngressConfig(conf)
 	ingressClient, err := rpc.NewIngressClient(clientParams)
@@ -121,11 +124,11 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	}
 	sipService := NewSIPService(sipConfig, nodeID, messageBus, sipClient, sipStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, router, telemetryService)
-	whipParticipantClient, err := rpc.NewTypedWHIPParticipantClient(clientParams)
+	v4, err := rpc.NewTypedWHIPParticipantClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	serviceWHIPService, err := NewWHIPService(conf, router, roomAllocator, clientParams, topicFormatter, whipParticipantClient)
+	serviceWHIPService, err := NewWHIPService(conf, router, roomAllocator, clientParams, topicFormatter, v4)
 	if err != nil {
 		return nil, err
 	}
@@ -298,12 +301,17 @@ func newSIPClient(p rpc.ClientParams) (rpc.SIPClient, error) {
 	})
 }
 
-func getSIPStore(s ObjectStore) SIPStore {
+func getSIPStore(conf *config.Config, s ObjectStore) (SIPStore, error) {
+
+	if conf.SIP.ConfigStore == "filesystem" {
+		return NewFileSIPStore(conf.SIP.ConfigPath)
+	}
+
 	switch store := s.(type) {
 	case *RedisStore:
-		return store
+		return store, nil
 	default:
-		return nil
+		return nil, nil
 	}
 }
 
