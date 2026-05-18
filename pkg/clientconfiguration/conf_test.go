@@ -82,10 +82,12 @@ func TestScriptMatchConfiguration(t *testing.T) {
 
 func TestScriptMatch(t *testing.T) {
 	client := &livekit.ClientInfo{
-		Protocol:    6,
-		Browser:     "chrome",
-		Sdk:         3, // android
-		DeviceModel: "12345",
+		Protocol:       6,
+		Browser:        "chrome",
+		Sdk:            3, // android
+		DeviceModel:    "12345",
+		BrowserVersion: "13.2",
+		Version:        "2.17.1",
 	}
 
 	type testcase struct {
@@ -101,6 +103,14 @@ func TestScriptMatch(t *testing.T) {
 		{name: "unexist field", expr: `c.protocols > 5`, err: true},
 		{name: "combined condition", expr: `c.protocol > 5 && (c.sdk=="android" || c.sdk=="ios")`, result: true},
 		{name: "combined condition2", expr: `(c.device_model == "xiaomi 2201117ti" && c.os == "android") || ((c.browser == "firefox" || c.browser == "firefox mobile") && (c.os == "linux" || c.os == "android"))`, result: false},
+		{name: "string lesser", expr: `c.browser_version < "11.3"`, result: false},
+		{name: "string lesser eq", expr: `c.browser_version <= "13.2"`, result: true},
+		{name: "string greater", expr: `c.browser_version > "11.3"`, result: true},
+		{name: "string greater eq", expr: `c.browser_version >= "13.2"`, result: true},
+		{name: "semantic lesser", expr: `c.version < "2.16.10"`, result: false},
+		{name: "semantic lesser eq", expr: `c.version <= "2.17.1"`, result: true},
+		{name: "semantic greater", expr: `c.version > "2.16.10"`, result: true},
+		{name: "semantic greater eq", expr: `c.version >= "2.17.1"`, result: true},
 	}
 
 	for _, c := range cases {
