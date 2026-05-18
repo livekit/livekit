@@ -32,6 +32,7 @@ import (
 
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/observability"
@@ -462,6 +463,13 @@ func (r *RoomManager) StartSession(
 		subscriberAllowPause = *pi.SubscriberAllowPause
 	}
 
+	enabledCodecs := protoRoom.EnabledCodecs
+	if !slices.ContainsFunc(enabledCodecs, func(codec *livekit.Codec) bool {
+		return mime.IsMimeTypeStringRTX(codec.Mime)
+	}) {
+		enabledCodecs = append(enabledCodecs, &livekit.Codec{Mime: mime.MimeTypeRTX.String()})
+	}
+
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:                pi.Identity,
 		Name:                    pi.Name,
@@ -478,8 +486,8 @@ func (r *RoomManager) StartSession(
 		Trailer:                 room.Trailer(),
 		PLIThrottleConfig:       r.config.RTC.PLIThrottle,
 		CongestionControlConfig: r.config.RTC.CongestionControl,
-		PublishEnabledCodecs:    protoRoom.EnabledCodecs,
-		SubscribeEnabledCodecs:  protoRoom.EnabledCodecs,
+		PublishEnabledCodecs:    enabledCodecs,
+		SubscribeEnabledCodecs:  enabledCodecs,
 		Grants:                  pi.Grants,
 		Reconnect:               pi.Reconnect,
 		Logger:                  pLogger,
