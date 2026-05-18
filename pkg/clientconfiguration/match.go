@@ -136,6 +136,10 @@ func (r *ruleSdkVersion) BinaryOp(op token.Token, rhs tengo.Object) (tengo.Objec
 			isMatch = cmp > 0
 		case token.GreaterEq:
 			isMatch = cmp >= 0
+		case token.Less:
+			isMatch = cmp < 0
+		case token.LessEq:
+			isMatch = cmp <= 0
 		default:
 			return nil, tengo.ErrInvalidOperator
 		}

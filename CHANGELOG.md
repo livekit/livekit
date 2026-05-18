@@ -4,7 +4,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [1.12.0] - 2026-05-16
 
-## ATTENTION: This releases introduces important changes to how TURN authentication and permissions are handled. These changes make the system more secure. This release maintains backwards compatiblity. However, backwards compatibility will be removed in the next release. So, please plan accordingly.
+## ATTENTION: This releases introduces important changes to how TURN authentication and permissions are handled. These changes make the system more secure. This release maintains backwards compatibility. However, backwards compatibility will be removed in the next release. So, please plan accordingly.
 
 ### TURN permission handling changes
 
