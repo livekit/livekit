@@ -288,6 +288,7 @@ type Participant interface {
 	ConnectedAt() time.Time
 	CloseReason() ParticipantCloseReason
 	Kind() livekit.ParticipantInfo_Kind
+	KindDetails() []livekit.ParticipantInfo_KindDetail
 	IsRecorder() bool
 	IsDependent() bool
 	IsAgent() bool

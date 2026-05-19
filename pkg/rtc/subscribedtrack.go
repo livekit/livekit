@@ -413,6 +413,8 @@ func (t *SubscribedTrack) OnStatsUpdate(stat *livekit.AnalyticsStat) {
 	if cs, ok := telemetry.CondenseStat(stat); ok {
 		ti := t.params.WrappedReceiver.TrackInfo()
 		t.reporter.Tx(func(tx roomobs.TrackTx) {
+			tx.ParticipantSession().ReportKindCode(roomobs.ParticipantKindCode(t.params.Subscriber.Kind()))
+			tx.ParticipantSession().ReportKindDetailsCodes(roomobs.ParticipantKindDetailsCodes(t.params.Subscriber.KindDetails()))
 			tx.ReportName(ti.Name)
 			tx.ReportKind(roomobs.TrackKindSub)
 			tx.ReportType(roomobs.TrackTypeFromProto(ti.Type))
