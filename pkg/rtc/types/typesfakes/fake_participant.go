@@ -259,6 +259,16 @@ type FakeParticipant struct {
 	kindReturnsOnCall map[int]struct {
 		result1 livekit.ParticipantInfo_Kind
 	}
+	KindDetailsStub        func() []livekit.ParticipantInfo_KindDetail
+	kindDetailsMutex       sync.RWMutex
+	kindDetailsArgsForCall []struct {
+	}
+	kindDetailsReturns struct {
+		result1 []livekit.ParticipantInfo_KindDetail
+	}
+	kindDetailsReturnsOnCall map[int]struct {
+		result1 []livekit.ParticipantInfo_KindDetail
+	}
 	MigrateStateStub        func() types.MigrateState
 	migrateStateMutex       sync.RWMutex
 	migrateStateArgsForCall []struct {
@@ -1644,6 +1654,59 @@ func (fake *FakeParticipant) KindReturnsOnCall(i int, result1 livekit.Participan
 	}
 	fake.kindReturnsOnCall[i] = struct {
 		result1 livekit.ParticipantInfo_Kind
+	}{result1}
+}
+
+func (fake *FakeParticipant) KindDetails() []livekit.ParticipantInfo_KindDetail {
+	fake.kindDetailsMutex.Lock()
+	ret, specificReturn := fake.kindDetailsReturnsOnCall[len(fake.kindDetailsArgsForCall)]
+	fake.kindDetailsArgsForCall = append(fake.kindDetailsArgsForCall, struct {
+	}{})
+	stub := fake.KindDetailsStub
+	fakeReturns := fake.kindDetailsReturns
+	fake.recordInvocation("KindDetails", []interface{}{})
+	fake.kindDetailsMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) KindDetailsCallCount() int {
+	fake.kindDetailsMutex.RLock()
+	defer fake.kindDetailsMutex.RUnlock()
+	return len(fake.kindDetailsArgsForCall)
+}
+
+func (fake *FakeParticipant) KindDetailsCalls(stub func() []livekit.ParticipantInfo_KindDetail) {
+	fake.kindDetailsMutex.Lock()
+	defer fake.kindDetailsMutex.Unlock()
+	fake.KindDetailsStub = stub
+}
+
+func (fake *FakeParticipant) KindDetailsReturns(result1 []livekit.ParticipantInfo_KindDetail) {
+	fake.kindDetailsMutex.Lock()
+	defer fake.kindDetailsMutex.Unlock()
+	fake.KindDetailsStub = nil
+	fake.kindDetailsReturns = struct {
+		result1 []livekit.ParticipantInfo_KindDetail
+	}{result1}
+}
+
+func (fake *FakeParticipant) KindDetailsReturnsOnCall(i int, result1 []livekit.ParticipantInfo_KindDetail) {
+	fake.kindDetailsMutex.Lock()
+	defer fake.kindDetailsMutex.Unlock()
+	fake.KindDetailsStub = nil
+	if fake.kindDetailsReturnsOnCall == nil {
+		fake.kindDetailsReturnsOnCall = make(map[int]struct {
+			result1 []livekit.ParticipantInfo_KindDetail
+		})
+	}
+	fake.kindDetailsReturnsOnCall[i] = struct {
+		result1 []livekit.ParticipantInfo_KindDetail
 	}{result1}
 }
 

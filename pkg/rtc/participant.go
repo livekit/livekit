@@ -382,6 +382,8 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		p.params.Country,
 		BytesTrackIDForParticipantID(BytesTrackTypeData, p.ID()),
 		p.ID(),
+		params.Grants.GetParticipantKind(),
+		params.Grants.GetKindDetails(),
 		params.TelemetryListener,
 		params.Reporter,
 	)
@@ -411,6 +413,9 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 			ts = *dts
 			tx.ReportEndTime(ts)
 		}
+
+		tx.ReportKindCode(roomobs.ParticipantKindCode(p.Kind()))
+		tx.ReportKindDetailsCodes(roomobs.ParticipantKindDetailsCodes(p.KindDetails()))
 
 		millis, secs, mins := p.params.SessionTimer.Advance(ts)
 		tx.ReportDuration(uint16(millis))
@@ -514,6 +519,10 @@ func (p *ParticipantImpl) State() livekit.ParticipantInfo_State {
 
 func (p *ParticipantImpl) Kind() livekit.ParticipantInfo_Kind {
 	return p.grants.Load().GetParticipantKind()
+}
+
+func (p *ParticipantImpl) KindDetails() []livekit.ParticipantInfo_KindDetail {
+	return p.grants.Load().GetKindDetails()
 }
 
 func (p *ParticipantImpl) IsRecorder() bool {
@@ -3301,23 +3310,25 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 
 func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo) *MediaTrack {
 	mt := NewMediaTrack(MediaTrackParams{
-		ParticipantID:         p.ID,
-		ParticipantIdentity:   p.params.Identity,
-		ParticipantVersion:    p.version.Load(),
-		ParticipantCountry:    p.params.Country,
-		BufferFactory:         p.params.Config.BufferFactory,
-		ReceiverConfig:        p.params.Config.Receiver,
-		AudioConfig:           p.params.AudioConfig,
-		VideoConfig:           p.params.VideoConfig,
-		TelemetryListener:     p.params.TelemetryListener,
-		Logger:                LoggerWithTrack(p.pubLogger, livekit.TrackID(ti.Sid), false),
-		Reporter:              p.params.Reporter.WithTrack(ti.Sid),
-		SubscriberConfig:      p.params.Config.Subscriber,
-		PLIThrottleConfig:     p.params.PLIThrottleConfig,
-		SimTracks:             p.params.SimTracks,
-		OnRTCP:                p.postRtcp,
-		ForwardStats:          p.params.ForwardStats,
-		OnTrackEverSubscribed: p.sendTrackHasBeenSubscribed,
+		ParticipantID:          p.ID,
+		ParticipantIdentity:    p.params.Identity,
+		ParticipantVersion:     p.version.Load(),
+		ParticipantCountry:     p.params.Country,
+		ParticipantKind:        p.Kind(),
+		ParticipantKindDetails: p.KindDetails(),
+		BufferFactory:          p.params.Config.BufferFactory,
+		ReceiverConfig:         p.params.Config.Receiver,
+		AudioConfig:            p.params.AudioConfig,
+		VideoConfig:            p.params.VideoConfig,
+		TelemetryListener:      p.params.TelemetryListener,
+		Logger:                 LoggerWithTrack(p.pubLogger, livekit.TrackID(ti.Sid), false),
+		Reporter:               p.params.Reporter.WithTrack(ti.Sid),
+		SubscriberConfig:       p.params.Config.Subscriber,
+		PLIThrottleConfig:      p.params.PLIThrottleConfig,
+		SimTracks:              p.params.SimTracks,
+		OnRTCP:                 p.postRtcp,
+		ForwardStats:           p.params.ForwardStats,
+		OnTrackEverSubscribed:  p.sendTrackHasBeenSubscribed,
 		ShouldRegressCodec: func() bool {
 			return p.helper().ShouldRegressCodec()
 		},

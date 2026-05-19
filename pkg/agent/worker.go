@@ -273,6 +273,9 @@ func NewWorker(
 		logger: logger.WithValues(
 			"workerID", registration.ID,
 			"agentName", registration.AgentName,
+			"deployment", registration.Deployment,
+			"agentID", registration.AgentID,
+			"version", registration.Version,
 			"jobType", registration.JobType.String(),
 		),
 

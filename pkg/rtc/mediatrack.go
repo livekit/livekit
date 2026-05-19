@@ -79,6 +79,8 @@ type MediaTrackParams struct {
 	ParticipantIdentity              livekit.ParticipantIdentity
 	ParticipantVersion               uint32
 	ParticipantCountry               string
+	ParticipantKind                  livekit.ParticipantInfo_Kind
+	ParticipantKindDetails           []livekit.ParticipantInfo_KindDetail
 	BufferFactory                    *buffer.Factory
 	ReceiverConfig                   ReceiverConfig
 	SubscriberConfig                 DirectionConfig
@@ -462,6 +464,9 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 
 				if cs, ok := telemetry.CondenseStat(stat); ok {
 					t.params.Reporter.Tx(func(tx roomobs.TrackTx) {
+						tx.ParticipantSession().ReportKind(t.params.ParticipantKind.String())
+						tx.ParticipantSession().ReportKindCode(roomobs.ParticipantKindCode(t.params.ParticipantKind))
+						tx.ParticipantSession().ReportKindDetailsCodes(roomobs.ParticipantKindDetailsCodes(t.params.ParticipantKindDetails))
 						tx.ReportName(ti.Name)
 						tx.ReportKind(roomobs.TrackKindPub)
 						tx.ReportType(roomobs.TrackTypeFromProto(ti.Type))
