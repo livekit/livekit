@@ -225,6 +225,23 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 	}
 }
 
+// IsIntentionalDisconnect reports whether a disconnect reason represents an
+// intentional/expected closure (client leaving, admin action, room teardown,
+// migration, etc.) as opposed to a connection failure.
+func IsIntentionalDisconnect(reason livekit.DisconnectReason) bool {
+	switch reason {
+	case livekit.DisconnectReason_CLIENT_INITIATED,
+		livekit.DisconnectReason_SERVER_SHUTDOWN,
+		livekit.DisconnectReason_DUPLICATE_IDENTITY,
+		livekit.DisconnectReason_MIGRATION,
+		livekit.DisconnectReason_PARTICIPANT_REMOVED,
+		livekit.DisconnectReason_ROOM_DELETED,
+		livekit.DisconnectReason_ROOM_CLOSED:
+		return true
+	}
+	return false
+}
+
 // ---------------------------------------------
 
 type SignallingCloseReason int
