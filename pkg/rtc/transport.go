@@ -440,10 +440,7 @@ func newPeerConnection(
 		}
 	}
 
-	lf := pionlogger.NewLoggerFactory(params.Logger)
-	if lf != nil {
-		se.LoggerFactory = lf
-	}
+	se.LoggerFactory = pionlogger.NewLoggerFactory(params.Logger)
 
 	ir := &interceptor.Registry{}
 	if params.IsSendSide {
