@@ -67,10 +67,6 @@ func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) e
 	p.queuedUpdates = nil
 	p.updateLock.Unlock()
 
-	if p.params.RequireMediaSectionWithJoinResponse && p.params.UseSinglePeerConnection {
-		p.sendMediaSectionsRequirement(audioSectionsCountWithJoinResponse, videoSectionsCountWithJoinResponse)
-	}
-
 	if len(queuedUpdates) > 0 {
 		return p.SendParticipantUpdate(queuedUpdates)
 	}
