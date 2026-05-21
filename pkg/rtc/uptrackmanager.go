@@ -311,7 +311,11 @@ func (u *UpTrackManager) parseSubscriptionPermissionsLocked(
 
 			sub := resolver(livekit.ParticipantID(trackPerms.ParticipantSid))
 			if sub == nil {
-				u.params.Logger.Warnw("could not find subscriber for permissions update", nil, "subscriberID", trackPerms.ParticipantSid)
+				u.params.Logger.Warnw(
+					"could not find subscriber for permissions update", nil,
+					"subscriberID", trackPerms.ParticipantSid,
+					"subscriptionPermission", logger.Proto(subscriptionPermission),
+				)
 				continue
 			}
 
@@ -320,10 +324,19 @@ func (u *UpTrackManager) parseSubscriptionPermissionsLocked(
 			if trackPerms.ParticipantSid != "" {
 				sub := resolver(livekit.ParticipantID(trackPerms.ParticipantSid))
 				if sub != nil && sub.Identity() != subscriberIdentity {
-					u.params.Logger.Errorw("participant identity mismatch", nil, "expected", subscriberIdentity, "got", sub.Identity())
+					u.params.Logger.Errorw(
+						"participant identity mismatch", nil,
+						"expected", subscriberIdentity,
+						"got", sub.Identity(),
+						"subscriptionPermission", logger.Proto(subscriptionPermission),
+					)
 				}
 				if sub == nil {
-					u.params.Logger.Warnw("could not find subscriber for permissions update", nil, "subscriberID", trackPerms.ParticipantSid)
+					u.params.Logger.Warnw(
+						"could not find subscriber for permissions update", nil,
+						"subscriberID", trackPerms.ParticipantSid,
+						"subscriptionPermission", logger.Proto(subscriptionPermission),
+					)
 				}
 			}
 		}
