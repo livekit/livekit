@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jxskiss/base62"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/stun/v3"
 	"github.com/pion/turn/v5"
@@ -1432,12 +1433,13 @@ func TestTurnAuthFailure(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, validPassword, mismatchedExpiryPassword)
 
-	// password whose hash was generated without an expiry component (the
-	// pre-expiry form of the username/password pair); should not authenticate
-	// against a username that carries an expiry.
-	passwordWithoutExpiry, err := authHandler.CreatePassword(testApiKey, pID, 0)
-	require.NoError(t, err)
-	require.NotEqual(t, validPassword, passwordWithoutExpiry)
+	// username carrying expiry=0 must be rejected outright; constructed
+	// directly because CreateUsername always stamps a real expiry.
+	zeroExpiryUsername := base62.EncodeToString(fmt.Appendf(nil, "%s|%s|%d", testApiKey, pID, 0))
+
+	// username with only apiKey|pID (no expiry component) is the legacy
+	// pre-expiry form and must be rejected.
+	twoPartUsername := base62.EncodeToString(fmt.Appendf(nil, "%s|%s", testApiKey, pID))
 
 	testCases := []struct {
 		name     string
@@ -1470,9 +1472,14 @@ func TestTurnAuthFailure(t *testing.T) {
 			password: mismatchedExpiryPassword,
 		},
 		{
-			name:     "password-missing-expiry",
-			username: validUsername,
-			password: passwordWithoutExpiry,
+			name:     "zero-expiry-username",
+			username: zeroExpiryUsername,
+			password: validPassword,
+		},
+		{
+			name:     "two-part-username",
+			username: twoPartUsername,
+			password: validPassword,
 		},
 	}
 
