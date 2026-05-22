@@ -15,9 +15,11 @@
 package service
 
 import (
+	"fmt"
 	"net"
 	"testing"
 
+	"github.com/jxskiss/base62"
 	"github.com/pion/stun/v3"
 	"github.com/pion/turn/v5"
 	"github.com/stretchr/testify/require"
@@ -125,4 +127,82 @@ func TestTURNAuthHandler_HandleAuth_WrongUsernameRejected(t *testing.T) {
 		Method:   stun.MethodRefresh,
 	})
 	require.False(t, ok)
+}
+
+func TestTURNAuthHandler_HandleAuth_TwoPartUsernameRejected(t *testing.T) {
+	h := newTestTurnAuthHandler()
+	pID := livekit.ParticipantID("PA_two_part")
+
+	username := base62.EncodeToString(fmt.Appendf(nil, "%s|%s", turnTestAPIKey, pID))
+
+	for _, method := range []stun.Method{
+		stun.MethodAllocate,
+		stun.MethodRefresh,
+		stun.MethodCreatePermission,
+		stun.MethodChannelBind,
+		stun.MethodSend,
+	} {
+		t.Run(method.String(), func(t *testing.T) {
+			_, _, ok := h.HandleAuth(&turn.RequestAttributes{
+				Username: username,
+				Realm:    LivekitRealm,
+				SrcAddr:  &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234},
+				Method:   method,
+			})
+			require.False(t, ok, "Two-part username must be rejected")
+		})
+	}
+}
+
+func TestTURNAuthHandler_HandleAuth_ZeroExpiryRejected(t *testing.T) {
+	h := newTestTurnAuthHandler()
+	pID := livekit.ParticipantID("PA_zero_expiry")
+
+	username := base62.EncodeToString(fmt.Appendf(nil, "%s|%s|%d", turnTestAPIKey, pID, 0))
+
+	for _, method := range []stun.Method{
+		stun.MethodAllocate,
+		stun.MethodRefresh,
+		stun.MethodCreatePermission,
+		stun.MethodChannelBind,
+		stun.MethodSend,
+	} {
+		t.Run(method.String(), func(t *testing.T) {
+			_, _, ok := h.HandleAuth(&turn.RequestAttributes{
+				Username: username,
+				Realm:    LivekitRealm,
+				SrcAddr:  &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234},
+				Method:   method,
+			})
+			require.False(t, ok, "Username with expiry=0 must be rejected")
+		})
+	}
+}
+
+func TestTURNAuthHandler_ParseUsername_TwoPartRejected(t *testing.T) {
+	h := newTestTurnAuthHandler()
+	pID := livekit.ParticipantID("PA_parse_two_part")
+
+	username := base62.EncodeToString(fmt.Appendf(nil, "%s|%s", turnTestAPIKey, pID))
+
+	_, _, _, err := h.ParseUsername(username)
+	require.Error(t, err)
+}
+
+func TestTURNAuthHandler_ParseUsername_ZeroExpiryRejected(t *testing.T) {
+	h := newTestTurnAuthHandler()
+	pID := livekit.ParticipantID("PA_parse_zero_expiry")
+
+	username := base62.EncodeToString(fmt.Appendf(nil, "%s|%s|%d", turnTestAPIKey, pID, 0))
+
+	_, _, _, err := h.ParseUsername(username)
+	require.ErrorIs(t, err, ErrExpired)
+}
+
+func TestTURNAuthHandler_CreatePassword_ZeroExpiryRejected(t *testing.T) {
+	h := newTestTurnAuthHandler()
+	pID := livekit.ParticipantID("PA_password_zero_expiry")
+
+	_, err := h.CreatePassword(turnTestAPIKey, pID, 0)
+	require.ErrorIs(t, err, ErrExpired)
 }

@@ -210,28 +210,28 @@ func (h *TURNAuthHandler) CreateUsername(apiKey string, pID livekit.ParticipantI
 	return base62.EncodeToString(fmt.Appendf(nil, "%s|%s|%d", apiKey, pID, expiry)), expiry
 }
 
-func (h *TURNAuthHandler) ParseUsername(username string) (apiKey string, pID livekit.ParticipantID, expiry int64, err error) {
+func (h *TURNAuthHandler) ParseUsername(username string) (string, livekit.ParticipantID, int64, error) {
 	decoded, err := base62.DecodeString(username)
 	if err != nil {
 		return "", "", 0, err
 	}
 	parts := strings.Split(string(decoded), "|")
-	if len(parts) != 2 && len(parts) != 3 {
+	if len(parts) != 3 {
 		return "", "", 0, errors.New("invalid username")
 	}
-	expiry = 0
-	if len(parts) == 3 {
-		var err error
-		if expiry, err = strconv.ParseInt(parts[2], 10, 64); err != nil {
-			return "", "", 0, err
-		}
+	expiry, err := strconv.ParseInt(parts[2], 10, 64)
+	if err != nil {
+		return "", "", 0, err
+	}
+	if expiry == 0 {
+		return "", "", 0, ErrExpired
 	}
 
 	return parts[0], livekit.ParticipantID(parts[1]), expiry, nil
 }
 
 func (h *TURNAuthHandler) CreatePassword(apiKey string, pID livekit.ParticipantID, expiry int64) (string, error) {
-	if expiry != 0 && time.Now().After(time.Unix(expiry, 0)) {
+	if expiry == 0 || time.Now().After(time.Unix(expiry, 0)) {
 		return "", ErrExpired
 	}
 	return h.computePassword(apiKey, pID, expiry)
@@ -243,10 +243,7 @@ func (h *TURNAuthHandler) computePassword(apiKey string, pID livekit.Participant
 		return "", ErrInvalidAPIKey
 	}
 
-	keyInput := fmt.Sprintf("%s|%s", secret, pID)
-	if expiry != 0 {
-		keyInput = fmt.Sprintf("%s|%s|%d", secret, pID, expiry)
-	}
+	keyInput := fmt.Sprintf("%s|%s|%d", secret, pID, expiry)
 
 	sum := sha256.Sum256([]byte(keyInput))
 	return base62.EncodeToString(sum[:]), nil
@@ -259,25 +256,25 @@ func (h *TURNAuthHandler) HandleAuth(ra *turn.RequestAttributes) (userID string,
 		return "", nil, false
 	}
 	parts := strings.Split(string(decoded), "|")
-	if len(parts) != 2 && len(parts) != 3 {
+	if len(parts) != 3 {
 		return "", nil, false
 	}
-	expiry := int64(0)
-	if len(parts) == 3 {
-		var err error
-		if expiry, err = strconv.ParseInt(parts[2], 10, 64); err != nil {
+	expiry, err := strconv.ParseInt(parts[2], 10, 64)
+	if err != nil {
+		return "", nil, false
+	}
+	if expiry == 0 {
+		return "", nil, false
+	}
+	expiryTime := time.Unix(expiry, 0)
+	if time.Now().After(expiryTime) {
+		// TTL only applies to initial allocation. Refresh / CreatePermission /
+		// ChannelBind / Send / Data requests are still authenticated against the
+		// username/password but skip the TTL check so long-running sessions can
+		// keep refreshing past the credential expiry.
+		if ra.Method == stun.MethodAllocate {
+			logger.Infow("TURN credential expired", "username", decoded, "participantID", parts[1], "expiry", expiryTime, "method", ra.Method)
 			return "", nil, false
-		}
-		expiryTime := time.Unix(expiry, 0)
-		if time.Now().After(expiryTime) {
-			// TTL only applies to initial allocation. Refresh / CreatePermission /
-			// ChannelBind / Send / Data requests are still authenticated against the
-			// username/password but skip the TTL check so long-running sessions can
-			// keep refreshing past the credential expiry.
-			if ra.Method == stun.MethodAllocate {
-				logger.Infow("TURN credential expired", "username", decoded, "participantID", parts[1], "expiry", expiryTime, "method", ra.Method)
-				return "", nil, false
-			}
 		}
 	}
 	password, err := h.computePassword(parts[0], livekit.ParticipantID(parts[1]), expiry)
