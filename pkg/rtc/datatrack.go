@@ -37,6 +37,7 @@ type DataTrackParams struct {
 	Logger              logger.Logger
 	ParticipantID       func() livekit.ParticipantID
 	ParticipantIdentity livekit.ParticipantIdentity
+	BytesTrackStats     *BytesTrackStats
 }
 
 type DataTrack struct {
@@ -76,6 +77,9 @@ func (d *DataTrack) Close() {
 	d.closed.Break()
 
 	d.stats.Close()
+	if d.params.BytesTrackStats != nil {
+		d.params.BytesTrackStats.Stop()
+	}
 }
 
 func (d *DataTrack) PublisherID() livekit.ParticipantID {
@@ -110,14 +114,25 @@ func (d *DataTrack) AddSubscriber(sub types.LocalParticipant) (types.DataDownTra
 		return nil, errAlreadySubscribed
 	}
 
+	bytesStats := NewBytesTrackStats(
+		sub.GetCountry(),
+		d.ID(),
+		sub.ID(),
+		sub.Kind(),
+		sub.KindDetails(),
+		sub.GetTelemetryListener(),
+		sub.GetReporter(),
+	)
 	dataDownTrack, err := NewDataDownTrack(DataDownTrackParams{
 		Logger:           sub.GetLogger().WithValues("trackID", d.ID()),
 		SubscriberID:     sub.ID(),
 		PublishDataTrack: d,
 		Handle:           sub.GetNextSubscribedDataTrackHandle(),
 		Transport:        sub.GetDataTrackTransport(),
+		BytesTrackStats:  bytesStats,
 	})
 	if err != nil {
+		bytesStats.Stop()
 		return nil, err
 	}
 
@@ -165,6 +180,9 @@ func (d *DataTrack) DeleteDataDownTrack(subscriberID livekit.ParticipantID) {
 
 func (d *DataTrack) HandlePacket(data []byte, packet *datatrack.Packet, arrivalTime int64) {
 	d.stats.Update(packet, arrivalTime, len(data))
+	if d.params.BytesTrackStats != nil {
+		d.params.BytesTrackStats.AddBytes(uint64(len(data)), false)
+	}
 
 	d.downTrackSpreader.Broadcast(func(dts types.DataTrackSender) {
 		dts.WritePacket(data, packet, arrivalTime)

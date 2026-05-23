@@ -1365,6 +1365,15 @@ func (p *ParticipantImpl) SetMigrateInfo(
 				Logger:              p.params.Logger.WithValues("trackID", dti.Sid),
 				ParticipantID:       p.ID,
 				ParticipantIdentity: p.params.Identity,
+				BytesTrackStats: NewBytesTrackStats(
+					p.params.Country,
+					livekit.TrackID(dti.Sid),
+					p.ID(),
+					p.Kind(),
+					p.KindDetails(),
+					p.params.TelemetryListener,
+					p.params.Reporter,
+				),
 			},
 			dti,
 		)
