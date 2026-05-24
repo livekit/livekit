@@ -91,18 +91,6 @@ func (p *ParticipantAsyncAttributes) GetAll() []*livekit.DataTrackSchemaDefiniti
 	return all
 }
 
-func (p *ParticipantAsyncAttributes) GetAllIDs() []*livekit.DataTrackSchemaId {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	ids := make([]*livekit.DataTrackSchemaId, 0, len(p.attributes))
-	for _, aa := range p.attributes {
-		ids = append(ids, utils.CloneProto(aa.Id))
-	}
-
-	return ids
-}
-
 // -------------------------------
 
 func ToParticipantAsyncAttributeKey(id *livekit.DataTrackSchemaId) string {

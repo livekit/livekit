@@ -121,6 +121,6 @@ func (p *ParticipantImpl) ProcessGetDataTrackSchemaRequest(req *livekit.GetDataT
 	p.sendGetDataTrackSchemaResponse(asyncAttribute)
 }
 
-func (p *ParticipantImpl) GetAllAsyncAttributeIDs() []*livekit.DataTrackSchemaId {
-	return p.asyncAttributes.GetAllIDs()
+func (p *ParticipantImpl) GetAllAsyncAttributes() []*livekit.DataTrackSchemaDefinition {
+	return p.asyncAttributes.GetAll()
 }

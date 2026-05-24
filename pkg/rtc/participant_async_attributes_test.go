@@ -63,10 +63,6 @@ func TestParticipantAsyncAttributes_AddOverwrites(t *testing.T) {
 	require.Equal(t, []byte("v2"), got.Definition)
 
 	require.Len(t, a.GetAll(), 1)
-	allIDs := a.GetAllIDs()
-	require.Len(t, allIDs, 1)
-	require.Equal(t, id.Name, allIDs[0].Name)
-	require.Equal(t, id.Encoding, allIDs[0].Encoding)
 }
 
 func TestParticipantAsyncAttributes_DifferentEncodingsAreDistinct(t *testing.T) {
@@ -93,7 +89,6 @@ func TestParticipantAsyncAttributes_DifferentEncodingsAreDistinct(t *testing.T) 
 	require.Equal(t, []byte("json-def"), gotJSON.Definition)
 
 	require.Len(t, a.GetAll(), 2)
-	require.Len(t, a.GetAllIDs(), 2)
 }
 
 func TestParticipantAsyncAttributes_Delete(t *testing.T) {
