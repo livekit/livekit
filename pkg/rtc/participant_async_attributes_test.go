@@ -39,7 +39,7 @@ func TestParticipantAsyncAttributes_AddAndGet(t *testing.T) {
 	}
 	value := []byte("definition-bytes")
 
-	a.Add(id, value)
+	a.Add(&livekit.DataTrackSchemaDefinition{Id: id, Definition: value})
 
 	got := a.Get(id)
 	require.NotNil(t, got)
@@ -55,14 +55,18 @@ func TestParticipantAsyncAttributes_AddOverwrites(t *testing.T) {
 		Name:     "schema-1",
 		Encoding: livekit.DataTrackSchemaEncoding_DATA_TRACK_SCHEMA_ENCODING_PROTOBUF,
 	}
-	a.Add(id, []byte("v1"))
-	a.Add(id, []byte("v2"))
+	a.Add(&livekit.DataTrackSchemaDefinition{Id: id, Definition: []byte("v1")})
+	a.Add(&livekit.DataTrackSchemaDefinition{Id: id, Definition: []byte("v2")})
 
 	got := a.Get(id)
 	require.NotNil(t, got)
 	require.Equal(t, []byte("v2"), got.Definition)
 
 	require.Len(t, a.GetAll(), 1)
+	allIDs := a.GetAllIDs()
+	require.Len(t, allIDs, 1)
+	require.Equal(t, id.Name, allIDs[0].Name)
+	require.Equal(t, id.Encoding, allIDs[0].Encoding)
 }
 
 func TestParticipantAsyncAttributes_DifferentEncodingsAreDistinct(t *testing.T) {
@@ -77,8 +81,8 @@ func TestParticipantAsyncAttributes_DifferentEncodingsAreDistinct(t *testing.T) 
 		Encoding: livekit.DataTrackSchemaEncoding_DATA_TRACK_SCHEMA_ENCODING_JSON_SCHEMA,
 	}
 
-	a.Add(idProto, []byte("proto-def"))
-	a.Add(idJSON, []byte("json-def"))
+	a.Add(&livekit.DataTrackSchemaDefinition{Id: idProto, Definition: []byte("proto-def")})
+	a.Add(&livekit.DataTrackSchemaDefinition{Id: idJSON, Definition: []byte("json-def")})
 
 	gotProto := a.Get(idProto)
 	require.NotNil(t, gotProto)
@@ -89,6 +93,7 @@ func TestParticipantAsyncAttributes_DifferentEncodingsAreDistinct(t *testing.T) 
 	require.Equal(t, []byte("json-def"), gotJSON.Definition)
 
 	require.Len(t, a.GetAll(), 2)
+	require.Len(t, a.GetAllIDs(), 2)
 }
 
 func TestParticipantAsyncAttributes_Delete(t *testing.T) {
@@ -98,7 +103,10 @@ func TestParticipantAsyncAttributes_Delete(t *testing.T) {
 		Name:     "schema-1",
 		Encoding: livekit.DataTrackSchemaEncoding_DATA_TRACK_SCHEMA_ENCODING_PROTOBUF,
 	}
-	a.Add(id, []byte("definition"))
+	a.Add(&livekit.DataTrackSchemaDefinition{
+		Id:         id,
+		Definition: []byte("definition"),
+	})
 
 	a.Delete(id)
 	require.Nil(t, a.Get(id))
@@ -113,7 +121,7 @@ func TestParticipantAsyncAttributes_NilId(t *testing.T) {
 	a := newTestAsyncAttributes()
 
 	// nil id should be silently ignored, not panic
-	a.Add(nil, []byte("definition"))
+	a.Add(&livekit.DataTrackSchemaDefinition{Definition: []byte("definition")})
 	require.Empty(t, a.GetAll())
 
 	require.Nil(t, a.Get(nil))
@@ -144,13 +152,21 @@ func TestParticipantAsyncAttributes_GetAllContents(t *testing.T) {
 		Encoding: livekit.DataTrackSchemaEncoding_DATA_TRACK_SCHEMA_ENCODING_FLATBUFFER,
 	}
 
-	a.Add(id1, []byte("def-1"))
-	a.Add(id2, []byte("def-2"))
+	a.Add(&livekit.DataTrackSchemaDefinition{Id: id1, Definition: []byte("def-1")})
+	a.Add(&livekit.DataTrackSchemaDefinition{Id: id2, Definition: []byte("def-2")})
 
 	all := a.GetAll()
 	require.Len(t, all, 2)
-	require.Equal(t, []byte("def-1"), all[ToParticipantAsyncAttributeKey(id1)])
-	require.Equal(t, []byte("def-2"), all[ToParticipantAsyncAttributeKey(id2)])
+	for _, aa := range all {
+		switch aa.Id.Name {
+		case "schema-1":
+			require.Equal(t, []byte("def-1"), aa.Definition)
+		case "schema-2":
+			require.Equal(t, []byte("def-2"), aa.Definition)
+		default:
+			require.Fail(t, "unexpected name", aa.Id.Name)
+		}
+	}
 }
 
 func TestParticipantAsyncAttributes_ConcurrentAccess(t *testing.T) {
@@ -169,7 +185,7 @@ func TestParticipantAsyncAttributes_ConcurrentAccess(t *testing.T) {
 					Name:     "schema",
 					Encoding: livekit.DataTrackSchemaEncoding(g % 8),
 				}
-				a.Add(id, []byte("v"))
+				a.Add(&livekit.DataTrackSchemaDefinition{Id: id, Definition: []byte("v")})
 				_ = a.Get(id)
 				_ = a.GetAll()
 				if i%3 == 0 {
@@ -199,7 +215,7 @@ func TestToKeyFromKey(t *testing.T) {
 	for _, id := range ids {
 		t.Run(id.Name, func(t *testing.T) {
 			key := ToParticipantAsyncAttributeKey(id)
-			roundTripped := FromParticipantAsyncAttributeKey(key)
+			roundTripped := fromParticipantAsyncAttributeKey(key)
 			require.Equal(t, id.Name, roundTripped.Name)
 			require.Equal(t, id.Encoding, roundTripped.Encoding)
 		})

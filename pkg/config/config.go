@@ -312,28 +312,28 @@ func (l LimitConfig) CheckAttributesSize(attributes map[string]string) bool {
 	return uint32(total) <= l.MaxAttributesSize
 }
 
-func (l LimitConfig) CheckAsyncAttributesSize(asyncAttributes map[string][]byte) bool {
+func (l LimitConfig) CheckAsyncAttributesSize(asyncAttributes []*livekit.DataTrackSchemaDefinition) bool {
 	if l.MaxAsyncAttributesSize == 0 {
 		return true
 	}
 
 	total := 0
-	for k, v := range asyncAttributes {
-		total += len(k) + len(v)
+	for _, asyncAttribute := range asyncAttributes {
+		total += len(asyncAttribute.Id.Name) + len(asyncAttribute.Definition)
 	}
 	return uint32(total) <= l.MaxAsyncAttributesSize
 }
 
-func (l LimitConfig) CanAddAsyncAttribute(asyncAttributes map[string][]byte, toAddKey string, toAddValue []byte) bool {
+func (l LimitConfig) CanAddAsyncAttribute(asyncAttributes []*livekit.DataTrackSchemaDefinition, toAdd *livekit.DataTrackSchemaDefinition) bool {
 	if l.MaxAsyncAttributesSize == 0 {
 		return true
 	}
 
 	total := 0
-	for k, v := range asyncAttributes {
-		total += len(k) + len(v)
+	for _, asyncAttribute := range asyncAttributes {
+		total += len(asyncAttribute.Id.Name) + len(asyncAttribute.Definition)
 	}
-	return uint32(total+len(toAddKey)+len(toAddValue)) <= l.MaxAsyncAttributesSize
+	return uint32(total+len(toAdd.Id.Name)+len(toAdd.Definition)) <= l.MaxAsyncAttributesSize
 }
 
 // ---------------------------------

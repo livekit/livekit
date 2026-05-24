@@ -221,6 +221,16 @@ type FakeLocalParticipant struct {
 	getAdaptiveStreamReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	GetAllAsyncAttributeIDsStub        func() []*livekit.DataTrackSchemaId
+	getAllAsyncAttributeIDsMutex       sync.RWMutex
+	getAllAsyncAttributeIDsArgsForCall []struct {
+	}
+	getAllAsyncAttributeIDsReturns struct {
+		result1 []*livekit.DataTrackSchemaId
+	}
+	getAllAsyncAttributeIDsReturnsOnCall map[int]struct {
+		result1 []*livekit.DataTrackSchemaId
+	}
 	GetAnswerStub        func() (webrtc.SessionDescription, uint32, error)
 	getAnswerMutex       sync.RWMutex
 	getAnswerArgsForCall []struct {
@@ -2580,6 +2590,59 @@ func (fake *FakeLocalParticipant) GetAdaptiveStreamReturnsOnCall(i int, result1 
 	}
 	fake.getAdaptiveStreamReturnsOnCall[i] = struct {
 		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetAllAsyncAttributeIDs() []*livekit.DataTrackSchemaId {
+	fake.getAllAsyncAttributeIDsMutex.Lock()
+	ret, specificReturn := fake.getAllAsyncAttributeIDsReturnsOnCall[len(fake.getAllAsyncAttributeIDsArgsForCall)]
+	fake.getAllAsyncAttributeIDsArgsForCall = append(fake.getAllAsyncAttributeIDsArgsForCall, struct {
+	}{})
+	stub := fake.GetAllAsyncAttributeIDsStub
+	fakeReturns := fake.getAllAsyncAttributeIDsReturns
+	fake.recordInvocation("GetAllAsyncAttributeIDs", []interface{}{})
+	fake.getAllAsyncAttributeIDsMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetAllAsyncAttributeIDsCallCount() int {
+	fake.getAllAsyncAttributeIDsMutex.RLock()
+	defer fake.getAllAsyncAttributeIDsMutex.RUnlock()
+	return len(fake.getAllAsyncAttributeIDsArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetAllAsyncAttributeIDsCalls(stub func() []*livekit.DataTrackSchemaId) {
+	fake.getAllAsyncAttributeIDsMutex.Lock()
+	defer fake.getAllAsyncAttributeIDsMutex.Unlock()
+	fake.GetAllAsyncAttributeIDsStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetAllAsyncAttributeIDsReturns(result1 []*livekit.DataTrackSchemaId) {
+	fake.getAllAsyncAttributeIDsMutex.Lock()
+	defer fake.getAllAsyncAttributeIDsMutex.Unlock()
+	fake.GetAllAsyncAttributeIDsStub = nil
+	fake.getAllAsyncAttributeIDsReturns = struct {
+		result1 []*livekit.DataTrackSchemaId
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetAllAsyncAttributeIDsReturnsOnCall(i int, result1 []*livekit.DataTrackSchemaId) {
+	fake.getAllAsyncAttributeIDsMutex.Lock()
+	defer fake.getAllAsyncAttributeIDsMutex.Unlock()
+	fake.GetAllAsyncAttributeIDsStub = nil
+	if fake.getAllAsyncAttributeIDsReturnsOnCall == nil {
+		fake.getAllAsyncAttributeIDsReturnsOnCall = make(map[int]struct {
+			result1 []*livekit.DataTrackSchemaId
+		})
+	}
+	fake.getAllAsyncAttributeIDsReturnsOnCall[i] = struct {
+		result1 []*livekit.DataTrackSchemaId
 	}{result1}
 }
 

@@ -57,11 +57,7 @@ func (p *ParticipantImpl) HandleDefineDataTrackSchemaRequest(req *livekit.Define
 		return
 	}
 
-	if !p.params.LimitConfig.CanAddAsyncAttribute(
-		p.asyncAttributes.GetAll(),
-		ToParticipantAsyncAttributeKey(req.SchemaDefinition.Id),
-		req.SchemaDefinition.Definition,
-	) {
+	if !p.params.LimitConfig.CanAddAsyncAttribute(p.asyncAttributes.GetAll(), req.SchemaDefinition) {
 		p.sendRequestResponse(&livekit.RequestResponse{
 			Reason:  livekit.RequestResponse_LIMIT_EXCEEDED,
 			Message: "async attribute definition exceeds limit",
@@ -91,7 +87,7 @@ func (p *ParticipantImpl) HandleGetDataTrackSchemaRequest(req *livekit.GetDataTr
 }
 
 func (p *ParticipantImpl) AddDataTrackSchema(definition *livekit.DataTrackSchemaDefinition) {
-	p.asyncAttributes.Add(definition.Id, definition.Definition)
+	p.asyncAttributes.Add(definition)
 }
 
 func (p *ParticipantImpl) GetDataTrackSchema(id *livekit.DataTrackSchemaId) *livekit.DataTrackSchemaDefinition {
@@ -123,4 +119,8 @@ func (p *ParticipantImpl) ProcessGetDataTrackSchemaRequest(req *livekit.GetDataT
 	}
 
 	p.sendGetDataTrackSchemaResponse(asyncAttribute)
+}
+
+func (p *ParticipantImpl) GetAllAsyncAttributeIDs() []*livekit.DataTrackSchemaId {
+	return p.asyncAttributes.GetAllIDs()
 }

@@ -22,6 +22,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 )
 
 type ParticipantAsyncAttributesParams struct {
@@ -31,25 +32,25 @@ type ParticipantAsyncAttributesParams struct {
 type ParticipantAsyncAttributes struct {
 	params     ParticipantAsyncAttributesParams
 	lock       sync.Mutex
-	attributes map[string][]byte
+	attributes map[string]*livekit.DataTrackSchemaDefinition
 }
 
 func NewParticipantAsyncAttributes(params ParticipantAsyncAttributesParams) *ParticipantAsyncAttributes {
 	return &ParticipantAsyncAttributes{
 		params:     params,
-		attributes: make(map[string][]byte),
+		attributes: make(map[string]*livekit.DataTrackSchemaDefinition),
 	}
 }
 
-func (p *ParticipantAsyncAttributes) Add(id *livekit.DataTrackSchemaId, value []byte) {
+func (p *ParticipantAsyncAttributes) Add(aa *livekit.DataTrackSchemaDefinition) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if id == nil {
+	if aa.Id == nil {
 		return
 	}
 
-	p.attributes[ToParticipantAsyncAttributeKey(id)] = value
+	p.attributes[ToParticipantAsyncAttributeKey(aa.Id)] = utils.CloneProto(aa)
 }
 
 func (p *ParticipantAsyncAttributes) Delete(id *livekit.DataTrackSchemaId) {
@@ -71,22 +72,35 @@ func (p *ParticipantAsyncAttributes) Get(id *livekit.DataTrackSchemaId) *livekit
 		return nil
 	}
 
-	value, ok := p.attributes[ToParticipantAsyncAttributeKey(id)]
+	aa, ok := p.attributes[ToParticipantAsyncAttributeKey(id)]
 	if !ok {
 		return nil
 	}
 
-	return &livekit.DataTrackSchemaDefinition{
-		Id:         id,
-		Definition: value,
-	}
+	return aa
 }
 
-func (p *ParticipantAsyncAttributes) GetAll() map[string][]byte {
+func (p *ParticipantAsyncAttributes) GetAll() []*livekit.DataTrackSchemaDefinition {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	return p.attributes
+	all := make([]*livekit.DataTrackSchemaDefinition, 0, len(p.attributes))
+	for _, aa := range p.attributes {
+		all = append(all, utils.CloneProto(aa))
+	}
+	return all
+}
+
+func (p *ParticipantAsyncAttributes) GetAllIDs() []*livekit.DataTrackSchemaId {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	ids := make([]*livekit.DataTrackSchemaId, 0, len(p.attributes))
+	for _, aa := range p.attributes {
+		ids = append(ids, utils.CloneProto(aa.Id))
+	}
+
+	return ids
 }
 
 // -------------------------------
@@ -95,7 +109,7 @@ func ToParticipantAsyncAttributeKey(id *livekit.DataTrackSchemaId) string {
 	return fmt.Sprintf("%s/%d", id.Name, id.Encoding)
 }
 
-func FromParticipantAsyncAttributeKey(key string) *livekit.DataTrackSchemaId {
+func fromParticipantAsyncAttributeKey(key string) *livekit.DataTrackSchemaId {
 	parts := strings.Split(key, "/")
 	encoding, _ := strconv.Atoi(parts[1])
 	return &livekit.DataTrackSchemaId{

@@ -242,7 +242,11 @@ func TestGetDataTrackSchema(t *testing.T) {
 	}
 	require.Nil(t, p.GetDataTrackSchema(id))
 
-	p.asyncAttributes.Add(id, []byte("definition"))
+	definition := &livekit.DataTrackSchemaDefinition{
+		Id:         id,
+		Definition: []byte("definition"),
+	}
+	p.asyncAttributes.Add(definition)
 	got := p.GetDataTrackSchema(id)
 	require.NotNil(t, got)
 	require.Equal(t, id.Name, got.Id.Name)
@@ -315,5 +319,77 @@ func TestProcessGetDataTrackSchemaRequest(t *testing.T) {
 		response, ok := msg.Message.(*livekit.SignalResponse_GetDataTrackSchemaResponse)
 		require.True(t, ok, "expected SignalResponse_GetDataTrackSchemaResponse, got %T", msg.Message)
 		require.Equal(t, def, response.GetDataTrackSchemaResponse.SchemaDefinition)
+	})
+}
+
+func TestGetAllAsyncAttributeIDs(t *testing.T) {
+	t.Run("returns empty slice when no schemas defined", func(t *testing.T) {
+		p := newParticipantWithAsyncAttributes(t, true, 0)
+		require.Empty(t, p.GetAllAsyncAttributeIDs())
+	})
+
+	t.Run("returns ids for all defined schemas", func(t *testing.T) {
+		p := newParticipantWithAsyncAttributes(t, true, 0)
+
+		id1 := &livekit.DataTrackSchemaId{
+			Name:     "schema-1",
+			Encoding: livekit.DataTrackSchemaEncoding_DATA_TRACK_SCHEMA_ENCODING_PROTOBUF,
+		}
+		id2 := &livekit.DataTrackSchemaId{
+			Name:     "schema-2",
+			Encoding: livekit.DataTrackSchemaEncoding_DATA_TRACK_SCHEMA_ENCODING_FLATBUFFER,
+		}
+		id3 := &livekit.DataTrackSchemaId{
+			Name:     "schema-1",
+			Encoding: livekit.DataTrackSchemaEncoding_DATA_TRACK_SCHEMA_ENCODING_JSON_SCHEMA,
+		}
+
+		p.AddDataTrackSchema(&livekit.DataTrackSchemaDefinition{Id: id1, Definition: []byte("def-1")})
+		p.AddDataTrackSchema(&livekit.DataTrackSchemaDefinition{Id: id2, Definition: []byte("def-2")})
+		p.AddDataTrackSchema(&livekit.DataTrackSchemaDefinition{Id: id3, Definition: []byte("def-3")})
+
+		ids := p.GetAllAsyncAttributeIDs()
+		require.Len(t, ids, 3)
+
+		got := make(map[string]livekit.DataTrackSchemaEncoding, len(ids))
+		for _, id := range ids {
+			got[id.Name+"|"+id.Encoding.String()] = id.Encoding
+		}
+		require.Contains(t, got, "schema-1|"+id1.Encoding.String())
+		require.Contains(t, got, "schema-2|"+id2.Encoding.String())
+		require.Contains(t, got, "schema-1|"+id3.Encoding.String())
+	})
+
+	t.Run("reflects deletes", func(t *testing.T) {
+		p := newParticipantWithAsyncAttributes(t, true, 0)
+
+		id := &livekit.DataTrackSchemaId{
+			Name:     "schema-1",
+			Encoding: livekit.DataTrackSchemaEncoding_DATA_TRACK_SCHEMA_ENCODING_PROTOBUF,
+		}
+		p.AddDataTrackSchema(&livekit.DataTrackSchemaDefinition{Id: id, Definition: []byte("def")})
+		require.Len(t, p.GetAllAsyncAttributeIDs(), 1)
+
+		p.asyncAttributes.Delete(id)
+		require.Empty(t, p.GetAllAsyncAttributeIDs())
+	})
+
+	t.Run("returned ids are cloned and do not alias internal state", func(t *testing.T) {
+		p := newParticipantWithAsyncAttributes(t, true, 0)
+
+		id := &livekit.DataTrackSchemaId{
+			Name:     "schema-1",
+			Encoding: livekit.DataTrackSchemaEncoding_DATA_TRACK_SCHEMA_ENCODING_PROTOBUF,
+		}
+		p.AddDataTrackSchema(&livekit.DataTrackSchemaDefinition{Id: id, Definition: []byte("def")})
+
+		ids := p.GetAllAsyncAttributeIDs()
+		require.Len(t, ids, 1)
+		ids[0].Name = "mutated"
+
+		// mutating the returned slice must not affect what's stored
+		again := p.GetAllAsyncAttributeIDs()
+		require.Len(t, again, 1)
+		require.Equal(t, "schema-1", again[0].Name)
 	})
 }

@@ -576,6 +576,8 @@ type LocalParticipant interface {
 	ClearParticipantListener()
 
 	GetNextSubscribedDataTrackHandle() uint16
+
+	GetAllAsyncAttributeIDs() []*livekit.DataTrackSchemaId
 }
 
 // ---------------------------------------------
