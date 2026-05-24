@@ -33,6 +33,7 @@ type DataDownTrackParams struct {
 	PublishDataTrack types.DataTrack
 	Handle           uint16
 	Transport        types.DataTrackTransport
+	BytesTrackStats  *BytesTrackStats
 }
 
 type DataDownTrack struct {
@@ -59,6 +60,9 @@ func NewDataDownTrack(params DataDownTrackParams) (*DataDownTrack, error) {
 
 func (d *DataDownTrack) Close() {
 	d.logger.Infow("closing data down track")
+	if d.params.BytesTrackStats != nil {
+		d.params.BytesTrackStats.Stop()
+	}
 	d.params.PublishDataTrack.DeleteDataDownTrack(d.SubscriberID())
 }
 
@@ -93,6 +97,10 @@ func (d *DataDownTrack) WritePacket(data []byte, packet *datatrack.Packet, _arri
 	}
 	if err := d.params.Transport.SendDataTrackMessage(buf); err != nil {
 		d.logger.Warnw("could not send data track message", err)
+		return
+	}
+	if d.params.BytesTrackStats != nil {
+		d.params.BytesTrackStats.AddBytes(uint64(len(buf)), true)
 	}
 }
 
