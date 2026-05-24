@@ -368,3 +368,9 @@ func (p *ParticipantImpl) SendDataTrackSubscriberHandles(handles map[uint32]*liv
 		SubHandles: handles,
 	}))
 }
+
+func (p *ParticipantImpl) sendGetDataTrackSchemaResponse(definition *livekit.DataTrackSchemaDefinition) error {
+	return p.signaller.WriteMessage(p.signalling.SignalGetDataTrackSchemaResponse(&livekit.GetDataTrackSchemaResponse{
+		SchemaDefinition: definition,
+	}))
+}

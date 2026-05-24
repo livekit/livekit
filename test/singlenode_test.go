@@ -1512,3 +1512,269 @@ func TestTurnAuthFailure(t *testing.T) {
 		})
 	}
 }
+
+// asyncAttributesCapture buffers RequestResponse and GetDataTrackSchemaResponse messages
+// sent to a test client so they can be asserted on. Other messages flow through to the
+// default handler.
+type asyncAttributesCapture struct {
+	mu                sync.Mutex
+	requestResponses  []*livekit.RequestResponse
+	schemaResponses   []*livekit.GetDataTrackSchemaResponse
+}
+
+func (c *asyncAttributesCapture) interceptor() testclient.SignalResponseInterceptor {
+	return func(msg *livekit.SignalResponse, next testclient.SignalResponseHandler) error {
+		switch m := msg.Message.(type) {
+		case *livekit.SignalResponse_RequestResponse:
+			c.mu.Lock()
+			c.requestResponses = append(c.requestResponses, m.RequestResponse)
+			c.mu.Unlock()
+		case *livekit.SignalResponse_GetDataTrackSchemaResponse:
+			c.mu.Lock()
+			c.schemaResponses = append(c.schemaResponses, m.GetDataTrackSchemaResponse)
+			c.mu.Unlock()
+		}
+		return next(msg)
+	}
+}
+
+func (c *asyncAttributesCapture) takeRequestResponse() *livekit.RequestResponse {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.requestResponses) == 0 {
+		return nil
+	}
+	rr := c.requestResponses[0]
+	c.requestResponses = c.requestResponses[1:]
+	return rr
+}
+
+func (c *asyncAttributesCapture) takeSchemaResponse() *livekit.GetDataTrackSchemaResponse {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.schemaResponses) == 0 {
+		return nil
+	}
+	sr := c.schemaResponses[0]
+	c.schemaResponses = c.schemaResponses[1:]
+	return sr
+}
+
+func (c *asyncAttributesCapture) requestResponseCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.requestResponses)
+}
+
+func setupAsyncAttributesServer(t *testing.T, name string, enable bool) (*service.LivekitServer, func()) {
+	logger.Infow("----------------STARTING TEST----------------", "test", name)
+	s := createSingleNodeServer(func(c *config.Config) {
+		c.EnableParticipantAsyncAttributes = enable
+		c.Limit.MaxAsyncAttributesSize = 1024
+	})
+	go func() {
+		if err := s.Start(); err != nil {
+			logger.Errorw("server returned error", err)
+		}
+	}()
+	waitForServerToStart(s)
+	return s, func() {
+		s.Stop(true)
+		logger.Infow("----------------FINISHING TEST----------------", "test", name)
+	}
+}
+
+func TestSingleNodeAsyncAttributes(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, finish := setupAsyncAttributesServer(t, "TestSingleNodeAsyncAttributes", true)
+	defer finish()
+
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
+			pubCapture := &asyncAttributesCapture{}
+			subCapture := &asyncAttributesCapture{}
+
+			pub := createRTCClient("pub", defaultServerPort, testRTCServicePath, &testclient.Options{
+				AutoSubscribe:             true,
+				SignalResponseInterceptor: pubCapture.interceptor(),
+			})
+			sub := createRTCClient("sub", defaultServerPort, testRTCServicePath, &testclient.Options{
+				AutoSubscribe:             true,
+				SignalResponseInterceptor: subCapture.interceptor(),
+			})
+			waitUntilConnected(t, pub, sub)
+			defer stopClients(pub, sub)
+
+			schemaID := &livekit.DataTrackSchemaId{
+				Name:     "schema-1",
+				Encoding: livekit.DataTrackSchemaEncoding_DATA_TRACK_SCHEMA_ENCODING_PROTOBUF,
+			}
+			definition := []byte("definition-bytes")
+
+			// publisher defines a schema
+			require.NoError(t, pub.SendRequest(&livekit.SignalRequest{
+				Message: &livekit.SignalRequest_DefineDataTrackSchema{
+					DefineDataTrackSchema: &livekit.DefineDataTrackSchemaRequest{
+						SchemaDefinition: &livekit.DataTrackSchemaDefinition{
+							Id:         schemaID,
+							Definition: definition,
+						},
+					},
+				},
+			}))
+
+			// give the server a moment to process; success path sends no response
+			time.Sleep(syncDelay)
+			require.Equal(t, 0, pubCapture.requestResponseCount(), "publisher should not receive an error response on success")
+
+			// subscriber asks for the schema
+			require.NoError(t, sub.SendRequest(&livekit.SignalRequest{
+				Message: &livekit.SignalRequest_GetDataTrackSchema{
+					GetDataTrackSchema: &livekit.GetDataTrackSchemaRequest{
+						ParticipantIdentity: "pub",
+						SchemaId:            schemaID,
+					},
+				},
+			}))
+
+			testutils.WithTimeout(t, func() string {
+				resp := subCapture.takeSchemaResponse()
+				if resp == nil {
+					return "subscriber did not receive schema response"
+				}
+				if resp.SchemaDefinition == nil {
+					return "schema response missing definition"
+				}
+				if resp.SchemaDefinition.Id.Name != schemaID.Name {
+					return fmt.Sprintf("expected schema name %s, got %s", schemaID.Name, resp.SchemaDefinition.Id.Name)
+				}
+				if string(resp.SchemaDefinition.Definition) != string(definition) {
+					return fmt.Sprintf("expected definition %q, got %q", definition, resp.SchemaDefinition.Definition)
+				}
+				return ""
+			})
+
+			// subscriber asks for an unknown schema on a known publisher
+			require.NoError(t, sub.SendRequest(&livekit.SignalRequest{
+				Message: &livekit.SignalRequest_GetDataTrackSchema{
+					GetDataTrackSchema: &livekit.GetDataTrackSchemaRequest{
+						ParticipantIdentity: "pub",
+						SchemaId: &livekit.DataTrackSchemaId{
+							Name:     "does-not-exist",
+							Encoding: livekit.DataTrackSchemaEncoding_DATA_TRACK_SCHEMA_ENCODING_PROTOBUF,
+						},
+					},
+				},
+			}))
+
+			testutils.WithTimeout(t, func() string {
+				rr := subCapture.takeRequestResponse()
+				if rr == nil {
+					return "subscriber did not receive RequestResponse for missing schema"
+				}
+				if rr.Reason != livekit.RequestResponse_NOT_FOUND {
+					return fmt.Sprintf("expected NOT_FOUND, got %s", rr.Reason)
+				}
+				return ""
+			})
+
+			// subscriber asks for a schema on an unknown publisher identity
+			require.NoError(t, sub.SendRequest(&livekit.SignalRequest{
+				Message: &livekit.SignalRequest_GetDataTrackSchema{
+					GetDataTrackSchema: &livekit.GetDataTrackSchemaRequest{
+						ParticipantIdentity: "unknown-publisher",
+						SchemaId:            schemaID,
+					},
+				},
+			}))
+
+			testutils.WithTimeout(t, func() string {
+				rr := subCapture.takeRequestResponse()
+				if rr == nil {
+					return "subscriber did not receive RequestResponse for unknown publisher"
+				}
+				if rr.Reason != livekit.RequestResponse_NOT_FOUND {
+					return fmt.Sprintf("expected NOT_FOUND, got %s", rr.Reason)
+				}
+				return ""
+			})
+
+			// publisher sends an invalid define (empty id name)
+			require.NoError(t, pub.SendRequest(&livekit.SignalRequest{
+				Message: &livekit.SignalRequest_DefineDataTrackSchema{
+					DefineDataTrackSchema: &livekit.DefineDataTrackSchemaRequest{
+						SchemaDefinition: &livekit.DataTrackSchemaDefinition{
+							Id: &livekit.DataTrackSchemaId{
+								Name:     "",
+								Encoding: livekit.DataTrackSchemaEncoding_DATA_TRACK_SCHEMA_ENCODING_PROTOBUF,
+							},
+							Definition: definition,
+						},
+					},
+				},
+			}))
+
+			testutils.WithTimeout(t, func() string {
+				rr := pubCapture.takeRequestResponse()
+				if rr == nil {
+					return "publisher did not receive RequestResponse for invalid define"
+				}
+				if rr.Reason != livekit.RequestResponse_INVALID_REQUEST {
+					return fmt.Sprintf("expected INVALID_REQUEST, got %s", rr.Reason)
+				}
+				return ""
+			})
+		})
+	}
+}
+
+func TestSingleNodeAsyncAttributesDisabled(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, finish := setupAsyncAttributesServer(t, "TestSingleNodeAsyncAttributesDisabled", false)
+	defer finish()
+
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
+			pubCapture := &asyncAttributesCapture{}
+			pub := createRTCClient("pub", defaultServerPort, testRTCServicePath, &testclient.Options{
+				AutoSubscribe:             true,
+				SignalResponseInterceptor: pubCapture.interceptor(),
+			})
+			waitUntilConnected(t, pub)
+			defer stopClients(pub)
+
+			require.NoError(t, pub.SendRequest(&livekit.SignalRequest{
+				Message: &livekit.SignalRequest_DefineDataTrackSchema{
+					DefineDataTrackSchema: &livekit.DefineDataTrackSchemaRequest{
+						SchemaDefinition: &livekit.DataTrackSchemaDefinition{
+							Id: &livekit.DataTrackSchemaId{
+								Name:     "schema-1",
+								Encoding: livekit.DataTrackSchemaEncoding_DATA_TRACK_SCHEMA_ENCODING_PROTOBUF,
+							},
+							Definition: []byte("definition-bytes"),
+						},
+					},
+				},
+			}))
+
+			testutils.WithTimeout(t, func() string {
+				rr := pubCapture.takeRequestResponse()
+				if rr == nil {
+					return "publisher did not receive RequestResponse"
+				}
+				if rr.Reason != livekit.RequestResponse_NOT_ALLOWED {
+					return fmt.Sprintf("expected NOT_ALLOWED, got %s", rr.Reason)
+				}
+				return ""
+			})
+		})
+	}
+}

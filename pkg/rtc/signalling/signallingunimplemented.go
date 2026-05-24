@@ -127,3 +127,7 @@ func (u *signallingUnimplemented) SignalUnpublishDataTrackResponse(unpublishData
 func (u *signallingUnimplemented) SignalDataTrackSubscriberHandles(dataTrackSubscriberHandles *livekit.DataTrackSubscriberHandles) proto.Message {
 	return nil
 }
+
+func (u *signallingUnimplemented) SignalGetDataTrackSchemaResponse(getDataTrackSchemaResponse *livekit.GetDataTrackSchemaResponse) proto.Message {
+	return nil
+}

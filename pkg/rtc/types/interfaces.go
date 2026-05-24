@@ -355,6 +355,9 @@ type Participant interface {
 	HandleReceivedDataTrackMessage([]byte, *datatrack.Packet, int64)
 
 	GetParticipantListener() ParticipantListener
+
+	AddDataTrackSchema(definition *livekit.DataTrackSchemaDefinition)
+	GetDataTrackSchema(id *livekit.DataTrackSchemaId) *livekit.DataTrackSchemaDefinition
 }
 
 // -------------------------------------------------------
@@ -560,6 +563,9 @@ type LocalParticipant interface {
 	HandlePublishDataTrackRequest(*livekit.PublishDataTrackRequest)
 	HandleUnpublishDataTrackRequest(*livekit.UnpublishDataTrackRequest)
 	HandleUpdateDataSubscription(*livekit.UpdateDataSubscription)
+	HandleDefineDataTrackSchemaRequest(*livekit.DefineDataTrackSchemaRequest)
+	HandleGetDataTrackSchemaRequest(*livekit.GetDataTrackSchemaRequest)
+	ProcessGetDataTrackSchemaRequest(*livekit.GetDataTrackSchemaRequest, Participant)
 
 	HandleSignalMessage(msg proto.Message) error
 
@@ -619,6 +625,8 @@ type LocalParticipantListener interface {
 	)
 	OnUpdateSubscriptionPermission(LocalParticipant, *livekit.SubscriptionPermission) error
 	OnUpdateDataSubscriptions(LocalParticipant, *livekit.UpdateDataSubscription)
+	OnDefineDataTrackSchema(LocalParticipant, *livekit.DataTrackSchemaDefinition)
+	OnGetDataTrackSchema(LocalParticipant, *livekit.GetDataTrackSchemaRequest)
 	OnSyncState(LocalParticipant, *livekit.SyncState) error
 	OnSimulateScenario(LocalParticipant, *livekit.SimulateScenario) error
 	OnLeave(LocalParticipant, ParticipantCloseReason)
@@ -649,6 +657,10 @@ func (*NullLocalParticipantListener) OnUpdateSubscriptionPermission(LocalPartici
 	return nil
 }
 func (*NullLocalParticipantListener) OnUpdateDataSubscriptions(LocalParticipant, *livekit.UpdateDataSubscription) {
+}
+func (*NullLocalParticipantListener) OnDefineDataTrackSchema(LocalParticipant, *livekit.DataTrackSchemaDefinition) {
+}
+func (*NullLocalParticipantListener) OnGetDataTrackSchema(LocalParticipant, *livekit.GetDataTrackSchemaRequest) {
 }
 func (*NullLocalParticipantListener) OnSyncState(LocalParticipant, *livekit.SyncState) error {
 	return nil

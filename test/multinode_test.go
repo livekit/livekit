@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	"github.com/livekit/livekit-server/test/client"
@@ -419,6 +420,116 @@ func TestCloseDisconnectedParticipantOnSignalClose(t *testing.T) {
 			testutils.WithTimeout(t, func() string {
 				if len(c1.RemoteParticipants()) != 0 {
 					return "c1 did not see c2 removed"
+				}
+				return ""
+			})
+		})
+	}
+}
+
+func TestMultiNodeAsyncAttributes(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, _, finish := setupMultiNodeTestWithConfig("TestMultiNodeAsyncAttributes", func(c *config.Config) {
+		c.EnableParticipantAsyncAttributes = true
+		c.Limit.MaxAsyncAttributesSize = 1024
+	})
+	defer finish()
+
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
+			pubCapture := &asyncAttributesCapture{}
+			subCapture := &asyncAttributesCapture{}
+
+			// publisher on node 1, subscriber on node 2
+			pub := createRTCClient("pub", defaultServerPort, testRTCServicePath, &client.Options{
+				AutoSubscribe:             true,
+				SignalResponseInterceptor: pubCapture.interceptor(),
+			})
+			sub := createRTCClient("sub", secondServerPort, testRTCServicePath, &client.Options{
+				AutoSubscribe:             true,
+				SignalResponseInterceptor: subCapture.interceptor(),
+			})
+			waitUntilConnected(t, pub, sub)
+			defer stopClients(pub, sub)
+
+			// wait for both nodes to see each other so the get request routes correctly
+			testutils.WithTimeout(t, func() string {
+				if sub.GetRemoteParticipant(pub.ID()) == nil {
+					return "sub does not see pub yet"
+				}
+				return ""
+			})
+
+			schemaID := &livekit.DataTrackSchemaId{
+				Name:     "schema-multinode",
+				Encoding: livekit.DataTrackSchemaEncoding_DATA_TRACK_SCHEMA_ENCODING_PROTOBUF,
+			}
+			definition := []byte("multinode-definition")
+
+			require.NoError(t, pub.SendRequest(&livekit.SignalRequest{
+				Message: &livekit.SignalRequest_DefineDataTrackSchema{
+					DefineDataTrackSchema: &livekit.DefineDataTrackSchemaRequest{
+						SchemaDefinition: &livekit.DataTrackSchemaDefinition{
+							Id:         schemaID,
+							Definition: definition,
+						},
+					},
+				},
+			}))
+
+			// give the publisher's node time to apply the definition
+			time.Sleep(syncDelay)
+			require.Equal(t, 0, pubCapture.requestResponseCount(), "publisher should not receive an error response on success")
+
+			// subscriber on a different node asks for the schema; the request routes
+			// across nodes to the publisher.
+			require.NoError(t, sub.SendRequest(&livekit.SignalRequest{
+				Message: &livekit.SignalRequest_GetDataTrackSchema{
+					GetDataTrackSchema: &livekit.GetDataTrackSchemaRequest{
+						ParticipantIdentity: "pub",
+						SchemaId:            schemaID,
+					},
+				},
+			}))
+
+			testutils.WithTimeout(t, func() string {
+				resp := subCapture.takeSchemaResponse()
+				if resp == nil {
+					return "subscriber did not receive schema response"
+				}
+				if resp.SchemaDefinition == nil {
+					return "schema response missing definition"
+				}
+				if resp.SchemaDefinition.Id.Name != schemaID.Name {
+					return fmt.Sprintf("expected schema name %s, got %s", schemaID.Name, resp.SchemaDefinition.Id.Name)
+				}
+				if string(resp.SchemaDefinition.Definition) != string(definition) {
+					return fmt.Sprintf("expected definition %q, got %q", definition, resp.SchemaDefinition.Definition)
+				}
+				return ""
+			})
+
+			// requesting an unknown publisher identity should return NOT_FOUND
+			require.NoError(t, sub.SendRequest(&livekit.SignalRequest{
+				Message: &livekit.SignalRequest_GetDataTrackSchema{
+					GetDataTrackSchema: &livekit.GetDataTrackSchemaRequest{
+						ParticipantIdentity: "unknown-publisher",
+						SchemaId:            schemaID,
+					},
+				},
+			}))
+
+			testutils.WithTimeout(t, func() string {
+				rr := subCapture.takeRequestResponse()
+				if rr == nil {
+					return "subscriber did not receive RequestResponse for unknown publisher"
+				}
+				if rr.Reason != livekit.RequestResponse_NOT_FOUND {
+					return fmt.Sprintf("expected NOT_FOUND, got %s", rr.Reason)
 				}
 				return ""
 			})

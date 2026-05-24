@@ -1374,6 +1374,11 @@ func (r *Room) onUpdateDataSubscriptions(participant types.LocalParticipant, req
 	}
 }
 
+func (r *Room) onGetDataTrackSchema(participant types.LocalParticipant, req *livekit.GetDataTrackSchemaRequest) {
+	publisher := r.GetParticipant(livekit.ParticipantIdentity(req.ParticipantIdentity))
+	participant.ProcessGetDataTrackSchemaRequest(req, publisher)
+}
+
 func (r *Room) onLeave(p types.LocalParticipant, reason types.ParticipantCloseReason) {
 	r.RemoveParticipant(p.Identity(), p.ID(), reason)
 }
@@ -1981,6 +1986,13 @@ func (l *localParticipantListener) OnUpdateSubscriptionPermission(p types.LocalP
 
 func (l *localParticipantListener) OnUpdateDataSubscriptions(p types.LocalParticipant, req *livekit.UpdateDataSubscription) {
 	l.room.onUpdateDataSubscriptions(p, req)
+}
+
+func (l *localParticipantListener) OnDefineDataTrackSchema(_p types.LocalParticipant, _definition *livekit.DataTrackSchemaDefinition) {
+}
+
+func (l *localParticipantListener) OnGetDataTrackSchema(p types.LocalParticipant, req *livekit.GetDataTrackSchemaRequest) {
+	l.room.onGetDataTrackSchema(p, req)
 }
 
 func (l *localParticipantListener) OnSyncState(p types.LocalParticipant, state *livekit.SyncState) error {

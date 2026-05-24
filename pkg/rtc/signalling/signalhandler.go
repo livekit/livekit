@@ -151,6 +151,12 @@ func (s *signalhandler) HandleMessage(msg proto.Message) error {
 
 	case *livekit.SignalRequest_UpdateDataSubscription:
 		s.params.Participant.HandleUpdateDataSubscription(msg.UpdateDataSubscription)
+
+	case *livekit.SignalRequest_DefineDataTrackSchema:
+		s.params.Participant.HandleDefineDataTrackSchemaRequest(msg.DefineDataTrackSchema)
+
+	case *livekit.SignalRequest_GetDataTrackSchema:
+		s.params.Participant.HandleGetDataTrackSchemaRequest(msg.GetDataTrackSchema)
 	}
 
 	return nil

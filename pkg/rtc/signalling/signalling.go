@@ -258,3 +258,11 @@ func (s *signalling) SignalDataTrackSubscriberHandles(dataTrackSubscriberHandles
 		},
 	}
 }
+
+func (u *signalling) SignalGetDataTrackSchemaResponse(getDataTrackSchemaResponse *livekit.GetDataTrackSchemaResponse) proto.Message {
+	return &livekit.SignalResponse{
+		Message: &livekit.SignalResponse_GetDataTrackSchemaResponse{
+			GetDataTrackSchemaResponse: getDataTrackSchemaResponse,
+		},
+	}
+}

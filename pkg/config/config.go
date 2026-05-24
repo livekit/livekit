@@ -89,6 +89,8 @@ type Config struct {
 
 	EnableDataTracks bool `yaml:"enable_data_tracks,omitempty"`
 
+	EnableParticipantAsyncAttributes bool `yaml:"enable_participant_async_attributes,omitempty"`
+
 	API APIConfig `yaml:"api,omitempty"`
 }
 
@@ -265,6 +267,8 @@ type RegionConfig struct {
 	Lon  float64 `yaml:"lon,omitempty"`
 }
 
+// ---------------------------------
+
 type LimitConfig struct {
 	NumTracks              int32   `yaml:"num_tracks,omitempty"`
 	BytesPerSec            float32 `yaml:"bytes_per_sec,omitempty"`
@@ -276,6 +280,8 @@ type LimitConfig struct {
 	MaxRoomNameLength            int    `yaml:"max_room_name_length,omitempty"`
 	MaxParticipantIdentityLength int    `yaml:"max_participant_identity_length,omitempty"`
 	MaxParticipantNameLength     int    `yaml:"max_participant_name_length,omitempty"`
+
+	MaxAsyncAttributesSize uint32 `yaml:"max_async_attributes_size,omitempty"`
 }
 
 func (l LimitConfig) CheckRoomNameLength(name string) bool {
@@ -305,6 +311,32 @@ func (l LimitConfig) CheckAttributesSize(attributes map[string]string) bool {
 	}
 	return uint32(total) <= l.MaxAttributesSize
 }
+
+func (l LimitConfig) CheckAsyncAttributesSize(asyncAttributes map[string][]byte) bool {
+	if l.MaxAsyncAttributesSize == 0 {
+		return true
+	}
+
+	total := 0
+	for k, v := range asyncAttributes {
+		total += len(k) + len(v)
+	}
+	return uint32(total) <= l.MaxAsyncAttributesSize
+}
+
+func (l LimitConfig) CanAddAsyncAttribute(asyncAttributes map[string][]byte, toAddKey string, toAddValue []byte) bool {
+	if l.MaxAsyncAttributesSize == 0 {
+		return true
+	}
+
+	total := 0
+	for k, v := range asyncAttributes {
+		total += len(k) + len(v)
+	}
+	return uint32(total+len(toAddKey)+len(toAddValue)) <= l.MaxAsyncAttributesSize
+}
+
+// ---------------------------------
 
 type IngressConfig struct {
 	RTMPBaseURL string `yaml:"rtmp_base_url,omitempty"`
@@ -425,6 +457,7 @@ var DefaultConfig = Config{
 		MaxRoomNameLength:            256,
 		MaxParticipantIdentityLength: 256,
 		MaxParticipantNameLength:     256,
+		MaxAsyncAttributesSize:       256000,
 	},
 	Logging: LoggingConfig{
 		PionLevel: "error",
