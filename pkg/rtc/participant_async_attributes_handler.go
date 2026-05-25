@@ -69,6 +69,7 @@ func (p *ParticipantImpl) HandleDefineDataTrackSchemaRequest(req *livekit.Define
 	}
 
 	p.AddDataTrackSchema(req.SchemaDefinition)
+	p.listener().OnDefineDataTrackSchema(p, req.SchemaDefinition)
 }
 
 func (p *ParticipantImpl) HandleGetDataTrackSchemaRequest(req *livekit.GetDataTrackSchemaRequest) {
