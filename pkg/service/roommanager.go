@@ -1041,7 +1041,7 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 			}
 		}
 		if r.config.TURN.TLSPort > 0 {
-			urls = append(urls, fmt.Sprintf("turns:%s:443?transport=tcp", r.config.TURN.Domain))
+			urls = append(urls, fmt.Sprintf("turns:%s:%d?transport=tcp", r.config.TURN.Domain, r.config.TURN.TLSPort))
 		}
 		if len(urls) > 0 {
 			username, expiry := r.turnAuthHandler.CreateUsername(apiKey, participant.ID(), r.config.TURN.TTLSeconds)
