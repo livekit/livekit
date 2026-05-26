@@ -37,6 +37,7 @@ var (
 	promMessageCounter            *prometheus.CounterVec
 	promServiceOperationCounter   *prometheus.CounterVec
 	promTwirpRequestStatusCounter *prometheus.CounterVec
+	promTwirpRequestLatency       *prometheus.HistogramVec
 
 	sysPacketsStart        uint32
 	sysDroppedPacketsStart uint32
@@ -81,6 +82,17 @@ func Init(nodeID string, nodeType livekit.NodeType) error {
 		[]string{"service", "method", "status", "code"},
 	)
 
+	promTwirpRequestLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace:   livekitNamespace,
+			Subsystem:   "node",
+			Name:        "twirp_request_latency_ms",
+			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+			Buckets:     []float64{5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000},
+		},
+		[]string{"service", "method"},
+	)
+
 	promSysPacketGauge = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace:   livekitNamespace,
@@ -95,6 +107,7 @@ func Init(nodeID string, nodeType livekit.NodeType) error {
 	prometheus.MustRegister(promMessageCounter)
 	prometheus.MustRegister(promServiceOperationCounter)
 	prometheus.MustRegister(promTwirpRequestStatusCounter)
+	prometheus.MustRegister(promTwirpRequestLatency)
 	prometheus.MustRegister(promSysPacketGauge)
 
 	sysPacketsStart, sysDroppedPacketsStart, _ = getTCStats()
@@ -286,4 +299,8 @@ func RecordServiceOperationError(op string, error string) {
 
 func RecordTwirpRequestStatus(service string, method string, statusFamily string, code twirp.ErrorCode) {
 	promTwirpRequestStatusCounter.WithLabelValues(service, method, statusFamily, string(code)).Add(1)
+}
+
+func RecordTwirpRequestLatency(service, method string, duration time.Duration) {
+	promTwirpRequestLatency.WithLabelValues(service, method).Observe(float64(duration.Milliseconds()))
 }

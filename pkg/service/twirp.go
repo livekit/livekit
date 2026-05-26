@@ -235,6 +235,26 @@ func statusReporterErrorReceived(ctx context.Context, e twirp.Error) context.Con
 
 // --------------------------------------------------------------------------
 
+func TwirpMetrics() *twirp.ServerHooks {
+	return &twirp.ServerHooks{
+		ResponseSent: func(ctx context.Context) {
+			metricsResponseSent(ctx)
+		},
+	}
+}
+
+func metricsResponseSent(ctx context.Context) {
+	r, ok := ctx.Value(twirpLoggerKey{}).(*twirpLogger)
+	if !ok || r == nil {
+		return
+	}
+
+	duration := time.Since(r.startedAt)
+	prometheus.RecordTwirpRequestLatency(r.service, r.method, duration)
+}
+
+// --------------------------------------------------------------------------
+
 type twirpTelemetryKey struct{}
 
 func TwirpTelemetry(

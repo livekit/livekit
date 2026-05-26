@@ -120,6 +120,7 @@ func NewLivekitServer(conf *config.Config,
 			TwirpLogger(),
 			TwirpEgressID(),
 			TwirpRequestStatusReporter(),
+			TwirpMetrics(),
 		)),
 	}
 	for _, opt := range xtwirp.DefaultServerOptions() {
