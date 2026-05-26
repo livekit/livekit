@@ -126,7 +126,8 @@ func loggerResponseSent(ctx context.Context, twirpLoggerPool *sync.Pool) {
 		return
 	}
 
-	r.fields = append(r.fields, "duration", time.Since(r.startedAt))
+	duration := time.Since(r.startedAt)
+	r.fields = append(r.fields, "duration", duration)
 	if !r.deadline.IsZero() {
 		r.fields = append(r.fields, "requestedTimeout", r.deadline.Sub(r.startedAt))
 	}
@@ -144,6 +145,7 @@ func loggerResponseSent(ctx context.Context, twirpLoggerPool *sync.Pool) {
 
 	serviceMethod := "API " + r.service + "." + r.method
 	utils.GetLogger(ctx).WithComponent(utils.ComponentAPI).Infow(serviceMethod, r.fields...)
+	prometheus.RecordTwirpRequestLatency(r.service, r.method, duration)
 
 	// reset fields and return to pool
 	r.reset()
