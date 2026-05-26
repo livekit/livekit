@@ -246,6 +246,10 @@ func getUserAgentParser() *uaparser.Parser {
 }
 
 func AugmentClientInfo(ci *livekit.ClientInfo, req *http.Request) {
+	if ci == nil {
+		return
+	}
+
 	// get real address (forwarded http header) - check Cloudflare headers first, fall back to X-Forwarded-For
 	ci.Address = GetClientIP(req)
 
