@@ -254,6 +254,9 @@ func (s *RTCService) validateInternal(
 	} else {
 		lgr.Debugw("processing join request", "joinRequest", logger.Proto(joinRequest))
 
+		if joinRequest.ClientInfo == nil {
+			joinRequest.ClientInfo = &livekit.ClientInfo{}
+		}
 		AugmentClientInfo(joinRequest.ClientInfo, r)
 		pi.Client = joinRequest.ClientInfo
 
