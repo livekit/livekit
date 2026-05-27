@@ -281,7 +281,8 @@ type LimitConfig struct {
 	MaxParticipantIdentityLength int    `yaml:"max_participant_identity_length,omitempty"`
 	MaxParticipantNameLength     int    `yaml:"max_participant_name_length,omitempty"`
 
-	MaxAsyncAttributesSize uint32 `yaml:"max_async_attributes_size,omitempty"`
+	MaxAsyncAttributeNameLength int    `yaml:"max_async_attributes_name_length,omitempty"`
+	MaxAsyncAttributesSize      uint32 `yaml:"max_async_attributes_size,omitempty"`
 }
 
 func (l LimitConfig) CheckRoomNameLength(name string) bool {
@@ -310,6 +311,10 @@ func (l LimitConfig) CheckAttributesSize(attributes map[string]string) bool {
 		total += len(k) + len(v)
 	}
 	return uint32(total) <= l.MaxAttributesSize
+}
+
+func (l LimitConfig) CheckAsyncAttributeNameLength(name string) bool {
+	return l.MaxAsyncAttributeNameLength == 0 || len(name) <= l.MaxAsyncAttributeNameLength
 }
 
 func (l LimitConfig) CheckAsyncAttributesSize(asyncAttributes []*livekit.DataTrackSchemaDefinition) bool {
@@ -457,6 +462,7 @@ var DefaultConfig = Config{
 		MaxRoomNameLength:            256,
 		MaxParticipantIdentityLength: 256,
 		MaxParticipantNameLength:     256,
+		MaxAsyncAttributeNameLength:  256,
 		MaxAsyncAttributesSize:       256000,
 	},
 	Logging: LoggingConfig{

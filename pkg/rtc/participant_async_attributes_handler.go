@@ -34,7 +34,7 @@ func (p *ParticipantImpl) HandleDefineDataTrackSchemaRequest(req *livekit.Define
 		return
 	}
 
-	if req.SchemaDefinition == nil || req.SchemaDefinition.Id == nil || len(req.SchemaDefinition.Id.Name) == 0 || len(req.SchemaDefinition.Id.Name) > 256 {
+	if req.SchemaDefinition == nil || req.SchemaDefinition.Id == nil || len(req.SchemaDefinition.Id.Name) == 0 || !p.params.LimitConfig.CheckAsyncAttributeNameLength(req.SchemaDefinition.Id.Name) {
 		p.pubLogger.Warnw("aync attribute definition is invalid", nil, "req", logger.Proto(req))
 		p.sendRequestResponse(&livekit.RequestResponse{
 			Reason:  livekit.RequestResponse_INVALID_REQUEST,

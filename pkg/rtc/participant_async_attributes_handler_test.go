@@ -27,12 +27,13 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 )
 
-func newParticipantWithAsyncAttributes(t *testing.T, enabled bool, maxSize uint32) *ParticipantImpl {
+func newParticipantWithAsyncAttributes(t *testing.T, enabled bool, maxNameLength int, maxSize uint32) *ParticipantImpl {
 	t.Helper()
 	p := newParticipantForTest("test")
 	p.params.EnableParticipantAsyncAttributes = enabled
 	p.params.LimitConfig = config.LimitConfig{
-		MaxAsyncAttributesSize: maxSize,
+		MaxAsyncAttributeNameLength: maxNameLength,
+		MaxAsyncAttributesSize:      maxSize,
 	}
 	return p
 }
@@ -47,7 +48,7 @@ func lastRequestResponse(t *testing.T, sink *routingfakes.FakeMessageSink, idx i
 
 func TestHandleDefineDataTrackSchemaRequest(t *testing.T) {
 	t.Run("returns NOT_ALLOWED when feature not enabled", func(t *testing.T) {
-		p := newParticipantWithAsyncAttributes(t, false, 0)
+		p := newParticipantWithAsyncAttributes(t, false, 0, 0)
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
 		req := &livekit.DefineDataTrackSchemaRequest{
@@ -69,7 +70,7 @@ func TestHandleDefineDataTrackSchemaRequest(t *testing.T) {
 	})
 
 	t.Run("returns INVALID_REQUEST when schema definition is nil", func(t *testing.T) {
-		p := newParticipantWithAsyncAttributes(t, true, 0)
+		p := newParticipantWithAsyncAttributes(t, true, 0, 0)
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
 		p.HandleDefineDataTrackSchemaRequest(&livekit.DefineDataTrackSchemaRequest{})
@@ -81,7 +82,7 @@ func TestHandleDefineDataTrackSchemaRequest(t *testing.T) {
 	})
 
 	t.Run("returns INVALID_REQUEST when id is nil", func(t *testing.T) {
-		p := newParticipantWithAsyncAttributes(t, true, 0)
+		p := newParticipantWithAsyncAttributes(t, true, 0, 0)
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
 		p.HandleDefineDataTrackSchemaRequest(&livekit.DefineDataTrackSchemaRequest{
@@ -96,7 +97,7 @@ func TestHandleDefineDataTrackSchemaRequest(t *testing.T) {
 	})
 
 	t.Run("returns INVALID_REQUEST when name is empty", func(t *testing.T) {
-		p := newParticipantWithAsyncAttributes(t, true, 0)
+		p := newParticipantWithAsyncAttributes(t, true, 0, 0)
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
 		p.HandleDefineDataTrackSchemaRequest(&livekit.DefineDataTrackSchemaRequest{
@@ -115,7 +116,7 @@ func TestHandleDefineDataTrackSchemaRequest(t *testing.T) {
 	})
 
 	t.Run("returns INVALID_REQUEST when name exceeds 256 chars", func(t *testing.T) {
-		p := newParticipantWithAsyncAttributes(t, true, 0)
+		p := newParticipantWithAsyncAttributes(t, true, 256, 0)
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
 		p.HandleDefineDataTrackSchemaRequest(&livekit.DefineDataTrackSchemaRequest{
@@ -134,7 +135,7 @@ func TestHandleDefineDataTrackSchemaRequest(t *testing.T) {
 	})
 
 	t.Run("returns INVALID_REQUEST when definition is empty", func(t *testing.T) {
-		p := newParticipantWithAsyncAttributes(t, true, 0)
+		p := newParticipantWithAsyncAttributes(t, true, 0, 0)
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
 		p.HandleDefineDataTrackSchemaRequest(&livekit.DefineDataTrackSchemaRequest{
@@ -154,7 +155,7 @@ func TestHandleDefineDataTrackSchemaRequest(t *testing.T) {
 	})
 
 	t.Run("returns LIMIT_EXCEEDED when adding would breach the limit", func(t *testing.T) {
-		p := newParticipantWithAsyncAttributes(t, true, 16)
+		p := newParticipantWithAsyncAttributes(t, true, 0, 16)
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
 		p.HandleDefineDataTrackSchemaRequest(&livekit.DefineDataTrackSchemaRequest{
@@ -174,7 +175,7 @@ func TestHandleDefineDataTrackSchemaRequest(t *testing.T) {
 	})
 
 	t.Run("stores a valid definition and sends no response", func(t *testing.T) {
-		p := newParticipantWithAsyncAttributes(t, true, 0)
+		p := newParticipantWithAsyncAttributes(t, true, 0, 0)
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
 		id := &livekit.DataTrackSchemaId{
@@ -201,7 +202,7 @@ func TestHandleDefineDataTrackSchemaRequest(t *testing.T) {
 
 func TestHandleGetDataTrackSchemaRequest(t *testing.T) {
 	t.Run("returns INVALID_REQUEST when schema id is missing", func(t *testing.T) {
-		p := newParticipantWithAsyncAttributes(t, true, 0)
+		p := newParticipantWithAsyncAttributes(t, true, 0, 0)
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
 		p.HandleGetDataTrackSchemaRequest(&livekit.GetDataTrackSchemaRequest{
@@ -214,7 +215,7 @@ func TestHandleGetDataTrackSchemaRequest(t *testing.T) {
 	})
 
 	t.Run("forwards request to listener when schema id is provided", func(t *testing.T) {
-		p := newParticipantWithAsyncAttributes(t, true, 0)
+		p := newParticipantWithAsyncAttributes(t, true, 0, 0)
 		listener := p.params.ParticipantListener.(*typesfakes.FakeLocalParticipantListener)
 
 		req := &livekit.GetDataTrackSchemaRequest{
@@ -234,7 +235,7 @@ func TestHandleGetDataTrackSchemaRequest(t *testing.T) {
 }
 
 func TestGetDataTrackSchema(t *testing.T) {
-	p := newParticipantWithAsyncAttributes(t, true, 0)
+	p := newParticipantWithAsyncAttributes(t, true, 0, 0)
 
 	id := &livekit.DataTrackSchemaId{
 		Name:     "schema-1",
@@ -255,7 +256,7 @@ func TestGetDataTrackSchema(t *testing.T) {
 
 func TestProcessGetDataTrackSchemaRequest(t *testing.T) {
 	t.Run("returns NOT_FOUND when publisher is nil", func(t *testing.T) {
-		p := newParticipantWithAsyncAttributes(t, true, 0)
+		p := newParticipantWithAsyncAttributes(t, true, 0, 0)
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
 		p.ProcessGetDataTrackSchemaRequest(&livekit.GetDataTrackSchemaRequest{
@@ -272,7 +273,7 @@ func TestProcessGetDataTrackSchemaRequest(t *testing.T) {
 	})
 
 	t.Run("returns NOT_FOUND when publisher has no matching schema", func(t *testing.T) {
-		p := newParticipantWithAsyncAttributes(t, true, 0)
+		p := newParticipantWithAsyncAttributes(t, true, 0, 0)
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
 		publisher := &typesfakes.FakeParticipant{}
@@ -295,7 +296,7 @@ func TestProcessGetDataTrackSchemaRequest(t *testing.T) {
 	})
 
 	t.Run("sends schema response when publisher has a matching schema", func(t *testing.T) {
-		p := newParticipantWithAsyncAttributes(t, true, 0)
+		p := newParticipantWithAsyncAttributes(t, true, 0, 0)
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 
 		id := &livekit.DataTrackSchemaId{
