@@ -60,7 +60,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		wire.Bind(new(routing.MessageRouter), new(routing.Router)),
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
 		telemetry.NewAnalyticsService,
-		telemetry.NewTelemetryService,
+		createTelemetryService,
 		getMessageBus,
 		NewIOInfoService,
 		wire.Bind(new(IOClient), new(*IOInfoService)),
@@ -169,6 +169,12 @@ func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webh
 	}
 
 	return webhook.NewDefaultNotifier(wc, provider)
+}
+
+func createTelemetryService(notifier webhook.QueuedNotifier, analytics telemetry.AnalyticsService) telemetry.TelemetryService {
+	svc := telemetry.NewTelemetryService(notifier, analytics)
+	telemetry.RegisterWebhookHook(svc, notifier)
+	return svc
 }
 
 func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {

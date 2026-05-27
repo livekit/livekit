@@ -83,7 +83,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	analyticsService := telemetry.NewAnalyticsService(conf, currentNode)
-	telemetryService := telemetry.NewTelemetryService(queuedNotifier, analyticsService)
+	telemetryService := createTelemetryService(queuedNotifier, analyticsService)
 	ioInfoService, err := NewIOInfoService(messageBus, egressStore, ingressStore, sipStore, telemetryService)
 	if err != nil {
 		return nil, err
@@ -234,6 +234,12 @@ func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webh
 	}
 
 	return webhook.NewDefaultNotifier(wc, provider)
+}
+
+func createTelemetryService(notifier webhook.QueuedNotifier, analytics telemetry.AnalyticsService) telemetry.TelemetryService {
+	svc := telemetry.NewTelemetryService(notifier, analytics)
+	telemetry.RegisterWebhookHook(svc, notifier)
+	return svc
 }
 
 func createRedisClient(conf *config.Config) (redis.UniversalClient, error) {
