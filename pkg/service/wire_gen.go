@@ -238,7 +238,9 @@ func createWebhookNotifier(conf *config.Config, provider auth.KeyProvider) (webh
 
 func createTelemetryService(notifier webhook.QueuedNotifier, analytics telemetry.AnalyticsService) telemetry.TelemetryService {
 	svc := telemetry.NewTelemetryService(notifier, analytics)
-	telemetry.RegisterWebhookHook(svc, notifier)
+	if notifier != nil {
+		notifier.RegisterProcessedHook(svc.Webhook)
+	}
 	return svc
 }
 

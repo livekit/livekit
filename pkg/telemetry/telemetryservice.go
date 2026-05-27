@@ -202,18 +202,6 @@ func NewTelemetryService(notifier webhook.QueuedNotifier, analytics AnalyticsSer
 	return t
 }
 
-// RegisterWebhookHook wires the notifier's processed-webhook callback to
-// svc.Webhook. Call this after constructing the (possibly wrapped) service so
-// any outer Webhook overrides are honored. No-op if notifier is nil.
-func RegisterWebhookHook(svc TelemetryService, notifier webhook.QueuedNotifier) {
-	if notifier == nil {
-		return
-	}
-	notifier.RegisterProcessedHook(func(ctx context.Context, whi *livekit.WebhookInfo) {
-		svc.Webhook(ctx, whi)
-	})
-}
-
 func (t *telemetryService) FlushStats() {
 	t.flushMu.Lock()
 	defer t.flushMu.Unlock()
