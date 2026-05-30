@@ -195,11 +195,6 @@ func NewTelemetryService(notifier webhook.QueuedNotifier, analytics AnalyticsSer
 		}),
 		workers: make(map[statsWorkerKey]*StatsWorker),
 	}
-	if t.notifier != nil {
-		t.notifier.RegisterProcessedHook(func(ctx context.Context, whi *livekit.WebhookInfo) {
-			t.Webhook(ctx, whi)
-		})
-	}
 
 	t.jobsQueue.Start()
 	go t.run()

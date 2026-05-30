@@ -411,6 +411,13 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	}
 
 	params.Reporter.RegisterFunc(func(ts time.Time, tx roomobs.ParticipantSessionTx) bool {
+		// Don't publish duration if participant never became active. Otherwise short-lived
+		// JOINING/JOINED -> DISCONNECTED transitions would still get rounded up to a
+		// minute by the session timer and inflate billed/reported duration.
+		if p.lastActiveAt.Load() == nil {
+			return !p.IsClosed()
+		}
+
 		if dts := p.disconnectedAt.Load(); dts != nil {
 			ts = *dts
 			tx.ReportEndTime(ts)
