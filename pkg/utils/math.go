@@ -14,24 +14,45 @@
 
 package utils
 
-import "slices"
+import (
+	"cmp"
+	"slices"
+)
 
-// Median gets median value for an array
-func Median[T float32](input []T) T {
+// OrderedNumber defines a constraint for numeric types that can be ordered and divided.
+type OrderedNumber interface {
+	cmp.Ordered
+	~int | ~int8 | ~int16 | ~int32 | ~int64 |
+		~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 |
+		~uintptr | ~float32 | ~float64
+}
+
+// Median gets the median value for a slice without modifying the original slice.
+//
+// Note:
+// 1. For integer types, if the slice has an even length, the division (/ 2)
+//    is performed using integer division, which truncates the result towards zero.
+// 2. Uses an overflow-safe formula left + (right-left)/2 to support narrow integer types.
+func Median[T OrderedNumber](input []T) T {
 	num := len(input)
 	switch num {
 	case 0:
-		return 0
+		var zero T
+		return zero
 	case 1:
 		return input[0]
 	}
-	slices.Sort(input)
+
+	// Clone the slice to avoid mutating the caller's slice
+	sortedInput := slices.Clone(input)
+	slices.Sort(sortedInput)
+
 	if num%2 != 0 {
-		return input[num/2]
+		return sortedInput[num/2]
 	}
-	left := input[num/2-1]
-	right := input[num/2]
-	return (left + right) / 2
+	left := sortedInput[num/2-1]
+	right := sortedInput[num/2]
+	return left + (right-left)/T(2)
 }
 
 func Signum[T int | int8 | int16 | int32 | int64 | float32 | float64](val T) int {
