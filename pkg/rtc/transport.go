@@ -427,7 +427,7 @@ func newPeerConnection(
 		}
 		if len(nat1to1Ips) > 0 {
 			params.Logger.Infow("client doesn't support prflx over relay, use external ip only as host candidate", "ips", nat1to1Ips)
-			if err := rtcconfig.SetNAT1To1AddressRewriteRules(&se, nat1to1Ips, webrtc.ICECandidateTypeHost); err != nil {
+			if err := rtcconfig.SetNAT1To1AddressRewriteRules(&se, nat1to1Ips, false); err != nil {
 				params.Logger.Warnw("failed to set ICE address rewrite rules", err, "ips", nat1to1Ips)
 			}
 			se.SetIPFilter(func(ip net.IP) bool {
