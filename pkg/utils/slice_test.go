@@ -17,31 +17,31 @@ package utils
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDedupeSlice(t *testing.T) {
 	t.Run("Empty slice", func(t *testing.T) {
 		var input []int
 		result := DedupeSlice(input)
-		assert.Empty(t, result)
+		require.Empty(t, result)
 	})
 
 	t.Run("Single element", func(t *testing.T) {
 		input := []string{"hello"}
 		result := DedupeSlice(input)
-		assert.Equal(t, []string{"hello"}, result)
+		require.Equal(t, []string{"hello"}, result)
 	})
 
 	t.Run("Unsorted slice with duplicates", func(t *testing.T) {
 		input := []int{4, 2, 4, 1, 3, 2}
 		result := DedupeSlice(input)
-		assert.Equal(t, []int{1, 2, 3, 4}, result)
+		require.Equal(t, []int{1, 2, 3, 4}, result)
 	})
 
 	t.Run("Already sorted and unique", func(t *testing.T) {
 		input := []string{"apple", "banana", "cherry"}
 		result := DedupeSlice(input)
-		assert.Equal(t, []string{"apple", "banana", "cherry"}, result)
+		require.Equal(t, []string{"apple", "banana", "cherry"}, result)
 	})
 }

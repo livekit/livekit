@@ -19,23 +19,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestChangeNotifier(t *testing.T) {
 	t.Run("Observer management", func(t *testing.T) {
 		notifier := NewChangeNotifier()
-		assert.False(t, notifier.HasObservers())
+		require.False(t, notifier.HasObservers())
 
 		called := false
 		notifier.AddObserver("test-key", func() {
 			called = true
 		})
-		assert.True(t, notifier.HasObservers())
+		require.True(t, notifier.HasObservers())
 
 		notifier.RemoveObserver("test-key")
-		assert.False(t, notifier.HasObservers())
-		assert.False(t, called)
+		require.False(t, notifier.HasObservers())
+		require.False(t, called)
 	})
 
 	t.Run("Notification triggers callbacks asynchronously", func(t *testing.T) {
@@ -77,8 +77,8 @@ func TestChangeNotifier(t *testing.T) {
 		}
 
 		mu.Lock()
-		assert.Equal(t, 1, callCounts["obs1"])
-		assert.Equal(t, 1, callCounts["obs2"])
+		require.Equal(t, 1, callCounts["obs1"])
+		require.Equal(t, 1, callCounts["obs2"])
 		mu.Unlock()
 	})
 }
@@ -86,17 +86,17 @@ func TestChangeNotifier(t *testing.T) {
 func TestChangeNotifierManager(t *testing.T) {
 	t.Run("Get and Create Notifiers", func(t *testing.T) {
 		manager := NewChangeNotifierManager()
-		assert.Nil(t, manager.GetNotifier("non-existent"))
+		require.Nil(t, manager.GetNotifier("non-existent"))
 
 		notifier := manager.GetOrCreateNotifier("room1")
-		assert.NotNil(t, notifier)
+		require.NotNil(t, notifier)
 
 		retrieved := manager.GetNotifier("room1")
-		assert.Equal(t, notifier, retrieved)
+		require.Equal(t, notifier, retrieved)
 
 		// GetOrCreate should return the existing one
 		again := manager.GetOrCreateNotifier("room1")
-		assert.Equal(t, notifier, again)
+		require.Equal(t, notifier, again)
 	})
 
 	t.Run("Remove Notifiers with HasObservers check", func(t *testing.T) {
@@ -105,7 +105,7 @@ func TestChangeNotifierManager(t *testing.T) {
 
 		// Case 1: notifier has no observers, should be removed
 		manager.RemoveNotifier("room1", false)
-		assert.Nil(t, manager.GetNotifier("room1"))
+		require.Nil(t, manager.GetNotifier("room1"))
 
 		// Re-create and add an observer
 		notifier := manager.GetOrCreateNotifier("room1")
@@ -113,10 +113,10 @@ func TestChangeNotifierManager(t *testing.T) {
 
 		// Case 2: notifier has observer, RemoveNotifier(..., false) should not remove it
 		manager.RemoveNotifier("room1", false)
-		assert.NotNil(t, manager.GetNotifier("room1"))
+		require.NotNil(t, manager.GetNotifier("room1"))
 
 		// Case 3: notifier has observer, RemoveNotifier(..., true) (force) should remove it
 		manager.RemoveNotifier("room1", true)
-		assert.Nil(t, manager.GetNotifier("room1"))
+		require.Nil(t, manager.GetNotifier("room1"))
 	})
 }
