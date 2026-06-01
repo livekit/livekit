@@ -101,14 +101,14 @@ func TestChangeNotifierManager(t *testing.T) {
 
 	t.Run("Remove Notifiers with HasObservers check", func(t *testing.T) {
 		manager := NewChangeNotifierManager()
-		notifier := manager.GetOrCreateNotifier("room1")
+		_ = manager.GetOrCreateNotifier("room1")
 
 		// Case 1: notifier has no observers, should be removed
 		manager.RemoveNotifier("room1", false)
 		assert.Nil(t, manager.GetNotifier("room1"))
 
 		// Re-create and add an observer
-		notifier = manager.GetOrCreateNotifier("room1")
+		notifier := manager.GetOrCreateNotifier("room1")
 		notifier.AddObserver("observer", func() {})
 
 		// Case 2: notifier has observer, RemoveNotifier(..., false) should not remove it
