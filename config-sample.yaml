@@ -71,6 +71,8 @@ rtc:
   # advertise_internal_ip: true
   # # when set to true, SFU skips external IP accessibility checks via self-ping.
   # # enable this when SFU is behind NAT that does not allow self-ping. only works when `use_external_ip` is set to true.
+  # # when both this and `external_ip_only` are set, SFU advertises all private IPs with their mapped external IPs and skips
+  # # private IPs that do not have a mapped external IP.
   # skip_external_ip_validation: true
   # # there are cases where the public IP determined via STUN is not the correct one
   # # in such cases, use this setting to set the public IP of the node
