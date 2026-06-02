@@ -115,6 +115,18 @@ type RTCConfig struct {
 	// allow TCP and TURN/TLS fallback
 	AllowTCPFallback *bool `yaml:"allow_tcp_fallback,omitempty"`
 
+	// Signaling RTT threshold (in milliseconds) governing ICE/TCP fallback. On a UDP
+	// failure, ICE/TCP is attempted only while the measured signaling RTT is below this
+	// value; at or above it, supporting clients fall back directly to TURN/TLS. When 0
+	// (the default), the RTT check is disabled and ICE/TCP is always attempted (for
+	// clients that support it). A positive value also gates allow_udp_unstable_fallback.
+	TCPFallbackRTTThreshold int `yaml:"tcp_fallback_rtt_threshold,omitempty"`
+
+	// When enabled, an established UDP connection reporting sustained high packet loss is
+	// migrated to ICE/TCP or TURN/TLS. Requires tcp_fallback_rtt_threshold to be set
+	// (> 0). Disabled by default.
+	AllowUDPUnstableFallback bool `yaml:"allow_udp_unstable_fallback,omitempty"`
+
 	// force a reconnect on a publication error
 	ReconnectOnPublicationError *bool `yaml:"reconnect_on_publication_error,omitempty"`
 
