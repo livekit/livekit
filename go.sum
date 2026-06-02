@@ -179,8 +179,8 @@ github.com/lithammer/shortuuid/v4 v4.2.0 h1:LMFOzVB3996a7b8aBuEXxqOBflbfPQAiVzkI
 github.com/lithammer/shortuuid/v4 v4.2.0/go.mod h1:D5noHZ2oFw/YaKCfGy0YxyE7M0wMbezmMjPdhyEFe6Y=
 github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731 h1:9x+U2HGLrSw5ATTo469PQPkqzdoU7be46ryiCDO3boc=
 github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731/go.mod h1:Rs3MhFwutWhGwmY1VQsygw28z5bWcnEYmS1OG9OxjOQ=
-github.com/livekit/mediatransportutil v0.0.0-20260521171458-ef117e280447 h1:AwzxgDnzGVVLZuSYDdgo7ETdpHzQPagyjtJOTrhQduY=
-github.com/livekit/mediatransportutil v0.0.0-20260521171458-ef117e280447/go.mod h1:RCd46PT+6sEztld6XpkCrG1xskb0u3SqxIjy4G897Ss=
+github.com/livekit/mediatransportutil v0.0.0-20260601042523-13d536af56d9 h1:kFXGyfVN9c2b66e6Q87evOvKrJE5u9e1Gd28gtjSLPI=
+github.com/livekit/mediatransportutil v0.0.0-20260601042523-13d536af56d9/go.mod h1:KIBQV035+uwqfYvKPUh+7H3bXtaYO0TXhcxLosbhJ9A=
 github.com/livekit/psrpc v0.7.1 h1:ms37az0QTD3UXIWuUC5D/SkmKOlRMVRsI261eBWu/Vw=
 github.com/livekit/psrpc v0.7.1/go.mod h1:bZ4iHFQptTkbPnB0LasvRNu/OBYXEu1NA6O5BMFo9kk=
 github.com/mackerelio/go-osstat v0.2.7 h1:TCavZi10wF49bT6iQZ9eT2keGZQpC69MTDfdJej5e94=
@@ -254,8 +254,8 @@ github.com/pion/datachannel v1.6.0 h1:XecBlj+cvsxhAMZWFfFcPyUaDZtd7IJvrXqlXD/53i
 github.com/pion/datachannel v1.6.0/go.mod h1:ur+wzYF8mWdC+Mkis5Thosk+u/VOL287apDNEbFpsIk=
 github.com/pion/dtls/v3 v3.1.2 h1:gqEdOUXLtCGW+afsBLO0LtDD8GnuBBjEy6HRtyofZTc=
 github.com/pion/dtls/v3 v3.1.2/go.mod h1:Hw/igcX4pdY69z1Hgv5x7wJFrUkdgHwAn/Q/uo7YHRo=
-github.com/pion/ice/v4 v4.2.3 h1:1QUD3JA+0MUoXk5Bl4pbcuSyUlxRDiTQDPr29PnIPCA=
-github.com/pion/ice/v4 v4.2.3/go.mod h1:ELQIH5Xmcs/nsJnKyzLJWij8v9Z/xHOzdPTfpFZMh2o=
+github.com/pion/ice/v4 v4.2.6 h1:17SKPTupOmumCMAQ4ntf8rv6q6XEfVzuz1gSFrnhzPE=
+github.com/pion/ice/v4 v4.2.6/go.mod h1:tmp90fBKpZhQDkHkp/QJb+Gn8vhMxuAcMq7PfhQWQHE=
 github.com/pion/interceptor v0.1.44 h1:sNlZwM8dWXU9JQAkJh8xrarC0Etn8Oolcniukmuy0/I=
 github.com/pion/interceptor v0.1.44/go.mod h1:4atVlBkcgXuUP+ykQF0qOCGU2j7pQzX2ofvPRFsY5RY=
 github.com/pion/logging v0.2.4 h1:tTew+7cmQ+Mc1pTBLKH2puKsOvhm32dROumOZ655zB8=
