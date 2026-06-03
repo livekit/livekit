@@ -172,6 +172,7 @@ func GetNodeStats(nodeStartedAt int64, prevStats []*livekit.NodeStats, rateInter
 		ParticipantRtcInit:         participantRTCInit.Load(),
 		ParticipantRtcConnected:    participantRTCConnected.Load(),
 		ParticipantRtcCanceled:     participantRTCCanceled.Load(),
+		ParticipantRtcActive:       participantRTCActive.Load(),
 		ForwardLatency:             forwardLatency.Load(),
 		ForwardJitter:              forwardJitter.Load(),
 		NumCpus:                    uint32(cpuStats.NumCPU()), // this will round down to the nearest integer
@@ -253,6 +254,7 @@ func getNodeStatsRate(statsHistory []*livekit.NodeStats) *livekit.NodeStatsRate 
 		ParticipantRtcInit:         perSec(earlier.ParticipantRtcInit, later.ParticipantRtcInit, elapsed),
 		ParticipantRtcConnected:    perSec(earlier.ParticipantRtcConnected, later.ParticipantRtcConnected, elapsed),
 		ParticipantRtcCanceled:     perSec(earlier.ParticipantRtcCanceled, later.ParticipantRtcCanceled, elapsed),
+		ParticipantRtcActive:       perSec(earlier.ParticipantRtcActive, later.ParticipantRtcActive, elapsed),
 		SysPacketsOut:              perSec(uint64(earlier.SysPacketsOut), uint64(later.SysPacketsOut), elapsed),
 		SysPacketsDropped:          perSec(uint64(earlier.SysPacketsDropped), uint64(later.SysPacketsDropped), elapsed),
 		TrackPublishAttempts:       perSec(uint64(earlier.NumTrackPublishAttempts), uint64(later.NumTrackPublishAttempts), elapsed),
