@@ -371,3 +371,7 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 
 	return info, nil
 }
+
+func (s *EgressService) StartEgress(ctx context.Context, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
+	return nil, errors.New("not implemented")
+}
