@@ -259,6 +259,10 @@ func startServer(ctx context.Context, c *cli.Command) error {
 		return err
 	}
 
+	if err = conf.ValidateTURNSecrets(); err != nil {
+		return err
+	}
+
 	if cpuProfile := c.String("cpuprofile"); cpuProfile != "" {
 		if f, err := os.Create(cpuProfile); err != nil {
 			return err

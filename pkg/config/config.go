@@ -49,8 +49,9 @@ const (
 )
 
 var (
-	ErrKeyFileIncorrectPermission = errors.New("key file others permissions must be set to 0")
-	ErrKeysNotSet                 = errors.New("one of key-file or keys must be provided")
+	ErrKeyFileIncorrectPermission        = errors.New("key file others permissions must be set to 0")
+	ErrTURNSecretFileIncorrectPermission = errors.New("turn secret file others permissions must be set to 0")
+	ErrKeysNotSet                        = errors.New("one of key-file or keys must be provided")
 )
 
 type Config struct {
@@ -149,6 +150,8 @@ type TURNServer struct {
 	// Secret is used for TURN static auth secrets mechanism. When provided,
 	// dynamic credentials are generated using HMAC-SHA1 instead of static Username/Credential
 	Secret string `yaml:"secret,omitempty"`
+	// File containing the secret
+	Secretkey string `yaml:"secret_file,omitempty"`
 	// TTL is the time-to-live in seconds for generated credentials when using Secret.
 	// Defaults to 14400 seconds (4 hours) if not specified
 	TTL int `yaml:"ttl,omitempty"`
@@ -637,6 +640,28 @@ func (conf *Config) ValidateKeys() error {
 			if len(secret) < 32 {
 				logger.Errorw("secret is too short, should be at least 32 characters for security", nil, "apiKey", key)
 			}
+		}
+	}
+	return nil
+}
+
+func (conf *Config) ValidateTURNSecrets() error {
+	var otherFilter os.FileMode = 0o007
+	for _, s := range conf.RTC.TURNServers {
+		if s.Secretkey == "" {
+			continue
+		}
+		if s.Secret != "" {
+			logger.Warnw("both secret and secret_file are set for TURN server, the hardcoded secret will be used", nil,
+				"host", s.Host, "port", s.Port)
+			continue
+		}
+		st, err := os.Stat(s.Secretkey)
+		if err != nil {
+			return err
+		}
+		if st.Mode().Perm()&otherFilter != 0o000 {
+			return ErrTURNSecretFileIncorrectPermission
 		}
 	}
 	return nil
