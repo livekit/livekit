@@ -4069,6 +4069,7 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 	p.telemetryGuard = &telemetry.ReferenceGuard{}
 	p.lock.Unlock()
 
+	p.params.Reporter.ReportEndTime(time.Now())
 	p.params.LoggerResolver.Reset()
 	p.params.ReporterResolver.Reset()
 	p.setListener(params.Listener)
