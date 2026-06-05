@@ -29,6 +29,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/ory/dockertest/v3 v3.12.0
+	github.com/ory/dockertest/v4 v4.0.0
 	github.com/pion/datachannel v1.6.0
 	github.com/pion/dtls/v3 v3.1.3
 	github.com/pion/ice/v4 v4.2.7
