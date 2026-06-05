@@ -2,6 +2,12 @@ module github.com/livekit/livekit-server
 
 go 1.26
 
+// bisect: pin pion/sctp back to master version to test if it's the regression
+// (webrtc/v4 v4.2.14 requires the newer sctp API, so pin them as a pair)
+replace github.com/pion/sctp => github.com/pion/sctp v1.9.5
+
+replace github.com/pion/webrtc/v4 => github.com/pion/webrtc/v4 v4.2.11
+
 require (
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.17.0
