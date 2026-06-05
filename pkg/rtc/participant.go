@@ -496,6 +496,18 @@ func (p *ParticipantImpl) GetReporterResolver() roomobs.ParticipantReporterResol
 	return p.params.ReporterResolver
 }
 
+// RestartSessionTimer re-anchors the participant session timer to startTime so
+// that the reported session duration is measured from that point rather than
+// from when the timer was originally created (session start). It is meant to be
+// called when the participant actually joins, so pre-join wall-clock time is not
+// billed. Duration is only ever emitted once the participant becomes active, so
+// this must be called before that for the new anchor to take effect.
+func (p *ParticipantImpl) RestartSessionTimer(startTime time.Time) {
+	if p.params.SessionTimer != nil {
+		p.params.SessionTimer.Reset(startTime)
+	}
+}
+
 func (p *ParticipantImpl) GetAdaptiveStream() bool {
 	return p.params.AdaptiveStream
 }

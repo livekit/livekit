@@ -402,6 +402,7 @@ type LocalParticipant interface {
 	GetLoggerResolver() logger.DeferredFieldResolver
 	GetReporter() roomobs.ParticipantSessionReporter
 	GetReporterResolver() roomobs.ParticipantReporterResolver
+	RestartSessionTimer(startTime time.Time)
 	GetAdaptiveStream() bool
 	ProtocolVersion() ProtocolVersion
 	SupportsSyncStreamID() bool
