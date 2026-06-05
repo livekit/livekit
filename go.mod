@@ -20,9 +20,9 @@ require (
 	github.com/jellydator/ttlcache/v3 v3.4.0
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
-	github.com/livekit/mediatransportutil v0.0.0-20260605182015-e79eb8d79819
-	github.com/livekit/protocol v1.46.6-0.20260605181725-7f0893ab5bf2
-	github.com/livekit/psrpc v0.7.2-0.20260604225640-4bab4033deca
+	github.com/livekit/mediatransportutil v0.0.0-20260605212259-862d4a7bcb1e
+	github.com/livekit/protocol v1.46.7-0.20260605212020-c0615a2f6f84
+	github.com/livekit/psrpc v0.7.2
 	github.com/mackerelio/go-osstat v0.2.7
 	github.com/magefile/mage v1.17.0
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.12.2
