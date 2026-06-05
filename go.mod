@@ -20,8 +20,8 @@ require (
 	github.com/jellydator/ttlcache/v3 v3.4.0
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
-	github.com/livekit/mediatransportutil v0.0.0-20260601042523-13d536af56d9
-	github.com/livekit/protocol v1.46.6-0.20260605012906-a7a83da5bb55
+	github.com/livekit/mediatransportutil v0.0.0-20260605182015-e79eb8d79819
+	github.com/livekit/protocol v1.46.6-0.20260605181725-7f0893ab5bf2
 	github.com/livekit/psrpc v0.7.2-0.20260604225640-4bab4033deca
 	github.com/mackerelio/go-osstat v0.2.7
 	github.com/magefile/mage v1.17.0
@@ -35,11 +35,11 @@ require (
 	github.com/pion/interceptor v0.1.45
 	github.com/pion/rtcp v1.2.16
 	github.com/pion/rtp v1.10.2
-	github.com/pion/sctp v1.10.0
+	github.com/pion/sctp v1.9.5
 	github.com/pion/sdp/v3 v3.0.18
 	github.com/pion/transport/v4 v4.0.2
 	github.com/pion/turn/v5 v5.0.8
-	github.com/pion/webrtc/v4 v4.2.14
+	github.com/pion/webrtc/v4 v4.2.11
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.20.0
