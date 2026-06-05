@@ -25,7 +25,6 @@ import (
 	"os"
 	"slices"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -1072,18 +1071,8 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 				transport = "udp"
 			}
 
-			var username, credential, secret string
+			var username, credential string
 			if s.Secret != "" {
-				secret = s.Secret
-			} else if s.Secretkey != "" {
-				data, err := os.ReadFile(s.Secretkey)
-				if err != nil {
-					panic(fmt.Sprintf("Error opening keyfile '%s' for a turnserver with: '%s'", s.Secretkey, err))
-				}
-				secret = strings.TrimSpace(string(data))
-			}
-
-			if secret != "" {
 				// Generate dynamic credentials using TURN static auth secrets
 				ttl := s.TTL
 				if ttl == 0 {
@@ -1095,7 +1084,7 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 				username = fmt.Sprintf("%d:%s", expiry, participantID)
 
 				// HMAC-SHA1 signature
-				h := hmac.New(sha1.New, []byte(secret))
+				h := hmac.New(sha1.New, []byte(s.Secret))
 				h.Write([]byte(username))
 				credential = base64.StdEncoding.EncodeToString(h.Sum(nil))
 			} else {

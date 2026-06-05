@@ -259,7 +259,7 @@ func startServer(ctx context.Context, c *cli.Command) error {
 		return err
 	}
 
-	if err = conf.ValidateTURNSecrets(); err != nil {
+	if err = conf.LoadTURNSecrets(); err != nil {
 		return err
 	}
 

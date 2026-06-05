@@ -98,6 +98,9 @@ rtc:
   #     protocol: tls
   #     # Shared secret for TURN server authentication
   #     secret: ""
+  #     # Path for file containing shared secret for TURN server authentication
+  #     # When both secret and secret_file are set, secret takes precedence
+  #     secret_file: "/var/lib/coturn/secret"
   #     ttl: 14400 # seconds
   #     # Insecure username/password authentication
   #     username: ""

@@ -151,7 +151,7 @@ type TURNServer struct {
 	// dynamic credentials are generated using HMAC-SHA1 instead of static Username/Credential
 	Secret string `yaml:"secret,omitempty"`
 	// File containing the secret
-	Secretkey string `yaml:"secret_file,omitempty"`
+	SecretFile string `yaml:"secret_file,omitempty"`
 	// TTL is the time-to-live in seconds for generated credentials when using Secret.
 	// Defaults to 14400 seconds (4 hours) if not specified
 	TTL int `yaml:"ttl,omitempty"`
@@ -645,10 +645,10 @@ func (conf *Config) ValidateKeys() error {
 	return nil
 }
 
-func (conf *Config) ValidateTURNSecrets() error {
+func (conf *Config) LoadTURNSecrets() error {
 	var otherFilter os.FileMode = 0o007
-	for _, s := range conf.RTC.TURNServers {
-		if s.Secretkey == "" {
+	for i, s := range conf.RTC.TURNServers {
+		if s.SecretFile == "" {
 			continue
 		}
 		if s.Secret != "" {
@@ -656,13 +656,18 @@ func (conf *Config) ValidateTURNSecrets() error {
 				"host", s.Host, "port", s.Port)
 			continue
 		}
-		st, err := os.Stat(s.Secretkey)
+		st, err := os.Stat(s.SecretFile)
 		if err != nil {
 			return err
 		}
 		if st.Mode().Perm()&otherFilter != 0o000 {
 			return ErrTURNSecretFileIncorrectPermission
 		}
+		data, err := os.ReadFile(s.SecretFile)
+		if err != nil {
+			return fmt.Errorf("reading turn secret file %q: %w", s.SecretFile, err)
+		}
+		conf.RTC.TURNServers[i].Secret = strings.TrimSpace(string(data))
 	}
 	return nil
 }
