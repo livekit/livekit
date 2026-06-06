@@ -163,3 +163,8 @@ require (
 	google.golang.org/grpc v1.81.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
+
+// for gst whipsink compatibility
+// it is unclear what in pion/dtls v3.1.3 breaks compatibility,
+// but both sides sends their first flights and do not make further progress
+replace github.com/pion/dtls/v3 => github.com/pion/dtls/v3 v3.1.2
