@@ -80,11 +80,12 @@ func drivePooled(wr interceptor.RTPWriter, baseSeq uint16, count int) {
 	}
 }
 
-// TestEncoderInterceptorRecoversWithPooledPayloads is the regression test for the FEC
-// generation bug: our interceptor must copy the payload before retaining it, so that the
-// parity it computes matches the bytes actually sent even though the caller recycles the
-// payload buffer immediately after each write.
-func TestEncoderInterceptorRecoversWithPooledPayloads(t *testing.T) {
+// TestSFUToSubscriberFlexFECGenerationRecoversDownlinkLossWithPooledPayloads exercises the
+// SFU -> subscriber leg: the SFU encoder interceptor generates a repair stream, one media
+// packet is lost on the simulated downlink, and the subscriber-side decoder reconstructs
+// the exact packet bytes that were actually written. It also guards the pooled-payload
+// bug: the interceptor must copy payloads before retaining them for parity generation.
+func TestSFUToSubscriberFlexFECGenerationRecoversDownlinkLossWithPooledPayloads(t *testing.T) {
 	const numMedia, numFec = 5, uint32(1)
 
 	wr := &recyclingWriter{fecSSRC: testFECSSRC}
@@ -116,6 +117,49 @@ func TestEncoderInterceptorRecoversWithPooledPayloads(t *testing.T) {
 
 	require.Len(t, recovered, 1, "FEC must recover the single dropped packet")
 	requirePacketsEqual(t, wr.media[dropped], recovered[0])
+}
+
+func TestSFUToSubscriberFlexFECGenerationUsesMultipleRepairPackets(t *testing.T) {
+	const numMedia, numFec = 6, uint32(2)
+
+	wr := &recyclingWriter{fecSSRC: testFECSSRC}
+	factory := NewEncoderInterceptorFactory(numMedia, numFec)
+	itc, err := factory.NewInterceptor("")
+	require.NoError(t, err)
+	writer := itc.BindLocalStream(fecStreamInfo(), interceptor.RTPWriterFunc(wr.Write))
+
+	drivePooled(writer, 2000, numMedia)
+
+	require.Len(t, wr.media, numMedia, "all media packets forwarded")
+	require.Len(t, wr.fec, int(numFec), "configured number of FEC packets generated")
+
+	// Pion's coverage is interleaved by repair-packet index, so with two FEC packets
+	// one protects media indexes 0/2/4 and the other protects 1/3/5. Drop one from
+	// each coverage set to prove both generated repair packets are useful.
+	dropped := map[int]struct{}{
+		1: {},
+		4: {},
+	}
+	dec := NewDecoder(testFECSSRC, testMediaSSRC)
+	for i, p := range wr.media {
+		if _, ok := dropped[i]; ok {
+			continue
+		}
+		require.Empty(t, dec.Decode(p))
+	}
+
+	recoveredBySeq := make(map[uint16]rtp.Packet)
+	for _, fp := range wr.fec {
+		for _, recovered := range dec.Decode(fp) {
+			recoveredBySeq[recovered.SequenceNumber] = recovered
+		}
+	}
+
+	require.Len(t, recoveredBySeq, len(dropped))
+	for droppedIdx := range dropped {
+		want := wr.media[droppedIdx]
+		requirePacketsEqual(t, want, recoveredBySeq[want.SequenceNumber])
+	}
 }
 
 // TestPionEncoderCorruptsWithPooledPayloads documents the upstream behaviour that makes

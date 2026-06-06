@@ -48,6 +48,55 @@ room:
 	require.Error(t, err)
 }
 
+func TestFlexFECConfigEnabled(t *testing.T) {
+	require.False(t, FlexFECConfig{}.Enabled(), "disabled by default")
+	require.False(t, FlexFECConfig{Publisher: true}.Enabled(), "payload type is required")
+	require.False(t, FlexFECConfig{Subscriber: true}.Enabled(), "payload type is required")
+	require.True(t, FlexFECConfig{Publisher: true, PayloadType: 49}.Enabled())
+	require.True(t, FlexFECConfig{Subscriber: true, PayloadType: 49}.Enabled())
+	require.True(t, FlexFECConfig{Publisher: true, Subscriber: true, PayloadType: 49}.Enabled())
+}
+
+func TestFlexFECConfigEncoderParams(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		conf     FlexFECConfig
+		expected [2]uint32
+	}{
+		{
+			name:     "defaults",
+			conf:     FlexFECConfig{},
+			expected: [2]uint32{10, 2},
+		},
+		{
+			name:     "custom",
+			conf:     FlexFECConfig{NumMediaPackets: 8, NumFecPackets: 3},
+			expected: [2]uint32{8, 3},
+		},
+		{
+			name:     "media_clamped_to_minimum",
+			conf:     FlexFECConfig{NumMediaPackets: 1, NumFecPackets: 1},
+			expected: [2]uint32{2, 1},
+		},
+		{
+			name:     "fec_clamped_below_media",
+			conf:     FlexFECConfig{NumMediaPackets: 5, NumFecPackets: 5},
+			expected: [2]uint32{5, 4},
+		},
+		{
+			name:     "fec_above_media_clamped",
+			conf:     FlexFECConfig{NumMediaPackets: 4, NumFecPackets: 10},
+			expected: [2]uint32{4, 3},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			numMediaPackets, numFecPackets := tc.conf.EncoderParams()
+			require.Equal(t, tc.expected[0], numMediaPackets)
+			require.Equal(t, tc.expected[1], numFecPackets)
+		})
+	}
+}
+
 func TestGeneratedFlags(t *testing.T) {
 	generatedFlags, err := GenerateCLIFlags(nil, false)
 	require.NoError(t, err)
