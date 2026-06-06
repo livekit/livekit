@@ -40,6 +40,7 @@ func (f *FactoryOfBufferFactory) CreateBufferFactory() *Factory {
 		rtpBuffers:           make(map[uint32]*Buffer),
 		rtcpReaders:          make(map[uint32]*RTCPReader),
 		rtxPair:              make(map[uint32]uint32),
+		fecPair:              make(map[uint32]uint32),
 	}
 }
 
@@ -50,6 +51,7 @@ type Factory struct {
 	rtpBuffers           map[uint32]*Buffer
 	rtcpReaders          map[uint32]*RTCPReader
 	rtxPair              map[uint32]uint32 // repair -> base
+	fecPair              map[uint32]uint32 // flexfec repair -> base
 }
 
 func (f *Factory) GetOrNew(packetType packetio.BufferPacketType, ssrc uint32) io.ReadWriteCloser {
@@ -89,10 +91,24 @@ func (f *Factory) GetOrNew(packetType packetio.BufferPacketType, ssrc uint32) io
 				break
 			}
 		}
+		for repair, base := range f.fecPair {
+			if repair == ssrc {
+				if baseBuffer, ok := f.rtpBuffers[base]; ok {
+					buffer.SetPrimaryBufferForFEC(baseBuffer)
+				}
+				break
+			} else if base == ssrc {
+				if repairBuffer, ok := f.rtpBuffers[repair]; ok {
+					repairBuffer.SetPrimaryBufferForFEC(buffer)
+				}
+				break
+			}
+		}
 		buffer.OnClose(func() {
 			f.Lock()
 			delete(f.rtpBuffers, ssrc)
 			delete(f.rtxPair, ssrc)
+			delete(f.fecPair, ssrc)
 			f.Unlock()
 		})
 		return buffer
@@ -130,5 +146,21 @@ func (f *Factory) SetRTXPair(repair, base uint32, rsid string) {
 		if rsid != "" {
 			baseBuffer.NotifyRTX(base, repair, rsid)
 		}
+	}
+}
+
+// SetFECPair associates a FlexFEC repair stream SSRC with the source (base) SSRC it
+// protects, as signalled by an a=ssrc-group:FEC-FR line. If both buffers already exist
+// the association is wired immediately, otherwise it is remembered and applied when the
+// missing buffer is created.
+func (f *Factory) SetFECPair(repair, base uint32) {
+	f.Lock()
+	repairBuffer, baseBuffer := f.rtpBuffers[repair], f.rtpBuffers[base]
+	if repairBuffer == nil || baseBuffer == nil {
+		f.fecPair[repair] = base
+	}
+	f.Unlock()
+	if repairBuffer != nil && baseBuffer != nil {
+		repairBuffer.SetPrimaryBufferForFEC(baseBuffer)
 	}
 }

@@ -37,6 +37,7 @@ type WebRTCConfig struct {
 	Receiver      ReceiverConfig
 	Publisher     DirectionConfig
 	Subscriber    DirectionConfig
+	FlexFEC       config.FlexFECConfig
 }
 
 type ReceiverConfig struct {
@@ -88,6 +89,7 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 		},
 		Publisher:  getPublisherConfig(false),
 		Subscriber: getSubscriberConfig(rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE),
+		FlexFEC:    rtcConf.FlexFEC,
 	}, nil
 }
 

@@ -115,6 +115,24 @@ rtc:
   # packet_buffer_size_video: 500
   # # number of packets to buffer in the SFU for audio, defaults to 200
   # packet_buffer_size_audio: 200
+  # # FlexFEC-03 (RFC 8627) video forward error correction. Disabled by default.
+  # # FlexFEC is terminated at the SFU: it cannot be passed through unchanged because the
+  # # SFU rewrites SSRC/sequence numbers per subscriber. The two directions are independent.
+  # flexfec:
+  #   # generate a fresh FlexFEC repair stream per subscriber (downstream loss recovery)
+  #   subscriber: false
+  #   # negotiate, receive and decode a publisher's FlexFEC repair stream (uplink loss recovery)
+  #   publisher: false
+  #   # dynamic payload type used for the flexfec-03 codec, defaults to 49
+  #   payload_type: 49
+  #   # subscriber-side generation is a fixed, block-based scheme: for every
+  #   # num_media_packets media packets, num_fec_packets repair packets are emitted.
+  #   # bandwidth overhead ~= num_fec_packets/num_media_packets, and a block can recover
+  #   # at most num_fec_packets losses out of num_media_packets. smaller num_media_packets
+  #   # recovers faster (lower added latency) but costs more overhead. defaults below give
+  #   # ~20% overhead; the pion library default (no tuning) is a much heavier 5/2 = 40%.
+  #   num_media_packets: 10
+  #   num_fec_packets: 2
   # # minimum amount of time between pli/fir rtcp packets being sent to an individual
   # # producer. Increasing these times can lead to longer black screens when new participants join,
   # # while reducing them can lead to higher stream bitrate.

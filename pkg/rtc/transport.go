@@ -49,6 +49,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/remotebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/datachannel"
+	"github.com/livekit/livekit-server/pkg/sfu/flexfec"
 	sfuinterceptor "github.com/livekit/livekit-server/pkg/sfu/interceptor"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
@@ -443,6 +444,74 @@ func newPeerConnection(
 	se.LoggerFactory = pionlogger.NewLoggerFactory(params.Logger)
 
 	ir := &interceptor.Registry{}
+
+	// FlexFEC (flexfec-03) setup.
+	//
+	// FlexFEC is terminated at the SFU; the two directions are independent:
+	//   - Subscriber side (this PC sends media to the client): register the flexfec-03
+	//     codec AND the pion encoder interceptor so a fresh repair stream is generated
+	//     per downstream. ConfigureFlexFEC03 must be added before any interceptor that
+	//     mutates outgoing RTP (e.g. the TWCC header extension interceptor below).
+	//   - Publisher side (this PC receives media from the client): register only the
+	//     flexfec-03 codec so the client negotiates sending us a repair stream, which the
+	//     buffer layer associates and decodes.
+	if flexFEC := params.Config.FlexFEC; flexFEC.Enabled() {
+		fecPayloadType := webrtc.PayloadType(flexFEC.PayloadType)
+		// in single-PC / one-shot mode a single PC both sends and receives, so Transport is
+		// PUBLISHER while IsSendSide is true - it then needs both behaviors.
+		isSubscriberRole := params.IsSendSide
+		isPublisherRole := params.Transport == livekit.SignalTarget_PUBLISHER
+		wantEncoder := isSubscriberRole && flexFEC.Subscriber
+		wantReceiveCodec := isPublisherRole && flexFEC.Publisher
+		switch {
+		case wantEncoder:
+			// Register the flexfec-03 codec so the sender allocates a repair SSRC and the
+			// stream info carries the FEC payload type / SSRC, then add our own encoder
+			// interceptor. We deliberately do NOT use pion's webrtc.ConfigureFlexFEC03:
+			// pion's encoder interceptor retains each media packet's payload slice by
+			// reference and only XORs the block once it is full, but LiveKit recycles RTP
+			// payload buffers back to a sync.Pool as soon as the packet is written (see
+			// pacer.Base.SendPacket). By the time pion computed the parity, earlier
+			// payloads in the block had been overwritten, producing FEC that protects
+			// garbage and causing receiver-side frame corruption / PLI storms. Our
+			// interceptor copies the payload when buffering to avoid this.
+			//
+			// It is added to the registry here, before the TWCC header extension
+			// interceptor below, so that when the interceptor-based send-side BWE is in
+			// use the generated FEC packets are assigned transport-wide sequence numbers
+			// and accounted for by congestion control.
+			numMediaPackets, numFecPackets := flexFEC.EncoderParams()
+			if err := registerFlexFECCodec(me, fecPayloadType); err != nil {
+				params.Logger.Warnw("failed to register flexfec-03 codec for generation", err)
+			} else {
+				ir.Add(flexfec.NewEncoderInterceptorFactory(numMediaPackets, numFecPackets))
+				params.Logger.Infow("flexfec-03 subscriber generation enabled",
+					"payloadType", fecPayloadType,
+					"numMediaPackets", numMediaPackets,
+					"numFecPackets", numFecPackets,
+				)
+				// FEC packets are generated inside our encoder interceptor, downstream of
+				// LiveKit's pacer. With the RemoteBWE path the added load is observed
+				// through receiver feedback (loss / REMB), and with the interceptor-based
+				// send-side BWE the packets are TWCC-tagged (see ordering above). With
+				// LiveKit's own pacer-based send-side BWE the FEC overhead is not fed back
+				// into the estimator, so warn to make the limitation explicit.
+				if params.CongestionControlConfig.UseSendSideBWE && !params.CongestionControlConfig.UseSendSideBWEInterceptor {
+					params.Logger.Warnw(
+						"flexfec-03 generation enabled with pacer-based send-side BWE; "+
+							"FEC overhead is not accounted for by congestion control", nil,
+					)
+				}
+			}
+		case wantReceiveCodec:
+			if err := registerFlexFECCodec(me, fecPayloadType); err != nil {
+				params.Logger.Warnw("failed to register flexfec-03 codec", err)
+			} else {
+				params.Logger.Debugw("flexfec-03 publisher reception enabled", "payloadType", fecPayloadType)
+			}
+		}
+	}
+
 	if params.IsSendSide {
 		if params.CongestionControlConfig.UseSendSideBWEInterceptor && !params.CongestionControlConfig.UseSendSideBWE {
 			params.Logger.Infow("using send side BWE - interceptor")
@@ -1647,6 +1716,15 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remo
 			t.params.Logger.Debugw("rtx pairs found from sdp", "ssrcs", rtxRepairs)
 			for repair, base := range rtxRepairs {
 				t.params.Config.BufferFactory.SetRTXPair(repair, base, "")
+			}
+		}
+		if t.params.Config.FlexFEC.Publisher {
+			fecRepairs := nonSimulcastFECRepairsFromSDP(parsed, t.params.Logger)
+			if len(fecRepairs) > 0 {
+				t.params.Logger.Debugw("flexfec pairs found from sdp", "ssrcs", fecRepairs)
+				for repair, base := range fecRepairs {
+					t.params.Config.BufferFactory.SetFECPair(repair, base)
+				}
 			}
 		}
 		return nil
@@ -2874,6 +2952,16 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, o
 		}
 	}
 
+	if t.params.Config.FlexFEC.Publisher {
+		fecRepairs := nonSimulcastFECRepairsFromSDP(parsed, t.params.Logger)
+		if len(fecRepairs) > 0 {
+			t.params.Logger.Debugw("flexfec pairs found from sdp", "ssrcs", fecRepairs)
+			for repair, base := range fecRepairs {
+				t.params.Config.BufferFactory.SetFECPair(repair, base)
+			}
+		}
+	}
+
 	if t.currentOfferIceCredential == "" || offerRestartICE {
 		t.currentOfferIceCredential = iceCredential
 	}
@@ -3243,6 +3331,47 @@ func nonSimulcastRTXRepairsFromSDP(s *sdp.SessionDescription, logger logger.Logg
 	}
 
 	return rtxRepairFlows
+}
+
+// nonSimulcastFECRepairsFromSDP extracts FlexFEC repair flows from non-simulcast media
+// sections, returning a map of FEC(repair) SSRC -> source(base) SSRC. It mirrors
+// nonSimulcastRTXRepairsFromSDP but parses `a=ssrc-group:FEC-FR <source> <fec>` lines
+// (RFC 5956), where the first SSRC is the protected source stream and the second is the
+// FlexFEC repair stream.
+func nonSimulcastFECRepairsFromSDP(s *sdp.SessionDescription, logger logger.Logger) map[uint32]uint32 {
+	fecRepairFlows := map[uint32]uint32{}
+	for _, media := range s.MediaDescriptions {
+		var ridFound bool
+		fecPairs := make(map[uint32]uint32)
+	findFEC:
+		for _, attr := range media.Attributes {
+			switch attr.Key {
+			case "rid":
+				ridFound = true
+				break findFEC
+			case sdp.AttrKeySSRCGroup:
+				split := strings.Split(attr.Value, " ")
+				if split[0] == sdp.SemanticTokenForwardErrorCorrectionFramework && len(split) == 3 {
+					baseSsrc, err := strconv.ParseUint(split[1], 10, 32)
+					if err != nil {
+						logger.Warnw("Failed to parse FEC source SSRC", err, "ssrc", split[1])
+						continue
+					}
+					fecRepairFlow, err := strconv.ParseUint(split[2], 10, 32)
+					if err != nil {
+						logger.Warnw("Failed to parse FEC repair SSRC", err, "ssrc", split[2])
+						continue
+					}
+					fecPairs[uint32(fecRepairFlow)] = uint32(baseSsrc)
+				}
+			}
+		}
+		if !ridFound {
+			maps.Copy(fecRepairFlows, fecPairs)
+		}
+	}
+
+	return fecRepairFlows
 }
 
 // ----------------------

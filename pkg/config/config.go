@@ -138,6 +138,67 @@ type RTCConfig struct {
 
 	// enable rtp stream restart detection for published tracks
 	EnableRTPStreamRestartDetection bool `yaml:"enable_rtp_stream_restart_detection,omitempty"`
+
+	// FlexFEC (RFC 8627 / flexfec-03) support
+	FlexFEC FlexFECConfig `yaml:"flexfec,omitempty"`
+}
+
+// FlexFECConfig controls FlexFEC-03 (video) forward error correction.
+//
+// FlexFEC cannot be passed through an SFU as-is because the SFU rewrites SSRC and
+// sequence numbers per subscriber. Instead, FlexFEC is terminated at the SFU and
+// the two directions are handled independently:
+//   - Subscriber: the SFU generates a fresh FlexFEC repair stream per downstream so a
+//     subscriber can recover packets lost on the SFU -> subscriber path.
+//   - Publisher: the SFU negotiates, receives and decodes a publisher's FlexFEC repair
+//     stream to recover packets lost on the publisher -> SFU path.
+//
+// Both are disabled by default. FlexFEC is video-only here; audio keeps RED / in-band
+// Opus FEC.
+type FlexFECConfig struct {
+	// generate FlexFEC for subscribers (downstream loss recovery)
+	Subscriber bool `yaml:"subscriber,omitempty"`
+	// negotiate, receive and decode FlexFEC from publishers (uplink loss recovery)
+	Publisher bool `yaml:"publisher,omitempty"`
+	// dynamic payload type used for the flexfec-03 codec
+	PayloadType int `yaml:"payload_type,omitempty"`
+	// NumMediaPackets is the number of media packets per FEC protection block for
+	// subscriber-side generation. The repair packets for a block are only emitted
+	// after this many media packets, so smaller blocks recover faster (lower added
+	// latency) but cost proportionally more overhead. Defaults to 10.
+	NumMediaPackets uint32 `yaml:"num_media_packets,omitempty"`
+	// NumFecPackets is the number of repair packets generated per block. Bandwidth
+	// overhead is approximately NumFecPackets/NumMediaPackets, and a block can recover
+	// at most NumFecPackets lost packets out of its NumMediaPackets. Note this is a
+	// fixed (non-adaptive), block-based scheme: it protects scattered loss well but a
+	// burst exceeding NumFecPackets within one block is unrecoverable by FEC.
+	// Defaults to 2 (i.e. ~20% overhead with the default NumMediaPackets).
+	NumFecPackets uint32 `yaml:"num_fec_packets,omitempty"`
+}
+
+func (f FlexFECConfig) Enabled() bool {
+	return (f.Subscriber || f.Publisher) && f.PayloadType != 0
+}
+
+// EncoderParams returns the (numMediaPackets, numFecPackets) used to configure the
+// subscriber-side FlexFEC encoder, applying sane defaults and clamping so the values
+// are always usable (1 <= numFec < numMedia, numMedia >= 2).
+func (f FlexFECConfig) EncoderParams() (numMediaPackets uint32, numFecPackets uint32) {
+	numMediaPackets = f.NumMediaPackets
+	numFecPackets = f.NumFecPackets
+	if numMediaPackets == 0 {
+		numMediaPackets = 10
+	}
+	if numFecPackets == 0 {
+		numFecPackets = 2
+	}
+	if numMediaPackets < 2 {
+		numMediaPackets = 2
+	}
+	if numFecPackets >= numMediaPackets {
+		numFecPackets = numMediaPackets - 1
+	}
+	return numMediaPackets, numFecPackets
 }
 
 type TURNServer struct {
@@ -389,6 +450,13 @@ var DefaultConfig = Config{
 			UseSendSideBWE:            false,
 			SendSideBWEPacer:          string(pacer.PacerBehaviorNoQueue),
 			SendSideBWE:               sendsidebwe.DefaultSendSideBWEConfig,
+		},
+		FlexFEC: FlexFECConfig{
+			Subscriber:      false,
+			Publisher:       false,
+			PayloadType:     49,
+			NumMediaPackets: 10,
+			NumFecPackets:   2,
 		},
 	},
 	Audio: sfu.DefaultAudioConfig,

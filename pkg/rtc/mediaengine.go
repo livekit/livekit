@@ -86,6 +86,28 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 	return nil
 }
 
+// flexFEC03CodecParameters returns the flexfec-03 (RFC 8627 draft-03) video codec
+// parameters for the given dynamic payload type. The repair-window fmtp matches the
+// value pion's webrtc.ConfigureFlexFEC03 advertises so publisher and subscriber sides
+// negotiate consistently.
+func flexFEC03CodecParameters(payloadType webrtc.PayloadType) webrtc.RTPCodecParameters {
+	return webrtc.RTPCodecParameters{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:    webrtc.MimeTypeFlexFEC03,
+			ClockRate:   90000,
+			SDPFmtpLine: "repair-window=10000000",
+		},
+		PayloadType: payloadType,
+	}
+}
+
+// registerFlexFECCodec registers the flexfec-03 codec on the media engine so that the
+// remote peer can negotiate sending a FlexFEC repair stream to the SFU. This is the
+// receive (publisher) side - it does NOT add the encoder interceptor.
+func registerFlexFECCodec(me *webrtc.MediaEngine, payloadType webrtc.PayloadType) error {
+	return me.RegisterCodec(flexFEC03CodecParameters(payloadType), webrtc.RTPCodecTypeVideo)
+}
+
 func registerHeaderExtensions(me *webrtc.MediaEngine, rtpHeaderExtension RTPHeaderExtensionConfig) error {
 	for _, extension := range rtpHeaderExtension.Video {
 		if err := me.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{URI: extension}, webrtc.RTPCodecTypeVideo); err != nil {
@@ -175,6 +197,14 @@ func filterCodecs(
 	filteredCodecs := make([]webrtc.RTPCodecParameters, 0, len(codecs))
 	for _, c := range codecs {
 		if filterOutH264HighProfile && isH264HighProfile(c.RTPCodecCapability.SDPFmtpLine) {
+			continue
+		}
+
+		// FlexFEC is an infrastructure codec (like RTX): it only appears in the codec
+		// list when it was registered on the media engine for this peer connection, so
+		// retain it unconditionally. The room enabled-codec list only tracks media codecs.
+		if strings.EqualFold(c.RTPCodecCapability.MimeType, webrtc.MimeTypeFlexFEC03) {
+			filteredCodecs = append(filteredCodecs, c)
 			continue
 		}
 

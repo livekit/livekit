@@ -630,18 +630,22 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 		)
 		d.params.Logger.Debugw("DownTrack.Bind", logFields...)
 
-		d.writeStream = t.WriteStream()
+		// maybeWrapDownlinkImpairment is a no-op unless the LK_DOWNLINK_* debug env vars
+		// are set (local FlexFEC test harness only); see downtrack_impair.go.
+		d.writeStream = maybeWrapDownlinkImpairment(t.WriteStream(), d.params.Logger)
 		if rr := d.params.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, d.ssrc).(*buffer.RTCPReader); rr != nil {
-			rr.OnPacket(func(pkt []byte) {
+			// maybeDelayInboundRTCP is a no-op unless the LK_UPLINK_DELAY_MS debug env var
+			// is set (local FlexFEC test harness only); see downtrack_impair.go.
+			rr.OnPacket(maybeDelayInboundRTCP(func(pkt []byte) {
 				d.handleRTCP(pkt)
-			})
+			}, d.params.Logger))
 			d.rtcpReader = rr
 		}
 		if d.ssrcRTX != 0 {
 			if rr := d.params.BufferFactory.GetOrNew(packetio.RTCPBufferPacket, d.ssrcRTX).(*buffer.RTCPReader); rr != nil {
-				rr.OnPacket(func(pkt []byte) {
+				rr.OnPacket(maybeDelayInboundRTCP(func(pkt []byte) {
 					d.handleRTCPRTX(pkt)
-				})
+				}, d.params.Logger))
 				d.rtcpReaderRTX = rr
 			}
 		}

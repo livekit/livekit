@@ -23,6 +23,7 @@ import (
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
 
+	"github.com/livekit/livekit-server/pkg/sfu/flexfec"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/mediatransportutil/pkg/bucket"
 	"github.com/livekit/mediatransportutil/pkg/twcc"
@@ -32,6 +33,9 @@ import (
 
 const (
 	rtcpReceiverReportDelta = 1e9
+
+	// fecReportInterval bounds how often a buffer logs a FlexFEC recovery summary.
+	fecReportInterval = 5e9
 
 	InitPacketBufferSizeVideo = 300
 	InitPacketBufferSizeAudio = 70
@@ -72,6 +76,28 @@ type Buffer struct {
 
 	primaryBufferForRTX *Buffer
 	rtxPktBuf           []byte
+
+	// FlexFEC (publisher -> SFU recovery).
+	// primaryBufferForFEC is set on a repair (FEC) buffer and points at the source
+	// buffer it protects. fecDecoder lives on the source buffer and reconstructs lost
+	// source packets from the repair stream. fecPktBuf is scratch for re-marshaling
+	// recovered packets before injecting them back into the source buffer.
+	primaryBufferForFEC *Buffer
+	fecDecoder          *flexfec.Decoder
+	fecPktBuf           []byte
+
+	// FlexFEC observability. Counters are cumulative for the lifetime of the source
+	// buffer; the *Reported fields snapshot the last logged values so the periodic
+	// summary can report deltas.
+	fecPacketsReceived   uint64
+	fecPacketsRecovered  uint64
+	fecReportedAt        int64
+	fecReportedReceived  uint64
+	fecReportedRecovered uint64
+
+	// Debug-only simulated publisher ("robot") uplink impairment; nil unless the
+	// LK_UPLINK_* env vars are set. See buffer_impair.go.
+	impair *uplinkImpair
 }
 
 func NewBuffer(ssrc uint32, maxVideoPkts, maxAudioPkts int) *Buffer {
@@ -84,6 +110,7 @@ func NewBuffer(ssrc uint32, maxVideoPkts, maxAudioPkts int) *Buffer {
 		SendPLI:            b.sendPLI,
 		IsReportingEnabled: true,
 	})
+	b.initUplinkImpair()
 	return b
 }
 
@@ -138,7 +165,24 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 }
 
 // Write adds an RTP Packet, ordering is not guaranteed, newer packets may arrive later
-func (b *Buffer) Write(pkt []byte) (n int, err error) {
+// Write is the inbound entry point for the publisher's RTP (media, RTX, and FEC SSRCs).
+// It applies the optional debug uplink impairment (loss + one-way delay) before handing
+// the packet to writeNow; both are no-ops unless the LK_UPLINK_* env vars are set.
+func (b *Buffer) Write(pkt []byte) (int, error) {
+	if b.impair != nil {
+		if b.impair.dropInbound() {
+			// Packet "lost" on the simulated 5G uplink; report success so pion's read
+			// loop is unaffected.
+			return len(pkt), nil
+		}
+		if b.impair.delayInbound(b, pkt) {
+			return len(pkt), nil
+		}
+	}
+	return b.writeNow(pkt)
+}
+
+func (b *Buffer) writeNow(pkt []byte) (n int, err error) {
 	var rtpPacket rtp.Packet
 	err = rtpPacket.Unmarshal(pkt)
 	if err != nil {
@@ -179,6 +223,13 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		return
 	}
 
+	// handle FlexFEC repair packet
+	if pb := b.primaryBufferForFEC; pb != nil {
+		b.Unlock()
+		pb.writeFEC(&rtpPacket, now)
+		return
+	}
+
 	if !b.isBound {
 		packet := make([]byte, len(pkt))
 		copy(packet, pkt)
@@ -203,14 +254,31 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 	}
 
 	rtcpPackets := b.calc(pkt, &rtpPacket, now, false, false)
+
+	// feed received source packets to the FlexFEC decoder so it can reconstruct
+	// previously lost packets, and inject any recoveries back into this buffer.
+	if b.fecDecoder != nil {
+		b.injectRecoveredLocked(b.fecDecoder.Decode(rtpPacket), now)
+	}
+
 	b.Unlock()
 
 	if len(rtcpPackets) != 0 {
-		if cb := b.getOnRtcpFeedback(); cb != nil {
-			cb(rtcpPackets)
-		}
+		b.emitRTCPFeedback(rtcpPackets)
 	}
 	return
+}
+
+// emitRTCPFeedback delivers SFU->publisher feedback (NACK/RR/etc). When the debug uplink
+// delay is set it defers delivery by the one-way delay so a NACK->RTX recovery costs a
+// full round trip; otherwise it fires immediately.
+func (b *Buffer) emitRTCPFeedback(rtcpPackets []rtcp.Packet) {
+	if b.impair != nil && b.impair.delayFeedback(b, rtcpPackets) {
+		return
+	}
+	if cb := b.getOnRtcpFeedback(); cb != nil {
+		cb(rtcpPackets)
+	}
 }
 
 func (b *Buffer) SetPrimaryBufferForRTX(primaryBuffer *Buffer) {
@@ -230,6 +298,114 @@ func (b *Buffer) SetPrimaryBufferForRTX(primaryBuffer *Buffer) {
 			continue
 		}
 		primaryBuffer.writeRTX(&rtpPacket, pp.arrivalTime)
+	}
+}
+
+// SetPrimaryBufferForFEC associates this (repair/FEC) buffer with the source buffer it
+// protects. It installs a FlexFEC decoder on the source buffer and replays any FEC
+// packets that arrived before the association was known.
+func (b *Buffer) SetPrimaryBufferForFEC(primaryBuffer *Buffer) {
+	primaryBuffer.enableFECDecoder(b.BufferBase.SSRC())
+
+	b.Lock()
+	b.primaryBufferForFEC = primaryBuffer
+	pkts := b.pPackets
+	b.pPackets = nil
+	b.Unlock()
+
+	for _, pp := range pkts {
+		var rtpPacket rtp.Packet
+		if err := rtpPacket.Unmarshal(pp.packet); err != nil {
+			continue
+		}
+		primaryBuffer.writeFEC(&rtpPacket, pp.arrivalTime)
+	}
+}
+
+// enableFECDecoder installs a FlexFEC decoder on this (source) buffer for the given
+// repair SSRC. Safe to call before the buffer is bound.
+func (b *Buffer) enableFECDecoder(fecSSRC uint32) {
+	b.Lock()
+	defer b.Unlock()
+
+	if b.fecDecoder == nil {
+		b.fecDecoder = flexfec.NewDecoder(fecSSRC, b.BufferBase.SSRC())
+		b.logger.Infow("flexfec decoder enabled", "fecSSRC", fecSSRC, "mediaSSRC", b.BufferBase.SSRC())
+	}
+}
+
+// writeFEC feeds a received FlexFEC repair packet to this (source) buffer's decoder and
+// injects any recovered source packets back into the buffer. Called on the source buffer.
+func (b *Buffer) writeFEC(fecPkt *rtp.Packet, arrivalTime int64) {
+	b.Lock()
+	defer b.Unlock()
+
+	if b.fecDecoder == nil {
+		return
+	}
+
+	b.fecPacketsReceived++
+	b.injectRecoveredLocked(b.fecDecoder.Decode(*fecPkt), arrivalTime)
+	b.maybeLogFECStatsLocked(arrivalTime)
+}
+
+// maybeLogFECStatsLocked emits a periodic FlexFEC recovery summary at most once per
+// fecReportInterval, and only when there has been FEC activity since the last summary.
+// b.Lock must be held.
+func (b *Buffer) maybeLogFECStatsLocked(now int64) {
+	if b.fecReportedAt == 0 {
+		b.fecReportedAt = now
+		b.fecReportedReceived = b.fecPacketsReceived
+		b.fecReportedRecovered = b.fecPacketsRecovered
+		return
+	}
+
+	if now-b.fecReportedAt < fecReportInterval {
+		return
+	}
+
+	receivedDelta := b.fecPacketsReceived - b.fecReportedReceived
+	recoveredDelta := b.fecPacketsRecovered - b.fecReportedRecovered
+
+	b.fecReportedAt = now
+	b.fecReportedReceived = b.fecPacketsReceived
+	b.fecReportedRecovered = b.fecPacketsRecovered
+
+	if receivedDelta == 0 && recoveredDelta == 0 {
+		return
+	}
+
+	b.logger.Infow(
+		"flexfec recovery stats",
+		"mediaSSRC", b.BufferBase.SSRC(),
+		"fecPacketsReceived", b.fecPacketsReceived,
+		"fecPacketsReceivedDelta", receivedDelta,
+		"packetsRecovered", b.fecPacketsRecovered,
+		"packetsRecoveredDelta", recoveredDelta,
+	)
+}
+
+// injectRecoveredLocked re-injects FlexFEC-recovered source packets into the buffer as
+// repaired packets (treated like RTX repairs, so they become NACK/forward eligible).
+// b.Lock must be held.
+func (b *Buffer) injectRecoveredLocked(recovered []rtp.Packet, arrivalTime int64) {
+	if len(recovered) == 0 || !b.isBound {
+		return
+	}
+
+	if b.fecPktBuf == nil {
+		b.fecPktBuf = make([]byte, bucket.RTPMaxPktSize)
+	}
+
+	for i := range recovered {
+		pkt := recovered[i]
+		n, err := pkt.MarshalTo(b.fecPktBuf)
+		if err != nil {
+			b.logger.Errorw("could not marshal flexfec recovered packet", err, "sn", pkt.SequenceNumber)
+			continue
+		}
+		b.calc(b.fecPktBuf[:n], &pkt, arrivalTime, false, true)
+		b.fecPacketsRecovered++
 	}
 }
 

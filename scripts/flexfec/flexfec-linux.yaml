@@ -1,0 +1,45 @@
+# Linux FlexFEC-03 test config for the netns + netem harness (scripts/flexfec/netns.sh).
+#
+# Unlike flexfec-local.yaml (macOS, loopback + in-SFU software impairment), this runs the
+# SFU in the root netns and advertises the veth host IP 10.200.0.1 so that:
+#   - the publisher in the `robot` netns reaches the SFU over the veth pair (shaped by netem)
+#   - the subscriber in the root netns reaches the SFU at 10.200.0.1 locally (clean link)
+#
+# Run with --dev (injects devkey/secret):
+#   ~/go1.26/bin/... # build first, then:
+#   sudo scripts/flexfec/netns.sh up
+#   /tmp/flexfec-livekit-server --dev --config scripts/flexfec/flexfec-linux.yaml
+
+port: 7880
+
+# Bind signalling (HTTP/WS + TCP) to the veth host IP so the publisher in the `robot` netns
+# can reach it, plus loopback for the in-root-ns subscriber. Setting a non-loopback bind
+# address also stops --dev from pinning everything to 127.0.0.1.
+bind_addresses:
+  - 10.200.0.1
+  - 127.0.0.1
+
+rtc:
+  udp_port: 7882
+  tcp_port: 7881
+  # Advertise the veth host IP, not a public IP.
+  use_external_ip: false
+  enable_loopback_candidate: true
+  ips:
+    includes:
+      # veth subnet: 10.200.0.1 (SFU/root) <-> 10.200.0.2 (robot netns)
+      - 10.200.0.0/24
+      - 127.0.0.0/8
+
+  # Asymmetric teleop topology: robot publishes with FlexFEC (uplink recovery at the SFU);
+  # the operator/subscriber is on a clean wired link so downlink FEC is off.
+  flexfec:
+    subscriber: false
+    publisher: true
+    payload_type: 49
+    num_media_packets: 5
+    num_fec_packets: 1
+
+logging:
+  level: debug
+  json: false
