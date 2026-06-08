@@ -49,6 +49,8 @@ var (
 	promSessionStartTime       *prometheus.HistogramVec
 	promSessionDuration        *prometheus.HistogramVec
 	promPubSubTime             *prometheus.HistogramVec
+
+	promPeerConnection *prometheus.CounterVec
 )
 
 func initRoomStats(nodeID string, nodeType livekit.NodeType) {
@@ -118,6 +120,12 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		Buckets:     []float64{100, 200, 500, 700, 1000, 5000, 10000},
 	}, append(promStreamLabels, "sdk", "kind", "count"))
+	promPeerConnection = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "peer_connection",
+		Name:        "state",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+	}, []string{"transport", "state"})
 
 	prometheus.MustRegister(promRoomCurrent)
 	prometheus.MustRegister(promRoomDuration)
@@ -129,6 +137,7 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promSessionStartTime)
 	prometheus.MustRegister(promSessionDuration)
 	prometheus.MustRegister(promPubSubTime)
+	prometheus.MustRegister(promPeerConnection)
 }
 
 func RoomStarted() {
@@ -268,4 +277,8 @@ func RecordSessionStartTime(protocolVersion int, d time.Duration) {
 
 func RecordSessionDuration(protocolVersion int, d time.Duration) {
 	promSessionDuration.WithLabelValues(strconv.Itoa(protocolVersion)).Observe(float64(d.Milliseconds()))
+}
+
+func RecordPeerConnectionState(transport livekit.SignalTarget, state string) {
+	promPeerConnection.WithLabelValues(transport.String(), state).Inc()
 }

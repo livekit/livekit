@@ -288,16 +288,17 @@ type PCTransport struct {
 	numRequestSentVideos uint32
 
 	// the following should be accessed only in event processing go routine
-	cacheLocalCandidates      bool
-	cachedLocalCandidates     []*webrtc.ICECandidate
-	pendingRemoteCandidates   []*webrtc.ICECandidateInit
-	restartAfterGathering     bool
-	restartAtNextOffer        bool
-	negotiationState          transport.NegotiationState
-	negotiateCounter          atomic.Int32
-	signalStateCheckTimer     *time.Timer
-	currentOfferIceCredential string // ice user:pwd, for publish side ice restart checking
-	pendingRestartIceOffer    *webrtc.SessionDescription
+	hasStartedConnectionSequence atomic.Bool
+	cacheLocalCandidates         bool
+	cachedLocalCandidates        []*webrtc.ICECandidate
+	pendingRemoteCandidates      []*webrtc.ICECandidateInit
+	restartAfterGathering        bool
+	restartAtNextOffer           bool
+	negotiationState             transport.NegotiationState
+	negotiateCounter             atomic.Int32
+	signalStateCheckTimer        *time.Timer
+	currentOfferIceCredential    string // ice user:pwd, for publish side ice restart checking
+	pendingRestartIceOffer       *webrtc.SessionDescription
 }
 
 type TransportParams struct {
@@ -717,6 +718,8 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 			t.tcpICETimer.Stop()
 			t.tcpICETimer = nil
 		}
+
+		prometheus.RecordPeerConnectionState(t.params.Transport, "connected")
 	}
 
 	if t.mayFailedICEStatsTimer != nil {
@@ -2614,6 +2617,9 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		prometheus.RecordServiceOperationError("offer", "local_description")
 		return errors.Wrap(err, "setting local description failed")
 	}
+	if !t.hasStartedConnectionSequence.Swap(true) {
+		prometheus.RecordPeerConnectionState(t.params.Transport, "started")
+	}
 
 	//
 	// Filter after setting local description as pion expects the offer
@@ -2788,7 +2794,7 @@ func (t *PCTransport) createAndSendAnswer() error {
 		return errors.Wrap(err, "could not send answer")
 	}
 	t.localAnswerId.Store(answerId)
-	prometheus.RecordServiceOperationSuccess("asnwer")
+	prometheus.RecordServiceOperationSuccess("answer")
 
 	if err := t.sendUnmatchedMediaRequirement(false); err != nil {
 		return err
@@ -2862,6 +2868,9 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, o
 
 	if err := t.setRemoteDescription(*sd); err != nil {
 		return err
+	}
+	if !t.hasStartedConnectionSequence.Swap(true) {
+		prometheus.RecordPeerConnectionState(t.params.Transport, "started")
 	}
 	t.params.Handler.OnSetRemoteDescriptionOffer()
 	t.processSendersPendingConfig()
