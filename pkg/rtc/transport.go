@@ -719,7 +719,7 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 			t.tcpICETimer = nil
 		}
 
-		prometheus.RecordPeerConnectionState(t.params.Transport, "connected")
+		prometheus.RecordPeerConnectionState(t.params.Transport, "ice_connected")
 	}
 
 	if t.mayFailedICEStatsTimer != nil {
@@ -804,6 +804,7 @@ func (t *PCTransport) setConnectedAt(at time.Time) bool {
 
 	t.firstConnectedAt = at
 	prometheus.RecordServiceOperationSuccess("peer_connection")
+	prometheus.RecordPeerConnectionState(t.params.Transport, "connected")
 	t.lock.Unlock()
 	return true
 }
@@ -967,6 +968,7 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 func (t *PCTransport) maybeNotifyFullyEstablished() {
 	if t.isFullyEstablished() {
 		t.params.Handler.OnFullyEstablished()
+		prometheus.RecordPeerConnectionState(t.params.Transport, "data_channels_established")
 	}
 }
 
