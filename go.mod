@@ -24,7 +24,7 @@ require (
 	github.com/livekit/protocol v1.46.7-0.20260605212020-c0615a2f6f84
 	github.com/livekit/psrpc v0.7.2
 	github.com/mackerelio/go-osstat v0.2.7
-	github.com/magefile/mage v1.17.0
+	github.com/magefile/mage v1.17.2
 	github.com/maxbrunsfeld/counterfeiter/v6 v6.12.2
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/moby/moby/client v0.4.1
