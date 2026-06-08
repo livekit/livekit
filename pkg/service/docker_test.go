@@ -75,7 +75,7 @@ func runRedis(t testing.TB) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_ = Docker.Close(t.Context())
+		_ = c.Close(t.Context())
 	})
 	addr := c.GetHostPort("6379/tcp")
 	waitTCPPort(t, addr)
