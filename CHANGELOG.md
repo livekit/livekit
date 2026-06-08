@@ -2,6 +2,12 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.1] - 2026-06-08
+
+### Fixed
+
+- ci: disable goreleaser gomod proxy, incompatible with go.mod replace directive
+
 ## [1.13.0] - 2026-06-08
 
 ## ATTENTION: This release removes backwards compatibility for TURN authentication without TTL. Please refer to change log of [1.12.0](https://github.com/livekit/livekit/releases/tag/v1.12.0) for details on changes to TURN authentication and permissions handling. It was removed in https://github.com/livekit/livekit/pull/4539.
