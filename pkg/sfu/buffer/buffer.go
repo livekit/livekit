@@ -171,6 +171,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 func (b *Buffer) Write(pkt []byte) (int, error) {
 	if b.impair != nil {
 		if b.impair.dropInbound() {
+			b.logImpairedDrop(pkt)
 			// Packet "lost" on the simulated 5G uplink; report success so pion's read
 			// loop is unaffected.
 			return len(pkt), nil
@@ -188,6 +189,7 @@ func (b *Buffer) writeNow(pkt []byte) (n int, err error) {
 	if err != nil {
 		return
 	}
+	b.logImpairedMarker(&rtpPacket)
 
 	b.Lock()
 	if b.BufferBase.IsClosed() {

@@ -19,11 +19,6 @@ import (
 	"testing"
 )
 
-const (
-	tagTimestampUs = 0x01
-	tagFrameID     = 0x02
-)
-
 // appendTLV appends a single XORed TLV element to dst.
 func appendTLV(dst []byte, tag byte, value []byte) []byte {
 	dst = append(dst, tag^xorByte, byte(len(value))^xorByte)
@@ -78,7 +73,7 @@ func makeTimestampOnlyTrailer(timestampUs int64) []byte {
 }
 
 func TestStripTrailer(t *testing.T) {
-	fullTrailerSize := 21 // (1+1+8) + (1+1+4) + 5
+	fullTrailerSize := 21   // (1+1+8) + (1+1+4) + 5
 	tsOnlyTrailerSize := 15 // (1+1+8) + 5
 
 	tests := []struct {
@@ -178,5 +173,35 @@ func TestStripTrailer(t *testing.T) {
 				t.Errorf("StripTrailer() = %d, want %d", got, tt.wantStrip)
 			}
 		})
+	}
+}
+
+func TestParseTrailer(t *testing.T) {
+	payload := makePayloadWithTrailer(20, 1700000000000000, 42)
+
+	metadata, ok := ParseTrailer(payload, true)
+	if !ok {
+		t.Fatal("ParseTrailer() did not find trailer")
+	}
+	if !metadata.HasTimestampUs || metadata.TimestampUs != 1700000000000000 {
+		t.Fatalf("timestamp = (%v, %d), want (true, 1700000000000000)", metadata.HasTimestampUs, metadata.TimestampUs)
+	}
+	if !metadata.HasFrameID || metadata.FrameID != 42 {
+		t.Fatalf("frame id = (%v, %d), want (true, 42)", metadata.HasFrameID, metadata.FrameID)
+	}
+
+	metadata, ok = ParseTrailer(makeTimestampOnlyTrailer(99), true)
+	if !ok {
+		t.Fatal("ParseTrailer() did not find timestamp-only trailer")
+	}
+	if !metadata.HasTimestampUs || metadata.TimestampUs != 99 {
+		t.Fatalf("timestamp = (%v, %d), want (true, 99)", metadata.HasTimestampUs, metadata.TimestampUs)
+	}
+	if metadata.HasFrameID {
+		t.Fatalf("frame id present = %v, want false", metadata.HasFrameID)
+	}
+
+	if _, ok := ParseTrailer(payload, false); ok {
+		t.Fatal("ParseTrailer() found trailer without RTP marker")
 	}
 }

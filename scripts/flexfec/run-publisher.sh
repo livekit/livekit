@@ -42,7 +42,8 @@ PUB_IDENTITY="${PUB_IDENTITY:-flexfec-pub}"
 
 PUB_ARGS=(--flex-fec --room-name "$ROOM" --identity "$PUB_IDENTITY")
 if [[ "${TEST_PATTERN:-1}" == "1" ]]; then
-  PUB_ARGS+=(--test-pattern)
+  # TEST_PATTERN_ANIMATE=1 -> animated (scrolling) pattern for a realistic motion bitrate.
+  PUB_ARGS+=(--test-pattern "${TEST_PATTERN_ANIMATE:-0}")
 fi
 if [[ "${ATTACH_META:-1}" == "1" ]]; then
   PUB_ARGS+=(--attach-timestamp --attach-frame-id)

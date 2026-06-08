@@ -14,13 +14,25 @@
 
 package packettrailer
 
+import "encoding/binary"
+
 var Magic = [4]byte{'L', 'K', 'T', 'S'}
 
 const (
 	xorByte = 0xFF
 
 	envelopeSize = 5 // 1B trailer_len + 4B magic
+
+	tagTimestampUs = 0x01
+	tagFrameID     = 0x02
 )
+
+type Metadata struct {
+	TimestampUs    uint64
+	HasTimestampUs bool
+	FrameID        uint32
+	HasFrameID     bool
+}
 
 // StripTrailer returns the number of bytes to strip from the end of an RTP
 // payload if it contains an LKTS trailer. The trailer is located by checking
@@ -43,4 +55,49 @@ func StripTrailer(payload []byte, marker bool) int {
 	}
 
 	return trailerLen
+}
+
+func ParseTrailer(payload []byte, marker bool) (Metadata, bool) {
+	strip := StripTrailer(payload, marker)
+	if strip == 0 {
+		return Metadata{}, false
+	}
+
+	var metadata Metadata
+	tlvEnd := len(payload) - envelopeSize
+	for i := len(payload) - strip; i < tlvEnd; {
+		if i+2 > tlvEnd {
+			return metadata, true
+		}
+		tag := payload[i] ^ xorByte
+		length := int(payload[i+1] ^ xorByte)
+		i += 2
+		if length < 0 || i+length > tlvEnd {
+			return metadata, true
+		}
+
+		switch tag {
+		case tagTimestampUs:
+			if length == 8 {
+				var buf [8]byte
+				for j := range buf {
+					buf[j] = payload[i+j] ^ xorByte
+				}
+				metadata.TimestampUs = binary.BigEndian.Uint64(buf[:])
+				metadata.HasTimestampUs = true
+			}
+		case tagFrameID:
+			if length == 4 {
+				var buf [4]byte
+				for j := range buf {
+					buf[j] = payload[i+j] ^ xorByte
+				}
+				metadata.FrameID = binary.BigEndian.Uint32(buf[:])
+				metadata.HasFrameID = true
+			}
+		}
+		i += length
+	}
+
+	return metadata, true
 }

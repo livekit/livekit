@@ -67,9 +67,9 @@ if [[ "$USE_NETNS" == "1" ]]; then
   NETEM_LOSS="${NETEM_LOSS:-0}"
   NETEM_OWD="${NETEM_OWD:-0}"
   if [[ "$NETEM_LOSS" != "0" || "$NETEM_OWD" != "0" ]]; then
-    "$LK_DIR/scripts/flexfec/netns.sh" shape "$NETEM_LOSS" "$NETEM_OWD" "${NETEM_JITTER:-0}" "${NETEM_CORR:-0}"
+    bash "$LK_DIR/scripts/flexfec/netns.sh" shape "$NETEM_LOSS" "$NETEM_OWD" "${NETEM_JITTER:-0}" "${NETEM_CORR:-0}"
   else
-    "$LK_DIR/scripts/flexfec/netns.sh" clear
+    bash "$LK_DIR/scripts/flexfec/netns.sh" clear
   fi
 fi
 
@@ -94,13 +94,13 @@ PUB="$RUST_DIR/target/debug/publisher"
 SUB="$RUST_DIR/target/debug/subscriber"
 
 # --- Publisher (robot) ---
-PUB_ARGS=(--flex-fec --room-name "$ROOM" --identity flexfec-pub --test-pattern --animate-test-pattern --attach-timestamp --attach-frame-id)
+PUB_ARGS=(--flex-fec --room-name "$ROOM" --identity flexfec-pub --test-pattern 1 --attach-timestamp --attach-frame-id)
 # shellcheck disable=SC2206
 [[ -n "$PUB_EXTRA" ]] && PUB_ARGS+=($PUB_EXTRA)
 
 if [[ "$USE_NETNS" == "1" ]]; then
   # netns.sh sudoes ip/tc internally; do NOT wrap it in sudo (the script isn't allowlisted).
-  "$LK_DIR/scripts/flexfec/netns.sh" exec env \
+  bash "$LK_DIR/scripts/flexfec/netns.sh" exec env \
     LIVEKIT_URL="$LIVEKIT_URL" LIVEKIT_API_KEY=devkey LIVEKIT_API_SECRET=secret RUST_LOG="$RUST_LOG" \
     "$PUB" "${PUB_ARGS[@]}" > "$PUB_LOG" 2>&1 &
 else
