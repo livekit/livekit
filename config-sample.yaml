@@ -114,6 +114,12 @@ rtc:
   #   allow_pause: true
   # # allows automatic connection fallback to TCP and TURN/TLS (if configured) when UDP has been unstable, default true
   # allow_tcp_fallback: true
+  # # signaling RTT (in milliseconds) below which ICE/TCP is attempted on a UDP failure; at or above it,
+  # # supporting clients fall back directly to TURN/TLS. 0 (default) disables the check (ICE/TCP always tried).
+  # # a positive value also enables allow_udp_unstable_fallback.
+  # tcp_fallback_rtt_threshold: 0
+  # # migrate an established-but-lossy UDP connection to ICE/TCP or TURN/TLS. requires tcp_fallback_rtt_threshold > 0, default false
+  # allow_udp_unstable_fallback: false
   # # number of packets to buffer in the SFU for video, defaults to 500
   # packet_buffer_size_video: 500
   # # number of packets to buffer in the SFU for audio, defaults to 200
