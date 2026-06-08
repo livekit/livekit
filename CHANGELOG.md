@@ -2,6 +2,38 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] - 2026-06-08
+
+## ATTENTION: This release removes backwards compatibility for TURN authentication without TTL. Please refer to change log of [1.12.0](https://github.com/livekit/livekit/releases/tag/v1.12.0) for details on changes to TURN authentication and permissions handling. It was removed in https://github.com/livekit/livekit/pull/4539.
+
+### Added
+
+- rtc: report participant kind code and details (#4534)
+- Add IsIntentionalDisconnect (#4537)
+- rtc: emit per-data-track bytes via BytesTrackStats (#4540)
+- Start tracking Twirp method request latency in prometheus too, not just in logs (#4545)
+- Config documentation for advertise_internal_ip and skip_external_ip_validation (#4552, #4554, #4563)
+- Metrics for participant active, i. e. fully established. (#4557)
+- turn: allow for providing secret via file (#4564)
+
+### Changed
+
+- Always enable rtx codec (#4533)
+- Don't require media sections when joining (#4535)
+- Use NACKQuueInterface type. (#4538)
+- Remove backwards compatibility support for TURN auth. (#4539)
+- telemetry: split webhook-processed hook out of NewTelemetryService (#4548)
+- rtc: prevent duration reporting for inactive participants (#4550)
+- rtc: report participant session end time on room move (#4561)
+- Update mediatransportutil to get ICE candidate timeout config (#4572)
+
+### Fixed
+
+- Check Less and LessEq in version compare. (#4532)
+- fix sip error categorization (#4528)
+- handle nil clientInfo (#4546, #4547)
+- Prevent panic from nil(illegal) syncState.Subscriptions message (#4560)
+
 ## [1.12.0] - 2026-05-16
 
 ## ATTENTION: This release introduces important changes to how TURN authentication and permissions are handled. These changes make the system more secure. This release maintains backwards compatibility. However, backwards compatibility will be removed in the next release. So, please plan accordingly.
