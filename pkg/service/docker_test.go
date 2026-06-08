@@ -15,27 +15,31 @@
 package service_test
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"testing"
+	"time"
 
 	"go.uber.org/atomic"
 
-	"github.com/ory/dockertest/v3"
+	mobyclient "github.com/moby/moby/client"
+	"github.com/ory/dockertest/v4"
 )
 
-var Docker *dockertest.Pool
+var Docker dockertest.ClosablePool
 
 func TestMain(m *testing.M) {
-	pool, err := dockertest.NewPool("")
+	ctx := context.Background()
+	pool, err := dockertest.NewPool(ctx, "")
 	if err != nil {
 		log.Fatalf("Could not construct pool: %s", err)
 	}
 
 	// uses pool to try to connect to Docker
-	err = pool.Client.Ping()
+	_, err = pool.Client().Ping(ctx, mobyclient.PingOptions{})
 	if err != nil {
 		log.Fatalf("Could not connect to Docker: %s", err)
 	}
@@ -46,7 +50,7 @@ func TestMain(m *testing.M) {
 }
 
 func waitTCPPort(t testing.TB, addr string) {
-	if err := Docker.Retry(func() error {
+	if err := Docker.Retry(t.Context(), 30*time.Second, func() error {
 		conn, err := net.Dial("tcp", addr)
 		if err != nil {
 			t.Log(err)
@@ -62,15 +66,16 @@ func waitTCPPort(t testing.TB, addr string) {
 var redisLast atomic.Uint32
 
 func runRedis(t testing.TB) string {
-	c, err := Docker.RunWithOptions(&dockertest.RunOptions{
-		Name:       fmt.Sprintf("lktest-redis-%d", redisLast.Inc()),
-		Repository: "redis", Tag: "latest",
-	})
+	c, err := Docker.Run(t.Context(),
+		"redis",
+		dockertest.WithName(fmt.Sprintf("lktest-redis-%d", redisLast.Inc())),
+		dockertest.WithTag("latest"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_ = Docker.Purge(c)
+		_ = Docker.Close(t.Context())
 	})
 	addr := c.GetHostPort("6379/tcp")
 	waitTCPPort(t, addr)
