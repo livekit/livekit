@@ -75,7 +75,9 @@ func runRedis(t testing.TB) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_ = c.Close(t.Context())
+		// t.Context() is canceled before cleanup funcs run, so use a
+		// non-canceled context to let the container stop/remove complete.
+		_ = c.Close(context.Background())
 	})
 	addr := c.GetHostPort("6379/tcp")
 	waitTCPPort(t, addr)
