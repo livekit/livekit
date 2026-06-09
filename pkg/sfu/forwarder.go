@@ -52,6 +52,15 @@ const (
 	ResumeBehindHighThresholdSeconds  = float64(2.0)   // 2 seconds
 	LayerSwitchBehindThresholdSeconds = float64(0.05)  // 50ms
 	SwitchAheadThresholdSeconds       = float64(0.025) // 25ms
+
+	// While a subscriber is acquiring its first layer and the requested (max) layer has not been
+	// seen on the wire yet, aim straight for the requested layer for this long instead of latching
+	// onto a lower layer that is detected first. Avoids a visible low -> high quality ramp,
+	// notably when the subscriber joined before the publisher started (so layers are detected, and
+	// `maxSeen` climbs, gradually). If the requested layer does not show up within this window the
+	// grace expires and forwarding falls back to the highest layer actually seen.
+	// See Forwarder.opportunisticAlloc / withinAcquireGraceLocked / MaybeExpireAcquireGrace.
+	initialLayerAcquisitionGrace = time.Second
 )
 
 var (
@@ -222,6 +231,7 @@ type Forwarder struct {
 	logger                         logger.Logger
 	skipReferenceTS                bool
 	disableOpportunisticAllocation bool
+	liveStreamingMode              bool
 	rtpStats                       *rtpstats.RTPStatsSender
 
 	muted                 bool
@@ -230,6 +240,7 @@ type Forwarder struct {
 
 	started                  bool
 	preStartTime             time.Time
+	acquireDeadline          int64 // mono nanos; initial-acquisition grace deadline, 0 = inactive
 	extFirstTS               uint64
 	lastSSRC                 uint32
 	lastReferencePayloadType int8
@@ -256,6 +267,7 @@ func NewForwarder(
 	logger logger.Logger,
 	skipReferenceTS bool,
 	disableOpportunisticAllocation bool,
+	liveStreamingMode bool,
 	rtpStats *rtpstats.RTPStatsSender,
 ) *Forwarder {
 	f := &Forwarder{
@@ -264,6 +276,7 @@ func NewForwarder(
 		logger:                         logger,
 		skipReferenceTS:                skipReferenceTS,
 		disableOpportunisticAllocation: disableOpportunisticAllocation,
+		liveStreamingMode:              liveStreamingMode,
 		rtpStats:                       rtpStats,
 		referenceLayerSpatial:          buffer.InvalidLayerSpatial,
 		lastAllocation:                 VideoAllocationDefault,
@@ -272,6 +285,7 @@ func NewForwarder(
 		vls:                            videolayerselector.NewNull(logger),
 		codecMunger:                    codecmunger.NewNull(logger),
 	}
+	f.vls.SetLiveStreamingMode(liveStreamingMode)
 
 	if f.kind == webrtc.RTPCodecTypeVideo {
 		f.vls.SetMaxTemporal(buffer.DefaultMaxLayerTemporal)
@@ -289,8 +303,34 @@ func (f *Forwarder) SetMaxPublishedLayer(maxPublishedLayer int32) bool {
 	}
 
 	f.vls.SetMaxSeenSpatial(maxPublishedLayer)
+	if f.liveStreamingMode && !f.vls.GetCurrent().IsValid() {
+		// A (higher) layer just became available while nothing is being forwarded yet.
+		// (Re)start the initial-acquisition grace so the target aims for the requested layer
+		// instead of ramping up gradually as more layers are detected. See opportunisticAlloc.
+		f.acquireDeadline = mono.UnixNano() + initialLayerAcquisitionGrace.Nanoseconds()
+	}
 	f.logger.Debugw("setting max published layer", "layer", maxPublishedLayer)
 	return true
+}
+
+// withinAcquireGraceLocked reports whether the initial-acquisition grace window is still open.
+func (f *Forwarder) withinAcquireGraceLocked() bool {
+	return f.acquireDeadline != 0 && mono.UnixNano() < f.acquireDeadline
+}
+
+// MaybeExpireAcquireGrace returns true once when the initial-acquisition grace has expired while
+// the forwarder is still not streaming any layer. The caller should trigger a re-allocation so the
+// target falls back from the requested layer to the highest layer actually seen, avoiding a stall
+// if the requested layer never shows up. The deadline is cleared so it fires at most once.
+func (f *Forwarder) MaybeExpireAcquireGrace() bool {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	if f.acquireDeadline == 0 || mono.UnixNano() < f.acquireDeadline {
+		return false
+	}
+	f.acquireDeadline = 0
+	return !f.vls.GetCurrent().IsValid()
 }
 
 func (f *Forwarder) SetMaxTemporalLayerSeen(maxTemporalLayerSeen int32) bool {
@@ -409,6 +449,9 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 			}
 		}
 	}
+
+	// the selector may have been (re)created above; keep its live-streaming mode in sync
+	f.vls.SetLiveStreamingMode(f.liveStreamingMode)
 }
 
 func (f *Forwarder) GetState() *livekit.RTPForwarderState {
@@ -832,6 +875,17 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 		return maxTemporal
 	}
 
+	// inAcquireGrace reports that we are acquiring the first layer, the requested layer has not
+	// been seen on the wire yet, and the grace window is still open. While true, aim straight for
+	// the requested layer instead of the highest seen so far, so acquisition does not ramp up
+	// gradually as layers are detected (`maxSeen` climbs). See initialLayerAcquisitionGrace.
+	inAcquireGrace := func(maxSpatial int32) bool {
+		return !currentLayer.IsValid() && maxSeenLayer.Spatial < maxSpatial && f.withinAcquireGraceLocked()
+	}
+
+	// set when opportunisticAlloc aimed the target at the requested layer due to the acquisition
+	// grace (as opposed to overshoot), so the key frame request can be pointed at it too
+	acquireGraceApplied := false
 	opportunisticAlloc := func() {
 		// opportunistically latch on to anything
 		maxSpatial := maxLayer.Spatial
@@ -839,8 +893,14 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 			maxSpatial = maxSeenLayer.Spatial
 		}
 
+		targetSpatial := min(maxSeenLayer.Spatial, maxSpatial)
+		if inAcquireGrace(maxSpatial) {
+			targetSpatial = maxSpatial
+			acquireGraceApplied = true
+		}
+
 		alloc.TargetLayer = buffer.VideoLayer{
-			Spatial:  min(maxSeenLayer.Spatial, maxSpatial),
+			Spatial:  targetSpatial,
 			Temporal: getMaxTemporal(),
 		}
 	}
@@ -935,7 +995,11 @@ func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allow
 			} else {
 				// opportunistically latch on to anything
 				opportunisticAlloc()
-				if requestLayerSpatial == buffer.InvalidLayerSpatial {
+				if acquireGraceApplied {
+					// in the acquisition grace, request a key frame for the requested layer we
+					// are waiting for (above what has been seen so far)
+					alloc.RequestLayerSpatial = alloc.TargetLayer.Spatial
+				} else if requestLayerSpatial == buffer.InvalidLayerSpatial {
 					alloc.RequestLayerSpatial = maxLayerSpatialLimit
 				} else {
 					alloc.RequestLayerSpatial = requestLayerSpatial

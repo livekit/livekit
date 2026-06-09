@@ -366,6 +366,16 @@ type FakeLocalParticipant struct {
 	getLastReliableSequenceReturnsOnCall map[int]struct {
 		result1 uint32
 	}
+	GetLiveStreamingModeStub        func() bool
+	getLiveStreamingModeMutex       sync.RWMutex
+	getLiveStreamingModeArgsForCall []struct {
+	}
+	getLiveStreamingModeReturns struct {
+		result1 bool
+	}
+	getLiveStreamingModeReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	GetLoggerStub        func() logger.Logger
 	getLoggerMutex       sync.RWMutex
 	getLoggerArgsForCall []struct {
@@ -3286,6 +3296,59 @@ func (fake *FakeLocalParticipant) GetLastReliableSequenceReturnsOnCall(i int, re
 	}
 	fake.getLastReliableSequenceReturnsOnCall[i] = struct {
 		result1 uint32
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetLiveStreamingMode() bool {
+	fake.getLiveStreamingModeMutex.Lock()
+	ret, specificReturn := fake.getLiveStreamingModeReturnsOnCall[len(fake.getLiveStreamingModeArgsForCall)]
+	fake.getLiveStreamingModeArgsForCall = append(fake.getLiveStreamingModeArgsForCall, struct {
+	}{})
+	stub := fake.GetLiveStreamingModeStub
+	fakeReturns := fake.getLiveStreamingModeReturns
+	fake.recordInvocation("GetLiveStreamingMode", []interface{}{})
+	fake.getLiveStreamingModeMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetLiveStreamingModeCallCount() int {
+	fake.getLiveStreamingModeMutex.RLock()
+	defer fake.getLiveStreamingModeMutex.RUnlock()
+	return len(fake.getLiveStreamingModeArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetLiveStreamingModeCalls(stub func() bool) {
+	fake.getLiveStreamingModeMutex.Lock()
+	defer fake.getLiveStreamingModeMutex.Unlock()
+	fake.GetLiveStreamingModeStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetLiveStreamingModeReturns(result1 bool) {
+	fake.getLiveStreamingModeMutex.Lock()
+	defer fake.getLiveStreamingModeMutex.Unlock()
+	fake.GetLiveStreamingModeStub = nil
+	fake.getLiveStreamingModeReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetLiveStreamingModeReturnsOnCall(i int, result1 bool) {
+	fake.getLiveStreamingModeMutex.Lock()
+	defer fake.getLiveStreamingModeMutex.Unlock()
+	fake.GetLiveStreamingModeStub = nil
+	if fake.getLiveStreamingModeReturnsOnCall == nil {
+		fake.getLiveStreamingModeReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.getLiveStreamingModeReturnsOnCall[i] = struct {
+		result1 bool
 	}{result1}
 }
 

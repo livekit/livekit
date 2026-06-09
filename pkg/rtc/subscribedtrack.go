@@ -48,6 +48,7 @@ type SubscribedTrackParams struct {
 	Subscriber                   types.LocalParticipant
 	MediaTrack                   types.MediaTrack
 	AdaptiveStream               bool
+	LiveStreamingMode            bool
 	TelemetryListener            types.ParticipantTelemetryListener
 	WrappedReceiver              *WrappedReceiver
 	IsRelayed                    bool
@@ -154,6 +155,7 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 		RTCPWriter:                     params.Subscriber.WriteSubscriberRTCP,
 		DisableSenderReportPassThrough: params.Subscriber.GetDisableSenderReportPassThrough(),
 		SupportsCodecChange:            params.Subscriber.SupportsCodecChange(),
+		LiveStreamingMode:              params.LiveStreamingMode,
 		Listener:                       s,
 	})
 	if err != nil {
@@ -212,7 +214,11 @@ func (t *SubscribedTrack) Bound(err error) {
 				t.logger.Debugw("enabling subscriber track settings on bind", "settings", logger.Proto(t.settings))
 			}
 		} else {
-			if t.params.AdaptiveStream {
+			if t.params.LiveStreamingMode {
+				// live streaming favors initial quality over time-to-first-frame: request the
+				// highest layer up front so the layer selector acquires it directly
+				t.settings = &livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_HIGH}
+			} else if t.params.AdaptiveStream {
 				t.settings = &livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_LOW}
 			} else {
 				t.settings = &livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_HIGH}

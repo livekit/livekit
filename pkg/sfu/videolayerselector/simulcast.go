@@ -94,14 +94,32 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 		found := false
 		reason := ""
 		if extPkt.IsKeyFrame {
-			if layer > s.currentLayer.Spatial && layer <= s.targetLayer.Spatial {
-				reason = "upgrading layer"
-				found = true
-			}
+			if s.liveStreamingMode && !isActive {
+				// Live streaming mode, initial acquisition: latch directly onto the target layer
+				// instead of opportunistically latching onto the first key frame of any lower
+				// layer that happens to arrive first. This avoids a visible low-quality ->
+				// high-quality ramp (e.g. briefly decoding layer 0 before settling on a requested
+				// layer 2) for a subscriber that requested the higher layer.
+				//
+				// The target is chosen by the allocator: during the initial-acquisition grace it
+				// points at the requested layer (so we wait for it); if that layer never shows
+				// up the grace expires and the allocator drops the target to the highest layer
+				// actually seen, so we always end up latching onto a layer that is flowing.
+				if layer == s.targetLayer.Spatial {
+					reason = "acquiring target layer"
+					found = true
+				}
+			} else {
+				// default: opportunistically latch on to / step towards the target layer
+				if layer > s.currentLayer.Spatial && layer <= s.targetLayer.Spatial {
+					reason = "upgrading layer"
+					found = true
+				}
 
-			if layer < s.currentLayer.Spatial && layer >= s.targetLayer.Spatial {
-				reason = "downgrading layer"
-				found = true
+				if layer < s.currentLayer.Spatial && layer >= s.targetLayer.Spatial {
+					reason = "downgrading layer"
+					found = true
+				}
 			}
 
 			if found {

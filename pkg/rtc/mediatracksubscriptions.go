@@ -109,6 +109,7 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 		Subscriber:         sub,
 		MediaTrack:         t.params.MediaTrack,
 		AdaptiveStream:     sub.GetAdaptiveStream(),
+		LiveStreamingMode:  sub.GetLiveStreamingMode(),
 		TelemetryListener:  sub.GetTelemetryListener(),
 		WrappedReceiver:    wr,
 		IsRelayed:          t.params.IsRelayed,

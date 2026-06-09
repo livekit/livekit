@@ -43,6 +43,8 @@ type VideoLayerSelector interface {
 	SetMaxTemporal(layer int32)
 	GetMax() buffer.VideoLayer
 
+	SetLiveStreamingMode(enabled bool)
+
 	SetTarget(targetLayer buffer.VideoLayer)
 	GetTarget() buffer.VideoLayer
 

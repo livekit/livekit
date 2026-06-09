@@ -207,6 +207,11 @@ type RoomConfig struct {
 	EnableRemoteUnmute bool               `yaml:"enable_remote_unmute,omitempty"`
 	PlayoutDelay       PlayoutDelayConfig `yaml:"playout_delay,omitempty"`
 	SyncStreams        bool               `yaml:"sync_streams,omitempty"`
+	// when enabled, a subscriber acquires its requested (highest) video layer directly instead
+	// of opportunistically ramping up from a lower layer (avoids a visible low->high quality
+	// ramp). intended for live streaming where the initial quality matters more than the
+	// time-to-first-frame. when disabled (default), the original opportunistic behavior is used.
+	LiveStreamingMode bool `yaml:"live_streaming_mode,omitempty"`
 	CreateRoomEnabled  bool               `yaml:"create_room_enabled,omitempty"`
 	CreateRoomTimeout  time.Duration      `yaml:"create_room_timeout,omitempty"`
 	CreateRoomAttempts int                `yaml:"create_room_attempts,omitempty"`

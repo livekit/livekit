@@ -189,6 +189,7 @@ type ParticipantParams struct {
 	Migration                       bool
 	Reconnect                       bool
 	AdaptiveStream                  bool
+	LiveStreamingMode               bool
 	AllowTCPFallback                bool
 	TCPFallbackRTTThreshold         int
 	AllowUDPUnstableFallback        bool
@@ -498,6 +499,10 @@ func (p *ParticipantImpl) GetReporterResolver() roomobs.ParticipantReporterResol
 
 func (p *ParticipantImpl) GetAdaptiveStream() bool {
 	return p.params.AdaptiveStream
+}
+
+func (p *ParticipantImpl) GetLiveStreamingMode() bool {
+	return p.params.LiveStreamingMode
 }
 
 func (p *ParticipantImpl) GetPacer() pacer.Pacer {

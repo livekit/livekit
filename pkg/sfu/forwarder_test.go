@@ -37,8 +37,9 @@ func newForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Fo
 	f := NewForwarder(
 		kind,
 		logger.GetLogger(),
-		true, // skipReferenceTS
-		true, // disableOpportunisticAllocation
+		true,  // skipReferenceTS
+		true,  // disableOpportunisticAllocation
+		false, // liveStreamingMode
 		nil,
 	)
 	f.DetermineCodec(codec, nil, livekit.VideoLayer_MODE_UNUSED)
@@ -2144,4 +2145,44 @@ func TestForwarderGetPaddingVP8(t *testing.T) {
 	marshalledVP8, err = expectedVP8.Marshal()
 	require.NoError(t, err)
 	require.Equal(t, marshalledVP8, buf)
+}
+
+func TestForwarderInitialAcquisitionGrace(t *testing.T) {
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f.liveStreamingMode = true // the acquisition grace only applies in live streaming mode
+
+	// subscriber requested the top spatial layer
+	f.SetMaxSpatialLayer(buffer.DefaultMaxLayerSpatial)
+	f.SetMaxTemporalLayer(buffer.DefaultMaxLayerTemporal)
+	f.SetMaxTemporalLayerSeen(buffer.DefaultMaxLayerTemporal)
+
+	bitrates := Bitrates{
+		{2, 3, 0, 0},
+		{4, 0, 0, 5},
+		{0, 7, 0, 0},
+	}
+
+	// subscriber-first: only layer 1 has been seen so far and nothing is being forwarded yet
+	// (current invalid). this arms the initial-acquisition grace.
+	require.True(t, f.SetMaxPublishedLayer(1))
+	require.True(t, f.withinAcquireGraceLocked())
+
+	// during the grace, the target aims straight at the requested layer (2) and requests a key
+	// frame for it, even though only layer 1 has been seen - so acquisition does not ramp up
+	// gradually as higher layers are detected
+	alloc := f.AllocateOptimal([]int32{0, 1}, bitrates, false, false)
+	require.Equal(t, int32(2), alloc.TargetLayer.Spatial)
+	require.Equal(t, int32(2), alloc.RequestLayerSpatial)
+
+	// force the grace to expire while still not streaming: must signal that a re-allocation is
+	// needed so the target can fall back
+	f.acquireDeadline = 1 // a deadline far in the past
+	require.True(t, f.MaybeExpireAcquireGrace())
+	require.False(t, f.MaybeExpireAcquireGrace()) // only fires once
+
+	// after the grace, the target falls back to the highest layer actually seen (1) instead of
+	// stalling while waiting for a requested layer that never showed up
+	alloc = f.AllocateOptimal([]int32{0, 1}, bitrates, false, false)
+	require.Equal(t, int32(1), alloc.TargetLayer.Spatial)
+	require.Equal(t, int32(1), alloc.RequestLayerSpatial)
 }

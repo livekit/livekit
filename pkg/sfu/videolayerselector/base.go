@@ -35,6 +35,8 @@ type Base struct {
 
 	currentLayer  buffer.VideoLayer
 	previousLayer buffer.VideoLayer
+
+	liveStreamingMode bool
 }
 
 func NewBase(logger logger.Logger) *Base {
@@ -72,6 +74,10 @@ func (b *Base) SetMax(maxLayer buffer.VideoLayer) {
 
 func (b *Base) SetMaxSpatial(layer int32) {
 	b.maxLayer.Spatial = layer
+}
+
+func (b *Base) SetLiveStreamingMode(enabled bool) {
+	b.liveStreamingMode = enabled
 }
 
 func (b *Base) SetMaxTemporal(layer int32) {

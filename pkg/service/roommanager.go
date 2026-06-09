@@ -514,6 +514,7 @@ func (r *RoomManager) StartSession(
 		SubscriptionLimitVideo:          r.config.Limit.SubscriptionLimitVideo,
 		PlayoutDelay:                    roomInternal.GetPlayoutDelay(),
 		SyncStreams:                     roomInternal.GetSyncStreams(),
+		LiveStreamingMode:               r.config.Room.LiveStreamingMode,
 		ForwardStats:                    r.forwardStats,
 		MetricConfig:                    r.config.Metric,
 		UseOneShotSignallingMode:        useOneShotSignallingMode,
