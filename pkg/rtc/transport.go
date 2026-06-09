@@ -2616,10 +2616,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		t.params.Logger.Debugw("local offer (unfiltered)", "sdp", offer.SDP)
 	}
 
-	isStartOfConnectionSequence := false
-	if t.pc.LocalDescription() == nil {
-		isStartOfConnectionSequence = true
-	}
+	isStartOfConnectionSequence := t.pc.LocalDescription() == nil
 
 	err = t.pc.SetLocalDescription(offer)
 	if err != nil {
@@ -2881,10 +2878,7 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, o
 		t.outputAndClearICEStats()
 	}
 
-	isStartOfConnectionSequence := false
-	if t.pc.RemoteDescription() == nil {
-		isStartOfConnectionSequence = true
-	}
+	isStartOfConnectionSequence := t.pc.RemoteDescription() == nil
 
 	if err := t.setRemoteDescription(*sd); err != nil {
 		return err
