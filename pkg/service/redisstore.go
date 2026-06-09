@@ -65,6 +65,9 @@ const (
 	AgentDispatchPrefix = "agent_dispatch:"
 	AgentJobPrefix      = "agent_job:"
 
+	// TokenRevocation
+	RoomParticipantRevocationsKey = "room_participents_revocations"
+
 	maxRetries = 5
 )
 
@@ -941,6 +944,32 @@ func (s *RedisStore) DeleteAgentJob(_ context.Context, job *livekit.Job) error {
 
 	key := AgentJobPrefix + string(job.Room.Name)
 	return s.rc.HDel(s.ctx, key, job.Id).Err()
+}
+
+func (s *RedisStore) RevokeRoomParticipant(ctx context.Context, identity *livekit.RoomParticipantIdentity) error {
+	revocationTime := time.Unix(identity.RevokeTokenTs, 0)
+	ttlDuration := 11 * time.Minute
+	err := s.rc.SetEx(s.ctx, GenRoomParticipantRevocationIdentifier(livekit.ParticipantIdentity(identity.Identity), livekit.RoomName(identity.Room)), revocationTime.Unix(), ttlDuration).Err()
+	if err != nil && err != redis.Nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *RedisStore) IsRoomParticipantRevoked(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) (bool, *time.Time, error) {
+	res := s.rc.Get(s.ctx, GenRoomParticipantRevocationIdentifier(livekit.ParticipantIdentity(identity), livekit.RoomName(room)))
+	revocationTimeInt, err := res.Int64()
+	if err != nil && err != redis.Nil {
+		return false, nil, nil
+	}
+
+	revocationTime := time.Unix(revocationTimeInt, 0)
+	return true, &revocationTime, nil
+}
+
+func (s *RedisStore) CleanupForRoom(ctx context.Context, room livekit.RoomName) {
+	// Not needed in the redis implementation
 }
 
 func redisStoreOne(ctx context.Context, s *RedisStore, key, id string, p proto.Message) error {

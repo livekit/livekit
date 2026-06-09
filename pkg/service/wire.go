@@ -54,6 +54,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createWebhookNotifier,
 		createForwardStats,
 		getNodeStatsConfig,
+		getTokenRevocationStore,
 		routing.CreateRouter,
 		getLimitConf,
 		getAPIConf,
@@ -219,6 +220,17 @@ func getIngressStore(s ObjectStore) IngressStore {
 }
 
 func getAgentStore(s ObjectStore) AgentStore {
+	switch store := s.(type) {
+	case *RedisStore:
+		return store
+	case *LocalStore:
+		return store
+	default:
+		return nil
+	}
+}
+
+func getTokenRevocationStore(s ObjectStore) TokenRevocationStore {
 	switch store := s.(type) {
 	case *RedisStore:
 		return store
