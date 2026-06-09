@@ -232,6 +232,8 @@ type PCTransport struct {
 	resetShortConnOnICERestart atomic.Bool
 	signalingRTT               atomic.Uint32 // milliseconds
 
+	hasFullyEstablishedRecorded bool
+
 	debouncedNegotiate *sfuutils.Debouncer
 	debouncePending    bool
 	lastNegotiate      time.Time
@@ -288,17 +290,16 @@ type PCTransport struct {
 	numRequestSentVideos uint32
 
 	// the following should be accessed only in event processing go routine
-	hasStartedConnectionSequence atomic.Bool
-	cacheLocalCandidates         bool
-	cachedLocalCandidates        []*webrtc.ICECandidate
-	pendingRemoteCandidates      []*webrtc.ICECandidateInit
-	restartAfterGathering        bool
-	restartAtNextOffer           bool
-	negotiationState             transport.NegotiationState
-	negotiateCounter             atomic.Int32
-	signalStateCheckTimer        *time.Timer
-	currentOfferIceCredential    string // ice user:pwd, for publish side ice restart checking
-	pendingRestartIceOffer       *webrtc.SessionDescription
+	cacheLocalCandidates      bool
+	cachedLocalCandidates     []*webrtc.ICECandidate
+	pendingRemoteCandidates   []*webrtc.ICECandidateInit
+	restartAfterGathering     bool
+	restartAtNextOffer        bool
+	negotiationState          transport.NegotiationState
+	negotiateCounter          atomic.Int32
+	signalStateCheckTimer     *time.Timer
+	currentOfferIceCredential string // ice user:pwd, for publish side ice restart checking
+	pendingRestartIceOffer    *webrtc.SessionDescription
 }
 
 type TransportParams struct {
@@ -968,7 +969,13 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 func (t *PCTransport) maybeNotifyFullyEstablished() {
 	if t.isFullyEstablished() {
 		t.params.Handler.OnFullyEstablished()
-		prometheus.RecordPeerConnectionState(t.params.Transport, "data_channels_established")
+
+		t.lock.Lock()
+		if !t.hasFullyEstablishedRecorded {
+			t.hasFullyEstablishedRecorded = true
+			prometheus.RecordPeerConnectionState(t.params.Transport, "fully_established")
+		}
+		t.lock.Unlock()
 	}
 }
 
@@ -2609,6 +2616,11 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		t.params.Logger.Debugw("local offer (unfiltered)", "sdp", offer.SDP)
 	}
 
+	isStartOfConnectionSequence := false
+	if t.pc.LocalDescription() == nil {
+		isStartOfConnectionSequence = true
+	}
+
 	err = t.pc.SetLocalDescription(offer)
 	if err != nil {
 		if errors.Is(err, webrtc.ErrConnectionClosed) {
@@ -2619,7 +2631,8 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		prometheus.RecordServiceOperationError("offer", "local_description")
 		return errors.Wrap(err, "setting local description failed")
 	}
-	if !t.hasStartedConnectionSequence.Swap(true) {
+
+	if isStartOfConnectionSequence {
 		prometheus.RecordPeerConnectionState(t.params.Transport, "started")
 	}
 
@@ -2868,12 +2881,19 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, o
 		t.outputAndClearICEStats()
 	}
 
+	isStartOfConnectionSequence := false
+	if t.pc.RemoteDescription() == nil {
+		isStartOfConnectionSequence = true
+	}
+
 	if err := t.setRemoteDescription(*sd); err != nil {
 		return err
 	}
-	if !t.hasStartedConnectionSequence.Swap(true) {
+
+	if isStartOfConnectionSequence {
 		prometheus.RecordPeerConnectionState(t.params.Transport, "started")
 	}
+
 	t.params.Handler.OnSetRemoteDescriptionOffer()
 	t.processSendersPendingConfig()
 
