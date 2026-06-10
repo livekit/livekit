@@ -151,6 +151,9 @@ type RTCConfig struct {
 
 	// enable rtp stream restart detection for published tracks
 	EnableRTPStreamRestartDetection bool `yaml:"enable_rtp_stream_restart_detection,omitempty"`
+
+	// accept FlexFEC-03 from publishers and use it to recover lost packets
+	EnableFlexFEC bool `yaml:"enable_flexfec,omitempty"`
 }
 
 type TURNServer struct {

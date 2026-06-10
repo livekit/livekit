@@ -35,6 +35,19 @@ const (
 	TransmissionRetransmit TransmissionType = "retransmit"
 )
 
+// FECState describes the disposition of incoming FlexFEC packets and recovery outcomes
+type FECState string
+
+const (
+	FECStateReceived        FECState = "received"         // valid FlexFEC packet received
+	FECStateInvalid         FECState = "invalid"          // FlexFEC packet failed to parse or was unsupported
+	FECStateRecoveryAttempt FECState = "recovery_attempt" // XOR recovery executed
+	FECStateRecovered       FECState = "recovered"        // recovered media packet injected
+	FECStateRecoveryFailed  FECState = "recovery_failed"  // FEC packet discarded with protected packets still missing
+	FECStateUnused          FECState = "unused"           // FEC packet discarded with all protected packets received
+	FECStateDiscardedOld    FECState = "discarded_old"    // FEC packet discarded due to age/overflow before evaluation
+)
+
 var (
 	bytesIn                           atomic.Uint64
 	bytesOut                          atomic.Uint64
@@ -57,6 +70,7 @@ var (
 	promPacketTotal           *prometheus.CounterVec
 	promPacketBytes           *prometheus.CounterVec
 	promRTCPLabels            = []string{"direction", "country"}
+	promFlexFECTotal          *prometheus.CounterVec
 	promStreamLabels          = []string{"direction", "source", "type", "country"}
 	promNackTotal             *prometheus.CounterVec
 	promPliTotal              *prometheus.CounterVec
@@ -105,6 +119,12 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, promRTCPLabels)
+	promFlexFECTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "flexfec_packet",
+		Name:        "total",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+	}, []string{"state"})
 	promPacketLossTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "packet_loss",
@@ -195,6 +215,7 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promNackTotal)
 	prometheus.MustRegister(promPliTotal)
 	prometheus.MustRegister(promFirTotal)
+	prometheus.MustRegister(promFlexFECTotal)
 	prometheus.MustRegister(promPacketLossTotal)
 	prometheus.MustRegister(promPacketLoss)
 	prometheus.MustRegister(promPacketOutOfOrderTotal)
@@ -206,6 +227,15 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promForwardLatency)
 	prometheus.MustRegister(promForwardJitter)
 	prometheus.MustRegister(promForwardLatencyHist)
+}
+
+// IncrementFEC counts incoming FlexFEC packet dispositions and recovery outcomes.
+// Safe to call before Init (e.g. from unit tests), increments are dropped in that case.
+func IncrementFEC(state FECState, count uint32) {
+	if promFlexFECTotal == nil || count == 0 {
+		return
+	}
+	promFlexFECTotal.WithLabelValues(string(state)).Add(float64(count))
 }
 
 func IncrementPackets(country string, direction Direction, count uint64, retransmit bool) {

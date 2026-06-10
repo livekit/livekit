@@ -2267,6 +2267,18 @@ func (p *ParticipantImpl) onMediaTrack(rtcTrack *webrtc.TrackRemote, rtpReceiver
 		"parameters", rtpReceiver.GetParameters(),
 	)
 
+	// FlexFEC repair flows are consumed by the primary stream's buffer and must
+	// not surface as media tracks. pion does not fire tracks for declared FEC
+	// SSRCs, this is a safety net. The mime package does not know flexfec.
+	if strings.EqualFold(codec.MimeType, webrtc.MimeTypeFlexFEC03) || strings.EqualFold(codec.MimeType, webrtc.MimeTypeFlexFEC) {
+		p.pubLogger.Infow(
+			"ignoring flexfec track",
+			"trackID", rtcTrack.ID(),
+			"ssrc", rtcTrack.SSRC(),
+		)
+		return
+	}
+
 	var track sfu.TrackRemote = sfu.NewTrackRemoteFromSdp(rtcTrack, codec)
 	publishedTrack, isNewTrack, isReceiverAdded, sdpRids := p.mediaTrackReceived(track, rtpReceiver)
 	if publishedTrack == nil {

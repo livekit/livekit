@@ -1661,6 +1661,14 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remo
 				t.params.Config.BufferFactory.SetRTXPair(repair, base, "")
 			}
 		}
+
+		fecPairs := flexFECPairsFromSDP(parsed, t.params.Logger)
+		if len(fecPairs) > 0 {
+			t.params.Logger.Debugw("flexfec pairs found from sdp", "ssrcs", fecPairs)
+			for fec, base := range fecPairs {
+				t.params.Config.BufferFactory.SetFECPair(fec, base)
+			}
+		}
 		return nil
 	}
 
@@ -2899,6 +2907,14 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, o
 		}
 	}
 
+	fecPairs := flexFECPairsFromSDP(parsed, t.params.Logger)
+	if len(fecPairs) > 0 {
+		t.params.Logger.Debugw("flexfec pairs found from sdp", "ssrcs", fecPairs)
+		for fec, base := range fecPairs {
+			t.params.Config.BufferFactory.SetFECPair(fec, base)
+		}
+	}
+
 	if t.currentOfferIceCredential == "" || offerRestartICE {
 		t.currentOfferIceCredential = iceCredential
 	}
@@ -3173,6 +3189,15 @@ func (t *PCTransport) restrictReceiverCodecsToPublishList() {
 		if len(filtered) == 0 {
 			continue
 		}
+		if t.params.DirectionConfig.EnableFlexFEC && tr.Kind() == webrtc.RTPCodecTypeVideo {
+			// flexfec is a repair mechanism negotiated alongside a video codec,
+			// it is never part of the publish codec list
+			for _, c := range receiver.GetParameters().Codecs {
+				if strings.EqualFold(c.MimeType, webrtc.MimeTypeFlexFEC03) {
+					filtered = append(filtered, c)
+				}
+			}
+		}
 		if err := tr.SetCodecPreferences(filtered); err != nil {
 			t.params.Logger.Warnw("failed to set recv codec preferences", err, "mid", tr.Mid())
 		}
@@ -3268,6 +3293,45 @@ func nonSimulcastRTXRepairsFromSDP(s *sdp.SessionDescription, logger logger.Logg
 	}
 
 	return rtxRepairFlows
+}
+
+// flexFECPairsFromSDP extracts FlexFEC repair flows (a=ssrc-group:FEC-FR <mediaSSRC> <fecSSRC>)
+// from non-simulcast media sections, returning a map of FEC SSRC -> media SSRC.
+// libwebrtc only protects a single stream per FEC-FR group, simulcast (rid) sections are skipped.
+func flexFECPairsFromSDP(s *sdp.SessionDescription, logger logger.Logger) map[uint32]uint32 {
+	fecFlows := map[uint32]uint32{}
+	for _, media := range s.MediaDescriptions {
+		var ridFound bool
+		fecPairs := make(map[uint32]uint32)
+	findFEC:
+		for _, attr := range media.Attributes {
+			switch attr.Key {
+			case "rid":
+				ridFound = true
+				break findFEC
+			case sdp.AttrKeySSRCGroup:
+				split := strings.Split(attr.Value, " ")
+				if split[0] == sdp.SemanticTokenForwardErrorCorrectionFramework && len(split) == 3 {
+					baseSsrc, err := strconv.ParseUint(split[1], 10, 32)
+					if err != nil {
+						logger.Warnw("Failed to parse SSRC", err, "ssrc", split[1])
+						continue
+					}
+					fecSsrc, err := strconv.ParseUint(split[2], 10, 32)
+					if err != nil {
+						logger.Warnw("Failed to parse SSRC", err, "ssrc", split[2])
+						continue
+					}
+					fecPairs[uint32(fecSsrc)] = uint32(baseSsrc)
+				}
+			}
+		}
+		if !ridFound {
+			maps.Copy(fecFlows, fecPairs)
+		}
+	}
+
+	return fecFlows
 }
 
 // ----------------------

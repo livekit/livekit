@@ -28,9 +28,11 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
 	"github.com/livekit/livekit-server/pkg/rtc/transport/transportfakes"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 )
 
 func TestMissingAnswerDuringICERestart(t *testing.T) {
@@ -610,7 +612,7 @@ func TestConfigureAudioTransceiver(t *testing.T) {
 	} {
 		t.Run(fmt.Sprintf("nack=%v,stereo=%v", testcase.nack, testcase.stereo), func(t *testing.T) {
 			var me webrtc.MediaEngine
-			registerCodecs(&me, []*livekit.Codec{{Mime: mime.MimeTypeOpus.String()}}, RTCPFeedbackConfig{Audio: []webrtc.RTCPFeedback{{Type: webrtc.TypeRTCPFBNACK}}}, false)
+			registerCodecs(&me, []*livekit.Codec{{Mime: mime.MimeTypeOpus.String()}}, DirectionConfig{RTCPFeedback: RTCPFeedbackConfig{Audio: []webrtc.RTCPFeedback{{Type: webrtc.TypeRTCPFBNACK}}}}, false)
 			pc, err := webrtc.NewAPI(webrtc.WithMediaEngine(&me)).NewPeerConnection(webrtc.Configuration{})
 			require.NoError(t, err)
 			defer pc.Close()
@@ -732,7 +734,7 @@ func TestSinglePCAnswerStripsSubscribeOnlyCodecsFromRecvSide(t *testing.T) {
 	defer server.Close()
 
 	var clientME webrtc.MediaEngine
-	require.NoError(t, registerCodecs(&clientME, subscribeCodecs, RTCPFeedbackConfig{}, false))
+	require.NoError(t, registerCodecs(&clientME, subscribeCodecs, DirectionConfig{}, false))
 	client, err := webrtc.NewAPI(webrtc.WithMediaEngine(&clientME)).NewPeerConnection(webrtc.Configuration{})
 	require.NoError(t, err)
 	defer client.Close()
@@ -775,5 +777,119 @@ func TestSinglePCAnswerStripsSubscribeOnlyCodecsFromRecvSide(t *testing.T) {
 		}
 		require.NotContains(t, a.Value, "H264/",
 			"answer must not advertise H.264 in recv-side m-section: %s", a.Value)
+	}
+}
+
+// TestFlexFECPairsFromSDP verifies extraction of FEC-FR repair flows and that
+// simulcast (rid) sections are skipped
+func TestFlexFECPairsFromSDP(t *testing.T) {
+	offer := `v=0
+o=- 8423650423 2 IN IP4 127.0.0.1
+s=-
+t=0 0
+m=video 9 UDP/TLS/RTP/SAVPF 96 49
+a=rtpmap:96 VP8/90000
+a=rtpmap:49 flexfec-03/90000
+a=fmtp:49 repair-window=10000000
+a=ssrc-group:FEC-FR 1234 5678
+a=ssrc:1234 cname:test
+a=ssrc:5678 cname:test
+`
+	parsed := &sdp.SessionDescription{}
+	require.NoError(t, parsed.Unmarshal([]byte(offer)))
+
+	pairs := flexFECPairsFromSDP(parsed, logger.GetLogger())
+	require.Equal(t, map[uint32]uint32{5678: 1234}, pairs)
+
+	// rid section must be skipped
+	offerWithRid := offer + "a=rid:hi send\n"
+	parsed = &sdp.SessionDescription{}
+	require.NoError(t, parsed.Unmarshal([]byte(offerWithRid)))
+	require.Empty(t, flexFECPairsFromSDP(parsed, logger.GetLogger()))
+}
+
+// TestFlexFECAnswer verifies the answer accepts flexfec-03 from an offer with a
+// FEC-FR group only when FlexFEC is enabled for the direction
+func TestFlexFECAnswer(t *testing.T) {
+	publishCodecs := []*livekit.Codec{
+		{Mime: mime.MimeTypeVP8.String()},
+	}
+
+	for _, enabled := range []bool{true, false} {
+		t.Run(fmt.Sprintf("enabled=%v", enabled), func(t *testing.T) {
+			cfg := &WebRTCConfig{}
+			cfg.SetBufferFactory(buffer.NewFactoryOfBufferFactory(500, 200).CreateBufferFactory())
+
+			handler := &transportfakes.FakeHandler{}
+			server, err := NewPCTransport(TransportParams{
+				Config:               cfg,
+				EnabledPublishCodecs: publishCodecs,
+				DirectionConfig:      DirectionConfig{EnableFlexFEC: enabled},
+				Handler:              handler,
+			})
+			require.NoError(t, err)
+			defer server.Close()
+
+			var clientME webrtc.MediaEngine
+			require.NoError(t, registerCodecs(&clientME, publishCodecs, DirectionConfig{}, false))
+			client, err := webrtc.NewAPI(webrtc.WithMediaEngine(&clientME)).NewPeerConnection(webrtc.Configuration{})
+			require.NoError(t, err)
+			defer client.Close()
+
+			_, err = client.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{
+				Direction: webrtc.RTPTransceiverDirectionSendonly,
+			})
+			require.NoError(t, err)
+			offer, err := client.CreateOffer(nil)
+			require.NoError(t, err)
+			require.NoError(t, client.SetLocalDescription(offer))
+
+			// munge the offer the way a libwebrtc publisher with FlexFEC
+			// enabled generates it: flexfec-03 codec + FEC-FR ssrc group
+			mungedSDP := client.LocalDescription().SDP
+			mediaSSRC := ""
+			for _, line := range strings.Split(mungedSDP, "\n") {
+				if strings.HasPrefix(line, "a=ssrc:") {
+					mediaSSRC = strings.Split(strings.TrimPrefix(line, "a=ssrc:"), " ")[0]
+					break
+				}
+			}
+			require.NotEmpty(t, mediaSSRC, "offer missing media ssrc")
+
+			lines := strings.Split(strings.TrimRight(mungedSDP, "\r\n"), "\n")
+			for i, line := range lines {
+				if strings.HasPrefix(line, "m=video ") {
+					lines[i] = strings.TrimRight(line, "\r") + " 49"
+				}
+			}
+			lines = append(lines,
+				"a=rtpmap:49 flexfec-03/90000",
+				"a=fmtp:49 repair-window=10000000",
+				fmt.Sprintf("a=ssrc-group:FEC-FR %s 99999", mediaSSRC),
+				"a=ssrc:99999 cname:fec-test",
+			)
+			munged := webrtc.SessionDescription{
+				Type: webrtc.SDPTypeOffer,
+				SDP:  strings.Join(lines, "\n") + "\n",
+			}
+
+			var answer atomic.Pointer[webrtc.SessionDescription]
+			handler.OnAnswerCalls(func(sd webrtc.SessionDescription, _ uint32, _ map[string]string) error {
+				answer.Store(&sd)
+				return nil
+			})
+			require.NoError(t, server.HandleRemoteDescription(munged, 1))
+
+			require.Eventually(t, func() bool {
+				return answer.Load() != nil
+			}, 5*time.Second, 10*time.Millisecond, "server did not produce answer")
+
+			if enabled {
+				require.Contains(t, answer.Load().SDP, "flexfec-03/90000", "answer must accept flexfec-03")
+				require.Contains(t, answer.Load().SDP, "a=rtpmap:49 flexfec-03/90000", "answer must use the offered payload type")
+			} else {
+				require.NotContains(t, answer.Load().SDP, "flexfec", "answer must not accept flexfec when disabled")
+			}
+		})
 	}
 }

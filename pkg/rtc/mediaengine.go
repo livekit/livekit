@@ -25,7 +25,21 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedback RTCPFeedbackConfig, filterOutH264HighProfile bool) error {
+// flexFEC03CodecParameters describes the FlexFEC-03 codec as sent by libwebrtc.
+// It is not part of livekit/protocol codecs - it is a repair mechanism negotiated
+// alongside a video codec (a=ssrc-group:FEC-FR), not a publishable codec.
+// The payload type is a local preference only, pion matches by capability.
+var flexFEC03CodecParameters = webrtc.RTPCodecParameters{
+	RTPCodecCapability: webrtc.RTPCodecCapability{
+		MimeType:    webrtc.MimeTypeFlexFEC03,
+		ClockRate:   90000,
+		SDPFmtpLine: "repair-window=10000000",
+	},
+	PayloadType: 49,
+}
+
+func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, config DirectionConfig, filterOutH264HighProfile bool) error {
+	rtcpFeedback := config.RTCPFeedback
 	// audio codecs
 	if IsCodecEnabled(codecs, protoCodecs.OpusCodecParameters.RTPCodecCapability) {
 		cp := protoCodecs.OpusCodecParameters
@@ -83,6 +97,12 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 			return err
 		}
 	}
+
+	if config.EnableFlexFEC {
+		if err := me.RegisterCodec(flexFEC03CodecParameters, webrtc.RTPCodecTypeVideo); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -104,7 +124,7 @@ func registerHeaderExtensions(me *webrtc.MediaEngine, rtpHeaderExtension RTPHead
 
 func createMediaEngine(codecs []*livekit.Codec, config DirectionConfig, filterOutH264HighProfile bool) (*webrtc.MediaEngine, error) {
 	me := &webrtc.MediaEngine{}
-	if err := registerCodecs(me, codecs, config.RTCPFeedback, filterOutH264HighProfile); err != nil {
+	if err := registerCodecs(me, codecs, config, filterOutH264HighProfile); err != nil {
 		return nil, err
 	}
 

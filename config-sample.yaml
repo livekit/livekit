@@ -120,6 +120,9 @@ rtc:
   # tcp_fallback_rtt_threshold: 0
   # # migrate an established-but-lossy UDP connection to ICE/TCP or TURN/TLS. requires tcp_fallback_rtt_threshold > 0, default false
   # allow_udp_unstable_fallback: false
+  # # accept FlexFEC-03 from publishers and use it to recover lost packets without
+  # # waiting for an RTT (useful for high-loss links, e.g. cellular). default false
+  # enable_flexfec: false
   # # number of packets to buffer in the SFU for video, defaults to 500
   # packet_buffer_size_video: 500
   # # number of packets to buffer in the SFU for audio, defaults to 200

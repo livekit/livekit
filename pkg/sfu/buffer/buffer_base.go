@@ -168,6 +168,7 @@ type BufferBase struct {
 	rtpParameters  webrtc.RTPParameters
 	payloadType    uint8
 	rtxPayloadType uint8
+	fecPayloadType uint8
 
 	snRangeMap *utils.RangeMap[uint64, uint64]
 
@@ -308,6 +309,14 @@ func (b *BufferBase) BindLocked(rtpParameters webrtc.RTPParameters, codec webrtc
 	for _, codec := range rtpParameters.Codecs {
 		if mime.IsMimeTypeStringRTX(codec.MimeType) && strings.Contains(codec.SDPFmtpLine, fmt.Sprintf("apt=%d", b.payloadType)) {
 			b.rtxPayloadType = uint8(codec.PayloadType)
+			break
+		}
+	}
+
+	// find FlexFEC payload type, the mime package does not know flexfec-03
+	for _, codec := range rtpParameters.Codecs {
+		if strings.EqualFold(codec.MimeType, webrtc.MimeTypeFlexFEC03) {
+			b.fecPayloadType = uint8(codec.PayloadType)
 			break
 		}
 	}
@@ -693,6 +702,32 @@ func (b *BufferBase) WaitRead() {
 
 func (b *BufferBase) NotifyRead() {
 	b.readCond.Broadcast()
+}
+
+// getWirePacketLocked fetches the raw packet stored for the given extended wire
+// sequence number, mapping it through the padding-only-drop sequence number adjustment.
+func (b *BufferBase) getWirePacketLocked(buf []byte, wireESN uint64) (int, error) {
+	snAdjustment, err := b.snRangeMap.GetValue(wireESN)
+	if err != nil {
+		return 0, err
+	}
+	return b.bucket.GetPacket(buf, wireESN-snAdjustment)
+}
+
+// extHighestWireSNLocked returns the extended highest sequence number as seen on the
+// wire, i.e. before the padding-only-drop adjustment applied for bucket storage.
+func (b *BufferBase) extHighestWireSNLocked() (uint64, bool) {
+	if b.rtpStats == nil || !b.rtpStats.IsActive() {
+		return 0, false
+	}
+	return b.rtpStats.ExtendedHighestSequenceNumber(), true
+}
+
+func (b *BufferBase) bucketCapacityLocked() int {
+	if b.bucket == nil {
+		return 0
+	}
+	return b.bucket.Capacity()
 }
 
 func (b *BufferBase) HandleIncomingPacket(

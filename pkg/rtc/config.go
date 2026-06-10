@@ -37,6 +37,8 @@ type WebRTCConfig struct {
 	Receiver      ReceiverConfig
 	Publisher     DirectionConfig
 	Subscriber    DirectionConfig
+
+	enableFlexFEC bool
 }
 
 type ReceiverConfig struct {
@@ -57,6 +59,8 @@ type RTCPFeedbackConfig struct {
 type DirectionConfig struct {
 	RTPHeaderExtension RTPHeaderExtensionConfig
 	RTCPFeedback       RTCPFeedbackConfig
+	// accept FlexFEC-03 in negotiation (publisher/receive direction only)
+	EnableFlexFEC bool
 }
 
 func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
@@ -80,19 +84,23 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 		rtcConf.PacketBufferSizeAudio = rtcConf.PacketBufferSize
 	}
 
-	return &WebRTCConfig{
+	c := &WebRTCConfig{
 		WebRTCConfig: *webRTCConfig,
 		Receiver: ReceiverConfig{
 			PacketBufferSizeVideo: rtcConf.PacketBufferSizeVideo,
 			PacketBufferSizeAudio: rtcConf.PacketBufferSizeAudio,
 		},
-		Publisher:  getPublisherConfig(false),
-		Subscriber: getSubscriberConfig(rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE),
-	}, nil
+		Publisher:     getPublisherConfig(false),
+		Subscriber:    getSubscriberConfig(rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE),
+		enableFlexFEC: rtcConf.EnableFlexFEC,
+	}
+	c.Publisher.EnableFlexFEC = c.enableFlexFEC
+	return c, nil
 }
 
 func (c *WebRTCConfig) UpdatePublisherConfig(consolidated bool) {
 	c.Publisher = getPublisherConfig(consolidated)
+	c.Publisher.EnableFlexFEC = c.enableFlexFEC
 }
 
 func (c *WebRTCConfig) UpdateSubscriberConfig(ccConf config.CongestionControlConfig) {
