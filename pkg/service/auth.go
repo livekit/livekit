@@ -150,9 +150,14 @@ func GetAPIKey(ctx context.Context) string {
 }
 
 func WithGrants(ctx context.Context, grants *auth.ClaimGrants, apiKey string) context.Context {
+	return WithGrantsExpiry(ctx, grants, apiKey, time.Time{})
+}
+
+func WithGrantsExpiry(ctx context.Context, grants *auth.ClaimGrants, apiKey string, expiresAt time.Time) context.Context {
 	return context.WithValue(ctx, grantsKey{}, &grantsValue{
-		claims: grants,
-		apiKey: apiKey,
+		claims:    grants,
+		apiKey:    apiKey,
+		expiresAt: expiresAt,
 	})
 }
 
