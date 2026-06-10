@@ -489,6 +489,7 @@ func (r *RoomManager) StartSession(
 		PublishEnabledCodecs:     enabledCodecs,
 		SubscribeEnabledCodecs:   enabledCodecs,
 		Grants:                   pi.Grants,
+		TokenExpiresAt:           pi.TokenExpiresAt,
 		Reconnect:                pi.Reconnect,
 		Logger:                   pLogger,
 		Reporter:                 roomobs.NewNoopParticipantSessionReporter(),
@@ -1124,11 +1125,20 @@ func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
 	}
 
 	grants := participant.ClaimGrants()
+
+	// Preserve the original token's expiry
+	validFor := tokenDefaultTTL
+	if expiresAt := participant.TokenExpiresAt(); !expiresAt.IsZero() {
+		if remaining := time.Until(expiresAt); remaining > validFor {
+			validFor = remaining
+		}
+	}
+
 	token := auth.NewAccessToken(key, secret)
 	token.SetName(grants.Name).
 		SetIdentity(string(participant.Identity())).
 		SetKind(grants.GetParticipantKind()).
-		SetValidFor(tokenDefaultTTL).
+		SetValidFor(validFor).
 		SetMetadata(grants.Metadata).
 		SetAttributes(grants.Attributes).
 		SetVideoGrant(grants.Video).

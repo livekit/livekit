@@ -182,6 +182,7 @@ type ParticipantParams struct {
 	ReporterResolver                roomobs.ParticipantReporterResolver
 	SimTracks                       map[uint32]interceptor.SimulcastTrackInfo
 	Grants                          *auth.ClaimGrants
+	TokenExpiresAt                  time.Time
 	InitialVersion                  uint32
 	ClientConf                      *livekit.ClientConfiguration
 	ClientInfo                      ClientInfo
@@ -779,6 +780,10 @@ func (p *ParticipantImpl) SetAttributes(attrs map[string]string) {
 
 func (p *ParticipantImpl) ClaimGrants() *auth.ClaimGrants {
 	return p.grants.Load()
+}
+
+func (p *ParticipantImpl) TokenExpiresAt() time.Time {
+	return p.params.TokenExpiresAt
 }
 
 func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermission) bool {

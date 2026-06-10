@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ua-parser/uap-go/uaparser"
 	"gopkg.in/yaml.v3"
@@ -289,6 +290,7 @@ type ValidateConnectRequestParams struct {
 type ValidateConnectRequestResult struct {
 	roomName          livekit.RoomName
 	grants            *auth.ClaimGrants
+	tokenExpiresAt    time.Time
 	region            string
 	createRoomRequest *livekit.CreateRoomRequest
 }
@@ -402,6 +404,7 @@ func ValidateConnectRequest(
 	}
 
 	res.grants = claims
+	res.tokenExpiresAt = GetTokenExpiresAt(r.Context())
 	return res, http.StatusOK, nil
 }
 
