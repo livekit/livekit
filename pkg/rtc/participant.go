@@ -405,17 +405,21 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		p.supervisor.OnPublicationError(p.onPublicationError)
 	}
 
+	var timerStarted bool
 	params.Reporter.RegisterFunc(func(ts time.Time, tx roomobs.ParticipantSessionTx) bool {
-		// Don't publish duration if participant never became active. Otherwise short-lived
-		// JOINING/JOINED -> DISCONNECTED transitions would still get rounded up to a
-		// minute by the session timer and inflate billed/reported duration.
-		if p.lastActiveAt.Load() == nil {
-			return !p.IsClosed()
-		}
-
 		if dts := p.disconnectedAt.Load(); dts != nil {
 			ts = *dts
 			tx.ReportEndTime(ts)
+		}
+
+		// Don't publish duration if participant never became active. Otherwise short-lived
+		// JOINING/JOINED -> DISCONNECTED transitions would still get rounded up to a
+		// minute by the session timer and inflate billed/reported duration.
+		if lastActive := p.lastActiveAt.Load(); lastActive == nil {
+			return !p.IsClosed()
+		} else if !timerStarted {
+			timerStarted = true
+			p.params.SessionTimer.Reset(*lastActive)
 		}
 
 		tx.ReportKindCode(roomobs.ParticipantKindCode(p.Kind()))
