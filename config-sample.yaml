@@ -170,6 +170,11 @@ rtc:
 # when enabled, LiveKit will expose prometheus metrics on :6789/metrics
 # prometheus_port: 6789
 
+# expose /debug/pprof (and /debug/goroutine, /debug/rooms) on a dedicated port,
+# separate from the public signalling port. only enabled when port is set.
+# debug_handler_port:
+#   port: 7070
+
 # API key / secret pairs.
 # Keys are used for JWT authentication, server APIs would require a keypair in order to generate access tokens
 # and make calls to the server
