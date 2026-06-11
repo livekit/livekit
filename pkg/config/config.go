@@ -60,6 +60,7 @@ type Config struct {
 	// PrometheusPort is deprecated
 	PrometheusPort uint32                   `yaml:"prometheus_port,omitempty"`
 	Prometheus     PrometheusConfig         `yaml:"prometheus,omitempty"`
+	DebugHandler   DebugHandlerConfig       `yaml:"debug_handler,omitempty"`
 	RTC            RTCConfig                `yaml:"rtc,omitempty"`
 	Redis          redisLiveKit.RedisConfig `yaml:"redis,omitempty"`
 	Audio          sfu.AudioConfig          `yaml:"audio,omitempty"`
@@ -346,6 +347,10 @@ type PrometheusConfig struct {
 	Port     uint32 `yaml:"port,omitempty"`
 	Username string `yaml:"username,omitempty"`
 	Password string `yaml:"password,omitempty"`
+}
+
+type DebugHandlerConfig struct {
+	Port uint32 `yaml:"port,omitempty"`
 }
 
 type ForwardStatsConfig struct {
