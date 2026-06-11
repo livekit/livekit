@@ -777,3 +777,77 @@ func TestSinglePCAnswerStripsSubscribeOnlyCodecsFromRecvSide(t *testing.T) {
 			"answer must not advertise H.264 in recv-side m-section: %s", a.Value)
 	}
 }
+
+// TestCloseStopsStreamAllocatorEvenWhenEventsQueueBlocked verifies that Close()
+// stops the StreamAllocator before it waits on the (potentially slow) transport
+// events queue drain. Otherwise the StreamAllocator ping goroutine keeps polling
+// the already-closed ICE agent, leaking the goroutine and spamming
+// "the agent is closed".
+func TestCloseStopsStreamAllocatorEvenWhenEventsQueueBlocked(t *testing.T) {
+	params := TransportParams{
+		Config:     &WebRTCConfig{},
+		IsOfferer:  true,
+		IsSendSide: true, // subscriber transport owns the StreamAllocator
+		Handler:    &transportfakes.FakeHandler{},
+	}
+	tr, err := NewPCTransport(params)
+	require.NoError(t, err)
+	require.NotNil(t, tr.streamAllocator, "send-side transport should own a StreamAllocator")
+
+	// Wedge the transport events queue: the worker goroutine enters this op and
+	// blocks, so <-eventsQueue.Stop() inside Close() cannot return until release.
+	started := make(chan struct{})
+	release := make(chan struct{})
+	tr.eventsQueue.Enqueue(func(event) {
+		close(started)
+		<-release
+	}, event{})
+	<-started
+
+	closeReturned := make(chan struct{})
+	go func() {
+		tr.Close()
+		close(closeReturned)
+	}()
+
+	// The StreamAllocator must be stopped while the events queue is still wedged.
+	require.Eventually(t, tr.streamAllocator.IsStopped, 5*time.Second, 5*time.Millisecond,
+		"StreamAllocator must be stopped before the blocking events-queue drain")
+
+	// Close() should still be blocked on the wedged queue at this point.
+	select {
+	case <-closeReturned:
+		t.Fatal("Close() returned before the wedged events queue was released")
+	default:
+	}
+
+	close(release)
+	require.Eventually(t, func() bool {
+		select {
+		case <-closeReturned:
+			return true
+		default:
+			return false
+		}
+	}, 5*time.Second, 5*time.Millisecond, "Close() should return once the events queue drains")
+}
+
+// TestGetRTTShortCircuitsAfterClose verifies that GetRTT() does not query the
+// (now closed) ICE agent after the transport is closed, which would log
+// "the agent is closed".
+func TestGetRTTShortCircuitsAfterClose(t *testing.T) {
+	params := TransportParams{
+		Config:     &WebRTCConfig{},
+		IsOfferer:  true,
+		IsSendSide: true,
+		Handler:    &transportfakes.FakeHandler{},
+	}
+	tr, err := NewPCTransport(params)
+	require.NoError(t, err)
+
+	tr.Close()
+
+	rtt, ok := tr.GetRTT()
+	require.False(t, ok, "GetRTT must report no value after Close")
+	require.Zero(t, rtt)
+}
