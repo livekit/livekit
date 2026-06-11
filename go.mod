@@ -31,7 +31,7 @@ require (
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/ory/dockertest/v4 v4.0.0
 	github.com/pion/datachannel v1.6.0
-	github.com/pion/dtls/v3 v3.1.3
+	github.com/pion/dtls/v3 v3.1.4
 	github.com/pion/ice/v4 v4.2.7
 	github.com/pion/interceptor v0.1.45
 	github.com/pion/rtcp v1.2.16
@@ -153,8 +153,3 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/grpc v1.81.1 // indirect
 )
-
-// for gst whipsink compatibility
-// it is unclear what in pion/dtls v3.1.3 breaks compatibility,
-// but both sides sends their first flights and do not make further progress
-replace github.com/pion/dtls/v3 => github.com/pion/dtls/v3 v3.1.2
