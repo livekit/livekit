@@ -404,12 +404,16 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		p.supervisor.OnPublicationError(p.onPublicationError)
 	}
 
+	var timerStarted bool
 	params.Reporter.RegisterFunc(func(ts time.Time, tx roomobs.ParticipantSessionTx) bool {
 		// Don't publish duration if participant never became active. Otherwise short-lived
 		// JOINING/JOINED -> DISCONNECTED transitions would still get rounded up to a
 		// minute by the session timer and inflate billed/reported duration.
-		if p.lastActiveAt.Load() == nil {
+		if lastActive := p.lastActiveAt.Load(); lastActive == nil {
 			return !p.IsClosed()
+		} else if !timerStarted {
+			timerStarted = true
+			p.params.SessionTimer.Reset(*lastActive)
 		}
 
 		if dts := p.disconnectedAt.Load(); dts != nil {
@@ -494,18 +498,6 @@ func (p *ParticipantImpl) GetReporter() roomobs.ParticipantSessionReporter {
 
 func (p *ParticipantImpl) GetReporterResolver() roomobs.ParticipantReporterResolver {
 	return p.params.ReporterResolver
-}
-
-// RestartSessionTimer re-anchors the participant session timer to startTime so
-// that the reported session duration is measured from that point rather than
-// from when the timer was originally created (session start). It is meant to be
-// called when the participant actually joins, so pre-join wall-clock time is not
-// billed. Duration is only ever emitted once the participant becomes active, so
-// this must be called before that for the new anchor to take effect.
-func (p *ParticipantImpl) RestartSessionTimer(startTime time.Time) {
-	if p.params.SessionTimer != nil {
-		p.params.SessionTimer.Reset(startTime)
-	}
 }
 
 func (p *ParticipantImpl) GetAdaptiveStream() bool {

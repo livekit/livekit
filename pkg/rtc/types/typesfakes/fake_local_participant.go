@@ -1008,11 +1008,6 @@ type FakeLocalParticipant struct {
 	removeTrackLocalReturnsOnCall map[int]struct {
 		result1 error
 	}
-	RestartSessionTimerStub        func(time.Time)
-	restartSessionTimerMutex       sync.RWMutex
-	restartSessionTimerArgsForCall []struct {
-		arg1 time.Time
-	}
 	SendConnectionQualityUpdateStub        func(*livekit.ConnectionQualityUpdate) error
 	sendConnectionQualityUpdateMutex       sync.RWMutex
 	sendConnectionQualityUpdateArgsForCall []struct {
@@ -6789,38 +6784,6 @@ func (fake *FakeLocalParticipant) RemoveTrackLocalReturnsOnCall(i int, result1 e
 	fake.removeTrackLocalReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
-}
-
-func (fake *FakeLocalParticipant) RestartSessionTimer(arg1 time.Time) {
-	fake.restartSessionTimerMutex.Lock()
-	fake.restartSessionTimerArgsForCall = append(fake.restartSessionTimerArgsForCall, struct {
-		arg1 time.Time
-	}{arg1})
-	stub := fake.RestartSessionTimerStub
-	fake.recordInvocation("RestartSessionTimer", []interface{}{arg1})
-	fake.restartSessionTimerMutex.Unlock()
-	if stub != nil {
-		fake.RestartSessionTimerStub(arg1)
-	}
-}
-
-func (fake *FakeLocalParticipant) RestartSessionTimerCallCount() int {
-	fake.restartSessionTimerMutex.RLock()
-	defer fake.restartSessionTimerMutex.RUnlock()
-	return len(fake.restartSessionTimerArgsForCall)
-}
-
-func (fake *FakeLocalParticipant) RestartSessionTimerCalls(stub func(time.Time)) {
-	fake.restartSessionTimerMutex.Lock()
-	defer fake.restartSessionTimerMutex.Unlock()
-	fake.RestartSessionTimerStub = stub
-}
-
-func (fake *FakeLocalParticipant) RestartSessionTimerArgsForCall(i int) time.Time {
-	fake.restartSessionTimerMutex.RLock()
-	defer fake.restartSessionTimerMutex.RUnlock()
-	argsForCall := fake.restartSessionTimerArgsForCall[i]
-	return argsForCall.arg1
 }
 
 func (fake *FakeLocalParticipant) SendConnectionQualityUpdate(arg1 *livekit.ConnectionQualityUpdate) error {
