@@ -471,34 +471,37 @@ func (r *RoomManager) StartSession(
 	}
 
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
-		Identity:                pi.Identity,
-		Name:                    pi.Name,
-		SID:                     sid,
-		Config:                  &rtcConf,
-		Sink:                    responseSink,
-		AudioConfig:             r.config.Audio,
-		VideoConfig:             r.config.Video,
-		LimitConfig:             r.config.Limit,
-		ProtocolVersion:         pv,
-		SessionStartTime:        sessionStartTime,
-		SessionTimer:            observability.NewSessionTimer(sessionStartTime),
-		TelemetryListener:       room.ParticipantTelemetryListener(),
-		Trailer:                 room.Trailer(),
-		PLIThrottleConfig:       r.config.RTC.PLIThrottle,
-		CongestionControlConfig: r.config.RTC.CongestionControl,
-		PublishEnabledCodecs:    enabledCodecs,
-		SubscribeEnabledCodecs:  enabledCodecs,
-		Grants:                  pi.Grants,
-		Reconnect:               pi.Reconnect,
-		Logger:                  pLogger,
-		Reporter:                roomobs.NewNoopParticipantSessionReporter(),
-		ClientConf:              clientConf,
-		ClientInfo:              rtc.ClientInfo{ClientInfo: pi.Client},
-		Region:                  pi.Region,
-		AdaptiveStream:          pi.AdaptiveStream,
-		AllowTCPFallback:        allowFallback,
-		TURNSEnabled:            r.config.IsTURNSEnabled(),
-		ParticipantListener:     room.LocalParticipantListener(),
+		Identity:                 pi.Identity,
+		Name:                     pi.Name,
+		SID:                      sid,
+		Config:                   &rtcConf,
+		Sink:                     responseSink,
+		AudioConfig:              r.config.Audio,
+		VideoConfig:              r.config.Video,
+		LimitConfig:              r.config.Limit,
+		ProtocolVersion:          pv,
+		SessionStartTime:         sessionStartTime,
+		SessionTimer:             observability.NewSessionTimer(sessionStartTime),
+		TelemetryListener:        room.ParticipantTelemetryListener(),
+		Trailer:                  room.Trailer(),
+		PLIThrottleConfig:        r.config.RTC.PLIThrottle,
+		CongestionControlConfig:  r.config.RTC.CongestionControl,
+		PublishEnabledCodecs:     enabledCodecs,
+		SubscribeEnabledCodecs:   enabledCodecs,
+		Grants:                   pi.Grants,
+		TokenExpiresAt:           pi.TokenExpiresAt,
+		Reconnect:                pi.Reconnect,
+		Logger:                   pLogger,
+		Reporter:                 roomobs.NewNoopParticipantSessionReporter(),
+		ClientConf:               clientConf,
+		ClientInfo:               rtc.ClientInfo{ClientInfo: pi.Client},
+		Region:                   pi.Region,
+		AdaptiveStream:           pi.AdaptiveStream,
+		AllowTCPFallback:         allowFallback,
+		TCPFallbackRTTThreshold:  r.config.RTC.TCPFallbackRTTThreshold,
+		AllowUDPUnstableFallback: r.config.RTC.AllowUDPUnstableFallback,
+		TURNSEnabled:             r.config.IsTURNSEnabled(),
+		ParticipantListener:      room.LocalParticipantListener(),
 		ParticipantHelper: &roomManagerParticipantHelper{
 			room:                     room,
 			codecRegressionThreshold: r.config.Video.CodecRegressionThreshold,
@@ -1122,11 +1125,20 @@ func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
 	}
 
 	grants := participant.ClaimGrants()
+
+	// Preserve the original token's expiry
+	validFor := tokenDefaultTTL
+	if expiresAt := participant.TokenExpiresAt(); !expiresAt.IsZero() {
+		if remaining := time.Until(expiresAt); remaining > validFor {
+			validFor = remaining
+		}
+	}
+
 	token := auth.NewAccessToken(key, secret)
 	token.SetName(grants.Name).
 		SetIdentity(string(participant.Identity())).
 		SetKind(grants.GetParticipantKind()).
-		SetValidFor(tokenDefaultTTL).
+		SetValidFor(validFor).
 		SetMetadata(grants.Metadata).
 		SetAttributes(grants.Attributes).
 		SetVideoGrant(grants.Video).

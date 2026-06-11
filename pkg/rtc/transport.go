@@ -232,6 +232,8 @@ type PCTransport struct {
 	resetShortConnOnICERestart atomic.Bool
 	signalingRTT               atomic.Uint32 // milliseconds
 
+	hasFullyEstablishedRecorded bool
+
 	debouncedNegotiate *sfuutils.Debouncer
 	debouncePending    bool
 	lastNegotiate      time.Time
@@ -717,6 +719,8 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 			t.tcpICETimer.Stop()
 			t.tcpICETimer = nil
 		}
+
+		prometheus.RecordPeerConnectionState(t.params.Transport, "ice_connected")
 	}
 
 	if t.mayFailedICEStatsTimer != nil {
@@ -801,6 +805,7 @@ func (t *PCTransport) setConnectedAt(at time.Time) bool {
 
 	t.firstConnectedAt = at
 	prometheus.RecordServiceOperationSuccess("peer_connection")
+	prometheus.RecordPeerConnectionState(t.params.Transport, "connected")
 	t.lock.Unlock()
 	return true
 }
@@ -964,6 +969,13 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 func (t *PCTransport) maybeNotifyFullyEstablished() {
 	if t.isFullyEstablished() {
 		t.params.Handler.OnFullyEstablished()
+
+		t.lock.Lock()
+		if !t.hasFullyEstablishedRecorded {
+			t.hasFullyEstablishedRecorded = true
+			prometheus.RecordPeerConnectionState(t.params.Transport, "fully_established")
+		}
+		t.lock.Unlock()
 	}
 }
 
@@ -2604,6 +2616,8 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 		t.params.Logger.Debugw("local offer (unfiltered)", "sdp", offer.SDP)
 	}
 
+	isStartOfConnectionSequence := t.pc.LocalDescription() == nil
+
 	err = t.pc.SetLocalDescription(offer)
 	if err != nil {
 		if errors.Is(err, webrtc.ErrConnectionClosed) {
@@ -2613,6 +2627,10 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 
 		prometheus.RecordServiceOperationError("offer", "local_description")
 		return errors.Wrap(err, "setting local description failed")
+	}
+
+	if isStartOfConnectionSequence {
+		prometheus.RecordPeerConnectionState(t.params.Transport, "started")
 	}
 
 	//
@@ -2788,7 +2806,7 @@ func (t *PCTransport) createAndSendAnswer() error {
 		return errors.Wrap(err, "could not send answer")
 	}
 	t.localAnswerId.Store(answerId)
-	prometheus.RecordServiceOperationSuccess("asnwer")
+	prometheus.RecordServiceOperationSuccess("answer")
 
 	if err := t.sendUnmatchedMediaRequirement(false); err != nil {
 		return err
@@ -2860,9 +2878,16 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, o
 		t.outputAndClearICEStats()
 	}
 
+	isStartOfConnectionSequence := t.pc.RemoteDescription() == nil
+
 	if err := t.setRemoteDescription(*sd); err != nil {
 		return err
 	}
+
+	if isStartOfConnectionSequence {
+		prometheus.RecordPeerConnectionState(t.params.Transport, "started")
+	}
+
 	t.params.Handler.OnSetRemoteDescriptionOffer()
 	t.processSendersPendingConfig()
 
