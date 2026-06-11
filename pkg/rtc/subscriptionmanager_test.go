@@ -204,9 +204,9 @@ func TestUnsubscribe(t *testing.T) {
 			publisherID:       "pubID",
 			publisherIdentity: "pub",
 			logger:            logger.GetLogger(),
+			hasPermission:     true,
 		},
-		hasPermission: true,
-		bound:         true,
+		bound: true,
 	}
 	// a bunch of unfortunate manual wiring
 	res := resolver.Resolve(nil, s.trackID)
@@ -445,6 +445,77 @@ func TestSubscriptionLimits(t *testing.T) {
 	require.Len(t, sm.GetSubscribedTracks(), 1)
 }
 
+func TestSubscribeDataTrack(t *testing.T) {
+	t.Run("no track permission", func(t *testing.T) {
+		sm := newTestSubscriptionManager()
+		defer sm.Close(false)
+		resolver := newTestDataTrackResolver(false, true, "pub", "pubID")
+		sm.params.DataTrackResolver = resolver.Resolve
+
+		sm.SubscribeToDataTrack("track")
+		sm.lock.RLock()
+		s := sm.dataTrackSubscriptions["track"]
+		sm.lock.RUnlock()
+		require.Eventually(t, func() bool {
+			return !s.getHasPermission()
+		}, subSettleTimeout, subCheckInterval, "should not have permission to subscribe")
+
+		time.Sleep(subscriptionTimeout)
+
+		// isDesired remains unchanged, no subscriber added to the data track
+		require.True(t, s.isDesired())
+		require.True(t, s.needsSubscribe())
+		require.Equal(t, 0, resolver.dataTrack.AddSubscriberCallCount())
+
+		// subscriber should have been notified that permission was denied
+		p := sm.params.Participant.(*typesfakes.FakeLocalParticipant)
+		require.Equal(t, 1, p.SendSubscriptionPermissionUpdateCallCount())
+		_, _, allowed := p.SendSubscriptionPermissionUpdateArgsForCall(0)
+		require.False(t, allowed)
+
+		// give permissions now
+		resolver.SetHasPermission(true)
+
+		require.Eventually(t, func() bool {
+			return !s.needsSubscribe()
+		}, subSettleTimeout, subCheckInterval, "should be subscribed")
+		require.NotNil(t, s.getDataDownTrack())
+		require.Equal(t, 1, resolver.dataTrack.AddSubscriberCallCount())
+	})
+
+	t.Run("permission revoked while subscribed", func(t *testing.T) {
+		sm := newTestSubscriptionManager()
+		defer sm.Close(false)
+		resolver := newTestDataTrackResolver(true, true, "pub", "pubID")
+		sm.params.DataTrackResolver = resolver.Resolve
+
+		sm.SubscribeToDataTrack("track")
+		sm.lock.RLock()
+		s := sm.dataTrackSubscriptions["track"]
+		sm.lock.RUnlock()
+		require.Eventually(t, func() bool {
+			return !s.needsSubscribe()
+		}, subSettleTimeout, subCheckInterval, "should be subscribed")
+
+		// revoke permission, down track should be removed while subscription stays desired
+		resolver.SetHasPermission(false)
+
+		require.Eventually(t, func() bool {
+			return s.getDataDownTrack() == nil
+		}, subSettleTimeout, subCheckInterval, "down track was not removed after permission revoke")
+		require.True(t, s.isDesired())
+		require.Equal(t, 1, resolver.dataTrack.RemoveSubscriberCallCount())
+
+		// give permission back, should resubscribe
+		resolver.SetHasPermission(true)
+
+		require.Eventually(t, func() bool {
+			return !s.needsSubscribe() && s.getDataDownTrack() != nil
+		}, subSettleTimeout, subCheckInterval, "should be resubscribed")
+		require.Equal(t, 2, resolver.dataTrack.AddSubscriberCallCount())
+	})
+}
+
 type testSubscriptionParams struct {
 	SubscriptionLimitAudio int32
 	SubscriptionLimitVideo int32
@@ -522,6 +593,57 @@ func (t *testResolver) Resolve(_subscriber types.LocalParticipant, trackID livek
 		})
 		st.MediaTrackReturns(mt)
 		res.Track = mt
+	}
+	return res
+}
+
+type testDataTrackResolver struct {
+	lock          sync.Mutex
+	hasPermission bool
+	hasTrack      bool
+	pubIdentity   livekit.ParticipantIdentity
+	pubID         livekit.ParticipantID
+
+	dataTrack *typesfakes.FakeDataTrack
+}
+
+func newTestDataTrackResolver(hasPermission bool, hasTrack bool, pubIdentity livekit.ParticipantIdentity, pubID livekit.ParticipantID) *testDataTrackResolver {
+	r := &testDataTrackResolver{
+		hasPermission: hasPermission,
+		hasTrack:      hasTrack,
+		pubIdentity:   pubIdentity,
+		pubID:         pubID,
+		dataTrack:     &typesfakes.FakeDataTrack{},
+	}
+	r.dataTrack.PublisherIDReturns(pubID)
+	r.dataTrack.PublisherIdentityReturns(pubIdentity)
+	r.dataTrack.AddSubscriberCalls(func(sub types.LocalParticipant) (types.DataDownTrack, error) {
+		ddt := &typesfakes.FakeDataDownTrack{}
+		ddt.PublishDataTrackReturns(r.dataTrack)
+		return ddt, nil
+	})
+	return r
+}
+
+func (t *testDataTrackResolver) SetHasPermission(hasPermission bool) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	t.hasPermission = hasPermission
+}
+
+func (t *testDataTrackResolver) Resolve(_subscriber types.LocalParticipant, trackID livekit.TrackID) types.DataResolverResult {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	res := types.DataResolverResult{
+		TrackChangedNotifier: utils.NewChangeNotifier(),
+		TrackRemovedNotifier: utils.NewChangeNotifier(),
+		HasPermission:        t.hasPermission,
+		PublisherID:          t.pubID,
+		PublisherIdentity:    t.pubIdentity,
+	}
+	if t.hasTrack {
+		t.dataTrack.IDReturns(trackID)
+		res.DataTrack = t.dataTrack
 	}
 	return res
 }

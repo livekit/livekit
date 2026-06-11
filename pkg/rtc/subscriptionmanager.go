@@ -592,7 +592,8 @@ func (m *SubscriptionManager) reconcileDataTrackSubscriptions() {
 	var needsToReconcile []*dataTrackSubscription
 	m.lock.RLock()
 	for _, sub := range m.dataTrackSubscriptions {
-		if sub.needsSubscribe() || sub.needsUnsubscribe() {
+		// active subscriptions are included to verify permission has not been revoked
+		if sub.needsSubscribe() || sub.needsUnsubscribe() || sub.isSubscribed() {
 			needsToReconcile = append(needsToReconcile, sub)
 		}
 	}
@@ -612,8 +613,9 @@ func (m *SubscriptionManager) reconcileDataTrackSubscription(s *dataTrackSubscri
 			s.recordAttempt(false)
 
 			switch err {
-			case ErrNoSubscribePermission:
+			case ErrNoTrackPermission, ErrNoSubscribePermission:
 				// these are errors that are outside of our control, so we'll keep trying
+				// - ErrNoTrackPermission: publisher did not grant subscriber permission, may change any moment
 				// - ErrNoSubscribePermission: participant was not granted canSubscribe, may change any moment
 			case ErrTrackNotFound:
 				// source track was never published or closed
@@ -656,6 +658,27 @@ func (m *SubscriptionManager) reconcileDataTrackSubscription(s *dataTrackSubscri
 		delete(m.dataTrackSubscriptions, s.trackID)
 		m.lock.Unlock()
 		m.notifyDataTrackSubscriberHandles()
+		return
+	}
+
+	if s.isSubscribed() {
+		// publisher could have revoked permission for an active subscription,
+		// remove the down track, but keep the subscription desired so that it
+		// is re-subscribed if permission is granted again
+		res := m.params.DataTrackResolver(m.params.Participant, s.trackID)
+		if res.DataTrack != nil && !res.HasPermission {
+			s.logger.Infow("unsubscribing from data track since permission was revoked")
+			if dataDownTrack := s.getDataDownTrack(); dataDownTrack != nil {
+				dataDownTrack.PublishDataTrack().RemoveSubscriber(s.subscriberID)
+				s.setDataDownTrack(nil)
+			}
+			m.unmarkSubscribedTo(s.getPublisherID(), s.trackID)
+			m.notifyDataTrackSubscriberHandles()
+
+			if s.setHasPermission(false) {
+				m.params.Participant.SendSubscriptionPermissionUpdate(s.getPublisherID(), s.trackID, false)
+			}
+		}
 		return
 	}
 
@@ -1083,6 +1106,14 @@ func (m *SubscriptionManager) subscribeDataTrack(sub *dataTrackSubscription) err
 
 	sub.setPublisher(res.PublisherIdentity, res.PublisherID)
 
+	permChanged := sub.setHasPermission(res.HasPermission)
+	if permChanged {
+		m.params.Participant.SendSubscriptionPermissionUpdate(sub.getPublisherID(), trackID, res.HasPermission)
+	}
+	if !res.HasPermission {
+		return ErrNoTrackPermission
+	}
+
 	dataDownTrack, err := dataTrack.AddSubscriber(m.params.Participant)
 	if err != nil && !errors.Is(err, errAlreadySubscribed) {
 		return err
@@ -1208,12 +1239,14 @@ type trackSubscription struct {
 	trackID      livekit.TrackID
 	logger       logger.Logger
 
-	lock              sync.RWMutex
-	desired           bool
-	publisherID       livekit.ParticipantID
-	publisherIdentity livekit.ParticipantIdentity
-	changedNotifier   types.ChangeNotifier
-	removedNotifier   types.ChangeNotifier
+	lock                     sync.RWMutex
+	desired                  bool
+	publisherID              livekit.ParticipantID
+	publisherIdentity        livekit.ParticipantIdentity
+	changedNotifier          types.ChangeNotifier
+	removedNotifier          types.ChangeNotifier
+	hasPermissionInitialized bool
+	hasPermission            bool
 
 	numAttempts atomic.Int32
 
@@ -1223,6 +1256,31 @@ type trackSubscription struct {
 
 	// the timestamp when the subscription was started, will be reset when downtrack is closed with expected resume
 	subscribeAt atomic.Pointer[time.Time]
+}
+
+// set permission and return true if it has changed
+func (s *trackSubscription) setHasPermission(perm bool) bool {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if s.hasPermissionInitialized && s.hasPermission == perm {
+		return false
+	}
+
+	s.hasPermissionInitialized = true
+	s.hasPermission = perm
+	if s.hasPermission {
+		// when permission is granted, reset the timer so it has sufficient time to reconcile
+		t := time.Now()
+		s.subStartedAt.Store(&t)
+		s.subscribeAt.Store(&t)
+	}
+	return true
+}
+
+func (s *trackSubscription) getHasPermission() bool {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	return s.hasPermission
 }
 
 func (s *trackSubscription) setPublisher(publisherIdentity livekit.ParticipantIdentity, publisherID livekit.ParticipantID) {
@@ -1355,13 +1413,11 @@ func (s *trackSubscription) handleSourceTrackRemoved() {
 type mediaTrackSubscription struct {
 	trackSubscription
 
-	settings                 *livekit.UpdateTrackSettings
-	hasPermissionInitialized bool
-	hasPermission            bool
-	subscribedTrack          types.SubscribedTrack
-	eventSent                atomic.Bool
-	bound                    bool
-	kind                     atomic.Pointer[livekit.TrackType]
+	settings        *livekit.UpdateTrackSettings
+	subscribedTrack types.SubscribedTrack
+	eventSent       atomic.Bool
+	bound           bool
+	kind            atomic.Pointer[livekit.TrackType]
 
 	succRecordCounter atomic.Int32
 }
@@ -1377,31 +1433,6 @@ func newMediaTrackSubscription(subscriberID livekit.ParticipantID, trackID livek
 	t := time.Now()
 	s.subscribeAt.Store(&t)
 	return s
-}
-
-// set permission and return true if it has changed
-func (s *mediaTrackSubscription) setHasPermission(perm bool) bool {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	if s.hasPermissionInitialized && s.hasPermission == perm {
-		return false
-	}
-
-	s.hasPermissionInitialized = true
-	s.hasPermission = perm
-	if s.hasPermission {
-		// when permission is granted, reset the timer so it has sufficient time to reconcile
-		t := time.Now()
-		s.subStartedAt.Store(&t)
-		s.subscribeAt.Store(&t)
-	}
-	return true
-}
-
-func (s *mediaTrackSubscription) getHasPermission() bool {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-	return s.hasPermission
 }
 
 func (s *mediaTrackSubscription) setSubscribedTrack(track types.SubscribedTrack) {
@@ -1569,6 +1600,12 @@ func (s *dataTrackSubscription) needsCleanup() bool {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	return !s.desired && s.dataDownTrack == nil
+}
+
+func (s *dataTrackSubscription) isSubscribed() bool {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	return s.desired && s.dataDownTrack != nil
 }
 
 func (s *dataTrackSubscription) setDataDownTrack(dataDownTrack types.DataDownTrack) {

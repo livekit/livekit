@@ -902,8 +902,10 @@ type DataResolverResult struct {
 	TrackChangedNotifier ChangeNotifier
 	TrackRemovedNotifier ChangeNotifier
 	DataTrack            DataTrack
-	PublisherID          livekit.ParticipantID
-	PublisherIdentity    livekit.ParticipantIdentity
+	// is permission given to the requesting participant
+	HasPermission     bool
+	PublisherID       livekit.ParticipantID
+	PublisherIdentity livekit.ParticipantIdentity
 }
 
 // MediaTrackResolver locates a specific media track for a subscriber
