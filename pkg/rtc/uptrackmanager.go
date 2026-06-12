@@ -49,7 +49,7 @@ type UpTrackManager struct {
 	// publishedTracks that participant is publishing
 	publishedTracks        map[livekit.TrackID]types.MediaTrack
 	subscriptionPermission *livekit.SubscriptionPermission
-	// subscriber permission for published tracks
+	// subscriber permission for published tracks (both media and data)
 	subscriberPermissions map[livekit.ParticipantIdentity]*livekit.TrackPermission // subscriberIdentity => *livekit.TrackPermission
 
 	lock sync.RWMutex
@@ -233,6 +233,13 @@ func (u *UpTrackManager) HasPermission(trackID livekit.TrackID, subIdentity live
 	defer u.lock.RUnlock()
 
 	return u.hasPermissionLocked(trackID, subIdentity)
+}
+
+func (u *UpTrackManager) GetAllowedSubscribers(trackID livekit.TrackID) []livekit.ParticipantIdentity {
+	u.lock.RLock()
+	defer u.lock.RUnlock()
+
+	return u.getAllowedSubscribersLocked(trackID)
 }
 
 func (u *UpTrackManager) UpdatePublishedAudioTrack(update *livekit.UpdateLocalAudioTrack) types.MediaTrack {

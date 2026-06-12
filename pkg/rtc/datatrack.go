@@ -16,9 +16,11 @@ package rtc
 
 import (
 	"errors"
+	"slices"
 	"sync"
 
 	"github.com/frostbyte73/core"
+
 	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
@@ -40,6 +42,11 @@ type DataTrackParams struct {
 	BytesTrackStats     *BytesTrackStats
 }
 
+type subscribedDataTrack struct {
+	subscriber    types.LocalParticipant
+	dataDownTrack types.DataDownTrack
+}
+
 type DataTrack struct {
 	params DataTrackParams
 
@@ -47,7 +54,7 @@ type DataTrack struct {
 
 	lock             sync.Mutex
 	dti              *livekit.DataTrackInfo
-	subscribedTracks map[livekit.ParticipantID]types.DataDownTrack
+	subscribedTracks map[livekit.ParticipantID]subscribedDataTrack
 
 	downTrackSpreader *sfuutils.DownTrackSpreader[types.DataTrackSender]
 
@@ -60,7 +67,7 @@ func NewDataTrack(params DataTrackParams, dti *livekit.DataTrackInfo) *DataTrack
 	d := &DataTrack{
 		params:           params,
 		dti:              dti,
-		subscribedTracks: make(map[livekit.ParticipantID]types.DataDownTrack),
+		subscribedTracks: make(map[livekit.ParticipantID]subscribedDataTrack),
 	}
 	d.logger = params.Logger.WithValues("name", d.Name(), "handle", dti.PubHandle)
 	d.downTrackSpreader = sfuutils.NewDownTrackSpreader[types.DataTrackSender](sfuutils.DownTrackSpreaderParams{
@@ -136,18 +143,21 @@ func (d *DataTrack) AddSubscriber(sub types.LocalParticipant) (types.DataDownTra
 		return nil, err
 	}
 
-	d.subscribedTracks[sub.ID()] = dataDownTrack
+	d.subscribedTracks[sub.ID()] = subscribedDataTrack{
+		subscriber:    sub,
+		dataDownTrack: dataDownTrack,
+	}
 	return dataDownTrack, nil
 }
 
 func (d *DataTrack) RemoveSubscriber(subID livekit.ParticipantID) {
 	d.lock.Lock()
-	dataDownTrack, ok := d.subscribedTracks[subID]
+	subscribedTrack, ok := d.subscribedTracks[subID]
 	delete(d.subscribedTracks, subID)
 	d.lock.Unlock()
 
 	if ok {
-		dataDownTrack.Close()
+		subscribedTrack.dataDownTrack.Close()
 	}
 }
 
@@ -157,6 +167,34 @@ func (d *DataTrack) IsSubscriber(subID livekit.ParticipantID) bool {
 
 	_, ok := d.subscribedTracks[subID]
 	return ok
+}
+
+func (d *DataTrack) RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity {
+	var revokedSubscriberIdentities []livekit.ParticipantIdentity
+
+	d.lock.Lock()
+	disallowed := make(map[livekit.ParticipantID]livekit.ParticipantIdentity)
+	for subID, subscribedTrack := range d.subscribedTracks {
+		if IsParticipantExemptFromTrackPermissionsRestrictions(subscribedTrack.subscriber) {
+			continue
+		}
+
+		if !slices.Contains(allowedSubscriberIdentities, subscribedTrack.subscriber.Identity()) {
+			disallowed[subID] = subscribedTrack.subscriber.Identity()
+		}
+	}
+	d.lock.Unlock()
+
+	for subID, subIdentity := range disallowed {
+		d.logger.Infow("revoking data track subscription",
+			"subscriber", subIdentity,
+			"subscriberID", subID,
+		)
+		d.RemoveSubscriber(subID)
+		revokedSubscriberIdentities = append(revokedSubscriberIdentities, subIdentity)
+	}
+
+	return revokedSubscriberIdentities
 }
 
 func (d *DataTrack) AddDataDownTrack(dts types.DataTrackSender) error {

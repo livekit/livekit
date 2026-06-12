@@ -16,6 +16,7 @@ package rtc
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
@@ -40,6 +41,10 @@ type DataDownTrack struct {
 	params    DataDownTrackParams
 	logger    logger.Logger
 	createdAt int64
+
+	lock    sync.Mutex
+	closed  bool
+	onClose func()
 }
 
 func NewDataDownTrack(params DataDownTrackParams) (*DataDownTrack, error) {
@@ -59,11 +64,34 @@ func NewDataDownTrack(params DataDownTrackParams) (*DataDownTrack, error) {
 }
 
 func (d *DataDownTrack) Close() {
+	d.lock.Lock()
+	onClose := d.onClose
+	if d.closed {
+		d.lock.Unlock()
+		return
+	}
+	d.closed = true
+	d.lock.Unlock()
+
 	d.logger.Infow("closing data down track")
 	if d.params.BytesTrackStats != nil {
 		d.params.BytesTrackStats.Stop()
 	}
 	d.params.PublishDataTrack.DeleteDataDownTrack(d.SubscriberID())
+
+	if onClose != nil {
+		onClose()
+	}
+}
+
+func (d *DataDownTrack) OnClose(fn func()) {
+	d.lock.Lock()
+	d.onClose = fn
+	closed := d.closed
+	d.lock.Unlock()
+	if closed {
+		fn()
+	}
 }
 
 func (d *DataDownTrack) Handle() uint16 {

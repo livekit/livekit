@@ -592,8 +592,7 @@ func (m *SubscriptionManager) reconcileDataTrackSubscriptions() {
 	var needsToReconcile []*dataTrackSubscription
 	m.lock.RLock()
 	for _, sub := range m.dataTrackSubscriptions {
-		// active subscriptions are included to verify permission has not been revoked
-		if sub.needsSubscribe() || sub.needsUnsubscribe() || sub.isSubscribed() {
+		if sub.needsSubscribe() || sub.needsUnsubscribe() {
 			needsToReconcile = append(needsToReconcile, sub)
 		}
 	}
@@ -658,27 +657,6 @@ func (m *SubscriptionManager) reconcileDataTrackSubscription(s *dataTrackSubscri
 		delete(m.dataTrackSubscriptions, s.trackID)
 		m.lock.Unlock()
 		m.notifyDataTrackSubscriberHandles()
-		return
-	}
-
-	if s.isSubscribed() {
-		// publisher could have revoked permission for an active subscription,
-		// remove the down track, but keep the subscription desired so that it
-		// is re-subscribed if permission is granted again
-		res := m.params.DataTrackResolver(m.params.Participant, s.trackID)
-		if res.DataTrack != nil && !res.HasPermission {
-			s.logger.Infow("unsubscribing from data track since permission was revoked")
-			if dataDownTrack := s.getDataDownTrack(); dataDownTrack != nil {
-				dataDownTrack.PublishDataTrack().RemoveSubscriber(s.subscriberID)
-				s.setDataDownTrack(nil)
-			}
-			m.unmarkSubscribedTo(s.getPublisherID(), s.trackID)
-			m.notifyDataTrackSubscriberHandles()
-
-			if s.setHasPermission(false) {
-				m.params.Participant.SendSubscriptionPermissionUpdate(s.getPublisherID(), s.trackID, false)
-			}
-		}
 		return
 	}
 
@@ -1122,6 +1100,9 @@ func (m *SubscriptionManager) subscribeDataTrack(sub *dataTrackSubscription) err
 		sub.logger.Debugw("already subscribed to data track")
 	}
 	if err == nil && dataDownTrack != nil { // subTrack could be nil if already subscribed
+		dataDownTrack.OnClose(func() {
+			m.handleDataDownTrackClose(sub)
+		})
 		sub.setDataDownTrack(dataDownTrack)
 		sub.logger.Debugw("subscribed to data track")
 	}
@@ -1142,11 +1123,27 @@ func (m *SubscriptionManager) unsubscribeDataTrack(s *dataTrackSubscription) err
 	dataTrack := dataDownTrack.PublishDataTrack()
 	dataTrack.RemoveSubscriber(s.subscriberID)
 
+	return nil
+}
+
+// DataDownTrack closing is how the publisher signifies that the subscription is no longer fulfilled
+// this could be due to a few reasons:
+// - subscriber-initiated unsubscribe
+// - data track was unpublished
+// - publisher revoked permissions for the participant
+func (m *SubscriptionManager) handleDataDownTrackClose(s *dataTrackSubscription) {
+	s.logger.Debugw("data down track closed")
+
+	if s.getDataDownTrack() == nil {
+		return
+	}
+	s.setDataDownTrack(nil)
 	s.setChangedNotifier(nil)
 	s.setRemovedNotifier(nil)
 
 	m.unmarkSubscribedTo(s.getPublisherID(), s.trackID)
-	return nil
+	m.notifyDataTrackSubscriberHandles()
+	m.queueReconcileDataTrack(s.trackID)
 }
 
 func (m *SubscriptionManager) notifyDataTrackSubscriberHandles() {
@@ -1602,14 +1599,9 @@ func (s *dataTrackSubscription) needsCleanup() bool {
 	return !s.desired && s.dataDownTrack == nil
 }
 
-func (s *dataTrackSubscription) isSubscribed() bool {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-	return s.desired && s.dataDownTrack != nil
-}
-
 func (s *dataTrackSubscription) setDataDownTrack(dataDownTrack types.DataDownTrack) {
 	s.lock.Lock()
+	oldDataDownTrack := s.dataDownTrack
 	s.dataDownTrack = dataDownTrack
 	subscriptionOptions := s.subscriptionOptions
 	s.lock.Unlock()
@@ -1618,8 +1610,9 @@ func (s *dataTrackSubscription) setDataDownTrack(dataDownTrack types.DataDownTra
 		s.logger.Debugw("restoring data track subscription options", "subscriptionOptions", logger.Proto(subscriptionOptions))
 		dataDownTrack.UpdateSubscriptionOptions(subscriptionOptions)
 	}
-
-	// DT-TODO - DataTrack close callback on previous if not nil?, see setSubscribedTrack for example
+	if oldDataDownTrack != nil {
+		oldDataDownTrack.OnClose(nil)
+	}
 }
 
 func (s *dataTrackSubscription) getDataDownTrack() types.DataDownTrack {

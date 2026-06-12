@@ -497,14 +497,21 @@ func TestSubscribeDataTrack(t *testing.T) {
 			return !s.needsSubscribe()
 		}, subSettleTimeout, subCheckInterval, "should be subscribed")
 
-		// revoke permission, down track should be removed while subscription stays desired
+		// revoke permission and close the down track like the publisher would
+		// (DataTrack.RevokeDisallowedSubscribers -> RemoveSubscriber -> DataDownTrack.Close)
 		resolver.SetHasPermission(false)
+		ddt := s.getDataDownTrack()
+		require.NotNil(t, ddt)
+		setTestDataDownTrackClosed(t, ddt)
 
-		require.Eventually(t, func() bool {
-			return s.getDataDownTrack() == nil
-		}, subSettleTimeout, subCheckInterval, "down track was not removed after permission revoke")
+		// subscription stays desired but is denied on resubscribe attempts
+		require.Nil(t, s.getDataDownTrack())
 		require.True(t, s.isDesired())
-		require.Equal(t, 1, resolver.dataTrack.RemoveSubscriberCallCount())
+		require.Eventually(t, func() bool {
+			return !s.getHasPermission()
+		}, subSettleTimeout, subCheckInterval, "should not have permission to resubscribe")
+		require.True(t, s.needsSubscribe())
+		require.Equal(t, 1, resolver.dataTrack.AddSubscriberCallCount())
 
 		// give permission back, should resubscribe
 		resolver.SetHasPermission(true)
@@ -662,4 +669,11 @@ func setTestSubscribedTrackClosed(t *testing.T, st types.SubscribedTrack, isExpe
 	require.True(t, ok)
 
 	fst.OnCloseArgsForCall(0)(isExpectedToResume)
+}
+
+func setTestDataDownTrackClosed(t *testing.T, ddt types.DataDownTrack) {
+	fddt, ok := ddt.(*typesfakes.FakeDataDownTrack)
+	require.True(t, ok)
+
+	fddt.OnCloseArgsForCall(0)()
 }

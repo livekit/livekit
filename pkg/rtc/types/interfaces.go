@@ -826,6 +826,7 @@ type DataTrack interface {
 	AddSubscriber(sub LocalParticipant) (DataDownTrack, error)
 	RemoveSubscriber(participantID livekit.ParticipantID)
 	IsSubscriber(subID livekit.ParticipantID) bool
+	RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity
 
 	AddDataDownTrack(sender DataTrackSender) error
 	DeleteDataDownTrack(subscriberID livekit.ParticipantID)
@@ -838,6 +839,7 @@ type DataTrack interface {
 //counterfeiter:generate . DataDownTrack
 type DataDownTrack interface {
 	Close()
+	OnClose(fn func())
 
 	Handle() uint16
 	PublishDataTrack() DataTrack
