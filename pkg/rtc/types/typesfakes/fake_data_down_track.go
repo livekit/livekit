@@ -23,6 +23,11 @@ type FakeDataDownTrack struct {
 	handleReturnsOnCall map[int]struct {
 		result1 uint16
 	}
+	OnCloseStub        func(func())
+	onCloseMutex       sync.RWMutex
+	onCloseArgsForCall []struct {
+		arg1 func()
+	}
 	PublishDataTrackStub        func() types.DataTrack
 	publishDataTrackMutex       sync.RWMutex
 	publishDataTrackArgsForCall []struct {
@@ -117,6 +122,38 @@ func (fake *FakeDataDownTrack) HandleReturnsOnCall(i int, result1 uint16) {
 	fake.handleReturnsOnCall[i] = struct {
 		result1 uint16
 	}{result1}
+}
+
+func (fake *FakeDataDownTrack) OnClose(arg1 func()) {
+	fake.onCloseMutex.Lock()
+	fake.onCloseArgsForCall = append(fake.onCloseArgsForCall, struct {
+		arg1 func()
+	}{arg1})
+	stub := fake.OnCloseStub
+	fake.recordInvocation("OnClose", []interface{}{arg1})
+	fake.onCloseMutex.Unlock()
+	if stub != nil {
+		fake.OnCloseStub(arg1)
+	}
+}
+
+func (fake *FakeDataDownTrack) OnCloseCallCount() int {
+	fake.onCloseMutex.RLock()
+	defer fake.onCloseMutex.RUnlock()
+	return len(fake.onCloseArgsForCall)
+}
+
+func (fake *FakeDataDownTrack) OnCloseCalls(stub func(func())) {
+	fake.onCloseMutex.Lock()
+	defer fake.onCloseMutex.Unlock()
+	fake.OnCloseStub = stub
+}
+
+func (fake *FakeDataDownTrack) OnCloseArgsForCall(i int) func() {
+	fake.onCloseMutex.RLock()
+	defer fake.onCloseMutex.RUnlock()
+	argsForCall := fake.onCloseArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeDataDownTrack) PublishDataTrack() types.DataTrack {

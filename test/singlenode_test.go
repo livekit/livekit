@@ -765,12 +765,20 @@ func TestSingleNodeUpdateSubscriptionPermissions(t *testing.T) {
 				SetIdentity("sub")
 			token, err := at.ToJWT()
 			require.NoError(t, err)
-			sub := createRTCClientWithToken(token, defaultServerPort, testRTCServicePath, nil)
+			sub := createRTCClientWithToken(token, defaultServerPort, testRTCServicePath, &testclient.Options{
+				AutoSubscribe:          true,
+				AutoSubscribeDataTrack: true,
+			})
 
 			waitUntilConnected(t, pub, sub)
 
 			writers := publishTracksForClients(t, pub)
 			defer stopWriters(writers...)
+
+			// publish a data track as well
+			dtw, err := pub.PublishDataTrack()
+			require.NoError(t, err)
+			defer dtw.Stop()
 
 			// wait sub receives tracks
 			testutils.WithTimeout(t, func() string {
@@ -783,6 +791,10 @@ func TestSingleNodeUpdateSubscriptionPermissions(t *testing.T) {
 				}
 				return ""
 			})
+
+			// no subscriptions should have been made while canSubscribe is false
+			require.Empty(t, sub.SubscribedTracks()[pub.ID()])
+			require.Empty(t, sub.SubscribedDataTracks()[pub.ID()])
 
 			// set permissions out of band
 			ctx := contextWithToken(adminRoomToken(testRoom))
@@ -798,11 +810,13 @@ func TestSingleNodeUpdateSubscriptionPermissions(t *testing.T) {
 
 			testutils.WithTimeout(t, func() string {
 				tracks := sub.SubscribedTracks()[pub.ID()]
-				if len(tracks) == 2 {
-					return ""
-				} else {
+				if len(tracks) != 2 {
 					return fmt.Sprintf("expected 2 tracks subscribed, actual: %d", len(tracks))
 				}
+				if len(sub.SubscribedDataTracks()[pub.ID()]) != 1 {
+					return "expected data track to be subscribed"
+				}
+				return ""
 			})
 		})
 	}

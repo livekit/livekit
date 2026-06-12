@@ -116,6 +116,17 @@ type FakeDataTrack struct {
 	removeSubscriberArgsForCall []struct {
 		arg1 livekit.ParticipantID
 	}
+	RevokeDisallowedSubscribersStub        func([]livekit.ParticipantIdentity) []livekit.ParticipantIdentity
+	revokeDisallowedSubscribersMutex       sync.RWMutex
+	revokeDisallowedSubscribersArgsForCall []struct {
+		arg1 []livekit.ParticipantIdentity
+	}
+	revokeDisallowedSubscribersReturns struct {
+		result1 []livekit.ParticipantIdentity
+	}
+	revokeDisallowedSubscribersReturnsOnCall map[int]struct {
+		result1 []livekit.ParticipantIdentity
+	}
 	ToProtoStub        func() *livekit.DataTrackInfo
 	toProtoMutex       sync.RWMutex
 	toProtoArgsForCall []struct {
@@ -706,6 +717,72 @@ func (fake *FakeDataTrack) RemoveSubscriberArgsForCall(i int) livekit.Participan
 	defer fake.removeSubscriberMutex.RUnlock()
 	argsForCall := fake.removeSubscriberArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakeDataTrack) RevokeDisallowedSubscribers(arg1 []livekit.ParticipantIdentity) []livekit.ParticipantIdentity {
+	var arg1Copy []livekit.ParticipantIdentity
+	if arg1 != nil {
+		arg1Copy = make([]livekit.ParticipantIdentity, len(arg1))
+		copy(arg1Copy, arg1)
+	}
+	fake.revokeDisallowedSubscribersMutex.Lock()
+	ret, specificReturn := fake.revokeDisallowedSubscribersReturnsOnCall[len(fake.revokeDisallowedSubscribersArgsForCall)]
+	fake.revokeDisallowedSubscribersArgsForCall = append(fake.revokeDisallowedSubscribersArgsForCall, struct {
+		arg1 []livekit.ParticipantIdentity
+	}{arg1Copy})
+	stub := fake.RevokeDisallowedSubscribersStub
+	fakeReturns := fake.revokeDisallowedSubscribersReturns
+	fake.recordInvocation("RevokeDisallowedSubscribers", []interface{}{arg1Copy})
+	fake.revokeDisallowedSubscribersMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeDataTrack) RevokeDisallowedSubscribersCallCount() int {
+	fake.revokeDisallowedSubscribersMutex.RLock()
+	defer fake.revokeDisallowedSubscribersMutex.RUnlock()
+	return len(fake.revokeDisallowedSubscribersArgsForCall)
+}
+
+func (fake *FakeDataTrack) RevokeDisallowedSubscribersCalls(stub func([]livekit.ParticipantIdentity) []livekit.ParticipantIdentity) {
+	fake.revokeDisallowedSubscribersMutex.Lock()
+	defer fake.revokeDisallowedSubscribersMutex.Unlock()
+	fake.RevokeDisallowedSubscribersStub = stub
+}
+
+func (fake *FakeDataTrack) RevokeDisallowedSubscribersArgsForCall(i int) []livekit.ParticipantIdentity {
+	fake.revokeDisallowedSubscribersMutex.RLock()
+	defer fake.revokeDisallowedSubscribersMutex.RUnlock()
+	argsForCall := fake.revokeDisallowedSubscribersArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeDataTrack) RevokeDisallowedSubscribersReturns(result1 []livekit.ParticipantIdentity) {
+	fake.revokeDisallowedSubscribersMutex.Lock()
+	defer fake.revokeDisallowedSubscribersMutex.Unlock()
+	fake.RevokeDisallowedSubscribersStub = nil
+	fake.revokeDisallowedSubscribersReturns = struct {
+		result1 []livekit.ParticipantIdentity
+	}{result1}
+}
+
+func (fake *FakeDataTrack) RevokeDisallowedSubscribersReturnsOnCall(i int, result1 []livekit.ParticipantIdentity) {
+	fake.revokeDisallowedSubscribersMutex.Lock()
+	defer fake.revokeDisallowedSubscribersMutex.Unlock()
+	fake.RevokeDisallowedSubscribersStub = nil
+	if fake.revokeDisallowedSubscribersReturnsOnCall == nil {
+		fake.revokeDisallowedSubscribersReturnsOnCall = make(map[int]struct {
+			result1 []livekit.ParticipantIdentity
+		})
+	}
+	fake.revokeDisallowedSubscribersReturnsOnCall[i] = struct {
+		result1 []livekit.ParticipantIdentity
+	}{result1}
 }
 
 func (fake *FakeDataTrack) ToProto() *livekit.DataTrackInfo {
