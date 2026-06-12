@@ -89,7 +89,7 @@ func (d *DataDownTrack) OnClose(fn func()) {
 	d.onClose = fn
 	closed := d.closed
 	d.lock.Unlock()
-	if closed {
+	if closed && fn != nil {
 		fn()
 	}
 }
