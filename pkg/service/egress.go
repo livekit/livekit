@@ -230,6 +230,8 @@ func (s *egressLauncher) StartEgress(ctx context.Context, req *rpc.StartEgressRe
 			roomName = v.TrackComposite.RoomName
 		case *rpc.StartEgressRequest_Track:
 			roomName = v.Track.RoomName
+		case *rpc.StartEgressRequest_Egress:
+			roomName = v.Egress.RoomName
 		}
 
 		if roomName != "" {
@@ -373,5 +375,28 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 }
 
 func (s *EgressService) StartEgress(ctx context.Context, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
-	return nil, errors.New("not implemented")
+	sourceType, outputType := egress.GetTypes(&livekit.EgressInfo_Egress{Egress: req})
+	fields := []any{
+		"room", req.RoomName,
+		"sourceType", sourceType,
+		"outputType", outputType,
+	}
+	defer func() {
+		AppendLogFields(ctx, fields...)
+	}()
+
+	egressID, idFromCtx := EgressID(ctx)
+	info, err := s.startEgress(ctx, &rpc.StartEgressRequest{
+		EgressId: egressID,
+		Request: &rpc.StartEgressRequest_Egress{
+			Egress: req,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !idFromCtx {
+		fields = append(fields, "egressID", info.EgressId)
+	}
+	return info, err
 }
