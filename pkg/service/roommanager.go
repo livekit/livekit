@@ -910,16 +910,22 @@ func (r *RoomManager) PerformRpc(ctx context.Context, req *livekit.PerformRpcReq
 }
 
 func (r *RoomManager) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomRequest) (*livekit.DeleteRoomResponse, error) {
-	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
+	roomName := livekit.RoomName(req.Room)
+	room := r.GetRoom(ctx, roomName)
 	if room == nil {
 		// special case of a non-RTC room e.g. room created but no participants joined
 		logger.Debugw("Deleting non-rtc room, loading from roomstore")
-		err := r.roomStore.DeleteRoom(ctx, livekit.RoomName(req.Room))
+		err := r.roomStore.DeleteRoom(ctx, roomName)
 		if err != nil {
 			logger.Debugw("Error deleting non-rtc room", "err", err)
 			return nil, err
 		}
 	} else {
+		// Clear room state before closing so a same-name recreate cannot reuse stale metadata
+		// while the old room is still winding down.
+		if err := r.deleteRoom(ctx, roomName); err != nil {
+			room.Logger().Errorw("could not delete room state before closing", err)
+		}
 		room.Logger().Infow("deleting room")
 		room.Close(types.ParticipantCloseReasonServiceRequestDeleteRoom)
 	}
