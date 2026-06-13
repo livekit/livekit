@@ -62,5 +62,5 @@ type ParticipantSignalling interface {
 	SignalPublishDataTrackResponse(publishDataTrackResponse *livekit.PublishDataTrackResponse) proto.Message
 	SignalUnpublishDataTrackResponse(unpublishDataTrackResponse *livekit.UnpublishDataTrackResponse) proto.Message
 	SignalDataTrackSubscriberHandles(dataTrackSubscriberHandles *livekit.DataTrackSubscriberHandles) proto.Message
-	SignalGetDataTrackSchemaResponse(getDataTrackSchemaResponse *livekit.GetDataTrackSchemaResponse) proto.Message
+	SignalGetDataBlobResponse(getDataBlobResponse *livekit.GetDataBlobResponse) proto.Message
 }

@@ -1384,9 +1384,9 @@ func (r *Room) onUpdateDataSubscriptions(participant types.LocalParticipant, req
 	}
 }
 
-func (r *Room) onGetDataTrackSchema(participant types.LocalParticipant, req *livekit.GetDataTrackSchemaRequest) {
+func (r *Room) onGetDataBlob(participant types.LocalParticipant, req *livekit.GetDataBlobRequest) {
 	publisher := r.GetParticipant(livekit.ParticipantIdentity(req.ParticipantIdentity))
-	participant.ProcessGetDataTrackSchemaRequest(req, publisher)
+	participant.ProcessGetDataBlobRequest(req, publisher)
 }
 
 func (r *Room) onLeave(p types.LocalParticipant, reason types.ParticipantCloseReason) {
@@ -1998,11 +1998,11 @@ func (l *localParticipantListener) OnUpdateDataSubscriptions(p types.LocalPartic
 	l.room.onUpdateDataSubscriptions(p, req)
 }
 
-func (l *localParticipantListener) OnDefineDataTrackSchema(_p types.LocalParticipant, _definition *livekit.DataTrackSchemaDefinition) {
+func (l *localParticipantListener) OnStoreDataBlob(_p types.LocalParticipant, _dataBlob *livekit.DataBlob) {
 }
 
-func (l *localParticipantListener) OnGetDataTrackSchema(p types.LocalParticipant, req *livekit.GetDataTrackSchemaRequest) {
-	l.room.onGetDataTrackSchema(p, req)
+func (l *localParticipantListener) OnGetDataBlob(p types.LocalParticipant, req *livekit.GetDataBlobRequest) {
+	l.room.onGetDataBlob(p, req)
 }
 
 func (l *localParticipantListener) OnSyncState(p types.LocalParticipant, state *livekit.SyncState) error {

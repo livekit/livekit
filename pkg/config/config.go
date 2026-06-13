@@ -91,7 +91,7 @@ type Config struct {
 
 	EnableDataTracks bool `yaml:"enable_data_tracks,omitempty"`
 
-	EnableParticipantAsyncAttributes bool `yaml:"enable_participant_async_attributes,omitempty"`
+	EnableParticipantDataBlob bool `yaml:"enable_participant_data_blob,omitempty"`
 
 	API APIConfig `yaml:"api,omitempty"`
 }
@@ -297,8 +297,8 @@ type LimitConfig struct {
 	MaxParticipantIdentityLength int    `yaml:"max_participant_identity_length,omitempty"`
 	MaxParticipantNameLength     int    `yaml:"max_participant_name_length,omitempty"`
 
-	MaxAsyncAttributeNameLength int    `yaml:"max_async_attributes_name_length,omitempty"`
-	MaxAsyncAttributesSize      uint32 `yaml:"max_async_attributes_size,omitempty"`
+	MaxDataBlobKeyLength int    `yaml:"max_data_blob_key_length,omitempty"`
+	MaxDataBlobSize      uint32 `yaml:"max_data_blobs_size,omitempty"`
 }
 
 func (l LimitConfig) CheckRoomNameLength(name string) bool {
@@ -329,32 +329,32 @@ func (l LimitConfig) CheckAttributesSize(attributes map[string]string) bool {
 	return uint32(total) <= l.MaxAttributesSize
 }
 
-func (l LimitConfig) CheckAsyncAttributeNameLength(name string) bool {
-	return l.MaxAsyncAttributeNameLength == 0 || len(name) <= l.MaxAsyncAttributeNameLength
+func (l LimitConfig) CheckDataBlobKeyLength(key string) bool {
+	return l.MaxDataBlobKeyLength == 0 || len(key) <= l.MaxDataBlobKeyLength
 }
 
-func (l LimitConfig) CheckAsyncAttributesSize(asyncAttributes []*livekit.DataTrackSchemaDefinition) bool {
-	if l.MaxAsyncAttributesSize == 0 {
+func (l LimitConfig) CheckDataBlobsSize(dataBlobs []*livekit.DataBlob) bool {
+	if l.MaxDataBlobSize == 0 {
 		return true
 	}
 
 	total := 0
-	for _, asyncAttribute := range asyncAttributes {
-		total += len(asyncAttribute.Id.Name) + len(asyncAttribute.Definition)
+	for _, dataBlob := range dataBlobs {
+		total += len(dataBlob.GetKey().String()) + len(dataBlob.Contents)
 	}
-	return uint32(total) <= l.MaxAsyncAttributesSize
+	return uint32(total) <= l.MaxDataBlobSize
 }
 
-func (l LimitConfig) CanAddAsyncAttribute(asyncAttributes []*livekit.DataTrackSchemaDefinition, toAdd *livekit.DataTrackSchemaDefinition) bool {
-	if l.MaxAsyncAttributesSize == 0 {
+func (l LimitConfig) CanAddDataBlob(dataBlobs []*livekit.DataBlob, toAdd *livekit.DataBlob) bool {
+	if l.MaxDataBlobSize == 0 {
 		return true
 	}
 
 	total := 0
-	for _, asyncAttribute := range asyncAttributes {
-		total += len(asyncAttribute.Id.Name) + len(asyncAttribute.Definition)
+	for _, dataBlob := range dataBlobs {
+		total += len(dataBlob.Key.String()) + len(dataBlob.Contents)
 	}
-	return uint32(total+len(toAdd.Id.Name)+len(toAdd.Definition)) <= l.MaxAsyncAttributesSize
+	return uint32(total+len(toAdd.GetKey().String())+len(toAdd.Contents)) <= l.MaxDataBlobSize
 }
 
 // ---------------------------------
@@ -482,8 +482,8 @@ var DefaultConfig = Config{
 		MaxRoomNameLength:            256,
 		MaxParticipantIdentityLength: 256,
 		MaxParticipantNameLength:     256,
-		MaxAsyncAttributeNameLength:  256,
-		MaxAsyncAttributesSize:       256000,
+		MaxDataBlobKeyLength:         256,
+		MaxDataBlobSize:              64000,
 	},
 	Logging: LoggingConfig{
 		PionLevel: "error",

@@ -523,9 +523,9 @@ func (r *RoomManager) StartSession(
 		DatachannelLossyTargetLatency:   r.config.RTC.DatachannelLossyTargetLatency,
 		FireOnTrackBySdp:                true,
 		UseSinglePeerConnection:         pi.UseSinglePeerConnection,
-		EnableDataTracks:                 r.config.EnableDataTracks,
-		EnableParticipantAsyncAttributes: r.config.EnableParticipantAsyncAttributes,
-		EnableRTPStreamRestartDetection:  r.config.RTC.EnableRTPStreamRestartDetection,
+		EnableDataTracks:                r.config.EnableDataTracks,
+		EnableParticipantDataBlob:       r.config.EnableParticipantDataBlob,
+		EnableRTPStreamRestartDetection: r.config.RTC.EnableRTPStreamRestartDetection,
 	})
 	if err != nil {
 		return err

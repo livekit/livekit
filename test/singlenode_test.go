@@ -1527,32 +1527,32 @@ func TestTurnAuthFailure(t *testing.T) {
 	}
 }
 
-// asyncAttributesCapture buffers RequestResponse and GetDataTrackSchemaResponse messages
+// dataBlobCapture buffers RequestResponse and GetDataBlobResponse messages
 // sent to a test client so they can be asserted on. Other messages flow through to the
 // default handler.
-type asyncAttributesCapture struct {
-	mu                sync.Mutex
-	requestResponses  []*livekit.RequestResponse
-	schemaResponses   []*livekit.GetDataTrackSchemaResponse
+type dataBlobCapture struct {
+	mu               sync.Mutex
+	requestResponses []*livekit.RequestResponse
+	blobResponses    []*livekit.GetDataBlobResponse
 }
 
-func (c *asyncAttributesCapture) interceptor() testclient.SignalResponseInterceptor {
+func (c *dataBlobCapture) interceptor() testclient.SignalResponseInterceptor {
 	return func(msg *livekit.SignalResponse, next testclient.SignalResponseHandler) error {
 		switch m := msg.Message.(type) {
 		case *livekit.SignalResponse_RequestResponse:
 			c.mu.Lock()
 			c.requestResponses = append(c.requestResponses, m.RequestResponse)
 			c.mu.Unlock()
-		case *livekit.SignalResponse_GetDataTrackSchemaResponse:
+		case *livekit.SignalResponse_GetDataBlobResponse:
 			c.mu.Lock()
-			c.schemaResponses = append(c.schemaResponses, m.GetDataTrackSchemaResponse)
+			c.blobResponses = append(c.blobResponses, m.GetDataBlobResponse)
 			c.mu.Unlock()
 		}
 		return next(msg)
 	}
 }
 
-func (c *asyncAttributesCapture) takeRequestResponse() *livekit.RequestResponse {
+func (c *dataBlobCapture) takeRequestResponse() *livekit.RequestResponse {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if len(c.requestResponses) == 0 {
@@ -1563,28 +1563,28 @@ func (c *asyncAttributesCapture) takeRequestResponse() *livekit.RequestResponse 
 	return rr
 }
 
-func (c *asyncAttributesCapture) takeSchemaResponse() *livekit.GetDataTrackSchemaResponse {
+func (c *dataBlobCapture) takeBlobResponse() *livekit.GetDataBlobResponse {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if len(c.schemaResponses) == 0 {
+	if len(c.blobResponses) == 0 {
 		return nil
 	}
-	sr := c.schemaResponses[0]
-	c.schemaResponses = c.schemaResponses[1:]
+	sr := c.blobResponses[0]
+	c.blobResponses = c.blobResponses[1:]
 	return sr
 }
 
-func (c *asyncAttributesCapture) requestResponseCount() int {
+func (c *dataBlobCapture) requestResponseCount() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return len(c.requestResponses)
 }
 
-func setupAsyncAttributesServer(t *testing.T, name string, enable bool) (*service.LivekitServer, func()) {
+func setupDataBlobServer(t *testing.T, name string, enable bool) (*service.LivekitServer, func()) {
 	logger.Infow("----------------STARTING TEST----------------", "test", name)
 	s := createSingleNodeServer(func(c *config.Config) {
-		c.EnableParticipantAsyncAttributes = enable
-		c.Limit.MaxAsyncAttributesSize = 1024
+		c.EnableParticipantDataBlob = enable
+		c.Limit.MaxDataBlobSize = 1024
 	})
 	go func() {
 		if err := s.Start(); err != nil {
@@ -1598,19 +1598,19 @@ func setupAsyncAttributesServer(t *testing.T, name string, enable bool) (*servic
 	}
 }
 
-func TestSingleNodeAsyncAttributes(t *testing.T) {
+func TestSingleNodeDataBlob(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 		return
 	}
 
-	_, finish := setupAsyncAttributesServer(t, "TestSingleNodeAsyncAttributes", true)
+	_, finish := setupDataBlobServer(t, "TestSingleNodeDataBlob", true)
 	defer finish()
 
 	for _, testRTCServicePath := range testRTCServicePaths {
 		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
-			pubCapture := &asyncAttributesCapture{}
-			subCapture := &asyncAttributesCapture{}
+			pubCapture := &dataBlobCapture{}
+			subCapture := &dataBlobCapture{}
 
 			pub := createRTCClient("pub", defaultServerPort, testRTCServicePath, &testclient.Options{
 				AutoSubscribe:             true,
@@ -1623,19 +1623,20 @@ func TestSingleNodeAsyncAttributes(t *testing.T) {
 			waitUntilConnected(t, pub, sub)
 			defer stopClients(pub, sub)
 
-			schemaID := &livekit.DataTrackSchemaId{
-				Name:     "schema-1",
-				Encoding: livekit.DataTrackSchemaEncoding_DATA_TRACK_SCHEMA_ENCODING_PROTOBUF,
+			key := &livekit.DataBlobKey{
+				Key: &livekit.DataBlobKey_Generic{
+					Generic: "blob-1",
+				},
 			}
-			definition := []byte("definition-bytes")
+			contents := []byte("definition-bytes")
 
-			// publisher defines a schema
+			// publisher stores a blob
 			require.NoError(t, pub.SendRequest(&livekit.SignalRequest{
-				Message: &livekit.SignalRequest_DefineDataTrackSchema{
-					DefineDataTrackSchema: &livekit.DefineDataTrackSchemaRequest{
-						SchemaDefinition: &livekit.DataTrackSchemaDefinition{
-							Id:         schemaID,
-							Definition: definition,
+				Message: &livekit.SignalRequest_StoreDataBlobRequest{
+					StoreDataBlobRequest: &livekit.StoreDataBlobRequest{
+						Blob: &livekit.DataBlob{
+							Key:      key,
+							Contents: contents,
 						},
 					},
 				},
@@ -1645,41 +1646,42 @@ func TestSingleNodeAsyncAttributes(t *testing.T) {
 			time.Sleep(syncDelay)
 			require.Equal(t, 0, pubCapture.requestResponseCount(), "publisher should not receive an error response on success")
 
-			// subscriber asks for the schema
+			// subscriber asks for the blob
 			require.NoError(t, sub.SendRequest(&livekit.SignalRequest{
-				Message: &livekit.SignalRequest_GetDataTrackSchema{
-					GetDataTrackSchema: &livekit.GetDataTrackSchemaRequest{
+				Message: &livekit.SignalRequest_GetDataBlobRequest{
+					GetDataBlobRequest: &livekit.GetDataBlobRequest{
 						ParticipantIdentity: "pub",
-						SchemaId:            schemaID,
+						Key:                 key,
 					},
 				},
 			}))
 
 			testutils.WithTimeout(t, func() string {
-				resp := subCapture.takeSchemaResponse()
+				resp := subCapture.takeBlobResponse()
 				if resp == nil {
-					return "subscriber did not receive schema response"
+					return "subscriber did not receive blob response"
 				}
-				if resp.SchemaDefinition == nil {
-					return "schema response missing definition"
+				if resp.Blob == nil {
+					return "blob response missing blob"
 				}
-				if resp.SchemaDefinition.Id.Name != schemaID.Name {
-					return fmt.Sprintf("expected schema name %s, got %s", schemaID.Name, resp.SchemaDefinition.Id.Name)
+				if resp.Blob.Key.String() != key.String() {
+					return fmt.Sprintf("expected blob key %s, got %s", key.String(), resp.Blob.Key.String())
 				}
-				if string(resp.SchemaDefinition.Definition) != string(definition) {
-					return fmt.Sprintf("expected definition %q, got %q", definition, resp.SchemaDefinition.Definition)
+				if string(resp.Blob.Contents) != string(contents) {
+					return fmt.Sprintf("expected contents %q, got %q", contents, resp.Blob.Contents)
 				}
 				return ""
 			})
 
-			// subscriber asks for an unknown schema on a known publisher
+			// subscriber asks for an unknown blob on a known publisher
 			require.NoError(t, sub.SendRequest(&livekit.SignalRequest{
-				Message: &livekit.SignalRequest_GetDataTrackSchema{
-					GetDataTrackSchema: &livekit.GetDataTrackSchemaRequest{
+				Message: &livekit.SignalRequest_GetDataBlobRequest{
+					GetDataBlobRequest: &livekit.GetDataBlobRequest{
 						ParticipantIdentity: "pub",
-						SchemaId: &livekit.DataTrackSchemaId{
-							Name:     "does-not-exist",
-							Encoding: livekit.DataTrackSchemaEncoding_DATA_TRACK_SCHEMA_ENCODING_PROTOBUF,
+						Key: &livekit.DataBlobKey{
+							Key: &livekit.DataBlobKey_Generic{
+								Generic: "does-not-exist",
+							},
 						},
 					},
 				},
@@ -1688,7 +1690,7 @@ func TestSingleNodeAsyncAttributes(t *testing.T) {
 			testutils.WithTimeout(t, func() string {
 				rr := subCapture.takeRequestResponse()
 				if rr == nil {
-					return "subscriber did not receive RequestResponse for missing schema"
+					return "subscriber did not receive RequestResponse for missing blob"
 				}
 				if rr.Reason != livekit.RequestResponse_NOT_FOUND {
 					return fmt.Sprintf("expected NOT_FOUND, got %s", rr.Reason)
@@ -1696,12 +1698,12 @@ func TestSingleNodeAsyncAttributes(t *testing.T) {
 				return ""
 			})
 
-			// subscriber asks for a schema on an unknown publisher identity
+			// subscriber asks for a blob on an unknown publisher identity
 			require.NoError(t, sub.SendRequest(&livekit.SignalRequest{
-				Message: &livekit.SignalRequest_GetDataTrackSchema{
-					GetDataTrackSchema: &livekit.GetDataTrackSchemaRequest{
+				Message: &livekit.SignalRequest_GetDataBlobRequest{
+					GetDataBlobRequest: &livekit.GetDataBlobRequest{
 						ParticipantIdentity: "unknown-publisher",
-						SchemaId:            schemaID,
+						Key:                 key,
 					},
 				},
 			}))
@@ -1717,16 +1719,12 @@ func TestSingleNodeAsyncAttributes(t *testing.T) {
 				return ""
 			})
 
-			// publisher sends an invalid define (empty id name)
+			// publisher sends an invalid blob (empty key)
 			require.NoError(t, pub.SendRequest(&livekit.SignalRequest{
-				Message: &livekit.SignalRequest_DefineDataTrackSchema{
-					DefineDataTrackSchema: &livekit.DefineDataTrackSchemaRequest{
-						SchemaDefinition: &livekit.DataTrackSchemaDefinition{
-							Id: &livekit.DataTrackSchemaId{
-								Name:     "",
-								Encoding: livekit.DataTrackSchemaEncoding_DATA_TRACK_SCHEMA_ENCODING_PROTOBUF,
-							},
-							Definition: definition,
+				Message: &livekit.SignalRequest_StoreDataBlobRequest{
+					StoreDataBlobRequest: &livekit.StoreDataBlobRequest{
+						Blob: &livekit.DataBlob{
+							Contents: contents,
 						},
 					},
 				},
@@ -1746,18 +1744,18 @@ func TestSingleNodeAsyncAttributes(t *testing.T) {
 	}
 }
 
-func TestSingleNodeAsyncAttributesDisabled(t *testing.T) {
+func TestSingleNodeDataBlobDisabled(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 		return
 	}
 
-	_, finish := setupAsyncAttributesServer(t, "TestSingleNodeAsyncAttributesDisabled", false)
+	_, finish := setupDataBlobServer(t, "TestSingleNodeDataBlobDisabled", false)
 	defer finish()
 
 	for _, testRTCServicePath := range testRTCServicePaths {
 		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
-			pubCapture := &asyncAttributesCapture{}
+			pubCapture := &dataBlobCapture{}
 			pub := createRTCClient("pub", defaultServerPort, testRTCServicePath, &testclient.Options{
 				AutoSubscribe:             true,
 				SignalResponseInterceptor: pubCapture.interceptor(),
@@ -1766,14 +1764,15 @@ func TestSingleNodeAsyncAttributesDisabled(t *testing.T) {
 			defer stopClients(pub)
 
 			require.NoError(t, pub.SendRequest(&livekit.SignalRequest{
-				Message: &livekit.SignalRequest_DefineDataTrackSchema{
-					DefineDataTrackSchema: &livekit.DefineDataTrackSchemaRequest{
-						SchemaDefinition: &livekit.DataTrackSchemaDefinition{
-							Id: &livekit.DataTrackSchemaId{
-								Name:     "schema-1",
-								Encoding: livekit.DataTrackSchemaEncoding_DATA_TRACK_SCHEMA_ENCODING_PROTOBUF,
+				Message: &livekit.SignalRequest_StoreDataBlobRequest{
+					StoreDataBlobRequest: &livekit.StoreDataBlobRequest{
+						Blob: &livekit.DataBlob{
+							Key: &livekit.DataBlobKey{
+								Key: &livekit.DataBlobKey_Generic{
+									Generic: "blob-1",
+								},
 							},
-							Definition: []byte("definition-bytes"),
+							Contents: []byte("definition-bytes"),
 						},
 					},
 				},

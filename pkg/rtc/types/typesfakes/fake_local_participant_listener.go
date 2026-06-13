@@ -42,17 +42,11 @@ type FakeLocalParticipantListener struct {
 		arg1 types.Participant
 		arg2 types.DataTrack
 	}
-	OnDefineDataTrackSchemaStub        func(types.LocalParticipant, *livekit.DataTrackSchemaDefinition)
-	onDefineDataTrackSchemaMutex       sync.RWMutex
-	onDefineDataTrackSchemaArgsForCall []struct {
+	OnGetDataBlobStub        func(types.LocalParticipant, *livekit.GetDataBlobRequest)
+	onGetDataBlobMutex       sync.RWMutex
+	onGetDataBlobArgsForCall []struct {
 		arg1 types.LocalParticipant
-		arg2 *livekit.DataTrackSchemaDefinition
-	}
-	OnGetDataTrackSchemaStub        func(types.LocalParticipant, *livekit.GetDataTrackSchemaRequest)
-	onGetDataTrackSchemaMutex       sync.RWMutex
-	onGetDataTrackSchemaArgsForCall []struct {
-		arg1 types.LocalParticipant
-		arg2 *livekit.GetDataTrackSchemaRequest
+		arg2 *livekit.GetDataBlobRequest
 	}
 	OnLeaveStub        func(types.LocalParticipant, types.ParticipantCloseReason)
 	onLeaveMutex       sync.RWMutex
@@ -93,6 +87,12 @@ type FakeLocalParticipantListener struct {
 	onStateChangeMutex       sync.RWMutex
 	onStateChangeArgsForCall []struct {
 		arg1 types.LocalParticipant
+	}
+	OnStoreDataBlobStub        func(types.LocalParticipant, *livekit.DataBlob)
+	onStoreDataBlobMutex       sync.RWMutex
+	onStoreDataBlobArgsForCall []struct {
+		arg1 types.LocalParticipant
+		arg2 *livekit.DataBlob
 	}
 	OnSubscribeStatusChangedStub        func(types.LocalParticipant, livekit.ParticipantID, bool)
 	onSubscribeStatusChangedMutex       sync.RWMutex
@@ -343,69 +343,36 @@ func (fake *FakeLocalParticipantListener) OnDataTrackUnpublishedArgsForCall(i in
 	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakeLocalParticipantListener) OnDefineDataTrackSchema(arg1 types.LocalParticipant, arg2 *livekit.DataTrackSchemaDefinition) {
-	fake.onDefineDataTrackSchemaMutex.Lock()
-	fake.onDefineDataTrackSchemaArgsForCall = append(fake.onDefineDataTrackSchemaArgsForCall, struct {
+func (fake *FakeLocalParticipantListener) OnGetDataBlob(arg1 types.LocalParticipant, arg2 *livekit.GetDataBlobRequest) {
+	fake.onGetDataBlobMutex.Lock()
+	fake.onGetDataBlobArgsForCall = append(fake.onGetDataBlobArgsForCall, struct {
 		arg1 types.LocalParticipant
-		arg2 *livekit.DataTrackSchemaDefinition
+		arg2 *livekit.GetDataBlobRequest
 	}{arg1, arg2})
-	stub := fake.OnDefineDataTrackSchemaStub
-	fake.recordInvocation("OnDefineDataTrackSchema", []interface{}{arg1, arg2})
-	fake.onDefineDataTrackSchemaMutex.Unlock()
+	stub := fake.OnGetDataBlobStub
+	fake.recordInvocation("OnGetDataBlob", []interface{}{arg1, arg2})
+	fake.onGetDataBlobMutex.Unlock()
 	if stub != nil {
-		fake.OnDefineDataTrackSchemaStub(arg1, arg2)
+		fake.OnGetDataBlobStub(arg1, arg2)
 	}
 }
 
-func (fake *FakeLocalParticipantListener) OnDefineDataTrackSchemaCallCount() int {
-	fake.onDefineDataTrackSchemaMutex.RLock()
-	defer fake.onDefineDataTrackSchemaMutex.RUnlock()
-	return len(fake.onDefineDataTrackSchemaArgsForCall)
+func (fake *FakeLocalParticipantListener) OnGetDataBlobCallCount() int {
+	fake.onGetDataBlobMutex.RLock()
+	defer fake.onGetDataBlobMutex.RUnlock()
+	return len(fake.onGetDataBlobArgsForCall)
 }
 
-func (fake *FakeLocalParticipantListener) OnDefineDataTrackSchemaCalls(stub func(types.LocalParticipant, *livekit.DataTrackSchemaDefinition)) {
-	fake.onDefineDataTrackSchemaMutex.Lock()
-	defer fake.onDefineDataTrackSchemaMutex.Unlock()
-	fake.OnDefineDataTrackSchemaStub = stub
+func (fake *FakeLocalParticipantListener) OnGetDataBlobCalls(stub func(types.LocalParticipant, *livekit.GetDataBlobRequest)) {
+	fake.onGetDataBlobMutex.Lock()
+	defer fake.onGetDataBlobMutex.Unlock()
+	fake.OnGetDataBlobStub = stub
 }
 
-func (fake *FakeLocalParticipantListener) OnDefineDataTrackSchemaArgsForCall(i int) (types.LocalParticipant, *livekit.DataTrackSchemaDefinition) {
-	fake.onDefineDataTrackSchemaMutex.RLock()
-	defer fake.onDefineDataTrackSchemaMutex.RUnlock()
-	argsForCall := fake.onDefineDataTrackSchemaArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
-}
-
-func (fake *FakeLocalParticipantListener) OnGetDataTrackSchema(arg1 types.LocalParticipant, arg2 *livekit.GetDataTrackSchemaRequest) {
-	fake.onGetDataTrackSchemaMutex.Lock()
-	fake.onGetDataTrackSchemaArgsForCall = append(fake.onGetDataTrackSchemaArgsForCall, struct {
-		arg1 types.LocalParticipant
-		arg2 *livekit.GetDataTrackSchemaRequest
-	}{arg1, arg2})
-	stub := fake.OnGetDataTrackSchemaStub
-	fake.recordInvocation("OnGetDataTrackSchema", []interface{}{arg1, arg2})
-	fake.onGetDataTrackSchemaMutex.Unlock()
-	if stub != nil {
-		fake.OnGetDataTrackSchemaStub(arg1, arg2)
-	}
-}
-
-func (fake *FakeLocalParticipantListener) OnGetDataTrackSchemaCallCount() int {
-	fake.onGetDataTrackSchemaMutex.RLock()
-	defer fake.onGetDataTrackSchemaMutex.RUnlock()
-	return len(fake.onGetDataTrackSchemaArgsForCall)
-}
-
-func (fake *FakeLocalParticipantListener) OnGetDataTrackSchemaCalls(stub func(types.LocalParticipant, *livekit.GetDataTrackSchemaRequest)) {
-	fake.onGetDataTrackSchemaMutex.Lock()
-	defer fake.onGetDataTrackSchemaMutex.Unlock()
-	fake.OnGetDataTrackSchemaStub = stub
-}
-
-func (fake *FakeLocalParticipantListener) OnGetDataTrackSchemaArgsForCall(i int) (types.LocalParticipant, *livekit.GetDataTrackSchemaRequest) {
-	fake.onGetDataTrackSchemaMutex.RLock()
-	defer fake.onGetDataTrackSchemaMutex.RUnlock()
-	argsForCall := fake.onGetDataTrackSchemaArgsForCall[i]
+func (fake *FakeLocalParticipantListener) OnGetDataBlobArgsForCall(i int) (types.LocalParticipant, *livekit.GetDataBlobRequest) {
+	fake.onGetDataBlobMutex.RLock()
+	defer fake.onGetDataBlobMutex.RUnlock()
+	argsForCall := fake.onGetDataBlobArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2
 }
 
@@ -632,6 +599,39 @@ func (fake *FakeLocalParticipantListener) OnStateChangeArgsForCall(i int) types.
 	defer fake.onStateChangeMutex.RUnlock()
 	argsForCall := fake.onStateChangeArgsForCall[i]
 	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipantListener) OnStoreDataBlob(arg1 types.LocalParticipant, arg2 *livekit.DataBlob) {
+	fake.onStoreDataBlobMutex.Lock()
+	fake.onStoreDataBlobArgsForCall = append(fake.onStoreDataBlobArgsForCall, struct {
+		arg1 types.LocalParticipant
+		arg2 *livekit.DataBlob
+	}{arg1, arg2})
+	stub := fake.OnStoreDataBlobStub
+	fake.recordInvocation("OnStoreDataBlob", []interface{}{arg1, arg2})
+	fake.onStoreDataBlobMutex.Unlock()
+	if stub != nil {
+		fake.OnStoreDataBlobStub(arg1, arg2)
+	}
+}
+
+func (fake *FakeLocalParticipantListener) OnStoreDataBlobCallCount() int {
+	fake.onStoreDataBlobMutex.RLock()
+	defer fake.onStoreDataBlobMutex.RUnlock()
+	return len(fake.onStoreDataBlobArgsForCall)
+}
+
+func (fake *FakeLocalParticipantListener) OnStoreDataBlobCalls(stub func(types.LocalParticipant, *livekit.DataBlob)) {
+	fake.onStoreDataBlobMutex.Lock()
+	defer fake.onStoreDataBlobMutex.Unlock()
+	fake.OnStoreDataBlobStub = stub
+}
+
+func (fake *FakeLocalParticipantListener) OnStoreDataBlobArgsForCall(i int) (types.LocalParticipant, *livekit.DataBlob) {
+	fake.onStoreDataBlobMutex.RLock()
+	defer fake.onStoreDataBlobMutex.RUnlock()
+	argsForCall := fake.onStoreDataBlobArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeLocalParticipantListener) OnSubscribeStatusChanged(arg1 types.LocalParticipant, arg2 livekit.ParticipantID, arg3 bool) {

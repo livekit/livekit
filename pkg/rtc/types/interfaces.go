@@ -356,8 +356,8 @@ type Participant interface {
 
 	GetParticipantListener() ParticipantListener
 
-	AddDataTrackSchema(definition *livekit.DataTrackSchemaDefinition)
-	GetDataTrackSchema(id *livekit.DataTrackSchemaId) *livekit.DataTrackSchemaDefinition
+	AddDataBlob(dataBlob *livekit.DataBlob)
+	GetDataBlob(key *livekit.DataBlobKey) *livekit.DataBlob
 }
 
 // -------------------------------------------------------
@@ -564,9 +564,9 @@ type LocalParticipant interface {
 	HandlePublishDataTrackRequest(*livekit.PublishDataTrackRequest)
 	HandleUnpublishDataTrackRequest(*livekit.UnpublishDataTrackRequest)
 	HandleUpdateDataSubscription(*livekit.UpdateDataSubscription)
-	HandleDefineDataTrackSchemaRequest(*livekit.DefineDataTrackSchemaRequest)
-	HandleGetDataTrackSchemaRequest(*livekit.GetDataTrackSchemaRequest)
-	ProcessGetDataTrackSchemaRequest(*livekit.GetDataTrackSchemaRequest, Participant)
+	HandleStoreDataBlobRequest(*livekit.StoreDataBlobRequest)
+	HandleGetDataBlobRequest(*livekit.GetDataBlobRequest)
+	ProcessGetDataBlobRequest(*livekit.GetDataBlobRequest, Participant)
 
 	HandleSignalMessage(msg proto.Message) error
 
@@ -578,7 +578,7 @@ type LocalParticipant interface {
 
 	GetNextSubscribedDataTrackHandle() uint16
 
-	GetAllAsyncAttributes() []*livekit.DataTrackSchemaDefinition
+	GetAllDataBlob() []*livekit.DataBlob
 }
 
 // ---------------------------------------------
@@ -628,8 +628,8 @@ type LocalParticipantListener interface {
 	)
 	OnUpdateSubscriptionPermission(LocalParticipant, *livekit.SubscriptionPermission) error
 	OnUpdateDataSubscriptions(LocalParticipant, *livekit.UpdateDataSubscription)
-	OnDefineDataTrackSchema(LocalParticipant, *livekit.DataTrackSchemaDefinition)
-	OnGetDataTrackSchema(LocalParticipant, *livekit.GetDataTrackSchemaRequest)
+	OnStoreDataBlob(LocalParticipant, *livekit.DataBlob)
+	OnGetDataBlob(LocalParticipant, *livekit.GetDataBlobRequest)
 	OnSyncState(LocalParticipant, *livekit.SyncState) error
 	OnSimulateScenario(LocalParticipant, *livekit.SimulateScenario) error
 	OnLeave(LocalParticipant, ParticipantCloseReason)
@@ -661,9 +661,9 @@ func (*NullLocalParticipantListener) OnUpdateSubscriptionPermission(LocalPartici
 }
 func (*NullLocalParticipantListener) OnUpdateDataSubscriptions(LocalParticipant, *livekit.UpdateDataSubscription) {
 }
-func (*NullLocalParticipantListener) OnDefineDataTrackSchema(LocalParticipant, *livekit.DataTrackSchemaDefinition) {
+func (*NullLocalParticipantListener) OnStoreDataBlob(LocalParticipant, *livekit.DataBlob) {
 }
-func (*NullLocalParticipantListener) OnGetDataTrackSchema(LocalParticipant, *livekit.GetDataTrackSchemaRequest) {
+func (*NullLocalParticipantListener) OnGetDataBlob(LocalParticipant, *livekit.GetDataBlobRequest) {
 }
 func (*NullLocalParticipantListener) OnSyncState(LocalParticipant, *livekit.SyncState) error {
 	return nil

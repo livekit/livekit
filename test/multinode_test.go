@@ -427,22 +427,22 @@ func TestCloseDisconnectedParticipantOnSignalClose(t *testing.T) {
 	}
 }
 
-func TestMultiNodeAsyncAttributes(t *testing.T) {
+func TestMultiNodeDataBlob(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 		return
 	}
 
-	_, _, finish := setupMultiNodeTestWithConfig("TestMultiNodeAsyncAttributes", func(c *config.Config) {
-		c.EnableParticipantAsyncAttributes = true
-		c.Limit.MaxAsyncAttributesSize = 1024
+	_, _, finish := setupMultiNodeTestWithConfig("TestMultiNodeDataBlob", func(c *config.Config) {
+		c.EnableParticipantDataBlob = true
+		c.Limit.MaxDataBlobSize = 1024
 	})
 	defer finish()
 
 	for _, testRTCServicePath := range testRTCServicePaths {
 		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
-			pubCapture := &asyncAttributesCapture{}
-			subCapture := &asyncAttributesCapture{}
+			pubCapture := &dataBlobCapture{}
+			subCapture := &dataBlobCapture{}
 
 			// publisher on node 1, subscriber on node 2
 			pub := createRTCClient("pub", defaultServerPort, testRTCServicePath, &client.Options{
@@ -464,18 +464,19 @@ func TestMultiNodeAsyncAttributes(t *testing.T) {
 				return ""
 			})
 
-			schemaID := &livekit.DataTrackSchemaId{
-				Name:     "schema-multinode",
-				Encoding: livekit.DataTrackSchemaEncoding_DATA_TRACK_SCHEMA_ENCODING_PROTOBUF,
+			key := &livekit.DataBlobKey{
+				Key: &livekit.DataBlobKey_Generic{
+					Generic: "blob-multinode",
+				},
 			}
-			definition := []byte("multinode-definition")
+			contents := []byte("multinode-content")
 
 			require.NoError(t, pub.SendRequest(&livekit.SignalRequest{
-				Message: &livekit.SignalRequest_DefineDataTrackSchema{
-					DefineDataTrackSchema: &livekit.DefineDataTrackSchemaRequest{
-						SchemaDefinition: &livekit.DataTrackSchemaDefinition{
-							Id:         schemaID,
-							Definition: definition,
+				Message: &livekit.SignalRequest_StoreDataBlobRequest{
+					StoreDataBlobRequest: &livekit.StoreDataBlobRequest{
+						Blob: &livekit.DataBlob{
+							Key:      key,
+							Contents: contents,
 						},
 					},
 				},
@@ -485,40 +486,40 @@ func TestMultiNodeAsyncAttributes(t *testing.T) {
 			time.Sleep(syncDelay)
 			require.Equal(t, 0, pubCapture.requestResponseCount(), "publisher should not receive an error response on success")
 
-			// subscriber on a different node asks for the schema; the request routes
+			// subscriber on a different node asks for the blob; the request routes
 			// across nodes to the publisher.
 			require.NoError(t, sub.SendRequest(&livekit.SignalRequest{
-				Message: &livekit.SignalRequest_GetDataTrackSchema{
-					GetDataTrackSchema: &livekit.GetDataTrackSchemaRequest{
+				Message: &livekit.SignalRequest_GetDataBlobRequest{
+					GetDataBlobRequest: &livekit.GetDataBlobRequest{
 						ParticipantIdentity: "pub",
-						SchemaId:            schemaID,
+						Key:                 key,
 					},
 				},
 			}))
 
 			testutils.WithTimeout(t, func() string {
-				resp := subCapture.takeSchemaResponse()
+				resp := subCapture.takeBlobResponse()
 				if resp == nil {
-					return "subscriber did not receive schema response"
+					return "subscriber did not receive blob response"
 				}
-				if resp.SchemaDefinition == nil {
-					return "schema response missing definition"
+				if resp.Blob == nil {
+					return "blob response missing blob"
 				}
-				if resp.SchemaDefinition.Id.Name != schemaID.Name {
-					return fmt.Sprintf("expected schema name %s, got %s", schemaID.Name, resp.SchemaDefinition.Id.Name)
+				if resp.Blob.Key.String() != key.String() {
+					return fmt.Sprintf("expected data blob key %s, got %s", key.String(), resp.Blob.Key.String())
 				}
-				if string(resp.SchemaDefinition.Definition) != string(definition) {
-					return fmt.Sprintf("expected definition %q, got %q", definition, resp.SchemaDefinition.Definition)
+				if string(resp.Blob.Contents) != string(contents) {
+					return fmt.Sprintf("expected contents %q, got %q", contents, resp.Blob.Contents)
 				}
 				return ""
 			})
 
 			// requesting an unknown publisher identity should return NOT_FOUND
 			require.NoError(t, sub.SendRequest(&livekit.SignalRequest{
-				Message: &livekit.SignalRequest_GetDataTrackSchema{
-					GetDataTrackSchema: &livekit.GetDataTrackSchemaRequest{
+				Message: &livekit.SignalRequest_GetDataBlobRequest{
+					GetDataBlobRequest: &livekit.GetDataBlobRequest{
 						ParticipantIdentity: "unknown-publisher",
-						SchemaId:            schemaID,
+						Key:                 key,
 					},
 				},
 			}))

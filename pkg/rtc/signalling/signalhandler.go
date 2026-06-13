@@ -152,11 +152,11 @@ func (s *signalhandler) HandleMessage(msg proto.Message) error {
 	case *livekit.SignalRequest_UpdateDataSubscription:
 		s.params.Participant.HandleUpdateDataSubscription(msg.UpdateDataSubscription)
 
-	case *livekit.SignalRequest_DefineDataTrackSchema:
-		s.params.Participant.HandleDefineDataTrackSchemaRequest(msg.DefineDataTrackSchema)
+	case *livekit.SignalRequest_StoreDataBlobRequest:
+		s.params.Participant.HandleStoreDataBlobRequest(msg.StoreDataBlobRequest)
 
-	case *livekit.SignalRequest_GetDataTrackSchema:
-		s.params.Participant.HandleGetDataTrackSchemaRequest(msg.GetDataTrackSchema)
+	case *livekit.SignalRequest_GetDataBlobRequest:
+		s.params.Participant.HandleGetDataBlobRequest(msg.GetDataBlobRequest)
 	}
 
 	return nil

@@ -225,7 +225,7 @@ type ParticipantParams struct {
 	EnableRTPStreamRestartDetection bool
 	ForceBackupCodecPolicySimulcast bool
 	DisableTransceiverReuseForE2EE  bool
-	EnableParticipantDataBlobs      bool
+	EnableParticipantDataBlob       bool
 }
 
 type ParticipantImpl struct {
@@ -335,7 +335,7 @@ type ParticipantImpl struct {
 	rpcPendingAcks      map[string]*utils.DataChannelRpcPendingAckHandler
 	rpcPendingResponses map[string]*utils.DataChannelRpcPendingResponseHandler
 
-	asyncAttributes *ParticipantAsyncAttributes
+	dataBlob *ParticipantDataBlob
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -374,7 +374,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		telemetryGuard:                &telemetry.ReferenceGuard{},
 		nextSubscribedDataTrackHandle: uint16(rand.Intn(256)),
 		requireBroadcast:              params.Grants.Metadata != "" || len(params.Grants.Attributes) != 0,
-		asyncAttributes: NewParticipantAsyncAttributes(ParticipantAsyncAttributesParams{
+		dataBlob: NewParticipantDataBlob(ParticipantDataBlobParams{
 			Logger: params.Logger,
 		}),
 	}
