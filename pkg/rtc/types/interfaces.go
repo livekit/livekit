@@ -444,6 +444,7 @@ type LocalParticipant interface {
 
 	// permissions
 	ClaimGrants() *auth.ClaimGrants
+	TokenExpiresAt() time.Time
 	SetPermission(permission *livekit.ParticipantPermission) bool
 	CanPublish() bool
 	CanPublishSource(source livekit.TrackSource) bool
@@ -839,6 +840,7 @@ type DataTrack interface {
 	AddSubscriber(sub LocalParticipant) (DataDownTrack, error)
 	RemoveSubscriber(participantID livekit.ParticipantID)
 	IsSubscriber(subID livekit.ParticipantID) bool
+	RevokeDisallowedSubscribers(allowedSubscriberIdentities []livekit.ParticipantIdentity) []livekit.ParticipantIdentity
 
 	AddDataDownTrack(sender DataTrackSender) error
 	DeleteDataDownTrack(subscriberID livekit.ParticipantID)
@@ -851,6 +853,7 @@ type DataTrack interface {
 //counterfeiter:generate . DataDownTrack
 type DataDownTrack interface {
 	Close()
+	OnClose(fn func())
 
 	Handle() uint16
 	PublishDataTrack() DataTrack
@@ -915,8 +918,10 @@ type DataResolverResult struct {
 	TrackChangedNotifier ChangeNotifier
 	TrackRemovedNotifier ChangeNotifier
 	DataTrack            DataTrack
-	PublisherID          livekit.ParticipantID
-	PublisherIdentity    livekit.ParticipantIdentity
+	// is permission given to the requesting participant
+	HasPermission     bool
+	PublisherID       livekit.ParticipantID
+	PublisherIdentity livekit.ParticipantIdentity
 }
 
 // MediaTrackResolver locates a specific media track for a subscriber

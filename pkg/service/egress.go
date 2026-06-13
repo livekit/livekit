@@ -72,6 +72,33 @@ func NewEgressLauncher(client rpc.EgressClient, io IOClient, store ServiceStore)
 	}
 }
 
+func (s *EgressService) StartEgress(ctx context.Context, req *livekit.StartEgressRequest) (*livekit.EgressInfo, error) {
+	sourceType, outputType := egress.GetTypes(&livekit.EgressInfo_Egress{Egress: req})
+	fields := []any{
+		"room", req.RoomName,
+		"sourceType", sourceType,
+		"outputType", outputType,
+	}
+	defer func() {
+		AppendLogFields(ctx, fields...)
+	}()
+
+	egressID, idFromCtx := EgressID(ctx)
+	ei, err := s.startEgress(ctx, &rpc.StartEgressRequest{
+		EgressId: egressID,
+		Request: &rpc.StartEgressRequest_Egress{
+			Egress: req,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !idFromCtx {
+		fields = append(fields, "egressID", ei.EgressId)
+	}
+	return ei, err
+}
+
 func (s *EgressService) StartRoomCompositeEgress(ctx context.Context, req *livekit.RoomCompositeEgressRequest) (*livekit.EgressInfo, error) {
 	fields := []any{
 		"room", req.RoomName,
@@ -230,6 +257,8 @@ func (s *egressLauncher) StartEgress(ctx context.Context, req *rpc.StartEgressRe
 			roomName = v.TrackComposite.RoomName
 		case *rpc.StartEgressRequest_Track:
 			roomName = v.Track.RoomName
+		case *rpc.StartEgressRequest_Egress:
+			roomName = v.Egress.RoomName
 		}
 
 		if roomName != "" {
@@ -252,13 +281,6 @@ func (s *egressLauncher) StartEgress(ctx context.Context, req *rpc.StartEgressRe
 	}
 
 	return info, nil
-}
-
-func (s *egressLauncher) StopEgress(ctx context.Context, req *livekit.StopEgressRequest) (*livekit.EgressInfo, error) {
-	if s.client == nil {
-		return nil, ErrEgressNotConnected
-	}
-	return s.client.StopEgress(ctx, req.EgressId, req)
 }
 
 type LayoutMetadata struct {
@@ -370,4 +392,11 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 	}
 
 	return info, nil
+}
+
+func (s *egressLauncher) StopEgress(ctx context.Context, req *livekit.StopEgressRequest) (*livekit.EgressInfo, error) {
+	if s.client == nil {
+		return nil, ErrEgressNotConnected
+	}
+	return s.client.StopEgress(ctx, req.EgressId, req)
 }

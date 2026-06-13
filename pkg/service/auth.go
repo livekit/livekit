@@ -19,6 +19,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/twitchtv/twirp"
 
@@ -35,8 +36,9 @@ const (
 type grantsKey struct{}
 
 type grantsValue struct {
-	claims *auth.ClaimGrants
-	apiKey string
+	claims    *auth.ClaimGrants
+	apiKey    string
+	expiresAt time.Time
 }
 
 var (
@@ -90,17 +92,23 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 			return
 		}
 
-		_, grants, err := v.Verify(secret)
+		claims, grants, err := v.Verify(secret)
 		if err != nil {
 			HandleError(w, r, http.StatusUnauthorized, errors.New("invalid token: "+authToken+", error: "+err.Error()))
 			return
 		}
 
+		var expiresAt time.Time
+		if claims != nil && claims.ExpiresAt != nil {
+			expiresAt = claims.ExpiresAt.Time
+		}
+
 		// set grants in context
 		ctx := r.Context()
 		r = r.WithContext(context.WithValue(ctx, grantsKey{}, &grantsValue{
-			claims: grants,
-			apiKey: v.APIKey(),
+			claims:    grants,
+			apiKey:    v.APIKey(),
+			expiresAt: expiresAt,
 		}))
 	}
 
@@ -123,6 +131,15 @@ func GetGrants(ctx context.Context) *auth.ClaimGrants {
 	return v.claims
 }
 
+func GetTokenExpiresAt(ctx context.Context) time.Time {
+	val := ctx.Value(grantsKey{})
+	v, ok := val.(*grantsValue)
+	if !ok {
+		return time.Time{}
+	}
+	return v.expiresAt
+}
+
 func GetAPIKey(ctx context.Context) string {
 	val := ctx.Value(grantsKey{})
 	v, ok := val.(*grantsValue)
@@ -133,9 +150,14 @@ func GetAPIKey(ctx context.Context) string {
 }
 
 func WithGrants(ctx context.Context, grants *auth.ClaimGrants, apiKey string) context.Context {
+	return WithGrantsExpiry(ctx, grants, apiKey, time.Time{})
+}
+
+func WithGrantsExpiry(ctx context.Context, grants *auth.ClaimGrants, apiKey string, expiresAt time.Time) context.Context {
 	return context.WithValue(ctx, grantsKey{}, &grantsValue{
-		claims: grants,
-		apiKey: apiKey,
+		claims:    grants,
+		apiKey:    apiKey,
+		expiresAt: expiresAt,
 	})
 }
 

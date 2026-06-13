@@ -218,6 +218,7 @@ func (s *RTCService) validateInternal(
 		Identity:                livekit.ParticipantIdentity(res.grants.Identity),
 		Name:                    livekit.ParticipantName(res.grants.Name),
 		Grants:                  res.grants,
+		TokenExpiresAt:          res.tokenExpiresAt,
 		Region:                  res.region,
 		CreateRoom:              res.createRoomRequest,
 		UseSinglePeerConnection: useSinglePeerConnection,
@@ -364,6 +365,7 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 
 	roomName, pi, code, err = s.validateInternal(pLogger, r, needsJoinRequest, false)
 	if err != nil {
+		prometheus.IncrementParticipantJoinValidationFail(1)
 		resolveLogger(true)
 		HandleError(w, r, code, err, getLoggerFields()...)
 		return

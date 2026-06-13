@@ -36,19 +36,22 @@ const (
 )
 
 var (
-	bytesIn                    atomic.Uint64
-	bytesOut                   atomic.Uint64
-	packetsIn                  atomic.Uint64
-	packetsOut                 atomic.Uint64
-	nackTotal                  atomic.Uint64
-	retransmitBytes            atomic.Uint64
-	retransmitPackets          atomic.Uint64
-	participantSignalConnected atomic.Uint64
-	participantRTCConnected    atomic.Uint64
-	participantRTCInit         atomic.Uint64
-	participantRTCCanceled     atomic.Uint64
-	forwardLatency             atomic.Uint32
-	forwardJitter              atomic.Uint32
+	bytesIn                           atomic.Uint64
+	bytesOut                          atomic.Uint64
+	packetsIn                         atomic.Uint64
+	packetsOut                        atomic.Uint64
+	nackTotal                         atomic.Uint64
+	retransmitBytes                   atomic.Uint64
+	retransmitPackets                 atomic.Uint64
+	participantSignalConnected        atomic.Uint64
+	participantSignalFailed           atomic.Uint64
+	participantSignalValidationFailed atomic.Uint64
+	participantRTCConnected           atomic.Uint64
+	participantRTCInit                atomic.Uint64
+	participantRTCCanceled            atomic.Uint64
+	participantRTCActive              atomic.Uint64
+	forwardLatency                    atomic.Uint32
+	forwardJitter                     atomic.Uint32
 
 	promPacketLabels          = []string{"direction", "transmission", "country"}
 	promPacketTotal           *prometheus.CounterVec
@@ -300,9 +303,17 @@ func IncrementParticipantJoin(join uint32) {
 	}
 }
 
-func IncrementParticipantJoinFail(join uint32) {
-	if join > 0 {
-		promParticipantJoin.WithLabelValues("signal_failed").Add(float64(join))
+func IncrementParticipantJoinFail(fail uint32) {
+	if fail > 0 {
+		participantSignalFailed.Add(uint64(fail))
+		promParticipantJoin.WithLabelValues("signal_failed").Add(float64(fail))
+	}
+}
+
+func IncrementParticipantJoinValidationFail(validationFail uint32) {
+	if validationFail > 0 {
+		participantSignalValidationFailed.Add(uint64(validationFail))
+		promParticipantJoin.WithLabelValues("signal_validation_failed").Add(float64(validationFail))
 	}
 }
 
@@ -320,9 +331,16 @@ func IncrementParticipantRtcConnected(join uint32) {
 	}
 }
 
+func IncrementParticipantRtcActive(active uint32) {
+	if active > 0 {
+		participantRTCActive.Add(uint64(active))
+		promParticipantJoin.WithLabelValues("rtc_active").Add(float64(active))
+	}
+}
+
 func IncrementParticipantRtcCanceled(numCancels uint64) {
 	if numCancels > 0 {
-		participantRTCConnected.Add(numCancels)
+		participantRTCCanceled.Add(numCancels)
 		promParticipantJoin.WithLabelValues("rtc_canceled").Add(float64(numCancels))
 	}
 }

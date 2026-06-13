@@ -135,6 +135,7 @@ func (t *telemetryService) ParticipantActive(
 			prometheus.AddParticipant()
 		}
 		worker.SetConnected()
+		prometheus.IncrementParticipantRtcActive(1)
 
 		ev := newParticipantEvent(livekit.AnalyticsEventType_PARTICIPANT_ACTIVE, room, participant)
 		ev.ClientMeta = clientMeta

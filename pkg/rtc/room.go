@@ -686,14 +686,14 @@ func (r *Room) onSyncState(participant types.LocalParticipant, state *livekit.Sy
 	// synthesize a track setting for each disabled track,
 	// can be set before adding subscriptions,
 	// in fact it is done before so that setting can be updated immediately upon subscription.
-	for _, trackSid := range state.TrackSidsDisabled {
+	for _, trackSid := range state.GetTrackSidsDisabled() {
 		participant.UpdateSubscribedTrackSettings(livekit.TrackID(trackSid), &livekit.UpdateTrackSettings{Disabled: true})
 	}
 
 	participant.HandleUpdateSubscriptions(
-		livekit.StringsAsIDs[livekit.TrackID](state.Subscription.TrackSids),
-		state.Subscription.ParticipantTracks,
-		state.Subscription.Subscribe,
+		livekit.StringsAsIDs[livekit.TrackID](state.GetSubscription().GetTrackSids()),
+		state.GetSubscription().GetParticipantTracks(),
+		state.GetSubscription().GetSubscribe(),
 	)
 	return nil
 }
@@ -703,6 +703,9 @@ func (r *Room) onUpdateSubscriptionPermission(participant types.LocalParticipant
 		return err
 	}
 	for _, track := range participant.GetPublishedTracks() {
+		r.trackManager.NotifyTrackChanged(track.ID())
+	}
+	for _, track := range participant.GetPublishedDataTracks() {
 		r.trackManager.NotifyTrackChanged(track.ID())
 	}
 	return nil
@@ -746,6 +749,13 @@ func (r *Room) ResolveDataTrackForSubscriber(sub types.LocalParticipant, trackID
 	res.TrackRemovedNotifier = r.trackManager.GetOrCreateTrackRemoveNotifier(trackID)
 	res.PublisherIdentity = info.PublisherIdentity
 	res.PublisherID = info.PublisherID
+
+	pub := r.GetParticipantByID(info.PublisherID)
+	// when publisher is not found, we will assume it doesn't have permission to access
+	if pub != nil {
+		res.HasPermission = IsParticipantExemptFromTrackPermissionsRestrictions(sub) || pub.HasPermission(trackID, sub.Identity())
+	}
+
 	return res
 }
 
