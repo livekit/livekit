@@ -97,6 +97,7 @@ func (p *ParticipantImpl) ProcessGetDataBlobRequest(req *livekit.GetDataBlobRequ
 	dataBlob := publisher.GetDataBlob(req.Key)
 	if dataBlob == nil {
 		p.sendRequestResponse(&livekit.RequestResponse{
+			RequestId: req.RequestId,
 			Reason:  livekit.RequestResponse_NOT_FOUND,
 			Message: "data blob not found",
 		})
