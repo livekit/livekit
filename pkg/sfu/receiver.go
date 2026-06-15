@@ -93,6 +93,23 @@ func WithForwardStats(forwardStats *ForwardStats) ReceiverOpts {
 	}
 }
 
+// DefaultGOPCacheMaxDuration bounds the cached GOP (and sizes the retransmit bucket) when the video
+// GOP cache is enabled via WithGOPCache.
+const DefaultGOPCacheMaxDuration = 3 * time.Second
+
+// WithGOPCache enables the video GOP cache on the receiver so a newly added down track is
+// bootstrapped by replaying the cached GOP instead of triggering a PLI. maxDuration bounds the
+// cached GOP (<= 0 uses DefaultGOPCacheMaxDuration). No-op for audio receivers.
+func WithGOPCache(maxDuration time.Duration) ReceiverOpts {
+	return func(w *WebRTCReceiver) *WebRTCReceiver {
+		if maxDuration <= 0 {
+			maxDuration = DefaultGOPCacheMaxDuration
+		}
+		w.ReceiverBase.EnableGOPCache(maxDuration)
+		return w
+	}
+}
+
 // NewWebRTCReceiver creates a new webrtc track receiver
 func NewWebRTCReceiver(
 	receiver *webrtc.RTPReceiver,

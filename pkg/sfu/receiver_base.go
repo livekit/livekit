@@ -215,6 +215,11 @@ type ReceiverBase struct {
 	videoSizes         [buffer.DefaultMaxLayerSpatial + 1]codec.VideoSize
 	onVideoSizeChanged func()
 
+	// video GOP cache: when enabled, buffers retain the current GOP and a newly added down track is
+	// bootstrapped by replaying it (see EnableGOPCache / replayGOP)
+	gopCacheEnabled     bool
+	gopCacheMaxDuration time.Duration
+
 	rtt uint32
 
 	streamTrackerManager *StreamTrackerManager
@@ -560,9 +565,150 @@ func (r *ReceiverBase) AddDownTrack(track TrackSender) error {
 	track.UpTrackMaxPublishedLayerChange(r.streamTrackerManager.GetMaxPublishedLayer())
 	track.UpTrackMaxTemporalLayerSeenChange(r.streamTrackerManager.GetMaxTemporalLayerSeen())
 
+	if r.gopCacheEnabled && r.Kind() == webrtc.RTPCodecTypeVideo {
+		// Bootstrap the new track from the cached GOP before joining the live broadcast: replay the
+		// GOP (paced) and catch up to the live forwarding point, then Store so the live feed takes
+		// over seamlessly. Held out of the broadcast during replay to avoid interleaving replayed and
+		// live packets.
+		go func() {
+			r.replayGOP(track)
+			if r.IsClosed() || track.IsClosed() {
+				return
+			}
+			r.downTrackSpreader.Store(track)
+			r.params.Logger.Debugw("downtrack added after GOP replay", "subscriberID", track.SubscriberID())
+		}()
+		return nil
+	}
+
 	r.downTrackSpreader.Store(track)
 	r.params.Logger.Debugw("downtrack added", "subscriberID", track.SubscriberID())
 	return nil
+}
+
+// EnableGOPCache turns on the video GOP cache for this receiver: each (current and future) buffer
+// retains the current GOP, and a newly added down track is bootstrapped from it (see replayGOP).
+// maxDuration bounds the cached GOP and sizes the retransmit bucket accordingly. No-op for audio.
+func (r *ReceiverBase) EnableGOPCache(maxDuration time.Duration) {
+	if r.Kind() != webrtc.RTPCodecTypeVideo {
+		return
+	}
+
+	r.bufferMu.Lock()
+	r.gopCacheEnabled = true
+	r.gopCacheMaxDuration = maxDuration
+	buffers := r.buffers
+	r.bufferMu.Unlock()
+
+	for _, buff := range buffers {
+		if buff != nil {
+			buff.EnableGOPCache(maxDuration)
+		}
+	}
+}
+
+// gopReplayMaxCatchupRounds bounds how many catch-up passes a GOP replay makes before giving up and
+// joining the live feed (replaying at ~2x real time converges quickly; this guards against a
+// pathological case where live keeps outrunning the replay).
+const gopReplayMaxCatchupRounds = 8
+
+// replayGOP bootstraps a freshly added down track by replaying the publisher's cached GOP, then the
+// packets accumulated since, until it catches up to the live forwarding point. Packets are paced at
+// half the (estimated) video frame interval so the replay runs at ~2x real time and converges on
+// live. It writes directly to the track (which is not yet in the live broadcast), so there is no
+// interleaving with live packets.
+//
+// It replays the highest spatial layer that currently has a cached GOP: a subscriber requesting full
+// quality has its forwarder targeting the top layer, and lower layers may not even be flowing (e.g.
+// paused by dynacast), so layer 0 often has no GOP.
+func (r *ReceiverBase) replayGOP(track TrackSender) {
+	var (
+		buff  buffer.BufferProvider
+		pkts  []*buffer.ExtPacket
+		layer int32 = buffer.InvalidLayerSpatial
+	)
+	for l := int32(buffer.DefaultMaxLayerSpatial); l >= 0; l-- {
+		b, _ := r.getBuffer(l)
+		if b == nil {
+			continue
+		}
+		if got, ok := b.GetGOP(); ok && len(got) > 0 {
+			buff, pkts, layer = b, got, l
+			break
+		}
+	}
+	if layer == buffer.InvalidLayerSpatial {
+		// no usable GOP cached on any layer - the down track falls back to requesting a key frame (PLI)
+		r.params.Logger.Debugw(
+			"subscriber bootstrap: GOP cache miss, falling back to PLI",
+			"subscriberID", track.SubscriberID(),
+			"gopCacheEnabled", r.gopCacheEnabled,
+		)
+		return
+	}
+
+	half := r.gopReplayFrameInterval(layer) / 2
+	r.params.Logger.Debugw(
+		"subscriber bootstrap: GOP cache hit, replaying",
+		"subscriberID", track.SubscriberID(),
+		"layer", layer,
+		"packets", len(pkts),
+		"frameIntervalHalf", half,
+	)
+
+	var lastSN uint64
+	write := func(eps []*buffer.ExtPacket) bool {
+		var lastTS uint64
+		for i, ep := range eps {
+			if r.IsClosed() || track.IsClosed() {
+				return false
+			}
+			// pace at frame boundaries (a new timestamp starts a new frame)
+			if i > 0 && ep.ExtTimestamp != lastTS && half > 0 {
+				time.Sleep(half)
+			}
+			lastTS = ep.ExtTimestamp
+			rp := *ep
+			rp.Arrival = mono.UnixNano()
+			track.WriteRTP(&rp, layer)
+			lastSN = ep.ExtSequenceNumber
+		}
+		return true
+	}
+
+	if !write(pkts) {
+		return
+	}
+
+	// catch up to live: replay the packets that arrived during the replay, repeating (each round is
+	// shorter since the replay outruns live) until nothing newer remains.
+	for round := 0; round < gopReplayMaxCatchupRounds; round++ {
+		if r.IsClosed() || track.IsClosed() {
+			return
+		}
+		more, ok := buff.GetPacketsAfter(lastSN)
+		if !ok || len(more) == 0 {
+			break
+		}
+		if !write(more) {
+			return
+		}
+	}
+}
+
+// gopReplayFrameInterval estimates the video frame interval for the spatial layer, used to pace a
+// GOP replay. Falls back to 30fps when the frame rate is not yet known.
+func (r *ReceiverBase) gopReplayFrameInterval(layer int32) time.Duration {
+	var fps float32
+	for _, f := range r.GetTemporalLayerFpsForSpatial(layer) {
+		if f > fps {
+			fps = f
+		}
+	}
+	if fps <= 0 {
+		fps = 30
+	}
+	return time.Duration(float64(time.Second) / float64(fps))
 }
 
 func (r *ReceiverBase) DeleteDownTrack(subscriberID livekit.ParticipantID) {
@@ -789,6 +935,9 @@ func (r *ReceiverBase) setupBuffer(buff buffer.BufferProvider, layer int32, rtt 
 	})
 	if r.Kind() == webrtc.RTPCodecTypeVideo && layer == 0 {
 		buff.OnCodecChange(r.handleCodecChange)
+	}
+	if r.gopCacheEnabled && r.Kind() == webrtc.RTPCodecTypeVideo {
+		buff.EnableGOPCache(r.gopCacheMaxDuration)
 	}
 	buff.OnStreamRestart(func(reason string) {
 		r.restartInternal(reason, true)

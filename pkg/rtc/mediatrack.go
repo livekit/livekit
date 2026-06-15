@@ -419,6 +419,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			sfu.WithLoadBalanceThreshold(20),
 			sfu.WithForwardStats(t.params.ForwardStats),
 			sfu.WithEnableRTPStreamRestartDetection(t.params.EnableRTPStreamRestartDetection),
+			sfu.WithGOPCache(sfu.DefaultGOPCacheMaxDuration),
 		)
 		newWR.OnCloseHandler(func() {
 			t.MediaTrackReceiver.SetClosing(false)
