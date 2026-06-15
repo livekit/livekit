@@ -155,6 +155,11 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 		DisableSenderReportPassThrough: params.Subscriber.GetDisableSenderReportPassThrough(),
 		SupportsCodecChange:            params.Subscriber.SupportsCodecChange(),
 		Listener:                       s,
+		FlexFEC: sfu.FlexFECParams{
+			Enabled:         params.SubscriberConfig.FlexFEC.Enabled,
+			NumMediaPackets: params.SubscriberConfig.FlexFEC.NumMediaPackets,
+			NumFECPackets:   params.SubscriberConfig.FlexFEC.NumFECPackets,
+		},
 	})
 	if err != nil {
 		return nil, err

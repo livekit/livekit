@@ -46,6 +46,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/packettrailer"
 	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
@@ -295,6 +296,13 @@ var _ TrackSender = (*DownTrack)(nil)
 
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
+// FlexFECParams configures FlexFEC-03 generation toward the subscriber.
+type FlexFECParams struct {
+	Enabled         bool
+	NumMediaPackets uint32
+	NumFECPackets   uint32
+}
+
 type DownTrackParams struct {
 	Codecs                         []webrtc.RTPCodecParameters
 	IsEncrypted                    bool
@@ -313,6 +321,7 @@ type DownTrackParams struct {
 	SupportsCodecChange            bool
 	StripPacketTrailer             bool
 	Listener                       DownTrackListener
+	FlexFEC                        FlexFECParams
 }
 
 // DownTrack implements webrtc.TrackLocal, is the track used to write packets
@@ -329,8 +338,11 @@ type DownTrack struct {
 	kind              webrtc.RTPCodecType
 	ssrc              uint32
 	ssrcRTX           uint32
+	ssrcFEC           uint32
 	payloadType       atomic.Uint32
 	payloadTypeRTX    atomic.Uint32
+	payloadTypeFEC    atomic.Uint32
+	fecWriter         atomic.Pointer[fecWriter]
 	sequencer         *sequencer
 	rtxSequenceNumber atomic.Uint64
 
@@ -620,14 +632,24 @@ func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters,
 
 		d.ssrc = uint32(t.SSRC())
 		d.ssrcRTX = uint32(t.SSRCRetransmission())
+		d.ssrcFEC = uint32(t.SSRCForwardErrorCorrection())
 		d.payloadType.Store(uint32(codec.PayloadType))
 		d.payloadTypeRTX.Store(uint32(utils.FindRTXPayloadType(codec.PayloadType, d.negotiatedCodecParameters)))
+		d.payloadTypeFEC.Store(uint32(utils.FindFlexFECPayloadType(d.negotiatedCodecParameters)))
+		d.maybeCreateFECWriter()
 		logFields = append(
 			logFields,
 			"payloadType", d.payloadType.Load(),
 			"payloadTypeRTX", d.payloadTypeRTX.Load(),
 			"codecParameters", d.negotiatedCodecParameters,
 		)
+		if fw := d.fecWriter.Load(); fw != nil {
+			logFields = append(
+				logFields,
+				"ssrcFEC", d.ssrcFEC,
+				"payloadTypeFEC", d.payloadTypeFEC.Load(),
+			)
+		}
 		d.params.Logger.Debugw("DownTrack.Bind", logFields...)
 
 		d.writeStream = t.WriteStream()
@@ -1195,6 +1217,11 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		Pool:               PacketFactory,
 		PoolEntity:         poolEntity,
 	}
+	if d.fecWriter.Load() != nil {
+		// protect the packet as sent on the wire, the pacer patched header
+		// included
+		pacerPacket.OnSent = d.onMediaPacketSentForFEC
+	}
 	d.pacer.Enqueue(pacerPacket)
 
 	if extPkt.IsKeyFrame {
@@ -1332,6 +1359,11 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 			TransportWideExtID: uint8(d.transportWideExtID),
 			WriteStream:        d.writeStream,
+		}
+		if d.fecWriter.Load() != nil {
+			// padding probes consume media sequence numbers, keep them in
+			// the FEC window so probing does not break its continuity
+			pacerPacket.OnSent = d.onMediaPacketSentForFEC
 		}
 		d.pacer.Enqueue(pacerPacket)
 
@@ -2448,6 +2480,73 @@ func (d *DownTrack) addDummyExtensions(hdr *rtp.Header) {
 	}
 }
 
+// maybeCreateFECWriter starts FlexFEC generation when enabled and the
+// subscriber negotiated a FEC SSRC and the flexfec-03 codec.
+func (d *DownTrack) maybeCreateFECWriter() {
+	if !d.params.FlexFEC.Enabled ||
+		d.kind != webrtc.RTPCodecTypeVideo ||
+		d.ssrcFEC == 0 ||
+		d.payloadTypeFEC.Load() == 0 ||
+		d.fecWriter.Load() != nil {
+		return
+	}
+
+	d.fecWriter.Store(newFECWriter(
+		d.ssrcFEC,
+		uint8(d.payloadTypeFEC.Load()),
+		d.params.FlexFEC.NumMediaPackets,
+		d.params.FlexFEC.NumFECPackets,
+		d.params.Logger,
+	))
+}
+
+// onMediaPacketSentForFEC is invoked by the pacer with the final on-wire
+// header and payload of every forwarded media packet. Completed protection
+// windows yield FEC packets which are queued behind the media they protect.
+func (d *DownTrack) onMediaPacketSentForFEC(hdr *rtp.Header, payload []byte) {
+	fw := d.fecWriter.Load()
+	if fw == nil {
+		return
+	}
+
+	fecPackets := fw.add(hdr, payload)
+	if len(fecPackets) == 0 {
+		return
+	}
+
+	bytesSent := uint64(0)
+	for i := range fecPackets {
+		fecHdr := fecPackets[i].Header
+		d.addDummyExtensions(&fecHdr)
+		headerSize := fecHdr.MarshalSize()
+
+		pacerPacket := pacer.PacketFactory.Get().(*pacer.Packet)
+		*pacerPacket = pacer.Packet{
+			Header:             &fecHdr,
+			HeaderSize:         headerSize,
+			Payload:            fecPackets[i].Payload,
+			ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
+			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
+			TransportWideExtID: uint8(d.transportWideExtID),
+			WriteStream:        d.writeStream,
+		}
+		bytesSent += uint64(headerSize + len(fecPackets[i].Payload))
+		d.pacer.Enqueue(pacerPacket)
+	}
+
+	prometheus.RecordFECDownstreamSent(len(fecPackets), bytesSent)
+}
+
+// FECWriterStats returns cumulative downstream FlexFEC generation counters,
+// the second return indicates whether FEC generation is active.
+func (d *DownTrack) FECWriterStats() (FECWriterStats, bool) {
+	fw := d.fecWriter.Load()
+	if fw == nil {
+		return FECWriterStats{}, false
+	}
+	return fw.Stats(), true
+}
+
 func (d *DownTrack) getTranslatedPayloadType(srcPT uint8) uint8 {
 	// send primary codec to subscriber if the publisher sent primary codec when red is negotiated,
 	// this will happen when the payload is too large to encode into red payload (exceeds mtu).
@@ -2468,6 +2567,17 @@ func (d *DownTrack) DebugInfo() map[string]any {
 		stats["NTPTime"] = senderReport.NTPTime
 		stats["RTPTime"] = senderReport.RTPTime
 		stats["PacketCount"] = senderReport.PacketCount
+	}
+
+	if fecStats, ok := d.FECWriterStats(); ok {
+		stats["FlexFEC"] = map[string]any{
+			"SSRC":             d.ssrcFEC,
+			"PayloadType":      d.payloadTypeFEC.Load(),
+			"PacketsSent":      fecStats.PacketsSent,
+			"BytesSent":        fecStats.BytesSent,
+			"PartialWindows":   fecStats.PartialWindows,
+			"DiscardedSingles": fecStats.DiscardedSingles,
+		}
 	}
 
 	return map[string]any{
