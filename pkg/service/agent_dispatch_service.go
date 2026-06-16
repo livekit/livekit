@@ -79,6 +79,7 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 		Metadata:      req.Metadata,
 		RestartPolicy: req.RestartPolicy,
 		Deployment:    req.Deployment,
+		Simulation:    req.Simulation,
 	}
 	return ag.agentDispatchClient.CreateDispatch(ctx, ag.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), dispatch)
 }
