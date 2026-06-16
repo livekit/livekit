@@ -60,6 +60,18 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 		return
 	}
 
+	if req.GetReliability() == livekit.DataTrackReliability_DTR_RELIABLE && !p.params.ClientInfo.SupportsReliableDataTrack() {
+		p.pubLogger.Warnw("client does not support reliable data tracks", nil, "req", logger.Proto(req))
+		p.sendRequestResponse(&livekit.RequestResponse{
+			Reason:  livekit.RequestResponse_NOT_ALLOWED,
+			Message: "client does not support reliable data tracks",
+			Request: &livekit.RequestResponse_PublishDataTrack{
+				PublishDataTrack: utils.CloneProto(req),
+			},
+		})
+		return
+	}
+
 	publishedDataTracks := p.UpDataTrackManager.GetPublishedDataTracks()
 	for _, dt := range publishedDataTracks {
 		message := ""
@@ -90,10 +102,11 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 	}
 
 	dti := &livekit.DataTrackInfo{
-		PubHandle:  req.PubHandle,
-		Sid:        guid.New(utils.DataTrackPrefix),
-		Name:       req.Name,
-		Encryption: req.Encryption,
+		PubHandle:   req.PubHandle,
+		Sid:         guid.New(utils.DataTrackPrefix),
+		Name:        req.Name,
+		Encryption:  req.Encryption,
+		Reliability: req.GetReliability(),
 	}
 	dt := NewDataTrack(
 		DataTrackParams{

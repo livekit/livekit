@@ -616,6 +616,10 @@ func (m *SubscriptionManager) reconcileDataTrackSubscription(s *dataTrackSubscri
 				// these are errors that are outside of our control, so we'll keep trying
 				// - ErrNoTrackPermission: publisher did not grant subscriber permission, may change any moment
 				// - ErrNoSubscribePermission: participant was not granted canSubscribe, may change any moment
+			case ErrReliableDataTrackUnsupported:
+				s.logger.Warnw("unsubscribing from unsupported reliable data track", err)
+				s.setDesired(false)
+				m.queueReconcile(s.trackID)
 			case ErrTrackNotFound:
 				// source track was never published or closed
 				// if after timeout we'd unsubscribe from it.

@@ -15,6 +15,8 @@
 package rtc
 
 import (
+	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -33,6 +35,8 @@ type dataTrackStats struct {
 	lock                  sync.Mutex
 	startTime             int64
 	endTime               int64
+	reportInterval        time.Duration
+	lastReportTime        int64
 	highestSequenceNumber uint16
 	numPackets            int
 	numPacketsLost        int
@@ -42,8 +46,16 @@ type dataTrackStats struct {
 }
 
 func newDataTrackStats(params dataTrackStatsParams) *dataTrackStats {
+	reportInterval := time.Duration(0)
+	if raw := os.Getenv("LIVEKIT_DATA_TRACK_STATS_INTERVAL_MS"); raw != "" {
+		if intervalMs, err := strconv.Atoi(raw); err == nil && intervalMs > 0 {
+			reportInterval = time.Duration(intervalMs) * time.Millisecond
+		}
+	}
+
 	return &dataTrackStats{
-		params: params,
+		params:         params,
+		reportInterval: reportInterval,
 	}
 }
 
@@ -84,6 +96,11 @@ func (d *dataTrackStats) Update(packet *datatrack.Packet, arrivalTime int64, pay
 	if packet.IsFinalOfFrame {
 		d.numFrames++
 	}
+
+	if d.reportInterval > 0 && arrivalTime-d.lastReportTime >= int64(d.reportInterval) {
+		d.lastReportTime = arrivalTime
+		d.logLocked("data track stats sample", arrivalTime)
+	}
 }
 
 func (d *dataTrackStats) Close() {
@@ -93,18 +110,29 @@ func (d *dataTrackStats) Close() {
 	d.endTime = mono.UnixNano()
 
 	if d.startTime != 0 {
-		duration := time.Duration(d.endTime - d.startTime).Seconds()
-		fps := float64(d.numFrames) / duration
-
-		d.params.Logger.Infow(
-			"data track stats",
-			"duration", duration,
-			"numPackets", d.numPackets,
-			"numPacketsLost", d.numPacketsLost,
-			"numPacketsOutOfOrder", d.numPacketsOutOfOrder,
-			"numFrames", d.numFrames,
-			"fps", fps,
-			"numBytes", d.numBytes,
-		)
+		d.logLocked("data track stats", d.endTime)
 	}
+}
+
+func (d *dataTrackStats) logLocked(message string, now int64) {
+	if d.startTime == 0 {
+		return
+	}
+
+	duration := time.Duration(now - d.startTime).Seconds()
+	fps := 0.0
+	if duration > 0 {
+		fps = float64(d.numFrames) / duration
+	}
+
+	d.params.Logger.Infow(
+		message,
+		"duration", duration,
+		"numPackets", d.numPackets,
+		"numPacketsLost", d.numPacketsLost,
+		"numPacketsOutOfOrder", d.numPacketsOutOfOrder,
+		"numFrames", d.numFrames,
+		"fps", fps,
+		"numBytes", d.numBytes,
+	)
 }

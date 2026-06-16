@@ -5,13 +5,15 @@ import (
 	"sync"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/protocol/livekit"
 )
 
 type FakeDataTrackTransport struct {
-	SendDataTrackMessageStub        func([]byte) error
+	SendDataTrackMessageStub        func([]byte, livekit.DataTrackReliability) error
 	sendDataTrackMessageMutex       sync.RWMutex
 	sendDataTrackMessageArgsForCall []struct {
 		arg1 []byte
+		arg2 livekit.DataTrackReliability
 	}
 	sendDataTrackMessageReturns struct {
 		result1 error
@@ -23,7 +25,7 @@ type FakeDataTrackTransport struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeDataTrackTransport) SendDataTrackMessage(arg1 []byte) error {
+func (fake *FakeDataTrackTransport) SendDataTrackMessage(arg1 []byte, arg2 livekit.DataTrackReliability) error {
 	var arg1Copy []byte
 	if arg1 != nil {
 		arg1Copy = make([]byte, len(arg1))
@@ -33,13 +35,14 @@ func (fake *FakeDataTrackTransport) SendDataTrackMessage(arg1 []byte) error {
 	ret, specificReturn := fake.sendDataTrackMessageReturnsOnCall[len(fake.sendDataTrackMessageArgsForCall)]
 	fake.sendDataTrackMessageArgsForCall = append(fake.sendDataTrackMessageArgsForCall, struct {
 		arg1 []byte
-	}{arg1Copy})
+		arg2 livekit.DataTrackReliability
+	}{arg1Copy, arg2})
 	stub := fake.SendDataTrackMessageStub
 	fakeReturns := fake.sendDataTrackMessageReturns
-	fake.recordInvocation("SendDataTrackMessage", []interface{}{arg1Copy})
+	fake.recordInvocation("SendDataTrackMessage", []interface{}{arg1Copy, arg2})
 	fake.sendDataTrackMessageMutex.Unlock()
 	if stub != nil {
-		return stub(arg1)
+		return stub(arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1
@@ -53,17 +56,17 @@ func (fake *FakeDataTrackTransport) SendDataTrackMessageCallCount() int {
 	return len(fake.sendDataTrackMessageArgsForCall)
 }
 
-func (fake *FakeDataTrackTransport) SendDataTrackMessageCalls(stub func([]byte) error) {
+func (fake *FakeDataTrackTransport) SendDataTrackMessageCalls(stub func([]byte, livekit.DataTrackReliability) error) {
 	fake.sendDataTrackMessageMutex.Lock()
 	defer fake.sendDataTrackMessageMutex.Unlock()
 	fake.SendDataTrackMessageStub = stub
 }
 
-func (fake *FakeDataTrackTransport) SendDataTrackMessageArgsForCall(i int) []byte {
+func (fake *FakeDataTrackTransport) SendDataTrackMessageArgsForCall(i int) ([]byte, livekit.DataTrackReliability) {
 	fake.sendDataTrackMessageMutex.RLock()
 	defer fake.sendDataTrackMessageMutex.RUnlock()
 	argsForCall := fake.sendDataTrackMessageArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeDataTrackTransport) SendDataTrackMessageReturns(result1 error) {

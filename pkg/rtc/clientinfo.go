@@ -130,6 +130,10 @@ func (c ClientInfo) SupportsPacketTrailer() bool {
 	return c.HasCapability(livekit.ClientInfo_CAP_PACKET_TRAILER)
 }
 
+func (c ClientInfo) SupportsReliableDataTrack() bool {
+	return c.HasCapability(livekit.ClientInfo_CAP_RELIABLE_DATA_TRACK)
+}
+
 // compareVersion compares a semver against the current client SDK version
 // returning 1 if current version is greater than version
 // 0 if they are the same, and -1 if it's an earlier version

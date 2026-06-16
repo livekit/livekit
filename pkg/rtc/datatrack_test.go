@@ -69,3 +69,36 @@ func TestDataTrackRevokeDisallowedSubscribers(t *testing.T) {
 	require.False(t, dt.IsSubscriber(disallowed.ID()))
 	require.True(t, dt.IsSubscriber(recorder.ID()))
 }
+
+func TestDataTrackReliableRequiresSubscriberCapability(t *testing.T) {
+	dt := NewDataTrack(
+		DataTrackParams{
+			Logger:              logger.GetLogger(),
+			ParticipantID:       func() livekit.ParticipantID { return "pubID" },
+			ParticipantIdentity: "pub",
+		},
+		&livekit.DataTrackInfo{
+			PubHandle:   1,
+			Sid:         "DTR_test",
+			Name:        "test",
+			Reliability: livekit.DataTrackReliability_DTR_RELIABLE,
+		},
+	)
+	defer dt.Close()
+
+	unsupported := newTestDataTrackSubscriber("oldID", "old", false)
+	unsupported.GetClientInfoReturns(&livekit.ClientInfo{})
+	_, err := dt.AddSubscriber(unsupported)
+	require.ErrorIs(t, err, ErrReliableDataTrackUnsupported)
+	require.False(t, dt.IsSubscriber(unsupported.ID()))
+
+	supported := newTestDataTrackSubscriber("newID", "new", false)
+	supported.GetClientInfoReturns(&livekit.ClientInfo{
+		Capabilities: []livekit.ClientInfo_Capability{
+			livekit.ClientInfo_CAP_RELIABLE_DATA_TRACK,
+		},
+	})
+	_, err = dt.AddSubscriber(supported)
+	require.NoError(t, err)
+	require.True(t, dt.IsSubscriber(supported.ID()))
+}

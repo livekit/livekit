@@ -91,6 +91,16 @@ type FakeDataTrack struct {
 	pubHandleReturnsOnCall map[int]struct {
 		result1 uint16
 	}
+	ReliabilityStub        func() livekit.DataTrackReliability
+	reliabilityMutex       sync.RWMutex
+	reliabilityArgsForCall []struct {
+	}
+	reliabilityReturns struct {
+		result1 livekit.DataTrackReliability
+	}
+	reliabilityReturnsOnCall map[int]struct {
+		result1 livekit.DataTrackReliability
+	}
 	PublisherIDStub        func() livekit.ParticipantID
 	publisherIDMutex       sync.RWMutex
 	publisherIDArgsForCall []struct {
@@ -578,6 +588,59 @@ func (fake *FakeDataTrack) PubHandleReturnsOnCall(i int, result1 uint16) {
 	}
 	fake.pubHandleReturnsOnCall[i] = struct {
 		result1 uint16
+	}{result1}
+}
+
+func (fake *FakeDataTrack) Reliability() livekit.DataTrackReliability {
+	fake.reliabilityMutex.Lock()
+	ret, specificReturn := fake.reliabilityReturnsOnCall[len(fake.reliabilityArgsForCall)]
+	fake.reliabilityArgsForCall = append(fake.reliabilityArgsForCall, struct {
+	}{})
+	stub := fake.ReliabilityStub
+	fakeReturns := fake.reliabilityReturns
+	fake.recordInvocation("Reliability", []interface{}{})
+	fake.reliabilityMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeDataTrack) ReliabilityCallCount() int {
+	fake.reliabilityMutex.RLock()
+	defer fake.reliabilityMutex.RUnlock()
+	return len(fake.reliabilityArgsForCall)
+}
+
+func (fake *FakeDataTrack) ReliabilityCalls(stub func() livekit.DataTrackReliability) {
+	fake.reliabilityMutex.Lock()
+	defer fake.reliabilityMutex.Unlock()
+	fake.ReliabilityStub = stub
+}
+
+func (fake *FakeDataTrack) ReliabilityReturns(result1 livekit.DataTrackReliability) {
+	fake.reliabilityMutex.Lock()
+	defer fake.reliabilityMutex.Unlock()
+	fake.ReliabilityStub = nil
+	fake.reliabilityReturns = struct {
+		result1 livekit.DataTrackReliability
+	}{result1}
+}
+
+func (fake *FakeDataTrack) ReliabilityReturnsOnCall(i int, result1 livekit.DataTrackReliability) {
+	fake.reliabilityMutex.Lock()
+	defer fake.reliabilityMutex.Unlock()
+	fake.ReliabilityStub = nil
+	if fake.reliabilityReturnsOnCall == nil {
+		fake.reliabilityReturnsOnCall = make(map[int]struct {
+			result1 livekit.DataTrackReliability
+		})
+	}
+	fake.reliabilityReturnsOnCall[i] = struct {
+		result1 livekit.DataTrackReliability
 	}{result1}
 }
 

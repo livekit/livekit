@@ -818,6 +818,7 @@ type DataTrack interface {
 	ID() livekit.TrackID
 	PubHandle() uint16
 	Name() string
+	Reliability() livekit.DataTrackReliability
 	ToProto() *livekit.DataTrackInfo
 
 	PublisherID() livekit.ParticipantID
@@ -856,7 +857,7 @@ type DataTrackSender interface {
 
 //counterfeiter:generate . DataTrackTransport
 type DataTrackTransport interface {
-	SendDataTrackMessage(data []byte) error
+	SendDataTrackMessage(data []byte, reliability livekit.DataTrackReliability) error
 }
 
 //counterfeiter:generate . SubscribedTrack

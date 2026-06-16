@@ -68,9 +68,10 @@ import (
 )
 
 const (
-	LossyDataChannel     = "_lossy"
-	ReliableDataChannel  = "_reliable"
-	DataTrackDataChannel = "_data_track"
+	LossyDataChannel             = "_lossy"
+	ReliableDataChannel          = "_reliable"
+	DataTrackDataChannel         = "_data_track"
+	ReliableDataTrackDataChannel = "_reliable_data_track"
 
 	fastNegotiationFrequency   = 10 * time.Millisecond
 	negotiationFrequency       = 150 * time.Millisecond
@@ -110,6 +111,10 @@ var (
 	ErrMidMismatch                       = errors.New("media mid does not match bundle mid")
 	ErrICECredentialMismatch             = errors.New("ice credential mismatch")
 )
+
+func isDataTrackDataChannel(label string) bool {
+	return label == DataTrackDataChannel || label == ReliableDataTrackDataChannel
+}
 
 // -------------------------------------------------------------------------
 
@@ -221,6 +226,7 @@ type PCTransport struct {
 	lossyDC                 *datachannel.DataChannelWriter[*webrtc.DataChannel]
 	lossyDCOpened           bool
 	dataTrackDC             *datachannel.DataChannelWriter[*webrtc.DataChannel]
+	reliableDataTrackDC     *datachannel.DataChannelWriter[*webrtc.DataChannel]
 	unlabeledDataChannels   []*datachannel.DataChannelWriter[*webrtc.DataChannel]
 
 	iceStartedAt               time.Time
@@ -882,7 +888,7 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 		case LossyDataChannel:
 			kind = livekit.DataPacket_LOSSY
 
-		case DataTrackDataChannel:
+		case DataTrackDataChannel, ReliableDataTrackDataChannel:
 			isDataTrack = true
 
 		default:
@@ -910,10 +916,17 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 				t.params.Logger.Debugw("data tracks not enabled")
 				isHandled = false
 			} else {
-				if t.dataTrackDC != nil {
-					t.dataTrackDC.Close()
+				if dc.Label() == ReliableDataTrackDataChannel {
+					if t.reliableDataTrackDC != nil {
+						t.reliableDataTrackDC.Close()
+					}
+					t.reliableDataTrackDC = datachannel.NewDataChannelWriterReliable(dc, rawDC, t.params.DatachannelSlowThreshold)
+				} else {
+					if t.dataTrackDC != nil {
+						t.dataTrackDC.Close()
+					}
+					t.dataTrackDC = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, 0, 0)
 				}
-				t.dataTrackDC = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, 0, 0)
 			}
 
 		case kind == livekit.DataPacket_RELIABLE:
@@ -1228,7 +1241,7 @@ func (t *PCTransport) getNumUnmatchedTransceivers() (uint32, uint32) {
 }
 
 func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelInit) error {
-	if label == DataTrackDataChannel && !t.params.EnableDataTracks {
+	if isDataTrackDataChannel(label) && !t.params.EnableDataTracks {
 		t.params.Logger.Debugw("data tracks not enabled")
 		return nil
 	}
@@ -1262,6 +1275,10 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 	case DataTrackDataChannel:
 		dcPtr = &t.dataTrackDC
 		isDataTrack = true
+
+	case ReliableDataTrackDataChannel:
+		dcPtr = &t.reliableDataTrackDC
+		isDataTrack = true
 	}
 
 	dc.OnOpen(func() {
@@ -1272,7 +1289,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 		}
 
 		var slowThreshold int
-		if dc.Label() == ReliableDataChannel || isUnlabeled {
+		if dc.Label() == ReliableDataChannel || dc.Label() == ReliableDataTrackDataChannel || isUnlabeled {
 			slowThreshold = t.params.DatachannelSlowThreshold
 		}
 
@@ -1293,6 +1310,8 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 				*dcPtr = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, t.params.DatachannelLossyTargetLatency, uint64(lossyDataChannelMinBufferedAmount))
 			case dcPtr == &t.dataTrackDC:
 				*dcPtr = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, 0, 0)
+			case dcPtr == &t.reliableDataTrackDC:
+				*dcPtr = datachannel.NewDataChannelWriterReliable(dc, rawDC, slowThreshold)
 			}
 			if dcReady != nil {
 				*dcReady = true
@@ -1374,7 +1393,7 @@ func (t *PCTransport) CreateReadableDataChannel(label string, dci *webrtc.DataCh
 }
 
 func (t *PCTransport) CreateDataChannelIfEmpty(dcLabel string, dci *webrtc.DataChannelInit) (label string, id uint16, existing bool, err error) {
-	if dcLabel == DataTrackDataChannel && !t.params.EnableDataTracks {
+	if isDataTrackDataChannel(dcLabel) && !t.params.EnableDataTracks {
 		t.params.Logger.Debugw("data tracks not enabled")
 		err = errors.New("data tracks not enabled")
 		return
@@ -1389,6 +1408,8 @@ func (t *PCTransport) CreateDataChannelIfEmpty(dcLabel string, dci *webrtc.DataC
 		dcw = t.lossyDC
 	case DataTrackDataChannel:
 		dcw = t.dataTrackDC
+	case ReliableDataTrackDataChannel:
+		dcw = t.reliableDataTrackDC
 	default:
 		t.params.Logger.Warnw("unknown data channel label", nil, "label", label)
 		err = errors.New("unknown data channel label")
@@ -1516,9 +1537,12 @@ func (t *PCTransport) SendDataMessageUnlabeled(data []byte, useRaw bool, sender 
 	return t.sendDataMessage(dc, data)
 }
 
-func (t *PCTransport) SendDataTrackMessage(data []byte) error {
+func (t *PCTransport) SendDataTrackMessage(data []byte, reliability livekit.DataTrackReliability) error {
 	t.lock.RLock()
 	dc := t.dataTrackDC
+	if reliability == livekit.DataTrackReliability_DTR_RELIABLE {
+		dc = t.reliableDataTrackDC
+	}
 	t.lock.RUnlock()
 
 	return t.sendDataMessage(dc, data)
@@ -1581,6 +1605,11 @@ func (t *PCTransport) Close() {
 	if t.dataTrackDC != nil {
 		t.dataTrackDC.Close()
 		t.dataTrackDC = nil
+	}
+
+	if t.reliableDataTrackDC != nil {
+		t.reliableDataTrackDC.Close()
+		t.reliableDataTrackDC = nil
 	}
 
 	for _, dc := range t.unlabeledDataChannels {

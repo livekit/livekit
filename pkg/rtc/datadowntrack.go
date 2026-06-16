@@ -123,7 +123,7 @@ func (d *DataDownTrack) WritePacket(data []byte, packet *datatrack.Packet, _arri
 		d.logger.Warnw("could not marshal data track message", err)
 		return
 	}
-	if err := d.params.Transport.SendDataTrackMessage(buf); err != nil {
+	if err := d.params.Transport.SendDataTrackMessage(buf, d.params.PublishDataTrack.Reliability()); err != nil {
 		d.logger.Warnw("could not send data track message", err)
 		return
 	}
@@ -133,5 +133,11 @@ func (d *DataDownTrack) WritePacket(data []byte, packet *datatrack.Packet, _arri
 }
 
 func (d *DataDownTrack) UpdateSubscriptionOptions(subscriptionOptions *livekit.DataTrackSubscriptionOptions) {
-	// DT-TODO
+	if subscriptionOptions == nil {
+		return
+	}
+	if subscriptionOptions.GetReliability() == livekit.DataTrackReliability_DTR_RELIABLE &&
+		d.params.PublishDataTrack.Reliability() == livekit.DataTrackReliability_DTR_LOSSY {
+		d.logger.Warnw("subscriber requested reliable delivery for lossy data track", nil)
+	}
 }

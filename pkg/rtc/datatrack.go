@@ -113,12 +113,26 @@ func (d *DataTrack) Name() string {
 	return d.dti.Name
 }
 
+func (d *DataTrack) Reliability() livekit.DataTrackReliability {
+	return d.dti.GetReliability()
+}
+
 func (d *DataTrack) AddSubscriber(sub types.LocalParticipant) (types.DataDownTrack, error) {
 	d.lock.Lock()
 	defer d.lock.Unlock()
 
 	if _, ok := d.subscribedTracks[sub.ID()]; ok {
 		return nil, errAlreadySubscribed
+	}
+	subscriberInfo := ClientInfo{sub.GetClientInfo()}
+	if d.Reliability() == livekit.DataTrackReliability_DTR_RELIABLE && !subscriberInfo.SupportsReliableDataTrack() {
+		d.logger.Warnw(
+			"subscriber does not support reliable data tracks",
+			nil,
+			"subscriberID", sub.ID(),
+			"subscriberIdentity", sub.Identity(),
+		)
+		return nil, ErrReliableDataTrackUnsupported
 	}
 
 	bytesStats := NewBytesTrackStats(

@@ -34,11 +34,12 @@ var (
 	ErrInternalError            = errors.New("internal error")
 
 	// Track subscription related
-	ErrNoTrackPermission         = errors.New("participant is not allowed to subscribe to this track")
-	ErrNoSubscribePermission     = errors.New("participant is not given permission to subscribe to tracks")
-	ErrTrackNotFound             = errors.New("track cannot be found")
-	ErrTrackNotBound             = errors.New("track not bound")
-	ErrSubscriptionLimitExceeded = errors.New("participant has exceeded its subscription limit")
+	ErrNoTrackPermission            = errors.New("participant is not allowed to subscribe to this track")
+	ErrNoSubscribePermission        = errors.New("participant is not given permission to subscribe to tracks")
+	ErrTrackNotFound                = errors.New("track cannot be found")
+	ErrTrackNotBound                = errors.New("track not bound")
+	ErrSubscriptionLimitExceeded    = errors.New("participant has exceeded its subscription limit")
+	ErrReliableDataTrackUnsupported = errors.New("participant does not support reliable data tracks")
 
 	ErrNoSubscribeMetricsPermission = errors.New("participant is not given permission to subscribe to metrics")
 )
