@@ -154,4 +154,4 @@ require (
 	google.golang.org/grpc v1.81.1 // indirect
 )
 
-replace github.com/livekit/protocol => ../protocol-local
+replace github.com/livekit/protocol => ../protocol
