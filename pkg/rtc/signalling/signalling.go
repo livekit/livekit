@@ -259,6 +259,14 @@ func (s *signalling) SignalDataTrackSubscriberHandles(dataTrackSubscriberHandles
 	}
 }
 
+func (s *signalling) SignalStoreDataBlobResponse(storeDataBlobResponse *livekit.StoreDataBlobResponse) proto.Message {
+	return &livekit.SignalResponse{
+		Message: &livekit.SignalResponse_StoreDataBlobResponse{
+			StoreDataBlobResponse: storeDataBlobResponse,
+		},
+	}
+}
+
 func (s *signalling) SignalGetDataBlobResponse(getDataBlobResponse *livekit.GetDataBlobResponse) proto.Message {
 	return &livekit.SignalResponse{
 		Message: &livekit.SignalResponse_GetDataBlobResponse{

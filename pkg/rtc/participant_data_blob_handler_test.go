@@ -157,7 +157,7 @@ func TestHandleStoreDataBlobRequest(t *testing.T) {
 		require.Empty(t, p.dataBlob.GetAll())
 	})
 
-	t.Run("stores a valid blob, notifies listener, and sends no response", func(t *testing.T) {
+	t.Run("stores a valid blob, notifies listener, and sends response", func(t *testing.T) {
 		p := newParticipantWithDataBlob(t, true, 0, 0)
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
 		listener := p.params.ParticipantListener.(*typesfakes.FakeLocalParticipantListener)
@@ -166,10 +166,17 @@ func TestHandleStoreDataBlobRequest(t *testing.T) {
 		contents := []byte("definition-bytes")
 		blob := &livekit.DataBlob{Key: key, Contents: contents}
 
-		p.HandleStoreDataBlobRequest(&livekit.StoreDataBlobRequest{Blob: blob})
+		p.HandleStoreDataBlobRequest(&livekit.StoreDataBlobRequest{
+			RequestId: 42,
+			Blob:      blob,
+		})
 
-		// on success no response is sent to the client
-		require.Equal(t, 0, sink.WriteMessageCallCount())
+		require.Equal(t, 1, sink.WriteMessageCallCount())
+		msg := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
+		response, ok := msg.Message.(*livekit.SignalResponse_StoreDataBlobResponse)
+		require.True(t, ok, "expected SignalResponse_StoreDataBlobResponse, got %T", msg.Message)
+		require.Equal(t, uint32(42), response.StoreDataBlobResponse.RequestId)
+		require.Equal(t, key, response.StoreDataBlobResponse.Key)
 
 		stored := p.dataBlob.Get(key)
 		require.NotNil(t, stored)

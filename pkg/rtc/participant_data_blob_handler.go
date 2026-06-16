@@ -61,6 +61,7 @@ func (p *ParticipantImpl) HandleStoreDataBlobRequest(req *livekit.StoreDataBlobR
 
 	p.AddDataBlob(req.Blob)
 	p.listener().OnStoreDataBlob(p, req.Blob)
+	p.sendStoreDataBlobResponse(req.RequestId, req.Blob.Key)
 }
 
 func (p *ParticipantImpl) HandleGetDataBlobRequest(req *livekit.GetDataBlobRequest) {

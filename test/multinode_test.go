@@ -474,6 +474,7 @@ func TestMultiNodeDataBlob(t *testing.T) {
 			require.NoError(t, pub.SendRequest(&livekit.SignalRequest{
 				Message: &livekit.SignalRequest_StoreDataBlobRequest{
 					StoreDataBlobRequest: &livekit.StoreDataBlobRequest{
+						RequestId: 1,
 						Blob: &livekit.DataBlob{
 							Key:      key,
 							Contents: contents,
@@ -482,8 +483,22 @@ func TestMultiNodeDataBlob(t *testing.T) {
 				},
 			}))
 
-			// give the publisher's node time to apply the definition
-			time.Sleep(syncDelay)
+			testutils.WithTimeout(t, func() string {
+				resp := pubCapture.takeStoreResponse()
+				if resp == nil {
+					return "publisher did not receive store response"
+				}
+				if resp.RequestId != 1 {
+					return fmt.Sprintf("expected store response request id 1, got %d", resp.RequestId)
+				}
+				if resp.Key == nil {
+					return "store response missing key"
+				}
+				if resp.Key.String() != key.String() {
+					return fmt.Sprintf("expected stored blob key %s, got %s", key.String(), resp.Key.String())
+				}
+				return ""
+			})
 			require.Equal(t, 0, pubCapture.requestResponseCount(), "publisher should not receive an error response on success")
 
 			// subscriber on a different node asks for the blob; the request routes

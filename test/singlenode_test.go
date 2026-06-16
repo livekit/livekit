@@ -1527,12 +1527,13 @@ func TestTurnAuthFailure(t *testing.T) {
 	}
 }
 
-// dataBlobCapture buffers RequestResponse and GetDataBlobResponse messages
+// dataBlobCapture buffers RequestResponse, StoreDataBlobResponse, and GetDataBlobResponse messages
 // sent to a test client so they can be asserted on. Other messages flow through to the
 // default handler.
 type dataBlobCapture struct {
 	mu               sync.Mutex
 	requestResponses []*livekit.RequestResponse
+	storeResponses   []*livekit.StoreDataBlobResponse
 	blobResponses    []*livekit.GetDataBlobResponse
 }
 
@@ -1542,6 +1543,10 @@ func (c *dataBlobCapture) interceptor() testclient.SignalResponseInterceptor {
 		case *livekit.SignalResponse_RequestResponse:
 			c.mu.Lock()
 			c.requestResponses = append(c.requestResponses, m.RequestResponse)
+			c.mu.Unlock()
+		case *livekit.SignalResponse_StoreDataBlobResponse:
+			c.mu.Lock()
+			c.storeResponses = append(c.storeResponses, m.StoreDataBlobResponse)
 			c.mu.Unlock()
 		case *livekit.SignalResponse_GetDataBlobResponse:
 			c.mu.Lock()
@@ -1561,6 +1566,17 @@ func (c *dataBlobCapture) takeRequestResponse() *livekit.RequestResponse {
 	rr := c.requestResponses[0]
 	c.requestResponses = c.requestResponses[1:]
 	return rr
+}
+
+func (c *dataBlobCapture) takeStoreResponse() *livekit.StoreDataBlobResponse {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.storeResponses) == 0 {
+		return nil
+	}
+	sr := c.storeResponses[0]
+	c.storeResponses = c.storeResponses[1:]
+	return sr
 }
 
 func (c *dataBlobCapture) takeBlobResponse() *livekit.GetDataBlobResponse {
@@ -1634,6 +1650,7 @@ func TestSingleNodeDataBlob(t *testing.T) {
 			require.NoError(t, pub.SendRequest(&livekit.SignalRequest{
 				Message: &livekit.SignalRequest_StoreDataBlobRequest{
 					StoreDataBlobRequest: &livekit.StoreDataBlobRequest{
+						RequestId: 1,
 						Blob: &livekit.DataBlob{
 							Key:      key,
 							Contents: contents,
@@ -1642,8 +1659,22 @@ func TestSingleNodeDataBlob(t *testing.T) {
 				},
 			}))
 
-			// give the server a moment to process; success path sends no response
-			time.Sleep(syncDelay)
+			testutils.WithTimeout(t, func() string {
+				resp := pubCapture.takeStoreResponse()
+				if resp == nil {
+					return "publisher did not receive store response"
+				}
+				if resp.RequestId != 1 {
+					return fmt.Sprintf("expected store response request id 1, got %d", resp.RequestId)
+				}
+				if resp.Key == nil {
+					return "store response missing key"
+				}
+				if resp.Key.String() != key.String() {
+					return fmt.Sprintf("expected stored blob key %s, got %s", key.String(), resp.Key.String())
+				}
+				return ""
+			})
 			require.Equal(t, 0, pubCapture.requestResponseCount(), "publisher should not receive an error response on success")
 
 			// subscriber asks for the blob
