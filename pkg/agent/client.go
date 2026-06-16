@@ -64,7 +64,7 @@ type JobRequest struct {
 	Metadata    string
 	AgentName  string
 	Deployment string
-	Simulation bool
+	Attributes map[string]string
 }
 
 type agentClient struct {
@@ -173,7 +173,7 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverut
 				Metadata:        desc.Metadata,
 				EnableRecording: c.config.EnableUserDataRecording,
 				Deployment:      desc.Deployment,
-				Simulation:      desc.Simulation,
+				Attributes:      desc.Attributes,
 			}
 			resp, err := c.client.JobRequest(context.Background(), topic, jobTypeTopic, job)
 			if err != nil {
