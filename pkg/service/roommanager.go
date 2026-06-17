@@ -91,7 +91,8 @@ type RoomManager struct {
 	turnAuthHandler   *TURNAuthHandler
 	bus               psrpc.MessageBus
 
-	rooms map[livekit.RoomName]*rtc.Room
+	rooms         map[livekit.RoomName]*rtc.Room
+	onRoomCreated []func(*rtc.Room)
 
 	roomServers                  utils.MultitonService[rpc.RoomTopic]
 	agentDispatchServers         utils.MultitonService[rpc.RoomTopic]
@@ -186,6 +187,34 @@ func (r *RoomManager) GetRoom(_ context.Context, roomName livekit.RoomName) *rtc
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 	return r.rooms[roomName]
+}
+
+func (r *RoomManager) AddOnRoomCreated(f func(*rtc.Room)) {
+	if f == nil {
+		return
+	}
+
+	r.lock.Lock()
+	r.onRoomCreated = append(r.onRoomCreated, f)
+	rooms := make([]*rtc.Room, 0, len(r.rooms))
+	for _, room := range r.rooms {
+		rooms = append(rooms, room)
+	}
+	r.lock.Unlock()
+
+	for _, room := range rooms {
+		f(room)
+	}
+}
+
+func (r *RoomManager) notifyRoomCreated(room *rtc.Room) {
+	r.lock.RLock()
+	onRoomCreated := slices.Clone(r.onRoomCreated)
+	r.lock.RUnlock()
+
+	for _, f := range onRoomCreated {
+		f(room)
+	}
 }
 
 // deleteRoom completely deletes all room information, including active sessions, room store, and routing info
@@ -703,6 +732,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 	r.lock.Unlock()
 
 	newRoom.Hold()
+	r.notifyRoomCreated(newRoom)
 
 	r.telemetry.RoomStarted(ctx, newRoom.ToProto())
 	prometheus.RoomStarted()

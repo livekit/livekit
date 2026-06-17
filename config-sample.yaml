@@ -16,6 +16,20 @@
 # for production setups, this port should be placed behind a load balancer with TLS
 port: 7880
 
+# Experimental receive-only Media over QUIC/WebTransport downstream. Supports
+# the LiveKit H264 probe protocol and moq-lite-04 for @moq/net receive testing.
+# WebTransport uses HTTP/3 over UDP and requires TLS. In production, expose this
+# UDP port directly or through an HTTP/3-capable load balancer.
+# moq:
+#   enabled: false
+#   port: 7883
+#   path: /moq/v1
+#   cert_file: /path/to/cert.pem
+#   key_file: /path/to/key.pem
+#   track_queue_size: 256
+#   cache_max_bytes: 2097152
+#   write_timeout: 2s
+
 # when redis is set, LiveKit will automatically operate in a fully distributed fashion
 # clients could connect to any node and be routed to the same room
 redis:

@@ -20,7 +20,17 @@ const (
 	xorByte = 0xFF
 
 	envelopeSize = 5 // 1B trailer_len + 4B magic
+
+	tagUserTimestampUs = 0x01
+	tagFrameID         = 0x02
 )
+
+type Metadata struct {
+	UserTimestampUs    int64
+	HasUserTimestampUs bool
+	FrameID            uint32
+	HasFrameID         bool
+}
 
 // StripTrailer returns the number of bytes to strip from the end of an RTP
 // payload if it contains an LKTS trailer. The trailer is located by checking
@@ -43,4 +53,58 @@ func StripTrailer(payload []byte, marker bool) int {
 	}
 
 	return trailerLen
+}
+
+func ParseTrailer(payload []byte, marker bool) (Metadata, int) {
+	var metadata Metadata
+	trailerLen := StripTrailer(payload, marker)
+	if trailerLen == 0 {
+		return metadata, 0
+	}
+
+	tlv := payload[len(payload)-trailerLen : len(payload)-envelopeSize]
+	for len(tlv) != 0 {
+		if len(tlv) < 2 {
+			return metadata, trailerLen
+		}
+		tag := tlv[0] ^ xorByte
+		valueLen := int(tlv[1] ^ xorByte)
+		tlv = tlv[2:]
+		if valueLen > len(tlv) {
+			return metadata, trailerLen
+		}
+		value := tlv[:valueLen]
+		tlv = tlv[valueLen:]
+
+		switch tag {
+		case tagUserTimestampUs:
+			if valueLen == 8 {
+				metadata.UserTimestampUs = int64(xorUint64(value))
+				metadata.HasUserTimestampUs = true
+			}
+		case tagFrameID:
+			if valueLen == 4 {
+				metadata.FrameID = xorUint32(value)
+				metadata.HasFrameID = true
+			}
+		}
+	}
+
+	return metadata, trailerLen
+}
+
+func xorUint64(value []byte) uint64 {
+	var out uint64
+	for _, b := range value {
+		out = (out << 8) | uint64(b^xorByte)
+	}
+	return out
+}
+
+func xorUint32(value []byte) uint32 {
+	var out uint32
+	for _, b := range value {
+		out = (out << 8) | uint32(b^xorByte)
+	}
+	return out
 }

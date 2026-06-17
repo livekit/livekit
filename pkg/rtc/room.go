@@ -136,9 +136,10 @@ type Room struct {
 
 	trailer []byte
 
-	onParticipantChanged func(p types.Participant)
-	onRoomUpdated        func()
-	onClose              func()
+	onParticipantChanged      func(p types.Participant)
+	onRoomUpdated             func()
+	onClose                   func()
+	onTrackPublishedCallbacks []func(types.Participant, types.MediaTrack)
 
 	simulationLock                                 sync.Mutex
 	disconnectSignalOnResumeParticipants           map[livekit.ParticipantIdentity]time.Time
@@ -837,6 +838,16 @@ func (r *Room) OnParticipantChanged(f func(participant types.Participant)) {
 	r.onParticipantChanged = f
 }
 
+func (r *Room) AddOnTrackPublished(f func(types.Participant, types.MediaTrack)) {
+	if f == nil {
+		return
+	}
+
+	r.lock.Lock()
+	r.onTrackPublishedCallbacks = append(r.onTrackPublishedCallbacks, f)
+	r.lock.Unlock()
+}
+
 func (r *Room) SendDataPacket(dp *livekit.DataPacket, kind livekit.DataPacket_Kind) {
 	r.onDataMessage(nil, kind, dp)
 }
@@ -1072,6 +1083,13 @@ func (r *Room) createJoinResponseLocked(
 // a ParticipantImpl in the room added a new track, subscribe other participants to it
 func (r *Room) onTrackPublished(participant types.Participant, track types.MediaTrack) {
 	r.trackManager.AddTrack(track, participant.Identity(), participant.ID())
+
+	r.lock.RLock()
+	onTrackPublished := slices.Clone(r.onTrackPublishedCallbacks)
+	r.lock.RUnlock()
+	for _, f := range onTrackPublished {
+		f(participant, track)
+	}
 
 	// publish participant update, since track state is changed
 	r.broadcastParticipantState(participant, broadcastOptions{skipSource: true})

@@ -92,6 +92,7 @@ type Config struct {
 	EnableDataTracks bool `yaml:"enable_data_tracks,omitempty"`
 
 	API APIConfig `yaml:"api,omitempty"`
+	MoQ MoQConfig `yaml:"moq,omitempty"`
 }
 
 type RTCConfig struct {
@@ -168,6 +169,55 @@ type TURNServer struct {
 	// TTL is the time-to-live in seconds for generated credentials when using Secret.
 	// Defaults to 14400 seconds (4 hours) if not specified
 	TTL int `yaml:"ttl,omitempty"`
+}
+
+type MoQConfig struct {
+	Enabled bool `yaml:"enabled,omitempty"`
+	// UDP port for the HTTP/3 WebTransport listener. This is intentionally
+	// separate from the existing TCP HTTP port.
+	Port uint32 `yaml:"port,omitempty"`
+	// If unset, bind_addresses from the top-level config are used. If those are
+	// unset, the listener binds all interfaces.
+	BindAddresses []string `yaml:"bind_addresses,omitempty"`
+	Path          string   `yaml:"path,omitempty"`
+
+	// WebTransport requires TLS. In production, configure cert_file and key_file.
+	// In development mode only, LiveKit can generate an ephemeral self-signed
+	// certificate when these are unset.
+	CertFile string `yaml:"cert_file,omitempty"`
+	KeyFile  string `yaml:"key_file,omitempty"`
+
+	// Number of access units queued per subscriber before non-keyframes are
+	// dropped to keep latency bounded.
+	TrackQueueSize int `yaml:"track_queue_size,omitempty"`
+	// Max bytes retained for the cached keyframe access unit per track/layer.
+	CacheMaxBytes int           `yaml:"cache_max_bytes,omitempty"`
+	WriteTimeout  time.Duration `yaml:"write_timeout,omitempty"`
+}
+
+func (c MoQConfig) WithDefaults(development bool, bindAddresses []string) MoQConfig {
+	if c.Path == "" {
+		c.Path = "/moq/v1"
+	}
+	if c.TrackQueueSize <= 0 {
+		c.TrackQueueSize = 256
+	}
+	if c.CacheMaxBytes <= 0 {
+		c.CacheMaxBytes = 2 * 1024 * 1024
+	}
+	if c.WriteTimeout <= 0 {
+		c.WriteTimeout = 2 * time.Second
+	}
+	if len(c.BindAddresses) == 0 {
+		c.BindAddresses = bindAddresses
+	}
+	if len(c.BindAddresses) == 0 {
+		c.BindAddresses = []string{""}
+	}
+	if development && c.Port == 0 {
+		c.Port = 7883
+	}
+	return c
 }
 
 type CongestionControlConfig struct {
@@ -478,6 +528,12 @@ var DefaultConfig = Config{
 	NodeStats:        DefaultNodeStatsConfig,
 	API:              DefaultAPIConfig(),
 	EnableDataTracks: true,
+	MoQ: MoQConfig{
+		Path:           "/moq/v1",
+		TrackQueueSize: 256,
+		CacheMaxBytes:  2 * 1024 * 1024,
+		WriteTimeout:   2 * time.Second,
+	},
 }
 
 func NewConfig(confString string, strictMode bool, c *cli.Command, baseFlags []cli.Flag) (*Config, error) {
@@ -517,6 +573,20 @@ func NewConfig(confString string, strictMode bool, c *cli.Command, baseFlags []c
 		return nil, err
 	}
 	conf.KeyFile = file
+	if conf.MoQ.CertFile != "" {
+		file, err = homedir.Expand(os.ExpandEnv(conf.MoQ.CertFile))
+		if err != nil {
+			return nil, err
+		}
+		conf.MoQ.CertFile = file
+	}
+	if conf.MoQ.KeyFile != "" {
+		file, err = homedir.Expand(os.ExpandEnv(conf.MoQ.KeyFile))
+		if err != nil {
+			return nil, err
+		}
+		conf.MoQ.KeyFile = file
+	}
 
 	// set defaults for Turn relay if none are set
 	if conf.TURN.RelayPortRangeStart == 0 || conf.TURN.RelayPortRangeEnd == 0 {
@@ -533,6 +603,7 @@ func NewConfig(confString string, strictMode bool, c *cli.Command, baseFlags []c
 	if conf.LogLevel != "" {
 		conf.Logging.Level = conf.LogLevel
 	}
+	conf.MoQ = conf.MoQ.WithDefaults(conf.Development, conf.BindAddresses)
 	if conf.Logging.Level == "" && conf.Development {
 		conf.Logging.Level = "debug"
 	}

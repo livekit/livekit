@@ -19,11 +19,6 @@ import (
 	"testing"
 )
 
-const (
-	tagTimestampUs = 0x01
-	tagFrameID     = 0x02
-)
-
 // appendTLV appends a single XORed TLV element to dst.
 func appendTLV(dst []byte, tag byte, value []byte) []byte {
 	dst = append(dst, tag^xorByte, byte(len(value))^xorByte)
@@ -46,7 +41,7 @@ func makeTrailer(timestampUs int64, frameID uint32) []byte {
 
 	var tsBuf [8]byte
 	binary.BigEndian.PutUint64(tsBuf[:], uint64(timestampUs))
-	trailer = appendTLV(trailer, tagTimestampUs, tsBuf[:])
+	trailer = appendTLV(trailer, tagUserTimestampUs, tsBuf[:])
 
 	var fidBuf [4]byte
 	binary.BigEndian.PutUint32(fidBuf[:], frameID)
@@ -71,14 +66,14 @@ func makeTimestampOnlyTrailer(timestampUs int64) []byte {
 	var trailer []byte
 	var tsBuf [8]byte
 	binary.BigEndian.PutUint64(tsBuf[:], uint64(timestampUs))
-	trailer = appendTLV(trailer, tagTimestampUs, tsBuf[:])
+	trailer = appendTLV(trailer, tagUserTimestampUs, tsBuf[:])
 	trailerLen := byte(len(trailer) + envelopeSize)
 	trailer = appendEnvelope(trailer, trailerLen)
 	return trailer
 }
 
 func TestStripTrailer(t *testing.T) {
-	fullTrailerSize := 21 // (1+1+8) + (1+1+4) + 5
+	fullTrailerSize := 21   // (1+1+8) + (1+1+4) + 5
 	tsOnlyTrailerSize := 15 // (1+1+8) + 5
 
 	tests := []struct {
@@ -136,7 +131,7 @@ func TestStripTrailer(t *testing.T) {
 				var trailer []byte
 				var tsBuf [8]byte
 				binary.BigEndian.PutUint64(tsBuf[:], 42)
-				trailer = appendTLV(trailer, tagTimestampUs, tsBuf[:])
+				trailer = appendTLV(trailer, tagUserTimestampUs, tsBuf[:])
 				trailer = appendEnvelope(trailer, 200)
 				return trailer
 			}(),
@@ -150,7 +145,7 @@ func TestStripTrailer(t *testing.T) {
 				var trailer []byte
 				var tsBuf [8]byte
 				binary.BigEndian.PutUint64(tsBuf[:], 42)
-				trailer = appendTLV(trailer, tagTimestampUs, tsBuf[:])
+				trailer = appendTLV(trailer, tagUserTimestampUs, tsBuf[:])
 				trailer = appendEnvelope(trailer, 3)
 				return append(video, trailer...)
 			}(),
@@ -178,5 +173,36 @@ func TestStripTrailer(t *testing.T) {
 				t.Errorf("StripTrailer() = %d, want %d", got, tt.wantStrip)
 			}
 		})
+	}
+}
+
+func TestParseTrailer(t *testing.T) {
+	payload := makePayloadWithTrailer(20, 1700000000000000, 42)
+
+	metadata, strip := ParseTrailer(payload, true)
+	if strip != 21 {
+		t.Fatalf("ParseTrailer() strip = %d, want 21", strip)
+	}
+	if !metadata.HasUserTimestampUs {
+		t.Fatal("ParseTrailer() did not parse user timestamp")
+	}
+	if metadata.UserTimestampUs != 1700000000000000 {
+		t.Fatalf("ParseTrailer() user timestamp = %d", metadata.UserTimestampUs)
+	}
+	if !metadata.HasFrameID {
+		t.Fatal("ParseTrailer() did not parse frame id")
+	}
+	if metadata.FrameID != 42 {
+		t.Fatalf("ParseTrailer() frame id = %d", metadata.FrameID)
+	}
+}
+
+func TestParseTrailerAbsent(t *testing.T) {
+	metadata, strip := ParseTrailer([]byte{0x01, 0x02, 0x03}, true)
+	if strip != 0 {
+		t.Fatalf("ParseTrailer() strip = %d, want 0", strip)
+	}
+	if metadata.HasUserTimestampUs || metadata.HasFrameID {
+		t.Fatalf("ParseTrailer() parsed unexpected metadata: %+v", metadata)
 	}
 }

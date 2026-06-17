@@ -1,0 +1,1417 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LiveKit MoQ and WebRTC receiver</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #111316;
+      color: #f5f7fb;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 28px;
+      box-sizing: border-box;
+      background: #111316;
+    }
+
+    main {
+      width: min(1500px, 100%);
+      margin: 0 auto;
+      display: grid;
+      gap: 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .panel {
+      border: 1px solid #2d333b;
+      border-radius: 8px;
+      background: #171b21;
+      padding: 18px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+    }
+
+    .context {
+      color: #a9b4c2;
+      font-size: 13px;
+      line-height: 1.4;
+      overflow-wrap: anywhere;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+      gap: 8px;
+    }
+
+    .metric {
+      border: 1px solid #343b45;
+      border-radius: 6px;
+      padding: 10px;
+      background: #1e242c;
+      min-width: 0;
+    }
+
+    .label {
+      color: #a9b4c2;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    .value {
+      margin-top: 5px;
+      font-size: 20px;
+      font-weight: 650;
+      overflow-wrap: anywhere;
+    }
+
+    .comparison {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      align-items: start;
+    }
+
+    .viewer {
+      display: grid;
+      gap: 12px;
+    }
+
+    .viewer-title {
+      margin: 0;
+      color: #dce6f2;
+      font-size: 15px;
+      font-weight: 650;
+      letter-spacing: 0;
+    }
+
+    .video-frame {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #050608;
+    }
+
+    canvas,
+    video {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #050608;
+      object-fit: contain;
+    }
+
+    .timing-overlay {
+      position: absolute;
+      left: 14px;
+      top: 14px;
+      margin: 0;
+      max-width: calc(100% - 28px);
+      max-height: calc(100% - 28px);
+      padding: 10px 12px;
+      border-radius: 6px;
+      background: rgba(5, 6, 8, .72);
+      color: #f6fbff;
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      white-space: pre;
+      overflow: auto;
+      pointer-events: none;
+      box-sizing: border-box;
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      color: #dbe5f2;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .ok {
+      color: #79d98d;
+    }
+
+    .warn {
+      color: #ffd37a;
+    }
+
+    .error {
+      color: #ff8d8d;
+    }
+
+    @media (max-width: 980px) {
+      body {
+        padding: 16px;
+      }
+
+      .comparison {
+        grid-template-columns: 1fr;
+      }
+
+      .status-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>LiveKit MoQ and WebRTC receiver</h1>
+    <section class="panel status-grid" aria-label="Overall status">
+      <div class="metric">
+        <div class="label">Status</div>
+        <div id="status" class="value">starting</div>
+      </div>
+      <div class="context">Room: <span id="roomLabel">moq-local-video</span> | Track: <span id="trackLabel">camera</span></div>
+    </section>
+    <section class="comparison">
+      <section class="panel viewer">
+        <h2 class="viewer-title">MoQ WebTransport</h2>
+        <div class="stats-grid" aria-label="MoQ metrics">
+          <div class="metric">
+            <div class="label">MoQ Status</div>
+            <div id="moqStatus" class="value">starting</div>
+          </div>
+          <div class="metric">
+            <div class="label">Connect</div>
+            <div id="connectMs" class="value" data-metric="connectMs">-</div>
+          </div>
+          <div class="metric">
+            <div class="label">First Object</div>
+            <div id="firstFrameMs" class="value" data-metric="firstFrameMs">-</div>
+          </div>
+          <div class="metric">
+            <div class="label">e2e Latency</div>
+            <div id="e2eLatency" class="value" data-metric="e2eLatency">NA</div>
+          </div>
+        </div>
+        <div class="video-frame">
+          <canvas id="video" width="640" height="480" aria-label="MoQ decoded video"></canvas>
+          <pre id="timingOverlay" class="timing-overlay">waiting for timing metadata</pre>
+        </div>
+      </section>
+      <section class="panel viewer">
+        <h2 class="viewer-title">LiveKit JS SDK WebRTC</h2>
+        <div class="stats-grid" aria-label="WebRTC metrics">
+          <div class="metric">
+            <div class="label">WebRTC Status</div>
+            <div id="webrtcStatus" class="value">starting</div>
+          </div>
+          <div class="metric">
+            <div class="label">Connect</div>
+            <div id="webrtcConnectMs" class="value" data-metric="webrtcConnectMs">-</div>
+          </div>
+          <div class="metric">
+            <div class="label">First Frame</div>
+            <div id="webrtcFirstFrameMs" class="value" data-metric="webrtcFirstFrameMs">-</div>
+          </div>
+          <div class="metric">
+            <div class="label">e2e Latency</div>
+            <div id="webrtcE2eLatency" class="value" data-metric="webrtcE2eLatency">NA</div>
+          </div>
+          <div class="metric">
+            <div class="label">Jitter Buffer</div>
+            <div id="webrtcJitterBuffer" class="value" data-metric="webrtcJitterBuffer">NA</div>
+          </div>
+        </div>
+        <div id="webrtcVideoFrame" class="video-frame">
+          <video id="webrtcVideo" autoplay muted playsinline aria-label="WebRTC video"></video>
+          <pre id="webrtcTimingOverlay" class="timing-overlay">waiting for WebRTC video</pre>
+        </div>
+      </section>
+    </section>
+    <section class="panel">
+      <pre id="log"></pre>
+    </section>
+    <pre id="resultJson" hidden>{}</pre>
+  </main>
+
+  <script type="module">
+    import * as Net from "https://esm.sh/@moq/net@0.1.5";
+    import { Room, RoomEvent, Track, TrackEvent } from "https://esm.sh/livekit-client@2.19.2";
+
+    const $ = (id) => document.getElementById(id);
+    const params = new URLSearchParams(location.search);
+    const targetFrames = Number(params.get("frames") ?? "30");
+    const timeoutMs = Number(params.get("timeoutMs") ?? "15000");
+    const room = params.get("room") ?? "moq-local-video";
+    const trackName = params.get("track") ?? "camera";
+    const timingTrackName = params.get("timingTrack") ?? `${trackName}.timing`;
+    const token = params.get("token");
+    const certHash = params.get("certHash");
+    const liveKitUrl = params.get("liveKitUrl");
+    const webrtcToken = params.get("webrtcToken");
+    const webrtcIdentity = params.get("webrtcIdentity") ?? "webrtc-client";
+    const packetTrailerWorkerUrl = params.get("packetTrailerWorkerUrl") ?? "./packet-trailer-worker.js";
+    const moqUrl = new URL(params.get("url") ?? "https://127.0.0.1:7883/moq/v1");
+
+    if (token) {
+      moqUrl.searchParams.set("access_token", token);
+    }
+    if (!certHash) {
+      throw new Error("certHash query parameter is required for local WebTransport");
+    }
+    $("roomLabel").textContent = room;
+    $("trackLabel").textContent = trackName;
+
+    const result = {
+      ok: false,
+      room,
+      track: trackName,
+      timingTrack: timingTrackName,
+      targetFrames,
+      url: moqUrl.toString().replace(/access_token=[^&]+/, "access_token=<redacted>"),
+      liveKitUrl,
+      webrtcIdentity,
+      frames: 0,
+      bytes: 0,
+      idrFrames: 0,
+      timingFrames: 0,
+      decodedFrames: 0,
+      renderedFrames: 0,
+      firstNalTypes: [],
+      groups: [],
+      visual: {
+        ok: false,
+        averageLuma: 0,
+        variance: 0,
+        sampleCount: 0,
+      },
+      motion: {
+        ok: false,
+        changedFrames: 0,
+        maxDelta: 0,
+      },
+      timing: {
+        latest: null,
+        exposureToReceive: "NA",
+        receiveToRender: "NA",
+        e2e: "NA",
+      },
+      moq: {
+        ok: false,
+        status: "starting",
+      },
+      webrtc: {
+        enabled: Boolean(liveKitUrl && webrtcToken),
+        ok: false,
+        status: liveKitUrl && webrtcToken ? "starting" : "disabled",
+        connectMs: null,
+        firstFrameMs: null,
+        renderedFrames: 0,
+        videoWidth: 0,
+        videoHeight: 0,
+        timing: {
+          latest: null,
+          captureToReceive: "NA",
+          receiveToRender: "NA",
+          e2e: "NA",
+          metadataAvailable: false,
+        },
+        packetTrailer: {
+          configured: false,
+          supported: false,
+          metadataFrames: 0,
+          latest: null,
+          error: null,
+        },
+        stats: {
+          latest: null,
+          jitterBufferDepthMs: null,
+          jitterBufferTargetMs: null,
+          error: null,
+        },
+      },
+    };
+    window.__moqHarnessResult = result;
+
+    const canvas = $("video");
+    const ctx = canvas.getContext("2d", { alpha: false });
+    const webrtcVideo = $("webrtcVideo");
+    let decoder;
+    let decoderConfigured = false;
+    let decoderError;
+    let firstDecodeStartedAt;
+    let frameTimestampUs = 0;
+    let lastVisualSignature;
+    let moqValidationComplete = false;
+    let webrtcValidationComplete = false;
+    let moqValidationResolve;
+    let moqValidationReject;
+    let webrtcValidationResolve;
+    let webrtcValidationReject;
+    let webrtcStartedAt = 0;
+    let lkRoom;
+    let packetTrailerWorker;
+    let webrtcRemoteVideoTrack;
+    let webrtcStatsTimer;
+    let webrtcStatsPrevious;
+    let webrtcStatsReceiver;
+    let webrtcStatsPeerConnection;
+    let latestWebRTCPacketTrailer;
+    const textDecoder = new TextDecoder();
+    const timingBySequence = new Map();
+    const timingWaiters = new Map();
+    const pendingDecodeSamples = [];
+    let timingReaderDone = false;
+    const moqValidation = new Promise((resolve, reject) => {
+      moqValidationResolve = resolve;
+      moqValidationReject = reject;
+    });
+    const webrtcValidation = new Promise((resolve, reject) => {
+      webrtcValidationResolve = resolve;
+      webrtcValidationReject = reject;
+    });
+
+    function log(line) {
+      $("log").textContent += `${new Date().toISOString()} ${line}\n`;
+      syncResult();
+    }
+
+    function setMetric(id, value) {
+      const element = $(id);
+      if (element) {
+        element.textContent = value;
+      }
+      syncResult();
+    }
+
+    function setStatus(id, value, className = "") {
+      const element = $(id);
+      element.textContent = value;
+      element.className = `value ${className}`.trim();
+    }
+
+    function syncResult() {
+      $("resultJson").textContent = JSON.stringify(result);
+    }
+
+    function refreshOverallStatus() {
+      const webrtcDone = !result.webrtc.enabled || result.webrtc.ok;
+      if (result.moq.ok && webrtcDone) {
+        result.ok = true;
+        setStatus("status", "ok", "ok");
+      } else if (result.moq.status === "error" || result.webrtc.status === "error") {
+        setStatus("status", "error", "error");
+      } else if (result.moq.status !== "starting" || result.webrtc.status !== "starting") {
+        setStatus("status", "validating", "warn");
+      }
+      syncResult();
+    }
+
+    function withTimeout(promise, ms, label) {
+      let timer;
+      const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms} ms`)), ms);
+      });
+      return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+    }
+
+    function currentTimestampUs() {
+      return Math.round(performance.timeOrigin * 1000 + performance.now() * 1000);
+    }
+
+    function domHighResTimestampUs(value) {
+      if (!Number.isFinite(value)) {
+        return NaN;
+      }
+      return Math.round(performance.timeOrigin * 1000 + value * 1000);
+    }
+
+    function packetTrailerTimestampUs(metadata) {
+      if (!metadata || metadata.userTimestamp === undefined || metadata.userTimestamp === null) {
+        return NaN;
+      }
+      if (typeof metadata.userTimestamp === "bigint") {
+        return Number(metadata.userTimestamp);
+      }
+      if (typeof metadata.userTimestamp === "number") {
+        return metadata.userTimestamp;
+      }
+      const parsed = Number(metadata.userTimestamp);
+      return Number.isFinite(parsed) ? parsed : NaN;
+    }
+
+    function formatTimeOfDayUs(timestampUs) {
+      if (!Number.isFinite(timestampUs) || timestampUs <= 0) {
+        return "--:--:--:---";
+      }
+      const totalMillis = Math.floor(timestampUs / 1000);
+      const millis = totalMillis % 1000;
+      const totalSeconds = Math.floor(totalMillis / 1000);
+      const seconds = totalSeconds % 60;
+      const minutes = Math.floor(totalSeconds / 60) % 60;
+      const hours = Math.floor(totalSeconds / 3600) % 24;
+      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}:${String(millis).padStart(3, "0")}`;
+    }
+
+    function formatDeltaMs(timestampUs, baseTimestampUs) {
+      if (!Number.isFinite(timestampUs) || !Number.isFinite(baseTimestampUs)) {
+        return "+--.-ms";
+      }
+      const deltaMs = (timestampUs - baseTimestampUs) / 1000;
+      if (deltaMs === 0) {
+        return "0.0ms";
+      }
+      return `${deltaMs >= 0 ? "+" : ""}${deltaMs.toFixed(1)}ms`;
+    }
+
+    function formatLatencyMs(endTimestampUs, startTimestampUs) {
+      if (!Number.isFinite(endTimestampUs) || !Number.isFinite(startTimestampUs) || endTimestampUs < startTimestampUs) {
+        return "NA";
+      }
+      return `${((endTimestampUs - startTimestampUs) / 1000).toFixed(1)}ms`;
+    }
+
+    function timingValueLine(label, value) {
+      return `${`${label}:`.padEnd(24, " ")} ${String(value).padStart(12, " ")}`;
+    }
+
+    function timingLine(label, timestampUs, delta) {
+      return `${`${label}:`.padEnd(24, " ")} ${formatTimeOfDayUs(timestampUs).padStart(12, " ")} ${String(delta).padStart(10, " ")}`;
+    }
+
+    function comparableTimingOverlayLines({ frameId, captureUs, receiveUs, renderUs }) {
+      return [
+        timingValueLine("Frame ID", frameId),
+        timingLine("source timestamp", captureUs, "0.0ms"),
+        timingLine("client receive", receiveUs, formatDeltaMs(receiveUs, captureUs)),
+        timingLine("client render", renderUs, formatDeltaMs(renderUs, receiveUs)),
+        timingValueLine("Capture to Receive", formatLatencyMs(receiveUs, captureUs)),
+        timingValueLine("Receive to Render", formatLatencyMs(renderUs, receiveUs)),
+        timingValueLine("e2e latency", formatLatencyMs(renderUs, captureUs)),
+      ];
+    }
+
+    function sampleVisualSignature(pixels, width, height) {
+      const signature = [];
+      const xStep = Math.max(1, Math.floor(width / 32));
+      const yStep = Math.max(1, Math.floor(height / 24));
+      for (let y = 0; y < height; y += yStep) {
+        for (let x = 0; x < width; x += xStep) {
+          const i = (y * width + x) * 4;
+          signature.push(Math.round(0.2126 * pixels[i] + 0.7152 * pixels[i + 1] + 0.0722 * pixels[i + 2]));
+        }
+      }
+      return signature;
+    }
+
+    function calculateVisualStats(pixels, width, height) {
+      const xStep = Math.max(1, Math.floor(width / 16));
+      const yStep = Math.max(1, Math.floor(height / 12));
+      let count = 0;
+      let sum = 0;
+      let sumSquares = 0;
+      for (let y = 0; y < height; y += yStep) {
+        for (let x = 0; x < width; x += xStep) {
+          const i = (y * width + x) * 4;
+          const luma = 0.2126 * pixels[i] + 0.7152 * pixels[i + 1] + 0.0722 * pixels[i + 2];
+          count += 1;
+          sum += luma;
+          sumSquares += luma * luma;
+        }
+      }
+      const average = count ? sum / count : 0;
+      const variance = count ? Math.max(0, sumSquares / count - average * average) : 0;
+      return {
+        ok: average > 8 && variance > 16,
+        averageLuma: Math.round(average * 10) / 10,
+        variance: Math.round(variance * 10) / 10,
+        sampleCount: count,
+      };
+    }
+
+    function updateMotion(signature, previousSignature, motion, renderedFrames) {
+      if (previousSignature) {
+        let delta = 0;
+        for (let i = 0; i < signature.length; i += 1) {
+          delta += Math.abs(signature[i] - previousSignature[i]);
+        }
+        motion.maxDelta = Math.max(motion.maxDelta, Math.round(delta));
+        if (delta > 100) {
+          motion.changedFrames += 1;
+        }
+      }
+      motion.ok = renderedFrames < 2 || motion.changedFrames > 0;
+    }
+
+    function updateTimingOverlay(sample) {
+      const captureUs = sample?.userTimestampUs;
+      if (!Number.isFinite(captureUs)) {
+        $("timingOverlay").textContent = "waiting for packet trailer timestamp";
+        return;
+      }
+
+      const frameId = Number.isFinite(sample.frameId) ? String(sample.frameId) : "NA";
+      const exposureToReceive = formatLatencyMs(sample.moqReceiveUs, captureUs);
+      const receiveToRender = formatLatencyMs(sample.framePaintedUs, sample.moqReceiveUs);
+      const e2e = formatLatencyMs(sample.framePaintedUs, captureUs);
+      result.timing.latest = {
+        sequence: sample.sequence,
+        frameId,
+        captureUs,
+        moqReceiveUs: sample.moqReceiveUs,
+        decoderUploadUs: sample.decoderUploadUs,
+        decoderOutputUs: sample.decoderOutputUs,
+        framePaintedUs: sample.framePaintedUs,
+      };
+      result.timing.exposureToReceive = exposureToReceive;
+      result.timing.receiveToRender = receiveToRender;
+      result.timing.e2e = e2e;
+
+      setMetric("exposureToReceive", exposureToReceive);
+      setMetric("e2eLatency", e2e);
+      $("timingOverlay").textContent = comparableTimingOverlayLines({
+        frameId,
+        captureUs,
+        receiveUs: sample.moqReceiveUs,
+        renderUs: sample.framePaintedUs,
+      }).join("\n");
+      syncResult();
+    }
+
+    function updateWebRTCTimingOverlay(metadata, paintedUs, packetTrailerMetadata) {
+      const packetTrailerCaptureUs = packetTrailerTimestampUs(packetTrailerMetadata);
+      const browserCaptureUs = domHighResTimestampUs(metadata.captureTime);
+      const captureUs = Number.isFinite(packetTrailerCaptureUs) ? packetTrailerCaptureUs : browserCaptureUs;
+      const receiveUs = domHighResTimestampUs(metadata.receiveTime);
+      const presentationUs = domHighResTimestampUs(metadata.presentationTime);
+      const expectedDisplayUs = domHighResTimestampUs(metadata.expectedDisplayTime);
+      const renderUs = Number.isFinite(paintedUs) ? paintedUs : presentationUs;
+      const captureToReceive = formatLatencyMs(receiveUs, captureUs);
+      const receiveToRender = formatLatencyMs(renderUs, receiveUs);
+      const e2e = formatLatencyMs(renderUs, captureUs);
+      const metadataAvailable = Boolean(packetTrailerMetadata) || Number.isFinite(browserCaptureUs) || Number.isFinite(receiveUs);
+      const frameId = Number.isFinite(packetTrailerMetadata?.frameId) ? String(packetTrailerMetadata.frameId) : "not exposed";
+
+      result.webrtc.timing.latest = {
+        presentedFrames: metadata.presentedFrames ?? result.webrtc.renderedFrames,
+        frameId,
+        packetTrailerCaptureUs: Number.isFinite(packetTrailerCaptureUs) ? packetTrailerCaptureUs : null,
+        browserCaptureUs: Number.isFinite(browserCaptureUs) ? browserCaptureUs : null,
+        captureUs: Number.isFinite(captureUs) ? captureUs : null,
+        receiveUs: Number.isFinite(receiveUs) ? receiveUs : null,
+        presentationUs: Number.isFinite(presentationUs) ? presentationUs : null,
+        expectedDisplayUs: Number.isFinite(expectedDisplayUs) ? expectedDisplayUs : null,
+        framePaintedUs: Number.isFinite(paintedUs) ? paintedUs : null,
+        clientRenderUs: Number.isFinite(renderUs) ? renderUs : null,
+        rtpTimestamp: Number.isFinite(metadata.rtpTimestamp) ? metadata.rtpTimestamp : null,
+      };
+      result.webrtc.timing.captureToReceive = captureToReceive;
+      result.webrtc.timing.receiveToRender = receiveToRender;
+      result.webrtc.timing.e2e = e2e;
+      result.webrtc.timing.metadataAvailable = metadataAvailable;
+      setMetric("webrtcExposureToReceive", captureToReceive);
+      setMetric("webrtcE2eLatency", e2e);
+      $("webrtcTimingOverlay").textContent = comparableTimingOverlayLines({
+        frameId,
+        captureUs,
+        receiveUs,
+        renderUs,
+      }).join("\n");
+      syncResult();
+    }
+
+    function mediaStreamTrackFromRemoteTrack(track) {
+      return track?.mediaStreamTrack ?? track?.track ?? track?.mediaTrack ?? null;
+    }
+
+    function collectWebRTCPeerConnections(root) {
+      const peerConnections = [];
+      const seen = new WeakSet();
+      const queue = [{ value: root, depth: 0 }];
+      while (queue.length > 0) {
+        const { value, depth } = queue.shift();
+        if (!value || (typeof value !== "object" && typeof value !== "function")) {
+          continue;
+        }
+        if (seen.has(value)) {
+          continue;
+        }
+        seen.add(value);
+        if (typeof value.getReceivers === "function" && typeof value.getStats === "function") {
+          peerConnections.push(value);
+          continue;
+        }
+        if (depth >= 5) {
+          continue;
+        }
+        for (const key of Object.keys(value)) {
+          if (key.startsWith("_") && key !== "_pc") {
+            continue;
+          }
+          try {
+            const child = value[key];
+            if (child && (typeof child === "object" || typeof child === "function")) {
+              queue.push({ value: child, depth: depth + 1 });
+            }
+          } catch (_err) {
+            // Some LiveKit internals expose guarded getters; skip those.
+          }
+        }
+      }
+      return peerConnections;
+    }
+
+    function findWebRTCRtpReceiver(track) {
+      if (webrtcStatsReceiver) {
+        return webrtcStatsReceiver;
+      }
+      const mediaStreamTrack = mediaStreamTrackFromRemoteTrack(track);
+      if (!mediaStreamTrack) {
+        return null;
+      }
+      for (const pc of collectWebRTCPeerConnections(lkRoom)) {
+        let receivers;
+        try {
+          receivers = pc.getReceivers();
+        } catch (_err) {
+          continue;
+        }
+        for (const receiver of receivers) {
+          if (receiver?.track === mediaStreamTrack || receiver?.track?.id === mediaStreamTrack.id) {
+            webrtcStatsReceiver = receiver;
+            return receiver;
+          }
+        }
+      }
+      return null;
+    }
+
+    function findWebRTCPeerConnectionForTrack(track) {
+      if (webrtcStatsPeerConnection) {
+        return webrtcStatsPeerConnection;
+      }
+      const mediaStreamTrack = mediaStreamTrackFromRemoteTrack(track);
+      for (const pc of collectWebRTCPeerConnections(lkRoom)) {
+        if (!mediaStreamTrack) {
+          webrtcStatsPeerConnection = pc;
+          return pc;
+        }
+        try {
+          if (pc.getReceivers().some((receiver) => receiver?.track === mediaStreamTrack || receiver?.track?.id === mediaStreamTrack.id)) {
+            webrtcStatsPeerConnection = pc;
+            return pc;
+          }
+        } catch (_err) {
+          // Try the next candidate.
+        }
+      }
+      return null;
+    }
+
+    async function getWebRTCStatsReport(track) {
+      const receiver = findWebRTCRtpReceiver(track);
+      if (receiver && typeof receiver.getStats === "function") {
+        return receiver.getStats();
+      }
+      const pc = findWebRTCPeerConnectionForTrack(track);
+      if (!pc || typeof pc.getStats !== "function") {
+        throw new Error("could not find WebRTC RTCRtpReceiver or RTCPeerConnection for stats");
+      }
+      const mediaStreamTrack = mediaStreamTrackFromRemoteTrack(track);
+      try {
+        return mediaStreamTrack ? pc.getStats(mediaStreamTrack) : pc.getStats();
+      } catch (_err) {
+        return pc.getStats();
+      }
+    }
+
+    function inboundVideoStatsFromReport(report) {
+      for (const stat of report.values()) {
+        if (stat.type !== "inbound-rtp" || stat.isRemote) {
+          continue;
+        }
+        if (stat.kind === "video" || stat.mediaType === "video") {
+          return stat;
+        }
+      }
+      return null;
+    }
+
+    function recentJitterBufferMs(stat, previous, field) {
+      const currentTotal = stat?.[field];
+      const previousTotal = previous?.[field];
+      const currentCount = stat?.jitterBufferEmittedCount;
+      const previousCount = previous?.jitterBufferEmittedCount;
+      if (
+        Number.isFinite(currentTotal)
+        && Number.isFinite(previousTotal)
+        && Number.isFinite(currentCount)
+        && Number.isFinite(previousCount)
+        && currentCount > previousCount
+        && currentTotal >= previousTotal
+      ) {
+        return ((currentTotal - previousTotal) / (currentCount - previousCount)) * 1000;
+      }
+      if (Number.isFinite(currentTotal) && Number.isFinite(currentCount) && currentCount > 0) {
+        return (currentTotal / currentCount) * 1000;
+      }
+      return null;
+    }
+
+    async function pollWebRTCStats() {
+      if (!webrtcRemoteVideoTrack || !result.webrtc.enabled) {
+        return;
+      }
+      try {
+        const report = await getWebRTCStatsReport(webrtcRemoteVideoTrack);
+        const inbound = inboundVideoStatsFromReport(report);
+        if (!inbound) {
+          throw new Error("no inbound video RTP stats found");
+        }
+        const jitterBufferDepthMs = recentJitterBufferMs(inbound, webrtcStatsPrevious, "jitterBufferDelay");
+        const jitterBufferTargetMs = recentJitterBufferMs(inbound, webrtcStatsPrevious, "jitterBufferTargetDelay");
+        webrtcStatsPrevious = {
+          jitterBufferDelay: inbound.jitterBufferDelay,
+          jitterBufferTargetDelay: inbound.jitterBufferTargetDelay,
+          jitterBufferEmittedCount: inbound.jitterBufferEmittedCount,
+        };
+        result.webrtc.stats.latest = {
+          id: inbound.id,
+          timestamp: inbound.timestamp,
+          framesDecoded: Number.isFinite(inbound.framesDecoded) ? inbound.framesDecoded : null,
+          framesDropped: Number.isFinite(inbound.framesDropped) ? inbound.framesDropped : null,
+          jitterBufferDelay: Number.isFinite(inbound.jitterBufferDelay) ? inbound.jitterBufferDelay : null,
+          jitterBufferTargetDelay: Number.isFinite(inbound.jitterBufferTargetDelay) ? inbound.jitterBufferTargetDelay : null,
+          jitterBufferEmittedCount: Number.isFinite(inbound.jitterBufferEmittedCount) ? inbound.jitterBufferEmittedCount : null,
+        };
+        result.webrtc.stats.jitterBufferDepthMs = Number.isFinite(jitterBufferDepthMs) ? jitterBufferDepthMs : null;
+        result.webrtc.stats.jitterBufferTargetMs = Number.isFinite(jitterBufferTargetMs) ? jitterBufferTargetMs : null;
+        result.webrtc.stats.error = null;
+        setMetric("webrtcJitterBuffer", Number.isFinite(jitterBufferDepthMs) ? `${jitterBufferDepthMs.toFixed(1)}ms` : "NA");
+      } catch (err) {
+        result.webrtc.stats.error = String(err?.message ?? err);
+        setMetric("webrtcJitterBuffer", "NA");
+      }
+    }
+
+    function startWebRTCStatsPolling() {
+      if (webrtcStatsTimer) {
+        return;
+      }
+      pollWebRTCStats();
+      webrtcStatsTimer = window.setInterval(pollWebRTCStats, 1000);
+    }
+
+    function stopWebRTCStatsPolling() {
+      if (webrtcStatsTimer) {
+        window.clearInterval(webrtcStatsTimer);
+        webrtcStatsTimer = undefined;
+      }
+      webrtcStatsPrevious = undefined;
+      webrtcStatsReceiver = undefined;
+      webrtcStatsPeerConnection = undefined;
+    }
+
+    function storeTimingSample(group, data) {
+      const metadata = JSON.parse(textDecoder.decode(data));
+      const sequence = metadata.sequence ?? group;
+      timingBySequence.set(sequence, metadata);
+      result.timingFrames += 1;
+      const waiters = timingWaiters.get(sequence);
+      if (waiters) {
+        timingWaiters.delete(sequence);
+        for (const resolve of waiters) {
+          resolve(metadata);
+        }
+      }
+    }
+
+    async function readTimingTrack(track) {
+      try {
+        while (true) {
+          const next = await track.readFrameSequence();
+          if (!next) {
+            return;
+          }
+          storeTimingSample(next.group, next.data);
+        }
+      } catch (err) {
+        if (!timingReaderDone) {
+          log(`timing track closed ${err?.message ?? err}`);
+        }
+      }
+    }
+
+    function waitForTiming(sequence, timeout = 250) {
+      if (timingBySequence.has(sequence)) {
+        return Promise.resolve(timingBySequence.get(sequence));
+      }
+      return new Promise((resolve) => {
+        const waiters = timingWaiters.get(sequence) ?? [];
+        waiters.push(resolve);
+        timingWaiters.set(sequence, waiters);
+        setTimeout(() => {
+          const current = timingWaiters.get(sequence);
+          if (!current) {
+            return;
+          }
+          const index = current.indexOf(resolve);
+          if (index >= 0) {
+            current.splice(index, 1);
+          }
+          if (current.length === 0) {
+            timingWaiters.delete(sequence);
+          }
+          resolve(null);
+        }, timeout);
+      });
+    }
+
+    function nalTypes(data) {
+      const types = [];
+      let i = 0;
+      while (i + 3 < data.length) {
+        let start = -1;
+        let offset = 0;
+        for (let j = i; j + 3 < data.length; j++) {
+          if (data[j] === 0 && data[j + 1] === 0 && data[j + 2] === 1) {
+            start = j;
+            offset = 3;
+            break;
+          }
+          if (j + 4 < data.length && data[j] === 0 && data[j + 1] === 0 && data[j + 2] === 0 && data[j + 3] === 1) {
+            start = j;
+            offset = 4;
+            break;
+          }
+        }
+        if (start < 0) {
+          break;
+        }
+        const nal = start + offset;
+        if (nal < data.length) {
+          types.push(data[nal] & 0x1f);
+        }
+        i = nal + 1;
+      }
+      return types;
+    }
+
+    function annexBNalus(data) {
+      const nalus = [];
+      let i = 0;
+      while (i + 3 < data.length) {
+        let start = -1;
+        let offset = 0;
+        for (let j = i; j + 3 < data.length; j++) {
+          if (data[j] === 0 && data[j + 1] === 0 && data[j + 2] === 1) {
+            start = j;
+            offset = 3;
+            break;
+          }
+          if (j + 4 < data.length && data[j] === 0 && data[j + 1] === 0 && data[j + 2] === 0 && data[j + 3] === 1) {
+            start = j;
+            offset = 4;
+            break;
+          }
+        }
+        if (start < 0) {
+          break;
+        }
+        const nalStart = start + offset;
+        i = nalStart + 1;
+        let next = data.length;
+        for (let j = i; j + 3 < data.length; j++) {
+          if (data[j] === 0 && data[j + 1] === 0 && (data[j + 2] === 1 || (j + 4 < data.length && data[j + 2] === 0 && data[j + 3] === 1))) {
+            next = j;
+            break;
+          }
+        }
+        nalus.push(data.subarray(nalStart, next));
+        i = next;
+      }
+      return nalus;
+    }
+
+    function codecFromSPS(data) {
+      const sps = annexBNalus(data).find((nalu) => nalu.length >= 4 && (nalu[0] & 0x1f) === 7);
+      if (!sps) {
+        return "avc1.42E01E";
+      }
+      return `avc1.${[sps[1], sps[2], sps[3]].map((value) => value.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+    }
+
+    async function configureDecoder(data) {
+      if (!("VideoDecoder" in window) || !("EncodedVideoChunk" in window)) {
+        throw new Error("WebCodecs VideoDecoder is not available in this browser");
+      }
+      if (decoderConfigured) {
+        return;
+      }
+
+      const codec = codecFromSPS(data);
+      const configs = [
+        { codec, optimizeForLatency: true, avc: { format: "annexb" } },
+        { codec, optimizeForLatency: true },
+        { codec: "avc1.42E01E", optimizeForLatency: true, avc: { format: "annexb" } },
+      ];
+      let selected;
+      for (const config of configs) {
+        try {
+          const supported = await VideoDecoder.isConfigSupported(config);
+          if (supported.supported) {
+            selected = supported.config;
+            break;
+          }
+        } catch (_err) {
+          // Older browser builds may reject the avc option; try the next shape.
+        }
+      }
+      if (!selected) {
+        throw new Error(`no supported WebCodecs H264 decoder config for ${codec}`);
+      }
+
+      decoder = new VideoDecoder({
+        output: renderFrame,
+        error: (err) => {
+          decoderError = err;
+          log(`decoder error ${err?.message ?? err}`);
+        },
+      });
+      decoder.configure(selected);
+      decoderConfigured = true;
+      result.decoderConfig = selected;
+      log(`moq decoder configured codec=${selected.codec} avc=${selected.avc?.format ?? "default"}`);
+    }
+
+    function renderFrame(frame) {
+      const timingSample = pendingDecodeSamples.shift();
+      const decoderOutputUs = currentTimestampUs();
+      if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
+        canvas.width = frame.displayWidth;
+        canvas.height = frame.displayHeight;
+      }
+      ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+      const framePaintedUs = currentTimestampUs();
+      frame.close();
+
+      if (timingSample) {
+        timingSample.decoderOutputUs = decoderOutputUs;
+        timingSample.framePaintedUs = framePaintedUs;
+        updateTimingOverlay(timingSample);
+      }
+
+      result.decodedFrames += 1;
+      result.renderedFrames += 1;
+      if (!result.firstRenderMs) {
+        result.firstRenderMs = Math.round(performance.now() - firstDecodeStartedAt);
+      }
+      setMetric("decodedFrames", String(result.decodedFrames));
+      setMetric("renderedFrames", String(result.renderedFrames));
+      updateVisualMetric();
+      maybeCompleteMoqValidation();
+    }
+
+    function updateVisualMetric() {
+      const width = canvas.width;
+      const height = canvas.height;
+      if (width === 0 || height === 0) {
+        return;
+      }
+
+      const pixels = ctx.getImageData(0, 0, width, height).data;
+      result.visual = calculateVisualStats(pixels, width, height);
+      const signature = sampleVisualSignature(pixels, width, height);
+      updateMotion(signature, lastVisualSignature, result.motion, result.renderedFrames);
+      lastVisualSignature = signature;
+      setMetric("visual", result.visual.ok ? "ok" : "flat");
+      setMetric("motion", result.motion.ok ? "ok" : "static");
+    }
+
+    function maybeCompleteMoqValidation() {
+      if (moqValidationComplete || result.renderedFrames < targetFrames) {
+        return;
+      }
+      try {
+        if (result.renderedFrames === 0) {
+          throw new Error("no decoded video frames were rendered");
+        }
+        if (!result.visual.ok) {
+          throw new Error(`rendered MoQ video failed visual validation averageLuma=${result.visual.averageLuma} variance=${result.visual.variance}`);
+        }
+        if (!result.motion.ok) {
+          throw new Error(`rendered MoQ video did not change across frames maxDelta=${result.motion.maxDelta}`);
+        }
+        if (!result.timing.latest) {
+          throw new Error("no timing metadata was received from the MoQ timing track");
+        }
+        moqValidationComplete = true;
+        result.moq.ok = true;
+        result.moq.status = "ok";
+        result.moq.totalMs = Math.round(performance.now() - result.moq.startedAt);
+        setStatus("moqStatus", "ok", "ok");
+        refreshOverallStatus();
+        moqValidationResolve();
+        log(`moq validated totalMs=${result.moq.totalMs} frames=${result.frames} decoded=${result.decodedFrames} rendered=${result.renderedFrames} bytes=${result.bytes} idrFrames=${result.idrFrames} visualLuma=${result.visual.averageLuma} visualVariance=${result.visual.variance} motionFrames=${result.motion.changedFrames} motionMaxDelta=${result.motion.maxDelta}`);
+      } catch (err) {
+        moqValidationComplete = true;
+        result.moq.status = "error";
+        result.moq.error = String(err?.stack ?? err);
+        setStatus("moqStatus", "error", "error");
+        moqValidationReject(err);
+      }
+    }
+
+    async function decodeAccessUnit(data, keyFrame, timingSample) {
+      await configureDecoder(data);
+      if (decoderError) {
+        throw decoderError;
+      }
+      if (!firstDecodeStartedAt) {
+        firstDecodeStartedAt = performance.now();
+      }
+      if (timingSample) {
+        timingSample.decoderUploadUs = currentTimestampUs();
+      }
+      pendingDecodeSamples.push(timingSample ?? null);
+      decoder.decode(new EncodedVideoChunk({
+        type: keyFrame ? "key" : "delta",
+        timestamp: frameTimestampUs,
+        duration: 33333,
+        data,
+      }));
+      frameTimestampUs += 33333;
+    }
+
+    async function startMoq() {
+      log(`moq connecting ${result.url}`);
+      log(`moq subscribing broadcast=${room} track=${trackName} timingTrack=${timingTrackName} validationFrames=${targetFrames}`);
+
+      const startedAt = performance.now();
+      result.moq.startedAt = startedAt;
+      const conn = await withTimeout(Net.Connection.connect(moqUrl, {
+        websocket: { enabled: false },
+        webtransport: {
+          serverCertificateHashes: [{ algorithm: "sha-256", value: certHash }],
+        },
+      }), timeoutMs, "WebTransport connect");
+      result.connectMs = Math.round(performance.now() - startedAt);
+      setMetric("connectMs", `${result.connectMs} ms`);
+      result.moq.status = "connected";
+      setStatus("moqStatus", "connected", "warn");
+      refreshOverallStatus();
+      log(`moq connected version=${conn.version} connectMs=${result.connectMs}`);
+
+      const broadcast = conn.consume(room);
+      const timingTrack = broadcast.subscribe(timingTrackName, 0);
+      readTimingTrack(timingTrack);
+      const track = broadcast.subscribe(trackName, 0);
+      const firstWaitStartedAt = performance.now();
+
+      window.addEventListener("pagehide", () => {
+        timingReaderDone = true;
+        if (decoder) {
+          decoder.close();
+          decoder = null;
+        }
+        conn.close();
+      }, { once: true });
+
+      async function readLoop() {
+        try {
+          while (true) {
+            const readPromise = track.readFrameSequence();
+            const next = moqValidationComplete
+              ? await readPromise
+              : await withTimeout(readPromise, Math.max(1000, timeoutMs - Math.round(performance.now() - startedAt)), "readFrameSequence");
+            if (!next) {
+              throw new Error("track closed");
+            }
+            const moqReceiveUs = currentTimestampUs();
+            const types = nalTypes(next.data);
+            const hasIDR = types.includes(5);
+            const timingMetadata = await waitForTiming(next.group);
+            const timingSample = timingMetadata ? {
+              sequence: timingMetadata.sequence ?? next.group,
+              frameId: timingMetadata.frameId,
+              userTimestampUs: timingMetadata.userTimestampUs,
+              moqReceiveUs,
+            } : null;
+            if (result.frames === 0) {
+              result.firstFrameMs = Math.round(performance.now() - firstWaitStartedAt);
+              result.firstObjectFromStartMs = Math.round(performance.now() - startedAt);
+              result.firstFrameBytes = next.data.byteLength;
+              result.firstNalTypes = types;
+              setMetric("firstFrameMs", `${result.firstObjectFromStartMs} ms`);
+            }
+            result.frames += 1;
+            result.bytes += next.data.byteLength;
+            result.idrFrames += hasIDR ? 1 : 0;
+            result.groups.push({
+              group: next.group,
+              frame: next.frame,
+              bytes: next.data.byteLength,
+              nalTypes: types,
+              idr: hasIDR,
+            });
+            if (result.groups.length > 16) {
+              result.groups.shift();
+            }
+
+            setMetric("frames", String(result.frames));
+            setMetric("bytes", String(result.bytes));
+            setMetric("idr", String(result.idrFrames > 0));
+            await decodeAccessUnit(next.data, hasIDR, timingSample);
+            if (result.frames <= 16 || result.frames % 30 === 0) {
+              log(`moq frame=${result.frames} group=${next.group} bytes=${next.data.byteLength} nalTypes=${types.join(",") || "none"} idr=${hasIDR} timing=${timingSample ? "yes" : "no"}`);
+            }
+          }
+        } catch (err) {
+          if (!moqValidationComplete) {
+            result.moq.status = "error";
+            result.moq.error = String(err?.stack ?? err);
+            setStatus("moqStatus", "error", "error");
+            moqValidationReject(err);
+          } else {
+            log(`moq stream stopped after validation ${err?.message ?? err}`);
+          }
+        }
+      }
+
+      readLoop();
+      return moqValidation;
+    }
+
+    function handleWebRTCTrackSubscribed(track, publication, participant) {
+      if (track.kind !== Track.Kind.Video && track.kind !== "video") {
+        return;
+      }
+      const trackNameFromPublication = publication?.trackName ?? publication?.name ?? "";
+      if (trackNameFromPublication && trackNameFromPublication !== trackName) {
+        log(`webrtc ignoring video track=${trackNameFromPublication} participant=${participant.identity}`);
+        return;
+      }
+      log(`webrtc subscribed participant=${participant.identity} track=${trackNameFromPublication || track.sid || "video"}`);
+      webrtcRemoteVideoTrack = track;
+      setupWebRTCPacketTrailerLookup(track);
+      track.attach(webrtcVideo);
+      webrtcVideo.muted = true;
+      webrtcVideo.playsInline = true;
+      webrtcVideo.autoplay = true;
+      webrtcVideo.play().catch((err) => log(`webrtc video play warning ${err?.message ?? err}`));
+      startWebRTCStatsPolling();
+      startWebRTCFrameLoop();
+    }
+
+    function setupWebRTCPacketTrailerLookup(track) {
+      if (typeof track.lookupFrameMetadata !== "function") {
+        result.webrtc.packetTrailer.error = "RemoteVideoTrack.lookupFrameMetadata is unavailable";
+        log("webrtc packet trailer lookup unavailable on this track");
+        return;
+      }
+
+      track.on(TrackEvent.TimeSyncUpdate, (update) => {
+        const metadata = track.lookupFrameMetadata({ rtpTimestamp: update.rtpTimestamp });
+        if (!metadata) {
+          return;
+        }
+        latestWebRTCPacketTrailer = {
+          rtpTimestamp: update.rtpTimestamp,
+          timeSyncTimestamp: update.timestamp,
+          frameId: metadata.frameId,
+          userTimestampUs: packetTrailerTimestampUs(metadata),
+        };
+        result.webrtc.packetTrailer.latest = latestWebRTCPacketTrailer;
+        result.webrtc.packetTrailer.metadataFrames += 1;
+        result.webrtc.packetTrailer.error = null;
+        setMetric("webrtcPacketTrailerFrames", String(result.webrtc.packetTrailer.metadataFrames));
+      });
+    }
+
+    function scanExistingWebRTCTracks(roomInstance) {
+      for (const participant of roomInstance.remoteParticipants.values()) {
+        const publications = participant.trackPublications ?? participant.videoTrackPublications ?? new Map();
+        for (const publication of publications.values()) {
+          if (publication.track) {
+            handleWebRTCTrackSubscribed(publication.track, publication, participant);
+          }
+        }
+      }
+    }
+
+    function startWebRTCFrameLoop() {
+      if (!("requestVideoFrameCallback" in HTMLVideoElement.prototype)) {
+        const err = new Error("requestVideoFrameCallback is not available in this browser");
+        webrtcValidationReject(err);
+        return;
+      }
+      if (result.webrtc.frameLoopStarted) {
+        return;
+      }
+      result.webrtc.frameLoopStarted = true;
+
+      const onFrame = (now, metadata) => {
+        const paintedUs = domHighResTimestampUs(now);
+        const packetTrailerMetadata = Number.isFinite(metadata.rtpTimestamp) && typeof webrtcRemoteVideoTrack?.lookupFrameMetadata === "function"
+          ? webrtcRemoteVideoTrack.lookupFrameMetadata({ rtpTimestamp: metadata.rtpTimestamp })
+          : latestWebRTCPacketTrailer
+            ? {
+              frameId: latestWebRTCPacketTrailer.frameId,
+              userTimestamp: latestWebRTCPacketTrailer.userTimestampUs,
+            }
+            : undefined;
+        result.webrtc.renderedFrames += 1;
+        result.webrtc.videoWidth = webrtcVideo.videoWidth;
+        result.webrtc.videoHeight = webrtcVideo.videoHeight;
+        if (!result.webrtc.firstFrameMs) {
+          result.webrtc.firstFrameMs = Math.round(performance.now() - webrtcStartedAt);
+          setMetric("webrtcFirstFrameMs", `${result.webrtc.firstFrameMs} ms`);
+        }
+        updateWebRTCTimingOverlay(metadata, paintedUs, packetTrailerMetadata);
+        maybeCompleteWebRTCValidation();
+        webrtcVideo.requestVideoFrameCallback(onFrame);
+      };
+      webrtcVideo.requestVideoFrameCallback(onFrame);
+    }
+
+    function maybeCompleteWebRTCValidation() {
+      if (webrtcValidationComplete || result.webrtc.renderedFrames < targetFrames) {
+        return;
+      }
+      try {
+        if (result.webrtc.videoWidth === 0 || result.webrtc.videoHeight === 0) {
+          throw new Error("WebRTC video has no rendered dimensions");
+        }
+        if (result.webrtc.packetTrailer.configured && result.webrtc.packetTrailer.metadataFrames === 0) {
+          throw new Error(`WebRTC packet trailer worker was configured but no frame metadata was decoded${result.webrtc.packetTrailer.error ? `: ${result.webrtc.packetTrailer.error}` : ""}`);
+        }
+        webrtcValidationComplete = true;
+        result.webrtc.ok = true;
+        result.webrtc.status = "ok";
+        result.webrtc.totalMs = Math.round(performance.now() - webrtcStartedAt);
+        setStatus("webrtcStatus", "ok", "ok");
+        refreshOverallStatus();
+        webrtcValidationResolve();
+        log(`webrtc validated totalMs=${result.webrtc.totalMs} rendered=${result.webrtc.renderedFrames} video=${result.webrtc.videoWidth}x${result.webrtc.videoHeight} metadata=${result.webrtc.timing.metadataAvailable} packetTrailerFrames=${result.webrtc.packetTrailer.metadataFrames} jitterBuffer=${result.webrtc.stats.jitterBufferDepthMs == null ? "NA" : `${result.webrtc.stats.jitterBufferDepthMs.toFixed(1)}ms`}`);
+      } catch (err) {
+        webrtcValidationComplete = true;
+        result.webrtc.status = "error";
+        result.webrtc.error = String(err?.stack ?? err);
+        setStatus("webrtcStatus", "error", "error");
+        webrtcValidationReject(err);
+      }
+    }
+
+    async function startWebRTC() {
+      if (!result.webrtc.enabled) {
+        setStatus("webrtcStatus", "disabled", "warn");
+        $("webrtcTimingOverlay").textContent = "missing liveKitUrl or webrtcToken";
+        result.webrtc.ok = true;
+        webrtcValidationResolve();
+        refreshOverallStatus();
+        return webrtcValidation;
+      }
+
+      webrtcStartedAt = performance.now();
+      result.webrtc.startedAt = webrtcStartedAt;
+      log(`webrtc connecting ${liveKitUrl} identity=${webrtcIdentity}`);
+      const roomOptions = {
+        adaptiveStream: false,
+        dynacast: false,
+      };
+      try {
+        packetTrailerWorker = new Worker(packetTrailerWorkerUrl, {
+          type: "module",
+          name: "livekit-packet-trailer",
+        });
+        roomOptions.packetTrailer = {
+          worker: packetTrailerWorker,
+        };
+        result.webrtc.packetTrailer.configured = true;
+        result.webrtc.packetTrailer.supported = typeof RTCRtpScriptTransform !== "undefined"
+          || (typeof RTCRtpSender !== "undefined" && Boolean(RTCRtpSender.prototype?.createEncodedStreams))
+          || (typeof RTCRtpReceiver !== "undefined" && Boolean(RTCRtpReceiver.prototype?.createEncodedStreams));
+        log(`webrtc packet trailer worker configured url=${packetTrailerWorkerUrl} supported=${result.webrtc.packetTrailer.supported}`);
+      } catch (err) {
+        result.webrtc.packetTrailer.error = String(err?.message ?? err);
+        log(`webrtc packet trailer worker unavailable ${result.webrtc.packetTrailer.error}`);
+      }
+
+      lkRoom = new Room(roomOptions);
+      lkRoom
+        .on(RoomEvent.TrackSubscribed, handleWebRTCTrackSubscribed)
+        .on(RoomEvent.TrackUnsubscribed, (track) => {
+          stopWebRTCStatsPolling();
+          track.detach();
+        })
+        .on(RoomEvent.Disconnected, (reason) => {
+          stopWebRTCStatsPolling();
+          if (!webrtcValidationComplete) {
+            const err = new Error(`WebRTC disconnected before validation reason=${reason ?? "unknown"}`);
+            setStatus("webrtcStatus", "error", "error");
+            webrtcValidationReject(err);
+          } else {
+            log(`webrtc disconnected reason=${reason ?? "unknown"}`);
+          }
+        });
+
+      await withTimeout(lkRoom.connect(liveKitUrl, webrtcToken, { autoSubscribe: true }), timeoutMs, "LiveKit WebRTC connect");
+      result.webrtc.connectMs = Math.round(performance.now() - webrtcStartedAt);
+      setMetric("webrtcConnectMs", `${result.webrtc.connectMs} ms`);
+      result.webrtc.status = "connected";
+      setStatus("webrtcStatus", "connected", "warn");
+      refreshOverallStatus();
+      log(`webrtc connected room=${lkRoom.name} connectMs=${result.webrtc.connectMs}`);
+      scanExistingWebRTCTracks(lkRoom);
+      window.addEventListener("pagehide", () => {
+        stopWebRTCStatsPolling();
+        lkRoom.disconnect();
+        packetTrailerWorker?.terminate();
+      }, { once: true });
+      return webrtcValidation;
+    }
+
+    async function run() {
+      const validations = [startMoq(), startWebRTC()];
+      const results = await Promise.allSettled(validations);
+      const failures = results.filter((item) => item.status === "rejected");
+      if (failures.length > 0) {
+        const error = failures[0].reason;
+        result.ok = false;
+        result.error = String(error?.stack ?? error);
+        setStatus("status", "error", "error");
+        log(result.error);
+        throw error;
+      }
+      refreshOverallStatus();
+    }
+
+    run().catch((err) => {
+      result.ok = false;
+      result.error = String(err?.stack ?? err);
+      setStatus("status", "error", "error");
+      log(result.error);
+      throw err;
+    });
+  </script>
+</body>
+</html>
