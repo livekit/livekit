@@ -84,8 +84,8 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		return nil, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, s.limitConf.MaxRoomNameLength)
 	}
 
-	if !s.limitConf.CheckRoomMetadataSize(req.Metadata) {
-		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(int(s.limitConf.MaxRoomMetadataSize)))
+	if !s.limitConf.CheckMetadataSize(req.Metadata) {
+		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(int(s.limitConf.MaxMetadataSize)))
 	}
 
 	for _, ad := range req.Agents {
@@ -333,8 +333,8 @@ func (s *RoomService) UpdateRoomMetadata(ctx context.Context, req *livekit.Updat
 	RecordRequest(ctx, req)
 
 	AppendLogFields(ctx, "room", req.Room, "size", len(req.Metadata))
-	if !s.limitConf.CheckRoomMetadataSize(req.Metadata) {
-		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(int(s.limitConf.MaxRoomMetadataSize)))
+	if !s.limitConf.CheckMetadataSize(req.Metadata) {
+		return nil, twirp.InvalidArgumentError(ErrMetadataExceedsLimits.Error(), strconv.Itoa(int(s.limitConf.MaxMetadataSize)))
 	}
 
 	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.Room)); err != nil {

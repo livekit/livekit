@@ -60,20 +60,17 @@ func TestMetaDataLimits(t *testing.T) {
 		require.Equal(t, twirp.InvalidArgument, terr.Code())
 	}
 
-	t.Run("participant metadata exceeds limits", func(t *testing.T) {
+	t.Run("metadata exceeds limit", func(t *testing.T) {
 		svc := newTestRoomService(config.LimitConfig{MaxMetadataSize: 5})
+
 		_, err := svc.UpdateParticipant(adminCtx(), &livekit.UpdateParticipantRequest{
 			Room:     "testroom",
 			Identity: "123",
 			Metadata: "abcdefg",
 		})
 		requireInvalidArg(t, err)
-	})
 
-	t.Run("room metadata exceeds limits", func(t *testing.T) {
-		svc := newTestRoomService(config.LimitConfig{MaxRoomMetadataSize: 5})
-
-		_, err := svc.UpdateRoomMetadata(adminCtx(), &livekit.UpdateRoomMetadataRequest{
+		_, err = svc.UpdateRoomMetadata(adminCtx(), &livekit.UpdateRoomMetadataRequest{
 			Room:     "testroom",
 			Metadata: "abcdefg",
 		})
@@ -84,11 +81,8 @@ func TestMetaDataLimits(t *testing.T) {
 			Metadata: "abcdefg",
 		})
 		requireInvalidArg(t, err)
-	})
 
-	t.Run("embedded agent dispatch in CreateRoom exceeds metadata limit", func(t *testing.T) {
-		svc := newTestRoomService(config.LimitConfig{MaxMetadataSize: 5})
-		_, err := svc.CreateRoom(createCtx(), &livekit.CreateRoomRequest{
+		_, err = svc.CreateRoom(createCtx(), &livekit.CreateRoomRequest{
 			Name: "testroom",
 			Agents: []*livekit.RoomAgentDispatch{
 				{AgentName: "bot", Metadata: "abcdefg"},
@@ -110,9 +104,8 @@ func TestMetaDataLimits(t *testing.T) {
 
 	notExceedsLimitsSvc := map[string]*TestRoomService{
 		"metadata exceeds limits": newTestRoomService(config.LimitConfig{
-			MaxMetadataSize:     5,
-			MaxRoomMetadataSize: 5,
-			MaxAttributesSize:   5,
+			MaxMetadataSize:   5,
+			MaxAttributesSize: 5,
 		}),
 		"metadata no limits": newTestRoomService(config.LimitConfig{}),
 	}
