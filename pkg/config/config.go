@@ -441,7 +441,7 @@ var DefaultConfig = Config{
 	},
 	Limit: LimitConfig{
 		MaxMetadataSize:              512 * 1024,
-		MaxAttributesSize:            64000,
+		MaxAttributesSize:            64 * 1024,
 		MaxRoomNameLength:            256,
 		MaxParticipantIdentityLength: 256,
 		MaxParticipantNameLength:     256,
