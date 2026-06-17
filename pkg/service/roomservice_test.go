@@ -69,6 +69,18 @@ func TestMetaDataLimits(t *testing.T) {
 		terr, ok = err.(twirp.Error)
 		require.True(t, ok)
 		require.Equal(t, twirp.InvalidArgument, terr.Code())
+
+		createGrant := &auth.ClaimGrants{
+			Video: &auth.VideoGrant{RoomCreate: true},
+		}
+		createCtx := service.WithGrants(context.Background(), createGrant, "")
+		_, err = svc.CreateRoom(createCtx, &livekit.CreateRoomRequest{
+			Name:     "testroom",
+			Metadata: "abcdefg",
+		})
+		terr, ok = err.(twirp.Error)
+		require.True(t, ok)
+		require.Equal(t, twirp.InvalidArgument, terr.Code())
 	})
 
 	notExceedsLimitsSvc := map[string]*TestRoomService{
@@ -99,6 +111,20 @@ func TestMetaDataLimits(t *testing.T) {
 			terr, ok = err.(twirp.Error)
 			require.True(t, ok)
 			require.NotEqual(t, twirp.InvalidArgument, terr.Code())
+
+			createGrant := &auth.ClaimGrants{
+				Video: &auth.VideoGrant{RoomCreate: true},
+			}
+			createCtx := service.WithGrants(context.Background(), createGrant, "")
+			_, err = svc.CreateRoom(createCtx, &livekit.CreateRoomRequest{
+				Name:     "testroom",
+				Metadata: "abc",
+			})
+			if err != nil {
+				terr, ok = err.(twirp.Error)
+				require.True(t, ok)
+				require.NotEqual(t, twirp.InvalidArgument, terr.Code())
+			}
 		})
 
 	}

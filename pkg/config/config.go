@@ -440,7 +440,7 @@ var DefaultConfig = Config{
 		UpdateBatchTargetSize: 128 * 1024,
 	},
 	Limit: LimitConfig{
-		MaxMetadataSize:              64000,
+		MaxMetadataSize:              512 * 1024,
 		MaxAttributesSize:            64000,
 		MaxRoomNameLength:            256,
 		MaxParticipantIdentityLength: 256,
