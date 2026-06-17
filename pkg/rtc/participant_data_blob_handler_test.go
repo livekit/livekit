@@ -286,13 +286,15 @@ func TestProcessGetDataBlobRequest(t *testing.T) {
 		publisher.GetDataBlobReturns(blob)
 
 		p.ProcessGetDataBlobRequest(&livekit.GetDataBlobRequest{
-			Key: key,
+			RequestId: 42,
+			Key:       key,
 		}, publisher)
 
 		require.Equal(t, 1, sink.WriteMessageCallCount())
 		msg := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
 		response, ok := msg.Message.(*livekit.SignalResponse_GetDataBlobResponse)
 		require.True(t, ok, "expected SignalResponse_GetDataBlobResponse, got %T", msg.Message)
+		require.Equal(t, uint32(42), response.GetDataBlobResponse.RequestId)
 		require.Equal(t, blob, response.GetDataBlobResponse.Blob)
 	})
 }

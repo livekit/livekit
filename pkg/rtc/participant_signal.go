@@ -376,8 +376,9 @@ func (p *ParticipantImpl) sendStoreDataBlobResponse(requestId uint32, key *livek
 	}))
 }
 
-func (p *ParticipantImpl) sendGetDataBlobResponse(dataBlob *livekit.DataBlob) error {
+func (p *ParticipantImpl) sendGetDataBlobResponse(requestId uint32, dataBlob *livekit.DataBlob) error {
 	return p.signaller.WriteMessage(p.signalling.SignalGetDataBlobResponse(&livekit.GetDataBlobResponse{
-		Blob: dataBlob,
+		RequestId: requestId,
+		Blob:      dataBlob,
 	}))
 }

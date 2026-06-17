@@ -99,13 +99,13 @@ func (p *ParticipantImpl) ProcessGetDataBlobRequest(req *livekit.GetDataBlobRequ
 	if dataBlob == nil {
 		p.sendRequestResponse(&livekit.RequestResponse{
 			RequestId: req.RequestId,
-			Reason:  livekit.RequestResponse_NOT_FOUND,
-			Message: "data blob not found",
+			Reason:    livekit.RequestResponse_NOT_FOUND,
+			Message:   "data blob not found",
 		})
 		return
 	}
 
-	p.sendGetDataBlobResponse(dataBlob)
+	p.sendGetDataBlobResponse(req.RequestId, dataBlob)
 }
 
 func (p *ParticipantImpl) GetAllDataBlob() []*livekit.DataBlob {
