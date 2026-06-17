@@ -287,6 +287,7 @@ type LimitConfig struct {
 	SubscriptionLimitVideo int32   `yaml:"subscription_limit_video,omitempty"`
 	SubscriptionLimitAudio int32   `yaml:"subscription_limit_audio,omitempty"`
 	MaxMetadataSize        uint32  `yaml:"max_metadata_size,omitempty"`
+	MaxRoomMetadataSize    uint32  `yaml:"max_room_metadata_size,omitempty"`
 	// total size of all attributes on a participant
 	MaxAttributesSize            uint32 `yaml:"max_attributes_size,omitempty"`
 	MaxRoomNameLength            int    `yaml:"max_room_name_length,omitempty"`
@@ -308,6 +309,10 @@ func (l LimitConfig) CheckParticipantNameLength(name string) bool {
 
 func (l LimitConfig) CheckMetadataSize(metadata string) bool {
 	return l.MaxMetadataSize == 0 || uint32(len(metadata)) <= l.MaxMetadataSize
+}
+
+func (l LimitConfig) CheckRoomMetadataSize(metadata string) bool {
+	return l.MaxRoomMetadataSize == 0 || uint32(len(metadata)) <= l.MaxRoomMetadataSize
 }
 
 func (l LimitConfig) CheckAttributesSize(attributes map[string]string) bool {
@@ -440,7 +445,8 @@ var DefaultConfig = Config{
 		UpdateBatchTargetSize: 128 * 1024,
 	},
 	Limit: LimitConfig{
-		MaxMetadataSize:              512 * 1024,
+		MaxMetadataSize:              64000,
+		MaxRoomMetadataSize:          512 * 1024,
 		MaxAttributesSize:            64000,
 		MaxRoomNameLength:            256,
 		MaxParticipantIdentityLength: 256,
@@ -546,7 +552,7 @@ func NewConfig(confString string, strictMode bool, c *cli.Command, baseFlags []c
 
 	// copy over legacy limits
 	if conf.Room.MaxMetadataSize != 0 {
-		conf.Limit.MaxMetadataSize = conf.Room.MaxMetadataSize
+		conf.Limit.MaxRoomMetadataSize = conf.Room.MaxMetadataSize
 	}
 	if conf.Room.MaxParticipantIdentityLength != 0 {
 		conf.Limit.MaxParticipantIdentityLength = conf.Room.MaxParticipantIdentityLength

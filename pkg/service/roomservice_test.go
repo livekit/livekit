@@ -47,55 +47,79 @@ func TestDeleteRoom(t *testing.T) {
 }
 
 func TestMetaDataLimits(t *testing.T) {
-	t.Run("metadata exceed limits", func(t *testing.T) {
+	adminCtx := func() context.Context {
+		return service.WithGrants(context.Background(), &auth.ClaimGrants{Video: &auth.VideoGrant{}}, "")
+	}
+	createCtx := func() context.Context {
+		return service.WithGrants(context.Background(), &auth.ClaimGrants{Video: &auth.VideoGrant{RoomCreate: true}}, "")
+	}
+	requireInvalidArg := func(t *testing.T, err error) {
+		t.Helper()
+		terr, ok := err.(twirp.Error)
+		require.True(t, ok, "expected twirp error, got %T (%v)", err, err)
+		require.Equal(t, twirp.InvalidArgument, terr.Code())
+	}
+
+	t.Run("participant metadata exceeds limits", func(t *testing.T) {
 		svc := newTestRoomService(config.LimitConfig{MaxMetadataSize: 5})
-		grant := &auth.ClaimGrants{
-			Video: &auth.VideoGrant{},
-		}
-		ctx := service.WithGrants(context.Background(), grant, "")
-		_, err := svc.UpdateParticipant(ctx, &livekit.UpdateParticipantRequest{
+		_, err := svc.UpdateParticipant(adminCtx(), &livekit.UpdateParticipantRequest{
 			Room:     "testroom",
 			Identity: "123",
 			Metadata: "abcdefg",
 		})
-		terr, ok := err.(twirp.Error)
-		require.True(t, ok)
-		require.Equal(t, twirp.InvalidArgument, terr.Code())
+		requireInvalidArg(t, err)
+	})
 
-		_, err = svc.UpdateRoomMetadata(ctx, &livekit.UpdateRoomMetadataRequest{
+	t.Run("room metadata exceeds limits", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{MaxRoomMetadataSize: 5})
+
+		_, err := svc.UpdateRoomMetadata(adminCtx(), &livekit.UpdateRoomMetadataRequest{
 			Room:     "testroom",
 			Metadata: "abcdefg",
 		})
-		terr, ok = err.(twirp.Error)
-		require.True(t, ok)
-		require.Equal(t, twirp.InvalidArgument, terr.Code())
+		requireInvalidArg(t, err)
 
-		createGrant := &auth.ClaimGrants{
-			Video: &auth.VideoGrant{RoomCreate: true},
-		}
-		createCtx := service.WithGrants(context.Background(), createGrant, "")
-		_, err = svc.CreateRoom(createCtx, &livekit.CreateRoomRequest{
+		_, err = svc.CreateRoom(createCtx(), &livekit.CreateRoomRequest{
 			Name:     "testroom",
 			Metadata: "abcdefg",
 		})
-		terr, ok = err.(twirp.Error)
-		require.True(t, ok)
-		require.Equal(t, twirp.InvalidArgument, terr.Code())
+		requireInvalidArg(t, err)
+	})
+
+	t.Run("embedded agent dispatch in CreateRoom exceeds metadata limit", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{MaxMetadataSize: 5})
+		_, err := svc.CreateRoom(createCtx(), &livekit.CreateRoomRequest{
+			Name: "testroom",
+			Agents: []*livekit.RoomAgentDispatch{
+				{AgentName: "bot", Metadata: "abcdefg"},
+			},
+		})
+		requireInvalidArg(t, err)
+	})
+
+	t.Run("embedded agent dispatch in CreateRoom exceeds attributes limit", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{MaxAttributesSize: 5})
+		_, err := svc.CreateRoom(createCtx(), &livekit.CreateRoomRequest{
+			Name: "testroom",
+			Agents: []*livekit.RoomAgentDispatch{
+				{AgentName: "bot", Attributes: map[string]string{"key": "abcdefg"}},
+			},
+		})
+		requireInvalidArg(t, err)
 	})
 
 	notExceedsLimitsSvc := map[string]*TestRoomService{
-		"metadata exceeds limits": newTestRoomService(config.LimitConfig{MaxMetadataSize: 5}),
-		"metadata no limits":      newTestRoomService(config.LimitConfig{}), // no limits
+		"metadata exceeds limits": newTestRoomService(config.LimitConfig{
+			MaxMetadataSize:     5,
+			MaxRoomMetadataSize: 5,
+			MaxAttributesSize:   5,
+		}),
+		"metadata no limits": newTestRoomService(config.LimitConfig{}),
 	}
 
-	for n, s := range notExceedsLimitsSvc {
-		svc := s
+	for n, svc := range notExceedsLimitsSvc {
 		t.Run(n, func(t *testing.T) {
-			grant := &auth.ClaimGrants{
-				Video: &auth.VideoGrant{},
-			}
-			ctx := service.WithGrants(context.Background(), grant, "")
-			_, err := svc.UpdateParticipant(ctx, &livekit.UpdateParticipantRequest{
+			_, err := svc.UpdateParticipant(adminCtx(), &livekit.UpdateParticipantRequest{
 				Room:     "testroom",
 				Identity: "123",
 				Metadata: "abc",
@@ -104,7 +128,7 @@ func TestMetaDataLimits(t *testing.T) {
 			require.True(t, ok)
 			require.NotEqual(t, twirp.InvalidArgument, terr.Code())
 
-			_, err = svc.UpdateRoomMetadata(ctx, &livekit.UpdateRoomMetadataRequest{
+			_, err = svc.UpdateRoomMetadata(adminCtx(), &livekit.UpdateRoomMetadataRequest{
 				Room:     "testroom",
 				Metadata: "abc",
 			})
@@ -112,13 +136,12 @@ func TestMetaDataLimits(t *testing.T) {
 			require.True(t, ok)
 			require.NotEqual(t, twirp.InvalidArgument, terr.Code())
 
-			createGrant := &auth.ClaimGrants{
-				Video: &auth.VideoGrant{RoomCreate: true},
-			}
-			createCtx := service.WithGrants(context.Background(), createGrant, "")
-			_, err = svc.CreateRoom(createCtx, &livekit.CreateRoomRequest{
+			_, err = svc.CreateRoom(createCtx(), &livekit.CreateRoomRequest{
 				Name:     "testroom",
 				Metadata: "abc",
+				Agents: []*livekit.RoomAgentDispatch{
+					{AgentName: "bot", Metadata: "abc", Attributes: map[string]string{"k": "v"}},
+				},
 			})
 			if err != nil {
 				terr, ok = err.(twirp.Error)
@@ -126,8 +149,37 @@ func TestMetaDataLimits(t *testing.T) {
 				require.NotEqual(t, twirp.InvalidArgument, terr.Code())
 			}
 		})
-
 	}
+}
+
+func TestAgentDispatchMetadataLimits(t *testing.T) {
+	ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{
+		Video: &auth.VideoGrant{Room: "testroom", RoomAdmin: true},
+	}, "")
+
+	t.Run("metadata exceeds limits", func(t *testing.T) {
+		svc := newTestAgentDispatchService(config.LimitConfig{MaxMetadataSize: 5})
+		_, err := svc.CreateDispatch(ctx, &livekit.CreateAgentDispatchRequest{
+			Room:     "testroom",
+			Metadata: "abcdefg",
+		})
+		require.ErrorIs(t, err, service.ErrMetadataExceedsLimits)
+	})
+
+	t.Run("attributes exceeds limits", func(t *testing.T) {
+		svc := newTestAgentDispatchService(config.LimitConfig{MaxAttributesSize: 5})
+		_, err := svc.CreateDispatch(ctx, &livekit.CreateAgentDispatchRequest{
+			Room:       "testroom",
+			Attributes: map[string]string{"key": "abcdefg"},
+		})
+		require.ErrorIs(t, err, service.ErrAttributeExceedsLimits)
+	})
+}
+
+func newTestAgentDispatchService(limitConf config.LimitConfig) *service.AgentDispatchService {
+	allocator := &servicefakes.FakeRoomAllocator{}
+	allocator.AutoCreateEnabledReturns(false)
+	return service.NewAgentDispatchService(limitConf, nil, rpc.NewTopicFormatter(), allocator, &routingfakes.FakeRouter{})
 }
 
 func newTestRoomService(limitConf config.LimitConfig) *TestRoomService {
