@@ -293,6 +293,15 @@ func (r *RoomManager) StartSession(
 ) error {
 	sessionStartTime := time.Now()
 
+	if pi.Identity != "" && pi.Grants != nil {
+		if !r.config.Limit.CheckMetadataSize(pi.Grants.Metadata) {
+			return ErrMetadataExceedsLimits
+		}
+		if !r.config.Limit.CheckAttributesSize(pi.Grants.Attributes) {
+			return ErrAttributeExceedsLimits
+		}
+	}
+
 	createRoom := pi.CreateRoom
 	room, err := r.getOrCreateRoom(ctx, createRoom)
 	if err != nil {
