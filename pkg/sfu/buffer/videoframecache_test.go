@@ -26,14 +26,14 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-func newGOPTestBuffer(maxDuration time.Duration) *BufferBase {
+func newVideoFrameCacheTestBuffer(maxDuration time.Duration) *BufferBase {
 	b := &BufferBase{
 		codecType: webrtc.RTPCodecTypeVideo,
 		clockRate: 90000,
 		logger:    logger.GetLogger(),
 	}
 	b.bucket = bucket.NewBucket[uint64, uint16](256, bucket.RTPMaxPktSize, bucket.RTPSeqNumOffset)
-	b.EnableGOPCache(maxDuration)
+	b.EnableVideoFrameCache(maxDuration)
 	return b
 }
 
@@ -49,7 +49,7 @@ func addBucketPacket(t *testing.T, b *BufferBase, extSN uint64, ts uint32) {
 	require.NoError(t, err)
 }
 
-func gopMarkPkt(extSN, extTS uint64, keyFrame bool) *ExtPacket {
+func videoFrameCacheMarkPkt(extSN, extTS uint64, keyFrame bool) *ExtPacket {
 	return &ExtPacket{
 		ExtSequenceNumber: extSN,
 		ExtTimestamp:      extTS,
@@ -58,8 +58,8 @@ func gopMarkPkt(extSN, extTS uint64, keyFrame bool) *ExtPacket {
 	}
 }
 
-func TestGOPCacheReadsFromBucket(t *testing.T) {
-	b := newGOPTestBuffer(0)
+func TestVideoFrameCacheReadsFromBucket(t *testing.T) {
+	b := newVideoFrameCacheTestBuffer(0)
 
 	// store SN 100..104 in the bucket
 	for i := uint64(0); i < 5; i++ {
@@ -67,18 +67,18 @@ func TestGOPCacheReadsFromBucket(t *testing.T) {
 	}
 
 	// no key frame marked yet -> not available
-	_, ok := b.GetGOP()
+	_, ok := b.GetVideoFrameCache()
 	require.False(t, ok)
 
 	// mark: delta at 100, key frame at 101, deltas after
-	b.markGOPLocked(gopMarkPkt(100, 1000, false))
-	b.markGOPLocked(gopMarkPkt(101, 2000, true))
-	b.markGOPLocked(gopMarkPkt(102, 3000, false))
-	b.markGOPLocked(gopMarkPkt(103, 4000, false))
-	b.markGOPLocked(gopMarkPkt(104, 5000, false))
+	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(100, 1000, false))
+	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(101, 2000, true))
+	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(102, 3000, false))
+	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(103, 4000, false))
+	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(104, 5000, false))
 
 	// GOP is [key frame .. head] = 101..104
-	pkts, ok := b.GetGOP()
+	pkts, ok := b.GetVideoFrameCache()
 	require.True(t, ok)
 	require.Len(t, pkts, 4)
 	require.Equal(t, uint16(101), pkts[0].Packet.SequenceNumber)
@@ -89,22 +89,22 @@ func TestGOPCacheReadsFromBucket(t *testing.T) {
 
 	// a new key frame moves the boundary
 	addBucketPacket(t, b, 105, 6000)
-	b.markGOPLocked(gopMarkPkt(105, 6000, true))
-	pkts, ok = b.GetGOP()
+	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(105, 6000, true))
+	pkts, ok = b.GetVideoFrameCache()
 	require.True(t, ok)
 	require.Len(t, pkts, 1)
 	require.Equal(t, uint16(105), pkts[0].Packet.SequenceNumber)
 	require.True(t, pkts[0].IsKeyFrame)
 }
 
-func TestGOPCacheGetPacketsAfter(t *testing.T) {
-	b := newGOPTestBuffer(0)
+func TestVideoFrameCacheGetPacketsAfter(t *testing.T) {
+	b := newVideoFrameCacheTestBuffer(0)
 	for i := uint64(0); i < 5; i++ {
 		addBucketPacket(t, b, 100+i, uint32(1000*(i+1)))
 	}
-	b.markGOPLocked(gopMarkPkt(100, 1000, true))
+	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(100, 1000, true))
 	for i := uint64(1); i < 5; i++ {
-		b.markGOPLocked(gopMarkPkt(100+i, 1000*(i+1), false))
+		b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(100+i, 1000*(i+1), false))
 	}
 
 	// everything after 102 is 103, 104
@@ -119,94 +119,94 @@ func TestGOPCacheGetPacketsAfter(t *testing.T) {
 	require.False(t, ok)
 }
 
-func TestGOPCacheSkipsLostPackets(t *testing.T) {
-	b := newGOPTestBuffer(0)
+func TestVideoFrameCacheSkipsLostPackets(t *testing.T) {
+	b := newVideoFrameCacheTestBuffer(0)
 
 	// store the key frame and a later packet, leaving a gap at 101
 	addBucketPacket(t, b, 100, 1000)
 	addBucketPacket(t, b, 102, 3000)
 
-	b.markGOPLocked(gopMarkPkt(100, 1000, true))
-	b.markGOPLocked(gopMarkPkt(102, 3000, false))
+	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(100, 1000, true))
+	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(102, 3000, false))
 
-	pkts, ok := b.GetGOP()
+	pkts, ok := b.GetVideoFrameCache()
 	require.True(t, ok)
 	require.Len(t, pkts, 2) // the missing 101 is skipped
 	require.Equal(t, uint16(100), pkts[0].Packet.SequenceNumber)
 	require.Equal(t, uint16(102), pkts[1].Packet.SequenceNumber)
 }
 
-func TestGOPCacheKeyFrameEvicted(t *testing.T) {
-	b := newGOPTestBuffer(0)
+func TestVideoFrameCacheKeyFrameEvicted(t *testing.T) {
+	b := newVideoFrameCacheTestBuffer(0)
 
 	// mark a key frame at a sequence number that is not in the bucket
 	addBucketPacket(t, b, 200, 1000)
-	b.markGOPLocked(gopMarkPkt(100, 500, true)) // 100 was never stored / evicted
-	b.gopLatestTS = 1000
+	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(100, 500, true)) // 100 was never stored / evicted
+	b.videoFrameCacheLatestTS = 1000
 
-	_, ok := b.GetGOP()
+	_, ok := b.GetVideoFrameCache()
 	require.False(t, ok)
 }
 
-func TestGOPCacheDurationBound(t *testing.T) {
+func TestVideoFrameCacheDurationBound(t *testing.T) {
 	// 2s cap at 90kHz -> 180000 ticks
-	b := newGOPTestBuffer(2 * time.Second)
+	b := newVideoFrameCacheTestBuffer(2 * time.Second)
 	addBucketPacket(t, b, 100, 1000)
 
 	const kfTS = uint64(1_000_000)
-	b.markGOPLocked(gopMarkPkt(100, kfTS, true))
+	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(100, kfTS, true))
 
 	// within the bound
-	b.gopLatestTS = kfTS + 90000 // +1s
-	_, ok := b.GetGOP()
+	b.videoFrameCacheLatestTS = kfTS + 90000 // +1s
+	_, ok := b.GetVideoFrameCache()
 	require.True(t, ok)
 
 	// beyond the bound -> not served
-	b.gopLatestTS = kfTS + 180001 // > 2s
-	_, ok = b.GetGOP()
+	b.videoFrameCacheLatestTS = kfTS + 180001 // > 2s
+	_, ok = b.GetVideoFrameCache()
 	require.False(t, ok)
 }
 
-func TestGOPCacheSpanUsesMaxTimestamp(t *testing.T) {
-	b := newGOPTestBuffer(0)
+func TestVideoFrameCacheSpanUsesMaxTimestamp(t *testing.T) {
+	b := newVideoFrameCacheTestBuffer(0)
 
 	// key frame at 1000, then a later packet at 1200 advances the span
-	b.markGOPLocked(gopMarkPkt(100, 1000, true))
-	b.markGOPLocked(gopMarkPkt(101, 1200, false))
-	require.Equal(t, uint64(1200), b.gopLatestTS)
+	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(100, 1000, true))
+	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(101, 1200, false))
+	require.Equal(t, uint64(1200), b.videoFrameCacheLatestTS)
 
 	// an out-of-order, older packet arriving last must not shrink the measured span
-	b.markGOPLocked(gopMarkPkt(102, 1100, false))
-	require.Equal(t, uint64(1200), b.gopLatestTS)
+	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(102, 1100, false))
+	require.Equal(t, uint64(1200), b.videoFrameCacheLatestTS)
 
 	// a new key frame resets the span to itself (a stale packet cannot stretch the new GOP)
-	b.markGOPLocked(gopMarkPkt(103, 5000, true))
-	require.Equal(t, uint64(5000), b.gopLatestTS)
-	b.markGOPLocked(gopMarkPkt(104, 4000, false)) // stale, older than the new key frame
-	require.Equal(t, uint64(5000), b.gopLatestTS)
+	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(103, 5000, true))
+	require.Equal(t, uint64(5000), b.videoFrameCacheLatestTS)
+	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(104, 4000, false)) // stale, older than the new key frame
+	require.Equal(t, uint64(5000), b.videoFrameCacheLatestTS)
 }
 
 func TestBucketGrowTarget(t *testing.T) {
 	const pps = 600
 	const maxPkts = 500 // default ~1s cap
 
-	// GOP sizing off -> unchanged original behavior: target is ~1s (pps), cap stays maxPkts
+	// video frame cache sizing off -> unchanged original behavior: target is ~1s (pps), cap stays maxPkts
 	target, cap := bucketGrowTarget(pps, maxPkts, false, 0)
 	require.Equal(t, pps, target)
 	require.Equal(t, maxPkts, cap)
 
-	// gopMaxDuration <= 0 is treated as not sizing even if the flag is set
+	// videoFrameCacheMaxDuration <= 0 is treated as not sizing even if the flag is set
 	target, cap = bucketGrowTarget(pps, maxPkts, true, 0)
 	require.Equal(t, pps, target)
 	require.Equal(t, maxPkts, cap)
 
-	// GOP sizing on, 2s: target is pps*2 + 0.5s margin, and the cap is raised to fit
+	// video frame cache sizing on, 2s: target is pps*2 + 0.5s margin, and the cap is raised to fit
 	target, cap = bucketGrowTarget(pps, maxPkts, true, 2*time.Second)
 	require.Equal(t, pps*2+pps/2, target) // 1500
 	require.Equal(t, target, cap)         // raised above the 500 default
 	require.Greater(t, cap, maxPkts)
 
-	// GOP sizing on but the target fits within maxPkts -> cap is not lowered
+	// video frame cache sizing on but the target fits within maxPkts -> cap is not lowered
 	target, cap = bucketGrowTarget(100, 1000, true, 2*time.Second)
 	require.Equal(t, 100*2+100/2, target) // 250
 	require.Equal(t, 1000, cap)           // unchanged, target < maxPkts
@@ -217,17 +217,17 @@ func TestBucketGrowTarget(t *testing.T) {
 	require.Greater(t, target3s, target1s)
 }
 
-func TestGOPCacheDisabled(t *testing.T) {
+func TestVideoFrameCacheDisabled(t *testing.T) {
 	b := &BufferBase{codecType: webrtc.RTPCodecTypeVideo, clockRate: 90000, logger: logger.GetLogger()}
 	b.bucket = bucket.NewBucket[uint64, uint16](256, bucket.RTPMaxPktSize, bucket.RTPSeqNumOffset)
 	addBucketPacket(t, b, 100, 1000)
-	b.markGOPLocked(gopMarkPkt(100, 1000, true)) // marking is a no-op while disabled, but set fields anyway
+	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(100, 1000, true)) // marking is a no-op while disabled, but set fields anyway
 
-	_, ok := b.GetGOP()
+	_, ok := b.GetVideoFrameCache()
 	require.False(t, ok)
 
 	// audio buffers never enable the cache
 	a := &BufferBase{codecType: webrtc.RTPCodecTypeAudio, clockRate: 48000, logger: logger.GetLogger()}
-	a.EnableGOPCache(0)
-	require.False(t, a.gopCacheEnabled)
+	a.EnableVideoFrameCache(0)
+	require.False(t, a.videoFrameCacheEnabled)
 }

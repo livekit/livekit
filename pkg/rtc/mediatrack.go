@@ -417,8 +417,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			sfu.WithEnableRTPStreamRestartDetection(t.params.EnableRTPStreamRestartDetection),
 		}
 		if t.params.EnableVideoCaching {
-			// VideoCachingMaxDuration <= 0 falls back to sfu.DefaultGOPCacheMaxDuration in WithGOPCache
-			receiverOpts = append(receiverOpts, sfu.WithGOPCache(t.params.VideoCachingMaxDuration))
+			// VideoCachingMaxDuration <= 0 falls back to sfu.DefaultVideoFrameCacheMaxDuration in WithVideoFrameCache
+			receiverOpts = append(receiverOpts, sfu.WithVideoFrameCache(t.params.VideoCachingMaxDuration))
 		}
 
 		newWR := sfu.NewWebRTCReceiver(

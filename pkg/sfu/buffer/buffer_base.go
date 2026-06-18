@@ -95,8 +95,8 @@ type BufferProvider interface {
 	ReadExtended(buf []byte) (*ExtPacket, error)
 	GetPacket(buf []byte, esn uint64) (int, error)
 
-	EnableGOPCache(maxDuration time.Duration)
-	GetGOP() ([]*ExtPacket, bool)
+	EnableVideoFrameCache(maxDuration time.Duration)
+	GetVideoFrameCache() ([]*ExtPacket, bool)
 	GetPacketsAfter(afterSN uint64) ([]*ExtPacket, bool)
 
 	GetAudioLevel() (float64, bool)
@@ -206,15 +206,15 @@ type BufferBase struct {
 	ddExtID  uint8
 	ddParser *DependencyDescriptorParser
 
-	// video GOP cache: mark the most recent key frame so the current group-of-pictures can be read
-	// back from the retransmit bucket (see EnableGOPCache / GetGOP). No packets are copied here - only
+	// video frame cache: mark the most recent key frame so the current group-of-pictures can be read
+	// back from the retransmit bucket (see EnableVideoFrameCache / GetVideoFrameCache). No packets are copied here - only
 	// the key-frame boundary is tracked.
-	gopCacheEnabled     bool
-	gopCacheMaxDuration time.Duration // optional bound on key-frame interval (0 = bucket-bounded only)
-	gopHasKeyFrame      bool
-	gopKeyFrameSN       uint64 // ext sequence number of the current GOP's first key-frame packet
-	gopKeyFrameTS       uint64 // ext timestamp of the current GOP's key frame
-	gopLatestTS         uint64 // maximum ext timestamp seen in the current GOP (resets on a new key frame)
+	videoFrameCacheEnabled     bool
+	videoFrameCacheMaxDuration time.Duration // optional bound on key-frame interval (0 = bucket-bounded only)
+	videoFrameCacheHasKeyFrame bool
+	videoFrameCacheKeyFrameSN  uint64 // ext sequence number of the current GOP's first key-frame packet
+	videoFrameCacheKeyFrameTS  uint64 // ext timestamp of the current GOP's key frame
+	videoFrameCacheLatestTS    uint64 // maximum ext timestamp seen in the current GOP (resets on a new key frame)
 
 	isPaused            bool
 	frameRateCalculator [DefaultMaxLayerSpatial + 1]FrameRateCalculator
@@ -558,7 +558,7 @@ func (b *BufferBase) restartStreamLocked(reason string, isDetected bool) {
 	b.stopRTPStats("stream-restart")
 	b.flushExtPacketsLocked()
 	// the marked GOP references the pre-restart sequence-number base / evicted bucket contents
-	b.gopHasKeyFrame = false
+	b.videoFrameCacheHasKeyFrame = false
 
 	// restart
 	b.snRangeMap = utils.NewRangeMap[uint64, uint64](100)
@@ -661,47 +661,47 @@ func (b *BufferBase) ReadExtended(buf []byte) (*ExtPacket, error) {
 	}
 }
 
-// EnableGOPCache turns on GOP tracking for this (video) buffer: the most recent key frame is marked
-// so the current group-of-pictures can be read back from the retransmit bucket via GetGOP. No
+// EnableVideoFrameCache turns on video frame cache tracking for this (video) buffer: the most recent key frame is marked
+// so the current group-of-pictures can be read back from the retransmit bucket via GetVideoFrameCache. No
 // packets are copied - only the key-frame boundary is tracked. maxDuration bounds the served
 // key-frame interval AND drives the retransmit bucket to retain that much history (see
 // maybeGrowBucket), so the key frame is not evicted before it can be read; <= 0 keeps the default
 // ~1s retransmit window (and bounds the GOP to it). No-op for audio buffers.
-func (b *BufferBase) EnableGOPCache(maxDuration time.Duration) {
+func (b *BufferBase) EnableVideoFrameCache(maxDuration time.Duration) {
 	b.Lock()
 	defer b.Unlock()
 
-	b.gopCacheEnabled = true
-	b.gopCacheMaxDuration = maxDuration
-	b.logger.Debugw("GOP cache enabled on buffer", "maxDuration", maxDuration)
+	b.videoFrameCacheEnabled = true
+	b.videoFrameCacheMaxDuration = maxDuration
+	b.logger.Debugw("video frame cache enabled on buffer", "maxDuration", maxDuration)
 }
 
-// markGOPLocked records the key-frame boundary of the current GOP and tracks its span. Caller holds
+// markVideoFrameCacheLocked records the key-frame boundary of the current GOP and tracks its span. Caller holds
 // the lock.
-func (b *BufferBase) markGOPLocked(ep *ExtPacket) {
+func (b *BufferBase) markVideoFrameCacheLocked(ep *ExtPacket) {
 	if ep == nil || ep.Packet == nil || len(ep.Packet.Payload) == 0 {
 		return
 	}
-	if ep.IsKeyFrame && (!b.gopHasKeyFrame || ep.ExtTimestamp != b.gopKeyFrameTS) {
+	if ep.IsKeyFrame && (!b.videoFrameCacheHasKeyFrame || ep.ExtTimestamp != b.videoFrameCacheKeyFrameTS) {
 		// a new key frame starts a new GOP; remember its first packet's sequence number and reset the
 		// span to the key frame so a stale packet from the previous GOP cannot stretch it
-		b.gopKeyFrameSN = ep.ExtSequenceNumber
-		b.gopKeyFrameTS = ep.ExtTimestamp
-		b.gopLatestTS = ep.ExtTimestamp
-		b.gopHasKeyFrame = true
-		b.logger.Debugw("GOP cache: marked key frame", "keyFrameSN", b.gopKeyFrameSN, "keyFrameTS", b.gopKeyFrameTS)
+		b.videoFrameCacheKeyFrameSN = ep.ExtSequenceNumber
+		b.videoFrameCacheKeyFrameTS = ep.ExtTimestamp
+		b.videoFrameCacheLatestTS = ep.ExtTimestamp
+		b.videoFrameCacheHasKeyFrame = true
+		b.logger.Debugw("video frame cache: marked key frame", "keyFrameSN", b.videoFrameCacheKeyFrameSN, "keyFrameTS", b.videoFrameCacheKeyFrameTS)
 		return
 	}
 	// track the maximum timestamp seen in the current GOP (not the last-written one) so an
-	// out-of-order, older packet arriving last cannot shrink the measured span and let GetGOP serve
-	// more than gopCacheMaxDuration. The head packet's timestamp is always <= gopLatestTS, so the
-	// duration gate in GetGOP strictly bounds the served GOP.
-	if ep.ExtTimestamp > b.gopLatestTS {
-		b.gopLatestTS = ep.ExtTimestamp
+	// out-of-order, older packet arriving last cannot shrink the measured span and let GetVideoFrameCache serve
+	// more than videoFrameCacheMaxDuration. The head packet's timestamp is always <= videoFrameCacheLatestTS, so the
+	// duration gate in GetVideoFrameCache strictly bounds the served GOP.
+	if ep.ExtTimestamp > b.videoFrameCacheLatestTS {
+		b.videoFrameCacheLatestTS = ep.ExtTimestamp
 	}
 }
 
-// GetGOP reads the packets of the current group-of-pictures (from the most recent key frame up to
+// GetVideoFrameCache reads the packets of the current group-of-pictures (from the most recent key frame up to
 // the latest packet) back from the retransmit bucket, so a newly attached relay / down track can be
 // bootstrapped without requesting a fresh key frame (PLI). Returns (nil, false) when the cache is
 // disabled, no key frame has been marked, the key-frame interval exceeds the configured bound, or
@@ -712,29 +712,29 @@ func (b *BufferBase) markGOPLocked(ep *ExtPacket) {
 // through the normal forward path (WriteRTP): ExtSequenceNumber comes from the bucket key and
 // ExtTimestamp / IsKeyFrame are derived from the marked key frame. The dependency descriptor is not
 // reconstructed (SVC replay is not supported here). The returned packets are self-contained copies.
-func (b *BufferBase) GetGOP() ([]*ExtPacket, bool) {
+func (b *BufferBase) GetVideoFrameCache() ([]*ExtPacket, bool) {
 	b.Lock()
 	defer b.Unlock()
 
-	if !b.gopCacheEnabled || !b.gopHasKeyFrame || b.bucket == nil {
+	if !b.videoFrameCacheEnabled || !b.videoFrameCacheHasKeyFrame || b.bucket == nil {
 		b.logger.Debugw(
-			"GOP cache miss: not ready",
-			"gopCacheEnabled", b.gopCacheEnabled,
-			"gopHasKeyFrame", b.gopHasKeyFrame,
+			"video frame cache miss: not ready",
+			"videoFrameCacheEnabled", b.videoFrameCacheEnabled,
+			"videoFrameCacheHasKeyFrame", b.videoFrameCacheHasKeyFrame,
 			"hasBucket", b.bucket != nil,
 		)
 		return nil, false
 	}
 
-	if b.gopCacheMaxDuration > 0 && b.clockRate > 0 {
-		maxTicks := uint64(b.gopCacheMaxDuration.Seconds() * float64(b.clockRate))
-		if b.gopLatestTS > b.gopKeyFrameTS+maxTicks {
+	if b.videoFrameCacheMaxDuration > 0 && b.clockRate > 0 {
+		maxTicks := uint64(b.videoFrameCacheMaxDuration.Seconds() * float64(b.clockRate))
+		if b.videoFrameCacheLatestTS > b.videoFrameCacheKeyFrameTS+maxTicks {
 			// key-frame interval longer than the bound - too old to serve a complete replay
 			b.logger.Debugw(
-				"GOP cache miss: key-frame interval exceeds bound",
-				"keyFrameTS", b.gopKeyFrameTS,
-				"latestTS", b.gopLatestTS,
-				"spanTicks", b.gopLatestTS-b.gopKeyFrameTS,
+				"video frame cache miss: key-frame interval exceeds bound",
+				"keyFrameTS", b.videoFrameCacheKeyFrameTS,
+				"latestTS", b.videoFrameCacheLatestTS,
+				"spanTicks", b.videoFrameCacheLatestTS-b.videoFrameCacheKeyFrameTS,
 				"maxTicks", maxTicks,
 			)
 			return nil, false
@@ -742,21 +742,21 @@ func (b *BufferBase) GetGOP() ([]*ExtPacket, bool) {
 	}
 
 	headSN := uint64(b.bucket.HeadSequenceNumber())
-	if headSN < b.gopKeyFrameSN {
-		b.logger.Debugw("GOP cache miss: head behind key frame", "headSN", headSN, "keyFrameSN", b.gopKeyFrameSN)
+	if headSN < b.videoFrameCacheKeyFrameSN {
+		b.logger.Debugw("video frame cache miss: head behind key frame", "headSN", headSN, "keyFrameSN", b.videoFrameCacheKeyFrameSN)
 		return nil, false
 	}
 
-	pkts := b.reconstructPacketsLocked(b.gopKeyFrameSN, headSN)
+	pkts := b.reconstructPacketsLocked(b.videoFrameCacheKeyFrameSN, headSN)
 	// the key frame itself must be present (its first packet), otherwise the GOP cannot be served
-	if len(pkts) == 0 || pkts[0].ExtSequenceNumber != b.gopKeyFrameSN {
+	if len(pkts) == 0 || pkts[0].ExtSequenceNumber != b.videoFrameCacheKeyFrameSN {
 		var firstSN uint64
 		if len(pkts) > 0 {
 			firstSN = pkts[0].ExtSequenceNumber
 		}
 		b.logger.Debugw(
-			"GOP cache miss: key frame evicted from bucket",
-			"keyFrameSN", b.gopKeyFrameSN,
+			"video frame cache miss: key frame evicted from bucket",
+			"keyFrameSN", b.videoFrameCacheKeyFrameSN,
 			"headSN", headSN,
 			"bucketCapacity", b.bucket.Capacity(),
 			"reconstructed", len(pkts),
@@ -768,14 +768,14 @@ func (b *BufferBase) GetGOP() ([]*ExtPacket, bool) {
 }
 
 // GetPacketsAfter reads the packets newer than afterSN (exclusive) up to the current head from the
-// retransmit bucket, reconstructed as ExtPackets like GetGOP. It is used to catch a GOP replay up to
+// retransmit bucket, reconstructed as ExtPackets like GetVideoFrameCache. It is used to catch a video frame cache replay up to
 // the live forwarding point. Returns (nil, false) when the cache is disabled or nothing newer is
 // retained.
 func (b *BufferBase) GetPacketsAfter(afterSN uint64) ([]*ExtPacket, bool) {
 	b.Lock()
 	defer b.Unlock()
 
-	if !b.gopCacheEnabled || !b.gopHasKeyFrame || b.bucket == nil {
+	if !b.videoFrameCacheEnabled || !b.videoFrameCacheHasKeyFrame || b.bucket == nil {
 		return nil, false
 	}
 	headSN := uint64(b.bucket.HeadSequenceNumber())
@@ -795,7 +795,7 @@ func (b *BufferBase) GetPacketsAfter(afterSN uint64) ([]*ExtPacket, bool) {
 // and IsKeyFrame flags packets at the key-frame timestamp. The dependency descriptor is not
 // reconstructed. Caller holds the lock.
 func (b *BufferBase) reconstructPacketsLocked(fromSN, headSN uint64) []*ExtPacket {
-	keyFrameRTPTS := uint32(b.gopKeyFrameTS)
+	keyFrameRTPTS := uint32(b.videoFrameCacheKeyFrameTS)
 	var pkts []*ExtPacket
 	buf := make([]byte, bucket.RTPMaxPktSize)
 	for sn := fromSN; sn <= headSN; sn++ {
@@ -811,14 +811,14 @@ func (b *BufferBase) reconstructPacketsLocked(fromSN, headSN uint64) []*ExtPacke
 			continue
 		}
 
-		extTS := b.gopKeyFrameTS + uint64(p.Timestamp-keyFrameRTPTS)
+		extTS := b.videoFrameCacheKeyFrameTS + uint64(p.Timestamp-keyFrameRTPTS)
 		pkts = append(pkts, &ExtPacket{
 			VideoLayer:        VideoLayer{Spatial: InvalidLayerSpatial, Temporal: InvalidLayerTemporal},
 			Arrival:           mono.UnixNano(),
 			ExtSequenceNumber: sn,
 			ExtTimestamp:      extTS,
 			Packet:            p,
-			IsKeyFrame:        extTS == b.gopKeyFrameTS,
+			IsKeyFrame:        extTS == b.videoFrameCacheKeyFrameTS,
 			RawPacket:         raw,
 		})
 	}
@@ -1096,8 +1096,8 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 		return 0, errors.New("could not get ext packet")
 	}
 	b.extPackets.PushBack(ep)
-	if b.gopCacheEnabled && b.codecType == webrtc.RTPCodecTypeVideo {
-		b.markGOPLocked(ep)
+	if b.videoFrameCacheEnabled && b.codecType == webrtc.RTPCodecTypeVideo {
+		b.markVideoFrameCacheLocked(ep)
 	}
 	b.readCond.Broadcast()
 
@@ -1418,14 +1418,14 @@ func (b *BufferBase) flushExtPacketsLocked() {
 // the cap that allows growing to it (effectiveMaxPkts), given the measured packets-per-second.
 //
 // Normally the target is ~1s of packets (the NACK / retransmit window), bounded by maxPkts. When
-// gopSizing is set (the video GOP cache is enabled with a positive duration), the bucket must retain
+// videoFrameCacheSizing is set (the video frame cache is enabled with a positive duration), the bucket must retain
 // the whole GOP duration plus ~0.5s margin so the key frame is not evicted before it is at most
-// gopMaxDuration old; the cap is raised to fit since the default maxPkts is only ~1s worth.
-func bucketGrowTarget(pps, maxPkts int, gopSizing bool, gopMaxDuration time.Duration) (targetPkts, effectiveMaxPkts int) {
+// videoFrameCacheMaxDuration old; the cap is raised to fit since the default maxPkts is only ~1s worth.
+func bucketGrowTarget(pps, maxPkts int, videoFrameCacheSizing bool, videoFrameCacheMaxDuration time.Duration) (targetPkts, effectiveMaxPkts int) {
 	targetPkts = pps
 	effectiveMaxPkts = maxPkts
-	if gopSizing && gopMaxDuration > 0 {
-		targetPkts = int(float64(pps)*gopMaxDuration.Seconds()) + pps/2
+	if videoFrameCacheSizing && videoFrameCacheMaxDuration > 0 {
+		targetPkts = int(float64(pps)*videoFrameCacheMaxDuration.Seconds()) + pps/2
 		if targetPkts > effectiveMaxPkts {
 			effectiveMaxPkts = targetPkts
 		}
@@ -1451,12 +1451,12 @@ func (b *BufferBase) maybeGrowBucket(now int64) {
 			maxPkts = b.params.MaxAudioPkts
 		}
 
-		// when the video GOP cache is enabled the bucket must retain the whole configured GOP
-		// duration (the key frame must survive until GetGOP reads it), which is more than the normal
+		// when the video frame cache is enabled the bucket must retain the whole configured GOP
+		// duration (the key frame must survive until GetVideoFrameCache reads it), which is more than the normal
 		// ~1s retransmit window. In that case the target / cap are computed below from pps; otherwise
 		// keep the original fast path.
-		gopSizing := b.codecType == webrtc.RTPCodecTypeVideo && b.gopCacheEnabled && b.gopCacheMaxDuration > 0
-		if cap >= maxPkts && !gopSizing {
+		videoFrameCacheSizing := b.codecType == webrtc.RTPCodecTypeVideo && b.videoFrameCacheEnabled && b.videoFrameCacheMaxDuration > 0
+		if cap >= maxPkts && !videoFrameCacheSizing {
 			return
 		}
 
@@ -1470,7 +1470,7 @@ func (b *BufferBase) maybeGrowBucket(now int64) {
 		}
 		pps := int(time.Duration(deltaInfo.Packets) * time.Second / duration)
 
-		targetPkts, maxPkts := bucketGrowTarget(pps, maxPkts, gopSizing, b.gopCacheMaxDuration)
+		targetPkts, maxPkts := bucketGrowTarget(pps, maxPkts, videoFrameCacheSizing, b.videoFrameCacheMaxDuration)
 		if cap >= maxPkts {
 			return
 		}

@@ -157,12 +157,12 @@ type RTCConfig struct {
 	// of ramping up from a lower layer (see SubscribedTrack.Bound / Forwarder initial-acquisition grace)
 	EnableStartAtDesiredQuality bool `yaml:"enable_start_at_desired_quality,omitempty"`
 
-	// enable caching the most recent video GOP per published track so a new subscriber is bootstrapped
-	// by replaying it instead of triggering a PLI (see WithGOPCache / ReceiverBase.replayGOP)
+	// enable caching the most recent video frame cache per published track so a new subscriber is bootstrapped
+	// by replaying it instead of triggering a PLI (see WithVideoFrameCache / ReceiverBase.replayVideoFrameCache)
 	EnableVideoCaching bool `yaml:"enable_video_caching,omitempty"`
 
-	// bounds the cached video GOP (and sizes the retransmit bucket) when enable_video_caching is on.
-	// 0 (default) uses sfu.DefaultGOPCacheMaxDuration.
+	// bounds the cached video frame cache (and sizes the retransmit bucket) when enable_video_caching is on.
+	// 0 (default) uses sfu.DefaultVideoFrameCacheMaxDuration.
 	VideoCachingMaxDuration time.Duration `yaml:"video_caching_max_duration,omitempty"`
 }
 
