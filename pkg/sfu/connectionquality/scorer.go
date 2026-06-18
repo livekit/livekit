@@ -482,7 +482,11 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 		ulgr.Debugw("quality rise")
 	default:
 		packets := stat.packets + stat.packetsPadding
-		if packets != 0 && ((stat.packetsLost-stat.packetsMissing-stat.packetsOutOfOrder)*100/packets) > 10 {
+		lost := stat.packetsLost - stat.packetsMissing - stat.packetsOutOfOrder
+		if int32(lost) < 0 {
+			lost = 0
+		}
+		if packets != 0 && lost*100/packets > 10 {
 			ulgr.Debugw("quality hold - high loss")
 		}
 	}
