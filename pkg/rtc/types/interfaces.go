@@ -403,6 +403,7 @@ type LocalParticipant interface {
 	GetReporter() roomobs.ParticipantSessionReporter
 	GetReporterResolver() roomobs.ParticipantReporterResolver
 	GetAdaptiveStream() bool
+	GetEnableStartAtDesiredQuality() bool
 	ProtocolVersion() ProtocolVersion
 	SupportsSyncStreamID() bool
 	SupportsTransceiverReuse(mt MediaTrack) bool

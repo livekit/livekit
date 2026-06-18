@@ -231,6 +231,7 @@ type Forwarder struct {
 	logger                         logger.Logger
 	skipReferenceTS                bool
 	disableOpportunisticAllocation bool
+	enableStartAtDesiredQuality    bool
 	rtpStats                       *rtpstats.RTPStatsSender
 
 	muted                 bool
@@ -266,6 +267,7 @@ func NewForwarder(
 	logger logger.Logger,
 	skipReferenceTS bool,
 	disableOpportunisticAllocation bool,
+	enableStartAtDesiredQuality bool,
 	rtpStats *rtpstats.RTPStatsSender,
 ) *Forwarder {
 	f := &Forwarder{
@@ -274,6 +276,7 @@ func NewForwarder(
 		logger:                         logger,
 		skipReferenceTS:                skipReferenceTS,
 		disableOpportunisticAllocation: disableOpportunisticAllocation,
+		enableStartAtDesiredQuality:    enableStartAtDesiredQuality,
 		rtpStats:                       rtpStats,
 		referenceLayerSpatial:          buffer.InvalidLayerSpatial,
 		lastAllocation:                 VideoAllocationDefault,
@@ -286,6 +289,7 @@ func NewForwarder(
 	if f.kind == webrtc.RTPCodecTypeVideo {
 		f.vls.SetMaxTemporal(buffer.DefaultMaxLayerTemporal)
 	}
+	f.vls.SetEnableStartAtDesiredQuality(enableStartAtDesiredQuality)
 	return f
 }
 
@@ -299,7 +303,7 @@ func (f *Forwarder) SetMaxPublishedLayer(maxPublishedLayer int32) bool {
 	}
 
 	f.vls.SetMaxSeenSpatial(maxPublishedLayer)
-	if !f.vls.GetCurrent().IsValid() {
+	if f.enableStartAtDesiredQuality && !f.vls.GetCurrent().IsValid() {
 		// A (higher) layer just became available while nothing is being forwarded yet.
 		// (Re)start the initial-acquisition grace so the target aims for the requested layer
 		// instead of ramping up gradually as more layers are detected. See opportunisticAlloc.

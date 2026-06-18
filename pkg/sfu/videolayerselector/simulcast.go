@@ -94,7 +94,7 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 		found := false
 		reason := ""
 		if extPkt.IsKeyFrame {
-			if !isActive {
+			if s.enableStartAtDesiredQuality && !isActive {
 				// Initial acquisition: latch directly onto the target layer instead of
 				// opportunistically latching onto the first key frame of any lower layer that
 				// happens to arrive first. This avoids a visible low-quality -> high-quality ramp

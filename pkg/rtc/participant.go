@@ -225,6 +225,7 @@ type ParticipantParams struct {
 	EnableRTPStreamRestartDetection bool
 	ForceBackupCodecPolicySimulcast bool
 	DisableTransceiverReuseForE2EE  bool
+	EnableStartAtDesiredQuality     bool
 }
 
 type ParticipantImpl struct {
@@ -503,6 +504,10 @@ func (p *ParticipantImpl) GetReporterResolver() roomobs.ParticipantReporterResol
 
 func (p *ParticipantImpl) GetAdaptiveStream() bool {
 	return p.params.AdaptiveStream
+}
+
+func (p *ParticipantImpl) GetEnableStartAtDesiredQuality() bool {
+	return p.params.EnableStartAtDesiredQuality
 }
 
 func (p *ParticipantImpl) GetPacer() pacer.Pacer {

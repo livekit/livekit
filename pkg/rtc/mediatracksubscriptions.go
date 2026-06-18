@@ -104,15 +104,16 @@ func (t *MediaTrackSubscriptions) AddSubscriber(sub types.LocalParticipant, wr *
 	t.subscribedTracksMu.Unlock()
 
 	subTrack, err := NewSubscribedTrack(SubscribedTrackParams{
-		ReceiverConfig:     t.params.ReceiverConfig,
-		SubscriberConfig:   t.params.SubscriberConfig,
-		Subscriber:         sub,
-		MediaTrack:         t.params.MediaTrack,
-		AdaptiveStream:     sub.GetAdaptiveStream(),
-		TelemetryListener:  sub.GetTelemetryListener(),
-		WrappedReceiver:    wr,
-		IsRelayed:          t.params.IsRelayed,
-		OnDownTrackCreated: t.onDownTrackCreated,
+		ReceiverConfig:              t.params.ReceiverConfig,
+		SubscriberConfig:            t.params.SubscriberConfig,
+		Subscriber:                  sub,
+		MediaTrack:                  t.params.MediaTrack,
+		AdaptiveStream:              sub.GetAdaptiveStream(),
+		EnableStartAtDesiredQuality: sub.GetEnableStartAtDesiredQuality(),
+		TelemetryListener:           sub.GetTelemetryListener(),
+		WrappedReceiver:             wr,
+		IsRelayed:                   t.params.IsRelayed,
+		OnDownTrackCreated:          t.onDownTrackCreated,
 		OnDownTrackClosed: func(subscriberID livekit.ParticipantID) {
 			t.subscribedTracksMu.Lock()
 			delete(t.subscribedTracks, subscriberID)

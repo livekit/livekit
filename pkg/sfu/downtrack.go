@@ -312,6 +312,7 @@ type DownTrackParams struct {
 	DisableSenderReportPassThrough bool
 	SupportsCodecChange            bool
 	StripPacketTrailer             bool
+	EnableStartAtDesiredQuality    bool
 	Listener                       DownTrackListener
 }
 
@@ -463,6 +464,7 @@ func NewDownTrack(params DownTrackParams) (*DownTrack, error) {
 		d.params.Logger,
 		false, // skipReferenceTS
 		false, // disableOpportunisticAllocation
+		d.params.EnableStartAtDesiredQuality,
 		d.rtpStats,
 	)
 
