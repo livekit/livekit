@@ -89,6 +89,8 @@ type BufferProvider interface {
 	SetPaused(paused bool)
 
 	SendPLI(force bool)
+	// PLIForwardedCount returns the number of PLIs actually forwarded to the publisher (past the throttle gate).
+	PLIForwardedCount() uint32
 
 	ReadExtended(buf []byte) (*ExtPacket, error)
 	GetPacket(buf []byte, esn uint64) (int, error)

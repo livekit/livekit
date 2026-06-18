@@ -220,6 +220,11 @@ type ReceiverBase struct {
 	gopCacheEnabled     bool
 	gopCacheMaxDuration time.Duration
 
+	// counts of subscribers bootstrapped from the GOP cache (hit) vs. those that fell back to a PLI
+	// because no usable GOP was cached (miss); see replayGOP
+	gopCacheHitCount  atomic.Uint32
+	gopCacheMissCount atomic.Uint32
+
 	rtt uint32
 
 	streamTrackerManager *StreamTrackerManager
@@ -576,7 +581,14 @@ func (r *ReceiverBase) AddDownTrack(track TrackSender) error {
 				return
 			}
 			r.downTrackSpreader.Store(track)
-			r.params.Logger.Debugw("downtrack added after GOP replay", "subscriberID", track.SubscriberID())
+
+			r.params.Logger.Debugw(
+				"downtrack added after GOP replay",
+				"subscriberID", track.SubscriberID(),
+				"gopCacheHitCount", r.gopCacheHitCount.Load(),
+				"gopCacheMissCount", r.gopCacheMissCount.Load(),
+				"pliForwardedCount", r.pliForwardedCount(),
+			)
 		}()
 		return nil
 	}
@@ -637,16 +649,21 @@ func (r *ReceiverBase) replayGOP(track TrackSender) {
 			break
 		}
 	}
+
 	if layer == buffer.InvalidLayerSpatial {
 		// no usable GOP cached on any layer - the down track falls back to requesting a key frame (PLI)
+		missCount := r.gopCacheMissCount.Inc()
 		r.params.Logger.Debugw(
 			"subscriber bootstrap: GOP cache miss, falling back to PLI",
 			"subscriberID", track.SubscriberID(),
 			"gopCacheEnabled", r.gopCacheEnabled,
+			"gopCacheHitCount", r.gopCacheHitCount.Load(),
+			"gopCacheMissCount", missCount,
 		)
 		return
 	}
 
+	hitCount := r.gopCacheHitCount.Inc()
 	half := r.gopReplayFrameInterval(layer) / 2
 	r.params.Logger.Debugw(
 		"subscriber bootstrap: GOP cache hit, replaying",
@@ -654,6 +671,8 @@ func (r *ReceiverBase) replayGOP(track TrackSender) {
 		"layer", layer,
 		"packets", len(pkts),
 		"frameIntervalHalf", half,
+		"gopCacheHitCount", hitCount,
+		"gopCacheMissCount", r.gopCacheMissCount.Load(),
 	)
 
 	var lastSN uint64
@@ -823,6 +842,21 @@ func (r *ReceiverBase) SendPLI(layer int32, force bool) {
 	}
 
 	buff.SendPLI(force)
+}
+
+// pliForwardedCount returns the total number of PLIs actually forwarded to the publisher across all
+// spatial-layer buffers (past each buffer's throttle gate).
+func (r *ReceiverBase) pliForwardedCount() uint32 {
+	r.bufferMu.RLock()
+	defer r.bufferMu.RUnlock()
+
+	var total uint32
+	for _, buff := range r.buffers {
+		if buff != nil {
+			total += buff.PLIForwardedCount()
+		}
+	}
+	return total
 }
 
 func (r *ReceiverBase) getBuffer(layer int32) (buffer.BufferProvider, int32) {
