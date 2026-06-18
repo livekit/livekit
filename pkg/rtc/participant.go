@@ -965,7 +965,7 @@ func (p *ParticipantImpl) GetTelemetryListener() types.ParticipantTelemetryListe
 }
 
 func (p *ParticipantImpl) AddOnClose(key string, callback func(types.LocalParticipant)) {
-	if p.isClosed.Load() {
+	if p.isClosed.Load() && callback != nil {
 		go callback(p)
 		return
 	}
