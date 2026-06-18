@@ -37,6 +37,7 @@ func keyFrameOnLayer(spatial, temporal int32) *buffer.ExtPacket {
 // briefly decode a lower layer (a visible quality ramp).
 func TestSimulcastSelectAcquiresTargetLayerDirectly(t *testing.T) {
 	s := NewSimulcast(logger.GetLogger())
+	s.SetEnableStartAtDesiredQuality(true)
 	s.SetMax(buffer.VideoLayer{Spatial: 2, Temporal: 2})
 	s.SetMaxSeen(buffer.VideoLayer{Spatial: 2, Temporal: 2})
 	s.SetTarget(buffer.VideoLayer{Spatial: 2, Temporal: 2})
@@ -60,6 +61,7 @@ func TestSimulcastSelectAcquiresTargetLayerDirectly(t *testing.T) {
 // originally requested layer never shows up.
 func TestSimulcastSelectAcquiresLoweredTarget(t *testing.T) {
 	s := NewSimulcast(logger.GetLogger())
+	s.SetEnableStartAtDesiredQuality(true)
 	s.SetMax(buffer.VideoLayer{Spatial: 2, Temporal: 2})
 	s.SetMaxSeen(buffer.VideoLayer{Spatial: 1, Temporal: 2})
 	// allocator dropped the target to the highest layer actually seen

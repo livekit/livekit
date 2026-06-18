@@ -48,6 +48,7 @@ type SubscribedTrackParams struct {
 	Subscriber                   types.LocalParticipant
 	MediaTrack                   types.MediaTrack
 	AdaptiveStream               bool
+	EnableStartAtDesiredQuality  bool
 	TelemetryListener            types.ParticipantTelemetryListener
 	WrappedReceiver              *WrappedReceiver
 	IsRelayed                    bool
@@ -154,6 +155,7 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 		RTCPWriter:                     params.Subscriber.WriteSubscriberRTCP,
 		DisableSenderReportPassThrough: params.Subscriber.GetDisableSenderReportPassThrough(),
 		SupportsCodecChange:            params.Subscriber.SupportsCodecChange(),
+		EnableStartAtDesiredQuality:    params.EnableStartAtDesiredQuality,
 		Listener:                       s,
 	})
 	if err != nil {
@@ -212,10 +214,16 @@ func (t *SubscribedTrack) Bound(err error) {
 				t.logger.Debugw("enabling subscriber track settings on bind", "settings", logger.Proto(t.settings))
 			}
 		} else {
-			// default to HIGH quality so the subscriber acquires the top layer directly instead of
-			// ramping up from a lower layer. adaptive stream clients can still scale down afterwards
-			// based on viewport.
-			t.settings = &livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_HIGH}
+			if t.params.EnableStartAtDesiredQuality {
+				// default to HIGH quality so the subscriber acquires the top layer directly instead of
+				// ramping up from a lower layer. adaptive stream clients can still scale down afterwards
+				// based on viewport.
+				t.settings = &livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_HIGH}
+			} else if t.params.AdaptiveStream {
+				t.settings = &livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_LOW}
+			} else {
+				t.settings = &livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_HIGH}
+			}
 			t.logger.Debugw("initializing subscriber track settings on bind", "settings", logger.Proto(t.settings))
 		}
 		t.settingsLock.Unlock()

@@ -39,6 +39,7 @@ func newForwarder(codec webrtc.RTPCodecCapability, kind webrtc.RTPCodecType) *Fo
 		logger.GetLogger(),
 		true, // skipReferenceTS
 		true, // disableOpportunisticAllocation
+		true, // enableStartAtDesiredQuality
 		nil,
 	)
 	f.DetermineCodec(codec, nil, livekit.VideoLayer_MODE_UNUSED)
