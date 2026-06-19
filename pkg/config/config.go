@@ -152,10 +152,6 @@ type RTCConfig struct {
 
 	// enable rtp stream restart detection for published tracks
 	EnableRTPStreamRestartDetection bool `yaml:"enable_rtp_stream_restart_detection,omitempty"`
-
-	// enable acquiring the requested (top) video layer directly at HIGH quality on subscribe instead
-	// of ramping up from a lower layer (see SubscribedTrack.Bound / Forwarder initial-acquisition grace)
-	EnableStartAtDesiredQuality bool `yaml:"enable_start_at_desired_quality,omitempty"`
 }
 
 type TURNServer struct {

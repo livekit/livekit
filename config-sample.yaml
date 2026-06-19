@@ -131,10 +131,6 @@ rtc:
   #   low_quality: 500ms
   #   mid_quality: 1s
   #   high_quality: 1s
-  # # when enabled, a new subscriber acquires the requested (top) video layer directly at HIGH quality
-  # # on subscribe instead of ramping up from a lower layer, removing the visible low->high quality ramp.
-  # # defaults to false
-  # enable_start_at_desired_quality: false
   # # when set, Livekit will collect loopback candidates, it is useful for some VM have public address mapped to its loopback interface.
   # enable_loopback_candidate: true
   # # network interface filter. If the machine has more than one network interface and you'd like it to use or skip specific interfaces
