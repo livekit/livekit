@@ -152,18 +152,6 @@ type RTCConfig struct {
 
 	// enable rtp stream restart detection for published tracks
 	EnableRTPStreamRestartDetection bool `yaml:"enable_rtp_stream_restart_detection,omitempty"`
-
-	// enable acquiring the requested (top) video layer directly at HIGH quality on subscribe instead
-	// of ramping up from a lower layer (see SubscribedTrack.Bound / Forwarder initial-acquisition grace)
-	EnableStartAtDesiredQuality bool `yaml:"enable_start_at_desired_quality,omitempty"`
-
-	// enable caching the most recent video frame cache per published track so a new subscriber is bootstrapped
-	// by replaying it instead of triggering a PLI (see WithVideoFrameCache / ReceiverBase.replayVideoFrameCache)
-	EnableVideoCaching bool `yaml:"enable_video_caching,omitempty"`
-
-	// bounds the cached video frame cache (and sizes the retransmit bucket) when enable_video_caching is on.
-	// 0 (default) uses sfu.DefaultVideoFrameCacheMaxDuration.
-	VideoCachingMaxDuration time.Duration `yaml:"video_caching_max_duration,omitempty"`
 }
 
 type TURNServer struct {
