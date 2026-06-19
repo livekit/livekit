@@ -325,6 +325,16 @@ type FakeLocalParticipant struct {
 	getDisableSenderReportPassThroughReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	GetEnableStartAtDesiredQualityStub        func() bool
+	getEnableStartAtDesiredQualityMutex       sync.RWMutex
+	getEnableStartAtDesiredQualityArgsForCall []struct {
+	}
+	getEnableStartAtDesiredQualityReturns struct {
+		result1 bool
+	}
+	getEnableStartAtDesiredQualityReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	GetEnabledPublishCodecsStub        func() []*livekit.Codec
 	getEnabledPublishCodecsMutex       sync.RWMutex
 	getEnabledPublishCodecsArgsForCall []struct {
@@ -3075,6 +3085,59 @@ func (fake *FakeLocalParticipant) GetDisableSenderReportPassThroughReturnsOnCall
 		})
 	}
 	fake.getDisableSenderReportPassThroughReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetEnableStartAtDesiredQuality() bool {
+	fake.getEnableStartAtDesiredQualityMutex.Lock()
+	ret, specificReturn := fake.getEnableStartAtDesiredQualityReturnsOnCall[len(fake.getEnableStartAtDesiredQualityArgsForCall)]
+	fake.getEnableStartAtDesiredQualityArgsForCall = append(fake.getEnableStartAtDesiredQualityArgsForCall, struct {
+	}{})
+	stub := fake.GetEnableStartAtDesiredQualityStub
+	fakeReturns := fake.getEnableStartAtDesiredQualityReturns
+	fake.recordInvocation("GetEnableStartAtDesiredQuality", []interface{}{})
+	fake.getEnableStartAtDesiredQualityMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetEnableStartAtDesiredQualityCallCount() int {
+	fake.getEnableStartAtDesiredQualityMutex.RLock()
+	defer fake.getEnableStartAtDesiredQualityMutex.RUnlock()
+	return len(fake.getEnableStartAtDesiredQualityArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetEnableStartAtDesiredQualityCalls(stub func() bool) {
+	fake.getEnableStartAtDesiredQualityMutex.Lock()
+	defer fake.getEnableStartAtDesiredQualityMutex.Unlock()
+	fake.GetEnableStartAtDesiredQualityStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetEnableStartAtDesiredQualityReturns(result1 bool) {
+	fake.getEnableStartAtDesiredQualityMutex.Lock()
+	defer fake.getEnableStartAtDesiredQualityMutex.Unlock()
+	fake.GetEnableStartAtDesiredQualityStub = nil
+	fake.getEnableStartAtDesiredQualityReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetEnableStartAtDesiredQualityReturnsOnCall(i int, result1 bool) {
+	fake.getEnableStartAtDesiredQualityMutex.Lock()
+	defer fake.getEnableStartAtDesiredQualityMutex.Unlock()
+	fake.GetEnableStartAtDesiredQualityStub = nil
+	if fake.getEnableStartAtDesiredQualityReturnsOnCall == nil {
+		fake.getEnableStartAtDesiredQualityReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.getEnableStartAtDesiredQualityReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }

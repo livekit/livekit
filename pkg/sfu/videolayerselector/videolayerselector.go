@@ -37,6 +37,7 @@ type VideoLayerSelector interface {
 	IsOvershootOkay() bool
 
 	SetTemporalLayerSelector(tls temporallayerselector.TemporalLayerSelector)
+	SetEnableStartAtDesiredQuality(enable bool)
 
 	SetMax(maxLayer buffer.VideoLayer)
 	SetMaxSpatial(layer int32)
