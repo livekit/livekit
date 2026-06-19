@@ -2164,7 +2164,9 @@ func TestForwarderInitialAcquisitionGrace(t *testing.T) {
 	// subscriber-first: only layer 1 has been seen so far and nothing is being forwarded yet
 	// (current invalid). this arms the initial-acquisition grace.
 	require.True(t, f.SetMaxPublishedLayer(1))
+	f.lock.RLock()
 	require.True(t, f.withinAcquireGraceLocked())
+	f.lock.RUnlock()
 
 	// during the grace, the target aims straight at the requested layer (2) and requests a key
 	// frame for it, even though only layer 1 has been seen - so acquisition does not ramp up
