@@ -226,6 +226,8 @@ type ParticipantParams struct {
 	ForceBackupCodecPolicySimulcast bool
 	DisableTransceiverReuseForE2EE  bool
 	EnableStartAtDesiredQuality     bool
+	EnableVideoCaching              bool
+	VideoCachingMaxDuration         time.Duration
 }
 
 type ParticipantImpl struct {
@@ -3382,6 +3384,8 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 		EnableRTPStreamRestartDetection:  p.params.EnableRTPStreamRestartDetection,
 		UpdateTrackInfoByVideoSizeChange: p.params.UseOneShotSignallingMode,
 		ForceBackupCodecPolicySimulcast:  p.params.ForceBackupCodecPolicySimulcast,
+		EnableVideoCaching:               p.params.EnableVideoCaching,
+		VideoCachingMaxDuration:          p.params.VideoCachingMaxDuration,
 	}, ti)
 
 	mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
