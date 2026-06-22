@@ -317,17 +317,29 @@ func IncrementParticipantJoinValidationFail(validationFail uint32) {
 	}
 }
 
-func IncrementParticipantRtcInit(join uint32) {
-	if join > 0 {
-		participantRTCInit.Add(uint64(join))
-		promParticipantJoin.WithLabelValues("rtc_init").Add(float64(join))
+func IncrementParticipantJoinUpgradeFail(upgradeFail uint32) {
+	if upgradeFail > 0 {
+		promParticipantJoin.WithLabelValues("signal_upgrade_failed").Add(float64(upgradeFail))
 	}
 }
 
-func IncrementParticipantRtcConnected(join uint32) {
-	if join > 0 {
-		participantRTCConnected.Add(uint64(join))
-		promParticipantJoin.WithLabelValues("rtc_connected").Add(float64(join))
+func IncrementParticipantJoinWriteInitialResponseFail(writeInitialResponseFail uint32) {
+	if writeInitialResponseFail > 0 {
+		promParticipantJoin.WithLabelValues("signal_write_initial_response_failed").Add(float64(writeInitialResponseFail))
+	}
+}
+
+func IncrementParticipantRtcInit(init uint32) {
+	if init > 0 {
+		participantRTCInit.Add(uint64(init))
+		promParticipantJoin.WithLabelValues("rtc_init").Add(float64(init))
+	}
+}
+
+func IncrementParticipantRtcConnected(connected uint32) {
+	if connected > 0 {
+		participantRTCConnected.Add(uint64(connected))
+		promParticipantJoin.WithLabelValues("rtc_connected").Add(float64(connected))
 	}
 }
 
@@ -338,10 +350,10 @@ func IncrementParticipantRtcActive(active uint32) {
 	}
 }
 
-func IncrementParticipantRtcCanceled(numCancels uint64) {
-	if numCancels > 0 {
-		participantRTCCanceled.Add(numCancels)
-		promParticipantJoin.WithLabelValues("rtc_canceled").Add(float64(numCancels))
+func IncrementParticipantRtcCanceled(canceled uint64) {
+	if canceled > 0 {
+		participantRTCCanceled.Add(canceled)
+		promParticipantJoin.WithLabelValues("rtc_canceled").Add(float64(canceled))
 	}
 }
 
