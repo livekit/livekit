@@ -157,6 +157,11 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 		SupportsCodecChange:            params.Subscriber.SupportsCodecChange(),
 		EnableStartAtDesiredQuality:    params.EnableStartAtDesiredQuality,
 		Listener:                       s,
+		FlexFEC: sfu.FlexFECParams{
+			Enabled:         params.SubscriberConfig.FlexFEC.Enabled,
+			NumMediaPackets: params.SubscriberConfig.FlexFEC.NumMediaPackets,
+			NumFECPackets:   params.SubscriberConfig.FlexFEC.NumFECPackets,
+		},
 	})
 	if err != nil {
 		return nil, err

@@ -76,13 +76,16 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 		return 0, err
 	}
 
-	var written int
-	written, err = p.WriteStream.WriteRTP(p.Header, p.Payload)
+	written, err := p.WriteStream.WriteRTP(p.Header, p.Payload)
 	if err != nil {
 		if !errors.Is(err, io.ErrClosedPipe) {
 			b.logger.Errorw("write rtp packet failed", err)
 		}
 		return 0, err
+	}
+
+	if p.OnSent != nil {
+		p.OnSent(p.Header, p.Payload)
 	}
 
 	return written, nil

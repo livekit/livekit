@@ -114,6 +114,8 @@ type RTCConfig struct {
 
 	CongestionControl CongestionControlConfig `yaml:"congestion_control,omitempty"`
 
+	FlexFEC FlexFECConfig `yaml:"flexfec,omitempty"`
+
 	// allow TCP and TURN/TLS fallback
 	AllowTCPFallback *bool `yaml:"allow_tcp_fallback,omitempty"`
 
@@ -183,6 +185,55 @@ type CongestionControlConfig struct {
 	UseSendSideBWE   bool                          `yaml:"use_send_side_bwe,omitempty"`
 	SendSideBWEPacer string                        `yaml:"send_side_bwe_pacer,omitempty"`
 	SendSideBWE      sendsidebwe.SendSideBWEConfig `yaml:"send_side_bwe,omitempty"`
+}
+
+// FlexFECConfig controls FlexFEC-03 forward error correction.
+// The upstream (publisher -> SFU) and downstream (SFU -> subscriber) legs are
+// independent: upstream accepts and decodes FEC sent by publishers to repair
+// lost packets before forwarding, downstream generates fresh FEC for
+// forwarded video.
+type FlexFECConfig struct {
+	// negotiate flexfec-03 with publishers and use it to recover lost upstream packets
+	UpstreamEnabled bool `yaml:"upstream_enabled,omitempty"`
+	// offer flexfec-03 to subscribers and generate FEC for forwarded video
+	DownstreamEnabled bool `yaml:"downstream_enabled,omitempty"`
+	// payload type used when offering flexfec-03 to subscribers, must not
+	// collide with codec payload types or their RTX (pt+1) slots
+	PayloadType uint8 `yaml:"payload_type,omitempty"`
+	// downstream: media packets accumulated per FEC batch
+	NumMediaPackets uint32 `yaml:"num_media_packets,omitempty"`
+	// downstream: FEC packets generated per batch (overhead ≈ num_fec_packets/num_media_packets)
+	NumFECPackets uint32 `yaml:"num_fec_packets,omitempty"`
+}
+
+var DefaultFlexFECConfig = FlexFECConfig{
+	UpstreamEnabled:   false,
+	DownstreamEnabled: false,
+	PayloadType:       115,
+	NumMediaPackets:   10,
+	NumFECPackets:     2,
+}
+
+// WithDefaults returns a copy with zero values replaced by defaults and
+// out-of-range values clamped.
+func (c FlexFECConfig) WithDefaults() FlexFECConfig {
+	if c.PayloadType == 0 {
+		c.PayloadType = DefaultFlexFECConfig.PayloadType
+	}
+	if c.NumMediaPackets == 0 {
+		c.NumMediaPackets = DefaultFlexFECConfig.NumMediaPackets
+	}
+	// flexfec-03 masks cover at most 109 media packets, stay well below
+	if c.NumMediaPackets > 48 {
+		c.NumMediaPackets = 48
+	}
+	if c.NumFECPackets == 0 {
+		c.NumFECPackets = DefaultFlexFECConfig.NumFECPackets
+	}
+	if c.NumFECPackets > c.NumMediaPackets {
+		c.NumFECPackets = c.NumMediaPackets
+	}
+	return c
 }
 
 type PlayoutDelayConfig struct {
@@ -409,6 +460,7 @@ var DefaultConfig = Config{
 			SendSideBWEPacer:          string(pacer.PacerBehaviorNoQueue),
 			SendSideBWE:               sendsidebwe.DefaultSendSideBWEConfig,
 		},
+		FlexFEC: DefaultFlexFECConfig,
 	},
 	Audio: sfu.DefaultAudioConfig,
 	Video: VideoConfig{

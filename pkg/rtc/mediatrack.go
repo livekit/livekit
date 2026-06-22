@@ -37,6 +37,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/connectionquality"
 	"github.com/livekit/livekit-server/pkg/sfu/interceptor"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	util "github.com/livekit/mediatransportutil"
 )
 
@@ -588,6 +589,10 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 	}
 
 	buff.OnNotifyRTX(t.MediaTrackReceiver.setLayerRtxInfo)
+
+	buff.OnFECRecovery(func(recovered int, received int, discarded int, bytesReceived int) {
+		prometheus.RecordFECUpstream(received, recovered, discarded, uint64(bytesReceived))
+	})
 
 	// if subscriber request fps before fps calculated, update them after fps updated.
 	buff.OnFpsChanged(func() {
