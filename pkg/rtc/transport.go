@@ -1432,6 +1432,13 @@ func (t *PCTransport) HasEverConnected() bool {
 	return !t.firstConnectedAt.IsZero()
 }
 
+func (t *PCTransport) FirstConnectedAt() time.Time {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.firstConnectedAt
+}
+
 func (t *PCTransport) GetICEConnectionInfo() *types.ICEConnectionInfo {
 	return t.connectionDetails.GetInfo()
 }
