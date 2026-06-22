@@ -330,6 +330,8 @@ func (f *Forwarder) MaybeExpireAcquireGrace() bool {
 		return false
 	}
 	f.acquireDeadline = 0
+	f.enableStartAtDesiredQuality = false
+	f.vls.SetEnableStartAtDesiredQuality(false)
 	return !f.vls.GetCurrent().IsValid()
 }
 

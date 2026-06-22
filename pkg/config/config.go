@@ -208,7 +208,6 @@ type RoomConfig struct {
 	EnableRemoteUnmute bool               `yaml:"enable_remote_unmute,omitempty"`
 	PlayoutDelay       PlayoutDelayConfig `yaml:"playout_delay,omitempty"`
 	SyncStreams        bool               `yaml:"sync_streams,omitempty"`
-	CreateRoomEnabled  bool               `yaml:"create_room_enabled,omitempty"`
 	CreateRoomTimeout  time.Duration      `yaml:"create_room_timeout,omitempty"`
 	CreateRoomAttempts int                `yaml:"create_room_attempts,omitempty"`
 	// target room participant update batch chunk size in bytes
@@ -434,7 +433,6 @@ var DefaultConfig = Config{
 		},
 		EmptyTimeout:          5 * 60,
 		DepartureTimeout:      20,
-		CreateRoomEnabled:     true,
 		CreateRoomTimeout:     10 * time.Second,
 		CreateRoomAttempts:    3,
 		UpdateBatchTargetSize: 128 * 1024,
