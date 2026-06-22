@@ -3248,11 +3248,11 @@ func (p *ParticipantImpl) mediaTrackReceived(
 		mt = p.addMediaTrack(signalCid, ti)
 		newTrack = true
 
-		// if the addTrackRequest is sent before participant active then it means the client tries to publish
-		// before fully connected, in this case we only record the time when the participant is active since
+		// if the addTrackRequest is sent before publisher peer connection is established, then it means the client tries to publish
+		// before fully connected, in this case we only record the time when publisher peer connection is established since
 		// we want this metric to represent the time cost by publishing.
-		if activeAt := p.lastActiveAt.Load(); activeAt != nil && createdAt.Before(*activeAt) {
-			createdAt = *activeAt
+		if connectedAt := p.TransportManager.PublisherFirstConnectedAt(); !connectedAt.IsZero() && createdAt.Before(connectedAt) {
+			createdAt = connectedAt
 		}
 		pubTime = time.Since(createdAt)
 		p.dirty.Store(true)
