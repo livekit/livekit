@@ -911,6 +911,7 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 		KindDetails:      grants.GetKindDetails(),
 		DisconnectReason: p.CloseReason().ToDisconnectReason(),
 		ClientProtocol:   clientProtocol,
+		Capabilities:     p.params.ClientInfo.GetCapabilities(),
 	}
 	p.lock.RUnlock()
 
