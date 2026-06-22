@@ -46,6 +46,7 @@ var (
 	promTrackSubscribedCurrent *prometheus.GaugeVec
 	promTrackPublishCounter    *prometheus.CounterVec
 	promTrackSubscribeCounter  *prometheus.CounterVec
+	promSessionJoinLatency     *prometheus.HistogramVec
 	promSessionStartTime       *prometheus.HistogramVec
 	promSessionDuration        *prometheus.HistogramVec
 	promPubSubTime             *prometheus.HistogramVec
@@ -99,6 +100,13 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "subscribe_counter",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, []string{"state", "error"})
+	promSessionJoinLatency = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "session",
+		Name:        "join_latency_ms",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+		Buckets:     prometheus.ExponentialBucketsRange(10, 10000, 15),
+	}, []string{"protocol_version"})
 	promSessionStartTime = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "session",
@@ -134,6 +142,7 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promTrackSubscribedCurrent)
 	prometheus.MustRegister(promTrackPublishCounter)
 	prometheus.MustRegister(promTrackSubscribeCounter)
+	prometheus.MustRegister(promSessionJoinLatency)
 	prometheus.MustRegister(promSessionStartTime)
 	prometheus.MustRegister(promSessionDuration)
 	prometheus.MustRegister(promPubSubTime)
@@ -269,6 +278,10 @@ func RecordTrackSubscribeFailure(err error, isUserError bool) {
 func RecordTrackSubscribeCancels(numCancels int32) {
 	trackSubscribeCancels.Add(numCancels)
 	promTrackSubscribeCounter.WithLabelValues("cancel", "").Add(float64(numCancels))
+}
+
+func RecordSessionJoinLatency(protocolVersion int, d time.Duration) {
+	promSessionJoinLatency.WithLabelValues(strconv.Itoa(protocolVersion)).Observe(float64(d.Milliseconds()))
 }
 
 func RecordSessionStartTime(protocolVersion int, d time.Duration) {
