@@ -628,20 +628,27 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 	}
 }
 
-func (s *RTCService) DrainConnections(interval time.Duration) {
+func (s *RTCService) DrainConnections(interval time.Duration, force bool) {
 	s.mu.Lock()
 	conns := maps.Clone(s.connections)
 	s.mu.Unlock()
 
-	// jitter drain start
-	time.Sleep(time.Duration(rand.Int63n(int64(interval))))
+	if !force {
+		// jitter drain start
+		time.Sleep(time.Duration(rand.Int63n(int64(interval))))
 
-	t := time.NewTicker(interval)
-	defer t.Stop()
+		t := time.NewTicker(interval)
+		defer t.Stop()
 
-	for c := range conns {
-		_ = c.Close()
-		<-t.C
+		for c := range conns {
+			_ = c.Close()
+			<-t.C
+		}
+	} else {
+		// drain as quickly as possible when forced
+		for c := range conns {
+			_ = c.Close()
+		}
 	}
 }
 
