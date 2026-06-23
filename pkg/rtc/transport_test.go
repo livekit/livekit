@@ -617,7 +617,7 @@ func TestConfigureAudioTransceiver(t *testing.T) {
 			tr, err := pc.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly})
 			require.NoError(t, err)
 
-			configureSenderAudio(tr, testcase.stereo, testcase.nack)
+			configureSenderAudio(tr, testcase.stereo, testcase.nack, nil)
 			codecs := tr.Sender().GetParameters().Codecs
 			for _, codec := range codecs {
 				if mime.IsMimeTypeStringOpus(codec.MimeType) {
@@ -634,6 +634,32 @@ func TestConfigureAudioTransceiver(t *testing.T) {
 			}
 		})
 	}
+}
+
+// When answering a subscriber offer, the sender's audio payload type must echo
+// the payload type the offer assigned (RFC 3264), otherwise Firefox decodes no
+// audio. See https://github.com/livekit/livekit/issues/4599.
+func TestConfigureAudioTransceiverEchoesOfferPayloadType(t *testing.T) {
+	var me webrtc.MediaEngine
+	registerCodecs(&me, []*livekit.Codec{{Mime: mime.MimeTypeOpus.String()}}, RTCPFeedbackConfig{Audio: []webrtc.RTCPFeedback{{Type: webrtc.TypeRTCPFBNACK}}}, false)
+	pc, err := webrtc.NewAPI(webrtc.WithMediaEngine(&me)).NewPeerConnection(webrtc.Configuration{})
+	require.NoError(t, err)
+	defer pc.Close()
+	tr, err := pc.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly})
+	require.NoError(t, err)
+
+	// offer mapped Opus to a payload type different from the server MediaEngine's.
+	const offeredOpusPT = webrtc.PayloadType(109)
+	configureSenderAudio(tr, false, true, map[mime.MimeType]webrtc.PayloadType{mime.MimeTypeOpus: offeredOpusPT})
+
+	var found bool
+	for _, codec := range tr.Sender().GetParameters().Codecs {
+		if mime.IsMimeTypeStringOpus(codec.MimeType) {
+			require.Equal(t, offeredOpusPT, codec.PayloadType)
+			found = true
+		}
+	}
+	require.True(t, found, "opus codec must be present in sender preferences")
 }
 
 // In single-PC mode the publisher PC carries both publish and subscribe
