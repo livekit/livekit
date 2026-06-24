@@ -728,11 +728,13 @@ func (m *SubscriptionManager) hasCapacityForSubscription(kind livekit.TrackType)
 	switch kind {
 	case livekit.TrackType_VIDEO:
 		if m.params.SubscriptionLimitVideo > 0 && m.subscribedVideoCount.Load() >= m.params.SubscriptionLimitVideo {
+			m.params.Logger.Infow("subcription limit exceeded for video", "limit", m.params.SubscriptionLimitVideo, "subscriptions", m.subscribedVideoCount.Load())
 			return false
 		}
 
 	case livekit.TrackType_AUDIO:
 		if m.params.SubscriptionLimitAudio > 0 && m.subscribedAudioCount.Load() >= m.params.SubscriptionLimitAudio {
+			m.params.Logger.Infow("subcription limit exceeded for audio", "limit", m.params.SubscriptionLimitAudio, "subscriptions", m.subscribedAudioCount.Load())
 			return false
 		}
 	}

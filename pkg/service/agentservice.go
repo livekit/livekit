@@ -485,19 +485,29 @@ func (h *AgentHandler) CheckEnabled(ctx context.Context, req *rpc.CheckEnabledRe
 	}, nil
 }
 
-func (h *AgentHandler) DrainConnections(interval time.Duration) {
-	// jitter drain start
-	time.Sleep(time.Duration(rand.Int63n(int64(interval))))
+func (h *AgentHandler) DrainConnections(interval time.Duration, force bool) {
+	if !force {
+		// jitter drain start
+		time.Sleep(time.Duration(rand.Int63n(int64(interval))))
 
-	t := time.NewTicker(interval)
-	defer t.Stop()
+		t := time.NewTicker(interval)
+		defer t.Stop()
 
-	h.mu.Lock()
-	defer h.mu.Unlock()
+		h.mu.Lock()
+		defer h.mu.Unlock()
 
-	for _, w := range h.workers {
-		w.Close()
-		<-t.C
+		for _, w := range h.workers {
+			w.Close()
+			<-t.C
+		}
+	} else {
+		// drain as quickly as possible when forced
+		h.mu.Lock()
+		defer h.mu.Unlock()
+
+		for _, w := range h.workers {
+			w.Close()
+		}
 	}
 }
 

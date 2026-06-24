@@ -401,9 +401,6 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 		return
 	}
 
-	prometheus.IncrementParticipantJoin(1)
-	joinDuration = time.Since(startedAt)
-
 	pLogger = pLogger.WithValues("connID", cr.ConnectionID)
 	if !pi.Reconnect && initialResponse.GetJoin() != nil {
 		joinRoomID := livekit.RoomID(initialResponse.GetJoin().GetRoom().GetSid())
@@ -445,6 +442,7 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 	// upgrade only once the basics are good to go
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		prometheus.IncrementParticipantJoinUpgradeFail(1)
 		resolveLogger(true)
 		HandleError(w, r, http.StatusInternalServerError, err, getLoggerFields()...)
 		return
@@ -465,11 +463,16 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 	pLogger.Debugw("sending initial response", "response", logger.Proto(initialResponse))
 	count, err := sigConn.WriteResponse(initialResponse)
 	if err != nil {
+		prometheus.IncrementParticipantJoinWriteInitialResponseFail(1)
 		resolveLogger(true)
 		pLogger.Warnw("could not write initial response", err)
 		return
 	}
 	signalStats.AddBytes(uint64(count), true)
+
+	prometheus.IncrementParticipantJoin(1)
+	joinDuration = time.Since(startedAt)
+	prometheus.RecordSessionJoinLatency(int(pi.Client.GetProtocol()), joinDuration)
 
 	pLogger.Debugw(
 		"new client WS connected",
@@ -625,20 +628,27 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 	}
 }
 
-func (s *RTCService) DrainConnections(interval time.Duration) {
+func (s *RTCService) DrainConnections(interval time.Duration, force bool) {
 	s.mu.Lock()
 	conns := maps.Clone(s.connections)
 	s.mu.Unlock()
 
-	// jitter drain start
-	time.Sleep(time.Duration(rand.Int63n(int64(interval))))
+	if !force {
+		// jitter drain start
+		time.Sleep(time.Duration(rand.Int63n(int64(interval))))
 
-	t := time.NewTicker(interval)
-	defer t.Stop()
+		t := time.NewTicker(interval)
+		defer t.Stop()
 
-	for c := range conns {
-		_ = c.Close()
-		<-t.C
+		for c := range conns {
+			_ = c.Close()
+			<-t.C
+		}
+	} else {
+		// drain as quickly as possible when forced
+		for c := range conns {
+			_ = c.Close()
+		}
 	}
 }
 

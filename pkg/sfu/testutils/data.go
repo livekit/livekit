@@ -54,9 +54,9 @@ func GetTestExtPacket(params *TestExtPacketParams) (*buffer.ExtPacket, error) {
 			SequenceNumber: params.SequenceNumber,
 			Timestamp:      params.Timestamp,
 			SSRC:           params.SSRC,
+			PaddingSize:    params.PaddingSize,
 		},
-		Payload:     make([]byte, params.PayloadSize),
-		PaddingSize: params.PaddingSize,
+		Payload: make([]byte, params.PayloadSize),
 	}
 
 	raw, err := packet.Marshal()

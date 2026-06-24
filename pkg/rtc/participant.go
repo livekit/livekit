@@ -226,6 +226,7 @@ type ParticipantParams struct {
 	ForceBackupCodecPolicySimulcast bool
 	DisableTransceiverReuseForE2EE  bool
 	EnableParticipantDataBlob       bool
+	EnableStartAtDesiredQuality     bool
 }
 
 type ParticipantImpl struct {
@@ -509,6 +510,10 @@ func (p *ParticipantImpl) GetReporterResolver() roomobs.ParticipantReporterResol
 
 func (p *ParticipantImpl) GetAdaptiveStream() bool {
 	return p.params.AdaptiveStream
+}
+
+func (p *ParticipantImpl) GetEnableStartAtDesiredQuality() bool {
+	return p.params.EnableStartAtDesiredQuality
 }
 
 func (p *ParticipantImpl) GetPacer() pacer.Pacer {
@@ -912,6 +917,7 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 		KindDetails:      grants.GetKindDetails(),
 		DisconnectReason: p.CloseReason().ToDisconnectReason(),
 		ClientProtocol:   clientProtocol,
+		Capabilities:     p.params.ClientInfo.GetCapabilities(),
 	}
 	p.lock.RUnlock()
 
@@ -972,7 +978,9 @@ func (p *ParticipantImpl) GetTelemetryListener() types.ParticipantTelemetryListe
 
 func (p *ParticipantImpl) AddOnClose(key string, callback func(types.LocalParticipant)) {
 	if p.isClosed.Load() {
-		go callback(p)
+		if callback != nil {
+			go callback(p)
+		}
 		return
 	}
 
@@ -1338,9 +1346,7 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 		return
 	}
 
-	p.pendingTracksLock.Lock()
-	ti := p.addPendingTrackLocked(req)
-	p.pendingTracksLock.Unlock()
+	ti := p.addPendingTrack(req)
 	if ti == nil {
 		return
 	}
@@ -1419,11 +1425,29 @@ func (p *ParticipantImpl) IsReconnect() bool {
 	return p.params.Reconnect
 }
 
+func (p *ParticipantImpl) maybeRecordRTCanceled(closeReason types.ParticipantCloseReason) {
+	if p.State() >= livekit.ParticipantInfo_ACTIVE {
+		return
+	}
+
+	if closeReason == types.ParticipantCloseReasonClientRequestLeave ||
+		closeReason == types.ParticipantCloseReasonDuplicateIdentity ||
+		closeReason == types.ParticipantCloseReasonRoomClosed ||
+		closeReason == types.ParticipantCloseReasonMigrationRequested ||
+		closeReason == types.ParticipantCloseReasonMigrationComplete ||
+		// client closing signal connection too quickly, there is a time check to handle clients timing out and leaving without sending a leave message
+		(time.Since(p.params.SessionStartTime) < 3*time.Second && closeReason == types.ParticipantCloseReasonSignalSourceClose) {
+		prometheus.IncrementParticipantRtcCanceled(1)
+	}
+}
+
 func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseReason, isExpectedToResume bool) error {
 	if p.isClosed.Swap(true) {
 		// already closed
 		return nil
 	}
+
+	p.maybeRecordRTCanceled(reason)
 
 	var sessionDuration time.Duration
 	if activeAt := p.ActiveAt(); !activeAt.IsZero() {
@@ -2832,7 +2856,10 @@ func (p *ParticipantImpl) onSubscribedAudioCodecChange(
 	return p.sendSubscribedAudioCodecUpdate(subscribedAudioCodecUpdate)
 }
 
-func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *livekit.TrackInfo {
+func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit.TrackInfo {
+	p.pendingTracksLock.Lock()
+	defer p.pendingTracksLock.Unlock()
+
 	if req.Sid != "" {
 		track := p.GetPublishedTrack(livekit.TrackID(req.Sid))
 		if track == nil {
@@ -3229,11 +3256,11 @@ func (p *ParticipantImpl) mediaTrackReceived(
 		mt = p.addMediaTrack(signalCid, ti)
 		newTrack = true
 
-		// if the addTrackRequest is sent before participant active then it means the client tries to publish
-		// before fully connected, in this case we only record the time when the participant is active since
+		// if the addTrackRequest is sent before publisher peer connection is established, then it means the client tries to publish
+		// before fully connected, in this case we only record the time when publisher peer connection is established since
 		// we want this metric to represent the time cost by publishing.
-		if activeAt := p.lastActiveAt.Load(); activeAt != nil && createdAt.Before(*activeAt) {
-			createdAt = *activeAt
+		if connectedAt := p.TransportManager.PublisherFirstConnectedAt(); !connectedAt.IsZero() && createdAt.Before(connectedAt) {
+			createdAt = connectedAt
 		}
 		pubTime = time.Since(createdAt)
 		p.dirty.Store(true)
