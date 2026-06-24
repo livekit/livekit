@@ -52,6 +52,7 @@ type MoQService struct {
 	keyProvider auth.KeyProvider
 	roomManager *RoomManager
 	tracks      *moqTrackRegistry
+	ingest      *moqIngestRegistry
 	logger      logger.Logger
 
 	lock    sync.Mutex
@@ -86,6 +87,11 @@ func NewMoQService(conf *config.Config, keyProvider auth.KeyProvider, roomManage
 	s.tracks = newMoQTrackRegistry(moqTrackRegistryParams{
 		Config: s.config,
 		Logger: lgr,
+	})
+	s.ingest = newMoQIngestRegistry(moqIngestRegistryParams{
+		Config:      s.config,
+		Logger:      lgr,
+		RoomManager: roomManager,
 	})
 	roomManager.AddOnRoomCreated(s.tracks.AttachRoom)
 	return s, nil
@@ -202,7 +208,17 @@ func (s *MoQService) handleWebTransport(w http.ResponseWriter, r *http.Request, 
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
-	if claims.Video == nil || !claims.Video.RoomJoin || !claims.Video.GetCanSubscribe() {
+	role := r.URL.Query().Get("role")
+	if claims.Video == nil || !claims.Video.RoomJoin {
+		http.Error(w, ErrPermissionDenied.Error(), http.StatusForbidden)
+		return
+	}
+	if role == "publish" {
+		if !s.config.IngestEnabled || !claims.Video.GetCanPublishSource(livekit.TrackSource_CAMERA) {
+			http.Error(w, ErrPermissionDenied.Error(), http.StatusForbidden)
+			return
+		}
+	} else if !claims.Video.GetCanSubscribe() {
 		http.Error(w, ErrPermissionDenied.Error(), http.StatusForbidden)
 		return
 	}
@@ -237,8 +253,24 @@ func (s *MoQService) handleWebTransport(w http.ResponseWriter, r *http.Request, 
 
 	switch protocol := sess.SessionState().ApplicationProtocol; protocol {
 	case moqLiteProtocol:
+		if role == "publish" {
+			if !s.config.IngestEnabled {
+				_ = sess.CloseWithError(1, "moq ingest is disabled")
+				return
+			}
+			s.serveMoQLitePublishSession(sess, r, roomName, claims)
+			return
+		}
+		if claims.Video == nil || !claims.Video.GetCanSubscribe() {
+			_ = sess.CloseWithError(1, ErrPermissionDenied.Error())
+			return
+		}
 		s.serveMoQLiteSession(sess, roomName, claims, layer)
 	case "", moqWireProtocol:
+		if claims.Video == nil || !claims.Video.GetCanSubscribe() {
+			_ = sess.CloseWithError(1, ErrPermissionDenied.Error())
+			return
+		}
 		resolved, catalog, _, err := s.resolveTrack(sess.Context(), roomName, livekit.TrackID(r.URL.Query().Get("track_id")), claims)
 		if err != nil {
 			_ = sess.CloseWithError(1, err.Error())

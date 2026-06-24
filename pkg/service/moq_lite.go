@@ -31,19 +31,6 @@ import (
 	webtransport "github.com/quic-go/webtransport-go"
 )
 
-const (
-	moqLiteProtocol = "moq-lite-04"
-
-	moqLiteStreamGroup     byte   = 0
-	moqLiteStreamSubscribe uint64 = 2
-	moqLiteStreamProbe     uint64 = 4
-
-	moqLiteSubscribeOK   uint64 = 0
-	moqLiteSubscribeDrop uint64 = 1
-
-	moqLiteMaxMessageSize = 1024 * 1024
-)
-
 type moqLiteSubscribe struct {
 	ID         uint64
 	Broadcast  string

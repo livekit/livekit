@@ -191,8 +191,18 @@ type MoQConfig struct {
 	// dropped to keep latency bounded.
 	TrackQueueSize int `yaml:"track_queue_size,omitempty"`
 	// Max bytes retained for the cached keyframe access unit per track/layer.
-	CacheMaxBytes int           `yaml:"cache_max_bytes,omitempty"`
-	WriteTimeout  time.Duration `yaml:"write_timeout,omitempty"`
+	CacheMaxBytes int `yaml:"cache_max_bytes,omitempty"`
+
+	// Experimental MoQ ingest path. When enabled, publishers can send H264
+	// Annex-B access units over moq-lite and appear as normal LiveKit tracks.
+	IngestEnabled           bool          `yaml:"ingest_enabled,omitempty"`
+	IngestQueueSize         int           `yaml:"ingest_queue_size,omitempty"`
+	IngestMaxFrameBytes     int           `yaml:"ingest_max_frame_bytes,omitempty"`
+	IngestReadTimeout       time.Duration `yaml:"ingest_read_timeout,omitempty"`
+	IngestResumeGrace       time.Duration `yaml:"ingest_resume_grace,omitempty"`
+	IngestMaxResumeSessions int           `yaml:"ingest_max_resume_sessions,omitempty"`
+
+	WriteTimeout time.Duration `yaml:"write_timeout,omitempty"`
 }
 
 func (c MoQConfig) WithDefaults(development bool, bindAddresses []string) MoQConfig {
@@ -204,6 +214,21 @@ func (c MoQConfig) WithDefaults(development bool, bindAddresses []string) MoQCon
 	}
 	if c.CacheMaxBytes <= 0 {
 		c.CacheMaxBytes = 2 * 1024 * 1024
+	}
+	if c.IngestQueueSize <= 0 {
+		c.IngestQueueSize = 256
+	}
+	if c.IngestMaxFrameBytes <= 0 {
+		c.IngestMaxFrameBytes = 2 * 1024 * 1024
+	}
+	if c.IngestReadTimeout <= 0 {
+		c.IngestReadTimeout = 10 * time.Second
+	}
+	if c.IngestResumeGrace <= 0 {
+		c.IngestResumeGrace = 30 * time.Second
+	}
+	if c.IngestMaxResumeSessions <= 0 {
+		c.IngestMaxResumeSessions = 1024
 	}
 	if c.WriteTimeout <= 0 {
 		c.WriteTimeout = 2 * time.Second
@@ -529,10 +554,15 @@ var DefaultConfig = Config{
 	API:              DefaultAPIConfig(),
 	EnableDataTracks: true,
 	MoQ: MoQConfig{
-		Path:           "/moq/v1",
-		TrackQueueSize: 256,
-		CacheMaxBytes:  2 * 1024 * 1024,
-		WriteTimeout:   2 * time.Second,
+		Path:                    "/moq/v1",
+		TrackQueueSize:          256,
+		CacheMaxBytes:           2 * 1024 * 1024,
+		IngestQueueSize:         256,
+		IngestMaxFrameBytes:     2 * 1024 * 1024,
+		IngestReadTimeout:       10 * time.Second,
+		IngestResumeGrace:       30 * time.Second,
+		IngestMaxResumeSessions: 1024,
+		WriteTimeout:            2 * time.Second,
 	},
 }
 

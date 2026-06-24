@@ -1344,6 +1344,55 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 	p.handlePendingRemoteTracks()
 }
 
+// PublishSyntheticTrack creates a published media track from a non-WebRTC
+// receiver. It is used by server-side ingest paths that already have encoded
+// RTP packets and need normal LiveKit SFU fanout.
+func (p *ParticipantImpl) PublishSyntheticTrack(req *livekit.AddTrackRequest, receiver sfu.TrackReceiver) (types.MediaTrack, error) {
+	if req == nil {
+		return nil, errors.New("add track request is nil")
+	}
+	if receiver == nil {
+		return nil, errors.New("track receiver is nil")
+	}
+	if !p.CanPublishSource(req.Source) {
+		return nil, errors.New("participant is not allowed to publish requested source")
+	}
+	if req.Type != livekit.TrackType_VIDEO {
+		return nil, errors.New("synthetic publish currently supports video tracks only")
+	}
+	if req.Cid == "" {
+		req = utils.CloneProto(req)
+		req.Cid = string(receiver.TrackID())
+	}
+
+	p.pendingTracksLock.Lock()
+	ti := p.addPendingTrackLocked(req)
+	if ti == nil {
+		p.pendingTracksLock.Unlock()
+		return nil, errors.New("could not create pending synthetic track")
+	}
+	ti.MimeType = receiver.Mime().String()
+	if len(ti.Codecs) == 1 && ti.Codecs[0].MimeType == "" {
+		ti.Codecs[0].MimeType = receiver.Mime().String()
+	}
+	for _, codec := range ti.Codecs {
+		if codec.MimeType == "" {
+			codec.MimeType = receiver.Mime().String()
+		}
+	}
+	if utils.TimedVersionFromProto(ti.Version).IsZero() {
+		ti.Version = p.params.VersionGenerator.Next().ToProto()
+	}
+	mt := p.addMediaTrack(req.Cid, ti)
+	p.dirty.Store(true)
+	p.pendingTracksLock.Unlock()
+
+	mt.SetPotentialCodecs([]webrtc.RTPCodecParameters{receiver.Codec()}, receiver.HeaderExtensions())
+	mt.SetupReceiver(receiver, 0, "")
+	p.handleTrackPublished(mt, false)
+	return mt, nil
+}
+
 func (p *ParticipantImpl) SetMigrateInfo(
 	previousOffer, previousAnswer *webrtc.SessionDescription,
 	mediaTracks []*livekit.TrackPublishedResponse,
