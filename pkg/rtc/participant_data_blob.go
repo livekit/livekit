@@ -19,7 +19,6 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 )
 
 type ParticipantDataBlobParams struct {
@@ -47,7 +46,7 @@ func (p *ParticipantDataBlob) Add(db *livekit.DataBlob) {
 		return
 	}
 
-	p.blobs[db.Key.String()] = utils.CloneProto(db)
+	p.blobs[db.Key.String()] = db
 }
 
 func (p *ParticipantDataBlob) Delete(dbKey *livekit.DataBlobKey) {
@@ -83,7 +82,7 @@ func (p *ParticipantDataBlob) GetAll() []*livekit.DataBlob {
 
 	all := make([]*livekit.DataBlob, 0, len(p.blobs))
 	for _, db := range p.blobs {
-		all = append(all, utils.CloneProto(db))
+		all = append(all, db)
 	}
 	return all
 }
