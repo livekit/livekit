@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/protocol/agent"
 	"github.com/livekit/protocol/livekit"
@@ -29,6 +30,7 @@ import (
 )
 
 type AgentDispatchService struct {
+	limitConf           config.LimitConfig
 	agentDispatchClient rpc.TypedAgentDispatchInternalClient
 	topicFormatter      rpc.TopicFormatter
 	roomAllocator       RoomAllocator
@@ -36,12 +38,14 @@ type AgentDispatchService struct {
 }
 
 func NewAgentDispatchService(
+	limitConf config.LimitConfig,
 	agentDispatchClient rpc.TypedAgentDispatchInternalClient,
 	topicFormatter rpc.TopicFormatter,
 	roomAllocator RoomAllocator,
 	router routing.MessageRouter,
 ) *AgentDispatchService {
 	return &AgentDispatchService{
+		limitConf:           limitConf,
 		agentDispatchClient: agentDispatchClient,
 		topicFormatter:      topicFormatter,
 		roomAllocator:       roomAllocator,
@@ -58,6 +62,13 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 
 	if err := agent.ValidateDeployment(req.GetDeployment()); err != nil {
 		return nil, psrpc.NewError(psrpc.InvalidArgument, err)
+	}
+
+	if !ag.limitConf.CheckMetadataSize(req.Metadata) {
+		return nil, ErrMetadataExceedsLimits
+	}
+	if !ag.limitConf.CheckAttributesSize(req.Attributes) {
+		return nil, ErrAttributeExceedsLimits
 	}
 
 	if ag.roomAllocator.AutoCreateEnabled(ctx) {
@@ -79,6 +90,7 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 		Metadata:      req.Metadata,
 		RestartPolicy: req.RestartPolicy,
 		Deployment:    req.Deployment,
+		Attributes:    req.Attributes,
 	}
 	return ag.agentDispatchClient.CreateDispatch(ctx, ag.topicFormatter.RoomTopic(ctx, livekit.RoomName(req.Room)), dispatch)
 }

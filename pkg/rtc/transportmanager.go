@@ -227,6 +227,10 @@ func (t *TransportManager) HasPublisherEverConnected() bool {
 	return t.publisher.HasEverConnected()
 }
 
+func (t *TransportManager) PublisherFirstConnectedAt() time.Time {
+	return t.publisher.FirstConnectedAt()
+}
+
 func (t *TransportManager) IsPublisherEstablished() bool {
 	return t.publisher.IsEstablished()
 }
@@ -264,6 +268,14 @@ func (t *TransportManager) HasSubscriberEverConnected() bool {
 		return t.publisher.HasEverConnected()
 	} else {
 		return t.subscriber.HasEverConnected()
+	}
+}
+
+func (t *TransportManager) SubscriberFirstConnectedAt() time.Time {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
+		return t.publisher.FirstConnectedAt()
+	} else {
+		return t.subscriber.FirstConnectedAt()
 	}
 }
 

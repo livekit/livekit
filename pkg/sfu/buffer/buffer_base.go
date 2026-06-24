@@ -742,25 +742,20 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 	b.processAudioSsrcLevelHeaderExtension(rtpPacket, arrivalTime)
 
 	if len(skippedSeqs) > 0 {
-		skippedRtpPkt := rtp.Packet{
-			Header: rtpPacket.Header,
-		}
-		skippedRtpPkt.Marker = false
 		// Use the current highest timestamp to prevent the case of old sequence number and newer timestamp.
 		// It is possible that the skipped packet is older. An example sequence
 		//   - Packet 10, skipped 6, 7, 9 -> Packet 8 is unknown at this point
-		//   - Packet 11, skipped 8 -> this would cause sequence number be older, but using timestamp from Packet 11 will make time stamp diff +ve
-		skippedRtpPkt.Timestamp = b.rtpStats.HighestTimestamp()
+		//   - Packet 11, skipped 8 -> this would cause sequence number to be older, but using timestamp from Packet 11 will make time stamp diff +ve
+		ts := b.rtpStats.HighestTimestamp()
 		for _, sn := range skippedSeqs {
-			skippedRtpPkt.SequenceNumber = sn
 			flowState := b.rtpStats.Update(
 				arrivalTime,
-				skippedRtpPkt.Header.SequenceNumber,
-				skippedRtpPkt.Header.Timestamp,
-				skippedRtpPkt.Header.Marker,
-				skippedRtpPkt.Header.MarshalSize(),
-				len(skippedRtpPkt.Payload),
-				int(skippedRtpPkt.PaddingSize),
+				sn,
+				ts,
+				false, // no marker
+				0,     // no header for skipped packet, so 0 size
+				0,     // no payload
+				0,     // no padding
 			)
 			if flowState.UnhandledReason == rtpstats.RTPFlowUnhandledReasonNone && !flowState.IsOutOfOrder {
 				if err := b.snRangeMap.ExcludeRange(flowState.ExtSequenceNumber, flowState.ExtSequenceNumber+1); err != nil {
@@ -790,7 +785,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 		rtpPacket.Header.Marker,
 		rtpPacket.Header.MarshalSize(),
 		len(rtpPacket.Payload),
-		int(rtpPacket.PaddingSize),
+		int(rtpPacket.Header.PaddingSize),
 	)
 	switch flowState.UnhandledReason {
 	case rtpstats.RTPFlowUnhandledReasonNone:
@@ -808,7 +803,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 			rtpPacket.Header.Marker,
 			rtpPacket.Header.MarshalSize(),
 			len(rtpPacket.Payload),
-			int(rtpPacket.PaddingSize),
+			int(rtpPacket.Header.PaddingSize),
 		)
 	default:
 		return 0, fmt.Errorf("unhandled reason: %s", flowState.UnhandledReason.String())
@@ -866,7 +861,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 			"timestamp", rtpPacket.Timestamp,
 			"extTimestamp", flowState.ExtTimestamp,
 			"payloadSize", len(rtpPacket.Payload),
-			"paddingSize", rtpPacket.PaddingSize,
+			"paddingSize", rtpPacket.Header.PaddingSize,
 			"rtpStats", b.rtpStats,
 			"rtpStatsLite", b.rtpStatsLite,
 			"snRangeMap", b.snRangeMap,

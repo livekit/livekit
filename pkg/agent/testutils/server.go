@@ -29,7 +29,7 @@ import (
 
 type AgentService interface {
 	HandleConnection(context.Context, agent.SignalConn, agent.WorkerRegistration)
-	DrainConnections(time.Duration)
+	DrainConnections(time.Duration, bool)
 }
 
 type TestServer struct {
@@ -140,7 +140,7 @@ func (h *TestServer) SimulateAgentWorker(opts ...SimulatedWorkerOption) *AgentWo
 }
 
 func (h *TestServer) Close() {
-	h.DrainConnections(1)
+	h.DrainConnections(1, false)
 }
 
 var _ agent.SignalConn = (*AgentWorker)(nil)
