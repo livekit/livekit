@@ -30,13 +30,13 @@ require (
 	github.com/moby/moby/client v0.4.1
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/ory/dockertest/v4 v4.0.0
-	github.com/pion/datachannel v1.6.2
+	github.com/pion/datachannel v1.6.0
 	github.com/pion/dtls/v3 v3.1.4
 	github.com/pion/ice/v4 v4.2.7
 	github.com/pion/interceptor v0.1.45
 	github.com/pion/rtcp v1.2.16
 	github.com/pion/rtp v1.10.2
-	github.com/pion/sctp v1.10.0
+	github.com/pion/sctp v1.9.5
 	github.com/pion/sdp/v3 v3.0.19
 	github.com/pion/transport/v4 v4.0.2
 	github.com/pion/turn/v5 v5.0.10
