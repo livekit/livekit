@@ -299,6 +299,8 @@ type LimitConfig struct {
 
 	MaxDataBlobKeyLength int    `yaml:"max_data_blob_key_length,omitempty"`
 	MaxDataBlobSize      uint32 `yaml:"max_data_blobs_size,omitempty"`
+
+	MaxCustomEncodingLength int `yaml:"max_custom_encoding_length,omitempty"`
 }
 
 func (l LimitConfig) CheckRoomNameLength(name string) bool {
@@ -331,6 +333,26 @@ func (l LimitConfig) CheckAttributesSize(attributes map[string]string) bool {
 
 func (l LimitConfig) CheckDataBlobKeyLength(key string) bool {
 	return l.MaxDataBlobKeyLength == 0 || len(key) <= l.MaxDataBlobKeyLength
+}
+
+func (l LimitConfig) CheckCustomEncodingLength(identifier string) bool {
+	return l.MaxCustomEncodingLength == 0 || len(identifier) <= l.MaxCustomEncodingLength
+}
+
+func (l LimitConfig) CheckDataTrackFrameEncoding(encoding *livekit.DataTrackFrameEncoding) bool {
+	custom, ok := encoding.GetValue().(*livekit.DataTrackFrameEncoding_Custom)
+	if !ok {
+		return true
+	}
+	return len(custom.Custom) != 0 && l.CheckCustomEncodingLength(custom.Custom)
+}
+
+func (l LimitConfig) CheckDataTrackSchemaID(schema *livekit.DataTrackSchemaId) bool {
+	custom, ok := schema.GetEncoding().GetValue().(*livekit.DataTrackSchemaEncoding_Custom)
+	if !ok {
+		return true
+	}
+	return len(custom.Custom) != 0 && l.CheckCustomEncodingLength(custom.Custom)
 }
 
 func (l LimitConfig) CheckDataBlobsSize(dataBlobs []*livekit.DataBlob) bool {
@@ -484,6 +506,7 @@ var DefaultConfig = Config{
 		MaxParticipantNameLength:     256,
 		MaxDataBlobKeyLength:         256,
 		MaxDataBlobSize:              64000,
+		MaxCustomEncodingLength:      25,
 	},
 	Logging: LoggingConfig{
 		PionLevel: "error",

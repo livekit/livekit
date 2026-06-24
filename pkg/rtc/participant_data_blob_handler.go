@@ -41,6 +41,16 @@ func (p *ParticipantImpl) HandleStoreDataBlobRequest(req *livekit.StoreDataBlobR
 		return
 	}
 
+	if !p.params.LimitConfig.CheckDataTrackSchemaID(req.Blob.Key.GetSchemaId()) {
+		p.pubLogger.Warnw("data blob key schema id is invalid", nil, "req", logger.Proto(req))
+		p.sendRequestResponse(&livekit.RequestResponse{
+			RequestId: req.RequestId,
+			Reason:    livekit.RequestResponse_INVALID_REQUEST,
+			Message:   "custom encoding identifier is empty or exceeds the maximum length",
+		})
+		return
+	}
+
 	if len(req.Blob.Contents) == 0 {
 		p.sendRequestResponse(&livekit.RequestResponse{
 			RequestId: req.RequestId,
