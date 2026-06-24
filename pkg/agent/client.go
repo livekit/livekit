@@ -39,6 +39,7 @@ const (
 	DefaultHandlerNamespace = ""
 
 	CheckEnabledTimeout = 5 * time.Second
+	JobRequestTimeout   = 12 * time.Second
 )
 
 var jobTypeTopics = map[livekit.JobType]string{
@@ -175,7 +176,7 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverut
 				Deployment:      desc.Deployment,
 				Attributes:      desc.Attributes,
 			}
-			resp, err := c.client.JobRequest(context.Background(), topic, jobTypeTopic, job)
+			resp, err := c.client.JobRequest(context.Background(), topic, jobTypeTopic, job, psrpc.WithRequestTimeout(JobRequestTimeout))
 			if err != nil {
 				logger.Infow("failed to send job request", "error", err, "namespace", curNs, "jobType", desc.JobType, "agentName", desc.AgentName)
 				return
