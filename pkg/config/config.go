@@ -91,6 +91,8 @@ type Config struct {
 
 	EnableDataTracks bool `yaml:"enable_data_tracks,omitempty"`
 
+	EnableParticipantDataBlob bool `yaml:"enable_participant_data_blob,omitempty"`
+
 	API APIConfig `yaml:"api,omitempty"`
 }
 
@@ -280,6 +282,8 @@ type RegionConfig struct {
 	Lon  float64 `yaml:"lon,omitempty"`
 }
 
+// ---------------------------------
+
 type LimitConfig struct {
 	NumTracks              int32   `yaml:"num_tracks,omitempty"`
 	BytesPerSec            float32 `yaml:"bytes_per_sec,omitempty"`
@@ -291,6 +295,9 @@ type LimitConfig struct {
 	MaxRoomNameLength            int    `yaml:"max_room_name_length,omitempty"`
 	MaxParticipantIdentityLength int    `yaml:"max_participant_identity_length,omitempty"`
 	MaxParticipantNameLength     int    `yaml:"max_participant_name_length,omitempty"`
+
+	MaxDataBlobKeyLength int    `yaml:"max_data_blob_key_length,omitempty"`
+	MaxDataBlobSize      uint32 `yaml:"max_data_blobs_size,omitempty"`
 }
 
 func (l LimitConfig) CheckRoomNameLength(name string) bool {
@@ -320,6 +327,36 @@ func (l LimitConfig) CheckAttributesSize(attributes map[string]string) bool {
 	}
 	return uint32(total) <= l.MaxAttributesSize
 }
+
+func (l LimitConfig) CheckDataBlobKeyLength(key string) bool {
+	return l.MaxDataBlobKeyLength == 0 || len(key) <= l.MaxDataBlobKeyLength
+}
+
+func (l LimitConfig) CheckDataBlobsSize(dataBlobs []*livekit.DataBlob) bool {
+	if l.MaxDataBlobSize == 0 {
+		return true
+	}
+
+	total := 0
+	for _, dataBlob := range dataBlobs {
+		total += len(dataBlob.GetKey().String()) + len(dataBlob.Contents)
+	}
+	return uint32(total) <= l.MaxDataBlobSize
+}
+
+func (l LimitConfig) CanAddDataBlob(dataBlobs []*livekit.DataBlob, toAdd *livekit.DataBlob) bool {
+	if l.MaxDataBlobSize == 0 {
+		return true
+	}
+
+	total := 0
+	for _, dataBlob := range dataBlobs {
+		total += len(dataBlob.Key.String()) + len(dataBlob.Contents)
+	}
+	return uint32(total+len(toAdd.GetKey().String())+len(toAdd.Contents)) <= l.MaxDataBlobSize
+}
+
+// ---------------------------------
 
 type IngressConfig struct {
 	RTMPBaseURL string `yaml:"rtmp_base_url,omitempty"`
@@ -443,6 +480,8 @@ var DefaultConfig = Config{
 		MaxRoomNameLength:            256,
 		MaxParticipantIdentityLength: 256,
 		MaxParticipantNameLength:     256,
+		MaxDataBlobKeyLength:         256,
+		MaxDataBlobSize:              64000,
 	},
 	Logging: LoggingConfig{
 		PionLevel: "error",

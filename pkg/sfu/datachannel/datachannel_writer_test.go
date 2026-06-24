@@ -2,9 +2,10 @@ package datachannel
 
 import (
 	"context"
-	"sync/atomic"
 	"testing"
 	"time"
+
+	"go.uber.org/atomic"
 
 	"github.com/pion/datachannel"
 	"github.com/pion/transport/v4/deadline"

@@ -538,6 +538,7 @@ func (r *RoomManager) StartSession(
 		FireOnTrackBySdp:                true,
 		UseSinglePeerConnection:         pi.UseSinglePeerConnection,
 		EnableDataTracks:                r.config.EnableDataTracks,
+		EnableParticipantDataBlob:       r.config.EnableParticipantDataBlob,
 		EnableRTPStreamRestartDetection: r.config.RTC.EnableRTPStreamRestartDetection,
 	})
 	if err != nil {

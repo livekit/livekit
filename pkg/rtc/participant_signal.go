@@ -368,3 +368,17 @@ func (p *ParticipantImpl) SendDataTrackSubscriberHandles(handles map[uint32]*liv
 		SubHandles: handles,
 	}))
 }
+
+func (p *ParticipantImpl) sendStoreDataBlobResponse(requestId uint32, key *livekit.DataBlobKey) error {
+	return p.signaller.WriteMessage(p.signalling.SignalStoreDataBlobResponse(&livekit.StoreDataBlobResponse{
+		RequestId: requestId,
+		Key:       key,
+	}))
+}
+
+func (p *ParticipantImpl) sendGetDataBlobResponse(requestId uint32, dataBlob *livekit.DataBlob) error {
+	return p.signaller.WriteMessage(p.signalling.SignalGetDataBlobResponse(&livekit.GetDataBlobResponse{
+		RequestId: requestId,
+		Blob:      dataBlob,
+	}))
+}

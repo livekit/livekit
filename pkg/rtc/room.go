@@ -1384,6 +1384,11 @@ func (r *Room) onUpdateDataSubscriptions(participant types.LocalParticipant, req
 	}
 }
 
+func (r *Room) onGetDataBlob(participant types.LocalParticipant, req *livekit.GetDataBlobRequest) {
+	publisher := r.GetParticipant(livekit.ParticipantIdentity(req.ParticipantIdentity))
+	participant.ProcessGetDataBlobRequest(req, publisher)
+}
+
 func (r *Room) onLeave(p types.LocalParticipant, reason types.ParticipantCloseReason) {
 	r.RemoveParticipant(p.Identity(), p.ID(), reason)
 }
@@ -1994,6 +1999,13 @@ func (l *localParticipantListener) OnUpdateSubscriptionPermission(p types.LocalP
 
 func (l *localParticipantListener) OnUpdateDataSubscriptions(p types.LocalParticipant, req *livekit.UpdateDataSubscription) {
 	l.room.onUpdateDataSubscriptions(p, req)
+}
+
+func (l *localParticipantListener) OnStoreDataBlob(_p types.LocalParticipant, _dataBlob *livekit.DataBlob) {
+}
+
+func (l *localParticipantListener) OnGetDataBlob(p types.LocalParticipant, req *livekit.GetDataBlobRequest) {
+	l.room.onGetDataBlob(p, req)
 }
 
 func (l *localParticipantListener) OnSyncState(p types.LocalParticipant, state *livekit.SyncState) error {
