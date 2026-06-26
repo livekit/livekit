@@ -334,7 +334,7 @@ func (l LimitConfig) CheckDataBlobKeyLength(key string) bool {
 	return l.MaxDataBlobKeyLength == 0 || len(key) <= l.MaxDataBlobKeyLength
 }
 
-func (l LimitConfig) CheckCustomEncodingLength(identifier string) bool {
+func (l LimitConfig) CheckDataTrackCustomEncodingLength(identifier string) bool {
 	return l.MaxDataTrackCustomEncodingLength == 0 || len(identifier) <= l.MaxDataTrackCustomEncodingLength
 }
 
@@ -343,7 +343,7 @@ func (l LimitConfig) CheckDataTrackFrameEncoding(encoding *livekit.DataTrackFram
 	if !ok {
 		return true
 	}
-	return len(custom.Custom) != 0 && l.CheckCustomEncodingLength(custom.Custom)
+	return len(custom.Custom) != 0 && l.CheckDataTrackCustomEncodingLength(custom.Custom)
 }
 
 func (l LimitConfig) CheckDataTrackSchemaID(schema *livekit.DataTrackSchemaId) bool {
@@ -351,7 +351,7 @@ func (l LimitConfig) CheckDataTrackSchemaID(schema *livekit.DataTrackSchemaId) b
 	if !ok {
 		return true
 	}
-	return len(custom.Custom) != 0 && l.CheckCustomEncodingLength(custom.Custom)
+	return len(custom.Custom) != 0 && l.CheckDataTrackCustomEncodingLength(custom.Custom)
 }
 
 func (l LimitConfig) CheckDataBlobsSize(dataBlobs []*livekit.DataBlob) bool {
