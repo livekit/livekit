@@ -227,6 +227,7 @@ type ParticipantParams struct {
 	DisableTransceiverReuseForE2EE  bool
 	EnableParticipantDataBlob       bool
 	EnableStartAtDesiredQuality     bool
+	MigrationWaitDuration           time.Duration
 }
 
 type ParticipantImpl struct {
@@ -1572,7 +1573,7 @@ func (p *ParticipantImpl) setupMigrationTimerLocked() {
 	// to try and succeed. If not, close the subscriber peer connection
 	// and help the remote side to narrow down its ICE candidate pool.
 	//
-	p.migrationTimer = time.AfterFunc(migrationWaitDuration, func() {
+	p.migrationTimer = time.AfterFunc(max(p.params.MigrationWaitDuration, migrationWaitDuration), func() {
 		p.clearMigrationTimer()
 
 		if p.IsClosed() || p.IsDisconnected() {
