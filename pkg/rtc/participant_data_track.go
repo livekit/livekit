@@ -62,10 +62,10 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 
 	if !p.params.LimitConfig.CheckDataTrackFrameEncoding(req.FrameEncoding) ||
 		!p.params.LimitConfig.CheckDataTrackSchemaID(req.Schema) {
-		p.pubLogger.Warnw("invalid custom encoding identifier", nil, "req", logger.Proto(req))
+		p.pubLogger.Warnw("invalid encoding identifier", nil, "req", logger.Proto(req))
 		p.sendRequestResponse(&livekit.RequestResponse{
 			Reason:  livekit.RequestResponse_INVALID_REQUEST,
-			Message: "custom encoding identifier is empty or exceeds the maximum length",
+			Message: "encoding identifier is empty or exceeds the maximum length",
 			Request: &livekit.RequestResponse_PublishDataTrack{
 				PublishDataTrack: utils.CloneProto(req),
 			},

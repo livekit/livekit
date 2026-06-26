@@ -46,7 +46,7 @@ func (p *ParticipantImpl) HandleStoreDataBlobRequest(req *livekit.StoreDataBlobR
 		p.sendRequestResponse(&livekit.RequestResponse{
 			RequestId: req.RequestId,
 			Reason:    livekit.RequestResponse_INVALID_REQUEST,
-			Message:   "custom encoding identifier is empty or exceeds the maximum length",
+			Message:   "encoding identifier is empty or exceeds the maximum length",
 		})
 		return
 	}
