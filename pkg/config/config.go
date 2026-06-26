@@ -504,7 +504,7 @@ var DefaultConfig = Config{
 		MaxParticipantNameLength:         256,
 		MaxDataBlobKeyLength:             256,
 		MaxDataBlobSize:                  64000,
-		MaxDataTrackCustomEncodingLength: 25,
+		MaxDataTrackCustomEncodingLength: 32,
 	},
 	Logging: LoggingConfig{
 		PionLevel: "error",
