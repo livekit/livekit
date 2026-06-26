@@ -299,7 +299,7 @@ type LimitConfig struct {
 	MaxDataBlobKeyLength int    `yaml:"max_data_blob_key_length,omitempty"`
 	MaxDataBlobSize      uint32 `yaml:"max_data_blobs_size,omitempty"`
 
-	MaxCustomEncodingLength int `yaml:"max_custom_encoding_length,omitempty"`
+	MaxDataTrackCustomEncodingLength int `yaml:"max_data_track_custom_encoding_length,omitempty"`
 }
 
 func (l LimitConfig) CheckRoomNameLength(name string) bool {
@@ -335,7 +335,7 @@ func (l LimitConfig) CheckDataBlobKeyLength(key string) bool {
 }
 
 func (l LimitConfig) CheckCustomEncodingLength(identifier string) bool {
-	return l.MaxCustomEncodingLength == 0 || len(identifier) <= l.MaxCustomEncodingLength
+	return l.MaxDataTrackCustomEncodingLength == 0 || len(identifier) <= l.MaxDataTrackCustomEncodingLength
 }
 
 func (l LimitConfig) CheckDataTrackFrameEncoding(encoding *livekit.DataTrackFrameEncoding) bool {
@@ -497,14 +497,14 @@ var DefaultConfig = Config{
 		UpdateBatchTargetSize: 128 * 1024,
 	},
 	Limit: LimitConfig{
-		MaxMetadataSize:              512 * 1024,
-		MaxAttributesSize:            64 * 1024,
-		MaxRoomNameLength:            256,
-		MaxParticipantIdentityLength: 256,
-		MaxParticipantNameLength:     256,
-		MaxDataBlobKeyLength:         256,
-		MaxDataBlobSize:              64000,
-		MaxCustomEncodingLength:      25,
+		MaxMetadataSize:                  512 * 1024,
+		MaxAttributesSize:                64 * 1024,
+		MaxRoomNameLength:                256,
+		MaxParticipantIdentityLength:     256,
+		MaxParticipantNameLength:         256,
+		MaxDataBlobKeyLength:             256,
+		MaxDataBlobSize:                  64000,
+		MaxDataTrackCustomEncodingLength: 25,
 	},
 	Logging: LoggingConfig{
 		PionLevel: "error",
