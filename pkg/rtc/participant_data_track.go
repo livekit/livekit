@@ -108,12 +108,8 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 		Name:       req.Name,
 		Encryption: req.Encryption,
 	}
-	if req.FrameEncoding != nil {
-		dti.FrameEncoding = utils.CloneProto(req.FrameEncoding)
-	}
-	if req.Schema != nil {
-		dti.Schema = utils.CloneProto(req.Schema)
-	}
+	dti.FrameEncoding = utils.CloneProto(req.GetFrameEncoding())
+	dti.Schema = utils.CloneProto(req.GetSchema())
 	dt := NewDataTrack(
 		DataTrackParams{
 			Logger:              p.params.Logger.WithValues("trackID", dti.Sid),
