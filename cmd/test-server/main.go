@@ -27,9 +27,8 @@ import (
 	"syscall"
 	"time"
 
-	"google.golang.org/protobuf/encoding/protojson"
-
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/utils/protojson"
 )
 
 // X-Lk-Mock-* request headers control the mock's behavior; see the README.

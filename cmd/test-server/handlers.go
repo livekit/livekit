@@ -20,12 +20,12 @@ import (
 	"strconv"
 	"strings"
 
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/utils/protojson"
 )
 
 // apiSpec captures the request and response message types for one Twirp method,
