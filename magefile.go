@@ -177,6 +177,11 @@ func TestAll() error {
 	return mageutil.Run(context.Background(), "go test ./... -count=1 -timeout=4m -v")
 }
 
+// runs the SDK test server (cmd/test-server) in the foreground
+func TestServer() error {
+	return mageutil.Run(context.Background(), "go run ./cmd/test-server")
+}
+
 // runs golangci-lint
 func Lint() error {
 	if _, err := exec.LookPath("golangci-lint"); err != nil {
