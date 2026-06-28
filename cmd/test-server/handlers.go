@@ -136,7 +136,7 @@ func (h *mockHandler) serveAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Permission enforcement comes first, mirroring the real server.
-	if status, code := authorize(key, r, req); status != 0 {
+	if status, code := h.authorize(key, r, req); status != 0 {
 		writeTwirpErrorCode(w, status, code, "mock: "+code)
 		return
 	}

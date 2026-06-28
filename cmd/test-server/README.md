@@ -71,14 +71,19 @@ Response headers:
 
 Every API method requires the same token grants the real LiveKit server checks
 (see `pkg/service/auth.go`), so the mock doubles as a conformance check that an
-SDK attaches the right permissions automatically. The mock **decodes the JWT
-claims but does not verify the signature** — it only inspects grants.
+SDK attaches the right permissions automatically. Tokens are parsed and verified
+with the protocol's own `auth` helpers — the same code path the real server uses
+— against the mock's configured API secret (default `secret`, matching
+`livekit-server --dev`; override with `--api-secret` / `LK_TEST_SERVER_API_SECRET`).
 
-- Missing or unparseable `Authorization` → `401 unauthenticated`.
-- Valid token without the required grant → `403 permission_denied`.
+- Missing, malformed, or wrongly-signed `Authorization` → `401 unauthenticated`.
+- Validly-signed token without the required grant → `403 permission_denied`.
 - `roomAdmin`-scoped methods also require the token's `room` to match the
   request's room; `ForwardParticipant`/`MoveParticipant` additionally require
   `destinationRoom` to match.
+
+SDKs exercising permissions should sign tokens with the same API secret the mock
+is configured with (`secret` by default).
 
 | Grant | Methods |
 |---|---|

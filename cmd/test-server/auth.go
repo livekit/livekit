@@ -15,10 +15,10 @@
 package main
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/livekit/protocol/auth"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -26,33 +26,13 @@ import (
 
 // The mock enforces the same token permissions the real LiveKit server requires
 // for each API method (see pkg/service/auth.go in livekit/livekit). The point is
-// to verify that SDKs attach the correct grants automatically; it decodes the
-// JWT claims but does NOT verify the signature (a mock has no shared secret).
+// to verify that SDKs attach the correct grants automatically. Tokens are parsed
+// and verified with the protocol's own auth helpers (the same code the server
+// uses), against the mock's configured API secret (default "secret", matching
+// `livekit-server --dev`); set --api-secret / LK_TEST_SERVER_API_SECRET to change it.
 //
 // Set X-Lk-Mock-Skip-Auth: true to bypass enforcement for tests that aren't
 // about permissions (e.g. region-failover tests using a placeholder token).
-
-// videoGrant / sipGrant / claimGrants mirror the JSON shape of a LiveKit access
-// token's grants (protocol/auth/grants.go).
-type videoGrant struct {
-	RoomCreate      bool   `json:"roomCreate"`
-	RoomList        bool   `json:"roomList"`
-	RoomRecord      bool   `json:"roomRecord"`
-	RoomAdmin       bool   `json:"roomAdmin"`
-	Room            string `json:"room"`
-	IngressAdmin    bool   `json:"ingressAdmin"`
-	DestinationRoom string `json:"destinationRoom"`
-}
-
-type sipGrant struct {
-	Admin bool `json:"admin"`
-	Call  bool `json:"call"`
-}
-
-type claimGrants struct {
-	Video *videoGrant `json:"video"`
-	SIP   *sipGrant   `json:"sip"`
-}
 
 // perm describes the grants a method requires. roomAdmin additionally requires
 // the token's room to match the request's room; destRoom further requires the
@@ -88,16 +68,16 @@ var methodPerms = map[string]perm{
 	"livekit.RoomService/PerformRpc":          {roomAdmin: true},
 
 	// Egress — all require record permission
-	"livekit.Egress/StartEgress":                {roomRecord: true},
-	"livekit.Egress/StartRoomCompositeEgress":   {roomRecord: true},
-	"livekit.Egress/StartWebEgress":             {roomRecord: true},
-	"livekit.Egress/StartParticipantEgress":     {roomRecord: true},
-	"livekit.Egress/StartTrackCompositeEgress":  {roomRecord: true},
-	"livekit.Egress/StartTrackEgress":           {roomRecord: true},
-	"livekit.Egress/UpdateLayout":               {roomRecord: true},
-	"livekit.Egress/UpdateStream":               {roomRecord: true},
-	"livekit.Egress/ListEgress":                 {roomRecord: true},
-	"livekit.Egress/StopEgress":                 {roomRecord: true},
+	"livekit.Egress/StartEgress":               {roomRecord: true},
+	"livekit.Egress/StartRoomCompositeEgress":  {roomRecord: true},
+	"livekit.Egress/StartWebEgress":            {roomRecord: true},
+	"livekit.Egress/StartParticipantEgress":    {roomRecord: true},
+	"livekit.Egress/StartTrackCompositeEgress": {roomRecord: true},
+	"livekit.Egress/StartTrackEgress":          {roomRecord: true},
+	"livekit.Egress/UpdateLayout":              {roomRecord: true},
+	"livekit.Egress/UpdateStream":              {roomRecord: true},
+	"livekit.Egress/ListEgress":                {roomRecord: true},
+	"livekit.Egress/StopEgress":                {roomRecord: true},
 
 	// Ingress — all require ingress admin
 	"livekit.Ingress/CreateIngress": {ingressAdmin: true},
@@ -106,20 +86,20 @@ var methodPerms = map[string]perm{
 	"livekit.Ingress/DeleteIngress": {ingressAdmin: true},
 
 	// SIP — trunk/dispatch administration requires sip.admin
-	"livekit.SIP/CreateSIPInboundTrunk":   {sipAdmin: true},
-	"livekit.SIP/CreateSIPOutboundTrunk":  {sipAdmin: true},
-	"livekit.SIP/UpdateSIPInboundTrunk":   {sipAdmin: true},
-	"livekit.SIP/UpdateSIPOutboundTrunk":  {sipAdmin: true},
-	"livekit.SIP/GetSIPInboundTrunk":      {sipAdmin: true},
-	"livekit.SIP/GetSIPOutboundTrunk":     {sipAdmin: true},
-	"livekit.SIP/ListSIPTrunk":            {sipAdmin: true},
-	"livekit.SIP/ListSIPInboundTrunk":     {sipAdmin: true},
-	"livekit.SIP/ListSIPOutboundTrunk":    {sipAdmin: true},
-	"livekit.SIP/DeleteSIPTrunk":          {sipAdmin: true},
-	"livekit.SIP/CreateSIPDispatchRule":   {sipAdmin: true},
-	"livekit.SIP/UpdateSIPDispatchRule":   {sipAdmin: true},
-	"livekit.SIP/ListSIPDispatchRule":     {sipAdmin: true},
-	"livekit.SIP/DeleteSIPDispatchRule":   {sipAdmin: true},
+	"livekit.SIP/CreateSIPInboundTrunk":  {sipAdmin: true},
+	"livekit.SIP/CreateSIPOutboundTrunk": {sipAdmin: true},
+	"livekit.SIP/UpdateSIPInboundTrunk":  {sipAdmin: true},
+	"livekit.SIP/UpdateSIPOutboundTrunk": {sipAdmin: true},
+	"livekit.SIP/GetSIPInboundTrunk":     {sipAdmin: true},
+	"livekit.SIP/GetSIPOutboundTrunk":    {sipAdmin: true},
+	"livekit.SIP/ListSIPTrunk":           {sipAdmin: true},
+	"livekit.SIP/ListSIPInboundTrunk":    {sipAdmin: true},
+	"livekit.SIP/ListSIPOutboundTrunk":   {sipAdmin: true},
+	"livekit.SIP/DeleteSIPTrunk":         {sipAdmin: true},
+	"livekit.SIP/CreateSIPDispatchRule":  {sipAdmin: true},
+	"livekit.SIP/UpdateSIPDispatchRule":  {sipAdmin: true},
+	"livekit.SIP/ListSIPDispatchRule":    {sipAdmin: true},
+	"livekit.SIP/DeleteSIPDispatchRule":  {sipAdmin: true},
 	// Placing a call requires sip.call; transfer also requires room admin.
 	"livekit.SIP/CreateSIPParticipant":   {sipCall: true},
 	"livekit.SIP/TransferSIPParticipant": {sipCall: true, roomAdmin: true},
@@ -139,7 +119,7 @@ var methodPerms = map[string]perm{
 
 // authorize enforces the permissions a method requires. It returns the HTTP
 // status and Twirp error code to send (0, "" means authorized / not enforced).
-func authorize(key string, r *http.Request, req proto.Message) (int, string) {
+func (h *mockHandler) authorize(key string, r *http.Request, req proto.Message) (int, string) {
 	if strings.EqualFold(r.Header.Get(headerSkipAuth), "true") {
 		return 0, ""
 	}
@@ -148,9 +128,9 @@ func authorize(key string, r *http.Request, req proto.Message) (int, string) {
 		return 0, "" // unknown/future method: don't enforce
 	}
 
-	grants, ok := parseGrants(r.Header.Get("Authorization"))
-	if !ok {
-		// Missing or unparseable token, like the real server's auth middleware.
+	grants, err := h.verifyToken(r.Header.Get("Authorization"))
+	if err != nil {
+		// Missing, malformed, or improperly-signed token, like the real server.
 		return http.StatusUnauthorized, "unauthenticated"
 	}
 	if !p.satisfiedBy(grants, req) {
@@ -159,7 +139,22 @@ func authorize(key string, r *http.Request, req proto.Message) (int, string) {
 	return 0, ""
 }
 
-func (p perm) satisfiedBy(g *claimGrants, req proto.Message) bool {
+// verifyToken parses and verifies a "Bearer <jwt>" header using the protocol's
+// own auth helpers (the same path the real server uses), returning the grants.
+func (h *mockHandler) verifyToken(authorization string) (*auth.ClaimGrants, error) {
+	token := strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))
+	v, err := auth.ParseAPIToken(token)
+	if err != nil {
+		return nil, err
+	}
+	_, grants, err := v.Verify(h.apiSecret)
+	if err != nil {
+		return nil, err
+	}
+	return grants, nil
+}
+
+func (p perm) satisfiedBy(g *auth.ClaimGrants, req proto.Message) bool {
 	v, s := g.Video, g.SIP
 	if p.roomCreate && (v == nil || !v.RoomCreate) {
 		return false
@@ -193,28 +188,6 @@ func (p perm) satisfiedBy(g *claimGrants, req proto.Message) bool {
 		}
 	}
 	return true
-}
-
-// parseGrants extracts the grants from a "Bearer <jwt>" header by base64-decoding
-// the JWT payload. The signature is not verified — the mock only checks grants.
-func parseGrants(authorization string) (*claimGrants, bool) {
-	token := strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))
-	if token == "" {
-		return nil, false
-	}
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return nil, false
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil, false
-	}
-	var g claimGrants
-	if err := json.Unmarshal(payload, &g); err != nil {
-		return nil, false
-	}
-	return &g, true
 }
 
 // requestRoom reads the room name a request targets, trying the common "room"
