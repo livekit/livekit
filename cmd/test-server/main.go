@@ -40,6 +40,8 @@ const (
 	headerDelayMs       = "X-Lk-Mock-Delay-Ms"
 	headerRegionsStatus = "X-Lk-Mock-Regions-Status"
 	headerResponse      = "X-Lk-Mock-Response"
+	// headerSkipAuth disables permission enforcement for a request.
+	headerSkipAuth = "X-Lk-Mock-Skip-Auth"
 	// headerRegion is set on responses to the index of the region that served it.
 	headerRegion = "X-Lk-Mock-Region"
 )
@@ -126,11 +128,7 @@ func (h *mockHandler) handleRegions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *mockHandler) handleTwirp(w http.ResponseWriter, r *http.Request) {
-	if h.shouldFail(r) {
-		h.fail(w, r)
-		return
-	}
-	h.writeAPIResponse(w, r)
+	h.serveAPI(w, r)
 }
 
 func (h *mockHandler) shouldFail(r *http.Request) bool {
@@ -173,10 +171,15 @@ func writeTwirpError(w http.ResponseWriter, r *http.Request, status int) {
 	if code == "" {
 		code = twirpCodeForStatus(status)
 	}
+	writeTwirpErrorCode(w, status, code, fmt.Sprintf("mock failure (status %d)", status))
+}
+
+// writeTwirpErrorCode writes a Twirp JSON error with an explicit code and message.
+func writeTwirpErrorCode(w http.ResponseWriter, status int, code, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set(headerRegion, "")
 	w.WriteHeader(status)
-	_, _ = fmt.Fprintf(w, `{"code":%q,"msg":%q}`, code, fmt.Sprintf("mock failure (status %d)", status))
+	_, _ = fmt.Fprintf(w, `{"code":%q,"msg":%q}`, code, msg)
 }
 
 func twirpCodeForStatus(status int) string {
