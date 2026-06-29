@@ -215,6 +215,13 @@ type ReceiverBase struct {
 	videoSizes         [buffer.DefaultMaxLayerSpatial + 1]codec.VideoSize
 	onVideoSizeChanged func()
 
+	videoFrameCacheMaxDuration time.Duration
+
+	// counts of subscribers bootstrapped from the video frame cache (hit) vs. those that fell back to a PLI
+	// because no usable video frame was cached (miss); see replayVideoFrameCache
+	videoFrameCacheHitCount  atomic.Uint32
+	videoFrameCacheMissCount atomic.Uint32
+
 	rtt uint32
 
 	streamTrackerManager *StreamTrackerManager
@@ -234,11 +241,12 @@ type ReceiverBase struct {
 
 func NewReceiverBase(params ReceiverBaseParams, trackInfo *livekit.TrackInfo, codecState ReceiverCodecState) *ReceiverBase {
 	r := &ReceiverBase{
-		params:         params,
-		codecState:     codecState,
-		isRED:          mime.IsMimeTypeStringRED(params.Codec.MimeType),
-		trackInfo:      utils.CloneProto(trackInfo),
-		videoLayerMode: buffer.GetVideoLayerModeForMimeType(mime.NormalizeMimeType(params.Codec.MimeType), trackInfo),
+		params:                     params,
+		codecState:                 codecState,
+		isRED:                      mime.IsMimeTypeStringRED(params.Codec.MimeType),
+		trackInfo:                  utils.CloneProto(trackInfo),
+		videoLayerMode:             buffer.GetVideoLayerModeForMimeType(mime.NormalizeMimeType(params.Codec.MimeType), trackInfo),
+		videoFrameCacheMaxDuration: 0,
 	}
 
 	r.downTrackSpreader = sfuutils.NewDownTrackSpreader[TrackSender](sfuutils.DownTrackSpreaderParams{
@@ -560,9 +568,184 @@ func (r *ReceiverBase) AddDownTrack(track TrackSender) error {
 	track.UpTrackMaxPublishedLayerChange(r.streamTrackerManager.GetMaxPublishedLayer())
 	track.UpTrackMaxTemporalLayerSeenChange(r.streamTrackerManager.GetMaxTemporalLayerSeen())
 
+	if r.videoFrameCacheMaxDuration > 0 && r.Kind() == webrtc.RTPCodecTypeVideo {
+		// Bootstrap the new track from the cached video frame before joining the live broadcast: replay the
+		// cached video frame (paced) and catch up to the live forwarding point, then Store so the live feed takes
+		// over seamlessly. Held out of the broadcast during replay to avoid interleaving replayed and
+		// live packets.
+		go func() {
+			r.replayVideoFrameCache(track)
+			if r.IsClosed() || track.IsClosed() {
+				return
+			}
+			r.downTrackSpreader.Store(track)
+
+			r.params.Logger.Debugw(
+				"downtrack added after cached video frame replay",
+				"subscriberID", track.SubscriberID(),
+				"videoFrameCacheHitCount", r.videoFrameCacheHitCount.Load(),
+				"videoFrameCacheMissCount", r.videoFrameCacheMissCount.Load(),
+			)
+		}()
+		return nil
+	}
+
 	r.downTrackSpreader.Store(track)
 	r.params.Logger.Debugw("downtrack added", "subscriberID", track.SubscriberID())
 	return nil
+}
+
+// SetVideoFrameCacheDuration turns on the video frame cache for this receiver: each (current and future) buffer
+// retains the current cached frame, and a newly added down track is bootstrapped from it (see replayVideoFrameCache).
+// maxDuration bounds the cached video frame and sizes the retransmit bucket accordingly. No-op for audio.
+func (r *ReceiverBase) SetVideoFrameCacheDuration(maxDuration time.Duration) {
+	if r.Kind() != webrtc.RTPCodecTypeVideo {
+		return
+	}
+
+	r.bufferMu.Lock()
+	r.videoFrameCacheMaxDuration = maxDuration
+	buffers := r.buffers
+	r.bufferMu.Unlock()
+
+	for _, buff := range buffers {
+		if buff != nil {
+			buff.SetVideoFrameCacheDuration(maxDuration)
+		}
+	}
+}
+
+// videoFrameCacheReplayMaxCatchupRounds bounds how many catch-up passes a video frame cache replay makes before giving up and
+// joining the live feed (replaying at ~2x real time converges quickly; this guards against a
+// pathological case where live keeps outrunning the replay).
+const videoFrameCacheReplayMaxCatchupRounds = 8
+
+// replayVideoFrameCache bootstraps a freshly added down track by replaying every spatial layer that
+// has a cached video frame cache group, then the packets accumulated since, until it catches up to
+// the live forwarding point. It writes directly to the track (which is not yet in the live
+// broadcast) so there is no interleaving with live packets.
+//
+// Every cached layer is replayed and the down track's forwarder locks onto whichever layer it is
+// targeting, dropping packets from the others - exactly as it does for the live broadcast (see
+// downTrackSpreader.Broadcast / DownTrack.WriteRTP). This lets a subscriber whose desired quality is
+// not the top layer (e.g. opportunistic forwarding with desired LOW, where start-at-desired-quality
+// is off) bootstrap from whatever layer it actually wants instead of being forced onto the highest
+// cached layer.
+func (r *ReceiverBase) replayVideoFrameCache(track TrackSender) {
+	type cachedLayer struct {
+		layer int32
+		buff  buffer.BufferProvider
+		pkts  []*buffer.ExtPacket
+	}
+	var cached []cachedLayer
+	for l := int32(buffer.DefaultMaxLayerSpatial); l >= 0; l-- {
+		b, _ := r.getBuffer(l)
+		if b == nil {
+			continue
+		}
+		if got, ok := b.GetVideoFrameCache(); ok && len(got) > 0 {
+			cached = append(cached, cachedLayer{layer: l, buff: b, pkts: got})
+		}
+	}
+
+	if len(cached) == 0 {
+		// no usable video frame cache group cached on any layer - the down track falls back to requesting a key frame (PLI)
+		missCount := r.videoFrameCacheMissCount.Inc()
+		r.params.Logger.Debugw(
+			"subscriber bootstrap: video frame cache miss, falling back to PLI",
+			"subscriberID", track.SubscriberID(),
+			"videoFrameCacheMaxDuration", r.videoFrameCacheMaxDuration,
+			"videoFrameCacheHitCount", r.videoFrameCacheHitCount.Load(),
+			"videoFrameCacheMissCount", missCount,
+		)
+		return
+	}
+
+	hitCount := r.videoFrameCacheHitCount.Inc()
+	r.params.Logger.Debugw(
+		"subscriber bootstrap: video frame cache hit, replaying",
+		"subscriberID", track.SubscriberID(),
+		"layers", len(cached),
+		"videoFrameCacheHitCount", hitCount,
+		"videoFrameCacheMissCount", r.videoFrameCacheMissCount.Load(),
+	)
+
+	for i := range cached {
+		if r.IsClosed() || track.IsClosed() {
+			return
+		}
+		c := &cached[i]
+		r.replayLayer(track, c.layer, c.buff, c.pkts)
+	}
+}
+
+// replayLayer replays one spatial layer's cached group-of-pictures to the track and then catches up
+// to the live forwarding point. The forwarder forwards the packets only while it is targeting this
+// layer and drops them otherwise; pacing (~2x real time, half the estimated frame interval) is
+// applied only to packets the forwarder actually forwarded, so a layer the forwarder is dropping
+// replays instantly without sleeping.
+func (r *ReceiverBase) replayLayer(track TrackSender, layer int32, buff buffer.BufferProvider, pkts []*buffer.ExtPacket) {
+	half := r.videoFrameCacheReplayFrameInterval(layer) / 2
+
+	var (
+		lastSN          uint64
+		haveForwarded   bool
+		lastForwardedTS uint64
+	)
+	write := func(eps []*buffer.ExtPacket) bool {
+		for _, ep := range eps {
+			if r.IsClosed() || track.IsClosed() {
+				return false
+			}
+			// pace at frame boundaries (a new timestamp starts a new frame), but only once a packet
+			// has actually been forwarded so a dropped layer replays without sleeping
+			if half > 0 && haveForwarded && ep.ExtTimestamp != lastForwardedTS {
+				time.Sleep(half)
+			}
+			rp := *ep
+			rp.Arrival = mono.UnixNano()
+			if track.WriteRTP(&rp, layer) > 0 {
+				haveForwarded = true
+				lastForwardedTS = ep.ExtTimestamp
+			}
+			lastSN = ep.ExtSequenceNumber
+		}
+		return true
+	}
+
+	if !write(pkts) {
+		return
+	}
+
+	// catch up to live: replay the packets that arrived during the replay, repeating (each round is
+	// shorter since the replay outruns live) until nothing newer remains.
+	for round := 0; round < videoFrameCacheReplayMaxCatchupRounds; round++ {
+		if r.IsClosed() || track.IsClosed() {
+			return
+		}
+		more, ok := buff.GetPacketsAfter(lastSN)
+		if !ok || len(more) == 0 {
+			break
+		}
+		if !write(more) {
+			return
+		}
+	}
+}
+
+// videoFrameCacheReplayFrameInterval estimates the video frame interval for the spatial layer, used to pace a
+// video frame cache replay. Falls back to 30fps when the frame rate is not yet known.
+func (r *ReceiverBase) videoFrameCacheReplayFrameInterval(layer int32) time.Duration {
+	var fps float32
+	for _, f := range r.GetTemporalLayerFpsForSpatial(layer) {
+		if f > fps {
+			fps = f
+		}
+	}
+	if fps <= 0 {
+		fps = 30
+	}
+	return time.Duration(float64(time.Second) / float64(fps))
 }
 
 func (r *ReceiverBase) DeleteDownTrack(subscriberID livekit.ParticipantID) {
@@ -790,6 +973,10 @@ func (r *ReceiverBase) setupBuffer(buff buffer.BufferProvider, layer int32, rtt 
 	if r.Kind() == webrtc.RTPCodecTypeVideo && layer == 0 {
 		buff.OnCodecChange(r.handleCodecChange)
 	}
+	if r.videoFrameCacheMaxDuration > 0 && r.Kind() == webrtc.RTPCodecTypeVideo {
+		buff.SetVideoFrameCacheDuration(r.videoFrameCacheMaxDuration)
+	}
+
 	buff.OnStreamRestart(func(reason string) {
 		r.restartInternal(reason, true)
 	})
