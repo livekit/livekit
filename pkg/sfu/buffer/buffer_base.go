@@ -790,8 +790,8 @@ func (b *BufferBase) GetPacketsAfter(afterESN uint64) ([]*ExtPacket, bool) {
 // reconstructPacketsLocked builds self-contained ExtPackets for the sequence-number range
 // [fromSN, headESN] from the retransmit bucket. Lost packets are skipped. ExtTimestamp is
 // reconstructed relative to the marked key frame (a video frame cache group spans well under one 32-bit timestamp wrap)
-// and IsKeyFrame flags packets at the key-frame timestamp. The dependency descriptor is not
-// reconstructed. Caller holds the lock.
+// and IsKeyFrame flags only the packet that starts the key frame (the marked sequence number). The
+// dependency descriptor is not reconstructed. Caller holds the lock.
 func (b *BufferBase) reconstructPacketsLocked(fromSN, headESN uint64) []*ExtPacket {
 	keyFrameRTPTS := uint32(b.videoFrameCacheKeyFrameETS)
 	var pkts []*ExtPacket
@@ -816,8 +816,10 @@ func (b *BufferBase) reconstructPacketsLocked(fromSN, headESN uint64) []*ExtPack
 			ExtSequenceNumber: sn,
 			ExtTimestamp:      extTS,
 			Packet:            p,
-			IsKeyFrame:        extTS == b.videoFrameCacheKeyFrameETS,
-			RawPacket:         raw,
+			// match the normal flow: only the packet that starts the key frame carries IsKeyFrame,
+			// not every packet sharing the key frame's timestamp
+			IsKeyFrame: sn == b.videoFrameCacheKeyFrameESN,
+			RawPacket:  raw,
 		})
 	}
 	return pkts
