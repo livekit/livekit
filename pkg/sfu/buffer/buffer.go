@@ -335,6 +335,7 @@ func (b *Buffer) sendPLI() {
 		return
 	}
 
+	b.logger.Debugw("send pli", "mediaSSRC", ssrc)
 	pli := []rtcp.Packet{
 		&rtcp.PictureLossIndication{
 			SenderSSRC: ssrc,
