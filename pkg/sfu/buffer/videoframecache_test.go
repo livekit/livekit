@@ -229,5 +229,5 @@ func TestVideoFrameCacheDisabled(t *testing.T) {
 	// audio buffers never enable the cache
 	a := &BufferBase{codecType: webrtc.RTPCodecTypeAudio, clockRate: 48000, logger: logger.GetLogger()}
 	a.EnableVideoFrameCache(0)
-	require.False(t, a.videoFrameCacheEnabled)
+	require.False(t, a.videoFrameCacheMaxDuration > 0)
 }

@@ -215,9 +215,6 @@ type ReceiverBase struct {
 	videoSizes         [buffer.DefaultMaxLayerSpatial + 1]codec.VideoSize
 	onVideoSizeChanged func()
 
-	// video frame cache: when enabled, buffers retain the current frame cache and a newly added down track is
-	// bootstrapped by replaying it (see EnableVideoFrameCache / replayVideoFrameCache)
-	videoFrameCacheEnabled     bool
 	videoFrameCacheMaxDuration time.Duration
 
 	// counts of subscribers bootstrapped from the video frame cache (hit) vs. those that fell back to a PLI
@@ -244,11 +241,12 @@ type ReceiverBase struct {
 
 func NewReceiverBase(params ReceiverBaseParams, trackInfo *livekit.TrackInfo, codecState ReceiverCodecState) *ReceiverBase {
 	r := &ReceiverBase{
-		params:         params,
-		codecState:     codecState,
-		isRED:          mime.IsMimeTypeStringRED(params.Codec.MimeType),
-		trackInfo:      utils.CloneProto(trackInfo),
-		videoLayerMode: buffer.GetVideoLayerModeForMimeType(mime.NormalizeMimeType(params.Codec.MimeType), trackInfo),
+		params:                     params,
+		codecState:                 codecState,
+		isRED:                      mime.IsMimeTypeStringRED(params.Codec.MimeType),
+		trackInfo:                  utils.CloneProto(trackInfo),
+		videoLayerMode:             buffer.GetVideoLayerModeForMimeType(mime.NormalizeMimeType(params.Codec.MimeType), trackInfo),
+		videoFrameCacheMaxDuration: 0,
 	}
 
 	r.downTrackSpreader = sfuutils.NewDownTrackSpreader[TrackSender](sfuutils.DownTrackSpreaderParams{
@@ -570,7 +568,7 @@ func (r *ReceiverBase) AddDownTrack(track TrackSender) error {
 	track.UpTrackMaxPublishedLayerChange(r.streamTrackerManager.GetMaxPublishedLayer())
 	track.UpTrackMaxTemporalLayerSeenChange(r.streamTrackerManager.GetMaxTemporalLayerSeen())
 
-	if r.videoFrameCacheEnabled && r.Kind() == webrtc.RTPCodecTypeVideo {
+	if r.videoFrameCacheMaxDuration > 0 && r.Kind() == webrtc.RTPCodecTypeVideo {
 		// Bootstrap the new track from the cached video frame before joining the live broadcast: replay the
 		// cached video frame (paced) and catch up to the live forwarding point, then Store so the live feed takes
 		// over seamlessly. Held out of the broadcast during replay to avoid interleaving replayed and
@@ -606,7 +604,6 @@ func (r *ReceiverBase) EnableVideoFrameCache(maxDuration time.Duration) {
 	}
 
 	r.bufferMu.Lock()
-	r.videoFrameCacheEnabled = true
 	r.videoFrameCacheMaxDuration = maxDuration
 	buffers := r.buffers
 	r.bufferMu.Unlock()
@@ -655,7 +652,7 @@ func (r *ReceiverBase) replayVideoFrameCache(track TrackSender) {
 		r.params.Logger.Debugw(
 			"subscriber bootstrap: video frame cache miss, falling back to PLI",
 			"subscriberID", track.SubscriberID(),
-			"videoFrameCacheEnabled", r.videoFrameCacheEnabled,
+			"videoFrameCacheMaxDuration", r.videoFrameCacheMaxDuration,
 			"videoFrameCacheHitCount", r.videoFrameCacheHitCount.Load(),
 			"videoFrameCacheMissCount", missCount,
 		)
@@ -954,9 +951,10 @@ func (r *ReceiverBase) setupBuffer(buff buffer.BufferProvider, layer int32, rtt 
 	if r.Kind() == webrtc.RTPCodecTypeVideo && layer == 0 {
 		buff.OnCodecChange(r.handleCodecChange)
 	}
-	if r.videoFrameCacheEnabled && r.Kind() == webrtc.RTPCodecTypeVideo {
+	if r.videoFrameCacheMaxDuration > 0 && r.Kind() == webrtc.RTPCodecTypeVideo {
 		buff.EnableVideoFrameCache(r.videoFrameCacheMaxDuration)
 	}
+
 	buff.OnStreamRestart(func(reason string) {
 		r.restartInternal(reason, true)
 	})

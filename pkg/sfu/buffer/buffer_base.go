@@ -204,11 +204,7 @@ type BufferBase struct {
 	ddExtID  uint8
 	ddParser *DependencyDescriptorParser
 
-	// video frame cache: mark the most recent key frame so the current group-of-pictures can be read
-	// back from the retransmit bucket (see EnableVideoFrameCache / GetVideoFrameCache). No packets are copied here - only
-	// the key-frame boundary is tracked.
-	videoFrameCacheEnabled     bool
-	videoFrameCacheMaxDuration time.Duration // optional bound on key-frame interval (0 = bucket-bounded only)
+	videoFrameCacheMaxDuration time.Duration // optional bound on key-frame interval (0 = disabled)
 	videoFrameCacheHasKeyFrame bool
 	videoFrameCacheKeyFrameESN uint64 // ext sequence number of the current video frame cache group's first key-frame packet
 	videoFrameCacheKeyFrameETS uint64 // ext timestamp of the current video frame cache group's key frame
@@ -239,11 +235,12 @@ func NewBufferBase(params BufferBaseParams) *BufferBase {
 	l = l.WithValues("ssrc", params.SSRC)
 
 	b := &BufferBase{
-		params:               params,
-		lastBucketCapCheckAt: mono.UnixNano(),
-		snRangeMap:           utils.NewRangeMap[uint64, uint64](100),
-		pliThrottle:          int64(500 * time.Millisecond),
-		logger:               l,
+		params:                     params,
+		lastBucketCapCheckAt:       mono.UnixNano(),
+		snRangeMap:                 utils.NewRangeMap[uint64, uint64](100),
+		pliThrottle:                int64(500 * time.Millisecond),
+		logger:                     l,
+		videoFrameCacheMaxDuration: 0,
 	}
 	b.readCond = sync.NewCond(&b.RWMutex)
 	b.extPackets.SetBaseCap(128)
@@ -659,19 +656,20 @@ func (b *BufferBase) ReadExtended(buf []byte) (*ExtPacket, error) {
 	}
 }
 
-// EnableVideoFrameCache turns on video frame cache tracking for this (video) buffer: the most recent key frame is marked
-// so the current group-of-pictures can be read back from the retransmit bucket via GetVideoFrameCache. No
-// packets are copied - only the key-frame boundary is tracked. maxDuration bounds the served
-// key-frame interval AND drives the retransmit bucket to retain that much history (see
-// maybeGrowBucket), so the key frame is not evicted before it can be read; <= 0 keeps the default
-// ~1s retransmit window (and bounds the video frame cache group to it). No-op for audio buffers.
+// EnableVideoFrameCache turns on video frame cache tracking for this (video) buffer: the most recent
+// key frame is marked so the current group-of-pictures can be read back from the retransmit bucket
+// via GetVideoFrameCache. No packets are copied - only the key-frame boundary is tracked. maxDuration
+// bounds the served key-frame interval AND drives the retransmit bucket to retain that much history
+// (see maybeGrowBucket), so the key frame is not evicted before it can be read; maxDuration <= 0
+// disables the cache.
 func (b *BufferBase) EnableVideoFrameCache(maxDuration time.Duration) {
 	b.Lock()
 	defer b.Unlock()
 
-	b.videoFrameCacheEnabled = true
 	b.videoFrameCacheMaxDuration = maxDuration
-	b.logger.Debugw("video frame cache enabled on buffer", "maxDuration", maxDuration)
+	if maxDuration > 0 {
+		b.logger.Debugw("video frame cache enabled on buffer", "maxDuration", maxDuration)
+	}
 }
 
 // markVideoFrameCacheLocked records the key-frame boundary of the current video frame cache group and tracks its span. Caller holds
@@ -714,24 +712,26 @@ func (b *BufferBase) GetVideoFrameCache() ([]*ExtPacket, bool) {
 	b.Lock()
 	defer b.Unlock()
 
-	if !b.videoFrameCacheEnabled || !b.videoFrameCacheHasKeyFrame || b.bucket == nil {
+	videoFrameCacheEnabled := b.videoFrameCacheMaxDuration > 0
+
+	if !videoFrameCacheEnabled || !b.videoFrameCacheHasKeyFrame || b.bucket == nil {
 		b.logger.Debugw(
 			"video frame cache miss: not ready",
-			"videoFrameCacheEnabled", b.videoFrameCacheEnabled,
+			"videoFrameCacheMaxDuration", b.videoFrameCacheMaxDuration,
 			"videoFrameCacheHasKeyFrame", b.videoFrameCacheHasKeyFrame,
 			"hasBucket", b.bucket != nil,
 		)
 		return nil, false
 	}
 
-	if b.videoFrameCacheMaxDuration > 0 && b.clockRate > 0 {
+	if videoFrameCacheEnabled && b.clockRate > 0 {
 		maxTicks := uint64(b.videoFrameCacheMaxDuration.Seconds() * float64(b.clockRate))
 		if b.videoFrameCacheLatestTS > b.videoFrameCacheKeyFrameETS+maxTicks {
 			// key-frame interval longer than the bound - too old to serve a complete replay
 			b.logger.Debugw(
 				"video frame cache miss: key-frame interval exceeds bound",
-				"keyFrameTS", b.videoFrameCacheKeyFrameETS,
-				"latestTS", b.videoFrameCacheLatestTS,
+				"keyFrameETS", b.videoFrameCacheKeyFrameETS,
+				"latestETS", b.videoFrameCacheLatestTS,
 				"spanTicks", b.videoFrameCacheLatestTS-b.videoFrameCacheKeyFrameETS,
 				"maxTicks", maxTicks,
 			)
@@ -741,16 +741,16 @@ func (b *BufferBase) GetVideoFrameCache() ([]*ExtPacket, bool) {
 
 	headESN := uint64(b.bucket.HeadSequenceNumber())
 	if headESN < b.videoFrameCacheKeyFrameESN {
-		b.logger.Debugw("video frame cache miss: head behind key frame", "headESN", headESN, "keyFrameSN", b.videoFrameCacheKeyFrameESN)
+		b.logger.Debugw("video frame cache miss: head behind key frame", "headESN", headESN, "keyCacheFrameESN", b.videoFrameCacheKeyFrameESN)
 		return nil, false
 	}
 
 	pkts := b.reconstructPacketsLocked(b.videoFrameCacheKeyFrameESN, headESN)
 	// the key frame itself must be present (its first packet), otherwise the video frame cache group cannot be served
 	if len(pkts) == 0 || pkts[0].ExtSequenceNumber != b.videoFrameCacheKeyFrameESN {
-		var firstSN uint64
+		var firstESN uint64
 		if len(pkts) > 0 {
-			firstSN = pkts[0].ExtSequenceNumber
+			firstESN = pkts[0].ExtSequenceNumber
 		}
 		b.logger.Debugw(
 			"video frame cache miss: key frame evicted from bucket",
@@ -758,7 +758,7 @@ func (b *BufferBase) GetVideoFrameCache() ([]*ExtPacket, bool) {
 			"headESN", headESN,
 			"bucketCapacity", b.bucket.Capacity(),
 			"reconstructed", len(pkts),
-			"firstSN", firstSN,
+			"firstESN", firstESN,
 		)
 		return nil, false
 	}
@@ -773,7 +773,7 @@ func (b *BufferBase) GetPacketsAfter(afterESN uint64) ([]*ExtPacket, bool) {
 	b.Lock()
 	defer b.Unlock()
 
-	if !b.videoFrameCacheEnabled || !b.videoFrameCacheHasKeyFrame || b.bucket == nil {
+	if b.videoFrameCacheMaxDuration <= 0 || !b.videoFrameCacheHasKeyFrame || b.bucket == nil {
 		return nil, false
 	}
 	headESN := uint64(b.bucket.HeadSequenceNumber())
@@ -1089,7 +1089,7 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 		return 0, errors.New("could not get ext packet")
 	}
 	b.extPackets.PushBack(ep)
-	if b.videoFrameCacheEnabled && b.codecType == webrtc.RTPCodecTypeVideo {
+	if b.videoFrameCacheMaxDuration > 0 && b.codecType == webrtc.RTPCodecTypeVideo {
 		b.markVideoFrameCacheLocked(ep)
 	}
 	b.readCond.Broadcast()
@@ -1448,7 +1448,7 @@ func (b *BufferBase) maybeGrowBucket(now int64) {
 		// duration (the key frame must survive until GetVideoFrameCache reads it), which is more than the normal
 		// ~1s retransmit window. In that case the target / cap are computed below from pps; otherwise
 		// keep the original fast path.
-		videoFrameCacheSizing := b.codecType == webrtc.RTPCodecTypeVideo && b.videoFrameCacheEnabled && b.videoFrameCacheMaxDuration > 0
+		videoFrameCacheSizing := b.codecType == webrtc.RTPCodecTypeVideo && b.videoFrameCacheMaxDuration > 0
 		if cap >= maxPkts && !videoFrameCacheSizing {
 			return
 		}

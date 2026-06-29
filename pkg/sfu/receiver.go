@@ -93,18 +93,8 @@ func WithForwardStats(forwardStats *ForwardStats) ReceiverOpts {
 	}
 }
 
-// DefaultVideoFrameCacheMaxDuration bounds the cached video frame cache group (and sizes the retransmit bucket) when the video
-// frame cache is enabled via WithVideoFrameCache.
-const DefaultVideoFrameCacheMaxDuration = 1 * time.Second
-
-// WithVideoFrameCache enables the video frame cache on the receiver so a newly added down track is
-// bootstrapped by replaying the cached video frame cache group instead of triggering a PLI. maxDuration bounds the
-// cached video frame (<= 0 uses DefaultVideoFrameCacheMaxDuration). No-op for audio receivers.
 func WithVideoFrameCache(maxDuration time.Duration) ReceiverOpts {
 	return func(w *WebRTCReceiver) *WebRTCReceiver {
-		if maxDuration <= 0 {
-			maxDuration = DefaultVideoFrameCacheMaxDuration
-		}
 		w.ReceiverBase.EnableVideoFrameCache(maxDuration)
 		return w
 	}

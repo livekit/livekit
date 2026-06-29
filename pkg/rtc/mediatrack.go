@@ -99,8 +99,7 @@ type MediaTrackParams struct {
 	EnableRTPStreamRestartDetection  bool
 	UpdateTrackInfoByVideoSizeChange bool
 	ForceBackupCodecPolicySimulcast  bool
-	EnableVideoCaching               bool
-	VideoCachingMaxDuration          time.Duration
+	VideoFrameCachingDuration        time.Duration
 }
 
 func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
@@ -416,9 +415,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			sfu.WithForwardStats(t.params.ForwardStats),
 			sfu.WithEnableRTPStreamRestartDetection(t.params.EnableRTPStreamRestartDetection),
 		}
-		if t.params.EnableVideoCaching {
-			// VideoCachingMaxDuration <= 0 falls back to sfu.DefaultVideoFrameCacheMaxDuration in WithVideoFrameCache
-			receiverOpts = append(receiverOpts, sfu.WithVideoFrameCache(t.params.VideoCachingMaxDuration))
+		if t.params.VideoFrameCachingDuration > 0 {
+			receiverOpts = append(receiverOpts, sfu.WithVideoFrameCache(t.params.VideoFrameCachingDuration))
 		}
 
 		newWR := sfu.NewWebRTCReceiver(
