@@ -33,7 +33,7 @@ func newVideoFrameCacheTestBuffer(maxDuration time.Duration) *BufferBase {
 		logger:    logger.GetLogger(),
 	}
 	b.bucket = bucket.NewBucket[uint64, uint16](256, bucket.RTPMaxPktSize, bucket.RTPSeqNumOffset)
-	b.EnableVideoFrameCache(maxDuration)
+	b.SetVideoFrameCacheDuration(maxDuration)
 	return b
 }
 
@@ -228,6 +228,6 @@ func TestVideoFrameCacheDisabled(t *testing.T) {
 
 	// audio buffers never enable the cache
 	a := &BufferBase{codecType: webrtc.RTPCodecTypeAudio, clockRate: 48000, logger: logger.GetLogger()}
-	a.EnableVideoFrameCache(0)
+	a.SetVideoFrameCacheDuration(0)
 	require.False(t, a.videoFrameCacheMaxDuration > 0)
 }

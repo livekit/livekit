@@ -595,10 +595,10 @@ func (r *ReceiverBase) AddDownTrack(track TrackSender) error {
 	return nil
 }
 
-// EnableVideoFrameCache turns on the video frame cache for this receiver: each (current and future) buffer
+// SetVideoFrameCacheDuration turns on the video frame cache for this receiver: each (current and future) buffer
 // retains the current cached frame, and a newly added down track is bootstrapped from it (see replayVideoFrameCache).
 // maxDuration bounds the cached video frame and sizes the retransmit bucket accordingly. No-op for audio.
-func (r *ReceiverBase) EnableVideoFrameCache(maxDuration time.Duration) {
+func (r *ReceiverBase) SetVideoFrameCacheDuration(maxDuration time.Duration) {
 	if r.Kind() != webrtc.RTPCodecTypeVideo {
 		return
 	}
@@ -610,7 +610,7 @@ func (r *ReceiverBase) EnableVideoFrameCache(maxDuration time.Duration) {
 
 	for _, buff := range buffers {
 		if buff != nil {
-			buff.EnableVideoFrameCache(maxDuration)
+			buff.SetVideoFrameCacheDuration(maxDuration)
 		}
 	}
 }
@@ -625,10 +625,6 @@ const videoFrameCacheReplayMaxCatchupRounds = 8
 // half the (estimated) video frame interval so the replay runs at ~2x real time and converges on
 // live. It writes directly to the track (which is not yet in the live broadcast), so there is no
 // interleaving with live packets.
-//
-// It replays the highest spatial layer that currently has a cached video frame cache group: a subscriber requesting full
-// quality has its forwarder targeting the top layer, and lower layers may not even be flowing (e.g.
-// paused by dynacast), so layer 0 often has no video frame cache group.
 func (r *ReceiverBase) replayVideoFrameCache(track TrackSender) {
 	var (
 		buff  buffer.BufferProvider
@@ -952,7 +948,7 @@ func (r *ReceiverBase) setupBuffer(buff buffer.BufferProvider, layer int32, rtt 
 		buff.OnCodecChange(r.handleCodecChange)
 	}
 	if r.videoFrameCacheMaxDuration > 0 && r.Kind() == webrtc.RTPCodecTypeVideo {
-		buff.EnableVideoFrameCache(r.videoFrameCacheMaxDuration)
+		buff.SetVideoFrameCacheDuration(r.videoFrameCacheMaxDuration)
 	}
 
 	buff.OnStreamRestart(func(reason string) {

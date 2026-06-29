@@ -93,7 +93,7 @@ type BufferProvider interface {
 	ReadExtended(buf []byte) (*ExtPacket, error)
 	GetPacket(buf []byte, esn uint64) (int, error)
 
-	EnableVideoFrameCache(maxDuration time.Duration)
+	SetVideoFrameCacheDuration(maxDuration time.Duration)
 	GetVideoFrameCache() ([]*ExtPacket, bool)
 	GetPacketsAfter(afterESN uint64) ([]*ExtPacket, bool)
 
@@ -656,13 +656,13 @@ func (b *BufferBase) ReadExtended(buf []byte) (*ExtPacket, error) {
 	}
 }
 
-// EnableVideoFrameCache turns on video frame cache tracking for this (video) buffer: the most recent
+// SetVideoFrameCacheDuration turns on video frame cache tracking for this (video) buffer: the most recent
 // key frame is marked so the current group-of-pictures can be read back from the retransmit bucket
 // via GetVideoFrameCache. No packets are copied - only the key-frame boundary is tracked. maxDuration
 // bounds the served key-frame interval AND drives the retransmit bucket to retain that much history
 // (see maybeGrowBucket), so the key frame is not evicted before it can be read; maxDuration <= 0
 // disables the cache.
-func (b *BufferBase) EnableVideoFrameCache(maxDuration time.Duration) {
+func (b *BufferBase) SetVideoFrameCacheDuration(maxDuration time.Duration) {
 	b.Lock()
 	defer b.Unlock()
 

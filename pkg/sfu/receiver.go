@@ -109,7 +109,7 @@ func WithVideoFrameCache(maxDuration time.Duration) ReceiverOpts {
 			maxDuration = maxVideoFrameCacheDuration
 		}
 
-		w.ReceiverBase.EnableVideoFrameCache(maxDuration)
+		w.ReceiverBase.SetVideoFrameCacheDuration(maxDuration)
 		return w
 	}
 }
