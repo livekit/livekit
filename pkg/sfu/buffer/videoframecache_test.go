@@ -142,7 +142,7 @@ func TestVideoFrameCacheKeyFrameEvicted(t *testing.T) {
 	// mark a key frame at a sequence number that is not in the bucket
 	addBucketPacket(t, b, 200, 1000)
 	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(100, 500, true)) // 100 was never stored / evicted
-	b.videoFrameCacheLatestTS = 1000
+	b.videoFrameCacheLatestETS = 1000
 
 	_, ok := b.GetVideoFrameCache()
 	require.False(t, ok)
@@ -157,12 +157,12 @@ func TestVideoFrameCacheDurationBound(t *testing.T) {
 	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(100, kfTS, true))
 
 	// within the bound
-	b.videoFrameCacheLatestTS = kfTS + 90000 // +1s
+	b.videoFrameCacheLatestETS = kfTS + 90000 // +1s
 	_, ok := b.GetVideoFrameCache()
 	require.True(t, ok)
 
 	// beyond the bound -> not served
-	b.videoFrameCacheLatestTS = kfTS + 180001 // > 2s
+	b.videoFrameCacheLatestETS = kfTS + 180001 // > 2s
 	_, ok = b.GetVideoFrameCache()
 	require.False(t, ok)
 }
@@ -173,17 +173,17 @@ func TestVideoFrameCacheSpanUsesMaxTimestamp(t *testing.T) {
 	// key frame at 1000, then a later packet at 1200 advances the span
 	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(100, 1000, true))
 	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(101, 1200, false))
-	require.Equal(t, uint64(1200), b.videoFrameCacheLatestTS)
+	require.Equal(t, uint64(1200), b.videoFrameCacheLatestETS)
 
 	// an out-of-order, older packet arriving last must not shrink the measured span
 	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(102, 1100, false))
-	require.Equal(t, uint64(1200), b.videoFrameCacheLatestTS)
+	require.Equal(t, uint64(1200), b.videoFrameCacheLatestETS)
 
 	// a new key frame resets the span to itself (a stale packet cannot stretch the new video frame cache group)
 	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(103, 5000, true))
-	require.Equal(t, uint64(5000), b.videoFrameCacheLatestTS)
+	require.Equal(t, uint64(5000), b.videoFrameCacheLatestETS)
 	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(104, 4000, false)) // stale, older than the new key frame
-	require.Equal(t, uint64(5000), b.videoFrameCacheLatestTS)
+	require.Equal(t, uint64(5000), b.videoFrameCacheLatestETS)
 }
 
 func TestBucketGrowTarget(t *testing.T) {

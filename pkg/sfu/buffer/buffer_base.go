@@ -208,7 +208,7 @@ type BufferBase struct {
 	videoFrameCacheHasKeyFrame bool
 	videoFrameCacheKeyFrameESN uint64 // ext sequence number of the current video frame cache group's first key-frame packet
 	videoFrameCacheKeyFrameETS uint64 // ext timestamp of the current video frame cache group's key frame
-	videoFrameCacheLatestTS    uint64 // maximum ext timestamp seen in the current video frame cache group (resets on a new key frame)
+	videoFrameCacheLatestETS   uint64 // maximum ext timestamp seen in the current video frame cache group (resets on a new key frame)
 
 	isPaused            bool
 	frameRateCalculator [DefaultMaxLayerSpatial + 1]FrameRateCalculator
@@ -683,17 +683,17 @@ func (b *BufferBase) markVideoFrameCacheLocked(ep *ExtPacket) {
 		// span to the key frame so a stale packet from the previous video frame cache group cannot stretch it
 		b.videoFrameCacheKeyFrameESN = ep.ExtSequenceNumber
 		b.videoFrameCacheKeyFrameETS = ep.ExtTimestamp
-		b.videoFrameCacheLatestTS = ep.ExtTimestamp
+		b.videoFrameCacheLatestETS = ep.ExtTimestamp
 		b.videoFrameCacheHasKeyFrame = true
 		b.logger.Debugw("video frame cache: marked key frame", "keyFrameSN", b.videoFrameCacheKeyFrameESN, "keyFrameTS", b.videoFrameCacheKeyFrameETS)
 		return
 	}
 	// track the maximum timestamp seen in the current video frame cache group (not the last-written one) so an
 	// out-of-order, older packet arriving last cannot shrink the measured span and let GetVideoFrameCache serve
-	// more than videoFrameCacheMaxDuration. The head packet's timestamp is always <= videoFrameCacheLatestTS, so the
+	// more than videoFrameCacheMaxDuration. The head packet's timestamp is always <= videoFrameCacheLatestETS, so the
 	// duration gate in GetVideoFrameCache strictly bounds the served video frame cache group.
-	if ep.ExtTimestamp > b.videoFrameCacheLatestTS {
-		b.videoFrameCacheLatestTS = ep.ExtTimestamp
+	if ep.ExtTimestamp > b.videoFrameCacheLatestETS {
+		b.videoFrameCacheLatestETS = ep.ExtTimestamp
 	}
 }
 
@@ -726,13 +726,13 @@ func (b *BufferBase) GetVideoFrameCache() ([]*ExtPacket, bool) {
 
 	if videoFrameCacheEnabled && b.clockRate > 0 {
 		maxTicks := uint64(b.videoFrameCacheMaxDuration.Seconds() * float64(b.clockRate))
-		if b.videoFrameCacheLatestTS > b.videoFrameCacheKeyFrameETS+maxTicks {
+		if b.videoFrameCacheLatestETS > b.videoFrameCacheKeyFrameETS+maxTicks {
 			// key-frame interval longer than the bound - too old to serve a complete replay
 			b.logger.Debugw(
 				"video frame cache miss: key-frame interval exceeds bound",
 				"keyFrameETS", b.videoFrameCacheKeyFrameETS,
-				"latestETS", b.videoFrameCacheLatestTS,
-				"spanTicks", b.videoFrameCacheLatestTS-b.videoFrameCacheKeyFrameETS,
+				"latestETS", b.videoFrameCacheLatestETS,
+				"spanTicks", b.videoFrameCacheLatestETS-b.videoFrameCacheKeyFrameETS,
 				"maxTicks", maxTicks,
 			)
 			return nil, false
