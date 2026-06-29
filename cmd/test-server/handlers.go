@@ -114,29 +114,53 @@ func init() {
 	reg[livekit.ConnectTwilioCallRequest, livekit.ConnectTwilioCallResponse]("livekit.Connector/ConnectTwilioCall")
 }
 
+// serveAPI handles a Twirp call end to end: decode the request, enforce the
+// method's required permissions (like the real server's auth middleware), apply
+// any region-failure injection, then serve a populated response.
+func (h *mockHandler) serveAPI(w http.ResponseWriter, r *http.Request) {
+	json := strings.Contains(r.Header.Get("Content-Type"), "json")
+	key := strings.TrimPrefix(r.URL.Path, h.twirpPrefix+"/")
+	spec, known := apiHandlers[key]
+
+	// Decode the request up front — needed both to enforce room-scoped grants
+	// and to build the echoed response.
+	var req proto.Message
+	if known {
+		body, _ := io.ReadAll(r.Body)
+		req = spec.newReq()
+		if json {
+			_ = protojson.Unmarshal(body, req)
+		} else {
+			_ = proto.Unmarshal(body, req)
+		}
+	}
+
+	// Permission enforcement comes first, mirroring the real server.
+	if status, code := h.authorize(key, r, req); status != 0 {
+		writeTwirpErrorCode(w, status, code, "mock: "+code)
+		return
+	}
+
+	if h.shouldFail(r) {
+		h.fail(w, r)
+		return
+	}
+
+	h.writeAPIResponse(w, r, json, known, req, spec)
+}
+
 // writeAPIResponse serves a populated, type-correct response for a known API
 // method. The response is the reflection-populated default unless the request
 // carries an X-Lk-Mock-Response header (protojson), which overrides it
 // entirely. Content type (protobuf vs JSON) mirrors the request.
-func (h *mockHandler) writeAPIResponse(w http.ResponseWriter, r *http.Request) {
-	json := strings.Contains(r.Header.Get("Content-Type"), "json")
+func (h *mockHandler) writeAPIResponse(w http.ResponseWriter, r *http.Request, json, known bool, req proto.Message, spec apiSpec) {
 	w.Header().Set(headerRegion, strconv.Itoa(h.regionIndex))
 
-	key := strings.TrimPrefix(r.URL.Path, h.twirpPrefix+"/")
-	spec, ok := apiHandlers[key]
-	if !ok {
+	if !known {
 		// Unknown/future method: an empty body still decodes to a valid default
 		// message in every Twirp client.
 		writeEmptySuccess(w, json)
 		return
-	}
-
-	body, _ := io.ReadAll(r.Body)
-	req := spec.newReq()
-	if json {
-		_ = protojson.Unmarshal(body, req)
-	} else {
-		_ = proto.Unmarshal(body, req)
 	}
 
 	resp := spec.newResp()

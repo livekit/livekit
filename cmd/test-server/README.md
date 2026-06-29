@@ -59,6 +59,7 @@ failover retry):
 | `X-Lk-Mock-Delay-Ms` | `30000` | delay before a `delay`-mode region responds (for timeout tests). |
 | `X-Lk-Mock-Regions-Status` | `200` | override the status of `GET /settings/regions`. |
 | `X-Lk-Mock-Response` | — | protojson of the response message for the called method; replaces the populated default, giving full control over the returned payload. |
+| `X-Lk-Mock-Skip-Auth` | — | `true` disables permission enforcement for the request (use for tests that aren't about authz, e.g. failover tests with a placeholder token). |
 
 Response headers:
 
@@ -66,11 +67,45 @@ Response headers:
 |---|---|
 | `X-Lk-Mock-Region` | index of the region that served the response (blank on a failed region). Assert on this to confirm which region a failover landed on. |
 
+## Permission enforcement
+
+Every API method requires the same token grants the real LiveKit server checks
+(see `pkg/service/auth.go`), so the mock doubles as a conformance check that an
+SDK attaches the right permissions automatically. Tokens are parsed and verified
+with the protocol's own `auth` helpers — the same code path the real server uses
+— against the mock's configured API secret (default `secret`, matching
+`livekit-server --dev`; override with `--api-secret` / `LK_TEST_SERVER_API_SECRET`).
+
+- Missing, malformed, or wrongly-signed `Authorization` → `401 unauthenticated`.
+- Validly-signed token without the required grant → `403 permission_denied`.
+- `roomAdmin`-scoped methods also require the token's `room` to match the
+  request's room; `ForwardParticipant`/`MoveParticipant` additionally require
+  `destinationRoom` to match.
+
+SDKs exercising permissions should sign tokens with the same API secret the mock
+is configured with (`secret` by default).
+
+| Grant | Methods |
+|---|---|
+| `video.roomCreate` | `CreateRoom`, `DeleteRoom`, all `Connector` calls |
+| `video.roomList` | `ListRooms` |
+| `video.roomRecord` | all `Egress` methods |
+| `video.ingressAdmin` | all `Ingress` methods |
+| `video.roomAdmin` (+ `room`) | room participant/data/metadata methods, `AgentDispatchService` methods |
+| `video.roomAdmin` (+ `room` + `destinationRoom`) | `ForwardParticipant`, `MoveParticipant` |
+| `sip.admin` | SIP trunk & dispatch-rule CRUD |
+| `sip.call` | `CreateSIPParticipant`; `TransferSIPParticipant` (also needs `roomAdmin`) |
+
+Send `X-Lk-Mock-Skip-Auth: true` to bypass enforcement for tests that aren't
+about permissions.
+
 ## Common recipes
 
 | Goal | Headers |
 |---|---|
-| Happy path | _(none)_ → 200 from region `0` |
+| Happy path | valid token with the method's grant → 200 from region `0` |
+| Bypass auth (failover tests) | `X-Lk-Mock-Skip-Auth: true` |
+| Missing-permission error | token without the required grant → 403 |
 | Failover succeeds on region 1 | `X-Lk-Mock-Fail-Regions: 0` |
 | Exhaust to region 2 | `X-Lk-Mock-Fail-Regions: 0,1` |
 | All regions down | `X-Lk-Mock-Fail-Regions: 0,1,2,3` |

@@ -40,6 +40,8 @@ const (
 	headerDelayMs       = "X-Lk-Mock-Delay-Ms"
 	headerRegionsStatus = "X-Lk-Mock-Regions-Status"
 	headerResponse      = "X-Lk-Mock-Response"
+	// headerSkipAuth disables permission enforcement for a request.
+	headerSkipAuth = "X-Lk-Mock-Skip-Auth"
 	// headerRegion is set on responses to the index of the region that served it.
 	headerRegion = "X-Lk-Mock-Region"
 )
@@ -51,6 +53,9 @@ func main() {
 	advertiseHost := flagValue("--advertise-host", "LK_TEST_SERVER_ADVERTISE_HOST", "http://127.0.0.1")
 	bindAddr := flagValue("--bind", "LK_TEST_SERVER_BIND", "0.0.0.0")
 	twirpPrefix := flagValue("--twirp-prefix", "LK_TEST_SERVER_TWIRP_PREFIX", "/twirp")
+	// API secret used to verify request tokens for permission enforcement.
+	// Defaults to the `livekit-server --dev` secret.
+	apiSecret := flagValue("--api-secret", "LK_TEST_SERVER_API_SECRET", "secret")
 
 	ports, err := parsePorts(portsFlag)
 	if err != nil {
@@ -72,7 +77,7 @@ func main() {
 	for i, p := range ports {
 		srv := &http.Server{
 			Addr:    fmt.Sprintf("%s:%d", bindAddr, p),
-			Handler: &mockHandler{regionIndex: i, regions: regions, twirpPrefix: twirpPrefix},
+			Handler: &mockHandler{regionIndex: i, regions: regions, twirpPrefix: twirpPrefix, apiSecret: apiSecret},
 		}
 		go func() { errCh <- srv.ListenAndServe() }()
 		fmt.Printf("test-server: region-%d listening on %s:%d (advertised as %s:%d)\n", i, bindAddr, p, advertiseHost, p)
@@ -93,6 +98,7 @@ type mockHandler struct {
 	regionIndex int
 	regions     *livekit.RegionSettings
 	twirpPrefix string
+	apiSecret   string
 }
 
 func (h *mockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -126,11 +132,7 @@ func (h *mockHandler) handleRegions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *mockHandler) handleTwirp(w http.ResponseWriter, r *http.Request) {
-	if h.shouldFail(r) {
-		h.fail(w, r)
-		return
-	}
-	h.writeAPIResponse(w, r)
+	h.serveAPI(w, r)
 }
 
 func (h *mockHandler) shouldFail(r *http.Request) bool {
@@ -173,10 +175,15 @@ func writeTwirpError(w http.ResponseWriter, r *http.Request, status int) {
 	if code == "" {
 		code = twirpCodeForStatus(status)
 	}
+	writeTwirpErrorCode(w, status, code, fmt.Sprintf("mock failure (status %d)", status))
+}
+
+// writeTwirpErrorCode writes a Twirp JSON error with an explicit code and message.
+func writeTwirpErrorCode(w http.ResponseWriter, status int, code, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set(headerRegion, "")
 	w.WriteHeader(status)
-	_, _ = fmt.Fprintf(w, `{"code":%q,"msg":%q}`, code, fmt.Sprintf("mock failure (status %d)", status))
+	_, _ = fmt.Fprintf(w, `{"code":%q,"msg":%q}`, code, msg)
 }
 
 func twirpCodeForStatus(status int) string {
