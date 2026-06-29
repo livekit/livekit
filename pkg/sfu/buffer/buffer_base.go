@@ -657,7 +657,7 @@ func (b *BufferBase) ReadExtended(buf []byte) (*ExtPacket, error) {
 }
 
 // SetVideoFrameCacheDuration turns on video frame cache tracking for this (video) buffer: the most recent
-// key frame is marked so the current group-of-pictures can be read back from the retransmit bucket
+// key frame is marked so the current video frame cache can be read back from the retransmit bucket
 // via GetVideoFrameCache. No packets are copied - only the key-frame boundary is tracked. maxDuration
 // bounds the served key-frame interval AND drives the retransmit bucket to retain that much history
 // (see maybeGrowBucket), so the key frame is not evicted before it can be read; maxDuration <= 0
@@ -697,7 +697,7 @@ func (b *BufferBase) markVideoFrameCacheLocked(ep *ExtPacket) {
 	}
 }
 
-// GetVideoFrameCache reads the packets of the current group-of-pictures (from the most recent key frame up to
+// GetVideoFrameCache reads the packets of the current video frame cache (from the most recent key frame up to
 // the latest packet) back from the retransmit bucket, so a newly attached down track can be
 // bootstrapped without requesting a fresh key frame (PLI). Returns (nil, false) when the cache is
 // disabled, no key frame has been marked, the key-frame interval exceeds the configured bound, or
