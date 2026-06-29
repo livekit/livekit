@@ -225,8 +225,10 @@ type ParticipantParams struct {
 	EnableRTPStreamRestartDetection bool
 	ForceBackupCodecPolicySimulcast bool
 	DisableTransceiverReuseForE2EE  bool
+	EnableParticipantDataBlob       bool
 	EnableStartAtDesiredQuality     bool
-	VideoFrameCachingDuration       time.Duration
+	MigrationWaitDuration           time.Duration
+  VideoFrameCachingDuration       time.Duration
 }
 
 type ParticipantImpl struct {
@@ -335,6 +337,8 @@ type ParticipantImpl struct {
 	rpcLock             sync.Mutex
 	rpcPendingAcks      map[string]*utils.DataChannelRpcPendingAckHandler
 	rpcPendingResponses map[string]*utils.DataChannelRpcPendingResponseHandler
+
+	dataBlob *ParticipantDataBlob
 }
 
 func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
@@ -373,6 +377,9 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		telemetryGuard:                &telemetry.ReferenceGuard{},
 		nextSubscribedDataTrackHandle: uint16(rand.Intn(256)),
 		requireBroadcast:              params.Grants.Metadata != "" || len(params.Grants.Attributes) != 0,
+		dataBlob: NewParticipantDataBlob(ParticipantDataBlobParams{
+			Logger: params.Logger,
+		}),
 	}
 	p.setupSignalling()
 
@@ -912,6 +919,7 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 		KindDetails:      grants.GetKindDetails(),
 		DisconnectReason: p.CloseReason().ToDisconnectReason(),
 		ClientProtocol:   clientProtocol,
+		Capabilities:     p.params.ClientInfo.GetCapabilities(),
 	}
 	p.lock.RUnlock()
 
@@ -1340,9 +1348,7 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 		return
 	}
 
-	p.pendingTracksLock.Lock()
-	ti := p.addPendingTrackLocked(req)
-	p.pendingTracksLock.Unlock()
+	ti := p.addPendingTrack(req)
 	if ti == nil {
 		return
 	}
@@ -1568,7 +1574,7 @@ func (p *ParticipantImpl) setupMigrationTimerLocked() {
 	// to try and succeed. If not, close the subscriber peer connection
 	// and help the remote side to narrow down its ICE candidate pool.
 	//
-	p.migrationTimer = time.AfterFunc(migrationWaitDuration, func() {
+	p.migrationTimer = time.AfterFunc(max(p.params.MigrationWaitDuration, migrationWaitDuration), func() {
 		p.clearMigrationTimer()
 
 		if p.IsClosed() || p.IsDisconnected() {
@@ -2852,7 +2858,10 @@ func (p *ParticipantImpl) onSubscribedAudioCodecChange(
 	return p.sendSubscribedAudioCodecUpdate(subscribedAudioCodecUpdate)
 }
 
-func (p *ParticipantImpl) addPendingTrackLocked(req *livekit.AddTrackRequest) *livekit.TrackInfo {
+func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit.TrackInfo {
+	p.pendingTracksLock.Lock()
+	defer p.pendingTracksLock.Unlock()
+
 	if req.Sid != "" {
 		track := p.GetPublishedTrack(livekit.TrackID(req.Sid))
 		if track == nil {
@@ -3249,11 +3258,11 @@ func (p *ParticipantImpl) mediaTrackReceived(
 		mt = p.addMediaTrack(signalCid, ti)
 		newTrack = true
 
-		// if the addTrackRequest is sent before participant active then it means the client tries to publish
-		// before fully connected, in this case we only record the time when the participant is active since
+		// if the addTrackRequest is sent before publisher peer connection is established, then it means the client tries to publish
+		// before fully connected, in this case we only record the time when publisher peer connection is established since
 		// we want this metric to represent the time cost by publishing.
-		if activeAt := p.lastActiveAt.Load(); activeAt != nil && createdAt.Before(*activeAt) {
-			createdAt = *activeAt
+		if connectedAt := p.TransportManager.PublisherFirstConnectedAt(); !connectedAt.IsZero() && createdAt.Before(connectedAt) {
+			createdAt = connectedAt
 		}
 		pubTime = time.Since(createdAt)
 		p.dirty.Store(true)
