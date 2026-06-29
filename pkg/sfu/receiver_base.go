@@ -620,29 +620,35 @@ func (r *ReceiverBase) SetVideoFrameCacheDuration(maxDuration time.Duration) {
 // pathological case where live keeps outrunning the replay).
 const videoFrameCacheReplayMaxCatchupRounds = 8
 
-// replayVideoFrameCache bootstraps a freshly added down track by replaying the publisher's cached video frame cache group, then the
-// packets accumulated since, until it catches up to the live forwarding point. Packets are paced at
-// half the (estimated) video frame interval so the replay runs at ~2x real time and converges on
-// live. It writes directly to the track (which is not yet in the live broadcast), so there is no
-// interleaving with live packets.
+// replayVideoFrameCache bootstraps a freshly added down track by replaying every spatial layer that
+// has a cached video frame cache group, then the packets accumulated since, until it catches up to
+// the live forwarding point. It writes directly to the track (which is not yet in the live
+// broadcast) so there is no interleaving with live packets.
+//
+// Every cached layer is replayed and the down track's forwarder locks onto whichever layer it is
+// targeting, dropping packets from the others - exactly as it does for the live broadcast (see
+// downTrackSpreader.Broadcast / DownTrack.WriteRTP). This lets a subscriber whose desired quality is
+// not the top layer (e.g. opportunistic forwarding with desired LOW, where start-at-desired-quality
+// is off) bootstrap from whatever layer it actually wants instead of being forced onto the highest
+// cached layer.
 func (r *ReceiverBase) replayVideoFrameCache(track TrackSender) {
-	var (
+	type cachedLayer struct {
+		layer int32
 		buff  buffer.BufferProvider
 		pkts  []*buffer.ExtPacket
-		layer = buffer.InvalidLayerSpatial
-	)
+	}
+	var cached []cachedLayer
 	for l := int32(buffer.DefaultMaxLayerSpatial); l >= 0; l-- {
 		b, _ := r.getBuffer(l)
 		if b == nil {
 			continue
 		}
 		if got, ok := b.GetVideoFrameCache(); ok && len(got) > 0 {
-			buff, pkts, layer = b, got, l
-			break
+			cached = append(cached, cachedLayer{layer: l, buff: b, pkts: got})
 		}
 	}
 
-	if layer == buffer.InvalidLayerSpatial {
+	if len(cached) == 0 {
 		// no usable video frame cache group cached on any layer - the down track falls back to requesting a key frame (PLI)
 		missCount := r.videoFrameCacheMissCount.Inc()
 		r.params.Logger.Debugw(
@@ -656,32 +662,52 @@ func (r *ReceiverBase) replayVideoFrameCache(track TrackSender) {
 	}
 
 	hitCount := r.videoFrameCacheHitCount.Inc()
-	half := r.videoFrameCacheReplayFrameInterval(layer) / 2
 	r.params.Logger.Debugw(
 		"subscriber bootstrap: video frame cache hit, replaying",
 		"subscriberID", track.SubscriberID(),
-		"layer", layer,
-		"packets", len(pkts),
-		"frameIntervalHalf", half,
+		"layers", len(cached),
 		"videoFrameCacheHitCount", hitCount,
 		"videoFrameCacheMissCount", r.videoFrameCacheMissCount.Load(),
 	)
 
-	var lastSN uint64
+	for i := range cached {
+		if r.IsClosed() || track.IsClosed() {
+			return
+		}
+		c := &cached[i]
+		r.replayLayer(track, c.layer, c.buff, c.pkts)
+	}
+}
+
+// replayLayer replays one spatial layer's cached group-of-pictures to the track and then catches up
+// to the live forwarding point. The forwarder forwards the packets only while it is targeting this
+// layer and drops them otherwise; pacing (~2x real time, half the estimated frame interval) is
+// applied only to packets the forwarder actually forwarded, so a layer the forwarder is dropping
+// replays instantly without sleeping.
+func (r *ReceiverBase) replayLayer(track TrackSender, layer int32, buff buffer.BufferProvider, pkts []*buffer.ExtPacket) {
+	half := r.videoFrameCacheReplayFrameInterval(layer) / 2
+
+	var (
+		lastSN          uint64
+		haveForwarded   bool
+		lastForwardedTS uint64
+	)
 	write := func(eps []*buffer.ExtPacket) bool {
-		var lastTS uint64
-		for i, ep := range eps {
+		for _, ep := range eps {
 			if r.IsClosed() || track.IsClosed() {
 				return false
 			}
-			// pace at frame boundaries (a new timestamp starts a new frame)
-			if i > 0 && ep.ExtTimestamp != lastTS && half > 0 {
+			// pace at frame boundaries (a new timestamp starts a new frame), but only once a packet
+			// has actually been forwarded so a dropped layer replays without sleeping
+			if half > 0 && haveForwarded && ep.ExtTimestamp != lastForwardedTS {
 				time.Sleep(half)
 			}
-			lastTS = ep.ExtTimestamp
 			rp := *ep
 			rp.Arrival = mono.UnixNano()
-			track.WriteRTP(&rp, layer)
+			if track.WriteRTP(&rp, layer) > 0 {
+				haveForwarded = true
+				lastForwardedTS = ep.ExtTimestamp
+			}
 			lastSN = ep.ExtSequenceNumber
 		}
 		return true
