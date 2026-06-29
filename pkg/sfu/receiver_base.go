@@ -623,15 +623,15 @@ func (r *ReceiverBase) EnableVideoFrameCache(maxDuration time.Duration) {
 // pathological case where live keeps outrunning the replay).
 const videoFrameCacheReplayMaxCatchupRounds = 8
 
-// replayVideoFrameCache bootstraps a freshly added down track by replaying the publisher's cached GOP, then the
+// replayVideoFrameCache bootstraps a freshly added down track by replaying the publisher's cached video frame cache group, then the
 // packets accumulated since, until it catches up to the live forwarding point. Packets are paced at
 // half the (estimated) video frame interval so the replay runs at ~2x real time and converges on
 // live. It writes directly to the track (which is not yet in the live broadcast), so there is no
 // interleaving with live packets.
 //
-// It replays the highest spatial layer that currently has a cached GOP: a subscriber requesting full
+// It replays the highest spatial layer that currently has a cached video frame cache group: a subscriber requesting full
 // quality has its forwarder targeting the top layer, and lower layers may not even be flowing (e.g.
-// paused by dynacast), so layer 0 often has no GOP.
+// paused by dynacast), so layer 0 often has no video frame cache group.
 func (r *ReceiverBase) replayVideoFrameCache(track TrackSender) {
 	var (
 		buff  buffer.BufferProvider
@@ -650,7 +650,7 @@ func (r *ReceiverBase) replayVideoFrameCache(track TrackSender) {
 	}
 
 	if layer == buffer.InvalidLayerSpatial {
-		// no usable GOP cached on any layer - the down track falls back to requesting a key frame (PLI)
+		// no usable video frame cache group cached on any layer - the down track falls back to requesting a key frame (PLI)
 		missCount := r.videoFrameCacheMissCount.Inc()
 		r.params.Logger.Debugw(
 			"subscriber bootstrap: video frame cache miss, falling back to PLI",

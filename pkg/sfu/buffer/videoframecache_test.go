@@ -77,7 +77,7 @@ func TestVideoFrameCacheReadsFromBucket(t *testing.T) {
 	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(103, 4000, false))
 	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(104, 5000, false))
 
-	// GOP is [key frame .. head] = 101..104
+	// video frame cache group is [key frame .. head] = 101..104
 	pkts, ok := b.GetVideoFrameCache()
 	require.True(t, ok)
 	require.Len(t, pkts, 4)
@@ -179,7 +179,7 @@ func TestVideoFrameCacheSpanUsesMaxTimestamp(t *testing.T) {
 	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(102, 1100, false))
 	require.Equal(t, uint64(1200), b.videoFrameCacheLatestTS)
 
-	// a new key frame resets the span to itself (a stale packet cannot stretch the new GOP)
+	// a new key frame resets the span to itself (a stale packet cannot stretch the new video frame cache group)
 	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(103, 5000, true))
 	require.Equal(t, uint64(5000), b.videoFrameCacheLatestTS)
 	b.markVideoFrameCacheLocked(videoFrameCacheMarkPkt(104, 4000, false)) // stale, older than the new key frame
