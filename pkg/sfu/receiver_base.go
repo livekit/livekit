@@ -587,7 +587,6 @@ func (r *ReceiverBase) AddDownTrack(track TrackSender) error {
 				"subscriberID", track.SubscriberID(),
 				"videoFrameCacheHitCount", r.videoFrameCacheHitCount.Load(),
 				"videoFrameCacheMissCount", r.videoFrameCacheMissCount.Load(),
-				"pliForwardedCount", r.pliForwardedCount(),
 			)
 		}()
 		return nil
@@ -842,21 +841,6 @@ func (r *ReceiverBase) SendPLI(layer int32, force bool) {
 	}
 
 	buff.SendPLI(force)
-}
-
-// pliForwardedCount returns the total number of PLIs actually forwarded to the publisher across all
-// spatial-layer buffers (past each buffer's throttle gate).
-func (r *ReceiverBase) pliForwardedCount() uint32 {
-	r.bufferMu.RLock()
-	defer r.bufferMu.RUnlock()
-
-	var total uint32
-	for _, buff := range r.buffers {
-		if buff != nil {
-			total += buff.PLIForwardedCount()
-		}
-	}
-	return total
 }
 
 func (r *ReceiverBase) getBuffer(layer int32) (buffer.BufferProvider, int32) {

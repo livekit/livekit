@@ -89,15 +89,13 @@ type BufferProvider interface {
 	SetPaused(paused bool)
 
 	SendPLI(force bool)
-	// PLIForwardedCount returns the number of PLIs actually forwarded to the publisher (past the throttle gate).
-	PLIForwardedCount() uint32
 
 	ReadExtended(buf []byte) (*ExtPacket, error)
 	GetPacket(buf []byte, esn uint64) (int, error)
 
 	EnableVideoFrameCache(maxDuration time.Duration)
 	GetVideoFrameCache() ([]*ExtPacket, bool)
-	GetPacketsAfter(afterSN uint64) ([]*ExtPacket, bool)
+	GetPacketsAfter(afterESN uint64) ([]*ExtPacket, bool)
 
 	GetAudioLevel() (float64, bool)
 	GetTemporalLayerFpsForSpatial(layer int32) []float32
@@ -212,8 +210,8 @@ type BufferBase struct {
 	videoFrameCacheEnabled     bool
 	videoFrameCacheMaxDuration time.Duration // optional bound on key-frame interval (0 = bucket-bounded only)
 	videoFrameCacheHasKeyFrame bool
-	videoFrameCacheKeyFrameSN  uint64 // ext sequence number of the current GOP's first key-frame packet
-	videoFrameCacheKeyFrameTS  uint64 // ext timestamp of the current GOP's key frame
+	videoFrameCacheKeyFrameESN uint64 // ext sequence number of the current GOP's first key-frame packet
+	videoFrameCacheKeyFrameETS uint64 // ext timestamp of the current GOP's key frame
 	videoFrameCacheLatestTS    uint64 // maximum ext timestamp seen in the current GOP (resets on a new key frame)
 
 	isPaused            bool
@@ -682,14 +680,14 @@ func (b *BufferBase) markVideoFrameCacheLocked(ep *ExtPacket) {
 	if ep == nil || ep.Packet == nil || len(ep.Packet.Payload) == 0 {
 		return
 	}
-	if ep.IsKeyFrame && (!b.videoFrameCacheHasKeyFrame || ep.ExtTimestamp != b.videoFrameCacheKeyFrameTS) {
+	if ep.IsKeyFrame && (!b.videoFrameCacheHasKeyFrame || ep.ExtTimestamp != b.videoFrameCacheKeyFrameETS) {
 		// a new key frame starts a new GOP; remember its first packet's sequence number and reset the
 		// span to the key frame so a stale packet from the previous GOP cannot stretch it
-		b.videoFrameCacheKeyFrameSN = ep.ExtSequenceNumber
-		b.videoFrameCacheKeyFrameTS = ep.ExtTimestamp
+		b.videoFrameCacheKeyFrameESN = ep.ExtSequenceNumber
+		b.videoFrameCacheKeyFrameETS = ep.ExtTimestamp
 		b.videoFrameCacheLatestTS = ep.ExtTimestamp
 		b.videoFrameCacheHasKeyFrame = true
-		b.logger.Debugw("video frame cache: marked key frame", "keyFrameSN", b.videoFrameCacheKeyFrameSN, "keyFrameTS", b.videoFrameCacheKeyFrameTS)
+		b.logger.Debugw("video frame cache: marked key frame", "keyFrameSN", b.videoFrameCacheKeyFrameESN, "keyFrameTS", b.videoFrameCacheKeyFrameETS)
 		return
 	}
 	// track the maximum timestamp seen in the current GOP (not the last-written one) so an
@@ -728,36 +726,36 @@ func (b *BufferBase) GetVideoFrameCache() ([]*ExtPacket, bool) {
 
 	if b.videoFrameCacheMaxDuration > 0 && b.clockRate > 0 {
 		maxTicks := uint64(b.videoFrameCacheMaxDuration.Seconds() * float64(b.clockRate))
-		if b.videoFrameCacheLatestTS > b.videoFrameCacheKeyFrameTS+maxTicks {
+		if b.videoFrameCacheLatestTS > b.videoFrameCacheKeyFrameETS+maxTicks {
 			// key-frame interval longer than the bound - too old to serve a complete replay
 			b.logger.Debugw(
 				"video frame cache miss: key-frame interval exceeds bound",
-				"keyFrameTS", b.videoFrameCacheKeyFrameTS,
+				"keyFrameTS", b.videoFrameCacheKeyFrameETS,
 				"latestTS", b.videoFrameCacheLatestTS,
-				"spanTicks", b.videoFrameCacheLatestTS-b.videoFrameCacheKeyFrameTS,
+				"spanTicks", b.videoFrameCacheLatestTS-b.videoFrameCacheKeyFrameETS,
 				"maxTicks", maxTicks,
 			)
 			return nil, false
 		}
 	}
 
-	headSN := uint64(b.bucket.HeadSequenceNumber())
-	if headSN < b.videoFrameCacheKeyFrameSN {
-		b.logger.Debugw("video frame cache miss: head behind key frame", "headSN", headSN, "keyFrameSN", b.videoFrameCacheKeyFrameSN)
+	headESN := uint64(b.bucket.HeadSequenceNumber())
+	if headESN < b.videoFrameCacheKeyFrameESN {
+		b.logger.Debugw("video frame cache miss: head behind key frame", "headESN", headESN, "keyFrameSN", b.videoFrameCacheKeyFrameESN)
 		return nil, false
 	}
 
-	pkts := b.reconstructPacketsLocked(b.videoFrameCacheKeyFrameSN, headSN)
+	pkts := b.reconstructPacketsLocked(b.videoFrameCacheKeyFrameESN, headESN)
 	// the key frame itself must be present (its first packet), otherwise the GOP cannot be served
-	if len(pkts) == 0 || pkts[0].ExtSequenceNumber != b.videoFrameCacheKeyFrameSN {
+	if len(pkts) == 0 || pkts[0].ExtSequenceNumber != b.videoFrameCacheKeyFrameESN {
 		var firstSN uint64
 		if len(pkts) > 0 {
 			firstSN = pkts[0].ExtSequenceNumber
 		}
 		b.logger.Debugw(
 			"video frame cache miss: key frame evicted from bucket",
-			"keyFrameSN", b.videoFrameCacheKeyFrameSN,
-			"headSN", headSN,
+			"keyFrameSN", b.videoFrameCacheKeyFrameESN,
+			"headESN", headESN,
 			"bucketCapacity", b.bucket.Capacity(),
 			"reconstructed", len(pkts),
 			"firstSN", firstSN,
@@ -767,22 +765,22 @@ func (b *BufferBase) GetVideoFrameCache() ([]*ExtPacket, bool) {
 	return pkts, true
 }
 
-// GetPacketsAfter reads the packets newer than afterSN (exclusive) up to the current head from the
+// GetPacketsAfter reads the packets newer than afterESN (exclusive) up to the current head from the
 // retransmit bucket, reconstructed as ExtPackets like GetVideoFrameCache. It is used to catch a video frame cache replay up to
 // the live forwarding point. Returns (nil, false) when the cache is disabled or nothing newer is
 // retained.
-func (b *BufferBase) GetPacketsAfter(afterSN uint64) ([]*ExtPacket, bool) {
+func (b *BufferBase) GetPacketsAfter(afterESN uint64) ([]*ExtPacket, bool) {
 	b.Lock()
 	defer b.Unlock()
 
 	if !b.videoFrameCacheEnabled || !b.videoFrameCacheHasKeyFrame || b.bucket == nil {
 		return nil, false
 	}
-	headSN := uint64(b.bucket.HeadSequenceNumber())
-	if headSN <= afterSN {
+	headESN := uint64(b.bucket.HeadSequenceNumber())
+	if headESN <= afterESN {
 		return nil, false
 	}
-	pkts := b.reconstructPacketsLocked(afterSN+1, headSN)
+	pkts := b.reconstructPacketsLocked(afterESN+1, headESN)
 	if len(pkts) == 0 {
 		return nil, false
 	}
@@ -790,15 +788,15 @@ func (b *BufferBase) GetPacketsAfter(afterSN uint64) ([]*ExtPacket, bool) {
 }
 
 // reconstructPacketsLocked builds self-contained ExtPackets for the sequence-number range
-// [fromSN, headSN] from the retransmit bucket. Lost packets are skipped. ExtTimestamp is
+// [fromSN, headESN] from the retransmit bucket. Lost packets are skipped. ExtTimestamp is
 // reconstructed relative to the marked key frame (a GOP spans well under one 32-bit timestamp wrap)
 // and IsKeyFrame flags packets at the key-frame timestamp. The dependency descriptor is not
 // reconstructed. Caller holds the lock.
-func (b *BufferBase) reconstructPacketsLocked(fromSN, headSN uint64) []*ExtPacket {
-	keyFrameRTPTS := uint32(b.videoFrameCacheKeyFrameTS)
+func (b *BufferBase) reconstructPacketsLocked(fromSN, headESN uint64) []*ExtPacket {
+	keyFrameRTPTS := uint32(b.videoFrameCacheKeyFrameETS)
 	var pkts []*ExtPacket
 	buf := make([]byte, bucket.RTPMaxPktSize)
-	for sn := fromSN; sn <= headSN; sn++ {
+	for sn := fromSN; sn <= headESN; sn++ {
 		n, err := b.bucket.GetPacket(buf, sn)
 		if err != nil {
 			continue // lost packet, skip
@@ -811,14 +809,14 @@ func (b *BufferBase) reconstructPacketsLocked(fromSN, headSN uint64) []*ExtPacke
 			continue
 		}
 
-		extTS := b.videoFrameCacheKeyFrameTS + uint64(p.Timestamp-keyFrameRTPTS)
+		extTS := b.videoFrameCacheKeyFrameETS + uint64(p.Timestamp-keyFrameRTPTS)
 		pkts = append(pkts, &ExtPacket{
 			VideoLayer:        VideoLayer{Spatial: InvalidLayerSpatial, Temporal: InvalidLayerTemporal},
 			Arrival:           mono.UnixNano(),
 			ExtSequenceNumber: sn,
 			ExtTimestamp:      extTS,
 			Packet:            p,
-			IsKeyFrame:        extTS == b.videoFrameCacheKeyFrameTS,
+			IsKeyFrame:        extTS == b.videoFrameCacheKeyFrameETS,
 			RawPacket:         raw,
 		})
 	}
@@ -1370,7 +1368,7 @@ func (b *BufferBase) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
 			b.logger.Warnw(
 				"could not get packet from bucket", err,
 				"sn", ep.Packet.SequenceNumber,
-				"headSN", b.bucket.HeadSequenceNumber(),
+				"headESN", b.bucket.HeadSequenceNumber(),
 				"count", packetNotFoundCount,
 				"rtpStats", b.rtpStats,
 				"rtpStatsLite", b.rtpStatsLite,

@@ -22,7 +22,6 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
-	"go.uber.org/atomic"
 
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/mediatransportutil/pkg/bucket"
@@ -73,9 +72,6 @@ type Buffer struct {
 
 	primaryBufferForRTX *Buffer
 	rtxPktBuf           []byte
-
-	// number of PLIs actually forwarded to the publisher (past the throttle gate, see sendPLI)
-	pliForwardedCount atomic.Uint32
 }
 
 func NewBuffer(ssrc uint32, maxVideoPkts, maxAudioPkts int) *Buffer {
@@ -347,15 +343,8 @@ func (b *Buffer) sendPLI() {
 	}
 
 	if cb := b.getOnRtcpFeedback(); cb != nil {
-		pliForwardedCount := b.pliForwardedCount.Inc()
 		cb(pli)
-		b.logger.Debugw("send pli", "mediaSSRC", ssrc, "pliForwardedCount", pliForwardedCount)
 	}
-}
-
-// PLIForwardedCount returns the number of PLIs actually forwarded to the publisher (past the throttle gate).
-func (b *Buffer) PLIForwardedCount() uint32 {
-	return b.pliForwardedCount.Load()
 }
 
 func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, isBuffered bool, isRTX bool) []rtcp.Packet {
