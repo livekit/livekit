@@ -20,9 +20,8 @@ import (
 	"github.com/livekit/psrpc"
 )
 
-const (
-	whipSessionNotifyInterval = 10 * time.Second
-)
+// whipSessionNotifyInterval is a var (rather than a const) so tests can shorten it.
+var whipSessionNotifyInterval = 10 * time.Second
 
 type whipService struct {
 	*RoomManager
@@ -181,7 +180,7 @@ func (s whipService) notifySession(ctx context.Context, participant types.Partic
 		case <-ticker.C:
 			err := s.sendConnectionNotify(ctx, participant)
 			if err != nil {
-				if errors.Is(err, context.Canceled) {
+				if errors.Is(err, context.Canceled) || errors.Is(err, ErrParticipantNotFound) {
 					return nil
 				}
 			}
@@ -193,6 +192,10 @@ func (s whipService) notifySession(ctx context.Context, participant types.Partic
 }
 
 func (s whipService) sendConnectionNotify(ctx context.Context, participant types.Participant) error {
+	if participant.IsClosed() {
+		return ErrParticipantNotFound
+	}
+
 	video, audio := getMediaStateForParticipant(participant)
 
 	_, err := s.ingressRpcCli.WHIPRTCConnectionNotify(ctx, string(participant.ID()), &rpc.WHIPRTCConnectionNotifyRequest{
@@ -345,12 +348,12 @@ func (r whipParticipantService) DeleteSession(ctx context.Context, req *rpc.WHIP
 
 	lp := room.GetParticipantByID(livekit.ParticipantID(req.ParticipantId))
 	if lp != nil {
-		lp.AddOnClose(types.ParticipantCloseKeyWHIP, nil)
 		room.RemoveParticipant(
 			lp.Identity(),
 			lp.ID(),
 			types.ParticipantCloseReasonClientRequestLeave,
 		)
+		lp.AddOnClose(types.ParticipantCloseKeyWHIP, nil)
 	}
 
 	return &emptypb.Empty{}, nil
