@@ -7,23 +7,27 @@ image and booted by each SDK's CI.
 
 ## Why it looks the way it does
 
-- **Stateless.** All behavior is selected by per-request `X-Lk-Mock-*` headers,
-  so the server holds no mutable state and tests run in parallel.
+- **Stateless.** All behavior is selected by a single per-request `X-Lk-Mock`
+  header (a JSON object), so the server holds no mutable state and tests run in
+  parallel.
 - **Multi-port = multi-region.** The process binds one listener per simulated
   region (`--ports`). A port's position in the list is its **region index**;
   index `0` is the primary the SDK is initially pointed at. `GET
   /settings/regions` advertises all of them in order.
 - **One header drives every attempt.** The SDK sends the same control header on
   the initial request *and* every failover retry. Each listener decides what to
-  do from its **own** index, so a single `X-Lk-Mock-Fail-Regions: 0` makes the
-  primary fail while the first fallback succeeds — no coordination needed.
+  do from its **own** index, so a single `X-Lk-Mock: {"failRegions":[0]}` makes
+  the primary fail while the first fallback succeeds — no coordination needed.
+- **Realistic latency.** Methods that block in the real server block here too:
+  `CreateSIPParticipant` with `wait_until_answered` and `TransferSIPParticipant`
+  take ~11s before responding, so SDKs can exercise their timeouts.
 - **The whole API is mocked with populated responses.** Every RoomService,
   Egress, Ingress, SIP, and Connector method returns a type-correct, populated
   response: scalar fields that share a name with the request are echoed (e.g.
   `name`, `metadata`, `identity`, timeouts), `id`/`sid` fields get placeholder
   values, and list endpoints return one element. Both protobuf and JSON Twirp
   clients are supported. A client can override the response entirely with the
-  `X-Lk-Mock-Response` header (see below). Unregistered/future methods fall back
+  `response` field (see below). Unregistered/future methods fall back
   to an empty (all-default) message, which still decodes cleanly.
 
 ## Running
@@ -46,20 +50,31 @@ docker run -p 9999-10002:9999-10002 livekit/test-server
 
 ## Control protocol
 
-Request headers (sent by the SDK on API calls; the SDK must forward
-client-configured custom headers onto the `/settings/regions` fetch and every
-failover retry):
+All behavior is driven by a single `X-Lk-Mock` request header whose value is a
+JSON object. The SDK sends the same header on API calls, on the
+`/settings/regions` fetch, and on every failover retry (it must forward
+client-configured custom headers onto all of them). Omit the header — or any
+field — for normal behavior. Every field is optional:
 
-| Header | Default | Effect |
+| Field | Default | Effect |
 |---|---|---|
-| `X-Lk-Mock-Fail-Regions` | — | comma list of region indices that fail this request, e.g. `0` or `0,1`. Each listener fails only if its own index is listed. |
-| `X-Lk-Mock-Fail-Mode` | `status` | how a failing region fails: `status`, `drop` (close connection → transport error), `delay`. |
-| `X-Lk-Mock-Fail-Status` | `503` | HTTP status when failing with `status`/`delay`. |
-| `X-Lk-Mock-Fail-Twirp-Code` | derived from status | Twirp error code string in the failure body. |
-| `X-Lk-Mock-Delay-Ms` | `30000` | delay before a `delay`-mode region responds (for timeout tests). |
-| `X-Lk-Mock-Regions-Status` | `200` | override the status of `GET /settings/regions`. |
-| `X-Lk-Mock-Response` | — | protojson of the response message for the called method; replaces the populated default, giving full control over the returned payload. |
-| `X-Lk-Mock-Skip-Auth` | — | `true` disables permission enforcement for the request (use for tests that aren't about authz, e.g. failover tests with a placeholder token). |
+| `failRegions` | — | array of region indices that fail this request, e.g. `[0]` or `[0,1]`. Each listener fails only if its own index is listed. |
+| `failMode` | `status` | how a failing region fails: `status` (write a Twirp error), or `drop` (close the connection → transport error). |
+| `failStatus` | `503` | HTTP status for a `status`-mode failure. |
+| `failTwirpCode` | derived from status | Twirp error code string in the failure body. |
+| `delayMs` | — | delay (ms) before responding, on success or failure. Overrides a method's natural latency — use it for timeout tests, or set it to skip a SIP method's built-in ~11s wait. |
+| `regionsStatus` | `200` | override the status of `GET /settings/regions`. |
+| `response` | — | the response message for the called method (a JSON object, protojson-shaped); replaces the populated default, giving full control over the returned payload. |
+| `skipAuth` | `false` | `true` disables permission enforcement for the request (use for tests that aren't about authz, e.g. failover tests with a placeholder token). |
+
+Example: `X-Lk-Mock: {"skipAuth":true,"failRegions":[0],"failStatus":400}`
+
+> **Deprecated:** the older per-setting headers — `X-Lk-Mock-Fail-Regions`,
+> `X-Lk-Mock-Fail-Mode` (incl. the `delay` mode), `X-Lk-Mock-Fail-Status`,
+> `X-Lk-Mock-Fail-Twirp-Code`, `X-Lk-Mock-Delay-Ms`, `X-Lk-Mock-Regions-Status`,
+> `X-Lk-Mock-Response`, `X-Lk-Mock-Skip-Auth` — are still honored for existing
+> clients and will be removed later. When `X-Lk-Mock` is also present, its fields
+> take precedence per-field. New clients should use `X-Lk-Mock` only.
 
 Response headers:
 
@@ -96,23 +111,24 @@ is configured with (`secret` by default).
 | `sip.admin` | SIP trunk & dispatch-rule CRUD |
 | `sip.call` | `CreateSIPParticipant`; `TransferSIPParticipant` (also needs `roomAdmin`) |
 
-Send `X-Lk-Mock-Skip-Auth: true` to bypass enforcement for tests that aren't
+Send `X-Lk-Mock: {"skipAuth":true}` to bypass enforcement for tests that aren't
 about permissions.
 
 ## Common recipes
 
-| Goal | Headers |
+| Goal | `X-Lk-Mock` value |
 |---|---|
-| Happy path | valid token with the method's grant → 200 from region `0` |
-| Bypass auth (failover tests) | `X-Lk-Mock-Skip-Auth: true` |
-| Missing-permission error | token without the required grant → 403 |
-| Failover succeeds on region 1 | `X-Lk-Mock-Fail-Regions: 0` |
-| Exhaust to region 2 | `X-Lk-Mock-Fail-Regions: 0,1` |
-| All regions down | `X-Lk-Mock-Fail-Regions: 0,1,2,3` |
-| 4xx, no retry | `X-Lk-Mock-Fail-Regions: 0` + `X-Lk-Mock-Fail-Status: 400` |
-| Transport-error failover | `X-Lk-Mock-Fail-Regions: 0` + `X-Lk-Mock-Fail-Mode: drop` |
-| Region discovery unreachable | `X-Lk-Mock-Regions-Status: 500` |
-| Custom response payload | `X-Lk-Mock-Response: {"sid":"RM_x","name":"my-room"}` |
+| Happy path | (no header) — valid token with the method's grant → 200 from region `0` |
+| Bypass auth (failover tests) | `{"skipAuth":true}` |
+| Missing-permission error | (no header) — token without the required grant → 403 |
+| Failover succeeds on region 1 | `{"failRegions":[0]}` |
+| Exhaust to region 2 | `{"failRegions":[0,1]}` |
+| All regions down | `{"failRegions":[0,1,2,3]}` |
+| 4xx, no retry | `{"failRegions":[0],"failStatus":400}` |
+| Transport-error failover | `{"failRegions":[0],"failMode":"drop"}` |
+| Timeout test | `{"delayMs":30000}` |
+| Region discovery unreachable | `{"regionsStatus":500}` |
+| Custom response payload | `{"response":{"sid":"RM_x","name":"my-room"}}` |
 
 Note: SDK region failover normally only engages for `*.livekit.cloud` hosts.
 Since tests point at `127.0.0.1`, set the SDK's failover-enable option to its
