@@ -2,6 +2,25 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.3] - 2026-07-03
+
+### Added
+
+- feat: mock API server for testing server SDKs (#4627)
+- support auth checks with mock server (#4629)
+- Data track schema metadata (#4622)
+- Report average bitrates for whip ingress (#4634)
+
+### Changed
+
+- Update webrtc to fix interop issue with bundled datachannel (#4631)
+- Update module github.com/urfave/cli/v3 to v3.10.0 (#4612)
+- Use camel case log name in `DataBlobKey` (#4633)
+
+### Fixed
+
+- Stop WHIP session notifier when participant leaves (#4637)
+
 ## [1.13.2] - 2026-06-27
 
 ### Added
