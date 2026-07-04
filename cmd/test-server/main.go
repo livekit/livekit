@@ -17,6 +17,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -27,6 +28,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils/protojson"
@@ -161,6 +164,23 @@ func writeTwirpErrorCode(w http.ResponseWriter, status int, code, msg string) {
 	w.Header().Set(headerRegion, "")
 	w.WriteHeader(status)
 	_, _ = fmt.Fprintf(w, `{"code":%q,"msg":%q}`, code, msg)
+}
+
+// writeTwirpErr writes a full Twirp JSON error — code, message, and metadata —
+// using the HTTP status Twirp derives from the error code.
+func writeTwirpErr(w http.ResponseWriter, terr twirp.Error) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(headerRegion, "")
+	w.WriteHeader(twirp.ServerHTTPStatusFromErrorCode(terr.Code()))
+	_ = json.NewEncoder(w).Encode(struct {
+		Code string            `json:"code"`
+		Msg  string            `json:"msg"`
+		Meta map[string]string `json:"meta,omitempty"`
+	}{
+		Code: string(terr.Code()),
+		Msg:  terr.Msg(),
+		Meta: terr.MetaMap(),
+	})
 }
 
 func twirpCodeForStatus(status int) string {

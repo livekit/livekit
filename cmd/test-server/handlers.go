@@ -27,6 +27,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils/protojson"
+	"github.com/livekit/protocol/utils/xtwirp"
 )
 
 // apiSpec captures the request and response message types for one Twirp method,
@@ -155,6 +156,13 @@ func (h *mockHandler) serveAPI(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(delay)
 	}
 
+	// A SIP dial that fails carries a SIP status; the Twirp code and metadata are
+	// derived from it exactly as the real server does.
+	if cfg.SIPStatus != nil && isSIPDialMethod(key) {
+		h.failSIP(w, &cfg)
+		return
+	}
+
 	if h.shouldFail(&cfg) {
 		h.fail(w, &cfg)
 		return
@@ -182,6 +190,26 @@ func methodLatency(key string, req proto.Message) time.Duration {
 // sipAnswerLatency is how long a SIP call takes to be answered/transferred in the
 // mock — long enough to exercise client-side timeouts around these calls.
 const sipAnswerLatency = 11 * time.Second
+
+// isSIPDialMethod reports whether key places a call that can fail with a SIP status.
+func isSIPDialMethod(key string) bool {
+	switch key {
+	case "livekit.SIP/CreateSIPParticipant", "livekit.SIP/TransferSIPParticipant":
+		return true
+	}
+	return false
+}
+
+// failSIP fails the request with the configured SIP status, mirroring the real
+// server: the status maps to a Twirp error code and attaches sip_status_code,
+// sip_status, and error_details metadata via xtwirp.
+func (h *mockHandler) failSIP(w http.ResponseWriter, cfg *mockConfig) {
+	st := &livekit.SIPStatus{
+		Code:   livekit.SIPStatusCode(cfg.SIPStatus.Code),
+		Status: cfg.SIPStatus.Status,
+	}
+	writeTwirpErr(w, xtwirp.ToError(st))
+}
 
 // writeAPIResponse serves a populated, type-correct response for a known API
 // method. The response is the reflection-populated default unless the mock

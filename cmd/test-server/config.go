@@ -80,10 +80,24 @@ type mockConfig struct {
 	// SkipAuth disables permission enforcement for this request (for tests that
 	// aren't about authz, e.g. failover tests with a placeholder token).
 	SkipAuth bool `json:"skipAuth,omitempty"`
+	// SIPStatus, when set on a SIP dial method (CreateSIPParticipant /
+	// TransferSIPParticipant), fails the call with this SIP status. The Twirp
+	// error code and metadata (sip_status_code, sip_status, error_details) are
+	// derived from it exactly as the real server does, so the SDK sees an
+	// identical error. Composes with DelayMs to simulate "ring, then fail".
+	SIPStatus *sipStatusConfig `json:"sipStatus,omitempty"`
 
 	// legacyDelayMs is the sleep used by the deprecated "delay" fail mode. It is
 	// populated only from the legacy X-Lk-Mock-Delay-Ms header, never from JSON.
 	legacyDelayMs int
+}
+
+// sipStatusConfig is a SIP response to inject; see mockConfig.SIPStatus.
+type sipStatusConfig struct {
+	// Code is the SIP response code, e.g. 486 (Busy Here) or 603 (Decline).
+	Code int `json:"code"`
+	// Status is the SIP reason phrase; defaults to the code's canonical name.
+	Status string `json:"status,omitempty"`
 }
 
 // parseMockConfig builds the request's config. Deprecated individual X-Lk-Mock-*

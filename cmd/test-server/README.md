@@ -66,6 +66,7 @@ field — for normal behavior. Every field is optional:
 | `regionsStatus` | `200` | override the status of `GET /settings/regions`. |
 | `response` | — | the response message for the called method (a JSON object, protojson-shaped); replaces the populated default, giving full control over the returned payload. |
 | `skipAuth` | `false` | `true` disables permission enforcement for the request (use for tests that aren't about authz, e.g. failover tests with a placeholder token). |
+| `sipStatus` | — | fail a SIP dial method (`CreateSIPParticipant`/`TransferSIPParticipant`) with a SIP status, e.g. `{"code":486,"status":"Busy Here"}` (`status` optional). The Twirp error code and `sip_status_code`/`sip_status`/`error_details` metadata are derived from it exactly as the real server does. Composes with `delayMs` to simulate "ring, then fail". |
 
 Example: `X-Lk-Mock: {"skipAuth":true,"failRegions":[0],"failStatus":400}`
 
@@ -129,6 +130,8 @@ about permissions.
 | Timeout test | `{"delayMs":30000}` |
 | Region discovery unreachable | `{"regionsStatus":500}` |
 | Custom response payload | `{"response":{"sid":"RM_x","name":"my-room"}}` |
+| SIP busy signal | `{"sipStatus":{"code":486,"status":"Busy Here"}}` |
+| SIP carrier decline | `{"sipStatus":{"code":603}}` |
 
 Note: SDK region failover normally only engages for `*.livekit.cloud` hosts.
 Since tests point at `127.0.0.1`, set the SDK's failover-enable option to its
