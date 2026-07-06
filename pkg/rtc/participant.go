@@ -227,6 +227,7 @@ type ParticipantParams struct {
 	DisableTransceiverReuseForE2EE  bool
 	EnableParticipantDataBlob       bool
 	EnableStartAtDesiredQuality     bool
+	MigrationWaitDuration           time.Duration
 }
 
 type ParticipantImpl struct {
@@ -1426,19 +1427,23 @@ func (p *ParticipantImpl) IsReconnect() bool {
 }
 
 func (p *ParticipantImpl) maybeRecordRTCanceled(closeReason types.ParticipantCloseReason) {
-	if p.State() >= livekit.ParticipantInfo_ACTIVE {
+	if p.HasConnected() {
 		return
 	}
 
-	if closeReason == types.ParticipantCloseReasonClientRequestLeave ||
+	if p.IsConnectionCanceled(closeReason) {
+		prometheus.IncrementParticipantRtcCanceled(1)
+	}
+}
+
+func (p *ParticipantImpl) IsConnectionCanceled(closeReason types.ParticipantCloseReason) bool {
+	return closeReason == types.ParticipantCloseReasonClientRequestLeave ||
 		closeReason == types.ParticipantCloseReasonDuplicateIdentity ||
 		closeReason == types.ParticipantCloseReasonRoomClosed ||
 		closeReason == types.ParticipantCloseReasonMigrationRequested ||
 		closeReason == types.ParticipantCloseReasonMigrationComplete ||
 		// client closing signal connection too quickly, there is a time check to handle clients timing out and leaving without sending a leave message
-		(time.Since(p.params.SessionStartTime) < 3*time.Second && closeReason == types.ParticipantCloseReasonSignalSourceClose) {
-		prometheus.IncrementParticipantRtcCanceled(1)
-	}
+		(time.Since(p.params.SessionStartTime) < 3*time.Second && closeReason == types.ParticipantCloseReasonSignalSourceClose)
 }
 
 func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseReason, isExpectedToResume bool) error {
@@ -1572,7 +1577,7 @@ func (p *ParticipantImpl) setupMigrationTimerLocked() {
 	// to try and succeed. If not, close the subscriber peer connection
 	// and help the remote side to narrow down its ICE candidate pool.
 	//
-	p.migrationTimer = time.AfterFunc(migrationWaitDuration, func() {
+	p.migrationTimer = time.AfterFunc(max(p.params.MigrationWaitDuration, migrationWaitDuration), func() {
 		p.clearMigrationTimer()
 
 		if p.IsClosed() || p.IsDisconnected() {

@@ -60,6 +60,19 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 		return
 	}
 
+	if !p.params.LimitConfig.CheckDataTrackFrameEncoding(req.FrameEncoding) ||
+		!p.params.LimitConfig.CheckDataTrackSchemaID(req.Schema) {
+		p.pubLogger.Warnw("invalid encoding identifier", nil, "req", logger.Proto(req))
+		p.sendRequestResponse(&livekit.RequestResponse{
+			Reason:  livekit.RequestResponse_INVALID_REQUEST,
+			Message: "encoding identifier is empty or exceeds the maximum length",
+			Request: &livekit.RequestResponse_PublishDataTrack{
+				PublishDataTrack: utils.CloneProto(req),
+			},
+		})
+		return
+	}
+
 	publishedDataTracks := p.UpDataTrackManager.GetPublishedDataTracks()
 	for _, dt := range publishedDataTracks {
 		message := ""
@@ -95,6 +108,8 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 		Name:       req.Name,
 		Encryption: req.Encryption,
 	}
+	dti.FrameEncoding = utils.CloneProto(req.GetFrameEncoding())
+	dti.Schema = utils.CloneProto(req.GetSchema())
 	dt := NewDataTrack(
 		DataTrackParams{
 			Logger:              p.params.Logger.WithValues("trackID", dti.Sid),

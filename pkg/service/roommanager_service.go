@@ -12,6 +12,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -19,9 +20,8 @@ import (
 	"github.com/livekit/psrpc"
 )
 
-const (
-	whipSessionNotifyInterval = 10 * time.Second
-)
+// whipSessionNotifyInterval is a var (rather than a const) so tests can shorten it.
+var whipSessionNotifyInterval = 10 * time.Second
 
 type whipService struct {
 	*RoomManager
@@ -180,7 +180,7 @@ func (s whipService) notifySession(ctx context.Context, participant types.Partic
 		case <-ticker.C:
 			err := s.sendConnectionNotify(ctx, participant)
 			if err != nil {
-				if errors.Is(err, context.Canceled) {
+				if errors.Is(err, context.Canceled) || errors.Is(err, ErrParticipantNotFound) {
 					return nil
 				}
 			}
@@ -192,6 +192,10 @@ func (s whipService) notifySession(ctx context.Context, participant types.Partic
 }
 
 func (s whipService) sendConnectionNotify(ctx context.Context, participant types.Participant) error {
+	if participant.IsClosed() {
+		return ErrParticipantNotFound
+	}
+
 	video, audio := getMediaStateForParticipant(participant)
 
 	_, err := s.ingressRpcCli.WHIPRTCConnectionNotify(ctx, string(participant.ID()), &rpc.WHIPRTCConnectionNotifyRequest{
@@ -204,50 +208,71 @@ func (s whipService) sendConnectionNotify(ctx context.Context, participant types
 }
 
 func getMediaStateForParticipant(participant types.Participant) (*livekit.InputVideoState, *livekit.InputAudioState) {
-	pParticipant := participant.ToProto()
-
 	var video *livekit.InputVideoState
 	var audio *livekit.InputAudioState
 
-	for _, v := range pParticipant.Tracks {
-		if v == nil {
+	for _, t := range participant.GetPublishedTracks() {
+		if t == nil {
 			continue
 		}
 
-		if v.Type != livekit.TrackType_VIDEO {
+		ti := t.ToProto()
+		if ti == nil {
 			continue
 		}
 
-		video = &livekit.InputVideoState{}
+		switch t.Kind() {
+		case livekit.TrackType_VIDEO:
+			if video != nil {
+				continue
+			}
 
-		video.MimeType = v.MimeType
-		video.Height = v.Height
-		video.Width = v.Width
+			video = &livekit.InputVideoState{
+				MimeType:       ti.MimeType,
+				Width:          ti.Width,
+				Height:         ti.Height,
+				AverageBitrate: trackAverageBitrate(t),
+			}
 
-		break
-	}
+		case livekit.TrackType_AUDIO:
+			if audio != nil {
+				continue
+			}
 
-	for _, a := range pParticipant.Tracks {
-		if a == nil {
-			continue
+			channels := uint32(1)
+			if ti.Stereo {
+				channels = 2
+			}
+
+			audio = &livekit.InputAudioState{
+				MimeType:       ti.MimeType,
+				Channels:       channels,
+				AverageBitrate: trackAverageBitrate(t),
+			}
 		}
-
-		if a.Type != livekit.TrackType_AUDIO {
-			continue
-		}
-
-		audio = &livekit.InputAudioState{}
-
-		audio.MimeType = a.MimeType
-		audio.Channels = 1
-		if a.Stereo {
-			audio.Channels = 2
-		}
-
-		break
 	}
 
 	return video, audio
+}
+
+func trackAverageBitrate(t types.MediaTrack) uint32 {
+	var allStats []*livekit.RTPStats
+	for _, r := range t.Receivers() {
+		if r == nil {
+			continue
+		}
+
+		if s := r.GetTrackStats(); s != nil {
+			allStats = append(allStats, s)
+		}
+	}
+
+	agg := rtpstats.AggregateRTPStats(allStats)
+	if agg == nil {
+		return 0
+	}
+
+	return uint32(agg.Bitrate)
 }
 
 // -------------------------------------------
@@ -323,12 +348,12 @@ func (r whipParticipantService) DeleteSession(ctx context.Context, req *rpc.WHIP
 
 	lp := room.GetParticipantByID(livekit.ParticipantID(req.ParticipantId))
 	if lp != nil {
-		lp.AddOnClose(types.ParticipantCloseKeyWHIP, nil)
 		room.RemoveParticipant(
 			lp.Identity(),
 			lp.ID(),
 			types.ParticipantCloseReasonClientRequestLeave,
 		)
+		lp.AddOnClose(types.ParticipantCloseKeyWHIP, nil)
 	}
 
 	return &emptypb.Empty{}, nil
