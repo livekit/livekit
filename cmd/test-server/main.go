@@ -17,36 +17,23 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/twitchtv/twirp"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils/protojson"
 )
-
-// X-Lk-Mock-* request headers control the mock's behavior; see the README.
-const (
-	headerFailRegions   = "X-Lk-Mock-Fail-Regions"
-	headerFailMode      = "X-Lk-Mock-Fail-Mode"
-	headerFailStatus    = "X-Lk-Mock-Fail-Status"
-	headerFailTwirpCode = "X-Lk-Mock-Fail-Twirp-Code"
-	headerDelayMs       = "X-Lk-Mock-Delay-Ms"
-	headerRegionsStatus = "X-Lk-Mock-Regions-Status"
-	headerResponse      = "X-Lk-Mock-Response"
-	// headerSkipAuth disables permission enforcement for a request.
-	headerSkipAuth = "X-Lk-Mock-Skip-Auth"
-	// headerRegion is set on responses to the index of the region that served it.
-	headerRegion = "X-Lk-Mock-Region"
-)
-
-const defaultDelayMs = 30_000
 
 func main() {
 	portsFlag := flagValue("--ports", "LK_TEST_SERVER_PORTS", "9999,10000,10001,10002")
@@ -116,8 +103,9 @@ func (h *mockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *mockHandler) handleRegions(w http.ResponseWriter, r *http.Request) {
-	if status := parseStatus(r.Header.Get(headerRegionsStatus), 0); status != 0 && status != http.StatusOK {
-		w.WriteHeader(status)
+	cfg := parseMockConfig(r)
+	if cfg.RegionsStatus != 0 && cfg.RegionsStatus != http.StatusOK {
+		w.WriteHeader(cfg.RegionsStatus)
 		return
 	}
 	body, err := protojson.Marshal(h.regions)
@@ -135,21 +123,12 @@ func (h *mockHandler) handleTwirp(w http.ResponseWriter, r *http.Request) {
 	h.serveAPI(w, r)
 }
 
-func (h *mockHandler) shouldFail(r *http.Request) bool {
-	for _, part := range strings.Split(r.Header.Get(headerFailRegions), ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		if idx, err := strconv.Atoi(part); err == nil && idx == h.regionIndex {
-			return true
-		}
-	}
-	return false
+func (h *mockHandler) shouldFail(cfg *mockConfig) bool {
+	return slices.Contains(cfg.FailRegions, h.regionIndex)
 }
 
-func (h *mockHandler) fail(w http.ResponseWriter, r *http.Request) {
-	switch strings.ToLower(r.Header.Get(headerFailMode)) {
+func (h *mockHandler) fail(w http.ResponseWriter, cfg *mockConfig) {
+	switch strings.ToLower(cfg.FailMode) {
 	case "drop":
 		if hj, ok := w.(http.Hijacker); ok {
 			if conn, _, err := hj.Hijack(); err == nil {
@@ -158,20 +137,21 @@ func (h *mockHandler) fail(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		w.WriteHeader(http.StatusServiceUnavailable)
+		return
 	case "delay":
-		delay := defaultDelayMs
-		if ms, err := strconv.Atoi(r.Header.Get(headerDelayMs)); err == nil && ms >= 0 {
-			delay = ms
-		}
-		time.Sleep(time.Duration(delay) * time.Millisecond)
-		writeTwirpError(w, r, parseStatus(r.Header.Get(headerFailStatus), http.StatusServiceUnavailable))
-	default:
-		writeTwirpError(w, r, parseStatus(r.Header.Get(headerFailStatus), http.StatusServiceUnavailable))
+		// Deprecated legacy mode: sleep, then status-fail. New clients should set
+		// DelayMs (which delays every response) instead.
+		time.Sleep(time.Duration(cfg.legacyDelayMs) * time.Millisecond)
 	}
+	status := cfg.FailStatus
+	if status < 100 || status > 599 {
+		status = http.StatusServiceUnavailable
+	}
+	writeTwirpError(w, cfg, status)
 }
 
-func writeTwirpError(w http.ResponseWriter, r *http.Request, status int) {
-	code := r.Header.Get(headerFailTwirpCode)
+func writeTwirpError(w http.ResponseWriter, cfg *mockConfig, status int) {
+	code := cfg.FailTwirpCode
 	if code == "" {
 		code = twirpCodeForStatus(status)
 	}
@@ -184,6 +164,23 @@ func writeTwirpErrorCode(w http.ResponseWriter, status int, code, msg string) {
 	w.Header().Set(headerRegion, "")
 	w.WriteHeader(status)
 	_, _ = fmt.Fprintf(w, `{"code":%q,"msg":%q}`, code, msg)
+}
+
+// writeTwirpErr writes a full Twirp JSON error — code, message, and metadata —
+// using the HTTP status Twirp derives from the error code.
+func writeTwirpErr(w http.ResponseWriter, terr twirp.Error) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(headerRegion, "")
+	w.WriteHeader(twirp.ServerHTTPStatusFromErrorCode(terr.Code()))
+	_ = json.NewEncoder(w).Encode(struct {
+		Code string            `json:"code"`
+		Msg  string            `json:"msg"`
+		Meta map[string]string `json:"meta,omitempty"`
+	}{
+		Code: string(terr.Code()),
+		Msg:  terr.Msg(),
+		Meta: terr.MetaMap(),
+	})
 }
 
 func twirpCodeForStatus(status int) string {
@@ -203,16 +200,6 @@ func twirpCodeForStatus(status int) string {
 	default:
 		return "internal"
 	}
-}
-
-func parseStatus(s string, def int) int {
-	if s == "" {
-		return def
-	}
-	if v, err := strconv.Atoi(strings.TrimSpace(s)); err == nil && v >= 100 && v <= 599 {
-		return v
-	}
-	return def
 }
 
 func parsePorts(s string) ([]int, error) {

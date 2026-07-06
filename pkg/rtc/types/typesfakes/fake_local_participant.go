@@ -841,6 +841,17 @@ type FakeLocalParticipant struct {
 	isClosedReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	IsConnectionCanceledStub        func(types.ParticipantCloseReason) bool
+	isConnectionCanceledMutex       sync.RWMutex
+	isConnectionCanceledArgsForCall []struct {
+		arg1 types.ParticipantCloseReason
+	}
+	isConnectionCanceledReturns struct {
+		result1 bool
+	}
+	isConnectionCanceledReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	IsDependentStub        func() bool
 	isDependentMutex       sync.RWMutex
 	isDependentArgsForCall []struct {
@@ -5952,6 +5963,67 @@ func (fake *FakeLocalParticipant) IsClosedReturnsOnCall(i int, result1 bool) {
 		})
 	}
 	fake.isClosedReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsConnectionCanceled(arg1 types.ParticipantCloseReason) bool {
+	fake.isConnectionCanceledMutex.Lock()
+	ret, specificReturn := fake.isConnectionCanceledReturnsOnCall[len(fake.isConnectionCanceledArgsForCall)]
+	fake.isConnectionCanceledArgsForCall = append(fake.isConnectionCanceledArgsForCall, struct {
+		arg1 types.ParticipantCloseReason
+	}{arg1})
+	stub := fake.IsConnectionCanceledStub
+	fakeReturns := fake.isConnectionCanceledReturns
+	fake.recordInvocation("IsConnectionCanceled", []interface{}{arg1})
+	fake.isConnectionCanceledMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) IsConnectionCanceledCallCount() int {
+	fake.isConnectionCanceledMutex.RLock()
+	defer fake.isConnectionCanceledMutex.RUnlock()
+	return len(fake.isConnectionCanceledArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) IsConnectionCanceledCalls(stub func(types.ParticipantCloseReason) bool) {
+	fake.isConnectionCanceledMutex.Lock()
+	defer fake.isConnectionCanceledMutex.Unlock()
+	fake.IsConnectionCanceledStub = stub
+}
+
+func (fake *FakeLocalParticipant) IsConnectionCanceledArgsForCall(i int) types.ParticipantCloseReason {
+	fake.isConnectionCanceledMutex.RLock()
+	defer fake.isConnectionCanceledMutex.RUnlock()
+	argsForCall := fake.isConnectionCanceledArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalParticipant) IsConnectionCanceledReturns(result1 bool) {
+	fake.isConnectionCanceledMutex.Lock()
+	defer fake.isConnectionCanceledMutex.Unlock()
+	fake.IsConnectionCanceledStub = nil
+	fake.isConnectionCanceledReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsConnectionCanceledReturnsOnCall(i int, result1 bool) {
+	fake.isConnectionCanceledMutex.Lock()
+	defer fake.isConnectionCanceledMutex.Unlock()
+	fake.IsConnectionCanceledStub = nil
+	if fake.isConnectionCanceledReturnsOnCall == nil {
+		fake.isConnectionCanceledReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isConnectionCanceledReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }

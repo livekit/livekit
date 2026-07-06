@@ -1428,19 +1428,23 @@ func (p *ParticipantImpl) IsReconnect() bool {
 }
 
 func (p *ParticipantImpl) maybeRecordRTCanceled(closeReason types.ParticipantCloseReason) {
-	if p.State() >= livekit.ParticipantInfo_ACTIVE {
+	if p.HasConnected() {
 		return
 	}
 
-	if closeReason == types.ParticipantCloseReasonClientRequestLeave ||
+	if p.IsConnectionCanceled(closeReason) {
+		prometheus.IncrementParticipantRtcCanceled(1, p.params.EnableWarp)
+	}
+}
+
+func (p *ParticipantImpl) IsConnectionCanceled(closeReason types.ParticipantCloseReason) bool {
+	return closeReason == types.ParticipantCloseReasonClientRequestLeave ||
 		closeReason == types.ParticipantCloseReasonDuplicateIdentity ||
 		closeReason == types.ParticipantCloseReasonRoomClosed ||
 		closeReason == types.ParticipantCloseReasonMigrationRequested ||
 		closeReason == types.ParticipantCloseReasonMigrationComplete ||
 		// client closing signal connection too quickly, there is a time check to handle clients timing out and leaving without sending a leave message
-		(time.Since(p.params.SessionStartTime) < 3*time.Second && closeReason == types.ParticipantCloseReasonSignalSourceClose) {
-		prometheus.IncrementParticipantRtcCanceled(1, p.params.EnableWarp)
-	}
+		(time.Since(p.params.SessionStartTime) < 3*time.Second && closeReason == types.ParticipantCloseReasonSignalSourceClose)
 }
 
 func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseReason, isExpectedToResume bool) error {

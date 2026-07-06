@@ -31,8 +31,8 @@ import (
 // uses), against the mock's configured API secret (default "secret", matching
 // `livekit-server --dev`); set --api-secret / LK_TEST_SERVER_API_SECRET to change it.
 //
-// Set X-Lk-Mock-Skip-Auth: true to bypass enforcement for tests that aren't
-// about permissions (e.g. region-failover tests using a placeholder token).
+// Set `"skipAuth": true` in the X-Lk-Mock header to bypass enforcement for tests
+// that aren't about permissions (e.g. region-failover tests with a placeholder token).
 
 // perm describes the grants a method requires. roomAdmin additionally requires
 // the token's room to match the request's room; destRoom further requires the
@@ -119,8 +119,8 @@ var methodPerms = map[string]perm{
 
 // authorize enforces the permissions a method requires. It returns the HTTP
 // status and Twirp error code to send (0, "" means authorized / not enforced).
-func (h *mockHandler) authorize(key string, r *http.Request, req proto.Message) (int, string) {
-	if strings.EqualFold(r.Header.Get(headerSkipAuth), "true") {
+func (h *mockHandler) authorize(key string, r *http.Request, cfg *mockConfig, req proto.Message) (int, string) {
+	if cfg.SkipAuth {
 		return 0, ""
 	}
 	p, known := methodPerms[key]
@@ -209,4 +209,16 @@ func requestString(req proto.Message, field string) string {
 		return ""
 	}
 	return m.Get(fd).String()
+}
+
+func requestBool(req proto.Message, field string) bool {
+	if req == nil {
+		return false
+	}
+	m := req.ProtoReflect()
+	fd := m.Descriptor().Fields().ByName(protoreflect.Name(field))
+	if fd == nil || fd.Kind() != protoreflect.BoolKind || fd.IsList() {
+		return false
+	}
+	return m.Get(fd).Bool()
 }
