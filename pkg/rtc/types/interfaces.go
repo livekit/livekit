@@ -427,6 +427,7 @@ type LocalParticipant interface {
 	GetPublisherICESessionUfrag() (string, error)
 	SupportsMoving() error
 	GetLastReliableSequence(migrateOut bool) uint32
+	IsWarpEnabled() bool
 
 	SwapResponseSink(sink routing.MessageSink, reason SignallingCloseReason)
 	GetResponseSink() routing.MessageSink

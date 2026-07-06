@@ -328,6 +328,7 @@ type TransportParams struct {
 	DatachannelMaxReceiverBufferSize int
 
 	EnableDataTracks bool
+	EnableWarp       bool
 }
 
 func newPeerConnection(
@@ -378,6 +379,11 @@ func newPeerConnection(
 
 	if params.ClientInfo.SupportsSctpZeroChecksum() {
 		se.EnableSCTPZeroChecksum(true)
+	}
+
+	if params.EnableWarp {
+		se.EnableSped(true)
+		se.EnableSctpSnap(true)
 	}
 
 	//

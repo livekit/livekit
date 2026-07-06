@@ -83,7 +83,7 @@ type FakeTelemetryService struct {
 		arg2 string
 		arg3 *livekit.EgressInfo
 	}
-	ParticipantActiveStub        func(context.Context, *livekit.Room, *livekit.ParticipantInfo, *livekit.AnalyticsClientMeta, bool, *telemetry.ReferenceGuard)
+	ParticipantActiveStub        func(context.Context, *livekit.Room, *livekit.ParticipantInfo, *livekit.AnalyticsClientMeta, bool, bool, *telemetry.ReferenceGuard)
 	participantActiveMutex       sync.RWMutex
 	participantActiveArgsForCall []struct {
 		arg1 context.Context
@@ -91,7 +91,8 @@ type FakeTelemetryService struct {
 		arg3 *livekit.ParticipantInfo
 		arg4 *livekit.AnalyticsClientMeta
 		arg5 bool
-		arg6 *telemetry.ReferenceGuard
+		arg6 bool
+		arg7 *telemetry.ReferenceGuard
 	}
 	ParticipantJoinedStub        func(context.Context, *livekit.Room, *livekit.ParticipantInfo, *livekit.ClientInfo, *livekit.AnalyticsClientMeta, bool, *telemetry.ReferenceGuard)
 	participantJoinedMutex       sync.RWMutex
@@ -709,7 +710,7 @@ func (fake *FakeTelemetryService) NotifyEgressEventArgsForCall(i int) (context.C
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
-func (fake *FakeTelemetryService) ParticipantActive(arg1 context.Context, arg2 *livekit.Room, arg3 *livekit.ParticipantInfo, arg4 *livekit.AnalyticsClientMeta, arg5 bool, arg6 *telemetry.ReferenceGuard) {
+func (fake *FakeTelemetryService) ParticipantActive(arg1 context.Context, arg2 *livekit.Room, arg3 *livekit.ParticipantInfo, arg4 *livekit.AnalyticsClientMeta, arg5 bool, arg6 bool, arg7 *telemetry.ReferenceGuard) {
 	fake.participantActiveMutex.Lock()
 	fake.participantActiveArgsForCall = append(fake.participantActiveArgsForCall, struct {
 		arg1 context.Context
@@ -717,13 +718,14 @@ func (fake *FakeTelemetryService) ParticipantActive(arg1 context.Context, arg2 *
 		arg3 *livekit.ParticipantInfo
 		arg4 *livekit.AnalyticsClientMeta
 		arg5 bool
-		arg6 *telemetry.ReferenceGuard
-	}{arg1, arg2, arg3, arg4, arg5, arg6})
+		arg6 bool
+		arg7 *telemetry.ReferenceGuard
+	}{arg1, arg2, arg3, arg4, arg5, arg6, arg7})
 	stub := fake.ParticipantActiveStub
-	fake.recordInvocation("ParticipantActive", []interface{}{arg1, arg2, arg3, arg4, arg5, arg6})
+	fake.recordInvocation("ParticipantActive", []interface{}{arg1, arg2, arg3, arg4, arg5, arg6, arg7})
 	fake.participantActiveMutex.Unlock()
 	if stub != nil {
-		fake.ParticipantActiveStub(arg1, arg2, arg3, arg4, arg5, arg6)
+		fake.ParticipantActiveStub(arg1, arg2, arg3, arg4, arg5, arg6, arg7)
 	}
 }
 
@@ -733,17 +735,17 @@ func (fake *FakeTelemetryService) ParticipantActiveCallCount() int {
 	return len(fake.participantActiveArgsForCall)
 }
 
-func (fake *FakeTelemetryService) ParticipantActiveCalls(stub func(context.Context, *livekit.Room, *livekit.ParticipantInfo, *livekit.AnalyticsClientMeta, bool, *telemetry.ReferenceGuard)) {
+func (fake *FakeTelemetryService) ParticipantActiveCalls(stub func(context.Context, *livekit.Room, *livekit.ParticipantInfo, *livekit.AnalyticsClientMeta, bool, bool, *telemetry.ReferenceGuard)) {
 	fake.participantActiveMutex.Lock()
 	defer fake.participantActiveMutex.Unlock()
 	fake.ParticipantActiveStub = stub
 }
 
-func (fake *FakeTelemetryService) ParticipantActiveArgsForCall(i int) (context.Context, *livekit.Room, *livekit.ParticipantInfo, *livekit.AnalyticsClientMeta, bool, *telemetry.ReferenceGuard) {
+func (fake *FakeTelemetryService) ParticipantActiveArgsForCall(i int) (context.Context, *livekit.Room, *livekit.ParticipantInfo, *livekit.AnalyticsClientMeta, bool, bool, *telemetry.ReferenceGuard) {
 	fake.participantActiveMutex.RLock()
 	defer fake.participantActiveMutex.RUnlock()
 	argsForCall := fake.participantActiveArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5, argsForCall.arg6
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5, argsForCall.arg6, argsForCall.arg7
 }
 
 func (fake *FakeTelemetryService) ParticipantJoined(arg1 context.Context, arg2 *livekit.Room, arg3 *livekit.ParticipantInfo, arg4 *livekit.ClientInfo, arg5 *livekit.AnalyticsClientMeta, arg6 bool, arg7 *telemetry.ReferenceGuard) {

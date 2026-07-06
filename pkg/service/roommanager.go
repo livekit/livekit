@@ -306,7 +306,7 @@ func (r *RoomManager) StartSession(
 	room, err := r.getOrCreateRoom(ctx, createRoom)
 	if err != nil {
 		if pi.Identity != "" {
-			prometheus.IncrementParticipantRtcCanceled(1)
+			prometheus.IncrementParticipantRtcCanceled(1, false)
 		}
 		return err
 	}
@@ -359,7 +359,7 @@ func (r *RoomManager) StartSession(
 						Leave: leave,
 					},
 				})
-				prometheus.IncrementParticipantRtcCanceled(1)
+				prometheus.IncrementParticipantRtcCanceled(1, participant.IsWarpEnabled())
 				return errors.New("could not restart closed participant")
 			}
 
@@ -383,11 +383,11 @@ func (r *RoomManager) StartSession(
 				pi.ReconnectReason,
 			); err != nil {
 				participant.GetLogger().Warnw("could not resume participant", err)
-				prometheus.IncrementParticipantRtcCanceled(1)
+				prometheus.IncrementParticipantRtcCanceled(1, participant.IsWarpEnabled())
 				return err
 			}
 			r.telemetry.ParticipantResumed(ctx, room.ToProto(), participant.ToProto(), r.currentNode.NodeID(), pi.ReconnectReason)
-			prometheus.IncrementParticipantRtcActive(1)
+			prometheus.IncrementParticipantRtcActive(1, participant.IsWarpEnabled())
 
 			go room.HandleSyncState(participant, pi.SyncState)
 
@@ -419,7 +419,7 @@ func (r *RoomManager) StartSession(
 				Leave: leave,
 			},
 		})
-		prometheus.IncrementParticipantRtcCanceled(1)
+		prometheus.IncrementParticipantRtcCanceled(1, false)
 		return errors.New("could not restart participant")
 	}
 
@@ -484,6 +484,7 @@ func (r *RoomManager) StartSession(
 		enabledCodecs = append(enabledCodecs, &livekit.Codec{Mime: mime.MimeTypeRTX.String()})
 	}
 
+	enableWarp := !useOneShotSignallingMode && r.config.RTC.EnableWarp
 	participant, err = rtc.NewParticipant(rtc.ParticipantParams{
 		Identity:                 pi.Identity,
 		Name:                     pi.Name,
@@ -540,9 +541,10 @@ func (r *RoomManager) StartSession(
 		EnableDataTracks:                r.config.EnableDataTracks,
 		EnableParticipantDataBlob:       r.config.EnableParticipantDataBlob,
 		EnableRTPStreamRestartDetection: r.config.RTC.EnableRTPStreamRestartDetection,
+		EnableWarp:                      enableWarp,
 	})
 	if err != nil {
-		prometheus.IncrementParticipantRtcCanceled(1)
+		prometheus.IncrementParticipantRtcCanceled(1, enableWarp)
 		return err
 	}
 	iceConfig := r.setIceConfig(room.Name(), participant)
@@ -558,7 +560,7 @@ func (r *RoomManager) StartSession(
 	if err = room.Join(participant, requestSource, &opts, iceServers); err != nil {
 		pLogger.Errorw("could not join room", err)
 		_ = participant.Close(true, types.ParticipantCloseReasonJoinFailed, false)
-		prometheus.IncrementParticipantRtcCanceled(1)
+		prometheus.IncrementParticipantRtcCanceled(1, enableWarp)
 		return err
 	}
 
@@ -570,7 +572,7 @@ func (r *RoomManager) StartSession(
 		participantServerClosers.Close()
 		pLogger.Errorw("could not join register participant topic", err)
 		_ = participant.Close(true, types.ParticipantCloseReasonMessageBusFailed, false)
-		prometheus.IncrementParticipantRtcCanceled(1)
+		prometheus.IncrementParticipantRtcCanceled(1, enableWarp)
 		return err
 	}
 
@@ -581,7 +583,7 @@ func (r *RoomManager) StartSession(
 			participantServerClosers.Close()
 			pLogger.Errorw("could not join register participant topic for rtc rest participant server", err)
 			_ = participant.Close(true, types.ParticipantCloseReasonMessageBusFailed, false)
-			prometheus.IncrementParticipantRtcCanceled(1)
+			prometheus.IncrementParticipantRtcCanceled(1, enableWarp)
 			return err
 		}
 	}

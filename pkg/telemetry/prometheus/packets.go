@@ -15,6 +15,8 @@
 package prometheus
 
 import (
+	"strconv"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
@@ -149,7 +151,7 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Subsystem:   "participant_join",
 		Name:        "total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
-	}, []string{"state"})
+	}, []string{"state", "warp"})
 	promConnections = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "connection",
@@ -297,31 +299,31 @@ func RecordRTT(country string, direction Direction, trackSource livekit.TrackSou
 func IncrementParticipantJoin(join uint32) {
 	if join > 0 {
 		participantSignalConnected.Add(uint64(join))
-		promParticipantJoin.WithLabelValues("signal_connected").Add(float64(join))
+		promParticipantJoin.WithLabelValues("signal_connected", "").Add(float64(join))
 	}
 }
 
 func IncrementParticipantJoinFail(fail uint32) {
 	if fail > 0 {
-		promParticipantJoin.WithLabelValues("signal_failed").Add(float64(fail))
+		promParticipantJoin.WithLabelValues("signal_failed", "").Add(float64(fail))
 	}
 }
 
 func IncrementParticipantJoinValidationFail(validationFail uint32) {
 	if validationFail > 0 {
-		promParticipantJoin.WithLabelValues("signal_validation_failed").Add(float64(validationFail))
+		promParticipantJoin.WithLabelValues("signal_validation_failed", "").Add(float64(validationFail))
 	}
 }
 
 func IncrementParticipantJoinUpgradeFail(upgradeFail uint32) {
 	if upgradeFail > 0 {
-		promParticipantJoin.WithLabelValues("signal_upgrade_failed").Add(float64(upgradeFail))
+		promParticipantJoin.WithLabelValues("signal_upgrade_failed", "").Add(float64(upgradeFail))
 	}
 }
 
 func IncrementParticipantJoinWriteInitialResponseFail(writeInitialResponseFail uint32) {
 	if writeInitialResponseFail > 0 {
-		promParticipantJoin.WithLabelValues("signal_write_initial_response_failed").Add(float64(writeInitialResponseFail))
+		promParticipantJoin.WithLabelValues("signal_write_initial_response_failed", "").Add(float64(writeInitialResponseFail))
 	}
 }
 
@@ -335,21 +337,21 @@ func IncrementParticipantRtcInit(init uint32) {
 func IncrementParticipantRtcConnected(connected uint32) {
 	if connected > 0 {
 		participantRTCConnected.Add(uint64(connected))
-		promParticipantJoin.WithLabelValues("rtc_connected").Add(float64(connected))
+		promParticipantJoin.WithLabelValues("rtc_connected", "").Add(float64(connected))
 	}
 }
 
-func IncrementParticipantRtcActive(active uint32) {
+func IncrementParticipantRtcActive(active uint32, warp bool) {
 	if active > 0 {
 		participantRTCActive.Add(uint64(active))
-		promParticipantJoin.WithLabelValues("rtc_active").Add(float64(active))
+		promParticipantJoin.WithLabelValues("rtc_active", strconv.FormatBool(warp)).Add(float64(active))
 	}
 }
 
-func IncrementParticipantRtcCanceled(canceled uint64) {
+func IncrementParticipantRtcCanceled(canceled uint64, warp bool) {
 	if canceled > 0 {
 		participantRTCCanceled.Add(canceled)
-		promParticipantJoin.WithLabelValues("rtc_canceled").Add(float64(canceled))
+		promParticipantJoin.WithLabelValues("rtc_canceled", strconv.FormatBool(warp)).Add(float64(canceled))
 	}
 }
 
