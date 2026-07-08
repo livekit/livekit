@@ -330,7 +330,7 @@ func IncrementParticipantJoinWriteInitialResponseFail(writeInitialResponseFail u
 func IncrementParticipantRtcInit(init uint32) {
 	if init > 0 {
 		participantRTCInit.Add(uint64(init))
-		promParticipantJoin.WithLabelValues("rtc_init").Add(float64(init))
+		promParticipantJoin.WithLabelValues("rtc_init", "").Add(float64(init))
 	}
 }
 
