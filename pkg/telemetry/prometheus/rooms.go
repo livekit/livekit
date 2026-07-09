@@ -113,7 +113,7 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "start_time_ms",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		Buckets:     prometheus.ExponentialBucketsRange(100, 10000, 15),
-	}, []string{"protocol_version"})
+	}, []string{"protocol_version", "warp"})
 	promSessionDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "session",
@@ -284,8 +284,8 @@ func RecordSessionJoinLatency(protocolVersion int, d time.Duration) {
 	promSessionJoinLatency.WithLabelValues(strconv.Itoa(protocolVersion)).Observe(float64(d.Milliseconds()))
 }
 
-func RecordSessionStartTime(protocolVersion int, d time.Duration) {
-	promSessionStartTime.WithLabelValues(strconv.Itoa(protocolVersion)).Observe(float64(d.Milliseconds()))
+func RecordSessionStartTime(protocolVersion int, warp bool, d time.Duration) {
+	promSessionStartTime.WithLabelValues(strconv.Itoa(protocolVersion), strconv.FormatBool(warp)).Observe(float64(d.Milliseconds()))
 }
 
 func RecordSessionDuration(protocolVersion int, d time.Duration) {
