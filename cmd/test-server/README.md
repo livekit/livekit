@@ -87,10 +87,10 @@ Response headers:
 
 The mock also speaks enough of the LiveKit signal protocol for SDKs to run
 end-to-end signal-connection tests (connect, keepalive, reconnect, leave, and
-the failure/timeout modes a client must classify). Unlike the Twirp API, signal
-behavior is **not** selected by the `X-Lk-Mock` header — the WebSocket client
-can't set request headers. Instead it is selected by a participant attribute
-(`lk.mock`) in the access token (see below), so parallel tests need no shared
+the failure/timeout modes a client must classify). Signal behavior is selected
+by a participant attribute (`lk.mock`) in the access token (see below) — the
+WebSocket client can't set request headers, so it can't carry a control header.
+Selecting via the token means parallel tests need no shared
 state.
 
 Endpoints (both protocol versions are supported and behave identically):
@@ -123,13 +123,14 @@ attribute value: {"signal":"no_pong"}
 ```
 
 The control object also accepts an optional `leaveAction` field — a
-`LeaveRequest_Action` enum value (`0`=DISCONNECT, `1`=RESUME, `2`=RECONNECT) —
-that sets the `action` on the `LeaveRequest` the leave-sending modes emit
+`LeaveRequest_Action`, given either as the number (`0`=DISCONNECT, `1`=RESUME,
+`2`=RECONNECT) or the enum name (`"RECONNECT"`, case-insensitive) — that sets
+the `action` on the `LeaveRequest` the leave-sending modes emit
 (`leave_when_connected`, `leave_first_message`, `leave_during_reconnect`). When
-absent it defaults to `0` (DISCONNECT). Example:
+absent it defaults to `0` (DISCONNECT). Examples:
 
 ```
-attribute value: {"signal":"leave_when_connected","leaveAction":2}
+attribute value: {"signal":"leave_when_connected","leaveAction":"RECONNECT"}
 ```
 
 If the `lk.mock` attribute is absent/empty, its value is unparseable, or its

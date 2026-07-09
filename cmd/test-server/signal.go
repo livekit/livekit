@@ -69,11 +69,31 @@ const (
 const signalControlAttribute = "lk.mock"
 
 // signalControl is the JSON value of the `lk.mock` attribute:
-// {"signal":"<mode>","leaveAction":<int>}. leaveAction is optional
-// (LeaveRequest_Action; 0=DISCONNECT) and sets the action on emitted leaves.
+// {"signal":"<mode>","leaveAction":<int|name>}. leaveAction is optional
+// (a LeaveRequest_Action, given as the number or the enum name e.g.
+// "RECONNECT"; absent/0 = DISCONNECT) and sets the action on emitted leaves.
 type signalControl struct {
-	Signal      string `json:"signal"`
-	LeaveAction int32  `json:"leaveAction"`
+	Signal      string           `json:"signal"`
+	LeaveAction leaveActionValue `json:"leaveAction"`
+}
+
+// leaveActionValue is a LeaveRequest_Action that unmarshals from either a JSON
+// number (2) or an enum name ("RECONNECT", case-insensitive). Anything
+// unrecognized decodes to 0 (DISCONNECT) rather than failing the whole control.
+type leaveActionValue livekit.LeaveRequest_Action
+
+func (v *leaveActionValue) UnmarshalJSON(b []byte) error {
+	var n int32
+	if json.Unmarshal(b, &n) == nil {
+		*v = leaveActionValue(n)
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	*v = leaveActionValue(livekit.LeaveRequest_Action_value[strings.ToUpper(s)])
+	return nil
 }
 
 // parseSignalControl parses the `lk.mock` attribute value; absent/invalid → zero.
@@ -115,7 +135,7 @@ func isValidatePath(path string) bool {
 
 var signalUpgrader = websocket.Upgrader{
 	EnableCompression: true,
-	// Auth is via the access token, so allow any origin (like the real server).
+	// Auth is via the access token, so allow any origin.
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 

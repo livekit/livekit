@@ -66,6 +66,21 @@ func mintTokenControl(t *testing.T, ctrl *signalControl) string {
 	return tok
 }
 
+// mintTokenAttr signs a token whose `lk.mock` attribute is the given raw value.
+func mintTokenAttr(t *testing.T, attrValue string) string {
+	t.Helper()
+	at := auth.NewAccessToken("APItest", testSecret).
+		SetIdentity("tester").
+		SetValidFor(time.Hour).
+		SetVideoGrant(&auth.VideoGrant{Room: "test-room", RoomJoin: true}).
+		SetAttributes(map[string]string{signalControlAttribute: attrValue})
+	tok, err := at.ToJWT()
+	if err != nil {
+		t.Fatalf("mint token: %v", err)
+	}
+	return tok
+}
+
 func wsURL(base, path, token string) string {
 	u := strings.Replace(base, "http://", "ws://", 1)
 	sep := "?"
@@ -240,8 +255,27 @@ func TestLeaveActionOverride(t *testing.T) {
 	defer srv.Close()
 	tok := mintTokenControl(t, &signalControl{
 		Signal:      "leave_when_connected",
-		LeaveAction: int32(livekit.LeaveRequest_RECONNECT),
+		LeaveAction: leaveActionValue(livekit.LeaveRequest_RECONNECT),
 	})
+	c := dial(t, srv.URL, "/rtc", tok)
+	defer c.Close()
+	if readResp(t, c, 2*time.Second).GetJoin() == nil {
+		t.Fatal("expected join")
+	}
+	leave := readResp(t, c, 2*time.Second).GetLeave()
+	if leave == nil {
+		t.Fatal("expected leave after join")
+	}
+	if leave.Action != livekit.LeaveRequest_RECONNECT {
+		t.Fatalf("leave action = %v, want RECONNECT", leave.Action)
+	}
+}
+
+func TestLeaveActionByName(t *testing.T) {
+	srv := newTestServer()
+	defer srv.Close()
+	// leaveAction may be the enum name instead of the number.
+	tok := mintTokenAttr(t, `{"signal":"leave_when_connected","leaveAction":"RECONNECT"}`)
 	c := dial(t, srv.URL, "/rtc", tok)
 	defer c.Close()
 	if readResp(t, c, 2*time.Second).GetJoin() == nil {
