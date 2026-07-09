@@ -40,6 +40,8 @@ type DataTrackParams struct {
 	ParticipantID       func() livekit.ParticipantID
 	ParticipantIdentity livekit.ParticipantIdentity
 	BytesTrackStats     *BytesTrackStats
+	// invoked when the number of subscribers changes on a dynacasted track
+	OnSubscriberCountChanged func(subscriberCount uint32)
 }
 
 type subscribedDataTrack struct {
@@ -115,9 +117,9 @@ func (d *DataTrack) Name() string {
 
 func (d *DataTrack) AddSubscriber(sub types.LocalParticipant) (types.DataDownTrack, error) {
 	d.lock.Lock()
-	defer d.lock.Unlock()
 
 	if _, ok := d.subscribedTracks[sub.ID()]; ok {
+		d.lock.Unlock()
 		return nil, errAlreadySubscribed
 	}
 
@@ -139,6 +141,7 @@ func (d *DataTrack) AddSubscriber(sub types.LocalParticipant) (types.DataDownTra
 		BytesTrackStats:  bytesStats,
 	})
 	if err != nil {
+		d.lock.Unlock()
 		bytesStats.Stop()
 		return nil, err
 	}
@@ -147,6 +150,10 @@ func (d *DataTrack) AddSubscriber(sub types.LocalParticipant) (types.DataDownTra
 		subscriber:    sub,
 		dataDownTrack: dataDownTrack,
 	}
+	subscriberCount := len(d.subscribedTracks)
+	d.lock.Unlock()
+
+	d.notifySubscriberCountChanged(subscriberCount)
 	return dataDownTrack, nil
 }
 
@@ -154,11 +161,20 @@ func (d *DataTrack) RemoveSubscriber(subID livekit.ParticipantID) {
 	d.lock.Lock()
 	subscribedTrack, ok := d.subscribedTracks[subID]
 	delete(d.subscribedTracks, subID)
+	subscriberCount := len(d.subscribedTracks)
 	d.lock.Unlock()
 
 	if ok {
 		subscribedTrack.dataDownTrack.Close()
+		d.notifySubscriberCountChanged(subscriberCount)
 	}
+}
+
+func (d *DataTrack) notifySubscriberCountChanged(subscriberCount int) {
+	if !d.dti.IsDynacasted || d.params.OnSubscriberCountChanged == nil {
+		return
+	}
+	d.params.OnSubscriberCountChanged(uint32(subscriberCount))
 }
 
 func (d *DataTrack) IsSubscriber(subID livekit.ParticipantID) bool {

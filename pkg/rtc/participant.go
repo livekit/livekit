@@ -1403,6 +1403,9 @@ func (p *ParticipantImpl) SetMigrateInfo(
 					p.params.TelemetryListener,
 					p.params.Reporter,
 				),
+				OnSubscriberCountChanged: func(subscriberCount uint32) {
+					p.sendDataTrackDemandUpdate(dti.PubHandle, subscriberCount)
+				},
 			},
 			dti,
 		)
