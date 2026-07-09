@@ -110,6 +110,8 @@ type RTCClient struct {
 	pendingPublishedDataTracks map[uint16]*livekit.DataTrackInfo
 	pendingDataTrackWriters    []TrackWriter
 	subscribedDataTracks       map[livekit.ParticipantID]map[uint16]*DataTrackRemote
+	// last received subscriber count per published data track handle
+	dataTrackDemands map[uint16]uint32
 }
 
 var (
@@ -240,6 +242,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		bytesReceived:              make(map[livekit.ParticipantID]uint64),
 		pendingPublishedDataTracks: make(map[uint16]*livekit.DataTrackInfo),
 		subscribedDataTracks:       make(map[livekit.ParticipantID]map[uint16]*DataTrackRemote),
+		dataTrackDemands:           make(map[uint16]uint32),
 		transportReady:             make(chan struct{}),
 	}
 	c.nextDataTrackHandle.Store(uint32(rand.IntN(8192)))
@@ -687,6 +690,17 @@ func (c *RTCClient) handleSignalResponse(res *livekit.SignalResponse) error {
 			}
 		}
 		c.lock.Unlock()
+
+	case *livekit.SignalResponse_DataTrackDemandUpdate:
+		logger.Infow(
+			"received data track demand update",
+			"participant", c.localParticipant.Identity,
+			"trackHandle", msg.DataTrackDemandUpdate.PubHandle,
+			"subscriberCount", msg.DataTrackDemandUpdate.SubscriberCount,
+		)
+		c.lock.Lock()
+		c.dataTrackDemands[uint16(msg.DataTrackDemandUpdate.PubHandle)] = msg.DataTrackDemandUpdate.SubscriberCount
+		c.lock.Unlock()
 	}
 	return nil
 }
@@ -765,6 +779,12 @@ func (c *RTCClient) SubscribedDataTracks() map[livekit.ParticipantID]map[uint16]
 		maps.Copy(tracks[publisherID], sts)
 	}
 	return tracks
+}
+
+func (c *RTCClient) DataTrackDemands() map[uint16]uint32 {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	return maps.Clone(c.dataTrackDemands)
 }
 
 func (c *RTCClient) RemoteParticipants() []*livekit.ParticipantInfo {
@@ -1037,18 +1057,30 @@ func (c *RTCClient) PublishDataUnlabeled(data []byte) error {
 	return c.publisher.SendDataMessageUnlabeled(data, true, "test")
 }
 
-func (c *RTCClient) PublishDataTrack() (writer TrackWriter, err error) {
+type PublishDataTrackOption func(*livekit.PublishDataTrackRequest)
+
+func PublishDataTrackDynacast() PublishDataTrackOption {
+	return func(req *livekit.PublishDataTrackRequest) {
+		req.IsDynacasted = true
+	}
+}
+
+func (c *RTCClient) PublishDataTrack(opts ...PublishDataTrackOption) (writer TrackWriter, err error) {
 	if err = c.ensurePublisherConnected(); err != nil {
 		return
 	}
 
 	dataTrackHandle := uint16(c.nextDataTrackHandle.Inc())
+	req := &livekit.PublishDataTrackRequest{
+		PubHandle: uint32(dataTrackHandle),
+		Name:      fmt.Sprintf("data_track_%d", dataTrackHandle),
+	}
+	for _, opt := range opts {
+		opt(req)
+	}
 	if err = c.SendRequest(&livekit.SignalRequest{
 		Message: &livekit.SignalRequest_PublishDataTrackRequest{
-			PublishDataTrackRequest: &livekit.PublishDataTrackRequest{
-				PubHandle: uint32(dataTrackHandle),
-				Name:      fmt.Sprintf("data_track_%d", dataTrackHandle),
-			},
+			PublishDataTrackRequest: req,
 		},
 	}); err != nil {
 		return
