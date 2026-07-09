@@ -1426,6 +1426,10 @@ func (p *ParticipantImpl) IsReconnect() bool {
 	return p.params.Reconnect
 }
 
+func (p *ParticipantImpl) IsMigration() bool {
+	return p.params.Migration
+}
+
 func (p *ParticipantImpl) maybeRecordRTCanceled(closeReason types.ParticipantCloseReason) {
 	if p.HasConnected() {
 		return

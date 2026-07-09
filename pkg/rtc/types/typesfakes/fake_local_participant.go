@@ -882,6 +882,16 @@ type FakeLocalParticipant struct {
 	isIdleReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	IsMigrationStub        func() bool
+	isMigrationMutex       sync.RWMutex
+	isMigrationArgsForCall []struct {
+	}
+	isMigrationReturns struct {
+		result1 bool
+	}
+	isMigrationReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	IsPublisherStub        func() bool
 	isPublisherMutex       sync.RWMutex
 	isPublisherArgsForCall []struct {
@@ -6173,6 +6183,59 @@ func (fake *FakeLocalParticipant) IsIdleReturnsOnCall(i int, result1 bool) {
 		})
 	}
 	fake.isIdleReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsMigration() bool {
+	fake.isMigrationMutex.Lock()
+	ret, specificReturn := fake.isMigrationReturnsOnCall[len(fake.isMigrationArgsForCall)]
+	fake.isMigrationArgsForCall = append(fake.isMigrationArgsForCall, struct {
+	}{})
+	stub := fake.IsMigrationStub
+	fakeReturns := fake.isMigrationReturns
+	fake.recordInvocation("IsMigration", []interface{}{})
+	fake.isMigrationMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) IsMigrationCallCount() int {
+	fake.isMigrationMutex.RLock()
+	defer fake.isMigrationMutex.RUnlock()
+	return len(fake.isMigrationArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) IsMigrationCalls(stub func() bool) {
+	fake.isMigrationMutex.Lock()
+	defer fake.isMigrationMutex.Unlock()
+	fake.IsMigrationStub = stub
+}
+
+func (fake *FakeLocalParticipant) IsMigrationReturns(result1 bool) {
+	fake.isMigrationMutex.Lock()
+	defer fake.isMigrationMutex.Unlock()
+	fake.IsMigrationStub = nil
+	fake.isMigrationReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsMigrationReturnsOnCall(i int, result1 bool) {
+	fake.isMigrationMutex.Lock()
+	defer fake.isMigrationMutex.Unlock()
+	fake.IsMigrationStub = nil
+	if fake.isMigrationReturnsOnCall == nil {
+		fake.isMigrationReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isMigrationReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }
