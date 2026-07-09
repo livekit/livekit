@@ -92,6 +92,10 @@ func (h *mockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/settings/regions":
 		h.handleRegions(w, r)
+	case isValidatePath(r.URL.Path):
+		h.handleValidate(w, r)
+	case isSignalPath(r.URL.Path):
+		h.handleSignal(w, r)
 	case strings.HasPrefix(r.URL.Path, h.twirpPrefix+"/"):
 		h.handleTwirp(w, r)
 	case r.URL.Path == "/" || r.URL.Path == "/_test/health":
