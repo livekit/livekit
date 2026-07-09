@@ -93,6 +93,27 @@ func WithForwardStats(forwardStats *ForwardStats) ReceiverOpts {
 	}
 }
 
+// maxVideoFrameCacheDuration caps the video frame cache window: a longer cached interval would size
+// the retransmit bucket too aggressively and delay subscriber bootstrap, so requests above it are
+// clamped down.
+const maxVideoFrameCacheDuration = 2 * time.Second
+
+func WithVideoFrameCache(maxDuration time.Duration) ReceiverOpts {
+	return func(w *WebRTCReceiver) *WebRTCReceiver {
+		if maxDuration > maxVideoFrameCacheDuration {
+			w.ReceiverBase.Logger().Infow(
+				"clamping video frame cache duration",
+				"requested", maxDuration,
+				"max", maxVideoFrameCacheDuration,
+			)
+			maxDuration = maxVideoFrameCacheDuration
+		}
+
+		w.ReceiverBase.SetVideoFrameCacheDuration(maxDuration)
+		return w
+	}
+}
+
 // NewWebRTCReceiver creates a new webrtc track receiver
 func NewWebRTCReceiver(
 	receiver *webrtc.RTPReceiver,

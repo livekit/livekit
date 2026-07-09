@@ -99,6 +99,7 @@ type MediaTrackParams struct {
 	EnableRTPStreamRestartDetection  bool
 	UpdateTrackInfoByVideoSizeChange bool
 	ForceBackupCodecPolicySimulcast  bool
+	VideoFrameCachingDuration        time.Duration
 }
 
 func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
@@ -407,6 +408,17 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			return newCodec, false
 		}
 
+		receiverOpts := []sfu.ReceiverOpts{
+			sfu.WithPliThrottleConfig(t.params.PLIThrottleConfig),
+			sfu.WithAudioConfig(t.params.AudioConfig),
+			sfu.WithLoadBalanceThreshold(20),
+			sfu.WithForwardStats(t.params.ForwardStats),
+			sfu.WithEnableRTPStreamRestartDetection(t.params.EnableRTPStreamRestartDetection),
+		}
+		if t.params.VideoFrameCachingDuration > 0 {
+			receiverOpts = append(receiverOpts, sfu.WithVideoFrameCache(t.params.VideoFrameCachingDuration))
+		}
+
 		newWR := sfu.NewWebRTCReceiver(
 			receiver,
 			track,
@@ -414,11 +426,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			LoggerWithCodecMime(t.params.Logger, mimeType),
 			t.params.OnRTCP,
 			t.params.VideoConfig.StreamTrackerManager,
-			sfu.WithPliThrottleConfig(t.params.PLIThrottleConfig),
-			sfu.WithAudioConfig(t.params.AudioConfig),
-			sfu.WithLoadBalanceThreshold(20),
-			sfu.WithForwardStats(t.params.ForwardStats),
-			sfu.WithEnableRTPStreamRestartDetection(t.params.EnableRTPStreamRestartDetection),
+			receiverOpts...,
 		)
 		newWR.OnCloseHandler(func() {
 			t.MediaTrackReceiver.SetClosing(false)
