@@ -353,6 +353,18 @@ func IncrementParticipantRtcCanceled(canceled uint64) {
 	}
 }
 
+func IncrementParticipantRtcSuccess(success uint64) {
+	if success > 0 {
+		promParticipantJoin.WithLabelValues("rtc_success").Add(float64(success))
+	}
+}
+
+func IncrementParticipantRtcFailure(failure uint64) {
+	if failure > 0 {
+		promParticipantJoin.WithLabelValues("rtc_failure").Add(float64(failure))
+	}
+}
+
 func AddConnection(direction Direction) {
 	promConnections.WithLabelValues(string(direction)).Add(1)
 }
