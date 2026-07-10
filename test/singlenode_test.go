@@ -1278,7 +1278,8 @@ func TestSinglePublisherDataTrack(t *testing.T) {
 			require.NoError(t, err)
 			defer dt1.Stop()
 
-			dt2, err := c1.PublishDataTrack()
+			// publish the second track with dynacast enabled so c1 receives demand updates for it
+			dt2, err := c1.PublishDataTrack(testclient.PublishDataTrackDynacast())
 			require.NoError(t, err)
 			defer dt2.Stop()
 
@@ -1291,6 +1292,20 @@ func TestSinglePublisherDataTrack(t *testing.T) {
 					return "c2 didn't subscribe to both data tracks from c1"
 				}
 				return ""
+			})
+
+			// c1 should get a demand update for the dynacasted track only
+			testutils.WithTimeout(t, func() string {
+				demands := c1.DataTrackDemands()
+				if len(demands) > 1 {
+					return "received demand update for non-dynacasted track"
+				}
+				for _, count := range demands {
+					if count == 1 {
+						return ""
+					}
+				}
+				return "did not receive demand update for dynacasted track"
 			})
 
 			// a new client joins and should get the initial stream
@@ -1315,6 +1330,16 @@ func TestSinglePublisherDataTrack(t *testing.T) {
 				require.True(t, strings.HasPrefix(string(tr.ID()), "DTR_"), "data track should begin with DTR")
 			}
 
+			// demand for the dynacasted track should reflect both subscribers
+			testutils.WithTimeout(t, func() string {
+				for _, count := range c1.DataTrackDemands() {
+					if count == 2 {
+						return ""
+					}
+				}
+				return "demand did not reach 2 after c3 subscribed"
+			})
+
 			// when c3 disconnects, ensure subscriber is cleaned up correctly
 			c3.Stop()
 
@@ -1329,6 +1354,16 @@ func TestSinglePublisherDataTrack(t *testing.T) {
 					}
 				}
 				return ""
+			})
+
+			// demand for the dynacasted track should drop back to 1
+			testutils.WithTimeout(t, func() string {
+				for _, count := range c1.DataTrackDemands() {
+					if count == 1 {
+						return ""
+					}
+				}
+				return "demand did not drop back to 1 after c3 disconnected"
 			})
 		})
 	}
