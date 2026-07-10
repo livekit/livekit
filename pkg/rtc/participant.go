@@ -1431,13 +1431,15 @@ func (p *ParticipantImpl) IsMigration() bool {
 	return p.params.Migration
 }
 
-func (p *ParticipantImpl) maybeRecordRTCanceled(closeReason types.ParticipantCloseReason) {
+func (p *ParticipantImpl) recordRTCState(closeReason types.ParticipantCloseReason) {
 	if p.HasConnected() {
-		return
-	}
-
-	if p.IsConnectionCanceled(closeReason) {
-		prometheus.IncrementParticipantRtcCanceled(1)
+		prometheus.IncrementParticipantRtcSuccess(1)
+	} else {
+		if p.IsConnectionCanceled(closeReason) {
+			prometheus.IncrementParticipantRtcCanceled(1)
+		} else {
+			prometheus.IncrementParticipantRtcFailure(1)
+		}
 	}
 }
 
@@ -1447,7 +1449,8 @@ func (p *ParticipantImpl) IsConnectionCanceled(closeReason types.ParticipantClos
 		closeReason == types.ParticipantCloseReasonRoomClosed ||
 		closeReason == types.ParticipantCloseReasonMigrationRequested ||
 		closeReason == types.ParticipantCloseReasonMigrationComplete ||
-		// client closing signal connection too quickly, there is a time check to handle clients timing out and leaving without sending a leave message
+		// client closing signal connection too quickly, a quick close could be an indication of client leaving before a timeout
+		// something longer could be clients timing out without sending a leave message and is usually a sign of failed connection
 		(time.Since(p.params.SessionStartTime) < 3*time.Second && closeReason == types.ParticipantCloseReasonSignalSourceClose)
 }
 
@@ -1457,7 +1460,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		return nil
 	}
 
-	p.maybeRecordRTCanceled(reason)
+	p.recordRTCState(reason)
 
 	var sessionDuration time.Duration
 	if activeAt := p.ActiveAt(); !activeAt.IsZero() {
