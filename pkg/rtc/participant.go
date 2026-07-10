@@ -228,6 +228,7 @@ type ParticipantParams struct {
 	EnableParticipantDataBlob       bool
 	EnableStartAtDesiredQuality     bool
 	MigrationWaitDuration           time.Duration
+	ExcludeIPv6LocalCandidates      bool
 }
 
 type ParticipantImpl struct {
@@ -2057,6 +2058,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		UseOneShotSignallingMode:      p.params.UseOneShotSignallingMode,
 		FireOnTrackBySdp:              p.params.FireOnTrackBySdp,
 		EnableDataTracks:              p.params.EnableDataTracks,
+		ExcludeIPv6LocalCandidates:    p.params.ExcludeIPv6LocalCandidates,
 	}
 	if p.params.SyncStreams && p.params.PlayoutDelay.GetEnabled() && p.params.ClientInfo.isFirefox() {
 		// we will disable playout delay for Firefox if the user is expecting
