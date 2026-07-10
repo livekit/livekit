@@ -98,6 +98,7 @@ type TransportManagerParams struct {
 	UseOneShotSignallingMode      bool
 	FireOnTrackBySdp              bool
 	EnableDataTracks              bool
+	ExcludeIPv6LocalCandidates    bool
 }
 
 type TransportManager struct {
@@ -168,6 +169,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		DatachannelLossyTargetLatency: params.DatachannelLossyTargetLatency,
 		FireOnTrackBySdp:              params.FireOnTrackBySdp,
 		EnableDataTracks:              params.EnableDataTracks,
+		ExcludeIPv6LocalCandidates:    params.ExcludeIPv6LocalCandidates,
 	})
 	if err != nil {
 		return nil, err
@@ -194,6 +196,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 			Handler:                       TransportManagerTransportHandler{params.SubscriberHandler, t, lgr},
 			FireOnTrackBySdp:              params.FireOnTrackBySdp,
 			EnableDataTracks:              params.EnableDataTracks,
+			ExcludeIPv6LocalCandidates:    params.ExcludeIPv6LocalCandidates,
 		})
 		if err != nil {
 			return nil, err
