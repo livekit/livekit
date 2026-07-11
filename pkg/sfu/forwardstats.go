@@ -17,7 +17,7 @@ const (
 const (
 	// A summary interval's worth of samples across all tracks must fit without
 	// dropping (ForwardStats is a singleton). Shard count spreads the per-packet
-	// atomic; shard capacity bounds memory (numShards*shardCap*8 bytes = 1MiB).
+	// atomic; shard capacity bounds memory (numShards*shardCap*16 bytes = 2MiB).
 	forwardSampleNumShards = 16
 	forwardSampleShardCap  = 8192
 	forwardSampleShardMask = forwardSampleShardCap - 1
@@ -25,12 +25,14 @@ const (
 )
 
 // forwardSampleShard is a ring of transit samples with multiple producers and a
-// single consumer. Producers reserve a slot with an atomic increment and store
-// the value atomically; the consumer reads committed slots.
+// single consumer. A producer reserves a slot, stores the value, then publishes
+// the slot's epoch (reserved index + 1). The consumer reads a slot only once its
+// epoch marks the value committed for that index.
 type forwardSampleShard struct {
-	writeIdx atomic.Uint64 // advanced by producers
-	readIdx  uint64        // consumer-only, no atomic needed
+	writeIdx atomic.Uint64 // advanced by producers to reserve a slot
+	readIdx  uint64        // consumer-only cursor
 	ring     [forwardSampleShardCap]atomic.Int64
+	seq      [forwardSampleShardCap]atomic.Uint64 // per-slot publish epoch
 }
 
 // forwardSampleBuffer holds per-packet transit samples produced on the packet
@@ -40,18 +42,24 @@ type forwardSampleBuffer struct {
 	dropped atomic.Uint64
 }
 
-// push records a sample with one atomic add to reserve a slot and one atomic
-// store to publish it. The shard is selected from arrival time bits.
+// push records a sample: reserve a slot, store the value, then publish the
+// slot's epoch. The shard is selected from arrival time bits.
 func (b *forwardSampleBuffer) push(arrival, transitNs int64) {
 	sh := &b.shards[(uint64(arrival)>>6)&forwardSampleShardSel]
 	i := sh.writeIdx.Add(1) - 1
-	sh.ring[i&forwardSampleShardMask].Store(transitNs)
+	slot := i & forwardSampleShardMask
+	sh.ring[slot].Store(transitNs)
+	sh.seq[slot].Store(i + 1)
 }
 
 // drain passes every committed sample to fn and advances the read cursor. Only
-// the background worker calls this. When producers get more than a shard's
-// capacity ahead of the cursor, the oldest excess samples are skipped and added
-// to the dropped count.
+// the background worker calls this.
+//
+// A slot holds index r's value once its epoch equals r+1. If the slot at the
+// cursor is still uncommitted (a producer reserved it but has not published),
+// draining stops and resumes from there on the next call, so no sample is read
+// stale or skipped. When producers get a shard's capacity ahead, or overwrite a
+// slot before it is read, the affected samples are counted as dropped.
 func (b *forwardSampleBuffer) drain(fn func(transitNs int64)) {
 	for si := range b.shards {
 		sh := &b.shards[si]
@@ -61,10 +69,23 @@ func (b *forwardSampleBuffer) drain(fn func(transitNs int64)) {
 			b.dropped.Add(w - r - forwardSampleShardCap)
 			r = w - forwardSampleShardCap
 		}
-		for ; r < w; r++ {
-			fn(sh.ring[r&forwardSampleShardMask].Load())
+		for r < w {
+			slot := r & forwardSampleShardMask
+			if sh.seq[slot].Load() < r+1 {
+				// reserved but not yet published; resume here next drain
+				break
+			}
+			v := sh.ring[slot].Load()
+			if sh.seq[slot].Load() != r+1 {
+				// overwritten by a newer sample during the read; original lost
+				b.dropped.Add(1)
+				r++
+				continue
+			}
+			fn(v)
+			r++
 		}
-		sh.readIdx = w
+		sh.readIdx = r
 	}
 }
 
@@ -198,8 +219,8 @@ func (s *ForwardStats) run() {
 			s.flush()
 
 		case <-reportTicker.C:
-			// fold in the most recent samples before reporting
-			s.flush()
+			// the summary ticker keeps the window ring current to within one
+			// summary interval; report over it without advancing the ring.
 			s.report()
 		}
 	}

@@ -150,6 +150,30 @@ func TestForwardSampleBuffer_Overflow(t *testing.T) {
 	}
 }
 
+func TestForwardSampleBuffer_DefersUncommitted(t *testing.T) {
+	var b forwardSampleBuffer
+	sh := &b.shards[0]
+
+	// simulate a producer that reserved index 0 but has not published its value
+	sh.writeIdx.Store(1)
+
+	got := 0
+	b.drain(func(int64) { got++ })
+	require.Equal(t, 0, got, "uncommitted slot must not be read")
+	require.Equal(t, uint64(0), sh.readIdx, "cursor must not advance past an uncommitted slot")
+	require.Equal(t, uint64(0), b.dropped.Load())
+
+	// producer publishes the value; next drain picks it up
+	sh.ring[0].Store(1234)
+	sh.seq[0].Store(1)
+
+	var vals []int64
+	b.drain(func(v int64) { vals = append(vals, v) })
+	require.Equal(t, []int64{1234}, vals)
+	require.Equal(t, uint64(1), sh.readIdx)
+	require.Equal(t, uint64(0), b.dropped.Load())
+}
+
 func TestForwardSampleBuffer_Concurrent(t *testing.T) {
 	var b forwardSampleBuffer
 	var stop atomic.Bool
