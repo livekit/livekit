@@ -48,7 +48,7 @@ func (d *DependencyDescriptorExtension) MarshalWithActiveChains(activeChains uin
 	}
 	buf := make([]byte, int(math.Ceil(float64(writer.ValueSizeBits())/8)))
 	writer.ResetBuf(buf)
-	if err = writer.Write(); err != nil {
+	if err = writer.writeWithoutSelection(); err != nil {
 		return nil, err
 	}
 	return buf, nil

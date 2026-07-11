@@ -57,6 +57,10 @@ func (w *DependencyDescriptorWriter) Write() error {
 		return err
 	}
 
+	return w.writeWithoutSelection()
+}
+
+func (w *DependencyDescriptorWriter) writeWithoutSelection() error {
 	if err := w.writeMandatoryFields(); err != nil {
 		return err
 	}
