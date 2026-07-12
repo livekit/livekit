@@ -278,6 +278,37 @@ func TestForwardStats_ReportWindow(t *testing.T) {
 	require.NotPanics(t, s.report)
 }
 
+func TestForwardStats_GetStats(t *testing.T) {
+	initPrometheus(t)
+
+	// 5 buckets, each covering one 100ms summary interval.
+	s := &ForwardStats{ring: make([]forwardSummary, 5), summaryInterval: 100 * time.Millisecond}
+
+	// fold five 100ms buckets, one sample each: 1ms, 2ms, 3ms, 4ms, 5ms.
+	for i := 1; i <= 5; i++ {
+		s.Update(0, int64(i)*int64(time.Millisecond))
+		s.flush()
+	}
+	require.Equal(t, 5, s.ringLen)
+
+	// a duration <= 0 covers the whole window: mean of 1..5ms == 3ms.
+	latency, jitter := s.GetStats(0)
+	require.InDelta(t, float64(3*time.Millisecond), float64(latency), float64(50*time.Microsecond))
+	require.Greater(t, jitter, time.Duration(0))
+
+	// a duration meeting/exceeding the window also covers it.
+	fullLatency, _ := s.GetStats(time.Second)
+	require.InDelta(t, float64(3*time.Millisecond), float64(fullLatency), float64(50*time.Microsecond))
+
+	// ~200ms rounds up to the two most recent buckets (4ms, 5ms): mean == 4.5ms.
+	shortLatency, _ := s.GetStats(200 * time.Millisecond)
+	require.InDelta(t, float64(4500*time.Microsecond), float64(shortLatency), float64(50*time.Microsecond))
+
+	// a sub-interval duration still yields at least the most recent bucket (5ms).
+	lastLatency, _ := s.GetStats(time.Nanosecond)
+	require.InDelta(t, float64(5*time.Millisecond), float64(lastLatency), float64(50*time.Microsecond))
+}
+
 func TestForwardStats_Lifecycle(t *testing.T) {
 	initPrometheus(t)
 
