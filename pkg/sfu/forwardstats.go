@@ -2,6 +2,7 @@ package sfu
 
 import (
 	"math"
+	"sync"
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -163,7 +164,9 @@ type ForwardStats struct {
 	samples forwardSampleBuffer
 
 	// ring of per-summary-interval summaries covering the report window.
-	// only touched by the background worker, so it needs no locking.
+	// written by the background worker (flush) and read both by the worker
+	// (report) and by external callers (GetStats), so it is guarded by lock.
+	lock     sync.Mutex
 	ring     []forwardSummary
 	ringHead int
 	ringLen  int
@@ -236,18 +239,52 @@ func (s *ForwardStats) flush() {
 		summ = summ.addSample(transitNs)
 	})
 
+	s.lock.Lock()
 	s.ring[s.ringHead] = summ
 	s.ringHead = (s.ringHead + 1) % len(s.ring)
 	if s.ringLen < len(s.ring) {
 		s.ringLen++
 	}
+	s.lock.Unlock()
+}
+
+// summarize merges the ring summaries covering the most recent window. A
+// window <= 0 (or >= the report window) covers the entire ring.
+func (s *ForwardStats) summarize(window time.Duration) forwardSummary {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	n := s.ringLen
+	if window > 0 && s.summaryInterval > 0 {
+		want := int((window + s.summaryInterval - 1) / s.summaryInterval)
+		if want < 1 {
+			want = 1
+		}
+		if want < n {
+			n = want
+		}
+	}
+
+	// walk backwards from the most recent entry (ringHead-1) over n entries.
+	var w forwardSummary
+	for i := 0; i < n; i++ {
+		idx := (s.ringHead - 1 - i + len(s.ring)) % len(s.ring)
+		w = w.merge(s.ring[idx])
+	}
+	return w
+}
+
+// GetStats returns the mean latency and jitter (std dev) of the forwarding
+// transit over the most recent duration. The duration is rounded up to a whole
+// number of summary intervals (the smallest bucket span that covers it). A
+// duration <= 0, or one that meets/exceeds the report window, covers the full
+// window.
+func (s *ForwardStats) GetStats(duration time.Duration) (time.Duration, time.Duration) {
+	return s.summarize(duration).meanStdDev()
 }
 
 func (s *ForwardStats) report() {
-	var w forwardSummary
-	for i := 0; i < s.ringLen; i++ {
-		w = w.merge(s.ring[i])
-	}
+	w := s.summarize(0)
 
 	latency, jitter := w.meanStdDev()
 	if dropped := s.samples.takeDropped(); dropped > 0 {
