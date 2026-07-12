@@ -34,7 +34,7 @@ func fecCounterValue(t *testing.T, direction string, typ string) float64 {
 	families, err := prom.DefaultGatherer.Gather()
 	require.NoError(t, err)
 	for _, family := range families {
-		if family.GetName() != "livekit_fec_packets" {
+		if family.GetName() != "livekit_fec_total" {
 			continue
 		}
 		for _, metric := range family.GetMetric() {

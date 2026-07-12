@@ -58,6 +58,24 @@ const (
 	recoveredPacketsLimit = 192
 )
 
+// FlexFEC-03 header bit fields.
+// https://datatracker.ietf.org/doc/html/draft-ietf-payload-flexible-fec-scheme-03#section-6.1
+const (
+	fecRetransmissionBit = 0x80 // R bit, first FEC header byte
+	fecInflexibleBit     = 0x40 // F bit, first FEC header byte
+	fecMaskKBit          = 0x80 // K bit, terminates the run of packet-mask chunks
+
+	// Data-bit width of each packet-mask chunk (the chunk minus its K bit).
+	fecMask0Bits = 15
+	fecMask1Bits = 31
+	fecMask2Bits = 63
+
+	// Value masks that clear the K bit from each packet-mask chunk.
+	fecMask0Value = 0x7FFF
+	fecMask1Value = 0x7FFFFFFF
+	fecMask2Value = 0x7FFFFFFFFFFFFFFF
+)
+
 // DecoderStats accumulates FEC usage counters. Snapshot via Decoder.Stats.
 type DecoderStats struct {
 	// FEC packets fed to the decoder
@@ -106,7 +124,7 @@ func (d *Decoder) DecodeFec(receivedPacket *rtp.Packet) []*rtp.Packet {
 	}
 
 	// the caller reuses packet memory, keep an owned copy
-	pkt := clonePacket(receivedPacket)
+	pkt := receivedPacket.Clone()
 
 	if len(d.recoveredPackets) >= maxMediaPackets {
 		backRecoveredPacket := d.recoveredPackets[len(d.recoveredPackets)-1]
@@ -207,12 +225,12 @@ func (d *Decoder) insertFECPacket(fecPkt *rtp.Packet) {
 		return
 	}
 
-	protectedSeqs := decodeMask(uint64(fec.mask0), 15, fec.seqNumBase)
+	protectedSeqs := decodeMask(uint64(fec.mask0), fecMask0Bits, fec.seqNumBase)
 	if fec.mask1 != 0 {
-		protectedSeqs = append(protectedSeqs, decodeMask(uint64(fec.mask1), 31, fec.seqNumBase+15)...)
+		protectedSeqs = append(protectedSeqs, decodeMask(uint64(fec.mask1), fecMask1Bits, fec.seqNumBase+fecMask0Bits)...)
 	}
 	if fec.mask2 != 0 {
-		protectedSeqs = append(protectedSeqs, decodeMask(fec.mask2, 63, fec.seqNumBase+46)...)
+		protectedSeqs = append(protectedSeqs, decodeMask(fec.mask2, fecMask2Bits, fec.seqNumBase+fecMask0Bits+fecMask1Bits)...)
 	}
 
 	if len(protectedSeqs) == 0 {
@@ -413,12 +431,12 @@ func parseFlexFEC03Header(data []byte) (flexFec, error) {
 		return flexFec{}, fmt.Errorf("%w: length %d", errPacketTruncated, len(data))
 	}
 
-	rBit := (data[0] & 0x80) != 0
+	rBit := (data[0] & fecRetransmissionBit) != 0
 	if rBit {
 		return flexFec{}, errRetransmissionBitSet
 	}
 
-	fBit := (data[0] & 0x40) != 0
+	fBit := (data[0] & fecInflexibleBit) != 0
 	if fBit {
 		return flexFec{}, errInflexibleGeneratorMatrix
 	}
@@ -433,8 +451,8 @@ func parseFlexFEC03Header(data []byte) (flexFec, error) {
 	rawPacketMask := data[18:]
 	var payload []byte
 
-	kBit0 := (rawPacketMask[0] & 0x80) != 0
-	maskPart0 := binary.BigEndian.Uint16(rawPacketMask[0:2]) & 0x7FFF
+	kBit0 := (rawPacketMask[0] & fecMaskKBit) != 0
+	maskPart0 := binary.BigEndian.Uint16(rawPacketMask[0:2]) & fecMask0Value
 	var maskPart1 uint32
 	var maskPart2 uint64
 
@@ -445,8 +463,8 @@ func parseFlexFEC03Header(data []byte) (flexFec, error) {
 			return flexFec{}, fmt.Errorf("%w: length %d", errPacketTruncated, len(data))
 		}
 
-		kBit1 := (rawPacketMask[2] & 0x80) != 0
-		maskPart1 = binary.BigEndian.Uint32(rawPacketMask[2:]) & 0x7FFFFFFF
+		kBit1 := (rawPacketMask[2] & fecMaskKBit) != 0
+		maskPart1 = binary.BigEndian.Uint32(rawPacketMask[2:]) & fecMask1Value
 
 		if kBit1 {
 			payload = rawPacketMask[6:]
@@ -455,8 +473,8 @@ func parseFlexFEC03Header(data []byte) (flexFec, error) {
 				return flexFec{}, fmt.Errorf("%w: length %d", errPacketTruncated, len(data))
 			}
 
-			kBit2 := (rawPacketMask[6] & 0x80) != 0
-			maskPart2 = binary.BigEndian.Uint64(rawPacketMask[6:]) & 0x7FFFFFFFFFFFFFFF
+			kBit2 := (rawPacketMask[6] & fecMaskKBit) != 0
+			maskPart2 = binary.BigEndian.Uint64(rawPacketMask[6:]) & fecMask2Value
 
 			if kBit2 {
 				payload = rawPacketMask[14:]
@@ -474,11 +492,6 @@ func parseFlexFEC03Header(data []byte) (flexFec, error) {
 		mask2:         maskPart2,
 		payload:       payload,
 	}, nil
-}
-
-func clonePacket(pkt *rtp.Packet) *rtp.Packet {
-	cloned := pkt.Clone()
-	return cloned
 }
 
 func seqDiff(a, b uint16) uint16 {

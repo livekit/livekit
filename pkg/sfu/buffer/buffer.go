@@ -78,7 +78,7 @@ type Buffer struct {
 	fecSSRC             uint32
 	fecDecoder          *flexfec.Decoder
 	fecPktBuf           []byte
-	onFECRecovery       func(recovered int, received int, discarded int, bytesReceived int)
+	onFECRecovery       func(received int, recovered int, discarded int, bytesReceived int)
 }
 
 func NewBuffer(ssrc uint32, maxVideoPkts, maxAudioPkts int) *Buffer {
@@ -350,9 +350,9 @@ func (b *Buffer) maybeCreateFECDecoderLocked() {
 }
 
 // OnFECRecovery is called with counter deltas whenever FEC packets are
-// processed: recovered media packets, FEC packets received and FEC packets
-// discarded since the previous callback.
-func (b *Buffer) OnFECRecovery(fn func(recovered int, received int, discarded int, bytesReceived int)) {
+// processed since the previous callback: FEC packets received, media packets
+// recovered, FEC packets discarded and FEC bytes received.
+func (b *Buffer) OnFECRecovery(fn func(received int, recovered int, discarded int, bytesReceived int)) {
 	b.Lock()
 	b.onFECRecovery = fn
 	b.Unlock()
@@ -437,7 +437,7 @@ func (b *Buffer) feedFECLocked(pkt *rtp.Packet, arrivalTime int64) {
 		discarded := int(statsAfter.FECPacketsDiscarded - statsBefore.FECPacketsDiscarded)
 		bytesReceived := int(statsAfter.FECBytesReceived - statsBefore.FECBytesReceived)
 		if len(recovered) > 0 || received > 0 || discarded > 0 {
-			cb(len(recovered), received, discarded, bytesReceived)
+			cb(received, len(recovered), discarded, bytesReceived)
 		}
 	}
 }

@@ -93,7 +93,7 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 	promFECPacketTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "fec",
-		Name:        "packets",
+		Name:        "total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, promFECLabels)
 	promFECPacketBytes = prometheus.NewCounterVec(prometheus.CounterOpts{

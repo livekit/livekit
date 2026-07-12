@@ -25,6 +25,10 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
+// flexFECRepairWindow is the flexfec-03 "repair-window" fmtp value in
+// microseconds (10 s), matching pion's ConfigureFlexFEC03 default.
+const flexFECRepairWindow = 10_000_000
+
 // flexFECCodecParameters returns the flexfec-03 codec registered/offered when
 // FlexFEC is enabled for a direction. Mirrors pion's ConfigureFlexFEC03 codec
 // minus its generator interceptor (the SFU runs its own encode/decode paths).
@@ -33,7 +37,7 @@ func flexFECCodecParameters(payloadType uint8) webrtc.RTPCodecParameters {
 		RTPCodecCapability: webrtc.RTPCodecCapability{
 			MimeType:    webrtc.MimeTypeFlexFEC03,
 			ClockRate:   90000,
-			SDPFmtpLine: "repair-window=10000000",
+			SDPFmtpLine: fmt.Sprintf("repair-window=%d", flexFECRepairWindow),
 			RTCPFeedback: []webrtc.RTCPFeedback{
 				{Type: webrtc.TypeRTCPFBTransportCC},
 			},

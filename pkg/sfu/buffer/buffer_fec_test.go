@@ -130,7 +130,7 @@ func TestBufferFECRecoversDroppedPacket(t *testing.T) {
 	bindFECTestBuffer(t, primary)
 
 	var recoveredDelta, receivedDelta int
-	primary.OnFECRecovery(func(recovered int, received int, discarded int, bytesReceived int) {
+	primary.OnFECRecovery(func(received int, recovered int, discarded int, bytesReceived int) {
 		recoveredDelta += recovered
 		receivedDelta += received
 	})

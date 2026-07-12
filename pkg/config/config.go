@@ -225,12 +225,15 @@ func (c FlexFECConfig) WithDefaults() FlexFECConfig {
 	}
 	// flexfec-03 masks cover at most 109 media packets, stay well below
 	if c.NumMediaPackets > 48 {
+		logger.Warnw("flexfec num_media_packets clamped to 48", nil, "configured", c.NumMediaPackets)
 		c.NumMediaPackets = 48
 	}
 	if c.NumFECPackets == 0 {
 		c.NumFECPackets = DefaultFlexFECConfig.NumFECPackets
 	}
 	if c.NumFECPackets > c.NumMediaPackets {
+		logger.Warnw("flexfec num_fec_packets clamped to num_media_packets", nil,
+			"configured", c.NumFECPackets, "numMediaPackets", c.NumMediaPackets)
 		c.NumFECPackets = c.NumMediaPackets
 	}
 	return c

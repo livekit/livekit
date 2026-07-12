@@ -590,7 +590,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 
 	buff.OnNotifyRTX(t.MediaTrackReceiver.setLayerRtxInfo)
 
-	buff.OnFECRecovery(func(recovered int, received int, discarded int, bytesReceived int) {
+	buff.OnFECRecovery(func(received int, recovered int, discarded int, bytesReceived int) {
 		prometheus.RecordFECUpstream(received, recovered, discarded, uint64(bytesReceived))
 	})
 

@@ -298,7 +298,11 @@ type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
 // FlexFECParams configures FlexFEC-03 generation toward the subscriber.
 type FlexFECParams struct {
-	Enabled         bool
+	Enabled bool
+	// NumMediaPackets is the media window size protected by one FEC block;
+	// NumFECPackets is the number of repair packets generated per window
+	// (their ratio sets the protection overhead). The count is scaled down
+	// for partial windows flushed on a sequence discontinuity.
 	NumMediaPackets uint32
 	NumFECPackets   uint32
 }
@@ -342,6 +346,7 @@ type DownTrack struct {
 	payloadType       atomic.Uint32
 	payloadTypeRTX    atomic.Uint32
 	payloadTypeFEC    atomic.Uint32
+	// atomic so the OnSent hot path reads it without taking a lock
 	fecWriter         atomic.Pointer[fecWriter]
 	sequencer         *sequencer
 	rtxSequenceNumber atomic.Uint64
