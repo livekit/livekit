@@ -1036,7 +1036,13 @@ func (r *ReceiverBase) forwardRTP(
 		}
 
 		// track delay/jitter
-		if writeCount.Load() > 0 && r.forwardStats != nil && !extPkt.IsBuffered {
+		//
+		// Out-of-order packets (retransmissions/late arrivals) are excluded. They
+		// tend to arrive in bursts (e.g. a NACK triggers a batch of retransmissions
+		// delivered back-to-back) which the single forwarder goroutine drains
+		// serially, inflating the measured transit for the tail of the burst. That
+		// reflects loss recovery rather than steady-state forwarding health.
+		if writeCount.Load() > 0 && r.forwardStats != nil && !extPkt.IsBuffered && !extPkt.IsOutOfOrder {
 			if latency, isHigh := r.forwardStats.Update(extPkt.Arrival, mono.UnixNano()); isHigh {
 				r.params.Logger.Debugw(
 					"high forwarding latency",

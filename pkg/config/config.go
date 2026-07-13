@@ -91,6 +91,8 @@ type Config struct {
 
 	EnableDataTracks bool `yaml:"enable_data_tracks,omitempty"`
 
+	EnableParticipantDataBlob bool `yaml:"enable_participant_data_blob,omitempty"`
+
 	API APIConfig `yaml:"api,omitempty"`
 }
 
@@ -262,7 +264,6 @@ type RoomConfig struct {
 	EnableRemoteUnmute bool               `yaml:"enable_remote_unmute,omitempty"`
 	PlayoutDelay       PlayoutDelayConfig `yaml:"playout_delay,omitempty"`
 	SyncStreams        bool               `yaml:"sync_streams,omitempty"`
-	CreateRoomEnabled  bool               `yaml:"create_room_enabled,omitempty"`
 	CreateRoomTimeout  time.Duration      `yaml:"create_room_timeout,omitempty"`
 	CreateRoomAttempts int                `yaml:"create_room_attempts,omitempty"`
 	// target room participant update batch chunk size in bytes
@@ -335,6 +336,8 @@ type RegionConfig struct {
 	Lon  float64 `yaml:"lon,omitempty"`
 }
 
+// ---------------------------------
+
 type LimitConfig struct {
 	NumTracks              int32   `yaml:"num_tracks,omitempty"`
 	BytesPerSec            float32 `yaml:"bytes_per_sec,omitempty"`
@@ -346,6 +349,11 @@ type LimitConfig struct {
 	MaxRoomNameLength            int    `yaml:"max_room_name_length,omitempty"`
 	MaxParticipantIdentityLength int    `yaml:"max_participant_identity_length,omitempty"`
 	MaxParticipantNameLength     int    `yaml:"max_participant_name_length,omitempty"`
+
+	MaxDataBlobKeyLength int    `yaml:"max_data_blob_key_length,omitempty"`
+	MaxDataBlobSize      uint32 `yaml:"max_data_blobs_size,omitempty"`
+
+	MaxDataTrackCustomEncodingLength int `yaml:"max_data_track_custom_encoding_length,omitempty"`
 }
 
 func (l LimitConfig) CheckRoomNameLength(name string) bool {
@@ -375,6 +383,56 @@ func (l LimitConfig) CheckAttributesSize(attributes map[string]string) bool {
 	}
 	return uint32(total) <= l.MaxAttributesSize
 }
+
+func (l LimitConfig) CheckDataBlobKeyLength(key string) bool {
+	return l.MaxDataBlobKeyLength == 0 || len(key) <= l.MaxDataBlobKeyLength
+}
+
+func (l LimitConfig) CheckDataTrackCustomEncodingLength(identifier string) bool {
+	return l.MaxDataTrackCustomEncodingLength == 0 || len(identifier) <= l.MaxDataTrackCustomEncodingLength
+}
+
+func (l LimitConfig) CheckDataTrackFrameEncoding(encoding *livekit.DataTrackFrameEncoding) bool {
+	custom, ok := encoding.GetValue().(*livekit.DataTrackFrameEncoding_Custom)
+	if !ok {
+		return true
+	}
+	return len(custom.Custom) != 0 && l.CheckDataTrackCustomEncodingLength(custom.Custom)
+}
+
+func (l LimitConfig) CheckDataTrackSchemaID(schema *livekit.DataTrackSchemaId) bool {
+	custom, ok := schema.GetEncoding().GetValue().(*livekit.DataTrackSchemaEncoding_Custom)
+	if !ok {
+		return true
+	}
+	return len(custom.Custom) != 0 && l.CheckDataTrackCustomEncodingLength(custom.Custom)
+}
+
+func (l LimitConfig) CheckDataBlobsSize(dataBlobs []*livekit.DataBlob) bool {
+	if l.MaxDataBlobSize == 0 {
+		return true
+	}
+
+	total := 0
+	for _, dataBlob := range dataBlobs {
+		total += len(dataBlob.GetKey().String()) + len(dataBlob.Contents)
+	}
+	return uint32(total) <= l.MaxDataBlobSize
+}
+
+func (l LimitConfig) CanAddDataBlob(dataBlobs []*livekit.DataBlob, toAdd *livekit.DataBlob) bool {
+	if l.MaxDataBlobSize == 0 {
+		return true
+	}
+
+	total := 0
+	for _, dataBlob := range dataBlobs {
+		total += len(dataBlob.Key.String()) + len(dataBlob.Contents)
+	}
+	return uint32(total+len(toAdd.GetKey().String())+len(toAdd.Contents)) <= l.MaxDataBlobSize
+}
+
+// ---------------------------------
 
 type IngressConfig struct {
 	RTMPBaseURL string `yaml:"rtmp_base_url,omitempty"`
@@ -489,17 +547,19 @@ var DefaultConfig = Config{
 		},
 		EmptyTimeout:          5 * 60,
 		DepartureTimeout:      20,
-		CreateRoomEnabled:     true,
 		CreateRoomTimeout:     10 * time.Second,
 		CreateRoomAttempts:    3,
 		UpdateBatchTargetSize: 128 * 1024,
 	},
 	Limit: LimitConfig{
-		MaxMetadataSize:              64000,
-		MaxAttributesSize:            64000,
-		MaxRoomNameLength:            256,
-		MaxParticipantIdentityLength: 256,
-		MaxParticipantNameLength:     256,
+		MaxMetadataSize:                  512 * 1024,
+		MaxAttributesSize:                64 * 1024,
+		MaxRoomNameLength:                256,
+		MaxParticipantIdentityLength:     256,
+		MaxParticipantNameLength:         256,
+		MaxDataBlobKeyLength:             256,
+		MaxDataBlobSize:                  64000,
+		MaxDataTrackCustomEncodingLength: 32,
 	},
 	Logging: LoggingConfig{
 		PionLevel: "error",

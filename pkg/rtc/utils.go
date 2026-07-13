@@ -173,6 +173,11 @@ func MaybeTruncateIP(addr string) string {
 	return addr[:len(addr)-3] + "..."
 }
 
+func IsIPv6(addr string) bool {
+	ipAddr := net.ParseIP(addr)
+	return ipAddr != nil && ipAddr.To4() == nil
+}
+
 func ChunkProtoBatch[T proto.Message](batch []T, target int) [][]T {
 	var chunks [][]T
 	var start, size int

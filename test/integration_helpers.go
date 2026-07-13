@@ -80,9 +80,13 @@ func setupSingleNodeTest(name string) (*service.LivekitServer, func()) {
 }
 
 func setupMultiNodeTest(name string) (*service.LivekitServer, *service.LivekitServer, func()) {
+	return setupMultiNodeTestWithConfig(name, nil)
+}
+
+func setupMultiNodeTestWithConfig(name string, configUpdater func(*config.Config)) (*service.LivekitServer, *service.LivekitServer, func()) {
 	logger.Infow("----------------STARTING TEST----------------", "test", name)
-	s1 := createMultiNodeServer(guid.New(nodeID1), defaultServerPort)
-	s2 := createMultiNodeServer(guid.New(nodeID2), secondServerPort)
+	s1 := createMultiNodeServer(guid.New(nodeID1), defaultServerPort, configUpdater)
+	s2 := createMultiNodeServer(guid.New(nodeID2), secondServerPort, configUpdater)
 	go s1.Start()
 	go s2.Start()
 
@@ -190,7 +194,7 @@ func createSingleNodeServer(configUpdater func(*config.Config)) *service.Livekit
 	return s
 }
 
-func createMultiNodeServer(nodeID string, port uint32) *service.LivekitServer {
+func createMultiNodeServer(nodeID string, port uint32, configUpdater func(*config.Config)) *service.LivekitServer {
 	var err error
 	conf, err := config.NewConfig("", true, nil, nil)
 	if err != nil {
@@ -202,6 +206,9 @@ func createMultiNodeServer(nodeID string, port uint32) *service.LivekitServer {
 	conf.Redis.Address = "localhost:6379"
 	conf.Keys = map[string]string{testApiKey: testApiSecret}
 	conf.EnableDataTracks = true
+	if configUpdater != nil {
+		configUpdater(conf)
+	}
 
 	currentNode, err := routing.NewLocalNode(conf)
 	if err != nil {

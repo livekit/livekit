@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	"github.com/livekit/livekit-server/test/client"
@@ -419,6 +420,132 @@ func TestCloseDisconnectedParticipantOnSignalClose(t *testing.T) {
 			testutils.WithTimeout(t, func() string {
 				if len(c1.RemoteParticipants()) != 0 {
 					return "c1 did not see c2 removed"
+				}
+				return ""
+			})
+		})
+	}
+}
+
+func TestMultiNodeDataBlob(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, _, finish := setupMultiNodeTestWithConfig("TestMultiNodeDataBlob", func(c *config.Config) {
+		c.EnableParticipantDataBlob = true
+		c.Limit.MaxDataBlobSize = 1024
+	})
+	defer finish()
+
+	for _, testRTCServicePath := range testRTCServicePaths {
+		t.Run(fmt.Sprintf("testRTCServicePath=%s", testRTCServicePath.String()), func(t *testing.T) {
+			pubCapture := &dataBlobCapture{}
+			subCapture := &dataBlobCapture{}
+
+			// publisher on node 1, subscriber on node 2
+			pub := createRTCClient("pub", defaultServerPort, testRTCServicePath, &client.Options{
+				AutoSubscribe:             true,
+				SignalResponseInterceptor: pubCapture.interceptor(),
+			})
+			sub := createRTCClient("sub", secondServerPort, testRTCServicePath, &client.Options{
+				AutoSubscribe:             true,
+				SignalResponseInterceptor: subCapture.interceptor(),
+			})
+			waitUntilConnected(t, pub, sub)
+			defer stopClients(pub, sub)
+
+			// wait for both nodes to see each other so the get request routes correctly
+			testutils.WithTimeout(t, func() string {
+				if sub.GetRemoteParticipant(pub.ID()) == nil {
+					return "sub does not see pub yet"
+				}
+				return ""
+			})
+
+			key := &livekit.DataBlobKey{
+				Key: &livekit.DataBlobKey_Generic{
+					Generic: "blob-multinode",
+				},
+			}
+			contents := []byte("multinode-content")
+
+			require.NoError(t, pub.SendRequest(&livekit.SignalRequest{
+				Message: &livekit.SignalRequest_StoreDataBlobRequest{
+					StoreDataBlobRequest: &livekit.StoreDataBlobRequest{
+						RequestId: 1,
+						Blob: &livekit.DataBlob{
+							Key:      key,
+							Contents: contents,
+						},
+					},
+				},
+			}))
+
+			testutils.WithTimeout(t, func() string {
+				resp := pubCapture.takeStoreResponse()
+				if resp == nil {
+					return "publisher did not receive store response"
+				}
+				if resp.RequestId != 1 {
+					return fmt.Sprintf("expected store response request id 1, got %d", resp.RequestId)
+				}
+				if resp.Key == nil {
+					return "store response missing key"
+				}
+				if resp.Key.String() != key.String() {
+					return fmt.Sprintf("expected stored blob key %s, got %s", key.String(), resp.Key.String())
+				}
+				return ""
+			})
+			require.Equal(t, 0, pubCapture.requestResponseCount(), "publisher should not receive an error response on success")
+
+			// subscriber on a different node asks for the blob; the request routes
+			// across nodes to the publisher.
+			require.NoError(t, sub.SendRequest(&livekit.SignalRequest{
+				Message: &livekit.SignalRequest_GetDataBlobRequest{
+					GetDataBlobRequest: &livekit.GetDataBlobRequest{
+						ParticipantIdentity: "pub",
+						Key:                 key,
+					},
+				},
+			}))
+
+			testutils.WithTimeout(t, func() string {
+				resp := subCapture.takeBlobResponse()
+				if resp == nil {
+					return "subscriber did not receive blob response"
+				}
+				if resp.Blob == nil {
+					return "blob response missing blob"
+				}
+				if resp.Blob.Key.String() != key.String() {
+					return fmt.Sprintf("expected data blob key %s, got %s", key.String(), resp.Blob.Key.String())
+				}
+				if string(resp.Blob.Contents) != string(contents) {
+					return fmt.Sprintf("expected contents %q, got %q", contents, resp.Blob.Contents)
+				}
+				return ""
+			})
+
+			// requesting an unknown publisher identity should return NOT_FOUND
+			require.NoError(t, sub.SendRequest(&livekit.SignalRequest{
+				Message: &livekit.SignalRequest_GetDataBlobRequest{
+					GetDataBlobRequest: &livekit.GetDataBlobRequest{
+						ParticipantIdentity: "unknown-publisher",
+						Key:                 key,
+					},
+				},
+			}))
+
+			testutils.WithTimeout(t, func() string {
+				rr := subCapture.takeRequestResponse()
+				if rr == nil {
+					return "subscriber did not receive RequestResponse for unknown publisher"
+				}
+				if rr.Reason != livekit.RequestResponse_NOT_FOUND {
+					return fmt.Sprintf("expected NOT_FOUND, got %s", rr.Reason)
 				}
 				return ""
 			})

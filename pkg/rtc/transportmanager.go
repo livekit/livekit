@@ -98,6 +98,7 @@ type TransportManagerParams struct {
 	UseOneShotSignallingMode      bool
 	FireOnTrackBySdp              bool
 	EnableDataTracks              bool
+	ExcludeIPv6LocalCandidates    bool
 }
 
 type TransportManager struct {
@@ -168,6 +169,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		DatachannelLossyTargetLatency: params.DatachannelLossyTargetLatency,
 		FireOnTrackBySdp:              params.FireOnTrackBySdp,
 		EnableDataTracks:              params.EnableDataTracks,
+		ExcludeIPv6LocalCandidates:    params.ExcludeIPv6LocalCandidates,
 	})
 	if err != nil {
 		return nil, err
@@ -194,6 +196,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 			Handler:                       TransportManagerTransportHandler{params.SubscriberHandler, t, lgr},
 			FireOnTrackBySdp:              params.FireOnTrackBySdp,
 			EnableDataTracks:              params.EnableDataTracks,
+			ExcludeIPv6LocalCandidates:    params.ExcludeIPv6LocalCandidates,
 		})
 		if err != nil {
 			return nil, err
@@ -225,6 +228,10 @@ func (t *TransportManager) SubscriberClose() {
 
 func (t *TransportManager) HasPublisherEverConnected() bool {
 	return t.publisher.HasEverConnected()
+}
+
+func (t *TransportManager) PublisherFirstConnectedAt() time.Time {
+	return t.publisher.FirstConnectedAt()
 }
 
 func (t *TransportManager) IsPublisherEstablished() bool {
@@ -264,6 +271,14 @@ func (t *TransportManager) HasSubscriberEverConnected() bool {
 		return t.publisher.HasEverConnected()
 	} else {
 		return t.subscriber.HasEverConnected()
+	}
+}
+
+func (t *TransportManager) SubscriberFirstConnectedAt() time.Time {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
+		return t.publisher.FirstConnectedAt()
+	} else {
+		return t.subscriber.FirstConnectedAt()
 	}
 }
 

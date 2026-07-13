@@ -355,6 +355,9 @@ type Participant interface {
 	HandleReceivedDataTrackMessage([]byte, *datatrack.Packet, int64)
 
 	GetParticipantListener() ParticipantListener
+
+	AddDataBlob(dataBlob *livekit.DataBlob)
+	GetDataBlob(key *livekit.DataBlobKey) *livekit.DataBlob
 }
 
 // -------------------------------------------------------
@@ -403,6 +406,7 @@ type LocalParticipant interface {
 	GetReporter() roomobs.ParticipantSessionReporter
 	GetReporterResolver() roomobs.ParticipantReporterResolver
 	GetAdaptiveStream() bool
+	GetEnableStartAtDesiredQuality() bool
 	ProtocolVersion() ProtocolVersion
 	SupportsSyncStreamID() bool
 	SupportsTransceiverReuse(mt MediaTrack) bool
@@ -410,6 +414,7 @@ type LocalParticipant interface {
 	IsReady() bool
 	ActiveAt() time.Time
 	Disconnected() <-chan struct{}
+	IsConnectionCanceled(closeReason ParticipantCloseReason) bool
 	IsIdle() bool
 	SubscriberAsPrimary() bool
 	GetClientInfo() *livekit.ClientInfo
@@ -522,6 +527,7 @@ type LocalParticipant interface {
 		dataTracks []*livekit.PublishDataTrackResponse,
 	)
 	IsReconnect() bool
+	IsMigration() bool
 	MoveToRoom(params MoveToRoomParams)
 
 	UpdateMediaRTT(rtt uint32)
@@ -561,6 +567,9 @@ type LocalParticipant interface {
 	HandlePublishDataTrackRequest(*livekit.PublishDataTrackRequest)
 	HandleUnpublishDataTrackRequest(*livekit.UnpublishDataTrackRequest)
 	HandleUpdateDataSubscription(*livekit.UpdateDataSubscription)
+	HandleStoreDataBlobRequest(*livekit.StoreDataBlobRequest)
+	HandleGetDataBlobRequest(*livekit.GetDataBlobRequest)
+	ProcessGetDataBlobRequest(*livekit.GetDataBlobRequest, Participant)
 
 	HandleSignalMessage(msg proto.Message) error
 
@@ -571,6 +580,8 @@ type LocalParticipant interface {
 	ClearParticipantListener()
 
 	GetNextSubscribedDataTrackHandle() uint16
+
+	GetAllDataBlob() []*livekit.DataBlob
 }
 
 // ---------------------------------------------
@@ -620,6 +631,8 @@ type LocalParticipantListener interface {
 	)
 	OnUpdateSubscriptionPermission(LocalParticipant, *livekit.SubscriptionPermission) error
 	OnUpdateDataSubscriptions(LocalParticipant, *livekit.UpdateDataSubscription)
+	OnStoreDataBlob(LocalParticipant, *livekit.DataBlob)
+	OnGetDataBlob(LocalParticipant, *livekit.GetDataBlobRequest)
 	OnSyncState(LocalParticipant, *livekit.SyncState) error
 	OnSimulateScenario(LocalParticipant, *livekit.SimulateScenario) error
 	OnLeave(LocalParticipant, ParticipantCloseReason)
@@ -650,6 +663,10 @@ func (*NullLocalParticipantListener) OnUpdateSubscriptionPermission(LocalPartici
 	return nil
 }
 func (*NullLocalParticipantListener) OnUpdateDataSubscriptions(LocalParticipant, *livekit.UpdateDataSubscription) {
+}
+func (*NullLocalParticipantListener) OnStoreDataBlob(LocalParticipant, *livekit.DataBlob) {
+}
+func (*NullLocalParticipantListener) OnGetDataBlob(LocalParticipant, *livekit.GetDataBlobRequest) {
 }
 func (*NullLocalParticipantListener) OnSyncState(LocalParticipant, *livekit.SyncState) error {
 	return nil

@@ -2,6 +2,58 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.3] - 2026-07-03
+
+### Added
+
+- feat: mock API server for testing server SDKs (#4627)
+- support auth checks with mock server (#4629)
+- Data track schema metadata (#4622)
+- Report average bitrates for whip ingress (#4634)
+
+### Changed
+
+- Update webrtc to fix interop issue with bundled datachannel (#4631)
+- Update module github.com/urfave/cli/v3 to v3.10.0 (#4612)
+- Use camel case log name in `DataBlobKey` (#4633)
+
+### Fixed
+
+- Stop WHIP session notifier when participant leaves (#4637)
+
+## [1.13.2] - 2026-06-27
+
+### Added
+
+- Add Prometheus metrics for join latency and peer connection state (#4574, #4616)
+- Preserve original expiry when refreshing token (#4580)
+- Add grants expiry to Auth context (#4581)
+- Add ability to run pprof on dedicated HTTP server (#4584)
+- Add API to get latest node stats (#4589)
+- Enforce subscription permission to data track (#4588)
+- egress v2 api (#4592)
+- agent: thread attributes map from dispatch to job (#4598)
+- Log subscription limit breaches (#4603)
+- Acquire requested video layer directly at HIGH quality by default (#4595)
+- Report participant capabilities in ParticipantInfo (#4606)
+- Add option to force drain rtcService/agentService connections (#4618)
+- Add support for data blob (a. k. a. async participant attributes) (#4619)
+
+### Changed
+
+- Update dependencies: pion/sctp, DTLS v3.1.4, protocol (#4587, #4601, #4623)
+- rtc: add RestartSessionTimer to re-anchor participant session duration (#4566)
+- Record more RTC cancellation points (#4600)
+- Cap all metadata at 512 KiB; enforce on join, agent dispatch, and embedded agents (#4602)
+- Tighten up publish latency stat (#4615)
+- Echo offered audio payload types in single-PC subscriber answer (#4614)
+
+### Fixed
+
+- Fix skipped packets accounting (#4604)
+- Do not log due to negative getting interpreted as large unsigned positive (#4605)
+- Do not call nil callback (#4607)
+
 ## [1.13.1] - 2026-06-08
 
 ### Fixed

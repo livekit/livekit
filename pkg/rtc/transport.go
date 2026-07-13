@@ -319,6 +319,7 @@ type TransportParams struct {
 	IsSendSide                    bool
 	AllowPlayoutDelay             bool
 	UseOneShotSignallingMode      bool
+	ExcludeIPv6LocalCandidates    bool
 	FireOnTrackBySdp              bool
 	DataChannelMaxBufferedAmount  uint64
 	DatachannelSlowThreshold      int
@@ -1007,13 +1008,13 @@ func (t *PCTransport) queueOrConfigureSender(
 	enableAudioNACK bool,
 ) {
 	params := configureSenderParams{
-		transceiver,
-		enabledCodecs,
-		rtcpFeedbackConfig,
-		!t.params.IsOfferer,
-		enableAudioStereo,
-		enableAudioNACK,
-		t.params.DirectionConfig.FlexFEC.Enabled,
+		transceiver:              transceiver,
+		enabledCodecs:            enabledCodecs,
+		rtcpFeedbackConfig:       rtcpFeedbackConfig,
+		filterOutH264HighProfile: !t.params.IsOfferer,
+		enableAudioStereo:        enableAudioStereo,
+		enableAudioNACK:          enableAudioNACK,
+		keepFlexFEC:              t.params.DirectionConfig.FlexFEC.Enabled,
 	}
 	if !t.params.IsOfferer {
 		t.sendersPendingConfigMu.Lock()
@@ -1022,10 +1023,17 @@ func (t *PCTransport) queueOrConfigureSender(
 		return
 	}
 
-	configureSender(params)
+	// Offerer: no remote offer to echo payload types from.
+	configureSender(params, nil)
 }
 
-func (t *PCTransport) processSendersPendingConfig() {
+// processSendersPendingConfig configures the senders queued while answering the
+// remote's offer (single peer connection mode). offerAudioPT (mime type -> the
+// payload type the offer assigned) is parsed from the offer by the caller before
+// SetRemoteDescription, so the answer echoes the offered payload types for audio
+// codecs (and stays consistent with the forwarded RTP). It is nil when there is
+// nothing to echo.
+func (t *PCTransport) processSendersPendingConfig(offerAudioPT map[mime.MimeType]webrtc.PayloadType) {
 	t.sendersPendingConfigMu.Lock()
 	pending := t.sendersPendingConfig
 	t.sendersPendingConfig = nil
@@ -1038,7 +1046,7 @@ func (t *PCTransport) processSendersPendingConfig() {
 			continue
 		}
 
-		configureSender(p)
+		configureSender(p, offerAudioPT)
 	}
 
 	if len(unprocessed) != 0 {
@@ -1433,6 +1441,13 @@ func (t *PCTransport) HasEverConnected() bool {
 	return !t.firstConnectedAt.IsZero()
 }
 
+func (t *PCTransport) FirstConnectedAt() time.Time {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.firstConnectedAt
+}
+
 func (t *PCTransport) GetICEConnectionInfo() *types.ICEConnectionInfo {
 	return t.connectionDetails.GetInfo()
 }
@@ -1708,31 +1723,26 @@ func (t *PCTransport) GetAnswer() (webrtc.SessionDescription, uint32, error) {
 
 	cld := t.pc.CurrentLocalDescription()
 
-	// add local candidates to ICE connection details
-	parsed, err := cld.Unmarshal()
-	if err == nil {
-		addLocalICECandidates := func(attrs []sdp.Attribute) {
-			for _, a := range attrs {
-				if a.IsICECandidate() {
-					c, err := ice.UnmarshalCandidate(a.Value)
-					if err != nil {
-						continue
-					}
-					t.connectionDetails.AddLocalICECandidate(c, false, false)
-				}
-			}
-		}
+	preferTCP := t.preferTCP.Load()
+	if t.isCandidateFilterActive(preferTCP) {
+		t.params.Logger.Debugw("local answer (unfiltered)", "sdp", cld.SDP)
+	}
 
-		addLocalICECandidates(parsed.Attributes)
-		for _, m := range parsed.MediaDescriptions {
-			addLocalICECandidates(m.Attributes)
-		}
+	//
+	// Filter after setting local description as pion expects the answer
+	// to match between CreateAnswer and SetLocalDescription.
+	// Filtered answer is sent to remote so that remote does not
+	// see filtered candidates.
+	//
+	filteredAnswer := t.filterCandidates(*cld, preferTCP, true)
+	if t.isCandidateFilterActive(preferTCP) {
+		t.params.Logger.Debugw("local answer (filtered)", "sdp", filteredAnswer.SDP)
 	}
 
 	answerId := t.remoteOfferId.Load()
 	t.localAnswerId.Store(answerId)
 
-	return *cld, answerId, nil
+	return filteredAnswer, answerId, nil
 }
 
 func (t *PCTransport) GetICESessionUfrag() (string, error) {
@@ -1895,13 +1905,13 @@ func (t *PCTransport) HandleICERestartSDPFragment(sdpFragment string) (string, e
 		t.connectionDetails.AddRemoteICECandidate(c, false, false, false)
 	}
 
-	ans, err := t.pc.CreateAnswer(nil)
+	answer, err := t.pc.CreateAnswer(nil)
 	if err != nil {
 		t.params.Logger.Warnw("could not create answer", err)
 		return "", err
 	}
 
-	if err = t.pc.SetLocalDescription(ans); err != nil {
+	if err = t.pc.SetLocalDescription(answer); err != nil {
 		t.params.Logger.Warnw("could not set local description", err)
 		return "", err
 	}
@@ -1911,31 +1921,30 @@ func (t *PCTransport) HandleICERestartSDPFragment(sdpFragment string) (string, e
 
 	cld := t.pc.CurrentLocalDescription()
 
+	preferTCP := t.preferTCP.Load()
+	if t.isCandidateFilterActive(preferTCP) {
+		t.params.Logger.Debugw("local answer (unfiltered)", "sdp", cld.SDP)
+	}
+
+	//
+	// Filter after setting local description as pion expects the answer
+	// to match between CreateAnswer and SetLocalDescription.
+	// Filtered answer is sent to remote so that remote does not
+	// see filtered candidates.
+	//
+	filteredAnswer := t.filterCandidates(*cld, preferTCP, true)
+	if t.isCandidateFilterActive(preferTCP) {
+		t.params.Logger.Debugw("local answer (filtered)", "sdp", filteredAnswer.SDP)
+	}
+
 	// add local candidates to ICE connection details
-	parsedAnswer, err := cld.Unmarshal()
+	parsedFilteredAnswer, err := filteredAnswer.Unmarshal()
 	if err != nil {
 		t.params.Logger.Warnw("could not parse local description", err)
 		return "", err
 	}
 
-	addLocalICECandidates := func(attrs []sdp.Attribute) {
-		for _, a := range attrs {
-			if a.IsICECandidate() {
-				c, err := ice.UnmarshalCandidate(a.Value)
-				if err != nil {
-					continue
-				}
-				t.connectionDetails.AddLocalICECandidate(c, false, false)
-			}
-		}
-	}
-
-	addLocalICECandidates(parsedAnswer.Attributes)
-	for _, m := range parsedAnswer.MediaDescriptions {
-		addLocalICECandidates(m.Attributes)
-	}
-
-	parsedFragmentAnswer, err := lksdp.ExtractSDPFragment(parsedAnswer)
+	parsedFragmentAnswer, err := lksdp.ExtractSDPFragment(parsedFilteredAnswer)
 	if err != nil {
 		t.params.Logger.Warnw("could not extract SDP fragment", err)
 		return "", err
@@ -2350,11 +2359,19 @@ func (t *PCTransport) handleICEGatheringCompleteAnswerer() error {
 	t.pendingRestartIceOffer = nil
 
 	t.params.Logger.Debugw("accept remote restart ice offer after ICE gathering")
+
+	// Parse the offer payload types before SetRemoteDescription so this does not
+	// race with pion's use of the same description.
+	var offerAudioPT map[mime.MimeType]webrtc.PayloadType
+	if parsed, err := offer.Unmarshal(); err == nil {
+		offerAudioPT = offerAudioPayloadTypes(parsed)
+	}
+
 	if err := t.setRemoteDescription(offer); err != nil {
 		return err
 	}
 	t.params.Handler.OnSetRemoteDescriptionOffer()
-	t.processSendersPendingConfig()
+	t.processSendersPendingConfig(offerAudioPT)
 
 	return t.createAndSendAnswer()
 }
@@ -2390,8 +2407,14 @@ func (t *PCTransport) handleLocalICECandidate(e event) error {
 	filtered := false
 	if c != nil {
 		if t.preferTCP.Load() && c.Protocol != webrtc.ICEProtocolTCP {
-			t.params.Logger.Debugw("filtering out local candidate", "candidate", c.String())
+			t.params.Logger.Debugw("filtering out local candidate, TCP prefered", "candidate", c.String())
 			filtered = true
+		}
+		if !filtered && t.params.ExcludeIPv6LocalCandidates {
+			if IsIPv6(c.Address) {
+				t.params.Logger.Debugw("filtering out local candidate, IPv6 excluded", "candidate", c.String())
+				filtered = true
+			}
 		}
 		t.connectionDetails.AddLocalCandidate(c, filtered, true)
 	}
@@ -2457,6 +2480,10 @@ func (t *PCTransport) setNegotiationState(state transport.NegotiationState) {
 	}
 }
 
+func (t *PCTransport) isCandidateFilterActive(preferTCP bool) bool {
+	return preferTCP || t.params.ExcludeIPv6LocalCandidates
+}
+
 func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP, isLocal bool) webrtc.SessionDescription {
 	parsed, err := sd.Unmarshal()
 	if err != nil {
@@ -2474,12 +2501,10 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP, 
 					filteredAttrs = append(filteredAttrs, a)
 					continue
 				}
-				excluded := preferTCP && !c.NetworkType().IsTCP()
-				if !excluded {
-					if !t.params.Config.UseMDNS && types.IsICECandidateMDNS(c) {
-						excluded = true
-					}
-				}
+				excluded :=
+					(preferTCP && !c.NetworkType().IsTCP()) ||
+						(t.params.ExcludeIPv6LocalCandidates && isLocal && c.NetworkType().IsIPv6()) ||
+						(!t.params.Config.UseMDNS && types.IsICECandidateMDNS(c))
 				if !excluded {
 					filteredAttrs = append(filteredAttrs, a)
 				}
@@ -2622,7 +2647,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	}
 
 	preferTCP := t.preferTCP.Load()
-	if preferTCP {
+	if t.isCandidateFilterActive(preferTCP) {
 		t.params.Logger.Debugw("local offer (unfiltered)", "sdp", offer.SDP)
 	}
 
@@ -2650,7 +2675,7 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	// see filtered candidates.
 	//
 	offer = t.filterCandidates(offer, preferTCP, true)
-	if preferTCP {
+	if t.isCandidateFilterActive(preferTCP) {
 		t.params.Logger.Debugw("local offer (filtered)", "sdp", offer.SDP)
 	}
 
@@ -2716,11 +2741,11 @@ func (t *PCTransport) isRemoteOfferRestartICE(parsed *sdp.SessionDescription) (s
 func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 	// filter before setting remote description so that pion does not see filtered remote candidates
 	preferTCP := t.preferTCP.Load()
-	if preferTCP {
+	if t.isCandidateFilterActive(preferTCP) {
 		t.params.Logger.Debugw("remote description (unfiltered)", "type", sd.Type, "sdp", sd.SDP)
 	}
 	sd = t.filterCandidates(sd, preferTCP, false)
-	if preferTCP {
+	if t.isCandidateFilterActive(preferTCP) {
 		t.params.Logger.Debugw("remote description (filtered)", "type", sd.Type, "sdp", sd.SDP)
 	}
 
@@ -2780,7 +2805,7 @@ func (t *PCTransport) createAndSendAnswer() error {
 	}
 
 	preferTCP := t.preferTCP.Load()
-	if preferTCP {
+	if t.isCandidateFilterActive(preferTCP) {
 		t.params.Logger.Debugw("local answer (unfiltered)", "sdp", answer.SDP)
 	}
 
@@ -2796,7 +2821,7 @@ func (t *PCTransport) createAndSendAnswer() error {
 	// see filtered candidates.
 	//
 	answer = t.filterCandidates(answer, preferTCP, true)
-	if preferTCP {
+	if t.isCandidateFilterActive(preferTCP) {
 		t.params.Logger.Debugw("local answer (filtered)", "sdp", answer.SDP)
 	}
 
@@ -2899,7 +2924,7 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, o
 	}
 
 	t.params.Handler.OnSetRemoteDescriptionOffer()
-	t.processSendersPendingConfig()
+	t.processSendersPendingConfig(offerAudioPayloadTypes(parsed))
 
 	rtxRepairs := nonSimulcastRTXRepairsFromSDP(parsed, t.params.Logger)
 	if len(rtxRepairs) > 0 {
@@ -3094,7 +3119,7 @@ type configureSenderParams struct {
 	keepFlexFEC              bool
 }
 
-func configureSender(params configureSenderParams) {
+func configureSender(params configureSenderParams, offerAudioPT map[mime.MimeType]webrtc.PayloadType) {
 	configureSenderCodecs(
 		params.transceiver,
 		params.enabledCodecs,
@@ -3104,14 +3129,14 @@ func configureSender(params configureSenderParams) {
 	)
 
 	if params.transceiver.Kind() == webrtc.RTPCodecTypeAudio {
-		configureSenderAudio(params.transceiver, params.enableAudioStereo, params.enableAudioNACK)
+		configureSenderAudio(params.transceiver, params.enableAudioStereo, params.enableAudioNACK, offerAudioPT)
 	}
 }
 
 // configure subscriber transceiver for audio stereo and nack
 // pion doesn't support per transciver codec configuration, so the nack of this session will be disabled
 // forever once it is first disabled by a transceiver.
-func configureSenderAudio(tr *webrtc.RTPTransceiver, stereo bool, nack bool) {
+func configureSenderAudio(tr *webrtc.RTPTransceiver, stereo bool, nack bool, offerAudioPT map[mime.MimeType]webrtc.PayloadType) {
 	sender := tr.Sender()
 	if sender == nil {
 		return
@@ -3135,10 +3160,63 @@ func configureSenderAudio(tr *webrtc.RTPTransceiver, stereo bool, nack bool) {
 				}
 			}
 		}
+		// When answering a subscriber's offer (single peer connection mode), echo
+		// the payload type the offer assigned for this codec instead of the server's
+		// MediaEngine payload type. Otherwise the answer can advertise e.g. Opus on a
+		// PT that was never offered, which Firefox rejects (received packets decode to
+		// 0 samples / silence). The forwarded RTP already uses the offered PT.
+		if len(offerAudioPT) > 0 {
+			if pt, ok := offerAudioPT[mime.NormalizeMimeType(c.MimeType)]; ok {
+				c.PayloadType = pt
+			}
+		}
 		configCodecs = append(configCodecs, c)
 	}
 
 	tr.SetCodecPreferences(configCodecs)
+}
+
+// offerAudioPayloadTypes returns mime type -> payload type for the audio codecs
+// in a remote offer, so the subscriber answer can echo the offered payload types
+// (RFC 3264 6.1). The caller parses the offer before SetRemoteDescription, so this
+// does not race with pion's use of the same description.
+func offerAudioPayloadTypes(parsed *sdp.SessionDescription) map[mime.MimeType]webrtc.PayloadType {
+	if parsed == nil {
+		return nil
+	}
+	out := map[mime.MimeType]webrtc.PayloadType{}
+	for _, md := range parsed.MediaDescriptions {
+		if !strings.EqualFold(md.MediaName.Media, "audio") {
+			continue
+		}
+		for _, a := range md.Attributes {
+			if a.Key != "rtpmap" {
+				continue
+			}
+			// value e.g. "109 opus/48000/2"
+			fields := strings.Fields(a.Value)
+			if len(fields) < 2 {
+				continue
+			}
+			pt, err := strconv.Atoi(fields[0])
+			if err != nil {
+				continue
+			}
+			codecName := fields[1]
+			if i := strings.Index(codecName, "/"); i >= 0 {
+				codecName = codecName[:i]
+			}
+			mt := mime.NormalizeMimeTypeCodec(codecName).ToMimeType()
+			if mt == mime.MimeTypeUnknown {
+				continue
+			}
+			out[mt] = webrtc.PayloadType(pt)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // In single peer connection mode, set up enebled codecs for sender.
