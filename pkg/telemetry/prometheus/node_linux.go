@@ -38,8 +38,17 @@ func getTCStats() (packets, drops uint32, err error) {
 	}
 
 	for _, qdisc := range qdiscs {
-		packets = packets + qdisc.Stats.Packets
-		drops = drops + qdisc.Stats.Drops
+		// Newer kernels report stats via TCA_STATS2 (Stats2), while older kernels
+		// only populate the legacy TCA_STATS attribute (Stats). Prefer Stats2 and
+		// fall back to Stats so counters are collected on both.
+		switch {
+		case qdisc.Stats2 != nil:
+			packets = packets + qdisc.Stats2.Packets
+			drops = drops + qdisc.Stats2.Drops
+		case qdisc.Stats != nil:
+			packets = packets + qdisc.Stats.Packets
+			drops = drops + qdisc.Stats.Drops
+		}
 	}
 
 	return
