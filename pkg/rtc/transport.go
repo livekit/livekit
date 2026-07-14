@@ -303,27 +303,28 @@ type PCTransport struct {
 }
 
 type TransportParams struct {
-	Handler                       transport.Handler
-	ProtocolVersion               types.ProtocolVersion
-	Config                        *WebRTCConfig
-	Twcc                          *lktwcc.Responder
-	DirectionConfig               DirectionConfig
-	CongestionControlConfig       config.CongestionControlConfig
-	EnabledPublishCodecs          []*livekit.Codec
-	EnabledSubscribeCodecs        []*livekit.Codec
-	Logger                        logger.Logger
-	Transport                     livekit.SignalTarget
-	SimTracks                     map[uint32]sfuinterceptor.SimulcastTrackInfo
-	ClientInfo                    ClientInfo
-	IsOfferer                     bool
-	IsSendSide                    bool
-	AllowPlayoutDelay             bool
-	UseOneShotSignallingMode      bool
-	ExcludeIPv6LocalCandidates    bool
-	FireOnTrackBySdp              bool
-	DataChannelMaxBufferedAmount  uint64
-	DatachannelSlowThreshold      int
-	DatachannelLossyTargetLatency time.Duration
+	Handler                           transport.Handler
+	ProtocolVersion                   types.ProtocolVersion
+	Config                            *WebRTCConfig
+	Twcc                              *lktwcc.Responder
+	DirectionConfig                   DirectionConfig
+	CongestionControlConfig           config.CongestionControlConfig
+	EnabledPublishCodecs              []*livekit.Codec
+	EnabledSubscribeCodecs            []*livekit.Codec
+	Logger                            logger.Logger
+	Transport                         livekit.SignalTarget
+	SimTracks                         map[uint32]sfuinterceptor.SimulcastTrackInfo
+	ClientInfo                        ClientInfo
+	IsOfferer                         bool
+	IsSendSide                        bool
+	AllowPlayoutDelay                 bool
+	UseOneShotSignallingMode          bool
+	ExcludeIPv6LocalCandidates        bool
+	FireOnTrackBySdp                  bool
+	DataChannelMaxBufferedAmount      uint64
+	DatachannelSlowThreshold          int
+	DatachannelLossyTargetLatency     time.Duration
+	DatachannelDataTrackTargetLatency time.Duration
 
 	// for development test
 	DatachannelMaxReceiverBufferSize int
@@ -914,7 +915,7 @@ func (t *PCTransport) onDataChannel(dc *webrtc.DataChannel) {
 				if t.dataTrackDC != nil {
 					t.dataTrackDC.Close()
 				}
-				t.dataTrackDC = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, 0, 0)
+				t.dataTrackDC = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, t.params.DatachannelDataTrackTargetLatency, uint64(lossyDataChannelMinBufferedAmount))
 			}
 
 		case kind == livekit.DataPacket_RELIABLE:
@@ -1300,7 +1301,7 @@ func (t *PCTransport) CreateDataChannel(label string, dci *webrtc.DataChannelIni
 			case dcPtr == &t.lossyDC:
 				*dcPtr = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, t.params.DatachannelLossyTargetLatency, uint64(lossyDataChannelMinBufferedAmount))
 			case dcPtr == &t.dataTrackDC:
-				*dcPtr = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, 0, 0)
+				*dcPtr = datachannel.NewDataChannelWriterUnreliable(dc, rawDC, t.params.DatachannelDataTrackTargetLatency, uint64(lossyDataChannelMinBufferedAmount))
 			}
 			if dcReady != nil {
 				*dcReady = true
