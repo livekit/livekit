@@ -63,6 +63,16 @@ func NewSIPService(
 	}
 }
 
+func unlikelyLoggerFromCtx(ctx context.Context) logger.UnlikelyLogger {
+	var logFields []any
+	logCtx, ok := ctx.Value(twirpLoggerKey{}).(*twirpLogger)
+	if ok {
+		logFields = logCtx.fields
+	}
+	return logger.GetLogger().WithUnlikelyValues(logFields...)
+
+}
+
 func (s *SIPService) CreateSIPTrunk(ctx context.Context, req *livekit.CreateSIPTrunkRequest) (*livekit.SIPTrunkInfo, error) {
 	if err := EnsureSIPAdminPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
@@ -116,7 +126,7 @@ func (s *SIPService) CreateSIPInboundTrunk(ctx context.Context, req *livekit.Cre
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
-	if err := req.Validate(); err != nil {
+	if err := req.ValidateResult().LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 
@@ -155,7 +165,7 @@ func (s *SIPService) CreateSIPOutboundTrunk(ctx context.Context, req *livekit.Cr
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
-	if err := req.Validate(); err != nil {
+	if err := req.ValidateResult().LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 
@@ -180,7 +190,7 @@ func (s *SIPService) UpdateSIPInboundTrunk(ctx context.Context, req *livekit.Upd
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
-	if err := req.Validate(); err != nil {
+	if err := req.ValidateResult().LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 
@@ -201,8 +211,9 @@ func (s *SIPService) UpdateSIPInboundTrunk(ctx context.Context, req *livekit.Upd
 	default:
 		return nil, errors.New("missing or unsupported action")
 	case livekit.UpdateSIPInboundTrunkRequestAction:
-		info, err = a.Apply(info)
-		if err != nil {
+		var result livekit.ValidationResult
+		info, result = a.ApplyResult(info)
+		if err := result.LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
 			return nil, err
 		}
 	}
@@ -235,7 +246,7 @@ func (s *SIPService) UpdateSIPOutboundTrunk(ctx context.Context, req *livekit.Up
 	if s.store == nil {
 		return nil, ErrSIPNotConnected
 	}
-	if err := req.Validate(); err != nil {
+	if err := req.ValidateResult().LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 
@@ -255,8 +266,9 @@ func (s *SIPService) UpdateSIPOutboundTrunk(ctx context.Context, req *livekit.Up
 	default:
 		return nil, errors.New("missing or unsupported action")
 	case livekit.UpdateSIPOutboundTrunkRequestAction:
-		info, err = a.Apply(info)
-		if err != nil {
+		var result livekit.ValidationResult
+		info, result = a.ApplyResult(info)
+		if err := result.LogUnlikelySoftErrors(unlikelyLoggerFromCtx(ctx)); err != nil {
 			return nil, err
 		}
 	}
@@ -631,9 +643,6 @@ func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livek
 		return nil, ErrSIPNotConnected
 	}
 	req.Upgrade()
-	if err := req.Validate(); err != nil {
-		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
-	}
 	callID := sip.NewCallID()
 	log := logger.GetLogger().WithUnlikelyValues(
 		"callID", callID,
@@ -641,6 +650,10 @@ func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livek
 		"sipTrunk", req.SipTrunkId,
 		"toUser", req.SipCallTo,
 	)
+	if err := req.ValidateResult().LogUnlikelySoftErrors(log); err != nil {
+		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
+	}
+
 	if projectID != "" {
 		log = log.WithValues("projectID", projectID)
 	}
@@ -662,7 +675,11 @@ func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livek
 	} else if t := req.Trunk; t != nil && t.FromHost != "" {
 		host = t.FromHost
 	}
-	return rpc.NewCreateSIPParticipantRequest(projectID, callID, host, wsUrl, token, req, trunk)
+	internalReq, result := rpc.NewCreateSIPParticipantRequestResult(projectID, callID, host, wsUrl, token, req, trunk)
+	if err := result.LogUnlikelySoftErrors(log); err != nil {
+		return nil, err
+	}
+	return internalReq, nil
 }
 
 func (s *SIPService) TransferSIPParticipant(ctx context.Context, req *livekit.TransferSIPParticipantRequest) (*emptypb.Empty, error) {
@@ -730,7 +747,12 @@ func (s *SIPService) transferSIPParticipantRequest(ctx context.Context, req *liv
 	if err := EnsureAdminPermission(ctx, livekit.RoomName(req.RoomName)); err != nil {
 		return nil, twirpAuthError(err)
 	}
-	if err := req.Validate(); err != nil {
+
+	unlikelyLogger := logger.GetLogger().WithUnlikelyValues(
+		"room", req.RoomName,
+		"participant", req.ParticipantIdentity,
+	)
+	if err := req.ValidateResult().LogUnlikelySoftErrors(unlikelyLogger); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 
