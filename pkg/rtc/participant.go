@@ -174,60 +174,62 @@ type ParticipantParams struct {
 	PLIThrottleConfig       sfu.PLIThrottleConfig
 	CongestionControlConfig config.CongestionControlConfig
 	// codecs that are enabled for this room
-	PublishEnabledCodecs            []*livekit.Codec
-	SubscribeEnabledCodecs          []*livekit.Codec
-	Logger                          logger.Logger
-	LoggerResolver                  logger.DeferredFieldResolver
-	Reporter                        roomobs.ParticipantSessionReporter
-	ReporterResolver                roomobs.ParticipantReporterResolver
-	SimTracks                       map[uint32]interceptor.SimulcastTrackInfo
-	Grants                          *auth.ClaimGrants
-	TokenExpiresAt                  time.Time
-	InitialVersion                  uint32
-	ClientConf                      *livekit.ClientConfiguration
-	ClientInfo                      ClientInfo
-	Region                          string
-	Migration                       bool
-	Reconnect                       bool
-	AdaptiveStream                  bool
-	AllowTCPFallback                bool
-	TCPFallbackRTTThreshold         int
-	AllowUDPUnstableFallback        bool
-	TURNSEnabled                    bool
-	ParticipantListener             types.LocalParticipantListener
-	ParticipantHelper               types.LocalParticipantHelper
-	DisableSupervisor               bool
-	ReconnectOnPublicationError     bool
-	ReconnectOnSubscriptionError    bool
-	ReconnectOnDataChannelError     bool
-	VersionGenerator                utils.TimedVersionGenerator
-	DisableDynacast                 bool
-	SubscriberAllowPause            bool
-	SubscriptionLimitAudio          int32
-	SubscriptionLimitVideo          int32
-	PlayoutDelay                    *livekit.PlayoutDelay
-	SyncStreams                     bool
-	ForwardStats                    *sfu.ForwardStats
-	DisableSenderReportPassThrough  bool
-	MetricConfig                    metric.MetricConfig
-	UseOneShotSignallingMode        bool
-	EnableMetrics                   bool
-	DataChannelMaxBufferedAmount    uint64
-	DatachannelSlowThreshold        int
-	DatachannelLossyTargetLatency   time.Duration
-	FireOnTrackBySdp                bool
-	DisableCodecRegression          bool
-	LastPubReliableSeq              uint32
-	Country                         string
-	PreferVideoSizeFromMedia        bool
-	UseSinglePeerConnection         bool
-	EnableDataTracks                bool
-	EnableRTPStreamRestartDetection bool
-	ForceBackupCodecPolicySimulcast bool
-	DisableTransceiverReuseForE2EE  bool
-	EnableParticipantDataBlob       bool
-	EnableStartAtDesiredQuality     bool
-	MigrationWaitDuration           time.Duration
+	PublishEnabledCodecs              []*livekit.Codec
+	SubscribeEnabledCodecs            []*livekit.Codec
+	Logger                            logger.Logger
+	LoggerResolver                    logger.DeferredFieldResolver
+	Reporter                          roomobs.ParticipantSessionReporter
+	ReporterResolver                  roomobs.ParticipantReporterResolver
+	SimTracks                         map[uint32]interceptor.SimulcastTrackInfo
+	Grants                            *auth.ClaimGrants
+	TokenExpiresAt                    time.Time
+	InitialVersion                    uint32
+	ClientConf                        *livekit.ClientConfiguration
+	ClientInfo                        ClientInfo
+	Region                            string
+	Migration                         bool
+	Reconnect                         bool
+	AdaptiveStream                    bool
+	AllowTCPFallback                  bool
+	TCPFallbackRTTThreshold           int
+	AllowUDPUnstableFallback          bool
+	TURNSEnabled                      bool
+	ParticipantListener               types.LocalParticipantListener
+	ParticipantHelper                 types.LocalParticipantHelper
+	DisableSupervisor                 bool
+	ReconnectOnPublicationError       bool
+	ReconnectOnSubscriptionError      bool
+	ReconnectOnDataChannelError       bool
+	VersionGenerator                  utils.TimedVersionGenerator
+	DisableDynacast                   bool
+	SubscriberAllowPause              bool
+	SubscriptionLimitAudio            int32
+	SubscriptionLimitVideo            int32
+	PlayoutDelay                      *livekit.PlayoutDelay
+	SyncStreams                       bool
+	ForwardStats                      *sfu.ForwardStats
+	DisableSenderReportPassThrough    bool
+	MetricConfig                      metric.MetricConfig
+	UseOneShotSignallingMode          bool
+	EnableMetrics                     bool
+	DataChannelMaxBufferedAmount      uint64
+	DatachannelSlowThreshold          int
+	DatachannelLossyTargetLatency     time.Duration
+	DatachannelDataTrackTargetLatency time.Duration
+	FireOnTrackBySdp                  bool
+	DisableCodecRegression            bool
+	LastPubReliableSeq                uint32
+	Country                           string
+	PreferVideoSizeFromMedia          bool
+	UseSinglePeerConnection           bool
+	EnableDataTracks                  bool
+	EnableRTPStreamRestartDetection   bool
+	ForceBackupCodecPolicySimulcast   bool
+	DisableTransceiverReuseForE2EE    bool
+	EnableParticipantDataBlob         bool
+	EnableStartAtDesiredQuality       bool
+	MigrationWaitDuration             time.Duration
+	ExcludeIPv6LocalCandidates        bool
 }
 
 type ParticipantImpl struct {
@@ -1426,13 +1428,19 @@ func (p *ParticipantImpl) IsReconnect() bool {
 	return p.params.Reconnect
 }
 
-func (p *ParticipantImpl) maybeRecordRTCanceled(closeReason types.ParticipantCloseReason) {
-	if p.HasConnected() {
-		return
-	}
+func (p *ParticipantImpl) IsMigration() bool {
+	return p.params.Migration
+}
 
-	if p.IsConnectionCanceled(closeReason) {
-		prometheus.IncrementParticipantRtcCanceled(1)
+func (p *ParticipantImpl) recordRTCState(closeReason types.ParticipantCloseReason) {
+	if p.HasConnected() {
+		prometheus.IncrementParticipantRtcSuccess(1)
+	} else {
+		if p.IsConnectionCanceled(closeReason) {
+			prometheus.IncrementParticipantRtcCanceled(1)
+		} else {
+			prometheus.IncrementParticipantRtcFailure(1)
+		}
 	}
 }
 
@@ -1442,7 +1450,8 @@ func (p *ParticipantImpl) IsConnectionCanceled(closeReason types.ParticipantClos
 		closeReason == types.ParticipantCloseReasonRoomClosed ||
 		closeReason == types.ParticipantCloseReasonMigrationRequested ||
 		closeReason == types.ParticipantCloseReasonMigrationComplete ||
-		// client closing signal connection too quickly, there is a time check to handle clients timing out and leaving without sending a leave message
+		// client closing signal connection too quickly, a quick close could be an indication of client leaving before a timeout
+		// something longer could be clients timing out without sending a leave message and is usually a sign of failed connection
 		(time.Since(p.params.SessionStartTime) < 3*time.Second && closeReason == types.ParticipantCloseReasonSignalSourceClose)
 }
 
@@ -1452,7 +1461,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		return nil
 	}
 
-	p.maybeRecordRTCanceled(reason)
+	p.recordRTCState(reason)
 
 	var sessionDuration time.Duration
 	if activeAt := p.ActiveAt(); !activeAt.IsZero() {
@@ -2027,32 +2036,34 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	params := TransportManagerParams{
 		// primary connection does not change, canSubscribe can change if permission was updated
 		// after the participant has joined
-		SubscriberAsPrimary:           subscriberAsPrimary,
-		UseSinglePeerConnection:       p.params.UseSinglePeerConnection,
-		Config:                        p.params.Config,
-		Twcc:                          p.twcc,
-		ProtocolVersion:               p.params.ProtocolVersion,
-		CongestionControlConfig:       p.params.CongestionControlConfig,
-		EnabledPublishCodecs:          p.enabledPublishCodecs,
-		EnabledSubscribeCodecs:        p.enabledSubscribeCodecs,
-		SimTracks:                     p.params.SimTracks,
-		ClientInfo:                    p.params.ClientInfo,
-		Migration:                     p.params.Migration,
-		AllowTCPFallback:              p.params.AllowTCPFallback,
-		TCPFallbackRTTThreshold:       p.params.TCPFallbackRTTThreshold,
-		AllowUDPUnstableFallback:      p.params.AllowUDPUnstableFallback,
-		TURNSEnabled:                  p.params.TURNSEnabled,
-		AllowPlayoutDelay:             p.params.PlayoutDelay.GetEnabled(),
-		DataChannelMaxBufferedAmount:  p.params.DataChannelMaxBufferedAmount,
-		DatachannelSlowThreshold:      p.params.DatachannelSlowThreshold,
-		DatachannelLossyTargetLatency: p.params.DatachannelLossyTargetLatency,
-		Logger:                        p.params.Logger.WithComponent(sutils.ComponentTransport),
-		PublisherHandler:              pth,
-		SubscriberHandler:             sth,
-		DataChannelStats:              p.dataChannelStats,
-		UseOneShotSignallingMode:      p.params.UseOneShotSignallingMode,
-		FireOnTrackBySdp:              p.params.FireOnTrackBySdp,
-		EnableDataTracks:              p.params.EnableDataTracks,
+		SubscriberAsPrimary:               subscriberAsPrimary,
+		UseSinglePeerConnection:           p.params.UseSinglePeerConnection,
+		Config:                            p.params.Config,
+		Twcc:                              p.twcc,
+		ProtocolVersion:                   p.params.ProtocolVersion,
+		CongestionControlConfig:           p.params.CongestionControlConfig,
+		EnabledPublishCodecs:              p.enabledPublishCodecs,
+		EnabledSubscribeCodecs:            p.enabledSubscribeCodecs,
+		SimTracks:                         p.params.SimTracks,
+		ClientInfo:                        p.params.ClientInfo,
+		Migration:                         p.params.Migration,
+		AllowTCPFallback:                  p.params.AllowTCPFallback,
+		TCPFallbackRTTThreshold:           p.params.TCPFallbackRTTThreshold,
+		AllowUDPUnstableFallback:          p.params.AllowUDPUnstableFallback,
+		TURNSEnabled:                      p.params.TURNSEnabled,
+		AllowPlayoutDelay:                 p.params.PlayoutDelay.GetEnabled(),
+		DataChannelMaxBufferedAmount:      p.params.DataChannelMaxBufferedAmount,
+		DatachannelSlowThreshold:          p.params.DatachannelSlowThreshold,
+		DatachannelLossyTargetLatency:     p.params.DatachannelLossyTargetLatency,
+		DatachannelDataTrackTargetLatency: p.params.DatachannelDataTrackTargetLatency,
+		Logger:                            p.params.Logger.WithComponent(sutils.ComponentTransport),
+		PublisherHandler:                  pth,
+		SubscriberHandler:                 sth,
+		DataChannelStats:                  p.dataChannelStats,
+		UseOneShotSignallingMode:          p.params.UseOneShotSignallingMode,
+		FireOnTrackBySdp:                  p.params.FireOnTrackBySdp,
+		EnableDataTracks:                  p.params.EnableDataTracks,
+		ExcludeIPv6LocalCandidates:        p.params.ExcludeIPv6LocalCandidates,
 	}
 	if p.params.SyncStreams && p.params.PlayoutDelay.GetEnabled() && p.params.ClientInfo.isFirefox() {
 		// we will disable playout delay for Firefox if the user is expecting
