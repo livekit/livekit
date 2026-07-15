@@ -63,6 +63,8 @@ func NewSIPService(
 	}
 }
 
+// Returns a new UnlikelyLogger, populated with values from the request context
+// (e.g. service, method, etc.).)
 func unlikelyLoggerFromCtx(ctx context.Context) logger.UnlikelyLogger {
 	var logFields []any
 	logCtx, ok := ctx.Value(twirpLoggerKey{}).(*twirpLogger)
