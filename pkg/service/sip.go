@@ -70,7 +70,6 @@ func unlikelyLoggerFromCtx(ctx context.Context) logger.UnlikelyLogger {
 		logFields = logCtx.fields
 	}
 	return logger.GetLogger().WithUnlikelyValues(logFields...)
-
 }
 
 func (s *SIPService) CreateSIPTrunk(ctx context.Context, req *livekit.CreateSIPTrunkRequest) (*livekit.SIPTrunkInfo, error) {
