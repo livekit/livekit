@@ -645,18 +645,18 @@ func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livek
 	}
 	req.Upgrade()
 	callID := sip.NewCallID()
-	log := logger.GetLogger().WithUnlikelyValues(
+	logValues := []string{
 		"callID", callID,
 		"room", req.RoomName,
 		"sipTrunk", req.SipTrunkId,
 		"toUser", req.SipCallTo,
-	)
+	}
+	if projectID != "" {
+		logValues = append(logValues, "projectID", projectID)
+	}
+	log := logger.GetLogger().WithUnlikelyValues(logValues)
 	if err := req.ValidateResult().LogUnlikelySoftErrors(log); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
-	}
-
-	if projectID != "" {
-		log = log.WithValues("projectID", projectID)
 	}
 
 	var trunk *livekit.SIPOutboundTrunkInfo
@@ -684,20 +684,15 @@ func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livek
 }
 
 func (s *SIPService) TransferSIPParticipant(ctx context.Context, req *livekit.TransferSIPParticipantRequest) (*emptypb.Empty, error) {
-	log := logger.GetLogger().WithUnlikelyValues(
-		"room", req.RoomName,
-		"participant", req.ParticipantIdentity,
-		"transferTo", req.TransferTo,
-		"playDialtone", req.PlayDialtone,
-	)
 	AppendLogFields(ctx,
 		"room", req.RoomName,
 		"participant", req.ParticipantIdentity,
 		"transferTo", req.TransferTo,
 		"playDialtone", req.PlayDialtone,
 	)
+	log := unlikelyLoggerFromCtx(ctx)
 
-	ireq, err := s.transferSIPParticipantRequest(ctx, req)
+	ireq, err := s.transferSIPParticipantRequest(ctx, req, log)
 	if err != nil {
 		log.Errorw("cannot create transfer sip participant request", err)
 		return nil, wrapSIPContextError(err)
@@ -733,7 +728,7 @@ func (s *SIPService) TransferSIPParticipant(ctx context.Context, req *livekit.Tr
 	return &emptypb.Empty{}, nil
 }
 
-func (s *SIPService) transferSIPParticipantRequest(ctx context.Context, req *livekit.TransferSIPParticipantRequest) (*rpc.InternalTransferSIPParticipantRequest, error) {
+func (s *SIPService) transferSIPParticipantRequest(ctx context.Context, req *livekit.TransferSIPParticipantRequest, log logger.UnlikelyLogger) (*rpc.InternalTransferSIPParticipantRequest, error) {
 	if req.RoomName == "" {
 		return nil, psrpc.NewErrorf(psrpc.InvalidArgument, "Missing room name")
 	}
@@ -749,11 +744,7 @@ func (s *SIPService) transferSIPParticipantRequest(ctx context.Context, req *liv
 		return nil, twirpAuthError(err)
 	}
 
-	unlikelyLogger := logger.GetLogger().WithUnlikelyValues(
-		"room", req.RoomName,
-		"participant", req.ParticipantIdentity,
-	)
-	if err := req.ValidateResult().LogUnlikelySoftErrors(unlikelyLogger); err != nil {
+	if err := req.ValidateResult().LogUnlikelySoftErrors(log); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
 
