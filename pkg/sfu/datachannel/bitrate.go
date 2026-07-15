@@ -31,6 +31,19 @@ const (
 	BitrateModeWallClock
 )
 
+func (m BitrateMode) String() string {
+	switch m {
+	case BitrateModeBusyOnly:
+		return "busyOnly"
+	case BitrateModeExcludeIdleDrain:
+		return "excludeIdleDrain"
+	case BitrateModeWallClock:
+		return "wallClock"
+	default:
+		return "unknown"
+	}
+}
+
 // BitrateCalculator calculates bitrate over sliding window
 type BitrateCalculator struct {
 	lock           sync.Mutex

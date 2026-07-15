@@ -9,24 +9,11 @@ import (
 
 var busyModes = []BitrateMode{BitrateModeBusyOnly, BitrateModeExcludeIdleDrain}
 
-func modeName(m BitrateMode) string {
-	switch m {
-	case BitrateModeBusyOnly:
-		return "busyOnly"
-	case BitrateModeExcludeIdleDrain:
-		return "excludeIdleDrain"
-	case BitrateModeWallClock:
-		return "wallClock"
-	default:
-		return "unknown"
-	}
-}
-
 // 1 KB written every second, each fully drained before the next write: never
 // backlogged, so there is no estimate.
 func TestBitrateCalculatorSparseFastAck(t *testing.T) {
 	for _, mode := range busyModes {
-		t.Run(modeName(mode), func(t *testing.T) {
+		t.Run(mode.String(), func(t *testing.T) {
 			c := NewBitrateCalculator(BitrateDuration, BitrateWindow, mode)
 			require.NotNil(t, c)
 
@@ -45,7 +32,7 @@ func TestBitrateCalculatorSparseFastAck(t *testing.T) {
 // buffer 1000+800=1800. 800 B / 100ms = 64000 bps.
 func TestBitrateCalculatorSustainedBacklog(t *testing.T) {
 	for _, mode := range busyModes {
-		t.Run(modeName(mode), func(t *testing.T) {
+		t.Run(mode.String(), func(t *testing.T) {
 			c := NewBitrateCalculator(BitrateDuration, BitrateWindow, mode)
 
 			t0 := time.Now()
@@ -65,7 +52,7 @@ func TestBitrateCalculatorSustainedBacklog(t *testing.T) {
 // converges to ~0.
 func TestBitrateCalculatorStalledConnection(t *testing.T) {
 	for _, mode := range busyModes {
-		t.Run(modeName(mode), func(t *testing.T) {
+		t.Run(mode.String(), func(t *testing.T) {
 			c := NewBitrateCalculator(BitrateDuration, BitrateWindow, mode)
 
 			t0 := time.Now()
@@ -86,7 +73,7 @@ func TestBitrateCalculatorStalledConnection(t *testing.T) {
 // no estimate is produced.
 func TestBitrateCalculatorFlushNotCounted(t *testing.T) {
 	for _, mode := range busyModes {
-		t.Run(modeName(mode), func(t *testing.T) {
+		t.Run(mode.String(), func(t *testing.T) {
 			c := NewBitrateCalculator(BitrateDuration, BitrateWindow, mode)
 
 			t0 := time.Now()
