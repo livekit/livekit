@@ -119,9 +119,18 @@ func (w *DataChannelWriter[T]) writeUnreliable(p []byte) (n int, err error) {
 	}
 
 	if bitrate, ok := w.rate.Bitrate(time.Now()); ok {
-		// control buffer latency to ~100ms
-		if w.bufferGetter.BufferedAmount() > uint64(time.Duration(bitrate)*w.targetLatency/8/time.Second) && w.bufferGetter.BufferedAmount() > w.minBufferedAmount {
-			return 0, ErrDataDroppedByHighBufferedAmount
+		// control buffer latency to target
+		bufferedAmount := w.bufferGetter.BufferedAmount()
+		targetLatencyLimit := uint64(time.Duration(bitrate) * w.targetLatency / 8 / time.Second)
+		if bufferedAmount > targetLatencyLimit && bufferedAmount > w.minBufferedAmount {
+			return 0, fmt.Errorf(
+				"%w: bitrate %d, buffered amount %d, target latency limit %d, min buffered amount %d",
+				ErrDataDroppedByHighBufferedAmount,
+				bitrate,
+				bufferedAmount,
+				targetLatencyLimit,
+				w.minBufferedAmount,
+			)
 		}
 	}
 
