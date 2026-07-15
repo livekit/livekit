@@ -41,7 +41,7 @@ type DataChannelWriter[T BufferedAmountGetter] struct {
 func NewDataChannelWriterReliable[T BufferedAmountGetter](bufferGetter T, rawDC datachannel.ReadWriteCloserDeadliner, slowThreshold int) *DataChannelWriter[T] {
 	var rate *BitrateCalculator
 	if slowThreshold > 0 {
-		rate = NewBitrateCalculator(BitrateDuration, BitrateWindow)
+		rate = NewBitrateCalculator(BitrateDuration, BitrateWindow, BitrateModeBusyOnly)
 	}
 	return &DataChannelWriter[T]{
 		bufferGetter:  bufferGetter,
@@ -59,7 +59,7 @@ func NewDataChannelWriterReliable[T BufferedAmountGetter](bufferGetter T, rawDC 
 func NewDataChannelWriterUnreliable[T BufferedAmountGetter](bufferGetter T, rawDC datachannel.ReadWriteCloserDeadliner, targetLatency time.Duration, minBufferedAmount uint64) *DataChannelWriter[T] {
 	var rate *BitrateCalculator
 	if targetLatency > 0 {
-		rate = NewBitrateCalculator(BitrateDuration, BitrateWindow)
+		rate = NewBitrateCalculator(BitrateDuration, BitrateWindow, BitrateModeBusyOnly)
 	}
 	return &DataChannelWriter[T]{
 		bufferGetter:      bufferGetter,
