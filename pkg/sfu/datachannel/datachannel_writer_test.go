@@ -93,9 +93,7 @@ func (m *mockDataChannelWriter) BufferedAmount() uint64 {
 }
 
 func (m *mockDataChannelWriter) Write(b []byte) (int, error) {
-	// Data handed to the channel stays buffered until the write completes
-	// (i.e. the receiver drains it). A slow/stalled receiver keeps it buffered,
-	// which is what the bitrate calculator observes as backlog.
+	// buffered while the write is in flight, cleared once it completes
 	m.buffered.Store(int64(len(b)))
 	wait := time.Until(m.nextWriteCompleteAt)
 	if wait <= 0 {
