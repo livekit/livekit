@@ -645,16 +645,13 @@ func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livek
 	}
 	req.Upgrade()
 	callID := sip.NewCallID()
-	logValues := []string{
+	log := logger.GetLogger().WithUnlikelyValues(
 		"callID", callID,
 		"room", req.RoomName,
 		"sipTrunk", req.SipTrunkId,
 		"toUser", req.SipCallTo,
-	}
-	if projectID != "" {
-		logValues = append(logValues, "projectID", projectID)
-	}
-	log := logger.GetLogger().WithUnlikelyValues(logValues)
+		"projectID", projectID,
+	)
 	if err := req.ValidateResult().LogUnlikelySoftErrors(log); err != nil {
 		return nil, twirp.WrapError(twirp.NewError(twirp.InvalidArgument, err.Error()), err)
 	}
