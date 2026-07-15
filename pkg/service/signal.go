@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
@@ -131,9 +132,23 @@ type signalService struct {
 }
 
 func (r *signalService) RelaySignal(stream psrpc.ServerStream[*rpc.RelaySignalResponse, *rpc.RelaySignalRequest]) (err error) {
-	req, ok := <-stream.Channel()
-	if !ok {
-		return nil
+	// Wait for the first (StartSession) message, but not forever. If the stream is
+	// opened but the client goes away before sending StartSession, psrpc only closes
+	// the stream after this handler returns (see streamHandler.handleOpenRequest),
+	// which never happens while we block on <-stream.Channel(). That leaks one
+	// goroutine per orphaned stream (observed piling up under mass reconnects).
+	// Returning here (before Hijack) lets psrpc call ss.Close() and free the goroutine.
+	var req *rpc.RelaySignalRequest
+	var ok bool
+	select {
+	case req, ok = <-stream.Channel():
+		if !ok {
+			return nil
+		}
+	case <-stream.Context().Done():
+		return stream.Context().Err()
+	case <-time.After(r.config.RetryTimeout):
+		return errors.New("timeout waiting for start session")
 	}
 
 	ss := req.StartSession
