@@ -42,13 +42,13 @@ func (d *DependencyDescriptorExtension) Marshal() ([]byte, error) {
 }
 
 func (d *DependencyDescriptorExtension) MarshalWithActiveChains(activeChains uint32) ([]byte, error) {
-	writer, err := NewDependencyDescriptorWriter(nil, d.Structure, activeChains, d.Descriptor)
-	if err != nil {
+	writer := newDependencyDescriptorWriter(nil, d.Structure, activeChains, d.Descriptor)
+	if err := writer.findBestTemplate(); err != nil {
 		return nil, err
 	}
 	buf := make([]byte, int(math.Ceil(float64(writer.ValueSizeBits())/8)))
 	writer.ResetBuf(buf)
-	if err = writer.Write(); err != nil {
+	if err := writer.Write(); err != nil {
 		return nil, err
 	}
 	return buf, nil
