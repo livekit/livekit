@@ -770,14 +770,13 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 		return
 	}
 
-	lastSignalSince := time.Since(t.lastSignalAt)
 	signalValid := t.signalSourceValid.Load()
 	if !t.hasRecentSignalLocked() || !signalValid {
 		// the failed might cause by network interrupt because signal closed or we have not seen any signal in the time window,
 		// so don't switch to next candidate type
 		t.params.Logger.Debugw(
 			"ignoring prefer candidate check by ICE failure because signal connection interrupted",
-			"lastSignalSince", lastSignalSince,
+			"sinceLastSignal", time.Since(t.lastSignalAt),
 			"signalValid", signalValid,
 		)
 		t.failureCount = 0
