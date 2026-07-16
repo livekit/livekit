@@ -1434,13 +1434,13 @@ func (p *ParticipantImpl) IsMigration() bool {
 
 func (p *ParticipantImpl) recordRTCState(closeReason types.ParticipantCloseReason) {
 	if p.HasConnected() {
-		prometheus.IncrementParticipantRtcSuccess(1)
+		return
+	}
+
+	if p.IsConnectionCanceled(closeReason) {
+		prometheus.IncrementParticipantRtcCanceled(1)
 	} else {
-		if p.IsConnectionCanceled(closeReason) {
-			prometheus.IncrementParticipantRtcCanceled(1)
-		} else {
-			prometheus.IncrementParticipantRtcFailure(1)
-		}
+		prometheus.IncrementParticipantRtcFailure(1)
 	}
 }
 
@@ -2648,6 +2648,7 @@ func (p *ParticipantImpl) onPrimaryTransportInitialConnected() {
 
 	if !p.sessionStartRecorded.Swap(true) {
 		prometheus.RecordSessionStartTime(int(p.ProtocolVersion()), time.Since(p.params.SessionStartTime))
+		prometheus.IncrementParticipantRtcSuccess(1)
 	}
 	p.updateState(livekit.ParticipantInfo_ACTIVE)
 }
