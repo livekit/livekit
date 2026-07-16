@@ -157,6 +157,7 @@ type TrackReceiver interface {
 
 type REDTransformer interface {
 	TrackReceiver
+	SetLBThreshold(lbThreshold int)
 	ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int32
 	ForwardRTCPSenderReport(
 		payloadType webrtc.PayloadType,
@@ -312,6 +313,9 @@ func (r *ReceiverBase) SetEnableRTPStreamRestartDetection(enableRTPStremRestartD
 func (r *ReceiverBase) SetLBThreshold(lbThreshold int) {
 	r.lbThreshold = lbThreshold
 	r.downTrackSpreader.SetThreshold(lbThreshold)
+	if rt := r.loadREDTransformer(); rt != nil {
+		rt.SetLBThreshold(lbThreshold)
+	}
 }
 
 func (r *ReceiverBase) SetForwardStats(forwardStats *ForwardStats) {
