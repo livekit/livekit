@@ -311,6 +311,7 @@ func (r *ReceiverBase) SetEnableRTPStreamRestartDetection(enableRTPStremRestartD
 
 func (r *ReceiverBase) SetLBThreshold(lbThreshold int) {
 	r.lbThreshold = lbThreshold
+	r.downTrackSpreader.SetThreshold(lbThreshold)
 }
 
 func (r *ReceiverBase) SetForwardStats(forwardStats *ForwardStats) {
