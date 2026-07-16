@@ -542,12 +542,11 @@ func (t *TransportManager) ProcessPendingPublisherOffer() {
 }
 
 func (t *TransportManager) HandleAnswer(answer webrtc.SessionDescription, answerId uint32) {
-	if t.subscriber == nil {
-		// no subscriber transport in single-PC / one-shot signalling mode
-		t.params.Logger.Warnw("answer received, but no subscriber peer connection", nil)
-		return
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
+		t.publisher.HandleRemoteDescription(answer, answerId)
+	} else {
+		t.subscriber.HandleRemoteDescription(answer, answerId)
 	}
-	t.subscriber.HandleRemoteDescription(answer, answerId)
 }
 
 // AddICECandidate adds candidates for remote peer
