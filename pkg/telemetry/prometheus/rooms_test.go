@@ -39,36 +39,33 @@ func TestPacketTrailerTrackMetrics(t *testing.T) {
 		},
 	}
 
-	trailerBefore := gaugeValue(t, promTrackPacketTrailerCurrent)
-	timestampBefore := gaugeValue(t, promTrackPacketTrailerByFeatureCurrent.WithLabelValues("PTF_USER_TIMESTAMP"))
-	frameIDBefore := gaugeValue(t, promTrackPacketTrailerByFeatureCurrent.WithLabelValues("PTF_FRAME_ID"))
-	userDataBefore := gaugeValue(t, promTrackPacketTrailerByFeatureCurrent.WithLabelValues("PTF_USER_DATA"))
-	unknownBefore := gaugeValue(t, promTrackPacketTrailerByFeatureCurrent.WithLabelValues("UNKNOWN"))
+	timestampBefore := gaugeValue(t, promTrackPacketTrailerCurrent.WithLabelValues("PTF_USER_TIMESTAMP"))
+	frameIDBefore := gaugeValue(t, promTrackPacketTrailerCurrent.WithLabelValues("PTF_FRAME_ID"))
+	userDataBefore := gaugeValue(t, promTrackPacketTrailerCurrent.WithLabelValues("PTF_USER_DATA"))
+	unknownBefore := gaugeValue(t, promTrackPacketTrailerCurrent.WithLabelValues("UNKNOWN"))
 
 	AddPacketTrailerTrack(track)
-	require.Equal(t, trailerBefore+1, gaugeValue(t, promTrackPacketTrailerCurrent))
-	require.Equal(t, timestampBefore+1, gaugeValue(t, promTrackPacketTrailerByFeatureCurrent.WithLabelValues("PTF_USER_TIMESTAMP")))
-	require.Equal(t, frameIDBefore+1, gaugeValue(t, promTrackPacketTrailerByFeatureCurrent.WithLabelValues("PTF_FRAME_ID")))
-	require.Equal(t, userDataBefore+1, gaugeValue(t, promTrackPacketTrailerByFeatureCurrent.WithLabelValues("PTF_USER_DATA")))
-	require.Equal(t, unknownBefore+1, gaugeValue(t, promTrackPacketTrailerByFeatureCurrent.WithLabelValues("UNKNOWN")))
+	require.Equal(t, timestampBefore+1, gaugeValue(t, promTrackPacketTrailerCurrent.WithLabelValues("PTF_USER_TIMESTAMP")))
+	require.Equal(t, frameIDBefore+1, gaugeValue(t, promTrackPacketTrailerCurrent.WithLabelValues("PTF_FRAME_ID")))
+	require.Equal(t, userDataBefore+1, gaugeValue(t, promTrackPacketTrailerCurrent.WithLabelValues("PTF_USER_DATA")))
+	require.Equal(t, unknownBefore+1, gaugeValue(t, promTrackPacketTrailerCurrent.WithLabelValues("UNKNOWN")))
 
 	SubPacketTrailerTrack(track)
-	require.Equal(t, trailerBefore, gaugeValue(t, promTrackPacketTrailerCurrent))
-	require.Equal(t, timestampBefore, gaugeValue(t, promTrackPacketTrailerByFeatureCurrent.WithLabelValues("PTF_USER_TIMESTAMP")))
-	require.Equal(t, frameIDBefore, gaugeValue(t, promTrackPacketTrailerByFeatureCurrent.WithLabelValues("PTF_FRAME_ID")))
-	require.Equal(t, userDataBefore, gaugeValue(t, promTrackPacketTrailerByFeatureCurrent.WithLabelValues("PTF_USER_DATA")))
-	require.Equal(t, unknownBefore, gaugeValue(t, promTrackPacketTrailerByFeatureCurrent.WithLabelValues("UNKNOWN")))
+	require.Equal(t, timestampBefore, gaugeValue(t, promTrackPacketTrailerCurrent.WithLabelValues("PTF_USER_TIMESTAMP")))
+	require.Equal(t, frameIDBefore, gaugeValue(t, promTrackPacketTrailerCurrent.WithLabelValues("PTF_FRAME_ID")))
+	require.Equal(t, userDataBefore, gaugeValue(t, promTrackPacketTrailerCurrent.WithLabelValues("PTF_USER_DATA")))
+	require.Equal(t, unknownBefore, gaugeValue(t, promTrackPacketTrailerCurrent.WithLabelValues("UNKNOWN")))
 }
 
 func TestPacketTrailerTrackMetricsIgnoreAudio(t *testing.T) {
 	require.NoError(t, Init("test", livekit.NodeType_SERVER))
 
-	before := gaugeValue(t, promTrackPacketTrailerCurrent)
+	before := gaugeValue(t, promTrackPacketTrailerCurrent.WithLabelValues("PTF_USER_DATA"))
 	AddPacketTrailerTrack(&livekit.TrackInfo{
 		Type:                  livekit.TrackType_AUDIO,
 		PacketTrailerFeatures: []livekit.PacketTrailerFeature{livekit.PacketTrailerFeature_PTF_USER_DATA},
 	})
-	require.Equal(t, before, gaugeValue(t, promTrackPacketTrailerCurrent))
+	require.Equal(t, before, gaugeValue(t, promTrackPacketTrailerCurrent.WithLabelValues("PTF_USER_DATA")))
 }
 
 func gaugeValue(t *testing.T, gauge promclient.Gauge) float64 {
