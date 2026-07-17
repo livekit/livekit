@@ -3305,15 +3305,6 @@ func (p *ParticipantImpl) mediaTrackReceived(
 					"packetTrailerEnabled", packetTrailerEnabled,
 					"packetTrailerFeatures", packetTrailerFeatures,
 				)
-			} else if packetTrailerEnabled {
-				p.pubLogger.Infow(
-					"video track published with packet trailer",
-					"trackID", mt.ID(),
-					"track", logger.Proto(trackInfo),
-					"cost", pubTime.Milliseconds(),
-					"isMigrated", isMigrated,
-					"packetTrailerFeatures", packetTrailerFeatures,
-				)
 			} else {
 				p.pubLogger.Debugw(
 					"track published",
@@ -3321,6 +3312,8 @@ func (p *ParticipantImpl) mediaTrackReceived(
 					"track", logger.Proto(trackInfo),
 					"cost", pubTime.Milliseconds(),
 					"isMigrated", isMigrated,
+					"packetTrailerEnabled", packetTrailerEnabled,
+					"packetTrailerFeatures", packetTrailerFeatures,
 				)
 			}
 
