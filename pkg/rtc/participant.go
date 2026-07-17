@@ -3288,14 +3288,12 @@ func (p *ParticipantImpl) mediaTrackReceived(
 
 	if newTrack {
 		go func() {
-			trackInfo := mt.ToProto()
-
 			// TODO: remove this after we know where the high delay is coming from
 			if pubTime > 3*time.Second {
 				p.pubLogger.Infow(
 					"track published with high delay",
 					"trackID", mt.ID(),
-					"track", logger.Proto(trackInfo),
+					"track", logger.Proto(mt.ToProto()),
 					"cost", pubTime.Milliseconds(),
 					"rid", track.RID(),
 					"mime", track.Codec().MimeType,
@@ -3305,7 +3303,7 @@ func (p *ParticipantImpl) mediaTrackReceived(
 				p.pubLogger.Debugw(
 					"track published",
 					"trackID", mt.ID(),
-					"track", logger.Proto(trackInfo),
+					"track", logger.Proto(mt.ToProto()),
 					"cost", pubTime.Milliseconds(),
 					"isMigrated", isMigrated,
 				)
