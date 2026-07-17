@@ -39,19 +39,19 @@ var (
 	// success rate by subtracting this from total attempts
 	trackSubscribeUserError atomic.Int32
 
-	promRoomCurrent                 prometheus.Gauge
-	promRoomDuration                prometheus.Histogram
-	promParticipantCurrent          prometheus.Gauge
-	promTrackPublishedCurrent       *prometheus.GaugeVec
-	promTrackSubscribedCurrent      *prometheus.GaugeVec
-	promTrackPacketTrailer          prometheus.Gauge
-	promTrackPacketTrailerByFeature *prometheus.GaugeVec
-	promTrackPublishCounter         *prometheus.CounterVec
-	promTrackSubscribeCounter       *prometheus.CounterVec
-	promSessionJoinLatency          *prometheus.HistogramVec
-	promSessionStartTime            *prometheus.HistogramVec
-	promSessionDuration             *prometheus.HistogramVec
-	promPubSubTime                  *prometheus.HistogramVec
+	promRoomCurrent                        prometheus.Gauge
+	promRoomDuration                       prometheus.Histogram
+	promParticipantCurrent                 prometheus.Gauge
+	promTrackPublishedCurrent              *prometheus.GaugeVec
+	promTrackSubscribedCurrent             *prometheus.GaugeVec
+	promTrackPacketTrailerCurrent          prometheus.Gauge
+	promTrackPacketTrailerByFeatureCurrent *prometheus.GaugeVec
+	promTrackPublishCounter                *prometheus.CounterVec
+	promTrackSubscribeCounter              *prometheus.CounterVec
+	promSessionJoinLatency                 *prometheus.HistogramVec
+	promSessionStartTime                   *prometheus.HistogramVec
+	promSessionDuration                    *prometheus.HistogramVec
+	promPubSubTime                         *prometheus.HistogramVec
 
 	promPeerConnection *prometheus.CounterVec
 )
@@ -90,14 +90,14 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "subscribed_total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, []string{"kind"})
-	promTrackPacketTrailer = prometheus.NewGauge(prometheus.GaugeOpts{
+	promTrackPacketTrailerCurrent = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "track",
 		Name:        "packet_trailer_total",
 		Help:        "Current number of published video tracks with packet trailers enabled.",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	})
-	promTrackPacketTrailerByFeature = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	promTrackPacketTrailerByFeatureCurrent = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "track",
 		Name:        "packet_trailer_feature_total",
@@ -106,7 +106,7 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 	}, []string{"feature"})
 	for value := range livekit.PacketTrailerFeature_name {
 		feature := livekit.PacketTrailerFeature(value)
-		promTrackPacketTrailerByFeature.WithLabelValues(feature.String()).Set(0)
+		promTrackPacketTrailerByFeatureCurrent.WithLabelValues(feature.String()).Set(0)
 	}
 	promTrackPublishCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
@@ -160,8 +160,8 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promParticipantCurrent)
 	prometheus.MustRegister(promTrackPublishedCurrent)
 	prometheus.MustRegister(promTrackSubscribedCurrent)
-	prometheus.MustRegister(promTrackPacketTrailer)
-	prometheus.MustRegister(promTrackPacketTrailerByFeature)
+	prometheus.MustRegister(promTrackPacketTrailerCurrent)
+	prometheus.MustRegister(promTrackPacketTrailerByFeatureCurrent)
 	prometheus.MustRegister(promTrackPublishCounter)
 	prometheus.MustRegister(promTrackSubscribeCounter)
 	prometheus.MustRegister(promSessionJoinLatency)
@@ -222,9 +222,9 @@ func updatePacketTrailerTracks(track *livekit.TrackInfo, delta float64) {
 		return
 	}
 
-	promTrackPacketTrailer.Add(delta)
+	promTrackPacketTrailerCurrent.Add(delta)
 	for _, feature := range features {
-		promTrackPacketTrailerByFeature.WithLabelValues(feature).Add(delta)
+		promTrackPacketTrailerByFeatureCurrent.WithLabelValues(feature).Add(delta)
 	}
 }
 
