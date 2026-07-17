@@ -157,6 +157,7 @@ type TrackReceiver interface {
 
 type REDTransformer interface {
 	TrackReceiver
+	SetLBThreshold(lbThreshold int)
 	ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int32
 	ForwardRTCPSenderReport(
 		payloadType webrtc.PayloadType,
@@ -311,6 +312,10 @@ func (r *ReceiverBase) SetEnableRTPStreamRestartDetection(enableRTPStremRestartD
 
 func (r *ReceiverBase) SetLBThreshold(lbThreshold int) {
 	r.lbThreshold = lbThreshold
+	r.downTrackSpreader.SetThreshold(lbThreshold)
+	if rt := r.loadREDTransformer(); rt != nil {
+		rt.SetLBThreshold(lbThreshold)
+	}
 }
 
 func (r *ReceiverBase) SetForwardStats(forwardStats *ForwardStats) {
@@ -1036,7 +1041,13 @@ func (r *ReceiverBase) forwardRTP(
 		}
 
 		// track delay/jitter
-		if writeCount.Load() > 0 && r.forwardStats != nil && !extPkt.IsBuffered {
+		//
+		// Out-of-order packets (retransmissions/late arrivals) are excluded. They
+		// tend to arrive in bursts (e.g. a NACK triggers a batch of retransmissions
+		// delivered back-to-back) which the single forwarder goroutine drains
+		// serially, inflating the measured transit for the tail of the burst. That
+		// reflects loss recovery rather than steady-state forwarding health.
+		if writeCount.Load() > 0 && r.forwardStats != nil && !extPkt.IsBuffered && !extPkt.IsOutOfOrder {
 			if latency, isHigh := r.forwardStats.Update(extPkt.Arrival, mono.UnixNano()); isHigh {
 				r.params.Logger.Debugw(
 					"high forwarding latency",

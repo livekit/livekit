@@ -72,32 +72,34 @@ func (h TransportManagerTransportHandler) OnFailed(isShortLived bool, iceConnect
 // -------------------------------
 
 type TransportManagerParams struct {
-	SubscriberAsPrimary           bool
-	UseSinglePeerConnection       bool
-	Config                        *WebRTCConfig
-	Twcc                          *twcc.Responder
-	ProtocolVersion               types.ProtocolVersion
-	CongestionControlConfig       config.CongestionControlConfig
-	EnabledSubscribeCodecs        []*livekit.Codec
-	EnabledPublishCodecs          []*livekit.Codec
-	SimTracks                     map[uint32]interceptor.SimulcastTrackInfo
-	ClientInfo                    ClientInfo
-	Migration                     bool
-	AllowTCPFallback              bool
-	TCPFallbackRTTThreshold       int
-	AllowUDPUnstableFallback      bool
-	TURNSEnabled                  bool
-	AllowPlayoutDelay             bool
-	DataChannelMaxBufferedAmount  uint64
-	DatachannelSlowThreshold      int
-	DatachannelLossyTargetLatency time.Duration
-	Logger                        logger.Logger
-	PublisherHandler              transport.Handler
-	SubscriberHandler             transport.Handler
-	DataChannelStats              *BytesTrackStats
-	UseOneShotSignallingMode      bool
-	FireOnTrackBySdp              bool
-	EnableDataTracks              bool
+	SubscriberAsPrimary               bool
+	UseSinglePeerConnection           bool
+	Config                            *WebRTCConfig
+	Twcc                              *twcc.Responder
+	ProtocolVersion                   types.ProtocolVersion
+	CongestionControlConfig           config.CongestionControlConfig
+	EnabledSubscribeCodecs            []*livekit.Codec
+	EnabledPublishCodecs              []*livekit.Codec
+	SimTracks                         map[uint32]interceptor.SimulcastTrackInfo
+	ClientInfo                        ClientInfo
+	Migration                         bool
+	AllowTCPFallback                  bool
+	TCPFallbackRTTThreshold           int
+	AllowUDPUnstableFallback          bool
+	TURNSEnabled                      bool
+	AllowPlayoutDelay                 bool
+	DataChannelMaxBufferedAmount      uint64
+	DatachannelSlowThreshold          int
+	DatachannelLossyTargetLatency     time.Duration
+	DatachannelDataTrackTargetLatency time.Duration
+	Logger                            logger.Logger
+	PublisherHandler                  transport.Handler
+	SubscriberHandler                 transport.Handler
+	DataChannelStats                  *BytesTrackStats
+	UseOneShotSignallingMode          bool
+	FireOnTrackBySdp                  bool
+	EnableDataTracks                  bool
+	ExcludeIPv6LocalCandidates        bool
 }
 
 type TransportManager struct {
@@ -148,26 +150,28 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		publisherSubscribeCodecs = params.EnabledSubscribeCodecs
 	}
 	publisher, err := NewPCTransport(TransportParams{
-		ProtocolVersion:               params.ProtocolVersion,
-		Config:                        params.Config,
-		Twcc:                          params.Twcc,
-		DirectionConfig:               params.Config.Publisher,
-		CongestionControlConfig:       params.CongestionControlConfig,
-		EnabledPublishCodecs:          params.EnabledPublishCodecs,
-		EnabledSubscribeCodecs:        publisherSubscribeCodecs,
-		Logger:                        lgr,
-		SimTracks:                     params.SimTracks,
-		ClientInfo:                    params.ClientInfo,
-		IsSendSide:                    params.UseOneShotSignallingMode || params.UseSinglePeerConnection,
-		AllowPlayoutDelay:             params.AllowPlayoutDelay,
-		Transport:                     livekit.SignalTarget_PUBLISHER,
-		Handler:                       TransportManagerTransportHandler{params.PublisherHandler, t, lgr},
-		UseOneShotSignallingMode:      params.UseOneShotSignallingMode,
-		DataChannelMaxBufferedAmount:  params.DataChannelMaxBufferedAmount,
-		DatachannelSlowThreshold:      params.DatachannelSlowThreshold,
-		DatachannelLossyTargetLatency: params.DatachannelLossyTargetLatency,
-		FireOnTrackBySdp:              params.FireOnTrackBySdp,
-		EnableDataTracks:              params.EnableDataTracks,
+		ProtocolVersion:                   params.ProtocolVersion,
+		Config:                            params.Config,
+		Twcc:                              params.Twcc,
+		DirectionConfig:                   params.Config.Publisher,
+		CongestionControlConfig:           params.CongestionControlConfig,
+		EnabledPublishCodecs:              params.EnabledPublishCodecs,
+		EnabledSubscribeCodecs:            publisherSubscribeCodecs,
+		Logger:                            lgr,
+		SimTracks:                         params.SimTracks,
+		ClientInfo:                        params.ClientInfo,
+		IsSendSide:                        params.UseOneShotSignallingMode || params.UseSinglePeerConnection,
+		AllowPlayoutDelay:                 params.AllowPlayoutDelay,
+		Transport:                         livekit.SignalTarget_PUBLISHER,
+		Handler:                           TransportManagerTransportHandler{params.PublisherHandler, t, lgr},
+		UseOneShotSignallingMode:          params.UseOneShotSignallingMode,
+		DataChannelMaxBufferedAmount:      params.DataChannelMaxBufferedAmount,
+		DatachannelSlowThreshold:          params.DatachannelSlowThreshold,
+		DatachannelLossyTargetLatency:     params.DatachannelLossyTargetLatency,
+		DatachannelDataTrackTargetLatency: params.DatachannelDataTrackTargetLatency,
+		FireOnTrackBySdp:                  params.FireOnTrackBySdp,
+		EnableDataTracks:                  params.EnableDataTracks,
+		ExcludeIPv6LocalCandidates:        params.ExcludeIPv6LocalCandidates,
 	})
 	if err != nil {
 		return nil, err
@@ -177,23 +181,25 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 	if !t.params.UseOneShotSignallingMode && !t.params.UseSinglePeerConnection {
 		lgr := LoggerWithPCTarget(params.Logger, livekit.SignalTarget_SUBSCRIBER)
 		subscriber, err := NewPCTransport(TransportParams{
-			ProtocolVersion:               params.ProtocolVersion,
-			Config:                        params.Config,
-			DirectionConfig:               params.Config.Subscriber,
-			CongestionControlConfig:       params.CongestionControlConfig,
-			EnabledSubscribeCodecs:        params.EnabledSubscribeCodecs,
-			Logger:                        lgr,
-			ClientInfo:                    params.ClientInfo,
-			IsOfferer:                     true,
-			IsSendSide:                    true,
-			AllowPlayoutDelay:             params.AllowPlayoutDelay,
-			DataChannelMaxBufferedAmount:  params.DataChannelMaxBufferedAmount,
-			DatachannelSlowThreshold:      params.DatachannelSlowThreshold,
-			DatachannelLossyTargetLatency: params.DatachannelLossyTargetLatency,
-			Transport:                     livekit.SignalTarget_SUBSCRIBER,
-			Handler:                       TransportManagerTransportHandler{params.SubscriberHandler, t, lgr},
-			FireOnTrackBySdp:              params.FireOnTrackBySdp,
-			EnableDataTracks:              params.EnableDataTracks,
+			ProtocolVersion:                   params.ProtocolVersion,
+			Config:                            params.Config,
+			DirectionConfig:                   params.Config.Subscriber,
+			CongestionControlConfig:           params.CongestionControlConfig,
+			EnabledSubscribeCodecs:            params.EnabledSubscribeCodecs,
+			Logger:                            lgr,
+			ClientInfo:                        params.ClientInfo,
+			IsOfferer:                         true,
+			IsSendSide:                        true,
+			AllowPlayoutDelay:                 params.AllowPlayoutDelay,
+			DataChannelMaxBufferedAmount:      params.DataChannelMaxBufferedAmount,
+			DatachannelSlowThreshold:          params.DatachannelSlowThreshold,
+			DatachannelLossyTargetLatency:     params.DatachannelLossyTargetLatency,
+			DatachannelDataTrackTargetLatency: params.DatachannelDataTrackTargetLatency,
+			Transport:                         livekit.SignalTarget_SUBSCRIBER,
+			Handler:                           TransportManagerTransportHandler{params.SubscriberHandler, t, lgr},
+			FireOnTrackBySdp:                  params.FireOnTrackBySdp,
+			EnableDataTracks:                  params.EnableDataTracks,
+			ExcludeIPv6LocalCandidates:        params.ExcludeIPv6LocalCandidates,
 		})
 		if err != nil {
 			return nil, err
@@ -554,6 +560,11 @@ func (t *TransportManager) ProcessPendingPublisherOffer() {
 }
 
 func (t *TransportManager) HandleAnswer(answer webrtc.SessionDescription, answerId uint32) {
+	if t.subscriber == nil {
+		// no subscriber transport in single-PC / one-shot signalling mode
+		t.params.Logger.Warnw("answer received, but no subscriber peer connection", nil)
+		return
+	}
 	t.subscriber.HandleRemoteDescription(answer, answerId)
 }
 
@@ -764,14 +775,13 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 		return
 	}
 
-	lastSignalSince := time.Since(t.lastSignalAt)
 	signalValid := t.signalSourceValid.Load()
 	if !t.hasRecentSignalLocked() || !signalValid {
 		// the failed might cause by network interrupt because signal closed or we have not seen any signal in the time window,
 		// so don't switch to next candidate type
 		t.params.Logger.Debugw(
 			"ignoring prefer candidate check by ICE failure because signal connection interrupted",
-			"lastSignalSince", lastSignalSince,
+			"sinceLastSignal", time.Since(t.lastSignalAt),
 			"signalValid", signalValid,
 		)
 		t.failureCount = 0

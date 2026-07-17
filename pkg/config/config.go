@@ -150,6 +150,12 @@ type RTCConfig struct {
 	// Target latency for lossy data channels, used to drop packets to reduce latency.
 	DatachannelLossyTargetLatency time.Duration `yaml:"datachannel_lossy_target_latency,omitempty"`
 
+	// Target latency for data track channels, used to drop packets to keep the
+	// per-subscriber buffer bounded under downlink congestion. Data tracks are a
+	// low-latency lossy transport, so a stale queued frame is worse than a dropped
+	// one. Set to 0 to disable buffering control (unbounded buffering).
+	DatachannelDataTrackTargetLatency time.Duration `yaml:"datachannel_data_track_target_latency,omitempty"`
+
 	ForwardStats ForwardStatsConfig `yaml:"forward_stats,omitempty"`
 
 	// enable rtp stream restart detection for published tracks
@@ -454,10 +460,11 @@ var DefaultConfig = Config{
 			ICEPortRangeEnd:   0,
 			STUNServers:       []string{},
 		},
-		PacketBufferSize:      500,
-		PacketBufferSizeVideo: 500,
-		PacketBufferSizeAudio: 200,
-		PLIThrottle:           sfu.DefaultPLIThrottleConfig,
+		PacketBufferSize:                  500,
+		PacketBufferSizeVideo:             500,
+		PacketBufferSizeAudio:             200,
+		PLIThrottle:                       sfu.DefaultPLIThrottleConfig,
+		DatachannelDataTrackTargetLatency: 100 * time.Millisecond,
 		CongestionControl: CongestionControlConfig{
 			Enabled:                   true,
 			AllowPause:                false,

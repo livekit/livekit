@@ -527,6 +527,7 @@ type LocalParticipant interface {
 		dataTracks []*livekit.PublishDataTrackResponse,
 	)
 	IsReconnect() bool
+	IsMigration() bool
 	MoveToRoom(params MoveToRoomParams)
 
 	UpdateMediaRTT(rtt uint32)
