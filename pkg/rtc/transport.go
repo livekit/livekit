@@ -3178,7 +3178,7 @@ func offerAudioPayloadTypes(parsed *sdp.SessionDescription) map[mime.MimeType]we
 			if len(fields) < 2 {
 				continue
 			}
-			pt, err := strconv.Atoi(fields[0])
+			pt, err := strconv.ParseUint(fields[0], 10, 8)
 			if err != nil {
 				continue
 			}
