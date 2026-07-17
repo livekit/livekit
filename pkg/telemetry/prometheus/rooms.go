@@ -39,17 +39,19 @@ var (
 	// success rate by subtracting this from total attempts
 	trackSubscribeUserError atomic.Int32
 
-	promRoomCurrent            prometheus.Gauge
-	promRoomDuration           prometheus.Histogram
-	promParticipantCurrent     prometheus.Gauge
-	promTrackPublishedCurrent  *prometheus.GaugeVec
-	promTrackSubscribedCurrent *prometheus.GaugeVec
-	promTrackPublishCounter    *prometheus.CounterVec
-	promTrackSubscribeCounter  *prometheus.CounterVec
-	promSessionJoinLatency     *prometheus.HistogramVec
-	promSessionStartTime       *prometheus.HistogramVec
-	promSessionDuration        *prometheus.HistogramVec
-	promPubSubTime             *prometheus.HistogramVec
+	promRoomCurrent                 prometheus.Gauge
+	promRoomDuration                prometheus.Histogram
+	promParticipantCurrent          prometheus.Gauge
+	promTrackPublishedCurrent       *prometheus.GaugeVec
+	promTrackSubscribedCurrent      *prometheus.GaugeVec
+	promTrackPacketTrailer          prometheus.Gauge
+	promTrackPacketTrailerByFeature *prometheus.GaugeVec
+	promTrackPublishCounter         *prometheus.CounterVec
+	promTrackSubscribeCounter       *prometheus.CounterVec
+	promSessionJoinLatency          *prometheus.HistogramVec
+	promSessionStartTime            *prometheus.HistogramVec
+	promSessionDuration             *prometheus.HistogramVec
+	promPubSubTime                  *prometheus.HistogramVec
 
 	promPeerConnection *prometheus.CounterVec
 )
@@ -88,6 +90,24 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "subscribed_total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, []string{"kind"})
+	promTrackPacketTrailer = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "track",
+		Name:        "packet_trailer_total",
+		Help:        "Current number of published video tracks with packet trailers enabled.",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+	})
+	promTrackPacketTrailerByFeature = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "track",
+		Name:        "packet_trailer_feature_total",
+		Help:        "Current number of published video tracks by enabled packet trailer feature.",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+	}, []string{"feature"})
+	for value := range livekit.PacketTrailerFeature_name {
+		feature := livekit.PacketTrailerFeature(value)
+		promTrackPacketTrailerByFeature.WithLabelValues(feature.String()).Set(0)
+	}
 	promTrackPublishCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "track",
@@ -140,6 +160,8 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promParticipantCurrent)
 	prometheus.MustRegister(promTrackPublishedCurrent)
 	prometheus.MustRegister(promTrackSubscribedCurrent)
+	prometheus.MustRegister(promTrackPacketTrailer)
+	prometheus.MustRegister(promTrackPacketTrailerByFeature)
 	prometheus.MustRegister(promTrackPublishCounter)
 	prometheus.MustRegister(promTrackSubscribeCounter)
 	prometheus.MustRegister(promSessionJoinLatency)
@@ -180,6 +202,48 @@ func AddPublishedTrack(kind string) {
 func SubPublishedTrack(kind string) {
 	promTrackPublishedCurrent.WithLabelValues(kind).Sub(1)
 	trackPublishedCurrent.Dec()
+}
+
+func AddPacketTrailerTrack(track *livekit.TrackInfo) {
+	updatePacketTrailerTracks(track, 1)
+}
+
+func SubPacketTrailerTrack(track *livekit.TrackInfo) {
+	updatePacketTrailerTracks(track, -1)
+}
+
+func updatePacketTrailerTracks(track *livekit.TrackInfo, delta float64) {
+	if track.GetType() != livekit.TrackType_VIDEO {
+		return
+	}
+
+	features := packetTrailerFeatureLabels(track.GetPacketTrailerFeatures())
+	if len(features) == 0 {
+		return
+	}
+
+	promTrackPacketTrailer.Add(delta)
+	for _, feature := range features {
+		promTrackPacketTrailerByFeature.WithLabelValues(feature).Add(delta)
+	}
+}
+
+func packetTrailerFeatureLabels(features []livekit.PacketTrailerFeature) []string {
+	labels := make([]string, 0, len(features))
+	seen := make(map[string]struct{}, len(features))
+	for _, feature := range features {
+		label := "UNKNOWN"
+		if _, ok := livekit.PacketTrailerFeature_name[int32(feature)]; ok {
+			label = feature.String()
+		}
+
+		if _, ok := seen[label]; ok {
+			continue
+		}
+		seen[label] = struct{}{}
+		labels = append(labels, label)
+	}
+	return labels
 }
 
 func RecordTrackPublishAttempt(kind string) {

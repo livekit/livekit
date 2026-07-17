@@ -3288,22 +3288,37 @@ func (p *ParticipantImpl) mediaTrackReceived(
 
 	if newTrack {
 		go func() {
+			trackInfo := mt.ToProto()
+			packetTrailerFeatures := trackInfo.GetPacketTrailerFeatures()
+			packetTrailerEnabled := mt.Kind() == livekit.TrackType_VIDEO && len(packetTrailerFeatures) > 0
+
 			// TODO: remove this after we know where the high delay is coming from
 			if pubTime > 3*time.Second {
 				p.pubLogger.Infow(
 					"track published with high delay",
 					"trackID", mt.ID(),
-					"track", logger.Proto(mt.ToProto()),
+					"track", logger.Proto(trackInfo),
 					"cost", pubTime.Milliseconds(),
 					"rid", track.RID(),
 					"mime", track.Codec().MimeType,
 					"isMigrated", isMigrated,
+					"packetTrailerEnabled", packetTrailerEnabled,
+					"packetTrailerFeatures", packetTrailerFeatures,
+				)
+			} else if packetTrailerEnabled {
+				p.pubLogger.Infow(
+					"video track published with packet trailer",
+					"trackID", mt.ID(),
+					"track", logger.Proto(trackInfo),
+					"cost", pubTime.Milliseconds(),
+					"isMigrated", isMigrated,
+					"packetTrailerFeatures", packetTrailerFeatures,
 				)
 			} else {
 				p.pubLogger.Debugw(
 					"track published",
 					"trackID", mt.ID(),
-					"track", logger.Proto(mt.ToProto()),
+					"track", logger.Proto(trackInfo),
 					"cost", pubTime.Milliseconds(),
 					"isMigrated", isMigrated,
 				)
