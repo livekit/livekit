@@ -44,7 +44,8 @@ var (
 	promParticipantCurrent                 prometheus.Gauge
 	promTrackPublishedCurrent              *prometheus.GaugeVec
 	promTrackSubscribedCurrent             *prometheus.GaugeVec
-	promTrackPacketTrailerCurrent          *prometheus.GaugeVec
+	promTrackPacketTrailerCurrent          prometheus.Gauge
+	promTrackPacketTrailerByFeatureCurrent *prometheus.GaugeVec
 	promTrackPublishCounter                *prometheus.CounterVec
 	promTrackSubscribeCounter              *prometheus.CounterVec
 	promSessionJoinLatency                 *prometheus.HistogramVec
@@ -89,16 +90,23 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "subscribed_total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, []string{"kind"})
-	promTrackPacketTrailerCurrent = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	promTrackPacketTrailerCurrent = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "track",
 		Name:        "packet_trailer_total",
+		Help:        "Current number of published video tracks with packet trailers enabled.",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+	})
+	promTrackPacketTrailerByFeatureCurrent = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "track",
+		Name:        "packet_trailer_feature_total",
 		Help:        "Current number of published video tracks by enabled packet trailer feature.",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, []string{"feature"})
 	for value := range livekit.PacketTrailerFeature_name {
 		feature := livekit.PacketTrailerFeature(value)
-		promTrackPacketTrailerCurrent.WithLabelValues(feature.String()).Set(0)
+		promTrackPacketTrailerByFeatureCurrent.WithLabelValues(feature.String()).Set(0)
 	}
 	promTrackPublishCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
@@ -153,6 +161,7 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promTrackPublishedCurrent)
 	prometheus.MustRegister(promTrackSubscribedCurrent)
 	prometheus.MustRegister(promTrackPacketTrailerCurrent)
+	prometheus.MustRegister(promTrackPacketTrailerByFeatureCurrent)
 	prometheus.MustRegister(promTrackPublishCounter)
 	prometheus.MustRegister(promTrackSubscribeCounter)
 	prometheus.MustRegister(promSessionJoinLatency)
@@ -213,8 +222,9 @@ func updatePacketTrailerTracks(track *livekit.TrackInfo, delta float64) {
 		return
 	}
 
+	promTrackPacketTrailerCurrent.Add(delta)
 	for _, feature := range features {
-		promTrackPacketTrailerCurrent.WithLabelValues(feature).Add(delta)
+		promTrackPacketTrailerByFeatureCurrent.WithLabelValues(feature).Add(delta)
 	}
 }
 
