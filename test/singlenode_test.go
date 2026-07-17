@@ -1278,8 +1278,7 @@ func TestSinglePublisherDataTrack(t *testing.T) {
 			require.NoError(t, err)
 			defer dt1.Stop()
 
-			// publish the second track with dynacast enabled so c1 receives demand updates for it
-			dt2, err := c1.PublishDataTrack(testclient.PublishDataTrackDynacast())
+			dt2, err := c1.PublishDataTrack()
 			require.NoError(t, err)
 			defer dt2.Stop()
 
@@ -1294,18 +1293,18 @@ func TestSinglePublisherDataTrack(t *testing.T) {
 				return ""
 			})
 
-			// c1 should get a demand update for the dynacasted track only
+			// c1 should get a demand update for both tracks once c2 subscribes
 			testutils.WithTimeout(t, func() string {
 				demands := c1.DataTrackDemands()
-				if len(demands) > 1 {
-					return "received demand update for non-dynacasted track"
+				if len(demands) != 2 {
+					return "did not receive demand updates for both tracks"
 				}
-				for _, count := range demands {
-					if count == 1 {
-						return ""
+				for _, hasSubscribers := range demands {
+					if !hasSubscribers {
+						return "demand update did not indicate subscribers"
 					}
 				}
-				return "did not receive demand update for dynacasted track"
+				return ""
 			})
 
 			// a new client joins and should get the initial stream
@@ -1330,16 +1329,6 @@ func TestSinglePublisherDataTrack(t *testing.T) {
 				require.True(t, strings.HasPrefix(string(tr.ID()), "DTR_"), "data track should begin with DTR")
 			}
 
-			// demand for the dynacasted track should reflect both subscribers
-			testutils.WithTimeout(t, func() string {
-				for _, count := range c1.DataTrackDemands() {
-					if count == 2 {
-						return ""
-					}
-				}
-				return "demand did not reach 2 after c3 subscribed"
-			})
-
 			// when c3 disconnects, ensure subscriber is cleaned up correctly
 			c3.Stop()
 
@@ -1356,14 +1345,15 @@ func TestSinglePublisherDataTrack(t *testing.T) {
 				return ""
 			})
 
-			// demand for the dynacasted track should drop back to 1
+			// once the last subscriber disconnects, demand should drop on both tracks
+			c2.Stop()
 			testutils.WithTimeout(t, func() string {
-				for _, count := range c1.DataTrackDemands() {
-					if count == 1 {
-						return ""
+				for _, hasSubscribers := range c1.DataTrackDemands() {
+					if hasSubscribers {
+						return "demand did not drop after last subscriber disconnected"
 					}
 				}
-				return "demand did not drop back to 1 after c3 disconnected"
+				return ""
 			})
 		})
 	}
