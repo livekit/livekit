@@ -40,8 +40,8 @@ type DataTrackParams struct {
 	ParticipantID       func() livekit.ParticipantID
 	ParticipantIdentity livekit.ParticipantIdentity
 	BytesTrackStats     *BytesTrackStats
-	// invoked when the number of subscribers changes on a dynacasted track
-	OnSubscriberCountChanged func(subscriberCount uint32)
+	// invoked when the track gains its first subscriber or loses its last one
+	OnHasSubscribersChanged func(hasSubscribers bool)
 }
 
 type subscribedDataTrack struct {
@@ -150,10 +150,12 @@ func (d *DataTrack) AddSubscriber(sub types.LocalParticipant) (types.DataDownTra
 		subscriber:    sub,
 		dataDownTrack: dataDownTrack,
 	}
-	subscriberCount := len(d.subscribedTracks)
+	isFirstSubscriber := len(d.subscribedTracks) == 1
 	d.lock.Unlock()
 
-	d.notifySubscriberCountChanged(subscriberCount)
+	if isFirstSubscriber {
+		d.notifyHasSubscribersChanged(true)
+	}
 	return dataDownTrack, nil
 }
 
@@ -161,20 +163,21 @@ func (d *DataTrack) RemoveSubscriber(subID livekit.ParticipantID) {
 	d.lock.Lock()
 	subscribedTrack, ok := d.subscribedTracks[subID]
 	delete(d.subscribedTracks, subID)
-	subscriberCount := len(d.subscribedTracks)
+	isLastSubscriber := len(d.subscribedTracks) == 0
 	d.lock.Unlock()
 
 	if ok {
 		subscribedTrack.dataDownTrack.Close()
-		d.notifySubscriberCountChanged(subscriberCount)
+		if isLastSubscriber {
+			d.notifyHasSubscribersChanged(false)
+		}
 	}
 }
 
-func (d *DataTrack) notifySubscriberCountChanged(subscriberCount int) {
-	if !d.dti.IsDynacasted || d.params.OnSubscriberCountChanged == nil {
-		return
+func (d *DataTrack) notifyHasSubscribersChanged(hasSubscribers bool) {
+	if d.params.OnHasSubscribersChanged != nil {
+		d.params.OnHasSubscribersChanged(hasSubscribers)
 	}
-	d.params.OnSubscriberCountChanged(uint32(subscriberCount))
 }
 
 func (d *DataTrack) IsSubscriber(subID livekit.ParticipantID) bool {

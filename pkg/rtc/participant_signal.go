@@ -369,10 +369,10 @@ func (p *ParticipantImpl) SendDataTrackSubscriberHandles(handles map[uint32]*liv
 	}))
 }
 
-func (p *ParticipantImpl) sendDataTrackDemandUpdate(pubHandle uint32, subscriberCount uint32) error {
+func (p *ParticipantImpl) sendDataTrackDemandUpdate(pubHandle uint32, hasSubscribers bool) error {
 	return p.signaller.WriteMessage(p.signalling.SignalDataTrackDemandUpdate(&livekit.DataTrackDemandUpdate{
-		PubHandle:       pubHandle,
-		SubscriberCount: subscriberCount,
+		PubHandle:      pubHandle,
+		HasSubscribers: hasSubscribers,
 	}))
 }
 

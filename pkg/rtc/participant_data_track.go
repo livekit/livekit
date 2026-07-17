@@ -103,11 +103,10 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 	}
 
 	dti := &livekit.DataTrackInfo{
-		PubHandle:    req.PubHandle,
-		Sid:          guid.New(utils.DataTrackPrefix),
-		Name:         req.Name,
-		Encryption:   req.Encryption,
-		IsDynacasted: req.IsDynacasted,
+		PubHandle:  req.PubHandle,
+		Sid:        guid.New(utils.DataTrackPrefix),
+		Name:       req.Name,
+		Encryption: req.Encryption,
 	}
 	dti.FrameEncoding = utils.CloneProto(req.GetFrameEncoding())
 	dti.Schema = utils.CloneProto(req.GetSchema())
@@ -125,8 +124,8 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 				p.params.TelemetryListener,
 				p.params.Reporter,
 			),
-			OnSubscriberCountChanged: func(subscriberCount uint32) {
-				p.sendDataTrackDemandUpdate(dti.PubHandle, subscriberCount)
+			OnHasSubscribersChanged: func(hasSubscribers bool) {
+				p.sendDataTrackDemandUpdate(dti.PubHandle, hasSubscribers)
 			},
 		},
 		dti,
