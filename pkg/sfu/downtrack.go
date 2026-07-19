@@ -1116,7 +1116,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	hdr := RTPHeaderFactory.Get().(*rtp.Header)
 	*hdr = rtp.Header{
 		Version:        extPkt.Packet.Version,
-		Padding:        extPkt.Packet.Padding,
+		Padding:        false,
 		Marker:         tp.marker,
 		PayloadType:    d.getTranslatedPayloadType(extPkt.Packet.PayloadType),
 		SequenceNumber: uint16(tp.rtp.extSequenceNumber),
@@ -1307,6 +1307,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 		*hdr = rtp.Header{
 			Version:        2,
 			Padding:        true,
+			PaddingSize:    byte(RTPPaddingMaxPayloadSize),
 			Marker:         false,
 			PayloadType:    uint8(d.payloadType.Load()),
 			SequenceNumber: uint16(snts[i].extSequenceNumber),
@@ -2185,7 +2186,7 @@ func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isPro
 	hdr := RTPHeaderFactory.Get().(*rtp.Header)
 	*hdr = rtp.Header{
 		Version:        pkt.Header.Version,
-		Padding:        pkt.Header.Padding,
+		Padding:        false,
 		Marker:         epm.marker,
 		PayloadType:    d.getTranslatedPayloadType(pkt.Header.PayloadType),
 		SequenceNumber: epm.targetSeqNo,
@@ -2375,6 +2376,7 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 			*hdr = rtp.Header{
 				Version:        2,
 				Padding:        true,
+				PaddingSize:    byte(RTPPaddingMaxPayloadSize),
 				Marker:         false,
 				PayloadType:    rtxPT,
 				SequenceNumber: uint16(rtxExtSequenceNumber),
