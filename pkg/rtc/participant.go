@@ -1474,6 +1474,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		"isExpectedToResume", isExpectedToResume,
 		"clientInfo", logger.Proto(sutils.ClientInfoWithoutAddress(p.GetClientInfo())),
 		"kind", p.Kind(),
+		"country", p.params.Country,
 		"sessionDuration", sessionDuration,
 	)
 	p.closeReason.Store(reason)
