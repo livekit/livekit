@@ -39,6 +39,7 @@ package sfu_test
 
 import (
 	"bytes"
+	"encoding/binary"
 	"io"
 	"sync"
 	"testing"
@@ -509,11 +510,12 @@ func TestDownTrackForwardsMedia(t *testing.T) {
 // retransmitPacket: RTX / retransmission
 // -----------------------------------------------------------------------------
 
-// TestDownTrackRetransmitsPackets exercises the retransmit path and verifies the
-// retransmitted header/payload on the far side: SSRC, payload type, sequence
-// number, timestamp, payload bytes, and that the padding bit is cleared regardless
-// of the source packet's padding bit.
-func TestDownTrackRetransmitsPackets(t *testing.T) {
+// TestDownTrackRetransmitsPacketsAsIs exercises the retransmit path when no RTX
+// stream is negotiated, so the packet is re-sent as-is on the primary SSRC/payload
+// type. It verifies the retransmitted header/payload on the far side: SSRC, payload
+// type, sequence number, timestamp, payload bytes, and that the padding bit is
+// cleared regardless of the source packet's padding bit.
+func TestDownTrackRetransmitsPacketsAsIs(t *testing.T) {
 	h := buildVNet(t)
 	factory := buffer.NewFactoryOfBufferFactory(500, 500).CreateBufferFactory()
 	p := pacer.NewPassThrough(logger.GetLogger(), newNullBWE())
@@ -579,6 +581,95 @@ func TestDownTrackRetransmitsPackets(t *testing.T) {
 
 	for want := uint16(40000); want < 40000+numPackets; want++ {
 		require.True(t, seen[want], "retransmitted sequence number %d did not arrive", want)
+	}
+}
+
+// TestDownTrackRetransmitsPacketsViaRTX exercises the retransmit path when an RTX
+// stream is negotiated. Each retransmitted packet must be emitted on the RTX SSRC
+// with the RTX payload type, carry the original media sequence number as the OSN
+// prefix (the first two payload bytes), draw its sequence number from the DownTrack's
+// RTX sequence space, and clear the padding bit.
+//
+// RTX packets are captured at the pacer as the DownTrack builds them: pion's
+// receiver-side RTX handling de-RTXes / consumes them, so the RTX-specific header
+// fields are not observable on the far side. The packets are still handed to the real
+// pacer (and written over pion).
+func TestDownTrackRetransmitsPacketsViaRTX(t *testing.T) {
+	h := buildVNet(t)
+	factory := buffer.NewFactoryOfBufferFactory(500, 500).CreateBufferFactory()
+	cp := &capturingPacer{inner: pacer.NewPassThrough(logger.GetLogger(), newNullBWE())}
+	t.Cleanup(cp.Stop)
+
+	// VP8 registers an RTX codec, so the bound DownTrack has an RTX SSRC / payload type.
+	dh := newBoundDownTrack(t, h, factory, vp8CodecParams, cp, mediaEngineConfig{video: true})
+	require.NotZero(t, dh.dt.SSRCRTX(), "RTX ssrc should be negotiated")
+	require.NotZero(t, dh.dt.PayloadTypeRTXForTest(), "RTX payload type should be negotiated")
+
+	type want struct {
+		payload []byte
+		ts      uint32
+	}
+	const numPackets = 10
+	osnBase := uint16(50000)
+	wants := map[uint16]want{} // keyed by OSN (the original media sequence number)
+	targetSN := osnBase
+	for i := 0; i < numPackets; i++ {
+		// build a source packet that carries the padding bit (valid padding trailer)
+		// and a distinctive payload.
+		payload := distinctivePayload(byte(i+100), 30)
+		src := &rtp.Packet{
+			Header: rtp.Header{
+				Version:        2,
+				Padding:        true,
+				PaddingSize:    20,
+				PayloadType:    96,
+				SequenceNumber: uint16(2000 + i),
+				Timestamp:      uint32(180000 + i*3000),
+				SSRC:           0x33333333,
+			},
+			Payload: payload,
+		}
+		raw, err := src.Marshal()
+		require.NoError(t, err)
+
+		ts := uint32(700000 + i*3000)
+		wants[targetSN] = want{payload: payload, ts: ts}
+
+		_, err = dh.dt.RetransmitForTest(uint64(src.SequenceNumber), targetSN, ts, uint64(ts), 0, raw)
+		require.NoError(t, err)
+		targetSN++
+	}
+
+	require.Eventually(t, func() bool {
+		return len(cp.rtxPackets()) >= numPackets
+	}, 5*time.Second, 20*time.Millisecond, "expected RTX packets to be emitted")
+
+	seen := map[uint16]bool{}
+	rtxSeqs := make([]uint16, 0, numPackets)
+	for _, pr := range cp.rtxPackets() {
+		require.EqualValues(t, dh.dt.SSRCRTX(), pr.hdr.SSRC, "retransmitted packet must be on the RTX SSRC")
+		require.EqualValues(t, dh.dt.PayloadTypeRTXForTest(), pr.hdr.PayloadType, "retransmitted packet must use the RTX payload type")
+		require.False(t, pr.hdr.Padding, "retransmitted packet must not carry padding bit")
+		require.GreaterOrEqual(t, len(pr.payload), 2, "RTX payload must contain the OSN prefix")
+
+		osn := binary.BigEndian.Uint16(pr.payload[0:2])
+		w, ok := wants[osn]
+		require.True(t, ok, "unexpected OSN %d", osn)
+		require.Equal(t, w.payload, pr.payload[2:], "RTX media payload mismatch (osn=%d)", osn)
+		require.Equal(t, w.ts, pr.hdr.Timestamp, "RTX timestamp mismatch (osn=%d)", osn)
+		seen[osn] = true
+		rtxSeqs = append(rtxSeqs, pr.hdr.SequenceNumber)
+	}
+
+	for osn := osnBase; osn < osnBase+numPackets; osn++ {
+		require.True(t, seen[osn], "OSN %d was not retransmitted via RTX", osn)
+	}
+
+	// RTX-stream sequence numbers come from the DownTrack's own RTX sequence space
+	// and must advance by one per packet.
+	require.Len(t, rtxSeqs, numPackets)
+	for i := 1; i < len(rtxSeqs); i++ {
+		require.EqualValues(t, rtxSeqs[i-1]+1, rtxSeqs[i], "RTX sequence numbers must be contiguous")
 	}
 }
 
@@ -692,25 +783,39 @@ type capturingProbe struct {
 	lastByte   byte
 }
 
-// capturingPacer wraps a real pacer.Pacer, records probe packets as the DownTrack
-// constructs them (before the real pacer patches/marshals them), and delegates
-// everything to the wrapped pacer so packets are still sent over real pion.
+// capturedRTX records what the DownTrack handed the pacer for an RTX packet.
+type capturedRTX struct {
+	hdr     rtp.Header
+	payload []byte
+}
+
+// capturingPacer wraps a real pacer.Pacer, records probe and RTX packets as the
+// DownTrack constructs them (before the real pacer patches/marshals them), and
+// delegates everything to the wrapped pacer so packets are still sent over real pion.
 type capturingPacer struct {
 	inner pacer.Pacer
 
 	lock   sync.Mutex
 	probes []capturingProbe
+	rtx    []capturedRTX
 }
 
 func (c *capturingPacer) Enqueue(p *pacer.Packet) {
-	if p.IsProbe && p.Header != nil {
-		cp := capturingProbe{hdr: *p.Header, payloadLen: len(p.Payload)}
-		if len(p.Payload) > 0 {
-			cp.lastByte = p.Payload[len(p.Payload)-1]
+	if p.Header != nil {
+		switch {
+		case p.IsProbe:
+			cp := capturingProbe{hdr: *p.Header, payloadLen: len(p.Payload)}
+			if len(p.Payload) > 0 {
+				cp.lastByte = p.Payload[len(p.Payload)-1]
+			}
+			c.lock.Lock()
+			c.probes = append(c.probes, cp)
+			c.lock.Unlock()
+		case p.IsRTX:
+			c.lock.Lock()
+			c.rtx = append(c.rtx, capturedRTX{hdr: *p.Header, payload: append([]byte(nil), p.Payload...)})
+			c.lock.Unlock()
 		}
-		c.lock.Lock()
-		c.probes = append(c.probes, cp)
-		c.lock.Unlock()
 	}
 	c.inner.Enqueue(p)
 }
@@ -719,6 +824,12 @@ func (c *capturingPacer) probePackets() []capturingProbe {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	return append([]capturingProbe(nil), c.probes...)
+}
+
+func (c *capturingPacer) rtxPackets() []capturedRTX {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	return append([]capturedRTX(nil), c.rtx...)
 }
 
 func (c *capturingPacer) Stop()                       { c.inner.Stop() }
