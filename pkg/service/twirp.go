@@ -143,9 +143,9 @@ func loggerResponseSent(ctx context.Context, twirpLoggerPool *sync.Pool) {
 		r.fields = append(r.fields, "code", r.error.Code())
 	}
 
-	statusFamily, code := twirpResponseStatus(ctx, r.error)
+	statusFamily, _ := twirpResponseStatus(ctx, r.error)
 	serviceMethod := "API " + r.service + "." + r.method
-	prometheus.RecordTwirpRequestLatency(r.service, r.method, duration, statusFamily, code)
+	prometheus.RecordTwirpRequestLatency(r.service, r.method, duration, statusFamily)
 	utils.GetLogger(ctx).WithComponent(utils.ComponentAPI).Infow(serviceMethod, r.fields...)
 
 	// reset fields and return to pool
