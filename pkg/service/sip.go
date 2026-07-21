@@ -139,6 +139,16 @@ func (s *SIPService) CreateSIPInboundTrunk(ctx context.Context, req *livekit.Cre
 
 	// Keep ID empty still, so that validation can print "<new>" instead of a non-existent ID in the error.
 
+	// Derive a deterministic id from the client request id so an SDK-retried
+	// create resolves to the same trunk. If it already exists, this is a retry:
+	// return it directly.
+	trunkID := DeterministicID(utils.SIPTrunkPrefix, RequestID(ctx))
+	if RequestID(ctx) != "" {
+		if existing, err := s.store.LoadSIPInboundTrunk(ctx, trunkID); err == nil && existing != nil {
+			return existing, nil
+		}
+	}
+
 	// Validate all trunks including the new one first.
 	it, err := ListSIPInboundTrunk(ctx, s.store, &livekit.ListSIPInboundTrunkRequest{
 		Numbers: req.GetTrunk().GetNumbers(),
@@ -152,7 +162,7 @@ func (s *SIPService) CreateSIPInboundTrunk(ctx context.Context, req *livekit.Cre
 	}
 
 	// Now we can generate ID and store.
-	info.SipTrunkId = guid.New(utils.SIPTrunkPrefix)
+	info.SipTrunkId = trunkID
 	if err := s.store.StoreSIPInboundTrunk(ctx, info); err != nil {
 		return nil, err
 	}
@@ -177,7 +187,7 @@ func (s *SIPService) CreateSIPOutboundTrunk(ctx context.Context, req *livekit.Cr
 	AppendLogFields(ctx, "trunk", logger.Proto(info))
 
 	// No additional validation needed for outbound.
-	info.SipTrunkId = guid.New(utils.SIPTrunkPrefix)
+	info.SipTrunkId = DeterministicID(utils.SIPTrunkPrefix, RequestID(ctx))
 	if err := s.store.StoreSIPOutboundTrunk(ctx, info); err != nil {
 		return nil, err
 	}
@@ -447,6 +457,16 @@ func (s *SIPService) CreateSIPDispatchRule(ctx context.Context, req *livekit.Cre
 	info := req.DispatchRuleInfo()
 	info.SipDispatchRuleId = ""
 
+	// Derive a deterministic id from the client request id so an SDK-retried
+	// create resolves to the same rule. If it already exists, this is a retry:
+	// return it directly.
+	ruleID := DeterministicID(utils.SIPDispatchRulePrefix, RequestID(ctx))
+	if RequestID(ctx) != "" {
+		if existing, err := s.store.LoadSIPDispatchRule(ctx, ruleID); err == nil && existing != nil {
+			return existing, nil
+		}
+	}
+
 	// Validate all rules including the new one first.
 	it, err := ListSIPDispatchRule(ctx, s.store, &livekit.ListSIPDispatchRuleRequest{
 		TrunkIds: req.TrunkIds,
@@ -460,7 +480,7 @@ func (s *SIPService) CreateSIPDispatchRule(ctx context.Context, req *livekit.Cre
 	}
 
 	// Now we can generate ID and store.
-	info.SipDispatchRuleId = guid.New(utils.SIPDispatchRulePrefix)
+	info.SipDispatchRuleId = ruleID
 	if err := s.store.StoreSIPDispatchRule(ctx, info); err != nil {
 		return nil, err
 	}
