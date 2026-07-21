@@ -560,6 +560,11 @@ func (t *TransportManager) ProcessPendingPublisherOffer() {
 }
 
 func (t *TransportManager) HandleAnswer(answer webrtc.SessionDescription, answerId uint32) {
+	if t.subscriber == nil {
+		// no subscriber transport in single-PC / one-shot signalling mode
+		t.params.Logger.Warnw("answer received, but no subscriber peer connection", nil)
+		return
+	}
 	t.subscriber.HandleRemoteDescription(answer, answerId)
 }
 
@@ -770,14 +775,13 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 		return
 	}
 
-	lastSignalSince := time.Since(t.lastSignalAt)
 	signalValid := t.signalSourceValid.Load()
 	if !t.hasRecentSignalLocked() || !signalValid {
 		// the failed might cause by network interrupt because signal closed or we have not seen any signal in the time window,
 		// so don't switch to next candidate type
 		t.params.Logger.Debugw(
 			"ignoring prefer candidate check by ICE failure because signal connection interrupted",
-			"lastSignalSince", lastSignalSince,
+			"sinceLastSignal", time.Since(t.lastSignalAt),
 			"signalValid", signalValid,
 		)
 		t.failureCount = 0

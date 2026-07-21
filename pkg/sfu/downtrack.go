@@ -51,29 +51,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 )
 
-// TrackSender defines an interface send media to remote peer
-type TrackSender interface {
-	UpTrackLayersChange()
-	UpTrackBitrateAvailabilityChange()
-	UpTrackMaxPublishedLayerChange(maxPublishedLayer int32)
-	UpTrackMaxTemporalLayerSeenChange(maxTemporalLayerSeen int32)
-	UpTrackBitrateReport(availableLayers []int32, bitrates Bitrates)
-	WriteRTP(p *buffer.ExtPacket, layer int32) int32
-	Close()
-	IsClosed() bool
-	// ID is the globally unique identifier for this Track.
-	ID() string
-	SubscriberID() livekit.ParticipantID
-	HandleRTCPSenderReportData(
-		payloadType webrtc.PayloadType,
-		layer int32,
-		publisherSRData *livekit.RTCPSenderReportState,
-	) error
-	Resync()
-	SetReceiver(TrackReceiver)
-	ReceiverRestart(TrackReceiver)
-}
-
 // -------------------------------------------------------------------
 
 const (
@@ -213,56 +190,6 @@ func (d DownTrackState) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddObject("ForwarderState", logger.Proto(d.ForwarderState))
 	e.AddObject("PlayoutDelayControllerState", d.PlayoutDelayControllerState)
 	return nil
-}
-
-// -------------------------------------------------------------------
-
-type DownTrackStreamAllocatorListener interface {
-	// RTCP received
-	OnREMB(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)
-	OnTransportCCFeedback(dt *DownTrack, cc *rtcp.TransportLayerCC)
-
-	// video layer availability changed
-	OnAvailableLayersChanged(dt *DownTrack)
-
-	// video layer bitrate availability changed
-	OnBitrateAvailabilityChanged(dt *DownTrack)
-
-	// max published spatial layer changed
-	OnMaxPublishedSpatialChanged(dt *DownTrack)
-
-	// max published temporal layer changed
-	OnMaxPublishedTemporalChanged(dt *DownTrack)
-
-	// subscription changed - mute/unmute
-	OnSubscriptionChanged(dt *DownTrack)
-
-	// subscribed max video layer changed
-	OnSubscribedLayerChanged(dt *DownTrack, layers buffer.VideoLayer)
-
-	// stream resumed
-	OnResume(dt *DownTrack)
-
-	// check if track should participate in BWE
-	IsBWEEnabled(dt *DownTrack) bool
-
-	// get the BWE type in use
-	BWEType() bwe.BWEType
-
-	// check if subscription mute can be applied
-	IsSubscribeMutable(dt *DownTrack) bool
-}
-
-// -------------------------------------------------------------------
-
-type DownTrackListener interface {
-	OnBindAndConnected()
-	OnStatsUpdate(stat *livekit.AnalyticsStat)
-	OnMaxSubscribedLayerChanged(layer int32)
-	OnRttUpdate(rtt uint32)
-	OnCodecNegotiated(webrtc.RTPCodecCapability)
-	OnDownTrackClose(isExpectedToResume bool)
-	OnStreamStarted()
 }
 
 // -------------------------------------------------------------------
@@ -1116,7 +1043,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	hdr := RTPHeaderFactory.Get().(*rtp.Header)
 	*hdr = rtp.Header{
 		Version:        extPkt.Packet.Version,
-		Padding:        extPkt.Packet.Padding,
+		Padding:        false,
 		Marker:         tp.marker,
 		PayloadType:    d.getTranslatedPayloadType(extPkt.Packet.PayloadType),
 		SequenceNumber: uint16(tp.rtp.extSequenceNumber),
@@ -1307,6 +1234,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 		*hdr = rtp.Header{
 			Version:        2,
 			Padding:        true,
+			PaddingSize:    byte(RTPPaddingMaxPayloadSize),
 			Marker:         false,
 			PayloadType:    uint8(d.payloadType.Load()),
 			SequenceNumber: uint16(snts[i].extSequenceNumber),
@@ -2185,7 +2113,7 @@ func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isPro
 	hdr := RTPHeaderFactory.Get().(*rtp.Header)
 	*hdr = rtp.Header{
 		Version:        pkt.Header.Version,
-		Padding:        pkt.Header.Padding,
+		Padding:        false,
 		Marker:         epm.marker,
 		PayloadType:    d.getTranslatedPayloadType(pkt.Header.PayloadType),
 		SequenceNumber: epm.targetSeqNo,
@@ -2375,6 +2303,7 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 			*hdr = rtp.Header{
 				Version:        2,
 				Padding:        true,
+				PaddingSize:    byte(RTPPaddingMaxPayloadSize),
 				Marker:         false,
 				PayloadType:    rtxPT,
 				SequenceNumber: uint16(rtxExtSequenceNumber),

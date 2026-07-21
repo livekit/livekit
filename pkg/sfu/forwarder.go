@@ -1728,6 +1728,14 @@ func (f *Forwarder) Restart() {
 	f.refVideoLayerMode = livekit.VideoLayer_MODE_UNUSED
 }
 
+func (f *Forwarder) ForceLayerForTest(layer buffer.VideoLayer) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	f.vls.SetCurrent(layer)
+	f.vls.SetTarget(layer)
+}
+
 func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLayers [buffer.DefaultMaxLayerSpatial + 1]bool) {
 	f.lock.RLock()
 	defer f.lock.RUnlock()

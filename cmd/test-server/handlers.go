@@ -17,6 +17,7 @@ package main
 import (
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -145,6 +146,14 @@ func (h *mockHandler) serveAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A project pinned to other regions is turned away by cloud middleware up front
+	// — before the request is served and with no latency — when it reaches a region
+	// it isn't pinned to. The check is by region name, as it is on the real server.
+	if len(cfg.PinnedRegions) > 0 && !slices.Contains(cfg.PinnedRegions, h.regionName()) {
+		h.failRegionPin(w)
+		return
+	}
+
 	// Delay before responding (success or failure). An explicit delayMs overrides
 	// the method's natural latency — e.g. CreateSIPParticipant blocking until the
 	// callee answers.
@@ -209,6 +218,16 @@ func (h *mockHandler) failSIP(w http.ResponseWriter, cfg *mockConfig) {
 		Status: cfg.SIPStatus.Status,
 	}
 	writeTwirpErr(w, xtwirp.ToError(st))
+}
+
+// failRegionPin rejects the request with HTTP 451, mirroring cloud middleware
+// turning away an API call from a project pinned to a different region. The body
+// is the middleware's plain-text message (not a Twirp error): clients key off the
+// 451 status to rediscover regions and retry against an allowed one.
+func (h *mockHandler) failRegionPin(w http.ResponseWriter) {
+	w.Header().Set(headerRegion, "")
+	w.WriteHeader(regionPinStatus)
+	_, _ = w.Write([]byte(regionPinMessage))
 }
 
 // writeAPIResponse serves a populated, type-correct response for a known API

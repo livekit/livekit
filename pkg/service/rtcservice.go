@@ -518,13 +518,13 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 
 				switch m := res.Message.(type) {
 				case *livekit.SignalResponse_Offer:
-					pLogger.Debugw("sending offer", "offer", m)
+					pLogger.Debugw("sending offer", "offer", logger.Proto(res))
 
 				case *livekit.SignalResponse_Answer:
-					pLogger.Debugw("sending answer", "answer", m)
+					pLogger.Debugw("sending answer", "answer", logger.Proto(res))
 
 				case *livekit.SignalResponse_Join:
-					pLogger.Debugw("sending join", "join", m)
+					pLogger.Debugw("sending join", "join", logger.Proto(res))
 					signalStats.ResolveRoom(m.Join.GetRoom())
 					signalStats.ResolveParticipant(m.Join.GetParticipant())
 
@@ -534,11 +534,11 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 						roomID = updateRoomID
 						resolveLogger(false)
 					}
-					pLogger.Debugw("sending room update", "roomUpdate", m)
+					pLogger.Debugw("sending room update", "roomUpdate", logger.Proto(res))
 					signalStats.ResolveRoom(m.RoomUpdate.GetRoom())
 
 				case *livekit.SignalResponse_Update:
-					pLogger.Debugw("sending participant update", "participantUpdate", m)
+					pLogger.Debugw("sending participant update", "participantUpdate", logger.Proto(res))
 
 				case *livekit.SignalResponse_RoomMoved:
 					resetLogger()
@@ -555,10 +555,10 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 
 					signalStats.ResolveRoom(m.RoomMoved.GetRoom())
 					signalStats.ResolveParticipant(m.RoomMoved.GetParticipant())
-					pLogger.Debugw("sending room moved", "roomMoved", m)
+					pLogger.Debugw("sending room moved", "roomMoved", logger.Proto(res))
 
 				default:
-					pLogger.Debugw("sending signal response", "response", m)
+					pLogger.Debugw("sending signal response", "response", logger.Proto(res))
 				}
 
 				if count, err := sigConn.WriteResponse(res); err != nil {
@@ -612,13 +612,13 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 			}
 		}
 
-		switch m := req.Message.(type) {
+		switch req.Message.(type) {
 		case *livekit.SignalRequest_Offer:
-			pLogger.Debugw("received offer", "offer", m)
+			pLogger.Debugw("received offer", "offer", logger.Proto(req))
 		case *livekit.SignalRequest_Answer:
-			pLogger.Debugw("received answer", "answer", m)
+			pLogger.Debugw("received answer", "answer", logger.Proto(req))
 		default:
-			pLogger.Debugw("received signal request", "request", m)
+			pLogger.Debugw("received signal request", "request", logger.Proto(req))
 		}
 
 		if err := cr.RequestSink.WriteMessage(req); err != nil {
