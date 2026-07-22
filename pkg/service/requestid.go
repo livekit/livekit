@@ -43,17 +43,6 @@ func RequestID(ctx context.Context) string {
 	return ""
 }
 
-// saltRequestID derives a distinct deterministic seed from the request id for a
-// secondary value (e.g. an ingress stream key) so it doesn't collide with the
-// primary resource id derived from the same request id. Empty in, empty out, so
-// DeterministicID still falls back to a random value when no request id is set.
-func saltRequestID(requestID, salt string) string {
-	if requestID == "" {
-		return ""
-	}
-	return requestID + "/" + salt
-}
-
 // DeterministicID derives a stable resource id from the request id — retries of the same logical call
 // yield the same id and dedup at the store. With no request id it falls back to a random id.
 func DeterministicID(prefix, requestID string) string {
