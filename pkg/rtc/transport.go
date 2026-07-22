@@ -1015,6 +1015,7 @@ func (t *PCTransport) queueOrConfigureSender(
 		filterOutH264HighProfile: !t.params.IsOfferer,
 		enableAudioStereo:        enableAudioStereo,
 		enableAudioNACK:          enableAudioNACK,
+		keepFlexFEC:              t.params.DirectionConfig.FlexFEC.Enabled,
 	}
 	if !t.params.IsOfferer {
 		t.sendersPendingConfigMu.Lock()
@@ -1675,6 +1676,15 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remo
 			t.params.Logger.Debugw("rtx pairs found from sdp", "ssrcs", rtxRepairs)
 			for repair, base := range rtxRepairs {
 				t.params.Config.BufferFactory.SetRTXPair(repair, base, "")
+			}
+		}
+
+		if t.params.DirectionConfig.FlexFEC.Enabled {
+			if fecFlows := fecPairsFromSDP(parsed, t.params.Logger); len(fecFlows) > 0 {
+				t.params.Logger.Debugw("fec pairs found from sdp", "ssrcs", fecFlows)
+				for fec, base := range fecFlows {
+					t.params.Config.BufferFactory.SetFECPair(fec, base)
+				}
 			}
 		}
 		return nil
@@ -2925,6 +2935,15 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, o
 		}
 	}
 
+	if t.params.DirectionConfig.FlexFEC.Enabled {
+		if fecFlows := fecPairsFromSDP(parsed, t.params.Logger); len(fecFlows) > 0 {
+			t.params.Logger.Debugw("fec pairs found from sdp", "ssrcs", fecFlows)
+			for fec, base := range fecFlows {
+				t.params.Config.BufferFactory.SetFECPair(fec, base)
+			}
+		}
+	}
+
 	if t.currentOfferIceCredential == "" || offerRestartICE {
 		t.currentOfferIceCredential = iceCredential
 	}
@@ -3098,6 +3117,7 @@ type configureSenderParams struct {
 	filterOutH264HighProfile bool
 	enableAudioStereo        bool
 	enableAudioNACK          bool
+	keepFlexFEC              bool
 }
 
 func configureSender(params configureSenderParams, offerAudioPT map[mime.MimeType]webrtc.PayloadType) {
@@ -3106,6 +3126,7 @@ func configureSender(params configureSenderParams, offerAudioPT map[mime.MimeTyp
 		params.enabledCodecs,
 		params.rtcpFeedbackConfig,
 		params.filterOutH264HighProfile,
+		params.keepFlexFEC,
 	)
 
 	if params.transceiver.Kind() == webrtc.RTPCodecTypeAudio {
@@ -3211,6 +3232,7 @@ func configureSenderCodecs(
 	enabledCodecs []*livekit.Codec,
 	rtcpFeedbackConfig RTCPFeedbackConfig,
 	filterOutH264HighProfile bool,
+	keepFlexFEC bool,
 ) {
 	if len(enabledCodecs) == 0 {
 		return
@@ -3226,6 +3248,7 @@ func configureSenderCodecs(
 		enabledCodecs,
 		rtcpFeedbackConfig,
 		filterOutH264HighProfile,
+		keepFlexFEC,
 	)
 	tr.SetCodecPreferences(filteredCodecs)
 }
@@ -3248,6 +3271,7 @@ func (t *PCTransport) restrictReceiverCodecsToPublishList() {
 			t.params.EnabledPublishCodecs,
 			t.params.DirectionConfig.RTCPFeedback,
 			false,
+			t.params.DirectionConfig.FlexFEC.Enabled,
 		)
 		if len(filtered) == 0 {
 			continue
@@ -3299,6 +3323,14 @@ func configureReceiverCodecs(
 		// if the client don't comply with codec order in SDP answer, only keep preferred codecs to force client to use it
 		if compliesWithCodecOrderInSDPAnswer {
 			reorderedCodecs = append(reorderedCodecs, leftCodecs...)
+		} else {
+			// flexfec applies to whichever video codec is negotiated, retain
+			// it even when trimming to the preferred codec
+			for _, c := range leftCodecs {
+				if isFlexFEC03MimeType(c.RTPCodecCapability.MimeType) {
+					reorderedCodecs = append(reorderedCodecs, c)
+				}
+			}
 		}
 	} else {
 		reorderedCodecs = append(reorderedCodecs, leftCodecs...)
@@ -3347,6 +3379,37 @@ func nonSimulcastRTXRepairsFromSDP(s *sdp.SessionDescription, logger logger.Logg
 	}
 
 	return rtxRepairFlows
+}
+
+// fecPairsFromSDP extracts FlexFEC repair flows declared via
+// `a=ssrc-group:FEC-FR <media ssrc> <fec ssrc>` (RFC 5956) from the remote
+// description, returning a map of fec ssrc -> protected media ssrc.
+func fecPairsFromSDP(s *sdp.SessionDescription, logger logger.Logger) map[uint32]uint32 {
+	fecFlows := map[uint32]uint32{}
+	for _, media := range s.MediaDescriptions {
+		for _, attr := range media.Attributes {
+			if attr.Key != sdp.AttrKeySSRCGroup {
+				continue
+			}
+			split := strings.Split(attr.Value, " ")
+			if split[0] != sdp.SemanticTokenForwardErrorCorrectionFramework || len(split) != 3 {
+				continue
+			}
+			baseSsrc, err := strconv.ParseUint(split[1], 10, 32)
+			if err != nil {
+				logger.Warnw("failed to parse SSRC", err, "ssrc", split[1])
+				continue
+			}
+			fecSsrc, err := strconv.ParseUint(split[2], 10, 32)
+			if err != nil {
+				logger.Warnw("failed to parse SSRC", err, "ssrc", split[2])
+				continue
+			}
+			fecFlows[uint32(fecSsrc)] = uint32(baseSsrc)
+		}
+	}
+
+	return fecFlows
 }
 
 // ----------------------
