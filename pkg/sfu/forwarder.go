@@ -407,7 +407,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 			if f.vls != nil {
 				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
 			} else {
-				f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
+				f.vls = videolayerselector.NewSimulcast(f.logger)
 			}
 		} else {
 			f.isDDAvailable = ddAvailable(extensions)
