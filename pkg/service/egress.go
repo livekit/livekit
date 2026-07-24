@@ -231,6 +231,15 @@ func (s *EgressService) startEgress(ctx context.Context, req *rpc.StartEgressReq
 		return nil, ErrEgressNotConnected
 	}
 
+	// Dedup SDK retries: when the client sent a request id, the egress id is
+	// derived from it, so an already-launched egress means this is a retry —
+	// return it instead of starting a second egress.
+	if s.io != nil && req.EgressId != "" && RequestID(ctx) != "" {
+		if existing, err := s.io.GetEgress(ctx, &rpc.GetEgressRequest{EgressId: req.EgressId}); err == nil && existing != nil {
+			return existing, nil
+		}
+	}
+
 	return s.launcher.StartEgress(ctx, req)
 }
 

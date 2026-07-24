@@ -140,13 +140,14 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 		urlStr = urlObj.String()
 	}
 
+	reqID := RequestID(ctx)
 	var sk string
 	if req.InputType != livekit.IngressInput_URL_INPUT {
 		sk = guid.New("")
 	}
 
 	info := &livekit.IngressInfo{
-		IngressId:           guid.New(utils.IngressPrefix),
+		IngressId:           DeterministicID(utils.IngressPrefix, reqID),
 		Name:                req.Name,
 		StreamKey:           sk,
 		Url:                 urlStr,
@@ -192,10 +193,13 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 		}
 		// The Ingress instance will create the ingress object when handling the URL pull ingress
 	} else {
-		_, err = s.io.CreateIngress(ctx, info)
+		var resp *rpc.CreateIngress2Response
+		resp, err = s.io.CreateIngress2(ctx, info)
 		switch err {
 		case nil:
-			break
+			if resp.GetInfo() != nil {
+				info = resp.GetInfo()
+			}
 		case ingress.ErrIngressOutOfDate:
 			// Error returned if the ingress was already created by the ingress service
 			err = nil
