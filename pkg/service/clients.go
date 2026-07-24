@@ -29,5 +29,6 @@ type IOClient interface {
 	GetEgress(ctx context.Context, req *rpc.GetEgressRequest) (*livekit.EgressInfo, error)
 	ListEgress(ctx context.Context, req *livekit.ListEgressRequest) (*livekit.ListEgressResponse, error)
 	CreateIngress(ctx context.Context, req *livekit.IngressInfo) (*emptypb.Empty, error)
+	CreateIngress2(ctx context.Context, req *livekit.IngressInfo) (*rpc.CreateIngress2Response, error)
 	UpdateIngressState(ctx context.Context, req *rpc.UpdateIngressStateRequest) (*emptypb.Empty, error)
 }

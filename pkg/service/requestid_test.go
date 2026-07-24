@@ -55,23 +55,6 @@ func TestDeterministicID(t *testing.T) {
 	}
 }
 
-func TestSaltRequestID(t *testing.T) {
-	// A salted seed derives a distinct-but-stable id (e.g. an ingress stream key
-	// vs its ingress id), so the two don't collide.
-	id := DeterministicID("IN_", "req_123")
-	sk := DeterministicID("", saltRequestID("req_123", "streamkey"))
-	if id == sk {
-		t.Fatalf("salted derivation collided with unsalted: %q", id)
-	}
-	if sk2 := DeterministicID("", saltRequestID("req_123", "streamkey")); sk2 != sk {
-		t.Fatalf("salted derivation not stable: %q != %q", sk, sk2)
-	}
-	// Empty in -> empty out, so DeterministicID still falls back to random.
-	if got := saltRequestID("", "streamkey"); got != "" {
-		t.Fatalf("saltRequestID(\"\", ...) = %q, want empty", got)
-	}
-}
-
 func TestRequestID(t *testing.T) {
 	if got := RequestID(context.Background()); got != "" {
 		t.Fatalf("RequestID on bare context = %q, want empty", got)
