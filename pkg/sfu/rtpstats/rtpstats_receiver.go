@@ -369,7 +369,7 @@ func (r *RTPStatsReceiver) Update(
 			//
 			// Case 1:
 			//  Very old time stamp, happens under the following conditions
-			//  - resume after long mute, this casues big time stamp jump ahead for the packets
+			//  - resume after long mute, this causes big time stamp jump ahead for the packets
 			//    after unmute
 			//  - an out of order packet from before the mute arrives (unsure what causes this
 			//    very old packet to be transmitted from remote), causing time stamp to jump back

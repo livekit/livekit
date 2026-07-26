@@ -1793,14 +1793,14 @@ func (t *PCTransport) HandleICETrickleSDPFragment(sdpFragment string) error {
 	fragmentICEUfrag, fragmentICEPwd, err := parsedFragment.ExtractICECredential()
 	if err != nil {
 		t.params.Logger.Warnw(
-			"could not get ICE crendential from fragment", err,
+			"could not get ICE credential from fragment", err,
 			"sdpFragment", sdpFragment,
 		)
 		return ErrInvalidSDPFragment
 	}
 	remoteICEUfrag, remoteICEPwd, err := lksdp.ExtractICECredential(parsedRemote)
 	if err != nil {
-		t.params.Logger.Warnw("could not get ICE crendential from remote description", err, "sdpFragment", sdpFragment, "remoteDescription", crd)
+		t.params.Logger.Warnw("could not get ICE credential from remote description", err, "sdpFragment", sdpFragment, "remoteDescription", crd)
 		return err
 	}
 	if fragmentICEUfrag != "" && fragmentICEUfrag != remoteICEUfrag {
@@ -2398,7 +2398,7 @@ func (t *PCTransport) handleLocalICECandidate(e event) error {
 	filtered := false
 	if c != nil {
 		if t.preferTCP.Load() && c.Protocol != webrtc.ICEProtocolTCP {
-			t.params.Logger.Debugw("filtering out local candidate, TCP prefered", "candidate", c.String())
+			t.params.Logger.Debugw("filtering out local candidate, TCP preferred", "candidate", c.String())
 			filtered = true
 		}
 		if !filtered && t.params.ExcludeIPv6LocalCandidates {
@@ -2947,7 +2947,7 @@ func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription, 
 
 	if err := t.setRemoteDescription(*sd); err != nil {
 		// Pion will call RTPSender.Send method for each new added Downtrack, and return error if the DownTrack.Bind
-		// returns error. In case of Downtrack.Bind returns ErrUnsupportedCodec, the signal state will be stable as negotiation is aleady compelted
+		// returns error. In case of Downtrack.Bind returns ErrUnsupportedCodec, the signal state will be stable as negotiation is already completed
 		// before startRTPSenders, and the peerconnection state can be recovered by next negotiation which will be triggered
 		// by the SubscriptionManager unsubscribe the failure DownTrack. So don't treat this error as negotiation failure.
 		if !errors.Is(err, webrtc.ErrUnsupportedCodec) {
@@ -3199,7 +3199,7 @@ func offerAudioPayloadTypes(parsed *sdp.SessionDescription) map[mime.MimeType]we
 	return out
 }
 
-// In single peer connection mode, set up enebled codecs for sender.
+// In single peer connection mode, set up enabled codecs for sender.
 // The config provides config of direction.
 // For publisher peer connection those are publish enabled codecs
 // and for subscriber peer connection those are subscribe enabled codecs.
