@@ -84,7 +84,7 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 	}
 
 	dispatch := &livekit.AgentDispatch{
-		Id:            guid.New(guid.AgentDispatchPrefix),
+		Id:            DeterministicID(guid.AgentDispatchPrefix, RequestID(ctx)),
 		AgentName:     req.AgentName,
 		Room:          req.Room,
 		Metadata:      req.Metadata,
