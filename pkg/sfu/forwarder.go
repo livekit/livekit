@@ -1841,6 +1841,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 			"layer", layer,
 			"referenceLayerSpatial", f.referenceLayerSpatial,
 		)
+		starting = true
 		return starting, nil
 	} else if f.referenceLayerSpatial == buffer.InvalidLayerSpatial {
 		if extPkt.IsOutOfOrder {
