@@ -91,7 +91,7 @@ func TestTrackPublishing(t *testing.T) {
 			published = true
 		})
 		p.UpTrackManager.AddPublishedTrack(track)
-		p.handleTrackPublished(track, false)
+		p.handleTrackPublished(track, false, false)
 		require.True(t, published)
 		require.False(t, updated)
 		require.Len(t, p.UpTrackManager.publishedTracks, 1)
@@ -264,7 +264,7 @@ func TestDisconnectTiming(t *testing.T) {
 		}()
 		track := &typesfakes.FakeMediaTrack{}
 		p.UpTrackManager.AddPublishedTrack(track)
-		p.handleTrackPublished(track, false)
+		p.handleTrackPublished(track, false, false)
 
 		// close channel and then try to Negotiate
 		msg.Close()
