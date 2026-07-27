@@ -2876,8 +2876,6 @@ func (p *ParticipantImpl) onSubscribedAudioCodecChange(
 
 func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit.TrackInfo {
 	p.pendingTracksLock.Lock()
-	defer p.pendingTracksLock.Unlock()
-
 	if req.Sid != "" {
 		track := p.GetPublishedTrack(livekit.TrackID(req.Sid))
 		if track == nil {
@@ -2888,11 +2886,14 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 					AddTrack: utils.CloneProto(req),
 				},
 			})
+			p.pendingTracksLock.Unlock()
 			return nil
 		}
 
 		track.(*MediaTrack).UpdateCodecInfo(req.SimulcastCodecs)
-		return track.ToProto()
+		ti := track.ToProto()
+		p.pendingTracksLock.Unlock()
+		return ti
 	}
 
 	backupCodecPolicy := req.BackupCodecPolicy
@@ -3060,8 +3061,6 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		}
 	}
 
-	p.params.TelemetryListener.OnTrackPublishRequested(p.ID(), p.Identity(), utils.CloneProto(ti))
-
 	if p.supervisor != nil {
 		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
 		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
@@ -3093,6 +3092,8 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 				AddTrack: utils.CloneProto(req),
 			},
 		})
+		p.pendingTracksLock.Unlock()
+		p.params.TelemetryListener.OnTrackPublishRequested(p.ID(), p.Identity(), utils.CloneProto(ti))
 		return nil
 	}
 
@@ -3110,6 +3111,8 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		"request", logger.Proto(req),
 		"pendingTrack", p.pendingTracks[req.Cid],
 	)
+	p.pendingTracksLock.Unlock()
+	p.params.TelemetryListener.OnTrackPublishRequested(p.ID(), p.Identity(), utils.CloneProto(ti))
 	return ti
 }
 
