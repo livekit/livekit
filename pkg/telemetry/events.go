@@ -230,9 +230,14 @@ func (t *telemetryService) TrackPublishRequested(
 	participantID livekit.ParticipantID,
 	identity livekit.ParticipantIdentity,
 	track *livekit.TrackInfo,
+	shouldSendEvent bool,
 ) {
 	t.enqueue(func() {
 		prometheus.RecordTrackPublishAttempt(track.Type.String())
+		if !shouldSendEvent {
+			return
+		}
+
 		room := toMinimalRoomProto(roomID, roomName)
 		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_PUBLISH_REQUESTED, room, participantID, track)
 		if ev.Participant != nil {

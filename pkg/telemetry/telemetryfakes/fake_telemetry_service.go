@@ -201,7 +201,7 @@ type FakeTelemetryService struct {
 		arg7 int
 		arg8 *livekit.RTPStats
 	}
-	TrackPublishRequestedStub        func(context.Context, livekit.RoomID, livekit.RoomName, livekit.ParticipantID, livekit.ParticipantIdentity, *livekit.TrackInfo)
+	TrackPublishRequestedStub        func(context.Context, livekit.RoomID, livekit.RoomName, livekit.ParticipantID, livekit.ParticipantIdentity, *livekit.TrackInfo, bool)
 	trackPublishRequestedMutex       sync.RWMutex
 	trackPublishRequestedArgsForCall []struct {
 		arg1 context.Context
@@ -210,6 +210,7 @@ type FakeTelemetryService struct {
 		arg4 livekit.ParticipantID
 		arg5 livekit.ParticipantIdentity
 		arg6 *livekit.TrackInfo
+		arg7 bool
 	}
 	TrackPublishedStub        func(context.Context, livekit.RoomID, livekit.RoomName, livekit.ParticipantID, livekit.ParticipantIdentity, *livekit.TrackInfo, bool)
 	trackPublishedMutex       sync.RWMutex
@@ -1233,7 +1234,7 @@ func (fake *FakeTelemetryService) TrackPublishRTPStatsArgsForCall(i int) (contex
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5, argsForCall.arg6, argsForCall.arg7, argsForCall.arg8
 }
 
-func (fake *FakeTelemetryService) TrackPublishRequested(arg1 context.Context, arg2 livekit.RoomID, arg3 livekit.RoomName, arg4 livekit.ParticipantID, arg5 livekit.ParticipantIdentity, arg6 *livekit.TrackInfo) {
+func (fake *FakeTelemetryService) TrackPublishRequested(arg1 context.Context, arg2 livekit.RoomID, arg3 livekit.RoomName, arg4 livekit.ParticipantID, arg5 livekit.ParticipantIdentity, arg6 *livekit.TrackInfo, arg7 bool) {
 	fake.trackPublishRequestedMutex.Lock()
 	fake.trackPublishRequestedArgsForCall = append(fake.trackPublishRequestedArgsForCall, struct {
 		arg1 context.Context
@@ -1242,12 +1243,13 @@ func (fake *FakeTelemetryService) TrackPublishRequested(arg1 context.Context, ar
 		arg4 livekit.ParticipantID
 		arg5 livekit.ParticipantIdentity
 		arg6 *livekit.TrackInfo
-	}{arg1, arg2, arg3, arg4, arg5, arg6})
+		arg7 bool
+	}{arg1, arg2, arg3, arg4, arg5, arg6, arg7})
 	stub := fake.TrackPublishRequestedStub
-	fake.recordInvocation("TrackPublishRequested", []interface{}{arg1, arg2, arg3, arg4, arg5, arg6})
+	fake.recordInvocation("TrackPublishRequested", []interface{}{arg1, arg2, arg3, arg4, arg5, arg6, arg7})
 	fake.trackPublishRequestedMutex.Unlock()
 	if stub != nil {
-		fake.TrackPublishRequestedStub(arg1, arg2, arg3, arg4, arg5, arg6)
+		fake.TrackPublishRequestedStub(arg1, arg2, arg3, arg4, arg5, arg6, arg7)
 	}
 }
 
@@ -1257,17 +1259,17 @@ func (fake *FakeTelemetryService) TrackPublishRequestedCallCount() int {
 	return len(fake.trackPublishRequestedArgsForCall)
 }
 
-func (fake *FakeTelemetryService) TrackPublishRequestedCalls(stub func(context.Context, livekit.RoomID, livekit.RoomName, livekit.ParticipantID, livekit.ParticipantIdentity, *livekit.TrackInfo)) {
+func (fake *FakeTelemetryService) TrackPublishRequestedCalls(stub func(context.Context, livekit.RoomID, livekit.RoomName, livekit.ParticipantID, livekit.ParticipantIdentity, *livekit.TrackInfo, bool)) {
 	fake.trackPublishRequestedMutex.Lock()
 	defer fake.trackPublishRequestedMutex.Unlock()
 	fake.TrackPublishRequestedStub = stub
 }
 
-func (fake *FakeTelemetryService) TrackPublishRequestedArgsForCall(i int) (context.Context, livekit.RoomID, livekit.RoomName, livekit.ParticipantID, livekit.ParticipantIdentity, *livekit.TrackInfo) {
+func (fake *FakeTelemetryService) TrackPublishRequestedArgsForCall(i int) (context.Context, livekit.RoomID, livekit.RoomName, livekit.ParticipantID, livekit.ParticipantIdentity, *livekit.TrackInfo, bool) {
 	fake.trackPublishRequestedMutex.RLock()
 	defer fake.trackPublishRequestedMutex.RUnlock()
 	argsForCall := fake.trackPublishRequestedArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5, argsForCall.arg6
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5, argsForCall.arg6, argsForCall.arg7
 }
 
 func (fake *FakeTelemetryService) TrackPublished(arg1 context.Context, arg2 livekit.RoomID, arg3 livekit.RoomName, arg4 livekit.ParticipantID, arg5 livekit.ParticipantIdentity, arg6 *livekit.TrackInfo, arg7 bool) {

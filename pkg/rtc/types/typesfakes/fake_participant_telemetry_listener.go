@@ -35,12 +35,13 @@ type FakeParticipantTelemetryListener struct {
 		arg4 int
 		arg5 *livekit.RTPStats
 	}
-	OnTrackPublishRequestedStub        func(livekit.ParticipantID, livekit.ParticipantIdentity, *livekit.TrackInfo)
+	OnTrackPublishRequestedStub        func(livekit.ParticipantID, livekit.ParticipantIdentity, *livekit.TrackInfo, bool)
 	onTrackPublishRequestedMutex       sync.RWMutex
 	onTrackPublishRequestedArgsForCall []struct {
 		arg1 livekit.ParticipantID
 		arg2 livekit.ParticipantIdentity
 		arg3 *livekit.TrackInfo
+		arg4 bool
 	}
 	OnTrackPublishedStub        func(livekit.ParticipantID, livekit.ParticipantIdentity, *livekit.TrackInfo, bool)
 	onTrackPublishedMutex       sync.RWMutex
@@ -228,18 +229,19 @@ func (fake *FakeParticipantTelemetryListener) OnTrackPublishRTPStatsArgsForCall(
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5
 }
 
-func (fake *FakeParticipantTelemetryListener) OnTrackPublishRequested(arg1 livekit.ParticipantID, arg2 livekit.ParticipantIdentity, arg3 *livekit.TrackInfo) {
+func (fake *FakeParticipantTelemetryListener) OnTrackPublishRequested(arg1 livekit.ParticipantID, arg2 livekit.ParticipantIdentity, arg3 *livekit.TrackInfo, arg4 bool) {
 	fake.onTrackPublishRequestedMutex.Lock()
 	fake.onTrackPublishRequestedArgsForCall = append(fake.onTrackPublishRequestedArgsForCall, struct {
 		arg1 livekit.ParticipantID
 		arg2 livekit.ParticipantIdentity
 		arg3 *livekit.TrackInfo
-	}{arg1, arg2, arg3})
+		arg4 bool
+	}{arg1, arg2, arg3, arg4})
 	stub := fake.OnTrackPublishRequestedStub
-	fake.recordInvocation("OnTrackPublishRequested", []interface{}{arg1, arg2, arg3})
+	fake.recordInvocation("OnTrackPublishRequested", []interface{}{arg1, arg2, arg3, arg4})
 	fake.onTrackPublishRequestedMutex.Unlock()
 	if stub != nil {
-		fake.OnTrackPublishRequestedStub(arg1, arg2, arg3)
+		fake.OnTrackPublishRequestedStub(arg1, arg2, arg3, arg4)
 	}
 }
 
@@ -249,17 +251,17 @@ func (fake *FakeParticipantTelemetryListener) OnTrackPublishRequestedCallCount()
 	return len(fake.onTrackPublishRequestedArgsForCall)
 }
 
-func (fake *FakeParticipantTelemetryListener) OnTrackPublishRequestedCalls(stub func(livekit.ParticipantID, livekit.ParticipantIdentity, *livekit.TrackInfo)) {
+func (fake *FakeParticipantTelemetryListener) OnTrackPublishRequestedCalls(stub func(livekit.ParticipantID, livekit.ParticipantIdentity, *livekit.TrackInfo, bool)) {
 	fake.onTrackPublishRequestedMutex.Lock()
 	defer fake.onTrackPublishRequestedMutex.Unlock()
 	fake.OnTrackPublishRequestedStub = stub
 }
 
-func (fake *FakeParticipantTelemetryListener) OnTrackPublishRequestedArgsForCall(i int) (livekit.ParticipantID, livekit.ParticipantIdentity, *livekit.TrackInfo) {
+func (fake *FakeParticipantTelemetryListener) OnTrackPublishRequestedArgsForCall(i int) (livekit.ParticipantID, livekit.ParticipantIdentity, *livekit.TrackInfo, bool) {
 	fake.onTrackPublishRequestedMutex.RLock()
 	defer fake.onTrackPublishRequestedMutex.RUnlock()
 	argsForCall := fake.onTrackPublishRequestedArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
 }
 
 func (fake *FakeParticipantTelemetryListener) OnTrackPublished(arg1 livekit.ParticipantID, arg2 livekit.ParticipantIdentity, arg3 *livekit.TrackInfo, arg4 bool) {
