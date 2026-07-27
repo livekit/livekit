@@ -1353,6 +1353,7 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 	if ti == nil {
 		return
 	}
+	p.params.TelemetryListener.OnTrackPublishRequested(p.ID(), p.Identity(), utils.CloneProto(ti))
 
 	p.sendTrackPublished(req.Cid, ti)
 
@@ -3059,8 +3060,6 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 			}
 		}
 	}
-
-	p.params.TelemetryListener.OnTrackPublishRequested(p.ID(), p.Identity(), utils.CloneProto(ti))
 
 	if p.supervisor != nil {
 		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
