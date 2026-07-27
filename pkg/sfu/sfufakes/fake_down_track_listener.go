@@ -3,6 +3,7 @@ package sfufakes
 
 import (
 	"sync"
+	"time"
 
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/protocol/livekit"
@@ -39,9 +40,10 @@ type FakeDownTrackListener struct {
 	onStatsUpdateArgsForCall []struct {
 		arg1 *livekit.AnalyticsStat
 	}
-	OnStreamStartedStub        func()
+	OnStreamStartedStub        func(time.Duration)
 	onStreamStartedMutex       sync.RWMutex
 	onStreamStartedArgsForCall []struct {
+		arg1 time.Duration
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
@@ -231,15 +233,16 @@ func (fake *FakeDownTrackListener) OnStatsUpdateArgsForCall(i int) *livekit.Anal
 	return argsForCall.arg1
 }
 
-func (fake *FakeDownTrackListener) OnStreamStarted() {
+func (fake *FakeDownTrackListener) OnStreamStarted(arg1 time.Duration) {
 	fake.onStreamStartedMutex.Lock()
 	fake.onStreamStartedArgsForCall = append(fake.onStreamStartedArgsForCall, struct {
-	}{})
+		arg1 time.Duration
+	}{arg1})
 	stub := fake.OnStreamStartedStub
-	fake.recordInvocation("OnStreamStarted", []interface{}{})
+	fake.recordInvocation("OnStreamStarted", []interface{}{arg1})
 	fake.onStreamStartedMutex.Unlock()
 	if stub != nil {
-		fake.OnStreamStartedStub()
+		fake.OnStreamStartedStub(arg1)
 	}
 }
 
@@ -249,10 +252,17 @@ func (fake *FakeDownTrackListener) OnStreamStartedCallCount() int {
 	return len(fake.onStreamStartedArgsForCall)
 }
 
-func (fake *FakeDownTrackListener) OnStreamStartedCalls(stub func()) {
+func (fake *FakeDownTrackListener) OnStreamStartedCalls(stub func(time.Duration)) {
 	fake.onStreamStartedMutex.Lock()
 	defer fake.onStreamStartedMutex.Unlock()
 	fake.OnStreamStartedStub = stub
+}
+
+func (fake *FakeDownTrackListener) OnStreamStartedArgsForCall(i int) time.Duration {
+	fake.onStreamStartedMutex.RLock()
+	defer fake.onStreamStartedMutex.RUnlock()
+	argsForCall := fake.onStreamStartedArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeDownTrackListener) Invocations() map[string][][]interface{} {

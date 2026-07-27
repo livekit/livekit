@@ -240,6 +240,7 @@ type Forwarder struct {
 
 	started                  bool
 	preStartTime             time.Time
+	startPending             bool
 	acquireDeadline          int64 // mono nanos; initial-acquisition grace deadline, 0 = inactive
 	extFirstTS               uint64
 	lastSSRC                 uint32
@@ -508,6 +509,7 @@ func (f *Forwarder) SeedState(state *livekit.RTPForwarderState) {
 	f.referenceLayerSpatial = state.ReferenceLayerSpatial
 	if state.PreStartTime != 0 {
 		f.preStartTime = time.Unix(0, state.PreStartTime)
+		f.startPending = true
 	}
 	f.extFirstTS = state.ExtFirstTimestamp
 	f.dummyStartTSOffset = state.DummyStartTimestampOffset
@@ -1858,7 +1860,10 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 			"referenceLayerSpatial", f.referenceLayerSpatial,
 		)
 
-		starting = true
+		if f.startPending {
+			f.startPending = false
+			starting = true
+		}
 	}
 
 	logTransition := func(message string, extExpectedTS, extRefTS, extLastTS uint64, diffSeconds float64) {
@@ -2230,6 +2235,7 @@ func (f *Forwarder) maybeStart() {
 
 	f.started = true
 	f.preStartTime = time.Now()
+	f.startPending = true
 
 	sequenceNumber := uint16(rand.Intn(1<<14)) + uint16(1<<15) // a random number in third quartile of sequence number space
 	timestamp := uint32(rand.Intn(1<<30)) + uint32(1<<31)      // a random number in third quartile of timestamp space

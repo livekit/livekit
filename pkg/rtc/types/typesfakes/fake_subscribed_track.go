@@ -3,6 +3,7 @@ package typesfakes
 
 import (
 	"sync"
+	"time"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -85,6 +86,11 @@ type FakeSubscribedTrack struct {
 	onCloseMutex       sync.RWMutex
 	onCloseArgsForCall []struct {
 		arg1 func(isExpectedToResume bool)
+	}
+	OnSubscribeStreamStartedStub        func(func(elapsed time.Duration))
+	onSubscribeStreamStartedMutex       sync.RWMutex
+	onSubscribeStreamStartedArgsForCall []struct {
+		arg1 func(elapsed time.Duration)
 	}
 	PublisherIDStub        func() livekit.ParticipantID
 	publisherIDMutex       sync.RWMutex
@@ -586,6 +592,38 @@ func (fake *FakeSubscribedTrack) OnCloseArgsForCall(i int) func(isExpectedToResu
 	fake.onCloseMutex.RLock()
 	defer fake.onCloseMutex.RUnlock()
 	argsForCall := fake.onCloseArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeSubscribedTrack) OnSubscribeStreamStarted(arg1 func(elapsed time.Duration)) {
+	fake.onSubscribeStreamStartedMutex.Lock()
+	fake.onSubscribeStreamStartedArgsForCall = append(fake.onSubscribeStreamStartedArgsForCall, struct {
+		arg1 func(elapsed time.Duration)
+	}{arg1})
+	stub := fake.OnSubscribeStreamStartedStub
+	fake.recordInvocation("OnSubscribeStreamStarted", []interface{}{arg1})
+	fake.onSubscribeStreamStartedMutex.Unlock()
+	if stub != nil {
+		fake.OnSubscribeStreamStartedStub(arg1)
+	}
+}
+
+func (fake *FakeSubscribedTrack) OnSubscribeStreamStartedCallCount() int {
+	fake.onSubscribeStreamStartedMutex.RLock()
+	defer fake.onSubscribeStreamStartedMutex.RUnlock()
+	return len(fake.onSubscribeStreamStartedArgsForCall)
+}
+
+func (fake *FakeSubscribedTrack) OnSubscribeStreamStartedCalls(stub func(func(elapsed time.Duration))) {
+	fake.onSubscribeStreamStartedMutex.Lock()
+	defer fake.onSubscribeStreamStartedMutex.Unlock()
+	fake.OnSubscribeStreamStartedStub = stub
+}
+
+func (fake *FakeSubscribedTrack) OnSubscribeStreamStartedArgsForCall(i int) func(elapsed time.Duration) {
+	fake.onSubscribeStreamStartedMutex.RLock()
+	defer fake.onSubscribeStreamStartedMutex.RUnlock()
+	argsForCall := fake.onSubscribeStreamStartedArgsForCall[i]
 	return argsForCall.arg1
 }
 
