@@ -2500,10 +2500,10 @@ func (d *DownTrack) onBindAndConnectedChange() {
 		return
 	}
 	writable := d.connected.Load() && d.bindState.Load() == bindStateBound
-	d.writable.Store(writable)
 	if writable {
 		d.writableAt.Store(time.Now())
 	}
+	d.writable.Store(writable)
 	if writable && !d.bindAndConnectedOnce.Swap(true) {
 		go d.params.Listener.OnBindAndConnected()
 
