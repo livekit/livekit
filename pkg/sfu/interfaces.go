@@ -15,6 +15,8 @@
 package sfu
 
 import (
+	"time"
+
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 
@@ -181,7 +183,7 @@ type DownTrackListener interface {
 	OnRttUpdate(rtt uint32)
 	OnCodecNegotiated(webrtc.RTPCodecCapability)
 	OnDownTrackClose(isExpectedToResume bool)
-	OnStreamStarted()
+	OnStreamStarted(elapsed time.Duration)
 }
 
 // -------------------------------------------------------------------

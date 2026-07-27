@@ -687,7 +687,7 @@ type ParticipantTelemetryListener interface {
 	OnTrackSubscribed(pID livekit.ParticipantID, ti *livekit.TrackInfo, publisherInfo *livekit.ParticipantInfo, shouldSendEvent bool)
 	OnTrackUnsubscribed(pID livekit.ParticipantID, ti *livekit.TrackInfo, shouldSendEvent bool)
 	OnTrackSubscribeFailed(pID livekit.ParticipantID, trackID livekit.TrackID, err error, isUserError bool)
-	OnTrackSubscribeStreamStarted(pID livekit.ParticipantID, ti *livekit.TrackInfo)
+	OnTrackSubscribeStreamStarted(pID livekit.ParticipantID, ti *livekit.TrackInfo, elapsed time.Duration)
 	OnTrackMuted(pID livekit.ParticipantID, ti *livekit.TrackInfo)
 	OnTrackUnmuted(pID livekit.ParticipantID, ti *livekit.TrackInfo)
 	OnTrackPublishedUpdate(pID livekit.ParticipantID, ti *livekit.TrackInfo)
@@ -716,7 +716,7 @@ func (NullParticipantTelemetryListener) OnTrackUnsubscribed(pID livekit.Particip
 }
 func (NullParticipantTelemetryListener) OnTrackSubscribeFailed(pID livekit.ParticipantID, trackID livekit.TrackID, err error, isUserError bool) {
 }
-func (NullParticipantTelemetryListener) OnTrackSubscribeStreamStarted(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
+func (NullParticipantTelemetryListener) OnTrackSubscribeStreamStarted(pID livekit.ParticipantID, ti *livekit.TrackInfo, elapsed time.Duration) {
 }
 func (NullParticipantTelemetryListener) OnTrackMuted(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
 }
@@ -880,6 +880,7 @@ type DataTrackTransport interface {
 type SubscribedTrack interface {
 	AddOnBind(f func(error))
 	IsBound() bool
+	OnSubscribeStreamStarted(f func(elapsed time.Duration))
 	Close(isExpectedToResume bool)
 	OnClose(f func(isExpectedToResume bool))
 	ID() livekit.TrackID

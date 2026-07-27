@@ -852,6 +852,7 @@ func (m *SubscriptionManager) addSubscriber(sub *mediaTrackSubscription, track t
 		)
 	}
 	if err == nil && subTrack != nil { // subTrack could be nil if already subscribed
+		subTrack.OnSubscribeStreamStarted(sub.recordStreamStartLatency)
 		subTrack.OnClose(func(isExpectedToResume bool) {
 			m.handleSubscribedTrackClose(sub, isExpectedToResume)
 
@@ -1530,6 +1531,28 @@ func (s *mediaTrackSubscription) maybeRecordSuccess(tl types.ParticipantTelemetr
 		Sid:      string(subTrack.PublisherID()),
 	}
 	tl.OnTrackSubscribed(s.subscriberID, mediaTrack.ToProto(), pi, !eventSent)
+}
+
+func (s *mediaTrackSubscription) recordStreamStartLatency(elapsed time.Duration) {
+	subTrack := s.getSubscribedTrack()
+	if subTrack == nil {
+		return
+	}
+	mediaTrack := subTrack.MediaTrack()
+	if mediaTrack == nil {
+		return
+	}
+
+	s.logger.Debugw("track subscribe stream started", "cost", elapsed.Microseconds())
+	subscriber := subTrack.Subscriber()
+	prometheus.RecordSubscribeStreamStartTime(
+		subscriber.GetCountry(),
+		mediaTrack.Source(),
+		mediaTrack.Kind(),
+		elapsed,
+		subscriber.GetClientInfo().GetSdk(),
+		subscriber.Kind(),
+	)
 }
 
 func (s *mediaTrackSubscription) isCanceled() bool {
