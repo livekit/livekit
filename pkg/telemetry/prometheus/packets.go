@@ -54,6 +54,9 @@ var (
 	promPacketLabels          = []string{"direction", "transmission", "country"}
 	promPacketTotal           *prometheus.CounterVec
 	promPacketBytes           *prometheus.CounterVec
+	promFECLabels             = []string{"direction", "type"}
+	promFECPacketTotal        *prometheus.CounterVec
+	promFECPacketBytes        *prometheus.CounterVec
 	promRTCPLabels            = []string{"direction", "country"}
 	promStreamLabels          = []string{"direction", "source", "type", "country"}
 	promNackTotal             *prometheus.CounterVec
@@ -85,6 +88,18 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "bytes",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	}, promPacketLabels)
+	promFECPacketTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "fec",
+		Name:        "total",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+	}, promFECLabels)
+	promFECPacketBytes = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "fec",
+		Name:        "bytes",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+	}, promFECLabels)
 	promNackTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "nack",
@@ -190,6 +205,8 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 
 	prometheus.MustRegister(promPacketTotal)
 	prometheus.MustRegister(promPacketBytes)
+	prometheus.MustRegister(promFECPacketTotal)
+	prometheus.MustRegister(promFECPacketBytes)
 	prometheus.MustRegister(promNackTotal)
 	prometheus.MustRegister(promPliTotal)
 	prometheus.MustRegister(promFirTotal)
@@ -204,6 +221,35 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promForwardLatency)
 	prometheus.MustRegister(promForwardJitter)
 	prometheus.MustRegister(promForwardLatencyHist)
+}
+
+// RecordFECUpstream tracks FlexFEC activity on the publisher leg: FEC
+// packets received from publishers, media packets recovered with them and
+// FEC packets that could not be used.
+func RecordFECUpstream(received int, recovered int, discarded int, bytesReceived uint64) {
+	if received > 0 {
+		promFECPacketTotal.WithLabelValues(string(Incoming), "received").Add(float64(received))
+	}
+	if recovered > 0 {
+		promFECPacketTotal.WithLabelValues(string(Incoming), "recovered").Add(float64(recovered))
+	}
+	if discarded > 0 {
+		promFECPacketTotal.WithLabelValues(string(Incoming), "discarded").Add(float64(discarded))
+	}
+	if bytesReceived > 0 {
+		promFECPacketBytes.WithLabelValues(string(Incoming), "received").Add(float64(bytesReceived))
+	}
+}
+
+// RecordFECDownstreamSent tracks FlexFEC packets generated toward
+// subscribers.
+func RecordFECDownstreamSent(packets int, bytes uint64) {
+	if packets > 0 {
+		promFECPacketTotal.WithLabelValues(string(Outgoing), "sent").Add(float64(packets))
+	}
+	if bytes > 0 {
+		promFECPacketBytes.WithLabelValues(string(Outgoing), "sent").Add(float64(bytes))
+	}
 }
 
 func IncrementPackets(country string, direction Direction, count uint64, retransmit bool) {

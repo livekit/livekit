@@ -112,6 +112,20 @@ rtc:
   #   # in the unlikely event of highly congested networks, SFU may choose to pause some tracks
   #   # in order to allow others to stream smoothly. You can disable this behavior here
   #   allow_pause: true
+  # # FlexFEC-03 forward error correction, both legs disabled by default.
+  # # Upstream accepts FEC from publishers (e.g. the Rust SDK with FlexFEC
+  # # enabled) and uses it to repair lost packets before forwarding.
+  # # Downstream generates FEC for forwarded video so subscribers can repair
+  # # losses without waiting for retransmissions. Overhead per protected
+  # # downstream track is roughly num_fec_packets/num_media_packets.
+  # flexfec:
+  #   upstream_enabled: false
+  #   downstream_enabled: false
+  #   # payload type offered to subscribers, must not collide with codec or RTX payload types
+  #   payload_type: 115
+  #   # downstream protection window: FEC packets generated per media packets
+  #   num_media_packets: 10
+  #   num_fec_packets: 2
   # # allows automatic connection fallback to TCP and TURN/TLS (if configured) when UDP has been unstable, default true
   # allow_tcp_fallback: true
   # # signaling RTT (in milliseconds) below which ICE/TCP is attempted on a UDP failure; at or above it,
