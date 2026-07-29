@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/pion/rtp"
+	"github.com/pion/rtp/codecs"
 	"github.com/stretchr/testify/require"
 
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
@@ -62,6 +63,16 @@ func (f *testFrameInfo) toH26x() *ExtPacket {
 	return &ExtPacket{
 		Packet:     &rtp.Packet{Header: f.header},
 		VideoLayer: VideoLayer{Spatial: InvalidLayerSpatial, Temporal: int32(f.temporal)},
+	}
+}
+
+func (f *testFrameInfo) toVP9() *ExtPacket {
+	return &ExtPacket{
+		Packet: &rtp.Packet{Header: f.header},
+		Payload: codecs.VP9Packet{
+			PictureID: f.framenumber,
+		},
+		VideoLayer: VideoLayer{Spatial: int32(f.spatial), Temporal: int32(f.temporal)},
 	}
 }
 
@@ -434,5 +445,60 @@ func TestFpsH26x(t *testing.T) {
 			fpsGot := calc.GetFrameRate()
 			verifyFps(t, fpsExpected, fpsGot[:len(fpsExpected)])
 		}
+	})
+}
+
+func TestFpsVP9CompletesWithFewerThanThreeSpatialLayers(t *testing.T) {
+	t.Run("single spatial layer", func(t *testing.T) {
+		fps := [][]float32{{7.5, 15, 30}}
+		frames := createFrames(100, 12345678, 10, 500, fps, false)
+		vp9calc := NewFrameRateCalculatorVP9(90000, logger.GetLogger())
+
+		var frameratesGot bool
+		for _, f := range frames[0] {
+			if vp9calc.RecvPacket(f.toVP9()) && vp9calc.Completed() {
+				frameratesGot = true
+				break
+			}
+		}
+		require.True(t, frameratesGot, "VP9 FPS should complete with a single spatial layer")
+		fpsGot := vp9calc.GetFrameRateForSpatial(0)
+		verifyFps(t, fps[0], fpsGot[:len(fps[0])])
+	})
+
+	t.Run("SetMaxLayer waits for declared layers", func(t *testing.T) {
+		fps := [][]float32{{7.5, 15, 30}}
+		frames := createFrames(100, 12345678, 10, 500, fps, false)
+		vp9calc := NewFrameRateCalculatorVP9(90000, logger.GetLogger())
+		vp9calc.SetMaxLayer(1) // require spatial 0 and 1
+
+		for _, f := range frames[0] {
+			vp9calc.RecvPacket(f.toVP9())
+		}
+		require.False(t, vp9calc.Completed(), "should not complete when only spatial 0 is received but maxSpatial is 1")
+	})
+
+	t.Run("observed higher spatial expands requirement", func(t *testing.T) {
+		// Build independent picture-ID sequences per spatial layer (simulcast-style).
+		fps := [][]float32{{15, 30}}
+		frames0 := createFrames(100, 12345678, 10, 500, fps, false)
+		frames1 := createFrames(100, 12345678, 10, 500, fps, false)
+		for _, f := range frames1[0] {
+			f.spatial = 1
+		}
+
+		vp9calc := NewFrameRateCalculatorVP9(90000, logger.GetLogger())
+		var frameratesGot bool
+		n := len(frames0[0])
+		for i := 0; i < n; i++ {
+			vp9calc.RecvPacket(frames0[0][i].toVP9())
+			vp9calc.RecvPacket(frames1[0][i].toVP9())
+			if vp9calc.Completed() {
+				frameratesGot = true
+				break
+			}
+		}
+		require.True(t, frameratesGot, "VP9 FPS should complete after both observed spatial layers finish")
+		require.EqualValues(t, 1, vp9calc.maxSpatial)
 	})
 }

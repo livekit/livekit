@@ -228,17 +228,17 @@ func (f *FrameRateCalculatorVP8) RecvPacket(ep *ExtPacket) bool {
 
 // FrameRateCalculator based on PictureID in VP9
 type FrameRateCalculatorVP9 struct {
-	logger    logger.Logger
-	completed bool
+	logger     logger.Logger
+	completed  bool
+	maxSpatial int32 // inclusive; expands as SIDs are observed, or via SetMaxLayer
 
-	// VP9-TODO - this is assuming three spatial layers. As `completed` marker relies on all layers being finished, have to assume this. FIX.
-	//            Maybe look at number of layers in livekit.TrackInfo and declare completed once advertised layers are measured
 	frameRateCalculatorsVPx [DefaultMaxLayerSpatial + 1]*frameRateCalculatorVPx
 }
 
 func NewFrameRateCalculatorVP9(clockRate uint32, logger logger.Logger) *FrameRateCalculatorVP9 {
 	f := &FrameRateCalculatorVP9{
-		logger: logger,
+		logger:     logger,
+		maxSpatial: 0, // assume single-layer until higher SIDs or SetMaxLayer
 	}
 
 	for i := range f.frameRateCalculatorsVPx {
@@ -250,6 +250,20 @@ func NewFrameRateCalculatorVP9(clockRate uint32, logger logger.Logger) *FrameRat
 
 func (f *FrameRateCalculatorVP9) Completed() bool {
 	return f.completed
+}
+
+// SetMaxLayer sets the highest spatial layer that must complete for FPS calculation.
+// Mirrors FrameRateCalculatorDD so callers can declare advertised layer count.
+func (f *FrameRateCalculatorVP9) SetMaxLayer(spatial int32) {
+	if spatial < 0 {
+		spatial = 0
+	}
+	if spatial > DefaultMaxLayerSpatial {
+		spatial = DefaultMaxLayerSpatial
+	}
+	if spatial > f.maxSpatial {
+		f.maxSpatial = spatial
+	}
 }
 
 func (f *FrameRateCalculatorVP9) RecvPacket(ep *ExtPacket) bool {
@@ -268,11 +282,15 @@ func (f *FrameRateCalculatorVP9) RecvPacket(ep *ExtPacket) bool {
 		return false
 	}
 
+	if ep.Spatial > f.maxSpatial {
+		f.maxSpatial = ep.Spatial
+	}
+
 	success := f.frameRateCalculatorsVPx[ep.Spatial].RecvPacket(ep, vp9.PictureID)
 
 	completed := true
-	for _, frc := range f.frameRateCalculatorsVPx {
-		if !frc.Completed() {
+	for i := int32(0); i <= f.maxSpatial; i++ {
+		if !f.frameRateCalculatorsVPx[i].Completed() {
 			completed = false
 			break
 		}
@@ -282,10 +300,10 @@ func (f *FrameRateCalculatorVP9) RecvPacket(ep *ExtPacket) bool {
 		f.completed = true
 
 		var frameRates [DefaultMaxLayerSpatial + 1][]float32
-		for i := range f.frameRateCalculatorsVPx {
+		for i := int32(0); i <= f.maxSpatial; i++ {
 			frameRates[i] = f.frameRateCalculatorsVPx[i].GetFrameRate()
 		}
-		f.logger.Debugw("frame rate calculated", "rate", frameRates)
+		f.logger.Debugw("frame rate calculated", "rate", frameRates, "maxSpatial", f.maxSpatial)
 	}
 
 	return success
