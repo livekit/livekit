@@ -533,13 +533,26 @@ func (h *AgentHandler) selectWorkerWeightedByLoad(key workerKey, ignore map[*age
 		return nil, errors.New("no workers with sufficient capacity")
 	}
 
-	currentSum := rand.Float32() * availableSum
+	selected := pickWorkerWeightedByLoad(normalizedLoads, availableSum, rand.Float32())
+	if selected == nil {
+		return nil, errors.New("no workers with sufficient capacity")
+	}
+	return selected, nil
+}
+
+// pickWorkerWeightedByLoad selects a worker using weighted random choice over normalizedLoads.
+// r should be in [0, 1). On floating-point residual after walking all loads, returns an eligible
+// worker from normalizedLoads — never an arbitrary entry from the raw worker list.
+func pickWorkerWeightedByLoad(normalizedLoads map[*agent.Worker]float32, availableSum float32, r float32) *agent.Worker {
+	currentSum := r * availableSum
+	var fallback *agent.Worker
 	for w, load := range normalizedLoads {
+		fallback = w
 		if currentSum -= load; currentSum <= 0 {
-			return w, nil
+			return w
 		}
 	}
-	return workers[0], nil
+	return fallback
 }
 
 var _ agent.WorkerSignalHandler = (*agentHandlerWorker)(nil)
