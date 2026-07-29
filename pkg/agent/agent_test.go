@@ -218,3 +218,41 @@ func TestConnectionClosedOnDispatchError(t *testing.T) {
 		}
 	})
 }
+
+func TestDrainConnectionsDoesNotDeadlock(t *testing.T) {
+	for _, force := range []bool{false, true} {
+		t.Run(fmt.Sprintf("force=%v", force), func(t *testing.T) {
+			bus := psrpc.NewLocalMessageBus()
+			server := testutils.NewTestServer(bus)
+			t.Cleanup(server.Close)
+
+			worker := server.SimulateAgentWorker()
+			worker.Register("drain_agent", livekit.JobType_JT_ROOM)
+			responses := worker.RegisterWorkerResponses.Observe()
+			select {
+			case <-responses.Events():
+			case <-time.After(time.Second):
+				require.Fail(t, "registration timeout")
+			}
+			responses.Stop()
+
+			done := make(chan struct{})
+			go func() {
+				server.DrainConnections(time.Millisecond, force)
+				close(done)
+			}()
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "DrainConnections deadlocked while closing workers")
+			}
+
+			select {
+			case <-worker.Closed():
+			case <-time.After(time.Second):
+				require.Fail(t, "worker should be closed after drain")
+			}
+		})
+	}
+}
