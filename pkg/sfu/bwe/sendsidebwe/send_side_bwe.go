@@ -29,7 +29,7 @@ var _ bwe.BWE = (*SendSideBWE)(nil)
 // Based on a simplified/modified version of JitterPath paper
 // (https://homepage.iis.sinica.edu.tw/papers/lcs/2114-F.pdf)
 //
-// TWCC feedback is uesed to calcualte delta one-way-delay.
+// TWCC feedback is used to calculate delta one-way-delay.
 // It is accumulated/propagated to determine in which region
 // groups of packets are operating in.
 //
@@ -43,7 +43,7 @@ var _ bwe.BWE = (*SendSideBWE)(nil)
 //       possibly_operating_in_jqr
 //    }
 // But, in this implementation it is checked at packet group level,
-// i. e. using queuing delay and aggreated delta one-way-delay of
+// i. e. using queuing delay and aggregated delta one-way-delay of
 // the group and a minimum value threshold is applied before declaring
 // that a group is in JQR.
 //

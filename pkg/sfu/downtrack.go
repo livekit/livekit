@@ -51,29 +51,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 )
 
-// TrackSender defines an interface send media to remote peer
-type TrackSender interface {
-	UpTrackLayersChange()
-	UpTrackBitrateAvailabilityChange()
-	UpTrackMaxPublishedLayerChange(maxPublishedLayer int32)
-	UpTrackMaxTemporalLayerSeenChange(maxTemporalLayerSeen int32)
-	UpTrackBitrateReport(availableLayers []int32, bitrates Bitrates)
-	WriteRTP(p *buffer.ExtPacket, layer int32) int32
-	Close()
-	IsClosed() bool
-	// ID is the globally unique identifier for this Track.
-	ID() string
-	SubscriberID() livekit.ParticipantID
-	HandleRTCPSenderReportData(
-		payloadType webrtc.PayloadType,
-		layer int32,
-		publisherSRData *livekit.RTCPSenderReportState,
-	) error
-	Resync()
-	SetReceiver(TrackReceiver)
-	ReceiverRestart(TrackReceiver)
-}
-
 // -------------------------------------------------------------------
 
 const (
@@ -217,56 +194,6 @@ func (d DownTrackState) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 // -------------------------------------------------------------------
 
-type DownTrackStreamAllocatorListener interface {
-	// RTCP received
-	OnREMB(dt *DownTrack, remb *rtcp.ReceiverEstimatedMaximumBitrate)
-	OnTransportCCFeedback(dt *DownTrack, cc *rtcp.TransportLayerCC)
-
-	// video layer availability changed
-	OnAvailableLayersChanged(dt *DownTrack)
-
-	// video layer bitrate availability changed
-	OnBitrateAvailabilityChanged(dt *DownTrack)
-
-	// max published spatial layer changed
-	OnMaxPublishedSpatialChanged(dt *DownTrack)
-
-	// max published temporal layer changed
-	OnMaxPublishedTemporalChanged(dt *DownTrack)
-
-	// subscription changed - mute/unmute
-	OnSubscriptionChanged(dt *DownTrack)
-
-	// subscribed max video layer changed
-	OnSubscribedLayerChanged(dt *DownTrack, layers buffer.VideoLayer)
-
-	// stream resumed
-	OnResume(dt *DownTrack)
-
-	// check if track should participate in BWE
-	IsBWEEnabled(dt *DownTrack) bool
-
-	// get the BWE type in use
-	BWEType() bwe.BWEType
-
-	// check if subscription mute can be applied
-	IsSubscribeMutable(dt *DownTrack) bool
-}
-
-// -------------------------------------------------------------------
-
-type DownTrackListener interface {
-	OnBindAndConnected()
-	OnStatsUpdate(stat *livekit.AnalyticsStat)
-	OnMaxSubscribedLayerChanged(layer int32)
-	OnRttUpdate(rtt uint32)
-	OnCodecNegotiated(webrtc.RTPCodecCapability)
-	OnDownTrackClose(isExpectedToResume bool)
-	OnStreamStarted()
-}
-
-// -------------------------------------------------------------------
-
 type bindState int
 
 const (
@@ -372,6 +299,7 @@ type DownTrack struct {
 	connected            atomic.Bool
 	bindAndConnectedOnce atomic.Bool
 	writable             atomic.Bool
+	writableAt           atomic.Time
 	writeStopped         atomic.Bool
 	isReceiverReady      bool
 
@@ -408,7 +336,8 @@ type DownTrack struct {
 	keyFrameRequesterCh       chan struct{}
 	keyFrameRequesterChClosed bool
 
-	createdAt int64
+	createdAt     int64
+	lastUnmutedAt atomic.Time
 }
 
 // NewDownTrack returns a DownTrack.
@@ -437,6 +366,8 @@ func NewDownTrack(params DownTrackParams) (*DownTrack, error) {
 		createdAt:           time.Now().UnixNano(),
 		receiver:            params.Receiver,
 	}
+	d.lastUnmutedAt.Store(time.Now())
+
 	d.codec.Store(codec)
 	d.bindState.Store(bindStateUnbound)
 	d.params.Logger = params.Logger.WithValues(
@@ -1116,7 +1047,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	hdr := RTPHeaderFactory.Get().(*rtp.Header)
 	*hdr = rtp.Header{
 		Version:        extPkt.Packet.Version,
-		Padding:        extPkt.Packet.Padding,
+		Padding:        false,
 		Marker:         tp.marker,
 		PayloadType:    d.getTranslatedPayloadType(extPkt.Packet.PayloadType),
 		SequenceNumber: uint16(tp.rtp.extSequenceNumber),
@@ -1230,7 +1161,28 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	}
 
 	if tp.isStarting {
-		d.params.Listener.OnStreamStarted()
+		writableAt := d.writableAt.Load()
+		lastUnmutedAt := d.lastUnmutedAt.Load()
+		anchorTo := lastUnmutedAt
+		if !writableAt.IsZero() && !lastUnmutedAt.IsZero() {
+			if writableAt.After(lastUnmutedAt) {
+				anchorTo = writableAt
+			}
+			d.params.Listener.OnStreamStarted(time.Since(anchorTo))
+			if time.Since(anchorTo) > time.Second {
+				d.params.Logger.Debugw(
+					"stream start high latency",
+					"latency", time.Since(anchorTo),
+					"createdAt", time.Unix(0, d.createdAt),
+					"sinceCreate", time.Since(time.Unix(0, d.createdAt)),
+					"writableAt", writableAt,
+					"sinceWritable", time.Since(writableAt),
+					"lastUnmutedAt", lastUnmutedAt,
+					"sinceLastUnmute", time.Since(lastUnmutedAt),
+					"rtpStats", d.rtpStats,
+				)
+			}
+		}
 	}
 	return 1
 }
@@ -1307,6 +1259,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 		*hdr = rtp.Header{
 			Version:        2,
 			Padding:        true,
+			PaddingSize:    byte(RTPPaddingMaxPayloadSize),
 			Marker:         false,
 			PayloadType:    uint8(d.payloadType.Load()),
 			SequenceNumber: uint16(snts[i].extSequenceNumber),
@@ -1374,6 +1327,11 @@ func (d *DownTrack) handleMute(muted bool, changed bool) {
 	}
 
 	d.connectionStats.UpdateMute(d.forwarder.IsAnyMuted())
+	if muted {
+		d.lastUnmutedAt.Store(time.Time{})
+	} else {
+		d.lastUnmutedAt.Store(time.Now())
+	}
 
 	//
 	// Subscriber mute changes trigger a max layer notification.
@@ -2185,7 +2143,7 @@ func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isPro
 	hdr := RTPHeaderFactory.Get().(*rtp.Header)
 	*hdr = rtp.Header{
 		Version:        pkt.Header.Version,
-		Padding:        pkt.Header.Padding,
+		Padding:        false,
 		Marker:         epm.marker,
 		PayloadType:    d.getTranslatedPayloadType(pkt.Header.PayloadType),
 		SequenceNumber: epm.targetSeqNo,
@@ -2375,6 +2333,7 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 			*hdr = rtp.Header{
 				Version:        2,
 				Padding:        true,
+				PaddingSize:    byte(RTPPaddingMaxPayloadSize),
 				Marker:         false,
 				PayloadType:    rtxPT,
 				SequenceNumber: uint16(rtxExtSequenceNumber),
@@ -2554,8 +2513,12 @@ func (d *DownTrack) onBindAndConnectedChange() {
 	if d.writeStopped.Load() {
 		return
 	}
-	d.writable.Store(d.connected.Load() && d.bindState.Load() == bindStateBound)
-	if d.connected.Load() && d.bindState.Load() == bindStateBound && !d.bindAndConnectedOnce.Swap(true) {
+	writable := d.connected.Load() && d.bindState.Load() == bindStateBound
+	if writable && !d.writable.Load() {
+		d.writableAt.Store(time.Now())
+	}
+	d.writable.Store(writable)
+	if writable && !d.bindAndConnectedOnce.Swap(true) {
 		go d.params.Listener.OnBindAndConnected()
 
 		if d.activePaddingOnMuteUpTrack.Load() {

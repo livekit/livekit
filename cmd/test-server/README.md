@@ -67,6 +67,7 @@ field — for normal behavior. Every field is optional:
 | `response` | — | the response message for the called method (a JSON object, protojson-shaped); replaces the populated default, giving full control over the returned payload. |
 | `skipAuth` | `false` | `true` disables permission enforcement for the request (use for tests that aren't about authz, e.g. failover tests with a placeholder token). |
 | `sipStatus` | — | fail a SIP dial method (`CreateSIPParticipant`/`TransferSIPParticipant`) with a SIP status, e.g. `{"code":486,"status":"Busy Here"}` (`status` optional). The Twirp error code and `sip_status_code`/`sip_status`/`error_details` metadata are derived from it exactly as the real server does. Composes with `delayMs` to simulate "ring, then fail". |
+| `pinnedRegions` | — | array of region **names** the project is pinned to (its **allowed** regions), e.g. `["region-1"]`, mirroring cloud's per-project `PinnedRegions` (region names, not indices). When non-empty a pin is in effect: any region whose name is **not** listed rejects the request with **HTTP 451** (a region-pin violation), and `GET /settings/regions` returns **only** the listed regions. The SDK is expected to see the 451, re-fetch `/settings/regions`, and retry against an allowed region — the 451 carries no region hint (its body is the middleware's plain text, not a Twirp error). This redirect is always active in clients; it can't be disabled. Use a name no listener advertises (e.g. `["region-99"]`) to model a pinned region that's unreachable. Names are the mock's region names (`region-0`, `region-1`, …); contrast `failRegions`, which addresses listeners by index. |
 
 Example: `X-Lk-Mock: {"skipAuth":true,"failRegions":[0],"failStatus":400}`
 
@@ -82,6 +83,80 @@ Response headers:
 | Header | Meaning |
 |---|---|
 | `X-Lk-Mock-Region` | index of the region that served the response (blank on a failed region). Assert on this to confirm which region a failover landed on. |
+
+## Signal connection (WebSocket) mocking
+
+The mock also speaks enough of the LiveKit signal protocol for SDKs to run
+end-to-end signal-connection tests (connect, keepalive, reconnect, leave, and
+the failure/timeout modes a client must classify). Signal behavior is selected
+by a participant attribute (`lk.mock`) in the access token (see below) — the
+WebSocket client can't set request headers, so it can't carry a control header.
+Selecting via the token means parallel tests need no shared
+state.
+
+Endpoints (both protocol versions are supported and behave identically):
+
+| Path | Purpose |
+|---|---|
+| `/rtc`, `/rtc/v1` | WebSocket signal connection |
+| `/rtc/validate`, `/rtc/v1/validate` | HTTP validate (the client fetches this when the WS fails to open) |
+
+- The access token is read from the `access_token` query param (or a
+  `Bearer` Authorization header) and verified against the API secret. A
+  missing/malformed/expired/wrongly-signed token makes `validate` return
+  **401** (and the WS refuse the upgrade).
+- Wire format is **binary protobuf**: `SignalRequest` in, `SignalResponse` out.
+- The v1 embedded publisher offer (`join_request` connection param) is
+  **ignored** — no valid offer is required.
+- Keepalive uses a short `pingTimeout=3s` / `pingInterval=1s` in the join so
+  timeout tests run fast.
+
+**Mode selection is via a participant attribute.** After the token is verified,
+the server reads the `lk.mock` entry from the token's `attributes` claim
+(`ClaimGrants.Attributes`, a `map[string]string`). The value of that attribute
+is a stringified JSON control object whose `signal` field picks the behavior.
+The `lk.mock` namespace is the attribute **key** (dot notation, matching
+LiveKit's convention for internal attributes), so the value has no inner parent:
+
+```
+attribute key:   lk.mock
+attribute value: {"signal":"no_pong"}
+```
+
+The control object also accepts an optional `leaveAction` field — a
+`LeaveRequest_Action`, given either as the number (`0`=DISCONNECT, `1`=RESUME,
+`2`=RECONNECT) or the enum name (`"RECONNECT"`, case-insensitive) — that sets
+the `action` on the `LeaveRequest` the leave-sending modes emit
+(`leave_when_connected`, `leave_first_message`, `leave_during_reconnect`). When
+absent it defaults to `0` (DISCONNECT). Examples:
+
+```
+attribute value: {"signal":"leave_when_connected","leaveAction":"RECONNECT"}
+```
+
+If the `lk.mock` attribute is absent/empty, its value is unparseable, or its
+`signal` is unknown, the mode defaults to `happy`. Both the WS handlers and the
+validate handlers read the mode from this same attribute.
+
+Behavior modes (any unknown/absent `signal` = `happy`):
+
+| `signal` value | Effect |
+|---|---|
+| `happy` | validate → 200; WS sends `JoinResponse` (or `ReconnectResponse` if `reconnect=1`), pongs pings, closes cleanly (1000) on client `LeaveRequest` |
+| `validate_500` | validate → 500; WS refuses upgrade with 500 |
+| `validate_service_not_found` | validate → 404 with a body *without* the room marker (client → serviceNotFound); WS refuses with 404 |
+| `room_not_found` | validate → 404 with body `requested room does not exist` (client → notAllowed); WS refuses with 404 |
+| `no_first_message` | WS accepted, server sends nothing (client hits connect timeout) |
+| `no_pong` | WS sends the join, then never pongs (client hits ping timeout) |
+| `close_before_join` | WS upgrade succeeds, then ~50ms later a clean close (code 1011, empty reason) *before* any first message — unexpected closure during connect |
+| `close_when_connected` | WS sends join, then ~200ms later closes with code 1011 |
+| `drop_when_connected` | WS sends join, then ~200ms later abruptly drops the TCP connection with no close handshake — client observes an abnormal closure (code 1006) |
+| `leave_when_connected` | WS sends join, then ~200ms later sends a `LeaveRequest` |
+| `leave_first_message` | WS sends a `LeaveRequest` as the first (and only) message |
+| `leave_during_reconnect` | on a `reconnect=1` connection, sends `LeaveRequest` first; otherwise behaves like `happy` |
+
+`LeaveRequest`s carry `reason=SERVER_SHUTDOWN` and `action` from the control's
+optional `leaveAction` (default `DISCONNECT (0)`).
 
 ## Permission enforcement
 

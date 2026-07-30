@@ -2,6 +2,47 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.4] - 2026-07-18
+
+### Added
+
+- added mocking function for SIP dialing methods (#4642)
+- Add signal tests to test-server (#4653)
+- Add option to exclude local IPv6 candidates. (#4657)
+- Add a method to get forward stats via API method. (#4664)
+- Add drop-on-close signal test scenario (#4669)
+- Log soft validation errors. (#4671)
+- add redaction flag in Job (#4650)
+
+### Changed
+
+- simpler mock protocol (#4641)
+- Make IsConnectionCanceled available at LocalParticipant interface. (#4643)
+- Update actions/checkout action to v7 (#4646)
+- Update protocol. (#4648)
+- Export migration to LocalParticipant interface. (#4652)
+- Record final RTC state as success/failure. (#4658)
+- Omit rtx/out-of-order packets from forwarding delay measurement. (#4659)
+- Move ForwardStats aggregation off the packet forwarding path (#4660)
+- protocol deps to get parallel exec alloc reduction (#4662)
+- Update pion/ice to deal with hang on close. (#4672)
+- Add more details to unreliable data channel drop error. (#4673)
+- Record `rtc_success` prom as soon as RTC connects. (#4677)
+- Use proto logger to get named enums in the logs. (#4679)
+- Propagate spreader threshold to RED receivers. (#4683)
+- Prefer QDisc.Stats till go-tc addresses QDisc.Stats2 parsing (#4685)
+- Bump protocol version to fix call to Validate. (#4686)
+
+### Fixed
+
+- bound data-track buffering under downlink congestion (targetLatency) (#4667)
+- Guard against nil TC qdisc stats to prevent SIGSEGV (#4668)
+- Fix goroutine leak from orphaned signal relay streams (#4674)
+- don't undercount data channel bitrate over idle gaps (#4676)
+- Fix receiver load balance threshold initialization (#4678)
+- rtc: guard against nil subscriber in TransportManager.HandleAnswer (#4680)
+- Potential fix for code scanning alert no. 42: Incorrect conversion between integer types (#4684)
+
 ## [1.13.3] - 2026-07-03
 
 ### Added

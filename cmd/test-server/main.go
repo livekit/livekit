@@ -92,6 +92,10 @@ func (h *mockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/settings/regions":
 		h.handleRegions(w, r)
+	case isValidatePath(r.URL.Path):
+		h.handleValidate(w, r)
+	case isSignalPath(r.URL.Path):
+		h.handleSignal(w, r)
 	case strings.HasPrefix(r.URL.Path, h.twirpPrefix+"/"):
 		h.handleTwirp(w, r)
 	case r.URL.Path == "/" || r.URL.Path == "/_test/health":
@@ -108,7 +112,14 @@ func (h *mockHandler) handleRegions(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(cfg.RegionsStatus)
 		return
 	}
-	body, err := protojson.Marshal(h.regions)
+	regions := h.regions
+	if len(cfg.PinnedRegions) > 0 {
+		// A pinned project's discovery returns only its allowed regions, so the
+		// client redirects straight to one after a 451 — mirroring cloud filtering
+		// /settings/regions by the project's PinnedRegions.
+		regions = pinnedRegionSettings(h.regions, cfg.PinnedRegions)
+	}
+	body, err := protojson.Marshal(regions)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -121,6 +132,27 @@ func (h *mockHandler) handleRegions(w http.ResponseWriter, r *http.Request) {
 
 func (h *mockHandler) handleTwirp(w http.ResponseWriter, r *http.Request) {
 	h.serveAPI(w, r)
+}
+
+// regionName is the advertised name of the region this listener represents.
+func (h *mockHandler) regionName() string {
+	if h.regionIndex < len(h.regions.Regions) {
+		return h.regions.Regions[h.regionIndex].Region
+	}
+	return ""
+}
+
+// pinnedRegionSettings returns only the regions whose name appears in pinned,
+// mirroring how cloud filters /settings/regions to a project's PinnedRegions.
+// Names outside the region list are ignored.
+func pinnedRegionSettings(all *livekit.RegionSettings, pinned []string) *livekit.RegionSettings {
+	out := &livekit.RegionSettings{}
+	for _, region := range all.Regions {
+		if slices.Contains(pinned, region.Region) {
+			out.Regions = append(out.Regions, region)
+		}
+	}
+	return out
 }
 
 func (h *mockHandler) shouldFail(cfg *mockConfig) bool {

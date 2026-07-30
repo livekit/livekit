@@ -2029,8 +2029,8 @@ type participantTelemetryListener struct {
 	room *Room
 }
 
-func (l participantTelemetryListener) OnTrackPublishRequested(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo) {
-	l.room.telemetry.TrackPublishRequested(context.Background(), l.room.ID(), l.room.Name(), pID, identity, ti)
+func (l participantTelemetryListener) OnTrackPublishRequested(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool) {
+	l.room.telemetry.TrackPublishRequested(context.Background(), l.room.ID(), l.room.Name(), pID, identity, ti, shouldSendEvent)
 }
 
 func (l participantTelemetryListener) OnTrackPublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool) {
@@ -2057,7 +2057,7 @@ func (l participantTelemetryListener) OnTrackSubscribeFailed(pID livekit.Partici
 	l.room.telemetry.TrackSubscribeFailed(context.Background(), l.room.ID(), l.room.Name(), pID, trackID, err, isUserError)
 }
 
-func (l participantTelemetryListener) OnTrackSubscribeStreamStarted(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
+func (l participantTelemetryListener) OnTrackSubscribeStreamStarted(pID livekit.ParticipantID, ti *livekit.TrackInfo, elapsed time.Duration) {
 }
 
 func (l participantTelemetryListener) OnTrackMuted(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
