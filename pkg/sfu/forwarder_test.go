@@ -2193,7 +2193,6 @@ func TestGetRefLayerRTPTimestampBounds(t *testing.T) {
 
 	layerCount := int32(len(f.refInfos))
 
-	// layer == len(refInfos) used to pass the old `>` check and then panic on index
 	_, err := f.getRefLayerRTPTimestamp(1000, layerCount, 0)
 	require.Error(t, err)
 
