@@ -932,10 +932,18 @@ func TestParticipant_ForceRelayOnICEConfigChange(t *testing.T) {
 			expectedForceRelay: livekit.ClientConfigSetting_ENABLED,
 		},
 		{
-			name:               "config disabled takes precedence over TLS preference",
+			name:               "config disabled keeps relay off",
+			forceRelay:         boolPtr(false),
+			icePreference:      livekit.ICECandidateType_ICT_TCP,
+			expectedForceRelay: livekit.ClientConfigSetting_DISABLED,
+		},
+		{
+			// the server has already moved the participant to TURN/TLS, telling the client not to
+			// force relay would take away the fallback it just got
+			name:               "TLS fallback wins over config disabled",
 			forceRelay:         boolPtr(false),
 			icePreference:      livekit.ICECandidateType_ICT_TLS,
-			expectedForceRelay: livekit.ClientConfigSetting_DISABLED,
+			expectedForceRelay: livekit.ClientConfigSetting_ENABLED,
 		},
 		{
 			name:               "not configured, TLS preference forces relay",

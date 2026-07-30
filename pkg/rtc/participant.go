@@ -638,23 +638,38 @@ func (p *ParticipantImpl) GetClientConfiguration() *livekit.ClientConfiguration 
 	return utils.CloneProto(p.params.ClientConf)
 }
 
-// setConfiguredForceRelayLocked applies the server configured force relay setting, if any, to the
-// client configuration. It reports whether the setting was configured, i.e. whether the ICE config
-// based fallback should be skipped.
-func (p *ParticipantImpl) setConfiguredForceRelayLocked() bool {
+// forceRelaySettingLocked resolves the force relay client configuration for the given ICE config.
+// A server configured force relay setting decides it, except when the server has already moved the
+// participant to TURN/TLS, in which case relay is the only thing that is going to work anyway.
+func (p *ParticipantImpl) forceRelaySettingLocked(iceConfig *livekit.ICEConfig) livekit.ClientConfigSetting {
+	if iceConfig.GetPreferenceSubscriber() == livekit.ICECandidateType_ICT_TLS {
+		return livekit.ClientConfigSetting_ENABLED
+	}
+
+	if p.params.Config != nil && p.params.Config.ForceRelay != nil {
+		if *p.params.Config.ForceRelay {
+			return livekit.ClientConfigSetting_ENABLED
+		}
+		return livekit.ClientConfigSetting_DISABLED
+	}
+
+	// UNSET indicates that clients could override RTCConfiguration to forceRelay
+	return livekit.ClientConfigSetting_UNSET
+}
+
+// setConfiguredForceRelayLocked applies a server configured force relay setting to the client
+// configuration. Nothing configured leaves the client configuration alone, so that nothing is sent
+// down where nothing was sent down before.
+func (p *ParticipantImpl) setConfiguredForceRelayLocked() {
 	if p.params.Config == nil || p.params.Config.ForceRelay == nil {
-		return false
+		return
 	}
 
 	if p.params.ClientConf == nil {
 		p.params.ClientConf = &livekit.ClientConfiguration{}
 	}
-	if *p.params.Config.ForceRelay {
-		p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_ENABLED
-	} else {
-		p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_DISABLED
-	}
-	return true
+	// there is no ICE config yet at this point, it is applied by the ICE config change handler
+	p.params.ClientConf.ForceRelay = p.forceRelaySettingLocked(nil)
 }
 
 func (p *ParticipantImpl) GetBufferFactory() *buffer.Factory {
@@ -2117,18 +2132,10 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		p.lock.Lock()
 		onICEConfigChanged := p.onICEConfigChanged
 
-		// an explicit force relay config always wins over what the ICE config implies
-		if !p.setConfiguredForceRelayLocked() {
-			if p.params.ClientConf == nil {
-				p.params.ClientConf = &livekit.ClientConfiguration{}
-			}
-			if iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS {
-				p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_ENABLED
-			} else {
-				// UNSET indicates that clients could override RTCConfiguration to forceRelay
-				p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_UNSET
-			}
+		if p.params.ClientConf == nil {
+			p.params.ClientConf = &livekit.ClientConfiguration{}
 		}
+		p.params.ClientConf.ForceRelay = p.forceRelaySettingLocked(iceConfig)
 		p.lock.Unlock()
 
 		if onICEConfigChanged != nil {

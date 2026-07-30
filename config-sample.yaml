@@ -121,10 +121,11 @@ rtc:
   # # migrate an established-but-lossy UDP connection to ICE/TCP or TURN/TLS. requires tcp_fallback_rtt_threshold > 0, default false
   # allow_udp_unstable_fallback: false
   # # Force all clients to use relay (TURN) servers only, bypassing direct P2P connections
-  # # When set to true, clients will be forced to use TURN servers for media traffic
-  # # When set to false, clients will not be forced to use relay
-  # # When not set (default), force relay behavior is determined by ICE configuration
-  # force_relay: false
+  # # true: clients are told to use TURN servers for media traffic
+  # # false: clients are told not to force relay, they cannot opt into it on their own either.
+  # #   relay is still forced for a participant the server has fallen back to TURN/TLS for
+  # # not set (default): force relay is determined by the ICE configuration in use
+  # force_relay: true
   # # number of packets to buffer in the SFU for video, defaults to 500
   # packet_buffer_size_video: 500
   # # number of packets to buffer in the SFU for audio, defaults to 200
