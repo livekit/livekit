@@ -411,9 +411,14 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.SwapResponseSink(params.Sink, types.SignallingCloseReasonUnknown)
 	p.setupEnabledCodecs(params.PublishEnabledCodecs, params.SubscribeEnabledCodecs, params.ClientConf.GetDisabledCodecs())
 
+	p.lock.Lock()
+	// the client configuration manager hands out a shared instance for non merged rules, so take a
+	// copy before anything modifies it for this participant
+	if p.params.ClientConf != nil {
+		p.params.ClientConf = utils.CloneProto(p.params.ClientConf)
+	}
 	// apply it up front so that it is part of the first join response, an ICE config change does
 	// not happen for a participant joining for the first time
-	p.lock.Lock()
 	p.setConfiguredForceRelayLocked()
 	p.lock.Unlock()
 

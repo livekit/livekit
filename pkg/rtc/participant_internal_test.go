@@ -17,6 +17,7 @@ package rtc
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -876,6 +877,44 @@ func TestParticipant_ForceRelayConfigOnJoin(t *testing.T) {
 			require.NotNil(t, clientConf)
 			require.Equal(t, tc.expectedForceRelay, clientConf.ForceRelay)
 		})
+	}
+}
+
+// StaticClientConfigurationManager.GetConfiguration hands out the shared global
+// *livekit.ClientConfiguration for Merge:false rules, so participants matching the same rule
+// get the very same pointer. Applying force relay must not write into it.
+func TestParticipant_ForceRelayDoesNotMutateSharedClientConf(t *testing.T) {
+	shared := &livekit.ClientConfiguration{
+		DisabledCodecs: &livekit.DisabledCodecs{
+			Publish: []*livekit.Codec{{Mime: mime.MimeTypeH264.String()}},
+		},
+	}
+
+	const numParticipants = 8
+	var wg sync.WaitGroup
+	participants := make([]*ParticipantImpl, numParticipants)
+	for i := range participants {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			participants[i] = newParticipantForTestWithOpts(
+				livekit.ParticipantIdentity(fmt.Sprintf("test%d", i)),
+				&participantOpts{forceRelay: boolPtr(true), clientConf: shared},
+			)
+		}()
+	}
+	wg.Wait()
+
+	// the shared configuration has to be left exactly as it was
+	require.Equal(t, livekit.ClientConfigSetting_UNSET, shared.ForceRelay)
+	require.NotNil(t, shared.DisabledCodecs)
+
+	// while every participant still gets the setting plus what it inherited
+	for _, p := range participants {
+		clientConf := p.GetClientConfiguration()
+		require.NotNil(t, clientConf)
+		require.Equal(t, livekit.ClientConfigSetting_ENABLED, clientConf.ForceRelay)
+		require.Len(t, clientConf.GetDisabledCodecs().GetPublish(), 1)
 	}
 }
 
