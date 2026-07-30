@@ -1174,6 +1174,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 					"stream start high latency",
 					"latency", time.Since(anchorTo),
 					"createdAt", time.Unix(0, d.createdAt),
+					"sinceCreate", time.Since(time.Unix(0, d.createdAt)),
 					"writableAt", writableAt,
 					"sinceWritable", time.Since(writableAt),
 					"lastUnmutedAt", lastUnmutedAt,
