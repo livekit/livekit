@@ -1163,11 +1163,24 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	if tp.isStarting {
 		writableAt := d.writableAt.Load()
 		lastUnmutedAt := d.lastUnmutedAt.Load()
+		anchorTo := lastUnmutedAt
 		if !writableAt.IsZero() && !lastUnmutedAt.IsZero() {
 			if writableAt.After(lastUnmutedAt) {
-				lastUnmutedAt = writableAt
+				anchorTo = writableAt
 			}
-			d.params.Listener.OnStreamStarted(time.Since(lastUnmutedAt))
+			d.params.Listener.OnStreamStarted(time.Since(anchorTo))
+			if time.Since(lastUnmutedAt) > time.Second {
+				d.params.Logger.Debugw(
+					"stream start high latency",
+					"latency", time.Since(anchorTo),
+					"createdAt", time.Unix(0, d.createdAt),
+					"writableAt", writableAt,
+					"sinceWritable", time.Since(writableAt),
+					"lastUnmutedAt", lastUnmutedAt,
+					"sinceLastUnmute", time.Since(lastUnmutedAt),
+					"rtpStats", d.rtpStats,
+				)
+			}
 		}
 	}
 	return 1
@@ -2500,7 +2513,7 @@ func (d *DownTrack) onBindAndConnectedChange() {
 		return
 	}
 	writable := d.connected.Load() && d.bindState.Load() == bindStateBound
-	if writable {
+	if writable && !d.writable.Load() {
 		d.writableAt.Store(time.Now())
 	}
 	d.writable.Store(writable)
