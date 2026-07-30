@@ -253,10 +253,6 @@ func (f *FrameRateCalculatorVP9) Completed() bool {
 }
 
 func (f *FrameRateCalculatorVP9) RecvPacket(ep *ExtPacket) bool {
-	if f.completed {
-		return true
-	}
-
 	vp9, ok := ep.Payload.(codecs.VP9Packet)
 	if !ok {
 		f.logger.Debugw("no vp9 payload", "sn", ep.Packet.SequenceNumber)
@@ -268,8 +264,15 @@ func (f *FrameRateCalculatorVP9) RecvPacket(ep *ExtPacket) bool {
 		return false
 	}
 
+	// Higher SIDs can appear after lower layers already completed (e.g. VP9 SVC
+	// bandwidth ramp-up). Re-open measurement so those layers are not stuck at 0 fps.
 	if ep.Spatial > f.maxSpatial {
 		f.maxSpatial = ep.Spatial
+		f.completed = false
+	}
+
+	if f.completed {
+		return true
 	}
 
 	success := f.frameRateCalculatorsVPx[ep.Spatial].RecvPacket(ep, vp9.PictureID)

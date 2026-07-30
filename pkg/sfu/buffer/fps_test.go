@@ -489,4 +489,38 @@ func TestFpsVP9CompletesWithFewerThanThreeSpatialLayers(t *testing.T) {
 		require.True(t, frameratesGot, "VP9 FPS should complete after both observed spatial layers finish")
 		require.EqualValues(t, 1, vp9calc.maxSpatial)
 	})
+
+	t.Run("late higher spatial reopens after completion", func(t *testing.T) {
+		fps := [][]float32{{15, 30}}
+		frames0 := createFrames(100, 12345678, 10, 500, fps, false)
+		frames1 := createFrames(100, 12345678, 10, 500, fps, false)
+		for _, f := range frames1[0] {
+			f.spatial = 1
+		}
+
+		vp9calc := NewFrameRateCalculatorVP9(90000, logger.GetLogger())
+		for _, f := range frames0[0] {
+			vp9calc.RecvPacket(f.toVP9())
+			if vp9calc.Completed() {
+				break
+			}
+		}
+		require.True(t, vp9calc.Completed(), "should complete on spatial 0 alone")
+
+		var recompleted bool
+		for _, f := range frames1[0] {
+			vp9calc.RecvPacket(f.toVP9())
+			if !vp9calc.Completed() {
+				// re-opened while measuring the late spatial layer
+			} else if vp9calc.maxSpatial >= 1 {
+				recompleted = true
+				break
+			}
+		}
+		require.True(t, recompleted, "should re-complete after late spatial 1 is measured")
+		require.EqualValues(t, 1, vp9calc.maxSpatial)
+		fpsGot := vp9calc.GetFrameRateForSpatial(1)
+		require.NotNil(t, fpsGot)
+		verifyFps(t, fps[0], fpsGot[:len(fps[0])])
+	})
 }

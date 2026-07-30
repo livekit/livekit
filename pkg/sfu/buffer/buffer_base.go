@@ -1271,7 +1271,7 @@ func (b *BufferBase) maybeGrowBucket(now int64) {
 }
 
 func (b *BufferBase) doFpsCalc(ep *ExtPacket) {
-	if b.isPaused || b.frameRateCalculated || len(ep.Packet.Payload) == 0 {
+	if b.isPaused || len(ep.Packet.Payload) == 0 {
 		return
 	}
 
@@ -1280,20 +1280,27 @@ func (b *BufferBase) doFpsCalc(ep *ExtPacket) {
 		spatial = 0
 	}
 	if fr := b.frameRateCalculator[spatial]; fr != nil {
-		if fr.RecvPacket(ep) {
-			complete := true
-			for _, fr2 := range b.frameRateCalculator {
-				if fr2 != nil && !fr2.Completed() {
-					complete = false
-					break
-				}
+		if !fr.RecvPacket(ep) {
+			return
+		}
+
+		complete := true
+		for _, fr2 := range b.frameRateCalculator {
+			if fr2 != nil && !fr2.Completed() {
+				complete = false
+				break
 			}
-			if complete {
+		}
+		if complete {
+			if !b.frameRateCalculated {
 				b.frameRateCalculated = true
 				if f := b.onFpsChanged; f != nil {
 					go f()
 				}
 			}
+		} else {
+			// e.g. VP9 observed a new spatial layer after an earlier completion
+			b.frameRateCalculated = false
 		}
 	}
 }
