@@ -355,6 +355,7 @@ func IncrementParticipantRtcCanceled(canceled uint64, warp bool) {
 	}
 }
 
+// todo: check if need to record warp to rtcSucc/Failure
 func IncrementParticipantRtcSuccess(success uint64) {
 	if success > 0 {
 		promParticipantJoin.WithLabelValues("rtc_success").Add(float64(success))

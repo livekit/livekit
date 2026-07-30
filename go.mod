@@ -36,7 +36,7 @@ require (
 	github.com/pion/interceptor v0.1.47
 	github.com/pion/rtcp v1.2.17
 	github.com/pion/rtp v1.10.5
-	github.com/pion/sctp v1.11.0
+	github.com/pion/sctp v1.11.1
 	github.com/pion/sdp/v3 v3.0.19
 	github.com/pion/transport/v4 v4.0.2
 	github.com/pion/turn/v5 v5.0.12
@@ -154,8 +154,8 @@ require (
 	google.golang.org/grpc v1.82.1 // indirect
 )
 
-replace github.com/pion/webrtc/v4 => github.com/livekit/webrtc-pion/v4 v4.2.16-warp.2
+replace github.com/pion/webrtc/v4 => github.com/livekit/webrtc-pion/v4 v4.2.18-warp.1
 
-replace github.com/pion/dtls/v3 => github.com/livekit/dtls/v3 v3.1.4-warp.1
+replace github.com/pion/dtls/v3 => github.com/livekit/dtls/v3 v3.1.5-warp.1
 
-replace github.com/pion/ice/v4 => github.com/livekit/ice/v4 v4.2.7-warp.1
+replace github.com/pion/ice/v4 => github.com/livekit/ice/v4 v4.4.0-warp.1
