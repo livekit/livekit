@@ -1169,7 +1169,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 				anchorTo = writableAt
 			}
 			d.params.Listener.OnStreamStarted(time.Since(anchorTo))
-			if time.Since(lastUnmutedAt) > time.Second {
+			if time.Since(anchorTo) > time.Second {
 				d.params.Logger.Debugw(
 					"stream start high latency",
 					"latency", time.Since(anchorTo),
