@@ -1543,7 +1543,7 @@ func (s *mediaTrackSubscription) recordStreamStartLatency(elapsed time.Duration)
 		return
 	}
 
-	s.logger.Debugw("track subscribe stream started", "cost", elapsed.Microseconds())
+	s.logger.Debugw("track subscribe stream started", "cost", elapsed.Milliseconds())
 	subscriber := subTrack.Subscriber()
 	prometheus.RecordSubscribeStreamStartTime(
 		subscriber.GetCountry(),
