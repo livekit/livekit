@@ -411,6 +411,12 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.SwapResponseSink(params.Sink, types.SignallingCloseReasonUnknown)
 	p.setupEnabledCodecs(params.PublishEnabledCodecs, params.SubscribeEnabledCodecs, params.ClientConf.GetDisabledCodecs())
 
+	// apply it up front so that it is part of the first join response, an ICE config change does
+	// not happen for a participant joining for the first time
+	p.lock.Lock()
+	p.setConfiguredForceRelayLocked()
+	p.lock.Unlock()
+
 	if p.supervisor != nil {
 		p.supervisor.OnPublicationError(p.onPublicationError)
 	}
@@ -625,6 +631,25 @@ func (p *ParticipantImpl) GetClientConfiguration() *livekit.ClientConfiguration 
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	return utils.CloneProto(p.params.ClientConf)
+}
+
+// setConfiguredForceRelayLocked applies the server configured force relay setting, if any, to the
+// client configuration. It reports whether the setting was configured, i.e. whether the ICE config
+// based fallback should be skipped.
+func (p *ParticipantImpl) setConfiguredForceRelayLocked() bool {
+	if p.params.Config == nil || p.params.Config.ForceRelay == nil {
+		return false
+	}
+
+	if p.params.ClientConf == nil {
+		p.params.ClientConf = &livekit.ClientConfiguration{}
+	}
+	if *p.params.Config.ForceRelay {
+		p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_ENABLED
+	} else {
+		p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_DISABLED
+	}
+	return true
 }
 
 func (p *ParticipantImpl) GetBufferFactory() *buffer.Factory {
@@ -2087,19 +2112,11 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		p.lock.Lock()
 		onICEConfigChanged := p.onICEConfigChanged
 
-		if p.params.ClientConf == nil {
-			p.params.ClientConf = &livekit.ClientConfiguration{}
-		}
-
-		// Check if ForceRelay is explicitly set in config first
-		if p.params.Config != nil && p.params.Config.ForceRelay != nil {
-			if *p.params.Config.ForceRelay {
-				p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_ENABLED
-			} else {
-				p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_DISABLED
+		// an explicit force relay config always wins over what the ICE config implies
+		if !p.setConfiguredForceRelayLocked() {
+			if p.params.ClientConf == nil {
+				p.params.ClientConf = &livekit.ClientConfiguration{}
 			}
-		} else {
-			// Fall back to ICE config based logic
 			if iceConfig.PreferenceSubscriber == livekit.ICECandidateType_ICT_TLS {
 				p.params.ClientConf.ForceRelay = livekit.ClientConfigSetting_ENABLED
 			} else {

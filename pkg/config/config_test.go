@@ -86,9 +86,9 @@ func TestGeneratedFlags(t *testing.T) {
 
 func TestForceRelayConfig(t *testing.T) {
 	tests := []struct {
-		name           string
-		configContent  string
-		expectedValue  *bool
+		name          string
+		configContent string
+		expectedValue *bool
 	}{
 		{
 			name: "ForceRelay enabled",

@@ -30,13 +30,13 @@ func TestWebRTCConfig_ForceRelay(t *testing.T) {
 	}{
 		{
 			name:          "ForceRelay enabled",
-			forceRelay:    func() *bool { b := true; return &b }(),
-			expectedValue: func() *bool { b := true; return &b }(),
+			forceRelay:    boolPtr(true),
+			expectedValue: boolPtr(true),
 		},
 		{
 			name:          "ForceRelay disabled",
-			forceRelay:    func() *bool { b := false; return &b }(),
-			expectedValue: func() *bool { b := false; return &b }(),
+			forceRelay:    boolPtr(false),
+			expectedValue: boolPtr(false),
 		},
 		{
 			name:          "ForceRelay not set",
