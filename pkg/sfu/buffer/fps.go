@@ -230,7 +230,7 @@ func (f *FrameRateCalculatorVP8) RecvPacket(ep *ExtPacket) bool {
 type FrameRateCalculatorVP9 struct {
 	logger     logger.Logger
 	completed  bool
-	maxSpatial int32 // inclusive; expands as SIDs are observed, or via SetMaxLayer
+	maxSpatial int32 // inclusive; expands as SIDs are observed
 
 	frameRateCalculatorsVPx [DefaultMaxLayerSpatial + 1]*frameRateCalculatorVPx
 }
@@ -238,7 +238,7 @@ type FrameRateCalculatorVP9 struct {
 func NewFrameRateCalculatorVP9(clockRate uint32, logger logger.Logger) *FrameRateCalculatorVP9 {
 	f := &FrameRateCalculatorVP9{
 		logger:     logger,
-		maxSpatial: 0, // assume single-layer until higher SIDs or SetMaxLayer
+		maxSpatial: 0, // assume single-layer until higher SIDs are observed
 	}
 
 	for i := range f.frameRateCalculatorsVPx {
@@ -250,20 +250,6 @@ func NewFrameRateCalculatorVP9(clockRate uint32, logger logger.Logger) *FrameRat
 
 func (f *FrameRateCalculatorVP9) Completed() bool {
 	return f.completed
-}
-
-// SetMaxLayer sets the highest spatial layer that must complete for FPS calculation.
-// Mirrors FrameRateCalculatorDD so callers can declare advertised layer count.
-func (f *FrameRateCalculatorVP9) SetMaxLayer(spatial int32) {
-	if spatial < 0 {
-		spatial = 0
-	}
-	if spatial > DefaultMaxLayerSpatial {
-		spatial = DefaultMaxLayerSpatial
-	}
-	if spatial > f.maxSpatial {
-		f.maxSpatial = spatial
-	}
 }
 
 func (f *FrameRateCalculatorVP9) RecvPacket(ep *ExtPacket) bool {

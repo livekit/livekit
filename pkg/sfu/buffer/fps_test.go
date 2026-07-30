@@ -466,18 +466,6 @@ func TestFpsVP9CompletesWithFewerThanThreeSpatialLayers(t *testing.T) {
 		verifyFps(t, fps[0], fpsGot[:len(fps[0])])
 	})
 
-	t.Run("SetMaxLayer waits for declared layers", func(t *testing.T) {
-		fps := [][]float32{{7.5, 15, 30}}
-		frames := createFrames(100, 12345678, 10, 500, fps, false)
-		vp9calc := NewFrameRateCalculatorVP9(90000, logger.GetLogger())
-		vp9calc.SetMaxLayer(1) // require spatial 0 and 1
-
-		for _, f := range frames[0] {
-			vp9calc.RecvPacket(f.toVP9())
-		}
-		require.False(t, vp9calc.Completed(), "should not complete when only spatial 0 is received but maxSpatial is 1")
-	})
-
 	t.Run("observed higher spatial expands requirement", func(t *testing.T) {
 		// Build independent picture-ID sequences per spatial layer (simulcast-style).
 		fps := [][]float32{{15, 30}}
