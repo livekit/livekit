@@ -356,15 +356,15 @@ func IncrementParticipantRtcCanceled(canceled uint64, warp bool) {
 }
 
 // todo: check if need to record warp to rtcSucc/Failure
-func IncrementParticipantRtcSuccess(success uint64) {
+func IncrementParticipantRtcSuccess(success uint64, warp bool) {
 	if success > 0 {
-		promParticipantJoin.WithLabelValues("rtc_success").Add(float64(success))
+		promParticipantJoin.WithLabelValues("rtc_success", strconv.FormatBool(warp)).Add(float64(success))
 	}
 }
 
-func IncrementParticipantRtcFailure(failure uint64) {
+func IncrementParticipantRtcFailure(failure uint64, warp bool) {
 	if failure > 0 {
-		promParticipantJoin.WithLabelValues("rtc_failure").Add(float64(failure))
+		promParticipantJoin.WithLabelValues("rtc_failure", strconv.FormatBool(warp)).Add(float64(failure))
 	}
 }
 
