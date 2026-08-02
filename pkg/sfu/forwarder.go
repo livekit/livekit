@@ -405,6 +405,13 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 	case mime.MimeTypeVP9:
 		f.codecMunger = codecmunger.NewNull(f.logger)
 		if sfuutils.IsSimulcastMode(videoLayerMode) {
+			// VP9 simulcast sends one RTP stream per spatial layer and the per-layer
+			// RTCP sender reports do not provide a usable cross-layer timestamp offset,
+			// so the reference-timestamp based switch point calculation never establishes
+			// (tsOffset stays 0) and every layer switch fails with "switch point too far
+			// behind". treat it like ONE_SPATIAL_LAYER_PER_STREAM_INCOMPLETE_RTCP_SR and
+			// fall back to the expected-timestamp based switch point.
+			f.skipReferenceTS = true
 			if f.vls != nil {
 				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
 			} else {
