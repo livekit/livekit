@@ -942,8 +942,14 @@ func (r *ReceiverBase) forwardRTP(
 		}
 
 		spatialLayer := layer
-		if extPkt.Spatial >= 0 {
-			// svc packet, take spatial layer info from packet
+		if extPkt.Spatial >= 0 && layer == 0 {
+			// svc packet, take spatial layer info from packet.
+			// only apply the override for the base uptrack (layer == 0): with SVC there is a
+			// single uptrack and the spatial layer comes from the packet. with simulcast
+			// (e. g. VP9/AV1 ONE_SPATIAL_LAYER_PER_STREAM) each rid is single-spatial, so the
+			// in-packet spatial id is always 0 and would collapse every rid to spatial layer 0,
+			// making the forwarder unable to tell the rids apart. for simulcast, the uptrack
+			// index (layer) is authoritative.
 			spatialLayer = extPkt.Spatial
 		}
 		if int(spatialLayer) >= len(spatialTrackers) {
