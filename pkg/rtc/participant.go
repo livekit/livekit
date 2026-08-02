@@ -15,6 +15,7 @@
 package rtc
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
@@ -271,6 +272,15 @@ type ParticipantImpl struct {
 	pendingTracks           map[string]*pendingTrackInfo
 	pendingPublishingTracks map[livekit.TrackID]*pendingTrackInfo
 	pendingRemoteTracks     []*pendingRemoteTrack
+	// ardiustech fork: in-flight/attempt state for scheduleStuckPublishNudge,
+	// keyed by trackID, guarded by pendingTracksLock (same lock already
+	// guarding the pendingRemoteTracks this state tracks nudges for). See
+	// that function's doc comment — review finding, 2026-08-01: without
+	// this, every retry of a still-stuck track armed an independent
+	// duplicate timer with no cap, which could self-sustain a nudge/
+	// renegotiate loop under exactly the sustained-failure conditions the
+	// nudge exists to recover from.
+	stuckPublishNudges map[string]*stuckPublishNudgeState
 
 	// supported codecs
 	enabledPublishCodecs   []*livekit.Codec
@@ -362,6 +372,7 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		}),
 		pendingTracks:           make(map[string]*pendingTrackInfo),
 		pendingPublishingTracks: make(map[livekit.TrackID]*pendingTrackInfo),
+		stuckPublishNudges:      make(map[string]*stuckPublishNudgeState),
 		connectedAt:             time.Now().Truncate(time.Millisecond),
 		rttUpdatedAt:            time.Now(),
 		cachedDownTracks:        make(map[livekit.TrackID]*downTrackState),
@@ -1485,6 +1496,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	p.closeReason.Store(reason)
 	p.clearDisconnectTimer()
 	p.clearMigrationTimer()
+	p.clearAllStuckPublishNudges()
 
 	if sendLeave {
 		p.sendLeaveRequest(
@@ -2390,6 +2402,363 @@ func (p *ParticipantImpl) handlePendingRemoteTracks() {
 	}
 }
 
+// ardiustech fork: republishNudgeTopic is a private data-channel topic this
+// fork uses to tell a publisher's OWN client "one of your tracks got stuck
+// unresolved — please renegotiate." Deliberately NOT a new DataPacket oneof
+// variant (that would require forking livekit-protocol AND client-sdk-js too,
+// to add and consume a new wire type) — DataPacket_User already exists
+// upstream for exactly this kind of arbitrary, app-defined payload, and
+// RoomEvent.DataReceived on the STOCK client SDK already surfaces it
+// unmodified. This keeps the fork to a single repo.
+const republishNudgeTopic = "_ardiustech_republish_nudge"
+
+// scheduleStuckPublishNudge checks back on one specific just-received track
+// after a short grace period and, if it's STILL sitting in
+// pendingRemoteTracks unresolved, proactively tells the publishing
+// participant to renegotiate — instead of silently relying on that
+// participant's app happening to trigger an unrelated renegotiation later
+// (see handlePendingRemoteTracks' three call sites, all client-initiated).
+//
+// gracePeriod is short (750ms) and deliberately shorter than any client-side
+// timer-based mitigation might use (e.g. a settle-nudge scheduled at
+// multi-second delays) — the goal is for the SERVER, which already has full
+// knowledge of the exact failure the instant it happens, to react faster and
+// more reliably than a client polling/guessing on a fixed schedule ever
+// could.
+const stuckPublishNudgeGracePeriod = 750 * time.Millisecond
+
+// stuckPublishNudgeMaxAttempts bounds how many times this fork will nudge
+// the SAME stuck track before giving up on renegotiation-based recovery and
+// escalating to a full reconnect instead (review finding, 2026-08-01: the
+// production incident this nudge targets logged 215 failed mid-resolution
+// attempts on one track, with ordinary renegotiations ALREADY occurring
+// during that window without resolving it — nudging the same participant to
+// renegotiate again can hit the identical failure mode indefinitely if
+// something about that connection's negotiation is itself impaired, not
+// just unlucky timing). `IssueFullReconnect` is self-contained recovery —
+// it doesn't depend on the same client cooperating correctly again.
+const stuckPublishNudgeMaxAttempts = 3
+
+// stuckPublishNudgeMaxChecks bounds a DIFFERENT failure mode than
+// stuckPublishNudgeMaxAttempts (review finding, 2026-08-01 — must-fix):
+// attempts only counts CONFIRMED-SENT nudges, so a participant whose data
+// channel never opens (a persistent, not transient, send failure) never
+// advances attempts and — combined with onStuckPublishNudgeFired's
+// unconditional re-arm — would otherwise loop at stuckPublishNudgeGracePeriod
+// forever, never escalating. checks counts every firing regardless of send
+// outcome, so this path still terminates even when sendRepublishNudge never
+// once succeeds. Deliberately larger than stuckPublishNudgeMaxAttempts (this
+// is the "give up on sending entirely" backstop, not the normal case) — do
+// not collapse the two counters back into one; that was the prior bug this
+// replaces (a failed send counting toward the same budget as a confirmed
+// one).
+const stuckPublishNudgeMaxChecks = 8
+
+// stuckPublishNudgeState is the per-trackID bookkeeping scheduleStuckPublishNudge
+// needs to dedup and cap nudges — guarded by pendingTracksLock (see that
+// field's doc comment on the ParticipantImpl struct).
+type stuckPublishNudgeState struct {
+	// timer is non-nil exactly while a nudge check is in flight for this
+	// track (armed, not yet fired) — used to skip arming a DUPLICATE timer
+	// when mediaTrackReceived sees the same track still stuck on a later
+	// retry, before the first check has even run.
+	timer *time.Timer
+	// attempts counts CONFIRMED-SENT sendRepublishNudge calls (i.e. it
+	// returned true) for this track's current stuck episode — NOT schedule
+	// calls (deduped above, costs nothing) and NOT a send that failed at the
+	// transport level (e.g. data channel not yet open — see
+	// onStuckPublishNudgeFired). Escalation trips once this reaches
+	// stuckPublishNudgeMaxAttempts (i.e. on the (max+1)th still-stuck
+	// check-in, since the check happens BEFORE incrementing for that
+	// attempt) — with max=3, that's 3 nudges sent, then reconnect on the 4th
+	// still-stuck firing, not literally "after 3 seconds."
+	attempts int
+	// checks counts every still-pending firing of onStuckPublishNudgeFired,
+	// regardless of whether sendRepublishNudge succeeded — see
+	// stuckPublishNudgeMaxChecks for why this exists alongside attempts.
+	checks int
+}
+
+// scheduleStuckPublishNudge is safe to call repeatedly for the SAME trackID
+// while it's stuck — see stuckPublishNudgeState's doc comment for why a
+// duplicate call while a check is already in flight is a no-op rather than
+// arming a second, independent timer (review finding, 2026-08-01: this
+// dedup was missing entirely, so every retry of a still-stuck track armed
+// its own timer with no cap — see stuckPublishNudgeMaxAttempts for the other
+// half of that fix).
+//
+// Guarded by the same IsClosed()/IsDisconnected() check onStuckPublishNudgeFired
+// uses at its own entry (review finding, 2026-08-02): onStuckPublishNudgeFired's
+// tail re-arms via this method without rechecking those flags, so without a
+// guard here too, a Close() racing in between that firing's initial check and
+// its re-arm could re-populate stuckPublishNudges with a fresh timer AFTER
+// clearAllStuckPublishNudges() already ran for this participant — defeating
+// the Close()-time cleanup guarantee clearAllStuckPublishNudges was added for.
+func (p *ParticipantImpl) scheduleStuckPublishNudge(trackID string) {
+	if p.IsClosed() || p.IsDisconnected() {
+		return
+	}
+	p.pendingTracksLock.Lock()
+	defer p.pendingTracksLock.Unlock()
+	state, ok := p.stuckPublishNudges[trackID]
+	if ok && state.timer != nil {
+		return
+	}
+	if !ok {
+		state = &stuckPublishNudgeState{}
+		p.stuckPublishNudges[trackID] = state
+	}
+	state.timer = time.AfterFunc(stuckPublishNudgeGracePeriod, func() {
+		p.onStuckPublishNudgeFired(trackID)
+	})
+}
+
+// shouldEscalateStuckPublish is the escalation decision pulled into its own
+// pure function (review finding, 2026-08-01) so a test can drive it directly
+// — the "still stuck" branch of onStuckPublishNudgeFired itself can't be
+// exercised end-to-end in this test binary (isTrackStillPending needs a real
+// *webrtc.TrackRemote in pendingRemoteTracks, which isn't fabricable here;
+// see participant_republish_nudge_test.go). Escalates on EITHER counter
+// reaching its cap: attempts bounds genuine confirmed-sent retries, checks
+// independently bounds the case where sendRepublishNudge never once
+// succeeds (a persistent, not transient, send failure) — see
+// stuckPublishNudgeMaxChecks's doc comment for why a failed send must still
+// count toward SOME cap even though it doesn't count toward attempts.
+func shouldEscalateStuckPublish(attemptsSoFar, checksSoFar int) bool {
+	return attemptsSoFar >= stuckPublishNudgeMaxAttempts || checksSoFar >= stuckPublishNudgeMaxChecks
+}
+
+// onStuckPublishNudgeFired is scheduleStuckPublishNudge's timer callback,
+// pulled into its own method (rather than an inline closure, as before) so
+// the still-pending / attempts-exhausted / send-nudge decision is one place
+// a test can drive without waiting out a real timer.
+func (p *ParticipantImpl) onStuckPublishNudgeFired(trackID string) {
+	if p.IsClosed() || p.IsDisconnected() {
+		// Participant torn down while this was waiting out its grace period
+		// — nothing left to nudge or reconnect (review finding, 2026-08-01:
+		// this class had no such guard, unlike migrationTimer/disconnectTimer's
+		// established pattern elsewhere in this file).
+		return
+	}
+	p.pendingTracksLock.Lock()
+	pendingTrackIDs := make([]string, len(p.pendingRemoteTracks))
+	for i, rt := range p.pendingRemoteTracks {
+		pendingTrackIDs[i] = rt.track.ID()
+	}
+	stillPending := isTrackStillPending(pendingTrackIDs, trackID)
+	// Peek at the CURRENT attempt count without incrementing yet (review
+	// finding, 2026-08-01): incrementing here, before sendRepublishNudge
+	// even runs, meant a nudge that failed to SEND (e.g. the data channel
+	// isn't open yet, right after a fresh join — an expected, transient
+	// condition, not evidence the track is actually stuck) still burned a
+	// slot toward the escalation cap. Only a CONFIRMED-sent attempt should
+	// count; see below.
+	var attemptsSoFar, checksSoFar int
+	if state, ok := p.stuckPublishNudges[trackID]; ok {
+		if stillPending {
+			state.timer = nil // this firing is done; a later schedule call may arm a fresh one
+			state.checks++
+			attemptsSoFar = state.attempts
+			checksSoFar = state.checks
+		} else {
+			// Belt-and-suspenders (review finding, 2026-08-01): the NORMAL
+			// path here is that mediaTrackReceived's success path already
+			// called clearStuckPublishNudgeLocked and removed this entry
+			// before this timer ever got a chance to fire — but explicitly
+			// deleting here too means a state entry can never outlive the
+			// episode it was tracking, regardless of ordering.
+			delete(p.stuckPublishNudges, trackID)
+		}
+	}
+	p.pendingTracksLock.Unlock()
+
+	if !stillPending {
+		// Resolved on its own (some other renegotiation flushed the queue)
+		// in the interim — nothing to do.
+		return
+	}
+	if shouldEscalateStuckPublish(attemptsSoFar, checksSoFar) {
+		p.clearStuckPublishNudge(trackID)
+		// Gated behind the SAME operator control onPublicationError already
+		// uses (review finding, 2026-08-01) — escalating unconditionally
+		// would let this new mechanism silently bypass an existing,
+		// off-by-default reconnect-on-error control an operator may have
+		// deliberately disabled, and would do so on an UNTUNED timeline
+		// (~3s here vs. the 2-minute incident window this patch's own
+		// evidence is drawn from) that hasn't been validated against real
+		// production data yet.
+		if p.params.ReconnectOnPublicationError {
+			p.pubLogger.Warnw(
+				"stuck-track republish nudge exhausted retries, issuing full reconnect", nil,
+				"trackID", trackID, "attempts", attemptsSoFar, "checks", checksSoFar,
+			)
+			p.IssueFullReconnect(types.ParticipantCloseReasonPublicationError)
+		} else {
+			p.pubLogger.Warnw(
+				"stuck-track republish nudge exhausted retries; NOT issuing a full reconnect "+
+					"(ReconnectOnPublicationError is disabled) — track will remain stuck until an "+
+					"unrelated renegotiation or the participant leaves", nil,
+				"trackID", trackID, "attempts", attemptsSoFar, "checks", checksSoFar,
+			)
+		}
+		return
+	}
+	if p.sendRepublishNudge(trackID) {
+		// Only count a CONFIRMED-sent attempt toward the cap (review finding,
+		// 2026-08-01) — a transport-level failure (e.g. data channel not yet
+		// open) is not evidence the track is actually stuck, and shouldn't
+		// spend budget that's meant to bound GENUINE retries.
+		p.pendingTracksLock.Lock()
+		if state, ok := p.stuckPublishNudges[trackID]; ok {
+			state.attempts++
+		}
+		p.pendingTracksLock.Unlock()
+	}
+	// Re-arm the next check regardless of send success (review finding,
+	// 2026-08-01 — must-fix): without this, the cap/escalation logic above
+	// was UNREACHABLE in exactly the scenario this whole patch targets.
+	// scheduleStuckPublishNudge is only ever called from mediaTrackReceived's
+	// mid=="" branch, which only fires again on an UNRELATED renegotiation —
+	// in the fork's own stated target case ("publish once, then typically no
+	// further track changes"), the timer fired exactly ONCE, sent one nudge,
+	// and then attempts froze forever: no further nudges, no escalation,
+	// regardless of whether the client ever acted on that first nudge.
+	// Re-scheduling here makes this method self-sustaining — it keeps
+	// checking back every stuckPublishNudgeGracePeriod until the track
+	// resolves (mediaTrackReceived clears state) or the cap trips (escalates
+	// above) — rather than depending on an external, unrelated event to give
+	// it another chance. A send FAILURE also re-arms (not just success) so a
+	// transient transport hiccup gets retried on the next tick instead of
+	// silently going quiet.
+	p.scheduleStuckPublishNudge(trackID)
+}
+
+// clearStuckPublishNudge removes any in-flight timer/attempt-count state for
+// trackID — called once a track's mid actually resolves (mediaTrackReceived's
+// success path) or when this specific track's episode ends via full
+// reconnect, so neither a stale timer nor a stale attempt count can outlive
+// what they were tracking. Acquires pendingTracksLock itself — callers that
+// ALREADY hold it (mediaTrackReceived's mid-resolved path) MUST call
+// clearStuckPublishNudgeLocked instead (review finding, 2026-08-01: this was
+// a real, guaranteed self-deadlock — utils.RWMutex is not reentrant, and
+// mediaTrackReceived holds this exact lock across its entire mid-resolved
+// path, including its original call to this function).
+func (p *ParticipantImpl) clearStuckPublishNudge(trackID string) {
+	p.pendingTracksLock.Lock()
+	defer p.pendingTracksLock.Unlock()
+	p.clearStuckPublishNudgeLocked(trackID)
+}
+
+// clearStuckPublishNudgeLocked is clearStuckPublishNudge's body, callable by
+// a caller that already holds pendingTracksLock.
+func (p *ParticipantImpl) clearStuckPublishNudgeLocked(trackID string) {
+	if state, ok := p.stuckPublishNudges[trackID]; ok {
+		if state.timer != nil {
+			state.timer.Stop()
+		}
+		delete(p.stuckPublishNudges, trackID)
+	}
+}
+
+// clearAllStuckPublishNudges stops every in-flight nudge timer for this
+// participant — called from Close() (review finding, 2026-08-01: this class
+// of timer had no Close()-time cleanup at all, unlike migrationTimer/
+// disconnectTimer's established pattern, so a participant disconnecting
+// within the 750ms grace period could leave a timer firing after teardown,
+// racing TransportManager.Close()).
+func (p *ParticipantImpl) clearAllStuckPublishNudges() {
+	p.pendingTracksLock.Lock()
+	defer p.pendingTracksLock.Unlock()
+	for _, state := range p.stuckPublishNudges {
+		if state.timer != nil {
+			state.timer.Stop()
+		}
+	}
+	p.stuckPublishNudges = make(map[string]*stuckPublishNudgeState)
+}
+
+// isTrackStillPending is the pure decision onStuckPublishNudgeFired acts
+// on — pulled out (and taking already-extracted IDs, not
+// []*pendingRemoteTrack) so it's testable with a plain string slice, no
+// live TransportManager/WebRTC stack required. *webrtc.TrackRemote has no
+// exported constructor (every field is private), so a real one can't be
+// built in a unit test at all — extracting IDs before this call is what
+// makes the actual decision logic testable.
+func isTrackStillPending(pendingTrackIDs []string, trackID string) bool {
+	return slices.Contains(pendingTrackIDs, trackID)
+}
+
+// republishNudgePayload is buildRepublishNudgePacket's payload shape,
+// marshaled via encoding/json rather than hand-built with fmt.Sprintf("%q",
+// ...) (review finding, 2026-08-01: %q escapes some control bytes as
+// `\xNN`, which is not valid JSON — `\u00NN` is required — and trackID
+// originates from client-controlled SDP/MediaStreamTrack id, not a purely
+// server-controlled value, so a client using an off-spec id could silently
+// break its own recovery signal with no error on either end).
+type republishNudgePayload struct {
+	Reason  string `json:"reason"`
+	TrackID string `json:"trackId"`
+}
+
+// buildRepublishNudgePacket is the pure packet-construction half of
+// sendRepublishNudge — pulled out so the wire shape (identity, topic,
+// payload) is directly assertable in a test without needing a live
+// TransportManager to actually send anything.
+func buildRepublishNudgePacket(identity livekit.ParticipantIdentity, trackID string) *livekit.DataPacket {
+	// Marshal errors here would mean republishNudgePayload itself is
+	// malformed (a programmer error, not a runtime/input one — TrackID is a
+	// string, which always marshals) — but ignore-and-fall-back-to-empty
+	// rather than panicking keeps a delivery bug in a best-effort nudge from
+	// ever taking down the caller.
+	payload, err := json.Marshal(republishNudgePayload{Reason: "stuck_mid", TrackID: trackID})
+	if err != nil {
+		payload = []byte(`{"reason":"stuck_mid"}`)
+	}
+	return &livekit.DataPacket{
+		ParticipantIdentity: string(identity),
+		Value: &livekit.DataPacket_User{
+			User: &livekit.UserPacket{
+				Payload: payload,
+				Topic:   pointer.To(republishNudgeTopic),
+			},
+		},
+	}
+}
+
+// sendRepublishNudge pushes a small marker payload down this SAME
+// participant's own data channel (server -> the participant who's stuck,
+// not a relay to anyone else) via the existing, unmodified DataPacket_User
+// wire type. The app's client-side code (LiveKitRoomManager.ts, in the app
+// repo — no SDK changes needed) listens for RoomEvent.DataReceived with this
+// topic and reacts by calling its own existing republishAllTracks(), the
+// exact same recovery action the app's blind settle-nudge already uses, just
+// triggered by a real signal instead of a timer.
+// sendRepublishNudge returns whether the nudge was actually handed to the
+// transport — the caller (onStuckPublishNudgeFired) uses this to decide
+// whether this firing counts toward stuckPublishNudgeMaxAttempts (review
+// finding, 2026-08-01: attempts previously incremented unconditionally
+// BEFORE this call, so e.g. a data channel not yet open right after a fresh
+// join — expected, transient, logged as a Warnw elsewhere, not a real
+// nudge failure — could burn through the cap and trigger an unwarranted
+// full reconnect for a participant that was never actually stuck, just
+// still connecting). "Sent" here means the transport accepted it, not that
+// the client received/processed it — RELIABLE bounds in-order delivery IF
+// the channel is up, not that it arrives at all; a stronger delivery-ack
+// guarantee is a separate, not-yet-built follow-up (see ARDIUSTECH_FORK.md).
+func (p *ParticipantImpl) sendRepublishNudge(trackID string) bool {
+	dpData, err := proto.Marshal(buildRepublishNudgePacket(p.Identity(), trackID))
+	if err != nil {
+		p.pubLogger.Errorw("failed to marshal republish-nudge data packet", err, "trackID", trackID)
+		return false
+	}
+	if err := p.TransportManager.SendDataMessage(livekit.DataPacket_RELIABLE, dpData); err != nil {
+		p.pubLogger.Warnw("failed to send republish nudge", err, "trackID", trackID)
+		return false
+	}
+	p.pubLogger.Infow("sent republish nudge for stuck track", "trackID", trackID)
+	return true
+}
+
 func (p *ParticipantImpl) onReceivedDataMessage(kind livekit.DataPacket_Kind, data []byte) {
 	if p.IsDisconnected() || !p.CanPublishData() {
 		return
@@ -2474,6 +2843,25 @@ func (p *ParticipantImpl) handleReceivedDataMessage(kind livekit.DataPacket_Kind
 			return
 		}
 		u := payload.User
+		// ardiustech fork: hard-drop the reserved republish-nudge topic here
+		// rather than relying solely on the client-side participant===undefined
+		// check (review finding, 2026-08-01: without this, any participant
+		// could send a DataPacket_User on this topic naming another
+		// participant as the destination, and this function would relay it
+		// like any other user payload — reaching that OTHER participant's
+		// client with a real, non-empty ParticipantIdentity below, which the
+		// client-side guard already rejects, but defense should not depend
+		// on only one side of a two-repo boundary staying correct forever).
+		// sendRepublishNudge bypasses this whole function via
+		// TransportManager.SendDataMessage directly, so genuine nudges never
+		// reach this check at all — only a forged/relayed one would.
+		if u.Topic != nil && *u.Topic == republishNudgeTopic {
+			p.pubLogger.Warnw(
+				"dropped a client-sent data packet on the reserved republish-nudge topic", nil,
+				"senderIdentity", p.params.Identity,
+			)
+			return
+		}
 		if p.Hidden() {
 			u.ParticipantSid = ""
 			u.ParticipantIdentity = ""
@@ -3224,8 +3612,29 @@ func (p *ParticipantImpl) mediaTrackReceived(
 		)
 		p.pendingTracksLock.Unlock()
 		p.pubLogger.Warnw("could not get mid for track", nil, "trackID", track.ID())
+		// ardiustech fork: this track is now stuck in pendingRemoteTracks with
+		// nothing to flush it except the SAME participant renegotiating again
+		// for an unrelated reason (see handlePendingRemoteTracks' call sites —
+		// all client-initiated: a fresh offer, an AddTrack request, or an
+		// unpublish). Upstream has no mechanism to proactively ask the
+		// publisher to do that, so a track can sit unrecoverable indefinitely
+		// if the app's usage pattern never naturally triggers one. Give the
+		// publisher a real, immediate reason to renegotiate instead of relying
+		// on an app-side blind timer guessing when (or whether) this happened.
+		p.scheduleStuckPublishNudge(track.ID())
 		return nil, false, false, buffer.VideoLayersRid{}
 	}
+	// mid resolved — clear any in-flight nudge/attempt-count state for this
+	// track so a LATER, unrelated stuck episode for the same trackID (e.g.
+	// after a full unpublish/republish cycle reuses the id) starts its
+	// attempt count fresh, and so a still-pending timer from an earlier
+	// episode can't fire against a track that's no longer stuck. Uses the
+	// ALREADY-LOCKED variant — pendingTracksLock is held from function entry
+	// and only unlocked in the mid=="" branch above, which already returned;
+	// calling the locking clearStuckPublishNudge here deadlocked on every
+	// single successful (non-stuck) track publish (review finding,
+	// 2026-08-01 — caught before this ever reached production).
+	p.clearStuckPublishNudgeLocked(track.ID())
 
 	// use existing media track to handle simulcast
 	var pubTime time.Duration
