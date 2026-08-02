@@ -1,0 +1,58 @@
+# Buildkite CI/CD for the ardiustech/livekit-server fork (pipeline slug:
+# tax-credits-livekit-server). Mirrors ardiustech/watercooler's own
+# .buildkite/pipeline.yml structure (CI -> wait -> gated CD via SSM) — see that
+# repo's .buildkite/README.md for the shared conventions (secret storage,
+# soft-skip-until-activated pattern, etc.).
+#
+# This repo had NO CI/CD at all before this: the inherited upstream
+# .github/workflows/buildtest.yaml exists but isn't wired in as a required
+# check (flagged in PR #1's third adversarial-review round), and deploy was a
+# fully manual SSM runbook (see ardiustech/watercooler's
+# infrastructure/livekit/README.md, "Rolling the LiveKit version" section,
+# pre-this-pipeline).
+#
+# To wire this up, the Buildkite pipeline's initial step should be
+# `buildkite-agent pipeline upload`, which reads this file. See .buildkite/README.md.
+
+agents:
+  queue: default_stable
+
+steps:
+  - label: ":golang: build · vet · test"
+    if: build.source != "schedule"
+    command:
+      - "gofmt -l $(find . -name '*.go' -not -path './vendor/*') | tee /tmp/fmt.out"
+      - "test ! -s /tmp/fmt.out"
+      - go build ./...
+      - go vet ./...
+      - go test ./...
+    plugins:
+      - docker#v5.13.0:
+          image: "golang:1.26"
+          environment:
+            - "CI=true"
+            - "GOFLAGS=-mod=mod"
+
+  # Gate the deploy on the checks above passing.
+  - wait
+
+  # CD: only on master (this repo's default branch — NOT "main", unlike
+  # watercooler). Builds + pushes an amd64 image (the LiveKit box is a c6i
+  # x86_64 instance, unlike the app's arm64 t4g — see
+  # ardiustech/watercooler's infrastructure/livekit/README.md "Notes / decisions")
+  # and triggers the on-box graceful deploy via SSM. Runs on the agent's Docker
+  # (needs buildx), not the docker plugin. Requires
+  # LK_AWS_ACCESS_KEY_ID / LK_AWS_SECRET_ACCESS_KEY secrets (the
+  # watercooler-livekit-ci IAM user) — named LK_* to avoid clashing with the
+  # agent's existing AWS_* creds or watercooler's own WC_* creds (this is a
+  # DIFFERENT IAM user, scoped to the livekit-server ECR repo + the livekit
+  # instance only). See .buildkite/README.md.
+  - label: ":rocket: deploy (graceful drain)"
+    if: build.branch == "master" && build.source != "schedule"
+    command: .buildkite/steps/deploy.sh
+    # Idempotent (always deploys the given tag fresh), so a single retry covers
+    # transient build/push/network flakiness safely.
+    retry:
+      automatic:
+        - exit_status: "*"
+          limit: 1

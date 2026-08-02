@@ -78,7 +78,7 @@ func makeTimestampOnlyTrailer(timestampUs int64) []byte {
 }
 
 func TestStripTrailer(t *testing.T) {
-	fullTrailerSize := 21 // (1+1+8) + (1+1+4) + 5
+	fullTrailerSize := 21   // (1+1+8) + (1+1+4) + 5
 	tsOnlyTrailerSize := 15 // (1+1+8) + 5
 
 	tests := []struct {
