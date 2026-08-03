@@ -37,6 +37,7 @@ func (f *testFrameInfo) toVP8() *ExtPacket {
 	return &ExtPacket{
 		Packet: &rtp.Packet{Header: f.header},
 		Payload: codec.VP8{
+			I:         true,
 			PictureID: f.framenumber,
 		},
 		VideoLayer: VideoLayer{Spatial: InvalidLayerSpatial, Temporal: int32(f.temporal)},
