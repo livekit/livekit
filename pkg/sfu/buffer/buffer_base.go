@@ -1279,29 +1279,33 @@ func (b *BufferBase) doFpsCalc(ep *ExtPacket) {
 	if spatial < 0 || int(spatial) >= len(b.frameRateCalculator) {
 		spatial = 0
 	}
-	if fr := b.frameRateCalculator[spatial]; fr != nil {
-		if !fr.RecvPacket(ep) {
-			return
-		}
+	fr := b.frameRateCalculator[spatial]
+	if fr == nil {
+		return
+	}
 
-		complete := true
-		for _, fr2 := range b.frameRateCalculator {
-			if fr2 != nil && !fr2.Completed() {
-				complete = false
-				break
+	// Always re-evaluate completion after feeding the packet. RecvPacket may return
+	// false while still changing state (e.g. VP9 reopens on a late higher SID and
+	// then measures that layer). Gating on the return value would leave
+	// frameRateCalculated stuck true and skip onFpsChanged when measurement finishes.
+	_ = fr.RecvPacket(ep)
+
+	complete := true
+	for _, fr2 := range b.frameRateCalculator {
+		if fr2 != nil && !fr2.Completed() {
+			complete = false
+			break
+		}
+	}
+	if complete {
+		if !b.frameRateCalculated {
+			b.frameRateCalculated = true
+			if f := b.onFpsChanged; f != nil {
+				go f()
 			}
 		}
-		if complete {
-			if !b.frameRateCalculated {
-				b.frameRateCalculated = true
-				if f := b.onFpsChanged; f != nil {
-					go f()
-				}
-			}
-		} else {
-			// e.g. VP9 observed a new spatial layer after an earlier completion
-			b.frameRateCalculated = false
-		}
+	} else {
+		b.frameRateCalculated = false
 	}
 }
 

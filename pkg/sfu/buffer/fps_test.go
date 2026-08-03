@@ -16,6 +16,7 @@ package buffer
 
 import (
 	"testing"
+	"time"
 
 	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
@@ -523,4 +524,59 @@ func TestFpsVP9CompletesWithFewerThanThreeSpatialLayers(t *testing.T) {
 		require.NotNil(t, fpsGot)
 		verifyFps(t, fps[0], fpsGot[:len(fps[0])])
 	})
+}
+
+func TestDoFpsCalcNotifiesOnLateHigherSpatial(t *testing.T) {
+	fps := [][]float32{{15, 30}}
+	frames0 := createFrames(100, 12345678, 10, 500, fps, false)
+	frames1 := createFrames(100, 12345678, 10, 500, fps, false)
+	for _, f := range frames1[0] {
+		f.spatial = 1
+	}
+
+	vp9calc := NewFrameRateCalculatorVP9(90000, logger.GetLogger())
+	b := &BufferBase{logger: logger.GetLogger()}
+	for i := range b.frameRateCalculator {
+		b.frameRateCalculator[i] = vp9calc.GetFrameRateCalculatorForSpatial(int32(i))
+	}
+
+	notifications := make(chan struct{}, 8)
+	b.onFpsChanged = func() {
+		notifications <- struct{}{}
+	}
+
+	withPayload := func(ep *ExtPacket) *ExtPacket {
+		// doFpsCalc ignores packets with empty RTP payload
+		ep.Packet.Payload = []byte{0x01}
+		return ep
+	}
+
+	waitNotify := func(msg string) {
+		t.Helper()
+		select {
+		case <-notifications:
+		case <-time.After(2 * time.Second):
+			t.Fatal(msg)
+		}
+	}
+
+	for _, f := range frames0[0] {
+		b.doFpsCalc(withPayload(f.toVP9()))
+		if b.frameRateCalculated {
+			break
+		}
+	}
+	require.True(t, b.frameRateCalculated)
+	waitNotify("expected onFpsChanged after spatial 0 completion")
+
+	// Feed only the late higher layer. RecvPacket returns false until that layer is
+	// measured; completion must still clear/re-set frameRateCalculated and notify.
+	for _, f := range frames1[0] {
+		b.doFpsCalc(withPayload(f.toVP9()))
+		if b.frameRateCalculated && vp9calc.maxSpatial >= 1 && vp9calc.Completed() {
+			break
+		}
+	}
+	require.True(t, b.frameRateCalculated)
+	waitNotify("onFpsChanged should fire again after late spatial completes")
 }
