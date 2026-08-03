@@ -194,6 +194,20 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 			return nil, videoLayer, ErrDDStructureAttachedToNonFirstPacket
 		}
 
+		if extFN < r.structureExtFrameNum {
+			// out-of-order key frame repeating the current structure: accepting it
+			// would regress structureExtFrameNum (ExtKeyFrameNum) and replay a stale
+			// structure update, confusing the downtrack's dependency descriptor
+			// selector.
+			r.logger.Debugw(
+				"drop out-of-order key frame",
+				"extFN", extFN,
+				"structureExtFrameNum", r.structureExtFrameNum,
+			)
+			ReleaseExtDependencyDescriptor(extDD)
+			return nil, videoLayer, ErrFrameEarlierThanKeyFrame
+		}
+
 		if r.structure == nil || ddVal.AttachedStructure.StructureId != r.structure.StructureId {
 			// structure actually changed (or first structure): advance the drop threshold
 			// so that only frames preceding this structure are dropped.
