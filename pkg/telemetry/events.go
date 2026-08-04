@@ -111,6 +111,7 @@ func (t *telemetryService) ParticipantActive(
 	participant *livekit.ParticipantInfo,
 	clientMeta *livekit.AnalyticsClientMeta,
 	isMigration bool,
+	isWarp bool,
 	guard *ReferenceGuard,
 ) {
 	t.enqueue(func() {
@@ -135,7 +136,7 @@ func (t *telemetryService) ParticipantActive(
 			prometheus.AddParticipant()
 		}
 		worker.SetConnected()
-		prometheus.IncrementParticipantRtcActive(1)
+		prometheus.IncrementParticipantRtcActive(1, isWarp)
 
 		ev := newParticipantEvent(livekit.AnalyticsEventType_PARTICIPANT_ACTIVE, room, participant)
 		ev.ClientMeta = clientMeta

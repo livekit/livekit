@@ -101,6 +101,11 @@ type RTCConfig struct {
 
 	TURNServers []TURNServer `yaml:"turn_servers,omitempty"`
 
+	// EnableWarp turns on WARP = SPED (DTLS-in-STUN, saves DTLS round-trip) +
+	// SNAP (SCTP INIT in SDP, saves SCTP/data-channel init round-trip).
+	// Off by default; experimental.
+	EnableWarp bool `yaml:"enable_warp,omitempty"`
+
 	// Deprecated
 	StrictACKs bool `yaml:"strict_acks,omitempty"`
 

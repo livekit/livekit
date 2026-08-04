@@ -230,6 +230,7 @@ type ParticipantParams struct {
 	EnableStartAtDesiredQuality       bool
 	MigrationWaitDuration             time.Duration
 	ExcludeIPv6LocalCandidates        bool
+	EnableWarp                        bool
 }
 
 type ParticipantImpl struct {
@@ -1443,9 +1444,9 @@ func (p *ParticipantImpl) recordRTCState(closeReason types.ParticipantCloseReaso
 	}
 
 	if p.IsConnectionCanceled(closeReason) {
-		prometheus.IncrementParticipantRtcCanceled(1)
+		prometheus.IncrementParticipantRtcCanceled(1, p.params.EnableWarp)
 	} else {
-		prometheus.IncrementParticipantRtcFailure(1)
+		prometheus.IncrementParticipantRtcFailure(1, p.params.EnableWarp)
 	}
 }
 
@@ -2072,6 +2073,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		FireOnTrackBySdp:                  p.params.FireOnTrackBySdp,
 		EnableDataTracks:                  p.params.EnableDataTracks,
 		ExcludeIPv6LocalCandidates:        p.params.ExcludeIPv6LocalCandidates,
+		EnableWarp:                        p.params.EnableWarp,
 	}
 	if p.params.SyncStreams && p.params.PlayoutDelay.GetEnabled() && p.params.ClientInfo.isFirefox() {
 		// we will disable playout delay for Firefox if the user is expecting
@@ -2655,8 +2657,8 @@ func (p *ParticipantImpl) onPrimaryTransportInitialConnected() {
 	}
 
 	if !p.sessionStartRecorded.Swap(true) {
-		prometheus.RecordSessionStartTime(int(p.ProtocolVersion()), time.Since(p.params.SessionStartTime))
-		prometheus.IncrementParticipantRtcSuccess(1)
+		prometheus.RecordSessionStartTime(int(p.ProtocolVersion()), p.params.EnableWarp, time.Since(p.params.SessionStartTime))
+		prometheus.IncrementParticipantRtcSuccess(1, p.params.EnableWarp)
 	}
 	p.updateState(livekit.ParticipantInfo_ACTIVE)
 }
@@ -4353,4 +4355,8 @@ func (p *ParticipantImpl) PerformRpc(req *livekit.PerformRpcRequest, resultCh ch
 		}
 		p.rpcLock.Unlock()
 	}()
+}
+
+func (p *ParticipantImpl) IsWarpEnabled() bool {
+	return p.params.EnableWarp
 }

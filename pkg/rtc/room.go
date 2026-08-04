@@ -1255,6 +1255,7 @@ func (r *Room) onStateChange(p types.LocalParticipant) {
 			p.ToProto(),
 			meta,
 			false,
+			p.IsWarpEnabled(),
 			p.TelemetryGuard(),
 		)
 
