@@ -417,6 +417,14 @@ func (m *SubscriptionManager) WaitUntilSubscribed(timeout time.Duration) error {
 				break
 			}
 		}
+		if allSubscribed {
+			for _, sub := range m.dataTrackSubscriptions {
+				if sub.needsSubscribe() {
+					allSubscribed = false
+					break
+				}
+			}
+		}
 		m.lock.RUnlock()
 		if allSubscribed {
 			return nil
