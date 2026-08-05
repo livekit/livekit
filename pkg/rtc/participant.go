@@ -418,8 +418,10 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	var timerStarted bool
 	params.Reporter.RegisterFunc(func(ts time.Time, tx roomobs.ParticipantSessionTx) bool {
 		if dts := p.disconnectedAt.Load(); dts != nil {
-			ts = *dts
-			tx.ReportEndTime(ts)
+			if p.CloseReason() != types.ParticipantCloseReasonMigrationComplete { // participant has migrated to another node
+				ts = *dts
+				tx.ReportEndTime(ts)
+			}
 		}
 
 		// Don't publish duration if participant never became active. Otherwise short-lived
