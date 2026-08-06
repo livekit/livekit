@@ -1124,13 +1124,16 @@ func (r *ReceiverBase) SetCodecState(state ReceiverCodecState) {
 	}
 }
 
-func (r *ReceiverBase) SetCodecWithState(codec webrtc.RTPCodecParameters, headerExtensions []webrtc.RTPHeaderExtensionParameter, codecState ReceiverCodecState) {
-	r.checkCodecChanged(codec, headerExtensions)
+// SetCodecWithState updates the codec state of the receiver. It returns true if the
+// given codec is incompatible with the codec the receiver was created with, see
+// `checkCodecChanged`.
+func (r *ReceiverBase) SetCodecWithState(codec webrtc.RTPCodecParameters, headerExtensions []webrtc.RTPHeaderExtensionParameter, codecState ReceiverCodecState) bool {
+	incompatible := r.checkCodecChanged(codec, headerExtensions)
 
 	r.codecStateLock.Lock()
 	if codecState == r.codecState {
 		r.codecStateLock.Unlock()
-		return
+		return incompatible
 	}
 
 	var fireChange bool
@@ -1141,7 +1144,7 @@ func (r *ReceiverBase) SetCodecWithState(codec webrtc.RTPCodecParameters, header
 	case ReceiverCodecStateNormal:
 		// TODO: support codec recovery
 		r.codecStateLock.Unlock()
-		return
+		return incompatible
 
 	case ReceiverCodecStateSuspended:
 		reason = "codec suspended"
@@ -1161,27 +1164,34 @@ func (r *ReceiverBase) SetCodecWithState(codec webrtc.RTPCodecParameters, header
 			fn(r.params.Codec, codecState)
 		}
 	}
+
+	return incompatible
 }
 
-func (r *ReceiverBase) checkCodecChanged(codec webrtc.RTPCodecParameters, headerExtensions []webrtc.RTPHeaderExtensionParameter) {
+func (r *ReceiverBase) checkCodecChanged(codec webrtc.RTPCodecParameters, headerExtensions []webrtc.RTPHeaderExtensionParameter) bool {
 	existingFmtp := strings.Split(r.params.Codec.SDPFmtpLine, ";")
 	slices.Sort(existingFmtp)
 	checkFmtp := strings.Split(codec.SDPFmtpLine, ";")
 	slices.Sort(checkFmtp)
+	var incompatible bool
 	if !mime.IsMimeTypeStringEqual(r.params.Codec.MimeType, codec.MimeType) || !slices.Equal(existingFmtp, checkFmtp) ||
-		r.params.Codec.ClockRate != codec.ClockRate {
-		err := fmt.Errorf("mime: %s -> %s, fmtp: %s -> %s, clockRate: %d -> %d",
+		r.params.Codec.ClockRate != codec.ClockRate || r.params.Codec.PayloadType != codec.PayloadType {
+		err := fmt.Errorf("mime: %s -> %s, fmtp: %s -> %s, clockRate: %d -> %d, pt: %d -> %d",
 			r.params.Codec.MimeType, codec.MimeType,
 			r.params.Codec.SDPFmtpLine, codec.SDPFmtpLine,
 			r.params.Codec.ClockRate, codec.ClockRate,
+			r.params.Codec.PayloadType, codec.PayloadType,
 		)
-		r.params.Logger.Errorw("unexpected change in codec", err)
+		r.params.Logger.Warnw("unexpected change in codec", err)
+		incompatible = r.params.Codec.PayloadType != codec.PayloadType
 	}
 
 	if len(r.params.HeaderExtensions) != len(headerExtensions) {
 		err := fmt.Errorf("extensions: %d -> %d", len(r.params.HeaderExtensions), len(headerExtensions))
 		r.params.Logger.Errorw("unexpected change in extensions length", err)
 	}
+
+	return incompatible
 }
 
 func (r *ReceiverBase) VideoSizes() []codec.VideoSize {
