@@ -1422,6 +1422,13 @@ func (t *PCTransport) CreateDataChannelIfEmpty(dcLabel string, dci *webrtc.DataC
 }
 
 func (t *PCTransport) GetRTT() (float64, bool) {
+	// Once the transport is closed the underlying ICE agent is closed too, and
+	// querying it logs "the agent is closed". Short-circuit so an in-flight
+	// StreamAllocator ping racing with Close() can't spam that error.
+	if t.isClosed.Load() {
+		return 0.0, false
+	}
+
 	scps, ok := t.iceTransport.GetSelectedCandidatePairStats()
 	if !ok {
 		return 0.0, false
@@ -1565,9 +1572,16 @@ func (t *PCTransport) Close() {
 		t.params.Logger.Warnw("unclean close of peer connection", err)
 	}
 
-	<-t.eventsQueue.Stop()
-	t.clearSignalStateCheckTimer()
-
+	// Stop the StreamAllocator and pacer before draining the events queue. Both
+	// own goroutines that are independent of the transport events queue, and
+	// eventsQueue.Stop() can block for a long time when participant teardown is
+	// deferred (e.g. the psrpc signal sink retrying or blocking until the
+	// participant times out in a multi-node deployment). If the allocator is
+	// gated behind that drain, its periodic ping goroutine never observes
+	// isStopped and keeps polling the already-closed ICE agent, leaking the
+	// goroutine and spamming "the agent is closed". Enqueue is a no-op once a
+	// queue is stopped, so stopping these early is safe even if later handlers
+	// post to them.
 	if t.streamAllocator != nil {
 		t.streamAllocator.Stop()
 	}
@@ -1575,6 +1589,9 @@ func (t *PCTransport) Close() {
 	if t.pacer != nil {
 		t.pacer.Stop()
 	}
+
+	<-t.eventsQueue.Stop()
+	t.clearSignalStateCheckTimer()
 
 	t.clearConnTimer()
 
