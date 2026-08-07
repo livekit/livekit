@@ -435,7 +435,7 @@ func (t *telemetryService) TrackPublishRTPStats(
 	stats *livekit.RTPStats,
 ) {
 	t.enqueue(func() {
-		ev := newRoomEvent(livekit.AnalyticsEventType_TRACK_PUBLISH_STATS, room)
+		ev := newRoomEvent(livekit.AnalyticsEventType_TRACK_PUBLISH_STATS, toMinimalRoom(room))
 		ev.ParticipantId = string(participantID)
 		ev.TrackId = string(trackID)
 		ev.Mime = mimeType.String()
@@ -454,7 +454,7 @@ func (t *telemetryService) TrackSubscribeRTPStats(
 	stats *livekit.RTPStats,
 ) {
 	t.enqueue(func() {
-		ev := newRoomEvent(livekit.AnalyticsEventType_TRACK_SUBSCRIBE_STATS, room)
+		ev := newRoomEvent(livekit.AnalyticsEventType_TRACK_SUBSCRIBE_STATS, toMinimalRoom(room))
 		ev.ParticipantId = string(participantID)
 		ev.TrackId = string(trackID)
 		ev.Mime = mimeType.String()
@@ -595,7 +595,7 @@ func newParticipantEvent(event livekit.AnalyticsEventType, room *livekit.Room, p
 }
 
 func newTrackEvent(event livekit.AnalyticsEventType, room *livekit.Room, participantID livekit.ParticipantID, track *livekit.TrackInfo) *livekit.AnalyticsEvent {
-	ev := newParticipantEvent(event, room, &livekit.ParticipantInfo{
+	ev := newParticipantEvent(event, toMinimalRoom(room), &livekit.ParticipantInfo{
 		Sid: string(participantID),
 	})
 	if track != nil {
@@ -622,6 +622,14 @@ func newIngressEvent(event livekit.AnalyticsEventType, ingress *livekit.IngressI
 		IngressId: ingress.IngressId,
 		Ingress:   ingress,
 	}
+}
+
+func toMinimalRoom(room *livekit.Room) *livekit.Room {
+	if room == nil {
+		return nil
+	}
+
+	return toMinimalRoomProto(livekit.RoomID(room.Sid), livekit.RoomName(room.Name))
 }
 
 func toMinimalRoomProto(roomID livekit.RoomID, roomName livekit.RoomName) *livekit.Room {
