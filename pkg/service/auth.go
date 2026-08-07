@@ -88,13 +88,18 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 
 		secret := m.provider.GetSecret(v.APIKey())
 		if secret == "" {
-			HandleError(w, r, http.StatusUnauthorized, errors.New("invalid API key: "+v.APIKey()))
+			// Do not echo the API key: HandleError writes the error to the WARN log
+			// and the response body, so embedding the key would persist a credential
+			// to logs and reflect it to any intermediary.
+			HandleError(w, r, http.StatusUnauthorized, errors.New("invalid API key"))
 			return
 		}
 
 		claims, grants, err := v.Verify(secret)
 		if err != nil {
-			HandleError(w, r, http.StatusUnauthorized, errors.New("invalid token: "+authToken+", error: "+err.Error()))
+			// Do not echo authToken: it is a live bearer credential and HandleError
+			// sends the message to the WARN log and the response body.
+			HandleError(w, r, http.StatusUnauthorized, errors.New("invalid token: "+err.Error()))
 			return
 		}
 
