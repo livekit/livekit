@@ -209,10 +209,23 @@ func EnsureListPermission(ctx context.Context) error {
 	return nil
 }
 
-func EnsureRecordPermission(ctx context.Context) error {
+// EnsureRecordPermission requires the RoomRecord grant. When the caller's
+// token is scoped to a room (Video.Room is set, as with tokens minted for a
+// single room's recording client), the targeted room must match it: without
+// this binding a room-scoped recording token can start, update, list and stop
+// egress jobs in every other room on the server. Unscoped tokens (Video.Room
+// empty, e.g. server-side recording services) retain server-wide access.
+func EnsureRecordPermission(ctx context.Context, rooms ...livekit.RoomName) error {
 	claims := GetGrants(ctx)
 	if claims == nil || claims.Video == nil || !claims.Video.RoomRecord {
 		return ErrPermissionDenied
+	}
+	if claims.Video.Room != "" {
+		for _, room := range rooms {
+			if room != "" && room != livekit.RoomName(claims.Video.Room) {
+				return ErrPermissionDenied
+			}
+		}
 	}
 	return nil
 }

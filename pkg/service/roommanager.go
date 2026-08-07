@@ -1185,9 +1185,16 @@ func (r *RoomManager) getIceConfig(roomName livekit.RoomName, participant types.
 	return r.iceConfigCache.Get(iceConfigCacheKey{roomName, participant.Identity()})
 }
 
+// getFirstKeyPair returns the lexicographically smallest configured API key.
+// Map iteration order is deliberately random in Go: ranging over
+// r.config.Keys directly would pick a different signing key on every call,
+// so refreshed participant tokens would be re-signed under a key that did
+// not authorize the join — defeating revocation of any single key for as
+// long as another key survives. The sorted order is stable across calls and
+// across nodes sharing the same key set.
 func (r *RoomManager) getFirstKeyPair() (string, string, error) {
-	for key, secret := range r.config.Keys {
-		return key, secret, nil
+	for _, key := range slices.Sorted(maps.Keys(r.config.Keys)) {
+		return key, r.config.Keys[key], nil
 	}
 	return "", "", errors.New("no API keys configured")
 }

@@ -15,6 +15,7 @@
 package service_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -71,4 +72,35 @@ func TestAuthMiddleware(t *testing.T) {
 	m.ServeHTTP(w, r, handler)
 	require.Nil(t, grants)
 	require.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestEnsureRecordPermissionRoomBinding(t *testing.T) {
+	t.Run("unscoped record token keeps server-wide access", func(t *testing.T) {
+		ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{
+			Video: &auth.VideoGrant{RoomRecord: true},
+		}, "")
+		require.NoError(t, service.EnsureRecordPermission(ctx))
+		require.NoError(t, service.EnsureRecordPermission(ctx, "any-room"))
+	})
+
+	t.Run("room-scoped record token passes for its own room", func(t *testing.T) {
+		ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{
+			Video: &auth.VideoGrant{Room: "room-a", RoomRecord: true},
+		}, "")
+		require.NoError(t, service.EnsureRecordPermission(ctx, "room-a"))
+	})
+
+	t.Run("room-scoped record token is denied for other rooms", func(t *testing.T) {
+		ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{
+			Video: &auth.VideoGrant{Room: "room-a", RoomRecord: true},
+		}, "")
+		require.Error(t, service.EnsureRecordPermission(ctx, "room-b"))
+	})
+
+	t.Run("room-scoped record token without the record grant is denied", func(t *testing.T) {
+		ctx := service.WithGrants(context.Background(), &auth.ClaimGrants{
+			Video: &auth.VideoGrant{Room: "room-a"},
+		}, "")
+		require.Error(t, service.EnsureRecordPermission(ctx, "room-a"))
+	})
 }
