@@ -325,8 +325,11 @@ func ValidateConnectRequest(
 
 	if claims.RoomConfig != nil {
 		if err := claims.RoomConfig.CheckCredentials(); err != nil {
-			lgr.Warnw("credentials found in token", nil)
-			// TODO(dz): in a future version, we'll reject these connections
+			// Credentials in a join token are base64-visible to the participant
+			// holding it and were already rejected at mint time in ToJWT; accept
+			// here would split the contract (join accepts, refresh hard-fails).
+			lgr.Warnw("rejecting connection: credentials found in token", nil)
+			return res, http.StatusBadRequest, errors.New("credentials are not allowed in token room configuration")
 		}
 	}
 
