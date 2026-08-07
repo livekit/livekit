@@ -225,7 +225,20 @@ func (s *EgressService) StartTrackEgress(ctx context.Context, req *livekit.Track
 }
 
 func (s *EgressService) startEgress(ctx context.Context, req *rpc.StartEgressRequest) (*livekit.EgressInfo, error) {
-	if err := EnsureRecordPermission(ctx); err != nil {
+	var roomName livekit.RoomName
+	switch v := req.Request.(type) {
+	case *rpc.StartEgressRequest_RoomComposite:
+		roomName = livekit.RoomName(v.RoomComposite.RoomName)
+	case *rpc.StartEgressRequest_Participant:
+		roomName = livekit.RoomName(v.Participant.RoomName)
+	case *rpc.StartEgressRequest_TrackComposite:
+		roomName = livekit.RoomName(v.TrackComposite.RoomName)
+	case *rpc.StartEgressRequest_Track:
+		roomName = livekit.RoomName(v.Track.RoomName)
+	case *rpc.StartEgressRequest_Egress:
+		roomName = livekit.RoomName(v.Egress.RoomName)
+	}
+	if err := EnsureRecordPermission(ctx, roomName); err != nil {
 		return nil, twirpAuthError(err)
 	} else if s.launcher == nil {
 		return nil, ErrEgressNotConnected
@@ -297,15 +310,23 @@ func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLay
 	if err != nil {
 		return nil, err
 	}
+	if err := EnsureRecordPermission(ctx, livekit.RoomName(info.RoomName)); err != nil {
+		return nil, twirpAuthError(err)
+	}
 
 	metadata, err := json.Marshal(&LayoutMetadata{Layout: req.Layout})
 	if err != nil {
 		return nil, err
 	}
 
-	grants := GetGrants(ctx)
+	// The internal UpdateParticipant call needs room-admin on the egress job's
+	// room. Grant it on a COPY of the caller's claims: the context grants are
+	// shared request state, and rewriting them in place would silently widen
+	// the caller's privileges for any later check in this request.
+	grants := GetGrants(ctx).Clone()
 	grants.Video.Room = info.RoomName
 	grants.Video.RoomAdmin = true
+	ctx = WithGrants(ctx, grants, GetAPIKey(ctx))
 
 	_, err = s.roomService.UpdateParticipant(ctx, &livekit.UpdateParticipantRequest{
 		Room:     info.RoomName,
@@ -327,6 +348,20 @@ func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStr
 
 	if s.client == nil {
 		return nil, ErrEgressNotConnected
+	}
+
+	if grants := GetGrants(ctx); grants != nil && grants.Video != nil && grants.Video.Room != "" {
+		// Room-scoped token: bind to the egress job's room before delegating.
+		// Fail closed on lookup error - skipping the check would reopen the
+		// cross-room bypass this binding exists to close. Unscoped tokens keep
+		// the previous flow with no extra store read.
+		bindInfo, bindErr := s.io.GetEgress(ctx, &rpc.GetEgressRequest{EgressId: req.EgressId})
+		if bindErr != nil {
+			return nil, twirp.NewError(twirp.Internal, fmt.Sprintf("could not load egress for room binding: %s", bindErr.Error()))
+		}
+		if err := EnsureRecordPermission(ctx, livekit.RoomName(bindInfo.RoomName)); err != nil {
+			return nil, twirpAuthError(err)
+		}
 	}
 
 	info, err := s.client.UpdateStream(ctx, req.EgressId, req)
@@ -354,8 +389,26 @@ func (s *EgressService) ListEgress(ctx context.Context, req *livekit.ListEgressR
 	if req.RoomName != "" {
 		AppendLogFields(ctx, "room", req.RoomName)
 	}
-	if err := EnsureRecordPermission(ctx); err != nil {
+	if err := EnsureRecordPermission(ctx, livekit.RoomName(req.RoomName)); err != nil {
 		return nil, twirpAuthError(err)
+	}
+	if grants := GetGrants(ctx); grants != nil && grants.Video != nil && grants.Video.Room != "" {
+		if req.EgressId != "" {
+			// IOInfoService short-circuits the room filter when a specific
+			// egress ID is requested, so bind it explicitly here: a room-scoped
+			// token must not read other rooms' recordings by ID.
+			info, err := s.io.GetEgress(ctx, &rpc.GetEgressRequest{EgressId: req.EgressId})
+			if err != nil {
+				return nil, err
+			}
+			if err := EnsureRecordPermission(ctx, livekit.RoomName(info.RoomName)); err != nil {
+				return nil, twirpAuthError(err)
+			}
+		} else if req.RoomName == "" {
+			// Room-scoped recording tokens list their own room only; an
+			// unfiltered listing would disclose every egress job on the server.
+			req.RoomName = grants.Video.Room
+		}
 	}
 	return s.io.ListEgress(ctx, req)
 }
@@ -371,6 +424,18 @@ func (s *EgressService) StopEgress(ctx context.Context, req *livekit.StopEgressR
 	AppendLogFields(ctx, "egressID", req.EgressId)
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
+	}
+
+	if grants := GetGrants(ctx); grants != nil && grants.Video != nil && grants.Video.Room != "" {
+		// Room-scoped token: bind to the egress job's room before stopping.
+		// Fail closed on lookup error; unscoped tokens keep the previous flow.
+		bindInfo, bindErr := s.io.GetEgress(ctx, &rpc.GetEgressRequest{EgressId: req.EgressId})
+		if bindErr != nil {
+			return nil, twirp.NewError(twirp.Internal, fmt.Sprintf("could not load egress for room binding: %s", bindErr.Error()))
+		}
+		if err := EnsureRecordPermission(ctx, livekit.RoomName(bindInfo.RoomName)); err != nil {
+			return nil, twirpAuthError(err)
+		}
 	}
 
 	info, err = s.launcher.StopEgress(ctx, req)
