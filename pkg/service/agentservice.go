@@ -86,6 +86,12 @@ func (u AgentSocketUpgrader) Upgrade(
 	apiKey := GetAPIKey(r.Context())
 	registration.APIKey = apiKey
 	if names, ok := u.AgentKeyNames[apiKey]; ok {
+		// A key listed with a null/empty YAML value unmarshals to a nil slice,
+		// and nil disables enforcement in the worker handler. Normalize to an
+		// empty (deny-all) list: listing the key must always restrict it.
+		if names == nil {
+			names = []string{}
+		}
 		registration.AllowedAgentNames = names
 	}
 
