@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -38,6 +39,7 @@ var (
 	ErrUnimplementedWrorkerSignal = errors.New("unimplemented worker signal")
 	ErrUnknownWorkerSignal        = errors.New("unknown worker signal")
 	ErrUnknownJobType             = errors.New("unknown job type")
+	ErrAgentNameNotAllowed        = errors.New("agent name not allowed for this API key")
 	ErrJobNotFound                = psrpc.NewErrorf(psrpc.NotFound, "no running job for given jobID")
 	ErrWorkerClosed               = errors.New("worker closed")
 	ErrWorkerNotAvailable         = errors.New("worker not available")
@@ -155,6 +157,13 @@ type WorkerRegistration struct {
 	Permissions *livekit.ParticipantPermission
 	ClientIP    string
 	Deployment  string
+	// APIKey is the key the worker authenticated the websocket with, captured
+	// at upgrade time so the register handler can enforce per-key agent-name
+	// restrictions (the token itself proves only a boolean 'agent' flag).
+	APIKey string
+	// AllowedAgentNames, when non-nil, restricts which agent names this
+	// worker may register as (from the server's per-key configuration).
+	AllowedAgentNames []string
 }
 
 func MakeWorkerRegistration() WorkerRegistration {
@@ -213,6 +222,10 @@ func (h *WorkerRegisterer) HandleRegister(req *livekit.RegisterWorkerRequest) er
 			CanPublishData:    true,
 			CanUpdateMetadata: true,
 		}
+	}
+
+	if h.registration.AllowedAgentNames != nil && !slices.Contains(h.registration.AllowedAgentNames, req.AgentName) {
+		return fmt.Errorf("%w: %q", ErrAgentNameNotAllowed, req.AgentName)
 	}
 
 	h.registration.Version = req.Version

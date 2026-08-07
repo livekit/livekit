@@ -73,9 +73,16 @@ type Config struct {
 	NodeSelector   NodeSelectorConfig       `yaml:"node_selector,omitempty"`
 	KeyFile        string                   `yaml:"key_file,omitempty"`
 	Keys           map[string]string        `yaml:"keys,omitempty"`
-	Region         string                   `yaml:"region,omitempty"`
-	SignalRelay    SignalRelayConfig        `yaml:"signal_relay,omitempty"`
-	PSRPC          rpc.PSRPCConfig          `yaml:"psrpc,omitempty"`
+	// AgentKeyNames optionally restricts which agent names each API key may
+	// register as a worker for. Agent worker tokens carry only a boolean
+	// 'agent' flag; without this map, any key holding an agent token can
+	// register under ANY agent name and receive that agent's dispatched jobs
+	// (impersonation / job theft across teams sharing one server). An empty
+	// or missing entry keeps the previous unrestricted behavior.
+	AgentKeyNames map[string][]string `yaml:"agent_key_names,omitempty"`
+	Region        string              `yaml:"region,omitempty"`
+	SignalRelay   SignalRelayConfig   `yaml:"signal_relay,omitempty"`
+	PSRPC         rpc.PSRPCConfig     `yaml:"psrpc,omitempty"`
 	// Deprecated: LogLevel is deprecated
 	LogLevel string        `yaml:"log_level,omitempty"`
 	Logging  LoggingConfig `yaml:"logging,omitempty"`

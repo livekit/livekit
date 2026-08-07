@@ -44,6 +44,11 @@ import (
 
 type AgentSocketUpgrader struct {
 	websocket.Upgrader
+	// AgentKeyNames optionally restricts which agent names each API key may
+	// register workers for (config `agent_key_names`). The worker token proves
+	// only a boolean 'agent' flag, so without this any agent token can claim
+	// any agent name and receive its dispatched jobs.
+	AgentKeyNames map[string][]string
 }
 
 func (u AgentSocketUpgrader) Upgrade(
@@ -78,6 +83,11 @@ func (u AgentSocketUpgrader) Upgrade(
 
 	registration = agent.MakeWorkerRegistration()
 	registration.ClientIP = GetClientIP(r)
+	apiKey := GetAPIKey(r.Context())
+	registration.APIKey = apiKey
+	if names, ok := u.AgentKeyNames[apiKey]; ok {
+		registration.AllowedAgentNames = names
+	}
 
 	// upgrade
 	conn, err := u.Upgrader.Upgrade(w, r, responseHeader)
@@ -171,6 +181,7 @@ func NewAgentService(
 	keyProvider auth.KeyProvider,
 ) (*AgentService, error) {
 	s := &AgentService{}
+	s.upgrader.AgentKeyNames = conf.AgentKeyNames
 
 	serverInfo := &livekit.ServerInfo{
 		Edition:       livekit.ServerInfo_Standard,
