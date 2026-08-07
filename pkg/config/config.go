@@ -218,6 +218,8 @@ type RoomConfig struct {
 	SyncStreams        bool               `yaml:"sync_streams,omitempty"`
 	CreateRoomTimeout  time.Duration      `yaml:"create_room_timeout,omitempty"`
 	CreateRoomAttempts int                `yaml:"create_room_attempts,omitempty"`
+	// include room metadata in track webhook events instead of just room SID and name
+	EnableFullRoomInWebhooks bool `yaml:"enable_full_room_in_webhooks,omitempty"`
 	// target room participant update batch chunk size in bytes
 	UpdateBatchTargetSize int `yaml:"update_batch_target_size,omitempty"`
 	// deprecated, moved to limits
