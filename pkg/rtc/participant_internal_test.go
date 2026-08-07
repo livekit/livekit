@@ -22,6 +22,7 @@ import (
 
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
+	"github.com/twitchtv/twirp"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
@@ -75,6 +76,26 @@ func TestIsReady(t *testing.T) {
 			require.Equal(t, test.ready, p.IsReady())
 		})
 	}
+}
+
+func TestSupportsMoving(t *testing.T) {
+	t.Run("current protocol version", func(t *testing.T) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{protocolVersion: types.CurrentProtocol})
+		require.NoError(t, p.SupportsMoving())
+	})
+
+	// a move rejected because of what the participant is cannot be retried into working, but it is
+	// still a caller error, so it has to surface as a 4xx rather than a 500
+	t.Run("client version that cannot be moved", func(t *testing.T) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{protocolVersion: 6})
+
+		err := p.SupportsMoving()
+		require.ErrorIs(t, err, ErrMoveOldClientVersion)
+
+		var twirpErr twirp.Error
+		require.ErrorAs(t, err, &twirpErr)
+		require.Equal(t, twirp.FailedPrecondition, twirpErr.Code())
+	})
 }
 
 func TestTrackPublishing(t *testing.T) {
