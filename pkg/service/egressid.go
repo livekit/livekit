@@ -16,7 +16,7 @@ func TwirpEgressID() *twirp.ServerHooks {
 		RequestRouted: func(ctx context.Context) (context.Context, error) {
 			// generate egressID for start egress methods for tracing egress failure before it reaches egress service.
 			if isStartEgressMethod(ctx) {
-				egressID := DeterministicID(guid.EgressPrefix, RequestID(ctx))
+				egressID := guid.New(guid.EgressPrefix)
 				ctx = WithEgressID(ctx, egressID)
 				AppendLogFields(ctx, "egressID", egressID)
 			}
