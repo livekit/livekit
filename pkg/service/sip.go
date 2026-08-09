@@ -21,6 +21,7 @@ import (
 
 	"github.com/dennwc/iters"
 	"github.com/twitchtv/twirp"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/protocol/livekit"
@@ -716,6 +717,11 @@ func (s *SIPService) TransferSIPParticipant(ctx context.Context, req *livekit.Tr
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
+
+	// Send the resolved timeout so the SIP node uses our deadline, not its
+	// own default (which could outlive us).
+	ireq.RingingTimeout = durationpb.New(timeout)
+
 	_, err = s.psrpcClient.TransferSIPParticipant(ctx, ireq.SipCallId, ireq, psrpc.WithRequestTimeout(timeout))
 	if err != nil {
 		log.Errorw("cannot transfer sip participant", err)

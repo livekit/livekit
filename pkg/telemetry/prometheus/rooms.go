@@ -205,7 +205,7 @@ func RecordPublishTime(
 	sdk livekit.ClientInfo_SDK,
 	kind livekit.ParticipantInfo_Kind,
 ) {
-	recordPubSubTime(true, country, source, trackType, d, sdk, kind, 1)
+	recordPubSubStreamStartTime("publish", country, source, trackType, d, sdk, kind, 1)
 }
 
 func RecordSubscribeTime(
@@ -217,11 +217,22 @@ func RecordSubscribeTime(
 	kind livekit.ParticipantInfo_Kind,
 	count int,
 ) {
-	recordPubSubTime(false, country, source, trackType, d, sdk, kind, count)
+	recordPubSubStreamStartTime("subscribe", country, source, trackType, d, sdk, kind, count)
 }
 
-func recordPubSubTime(
-	isPublish bool,
+func RecordSubscribeStreamStartTime(
+	country string,
+	source livekit.TrackSource,
+	trackType livekit.TrackType,
+	d time.Duration,
+	sdk livekit.ClientInfo_SDK,
+	kind livekit.ParticipantInfo_Kind,
+) {
+	recordPubSubStreamStartTime("subscribe-stream-start", country, source, trackType, d, sdk, kind, 1)
+}
+
+func recordPubSubStreamStartTime(
+	direction string,
 	country string,
 	source livekit.TrackSource,
 	trackType livekit.TrackType,
@@ -230,10 +241,6 @@ func recordPubSubTime(
 	kind livekit.ParticipantInfo_Kind,
 	count int,
 ) {
-	direction := "subscribe"
-	if isPublish {
-		direction = "publish"
-	}
 	promPubSubTime.WithLabelValues(
 		direction,
 		source.String(),

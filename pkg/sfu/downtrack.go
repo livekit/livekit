@@ -299,6 +299,7 @@ type DownTrack struct {
 	connected            atomic.Bool
 	bindAndConnectedOnce atomic.Bool
 	writable             atomic.Bool
+	writableAt           atomic.Time
 	writeStopped         atomic.Bool
 	isReceiverReady      bool
 
@@ -335,7 +336,8 @@ type DownTrack struct {
 	keyFrameRequesterCh       chan struct{}
 	keyFrameRequesterChClosed bool
 
-	createdAt int64
+	createdAt     int64
+	lastUnmutedAt atomic.Time
 }
 
 // NewDownTrack returns a DownTrack.
@@ -364,6 +366,8 @@ func NewDownTrack(params DownTrackParams) (*DownTrack, error) {
 		createdAt:           time.Now().UnixNano(),
 		receiver:            params.Receiver,
 	}
+	d.lastUnmutedAt.Store(time.Now())
+
 	d.codec.Store(codec)
 	d.bindState.Store(bindStateUnbound)
 	d.params.Logger = params.Logger.WithValues(
@@ -1157,7 +1161,28 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	}
 
 	if tp.isStarting {
-		d.params.Listener.OnStreamStarted()
+		writableAt := d.writableAt.Load()
+		lastUnmutedAt := d.lastUnmutedAt.Load()
+		anchorTo := lastUnmutedAt
+		if !writableAt.IsZero() && !lastUnmutedAt.IsZero() {
+			if writableAt.After(lastUnmutedAt) {
+				anchorTo = writableAt
+			}
+			d.params.Listener.OnStreamStarted(time.Since(anchorTo))
+			if time.Since(anchorTo) > time.Second {
+				d.params.Logger.Debugw(
+					"stream start high latency",
+					"latency", time.Since(anchorTo),
+					"createdAt", time.Unix(0, d.createdAt),
+					"sinceCreate", time.Since(time.Unix(0, d.createdAt)),
+					"writableAt", writableAt,
+					"sinceWritable", time.Since(writableAt),
+					"lastUnmutedAt", lastUnmutedAt,
+					"sinceLastUnmute", time.Since(lastUnmutedAt),
+					"rtpStats", d.rtpStats,
+				)
+			}
+		}
 	}
 	return 1
 }
@@ -1302,6 +1327,11 @@ func (d *DownTrack) handleMute(muted bool, changed bool) {
 	}
 
 	d.connectionStats.UpdateMute(d.forwarder.IsAnyMuted())
+	if muted {
+		d.lastUnmutedAt.Store(time.Time{})
+	} else {
+		d.lastUnmutedAt.Store(time.Now())
+	}
 
 	//
 	// Subscriber mute changes trigger a max layer notification.
@@ -2483,8 +2513,12 @@ func (d *DownTrack) onBindAndConnectedChange() {
 	if d.writeStopped.Load() {
 		return
 	}
-	d.writable.Store(d.connected.Load() && d.bindState.Load() == bindStateBound)
-	if d.connected.Load() && d.bindState.Load() == bindStateBound && !d.bindAndConnectedOnce.Swap(true) {
+	writable := d.connected.Load() && d.bindState.Load() == bindStateBound
+	if writable && !d.writable.Load() {
+		d.writableAt.Store(time.Now())
+	}
+	d.writable.Store(writable)
+	if writable && !d.bindAndConnectedOnce.Swap(true) {
 		go d.params.Listener.OnBindAndConnected()
 
 		if d.activePaddingOnMuteUpTrack.Load() {

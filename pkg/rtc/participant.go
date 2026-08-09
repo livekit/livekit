@@ -418,8 +418,10 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	var timerStarted bool
 	params.Reporter.RegisterFunc(func(ts time.Time, tx roomobs.ParticipantSessionTx) bool {
 		if dts := p.disconnectedAt.Load(); dts != nil {
-			ts = *dts
-			tx.ReportEndTime(ts)
+			if p.CloseReason() != types.ParticipantCloseReasonMigrationComplete { // participant has migrated to another node
+				ts = *dts
+				tx.ReportEndTime(ts)
+			}
 		}
 
 		// Don't publish duration if participant never became active. Otherwise short-lived
@@ -1389,6 +1391,11 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	}
 	p.pendingTracksLock.Unlock()
 
+	// for migrating in tracks, there is no AddTrack, so record a synthetic publish request
+	for _, t := range mediaTracks {
+		p.params.TelemetryListener.OnTrackPublishRequested(p.ID(), p.Identity(), t.GetTrack(), false)
+	}
+
 	for _, t := range dataTracks {
 		dti := t.GetInfo()
 		dt := NewDataTrack(
@@ -1495,11 +1502,13 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 	}
 
 	p.pendingTracksLock.Lock()
-	for _, pti := range p.pendingTracks {
-		if len(pti.trackInfos) == 0 {
-			continue
+	if p.IsConnectionCanceled(reason) {
+		for _, pti := range p.pendingTracks {
+			if len(pti.trackInfos) == 0 {
+				continue
+			}
+			prometheus.RecordTrackPublishCancels(pti.trackInfos[0].Type.String(), int32(len(pti.trackInfos)))
 		}
-		prometheus.RecordTrackPublishCancels(pti.trackInfos[0].Type.String(), int32(len(pti.trackInfos)))
 	}
 	p.pendingTracks = make(map[string]*pendingTrackInfo)
 	p.pendingPublishingTracks = make(map[livekit.TrackID]*pendingTrackInfo)
@@ -1687,7 +1696,7 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		// launch callbacks in goroutine since they could block.
 		// callbacks handle webhooks as well as db persistence
 		for _, t := range migratedTracks {
-			p.handleTrackPublished(t, true)
+			p.handleTrackPublished(t, true, true)
 		}
 
 		if s == types.MigrateStateComplete {
@@ -2876,8 +2885,6 @@ func (p *ParticipantImpl) onSubscribedAudioCodecChange(
 
 func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit.TrackInfo {
 	p.pendingTracksLock.Lock()
-	defer p.pendingTracksLock.Unlock()
-
 	if req.Sid != "" {
 		track := p.GetPublishedTrack(livekit.TrackID(req.Sid))
 		if track == nil {
@@ -2888,11 +2895,14 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 					AddTrack: utils.CloneProto(req),
 				},
 			})
+			p.pendingTracksLock.Unlock()
 			return nil
 		}
 
 		track.(*MediaTrack).UpdateCodecInfo(req.SimulcastCodecs)
-		return track.ToProto()
+		ti := track.ToProto()
+		p.pendingTracksLock.Unlock()
+		return ti
 	}
 
 	backupCodecPolicy := req.BackupCodecPolicy
@@ -3060,8 +3070,6 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		}
 	}
 
-	p.params.TelemetryListener.OnTrackPublishRequested(p.ID(), p.Identity(), utils.CloneProto(ti))
-
 	if p.supervisor != nil {
 		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
 		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
@@ -3093,6 +3101,8 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 				AddTrack: utils.CloneProto(req),
 			},
 		})
+		p.pendingTracksLock.Unlock()
+		p.params.TelemetryListener.OnTrackPublishRequested(p.ID(), p.Identity(), utils.CloneProto(ti), true)
 		return nil
 	}
 
@@ -3110,6 +3120,8 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		"request", logger.Proto(req),
 		"pendingTrack", p.pendingTracks[req.Cid],
 	)
+	p.pendingTracksLock.Unlock()
+	p.params.TelemetryListener.OnTrackPublishRequested(p.ID(), p.Identity(), utils.CloneProto(ti), true)
 	return ti
 }
 
@@ -3318,7 +3330,7 @@ func (p *ParticipantImpl) mediaTrackReceived(
 				p.GetClientInfo().GetSdk(),
 				p.Kind(),
 			)
-			p.handleTrackPublished(mt, isMigrated)
+			p.handleTrackPublished(mt, isMigrated, false)
 		}()
 	}
 
@@ -3473,17 +3485,19 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 	return mt
 }
 
-func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack, isMigrated bool) {
+func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack, isMigrated bool, isSynthetic bool) {
 	p.listener().OnTrackPublished(p, track)
 
-	// send webhook after callbacks are complete, persistence and state handling happens
-	// in `onTrackPublished` cb
-	p.params.TelemetryListener.OnTrackPublished(
-		p.ID(),
-		p.Identity(),
-		track.ToProto(),
-		!isMigrated,
-	)
+	if !isSynthetic {
+		// send webhook after callbacks are complete, persistence and state handling happens
+		// in `onTrackPublished` cb
+		p.params.TelemetryListener.OnTrackPublished(
+			p.ID(),
+			p.Identity(),
+			track.ToProto(),
+			!isMigrated,
+		)
+	}
 
 	p.pendingTracksLock.Lock()
 	delete(p.pendingPublishingTracks, track.ID())

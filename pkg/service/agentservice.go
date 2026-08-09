@@ -486,6 +486,16 @@ func (h *AgentHandler) CheckEnabled(ctx context.Context, req *rpc.CheckEnabledRe
 }
 
 func (h *AgentHandler) DrainConnections(interval time.Duration, force bool) {
+	// Snapshot workers and release the lock before Close. Worker.Close closes the
+	// signal connection, which unblocks HandleConnection's read loop so it can call
+	// deregisterWorker — that needs h.mu. Holding the lock across Close deadlocks drain.
+	h.mu.Lock()
+	workers := make([]*agent.Worker, 0, len(h.workers))
+	for _, w := range h.workers {
+		workers = append(workers, w)
+	}
+	h.mu.Unlock()
+
 	if !force {
 		// jitter drain start
 		time.Sleep(time.Duration(rand.Int63n(int64(interval))))
@@ -493,19 +503,13 @@ func (h *AgentHandler) DrainConnections(interval time.Duration, force bool) {
 		t := time.NewTicker(interval)
 		defer t.Stop()
 
-		h.mu.Lock()
-		defer h.mu.Unlock()
-
-		for _, w := range h.workers {
+		for _, w := range workers {
 			w.Close()
 			<-t.C
 		}
 	} else {
 		// drain as quickly as possible when forced
-		h.mu.Lock()
-		defer h.mu.Unlock()
-
-		for _, w := range h.workers {
+		for _, w := range workers {
 			w.Close()
 		}
 	}

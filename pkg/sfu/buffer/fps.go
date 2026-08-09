@@ -215,6 +215,10 @@ func (f *FrameRateCalculatorVP8) RecvPacket(ep *ExtPacket) bool {
 		f.logger.Debugw("no vp8 payload", "sn", ep.Packet.SequenceNumber)
 		return false
 	}
+	if !vp8.I {
+		f.logger.Debugw("no vp8 pictureID", "sn", ep.Packet.SequenceNumber)
+		return false
+	}
 	success := f.frameRateCalculatorVPx.RecvPacket(ep, vp8.PictureID)
 
 	if f.frameRateCalculatorVPx.Completed() {
@@ -262,7 +266,10 @@ func (f *FrameRateCalculatorVP9) RecvPacket(ep *ExtPacket) bool {
 		f.logger.Debugw("no vp9 payload", "sn", ep.Packet.SequenceNumber)
 		return false
 	}
-
+	if !vp9.I {
+		f.logger.Debugw("no vp9 pictureID", "sn", ep.Packet.SequenceNumber)
+		return false
+	}
 	if ep.Spatial < 0 || ep.Spatial >= int32(len(f.frameRateCalculatorsVPx)) || f.frameRateCalculatorsVPx[ep.Spatial] == nil {
 		f.logger.Debugw("invalid spatial layer", "sn", ep.Packet.SequenceNumber, "spatial", ep.Spatial)
 		return false
