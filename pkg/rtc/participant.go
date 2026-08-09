@@ -83,7 +83,7 @@ const (
 )
 
 var (
-	ErrMoveOldClientVersion = errors.New("participant client version does not support moving")
+	ErrMoveOldClientVersion = psrpc.NewErrorf(psrpc.FailedPrecondition, "participant client version does not support moving")
 )
 
 // -------------------------------------------------
@@ -4103,7 +4103,12 @@ func (p *ParticipantImpl) SupportsMoving() error {
 	}
 
 	if kind := p.Kind(); kind == livekit.ParticipantInfo_EGRESS || kind == livekit.ParticipantInfo_AGENT || p.params.UseOneShotSignallingMode {
-		return fmt.Errorf("%s participants cannot be moved, one-shot signaling mode: %t", kind.String(), p.params.UseOneShotSignallingMode)
+		return psrpc.NewErrorf(
+			psrpc.FailedPrecondition,
+			"%s participants cannot be moved, one-shot signaling mode: %t",
+			kind.String(),
+			p.params.UseOneShotSignallingMode,
+		)
 	}
 
 	return nil
