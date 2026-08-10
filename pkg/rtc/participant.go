@@ -1501,6 +1501,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		p.supervisor.Stop()
 	}
 
+	sdk := p.GetClientInfo().GetSdk()
 	p.pendingTracksLock.Lock()
 	if p.IsConnectionCanceled(reason) {
 		for _, pti := range p.pendingTracks {
@@ -1508,6 +1509,23 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 				continue
 			}
 			prometheus.RecordTrackPublishCancels(pti.trackInfos[0].Type.String(), int32(len(pti.trackInfos)))
+		}
+	} else {
+		// record close time as publish time for non canceled pending tracks,
+		// this will inflate publish time and can signal a node wide issue if
+		// enough participants are closing without publishing tracks.
+		for _, pti := range p.pendingTracks {
+			if len(pti.trackInfos) == 0 || pti.migrated {
+				continue
+			}
+			prometheus.RecordPublishTime(
+				p.params.Country,
+				pti.trackInfos[0].Source,
+				pti.trackInfos[0].Type,
+				time.Since(pti.createdAt),
+				sdk,
+				p.Kind(),
+			)
 		}
 	}
 	p.pendingTracks = make(map[string]*pendingTrackInfo)
