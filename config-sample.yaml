@@ -376,3 +376,8 @@ keys:
 #   max_room_name_length: 0
 #   # limit length of participant identity
 #   max_participant_identity_length: 0
+#   # max size (bytes) of a single client-facing signalling WebSocket message; oversized
+#   # frames are rejected by the transport before being buffered. defaults to 2 MiB, 0 for no limit
+#   signal_message_size_limit: 2097152
+#   # same as above, but for agent worker WebSocket connections. defaults to 2 MiB, 0 for no limit
+#   agent_signal_message_size_limit: 2097152

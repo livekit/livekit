@@ -131,6 +131,8 @@ func HandshakeAgentWorker(c agent.SignalConn, serverInfo *livekit.ServerInfo, re
 type AgentService struct {
 	upgrader AgentSocketUpgrader
 
+	signalMessageSizeLimit int64
+
 	*AgentHandler
 }
 
@@ -170,7 +172,9 @@ func NewAgentService(
 	bus psrpc.MessageBus,
 	keyProvider auth.KeyProvider,
 ) (*AgentService, error) {
-	s := &AgentService{}
+	s := &AgentService{
+		signalMessageSizeLimit: conf.Limit.AgentSignalMessageSizeLimit,
+	}
 
 	serverInfo := &livekit.ServerInfo{
 		Edition:       livekit.ServerInfo_Standard,
@@ -200,6 +204,11 @@ func NewAgentService(
 
 func (s *AgentService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if conn, registration, ok := s.upgrader.Upgrade(w, r, nil); ok {
+		// bound the size of a single signalling frame so an oversized message is
+		// rejected by the transport before being fully buffered in memory
+		if s.signalMessageSizeLimit > 0 {
+			conn.SetReadLimit(s.signalMessageSizeLimit)
+		}
 		s.HandleConnection(r.Context(), NewWSSignalConnection(conn), registration)
 		conn.Close()
 	}

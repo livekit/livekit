@@ -447,6 +447,11 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 		HandleError(w, r, http.StatusInternalServerError, err, getLoggerFields()...)
 		return
 	}
+	// bound the size of a single signalling frame so an oversized message is
+	// rejected by the transport before being fully buffered in memory
+	if s.limits.SignalMessageSizeLimit > 0 {
+		conn.SetReadLimit(s.limits.SignalMessageSizeLimit)
+	}
 
 	s.mu.Lock()
 	s.connections[conn] = struct{}{}
