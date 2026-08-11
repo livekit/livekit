@@ -130,6 +130,36 @@ func TestTURNAllocationQuota_ConfirmedReservationSurvivesTTL(t *testing.T) {
 	require.True(t, q.Allow("A", LivekitRealm, udpAddr(t, 5001)))
 }
 
+func TestTURNAllocationQuota_StaleReclaimDoesNotEvictReplacement(t *testing.T) {
+	// a reclaim timer that fires after its slot was released must not delete a
+	// fresh reservation created for the same participant + client address
+	q := newTURNAllocationQuota(1)
+	q.reservationTTL = time.Hour // keep real timers from firing during the test
+
+	addr := udpAddr(t, 5000)
+	key := srcAddrKey(addr)
+
+	require.True(t, q.Allow("A", LivekitRealm, addr))
+	q.mu.Lock()
+	stale := q.users["A"][key]
+	q.mu.Unlock()
+
+	// the original allocation is torn down, then the same 5-tuple is reused and
+	// its replacement allocation is confirmed
+	q.OnDeleted(addr, nil, "udp", "A", LivekitRealm)
+	require.True(t, q.Allow("A", LivekitRealm, addr))
+	q.OnCreated(addr, nil, "udp", "A", LivekitRealm, nil, 0)
+
+	// the original slot's timer fires late: it must be a no-op
+	q.reclaimPending("A", key, stale)
+
+	q.mu.Lock()
+	_, live := q.users["A"][key]
+	q.mu.Unlock()
+	require.True(t, live, "replacement slot must survive a stale reclaim")
+	require.False(t, q.Allow("A", LivekitRealm, udpAddr(t, 5001)), "replacement must still count against quota")
+}
+
 // TestTURNAllocationQuota_ConcurrentAllocatesRespectLimit is the core security
 // property: a burst of concurrent Allocate requests reusing one credential must
 // not be able to race past the limit.

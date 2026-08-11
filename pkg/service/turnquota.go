@@ -112,7 +112,7 @@ func (q *turnAllocationQuota) Allow(userID, _ string, srcAddr net.Addr) bool {
 	// failed attempt (Pion emits no created/deleted event) cannot hold it forever
 	slot := &turnAllocationSlot{}
 	slot.timer = time.AfterFunc(q.reservationTTL, func() {
-		q.reclaimPending(userID, key)
+		q.reclaimPending(userID, key, slot)
 	})
 	slots[key] = slot
 	return true
@@ -150,11 +150,13 @@ func (q *turnAllocationQuota) OnDeleted(srcAddr, _ net.Addr, _, userID, _ string
 
 // reclaimPending drops a reservation that was never confirmed, freeing a slot
 // left behind by an Allocate that passed the quota but failed to create a relay.
-func (q *turnAllocationQuota) reclaimPending(userID, key string) {
+// It is identity-aware: a timer that fires after its slot was already released
+// must not evict a replacement reservation created for the same userID+key.
+func (q *turnAllocationQuota) reclaimPending(userID, key string, slot *turnAllocationSlot) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	if slot := q.users[userID][key]; slot == nil || slot.confirmed {
+	if q.users[userID][key] != slot || slot.confirmed {
 		return
 	}
 	q.removeLocked(userID, key)
