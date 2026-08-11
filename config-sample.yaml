@@ -100,7 +100,11 @@ rtc:
   #     secret: ""
   #     # Path for file containing shared secret for TURN server authentication
   #     # When both secret and secret_file are set, secret takes precedence
+  #     # An empty/whitespace-only secret file fails startup rather than silently
+  #     # falling back to static credentials
   #     secret_file: "/var/lib/coturn/secret"
+  #     # TTL of generated credentials in seconds. Defaults to 14400 (4h) when 0.
+  #     # Values are clamped to [0, 86400]; negative/out-of-range values are adjusted with a warning.
   #     ttl: 14400 # seconds
   #     # Insecure username/password authentication
   #     username: ""
@@ -304,7 +308,8 @@ keys:
 #   # optional (set only if not using external TLS termination)
 #   # cert_file: /path/to/cert.pem
 #   # key_file: /path/to/key.pem
-#   # TTL of the TURN credentials in seconds - defaults to 300
+#   # TTL of the TURN credentials in seconds - defaults to 300.
+#   # Values are clamped to [0, 86400]; negative/out-of-range values are adjusted with a warning.
 #   ttl_seconds: 300
 #   # list of restricted peer CIDRs (loopback, link-local (unicast, multicast), multicast, private, unspecified) to allow access to.
 #   # By default (i. e. empty list), all restricted peer CIDRs are denied access.
@@ -316,6 +321,7 @@ keys:
 #   # list of peer CIDRs to deny access to.
 #   # This applies to all peer CIDRs, including restricted ones.
 #   # Deny list takes precedence over allow list.
+#   # A malformed CIDR in either list fails startup rather than being silently ignored.
 #   deny_peer_cidrs:
 #     - 10.0.0.0/8
 #     - 192.168.0.0/16

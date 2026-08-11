@@ -1096,10 +1096,11 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 
 			var username, credential string
 			if s.Secret != "" {
-				// Generate dynamic credentials using TURN static auth secrets
-				ttl := s.TTL
+				// Generate dynamic credentials using TURN static auth secrets.
+				// Clamp defensively so a negative or overflowing TTL cannot produce a wrong-lifetime credential.
+				ttl, _ := config.ClampTURNTTLSeconds(s.TTL)
 				if ttl == 0 {
-					ttl = 14400 // Default 4 hours
+					ttl = config.DefaultExternalTURNTTLSeconds
 				}
 
 				expiry := time.Now().Add(time.Duration(ttl) * time.Second).Unix()
