@@ -227,6 +227,16 @@ type FakeLocalMediaTrack struct {
 	loggerReturnsOnCall map[int]struct {
 		result1 logger.Logger
 	}
+	MigratedStub        func() bool
+	migratedMutex       sync.RWMutex
+	migratedArgsForCall []struct {
+	}
+	migratedReturns struct {
+		result1 bool
+	}
+	migratedReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	NameStub        func() string
 	nameMutex       sync.RWMutex
 	nameArgsForCall []struct {
@@ -258,6 +268,16 @@ type FakeLocalMediaTrack struct {
 	OnTrackSubscribedStub        func()
 	onTrackSubscribedMutex       sync.RWMutex
 	onTrackSubscribedArgsForCall []struct {
+	}
+	PublishedStub        func() bool
+	publishedMutex       sync.RWMutex
+	publishedArgsForCall []struct {
+	}
+	publishedReturns struct {
+		result1 bool
+	}
+	publishedReturnsOnCall map[int]struct {
+		result1 bool
 	}
 	PublisherIDStub        func() livekit.ParticipantID
 	publisherIDMutex       sync.RWMutex
@@ -320,9 +340,19 @@ type FakeLocalMediaTrack struct {
 	revokeDisallowedSubscribersReturnsOnCall map[int]struct {
 		result1 []livekit.ParticipantIdentity
 	}
+	SetMigratedStub        func(bool)
+	setMigratedMutex       sync.RWMutex
+	setMigratedArgsForCall []struct {
+		arg1 bool
+	}
 	SetMutedStub        func(bool)
 	setMutedMutex       sync.RWMutex
 	setMutedArgsForCall []struct {
+		arg1 bool
+	}
+	SetPublishedStub        func(bool)
+	setPublishedMutex       sync.RWMutex
+	setPublishedArgsForCall []struct {
 		arg1 bool
 	}
 	SetRTTStub        func(uint32)
@@ -1514,6 +1544,59 @@ func (fake *FakeLocalMediaTrack) LoggerReturnsOnCall(i int, result1 logger.Logge
 	}{result1}
 }
 
+func (fake *FakeLocalMediaTrack) Migrated() bool {
+	fake.migratedMutex.Lock()
+	ret, specificReturn := fake.migratedReturnsOnCall[len(fake.migratedArgsForCall)]
+	fake.migratedArgsForCall = append(fake.migratedArgsForCall, struct {
+	}{})
+	stub := fake.MigratedStub
+	fakeReturns := fake.migratedReturns
+	fake.recordInvocation("Migrated", []interface{}{})
+	fake.migratedMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalMediaTrack) MigratedCallCount() int {
+	fake.migratedMutex.RLock()
+	defer fake.migratedMutex.RUnlock()
+	return len(fake.migratedArgsForCall)
+}
+
+func (fake *FakeLocalMediaTrack) MigratedCalls(stub func() bool) {
+	fake.migratedMutex.Lock()
+	defer fake.migratedMutex.Unlock()
+	fake.MigratedStub = stub
+}
+
+func (fake *FakeLocalMediaTrack) MigratedReturns(result1 bool) {
+	fake.migratedMutex.Lock()
+	defer fake.migratedMutex.Unlock()
+	fake.MigratedStub = nil
+	fake.migratedReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalMediaTrack) MigratedReturnsOnCall(i int, result1 bool) {
+	fake.migratedMutex.Lock()
+	defer fake.migratedMutex.Unlock()
+	fake.MigratedStub = nil
+	if fake.migratedReturnsOnCall == nil {
+		fake.migratedReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.migratedReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
 func (fake *FakeLocalMediaTrack) Name() string {
 	fake.nameMutex.Lock()
 	ret, specificReturn := fake.nameReturnsOnCall[len(fake.nameArgsForCall)]
@@ -1698,6 +1781,59 @@ func (fake *FakeLocalMediaTrack) OnTrackSubscribedCalls(stub func()) {
 	fake.onTrackSubscribedMutex.Lock()
 	defer fake.onTrackSubscribedMutex.Unlock()
 	fake.OnTrackSubscribedStub = stub
+}
+
+func (fake *FakeLocalMediaTrack) Published() bool {
+	fake.publishedMutex.Lock()
+	ret, specificReturn := fake.publishedReturnsOnCall[len(fake.publishedArgsForCall)]
+	fake.publishedArgsForCall = append(fake.publishedArgsForCall, struct {
+	}{})
+	stub := fake.PublishedStub
+	fakeReturns := fake.publishedReturns
+	fake.recordInvocation("Published", []interface{}{})
+	fake.publishedMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalMediaTrack) PublishedCallCount() int {
+	fake.publishedMutex.RLock()
+	defer fake.publishedMutex.RUnlock()
+	return len(fake.publishedArgsForCall)
+}
+
+func (fake *FakeLocalMediaTrack) PublishedCalls(stub func() bool) {
+	fake.publishedMutex.Lock()
+	defer fake.publishedMutex.Unlock()
+	fake.PublishedStub = stub
+}
+
+func (fake *FakeLocalMediaTrack) PublishedReturns(result1 bool) {
+	fake.publishedMutex.Lock()
+	defer fake.publishedMutex.Unlock()
+	fake.PublishedStub = nil
+	fake.publishedReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalMediaTrack) PublishedReturnsOnCall(i int, result1 bool) {
+	fake.publishedMutex.Lock()
+	defer fake.publishedMutex.Unlock()
+	fake.PublishedStub = nil
+	if fake.publishedReturnsOnCall == nil {
+		fake.publishedReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.publishedReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
 }
 
 func (fake *FakeLocalMediaTrack) PublisherID() livekit.ParticipantID {
@@ -2035,6 +2171,38 @@ func (fake *FakeLocalMediaTrack) RevokeDisallowedSubscribersReturnsOnCall(i int,
 	}{result1}
 }
 
+func (fake *FakeLocalMediaTrack) SetMigrated(arg1 bool) {
+	fake.setMigratedMutex.Lock()
+	fake.setMigratedArgsForCall = append(fake.setMigratedArgsForCall, struct {
+		arg1 bool
+	}{arg1})
+	stub := fake.SetMigratedStub
+	fake.recordInvocation("SetMigrated", []interface{}{arg1})
+	fake.setMigratedMutex.Unlock()
+	if stub != nil {
+		fake.SetMigratedStub(arg1)
+	}
+}
+
+func (fake *FakeLocalMediaTrack) SetMigratedCallCount() int {
+	fake.setMigratedMutex.RLock()
+	defer fake.setMigratedMutex.RUnlock()
+	return len(fake.setMigratedArgsForCall)
+}
+
+func (fake *FakeLocalMediaTrack) SetMigratedCalls(stub func(bool)) {
+	fake.setMigratedMutex.Lock()
+	defer fake.setMigratedMutex.Unlock()
+	fake.SetMigratedStub = stub
+}
+
+func (fake *FakeLocalMediaTrack) SetMigratedArgsForCall(i int) bool {
+	fake.setMigratedMutex.RLock()
+	defer fake.setMigratedMutex.RUnlock()
+	argsForCall := fake.setMigratedArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeLocalMediaTrack) SetMuted(arg1 bool) {
 	fake.setMutedMutex.Lock()
 	fake.setMutedArgsForCall = append(fake.setMutedArgsForCall, struct {
@@ -2064,6 +2232,38 @@ func (fake *FakeLocalMediaTrack) SetMutedArgsForCall(i int) bool {
 	fake.setMutedMutex.RLock()
 	defer fake.setMutedMutex.RUnlock()
 	argsForCall := fake.setMutedArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeLocalMediaTrack) SetPublished(arg1 bool) {
+	fake.setPublishedMutex.Lock()
+	fake.setPublishedArgsForCall = append(fake.setPublishedArgsForCall, struct {
+		arg1 bool
+	}{arg1})
+	stub := fake.SetPublishedStub
+	fake.recordInvocation("SetPublished", []interface{}{arg1})
+	fake.setPublishedMutex.Unlock()
+	if stub != nil {
+		fake.SetPublishedStub(arg1)
+	}
+}
+
+func (fake *FakeLocalMediaTrack) SetPublishedCallCount() int {
+	fake.setPublishedMutex.RLock()
+	defer fake.setPublishedMutex.RUnlock()
+	return len(fake.setPublishedArgsForCall)
+}
+
+func (fake *FakeLocalMediaTrack) SetPublishedCalls(stub func(bool)) {
+	fake.setPublishedMutex.Lock()
+	defer fake.setPublishedMutex.Unlock()
+	fake.SetPublishedStub = stub
+}
+
+func (fake *FakeLocalMediaTrack) SetPublishedArgsForCall(i int) bool {
+	fake.setPublishedMutex.RLock()
+	defer fake.setPublishedMutex.RUnlock()
+	argsForCall := fake.setPublishedArgsForCall[i]
 	return argsForCall.arg1
 }
 
