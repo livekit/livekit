@@ -129,11 +129,11 @@ func (h *Header) Unmarshal(buf []byte) (int, error) {
 		if len(buf) < extensionsSizeOffset+extensionsSizeLength {
 			return 0, fmt.Errorf("%w: %d < %d", errHeaderSizeInsufficient, len(buf), extensionsSizeOffset+extensionsSizeLength)
 		}
-		extensionsSize := (binary.BigEndian.Uint16(buf[extensionsSizeOffset:extensionsSizeOffset+extensionsSizeLength])+1)*4 - extensionsSizeLength
+		extensionsSize := (int(binary.BigEndian.Uint16(buf[extensionsSizeOffset:extensionsSizeOffset+extensionsSizeLength]))+1)*4 - extensionsSizeLength
 		hdrSize += extensionsSizeLength
 
 		extensionHeaderSize := extensionIDLength + extensionSizeLength
-		remainingSize := int(extensionsSize)
+		remainingSize := extensionsSize
 		idx := extensionsSizeOffset + extensionsSizeLength
 		for remainingSize != 0 {
 			// read extension header
@@ -169,7 +169,7 @@ func (h *Header) Unmarshal(buf []byte) (int, error) {
 			idx += size
 			hdrSize += size
 		}
-		h.ExtensionsSize = extensionsSize - uint16(remainingSize)
+		h.ExtensionsSize = uint16(extensionsSize - remainingSize)
 	}
 
 	return hdrSize, nil
@@ -276,6 +276,9 @@ func (p *Packet) Unmarshal(buf []byte) error {
 	hdrSize, err := p.Header.Unmarshal(buf)
 	if err != nil {
 		return err
+	}
+	if hdrSize > len(buf) {
+		return fmt.Errorf("%w: %d < %d", errBufferSizeInsufficient, len(buf), hdrSize)
 	}
 
 	p.Payload = buf[hdrSize:]

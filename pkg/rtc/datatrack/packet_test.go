@@ -269,6 +269,18 @@ func TestPacket(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	t.Run("extensions size wraparound does not panic", func(t *testing.T) {
+		var unmarshaled Packet
+		// 0xFFFF extensions-size field wraps (raw+1)*4 uint16 arithmetic to a huge
+		// remainingSize; the 0x00 padding id must not push hdrSize past len(buf)
+		badPacket := []byte{
+			0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00,
+		}
+		err := unmarshaled.Unmarshal(badPacket)
+		require.Error(t, err)
+	})
+
 	t.Run("truncated extensions size field does not panic", func(t *testing.T) {
 		var unmarshaled Packet
 		// HasExtensions set but buffer too short to hold the extensionsSize field
