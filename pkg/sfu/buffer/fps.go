@@ -356,7 +356,17 @@ func (f *FrameRateCalculatorDD) Completed() bool {
 }
 
 func (f *FrameRateCalculatorDD) SetMaxLayer(spatial, temporal int32) {
-	f.maxSpatial, f.maxTemporal = spatial, temporal
+	if spatial <= DefaultMaxLayerSpatial {
+		f.maxSpatial = spatial
+	} else {
+		f.logger.Warnw("max spatial layer out of range", nil, "spatial", spatial)
+	}
+
+	if temporal <= DefaultMaxLayerTemporal {
+		f.maxTemporal = temporal
+	} else {
+		f.logger.Warnw("max temporal layer out of range", nil, "temporal", temporal)
+	}
 }
 
 func (f *FrameRateCalculatorDD) RecvPacket(ep *ExtPacket) bool {
