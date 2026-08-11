@@ -3298,9 +3298,10 @@ func (p *ParticipantImpl) mediaTrackReceived(
 	// a track might have been set up in migrate-in path and won't show up as a new track here,
 	// so we need to check if it's migrated and published separately
 	if !isMigrated {
-		isMigrated = mt.Migrated()
-		if migratedInAt := p.migratedInAt.Load(); migratedInAt != nil {
-			createdAt = *migratedInAt
+		if isMigrated = mt.Migrated(); isMigrated {
+			if migratedInAt := p.migratedInAt.Load(); migratedInAt != nil {
+				createdAt = *migratedInAt
+			}
 		}
 	}
 	if !newTrack {
