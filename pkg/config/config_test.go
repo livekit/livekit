@@ -93,10 +93,10 @@ func TestClampTURNTTLSeconds(t *testing.T) {
 		want    int
 		changed bool
 	}{
-		{"negative clamps to zero", -1, 0, true},
-		{"large negative clamps to zero", -1 << 40, 0, true},
-		{"zero preserved", 0, 0, false},
-		{"in range preserved", 300, 300, false},
+		{"negative falls back to default", -1, DefaultTURNTTLSeconds, true},
+		{"large negative falls back to default", -1 << 40, DefaultTURNTTLSeconds, true},
+		{"zero falls back to default", 0, DefaultTURNTTLSeconds, true},
+		{"in range preserved", 600, 600, false},
 		{"max preserved", TURNMaxTTLSeconds, TURNMaxTTLSeconds, false},
 		{"over max clamps to max", TURNMaxTTLSeconds + 1, TURNMaxTTLSeconds, true},
 		{"overflowing value clamps to max", 1<<62 + 1, TURNMaxTTLSeconds, true},
@@ -124,9 +124,12 @@ func TestNormalizeTURNTTLs(t *testing.T) {
 
 	conf.NormalizeTURNTTLs()
 
-	require.Equal(t, 0, conf.TURN.TTLSeconds)
+	// embedded TTL <= 0 falls back to the 5m default
+	require.Equal(t, DefaultTURNTTLSeconds, conf.TURN.TTLSeconds)
+	// external TTLs: only the upper bound is capped at load; 0/negative keep their
+	// "use the default" meaning and are resolved when credentials are generated
 	require.Equal(t, TURNMaxTTLSeconds, conf.RTC.TURNServers[0].TTL)
-	require.Equal(t, 0, conf.RTC.TURNServers[1].TTL)
+	require.Equal(t, -1, conf.RTC.TURNServers[1].TTL)
 	require.Equal(t, 0, conf.RTC.TURNServers[2].TTL)
 	require.Equal(t, 600, conf.RTC.TURNServers[3].TTL)
 }
@@ -136,7 +139,7 @@ func TestNewConfigNormalizesTURNTTL(t *testing.T) {
   ttl_seconds: -10`
 	conf, err := NewConfig(content, true, nil, nil)
 	require.NoError(t, err)
-	require.Equal(t, 0, conf.TURN.TTLSeconds)
+	require.Equal(t, DefaultTURNTTLSeconds, conf.TURN.TTLSeconds)
 }
 
 func writeSecretFile(t *testing.T, content string) string {
@@ -195,5 +198,12 @@ func TestLoadTURNSecrets(t *testing.T) {
 		conf.RTC.TURNServers = []TURNServer{{Host: "h", Secret: " inline ", SecretFile: writeSecretFile(t, "fromfile")}}
 		require.NoError(t, conf.LoadTURNSecrets())
 		require.Equal(t, "inline", conf.RTC.TURNServers[0].Secret)
+	})
+
+	t.Run("blank inline secret falls back to secret file", func(t *testing.T) {
+		conf := &Config{}
+		conf.RTC.TURNServers = []TURNServer{{Host: "h", Secret: "   ", SecretFile: writeSecretFile(t, "fromfile")}}
+		require.NoError(t, conf.LoadTURNSecrets())
+		require.Equal(t, "fromfile", conf.RTC.TURNServers[0].Secret)
 	})
 }

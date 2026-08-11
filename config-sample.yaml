@@ -104,7 +104,7 @@ rtc:
   #     # falling back to static credentials
   #     secret_file: "/var/lib/coturn/secret"
   #     # TTL of generated credentials in seconds. Defaults to 14400 (4h) when 0.
-  #     # Values are clamped to [0, 86400]; negative/out-of-range values are adjusted with a warning.
+  #     # Negative values fall back to the 300s (5m) default; values are capped at 86400 (24h).
   #     ttl: 14400 # seconds
   #     # Insecure username/password authentication
   #     username: ""
@@ -309,7 +309,7 @@ keys:
 #   # cert_file: /path/to/cert.pem
 #   # key_file: /path/to/key.pem
 #   # TTL of the TURN credentials in seconds - defaults to 300.
-#   # Values are clamped to [0, 86400]; negative/out-of-range values are adjusted with a warning.
+#   # Values <= 0 fall back to the 300s (5m) default; values are capped at 86400 (24h).
 #   ttl_seconds: 300
 #   # list of restricted peer CIDRs (loopback, link-local (unicast, multicast), multicast, private, unspecified) to allow access to.
 #   # By default (i. e. empty list), all restricted peer CIDRs are denied access.

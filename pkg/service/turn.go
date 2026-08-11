@@ -227,7 +227,7 @@ func NewTURNAuthHandler(keyProvider auth.KeyProvider) *TURNAuthHandler {
 }
 
 func (h *TURNAuthHandler) CreateUsername(apiKey string, pID livekit.ParticipantID, ttlSeconds int) (string, int64) {
-	// clamp defensively so a negative or overflowing TTL cannot produce a wrong-lifetime credential
+	// clamp defensively: non-positive TTLs fall back to the default and overflowing ones are capped
 	ttlSeconds, _ = config.ClampTURNTTLSeconds(ttlSeconds)
 	expiry := time.Now().Add(time.Duration(ttlSeconds) * time.Second).Unix()
 	return base62.EncodeToString(fmt.Appendf(nil, "%s|%s|%d", apiKey, pID, expiry)), expiry

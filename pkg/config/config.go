@@ -52,7 +52,8 @@ const (
 	// by time.Second (values above ~9.2e9 seconds wrap on 64-bit builds).
 	TURNMaxTTLSeconds = 24 * 60 * 60
 
-	// DefaultTURNTTLSeconds is the default TTL for embedded TURN credentials.
+	// DefaultTURNTTLSeconds is the default TTL for embedded TURN credentials, and the
+	// fallback used when a configured TTL is <= 0.
 	DefaultTURNTTLSeconds = 300
 
 	// DefaultExternalTURNTTLSeconds is the default TTL applied to external TURN
@@ -188,7 +189,8 @@ type TURNServer struct {
 	// File containing the secret
 	SecretFile string `yaml:"secret_file,omitempty"`
 	// TTL is the time-to-live in seconds for generated credentials when using Secret.
-	// Defaults to 14400 seconds (4 hours) if not specified. Clamped to [0, TURNMaxTTLSeconds].
+	// Defaults to 14400 seconds (4 hours) when 0. Negative values fall back to the 5m
+	// default and large values are capped at TURNMaxTTLSeconds.
 	TTL int `yaml:"ttl,omitempty"`
 }
 
@@ -266,7 +268,8 @@ type TURNConfig struct {
 	RelayPortRangeEnd   uint16   `yaml:"relay_range_end,omitempty"`
 	ExternalTLS         bool     `yaml:"external_tls,omitempty"`
 	BindAddresses       []string `yaml:"bind_addresses,omitempty"`
-	// TTL of the TURN credentials in seconds - defaults to 300. Clamped to [0, TURNMaxTTLSeconds].
+	// TTL of the TURN credentials in seconds - defaults to 300. Values <= 0 fall back to the
+	// 300s (5m) default and large values are capped at TURNMaxTTLSeconds.
 	TTLSeconds int `yaml:"ttl_seconds,omitempty"`
 	// list of restricted peer CIDRs (loopback, link-local (unicast, multicast), multicast, private, unspecified) to allow access to.
 	// By default (i. e. empty list), all restricted peer CIDRs are denied access.
@@ -750,11 +753,13 @@ func (conf *Config) ValidateKeys() error {
 func (conf *Config) LoadTURNSecrets() error {
 	var otherFilter os.FileMode = 0o007
 	for i, s := range conf.RTC.TURNServers {
+		// trim first so a blank inline secret falls back to secret_file rather than being treated as set
+		inlineSecret := strings.TrimSpace(s.Secret)
 		switch {
-		case s.SecretFile != "" && s.Secret != "":
+		case s.SecretFile != "" && inlineSecret != "":
 			logger.Warnw("both secret and secret_file are set for TURN server, the hardcoded secret will be used", nil,
 				"host", s.Host, "port", s.Port)
-			conf.RTC.TURNServers[i].Secret = strings.TrimSpace(s.Secret)
+			conf.RTC.TURNServers[i].Secret = inlineSecret
 		case s.SecretFile != "":
 			st, err := os.Stat(s.SecretFile)
 			if err != nil {
@@ -773,7 +778,7 @@ func (conf *Config) LoadTURNSecrets() error {
 			}
 			conf.RTC.TURNServers[i].Secret = secret
 		default:
-			conf.RTC.TURNServers[i].Secret = strings.TrimSpace(s.Secret)
+			conf.RTC.TURNServers[i].Secret = inlineSecret
 		}
 
 		// validate credential mode as an explicit union rather than inferring it from a
@@ -788,14 +793,14 @@ func (conf *Config) LoadTURNSecrets() error {
 	return nil
 }
 
-// ClampTURNTTLSeconds bounds a TURN credential TTL to [0, TURNMaxTTLSeconds]:
-// negatives (already-expired credentials) clamp to 0 and overflowing values clamp
-// to the max. 0 is preserved (embedded => immediate expiry, external => default).
-// The second return value reports whether the input was out of range.
+// ClampTURNTTLSeconds bounds a TURN credential TTL to [DefaultTURNTTLSeconds, TURNMaxTTLSeconds]:
+// non-positive values (which would otherwise produce already-expired credentials) fall back to
+// the 5m default and overflowing values clamp to the max. The second return value reports whether
+// the input was out of range.
 func ClampTURNTTLSeconds(ttlSeconds int) (int, bool) {
 	switch {
-	case ttlSeconds < 0:
-		return 0, true
+	case ttlSeconds <= 0:
+		return DefaultTURNTTLSeconds, true
 	case ttlSeconds > TURNMaxTTLSeconds:
 		return TURNMaxTTLSeconds, true
 	default:
@@ -808,7 +813,7 @@ func ClampTURNTTLSeconds(ttlSeconds int) (int, bool) {
 func (conf *Config) NormalizeTURNTTLs() {
 	if clamped, changed := ClampTURNTTLSeconds(conf.TURN.TTLSeconds); changed {
 		logger.Warnw(
-			"turn.ttl_seconds out of range, clamping to safe value", nil,
+			"turn.ttl_seconds out of range, using safe value", nil,
 			"configured", conf.TURN.TTLSeconds,
 			"clamped", clamped,
 			"max", TURNMaxTTLSeconds,
@@ -816,15 +821,17 @@ func (conf *Config) NormalizeTURNTTLs() {
 		conf.TURN.TTLSeconds = clamped
 	}
 	for i := range conf.RTC.TURNServers {
-		if clamped, changed := ClampTURNTTLSeconds(conf.RTC.TURNServers[i].TTL); changed {
+		// external TTL of 0 means "use the default", so only cap the upper bound here;
+		// non-positive values fall back to the default when credentials are generated
+		if ttl := conf.RTC.TURNServers[i].TTL; ttl > TURNMaxTTLSeconds {
 			logger.Warnw(
-				"turn_servers ttl out of range, clamping to safe value", nil,
+				"turn_servers ttl out of range, using safe value", nil,
 				"host", conf.RTC.TURNServers[i].Host,
-				"configured", conf.RTC.TURNServers[i].TTL,
-				"clamped", clamped,
+				"configured", ttl,
+				"clamped", TURNMaxTTLSeconds,
 				"max", TURNMaxTTLSeconds,
 			)
-			conf.RTC.TURNServers[i].TTL = clamped
+			conf.RTC.TURNServers[i].TTL = TURNMaxTTLSeconds
 		}
 	}
 }

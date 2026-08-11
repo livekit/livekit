@@ -78,7 +78,8 @@ func TestTURNAuthHandler_HandleAuth_ExpiredAllocateRejected(t *testing.T) {
 	h := newTestTurnAuthHandler()
 	pID := livekit.ParticipantID("PA_expired_alloc")
 
-	username, _ := h.CreateUsername(turnTestAPIKey, pID, -60)
+	expiry := time.Now().Add(-time.Minute).Unix()
+	username := base62.EncodeToString(fmt.Appendf(nil, "%s|%s|%d", turnTestAPIKey, pID, expiry))
 	_, _, ok := h.HandleAuth(&turn.RequestAttributes{
 		Username: username,
 		Realm:    LivekitRealm,
@@ -92,7 +93,8 @@ func TestTURNAuthHandler_HandleAuth_ExpiredNonAllocateAllowed(t *testing.T) {
 	h := newTestTurnAuthHandler()
 	pID := livekit.ParticipantID("PA_expired_refresh")
 
-	username, expiry := h.CreateUsername(turnTestAPIKey, pID, -60)
+	expiry := time.Now().Add(-time.Minute).Unix()
+	username := base62.EncodeToString(fmt.Appendf(nil, "%s|%s|%d", turnTestAPIKey, pID, expiry))
 
 	// CreatePassword still enforces ErrExpired on its own, but the server hands
 	// the same key it generated at allocation time — reproduce that by directly
@@ -272,7 +274,7 @@ func TestTURNAuthHandler_CreateUsername_TTLClamped(t *testing.T) {
 	require.Greater(t, overflowExpiry, time.Now().Unix())
 	require.LessOrEqual(t, overflowExpiry, time.Now().Unix()+int64(config.TURNMaxTTLSeconds)+1)
 
-	// A negative TTL clamps to 0, yielding an immediate (non-wrapped) expiry.
+	// A non-positive TTL falls back to the default rather than producing a past/wrapped expiry.
 	_, negativeExpiry := h.CreateUsername(turnTestAPIKey, pID, -1<<40)
-	require.InDelta(t, time.Now().Unix(), negativeExpiry, 2)
+	require.InDelta(t, time.Now().Unix()+int64(config.DefaultTURNTTLSeconds), negativeExpiry, 2)
 }
