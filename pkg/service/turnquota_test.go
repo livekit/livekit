@@ -20,6 +20,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -89,6 +90,44 @@ func TestTURNAllocationQuota_ForgetsUserWhenEmpty(t *testing.T) {
 	_, tracked := q.users["A"]
 	q.mu.Unlock()
 	require.False(t, tracked, "user with no active allocations should not be retained")
+}
+
+func TestTURNAllocationQuota_UnconfirmedReservationReclaimed(t *testing.T) {
+	// an Allocate that passes the quota but never produces an allocation (e.g.
+	// relay ports exhausted) must not hold its slot forever
+	q := newTURNAllocationQuota(1)
+	q.reservationTTL = 10 * time.Millisecond
+
+	require.True(t, q.Allow("A", LivekitRealm, udpAddr(t, 5000)))
+	require.False(t, q.Allow("A", LivekitRealm, udpAddr(t, 5001)), "at quota while reservation pending")
+
+	require.Eventually(t, func() bool {
+		return q.Allow("A", LivekitRealm, udpAddr(t, 5002))
+	}, time.Second, 5*time.Millisecond, "slot should be reclaimed after TTL")
+
+	// the reclaimed user should not linger once fully drained
+	q.OnDeleted(udpAddr(t, 5002), nil, "udp", "A", LivekitRealm)
+	q.mu.Lock()
+	_, tracked := q.users["A"]
+	q.mu.Unlock()
+	require.False(t, tracked)
+}
+
+func TestTURNAllocationQuota_ConfirmedReservationSurvivesTTL(t *testing.T) {
+	// a confirmed (live) allocation must never be reclaimed by the pending timer
+	q := newTURNAllocationQuota(1)
+	q.reservationTTL = 10 * time.Millisecond
+
+	addr := udpAddr(t, 5000)
+	require.True(t, q.Allow("A", LivekitRealm, addr))
+	q.OnCreated(addr, nil, "udp", "A", LivekitRealm, nil, 0)
+
+	time.Sleep(30 * time.Millisecond) // past the TTL
+
+	require.False(t, q.Allow("A", LivekitRealm, udpAddr(t, 5001)), "confirmed allocation must still hold its slot")
+
+	q.OnDeleted(addr, nil, "udp", "A", LivekitRealm)
+	require.True(t, q.Allow("A", LivekitRealm, udpAddr(t, 5001)))
 }
 
 // TestTURNAllocationQuota_ConcurrentAllocatesRespectLimit is the core security
