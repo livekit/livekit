@@ -125,6 +125,7 @@ type Room struct {
 	participantOpts           map[livekit.ParticipantIdentity]*ParticipantOptions
 	participantRequestSources map[livekit.ParticipantIdentity]routing.MessageSource
 	hasPublished              map[livekit.ParticipantIdentity]bool
+	launchedTrackEgresses     map[livekit.ParticipantIdentity][]livekit.TrackID
 	agentParticpants          map[livekit.ParticipantIdentity]*agentJob
 	bufferFactory             *buffer.FactoryOfBufferFactory
 
@@ -273,6 +274,7 @@ func NewRoom(
 		participantOpts:                      make(map[livekit.ParticipantIdentity]*ParticipantOptions),
 		participantRequestSources:            make(map[livekit.ParticipantIdentity]routing.MessageSource),
 		hasPublished:                         make(map[livekit.ParticipantIdentity]bool),
+		launchedTrackEgresses:                make(map[livekit.ParticipantIdentity][]livekit.TrackID),
 		agentParticpants:                     make(map[livekit.ParticipantIdentity]*agentJob),
 		bufferFactory:                        buffer.NewFactoryOfBufferFactory(config.Receiver.PacketBufferSizeVideo, config.Receiver.PacketBufferSizeAudio),
 		batchedUpdates:                       make(map[livekit.ParticipantIdentity]*ParticipantUpdate),
@@ -1133,19 +1135,27 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Media
 		}
 	}
 	if participant.Kind() != livekit.ParticipantInfo_EGRESS && r.internal != nil && r.internal.TrackEgress != nil {
-		go func() {
-			if err := StartTrackEgress(
-				context.Background(),
-				r.egressLauncher,
-				r.telemetry,
-				r.internal.TrackEgress,
-				track,
-				r.Name(),
-				r.ID(),
-			); err != nil {
-				r.logger.Errorw("failed to launch track egress", err)
-			}
-		}()
+		r.lock.Lock()
+		launchedTrackEgress := slices.Contains(r.launchedTrackEgresses[participant.Identity()], track.ID())
+		if !launchedTrackEgress {
+			r.launchedTrackEgresses[participant.Identity()] = append(r.launchedTrackEgresses[participant.Identity()], track.ID())
+		}
+		r.lock.Unlock()
+		if !launchedTrackEgress {
+			go func() {
+				if err := StartTrackEgress(
+					context.Background(),
+					r.egressLauncher,
+					r.telemetry,
+					r.internal.TrackEgress,
+					track,
+					r.Name(),
+					r.ID(),
+				); err != nil {
+					r.logger.Errorw("failed to launch track egress", err)
+				}
+			}()
+		}
 	}
 }
 
@@ -1417,6 +1427,7 @@ func (r *Room) RemoveParticipant(
 	delete(r.participantOpts, identity)
 	delete(r.participantRequestSources, identity)
 	delete(r.hasPublished, identity)
+	delete(r.launchedTrackEgresses, identity)
 	delete(r.agentParticpants, identity)
 	if !p.Hidden() {
 		r.protoRoom.NumParticipants--
