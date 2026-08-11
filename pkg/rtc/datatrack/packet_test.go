@@ -256,4 +256,27 @@ func TestPacket(t *testing.T) {
 		err = unmarshaled.Unmarshal(badPacket)
 		require.Error(t, err)
 	})
+
+	t.Run("oversized extension padding does not panic", func(t *testing.T) {
+		var unmarshaled Packet
+		// HasExtensions set, extensionsSize describes more bytes than present,
+		// terminated by a 0x00 padding id -> hdrSize would exceed len(buf)
+		badPacket := []byte{
+			0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		}
+		err := unmarshaled.Unmarshal(badPacket)
+		require.Error(t, err)
+	})
+
+	t.Run("truncated extensions size field does not panic", func(t *testing.T) {
+		var unmarshaled Packet
+		// HasExtensions set but buffer too short to hold the extensionsSize field
+		badPacket := []byte{
+			0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00,
+		}
+		err := unmarshaled.Unmarshal(badPacket)
+		require.Error(t, err)
+	})
 }
