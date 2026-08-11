@@ -261,6 +261,8 @@ type ParticipantImpl struct {
 	disconnectTimer *time.Timer
 	migrationTimer  *time.Timer
 
+	migratedInAt atomic.Pointer[time.Time]
+
 	pubRTCPQueue *sutils.TypedOpsQueue[postRtcpOp]
 
 	// hold reference for MediaTrack
@@ -1288,7 +1290,7 @@ func (p *ParticipantImpl) HandleAnswer(sd *livekit.SessionDescription) {
 
 func (p *ParticipantImpl) handleMigrateTracks() []*MediaTrack {
 	// muted track won't send rtp packet, so it is required to add mediatrack manually.
-	// But, synthesising track publish for unmuted tracks keeps a consistent path.
+	// But, synthesising track publish for unmuted tracks also keeps a consistent path.
 	// In both cases (muted and unmuted), when publisher sends media packets, OnTrack would register and go from there.
 	var addedTracks []*MediaTrack
 	p.pendingTracksLock.Lock()
@@ -1368,6 +1370,9 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	dataChannelReceiveState []*livekit.DataChannelReceiveState,
 	dataTracks []*livekit.PublishDataTrackResponse,
 ) {
+	now := time.Now()
+	p.migratedInAt.Store(pointer.To(now))
+
 	p.pendingTracksLock.Lock()
 	for _, t := range mediaTracks {
 		ti := t.GetTrack()
@@ -1380,7 +1385,7 @@ func (p *ParticipantImpl) SetMigrateInfo(
 		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{
 			trackInfos: []*livekit.TrackInfo{ti},
 			migrated:   true,
-			createdAt:  time.Now(),
+			createdAt:  now,
 		}
 		p.pubLogger.Infow(
 			"pending track added (migration)",
@@ -1700,7 +1705,7 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		}
 
 		if s == types.MigrateStateComplete {
-			// wait for all migrated track to be published,
+			// wait for all migrated tracks to be published,
 			// it is possible that synthesized track publish above could
 			// race with actual publish from client and the above synthesized
 			// one could actually be a no-op because the actual publish path is active.
@@ -3230,13 +3235,17 @@ func (p *ParticipantImpl) mediaTrackReceived(
 	}
 
 	// use existing media track to handle simulcast
-	var pubTime time.Duration
+	var createdAt time.Time
 	var isMigrated bool
 	var ridsFromSdp buffer.VideoLayersRid
+	var pubTime time.Duration
 	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
 	if !ok {
-		signalCid, ti, sdpRids, migrated, createdAt := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()), true)
-		ridsFromSdp = sdpRids
+		var (
+			signalCid string
+			ti        *livekit.TrackInfo
+		)
+		signalCid, ti, ridsFromSdp, isMigrated, createdAt = p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()), true)
 		if ti == nil {
 			p.pendingRemoteTracks = append(
 				p.pendingRemoteTracks,
@@ -3245,10 +3254,9 @@ func (p *ParticipantImpl) mediaTrackReceived(
 			p.pendingTracksLock.Unlock()
 			return nil, false, false, ridsFromSdp
 		}
-		isMigrated = migrated
 
 		// check if the migrated track has correct codec
-		if migrated && len(ti.Codecs) > 0 {
+		if isMigrated && len(ti.Codecs) > 0 {
 			parameters := rtpReceiver.GetParameters()
 			var codecFound int
 			for _, c := range ti.Codecs {
@@ -3280,12 +3288,27 @@ func (p *ParticipantImpl) mediaTrackReceived(
 		mimeType := mime.NormalizeMimeType(ti.MimeType)
 		for _, layer := range ti.Layers {
 			layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(mimeType, layer.Quality, ti)
-			layer.Rid = buffer.VideoQualityToRid(mimeType, layer.Quality, ti, sdpRids)
+			layer.Rid = buffer.VideoQualityToRid(mimeType, layer.Quality, ti, ridsFromSdp)
 		}
 
 		mt = p.addMediaTrack(signalCid, ti)
 		newTrack = true
+	}
 
+	// a track might have been set up in migrate-in path and won't show up as a new track here,
+	// so we need to check if it's migrated and published separately
+	if !isMigrated {
+		isMigrated = mt.Migrated()
+		if migratedInAt := p.migratedInAt.Load(); migratedInAt != nil {
+			createdAt = *migratedInAt
+		}
+	}
+	if !newTrack {
+		newTrack = !mt.Published()
+	}
+	mt.SetPublished(true)
+
+	if newTrack {
 		// if the addTrackRequest is sent before publisher peer connection is established, then it means the client tries to publish
 		// before fully connected, in this case we only record the time when publisher peer connection is established since
 		// we want this metric to represent the time cost by publishing.
@@ -3350,6 +3373,7 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 	}
 
 	mt := p.addMediaTrack(cid, ti)
+	mt.SetMigrated(true)
 
 	potentialCodecs := make([]webrtc.RTPCodecParameters, 0, len(ti.Codecs))
 	parameters := rtpReceiver.GetParameters()
@@ -3460,6 +3484,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 			p.ID(),
 			p.Identity(),
 			mt.ToProto(),
+			mt.Published(),
 			!isExpectedToResume,
 		)
 
@@ -4129,6 +4154,7 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 			p.ID(),
 			p.Identity(),
 			trackInfo,
+			track.(types.LocalMediaTrack).Published(),
 			true,
 		)
 	}

@@ -54,7 +54,9 @@ type MediaTrack struct {
 
 	dynacastManager dynacast.DynacastManager
 
-	lock sync.RWMutex
+	lock      sync.RWMutex
+	migrated  bool
+	published bool
 
 	rttFromXR atomic.Bool
 
@@ -711,4 +713,28 @@ func (t *MediaTrack) OnDynacastSubscribedAudioCodecChange(codecs []*livekit.Subs
 	if onSubscribedAudioCodecChange != nil {
 		_ = onSubscribedAudioCodecChange(t.ID(), codecs)
 	}
+}
+
+func (t *MediaTrack) SetMigrated(migrated bool) {
+	t.lock.Lock()
+	t.migrated = migrated
+	t.lock.Unlock()
+}
+
+func (t *MediaTrack) Migrated() bool {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	return t.migrated
+}
+
+func (t *MediaTrack) SetPublished(published bool) {
+	t.lock.Lock()
+	t.published = published
+	t.lock.Unlock()
+}
+
+func (t *MediaTrack) Published() bool {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	return t.published
 }

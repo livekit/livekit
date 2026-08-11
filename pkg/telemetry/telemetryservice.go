@@ -50,7 +50,7 @@ type TelemetryService interface {
 	// TrackPublished - a publication attempt has been successful
 	TrackPublished(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool)
 	// TrackUnpublished - a participant unpublished a track
-	TrackUnpublished(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool)
+	TrackUnpublished(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, wasPublishedLocally bool, shouldSendEvent bool)
 	// TrackSubscribeRequested - a participant requested to subscribe to a track
 	TrackSubscribeRequested(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, track *livekit.TrackInfo)
 	// TrackSubscribed - a participant subscribed to a track successfully
@@ -118,7 +118,7 @@ func (n NullTelemetryService) TrackPublishRequested(ctx context.Context, room *l
 }
 func (n NullTelemetryService) TrackPublished(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool) {
 }
-func (n NullTelemetryService) TrackUnpublished(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool) {
+func (n NullTelemetryService) TrackUnpublished(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, wasPublishedLocally bool, shouldSendEvent bool) {
 }
 func (n NullTelemetryService) TrackSubscribeRequested(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
 }

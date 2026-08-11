@@ -380,10 +380,13 @@ func (t *telemetryService) TrackUnpublished(
 	participantID livekit.ParticipantID,
 	identity livekit.ParticipantIdentity,
 	track *livekit.TrackInfo,
+	wasPublishedLocally bool,
 	shouldSendEvent bool,
 ) {
 	t.enqueue(func() {
-		prometheus.SubPublishedTrack(track.Type.String())
+		if wasPublishedLocally {
+			prometheus.SubPublishedTrack(track.Type.String())
+		}
 		if !shouldSendEvent {
 			return
 		}

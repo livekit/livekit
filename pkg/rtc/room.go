@@ -2047,8 +2047,8 @@ func (l participantTelemetryListener) OnTrackPublished(pID livekit.ParticipantID
 	l.room.telemetry.TrackPublished(context.Background(), l.eventRoom(), pID, identity, ti, shouldSendEvent)
 }
 
-func (l participantTelemetryListener) OnTrackUnpublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool) {
-	l.room.telemetry.TrackUnpublished(context.Background(), l.eventRoom(), pID, identity, ti, shouldSendEvent)
+func (l participantTelemetryListener) OnTrackUnpublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, wasPublishedLocally bool, shouldSendEvent bool) {
+	l.room.telemetry.TrackUnpublished(context.Background(), l.eventRoom(), pID, identity, ti, wasPublishedLocally, shouldSendEvent)
 }
 
 func (l participantTelemetryListener) OnTrackSubscribeRequested(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
