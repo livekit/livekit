@@ -59,6 +59,12 @@ const (
 	// DefaultExternalTURNTTLSeconds is the default TTL applied to external TURN
 	// (static-auth-secret) credentials when the configured TTL is left at 0.
 	DefaultExternalTURNTTLSeconds = 14400
+
+	// DefaultTURNPerUserRelayAllocationLimit bounds how many concurrent relay
+	// allocations a single participant credential may hold on the embedded TURN
+	// server. It prevents one authenticated participant from exhausting the
+	// shared relay-port range for everyone else. A value <= 0 disables the quota.
+	DefaultTURNPerUserRelayAllocationLimit = 4
 )
 
 var (
@@ -268,6 +274,12 @@ type TURNConfig struct {
 	RelayPortRangeEnd   uint16   `yaml:"relay_range_end,omitempty"`
 	ExternalTLS         bool     `yaml:"external_tls,omitempty"`
 	BindAddresses       []string `yaml:"bind_addresses,omitempty"`
+	// PerUserRelayAllocationLimit caps the number of concurrent relay allocations
+	// a single participant credential may hold, keyed by the participant ID. This
+	// stops one authenticated participant from consuming the shared relay-port
+	// range and denying TURN relays to others. Defaults to
+	// DefaultTURNPerUserRelayAllocationLimit; a value <= 0 disables the quota.
+	PerUserRelayAllocationLimit int `yaml:"per_user_relay_allocation_limit,omitempty"`
 	// TTL of the TURN credentials in seconds - defaults to 300. Values <= 0 fall back to the
 	// 300s (5m) default and large values are capped at TURNMaxTTLSeconds.
 	TTLSeconds int `yaml:"ttl_seconds,omitempty"`
@@ -536,9 +548,10 @@ var DefaultConfig = Config{
 		PionLevel: "error",
 	},
 	TURN: TURNConfig{
-		Enabled:       false,
-		BindAddresses: []string{"0.0.0.0"},
-		TTLSeconds:    DefaultTURNTTLSeconds,
+		Enabled:                     false,
+		BindAddresses:               []string{"0.0.0.0"},
+		TTLSeconds:                  DefaultTURNTTLSeconds,
+		PerUserRelayAllocationLimit: DefaultTURNPerUserRelayAllocationLimit,
 	},
 	NodeSelector: NodeSelectorConfig{
 		Kind:         "any",

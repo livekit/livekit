@@ -95,9 +95,18 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 		LoggerFactory: pionlogger.NewLoggerFactory(logger.GetLogger()),
 	}
 
+	// cap concurrent relay allocations per participant so one credential cannot
+	// exhaust the shared relay-port range (a value <= 0 disables the quota)
+	if turnConf.PerUserRelayAllocationLimit > 0 {
+		quota := newTURNAllocationQuota(turnConf.PerUserRelayAllocationLimit)
+		serverConfig.QuotaHandler = quota.Allow
+		serverConfig.EventHandler = quota.eventHandler()
+	}
+
 	var logValues []any
 	logValues = append(logValues, "turn.relay_range_start", turnConf.RelayPortRangeStart)
 	logValues = append(logValues, "turn.relay_range_end", turnConf.RelayPortRangeEnd)
+	logValues = append(logValues, "turn.per_user_relay_allocation_limit", turnConf.PerUserRelayAllocationLimit)
 
 	for _, addr := range turnConf.BindAddresses {
 		var nodeIP string
