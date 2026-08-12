@@ -467,7 +467,7 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 
 	// websocket established
 	sigConn := NewWSSignalConnection(conn, s.limits.SignalMessageSizeLimit)
-	defer sigConn.Close()
+	defer sigConn.CloseWithReason("")
 	pLogger.Debugw("sending initial response", "response", logger.Proto(initialResponse))
 	count, err := sigConn.WriteResponse(initialResponse)
 	if err != nil {
