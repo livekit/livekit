@@ -337,6 +337,14 @@ type LimitConfig struct {
 	MaxDataBlobSize      uint32 `yaml:"max_data_blobs_size,omitempty"`
 
 	MaxDataTrackCustomEncodingLength int `yaml:"max_data_track_custom_encoding_length,omitempty"`
+
+	// maximum size (in bytes) of a single message read off a client-facing
+	// signalling WebSocket connection. Frames larger than this are rejected by the
+	// transport before being buffered, guarding against single-frame memory
+	// exhaustion. A value of 0 disables the limit (unbounded).
+	SignalMessageSizeLimit int64 `yaml:"signal_message_size_limit,omitempty"`
+	// same as SignalMessageSizeLimit, but for agent worker WebSocket connections.
+	AgentSignalMessageSizeLimit int64 `yaml:"agent_signal_message_size_limit,omitempty"`
 }
 
 func (l LimitConfig) CheckRoomNameLength(name string) bool {
@@ -543,6 +551,8 @@ var DefaultConfig = Config{
 		MaxDataBlobKeyLength:             256,
 		MaxDataBlobSize:                  64000,
 		MaxDataTrackCustomEncodingLength: 32,
+		SignalMessageSizeLimit:           2 << 20, // 2 MiB
+		AgentSignalMessageSizeLimit:      2 << 20, // 2 MiB
 	},
 	Logging: LoggingConfig{
 		PionLevel: "error",

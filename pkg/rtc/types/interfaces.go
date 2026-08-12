@@ -16,6 +16,7 @@ package types
 
 import (
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/pion/rtcp"
@@ -43,6 +44,7 @@ import (
 //counterfeiter:generate . WebsocketClient
 type WebsocketClient interface {
 	ReadMessage() (messageType int, p []byte, err error)
+	NextReader() (messageType int, r io.Reader, err error)
 	WriteMessage(messageType int, data []byte) error
 	WriteControl(messageType int, data []byte, deadline time.Time) error
 	SetReadDeadline(deadline time.Time) error
