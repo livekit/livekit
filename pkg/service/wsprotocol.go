@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/frostbyte73/core"
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
 
@@ -45,6 +46,8 @@ type WSSignalConnection struct {
 
 	// maximum size (in bytes) of a single decompressed message; 0 disables the limit
 	messageSizeLimit int64
+
+	closed core.Fuse
 }
 
 func NewWSSignalConnection(conn types.WebsocketClient, messageSizeLimit int64) *WSSignalConnection {
@@ -88,10 +91,14 @@ func (c *WSSignalConnection) readMessage() (int, []byte, error) {
 }
 
 func (c *WSSignalConnection) Close() error {
+	c.closed.Break()
+
 	return c.conn.Close()
 }
 
 func (c *WSSignalConnection) CloseWithReason(reason string) error {
+	c.closed.Break()
+
 	msg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, reason)
 	_ = c.conn.WriteControl(websocket.CloseMessage, msg, time.Now().Add(closeWriteTimeout))
 	return c.conn.Close()
@@ -213,10 +220,16 @@ func (c *WSSignalConnection) pingWorker() {
 	ticker := time.NewTicker(pingFrequency)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		err := c.conn.WriteControl(websocket.PingMessage, []byte(""), time.Now().Add(pingTimeout))
-		if err != nil {
+	for {
+		select {
+		case <-c.closed.Watch():
 			return
+
+		case <-ticker.C:
+			err := c.conn.WriteControl(websocket.PingMessage, []byte(""), time.Now().Add(pingTimeout))
+			if err != nil {
+				return
+			}
 		}
 	}
 }

@@ -467,6 +467,7 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 
 	// websocket established
 	sigConn := NewWSSignalConnection(conn, s.limits.SignalMessageSizeLimit)
+	defer sigConn.CloseWithReason("")
 	pLogger.Debugw("sending initial response", "response", logger.Proto(initialResponse))
 	count, err := sigConn.WriteResponse(initialResponse)
 	if err != nil {
@@ -495,9 +496,7 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 		defer func() {
 			// when the source is terminated, this means Participant.Close had been called and RTC connection is done
 			// we would terminate the signal connection as well
-			closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")
-			_ = conn.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(time.Second))
-			_ = conn.Close()
+			sigConn.CloseWithReason("")
 		}()
 		defer func() {
 			if r := rtc.Recover(pLogger); r != nil {

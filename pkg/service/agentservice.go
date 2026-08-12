@@ -211,8 +211,10 @@ func (s *AgentService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if s.signalMessageSizeLimit > 0 {
 			conn.SetReadLimit(s.signalMessageSizeLimit)
 		}
-		s.HandleConnection(r.Context(), NewWSSignalConnection(conn, s.signalMessageSizeLimit), registration)
-		conn.Close()
+		sigConn := NewWSSignalConnection(conn, s.signalMessageSizeLimit)
+		defer sigConn.Close()
+
+		s.HandleConnection(r.Context(), sigConn, registration)
 	}
 }
 
