@@ -42,6 +42,25 @@ func TestConfig_DefaultsKept(t *testing.T) {
 	require.Equal(t, uint32(10), conf.Room.EmptyTimeout)
 }
 
+func TestConfig_SignalMessageSizeLimitDefaults(t *testing.T) {
+	conf, err := NewConfig("", true, nil, nil)
+	require.NoError(t, err)
+	// both default to 2 MiB when not specified
+	require.Equal(t, int64(2<<20), conf.Limit.SignalMessageSizeLimit)
+	require.Equal(t, int64(2<<20), conf.Limit.AgentSignalMessageSizeLimit)
+}
+
+func TestConfig_SignalMessageSizeLimitOverride(t *testing.T) {
+	const content = `limit:
+  signal_message_size_limit: 1024
+  agent_signal_message_size_limit: 0`
+	conf, err := NewConfig(content, true, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, int64(1024), conf.Limit.SignalMessageSizeLimit)
+	// 0 explicitly disables the limit
+	require.Equal(t, int64(0), conf.Limit.AgentSignalMessageSizeLimit)
+}
+
 func TestConfig_UnknownKeys(t *testing.T) {
 	const content = `unknown: 10
 room:

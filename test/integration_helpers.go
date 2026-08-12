@@ -63,8 +63,12 @@ func init() {
 }
 
 func setupSingleNodeTest(name string) (*service.LivekitServer, func()) {
+	return setupSingleNodeTestWithConfig(name, nil)
+}
+
+func setupSingleNodeTestWithConfig(name string, configUpdater func(*config.Config)) (*service.LivekitServer, func()) {
 	logger.Infow("----------------STARTING TEST----------------", "test", name)
-	s := createSingleNodeServer(nil)
+	s := createSingleNodeServer(configUpdater)
 	go func() {
 		if err := s.Start(); err != nil {
 			logger.Errorw("server returned error", err)
