@@ -205,11 +205,13 @@ func NewAgentService(
 func (s *AgentService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if conn, registration, ok := s.upgrader.Upgrade(w, r, nil); ok {
 		// bound the size of a single signalling frame so an oversized message is
-		// rejected by the transport before being fully buffered in memory
+		// rejected by the transport before being fully buffered in memory. This
+		// limits the compressed bytes read off the wire; the decompressed size is
+		// bounded separately in WSSignalConnection.
 		if s.signalMessageSizeLimit > 0 {
 			conn.SetReadLimit(s.signalMessageSizeLimit)
 		}
-		s.HandleConnection(r.Context(), NewWSSignalConnection(conn), registration)
+		s.HandleConnection(r.Context(), NewWSSignalConnection(conn, s.signalMessageSizeLimit), registration)
 		conn.Close()
 	}
 }

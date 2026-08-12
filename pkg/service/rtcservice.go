@@ -448,7 +448,9 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 		return
 	}
 	// bound the size of a single signalling frame so an oversized message is
-	// rejected by the transport before being fully buffered in memory
+	// rejected by the transport before being fully buffered in memory. This limits
+	// the compressed bytes read off the wire; the decompressed size is bounded
+	// separately in WSSignalConnection below.
 	if s.limits.SignalMessageSizeLimit > 0 {
 		conn.SetReadLimit(s.limits.SignalMessageSizeLimit)
 	}
@@ -464,7 +466,7 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 	}()
 
 	// websocket established
-	sigConn := NewWSSignalConnection(conn)
+	sigConn := NewWSSignalConnection(conn, s.limits.SignalMessageSizeLimit)
 	pLogger.Debugw("sending initial response", "response", logger.Proto(initialResponse))
 	count, err := sigConn.WriteResponse(initialResponse)
 	if err != nil {
