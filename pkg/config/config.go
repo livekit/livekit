@@ -64,7 +64,7 @@ const (
 	// allocations a single participant credential may hold on the embedded TURN
 	// server. It prevents one authenticated participant from exhausting the
 	// shared relay-port range for everyone else. A value <= 0 disables the quota.
-	DefaultTURNPerUserRelayAllocationLimit = 4
+	DefaultTURNPerUserRelayAllocationLimit = 12
 )
 
 var (
