@@ -3109,11 +3109,6 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		}
 	}
 
-	if p.supervisor != nil {
-		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
-		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
-	}
-
 	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid) != nil || p.pendingTracks[req.Cid] != nil {
 		if p.pendingTracks[req.Cid] == nil {
 			pti := &pendingTrackInfo{
@@ -3153,7 +3148,13 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 				AddTrack: utils.CloneProto(req),
 			},
 		})
+
+		if p.supervisor != nil {
+			p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
+			p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
+		}
 		p.pendingTracksLock.Unlock()
+
 		p.params.TelemetryListener.OnTrackPublishRequested(p.ID(), p.Identity(), utils.CloneProto(ti), true)
 		return nil
 	}
@@ -3172,7 +3173,13 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		"request", logger.Proto(req),
 		"pendingTrack", p.pendingTracks[req.Cid],
 	)
+
+	if p.supervisor != nil {
+		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
+		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
+	}
 	p.pendingTracksLock.Unlock()
+
 	p.params.TelemetryListener.OnTrackPublishRequested(p.ID(), p.Identity(), utils.CloneProto(ti), true)
 	return ti
 }
