@@ -167,8 +167,8 @@ func NewLivekitServer(conf *config.Config,
 			protectedHandler.UseHandler(promHandler)
 			promHandler = protectedHandler
 		} else if conf.Prometheus.Username != "" || conf.Prometheus.Password != "" {
-			logger.Warnw("prometheus username or password is set but not both, ignoring partial credentials", nil)
-			err = errors.New("prometheus username or password is set but not both, ignoring partial credentials")
+			logger.Warnw("prometheus username or password is set but not both, set both or nothing for unauthenticated access", nil)
+			err = errors.New("prometheus username or password is set but not both, set both or nothing for unauthenticated access")
 			return
 		}
 		s.promServer = &http.Server{
