@@ -78,6 +78,9 @@ const (
 	migrationWaitDuration              = 3 * time.Second
 	migrationWaitContinuousMsgDuration = 2 * time.Second
 
+	cMaxPendingTracks       = 20
+	cMaxPendingQueuedTracks = 3
+
 	PingIntervalSeconds = 5
 	PingTimeoutSeconds  = 15
 )
@@ -2928,6 +2931,19 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		return ti
 	}
 
+	if len(p.pendingTracks) >= cMaxPendingTracks {
+		p.pubLogger.Infow("too many pending tracks, rejecting new track", "numPendingTracks", len(p.pendingTracks))
+		p.sendRequestResponse(&livekit.RequestResponse{
+			Reason:  livekit.RequestResponse_LIMIT_EXCEEDED,
+			Message: fmt.Sprintf("too many pending tracks, rejecting new track, numPendingTracks: %d", len(p.pendingTracks)),
+			Request: &livekit.RequestResponse_AddTrack{
+				AddTrack: utils.CloneProto(req),
+			},
+		})
+		p.pendingTracksLock.Unlock()
+		return nil
+	}
+
 	backupCodecPolicy := req.BackupCodecPolicy
 
 	// enable simulcast codec for audio by default
@@ -3110,6 +3126,19 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 			}
 			p.pendingTracks[req.Cid] = pti
 		} else {
+			if len(p.pendingTracks[req.Cid].trackInfos) >= cMaxPendingQueuedTracks {
+				p.pubLogger.Infow("too many pending queued tracks, rejecting new track", "trackID", ti.Sid, "numPendingTracksQueued", len(p.pendingTracks[req.Cid].trackInfos))
+				p.sendRequestResponse(&livekit.RequestResponse{
+					Reason:  livekit.RequestResponse_LIMIT_EXCEEDED,
+					Message: fmt.Sprintf("too many pending queued tracks, rejecting new track, numPendingTracksQueued: %d", len(p.pendingTracks[req.Cid].trackInfos)),
+					Request: &livekit.RequestResponse_AddTrack{
+						AddTrack: utils.CloneProto(req),
+					},
+				})
+				p.pendingTracksLock.Unlock()
+				return nil
+			}
+
 			p.pendingTracks[req.Cid].trackInfos = append(p.pendingTracks[req.Cid].trackInfos, ti)
 		}
 		p.pubLogger.Infow(
