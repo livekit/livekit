@@ -154,7 +154,7 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 
 	now := mono.UnixNano()
 	if b.twcc != nil && b.twccExtID != 0 {
-		if ext := rtpPacket.GetExtension(b.twccExtID); ext != nil {
+		if ext := rtpPacket.GetExtension(b.twccExtID); ext != nil && len(ext) >= 2 {
 			b.twcc.Push(rtpPacket.SSRC, binary.BigEndian.Uint16(ext[0:2]), now, rtpPacket.Marker)
 		}
 	}
