@@ -155,6 +155,8 @@ type ReceiverBase struct {
 	restartInProgress    bool
 
 	isClosed atomic.Bool
+
+	dropPayloadTypeMismatchCount atomic.Uint32
 }
 
 func NewReceiverBase(params ReceiverBaseParams, trackInfo *livekit.TrackInfo, codecState ReceiverCodecState) *ReceiverBase {
@@ -932,11 +934,15 @@ func (r *ReceiverBase) forwardRTP(
 
 		if extPkt.Packet.PayloadType != uint8(r.params.Codec.PayloadType) {
 			// drop packets as we don't support codec fallback directly
-			r.params.Logger.Debugw(
-				"dropping packet - payload mismatch",
-				"packetPayloadType", extPkt.Packet.PayloadType,
-				"payloadType", r.params.Codec.PayloadType,
-			)
+			dropPayloadTypeMismatchCount := r.dropPayloadTypeMismatchCount.Inc()
+			if (dropPayloadTypeMismatchCount-1)%100 == 0 {
+				r.params.Logger.Debugw(
+					"dropping packet - payload mismatch",
+					"packetPayloadType", extPkt.Packet.PayloadType,
+					"payloadType", r.params.Codec.PayloadType,
+					"count", dropPayloadTypeMismatchCount,
+				)
+			}
 			numPacketsDropped++
 			continue
 		}
