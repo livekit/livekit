@@ -69,17 +69,6 @@
       "datasourceTemplate": "docker",
       "depNameTemplate": "golang",
       "versioningTemplate": "regex:^(?<compatibility>\\d+\\.\\d+\\.\\d+)-alpine(?<major>\\d+)\\.(?<minor>\\d+)$"
-    },
-    {
-      "customType": "regex",
-      "description": "Generic marker for tool versions no first-class manager can see: today that is action inputs selecting a separately-versioned binary (golangci-lint-action's `version:` picks the linter, not the action, which is digest-pinned), and it also covers any `go install <pkg>@<version>` left in a workflow step. Annotate the pin with `renovate: datasource=<ds> depName=<module>` on the line directly above it — the comment must be immediately above, since only the next line is scanned for the version. Prefer not needing this: a tool that tolerates being built from our module graph should get a go.mod `tool` directive and run via `go tool`, so go.mod owns the version and the gomod manager handles it. golangci-lint deliberately does not — it pins its own golang.org/x/tools for the analyzers it bundles, and building it here would drag that up to ours.",
-      "managerFilePatterns": [
-        "/^\\.github/workflows/[^/]+\\.ya?ml$/"
-      ],
-      "matchStrings": [
-        "renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)(?:\\s+versioning=(?<versioning>\\S+))?[^\\n]*\\n[^\\n]*?(?<currentValue>v[0-9]+\\.[0-9]+\\.[0-9]+[^\"'\\s,]*)"
-      ],
-      "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}"
     }
   ],
   "postUpdateOptions": [
