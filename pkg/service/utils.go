@@ -87,13 +87,13 @@ func HandleError(w http.ResponseWriter, r *http.Request, status int, err error, 
 }
 
 func HandleErrorJson(w http.ResponseWriter, r *http.Request, status int, err error, keysAndValues ...any) {
+	w.Header().Set("Content-Type", "application/json")
 	handleError(w, r, status, err, keysAndValues...)
 	json.NewEncoder(w).Encode(struct {
 		Error string `json:"error"`
 	}{
 		Error: err.Error(),
 	})
-	w.Header().Add("Content-type", "application/json")
 }
 
 func boolValue(s string) bool {
