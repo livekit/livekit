@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -88,13 +89,13 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 
 		secret := m.provider.GetSecret(v.APIKey())
 		if secret == "" {
-			HandleError(w, r, http.StatusUnauthorized, errors.New("invalid API key: "+v.APIKey()))
+			HandleError(w, r, http.StatusUnauthorized, ErrInvalidAPIKey)
 			return
 		}
 
 		claims, grants, err := v.Verify(secret)
 		if err != nil {
-			HandleError(w, r, http.StatusUnauthorized, errors.New("invalid token, "+err.Error()))
+			HandleError(w, r, http.StatusUnauthorized, fmt.Errorf("%w: %s", ErrInvalidAuthorizationToken, err.Error()))
 			return
 		}
 
