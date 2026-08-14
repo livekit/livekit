@@ -111,6 +111,8 @@ func NewLivekitServer(conf *config.Config,
 			MaxAge: 86400,
 		}),
 		negroni.HandlerFunc(RemoveDoubleSlashes),
+		// limit request body size so large messages cannot exhaust memory
+		NewRequestBodyLimiter(conf.Limit.MaxAPIRequestBodySize),
 	}
 	if keyProvider != nil {
 		middlewares = append(middlewares, NewAPIKeyAuthMiddleware(keyProvider))

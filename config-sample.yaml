@@ -385,3 +385,7 @@ keys:
 #   signal_message_size_limit: 2097152
 #   # same as above, but for agent worker WebSocket connections. defaults to 2 MiB, 0 for no limit
 #   agent_signal_message_size_limit: 2097152
+#   # max size (bytes) of an HTTP request body on the main API listener (Twirp room/egress/ingress/SIP
+#   # routes). requests larger than this are rejected before their body is decoded, so large messages
+#   # cannot exhaust memory. defaults to 10 MiB, 0 for no limit
+#   max_api_request_body_size: 10485760
