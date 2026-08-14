@@ -40,7 +40,6 @@ RUN go mod download
 COPY cmd/ cmd/
 COPY pkg/ pkg/
 COPY test/ test/
-COPY tools/ tools/
 COPY version/ version/
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH GO111MODULE=on go build -a -o livekit-server ./cmd/server
