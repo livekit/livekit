@@ -54,10 +54,8 @@ jobs:
           go get github.com/sasha-s/go-deadlock
           grep -rl sync.Mutex ./pkg | xargs sed -i 's/sync\.Mutex/deadlock\.Mutex/g'
           grep -rl sync.RWMutex ./pkg | xargs sed -i 's/sync\.RWMutex/deadlock\.RWMutex/g'
-          # renovate: datasource=go depName=golang.org/x/tools
-          go install golang.org/x/tools/cmd/goimports@v0.48.0
-          grep -rl deadlock.Mutex ./pkg | xargs goimports -w
-          grep -rl deadlock.RWMutex ./pkg | xargs goimports -w
+          grep -rl deadlock.Mutex ./pkg | xargs go tool goimports -w
+          grep -rl deadlock.RWMutex ./pkg | xargs go tool goimports -w
           go mod tidy
 
       # Run mage at the version go.mod pins, rather than the mage-action's

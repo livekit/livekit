@@ -114,9 +114,6 @@ func BuildLinux() error {
 
 func Deadlock() error {
 	ctx := context.Background()
-	if err := mageutil.InstallTool("golang.org/x/tools/cmd/goimports", "latest", false); err != nil {
-		return err
-	}
 	if err := mageutil.Run(ctx, "go get github.com/sasha-s/go-deadlock"); err != nil {
 		return err
 	}
@@ -126,7 +123,7 @@ func Deadlock() error {
 	if err := mageutil.Pipe("grep -rl sync.RWMutex ./pkg", "xargs sed -i  -e s/sync.RWMutex/deadlock.RWMutex/g"); err != nil {
 		return err
 	}
-	if err := mageutil.Pipe("grep -rl deadlock.Mutex\\|deadlock.RWMutex ./pkg", "xargs goimports -w"); err != nil {
+	if err := mageutil.Pipe("grep -rl deadlock.Mutex\\|deadlock.RWMutex ./pkg", "xargs go tool goimports -w"); err != nil {
 		return err
 	}
 	if err := mageutil.Run(ctx, "go mod tidy"); err != nil {
@@ -142,7 +139,7 @@ func Sync() error {
 	if err := mageutil.Pipe("grep -rl deadlock.RWMutex ./pkg", "xargs sed -i  -e s/deadlock.RWMutex/sync.RWMutex/g"); err != nil {
 		return err
 	}
-	if err := mageutil.Pipe("grep -rl sync.Mutex\\|sync.RWMutex ./pkg", "xargs goimports -w"); err != nil {
+	if err := mageutil.Pipe("grep -rl sync.Mutex\\|sync.RWMutex ./pkg", "xargs go tool goimports -w"); err != nil {
 		return err
 	}
 	if err := mageutil.Run(context.Background(), "go mod tidy"); err != nil {

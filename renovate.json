@@ -72,7 +72,7 @@
     },
     {
       "customType": "regex",
-      "description": "Generic marker for tool versions no first-class manager can see: CLI tools installed by `go install <pkg>@<version>` in a workflow step, and action inputs that select a separately-versioned binary (golangci-lint-action's `version:` picks the linter, not the action). Annotate the pin with `renovate: datasource=<ds> depName=<module>` on the line directly above it — the comment must be immediately above, since only the next line is scanned for the version. Tools that can run via `go run` don't need this: keep them in tools/tools.go so go.mod owns the version and the gomod manager handles them.",
+      "description": "Generic marker for tool versions no first-class manager can see: CLI tools installed by `go install <pkg>@<version>` in a workflow step, and action inputs that select a separately-versioned binary (golangci-lint-action's `version:` picks the linter, not the action). Annotate the pin with `renovate: datasource=<ds> depName=<module>` on the line directly above it — the comment must be immediately above, since only the next line is scanned for the version. Tools that can run from the module graph don't need this: give them a go.mod `tool` directive (or a tools.go blank import) and run them with `go tool`/`go run`, so go.mod owns the version and the gomod manager handles them.",
       "managerFilePatterns": [
         "/^\\.github/workflows/[^/]+\\.ya?ml$/"
       ],
