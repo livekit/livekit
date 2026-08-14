@@ -122,6 +122,8 @@ type RTCConfig struct {
 
 	TURNServers []TURNServer `yaml:"turn_servers,omitempty"`
 
+	CloudflareTURN `yaml:"cloudflare_turn,omitempty"`
+
 	// Deprecated
 	StrictACKs bool `yaml:"strict_acks,omitempty"`
 
@@ -198,6 +200,11 @@ type TURNServer struct {
 	// Defaults to 14400 seconds (4 hours) when 0. Negative values fall back to the 5m
 	// default and large values are capped at TURNMaxTTLSeconds.
 	TTL int `yaml:"ttl,omitempty"`
+}
+
+type CloudflareTURN struct {
+	KeyID    string `yaml:"key_id,omitempty"`
+	APIToken string `yaml:"api_token,omitempty"`
 }
 
 type CongestionControlConfig struct {
