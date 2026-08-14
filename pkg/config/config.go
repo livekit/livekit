@@ -345,6 +345,12 @@ type LimitConfig struct {
 	SignalMessageSizeLimit int64 `yaml:"signal_message_size_limit,omitempty"`
 	// same as SignalMessageSizeLimit, but for agent worker WebSocket connections.
 	AgentSignalMessageSizeLimit int64 `yaml:"agent_signal_message_size_limit,omitempty"`
+
+	// maximum size (in bytes) of an HTTP request body accepted on the main API
+	// listener (Twirp room/egress/ingress/SIP routes, etc). Requests larger than
+	// this are rejected before their body is decoded, so large messages cannot
+	// exhaust memory. A value of 0 disables the limit (unbounded).
+	MaxAPIRequestBodySize int64 `yaml:"max_api_request_body_size,omitempty"`
 }
 
 func (l LimitConfig) CheckRoomNameLength(name string) bool {
@@ -551,8 +557,9 @@ var DefaultConfig = Config{
 		MaxDataBlobKeyLength:             256,
 		MaxDataBlobSize:                  64000,
 		MaxDataTrackCustomEncodingLength: 32,
-		SignalMessageSizeLimit:           2 << 20, // 2 MiB
-		AgentSignalMessageSizeLimit:      2 << 20, // 2 MiB
+		SignalMessageSizeLimit:           2 << 20,  // 2 MiB
+		AgentSignalMessageSizeLimit:      2 << 20,  // 2 MiB
+		MaxAPIRequestBodySize:            10 << 20, // 10 MiB
 	},
 	Logging: LoggingConfig{
 		PionLevel: "error",
