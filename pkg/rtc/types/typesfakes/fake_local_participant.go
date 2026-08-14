@@ -965,6 +965,16 @@ type FakeLocalParticipant struct {
 	isUsingSinglePeerConnectionReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	IsWarpEnabledStub        func() bool
+	isWarpEnabledMutex       sync.RWMutex
+	isWarpEnabledArgsForCall []struct {
+	}
+	isWarpEnabledReturns struct {
+		result1 bool
+	}
+	isWarpEnabledReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	IssueFullReconnectStub        func(types.ParticipantCloseReason)
 	issueFullReconnectMutex       sync.RWMutex
 	issueFullReconnectArgsForCall []struct {
@@ -6624,6 +6634,59 @@ func (fake *FakeLocalParticipant) IsUsingSinglePeerConnectionReturnsOnCall(i int
 		})
 	}
 	fake.isUsingSinglePeerConnectionReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsWarpEnabled() bool {
+	fake.isWarpEnabledMutex.Lock()
+	ret, specificReturn := fake.isWarpEnabledReturnsOnCall[len(fake.isWarpEnabledArgsForCall)]
+	fake.isWarpEnabledArgsForCall = append(fake.isWarpEnabledArgsForCall, struct {
+	}{})
+	stub := fake.IsWarpEnabledStub
+	fakeReturns := fake.isWarpEnabledReturns
+	fake.recordInvocation("IsWarpEnabled", []interface{}{})
+	fake.isWarpEnabledMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) IsWarpEnabledCallCount() int {
+	fake.isWarpEnabledMutex.RLock()
+	defer fake.isWarpEnabledMutex.RUnlock()
+	return len(fake.isWarpEnabledArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) IsWarpEnabledCalls(stub func() bool) {
+	fake.isWarpEnabledMutex.Lock()
+	defer fake.isWarpEnabledMutex.Unlock()
+	fake.IsWarpEnabledStub = stub
+}
+
+func (fake *FakeLocalParticipant) IsWarpEnabledReturns(result1 bool) {
+	fake.isWarpEnabledMutex.Lock()
+	defer fake.isWarpEnabledMutex.Unlock()
+	fake.IsWarpEnabledStub = nil
+	fake.isWarpEnabledReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) IsWarpEnabledReturnsOnCall(i int, result1 bool) {
+	fake.isWarpEnabledMutex.Lock()
+	defer fake.isWarpEnabledMutex.Unlock()
+	fake.IsWarpEnabledStub = nil
+	if fake.isWarpEnabledReturnsOnCall == nil {
+		fake.isWarpEnabledReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.isWarpEnabledReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }
