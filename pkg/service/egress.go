@@ -319,8 +319,16 @@ func (s *EgressService) UpdateLayout(ctx context.Context, req *livekit.UpdateLay
 	return info, nil
 }
 
+func redactedStreamUrls(urls []string) []string {
+	redacted := make([]string, len(urls))
+	for i, u := range urls {
+		redacted[i], _ = utils.RedactStreamKey(u)
+	}
+	return redacted
+}
+
 func (s *EgressService) UpdateStream(ctx context.Context, req *livekit.UpdateStreamRequest) (*livekit.EgressInfo, error) {
-	AppendLogFields(ctx, "egressID", req.EgressId, "addUrls", req.AddOutputUrls, "removeUrls", req.RemoveOutputUrls)
+	AppendLogFields(ctx, "egressID", req.EgressId, "addUrls", redactedStreamUrls(req.AddOutputUrls), "removeUrls", redactedStreamUrls(req.RemoveOutputUrls))
 	if err := EnsureRecordPermission(ctx); err != nil {
 		return nil, twirpAuthError(err)
 	}
