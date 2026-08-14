@@ -12,13 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM golang:1.26-alpine AS builder
+# Pinned by digest so the build is reproducible even if the tag is republished.
+# The tag is kept alongside it for readability; Renovate updates both together.
+# This image is also the single source of truth for the Go toolchain: CI reads the
+# version out of this line (see .github/scripts/go-version.sh) so tests and images
+# always run the same runtime.
+FROM golang:1.26.6-alpine3.24@sha256:af8d6740070b8906d12eae1c3e3ea0957fb63f492051ea05e354c38ef9fe88df AS builder
 
 ARG TARGETPLATFORM
 ARG TARGETARCH
 RUN echo building for "$TARGETPLATFORM"
 
 WORKDIR /workspace
+
+# Build with exactly the toolchain in this image; fail (don't silently download)
+# if go.mod ever requires a newer version, so the pinned image stays authoritative.
+ENV GOTOOLCHAIN=local
 
 # Copy the Go Modules manifests
 COPY go.mod go.mod
@@ -36,7 +45,16 @@ COPY version/ version/
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH GO111MODULE=on go build -a -o livekit-server ./cmd/server
 
-FROM alpine
+FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+
+# Pull the latest security patches for base packages within the pinned Alpine
+# release. The digest above is only refreshed by a Renovate PR, so without this
+# an image can ship base-package CVEs that Alpine has already fixed.
+# NOTE: this relies on the build starting with a cold layer cache, which is true
+# today because the release workflow configures no buildx cache. If cache-from/
+# cache-to is ever added, this layer needs a cache-busting ARG (as ../cloud does
+# with SECURITY_REFRESH) or it will be served stale.
+RUN apk upgrade --no-cache
 
 COPY --from=builder /workspace/livekit-server /livekit-server
 
