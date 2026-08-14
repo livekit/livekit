@@ -45,10 +45,6 @@ jobs:
         with:
           go-version: ${{ steps.go-version.outputs.version }}
 
-      - name: Set up gotestfmt
-        # renovate: datasource=go depName=github.com/gotesttools/gotestfmt/v2
-        run: go install github.com/gotesttools/gotestfmt/v2/cmd/gotestfmt@v2.4.1
-
       - name: Replace mutexes
         run: |
           go get github.com/sasha-s/go-deadlock
@@ -75,7 +71,7 @@ jobs:
       - name: Test
         run: |
           set -euo pipefail
-          MallocNanoZone=0 go test -race -json -v ./... 2>&1 | tee /tmp/gotest.log | gotestfmt
+          MallocNanoZone=0 go test -race -json -v ./... 2>&1 | tee /tmp/gotest.log | go tool gotestfmt
 
       # Upload the original go test log as an artifact for later review.
       - name: Upload test log
