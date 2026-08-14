@@ -568,7 +568,7 @@ func (p *ParticipantImpl) IsAgent() bool {
 func (p *ParticipantImpl) IsDependent() bool {
 	grants := p.grants.Load()
 	switch grants.GetParticipantKind() {
-	case livekit.ParticipantInfo_AGENT, livekit.ParticipantInfo_EGRESS:
+	case livekit.ParticipantInfo_AGENT, livekit.ParticipantInfo_EGRESS, livekit.ParticipantInfo_INGRESS:
 		return true
 	default:
 		return grants.Video.Agent || grants.Video.Recorder

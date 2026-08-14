@@ -78,6 +78,40 @@ func TestIsReady(t *testing.T) {
 	}
 }
 
+func TestIsDependent(t *testing.T) {
+	tests := []struct {
+		kind      livekit.ParticipantInfo_Kind
+		dependent bool
+	}{
+		{
+			kind:      livekit.ParticipantInfo_STANDARD,
+			dependent: false,
+		},
+		{
+			kind:      livekit.ParticipantInfo_INGRESS,
+			dependent: true,
+		},
+		{
+			kind:      livekit.ParticipantInfo_EGRESS,
+			dependent: true,
+		},
+		{
+			kind:      livekit.ParticipantInfo_AGENT,
+			dependent: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.kind.String(), func(t *testing.T) {
+			grants := &auth.ClaimGrants{Video: &auth.VideoGrant{}}
+			grants.SetParticipantKind(test.kind)
+			p := &ParticipantImpl{}
+			p.grants.Store(grants)
+			require.Equal(t, test.dependent, p.IsDependent())
+		})
+	}
+}
+
 func TestSupportsMoving(t *testing.T) {
 	t.Run("current protocol version", func(t *testing.T) {
 		p := newParticipantForTestWithOpts("test", &participantOpts{protocolVersion: types.CurrentProtocol})
