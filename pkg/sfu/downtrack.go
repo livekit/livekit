@@ -714,6 +714,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 
 	receiver := d.Receiver()
 	d.forwarder.Restart()
+	d.flushSequencer()
 	d.forwarder.DetermineCodec(codec.RTPCodecCapability, receiver.HeaderExtensions(), receiver.VideoLayerMode())
 
 	d.connectionStats.UpdateCodec(d.Mime(), isFECEnabled)
@@ -1031,6 +1032,15 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		if err != nil {
 			d.params.Logger.Errorw("could not get translation params", err)
 		}
+		return 0
+	}
+
+	if tp.incomingHeaderSize > len(extPkt.Packet.Payload) {
+		d.params.Logger.Errorw(
+			"incoming header size overflow", errPayloadOverflow,
+			"incomingHeaderSize", tp.incomingHeaderSize,
+			"payloadSize", len(extPkt.Packet.Payload),
+		)
 		return 0
 	}
 
@@ -1717,6 +1727,16 @@ func (d *DownTrack) Pause() VideoAllocation {
 
 func (d *DownTrack) Resync() {
 	d.forwarder.Resync()
+	d.flushSequencer()
+}
+
+// flushSequencer discards recorded packet metadata on a stream restart so that NACK
+// retransmissions cannot use metadata that describes packets no longer in the receiver's
+// (resynced) bucket.
+func (d *DownTrack) flushSequencer() {
+	if d.sequencer != nil {
+		d.sequencer.flush()
+	}
 }
 
 func (d *DownTrack) ReceiverRestart(rcvr TrackReceiver) {
@@ -1732,6 +1752,7 @@ func (d *DownTrack) ReceiverRestart(rcvr TrackReceiver) {
 	receiver := d.Receiver()
 	d.params.Logger.Infow("upstream receiver restart", "mime", receiver.Mime().String())
 	d.forwarder.Restart()
+	d.flushSequencer()
 	d.forwarder.DetermineCodec(codec, receiver.HeaderExtensions(), receiver.VideoLayerMode())
 }
 
@@ -2156,6 +2177,18 @@ func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isPro
 	if err := pkt.Unmarshal(sourcePkt); err != nil {
 		d.params.Logger.Errorw("could not unmarshal rtp packet to send via RTX", err)
 		return 0, err
+	}
+	// Defensive panic-safety net: the codec header size was recorded when the packet was first
+	// forwarded and is re-read here against a bucket packet. A stream restart flushes the
+	// sequencer (see flushSequencer), so metadata and payload should always agree; guard
+	// against a slice overflow regardless.
+	if int(epm.numCodecBytesIn) > len(pkt.Payload) {
+		d.params.Logger.Warnw(
+			"recorded codec header size overflows payload", errPayloadOverflow,
+			"numCodecBytesIn", epm.numCodecBytesIn,
+			"payloadSize", len(pkt.Payload),
+		)
+		return 0, errPayloadOverflow
 	}
 	hdr := RTPHeaderFactory.Get().(*rtp.Header)
 	*hdr = rtp.Header{

@@ -15,6 +15,7 @@
 package buffer
 
 import (
+	"math/bits"
 	"math/rand"
 	"testing"
 
@@ -72,8 +73,8 @@ func TestFrameIntegrityChecker(t *testing.T) {
 			frames = append(frames, i)
 		}
 		require.False(t, fc.FrameIntegrity(frame))
-		rand.Seed(int64(frame))
-		rand.Shuffle(len(frames), func(i, j int) { frames[i], frames[j] = frames[j], frames[i] })
+		rng := rand.New(rand.NewSource(int64(frame)))
+		rng.Shuffle(len(frames), func(i, j int) { frames[i], frames[j] = frames[j], frames[i] })
 		for i, f := range frames {
 			fc.AddPacket(f, frame, &dd.DependencyDescriptor{
 				FirstPacketInFrame: f == firstFrame,
@@ -82,5 +83,65 @@ func TestFrameIntegrityChecker(t *testing.T) {
 			require.Equal(t, i == len(frames)-1, fc.FrameIntegrity(frame), i)
 		}
 		require.True(t, fc.FrameIntegrity(frame))
+	}
+}
+
+func countSetBits(ph *PacketHistory) int {
+	n := 0
+	for _, w := range ph.bits {
+		n += bits.OnesCount64(w)
+	}
+	return n
+}
+
+// A forward sequence-number jump much larger than the ring must clear the whole ring,
+// leaving only the newly received sequence number set.
+func TestPacketHistoryLargeForwardJump(t *testing.T) {
+	ph := NewPacketHistory(1000) // rounds up to a multiple of 64
+	require.Equal(t, 1024, ph.packetCount)
+
+	// Fill the entire ring so every slot holds a "received" bit.
+	base := uint64(100000)
+	ph.AddPacket(base)
+	for i := base + 1; i <= base+2000; i++ {
+		ph.AddPacket(i)
+	}
+	require.Equal(t, ph.packetCount, countSetBits(ph))
+	last := base + 2000
+
+	// Forward jump well beyond both the ring and the ~32k extension wrap-around cap. The ring
+	// must end up fully cleared, with only newSeq marked received.
+	newSeq := last + 40000
+	ph.AddPacket(newSeq)
+
+	// If the cap under-cleared, stale bits from the pre-jump fill would survive here.
+	require.Equal(t, 1, countSetBits(ph))
+	require.True(t, ph.PacketsConsecutive(newSeq, newSeq))
+	require.False(t, ph.PacketsConsecutive(newSeq-5, newSeq))
+
+	// The window just below newSeq was cleared and can be refilled normally.
+	for i := newSeq - 5; i < newSeq; i++ {
+		ph.AddPacket(i)
+	}
+	require.True(t, ph.PacketsConsecutive(newSeq-5, newSeq))
+}
+
+// A forward frame-number jump much larger than frameCount must reset the whole frame ring,
+// so no frame that aliases an old slot inherits stale integrity.
+func TestFrameIntegrityCheckerLargeFrameJump(t *testing.T) {
+	fc := NewFrameIntegrityChecker(100, 1000)
+
+	// Populate every ring slot with an integral single-packet frame.
+	for f := uint64(200); f <= 399; f++ {
+		fc.AddPacket(f, f, &dd.DependencyDescriptor{FirstPacketInFrame: true, LastPacketInFrame: true})
+	}
+	require.True(t, fc.FrameIntegrity(399))
+
+	// Jump far beyond frameCount. The capped reset loop must clear the entire frame ring; if it
+	// under-cleared, some aliased slot would still report a stale frame's integrity.
+	newFrame := uint64(399 + 5000)
+	fc.AddPacket(50000, newFrame, &dd.DependencyDescriptor{}) // incomplete frame, no first/last
+	for f := newFrame - uint64(fc.frameCount) + 1; f <= newFrame; f++ {
+		require.False(t, fc.FrameIntegrity(f), "frame %d should not be integral after jump", f)
 	}
 }

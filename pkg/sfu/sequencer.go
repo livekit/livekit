@@ -148,6 +148,26 @@ func (s *sequencer) setRTT(rtt uint32) {
 	}
 }
 
+// flush discards all recorded packet metadata. It must be called on a stream restart: the
+// metadata maps outgoing sequence numbers to source packets in the receiver's bucket, and a
+// restart resyncs that bucket, so retransmitting against stale metadata would send the wrong
+// packet (or read past the re-read payload). After flush, NACKs for pre-restart packets are
+// ignored until the sequencer is re-initialized by the next push.
+func (s *sequencer) flush() {
+	s.Lock()
+	defer s.Unlock()
+
+	s.initialized = false
+	s.extStartSN = 0
+	s.extHighestSN = 0
+	s.extHighestTS = 0
+	s.snOffset = 0
+	clear(s.meta)
+	if s.snRangeMap != nil {
+		s.snRangeMap = utils.NewRangeMap[uint64, uint64]((s.size + 1) / 2)
+	}
+}
+
 func (s *sequencer) push(
 	packetTime int64,
 	extIncomingSN, extModifiedSN uint64,

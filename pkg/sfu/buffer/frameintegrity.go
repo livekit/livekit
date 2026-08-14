@@ -100,7 +100,15 @@ func (ph *PacketHistory) AddPacket(extSeq uint64) {
 		return
 	}
 
-	for i := ph.last + 1; i < extSeq; i++ {
+	// A forward jump only needs at most packetCount slots cleared; anything older aliases
+	// into the same ring and would be overwritten anyway. Cap the loop so a single crafted
+	// sequence number jump (up to ~32k by the extension wrap-around heuristic) cannot force
+	// a large per-packet iteration count.
+	start := ph.last + 1
+	if extSeq-start > uint64(ph.packetCount) {
+		start = extSeq - uint64(ph.packetCount)
+	}
+	for i := start; i < extSeq; i++ {
 		ph.set(i, false)
 	}
 
@@ -208,8 +216,13 @@ func (fc *FrameIntegrityChecker) AddPacket(extSeq uint64, extFrameNum uint64, dd
 		return
 	}
 
-	// reset missing frames
-	for i := fc.last + 1; i <= extFrameNum; i++ {
+	// reset missing frames; cap to frameCount so a crafted frame-number jump cannot force a
+	// large loop (older frames alias into the same ring and get overwritten anyway).
+	start := fc.last + 1
+	if extFrameNum-fc.last > uint64(fc.frameCount) {
+		start = extFrameNum - uint64(fc.frameCount) + 1
+	}
+	for i := start; i <= extFrameNum; i++ {
 		fc.frames[int(i-fc.base)%fc.frameCount].Reset()
 	}
 	fc.frames[int(extFrameNum-fc.base)%fc.frameCount].AddPacket(extSeq, ddVal)
