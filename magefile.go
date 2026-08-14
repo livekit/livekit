@@ -51,9 +51,14 @@ func init() {
 	}
 }
 
-// explicitly reinstall all deps
+// downloads module deps at the versions pinned in go.mod
+//
+// Code generators are not installed here: they run as `go run <pkg>` from their
+// //go:generate directives (see pkg/service/wire_gen.go and the counterfeiter
+// directives under pkg/), so they always execute at the version go.mod pins and
+// Renovate keeps them current alongside every other module.
 func Deps() error {
-	return installTools(true)
+	return mageutil.Run(context.Background(), "go mod download")
 }
 
 // builds LiveKit server
@@ -199,7 +204,7 @@ func Clean() {
 
 // regenerate code
 func Generate() error {
-	mg.Deps(installDeps, generateWire)
+	mg.Deps(generateWire)
 
 	fmt.Println("generating...")
 	return mageutil.Run(context.Background(), "go generate ./...")
@@ -207,40 +212,13 @@ func Generate() error {
 
 // code generation for wiring
 func generateWire() error {
-	mg.Deps(installDeps)
 	if !checksummer.IsChanged() {
 		return nil
 	}
 
 	fmt.Println("wiring...")
 
-	wire, err := mageutil.GetToolPath("wire")
-	if err != nil {
-		return err
-	}
-	cmd := exec.Command(wire)
-	cmd.Dir = "pkg/service"
-	mageutil.ConnectStd(cmd)
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// implicitly install deps
-func installDeps() error {
-	return installTools(false)
-}
-
-func installTools(force bool) error {
-	tools := map[string]string{
-		"github.com/google/wire/cmd/wire": "latest",
-	}
-	for t, v := range tools {
-		if err := mageutil.InstallTool(t, v, force); err != nil {
-			return err
-		}
-	}
-	return nil
+	// Matches the //go:generate directive in pkg/service/wire_gen.go, so running
+	// wire here and running `go generate ./...` produce the same output.
+	return mageutil.RunDir(context.Background(), "pkg/service", "go run github.com/google/wire/cmd/wire")
 }
