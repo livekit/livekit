@@ -192,6 +192,7 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 		}
 		// The Ingress instance will create the ingress object when handling the URL pull ingress
 	} else {
+		// TODO-jie: ingress retry idempotency: generate ingress key by request-id, and return the ingress object from CreateIngress.
 		_, err = s.io.CreateIngress(ctx, info)
 		switch err {
 		case nil:

@@ -46,6 +46,20 @@ const (
 
 var ErrExpired = errors.New("expired")
 
+// parsePeerCIDRs compiles a list of CIDR strings, failing with a field-specific
+// error on any invalid entry so a malformed peer policy is never silently ignored.
+func parsePeerCIDRs(field string, cidrs []string) ([]*net.IPNet, error) {
+	parsed := make([]*net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		_, ipnet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CIDR %q in %s: %w", cidr, field, err)
+		}
+		parsed = append(parsed, ipnet)
+	}
+	return parsed, nil
+}
+
 func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone bool) (*turn.Server, error) {
 	turnConf := conf.TURN
 	if !turnConf.Enabled {
@@ -64,15 +78,35 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 		}
 	}
 
+	// parse peer CIDR policies once at startup so a malformed entry fails loudly
+	// instead of being silently skipped on every permission decision (fail-open)
+	allowRestrictedPeerCIDRs, err := parsePeerCIDRs("turn.allow_restricted_peer_cidrs", turnConf.AllowRestrictedPeerCIDRs)
+	if err != nil {
+		return nil, err
+	}
+	denyPeerCIDRs, err := parsePeerCIDRs("turn.deny_peer_cidrs", turnConf.DenyPeerCIDRs)
+	if err != nil {
+		return nil, err
+	}
+
 	serverConfig := turn.ServerConfig{
 		Realm:         LivekitRealm,
 		AuthHandler:   authHandler,
 		LoggerFactory: pionlogger.NewLoggerFactory(logger.GetLogger()),
 	}
 
+	// cap concurrent relay allocations per participant so one credential cannot
+	// exhaust the shared relay-port range (a value <= 0 disables the quota)
+	if turnConf.PerUserRelayAllocationLimit > 0 {
+		quota := newTURNAllocationQuota(turnConf.PerUserRelayAllocationLimit)
+		serverConfig.QuotaHandler = quota.Allow
+		serverConfig.EventHandler = quota.eventHandler()
+	}
+
 	var logValues []any
 	logValues = append(logValues, "turn.relay_range_start", turnConf.RelayPortRangeStart)
 	logValues = append(logValues, "turn.relay_range_end", turnConf.RelayPortRangeEnd)
+	logValues = append(logValues, "turn.per_user_relay_allocation_limit", turnConf.PerUserRelayAllocationLimit)
 
 	for _, addr := range turnConf.BindAddresses {
 		var nodeIP string
@@ -105,12 +139,10 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 				peerIP.IsPrivate() ||
 				peerIP.IsUnspecified() {
 				allowed := false
-				for _, cidr := range turnConf.AllowRestrictedPeerCIDRs {
-					if _, ipnet, err := net.ParseCIDR(cidr); err == nil {
-						if ipnet.Contains(peerIP) {
-							allowed = true
-							break
-						}
+				for _, ipnet := range allowRestrictedPeerCIDRs {
+					if ipnet.Contains(peerIP) {
+						allowed = true
+						break
 					}
 				}
 				if !allowed {
@@ -120,11 +152,9 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 				// if allowed, check deny list for overrides
 			}
 
-			for _, cidr := range turnConf.DenyPeerCIDRs {
-				if _, ipnet, err := net.ParseCIDR(cidr); err == nil {
-					if ipnet.Contains(peerIP) {
-						return false
-					}
+			for _, ipnet := range denyPeerCIDRs {
+				if ipnet.Contains(peerIP) {
+					return false
 				}
 			}
 
@@ -206,6 +236,8 @@ func NewTURNAuthHandler(keyProvider auth.KeyProvider) *TURNAuthHandler {
 }
 
 func (h *TURNAuthHandler) CreateUsername(apiKey string, pID livekit.ParticipantID, ttlSeconds int) (string, int64) {
+	// clamp defensively: non-positive TTLs fall back to the default and overflowing ones are capped
+	ttlSeconds, _ = config.ClampTURNTTLSeconds(ttlSeconds)
 	expiry := time.Now().Add(time.Duration(ttlSeconds) * time.Second).Unix()
 	return base62.EncodeToString(fmt.Appendf(nil, "%s|%s|%d", apiKey, pID, expiry)), expiry
 }

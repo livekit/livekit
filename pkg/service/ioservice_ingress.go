@@ -18,13 +18,14 @@ import (
 	"context"
 	"errors"
 
+	"google.golang.org/protobuf/types/known/emptypb"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-func (s *IOInfoService) CreateIngress(ctx context.Context, info *livekit.IngressInfo) (*emptypb.Empty, error) {
+func (s *IOInfoService) CreateIngress(ctx context.Context, info *livekit.IngressInfo) (*rpc.CreateIngressResponse, error) {
 	if s.is == nil {
 		return nil, ErrIngressNotConnected
 	}
@@ -36,7 +37,7 @@ func (s *IOInfoService) CreateIngress(ctx context.Context, info *livekit.Ingress
 
 	s.telemetry.IngressCreated(ctx, info)
 
-	return &emptypb.Empty{}, nil
+	return &rpc.CreateIngressResponse{Info: info}, nil
 }
 
 func (s *IOInfoService) GetIngressInfo(ctx context.Context, req *rpc.GetIngressInfoRequest) (*rpc.GetIngressInfoResponse, error) {

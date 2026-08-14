@@ -78,12 +78,15 @@ const (
 	migrationWaitDuration              = 3 * time.Second
 	migrationWaitContinuousMsgDuration = 2 * time.Second
 
+	cMaxPendingTracks       = 20
+	cMaxPendingQueuedTracks = 3
+
 	PingIntervalSeconds = 5
 	PingTimeoutSeconds  = 15
 )
 
 var (
-	ErrMoveOldClientVersion = errors.New("participant client version does not support moving")
+	ErrMoveOldClientVersion = psrpc.NewErrorf(psrpc.FailedPrecondition, "participant client version does not support moving")
 )
 
 // -------------------------------------------------
@@ -262,6 +265,8 @@ type ParticipantImpl struct {
 	disconnectTimer *time.Timer
 	migrationTimer  *time.Timer
 
+	migratedInAt atomic.Pointer[time.Time]
+
 	pubRTCPQueue *sutils.TypedOpsQueue[postRtcpOp]
 
 	// hold reference for MediaTrack
@@ -419,8 +424,10 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	var timerStarted bool
 	params.Reporter.RegisterFunc(func(ts time.Time, tx roomobs.ParticipantSessionTx) bool {
 		if dts := p.disconnectedAt.Load(); dts != nil {
-			ts = *dts
-			tx.ReportEndTime(ts)
+			if p.CloseReason() != types.ParticipantCloseReasonMigrationComplete { // participant has migrated to another node
+				ts = *dts
+				tx.ReportEndTime(ts)
+			}
 		}
 
 		// Don't publish duration if participant never became active. Otherwise short-lived
@@ -1287,7 +1294,7 @@ func (p *ParticipantImpl) HandleAnswer(sd *livekit.SessionDescription) {
 
 func (p *ParticipantImpl) handleMigrateTracks() []*MediaTrack {
 	// muted track won't send rtp packet, so it is required to add mediatrack manually.
-	// But, synthesising track publish for unmuted tracks keeps a consistent path.
+	// But, synthesising track publish for unmuted tracks also keeps a consistent path.
 	// In both cases (muted and unmuted), when publisher sends media packets, OnTrack would register and go from there.
 	var addedTracks []*MediaTrack
 	p.pendingTracksLock.Lock()
@@ -1367,6 +1374,9 @@ func (p *ParticipantImpl) SetMigrateInfo(
 	dataChannelReceiveState []*livekit.DataChannelReceiveState,
 	dataTracks []*livekit.PublishDataTrackResponse,
 ) {
+	now := time.Now()
+	p.migratedInAt.Store(pointer.To(now))
+
 	p.pendingTracksLock.Lock()
 	for _, t := range mediaTracks {
 		ti := t.GetTrack()
@@ -1379,7 +1389,7 @@ func (p *ParticipantImpl) SetMigrateInfo(
 		p.pendingTracks[t.GetCid()] = &pendingTrackInfo{
 			trackInfos: []*livekit.TrackInfo{ti},
 			migrated:   true,
-			createdAt:  time.Now(),
+			createdAt:  now,
 		}
 		p.pubLogger.Infow(
 			"pending track added (migration)",
@@ -1500,6 +1510,7 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 		p.supervisor.Stop()
 	}
 
+	sdk := p.GetClientInfo().GetSdk()
 	p.pendingTracksLock.Lock()
 	if p.IsConnectionCanceled(reason) {
 		for _, pti := range p.pendingTracks {
@@ -1507,6 +1518,23 @@ func (p *ParticipantImpl) Close(sendLeave bool, reason types.ParticipantCloseRea
 				continue
 			}
 			prometheus.RecordTrackPublishCancels(pti.trackInfos[0].Type.String(), int32(len(pti.trackInfos)))
+		}
+	} else {
+		// record close time as publish time for non canceled pending tracks,
+		// this will inflate publish time and can signal a node wide issue if
+		// enough participants are closing without publishing tracks.
+		for _, pti := range p.pendingTracks {
+			if len(pti.trackInfos) == 0 || pti.migrated {
+				continue
+			}
+			prometheus.RecordPublishTime(
+				p.params.Country,
+				pti.trackInfos[0].Source,
+				pti.trackInfos[0].Type,
+				time.Since(pti.createdAt),
+				sdk,
+				p.Kind(),
+			)
 		}
 	}
 	p.pendingTracks = make(map[string]*pendingTrackInfo)
@@ -1699,7 +1727,7 @@ func (p *ParticipantImpl) SetMigrateState(s types.MigrateState) {
 		}
 
 		if s == types.MigrateStateComplete {
-			// wait for all migrated track to be published,
+			// wait for all migrated tracks to be published,
 			// it is possible that synthesized track publish above could
 			// race with actual publish from client and the above synthesized
 			// one could actually be a no-op because the actual publish path is active.
@@ -2905,6 +2933,19 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		return ti
 	}
 
+	if len(p.pendingTracks) >= cMaxPendingTracks {
+		p.pubLogger.Infow("too many pending tracks, rejecting new track", "numPendingTracks", len(p.pendingTracks))
+		p.sendRequestResponse(&livekit.RequestResponse{
+			Reason:  livekit.RequestResponse_LIMIT_EXCEEDED,
+			Message: fmt.Sprintf("too many pending tracks, rejecting new track, numPendingTracks: %d", len(p.pendingTracks)),
+			Request: &livekit.RequestResponse_AddTrack{
+				AddTrack: utils.CloneProto(req),
+			},
+		})
+		p.pendingTracksLock.Unlock()
+		return nil
+	}
+
 	backupCodecPolicy := req.BackupCodecPolicy
 
 	// enable simulcast codec for audio by default
@@ -3070,11 +3111,6 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		}
 	}
 
-	if p.supervisor != nil {
-		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
-		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
-	}
-
 	if p.getPublishedTrackBySignalCid(req.Cid) != nil || p.getPublishedTrackBySdpCid(req.Cid) != nil || p.pendingTracks[req.Cid] != nil {
 		if p.pendingTracks[req.Cid] == nil {
 			pti := &pendingTrackInfo{
@@ -3087,6 +3123,19 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 			}
 			p.pendingTracks[req.Cid] = pti
 		} else {
+			if len(p.pendingTracks[req.Cid].trackInfos) >= cMaxPendingQueuedTracks {
+				p.pubLogger.Infow("too many pending queued tracks, rejecting new track", "trackID", ti.Sid, "numPendingTracksQueued", len(p.pendingTracks[req.Cid].trackInfos))
+				p.sendRequestResponse(&livekit.RequestResponse{
+					Reason:  livekit.RequestResponse_LIMIT_EXCEEDED,
+					Message: fmt.Sprintf("too many pending queued tracks, rejecting new track, numPendingTracksQueued: %d", len(p.pendingTracks[req.Cid].trackInfos)),
+					Request: &livekit.RequestResponse_AddTrack{
+						AddTrack: utils.CloneProto(req),
+					},
+				})
+				p.pendingTracksLock.Unlock()
+				return nil
+			}
+
 			p.pendingTracks[req.Cid].trackInfos = append(p.pendingTracks[req.Cid].trackInfos, ti)
 		}
 		p.pubLogger.Infow(
@@ -3101,7 +3150,13 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 				AddTrack: utils.CloneProto(req),
 			},
 		})
+
+		if p.supervisor != nil {
+			p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
+			p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
+		}
 		p.pendingTracksLock.Unlock()
+
 		p.params.TelemetryListener.OnTrackPublishRequested(p.ID(), p.Identity(), utils.CloneProto(ti), true)
 		return nil
 	}
@@ -3120,7 +3175,13 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		"request", logger.Proto(req),
 		"pendingTrack", p.pendingTracks[req.Cid],
 	)
+
+	if p.supervisor != nil {
+		p.supervisor.AddPublication(livekit.TrackID(ti.Sid))
+		p.supervisor.SetPublicationMute(livekit.TrackID(ti.Sid), ti.Muted)
+	}
 	p.pendingTracksLock.Unlock()
+
 	p.params.TelemetryListener.OnTrackPublishRequested(p.ID(), p.Identity(), utils.CloneProto(ti), true)
 	return ti
 }
@@ -3230,13 +3291,17 @@ func (p *ParticipantImpl) mediaTrackReceived(
 	}
 
 	// use existing media track to handle simulcast
-	var pubTime time.Duration
+	var createdAt time.Time
 	var isMigrated bool
 	var ridsFromSdp buffer.VideoLayersRid
+	var pubTime time.Duration
 	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
 	if !ok {
-		signalCid, ti, sdpRids, migrated, createdAt := p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()), true)
-		ridsFromSdp = sdpRids
+		var (
+			signalCid string
+			ti        *livekit.TrackInfo
+		)
+		signalCid, ti, ridsFromSdp, isMigrated, createdAt = p.getPendingTrack(track.ID(), ToProtoTrackKind(track.Kind()), true)
 		if ti == nil {
 			p.pendingRemoteTracks = append(
 				p.pendingRemoteTracks,
@@ -3245,10 +3310,9 @@ func (p *ParticipantImpl) mediaTrackReceived(
 			p.pendingTracksLock.Unlock()
 			return nil, false, false, ridsFromSdp
 		}
-		isMigrated = migrated
 
 		// check if the migrated track has correct codec
-		if migrated && len(ti.Codecs) > 0 {
+		if isMigrated && len(ti.Codecs) > 0 {
 			parameters := rtpReceiver.GetParameters()
 			var codecFound int
 			for _, c := range ti.Codecs {
@@ -3280,12 +3344,28 @@ func (p *ParticipantImpl) mediaTrackReceived(
 		mimeType := mime.NormalizeMimeType(ti.MimeType)
 		for _, layer := range ti.Layers {
 			layer.SpatialLayer = buffer.VideoQualityToSpatialLayer(mimeType, layer.Quality, ti)
-			layer.Rid = buffer.VideoQualityToRid(mimeType, layer.Quality, ti, sdpRids)
+			layer.Rid = buffer.VideoQualityToRid(mimeType, layer.Quality, ti, ridsFromSdp)
 		}
 
 		mt = p.addMediaTrack(signalCid, ti)
 		newTrack = true
+	}
 
+	// a track might have been set up in migrate-in path and won't show up as a new track here,
+	// so we need to check if it's migrated and published separately
+	if !isMigrated {
+		if isMigrated = mt.Migrated(); isMigrated {
+			if migratedInAt := p.migratedInAt.Load(); migratedInAt != nil {
+				createdAt = *migratedInAt
+			}
+		}
+	}
+	if !newTrack {
+		newTrack = !mt.Published()
+	}
+	mt.SetPublished(true)
+
+	if newTrack {
 		// if the addTrackRequest is sent before publisher peer connection is established, then it means the client tries to publish
 		// before fully connected, in this case we only record the time when publisher peer connection is established since
 		// we want this metric to represent the time cost by publishing.
@@ -3350,6 +3430,7 @@ func (p *ParticipantImpl) addMigratedTrack(cid string, ti *livekit.TrackInfo) *M
 	}
 
 	mt := p.addMediaTrack(cid, ti)
+	mt.SetMigrated(true)
 
 	potentialCodecs := make([]webrtc.RTPCodecParameters, 0, len(ti.Codecs))
 	parameters := rtpReceiver.GetParameters()
@@ -3460,6 +3541,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 			p.ID(),
 			p.Identity(),
 			mt.ToProto(),
+			mt.Published(),
 			!isExpectedToResume,
 		)
 
@@ -4103,7 +4185,12 @@ func (p *ParticipantImpl) SupportsMoving() error {
 	}
 
 	if kind := p.Kind(); kind == livekit.ParticipantInfo_EGRESS || kind == livekit.ParticipantInfo_AGENT || p.params.UseOneShotSignallingMode {
-		return fmt.Errorf("%s participants cannot be moved, one-shot signaling mode: %t", kind.String(), p.params.UseOneShotSignallingMode)
+		return psrpc.NewErrorf(
+			psrpc.FailedPrecondition,
+			"%s participants cannot be moved, one-shot signaling mode: %t",
+			kind.String(),
+			p.params.UseOneShotSignallingMode,
+		)
 	}
 
 	return nil
@@ -4124,6 +4211,7 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 			p.ID(),
 			p.Identity(),
 			trackInfo,
+			track.(types.LocalMediaTrack).Published(),
 			true,
 		)
 	}

@@ -447,6 +447,13 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 		HandleError(w, r, http.StatusInternalServerError, err, getLoggerFields()...)
 		return
 	}
+	// bound the size of a single signalling frame so an oversized message is
+	// rejected by the transport before being fully buffered in memory. This limits
+	// the compressed bytes read off the wire; the decompressed size is bounded
+	// separately in WSSignalConnection below.
+	if s.limits.SignalMessageSizeLimit > 0 {
+		conn.SetReadLimit(s.limits.SignalMessageSizeLimit)
+	}
 
 	s.mu.Lock()
 	s.connections[conn] = struct{}{}
@@ -459,7 +466,8 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 	}()
 
 	// websocket established
-	sigConn := NewWSSignalConnection(conn)
+	sigConn := NewWSSignalConnection(conn, s.limits.SignalMessageSizeLimit)
+	defer sigConn.CloseWithReason("")
 	pLogger.Debugw("sending initial response", "response", logger.Proto(initialResponse))
 	count, err := sigConn.WriteResponse(initialResponse)
 	if err != nil {
@@ -488,9 +496,7 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 		defer func() {
 			// when the source is terminated, this means Participant.Close had been called and RTC connection is done
 			// we would terminate the signal connection as well
-			closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")
-			_ = conn.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(time.Second))
-			_ = conn.Close()
+			sigConn.CloseWithReason("")
 		}()
 		defer func() {
 			if r := rtc.Recover(pLogger); r != nil {

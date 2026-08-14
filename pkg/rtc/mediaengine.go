@@ -67,6 +67,14 @@ func registerCodecs(me *webrtc.MediaEngine, codecs []*livekit.Codec, rtcpFeedbac
 	}
 	codecsToRegister = append(codecsToRegister,
 		codecToRegister{
+			RTPCodecParameters: protoCodecs.H264ProfileLevelId42001fPacketizationMode0CodecParameters,
+			strictFmtp:         true,
+		},
+		codecToRegister{
+			RTPCodecParameters: protoCodecs.H264ProfileLevelId42001fPacketizationMode1CodecParameters,
+			strictFmtp:         true,
+		},
+		codecToRegister{
 			RTPCodecParameters: protoCodecs.H264ProfileLevelId4d001fPacketizationMode0CodecParameters,
 			strictFmtp:         true,
 		},

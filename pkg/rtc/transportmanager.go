@@ -979,6 +979,11 @@ func (t *TransportManager) onMediaLossUpdate(loss uint8) {
 				t.lock.Unlock()
 
 				t.params.Logger.Infow("udp connection unstable, switch to tcp", "signalingRTT", t.signalingRTT)
+				// switch ICE preference to TCP before asking the client to resume,
+				// the raw params handler only sends a leave request and does not
+				// reconfigure the transport, so the client would reconnect over UDP
+				// again and this path would keep firing
+				t.handleConnectionFailed(true)
 				if t.params.UseSinglePeerConnection {
 					t.params.PublisherHandler.OnFailed(true, t.publisher.GetICEConnectionInfo())
 				} else {
