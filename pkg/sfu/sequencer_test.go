@@ -78,6 +78,39 @@ func Test_sequencer(t *testing.T) {
 	require.Equal(t, 1, len(m))
 }
 
+func Test_sequencer_flush(t *testing.T) {
+	seq := newSequencer(500, false, logger.GetLogger())
+	off := uint16(15)
+
+	for i := uint64(1); i < 100; i++ {
+		seq.push(time.Now().UnixNano(), i, i+uint64(off), 123, true, 2, nil, 0, nil, nil)
+	}
+	preFlush := []uint16{57 + off, 58 + off}
+
+	// flush discards all recorded metadata on a stream restart
+	seq.flush()
+
+	// even after enough time elapses, a NACK for a pre-flush packet retransmits nothing
+	time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
+	require.Equal(t, 0, len(seq.getExtPacketMetas(preFlush)))
+
+	// the sequencer re-initializes on the next push and works normally for new packets
+	for i := uint64(200); i < 210; i++ {
+		seq.push(time.Now().UnixNano(), i, i+uint64(off), 456, true, 3, nil, 0, nil, nil)
+	}
+	postFlush := []uint16{205 + off}
+	require.Equal(t, 0, len(seq.getExtPacketMetas(postFlush))) // not enough time elapsed yet
+	time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
+	res := seq.getExtPacketMetas(postFlush)
+	require.Equal(t, 1, len(res))
+	require.Equal(t, uint16(205+off), res[0].targetSeqNo)
+	require.Equal(t, uint64(205), res[0].sourceSeqNo)
+	require.Equal(t, int8(3), res[0].layer)
+
+	// pre-flush packets remain non-retransmittable
+	require.Equal(t, 0, len(seq.getExtPacketMetas(preFlush)))
+}
+
 func Test_sequencer_getNACKSeqNo_exclusion(t *testing.T) {
 	type args struct {
 		seqNo []uint16

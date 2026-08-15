@@ -44,8 +44,9 @@ import (
 )
 
 var (
-	ErrGzipReadFailed = errors.New("cannot read decompressed data")
-	ErrGzipTooLarge   = errors.New("decompressed data too large")
+	ErrGzipReadFailed      = errors.New("cannot read decompressed data")
+	ErrGzipTooLarge        = errors.New("decompressed data too large")
+	ErrRequestBodyTooLarge = errors.New("request body too large")
 )
 
 var gzipReaderPool = sync.Pool{
@@ -103,6 +104,39 @@ func RemoveDoubleSlashes(w http.ResponseWriter, r *http.Request, next http.Handl
 	if strings.HasPrefix(r.URL.Path, "//") {
 		r.URL.Path = r.URL.Path[1:]
 	}
+	next(w, r)
+}
+
+// RequestBodyLimiter bounds the size of an incoming HTTP request body so that
+// large messages cannot exhaust memory. The Twirp handlers decode the whole
+// body before any grant check runs, so the limit is applied here, up front.
+//
+// It does not decode the body itself: a request whose Content-Length exceeds
+// the limit is rejected with 413, and the body is wrapped with
+// http.MaxBytesReader so a missing or dishonest Content-Length is still caught
+// by the downstream decoder.
+type RequestBodyLimiter struct {
+	maxBytes int64
+}
+
+func NewRequestBodyLimiter(maxBytes int64) *RequestBodyLimiter {
+	return &RequestBodyLimiter{maxBytes: maxBytes}
+}
+
+func (l *RequestBodyLimiter) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	if l.maxBytes <= 0 || r.Body == nil {
+		next(w, r)
+		return
+	}
+
+	// reject early when the declared size already exceeds the limit
+	if r.ContentLength > l.maxBytes {
+		HandleError(w, r, http.StatusRequestEntityTooLarge, ErrRequestBodyTooLarge)
+		return
+	}
+
+	// bound the read in case Content-Length is missing or wrong
+	r.Body = http.MaxBytesReader(w, r.Body, l.maxBytes)
 	next(w, r)
 }
 

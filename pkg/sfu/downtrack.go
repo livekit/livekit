@@ -65,6 +65,9 @@ const (
 	keyFrameIntervalMax = 1000
 	flushTimeout        = 1 * time.Second
 
+	// upper bound on NACKed sequence numbers buffered between retransmit worker runs
+	maxPendingNACKs = 5000
+
 	waitBeforeSendPaddingOnMute = 100 * time.Millisecond
 	maxPaddingOnMuteDuration    = 5 * time.Second
 	paddingOnMuteInterval       = 100 * time.Millisecond
@@ -336,6 +339,12 @@ type DownTrack struct {
 	keyFrameRequesterCh       chan struct{}
 	keyFrameRequesterChClosed bool
 
+	retransmitChMu     sync.RWMutex
+	retransmitCh       chan struct{}
+	retransmitChClosed bool
+	pendingNACKsMu     sync.Mutex
+	pendingNACKs       []uint16
+
 	createdAt     int64
 	lastUnmutedAt atomic.Time
 }
@@ -363,6 +372,7 @@ func NewDownTrack(params DownTrackParams) (*DownTrack, error) {
 		pacer:               params.Pacer,
 		maxLayerNotifierCh:  make(chan string, 1),
 		keyFrameRequesterCh: make(chan struct{}, 1),
+		retransmitCh:        make(chan struct{}, 1),
 		createdAt:           time.Now().UnixNano(),
 		receiver:            params.Receiver,
 	}
@@ -421,6 +431,8 @@ func NewDownTrack(params DownTrackParams) (*DownTrack, error) {
 		go d.maxLayerNotifierWorker()
 		go d.keyFrameRequester()
 	}
+
+	go d.retransmitWorker()
 
 	d.params.Receiver.AddOnReady(d.handleReceiverReady)
 	d.rtxSequenceNumber.Store(uint64(rand.Intn(1<<14)) + uint64(1<<15)) // a random number in third quartile of sequence number space
@@ -702,6 +714,7 @@ func (d *DownTrack) handleUpstreamCodecChange(mimeType string) {
 
 	receiver := d.Receiver()
 	d.forwarder.Restart()
+	d.flushSequencer()
 	d.forwarder.DetermineCodec(codec.RTPCodecCapability, receiver.HeaderExtensions(), receiver.VideoLayerMode())
 
 	d.connectionStats.UpdateCodec(d.Mime(), isFECEnabled)
@@ -1019,6 +1032,15 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		if err != nil {
 			d.params.Logger.Errorw("could not get translation params", err)
 		}
+		return 0
+	}
+
+	if tp.incomingHeaderSize > len(extPkt.Packet.Payload) {
+		d.params.Logger.Errorw(
+			"incoming header size overflow", errPayloadOverflow,
+			"incomingHeaderSize", tp.incomingHeaderSize,
+			"payloadSize", len(extPkt.Packet.Payload),
+		)
 		return 0
 	}
 
@@ -1461,6 +1483,11 @@ func (d *DownTrack) CloseWithFlush(flush bool, isEnding bool) {
 	close(d.keyFrameRequesterCh)
 	d.keyFrameRequesterChMu.Unlock()
 
+	d.retransmitChMu.Lock()
+	d.retransmitChClosed = true
+	close(d.retransmitCh)
+	d.retransmitChMu.Unlock()
+
 	d.params.Listener.OnDownTrackClose(!flush)
 }
 
@@ -1700,6 +1727,16 @@ func (d *DownTrack) Pause() VideoAllocation {
 
 func (d *DownTrack) Resync() {
 	d.forwarder.Resync()
+	d.flushSequencer()
+}
+
+// flushSequencer discards recorded packet metadata on a stream restart so that NACK
+// retransmissions cannot use metadata that describes packets no longer in the receiver's
+// (resynced) bucket.
+func (d *DownTrack) flushSequencer() {
+	if d.sequencer != nil {
+		d.sequencer.flush()
+	}
 }
 
 func (d *DownTrack) ReceiverRestart(rcvr TrackReceiver) {
@@ -1715,6 +1752,7 @@ func (d *DownTrack) ReceiverRestart(rcvr TrackReceiver) {
 	receiver := d.Receiver()
 	d.params.Logger.Infow("upstream receiver restart", "mime", receiver.Mime().String())
 	d.forwarder.Restart()
+	d.flushSequencer()
 	d.forwarder.DetermineCodec(codec, receiver.HeaderExtensions(), receiver.VideoLayerMode())
 }
 
@@ -2032,7 +2070,7 @@ func (d *DownTrack) handleRTCP(bytes []byte) {
 					numNACKs += uint32(len(packetList))
 					nacks = append(nacks, packetList...)
 				}
-				go d.retransmitPackets(nacks)
+				d.postRetransmitPackets(nacks)
 			}
 
 		case *rtcp.TransportLayerCC:
@@ -2139,6 +2177,18 @@ func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isPro
 	if err := pkt.Unmarshal(sourcePkt); err != nil {
 		d.params.Logger.Errorw("could not unmarshal rtp packet to send via RTX", err)
 		return 0, err
+	}
+	// Defensive panic-safety net: the codec header size was recorded when the packet was first
+	// forwarded and is re-read here against a bucket packet. A stream restart flushes the
+	// sequencer (see flushSequencer), so metadata and payload should always agree; guard
+	// against a slice overflow regardless.
+	if int(epm.numCodecBytesIn) > len(pkt.Payload) {
+		d.params.Logger.Warnw(
+			"recorded codec header size overflows payload", errPayloadOverflow,
+			"numCodecBytesIn", epm.numCodecBytesIn,
+			"payloadSize", len(pkt.Payload),
+		)
+		return 0, errPayloadOverflow
 	}
 	hdr := RTPHeaderFactory.Get().(*rtp.Header)
 	*hdr = rtp.Header{
@@ -2251,6 +2301,49 @@ func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isPro
 	}
 	d.pacer.Enqueue(pacerPacket)
 	return headerSize + len(payload), nil
+}
+
+// postRetransmitPackets buffers the NACKed sequence numbers, capped at
+// maxPendingNACKs, and signals the retransmit worker without blocking.
+func (d *DownTrack) postRetransmitPackets(nacks []uint16) {
+	if d.sequencer == nil || len(nacks) == 0 {
+		return
+	}
+
+	d.pendingNACKsMu.Lock()
+	d.pendingNACKs = append(d.pendingNACKs, nacks...)
+	if len(d.pendingNACKs) > maxPendingNACKs {
+		// drop the oldest NACKs under a NACK flood
+		d.pendingNACKs = d.pendingNACKs[len(d.pendingNACKs)-maxPendingNACKs:]
+	}
+	d.pendingNACKsMu.Unlock()
+
+	d.retransmitChMu.RLock()
+	if !d.retransmitChClosed {
+		select {
+		case d.retransmitCh <- struct{}{}:
+		default:
+		}
+	}
+	d.retransmitChMu.RUnlock()
+}
+
+func (d *DownTrack) retransmitWorker() {
+	for {
+		_, more := <-d.retransmitCh
+		if !more {
+			return
+		}
+
+		d.pendingNACKsMu.Lock()
+		nacks := d.pendingNACKs
+		d.pendingNACKs = nil
+		d.pendingNACKsMu.Unlock()
+
+		if len(nacks) > 0 {
+			d.retransmitPackets(nacks)
+		}
+	}
 }
 
 func (d *DownTrack) retransmitPackets(nacks []uint16) {
