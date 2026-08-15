@@ -24,10 +24,12 @@ func TestRoomManagerICEServersForParticipant_TURNURLOptions(t *testing.T) {
 		advertiseTLSPort bool
 		udpUseDomain     bool
 		tlsOnly          bool
+		iceServerCount   int
 		urls             []string
 	}{
 		{
-			name: "defaults",
+			name:           "defaults",
+			iceServerCount: 1,
 			urls: []string{
 				"turn:203.0.113.1:3478?transport=udp",
 				"turns:turn.example.com:443?transport=tcp",
@@ -36,14 +38,16 @@ func TestRoomManagerICEServersForParticipant_TURNURLOptions(t *testing.T) {
 		{
 			name:             "advertise tls port",
 			advertiseTLSPort: true,
+			iceServerCount:   1,
 			urls: []string{
 				"turn:203.0.113.1:3478?transport=udp",
 				"turns:turn.example.com:8443?transport=tcp",
 			},
 		},
 		{
-			name:         "use domain for udp",
-			udpUseDomain: true,
+			name:           "use domain for udp",
+			udpUseDomain:   true,
+			iceServerCount: 1,
 			urls: []string{
 				"turn:turn.example.com:3478?transport=udp",
 				"turns:turn.example.com:443?transport=tcp",
@@ -53,15 +57,17 @@ func TestRoomManagerICEServersForParticipant_TURNURLOptions(t *testing.T) {
 			name:             "both options",
 			advertiseTLSPort: true,
 			udpUseDomain:     true,
+			iceServerCount:   1,
 			urls: []string{
 				"turn:turn.example.com:3478?transport=udp",
 				"turns:turn.example.com:8443?transport=tcp",
 			},
 		},
 		{
-			name:    "tls only omits udp",
-			tlsOnly: true,
-			urls:    []string{"turns:turn.example.com:443?transport=tcp"},
+			name:           "tls only omits udp",
+			tlsOnly:        true,
+			iceServerCount: 2,
+			urls:           []string{"turns:turn.example.com:443?transport=tcp"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -86,7 +92,7 @@ func TestRoomManagerICEServersForParticipant_TURNURLOptions(t *testing.T) {
 			}
 
 			iceServers := manager.iceServersForParticipant(turnTestAPIKey, participant, tc.tlsOnly)
-			require.Len(t, iceServers, 1)
+			require.Len(t, iceServers, tc.iceServerCount)
 			require.Equal(t, tc.urls, iceServers[0].Urls)
 		})
 	}
