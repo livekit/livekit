@@ -278,6 +278,8 @@ type TURNConfig struct {
 	RelayPortRangeStart uint16   `yaml:"relay_range_start,omitempty"`
 	RelayPortRangeEnd   uint16   `yaml:"relay_range_end,omitempty"`
 	ExternalTLS         bool     `yaml:"external_tls,omitempty"`
+	AdvertiseTLSPort    bool     `yaml:"advertise_tls_port,omitempty"`
+	UDPUseDomain        bool     `yaml:"udp_use_domain,omitempty"`
 	BindAddresses       []string `yaml:"bind_addresses,omitempty"`
 	// PerUserRelayAllocationLimit caps the number of concurrent relay allocations
 	// a single participant credential may hold, keyed by the participant ID. This

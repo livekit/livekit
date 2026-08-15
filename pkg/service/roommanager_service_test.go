@@ -9,12 +9,88 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 )
+
+func TestRoomManagerICEServersForParticipant_TURNURLOptions(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		advertiseTLSPort bool
+		udpUseDomain     bool
+		tlsOnly          bool
+		urls             []string
+	}{
+		{
+			name: "defaults",
+			urls: []string{
+				"turn:203.0.113.1:3478?transport=udp",
+				"turns:turn.example.com:443?transport=tcp",
+			},
+		},
+		{
+			name:             "advertise tls port",
+			advertiseTLSPort: true,
+			urls: []string{
+				"turn:203.0.113.1:3478?transport=udp",
+				"turns:turn.example.com:8443?transport=tcp",
+			},
+		},
+		{
+			name:         "use domain for udp",
+			udpUseDomain: true,
+			urls: []string{
+				"turn:turn.example.com:3478?transport=udp",
+				"turns:turn.example.com:443?transport=tcp",
+			},
+		},
+		{
+			name:             "both options",
+			advertiseTLSPort: true,
+			udpUseDomain:     true,
+			urls: []string{
+				"turn:turn.example.com:3478?transport=udp",
+				"turns:turn.example.com:8443?transport=tcp",
+			},
+		},
+		{
+			name:    "tls only omits udp",
+			tlsOnly: true,
+			urls:    []string{"turns:turn.example.com:443?transport=tcp"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conf := &config.Config{}
+			conf.RTC.NodeIP.UnmarshalString("203.0.113.1")
+			conf.TURN = config.TURNConfig{
+				Enabled:          true,
+				Domain:           "turn.example.com",
+				TLSPort:          8443,
+				UDPPort:          3478,
+				AdvertiseTLSPort: tc.advertiseTLSPort,
+				UDPUseDomain:     tc.udpUseDomain,
+			}
+			participant := &typesfakes.FakeLocalParticipant{}
+			participant.IDReturns(livekit.ParticipantID("PA_test"))
+			manager := &RoomManager{
+				config: conf,
+				turnAuthHandler: NewTURNAuthHandler(auth.NewSimpleKeyProvider(
+					turnTestAPIKey,
+					turnTestAPISecret,
+				)),
+			}
+
+			iceServers := manager.iceServersForParticipant(turnTestAPIKey, participant, tc.tlsOnly)
+			require.Len(t, iceServers, 1)
+			require.Equal(t, tc.urls, iceServers[0].Urls)
+		})
+	}
+}
 
 // fakeIngressHandlerClient records WHIPRTCConnectionNotify calls. It embeds the
 // interface so only the method under test needs to be implemented; any other
