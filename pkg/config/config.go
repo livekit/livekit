@@ -84,6 +84,12 @@ type Config struct {
 	DebugHandler   DebugHandlerConfig       `yaml:"debug_handler,omitempty"`
 	RTC            RTCConfig                `yaml:"rtc,omitempty"`
 	Redis          redisLiveKit.RedisConfig `yaml:"redis,omitempty"`
+	// RedisChannelPrefix namespaces psrpc pubsub channel names, letting multiple
+	// LiveKit deployments share one redis instance without colliding on channel
+	// names (the redis db index only scopes the keyspace, not pubsub channels).
+	// Requires the github.com/livekit/psrpc replace in go.mod (see the TODO
+	// there) until channel-prefix support lands upstream.
+	RedisChannelPrefix string `yaml:"redis_channel_prefix,omitempty"`
 	Audio          sfu.AudioConfig          `yaml:"audio,omitempty"`
 	Video          VideoConfig              `yaml:"video,omitempty"`
 	Room           RoomConfig               `yaml:"room,omitempty"`

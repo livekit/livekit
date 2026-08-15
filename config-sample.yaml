@@ -50,6 +50,12 @@ redis:
   # And it will use the password key above as cluster password
   # And the db key will not be used due to cluster mode not support it.
 
+# redis_channel_prefix namespaces pubsub channel names, letting multiple
+# LiveKit deployments share one redis instance without colliding on
+# channel names (the redis db above only scopes the keyspace, not
+# pubsub channels)
+# redis_channel_prefix: myproject:
+
 # WebRTC configuration
 rtc:
   # UDP ports to use for client traffic.
