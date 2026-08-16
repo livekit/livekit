@@ -299,7 +299,7 @@ keys:
 #   udp_use_domain: false
 #   # defaults to 5349 - if not using a load balancer, this must be set to 443
 #   tls_port: 5349
-#   # advertise tls_port instead of 443 for TURN/TLS candidates, defaults to false
+#   # set to true when clients must reach TURN/TLS on tls_port instead of 443, defaults to false
 #   advertise_tls_port: false
 #   # set UDP port range for TURN relay to connect to LiveKit SFU, by default it uses a any available port
 #   relay_range_start: 1024

@@ -94,6 +94,13 @@ func TestRoomManagerICEServersForParticipant_TURNURLOptions(t *testing.T) {
 			iceServers := manager.iceServersForParticipant(turnTestAPIKey, participant, tc.tlsOnly)
 			require.Len(t, iceServers, tc.iceServerCount)
 			require.Equal(t, tc.urls, iceServers[0].Urls)
+			if tc.tlsOnly {
+				for _, iceServer := range iceServers {
+					for _, url := range iceServer.Urls {
+						require.NotContains(t, url, "?transport=udp")
+					}
+				}
+			}
 		})
 	}
 }
