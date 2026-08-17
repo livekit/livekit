@@ -67,6 +67,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		rpc.NewEgressClient,
 		rpc.NewIngressClient,
 		getEgressStore,
+		getClusterID,
 		NewEgressLauncher,
 		NewEgressService,
 		getIngressStore,
@@ -257,6 +258,10 @@ func getSIPStore(s ObjectStore) SIPStore {
 
 func getSIPConfig(conf *config.Config) *config.SIPConfig {
 	return &conf.SIP
+}
+
+func getClusterID(conf *config.Config) string {
+	return conf.ClusterID
 }
 
 func getLimitConf(config *config.Config) config.LimitConfig {

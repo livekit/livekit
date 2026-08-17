@@ -50,6 +50,11 @@ redis:
   # And it will use the password key above as cluster password
   # And the db key will not be used due to cluster mode not support it.
 
+# optional namespace for internal PSRPC topics used by external services such as
+# Egress and SIP. The value must match their cluster_id configuration. Leave
+# empty for the legacy global topics.
+# cluster_id: my-cluster
+
 # WebRTC configuration
 rtc:
   # UDP ports to use for client traffic.

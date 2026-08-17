@@ -42,6 +42,12 @@ func TestConfig_DefaultsKept(t *testing.T) {
 	require.Equal(t, uint32(10), conf.Room.EmptyTimeout)
 }
 
+func TestConfig_ClusterID(t *testing.T) {
+	conf, err := NewConfig("cluster_id: staging", true, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, "staging", conf.ClusterID)
+}
+
 func TestConfig_SignalMessageSizeLimitDefaults(t *testing.T) {
 	conf, err := NewConfig("", true, nil, nil)
 	require.NoError(t, err)

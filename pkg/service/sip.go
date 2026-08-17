@@ -39,6 +39,7 @@ import (
 type SIPService struct {
 	conf        *config.SIPConfig
 	nodeID      livekit.NodeID
+	clusterID   string
 	bus         psrpc.MessageBus
 	psrpcClient rpc.SIPClient
 	store       SIPStore
@@ -48,6 +49,7 @@ type SIPService struct {
 func NewSIPService(
 	conf *config.SIPConfig,
 	nodeID livekit.NodeID,
+	clusterID string,
 	bus psrpc.MessageBus,
 	psrpcClient rpc.SIPClient,
 	store SIPStore,
@@ -57,6 +59,7 @@ func NewSIPService(
 	return &SIPService{
 		conf:        conf,
 		nodeID:      nodeID,
+		clusterID:   clusterID,
 		bus:         bus,
 		psrpcClient: psrpcClient,
 		store:       store,
@@ -624,7 +627,7 @@ func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.Crea
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-	resp, err := s.psrpcClient.CreateSIPParticipant(ctx, "", ireq, psrpc.WithRequestTimeout(timeout))
+	resp, err := s.psrpcClient.CreateSIPParticipant(ctx, s.clusterID, ireq, psrpc.WithRequestTimeout(timeout))
 	if err != nil {
 		unlikelyLogger.Errorw("cannot create sip participant", err)
 		return nil, wrapSIPContextError(err)
