@@ -32,10 +32,19 @@ jobs:
       - name: Fetch all tags
         run: git fetch --force --tags
 
+      # Release with the same Go toolchain the published image is built with
+      - name: Resolve Go version
+        id: go-version
+        run: |
+          # Assign first so a failed lookup trips `set -e`; inside echo its exit
+          # status would be discarded and an empty version written.
+          version=$(.github/scripts/go-version.sh Dockerfile)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version-file: "go.mod"
+          go-version: ${{ steps.go-version.outputs.version }}
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@ec59f474b9834571250b370d4735c50f8e2d1e29 # v7

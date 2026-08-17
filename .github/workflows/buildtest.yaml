@@ -35,29 +35,34 @@ jobs:
           auto-start: true
       - run: redis-cli ping
 
+      # Test with the same Go toolchain the published image is built with
+      - name: Resolve Go version
+        id: go-version
+        run: |
+          # Assign first so a failed lookup trips `set -e`; inside echo its exit
+          # status would be discarded and an empty version written.
+          version=$(.github/scripts/go-version.sh Dockerfile)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: "^1.26"
-
-      - name: Set up gotestfmt
-        run: go install github.com/gotesttools/gotestfmt/v2/cmd/gotestfmt@v2.4.1
+          go-version: ${{ steps.go-version.outputs.version }}
 
       - name: Replace mutexes
         run: |
           go get github.com/sasha-s/go-deadlock
           grep -rl sync.Mutex ./pkg | xargs sed -i 's/sync\.Mutex/deadlock\.Mutex/g'
           grep -rl sync.RWMutex ./pkg | xargs sed -i 's/sync\.RWMutex/deadlock\.RWMutex/g'
-          go install golang.org/x/tools/cmd/goimports@latest
-          grep -rl deadlock.Mutex ./pkg | xargs goimports -w
-          grep -rl deadlock.RWMutex ./pkg | xargs goimports -w
+          grep -rl deadlock.Mutex ./pkg | xargs go tool goimports -w
+          grep -rl deadlock.RWMutex ./pkg | xargs go tool goimports -w
           go mod tidy
 
+      # Run mage at the version go.mod pins, rather than the mage-action's
+      # `version: latest`, so the binary matches the mage/mg library the magefile is
+      # compiled against and Renovate owns the version like any other module.
       - name: Mage Build
-        uses: magefile/mage-action@a662bd8c29d8106879588cfff83b2faf6e6f59db # v4
-        with:
-          version: latest
-          args: build
+        run: go run github.com/magefile/mage build
 
       - name: Lint
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
@@ -67,7 +72,7 @@ jobs:
       - name: Test
         run: |
           set -euo pipefail
-          MallocNanoZone=0 go test -race -json -v ./... 2>&1 | tee /tmp/gotest.log | gotestfmt
+          MallocNanoZone=0 go test -race -json -v ./... 2>&1 | tee /tmp/gotest.log | go tool gotestfmt
 
       # Upload the original go test log as an artifact for later review.
       - name: Upload test log
