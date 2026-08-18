@@ -1059,9 +1059,10 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	}
 	payload = payload[:len(tp.codecBytes)+n]
 
+	trailerStripped := 0
 	if d.params.StripPacketTrailer {
-		if strip := packettrailer.StripTrailer(payload, tp.marker); strip > 0 {
-			payload = payload[:len(payload)-strip]
+		if trailerStripped = packettrailer.StripTrailer(payload, tp.marker || tp.isEndOfLayerFrame); trailerStripped > 0 {
+			payload = payload[:len(payload)-trailerStripped]
 		}
 	}
 
@@ -1132,6 +1133,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 			tp.incomingHeaderSize,
 			tp.ddBytes,
 			actBytes,
+			trailerStripped,
 		)
 	}
 
@@ -2243,9 +2245,17 @@ func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isPro
 		payload = payload[:rtxOffset+int(epm.numCodecBytesOut)+len(pkt.Payload)-int(epm.numCodecBytesIn)]
 	}
 
-	if d.params.StripPacketTrailer {
-		if strip := packettrailer.StripTrailer(payload[rtxOffset:], epm.marker); strip > 0 {
-			payload = payload[:len(payload)-strip]
+	// replay the strip done on the original transmission to keep the retransmitted
+	// payload byte identical to it
+	if epm.trailerStripped != 0 {
+		if int(epm.trailerStripped) > len(payload)-rtxOffset {
+			d.params.Logger.Warnw(
+				"recorded packet trailer size overflows payload", errPayloadOverflow,
+				"trailerStripped", epm.trailerStripped,
+				"payloadSize", len(payload)-rtxOffset,
+			)
+		} else {
+			payload = payload[:len(payload)-int(epm.trailerStripped)]
 		}
 	}
 

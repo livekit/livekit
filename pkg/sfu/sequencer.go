@@ -66,6 +66,8 @@ type packetMeta struct {
 	ddBytesSlice []byte
 	// abs-capture-time of packet
 	actBytes []byte
+	// number of packet trailer bytes stripped when the packet was forwarded
+	trailerStripped uint8
 }
 
 func (pm packetMeta) MarshalLogObject(e zapcore.ObjectEncoder) error {
@@ -86,6 +88,9 @@ func (pm packetMeta) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	}
 	if len(pm.actBytes) != 0 {
 		e.AddInt("actBytes", len(pm.actBytes))
+	}
+	if pm.trailerStripped != 0 {
+		e.AddUint8("trailerStripped", pm.trailerStripped)
 	}
 	return nil
 }
@@ -178,6 +183,7 @@ func (s *sequencer) push(
 	numCodecBytesIn int,
 	ddBytes []byte,
 	actBytes []byte,
+	trailerStripped int,
 ) {
 	s.Lock()
 	defer s.Unlock()
@@ -246,6 +252,7 @@ func (s *sequencer) push(
 		marker:          marker,
 		layer:           layer,
 		numCodecBytesIn: uint8(numCodecBytesIn),
+		trailerStripped: uint8(trailerStripped),
 		lastNack:        s.getRefTime(packetTime), // delay retransmissions after the original transmission
 	}
 	pm := &s.meta[slot]

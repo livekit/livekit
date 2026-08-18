@@ -17,14 +17,17 @@ package sfu
 import (
 	"testing"
 
+	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/mediatransportutil/pkg/codec"
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
 )
 
@@ -2214,4 +2217,35 @@ func TestGetRefLayerRTPTimestampBounds(t *testing.T) {
 	_, err = f.getRefLayerRTPTimestamp(1000, layerCount-1, 0)
 	require.Error(t, err) // unavailable sender report, not invalid layer
 	require.Contains(t, err.Error(), "unavailable")
+}
+
+// TestForwarderIsEndOfLayerFrame checks the end-of-layer-frame detection used to
+// locate packet trailers, which VP9 SVC can carry at the end of any spatial layer
+// frame and not just at the end of a picture.
+func TestForwarderIsEndOfLayerFrame(t *testing.T) {
+	vp9Codec := webrtc.RTPCodecCapability{MimeType: mime.MimeTypeVP9.String(), ClockRate: 90000}
+
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{Payload: codecs.VP9Packet{E: true}}))
+
+	f = newForwarder(vp9Codec, webrtc.RTPCodecTypeVideo)
+	require.True(t, f.isEndOfLayerFrame(&buffer.ExtPacket{Payload: codecs.VP9Packet{E: true}}))
+	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{Payload: codecs.VP9Packet{E: false}}))
+	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{}))
+
+	require.True(t, f.isEndOfLayerFrame(&buffer.ExtPacket{
+		DependencyDescriptor: &buffer.ExtDependencyDescriptor{
+			Descriptor: &dd.DependencyDescriptor{LastPacketInFrame: true},
+		},
+		Payload: codecs.VP9Packet{E: false},
+	}))
+	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{
+		DependencyDescriptor: &buffer.ExtDependencyDescriptor{
+			Descriptor: &dd.DependencyDescriptor{LastPacketInFrame: false},
+		},
+		Payload: codecs.VP9Packet{E: true},
+	}))
+	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{
+		DependencyDescriptor: &buffer.ExtDependencyDescriptor{},
+	}))
 }

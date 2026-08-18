@@ -29,11 +29,11 @@ func Test_sequencer(t *testing.T) {
 	off := uint16(15)
 
 	for i := uint64(1); i < 518; i++ {
-		seq.push(time.Now().UnixNano(), i, i+uint64(off), 123, true, 2, nil, 0, nil, nil)
+		seq.push(time.Now().UnixNano(), i, i+uint64(off), 123, true, 2, nil, 0, nil, nil, 0)
 	}
 	// send the last two out-of-order
-	seq.push(time.Now().UnixNano(), 519, 519+uint64(off), 123, false, 2, nil, 0, nil, nil)
-	seq.push(time.Now().UnixNano(), 518, 518+uint64(off), 123, true, 2, nil, 0, nil, nil)
+	seq.push(time.Now().UnixNano(), 519, 519+uint64(off), 123, false, 2, nil, 0, nil, nil, 0)
+	seq.push(time.Now().UnixNano(), 518, 518+uint64(off), 123, true, 2, nil, 0, nil, nil, 0)
 
 	req := []uint16{57, 58, 62, 63, 513, 514, 515, 516, 517}
 	res := seq.getExtPacketMetas(req)
@@ -63,14 +63,14 @@ func Test_sequencer(t *testing.T) {
 		require.Equal(t, val.extTimestamp, uint64(123))
 	}
 
-	seq.push(time.Now().UnixNano(), 521, 521+uint64(off), 123, true, 1, nil, 0, nil, nil)
+	seq.push(time.Now().UnixNano(), 521, 521+uint64(off), 123, true, 1, nil, 0, nil, nil, 0)
 	m := seq.getExtPacketMetas([]uint16{521 + off})
 	require.Equal(t, 0, len(m))
 	time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
 	m = seq.getExtPacketMetas([]uint16{521 + off})
 	require.Equal(t, 1, len(m))
 
-	seq.push(time.Now().UnixNano(), 505, 505+uint64(off), 123, false, 1, nil, 0, nil, nil)
+	seq.push(time.Now().UnixNano(), 505, 505+uint64(off), 123, false, 1, nil, 0, nil, nil, 0)
 	m = seq.getExtPacketMetas([]uint16{505 + off})
 	require.Equal(t, 0, len(m))
 	time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
@@ -83,7 +83,7 @@ func Test_sequencer_flush(t *testing.T) {
 	off := uint16(15)
 
 	for i := uint64(1); i < 100; i++ {
-		seq.push(time.Now().UnixNano(), i, i+uint64(off), 123, true, 2, nil, 0, nil, nil)
+		seq.push(time.Now().UnixNano(), i, i+uint64(off), 123, true, 2, nil, 0, nil, nil, 0)
 	}
 	preFlush := []uint16{57 + off, 58 + off}
 
@@ -96,7 +96,7 @@ func Test_sequencer_flush(t *testing.T) {
 
 	// the sequencer re-initializes on the next push and works normally for new packets
 	for i := uint64(200); i < 210; i++ {
-		seq.push(time.Now().UnixNano(), i, i+uint64(off), 456, true, 3, nil, 0, nil, nil)
+		seq.push(time.Now().UnixNano(), i, i+uint64(off), 456, true, 3, nil, 0, nil, nil, 0)
 	}
 	postFlush := []uint16{205 + off}
 	require.Equal(t, 0, len(seq.getExtPacketMetas(postFlush))) // not enough time elapsed yet
@@ -200,6 +200,7 @@ func Test_sequencer_getNACKSeqNo_exclusion(t *testing.T) {
 							len(tt.fields.codecBytesOversized),
 							tt.fields.ddBytesOversized,
 							tt.fields.actBytesOdd,
+							0,
 						)
 					} else {
 						if i.seqNo%2 == 0 {
@@ -214,6 +215,7 @@ func Test_sequencer_getNACKSeqNo_exclusion(t *testing.T) {
 								tt.fields.numCodecBytesInEven,
 								tt.fields.ddBytesEven,
 								tt.fields.actBytesEven,
+								0,
 							)
 						} else {
 							n.push(
@@ -227,6 +229,7 @@ func Test_sequencer_getNACKSeqNo_exclusion(t *testing.T) {
 								tt.fields.numCodecBytesInOdd,
 								tt.fields.ddBytesOdd,
 								tt.fields.actBytesOdd,
+								0,
 							)
 						}
 					}
@@ -354,6 +357,7 @@ func Test_sequencer_getNACKSeqNo_no_exclusion(t *testing.T) {
 							tt.fields.numCodecBytesInEven,
 							tt.fields.ddBytesEven,
 							tt.fields.actBytesEven,
+							0,
 						)
 					} else {
 						n.push(
@@ -367,6 +371,7 @@ func Test_sequencer_getNACKSeqNo_no_exclusion(t *testing.T) {
 							tt.fields.numCodecBytesInOdd,
 							tt.fields.ddBytesOdd,
 							tt.fields.actBytesOdd,
+							0,
 						)
 					}
 				}
