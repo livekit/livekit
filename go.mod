@@ -169,3 +169,10 @@ replace github.com/pion/webrtc/v4 => github.com/livekit/webrtc-pion/v4 v4.2.18-w
 replace github.com/pion/dtls/v3 => github.com/livekit/dtls/v3 v3.1.5-warp.1
 
 replace github.com/pion/ice/v4 => github.com/livekit/ice/v4 v4.4.0-warp.1
+
+// TODO(karolyi): temporary fork adding psrpc.WithChannelPrefix (redis pubsub
+// channel namespacing), used by config.Config.RedisChannelPrefix. No upstream
+// PR exists yet (github.com/karolyi/psrpc, commit bcd7600). Once one is
+// opened against livekit/psrpc and merges, revert this replace back to
+// github.com/livekit/psrpc.
+replace github.com/livekit/psrpc => github.com/karolyi/psrpc v0.0.0-20260815165523-bcd7600d83e1
