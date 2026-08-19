@@ -49,6 +49,10 @@ const (
 	// applies only when the source is not closed by the relay, i. e. when there is
 	// no way to tell that everything pending has been read
 	responseFlushTimeout = 250 * time.Millisecond
+
+	// how long the response pump is given to stop, a bit more than the drain deadline
+	// so that it can finish the write it is in when that deadline expires
+	responsePumpDoneTimeout = 2 * responseFlushTimeout
 )
 
 type RTCService struct {
@@ -452,7 +456,7 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 		if responsePumpStarted {
 			select {
 			case <-responsePumpDone:
-			case <-time.After(responseFlushTimeout):
+			case <-time.After(responsePumpDoneTimeout):
 				pLogger.Debugw("timed out waiting for response pump to finish")
 			}
 		}
