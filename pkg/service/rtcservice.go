@@ -381,7 +381,7 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 	var cr connectionResult
 	var initialResponse *livekit.SignalResponse
 	for attempt := 0; attempt < s.config.SignalRelay.ConnectAttempts; attempt++ {
-		connectionTimeout := 3 * time.Second * time.Duration(attempt+1)
+		connectionTimeout := time.Duration(3+attempt) * time.Second
 		ctx := utils.ContextWithAttempt(r.Context(), attempt)
 		cr, initialResponse, err = s.startConnection(ctx, roomName, pi, connectionTimeout)
 		if err == nil || errors.Is(err, context.Canceled) {
