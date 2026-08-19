@@ -17,6 +17,7 @@ package rtc
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -783,6 +784,7 @@ type participantOpts struct {
 	publisher       bool
 	clientConf      *livekit.ClientConfiguration
 	clientInfo      *livekit.ClientInfo
+	forceRelay      *bool
 }
 
 func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *participantOpts) *ParticipantImpl {
@@ -799,6 +801,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 	if err != nil {
 		panic(err)
 	}
+	rtcConf.ForceRelay = opts.forceRelay
 	ff := buffer.NewFactoryOfBufferFactory(500, 200)
 	rtcConf.SetBufferFactory(ff.CreateBufferFactory())
 	grants := &auth.ClaimGrants{
@@ -846,4 +849,149 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 
 func newParticipantForTest(identity livekit.ParticipantIdentity) *ParticipantImpl {
 	return newParticipantForTestWithOpts(identity, nil)
+}
+
+func boolPtr(b bool) *bool {
+	return &b
+}
+
+// ForceRelay set through server config has to be in the very first JoinResponse, i.e. it must
+// not depend on an ICE config change, which does not happen for a first time participant.
+func TestParticipant_ForceRelayConfigOnJoin(t *testing.T) {
+	tests := []struct {
+		name               string
+		forceRelay         *bool
+		expectedClientConf bool
+		expectedForceRelay livekit.ClientConfigSetting
+	}{
+		{
+			name:               "force relay enabled in config",
+			forceRelay:         boolPtr(true),
+			expectedClientConf: true,
+			expectedForceRelay: livekit.ClientConfigSetting_ENABLED,
+		},
+		{
+			name:               "force relay disabled in config",
+			forceRelay:         boolPtr(false),
+			expectedClientConf: true,
+			expectedForceRelay: livekit.ClientConfigSetting_DISABLED,
+		},
+		{
+			// not configured, so nothing should be sent down and clients keep deciding on their own
+			name:               "force relay not configured",
+			forceRelay:         nil,
+			expectedClientConf: false,
+			expectedForceRelay: livekit.ClientConfigSetting_UNSET,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newParticipantForTestWithOpts("test", &participantOpts{forceRelay: tc.forceRelay})
+
+			// no ICE config change, exactly what a first time participant sees
+			clientConf := p.GetClientConfiguration()
+			if !tc.expectedClientConf {
+				require.Nil(t, clientConf)
+				return
+			}
+			require.NotNil(t, clientConf)
+			require.Equal(t, tc.expectedForceRelay, clientConf.ForceRelay)
+		})
+	}
+}
+
+// StaticClientConfigurationManager.GetConfiguration hands out the shared global
+// *livekit.ClientConfiguration for Merge:false rules, so participants matching the same rule
+// get the very same pointer. Applying force relay must not write into it.
+func TestParticipant_ForceRelayDoesNotMutateSharedClientConf(t *testing.T) {
+	shared := &livekit.ClientConfiguration{
+		DisabledCodecs: &livekit.DisabledCodecs{
+			Publish: []*livekit.Codec{{Mime: mime.MimeTypeH264.String()}},
+		},
+	}
+
+	const numParticipants = 8
+	var wg sync.WaitGroup
+	participants := make([]*ParticipantImpl, numParticipants)
+	for i := range participants {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			participants[i] = newParticipantForTestWithOpts(
+				livekit.ParticipantIdentity(fmt.Sprintf("test%d", i)),
+				&participantOpts{forceRelay: boolPtr(true), clientConf: shared},
+			)
+		}()
+	}
+	wg.Wait()
+
+	// the shared configuration has to be left exactly as it was
+	require.Equal(t, livekit.ClientConfigSetting_UNSET, shared.ForceRelay)
+	require.NotNil(t, shared.DisabledCodecs)
+
+	// while every participant still gets the setting plus what it inherited
+	for _, p := range participants {
+		clientConf := p.GetClientConfiguration()
+		require.NotNil(t, clientConf)
+		require.Equal(t, livekit.ClientConfigSetting_ENABLED, clientConf.ForceRelay)
+		require.Len(t, clientConf.GetDisabledCodecs().GetPublish(), 1)
+	}
+}
+
+func TestParticipant_ForceRelayOnICEConfigChange(t *testing.T) {
+	tests := []struct {
+		name               string
+		forceRelay         *bool
+		icePreference      livekit.ICECandidateType
+		expectedForceRelay livekit.ClientConfigSetting
+	}{
+		{
+			name:               "config takes precedence over ICE preference",
+			forceRelay:         boolPtr(true),
+			icePreference:      livekit.ICECandidateType_ICT_TCP,
+			expectedForceRelay: livekit.ClientConfigSetting_ENABLED,
+		},
+		{
+			name:               "config disabled keeps relay off",
+			forceRelay:         boolPtr(false),
+			icePreference:      livekit.ICECandidateType_ICT_TCP,
+			expectedForceRelay: livekit.ClientConfigSetting_DISABLED,
+		},
+		{
+			// the server has already moved the participant to TURN/TLS, telling the client not to
+			// force relay would take away the fallback it just got
+			name:               "TLS fallback wins over config disabled",
+			forceRelay:         boolPtr(false),
+			icePreference:      livekit.ICECandidateType_ICT_TLS,
+			expectedForceRelay: livekit.ClientConfigSetting_ENABLED,
+		},
+		{
+			name:               "not configured, TLS preference forces relay",
+			forceRelay:         nil,
+			icePreference:      livekit.ICECandidateType_ICT_TLS,
+			expectedForceRelay: livekit.ClientConfigSetting_ENABLED,
+		},
+		{
+			name:               "not configured, TCP preference leaves it to the client",
+			forceRelay:         nil,
+			icePreference:      livekit.ICECandidateType_ICT_TCP,
+			expectedForceRelay: livekit.ClientConfigSetting_UNSET,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newParticipantForTestWithOpts("test", &participantOpts{forceRelay: tc.forceRelay})
+
+			p.SetICEConfig(&livekit.ICEConfig{
+				PreferenceSubscriber: tc.icePreference,
+				PreferencePublisher:  tc.icePreference,
+			})
+
+			clientConf := p.GetClientConfiguration()
+			require.NotNil(t, clientConf)
+			require.Equal(t, tc.expectedForceRelay, clientConf.ForceRelay)
+		})
+	}
 }
