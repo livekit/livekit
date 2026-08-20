@@ -40,6 +40,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/xtwirp"
 
+	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/version"
@@ -150,6 +151,19 @@ func NewLivekitServer(conf *config.Config,
 	rtcService.SetupRoutes(mux)
 	whipService.SetupRoutes(mux)
 	mux.Handle("/agent", agentService)
+	mux.Handle(endpoint.PathPrefix, agentService.EndpointFront())
+	if port := conf.Agents.Endpoints.RelayPort; port > 0 {
+		// relayed agent-endpoint requests from other nodes; private network only
+		relayServer := &http.Server{
+			Addr:    fmt.Sprintf(":%d", port),
+			Handler: agentService.EndpointRelayHandler(),
+		}
+		go func() {
+			if err := relayServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				logger.Errorw("agent endpoint relay listener failed", err)
+			}
+		}()
+	}
 	mux.HandleFunc("/", s.defaultHandler)
 
 	s.httpServer = &http.Server{
