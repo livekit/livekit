@@ -774,6 +774,16 @@ type FakeLocalParticipant struct {
 	hasConnectedReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	HasICEConnectedStub        func() bool
+	hasICEConnectedMutex       sync.RWMutex
+	hasICEConnectedArgsForCall []struct {
+	}
+	hasICEConnectedReturns struct {
+		result1 bool
+	}
+	hasICEConnectedReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	HasPermissionStub        func(livekit.TrackID, livekit.ParticipantIdentity) bool
 	hasPermissionMutex       sync.RWMutex
 	hasPermissionArgsForCall []struct {
@@ -5614,6 +5624,59 @@ func (fake *FakeLocalParticipant) HasConnectedReturnsOnCall(i int, result1 bool)
 		})
 	}
 	fake.hasConnectedReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) HasICEConnected() bool {
+	fake.hasICEConnectedMutex.Lock()
+	ret, specificReturn := fake.hasICEConnectedReturnsOnCall[len(fake.hasICEConnectedArgsForCall)]
+	fake.hasICEConnectedArgsForCall = append(fake.hasICEConnectedArgsForCall, struct {
+	}{})
+	stub := fake.HasICEConnectedStub
+	fakeReturns := fake.hasICEConnectedReturns
+	fake.recordInvocation("HasICEConnected", []interface{}{})
+	fake.hasICEConnectedMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) HasICEConnectedCallCount() int {
+	fake.hasICEConnectedMutex.RLock()
+	defer fake.hasICEConnectedMutex.RUnlock()
+	return len(fake.hasICEConnectedArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) HasICEConnectedCalls(stub func() bool) {
+	fake.hasICEConnectedMutex.Lock()
+	defer fake.hasICEConnectedMutex.Unlock()
+	fake.HasICEConnectedStub = stub
+}
+
+func (fake *FakeLocalParticipant) HasICEConnectedReturns(result1 bool) {
+	fake.hasICEConnectedMutex.Lock()
+	defer fake.hasICEConnectedMutex.Unlock()
+	fake.HasICEConnectedStub = nil
+	fake.hasICEConnectedReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) HasICEConnectedReturnsOnCall(i int, result1 bool) {
+	fake.hasICEConnectedMutex.Lock()
+	defer fake.hasICEConnectedMutex.Unlock()
+	fake.HasICEConnectedStub = nil
+	if fake.hasICEConnectedReturnsOnCall == nil {
+		fake.hasICEConnectedReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.hasICEConnectedReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }

@@ -425,6 +425,7 @@ type LocalParticipant interface {
 	GetPlayoutDelayConfig() *livekit.PlayoutDelay
 	GetPendingTrack(trackID livekit.TrackID) *livekit.TrackInfo
 	GetICEConnectionInfo() []*ICEConnectionInfo
+	HasICEConnected() bool
 	HasConnected() bool
 	GetEnabledPublishCodecs() []*livekit.Codec
 	GetPublisherICESessionUfrag() (string, error)

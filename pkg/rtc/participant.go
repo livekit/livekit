@@ -1013,7 +1013,7 @@ func (p *ParticipantImpl) OnClaimsChanged(callback func(types.LocalParticipant))
 func (p *ParticipantImpl) HandleSignalSourceClose() {
 	p.TransportManager.SetSignalSourceValid(false)
 
-	if !p.HasConnected() {
+	if !p.HasICEConnected() {
 		_ = p.Close(false, types.ParticipantCloseReasonSignalSourceClose, false)
 	}
 }
@@ -1449,7 +1449,7 @@ func (p *ParticipantImpl) IsMigration() bool {
 }
 
 func (p *ParticipantImpl) recordRTCState(closeReason types.ParticipantCloseReason) {
-	if p.HasConnected() {
+	if p.HasICEConnected() {
 		return
 	}
 
@@ -3197,6 +3197,10 @@ func (p *ParticipantImpl) GetPendingTrack(trackID livekit.TrackID) *livekit.Trac
 	}
 
 	return nil
+}
+
+func (p *ParticipantImpl) HasICEConnected() bool {
+	return p.TransportManager.HasSubscriberICEEverConnected() || p.TransportManager.HasPublisherICEEverConnected()
 }
 
 func (p *ParticipantImpl) HasConnected() bool {
