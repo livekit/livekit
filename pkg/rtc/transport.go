@@ -705,7 +705,7 @@ func (t *PCTransport) setICEConnectedAt(at time.Time) {
 	if t.iceFirstConnectedAt.IsZero() {
 		//
 		// Record initial connection time.
-		// This prevents reset of connectedAt if ICE goes `Connected` -> `Disconnected` -> `Connected`.
+		// This prevents reset of iceFirstConnectedAt if ICE goes `Connected` -> `Disconnected` -> `Connected`.
 		//
 		t.iceFirstConnectedAt = at
 
