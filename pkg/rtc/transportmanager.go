@@ -232,12 +232,16 @@ func (t *TransportManager) SubscriberClose() {
 	t.subscriber.Close()
 }
 
+func (t *TransportManager) HasPublisherICEEverConnected() bool {
+	return t.publisher.ICEHasEverConnected()
+}
+
 func (t *TransportManager) HasPublisherEverConnected() bool {
-	return t.publisher.HasEverConnected()
+	return t.publisher.PeerConnectionHasEverConnected()
 }
 
 func (t *TransportManager) PublisherFirstConnectedAt() time.Time {
-	return t.publisher.FirstConnectedAt()
+	return t.publisher.PeerConnectionFirstConnectedAt()
 }
 
 func (t *TransportManager) IsPublisherEstablished() bool {
@@ -272,19 +276,27 @@ func (t *TransportManager) GetSubscriberRTT() (float64, bool) {
 	}
 }
 
+func (t *TransportManager) HasSubscriberICEEverConnected() bool {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
+		return t.publisher.ICEHasEverConnected()
+	} else {
+		return t.subscriber.ICEHasEverConnected()
+	}
+}
+
 func (t *TransportManager) HasSubscriberEverConnected() bool {
 	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
-		return t.publisher.HasEverConnected()
+		return t.publisher.PeerConnectionHasEverConnected()
 	} else {
-		return t.subscriber.HasEverConnected()
+		return t.subscriber.PeerConnectionHasEverConnected()
 	}
 }
 
 func (t *TransportManager) SubscriberFirstConnectedAt() time.Time {
 	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
-		return t.publisher.FirstConnectedAt()
+		return t.publisher.PeerConnectionFirstConnectedAt()
 	} else {
-		return t.subscriber.FirstConnectedAt()
+		return t.subscriber.PeerConnectionFirstConnectedAt()
 	}
 }
 

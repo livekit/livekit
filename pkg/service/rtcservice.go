@@ -44,6 +44,17 @@ import (
 	"github.com/livekit/livekit-server/pkg/utils"
 )
 
+const (
+	// how long the response source is drained after the request direction is gone,
+	// applies only when the source is not closed by the relay, i. e. when there is
+	// no way to tell that everything pending has been read
+	responseFlushTimeout = 250 * time.Millisecond
+
+	// how long the response pump is given to stop, a bit more than the drain deadline
+	// so that it can finish the write it is in when that deadline expires
+	responsePumpDoneTimeout = 2 * responseFlushTimeout
+)
+
 type RTCService struct {
 	router        routing.MessageRouter
 	roomAllocator RoomAllocator
@@ -381,7 +392,7 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 	var cr connectionResult
 	var initialResponse *livekit.SignalResponse
 	for attempt := 0; attempt < s.config.SignalRelay.ConnectAttempts; attempt++ {
-		connectionTimeout := 3 * time.Second * time.Duration(attempt+1)
+		connectionTimeout := time.Duration(3+attempt) * time.Second
 		ctx := utils.ContextWithAttempt(r.Context(), attempt)
 		cr, initialResponse, err = s.startConnection(ctx, roomName, pi, connectionTimeout)
 		if err == nil || errors.Is(err, context.Canceled) {
@@ -428,13 +439,34 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 
 	closedByClient := atomic.NewBool(false)
 	done := make(chan struct{})
+	// closed by the response pump when it has stopped writing to the web socket
+	responsePumpDone := make(chan struct{})
+	responsePumpStarted := false
+	var sigConn *WSSignalConnection
 	// function exits when websocket terminates, it'll close the event reading off of request sink and response source as well
 	defer func() {
 		resolveLogger(true)
 		pLogger.Debugw("finishing WS connection", "closedByClient", closedByClient.Load())
-		cr.ResponseSource.Close()
-		cr.RequestSink.Close()
+
+		// signal the response pump before anything else so that it can flush responses
+		// the participant queued on its way out, a leave request sent just before the
+		// signalling connection was closed (on migration for example) is dropped otherwise
 		close(done)
+		cr.RequestSink.Close()
+		if responsePumpStarted {
+			select {
+			case <-responsePumpDone:
+			case <-time.After(responsePumpDoneTimeout):
+				pLogger.Debugw("timed out waiting for response pump to finish")
+			}
+		}
+		cr.ResponseSource.Close()
+
+		// close the web socket on all paths, even when the response pump is wedged
+		// writing to an unresponsive client
+		if sigConn != nil {
+			sigConn.CloseWithReason("")
+		}
 
 		signalStats.Stop()
 	}()
@@ -466,8 +498,7 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 	}()
 
 	// websocket established
-	sigConn := NewWSSignalConnection(conn, s.limits.SignalMessageSizeLimit)
-	defer sigConn.CloseWithReason("")
+	sigConn = NewWSSignalConnection(conn, s.limits.SignalMessageSizeLimit)
 	pLogger.Debugw("sending initial response", "response", logger.Proto(initialResponse))
 	count, err := sigConn.WriteResponse(initialResponse)
 	if err != nil {
@@ -491,9 +522,79 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 		"nodeSelectionReason", cr.NodeSelectionReason,
 	)
 
+	// writes one response from the response source to the web socket,
+	// returns false if the response pump should stop
+	writeResponse := func(msg proto.Message) bool {
+		res, ok := msg.(*livekit.SignalResponse)
+		if !ok {
+			pLogger.Errorw(
+				"unexpected message type", nil,
+				"type", fmt.Sprintf("%T", msg),
+			)
+			return true
+		}
+
+		switch m := res.Message.(type) {
+		case *livekit.SignalResponse_Offer:
+			pLogger.Debugw("sending offer", "offer", logger.Proto(res))
+
+		case *livekit.SignalResponse_Answer:
+			pLogger.Debugw("sending answer", "answer", logger.Proto(res))
+
+		case *livekit.SignalResponse_Join:
+			pLogger.Debugw("sending join", "join", logger.Proto(res))
+			signalStats.ResolveRoom(m.Join.GetRoom())
+			signalStats.ResolveParticipant(m.Join.GetParticipant())
+
+		case *livekit.SignalResponse_RoomUpdate:
+			updateRoomID := livekit.RoomID(m.RoomUpdate.GetRoom().GetSid())
+			if updateRoomID != "" {
+				roomID = updateRoomID
+				resolveLogger(false)
+			}
+			pLogger.Debugw("sending room update", "roomUpdate", logger.Proto(res))
+			signalStats.ResolveRoom(m.RoomUpdate.GetRoom())
+
+		case *livekit.SignalResponse_Update:
+			pLogger.Debugw("sending participant update", "participantUpdate", logger.Proto(res))
+
+		case *livekit.SignalResponse_RoomMoved:
+			resetLogger()
+			signalStats.Reset()
+
+			roomName = livekit.RoomName(m.RoomMoved.GetRoom().GetName())
+			moveRoomID := livekit.RoomID(m.RoomMoved.GetRoom().GetSid())
+			if moveRoomID != "" {
+				roomID = moveRoomID
+			}
+			participantIdentity = livekit.ParticipantIdentity(m.RoomMoved.GetParticipant().GetIdentity())
+			pID = livekit.ParticipantID(m.RoomMoved.GetParticipant().GetSid())
+			resolveLogger(false)
+
+			signalStats.ResolveRoom(m.RoomMoved.GetRoom())
+			signalStats.ResolveParticipant(m.RoomMoved.GetParticipant())
+			pLogger.Debugw("sending room moved", "roomMoved", logger.Proto(res))
+
+		default:
+			pLogger.Debugw("sending signal response", "response", logger.Proto(res))
+		}
+
+		if count, err := sigConn.WriteResponse(res); err != nil {
+			pLogger.Warnw("error writing to websocket", err)
+			return false
+		} else {
+			signalStats.AddBytes(uint64(count), true)
+		}
+
+		return true
+	}
+
 	// handle responses
+	responsePumpStarted = true
 	go func() {
 		defer func() {
+			close(responsePumpDone)
+
 			// when the source is terminated, this means Participant.Close had been called and RTC connection is done
 			// we would terminate the signal connection as well
 			sigConn.CloseWithReason("")
@@ -506,72 +607,23 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 		for {
 			select {
 			case <-done:
+				// the request direction is gone, flush what the participant queued on its
+				// way out unless the client is the one that went away
+				if !closedByClient.Load() {
+					if !drainMessageSource(cr.ResponseSource, responseFlushTimeout, writeResponse) {
+						pLogger.Debugw("could not drain response source fully")
+					}
+				}
 				return
+
 			case msg := <-cr.ResponseSource.ReadChan():
 				if msg == nil {
 					resolveLogger(true)
 					pLogger.Debugw("nothing to read from response source")
 					return
 				}
-				res, ok := msg.(*livekit.SignalResponse)
-				if !ok {
-					pLogger.Errorw(
-						"unexpected message type", nil,
-						"type", fmt.Sprintf("%T", msg),
-					)
-					continue
-				}
-
-				switch m := res.Message.(type) {
-				case *livekit.SignalResponse_Offer:
-					pLogger.Debugw("sending offer", "offer", logger.Proto(res))
-
-				case *livekit.SignalResponse_Answer:
-					pLogger.Debugw("sending answer", "answer", logger.Proto(res))
-
-				case *livekit.SignalResponse_Join:
-					pLogger.Debugw("sending join", "join", logger.Proto(res))
-					signalStats.ResolveRoom(m.Join.GetRoom())
-					signalStats.ResolveParticipant(m.Join.GetParticipant())
-
-				case *livekit.SignalResponse_RoomUpdate:
-					updateRoomID := livekit.RoomID(m.RoomUpdate.GetRoom().GetSid())
-					if updateRoomID != "" {
-						roomID = updateRoomID
-						resolveLogger(false)
-					}
-					pLogger.Debugw("sending room update", "roomUpdate", logger.Proto(res))
-					signalStats.ResolveRoom(m.RoomUpdate.GetRoom())
-
-				case *livekit.SignalResponse_Update:
-					pLogger.Debugw("sending participant update", "participantUpdate", logger.Proto(res))
-
-				case *livekit.SignalResponse_RoomMoved:
-					resetLogger()
-					signalStats.Reset()
-
-					roomName = livekit.RoomName(m.RoomMoved.GetRoom().GetName())
-					moveRoomID := livekit.RoomID(m.RoomMoved.GetRoom().GetSid())
-					if moveRoomID != "" {
-						roomID = moveRoomID
-					}
-					participantIdentity = livekit.ParticipantIdentity(m.RoomMoved.GetParticipant().GetIdentity())
-					pID = livekit.ParticipantID(m.RoomMoved.GetParticipant().GetSid())
-					resolveLogger(false)
-
-					signalStats.ResolveRoom(m.RoomMoved.GetRoom())
-					signalStats.ResolveParticipant(m.RoomMoved.GetParticipant())
-					pLogger.Debugw("sending room moved", "roomMoved", logger.Proto(res))
-
-				default:
-					pLogger.Debugw("sending signal response", "response", logger.Proto(res))
-				}
-
-				if count, err := sigConn.WriteResponse(res); err != nil {
-					pLogger.Warnw("error writing to websocket", err)
+				if !writeResponse(msg) {
 					return
-				} else {
-					signalStats.AddBytes(uint64(count), true)
 				}
 			}
 		}
@@ -630,6 +682,34 @@ func (s *RTCService) serve(w http.ResponseWriter, r *http.Request, needsJoinRequ
 		if err := cr.RequestSink.WriteMessage(req); err != nil {
 			pLogger.Warnw("error writing to request sink", err)
 			return
+		}
+	}
+}
+
+// drainMessageSource writes messages that are still queued in source using write.
+// It is used when tearing a signalling connection down, responses the participant queued
+// on its way out, a leave request on migration for example, would be dropped otherwise.
+//
+// The producer writes all pending messages into the source before closing it, so draining
+// till the source is closed is a complete flush. The deadline is a backstop for the cases
+// where the source is not closed, i. e. when there is no way to tell that everything
+// pending has been read. Returns true if the source was drained fully.
+func drainMessageSource(source routing.MessageSource, timeout time.Duration, write func(proto.Message) bool) bool {
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+
+	for {
+		select {
+		case msg := <-source.ReadChan():
+			if msg == nil {
+				return true
+			}
+			if !write(msg) {
+				return false
+			}
+
+		case <-deadline.C:
+			return false
 		}
 	}
 }
