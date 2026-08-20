@@ -155,6 +155,12 @@ type WorkerRegistration struct {
 	Permissions *livekit.ParticipantPermission
 	ClientIP    string
 	Deployment  string
+
+	// agent HTTP endpoints data plane
+	Endpoints        []*livekit.AgentHttp_AgentEndpoint
+	InstanceID       string
+	EndpointProtocol uint32
+	EndpointSettings *livekit.AgentHttp_AgentEndpointSettings
 }
 
 func MakeWorkerRegistration() WorkerRegistration {
@@ -166,10 +172,17 @@ func MakeWorkerRegistration() WorkerRegistration {
 
 var _ WorkerSignalHandler = (*WorkerRegisterer)(nil)
 
+// EndpointSettingsFunc validates a registration's endpoint manifest and returns the
+// negotiated data-plane settings (including the attach token). Returning an error
+// fails the registration. It runs only when the registration declares endpoints AND
+// a data-plane protocol version; a nil func rejects such registrations.
+type EndpointSettingsFunc func(req *livekit.RegisterWorkerRequest) (*livekit.AgentHttp_AgentEndpointSettings, error)
+
 type WorkerRegisterer struct {
 	WorkerPingHandler
-	serverInfo *livekit.ServerInfo
-	deadline   time.Time
+	serverInfo       *livekit.ServerInfo
+	deadline         time.Time
+	endpointSettings EndpointSettingsFunc
 
 	registration WorkerRegistration
 	registered   bool
@@ -182,6 +195,13 @@ func NewWorkerRegisterer(conn SignalConn, serverInfo *livekit.ServerInfo, base W
 		registration:      base,
 		deadline:          time.Now().Add(RegisterTimeout),
 	}
+}
+
+// WithEndpointSettings enables the HTTP endpoints data plane for registrations that
+// declare endpoints.
+func (h *WorkerRegisterer) WithEndpointSettings(f EndpointSettingsFunc) *WorkerRegisterer {
+	h.endpointSettings = f
+	return h
 }
 
 func (h *WorkerRegisterer) Deadline() time.Time {
@@ -221,13 +241,28 @@ func (h *WorkerRegisterer) HandleRegister(req *livekit.RegisterWorkerRequest) er
 	h.registration.JobType = req.GetType()
 	h.registration.Permissions = permissions
 	h.registration.Deployment = req.GetDeployment()
+	h.registration.Endpoints = req.GetEndpoints()
+	h.registration.InstanceID = req.GetInstanceId()
+	h.registration.EndpointProtocol = req.GetEndpointProtocol()
+
+	if len(req.GetEndpoints()) > 0 && req.GetEndpointProtocol() > 0 {
+		if h.endpointSettings == nil {
+			return errors.New("agent HTTP endpoints are not supported by this server")
+		}
+		settings, err := h.endpointSettings(req)
+		if err != nil {
+			return err
+		}
+		h.registration.EndpointSettings = settings
+	}
 	h.registered = true
 
 	_, err := h.conn.WriteServerMessage(&livekit.ServerMessage{
 		Message: &livekit.ServerMessage_Register{
 			Register: &livekit.RegisterWorkerResponse{
-				WorkerId:   h.registration.ID,
-				ServerInfo: h.serverInfo,
+				WorkerId:         h.registration.ID,
+				ServerInfo:       h.serverInfo,
+				EndpointSettings: h.registration.EndpointSettings,
 			},
 		},
 	})
@@ -248,9 +283,11 @@ type Worker struct {
 	cancel context.CancelFunc
 	closed chan struct{}
 
-	mu     sync.Mutex
-	load   float32
-	status livekit.WorkerStatus
+	mu        sync.Mutex
+	load      float32
+	status    livekit.WorkerStatus
+	statusSeq uint64
+	draining  bool
 
 	runningJobs  map[livekit.JobID]*livekit.Job
 	availability map[livekit.JobID]chan *livekit.AvailabilityResponse
@@ -581,13 +618,28 @@ func (w *Worker) HandleUpdateWorker(update *livekit.UpdateWorkerStatus) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	// status updates may interleave across connections; never regress newer state
+	if seq := update.GetSeq(); seq != 0 {
+		if seq <= w.statusSeq {
+			return nil
+		}
+		w.statusSeq = seq
+	}
+
 	if status := update.Status; status != nil && w.status != *status {
 		w.status = *status
 		w.Logger().Debugw("worker status changed", "status", w.status)
 	}
 	w.load = update.GetLoad()
+	w.draining = update.GetDraining()
 
 	return nil
+}
+
+func (w *Worker) Draining() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.draining
 }
 
 func (w *Worker) HandleMigrateJob(req *livekit.MigrateJobRequest) error {

@@ -26,9 +26,11 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/livekit-server/pkg/agent"
+	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
@@ -112,8 +114,11 @@ func DispatchAgentWorkerSignal(c agent.SignalConn, h agent.WorkerSignalHandler, 
 	return true
 }
 
-func HandshakeAgentWorker(c agent.SignalConn, serverInfo *livekit.ServerInfo, registration agent.WorkerRegistration, l logger.Logger) (r agent.WorkerRegistration, ok bool) {
+func HandshakeAgentWorker(c agent.SignalConn, serverInfo *livekit.ServerInfo, registration agent.WorkerRegistration, l logger.Logger, opts ...func(*agent.WorkerRegisterer)) (r agent.WorkerRegistration, ok bool) {
 	wr := agent.NewWorkerRegisterer(c, serverInfo, registration)
+	for _, opt := range opts {
+		opt(wr)
+	}
 	if err := c.SetReadDeadline(wr.Deadline()); err != nil {
 		return
 	}
@@ -138,14 +143,21 @@ type AgentService struct {
 
 type AgentHandler struct {
 	agentServer rpc.AgentInternalServer
-	mu          sync.Mutex
-	logger      logger.Logger
+	// the server's only configured api key, when exactly one exists: the
+	// unauthenticated scope for public endpoints regardless of which node holds
+	// the workers
+	singleAPIKey string
+	mu           sync.Mutex
+	logger       logger.Logger
 
 	serverInfo  *livekit.ServerInfo
 	workers     map[string]*agent.Worker
 	jobToWorker map[livekit.JobID]*agent.Worker
 	keyProvider auth.KeyProvider
 	targetLoad  float32
+
+	endpointRegistry *endpoint.Registry
+	endpointsConfig  agent.EndpointsConfig
 
 	namespaceWorkers    map[workerKey][]*agent.Worker
 	roomKeyCount        int
@@ -199,10 +211,34 @@ func NewAgentService(
 		agent.PublisherAgentTopic,
 		agent.ParticipantAgentTopic,
 	)
+	s.AgentHandler.endpointsConfig = conf.Agents.Endpoints
+	if len(conf.Keys) == 1 {
+		for key := range conf.Keys {
+			s.AgentHandler.singleAPIKey = key
+		}
+	}
+
 	return s, nil
 }
 
+// EndpointFront is the /agents/{deployment}/{path...} handler backed by this
+// node's attached workers. Project scope comes from validated grants when a
+// token is present; unauthenticated requests reach public endpoints only.
+func (s *AgentService) EndpointFront() http.Handler {
+	front := endpoint.NewFront(s.endpointRegistry, func(r *http.Request) (string, bool) {
+		if claims := GetGrants(r.Context()); claims != nil {
+			return GetAPIKey(r.Context()), true
+		}
+		// unauthenticated: with a single configured key the scope is
+		// unambiguous even when this node holds no registrations (multi-node)
+		return s.singleAPIKey, false
+	}, s.logger)
+	front.WithSingleKeyFallback()
+	return front
+}
+
 func (s *AgentService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	attach := r.URL.Query().Get("attach") != ""
 	if conn, registration, ok := s.upgrader.Upgrade(w, r, nil); ok {
 		// bound the size of a single signalling frame so an oversized message is
 		// rejected by the transport before being fully buffered in memory. This
@@ -211,10 +247,154 @@ func (s *AgentService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if s.signalMessageSizeLimit > 0 {
 			conn.SetReadLimit(s.signalMessageSizeLimit)
 		}
+
+		if attach {
+			// data wire: no registration handshake, no signal loop; the wire
+			// speaks AgentHttp.Frame exclusively and the endpoint mux owns it
+			// after a successful attach
+			HandleEndpointAttach(s.endpointRegistry, NewEndpointWireConn(conn), s.wireParams())
+			return
+		}
+
 		sigConn := NewWSSignalConnection(conn, s.signalMessageSizeLimit)
 		defer sigConn.Close()
-
 		s.HandleConnection(r.Context(), sigConn, registration)
+	}
+}
+
+// endpointWireIdleTimeout is the read-side liveness bound on adopted wires:
+// the SDK pings every 30s at the websocket level, so a wire silent for this
+// long is dead and must release its pool slot instead of occupying it until a
+// write happens to trip the write-stall deadline.
+const endpointWireIdleTimeout = 2 * time.Minute
+
+// endpointWireConn frames AgentHttp.Frame over a raw websocket: one frame per
+// binary message.
+type endpointWireConn struct {
+	ws      *websocket.Conn
+	writeMu sync.Mutex
+}
+
+// NewEndpointWireConn wraps an upgraded agent websocket as a data-plane wire.
+func NewEndpointWireConn(ws *websocket.Conn) endpoint.WireConn {
+	c := &endpointWireConn{ws: ws}
+	ws.SetPingHandler(func(m string) error {
+		_ = ws.SetReadDeadline(time.Now().Add(endpointWireIdleTimeout))
+		return ws.WriteControl(websocket.PongMessage, []byte(m), time.Now().Add(10*time.Second))
+	})
+	return c
+}
+
+func (c *endpointWireConn) WriteFrame(f *livekit.AgentHttp_Frame) error {
+	b, err := proto.Marshal(f)
+	if err != nil {
+		return err
+	}
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return c.ws.WriteMessage(websocket.BinaryMessage, b)
+}
+
+func (c *endpointWireConn) ReadFrame() (*livekit.AgentHttp_Frame, error) {
+	for {
+		_ = c.ws.SetReadDeadline(time.Now().Add(endpointWireIdleTimeout))
+		mt, b, err := c.ws.ReadMessage()
+		if err != nil {
+			return nil, err
+		}
+		if mt != websocket.BinaryMessage {
+			continue
+		}
+		f := &livekit.AgentHttp_Frame{}
+		if err := proto.Unmarshal(b, f); err != nil {
+			return nil, err
+		}
+		return f, nil
+	}
+}
+
+func (c *endpointWireConn) SetWriteDeadline(t time.Time) error {
+	return c.ws.SetWriteDeadline(t)
+}
+
+func (c *endpointWireConn) SetReadDeadline(t time.Time) error {
+	return c.ws.SetReadDeadline(t)
+}
+
+func (c *endpointWireConn) Close() error {
+	return c.ws.Close()
+}
+
+// wireParams are this node's wire-level flow-control parameters, announced to
+// the worker in each attach response.
+func (s *AgentService) wireParams() endpoint.WireParams {
+	p := endpoint.WireParams{
+		CreditWindow:      s.endpointsConfig.CreditWindow,
+		ConnectionWindow:  s.endpointsConfig.ConnectionWindow,
+		MaxFrameSize:      s.endpointsConfig.MaxFrameSize,
+		MaxStreamsPerConn: s.endpointsConfig.MaxStreamsPerConn,
+	}.WithDefaults()
+	// data frames ride the same websocket read limit as signalling: keep the
+	// frame size safely under it so a full frame can never kill the wire
+	if lim := s.signalMessageSizeLimit; lim > 0 && int64(p.MaxFrameSize) > lim/2 {
+		p.MaxFrameSize = uint32(lim / 2)
+	}
+	return p
+}
+
+// HandleEndpointAttach adopts a worker-dialed data wire: the first frame is
+// Attach on stream 0, validated against the registration's epoch and token; the
+// response carries this node's wire parameters. Shared by OSS and cloud
+// servers.
+func HandleEndpointAttach(registry *endpoint.Registry, wire endpoint.WireConn, params endpoint.WireParams) {
+	if err := wire.SetReadDeadline(time.Now().Add(agent.RegisterTimeout)); err != nil {
+		_ = wire.Close()
+		return
+	}
+	f, err := wire.ReadFrame()
+	if err != nil {
+		_ = wire.Close()
+		return
+	}
+	att, ok := f.Message.(*livekit.AgentHttp_Frame_Attach)
+	if !ok || f.StreamId != 0 {
+		_ = wire.Close()
+		return
+	}
+
+	effective := params.WithDefaults()
+	respond := func(errStr string) error {
+		resp := &livekit.AgentHttp_AttachDataConnectionResponse{Error: errStr}
+		if errStr == "" {
+			resp.CreditWindow = effective.CreditWindow
+			resp.ConnectionWindow = effective.ConnectionWindow
+			resp.MaxFrameSize = effective.MaxFrameSize
+			resp.MaxStreamsPerConn = effective.MaxStreamsPerConn
+		}
+		// the only wire write outside the scheduler: bound it too
+		_ = wire.SetWriteDeadline(time.Now().Add(agent.RegisterTimeout))
+		return wire.WriteFrame(&livekit.AgentHttp_Frame{
+			Message: &livekit.AgentHttp_Frame_AttachResponse{AttachResponse: resp},
+		})
+	}
+
+	a := att.Attach
+	// the slot is reserved before the ack is written (never a success ack for a
+	// wire that then loses the cap race) and adopted only after it, so the
+	// worker cannot observe stream frames ahead of the attach outcome
+	ticket, err := registry.BeginAttach(a.GetWorkerId(), a.GetInstanceId(), a.GetAttachToken())
+	if err != nil {
+		_ = respond(err.Error())
+		_ = wire.Close()
+		return
+	}
+	if err := respond(""); err != nil {
+		ticket.Abort()
+		_ = wire.Close()
+		return
+	}
+	if !ticket.Complete(wire, effective) {
+		_ = wire.Close()
 	}
 }
 
@@ -240,11 +420,37 @@ func NewAgentHandler(
 		roomTopic:        roomTopic,
 		publisherTopic:   publisherTopic,
 		participantTopic: participantTopic,
+		endpointRegistry: endpoint.NewRegistry(),
 	}
 }
 
+// endpointSettings validates a registration's manifest and negotiates the
+// data-plane settings, minting the epoch's attach token.
+func (h *AgentHandler) endpointSettings(req *livekit.RegisterWorkerRequest) (*livekit.AgentHttp_AgentEndpointSettings, error) {
+	if h.endpointsConfig.Disabled {
+		return nil, errors.New("agent HTTP endpoints are disabled on this server")
+	}
+	if _, err := endpoint.ParseManifest(req.GetEndpoints()); err != nil {
+		return nil, err
+	}
+	if req.GetInstanceId() == "" {
+		return nil, errors.New("registrations with endpoints require an instance_id")
+	}
+	settings := endpoint.Settings{
+		Protocol:      endpoint.CurrentProtocol,
+		AttachToken:   endpoint.NewAttachToken(),
+		DataConnCount: h.endpointsConfig.DataConnCount,
+	}
+	if settings.DataConnCount == 0 {
+		settings.DataConnCount = endpoint.DefaultDataConnCount
+	}
+	return settings.Proto(), nil
+}
+
 func (h *AgentHandler) HandleConnection(ctx context.Context, conn agent.SignalConn, registration agent.WorkerRegistration) {
-	registration, ok := HandshakeAgentWorker(conn, h.serverInfo, registration, h.logger)
+	registration, ok := HandshakeAgentWorker(conn, h.serverInfo, registration, h.logger, func(wr *agent.WorkerRegisterer) {
+		wr.WithEndpointSettings(h.endpointSettings)
+	})
 	if !ok {
 		return
 	}
@@ -255,13 +461,55 @@ func (h *AgentHandler) HandleConnection(ctx context.Context, conn agent.SignalCo
 	worker := agent.NewWorker(registration, apiKey, apiSecret, conn, h.logger)
 	h.registerWorker(worker)
 
+	endpointReg := h.registerEndpoints(worker)
+
 	handlerWorker := &agentHandlerWorker{h, worker}
 	for ok := true; ok; {
 		ok = DispatchAgentWorkerSignal(conn, handlerWorker, worker.Logger())
 	}
 
+	if endpointReg != nil {
+		h.endpointRegistry.Deregister(endpointReg)
+	}
 	h.deregisterWorker(worker)
 	worker.Close()
+}
+
+// registerEndpoints adopts a worker's endpoint manifest into the data-plane
+// registry. The registration lives exactly as long as the control connection.
+func (h *AgentHandler) registerEndpoints(w *agent.Worker) *endpoint.Registration {
+	settings := w.EndpointSettings
+	if settings == nil {
+		return nil
+	}
+	manifest, err := endpoint.ParseManifest(w.Endpoints)
+	if err != nil {
+		// validated during the handshake; a failure here is a programming error
+		w.Logger().Errorw("endpoint manifest failed to re-parse", err)
+		return nil
+	}
+	reg := &endpoint.Registration{
+		WorkerID:   w.ID,
+		InstanceID: w.InstanceID,
+		APIKey:     w.APIKey(),
+		Deployment: w.Deployment,
+		Manifest:   manifest,
+		Settings: endpoint.Settings{
+			Protocol:      settings.GetProtocol(),
+			AttachToken:   settings.GetAttachToken(),
+			DataConnCount: settings.GetDataConnectionCount(),
+		},
+		Logger:   w.Logger(),
+		Load:     w.Load,
+		Draining: w.Draining,
+	}
+	if err := h.endpointRegistry.Register(reg); err != nil {
+		w.Logger().Errorw("failed to register endpoints", err)
+		return nil
+	}
+	w.Logger().Infow("endpoints registered",
+		"deployment", w.Deployment, "routes", len(w.Endpoints))
+	return reg
 }
 
 func (h *AgentHandler) registerWorker(w *agent.Worker) {

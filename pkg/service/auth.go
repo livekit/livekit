@@ -76,8 +76,12 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 
 		authToken = authHeader[len(bearerPrefix):]
 	} else {
-		// attempt to find from request header
-		authToken = r.FormValue(accessTokenParam)
+		// attempt to find from the query string. FormValue would also parse
+		// url-encoded POST bodies, consuming the body of any request that gets
+		// proxied further (agent HTTP endpoints)
+		if r.URL != nil {
+			authToken = r.URL.Query().Get(accessTokenParam)
+		}
 	}
 
 	if authToken != "" {
