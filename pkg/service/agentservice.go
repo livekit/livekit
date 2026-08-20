@@ -390,7 +390,7 @@ func HandleEndpointAttach(registry *endpoint.Registry, wire endpoint.WireConn, p
 	// wire that then loses the cap race) and adopted only after it, so the
 	// worker cannot observe stream frames ahead of the attach outcome
 	ticket, err := registry.BeginAttach(a.GetWorkerId(), a.GetInstanceId(), a.GetAttachToken())
-	if errors.Is(err, endpoint.ErrUnknownWorker) && adopt != nil {
+	if (errors.Is(err, endpoint.ErrUnknownWorker) || errors.Is(err, endpoint.ErrWrongEpoch)) && adopt != nil {
 		if aerr := adopt(a); aerr != nil {
 			_ = respond(aerr.Error())
 			_ = wire.Close()

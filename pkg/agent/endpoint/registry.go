@@ -31,6 +31,11 @@ const DefaultDeployment = "default"
 var (
 	ErrAttachRejected = errors.New("attach rejected")
 	ErrUnknownWorker  = errors.New("unknown worker registration")
+	// ErrWrongEpoch means a registration exists for the worker but the wire's
+	// credentials name a different epoch: a multi-node adopter re-validates
+	// against the registration holder and refreshes, since the holder is the
+	// authority on the current epoch.
+	ErrWrongEpoch = errors.New("wrong registration epoch")
 )
 
 func normalizeDeployment(d string) string {
@@ -90,11 +95,9 @@ func (r *Registration) validateAttach(instanceID, token string) error {
 // slot, so the attach ack can be written before adoption without two racing
 // wires both being acked at the cap.
 func (r *Registration) beginAttach(instanceID, token string) (*AttachTicket, error) {
-	if subtle.ConstantTimeCompare([]byte(token), []byte(r.Settings.AttachToken)) != 1 {
-		return nil, ErrAttachRejected
-	}
-	if instanceID != r.InstanceID {
-		return nil, ErrAttachRejected
+	if subtle.ConstantTimeCompare([]byte(token), []byte(r.Settings.AttachToken)) != 1 ||
+		instanceID != r.InstanceID {
+		return nil, ErrWrongEpoch
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
