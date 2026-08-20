@@ -16,7 +16,9 @@ package endpoint
 
 import (
 	"fmt"
+	"hash/fnv"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/livekit/protocol/livekit"
@@ -35,6 +37,27 @@ type Route struct {
 // Manifest is a worker's ordered route table.
 type Manifest struct {
 	routes []Route
+}
+
+// Version is a stable fnv64a digest of the route set, used to detect manifest
+// skew across nodes serving the same deployment (all-agree => safe to route
+// without inspecting the path). It is order-independent: two workers on the
+// same revision hash identically regardless of route declaration order.
+func (m *Manifest) Version() uint64 {
+	lines := make([]string, 0, len(m.routes))
+	for i := range m.routes {
+		r := &m.routes[i]
+		methods := append([]string(nil), r.Methods...)
+		slices.Sort(methods)
+		lines = append(lines, strconv.Itoa(int(r.Kind))+" "+r.Template.String()+" "+strings.Join(methods, ",")+" "+strconv.FormatBool(r.Public))
+	}
+	slices.Sort(lines)
+	h := fnv.New64a()
+	for _, l := range lines {
+		_, _ = h.Write([]byte(l))
+		_, _ = h.Write([]byte{0})
+	}
+	return h.Sum64()
 }
 
 // MatchResult mirrors starlette's Match enum: a FULL match selects the route, a
