@@ -509,6 +509,7 @@ func (h *AgentHandler) registerEndpoints(w *agent.Worker) *endpoint.Registration
 		APIKey:     w.APIKey(),
 		Deployment: w.Deployment,
 		Manifest:   manifest,
+		Endpoints:  w.Endpoints,
 		Settings: endpoint.Settings{
 			Protocol:      settings.GetProtocol(),
 			AttachToken:   settings.GetAttachToken(),

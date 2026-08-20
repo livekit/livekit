@@ -20,6 +20,7 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/guid"
 )
@@ -56,8 +57,11 @@ type Registration struct {
 	APIKey     string
 	Deployment string
 	Manifest   *Manifest
-	Settings   Settings
-	Logger     logger.Logger
+	// Endpoints is the raw manifest as declared, kept so a multi-node layer can
+	// replicate the route set for remote path matching without re-deriving it.
+	Endpoints []*livekit.AgentHttp_AgentEndpoint
+	Settings  Settings
+	Logger    logger.Logger
 
 	// Load and Draining are provided by the control-plane layer that owns the
 	// worker (reported load rides UpdateWorkerStatus on the control connection).
