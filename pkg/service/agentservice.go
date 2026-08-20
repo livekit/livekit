@@ -252,7 +252,7 @@ func (s *AgentService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// data wire: no registration handshake, no signal loop; the wire
 			// speaks AgentHttp.Frame exclusively and the endpoint mux owns it
 			// after a successful attach
-			HandleEndpointAttach(s.endpointRegistry, NewEndpointWireConn(conn), s.wireParams())
+			HandleEndpointAttach(s.endpointRegistry, NewEndpointWireConn(conn), s.wireParams(), nil)
 			return
 		}
 
@@ -342,11 +342,18 @@ func (s *AgentService) wireParams() endpoint.WireParams {
 	return p
 }
 
+// AttachAdopter resolves an attach whose worker is unknown to the local
+// registry - behind a load balancer the wire may land on a node other than the
+// one holding the registration. The adopter may install a local registration
+// (e.g. a satellite fetched from the holder); afterwards the attach is retried
+// locally once. nil rejects unknown workers.
+type AttachAdopter func(a *livekit.AgentHttp_AttachDataConnection) error
+
 // HandleEndpointAttach adopts a worker-dialed data wire: the first frame is
 // Attach on stream 0, validated against the registration's epoch and token; the
 // response carries this node's wire parameters. Shared by OSS and cloud
 // servers.
-func HandleEndpointAttach(registry *endpoint.Registry, wire endpoint.WireConn, params endpoint.WireParams) {
+func HandleEndpointAttach(registry *endpoint.Registry, wire endpoint.WireConn, params endpoint.WireParams, adopt AttachAdopter) {
 	if err := wire.SetReadDeadline(time.Now().Add(agent.RegisterTimeout)); err != nil {
 		_ = wire.Close()
 		return
@@ -383,6 +390,14 @@ func HandleEndpointAttach(registry *endpoint.Registry, wire endpoint.WireConn, p
 	// wire that then loses the cap race) and adopted only after it, so the
 	// worker cannot observe stream frames ahead of the attach outcome
 	ticket, err := registry.BeginAttach(a.GetWorkerId(), a.GetInstanceId(), a.GetAttachToken())
+	if errors.Is(err, endpoint.ErrUnknownWorker) && adopt != nil {
+		if aerr := adopt(a); aerr != nil {
+			_ = respond(aerr.Error())
+			_ = wire.Close()
+			return
+		}
+		ticket, err = registry.BeginAttach(a.GetWorkerId(), a.GetInstanceId(), a.GetAttachToken())
+	}
 	if err != nil {
 		_ = respond(err.Error())
 		_ = wire.Close()
