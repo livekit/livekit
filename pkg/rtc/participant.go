@@ -81,6 +81,10 @@ const (
 	cMaxPendingTracks       = 20
 	cMaxPendingQueuedTracks = 3
 
+	// unsequenced reliable data (server API sends) cannot be recovered from the
+	// data message cache, so it is held here until the reliable data channel is writable
+	cMaxJoiningUnsequencedReliableBytes = 100_000
+
 	PingIntervalSeconds = 5
 	PingTimeoutSeconds  = 15
 )
@@ -150,6 +154,9 @@ type reliableDataInfo struct {
 	joiningMessageLock            sync.Mutex
 	joiningMessageFirstSeqs       map[livekit.ParticipantID]uint32
 	joiningMessageLastWrittenSeqs map[livekit.ParticipantID]uint32
+	joiningUnsequencedMessages    [][]byte
+	joiningUnsequencedBytes       int
+	joiningUnsequencedDropped     int
 	lastPubReliableSeq            atomic.Uint32
 	stopReliableByMigrateOut      atomic.Bool
 	canWriteReliable              bool
@@ -3956,7 +3963,37 @@ func (p *ParticipantImpl) SupportsTransceiverReuse(mt types.MediaTrack) bool {
 }
 
 func (p *ParticipantImpl) SendDataMessage(kind livekit.DataPacket_Kind, data []byte, sender livekit.ParticipantID, seq uint32) error {
-	if sender == "" || kind != livekit.DataPacket_RELIABLE || seq == 0 {
+	if kind != livekit.DataPacket_RELIABLE {
+		if p.State() != livekit.ParticipantInfo_ACTIVE {
+			return ErrDataChannelUnavailable
+		}
+		return p.TransportManager.SendDataMessage(kind, data)
+	}
+
+	if sender == "" || seq == 0 {
+		// Unsequenced reliable data, i. e. not published by a participant, room service
+		// SendData for example. Such a message cannot be recovered by
+		// replayJoiningReliableMessages as the data message cache is keyed on
+		// sender/sequence number, so hold on to the message itself here till the
+		// reliable data channel is writable.
+		p.reliableDataInfo.joiningMessageLock.Lock()
+		if !p.reliableDataInfo.canWriteReliable {
+			if p.reliableDataInfo.joiningUnsequencedBytes+len(data) > cMaxJoiningUnsequencedReliableBytes {
+				p.reliableDataInfo.joiningUnsequencedDropped++
+				p.reliableDataInfo.joiningMessageLock.Unlock()
+				return ErrDataChannelUnavailable
+			}
+
+			p.reliableDataInfo.joiningUnsequencedMessages = append(
+				p.reliableDataInfo.joiningUnsequencedMessages,
+				slices.Clone(data),
+			)
+			p.reliableDataInfo.joiningUnsequencedBytes += len(data)
+			p.reliableDataInfo.joiningMessageLock.Unlock()
+			return nil
+		}
+		p.reliableDataInfo.joiningMessageLock.Unlock()
+
 		if p.State() != livekit.ParticipantInfo_ACTIVE {
 			return ErrDataChannelUnavailable
 		}
@@ -4070,6 +4107,20 @@ func (p *ParticipantImpl) replayJoiningReliableMessages() {
 
 		p.TransportManager.SendDataMessage(livekit.DataPacket_RELIABLE, msgCache.Data)
 	}
+
+	for _, msg := range p.reliableDataInfo.joiningUnsequencedMessages {
+		p.TransportManager.SendDataMessage(livekit.DataPacket_RELIABLE, msg)
+	}
+	if p.reliableDataInfo.joiningUnsequencedDropped != 0 {
+		p.params.Logger.Warnw(
+			"dropped unsequenced reliable data messages while joining", nil,
+			"numDropped", p.reliableDataInfo.joiningUnsequencedDropped,
+			"numReplayed", len(p.reliableDataInfo.joiningUnsequencedMessages),
+		)
+	}
+	p.reliableDataInfo.joiningUnsequencedMessages = nil
+	p.reliableDataInfo.joiningUnsequencedBytes = 0
+	p.reliableDataInfo.joiningUnsequencedDropped = 0
 
 	p.reliableDataInfo.joiningMessageFirstSeqs = make(map[livekit.ParticipantID]uint32)
 	p.reliableDataInfo.canWriteReliable = true
