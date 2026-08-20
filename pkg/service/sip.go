@@ -766,11 +766,13 @@ func (s *SIPService) transferSIPParticipantRequest(ctx context.Context, req *liv
 	}
 
 	return &rpc.InternalTransferSIPParticipantRequest{
-		SipCallId:      callID,
-		TransferTo:     req.TransferTo,
-		PlayDialtone:   req.PlayDialtone,
-		Headers:        req.Headers,
-		RingingTimeout: req.RingingTimeout,
+		SipCallId:           callID,
+		TransferTo:          req.TransferTo,
+		PlayDialtone:        req.PlayDialtone,
+		Headers:             req.Headers,
+		RingingTimeout:      req.RingingTimeout,
+		RoomName:            req.RoomName,
+		ParticipantIdentity: req.ParticipantIdentity,
 	}, nil
 }
 
