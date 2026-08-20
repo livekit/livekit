@@ -1099,7 +1099,7 @@ func (r *Room) onTrackPublished(participant types.Participant, track types.Media
 			"publisherID", participant.ID(),
 			"trackID", track.ID(),
 		)
-		existingParticipant.SubscribeToTrack(track.ID(), false)
+		existingParticipant.SubscribeToTrack(track.ID(), false, false)
 	}
 	onParticipantChanged := r.onParticipantChanged
 	r.lock.RUnlock()
@@ -1354,7 +1354,7 @@ func (r *Room) onUpdateSubscriptions(
 	participantTracks []*livekit.ParticipantTracks,
 	subscribe bool,
 ) {
-	r.UpdateSubscriptions(participant, trackIDs, participantTracks, subscribe)
+	r.UpdateSubscriptions(participant, trackIDs, participantTracks, subscribe, false /* adminInitiated */)
 }
 
 func (r *Room) UpdateSubscriptions(
@@ -1362,10 +1362,11 @@ func (r *Room) UpdateSubscriptions(
 	trackIDs []livekit.TrackID,
 	participantTracks []*livekit.ParticipantTracks,
 	subscribe bool,
+	adminInitiated bool,
 ) {
 	for _, trackID := range trackIDs {
 		if subscribe {
-			participant.SubscribeToTrack(trackID, false)
+			participant.SubscribeToTrack(trackID, false, adminInitiated)
 		} else {
 			participant.UnsubscribeFromTrack(trackID)
 		}
@@ -1374,7 +1375,7 @@ func (r *Room) UpdateSubscriptions(
 	for _, pt := range participantTracks {
 		for _, trackID := range livekit.StringsAsIDs[livekit.TrackID](pt.TrackSids) {
 			if subscribe {
-				participant.SubscribeToTrack(trackID, false)
+				participant.SubscribeToTrack(trackID, false, adminInitiated)
 			} else {
 				participant.UnsubscribeFromTrack(trackID)
 			}
@@ -1517,7 +1518,7 @@ func (r *Room) subscribeToExistingTracks(p types.LocalParticipant, isSync bool) 
 		if autoSubscribe {
 			for _, track := range op.GetPublishedTracks() {
 				trackIDs = append(trackIDs, track.ID())
-				p.SubscribeToTrack(track.ID(), isSync)
+				p.SubscribeToTrack(track.ID(), isSync, false)
 			}
 		}
 
