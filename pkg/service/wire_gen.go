@@ -84,7 +84,8 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	rtcEgressLauncher := NewEgressLauncher(egressClient, ioInfoService, objectStore)
+	clusterID := getClusterID(conf)
+	rtcEgressLauncher := NewEgressLauncher(egressClient, ioInfoService, objectStore, clusterID)
 	topicFormatter := rpc.NewTopicFormatter()
 	v, err := rpc.NewTypedRoomClient(clientParams)
 	if err != nil {
@@ -115,7 +116,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	sipService := NewSIPService(sipConfig, nodeID, messageBus, sipClient, sipStore, roomService, telemetryService)
+	sipService := NewSIPService(sipConfig, nodeID, clusterID, messageBus, sipClient, sipStore, roomService, telemetryService)
 	rtcService := NewRTCService(conf, roomAllocator, router, telemetryService)
 	v4, err := rpc.NewTypedWHIPParticipantClient(clientParams)
 	if err != nil {
@@ -313,6 +314,10 @@ func getSIPStore(s ObjectStore) SIPStore {
 
 func getSIPConfig(conf *config.Config) *config.SIPConfig {
 	return &conf.SIP
+}
+
+func getClusterID(conf *config.Config) string {
+	return conf.ClusterID
 }
 
 func getLimitConf(config2 *config.Config) config.LimitConfig {

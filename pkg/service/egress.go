@@ -42,9 +42,10 @@ type EgressService struct {
 }
 
 type egressLauncher struct {
-	client rpc.EgressClient
-	io     IOClient
-	store  ServiceStore
+	client    rpc.EgressClient
+	io        IOClient
+	store     ServiceStore
+	clusterID string
 }
 
 func NewEgressService(
@@ -61,14 +62,15 @@ func NewEgressService(
 	}
 }
 
-func NewEgressLauncher(client rpc.EgressClient, io IOClient, store ServiceStore) rtc.EgressLauncher {
+func NewEgressLauncher(client rpc.EgressClient, io IOClient, store ServiceStore, clusterID string) rtc.EgressLauncher {
 	if client == nil {
 		return nil
 	}
 	return &egressLauncher{
-		client: client,
-		io:     io,
-		store:  store,
+		client:    client,
+		io:        io,
+		store:     store,
+		clusterID: clusterID,
 	}
 }
 
@@ -270,7 +272,7 @@ func (s *egressLauncher) StartEgress(ctx context.Context, req *rpc.StartEgressRe
 		}
 	}
 
-	info, err := s.client.StartEgress(ctx, "", req)
+	info, err := s.client.StartEgress(ctx, s.clusterID, req)
 	if err != nil {
 		return nil, err
 	}
