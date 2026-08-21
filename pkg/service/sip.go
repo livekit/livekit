@@ -22,7 +22,6 @@ import (
 	"github.com/dennwc/iters"
 	"github.com/twitchtv/twirp"
 	"google.golang.org/protobuf/types/known/durationpb"
-	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -681,7 +680,7 @@ func (s *SIPService) CreateSIPParticipantRequest(ctx context.Context, req *livek
 	return internalReq, nil
 }
 
-func (s *SIPService) TransferSIPParticipant(ctx context.Context, req *livekit.TransferSIPParticipantRequest) (*emptypb.Empty, error) {
+func (s *SIPService) TransferSIPParticipant(ctx context.Context, req *livekit.TransferSIPParticipantRequest) (*livekit.TransferSIPParticipantResponse, error) {
 	AppendLogFields(ctx,
 		"room", req.RoomName,
 		"participant", req.ParticipantIdentity,
@@ -722,13 +721,19 @@ func (s *SIPService) TransferSIPParticipant(ctx context.Context, req *livekit.Tr
 	// own default (which could outlive us).
 	ireq.RingingTimeout = durationpb.New(timeout)
 
-	_, err = s.psrpcClient.TransferSIPParticipant(ctx, ireq.SipCallId, ireq, psrpc.WithRequestTimeout(timeout))
+	iresp, err := s.psrpcClient.TransferSIPParticipant(ctx, ireq.SipCallId, ireq, psrpc.WithRequestTimeout(timeout))
 	if err != nil {
 		log.Errorw("cannot transfer sip participant", err)
 		return nil, wrapSIPContextError(err)
 	}
 
-	return &emptypb.Empty{}, nil
+	// The bridge reports the outcome; pass it through rather than inventing one.
+	return &livekit.TransferSIPParticipantResponse{
+		TransferId: iresp.GetTransferId(),
+		Status:     iresp.GetStatus(),
+		Reason:     iresp.GetReason(),
+		SipStatus:  iresp.GetSipStatus(),
+	}, nil
 }
 
 func (s *SIPService) transferSIPParticipantRequest(ctx context.Context, req *livekit.TransferSIPParticipantRequest, log logger.UnlikelyLogger) (*rpc.InternalTransferSIPParticipantRequest, error) {
