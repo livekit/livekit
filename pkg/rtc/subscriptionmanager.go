@@ -417,6 +417,14 @@ func (m *SubscriptionManager) WaitUntilSubscribed(timeout time.Duration) error {
 				break
 			}
 		}
+		if allSubscribed {
+			for _, sub := range m.dataTrackSubscriptions {
+				if sub.needsSubscribe() {
+					allSubscribed = false
+					break
+				}
+			}
+		}
 		m.lock.RUnlock()
 		if allSubscribed {
 			return nil
@@ -728,13 +736,13 @@ func (m *SubscriptionManager) hasCapacityForSubscription(kind livekit.TrackType)
 	switch kind {
 	case livekit.TrackType_VIDEO:
 		if m.params.SubscriptionLimitVideo > 0 && m.subscribedVideoCount.Load() >= m.params.SubscriptionLimitVideo {
-			m.params.Logger.Infow("subscription limit exceeded for video", "limit", m.params.SubscriptionLimitVideo, "subscriptions", m.subscribedVideoCount.Load())
+			m.params.Logger.Debugw("subscription limit exceeded for video", "limit", m.params.SubscriptionLimitVideo, "subscriptions", m.subscribedVideoCount.Load())
 			return false
 		}
 
 	case livekit.TrackType_AUDIO:
 		if m.params.SubscriptionLimitAudio > 0 && m.subscribedAudioCount.Load() >= m.params.SubscriptionLimitAudio {
-			m.params.Logger.Infow("subscription limit exceeded for audio", "limit", m.params.SubscriptionLimitAudio, "subscriptions", m.subscribedAudioCount.Load())
+			m.params.Logger.Debugw("subscription limit exceeded for audio", "limit", m.params.SubscriptionLimitAudio, "subscriptions", m.subscribedAudioCount.Load())
 			return false
 		}
 	}
@@ -1543,7 +1551,7 @@ func (s *mediaTrackSubscription) recordStreamStartLatency(elapsed time.Duration)
 		return
 	}
 
-	s.logger.Debugw("track subscribe stream started", "cost", elapsed.Microseconds())
+	s.logger.Debugw("track subscribe stream started", "cost", elapsed.Milliseconds())
 	subscriber := subTrack.Subscriber()
 	prometheus.RecordSubscribeStreamStartTime(
 		subscriber.GetCountry(),

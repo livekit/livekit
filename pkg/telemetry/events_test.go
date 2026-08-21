@@ -86,7 +86,7 @@ func Test_OnParticipantLeft_EventIsSent(t *testing.T) {
 	guard := &telemetry.ReferenceGuard{}
 
 	// do
-	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, &livekit.AnalyticsClientMeta{}, false, guard)
+	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, &livekit.AnalyticsClientMeta{}, false, false, guard)
 	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo, true, guard)
 	time.Sleep(time.Millisecond * 500)
 
@@ -124,7 +124,7 @@ func Test_OnTrackUpdate_EventIsSent(t *testing.T) {
 	}
 
 	// do
-	fixture.sut.TrackPublishedUpdate(context.Background(), livekit.RoomID(roomID), livekit.RoomName(roomName), livekit.ParticipantID(partID), trackInfo)
+	fixture.sut.TrackPublishedUpdate(context.Background(), &livekit.Room{Sid: roomID, Name: roomName}, livekit.ParticipantID(partID), trackInfo)
 	time.Sleep(time.Millisecond * 500)
 
 	// test
@@ -179,7 +179,7 @@ func Test_OnParticipantActive_EventIsSent(t *testing.T) {
 		ClientConnectTime: 420,
 	}
 
-	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, clientMetaConnect, false, guard)
+	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, clientMetaConnect, false, false, guard)
 	time.Sleep(time.Millisecond * 500)
 
 	require.Equal(t, 2, fixture.analytics.SendEventCallCount())
@@ -228,7 +228,7 @@ func Test_OnTrackSubscribed_EventIsSent(t *testing.T) {
 	require.Equal(t, room, event.Room)
 
 	// do
-	fixture.sut.TrackSubscribed(context.Background(), livekit.RoomID(room.Sid), livekit.RoomName(room.Name), livekit.ParticipantID(partSID), trackInfo, publisherInfo, true)
+	fixture.sut.TrackSubscribed(context.Background(), room, livekit.ParticipantID(partSID), trackInfo, publisherInfo, true)
 	time.Sleep(time.Millisecond * 500)
 
 	require.Eventually(t, func() bool {

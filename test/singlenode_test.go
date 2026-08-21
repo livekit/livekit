@@ -1434,8 +1434,9 @@ func TestTurnAuthFailure(t *testing.T) {
 	validPassword, err := authHandler.CreatePassword(testApiKey, pID, validExpiry)
 	require.NoError(t, err)
 
-	// username encoded with an already-expired timestamp.
-	expiredUsername, _ := authHandler.CreateUsername(testApiKey, pID, -10)
+	// username encoded with an already-expired timestamp; constructed directly
+	// because CreateUsername floors non-positive TTLs to the default.
+	expiredUsername := base62.EncodeToString(fmt.Appendf(nil, "%s|%s|%d", testApiKey, pID, time.Now().Add(-time.Minute).Unix()))
 
 	// username encoded with an api key the server does not know about.
 	unknownAPIKeyUsername, _ := authHandler.CreateUsername("unknown-api-key", pID, 300)

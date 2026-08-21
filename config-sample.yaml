@@ -100,7 +100,11 @@ rtc:
   #     secret: ""
   #     # Path for file containing shared secret for TURN server authentication
   #     # When both secret and secret_file are set, secret takes precedence
+  #     # An empty/whitespace-only secret file fails startup rather than silently
+  #     # falling back to static credentials
   #     secret_file: "/var/lib/coturn/secret"
+  #     # TTL of generated credentials in seconds. Defaults to 14400 (4h) when 0.
+  #     # Negative values fall back to the 300s (5m) default; values are capped at 86400 (24h).
   #     ttl: 14400 # seconds
   #     # Insecure username/password authentication
   #     username: ""
@@ -296,6 +300,10 @@ keys:
 #   # set UDP port range for TURN relay to connect to LiveKit SFU, by default it uses a any available port
 #   relay_range_start: 1024
 #   relay_range_end: 30000
+#   # caps the number of concurrent relay allocations a single participant credential may hold.
+#   # prevents one authenticated participant from exhausting the shared relay-port range for everyone else.
+#   # defaults to 12; a value <= 0 disables the quota.
+#   per_user_relay_allocation_limit: 12
 #   # set external_tls to true if using a L4 load balancer to terminate TLS. when enabled,
 #   # LiveKit expects unencrypted traffic on tls_port, and still advertise tls_port as a TURN/TLS candidate.
 #   external_tls: true
@@ -304,7 +312,8 @@ keys:
 #   # optional (set only if not using external TLS termination)
 #   # cert_file: /path/to/cert.pem
 #   # key_file: /path/to/key.pem
-#   # TTL of the TURN credentials in seconds - defaults to 300
+#   # TTL of the TURN credentials in seconds - defaults to 300.
+#   # Values <= 0 fall back to the 300s (5m) default; values are capped at 86400 (24h).
 #   ttl_seconds: 300
 #   # list of restricted peer CIDRs (loopback, link-local (unicast, multicast), multicast, private, unspecified) to allow access to.
 #   # By default (i. e. empty list), all restricted peer CIDRs are denied access.
@@ -316,6 +325,7 @@ keys:
 #   # list of peer CIDRs to deny access to.
 #   # This applies to all peer CIDRs, including restricted ones.
 #   # Deny list takes precedence over allow list.
+#   # A malformed CIDR in either list fails startup rather than being silently ignored.
 #   deny_peer_cidrs:
 #     - 10.0.0.0/8
 #     - 192.168.0.0/16
@@ -370,3 +380,12 @@ keys:
 #   max_room_name_length: 0
 #   # limit length of participant identity
 #   max_participant_identity_length: 0
+#   # max size (bytes) of a single client-facing signalling WebSocket message; oversized
+#   # frames are rejected by the transport before being buffered. defaults to 2 MiB, 0 for no limit
+#   signal_message_size_limit: 2097152
+#   # same as above, but for agent worker WebSocket connections. defaults to 2 MiB, 0 for no limit
+#   agent_signal_message_size_limit: 2097152
+#   # max size (bytes) of an HTTP request body on the main API listener (Twirp room/egress/ingress/SIP
+#   # routes). requests larger than this are rejected before their body is decoded, so large messages
+#   # cannot exhaust memory. defaults to 10 MiB, 0 for no limit
+#   max_api_request_body_size: 10485760

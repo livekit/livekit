@@ -14,11 +14,18 @@
 
 # Mock LiveKit API server for SDK conformance testing. Build from the repo
 # root:  docker build -f cmd/test-server/Dockerfile -t livekit/test-server .
-FROM golang:1.26-alpine AS builder
+#
+# Pinned by digest so the build is reproducible even if the tag is republished.
+# The tag is kept alongside it for readability; Renovate updates both together.
+FROM golang:1.26.6-alpine3.24@sha256:af8d6740070b8906d12eae1c3e3ea0957fb63f492051ea05e354c38ef9fe88df AS builder
 
 ARG TARGETARCH
 
 WORKDIR /workspace
+
+# Build with exactly the toolchain in this image; fail (don't silently download)
+# if go.mod ever requires a newer version, so the pinned image stays authoritative.
+ENV GOTOOLCHAIN=local
 
 COPY go.mod go.mod
 COPY go.sum go.sum
@@ -30,7 +37,12 @@ COPY version/ version/
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH GO111MODULE=on go build -a -o livekit-test-server ./cmd/test-server
 
-FROM alpine
+FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+
+# Pull the latest security patches for base packages within the pinned Alpine
+# release; the digest above is only refreshed by a Renovate PR. See the note in
+# the repo-root Dockerfile about the cold-cache assumption.
+RUN apk upgrade --no-cache
 
 COPY --from=builder /workspace/livekit-test-server /livekit-test-server
 

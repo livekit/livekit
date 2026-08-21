@@ -2187,3 +2187,31 @@ func TestForwarderInitialAcquisitionGrace(t *testing.T) {
 	require.Equal(t, int32(1), alloc.TargetLayer.Spatial)
 	require.Equal(t, int32(1), alloc.RequestLayerSpatial)
 }
+
+func TestGetRefLayerRTPTimestampBounds(t *testing.T) {
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+
+	layerCount := int32(len(f.refInfos))
+
+	_, err := f.getRefLayerRTPTimestamp(1000, layerCount, 0)
+	require.Error(t, err)
+
+	_, err = f.getRefLayerRTPTimestamp(1000, 0, layerCount)
+	require.Error(t, err)
+
+	_, err = f.getRefLayerRTPTimestamp(1000, -1, 0)
+	require.Error(t, err)
+
+	_, err = f.getRefLayerRTPTimestamp(1000, 0, -1)
+	require.Error(t, err)
+
+	// same-layer translation does not need sender reports
+	ts, err := f.getRefLayerRTPTimestamp(1000, 0, 0)
+	require.NoError(t, err)
+	require.Equal(t, uint32(1000), ts)
+
+	// last valid index must be accepted by the bounds check (may still error for missing SR)
+	_, err = f.getRefLayerRTPTimestamp(1000, layerCount-1, 0)
+	require.Error(t, err) // unavailable sender report, not invalid layer
+	require.Contains(t, err.Error(), "unavailable")
+}

@@ -223,14 +223,14 @@ type PCTransport struct {
 	dataTrackDC             *datachannel.DataChannelWriter[*webrtc.DataChannel]
 	unlabeledDataChannels   []*datachannel.DataChannelWriter[*webrtc.DataChannel]
 
-	iceStartedAt               time.Time
-	iceConnectedAt             time.Time
-	firstConnectedAt           time.Time
-	connectedAt                time.Time
-	tcpICETimer                *time.Timer
-	connectAfterICETimer       *time.Timer // timer to wait for pc to connect after ice connected
-	resetShortConnOnICERestart atomic.Bool
-	signalingRTT               atomic.Uint32 // milliseconds
+	iceFirstStartedAt              time.Time
+	iceFirstConnectedAt            time.Time
+	peerConnectionFirstConnectedAt time.Time
+	peerConnectionLastconnectedAt  time.Time
+	tcpICETimer                    *time.Timer
+	connectAfterICETimer           *time.Timer // timer to wait for pc to connect after ice connected
+	resetShortConnOnICERestart     atomic.Bool
+	signalingRTT                   atomic.Uint32 // milliseconds
 
 	hasFullyEstablishedRecorded bool
 
@@ -330,6 +330,7 @@ type TransportParams struct {
 	DatachannelMaxReceiverBufferSize int
 
 	EnableDataTracks bool
+	EnableWarp       bool
 }
 
 func newPeerConnection(
@@ -380,6 +381,11 @@ func newPeerConnection(
 
 	if params.ClientInfo.SupportsSctpZeroChecksum() {
 		se.EnableSCTPZeroChecksum(true)
+	}
+
+	if params.EnableWarp {
+		se.EnableSped(true)
+		se.EnableSctpSnap(true)
 	}
 
 	//
@@ -664,8 +670,8 @@ func (t *PCTransport) SetSignalingRTT(rtt uint32) {
 
 func (t *PCTransport) setICEStartedAt(at time.Time) {
 	t.lock.Lock()
-	if t.iceStartedAt.IsZero() {
-		t.iceStartedAt = at
+	if t.iceFirstStartedAt.IsZero() {
+		t.iceFirstStartedAt = at
 
 		// checklist of ice agent will be cleared on ice failed, get stats before that
 		t.mayFailedICEStatsTimer = time.AfterFunc(iceFailedTimeoutTotal-time.Second, t.logMayFailedICEStats)
@@ -696,15 +702,15 @@ func (t *PCTransport) setICEStartedAt(at time.Time) {
 
 func (t *PCTransport) setICEConnectedAt(at time.Time) {
 	t.lock.Lock()
-	if t.iceConnectedAt.IsZero() {
+	if t.iceFirstConnectedAt.IsZero() {
 		//
 		// Record initial connection time.
-		// This prevents reset of connected at time if ICE goes `Connected` -> `Disconnected` -> `Connected`.
+		// This prevents reset of iceFirstConnectedAt if ICE goes `Connected` -> `Disconnected` -> `Connected`.
 		//
-		t.iceConnectedAt = at
+		t.iceFirstConnectedAt = at
 
 		// set failure timer for dtls handshake
-		iceDuration := at.Sub(t.iceStartedAt)
+		iceDuration := at.Sub(t.iceFirstStartedAt)
 		connTimeoutAfterICE := min(max(minConnectTimeoutAfterICE, 3*iceDuration), maxConnectTimeoutAfterICE)
 		t.params.Logger.Debugw("setting connection timer after ICE connected", "timeout", connTimeoutAfterICE, "iceDuration", iceDuration)
 		t.connectAfterICETimer = time.AfterFunc(connTimeoutAfterICE, func() {
@@ -771,9 +777,9 @@ func (t *PCTransport) logMayFailedICEStats() {
 func (t *PCTransport) resetShortConn() {
 	t.params.Logger.Infow("resetting short connection on ICE restart")
 	t.lock.Lock()
-	t.iceStartedAt = time.Time{}
-	t.iceConnectedAt = time.Time{}
-	t.connectedAt = time.Time{}
+	t.iceFirstStartedAt = time.Time{}
+	t.iceFirstConnectedAt = time.Time{}
+	t.peerConnectionLastconnectedAt = time.Time{}
 	if t.connectAfterICETimer != nil {
 		t.connectAfterICETimer.Stop()
 		t.connectAfterICETimer = nil
@@ -789,23 +795,23 @@ func (t *PCTransport) IsShortConnection(at time.Time) (bool, time.Duration) {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	if t.iceConnectedAt.IsZero() {
+	if t.iceFirstConnectedAt.IsZero() {
 		return false, 0
 	}
 
-	duration := at.Sub(t.iceConnectedAt)
+	duration := at.Sub(t.iceFirstConnectedAt)
 	return duration < shortConnectionThreshold, duration
 }
 
-func (t *PCTransport) setConnectedAt(at time.Time) bool {
+func (t *PCTransport) setPeerConnectionConnectedAt(at time.Time) bool {
 	t.lock.Lock()
-	t.connectedAt = at
-	if !t.firstConnectedAt.IsZero() {
+	t.peerConnectionLastconnectedAt = at
+	if !t.peerConnectionFirstConnectedAt.IsZero() {
 		t.lock.Unlock()
 		return false
 	}
 
-	t.firstConnectedAt = at
+	t.peerConnectionFirstConnectedAt = at
 	prometheus.RecordServiceOperationSuccess("peer_connection")
 	prometheus.RecordPeerConnectionState(t.params.Transport, "connected")
 	t.lock.Unlock()
@@ -859,7 +865,7 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 	switch state {
 	case webrtc.PeerConnectionStateConnected:
 		t.clearConnTimer()
-		isInitialConnection := t.setConnectedAt(time.Now())
+		isInitialConnection := t.setPeerConnectionConnectedAt(time.Now())
 		if isInitialConnection {
 			t.params.Handler.OnInitialConnected()
 
@@ -987,7 +993,7 @@ func (t *PCTransport) isFullyEstablished() bool {
 
 	dataChannelReady := t.params.UseOneShotSignallingMode || t.firstOfferNoDataChannel || (t.reliableDCOpened && t.lossyDCOpened)
 
-	return dataChannelReady && !t.connectedAt.IsZero()
+	return dataChannelReady && !t.peerConnectionLastconnectedAt.IsZero()
 }
 
 func (t *PCTransport) SetPreferTCP(preferTCP bool) {
@@ -1434,18 +1440,25 @@ func (t *PCTransport) IsEstablished() bool {
 	return t.pc.ConnectionState() != webrtc.PeerConnectionStateNew
 }
 
-func (t *PCTransport) HasEverConnected() bool {
+func (t *PCTransport) ICEHasEverConnected() bool {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	return !t.firstConnectedAt.IsZero()
+	return !t.iceFirstConnectedAt.IsZero()
 }
 
-func (t *PCTransport) FirstConnectedAt() time.Time {
+func (t *PCTransport) PeerConnectionHasEverConnected() bool {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	return t.firstConnectedAt
+	return !t.peerConnectionFirstConnectedAt.IsZero()
+}
+
+func (t *PCTransport) PeerConnectionFirstConnectedAt() time.Time {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.peerConnectionFirstConnectedAt
 }
 
 func (t *PCTransport) GetICEConnectionInfo() *types.ICEConnectionInfo {

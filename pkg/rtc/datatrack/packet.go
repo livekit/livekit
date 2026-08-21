@@ -126,11 +126,14 @@ func (h *Header) Unmarshal(buf []byte) (int, error) {
 	h.Timestamp = binary.BigEndian.Uint32(buf[timestampOffset : timestampOffset+timestampLength])
 
 	if h.HasExtensions {
-		extensionsSize := (binary.BigEndian.Uint16(buf[extensionsSizeOffset:extensionsSizeOffset+extensionsSizeLength])+1)*4 - extensionsSizeLength
+		if len(buf) < extensionsSizeOffset+extensionsSizeLength {
+			return 0, fmt.Errorf("%w: %d < %d", errHeaderSizeInsufficient, len(buf), extensionsSizeOffset+extensionsSizeLength)
+		}
+		extensionsSize := (int(binary.BigEndian.Uint16(buf[extensionsSizeOffset:extensionsSizeOffset+extensionsSizeLength]))+1)*4 - extensionsSizeLength
 		hdrSize += extensionsSizeLength
 
 		extensionHeaderSize := extensionIDLength + extensionSizeLength
-		remainingSize := int(extensionsSize)
+		remainingSize := extensionsSize
 		idx := extensionsSizeOffset + extensionsSizeLength
 		for remainingSize != 0 {
 			// read extension header
@@ -140,6 +143,9 @@ func (h *Header) Unmarshal(buf []byte) (int, error) {
 			id := buf[idx]
 			if id == 0 {
 				// end of extensions, padding has started
+				if len(buf[idx:]) < remainingSize {
+					return 0, fmt.Errorf("%w: %d/%d < %d", errExtensionSizeInsufficient, remainingSize, len(buf[idx:]), remainingSize)
+				}
 				hdrSize += remainingSize
 				break
 			}
@@ -163,7 +169,7 @@ func (h *Header) Unmarshal(buf []byte) (int, error) {
 			idx += size
 			hdrSize += size
 		}
-		h.ExtensionsSize = extensionsSize - uint16(remainingSize)
+		h.ExtensionsSize = uint16(extensionsSize - remainingSize)
 	}
 
 	return hdrSize, nil
@@ -270,6 +276,9 @@ func (p *Packet) Unmarshal(buf []byte) error {
 	hdrSize, err := p.Header.Unmarshal(buf)
 	if err != nil {
 		return err
+	}
+	if hdrSize > len(buf) {
+		return fmt.Errorf("%w: %d < %d", errBufferSizeInsufficient, len(buf), hdrSize)
 	}
 
 	p.Payload = buf[hdrSize:]

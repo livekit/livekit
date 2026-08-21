@@ -54,7 +54,9 @@ type MediaTrack struct {
 
 	dynacastManager dynacast.DynacastManager
 
-	lock sync.RWMutex
+	lock      sync.RWMutex
+	migrated  bool
+	published bool
 
 	rttFromXR atomic.Bool
 
@@ -346,8 +348,11 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 	})
 
 	ti := t.MediaTrackReceiver.TrackInfoClone()
-	t.lock.Lock()
+
 	var regressCodec bool
+	enableRegression := t.enableRegression()
+
+	t.lock.Lock()
 	mimeType := mime.NormalizeMimeType(track.Codec().MimeType)
 	layer := buffer.GetSpatialLayerForRid(mimeType, track.RID(), ti)
 	if layer < 0 {
@@ -529,7 +534,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		})
 	}
 
-	if newCodec && t.enableRegression() {
+	if newCodec && enableRegression {
 		if mimeType == t.regressionTargetCodec {
 			t.params.Logger.Infow("regression target codec received", "codec", mimeType)
 			t.regressionTargetCodecReceived = true
@@ -711,4 +716,28 @@ func (t *MediaTrack) OnDynacastSubscribedAudioCodecChange(codecs []*livekit.Subs
 	if onSubscribedAudioCodecChange != nil {
 		_ = onSubscribedAudioCodecChange(t.ID(), codecs)
 	}
+}
+
+func (t *MediaTrack) SetMigrated(migrated bool) {
+	t.lock.Lock()
+	t.migrated = migrated
+	t.lock.Unlock()
+}
+
+func (t *MediaTrack) Migrated() bool {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	return t.migrated
+}
+
+func (t *MediaTrack) SetPublished(published bool) {
+	t.lock.Lock()
+	t.published = published
+	t.lock.Unlock()
+}
+
+func (t *MediaTrack) Published() bool {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	return t.published
 }

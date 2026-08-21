@@ -131,6 +131,8 @@ func HandshakeAgentWorker(c agent.SignalConn, serverInfo *livekit.ServerInfo, re
 type AgentService struct {
 	upgrader AgentSocketUpgrader
 
+	signalMessageSizeLimit int64
+
 	*AgentHandler
 }
 
@@ -170,7 +172,9 @@ func NewAgentService(
 	bus psrpc.MessageBus,
 	keyProvider auth.KeyProvider,
 ) (*AgentService, error) {
-	s := &AgentService{}
+	s := &AgentService{
+		signalMessageSizeLimit: conf.Limit.AgentSignalMessageSizeLimit,
+	}
 
 	serverInfo := &livekit.ServerInfo{
 		Edition:       livekit.ServerInfo_Standard,
@@ -200,8 +204,17 @@ func NewAgentService(
 
 func (s *AgentService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if conn, registration, ok := s.upgrader.Upgrade(w, r, nil); ok {
-		s.HandleConnection(r.Context(), NewWSSignalConnection(conn), registration)
-		conn.Close()
+		// bound the size of a single signalling frame so an oversized message is
+		// rejected by the transport before being fully buffered in memory. This
+		// limits the compressed bytes read off the wire; the decompressed size is
+		// bounded separately in WSSignalConnection.
+		if s.signalMessageSizeLimit > 0 {
+			conn.SetReadLimit(s.signalMessageSizeLimit)
+		}
+		sigConn := NewWSSignalConnection(conn, s.signalMessageSizeLimit)
+		defer sigConn.Close()
+
+		s.HandleConnection(r.Context(), sigConn, registration)
 	}
 }
 
@@ -486,6 +499,16 @@ func (h *AgentHandler) CheckEnabled(ctx context.Context, req *rpc.CheckEnabledRe
 }
 
 func (h *AgentHandler) DrainConnections(interval time.Duration, force bool) {
+	// Snapshot workers and release the lock before Close. Worker.Close closes the
+	// signal connection, which unblocks HandleConnection's read loop so it can call
+	// deregisterWorker — that needs h.mu. Holding the lock across Close deadlocks drain.
+	h.mu.Lock()
+	workers := make([]*agent.Worker, 0, len(h.workers))
+	for _, w := range h.workers {
+		workers = append(workers, w)
+	}
+	h.mu.Unlock()
+
 	if !force {
 		// jitter drain start
 		time.Sleep(time.Duration(rand.Int63n(int64(interval))))
@@ -493,19 +516,13 @@ func (h *AgentHandler) DrainConnections(interval time.Duration, force bool) {
 		t := time.NewTicker(interval)
 		defer t.Stop()
 
-		h.mu.Lock()
-		defer h.mu.Unlock()
-
-		for _, w := range h.workers {
+		for _, w := range workers {
 			w.Close()
 			<-t.C
 		}
 	} else {
 		// drain as quickly as possible when forced
-		h.mu.Lock()
-		defer h.mu.Unlock()
-
-		for _, w := range h.workers {
+		for _, w := range workers {
 			w.Close()
 		}
 	}

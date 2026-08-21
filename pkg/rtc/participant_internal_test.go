@@ -22,6 +22,7 @@ import (
 
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
+	"github.com/twitchtv/twirp"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
@@ -75,6 +76,26 @@ func TestIsReady(t *testing.T) {
 			require.Equal(t, test.ready, p.IsReady())
 		})
 	}
+}
+
+func TestSupportsMoving(t *testing.T) {
+	t.Run("current protocol version", func(t *testing.T) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{protocolVersion: types.CurrentProtocol})
+		require.NoError(t, p.SupportsMoving())
+	})
+
+	// a move rejected because of what the participant is cannot be retried into working, but it is
+	// still a caller error, so it has to surface as a 4xx rather than a 500
+	t.Run("client version that cannot be moved", func(t *testing.T) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{protocolVersion: 6})
+
+		err := p.SupportsMoving()
+		require.ErrorIs(t, err, ErrMoveOldClientVersion)
+
+		var twirpErr twirp.Error
+		require.ErrorAs(t, err, &twirpErr)
+		require.Equal(t, twirp.FailedPrecondition, twirpErr.Code())
+	})
 }
 
 func TestTrackPublishing(t *testing.T) {
@@ -825,4 +846,52 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 
 func newParticipantForTest(identity livekit.ParticipantIdentity) *ParticipantImpl {
 	return newParticipantForTestWithOpts(identity, nil)
+}
+
+func TestUnsequencedReliableDataBufferedWhileJoining(t *testing.T) {
+	// unsequenced reliable data, i. e. room service SendData, arriving before the
+	// reliable data channel is writable should be held and replayed, not dropped
+	t.Run("buffers and replays", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		require.False(t, p.reliableDataInfo.canWriteReliable)
+
+		require.NoError(t, p.SendDataMessage(livekit.DataPacket_RELIABLE, []byte("one"), "", 0))
+		require.NoError(t, p.SendDataMessage(livekit.DataPacket_RELIABLE, []byte("two"), "", 0))
+
+		require.Equal(t, [][]byte{[]byte("one"), []byte("two")}, p.reliableDataInfo.joiningUnsequencedMessages)
+		require.Equal(t, 6, p.reliableDataInfo.joiningUnsequencedBytes)
+
+		p.replayJoiningReliableMessages()
+
+		require.True(t, p.reliableDataInfo.canWriteReliable)
+		require.Empty(t, p.reliableDataInfo.joiningUnsequencedMessages)
+		require.Zero(t, p.reliableDataInfo.joiningUnsequencedBytes)
+	})
+
+	t.Run("does not buffer once writable", func(t *testing.T) {
+		p := newParticipantForTest("test")
+		p.replayJoiningReliableMessages()
+
+		// no data channel in test, so the write through fails rather than getting buffered
+		require.Error(t, p.SendDataMessage(livekit.DataPacket_RELIABLE, []byte("one"), "", 0))
+		require.Empty(t, p.reliableDataInfo.joiningUnsequencedMessages)
+	})
+
+	t.Run("bounded buffer", func(t *testing.T) {
+		p := newParticipantForTest("test")
+
+		data := make([]byte, cMaxJoiningUnsequencedReliableBytes)
+		require.NoError(t, p.SendDataMessage(livekit.DataPacket_RELIABLE, data, "", 0))
+		require.Error(t, p.SendDataMessage(livekit.DataPacket_RELIABLE, []byte("overflow"), "", 0))
+
+		require.Len(t, p.reliableDataInfo.joiningUnsequencedMessages, 1)
+		require.Equal(t, 1, p.reliableDataInfo.joiningUnsequencedDropped)
+	})
+
+	t.Run("lossy is not buffered", func(t *testing.T) {
+		p := newParticipantForTest("test")
+
+		require.Error(t, p.SendDataMessage(livekit.DataPacket_LOSSY, []byte("one"), "", 0))
+		require.Empty(t, p.reliableDataInfo.joiningUnsequencedMessages)
+	})
 }

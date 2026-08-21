@@ -2,6 +2,34 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.5] - 2026-07-31
+
+### Added
+
+- add mock for testing region pins with API (#4691)
+- Add country to participant closing log (#4693)
+- Tests for down stream packet push. (#4692)
+- Add status code for twirp request latency prometheus metric (#4621)
+- Support more h264 profiles (#4708)
+- log high stream start latency. (#4714)
+
+### Changed
+
+- Use simulcast constructor for VP9 if simulcasted. (#4696)
+- send resolved ringing timeout (#4697)
+- Update go deps (#4645)
+- protocol deps for logging webhook status (#4699)
+- protocol update with webhook status logging (#4700)
+- Record subscribe stream start time in prometheus. (#4704)
+- A bit better counting for track publish. (#4707)
+
+### Fixed
+
+- Fix padding bit in forwarded packet. (#4690)
+- Spelling fixes (#4698)
+- Do not call telemetry listener under pending track lock. (#4706)
+- Fix getRefLayerRTPTimestamp off-by-one that can panic on max layer index (#4712)
+
 ## [1.13.4] - 2026-07-18
 
 ### Added
