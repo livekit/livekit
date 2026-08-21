@@ -38,9 +38,9 @@ func TestRouteMatchStaticAndParams(t *testing.T) {
 func TestRouteMatchTypedParams(t *testing.T) {
 	x := idx(t, "/orders/{id:int}", "/u/{u:uuid}")
 
-	require.True(t, Matches(x, "/orders/42"))      // int
-	require.False(t, Matches(x, "/orders/abc"))    // not an int -> edge miss, no relay
-	require.False(t, Matches(x, "/orders/3.14"))   // float is not int
+	require.True(t, Matches(x, "/orders/42"))    // int
+	require.False(t, Matches(x, "/orders/abc"))  // not an int -> edge miss, no relay
+	require.False(t, Matches(x, "/orders/3.14")) // float is not int
 
 	uuid := "550e8400-e29b-41d4-a716-446655440000"
 	require.True(t, Matches(x, "/u/"+uuid))
@@ -52,7 +52,7 @@ func TestRouteMatchUUIDvsStr(t *testing.T) {
 	// a uuid value is also a valid str; whichever the route declared wins
 	uuid := "550e8400-e29b-41d4-a716-446655440000"
 
-	strOnly := idx(t, "/x/{v}") // str
+	strOnly := idx(t, "/x/{v}")                   // str
 	require.True(t, Matches(strOnly, "/x/"+uuid)) // uuid value matches a str route
 	require.True(t, Matches(strOnly, "/x/anything"))
 
@@ -66,9 +66,32 @@ func TestRouteMatchGlob(t *testing.T) {
 
 	require.True(t, Matches(x, "/files/a"))
 	require.True(t, Matches(x, "/files/a/b/c/d.txt")) // spans segments
-	require.True(t, Matches(x, "/files"))             // path matches the empty remainder
+	// /files with no trailing slash is a tolerated FALSE POSITIVE (Starlette
+	// requires the separating slash); the worker returns the real status
+	require.True(t, Matches(x, "/files"))
 	require.False(t, Matches(x, "/other/a/b"))
 	require.True(t, Matches(x, "/static"))
+}
+
+// a path convertor that is not the last segment must still match (the glob is
+// treated as terminal, over-approximating the suffix)
+func TestRouteMatchNonTerminalGlob(t *testing.T) {
+	x := idx(t, "/files/{rest:path}/edit")
+	require.True(t, Matches(x, "/files/a/b/edit"))
+	require.True(t, Matches(x, "/files/a/edit"))
+	// suffix is over-approximated: a path under /files matches even without
+	// /edit (the worker's router returns the real 404)
+	require.True(t, Matches(x, "/files/a/b"))
+	require.False(t, Matches(x, "/other/a/edit"))
+}
+
+// a path convertor mixed with literal text in a segment spans slashes and must
+// not be narrowed to a single-segment str
+func TestRouteMatchMixedGlob(t *testing.T) {
+	x := idx(t, "/files/pre{rest:path}")
+	require.True(t, Matches(x, "/files/prea"))
+	require.True(t, Matches(x, "/files/prea/b/c")) // spans segments (would drop under str)
+	require.False(t, Matches(x, "/other/x"))
 }
 
 func TestRouteMatchHeterogeneousShapes(t *testing.T) {
@@ -85,8 +108,8 @@ func TestRouteMatchHeterogeneousShapes(t *testing.T) {
 func TestRouteMatchLiteralBeatsWildcardCoexist(t *testing.T) {
 	// a literal segment and a param at the same position coexist
 	x := idx(t, "/users/me", "/users/{id:int}")
-	require.True(t, Matches(x, "/users/me"))  // literal
-	require.True(t, Matches(x, "/users/42"))  // param
+	require.True(t, Matches(x, "/users/me"))   // literal
+	require.True(t, Matches(x, "/users/42"))   // param
 	require.False(t, Matches(x, "/users/abc")) // neither: not "me", not an int
 }
 

@@ -73,37 +73,55 @@ func canonicalizeTemplate(path string) ([]string, error) {
 	segs := splitSegments(path)
 	out := make([]string, 0, len(segs))
 	for _, seg := range segs {
-		out = append(out, canonicalSegment(seg))
+		tok, glob := canonicalSegment(seg)
+		out = append(out, tok)
+		if glob {
+			// a path convertor spans slashes: the glob is terminal, and any
+			// segments after it are dropped so the walk over-approximates (a
+			// concrete request matching the pre-glob prefix always matches; the
+			// worker's router enforces whatever follows). Truncating here can
+			// only add matches, never drop one.
+			break
+		}
 	}
 	return out, nil
 }
 
-func canonicalSegment(seg string) string {
-	m := paramRegex.FindStringSubmatchIndex(seg)
-	if m == nil {
-		return seg // pure literal
+// canonicalSegment maps a template segment to its canonical token; glob is true
+// when the segment contains a path convertor (spans slashes).
+func canonicalSegment(seg string) (tok string, glob bool) {
+	matches := paramRegex.FindAllStringSubmatchIndex(seg, -1)
+	if len(matches) == 0 {
+		return seg, false // pure literal
+	}
+	// any path convertor in the segment makes it a glob, whether it is the whole
+	// segment ("{rest:path}") or mixed with literal text ("pre{rest:path}") -
+	// str would be strictly narrower than the glob's `.*` and would drop matches
+	for _, m := range matches {
+		if m[4] != -1 && seg[m[4]+1:m[5]] == "path" {
+			return tokGlob, true
+		}
 	}
 	// a clean whole-segment param: "{name}" or "{name:conv}"
-	if m[0] == 0 && m[1] == len(seg) {
+	if m := matches[0]; len(matches) == 1 && m[0] == 0 && m[1] == len(seg) {
 		conv := "str"
 		if m[4] != -1 {
 			conv = seg[m[4]+1 : m[5]]
 		}
 		switch conv {
 		case "int":
-			return tokInt
+			return tokInt, false
 		case "float":
-			return tokFloat
+			return tokFloat, false
 		case "uuid":
-			return tokUUID
-		case "path":
-			return tokGlob
+			return tokUUID, false
 		default: // str and anything ParseTemplate already accepted
-			return tokStr
+			return tokStr, false
 		}
 	}
-	// a param mixed with literal text in one segment: over-approximate to str
-	return tokStr
+	// a non-path param mixed with literal text: over-approximate to str (str's
+	// [^/]+ is wider than any typed single-segment convertor, so no false negative)
+	return tokStr, false
 }
 
 // candidateTokens returns the canonical tokens a concrete request segment could
