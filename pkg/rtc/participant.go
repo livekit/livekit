@@ -2447,7 +2447,7 @@ func (p *ParticipantImpl) onReceivedDataMessage(kind livekit.DataPacket_Kind, da
 		}
 
 		if migrationCache := p.reliableDataInfo.migrateInPubDataCache.Load(); migrationCache != nil {
-			switch migrationCache.Add(dp) {
+			switch migrationCache.Add(dp, len(data)) {
 			case MigrationDataCacheStateWaiting:
 				// waiting for the reliable sequence to continue from last node
 				return
@@ -2466,6 +2466,8 @@ func (p *ParticipantImpl) onReceivedDataMessage(kind livekit.DataPacket_Kind, da
 						"migration data cache timed out, handling cached messages", nil,
 						"cachedFirstSeq", cachedMsgs[0].Sequence,
 						"cachedLastSeq", cachedMsgs[len(cachedMsgs)-1].Sequence,
+						"cachedNum", len(cachedMsgs),
+						"cachedSize", migrationCache.Size(),
 						"lastPubReliableSeq", p.params.LastPubReliableSeq,
 					)
 				}
