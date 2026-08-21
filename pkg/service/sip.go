@@ -727,7 +727,6 @@ func (s *SIPService) TransferSIPParticipant(ctx context.Context, req *livekit.Tr
 		return nil, wrapSIPContextError(err)
 	}
 
-	// The bridge reports the outcome; pass it through rather than inventing one.
 	return &livekit.TransferSIPParticipantResponse{
 		TransferId: iresp.GetTransferId(),
 		Status:     iresp.GetStatus(),
