@@ -66,6 +66,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/bwe/sendsidebwe"
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
+	"github.com/livekit/livekit-server/pkg/sfu/packettrailer"
 	"github.com/livekit/livekit-server/pkg/sfu/sfufakes"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
@@ -557,6 +558,7 @@ func TestDownTrackRetransmitsPacketsAsIs(t *testing.T) {
 			uint64(ts),
 			0,
 			raw,
+			0,
 		)
 		require.NoError(t, err)
 		targetSN++
@@ -635,7 +637,7 @@ func TestDownTrackRetransmitsPacketsViaRTX(t *testing.T) {
 		ts := uint32(700000 + i*3000)
 		wants[targetSN] = want{payload: payload, ts: ts}
 
-		_, err = dh.dt.RetransmitForTest(uint64(src.SequenceNumber), targetSN, ts, uint64(ts), 0, raw)
+		_, err = dh.dt.RetransmitForTest(uint64(src.SequenceNumber), targetSN, ts, uint64(ts), 0, raw, 0)
 		require.NoError(t, err)
 		targetSN++
 	}
@@ -671,6 +673,65 @@ func TestDownTrackRetransmitsPacketsViaRTX(t *testing.T) {
 	for i := 1; i < len(rtxSeqs); i++ {
 		require.EqualValues(t, rtxSeqs[i-1]+1, rtxSeqs[i], "RTX sequence numbers must be contiguous")
 	}
+}
+
+// TestDownTrackReplaysPacketTrailerStripOnRetransmit verifies that a packet whose
+// packet trailer was stripped when it was forwarded is retransmitted with the same
+// bytes removed, i. e. the retransmitted media payload is byte identical to the
+// original transmission.
+func TestDownTrackReplaysPacketTrailerStripOnRetransmit(t *testing.T) {
+	h := buildVNet(t)
+	factory := buffer.NewFactoryOfBufferFactory(500, 500).CreateBufferFactory()
+	cp := &capturingPacer{inner: pacer.NewPassThrough(logger.GetLogger(), newNullBWE())}
+	t.Cleanup(cp.Stop)
+
+	dh := newBoundDownTrack(t, h, factory, vp8CodecParams, cp, mediaEngineConfig{video: true})
+	require.NotZero(t, dh.dt.SSRCRTX(), "RTX ssrc should be negotiated")
+
+	video := distinctivePayload(11, 40)
+	trailer := lktsTrailer()
+	src := &rtp.Packet{
+		Header: rtp.Header{
+			Version:        2,
+			PayloadType:    96,
+			SequenceNumber: 3000,
+			Timestamp:      270000,
+			SSRC:           0x44444444,
+		},
+		Payload: append(append([]byte{}, video...), trailer...),
+	}
+	raw, err := src.Marshal()
+	require.NoError(t, err)
+
+	osn := uint16(60000)
+	_, err = dh.dt.RetransmitForTest(
+		uint64(src.SequenceNumber),
+		osn,
+		src.Timestamp,
+		uint64(src.Timestamp),
+		0,
+		raw,
+		uint8(len(trailer)),
+	)
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		return len(cp.rtxPackets()) >= 1
+	}, 5*time.Second, 20*time.Millisecond, "expected RTX packet to be emitted")
+
+	pr := cp.rtxPackets()[0]
+	require.EqualValues(t, osn, binary.BigEndian.Uint16(pr.payload[0:2]))
+	require.Equal(t, video, pr.payload[2:], "retransmitted payload must not carry the packet trailer")
+}
+
+// lktsTrailer builds a 15-byte LKTS packet trailer carrying a user timestamp TLV.
+func lktsTrailer() []byte {
+	trailer := []byte{0x01 ^ 0xFF, 8 ^ 0xFF}
+	for i := 0; i < 8; i++ {
+		trailer = append(trailer, byte(i)^0xFF)
+	}
+	trailer = append(trailer, 15^0xFF)
+	return append(trailer, packettrailer.Magic[:]...)
 }
 
 // -----------------------------------------------------------------------------
