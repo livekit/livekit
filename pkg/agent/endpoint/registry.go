@@ -63,9 +63,9 @@ type Registration struct {
 	Settings  Settings
 	Logger    logger.Logger
 
-	// Load and Draining are provided by the control-plane layer that owns the
-	// worker (reported load rides UpdateWorkerStatus on the control connection).
-	Load     func() float32
+	// Draining is provided by the control-plane layer that owns the worker; a
+	// draining worker takes no new streams. Worker selection uses live in-flight
+	// streams, not a reported load, so no load hook is needed here.
 	Draining func() bool
 
 	// pendingAttaches counts slots reserved by validated-but-unadopted wires so
@@ -199,6 +199,36 @@ func (r *Registration) AttachedConns() int {
 	return len(r.conns)
 }
 
+// InflightStreams reports the open streams across this registration's data
+// conns - the requests currently being served from this node. It is the
+// least-outstanding-requests signal for worker selection: a per-node view (each
+// node counts only the streams it opened), which is exactly what a node needs
+// to spread its own traffic, and it needs no load reported by the worker.
+func (r *Registration) InflightStreams() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for _, c := range r.conns {
+		n += c.OpenStreams()
+	}
+	return n
+}
+
+// SpareStreams reports the total spare stream capacity across this
+// registration's data conns on this node - how many more concurrent requests it
+// can accept. It is the node's live, locally-observed serving headroom for the
+// worker; being measured on the conns this node holds, it is accurate for
+// adopted (satellite) registrations too, which report no load.
+func (r *Registration) SpareStreams() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for _, c := range r.conns {
+		n += c.SpareStreams()
+	}
+	return n
+}
+
 func (r *Registration) close() {
 	r.mu.Lock()
 	if r.closed {
@@ -221,20 +251,6 @@ type Registry struct {
 	mu    sync.Mutex
 	regs  map[string]*Registration // by worker id
 	byKey map[regKey][]*Registration
-
-	// scope hooks fire when a scope (api key / project) gains its first or
-	// loses its last registration; the Remote uses them to (de)register the
-	// resolve topic on the bus
-	scopeCounts   map[string]int
-	onScopeActive func(scope string)
-	onScopeIdle   func(scope string)
-
-	// hookMu serializes scope hook invocations. Transitions are decided against
-	// the registry's CURRENT state under hookMu, never from values computed
-	// earlier: a reconnect's activation racing the old connection's idle must
-	// not leave a live scope without its resolve topic.
-	hookMu        sync.Mutex
-	scopeNotified map[string]bool
 }
 
 type regKey struct {
@@ -244,62 +260,8 @@ type regKey struct {
 
 func NewRegistry() *Registry {
 	return &Registry{
-		regs:          make(map[string]*Registration),
-		byKey:         make(map[regKey][]*Registration),
-		scopeCounts:   make(map[string]int),
-		scopeNotified: make(map[string]bool),
-	}
-}
-
-// notifyScope reconciles the scope's hook state with the registry's current
-// truth. Racing register/deregister notifications converge instead of
-// interleaving.
-func (g *Registry) notifyScope(scope string) {
-	g.hookMu.Lock()
-	defer g.hookMu.Unlock()
-	g.mu.Lock()
-	active := g.scopeCounts[scope] > 0
-	activeHook, idleHook := g.onScopeActive, g.onScopeIdle
-	g.mu.Unlock()
-	if activeHook == nil && idleHook == nil {
-		return
-	}
-	if g.scopeNotified[scope] == active {
-		return
-	}
-	if active {
-		g.scopeNotified[scope] = true
-		activeHook(scope)
-	} else {
-		delete(g.scopeNotified, scope)
-		idleHook(scope)
-	}
-}
-
-// SetScopeHooks installs the scope activation callbacks, replaying currently
-// active scopes so a resolver layered on after registrations still registers
-// its topics. Multi-node deployments use this to answer endpoint resolves only
-// while they hold registrations for a scope.
-func (g *Registry) SetScopeHooks(active, idle func(scope string)) {
-	g.hookMu.Lock()
-	defer g.hookMu.Unlock()
-	g.mu.Lock()
-	g.onScopeActive = active
-	g.onScopeIdle = idle
-	scopes := make([]string, 0, len(g.scopeCounts))
-	for scope, n := range g.scopeCounts {
-		if n > 0 {
-			scopes = append(scopes, scope)
-		}
-	}
-	g.mu.Unlock()
-	if active != nil {
-		for _, s := range scopes {
-			if !g.scopeNotified[s] {
-				g.scopeNotified[s] = true
-				active(s)
-			}
-		}
+		regs:  make(map[string]*Registration),
+		byKey: make(map[regKey][]*Registration),
 	}
 }
 
@@ -321,13 +283,8 @@ func (g *Registry) Register(r *Registration) error {
 	}
 	g.regs[r.WorkerID] = r
 	g.byKey[key] = append(g.byKey[key], r)
-	g.scopeCounts[r.APIKey]++
 	g.mu.Unlock()
-	g.notifyScope(r.APIKey)
 	if old != nil {
-		if old.APIKey != r.APIKey {
-			g.notifyScope(old.APIKey)
-		}
 		old.close()
 	}
 	return nil
@@ -347,10 +304,6 @@ func (g *Registry) removeLocked(r *Registration) {
 			g.byKey[key] = regs
 		}
 	}
-	g.scopeCounts[r.APIKey]--
-	if g.scopeCounts[r.APIKey] == 0 {
-		delete(g.scopeCounts, r.APIKey)
-	}
 }
 
 // Deregister removes exactly this registration; it is a no-op when a newer
@@ -363,30 +316,39 @@ func (g *Registry) Deregister(r *Registration) {
 	}
 	g.removeLocked(r)
 	g.mu.Unlock()
-	g.notifyScope(r.APIKey)
 	r.close()
 }
 
 // ValidateAttach checks an attach without adopting the connection, so the
-// attach response can be written before stream frames may flow.
-func (g *Registry) ValidateAttach(workerID, instanceID, token string) error {
+// attach response can be written before stream frames may flow. apiKey is the
+// project the connecting grant is authorized for; it must match the
+// registration's, so a leaked attach token is useless without a grant for the
+// worker's own project (defense in depth over the token secret).
+func (g *Registry) ValidateAttach(workerID, instanceID, apiKey, token string) error {
 	g.mu.Lock()
 	r, ok := g.regs[workerID]
 	g.mu.Unlock()
 	if !ok {
 		return ErrUnknownWorker
 	}
+	if apiKey != r.APIKey {
+		return ErrAttachRejected // wrong project: terminal, never adopt-retried
+	}
 	return r.validateAttach(instanceID, token)
 }
 
 // BeginAttach validates an attach and reserves a pool slot; the caller writes
-// the ack and then Completes (or Aborts) the ticket.
-func (g *Registry) BeginAttach(workerID, instanceID, token string) (*AttachTicket, error) {
+// the ack and then Completes (or Aborts) the ticket. apiKey binds the attach to
+// the connecting grant's project (see ValidateAttach).
+func (g *Registry) BeginAttach(workerID, instanceID, apiKey, token string) (*AttachTicket, error) {
 	g.mu.Lock()
 	r, ok := g.regs[workerID]
 	g.mu.Unlock()
 	if !ok {
 		return nil, ErrUnknownWorker
+	}
+	if apiKey != r.APIKey {
+		return nil, ErrAttachRejected // wrong project: terminal, never adopt-retried
 	}
 	return r.beginAttach(instanceID, token)
 }

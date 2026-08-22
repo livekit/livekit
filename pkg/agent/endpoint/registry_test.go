@@ -34,8 +34,11 @@ func TestRegistrySupersede(t *testing.T) {
 	require.NoError(t, g.Register(newReg))
 
 	require.Equal(t, []*Registration{newReg}, g.Candidates("key", "production"))
-	require.Error(t, g.ValidateAttach("AW_1", "i-1", "ATT_i-1"), "old epoch must not attach")
-	require.NoError(t, g.ValidateAttach("AW_1", "i-2", "ATT_i-2"))
+	require.Error(t, g.ValidateAttach("AW_1", "i-1", "key", "ATT_i-1"), "old epoch must not attach")
+	require.NoError(t, g.ValidateAttach("AW_1", "i-2", "key", "ATT_i-2"))
+	// a grant for another project cannot attach even with the right token
+	require.ErrorIs(t, g.ValidateAttach("AW_1", "i-2", "other", "ATT_i-2"), ErrAttachRejected,
+		"wrong-project grant must not attach")
 
 	// the old control connection tears down after the new one registered
 	g.Deregister(oldReg)

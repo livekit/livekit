@@ -32,6 +32,24 @@ import (
 	"github.com/livekit/protocol/utils/guid"
 )
 
+// HeaderEndpointMiss marks a response the front produced ITSELF - a routing
+// miss (no matching route, wrong method, auth required, or no local capacity) -
+// as distinct from a response the worker's app returned through the bridge. A
+// relay caller keys its cross-node retry on this header, so a worker's own 404
+// (e.g. GET /users/999 for a missing user) is never mistaken for "this node
+// can't serve the path" and re-relayed. The value is the miss kind, so the
+// caller can surface the most informative aggregate status. The header is set
+// only on the private relay listener (see MarkMisses) and stripped by the relay
+// caller, so it never reaches a client.
+const HeaderEndpointMiss = "X-Livekit-Endpoint-Miss"
+
+const (
+	MissNotFound         = "notfound"
+	MissMethodNotAllowed = "methodnotallowed"
+	MissUnauthenticated  = "unauthenticated"
+	MissUnavailable      = "unavailable"
+)
+
 const (
 	// PathPrefix is the public route namespace: /agents/{deployment}/{path...}
 	PathPrefix = "/agents/"
@@ -45,15 +63,15 @@ const (
 	maxAttempts = 3
 )
 
-// ScopeResolver maps an inbound request to its project scope. It returns the
-// api key the request is authorized for (empty when unauthenticated) - the
-// service layer implements it from validated grants.
-type ScopeResolver func(r *http.Request) (apiKey string, authenticated bool)
+// APIKeyResolver maps an inbound request to the api key it is authorized for
+// (empty when unauthenticated) - the service layer implements it from validated
+// grants.
+type APIKeyResolver func(r *http.Request) (apiKey string, authenticated bool)
 
 type Front struct {
-	registry     *Registry
-	resolveScope ScopeResolver
-	logger       logger.Logger
+	registry      *Registry
+	resolveAPIKey APIKeyResolver
+	logger        logger.Logger
 
 	// fallback is consulted when nothing local can serve the request (no
 	// candidates, no route match, or every match without capacity); a
@@ -62,21 +80,25 @@ type Front struct {
 	fallback Fallback
 	// see WithSingleKeyFallback
 	singleKeyFallback bool
+	// see MarkMisses: set on the private relay listener so a relay caller can
+	// tell a routing miss from a worker-app response
+	markMisses bool
 }
 
-func NewFront(registry *Registry, resolveScope ScopeResolver, log logger.Logger) *Front {
+func NewFront(registry *Registry, resolveAPIKey APIKeyResolver, log logger.Logger) *Front {
 	return &Front{
-		registry:     registry,
-		resolveScope: resolveScope,
-		logger:       log.WithComponent("agents.endpoint"),
+		registry:      registry,
+		resolveAPIKey: resolveAPIKey,
+		logger:        log.WithComponent("agents.endpoint"),
 	}
 }
 
 // FallbackRequest describes a request nothing local could serve. The request
 // body is untouched when the fallback runs.
 type FallbackRequest struct {
-	// Scope is the project identity the front resolved (api key in OSS)
-	Scope         string
+	// APIKey is the identity the front resolved the request to (empty when
+	// unauthenticated)
+	APIKey        string
 	Authenticated bool
 	Deployment    string
 	// Path within the deployment, '/'-rooted
@@ -96,9 +118,28 @@ func (f *Front) WithFallback(fb Fallback) *Front {
 	return f
 }
 
+// MarkMisses tags the front's own routing-miss responses with HeaderEndpointMiss
+// so a relay caller can distinguish them from worker-app responses. Set it on
+// the private relay listener only; the public front must not (the header would
+// leak to clients, and its misses are final anyway).
+func (f *Front) MarkMisses() *Front {
+	f.markMisses = true
+	return f
+}
+
+// writeMiss writes a front-originated miss, tagging it with the kind when this
+// front marks misses (the relay listener) so the relay caller can retry past it
+// and aggregate the most informative status.
+func (f *Front) writeMiss(w http.ResponseWriter, status int, kind, msg string) {
+	if f.markMisses {
+		w.Header().Set(HeaderEndpointMiss, kind)
+	}
+	http.Error(w, msg, status)
+}
+
 // WithSingleKeyFallback resolves unauthenticated requests to the registry's
-// single api key when the scope resolver yields none. Self-hosted convenience
-// only: a multi-tenant front must never guess a scope from what happens to be
+// single api key when the resolver yields none. Self-hosted convenience only: a
+// multi-tenant front must never guess an api key from what happens to be
 // registered.
 func (f *Front) WithSingleKeyFallback() *Front {
 	f.singleKeyFallback = true
@@ -123,7 +164,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	isWS := isWebSocketUpgrade(r)
 
-	apiKey, authenticated := f.resolveScope(r)
+	apiKey, authenticated := f.resolveAPIKey(r)
 	if apiKey == "" && f.singleKeyFallback {
 		// unauthenticated: OSS serves public routes when the worker fleet
 		// belongs to a single key
@@ -131,14 +172,14 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if apiKey == "" {
 		w.Header().Set("WWW-Authenticate", "Bearer")
-		http.Error(w, "authentication required", http.StatusUnauthorized)
+		f.writeMiss(w, http.StatusUnauthorized, MissUnauthenticated, "authentication required")
 		return
 	}
 
 	candidates := f.registry.Candidates(apiKey, deployment)
 	if len(candidates) == 0 && f.fallback == nil {
 		w.Header().Set("Retry-After", "1")
-		http.Error(w, "no workers available for deployment", http.StatusServiceUnavailable)
+		f.writeMiss(w, http.StatusServiceUnavailable, MissUnavailable, "no workers available for deployment")
 		return
 	}
 
@@ -167,14 +208,14 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if route == nil && f.fallback != nil {
 		// nothing local can serve: hand off before the local status mapping
 		if f.fallback(w, r, &FallbackRequest{
-			Scope: apiKey, Authenticated: authenticated,
+			APIKey: apiKey, Authenticated: authenticated,
 			Deployment: deployment, Path: path, WebSocket: isWS,
 		}) {
 			return
 		}
 		if len(candidates) == 0 && !restricted && !partial {
 			w.Header().Set("Retry-After", "1")
-			http.Error(w, "no workers available for deployment", http.StatusServiceUnavailable)
+			f.writeMiss(w, http.StatusServiceUnavailable, MissUnavailable, "no workers available for deployment")
 			return
 		}
 	}
@@ -182,9 +223,9 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case restricted:
 			w.Header().Set("WWW-Authenticate", "Bearer")
-			http.Error(w, "authentication required", http.StatusUnauthorized)
+			f.writeMiss(w, http.StatusUnauthorized, MissUnauthenticated, "authentication required")
 		case partial:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			f.writeMiss(w, http.StatusMethodNotAllowed, MissMethodNotAllowed, "method not allowed")
 		default:
 			for _, reg := range candidates {
 				if alt, ok := reg.Manifest.RedirectSlashes(path, r.Method, isWS); ok {
@@ -194,7 +235,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
-			http.NotFound(w, r)
+			f.writeMiss(w, http.StatusNotFound, MissNotFound, "not found")
 		}
 		return
 	}
@@ -204,7 +245,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	attempted := make(map[*Registration]bool)
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		reg := pickWeighted(matched, attempted)
+		reg := pickWorker(matched, attempted)
 		if reg == nil {
 			break
 		}
@@ -223,7 +264,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// retryable.
 	if bodyConsumed == 0 && f.fallback != nil {
 		if f.fallback(w, r, &FallbackRequest{
-			Scope: apiKey, Authenticated: authenticated,
+			APIKey: apiKey, Authenticated: authenticated,
 			Deployment: deployment, Path: path, WebSocket: isWS,
 		}) {
 			return
@@ -231,38 +272,49 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Retry-After", "1")
-	http.Error(w, "no worker could serve the request", http.StatusServiceUnavailable)
+	f.writeMiss(w, http.StatusServiceUnavailable, MissUnavailable, "no worker could serve the request")
 }
 
-// pickWeighted is capacity-weighted random over non-draining workers with
-// attached data connections.
-func pickWeighted(regs []*Registration, ignore map[*Registration]bool) *Registration {
-	var sum float32
-	weights := make([]float32, len(regs))
-	for i, reg := range regs {
+// pickWorker chooses a worker by the power of two choices: sample two eligible
+// registrations at random and take the one with fewer in-flight streams (least
+// outstanding requests). This approximates optimal load spreading without global
+// coordination or the herding of exact least-loaded, and - unlike a
+// self-reported load - the in-flight count is observed here on this node's own
+// data conns, so it is accurate for adopted (satellite) registrations too.
+// Eligible = not already attempted, has attached conns, not draining.
+func pickWorker(regs []*Registration, ignore map[*Registration]bool) *Registration {
+	eligible := regs[:0:0]
+	for _, reg := range regs {
 		if ignore[reg] || reg.AttachedConns() == 0 {
 			continue
 		}
 		if reg.Draining != nil && reg.Draining() {
 			continue
 		}
-		w := float32(1)
-		if reg.Load != nil {
-			w = max(0.01, 1-reg.Load())
-		}
-		weights[i] = w
-		sum += w
+		eligible = append(eligible, reg)
 	}
-	if sum == 0 {
+	if len(eligible) == 0 {
 		return nil
 	}
-	target := rand.Float32() * sum
-	for i, reg := range regs {
-		if target -= weights[i]; weights[i] > 0 && target <= 0 {
-			return reg
-		}
+	return eligible[p2c(len(eligible), func(i int) int { return eligible[i].InflightStreams() })]
+}
+
+// p2c returns the index of the less-loaded of two distinct random draws from
+// [0,n) (n >= 1). With n == 2 both are always sampled, so it is exact; larger n
+// trades a little optimality for O(1) work and no herding.
+func p2c(n int, load func(int) int) int {
+	if n == 1 {
+		return 0
 	}
-	return nil
+	i := rand.IntN(n)
+	j := rand.IntN(n - 1)
+	if j >= i { // fold to a distinct second draw
+		j++
+	}
+	if load(i) <= load(j) {
+		return i
+	}
+	return j
 }
 
 // bridge runs one attempt against one worker. done means a response (or abort)

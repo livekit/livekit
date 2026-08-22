@@ -122,6 +122,17 @@ func (c *DataConn) OpenStreams() int {
 	return len(c.streams)
 }
 
+// SpareStreams reports how many more streams this conn can accept before its
+// per-conn cap; never negative.
+func (c *DataConn) SpareStreams() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if n := int(c.params.MaxStreamsPerConn) - len(c.streams); n > 0 {
+		return n
+	}
+	return 0
+}
+
 // HasCapacity reports whether a new stream may be opened.
 func (c *DataConn) HasCapacity() bool {
 	c.mu.Lock()

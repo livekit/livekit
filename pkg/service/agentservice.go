@@ -144,8 +144,8 @@ type AgentService struct {
 type AgentHandler struct {
 	agentServer rpc.AgentInternalServer
 	// the server's only configured api key, when exactly one exists: the
-	// unauthenticated scope for public endpoints regardless of which node holds
-	// the workers
+	// unauthenticated identity for public endpoints regardless of which node
+	// holds the workers
 	singleAPIKey string
 	mu           sync.Mutex
 	logger       logger.Logger
@@ -222,14 +222,14 @@ func NewAgentService(
 }
 
 // EndpointFront is the /agents/{deployment}/{path...} handler backed by this
-// node's attached workers. Project scope comes from validated grants when a
+// node's attached workers. The api key comes from validated grants when a
 // token is present; unauthenticated requests reach public endpoints only.
 func (s *AgentService) EndpointFront() http.Handler {
 	front := endpoint.NewFront(s.endpointRegistry, func(r *http.Request) (string, bool) {
 		if claims := GetGrants(r.Context()); claims != nil {
 			return GetAPIKey(r.Context()), true
 		}
-		// unauthenticated: with a single configured key the scope is
+		// unauthenticated: with a single configured key the api key is
 		// unambiguous even when this node holds no registrations (multi-node)
 		return s.singleAPIKey, false
 	}, s.logger)
@@ -251,8 +251,10 @@ func (s *AgentService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if attach {
 			// data wire: no registration handshake, no signal loop; the wire
 			// speaks AgentHttp.Frame exclusively and the endpoint mux owns it
-			// after a successful attach
-			HandleEndpointAttach(s.endpointRegistry, NewEndpointWireConn(conn), s.wireParams(), nil)
+			// after a successful attach. The connecting grant's api key binds the
+			// attach to its own project (a leaked attach token alone cannot bind a
+			// data conn to another project's worker).
+			HandleEndpointAttach(s.endpointRegistry, NewEndpointWireConn(conn), s.wireParams(), nil, GetAPIKey(r.Context()))
 			return
 		}
 
@@ -346,14 +348,17 @@ func (s *AgentService) wireParams() endpoint.WireParams {
 // registry - behind a load balancer the wire may land on a node other than the
 // one holding the registration. The adopter may install a local registration
 // (e.g. a satellite fetched from the holder); afterwards the attach is retried
-// locally once. nil rejects unknown workers.
-type AttachAdopter func(a *livekit.AgentHttp_AttachDataConnection) error
+// locally once. apiKey is the identity the connecting grant is authorized for:
+// the adopter must refuse to install a registration for any other project, so
+// an unentitled grant cannot adopt (or even probe) another project's worker.
+// nil rejects unknown workers.
+type AttachAdopter func(a *livekit.AgentHttp_AttachDataConnection, apiKey string) error
 
 // HandleEndpointAttach adopts a worker-dialed data wire: the first frame is
 // Attach on stream 0, validated against the registration's epoch and token; the
 // response carries this node's wire parameters. Shared by OSS and cloud
 // servers.
-func HandleEndpointAttach(registry *endpoint.Registry, wire endpoint.WireConn, params endpoint.WireParams, adopt AttachAdopter) {
+func HandleEndpointAttach(registry *endpoint.Registry, wire endpoint.WireConn, params endpoint.WireParams, adopt AttachAdopter, apiKey string) {
 	if err := wire.SetReadDeadline(time.Now().Add(agent.RegisterTimeout)); err != nil {
 		_ = wire.Close()
 		return
@@ -389,14 +394,14 @@ func HandleEndpointAttach(registry *endpoint.Registry, wire endpoint.WireConn, p
 	// the slot is reserved before the ack is written (never a success ack for a
 	// wire that then loses the cap race) and adopted only after it, so the
 	// worker cannot observe stream frames ahead of the attach outcome
-	ticket, err := registry.BeginAttach(a.GetWorkerId(), a.GetInstanceId(), a.GetAttachToken())
+	ticket, err := registry.BeginAttach(a.GetWorkerId(), a.GetInstanceId(), apiKey, a.GetAttachToken())
 	if (errors.Is(err, endpoint.ErrUnknownWorker) || errors.Is(err, endpoint.ErrWrongEpoch)) && adopt != nil {
-		if aerr := adopt(a); aerr != nil {
+		if aerr := adopt(a, apiKey); aerr != nil {
 			_ = respond(aerr.Error())
 			_ = wire.Close()
 			return
 		}
-		ticket, err = registry.BeginAttach(a.GetWorkerId(), a.GetInstanceId(), a.GetAttachToken())
+		ticket, err = registry.BeginAttach(a.GetWorkerId(), a.GetInstanceId(), apiKey, a.GetAttachToken())
 	}
 	if err != nil {
 		_ = respond(err.Error())
@@ -516,7 +521,6 @@ func (h *AgentHandler) registerEndpoints(w *agent.Worker) *endpoint.Registration
 			DataConnCount: settings.GetDataConnectionCount(),
 		},
 		Logger:   w.Logger(),
-		Load:     w.Load,
 		Draining: w.Draining,
 	}
 	if err := h.endpointRegistry.Register(reg); err != nil {
