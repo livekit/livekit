@@ -78,7 +78,7 @@ func NewDataConn(wire WireConn, params WireParams, onClose func(*DataConn), log 
 	}
 	c.sendCond = sync.NewCond(&c.sendMu)
 	c.lastDecay.Store(time.Now().UnixNano())
-	c.sched = newScheduler(wire)
+	c.sched = newScheduler(wire, int(params.MaxFrameSize))
 	go c.readLoop()
 	return c
 }

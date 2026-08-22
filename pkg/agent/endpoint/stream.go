@@ -138,9 +138,7 @@ func (s *Stream) Write(p []byte) (int, error) {
 			continue
 		}
 
-		chunk := make([]byte, n)
-		copy(chunk, p[:n])
-		if err := s.conn.sched.enqueueData(s.id, chunk); err != nil {
+		if err := s.conn.sched.enqueueData(s.id, s.conn.sched.newChunk(p[:n])); err != nil {
 			return total, err
 		}
 		s.conn.noteActivity(n)
@@ -148,6 +146,33 @@ func (s *Stream) Write(p []byte) (int, error) {
 		total += int(n)
 	}
 	return total, nil
+}
+
+// ReadFrom streams r to the worker in MaxFrameSize frames. Without it,
+// http.Request.Write wraps this stream in a 4KiB bufio.Writer (Stream is not an
+// io.ByteWriter) and a large body would be refragmented into ~4KiB frames;
+// bufio.Writer.ReadFrom delegates here once its buffer drains, so the body
+// flows at the negotiated frame size instead. Implements io.ReaderFrom. Write
+// still handles headers and small bodies (bufio never delegates for those).
+func (s *Stream) ReadFrom(r io.Reader) (int64, error) {
+	buf := make([]byte, s.conn.params.MaxFrameSize)
+	var total int64
+	for {
+		n, rerr := r.Read(buf)
+		if n > 0 {
+			w, werr := s.Write(buf[:n])
+			total += int64(w)
+			if werr != nil {
+				return total, werr
+			}
+		}
+		if rerr != nil {
+			if rerr == io.EOF {
+				return total, nil
+			}
+			return total, rerr
+		}
+	}
 }
 
 func (s *Stream) writeErrLocked() error {

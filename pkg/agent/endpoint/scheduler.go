@@ -35,6 +35,12 @@ import (
 // Locking rule: the wire write happens OUTSIDE the scheduler lock. Holding the
 // lock across a blocking write would let one stalled connection stop enqueues
 // from every stream sharing it.
+// chunkPoolMinSize is the payload size at or above which a frame's buffer is
+// drawn from the recycle pool. Below it (webhook-sized bodies, headers) a
+// right-sized make is cheaper than borrowing a full MaxFrameSize buffer, so
+// small/average requests never pay the pooled buffer's footprint.
+const chunkPoolMinSize = 16 << 10
+
 type scheduler struct {
 	wire WireConn
 
@@ -50,21 +56,61 @@ type scheduler struct {
 	rrIdx  int
 
 	queuedBytes int64 // aggregate queued DATA payload bytes, capped by connBufferBudget
+
+	// chunkPool recycles MaxFrameSize payload buffers for large frames (>=
+	// chunkPoolMinSize), so a big upload does not allocate one per frame. A
+	// buffer is drawn in Stream.Write, held in a streamQueue until its frame is
+	// written, then returned (in writeLoop after WriteFrame, or in dropStream).
+	chunkPool sync.Pool
 }
 
 type streamQueue struct {
-	chunks [][]byte
+	chunks []queuedChunk
 	eof    bool // send an EOF frame after the last chunk drains
 }
 
-func newScheduler(wire WireConn) *scheduler {
+// queuedChunk is one pending DATA payload. data is the bytes to send; bp is the
+// pooled buffer backing them and is non-nil only for pooled (large) chunks,
+// which are the ones recycled once their frame is written.
+type queuedChunk struct {
+	data []byte
+	bp   *[]byte
+}
+
+func newScheduler(wire WireConn, maxFrameSize int) *scheduler {
 	s := &scheduler{
 		wire:   wire,
 		queues: make(map[uint32]*streamQueue),
+		chunkPool: sync.Pool{New: func() any {
+			b := make([]byte, maxFrameSize)
+			return &b
+		}},
 	}
 	s.cond = sync.NewCond(&s.mu)
 	go s.writeLoop()
 	return s
+}
+
+// newChunk copies p into a queued chunk, drawing a pooled MaxFrameSize buffer
+// for large payloads and a right-sized make for small ones (so webhook-sized
+// requests never borrow a full pooled buffer). The bytes are copied because the
+// scheduler is async: the caller's buffer is reused before the frame is written.
+func (s *scheduler) newChunk(p []byte) queuedChunk {
+	if len(p) >= chunkPoolMinSize {
+		bp := s.chunkPool.Get().(*[]byte)
+		n := copy(*bp, p)
+		return queuedChunk{data: (*bp)[:n], bp: bp}
+	}
+	data := make([]byte, len(p))
+	copy(data, p)
+	return queuedChunk{data: data}
+}
+
+// recycle returns a chunk's pooled buffer if it has one.
+func (s *scheduler) recycle(c queuedChunk) {
+	if c.bp != nil {
+		s.chunkPool.Put(c.bp)
+	}
 }
 
 // enqueueControl never blocks: control frames are small and bounded by the
@@ -83,13 +129,14 @@ func (s *scheduler) enqueueControl(f *livekit.AgentHttp_Frame) error {
 // enqueueData blocks while the connection buffer budget is exhausted. Stream
 // and connection credit are enforced by the caller (Stream.Write); the budget
 // is the local memory cap on top of them.
-func (s *scheduler) enqueueData(streamID uint32, chunk []byte) error {
+func (s *scheduler) enqueueData(streamID uint32, chunk queuedChunk) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for !s.closed && s.queuedBytes+int64(len(chunk)) > connBufferBudget && s.queuedBytes > 0 {
+	for !s.closed && s.queuedBytes+int64(len(chunk.data)) > connBufferBudget && s.queuedBytes > 0 {
 		s.cond.Wait()
 	}
 	if s.closed {
+		s.recycle(chunk) // never enqueued; return its buffer to the pool
 		return s.errLocked()
 	}
 	q := s.queues[streamID]
@@ -101,7 +148,7 @@ func (s *scheduler) enqueueData(streamID uint32, chunk []byte) error {
 		s.rr = append(s.rr, streamID)
 	}
 	q.chunks = append(q.chunks, chunk)
-	s.queuedBytes += int64(len(chunk))
+	s.queuedBytes += int64(len(chunk.data))
 	s.cond.Broadcast()
 	return nil
 }
@@ -135,7 +182,8 @@ func (s *scheduler) dropStream(streamID uint32) {
 	defer s.mu.Unlock()
 	if q, ok := s.queues[streamID]; ok {
 		for _, c := range q.chunks {
-			s.queuedBytes -= int64(len(c))
+			s.queuedBytes -= int64(len(c.data))
+			s.recycle(c)
 		}
 		delete(s.queues, streamID)
 		if i := slices.Index(s.rr, streamID); i != -1 {
@@ -169,18 +217,20 @@ func (s *scheduler) errLocked() error {
 }
 
 // next pops the next frame to write: all pending control first, then one DATA
-// chunk (or the EOF sentinel) from the round-robin ring.
-func (s *scheduler) next() (*livekit.AgentHttp_Frame, bool) {
+// chunk (or the EOF sentinel) from the round-robin ring. recycle is the pooled
+// buffer backing a DATA frame, to be returned once the frame is written (nil
+// for control/EOF/unpooled frames).
+func (s *scheduler) next() (f *livekit.AgentHttp_Frame, recycle *[]byte, ok bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for {
 		if s.closed {
-			return nil, false
+			return nil, nil, false
 		}
 		if len(s.control) > 0 {
-			f := s.control[0]
+			f = s.control[0]
 			s.control = s.control[1:]
-			return f, true
+			return f, nil, true
 		}
 		if len(s.rr) > 0 {
 			if s.rrIdx >= len(s.rr) {
@@ -188,14 +238,14 @@ func (s *scheduler) next() (*livekit.AgentHttp_Frame, bool) {
 			}
 			id := s.rr[s.rrIdx]
 			q := s.queues[id]
-			var f *livekit.AgentHttp_Frame
 			if len(q.chunks) > 0 {
 				chunk := q.chunks[0]
 				q.chunks = q.chunks[1:]
-				s.queuedBytes -= int64(len(chunk))
+				s.queuedBytes -= int64(len(chunk.data))
+				recycle = chunk.bp
 				f = &livekit.AgentHttp_Frame{
 					StreamId: id,
-					Message:  &livekit.AgentHttp_Frame_Data{Data: chunk},
+					Message:  &livekit.AgentHttp_Frame_Data{Data: chunk.data},
 				}
 			}
 			if len(q.chunks) == 0 {
@@ -209,7 +259,7 @@ func (s *scheduler) next() (*livekit.AgentHttp_Frame, bool) {
 						// keep the stream in the ring so the EOF drains next round
 						s.rrIdx++
 						s.cond.Broadcast()
-						return f, true
+						return f, recycle, true
 					}
 				}
 				delete(s.queues, id)
@@ -218,7 +268,7 @@ func (s *scheduler) next() (*livekit.AgentHttp_Frame, bool) {
 				s.rrIdx++
 			}
 			s.cond.Broadcast() // budget freed
-			return f, true
+			return f, recycle, true
 		}
 		s.cond.Wait()
 	}
@@ -226,12 +276,19 @@ func (s *scheduler) next() (*livekit.AgentHttp_Frame, bool) {
 
 func (s *scheduler) writeLoop() {
 	for {
-		f, ok := s.next()
+		f, recycle, ok := s.next()
 		if !ok {
 			return
 		}
 		_ = s.wire.SetWriteDeadline(time.Now().Add(writeStallTimeout))
-		if err := s.wire.WriteFrame(f); err != nil {
+		err := s.wire.WriteFrame(f)
+		// WriteFrame marshalled the payload into its own buffer and gorilla does
+		// not retain it, so the pooled buffer is free to recycle here whether or
+		// not the write succeeded.
+		if recycle != nil {
+			s.chunkPool.Put(recycle)
+		}
+		if err != nil {
 			s.close(err)
 			return
 		}
