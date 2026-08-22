@@ -109,10 +109,9 @@ type FallbackRequest struct {
 	// unauthenticated)
 	APIKey        string
 	Authenticated bool
-	Deployment    string
+	Deployment string
 	// Path within the deployment, '/'-rooted
-	Path      string
-	WebSocket bool
+	Path string
 }
 
 // Fallback serves a request elsewhere (e.g. a multi-node relay); it reports
@@ -171,8 +170,6 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isWS := isWebSocketUpgrade(r)
-
 	apiKey, authenticated := f.resolveAPIKey(r)
 	if apiKey == "" && f.singleKeyFallback {
 		// unauthenticated: OSS serves public routes when the worker fleet
@@ -199,7 +196,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	partial := false
 	restricted := false
 	for _, reg := range candidates {
-		rt, res := reg.Manifest.Match(path, r.Method, isWS)
+		rt, res := reg.Manifest.Match(path, r.Method)
 		switch res {
 		case MatchFull:
 			if !authenticated && !rt.Public {
@@ -218,7 +215,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// nothing local can serve: hand off before the local status mapping
 		if f.fallback(w, r, &FallbackRequest{
 			APIKey: apiKey, Authenticated: authenticated,
-			Deployment: deployment, Path: path, WebSocket: isWS,
+			Deployment: deployment, Path: path,
 		}) {
 			return
 		}
@@ -237,7 +234,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			f.writeMiss(w, http.StatusMethodNotAllowed, MissMethodNotAllowed, "method not allowed")
 		default:
 			for _, reg := range candidates {
-				if alt, ok := reg.Manifest.RedirectSlashes(path, r.Method, isWS); ok {
+				if alt, ok := reg.Manifest.RedirectSlashes(path, r.Method); ok {
 					u := *r.URL
 					u.Path = PathPrefix + deployment + alt
 					http.Redirect(w, r, u.String(), http.StatusTemporaryRedirect)
@@ -260,7 +257,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		attempted[reg] = true
 
-		done, retryable := f.bridge(w, r, reg, path, countingBody, bodyConsumed, isWS)
+		done, retryable := f.bridge(w, r, reg, path, countingBody, bodyConsumed)
 		if done || !retryable {
 			return
 		}
@@ -274,7 +271,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if bodyConsumed == 0 && f.fallback != nil {
 		if f.fallback(w, r, &FallbackRequest{
 			APIKey: apiKey, Authenticated: authenticated,
-			Deployment: deployment, Path: path, WebSocket: isWS,
+			Deployment: deployment, Path: path,
 		}) {
 			return
 		}
@@ -337,7 +334,6 @@ func (f *Front) bridge(
 	path string,
 	body io.Reader,
 	bodyConsumedBefore int64,
-	isWS bool,
 ) (done bool, retryable bool) {
 	conn := reg.PickConn()
 	if conn == nil {
@@ -361,36 +357,25 @@ func (f *Front) bridge(
 
 	// serialize the request into the stream concurrently with response reading:
 	// directions are independent (full duplex within the stream)
-	outReq := f.outboundRequest(r, path, body, isWS)
+	outReq := f.outboundRequest(r, path, body)
 	writeErrCh := make(chan error, 1)
-	if isWS {
-		// upgrade requests have no body: write the head inline and do NOT
-		// half-close - the client->worker direction carries the session, and
-		// the upgrade pump must be the stream's only writer
-		if err := outReq.Write(stream); err != nil {
+	go func() {
+		err := outReq.Write(stream)
+		if err == nil {
+			err = stream.CloseWrite()
+		} else {
+			// fail fast: the worker is waiting for bytes that will never come
 			stream.Reset(livekit.AgentHttp_HSR_CANCEL, "request write failed")
-			return false, true
 		}
-		writeErrCh <- nil
-	} else {
-		go func() {
-			err := outReq.Write(stream)
-			if err == nil {
-				err = stream.CloseWrite()
-			} else {
-				// fail fast: the worker is waiting for bytes that will never come
-				stream.Reset(livekit.AgentHttp_HSR_CANCEL, "request write failed")
-			}
-			writeErrCh <- err
-		}()
-	}
+		writeErrCh <- err
+	}()
 
 	counted := &countingReader{r: stream, n: new(int64)}
 	br := responseReadPool.Get().(*bufio.Reader)
 	br.Reset(counted)
-	// bridge returns only after the response (or the hijacked upgrade session)
-	// is fully drained, so the reader is free to recycle here; Reset(nil) drops
-	// the stream reference so the pool never pins a dead conn.
+	// bridge returns only after the response is fully drained, so the reader is
+	// free to recycle here; Reset(nil) drops the stream reference so the pool
+	// never pins a dead conn.
 	defer func() { br.Reset(nil); responseReadPool.Put(br) }()
 
 	resp, err := f.readResponseHead(w, br, outReq, stream)
@@ -410,11 +395,6 @@ func (f *Front) bridge(
 	}
 
 	// a response byte arrived: from here every failure is surfaced, never retried
-	if resp.StatusCode == http.StatusSwitchingProtocols {
-		f.bridgeUpgrade(w, resp, br, stream)
-		return true, false
-	}
-
 	copyResponseHeaders(w.Header(), resp)
 	w.WriteHeader(resp.StatusCode)
 
@@ -482,58 +462,6 @@ func (f *Front) readResponseHead(w http.ResponseWriter, br *bufio.Reader, outReq
 	}
 }
 
-// bridgeUpgrade hijacks the client connection after a 101 and pumps raw bytes in
-// both directions; the stream carries the rest of the WebSocket session.
-func (f *Front) bridgeUpgrade(w http.ResponseWriter, resp *http.Response, br *bufio.Reader, stream *Stream) {
-	hj, ok := w.(http.Hijacker)
-	if !ok {
-		// e.g. HTTP/2 client conns cannot be upgraded
-		stream.Reset(livekit.AgentHttp_HSR_CANCEL, "client does not support upgrade")
-		http.Error(w, "upgrade not supported on this connection", http.StatusBadGateway)
-		return
-	}
-	clientConn, clientRW, err := hj.Hijack()
-	if err != nil {
-		stream.Reset(livekit.AgentHttp_HSR_CANCEL, "hijack failed")
-		return
-	}
-	defer clientConn.Close()
-
-	if err := resp.Write(clientRW); err != nil {
-		return
-	}
-	if err := clientRW.Flush(); err != nil {
-		return
-	}
-
-	errCh := make(chan error, 2)
-	go func() {
-		// worker -> client, including bytes the bufio reader already buffered
-		_, err := io.Copy(clientConn, br)
-		errCh <- err
-	}()
-	go func() {
-		// client -> worker
-		buf := make([]byte, 32<<10)
-		for {
-			n, rerr := clientRW.Read(buf)
-			if n > 0 {
-				if _, werr := stream.Write(buf[:n]); werr != nil {
-					errCh <- werr
-					return
-				}
-			}
-			if rerr != nil {
-				_ = stream.CloseWrite()
-				errCh <- rerr
-				return
-			}
-		}
-	}()
-	<-errCh
-	stream.Reset(livekit.AgentHttp_HSR_CANCEL, "upgrade session ended")
-}
-
 // classifyRetry implements the retry table.
 func (f *Front) classifyRetry(r *http.Request, stream *Stream, responseBytes, bodyConsumedBefore int64, err error) bool {
 	if responseBytes > 0 || stream.BytesRead() > 0 {
@@ -557,7 +485,7 @@ func (f *Front) classifyRetry(r *http.Request, stream *Stream, responseBytes, bo
 // outboundRequest builds the request serialized into the stream: the path the
 // worker's router sees (deployment prefix stripped), hop-by-hop headers removed,
 // forwarding headers appended.
-func (f *Front) outboundRequest(r *http.Request, path string, body io.Reader, isWS bool) *http.Request {
+func (f *Front) outboundRequest(r *http.Request, path string, body io.Reader) *http.Request {
 	out := r.Clone(r.Context())
 	out.RequestURI = ""
 	out.URL = &url.URL{Path: path, RawQuery: r.URL.RawQuery}
@@ -566,9 +494,9 @@ func (f *Front) outboundRequest(r *http.Request, path string, body io.Reader, is
 	// one exchange per stream: closing the worker-local app connection after the
 	// response is what lets the opaque pump observe the end of the exchange and
 	// free the stream slot
-	out.Close = !isWS
+	out.Close = true
 
-	removeHopByHopHeaders(out.Header, isWS)
+	removeHopByHopHeaders(out.Header)
 	out.Header.Del("Expect") // the front owns 100-continue semantics client-side
 
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
@@ -583,27 +511,19 @@ func (f *Front) outboundRequest(r *http.Request, path string, body io.Reader, is
 }
 
 // hop-by-hop headers per RFC 9110; Connection-nominated headers are dropped too.
-// For WebSocket upgrades Connection/Upgrade survive so the worker-side bridge
-// sees a real upgrade request.
-func removeHopByHopHeaders(h http.Header, isWS bool) {
+func removeHopByHopHeaders(h http.Header) {
 	for _, f := range h.Values("Connection") {
 		for _, sf := range strings.Split(f, ",") {
-			if sf = strings.TrimSpace(sf); sf != "" && !strings.EqualFold(sf, "upgrade") {
+			if sf = strings.TrimSpace(sf); sf != "" {
 				h.Del(sf)
 			}
 		}
 	}
 	for _, k := range []string{
-		"Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization",
-		"Te", "Trailer", "Transfer-Encoding",
+		"Connection", "Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization",
+		"Te", "Trailer", "Transfer-Encoding", "Upgrade",
 	} {
 		h.Del(k)
-	}
-	if !isWS {
-		h.Del("Connection")
-		h.Del("Upgrade")
-	} else {
-		h.Set("Connection", "Upgrade")
 	}
 }
 
@@ -613,7 +533,7 @@ func copyResponseHeaders(dst http.Header, resp *http.Response) {
 			dst.Add(k, v)
 		}
 	}
-	removeHopByHopHeaders(dst, false)
+	removeHopByHopHeaders(dst)
 	if resp.ContentLength >= 0 && dst.Get("Content-Length") == "" {
 		dst.Set("Content-Length", fmt.Sprintf("%d", resp.ContentLength))
 	}
@@ -630,18 +550,3 @@ func (c *countingReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func isWebSocketUpgrade(r *http.Request) bool {
-	return strings.EqualFold(r.Header.Get("Upgrade"), "websocket") &&
-		httpHeaderContainsToken(r.Header, "Connection", "upgrade")
-}
-
-func httpHeaderContainsToken(h http.Header, name, token string) bool {
-	for _, v := range h.Values(name) {
-		for _, f := range strings.Split(v, ",") {
-			if strings.EqualFold(strings.TrimSpace(f), token) {
-				return true
-			}
-		}
-	}
-	return false
-}

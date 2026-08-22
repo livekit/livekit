@@ -63,20 +63,20 @@ func TestManifestFullPartialSemantics(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	r, res := m.Match("/x", http.MethodPost, false)
+	r, res := m.Match("/x", http.MethodPost)
 	require.Equal(t, MatchFull, res)
 	require.Contains(t, r.Methods, "POST")
 
 	// the manifest carries the app's methods verbatim: FastAPI does not imply
 	// HEAD from GET, so neither does the matcher
-	_, res = m.Match("/x", http.MethodHead, false)
+	_, res = m.Match("/x", http.MethodHead)
 	require.Equal(t, MatchPartial, res)
 
 	// PARTIAL only when no route serves the method
-	_, res = m.Match("/x", http.MethodDelete, false)
+	_, res = m.Match("/x", http.MethodDelete)
 	require.Equal(t, MatchPartial, res)
 
-	_, res = m.Match("/nope", http.MethodGet, false)
+	_, res = m.Match("/nope", http.MethodGet)
 	require.Equal(t, MatchNone, res)
 }
 
@@ -86,27 +86,12 @@ func TestManifestRedirectSlashes(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	alt, ok := m.RedirectSlashes("/hook/", http.MethodPost, false)
+	alt, ok := m.RedirectSlashes("/hook/", http.MethodPost)
 	require.True(t, ok)
 	require.Equal(t, "/hook", alt)
 
-	_, ok = m.RedirectSlashes("/other/", http.MethodPost, false)
+	_, ok = m.RedirectSlashes("/other/", http.MethodPost)
 	require.False(t, ok)
-}
-
-func TestManifestWebSocketRoutes(t *testing.T) {
-	m, err := ParseManifest([]*livekit.AgentHttp_AgentEndpoint{
-		{Path: "/ws", Kind: livekit.AgentHttp_AEK_WEBSOCKET, Public: true},
-		ep("/http", []string{"GET"}, true),
-	})
-	require.NoError(t, err)
-
-	_, res := m.Match("/ws", http.MethodGet, true)
-	require.Equal(t, MatchFull, res)
-	_, res = m.Match("/ws", http.MethodGet, false)
-	require.Equal(t, MatchNone, res)
-	_, res = m.Match("/http", http.MethodGet, true)
-	require.Equal(t, MatchNone, res)
 }
 
 func TestManifestValidation(t *testing.T) {
@@ -117,7 +102,7 @@ func TestManifestValidation(t *testing.T) {
 	require.Error(t, err, "lowercase method")
 
 	_, err = ParseManifest([]*livekit.AgentHttp_AgentEndpoint{
-		{Path: "/ws", Kind: livekit.AgentHttp_AEK_WEBSOCKET, Methods: []string{"GET"}},
+		{Path: "/ws", Kind: livekit.AgentHttp_AEK_TEXT, Methods: []string{"GET"}},
 	})
-	require.Error(t, err, "websocket route with methods")
+	require.Error(t, err, "unsupported endpoint kind")
 }

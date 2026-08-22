@@ -27,8 +27,7 @@ const MaxManifestRoutes = 256
 // Route is one validated manifest entry.
 type Route struct {
 	Template *Template
-	Methods  []string // uppercase; empty for websocket routes
-	Kind     livekit.AgentHttp_AgentEndpointKind
+	Methods  []string // uppercase
 	Public   bool
 }
 
@@ -66,50 +65,39 @@ func ParseManifest(endpoints []*livekit.AgentHttp_AgentEndpoint) (*Manifest, err
 		} else if d > MaxRouteDepth {
 			return nil, fmt.Errorf("endpoint %q exceeds max route depth %d", ep.GetPath(), MaxRouteDepth)
 		}
-		var methods []string
-		switch ep.GetKind() {
-		case livekit.AgentHttp_AEK_HTTP:
-			if len(ep.GetMethods()) == 0 {
-				return nil, fmt.Errorf("endpoint %q declares no methods", ep.GetPath())
-			}
-			for _, method := range ep.GetMethods() {
-				u := strings.ToUpper(method)
-				if u != method {
-					return nil, fmt.Errorf("endpoint %q method %q must be uppercase", ep.GetPath(), method)
-				}
-				methods = append(methods, u)
-			}
-		case livekit.AgentHttp_AEK_WEBSOCKET:
-			if len(ep.GetMethods()) != 0 {
-				return nil, fmt.Errorf("websocket endpoint %q must not declare methods", ep.GetPath())
-			}
-		default:
+		if ep.GetKind() != livekit.AgentHttp_AEK_HTTP {
 			return nil, fmt.Errorf("endpoint %q has unsupported kind %s", ep.GetPath(), ep.GetKind())
+		}
+		if len(ep.GetMethods()) == 0 {
+			return nil, fmt.Errorf("endpoint %q declares no methods", ep.GetPath())
+		}
+		var methods []string
+		for _, method := range ep.GetMethods() {
+			u := strings.ToUpper(method)
+			if u != method {
+				return nil, fmt.Errorf("endpoint %q method %q must be uppercase", ep.GetPath(), method)
+			}
+			methods = append(methods, u)
 		}
 		m.routes = append(m.routes, Route{
 			Template: tpl,
 			Methods:  methods,
-			Kind:     ep.GetKind(),
 			Public:   ep.GetPublic(),
 		})
 	}
 	return m, nil
 }
 
-// Match resolves a request path against the table. websocket selects the
-// websocket route class (upgrade requests); otherwise the HTTP class with
-// method matching.
-func (m *Manifest) Match(path, method string, websocket bool) (*Route, MatchResult) {
+// Match resolves a request path+method against the table: a FULL match on both,
+// else PARTIAL if the path matched but no route had the method (405).
+func (m *Manifest) Match(path, method string) (*Route, MatchResult) {
 	partial := false
 	for i := range m.routes {
 		r := &m.routes[i]
-		if websocket != (r.Kind == livekit.AgentHttp_AEK_WEBSOCKET) {
-			continue
-		}
 		if !r.Template.Match(path) {
 			continue
 		}
-		if websocket || slices.Contains(r.Methods, method) {
+		if slices.Contains(r.Methods, method) {
 			return r, MatchFull
 		}
 		partial = true
@@ -123,7 +111,7 @@ func (m *Manifest) Match(path, method string, websocket bool) (*Route, MatchResu
 // RedirectSlashes reports whether the alternate-slash form of path would match,
 // mirroring starlette's redirect_slashes default (FastAPI 307s /x/ to /x and
 // vice versa when only the alternate form matches).
-func (m *Manifest) RedirectSlashes(path, method string, websocket bool) (string, bool) {
+func (m *Manifest) RedirectSlashes(path, method string) (string, bool) {
 	if path == "/" {
 		return "", false
 	}
@@ -133,7 +121,7 @@ func (m *Manifest) RedirectSlashes(path, method string, websocket bool) (string,
 	} else {
 		alt = path + "/"
 	}
-	if _, res := m.Match(alt, method, websocket); res == MatchFull {
+	if _, res := m.Match(alt, method); res == MatchFull {
 		return alt, true
 	}
 	return "", false

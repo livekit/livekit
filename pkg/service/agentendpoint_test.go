@@ -22,7 +22,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -30,7 +29,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/agent"
@@ -444,59 +442,4 @@ func TestAgentEndpointsNoLocalListenerContract(t *testing.T) {
 		resp.Body.Close()
 		require.Equal(t, 404, resp.StatusCode, path)
 	}
-}
-
-// dial helper kept for upgrade tests once the SDK lands; avoids unused imports
-var _ = net.Dialer{}
-
-// the upgrade exchange and the raw bidirectional session both ride one stream;
-// this guards the front's hijack path and the no-half-close rule for upgrades
-func TestAgentEndpointsWebSocketUpgrade(t *testing.T) {
-	upgrader := websocket.Upgrader{}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		c, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer c.Close()
-		for {
-			mt, msg, err := c.ReadMessage()
-			if err != nil {
-				return
-			}
-			if err := c.WriteMessage(mt, append([]byte("echo:"), msg...)); err != nil {
-				return
-			}
-		}
-	})
-	app := newTargetApp(t, mux)
-
-	stack := newEndpointStack(t, agent.EndpointsConfig{})
-	stack.startWorker(app.URL, "production", []*livekit.AgentHttp_AgentEndpoint{
-		{Path: "/ws", Kind: livekit.AgentHttp_AEK_WEBSOCKET, Public: true},
-	})
-
-	wsURL := "ws" + strings.TrimPrefix(stack.ts.URL, "http") + "/agents/production/ws"
-	c, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	require.NoError(t, err)
-	if resp != nil {
-		resp.Body.Close()
-	}
-	defer c.Close()
-
-	for i := 0; i < 5; i++ {
-		payload := fmt.Sprintf("msg-%d", i)
-		require.NoError(t, c.WriteMessage(websocket.TextMessage, []byte(payload)))
-		_, echoed, err := c.ReadMessage()
-		require.NoError(t, err)
-		require.Equal(t, "echo:"+payload, string(echoed))
-	}
-
-	// a larger frame exercises credit flow through the raw pump
-	big := bytes.Repeat([]byte("x"), 256<<10)
-	require.NoError(t, c.WriteMessage(websocket.BinaryMessage, big))
-	_, echoed, err := c.ReadMessage()
-	require.NoError(t, err)
-	require.Equal(t, len(big)+5, len(echoed))
 }
