@@ -295,8 +295,12 @@ keys:
 #   # defaults to 3478 - recommended to 443 if not running HTTP3/QUIC server
 #   # only 53/80/443 are allowed if less than 1024
 #   udp_port: 3478
+#   # advertise domain instead of node IP for UDP TURN candidates, defaults to false
+#   udp_use_domain: false
 #   # defaults to 5349 - if not using a load balancer, this must be set to 443
 #   tls_port: 5349
+#   # set to true when clients must reach TURN/TLS on tls_port instead of 443, defaults to false
+#   advertise_tls_port: false
 #   # set UDP port range for TURN relay to connect to LiveKit SFU, by default it uses a any available port
 #   relay_range_start: 1024
 #   relay_range_end: 30000
@@ -305,7 +309,7 @@ keys:
 #   # defaults to 12; a value <= 0 disables the quota.
 #   per_user_relay_allocation_limit: 12
 #   # set external_tls to true if using a L4 load balancer to terminate TLS. when enabled,
-#   # LiveKit expects unencrypted traffic on tls_port, and still advertise tls_port as a TURN/TLS candidate.
+#   # LiveKit expects unencrypted traffic on tls_port and advertises 443 unless advertise_tls_port is true.
 #   external_tls: true
 #   # needs to match tls cert domain
 #   domain: turn.myhost.com
