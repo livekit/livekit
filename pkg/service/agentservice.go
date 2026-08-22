@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 	"errors"
+	"io"
 	"math/rand"
 	"net/http"
 	"slices"
@@ -240,24 +241,27 @@ func (s *AgentService) EndpointFront() http.Handler {
 func (s *AgentService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	attach := r.URL.Query().Get("attach") != ""
 	if conn, registration, ok := s.upgrader.Upgrade(w, r, nil); ok {
-		// bound the size of a single signalling frame so an oversized message is
-		// rejected by the transport before being fully buffered in memory. This
-		// limits the compressed bytes read off the wire; the decompressed size is
-		// bounded separately in WSSignalConnection.
-		if s.signalMessageSizeLimit > 0 {
-			conn.SetReadLimit(s.signalMessageSizeLimit)
-		}
-
 		if attach {
 			// data wire: no registration handshake, no signal loop; the wire
 			// speaks AgentHttp.Frame exclusively and the endpoint mux owns it
-			// after a successful attach. The connecting grant's api key binds the
-			// attach to its own project (a leaked attach token alone cannot bind a
-			// data conn to another project's worker).
-			HandleEndpointAttach(s.endpointRegistry, NewEndpointWireConn(conn), s.wireParams(), nil, GetAPIKey(r.Context()))
+			// after a successful attach. The read is bounded by the data wire's
+			// own max message size (a full frame), independent of the signalling
+			// limit, so a peer cannot OOM the server with an oversized frame. The
+			// connecting grant's api key binds the attach to its own project (a
+			// leaked attach token alone cannot bind a data conn to another
+			// project's worker).
+			params := s.wireParams()
+			conn.SetReadLimit(params.MaxMessageSize())
+			HandleEndpointAttach(s.endpointRegistry, NewEndpointWireConn(conn), params, nil, GetAPIKey(r.Context()))
 			return
 		}
 
+		// control/signal conn: bound a single signalling frame (0 = operator
+		// disabled) before it is buffered; decompressed size is bounded in
+		// WSSignalConnection.
+		if s.signalMessageSizeLimit > 0 {
+			conn.SetReadLimit(s.signalMessageSizeLimit)
+		}
 		sigConn := NewWSSignalConnection(conn, s.signalMessageSizeLimit)
 		defer sigConn.Close()
 		s.HandleConnection(r.Context(), sigConn, registration)
@@ -278,6 +282,10 @@ type endpointWireConn struct {
 	// scratch holds the last frame's marshalled bytes, reused across writes so a
 	// high-rate stream does not allocate a buffer per frame. Guarded by writeMu.
 	scratch []byte
+	// readBuf holds the last frame's raw bytes, reused across reads. Only the
+	// single reader (the conn's readLoop) touches it, and proto.Unmarshal copies
+	// the payload out, so it is safe to recycle each frame with no lock.
+	readBuf []byte
 }
 
 // NewEndpointWireConn wraps an upgraded agent websocket as a data-plane wire.
@@ -306,18 +314,44 @@ func (c *endpointWireConn) WriteFrame(f *livekit.AgentHttp_Frame) error {
 func (c *endpointWireConn) ReadFrame() (*livekit.AgentHttp_Frame, error) {
 	for {
 		_ = c.ws.SetReadDeadline(time.Now().Add(endpointWireIdleTimeout))
-		mt, b, err := c.ws.ReadMessage()
+		mt, r, err := c.ws.NextReader()
 		if err != nil {
 			return nil, err
 		}
 		if mt != websocket.BinaryMessage {
-			continue
+			continue // gorilla discards this reader on the next NextReader
+		}
+		// read into the reused buffer instead of letting ReadMessage allocate one
+		// per frame; proto.Unmarshal copies the payload into Frame.Data, so the
+		// buffer is free to recycle on the next read
+		c.readBuf, err = readAllInto(c.readBuf, r)
+		if err != nil {
+			return nil, err
 		}
 		f := &livekit.AgentHttp_Frame{}
-		if err := proto.Unmarshal(b, f); err != nil {
+		if err := proto.Unmarshal(c.readBuf, f); err != nil {
 			return nil, err
 		}
 		return f, nil
+	}
+}
+
+// readAllInto reads r to EOF, reusing buf's capacity, and returns the filled
+// slice (a re-slice of buf, or a larger buffer if the message outgrew it).
+func readAllInto(buf []byte, r io.Reader) ([]byte, error) {
+	buf = buf[:0]
+	for {
+		if len(buf) == cap(buf) {
+			buf = append(buf, 0)[:len(buf)] // grow capacity, keep length
+		}
+		n, err := r.Read(buf[len(buf):cap(buf)])
+		buf = buf[:len(buf)+n]
+		if err != nil {
+			if err == io.EOF {
+				err = nil
+			}
+			return buf, err
+		}
 	}
 }
 
@@ -335,19 +369,16 @@ func (c *endpointWireConn) Close() error {
 
 // wireParams are this node's wire-level flow-control parameters, announced to
 // the worker in each attach response.
+// wireParams are the data-plane flow-control parameters, from config with
+// package defaults. They are independent of the signalling message limit, which
+// governs the separate control websocket.
 func (s *AgentService) wireParams() endpoint.WireParams {
-	p := endpoint.WireParams{
+	return endpoint.WireParams{
 		CreditWindow:      s.endpointsConfig.CreditWindow,
 		ConnectionWindow:  s.endpointsConfig.ConnectionWindow,
 		MaxFrameSize:      s.endpointsConfig.MaxFrameSize,
 		MaxStreamsPerConn: s.endpointsConfig.MaxStreamsPerConn,
 	}.WithDefaults()
-	// data frames ride the same websocket read limit as signalling: keep the
-	// frame size safely under it so a full frame can never kill the wire
-	if lim := s.signalMessageSizeLimit; lim > 0 && int64(p.MaxFrameSize) > lim/2 {
-		p.MaxFrameSize = uint32(lim / 2)
-	}
-	return p
 }
 
 // AttachAdopter resolves an attach whose worker is unknown to the local

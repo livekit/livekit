@@ -100,6 +100,19 @@ func (p WireParams) WithDefaults() WireParams {
 	return p
 }
 
+// frameOverhead bounds the AgentHttp.Frame envelope around a payload (stream id,
+// oneof tag, length varints); a data frame on the wire is at most
+// MaxFrameSize + frameOverhead.
+const frameOverhead = 1024
+
+// MaxMessageSize is the largest websocket message a wire may legitimately carry
+// (a full data frame). A reader caps its read limit at this so an oversized
+// frame is rejected before it can exhaust memory, even when no signalling limit
+// is configured.
+func (p WireParams) MaxMessageSize() int64 {
+	return int64(p.MaxFrameSize) + frameOverhead
+}
+
 func (s Settings) Proto() *livekit.AgentHttp_AgentEndpointSettings {
 	return &livekit.AgentHttp_AgentEndpointSettings{
 		Protocol:            s.Protocol,
