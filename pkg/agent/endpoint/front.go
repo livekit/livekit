@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/livekit/protocol/livekit"
@@ -61,6 +62,14 @@ const (
 
 	// maxAttempts bounds worker retries per request
 	maxAttempts = 3
+)
+
+// Per-request scratch is pooled: a served request would otherwise allocate a
+// 32KiB response-copy buffer and a response-head reader every time, and at high
+// request rates that dominates the front's garbage.
+var (
+	copyBufferPool   = sync.Pool{New: func() any { b := make([]byte, 32<<10); return &b }}
+	responseReadPool = sync.Pool{New: func() any { return bufio.NewReaderSize(nil, 4<<10) }}
 )
 
 // APIKeyResolver maps an inbound request to the api key it is authorized for
@@ -377,7 +386,12 @@ func (f *Front) bridge(
 	}
 
 	counted := &countingReader{r: stream, n: new(int64)}
-	br := bufio.NewReader(counted)
+	br := responseReadPool.Get().(*bufio.Reader)
+	br.Reset(counted)
+	// bridge returns only after the response (or the hijacked upgrade session)
+	// is fully drained, so the reader is free to recycle here; Reset(nil) drops
+	// the stream reference so the pool never pins a dead conn.
+	defer func() { br.Reset(nil); responseReadPool.Put(br) }()
 
 	resp, err := f.readResponseHead(w, br, outReq, stream)
 	if err != nil {
@@ -405,7 +419,9 @@ func (f *Front) bridge(
 	w.WriteHeader(resp.StatusCode)
 
 	rc := http.NewResponseController(w)
-	buf := make([]byte, 32<<10)
+	bufp := copyBufferPool.Get().(*[]byte)
+	buf := *bufp
+	defer copyBufferPool.Put(bufp)
 	for {
 		n, rerr := resp.Body.Read(buf)
 		if n > 0 {

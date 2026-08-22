@@ -275,6 +275,9 @@ const endpointWireIdleTimeout = 2 * time.Minute
 type endpointWireConn struct {
 	ws      *websocket.Conn
 	writeMu sync.Mutex
+	// scratch holds the last frame's marshalled bytes, reused across writes so a
+	// high-rate stream does not allocate a buffer per frame. Guarded by writeMu.
+	scratch []byte
 }
 
 // NewEndpointWireConn wraps an upgraded agent websocket as a data-plane wire.
@@ -288,12 +291,15 @@ func NewEndpointWireConn(ws *websocket.Conn) endpoint.WireConn {
 }
 
 func (c *endpointWireConn) WriteFrame(f *livekit.AgentHttp_Frame) error {
-	b, err := proto.Marshal(f)
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	// marshal into the reused buffer and write it before returning; gorilla's
+	// WriteMessage does not retain the payload, so the next frame can reuse it.
+	b, err := proto.MarshalOptions{}.MarshalAppend(c.scratch[:0], f)
 	if err != nil {
 		return err
 	}
-	c.writeMu.Lock()
-	defer c.writeMu.Unlock()
+	c.scratch = b
 	return c.ws.WriteMessage(websocket.BinaryMessage, b)
 }
 
