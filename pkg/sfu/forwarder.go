@@ -230,6 +230,7 @@ type Forwarder struct {
 	kind                           webrtc.RTPCodecType
 	logger                         logger.Logger
 	skipReferenceTS                bool
+	forceSkipReferenceTS           bool // constructor-provided override, forces skipReferenceTS on
 	disableOpportunisticAllocation bool
 	enableStartAtDesiredQuality    bool
 	rtpStats                       *rtpstats.RTPStatsSender
@@ -276,6 +277,7 @@ func NewForwarder(
 		kind:                           kind,
 		logger:                         logger,
 		skipReferenceTS:                skipReferenceTS,
+		forceSkipReferenceTS:           skipReferenceTS,
 		disableOpportunisticAllocation: disableOpportunisticAllocation,
 		enableStartAtDesiredQuality:    enableStartAtDesiredQuality,
 		rtpStats:                       rtpStats,
@@ -354,10 +356,6 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	if videoLayerMode == livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM_INCOMPLETE_RTCP_SR {
-		f.skipReferenceTS = true
-	}
-
 	toMimeType := mime.NormalizeMimeType(codec.MimeType)
 	codecChanged := f.mime != mime.MimeTypeUnknown && f.mime != toMimeType
 	if codecChanged {
@@ -366,6 +364,21 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 	f.mime = toMimeType
 	f.clockRate = codec.ClockRate
 	f.refVideoLayerMode = videoLayerMode
+
+	// derive per invocation (DetermineCodec is re-invoked on upstream codec change
+	// and receiver restart) so that moving away from a codec/mode that needs the
+	// fallback re-enables the sender-report based switch point. the
+	// constructor-provided value still forces it on.
+	//
+	// VP9 simulcast sends one RTP stream per spatial layer and the per-layer RTCP
+	// sender reports do not provide a usable cross-layer timestamp offset, so the
+	// reference-timestamp based switch point calculation never establishes
+	// (tsOffset stays 0) and every layer switch fails with "switch point too far
+	// behind". treat it like ONE_SPATIAL_LAYER_PER_STREAM_INCOMPLETE_RTCP_SR and
+	// fall back to the expected-timestamp based switch point.
+	f.skipReferenceTS = f.forceSkipReferenceTS ||
+		videoLayerMode == livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM_INCOMPLETE_RTCP_SR ||
+		(f.mime == mime.MimeTypeVP9 && sfuutils.IsSimulcastMode(videoLayerMode))
 
 	ddAvailable := func(exts []webrtc.RTPHeaderExtensionParameter) bool {
 		for _, ext := range exts {

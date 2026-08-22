@@ -948,8 +948,18 @@ func (r *ReceiverBase) forwardRTP(
 		}
 
 		spatialLayer := layer
-		if extPkt.Spatial >= 0 {
-			// svc packet, take spatial layer info from packet
+		if extPkt.Spatial >= 0 && !sfuutils.IsSimulcastMode(r.videoLayerMode) {
+			// svc packet, take spatial layer info from packet.
+			// apply the override whenever the stream can carry multiple spatial layers:
+			// with SVC there is a single uptrack and the spatial layer comes from the
+			// packet. with simulcast (e. g. VP9/AV1 ONE_SPATIAL_LAYER_PER_STREAM) each rid
+			// is single-spatial, so the in-packet spatial id is always 0 and would collapse
+			// every rid to spatial layer 0, making the forwarder unable to tell the rids
+			// apart. for simulcast, the uptrack index (layer) is authoritative.
+			// note: the mode is checked rather than layer == 0 because an SVC publisher
+			// that does not signal videoLayerMode (MODE_UNUSED) but sends a rid can be
+			// registered under a non-zero uptrack index (see AddUpTrack), and its layers
+			// would otherwise all be attributed to that single index.
 			spatialLayer = extPkt.Spatial
 		}
 		if int(spatialLayer) >= len(spatialTrackers) {

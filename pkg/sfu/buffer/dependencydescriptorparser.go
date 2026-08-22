@@ -63,6 +63,12 @@ type DependencyDescriptorParser struct {
 	seqWrapAround             *utils.WrapAround[uint16, uint64]
 	frameWrapAround           *utils.WrapAround[uint16, uint64]
 	structureExtFrameNum      uint64
+	// drop threshold for frames belonging to a previous dependency structure.
+	// advanced only when the structure id actually changes: structureExtFrameNum
+	// advances on every structure-bearing key frame, so with frequent key frames
+	// repeating the same structure (e. g. screen content), valid late/retransmitted
+	// frames would be dropped as "earlier than current structure".
+	structureChangeExtFrameNum uint64
 	activeDecodeTargetsExtSeq uint64
 	activeDecodeTargetsMask   uint32
 	frameChecker              *FrameIntegrityChecker
@@ -153,12 +159,12 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 	unwrapped := r.frameWrapAround.UpdateWithOrderKnown(ddVal.FrameNumber, restart)
 	extFN := unwrapped.ExtendedVal
 
-	if extFN < r.structureExtFrameNum {
+	if extFN < r.structureChangeExtFrameNum {
 		r.logger.Debugw(
 			"drop frame which is earlier than current structure",
 			"fn", ddVal.FrameNumber,
 			"extFN", extFN,
-			"structureExtFrameNum", r.structureExtFrameNum,
+			"structureChangeExtFrameNum", r.structureChangeExtFrameNum,
 			"unwrappedFN", unwrapped,
 			"frameWrapAround", r.frameWrapAround,
 		)
@@ -188,7 +194,24 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 			return nil, videoLayer, ErrDDStructureAttachedToNonFirstPacket
 		}
 
+		if extFN < r.structureExtFrameNum {
+			// out-of-order key frame repeating the current structure: accepting it
+			// would regress structureExtFrameNum (ExtKeyFrameNum) and replay a stale
+			// structure update, confusing the downtrack's dependency descriptor
+			// selector.
+			r.logger.Debugw(
+				"drop out-of-order key frame",
+				"extFN", extFN,
+				"structureExtFrameNum", r.structureExtFrameNum,
+			)
+			ReleaseExtDependencyDescriptor(extDD)
+			return nil, videoLayer, ErrFrameEarlierThanKeyFrame
+		}
+
 		if r.structure == nil || ddVal.AttachedStructure.StructureId != r.structure.StructureId {
+			// structure actually changed (or first structure): advance the drop threshold
+			// so that only frames preceding this structure are dropped.
+			r.structureChangeExtFrameNum = extFN
 			r.logger.Debugw(
 				"structure updated",
 				"structureID", ddVal.AttachedStructure.StructureId,
@@ -252,6 +275,7 @@ func (r *DependencyDescriptorParser) restart() {
 	r.frameChecker = NewFrameIntegrityChecker(integrityCheckFrame, integrityCheckPkt)
 	r.structure = nil
 	r.structureExtFrameNum = 0
+	r.structureChangeExtFrameNum = 0
 	r.activeDecodeTargetsExtSeq = 0
 	r.activeDecodeTargetsMask = 0
 	r.decodeTargets = r.decodeTargets[:0]
