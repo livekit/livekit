@@ -67,7 +67,8 @@ rtc:
   use_external_ip: true
   # # when set to true, advertises both mapped external and internal IPs to clients as server candidates.
   # # useful when clients connect from both private and public networks.
-  # # works only when `use_external_ip` is set to true.
+  # # works when `use_external_ip` is set to true, and also when `node_ip` is set explicitly below.
+  # # in both cases the node's local candidate is kept alongside the mapped one instead of being replaced by it.
   # # when both this and `external_ip_only` are set, SFU advertises all private IPs with their mapped external IPs and skips
   # # private IPs that do not have a mapped external IP.
   # advertise_internal_ip: true
