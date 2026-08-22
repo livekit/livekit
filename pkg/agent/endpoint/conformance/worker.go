@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package client is the reference worker-side implementation of the agent HTTP
-// endpoints data plane: it registers a manifest over the control connection,
-// attaches the fixed wire pool, and bridges each stream to a local HTTP server.
-// It doubles as the protocol conformance harness and as a manual sidecar for
-// non-SDK workers.
-package client
+// Package conformance is a reference worker-side implementation of the agent
+// HTTP endpoints data plane, used as test infrastructure: it registers a
+// manifest over the control connection, attaches the fixed wire pool, and
+// bridges each stream to a local HTTP server. The acceptance suite drives it to
+// exercise the server end to end in Go, without a Python SDK worker.
+package conformance
 
 import (
 	"context"

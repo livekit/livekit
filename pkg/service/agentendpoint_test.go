@@ -35,7 +35,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/agent/endpoint"
-	"github.com/livekit/livekit-server/pkg/agent/endpoint/client"
+	"github.com/livekit/livekit-server/pkg/agent/endpoint/conformance"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
@@ -90,8 +90,8 @@ func (s *endpointStack) wsURL() string {
 	return "ws" + strings.TrimPrefix(s.ts.URL, "http") + "/agent"
 }
 
-func (s *endpointStack) startWorker(target string, deployment string, endpoints []*livekit.AgentHttp_AgentEndpoint) *client.Worker {
-	w := client.New(client.Config{
+func (s *endpointStack) startWorker(target string, deployment string, endpoints []*livekit.AgentHttp_AgentEndpoint) *conformance.Worker {
+	w := conformance.New(conformance.Config{
 		ServerURL:  s.wsURL(),
 		APIKey:     testKey,
 		APISecret:  testSecret,
@@ -366,7 +366,7 @@ func TestAgentEndpointsRetrySafety(t *testing.T) {
 	deadTarget := "127.0.0.1:1" // nothing listens
 	eps := []*livekit.AgentHttp_AgentEndpoint{httpEP("/json", []string{"GET"}, true)}
 
-	broken := client.New(client.Config{
+	broken := conformance.New(conformance.Config{
 		ServerURL: stack.wsURL(), APIKey: testKey, APISecret: testSecret,
 		AgentName: "test-agent", Deployment: "production",
 		Endpoints: eps, TargetAddr: deadTarget,
