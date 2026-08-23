@@ -15,6 +15,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -225,4 +226,146 @@ func TestLoadTURNSecrets(t *testing.T) {
 		require.NoError(t, conf.LoadTURNSecrets())
 		require.Equal(t, "fromfile", conf.RTC.TURNServers[0].Secret)
 	})
+
+	t.Run("static credentials are loaded from files and trimmed", func(t *testing.T) {
+		dir := t.TempDir()
+		conf := &Config{}
+		conf.RTC.TURNServers = []TURNServer{{
+			Host:           "h",
+			UsernameFile:   writeTURNFile(t, dir, "username", " turn-user\n", 0o644),
+			CredentialFile: writeTURNFile(t, dir, "credential", "  turn-pass \n", 0o600),
+		}}
+		require.NoError(t, conf.LoadTURNSecrets())
+		require.Equal(t, "turn-user", conf.RTC.TURNServers[0].Username)
+		require.Equal(t, "turn-pass", conf.RTC.TURNServers[0].Credential)
+	})
+
+	t.Run("world-readable credential file is rejected", func(t *testing.T) {
+		dir := t.TempDir()
+		conf := &Config{}
+		conf.RTC.TURNServers = []TURNServer{{
+			Host:           "h",
+			Username:       "u",
+			CredentialFile: writeTURNFile(t, dir, "credential", "turn-pass", 0o644),
+		}}
+		require.ErrorIs(t, conf.LoadTURNSecrets(), ErrTURNCredentialFileIncorrectPermission)
+	})
+
+	t.Run("world-readable username file is accepted", func(t *testing.T) {
+		dir := t.TempDir()
+		conf := &Config{}
+		conf.RTC.TURNServers = []TURNServer{{
+			Host:         "h",
+			UsernameFile: writeTURNFile(t, dir, "username", "turn-user", 0o644),
+			Credential:   "c",
+		}}
+		require.NoError(t, conf.LoadTURNSecrets())
+		require.Equal(t, "turn-user", conf.RTC.TURNServers[0].Username)
+	})
+
+	t.Run("whitespace-only credential file is rejected", func(t *testing.T) {
+		dir := t.TempDir()
+		conf := &Config{}
+		conf.RTC.TURNServers = []TURNServer{{
+			Host:           "h",
+			Username:       "u",
+			CredentialFile: writeTURNFile(t, dir, "credential", " \n\t ", 0o600),
+		}}
+		require.ErrorIs(t, conf.LoadTURNSecrets(), ErrTURNCredentialFileEmpty)
+	})
+
+	t.Run("empty username file is rejected", func(t *testing.T) {
+		dir := t.TempDir()
+		conf := &Config{}
+		conf.RTC.TURNServers = []TURNServer{{
+			Host:         "h",
+			UsernameFile: writeTURNFile(t, dir, "username", "", 0o644),
+			Credential:   "c",
+		}}
+		require.ErrorIs(t, conf.LoadTURNSecrets(), ErrTURNCredentialFileEmpty)
+	})
+
+	t.Run("missing credential file surfaces the stat error", func(t *testing.T) {
+		conf := &Config{}
+		conf.RTC.TURNServers = []TURNServer{{
+			Host:           "h",
+			Username:       "u",
+			CredentialFile: filepath.Join(t.TempDir(), "does-not-exist"),
+		}}
+		require.ErrorIs(t, conf.LoadTURNSecrets(), os.ErrNotExist)
+	})
+
+	t.Run("unreadable username file surfaces the read error", func(t *testing.T) {
+		conf := &Config{}
+		conf.RTC.TURNServers = []TURNServer{{
+			Host:         "h",
+			UsernameFile: filepath.Join(t.TempDir(), "does-not-exist"),
+			Credential:   "c",
+		}}
+		require.ErrorIs(t, conf.LoadTURNSecrets(), os.ErrNotExist)
+	})
+
+	t.Run("inline static credentials take precedence over their files", func(t *testing.T) {
+		dir := t.TempDir()
+		conf := &Config{}
+		conf.RTC.TURNServers = []TURNServer{{
+			Host:           "h",
+			Username:       "inline-user",
+			UsernameFile:   writeTURNFile(t, dir, "username", "file-user", 0o644),
+			Credential:     "inline-pass",
+			CredentialFile: writeTURNFile(t, dir, "credential", "file-pass", 0o600),
+		}}
+		require.NoError(t, conf.LoadTURNSecrets())
+		require.Equal(t, "inline-user", conf.RTC.TURNServers[0].Username)
+		require.Equal(t, "inline-pass", conf.RTC.TURNServers[0].Credential)
+	})
+
+	// unlike secret, a static username/credential is sent to the TURN server as-is,
+	// so surrounding whitespace must survive exactly as it was configured
+	t.Run("inline static credentials keep surrounding whitespace", func(t *testing.T) {
+		conf := &Config{}
+		conf.RTC.TURNServers = []TURNServer{{Host: "h", Username: " u ", Credential: " c "}}
+		require.NoError(t, conf.LoadTURNSecrets())
+		require.Equal(t, " u ", conf.RTC.TURNServers[0].Username)
+		require.Equal(t, " c ", conf.RTC.TURNServers[0].Credential)
+	})
+
+	t.Run("credential file without a username is rejected", func(t *testing.T) {
+		dir := t.TempDir()
+		conf := &Config{}
+		conf.RTC.TURNServers = []TURNServer{{
+			Host:           "h",
+			CredentialFile: writeTURNFile(t, dir, "credential", "turn-pass", 0o600),
+		}}
+		require.ErrorIs(t, conf.LoadTURNSecrets(), ErrTURNServerNoCredentials)
+	})
+}
+
+func writeTURNFile(t *testing.T, dir, name, content string, perm os.FileMode) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	require.NoError(t, os.WriteFile(path, []byte(content), perm))
+	return path
+}
+
+// TestNewConfigParsesTURNCredentialFiles covers the end-to-end path an operator
+// actually uses: YAML keys straight from the config file through to the resolved
+// credentials.
+func TestNewConfigParsesTURNCredentialFiles(t *testing.T) {
+	dir := t.TempDir()
+	usernameFile := writeTURNFile(t, dir, "username", "turn-user\n", 0o644)
+	credentialFile := writeTURNFile(t, dir, "credential", "  turn-pass \n", 0o600)
+
+	content := fmt.Sprintf(`rtc:
+  turn_servers:
+    - host: turn.example.com
+      username_file: %s
+      credential_file: %s
+`, usernameFile, credentialFile)
+
+	conf, err := NewConfig(content, true, nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, conf.LoadTURNSecrets())
+	require.Equal(t, "turn-user", conf.RTC.TURNServers[0].Username)
+	require.Equal(t, "turn-pass", conf.RTC.TURNServers[0].Credential)
 }
