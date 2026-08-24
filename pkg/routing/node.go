@@ -15,6 +15,7 @@
 package routing
 
 import (
+	"math"
 	"runtime"
 	"sync"
 	"time"
@@ -26,6 +27,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 )
 
+//counterfeiter:generate . LocalNode
 type LocalNode interface {
 	Clone() *livekit.Node
 	SetNodeID(nodeID livekit.NodeID)
@@ -34,14 +36,20 @@ type LocalNode interface {
 	NodeIP() string
 	Region() string
 	SetState(state livekit.NodeState)
+	State() livekit.NodeState
 	SetStats(stats *livekit.NodeStats)
 	UpdateNodeStats() bool
 	SecondsSinceNodeStatsUpdate() float64
+	UpdateKeepalive()
+	SecondsSinceKeepalive() float64
 }
 
 type LocalNodeImpl struct {
 	lock sync.RWMutex
 	node *livekit.Node
+	// when this node last heard back from its own keepalive ping. starts out
+	// set, so that a node is not born unready
+	keepaliveAt time.Time
 
 	nodeStats *NodeStats
 }
@@ -51,8 +59,10 @@ func NewLocalNode(conf *config.Config) (*LocalNodeImpl, error) {
 	if conf != nil && conf.RTC.NodeIP.IsEmpty() {
 		return nil, ErrIPNotSet
 	}
-	nowUnix := time.Now().Unix()
+	now := time.Now()
+	nowUnix := now.Unix()
 	l := &LocalNodeImpl{
+		keepaliveAt: now,
 		node: &livekit.Node{
 			Id:      nodeID,
 			NumCpus: uint32(runtime.NumCPU()),
@@ -76,7 +86,7 @@ func NewLocalNode(conf *config.Config) (*LocalNodeImpl, error) {
 }
 
 func NewLocalNodeFromNodeProto(node *livekit.Node) (*LocalNodeImpl, error) {
-	return &LocalNodeImpl{node: utils.CloneProto(node)}, nil
+	return &LocalNodeImpl{node: utils.CloneProto(node), keepaliveAt: time.Now()}, nil
 }
 
 func (l *LocalNodeImpl) Clone() *livekit.Node {
@@ -129,6 +139,13 @@ func (l *LocalNodeImpl) SetState(state livekit.NodeState) {
 	l.node.State = state
 }
 
+func (l *LocalNodeImpl) State() livekit.NodeState {
+	l.lock.RLock()
+	defer l.lock.RUnlock()
+
+	return l.node.State
+}
+
 // for testing only
 func (l *LocalNodeImpl) SetStats(stats *livekit.NodeStats) {
 	l.lock.Lock()
@@ -154,5 +171,26 @@ func (l *LocalNodeImpl) SecondsSinceNodeStatsUpdate() float64 {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 
+	if l.node.Stats == nil {
+		// a node that has never sampled is as stale as it gets, which the
+		// liveness probe should report rather than panic on
+		return math.Inf(1)
+	}
 	return time.Since(time.Unix(l.node.Stats.UpdatedAt, 0)).Seconds()
+}
+
+// UpdateKeepalive records that this node's keepalive ping made it back, which is
+// its proof that it can still receive the messages routed to it.
+func (l *LocalNodeImpl) UpdateKeepalive() {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
+	l.keepaliveAt = time.Now()
+}
+
+func (l *LocalNodeImpl) SecondsSinceKeepalive() float64 {
+	l.lock.RLock()
+	defer l.lock.RUnlock()
+
+	return time.Since(l.keepaliveAt).Seconds()
 }
