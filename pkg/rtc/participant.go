@@ -415,9 +415,9 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 		p.ID(),
 		params.Grants.GetParticipantKind(),
 		params.Grants.GetKindDetails(),
+		p.GetTelemetryListener,
 		params.Reporter,
 	)
-	p.dataChannelStats.SetTelemetryListener(p.GetTelemetryListener())
 	p.reliableDataInfo.lastPubReliableSeq.Store(params.LastPubReliableSeq)
 
 	p.migrateState.Store(types.MigrateStateInit)
@@ -1428,21 +1428,20 @@ func (p *ParticipantImpl) SetMigrateInfo(
 
 	for _, t := range dataTracks {
 		dti := t.GetInfo()
-		bts := NewBytesTrackStats(
-			p.params.Country,
-			livekit.TrackID(dti.Sid),
-			p.ID(),
-			p.Kind(),
-			p.KindDetails(),
-			p.params.Reporter,
-		)
-		bts.SetTelemetryListener(p.GetTelemetryListener())
 		dt := NewDataTrack(
 			DataTrackParams{
 				Logger:              p.params.Logger.WithValues("trackID", dti.Sid),
 				ParticipantID:       p.ID,
 				ParticipantIdentity: p.params.Identity,
-				BytesTrackStats:     bts,
+				BytesTrackStats: NewBytesTrackStats(
+					p.params.Country,
+					livekit.TrackID(dti.Sid),
+					p.ID(),
+					p.Kind(),
+					p.KindDetails(),
+					p.GetTelemetryListener,
+					p.params.Reporter,
+				),
 			},
 			dti,
 		)
@@ -4313,7 +4312,6 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 	p.participantHelper.Store(params.Helper)
 
 	p.id.Store(params.ParticipantID)
-	p.dataChannelStats.SetTelemetryListener(p.GetTelemetryListener())
 
 	grants := p.grants.Load().Clone()
 	grants.Video.Room = string(params.RoomName)

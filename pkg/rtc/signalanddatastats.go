@@ -60,7 +60,7 @@ type BytesTrackStats struct {
 	sendMessages, recvMessages           atomic.Uint32
 	totalSendBytes, totalRecvBytes       atomic.Uint64
 	totalSendMessages, totalRecvMessages atomic.Uint32
-	telemetryListener                    atomic.Pointer[types.ParticipantTelemetryListener]
+	telemetryListener                    func() types.ParticipantTelemetryListener
 	reporter                             roomobs.TrackReporter
 	done                                 core.Fuse
 }
@@ -71,33 +71,20 @@ func NewBytesTrackStats(
 	pID livekit.ParticipantID,
 	kind livekit.ParticipantInfo_Kind,
 	kindDetails []livekit.ParticipantInfo_KindDetail,
+	telemetryListener func() types.ParticipantTelemetryListener,
 	participantReporter roomobs.ParticipantSessionReporter,
 ) *BytesTrackStats {
 	s := &BytesTrackStats{
-		country:     country,
-		pID:         pID,
-		kind:        kind,
-		kindDetails: kindDetails,
-		trackID:     trackID,
-		reporter:    participantReporter.WithTrack(trackID.String()),
+		country:           country,
+		pID:               pID,
+		kind:              kind,
+		kindDetails:       kindDetails,
+		trackID:           trackID,
+		telemetryListener: telemetryListener,
+		reporter:          participantReporter.WithTrack(trackID.String()),
 	}
 	go s.worker()
 	return s
-}
-
-func (s *BytesTrackStats) SetTelemetryListener(listener types.ParticipantTelemetryListener) {
-	if listener == nil {
-		s.telemetryListener.Store(nil)
-		return
-	}
-	s.telemetryListener.Store(&listener)
-}
-
-func (s *BytesTrackStats) getTelemetryListener() types.ParticipantTelemetryListener {
-	if l := s.telemetryListener.Load(); l != nil {
-		return *l
-	}
-	return &types.NullParticipantTelemetryListener{}
 }
 
 func (s *BytesTrackStats) AddBytes(bytes uint64, isSend bool) {
@@ -147,7 +134,7 @@ func (s *BytesTrackStats) Stop() {
 func (s *BytesTrackStats) report() {
 	if recv := s.recv.Swap(0); recv > 0 {
 		packets := s.recvMessages.Swap(0)
-		s.getTelemetryListener().OnTrackStats(
+		s.telemetryListener().OnTrackStats(
 			telemetry.StatsKeyForData(s.country, livekit.StreamType_UPSTREAM, s.pID, s.trackID),
 			&livekit.AnalyticsStat{
 				Streams: []*livekit.AnalyticsStream{
@@ -162,7 +149,7 @@ func (s *BytesTrackStats) report() {
 
 	if send := s.send.Swap(0); send > 0 {
 		packets := s.sendMessages.Swap(0)
-		s.getTelemetryListener().OnTrackStats(
+		s.telemetryListener().OnTrackStats(
 			telemetry.StatsKeyForData(s.country, livekit.StreamType_DOWNSTREAM, s.pID, s.trackID),
 			&livekit.AnalyticsStat{
 				Streams: []*livekit.AnalyticsStream{
@@ -228,11 +215,11 @@ func NewBytesSignalStats(
 		guard:               &telemetry.ReferenceGuard{},
 		participantResolver: participantReporterResolver,
 		trackResolver:       trackReporterResolver,
-		BytesTrackStats: BytesTrackStats{
-			reporter: trackReporter,
-		},
 	}
-	b.BytesTrackStats.SetTelemetryListener(b)
+	b.BytesTrackStats = BytesTrackStats{
+		telemetryListener: b.telemetryListener,
+		reporter:          trackReporter,
+	}
 	return b
 }
 
@@ -306,6 +293,10 @@ func (s *BytesSignalStats) worker() {
 	s.BytesTrackStats.worker()
 	s.telemetry.ParticipantLeft(s.ctx, s.ri, s.pi, false, s.guard)
 	close(s.stopped)
+}
+
+func (s *BytesSignalStats) telemetryListener() types.ParticipantTelemetryListener {
+	return s
 }
 
 func (s *BytesSignalStats) OnTrackStats(key telemetry.StatsKey, stat *livekit.AnalyticsStat) {
