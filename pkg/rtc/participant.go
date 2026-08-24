@@ -251,6 +251,7 @@ type ParticipantImpl struct {
 	params ParticipantParams
 
 	participantListener atomic.Pointer[types.LocalParticipantListener]
+	telemetryListener   atomic.Pointer[types.ParticipantTelemetryListener]
 	participantHelper   atomic.Value // types.LocalParticipantHelper
 	id                  atomic.Value // types.ParticipantID
 
@@ -398,17 +399,8 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.setupSignalling()
 
 	p.id.Store(params.SID)
-	p.dataChannelStats = NewBytesTrackStats(
-		p.params.Country,
-		BytesTrackIDForParticipantID(BytesTrackTypeData, p.ID()),
-		p.ID(),
-		params.Grants.GetParticipantKind(),
-		params.Grants.GetKindDetails(),
-		params.TelemetryListener,
-		params.Reporter,
-	)
-	p.reliableDataInfo.lastPubReliableSeq.Store(params.LastPubReliableSeq)
 	p.setListener(params.ParticipantListener)
+	p.setTelemetryListener(params.TelemetryListener)
 	p.participantHelper.Store(params.ParticipantHelper)
 	if !params.DisableSupervisor {
 		p.supervisor = supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger})
@@ -416,6 +408,17 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.closeReason.Store(types.ParticipantCloseReasonNone)
 	p.version.Store(params.InitialVersion)
 	p.timedVersion.Update(params.VersionGenerator.Next())
+
+	p.dataChannelStats = NewBytesTrackStats(
+		p.params.Country,
+		BytesTrackIDForParticipantID(BytesTrackTypeData, p.ID()),
+		p.ID(),
+		params.Grants.GetParticipantKind(),
+		params.Grants.GetKindDetails(),
+		p.GetTelemetryListener,
+		params.Reporter,
+	)
+	p.reliableDataInfo.lastPubReliableSeq.Store(params.LastPubReliableSeq)
 
 	p.migrateState.Store(types.MigrateStateInit)
 
@@ -498,6 +501,25 @@ func (p *ParticipantImpl) GetParticipantListener() types.ParticipantListener {
 
 func (p *ParticipantImpl) ClearParticipantListener() {
 	p.setListener(nil)
+}
+
+func (p *ParticipantImpl) setTelemetryListener(listener types.ParticipantTelemetryListener) {
+	if listener == nil {
+		p.telemetryListener.Store(nil)
+		return
+	}
+	p.telemetryListener.Store(&listener)
+}
+
+func (p *ParticipantImpl) GetTelemetryListener() types.ParticipantTelemetryListener {
+	if l := p.telemetryListener.Load(); l != nil {
+		return *l
+	}
+	return &types.NullParticipantTelemetryListener{}
+}
+
+func (p *ParticipantImpl) ClearTelemetryListener() {
+	p.setTelemetryListener(nil)
 }
 
 func (p *ParticipantImpl) GetCountry() string {
@@ -986,14 +1008,6 @@ func (p *ParticipantImpl) TelemetryGuard() *telemetry.ReferenceGuard {
 	return p.telemetryGuard
 }
 
-func (p *ParticipantImpl) GetTelemetryListener() types.ParticipantTelemetryListener {
-	if p.params.TelemetryListener == nil {
-		return &types.NullParticipantTelemetryListener{}
-	}
-
-	return p.params.TelemetryListener
-}
-
 func (p *ParticipantImpl) AddOnClose(key string, callback func(types.LocalParticipant)) {
 	if p.isClosed.Load() {
 		if callback != nil {
@@ -1409,7 +1423,7 @@ func (p *ParticipantImpl) SetMigrateInfo(
 
 	// for migrating in tracks, there is no AddTrack, so record a synthetic publish request
 	for _, t := range mediaTracks {
-		p.params.TelemetryListener.OnTrackPublishRequested(p.ID(), p.Identity(), t.GetTrack(), false)
+		p.GetTelemetryListener().OnTrackPublishRequested(p.ID(), p.Identity(), t.GetTrack(), false)
 	}
 
 	for _, t := range dataTracks {
@@ -1425,7 +1439,7 @@ func (p *ParticipantImpl) SetMigrateInfo(
 					p.ID(),
 					p.Kind(),
 					p.KindDetails(),
-					p.params.TelemetryListener,
+					p.GetTelemetryListener,
 					p.params.Reporter,
 				),
 			},
@@ -2177,7 +2191,6 @@ func (p *ParticipantImpl) setupSubscriptionManager() {
 		DataTrackResolver: func(lp types.LocalParticipant, ti livekit.TrackID) types.DataResolverResult {
 			return p.helper().ResolveDataTrack(lp, ti)
 		},
-		TelemetryListener:        p.params.TelemetryListener,
 		OnTrackSubscribed:        p.onTrackSubscribed,
 		OnTrackUnsubscribed:      p.onTrackUnsubscribed,
 		OnSubscriptionError:      p.onSubscriptionError,
@@ -2864,7 +2877,7 @@ func (p *ParticipantImpl) onSubscribedMaxQualityChange(
 				break
 			}
 		}
-		p.params.TelemetryListener.OnTrackMaxSubscribedVideoQuality(
+		p.GetTelemetryListener().OnTrackMaxSubscribedVideoQuality(
 			p.ID(),
 			ti,
 			maxSubscribedQuality.CodecMime,
@@ -3167,7 +3180,7 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		}
 		p.pendingTracksLock.Unlock()
 
-		p.params.TelemetryListener.OnTrackPublishRequested(p.ID(), p.Identity(), utils.CloneProto(ti), true)
+		p.GetTelemetryListener().OnTrackPublishRequested(p.ID(), p.Identity(), utils.CloneProto(ti), true)
 		return nil
 	}
 
@@ -3192,7 +3205,7 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 	}
 	p.pendingTracksLock.Unlock()
 
-	p.params.TelemetryListener.OnTrackPublishRequested(p.ID(), p.Identity(), utils.CloneProto(ti), true)
+	p.GetTelemetryListener().OnTrackPublishRequested(p.ID(), p.Identity(), utils.CloneProto(ti), true)
 	return ti
 }
 
@@ -3258,9 +3271,9 @@ func (p *ParticipantImpl) setTrackMuted(mute *livekit.MuteTrackRequest, fromAdmi
 
 	if trackInfo != nil && changed {
 		if mute.Muted {
-			p.params.TelemetryListener.OnTrackMuted(p.ID(), trackInfo)
+			p.GetTelemetryListener().OnTrackMuted(p.ID(), trackInfo)
 		} else {
-			p.params.TelemetryListener.OnTrackUnmuted(p.ID(), trackInfo)
+			p.GetTelemetryListener().OnTrackUnmuted(p.ID(), trackInfo)
 		}
 	}
 
@@ -3499,7 +3512,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 		ReceiverConfig:         p.params.Config.Receiver,
 		AudioConfig:            p.params.AudioConfig,
 		VideoConfig:            p.params.VideoConfig,
-		TelemetryListener:      p.params.TelemetryListener,
+		TelemetryListener:      p.GetTelemetryListener,
 		Logger:                 LoggerWithTrack(p.pubLogger, livekit.TrackID(ti.Sid), false),
 		Reporter:               p.params.Reporter.WithTrack(ti.Sid),
 		SubscriberConfig:       p.params.Config.Subscriber,
@@ -3515,10 +3528,9 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 		EnableRTPStreamRestartDetection:  p.params.EnableRTPStreamRestartDetection,
 		UpdateTrackInfoByVideoSizeChange: p.params.UseOneShotSignallingMode,
 		ForceBackupCodecPolicySimulcast:  p.params.ForceBackupCodecPolicySimulcast,
+		OnSubscribedMaxQualityChange:     p.onSubscribedMaxQualityChange,
+		OnSubscribedAudioCodecChange:     p.onSubscribedAudioCodecChange,
 	}, ti)
-
-	mt.OnSubscribedMaxQualityChange(p.onSubscribedMaxQualityChange)
-	mt.OnSubscribedAudioCodecChange(p.onSubscribedAudioCodecChange)
 
 	// add to published and clean up pending
 	if p.supervisor != nil {
@@ -3551,7 +3563,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 			p.supervisor.ClearPublishedTrack(trackID, mt)
 		}
 
-		p.params.TelemetryListener.OnTrackUnpublished(
+		p.GetTelemetryListener().OnTrackUnpublished(
 			p.ID(),
 			p.Identity(),
 			mt.ToProto(),
@@ -3587,7 +3599,7 @@ func (p *ParticipantImpl) handleTrackPublished(track types.MediaTrack, isMigrate
 	if !isSynthetic {
 		// send webhook after callbacks are complete, persistence and state handling happens
 		// in `onTrackPublished` cb
-		p.params.TelemetryListener.OnTrackPublished(
+		p.GetTelemetryListener().OnTrackPublished(
 			p.ID(),
 			p.Identity(),
 			track.ToProto(),
@@ -4265,7 +4277,7 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 		track.(types.LocalMediaTrack).ClearSubscriberNodes()
 
 		trackInfo := track.ToProto()
-		p.params.TelemetryListener.OnTrackUnpublished(
+		p.GetTelemetryListener().OnTrackUnpublished(
 			p.ID(),
 			p.Identity(),
 			trackInfo,
@@ -4273,6 +4285,9 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 			true,
 		)
 	}
+
+	p.params.Reporter.ReportEndTime(time.Now())
+	p.SubscriptionManager.ClearAllSubscriptions()
 
 	// fire onClose callback for original room
 	p.lock.Lock()
@@ -4289,13 +4304,15 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 	p.telemetryGuard = &telemetry.ReferenceGuard{}
 	p.lock.Unlock()
 
-	p.params.Reporter.ReportEndTime(time.Now())
 	p.params.LoggerResolver.Reset()
 	p.params.ReporterResolver.Reset()
+
 	p.setListener(params.Listener)
+	p.setTelemetryListener(params.TelemetryListener)
 	p.participantHelper.Store(params.Helper)
-	p.SubscriptionManager.ClearAllSubscriptions()
+
 	p.id.Store(params.ParticipantID)
+
 	grants := p.grants.Load().Clone()
 	grants.Video.Room = string(params.RoomName)
 	p.grants.Store(grants)

@@ -125,7 +125,7 @@ type MediaTrackReceiverParams struct {
 	ReceiverConfig           ReceiverConfig
 	SubscriberConfig         DirectionConfig
 	AudioConfig              sfu.AudioConfig
-	TelemetryListener        types.ParticipantTelemetryListener
+	TelemetryListener        func() types.ParticipantTelemetryListener
 	Logger                   logger.Logger
 	RegressionTargetCodec    mime.MimeType
 	PreferVideoSizeFromMedia bool
@@ -949,7 +949,7 @@ func (t *MediaTrackReceiver) UpdateAudioTrack(update *livekit.UpdateLocalAudioTr
 
 	t.updateTrackInfoOfReceivers()
 
-	t.params.TelemetryListener.OnTrackPublishedUpdate(t.PublisherID(), clonedInfo)
+	t.params.TelemetryListener().OnTrackPublishedUpdate(t.PublisherID(), clonedInfo)
 	t.params.Logger.Debugw("updated audio track", "before", logger.Proto(trackInfo), "after", logger.Proto(clonedInfo))
 }
 
@@ -973,7 +973,7 @@ func (t *MediaTrackReceiver) UpdateVideoTrack(update *livekit.UpdateLocalVideoTr
 
 	t.updateTrackInfoOfReceivers()
 
-	t.params.TelemetryListener.OnTrackPublishedUpdate(t.PublisherID(), clonedInfo)
+	t.params.TelemetryListener().OnTrackPublishedUpdate(t.PublisherID(), clonedInfo)
 	t.params.Logger.Debugw("updated video track", "before", logger.Proto(trackInfo), "after", logger.Proto(clonedInfo))
 }
 
@@ -1019,7 +1019,7 @@ func (t *MediaTrackReceiver) UpdateVideoSize(mimeType mime.MimeType, sizes []cod
 
 	t.updateTrackInfoOfReceivers()
 
-	t.params.TelemetryListener.OnTrackPublishedUpdate(t.PublisherID(), clonedInfo)
+	t.params.TelemetryListener().OnTrackPublishedUpdate(t.PublisherID(), clonedInfo)
 	t.params.Logger.Debugw("updated video sizes", "before", logger.Proto(trackInfo), "after", logger.Proto(clonedInfo))
 }
 
@@ -1050,7 +1050,7 @@ func (t *MediaTrackReceiver) NotifyMaxLayerChange(mimeType mime.MimeType, maxLay
 		}
 	}
 
-	t.params.TelemetryListener.OnTrackPublishedUpdate(t.PublisherID(), ti)
+	t.params.TelemetryListener().OnTrackPublishedUpdate(t.PublisherID(), ti)
 }
 
 // GetQualityForDimension finds the closest quality to use for desired dimensions

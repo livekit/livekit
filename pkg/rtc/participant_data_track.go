@@ -121,7 +121,7 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 				p.ID(),
 				p.Kind(),
 				p.KindDetails(),
-				p.params.TelemetryListener,
+				p.GetTelemetryListener,
 				p.params.Reporter,
 			),
 		},
