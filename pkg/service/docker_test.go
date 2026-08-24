@@ -17,7 +17,6 @@ package service_test
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"testing"
@@ -29,24 +28,42 @@ import (
 	"github.com/ory/dockertest/v4"
 )
 
-var Docker dockertest.ClosablePool
+var (
+	Docker dockertest.ClosablePool
+	// why Docker is not available, if it is not. the tests that need it skip on
+	// this locally, and fail on it under CI, rather than the whole package
+	// failing to run without a daemon
+	dockerErr error
+)
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()
 	pool, err := dockertest.NewPool(ctx, "")
 	if err != nil {
-		log.Fatalf("Could not construct pool: %s", err)
+		dockerErr = fmt.Errorf("could not construct pool: %w", err)
+	} else if _, err = pool.Client().Ping(ctx, mobyclient.PingOptions{}); err != nil {
+		// uses pool to try to connect to Docker
+		dockerErr = fmt.Errorf("could not connect to Docker: %w", err)
+	} else {
+		Docker = pool
 	}
-
-	// uses pool to try to connect to Docker
-	_, err = pool.Client().Ping(ctx, mobyclient.PingOptions{})
-	if err != nil {
-		log.Fatalf("Could not connect to Docker: %s", err)
-	}
-	Docker = pool
 
 	code := m.Run()
 	os.Exit(code)
+}
+
+func requireDocker(t testing.TB) {
+	t.Helper()
+
+	if dockerErr == nil {
+		return
+	}
+	if os.Getenv("CI") != "" {
+		// a runner that cannot reach docker is a broken build, not a reason to
+		// quietly cover less than the last one did
+		t.Fatal(dockerErr)
+	}
+	t.Skip(dockerErr)
 }
 
 func waitTCPPort(t testing.TB, addr string) {
@@ -66,6 +83,8 @@ func waitTCPPort(t testing.TB, addr string) {
 var redisLast atomic.Uint32
 
 func runRedis(t testing.TB) string {
+	requireDocker(t)
+
 	c, err := Docker.Run(t.Context(),
 		"redis",
 		dockertest.WithName(fmt.Sprintf("lktest-redis-%d", redisLast.Inc())),
