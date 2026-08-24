@@ -1468,7 +1468,8 @@ func (p *ParticipantImpl) recordRTCState(closeReason types.ParticipantCloseReaso
 }
 
 func (p *ParticipantImpl) IsConnectionCanceled(closeReason types.ParticipantCloseReason) bool {
-	return closeReason == types.ParticipantCloseReasonClientRequestLeave ||
+	return closeReason == types.ParticipantCloseReasonJoinFailed ||
+		closeReason == types.ParticipantCloseReasonClientRequestLeave ||
 		closeReason == types.ParticipantCloseReasonDuplicateIdentity ||
 		closeReason == types.ParticipantCloseReasonRoomClosed ||
 		closeReason == types.ParticipantCloseReasonMigrationRequested ||
