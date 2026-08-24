@@ -185,6 +185,7 @@ func TestEgressStore(t *testing.T) {
 		},
 	}
 	require.NoError(t, rs.StoreEgress(ctx, info))
+	t.Cleanup(func() { cleanEgress(ctx, rs, info) })
 
 	// load
 	res, err := rs.LoadEgress(ctx, info.EgressId)
@@ -205,11 +206,12 @@ func TestEgressStore(t *testing.T) {
 		},
 	}
 	require.NoError(t, rs.StoreEgress(ctx, info2))
+	t.Cleanup(func() { cleanEgress(ctx, rs, info2) })
 
 	// update
 	info2.Status = livekit.EgressStatus_EGRESS_COMPLETE
 	info2.EndedAt = time.Now().Add(-24 * time.Hour).UnixNano()
-	require.NoError(t, rs.UpdateEgress(ctx, info))
+	require.NoError(t, rs.UpdateEgress(ctx, info2))
 
 	// list
 	list, err := rs.ListEgress(ctx, "", false)
@@ -229,10 +231,27 @@ func TestEgressStore(t *testing.T) {
 	// clean
 	require.NoError(t, rs.CleanEndedEgress())
 
-	// list
-	list, err = rs.ListEgress(ctx, livekit.RoomName(roomName), false)
+	// list -- every room, since a record left behind in any of them outlives
+	// the test in a redis the next run will share
+	list, err = rs.ListEgress(ctx, "", false)
 	require.NoError(t, err)
 	require.Len(t, list, 0)
+}
+
+// cleanEgress ends an egress and sweeps it, so that a test which failed before
+// it got that far does not leave a record behind for the next run to trip over.
+func cleanEgress(ctx context.Context, rs *service.RedisStore, info *livekit.EgressInfo) {
+	if _, err := rs.LoadEgress(ctx, info.EgressId); err != nil {
+		// already swept, and UpdateEgress would write it back
+		return
+	}
+
+	info.Status = livekit.EgressStatus_EGRESS_COMPLETE
+	info.EndedAt = time.Now().Add(-24 * time.Hour).UnixNano()
+	if err := rs.UpdateEgress(ctx, info); err != nil {
+		return
+	}
+	_ = rs.CleanEndedEgress()
 }
 
 func TestIngressStore(t *testing.T) {
