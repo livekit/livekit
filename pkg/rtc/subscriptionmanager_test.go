@@ -82,7 +82,7 @@ func TestSubscribe(t *testing.T) {
 		require.Equal(t, "pubID", string(sm.GetSubscribedParticipants()[0]))
 
 		// ensure telemetry events are sent
-		tl := sm.params.TelemetryListener.(*typesfakes.FakeParticipantTelemetryListener)
+		tl := sm.params.Participant.GetTelemetryListener().(*typesfakes.FakeParticipantTelemetryListener)
 		require.Equal(t, 1, tl.OnTrackSubscribeRequestedCallCount())
 
 		// ensure bound
@@ -141,7 +141,7 @@ func TestSubscribe(t *testing.T) {
 		require.Len(t, sm.GetSubscribedTracks(), 0)
 
 		// trackSubscribed telemetry not sent
-		tl := sm.params.TelemetryListener.(*typesfakes.FakeParticipantTelemetryListener)
+		tl := sm.params.Participant.GetTelemetryListener().(*typesfakes.FakeParticipantTelemetryListener)
 		require.Equal(t, 1, tl.OnTrackSubscribeRequestedCallCount())
 		require.Equal(t, 0, tl.OnTrackSubscribedCallCount())
 
@@ -250,7 +250,7 @@ func TestUnsubscribe(t *testing.T) {
 	require.Len(t, sm.GetSubscribedTracks(), 0)
 	require.False(t, res.TrackChangedNotifier.HasObservers())
 
-	tl := sm.params.TelemetryListener.(*typesfakes.FakeParticipantTelemetryListener)
+	tl := sm.params.Participant.GetTelemetryListener().(*typesfakes.FakeParticipantTelemetryListener)
 	require.Equal(t, 1, tl.OnTrackUnsubscribedCallCount())
 }
 
@@ -390,7 +390,7 @@ func TestSubscriptionLimits(t *testing.T) {
 	require.Equal(t, "pubID", string(sm.GetSubscribedParticipants()[0]))
 
 	// ensure telemetry events are sent
-	tl := sm.params.TelemetryListener.(*typesfakes.FakeParticipantTelemetryListener)
+	tl := sm.params.Participant.GetTelemetryListener().(*typesfakes.FakeParticipantTelemetryListener)
 	require.Equal(t, 1, tl.OnTrackSubscribeRequestedCallCount())
 
 	// ensure bound
@@ -538,6 +538,10 @@ func newTestSubscriptionManagerWithParams(params testSubscriptionParams) *Subscr
 	p.IDReturns("subID")
 	p.IdentityReturns("sub")
 	p.KindReturns(livekit.ParticipantInfo_STANDARD)
+
+	tl := &typesfakes.FakeParticipantTelemetryListener{}
+	p.GetTelemetryListenerReturns(tl)
+
 	return NewSubscriptionManager(SubscriptionManagerParams{
 		Participant:         p,
 		Logger:              logger.GetLogger(),
@@ -547,7 +551,6 @@ func newTestSubscriptionManagerWithParams(params testSubscriptionParams) *Subscr
 		TrackResolver: func(sub types.LocalParticipant, trackID livekit.TrackID) types.MediaResolverResult {
 			return types.MediaResolverResult{}
 		},
-		TelemetryListener:      &typesfakes.FakeParticipantTelemetryListener{},
 		SubscriptionLimitAudio: params.SubscriptionLimitAudio,
 		SubscriptionLimitVideo: params.SubscriptionLimitVideo,
 	})

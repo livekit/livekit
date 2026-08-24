@@ -110,20 +110,21 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 	}
 	dti.FrameEncoding = utils.CloneProto(req.GetFrameEncoding())
 	dti.Schema = utils.CloneProto(req.GetSchema())
+	bts := NewBytesTrackStats(
+		p.params.Country,
+		livekit.TrackID(dti.Sid),
+		p.ID(),
+		p.Kind(),
+		p.KindDetails(),
+		p.params.Reporter,
+	)
+	bts.SetTelemetryListener(p.GetTelemetryListener())
 	dt := NewDataTrack(
 		DataTrackParams{
 			Logger:              p.params.Logger.WithValues("trackID", dti.Sid),
 			ParticipantID:       p.ID,
 			ParticipantIdentity: p.params.Identity,
-			BytesTrackStats: NewBytesTrackStats(
-				p.params.Country,
-				livekit.TrackID(dti.Sid),
-				p.ID(),
-				p.Kind(),
-				p.KindDetails(),
-				p.params.TelemetryListener,
-				p.params.Reporter,
-			),
+			BytesTrackStats:     bts,
 		},
 		dti,
 	)

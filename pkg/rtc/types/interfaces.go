@@ -370,10 +370,11 @@ type AddTrackParams struct {
 }
 
 type MoveToRoomParams struct {
-	RoomName      livekit.RoomName
-	ParticipantID livekit.ParticipantID
-	Listener      LocalParticipantListener
-	Helper        LocalParticipantHelper
+	RoomName          livekit.RoomName
+	ParticipantID     livekit.ParticipantID
+	Listener          LocalParticipantListener
+	TelemetryListener ParticipantTelemetryListener
+	Helper            LocalParticipantHelper
 }
 
 type DataMessageCache struct {
