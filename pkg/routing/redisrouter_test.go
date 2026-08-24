@@ -153,3 +153,28 @@ func TestRedisRouterKeepaliveFollowsPings(t *testing.T) {
 
 	require.Zero(t, node.UpdateNodeStatsCallCount(), "the ping sampled stats of its own")
 }
+
+// Stop is final here too, the same way it is for the LocalRouter this embeds:
+// the context a stopped router cancelled is not replaced.
+func TestRedisRouterStopIsFinal(t *testing.T) {
+	r, _ := startRedisRouter(t, testNode(), &rpcfakes.FakeKeepalivePubSub{}, time.Minute)
+
+	r.Stop()
+	require.ErrorIs(t, r.Start(), routing.ErrRouterStopped)
+}
+
+// A router that never started still has a context to let go of, and still has
+// to refuse to start afterwards.
+func TestRedisRouterStopBeforeStart(t *testing.T) {
+	rc := deadRedis()
+	defer rc.Close()
+
+	r := routing.NewRedisRouter(
+		routing.NewLocalRouter(testNode(), nil, nil, config.DefaultNodeStatsConfig),
+		rc,
+		&rpcfakes.FakeKeepalivePubSub{},
+	)
+
+	r.Stop()
+	require.ErrorIs(t, r.Start(), routing.ErrRouterStopped)
+}

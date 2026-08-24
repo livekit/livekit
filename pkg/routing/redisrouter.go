@@ -170,6 +170,9 @@ func (r *RedisRouter) StartParticipantSignal(ctx context.Context, roomName livek
 }
 
 func (r *RedisRouter) Start() error {
+	if r.ctx.Err() != nil {
+		return ErrRouterStopped
+	}
 	if r.isStarted.Swap(true) {
 		return nil
 	}
@@ -190,21 +193,28 @@ func (r *RedisRouter) Drain() {
 }
 
 func (r *RedisRouter) Stop() {
+	// both of these even for a router that never started, so that nothing it
+	// holds outlives the call and Start knows to refuse
+	defer r.cancel()
+	defer r.LocalRouter.Stop()
+
 	if !r.isStarted.Swap(false) {
 		return
 	}
 	logger.Debugw("stopping RedisRouter")
 	_ = r.UnregisterNode()
-	r.cancel()
 }
 
 // update node stats and cleanup
 func (r *RedisRouter) statsWorker() {
+	ticker := time.NewTicker(r.nodeStatsConfig.StatsUpdateInterval)
+	defer ticker.Stop()
+
 	goroutineDumped := false
 	for r.ctx.Err() == nil {
 		// update periodically
 		select {
-		case <-time.After(r.nodeStatsConfig.StatsUpdateInterval):
+		case <-ticker.C:
 			// sampled here rather than when the ping comes back, since a redis
 			// outage stalls every node's ping at once, and before the ping, so
 			// that the registration it triggers carries this sample

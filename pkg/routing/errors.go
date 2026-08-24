@@ -28,6 +28,7 @@ var (
 	ErrInvalidRouterMessage = errors.New("invalid router message")
 	ErrChannelClosed        = errors.New("channel closed")
 	ErrChannelFull          = errors.New("channel is full")
+	ErrRouterStopped        = errors.New("router has been stopped")
 
 	// errors when starting signal connection
 	ErrRequestChannelClosed       = errors.New("request channel closed")

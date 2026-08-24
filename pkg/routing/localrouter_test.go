@@ -54,3 +54,49 @@ func TestLocalRouterKeepsKeepaliveFresh(t *testing.T) {
 		return node.UpdateKeepaliveCallCount() >= 3
 	}, time.Second, 10*time.Millisecond)
 }
+
+// Stop has to stop the sampler. A worker left behind would go on sampling
+// alongside the next one, which is enough to keep the stats history from
+// covering a rate measurement window.
+func TestLocalRouterStopsSampling(t *testing.T) {
+	node := &routingfakes.FakeLocalNode{}
+	r := startLocalRouter(t, node)
+
+	r.Stop()
+	sampled := settledSampleCount(t, node)
+
+	time.Sleep(10 * testStatsInterval)
+	require.Equal(t, sampled, node.UpdateNodeStatsCallCount())
+}
+
+// Stop is final, and says so: asking twice has to be as harmless as asking
+// once, and starting again has to say it did not.
+func TestLocalRouterStopIsFinal(t *testing.T) {
+	node := &routingfakes.FakeLocalNode{}
+	r := startLocalRouter(t, node)
+
+	r.Stop()
+	r.Stop()
+	require.ErrorIs(t, r.Start(), routing.ErrRouterStopped)
+	r.Stop()
+
+	sampled := settledSampleCount(t, node)
+	time.Sleep(10 * testStatsInterval)
+	require.Equal(t, sampled, node.UpdateNodeStatsCallCount())
+}
+
+// settledSampleCount waits for sampling to stop, which a sample already under
+// way when the router stopped can outlast by a tick.
+func settledSampleCount(t *testing.T, node *routingfakes.FakeLocalNode) int {
+	t.Helper()
+
+	sampled := -1
+	require.Eventually(t, func() bool {
+		count := node.UpdateNodeStatsCallCount()
+		settled := count == sampled
+		sampled = count
+		return settled
+	}, time.Second, 5*testStatsInterval)
+
+	return sampled
+}
