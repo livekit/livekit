@@ -45,6 +45,14 @@ import (
 	"github.com/livekit/livekit-server/version"
 )
 
+const (
+	livenessPath  = "/healthz"
+	readinessPath = "/readyz"
+
+	// never call a node unready sooner than `GET /` always has
+	minKeepaliveMaxDelay = 4 * time.Second
+)
+
 type LivekitServer struct {
 	config       *config.Config
 	ioService    *IOInfoService
@@ -150,6 +158,7 @@ func NewLivekitServer(conf *config.Config,
 	rtcService.SetupRoutes(mux)
 	whipService.SetupRoutes(mux)
 	mux.Handle("/agent", agentService)
+	s.setupHealthRoutes(mux)
 	mux.HandleFunc("/", s.defaultHandler)
 
 	s.httpServer = &http.Server{
@@ -411,17 +420,71 @@ func (s *LivekitServer) defaultHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *LivekitServer) healthCheck(w http.ResponseWriter, _ *http.Request) {
-	var updatedAt time.Time
-	if s.Node().Stats != nil {
-		updatedAt = time.Unix(s.Node().Stats.UpdatedAt, 0)
-	}
-	if time.Since(updatedAt) > 4*time.Second {
-		w.WriteHeader(http.StatusNotAcceptable)
-		_, _ = fmt.Fprintf(w, "Not Ready\nNode Updated At %s", updatedAt)
+func (s *LivekitServer) setupHealthRoutes(mux *http.ServeMux) {
+	mux.HandleFunc(livenessPath, s.livenessCheck)
+	mux.HandleFunc(readinessPath, s.readinessCheck)
+}
+
+// livenessCheck answers for this process and nothing else. It deliberately
+// looks at nothing shared: a redis outage stalls every node at once, and a probe
+// that failed on it would have kubernetes restart the whole fleet.
+func (s *LivekitServer) livenessCheck(w http.ResponseWriter, _ *http.Request) {
+	// the router samples stats on a local ticker, so their age is how long this
+	// process has gone without making progress. a node told to sample less
+	// often than the delay allows for is not stalled, it is configured that way
+	maxDelay := max(2*s.config.NodeStats.StatsUpdateInterval, s.config.NodeStats.StatsMaxDelay)
+	if delay := s.currentNode.SecondsSinceNodeStatsUpdate(); delay > maxDelay.Seconds() {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = fmt.Fprintf(w, "Not Alive\nNode Stats %.1fs Old", delay)
 		return
 	}
 
+	writeOK(w)
+}
+
+// readinessCheck answers whether this node should be given work.
+func (s *LivekitServer) readinessCheck(w http.ResponseWriter, _ *http.Request) {
+	if delay, stale := s.keepaliveDelay(); stale {
+		writeNotReady(w, http.StatusServiceUnavailable, fmt.Sprintf("Keepalive %.1fs Old", delay))
+		return
+	}
+
+	if state := s.currentNode.State(); state != livekit.NodeState_SERVING {
+		writeNotReady(w, http.StatusServiceUnavailable, fmt.Sprintf("Node Is %s", state))
+		return
+	}
+
+	writeOK(w)
+}
+
+// healthCheck is what `GET /` has always answered, unchanged: the keepalive
+// check under its own status code, and no state check, since deployments that
+// predate the two probes above point their liveness at it.
+func (s *LivekitServer) healthCheck(w http.ResponseWriter, _ *http.Request) {
+	if delay, stale := s.keepaliveDelay(); stale {
+		writeNotReady(w, http.StatusNotAcceptable, fmt.Sprintf("Keepalive %.1fs Old", delay))
+		return
+	}
+
+	writeOK(w)
+}
+
+// keepaliveDelay reports how long since the node last heard its own keepalive,
+// and whether that is too long. A node that stops hearing it cannot route
+// signalling to itself either.
+func (s *LivekitServer) keepaliveDelay() (float64, bool) {
+	// a ping goes out on every stats update, so allow for two of them
+	maxDelay := max(2*s.config.NodeStats.StatsUpdateInterval, minKeepaliveMaxDelay)
+	delay := s.currentNode.SecondsSinceKeepalive()
+	return delay, delay > maxDelay.Seconds()
+}
+
+func writeNotReady(w http.ResponseWriter, status int, reason string) {
+	w.WriteHeader(status)
+	_, _ = fmt.Fprintf(w, "Not Ready\n%s", reason)
+}
+
+func writeOK(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("OK"))
 }

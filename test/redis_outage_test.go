@@ -33,13 +33,14 @@ import (
 	"github.com/livekit/livekit-server/pkg/testutils"
 )
 
-// These cover what a sustained redis outage does to a multi-node cluster. They
-// describe the behavior we want rather than the behavior we have, so as of
-// https://github.com/livekit/livekit/issues/4663 all three of them fail.
+// These cover what a sustained redis outage does to a multi-node cluster, from
+// https://github.com/livekit/livekit/issues/4663. The drain one still fails: it
+// describes behavior the fix for that issue deliberately leaves alone, a drain
+// that finishes and a node that leaves the registry when it does.
 
-// The endpoints the fix is expected to add, splitting apart what `GET /` does on
-// its own today. /healthz answers for the process, /readyz for whether the node
-// should be given work. `GET /` keeps what it does now, for compatibility.
+// The endpoints that split apart what `GET /` used to answer on its own.
+// /healthz answers for the process, /readyz for whether the node should be
+// given work. `GET /` keeps what it did before, for compatibility.
 const (
 	healthzPath = "/healthz"
 	readyzPath  = "/readyz"
@@ -209,15 +210,6 @@ func TestMultiNodeRedisOutageDrainsAndDeregisters(t *testing.T) {
 	})
 }
 
-// livenessPath is what a kubelet has to aim a liveness probe at: /healthz once
-// the fix adds it, and until then `GET /`, the only health surface there is.
-func livenessPath(s *service.LivekitServer) string {
-	if probe(s, healthzPath) != http.StatusNotFound {
-		return healthzPath
-	}
-	return "/"
-}
-
 // failsLivenessProbe replays the shape of the chart's default liveness probe --
 // failureThreshold consecutive failures a period apart and the container is
 // restarted -- at a compressed period, so the test does not sit out a real
@@ -283,11 +275,10 @@ func TestMultiNodeRedisOutageDoesNotKillTheCluster(t *testing.T) {
 	// that none is still about to restart a node
 	decided := make(chan string, len(servers))
 	for _, s := range servers {
-		path := livenessPath(s)
 		shutdowns.Add(1)
 		go func(s *service.LivekitServer) {
 			defer shutdowns.Done()
-			if !failsLivenessProbe(s, path, until) {
+			if !failsLivenessProbe(s, healthzPath, until) {
 				decided <- ""
 				return
 			}
