@@ -3513,7 +3513,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 		ReceiverConfig:         p.params.Config.Receiver,
 		AudioConfig:            p.params.AudioConfig,
 		VideoConfig:            p.params.VideoConfig,
-		TelemetryListener:      p.GetTelemetryListener(),
+		TelemetryListener:      p.GetTelemetryListener,
 		Logger:                 LoggerWithTrack(p.pubLogger, livekit.TrackID(ti.Sid), false),
 		Reporter:               p.params.Reporter.WithTrack(ti.Sid),
 		SubscriberConfig:       p.params.Config.Subscriber,
