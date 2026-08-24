@@ -205,15 +205,21 @@ func (r *RedisRouter) statsWorker() {
 		// update periodically
 		select {
 		case <-time.After(r.nodeStatsConfig.StatsUpdateInterval):
+			// sampled here rather than when the ping comes back, since a redis
+			// outage stalls every node's ping at once, and before the ping, so
+			// that the registration it triggers carries this sample
+			r.currentNode.UpdateNodeStats()
+
+			// psrpc enqueues and returns, so this cannot hold up the sampling
 			r.kps.PublishPing(r.ctx, r.currentNode.NodeID(), &rpc.KeepalivePing{Timestamp: time.Now().Unix()})
 
-			delaySeconds := r.currentNode.SecondsSinceNodeStatsUpdate()
+			delaySeconds := r.currentNode.SecondsSinceKeepalive()
 			if delaySeconds > r.nodeStatsConfig.StatsMaxDelay.Seconds() {
 				if !goroutineDumped {
 					goroutineDumped = true
 					buf := bytes.NewBuffer(nil)
 					_ = pprof.Lookup("goroutine").WriteTo(buf, 2)
-					logger.Errorw("status update delayed, possible deadlock", nil,
+					logger.Errorw("keepalive delayed, possible deadlock", nil,
 						"delay", delaySeconds,
 						"goroutines", buf.String())
 				}
@@ -240,9 +246,7 @@ func (r *RedisRouter) keepaliveWorker(startedChan chan error) {
 			continue
 		}
 
-		if !r.currentNode.UpdateNodeStats() {
-			continue
-		}
+		r.currentNode.UpdateKeepalive()
 
 		// TODO: check stats against config.Limit values
 		if err := r.RegisterNode(); err != nil {

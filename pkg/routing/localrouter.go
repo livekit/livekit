@@ -151,6 +151,8 @@ func (r *LocalRouter) statsWorker() {
 		}
 		<-time.After(r.nodeStatsConfig.StatsUpdateInterval)
 		r.currentNode.UpdateNodeStats()
+		// no message bus here, so there is no round trip to wait on
+		r.currentNode.UpdateKeepalive()
 	}
 }
 
