@@ -55,8 +55,7 @@ type MediaTrack struct {
 	dynacastManager dynacast.DynacastManager
 
 	// serialises receiver creation in AddReceiver, i. e. the check-then-create
-	// of a receiver for a mime type. Held across receiver set up, so it must not
-	// be taken while holding any participant lock.
+	// of a receiver for a mime type. Held across receiver set up
 	addReceiverLock sync.Mutex
 
 	regressionTargetCodecReceived atomic.Bool
