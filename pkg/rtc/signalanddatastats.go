@@ -195,6 +195,8 @@ func (s *BytesTrackStats) worker() {
 
 // -----------------------------------------------------------------------
 
+var _ types.ParticipantTelemetryListener = (*BytesSignalStats)(nil)
+
 type BytesSignalStats struct {
 	BytesTrackStats
 	ctx context.Context
@@ -209,6 +211,8 @@ type BytesSignalStats struct {
 	ri      *livekit.Room
 	pi      *livekit.ParticipantInfo
 	stopped chan struct{}
+
+	types.NullParticipantTelemetryListener
 }
 
 func NewBytesSignalStats(
@@ -224,10 +228,11 @@ func NewBytesSignalStats(
 		guard:               &telemetry.ReferenceGuard{},
 		participantResolver: participantReporterResolver,
 		trackResolver:       trackReporterResolver,
+		BytesTrackStats: BytesTrackStats{
+			reporter: trackReporter,
+		},
 	}
-	b.BytesTrackStats = BytesTrackStats{
-		reporter: trackReporter,
-	}
+	b.BytesTrackStats.SetTelemetryListener(b)
 	return b
 }
 
