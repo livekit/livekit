@@ -16,7 +16,9 @@ package service_test
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"testing"
@@ -28,23 +30,30 @@ import (
 	"github.com/ory/dockertest/v4"
 )
 
-var (
-	Docker dockertest.ClosablePool
-	// why Docker is not available, if it is not. the tests that need it skip on
-	// this locally, and fail on it under CI, rather than the whole package
-	// failing to run without a daemon
-	dockerErr error
-)
+var Docker dockertest.ClosablePool
+
+// go test -docker=false ./pkg/service skips the tests that need a docker
+// daemon, for a checkout without one. Running them is the default: a run that
+// quietly covers less than the last one is worse than a run that stops, so a
+// daemon that should be there and is not still fails the whole package.
+var useDocker = flag.Bool("docker", true, "run the tests that need a docker daemon")
 
 func TestMain(m *testing.M) {
-	ctx := context.Background()
-	pool, err := dockertest.NewPool(ctx, "")
-	if err != nil {
-		dockerErr = fmt.Errorf("could not construct pool: %w", err)
-	} else if _, err = pool.Client().Ping(ctx, mobyclient.PingOptions{}); err != nil {
+	// m.Run would parse them, but the flag is read before that
+	flag.Parse()
+
+	if *useDocker {
+		ctx := context.Background()
+		pool, err := dockertest.NewPool(ctx, "")
+		if err != nil {
+			log.Fatalf("Could not construct pool: %s", err)
+		}
+
 		// uses pool to try to connect to Docker
-		dockerErr = fmt.Errorf("could not connect to Docker: %w", err)
-	} else {
+		_, err = pool.Client().Ping(ctx, mobyclient.PingOptions{})
+		if err != nil {
+			log.Fatalf("Could not connect to Docker: %s", err)
+		}
 		Docker = pool
 	}
 
@@ -55,15 +64,9 @@ func TestMain(m *testing.M) {
 func requireDocker(t testing.TB) {
 	t.Helper()
 
-	if dockerErr == nil {
-		return
+	if !*useDocker {
+		t.Skip("this test needs a docker daemon, and -docker=false says there is none")
 	}
-	if os.Getenv("CI") != "" {
-		// a runner that cannot reach docker is a broken build, not a reason to
-		// quietly cover less than the last one did
-		t.Fatal(dockerErr)
-	}
-	t.Skip(dockerErr)
 }
 
 func waitTCPPort(t testing.TB, addr string) {
