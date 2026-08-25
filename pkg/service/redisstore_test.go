@@ -216,12 +216,12 @@ func TestEgressStore(t *testing.T) {
 	// list
 	list, err := rs.ListEgress(ctx, "", false)
 	require.NoError(t, err)
-	require.Len(t, list, 2)
+	require.Subset(t, egressIDs(list), []string{info.EgressId, info2.EgressId})
 
 	// list by room
 	list, err = rs.ListEgress(ctx, livekit.RoomName(roomName), false)
 	require.NoError(t, err)
-	require.Len(t, list, 1)
+	require.Equal(t, []string{info.EgressId}, egressIDs(list))
 
 	// update
 	info.Status = livekit.EgressStatus_EGRESS_COMPLETE
@@ -231,11 +231,23 @@ func TestEgressStore(t *testing.T) {
 	// clean
 	require.NoError(t, rs.CleanEndedEgress())
 
-	// list -- every room, since a record left behind in any of them outlives
-	// the test in a redis the next run will share
-	list, err = rs.ListEgress(ctx, "", false)
-	require.NoError(t, err)
-	require.Len(t, list, 0)
+	// gone -- both of them, since the one in the other room is swept by the
+	// same call and would otherwise be left behind
+	for _, id := range []string{info.EgressId, info2.EgressId} {
+		_, err = rs.LoadEgress(ctx, id)
+		require.ErrorIs(t, err, service.ErrEgressNotFound)
+	}
+}
+
+// egressIDs is what a listing can be asserted on: the store is a redis the
+// whole run shares, and on a development machine one that outlives the run, so
+// anything else on it is in the listing too.
+func egressIDs(list []*livekit.EgressInfo) []string {
+	ids := make([]string, 0, len(list))
+	for _, info := range list {
+		ids = append(ids, info.EgressId)
+	}
+	return ids
 }
 
 // cleanEgress ends an egress and sweeps it, so that a test which failed before
