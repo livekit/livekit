@@ -411,3 +411,15 @@ keys:
 #   # goroutines in case it has deadlocked. the allowance is the larger of this
 #   # and two update intervals. defaults to 30s
 #   stats_max_delay: 30s
+
+# bounds how long a graceful shutdown waits for the participants on this node
+# to leave it. it bounds that wait, not the shutdown as a whole, and is not set
+# by default: a deadline ends the drain by disconnecting whoever is still
+# there, so a deployment has to ask for one and say how long
+# shutdown:
+#   # give up on the participants after this long and shut down anyway. keep it
+#   # below the terminationGracePeriodSeconds of your deployment, so that the
+#   # server ends the drain itself rather than being killed mid-shutdown.
+#   # unset waits for as long as they take, which is what this server has
+#   # always done
+#   drain_timeout: 30m

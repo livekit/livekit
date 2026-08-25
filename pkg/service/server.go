@@ -51,6 +51,9 @@ const (
 
 	// never call a node unready sooner than `GET /` always has
 	minKeepaliveMaxDelay = 4 * time.Second
+
+	// how often a draining node looks at what is left to drain
+	drainPollInterval = 5 * time.Second
 )
 
 type LivekitServer struct {
@@ -367,14 +370,20 @@ func (s *LivekitServer) Start() error {
 func (s *LivekitServer) Stop(force bool) {
 	// wait for all participants to exit
 	s.router.Drain()
-	partTicker := time.NewTicker(5 * time.Second)
-	waitingForParticipants := !force && s.roomManager.HasParticipants()
-	for waitingForParticipants {
-		<-partTicker.C
-		logger.Infow("waiting for participants to exit")
-		waitingForParticipants = s.roomManager.HasParticipants()
+	if !force {
+		if s.roomManager.HasParticipants() {
+			// says which deadlines are in play, so that whoever finds the node
+			// sitting in the wait below knows what will end it and what to set
+			logger.Infow("draining participants before shutdown",
+				"nodeID", s.currentNode.NodeID(),
+				"drainTimeout", s.config.Shutdown.DrainTimeout)
+		}
+		waitForDrain(
+			s.config.Shutdown,
+			drainPollInterval,
+			s.roomManager.HasParticipants,
+		)
 	}
-	partTicker.Stop()
 
 	if !s.running.Swap(false) {
 		return
@@ -385,6 +394,44 @@ func (s *LivekitServer) Stop(force bool) {
 
 	// wait for fully closed
 	<-s.closedChan
+}
+
+// waitForDrain blocks while participants remain on this node, and returns when
+// they have left or when the configured deadline runs out.
+func waitForDrain(
+	conf config.ShutdownConfig,
+	poll time.Duration,
+	hasParticipants func() bool,
+) {
+	if !hasParticipants() {
+		return
+	}
+
+	ticker := time.NewTicker(poll)
+	defer ticker.Stop()
+
+	var deadline <-chan time.Time
+	if conf.DrainTimeout > 0 {
+		timer := time.NewTimer(conf.DrainTimeout)
+		defer timer.Stop()
+		deadline = timer.C
+	}
+
+	for {
+		select {
+		case <-ticker.C:
+		case <-deadline:
+			logger.Warnw("drain timed out, shutting down with participants still connected", nil,
+				"drainTimeout", conf.DrainTimeout)
+			return
+		}
+
+		if !hasParticipants() {
+			return
+		}
+
+		logger.Infow("waiting for participants to exit")
+	}
 }
 
 func (s *LivekitServer) RoomManager() *RoomManager {

@@ -27,6 +27,7 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/livekit/livekit-server/pkg/service"
@@ -34,9 +35,9 @@ import (
 )
 
 // These cover what a sustained redis outage does to a multi-node cluster, from
-// https://github.com/livekit/livekit/issues/4663. The drain one still fails: it
-// describes behavior the fix for that issue deliberately leaves alone, a drain
-// that finishes and a node that leaves the registry when it does.
+// https://github.com/livekit/livekit/issues/4663: liveness that does not follow
+// redis, a drain that finishes, and a cluster that still has capacity when the
+// outage ends.
 
 // The endpoints that split apart what `GET /` used to answer on its own.
 // /healthz answers for the process, /readyz for whether the node should be
@@ -135,9 +136,10 @@ func TestMultiNodeRedisOutageKeepsNodesLive(t *testing.T) {
 
 // A node told to shut down during the outage has to finish anyway: the drain
 // needs a deadline, and once redis is back the node has to leave the registry.
-// Today Stop(force=false) waits for participants that cannot leave, with no
-// deadline and no way to configure one, while the keepalive worker keeps
-// re-registering the node as SHUTTING_DOWN -- a state nothing sets back.
+// Stop(force=false) waits for participants who leave over signalling this node
+// routes through redis, so without a deadline it waits for something that
+// cannot happen while the keepalive worker keeps re-registering the node as
+// SHUTTING_DOWN -- a state nothing sets back.
 func TestMultiNodeRedisOutageDrainsAndDeregisters(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
@@ -146,7 +148,15 @@ func TestMultiNodeRedisOutageDrainsAndDeregisters(t *testing.T) {
 
 	rd := startControlledRedis(t)
 
-	s1, s2, finish := setupMultiNodeTest("TestMultiNodeRedisOutageDrainsAndDeregisters")
+	// compressed from what an operator would set, the same way the probe period
+	// below is. it is the absolute deadline that ends this drain: redis is back
+	// before the node has waited long enough to give up on being unreachable,
+	// and a node that gave up mid-outage could not have reached redis to
+	// deregister either
+	const drainTimeout = 10 * time.Second
+
+	s1, s2, finish := setupMultiNodeTestWithConfig("TestMultiNodeRedisOutageDrainsAndDeregisters",
+		func(c *config.Config) { c.Shutdown.DrainTimeout = drainTimeout })
 	defer finish()
 
 	c1 := createRTCClientWithToken(joinToken("outage-drain1", "outage-a", nil), defaultServerPort, testRTCServicePathv0, nil)
@@ -166,8 +176,11 @@ func TestMultiNodeRedisOutageDrainsAndDeregisters(t *testing.T) {
 	// would leave over is itself routed through redis
 	rd.stop()
 	drained := make(chan struct{})
+	stopAt := time.Now()
+	var drainTook time.Duration
 	go func() {
 		victim.Stop(false)
+		drainTook = time.Since(stopAt)
 		close(drained)
 	}()
 	// finish() forces the drain if it is still running when the test ends
@@ -178,8 +191,31 @@ func TestMultiNodeRedisOutageDrainsAndDeregisters(t *testing.T) {
 	time.Sleep(2 * time.Second)
 	rd.start(t)
 
+	// the node says it is going away for as long as it drains, rather than only
+	// once the drain ends -- a node that still advertises SERVING while it waits
+	// keeps being handed the rooms it is trying to get rid of
+	testutils.WithTimeout(t, func() string {
+		nodes, err := nodesInRedis()
+		if err != nil {
+			return err.Error()
+		}
+		for _, n := range nodes {
+			if n.Id == victim.Node().Id {
+				if n.State != livekit.NodeState_SHUTTING_DOWN {
+					return fmt.Sprintf("the draining node advertises %s", n.State)
+				}
+				return ""
+			}
+		}
+		return "the draining node has not re-registered yet"
+	}, 6*time.Second)
+
 	select {
 	case <-drained:
+		// a shutdown that returned before the deadline never drained at all,
+		// which passes the registry checks below just as well as draining does
+		require.GreaterOrEqual(t, drainTook, drainTimeout,
+			"node %s stopped without waiting for the participants it was draining", victim.Node().Id)
 	case <-time.After(testutils.ConnectTimeout):
 		t.Fatalf("node %s is still draining", victim.Node().Id)
 	}

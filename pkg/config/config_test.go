@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
@@ -59,6 +60,24 @@ func TestConfig_SignalMessageSizeLimitOverride(t *testing.T) {
 	require.Equal(t, int64(1024), conf.Limit.SignalMessageSizeLimit)
 	// 0 explicitly disables the limit
 	require.Equal(t, int64(0), conf.Limit.AgentSignalMessageSizeLimit)
+}
+
+func TestConfig_ShutdownDefaults(t *testing.T) {
+	conf, err := NewConfig("", true, nil, nil)
+	require.NoError(t, err)
+	// off unless asked for: a deadline ends a drain by disconnecting whoever is
+	// left, so the wait stays as long as it has always been until a deployment
+	// says otherwise
+	require.Zero(t, conf.Shutdown.DrainTimeout)
+}
+
+func TestConfig_ShutdownOverride(t *testing.T) {
+	// the durations are spelled the way config-sample.yaml spells them
+	const content = `shutdown:
+  drain_timeout: 45s`
+	conf, err := NewConfig(content, true, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, 45*time.Second, conf.Shutdown.DrainTimeout)
 }
 
 func TestConfig_UnknownKeys(t *testing.T) {

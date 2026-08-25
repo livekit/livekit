@@ -110,6 +110,8 @@ type Config struct {
 
 	NodeStats NodeStatsConfig `yaml:"node_stats,omitempty"`
 
+	Shutdown ShutdownConfig `yaml:"shutdown,omitempty"`
+
 	EnableDataTracks bool `yaml:"enable_data_tracks,omitempty"`
 
 	EnableParticipantDataBlob bool `yaml:"enable_participant_data_blob,omitempty"`
@@ -500,6 +502,20 @@ var DefaultNodeStatsConfig = NodeStatsConfig{
 	StatsMaxDelay:                 30 * time.Second,
 }
 
+// ShutdownConfig bounds how long a graceful shutdown waits for the
+// participants on this node to leave it.
+type ShutdownConfig struct {
+	// DrainTimeout is how long to wait for the participants before shutting
+	// down anyway. Defaults to 0, which waits for as long as they take, as this
+	// server did before the deadline existed: a deployment that would rather
+	// end a drain than let it run has to say so, and say how long.
+	DrainTimeout time.Duration `yaml:"drain_timeout,omitempty"`
+}
+
+var DefaultShutdownConfig = ShutdownConfig{
+	DrainTimeout: 0,
+}
+
 var DefaultConfig = Config{
 	Port: 7880,
 	RTC: RTCConfig{
@@ -597,6 +613,7 @@ var DefaultConfig = Config{
 	Metric:           metric.DefaultMetricConfig,
 	WebHook:          webhook.DefaultWebHookConfig,
 	NodeStats:        DefaultNodeStatsConfig,
+	Shutdown:         DefaultShutdownConfig,
 	API:              DefaultAPIConfig(),
 	EnableDataTracks: true,
 }
