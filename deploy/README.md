@@ -73,7 +73,10 @@ A few details worth knowing when tuning the above:
 - A drain waits for the participants indefinitely unless you set
   `shutdown.drain_timeout`, so by default the pod's
   `terminationGracePeriodSeconds` is what ends it, with a `SIGKILL`. Set the
-  timeout below the grace period to have the server end its own drain instead.
+  timeout below the grace period to have the server end its own drain instead,
+  and set `shutdown.unreachable_drain_timeout` to end it sooner on a node that
+  has stopped hearing its own keepalive — participants cannot leave a node
+  whose signalling no longer routes, so that wait cannot finish.
 - A node registers itself and subscribes to its own keepalive before it opens
   its port, and exits if it cannot reach Redis. Nodes already up ride an outage
   out; one that restarts during it will not come back until Redis does, and the

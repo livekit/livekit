@@ -69,15 +69,19 @@ func TestConfig_ShutdownDefaults(t *testing.T) {
 	// left, so the wait stays as long as it has always been until a deployment
 	// says otherwise
 	require.Zero(t, conf.Shutdown.DrainTimeout)
+	require.Zero(t, conf.Shutdown.UnreachableDrainTimeout)
 }
 
 func TestConfig_ShutdownOverride(t *testing.T) {
 	// the durations are spelled the way config-sample.yaml spells them
 	const content = `shutdown:
-  drain_timeout: 45s`
+  drain_timeout: 45s
+  unreachable_drain_timeout: 0s`
 	conf, err := NewConfig(content, true, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, 45*time.Second, conf.Shutdown.DrainTimeout)
+	// 0 explicitly waits for as long as the participants take
+	require.Equal(t, time.Duration(0), conf.Shutdown.UnreachableDrainTimeout)
 }
 
 func TestConfig_UnknownKeys(t *testing.T) {

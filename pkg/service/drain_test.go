@@ -34,9 +34,11 @@ const (
 	testDrainBudget = 5 * time.Second
 )
 
-// drainWatch runs a drain the test drives: it says when the participants leave.
+// drainWatch runs a drain the test drives: it says when the participants leave,
+// and how long the node has gone without hearing its own keepalive.
 type drainWatch struct {
 	participants atomic.Bool
+	keepalive    atomic.Duration
 	ended        chan struct{}
 }
 
@@ -50,7 +52,9 @@ func startDrain(t *testing.T, conf config.ShutdownConfig) *drainWatch {
 	t.Cleanup(func() { d.participants.Store(false) })
 
 	go func() {
-		waitForDrain(conf, testDrainPoll, d.participants.Load)
+		waitForDrain(conf, testDrainPoll, d.participants.Load, func() float64 {
+			return d.keepalive.Load().Seconds()
+		})
 		d.ended <- struct{}{}
 	}()
 	return d
@@ -81,7 +85,8 @@ func (d *drainWatch) requireWaiting(t *testing.T) {
 func TestDrainWithoutParticipantsDoesNotWait(t *testing.T) {
 	ended := make(chan struct{}, 1)
 	go func() {
-		waitForDrain(config.ShutdownConfig{}, time.Hour, func() bool { return false })
+		waitForDrain(config.ShutdownConfig{}, time.Hour,
+			func() bool { return false }, func() float64 { return 0 })
 		ended <- struct{}{}
 	}()
 
@@ -108,6 +113,40 @@ func TestDrainTimeoutEndsTheWait(t *testing.T) {
 	d := startDrain(t, config.ShutdownConfig{DrainTimeout: 50 * time.Millisecond})
 
 	d.requireFinished(t)
+}
+
+// The case from https://github.com/livekit/livekit/issues/4663: a node that
+// cannot hear its own keepalive cannot route the signalling its participants
+// would leave over, so waiting for them waits for something that cannot happen.
+func TestDrainGivesUpWhenTheNodeCannotBeReached(t *testing.T) {
+	d := startDrain(t, config.ShutdownConfig{UnreachableDrainTimeout: 50 * time.Millisecond})
+	d.requireWaiting(t)
+
+	d.keepalive.Store(time.Second)
+	d.requireFinished(t)
+}
+
+// A blip is not an outage. The keepalive clock is reset by a ping that makes it
+// back, so a node that keeps hearing itself keeps waiting, however long the
+// drain takes.
+func TestDrainKeepsWaitingWhileTheKeepaliveComesBack(t *testing.T) {
+	d := startDrain(t, config.ShutdownConfig{UnreachableDrainTimeout: 50 * time.Millisecond})
+
+	for range 5 {
+		d.keepalive.Store(40 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
+		d.keepalive.Store(0)
+	}
+	d.requireWaiting(t)
+}
+
+// Neither deadline applies unless it is configured, so an operator who wants
+// today's behavior keeps it.
+func TestDrainWithoutDeadlinesWaitsThroughAnOutage(t *testing.T) {
+	d := startDrain(t, config.ShutdownConfig{})
+	d.keepalive.Store(time.Hour)
+
+	d.requireWaiting(t)
 }
 
 // A forced stop is the second SIGTERM, and every test teardown in the suite:

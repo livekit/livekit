@@ -376,12 +376,14 @@ func (s *LivekitServer) Stop(force bool) {
 			// sitting in the wait below knows what will end it and what to set
 			logger.Infow("draining participants before shutdown",
 				"nodeID", s.currentNode.NodeID(),
-				"drainTimeout", s.config.Shutdown.DrainTimeout)
+				"drainTimeout", s.config.Shutdown.DrainTimeout,
+				"unreachableDrainTimeout", s.config.Shutdown.UnreachableDrainTimeout)
 		}
 		waitForDrain(
 			s.config.Shutdown,
 			drainPollInterval,
 			s.roomManager.HasParticipants,
+			s.currentNode.SecondsSinceKeepalive,
 		)
 	}
 
@@ -397,11 +399,12 @@ func (s *LivekitServer) Stop(force bool) {
 }
 
 // waitForDrain blocks while participants remain on this node, and returns when
-// they have left or when the configured deadline runs out.
+// they have left or when one of the configured deadlines runs out.
 func waitForDrain(
 	conf config.ShutdownConfig,
 	poll time.Duration,
 	hasParticipants func() bool,
+	secondsSinceKeepalive func() float64,
 ) {
 	if !hasParticipants() {
 		return
@@ -428,6 +431,18 @@ func waitForDrain(
 
 		if !hasParticipants() {
 			return
+		}
+
+		if conf.UnreachableDrainTimeout > 0 {
+			// the keepalive clock is reset by a ping that makes it back, so it
+			// reads how long the node has been unreachable, not how long it has
+			// been draining
+			if delay := secondsSinceKeepalive(); delay > conf.UnreachableDrainTimeout.Seconds() {
+				logger.Warnw("node has not heard its own keepalive, shutting down mid-drain", nil,
+					"keepaliveDelay", delay,
+					"unreachableDrainTimeout", conf.UnreachableDrainTimeout)
+				return
+			}
 		}
 
 		logger.Infow("waiting for participants to exit")

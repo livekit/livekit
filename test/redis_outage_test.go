@@ -246,6 +246,68 @@ func TestMultiNodeRedisOutageDrainsAndDeregisters(t *testing.T) {
 	})
 }
 
+// The other deadline, which is the one the outage itself trips: with no
+// absolute timeout configured, a node that cannot hear its own keepalive still
+// has to stop, because the participants it is waiting for have no signalling
+// path to leave over. Redis stays down for the whole drain here, so nothing but
+// that clock can end it.
+func TestMultiNodeRedisOutageEndsAnUnreachableDrain(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	rd := startControlledRedis(t)
+
+	// compressed the same way the deadline in the test above is, and below the
+	// poll interval, so the first poll of the drain is the one that gives up
+	const unreachableTimeout = 3 * time.Second
+
+	s1, s2, finish := setupMultiNodeTestWithConfig("TestMultiNodeRedisOutageEndsAnUnreachableDrain",
+		func(c *config.Config) {
+			c.Shutdown.DrainTimeout = 0
+			c.Shutdown.UnreachableDrainTimeout = unreachableTimeout
+			// a participant whose signal relay gives up is one that leaves on
+			// its own, which would end the drain without the deadline having
+			// anything to do with it. held well past the end of the test, so
+			// that the only way out of the drain is the deadline
+			c.SignalRelay.RetryTimeout = 5 * time.Minute
+		})
+	defer finish()
+
+	c1 := createRTCClientWithToken(joinToken("outage-unreachable1", "outage-a", nil), defaultServerPort, testRTCServicePathv0, nil)
+	c2 := createRTCClientWithToken(joinToken("outage-unreachable2", "outage-b", nil), secondServerPort, testRTCServicePathv0, nil)
+	defer stopClients(c1, c2)
+	waitUntilConnected(t, c1, c2)
+
+	victim := s1
+	if !victim.RoomManager().HasParticipants() {
+		victim = s2
+	}
+	require.True(t, victim.RoomManager().HasParticipants(), "no node is hosting participants")
+
+	rd.stop()
+	drained := make(chan struct{})
+	stopAt := time.Now()
+	go func() {
+		victim.Stop(false)
+		close(drained)
+	}()
+	// finish() forces the drain if it is still running when the test ends
+	t.Cleanup(func() { <-drained })
+
+	select {
+	case <-drained:
+		t.Logf("the drain gave up after %s of an unreachable node", time.Since(stopAt).Round(time.Millisecond))
+	// most of this budget is the shutdown that follows the drain -- closing
+	// rooms against a redis that is still down costs seconds per key -- so it
+	// is generous on purpose. a drain with no working deadline never ends at
+	// all, so it fails here whatever the machine is doing
+	case <-time.After(unreachableTimeout + 2*testutils.ConnectTimeout):
+		t.Fatalf("node %s is still draining a node that cannot reach redis", victim.Node().Id)
+	}
+}
+
 // failsLivenessProbe replays the shape of the chart's default liveness probe --
 // failureThreshold consecutive failures a period apart and the container is
 // restarted -- at a compressed period, so the test does not sit out a real
