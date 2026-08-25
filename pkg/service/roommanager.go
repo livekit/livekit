@@ -699,8 +699,19 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 		roomInfo := newRoom.ToProto()
 		r.telemetry.RoomEnded(ctx, roomInfo, reason.ToProto())
 		prometheus.RoomEnded(time.Unix(roomInfo.CreationTime, 0))
-		if err := r.deleteRoom(ctx, roomName); err != nil {
-			newRoom.Logger().Errorw("could not delete room", err)
+
+		// Only clear the room state if this room is still the one registered
+		// under the name. A same-name room may have been created while this
+		// room was winding down (e.g. DeleteRoom pre-clears the state, then a
+		// recreate lands before the old room's participants finish closing);
+		// deleting unconditionally here would wipe the new room's state.
+		r.lock.RLock()
+		current := r.rooms[roomName]
+		r.lock.RUnlock()
+		if current == newRoom {
+			if err := r.deleteRoom(ctx, roomName); err != nil {
+				newRoom.Logger().Errorw("could not delete room", err)
+			}
 		}
 
 		newRoom.Logger().Infow("room closed")
@@ -932,16 +943,27 @@ func (r *RoomManager) PerformRpc(ctx context.Context, req *livekit.PerformRpcReq
 }
 
 func (r *RoomManager) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomRequest) (*livekit.DeleteRoomResponse, error) {
-	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
+	roomName := livekit.RoomName(req.Room)
+	room := r.GetRoom(ctx, roomName)
 	if room == nil {
 		// special case of a non-RTC room e.g. room created but no participants joined
 		logger.Debugw("Deleting non-rtc room, loading from roomstore")
-		err := r.roomStore.DeleteRoom(ctx, livekit.RoomName(req.Room))
+		err := r.roomStore.DeleteRoom(ctx, roomName)
 		if err != nil {
 			logger.Debugw("Error deleting non-rtc room", "err", err)
 			return nil, err
 		}
 	} else {
+		// Clear the room store and routing state before closing the room so a
+		// same-name recreate cannot load the stale room (old SID, old creation
+		// time) while the old room is still winding down. Closing participants
+		// can block on slow signal connections, and the OnClose cleanup only
+		// runs after every participant has closed — leaving a window where a
+		// recreate would inherit the old room's identity and pending timeouts
+		// (issue #4726).
+		if err := r.deleteRoom(ctx, roomName); err != nil {
+			room.Logger().Errorw("could not delete room state before closing", err)
+		}
 		room.Logger().Infow("deleting room")
 		room.Close(types.RoomCloseReasonAPIDelete)
 	}
