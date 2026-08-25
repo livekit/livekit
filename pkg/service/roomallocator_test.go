@@ -17,6 +17,7 @@ package service_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -47,7 +48,7 @@ func TestCreateRoom(t *testing.T) {
 	})
 }
 
-func SelectRoomNode(t *testing.T) {
+func TestSelectRoomNode(t *testing.T) {
 	t.Run("reject new participants when track limit has been reached", func(t *testing.T) {
 		conf, err := config.NewConfig("", true, nil, nil)
 		require.NoError(t, err)
@@ -56,6 +57,7 @@ func SelectRoomNode(t *testing.T) {
 		node, err := routing.NewLocalNode(conf)
 		require.NoError(t, err)
 		node.SetStats(&livekit.NodeStats{
+			UpdatedAt:    time.Now().Unix(),
 			NumTracksIn:  100,
 			NumTracksOut: 100,
 		})
@@ -74,8 +76,13 @@ func SelectRoomNode(t *testing.T) {
 		node, err := routing.NewLocalNode(conf)
 		require.NoError(t, err)
 		node.SetStats(&livekit.NodeStats{
-			BytesInPerSec:  1000,
-			BytesOutPerSec: 1000,
+			UpdatedAt: time.Now().Unix(),
+			// the limit is read off the most recent rate sample, the per-second
+			// fields on the stats themselves having been left behind
+			Rates: []*livekit.NodeStatsRate{{
+				BytesIn:  1000,
+				BytesOut: 1000,
+			}},
 		})
 
 		ra, _ := newTestRoomAllocator(t, conf, node.Clone())
