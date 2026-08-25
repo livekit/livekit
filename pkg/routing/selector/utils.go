@@ -40,10 +40,16 @@ func IsAvailable(node *livekit.Node) bool {
 	return int(delta) < AvailableSeconds
 }
 
+// checks if a node can be given a room to host: updated recently enough to be
+// answering, and not on its way out. A node keeps registering itself while it
+// drains, so it stays as fresh as any other for as long as it takes, and
+// freshness alone would keep handing it participants it cannot see out.
+func CanHostRoom(node *livekit.Node) bool {
+	return IsAvailable(node) && node.State == livekit.NodeState_SERVING
+}
+
 func GetAvailableNodes(nodes []*livekit.Node) []*livekit.Node {
-	return funk.Filter(nodes, func(node *livekit.Node) bool {
-		return IsAvailable(node) && node.State == livekit.NodeState_SERVING
-	}).([]*livekit.Node)
+	return funk.Filter(nodes, CanHostRoom).([]*livekit.Node)
 }
 
 func GetNodeSysload(node *livekit.Node) float32 {

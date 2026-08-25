@@ -38,7 +38,7 @@ func TestCreateRoom(t *testing.T) {
 		node, err := routing.NewLocalNode(conf)
 		require.NoError(t, err)
 
-		ra, conf := newTestRoomAllocator(t, conf, node.Clone())
+		ra, _ := newTestRoomAllocator(t, conf, node.Clone())
 
 		room, _, _, err := ra.CreateRoom(context.Background(), &livekit.CreateRoomRequest{Name: "myroom"}, true)
 		require.NoError(t, err)
@@ -90,9 +90,33 @@ func TestSelectRoomNode(t *testing.T) {
 		err = ra.SelectRoomNode(context.Background(), "low-limit-room", "")
 		require.ErrorIs(t, err, routing.ErrNodeLimitReached)
 	})
+
+	// A node that has begun draining is on its way out, and takes everything on
+	// it along. Leaving the room there hands the participants about to join a
+	// session that ends when the node does, while a node that is staying up is
+	// standing right there.
+	t.Run("move the room off a node that has begun draining", func(t *testing.T) {
+		conf, err := config.NewConfig("", true, nil, nil)
+		require.NoError(t, err)
+
+		draining := registeredNode(t, conf, livekit.NodeState_SHUTTING_DOWN)
+		serving := registeredNode(t, conf, livekit.NodeState_SERVING)
+
+		ra, router := newTestRoomAllocator(t, conf, draining)
+		router.ListNodesReturns([]*livekit.Node{draining, serving}, nil)
+
+		require.NoError(t, ra.SelectRoomNode(context.Background(), "draining-room", ""))
+
+		require.Equal(t, 1, router.SetNodeForRoomCallCount(), "the room was left on the draining node")
+		_, roomName, nodeID := router.SetNodeForRoomArgsForCall(0)
+		require.Equal(t, livekit.RoomName("draining-room"), roomName)
+		require.Equal(t, livekit.NodeID(serving.Id), nodeID)
+	})
 }
 
-func newTestRoomAllocator(t *testing.T, conf *config.Config, node *livekit.Node) (service.RoomAllocator, *config.Config) {
+func newTestRoomAllocator(t *testing.T, conf *config.Config, node *livekit.Node) (service.RoomAllocator, *routingfakes.FakeRouter) {
+	t.Helper()
+
 	store := &servicefakes.FakeObjectStore{}
 	store.LoadRoomReturns(nil, nil, service.ErrRoomNotFound)
 	router := &routingfakes.FakeRouter{}
@@ -101,5 +125,18 @@ func newTestRoomAllocator(t *testing.T, conf *config.Config, node *livekit.Node)
 
 	ra, err := service.NewRoomAllocator(conf, router, store)
 	require.NoError(t, err)
-	return ra, conf
+	return ra, router
+}
+
+// registeredNode is a node as the registry would have it: registered a moment
+// ago, and so as fresh as any node the router would hand back.
+func registeredNode(t *testing.T, conf *config.Config, state livekit.NodeState) *livekit.Node {
+	t.Helper()
+
+	node, err := routing.NewLocalNode(conf)
+	require.NoError(t, err)
+
+	n := node.Clone()
+	n.State = state
+	return n
 }
