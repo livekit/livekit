@@ -190,11 +190,35 @@ func (r *RoomManager) GetRoom(_ context.Context, roomName livekit.RoomName) *rtc
 
 // deleteRoom completely deletes all room information, including active sessions, room store, and routing info
 func (r *RoomManager) deleteRoom(ctx context.Context, roomName livekit.RoomName) error {
-	logger.Infow("deleting room state", "room", roomName)
 	r.lock.Lock()
 	delete(r.rooms, roomName)
 	r.lock.Unlock()
 
+	return r.deleteRoomState(ctx, roomName)
+}
+
+// deleteRoomIfCurrent deletes the room state only when the room currently
+// registered under the name is the given room. It is atomic with the map
+// mutation, so a same-name recreate cannot race between the identity check and
+// the delete and have its state wiped by an older room's teardown.
+func (r *RoomManager) deleteRoomIfCurrent(ctx context.Context, roomName livekit.RoomName, room *rtc.Room) bool {
+	r.lock.Lock()
+	current := r.rooms[roomName]
+	if current != room {
+		r.lock.Unlock()
+		return false
+	}
+	delete(r.rooms, roomName)
+	r.lock.Unlock()
+
+	if err := r.deleteRoomState(ctx, roomName); err != nil {
+		room.Logger().Errorw("could not delete room", err)
+	}
+	return true
+}
+
+func (r *RoomManager) deleteRoomState(ctx context.Context, roomName livekit.RoomName) error {
+	logger.Infow("deleting room state", "room", roomName)
 	var err, err2 error
 	wg := sync.WaitGroup{}
 	wg.Add(2)
@@ -704,14 +728,11 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 		// under the name. A same-name room may have been created while this
 		// room was winding down (e.g. DeleteRoom pre-clears the state, then a
 		// recreate lands before the old room's participants finish closing);
-		// deleting unconditionally here would wipe the new room's state.
-		r.lock.RLock()
-		current := r.rooms[roomName]
-		r.lock.RUnlock()
-		if current == newRoom {
-			if err := r.deleteRoom(ctx, roomName); err != nil {
-				newRoom.Logger().Errorw("could not delete room", err)
-			}
+		// deleting unconditionally here would wipe the new room's state. The
+		// identity check and the map delete are atomic, so a recreate cannot
+		// slip between them.
+		if !r.deleteRoomIfCurrent(ctx, roomName, newRoom) {
+			newRoom.Logger().Debugw("room replaced before close; skipping state cleanup")
 		}
 
 		newRoom.Logger().Infow("room closed")
