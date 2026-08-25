@@ -10,17 +10,19 @@ import (
 )
 
 type FakeRouter struct {
-	ClearRoomStateStub        func(context.Context, livekit.RoomName) error
+	ClearRoomStateStub        func(context.Context, livekit.RoomName) (bool, error)
 	clearRoomStateMutex       sync.RWMutex
 	clearRoomStateArgsForCall []struct {
 		arg1 context.Context
 		arg2 livekit.RoomName
 	}
 	clearRoomStateReturns struct {
-		result1 error
+		result1 bool
+		result2 error
 	}
 	clearRoomStateReturnsOnCall map[int]struct {
-		result1 error
+		result1 bool
+		result2 error
 	}
 	CreateRoomStub        func(context.Context, *livekit.CreateRoomRequest) (*livekit.Room, error)
 	createRoomMutex       sync.RWMutex
@@ -152,7 +154,7 @@ type FakeRouter struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeRouter) ClearRoomState(arg1 context.Context, arg2 livekit.RoomName) error {
+func (fake *FakeRouter) ClearRoomState(arg1 context.Context, arg2 livekit.RoomName) (bool, error) {
 	fake.clearRoomStateMutex.Lock()
 	ret, specificReturn := fake.clearRoomStateReturnsOnCall[len(fake.clearRoomStateArgsForCall)]
 	fake.clearRoomStateArgsForCall = append(fake.clearRoomStateArgsForCall, struct {
@@ -167,9 +169,9 @@ func (fake *FakeRouter) ClearRoomState(arg1 context.Context, arg2 livekit.RoomNa
 		return stub(arg1, arg2)
 	}
 	if specificReturn {
-		return ret.result1
+		return ret.result1, ret.result2
 	}
-	return fakeReturns.result1
+	return fakeReturns.result1, fakeReturns.result2
 }
 
 func (fake *FakeRouter) ClearRoomStateCallCount() int {
@@ -178,7 +180,7 @@ func (fake *FakeRouter) ClearRoomStateCallCount() int {
 	return len(fake.clearRoomStateArgsForCall)
 }
 
-func (fake *FakeRouter) ClearRoomStateCalls(stub func(context.Context, livekit.RoomName) error) {
+func (fake *FakeRouter) ClearRoomStateCalls(stub func(context.Context, livekit.RoomName) (bool, error)) {
 	fake.clearRoomStateMutex.Lock()
 	defer fake.clearRoomStateMutex.Unlock()
 	fake.ClearRoomStateStub = stub
@@ -191,27 +193,30 @@ func (fake *FakeRouter) ClearRoomStateArgsForCall(i int) (context.Context, livek
 	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakeRouter) ClearRoomStateReturns(result1 error) {
+func (fake *FakeRouter) ClearRoomStateReturns(result1 bool, result2 error) {
 	fake.clearRoomStateMutex.Lock()
 	defer fake.clearRoomStateMutex.Unlock()
 	fake.ClearRoomStateStub = nil
 	fake.clearRoomStateReturns = struct {
-		result1 error
-	}{result1}
+		result1 bool
+		result2 error
+	}{result1, result2}
 }
 
-func (fake *FakeRouter) ClearRoomStateReturnsOnCall(i int, result1 error) {
+func (fake *FakeRouter) ClearRoomStateReturnsOnCall(i int, result1 bool, result2 error) {
 	fake.clearRoomStateMutex.Lock()
 	defer fake.clearRoomStateMutex.Unlock()
 	fake.ClearRoomStateStub = nil
 	if fake.clearRoomStateReturnsOnCall == nil {
 		fake.clearRoomStateReturnsOnCall = make(map[int]struct {
-			result1 error
+			result1 bool
+			result2 error
 		})
 	}
 	fake.clearRoomStateReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
+		result1 bool
+		result2 error
+	}{result1, result2}
 }
 
 func (fake *FakeRouter) CreateRoom(arg1 context.Context, arg2 *livekit.CreateRoomRequest) (*livekit.Room, error) {

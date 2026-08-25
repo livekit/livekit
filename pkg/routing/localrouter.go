@@ -64,8 +64,9 @@ func (r *LocalRouter) SetNodeForRoom(_ context.Context, _ livekit.RoomName, _ li
 	return nil
 }
 
-func (r *LocalRouter) ClearRoomState(_ context.Context, _ livekit.RoomName) error {
-	return nil
+func (r *LocalRouter) ClearRoomState(_ context.Context, _ livekit.RoomName) (bool, error) {
+	// the only node there is, so every room is its own
+	return true, nil
 }
 
 func (r *LocalRouter) RegisterNode() error {

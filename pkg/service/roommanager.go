@@ -189,32 +189,34 @@ func (r *RoomManager) GetRoom(_ context.Context, roomName livekit.RoomName) *rtc
 }
 
 // deleteRoom completely deletes all room information, including active sessions, room store, and routing info
-func (r *RoomManager) deleteRoom(ctx context.Context, roomName livekit.RoomName) error {
+func (r *RoomManager) deleteRoom(ctx context.Context, roomInfo *livekit.Room) error {
+	roomName := livekit.RoomName(roomInfo.Name)
 	logger.Infow("deleting room state", "room", roomName)
 	r.lock.Lock()
 	delete(r.rooms, roomName)
 	r.lock.Unlock()
 
-	var err, err2 error
-	wg := sync.WaitGroup{}
-	wg.Add(2)
-	// clear routing information
-	go func() {
-		defer wg.Done()
-		err = r.router.ClearRoomState(ctx, roomName)
-	}()
-	// also delete room from db
-	go func() {
-		defer wg.Done()
-		err2 = r.roomStore.DeleteRoom(ctx, roomName)
-	}()
-
-	wg.Wait()
-	if err2 != nil {
-		err = err2
+	// the routing goes first, and the room itself only if this node still had
+	// it: a room routed to another node while this one was closing its copy is
+	// being served there under the same name its records are keyed by
+	cleared, err := r.router.ClearRoomState(ctx, roomName)
+	if err != nil {
+		return err
+	}
+	if !cleared {
+		// either another node has taken the room over, or the routing is gone
+		// altogether -- a redis that came back empty has no record of either the
+		// room or the node it was on. leaving the records alone is right for both
+		logger.Infow("room routing was not this node's to clear, leaving its state alone", "room", roomName)
+		return nil
 	}
 
-	return err
+	// the room has ended, rather than moved, so this is where it is announced:
+	// the webhook says the room finished, and it finished only once
+	r.telemetry.RoomEnded(ctx, roomInfo)
+
+	// also delete room from db
+	return r.roomStore.DeleteRoom(ctx, roomName)
 }
 
 func (r *RoomManager) CloseIdleRooms() {
@@ -697,9 +699,10 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 		killDispServer()
 
 		roomInfo := newRoom.ToProto()
-		r.telemetry.RoomEnded(ctx, roomInfo)
+		// the room is off this node either way, so the gauge comes down either
+		// way; whether the room ended at all is deleteRoom's to say
 		prometheus.RoomEnded(time.Unix(roomInfo.CreationTime, 0))
-		if err := r.deleteRoom(ctx, roomName); err != nil {
+		if err := r.deleteRoom(ctx, roomInfo); err != nil {
 			newRoom.Logger().Errorw("could not delete room", err)
 		}
 
