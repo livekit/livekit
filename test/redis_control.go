@@ -73,17 +73,21 @@ func (r *controlledRedis) start(t *testing.T) {
 	// bound to the one address rather than to every interface: a wildcard bind is
 	// one another server can be started over, since the probe that looks for a
 	// free port would find this one's port free
-	r.cmd = exec.Command(r.bin,
+	cmd := exec.Command(r.bin,
 		"--port", r.port, "--bind", "127.0.0.1",
 		"--save", "", "--appendonly", "no", "--dir", r.dir)
-	r.cmd.Stderr = os.Stderr
-	require.NoError(t, r.cmd.Start())
+	cmd.Stderr = os.Stderr
+	require.NoError(t, cmd.Start())
 
-	r.exited = make(chan struct{})
-	go func(cmd *exec.Cmd, exited chan struct{}) {
+	exited := make(chan struct{})
+	go func() {
 		_ = cmd.Wait()
 		close(exited)
-	}(r.cmd, r.exited)
+	}()
+
+	// held only once there is a process to hold: stop reads them to mean there
+	// is one to kill, and a start that never got that far leaves it nothing
+	r.cmd, r.exited = cmd, exited
 
 	r.waitUp(t)
 }
