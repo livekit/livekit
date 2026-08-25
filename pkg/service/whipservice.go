@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/pion/webrtc/v4"
@@ -269,7 +268,7 @@ func (s *WHIPService) handleCreate(w http.ResponseWriter, r *http.Request) {
 	for _, iceServer := range res.IceServers {
 		for _, iceURL := range iceServer.Urls {
 			iceServerLink := &linkheader.Link{
-				URL:    url.PathEscape(iceURL),
+				URL:    iceURL,
 				Rel:    "ice-server",
 				Params: map[string]string{},
 			}
