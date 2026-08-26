@@ -72,6 +72,24 @@ type Buffer struct {
 
 	primaryBufferForRTX *Buffer
 	rtxPktBuf           []byte
+
+	streamInfoProbe       *StreamInfoProbe
+	warnedPendingOverflow bool
+}
+
+// StreamInfoProbe identifies a stream from the mid/rid/rsid header extensions of its
+// packets. It runs on the write path, i. e. as SRTP pushes into this buffer, because
+// nothing reads remote streams through pion's interceptor chain.
+type StreamInfoProbe struct {
+	MidExtID  uint8
+	RidExtID  uint8
+	RsidExtID uint8
+
+	// Tries bounds how many packets are inspected before giving up.
+	Tries int
+
+	// OnFound is called at most once, in a goroutine, as it can re-enter this buffer.
+	OnFound func(ssrc uint32, mid, rid, rsid string)
 }
 
 func NewBuffer(ssrc uint32, maxVideoPkts, maxAudioPkts int) *Buffer {
@@ -166,6 +184,10 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		return
 	}
 
+	if b.streamInfoProbe != nil {
+		b.probeStreamInfoLocked(&rtpPacket)
+	}
+
 	// handle RTX packet
 	if pb := b.primaryBufferForRTX; pb != nil {
 		b.Unlock()
@@ -191,6 +213,17 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		overflow := len(b.pPackets) - max(b.BufferBase.MaxVideoPkts(), b.BufferBase.MaxAudioPkts())
 		if overflow > 0 {
 			startIdx = overflow
+
+			// a stream that keeps arriving but never binds drops every packet from here
+			// on; for an RTX stream it means the pairing was never established
+			if !b.warnedPendingOverflow {
+				b.warnedPendingOverflow = true
+				b.logger.Warnw(
+					"unbound buffer overflowing, dropping packets", nil,
+					"ssrc", b.BufferBase.SSRC(),
+					"pending", len(b.pPackets),
+				)
+			}
 		}
 		b.pPackets = append(b.pPackets[startIdx:], pendingPacket{
 			packet:      packet,
@@ -211,6 +244,59 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		}
 	}
 	return
+}
+
+// SetStreamInfoProbe installs probe and runs it over packets already queued.
+func (b *Buffer) SetStreamInfoProbe(probe *StreamInfoProbe) {
+	b.Lock()
+	defer b.Unlock()
+
+	b.streamInfoProbe = probe
+
+	for _, pp := range b.pPackets {
+		if b.streamInfoProbe == nil {
+			return
+		}
+
+		var rtpPacket rtp.Packet
+		if err := rtpPacket.Unmarshal(pp.packet); err != nil {
+			continue
+		}
+		b.probeStreamInfoLocked(&rtpPacket)
+	}
+}
+
+// probeStreamInfoLocked inspects one packet, clearing the probe once the stream is
+// identified or the try budget runs out.
+func (b *Buffer) probeStreamInfoLocked(rtpPacket *rtp.Packet) {
+	probe := b.streamInfoProbe
+
+	var mid, rid, rsid string
+	if ext := rtpPacket.GetExtension(probe.MidExtID); ext != nil {
+		mid = string(ext)
+	}
+	if ext := rtpPacket.GetExtension(probe.RidExtID); ext != nil {
+		rid = string(ext)
+	}
+	if ext := rtpPacket.GetExtension(probe.RsidExtID); ext != nil {
+		rsid = string(ext)
+	}
+
+	if mid != "" && (rid != "" || rsid != "") {
+		b.streamInfoProbe = nil
+		b.logger.Debugw("stream found", "ssrc", rtpPacket.SSRC, "mid", mid, "rid", rid, "rsid", rsid)
+		go probe.OnFound(rtpPacket.SSRC, mid, rid, rsid)
+		return
+	}
+
+	// ignore padding only packets for probe count
+	if rtpPacket.Padding && len(rtpPacket.Payload) == 0 {
+		return
+	}
+
+	if probe.Tries--; probe.Tries <= 0 {
+		b.streamInfoProbe = nil
+	}
 }
 
 func (b *Buffer) SetPrimaryBufferForRTX(primaryBuffer *Buffer) {

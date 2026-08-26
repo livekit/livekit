@@ -530,6 +530,8 @@ func newPeerConnection(
 			params.Logger.Debugw("rtx pair found from extension", "repair", repair, "base", base, "rsid", rsid)
 			params.Config.BufferFactory.SetRTXPair(repair, base, rsid)
 		},
+		params.Config.BufferFactory,
+		params.SimTracks,
 		params.Logger,
 	)
 	// put rtx interceptor behind unhandle simulcast interceptor so it can get the correct mid & rid

@@ -18,11 +18,14 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/pion/transport/v4/vnet"
 	"github.com/redis/go-redis/v9"
+	"github.com/stretchr/testify/require"
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
@@ -33,9 +36,12 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/service"
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/testutils"
+	"github.com/livekit/livekit-server/pkg/testutils/vnettest"
 	testclient "github.com/livekit/livekit-server/test/client"
 )
 
@@ -385,4 +391,68 @@ func stopClients(clients ...*testclient.RTCClient) {
 	for _, c := range clients {
 		c.Stop()
 	}
+}
+
+// -----------------------------------------------------------------------------
+// vnet media harness
+//
+// Setup specific to driving a real server transport over a virtual network. The
+// pion side lives in pkg/testutils/vnettest, shared with the pkg/sfu media tests.
+// -----------------------------------------------------------------------------
+
+// newVNetWebRTCConfig builds the server side WebRTCConfig on net. The direction
+// configs come from the production NewWebRTCConfig so the negotiated extensions and
+// feedback stay in step with it; the setting engine is replaced so no real socket or
+// ICE mux is bound.
+func newVNetWebRTCConfig(t *testing.T, net *vnet.Net, bufferFactory *buffer.Factory) *rtc.WebRTCConfig {
+	t.Helper()
+
+	conf, err := config.NewConfig("", true, nil, nil)
+	require.NoError(t, err)
+
+	// an ephemeral port range instead of the dev mode single port, which would bind a mux
+	conf.RTC.TCPPort = 0
+	conf.RTC.UDPPort = rtcconfig.PortRange{}
+	conf.RTC.ICEPortRangeStart = 50000
+	conf.RTC.ICEPortRangeEnd = 60000
+
+	rtcConf, err := rtc.NewWebRTCConfig(conf)
+	require.NoError(t, err)
+	require.Nil(t, rtcConf.UDPMux, "test config must not bind a udp mux")
+
+	rtcConf.SettingEngine = vnettest.NewSettingEngine(net)
+	rtcConf.SetBufferFactory(bufferFactory)
+
+	return rtcConf
+}
+
+// stripDeclaredSSRCs removes the a=ssrc lines pion puts in its offer. Browsers doing
+// rid based simulcast do not declare per-layer SSRCs, which is why a repair SSRC has to
+// be learned at all; leaving them in would let the receiver resolve everything from SDP.
+func stripDeclaredSSRCs(offer string) string {
+	lines := strings.Split(offer, "\r\n")
+	filtered := lines[:0]
+	for _, line := range lines {
+		if strings.HasPrefix(line, "a=ssrc") {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	return strings.Join(filtered, "\r\n")
+}
+
+// sendUntil calls send every 20ms until done reports true or the timeout expires,
+// returning the final state of done.
+func sendUntil(t *testing.T, timeout time.Duration, done func() bool, send func()) bool {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if done() {
+			return true
+		}
+		send()
+		time.Sleep(20 * time.Millisecond)
+	}
+	return done()
 }
