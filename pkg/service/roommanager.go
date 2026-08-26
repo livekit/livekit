@@ -981,9 +981,12 @@ func (r *RoomManager) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		// can block on slow signal connections, and the OnClose cleanup only
 		// runs after every participant has closed — leaving a window where a
 		// recreate would inherit the old room's identity and pending timeouts
-		// (issue #4726).
-		if err := r.deleteRoom(ctx, roomName); err != nil {
-			room.Logger().Errorw("could not delete room state before closing", err)
+		// (issue #4726). The identity-checked delete only fires while this room
+		// is still the registered one: if it closed on its own (e.g. empty
+		// timeout) and a recreate landed meanwhile, the fresh room must not be
+		// wiped. Closing an already-closed room is a no-op.
+		if !r.deleteRoomIfCurrent(ctx, roomName, room) {
+			room.Logger().Debugw("room replaced before delete; skipping pre-clear")
 		}
 		room.Logger().Infow("deleting room")
 		room.Close(types.RoomCloseReasonAPIDelete)
