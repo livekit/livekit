@@ -16,6 +16,7 @@ package service_test
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"net"
@@ -31,22 +32,41 @@ import (
 
 var Docker dockertest.ClosablePool
 
-func TestMain(m *testing.M) {
-	ctx := context.Background()
-	pool, err := dockertest.NewPool(ctx, "")
-	if err != nil {
-		log.Fatalf("Could not construct pool: %s", err)
-	}
+// go test -docker=false ./pkg/service skips the tests that need a docker
+// daemon, for a checkout without one. Running them is the default: a run that
+// quietly covers less than the last one is worse than a run that stops, so a
+// daemon that should be there and is not still fails the whole package.
+var useDocker = flag.Bool("docker", true, "run the tests that need a docker daemon")
 
-	// uses pool to try to connect to Docker
-	_, err = pool.Client().Ping(ctx, mobyclient.PingOptions{})
-	if err != nil {
-		log.Fatalf("Could not connect to Docker: %s", err)
+func TestMain(m *testing.M) {
+	// m.Run would parse them, but the flag is read before that
+	flag.Parse()
+
+	if *useDocker {
+		ctx := context.Background()
+		pool, err := dockertest.NewPool(ctx, "")
+		if err != nil {
+			log.Fatalf("Could not construct pool: %s", err)
+		}
+
+		// uses pool to try to connect to Docker
+		_, err = pool.Client().Ping(ctx, mobyclient.PingOptions{})
+		if err != nil {
+			log.Fatalf("Could not connect to Docker: %s", err)
+		}
+		Docker = pool
 	}
-	Docker = pool
 
 	code := m.Run()
 	os.Exit(code)
+}
+
+func requireDocker(t testing.TB) {
+	t.Helper()
+
+	if !*useDocker {
+		t.Skip("this test needs a docker daemon, and -docker=false says there is none")
+	}
 }
 
 func waitTCPPort(t testing.TB, addr string) {
@@ -66,6 +86,8 @@ func waitTCPPort(t testing.TB, addr string) {
 var redisLast atomic.Uint32
 
 func runRedis(t testing.TB) string {
+	requireDocker(t)
+
 	c, err := Docker.Run(t.Context(),
 		"redis",
 		dockertest.WithName(fmt.Sprintf("lktest-redis-%d", redisLast.Inc())),
