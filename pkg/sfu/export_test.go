@@ -56,13 +56,15 @@ func (d *DownTrack) RetransmitForTest(
 	extTimestamp uint64,
 	layer int8,
 	sourcePkt []byte,
+	trailerStripped uint8,
 ) (int, error) {
 	epm := extPacketMeta{
 		packetMeta: packetMeta{
-			sourceSeqNo: sourceSeqNo,
-			targetSeqNo: targetSeqNo,
-			timestamp:   timestamp,
-			layer:       layer,
+			sourceSeqNo:     sourceSeqNo,
+			targetSeqNo:     targetSeqNo,
+			timestamp:       timestamp,
+			layer:           layer,
+			trailerStripped: trailerStripped,
 		},
 		extSequenceNumber: uint64(targetSeqNo),
 		extTimestamp:      extTimestamp,
