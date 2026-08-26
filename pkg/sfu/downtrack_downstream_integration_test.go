@@ -45,12 +45,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pion/interceptor"
-	"github.com/pion/logging"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
-	"github.com/pion/sdp/v3"
-	"github.com/pion/transport/v4/vnet"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 
@@ -70,164 +66,8 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/sfufakes"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
+	"github.com/livekit/livekit-server/pkg/testutils/vnettest"
 )
-
-// -----------------------------------------------------------------------------
-// vnet harness
-// -----------------------------------------------------------------------------
-
-type vnetHarness struct {
-	wan       *vnet.Router
-	offerNet  *vnet.Net
-	answerNet *vnet.Net
-}
-
-func buildVNet(t *testing.T) *vnetHarness {
-	t.Helper()
-
-	wan, err := vnet.NewRouter(&vnet.RouterConfig{
-		CIDR:          "1.2.3.0/24",
-		LoggerFactory: logging.NewDefaultLoggerFactory(),
-	})
-	require.NoError(t, err)
-
-	offerNet, err := vnet.NewNet(&vnet.NetConfig{StaticIPs: []string{"1.2.3.4"}})
-	require.NoError(t, err)
-	require.NoError(t, wan.AddNet(offerNet))
-
-	answerNet, err := vnet.NewNet(&vnet.NetConfig{StaticIPs: []string{"1.2.3.5"}})
-	require.NoError(t, err)
-	require.NoError(t, wan.AddNet(answerNet))
-
-	require.NoError(t, wan.Start())
-	t.Cleanup(func() { _ = wan.Stop() })
-
-	return &vnetHarness{wan: wan, offerNet: offerNet, answerNet: answerNet}
-}
-
-// mediaEngineConfig describes what codecs / header extensions to register on a PC.
-type mediaEngineConfig struct {
-	video            bool // register VP8 (+ RTX); otherwise register opus
-	headerExtensions bool // register abs-send-time + transport-cc header extensions
-}
-
-func newMediaPC(t *testing.T, net *vnet.Net, factory *buffer.Factory, cfg mediaEngineConfig) *webrtc.PeerConnection {
-	t.Helper()
-
-	me := &webrtc.MediaEngine{}
-	if cfg.video {
-		require.NoError(t, me.RegisterCodec(webrtc.RTPCodecParameters{
-			RTPCodecCapability: webrtc.RTPCodecCapability{
-				MimeType: webrtc.MimeTypeVP8, ClockRate: 90000, RTCPFeedback: videoRTCPFeedback(),
-			},
-			PayloadType: 96,
-		}, webrtc.RTPCodecTypeVideo))
-		require.NoError(t, me.RegisterCodec(webrtc.RTPCodecParameters{
-			RTPCodecCapability: webrtc.RTPCodecCapability{
-				MimeType: webrtc.MimeTypeRTX, ClockRate: 90000, SDPFmtpLine: "apt=96",
-			},
-			PayloadType: 97,
-		}, webrtc.RTPCodecTypeVideo))
-	} else {
-		require.NoError(t, me.RegisterCodec(webrtc.RTPCodecParameters{
-			RTPCodecCapability: webrtc.RTPCodecCapability{
-				MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2,
-			},
-			PayloadType: 111,
-		}, webrtc.RTPCodecTypeAudio))
-	}
-
-	if cfg.headerExtensions {
-		kind := webrtc.RTPCodecTypeAudio
-		if cfg.video {
-			kind = webrtc.RTPCodecTypeVideo
-		}
-		require.NoError(t, me.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{URI: sdp.ABSSendTimeURI}, kind))
-		require.NoError(t, me.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{URI: sdp.TransportCCURI}, kind))
-	}
-
-	// no pion default interceptors: the DownTrack/pacer fill abs-send-time and
-	// transport-cc themselves, and the tests drive RTCP feedback synthetically, so
-	// pion's own feedback generators would only add nondeterminism.
-	ir := &interceptor.Registry{}
-
-	se := webrtc.SettingEngine{}
-	se.SetNet(net)
-	se.SetICETimeouts(time.Second, time.Second, 200*time.Millisecond)
-	se.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4})
-	if factory != nil {
-		se.BufferFactory = factory.GetOrNew
-	}
-
-	api := webrtc.NewAPI(
-		webrtc.WithMediaEngine(me),
-		webrtc.WithInterceptorRegistry(ir),
-		webrtc.WithSettingEngine(se),
-	)
-	pc, err := api.NewPeerConnection(webrtc.Configuration{})
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = pc.Close() })
-
-	return pc
-}
-
-func videoRTCPFeedback() []webrtc.RTCPFeedback {
-	return []webrtc.RTCPFeedback{
-		{Type: "nack"},
-		{Type: "nack", Parameter: "pli"},
-		{Type: webrtc.TypeRTCPFBTransportCC},
-		{Type: webrtc.TypeRTCPFBGoogREMB},
-	}
-}
-
-// signalPair performs a full offer/answer exchange between two PCs (adapted from
-// pion's own test helper) and waits for both to reach the connected state.
-func signalPair(t *testing.T, offerer, answerer *webrtc.PeerConnection) {
-	t.Helper()
-
-	connected := untilConnected(offerer, answerer)
-
-	offer, err := offerer.CreateOffer(nil)
-	require.NoError(t, err)
-	gatherOffer := webrtc.GatheringCompletePromise(offerer)
-	require.NoError(t, offerer.SetLocalDescription(offer))
-	<-gatherOffer
-
-	require.NoError(t, answerer.SetRemoteDescription(*offerer.LocalDescription()))
-
-	answer, err := answerer.CreateAnswer(nil)
-	require.NoError(t, err)
-	gatherAnswer := webrtc.GatheringCompletePromise(answerer)
-	require.NoError(t, answerer.SetLocalDescription(answer))
-	<-gatherAnswer
-
-	require.NoError(t, offerer.SetRemoteDescription(*answerer.LocalDescription()))
-
-	select {
-	case <-connected:
-	case <-time.After(10 * time.Second):
-		t.Fatal("timed out waiting for peer connections to connect")
-	}
-}
-
-func untilConnected(pcs ...*webrtc.PeerConnection) <-chan struct{} {
-	var wg sync.WaitGroup
-	wg.Add(len(pcs))
-	for _, pc := range pcs {
-		var once sync.Once
-		pc.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
-			if s == webrtc.PeerConnectionStateConnected {
-				once.Do(wg.Done)
-			}
-		})
-	}
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-	return done
-}
 
 // -----------------------------------------------------------------------------
 // packet capture on the far side
@@ -320,7 +160,7 @@ var (
 		PayloadType:        111,
 	}
 	vp8CodecParams = webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000, RTCPFeedback: videoRTCPFeedback()},
+		RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000, RTCPFeedback: vnettest.VideoRTCPFeedback()},
 		PayloadType:        96,
 	}
 )
@@ -336,11 +176,11 @@ type downTrackHarness struct {
 
 // newBoundDownTrack builds a real DownTrack, attaches it to a real sender PC,
 // negotiates with a real subscriber PC over vnet, and makes it writable.
-func newBoundDownTrack(t *testing.T, h *vnetHarness, factory *buffer.Factory, codecParams webrtc.RTPCodecParameters, p pacer.Pacer, meCfg mediaEngineConfig) *downTrackHarness {
+func newBoundDownTrack(t *testing.T, h *vnettest.Hosts, factory *buffer.Factory, codecParams webrtc.RTPCodecParameters, p pacer.Pacer, meCfg vnettest.MediaEngineConfig) *downTrackHarness {
 	t.Helper()
 
-	sender := newMediaPC(t, h.offerNet, factory, meCfg)
-	sub := newMediaPC(t, h.answerNet, factory, meCfg)
+	sender := vnettest.NewPeerConnection(t, vnettest.PCConfig{Net: h.OfferNet, MediaEngine: meCfg, BufferFactory: factory.GetOrNew})
+	sub := vnettest.NewPeerConnection(t, vnettest.PCConfig{Net: h.AnswerNet, MediaEngine: meCfg, BufferFactory: factory.GetOrNew})
 	capture := captureTrack(sub)
 
 	rcv := newFakeTrackReceiver(codecParams)
@@ -361,7 +201,7 @@ func newBoundDownTrack(t *testing.T, h *vnetHarness, factory *buffer.Factory, co
 	require.NoError(t, err)
 	dt.SetTransceiver(tr)
 
-	signalPair(t, sender, sub)
+	vnettest.SignalPair(t, sender, sub)
 	dt.SetConnected()
 
 	require.Eventually(t, func() bool {
@@ -393,10 +233,10 @@ func distinctivePayload(seed byte, n int) []byte {
 // -----------------------------------------------------------------------------
 
 func TestPionVNetForwardingSpike(t *testing.T) {
-	h := buildVNet(t)
+	h := vnettest.NewHosts(t)
 
-	sender := newMediaPC(t, h.offerNet, nil, mediaEngineConfig{video: true})
-	receiver := newMediaPC(t, h.answerNet, nil, mediaEngineConfig{video: true})
+	sender := vnettest.NewPeerConnection(t, vnettest.PCConfig{Net: h.OfferNet, MediaEngine: vnettest.MediaEngineConfig{Video: true}})
+	receiver := vnettest.NewPeerConnection(t, vnettest.PCConfig{Net: h.AnswerNet, MediaEngine: vnettest.MediaEngineConfig{Video: true}})
 
 	track, err := webrtc.NewTrackLocalStaticRTP(
 		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000},
@@ -408,7 +248,7 @@ func TestPionVNetForwardingSpike(t *testing.T) {
 
 	cap := captureTrack(receiver)
 
-	signalPair(t, sender, receiver)
+	vnettest.SignalPair(t, sender, receiver)
 
 	// pump a few RTP packets from the sender track
 	go func() {
@@ -445,12 +285,12 @@ func TestPionVNetForwardingSpike(t *testing.T) {
 // contiguous sequence numbers, timestamps, payload bytes, and that the padding bit
 // is cleared regardless of the source packet's padding bit.
 func TestDownTrackForwardsMedia(t *testing.T) {
-	h := buildVNet(t)
+	h := vnettest.NewHosts(t)
 	factory := buffer.NewFactoryOfBufferFactory(500, 500).CreateBufferFactory()
 	p := pacer.NewPassThrough(logger.GetLogger(), newNullBWE())
 	t.Cleanup(p.Stop)
 
-	dh := newBoundDownTrack(t, h, factory, opusCodecParams, p, mediaEngineConfig{video: false})
+	dh := newBoundDownTrack(t, h, factory, opusCodecParams, p, vnettest.MediaEngineConfig{})
 
 	const numPackets = 20
 	sn := uint16(23333)
@@ -517,12 +357,12 @@ func TestDownTrackForwardsMedia(t *testing.T) {
 // type, sequence number, timestamp, payload bytes, and that the padding bit is
 // cleared regardless of the source packet's padding bit.
 func TestDownTrackRetransmitsPacketsAsIs(t *testing.T) {
-	h := buildVNet(t)
+	h := vnettest.NewHosts(t)
 	factory := buffer.NewFactoryOfBufferFactory(500, 500).CreateBufferFactory()
 	p := pacer.NewPassThrough(logger.GetLogger(), newNullBWE())
 	t.Cleanup(p.Stop)
 
-	dh := newBoundDownTrack(t, h, factory, opusCodecParams, p, mediaEngineConfig{video: false})
+	dh := newBoundDownTrack(t, h, factory, opusCodecParams, p, vnettest.MediaEngineConfig{})
 
 	const numPackets = 10
 	targetSN := uint16(40000)
@@ -597,13 +437,13 @@ func TestDownTrackRetransmitsPacketsAsIs(t *testing.T) {
 // fields are not observable on the far side. The packets are still handed to the real
 // pacer (and written over pion).
 func TestDownTrackRetransmitsPacketsViaRTX(t *testing.T) {
-	h := buildVNet(t)
+	h := vnettest.NewHosts(t)
 	factory := buffer.NewFactoryOfBufferFactory(500, 500).CreateBufferFactory()
 	cp := &capturingPacer{inner: pacer.NewPassThrough(logger.GetLogger(), newNullBWE())}
 	t.Cleanup(cp.Stop)
 
 	// VP8 registers an RTX codec, so the bound DownTrack has an RTX SSRC / payload type.
-	dh := newBoundDownTrack(t, h, factory, vp8CodecParams, cp, mediaEngineConfig{video: true})
+	dh := newBoundDownTrack(t, h, factory, vp8CodecParams, cp, vnettest.MediaEngineConfig{Video: true})
 	require.NotZero(t, dh.dt.SSRCRTX(), "RTX ssrc should be negotiated")
 	require.NotZero(t, dh.dt.PayloadTypeRTXForTest(), "RTX payload type should be negotiated")
 
@@ -680,12 +520,12 @@ func TestDownTrackRetransmitsPacketsViaRTX(t *testing.T) {
 // bytes removed, i. e. the retransmitted media payload is byte identical to the
 // original transmission.
 func TestDownTrackReplaysPacketTrailerStripOnRetransmit(t *testing.T) {
-	h := buildVNet(t)
+	h := vnettest.NewHosts(t)
 	factory := buffer.NewFactoryOfBufferFactory(500, 500).CreateBufferFactory()
 	cp := &capturingPacer{inner: pacer.NewPassThrough(logger.GetLogger(), newNullBWE())}
 	t.Cleanup(cp.Stop)
 
-	dh := newBoundDownTrack(t, h, factory, vp8CodecParams, cp, mediaEngineConfig{video: true})
+	dh := newBoundDownTrack(t, h, factory, vp8CodecParams, cp, vnettest.MediaEngineConfig{Video: true})
 	require.NotZero(t, dh.dt.SSRCRTX(), "RTX ssrc should be negotiated")
 
 	video := distinctivePayload(11, 40)
@@ -749,12 +589,12 @@ func lktsTrailer() []byte {
 // and reports both the padding bit and the padding size, so the received payload
 // length equals the declared padding size (RTPPaddingMaxPayloadSize).
 func TestDownTrackSendsPaddingOnlyPackets(t *testing.T) {
-	h := buildVNet(t)
+	h := vnettest.NewHosts(t)
 	factory := buffer.NewFactoryOfBufferFactory(500, 500).CreateBufferFactory()
 	p := pacer.NewPassThrough(logger.GetLogger(), newNullBWE())
 	t.Cleanup(p.Stop)
 
-	dh := newBoundDownTrack(t, h, factory, vp8CodecParams, p, mediaEngineConfig{video: true})
+	dh := newBoundDownTrack(t, h, factory, vp8CodecParams, p, vnettest.MediaEngineConfig{Video: true})
 
 	// force a valid target/current layer so the video forwarder will forward (test seam
 	// also used by forwarder_test.go's disable()).
@@ -971,7 +811,7 @@ func TestDownTrackSendsProbePackets(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			h := buildVNet(t)
+			h := vnettest.NewHosts(t)
 			factory := buffer.NewFactoryOfBufferFactory(500, 500).CreateBufferFactory()
 
 			b := tc.makeBWE()
@@ -981,9 +821,9 @@ func TestDownTrackSendsProbePackets(t *testing.T) {
 			// header extensions (abs-send-time for remote BWE, transport-cc for send-side)
 			// are needed for the DownTrack to pick up an ext id, which WriteProbePackets
 			// requires.
-			dh := newBoundDownTrack(t, h, factory, vp8CodecParams, cp, mediaEngineConfig{
-				video:            true,
-				headerExtensions: true,
+			dh := newBoundDownTrack(t, h, factory, vp8CodecParams, cp, vnettest.MediaEngineConfig{
+				Video:            true,
+				HeaderExtensions: true,
 			})
 
 			require.NotZero(t, dh.dt.SSRCRTX(), "RTX ssrc should be negotiated")
