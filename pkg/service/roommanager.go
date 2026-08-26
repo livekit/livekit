@@ -188,15 +188,6 @@ func (r *RoomManager) GetRoom(_ context.Context, roomName livekit.RoomName) *rtc
 	return r.rooms[roomName]
 }
 
-// deleteRoom completely deletes all room information, including active sessions, room store, and routing info
-func (r *RoomManager) deleteRoom(ctx context.Context, roomName livekit.RoomName) error {
-	r.lock.Lock()
-	delete(r.rooms, roomName)
-	r.lock.Unlock()
-
-	return r.deleteRoomState(ctx, roomName)
-}
-
 // deleteRoomIfCurrent deletes the room state only when the room currently
 // registered under the name is the given room. It is atomic with the map
 // mutation, so a same-name recreate cannot race between the identity check and
