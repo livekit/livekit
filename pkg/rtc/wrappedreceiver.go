@@ -184,7 +184,7 @@ func (r *WrappedReceiver) AddOnReady(f func()) {
 
 type DummyReceiver struct {
 	receiver         atomic.Value
-	trackID          livekit.TrackID
+	trackInfo        *livekit.TrackInfo
 	streamId         string
 	codec            webrtc.RTPCodecParameters
 	headerExtensions []webrtc.RTPHeaderExtensionParameter
@@ -201,9 +201,14 @@ type DummyReceiver struct {
 	redReceiver, primaryReceiver *DummyRedReceiver
 }
 
-func NewDummyReceiver(trackID livekit.TrackID, streamId string, codec webrtc.RTPCodecParameters, headerExtensions []webrtc.RTPHeaderExtensionParameter) *DummyReceiver {
+func NewDummyReceiver(
+	trackInfo *livekit.TrackInfo,
+	streamId string,
+	codec webrtc.RTPCodecParameters,
+	headerExtensions []webrtc.RTPHeaderExtensionParameter,
+) *DummyReceiver {
 	return &DummyReceiver{
-		trackID:          trackID,
+		trackInfo:        trackInfo,
 		streamId:         streamId,
 		codec:            codec,
 		headerExtensions: headerExtensions,
@@ -262,7 +267,7 @@ func (d *DummyReceiver) Upgrade(receiver sfu.TrackReceiver) {
 }
 
 func (d *DummyReceiver) TrackID() livekit.TrackID {
-	return d.trackID
+	return livekit.TrackID(d.trackInfo.Sid)
 }
 
 func (d *DummyReceiver) StreamID() string {
@@ -391,7 +396,7 @@ func (d *DummyReceiver) TrackInfo() *livekit.TrackInfo {
 	if receiver := d.getReceiver(); receiver != nil {
 		return receiver.TrackInfo()
 	}
-	return nil
+	return d.trackInfo
 }
 
 func (d *DummyReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
