@@ -125,13 +125,19 @@ Metrics, exported on the existing Prometheus listener:
 | `livekit_analytics_sink_write_errors_total` | failed batches (each is retried) |
 | `livekit_analytics_sink_pending_samples` | samples buffered in memory |
 
-Failure behaviour is deliberately asymmetric: a configuration error (bad schema name,
-unreadable DSN file, unparseable DSN) fails startup, while an unreachable database
-does not. Media serving must never go down because the billing database is down, so
-the sink buffers up to `buffer_size` samples, retries with exponential backoff up to
-one minute, and runs the migration on the writer goroutine so a database that was
-down at startup is picked up when it returns. Only when the buffer is full are the
-oldest samples dropped, and every drop is counted.
+Failure behaviour is fail-fast at startup, best-effort once running:
+
+- **At startup**, `NewAnalyticsServiceFromConfig` pings the database and, with
+  `auto_migrate` on, creates the schema synchronously before the server is allowed to
+  finish starting. A bad schema name, unreadable DSN file, unparseable DSN,
+  unreachable database, or failed migration all fail startup the same way an invalid
+  key file does — an operator finds out at deploy time, not by noticing a gap in
+  billing data days later.
+- **Once running**, a later outage does not take the server down: media serving must
+  never go down because the billing database went down. The sink buffers up to
+  `buffer_size` samples in memory and retries with exponential backoff up to one
+  minute. Only when the buffer is full are the oldest samples dropped, and every drop
+  is counted (`livekit_analytics_sink_samples_dropped_total`).
 
 On graceful shutdown the server drains the sink after the room manager stops, so
 buffered samples are written before exit.

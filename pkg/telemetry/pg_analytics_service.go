@@ -28,6 +28,7 @@ package telemetry
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	prom "github.com/prometheus/client_golang/prometheus"
@@ -129,10 +130,11 @@ type pgAnalyticsService struct {
 }
 
 // NewAnalyticsServiceFromConfig returns the Postgres-backed analytics sink when a
-// DSN is configured, and upstream's analytics service otherwise. A configuration
-// error (bad schema name, unreadable DSN file, unparseable DSN) fails startup; an
-// unreachable database does not - the sink buffers and retries so that billing
-// telemetry can never take media serving down with it.
+// DSN is configured, and upstream's analytics service otherwise. Startup fails if
+// the analytics database is unreachable or (with auto_migrate on) its schema cannot
+// be created - an operator finds out immediately rather than silently losing billing
+// data. Once running, a later outage does not take the server down: the sink buffers
+// and retries instead, so billing telemetry can never take media serving with it.
 func NewAnalyticsServiceFromConfig(conf *config.Config, currentNode routing.LocalNode) (AnalyticsService, error) {
 	upstream := NewAnalyticsService(conf, currentNode)
 	if !conf.Analytics.Postgres.IsConfigured() {
@@ -149,6 +151,11 @@ func NewAnalyticsServiceFromConfig(conf *config.Config, currentNode routing.Loca
 		return nil, err
 	}
 
+	if err := verifyStoreReady(pgConf, store); err != nil {
+		store.close()
+		return nil, fmt.Errorf("analytics postgres not ready: %w", err)
+	}
+
 	a := &pgAnalyticsService{
 		AnalyticsService: upstream,
 		conf:             pgConf,
@@ -158,12 +165,39 @@ func NewAnalyticsServiceFromConfig(conf *config.Config, currentNode routing.Loca
 		samples:          make(chan roomByteSample, pgConf.BufferSize),
 		closed:           make(chan struct{}),
 		done:             make(chan struct{}),
+		// verifyStoreReady already migrated the schema; the writer does not need to
+		// repeat it before its first flush.
+		migrated: pgConf.AutoMigrate,
 	}
 
 	a.logger.Infow("recording media byte samples to postgres", store.logFields()...)
 	go a.run()
 
 	return a, nil
+}
+
+// verifyStoreReady pings the database and, when enabled, creates the schema, both
+// with startup-scoped timeouts. Called once, synchronously, before the server is
+// allowed to finish starting - this is the fork's fail-fast boundary. Nothing after
+// construction blocks on the database again.
+func verifyStoreReady(conf config.PostgresAnalyticsConfig, store *pgAnalyticsStore) error {
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), conf.ConnectTimeout)
+	defer pingCancel()
+	if err := store.pool.Ping(pingCtx); err != nil {
+		return fmt.Errorf("could not connect: %w", err)
+	}
+
+	if !conf.AutoMigrate {
+		return nil
+	}
+
+	migrateCtx, migrateCancel := context.WithTimeout(context.Background(), conf.WriteTimeout)
+	defer migrateCancel()
+	if err := store.migrate(migrateCtx); err != nil {
+		return fmt.Errorf("could not create schema: %w", err)
+	}
+
+	return nil
 }
 
 // SendStats fans a stats batch out into one sample per stream and buffers it. It is

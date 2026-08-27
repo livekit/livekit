@@ -73,6 +73,25 @@ func TestNewAnalyticsServiceFromConfigRejectsUnsafeSchema(t *testing.T) {
 	require.ErrorIs(t, err, config.ErrAnalyticsSchemaInvalid)
 }
 
+func TestNewAnalyticsServiceFromConfigFailsFastWhenDatabaseIsUnreachable(t *testing.T) {
+	node, err := routing.NewLocalNode(nil)
+	require.NoError(t, err)
+
+	conf := &config.Config{Analytics: config.AnalyticsConfig{
+		Postgres: config.PostgresAnalyticsConfig{
+			// nothing listens on this port; startup must fail rather than fall back
+			// to buffering, so a misconfigured/unreachable database is caught at
+			// deploy time instead of silently losing billing data at runtime
+			DSN:            "postgres://user:pass@127.0.0.1:1/hideout",
+			ConnectTimeout: 500 * time.Millisecond,
+		},
+	}}
+
+	svc, err := NewAnalyticsServiceFromConfig(conf, node)
+	require.Error(t, err)
+	require.Nil(t, svc)
+}
+
 func TestNewAnalyticsServiceFromConfigRejectsUnparseableDSN(t *testing.T) {
 	node, err := routing.NewLocalNode(nil)
 	require.NoError(t, err)
