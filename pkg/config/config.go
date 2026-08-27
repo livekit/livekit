@@ -439,6 +439,8 @@ func (l LimitConfig) CanAddDataBlob(dataBlobs []*livekit.DataBlob, toAdd *liveki
 type IngressConfig struct {
 	RTMPBaseURL string `yaml:"rtmp_base_url,omitempty"`
 	WHIPBaseURL string `yaml:"whip_base_url,omitempty"`
+	// allow URL pull ingresses with a udp:// source URL
+	EnableUDPURLPull bool `yaml:"enable_udp_url_pull,omitempty"`
 }
 
 type SIPConfig struct{}

@@ -337,6 +337,8 @@ keys:
 #   rtmp_base_url: "rtmp://my.domain.com/live"
 #   # Prefix used to generate WHIP URLs for WHIP ingress.
 #   whip_base_url: "http://my.domain.com/whip"
+#   # Allow URL pull ingress from udp:// source URLs. Disabled by default.
+#   enable_udp_url_pull: false
 
 # Region of the current node. Required if using regionaware node selector
 # region: us-west-2

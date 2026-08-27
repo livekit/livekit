@@ -19,8 +19,6 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/ingress"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -28,8 +26,12 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
+
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/telemetry"
 )
 
+//counterfeiter:generate . IngressLauncher
 type IngressLauncher interface {
 	LaunchPullIngress(ctx context.Context, info *livekit.IngressInfo) (*livekit.IngressInfo, error)
 }
@@ -133,7 +135,13 @@ func (s *IngressService) CreateIngressWithUrl(ctx context.Context, urlStr string
 		if err != nil {
 			return nil, psrpc.NewError(psrpc.InvalidArgument, err)
 		}
-		if urlObj.Scheme != "http" && urlObj.Scheme != "https" && urlObj.Scheme != "srt" {
+		switch urlObj.Scheme {
+		case "http", "https", "srt":
+		case "udp":
+			if !s.conf.EnableUDPURLPull {
+				return nil, ingress.ErrInvalidIngress("udp url pull is not enabled")
+			}
+		default:
 			return nil, ingress.ErrInvalidIngress(fmt.Sprintf("invalid url scheme %s", urlObj.Scheme))
 		}
 		// Marshall the URL again for sanitization
