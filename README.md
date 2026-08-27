@@ -23,6 +23,7 @@ LiveKit's server is written in Go, using the awesome [Pion WebRTC](https://githu
 [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/livekit/livekit/buildtest.yaml?branch=master)](https://github.com/livekit/livekit/actions/workflows/buildtest.yaml)
 [![License](https://img.shields.io/github/license/livekit/livekit)](https://github.com/livekit/livekit/blob/master/LICENSE)
 
+<!--BEGIN_AGENTS_INFO-->
 > [!IMPORTANT]
 > If you're building Voice AI, [LiveKit Agents](https://github.com/livekit/agents) is the SDK for code-first realtime voice agents. STT, LLM, TTS, turn detection, [expressive speech](https://docs.livekit.io/agents/models/tts/expressive/), [keyterm accuracy](https://docs.livekit.io/agents/models/stt/keyterms/), tool usage, and telephony all come bundled in the framework. It's available in both [Python](https://github.com/livekit/agents) and [Node.js](https://github.com/livekit/agents-js).
 >
@@ -53,6 +54,7 @@ LiveKit's server is written in Go, using the awesome [Pion WebRTC](https://githu
 >```
 >
 >Models come from [LiveKit Inference](https://docs.livekit.io/agents/models/) with no per-provider API keys, and LiveKit Cloud handles [deployment](https://docs.livekit.io/deploy/agents/) and [observability](https://docs.livekit.io/deploy/observability/). Visit the docs for more info at [docs.livekit.io/agents](https://docs.livekit.io/agents/).
+<!--END_AGENTS_INFO-->
 
 ## Features
 
