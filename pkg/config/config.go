@@ -115,6 +115,10 @@ type Config struct {
 	EnableParticipantDataBlob bool `yaml:"enable_participant_data_blob,omitempty"`
 
 	API APIConfig `yaml:"api,omitempty"`
+
+	// Analytics configures the self-hosted analytics sink (fork addition, see
+	// pkg/config/analytics.go and pkg/telemetry/pg_analytics_service.go).
+	Analytics AnalyticsConfig `yaml:"analytics,omitempty"`
 }
 
 type RTCConfig struct {
@@ -598,6 +602,7 @@ var DefaultConfig = Config{
 	WebHook:          webhook.DefaultWebHookConfig,
 	NodeStats:        DefaultNodeStatsConfig,
 	API:              DefaultAPIConfig(),
+	Analytics:        DefaultAnalyticsConfig,
 	EnableDataTracks: true,
 }
 

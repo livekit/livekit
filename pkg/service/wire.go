@@ -59,7 +59,9 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		getAPIConf,
 		wire.Bind(new(routing.MessageRouter), new(routing.Router)),
 		wire.Bind(new(livekit.RoomService), new(*RoomService)),
-		telemetry.NewAnalyticsService,
+		// fork: swaps upstream's LiveKit Cloud analytics sink for the self-hosted
+		// Postgres one when analytics.postgres.dsn is configured
+		telemetry.NewAnalyticsServiceFromConfig,
 		createTelemetryService,
 		getMessageBus,
 		NewIOInfoService,

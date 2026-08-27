@@ -42,8 +42,13 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/livekit-server/version"
 )
+
+// analyticsDrainTimeout bounds how long a graceful shutdown waits for buffered
+// analytics samples to reach the database (fork addition).
+const analyticsDrainTimeout = 10 * time.Second
 
 type LivekitServer struct {
 	config       *config.Config
@@ -59,6 +64,7 @@ type LivekitServer struct {
 	signalServer *SignalServer
 	turnServer   *turn.Server
 	currentNode  routing.LocalNode
+	analytics    telemetry.AnalyticsService
 	running      atomic.Bool
 	doneChan     chan struct{}
 	closedChan   chan struct{}
@@ -80,6 +86,7 @@ func NewLivekitServer(conf *config.Config,
 	signalServer *SignalServer,
 	turnServer *turn.Server,
 	currentNode routing.LocalNode,
+	analytics telemetry.AnalyticsService,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
 		config:       conf,
@@ -93,6 +100,7 @@ func NewLivekitServer(conf *config.Config,
 		// turn server starts automatically
 		turnServer:  turnServer,
 		currentNode: currentNode,
+		analytics:   analytics,
 		closedChan:  make(chan struct{}),
 	}
 
@@ -350,6 +358,14 @@ func (s *LivekitServer) Start() error {
 	s.roomManager.Stop()
 	s.signalServer.Stop()
 	s.ioService.Stop()
+
+	// fork: analytics sinks buffer billable byte counts in memory, so give them a
+	// chance to persist what is left once nothing else can produce stats
+	if drainable, ok := s.analytics.(telemetry.DrainableAnalyticsService); ok {
+		drainCtx, drainCancel := context.WithTimeout(context.Background(), analyticsDrainTimeout)
+		drainable.Drain(drainCtx)
+		drainCancel()
+	}
 
 	close(s.closedChan)
 	return nil

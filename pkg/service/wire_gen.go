@@ -78,7 +78,10 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	analyticsService := telemetry.NewAnalyticsService(conf, currentNode)
+	analyticsService, err := telemetry.NewAnalyticsServiceFromConfig(conf, currentNode)
+	if err != nil {
+		return nil, err
+	}
 	telemetryService := createTelemetryService(queuedNotifier, analyticsService)
 	ioInfoService, err := NewIOInfoService(messageBus, egressStore, ingressStore, sipStore, telemetryService)
 	if err != nil {
@@ -151,7 +154,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, serviceWHIPService, agentService, keyProvider, router, roomManager, signalServer, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, serviceWHIPService, agentService, keyProvider, router, roomManager, signalServer, server, currentNode, analyticsService)
 	if err != nil {
 		return nil, err
 	}

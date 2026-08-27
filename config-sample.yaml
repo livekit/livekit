@@ -390,3 +390,33 @@ keys:
 #   # routes). requests larger than this are rejected before their body is decoded, so large messages
 #   # cannot exhaust memory. defaults to 10 MiB, 0 for no limit
 #   max_api_request_body_size: 10485760
+
+# # self-hosted analytics sink (fork addition)
+# # records the SFU's per-room, per-participant, per-track byte counters to Postgres so
+# # that network usage can be invoiced from server-side ground truth. without a dsn the
+# # counters are discarded, exactly as in upstream livekit-server.
+# # the sink shares the application database and is isolated by schema; it only ever
+# # creates and writes <schema>.room_byte_samples.
+# analytics:
+#   postgres:
+#     # connection string. prefer dsn_file or the LIVEKIT_ANALYTICS_POSTGRES_DSN env var
+#     # over committing credentials to this file
+#     dsn: postgres://livekit:secret@postgres:5432/hideout
+#     # read the dsn from a file instead. the file must not be readable by others
+#     dsn_file: /etc/livekit/analytics.dsn
+#     # schema the sink owns, created on startup. defaults to livekit_analytics
+#     schema: livekit_analytics
+#     # create the schema, table and indexes when missing. defaults to true
+#     auto_migrate: true
+#     # how long a sample may sit in memory before it is written. defaults to 5s
+#     flush_interval: 5s
+#     # rows per COPY. defaults to 1000
+#     batch_size: 1000
+#     # samples buffered in memory while postgres is unreachable, after which the oldest
+#     # are dropped (and counted by livekit_analytics_sink_samples_dropped_total).
+#     # defaults to 50000
+#     buffer_size: 50000
+#     # connection pool size. defaults to 4
+#     max_conns: 4
+#     connect_timeout: 10s
+#     write_timeout: 30s
