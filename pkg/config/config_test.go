@@ -23,6 +23,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/livekit/livekit-server/pkg/config/configtest"
+	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 )
 
 func TestConfig_UnmarshalKeys(t *testing.T) {
@@ -159,6 +160,40 @@ func TestNewConfigNormalizesTURNTTL(t *testing.T) {
 	conf, err := NewConfig(content, true, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, DefaultTURNTTLSeconds, conf.TURN.TTLSeconds)
+}
+
+func TestNewConfigValidatesSendSideBWEPacer(t *testing.T) {
+	cases := []struct {
+		name    string
+		pacer   string
+		wantErr bool
+	}{
+		{name: "unset keeps the default", pacer: "", wantErr: false},
+		{name: "pass-through", pacer: string(pacer.PacerBehaviorPassThrough), wantErr: false},
+		{name: "no-queue", pacer: string(pacer.PacerBehaviorNoQueue), wantErr: false},
+		{name: "leaky-bucket", pacer: string(pacer.PacerBehaviorLeakybucket), wantErr: false},
+		{name: "typo is rejected", pacer: "leakybucket", wantErr: true},
+		{name: "unknown value is rejected", pacer: "not-a-pacer", wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			content := "rtc:\n  congestion_control:\n    send_side_bwe_pacer: " + tc.pacer
+			conf, err := NewConfig(content, true, nil, nil)
+			if tc.wantErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.pacer)
+				return
+			}
+
+			require.NoError(t, err)
+			if tc.pacer == "" {
+				require.Equal(t, string(pacer.PacerBehaviorNoQueue), conf.RTC.CongestionControl.SendSideBWEPacer)
+				return
+			}
+			require.Equal(t, tc.pacer, conf.RTC.CongestionControl.SendSideBWEPacer)
+		})
+	}
 }
 
 func writeSecretFile(t *testing.T, content string) string {
