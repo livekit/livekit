@@ -113,7 +113,10 @@ func TestSubscribe(t *testing.T) {
 		require.Eventually(t, func() bool {
 			return numParticipantSubscribed.Load() == 2
 		}, subSettleTimeout, subCheckInterval, "participant subscribe status was not updated twice")
-		require.Equal(t, int32(1), numParticipantUnsubscribed.Load())
+		// the unsubscribed callback is delivered on a goroutine of its own
+		require.Eventually(t, func() bool {
+			return numParticipantUnsubscribed.Load() == 1
+		}, subSettleTimeout, subCheckInterval, "participant unsubscribe status was not updated")
 	})
 
 	t.Run("no track permission", func(t *testing.T) {
@@ -248,7 +251,10 @@ func TestUnsubscribe(t *testing.T) {
 
 	// no traces should be left
 	require.Len(t, sm.GetSubscribedTracks(), 0)
-	require.False(t, res.TrackChangedNotifier.HasObservers())
+	// the observer is dropped on a goroutine of its own
+	require.Eventually(t, func() bool {
+		return !res.TrackChangedNotifier.HasObservers()
+	}, subSettleTimeout, subCheckInterval, "observer was not removed")
 
 	tl := sm.params.Participant.GetTelemetryListener().(*typesfakes.FakeParticipantTelemetryListener)
 	require.Equal(t, 1, tl.OnTrackUnsubscribedCallCount())
