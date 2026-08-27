@@ -344,7 +344,7 @@ func (t *MediaTrackReceiver) SetPotentialCodecs(codecs []webrtc.RTPCodecParamete
 		}
 		if !exist {
 			receivers = append(receivers, &simulcastReceiver{
-				TrackReceiver: NewDummyReceiver(t.ID(), string(t.PublisherID()), c, headers),
+				TrackReceiver: NewDummyReceiver(t.TrackInfo(), string(t.PublisherID()), c, headers),
 				priority:      i,
 			})
 		}
