@@ -154,6 +154,7 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 		),
 		RTCPWriter:                     params.Subscriber.WriteSubscriberRTCP,
 		DisableSenderReportPassThrough: params.Subscriber.GetDisableSenderReportPassThrough(),
+		ForwardAbsCaptureTimeVerbatim:  params.Subscriber.GetForwardAbsCaptureTimeVerbatim(),
 		SupportsCodecChange:            params.Subscriber.SupportsCodecChange(),
 		EnableStartAtDesiredQuality:    params.EnableStartAtDesiredQuality,
 		Listener:                       s,

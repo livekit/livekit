@@ -371,6 +371,16 @@ type FakeLocalParticipant struct {
 	getEnabledPublishCodecsReturnsOnCall map[int]struct {
 		result1 []*livekit.Codec
 	}
+	GetForwardAbsCaptureTimeVerbatimStub        func() bool
+	getForwardAbsCaptureTimeVerbatimMutex       sync.RWMutex
+	getForwardAbsCaptureTimeVerbatimArgsForCall []struct {
+	}
+	getForwardAbsCaptureTimeVerbatimReturns struct {
+		result1 bool
+	}
+	getForwardAbsCaptureTimeVerbatimReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	GetICEConfigStub        func() *livekit.ICEConfig
 	getICEConfigMutex       sync.RWMutex
 	getICEConfigArgsForCall []struct {
@@ -3401,6 +3411,59 @@ func (fake *FakeLocalParticipant) GetEnabledPublishCodecsReturnsOnCall(i int, re
 	}
 	fake.getEnabledPublishCodecsReturnsOnCall[i] = struct {
 		result1 []*livekit.Codec
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetForwardAbsCaptureTimeVerbatim() bool {
+	fake.getForwardAbsCaptureTimeVerbatimMutex.Lock()
+	ret, specificReturn := fake.getForwardAbsCaptureTimeVerbatimReturnsOnCall[len(fake.getForwardAbsCaptureTimeVerbatimArgsForCall)]
+	fake.getForwardAbsCaptureTimeVerbatimArgsForCall = append(fake.getForwardAbsCaptureTimeVerbatimArgsForCall, struct {
+	}{})
+	stub := fake.GetForwardAbsCaptureTimeVerbatimStub
+	fakeReturns := fake.getForwardAbsCaptureTimeVerbatimReturns
+	fake.recordInvocation("GetForwardAbsCaptureTimeVerbatim", []interface{}{})
+	fake.getForwardAbsCaptureTimeVerbatimMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetForwardAbsCaptureTimeVerbatimCallCount() int {
+	fake.getForwardAbsCaptureTimeVerbatimMutex.RLock()
+	defer fake.getForwardAbsCaptureTimeVerbatimMutex.RUnlock()
+	return len(fake.getForwardAbsCaptureTimeVerbatimArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetForwardAbsCaptureTimeVerbatimCalls(stub func() bool) {
+	fake.getForwardAbsCaptureTimeVerbatimMutex.Lock()
+	defer fake.getForwardAbsCaptureTimeVerbatimMutex.Unlock()
+	fake.GetForwardAbsCaptureTimeVerbatimStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetForwardAbsCaptureTimeVerbatimReturns(result1 bool) {
+	fake.getForwardAbsCaptureTimeVerbatimMutex.Lock()
+	defer fake.getForwardAbsCaptureTimeVerbatimMutex.Unlock()
+	fake.GetForwardAbsCaptureTimeVerbatimStub = nil
+	fake.getForwardAbsCaptureTimeVerbatimReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetForwardAbsCaptureTimeVerbatimReturnsOnCall(i int, result1 bool) {
+	fake.getForwardAbsCaptureTimeVerbatimMutex.Lock()
+	defer fake.getForwardAbsCaptureTimeVerbatimMutex.Unlock()
+	fake.GetForwardAbsCaptureTimeVerbatimStub = nil
+	if fake.getForwardAbsCaptureTimeVerbatimReturnsOnCall == nil {
+		fake.getForwardAbsCaptureTimeVerbatimReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.getForwardAbsCaptureTimeVerbatimReturnsOnCall[i] = struct {
+		result1 bool
 	}{result1}
 }
 

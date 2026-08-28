@@ -541,6 +541,7 @@ func (r *RoomManager) StartSession(
 		EnableDataTracks:                  r.config.EnableDataTracks,
 		EnableParticipantDataBlob:         r.config.EnableParticipantDataBlob,
 		EnableRTPStreamRestartDetection:   r.config.RTC.EnableRTPStreamRestartDetection,
+		ForwardAbsCaptureTimeVerbatim:     r.config.RTC.ForwardAbsCaptureTimeVerbatim,
 	})
 	if err != nil {
 		prometheus.IncrementParticipantRtcCanceled(1)

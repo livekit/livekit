@@ -160,6 +160,11 @@ type RTCConfig struct {
 
 	// enable rtp stream restart detection for published tracks
 	EnableRTPStreamRestartDetection bool `yaml:"enable_rtp_stream_restart_detection,omitempty"`
+
+	// Forward abs-capture-time to subscribers verbatim, skipping the default sender-report
+	// gate and SFU-clock rewrite (used for cross-stream A/V sync). Enable when a subscriber
+	// needs the original publisher capture timestamp, e.g. for end-to-end latency measurement.
+	ForwardAbsCaptureTimeVerbatim bool `yaml:"forward_abs_capture_time_verbatim,omitempty"`
 }
 
 type TURNServer struct {
