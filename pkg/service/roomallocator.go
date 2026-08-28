@@ -138,8 +138,19 @@ func (r *StandardRoomAllocator) SelectRoomNode(ctx context.Context, roomName liv
 		return err
 	}
 
-	// if already assigned and still available, keep it on that node
-	if err == nil && selector.IsAvailable(existing) {
+	// if already assigned and still available, keep it on that node.
+	//
+	// a node that has begun draining is not available, however fresh it looks:
+	// it keeps registering itself for as long as it drains, and everything left
+	// on it goes when it does. the room moves, and the participants still on the
+	// draining node follow it there as they reconnect.
+	//
+	// until they have, both nodes host a room of that name, and a room's records
+	// and its rpc topics are keyed by the name alone. so for that window the
+	// store holds whichever node wrote last, and a room rpc reaches whichever
+	// node answers first. moving the room when the drain begins, rather than
+	// leaving it to be found here, is what would close the window.
+	if err == nil && selector.CanHostRoom(existing) {
 		// if node hosting the room is full, deny entry
 		if selector.LimitsReached(r.config.Limit, existing.Stats) {
 			return routing.ErrNodeLimitReached

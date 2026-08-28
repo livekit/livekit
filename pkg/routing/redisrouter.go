@@ -113,11 +113,29 @@ func (r *RedisRouter) SetNodeForRoom(_ context.Context, roomName livekit.RoomNam
 	return r.rc.HSet(r.ctx, NodeRoomKey, string(roomName), string(nodeID)).Err()
 }
 
-func (r *RedisRouter) ClearRoomState(_ context.Context, roomName livekit.RoomName) error {
-	if err := r.rc.HDel(context.Background(), NodeRoomKey, string(roomName)).Err(); err != nil {
-		return errors.Wrap(err, "could not clear room state")
+var clearRoomStateScript = redis.NewScript(`if redis.call("hget", KEYS[1], ARGV[1]) == ARGV[2] then
+												return redis.call("hdel", KEYS[1], ARGV[1])
+											 else return 0
+											 end`)
+
+// ClearRoomState clears a room's routing, but only while it still names this
+// node: a room can be routed to another node before the node it was on is done
+// with it, and clearing it then would unroute a room that is being hosted.
+func (r *RedisRouter) ClearRoomState(_ context.Context, roomName livekit.RoomName) (bool, error) {
+	// could be called after Stop(), so we'd want to use an unrelated context
+	res, err := clearRoomStateScript.Run(
+		context.Background(),
+		r.rc,
+		[]string{NodeRoomKey},
+		string(roomName),
+		string(r.currentNode.NodeID()),
+	).Result()
+	if err != nil {
+		return false, errors.Wrap(err, "could not clear room state")
 	}
-	return nil
+
+	cleared, _ := res.(int64)
+	return cleared == 1, nil
 }
 
 func (r *RedisRouter) GetNode(nodeID livekit.NodeID) (*livekit.Node, error) {

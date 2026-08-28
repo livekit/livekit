@@ -134,7 +134,9 @@ type Router interface {
 
 	GetNodeForRoom(ctx context.Context, roomName livekit.RoomName) (*livekit.Node, error)
 	SetNodeForRoom(ctx context.Context, roomName livekit.RoomName, nodeId livekit.NodeID) error
-	ClearRoomState(ctx context.Context, roomName livekit.RoomName) error
+	// clears a room's routing, and reports whether it was this node's to clear:
+	// a room can be routed to another node before this one is done with it
+	ClearRoomState(ctx context.Context, roomName livekit.RoomName) (bool, error)
 
 	GetRegion() string
 

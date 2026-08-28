@@ -44,3 +44,35 @@ func TestIsAvailable(t *testing.T) {
 		require.False(t, selector.IsAvailable(n))
 	})
 }
+
+// A node on its way out keeps registering itself for as long as it drains, so
+// its stats stay as fresh as a serving node's. Freshness alone cannot tell the
+// two apart, and only one of them can be given a room.
+func TestCanHostRoom(t *testing.T) {
+	fresh := func(state livekit.NodeState) *livekit.Node {
+		return &livekit.Node{
+			State: state,
+			Stats: &livekit.NodeStats{
+				UpdatedAt: time.Now().Unix(),
+			},
+		}
+	}
+
+	t.Run("serving", func(t *testing.T) {
+		require.True(t, selector.CanHostRoom(fresh(livekit.NodeState_SERVING)))
+	})
+
+	t.Run("draining", func(t *testing.T) {
+		require.False(t, selector.CanHostRoom(fresh(livekit.NodeState_SHUTTING_DOWN)))
+	})
+
+	t.Run("not yet serving", func(t *testing.T) {
+		require.False(t, selector.CanHostRoom(fresh(livekit.NodeState_STARTING_UP)))
+	})
+
+	t.Run("stale", func(t *testing.T) {
+		n := fresh(livekit.NodeState_SERVING)
+		n.Stats.UpdatedAt = time.Now().Unix() - 20
+		require.False(t, selector.CanHostRoom(n))
+	})
+}
