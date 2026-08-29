@@ -161,6 +161,7 @@ func (d *Decoder) insertPacket(receivedPkt *rtp.Packet) {
 			}
 		}
 		if toRemove > 0 {
+			clear(d.receivedFECPackets[:toRemove])
 			d.receivedFECPackets = d.receivedFECPackets[toRemove:]
 		}
 	}
@@ -270,6 +271,13 @@ func (d *Decoder) insertFECPacket(fecPkt *rtp.Packet) {
 		})
 		protectedSeqIt++
 	}
+
+	// No recovery is needed when all protected media packets are already
+	// available. Do not retain the FEC packet and its cloned payload.
+	if countMissingPackets(protectedPackets) == 0 {
+		return
+	}
+
 	d.receivedFECPackets = append(d.receivedFECPackets, fecPacketState{
 		packet:           fecPkt,
 		flexFec:          fec,
@@ -281,7 +289,7 @@ func (d *Decoder) insertFECPacket(fecPkt *rtp.Packet) {
 	})
 
 	if len(d.receivedFECPackets) > maxFECPackets {
-		d.receivedFECPackets = d.receivedFECPackets[1:]
+		d.removeFECPacketAt(0)
 	}
 }
 
@@ -289,28 +297,27 @@ func (d *Decoder) attemptRecovery() []*rtp.Packet {
 	var recoveredPackets []*rtp.Packet
 	for {
 		packetsRecovered := 0
-		for i := range d.receivedFECPackets {
+		for i := 0; i < len(d.receivedFECPackets); {
 			fecPkt := &d.receivedFECPackets[i]
-			packetsMissing := 0
-			for _, pkt := range fecPkt.protectedPackets {
-				if pkt.packet == nil {
-					packetsMissing++
-					if packetsMissing > 1 {
-						break
-					}
-				}
+			packetsMissing := countMissingPackets(fecPkt.protectedPackets)
+			if packetsMissing == 0 {
+				d.removeFECPacketAt(i)
+				continue
 			}
 
 			if packetsMissing != 1 {
+				i++
 				continue
 			}
 
 			recovered, err := d.recoverPacket(fecPkt)
 			if err != nil {
 				d.logger.Debugw("flexfec: failed to recover packet", "error", err)
+				i++
 				continue
 			}
 
+			d.removeFECPacketAt(i)
 			recoveredPackets = append(recoveredPackets, recovered)
 			d.recoveredPackets = append(d.recoveredPackets, recovered)
 			sort.Slice(d.recoveredPackets, func(i, j int) bool {
@@ -328,6 +335,27 @@ func (d *Decoder) attemptRecovery() []*rtp.Packet {
 	}
 
 	return recoveredPackets
+}
+
+func countMissingPackets(protectedPackets []*protectedPacket) int {
+	missing := 0
+	for _, pkt := range protectedPackets {
+		if pkt.packet == nil {
+			missing++
+			if missing > 1 {
+				break
+			}
+		}
+	}
+
+	return missing
+}
+
+func (d *Decoder) removeFECPacketAt(index int) {
+	last := len(d.receivedFECPackets) - 1
+	copy(d.receivedFECPackets[index:], d.receivedFECPackets[index+1:])
+	d.receivedFECPackets[last] = fecPacketState{}
+	d.receivedFECPackets = d.receivedFECPackets[:last]
 }
 
 func (d *Decoder) recoverPacket(fec *fecPacketState) (*rtp.Packet, error) {
@@ -391,7 +419,9 @@ func (d *Decoder) recoverPacket(fec *fecPacketState) (*rtp.Packet, error) {
 
 func (d *Decoder) discardOldRecoveredPackets() {
 	if len(d.recoveredPackets) > recoveredPacketsLimit {
-		d.recoveredPackets = d.recoveredPackets[len(d.recoveredPackets)-recoveredPacketsLimit:]
+		toRemove := len(d.recoveredPackets) - recoveredPacketsLimit
+		clear(d.recoveredPackets[:toRemove])
+		d.recoveredPackets = d.recoveredPackets[toRemove:]
 	}
 }
 

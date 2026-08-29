@@ -96,6 +96,7 @@ func TestDecoderRecoversSingleLoss(t *testing.T) {
 
 	require.Len(t, recovered, 1)
 	requirePacketEqual(t, &media[2], recovered[0])
+	assert.Empty(t, decoder.receivedFECPackets)
 
 	stats := decoder.Stats()
 	assert.Equal(t, uint64(len(fec)), stats.FECPacketsReceived)
@@ -121,11 +122,13 @@ func TestDecoderRecoversWithLateMedia(t *testing.T) {
 	}
 	// two packets missing from the protected window, nothing recoverable yet
 	require.Empty(t, recovered)
+	require.Len(t, decoder.receivedFECPackets, 1)
 
 	// late arrival of media[1] leaves only media[2] missing
 	recovered = decoder.DecodeFec(&media[1])
 	require.Len(t, recovered, 1)
 	requirePacketEqual(t, &media[2], recovered[0])
+	assert.Empty(t, decoder.receivedFECPackets)
 }
 
 func TestDecoderRecoversMultipleWindows(t *testing.T) {
@@ -248,7 +251,7 @@ func TestDecoderDiscardsDuplicateFEC(t *testing.T) {
 	fec := encodeFEC(t, media, 1)
 
 	decoder := NewDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
-	for i := range media {
+	for _, i := range []int{0, 3, 4} {
 		decoder.DecodeFec(&media[i])
 	}
 	require.Empty(t, decoder.DecodeFec(&fec[0]))
@@ -257,6 +260,19 @@ func TestDecoderDiscardsDuplicateFEC(t *testing.T) {
 	stats := decoder.Stats()
 	assert.Equal(t, uint64(2), stats.FECPacketsReceived)
 	assert.Equal(t, uint64(1), stats.FECPacketsDiscarded)
+}
+
+func TestDecoderDoesNotRetainCompleteFECState(t *testing.T) {
+	media := makeMediaPackets(t, 450, 5)
+	fec := encodeFEC(t, media, 1)
+
+	decoder := NewDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
+	for i := range media {
+		require.Empty(t, decoder.DecodeFec(&media[i]))
+	}
+
+	require.Empty(t, decoder.DecodeFec(&fec[0]))
+	assert.Empty(t, decoder.receivedFECPackets)
 }
 
 func TestDecoderInputMemoryReuse(t *testing.T) {
