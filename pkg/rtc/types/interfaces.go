@@ -294,6 +294,7 @@ func (s SignallingCloseReason) String() string {
 }
 
 // ---------------------------------------------
+
 const (
 	ParticipantCloseKeyNormal = "normal"
 	ParticipantCloseKeyWHIP   = "whip"
