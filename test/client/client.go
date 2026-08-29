@@ -65,6 +65,7 @@ type RTCClient struct {
 	subscriber              *rtc.PCTransport
 	enabledCodecs           []*livekit.Codec
 	forceRelay              bool
+	enableFlexFEC           bool
 	transportReady          chan struct{}
 	// sid => track
 	localTracks        map[string]webrtc.TrackLocal
@@ -141,6 +142,7 @@ type Options struct {
 	UseJoinRequestQueryParam  bool
 	RTCServicePath            string
 	ForceRelay                bool
+	EnableFlexFEC             bool
 }
 
 func NewWebSocketConn(host, token string, opts *Options) (*websocket.Conn, error) {
@@ -276,6 +278,7 @@ func NewRTCClient(conn *websocket.Conn, useSinglePeerConnection bool, opts *Opti
 		c.signalRequestInterceptor = opts.SignalRequestInterceptor
 		c.signalResponseInterceptor = opts.SignalResponseInterceptor
 		c.forceRelay = opts.ForceRelay
+		c.enableFlexFEC = opts.EnableFlexFEC
 	}
 
 	return c, nil
@@ -293,6 +296,15 @@ func (c *RTCClient) createTransport(rtcconf webrtc.Configuration) error {
 	conf.SettingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleClient)
 	ff := buffer.NewFactoryOfBufferFactory(500, 200)
 	conf.SetBufferFactory(ff.CreateBufferFactory())
+
+	if c.enableFlexFEC {
+		fecConfig := rtc.FlexFECDirectionConfig{
+			Enabled:     true,
+			PayloadType: 115,
+		}
+		conf.Publisher.FlexFEC = fecConfig
+		conf.Subscriber.FlexFEC = fecConfig
+	}
 
 	//
 	// The signal targets are from point of view of server.
