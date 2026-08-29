@@ -57,18 +57,20 @@ func (t *telemetryService) RoomStarted(ctx context.Context, room *livekit.Room) 
 	})
 }
 
-func (t *telemetryService) RoomEnded(ctx context.Context, room *livekit.Room) {
+func (t *telemetryService) RoomEnded(ctx context.Context, room *livekit.Room, reason livekit.RoomEndReason) {
 	t.enqueue(func() {
 		t.NotifyEvent(ctx, &livekit.WebhookEvent{
-			Event: webhook.EventRoomFinished,
-			Room:  room,
+			Event:         webhook.EventRoomFinished,
+			Room:          room,
+			RoomEndReason: reason,
 		})
 
 		t.SendEvent(ctx, &livekit.AnalyticsEvent{
-			Type:      livekit.AnalyticsEventType_ROOM_ENDED,
-			Timestamp: timestamppb.Now(),
-			RoomId:    room.Sid,
-			Room:      room,
+			Type:          livekit.AnalyticsEventType_ROOM_ENDED,
+			Timestamp:     timestamppb.Now(),
+			RoomId:        room.Sid,
+			Room:          room,
+			RoomEndReason: reason,
 		})
 	})
 }

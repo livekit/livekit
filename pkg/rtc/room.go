@@ -139,7 +139,7 @@ type Room struct {
 
 	onParticipantChanged func(p types.Participant)
 	onRoomUpdated        func()
-	onClose              func()
+	onClose              func(types.RoomCloseReason)
 
 	simulationLock                                 sync.Mutex
 	disconnectSignalOnResumeParticipants           map[livekit.ParticipantIdentity]time.Time
@@ -802,12 +802,12 @@ func (r *Room) CloseIfEmpty() {
 	r.lock.Unlock()
 
 	if elapsed >= int64(timeout) {
-		r.Close(types.ParticipantCloseReasonRoomClosed)
+		r.Close(types.RoomCloseReasonIdleTimeout)
 		r.logger.Infow("closing idle room", "reason", reason)
 	}
 }
 
-func (r *Room) Close(reason types.ParticipantCloseReason) {
+func (r *Room) Close(reason types.RoomCloseReason) {
 	r.lock.Lock()
 	select {
 	case <-r.closed:
@@ -819,19 +819,20 @@ func (r *Room) Close(reason types.ParticipantCloseReason) {
 	close(r.closed)
 	r.lock.Unlock()
 
-	r.logger.Infow("closing room")
+	r.logger.Infow("closing room", "reason", reason)
+	participantCloseReason := reason.ToParticipantCloseReason()
 	for _, p := range r.GetParticipants() {
-		_ = p.Close(true, reason, false)
+		_ = p.Close(true, participantCloseReason, false)
 	}
 
 	r.protoProxy.Stop()
 
 	if r.onClose != nil {
-		r.onClose()
+		r.onClose(reason)
 	}
 }
 
-func (r *Room) OnClose(f func()) {
+func (r *Room) OnClose(f func(types.RoomCloseReason)) {
 	r.onClose = f
 }
 
