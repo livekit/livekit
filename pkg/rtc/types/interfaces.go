@@ -227,6 +227,72 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 	}
 }
 
+// ---------------------------------------------
+
+type RoomCloseReason int
+
+const (
+	RoomCloseReasonUnknown RoomCloseReason = iota
+	RoomCloseReasonAPIDelete
+	RoomCloseReasonIdleTimeout
+	RoomCloseReasonServerShutdown
+	RoomCloseReasonSuperseded
+	RoomCloseReasonOpenFailed
+)
+
+func (r RoomCloseReason) String() string {
+	switch r {
+	case RoomCloseReasonUnknown:
+		return "UNKNOWN"
+	case RoomCloseReasonAPIDelete:
+		return "API_DELETE"
+	case RoomCloseReasonIdleTimeout:
+		return "IDLE_TIMEOUT"
+	case RoomCloseReasonServerShutdown:
+		return "SERVER_SHUTDOWN"
+	case RoomCloseReasonSuperseded:
+		return "SUPERSEDED"
+	case RoomCloseReasonOpenFailed:
+		return "OPEN_FAILED"
+	default:
+		return fmt.Sprintf("%d", int(r))
+	}
+}
+
+func (r RoomCloseReason) ToProto() livekit.RoomEndReason {
+	switch r {
+	case RoomCloseReasonAPIDelete:
+		return livekit.RoomEndReason_ROOM_END_API_DELETE
+	case RoomCloseReasonIdleTimeout:
+		return livekit.RoomEndReason_ROOM_END_IDLE_TIMEOUT
+	case RoomCloseReasonServerShutdown:
+		return livekit.RoomEndReason_ROOM_END_SERVER_SHUTDOWN
+	case RoomCloseReasonSuperseded:
+		return livekit.RoomEndReason_ROOM_END_SUPERSEDED
+	case RoomCloseReasonOpenFailed:
+		return livekit.RoomEndReason_ROOM_END_OPEN_FAILED
+	default:
+		return livekit.RoomEndReason_ROOM_END_UNKNOWN
+	}
+}
+
+// ToParticipantCloseReason gives the reason participants are closed with when the
+// room closes for this reason, so the two can never disagree.
+func (r RoomCloseReason) ToParticipantCloseReason() ParticipantCloseReason {
+	switch r {
+	case RoomCloseReasonAPIDelete:
+		return ParticipantCloseReasonServiceRequestDeleteRoom
+	case RoomCloseReasonIdleTimeout, RoomCloseReasonSuperseded:
+		return ParticipantCloseReasonRoomClosed
+	case RoomCloseReasonServerShutdown:
+		return ParticipantCloseReasonRoomManagerStop
+	default:
+		return ParticipantCloseReasonNone
+	}
+}
+
+// ---------------------------------------------
+
 // IsIntentionalDisconnect reports whether a disconnect reason represents an
 // intentional/expected closure (client leaving, admin action, room teardown,
 // migration, etc.) as opposed to a connection failure.
