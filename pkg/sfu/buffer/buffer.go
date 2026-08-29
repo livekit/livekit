@@ -468,7 +468,7 @@ func (b *Buffer) writeFEC(fecPkt *rtp.Packet, arrivalTime int64) {
 	// publisher send side BWE sees the FEC packets acked. The repair stream
 	// shares the media m-line, extension ids match the primary stream.
 	if b.twcc != nil && b.twccExtID != 0 {
-		if ext := fecPkt.GetExtension(b.twccExtID); ext != nil {
+		if ext := fecPkt.GetExtension(b.twccExtID); len(ext) >= 2 {
 			b.twcc.Push(fecPkt.SSRC, binary.BigEndian.Uint16(ext[0:2]), arrivalTime, fecPkt.Marker)
 		}
 	}

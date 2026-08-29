@@ -24,6 +24,8 @@ import (
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/mediatransportutil/pkg/twcc"
 )
 
 const (
@@ -287,6 +289,32 @@ func TestBufferFECIgnoresUnexpectedPayloadType(t *testing.T) {
 	stats := primary.FECDecoderStats()
 	assert.EqualValues(t, 0, stats.FECPacketsReceived)
 	assert.EqualValues(t, 0, stats.PacketsRecovered)
+}
+
+func TestBufferFECIgnoresShortTWCCExtension(t *testing.T) {
+	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+
+	primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
+	fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
+	factory.SetFECPair(fecTestFECSSRC, fecTestMediaSSRC)
+	bindFECTestBuffer(t, primary)
+
+	const twccExtID = 3
+	primary.SetTWCCAndExtID(twcc.NewTransportWideCCResponder(), twccExtID)
+
+	fecPacket := rtp.Packet{
+		Header: rtp.Header{
+			Version:        2,
+			PayloadType:    fecTestFECPT,
+			SequenceNumber: 1,
+			SSRC:           fecTestFECSSRC,
+		},
+		Payload: []byte{0},
+	}
+	require.NoError(t, fecPacket.SetExtension(twccExtID, []byte{1}))
+
+	writePacket(t, fecBuff, &fecPacket)
+	assert.EqualValues(t, 1, primary.FECDecoderStats().FECPacketsDiscarded)
 }
 
 func TestBufferFECNACKSuppression(t *testing.T) {
