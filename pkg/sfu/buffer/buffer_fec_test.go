@@ -212,9 +212,8 @@ func TestBufferFECRecoveryCallbackCanReenterBuffer(t *testing.T) {
 
 func TestBufferFECPairAfterPackets(t *testing.T) {
 	// FEC packets arriving before the ssrc-group is known are queued as
-	// pending and replayed when the pair is established. Media seen before
-	// the pairing is not in the decoder window (cold start), so the first
-	// window is not recoverable, subsequent windows are.
+	// pending and replayed when the pair is established. Protected media is
+	// recovered from the primary packet bucket even when pairing is late.
 	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
 
 	primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
@@ -225,8 +224,9 @@ func TestBufferFECPairAfterPackets(t *testing.T) {
 	fecPackets := encoder.EncodeFec(media, 2)
 	require.NotEmpty(t, fecPackets)
 
+	const firstDroppedIdx = 5
 	for i := range media {
-		if i == 5 {
+		if i == firstDroppedIdx {
 			continue
 		}
 		writePacket(t, primary, &media[i])
@@ -243,11 +243,10 @@ func TestBufferFECPairAfterPackets(t *testing.T) {
 
 	factory.SetFECPair(fecTestFECSSRC, fecTestMediaSSRC)
 
-	// pending FEC was replayed into the decoder, no recovery possible for the
-	// cold-start window
+	// Pending FEC is replayed and can use media already in the primary bucket.
 	stats = primary.FECDecoderStats()
 	assert.EqualValues(t, len(fecPackets), stats.FECPacketsReceived)
-	assert.EqualValues(t, 0, stats.PacketsRecovered)
+	assert.EqualValues(t, 1, stats.PacketsRecovered)
 
 	// the next window recovers normally
 	media2 := fecTestMediaPackets(t, 210, 10)
@@ -266,9 +265,10 @@ func TestBufferFECPairAfterPackets(t *testing.T) {
 	}
 
 	stats = primary.FECDecoderStats()
-	assert.EqualValues(t, 1, stats.PacketsRecovered)
+	assert.EqualValues(t, 2, stats.PacketsRecovered)
 
 	extSNBySN := readExtSequenceNumbers(t, primary, len(media)-1+len(media2)-1)
+	requireRecoveredInBucket(t, primary, &media[firstDroppedIdx], extSNBySN, media[0].SequenceNumber)
 	requireRecoveredInBucket(t, primary, &media2[droppedIdx], extSNBySN, media2[0].SequenceNumber)
 }
 
@@ -300,6 +300,36 @@ func TestBufferFECCoupledBeforeBuffersExist(t *testing.T) {
 	stats := primary.FECDecoderStats()
 	assert.EqualValues(t, 1, stats.PacketsRecovered)
 
+	extSNBySN := readExtSequenceNumbers(t, primary, len(media)-1)
+	requireRecoveredInBucket(t, primary, &media[droppedIdx], extSNBySN, media[0].SequenceNumber)
+}
+
+func TestBufferFECSequenceNumberWrap(t *testing.T) {
+	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	factory.SetFECPair(fecTestFECSSRC, fecTestMediaSSRC)
+
+	primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
+	fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
+	bindFECTestBuffer(t, primary)
+
+	media := fecTestMediaPackets(t, 65533, 5)
+	for i := range media {
+		media[i].Timestamp = 90000 + 3000*uint32(i)
+	}
+	fecPackets := pionflexfec.NewFlexEncoder03(fecTestFECPT, fecTestFECSSRC).EncodeFec(media, 1)
+	require.NotEmpty(t, fecPackets)
+
+	const droppedIdx = 3 // sequence number 0
+	for i := range media {
+		if i != droppedIdx {
+			writePacket(t, primary, &media[i])
+		}
+	}
+	for i := range fecPackets {
+		writePacket(t, fecBuff, &fecPackets[i])
+	}
+
+	require.EqualValues(t, 1, primary.FECDecoderStats().PacketsRecovered)
 	extSNBySN := readExtSequenceNumbers(t, primary, len(media)-1)
 	requireRecoveredInBucket(t, primary, &media[droppedIdx], extSNBySN, media[0].SequenceNumber)
 }

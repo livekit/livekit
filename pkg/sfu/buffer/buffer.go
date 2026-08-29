@@ -39,7 +39,8 @@ const (
 )
 
 var (
-	errInvalidCodec = errors.New("invalid codec")
+	errInvalidCodec           = errors.New("invalid codec")
+	errFECMediaPacketNotFound = errors.New("fec media packet not found")
 )
 
 var _ BufferProvider = (*Buffer)(nil)
@@ -446,16 +447,28 @@ func (b *Buffer) setFECSSRC(ssrc uint32) {
 
 // maybeCreateFECDecoderLocked creates the FEC decoder as soon as the repair
 // stream SSRC is known and the buffer is bound with a negotiated flexfec
-// payload type. Eager creation lets the decoder track media packets before
-// the first FEC packet arrives, otherwise the leading protection windows
-// would be unrecoverable.
+// payload type. Protected media is read from the primary RTP packet bucket.
 func (b *Buffer) maybeCreateFECDecoderLocked() {
 	if b.fecDecoder != nil || b.fecSSRC == 0 || !b.isBound || b.fecPayloadType == 0 {
 		return
 	}
 
-	b.fecDecoder = flexfec.NewDecoder(b.fecSSRC, b.BufferBase.SSRC(), b.logger)
+	b.fecDecoder = flexfec.NewDecoder(b.fecSSRC, b.BufferBase.SSRC(), b.getFECMediaPacketLocked, b.logger)
 	b.logger.Debugw("flexfec decoder created", "fecSSRC", b.fecSSRC, "mediaSSRC", b.BufferBase.SSRC())
+}
+
+func (b *Buffer) getFECMediaPacketLocked(sequenceNumber uint16, dst []byte) (int, error) {
+	if b.bucket == nil {
+		return 0, errFECMediaPacketNotFound
+	}
+
+	headSequenceNumber := b.bucket.HeadSequenceNumber()
+	extendedSequenceNumber := int64(headSequenceNumber) + int64(int16(sequenceNumber-uint16(headSequenceNumber)))
+	if extendedSequenceNumber < 0 {
+		return 0, errFECMediaPacketNotFound
+	}
+
+	return b.bucket.GetPacket(dst, uint64(extendedSequenceNumber))
 }
 
 // OnFECRecovery is called with counter deltas whenever FEC packets are

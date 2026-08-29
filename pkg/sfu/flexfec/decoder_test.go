@@ -16,6 +16,7 @@ package flexfec
 
 import (
 	"encoding/binary"
+	"errors"
 	"math/rand"
 	"testing"
 
@@ -33,6 +34,51 @@ const (
 	testFECPT     = uint8(115)
 	testMediaPT   = uint8(96)
 )
+
+var errTestMediaPacketNotFound = errors.New("test media packet not found")
+
+type testDecoder struct {
+	*Decoder
+	mediaPackets map[uint16][]byte
+}
+
+func newTestDecoder(fecSSRC, protectedSSRC uint32, lgr logger.Logger) *testDecoder {
+	d := &testDecoder{mediaPackets: make(map[uint16][]byte)}
+	d.Decoder = NewDecoder(fecSSRC, protectedSSRC, d.getMediaPacket, lgr)
+	return d
+}
+
+func (d *testDecoder) getMediaPacket(sequenceNumber uint16, dst []byte) (int, error) {
+	packet, ok := d.mediaPackets[sequenceNumber]
+	if !ok {
+		return 0, errTestMediaPacketNotFound
+	}
+	if len(dst) < len(packet) {
+		return 0, errors.New("test media packet buffer too small")
+	}
+
+	return copy(dst, packet), nil
+}
+
+func (d *testDecoder) DecodeFec(packet *rtp.Packet) []*rtp.Packet {
+	if packet.SSRC == d.protectedSSRC {
+		raw, err := packet.Marshal()
+		if err != nil {
+			panic(err)
+		}
+		d.mediaPackets[packet.SequenceNumber] = raw
+	}
+
+	recovered := d.Decoder.DecodeFec(packet)
+	for _, recoveredPacket := range recovered {
+		raw, err := recoveredPacket.Marshal()
+		if err != nil {
+			panic(err)
+		}
+		d.mediaPackets[recoveredPacket.SequenceNumber] = raw
+	}
+	return recovered
+}
 
 func makeMediaPackets(t *testing.T, baseSN uint16, count int) []rtp.Packet {
 	t.Helper()
@@ -78,7 +124,7 @@ func TestDecoderRecoversSingleLoss(t *testing.T) {
 	media := makeMediaPackets(t, 100, 5)
 	fec := encodeFEC(t, media, 1)
 
-	decoder := NewDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
+	decoder := newTestDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
 
 	// drop media[2], feed the rest
 	var recovered []*rtp.Packet
@@ -104,14 +150,37 @@ func TestDecoderRecoversSingleLoss(t *testing.T) {
 	assert.Equal(t, uint64(0), stats.FECPacketsDiscarded)
 }
 
+func TestDecoderRecoversPacketWithExtendedHeader(t *testing.T) {
+	media := makeMediaPackets(t, 150, 5)
+	for i := range media {
+		media[i].CSRC = []uint32{uint32(1000 + i)}
+		require.NoError(t, media[i].SetExtension(3, []byte{byte(i), byte(i + 1)}))
+	}
+	fec := encodeFEC(t, media, 1)
+	decoder := newTestDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
+
+	for i := range media {
+		if i != 2 {
+			require.Empty(t, decoder.DecodeFec(&media[i]))
+		}
+	}
+	recovered := decoder.DecodeFec(&fec[0])
+	require.Len(t, recovered, 1)
+
+	expectedRaw, err := media[2].Marshal()
+	require.NoError(t, err)
+	actualRaw, err := recovered[0].Marshal()
+	require.NoError(t, err)
+	assert.Equal(t, expectedRaw, actualRaw)
+}
+
 func TestDecoderRecoversWithLateMedia(t *testing.T) {
 	// FEC arrives while two packets are missing; recovery happens once one of
-	// them shows up late. Exercises updateCoveringFecPackets and the
-	// stable-pointer window.
+	// them shows up late. Exercises retained FEC state and packet lookup.
 	media := makeMediaPackets(t, 200, 5)
 	fec := encodeFEC(t, media, 1)
 
-	decoder := NewDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
+	decoder := newTestDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
 
 	var recovered []*rtp.Packet
 	for _, i := range []int{0, 3, 4} {
@@ -132,7 +201,7 @@ func TestDecoderRecoversWithLateMedia(t *testing.T) {
 }
 
 func TestDecoderRecoversMultipleWindows(t *testing.T) {
-	decoder := NewDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
+	decoder := newTestDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
 	encoder := pionflexfec.NewFlexEncoder03(testFECPT, testFECSSRC)
 
 	var allRecovered []*rtp.Packet
@@ -170,7 +239,7 @@ func TestDecoderSequenceNumberWrap(t *testing.T) {
 	media := makeMediaPackets(t, 65533, 5) // spans 65533..1
 	fec := encodeFEC(t, media, 1)
 
-	decoder := NewDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
+	decoder := newTestDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
 
 	var recovered []*rtp.Packet
 	for i := range media {
@@ -187,24 +256,10 @@ func TestDecoderSequenceNumberWrap(t *testing.T) {
 	requirePacketEqual(t, &media[3], recovered[0])
 }
 
-func TestDecoderMediaWindowOrder(t *testing.T) {
-	media := makeMediaPackets(t, 65534, 4)
-	decoder := NewDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
-
-	for _, i := range []int{1, 3, 0, 2} {
-		require.Empty(t, decoder.DecodeFec(&media[i]))
-	}
-
-	require.Len(t, decoder.recoveredPackets, 4)
-	for i := range media {
-		assert.Equal(t, media[i].SequenceNumber, decoder.recoveredPackets[i].SequenceNumber)
-	}
-}
-
 func TestDecoderFECWindowOrder(t *testing.T) {
 	media := makeMediaPackets(t, 50, 5)
 	fec := encodeFEC(t, media, 1)[0]
-	decoder := NewDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
+	decoder := newTestDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
 
 	for _, i := range []int{0, 3, 4} {
 		require.Empty(t, decoder.DecodeFec(&media[i]))
@@ -225,7 +280,7 @@ func TestDecoderDiscardsForeignProtectedSSRC(t *testing.T) {
 	fec := encodeFEC(t, media, 1)
 
 	// decoder bound to a different protected stream
-	decoder := NewDecoder(testFECSSRC, testMediaSSRC+1, logger.GetLogger())
+	decoder := newTestDecoder(testFECSSRC, testMediaSSRC+1, logger.GetLogger())
 	recovered := decoder.DecodeFec(&fec[0])
 	require.Empty(t, recovered)
 
@@ -235,7 +290,7 @@ func TestDecoderDiscardsForeignProtectedSSRC(t *testing.T) {
 }
 
 func TestDecoderDiscardsMalformedFEC(t *testing.T) {
-	decoder := NewDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
+	decoder := newTestDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
 
 	for _, payload := range [][]byte{
 		nil,
@@ -283,7 +338,7 @@ func TestDecoderDiscardsDuplicateFEC(t *testing.T) {
 	media := makeMediaPackets(t, 400, 5)
 	fec := encodeFEC(t, media, 1)
 
-	decoder := NewDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
+	decoder := newTestDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
 	for _, i := range []int{0, 3, 4} {
 		decoder.DecodeFec(&media[i])
 	}
@@ -299,7 +354,7 @@ func TestDecoderDoesNotRetainCompleteFECState(t *testing.T) {
 	media := makeMediaPackets(t, 450, 5)
 	fec := encodeFEC(t, media, 1)
 
-	decoder := NewDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
+	decoder := newTestDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
 	for i := range media {
 		require.Empty(t, decoder.DecodeFec(&media[i]))
 	}
@@ -313,7 +368,7 @@ func TestDecoderInputMemoryReuse(t *testing.T) {
 	media := makeMediaPackets(t, 500, 5)
 	fec := encodeFEC(t, media, 1)
 
-	decoder := NewDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
+	decoder := newTestDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
 
 	scratch := &rtp.Packet{}
 	feed := func(src *rtp.Packet) []*rtp.Packet {
@@ -347,7 +402,7 @@ func TestDecoderRetainedFECMemoryReuse(t *testing.T) {
 	media := makeMediaPackets(t, 550, 5)
 	fec := encodeFEC(t, media, 1)
 
-	decoder := NewDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
+	decoder := newTestDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
 	scratch := &rtp.Packet{}
 	feed := func(src *rtp.Packet) []*rtp.Packet {
 		buf, err := src.Marshal()
@@ -378,7 +433,7 @@ func TestDecoderTwoFECPacketsTwoLosses(t *testing.T) {
 	fec := encodeFEC(t, media, 2)
 	require.Len(t, fec, 2)
 
-	decoder := NewDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
+	decoder := newTestDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
 
 	var recovered []*rtp.Packet
 	for i := range media {
@@ -406,7 +461,7 @@ func TestDecoderTwoFECPacketsTwoLosses(t *testing.T) {
 }
 
 func TestDecoderResetsOnBigSequenceGap(t *testing.T) {
-	decoder := NewDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
+	decoder := newTestDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
 
 	media := makeMediaPackets(t, 100, 110)
 	for i := range media {

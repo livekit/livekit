@@ -40,8 +40,30 @@ func benchmarkMediaPackets(count, payloadSize int) []rtp.Packet {
 	return packets
 }
 
+func benchmarkMediaLookup(media []rtp.Packet, missingIndex int) MediaPacketLookup {
+	packets := make(map[uint16][]byte, len(media))
+	for i := range media {
+		if i == missingIndex {
+			continue
+		}
+		raw, err := media[i].Marshal()
+		if err != nil {
+			panic(err)
+		}
+		packets[media[i].SequenceNumber] = raw
+	}
+
+	return func(sequenceNumber uint16, dst []byte) (int, error) {
+		packet, ok := packets[sequenceNumber]
+		if !ok {
+			return 0, errTestMediaPacketNotFound
+		}
+		return copy(dst, packet), nil
+	}
+}
+
 func BenchmarkDecoderMediaSteadyState1200(b *testing.B) {
-	decoder := NewDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
+	decoder := NewDecoder(testFECSSRC, testMediaSSRC, nil, logger.GetLogger())
 	packet := benchmarkMediaPackets(1, 1200)[0]
 
 	b.ReportAllocs()
@@ -56,11 +78,12 @@ func BenchmarkDecoderMediaSteadyState1200(b *testing.B) {
 func BenchmarkDecoderCompleteWindow10x1200(b *testing.B) {
 	media := benchmarkMediaPackets(10, 1200)
 	fecPackets := pionflexfec.NewFlexEncoder03(testFECPT, testFECSSRC).EncodeFec(media, 1)
+	lookup := benchmarkMediaLookup(media, -1)
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		decoder := NewDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
+		decoder := NewDecoder(testFECSSRC, testMediaSSRC, lookup, logger.GetLogger())
 		for j := range media {
 			decoder.DecodeFec(&media[j])
 		}
@@ -73,11 +96,12 @@ func BenchmarkDecoderCompleteWindow10x1200(b *testing.B) {
 func BenchmarkDecoderRecoveryWindow10x1200(b *testing.B) {
 	media := benchmarkMediaPackets(10, 1200)
 	fecPackets := pionflexfec.NewFlexEncoder03(testFECPT, testFECSSRC).EncodeFec(media, 1)
+	lookup := benchmarkMediaLookup(media, 4)
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		decoder := NewDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
+		decoder := NewDecoder(testFECSSRC, testMediaSSRC, lookup, logger.GetLogger())
 		for j := range media {
 			if j != 4 {
 				decoder.DecodeFec(&media[j])
