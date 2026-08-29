@@ -17,6 +17,7 @@ package buffer
 import (
 	"math/rand"
 	"testing"
+	"time"
 
 	pionflexfec "github.com/pion/interceptor/pkg/flexfec"
 	"github.com/pion/rtp"
@@ -164,6 +165,49 @@ func TestBufferFECRecoversDroppedPacket(t *testing.T) {
 	// recovered one fills the bucket like an RTX repair
 	extSNBySN := readExtSequenceNumbers(t, primary, len(media)-1)
 	requireRecoveredInBucket(t, primary, &media[droppedIdx], extSNBySN, media[0].SequenceNumber)
+}
+
+func TestBufferFECRecoveryCallbackCanReenterBuffer(t *testing.T) {
+	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+
+	primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
+	fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
+	factory.SetFECPair(fecTestFECSSRC, fecTestMediaSSRC)
+	bindFECTestBuffer(t, primary)
+
+	callbackDone := make(chan struct{}, 1)
+	primary.OnFECRecovery(func(received int, recovered int, discarded int, bytesReceived int) {
+		primary.FECDecoderStats()
+		callbackDone <- struct{}{}
+	})
+
+	media := fecTestMediaPackets(t, 150, 5)
+	for i := range media {
+		writePacket(t, primary, &media[i])
+	}
+	fecPackets := pionflexfec.NewFlexEncoder03(fecTestFECPT, fecTestFECSSRC).EncodeFec(media, 1)
+	require.NotEmpty(t, fecPackets)
+
+	rawFEC, err := fecPackets[0].Marshal()
+	require.NoError(t, err)
+	writeDone := make(chan error, 1)
+	go func() {
+		_, err := fecBuff.Write(rawFEC)
+		writeDone <- err
+	}()
+
+	select {
+	case <-callbackDone:
+	case <-time.After(time.Second):
+		t.Fatal("FEC recovery callback deadlocked while re-entering the buffer")
+	}
+
+	select {
+	case err := <-writeDone:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("FEC packet write did not return after callback")
+	}
 }
 
 func TestBufferFECPairAfterPackets(t *testing.T) {

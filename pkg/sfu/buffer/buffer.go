@@ -49,6 +49,19 @@ type pendingPacket struct {
 	packet      []byte
 }
 
+type fecRecoveryDelta struct {
+	received      int
+	recovered     int
+	discarded     int
+	bytesReceived int
+}
+
+func (d fecRecoveryDelta) invoke(callback func(received int, recovered int, discarded int, bytesReceived int)) {
+	if callback != nil && (d.recovered > 0 || d.received > 0 || d.discarded > 0) {
+		callback(d.received, d.recovered, d.discarded, d.bytesReceived)
+	}
+}
+
 // Buffer contains all packets
 type Buffer struct {
 	*BufferBase
@@ -257,12 +270,15 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 	}
 
 	rtcpPackets := b.calc(pkt, &rtpPacket, now, false, false)
+	var fecDelta fecRecoveryDelta
+	var onFECRecovery func(received int, recovered int, discarded int, bytesReceived int)
 	if b.fecDecoder != nil {
 		// feed media into the FEC decoder, a media arrival can complete a
 		// previously unrecoverable FEC window
-		b.feedFECLocked(&rtpPacket, now)
+		fecDelta, onFECRecovery = b.feedFECLocked(&rtpPacket, now)
 	}
 	b.Unlock()
+	fecDelta.invoke(onFECRecovery)
 
 	if len(rtcpPackets) != 0 {
 		if cb := b.getOnRtcpFeedback(); cb != nil {
@@ -353,13 +369,14 @@ func (b *Buffer) NotifyRTX(ssrc uint32, repairSSRC uint32, rsid string) {
 
 func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime int64) {
 	b.Lock()
-	defer b.Unlock()
 	if !b.isBound {
+		b.Unlock()
 		return
 	}
 
 	if rtxPkt.PayloadType != b.rtxPayloadType {
 		b.logger.Debugw("unexpected rtx payload type", "expected", b.rtxPayloadType, "actual", rtxPkt.PayloadType)
+		b.Unlock()
 		return
 	}
 
@@ -369,6 +386,7 @@ func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime int64) {
 
 	if len(rtxPkt.Payload) < 2 {
 		b.logger.Warnw("rtx payload too short", nil, "size", len(rtxPkt.Payload))
+		b.Unlock()
 		return
 	}
 
@@ -380,13 +398,18 @@ func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime int64) {
 	n, err := repairedPkt.MarshalTo(b.rtxPktBuf)
 	if err != nil {
 		b.logger.Errorw("could not marshal repaired packet", err, "ssrc", b.BufferBase.SSRC(), "sn", repairedPkt.SequenceNumber)
+		b.Unlock()
 		return
 	}
 
 	b.calc(b.rtxPktBuf[:n], &repairedPkt, arrivalTime, false, true)
+	var fecDelta fecRecoveryDelta
+	var onFECRecovery func(received int, recovered int, discarded int, bytesReceived int)
 	if b.fecDecoder != nil {
-		b.feedFECLocked(&repairedPkt, arrivalTime)
+		fecDelta, onFECRecovery = b.feedFECLocked(&repairedPkt, arrivalTime)
 	}
+	b.Unlock()
+	fecDelta.invoke(onFECRecovery)
 }
 
 func (b *Buffer) SetPrimaryBufferForFEC(primaryBuffer *Buffer) {
@@ -490,14 +513,18 @@ func (b *Buffer) writeFEC(fecPkt *rtp.Packet, arrivalTime int64) {
 		}
 	}
 
-	b.feedFECLocked(fecPkt, arrivalTime)
+	fecDelta, onFECRecovery := b.feedFECLocked(fecPkt, arrivalTime)
 	b.Unlock()
+	fecDelta.invoke(onFECRecovery)
 }
 
 // feedFECLocked runs a media or FEC packet through the FEC decoder and
 // injects recovered packets into the packet pipeline. Must be called with the
 // buffer lock held and a non-nil decoder.
-func (b *Buffer) feedFECLocked(pkt *rtp.Packet, arrivalTime int64) {
+func (b *Buffer) feedFECLocked(
+	pkt *rtp.Packet,
+	arrivalTime int64,
+) (fecRecoveryDelta, func(received int, recovered int, discarded int, bytesReceived int)) {
 	statsBefore := b.fecDecoder.Stats()
 	recovered := b.fecDecoder.DecodeFec(pkt)
 
@@ -519,13 +546,15 @@ func (b *Buffer) feedFECLocked(pkt *rtp.Packet, arrivalTime int64) {
 
 	if cb := b.onFECRecovery; cb != nil {
 		statsAfter := b.fecDecoder.Stats()
-		received := int(statsAfter.FECPacketsReceived - statsBefore.FECPacketsReceived)
-		discarded := int(statsAfter.FECPacketsDiscarded - statsBefore.FECPacketsDiscarded)
-		bytesReceived := int(statsAfter.FECBytesReceived - statsBefore.FECBytesReceived)
-		if len(recovered) > 0 || received > 0 || discarded > 0 {
-			cb(received, len(recovered), discarded, bytesReceived)
-		}
+		return fecRecoveryDelta{
+			received:      int(statsAfter.FECPacketsReceived - statsBefore.FECPacketsReceived),
+			recovered:     len(recovered),
+			discarded:     int(statsAfter.FECPacketsDiscarded - statsBefore.FECPacketsDiscarded),
+			bytesReceived: int(statsAfter.FECBytesReceived - statsBefore.FECBytesReceived),
+		}, cb
 	}
+
+	return fecRecoveryDelta{}, nil
 }
 
 func (b *Buffer) Read(buff []byte) (n int, err error) {
