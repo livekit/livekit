@@ -36,6 +36,10 @@ const (
 
 	InitPacketBufferSizeVideo = 300
 	InitPacketBufferSizeAudio = 70
+
+	// An unpaired FEC repair stream only needs a short bridge until its primary
+	// stream appears. The decoder itself retains at most this many FEC states.
+	maxPendingFECRepairPackets = 100
 )
 
 var (
@@ -89,6 +93,7 @@ type Buffer struct {
 	rtxPktBuf           []byte
 
 	primaryBufferForFEC *Buffer
+	isFECRepair         bool
 	fecSSRC             uint32
 	fecDecoder          *flexfec.Decoder
 	fecPktBuf           []byte
@@ -237,17 +242,18 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 	}
 
 	if !b.isBound {
-		packet := make([]byte, len(pkt))
-		copy(packet, pkt)
-
 		if len(b.pPackets) == 0 {
 			b.logger.Debugw("received first packet")
 		}
 
-		startIdx := 0
-		overflow := len(b.pPackets) - max(b.BufferBase.MaxVideoPkts(), b.BufferBase.MaxAudioPkts())
-		if overflow > 0 {
-			startIdx = overflow
+		pendingLimit := max(b.BufferBase.MaxVideoPkts(), b.BufferBase.MaxAudioPkts())
+		if b.isFECRepair {
+			pendingLimit = min(pendingLimit, maxPendingFECRepairPackets)
+		}
+		pendingLimit = max(pendingLimit, 1)
+		if overflow := len(b.pPackets) - pendingLimit + 1; overflow > 0 {
+			clear(b.pPackets[:overflow])
+			b.pPackets = b.pPackets[overflow:]
 
 			// a stream that keeps arriving but never binds drops every packet from here
 			// on; for an RTX stream it means the pairing was never established
@@ -260,7 +266,10 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 				)
 			}
 		}
-		b.pPackets = append(b.pPackets[startIdx:], pendingPacket{
+
+		packet := make([]byte, len(pkt))
+		copy(packet, pkt)
+		b.pPackets = append(b.pPackets, pendingPacket{
 			packet:      packet,
 			arrivalTime: now,
 		})
@@ -436,6 +445,25 @@ func (b *Buffer) SetPrimaryBufferForFEC(primaryBuffer *Buffer) {
 		}
 		primaryBuffer.writeFEC(&rtpPacket, pp.arrivalTime)
 	}
+}
+
+func (b *Buffer) markAsFECRepair() {
+	b.Lock()
+	defer b.Unlock()
+
+	b.isFECRepair = true
+	if len(b.pPackets) <= maxPendingFECRepairPackets {
+		return
+	}
+
+	// Pairing can be announced after repair packets start arriving. Compact the
+	// retained tail so both the dropped packet bytes and oversized slice backing
+	// array become collectible.
+	start := len(b.pPackets) - maxPendingFECRepairPackets
+	retained := make([]pendingPacket, maxPendingFECRepairPackets)
+	copy(retained, b.pPackets[start:])
+	clear(b.pPackets)
+	b.pPackets = retained
 }
 
 func (b *Buffer) setFECSSRC(ssrc uint32) {

@@ -93,6 +93,7 @@ func (f *Factory) GetOrNew(packetType packetio.BufferPacketType, ssrc uint32) io
 		}
 		for fec, base := range f.fecPair {
 			if fec == ssrc {
+				buffer.markAsFECRepair()
 				baseBuffer, ok := f.rtpBuffers[base]
 				if ok {
 					buffer.SetPrimaryBufferForFEC(baseBuffer)
@@ -173,6 +174,9 @@ func (f *Factory) SetFECPair(fec, base uint32) {
 		f.fecPair[fec] = base
 	}
 	f.Unlock()
+	if fecBuffer != nil && baseBuffer == nil {
+		fecBuffer.markAsFECRepair()
+	}
 	if fecBuffer != nil && baseBuffer != nil {
 		fecBuffer.SetPrimaryBufferForFEC(baseBuffer)
 	}

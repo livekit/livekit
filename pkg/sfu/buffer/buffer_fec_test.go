@@ -123,6 +123,58 @@ func requireRecoveredInBucket(t *testing.T, buff *Buffer, dropped *rtp.Packet, e
 	assert.Equal(t, dropped.Payload, pkt.Payload)
 }
 
+func TestBufferFECPendingPacketLimit(t *testing.T) {
+	makeRepairPacket := func(sequenceNumber uint16) rtp.Packet {
+		return rtp.Packet{
+			Header: rtp.Header{
+				Version:        2,
+				PayloadType:    fecTestFECPT,
+				SequenceNumber: sequenceNumber,
+				SSRC:           fecTestFECSSRC,
+			},
+			Payload: make([]byte, 1200),
+		}
+	}
+	writeRepairPackets := func(t *testing.T, buff *Buffer, count int) {
+		t.Helper()
+		for i := range count {
+			packet := makeRepairPacket(uint16(i))
+			writePacket(t, buff, &packet)
+		}
+	}
+	assertRetainedTail := func(t *testing.T, buff *Buffer, total int) {
+		t.Helper()
+		require.Len(t, buff.pPackets, maxPendingFECRepairPackets)
+
+		var first, last rtp.Packet
+		require.NoError(t, first.Unmarshal(buff.pPackets[0].packet))
+		require.NoError(t, last.Unmarshal(buff.pPackets[len(buff.pPackets)-1].packet))
+		assert.EqualValues(t, total-maxPendingFECRepairPackets, first.SequenceNumber)
+		assert.EqualValues(t, total-1, last.SequenceNumber)
+	}
+
+	const packetCount = maxPendingFECRepairPackets + 50
+	t.Run("pair declared before repair stream", func(t *testing.T) {
+		factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+		factory.SetFECPair(fecTestFECSSRC, fecTestMediaSSRC)
+		fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
+
+		writeRepairPackets(t, fecBuff, packetCount)
+		assertRetainedTail(t, fecBuff, packetCount)
+	})
+
+	t.Run("pair declared after repair packets", func(t *testing.T) {
+		factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+		fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
+		writeRepairPackets(t, fecBuff, packetCount)
+		require.Len(t, fecBuff.pPackets, packetCount)
+
+		factory.SetFECPair(fecTestFECSSRC, fecTestMediaSSRC)
+		assertRetainedTail(t, fecBuff, packetCount)
+		assert.LessOrEqual(t, cap(fecBuff.pPackets), maxPendingFECRepairPackets)
+	})
+}
+
 func TestBufferFECRecoversDroppedPacket(t *testing.T) {
 	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
 
