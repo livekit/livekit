@@ -2532,13 +2532,15 @@ func (d *DownTrack) onMediaPacketSentForFEC(hdr *rtp.Header, payload []byte) {
 
 	bytesSent := uint64(0)
 	for i := range fecPackets {
-		fecHdr := fecPackets[i].Header
-		d.addDummyExtensions(&fecHdr)
+		fecHdr := RTPHeaderFactory.Get().(*rtp.Header)
+		*fecHdr = fecPackets[i].Header
+		d.addDummyExtensions(fecHdr)
 		headerSize := fecHdr.MarshalSize()
 
 		pacerPacket := pacer.PacketFactory.Get().(*pacer.Packet)
 		*pacerPacket = pacer.Packet{
-			Header:             &fecHdr,
+			Header:             fecHdr,
+			HeaderPool:         RTPHeaderFactory,
 			HeaderSize:         headerSize,
 			Payload:            fecPackets[i].Payload,
 			ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
@@ -2546,12 +2548,11 @@ func (d *DownTrack) onMediaPacketSentForFEC(hdr *rtp.Header, payload []byte) {
 			TransportWideExtID: uint8(d.transportWideExtID),
 			WriteStream:        d.writeStream,
 		}
-		bytesSent += uint64(headerSize + len(fecPackets[i].Payload))
+		bytesSent += uint64(len(fecPackets[i].Payload))
 		d.pacer.Enqueue(pacerPacket)
 	}
 
 	prometheus.RecordFECDownstreamSent(len(fecPackets), bytesSent)
-}
 
 // FECWriterStats returns cumulative downstream FlexFEC generation counters,
 // the second return indicates whether FEC generation is active.
