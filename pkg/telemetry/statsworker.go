@@ -18,6 +18,7 @@ import (
 	"context"
 	"sync"
 	"time"
+	"unsafe"
 
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -31,6 +32,15 @@ import (
 type ReferenceGuard struct {
 	activated, released bool
 }
+
+func (r *ReferenceGuard) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddUintptr("self", uintptr(unsafe.Pointer(r)))
+	e.AddBool("activated", r.activated)
+	e.AddBool("released", r.released)
+	return nil
+}
+
+// ----------------------------------------
 
 type ReferenceCount struct {
 	count int
