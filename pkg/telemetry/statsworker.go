@@ -52,6 +52,18 @@ func (s *ReferenceCount) Release(guard *ReferenceGuard) bool {
 	return s.count == 0
 }
 
+// Take hands over every reference held, leaving none behind.
+func (s *ReferenceCount) Take() int {
+	count := s.count
+	s.count = 0
+	return count
+}
+
+// Absorb takes on references handed over from elsewhere.
+func (s *ReferenceCount) Absorb(count int) {
+	s.count += count
+}
+
 func (s ReferenceCount) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddInt("count", s.count)
 	return nil
@@ -240,15 +252,28 @@ func (s *StatsWorker) Close(guard *ReferenceGuard) bool {
 // ForceClose closes the worker irrespective of outstanding references. Used when a
 // worker can no longer be reached through the worker map, so that it drains and is
 // reaped instead of lingering in the flush list forever.
-func (s *StatsWorker) ForceClose() bool {
+//
+// Its references are handed over to `successor`, the worker that can be reached in its
+// place, so that whoever holds one still has a live worker to close. A ReferenceGuard
+// records that it activated some worker, not which one, so leaving them behind would
+// strand the successor with references it can never see released.
+func (s *StatsWorker) ForceClose(successor *StatsWorker) bool {
 	s.lock.Lock()
-	defer s.lock.Unlock()
-
 	if !s.closedAt.IsZero() {
+		s.lock.Unlock()
 		return false
 	}
 
 	s.closedAt = time.Now()
+	count := s.refCount.Take()
+	s.lock.Unlock()
+
+	if successor != nil && count != 0 {
+		successor.lock.Lock()
+		successor.refCount.Absorb(count)
+		successor.lock.Unlock()
+	}
+
 	return true
 }
 

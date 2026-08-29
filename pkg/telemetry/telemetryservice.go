@@ -361,11 +361,11 @@ func (t *telemetryService) reKeyRoom(prevRoomID livekit.RoomID, roomID livekit.R
 
 	for participantID, worker := range roomWorkers {
 		if existing != nil {
-			if _, ok := existing[participantID]; ok {
+			if survivor, ok := existing[participantID]; ok {
 				// only one worker can be keyed at (room, participant) and the one already
 				// filed there wins, close the superseded one so that it drains and is
 				// reaped instead of lingering in the flush list unreachable
-				if worker.ForceClose() {
+				if worker.ForceClose(survivor) {
 					prometheus.SubParticipant()
 				}
 				continue
