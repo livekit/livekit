@@ -34,9 +34,11 @@ type ReferenceGuard struct {
 }
 
 func (r *ReferenceGuard) MarshalLogObject(e zapcore.ObjectEncoder) error {
-	e.AddUintptr("self", uintptr(unsafe.Pointer(r)))
-	e.AddBool("activated", r.activated)
-	e.AddBool("released", r.released)
+	if r != nil {
+		e.AddUintptr("self", uintptr(unsafe.Pointer(r)))
+		e.AddBool("activated", r.activated)
+		e.AddBool("released", r.released)
+	}
 	return nil
 }
 
