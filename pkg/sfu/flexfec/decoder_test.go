@@ -310,6 +310,34 @@ func TestDecoderInputMemoryReuse(t *testing.T) {
 	requirePacketEqual(t, &media[2], recovered[0])
 }
 
+func TestDecoderRetainedFECMemoryReuse(t *testing.T) {
+	media := makeMediaPackets(t, 550, 5)
+	fec := encodeFEC(t, media, 1)
+
+	decoder := NewDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
+	scratch := &rtp.Packet{}
+	feed := func(src *rtp.Packet) []*rtp.Packet {
+		buf, err := src.Marshal()
+		require.NoError(t, err)
+		require.NoError(t, scratch.Unmarshal(buf))
+		out := decoder.DecodeFec(scratch)
+		for i := range scratch.Payload {
+			scratch.Payload[i] = 0xde
+		}
+		return out
+	}
+
+	for _, i := range []int{0, 3, 4} {
+		require.Empty(t, feed(&media[i]))
+	}
+	require.Empty(t, feed(&fec[0]))
+	require.Len(t, decoder.receivedFECPackets, 1)
+
+	recovered := feed(&media[1])
+	require.Len(t, recovered, 1)
+	requirePacketEqual(t, &media[2], recovered[0])
+}
+
 func TestDecoderTwoFECPacketsTwoLosses(t *testing.T) {
 	// with 2 FEC packets over 10 media packets, the coverage interleaves, so
 	// two losses landing in different coverage groups are both recoverable

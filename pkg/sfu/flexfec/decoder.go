@@ -56,6 +56,8 @@ const (
 	maxFECPackets = 100
 	// seen/recovered media packets retained for XOR recovery
 	recoveredPacketsLimit = 192
+	// maximum number of sequence numbers represented by the three packet masks
+	maxProtectedPackets = fecMask0Bits + fecMask1Bits + fecMask2Bits
 )
 
 // FlexFEC-03 header bit fields.
@@ -123,8 +125,13 @@ func (d *Decoder) DecodeFec(receivedPacket *rtp.Packet) []*rtp.Packet {
 		d.stats.FECBytesReceived += uint64(len(receivedPacket.Payload))
 	}
 
-	// the caller reuses packet memory, keep an owned copy
-	pkt := receivedPacket.Clone()
+	// Media packets remain in the recovery window and need an owned copy. FEC
+	// packets are cloned only if insertFECPacket determines that their state
+	// must outlive this call.
+	pkt := receivedPacket
+	if receivedPacket.SSRC == d.protectedSSRC {
+		pkt = receivedPacket.Clone()
+	}
 
 	if len(d.recoveredPackets) >= maxMediaPackets {
 		backRecoveredPacket := d.recoveredPackets[len(d.recoveredPackets)-1]
@@ -227,17 +234,22 @@ func (d *Decoder) insertFECPacket(fecPkt *rtp.Packet) {
 		return
 	}
 
-	protectedSeqs := decodeMask(uint64(fec.mask0), fecMask0Bits, fec.seqNumBase)
+	var protectedSeqBuf [maxProtectedPackets]uint16
+	protectedSeqs := appendMaskSequences(protectedSeqBuf[:0], uint64(fec.mask0), fecMask0Bits, fec.seqNumBase)
 	if fec.mask1 != 0 {
-		protectedSeqs = append(protectedSeqs, decodeMask(uint64(fec.mask1), fecMask1Bits, fec.seqNumBase+fecMask0Bits)...)
+		protectedSeqs = appendMaskSequences(protectedSeqs, uint64(fec.mask1), fecMask1Bits, fec.seqNumBase+fecMask0Bits)
 	}
 	if fec.mask2 != 0 {
-		protectedSeqs = append(protectedSeqs, decodeMask(fec.mask2, fecMask2Bits, fec.seqNumBase+fecMask0Bits+fecMask1Bits)...)
+		protectedSeqs = appendMaskSequences(protectedSeqs, fec.mask2, fecMask2Bits, fec.seqNumBase+fecMask0Bits+fecMask1Bits)
 	}
 
 	if len(protectedSeqs) == 0 {
 		d.stats.FECPacketsDiscarded++
 		d.logger.Debugw("flexfec: discarding packet", "error", errEmptyMask)
+		return
+	}
+
+	if countMissingSequences(protectedSeqs, d.recoveredPackets) == 0 {
 		return
 	}
 
@@ -273,15 +285,20 @@ func (d *Decoder) insertFECPacket(fecPkt *rtp.Packet) {
 		protectedSeqIt++
 	}
 
-	// No recovery is needed when all protected media packets are already
-	// available. Do not retain the FEC packet and its cloned payload.
-	if countMissingPackets(protectedPackets) == 0 {
+	// The caller may reuse packet memory after DecodeFec returns. Take
+	// ownership only now that this FEC state needs to be retained.
+	ownedFECPkt := fecPkt.Clone()
+	ownedFEC, err := parseFlexFEC03Header(ownedFECPkt.Payload)
+	if err != nil {
+		// Parsing the same bytes succeeded above, so this should be unreachable.
+		d.stats.FECPacketsDiscarded++
+		d.logger.Debugw("flexfec: failed to parse cloned header", "error", err)
 		return
 	}
 
 	d.receivedFECPackets = append(d.receivedFECPackets, fecPacketState{
-		packet:           fecPkt,
-		flexFec:          fec,
+		packet:           ownedFECPkt,
+		flexFec:          ownedFEC,
 		protectedPackets: protectedPackets,
 	})
 
@@ -349,6 +366,28 @@ func countMissingPackets(protectedPackets []protectedPacket) int {
 		}
 	}
 
+	return missing
+}
+
+func countMissingSequences(protectedSeqs []uint16, recoveredPackets []*rtp.Packet) int {
+	missing := 0
+	protectedSeqIt := 0
+	recoveredPacketIt := 0
+
+	for protectedSeqIt < len(protectedSeqs) && recoveredPacketIt < len(recoveredPackets) {
+		switch {
+		case isNewerSeq(protectedSeqs[protectedSeqIt], recoveredPackets[recoveredPacketIt].SequenceNumber):
+			missing++
+			protectedSeqIt++
+		case isNewerSeq(recoveredPackets[recoveredPacketIt].SequenceNumber, protectedSeqs[protectedSeqIt]):
+			recoveredPacketIt++
+		default:
+			protectedSeqIt++
+			recoveredPacketIt++
+		}
+	}
+
+	missing += len(protectedSeqs) - protectedSeqIt
 	return missing
 }
 
@@ -426,15 +465,14 @@ func (d *Decoder) discardOldRecoveredPackets() {
 	}
 }
 
-func decodeMask(mask uint64, bitCount uint16, seqNumBase uint16) []uint16 {
-	res := make([]uint16, 0)
+func appendMaskSequences(dst []uint16, mask uint64, bitCount uint16, seqNumBase uint16) []uint16 {
 	for i := uint16(0); i < bitCount; i++ {
 		if (mask>>(bitCount-1-i))&1 == 1 {
-			res = append(res, seqNumBase+i)
+			dst = append(dst, seqNumBase+i)
 		}
 	}
 
-	return res
+	return dst
 }
 
 type fecPacketState struct {
