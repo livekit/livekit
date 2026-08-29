@@ -191,9 +191,16 @@ func (d *Decoder) insertMediaPacket(receivedPkt *rtp.Packet) {
 	}
 
 	d.recoveredPackets = append(d.recoveredPackets, receivedPkt)
-	sort.Slice(d.recoveredPackets, func(i, j int) bool {
-		return isNewerSeq(d.recoveredPackets[i].SequenceNumber, d.recoveredPackets[j].SequenceNumber)
-	})
+	if len(d.recoveredPackets) > 1 && !isNewerSeq(
+		d.recoveredPackets[len(d.recoveredPackets)-2].SequenceNumber,
+		receivedPkt.SequenceNumber,
+	) {
+		insertAt := sort.Search(len(d.recoveredPackets)-1, func(i int) bool {
+			return isNewerSeq(receivedPkt.SequenceNumber, d.recoveredPackets[i].SequenceNumber)
+		})
+		copy(d.recoveredPackets[insertAt+1:], d.recoveredPackets[insertAt:len(d.recoveredPackets)-1])
+		d.recoveredPackets[insertAt] = receivedPkt
+	}
 	d.updateCoveringFecPackets(receivedPkt)
 }
 
@@ -296,15 +303,22 @@ func (d *Decoder) insertFECPacket(fecPkt *rtp.Packet) {
 		return
 	}
 
-	d.receivedFECPackets = append(d.receivedFECPackets, fecPacketState{
+	state := fecPacketState{
 		packet:           ownedFECPkt,
 		flexFec:          ownedFEC,
 		protectedPackets: protectedPackets,
-	})
-
-	sort.Slice(d.receivedFECPackets, func(i, j int) bool {
-		return isNewerSeq(d.receivedFECPackets[i].packet.SequenceNumber, d.receivedFECPackets[j].packet.SequenceNumber)
-	})
+	}
+	d.receivedFECPackets = append(d.receivedFECPackets, state)
+	if len(d.receivedFECPackets) > 1 && !isNewerSeq(
+		d.receivedFECPackets[len(d.receivedFECPackets)-2].packet.SequenceNumber,
+		state.packet.SequenceNumber,
+	) {
+		insertAt := sort.Search(len(d.receivedFECPackets)-1, func(i int) bool {
+			return isNewerSeq(state.packet.SequenceNumber, d.receivedFECPackets[i].packet.SequenceNumber)
+		})
+		copy(d.receivedFECPackets[insertAt+1:], d.receivedFECPackets[insertAt:len(d.receivedFECPackets)-1])
+		d.receivedFECPackets[insertAt] = state
+	}
 
 	if len(d.receivedFECPackets) > maxFECPackets {
 		d.removeFECPacketAt(0)
@@ -337,12 +351,7 @@ func (d *Decoder) attemptRecovery() []*rtp.Packet {
 
 			d.removeFECPacketAt(i)
 			recoveredPackets = append(recoveredPackets, recovered)
-			d.recoveredPackets = append(d.recoveredPackets, recovered)
-			sort.Slice(d.recoveredPackets, func(i, j int) bool {
-				return isNewerSeq(d.recoveredPackets[i].SequenceNumber, d.recoveredPackets[j].SequenceNumber)
-			})
-
-			d.updateCoveringFecPackets(recovered)
+			d.insertMediaPacket(recovered)
 			d.discardOldRecoveredPackets()
 			packetsRecovered++
 		}

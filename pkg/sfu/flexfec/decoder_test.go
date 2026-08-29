@@ -187,6 +187,39 @@ func TestDecoderSequenceNumberWrap(t *testing.T) {
 	requirePacketEqual(t, &media[3], recovered[0])
 }
 
+func TestDecoderMediaWindowOrder(t *testing.T) {
+	media := makeMediaPackets(t, 65534, 4)
+	decoder := NewDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
+
+	for _, i := range []int{1, 3, 0, 2} {
+		require.Empty(t, decoder.DecodeFec(&media[i]))
+	}
+
+	require.Len(t, decoder.recoveredPackets, 4)
+	for i := range media {
+		assert.Equal(t, media[i].SequenceNumber, decoder.recoveredPackets[i].SequenceNumber)
+	}
+}
+
+func TestDecoderFECWindowOrder(t *testing.T) {
+	media := makeMediaPackets(t, 50, 5)
+	fec := encodeFEC(t, media, 1)[0]
+	decoder := NewDecoder(testFECSSRC, testMediaSSRC, logger.GetLogger())
+
+	for _, i := range []int{0, 3, 4} {
+		require.Empty(t, decoder.DecodeFec(&media[i]))
+	}
+	for _, seq := range []uint16{102, 100, 101} {
+		fec.SequenceNumber = seq
+		require.Empty(t, decoder.DecodeFec(&fec))
+	}
+
+	require.Len(t, decoder.receivedFECPackets, 3)
+	for i, seq := range []uint16{100, 101, 102} {
+		assert.Equal(t, seq, decoder.receivedFECPackets[i].packet.SequenceNumber)
+	}
+}
+
 func TestDecoderDiscardsForeignProtectedSSRC(t *testing.T) {
 	media := makeMediaPackets(t, 300, 5)
 	fec := encodeFEC(t, media, 1)
