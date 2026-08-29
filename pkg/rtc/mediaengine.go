@@ -53,6 +53,10 @@ func isFlexFEC03MimeType(mimeType string) bool {
 // validateFlexFECPayloadType ensures the configured flexfec payload type does
 // not collide with any known codec payload type or its RTX (pt+1) slot.
 func validateFlexFECPayloadType(payloadType uint8) error {
+	if payloadType > 127 {
+		return fmt.Errorf("flexfec payload type %d is outside the RTP payload type range 0-127", payloadType)
+	}
+
 	pt := webrtc.PayloadType(payloadType)
 	for _, codec := range protoCodecs.VideoCodecsParameters {
 		if pt == codec.PayloadType || pt == codec.PayloadType+1 {

@@ -78,6 +78,10 @@ a=ssrc:1111 cname:test
 
 func TestFlexFECPayloadTypeValidation(t *testing.T) {
 	assert.NoError(t, validateFlexFECPayloadType(115))
+	// upper boundary of the 7-bit RTP payload type field
+	assert.NoError(t, validateFlexFECPayloadType(127))
+	assert.Error(t, validateFlexFECPayloadType(128))
+	assert.Error(t, validateFlexFECPayloadType(255))
 	// VP8 payload type
 	assert.Error(t, validateFlexFECPayloadType(96))
 	// RTX slot of VP8 (pt+1)
