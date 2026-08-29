@@ -39,7 +39,7 @@ a=rtpmap:96 VP8/90000
 a=rtpmap:97 rtx/90000
 a=fmtp:97 apt=96
 a=rtpmap:115 flexfec-03/90000
-a=fmtp:115 repair-window=10000000
+a=fmtp:115 repair-window=2000000
 a=ssrc-group:FID 1111 2222
 a=ssrc-group:FEC-FR 1111 3333
 a=ssrc:1111 cname:test
@@ -111,6 +111,7 @@ func TestMediaEngineRegistersFlexFEC(t *testing.T) {
 		// drive codec registration into negotiated form via an SDP round trip
 		// is heavyweight, instead check via filterCodecs retention behavior
 		flexfecParams := flexFECCodecParameters(115)
+		assert.Equal(t, "repair-window=2000000", flexfecParams.SDPFmtpLine)
 		filtered := filterCodecs(
 			[]webrtc.RTPCodecParameters{flexfecParams},
 			enabledCodecs,

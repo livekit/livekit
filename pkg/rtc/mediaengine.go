@@ -26,8 +26,8 @@ import (
 )
 
 // flexFECRepairWindow is the flexfec-03 "repair-window" fmtp value in
-// microseconds (10 s), matching pion's ConfigureFlexFEC03 default.
-const flexFECRepairWindow = 10_000_000
+// microseconds (2 s).
+const flexFECRepairWindow = 2_000_000
 
 // flexFECCodecParameters returns the flexfec-03 codec registered/offered when
 // FlexFEC is enabled for a direction. Mirrors pion's ConfigureFlexFEC03 codec
