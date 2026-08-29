@@ -192,7 +192,8 @@ func (d *Decoder) insertMediaPacket(receivedPkt *rtp.Packet) {
 
 func (d *Decoder) updateCoveringFecPackets(receivedPkt *rtp.Packet) {
 	for i := range d.receivedFECPackets {
-		for _, pp := range d.receivedFECPackets[i].protectedPackets {
+		for j := range d.receivedFECPackets[i].protectedPackets {
+			pp := &d.receivedFECPackets[i].protectedPackets[j]
 			if pp.seq == receivedPkt.SequenceNumber {
 				pp.packet = receivedPkt
 			}
@@ -240,14 +241,14 @@ func (d *Decoder) insertFECPacket(fecPkt *rtp.Packet) {
 		return
 	}
 
-	protectedPackets := make([]*protectedPacket, 0, len(protectedSeqs))
+	protectedPackets := make([]protectedPacket, 0, len(protectedSeqs))
 	protectedSeqIt := 0
 	recoveredPacketIt := 0
 
 	for protectedSeqIt < len(protectedSeqs) && recoveredPacketIt < len(d.recoveredPackets) {
 		switch {
 		case isNewerSeq(protectedSeqs[protectedSeqIt], d.recoveredPackets[recoveredPacketIt].SequenceNumber):
-			protectedPackets = append(protectedPackets, &protectedPacket{
+			protectedPackets = append(protectedPackets, protectedPacket{
 				seq:    protectedSeqs[protectedSeqIt],
 				packet: nil,
 			})
@@ -255,7 +256,7 @@ func (d *Decoder) insertFECPacket(fecPkt *rtp.Packet) {
 		case isNewerSeq(d.recoveredPackets[recoveredPacketIt].SequenceNumber, protectedSeqs[protectedSeqIt]):
 			recoveredPacketIt++
 		default:
-			protectedPackets = append(protectedPackets, &protectedPacket{
+			protectedPackets = append(protectedPackets, protectedPacket{
 				seq:    protectedSeqs[protectedSeqIt],
 				packet: d.recoveredPackets[recoveredPacketIt],
 			})
@@ -265,7 +266,7 @@ func (d *Decoder) insertFECPacket(fecPkt *rtp.Packet) {
 	}
 
 	for protectedSeqIt < len(protectedSeqs) {
-		protectedPackets = append(protectedPackets, &protectedPacket{
+		protectedPackets = append(protectedPackets, protectedPacket{
 			seq:    protectedSeqs[protectedSeqIt],
 			packet: nil,
 		})
@@ -337,7 +338,7 @@ func (d *Decoder) attemptRecovery() []*rtp.Packet {
 	return recoveredPackets
 }
 
-func countMissingPackets(protectedPackets []*protectedPacket) int {
+func countMissingPackets(protectedPackets []protectedPacket) int {
 	missing := 0
 	for _, pkt := range protectedPackets {
 		if pkt.packet == nil {
@@ -439,7 +440,7 @@ func decodeMask(mask uint64, bitCount uint16, seqNumBase uint16) []uint16 {
 type fecPacketState struct {
 	packet           *rtp.Packet
 	flexFec          flexFec
-	protectedPackets []*protectedPacket
+	protectedPackets []protectedPacket
 }
 
 type flexFec struct {
