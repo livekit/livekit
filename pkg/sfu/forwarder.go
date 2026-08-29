@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/pion/rtp"
+	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/zap/zapcore"
 
@@ -202,6 +203,8 @@ type TranslationParams struct {
 	incomingHeaderSize int
 	codecBytes         []byte
 	marker             bool
+	// end of the svc spatial layer frame
+	isEndOfLayerFrame bool
 }
 
 // -------------------------------------------------------------------
@@ -240,6 +243,7 @@ type Forwarder struct {
 
 	started                  bool
 	preStartTime             time.Time
+	startPending             bool
 	acquireDeadline          int64 // mono nanos; initial-acquisition grace deadline, 0 = inactive
 	extFirstTS               uint64
 	lastSSRC                 uint32
@@ -407,7 +411,7 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 			if f.vls != nil {
 				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
 			} else {
-				f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
+				f.vls = videolayerselector.NewSimulcast(f.logger)
 			}
 		} else {
 			f.isDDAvailable = ddAvailable(extensions)
@@ -508,6 +512,7 @@ func (f *Forwarder) SeedState(state *livekit.RTPForwarderState) {
 	f.referenceLayerSpatial = state.ReferenceLayerSpatial
 	if state.PreStartTime != 0 {
 		f.preStartTime = time.Unix(0, state.PreStartTime)
+		f.startPending = true
 	}
 	f.extFirstTS = state.ExtFirstTimestamp
 	f.dummyStartTSOffset = state.DummyStartTimestampOffset
@@ -1728,6 +1733,14 @@ func (f *Forwarder) Restart() {
 	f.refVideoLayerMode = livekit.VideoLayer_MODE_UNUSED
 }
 
+func (f *Forwarder) ForceLayerForTest(layer buffer.VideoLayer) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	f.vls.SetCurrent(layer)
+	f.vls.SetTarget(layer)
+}
+
 func (f *Forwarder) FilterRTX(nacks []uint16) (filtered []uint16, disallowedLayers [buffer.DefaultMaxLayerSpatial + 1]bool) {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
@@ -1782,7 +1795,7 @@ func (f *Forwarder) GetTranslationParams(extPkt *buffer.ExtPacket, layer int32) 
 }
 
 func (f *Forwarder) getRefLayerRTPTimestamp(ts uint32, refLayer, targetLayer int32) (uint32, error) {
-	if refLayer < 0 || int(refLayer) > len(f.refInfos) || targetLayer < 0 || int(targetLayer) > len(f.refInfos) {
+	if refLayer < 0 || int(refLayer) >= len(f.refInfos) || targetLayer < 0 || int(targetLayer) >= len(f.refInfos) {
 		return 0, fmt.Errorf("invalid layer(s), refLayer: %d, targetLayer: %d", refLayer, targetLayer)
 	}
 
@@ -1850,7 +1863,10 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 			"referenceLayerSpatial", f.referenceLayerSpatial,
 		)
 
-		starting = true
+		if f.startPending {
+			f.startPending = false
+			starting = true
+		}
 	}
 
 	logTransition := func(message string, extExpectedTS, extRefTS, extLastTS uint64, diffSeconds float64) {
@@ -2113,6 +2129,20 @@ func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket, layer in
 }
 
 // should be called with lock held
+func (f *Forwarder) isEndOfLayerFrame(extPkt *buffer.ExtPacket) bool {
+	if extPkt.DependencyDescriptor != nil {
+		return extPkt.DependencyDescriptor.Descriptor != nil && extPkt.DependencyDescriptor.Descriptor.LastPacketInFrame
+	}
+
+	if f.mime == mime.MimeTypeVP9 {
+		vp9, ok := extPkt.Payload.(codecs.VP9Packet)
+		return ok && vp9.E
+	}
+
+	return false
+}
+
+// should be called with lock held
 func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer int32) (TranslationParams, error) {
 	tp := TranslationParams{}
 	if !f.vls.GetTarget().IsValid() {
@@ -2156,6 +2186,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	tp.isSwitching = result.IsSwitching
 	tp.ddBytes = result.DependencyDescriptorExtension
 	tp.marker = result.RTPMarker
+	tp.isEndOfLayerFrame = f.isEndOfLayerFrame(extPkt)
 
 	starting, err := f.getTranslationParamsCommon(extPkt, layer, &tp)
 	tp.isStarting = starting
@@ -2222,6 +2253,7 @@ func (f *Forwarder) maybeStart() {
 
 	f.started = true
 	f.preStartTime = time.Now()
+	f.startPending = true
 
 	sequenceNumber := uint16(rand.Intn(1<<14)) + uint16(1<<15) // a random number in third quartile of sequence number space
 	timestamp := uint32(rand.Intn(1<<30)) + uint32(1<<31)      // a random number in third quartile of timestamp space

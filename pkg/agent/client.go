@@ -172,6 +172,7 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverut
 				AgentName:       desc.AgentName,
 				Metadata:        desc.Metadata,
 				EnableRecording: c.config.EnableUserDataRecording,
+				EnableRedaction: c.config.EnableUserDataRedaction,
 				Deployment:      desc.Deployment,
 				Attributes:      desc.Attributes,
 			}

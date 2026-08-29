@@ -98,7 +98,10 @@ func NewPlayoutDelayController(minDelay, maxDelay uint32, logger logger.Logger, 
 		rtpStats:         rtpStats,
 		senderSnapshotID: rtpStats.NewSenderSnapshotId(),
 	}
-	return c, c.createExtData()
+
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	return c, c.createExtDataLocked()
 }
 
 func (c *PlayoutDelayController) GetState() PlayoutDelayControllerState {
@@ -157,8 +160,8 @@ func (c *PlayoutDelayController) SetJitter(jitter uint32) {
 		}
 	}
 	c.currentDelay = targetDelay
+	c.createExtDataLocked()
 	c.lock.Unlock()
-	c.createExtData()
 }
 
 func (c *PlayoutDelayController) OnSeqAcked(seq uint16) {
@@ -186,7 +189,7 @@ func (c *PlayoutDelayController) GetDelayExtension(seq uint16) []byte {
 	return nil
 }
 
-func (c *PlayoutDelayController) createExtData() error {
+func (c *PlayoutDelayController) createExtDataLocked() error {
 	delay := pd.PlayoutDelayFromValue(
 		uint16(c.currentDelay),
 		uint16(c.maxDelay),

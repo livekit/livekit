@@ -2,6 +2,136 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.6] - 2026-08-26
+
+### Added
+
+- Expand room details in webhook events (#4730)
+- Add configurable read-message size limit on signalling WebSockets (#4743)
+- Add per-participant concurrent TURN allocation quota (#4744)
+- Limit number of pending tracks per participant. (#4750)
+- Limit API request body size (#4757)
+- Experimental WARP (#4649)
+- Log invalid APIKey on API failures. (#4762)
+- Add a small cache for data messages received via SendData API. (#4781)
+- Add bytes cap on migration data cache size (#4782)
+- TEL-912 Adding response for TransferSIPParticipant rpc (#4783)
+
+### Changed
+
+- Remove H.264 baseline (42001f) from default enabled codecs (#4723)
+- Apply ICE preference when switching to TCP on unstable UDP (#4703)
+- Include data track susbcriptions in WaitForSubscription. (#4727)
+- Return incompatible in SetCodecWithState if the codec PT changed (#4729)
+- return psrpc.FailedPrecondition for "participant client version does not support moving" error (#4736)
+- Update actions/setup-go action to v7 (#4720)
+- Validate TURN config to guard against invalid values (#4742)
+- Use request id to make api idempotence on sdk retry (#4694)
+- Set relay quota per participant at 12 default for dual peer connection + resume scenarios (#4745)
+- Record publish time on participant close for pending tracks. (#4738)
+- Make subscription limit log Debugw as it could spam in a large room. (#4748)
+- Fail server start up on partial prom config. (#4749)
+- sample codec payload mismatch error log (#4751)
+- Process NACK retransmissions in a single worker per DownTrack (#4758)
+- Update module github.com/moby/moby/client to v0.5.1 (#4769)
+- Update renovate and pinning behavior, run tools from go.mod (#4759)
+- Bump github.com/cilium/ebpf in the go_modules group across 1 directory (#4770)
+- bump protocol for passthrough + UpdateEgress removal (#4774)
+- Check for ICE connection before closing participant on signal close. (#4780)
+- Join failure is a canceled connection attempt. (#4788)
+- Update github.com/livekit/mediatransportutil digest to f234b53 (#4785)
+- Reduce locking in media track + telemetry listener on move participant. (#4790)
+- Group livekit dependency updates in renovate (#4791)
+- Return created ingress info from io service (#4787)
+- config: clarify AdvertiseInternalIP applies to explicit node_ip too (#4754)
+
+### Fixed
+
+- Fix AgentHandler.DrainConnections deadlock on worker close. (#4710)
+- Check for pictureID existence in VP8 and VP9 (#4721)
+- Do not report end time for participant if the participant is migrating (#4728)
+- Check layer value in dependency descriptor and keep it in bounds. (#4739)
+- Fix publish track count on migration in. (#4740)
+- Cover a couple of more cases on data track runt packet handling. (#4741)
+- Close web socket connections in all paths. (#4747)
+- Check slice length before access in a couple of more places (#4752)
+- Remove auth token from log/being sent back to client on invalid token error (#4756)
+- Flush sequencer on stream restart; bound frame-integrity loops (#4760)
+- Redact stream keys in UpdateStream API log fields (#4763)
+- Fix deadlock in regress codec check. (#4775)
+- Flush pending signal responses before closing the web socket. (#4776)
+- Strip packet trailers from every VP9 layer frame (#4773)
+- Fix simulcast RTX pairing broken by pion/webrtc#3470 (#4800)
+
+## [1.13.5] - 2026-07-31
+
+### Added
+
+- add mock for testing region pins with API (#4691)
+- Add country to participant closing log (#4693)
+- Tests for down stream packet push. (#4692)
+- Add status code for twirp request latency prometheus metric (#4621)
+- Support more h264 profiles (#4708)
+- log high stream start latency. (#4714)
+
+### Changed
+
+- Use simulcast constructor for VP9 if simulcasted. (#4696)
+- send resolved ringing timeout (#4697)
+- Update go deps (#4645)
+- protocol deps for logging webhook status (#4699)
+- protocol update with webhook status logging (#4700)
+- Record subscribe stream start time in prometheus. (#4704)
+- A bit better counting for track publish. (#4707)
+
+### Fixed
+
+- Fix padding bit in forwarded packet. (#4690)
+- Spelling fixes (#4698)
+- Do not call telemetry listener under pending track lock. (#4706)
+- Fix getRefLayerRTPTimestamp off-by-one that can panic on max layer index (#4712)
+
+## [1.13.4] - 2026-07-18
+
+### Added
+
+- added mocking function for SIP dialing methods (#4642)
+- Add signal tests to test-server (#4653)
+- Add option to exclude local IPv6 candidates. (#4657)
+- Add a method to get forward stats via API method. (#4664)
+- Add drop-on-close signal test scenario (#4669)
+- Log soft validation errors. (#4671)
+- add redaction flag in Job (#4650)
+
+### Changed
+
+- simpler mock protocol (#4641)
+- Make IsConnectionCanceled available at LocalParticipant interface. (#4643)
+- Update actions/checkout action to v7 (#4646)
+- Update protocol. (#4648)
+- Export migration to LocalParticipant interface. (#4652)
+- Record final RTC state as success/failure. (#4658)
+- Omit rtx/out-of-order packets from forwarding delay measurement. (#4659)
+- Move ForwardStats aggregation off the packet forwarding path (#4660)
+- protocol deps to get parallel exec alloc reduction (#4662)
+- Update pion/ice to deal with hang on close. (#4672)
+- Add more details to unreliable data channel drop error. (#4673)
+- Record `rtc_success` prom as soon as RTC connects. (#4677)
+- Use proto logger to get named enums in the logs. (#4679)
+- Propagate spreader threshold to RED receivers. (#4683)
+- Prefer QDisc.Stats till go-tc addresses QDisc.Stats2 parsing (#4685)
+- Bump protocol version to fix call to Validate. (#4686)
+
+### Fixed
+
+- bound data-track buffering under downlink congestion (targetLatency) (#4667)
+- Guard against nil TC qdisc stats to prevent SIGSEGV (#4668)
+- Fix goroutine leak from orphaned signal relay streams (#4674)
+- don't undercount data channel bitrate over idle gaps (#4676)
+- Fix receiver load balance threshold initialization (#4678)
+- rtc: guard against nil subscriber in TransportManager.HandleAnswer (#4680)
+- Potential fix for code scanning alert no. 42: Incorrect conversion between integer types (#4684)
+
 ## [1.13.3] - 2026-07-03
 
 ### Added

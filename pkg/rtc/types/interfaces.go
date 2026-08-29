@@ -16,6 +16,7 @@ package types
 
 import (
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/pion/rtcp"
@@ -43,6 +44,7 @@ import (
 //counterfeiter:generate . WebsocketClient
 type WebsocketClient interface {
 	ReadMessage() (messageType int, p []byte, err error)
+	NextReader() (messageType int, r io.Reader, err error)
 	WriteMessage(messageType int, data []byte) error
 	WriteControl(messageType int, data []byte, deadline time.Time) error
 	SetReadDeadline(deadline time.Time) error
@@ -368,10 +370,11 @@ type AddTrackParams struct {
 }
 
 type MoveToRoomParams struct {
-	RoomName      livekit.RoomName
-	ParticipantID livekit.ParticipantID
-	Listener      LocalParticipantListener
-	Helper        LocalParticipantHelper
+	RoomName          livekit.RoomName
+	ParticipantID     livekit.ParticipantID
+	Listener          LocalParticipantListener
+	TelemetryListener ParticipantTelemetryListener
+	Helper            LocalParticipantHelper
 }
 
 type DataMessageCache struct {
@@ -423,11 +426,13 @@ type LocalParticipant interface {
 	GetPlayoutDelayConfig() *livekit.PlayoutDelay
 	GetPendingTrack(trackID livekit.TrackID) *livekit.TrackInfo
 	GetICEConnectionInfo() []*ICEConnectionInfo
+	HasICEConnected() bool
 	HasConnected() bool
 	GetEnabledPublishCodecs() []*livekit.Codec
 	GetPublisherICESessionUfrag() (string, error)
 	SupportsMoving() error
 	GetLastReliableSequence(migrateOut bool) uint32
+	IsWarpEnabled() bool
 
 	SwapResponseSink(sink routing.MessageSink, reason SignallingCloseReason)
 	GetResponseSink() routing.MessageSink
@@ -680,14 +685,14 @@ func (*NullLocalParticipantListener) OnLeave(LocalParticipant, ParticipantCloseR
 
 //counterfeiter:generate . ParticipantTelemetryListener
 type ParticipantTelemetryListener interface {
-	OnTrackPublishRequested(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo)
+	OnTrackPublishRequested(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool)
 	OnTrackPublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool)
-	OnTrackUnpublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool)
+	OnTrackUnpublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, wasPublishedLocally bool, shouldSendEvent bool)
 	OnTrackSubscribeRequested(pID livekit.ParticipantID, ti *livekit.TrackInfo)
 	OnTrackSubscribed(pID livekit.ParticipantID, ti *livekit.TrackInfo, publisherInfo *livekit.ParticipantInfo, shouldSendEvent bool)
 	OnTrackUnsubscribed(pID livekit.ParticipantID, ti *livekit.TrackInfo, shouldSendEvent bool)
 	OnTrackSubscribeFailed(pID livekit.ParticipantID, trackID livekit.TrackID, err error, isUserError bool)
-	OnTrackSubscribeStreamStarted(pID livekit.ParticipantID, ti *livekit.TrackInfo)
+	OnTrackSubscribeStreamStarted(pID livekit.ParticipantID, ti *livekit.TrackInfo, elapsed time.Duration)
 	OnTrackMuted(pID livekit.ParticipantID, ti *livekit.TrackInfo)
 	OnTrackUnmuted(pID livekit.ParticipantID, ti *livekit.TrackInfo)
 	OnTrackPublishedUpdate(pID livekit.ParticipantID, ti *livekit.TrackInfo)
@@ -702,11 +707,11 @@ var _ ParticipantTelemetryListener = (*NullParticipantTelemetryListener)(nil)
 
 type NullParticipantTelemetryListener struct{}
 
-func (NullParticipantTelemetryListener) OnTrackPublishRequested(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo) {
+func (NullParticipantTelemetryListener) OnTrackPublishRequested(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool) {
 }
 func (NullParticipantTelemetryListener) OnTrackPublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool) {
 }
-func (NullParticipantTelemetryListener) OnTrackUnpublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool) {
+func (NullParticipantTelemetryListener) OnTrackUnpublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, wasPublishedLocally bool, shouldSendEvent bool) {
 }
 func (NullParticipantTelemetryListener) OnTrackSubscribeRequested(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
 }
@@ -716,7 +721,7 @@ func (NullParticipantTelemetryListener) OnTrackUnsubscribed(pID livekit.Particip
 }
 func (NullParticipantTelemetryListener) OnTrackSubscribeFailed(pID livekit.ParticipantID, trackID livekit.TrackID, err error, isUserError bool) {
 }
-func (NullParticipantTelemetryListener) OnTrackSubscribeStreamStarted(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
+func (NullParticipantTelemetryListener) OnTrackSubscribeStreamStarted(pID livekit.ParticipantID, ti *livekit.TrackInfo, elapsed time.Duration) {
 }
 func (NullParticipantTelemetryListener) OnTrackMuted(pID livekit.ParticipantID, ti *livekit.TrackInfo) {
 }
@@ -817,6 +822,11 @@ type LocalMediaTrack interface {
 	HasSignalCid(cid string) bool
 	HasSdpCid(cid string) bool
 
+	SetMigrated(bool)
+	Migrated() bool
+	SetPublished(bool)
+	Published() bool
+
 	GetConnectionScoreAndQuality() (float32, livekit.ConnectionQuality)
 	GetTrackStats() *livekit.RTPStats
 
@@ -880,6 +890,7 @@ type DataTrackTransport interface {
 type SubscribedTrack interface {
 	AddOnBind(f func(error))
 	IsBound() bool
+	OnSubscribeStreamStarted(f func(elapsed time.Duration))
 	Close(isExpectedToResume bool)
 	OnClose(f func(isExpectedToResume bool))
 	ID() livekit.TrackID

@@ -113,7 +113,7 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "start_time_ms",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		Buckets:     prometheus.ExponentialBucketsRange(100, 10000, 15),
-	}, []string{"protocol_version"})
+	}, []string{"protocol_version", "warp"})
 	promSessionDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "session",
@@ -205,7 +205,7 @@ func RecordPublishTime(
 	sdk livekit.ClientInfo_SDK,
 	kind livekit.ParticipantInfo_Kind,
 ) {
-	recordPubSubTime(true, country, source, trackType, d, sdk, kind, 1)
+	recordPubSubStreamStartTime("publish", country, source, trackType, d, sdk, kind, 1)
 }
 
 func RecordSubscribeTime(
@@ -217,11 +217,22 @@ func RecordSubscribeTime(
 	kind livekit.ParticipantInfo_Kind,
 	count int,
 ) {
-	recordPubSubTime(false, country, source, trackType, d, sdk, kind, count)
+	recordPubSubStreamStartTime("subscribe", country, source, trackType, d, sdk, kind, count)
 }
 
-func recordPubSubTime(
-	isPublish bool,
+func RecordSubscribeStreamStartTime(
+	country string,
+	source livekit.TrackSource,
+	trackType livekit.TrackType,
+	d time.Duration,
+	sdk livekit.ClientInfo_SDK,
+	kind livekit.ParticipantInfo_Kind,
+) {
+	recordPubSubStreamStartTime("subscribe-stream-start", country, source, trackType, d, sdk, kind, 1)
+}
+
+func recordPubSubStreamStartTime(
+	direction string,
 	country string,
 	source livekit.TrackSource,
 	trackType livekit.TrackType,
@@ -230,10 +241,6 @@ func recordPubSubTime(
 	kind livekit.ParticipantInfo_Kind,
 	count int,
 ) {
-	direction := "subscribe"
-	if isPublish {
-		direction = "publish"
-	}
 	promPubSubTime.WithLabelValues(
 		direction,
 		source.String(),
@@ -284,8 +291,8 @@ func RecordSessionJoinLatency(protocolVersion int, d time.Duration) {
 	promSessionJoinLatency.WithLabelValues(strconv.Itoa(protocolVersion)).Observe(float64(d.Milliseconds()))
 }
 
-func RecordSessionStartTime(protocolVersion int, d time.Duration) {
-	promSessionStartTime.WithLabelValues(strconv.Itoa(protocolVersion)).Observe(float64(d.Milliseconds()))
+func RecordSessionStartTime(protocolVersion int, warp bool, d time.Duration) {
+	promSessionStartTime.WithLabelValues(strconv.Itoa(protocolVersion), strconv.FormatBool(warp)).Observe(float64(d.Milliseconds()))
 }
 
 func RecordSessionDuration(protocolVersion int, d time.Duration) {

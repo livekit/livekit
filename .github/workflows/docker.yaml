@@ -43,19 +43,28 @@ jobs:
             type=semver,pattern=v{{version}}
             type=semver,pattern=v{{major}}.{{minor}}
 
+      # Generate with the same Go toolchain the published image is built with
+      - name: Resolve Go version
+        id: go-version
+        run: |
+          # Assign first so a failed lookup trips `set -e`; inside echo its exit
+          # status would be discarded and an empty version written.
+          version=$(.github/scripts/go-version.sh Dockerfile)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Set up Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version-file: "go.mod"
+          go-version: ${{ steps.go-version.outputs.version }}
 
       - name: Download Go modules
         run: go mod download
 
+      # Run mage at the version go.mod pins, rather than the mage-action's
+      # `version: latest`, so the binary matches the mage/mg library the magefile is
+      # compiled against and Renovate owns the version like any other module.
       - name: Generate code
-        uses: magefile/mage-action@a662bd8c29d8106879588cfff83b2faf6e6f59db # v4
-        with:
-          version: latest
-          args: generate
+        run: go run github.com/magefile/mage generate
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4

@@ -74,7 +74,8 @@ type SubscribedTrack struct {
 	bound           bool
 	onBindCallbacks []func(error)
 
-	onClose atomic.Value // func(bool)
+	onSubscribeStreamStarted atomic.Value //func(time.Duration)
+	onClose                  atomic.Value // func(bool)
 
 	debouncer func(func())
 
@@ -245,6 +246,10 @@ func (t *SubscribedTrack) Close(isExpectedToResume bool) {
 	if onClose := t.onClose.Load(); onClose != nil {
 		onClose.(func(bool))(isExpectedToResume)
 	}
+}
+
+func (t *SubscribedTrack) OnSubscribeStreamStarted(f func(time.Duration)) {
+	t.onSubscribeStreamStarted.Store(f)
 }
 
 func (t *SubscribedTrack) OnClose(f func(bool)) {
@@ -497,6 +502,9 @@ func (t *SubscribedTrack) OnDownTrackClose(isExpectedToResume bool) {
 	t.Close(isExpectedToResume)
 }
 
-func (t *SubscribedTrack) OnStreamStarted() {
-	t.params.TelemetryListener.OnTrackSubscribeStreamStarted(t.params.Subscriber.ID(), t.params.MediaTrack.ToProto())
+func (t *SubscribedTrack) OnStreamStarted(elapsed time.Duration) {
+	t.params.TelemetryListener.OnTrackSubscribeStreamStarted(t.params.Subscriber.ID(), t.params.MediaTrack.ToProto(), elapsed)
+	if onSubscribeStreamStarted := t.onSubscribeStreamStarted.Load(); onSubscribeStreamStarted != nil {
+		onSubscribeStreamStarted.(func(time.Duration))(elapsed)
+	}
 }

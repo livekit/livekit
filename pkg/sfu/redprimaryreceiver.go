@@ -61,6 +61,10 @@ func NewRedPrimaryReceiver(receiver TrackReceiver, dsp utils.DownTrackSpreaderPa
 	}
 }
 
+func (r *RedPrimaryReceiver) SetLBThreshold(lbThreshold int) {
+	r.downTrackSpreader.SetThreshold(lbThreshold)
+}
+
 func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int32 {
 	// extract primary payload from RED and forward to downtracks
 	if r.downTrackSpreader.DownTrackCount() == 0 {
@@ -111,7 +115,7 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 					"packetExtractedTS", pkts[i].Timestamp,
 					"packetETS", pPkt.ExtTimestamp,
 					"pktHistory", r.pktHistory,
-					"redHeader", pkt.Packet.Payload[:10],
+					"redHeader", pkt.Packet.Payload[:min(len(pkt.Packet.Payload), 10)],
 					"payloadSize", len(pkt.Packet.Payload),
 					"lastSeq", r.lastSeq,
 					"highestFowardedExtSequenceNumber", r.highestForwardedExtSequenceNumber,

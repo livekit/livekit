@@ -47,7 +47,7 @@ var _ types.LocalMediaTrack = (*MediaTrack)(nil)
 // Implements MediaTrack and PublishedTrack interface
 type MediaTrack struct {
 	params         MediaTrackParams
-	buffer         *buffer.Buffer
+	buffer         atomic.Pointer[buffer.Buffer]
 	everSubscribed atomic.Bool
 
 	*MediaTrackReceiver
@@ -55,24 +55,20 @@ type MediaTrack struct {
 
 	dynacastManager dynacast.DynacastManager
 
-	lock sync.RWMutex
+	// serialises receiver creation in AddReceiver, i. e. the check-then-create
+	// of a receiver for a mime type. Held across receiver set up
+	addReceiverLock sync.Mutex
+
+	regressionTargetCodecReceived atomic.Bool
+
+	migrated  atomic.Bool
+	published atomic.Bool
 
 	rttFromXR atomic.Bool
 
-	backupCodecPolicy             livekit.BackupCodecPolicy
-	regressionTargetCodec         mime.MimeType
-	regressionTargetCodecReceived bool
-
-	onSubscribedMaxQualityChange func(
-		trackID livekit.TrackID,
-		trackInfo *livekit.TrackInfo,
-		subscribedQualities []*livekit.SubscribedCodec,
-		maxSubscribedQualities []types.SubscribedCodecQuality,
-	) error
-	onSubscribedAudioCodecChange func(
-		trackID livekit.TrackID,
-		codecs []*livekit.SubscribedAudioCodec,
-	) error
+	backupCodecPolicy livekit.BackupCodecPolicy
+	// immutable after construction
+	regressionTargetCodec mime.MimeType
 }
 
 type MediaTrackParams struct {
@@ -88,7 +84,7 @@ type MediaTrackParams struct {
 	PLIThrottleConfig                sfu.PLIThrottleConfig
 	AudioConfig                      sfu.AudioConfig
 	VideoConfig                      config.VideoConfig
-	TelemetryListener                types.ParticipantTelemetryListener
+	TelemetryListener                func() types.ParticipantTelemetryListener
 	Logger                           logger.Logger
 	Reporter                         roomobs.TrackReporter
 	SimTracks                        map[uint32]interceptor.SimulcastTrackInfo
@@ -100,6 +96,16 @@ type MediaTrackParams struct {
 	EnableRTPStreamRestartDetection  bool
 	UpdateTrackInfoByVideoSizeChange bool
 	ForceBackupCodecPolicySimulcast  bool
+	OnSubscribedMaxQualityChange     func(
+		trackID livekit.TrackID,
+		trackInfo *livekit.TrackInfo,
+		subscribedQualities []*livekit.SubscribedCodec,
+		maxSubscribedQualities []types.SubscribedCodecQuality,
+	) error
+	OnSubscribedAudioCodecChange func(
+		trackID livekit.TrackID,
+		codecs []*livekit.SubscribedAudioCodec,
+	) error
 }
 
 func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
@@ -137,8 +143,8 @@ func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 			Logger: params.Logger,
 		})
 		t.MediaLossProxy.OnMediaLossUpdate(func(fractionalLoss uint8) {
-			if t.buffer != nil {
-				t.buffer.SetLastFractionLostReport(fractionalLoss)
+			if buff := t.buffer.Load(); buff != nil {
+				buff.SetLastFractionLostReport(fractionalLoss)
 			}
 		})
 		t.MediaTrackReceiver.OnMediaLossFeedback(t.MediaLossProxy.HandleMaxLossFeedback)
@@ -197,30 +203,6 @@ func NewMediaTrack(params MediaTrackParams, ti *livekit.TrackInfo) *MediaTrack {
 	})
 
 	return t
-}
-
-func (t *MediaTrack) OnSubscribedMaxQualityChange(
-	f func(
-		trackID livekit.TrackID,
-		trackInfo *livekit.TrackInfo,
-		subscribedQualities []*livekit.SubscribedCodec,
-		maxSubscribedQualities []types.SubscribedCodecQuality,
-	) error,
-) {
-	t.lock.Lock()
-	t.onSubscribedMaxQualityChange = f
-	t.lock.Unlock()
-}
-
-func (t *MediaTrack) OnSubscribedAudioCodecChange(
-	f func(
-		trackID livekit.TrackID,
-		codecs []*livekit.SubscribedAudioCodec,
-	) error,
-) {
-	t.lock.Lock()
-	t.onSubscribedAudioCodecChange = f
-	t.lock.Unlock()
 }
 
 func (t *MediaTrack) NotifySubscriberNodeMaxQuality(nodeID livekit.NodeID, qualities []types.SubscribedCodecQuality) {
@@ -347,8 +329,11 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 	})
 
 	ti := t.MediaTrackReceiver.TrackInfoClone()
-	t.lock.Lock()
+
 	var regressCodec bool
+	enableRegression := t.enableRegression()
+
+	t.addReceiverLock.Lock()
 	mimeType := mime.NormalizeMimeType(track.Codec().MimeType)
 	layer := buffer.GetSpatialLayerForRid(mimeType, track.RID(), ti)
 	if layer < 0 {
@@ -360,7 +345,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			"codec", track.Codec(),
 			"trackInfo", logger.Proto(ti),
 		)
-		t.lock.Unlock()
+		t.addReceiverLock.Unlock()
 		return newCodec, false
 	}
 
@@ -404,7 +389,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 				"mime", mimeType,
 				"track", logger.Proto(ti),
 			)
-			t.lock.Unlock()
+			t.addReceiverLock.Unlock()
 			return newCodec, false
 		}
 
@@ -447,11 +432,8 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		}
 		newWR.OnStatsUpdate(func(_ *sfu.WebRTCReceiver, stat *livekit.AnalyticsStat) {
 			// send for only one codec, either primary (priority == 0) OR regressed codec
-			t.lock.RLock()
-			regressionTargetCodecReceived := t.regressionTargetCodecReceived
-			t.lock.RUnlock()
-			if priority == 0 || regressionTargetCodecReceived {
-				t.params.TelemetryListener.OnTrackStats(statsKey, stat)
+			if priority == 0 || t.regressionTargetCodecReceived.Load() {
+				t.params.TelemetryListener().OnTrackStats(statsKey, stat)
 
 				if cs, ok := telemetry.CondenseStat(stat); ok {
 					t.params.Reporter.Tx(func(tx roomobs.TrackTx) {
@@ -476,10 +458,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 
 		newWR.OnMaxLayerChange(func(mimeType mime.MimeType, maxLayer int32) {
 			// send for only one codec, either primary (priority == 0) OR regressed codec
-			t.lock.RLock()
-			regressionTargetCodecReceived := t.regressionTargetCodecReceived
-			t.lock.RUnlock()
-			if priority == 0 || regressionTargetCodecReceived {
+			if priority == 0 || t.regressionTargetCodecReceived.Load() {
 				t.MediaTrackReceiver.NotifyMaxLayerChange(mimeType, maxLayer)
 			}
 		})
@@ -504,7 +483,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			}
 		}
 
-		t.buffer = buff
+		t.buffer.Store(buff)
 
 		t.MediaTrackReceiver.SetupReceiver(newWR, priority, mid)
 
@@ -530,16 +509,16 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 		})
 	}
 
-	if newCodec && t.enableRegression() {
+	if newCodec && enableRegression {
 		if mimeType == t.regressionTargetCodec {
 			t.params.Logger.Infow("regression target codec received", "codec", mimeType)
-			t.regressionTargetCodecReceived = true
+			t.regressionTargetCodecReceived.Store(true)
 			regressCodec = true
-		} else if t.regressionTargetCodecReceived {
+		} else if t.regressionTargetCodecReceived.Load() {
 			regressCodec = true
 		}
 	}
-	t.lock.Unlock()
+	t.addReceiverLock.Unlock()
 
 	if err := wr.(*sfu.WebRTCReceiver).AddUpTrack(track, buff); err != nil {
 		t.params.Logger.Warnw(
@@ -600,7 +579,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 	})
 
 	buff.OnFinalRtpStats(func(stats *livekit.RTPStats) {
-		t.params.TelemetryListener.OnTrackPublishRTPStats(
+		t.params.TelemetryListener().OnTrackPublishRTPStats(
 			t.params.ParticipantID(),
 			t.ID(),
 			mimeType,
@@ -681,12 +660,8 @@ func (t *MediaTrack) OnDynacastSubscribedMaxQualityChange(
 	subscribedQualities []*livekit.SubscribedCodec,
 	maxSubscribedQualities []types.SubscribedCodecQuality,
 ) {
-	t.lock.RLock()
-	onSubscribedMaxQualityChange := t.onSubscribedMaxQualityChange
-	t.lock.RUnlock()
-
-	if onSubscribedMaxQualityChange != nil && !t.IsMuted() {
-		_ = onSubscribedMaxQualityChange(
+	if t.params.OnSubscribedMaxQualityChange != nil && !t.IsMuted() {
+		_ = t.params.OnSubscribedMaxQualityChange(
 			t.ID(),
 			t.ToProto(),
 			subscribedQualities,
@@ -709,11 +684,23 @@ func (t *MediaTrack) OnDynacastSubscribedMaxQualityChange(
 }
 
 func (t *MediaTrack) OnDynacastSubscribedAudioCodecChange(codecs []*livekit.SubscribedAudioCodec) {
-	t.lock.RLock()
-	onSubscribedAudioCodecChange := t.onSubscribedAudioCodecChange
-	t.lock.RUnlock()
-
-	if onSubscribedAudioCodecChange != nil {
-		_ = onSubscribedAudioCodecChange(t.ID(), codecs)
+	if t.params.OnSubscribedAudioCodecChange != nil {
+		_ = t.params.OnSubscribedAudioCodecChange(t.ID(), codecs)
 	}
+}
+
+func (t *MediaTrack) SetMigrated(migrated bool) {
+	t.migrated.Store(migrated)
+}
+
+func (t *MediaTrack) Migrated() bool {
+	return t.migrated.Load()
+}
+
+func (t *MediaTrack) SetPublished(published bool) {
+	t.published.Store(published)
+}
+
+func (t *MediaTrack) Published() bool {
+	return t.published.Load()
 }

@@ -57,7 +57,6 @@ type SubscriptionManagerParams struct {
 	OnTrackSubscribed   func(subTrack types.SubscribedTrack)
 	OnTrackUnsubscribed func(subTrack types.SubscribedTrack)
 	OnSubscriptionError func(trackID livekit.TrackID, fatal bool, err error)
-	TelemetryListener   types.ParticipantTelemetryListener
 
 	SubscriptionLimitVideo, SubscriptionLimitAudio int32
 
@@ -417,6 +416,14 @@ func (m *SubscriptionManager) WaitUntilSubscribed(timeout time.Duration) error {
 				break
 			}
 		}
+		if allSubscribed {
+			for _, sub := range m.dataTrackSubscriptions {
+				if sub.needsSubscribe() {
+					allSubscribed = false
+					break
+				}
+			}
+		}
 		m.lock.RUnlock()
 		if allSubscribed {
 			return nil
@@ -495,7 +502,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *mediaTrackSubscription) {
 
 		numAttempts := s.getNumAttempts()
 		if numAttempts == 0 {
-			m.params.TelemetryListener.OnTrackSubscribeRequested(
+			m.params.Participant.GetTelemetryListener().OnTrackSubscribeRequested(
 				s.subscriberID,
 				&livekit.TrackInfo{
 					Sid: string(s.trackID),
@@ -515,14 +522,14 @@ func (m *SubscriptionManager) reconcileSubscription(s *mediaTrackSubscription) {
 				// - ErrSubscriptionLimitExceeded: the participant have reached the limit of subscriptions, wait for the other subscription to be unsubscribed
 				// We'll still log an event to reflect this in telemetry since it's been too long
 				if s.durationSinceStart() > subscriptionTimeout {
-					s.maybeRecordError(m.params.TelemetryListener, err, true)
+					s.maybeRecordError(m.params.Participant.GetTelemetryListener(), err, true)
 				}
 			case ErrTrackNotFound:
 				// source track was never published or closed
 				// if after timeout we'd unsubscribe from it.
 				// this is the *only* case we'd change desired state
 				if s.durationSinceStart() > notFoundTimeout {
-					s.maybeRecordError(m.params.TelemetryListener, err, true)
+					s.maybeRecordError(m.params.Participant.GetTelemetryListener(), err, true)
 					s.logger.Infow("unsubscribing from track after notFoundTimeout", "error", err)
 					s.setDesired(false)
 					m.queueReconcile(s.trackID)
@@ -535,7 +542,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *mediaTrackSubscription) {
 						"failed to subscribe, triggering error handler", err,
 						"attempt", s.getNumAttempts(),
 					)
-					s.maybeRecordError(m.params.TelemetryListener, err, false)
+					s.maybeRecordError(m.params.Participant.GetTelemetryListener(), err, false)
 					m.params.OnSubscriptionError(s.trackID, true, err)
 				} else {
 					s.logger.Debugw(
@@ -574,7 +581,7 @@ func (m *SubscriptionManager) reconcileSubscription(s *mediaTrackSubscription) {
 			wait := min(time.Since(activeAt), s.durationSinceStart())
 			if wait > subscriptionTimeout {
 				s.logger.Warnw("track not bound after timeout", nil)
-				s.maybeRecordError(m.params.TelemetryListener, ErrTrackNotBound, false)
+				s.maybeRecordError(m.params.Participant.GetTelemetryListener(), ErrTrackNotBound, false)
 				m.params.OnSubscriptionError(s.trackID, true, ErrTrackNotBound)
 			}
 		}
@@ -728,13 +735,13 @@ func (m *SubscriptionManager) hasCapacityForSubscription(kind livekit.TrackType)
 	switch kind {
 	case livekit.TrackType_VIDEO:
 		if m.params.SubscriptionLimitVideo > 0 && m.subscribedVideoCount.Load() >= m.params.SubscriptionLimitVideo {
-			m.params.Logger.Infow("subcription limit exceeded for video", "limit", m.params.SubscriptionLimitVideo, "subscriptions", m.subscribedVideoCount.Load())
+			m.params.Logger.Debugw("subscription limit exceeded for video", "limit", m.params.SubscriptionLimitVideo, "subscriptions", m.subscribedVideoCount.Load())
 			return false
 		}
 
 	case livekit.TrackType_AUDIO:
 		if m.params.SubscriptionLimitAudio > 0 && m.subscribedAudioCount.Load() >= m.params.SubscriptionLimitAudio {
-			m.params.Logger.Infow("subcription limit exceeded for audio", "limit", m.params.SubscriptionLimitAudio, "subscriptions", m.subscribedAudioCount.Load())
+			m.params.Logger.Debugw("subscription limit exceeded for audio", "limit", m.params.SubscriptionLimitAudio, "subscriptions", m.subscribedAudioCount.Load())
 			return false
 		}
 	}
@@ -852,6 +859,7 @@ func (m *SubscriptionManager) addSubscriber(sub *mediaTrackSubscription, track t
 		)
 	}
 	if err == nil && subTrack != nil { // subTrack could be nil if already subscribed
+		subTrack.OnSubscribeStreamStarted(sub.recordStreamStartLatency)
 		subTrack.OnClose(func(isExpectedToResume bool) {
 			m.handleSubscribedTrackClose(sub, isExpectedToResume)
 
@@ -864,13 +872,13 @@ func (m *SubscriptionManager) addSubscriber(sub *mediaTrackSubscription, track t
 		subTrack.AddOnBind(func(err error) {
 			if err != nil {
 				sub.logger.Infow("failed to bind track", "err", err)
-				sub.maybeRecordError(m.params.TelemetryListener, err, true)
+				sub.maybeRecordError(m.params.Participant.GetTelemetryListener(), err, true)
 				m.UnsubscribeFromTrack(trackID)
 				m.params.OnSubscriptionError(trackID, false, err)
 				return
 			}
 			sub.setBound()
-			sub.maybeRecordSuccess(m.params.TelemetryListener)
+			sub.maybeRecordSuccess(m.params.Participant.GetTelemetryListener())
 		})
 		sub.setSubscribedTrack(subTrack)
 
@@ -994,7 +1002,7 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *mediaTrackSubscripti
 	// * the participant isn't closing
 	// * it's not a migration
 	if wasBound {
-		m.params.TelemetryListener.OnTrackUnsubscribed(
+		m.params.Participant.GetTelemetryListener().OnTrackUnsubscribed(
 			s.subscriberID,
 			&livekit.TrackInfo{Sid: string(s.trackID), Type: subTrack.MediaTrack().Kind()},
 			!isExpectedToResume,
@@ -1004,7 +1012,7 @@ func (m *SubscriptionManager) handleSubscribedTrackClose(s *mediaTrackSubscripti
 		if dt != nil {
 			stats := dt.GetTrackStats()
 			if stats != nil {
-				m.params.TelemetryListener.OnTrackSubscribeRTPStats(
+				m.params.Participant.GetTelemetryListener().OnTrackSubscribeRTPStats(
 					s.subscriberID,
 					s.trackID,
 					dt.Mime(),
@@ -1530,6 +1538,28 @@ func (s *mediaTrackSubscription) maybeRecordSuccess(tl types.ParticipantTelemetr
 		Sid:      string(subTrack.PublisherID()),
 	}
 	tl.OnTrackSubscribed(s.subscriberID, mediaTrack.ToProto(), pi, !eventSent)
+}
+
+func (s *mediaTrackSubscription) recordStreamStartLatency(elapsed time.Duration) {
+	subTrack := s.getSubscribedTrack()
+	if subTrack == nil {
+		return
+	}
+	mediaTrack := subTrack.MediaTrack()
+	if mediaTrack == nil {
+		return
+	}
+
+	s.logger.Debugw("track subscribe stream started", "cost", elapsed.Milliseconds())
+	subscriber := subTrack.Subscriber()
+	prometheus.RecordSubscribeStreamStartTime(
+		subscriber.GetCountry(),
+		mediaTrack.Source(),
+		mediaTrack.Kind(),
+		elapsed,
+		subscriber.GetClientInfo().GetSdk(),
+		subscriber.Kind(),
+	)
 }
 
 func (s *mediaTrackSubscription) isCanceled() bool {

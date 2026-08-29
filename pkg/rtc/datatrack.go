@@ -127,7 +127,7 @@ func (d *DataTrack) AddSubscriber(sub types.LocalParticipant) (types.DataDownTra
 		sub.ID(),
 		sub.Kind(),
 		sub.KindDetails(),
-		sub.GetTelemetryListener(),
+		sub.GetTelemetryListener,
 		sub.GetReporter(),
 	)
 	dataDownTrack, err := NewDataDownTrack(DataDownTrackParams{

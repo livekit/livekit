@@ -17,14 +17,17 @@ package sfu
 import (
 	"testing"
 
+	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/mediatransportutil/pkg/codec"
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
 )
 
@@ -2186,4 +2189,63 @@ func TestForwarderInitialAcquisitionGrace(t *testing.T) {
 	alloc = f.AllocateOptimal([]int32{0, 1}, bitrates, false, false)
 	require.Equal(t, int32(1), alloc.TargetLayer.Spatial)
 	require.Equal(t, int32(1), alloc.RequestLayerSpatial)
+}
+
+func TestGetRefLayerRTPTimestampBounds(t *testing.T) {
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+
+	layerCount := int32(len(f.refInfos))
+
+	_, err := f.getRefLayerRTPTimestamp(1000, layerCount, 0)
+	require.Error(t, err)
+
+	_, err = f.getRefLayerRTPTimestamp(1000, 0, layerCount)
+	require.Error(t, err)
+
+	_, err = f.getRefLayerRTPTimestamp(1000, -1, 0)
+	require.Error(t, err)
+
+	_, err = f.getRefLayerRTPTimestamp(1000, 0, -1)
+	require.Error(t, err)
+
+	// same-layer translation does not need sender reports
+	ts, err := f.getRefLayerRTPTimestamp(1000, 0, 0)
+	require.NoError(t, err)
+	require.Equal(t, uint32(1000), ts)
+
+	// last valid index must be accepted by the bounds check (may still error for missing SR)
+	_, err = f.getRefLayerRTPTimestamp(1000, layerCount-1, 0)
+	require.Error(t, err) // unavailable sender report, not invalid layer
+	require.Contains(t, err.Error(), "unavailable")
+}
+
+// TestForwarderIsEndOfLayerFrame checks the end-of-layer-frame detection used to
+// locate packet trailers, which VP9 SVC can carry at the end of any spatial layer
+// frame and not just at the end of a picture.
+func TestForwarderIsEndOfLayerFrame(t *testing.T) {
+	vp9Codec := webrtc.RTPCodecCapability{MimeType: mime.MimeTypeVP9.String(), ClockRate: 90000}
+
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{Payload: codecs.VP9Packet{E: true}}))
+
+	f = newForwarder(vp9Codec, webrtc.RTPCodecTypeVideo)
+	require.True(t, f.isEndOfLayerFrame(&buffer.ExtPacket{Payload: codecs.VP9Packet{E: true}}))
+	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{Payload: codecs.VP9Packet{E: false}}))
+	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{}))
+
+	require.True(t, f.isEndOfLayerFrame(&buffer.ExtPacket{
+		DependencyDescriptor: &buffer.ExtDependencyDescriptor{
+			Descriptor: &dd.DependencyDescriptor{LastPacketInFrame: true},
+		},
+		Payload: codecs.VP9Packet{E: false},
+	}))
+	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{
+		DependencyDescriptor: &buffer.ExtDependencyDescriptor{
+			Descriptor: &dd.DependencyDescriptor{LastPacketInFrame: false},
+		},
+		Payload: codecs.VP9Packet{E: true},
+	}))
+	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{
+		DependencyDescriptor: &buffer.ExtDependencyDescriptor{},
+	}))
 }

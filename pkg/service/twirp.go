@@ -143,9 +143,10 @@ func loggerResponseSent(ctx context.Context, twirpLoggerPool *sync.Pool) {
 		r.fields = append(r.fields, "code", r.error.Code())
 	}
 
+	statusFamily, _ := twirpResponseStatus(ctx, r.error)
 	serviceMethod := "API " + r.service + "." + r.method
+	prometheus.RecordTwirpRequestLatency(r.service, r.method, duration, statusFamily)
 	utils.GetLogger(ctx).WithComponent(utils.ComponentAPI).Infow(serviceMethod, r.fields...)
-	prometheus.RecordTwirpRequestLatency(r.service, r.method, duration)
 
 	// reset fields and return to pool
 	r.reset()
@@ -197,31 +198,38 @@ func statusReporterRequestRouted(ctx context.Context) (context.Context, error) {
 	return ctx, nil
 }
 
+func twirpResponseStatus(ctx context.Context, err twirp.Error) (statusFamily string, code twirp.ErrorCode) {
+	if statusCode, ok := twirp.StatusCode(ctx); ok {
+		statusFamily = httpStatusFamily(statusCode)
+	}
+	if err != nil {
+		code = err.Code()
+	}
+	return
+}
+
+func httpStatusFamily(statusCode string) string {
+	var statusFamily string
+	if status, err := strconv.Atoi(statusCode); err == nil {
+		switch {
+		case status >= 400 && status <= 499:
+			statusFamily = "4xx"
+		case status >= 500 && status <= 599:
+			statusFamily = "5xx"
+		default:
+			statusFamily = statusCode
+		}
+	}
+	return statusFamily
+}
+
 func statusReporterResponseSent(ctx context.Context) {
 	r, ok := ctx.Value(statusReporterKey{}).(*twirpRequestFields)
 	if !ok || r == nil {
 		return
 	}
 
-	var statusFamily string
-	if statusCode, ok := twirp.StatusCode(ctx); ok {
-		if status, err := strconv.Atoi(statusCode); err == nil {
-			switch {
-			case status >= 400 && status <= 499:
-				statusFamily = "4xx"
-			case status >= 500 && status <= 599:
-				statusFamily = "5xx"
-			default:
-				statusFamily = statusCode
-			}
-		}
-	}
-
-	var code twirp.ErrorCode
-	if r.error != nil {
-		code = r.error.Code()
-	}
-
+	statusFamily, code := twirpResponseStatus(ctx, r.error)
 	prometheus.RecordTwirpRequestStatus(r.service, r.method, statusFamily, code)
 }
 

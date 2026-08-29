@@ -91,12 +91,14 @@ func (d *DownTrackSpreader[T]) HasDownTrack(subscriberID livekit.ParticipantID) 
 }
 
 func (d *DownTrackSpreader[T]) Broadcast(writer func(T)) {
-	downTracks := d.GetDownTracks()
+	d.downTrackMu.RLock()
+	downTracks := d.downTracksShadow
+	threshold := uint64(d.params.Threshold)
+	d.downTrackMu.RUnlock()
+
 	if len(downTracks) == 0 {
 		return
 	}
-
-	threshold := uint64(d.params.Threshold)
 	if threshold == 0 {
 		threshold = 1000000
 	}
@@ -118,4 +120,10 @@ func (d *DownTrackSpreader[T]) shadowDownTracks() {
 	for _, dt := range d.downTracks {
 		d.downTracksShadow = append(d.downTracksShadow, dt)
 	}
+}
+
+func (d *DownTrackSpreader[T]) SetThreshold(threshold int) {
+	d.downTrackMu.Lock()
+	d.params.Threshold = threshold
+	d.downTrackMu.Unlock()
 }

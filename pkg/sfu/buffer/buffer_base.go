@@ -205,9 +205,10 @@ type BufferBase struct {
 	frameRateCalculator [DefaultMaxLayerSpatial + 1]FrameRateCalculator
 	frameRateCalculated bool
 
-	packetNotFoundCount   atomic.Uint32
-	packetTooOldCount     atomic.Uint32
-	extPacketTooMuchCount atomic.Uint32
+	packetNotFoundCount           atomic.Uint32
+	packetTooOldCount             atomic.Uint32
+	extPacketTooMuchCount         atomic.Uint32
+	codecPayloadTypeNotFoundCount atomic.Uint32
 
 	absCaptureTimeExtID uint8
 
@@ -995,11 +996,15 @@ func (b *BufferBase) handleCodecChange(newPT uint8) {
 		}
 	}
 	if !codecFound {
-		b.logger.Errorw(
-			"could not find codec for new payload type", nil,
-			"pt", newPT,
-			"rtpParameters", b.rtpParameters,
-		)
+		codecNotFoundCount := b.codecPayloadTypeNotFoundCount.Inc()
+		if (codecNotFoundCount-1)%100 == 0 {
+			b.logger.Errorw(
+				"could not find codec for new payload type", nil,
+				"pt", newPT,
+				"rtpParameters", b.rtpParameters,
+				"count", codecNotFoundCount,
+			)
+		}
 		return
 	}
 

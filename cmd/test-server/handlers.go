@@ -17,13 +17,13 @@ package main
 import (
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
-	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils/protojson"
@@ -106,7 +106,7 @@ func init() {
 	reg[livekit.ListSIPDispatchRuleRequest, livekit.ListSIPDispatchRuleResponse]("livekit.SIP/ListSIPDispatchRule")
 	reg[livekit.DeleteSIPDispatchRuleRequest, livekit.SIPDispatchRuleInfo]("livekit.SIP/DeleteSIPDispatchRule")
 	reg[livekit.CreateSIPParticipantRequest, livekit.SIPParticipantInfo]("livekit.SIP/CreateSIPParticipant")
-	reg[livekit.TransferSIPParticipantRequest, emptypb.Empty]("livekit.SIP/TransferSIPParticipant")
+	reg[livekit.TransferSIPParticipantRequest, livekit.TransferSIPParticipantResponse]("livekit.SIP/TransferSIPParticipant")
 
 	// Connector
 	reg[livekit.DialWhatsAppCallRequest, livekit.DialWhatsAppCallResponse]("livekit.Connector/DialWhatsAppCall")
@@ -142,6 +142,14 @@ func (h *mockHandler) serveAPI(w http.ResponseWriter, r *http.Request) {
 	// Permission enforcement comes first, mirroring the real server.
 	if status, code := h.authorize(key, r, &cfg, req); status != 0 {
 		writeTwirpErrorCode(w, status, code, "mock: "+code)
+		return
+	}
+
+	// A project pinned to other regions is turned away by cloud middleware up front
+	// — before the request is served and with no latency — when it reaches a region
+	// it isn't pinned to. The check is by region name, as it is on the real server.
+	if len(cfg.PinnedRegions) > 0 && !slices.Contains(cfg.PinnedRegions, h.regionName()) {
+		h.failRegionPin(w)
 		return
 	}
 
@@ -209,6 +217,16 @@ func (h *mockHandler) failSIP(w http.ResponseWriter, cfg *mockConfig) {
 		Status: cfg.SIPStatus.Status,
 	}
 	writeTwirpErr(w, xtwirp.ToError(st))
+}
+
+// failRegionPin rejects the request with HTTP 451, mirroring cloud middleware
+// turning away an API call from a project pinned to a different region. The body
+// is the middleware's plain-text message (not a Twirp error): clients key off the
+// 451 status to rediscover regions and retry against an allowed one.
+func (h *mockHandler) failRegionPin(w http.ResponseWriter) {
+	w.Header().Set(headerRegion, "")
+	w.WriteHeader(regionPinStatus)
+	_, _ = w.Write([]byte(regionPinMessage))
 }
 
 // writeAPIResponse serves a populated, type-correct response for a known API

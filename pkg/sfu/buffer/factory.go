@@ -136,6 +136,21 @@ func (f *Factory) GetRTCPReader(ssrc uint32) *RTCPReader {
 	return f.rtcpReaders[ssrc]
 }
 
+// SetStreamInfoProbe installs probe on the buffer of ssrc, reporting whether that
+// buffer exists. False means the stream can never be identified.
+func (f *Factory) SetStreamInfoProbe(ssrc uint32, probe *StreamInfoProbe) bool {
+	f.RLock()
+	buffer := f.rtpBuffers[ssrc]
+	f.RUnlock()
+
+	if buffer == nil {
+		return false
+	}
+
+	buffer.SetStreamInfoProbe(probe)
+	return true
+}
+
 func (f *Factory) SetRTXPair(repair, base uint32, rsid string) {
 	f.Lock()
 	repairBuffer, baseBuffer := f.rtpBuffers[repair], f.rtpBuffers[base]

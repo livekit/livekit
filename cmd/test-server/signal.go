@@ -64,6 +64,7 @@ const (
 	modeLeaveWhenConnected   = "leave_when_connected"   // send join, then LeaveRequest
 	modeLeaveFirstMessage    = "leave_first_message"    // LeaveRequest as first message
 	modeLeaveDuringReconnect = "leave_during_reconnect" // on reconnect=1, LeaveRequest first
+	modeDropOnClose          = "drop_on_close"          // happy, but drop TCP on the client's close frame instead of completing the handshake
 )
 
 const signalControlAttribute = "lk.mock"
@@ -118,7 +119,8 @@ func signalMode(grants *auth.ClaimGrants) string {
 	case modeValidate500, modeServiceNotFound, modeRoomNotFound,
 		modeHappy, modeNoFirstMessage, modeNoPong,
 		modeCloseBeforeJoin, modeCloseWhenConnected, modeDropWhenConnected,
-		modeLeaveWhenConnected, modeLeaveFirstMessage, modeLeaveDuringReconnect:
+		modeLeaveWhenConnected, modeLeaveFirstMessage, modeLeaveDuringReconnect,
+		modeDropOnClose:
 		return ctrl.Signal
 	default:
 		return modeHappy
@@ -296,6 +298,15 @@ func (h *mockHandler) runSignal(conn *websocket.Conn, mode string, reconnect boo
 		_ = writeResp(leaveResponse(leaveAction))
 	}
 
+	// drop_on_close: when the client starts a clean close handshake, drop the
+	// TCP connection instead of replying with a close frame, so the client
+	// observes an abnormal closure while it is disconnecting.
+	if mode == modeDropOnClose {
+		conn.SetCloseHandler(func(code int, text string) error {
+			return conn.UnderlyingConn().Close()
+		})
+	}
+
 	// Read loop: pong to pings (unless no_pong), clean close on client leave.
 	for {
 		mt, payload, err := conn.ReadMessage()
@@ -327,6 +338,17 @@ func (h *mockHandler) runSignal(conn *websocket.Conn, mode string, reconnect boo
 					},
 				})
 			}
+		case *livekit.SignalRequest_UpdateMetadata:
+			// Ack like the real server does, so SDK tests can observe that a
+			// (possibly queued) request actually reached the server.
+			_ = writeResp(&livekit.SignalResponse{
+				Message: &livekit.SignalResponse_RequestResponse{
+					RequestResponse: &livekit.RequestResponse{
+						RequestId: m.UpdateMetadata.RequestId,
+						Reason:    livekit.RequestResponse_OK,
+					},
+				},
+			})
 		case *livekit.SignalRequest_Leave:
 			msg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")
 			_ = conn.WriteControl(websocket.CloseMessage, msg, time.Now().Add(time.Second))

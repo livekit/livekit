@@ -97,81 +97,6 @@ const (
 
 // --------------------------------------
 
-// TrackReceiver defines an interface receive media from remote peer
-type TrackReceiver interface {
-	TrackID() livekit.TrackID
-	StreamID() string
-
-	// returns the initial codec of the receiver, it is determined by the track's codec
-	// and will not change if the codec changes during the session (publisher changes codec)
-	Codec() webrtc.RTPCodecParameters
-	Mime() mime.MimeType
-	VideoLayerMode() livekit.VideoLayer_Mode
-	HeaderExtensions() []webrtc.RTPHeaderExtensionParameter
-	IsClosed() bool
-
-	ReadRTP(buf []byte, layer uint8, esn uint64) (int, error)
-	GetLayeredBitrate() ([]int32, Bitrates)
-
-	GetAudioLevel() (float64, bool)
-
-	SendPLI(layer int32, force bool)
-
-	SetMaxExpectedSpatialLayer(layer int32)
-
-	AddDownTrack(track TrackSender) error
-	DeleteDownTrack(participantID livekit.ParticipantID)
-	GetDownTracks() []TrackSender
-
-	DebugInfo() map[string]any
-
-	TrackInfo() *livekit.TrackInfo
-	UpdateTrackInfo(ti *livekit.TrackInfo)
-
-	// Get primary receiver if this receiver represents a RED codec; otherwise it will return itself
-	GetPrimaryReceiverForRed() TrackReceiver
-
-	// Get red receiver for primary codec, used by forward red encodings for opus only codec
-	GetRedReceiver() TrackReceiver
-
-	GetTemporalLayerFpsForSpatial(layer int32) []float32
-
-	GetTrackStats() *livekit.RTPStats
-
-	// AddOnReady adds a function to be called when the receiver is ready, the callback
-	// could be called immediately if the receiver is ready when the callback is added
-	AddOnReady(func())
-
-	AddOnCodecStateChange(func(webrtc.RTPCodecParameters, ReceiverCodecState))
-	CodecState() ReceiverCodecState
-
-	// VideoSizes returns the video size parsed from rtp packet for each spatial layer.
-	VideoSizes() []codec.VideoSize
-
-	// closes all associated buffers and issues a resync to all attached downtracks so that
-	// they can resync and have proper sequncing without gaps in sequence numbers / timestamps
-	Restart(reason string)
-}
-
-// --------------------------------------
-
-type REDTransformer interface {
-	TrackReceiver
-	ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int32
-	ForwardRTCPSenderReport(
-		payloadType webrtc.PayloadType,
-		layer int32,
-		publisherSRData *livekit.RTCPSenderReportState,
-	)
-	GetDownTracks() []TrackSender
-	ResyncDownTracks()
-	OnStreamRestart()
-	CanClose() bool
-	Close()
-}
-
-// --------------------------------------
-
 type bufferPromise struct {
 	ready chan struct{}
 }
@@ -230,6 +155,8 @@ type ReceiverBase struct {
 	restartInProgress    bool
 
 	isClosed atomic.Bool
+
+	dropPayloadTypeMismatchCount atomic.Uint32
 }
 
 func NewReceiverBase(params ReceiverBaseParams, trackInfo *livekit.TrackInfo, codecState ReceiverCodecState) *ReceiverBase {
@@ -311,6 +238,10 @@ func (r *ReceiverBase) SetEnableRTPStreamRestartDetection(enableRTPStremRestartD
 
 func (r *ReceiverBase) SetLBThreshold(lbThreshold int) {
 	r.lbThreshold = lbThreshold
+	r.downTrackSpreader.SetThreshold(lbThreshold)
+	if rt := r.loadREDTransformer(); rt != nil {
+		rt.SetLBThreshold(lbThreshold)
+	}
 }
 
 func (r *ReceiverBase) SetForwardStats(forwardStats *ForwardStats) {
@@ -1003,11 +934,15 @@ func (r *ReceiverBase) forwardRTP(
 
 		if extPkt.Packet.PayloadType != uint8(r.params.Codec.PayloadType) {
 			// drop packets as we don't support codec fallback directly
-			r.params.Logger.Debugw(
-				"dropping packet - payload mismatch",
-				"packetPayloadType", extPkt.Packet.PayloadType,
-				"payloadType", r.params.Codec.PayloadType,
-			)
+			dropPayloadTypeMismatchCount := r.dropPayloadTypeMismatchCount.Inc()
+			if (dropPayloadTypeMismatchCount-1)%100 == 0 {
+				r.params.Logger.Debugw(
+					"dropping packet - payload mismatch",
+					"packetPayloadType", extPkt.Packet.PayloadType,
+					"payloadType", r.params.Codec.PayloadType,
+					"count", dropPayloadTypeMismatchCount,
+				)
+			}
 			numPacketsDropped++
 			continue
 		}
@@ -1195,13 +1130,16 @@ func (r *ReceiverBase) SetCodecState(state ReceiverCodecState) {
 	}
 }
 
-func (r *ReceiverBase) SetCodecWithState(codec webrtc.RTPCodecParameters, headerExtensions []webrtc.RTPHeaderExtensionParameter, codecState ReceiverCodecState) {
-	r.checkCodecChanged(codec, headerExtensions)
+// SetCodecWithState updates the codec state of the receiver. It returns true if the
+// given codec is incompatible with the codec the receiver was created with, see
+// `checkCodecChanged`.
+func (r *ReceiverBase) SetCodecWithState(codec webrtc.RTPCodecParameters, headerExtensions []webrtc.RTPHeaderExtensionParameter, codecState ReceiverCodecState) bool {
+	incompatible := r.checkCodecChanged(codec, headerExtensions)
 
 	r.codecStateLock.Lock()
 	if codecState == r.codecState {
 		r.codecStateLock.Unlock()
-		return
+		return incompatible
 	}
 
 	var fireChange bool
@@ -1212,7 +1150,7 @@ func (r *ReceiverBase) SetCodecWithState(codec webrtc.RTPCodecParameters, header
 	case ReceiverCodecStateNormal:
 		// TODO: support codec recovery
 		r.codecStateLock.Unlock()
-		return
+		return incompatible
 
 	case ReceiverCodecStateSuspended:
 		reason = "codec suspended"
@@ -1232,27 +1170,34 @@ func (r *ReceiverBase) SetCodecWithState(codec webrtc.RTPCodecParameters, header
 			fn(r.params.Codec, codecState)
 		}
 	}
+
+	return incompatible
 }
 
-func (r *ReceiverBase) checkCodecChanged(codec webrtc.RTPCodecParameters, headerExtensions []webrtc.RTPHeaderExtensionParameter) {
+func (r *ReceiverBase) checkCodecChanged(codec webrtc.RTPCodecParameters, headerExtensions []webrtc.RTPHeaderExtensionParameter) bool {
 	existingFmtp := strings.Split(r.params.Codec.SDPFmtpLine, ";")
 	slices.Sort(existingFmtp)
 	checkFmtp := strings.Split(codec.SDPFmtpLine, ";")
 	slices.Sort(checkFmtp)
+	var incompatible bool
 	if !mime.IsMimeTypeStringEqual(r.params.Codec.MimeType, codec.MimeType) || !slices.Equal(existingFmtp, checkFmtp) ||
-		r.params.Codec.ClockRate != codec.ClockRate {
-		err := fmt.Errorf("mime: %s -> %s, fmtp: %s -> %s, clockRate: %d -> %d",
+		r.params.Codec.ClockRate != codec.ClockRate || r.params.Codec.PayloadType != codec.PayloadType {
+		err := fmt.Errorf("mime: %s -> %s, fmtp: %s -> %s, clockRate: %d -> %d, pt: %d -> %d",
 			r.params.Codec.MimeType, codec.MimeType,
 			r.params.Codec.SDPFmtpLine, codec.SDPFmtpLine,
 			r.params.Codec.ClockRate, codec.ClockRate,
+			r.params.Codec.PayloadType, codec.PayloadType,
 		)
-		r.params.Logger.Errorw("unexpected change in codec", err)
+		r.params.Logger.Warnw("unexpected change in codec", err)
+		incompatible = r.params.Codec.PayloadType != codec.PayloadType
 	}
 
 	if len(r.params.HeaderExtensions) != len(headerExtensions) {
 		err := fmt.Errorf("extensions: %d -> %d", len(r.params.HeaderExtensions), len(headerExtensions))
 		r.params.Logger.Errorw("unexpected change in extensions length", err)
 	}
+
+	return incompatible
 }
 
 func (r *ReceiverBase) VideoSizes() []codec.VideoSize {
