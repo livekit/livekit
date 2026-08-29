@@ -136,6 +136,13 @@ type FakeTelemetryService struct {
 		arg2 *livekit.Room
 		arg3 livekit.RoomEndReason
 	}
+	RoomIDChangedStub        func(context.Context, livekit.RoomID, *livekit.Room)
+	roomIDChangedMutex       sync.RWMutex
+	roomIDChangedArgsForCall []struct {
+		arg1 context.Context
+		arg2 livekit.RoomID
+		arg3 *livekit.Room
+	}
 	RoomProjectReporterStub        func(context.Context) roomobs.ProjectReporter
 	roomProjectReporterMutex       sync.RWMutex
 	roomProjectReporterArgsForCall []struct {
@@ -912,6 +919,40 @@ func (fake *FakeTelemetryService) RoomEndedArgsForCall(i int) (context.Context, 
 	fake.roomEndedMutex.RLock()
 	defer fake.roomEndedMutex.RUnlock()
 	argsForCall := fake.roomEndedArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeTelemetryService) RoomIDChanged(arg1 context.Context, arg2 livekit.RoomID, arg3 *livekit.Room) {
+	fake.roomIDChangedMutex.Lock()
+	fake.roomIDChangedArgsForCall = append(fake.roomIDChangedArgsForCall, struct {
+		arg1 context.Context
+		arg2 livekit.RoomID
+		arg3 *livekit.Room
+	}{arg1, arg2, arg3})
+	stub := fake.RoomIDChangedStub
+	fake.recordInvocation("RoomIDChanged", []interface{}{arg1, arg2, arg3})
+	fake.roomIDChangedMutex.Unlock()
+	if stub != nil {
+		fake.RoomIDChangedStub(arg1, arg2, arg3)
+	}
+}
+
+func (fake *FakeTelemetryService) RoomIDChangedCallCount() int {
+	fake.roomIDChangedMutex.RLock()
+	defer fake.roomIDChangedMutex.RUnlock()
+	return len(fake.roomIDChangedArgsForCall)
+}
+
+func (fake *FakeTelemetryService) RoomIDChangedCalls(stub func(context.Context, livekit.RoomID, *livekit.Room)) {
+	fake.roomIDChangedMutex.Lock()
+	defer fake.roomIDChangedMutex.Unlock()
+	fake.RoomIDChangedStub = stub
+}
+
+func (fake *FakeTelemetryService) RoomIDChangedArgsForCall(i int) (context.Context, livekit.RoomID, *livekit.Room) {
+	fake.roomIDChangedMutex.RLock()
+	defer fake.roomIDChangedMutex.RUnlock()
+	argsForCall := fake.roomIDChangedArgsForCall[i]
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
