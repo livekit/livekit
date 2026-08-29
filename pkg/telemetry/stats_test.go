@@ -710,6 +710,49 @@ func Test_RoomIDChangeLeavesForwardedParticipantAlone(t *testing.T) {
 	require.Equal(t, restartedDest.Name, byRoom[restartedDest.Sid].RoomName)
 }
 
+// a re-key should never land on a room that already has workers, but if it does only
+// one worker can be keyed at (room, participant) and the superseded one must not be
+// left unreachable in the flush list
+func Test_RoomIDChangeParticipantCollision(t *testing.T) {
+	fixture := createFixture()
+
+	// prepare - the same participant id in the room being re-keyed and in its destination
+	prevRoom := &livekit.Room{Sid: "PrevSid", Name: "PrevRoom"}
+	destRoom := &livekit.Room{Sid: "DestSid", Name: "DestRoom"}
+	partSID := livekit.ParticipantID("part1")
+	participantInfo := &livekit.ParticipantInfo{Sid: string(partSID)}
+	trackID := livekit.TrackID("trackID")
+	fixture.sut.ParticipantJoined(context.Background(), prevRoom, participantInfo, nil, nil, true, &telemetry.ReferenceGuard{})
+	fixture.sut.ParticipantJoined(context.Background(), destRoom, participantInfo, nil, nil, true, &telemetry.ReferenceGuard{})
+
+	stat1 := &livekit.AnalyticsStat{Streams: []*livekit.AnalyticsStream{{PrimaryBytes: 33}}}
+	fixture.sut.TrackStats(livekit.RoomID(prevRoom.Sid), livekit.RoomName(prevRoom.Name), telemetry.StatsKeyForData("test", livekit.StreamType_DOWNSTREAM, partSID, trackID), stat1)
+
+	// do
+	fixture.sut.RoomIDChanged(context.Background(), livekit.RoomID(prevRoom.Sid), destRoom)
+
+	// the superseded worker drains what it collected under the room it was in
+	fixture.flush()
+	byRoom := map[string]*livekit.AnalyticsStat{}
+	for i := 0; i < fixture.analytics.SendStatsCallCount(); i++ {
+		_, stats := fixture.analytics.SendStatsArgsForCall(i)
+		for _, stat := range stats {
+			byRoom[stat.RoomId] = stat
+		}
+	}
+	require.Equal(t, uint64(33), byRoom[prevRoom.Sid].Streams[0].PrimaryBytes)
+
+	// the worker already keyed at the destination wins and keeps receiving stats
+	stat2 := &livekit.AnalyticsStat{Streams: []*livekit.AnalyticsStream{{PrimaryBytes: 44}}}
+	fixture.sut.TrackStats(livekit.RoomID(destRoom.Sid), livekit.RoomName(destRoom.Name), telemetry.StatsKeyForData("test", livekit.StreamType_DOWNSTREAM, partSID, trackID), stat2)
+
+	fixture.flush()
+	_, stats := fixture.analytics.SendStatsArgsForCall(fixture.analytics.SendStatsCallCount() - 1)
+	require.Equal(t, 1, len(stats))
+	require.Equal(t, destRoom.Sid, stats[0].RoomId)
+	require.Equal(t, uint64(44), stats[0].Streams[0].PrimaryBytes)
+}
+
 func (f *telemetryServiceFixture) flush() {
 	time.Sleep(time.Millisecond * 500)
 	f.sut.FlushStats()

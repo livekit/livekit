@@ -16,10 +16,10 @@ package telemetry
 
 import (
 	"context"
-	"maps"
 	"sync"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
@@ -344,9 +344,11 @@ func (t *telemetryService) reKeyRoom(prevRoomID livekit.RoomID, roomID livekit.R
 	}
 	delete(t.workers, prevRoomID)
 
-	if existing := t.workers[roomID]; existing != nil {
-		// should not happen as a room id is only ever replaced by a freshly minted one,
-		// but merge rather than drop workers if it does
+	existing := t.workers[roomID]
+	if existing == nil {
+		t.workers[roomID] = roomWorkers
+	} else {
+		// should not happen as a room id is only ever replaced by a freshly minted one
 		logger.Warnw(
 			"telemetry re-keying room into an existing entry", nil,
 			"prevRoomID", prevRoomID,
@@ -355,12 +357,22 @@ func (t *telemetryService) reKeyRoom(prevRoomID livekit.RoomID, roomID livekit.R
 			"numWorkers", len(roomWorkers),
 			"numExistingWorkers", len(existing),
 		)
-		maps.Copy(existing, roomWorkers)
-	} else {
-		t.workers[roomID] = roomWorkers
 	}
 
-	for _, worker := range roomWorkers {
+	for participantID, worker := range roomWorkers {
+		if existing != nil {
+			if _, ok := existing[participantID]; ok {
+				// only one worker can be keyed at (room, participant) and the one already
+				// filed there wins, close the superseded one so that it drains and is
+				// reaped instead of lingering in the flush list unreachable
+				if worker.ForceClose() {
+					prometheus.SubParticipant()
+				}
+				continue
+			}
+			existing[participantID] = worker
+		}
+
 		worker.SetRoom(roomID, roomName)
 	}
 

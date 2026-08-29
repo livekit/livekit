@@ -237,6 +237,21 @@ func (s *StatsWorker) Close(guard *ReferenceGuard) bool {
 	return ok
 }
 
+// ForceClose closes the worker irrespective of outstanding references. Used when a
+// worker can no longer be reached through the worker map, so that it drains and is
+// reaped instead of lingering in the flush list forever.
+func (s *StatsWorker) ForceClose() bool {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if !s.closedAt.IsZero() {
+		return false
+	}
+
+	s.closedAt = time.Now()
+	return true
+}
+
 func (s *StatsWorker) Closed(guard *ReferenceGuard) bool {
 	s.lock.Lock()
 	defer s.lock.Unlock()
