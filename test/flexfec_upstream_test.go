@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/config"
@@ -79,6 +80,57 @@ func TestFlexFECUpstreamNegotiation(t *testing.T) {
 		}
 		if !strings.Contains(sd.SDP, "repair-window=2000000") {
 			return "SFU answer does not contain the configured FlexFEC repair window"
+		}
+		return ""
+	})
+}
+
+// TestFlexFECUpstreamWithE2EE verifies that FlexFEC negotiation and media
+// forwarding remain enabled when the published track is marked as GCM E2EE.
+// The SFU must treat the media payload as opaque in this mode.
+func TestFlexFECUpstreamWithE2EE(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+		return
+	}
+
+	_, finish := setupFlexFECUpstreamTest("TestFlexFECUpstreamWithE2EE")
+	defer finish()
+
+	pubOpts := &testclient.Options{
+		AutoSubscribe: true,
+		EnableFlexFEC: true,
+		SignalRequestInterceptor: func(msg *livekit.SignalRequest, next testclient.SignalRequestHandler) error {
+			if req := msg.GetAddTrack(); req != nil {
+				req.Encryption = livekit.Encryption_GCM
+			}
+			return next(msg)
+		},
+	}
+	c1 := createRTCClient("fec_e2ee_pub", defaultServerPort, testRTCServicePathv0, pubOpts)
+	c2 := createRTCClient("fec_e2ee_sub", defaultServerPort, testRTCServicePathv0, nil)
+	defer stopClients(c1, c2)
+	waitUntilConnected(t, c1, c2)
+
+	writer, err := c1.AddStaticTrack("video/vp8", "video", "fec-e2ee-video")
+	require.NoError(t, err)
+	defer writer.Stop()
+
+	testutils.WithTimeout(t, func() string {
+		sd := c1.LastAnswer()
+		if sd == nil || !strings.Contains(sd.SDP, "flexfec-03") {
+			return "publisher did not negotiate flexfec-03"
+		}
+
+		remote := c2.GetRemoteParticipant(c1.ID())
+		if remote == nil || len(remote.Tracks) == 0 {
+			return "subscriber has not received the publisher's track metadata"
+		}
+		if remote.Tracks[0].Encryption != livekit.Encryption_GCM {
+			return "subscriber does not see the track as GCM-encrypted"
+		}
+		if len(c2.SubscribedTracks()[c1.ID()]) == 0 || c2.BytesReceived() == 0 {
+			return "subscriber has not received media for the encrypted track"
 		}
 		return ""
 	})

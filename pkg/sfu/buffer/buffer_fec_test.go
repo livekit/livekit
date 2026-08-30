@@ -15,6 +15,8 @@
 package buffer
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"encoding/binary"
 	"math/rand"
 	"testing"
@@ -218,6 +220,61 @@ func TestBufferFECRecoversDroppedPacket(t *testing.T) {
 	// recovered one fills the bucket like an RTX repair
 	extSNBySN := readExtSequenceNumbers(t, primary, len(media)-1)
 	requireRecoveredInBucket(t, primary, &media[droppedIdx], extSNBySN, media[0].SequenceNumber)
+}
+
+func TestBufferFECRecoversEncryptedPayload(t *testing.T) {
+	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	factory.SetFECPair(fecTestFECSSRC, fecTestMediaSSRC)
+
+	primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
+	fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
+	bindFECTestBuffer(t, primary)
+
+	block, err := aes.NewCipher([]byte("flexfec-e2ee-key"))
+	require.NoError(t, err)
+	aead, err := cipher.NewGCM(block)
+	require.NoError(t, err)
+
+	media := fecTestMediaPackets(t, 120, 5)
+	plaintexts := make([][]byte, len(media))
+	for i := range media {
+		plaintexts[i] = append([]byte("encrypted-video-frame-"), byte(i))
+		nonce := make([]byte, aead.NonceSize())
+		binary.BigEndian.PutUint64(nonce[len(nonce)-8:], uint64(media[i].SequenceNumber))
+		// E2EE encrypts the encoded frame before RTP packetization. The VP8
+		// payload descriptor remains clear while the frame bytes are opaque to
+		// the SFU and authenticated end-to-end.
+		media[i].Payload = append([]byte{0x10}, aead.Seal(nil, nonce, plaintexts[i], nil)...)
+	}
+
+	fecPackets := pionflexfec.NewFlexEncoder03(fecTestFECPT, fecTestFECSSRC).EncodeFec(media, 1)
+	require.Len(t, fecPackets, 1)
+
+	const droppedIdx = 2
+	for i := range media {
+		if i != droppedIdx {
+			writePacket(t, primary, &media[i])
+		}
+	}
+	writePacket(t, fecBuff, &fecPackets[0])
+
+	require.EqualValues(t, 1, primary.FECDecoderStats().PacketsRecovered)
+	extSNBySN := readExtSequenceNumbers(t, primary, len(media)-1)
+	requireRecoveredInBucket(t, primary, &media[droppedIdx], extSNBySN, media[0].SequenceNumber)
+
+	refExtSN := extSNBySN[media[0].SequenceNumber]
+	droppedExtSN := refExtSN + uint64(media[droppedIdx].SequenceNumber-media[0].SequenceNumber)
+	var raw [1500]byte
+	n, err := primary.GetPacket(raw[:], droppedExtSN)
+	require.NoError(t, err)
+	var recovered rtp.Packet
+	require.NoError(t, recovered.Unmarshal(raw[:n]))
+
+	nonce := make([]byte, aead.NonceSize())
+	binary.BigEndian.PutUint64(nonce[len(nonce)-8:], uint64(recovered.SequenceNumber))
+	decrypted, err := aead.Open(nil, nonce, recovered.Payload[1:], nil)
+	require.NoError(t, err, "FlexFEC recovery must preserve authenticated ciphertext byte-for-byte")
+	assert.Equal(t, plaintexts[droppedIdx], decrypted)
 }
 
 func TestBufferFECRecoveryCallbackCanReenterBuffer(t *testing.T) {
