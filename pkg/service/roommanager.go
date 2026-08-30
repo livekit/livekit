@@ -61,6 +61,11 @@ import (
 const (
 	tokenRefreshInterval = 5 * time.Minute
 	tokenDefaultTTL      = 10 * time.Minute
+
+	// roomStoreLockTimeout bounds how long a same-name CreateRoom may wait for
+	// the in-progress room-state deletion (see deleteRoomIfCurrent). Matched to
+	// the allocator's own 5s lock window in StandardRoomAllocator.CreateRoom.
+	roomStoreLockTimeout = 5 * time.Second
 )
 
 type iceConfigCacheKey struct {
@@ -192,6 +197,12 @@ func (r *RoomManager) GetRoom(_ context.Context, roomName livekit.RoomName) *rtc
 // registered under the name is the given room. It is atomic with the map
 // mutation, so a same-name recreate cannot race between the identity check and
 // the delete and have its state wiped by an older room's teardown.
+//
+// The persistent-state cleanup is coordinated with recreation through the
+// room store's per-room lock (the same one StandardRoomAllocator.CreateRoom
+// takes around LoadRoom/StoreRoom): without it, a recreate that lands between
+// releasing r.lock and deleteRoomState could have its freshly stored room
+// record wiped by the stale deletion below.
 func (r *RoomManager) deleteRoomIfCurrent(ctx context.Context, roomName livekit.RoomName, room *rtc.Room) bool {
 	r.lock.Lock()
 	current := r.rooms[roomName]
@@ -201,6 +212,16 @@ func (r *RoomManager) deleteRoomIfCurrent(ctx context.Context, roomName livekit.
 	}
 	delete(r.rooms, roomName)
 	r.lock.Unlock()
+
+	// Block a same-name CreateRoom (LockRoom + LoadRoom + StoreRoom) until the
+	// persistent state is fully cleared, so the new room always starts from a
+	// fresh SID instead of the old one.
+	token, err := r.roomStore.LockRoom(ctx, roomName, roomStoreLockTimeout)
+	if err != nil {
+		room.Logger().Errorw("could not lock room for state deletion", err)
+	} else {
+		defer func() { _ = r.roomStore.UnlockRoom(ctx, roomName, token) }()
+	}
 
 	if err := r.deleteRoomState(ctx, roomName); err != nil {
 		room.Logger().Errorw("could not delete room", err)
