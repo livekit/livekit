@@ -132,6 +132,16 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 }
 
 func (r *StandardRoomAllocator) SelectRoomNode(ctx context.Context, roomName livekit.RoomName, nodeID livekit.NodeID) error {
+	// Take the room lock so node assignment cannot interleave with a concurrent
+	// room-state deletion (RoomManager.deleteRoomIfCurrent), which would erase
+	// the assignment we are about to persist and strand the connecting
+	// participant with ErrNotFound.
+	token, err := r.roomStore.LockRoom(ctx, roomName, 5*time.Second)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = r.roomStore.UnlockRoom(ctx, roomName, token) }()
+
 	// check if room already assigned
 	existing, err := r.router.GetNodeForRoom(ctx, roomName)
 	if !errors.Is(err, routing.ErrNotFound) && err != nil {
