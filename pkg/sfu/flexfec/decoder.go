@@ -132,10 +132,10 @@ func (d *Decoder) Stats() DecoderStats {
 	return d.stats
 }
 
-// DecodeFec ingests a packet of either the FEC stream (fecSSRC) or the
+// DecodeFEC ingests a packet of either the FEC stream (fecSSRC) or the
 // protected media stream (protectedSSRC) and returns any media packets that
 // became recoverable. Ownership of returned packets transfers to the caller.
-func (d *Decoder) DecodeFec(receivedPacket *rtp.Packet) []*rtp.Packet {
+func (d *Decoder) DecodeFEC(receivedPacket *rtp.Packet) []*rtp.Packet {
 	switch receivedPacket.SSRC {
 	case d.fecSSRC:
 		d.stats.FECPacketsReceived++
@@ -172,15 +172,13 @@ func (d *Decoder) observeMediaPacket(sequenceNumber uint16) {
 }
 
 func (d *Decoder) discardOldFECPackets(sequenceNumber uint16) {
-	// Discard old FEC packets such that the sequence numbers in
-	// `receivedFECPackets` span at most 1/2 of the sequence number space.
-	// This is important for keeping `receivedFECPackets` sorted, and may
-	// also reduce the possibility of incorrect decoding due to sequence
-	// number wrap-around.
+	// Keep the retained sequence-number span well below half of the sequence
+	// space. This keeps ordering unambiguous across wrap-around and reduces the
+	// possibility of decoding against stale state.
 	if len(d.receivedFECPackets) > 0 {
 		toRemove := 0
 		for _, fecPkt := range d.receivedFECPackets {
-			if absInt(int(sequenceNumber)-int(fecPkt.packet.SequenceNumber)) > 0x3fff {
+			if seqDiff(sequenceNumber, fecPkt.packet.SequenceNumber) > 0x3fff {
 				toRemove++
 			} else {
 				// no need to keep iterating, since receivedFECPackets is sorted
@@ -220,10 +218,7 @@ func (d *Decoder) insertFECPacket(fecPkt *rtp.Packet) {
 		return
 	}
 
-	var protectedSeqBuf [maxProtectedPackets]uint16
-	protectedSeqs := fec.protectedSequences(protectedSeqBuf[:0])
-
-	if len(protectedSeqs) == 0 {
+	if fec.mask0 == 0 && fec.mask1 == 0 && fec.mask2 == 0 {
 		d.stats.FECPacketsDiscarded++
 		d.logger.Debugw("flexfec: discarding packet", "error", errEmptyMask)
 		return
@@ -233,18 +228,13 @@ func (d *Decoder) insertFECPacket(fecPkt *rtp.Packet) {
 		return
 	}
 
-	// The caller may reuse packet memory after DecodeFec returns. Take
+	// The caller may reuse packet memory after DecodeFEC returns. Take
 	// ownership only now that this FEC state needs to be retained.
 	ownedFECPkt := fecPkt.Clone()
-	ownedFEC, err := parseFlexFEC03Header(ownedFECPkt.Payload)
-	if err != nil {
-		// Parsing the same bytes succeeded above, so this should be unreachable.
-		d.stats.FECPacketsDiscarded++
-		d.logger.Debugw("flexfec: failed to parse cloned header", "error", err)
-		return
-	}
+	ownedFEC := fec
+	ownedFEC.payload = ownedFECPkt.Payload[len(fecPkt.Payload)-len(fec.payload):]
 
-	state := fecPacketState{packet: ownedFECPkt, flexFec: ownedFEC}
+	state := fecPacketState{packet: ownedFECPkt, flexFEC: ownedFEC}
 	d.receivedFECPackets = append(d.receivedFECPackets, state)
 	if len(d.receivedFECPackets) > 1 && !isNewerSeq(
 		d.receivedFECPackets[len(d.receivedFECPackets)-2].packet.SequenceNumber,
@@ -268,7 +258,7 @@ func (d *Decoder) attemptRecovery() []*rtp.Packet {
 		packetsRecovered := 0
 		for i := 0; i < len(d.receivedFECPackets); {
 			fecPkt := &d.receivedFECPackets[i]
-			packetsMissing := d.countMissingPackets(fecPkt.flexFec, recoveredPackets)
+			packetsMissing := d.countMissingPackets(fecPkt.flexFEC, recoveredPackets)
 			if packetsMissing == 0 {
 				d.removeFECPacketAt(i)
 				continue
@@ -299,7 +289,7 @@ func (d *Decoder) attemptRecovery() []*rtp.Packet {
 	return recoveredPackets
 }
 
-func (d *Decoder) countMissingPackets(fec flexFec, recoveredPackets []*rtp.Packet) int {
+func (d *Decoder) countMissingPackets(fec flexFEC, recoveredPackets []*rtp.Packet) int {
 	var protectedSeqBuf [maxProtectedPackets]uint16
 	protectedSeqs := fec.protectedSequences(protectedSeqBuf[:0])
 	missing := 0
@@ -347,7 +337,7 @@ func (d *Decoder) recoverPacket(fec *fecPacketState, recoveredPackets []*rtp.Pac
 	var headerRecovery [12]byte
 	copy(headerRecovery[:], fec.packet.Payload[:10])
 	var protectedSeqBuf [maxProtectedPackets]uint16
-	protectedSeqs := fec.flexFec.protectedSequences(protectedSeqBuf[:0])
+	protectedSeqs := fec.flexFEC.protectedSequences(protectedSeqBuf[:0])
 
 	missing := 0
 	var sequenceNumber uint16
@@ -391,7 +381,7 @@ func (d *Decoder) recoverPacket(fec *fecPacketState, recoveredPackets []*rtp.Pac
 
 	recoveredRaw := make([]byte, 12+int(payloadLength))
 	copy(recoveredRaw[:12], headerRecovery[:])
-	copy(recoveredRaw[12:], fec.flexFec.payload)
+	copy(recoveredRaw[12:], fec.flexFEC.payload)
 	for _, protectedSeq := range protectedSeqs {
 		n, err := d.getMediaPacket(protectedSeq, recoveredPackets, d.mediaPacketBuf[:])
 		if err != nil {
@@ -425,10 +415,10 @@ func appendMaskSequences(dst []uint16, mask uint64, bitCount uint16, seqNumBase 
 
 type fecPacketState struct {
 	packet  *rtp.Packet
-	flexFec flexFec
+	flexFEC flexFEC
 }
 
-type flexFec struct {
+type flexFEC struct {
 	protectedSSRC uint32
 	seqNumBase    uint16
 	mask0         uint16
@@ -437,7 +427,7 @@ type flexFec struct {
 	payload       []byte
 }
 
-func (f flexFec) protectedSequences(dst []uint16) []uint16 {
+func (f flexFEC) protectedSequences(dst []uint16) []uint16 {
 	dst = appendMaskSequences(dst, uint64(f.mask0), fecMask0Bits, f.seqNumBase)
 	if f.mask1 != 0 {
 		dst = appendMaskSequences(dst, uint64(f.mask1), fecMask1Bits, f.seqNumBase+fecMask0Bits)
@@ -449,24 +439,24 @@ func (f flexFec) protectedSequences(dst []uint16) []uint16 {
 	return dst
 }
 
-func parseFlexFEC03Header(data []byte) (flexFec, error) {
+func parseFlexFEC03Header(data []byte) (flexFEC, error) {
 	if len(data) < 20 {
-		return flexFec{}, fmt.Errorf("%w: length %d", errPacketTruncated, len(data))
+		return flexFEC{}, fmt.Errorf("%w: length %d", errPacketTruncated, len(data))
 	}
 
 	rBit := (data[0] & fecRetransmissionBit) != 0
 	if rBit {
-		return flexFec{}, errRetransmissionBitSet
+		return flexFEC{}, errRetransmissionBitSet
 	}
 
 	fBit := (data[0] & fecInflexibleBit) != 0
 	if fBit {
-		return flexFec{}, errInflexibleGeneratorMatrix
+		return flexFEC{}, errInflexibleGeneratorMatrix
 	}
 
 	ssrcCount := data[8]
 	if ssrcCount != 1 {
-		return flexFec{}, fmt.Errorf("%w: count %d", errMultipleSSRCProtection, ssrcCount)
+		return flexFEC{}, fmt.Errorf("%w: count %d", errMultipleSSRCProtection, ssrcCount)
 	}
 
 	protectedSSRC := binary.BigEndian.Uint32(data[12:])
@@ -483,7 +473,7 @@ func parseFlexFEC03Header(data []byte) (flexFec, error) {
 		payload = rawPacketMask[2:]
 	} else {
 		if len(data) < 24 {
-			return flexFec{}, fmt.Errorf("%w: length %d", errPacketTruncated, len(data))
+			return flexFEC{}, fmt.Errorf("%w: length %d", errPacketTruncated, len(data))
 		}
 
 		kBit1 := (rawPacketMask[2] & fecMaskKBit) != 0
@@ -493,7 +483,7 @@ func parseFlexFEC03Header(data []byte) (flexFec, error) {
 			payload = rawPacketMask[6:]
 		} else {
 			if len(data) < 32 {
-				return flexFec{}, fmt.Errorf("%w: length %d", errPacketTruncated, len(data))
+				return flexFEC{}, fmt.Errorf("%w: length %d", errPacketTruncated, len(data))
 			}
 
 			kBit2 := (rawPacketMask[6] & fecMaskKBit) != 0
@@ -502,12 +492,12 @@ func parseFlexFEC03Header(data []byte) (flexFec, error) {
 			if kBit2 {
 				payload = rawPacketMask[14:]
 			} else {
-				return flexFec{}, errLastOptionalMaskKBitSetToFalse
+				return flexFEC{}, errLastOptionalMaskKBitSetToFalse
 			}
 		}
 	}
 
-	return flexFec{
+	return flexFEC{
 		protectedSSRC: protectedSSRC,
 		seqNumBase:    seqNumBase,
 		mask0:         maskPart0,
@@ -519,14 +509,6 @@ func parseFlexFEC03Header(data []byte) (flexFec, error) {
 
 func seqDiff(a, b uint16) uint16 {
 	return min(a-b, b-a)
-}
-
-func absInt(x int) int {
-	if x >= 0 {
-		return x
-	}
-
-	return -x
 }
 
 func isNewerSeq(prevValue, value uint16) bool {

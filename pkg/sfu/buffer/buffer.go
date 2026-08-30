@@ -430,8 +430,8 @@ func (b *Buffer) SetPrimaryBufferForFEC(primaryBuffer *Buffer) {
 	ssrc := b.BufferBase.SSRC()
 	b.Unlock()
 
-	// let the primary know the repair stream SSRC so its decoder starts
-	// filling with media before the first FEC packet shows up
+	// Let the primary know the repair stream SSRC so its decoder is ready
+	// before the first FEC packet arrives.
 	primaryBuffer.setFECSSRC(ssrc)
 
 	for _, pp := range pkts {
@@ -486,17 +486,27 @@ func (b *Buffer) maybeCreateFECDecoderLocked() {
 }
 
 func (b *Buffer) getFECMediaPacketLocked(sequenceNumber uint16, dst []byte) (int, error) {
-	if b.bucket == nil {
+	if b.bucket == nil || b.rtpStats == nil {
 		return 0, errFECMediaPacketNotFound
 	}
 
-	headSequenceNumber := b.bucket.HeadSequenceNumber()
-	extendedSequenceNumber := int64(headSequenceNumber) + int64(int16(sequenceNumber-uint16(headSequenceNumber)))
+	// FlexFEC masks use the publisher's sequence-number space. BufferBase
+	// removes padding-only packets from the downstream space, so resolve the
+	// original extended sequence number and apply the same adjustment used
+	// when the packet was inserted into the bucket.
+	highestSequenceNumber := b.rtpStats.ExtendedHighestSequenceNumber()
+	extendedSequenceNumber := int64(highestSequenceNumber) + int64(int16(sequenceNumber-uint16(highestSequenceNumber)))
 	if extendedSequenceNumber < 0 {
 		return 0, errFECMediaPacketNotFound
 	}
 
-	return b.bucket.GetPacket(dst, uint64(extendedSequenceNumber))
+	extendedSN := uint64(extendedSequenceNumber)
+	sequenceNumberAdjustment, err := b.snRangeMap.GetValue(extendedSN)
+	if err != nil || sequenceNumberAdjustment > extendedSN {
+		return 0, errFECMediaPacketNotFound
+	}
+
+	return b.bucket.GetPacket(dst, extendedSN-sequenceNumberAdjustment)
 }
 
 // OnFECRecovery is called with counter deltas whenever FEC packets are
@@ -567,9 +577,9 @@ func (b *Buffer) feedFECLocked(
 	arrivalTime int64,
 ) (fecRecoveryDelta, func(received int, recovered int, discarded int, bytesReceived int)) {
 	statsBefore := b.fecDecoder.Stats()
-	recovered := b.fecDecoder.DecodeFec(pkt)
+	recovered := b.fecDecoder.DecodeFEC(pkt)
 
-	if b.fecPktBuf == nil {
+	if len(recovered) > 0 && b.fecPktBuf == nil {
 		b.fecPktBuf = make([]byte, bucket.RTPMaxPktSize)
 	}
 	for _, rp := range recovered {
@@ -581,7 +591,8 @@ func (b *Buffer) feedFECLocked(
 
 		// recovered packets flow through the regular pipeline: they are
 		// forwarded downstream and stop NACKs for the lost sequence numbers.
-		// they do not re-enter the decoder, it already has them in its window.
+		// They do not re-enter the decoder because chained recovery already
+		// completed within DecodeFEC.
 		b.calc(b.fecPktBuf[:n], rp, arrivalTime, false, true)
 	}
 

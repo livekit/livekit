@@ -77,6 +77,9 @@ func TestFlexFECUpstreamNegotiation(t *testing.T) {
 		if !strings.Contains(sd.SDP, "flexfec-03") {
 			return "SFU answer does not contain flexfec-03"
 		}
+		if !strings.Contains(sd.SDP, "repair-window=2000000") {
+			return "SFU answer does not contain the configured FlexFEC repair window"
+		}
 		return ""
 	})
 }

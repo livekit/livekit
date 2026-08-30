@@ -15,6 +15,7 @@
 package buffer
 
 import (
+	"encoding/binary"
 	"math/rand"
 	"testing"
 	"time"
@@ -35,7 +36,7 @@ const (
 	fecTestFECPT     = uint8(115)
 )
 
-var flexfecCodec = webrtc.RTPCodecParameters{
+var flexFECCodec = webrtc.RTPCodecParameters{
 	RTPCodecCapability: webrtc.RTPCodecCapability{
 		MimeType:    webrtc.MimeTypeFlexFEC03,
 		ClockRate:   90000,
@@ -76,7 +77,7 @@ func bindFECTestBuffer(t *testing.T, buff *Buffer) {
 	t.Helper()
 	buff.codecType = webrtc.RTPCodecTypeVideo
 	require.NoError(t, buff.Bind(webrtc.RTPParameters{
-		Codecs: []webrtc.RTPCodecParameters{vp8Codec, flexfecCodec},
+		Codecs: []webrtc.RTPCodecParameters{vp8Codec, flexFECCodec},
 	}, vp8Codec.RTPCodecCapability, 0))
 }
 
@@ -384,6 +385,70 @@ func TestBufferFECSequenceNumberWrap(t *testing.T) {
 	require.EqualValues(t, 1, primary.FECDecoderStats().PacketsRecovered)
 	extSNBySN := readExtSequenceNumbers(t, primary, len(media)-1)
 	requireRecoveredInBucket(t, primary, &media[droppedIdx], extSNBySN, media[0].SequenceNumber)
+}
+
+func TestBufferFECRecoveryAfterPaddingRemoval(t *testing.T) {
+	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+	factory.SetFECPair(fecTestFECSSRC, fecTestMediaSSRC)
+
+	primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
+	fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
+	bindFECTestBuffer(t, primary)
+
+	media := fecTestMediaPackets(t, 800, 5)
+	fecPackets := pionflexfec.NewFlexEncoder03(fecTestFECPT, fecTestFECSSRC).EncodeFec(media, 1)
+	require.Len(t, fecPackets, 1)
+
+	// Insert a padding-only packet into the publisher sequence-number space.
+	// The FEC packet protects the five media packets but not the padding packet.
+	for i := 1; i < len(media); i++ {
+		media[i].SequenceNumber++
+	}
+	mask := uint16(0x8000)
+	for _, offset := range []uint{0, 2, 3, 4, 5} {
+		mask |= 1 << (14 - offset)
+	}
+	binary.BigEndian.PutUint16(fecPackets[0].Payload[18:20], mask)
+
+	padding := rtp.Packet{
+		Header: rtp.Header{
+			Version:        2,
+			Padding:        true,
+			PaddingSize:    20,
+			PayloadType:    uint8(vp8Codec.PayloadType),
+			SequenceNumber: 801,
+			Timestamp:      media[0].Timestamp,
+			SSRC:           fecTestMediaSSRC,
+		},
+	}
+
+	writePacket(t, primary, &media[0])
+	writePacket(t, primary, &padding)
+	const droppedIdx = 2
+	for i := 1; i < len(media); i++ {
+		if i != droppedIdx {
+			writePacket(t, primary, &media[i])
+		}
+	}
+	writePacket(t, fecBuff, &fecPackets[0])
+
+	require.EqualValues(t, 1, primary.FECDecoderStats().PacketsRecovered)
+	extSNBySN := readExtSequenceNumbers(t, primary, len(media)-1)
+	baseExtSN, ok := extSNBySN[media[0].SequenceNumber]
+	require.True(t, ok)
+
+	// The removed padding packet shifts the recovered packet down by one in
+	// the bucket/downstream sequence-number space.
+	var raw [1500]byte
+	n, err := primary.GetPacket(raw[:], baseExtSN+2)
+	require.NoError(t, err)
+	var recovered rtp.Packet
+	require.NoError(t, recovered.Unmarshal(raw[:n]))
+	assert.Equal(t, media[droppedIdx].SequenceNumber-1, recovered.SequenceNumber)
+	assert.Equal(t, media[droppedIdx].Timestamp, recovered.Timestamp)
+	assert.Equal(t, media[droppedIdx].PayloadType, recovered.PayloadType)
+	assert.Equal(t, media[droppedIdx].SSRC, recovered.SSRC)
+	assert.Equal(t, media[droppedIdx].Payload, recovered.Payload)
 }
 
 func TestBufferFECIgnoresUnexpectedPayloadType(t *testing.T) {

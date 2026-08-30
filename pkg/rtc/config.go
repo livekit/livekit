@@ -70,6 +70,12 @@ type FlexFECDirectionConfig struct {
 
 func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 	rtcConf := conf.RTC
+	flexFEC := rtcConf.FlexFEC.WithDefaults()
+	if flexFEC.UpstreamEnabled {
+		if err := validateFlexFECPayloadType(flexFEC.PayloadType); err != nil {
+			return nil, err
+		}
+	}
 
 	webRTCConfig, err := rtcconfig.NewWebRTCConfig(&rtcConf.RTCConfig, conf.Development)
 	if err != nil {
@@ -89,12 +95,6 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 		rtcConf.PacketBufferSizeAudio = rtcConf.PacketBufferSize
 	}
 
-	flexFEC := rtcConf.FlexFEC.WithDefaults()
-	if flexFEC.UpstreamEnabled {
-		if err := validateFlexFECPayloadType(flexFEC.PayloadType); err != nil {
-			return nil, err
-		}
-	}
 	return &WebRTCConfig{
 		WebRTCConfig: *webRTCConfig,
 		Receiver: ReceiverConfig{

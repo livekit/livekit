@@ -3407,18 +3407,18 @@ func fecPairsFromSDP(s *sdp.SessionDescription, logger logger.Logger) map[uint32
 			if attr.Key != sdp.AttrKeySSRCGroup {
 				continue
 			}
-			split := strings.Split(attr.Value, " ")
-			if split[0] != sdp.SemanticTokenForwardErrorCorrectionFramework || len(split) != 3 {
+			fields := strings.Fields(attr.Value)
+			if len(fields) != 3 || fields[0] != sdp.SemanticTokenForwardErrorCorrectionFramework {
 				continue
 			}
-			baseSsrc, err := strconv.ParseUint(split[1], 10, 32)
+			baseSsrc, err := strconv.ParseUint(fields[1], 10, 32)
 			if err != nil {
-				logger.Warnw("failed to parse SSRC", err, "ssrc", split[1])
+				logger.Warnw("failed to parse SSRC", err, "ssrc", fields[1])
 				continue
 			}
-			fecSsrc, err := strconv.ParseUint(split[2], 10, 32)
+			fecSsrc, err := strconv.ParseUint(fields[2], 10, 32)
 			if err != nil {
-				logger.Warnw("failed to parse SSRC", err, "ssrc", split[2])
+				logger.Warnw("failed to parse SSRC", err, "ssrc", fields[2])
 				continue
 			}
 			fecFlows[uint32(fecSsrc)] = uint32(baseSsrc)

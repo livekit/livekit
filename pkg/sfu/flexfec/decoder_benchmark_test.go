@@ -71,7 +71,7 @@ func BenchmarkDecoderMediaSteadyState1200(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		packet.SequenceNumber = uint16(i)
 		packet.Timestamp = uint32(i) * 3000
-		decoder.DecodeFec(&packet)
+		decoder.DecodeFEC(&packet)
 	}
 }
 
@@ -85,9 +85,9 @@ func BenchmarkDecoderCompleteWindow10x1200(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		decoder := NewDecoder(testFECSSRC, testMediaSSRC, lookup, logger.GetLogger())
 		for j := range media {
-			decoder.DecodeFec(&media[j])
+			decoder.DecodeFEC(&media[j])
 		}
-		if recovered := decoder.DecodeFec(&fecPackets[0]); len(recovered) != 0 {
+		if recovered := decoder.DecodeFEC(&fecPackets[0]); len(recovered) != 0 {
 			b.Fatalf("expected no recovered packets, got %d", len(recovered))
 		}
 	}
@@ -104,10 +104,10 @@ func BenchmarkDecoderRecoveryWindow10x1200(b *testing.B) {
 		decoder := NewDecoder(testFECSSRC, testMediaSSRC, lookup, logger.GetLogger())
 		for j := range media {
 			if j != 4 {
-				decoder.DecodeFec(&media[j])
+				decoder.DecodeFEC(&media[j])
 			}
 		}
-		if recovered := decoder.DecodeFec(&fecPackets[0]); len(recovered) != 1 {
+		if recovered := decoder.DecodeFEC(&fecPackets[0]); len(recovered) != 1 {
 			b.Fatalf("expected one recovered packet, got %d", len(recovered))
 		}
 	}

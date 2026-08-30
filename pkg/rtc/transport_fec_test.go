@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -76,6 +77,37 @@ a=ssrc:1111 cname:test
 	assert.Empty(t, fecPairsFromSDP(parsed, logger.GetLogger()))
 }
 
+func TestFECPairsFromSDPIgnoresMalformedGroups(t *testing.T) {
+	description := &sdp.SessionDescription{
+		MediaDescriptions: []*sdp.MediaDescription{{
+			Attributes: []sdp.Attribute{
+				{Key: sdp.AttrKeySSRCGroup},
+				{Key: sdp.AttrKeySSRCGroup, Value: "FEC-FR 1111"},
+				{Key: sdp.AttrKeySSRCGroup, Value: "FEC-FR invalid 3333"},
+				{Key: sdp.AttrKeySSRCGroup, Value: "FEC-FR 1111 invalid"},
+				{Key: sdp.AttrKeySSRCGroup, Value: "FEC-FR 1111 3333 4444"},
+			},
+		}},
+	}
+
+	require.NotPanics(t, func() {
+		assert.Empty(t, fecPairsFromSDP(description, logger.GetLogger()))
+	})
+}
+
+func TestFECPairsFromSDPHandlesWhitespace(t *testing.T) {
+	description := &sdp.SessionDescription{
+		MediaDescriptions: []*sdp.MediaDescription{{
+			Attributes: []sdp.Attribute{{
+				Key:   sdp.AttrKeySSRCGroup,
+				Value: "  FEC-FR   1111\t3333  ",
+			}},
+		}},
+	}
+
+	assert.Equal(t, map[uint32]uint32{3333: 1111}, fecPairsFromSDP(description, logger.GetLogger()))
+}
+
 func TestFlexFECPayloadTypeValidation(t *testing.T) {
 	assert.NoError(t, validateFlexFECPayloadType(115))
 	// upper boundary of the 7-bit RTP payload type field
@@ -96,35 +128,90 @@ func TestMediaEngineRegistersFlexFEC(t *testing.T) {
 		{Mime: "video/rtx"},
 	}
 
-	for _, enabled := range []bool{false, true} {
-		me, err := createMediaEngine(enabledCodecs, DirectionConfig{
-			FlexFEC: FlexFECDirectionConfig{
-				Enabled:     enabled,
-				PayloadType: 115,
-			},
-			RTCPFeedback: RTCPFeedbackConfig{
-				Video: []webrtc.RTCPFeedback{{Type: webrtc.TypeRTCPFBTransportCC}},
-			},
-		}, false)
-		require.NoError(t, err)
+	for _, test := range []struct {
+		name    string
+		enabled bool
+	}{
+		{name: "disabled", enabled: false},
+		{name: "enabled", enabled: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			me, err := createMediaEngine(enabledCodecs, DirectionConfig{
+				FlexFEC: FlexFECDirectionConfig{
+					Enabled:     test.enabled,
+					PayloadType: 115,
+				},
+				RTCPFeedback: RTCPFeedbackConfig{
+					Video: []webrtc.RTCPFeedback{{Type: webrtc.TypeRTCPFBTransportCC}},
+				},
+			}, false)
+			require.NoError(t, err)
 
-		// drive codec registration into negotiated form via an SDP round trip
-		// is heavyweight, instead check via filterCodecs retention behavior
-		flexfecParams := flexFECCodecParameters(115)
-		assert.Equal(t, "repair-window=2000000", flexfecParams.SDPFmtpLine)
-		filtered := filterCodecs(
-			[]webrtc.RTPCodecParameters{flexfecParams},
-			enabledCodecs,
-			RTCPFeedbackConfig{},
-			false,
-			enabled,
-		)
-		if enabled {
-			require.Len(t, filtered, 1)
-			assert.Equal(t, webrtc.MimeTypeFlexFEC03, filtered[0].MimeType)
-		} else {
-			assert.Empty(t, filtered)
-		}
-		_ = me
+			pc, err := webrtc.NewAPI(webrtc.WithMediaEngine(me)).NewPeerConnection(webrtc.Configuration{})
+			require.NoError(t, err)
+			defer pc.Close()
+			_, err = pc.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo)
+			require.NoError(t, err)
+			offer, err := pc.CreateOffer(nil)
+			require.NoError(t, err)
+
+			flexFECParams := flexFECCodecParameters(115)
+			assert.Equal(t, "repair-window=2000000", flexFECParams.SDPFmtpLine)
+			filtered := filterCodecs(
+				[]webrtc.RTPCodecParameters{flexFECParams},
+				enabledCodecs,
+				RTCPFeedbackConfig{},
+				false,
+				test.enabled,
+			)
+			if test.enabled {
+				require.Len(t, filtered, 1)
+				assert.Equal(t, webrtc.MimeTypeFlexFEC03, filtered[0].MimeType)
+				assert.Contains(t, offer.SDP, "a=rtpmap:115 flexfec-03/90000")
+				assert.Contains(t, offer.SDP, "a=fmtp:115 repair-window=2000000")
+			} else {
+				assert.Empty(t, filtered)
+				assert.NotContains(t, offer.SDP, "flexfec-03")
+			}
+		})
 	}
+}
+
+func TestWebRTCConfigFlexFEC(t *testing.T) {
+	newConfig := func(t *testing.T) *config.Config {
+		t.Helper()
+		conf, err := config.NewConfig("", true, nil, nil)
+		require.NoError(t, err)
+		conf.RTC.TCPPort = 0
+		return conf
+	}
+
+	t.Run("defaults and publisher updates", func(t *testing.T) {
+		conf := newConfig(t)
+		conf.RTC.FlexFEC = config.FlexFECConfig{UpstreamEnabled: true}
+
+		webRTCConfig, err := NewWebRTCConfig(conf)
+		require.NoError(t, err)
+		assert.Equal(t, FlexFECDirectionConfig{
+			Enabled:     true,
+			PayloadType: config.DefaultFlexFECConfig.PayloadType,
+		}, webRTCConfig.Publisher.FlexFEC)
+		assert.False(t, webRTCConfig.Subscriber.FlexFEC.Enabled)
+
+		webRTCConfig.UpdatePublisherConfig(true)
+		assert.True(t, webRTCConfig.Publisher.FlexFEC.Enabled)
+		assert.Equal(t, config.DefaultFlexFECConfig.PayloadType, webRTCConfig.Publisher.FlexFEC.PayloadType)
+	})
+
+	t.Run("invalid payload type", func(t *testing.T) {
+		conf := newConfig(t)
+		conf.RTC.FlexFEC = config.FlexFECConfig{
+			UpstreamEnabled: true,
+			PayloadType:     96,
+		}
+
+		_, err := NewWebRTCConfig(conf)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "collides")
+	})
 }
