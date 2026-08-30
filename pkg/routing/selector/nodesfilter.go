@@ -2,7 +2,7 @@ package selector
 
 import "github.com/livekit/protocol/livekit"
 
-func FilterNodesByCriteria(nodes []*livekit.Node, criteriaThreashold float32, calculateCriteriaFunc func(*livekit.Node) float32) ([]*livekit.Node, error) {
+func FilterNodesByCriteria(nodes []*livekit.Node, criteriaThreshold float32, calculateCriteriaFunc func(*livekit.Node) float32) ([]*livekit.Node, error) {
 	nodes = GetAvailableNodes(nodes)
 	if len(nodes) == 0 {
 		return nil, ErrNoAvailableNodes
@@ -10,7 +10,7 @@ func FilterNodesByCriteria(nodes []*livekit.Node, criteriaThreashold float32, ca
 
 	filteredNodes := make([]*livekit.Node, 0)
 	for _, node := range nodes {
-		if calculateCriteriaFunc(node) < criteriaThreashold {
+		if calculateCriteriaFunc(node) < criteriaThreshold {
 			filteredNodes = append(filteredNodes, node)
 		}
 	}
