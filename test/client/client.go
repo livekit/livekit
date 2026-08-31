@@ -46,10 +46,10 @@ import (
 	"github.com/livekit/protocol/signalling"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
-	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/transport/transportfakes"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/protocol/datatrack"
 )
 
 type SignalRequestHandler func(msg *livekit.SignalRequest) error
