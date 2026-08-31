@@ -61,8 +61,8 @@ func TestRegistrySupersede(t *testing.T) {
 	require.True(t, newSess.closed, "deregistered session must be closed")
 }
 
-// Candidates keys on (apiKey, agentName, deployment): a request for one agent
-// must not see another agent's workers in the same project/deployment.
+// Candidates keys on (apiKey, agentName, deployment): a request must not see
+// another agent's workers, nor another deployment's, in the same project.
 func TestRegistryAgentScoping(t *testing.T) {
 	g := NewRegistry()
 	manifest, err := ParseManifest([]*livekit.AgentHttp_AgentEndpoint{{
@@ -70,20 +70,24 @@ func TestRegistryAgentScoping(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	mk := func(workerID, agentName string) *Registration {
+	mk := func(workerID, agentName, deployment string) *Registration {
 		r := &Registration{
 			WorkerID: workerID, APIKey: "key",
-			AgentName: agentName, Deployment: "production", Manifest: manifest,
+			AgentName: agentName, Deployment: deployment, Manifest: manifest,
 		}
 		r.SetSession(&fakeSession{})
 		return r
 	}
-	a := mk("AW_a", "alpha")
-	b := mk("AW_b", "beta")
+	a := mk("AW_a", "alpha", "production")
+	b := mk("AW_b", "beta", "production")
+	staging := mk("AW_c", "alpha", "staging")
 	require.NoError(t, g.Register(a))
 	require.NoError(t, g.Register(b))
+	require.NoError(t, g.Register(staging))
 
 	require.Equal(t, []*Registration{a}, g.Candidates("key", "alpha", "production"))
 	require.Equal(t, []*Registration{b}, g.Candidates("key", "beta", "production"))
 	require.Empty(t, g.Candidates("key", "gamma", "production"))
+	// a different deployment of the same agent is a separate candidate set
+	require.Equal(t, []*Registration{staging}, g.Candidates("key", "alpha", "staging"))
 }
