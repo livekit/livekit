@@ -17,7 +17,6 @@ package endpoint
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"math/rand/v2"
@@ -28,9 +27,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils/guid"
 )
 
 // HeaderEndpointMiss marks a response the front produced ITSELF - a routing
@@ -52,7 +49,7 @@ const (
 )
 
 const (
-	// PathPrefix is the public route namespace: /agents/{deployment}/{path...}
+	// PathPrefix is the public route namespace: /agents/{agent_name}/{deployment}/{path...}
 	PathPrefix = "/agents/"
 
 	// responseHeadTimeout bounds the wait for the worker's response head. Bodies
@@ -109,7 +106,12 @@ type FallbackRequest struct {
 	// unauthenticated)
 	APIKey        string
 	Authenticated bool
-	Deployment string
+	AgentName     string
+	Deployment    string
+	// Method is the request's HTTP method, so a multi-node layer can select
+	// candidates method-aware (a node serving the path under a different method
+	// is not a candidate).
+	Method string
 	// Path within the deployment, '/'-rooted
 	Path string
 }
@@ -160,6 +162,11 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	agentName, rest, found := strings.Cut(rest, "/")
+	if !found || agentName == "" {
+		http.NotFound(w, r)
+		return
+	}
 	deployment, path, found := strings.Cut(rest, "/")
 	if !found {
 		path = ""
@@ -182,7 +189,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	candidates := f.registry.Candidates(apiKey, deployment)
+	candidates := f.registry.Candidates(apiKey, agentName, deployment)
 	if len(candidates) == 0 && f.fallback == nil {
 		w.Header().Set("Retry-After", "1")
 		f.writeMiss(w, http.StatusServiceUnavailable, MissUnavailable, "no workers available for deployment")
@@ -215,7 +222,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// nothing local can serve: hand off before the local status mapping
 		if f.fallback(w, r, &FallbackRequest{
 			APIKey: apiKey, Authenticated: authenticated,
-			Deployment: deployment, Path: path,
+			AgentName: agentName, Deployment: deployment, Method: r.Method, Path: path,
 		}) {
 			return
 		}
@@ -236,7 +243,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			for _, reg := range candidates {
 				if alt, ok := reg.Manifest.RedirectSlashes(path, r.Method); ok {
 					u := *r.URL
-					u.Path = PathPrefix + deployment + alt
+					u.Path = PathPrefix + agentName + "/" + deployment + alt
 					http.Redirect(w, r, u.String(), http.StatusTemporaryRedirect)
 					return
 				}
@@ -271,7 +278,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if bodyConsumed == 0 && f.fallback != nil {
 		if f.fallback(w, r, &FallbackRequest{
 			APIKey: apiKey, Authenticated: authenticated,
-			Deployment: deployment, Path: path,
+			AgentName: agentName, Deployment: deployment, Method: r.Method, Path: path,
 		}) {
 			return
 		}
@@ -285,13 +292,12 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // registrations at random and take the one with fewer in-flight streams (least
 // outstanding requests). This approximates optimal load spreading without global
 // coordination or the herding of exact least-loaded, and - unlike a
-// self-reported load - the in-flight count is observed here on this node's own
-// data conns, so it is accurate for adopted (satellite) registrations too.
-// Eligible = not already attempted, has attached conns, not draining.
+// self-reported load - the in-flight count is observed here from the worker's
+// own session. Eligible = not already attempted, has a live session, not draining.
 func pickWorker(regs []*Registration, ignore map[*Registration]bool) *Registration {
 	eligible := regs[:0:0]
 	for _, reg := range regs {
-		if ignore[reg] || reg.AttachedConns() == 0 {
+		if ignore[reg] || !reg.HasSession() {
 			continue
 		}
 		if reg.Draining != nil && reg.Draining() {
@@ -335,23 +341,15 @@ func (f *Front) bridge(
 	body io.Reader,
 	bodyConsumedBefore int64,
 ) (done bool, retryable bool) {
-	conn := reg.PickConn()
-	if conn == nil {
-		return false, true // no capacity here; try another worker
-	}
-
-	stream, err := conn.OpenStream(&livekit.AgentHttp_HttpStreamOpen{
-		RequestId:  guid.New("AER_"),
-		ClientAddr: r.RemoteAddr,
-	})
+	ctx := r.Context()
+	stream, err := reg.OpenStream(ctx)
 	if err != nil {
-		return false, true
+		return false, true // no session/capacity here; try another worker
 	}
 	defer stream.Close()
 
-	ctx := r.Context()
 	stop := context.AfterFunc(ctx, func() {
-		stream.Reset(livekit.AgentHttp_HSR_CANCEL, "client disconnected")
+		stream.Reset(ResetCancel, "client disconnected")
 	})
 	defer stop()
 
@@ -365,7 +363,7 @@ func (f *Front) bridge(
 			err = stream.CloseWrite()
 		} else {
 			// fail fast: the worker is waiting for bytes that will never come
-			stream.Reset(livekit.AgentHttp_HSR_CANCEL, "request write failed")
+			stream.Reset(ResetCancel, "request write failed")
 		}
 		writeErrCh <- err
 	}()
@@ -389,7 +387,7 @@ func (f *Front) bridge(
 		}
 		// join the request writer before another attempt touches the shared
 		// body reader (retries are bodyless per the table, so this is prompt)
-		stream.Reset(livekit.AgentHttp_HSR_CANCEL, "retrying elsewhere")
+		stream.Reset(ResetCancel, "retrying elsewhere")
 		<-writeErrCh
 		return false, true
 	}
@@ -406,7 +404,7 @@ func (f *Front) bridge(
 		n, rerr := resp.Body.Read(buf)
 		if n > 0 {
 			if _, werr := w.Write(buf[:n]); werr != nil {
-				stream.Reset(livekit.AgentHttp_HSR_CANCEL, "client write failed")
+				stream.Reset(ResetCancel, "client write failed")
 				return true, false
 			}
 			_ = rc.Flush()
@@ -427,16 +425,18 @@ func (f *Front) bridge(
 	return true, false
 }
 
-// readResponseHead reads the worker's response head, relaying informational
-// responses (1xx except 101) to the client.
-func (f *Front) readResponseHead(w http.ResponseWriter, br *bufio.Reader, outReq *http.Request, stream *Stream) (*http.Response, error) {
+// readResponseHead reads the worker's response head, relaying 1xx informational
+// responses to the client and returning the final head. A 101 is not treated as
+// informational (there is no protocol upgrade over an opaque request stream): it
+// is returned as-is as the final response rather than looped past.
+func (f *Front) readResponseHead(w http.ResponseWriter, br *bufio.Reader, outReq *http.Request, stream Stream) (*http.Response, error) {
 	deadline := time.NewTimer(responseHeadTimeout)
 	defer deadline.Stop()
 	headCh := make(chan struct{})
 	go func() {
 		select {
 		case <-deadline.C:
-			stream.Reset(livekit.AgentHttp_HSR_CANCEL, "response head timeout")
+			stream.Reset(ResetCancel, "response head timeout")
 		case <-headCh:
 		}
 	}()
@@ -463,16 +463,13 @@ func (f *Front) readResponseHead(w http.ResponseWriter, br *bufio.Reader, outReq
 }
 
 // classifyRetry implements the retry table.
-func (f *Front) classifyRetry(r *http.Request, stream *Stream, responseBytes, bodyConsumedBefore int64, err error) bool {
+func (f *Front) classifyRetry(r *http.Request, stream Stream, responseBytes, bodyConsumedBefore int64, err error) bool {
 	if responseBytes > 0 || stream.BytesRead() > 0 {
 		return false
 	}
 	if stream.Refused() {
 		// the worker proved non-dispatch; safe for any method, but only when the
 		// request body can be replayed (nothing consumed yet)
-		return bodyConsumedBefore == 0 && r.ContentLength == 0
-	}
-	if errors.Is(err, ErrStreamRefused) {
 		return bodyConsumedBefore == 0 && r.ContentLength == 0
 	}
 	switch r.Method {
@@ -549,4 +546,3 @@ func (c *countingReader) Read(p []byte) (int, error) {
 	*c.n += int64(n)
 	return n, err
 }
-

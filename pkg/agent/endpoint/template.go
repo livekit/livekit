@@ -27,8 +27,7 @@ import (
 // starlette's semantics would make the server route requests the worker-side
 // router then refuses.
 type Template struct {
-	raw string
-	re  *regexp.Regexp
+	re *regexp.Regexp
 }
 
 // convertor patterns copied verbatim from starlette's convertors.py. The uuid
@@ -86,13 +85,9 @@ func ParseTemplate(path string) (*Template, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid path template %q: %w", path, err)
 	}
-	return &Template{raw: path, re: re}, nil
+	return &Template{re: re}, nil
 }
 
 func (t *Template) Match(path string) bool {
 	return t.re.MatchString(path)
-}
-
-func (t *Template) String() string {
-	return t.raw
 }

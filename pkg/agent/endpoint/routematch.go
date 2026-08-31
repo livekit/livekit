@@ -22,18 +22,20 @@ import (
 // Route matching for the multi-node edge. Templates are canonicalized by
 // replacing each path parameter with a typed wildcard token ({id:int} -> the
 // int token, {name} or {name:str} -> the str token, {rest:path} -> the greedy
-// glob), then indexed by ALL prefixes plus the full route as a terminal. A
-// concrete request path is matched by a left-to-right pruned walk: at each
-// segment we branch over the literal value and the wildcard tokens the value is
+// glob), then indexed by ALL prefixes (path-only) plus, for each declared HTTP
+// method, a method-qualified terminal route key. A concrete request (method +
+// path) is matched by a left-to-right pruned walk over the path: at each segment
+// we branch over the literal value and the wildcard tokens the value is
 // type-compatible with, keeping only branches that are a prefix of some route -
 // so the cost is linear in the path depth, never 2^segments, and the surviving
-// set never exceeds the route count.
+// set never exceeds the route count - then the terminal check is method-aware,
+// so a node that serves the path under a different method is not a candidate.
 //
-// This is a SHAPE match only: the exact convertor (int/uuid/...) and the method
-// are re-checked by the worker's own router, which stays authoritative. A shape
-// match that the worker then rejects costs one wasted relay, never a wrong
-// route; a false positive from a probabilistic backing (see FilterIndex) is the
-// same bounded cost.
+// This is a SHAPE match only: the exact convertor (int/uuid/...) is re-checked
+// by the worker's own router, which stays authoritative (the method is now part
+// of the match, but the worker still enforces it). A shape match the worker then
+// rejects costs one wasted relay, never a wrong route; a false positive from a
+// probabilistic backing (see FilterIndex) is the same bounded cost.
 
 // canonical wildcard tokens; the control-char prefix keeps them from colliding
 // with any real path segment
@@ -158,6 +160,15 @@ func extendKey(prefix, tok string) string {
 	return prefix + segSep + tok
 }
 
+// RouteKey qualifies a canonical path terminal with its HTTP method, so a
+// terminal is a route only for the method(s) the worker declared. Methods are
+// uppercase ASCII (allowlisted at registration) and canonical tokens start with
+// a control char, so method and path can't collide. Prefix keys stay path-only
+// (the pruned walk is method-agnostic until the terminal check).
+func RouteKey(method, canonicalRoute string) string {
+	return method + segSep + canonicalRoute
+}
+
 // PrefixIndex is the backing an edge matches against: whether a canonical prefix
 // key is a prefix of some route, and whether it is a complete route. An exact
 // map-backed index (ExactIndex) gives precise answers; a cuckoo-filter backing
@@ -167,10 +178,12 @@ type PrefixIndex interface {
 	IsRoute(key string) bool
 }
 
-// Matches reports whether the request path matches any route in the index, via
-// the pruned walk. A path deeper than maxMatchDepth returns true so the caller
-// relays and lets the worker decide (never a spurious 404 on a deep path).
-func Matches(idx PrefixIndex, path string) bool {
+// Matches reports whether the request (method + path) matches any route in the
+// index, via the pruned walk. The path walk is method-agnostic (prefix keys are
+// path-only); only the terminal check is method-qualified. A path deeper than
+// maxMatchDepth returns true so the caller relays and lets the worker decide
+// (never a spurious 404 on a deep path).
+func Matches(idx PrefixIndex, method, path string) bool {
 	segs := splitSegments(path)
 	if len(segs) > maxMatchDepth {
 		return true
@@ -180,7 +193,7 @@ func Matches(idx PrefixIndex, path string) bool {
 	for _, seg := range segs {
 		// a glob at any currently-live prefix eats this segment and the rest
 		for p := range live {
-			if idx.IsRoute(extendKey(p, tokGlob)) {
+			if idx.IsRoute(RouteKey(method, extendKey(p, tokGlob))) {
 				return true
 			}
 		}
@@ -198,10 +211,10 @@ func Matches(idx PrefixIndex, path string) bool {
 		}
 		live = next
 	}
-	// consumed every segment: a live prefix that is a complete route matches,
-	// and a glob at a live prefix matches the empty remainder too
+	// consumed every segment: a live prefix that is a complete route for this
+	// method matches, and a glob at a live prefix matches the empty remainder too
 	for p := range live {
-		if idx.IsRoute(p) || idx.IsRoute(extendKey(p, tokGlob)) {
+		if idx.IsRoute(RouteKey(method, p)) || idx.IsRoute(RouteKey(method, extendKey(p, tokGlob))) {
 			return true
 		}
 	}
@@ -224,8 +237,9 @@ func NewExactIndex() *ExactIndex {
 	}
 }
 
-// Add canonicalizes a template and inserts its prefixes and terminal.
-func (x *ExactIndex) Add(path string) error {
+// Add canonicalizes a template and inserts its path prefixes plus a
+// method-qualified terminal per declared method.
+func (x *ExactIndex) Add(methods []string, path string) error {
 	segs, err := canonicalizeTemplate(path)
 	if err != nil {
 		return err
@@ -235,7 +249,9 @@ func (x *ExactIndex) Add(path string) error {
 		key = extendKey(key, s)
 		x.prefixes[key] = struct{}{}
 	}
-	x.routes[key] = struct{}{}
+	for _, m := range methods {
+		x.routes[RouteKey(m, key)] = struct{}{}
+	}
 	return nil
 }
 

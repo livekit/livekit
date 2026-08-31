@@ -60,6 +60,7 @@ type LivekitServer struct {
 	signalServer *SignalServer
 	turnServer   *turn.Server
 	currentNode  routing.LocalNode
+	agentWTStop  func()
 	running      atomic.Bool
 	doneChan     chan struct{}
 	closedChan   chan struct{}
@@ -236,6 +237,14 @@ func (s *LivekitServer) Start() error {
 		return err
 	}
 
+	if s.agentService != nil {
+		stop, err := s.agentService.StartWebTransport(s.config.Development)
+		if err != nil {
+			return err
+		}
+		s.agentWTStop = stop
+	}
+
 	addresses := s.config.BindAddresses
 	if addresses == nil {
 		addresses = []string{""}
@@ -374,6 +383,9 @@ func (s *LivekitServer) Stop(force bool) {
 	}
 
 	s.router.Stop()
+	if s.agentWTStop != nil {
+		s.agentWTStop()
+	}
 	close(s.doneChan)
 
 	// wait for fully closed

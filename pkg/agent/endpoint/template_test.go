@@ -101,6 +101,15 @@ func TestManifestValidation(t *testing.T) {
 	_, err = ParseManifest([]*livekit.AgentHttp_AgentEndpoint{ep("/x", []string{"get"}, false)})
 	require.Error(t, err, "lowercase method")
 
+	_, err = ParseManifest([]*livekit.AgentHttp_AgentEndpoint{ep("/x", []string{"GTE"}, false)})
+	require.Error(t, err, "unsupported method rejected")
+
+	// the full FastAPI/starlette verb set is accepted
+	_, err = ParseManifest([]*livekit.AgentHttp_AgentEndpoint{
+		ep("/x", []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE"}, false),
+	})
+	require.NoError(t, err, "all FastAPI verbs accepted")
+
 	_, err = ParseManifest([]*livekit.AgentHttp_AgentEndpoint{
 		{Path: "/ws", Kind: livekit.AgentHttp_AEK_TEXT, Methods: []string{"GET"}},
 	})

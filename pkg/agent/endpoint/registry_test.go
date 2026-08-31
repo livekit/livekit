@@ -1,17 +1,31 @@
+// Copyright 2026 LiveKit, Inc.
+
 package endpoint
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
 )
 
+// fakeSession is a no-op Session for registry tests: it records whether it was
+// closed so supersede/deregister can be asserted.
+type fakeSession struct {
+	open   int
+	closed bool
+}
+
+func (s *fakeSession) OpenStream(context.Context) (Stream, error) { return nil, ErrNoSession }
+func (s *fakeSession) OpenStreams() int                           { return s.open }
+func (s *fakeSession) MaxStreams() int                            { return DefaultMaxStreams }
+func (s *fakeSession) Close(string)                               { s.closed = true }
+
 // worker ids are stable across reconnects: a re-registration must supersede the
-// old epoch, and the retiring connection's Deregister must not strand the new
-// one.
+// old epoch and close its session, and the retiring session's Deregister must
+// not strand the new one.
 func TestRegistrySupersede(t *testing.T) {
 	g := NewRegistry()
 	manifest, err := ParseManifest([]*livekit.AgentHttp_AgentEndpoint{{
@@ -19,32 +33,58 @@ func TestRegistrySupersede(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	mk := func(instance string) *Registration {
-		return &Registration{
-			WorkerID: "AW_1", InstanceID: instance, APIKey: "key",
-			Deployment: "production", Manifest: manifest,
-			Settings: Settings{DataConnCount: 1, AttachToken: "ATT_" + instance},
-			Logger:   logger.GetLogger(),
+	mk := func() (*Registration, *fakeSession) {
+		r := &Registration{
+			WorkerID: "AW_1", APIKey: "key",
+			AgentName: "agent", Deployment: "production", Manifest: manifest,
 		}
+		s := &fakeSession{}
+		r.SetSession(s)
+		return r, s
 	}
 
-	oldReg := mk("i-1")
+	oldReg, oldSess := mk()
 	require.NoError(t, g.Register(oldReg))
-	newReg := mk("i-2")
+	newReg, newSess := mk()
 	require.NoError(t, g.Register(newReg))
 
-	require.Equal(t, []*Registration{newReg}, g.Candidates("key", "production"))
-	require.Error(t, g.ValidateAttach("AW_1", "i-1", "key", "ATT_i-1"), "old epoch must not attach")
-	require.NoError(t, g.ValidateAttach("AW_1", "i-2", "key", "ATT_i-2"))
-	// a grant for another project cannot attach even with the right token
-	require.ErrorIs(t, g.ValidateAttach("AW_1", "i-2", "other", "ATT_i-2"), ErrAttachRejected,
-		"wrong-project grant must not attach")
+	require.Equal(t, []*Registration{newReg}, g.Candidates("key", "agent", "production"))
+	require.True(t, oldSess.closed, "superseded epoch's session must be closed")
+	require.False(t, newSess.closed)
 
 	// the old control connection tears down after the new one registered
 	g.Deregister(oldReg)
-	require.Equal(t, []*Registration{newReg}, g.Candidates("key", "production"),
+	require.Equal(t, []*Registration{newReg}, g.Candidates("key", "agent", "production"),
 		"the retiring epoch must not deregister its successor")
 
 	g.Deregister(newReg)
-	require.Empty(t, g.Candidates("key", "production"))
+	require.Empty(t, g.Candidates("key", "agent", "production"))
+	require.True(t, newSess.closed, "deregistered session must be closed")
+}
+
+// Candidates keys on (apiKey, agentName, deployment): a request for one agent
+// must not see another agent's workers in the same project/deployment.
+func TestRegistryAgentScoping(t *testing.T) {
+	g := NewRegistry()
+	manifest, err := ParseManifest([]*livekit.AgentHttp_AgentEndpoint{{
+		Path: "/x", Methods: []string{"GET"}, Public: true,
+	}})
+	require.NoError(t, err)
+
+	mk := func(workerID, agentName string) *Registration {
+		r := &Registration{
+			WorkerID: workerID, APIKey: "key",
+			AgentName: agentName, Deployment: "production", Manifest: manifest,
+		}
+		r.SetSession(&fakeSession{})
+		return r
+	}
+	a := mk("AW_a", "alpha")
+	b := mk("AW_b", "beta")
+	require.NoError(t, g.Register(a))
+	require.NoError(t, g.Register(b))
+
+	require.Equal(t, []*Registration{a}, g.Candidates("key", "alpha", "production"))
+	require.Equal(t, []*Registration{b}, g.Candidates("key", "beta", "production"))
+	require.Empty(t, g.Candidates("key", "gamma", "production"))
 }

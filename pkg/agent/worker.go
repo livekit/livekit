@@ -159,7 +159,6 @@ type WorkerRegistration struct {
 	// agent HTTP endpoints data plane
 	Endpoints        []*livekit.AgentHttp_AgentEndpoint
 	InstanceID       string
-	EndpointProtocol uint32
 	EndpointSettings *livekit.AgentHttp_AgentEndpointSettings
 }
 
@@ -243,11 +242,18 @@ func (h *WorkerRegisterer) HandleRegister(req *livekit.RegisterWorkerRequest) er
 	h.registration.Deployment = req.GetDeployment()
 	h.registration.Endpoints = req.GetEndpoints()
 	h.registration.InstanceID = req.GetInstanceId()
-	h.registration.EndpointProtocol = req.GetEndpointProtocol()
 
 	if len(req.GetEndpoints()) > 0 && req.GetEndpointProtocol() > 0 {
 		if h.endpointSettings == nil {
 			return errors.New("agent HTTP endpoints are not supported by this server")
+		}
+		// endpoints are addressed at /agents/{agent_name}/{deployment}/...; a
+		// worker serving them needs a non-empty, URL-safe agent name
+		if req.GetAgentName() == "" {
+			return errors.New("agent HTTP endpoints require an agent name")
+		}
+		if err := protoagent.ValidateAgentName(req.GetAgentName()); err != nil {
+			return err
 		}
 		settings, err := h.endpointSettings(req)
 		if err != nil {

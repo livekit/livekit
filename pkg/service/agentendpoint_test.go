@@ -18,10 +18,17 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"fmt"
 	"io"
+	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,6 +36,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quic-go/quic-go/http3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/agent"
@@ -48,9 +56,30 @@ const (
 )
 
 type endpointStack struct {
-	t   *testing.T
-	ts  *httptest.Server
-	svc *service.AgentService
+	t     *testing.T
+	ts    *httptest.Server
+	svc   *service.AgentService
+	wtURL string // https://host:port/agent (WebTransport control+data)
+}
+
+// selfSignedTLS mints an in-memory cert for 127.0.0.1 with the h3 ALPN, for the
+// node's WebTransport listener.
+func selfSignedTLS(t *testing.T) *tls.Config {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "localhost"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	require.NoError(t, err)
+	return &tls.Config{
+		Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}},
+		NextProtos:   []string{http3.NextProtoH3},
+	}
 }
 
 func newEndpointStack(t *testing.T, endpointsCfg agent.EndpointsConfig) *endpointStack {
@@ -70,10 +99,9 @@ func newEndpointStack(t *testing.T, endpointsCfg agent.EndpointsConfig) *endpoin
 	)
 	require.NoError(t, err)
 
+	// public front (client-facing HTTP/1.1), unchanged
 	mux := http.NewServeMux()
-	mux.Handle("/agent", svc)
 	mux.Handle(endpoint.PathPrefix, svc.EndpointFront())
-
 	authMW := service.NewAPIKeyAuthMiddleware(keyProvider)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authMW.ServeHTTP(w, r, mux.ServeHTTP)
@@ -81,26 +109,32 @@ func newEndpointStack(t *testing.T, endpointsCfg agent.EndpointsConfig) *endpoin
 	t.Cleanup(ts.Close)
 	t.Cleanup(func() { svc.DrainConnections(time.Millisecond, true) })
 
-	return &endpointStack{t: t, ts: ts, svc: svc}
-}
+	// workers connect over WebTransport (control + data on one session)
+	udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+	require.NoError(t, err)
+	wt := service.NewAgentWebTransportServer(svc, keyProvider, selfSignedTLS(t))
+	go func() { _ = wt.Serve(udp) }()
+	t.Cleanup(func() { _ = wt.Close(); _ = udp.Close() })
+	wtURL := "https://" + udp.LocalAddr().String() + "/agent"
 
-func (s *endpointStack) wsURL() string {
-	return "ws" + strings.TrimPrefix(s.ts.URL, "http") + "/agent"
+	return &endpointStack{t: t, ts: ts, svc: svc, wtURL: wtURL}
 }
 
 func (s *endpointStack) startWorker(target string, deployment string, endpoints []*livekit.AgentHttp_AgentEndpoint) *conformance.Worker {
 	w := conformance.New(conformance.Config{
-		ServerURL:  s.wsURL(),
+		ServerURL:  s.wtURL,
 		APIKey:     testKey,
 		APISecret:  testSecret,
 		AgentName:  "test-agent",
 		Deployment: deployment,
 		Endpoints:  endpoints,
 		TargetAddr: strings.TrimPrefix(target, "http://"),
+		Insecure:   true,
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	require.NoError(s.t, w.Start(ctx))
+	require.NoError(s.t, w.WaitRegistered(ctx))
 	s.t.Cleanup(w.Close)
 	return w
 }
@@ -164,7 +198,7 @@ func TestAgentEndpointsCorrectnessGate(t *testing.T) {
 		httpEP("/sse", []string{"GET"}, true),
 	})
 
-	base := stack.ts.URL + "/agents/production"
+	base := stack.ts.URL + "/agents/test-agent/production"
 
 	t.Run("json round trip", func(t *testing.T) {
 		resp, err := http.Get(base + "/json")
@@ -250,7 +284,7 @@ func TestAgentEndpointsStatusMapping(t *testing.T) {
 		httpEP("/private", []string{"GET"}, false),
 	})
 
-	base := stack.ts.URL + "/agents/production"
+	base := stack.ts.URL + "/agents/test-agent/production"
 
 	t.Run("404 unknown path", func(t *testing.T) {
 		resp, _ := http.Get(base + "/nope")
@@ -276,7 +310,7 @@ func TestAgentEndpointsStatusMapping(t *testing.T) {
 		require.Equal(t, 200, resp.StatusCode)
 	})
 	t.Run("503 unknown deployment", func(t *testing.T) {
-		resp, _ := http.Get(stack.ts.URL + "/agents/staging/hook")
+		resp, _ := http.Get(stack.ts.URL + "/agents/test-agent/staging/hook")
 		resp.Body.Close()
 		require.Equal(t, 503, resp.StatusCode)
 	})
@@ -288,15 +322,64 @@ func TestAgentEndpointsStatusMapping(t *testing.T) {
 		require.NoError(t, err)
 		resp.Body.Close()
 		require.Equal(t, 307, resp.StatusCode)
-		require.Equal(t, "/agents/production/hook", resp.Header.Get("Location"))
+		require.Equal(t, "/agents/test-agent/production/hook", resp.Header.Get("Location"))
+	})
+}
+
+// two workers of the same agent+deployment serve the SAME path with DIFFERENT
+// methods; each request must route to the worker whose manifest serves its
+// method (method-aware candidate selection: FULL = path+method).
+func TestAgentEndpointsMethodAcrossWorkers(t *testing.T) {
+	postMux := http.NewServeMux()
+	postMux.HandleFunc("POST /thing", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "post-worker")
+	})
+	postApp := newTargetApp(t, postMux)
+
+	getMux := http.NewServeMux()
+	getMux.HandleFunc("GET /thing", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "get-worker")
+	})
+	getApp := newTargetApp(t, getMux)
+
+	stack := newEndpointStack(t, agent.EndpointsConfig{})
+	stack.startWorker(postApp.URL, "production", []*livekit.AgentHttp_AgentEndpoint{
+		httpEP("/thing", []string{"POST"}, true),
+	})
+	stack.startWorker(getApp.URL, "production", []*livekit.AgentHttp_AgentEndpoint{
+		httpEP("/thing", []string{"GET"}, true),
+	})
+	base := stack.ts.URL + "/agents/test-agent/production"
+
+	t.Run("GET routes to the GET worker", func(t *testing.T) {
+		resp, err := http.Get(base + "/thing")
+		require.NoError(t, err)
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		require.Equal(t, 200, resp.StatusCode)
+		require.Equal(t, "get-worker", string(body))
+	})
+	t.Run("POST routes to the POST worker", func(t *testing.T) {
+		resp, err := http.Post(base+"/thing", "text/plain", nil)
+		require.NoError(t, err)
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		require.Equal(t, 200, resp.StatusCode)
+		require.Equal(t, "post-worker", string(body))
+	})
+	t.Run("unserved method is 405", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodDelete, base+"/thing", nil)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+		require.Equal(t, 405, resp.StatusCode)
 	})
 }
 
 func TestAgentEndpointsHOL(t *testing.T) {
-	// one data conn forces every stream onto the same socket: the credit windows
-	// and the write scheduler are the only things standing between a stalled
-	// reader and its siblings
-	blocked := make(chan struct{})
+	// every exchange rides its own QUIC stream on the one session: QUIC's
+	// per-stream flow control is what keeps a stalled reader from blocking its
+	// siblings (there is no shared socket, no credit window, no write scheduler).
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /drip", func(w http.ResponseWriter, r *http.Request) {
 		f := w.(http.Flusher)
@@ -318,12 +401,12 @@ func TestAgentEndpointsHOL(t *testing.T) {
 	})
 	app := newTargetApp(t, mux)
 
-	stack := newEndpointStack(t, agent.EndpointsConfig{DataConnCount: 1})
+	stack := newEndpointStack(t, agent.EndpointsConfig{})
 	stack.startWorker(app.URL, "production", []*livekit.AgentHttp_AgentEndpoint{
 		httpEP("/drip", []string{"GET"}, true),
 		httpEP("/quick", []string{"GET"}, true),
 	})
-	base := stack.ts.URL + "/agents/production"
+	base := stack.ts.URL + "/agents/test-agent/production"
 
 	// a stalled client: open /drip, read a little, then stop reading entirely
 	resp, err := http.Get(base + "/drip")
@@ -332,8 +415,7 @@ func TestAgentEndpointsHOL(t *testing.T) {
 	small := make([]byte, 1024)
 	_, err = io.ReadFull(resp.Body, small)
 	require.NoError(t, err)
-	// do not read further; the stream's credit window fills and stays full
-	close(blocked)
+	// do not read further; the drip stream's QUIC flow-control window fills
 	time.Sleep(500 * time.Millisecond)
 
 	// sibling streams on the SAME connection must proceed at full speed
@@ -365,13 +447,14 @@ func TestAgentEndpointsRetrySafety(t *testing.T) {
 	eps := []*livekit.AgentHttp_AgentEndpoint{httpEP("/json", []string{"GET"}, true)}
 
 	broken := conformance.New(conformance.Config{
-		ServerURL: stack.wsURL(), APIKey: testKey, APISecret: testSecret,
+		ServerURL: stack.wtURL, APIKey: testKey, APISecret: testSecret,
 		AgentName: "test-agent", Deployment: "production",
-		Endpoints: eps, TargetAddr: deadTarget,
+		Endpoints: eps, TargetAddr: deadTarget, Insecure: true,
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	require.NoError(t, broken.Start(ctx))
+	require.NoError(t, broken.WaitRegistered(ctx))
 	t.Cleanup(broken.Close)
 
 	stack.startWorker(app.URL, "production", eps)
@@ -379,7 +462,7 @@ func TestAgentEndpointsRetrySafety(t *testing.T) {
 	// run enough requests that both workers get picked first sometimes
 	okCount := 0
 	for i := 0; i < 12; i++ {
-		resp, err := http.Get(stack.ts.URL + "/agents/production/json")
+		resp, err := http.Get(stack.ts.URL + "/agents/test-agent/production/json")
 		require.NoError(t, err)
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -409,7 +492,7 @@ func TestAgentEndpointsTruncationAborts(t *testing.T) {
 		httpEP("/partial", []string{"GET"}, true),
 	})
 
-	resp, err := http.Get(stack.ts.URL + "/agents/production/partial")
+	resp, err := http.Get(stack.ts.URL + "/agents/test-agent/production/partial")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -437,7 +520,7 @@ func TestAgentEndpointsNoLocalListenerContract(t *testing.T) {
 	})
 
 	for _, path := range []string{"/", "/worker", "/undeclared"} {
-		resp, err := http.Get(stack.ts.URL + "/agents/production" + path)
+		resp, err := http.Get(stack.ts.URL + "/agents/test-agent/production" + path)
 		require.NoError(t, err)
 		resp.Body.Close()
 		require.Equal(t, 404, resp.StatusCode, path)

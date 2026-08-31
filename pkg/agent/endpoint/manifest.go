@@ -16,6 +16,7 @@ package endpoint
 
 import (
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 
@@ -23,6 +24,21 @@ import (
 )
 
 const MaxManifestRoutes = 256
+
+// allowedMethods is the set of HTTP methods a route may declare: exactly the
+// verbs FastAPI (starlette) can route. Registration rejects anything else, so a
+// typo ("GTE") or a garbage token can't sit in a manifest silently never
+// matching. Widen this only if the worker side ever routes beyond FastAPI.
+var allowedMethods = map[string]struct{}{
+	http.MethodGet:     {},
+	http.MethodHead:    {},
+	http.MethodPost:    {},
+	http.MethodPut:     {},
+	http.MethodPatch:   {},
+	http.MethodDelete:  {},
+	http.MethodOptions: {},
+	http.MethodTrace:   {},
+}
 
 // Route is one validated manifest entry.
 type Route struct {
@@ -76,6 +92,9 @@ func ParseManifest(endpoints []*livekit.AgentHttp_AgentEndpoint) (*Manifest, err
 			u := strings.ToUpper(method)
 			if u != method {
 				return nil, fmt.Errorf("endpoint %q method %q must be uppercase", ep.GetPath(), method)
+			}
+			if _, ok := allowedMethods[u]; !ok {
+				return nil, fmt.Errorf("endpoint %q declares unsupported method %q", ep.GetPath(), method)
 			}
 			methods = append(methods, u)
 		}
