@@ -12,12 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package conformance is a reference worker-side implementation of the agent
-// HTTP endpoints data plane over WebTransport, used as test infrastructure: it
-// opens one WebTransport session to /agent, registers its manifest on the
-// control stream, then serves each node-opened stream by bridging the opaque
-// HTTP exchange to a local HTTP server. The acceptance suite drives it to
-// exercise the server end to end in Go, without a Python SDK worker.
 package conformance
 
 import (

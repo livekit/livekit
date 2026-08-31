@@ -19,24 +19,6 @@ import (
 	"strings"
 )
 
-// Route matching for the multi-node edge. Templates are canonicalized by
-// replacing each path parameter with a typed wildcard token ({id:int} -> the
-// int token, {name} or {name:str} -> the str token, {rest:path} -> the greedy
-// glob), then indexed by ALL prefixes (path-only) plus, for each declared HTTP
-// method, a method-qualified terminal route key. A concrete request (method +
-// path) is matched by a left-to-right pruned walk over the path: at each segment
-// we branch over the literal value and the wildcard tokens the value is
-// type-compatible with, keeping only branches that are a prefix of some route -
-// so the cost is linear in the path depth, never 2^segments, and the surviving
-// set never exceeds the route count - then the terminal check is method-aware,
-// so a node that serves the path under a different method is not a candidate.
-//
-// This is a SHAPE match only: the exact convertor (int/uuid/...) is re-checked
-// by the worker's own router, which stays authoritative (the method is now part
-// of the match, but the worker still enforces it). A shape match the worker then
-// rejects costs one wasted relay, never a wrong route; a false positive from a
-// probabilistic backing (see FilterIndex) is the same bounded cost.
-
 // canonical wildcard tokens; the control-char prefix keeps them from colliding
 // with any real path segment
 const (
