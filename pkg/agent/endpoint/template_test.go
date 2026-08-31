@@ -80,17 +80,19 @@ func TestManifestFullPartialSemantics(t *testing.T) {
 	require.Equal(t, MatchNone, res)
 }
 
-func TestManifestRedirectSlashes(t *testing.T) {
+func TestManifestSlashAlternate(t *testing.T) {
 	m, err := ParseManifest([]*livekit.AgentHttp_AgentEndpoint{
 		ep("/hook", []string{"POST"}, true),
 	})
 	require.NoError(t, err)
 
-	alt, ok := m.RedirectSlashes("/hook/", http.MethodPost)
+	// a slash-mismatched request normalizes to the registered form
+	alt, ok := m.slashAlternate("/hook/", http.MethodPost)
 	require.True(t, ok)
 	require.Equal(t, "/hook", alt)
 
-	_, ok = m.RedirectSlashes("/other/", http.MethodPost)
+	// no route matches either slash form
+	_, ok = m.slashAlternate("/other/", http.MethodPost)
 	require.False(t, ok)
 }
 

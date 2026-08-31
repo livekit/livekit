@@ -127,10 +127,14 @@ func (m *Manifest) Match(path, method string) (*Route, MatchResult) {
 	return nil, MatchNone
 }
 
-// RedirectSlashes reports whether the alternate-slash form of path would match,
-// mirroring starlette's redirect_slashes default (FastAPI 307s /x/ to /x and
-// vice versa when only the alternate form matches).
-func (m *Manifest) RedirectSlashes(path, method string) (string, bool) {
+// slashAlternate returns the trailing-slash-normalized form of path when only
+// that alternate form fully matches a registered route. The front tries the
+// exact form first and uses this to rewrite a slash-mismatched request to the
+// registered form and serve it directly, rather than redirecting the client
+// (webhook clients often don't follow redirects, and a redirect from the final
+// routing hop would pay the whole routing path twice). A route registered with
+// a trailing slash is matched exactly and left untouched.
+func (m *Manifest) slashAlternate(path, method string) (string, bool) {
 	if path == "/" {
 		return "", false
 	}

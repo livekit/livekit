@@ -314,15 +314,16 @@ func TestAgentEndpointsStatusMapping(t *testing.T) {
 		resp.Body.Close()
 		require.Equal(t, 503, resp.StatusCode)
 	})
-	t.Run("307 slash redirect", func(t *testing.T) {
+	t.Run("trailing slash normalized and served, not redirected", func(t *testing.T) {
+		// the route is registered as /hook (no slash); a request to /hook/ is
+		// normalized to /hook and served directly, never 307'd back to the client
 		c := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		}}
 		resp, err := c.Post(base+"/hook/", "text/plain", nil)
 		require.NoError(t, err)
 		resp.Body.Close()
-		require.Equal(t, 307, resp.StatusCode)
-		require.Equal(t, "/agents/test-agent/production/hook", resp.Header.Get("Location"))
+		require.Equal(t, 200, resp.StatusCode)
 	})
 }
 

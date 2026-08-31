@@ -203,25 +203,41 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// manifest match across the deployment's workers: FULL wins; PARTIAL only
-	// yields 405 when nothing matches fully; slash-redirect mirrors FastAPI
-	var matched []*Registration
-	var route *Route
-	partial := false
-	restricted := false
-	for _, reg := range candidates {
-		rt, res := reg.Manifest.Match(path, r.Method)
-		switch res {
-		case MatchFull:
-			if !authenticated && !rt.Public {
-				restricted = true
-				continue
+	// yields 405 when nothing matches fully.
+	matchAll := func(p string) (matched []*Registration, route *Route, partial, restricted bool) {
+		for _, reg := range candidates {
+			rt, res := reg.Manifest.Match(p, r.Method)
+			switch res {
+			case MatchFull:
+				if !authenticated && !rt.Public {
+					restricted = true
+					continue
+				}
+				if route == nil {
+					route = rt
+				}
+				matched = append(matched, reg)
+			case MatchPartial:
+				partial = true
 			}
-			if route == nil {
-				route = rt
+		}
+		return
+	}
+
+	matched, route, partial, restricted := matchAll(path)
+	// no exact match: if only the trailing-slash alternate matches a registered
+	// route, normalize the path to that form and serve it directly (no client
+	// redirect). The exact form is tried first, so a route registered with a
+	// trailing slash is served as-is; this only rewrites a slash mismatch toward
+	// the registered form. When the request must be relayed, the serving node
+	// runs this same normalization, so no redirect is ever emitted.
+	if route == nil && !partial && !restricted {
+		for _, reg := range candidates {
+			if alt, ok := reg.Manifest.slashAlternate(path, r.Method); ok {
+				path = alt
+				matched, route, partial, restricted = matchAll(path)
+				break
 			}
-			matched = append(matched, reg)
-		case MatchPartial:
-			partial = true
 		}
 	}
 	if route == nil && f.fallback != nil {
@@ -245,14 +261,6 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case partial:
 			f.writeMiss(w, http.StatusMethodNotAllowed, MissMethodNotAllowed, "method not allowed")
 		default:
-			for _, reg := range candidates {
-				if alt, ok := reg.Manifest.RedirectSlashes(path, r.Method); ok {
-					u := *r.URL
-					u.Path = PathPrefix + agentName + "/" + deployment + alt
-					http.Redirect(w, r, u.String(), http.StatusTemporaryRedirect)
-					return
-				}
-			}
 			f.writeMiss(w, http.StatusNotFound, MissNotFound, "not found")
 		}
 		return
