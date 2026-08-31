@@ -239,6 +239,17 @@ func (r *RoomManager) HasParticipants() bool {
 	return false
 }
 
+// FlushTelemetryStats flushes every stats worker's buffered samples immediately,
+// instead of waiting for telemetryService's own periodic ticker.
+//
+// Fork addition: called once during a graceful shutdown, after every room has
+// already closed and before the analytics sink is drained, so that a
+// participant's last few seconds of usage reach the sink instead of being
+// silently discarded when the process exits. See docs/analytics-sink.md.
+func (r *RoomManager) FlushTelemetryStats() {
+	r.telemetry.FlushStats()
+}
+
 func (r *RoomManager) Stop() {
 	// disconnect all clients
 	r.lock.RLock()

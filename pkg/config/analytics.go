@@ -55,6 +55,25 @@ const (
 	DefaultAnalyticsPostgresConnectTimeout = 10 * time.Second
 	DefaultAnalyticsPostgresWriteTimeout   = 30 * time.Second
 
+	// DefaultAnalyticsOrgAttributeKey is the participant attribute the sink reads
+	// the billable organization id from. apps/api sets it on the LiveKit access
+	// token it mints, so the value is signed with the LiveKit API secret and is
+	// server-issued rather than client-supplied.
+	//
+	// This is a JWT attribute name, not the column it lands in: the attribute is
+	// camelCase because apps/api names it that way, the column is always org_id.
+	DefaultAnalyticsOrgAttributeKey = "orgId"
+
+	// DefaultAnalyticsOrgRoomNamePrefix is the room-name prefix whose remainder is
+	// the organization id, so that the id recorded from the token can be checked
+	// against the room the bytes actually moved in. Rooms whose name does not start
+	// with it - private desk rooms, named after a zone - are simply not checked.
+	//
+	// Set org_room_name_prefix to an empty string to turn the check off. Unlike the
+	// other defaults this one is applied when the config is loaded rather than by
+	// Resolved, so that an explicit empty value survives.
+	DefaultAnalyticsOrgRoomNamePrefix = "world-"
+
 	// maxPostgresIdentifierLength is Postgres' NAMEDATALEN - 1.
 	maxPostgresIdentifierLength = 63
 )
@@ -94,6 +113,20 @@ type PostgresAnalyticsConfig struct {
 	// AutoMigrate creates the schema, table and indexes at startup when missing.
 	AutoMigrate bool `yaml:"auto_migrate,omitempty"`
 
+	// OrgAttributeKey is the participant attribute holding the organization a
+	// participant's traffic is billed to. It is configurable because apps/api and
+	// this server deploy independently: renaming the attribute on one side would
+	// otherwise need a coordinated rebuild of the other.
+	OrgAttributeKey string `yaml:"org_attribute_key,omitempty"`
+
+	// OrgRoomNamePrefix enables the consistency check between the organization on
+	// the participant's token and the one in the room name. Empty disables it.
+	//
+	// The check never changes what is recorded - the token stays authoritative - it
+	// only counts and logs disagreements, because a silent disagreement between the
+	// two sources of the same id is exactly what makes a wrong invoice undetectable.
+	OrgRoomNamePrefix string `yaml:"org_room_name_prefix,omitempty"`
+
 	FlushInterval  time.Duration `yaml:"flush_interval,omitempty"`
 	BatchSize      int           `yaml:"batch_size,omitempty"`
 	BufferSize     int           `yaml:"buffer_size,omitempty"`
@@ -104,14 +137,16 @@ type PostgresAnalyticsConfig struct {
 
 var DefaultAnalyticsConfig = AnalyticsConfig{
 	Postgres: PostgresAnalyticsConfig{
-		Schema:         DefaultAnalyticsPostgresSchema,
-		AutoMigrate:    true,
-		FlushInterval:  DefaultAnalyticsPostgresFlushInterval,
-		BatchSize:      DefaultAnalyticsPostgresBatchSize,
-		BufferSize:     DefaultAnalyticsPostgresBufferSize,
-		MaxConns:       DefaultAnalyticsPostgresMaxConns,
-		ConnectTimeout: DefaultAnalyticsPostgresConnectTimeout,
-		WriteTimeout:   DefaultAnalyticsPostgresWriteTimeout,
+		Schema:            DefaultAnalyticsPostgresSchema,
+		AutoMigrate:       true,
+		OrgAttributeKey:   DefaultAnalyticsOrgAttributeKey,
+		OrgRoomNamePrefix: DefaultAnalyticsOrgRoomNamePrefix,
+		FlushInterval:     DefaultAnalyticsPostgresFlushInterval,
+		BatchSize:         DefaultAnalyticsPostgresBatchSize,
+		BufferSize:        DefaultAnalyticsPostgresBufferSize,
+		MaxConns:          DefaultAnalyticsPostgresMaxConns,
+		ConnectTimeout:    DefaultAnalyticsPostgresConnectTimeout,
+		WriteTimeout:      DefaultAnalyticsPostgresWriteTimeout,
 	},
 }
 
@@ -146,6 +181,13 @@ func (c PostgresAnalyticsConfig) Resolved() (PostgresAnalyticsConfig, error) {
 	if resolved.Schema == "" {
 		resolved.Schema = DefaultAnalyticsPostgresSchema
 	}
+	resolved.OrgAttributeKey = strings.TrimSpace(resolved.OrgAttributeKey)
+	if resolved.OrgAttributeKey == "" {
+		resolved.OrgAttributeKey = DefaultAnalyticsOrgAttributeKey
+	}
+	// deliberately not defaulted here: DefaultAnalyticsConfig supplies it when the
+	// key is absent, so an explicit empty value reaches the sink as "check disabled"
+	resolved.OrgRoomNamePrefix = strings.TrimSpace(resolved.OrgRoomNamePrefix)
 	if !isValidPostgresIdentifier(resolved.Schema) {
 		return resolved, ErrAnalyticsSchemaInvalid
 	}

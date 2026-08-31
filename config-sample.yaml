@@ -408,6 +408,17 @@ keys:
 #     schema: livekit_analytics
 #     # create the schema, table and indexes when missing. defaults to true
 #     auto_migrate: true
+#     # participant token attribute holding the organization each sample is billed to.
+#     # set by whoever mints the access token, and signed with the livekit api secret,
+#     # so it is server-issued rather than client-supplied. defaults to orgId.
+#     # samples whose token omits it are still recorded, with a null org_id, and
+#     # counted by livekit_analytics_sink_samples_unresolved_org_total
+#     org_attribute_key: orgId
+#     # cross-check org_id against the organization in the room name ("world-{orgId}").
+#     # disagreements are counted by livekit_analytics_sink_org_room_mismatch_total and
+#     # logged; the token's value is still what gets recorded. rooms not starting with
+#     # the prefix are skipped. defaults to "world-"; set to "" to disable the check
+#     org_room_name_prefix: "world-"
 #     # how long a sample may sit in memory before it is written. defaults to 5s
 #     flush_interval: 5s
 #     # rows per COPY. defaults to 1000

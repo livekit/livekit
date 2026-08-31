@@ -44,6 +44,7 @@ analytics:
     dsn: postgres://livekit:secret@db:5432/hideout
     schema: billing_samples
     auto_migrate: false
+    org_attribute_key: tenantId
     flush_interval: 2s
 `, true, nil, nil)
 	require.NoError(t, err)
@@ -52,6 +53,7 @@ analytics:
 	require.True(t, pg.IsConfigured())
 	require.Equal(t, "billing_samples", pg.Schema)
 	require.False(t, pg.AutoMigrate)
+	require.Equal(t, "tenantId", pg.OrgAttributeKey)
 	require.Equal(t, 2*time.Second, pg.FlushInterval)
 }
 
@@ -61,10 +63,48 @@ func TestPostgresAnalyticsConfigResolvedFillsDefaults(t *testing.T) {
 
 	require.Equal(t, "postgres://db/hideout", resolved.DSN)
 	require.Equal(t, DefaultAnalyticsPostgresSchema, resolved.Schema)
+	require.Equal(t, DefaultAnalyticsOrgAttributeKey, resolved.OrgAttributeKey)
 	require.Equal(t, DefaultAnalyticsPostgresBatchSize, resolved.BatchSize)
 	require.Equal(t, DefaultAnalyticsPostgresBufferSize, resolved.BufferSize)
 	require.EqualValues(t, DefaultAnalyticsPostgresMaxConns, resolved.MaxConns)
 	require.Equal(t, DefaultAnalyticsPostgresWriteTimeout, resolved.WriteTimeout)
+}
+
+// The prefix is defaulted where the config is loaded, not in Resolved, so that an
+// operator can switch the room-name cross-check off with an explicit empty value.
+func TestPostgresAnalyticsConfigResolvedLeavesTheRoomNamePrefixAlone(t *testing.T) {
+	loaded, err := NewConfig(`
+analytics:
+  postgres:
+    dsn: postgres://db/hideout
+`, true, nil, nil)
+	require.NoError(t, err)
+	resolved, err := loaded.Analytics.Postgres.Resolved()
+	require.NoError(t, err)
+	require.Equal(t, DefaultAnalyticsOrgRoomNamePrefix, resolved.OrgRoomNamePrefix)
+
+	disabled, err := NewConfig(`
+analytics:
+  postgres:
+    dsn: postgres://db/hideout
+    org_room_name_prefix: ""
+`, true, nil, nil)
+	require.NoError(t, err)
+	resolved, err = disabled.Analytics.Postgres.Resolved()
+	require.NoError(t, err)
+	require.Empty(t, resolved.OrgRoomNamePrefix, "an explicit empty value must survive as \"check disabled\"")
+}
+
+// The attribute name is what apps/api writes onto the token it mints. A configured
+// value must survive Resolved untouched, or every row silently loses its
+// organization the moment the two sides agree on a name other than the default.
+func TestPostgresAnalyticsConfigResolvedKeepsConfiguredOrgAttributeKey(t *testing.T) {
+	resolved, err := PostgresAnalyticsConfig{
+		DSN:             "postgres://db/hideout",
+		OrgAttributeKey: "  tenantId  ",
+	}.Resolved()
+	require.NoError(t, err)
+	require.Equal(t, "tenantId", resolved.OrgAttributeKey)
 }
 
 func TestPostgresAnalyticsConfigResolvedKeepsBufferAtLeastOneBatch(t *testing.T) {

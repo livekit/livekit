@@ -32,14 +32,31 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing"
 )
 
+// recordingAnalyticsService stands in for the upstream service the sink embeds.
+// telemetryfakes cannot be used here: it imports this package, and these tests live
+// inside it so they can reach the sink's unexported state.
+type recordingAnalyticsService struct {
+	AnalyticsService
+	events []*livekit.AnalyticsEvent
+}
+
+func (s *recordingAnalyticsService) SendEvent(_ context.Context, event *livekit.AnalyticsEvent) {
+	s.events = append(s.events, event)
+}
+
 func newTestSink(t *testing.T, bufferSize int) *pgAnalyticsService {
 	t.Helper()
 
-	conf, err := config.PostgresAnalyticsConfig{BufferSize: bufferSize, BatchSize: 1}.Resolved()
+	conf, err := config.PostgresAnalyticsConfig{
+		BufferSize:        bufferSize,
+		BatchSize:         1,
+		OrgRoomNamePrefix: config.DefaultAnalyticsOrgRoomNamePrefix,
+	}.Resolved()
 	require.NoError(t, err)
 
 	return &pgAnalyticsService{
 		conf:    conf,
+		orgs:    newOrgResolver(conf.OrgAttributeKey),
 		nodeID:  "ND_test",
 		logger:  logger.GetLogger(),
 		samples: make(chan roomByteSample, conf.BufferSize),
@@ -116,22 +133,67 @@ func TestSampleFromStat(t *testing.T) {
 		ParticipantId: "PA_1",
 		TrackId:       "TR_1",
 	}
-	stream := &livekit.AnalyticsStream{PrimaryBytes: 1000, RetransmitBytes: 20, PaddingBytes: 3}
+	stream := &livekit.AnalyticsStream{
+		PrimaryBytes: 1000, RetransmitBytes: 20, PaddingBytes: 3,
+		PrimaryPackets: 12, RetransmitPackets: 2, PaddingPackets: 1,
+	}
+
+	sink.orgs.observe(participantEventKind(
+		livekit.AnalyticsEventType_PARTICIPANT_JOINED, "PA_1", orgAttribute("org_01HQZX"), livekit.ParticipantInfo_STANDARD,
+	), sampledAt)
 
 	sample, ok := sink.sampleFromStat(stat, stream)
 	require.True(t, ok)
 	require.Equal(t, roomByteSample{
-		RoomName:        "world-org-1",
-		RoomID:          "RM_abc",
-		ParticipantID:   "PA_1",
-		TrackID:         "TR_1",
-		Direction:       directionDownstream,
-		PrimaryBytes:    1000,
-		RetransmitBytes: 20,
-		PaddingBytes:    3,
-		SampledAt:       sampledAt,
-		NodeID:          "ND_test",
+		OrgID:             "org_01HQZX",
+		RoomName:          "world-org-1",
+		RoomID:            "RM_abc",
+		ParticipantID:     "PA_1",
+		ParticipantKind:   "STANDARD",
+		TrackID:           "TR_1",
+		Direction:         directionDownstream,
+		PrimaryBytes:      1000,
+		RetransmitBytes:   20,
+		PaddingBytes:      3,
+		PrimaryPackets:    12,
+		RetransmitPackets: 2,
+		PaddingPackets:    1,
+		SampledAt:         sampledAt,
+		NodeID:            "ND_test",
 	}, sample)
+}
+
+// participant_kind must reach the row even for a participant whose token never
+// carried an organization attribute at all - the two are resolved independently,
+// and a rollup excluding agents/egress/ingress needs this regardless of billing
+// attribution.
+func TestSampleFromStatRecordsKindWithoutAnOrganization(t *testing.T) {
+	sink := newTestSink(t, 8)
+	sink.orgs.observe(participantEventKind(
+		livekit.AnalyticsEventType_PARTICIPANT_JOINED, "PA_egress", nil, livekit.ParticipantInfo_EGRESS,
+	), time.Now())
+
+	sample, ok := sink.sampleFromStat(
+		&livekit.AnalyticsStat{ParticipantId: "PA_egress"},
+		&livekit.AnalyticsStream{PrimaryBytes: 5},
+	)
+	require.True(t, ok)
+	require.Empty(t, sample.OrgID)
+	require.Equal(t, "EGRESS", sample.ParticipantKind)
+}
+
+// A participant never observed at all must leave ParticipantKind empty (written as
+// NULL), not default to "STANDARD" - that would misrepresent "unknown" as a real,
+// checked answer.
+func TestSampleFromStatLeavesKindEmptyForAnUnknownParticipant(t *testing.T) {
+	sink := newTestSink(t, 8)
+
+	sample, ok := sink.sampleFromStat(
+		&livekit.AnalyticsStat{ParticipantId: "PA_never_seen"},
+		&livekit.AnalyticsStream{PrimaryBytes: 5},
+	)
+	require.True(t, ok)
+	require.Empty(t, sample.ParticipantKind)
 }
 
 func TestSampleFromStatUpstreamDirection(t *testing.T) {
@@ -159,6 +221,162 @@ func TestSampleFromStatFallsBackToNowWithoutTimestamp(t *testing.T) {
 	sample, ok := sink.sampleFromStat(&livekit.AnalyticsStat{}, &livekit.AnalyticsStream{PaddingBytes: 7})
 	require.True(t, ok)
 	require.False(t, sample.SampledAt.Before(before))
+}
+
+// Bytes without an organization are still bytes. The row must be recorded either
+// way; only the counters distinguish a guest from a token that never carried one.
+func TestSampleFromStatRecordsSamplesWithoutAnOrganization(t *testing.T) {
+	sink := newTestSink(t, 8)
+	sink.orgs.observe(participantEvent(
+		livekit.AnalyticsEventType_PARTICIPANT_JOINED, "PA_empty", orgAttribute(""),
+	), time.Now())
+
+	empties := testutil.ToFloat64(promAnalyticsSamplesEmptyOrg)
+	unresolved := testutil.ToFloat64(promAnalyticsSamplesUnresolvedOrg)
+
+	empty, ok := sink.sampleFromStat(
+		&livekit.AnalyticsStat{ParticipantId: "PA_empty"},
+		&livekit.AnalyticsStream{PrimaryBytes: 11},
+	)
+	require.True(t, ok)
+	require.Empty(t, empty.OrgID)
+	require.EqualValues(t, 11, empty.PrimaryBytes)
+
+	unknown, ok := sink.sampleFromStat(
+		&livekit.AnalyticsStat{ParticipantId: "PA_never_seen"},
+		&livekit.AnalyticsStream{PrimaryBytes: 13},
+	)
+	require.True(t, ok)
+	require.Empty(t, unknown.OrgID)
+	require.EqualValues(t, 13, unknown.PrimaryBytes)
+
+	require.Equal(t, empties+1, testutil.ToFloat64(promAnalyticsSamplesEmptyOrg))
+	require.Equal(t, unresolved+1, testutil.ToFloat64(promAnalyticsSamplesUnresolvedOrg))
+}
+
+// The token and the room name are minted from the same organization id, so a
+// disagreement means one of them is wrong. The sink reports it and records the
+// token's value unchanged - preferring one source silently would erase the evidence.
+func TestSampleFromStatFlagsOrgDisagreeingWithRoomName(t *testing.T) {
+	sink := newTestSink(t, 8)
+	sink.orgs.observe(participantEvent(
+		livekit.AnalyticsEventType_PARTICIPANT_JOINED, "PA_1", orgAttribute("org-a"),
+	), time.Now())
+	mismatches := testutil.ToFloat64(promAnalyticsOrgRoomMismatch)
+
+	sample, ok := sink.sampleFromStat(
+		&livekit.AnalyticsStat{ParticipantId: "PA_1", RoomName: "world-org-b"},
+		&livekit.AnalyticsStream{PrimaryBytes: 5},
+	)
+	require.True(t, ok)
+	require.Equal(t, "org-a", sample.OrgID, "the token stays authoritative")
+	require.Equal(t, mismatches+1, testutil.ToFloat64(promAnalyticsOrgRoomMismatch))
+}
+
+func TestSampleFromStatAcceptsOrgMatchingTheRoomName(t *testing.T) {
+	sink := newTestSink(t, 8)
+	sink.orgs.observe(participantEvent(
+		livekit.AnalyticsEventType_PARTICIPANT_JOINED, "PA_1", orgAttribute("org-a"),
+	), time.Now())
+	mismatches := testutil.ToFloat64(promAnalyticsOrgRoomMismatch)
+
+	_, ok := sink.sampleFromStat(
+		&livekit.AnalyticsStat{ParticipantId: "PA_1", RoomName: "world-org-a"},
+		&livekit.AnalyticsStream{PrimaryBytes: 5},
+	)
+	require.True(t, ok)
+	require.Equal(t, mismatches, testutil.ToFloat64(promAnalyticsOrgRoomMismatch))
+}
+
+// Private desk rooms are named after a zone, not an organization, so there is
+// nothing in the name to compare against and they must not be flagged.
+func TestSampleFromStatSkipsTheCheckForRoomsNotNamedAfterAnOrg(t *testing.T) {
+	sink := newTestSink(t, 8)
+	sink.orgs.observe(participantEvent(
+		livekit.AnalyticsEventType_PARTICIPANT_JOINED, "PA_1", orgAttribute("org-a"),
+	), time.Now())
+	mismatches := testutil.ToFloat64(promAnalyticsOrgRoomMismatch)
+
+	_, ok := sink.sampleFromStat(
+		&livekit.AnalyticsStat{ParticipantId: "PA_1", RoomName: "desk-zone-42"},
+		&livekit.AnalyticsStream{PrimaryBytes: 5},
+	)
+	require.True(t, ok)
+	require.Equal(t, mismatches, testutil.ToFloat64(promAnalyticsOrgRoomMismatch))
+}
+
+// An empty prefix turns the check off; without this guard every room name would
+// have the empty prefix and be compared in full against the organization.
+func TestSampleFromStatSkipsTheCheckWhenNoPrefixIsConfigured(t *testing.T) {
+	sink := newTestSink(t, 8)
+	sink.conf.OrgRoomNamePrefix = ""
+	sink.orgs.observe(participantEvent(
+		livekit.AnalyticsEventType_PARTICIPANT_JOINED, "PA_1", orgAttribute("org-a"),
+	), time.Now())
+	mismatches := testutil.ToFloat64(promAnalyticsOrgRoomMismatch)
+
+	_, ok := sink.sampleFromStat(
+		&livekit.AnalyticsStat{ParticipantId: "PA_1", RoomName: "world-org-b"},
+		&livekit.AnalyticsStream{PrimaryBytes: 5},
+	)
+	require.True(t, ok)
+	require.Equal(t, mismatches, testutil.ToFloat64(promAnalyticsOrgRoomMismatch))
+}
+
+func TestLogThrottleAllowsOnePerInterval(t *testing.T) {
+	var throttle logThrottle
+	now := time.Now()
+
+	require.True(t, throttle.allow(now, time.Minute))
+	require.False(t, throttle.allow(now.Add(30*time.Second), time.Minute))
+	require.True(t, throttle.allow(now.Add(90*time.Second), time.Minute))
+}
+
+// SendEvent is the sink's only view of the organization; it must index the event
+// and still hand it to upstream untouched.
+func TestSendEventIndexesTheOrganizationAndDelegates(t *testing.T) {
+	sink := newTestSink(t, 8)
+	upstream := &recordingAnalyticsService{}
+	sink.AnalyticsService = upstream
+
+	event := participantEvent(
+		livekit.AnalyticsEventType_PARTICIPANT_JOINED, "PA_1", orgAttribute("org_01HQZX"),
+	)
+	sink.SendEvent(context.Background(), event)
+
+	resolved := sink.orgs.resolve("PA_1", time.Now())
+	require.Equal(t, "org_01HQZX", resolved.OrgID)
+	require.True(t, resolved.Attributed)
+
+	require.Len(t, upstream.events, 1)
+	require.Same(t, event, upstream.events[0])
+}
+
+func TestMaybeSweepOrgIndexKeepsItsOwnCadence(t *testing.T) {
+	sink := newTestSink(t, 8)
+	now := time.Now()
+
+	sink.orgs.observe(participantEvent(
+		livekit.AnalyticsEventType_PARTICIPANT_JOINED, "PA_1", orgAttribute("org_01HQZX"),
+	), now)
+	sink.orgs.observe(participantEvent(livekit.AnalyticsEventType_PARTICIPANT_LEFT, "PA_1", nil), now)
+
+	firstSweep := now.Add(orgLingerAfterLeave + time.Second)
+	sink.maybeSweepOrgIndex(firstSweep)
+	require.Zero(t, sink.orgs.size())
+
+	// PA_2 left at the same time as PA_1, so it is already past the linger window
+	// and only the sweep cadence can be keeping it alive
+	sink.orgs.observe(participantEvent(
+		livekit.AnalyticsEventType_PARTICIPANT_JOINED, "PA_2", orgAttribute("org_01HQZX"),
+	), now)
+	sink.orgs.observe(participantEvent(livekit.AnalyticsEventType_PARTICIPANT_LEFT, "PA_2", nil), now)
+
+	sink.maybeSweepOrgIndex(firstSweep.Add(orgSweepInterval / 2))
+	require.Equal(t, 1, sink.orgs.size(), "a sweep inside the interval must be skipped")
+
+	sink.maybeSweepOrgIndex(firstSweep.Add(orgSweepInterval + time.Second))
+	require.Zero(t, sink.orgs.size())
 }
 
 func TestSendStatsBuffersOneSamplePerStream(t *testing.T) {
@@ -262,6 +480,10 @@ func TestSinkPersistsStatsEndToEnd(t *testing.T) {
 	sink, ok := svc.(*pgAnalyticsService)
 	require.True(t, ok, "a configured dsn must select the postgres sink")
 
+	svc.SendEvent(context.Background(), participantEvent(
+		livekit.AnalyticsEventType_PARTICIPANT_JOINED, "PA_e2e", orgAttribute("org-e2e"),
+	))
+
 	svc.SendStats(context.Background(), []*livekit.AnalyticsStat{{
 		Kind:          livekit.StreamType_DOWNSTREAM,
 		TimeStamp:     timestamppb.Now(),
@@ -289,12 +511,13 @@ func TestSinkPersistsStatsEndToEnd(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	var direction string
+	var direction, orgID string
 	var bytes int64
 	require.NoError(t, verify.pool.QueryRow(ctx,
-		`SELECT direction, bytes FROM "livekit_analytics_e2e_test"."room_byte_samples" WHERE room_name = $1`,
+		`SELECT direction, bytes, org_id FROM "livekit_analytics_e2e_test"."room_byte_samples" WHERE room_name = $1`,
 		"world-org-e2e",
-	).Scan(&direction, &bytes))
+	).Scan(&direction, &bytes, &orgID))
 	require.Equal(t, directionDownstream, direction)
 	require.EqualValues(t, 525, bytes)
+	require.Equal(t, "org-e2e", orgID)
 }

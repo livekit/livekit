@@ -359,6 +359,16 @@ func (s *LivekitServer) Start() error {
 	s.signalServer.Stop()
 	s.ioService.Stop()
 
+	// fork: every room is closed and nothing left can produce a stat, so flush
+	// whatever every stats worker is still holding rather than waiting for
+	// telemetryService's own 30s ticker, which nothing else calls on shutdown.
+	// Without this, up to one flush interval of every participant's usage in this
+	// process is silently discarded on every graceful restart. Must happen before
+	// the analytics sink is drained below, so the flushed stats still have
+	// somewhere to land. See docs/analytics-sink.md, "A graceful restart loses
+	// usage" for the failure this closes.
+	s.roomManager.FlushTelemetryStats()
+
 	// fork: analytics sinks buffer billable byte counts in memory, so give them a
 	// chance to persist what is left once nothing else can produce stats
 	if drainable, ok := s.analytics.(telemetry.DrainableAnalyticsService); ok {

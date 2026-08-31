@@ -29,6 +29,7 @@ package telemetry
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	prom "github.com/prometheus/client_golang/prometheus"
@@ -55,6 +56,15 @@ const (
 	// shutdownFlushTimeout bounds a single COPY during the final drain when the
 	// caller did not supply a deadline.
 	shutdownFlushTimeout = 5 * time.Second
+
+	// orgMismatchLogInterval throttles the warning for a token that disagrees with
+	// the room name. One misconfigured room produces a sample every 30s per track.
+	orgMismatchLogInterval = time.Minute
+
+	// orgSweepInterval is how often the participant -> organization index is pruned.
+	// The flush ticker runs every few seconds and the index does not need that
+	// attention, so sweeps ride on it at their own slower cadence.
+	orgSweepInterval = time.Minute
 )
 
 var (
@@ -82,6 +92,30 @@ var (
 		Name:      "pending_samples",
 		Help:      "Media byte samples buffered in memory, waiting to be persisted.",
 	})
+	promAnalyticsSamplesUnresolvedOrg = prom.NewCounter(prom.CounterOpts{
+		Namespace: "livekit",
+		Subsystem: "analytics_sink",
+		Name:      "samples_unresolved_org_total",
+		Help:      "Media byte samples whose participant token carried no organization attribute at all. The bytes are kept but cannot be billed - a sustained non-zero rate means tokens, a deploy or the participant index is broken. Alert on it.",
+	})
+	promAnalyticsSamplesEmptyOrg = prom.NewCounter(prom.CounterOpts{
+		Namespace: "livekit",
+		Subsystem: "analytics_sink",
+		Name:      "samples_empty_org_total",
+		Help:      "Media byte samples whose participant token carried the organization attribute but left it empty. Every participant is expected to have an organization, so this is a defect like samples_unresolved_org_total; the two are counted apart only to say which side is at fault.",
+	})
+	promAnalyticsOrgRoomMismatch = prom.NewCounter(prom.CounterOpts{
+		Namespace: "livekit",
+		Subsystem: "analytics_sink",
+		Name:      "org_room_mismatch_total",
+		Help:      "Media byte samples whose token organization disagreed with the organization in the room name. The token's value is still what gets recorded; a non-zero value means one of the two is wrong and usage may be attributed to the wrong organization. Alert on it.",
+	})
+	promAnalyticsOrgIndexSize = prom.NewGauge(prom.GaugeOpts{
+		Namespace: "livekit",
+		Subsystem: "analytics_sink",
+		Name:      "org_index_participants",
+		Help:      "Participants currently held in the participant to organization index.",
+	})
 )
 
 func init() {
@@ -90,7 +124,26 @@ func init() {
 		promAnalyticsSamplesDropped,
 		promAnalyticsWriteErrors,
 		promAnalyticsPendingSamples,
+		promAnalyticsSamplesUnresolvedOrg,
+		promAnalyticsSamplesEmptyOrg,
+		promAnalyticsOrgRoomMismatch,
+		promAnalyticsOrgIndexSize,
 	)
+}
+
+// logThrottle rate-limits a warning that arrives in bursts to one line per interval.
+// The metric behind such a warning still counts every occurrence, so throttling the
+// log loses nothing that matters.
+type logThrottle struct {
+	last atomic.Int64
+}
+
+func (l *logThrottle) allow(now time.Time, interval time.Duration) bool {
+	last := l.last.Load()
+	if now.UnixNano()-last < int64(interval) {
+		return false
+	}
+	return l.last.CompareAndSwap(last, now.UnixNano())
 }
 
 // DrainableAnalyticsService is implemented by analytics services that buffer samples
@@ -108,6 +161,7 @@ type pgAnalyticsService struct {
 
 	conf   config.PostgresAnalyticsConfig
 	store  *pgAnalyticsStore
+	orgs   *orgResolver
 	nodeID string
 	logger logger.Logger
 
@@ -115,18 +169,21 @@ type pgAnalyticsService struct {
 	closed  chan struct{}
 	done    chan struct{}
 
-	stopped     atomic.Bool
-	stopOnce    atomic.Bool
-	lastDropLog atomic.Int64
+	stopped  atomic.Bool
+	stopOnce atomic.Bool
+
+	dropLog        logThrottle
+	orgMismatchLog logThrottle
 
 	// drainCtx is written by Drain before closing closed, and read by the writer
 	// goroutine only after it observes that close, which orders the two accesses.
 	drainCtx context.Context
 
 	// writer goroutine state, never touched from other goroutines
-	migrated    bool
-	failures    int
-	nextAttempt time.Time
+	migrated     bool
+	failures     int
+	nextAttempt  time.Time
+	lastOrgSweep time.Time
 }
 
 // NewAnalyticsServiceFromConfig returns the Postgres-backed analytics sink when a
@@ -160,6 +217,7 @@ func NewAnalyticsServiceFromConfig(conf *config.Config, currentNode routing.Loca
 		AnalyticsService: upstream,
 		conf:             pgConf,
 		store:            store,
+		orgs:             newOrgResolver(pgConf.OrgAttributeKey),
 		nodeID:           string(currentNode.NodeID()),
 		logger:           logger.GetLogger().WithComponent("analytics_sink"),
 		samples:          make(chan roomByteSample, pgConf.BufferSize),
@@ -170,7 +228,10 @@ func NewAnalyticsServiceFromConfig(conf *config.Config, currentNode routing.Loca
 		migrated: pgConf.AutoMigrate,
 	}
 
-	a.logger.Infow("recording media byte samples to postgres", store.logFields()...)
+	a.logger.Infow(
+		"recording media byte samples to postgres",
+		append(store.logFields(), "orgAttribute", pgConf.OrgAttributeKey)...,
+	)
 	go a.run()
 
 	return a, nil
@@ -227,6 +288,14 @@ func (a *pgAnalyticsService) SendStats(_ context.Context, stats []*livekit.Analy
 	}
 }
 
+// SendEvent watches the participant lifecycle for the organization each participant
+// belongs to, then hands the event on to upstream unchanged. This is the only place
+// the organization is available: AnalyticsStat has no field for it.
+func (a *pgAnalyticsService) SendEvent(ctx context.Context, event *livekit.AnalyticsEvent) {
+	a.orgs.observe(event, time.Now())
+	a.AnalyticsService.SendEvent(ctx, event)
+}
+
 // Drain stops the writer, flushes whatever is still buffered and closes the pool.
 // It is safe to call once; later SendStats calls are counted as dropped.
 func (a *pgAnalyticsService) Drain(ctx context.Context) {
@@ -273,18 +342,79 @@ func (a *pgAnalyticsService) sampleFromStat(
 		sampledAt = ts.AsTime()
 	}
 
+	// a sample without an organization is recorded, never dropped: the bytes are
+	// real and this row is the only place they exist, so losing it would understate
+	// usage rather than merely leave it unattributed. Every participant is expected
+	// to carry an organization, so both ways of not having one are defects; they are
+	// counted apart only to say whether the attribute was missing or empty.
+	resolved := a.orgs.resolve(livekit.ParticipantID(stat.GetParticipantId()), time.Now())
+	switch {
+	case resolved.OrgID != "":
+		a.checkOrgMatchesRoom(resolved.OrgID, stat.GetRoomName())
+	case resolved.Attributed:
+		promAnalyticsSamplesEmptyOrg.Inc()
+	default:
+		promAnalyticsSamplesUnresolvedOrg.Inc()
+	}
+
+	var participantKind string
+	if resolved.KindKnown {
+		participantKind = resolved.Kind.String()
+	}
+
 	return roomByteSample{
+		OrgID:           resolved.OrgID,
 		RoomName:        stat.GetRoomName(),
 		RoomID:          stat.GetRoomId(),
 		ParticipantID:   stat.GetParticipantId(),
+		ParticipantKind: participantKind,
 		TrackID:         stat.GetTrackId(),
 		Direction:       direction,
 		PrimaryBytes:    int64(primary),
 		RetransmitBytes: int64(retransmit),
 		PaddingBytes:    int64(padding),
-		SampledAt:       sampledAt,
-		NodeID:          a.nodeID,
+		// packet counts are already present on the same AnalyticsStream the byte
+		// counts come from - see the field comments on roomByteSample for why they
+		// matter and docs/analytics-sink.md for the conversion they make possible.
+		PrimaryPackets:    int64(stream.GetPrimaryPackets()),
+		RetransmitPackets: int64(stream.GetRetransmitPackets()),
+		PaddingPackets:    int64(stream.GetPaddingPackets()),
+		SampledAt:         sampledAt,
+		NodeID:            a.nodeID,
 	}, true
+}
+
+// checkOrgMatchesRoom compares the organization the token supplied against the one
+// encoded in the room name. The two are minted from the same id by the application,
+// so they must agree; a disagreement means one of them is wrong and some usage is
+// about to be attributed to the wrong organization.
+//
+// It reports and does not correct. The token is what gets recorded either way -
+// silently preferring one source would destroy the evidence that they disagreed,
+// and this is precisely the case where a human has to look.
+//
+// Rooms not named after an organization (private desk rooms, named after a zone)
+// carry no organization to compare against and are skipped.
+func (a *pgAnalyticsService) checkOrgMatchesRoom(orgID, roomName string) {
+	prefix := a.conf.OrgRoomNamePrefix
+	if prefix == "" || !strings.HasPrefix(roomName, prefix) {
+		return
+	}
+
+	roomOrgID := strings.TrimPrefix(roomName, prefix)
+	if roomOrgID == orgID {
+		return
+	}
+
+	promAnalyticsOrgRoomMismatch.Inc()
+	if a.orgMismatchLog.allow(time.Now(), orgMismatchLogInterval) {
+		a.logger.Warnw(
+			"participant token organization disagrees with the room name, usage may be billed to the wrong organization", nil,
+			"tokenOrg", orgID,
+			"roomOrg", roomOrgID,
+			"room", roomName,
+		)
+	}
 }
 
 // run batches buffered samples and writes them, retrying with backoff while the
@@ -306,6 +436,7 @@ func (a *pgAnalyticsService) run() {
 
 		case <-ticker.C:
 			pending = a.flush(pending)
+			a.maybeSweepOrgIndex(time.Now())
 
 		case <-a.closed:
 			pending = a.drainBuffered(pending)
@@ -412,6 +543,19 @@ func (a *pgAnalyticsService) finalFlush(pending []roomByteSample) {
 	promAnalyticsPendingSamples.Set(float64(len(pending)))
 }
 
+// maybeSweepOrgIndex prunes the participant -> organization index, at most once per
+// orgSweepInterval. It runs on the writer goroutine so the index is only ever swept
+// from one place.
+func (a *pgAnalyticsService) maybeSweepOrgIndex(now time.Time) {
+	if now.Sub(a.lastOrgSweep) < orgSweepInterval {
+		return
+	}
+
+	a.lastOrgSweep = now
+	a.orgs.sweep(now)
+	promAnalyticsOrgIndexSize.Set(float64(a.orgs.size()))
+}
+
 // ensureMigrated runs the migration once, on the writer goroutine, so that a
 // database that was unreachable at startup is picked up as soon as it comes back.
 func (a *pgAnalyticsService) ensureMigrated(ctx context.Context, timeout time.Duration) error {
@@ -462,15 +606,9 @@ func (a *pgAnalyticsService) recordDropped(count int) {
 
 	promAnalyticsSamplesDropped.Add(float64(count))
 
-	now := time.Now()
-	last := a.lastDropLog.Load()
-	if now.UnixNano()-last < int64(dropLogInterval) {
-		return
+	if a.dropLog.allow(time.Now(), dropLogInterval) {
+		a.logger.Warnw("dropping media byte samples, billing data is being lost", nil, "samples", count)
 	}
-	if !a.lastDropLog.CompareAndSwap(last, now.UnixNano()) {
-		return
-	}
-	a.logger.Warnw("dropping media byte samples, billing data is being lost", nil, "samples", count)
 }
 
 // backoffFor grows the retry delay exponentially from one flush interval up to
