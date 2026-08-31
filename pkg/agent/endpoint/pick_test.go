@@ -19,7 +19,7 @@ func TestP2CChoice(t *testing.T) {
 		require.Equal(t, 0, p2c(2, func(i int) int { return []int{2, 5}[i] }))
 	}
 
-	// larger n: the draws are always distinct and in range
+	// larger n: the pick is always in range
 	for i := 0; i < 500; i++ {
 		idx := p2c(5, func(int) int { return 0 })
 		require.GreaterOrEqual(t, idx, 0)

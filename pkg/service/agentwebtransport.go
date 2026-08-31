@@ -179,7 +179,7 @@ func (s *AgentService) serveWebTransportSession(ctx context.Context, sess *webtr
 	defer cancel()
 	control, err := sess.AcceptStream(acceptCtx)
 	if err != nil {
-		_ = sess.CloseWithError(0, "no control stream")
+		_ = sess.CloseWithError(endpoint.SessionCloseOK, "no control stream")
 		return
 	}
 	sigConn := NewWTSignalConn(sess, control)
@@ -226,9 +226,9 @@ func (c *wtSignalConn) SetReadDeadline(t time.Time) error {
 }
 
 func (c *wtSignalConn) Close() error {
-	return c.sess.CloseWithError(0, "")
+	return c.sess.CloseWithError(endpoint.SessionCloseOK, "")
 }
 
 func (c *wtSignalConn) CloseWithReason(reason string) error {
-	return c.sess.CloseWithError(0, reason)
+	return c.sess.CloseWithError(endpoint.SessionCloseOK, reason)
 }

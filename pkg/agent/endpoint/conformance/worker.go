@@ -122,7 +122,7 @@ func (w *Worker) Start(ctx context.Context) error {
 				Deployment:       w.cfg.Deployment,
 				Endpoints:        w.cfg.Endpoints,
 				InstanceId:       w.instanceID,
-				EndpointProtocol: 1,
+				EndpointProtocol: endpoint.CurrentProtocol,
 			},
 		},
 	}); err != nil {
@@ -246,7 +246,7 @@ func (w *Worker) Close() {
 	sess := w.sess
 	w.mu.Unlock()
 	if sess != nil {
-		_ = sess.CloseWithError(0, "worker closed")
+		_ = sess.CloseWithError(endpoint.SessionCloseOK, "worker closed")
 	}
 }
 

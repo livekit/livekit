@@ -65,7 +65,7 @@ func (s *wtSession) OpenStream(ctx context.Context) (Stream, error) {
 
 func (s *wtSession) OpenStreams() int    { return int(s.open.Load()) }
 func (s *wtSession) MaxStreams() int     { return s.maxStreams }
-func (s *wtSession) Close(reason string) { _ = s.sess.CloseWithError(0, reason) }
+func (s *wtSession) Close(reason string) { _ = s.sess.CloseWithError(SessionCloseOK, reason) }
 
 // wtStream is one HTTP exchange over a WebTransport bidi stream.
 type wtStream struct {

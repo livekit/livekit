@@ -14,12 +14,11 @@ import (
 // fakeSession is a no-op Session for registry tests: it records whether it was
 // closed so supersede/deregister can be asserted.
 type fakeSession struct {
-	open   int
 	closed bool
 }
 
 func (s *fakeSession) OpenStream(context.Context) (Stream, error) { return nil, ErrNoSession }
-func (s *fakeSession) OpenStreams() int                           { return s.open }
+func (s *fakeSession) OpenStreams() int                           { return 0 }
 func (s *fakeSession) MaxStreams() int                            { return DefaultMaxStreams }
 func (s *fakeSession) Close(string)                               { s.closed = true }
 

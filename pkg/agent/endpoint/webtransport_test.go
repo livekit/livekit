@@ -171,7 +171,6 @@ func TestWebTransportEndpointRoundTrip(t *testing.T) {
 		defer resp.Body.Close()
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		body, _ := io.ReadAll(resp.Body)
-		require.Equal(t, len(payload), len(body))
 		require.Equal(t, payload, string(body))
 	})
 

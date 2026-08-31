@@ -46,7 +46,7 @@ func TestRouteMatchStaticAndParams(t *testing.T) {
 func TestRouteMatchTypedParams(t *testing.T) {
 	x := idx(t, "/orders/{id:int}", "/u/{u:uuid}")
 
-	require.True(t, matches(x, "/orders/42"))    // int
+	require.True(t, matches(x, "/orders/42"))
 	require.False(t, matches(x, "/orders/abc"))  // not an int -> edge miss, no relay
 	require.False(t, matches(x, "/orders/3.14")) // float is not int
 
@@ -116,8 +116,8 @@ func TestRouteMatchHeterogeneousShapes(t *testing.T) {
 func TestRouteMatchLiteralBeatsWildcardCoexist(t *testing.T) {
 	// a literal segment and a param at the same position coexist
 	x := idx(t, "/users/me", "/users/{id:int}")
-	require.True(t, matches(x, "/users/me"))   // literal
-	require.True(t, matches(x, "/users/42"))   // param
+	require.True(t, matches(x, "/users/me"))
+	require.True(t, matches(x, "/users/42"))
 	require.False(t, matches(x, "/users/abc")) // neither: not "me", not an int
 }
 

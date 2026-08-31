@@ -67,11 +67,9 @@ var (
 // with a param (e.g. "{name}.json") canonicalizes to the str token: the edge
 // over-approximates the shape and the worker enforces the literal part.
 func canonicalizeTemplate(path string) ([]string, error) {
-	tpl, err := ParseTemplate(path) // validates '/', convertors, dup params
-	if err != nil {
+	if _, err := ParseTemplate(path); err != nil { // validates '/', convertors, dup params
 		return nil, err
 	}
-	_ = tpl
 	segs := splitSegments(path)
 	out := make([]string, 0, len(segs))
 	for _, seg := range segs {

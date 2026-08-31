@@ -23,6 +23,10 @@ import (
 // negotiated in RegisterWorkerResponse.
 const CurrentProtocol uint32 = 1
 
+// SessionCloseOK is the WebTransport application close code for a normal session
+// teardown; the human-readable reason travels in the close message.
+const SessionCloseOK = 0
+
 // ResetCode is why a stream was aborted.
 type ResetCode int
 

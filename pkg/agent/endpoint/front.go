@@ -17,12 +17,12 @@ package endpoint
 import (
 	"bufio"
 	"context"
-	"fmt"
 	"io"
 	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -147,6 +147,13 @@ func (f *Front) writeMiss(w http.ResponseWriter, status int, kind, msg string) {
 	http.Error(w, msg, status)
 }
 
+// writeUnavailable writes a 503 with a Retry-After hint, the miss the front
+// returns when no worker can currently serve a request it did route.
+func (f *Front) writeUnavailable(w http.ResponseWriter, msg string) {
+	w.Header().Set("Retry-After", "1")
+	f.writeMiss(w, http.StatusServiceUnavailable, MissUnavailable, msg)
+}
+
 // WithSingleKeyFallback resolves unauthenticated requests to the registry's
 // single api key when the resolver yields none. Self-hosted convenience only: a
 // multi-tenant front must never guess an api key from what happens to be
@@ -191,8 +198,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	candidates := f.registry.Candidates(apiKey, agentName, deployment)
 	if len(candidates) == 0 && f.fallback == nil {
-		w.Header().Set("Retry-After", "1")
-		f.writeMiss(w, http.StatusServiceUnavailable, MissUnavailable, "no workers available for deployment")
+		f.writeUnavailable(w, "no workers available for deployment")
 		return
 	}
 
@@ -227,8 +233,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if len(candidates) == 0 && !restricted && !partial {
-			w.Header().Set("Retry-After", "1")
-			f.writeMiss(w, http.StatusServiceUnavailable, MissUnavailable, "no workers available for deployment")
+			f.writeUnavailable(w, "no workers available for deployment")
 			return
 		}
 	}
@@ -284,8 +289,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Retry-After", "1")
-	f.writeMiss(w, http.StatusServiceUnavailable, MissUnavailable, "no worker could serve the request")
+	f.writeUnavailable(w, "no worker could serve the request")
 }
 
 // pickWorker chooses a worker by the power of two choices: sample two eligible
@@ -449,11 +453,7 @@ func (f *Front) readResponseHead(w http.ResponseWriter, br *bufio.Reader, outReq
 		}
 		if resp.StatusCode >= 100 && resp.StatusCode < 200 && resp.StatusCode != http.StatusSwitchingProtocols {
 			// informational: relay and keep reading
-			for k, vv := range resp.Header {
-				for _, v := range vv {
-					w.Header().Add(k, v)
-				}
-			}
+			addHeaders(w.Header(), resp.Header)
 			w.WriteHeader(resp.StatusCode)
 			clear(w.Header())
 			continue
@@ -524,15 +524,20 @@ func removeHopByHopHeaders(h http.Header) {
 	}
 }
 
-func copyResponseHeaders(dst http.Header, resp *http.Response) {
-	for k, vv := range resp.Header {
+// addHeaders copies every value of every header from src into dst.
+func addHeaders(dst, src http.Header) {
+	for k, vv := range src {
 		for _, v := range vv {
 			dst.Add(k, v)
 		}
 	}
+}
+
+func copyResponseHeaders(dst http.Header, resp *http.Response) {
+	addHeaders(dst, resp.Header)
 	removeHopByHopHeaders(dst)
 	if resp.ContentLength >= 0 && dst.Get("Content-Length") == "" {
-		dst.Set("Content-Length", fmt.Sprintf("%d", resp.ContentLength))
+		dst.Set("Content-Length", strconv.FormatInt(resp.ContentLength, 10))
 	}
 }
 
