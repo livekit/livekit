@@ -42,7 +42,7 @@ var flexFECCodec = webrtc.RTPCodecParameters{
 	RTPCodecCapability: webrtc.RTPCodecCapability{
 		MimeType:    webrtc.MimeTypeFlexFEC03,
 		ClockRate:   90000,
-		SDPFmtpLine: "repair-window=2000000",
+		SDPFmtpLine: "repair-window=10000000",
 	},
 	PayloadType: webrtc.PayloadType(fecTestFECPT),
 }
