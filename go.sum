@@ -158,8 +158,8 @@ github.com/lithammer/shortuuid/v4 v4.3.0 h1:XRr80OYPOlqxgnCv2/iuElkl/ZtXtPtLKk2A
 github.com/lithammer/shortuuid/v4 v4.3.0/go.mod h1:D5noHZ2oFw/YaKCfGy0YxyE7M0wMbezmMjPdhyEFe6Y=
 github.com/livekit/dtls/v3 v3.1.5-warp.1 h1:5jo2qQreDnUrgw6Al1F+9xVyXHvWQ2IaQkjF53FHEyU=
 github.com/livekit/dtls/v3 v3.1.5-warp.1/go.mod h1:gz1K4jg6c+fq86oQMH4pilpCEOEPwmEr2jY+VcF/mkU=
-github.com/livekit/ice/v4 v4.4.0-warp.1 h1:P9Y1f02VVx6kkRJxY3jzoS7HnblFbYkgMwiu6iOqCOU=
-github.com/livekit/ice/v4 v4.4.0-warp.1/go.mod h1:obAyD+J+Hzs7QA7Y8YXHp5uIn6gb7z87pKedXZkrcFU=
+github.com/livekit/ice/v4 v4.4.0-warp.2 h1:AYfwxksKNs2LGgLIifsrB/K4ixaQDuURxBgrA5dJBo4=
+github.com/livekit/ice/v4 v4.4.0-warp.2/go.mod h1:obAyD+J+Hzs7QA7Y8YXHp5uIn6gb7z87pKedXZkrcFU=
 github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731 h1:9x+U2HGLrSw5ATTo469PQPkqzdoU7be46ryiCDO3boc=
 github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731/go.mod h1:Rs3MhFwutWhGwmY1VQsygw28z5bWcnEYmS1OG9OxjOQ=
 github.com/livekit/mediatransportutil v0.0.0-20260821083140-f234b534b095 h1:BcliKAXoMhl/nWmzQweQ5kmh4Qqagxl4s3Z5pvM/7AY=
