@@ -35,7 +35,7 @@ func TestHandshakeGate(t *testing.T) {
 		require.False(t, s.HandshakePending())
 	})
 
-	t.Run("closing the connection opens the gate", func(t *testing.T) {
+	t.Run("closing the connection clears the gate", func(t *testing.T) {
 		s := newBase()
 
 		s.SwapResponseSink(&routingfakes.FakeMessageSink{}, types.SignallingCloseReasonResume)
@@ -45,18 +45,23 @@ func TestHandshakeGate(t *testing.T) {
 		require.False(t, s.HandshakePending())
 	})
 
-	t.Run("the gate opens on its own after the handshake window", func(t *testing.T) {
+	t.Run("the handshake window opens the gate", func(t *testing.T) {
 		s := newBase()
 
 		s.SwapResponseSink(&routingfakes.FakeMessageSink{}, types.SignallingCloseReasonResume)
 		require.True(t, s.HandshakePending())
 
-		s.resSinkMu.Lock()
-		s.handshakeArmedAt = time.Now().Add(-handshakeWindow - time.Second)
-		s.resSinkMu.Unlock()
-
+		s.onHandshakeTimeout()
 		require.False(t, s.HandshakePending())
-		// and stays open
+	})
+
+	t.Run("a swap to a fresh connection opens the gate", func(t *testing.T) {
+		s := newBase()
+
+		s.SwapResponseSink(&routingfakes.FakeMessageSink{}, types.SignallingCloseReasonResume)
+		require.True(t, s.HandshakePending())
+
+		s.SwapResponseSink(&routingfakes.FakeMessageSink{}, types.SignallingCloseReasonUnknown)
 		require.False(t, s.HandshakePending())
 	})
 }
@@ -90,15 +95,39 @@ func TestHandshakeGateNotifiesOnOpen(t *testing.T) {
 		s := newBase()
 
 		s.SwapResponseSink(&routingfakes.FakeMessageSink{}, types.SignallingCloseReasonResume)
-		s.resSinkMu.Lock()
-		s.handshakeArmedAt = time.Now().Add(-handshakeWindow - time.Second)
-		s.resSinkMu.Unlock()
+		require.Zero(t, opened)
 
+		s.onHandshakeTimeout()
 		require.False(t, s.HandshakePending())
 		require.Equal(t, 1, opened)
 
-		require.False(t, s.HandshakePending())
+		// only the transition notifies
+		s.onHandshakeTimeout()
 		require.Equal(t, 1, opened)
+	})
+
+	t.Run("the window fires without anything else touching the gate", func(t *testing.T) {
+		opened = 0
+		s := newSignallerAsyncBase(signallerAsyncBaseParams{
+			Logger:            logger.GetLogger(),
+			OnHandshakeOpened: func() { opened++ },
+		})
+
+		s.SwapResponseSink(&routingfakes.FakeMessageSink{}, types.SignallingCloseReasonResume)
+		require.Eventually(t, func() bool {
+			return !s.HandshakePending() && opened == 1
+		}, 2*handshakeWindow, 100*time.Millisecond)
+	})
+
+	t.Run("not on a connection close", func(t *testing.T) {
+		opened = 0
+		s := newBase()
+
+		s.SwapResponseSink(&routingfakes.FakeMessageSink{}, types.SignallingCloseReasonResume)
+		s.CloseSignalConnection(types.SignallingCloseReasonParticipantClose)
+
+		require.False(t, s.HandshakePending())
+		require.Zero(t, opened)
 	})
 
 	t.Run("not when the gate was never armed", func(t *testing.T) {

@@ -75,16 +75,15 @@ func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) e
 }
 
 func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo) error {
-	// checked before taking the lock, opening the connection flushes the queue from here
-	handshakePending := p.signaller.HandshakePending()
-
 	p.updateLock.Lock()
 	if p.IsDisconnected() {
 		p.updateLock.Unlock()
 		return nil
 	}
 
-	if !p.IsReady() || handshakePending {
+	// read under the lock the flush takes, so an update either queues before the flush
+	// or goes out after the connection has opened
+	if !p.IsReady() || p.signaller.HandshakePending() {
 		// queue up updates
 		p.queuedUpdates = append(p.queuedUpdates, participantsToUpdate...)
 		p.updateLock.Unlock()

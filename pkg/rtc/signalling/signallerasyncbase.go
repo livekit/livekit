@@ -43,8 +43,10 @@ type signallerAsyncBase struct {
 
 	resSinkMu sync.Mutex
 	resSink   routing.MessageSink
-	// when the wait for a ReconnectResponse started, zero once the connection is open
-	handshakeArmedAt time.Time
+	// set while a resumed connection holds messages back waiting for its
+	// ReconnectResponse, the timer opens the connection if none is written
+	handshakePending bool
+	handshakeTimer   *time.Timer
 }
 
 func newSignallerAsyncBase(params signallerAsyncBaseParams) *signallerAsyncBase {
@@ -59,12 +61,21 @@ func (s *signallerAsyncBase) SwapResponseSink(sink routing.MessageSink, reason t
 	s.resSink = sink
 	// a resumed connection has to open with the ReconnectResponse, the client takes it
 	// only as the first message it reads
-	if sink != nil && reason == types.SignallingCloseReasonResume {
-		s.handshakeArmedAt = time.Now()
-	} else {
-		s.handshakeArmedAt = time.Time{}
+	opened := false
+	switch {
+	case sink == nil:
+		// the connection is gone, keep anything queued for the next one
+		s.disarmHandshakeLocked()
+	case reason == types.SignallingCloseReasonResume:
+		s.armHandshakeLocked()
+	default:
+		opened = s.disarmHandshakeLocked()
 	}
 	s.resSinkMu.Unlock()
+
+	if opened {
+		s.notifyHandshakeOpened()
+	}
 
 	if oldSink != nil {
 		if sink != nil {
@@ -85,37 +96,59 @@ func (s *signallerAsyncBase) SwapResponseSink(sink routing.MessageSink, reason t
 	}
 }
 
+// HandshakePending is a plain read, so a caller can decide to hold a message back
+// while holding its own lock
 func (s *signallerAsyncBase) HandshakePending() bool {
 	s.resSinkMu.Lock()
-	armedAt := s.handshakeArmedAt
-	if armedAt.IsZero() {
-		s.resSinkMu.Unlock()
-		return false
-	}
-	if time.Since(armedAt) <= handshakeWindow {
-		s.resSinkMu.Unlock()
-		return true
-	}
-	s.handshakeArmedAt = time.Time{}
-	s.resSinkMu.Unlock()
+	defer s.resSinkMu.Unlock()
 
-	s.params.Logger.Warnw(
-		"resumed connection did not open with a ReconnectResponse", nil,
-		"armedAt", armedAt,
-	)
-	s.notifyHandshakeOpened()
-	return false
+	return s.handshakePending
 }
 
 func (s *signallerAsyncBase) OpenHandshake() {
 	s.resSinkMu.Lock()
-	wasPending := !s.handshakeArmedAt.IsZero()
-	s.handshakeArmedAt = time.Time{}
+	opened := s.disarmHandshakeLocked()
 	s.resSinkMu.Unlock()
 
-	if wasPending {
+	if opened {
 		s.notifyHandshakeOpened()
 	}
+}
+
+func (s *signallerAsyncBase) armHandshakeLocked() {
+	s.handshakePending = true
+	if s.handshakeTimer != nil {
+		s.handshakeTimer.Stop()
+	}
+	// the connection opens on its own if nothing writes a ReconnectResponse, a path
+	// that resumes without one should not hold messages back for the whole session
+	s.handshakeTimer = time.AfterFunc(handshakeWindow, s.onHandshakeTimeout)
+}
+
+// disarmHandshakeLocked reports whether it opened a connection that was holding
+// messages back
+func (s *signallerAsyncBase) disarmHandshakeLocked() bool {
+	if s.handshakeTimer != nil {
+		s.handshakeTimer.Stop()
+		s.handshakeTimer = nil
+	}
+
+	wasPending := s.handshakePending
+	s.handshakePending = false
+	return wasPending
+}
+
+func (s *signallerAsyncBase) onHandshakeTimeout() {
+	s.resSinkMu.Lock()
+	opened := s.disarmHandshakeLocked()
+	s.resSinkMu.Unlock()
+
+	if !opened {
+		return
+	}
+
+	s.params.Logger.Warnw("resumed connection did not open with a ReconnectResponse", nil)
+	s.notifyHandshakeOpened()
 }
 
 // notifyHandshakeOpened runs without resSinkMu held, the callback sends messages
