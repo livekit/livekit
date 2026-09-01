@@ -19,8 +19,9 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/protocol/datatrack"
+	"github.com/livekit/protocol/datatrack/datatracktest"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -59,7 +60,7 @@ func (d *dataTrackWriter) writeFrames() {
 			return
 
 		default:
-			packets := datatrack.GenerateRawDataPackets(d.handle, seqNum, frameNum, 1, rand.Intn(2048)+1, 100*time.Millisecond)
+			packets := datatracktest.GenerateRawDataPackets(d.handle, seqNum, frameNum, 1, rand.Intn(2048)+1, 100*time.Millisecond)
 			for _, packet := range packets {
 				if err := d.transport.SendDataTrackMessage(packet); err != nil {
 					logger.Errorw("could not send data track packet", err)
