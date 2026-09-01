@@ -16,6 +16,7 @@ package signalling
 
 import (
 	"sync"
+	"time"
 
 	"github.com/livekit/protocol/logger"
 
@@ -27,6 +28,11 @@ type signallerAsyncBaseParams struct {
 	Logger logger.Logger
 }
 
+// how long a resumed connection holds messages back waiting for its ReconnectResponse.
+// A path that resumes without sending one lets messages flow after this instead of
+// holding them back for the rest of the session.
+const handshakeWindow = 5 * time.Second
+
 type signallerAsyncBase struct {
 	signallerUnimplemented
 
@@ -34,6 +40,8 @@ type signallerAsyncBase struct {
 
 	resSinkMu sync.Mutex
 	resSink   routing.MessageSink
+	// when the wait for a ReconnectResponse started, zero once the connection is open
+	handshakeArmedAt time.Time
 }
 
 func newSignallerAsyncBase(params signallerAsyncBaseParams) *signallerAsyncBase {
@@ -46,6 +54,13 @@ func (s *signallerAsyncBase) SwapResponseSink(sink routing.MessageSink, reason t
 	s.resSinkMu.Lock()
 	oldSink := s.resSink
 	s.resSink = sink
+	// a resumed connection has to open with the ReconnectResponse, the client takes it
+	// only as the first message it reads
+	if sink != nil && reason == types.SignallingCloseReasonResume {
+		s.handshakeArmedAt = time.Now()
+	} else {
+		s.handshakeArmedAt = time.Time{}
+	}
 	s.resSinkMu.Unlock()
 
 	if oldSink != nil {
@@ -65,6 +80,31 @@ func (s *signallerAsyncBase) SwapResponseSink(sink routing.MessageSink, reason t
 		}
 		oldSink.Close()
 	}
+}
+
+func (s *signallerAsyncBase) HandshakePending() bool {
+	s.resSinkMu.Lock()
+	defer s.resSinkMu.Unlock()
+
+	if s.handshakeArmedAt.IsZero() {
+		return false
+	}
+	if time.Since(s.handshakeArmedAt) > handshakeWindow {
+		s.params.Logger.Warnw(
+			"resumed connection did not open with a ReconnectResponse", nil,
+			"armedAt", s.handshakeArmedAt,
+		)
+		s.handshakeArmedAt = time.Time{}
+		return false
+	}
+
+	return true
+}
+
+func (s *signallerAsyncBase) OpenHandshake() {
+	s.resSinkMu.Lock()
+	s.handshakeArmedAt = time.Time{}
+	s.resSinkMu.Unlock()
 }
 
 func (s *signallerAsyncBase) GetResponseSink() routing.MessageSink {

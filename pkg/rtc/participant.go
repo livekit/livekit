@@ -261,6 +261,10 @@ type ParticipantImpl struct {
 	state        atomic.Value // livekit.ParticipantInfo_State
 	disconnected chan struct{}
 
+	// a migrating in participant resumes on a reconnect response, the client takes it
+	// only as the first message on the resumed signal connection
+	reconnectResponseSent atomic.Bool
+
 	grants      atomic.Pointer[auth.ClaimGrants]
 	isPublisher atomic.Bool
 
@@ -612,9 +616,10 @@ func (p *ParticipantImpl) IsReady() bool {
 	state := p.State()
 
 	// when migrating, there is no JoinResponse, state transitions from JOINING -> ACTIVE -> DISCONNECTED
-	// so JOINING is considered ready.
+	// so JOINING is considered ready. The ReconnectResponse takes the place of the JoinResponse
+	// as the message the resumed signal connection opens with, so readiness waits for it.
 	if p.params.Migration {
-		return state != livekit.ParticipantInfo_DISCONNECTED
+		return state != livekit.ParticipantInfo_DISCONNECTED && p.reconnectResponseSent.Load()
 	}
 
 	// when not migrating, there is a JoinResponse, state transitions from JOINING -> JOINED -> ACTIVE -> DISCONNECTED

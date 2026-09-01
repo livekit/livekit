@@ -69,17 +69,25 @@ func (s *signallerAsync) WriteMessage(msg proto.Message) error {
 		return nil
 	}
 
-	if !s.params.Participant.IsReady() {
-		if typed, ok := msg.(*livekit.SignalResponse); !ok {
-			s.params.Logger.Warnw(
-				"unknown message type", nil,
-				"messageType", fmt.Sprintf("%T", msg),
-			)
-		} else {
-			if typed.GetJoin() == nil {
-				return nil
-			}
-		}
+	// a signal connection opens with a join response, or with a reconnect response when
+	// it is resumed or migrated in. The client reads that first message as the handshake,
+	// so nothing may go out ahead of it.
+	isHandshake := false
+	if typed, ok := msg.(*livekit.SignalResponse); !ok {
+		s.params.Logger.Warnw(
+			"unknown message type", nil,
+			"messageType", fmt.Sprintf("%T", msg),
+		)
+	} else {
+		isHandshake = typed.GetJoin() != nil || typed.GetReconnect() != nil
+	}
+
+	if !isHandshake && (!s.params.Participant.IsReady() || s.HandshakePending()) {
+		s.params.Logger.Debugw(
+			"dropping message, connection has not opened yet",
+			"messageType", getMessageType(msg),
+		)
+		return nil
 	}
 
 	sink := s.GetResponseSink()
@@ -108,6 +116,10 @@ func (s *signallerAsync) WriteMessage(msg proto.Message) error {
 			return err
 		}
 	} else {
+		if isHandshake {
+			// the connection is open, hold nothing back any more
+			s.OpenHandshake()
+		}
 		s.params.Logger.Debugw("sent signal response", "response", logger.Proto(msg))
 	}
 	return nil

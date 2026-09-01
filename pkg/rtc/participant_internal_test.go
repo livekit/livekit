@@ -783,6 +783,7 @@ type participantOpts struct {
 	publisher       bool
 	clientConf      *livekit.ClientConfiguration
 	clientInfo      *livekit.ClientInfo
+	migration       bool
 }
 
 func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *participantOpts) *ParticipantImpl {
@@ -837,6 +838,7 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		VersionGenerator:       utils.NewDefaultTimedVersionGenerator(),
 		ParticipantListener:    &typesfakes.FakeLocalParticipantListener{},
 		ParticipantHelper:      &typesfakes.FakeLocalParticipantHelper{},
+		Migration:              opts.migration,
 	})
 	p.isPublisher.Store(opts.publisher)
 	p.updateState(livekit.ParticipantInfo_ACTIVE)
@@ -893,5 +895,138 @@ func TestUnsequencedReliableDataBufferedWhileJoining(t *testing.T) {
 
 		require.Error(t, p.SendDataMessage(livekit.DataPacket_LOSSY, []byte("one"), "", 0))
 		require.Empty(t, p.reliableDataInfo.joiningUnsequencedMessages)
+	})
+}
+
+func TestMigratingInParticipantWaitsForReconnectResponse(t *testing.T) {
+	// a migrating in participant resumes on a ReconnectResponse, the client takes it only
+	// as the first message on the resumed signal connection, so everything else waits
+	newMigratingParticipant := func() (*ParticipantImpl, *routingfakes.FakeMessageSink) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{
+			migration:       true,
+			protocolVersion: 17,
+			clientInfo:      &livekit.ClientInfo{Sdk: livekit.ClientInfo_JS, Version: "2.15.2"},
+		})
+		return p, p.params.Sink.(*routingfakes.FakeMessageSink)
+	}
+
+	t.Run("not ready until the response is sent", func(t *testing.T) {
+		p, sink := newMigratingParticipant()
+		require.False(t, p.IsReady())
+
+		require.NoError(t, p.HandleReconnectAndSendResponse(
+			livekit.ReconnectReason_RR_UNKNOWN,
+			&livekit.ReconnectResponse{LastMessageSeq: 21},
+		))
+		require.True(t, p.IsReady())
+
+		require.Equal(t, 1, sink.WriteMessageCallCount())
+		res := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
+		require.NotNil(t, res.GetReconnect())
+		require.EqualValues(t, 21, res.GetReconnect().LastMessageSeq)
+	})
+
+	t.Run("the response goes out first", func(t *testing.T) {
+		p, sink := newMigratingParticipant()
+
+		// a room update while waiting is dropped, it is re-sent after the migration
+		require.NoError(t, p.SendRoomUpdate(&livekit.Room{Name: "test"}))
+		// participant updates while waiting are queued
+		require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{{
+			Sid:      "PA_other",
+			Identity: "other",
+			Version:  1,
+		}}))
+		require.Zero(t, sink.WriteMessageCallCount())
+
+		require.NoError(t, p.HandleReconnectAndSendResponse(
+			livekit.ReconnectReason_RR_UNKNOWN,
+			&livekit.ReconnectResponse{},
+		))
+
+		require.Equal(t, 2, sink.WriteMessageCallCount())
+		first := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
+		require.NotNil(t, first.GetReconnect())
+		second := sink.WriteMessageArgsForCall(1).(*livekit.SignalResponse)
+		require.NotNil(t, second.GetUpdate())
+		require.Len(t, second.GetUpdate().Participants, 1)
+		require.EqualValues(t, "PA_other", second.GetUpdate().Participants[0].Sid)
+	})
+
+	t.Run("a client that cannot handle the response is ready right away", func(t *testing.T) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{
+			migration:       true,
+			protocolVersion: 17,
+			clientInfo:      &livekit.ClientInfo{Sdk: livekit.ClientInfo_JS, Version: "1.6.2"},
+		})
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+
+		require.NoError(t, p.HandleReconnectAndSendResponse(
+			livekit.ReconnectReason_RR_UNKNOWN,
+			&livekit.ReconnectResponse{},
+		))
+		require.True(t, p.IsReady())
+		require.Zero(t, sink.WriteMessageCallCount())
+
+		require.NoError(t, p.SendRoomUpdate(&livekit.Room{Name: "test"}))
+		require.Equal(t, 1, sink.WriteMessageCallCount())
+	})
+}
+
+func TestResumedParticipantWaitsForReconnectResponse(t *testing.T) {
+	// a resumed connection has to open with the ReconnectResponse too, and the
+	// participant is ready throughout, so the signaller holds messages back
+	newResumedParticipant := func(version string) (*ParticipantImpl, *routingfakes.FakeMessageSink) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{
+			protocolVersion: 17,
+			clientInfo:      &livekit.ClientInfo{Sdk: livekit.ClientInfo_JS, Version: version},
+		})
+		require.True(t, p.IsReady())
+
+		sink := &routingfakes.FakeMessageSink{}
+		p.SwapResponseSink(sink, types.SignallingCloseReasonResume)
+		return p, sink
+	}
+
+	t.Run("the response goes out first", func(t *testing.T) {
+		p, sink := newResumedParticipant("2.15.2")
+
+		require.NoError(t, p.SendRoomUpdate(&livekit.Room{Name: "test"}))
+		require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{{
+			Sid:      "PA_other",
+			Identity: "other",
+			Version:  1,
+		}}))
+		require.Zero(t, sink.WriteMessageCallCount())
+
+		require.NoError(t, p.HandleReconnectAndSendResponse(
+			livekit.ReconnectReason_RR_SIGNAL_DISCONNECTED,
+			&livekit.ReconnectResponse{LastMessageSeq: 7},
+		))
+
+		require.Equal(t, 2, sink.WriteMessageCallCount())
+		first := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
+		require.NotNil(t, first.GetReconnect())
+		require.EqualValues(t, 7, first.GetReconnect().LastMessageSeq)
+		second := sink.WriteMessageArgsForCall(1).(*livekit.SignalResponse)
+		require.NotNil(t, second.GetUpdate())
+		require.EqualValues(t, "PA_other", second.GetUpdate().Participants[0].Sid)
+
+		// and the connection is open from here on
+		require.NoError(t, p.SendRoomUpdate(&livekit.Room{Name: "test"}))
+		require.Equal(t, 3, sink.WriteMessageCallCount())
+	})
+
+	t.Run("a client that cannot handle the response is not held back", func(t *testing.T) {
+		p, sink := newResumedParticipant("1.6.2")
+
+		require.NoError(t, p.HandleReconnectAndSendResponse(
+			livekit.ReconnectReason_RR_SIGNAL_DISCONNECTED,
+			&livekit.ReconnectResponse{},
+		))
+		require.Zero(t, sink.WriteMessageCallCount())
+
+		require.NoError(t, p.SendRoomUpdate(&livekit.Room{Name: "test"}))
+		require.Equal(t, 1, sink.WriteMessageCallCount())
 	})
 }

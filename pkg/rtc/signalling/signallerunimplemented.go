@@ -34,6 +34,12 @@ func (u *signallerUnimplemented) GetResponseSink() routing.MessageSink {
 
 func (u *signallerUnimplemented) CloseSignalConnection(reason types.SignallingCloseReason) {}
 
+func (u *signallerUnimplemented) HandshakePending() bool {
+	return false
+}
+
+func (u *signallerUnimplemented) OpenHandshake() {}
+
 func (u *signallerUnimplemented) WriteMessage(msg proto.Message) error {
 	return nil
 }
