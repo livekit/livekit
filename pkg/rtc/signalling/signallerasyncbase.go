@@ -44,9 +44,12 @@ type signallerAsyncBase struct {
 	resSinkMu sync.Mutex
 	resSink   routing.MessageSink
 	// set while a resumed connection holds messages back waiting for its
-	// ReconnectResponse, the timer opens the connection if none is written
-	handshakePending bool
-	handshakeTimer   *time.Timer
+	// ReconnectResponse, the timer opens the connection if none is written.
+	// handshakeGeneration tells a timeout whether it belongs to the current wait, a
+	// Stop cannot cancel a callback that has already started running.
+	handshakePending    bool
+	handshakeGeneration uint32
+	handshakeTimer      *time.Timer
 }
 
 func newSignallerAsyncBase(params signallerAsyncBaseParams) *signallerAsyncBase {
@@ -116,30 +119,42 @@ func (s *signallerAsyncBase) OpenHandshake() {
 }
 
 func (s *signallerAsyncBase) armHandshakeLocked() {
+	s.stopHandshakeTimerLocked()
+
 	s.handshakePending = true
-	if s.handshakeTimer != nil {
-		s.handshakeTimer.Stop()
-	}
+	s.handshakeGeneration++
+	generation := s.handshakeGeneration
 	// the connection opens on its own if nothing writes a ReconnectResponse, a path
 	// that resumes without one should not hold messages back for the whole session
-	s.handshakeTimer = time.AfterFunc(handshakeWindow, s.onHandshakeTimeout)
+	s.handshakeTimer = time.AfterFunc(handshakeWindow, func() { s.onHandshakeTimeout(generation) })
 }
 
 // disarmHandshakeLocked reports whether it opened a connection that was holding
 // messages back
 func (s *signallerAsyncBase) disarmHandshakeLocked() bool {
+	s.stopHandshakeTimerLocked()
+
+	wasPending := s.handshakePending
+	s.handshakePending = false
+	// a timeout of the wait that just ended is stale
+	s.handshakeGeneration++
+	return wasPending
+}
+
+func (s *signallerAsyncBase) stopHandshakeTimerLocked() {
 	if s.handshakeTimer != nil {
 		s.handshakeTimer.Stop()
 		s.handshakeTimer = nil
 	}
-
-	wasPending := s.handshakePending
-	s.handshakePending = false
-	return wasPending
 }
 
-func (s *signallerAsyncBase) onHandshakeTimeout() {
+func (s *signallerAsyncBase) onHandshakeTimeout(generation uint32) {
 	s.resSinkMu.Lock()
+	if generation != s.handshakeGeneration {
+		// the wait this timeout was armed for has ended, a later one may be in progress
+		s.resSinkMu.Unlock()
+		return
+	}
 	opened := s.disarmHandshakeLocked()
 	s.resSinkMu.Unlock()
 
