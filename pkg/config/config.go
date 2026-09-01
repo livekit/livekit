@@ -439,6 +439,19 @@ func (l LimitConfig) CanAddDataBlob(dataBlobs []*livekit.DataBlob, toAdd *liveki
 type IngressConfig struct {
 	RTMPBaseURL string `yaml:"rtmp_base_url,omitempty"`
 	WHIPBaseURL string `yaml:"whip_base_url,omitempty"`
+	// Allow URL pull ingresses with a udp:// source URL. Disabled by default, and should only be
+	// enabled if both the callers allowed to create ingresses and the network the ingress handlers
+	// run on are trusted. Unlike an http or srt source url, a udp source url doesn't make the ingress
+	// handler connect out to the url host: the handler binds a local socket on the address and port
+	// taken from the url, and joins the multicast group if one is given. This lets the caller:
+	//   - Choose which local port the handler binds, potentially colliding with other services on
+	//     the host.
+	//   - Feed the session unauthenticated traffic. UDP is connectionless, so any host able to reach
+	//     that port can inject media, or spoof the sender address to disrupt a legitimate feed.
+	//   - Make the handler join arbitrary multicast groups and republish whatever it receives into a
+	//     room, using the ingress as a relay for streams on the handler's local network the caller has
+	//     no direct access to.
+	EnableUDPURLPull bool `yaml:"enable_udp_url_pull,omitempty"`
 }
 
 type SIPConfig struct{}
