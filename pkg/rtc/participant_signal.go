@@ -75,13 +75,16 @@ func (p *ParticipantImpl) SendJoinResponse(joinResponse *livekit.JoinResponse) e
 }
 
 func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.ParticipantInfo) error {
+	// checked before taking the lock, opening the connection flushes the queue from here
+	handshakePending := p.signaller.HandshakePending()
+
 	p.updateLock.Lock()
 	if p.IsDisconnected() {
 		p.updateLock.Unlock()
 		return nil
 	}
 
-	if !p.IsReady() {
+	if !p.IsReady() || handshakePending {
 		// queue up updates
 		p.queuedUpdates = append(p.queuedUpdates, participantsToUpdate...)
 		p.updateLock.Unlock()
@@ -203,7 +206,7 @@ func (p *ParticipantImpl) HandleReconnectAndSendResponse(reconnectReason livekit
 }
 
 // reconnectResponseSentAndFlush makes a migrating in participant ready and sends what was
-// queued up while it was waiting for its ReconnectResponse.
+// queued up while the connection was waiting for its ReconnectResponse.
 func (p *ParticipantImpl) reconnectResponseSentAndFlush() error {
 	// a successful write opens the connection by itself, this covers the paths that do
 	// not write one, i. e. a client that cannot handle it and a failed write
@@ -220,6 +223,24 @@ func (p *ParticipantImpl) reconnectResponseSentAndFlush() error {
 	}
 
 	return nil
+}
+
+// flushQueuedUpdates sends the updates queued while the connection was closed for the
+// handshake. Called when the connection opens, including when it opens without a
+// ReconnectResponse having been written.
+func (p *ParticipantImpl) flushQueuedUpdates() {
+	p.updateLock.Lock()
+	queuedUpdates := p.queuedUpdates
+	p.queuedUpdates = nil
+	p.updateLock.Unlock()
+
+	if len(queuedUpdates) == 0 {
+		return
+	}
+
+	if err := p.SendParticipantUpdate(queuedUpdates); err != nil {
+		p.params.Logger.Warnw("could not send queued participant updates", err)
+	}
 }
 
 func (p *ParticipantImpl) sendDisconnectUpdatesForReconnect() error {

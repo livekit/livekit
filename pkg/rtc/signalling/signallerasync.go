@@ -31,8 +31,9 @@ import (
 var _ ParticipantSignaller = (*signallerAsync)(nil)
 
 type SignallerAsyncParams struct {
-	Logger      logger.Logger
-	Participant types.LocalParticipant
+	Logger            logger.Logger
+	Participant       types.LocalParticipant
+	OnHandshakeOpened func()
 }
 
 type signallerAsync struct {
@@ -43,8 +44,11 @@ type signallerAsync struct {
 
 func NewSignallerAsync(params SignallerAsyncParams) ParticipantSignaller {
 	return &signallerAsync{
-		params:             params,
-		signallerAsyncBase: newSignallerAsyncBase(signallerAsyncBaseParams{Logger: params.Logger}),
+		params: params,
+		signallerAsyncBase: newSignallerAsyncBase(signallerAsyncBaseParams{
+			Logger:            params.Logger,
+			OnHandshakeOpened: params.OnHandshakeOpened,
+		}),
 	}
 }
 

@@ -2076,8 +2076,9 @@ func (p *ParticipantImpl) setupSignalling() {
 		Participant: p,
 	})
 	p.signaller = signalling.NewSignallerAsync(signalling.SignallerAsyncParams{
-		Logger:      p.params.Logger,
-		Participant: p,
+		Logger:            p.params.Logger,
+		Participant:       p,
+		OnHandshakeOpened: p.flushQueuedUpdates,
 	})
 }
 
