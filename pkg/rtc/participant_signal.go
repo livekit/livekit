@@ -81,7 +81,7 @@ func (p *ParticipantImpl) SendParticipantUpdate(participantsToUpdate []*livekit.
 		return nil
 	}
 
-	if !p.IsReady() || p.signaller.HandshakePending() {
+	if !p.IsReady() {
 		// queue up updates
 		p.queuedUpdates = append(p.queuedUpdates, participantsToUpdate...)
 		p.updateLock.Unlock()

@@ -991,6 +991,8 @@ func TestResumedParticipantWaitsForReconnectResponse(t *testing.T) {
 	t.Run("the response goes out first", func(t *testing.T) {
 		p, sink := newResumedParticipant("2.15.2")
 
+		// the resume path re-sends room and participant state right after the response,
+		// so what is written in this window is dropped
 		require.NoError(t, p.SendRoomUpdate(&livekit.Room{Name: "test"}))
 		require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{{
 			Sid:      "PA_other",
@@ -1004,17 +1006,21 @@ func TestResumedParticipantWaitsForReconnectResponse(t *testing.T) {
 			&livekit.ReconnectResponse{LastMessageSeq: 7},
 		))
 
-		require.Equal(t, 2, sink.WriteMessageCallCount())
+		require.Equal(t, 1, sink.WriteMessageCallCount())
 		first := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
 		require.NotNil(t, first.GetReconnect())
 		require.EqualValues(t, 7, first.GetReconnect().LastMessageSeq)
+
+		// and the connection is open from here on
+		require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{{
+			Sid:      "PA_other",
+			Identity: "other",
+			Version:  2,
+		}}))
+		require.Equal(t, 2, sink.WriteMessageCallCount())
 		second := sink.WriteMessageArgsForCall(1).(*livekit.SignalResponse)
 		require.NotNil(t, second.GetUpdate())
 		require.EqualValues(t, "PA_other", second.GetUpdate().Participants[0].Sid)
-
-		// and the connection is open from here on
-		require.NoError(t, p.SendRoomUpdate(&livekit.Room{Name: "test"}))
-		require.Equal(t, 3, sink.WriteMessageCallCount())
 	})
 
 	t.Run("a client that cannot handle the response is not held back", func(t *testing.T) {

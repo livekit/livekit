@@ -73,6 +73,7 @@ func (s *signallerAsync) WriteMessage(msg proto.Message) error {
 	// it is resumed or migrated in. The client reads that first message as the handshake,
 	// so nothing may go out ahead of it.
 	isHandshake := false
+	isSdp := false
 	if typed, ok := msg.(*livekit.SignalResponse); !ok {
 		s.params.Logger.Warnw(
 			"unknown message type", nil,
@@ -80,10 +81,19 @@ func (s *signallerAsync) WriteMessage(msg proto.Message) error {
 		)
 	} else {
 		isHandshake = typed.GetJoin() != nil || typed.GetReconnect() != nil
+		isSdp = typed.GetOffer() != nil || typed.GetAnswer() != nil
 	}
 
 	if !isHandshake && (!s.params.Participant.IsReady() || s.HandshakePending()) {
-		s.params.Logger.Debugw(
+		logFunc := s.params.Logger.Debugw
+		if isSdp {
+			// a dropped SDP leaves the negotiation waiting for the peer until the
+			// negotiation state machine recovers it, so make it visible
+			logFunc = func(msg string, keysAndValues ...any) {
+				s.params.Logger.Infow(msg, keysAndValues...)
+			}
+		}
+		logFunc(
 			"dropping message, connection has not opened yet",
 			"messageType", getMessageType(msg),
 		)
