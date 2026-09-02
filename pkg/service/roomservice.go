@@ -157,7 +157,7 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		// left the cluster. There is no RTC room left to close, so delete the persisted
 		// state directly rather than failing every future attempt.
 		if errors.Is(err, routing.ErrNotFound) {
-			return s.deleteOrphanedRoom(ctx, livekit.RoomName(req.Room))
+			return s.deleteOrphanedRoom(ctx, livekit.RoomName(req.Room), err)
 		}
 		return nil, err
 	}
@@ -182,7 +182,19 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 // crash, scale-in) while the room record itself lives on in the store with no TTL. Routing
 // then resolves the room to a node that is gone, and the regular delete path fails at that
 // lookup before it ever reaches the store, so the room can never be removed through the API.
-func (s *RoomService) deleteOrphanedRoom(ctx context.Context, roomName livekit.RoomName) (*livekit.DeleteRoomResponse, error) {
+func (s *RoomService) deleteOrphanedRoom(
+	ctx context.Context,
+	roomName livekit.RoomName,
+	routingErr error,
+) (*livekit.DeleteRoomResponse, error) {
+	// On the regular path the room is deleted by the node handling the request. Here there
+	// is no such node, so this store is the only thing that can remove the room. If it
+	// cannot, report the original routing failure rather than a delete that did not happen.
+	os, ok := s.roomStore.(OSSServiceStore)
+	if !ok {
+		return nil, routingErr
+	}
+
 	logger.Infow("deleting orphaned room, no live node hosts it", "room", roomName)
 
 	// best effort: drop the stale room -> node mapping so it does not leak
@@ -192,10 +204,8 @@ func (s *RoomService) deleteOrphanedRoom(ctx context.Context, roomName livekit.R
 		}
 	}
 
-	if os, ok := s.roomStore.(OSSServiceStore); ok {
-		if err := os.DeleteRoom(ctx, roomName); err != nil {
-			return nil, err
-		}
+	if err := os.DeleteRoom(ctx, roomName); err != nil {
+		return nil, err
 	}
 
 	res := &livekit.DeleteRoomResponse{}

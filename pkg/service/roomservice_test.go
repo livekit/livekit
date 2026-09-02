@@ -104,6 +104,21 @@ func TestDeleteRoom(t *testing.T) {
 		require.Equal(t, 1, svc.store.DeleteRoomCallCount())
 	})
 
+	// RoomService is constructed with a ServiceStore, which has no DeleteRoom. On the
+	// regular path the node handling the request deletes the room, but an orphaned room has
+	// no such node, so a store that cannot delete must not report success.
+	t.Run("orphaned room reports failure when the store cannot delete", func(t *testing.T) {
+		store := &servicefakes.FakeServiceStore{}
+		store.RoomExistsReturns(true, nil)
+		svc, router := newTestRoomServiceWithStore(config.LimitConfig{}, store)
+		router.CreateRoomReturns(nil, routing.ErrNotFound)
+
+		_, err := svc.DeleteRoom(createCtx(), &livekit.DeleteRoomRequest{
+			Room: "testroom",
+		})
+		require.ErrorIs(t, err, routing.ErrNotFound)
+	})
+
 	t.Run("unknown room is not found", func(t *testing.T) {
 		svc := newTestRoomService(config.LimitConfig{})
 		svc.store.RoomExistsReturns(false, nil)
@@ -243,6 +258,28 @@ func newTestAgentDispatchService(limitConf config.LimitConfig) *service.AgentDis
 	allocator := &servicefakes.FakeRoomAllocator{}
 	allocator.AutoCreateEnabledReturns(false)
 	return service.NewAgentDispatchService(limitConf, nil, rpc.NewTopicFormatter(), allocator, &routingfakes.FakeRouter{})
+}
+
+func newTestRoomServiceWithStore(
+	limitConf config.LimitConfig,
+	store service.ServiceStore,
+) (*service.RoomService, *routingfakes.FakeRouter) {
+	router := &routingfakes.FakeRouter{}
+	svc, err := service.NewRoomService(
+		limitConf,
+		config.APIConfig{ExecutionTimeout: 2},
+		router,
+		&servicefakes.FakeRoomAllocator{},
+		store,
+		nil,
+		rpc.NewTopicFormatter(),
+		&rpcfakes.FakeTypedRoomClient{},
+		&rpcfakes.FakeTypedParticipantClient{},
+	)
+	if err != nil {
+		panic(err)
+	}
+	return svc, router
 }
 
 func newTestRoomService(limitConf config.LimitConfig) *TestRoomService {
