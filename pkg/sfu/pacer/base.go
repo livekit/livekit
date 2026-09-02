@@ -85,7 +85,6 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 		return 0, err
 	}
 
-	b.lastPacketSentAt.Store(mono.UnixNano())
 	return written, nil
 }
 
@@ -104,6 +103,8 @@ func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 		if err = p.Header.SetExtension(p.AbsSendTimeExtID, absSendTimeBytes); err != nil {
 			return err
 		}
+
+		b.lastPacketSentAt.Store(sendingAt.UnixNano())
 	}
 
 	packetSize := p.HeaderSize + len(p.Payload)
@@ -126,6 +127,8 @@ func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 		if err = p.Header.SetExtension(p.TransportWideExtID, twccExtBytes); err != nil {
 			return err
 		}
+
+		b.lastPacketSentAt.Store(sendingAt.UnixNano())
 	}
 
 	b.ProbeObserver.RecordPacket(packetSize, p.IsRTX, p.ProbeClusterId, p.IsProbe)
