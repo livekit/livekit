@@ -27,12 +27,21 @@ import (
 	"github.com/livekit/protocol/rpc/rpcfakes"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/service/servicefakes"
 )
 
 func TestDeleteRoom(t *testing.T) {
+	createCtx := func() context.Context {
+		return service.WithGrants(
+			context.Background(),
+			&auth.ClaimGrants{Video: &auth.VideoGrant{RoomCreate: true}},
+			"",
+		)
+	}
+
 	t.Run("missing permissions", func(t *testing.T) {
 		svc := newTestRoomService(config.LimitConfig{})
 		grant := &auth.ClaimGrants{
@@ -43,6 +52,67 @@ func TestDeleteRoom(t *testing.T) {
 			Room: "testroom",
 		})
 		require.Error(t, err)
+	})
+
+	// A room whose node has left the cluster still exists in the store, but routing can no
+	// longer resolve a live node for it. It must still be deletable, otherwise it is
+	// returned by ListRooms forever. See #3766.
+	t.Run("deletes room orphaned by a departed node", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{})
+		svc.store.RoomExistsReturns(true, nil)
+		svc.router.CreateRoomReturns(nil, routing.ErrNotFound)
+
+		_, err := svc.DeleteRoom(createCtx(), &livekit.DeleteRoomRequest{
+			Room: "testroom",
+		})
+		require.NoError(t, err)
+
+		require.Equal(t, 1, svc.store.DeleteRoomCallCount(),
+			"orphaned room should be removed from the store")
+		_, deleted := svc.store.DeleteRoomArgsForCall(0)
+		require.Equal(t, livekit.RoomName("testroom"), deleted)
+
+		require.Equal(t, 1, svc.router.ClearRoomStateCallCount(),
+			"stale room -> node mapping should be cleared")
+
+		require.Zero(t, svc.roomClient.DeleteRoomCallCount(),
+			"no node hosts the room, so it should not be asked to close it")
+	})
+
+	t.Run("other routing errors are not swallowed", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{})
+		svc.store.RoomExistsReturns(true, nil)
+		svc.router.CreateRoomReturns(nil, routing.ErrNodeLimitReached)
+
+		_, err := svc.DeleteRoom(createCtx(), &livekit.DeleteRoomRequest{
+			Room: "testroom",
+		})
+		require.ErrorIs(t, err, routing.ErrNodeLimitReached)
+		require.Zero(t, svc.store.DeleteRoomCallCount())
+	})
+
+	t.Run("healthy room is deleted through its node", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{})
+		svc.store.RoomExistsReturns(true, nil)
+		svc.router.CreateRoomReturns(&livekit.Room{Name: "testroom"}, nil)
+
+		_, err := svc.DeleteRoom(createCtx(), &livekit.DeleteRoomRequest{
+			Room: "testroom",
+		})
+		require.NoError(t, err)
+		require.Equal(t, 1, svc.roomClient.DeleteRoomCallCount())
+		require.Equal(t, 1, svc.store.DeleteRoomCallCount())
+	})
+
+	t.Run("unknown room is not found", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{})
+		svc.store.RoomExistsReturns(false, nil)
+
+		_, err := svc.DeleteRoom(createCtx(), &livekit.DeleteRoomRequest{
+			Room: "testroom",
+		})
+		require.ErrorIs(t, err, service.ErrRoomNotFound)
+		require.Zero(t, svc.store.DeleteRoomCallCount())
 	})
 }
 
@@ -178,7 +248,8 @@ func newTestAgentDispatchService(limitConf config.LimitConfig) *service.AgentDis
 func newTestRoomService(limitConf config.LimitConfig) *TestRoomService {
 	router := &routingfakes.FakeRouter{}
 	allocator := &servicefakes.FakeRoomAllocator{}
-	store := &servicefakes.FakeServiceStore{}
+	store := &servicefakes.FakeObjectStore{}
+	roomClient := &rpcfakes.FakeTypedRoomClient{}
 	svc, err := service.NewRoomService(
 		limitConf,
 		config.APIConfig{ExecutionTimeout: 2},
@@ -187,7 +258,7 @@ func newTestRoomService(limitConf config.LimitConfig) *TestRoomService {
 		store,
 		nil,
 		rpc.NewTopicFormatter(),
-		&rpcfakes.FakeTypedRoomClient{},
+		roomClient,
 		&rpcfakes.FakeTypedParticipantClient{},
 	)
 	if err != nil {
@@ -198,12 +269,14 @@ func newTestRoomService(limitConf config.LimitConfig) *TestRoomService {
 		router:      router,
 		allocator:   allocator,
 		store:       store,
+		roomClient:  roomClient,
 	}
 }
 
 type TestRoomService struct {
 	service.RoomService
-	router    *routingfakes.FakeRouter
-	allocator *servicefakes.FakeRoomAllocator
-	store     *servicefakes.FakeServiceStore
+	router     *routingfakes.FakeRouter
+	allocator  *servicefakes.FakeRoomAllocator
+	store      *servicefakes.FakeObjectStore
+	roomClient *rpcfakes.FakeTypedRoomClient
 }
