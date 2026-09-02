@@ -389,6 +389,14 @@ func newPeerConnection(
 	se.SetDTLSRetransmissionInterval(dtlsRetransmissionInterval)
 	se.SetICETimeouts(iceDisconnectedTimeout, iceFailedTimeout, iceKeepaliveInterval)
 
+	// pion's controlling selector refuses to nominate a candidate until a per-type
+	// minimum wait elapses (prflx 1s, relay 2s), so that a better path still trickling
+	// in can win. Behind a forced TURN relay there is only ever one viable path, so the
+	// wait is dead time. It lands on the subscriber PeerConnection because the SFU
+	// offers that one and is therefore the controlling agent; the publisher is unaffected.
+	se.SetPrflxAcceptanceMinWait(0)
+	se.SetRelayAcceptanceMinWait(0)
+
 	// if client don't support prflx over relay, we should not expose private address to it, use single external ip as host candidate
 	if !params.ClientInfo.SupportsPrflxOverRelay() && len(params.Config.NAT1To1IPs) > 0 {
 		var nat1to1Ips []string
