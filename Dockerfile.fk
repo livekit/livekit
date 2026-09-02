@@ -31,14 +31,17 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
     -o bin/livekit-server ./cmd/server
 
 ###########
-FROM --platform=linux/amd64 jfrog.fkinternal.com/appsec.local/distroless-static-debian:nonroot
+# Runtime is the stock v1.9.12 image with only the binary swapped, so the container
+# stays byte-identical to what the chart already expects: a shell at /bin/sh (the
+# deployment wraps startup in `sh -c` to sed the Redis password into the config) and
+# the binary at /livekit-server. Distroless has no shell and fails to start here.
+FROM --platform=linux/amd64 edge.fkinternal.com/docker-external/livekit/livekit-server:v1.9.12
 
-COPY --from=builder /workspace/bin/livekit-server /usr/bin/livekit-server
-USER 65532:65532
+COPY --from=builder /workspace/bin/livekit-server /livekit-server
 
 EXPOSE 7880/tcp
 EXPOSE 7881/tcp
 EXPOSE 6789/tcp
 EXPOSE 50000-60000/udp
 
-ENTRYPOINT ["/usr/bin/livekit-server"]
+ENTRYPOINT ["/livekit-server"]
