@@ -8,10 +8,12 @@
 
 <!--END_BANNER_IMAGE-->
 
-# LiveKit: Real-time video, audio and data for developers
+# LiveKit: Realtime infrastructure for voice, video, and AI agents
 
-[LiveKit](https://livekit.io) is an open source project that provides scalable, multi-user conferencing based on WebRTC.
-It's designed to provide everything you need to build real-time video audio data capabilities in your applications.
+[LiveKit](https://livekit.com) is an open source platform for building voice, video, and physical AI agents.
+This repository is the LiveKit server: a scalable, distributed WebRTC SFU that moves realtime audio, video, and
+data between people, devices, and AI models. It's the transport layer under everything else LiveKit ships. The
+SDKs, agents frameworks, and companion services are linked in the table at the bottom of this page.
 
 LiveKit's server is written in Go, using the awesome [Pion WebRTC](https://github.com/pion/webrtc) implementation.
 
@@ -27,211 +29,82 @@ LiveKit's server is written in Go, using the awesome [Pion WebRTC](https://githu
 > [!IMPORTANT]
 > If you're building Voice AI, [LiveKit Agents](https://github.com/livekit/agents) is the SDK for code-first realtime voice agents. STT, LLM, TTS, turn detection, [expressive speech](https://docs.livekit.io/agents/models/tts/expressive/), [keyterm accuracy](https://docs.livekit.io/agents/models/stt/keyterms/), tool usage, and telephony all come bundled in the framework. It's available in both [Python](https://github.com/livekit/agents) and [Node.js](https://github.com/livekit/agents-js).
 >
->```python
-># agent.py
->from livekit import agents
->from livekit.agents import Agent, AgentServer, AgentSession, STTContextOptions, TurnHandlingOptions, inference
+> ```python
+> # agent.py
+> from livekit import agents
+> from livekit.agents import Agent, AgentServer, AgentSession, STTContextOptions, TurnHandlingOptions, inference
 >
->server = AgentServer()
->
->
->@server.rtc_session(agent_name="my-agent")
->async def my_agent(ctx: agents.JobContext):
->    session = AgentSession(
->        stt=inference.STT(model="deepgram/nova-3", language="multi"),
->        llm=inference.LLM(model="google/gemma-4-31b-it"),
->        tts=inference.TTS(model="inworld/inworld-tts-2", voice="Ashley"),
->        turn_handling=TurnHandlingOptions(turn_detection=inference.TurnDetector()),
->        stt_context_options=STTContextOptions(keyterms=["LiveKit", "Acme Corp"]),
->        expressive=True,
->    )
->    await session.start(room=ctx.room, agent=Agent(instructions="You are a helpful voice AI assistant."))
->    await session.generate_reply(instructions="Greet the user and offer your assistance.")
+> server = AgentServer()
 >
 >
->if __name__ == "__main__":
->    agents.cli.run_app(server)
->```
+> @server.rtc_session(agent_name="my-agent")
+> async def my_agent(ctx: agents.JobContext):
+>     session = AgentSession(
+>         stt=inference.STT(model="deepgram/nova-3", language="multi"),
+>         llm=inference.LLM(model="google/gemma-4-31b-it"),
+>         tts=inference.TTS(model="inworld/inworld-tts-2", voice="Ashley"),
+>         turn_handling=TurnHandlingOptions(turn_detection=inference.TurnDetector()),
+>         stt_context_options=STTContextOptions(keyterms=["LiveKit", "Acme Corp"]),
+>         expressive=True,
+>     )
+>     await session.start(room=ctx.room, agent=Agent(instructions="You are a helpful voice AI assistant."))
+>     await session.generate_reply(instructions="Greet the user and offer your assistance.")
 >
->Models come from [LiveKit Inference](https://docs.livekit.io/agents/models/) with no per-provider API keys, and LiveKit Cloud handles [deployment](https://docs.livekit.io/deploy/agents/) and [observability](https://docs.livekit.io/deploy/observability/). Visit the docs for more info at [docs.livekit.io/agents](https://docs.livekit.io/agents/).
+>
+> if __name__ == "__main__":
+>     agents.cli.run_app(server)
+> ```
+>
+> Models come from [LiveKit Inference](https://docs.livekit.io/agents/models/) with no per-provider API keys, and LiveKit Cloud handles [deployment](https://docs.livekit.io/deploy/agents/) and [observability](https://docs.livekit.io/deploy/observability/). Visit the docs for more info at [docs.livekit.io/agents](https://docs.livekit.io/agents/).
 <!--END_AGENTS_INFO-->
+
+## Used in production by
+
+LiveKit carries billions of calls a year for companies including Salesforce, Nvidia, Oracle, SAP,
+Deutsche Telekom, Spotify, Tinder, Coursera, Headspace, Skydio, Retell, Decagon, Cresta, and HeyGen. Read how
+[Assort Health](https://livekit.com/customers/assort-health), [Playback](https://livekit.com/customers/playback), and
+[Polymath Robotics](https://livekit.com/customers/polymath) use it, or see [more customers](https://livekit.com/customers).
 
 ## Features
 
 -   Scalable, distributed WebRTC SFU (Selective Forwarding Unit)
--   Modern, full-featured client SDKs
+-   People, devices, and AI agents join the same room as participants, with
+    [agent dispatch](https://docs.livekit.io/agents/server/agent-dispatch/) to route agents in automatically or on demand
+-   Modern, full-featured SDKs for web, mobile, desktop, embedded, and server
 -   Built for production, supports JWT authentication
 -   Robust networking and connectivity, UDP/TCP/TURN
 -   Easy to deploy: single binary, Docker or Kubernetes
 -   Advanced features including:
-    -   [speaker detection](https://docs.livekit.io/home/client/tracks/subscribe/#speaker-detection)
-    -   [simulcast](https://docs.livekit.io/home/client/tracks/publish/#video-simulcast)
-    -   [end-to-end optimizations](https://blog.livekit.io/livekit-one-dot-zero/)
-    -   [selective subscription](https://docs.livekit.io/home/client/tracks/subscribe/#selective-subscription)
-    -   [moderation APIs](https://docs.livekit.io/home/server/managing-participants/)
-    -   end-to-end encryption
+    -   [speaker detection](https://docs.livekit.io/transport/media/subscribe/)
+    -   [simulcast](https://docs.livekit.io/transport/media/publish/)
+    -   [selective subscription](https://docs.livekit.io/transport/media/subscribe/)
+    -   [moderation APIs](https://docs.livekit.io/intro/basics/rooms-participants-tracks/participants/)
+    -   [end-to-end encryption](https://docs.livekit.io/transport/media/encryption/)
     -   SVC codecs (VP9, AV1)
-    -   [webhooks](https://docs.livekit.io/home/server/webhooks/)
-    -   [distributed and multi-region](https://docs.livekit.io/home/self-hosting/distributed/)
+    -   [data tracks](https://docs.livekit.io/transport/data/data-tracks/) for low-latency telemetry and teleoperation
+    -   [telephony](https://docs.livekit.io/telephony/) over SIP
+    -   [webhooks](https://docs.livekit.io/intro/basics/rooms-participants-tracks/webhooks-events/)
+    -   [distributed and multi-region](https://docs.livekit.io/transport/self-hosting/distributed/)
 
 ## Documentation & Guides
 
 https://docs.livekit.io
 
+Working with a coding agent? Give it the [LiveKit Docs MCP server](https://docs.livekit.io/mcp/), or start with the
+[coding agents guide](https://docs.livekit.io/intro/coding-agents/).
+
 ## Live Demos
 
+-   [Talk to a voice agent](https://livekit.com) built with LiveKit Agents
 -   [LiveKit Meet](https://meet.livekit.io) ([source](https://github.com/livekit-examples/meet))
 -   [Spatial Audio](https://spatial-audio-demo.livekit.io/) ([source](https://github.com/livekit-examples/spatial-audio))
 -   Livestreaming from OBS Studio ([source](https://github.com/livekit-examples/livestream))
--   [AI voice assistant using ChatGPT](https://livekit.io/kitt) ([source](https://github.com/livekit-examples/kitt))
-
-## Ecosystem
-
--   [Agents](https://github.com/livekit/agents): build real-time multimodal AI applications with programmable backend participants
--   [Egress](https://github.com/livekit/egress): record or multi-stream rooms and export individual tracks
--   [Ingress](https://github.com/livekit/ingress): ingest streams from external sources like RTMP, WHIP, HLS, or OBS Studio
-
-## SDKs & Tools
-
-### Client SDKs
-
-Client SDKs enable your frontend to include interactive, multi-user experiences.
-
-<table>
-  <tr>
-    <th>Language</th>
-    <th>Repo</th>
-    <th>
-        <a href="https://docs.livekit.io/home/client/events/#declarative-ui" target="_blank" rel="noopener noreferrer">Declarative UI</a>
-    </th>
-    <th>Links</th>
-  </tr>
-  <!-- BEGIN Template
-  <tr>
-    <td>Language</td>
-    <td>
-      <a href="" target="_blank" rel="noopener noreferrer"></a>
-    </td>
-    <td></td>
-    <td></td>
-  </tr>
-  END -->
-  <!-- JavaScript -->
-  <tr>
-    <td>JavaScript (TypeScript)</td>
-    <td>
-      <a href="https://github.com/livekit/client-sdk-js" target="_blank" rel="noopener noreferrer">client-sdk-js</a>
-    </td>
-    <td>
-      <a href="https://github.com/livekit/livekit-react" target="_blank" rel="noopener noreferrer">React</a>
-    </td>
-    <td>
-      <a href="https://docs.livekit.io/client-sdk-js/" target="_blank" rel="noopener noreferrer">docs</a>
-      |
-      <a href="https://github.com/livekit/client-sdk-js/tree/main/example" target="_blank" rel="noopener noreferrer">JS example</a>
-      |
-      <a href="https://github.com/livekit/client-sdk-js/tree/main/example" target="_blank" rel="noopener noreferrer">React example</a>
-    </td>
-  </tr>
-  <!-- Swift -->
-  <tr>
-    <td>Swift (iOS / MacOS)</td>
-    <td>
-      <a href="https://github.com/livekit/client-sdk-swift" target="_blank" rel="noopener noreferrer">client-sdk-swift</a>
-    </td>
-    <td>Swift UI</td>
-    <td>
-      <a href="https://docs.livekit.io/client-sdk-swift/" target="_blank" rel="noopener noreferrer">docs</a>
-      |
-      <a href="https://github.com/livekit/client-example-swift" target="_blank" rel="noopener noreferrer">example</a>
-    </td>
-  </tr>
-  <!-- Kotlin -->
-  <tr>
-    <td>Kotlin (Android)</td>
-    <td>
-      <a href="https://github.com/livekit/client-sdk-android" target="_blank" rel="noopener noreferrer">client-sdk-android</a>
-    </td>
-    <td>Compose</td>
-    <td>
-      <a href="https://docs.livekit.io/client-sdk-android/index.html" target="_blank" rel="noopener noreferrer">docs</a>
-      |
-      <a href="https://github.com/livekit/client-sdk-android/tree/main/sample-app/src/main/java/io/livekit/android/sample" target="_blank" rel="noopener noreferrer">example</a>
-      |
-      <a href="https://github.com/livekit/client-sdk-android/tree/main/sample-app-compose/src/main/java/io/livekit/android/composesample" target="_blank" rel="noopener noreferrer">Compose example</a>
-    </td>
-  </tr>
-<!-- Flutter -->
-  <tr>
-    <td>Flutter (all platforms)</td>
-    <td>
-      <a href="https://github.com/livekit/client-sdk-flutter" target="_blank" rel="noopener noreferrer">client-sdk-flutter</a>
-    </td>
-    <td>native</td>
-    <td>
-      <a href="https://docs.livekit.io/client-sdk-flutter/" target="_blank" rel="noopener noreferrer">docs</a>
-      |
-      <a href="https://github.com/livekit/client-sdk-flutter/tree/main/example" target="_blank" rel="noopener noreferrer">example</a>
-    </td>
-  </tr>
-  <!-- Unity -->
-  <tr>
-    <td>Unity WebGL</td>
-    <td>
-      <a href="https://github.com/livekit/client-sdk-unity-web" target="_blank" rel="noopener noreferrer">client-sdk-unity-web</a>
-    </td>
-    <td></td>
-    <td>
-      <a href="https://livekit.github.io/client-sdk-unity-web/" target="_blank" rel="noopener noreferrer">docs</a>
-    </td>
-  </tr>
-  <!-- React Native -->
-  <tr>
-    <td>React Native (beta)</td>
-    <td>
-      <a href="https://github.com/livekit/client-sdk-react-native" target="_blank" rel="noopener noreferrer">client-sdk-react-native</a>
-    </td>
-    <td>native</td>
-    <td></td>
-  </tr>
-  <!-- Rust -->
-  <tr>
-    <td>Rust</td>
-    <td>
-      <a href="https://github.com/livekit/client-sdk-rust" target="_blank" rel="noopener noreferrer">client-sdk-rust</a>
-    </td>
-    <td></td>
-    <td></td>
-  </tr>
-</table>
-
-### Server SDKs
-
-Server SDKs enable your backend to generate [access tokens](https://docs.livekit.io/home/get-started/authentication/),
-call [server APIs](https://docs.livekit.io/reference/server/server-apis/), and
-receive [webhooks](https://docs.livekit.io/home/server/webhooks/). In addition, the Go SDK includes client capabilities,
-enabling you to build automations that behave like end-users.
-
-| Language                | Repo                                                                                    | Docs                                                        |
-| :---------------------- | :-------------------------------------------------------------------------------------- | :---------------------------------------------------------- |
-| Go                      | [server-sdk-go](https://github.com/livekit/server-sdk-go)                               | [docs](https://pkg.go.dev/github.com/livekit/server-sdk-go) |
-| JavaScript (TypeScript) | [server-sdk-js](https://github.com/livekit/server-sdk-js)                               | [docs](https://docs.livekit.io/server-sdk-js/)              |
-| Ruby                    | [server-sdk-ruby](https://github.com/livekit/server-sdk-ruby)                           |                                                             |
-| Java (Kotlin)           | [server-sdk-kotlin](https://github.com/livekit/server-sdk-kotlin)                       |                                                             |
-| Python (community)      | [python-sdks](https://github.com/livekit/python-sdks)                                   |                                                             |
-| PHP (community)         | [agence104/livekit-server-sdk-php](https://github.com/agence104/livekit-server-sdk-php) |                                                             |
-
-### Tools
-
--   [CLI](https://github.com/livekit/livekit-cli) - command line interface & load tester
--   [Docker image](https://hub.docker.com/r/livekit/livekit-server)
--   [Helm charts](https://github.com/livekit/livekit-helm)
 
 ## Install
 
 > [!TIP]
 > We recommend installing [LiveKit CLI](https://github.com/livekit/livekit-cli) along with the server. It lets you access
-> server APIs, create tokens, and generate test traffic.
+> server APIs, create tokens, generate test traffic, and scaffold and deploy agents.
 
 The following will install LiveKit's media server:
 
@@ -262,11 +135,11 @@ API Key: devkey
 API Secret: secret
 ```
 
-To customize your setup for production, refer to our [deployment docs](https://docs.livekit.io/deploy/)
+To customize your setup for production, refer to our [deployment docs](https://docs.livekit.io/transport/self-hosting/deployment/)
 
 ### Creating access token
 
-A user connecting to a LiveKit room requires an [access token](https://docs.livekit.io/home/get-started/authentication/#creating-a-token). Access
+A user connecting to a LiveKit room requires an [access token](https://docs.livekit.io/frontends/build/authentication/). Access
 tokens (JWT) encode the user's identity and the room permissions they've been granted. You can generate a token with our
 CLI:
 
@@ -280,7 +153,7 @@ lk token create \
 ### Test with example app
 
 Head over to our [example app](https://example.livekit.io) and enter a generated token to connect to your LiveKit
-server. This app is built with our [React SDK](https://github.com/livekit/livekit-react).
+server.
 
 Once connected, your video and audio are now being published to your new LiveKit instance!
 
@@ -299,24 +172,34 @@ This command publishes a looped demo video to a room. Due to how the video clip 
 there's a slight delay before the browser has sufficient data to begin rendering frames. This is an artifact of the
 simulation.
 
+### Adding an agent
+
+Agents join rooms as participants, the same way a browser or a phone does. Follow the
+[Voice AI quickstart](https://docs.livekit.io/agents/start/voice-ai/) to build one. An agent connects to a self-hosted
+server the same way it connects to LiveKit Cloud; when running without Cloud, use
+[model plugins](https://docs.livekit.io/agents/models/#plugins) in place of LiveKit Inference.
+
 ## Deployment
 
 ### Use LiveKit Cloud
 
-LiveKit Cloud is the fastest and most reliable way to run LiveKit. Every project gets free monthly bandwidth and
-transcoding credits.
+LiveKit Cloud is the fastest and most reliable way to run LiveKit. It runs in 19+ regions with 99.99% uptime and adds
+agent hosting, model inference, telephony, and observability on top of the server. The Build plan is free, with no
+credit card required.
 
 Sign up for [LiveKit Cloud](https://cloud.livekit.io/).
 
 ### Self-host
 
-Read our [deployment docs](https://docs.livekit.io/transport/self-hosting/) for more information.
+Read our [deployment docs](https://docs.livekit.io/transport/self-hosting/) for more information. Official
+[Docker images](https://hub.docker.com/r/livekit/livekit-server) and [Helm charts](https://github.com/livekit/livekit-helm)
+are available.
 
 ## Building from source
 
 Pre-requisites:
 
--   Go 1.23+ is installed
+-   Go 1.26+ is installed
 -   GOPATH/bin is in your PATH
 
 Then run
@@ -331,7 +214,8 @@ mage
 ## Contributing
 
 We welcome your contributions toward improving LiveKit! Please join us
-[on Slack](http://livekit.io/join-slack) to discuss your ideas and/or PRs.
+[on Slack](http://livekit.io/join-slack) or in the [Developer Community](https://community.livekit.io) to discuss your
+ideas and/or PRs.
 
 ## License
 
