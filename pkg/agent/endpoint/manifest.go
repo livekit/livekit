@@ -74,13 +74,6 @@ func ParseManifest(endpoints []*livekit.AgentHttp_AgentEndpoint) (*Manifest, err
 		if err != nil {
 			return nil, err
 		}
-		// bound route depth: it caps the replicated filter's prefix count and
-		// the edge matcher's walk (a request past a route's depth can't match it)
-		if d, err := RouteDepth(ep.GetPath()); err != nil {
-			return nil, err
-		} else if d > MaxRouteDepth {
-			return nil, fmt.Errorf("endpoint %q exceeds max route depth %d", ep.GetPath(), MaxRouteDepth)
-		}
 		if ep.GetKind() != livekit.AgentHttp_AEK_HTTP {
 			return nil, fmt.Errorf("endpoint %q has unsupported kind %s", ep.GetPath(), ep.GetKind())
 		}

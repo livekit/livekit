@@ -30,24 +30,6 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-// HeaderEndpointMiss marks a response the front produced ITSELF - a routing
-// miss (no matching route, wrong method, auth required, or no local capacity) -
-// as distinct from a response the worker's app returned through the bridge. A
-// relay caller keys its cross-node retry on this header, so a worker's own 404
-// (e.g. GET /users/999 for a missing user) is never mistaken for "this node
-// can't serve the path" and re-relayed. The value is the miss kind, so the
-// caller can surface the most informative aggregate status. The header is set
-// only on the private relay listener (see MarkMisses) and stripped by the relay
-// caller, so it never reaches a client.
-const HeaderEndpointMiss = "X-Livekit-Endpoint-Miss"
-
-const (
-	MissNotFound         = "notfound"
-	MissMethodNotAllowed = "methodnotallowed"
-	MissUnauthenticated  = "unauthenticated"
-	MissUnavailable      = "unavailable"
-)
-
 const (
 	// PathPrefix is the public route namespace: /agents/{agent_name}/{deployment}/{path...}
 	PathPrefix = "/agents/"
@@ -86,9 +68,6 @@ type Front struct {
 	fallback Fallback
 	// see WithSingleKeyFallback
 	singleKeyFallback bool
-	// see MarkMisses: set on the private relay listener so a relay caller can
-	// tell a routing miss from a worker-app response
-	markMisses bool
 }
 
 func NewFront(registry *Registry, resolveAPIKey APIKeyResolver, log logger.Logger) *Front {
@@ -108,12 +87,6 @@ type FallbackRequest struct {
 	Authenticated bool
 	AgentName     string
 	Deployment    string
-	// Method is the request's HTTP method, so a multi-node layer can select
-	// candidates method-aware (a node serving the path under a different method
-	// is not a candidate).
-	Method string
-	// Path within the deployment, '/'-rooted
-	Path string
 }
 
 // Fallback serves a request elsewhere (e.g. a multi-node relay); it reports
@@ -128,30 +101,11 @@ func (f *Front) WithFallback(fb Fallback) *Front {
 	return f
 }
 
-// MarkMisses tags the front's own routing-miss responses with HeaderEndpointMiss
-// so a relay caller can distinguish them from worker-app responses. Set it on
-// the private relay listener only; the public front must not (the header would
-// leak to clients, and its misses are final anyway).
-func (f *Front) MarkMisses() *Front {
-	f.markMisses = true
-	return f
-}
-
-// writeMiss writes a front-originated miss, tagging it with the kind when this
-// front marks misses (the relay listener) so the relay caller can retry past it
-// and aggregate the most informative status.
-func (f *Front) writeMiss(w http.ResponseWriter, status int, kind, msg string) {
-	if f.markMisses {
-		w.Header().Set(HeaderEndpointMiss, kind)
-	}
-	http.Error(w, msg, status)
-}
-
-// writeUnavailable writes a 503 with a Retry-After hint, the miss the front
+// writeUnavailable writes a 503 with a Retry-After hint, the response the front
 // returns when no worker can currently serve a request it did route.
 func (f *Front) writeUnavailable(w http.ResponseWriter, msg string) {
 	w.Header().Set("Retry-After", "1")
-	f.writeMiss(w, http.StatusServiceUnavailable, MissUnavailable, msg)
+	http.Error(w, msg, http.StatusServiceUnavailable)
 }
 
 // WithSingleKeyFallback resolves unauthenticated requests to the registry's
@@ -192,7 +146,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if apiKey == "" {
 		w.Header().Set("WWW-Authenticate", "Bearer")
-		f.writeMiss(w, http.StatusUnauthorized, MissUnauthenticated, "authentication required")
+		http.Error(w, "authentication required", http.StatusUnauthorized)
 		return
 	}
 
@@ -244,7 +198,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// nothing local can serve: hand off before the local status mapping
 		if f.fallback(w, r, &FallbackRequest{
 			APIKey: apiKey, Authenticated: authenticated,
-			AgentName: agentName, Deployment: deployment, Method: r.Method, Path: path,
+			AgentName: agentName, Deployment: deployment,
 		}) {
 			return
 		}
@@ -257,11 +211,11 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case restricted:
 			w.Header().Set("WWW-Authenticate", "Bearer")
-			f.writeMiss(w, http.StatusUnauthorized, MissUnauthenticated, "authentication required")
+			http.Error(w, "authentication required", http.StatusUnauthorized)
 		case partial:
-			f.writeMiss(w, http.StatusMethodNotAllowed, MissMethodNotAllowed, "method not allowed")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		default:
-			f.writeMiss(w, http.StatusNotFound, MissNotFound, "not found")
+			http.Error(w, "not found", http.StatusNotFound)
 		}
 		return
 	}
@@ -291,7 +245,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if bodyConsumed == 0 && f.fallback != nil {
 		if f.fallback(w, r, &FallbackRequest{
 			APIKey: apiKey, Authenticated: authenticated,
-			AgentName: agentName, Deployment: deployment, Method: r.Method, Path: path,
+			AgentName: agentName, Deployment: deployment,
 		}) {
 			return
 		}
