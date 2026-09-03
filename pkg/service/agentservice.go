@@ -354,7 +354,6 @@ func (h *AgentHandler) registerEndpoints(w *agent.Worker, sess endpoint.Session)
 		AgentName:  w.AgentName,
 		Deployment: w.Deployment,
 		Manifest:   manifest,
-		Endpoints:  w.Endpoints,
 		Draining:   w.Draining,
 	}
 	reg.SetSession(sess)

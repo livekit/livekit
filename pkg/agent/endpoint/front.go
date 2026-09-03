@@ -101,8 +101,8 @@ func (f *Front) WithFallback(fb Fallback) *Front {
 	return f
 }
 
-// writeUnavailable writes a 503 with a Retry-After hint, the response the front
-// returns when no worker can currently serve a request it did route.
+// writeUnavailable writes a 503 with a Retry-After hint: no local worker can
+// serve the request and no fallback placed it elsewhere.
 func (f *Front) writeUnavailable(w http.ResponseWriter, msg string) {
 	w.Header().Set("Retry-After", "1")
 	http.Error(w, msg, http.StatusServiceUnavailable)
@@ -195,7 +195,10 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if route == nil && f.fallback != nil {
-		// nothing local can serve: hand off before the local status mapping
+		// nothing local matched: hand off to the multi-node fallback (relay to a
+		// node holding the deployment) before the local status mapping. The
+		// serving node's relay listener installs no fallback of its own, so a
+		// relayed request is served or errored there and never re-relays.
 		if f.fallback(w, r, &FallbackRequest{
 			APIKey: apiKey, Authenticated: authenticated,
 			AgentName: agentName, Deployment: deployment,

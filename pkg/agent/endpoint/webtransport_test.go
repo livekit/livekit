@@ -91,7 +91,6 @@ func handleSession(reg *endpoint.Registry, sess *webtransport.Session) {
 		AgentName:  rw.GetAgentName(),
 		Deployment: rw.GetDeployment(),
 		Manifest:   manifest,
-		Endpoints:  rw.GetEndpoints(),
 	}
 	registration.SetSession(endpoint.NewWebTransportSession(sess, endpoint.DefaultMaxStreams))
 	_ = reg.Register(registration)

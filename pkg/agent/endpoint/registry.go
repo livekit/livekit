@@ -19,8 +19,6 @@ import (
 	"errors"
 	"slices"
 	"sync"
-
-	"github.com/livekit/protocol/livekit"
 )
 
 // DefaultDeployment is the URL segment that addresses workers registered with an
@@ -53,9 +51,6 @@ type Registration struct {
 	AgentName  string
 	Deployment string
 	Manifest   *Manifest
-	// Endpoints is the raw manifest as declared, kept so a multi-node layer can
-	// replicate the route set for remote path matching without re-deriving it.
-	Endpoints []*livekit.AgentHttp_AgentEndpoint
 
 	// Draining is provided by the control-plane layer that owns the worker; a
 	// draining worker takes no new streams. Worker selection uses live in-flight
