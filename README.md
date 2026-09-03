@@ -12,8 +12,8 @@
 
 [LiveKit](https://livekit.com) is an open source platform for building voice, video, and physical AI agents.
 This repository is the LiveKit server: a scalable, distributed WebRTC SFU that moves realtime audio, video, and
-data between people, devices, and AI models. It's the transport layer under everything else LiveKit ships. The
-SDKs, agents frameworks, and companion services are linked in the table at the bottom of this page.
+data between people, devices, and AI models. The SDKs, agents frameworks, and companion services are linked in
+the table at the bottom of this page.
 
 LiveKit's server is written in Go, using the awesome [Pion WebRTC](https://github.com/pion/webrtc) implementation.
 
