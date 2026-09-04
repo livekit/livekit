@@ -110,6 +110,8 @@ type Config struct {
 
 	NodeStats NodeStatsConfig `yaml:"node_stats,omitempty"`
 
+	Shutdown ShutdownConfig `yaml:"shutdown,omitempty"`
+
 	EnableDataTracks bool `yaml:"enable_data_tracks,omitempty"`
 
 	EnableParticipantDataBlob bool `yaml:"enable_participant_data_blob,omitempty"`
@@ -513,6 +515,31 @@ var DefaultNodeStatsConfig = NodeStatsConfig{
 	StatsMaxDelay:                 30 * time.Second,
 }
 
+// ShutdownConfig bounds how long a graceful shutdown waits for the
+// participants on this node to leave it. They leave over signalling this node
+// routes through the message bus, so a node that has stopped hearing its own
+// keepalive is waiting for something that cannot happen -- and holds its place
+// in the registry as SHUTTING_DOWN for as long as it waits.
+type ShutdownConfig struct {
+	// DrainTimeout is how long to wait for the participants before shutting
+	// down anyway. Defaults to 0, which waits for as long as they take, as this
+	// server did before the deadline existed: a deployment that would rather
+	// end a drain than let it run has to say so, and say how long.
+	DrainTimeout time.Duration `yaml:"drain_timeout,omitempty"`
+
+	// UnreachableDrainTimeout bounds that wait for a node that cannot hear its
+	// own keepalive. Measured from the last one that made it back, so a brief
+	// outage the node recovers from does not count against it, and checked on a
+	// poll a few seconds apart, so it can overshoot by that much. Defaults to 0,
+	// which waits for as long as the participants take.
+	UnreachableDrainTimeout time.Duration `yaml:"unreachable_drain_timeout,omitempty"`
+}
+
+var DefaultShutdownConfig = ShutdownConfig{
+	DrainTimeout:            0,
+	UnreachableDrainTimeout: 0,
+}
+
 var DefaultConfig = Config{
 	Port: 7880,
 	RTC: RTCConfig{
@@ -610,6 +637,7 @@ var DefaultConfig = Config{
 	Metric:           metric.DefaultMetricConfig,
 	WebHook:          webhook.DefaultWebHookConfig,
 	NodeStats:        DefaultNodeStatsConfig,
+	Shutdown:         DefaultShutdownConfig,
 	API:              DefaultAPIConfig(),
 	EnableDataTracks: true,
 }

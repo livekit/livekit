@@ -16,6 +16,7 @@ package routing
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"go.uber.org/atomic"
@@ -38,6 +39,10 @@ type LocalRouter struct {
 	requestChannels  map[string]*MessageChannel
 	responseChannels map[string]*MessageChannel
 	isStarted        atomic.Bool
+	// closed by Stop, which is final: a stopped router does not start again,
+	// the same way a stopped RedisRouter cannot, its context being cancelled
+	stopped  chan struct{}
+	stopOnce sync.Once
 }
 
 func NewLocalRouter(
@@ -53,6 +58,7 @@ func NewLocalRouter(
 		nodeStatsConfig:   nodeStatsConfig,
 		requestChannels:   make(map[string]*MessageChannel),
 		responseChannels:  make(map[string]*MessageChannel),
+		stopped:           make(chan struct{}),
 	}
 }
 
@@ -126,6 +132,11 @@ func (r *LocalRouter) StartParticipantSignalWithNodeID(ctx context.Context, room
 }
 
 func (r *LocalRouter) Start() error {
+	select {
+	case <-r.stopped:
+		return ErrRouterStopped
+	default:
+	}
 	if r.isStarted.Swap(true) {
 		return nil
 	}
@@ -138,19 +149,28 @@ func (r *LocalRouter) Drain() {
 	r.currentNode.SetState(livekit.NodeState_SHUTTING_DOWN)
 }
 
-func (r *LocalRouter) Stop() {}
+func (r *LocalRouter) Stop() {
+	r.stopOnce.Do(func() {
+		close(r.stopped)
+	})
+}
 
 func (r *LocalRouter) GetRegion() string {
 	return r.currentNode.Region()
 }
 
 func (r *LocalRouter) statsWorker() {
+	ticker := time.NewTicker(r.nodeStatsConfig.StatsUpdateInterval)
+	defer ticker.Stop()
 	for {
-		if !r.isStarted.Load() {
+		select {
+		case <-r.stopped:
 			return
+		case <-ticker.C:
+			r.currentNode.UpdateNodeStats()
+			// no message bus here, so there is no round trip to wait on
+			r.currentNode.UpdateKeepalive()
 		}
-		<-time.After(r.nodeStatsConfig.StatsUpdateInterval)
-		r.currentNode.UpdateNodeStats()
 	}
 }
 

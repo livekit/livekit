@@ -14,6 +14,10 @@
 
 # main TCP port for RoomService and RTC endpoint
 # for production setups, this port should be placed behind a load balancer with TLS
+#
+# health checks are served on this port too: /healthz for liveness, /readyz for
+# readiness, and `GET /` for the deployments that predate them. point a liveness
+# probe at /healthz -- the other two depend on redis. see deploy/README.md
 port: 7880
 
 # when redis is set, LiveKit will automatically operate in a fully distributed fashion
@@ -399,3 +403,39 @@ keys:
 #   # routes). requests larger than this are rejected before their body is decoded, so large messages
 #   # cannot exhaust memory. defaults to 10 MiB, 0 for no limit
 #   max_api_request_body_size: 10485760
+
+# how often the node samples itself, and how stale those samples may get before
+# it stops calling itself healthy. the health endpoints are read off these
+# clocks, so a node told to sample less often is given proportionally longer to
+# do it -- see deploy/README.md
+# node_stats:
+#   # how often to sample cpu, memory and traffic, and to publish the keepalive
+#   # the node sends to itself. defaults to 2s
+#   stats_update_interval: 2s
+#   # windows over which the traffic rates in those samples are averaged. the
+#   # node keeps enough history for the longest of them. defaults to one 10s window
+#   stats_rate_measurement_intervals:
+#     - 10s
+#   # how long the node may go without a fresh sample before /healthz reports it
+#   # as stalled, and how long its keepalive may be delayed before it dumps its
+#   # goroutines in case it has deadlocked. the allowance is the larger of this
+#   # and two update intervals. defaults to 30s
+#   stats_max_delay: 30s
+
+# bounds on how long a graceful shutdown waits for the participants on this
+# node to leave it. they bound that wait, not the shutdown as a whole, and
+# neither is set by default: a deadline ends the drain by disconnecting whoever
+# is still there, so a deployment has to ask for one and say how long
+# shutdown:
+#   # give up on the participants after this long and shut down anyway. keep it
+#   # below the terminationGracePeriodSeconds of your deployment, so that the
+#   # server ends the drain itself rather than being killed mid-shutdown.
+#   # unset waits for as long as they take, which is what this server has
+#   # always done
+#   drain_timeout: 30m
+#   # give up sooner when the node has gone this long without hearing its own
+#   # keepalive come back to it -- participants cannot leave a node whose
+#   # signalling no longer routes. measured from the last keepalive that made
+#   # it, so a brief outage the node recovers from does not count against it.
+#   # unset waits for as long as the participants take
+#   unreachable_drain_timeout: 5m

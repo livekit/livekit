@@ -213,7 +213,7 @@ func createMultiNodeServer(nodeID string, port uint32, configUpdater func(*confi
 	conf.Port = port
 	conf.RTC.UDPPort = rtcconfig.PortRange{Start: int(port) + 1}
 	conf.RTC.TCPPort = port + 2
-	conf.Redis.Address = "localhost:6379"
+	conf.Redis.Address = redisAddr
 	conf.Keys = map[string]string{testApiKey: testApiSecret}
 	conf.EnableDataTracks = true
 	if configUpdater != nil {
@@ -316,9 +316,23 @@ func createRTCClientWithToken(token string, port int, testRTCServicePath testRTC
 	return c
 }
 
+// redisAddr is where the multi-node test servers and redisClient look for redis.
+// Tests that need to control the redis instance itself -- to simulate an outage,
+// say -- point this at one they started, with useRedisAddr.
+var redisAddr = "localhost:6379"
+
+// useRedisAddr runs the calling test against a different redis instance. The
+// suite's tests share fixed ports and so never run in parallel; this would need
+// to become per-test state if that changed.
+func useRedisAddr(t *testing.T, addr string) {
+	prev := redisAddr
+	redisAddr = addr
+	t.Cleanup(func() { redisAddr = prev })
+}
+
 func redisClient() *redis.Client {
 	return redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
+		Addr: redisAddr,
 	})
 }
 
