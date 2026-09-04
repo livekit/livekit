@@ -84,6 +84,7 @@ type Config struct {
 	DebugHandler   DebugHandlerConfig       `yaml:"debug_handler,omitempty"`
 	RTC            RTCConfig                `yaml:"rtc,omitempty"`
 	Redis          redisLiveKit.RedisConfig `yaml:"redis,omitempty"`
+	ClusterID      string                   `yaml:"cluster_id,omitempty"`
 	Audio          sfu.AudioConfig          `yaml:"audio,omitempty"`
 	Video          VideoConfig              `yaml:"video,omitempty"`
 	Room           RoomConfig               `yaml:"room,omitempty"`
