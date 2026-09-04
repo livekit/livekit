@@ -2204,6 +2204,9 @@ func (p *ParticipantImpl) setupSubscriptionManager() {
 		SubscriptionLimitAudio:   p.params.SubscriptionLimitAudio,
 		UseOneShotSignallingMode: p.params.UseOneShotSignallingMode,
 	})
+	p.SubscriptionManager.OnSubscribeStatusChanged(func(publisherID livekit.ParticipantID, subscribed bool) {
+		p.listener().OnSubscribeStatusChanged(p, publisherID, subscribed)
+	})
 }
 
 func (p *ParticipantImpl) MetricsCollectorTimeToCollectMetrics() {
