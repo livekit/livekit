@@ -80,8 +80,6 @@ type SubscriptionManager struct {
 	closeCh              chan struct{}
 	doneCh               chan struct{}
 
-	onSubscribeStatusChanged func(publisherID livekit.ParticipantID, subscribed bool)
-
 	dataTrackSubscriptions map[livekit.TrackID]*dataTrackSubscription
 }
 
@@ -394,15 +392,6 @@ func (m *SubscriptionManager) UpdateDataTrackSubscriptionOptions(trackID livekit
 	m.lock.Unlock()
 
 	sub.setSubscriptionOptions(subscriptionOptions)
-}
-
-// OnSubscribeStatusChanged callback will be notified when a participant subscribes or unsubscribes to another participant
-// it will only fire once per publisher. If current participant is subscribed to multiple tracks from another, this
-// callback will only fire once.
-func (m *SubscriptionManager) OnSubscribeStatusChanged(fn func(publisherID livekit.ParticipantID, subscribed bool)) {
-	m.lock.Lock()
-	m.onSubscribeStatusChanged = fn
-	m.lock.Unlock()
 }
 
 func (m *SubscriptionManager) WaitUntilSubscribed(timeout time.Duration) error {
@@ -1193,7 +1182,6 @@ func (m *SubscriptionManager) markSubscribedTo(publisherID livekit.ParticipantID
 	firstSubscribe := false
 	m.lock.Lock()
 	pTracks := m.subscribedTo[publisherID]
-	changedCB := m.onSubscribeStatusChanged
 	if pTracks == nil {
 		pTracks = make(map[livekit.TrackID]struct{})
 		m.subscribedTo[publisherID] = pTracks
@@ -1202,8 +1190,12 @@ func (m *SubscriptionManager) markSubscribedTo(publisherID livekit.ParticipantID
 	pTracks[trackID] = struct{}{}
 	m.lock.Unlock()
 
-	if changedCB != nil && firstSubscribe {
-		changedCB(publisherID, true)
+	// notify the listener only once per publisher, on the first subscription to it. If the
+	// participant is subscribed to multiple tracks from the same publisher, this fires once.
+	if firstSubscribe {
+		if l, ok := m.params.Participant.GetParticipantListener().(types.LocalParticipantListener); ok {
+			l.OnSubscribeStatusChanged(m.params.Participant, publisherID, true)
+		}
 	}
 }
 
@@ -1211,7 +1203,6 @@ func (m *SubscriptionManager) unmarkSubscribedTo(publisherID livekit.Participant
 	// remove from subscribedTo
 	lastSubscription := false
 	m.lock.Lock()
-	changedCB := m.onSubscribeStatusChanged
 	pTracks := m.subscribedTo[publisherID]
 	if pTracks != nil {
 		delete(pTracks, trackID)
@@ -1221,8 +1212,12 @@ func (m *SubscriptionManager) unmarkSubscribedTo(publisherID livekit.Participant
 		}
 	}
 	m.lock.Unlock()
-	if changedCB != nil && lastSubscription {
-		go changedCB(publisherID, false)
+
+	// notify the listener only once per publisher, on the last subscription to it going away
+	if lastSubscription {
+		if l, ok := m.params.Participant.GetParticipantListener().(types.LocalParticipantListener); ok {
+			go l.OnSubscribeStatusChanged(m.params.Participant, publisherID, false)
+		}
 	}
 }
 

@@ -58,7 +58,8 @@ func TestSubscribe(t *testing.T) {
 		}
 		numParticipantSubscribed := atomic.Int32{}
 		numParticipantUnsubscribed := atomic.Int32{}
-		sm.OnSubscribeStatusChanged(func(pubID livekit.ParticipantID, subscribed bool) {
+		pl := sm.params.Participant.GetParticipantListener().(*typesfakes.FakeLocalParticipantListener)
+		pl.OnSubscribeStatusChangedCalls(func(_ types.LocalParticipant, pubID livekit.ParticipantID, subscribed bool) {
 			if subscribed {
 				numParticipantSubscribed.Add(1)
 			} else {
@@ -267,7 +268,8 @@ func TestSubscribeStatusChanged(t *testing.T) {
 	sm.params.TrackResolver = resolver.Resolve
 	numParticipantSubscribed := atomic.Int32{}
 	numParticipantUnsubscribed := atomic.Int32{}
-	sm.OnSubscribeStatusChanged(func(pubID livekit.ParticipantID, subscribed bool) {
+	pl := sm.params.Participant.GetParticipantListener().(*typesfakes.FakeLocalParticipantListener)
+	pl.OnSubscribeStatusChangedCalls(func(_ types.LocalParticipant, pubID livekit.ParticipantID, subscribed bool) {
 		if subscribed {
 			numParticipantSubscribed.Add(1)
 		} else {
@@ -372,7 +374,8 @@ func TestSubscriptionLimits(t *testing.T) {
 	}
 	numParticipantSubscribed := atomic.Int32{}
 	numParticipantUnsubscribed := atomic.Int32{}
-	sm.OnSubscribeStatusChanged(func(pubID livekit.ParticipantID, subscribed bool) {
+	pl := sm.params.Participant.GetParticipantListener().(*typesfakes.FakeLocalParticipantListener)
+	pl.OnSubscribeStatusChangedCalls(func(_ types.LocalParticipant, pubID livekit.ParticipantID, subscribed bool) {
 		if subscribed {
 			numParticipantSubscribed.Add(1)
 		} else {
@@ -547,6 +550,9 @@ func newTestSubscriptionManagerWithParams(params testSubscriptionParams) *Subscr
 
 	tl := &typesfakes.FakeParticipantTelemetryListener{}
 	p.GetTelemetryListenerReturns(tl)
+
+	pl := &typesfakes.FakeLocalParticipantListener{}
+	p.GetParticipantListenerReturns(pl)
 
 	return NewSubscriptionManager(SubscriptionManagerParams{
 		Participant:         p,
