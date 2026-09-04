@@ -114,7 +114,6 @@ func TestSubscribe(t *testing.T) {
 		require.Eventually(t, func() bool {
 			return numParticipantSubscribed.Load() == 2
 		}, subSettleTimeout, subCheckInterval, "participant subscribe status was not updated twice")
-		// the unsubscribed callback is delivered on a goroutine of its own
 		require.Eventually(t, func() bool {
 			return numParticipantUnsubscribed.Load() == 1
 		}, subSettleTimeout, subCheckInterval, "participant unsubscribe status was not updated")

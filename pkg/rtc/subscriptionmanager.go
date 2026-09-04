@@ -1213,10 +1213,13 @@ func (m *SubscriptionManager) unmarkSubscribedTo(publisherID livekit.Participant
 	}
 	m.lock.Unlock()
 
-	// notify the listener only once per publisher, on the last subscription to it going away
+	// notify the listener only once per publisher, on the last subscription to it going away.
+	// delivered synchronously (like the subscribe notification) so that on a quick track
+	// close + resubscribe the `false` cannot be reordered after the following `true` and
+	// leave the publisher's speaker/quality state stale.
 	if lastSubscription {
 		if l, ok := m.params.Participant.GetParticipantListener().(types.LocalParticipantListener); ok {
-			go l.OnSubscribeStatusChanged(m.params.Participant, publisherID, false)
+			l.OnSubscribeStatusChanged(m.params.Participant, publisherID, false)
 		}
 	}
 }
