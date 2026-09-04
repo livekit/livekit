@@ -54,6 +54,11 @@ type Packet struct {
 	WriteStream        webrtc.TrackLocalWriter
 	Pool               *sync.Pool
 	PoolEntity         *[]byte
+	// OnSent is invoked after the packet has been written to the wire with
+	// the final header (pacer patched extensions included). Header and
+	// payload are pooled after the call returns, implementations must copy
+	// anything they keep.
+	OnSent func(hdr *rtp.Header, payload []byte)
 }
 
 type Pacer interface {
