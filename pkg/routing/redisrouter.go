@@ -83,18 +83,41 @@ func (r *RedisRouter) UnregisterNode() error {
 }
 
 func (r *RedisRouter) RemoveDeadNodes() error {
+	// a node that cannot hear its own keepalive is looking at a bus that has
+	// stopped carrying registrations, not at a fleet that has died
+	if !r.hearsItself() {
+		return nil
+	}
+
 	nodes, err := r.ListNodes()
 	if err != nil {
 		return err
 	}
+
+	dead := make([]string, 0, len(nodes))
 	for _, n := range nodes {
-		if !selector.IsAvailable(n) {
-			if err := r.rc.HDel(context.Background(), NodesKey, n.Id).Err(); err != nil {
-				return err
-			}
+		// this node's own entry is the one it is least able to judge: its
+		// registration goes stale while its local stats do not
+		if n.Id != string(r.currentNode.NodeID()) && selector.IsDead(n) {
+			dead = append(dead, n.Id)
 		}
 	}
-	return nil
+	if len(dead) == 0 {
+		return nil
+	}
+
+	return r.rc.HDel(r.ctx, NodesKey, dead...).Err()
+}
+
+// hearsItself reports whether this node's own keepalive has come back to it
+// recently enough for what it reads about the others to mean anything.
+// StatsMaxDelay is what the stats worker already takes for this path being
+// wedged; half the timeout is the ceiling over that, so that a peer always has
+// to be at least the other half further behind than this node before it can be
+// buried, whatever the delay is set to.
+func (r *RedisRouter) hearsItself() bool {
+	fresh := min(r.nodeStatsConfig.StatsMaxDelay, selector.DeadNodeTimeout/2)
+	return r.currentNode.SecondsSinceNodeStatsUpdate() <= fresh.Seconds()
 }
 
 // GetNodeForRoom finds the node where the room is hosted at
@@ -176,6 +199,7 @@ func (r *RedisRouter) Start() error {
 
 	workerStarted := make(chan error)
 	go r.statsWorker()
+	go r.deadNodeWorker()
 	go r.keepaliveWorker(workerStarted)
 
 	// wait until worker is running
@@ -222,6 +246,55 @@ func (r *RedisRouter) statsWorker() {
 			}
 		case <-r.ctx.Done():
 			return
+		}
+	}
+}
+
+// sweepDue reports whether a sweep may run, which takes a whole timeout since
+// this node last could not hear itself, and another since the last sweep, that
+// second one being what holds this to the pace of what it watches for rather
+// than to the pace of the ticker.
+func sweepDue(now, unheard, lastSweep time.Time) bool {
+	return now.Sub(unheard) >= selector.DeadNodeTimeout &&
+		now.Sub(lastSweep) >= selector.DeadNodeTimeout
+}
+
+// deadNodeWorker sweeps the registrations of nodes that are gone. A node killed
+// outright never unregisters itself and nothing else deletes what it leaves
+// behind, so this runs while the cluster does rather than only when a node
+// happens to start.
+func (r *RedisRouter) deadNodeWorker() {
+	// sampled on the stats interval rather than on the timeout it guards: a
+	// tick as coarse as that timeout cannot see an outage shorter than one,
+	// which is the length that makes a peer look dead in the first place
+	ticker := time.NewTicker(r.nodeStatsConfig.StatsUpdateInterval)
+	defer ticker.Stop()
+
+	// starting up counts as not having heard itself, so the first sweep comes a
+	// whole timeout in -- as does the first after an outage, which gives the
+	// peers coming back from it the time to re-register that this node took
+	unheard := time.Now()
+	var lastSweep time.Time
+	for {
+		select {
+		case <-r.ctx.Done():
+			return
+		case <-ticker.C:
+			now := time.Now()
+			// the sweep asks this too, for whoever reaches it through the
+			// Router interface; here it is asked to date the outage
+			if !r.hearsItself() {
+				unheard = now
+				continue
+			}
+			if !sweepDue(now, unheard, lastSweep) {
+				continue
+			}
+
+			lastSweep = now
+			if err := r.RemoveDeadNodes(); err != nil {
+				logger.Errorw("could not remove dead nodes", err)
+			}
 		}
 	}
 }
