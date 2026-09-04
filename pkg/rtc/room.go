@@ -1725,25 +1725,25 @@ func (r *Room) connectionQualityWorker() {
 		// and without a later quality change it would never receive their quality
 		for pID := range toldQualityOf {
 			if _, nowOk := nowConnectionInfos[pID]; !nowOk {
+				// participant is not ACTIVE any more
 				delete(toldQualityOf, pID)
 			}
 		}
-		for _, op := range participants {
-			if sendUpdate {
-				break
-			}
-			if !op.ProtocolVersion().SupportsConnectionQuality() || op.State() != livekit.ParticipantInfo_ACTIVE {
-				continue
-			}
-			for _, sid := range op.GetSubscribedParticipants() {
-				if _, nowOk := nowConnectionInfos[sid]; !nowOk {
-					continue
+		if !sendUpdate {
+			sendUpdate = slices.ContainsFunc(participants, func(op types.LocalParticipant) bool {
+				if !op.ProtocolVersion().SupportsConnectionQuality() || op.State() != livekit.ParticipantInfo_ACTIVE {
+					return false
 				}
-				if _, told := toldQualityOf[op.ID()][sid]; !told {
-					sendUpdate = true
-					break
+				for _, sid := range op.GetSubscribedParticipants() {
+					if _, nowOk := nowConnectionInfos[sid]; !nowOk {
+						continue
+					}
+					if _, told := toldQualityOf[op.ID()][sid]; !told {
+						return true
+					}
 				}
-			}
+				return false
+			})
 		}
 
 		if !sendUpdate {
@@ -1775,17 +1775,19 @@ func (r *Room) connectionQualityWorker() {
 				continue
 			}
 
-			// remember which participants' quality this participant is being told about in this update
+			if err := op.SendConnectionQualityUpdate(update); err != nil {
+				r.logger.Warnw("could not send connection quality update", err,
+					"participant", op.Identity())
+				continue
+			}
+
+			// remember which participants' quality this participant has been sent,
+			// only after a successful send so that a failed one is retried on next tick
 			told := make(map[livekit.ParticipantID]struct{}, len(update.Updates))
 			for _, info := range update.Updates {
 				told[livekit.ParticipantID(info.ParticipantSid)] = struct{}{}
 			}
 			toldQualityOf[op.ID()] = told
-			
-			if err := op.SendConnectionQualityUpdate(update); err != nil {
-				r.logger.Warnw("could not send connection quality update", err,
-					"participant", op.Identity())
-			}
 		}
 
 		prevConnectionInfos = nowConnectionInfos
