@@ -1681,6 +1681,8 @@ func (r *Room) connectionQualityWorker() {
 	defer ticker.Stop()
 
 	prevConnectionInfos := make(map[livekit.ParticipantID]*livekit.ConnectionQualityInfo)
+	// per participant, the participants whose quality it was told about in its last update
+	toldQualityOf := make(map[livekit.ParticipantID]map[livekit.ParticipantID]struct{})
 	// send updates to only users that are subscribed to each other
 	for !r.IsClosed() {
 		<-ticker.C
@@ -1718,6 +1720,32 @@ func (r *Room) connectionQualityWorker() {
 			}
 		}
 
+		// also send if a participant is subscribed to someone whose quality it has never been told about:
+		// its subscriptions may have been established after the tick that announced it as a new entrant,
+		// and without a later quality change it would never receive their quality
+		for pID := range toldQualityOf {
+			if _, nowOk := nowConnectionInfos[pID]; !nowOk {
+				delete(toldQualityOf, pID)
+			}
+		}
+		for _, op := range participants {
+			if sendUpdate {
+				break
+			}
+			if !op.ProtocolVersion().SupportsConnectionQuality() || op.State() != livekit.ParticipantInfo_ACTIVE {
+				continue
+			}
+			for _, sid := range op.GetSubscribedParticipants() {
+				if _, nowOk := nowConnectionInfos[sid]; !nowOk {
+					continue
+				}
+				if _, told := toldQualityOf[op.ID()][sid]; !told {
+					sendUpdate = true
+					break
+				}
+			}
+		}
+
 		if !sendUpdate {
 			prevConnectionInfos = nowConnectionInfos
 			continue
@@ -1746,6 +1774,14 @@ func (r *Room) connectionQualityWorker() {
 				// no change
 				continue
 			}
+
+			// remember which participants' quality this participant is being told about in this update
+			told := make(map[livekit.ParticipantID]struct{}, len(update.Updates))
+			for _, info := range update.Updates {
+				told[livekit.ParticipantID(info.ParticipantSid)] = struct{}{}
+			}
+			toldQualityOf[op.ID()] = told
+			
 			if err := op.SendConnectionQualityUpdate(update); err != nil {
 				r.logger.Warnw("could not send connection quality update", err,
 					"participant", op.Identity())
