@@ -220,6 +220,22 @@ type CongestionControlConfig struct {
 	SendSideBWE      sendsidebwe.SendSideBWEConfig `yaml:"send_side_bwe,omitempty"`
 }
 
+// Validate reports configuration that would otherwise be ignored at runtime.
+func (c CongestionControlConfig) Validate() error {
+	switch pacer.PacerBehavior(c.SendSideBWEPacer) {
+	case "", pacer.PacerBehaviorPassThrough, pacer.PacerBehaviorNoQueue, pacer.PacerBehaviorLeakybucket:
+		return nil
+	default:
+		return fmt.Errorf(
+			"invalid send_side_bwe_pacer %q, must be one of %q, %q, %q",
+			c.SendSideBWEPacer,
+			pacer.PacerBehaviorPassThrough,
+			pacer.PacerBehaviorNoQueue,
+			pacer.PacerBehaviorLeakybucket,
+		)
+	}
+}
+
 type PlayoutDelayConfig struct {
 	Enabled bool `yaml:"enabled,omitempty"`
 	Min     int  `yaml:"min,omitempty"`
@@ -643,6 +659,10 @@ func NewConfig(confString string, strictMode bool, c *cli.Command, baseFlags []c
 
 	if err := conf.RTC.Validate(conf.Development); err != nil {
 		return nil, fmt.Errorf("could not validate RTC config: %v", err)
+	}
+
+	if err := conf.RTC.CongestionControl.Validate(); err != nil {
+		return nil, fmt.Errorf("could not validate congestion control config: %v", err)
 	}
 
 	conf.NormalizeTURNTTLs()

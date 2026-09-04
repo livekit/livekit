@@ -579,12 +579,25 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 				Config: params.CongestionControlConfig.SendSideBWE,
 				Logger: params.Logger,
 			})
-			switch pacer.PacerBehavior(params.CongestionControlConfig.SendSideBWEPacer) {
+			switch behavior := pacer.PacerBehavior(params.CongestionControlConfig.SendSideBWEPacer); behavior {
 			case pacer.PacerBehaviorPassThrough:
 				t.pacer = pacer.NewPassThrough(params.Logger, t.bwe)
 			case pacer.PacerBehaviorNoQueue:
 				t.pacer = pacer.NewNoQueue(params.Logger, t.bwe)
 			default:
+				// leaky-bucket lands here: it is a recognized value, but LeakyBucket paces
+				// to a bitrate set through Pacer.SetBitrate and nothing drives that from
+				// the bandwidth estimate, so it would pace at a fixed rate and ignore
+				// congestion. Unknown values are rejected by CongestionControlConfig.
+				// Validate, so they only reach here from callers building TransportParams
+				// directly.
+				if behavior != "" {
+					params.Logger.Warnw(
+						"send side BWE pacer unavailable, falling back", nil,
+						"pacerBehavior", behavior,
+						"fallback", pacer.PacerBehaviorNoQueue,
+					)
+				}
 				t.pacer = pacer.NewNoQueue(params.Logger, t.bwe)
 			}
 		} else {
