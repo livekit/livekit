@@ -61,6 +61,11 @@ import (
 const (
 	tokenRefreshInterval = 5 * time.Minute
 	tokenDefaultTTL      = 10 * time.Minute
+
+	// roomStoreLockTimeout bounds how long a same-name CreateRoom may wait for
+	// the in-progress room-state deletion (see deleteRoomIfCurrent). Matched to
+	// the allocator's own 5s lock window in StandardRoomAllocator.CreateRoom.
+	roomStoreLockTimeout = 5 * time.Second
 )
 
 type iceConfigCacheKey struct {
@@ -188,13 +193,44 @@ func (r *RoomManager) GetRoom(_ context.Context, roomName livekit.RoomName) *rtc
 	return r.rooms[roomName]
 }
 
-// deleteRoom completely deletes all room information, including active sessions, room store, and routing info
-func (r *RoomManager) deleteRoom(ctx context.Context, roomName livekit.RoomName) error {
-	logger.Infow("deleting room state", "room", roomName)
+// deleteRoomIfCurrent deletes the room state only when the room currently
+// registered under the name is the given room. It is atomic with the map
+// mutation, so a same-name recreate cannot race between the identity check and
+// the delete and have its state wiped by an older room's teardown.
+//
+// The persistent-state cleanup is coordinated with recreation through the
+// room store's per-room lock (the same one StandardRoomAllocator.CreateRoom
+// takes around LoadRoom/StoreRoom): without it, a recreate that lands between
+// releasing r.lock and deleteRoomState could have its freshly stored room
+// record wiped by the stale deletion below.
+func (r *RoomManager) deleteRoomIfCurrent(ctx context.Context, roomName livekit.RoomName, room *rtc.Room) bool {
 	r.lock.Lock()
+	current := r.rooms[roomName]
+	if current != room {
+		r.lock.Unlock()
+		return false
+	}
 	delete(r.rooms, roomName)
 	r.lock.Unlock()
 
+	// Block a same-name CreateRoom (LockRoom + LoadRoom + StoreRoom) until the
+	// persistent state is fully cleared, so the new room always starts from a
+	// fresh SID instead of the old one.
+	token, err := r.roomStore.LockRoom(ctx, roomName, roomStoreLockTimeout)
+	if err != nil {
+		room.Logger().Errorw("could not lock room for state deletion", err)
+	} else {
+		defer func() { _ = r.roomStore.UnlockRoom(ctx, roomName, token) }()
+	}
+
+	if err := r.deleteRoomState(ctx, roomName); err != nil {
+		room.Logger().Errorw("could not delete room", err)
+	}
+	return true
+}
+
+func (r *RoomManager) deleteRoomState(ctx context.Context, roomName livekit.RoomName) error {
+	logger.Infow("deleting room state", "room", roomName)
 	var err, err2 error
 	wg := sync.WaitGroup{}
 	wg.Add(2)
@@ -699,8 +735,16 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 		roomInfo := newRoom.ToProto()
 		r.telemetry.RoomEnded(ctx, roomInfo, reason.ToProto())
 		prometheus.RoomEnded(time.Unix(roomInfo.CreationTime, 0))
-		if err := r.deleteRoom(ctx, roomName); err != nil {
-			newRoom.Logger().Errorw("could not delete room", err)
+
+		// Only clear the room state if this room is still the one registered
+		// under the name. A same-name room may have been created while this
+		// room was winding down (e.g. DeleteRoom pre-clears the state, then a
+		// recreate lands before the old room's participants finish closing);
+		// deleting unconditionally here would wipe the new room's state. The
+		// identity check and the map delete are atomic, so a recreate cannot
+		// slip between them.
+		if !r.deleteRoomIfCurrent(ctx, roomName, newRoom) {
+			newRoom.Logger().Debugw("room replaced before close; skipping state cleanup")
 		}
 
 		newRoom.Logger().Infow("room closed")
@@ -932,16 +976,30 @@ func (r *RoomManager) PerformRpc(ctx context.Context, req *livekit.PerformRpcReq
 }
 
 func (r *RoomManager) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomRequest) (*livekit.DeleteRoomResponse, error) {
-	room := r.GetRoom(ctx, livekit.RoomName(req.Room))
+	roomName := livekit.RoomName(req.Room)
+	room := r.GetRoom(ctx, roomName)
 	if room == nil {
 		// special case of a non-RTC room e.g. room created but no participants joined
 		logger.Debugw("Deleting non-rtc room, loading from roomstore")
-		err := r.roomStore.DeleteRoom(ctx, livekit.RoomName(req.Room))
+		err := r.roomStore.DeleteRoom(ctx, roomName)
 		if err != nil {
 			logger.Debugw("Error deleting non-rtc room", "err", err)
 			return nil, err
 		}
 	} else {
+		// Clear the room store and routing state before closing the room so a
+		// same-name recreate cannot load the stale room (old SID, old creation
+		// time) while the old room is still winding down. Closing participants
+		// can block on slow signal connections, and the OnClose cleanup only
+		// runs after every participant has closed — leaving a window where a
+		// recreate would inherit the old room's identity and pending timeouts
+		// (issue #4726). The identity-checked delete only fires while this room
+		// is still the registered one: if it closed on its own (e.g. empty
+		// timeout) and a recreate landed meanwhile, the fresh room must not be
+		// wiped. Closing an already-closed room is a no-op.
+		if !r.deleteRoomIfCurrent(ctx, roomName, room) {
+			room.Logger().Debugw("room replaced before delete; skipping pre-clear")
+		}
 		room.Logger().Infow("deleting room")
 		room.Close(types.RoomCloseReasonAPIDelete)
 	}
