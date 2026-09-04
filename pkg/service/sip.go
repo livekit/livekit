@@ -623,7 +623,11 @@ func (s *SIPService) CreateSIPParticipant(ctx context.Context, req *livekit.Crea
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-	resp, err := s.psrpcClient.CreateSIPParticipant(ctx, "", ireq, psrpc.WithRequestTimeout(timeout))
+	clusterID := ""
+	if v, ok := req.ParticipantAttributes["sip.cluster"]; ok {
+		clusterID = v
+	}
+	resp, err := s.psrpcClient.CreateSIPParticipant(ctx, clusterID, ireq, psrpc.WithRequestTimeout(timeout))
 	if err != nil {
 		unlikelyLogger.Errorw("cannot create sip participant", err)
 		return nil, wrapSIPContextError(err)
