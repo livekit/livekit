@@ -526,6 +526,33 @@ func TestSubscribeDataTrack(t *testing.T) {
 		}, subSettleTimeout, subCheckInterval, "should be resubscribed")
 		require.Equal(t, 2, resolver.dataTrack.AddSubscriberCallCount())
 	})
+
+	t.Run("unsubscribe before data track resolves", func(t *testing.T) {
+		sm := newTestSubscriptionManager()
+		defer sm.Close(false)
+		// no track available, subscribe attempts fail with ErrTrackNotFound
+		resolver := newTestDataTrackResolver(true, false, "pub", "pubID")
+		sm.params.DataTrackResolver = resolver.Resolve
+
+		sm.SubscribeToDataTrack("track")
+		sm.lock.RLock()
+		s := sm.dataTrackSubscriptions["track"]
+		sm.lock.RUnlock()
+		require.NotNil(t, s)
+
+		// let the worker attempt (and fail) the subscribe
+		require.Eventually(t, func() bool {
+			return s.getNumAttempts() > 0
+		}, subSettleTimeout, subCheckInterval, "no subscribe attempt was made")
+
+		sm.UnsubscribeFromDataTrack("track")
+		require.Eventually(t, func() bool {
+			sm.lock.RLock()
+			_, ok := sm.dataTrackSubscriptions["track"]
+			sm.lock.RUnlock()
+			return !ok
+		}, subSettleTimeout, subCheckInterval, "data track subscription was not cleaned up")
+	})
 }
 
 type testSubscriptionParams struct {
