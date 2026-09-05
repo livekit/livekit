@@ -527,7 +527,7 @@ func TestSubscribeDataTrack(t *testing.T) {
 		require.Equal(t, 2, resolver.dataTrack.AddSubscriberCallCount())
 	})
 
-	t.Run("unsubscribe before track resolves", func(t *testing.T) {
+	t.Run("unsubscribe before data track resolves", func(t *testing.T) {
 		sm := newTestSubscriptionManager()
 		defer sm.Close(false)
 		// no track available, subscribe attempts fail with ErrTrackNotFound
@@ -545,8 +545,6 @@ func TestSubscribeDataTrack(t *testing.T) {
 			return s.getNumAttempts() > 0
 		}, subSettleTimeout, subCheckInterval, "no subscribe attempt was made")
 
-		// unsubscribing while no down track exists must clean up the
-		// subscription without deadlocking the reconcile worker
 		sm.UnsubscribeFromDataTrack("track")
 		require.Eventually(t, func() bool {
 			sm.lock.RLock()
