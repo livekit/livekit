@@ -599,7 +599,7 @@ func (m *SubscriptionManager) reconcileDataTrackSubscriptions() {
 	var needsToReconcile []*dataTrackSubscription
 	m.lock.RLock()
 	for _, sub := range m.dataTrackSubscriptions {
-		if sub.needsSubscribe() || sub.needsUnsubscribe() {
+		if sub.needsSubscribe() || sub.needsUnsubscribe() || sub.needsCleanup() {
 			needsToReconcile = append(needsToReconcile, sub)
 		}
 	}
@@ -630,7 +630,7 @@ func (m *SubscriptionManager) reconcileDataTrackSubscription(s *dataTrackSubscri
 				if s.durationSinceStart() > notFoundTimeout {
 					s.logger.Infow("unsubscribing from data track after notFoundTimeout", "error", err)
 					s.setDesired(false)
-					m.queueReconcile(s.trackID)
+					m.queueReconcileDataTrack(s.trackID)
 				}
 			default:
 				// all other errors
@@ -668,12 +668,16 @@ func (m *SubscriptionManager) reconcileDataTrackSubscription(s *dataTrackSubscri
 	}
 
 	m.lock.Lock()
-	if s.needsCleanup() {
+	cleanedUp := s.needsCleanup()
+	if cleanedUp {
 		s.logger.Debugw("cleanup removing data track subscription")
 		delete(m.dataTrackSubscriptions, s.trackID)
-		m.notifyDataTrackSubscriberHandles()
 	}
 	m.lock.Unlock()
+
+	if cleanedUp {
+		m.notifyDataTrackSubscriberHandles()
+	}
 }
 
 // trigger an immediate reconciliation, when trackID is empty, will reconcile all subscriptions
