@@ -1328,11 +1328,12 @@ type FakeLocalParticipant struct {
 	subscribeToDataTrackArgsForCall []struct {
 		arg1 livekit.TrackID
 	}
-	SubscribeToTrackStub        func(livekit.TrackID, bool)
+	SubscribeToTrackStub        func(livekit.TrackID, bool, bool)
 	subscribeToTrackMutex       sync.RWMutex
 	subscribeToTrackArgsForCall []struct {
 		arg1 livekit.TrackID
 		arg2 bool
+		arg3 bool
 	}
 	SubscriberAsPrimaryStub        func() bool
 	subscriberAsPrimaryMutex       sync.RWMutex
@@ -8678,17 +8679,18 @@ func (fake *FakeLocalParticipant) SubscribeToDataTrackArgsForCall(i int) livekit
 	return argsForCall.arg1
 }
 
-func (fake *FakeLocalParticipant) SubscribeToTrack(arg1 livekit.TrackID, arg2 bool) {
+func (fake *FakeLocalParticipant) SubscribeToTrack(arg1 livekit.TrackID, arg2 bool, arg3 bool) {
 	fake.subscribeToTrackMutex.Lock()
 	fake.subscribeToTrackArgsForCall = append(fake.subscribeToTrackArgsForCall, struct {
 		arg1 livekit.TrackID
 		arg2 bool
-	}{arg1, arg2})
+		arg3 bool
+	}{arg1, arg2, arg3})
 	stub := fake.SubscribeToTrackStub
-	fake.recordInvocation("SubscribeToTrack", []interface{}{arg1, arg2})
+	fake.recordInvocation("SubscribeToTrack", []interface{}{arg1, arg2, arg3})
 	fake.subscribeToTrackMutex.Unlock()
 	if stub != nil {
-		fake.SubscribeToTrackStub(arg1, arg2)
+		fake.SubscribeToTrackStub(arg1, arg2, arg3)
 	}
 }
 
@@ -8698,17 +8700,17 @@ func (fake *FakeLocalParticipant) SubscribeToTrackCallCount() int {
 	return len(fake.subscribeToTrackArgsForCall)
 }
 
-func (fake *FakeLocalParticipant) SubscribeToTrackCalls(stub func(livekit.TrackID, bool)) {
+func (fake *FakeLocalParticipant) SubscribeToTrackCalls(stub func(livekit.TrackID, bool, bool)) {
 	fake.subscribeToTrackMutex.Lock()
 	defer fake.subscribeToTrackMutex.Unlock()
 	fake.SubscribeToTrackStub = stub
 }
 
-func (fake *FakeLocalParticipant) SubscribeToTrackArgsForCall(i int) (livekit.TrackID, bool) {
+func (fake *FakeLocalParticipant) SubscribeToTrackArgsForCall(i int) (livekit.TrackID, bool, bool) {
 	fake.subscribeToTrackMutex.RLock()
 	defer fake.subscribeToTrackMutex.RUnlock()
 	argsForCall := fake.subscribeToTrackArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeLocalParticipant) SubscriberAsPrimary() bool {
