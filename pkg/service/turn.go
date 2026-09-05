@@ -68,7 +68,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 
 	if turnConf.TLSPort <= 0 && turnConf.UDPPort <= 0 {
 		return nil, errors.New("invalid TURN ports")
-	} else if turnConf.TLSPort > 0 {
+	} else if turnConf.TLSPort > 0 || (turnConf.UDPUseDomain && turnConf.UDPPort > 0) {
 		if turnConf.Domain == "" {
 			return nil, errors.New("TURN domain required")
 		}
