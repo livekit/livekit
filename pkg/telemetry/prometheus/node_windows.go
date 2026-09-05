@@ -23,7 +23,3 @@ import "github.com/mackerelio/go-osstat/loadavg"
 func getLoadAvg() (*loadavg.Stats, error) {
 	return &loadavg.Stats{}, nil
 }
-
-func getCPUStats() (cpuLoad float32, numCPUs uint32, err error) {
-	return 1, 1, nil
-}
