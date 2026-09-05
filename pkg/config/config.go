@@ -72,8 +72,16 @@ var (
 	ErrTURNSecretFileIncorrectPermission = errors.New("turn secret file others permissions must be set to 0")
 	ErrKeysNotSet                        = errors.New("one of key-file or keys must be provided")
 	ErrTURNSecretEmpty                   = errors.New("turn secret is empty")
-	ErrTURNServerNoCredentials           = errors.New("turn server has no usable credentials: set a non-empty secret/secret_file for dynamic auth, or username and credential for static auth")
+	ErrTURNServerNoCredentials           = errors.New("turn server has no usable credentials: set a non-empty secret/secret_file for dynamic auth, or username/username_file and credential/credential_file for static auth")
+
+	ErrTURNCredentialFileIncorrectPermission = errors.New("turn credential file others permissions must be set to 0")
+	ErrTURNCredentialFileEmpty               = errors.New("turn credential file is empty")
 )
+
+// turnSecretFileOtherPerms masks the "other" permission bits a file holding a TURN
+// secret must not have set, so a world-readable secret fails startup instead of
+// leaking silently.
+const turnSecretFileOtherPerms os.FileMode = 0o007
 
 type Config struct {
 	Port          uint32   `yaml:"port,omitempty"`
@@ -189,11 +197,19 @@ type RTCConfig struct {
 }
 
 type TURNServer struct {
-	Host       string `yaml:"host,omitempty"`
-	Port       int    `yaml:"port,omitempty"`
-	Protocol   string `yaml:"protocol,omitempty"`
-	Username   string `yaml:"username,omitempty"`
-	Credential string `yaml:"credential,omitempty"`
+	Host     string `yaml:"host,omitempty"`
+	Port     int    `yaml:"port,omitempty"`
+	Protocol string `yaml:"protocol,omitempty"`
+	Username string `yaml:"username,omitempty"`
+	// File containing the static-auth username. Lets deployments that mount
+	// credentials as files (systemd LoadCredential, Kubernetes secrets, NixOS)
+	// keep them out of the config. Username takes precedence when both are set.
+	// The username is not a secret, so no permission restriction is applied.
+	UsernameFile string `yaml:"username_file,omitempty"`
+	Credential   string `yaml:"credential,omitempty"`
+	// File containing the static-auth credential. Credential takes precedence when
+	// both are set. The file must not be readable by others.
+	CredentialFile string `yaml:"credential_file,omitempty"`
 	// Secret is used for TURN static auth secrets mechanism. When provided,
 	// dynamic credentials are generated using HMAC-SHA1 instead of static Username/Credential
 	Secret string `yaml:"secret,omitempty"`
@@ -798,40 +814,108 @@ func (conf *Config) ValidateKeys() error {
 	return nil
 }
 
-func (conf *Config) LoadTURNSecrets() error {
-	var otherFilter os.FileMode = 0o007
-	for i, s := range conf.RTC.TURNServers {
-		// trim first so a blank inline secret falls back to secret_file rather than being treated as set
-		inlineSecret := strings.TrimSpace(s.Secret)
-		switch {
-		case s.SecretFile != "" && inlineSecret != "":
-			logger.Warnw("both secret and secret_file are set for TURN server, the hardcoded secret will be used", nil,
-				"host", s.Host, "port", s.Port)
-			conf.RTC.TURNServers[i].Secret = inlineSecret
-		case s.SecretFile != "":
-			st, err := os.Stat(s.SecretFile)
-			if err != nil {
-				return err
-			}
-			if st.Mode().Perm()&otherFilter != 0o000 {
-				return ErrTURNSecretFileIncorrectPermission
-			}
-			data, err := os.ReadFile(s.SecretFile)
-			if err != nil {
-				return fmt.Errorf("reading turn secret file %q: %w", s.SecretFile, err)
-			}
-			secret := strings.TrimSpace(string(data))
-			if secret == "" {
-				return fmt.Errorf("turn server %q secret file %q: %w", s.Host, s.SecretFile, ErrTURNSecretEmpty)
-			}
-			conf.RTC.TURNServers[i].Secret = secret
-		default:
-			conf.RTC.TURNServers[i].Secret = inlineSecret
+// turnCredentialSource describes one TURN credential that may be supplied either
+// inline in the config or through a file, so secret, username, and credential all
+// resolve through a single code path.
+type turnCredentialSource struct {
+	// field is the inline YAML key; the file counterpart is always "<field>_file".
+	field  string
+	inline string
+	file   string
+	// permErr is returned when the file is readable by others. It is nil for values
+	// that are not secrets, which skips the permission check entirely.
+	permErr error
+	// emptyErr is returned when the file holds nothing but whitespace.
+	emptyErr error
+	// trimInline trims the inline value before deciding whether it is set. Only
+	// `secret` does this, preserving its pre-existing behaviour; a static
+	// username/credential is passed to the TURN server verbatim, so trimming one
+	// would silently change what an existing deployment authenticates with.
+	trimInline bool
+}
+
+// loadTURNCredential resolves one credential from its inline value and its optional
+// file counterpart. The inline value always wins, so an explicit config entry is
+// never silently overridden by a leftover credential file. File contents are always
+// trimmed so a mounted secret written with a trailing newline works as expected.
+func loadTURNCredential(host string, port int, src turnCredentialSource) (string, error) {
+	inline := src.inline
+	if src.trimInline {
+		inline = strings.TrimSpace(inline)
+	}
+	if src.file == "" {
+		return inline, nil
+	}
+	if inline != "" {
+		logger.Warnw("both inline and file TURN credential are set, the inline value will be used", nil,
+			"host", host, "port", port, "field", src.field)
+		return inline, nil
+	}
+
+	if src.permErr != nil {
+		st, err := os.Stat(src.file)
+		if err != nil {
+			return "", err
 		}
+		if st.Mode().Perm()&turnSecretFileOtherPerms != 0o000 {
+			return "", src.permErr
+		}
+	}
+
+	data, err := os.ReadFile(src.file)
+	if err != nil {
+		return "", fmt.Errorf("reading turn %s_file %q: %w", src.field, src.file, err)
+	}
+	value := strings.TrimSpace(string(data))
+	if value == "" {
+		return "", fmt.Errorf("turn server %q %s_file %q: %w", host, src.field, src.file, src.emptyErr)
+	}
+	return value, nil
+}
+
+func (conf *Config) LoadTURNSecrets() error {
+	for i := range conf.RTC.TURNServers {
+		s := &conf.RTC.TURNServers[i]
+
+		secret, err := loadTURNCredential(s.Host, s.Port, turnCredentialSource{
+			field:      "secret",
+			inline:     s.Secret,
+			file:       s.SecretFile,
+			permErr:    ErrTURNSecretFileIncorrectPermission,
+			emptyErr:   ErrTURNSecretEmpty,
+			trimInline: true,
+		})
+		if err != nil {
+			return err
+		}
+
+		// the username is not a secret, so permErr is left nil and its file may be
+		// world-readable
+		username, err := loadTURNCredential(s.Host, s.Port, turnCredentialSource{
+			field:    "username",
+			inline:   s.Username,
+			file:     s.UsernameFile,
+			emptyErr: ErrTURNCredentialFileEmpty,
+		})
+		if err != nil {
+			return err
+		}
+
+		credential, err := loadTURNCredential(s.Host, s.Port, turnCredentialSource{
+			field:    "credential",
+			inline:   s.Credential,
+			file:     s.CredentialFile,
+			permErr:  ErrTURNCredentialFileIncorrectPermission,
+			emptyErr: ErrTURNCredentialFileEmpty,
+		})
+		if err != nil {
+			return err
+		}
+
+		s.Secret, s.Username, s.Credential = secret, username, credential
 
 		// validate credential mode as an explicit union rather than inferring it from a
 		// post-load empty secret (which would silently fall back to static credentials)
-		s := conf.RTC.TURNServers[i]
 		hasDynamic := s.Secret != ""
 		hasStatic := s.Username != "" && s.Credential != ""
 		if !hasDynamic && !hasStatic {
