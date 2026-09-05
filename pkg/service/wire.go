@@ -193,11 +193,12 @@ func createStore(rc redis.UniversalClient) ObjectStore {
 	return NewLocalStore()
 }
 
-func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
+func getMessageBus(rc redis.UniversalClient, psrpcConf rpc.PSRPCConfig) psrpc.MessageBus {
+	opts := psrpcConf.BusOptions()
 	if rc == nil {
-		return psrpc.NewLocalMessageBus()
+		return psrpc.NewLocalMessageBus(opts...)
 	}
-	return psrpc.NewRedisMessageBus(rc)
+	return psrpc.NewRedisMessageBus(rc, opts...)
 }
 
 func getEgressStore(s ObjectStore) EgressStore {

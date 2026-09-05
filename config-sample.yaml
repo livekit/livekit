@@ -268,6 +268,15 @@ keys:
 #   backoff: 500ms
 #   # number of messages to buffer before dropping
 #   buffer_size: 1000
+#   # optional gzip compression of bus payloads
+#   compression:
+#     # gzip level 1-9; 0 disables. every node on the bus must support
+#     # compression before enabling it
+#     quality: 0
+#     # payload bytes below which compression is skipped
+#     threshold: 1024
+#     # cap on an inbound payload after decompression, 0 for unlimited
+#     max_decompressed_size: 0
 
 # customize audio level sensitivity
 # audio:
