@@ -200,10 +200,24 @@ func (r *RoomManager) GetRoom(_ context.Context, roomName livekit.RoomName) *rtc
 //
 // The persistent-state cleanup is coordinated with recreation through the
 // room store's per-room lock (the same one StandardRoomAllocator.CreateRoom
-// takes around LoadRoom/StoreRoom): without it, a recreate that lands between
-// releasing r.lock and deleteRoomState could have its freshly stored room
-// record wiped by the stale deletion below.
+// takes around LoadRoom/StoreRoom). The lock is taken *before* the in-memory
+// room is removed: a recreate that lands in the gap between the map delete and
+// the persistent clear would otherwise LoadRoom the old record and resurrect
+// the old SID/call, then be torn down by the stale deletion. With the lock
+// first, CreateRoom either waits and observes the cleared state (fresh SID) or
+// runs entirely before this deletion, which then deletes it again via the
+// identity check.
 func (r *RoomManager) deleteRoomIfCurrent(ctx context.Context, roomName livekit.RoomName, room *rtc.Room) bool {
+	// Block a same-name CreateRoom (LockRoom + LoadRoom + StoreRoom) from the
+	// in-memory wipe through the persistent-state clear, so a create racing the
+	// teardown either waits for the fresh state or strictly precedes it.
+	token, err := r.roomStore.LockRoom(ctx, roomName, roomStoreLockTimeout)
+	if err != nil {
+		room.Logger().Errorw("could not lock room for state deletion", err)
+	} else {
+		defer func() { _ = r.roomStore.UnlockRoom(ctx, roomName, token) }()
+	}
+
 	r.lock.Lock()
 	current := r.rooms[roomName]
 	if current != room {
@@ -212,16 +226,6 @@ func (r *RoomManager) deleteRoomIfCurrent(ctx context.Context, roomName livekit.
 	}
 	delete(r.rooms, roomName)
 	r.lock.Unlock()
-
-	// Block a same-name CreateRoom (LockRoom + LoadRoom + StoreRoom) until the
-	// persistent state is fully cleared, so the new room always starts from a
-	// fresh SID instead of the old one.
-	token, err := r.roomStore.LockRoom(ctx, roomName, roomStoreLockTimeout)
-	if err != nil {
-		room.Logger().Errorw("could not lock room for state deletion", err)
-	} else {
-		defer func() { _ = r.roomStore.UnlockRoom(ctx, roomName, token) }()
-	}
 
 	if err := r.deleteRoomState(ctx, roomName); err != nil {
 		room.Logger().Errorw("could not delete room", err)
