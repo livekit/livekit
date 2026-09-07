@@ -242,6 +242,28 @@ keys:
 #   urls:
 #     - https://your-host.com/handler
 
+# Room-level webhooks
+# in addition to the global `webhook` config above, individual rooms can carry their own
+# webhook endpoints. Set them per room on CreateRoom (`webhooks` field), or attach them to
+# a named room preset here and create the room with `room_preset: <name>`.
+# Room webhooks receive room_started, room_finished, participant_joined, participant_left,
+# participant_connection_aborted, track_published and track_unpublished. Egress and ingress
+# events are never delivered to them; those carry their own webhooks on the egress request.
+# room:
+#   room_configurations:
+#     support-call:
+#       empty_timeout: 300
+#       webhooks:
+#         - url: https://your-host.com/support-hook
+#           # api key used to sign the message; must be one of the keys below.
+#           # leave unset to sign with the key from the global `webhook` config
+#           signing_key: <api_key>
+#           # optional; include_events takes precedence over exclude_events
+#           filter_params:
+#             include_events:
+#               - participant_joined
+#               - participant_left
+
 # Signal Relay
 # since v1.4.0, a more reliable, psrpc based signal relay is available
 # this gives us the ability to reliably proxy messages between a signal server and RTC node

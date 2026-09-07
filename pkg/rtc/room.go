@@ -1268,6 +1268,7 @@ func (r *Room) onStateChange(p types.LocalParticipant) {
 			false,
 			p.IsWarpEnabled(),
 			p.TelemetryGuard(),
+			r.Internal().GetWebhooks(),
 		)
 
 		p.GetReporter().Tx(func(tx roomobs.ParticipantSessionTx) {
@@ -2057,11 +2058,11 @@ func (l participantTelemetryListener) OnTrackPublishRequested(pID livekit.Partic
 }
 
 func (l participantTelemetryListener) OnTrackPublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, shouldSendEvent bool) {
-	l.room.telemetry.TrackPublished(context.Background(), l.eventRoom(), pID, identity, ti, shouldSendEvent)
+	l.room.telemetry.TrackPublished(context.Background(), l.eventRoom(), pID, identity, ti, shouldSendEvent, l.room.Internal().GetWebhooks())
 }
 
 func (l participantTelemetryListener) OnTrackUnpublished(pID livekit.ParticipantID, identity livekit.ParticipantIdentity, ti *livekit.TrackInfo, wasPublishedLocally bool, shouldSendEvent bool) {
-	l.room.telemetry.TrackUnpublished(context.Background(), l.eventRoom(), pID, identity, ti, wasPublishedLocally, shouldSendEvent)
+	l.room.telemetry.TrackUnpublished(context.Background(), l.eventRoom(), pID, identity, ti, wasPublishedLocally, shouldSendEvent, l.room.Internal().GetWebhooks())
 }
 
 func (l participantTelemetryListener) OnTrackSubscribeRequested(pID livekit.ParticipantID, ti *livekit.TrackInfo) {

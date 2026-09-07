@@ -42,12 +42,12 @@ func (t *telemetryService) NotifyEvent(ctx context.Context, event *livekit.Webho
 	}
 }
 
-func (t *telemetryService) RoomStarted(ctx context.Context, room *livekit.Room) {
+func (t *telemetryService) RoomStarted(ctx context.Context, room *livekit.Room, roomWebhooks []*livekit.WebhookConfig) {
 	t.enqueue(func() {
 		t.NotifyEvent(ctx, &livekit.WebhookEvent{
 			Event: webhook.EventRoomStarted,
 			Room:  room,
-		})
+		}, webhook.GetRoomNotifyOptions(webhook.EventRoomStarted, roomWebhooks)...)
 
 		t.SendEvent(ctx, &livekit.AnalyticsEvent{
 			Type:      livekit.AnalyticsEventType_ROOM_CREATED,
@@ -57,13 +57,13 @@ func (t *telemetryService) RoomStarted(ctx context.Context, room *livekit.Room) 
 	})
 }
 
-func (t *telemetryService) RoomEnded(ctx context.Context, room *livekit.Room, reason livekit.RoomEndReason) {
+func (t *telemetryService) RoomEnded(ctx context.Context, room *livekit.Room, reason livekit.RoomEndReason, roomWebhooks []*livekit.WebhookConfig) {
 	t.enqueue(func() {
 		t.NotifyEvent(ctx, &livekit.WebhookEvent{
 			Event:         webhook.EventRoomFinished,
 			Room:          room,
 			RoomEndReason: reason,
-		})
+		}, webhook.GetRoomNotifyOptions(webhook.EventRoomFinished, roomWebhooks)...)
 
 		t.SendEvent(ctx, &livekit.AnalyticsEvent{
 			Type:          livekit.AnalyticsEventType_ROOM_ENDED,
@@ -115,6 +115,7 @@ func (t *telemetryService) ParticipantActive(
 	isMigration bool,
 	isWarp bool,
 	guard *ReferenceGuard,
+	roomWebhooks []*livekit.WebhookConfig,
 ) {
 	t.enqueue(func() {
 		if !isMigration {
@@ -123,7 +124,7 @@ func (t *telemetryService) ParticipantActive(
 				Event:       webhook.EventParticipantJoined,
 				Room:        room,
 				Participant: participant,
-			})
+			}, webhook.GetRoomNotifyOptions(webhook.EventParticipantJoined, roomWebhooks)...)
 		}
 
 		worker, found := t.getOrCreateWorker(
@@ -201,6 +202,7 @@ func (t *telemetryService) ParticipantLeft(ctx context.Context,
 	participant *livekit.ParticipantInfo,
 	shouldSendEvent bool,
 	guard *ReferenceGuard,
+	roomWebhooks []*livekit.WebhookConfig,
 ) {
 	t.enqueue(func() {
 		isConnected := false
@@ -232,7 +234,7 @@ func (t *telemetryService) ParticipantLeft(ctx context.Context,
 				Event:       webhookEvent,
 				Room:        room,
 				Participant: participant,
-			})
+			}, webhook.GetRoomNotifyOptions(webhookEvent, roomWebhooks)...)
 
 			t.SendEvent(ctx, newParticipantEvent(analyticsEvent, room, participant))
 		}
@@ -268,6 +270,7 @@ func (t *telemetryService) TrackPublished(
 	identity livekit.ParticipantIdentity,
 	track *livekit.TrackInfo,
 	shouldSendEvent bool,
+	roomWebhooks []*livekit.WebhookConfig,
 ) {
 	t.enqueue(func() {
 		prometheus.AddPublishedTrack(track.Type.String())
@@ -285,7 +288,7 @@ func (t *telemetryService) TrackPublished(
 			Room:        room,
 			Participant: participant,
 			Track:       track,
-		})
+		}, webhook.GetRoomNotifyOptions(webhook.EventTrackPublished, roomWebhooks)...)
 
 		ev := newTrackEvent(livekit.AnalyticsEventType_TRACK_PUBLISHED, room, participantID, track)
 		ev.Participant = participant
@@ -398,6 +401,7 @@ func (t *telemetryService) TrackUnpublished(
 	track *livekit.TrackInfo,
 	wasPublishedLocally bool,
 	shouldSendEvent bool,
+	roomWebhooks []*livekit.WebhookConfig,
 ) {
 	t.enqueue(func() {
 		if wasPublishedLocally {
@@ -416,7 +420,7 @@ func (t *telemetryService) TrackUnpublished(
 			Room:        room,
 			Participant: participant,
 			Track:       track,
-		})
+		}, webhook.GetRoomNotifyOptions(webhook.EventTrackUnpublished, roomWebhooks)...)
 
 		t.SendEvent(ctx, newTrackEvent(livekit.AnalyticsEventType_TRACK_UNPUBLISHED, room, participantID, track))
 	})

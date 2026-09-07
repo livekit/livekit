@@ -113,6 +113,9 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	if req.Agents != nil {
 		internal.AgentDispatches = req.Agents
 	}
+	if req.Webhooks != nil {
+		internal.Webhooks = req.Webhooks
+	}
 	if req.MinPlayoutDelay > 0 || req.MaxPlayoutDelay > 0 {
 		internal.PlayoutDelay = &livekit.PlayoutDelay{
 			Enabled: true,
@@ -242,6 +245,12 @@ func (r *StandardRoomAllocator) applyNamedRoomConfiguration(req *livekit.CreateR
 	}
 	if clone.Metadata == "" {
 		clone.Metadata = conf.Metadata
+	}
+	if clone.Webhooks == nil && len(conf.Webhooks) > 0 {
+		clone.Webhooks = make([]*livekit.WebhookConfig, 0, len(conf.Webhooks))
+		for _, wh := range conf.Webhooks {
+			clone.Webhooks = append(clone.Webhooks, utils.CloneProto(wh))
+		}
 	}
 
 	return clone, nil

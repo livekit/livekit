@@ -291,7 +291,7 @@ func (s *BytesSignalStats) maybeStart() {
 
 func (s *BytesSignalStats) worker() {
 	s.BytesTrackStats.worker()
-	s.telemetry.ParticipantLeft(s.ctx, s.ri, s.pi, false, s.guard)
+	s.telemetry.ParticipantLeft(s.ctx, s.ri, s.pi, false, s.guard, nil)
 	close(s.stopped)
 }
 

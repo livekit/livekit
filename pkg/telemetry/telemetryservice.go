@@ -35,26 +35,26 @@ type TelemetryService interface {
 	TrackStats(roomID livekit.RoomID, roomName livekit.RoomName, key StatsKey, stat *livekit.AnalyticsStat)
 
 	// events
-	RoomStarted(ctx context.Context, room *livekit.Room)
-	RoomEnded(ctx context.Context, room *livekit.Room, reason livekit.RoomEndReason)
+	RoomStarted(ctx context.Context, room *livekit.Room, roomWebhooks []*livekit.WebhookConfig)
+	RoomEnded(ctx context.Context, room *livekit.Room, reason livekit.RoomEndReason, roomWebhooks []*livekit.WebhookConfig)
 
 	// ParticipantJoined - a participant establishes signal connection to a room
 	ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo, clientMeta *livekit.AnalyticsClientMeta, shouldSendEvent bool, guard *ReferenceGuard)
 	// ParticipantActive - a participant establishes media connection
-	ParticipantActive(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientMeta *livekit.AnalyticsClientMeta, isMigration bool, isWarp bool, guard *ReferenceGuard)
+	ParticipantActive(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientMeta *livekit.AnalyticsClientMeta, isMigration bool, isWarp bool, guard *ReferenceGuard, roomWebhooks []*livekit.WebhookConfig)
 	// ParticipantResumed - there has been an ICE restart or connection resume attempt, and we've received their signal connection
 	ParticipantResumed(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, nodeID livekit.NodeID, reason livekit.ReconnectReason)
 	// ParticipantLeft - the participant leaves the room, only sent if ParticipantActive has been called before
-	ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, shouldSendEvent bool, guard *ReferenceGuard)
+	ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, shouldSendEvent bool, guard *ReferenceGuard, roomWebhooks []*livekit.WebhookConfig)
 	// RoomIDChanged - the room kept its session, but got a different id (a provisional room id
 	// replaced by the resolved one), re-keys the stats workers of every participant in the room
 	RoomIDChanged(ctx context.Context, prevRoomID livekit.RoomID, room *livekit.Room)
 	// TrackPublishRequested - a publication attempt has been received
 	TrackPublishRequested(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool)
 	// TrackPublished - a publication attempt has been successful
-	TrackPublished(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool)
+	TrackPublished(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool, roomWebhooks []*livekit.WebhookConfig)
 	// TrackUnpublished - a participant unpublished a track
-	TrackUnpublished(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, wasPublishedLocally bool, shouldSendEvent bool)
+	TrackUnpublished(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, wasPublishedLocally bool, shouldSendEvent bool, roomWebhooks []*livekit.WebhookConfig)
 	// TrackSubscribeRequested - a participant requested to subscribe to a track
 	TrackSubscribeRequested(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, track *livekit.TrackInfo)
 	// TrackSubscribed - a participant subscribed to a track successfully
@@ -108,24 +108,25 @@ type NullTelemetryService struct {
 
 func (n NullTelemetryService) TrackStats(roomID livekit.RoomID, roomName livekit.RoomName, key StatsKey, stat *livekit.AnalyticsStat) {
 }
-func (n NullTelemetryService) RoomStarted(ctx context.Context, room *livekit.Room) {}
-func (n NullTelemetryService) RoomEnded(ctx context.Context, room *livekit.Room, reason livekit.RoomEndReason) {
+func (n NullTelemetryService) RoomStarted(ctx context.Context, room *livekit.Room, roomWebhooks []*livekit.WebhookConfig) {
+}
+func (n NullTelemetryService) RoomEnded(ctx context.Context, room *livekit.Room, reason livekit.RoomEndReason, roomWebhooks []*livekit.WebhookConfig) {
 }
 func (n NullTelemetryService) ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo, clientMeta *livekit.AnalyticsClientMeta, shouldSendEvent bool, guard *ReferenceGuard) {
 }
-func (n NullTelemetryService) ParticipantActive(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientMeta *livekit.AnalyticsClientMeta, isMigration bool, isWarp bool, guard *ReferenceGuard) {
+func (n NullTelemetryService) ParticipantActive(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientMeta *livekit.AnalyticsClientMeta, isMigration bool, isWarp bool, guard *ReferenceGuard, roomWebhooks []*livekit.WebhookConfig) {
 }
 func (n NullTelemetryService) ParticipantResumed(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, nodeID livekit.NodeID, reason livekit.ReconnectReason) {
 }
-func (n NullTelemetryService) ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, shouldSendEvent bool, guard *ReferenceGuard) {
+func (n NullTelemetryService) ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, shouldSendEvent bool, guard *ReferenceGuard, roomWebhooks []*livekit.WebhookConfig) {
 }
 func (n NullTelemetryService) RoomIDChanged(ctx context.Context, prevRoomID livekit.RoomID, room *livekit.Room) {
 }
 func (n NullTelemetryService) TrackPublishRequested(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool) {
 }
-func (n NullTelemetryService) TrackPublished(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool) {
+func (n NullTelemetryService) TrackPublished(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool, roomWebhooks []*livekit.WebhookConfig) {
 }
-func (n NullTelemetryService) TrackUnpublished(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, wasPublishedLocally bool, shouldSendEvent bool) {
+func (n NullTelemetryService) TrackUnpublished(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, wasPublishedLocally bool, shouldSendEvent bool, roomWebhooks []*livekit.WebhookConfig) {
 }
 func (n NullTelemetryService) TrackSubscribeRequested(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, track *livekit.TrackInfo) {
 }

@@ -34,6 +34,10 @@ import (
 func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*LivekitServer, error) {
 	limitConfig := getLimitConf(conf)
 	apiConfig := getAPIConf(conf)
+	keyProvider, err := createKeyProvider(conf)
+	if err != nil {
+		return nil, err
+	}
 	universalClient, err := createRedisClient(conf)
 	if err != nil {
 		return nil, err
@@ -70,10 +74,6 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	egressStore := getEgressStore(objectStore)
 	ingressStore := getIngressStore(objectStore)
 	sipStore := getSIPStore(objectStore)
-	keyProvider, err := createKeyProvider(conf)
-	if err != nil {
-		return nil, err
-	}
 	queuedNotifier, err := createWebhookNotifier(conf, keyProvider)
 	if err != nil {
 		return nil, err
@@ -94,7 +94,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	roomService, err := NewRoomService(limitConfig, apiConfig, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, v2, v3)
+	roomService, err := NewRoomService(limitConfig, apiConfig, keyProvider, router, roomAllocator, objectStore, rtcEgressLauncher, topicFormatter, v2, v3)
 	if err != nil {
 		return nil, err
 	}

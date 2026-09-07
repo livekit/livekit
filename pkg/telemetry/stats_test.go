@@ -479,7 +479,7 @@ func Test_OnUpstreamRTCP_SeveralTracks(t *testing.T) {
 	require.True(t, found2)
 
 	// remove 1 track - track stats were flushed above, so no more calls to SendStats
-	fixture.sut.TrackUnpublished(context.Background(), room, partSID, identity, &livekit.TrackInfo{Sid: string(trackID2)}, true, true)
+	fixture.sut.TrackUnpublished(context.Background(), room, partSID, identity, &livekit.TrackInfo{Sid: string(trackID2)}, true, true, nil)
 
 	// flush
 	fixture.flush()
@@ -498,7 +498,7 @@ func Test_AnalyticsSentWhenParticipantLeaves(t *testing.T) {
 	fixture.sut.ParticipantJoined(context.Background(), room, participantInfo, nil, nil, true, guard)
 
 	// do
-	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo, true, guard)
+	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo, true, guard, nil)
 
 	// should not be called if there are no track stats
 	time.Sleep(time.Millisecond * 500)
@@ -665,7 +665,7 @@ func Test_RoomIDChangeReKeysStatsWorkers(t *testing.T) {
 	require.Equal(t, uint64(44), byRoom[restartedRoom.Sid].Streams[0].PrimaryBytes)
 
 	// the worker moved rather than being duplicated, so closing it out drains everything
-	fixture.sut.ParticipantLeft(context.Background(), restartedRoom, participantInfo, true, guard)
+	fixture.sut.ParticipantLeft(context.Background(), restartedRoom, participantInfo, true, guard, nil)
 	fixture.flush()
 	require.Equal(t, 1, fixture.analytics.SendStatsCallCount())
 }

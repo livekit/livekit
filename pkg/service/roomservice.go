@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strconv"
 
 	"github.com/twitchtv/twirp"
@@ -24,6 +25,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
@@ -33,6 +35,7 @@ import (
 type RoomService struct {
 	limitConf         config.LimitConfig
 	apiConf           config.APIConfig
+	keyProvider       auth.KeyProvider
 	router            routing.MessageRouter
 	roomAllocator     RoomAllocator
 	roomStore         ServiceStore
@@ -48,6 +51,7 @@ type RoomService struct {
 func NewRoomService(
 	limitConf config.LimitConfig,
 	apiConf config.APIConfig,
+	keyProvider auth.KeyProvider,
 	router routing.MessageRouter,
 	roomAllocator RoomAllocator,
 	serviceStore ServiceStore,
@@ -59,6 +63,7 @@ func NewRoomService(
 	svc = &RoomService{
 		limitConf:         limitConf,
 		apiConf:           apiConf,
+		keyProvider:       keyProvider,
 		router:            router,
 		roomAllocator:     roomAllocator,
 		roomStore:         serviceStore,
@@ -97,6 +102,10 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 		}
 	}
 
+	if err := s.validateWebhooks(req.Webhooks); err != nil {
+		return nil, err
+	}
+
 	err := s.roomAllocator.SelectRoomNode(ctx, livekit.RoomName(req.Name), livekit.NodeID(req.NodeId))
 	if err != nil {
 		return nil, err
@@ -105,6 +114,22 @@ func (s *RoomService) CreateRoom(ctx context.Context, req *livekit.CreateRoomReq
 	room, err := s.router.CreateRoom(ctx, req)
 	RecordResponse(ctx, room)
 	return room, err
+}
+
+// validateWebhooks rejects room-scoped webhook configs that could never deliver, so
+// the caller learns at CreateRoom time rather than from a per-event warning log.
+func (s *RoomService) validateWebhooks(webhooks []*livekit.WebhookConfig) error {
+	for _, wh := range webhooks {
+		u, err := url.Parse(wh.Url)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return twirp.InvalidArgumentError("webhooks.url", "must be an absolute http(s) URL")
+		}
+		// an empty signing key means "use the default key from the webhook config"
+		if wh.SigningKey != "" && s.keyProvider.GetSecret(wh.SigningKey) == "" {
+			return twirp.InvalidArgumentError("webhooks.signing_key", "unknown api key")
+		}
+	}
+	return nil
 }
 
 func (s *RoomService) ListRooms(ctx context.Context, req *livekit.ListRoomsRequest) (*livekit.ListRoomsResponse, error) {
