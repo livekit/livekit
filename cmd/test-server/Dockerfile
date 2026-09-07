@@ -17,7 +17,7 @@
 #
 # Pinned by digest so the build is reproducible even if the tag is republished.
 # The tag is kept alongside it for readability; Renovate updates both together.
-FROM golang:1.26.6-alpine3.24@sha256:af8d6740070b8906d12eae1c3e3ea0957fb63f492051ea05e354c38ef9fe88df AS builder
+FROM golang:1.27.0-alpine3.24@sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc AS builder
 
 ARG TARGETARCH
 
