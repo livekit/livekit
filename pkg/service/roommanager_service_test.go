@@ -18,6 +18,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
+	"github.com/livekit/livekit-server/pkg/sfu"
 )
 
 type lockFailingObjectStore struct {
@@ -50,7 +51,7 @@ func TestDeleteRoomIfCurrentLockFailure(t *testing.T) {
 		nil,
 		rtc.WebRTCConfig{},
 		config.RoomConfig{},
-		nil,
+		&sfu.AudioConfig{},
 		nil,
 		nil,
 		nil,

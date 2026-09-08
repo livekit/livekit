@@ -760,7 +760,6 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 		if !r.deleteRoomIfCurrent(ctx, roomName, newRoom) {
 			newRoom.Logger().Debugw("room replaced before close; skipping state cleanup")
 		}
-		}
 
 		newRoom.Logger().Infow("room closed")
 	})
