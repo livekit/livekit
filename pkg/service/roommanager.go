@@ -214,9 +214,9 @@ func (r *RoomManager) deleteRoomIfCurrent(ctx context.Context, roomName livekit.
 	token, err := r.roomStore.LockRoom(ctx, roomName, roomStoreLockTimeout)
 	if err != nil {
 		room.Logger().Errorw("could not lock room for state deletion", err)
-	} else {
-		defer func() { _ = r.roomStore.UnlockRoom(ctx, roomName, token) }()
+		return false
 	}
+	defer func() { _ = r.roomStore.UnlockRoom(ctx, roomName, token) }()
 
 	r.lock.Lock()
 	current := r.rooms[roomName]
