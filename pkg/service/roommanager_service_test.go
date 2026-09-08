@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -13,8 +14,64 @@ import (
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/psrpc"
 
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
+	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 )
+
+type lockFailingObjectStore struct {
+	ObjectStore
+	lockErr         error
+	lockCalls       atomic.Int32
+	unlockCalls     atomic.Int32
+	deleteRoomCalls atomic.Int32
+}
+
+func (s *lockFailingObjectStore) LockRoom(context.Context, livekit.RoomName, time.Duration) (string, error) {
+	s.lockCalls.Inc()
+	return "", s.lockErr
+}
+
+func (s *lockFailingObjectStore) UnlockRoom(context.Context, livekit.RoomName, string) error {
+	s.unlockCalls.Inc()
+	return nil
+}
+
+func (s *lockFailingObjectStore) DeleteRoom(context.Context, livekit.RoomName) error {
+	s.deleteRoomCalls.Inc()
+	return nil
+}
+
+func TestDeleteRoomIfCurrentLockFailure(t *testing.T) {
+	roomName := livekit.RoomName("test-room")
+	room := rtc.NewRoom(
+		&livekit.Room{Name: string(roomName), Sid: "RM_test"},
+		nil,
+		rtc.WebRTCConfig{},
+		config.RoomConfig{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	store := &lockFailingObjectStore{lockErr: errors.New("lock unavailable")}
+	router := &routingfakes.FakeRouter{}
+	manager := &RoomManager{
+		router:    router,
+		roomStore: store,
+		rooms:     map[livekit.RoomName]*rtc.Room{roomName: room},
+	}
+
+	require.False(t, manager.deleteRoomIfCurrent(t.Context(), roomName, room))
+	require.Same(t, room, manager.rooms[roomName])
+	require.Equal(t, int32(1), store.lockCalls.Load())
+	require.Zero(t, store.unlockCalls.Load())
+	require.Zero(t, store.deleteRoomCalls.Load())
+	require.Zero(t, router.ClearRoomStateCallCount())
+}
 
 // fakeIngressHandlerClient records WHIPRTCConnectionNotify calls. It embeds the
 // interface so only the method under test needs to be implemented; any other
