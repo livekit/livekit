@@ -322,7 +322,14 @@ keys:
 #   # PROXY protocol v1/v2 header instead. Without it TURN reports the proxy's address to the
 #   # client as XOR-MAPPED-ADDRESS, which Firefox rejects when it is loopback or wildcard.
 #   # every connection on tls_port must then carry the header; connections without it are rejected.
+#   # prefer PROXY protocol v2 on the proxy side: the v1 text header must arrive in a single read.
 #   proxy_protocol: false
+#   # proxies whose PROXY header is trusted. connections from any other address are closed, so a
+#   # client that reaches tls_port directly cannot claim an arbitrary source address.
+#   # defaults to loopback, for a proxy running on the same host.
+#   proxy_protocol_trusted_cidrs:
+#     - 127.0.0.0/8
+#     - ::1/128
 #   # needs to match tls cert domain
 #   domain: turn.myhost.com
 #   # optional (set only if not using external TLS termination)

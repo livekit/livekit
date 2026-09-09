@@ -279,8 +279,12 @@ func TestTURNAuthHandler_CreateUsername_TTLClamped(t *testing.T) {
 	require.InDelta(t, time.Now().Unix()+int64(config.DefaultTURNTTLSeconds), negativeExpiry, 2)
 }
 
+func proxyProtocolTURNConfig(trustedCIDRs ...string) config.TURNConfig {
+	return config.TURNConfig{ExternalTLS: true, ProxyProtocol: true, ProxyProtocolTrustedCIDRs: trustedCIDRs}
+}
+
 func TestNewTURNTCPListener_ProxyProtocol(t *testing.T) {
-	listener, err := newTURNTCPListener(config.TURNConfig{ExternalTLS: true, ProxyProtocol: true}, "127.0.0.1:0")
+	listener, err := newTURNTCPListener(proxyProtocolTURNConfig("127.0.0.0/8"), "127.0.0.1:0")
 	require.NoError(t, err)
 	defer listener.Close()
 
@@ -314,7 +318,7 @@ func TestNewTURNTCPListener_ProxyProtocol(t *testing.T) {
 }
 
 func TestNewTURNTCPListener_ProxyProtocolRejectsBareConnection(t *testing.T) {
-	listener, err := newTURNTCPListener(config.TURNConfig{ExternalTLS: true, ProxyProtocol: true}, "127.0.0.1:0")
+	listener, err := newTURNTCPListener(proxyProtocolTURNConfig("127.0.0.0/8"), "127.0.0.1:0")
 	require.NoError(t, err)
 	defer listener.Close()
 
@@ -372,4 +376,41 @@ func TestNewTURNTCPListener_WithoutProxyProtocol(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for the accepted connection")
 	}
+}
+
+func TestNewTURNTCPListener_ProxyProtocolClosesUntrustedProxy(t *testing.T) {
+	listener, err := newTURNTCPListener(proxyProtocolTURNConfig("203.0.113.0/24"), "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+
+	accepted := make(chan struct{}, 1)
+	go func() {
+		if conn, err := listener.Accept(); err == nil {
+			conn.Close()
+			accepted <- struct{}{}
+		}
+	}()
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	require.NoError(t, err)
+	defer conn.Close()
+	_, _ = conn.Write([]byte("PROXY TCP4 203.0.113.9 127.0.0.1 40123 443\r\nx"))
+
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+	_, err = conn.Read(make([]byte, 1))
+	require.Error(t, err, "the listener should have closed the connection")
+
+	select {
+	case <-accepted:
+		t.Fatal("connection from an untrusted proxy must not be accepted")
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestNewTURNTCPListener_ProxyProtocolRequiresTrustedCIDRs(t *testing.T) {
+	_, err := newTURNTCPListener(proxyProtocolTURNConfig(), "127.0.0.1:0")
+	require.Error(t, err)
+
+	_, err = newTURNTCPListener(proxyProtocolTURNConfig("not-a-cidr"), "127.0.0.1:0")
+	require.Error(t, err)
 }
