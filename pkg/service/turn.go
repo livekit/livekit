@@ -26,6 +26,7 @@ import (
 	"github.com/jxskiss/base62"
 	"github.com/pion/stun/v3"
 	"github.com/pion/turn/v5"
+	"github.com/pires/go-proxyproto"
 	"github.com/pkg/errors"
 
 	"github.com/livekit/protocol/auth"
@@ -183,6 +184,9 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 			if listenerErr != nil {
 				return nil, errors.Wrap(listenerErr, "could not listen on TURN TCP port")
 			}
+			if turnConf.UseProxyProtocol {
+				listener = &proxyproto.Listener{Listener: listener}
+			}
 			if standalone {
 				listener = telemetry.NewListener(listener)
 			}
@@ -194,7 +198,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 			}
 			serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
 
-			logValues = append(logValues, "turn.portTLS", turnConf.TLSPort, "turn.externalTLS", turnConf.ExternalTLS)
+			logValues = append(logValues, "turn.portTLS", turnConf.TLSPort, "turn.externalTLS", turnConf.ExternalTLS, "turn.useProxyProtocol", turnConf.UseProxyProtocol)
 		}
 
 		if turnConf.UDPPort > 0 {

@@ -278,3 +278,22 @@ func TestTURNAuthHandler_CreateUsername_TTLClamped(t *testing.T) {
 	_, negativeExpiry := h.CreateUsername(turnTestAPIKey, pID, -1<<40)
 	require.InDelta(t, time.Now().Unix()+int64(config.DefaultTURNTTLSeconds), negativeExpiry, 2)
 }
+
+func TestNewTurnServer_UseProxyProtocol(t *testing.T) {
+	conf := &config.Config{}
+	conf.TURN.Enabled = true
+	conf.TURN.TLSPort = 5349
+	conf.TURN.Domain = "turn.example.com"
+	conf.TURN.ExternalTLS = true
+	conf.TURN.UseProxyProtocol = true
+	conf.TURN.RelayPortRangeStart = 50000
+	conf.TURN.RelayPortRangeEnd = 50050
+	conf.TURN.BindAddresses = []string{"127.0.0.1"}
+	conf.RTC.NodeIP.V4 = "127.0.0.1"
+
+	server, err := NewTurnServer(conf, newTestTurnAuthHandler().HandleAuth, false)
+	require.NoError(t, err)
+	require.NotNil(t, server)
+	defer server.Close()
+}
+
