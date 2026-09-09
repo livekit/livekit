@@ -617,7 +617,7 @@ func (r *RoomManager) StartSession(
 		// update room store with new numParticipants
 		proto := room.ToProto()
 		persistRoomForParticipantCount(proto)
-		r.telemetry.ParticipantLeft(ctx, proto, p.ToProto(), true, participant.TelemetryGuard())
+		r.telemetry.ParticipantLeft(ctx, proto, p.ToProto(), true, participant.TelemetryGuard(), room.Internal().GetWebhooks())
 	})
 	participant.OnClaimsChanged(func(participant types.LocalParticipant) {
 		pLogger.Debugw("refreshing client token after claims change")
@@ -697,7 +697,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 		killDispServer()
 
 		roomInfo := newRoom.ToProto()
-		r.telemetry.RoomEnded(ctx, roomInfo, reason.ToProto())
+		r.telemetry.RoomEnded(ctx, roomInfo, reason.ToProto(), newRoom.Internal().GetWebhooks())
 		prometheus.RoomEnded(time.Unix(roomInfo.CreationTime, 0))
 		if err := r.deleteRoom(ctx, roomName); err != nil {
 			newRoom.Logger().Errorw("could not delete room", err)
@@ -726,7 +726,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 
 	newRoom.Hold()
 
-	r.telemetry.RoomStarted(ctx, newRoom.ToProto())
+	r.telemetry.RoomStarted(ctx, newRoom.ToProto(), newRoom.Internal().GetWebhooks())
 	prometheus.RoomStarted()
 
 	if created && createRoom.GetEgress().GetRoom() != nil {

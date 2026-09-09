@@ -86,8 +86,8 @@ func Test_OnParticipantLeft_EventIsSent(t *testing.T) {
 	guard := &telemetry.ReferenceGuard{}
 
 	// do
-	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, &livekit.AnalyticsClientMeta{}, false, false, guard)
-	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo, true, guard)
+	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, &livekit.AnalyticsClientMeta{}, false, false, guard, nil)
+	fixture.sut.ParticipantLeft(context.Background(), room, participantInfo, true, guard, nil)
 	time.Sleep(time.Millisecond * 500)
 
 	// test
@@ -179,7 +179,7 @@ func Test_OnParticipantActive_EventIsSent(t *testing.T) {
 		ClientConnectTime: 420,
 	}
 
-	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, clientMetaConnect, false, false, guard)
+	fixture.sut.ParticipantActive(context.Background(), room, participantInfo, clientMetaConnect, false, false, guard, nil)
 	time.Sleep(time.Millisecond * 500)
 
 	require.Equal(t, 2, fixture.analytics.SendEventCallCount())
@@ -248,7 +248,7 @@ func Test_OnRoomEnded_ReasonIsSent(t *testing.T) {
 	fixture := createFixture()
 
 	room := &livekit.Room{Sid: "RoomSid", Name: "RoomName"}
-	fixture.sut.RoomEnded(context.Background(), room, livekit.RoomEndReason_ROOM_END_API_DELETE)
+	fixture.sut.RoomEnded(context.Background(), room, livekit.RoomEndReason_ROOM_END_API_DELETE, nil)
 
 	fixture.flush()
 

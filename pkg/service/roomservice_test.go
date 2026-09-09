@@ -182,6 +182,7 @@ func newTestRoomService(limitConf config.LimitConfig) *TestRoomService {
 	svc, err := service.NewRoomService(
 		limitConf,
 		config.APIConfig{ExecutionTimeout: 2},
+		auth.NewFileBasedKeyProviderFromMap(map[string]string{"APIkey": "secret-that-is-long-enough"}),
 		router,
 		allocator,
 		store,

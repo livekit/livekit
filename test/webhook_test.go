@@ -124,6 +124,82 @@ func TestWebhooks(t *testing.T) {
 	}
 }
 
+// TestRoomWebhooks verifies that webhooks configured on a single room receive that
+// room's events in addition to the globally configured webhook URLs.
+func TestRoomWebhooks(t *testing.T) {
+	server, globalTS, finish, err := setupServerWithWebhook()
+	require.NoError(t, err)
+	defer finish()
+
+	// the room's own webhook endpoint, separate from the global one
+	roomTS := newTestServer(":7891")
+	require.NoError(t, roomTS.Start())
+	defer roomTS.Stop()
+
+	// setupServerWithWebhook does not populate the shared roomClient
+	rc := livekit.NewRoomServiceJSONClient(fmt.Sprintf("http://localhost:%d", defaultServerPort), &http.Client{})
+
+	// signing_key left empty: signed with the key from the global webhook config
+	_, err = rc.CreateRoom(contextWithToken(createRoomToken()), &livekit.CreateRoomRequest{
+		Name:     testRoom,
+		Webhooks: []*livekit.WebhookConfig{{Url: "http://localhost:7891"}},
+	})
+	require.NoError(t, err)
+
+	c1 := createRTCClient("c1", defaultServerPort, testRTCServicePaths[0], nil)
+	waitUntilConnected(t, c1)
+
+	testutils.WithTimeout(t, func() string {
+		if roomTS.GetEvent(webhook.EventRoomStarted) == nil {
+			return "room webhook did not receive RoomStarted"
+		}
+		if roomTS.GetEvent(webhook.EventParticipantJoined) == nil {
+			return "room webhook did not receive ParticipantJoined"
+		}
+		return ""
+	})
+	require.Equal(t, testRoom, roomTS.GetEvent(webhook.EventRoomStarted).Room.Name)
+	require.Equal(t, "c1", roomTS.GetEvent(webhook.EventParticipantJoined).Participant.Identity)
+
+	// the global webhook still receives everything
+	require.NotNil(t, globalTS.GetEvent(webhook.EventRoomStarted))
+	require.NotNil(t, globalTS.GetEvent(webhook.EventParticipantJoined))
+	roomTS.ClearEvents()
+	globalTS.ClearEvents()
+
+	writers := publishTracksForClients(t, c1)
+	defer stopWriters(writers...)
+	testutils.WithTimeout(t, func() string {
+		ev := roomTS.GetEvent(webhook.EventTrackPublished)
+		if ev == nil {
+			return "room webhook did not receive TrackPublished"
+		}
+		require.Equal(t, string(c1.ID()), ev.Participant.Sid)
+		return ""
+	})
+	roomTS.ClearEvents()
+
+	c1.Stop()
+	testutils.WithTimeout(t, func() string {
+		if roomTS.GetEvent(webhook.EventParticipantLeft) == nil {
+			return "room webhook did not receive ParticipantLeft"
+		}
+		return ""
+	})
+	require.Equal(t, "c1", roomTS.GetEvent(webhook.EventParticipantLeft).Participant.Identity)
+	roomTS.ClearEvents()
+
+	rm := server.RoomManager().GetRoom(context.Background(), testRoom)
+	rm.Close(types.RoomCloseReasonAPIDelete)
+	testutils.WithTimeout(t, func() string {
+		if roomTS.GetEvent(webhook.EventRoomFinished) == nil {
+			return "room webhook did not receive RoomFinished"
+		}
+		return ""
+	})
+	require.Equal(t, testRoom, roomTS.GetEvent(webhook.EventRoomFinished).Room.Name)
+}
+
 func setupServerWithWebhook() (server *service.LivekitServer, testServer *webhookTestServer, finishFunc func(), err error) {
 	conf, err := config.NewConfig("", true, nil, nil)
 	if err != nil {
