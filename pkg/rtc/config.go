@@ -64,18 +64,12 @@ type DirectionConfig struct {
 
 // FlexFECDirectionConfig enables flexfec-03 for a transport direction.
 type FlexFECDirectionConfig struct {
-	Enabled     bool
-	PayloadType uint8
+	Enabled bool
 }
 
 func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 	rtcConf := conf.RTC
-	flexFEC := rtcConf.FlexFEC.WithDefaults()
-	if flexFEC.UpstreamEnabled {
-		if err := validateFlexFECPayloadType(flexFEC.PayloadType); err != nil {
-			return nil, err
-		}
-	}
+	flexFEC := rtcConf.FlexFEC
 
 	webRTCConfig, err := rtcconfig.NewWebRTCConfig(&rtcConf.RTCConfig, conf.Development)
 	if err != nil {
@@ -122,8 +116,7 @@ func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
 
 func getPublisherConfig(consolidated bool, flexFEC config.FlexFECConfig) DirectionConfig {
 	publisherFlexFEC := FlexFECDirectionConfig{
-		Enabled:     flexFEC.UpstreamEnabled,
-		PayloadType: flexFEC.PayloadType,
+		Enabled: flexFEC.UpstreamEnabled,
 	}
 	if consolidated {
 		return DirectionConfig{

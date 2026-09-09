@@ -226,22 +226,6 @@ type CongestionControlConfig struct {
 type FlexFECConfig struct {
 	// negotiate flexfec-03 with publishers and use it to recover lost upstream packets
 	UpstreamEnabled bool `yaml:"upstream_enabled,omitempty"`
-	// payload type used for flexfec-03, must not collide with codec payload
-	// types or their RTX (pt+1) slots
-	PayloadType uint8 `yaml:"payload_type,omitempty"`
-}
-
-var DefaultFlexFECConfig = FlexFECConfig{
-	UpstreamEnabled: false,
-	PayloadType:     115,
-}
-
-// WithDefaults returns a copy with zero values replaced by defaults.
-func (c FlexFECConfig) WithDefaults() FlexFECConfig {
-	if c.PayloadType == 0 {
-		c.PayloadType = DefaultFlexFECConfig.PayloadType
-	}
-	return c
 }
 
 type PlayoutDelayConfig struct {
@@ -549,7 +533,6 @@ var DefaultConfig = Config{
 			SendSideBWEPacer:          string(pacer.PacerBehaviorNoQueue),
 			SendSideBWE:               sendsidebwe.DefaultSendSideBWEConfig,
 		},
-		FlexFEC: DefaultFlexFECConfig,
 	},
 	Audio: sfu.DefaultAudioConfig,
 	Video: VideoConfig{

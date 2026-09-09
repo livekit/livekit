@@ -122,8 +122,6 @@ rtc:
   # # forwarding.
   # flexfec:
   #   upstream_enabled: false
-  #   # must not collide with codec or RTX payload types
-  #   payload_type: 115
   # # allows automatic connection fallback to TCP and TURN/TLS (if configured) when UDP has been unstable, default true
   # allow_tcp_fallback: true
   # # signaling RTT (in milliseconds) below which ICE/TCP is attempted on a UDP failure; at or above it,

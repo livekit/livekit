@@ -299,8 +299,7 @@ func (c *RTCClient) createTransport(rtcconf webrtc.Configuration) error {
 
 	if c.enableFlexFEC {
 		fecConfig := rtc.FlexFECDirectionConfig{
-			Enabled:     true,
-			PayloadType: 115,
+			Enabled: true,
 		}
 		conf.Publisher.FlexFEC = fecConfig
 		conf.Subscriber.FlexFEC = fecConfig

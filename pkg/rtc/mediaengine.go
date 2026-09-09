@@ -25,6 +25,9 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
+// flexFECPayloadType is reserved alongside the codec and RTX payload types.
+const flexFECPayloadType webrtc.PayloadType = 115
+
 // flexFECRepairWindow is the flexfec-03 "repair-window" fmtp value in
 // microseconds (10 s), matching libwebrtc and pion's fixed advertised value.
 // A different value prevents those publishers from negotiating FlexFEC.
@@ -33,7 +36,7 @@ const flexFECRepairWindow = 10_000_000
 // flexFECCodecParameters returns the flexfec-03 codec registered/offered when
 // FlexFEC is enabled for a direction. Mirrors pion's ConfigureFlexFEC03 codec
 // minus its generator interceptor (the SFU runs its own encode/decode paths).
-func flexFECCodecParameters(payloadType uint8) webrtc.RTPCodecParameters {
+func flexFECCodecParameters() webrtc.RTPCodecParameters {
 	return webrtc.RTPCodecParameters{
 		RTPCodecCapability: webrtc.RTPCodecCapability{
 			MimeType:    webrtc.MimeTypeFlexFEC03,
@@ -43,40 +46,12 @@ func flexFECCodecParameters(payloadType uint8) webrtc.RTPCodecParameters {
 				{Type: webrtc.TypeRTCPFBTransportCC},
 			},
 		},
-		PayloadType: webrtc.PayloadType(payloadType),
+		PayloadType: flexFECPayloadType,
 	}
 }
 
 func isFlexFEC03MimeType(mimeType string) bool {
 	return strings.EqualFold(mimeType, webrtc.MimeTypeFlexFEC03)
-}
-
-// validateFlexFECPayloadType ensures the configured flexfec payload type does
-// not collide with any known codec payload type or its RTX (pt+1) slot.
-func validateFlexFECPayloadType(payloadType uint8) error {
-	if payloadType > 127 {
-		return fmt.Errorf("flexfec payload type %d is outside the RTP payload type range 0-127", payloadType)
-	}
-
-	pt := webrtc.PayloadType(payloadType)
-	for _, codec := range protoCodecs.VideoCodecsParameters {
-		if pt == codec.PayloadType || pt == codec.PayloadType+1 {
-			return fmt.Errorf("flexfec payload type %d collides with %s (pt %d / rtx pt %d)",
-				payloadType, codec.MimeType, codec.PayloadType, codec.PayloadType+1)
-		}
-	}
-	for _, codec := range []webrtc.RTPCodecParameters{
-		protoCodecs.OpusCodecParameters,
-		protoCodecs.RedCodecParameters,
-		protoCodecs.PCMUCodecParameters,
-		protoCodecs.PCMACodecParameters,
-	} {
-		if pt == codec.PayloadType {
-			return fmt.Errorf("flexfec payload type %d collides with %s (pt %d)",
-				payloadType, codec.MimeType, codec.PayloadType)
-		}
-	}
-	return nil
 }
 
 type codecToRegister struct {
@@ -195,7 +170,7 @@ func createMediaEngine(codecs []*livekit.Codec, config DirectionConfig, filterOu
 		// registering a flexfec codec makes pion allocate FEC SSRCs for video
 		// senders and emit a=ssrc-group:FEC-FR in offers, and lets answers
 		// accept flexfec offered by publishers
-		if err := me.RegisterCodec(flexFECCodecParameters(config.FlexFEC.PayloadType), webrtc.RTPCodecTypeVideo); err != nil {
+		if err := me.RegisterCodec(flexFECCodecParameters(), webrtc.RTPCodecTypeVideo); err != nil {
 			return nil, err
 		}
 	}

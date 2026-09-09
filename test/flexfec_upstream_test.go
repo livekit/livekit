@@ -33,7 +33,6 @@ func setupFlexFECUpstreamTest(name string) (*service.LivekitServer, func()) {
 	s := createSingleNodeServer(func(conf *config.Config) {
 		conf.RTC.FlexFEC = config.FlexFECConfig{
 			UpstreamEnabled: true,
-			PayloadType:     115,
 		}
 	})
 	go func() {
