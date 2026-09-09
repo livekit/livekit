@@ -317,6 +317,12 @@ keys:
 #   # set external_tls to true if using a L4 load balancer to terminate TLS. when enabled,
 #   # LiveKit expects unencrypted traffic on tls_port, and still advertise tls_port as a TURN/TLS candidate.
 #   external_tls: true
+#   # set proxy_protocol to true if the proxy or load balancer in front of tls_port does not preserve
+#   # the client address (it terminates TLS, or dials LiveKit from its own IP) and can send a
+#   # PROXY protocol v1/v2 header instead. Without it TURN reports the proxy's address to the
+#   # client as XOR-MAPPED-ADDRESS, which Firefox rejects when it is loopback or wildcard.
+#   # every connection on tls_port must then carry the header; connections without it are rejected.
+#   proxy_protocol: false
 #   # needs to match tls cert domain
 #   domain: turn.myhost.com
 #   # optional (set only if not using external TLS termination)

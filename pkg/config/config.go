@@ -279,6 +279,15 @@ type TURNConfig struct {
 	RelayPortRangeEnd   uint16   `yaml:"relay_range_end,omitempty"`
 	ExternalTLS         bool     `yaml:"external_tls,omitempty"`
 	BindAddresses       []string `yaml:"bind_addresses,omitempty"`
+	// ProxyProtocol makes the TURN TCP listener require a PROXY protocol (v1 or v2)
+	// header on every connection and use the client address it carries. Needed when
+	// a proxy in front of TURN dials from its own address (a TLS-terminating L4
+	// proxy, a TCP reverse proxy): TURN echoes the address it sees back to the
+	// client as XOR-MAPPED-ADDRESS, and browsers such as Firefox reject a loopback
+	// or wildcard address there and abandon the allocation. Connections without
+	// the header are rejected, so only enable it on a port that is reached
+	// exclusively through such a proxy.
+	ProxyProtocol bool `yaml:"proxy_protocol,omitempty"`
 	// PerUserRelayAllocationLimit caps the number of concurrent relay allocations
 	// a single participant credential may hold, keyed by the participant ID. This
 	// stops one authenticated participant from consuming the shared relay-port

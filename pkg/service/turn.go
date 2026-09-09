@@ -26,6 +26,7 @@ import (
 	"github.com/jxskiss/base62"
 	"github.com/pion/stun/v3"
 	"github.com/pion/turn/v5"
+	"github.com/pires/go-proxyproto"
 	"github.com/pkg/errors"
 
 	"github.com/livekit/protocol/auth"
@@ -162,26 +163,9 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 		}
 
 		if turnConf.TLSPort > 0 {
-			var listener net.Listener
-			var listenerErr error
-
-			if turnConf.ExternalTLS {
-				listener, listenerErr = net.Listen("tcp", net.JoinHostPort(addr, strconv.Itoa(turnConf.TLSPort)))
-			} else {
-				cert, err := tls.LoadX509KeyPair(turnConf.CertFile, turnConf.KeyFile)
-				if err != nil {
-					return nil, errors.Wrap(err, "TURN tls cert required")
-				}
-
-				listener, listenerErr = tls.Listen("tcp", net.JoinHostPort(addr, strconv.Itoa(turnConf.TLSPort)),
-					&tls.Config{
-						MinVersion:   tls.VersionTLS12,
-						Certificates: []tls.Certificate{cert},
-					})
-			}
-
-			if listenerErr != nil {
-				return nil, errors.Wrap(listenerErr, "could not listen on TURN TCP port")
+			listener, err := newTURNTCPListener(turnConf, net.JoinHostPort(addr, strconv.Itoa(turnConf.TLSPort)))
+			if err != nil {
+				return nil, err
 			}
 			if standalone {
 				listener = telemetry.NewListener(listener)
@@ -194,7 +178,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 			}
 			serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
 
-			logValues = append(logValues, "turn.portTLS", turnConf.TLSPort, "turn.externalTLS", turnConf.ExternalTLS)
+			logValues = append(logValues, "turn.portTLS", turnConf.TLSPort, "turn.externalTLS", turnConf.ExternalTLS, "turn.proxyProtocol", turnConf.ProxyProtocol)
 		}
 
 		if turnConf.UDPPort > 0 {
@@ -219,6 +203,36 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 
 	logger.Infow("Starting TURN server", logValues...)
 	return turn.NewServer(serverConfig)
+}
+
+// newTURNTCPListener returns the TCP listener for TURN/TLS. The PROXY protocol
+// header, when enabled, is read before TLS so the client address is known to
+// the TLS layer and to TURN regardless of who terminates TLS.
+func newTURNTCPListener(turnConf config.TURNConfig, address string) (net.Listener, error) {
+	var tlsConfig *tls.Config
+	if !turnConf.ExternalTLS {
+		cert, err := tls.LoadX509KeyPair(turnConf.CertFile, turnConf.KeyFile)
+		if err != nil {
+			return nil, errors.Wrap(err, "TURN tls cert required")
+		}
+		tlsConfig = &tls.Config{
+			MinVersion:   tls.VersionTLS12,
+			Certificates: []tls.Certificate{cert},
+		}
+	}
+
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not listen on TURN TCP port")
+	}
+	if turnConf.ProxyProtocol {
+		// the default policy requires the header and rejects connections without it
+		listener = &proxyproto.Listener{Listener: listener}
+	}
+	if tlsConfig != nil {
+		listener = tls.NewListener(listener, tlsConfig)
+	}
+	return listener, nil
 }
 
 func getTURNAuthHandlerFunc(handler *TURNAuthHandler) turn.AuthHandler {
