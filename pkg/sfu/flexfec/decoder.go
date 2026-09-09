@@ -373,7 +373,7 @@ func (d *Decoder) recoverPacket(fec *fecPacketState, recoveredPackets []*rtp.Pac
 	headerRecovery[0] |= 0x80
 	headerRecovery[0] &= 0xbf
 	payloadLength := binary.BigEndian.Uint16(headerRecovery[2:4])
-	if int(payloadLength)+12 > maxMediaPacketSize {
+	if int(payloadLength) > len(fec.flexFEC.payload) || int(payloadLength)+12 > maxMediaPacketSize {
 		return nil, fmt.Errorf("%w: recovered packet length %d", errInvalidRecoveredPacketSize, int(payloadLength)+12)
 	}
 	binary.BigEndian.PutUint16(headerRecovery[2:4], sequenceNumber)
