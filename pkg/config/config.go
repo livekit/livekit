@@ -313,12 +313,13 @@ type TURNConfig struct {
 }
 
 type NodeSelectorConfig struct {
-	Kind         string         `yaml:"kind,omitempty"`
-	SortBy       string         `yaml:"sort_by,omitempty"`
-	Algorithm    string         `yaml:"algorithm,omitempty"`
-	CPULoadLimit float32        `yaml:"cpu_load_limit,omitempty"`
-	SysloadLimit float32        `yaml:"sysload_limit,omitempty"`
-	Regions      []RegionConfig `yaml:"regions,omitempty"`
+	Kind             string         `yaml:"kind,omitempty"`
+	SortBy           string         `yaml:"sort_by,omitempty"`
+	Algorithm        string         `yaml:"algorithm,omitempty"`
+	CPULoadLimit     float32        `yaml:"cpu_load_limit,omitempty"`
+	SysloadLimit     float32        `yaml:"sysload_limit,omitempty"`
+	BytesPerSecLimit float32        `yaml:"bytes_per_sec_limit,omitempty"`
+	Regions          []RegionConfig `yaml:"regions,omitempty"`
 }
 
 type SignalRelayConfig struct {
