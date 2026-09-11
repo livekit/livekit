@@ -44,3 +44,40 @@ func TestIsAvailable(t *testing.T) {
 		require.False(t, selector.IsAvailable(n))
 	})
 }
+
+func TestIsDead(t *testing.T) {
+	t.Run("never reported", func(t *testing.T) {
+		// no stats is nothing to go on, in either direction
+		require.False(t, selector.IsDead(&livekit.Node{}))
+	})
+
+	t.Run("current", func(t *testing.T) {
+		n := &livekit.Node{
+			Stats: &livekit.NodeStats{
+				UpdatedAt: time.Now().Unix() - 3,
+			},
+		}
+		require.False(t, selector.IsDead(n))
+	})
+
+	t.Run("stale is not dead", func(t *testing.T) {
+		// far enough behind to be passed over for new rooms, nowhere near far
+		// enough for its registration to be thrown away
+		n := &livekit.Node{
+			Stats: &livekit.NodeStats{
+				UpdatedAt: time.Now().Unix() - 20,
+			},
+		}
+		require.False(t, selector.IsAvailable(n))
+		require.False(t, selector.IsDead(n))
+	})
+
+	t.Run("dead", func(t *testing.T) {
+		n := &livekit.Node{
+			Stats: &livekit.NodeStats{
+				UpdatedAt: time.Now().Unix() - 61,
+			},
+		}
+		require.True(t, selector.IsDead(n))
+	})
+}
