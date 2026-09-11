@@ -17,6 +17,7 @@ package utils
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/pion/interceptor"
 	"github.com/pion/rtp"
@@ -52,6 +53,18 @@ func FindRTXPayloadType(needle webrtc.PayloadType, haystack []webrtc.RTPCodecPar
 	aptStr := fmt.Sprintf("apt=%d", needle)
 	for _, c := range haystack {
 		if aptStr == c.SDPFmtpLine {
+			return c.PayloadType
+		}
+	}
+
+	return webrtc.PayloadType(0)
+}
+
+// FindFlexFECPayloadType returns the negotiated flexfec-03 payload type, or 0
+// if flexfec was not negotiated.
+func FindFlexFECPayloadType(haystack []webrtc.RTPCodecParameters) webrtc.PayloadType {
+	for _, c := range haystack {
+		if strings.EqualFold(c.MimeType, webrtc.MimeTypeFlexFEC03) {
 			return c.PayloadType
 		}
 	}
