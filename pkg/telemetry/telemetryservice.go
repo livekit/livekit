@@ -302,6 +302,13 @@ func (t *telemetryService) getOrCreateWorker(
 		return worker, true
 	}
 
+	// only ParticipantLeft releases a guard, so a released guard is a call landing after
+	// the participant left, e.g. ParticipantActive overtaken by the close. Do not replace
+	// the closed worker with one nothing can ever release
+	if ok && guard != nil && guard.released {
+		return worker, true
+	}
+
 	existingIsConnected := false
 	if ok {
 		existingIsConnected = worker.IsConnected()
