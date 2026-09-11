@@ -2091,7 +2091,10 @@ func (p *ParticipantImpl) setupTransportManager() error {
 	var pth transport.Handler = PublisherTransportHandler{ath}
 	var sth transport.Handler = SubscriberTransportHandler{ath}
 
-	subscriberAsPrimary := !p.params.UseOneShotSignallingMode && (p.ProtocolVersion().SubscriberAsPrimary() && p.CanSubscribe()) && !p.params.UseSinglePeerConnection
+	// CanSubscribe is intentionally excluded here: admin-initiated subscriptions can
+	// force-subscribe participants that lack subscribe permission, so the subscriber
+	// transport must be set up regardless of current permission state.
+	subscriberAsPrimary := !p.params.UseOneShotSignallingMode && p.ProtocolVersion().SubscriberAsPrimary() && !p.params.UseSinglePeerConnection
 	if subscriberAsPrimary {
 		sth = PrimaryTransportHandler{sth, p}
 	} else {

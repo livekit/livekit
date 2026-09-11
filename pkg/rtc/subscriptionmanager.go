@@ -179,13 +179,13 @@ func (m *SubscriptionManager) isClosed() bool {
 	}
 }
 
-func (m *SubscriptionManager) SubscribeToTrack(trackID livekit.TrackID, isSync bool) {
+func (m *SubscriptionManager) SubscribeToTrack(trackID livekit.TrackID, isSync bool, admin bool) {
 	if m.isClosed() {
 		return
 	}
 
 	if m.params.UseOneShotSignallingMode || isSync {
-		m.subscribeSynchronous(trackID)
+		m.subscribeSynchronous(trackID, admin)
 		return
 	}
 
@@ -195,15 +195,24 @@ func (m *SubscriptionManager) SubscribeToTrack(trackID livekit.TrackID, isSync b
 			"trackID", trackID,
 		)
 		sub = newMediaTrackSubscription(m.params.Participant.ID(), trackID, sLogger)
+		if admin {
+			sub.admin.Store(true)
+		}
 
 		m.lock.Lock()
 		m.subscriptions[trackID] = sub
 		m.lock.Unlock()
 
 		sub, desireChanged = m.setDesired(trackID, true)
+	} else if admin {
+		sub.admin.Store(true)
 	}
 	if desireChanged {
-		sub.logger.Debugw("subscribing to track")
+		if admin {
+			sub.logger.Debugw("subscribing to track (admin)")
+		} else {
+			sub.logger.Debugw("subscribing to track")
+		}
 	}
 
 	// always reconcile, since SubscribeToTrack could be called when the track is ready
@@ -755,7 +764,8 @@ func (m *SubscriptionManager) hasCapacityForSubscription(kind livekit.TrackType)
 func (m *SubscriptionManager) subscribe(sub *mediaTrackSubscription) error {
 	sub.logger.Debugw("executing subscribe")
 
-	if !m.params.Participant.CanSubscribe() {
+	// admin-initiated subscriptions bypass the CanSubscribe permission check; see SubscribeToTrack admin flag.
+	if !m.params.Participant.CanSubscribe() && !sub.admin.Load() {
 		return ErrNoSubscribePermission
 	}
 
@@ -814,10 +824,11 @@ func (m *SubscriptionManager) subscribe(sub *mediaTrackSubscription) error {
 	return nil
 }
 
-func (m *SubscriptionManager) subscribeSynchronous(trackID livekit.TrackID) error {
+func (m *SubscriptionManager) subscribeSynchronous(trackID livekit.TrackID, admin bool) error {
 	m.params.Logger.Debugw("executing subscribe synchronous", "trackID", trackID)
 
-	if !m.params.Participant.CanSubscribe() {
+	// admin-initiated subscriptions bypass the CanSubscribe permission check; see SubscribeToTrack admin flag.
+	if !m.params.Participant.CanSubscribe() && !admin {
 		return ErrNoSubscribePermission
 	}
 
@@ -1429,6 +1440,7 @@ type mediaTrackSubscription struct {
 	eventSent       atomic.Bool
 	bound           bool
 	kind            atomic.Pointer[livekit.TrackType]
+	admin           atomic.Bool
 
 	succRecordCounter atomic.Int32
 }
