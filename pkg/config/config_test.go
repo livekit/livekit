@@ -42,6 +42,21 @@ func TestConfig_DefaultsKept(t *testing.T) {
 	require.Equal(t, uint32(10), conf.Room.EmptyTimeout)
 }
 
+func TestConfig_TURNURLOptions(t *testing.T) {
+	conf, err := NewConfig("", true, nil, nil)
+	require.NoError(t, err)
+	require.False(t, conf.TURN.AdvertiseTLSPort)
+	require.False(t, conf.TURN.UDPUseDomain)
+
+	const content = `turn:
+  advertise_tls_port: true
+  udp_use_domain: true`
+	conf, err = NewConfig(content, true, nil, nil)
+	require.NoError(t, err)
+	require.True(t, conf.TURN.AdvertiseTLSPort)
+	require.True(t, conf.TURN.UDPUseDomain)
+}
+
 func TestConfig_SignalMessageSizeLimitDefaults(t *testing.T) {
 	conf, err := NewConfig("", true, nil, nil)
 	require.NoError(t, err)

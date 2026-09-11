@@ -265,6 +265,27 @@ func TestNewTurnServer_InvalidPeerCIDRFailsStartup(t *testing.T) {
 	}
 }
 
+func TestNewTurnServer_UDPUseDomainRequiresValidDomain(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		domain string
+	}{
+		{name: "missing domain"},
+		{name: "invalid domain", domain: "not a domain"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conf := &config.Config{}
+			conf.TURN.Enabled = true
+			conf.TURN.UDPPort = 3478
+			conf.TURN.UDPUseDomain = true
+			conf.TURN.Domain = tc.domain
+
+			_, err := NewTurnServer(conf, nil, false)
+			require.Error(t, err)
+		})
+	}
+}
+
 func TestTURNAuthHandler_CreateUsername_TTLClamped(t *testing.T) {
 	h := newTestTurnAuthHandler()
 	pID := livekit.ParticipantID("PA_ttl_clamp")

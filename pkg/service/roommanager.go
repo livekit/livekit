@@ -1061,12 +1061,20 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 		if r.config.TURN.UDPPort > 0 && !tlsOnly {
 			// UDP TURN is used as STUN
 			hasSTUN = true
-			for _, ip := range r.config.RTC.NodeIP.ToStringSlice() {
-				urls = append(urls, fmt.Sprintf("turn:%s?transport=udp", net.JoinHostPort(ip, strconv.Itoa(int(r.config.TURN.UDPPort)))))
+			if r.config.TURN.UDPUseDomain {
+				urls = append(urls, fmt.Sprintf("turn:%s?transport=udp", net.JoinHostPort(r.config.TURN.Domain, strconv.Itoa(int(r.config.TURN.UDPPort)))))
+			} else {
+				for _, ip := range r.config.RTC.NodeIP.ToStringSlice() {
+					urls = append(urls, fmt.Sprintf("turn:%s?transport=udp", net.JoinHostPort(ip, strconv.Itoa(int(r.config.TURN.UDPPort)))))
+				}
 			}
 		}
 		if r.config.TURN.TLSPort > 0 {
-			urls = append(urls, fmt.Sprintf("turns:%s:443?transport=tcp", r.config.TURN.Domain))
+			turnTLSPort := 443
+			if r.config.TURN.AdvertiseTLSPort {
+				turnTLSPort = r.config.TURN.TLSPort
+			}
+			urls = append(urls, fmt.Sprintf("turns:%s:%d?transport=tcp", r.config.TURN.Domain, turnTLSPort))
 		}
 		if len(urls) > 0 {
 			username, expiry := r.turnAuthHandler.CreateUsername(apiKey, participant.ID(), r.config.TURN.TTLSeconds)
