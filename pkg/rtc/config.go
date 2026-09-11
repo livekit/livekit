@@ -37,6 +37,8 @@ type WebRTCConfig struct {
 	Receiver      ReceiverConfig
 	Publisher     DirectionConfig
 	Subscriber    DirectionConfig
+
+	flexFEC config.FlexFECConfig
 }
 
 type ReceiverConfig struct {
@@ -57,10 +59,17 @@ type RTCPFeedbackConfig struct {
 type DirectionConfig struct {
 	RTPHeaderExtension RTPHeaderExtensionConfig
 	RTCPFeedback       RTCPFeedbackConfig
+	FlexFEC            FlexFECDirectionConfig
+}
+
+// FlexFECDirectionConfig enables flexfec-03 for a transport direction.
+type FlexFECDirectionConfig struct {
+	Enabled bool
 }
 
 func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 	rtcConf := conf.RTC
+	flexFEC := rtcConf.FlexFEC
 
 	webRTCConfig, err := rtcconfig.NewWebRTCConfig(&rtcConf.RTCConfig, conf.Development)
 	if err != nil {
@@ -86,13 +95,14 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 			PacketBufferSizeVideo: rtcConf.PacketBufferSizeVideo,
 			PacketBufferSizeAudio: rtcConf.PacketBufferSizeAudio,
 		},
-		Publisher:  getPublisherConfig(false),
+		Publisher:  getPublisherConfig(false, flexFEC),
 		Subscriber: getSubscriberConfig(rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE),
+		flexFEC:    flexFEC,
 	}, nil
 }
 
 func (c *WebRTCConfig) UpdatePublisherConfig(consolidated bool) {
-	c.Publisher = getPublisherConfig(consolidated)
+	c.Publisher = getPublisherConfig(consolidated, c.flexFEC)
 }
 
 func (c *WebRTCConfig) UpdateSubscriberConfig(ccConf config.CongestionControlConfig) {
@@ -104,9 +114,13 @@ func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
 	c.SettingEngine.BufferFactory = factory.GetOrNew
 }
 
-func getPublisherConfig(consolidated bool) DirectionConfig {
+func getPublisherConfig(consolidated bool, flexFEC config.FlexFECConfig) DirectionConfig {
+	publisherFlexFEC := FlexFECDirectionConfig{
+		Enabled: flexFEC.UpstreamEnabled,
+	}
 	if consolidated {
 		return DirectionConfig{
+			FlexFEC: publisherFlexFEC,
 			RTPHeaderExtension: RTPHeaderExtensionConfig{
 				Audio: []string{
 					sdp.SDESMidURI,
@@ -141,6 +155,7 @@ func getPublisherConfig(consolidated bool) DirectionConfig {
 	}
 
 	return DirectionConfig{
+		FlexFEC: publisherFlexFEC,
 		RTPHeaderExtension: RTPHeaderExtensionConfig{
 			Audio: []string{
 				sdp.SDESMidURI,
