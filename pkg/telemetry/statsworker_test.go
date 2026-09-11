@@ -83,8 +83,20 @@ func TestGetOrCreateWorkerReleasedGuard(t *testing.T) {
 	require.False(t, found)
 	require.True(t, w.Close(&g))
 
-	late, found := ts.getOrCreateWorker(context.Background(), roomID, "", pID, "", &g)
-	require.True(t, found)
-	require.Same(t, w, late)
-	require.Same(t, w, ts.workers[roomID][pID])
+	t.Run("closed worker still in the map", func(t *testing.T) {
+		late, found := ts.getOrCreateWorker(context.Background(), roomID, "", pID, "", &g)
+		require.True(t, found)
+		require.Same(t, w, late)
+		require.Same(t, w, ts.workers[roomID][pID])
+	})
+
+	t.Run("closed worker already reaped", func(t *testing.T) {
+		delete(ts.workers[roomID], pID)
+
+		late, found := ts.getOrCreateWorker(context.Background(), roomID, "", pID, "", &g)
+		require.True(t, found)
+		require.Nil(t, late)
+		require.Empty(t, ts.workers[roomID])
+		late.SetConnected()
+	})
 }

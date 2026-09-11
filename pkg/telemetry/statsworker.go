@@ -205,6 +205,10 @@ func (s *StatsWorker) sealStatsLocked() statsBatch {
 }
 
 func (s *StatsWorker) SetConnected() {
+	if s == nil {
+		return
+	}
+
 	s.lock.Lock()
 	s.isConnected = true
 	s.lock.Unlock()
