@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zapcore"
 )
 
 func TestStatsWorker(t *testing.T) {
@@ -59,5 +60,10 @@ func TestStatsWorker(t *testing.T) {
 			require.False(t, superseded.ForceClose(survivor))
 			require.Equal(t, 0, survivor.refCount.count)
 		})
+	})
+
+	t.Run("logging a nil worker does not panic", func(t *testing.T) {
+		var w *StatsWorker
+		require.NoError(t, w.MarshalLogObject(zapcore.NewMapObjectEncoder()))
 	})
 }

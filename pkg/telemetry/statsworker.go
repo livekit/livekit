@@ -328,6 +328,10 @@ func (s *StatsWorker) collectStats(
 }
 
 func (s *StatsWorker) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if s == nil {
+		return nil
+	}
+
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
