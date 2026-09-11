@@ -516,6 +516,120 @@ func TestFilteringCandidates(t *testing.T) {
 	transport.Close()
 }
 
+func sdpHasApplicationMedia(sd webrtc.SessionDescription) bool {
+	parsed, err := sd.Unmarshal()
+	if err != nil {
+		return false
+	}
+	for _, m := range parsed.MediaDescriptions {
+		if strings.EqualFold(m.MediaName.Media, "application") {
+			return true
+		}
+	}
+	return false
+}
+
+// Regression test for https://github.com/livekit/livekit/issues/4825.
+// Publisher-primary clients (protocol <= 2) use a separate subscriber PC where the
+// server is the offerer. Without subscriber data channels the offer omits
+// m=application, Pion never starts SCTP, and clients that push SCTP INIT on that
+// transport (e.g. esp_peer on ESP32) get no response.
+func TestSubscriberTransportSCTPPublisherPrimary(t *testing.T) {
+	subscriberOffererParams := func() TransportParams {
+		return TransportParams{
+			Config: &WebRTCConfig{},
+			EnabledSubscribeCodecs: []*livekit.Codec{
+				{Mime: mime.MimeTypeOpus.String()},
+			},
+			IsOfferer: true,
+			Transport: livekit.SignalTarget_SUBSCRIBER,
+		}
+	}
+
+	t.Run("offer omits m=application without subscriber data channels", func(t *testing.T) {
+		params := subscriberOffererParams()
+		handler := &transportfakes.FakeHandler{}
+		params.Handler = handler
+		server, err := NewPCTransport(params)
+		require.NoError(t, err)
+		defer server.Close()
+
+		_, err = server.pc.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{
+			Direction: webrtc.RTPTransceiverDirectionSendonly,
+		})
+		require.NoError(t, err)
+
+		var capturedOffer webrtc.SessionDescription
+		handler.OnOfferCalls(func(sd webrtc.SessionDescription, _ uint32, _ map[string]string) error {
+			capturedOffer = sd
+			return nil
+		})
+		server.Negotiate(true)
+
+		require.Eventually(t, func() bool {
+			return capturedOffer.SDP != ""
+		}, 10*time.Second, 10*time.Millisecond, "subscriber offer not produced")
+		require.False(t, sdpHasApplicationMedia(capturedOffer))
+	})
+
+	t.Run("offer includes m=application with subscriber data channels", func(t *testing.T) {
+		params := subscriberOffererParams()
+		handler := &transportfakes.FakeHandler{}
+		params.Handler = handler
+		server, err := NewPCTransport(params)
+		require.NoError(t, err)
+		defer server.Close()
+
+		_, err = server.pc.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{
+			Direction: webrtc.RTPTransceiverDirectionSendonly,
+		})
+		require.NoError(t, err)
+		require.NoError(t, server.CreateDataChannel(ReliableDataChannel, nil))
+		require.NoError(t, server.CreateDataChannel(LossyDataChannel, nil))
+
+		var capturedOffer webrtc.SessionDescription
+		handler.OnOfferCalls(func(sd webrtc.SessionDescription, _ uint32, _ map[string]string) error {
+			capturedOffer = sd
+			return nil
+		})
+		server.Negotiate(true)
+
+		require.Eventually(t, func() bool {
+			return capturedOffer.SDP != ""
+		}, 10*time.Second, 10*time.Millisecond, "subscriber offer not produced")
+		require.True(t, sdpHasApplicationMedia(capturedOffer))
+	})
+
+	t.Run("SCTP establishes when subscriber offer includes m=application", func(t *testing.T) {
+		paramsA := subscriberOffererParams()
+		handlerA := &transportfakes.FakeHandler{}
+		paramsA.Handler = handlerA
+		server, err := NewPCTransport(paramsA)
+		require.NoError(t, err)
+		defer server.Close()
+
+		require.NoError(t, server.CreateDataChannel(ReliableDataChannel, nil))
+		require.NoError(t, server.CreateDataChannel(LossyDataChannel, nil))
+
+		paramsB := TransportParams{
+			Config:    &WebRTCConfig{},
+			IsOfferer: false,
+		}
+		handlerB := &transportfakes.FakeHandler{}
+		paramsB.Handler = handlerB
+		client, err := NewPCTransport(paramsB)
+		require.NoError(t, err)
+		defer client.Close()
+
+		handleICEExchange(t, server, client, handlerA, handlerB)
+		connectTransports(t, server, client, handlerA, handlerB, false, 1, 1)
+
+		require.Eventually(t, func() bool {
+			return server.pc.SCTP().State() == webrtc.SCTPTransportStateConnected
+		}, testutils.ConnectTimeout, 10*time.Millisecond, "server subscriber SCTP did not connect")
+	})
+}
+
 func handleICEExchange(t *testing.T, a, b *PCTransport, ah, bh *transportfakes.FakeHandler) {
 	ah.OnICECandidateCalls(func(candidate *webrtc.ICECandidate, target livekit.SignalTarget) error {
 		if candidate == nil {
