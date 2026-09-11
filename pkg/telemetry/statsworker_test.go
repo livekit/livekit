@@ -1,10 +1,13 @@
 package telemetry
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/livekit/protocol/livekit"
 )
 
 func TestStatsWorker(t *testing.T) {
@@ -65,5 +68,35 @@ func TestStatsWorker(t *testing.T) {
 	t.Run("logging a nil worker does not panic", func(t *testing.T) {
 		var w *StatsWorker
 		require.NoError(t, w.MarshalLogObject(zapcore.NewMapObjectEncoder()))
+	})
+}
+
+func TestGetOrCreateWorkerReleasedGuard(t *testing.T) {
+	// ParticipantActive overtaken by the participant's close arrives with a guard that
+	// ParticipantLeft already released. It must not replace the closed worker with one
+	// nothing can release.
+	ts := &telemetryService{workers: make(map[livekit.RoomID]map[livekit.ParticipantID]*StatsWorker)}
+	roomID, pID := livekit.RoomID("room"), livekit.ParticipantID("participant")
+
+	var g ReferenceGuard
+	w, found := ts.getOrCreateWorker(context.Background(), roomID, "", pID, "", &g)
+	require.False(t, found)
+	require.True(t, w.Close(&g))
+
+	t.Run("closed worker still in the map", func(t *testing.T) {
+		late, found := ts.getOrCreateWorker(context.Background(), roomID, "", pID, "", &g)
+		require.True(t, found)
+		require.Same(t, w, late)
+		require.Same(t, w, ts.workers[roomID][pID])
+	})
+
+	t.Run("closed worker already reaped", func(t *testing.T) {
+		delete(ts.workers[roomID], pID)
+
+		late, found := ts.getOrCreateWorker(context.Background(), roomID, "", pID, "", &g)
+		require.True(t, found)
+		require.Nil(t, late)
+		require.Empty(t, ts.workers[roomID])
+		late.SetConnected()
 	})
 }
