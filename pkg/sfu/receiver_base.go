@@ -197,7 +197,7 @@ func (r *ReceiverBase) Close(reason string, clearBuffers bool) {
 	}
 	r.streamTrackerManager.Close()
 
-	closeTrackSenders(r.downTrackSpreader.ResetAndGetDownTracks())
+	closeTrackSenders(r.downTrackSpreader.CloseAndGetDownTracks())
 
 	if rt := r.loadREDTransformer(); rt != nil {
 		rt.Close()
@@ -491,7 +491,9 @@ func (r *ReceiverBase) AddDownTrack(track TrackSender) error {
 	track.UpTrackMaxPublishedLayerChange(r.streamTrackerManager.GetMaxPublishedLayer())
 	track.UpTrackMaxTemporalLayerSeenChange(r.streamTrackerManager.GetMaxTemporalLayerSeen())
 
-	r.downTrackSpreader.Store(track)
+	if !r.downTrackSpreader.TryStore(track) {
+		return ErrReceiverClosed
+	}
 	r.params.Logger.Debugw("downtrack added", "subscriberID", track.SubscriberID())
 	return nil
 }

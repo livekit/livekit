@@ -37,6 +37,7 @@ type DownTrackSpreader[T sender] struct {
 	downTrackMu      sync.RWMutex
 	downTracks       map[livekit.ParticipantID]T
 	downTracksShadow []T
+	closed           bool
 }
 
 func NewDownTrackSpreader[T sender](params DownTrackSpreaderParams) *DownTrackSpreader[T] {
@@ -58,20 +59,35 @@ func (d *DownTrackSpreader[T]) ResetAndGetDownTracks() []T {
 	d.downTrackMu.Lock()
 	defer d.downTrackMu.Unlock()
 
-	downTracks := d.downTracksShadow
-
-	d.downTracks = make(map[livekit.ParticipantID]T)
-	d.downTracksShadow = nil
-
-	return downTracks
+	return d.resetAndGetDownTracksLocked()
 }
 
-func (d *DownTrackSpreader[T]) Store(sender T) {
+// CloseAndGetDownTracks terminally closes the spreader and drains all senders.
+// Once it returns, TryStore will reject every subsequent sender.
+func (d *DownTrackSpreader[T]) CloseAndGetDownTracks() []T {
 	d.downTrackMu.Lock()
 	defer d.downTrackMu.Unlock()
 
+	d.closed = true
+	return d.resetAndGetDownTracksLocked()
+}
+
+func (d *DownTrackSpreader[T]) Store(sender T) {
+	_ = d.TryStore(sender)
+}
+
+// TryStore stores sender unless the spreader has been terminally closed.
+func (d *DownTrackSpreader[T]) TryStore(sender T) bool {
+	d.downTrackMu.Lock()
+	defer d.downTrackMu.Unlock()
+
+	if d.closed {
+		return false
+	}
+
 	d.downTracks[sender.SubscriberID()] = sender
 	d.shadowDownTracks()
+	return true
 }
 
 func (d *DownTrackSpreader[T]) Free(subscriberID livekit.ParticipantID) {
@@ -113,6 +129,13 @@ func (d *DownTrackSpreader[T]) DownTrackCount() int {
 	d.downTrackMu.RLock()
 	defer d.downTrackMu.RUnlock()
 	return len(d.downTracksShadow)
+}
+
+func (d *DownTrackSpreader[T]) resetAndGetDownTracksLocked() []T {
+	downTracks := d.downTracksShadow
+	d.downTracks = make(map[livekit.ParticipantID]T)
+	d.downTracksShadow = nil
+	return downTracks
 }
 
 func (d *DownTrackSpreader[T]) shadowDownTracks() {
