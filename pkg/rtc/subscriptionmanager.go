@@ -307,6 +307,19 @@ func (m *SubscriptionManager) GetSubscribedTracks() []types.SubscribedTrack {
 	return tracks
 }
 
+func (m *SubscriptionManager) GetSubscribedDataTracks() []types.DataDownTrack {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
+	tracks := make([]types.DataDownTrack, 0, len(m.dataTrackSubscriptions))
+	for _, s := range m.dataTrackSubscriptions {
+		if dt := s.getDataDownTrack(); dt != nil {
+			tracks = append(tracks, dt)
+		}
+	}
+	return tracks
+}
+
 func (m *SubscriptionManager) IsTrackNameSubscribed(publisherIdentity livekit.ParticipantIdentity, trackName string) bool {
 	m.lock.RLock()
 	defer m.lock.RUnlock()

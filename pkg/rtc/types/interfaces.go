@@ -548,6 +548,7 @@ type LocalParticipant interface {
 	UnsubscribeFromTrack(trackID livekit.TrackID)
 	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings)
 	GetSubscribedTracks() []SubscribedTrack
+	GetSubscribedDataTracks() []DataDownTrack
 	IsTrackNameSubscribed(publisherIdentity livekit.ParticipantIdentity, trackName string) bool
 	SubscribeToDataTrack(trackID livekit.TrackID)
 	UnsubscribeFromDataTrack(trackID livekit.TrackID)
