@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -281,13 +282,25 @@ type whipParticipantService struct {
 	*RoomManager
 }
 
+func getWHIPParticipant(
+	room *rtc.Room,
+	identity livekit.ParticipantIdentity,
+	participantID livekit.ParticipantID,
+) types.LocalParticipant {
+	lp := room.GetParticipant(identity)
+	if lp == nil || lp.ID() != participantID {
+		return nil
+	}
+	return lp
+}
+
 func (r whipParticipantService) ICETrickle(ctx context.Context, req *rpc.WHIPParticipantICETrickleRequest) (*emptypb.Empty, error) {
 	room := r.RoomManager.GetRoom(ctx, livekit.RoomName(req.Room))
 	if room == nil {
 		return nil, ErrRoomNotFound
 	}
 
-	lp := room.GetParticipantByID(livekit.ParticipantID(req.ParticipantId))
+	lp := getWHIPParticipant(room, livekit.ParticipantIdentity(req.GetParticipantIdentity()), livekit.ParticipantID(req.GetParticipantId()))
 	if lp == nil {
 		return nil, ErrParticipantNotFound
 	}
@@ -318,7 +331,7 @@ func (r whipParticipantService) ICERestart(ctx context.Context, req *rpc.WHIPPar
 		return nil, ErrRoomNotFound
 	}
 
-	lp := room.GetParticipantByID(livekit.ParticipantID(req.ParticipantId))
+	lp := getWHIPParticipant(room, livekit.ParticipantIdentity(req.GetParticipantIdentity()), livekit.ParticipantID(req.GetParticipantId()))
 	if lp == nil {
 		return nil, ErrParticipantNotFound
 	}
@@ -346,7 +359,7 @@ func (r whipParticipantService) DeleteSession(ctx context.Context, req *rpc.WHIP
 		return nil, ErrRoomNotFound
 	}
 
-	lp := room.GetParticipantByID(livekit.ParticipantID(req.ParticipantId))
+	lp := getWHIPParticipant(room, livekit.ParticipantIdentity(req.GetParticipantIdentity()), livekit.ParticipantID(req.GetParticipantId()))
 	if lp != nil {
 		room.RemoveParticipant(
 			lp.Identity(),
