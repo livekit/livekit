@@ -557,6 +557,16 @@ type FakeLocalParticipant struct {
 	getResponseSinkReturnsOnCall map[int]struct {
 		result1 routing.MessageSink
 	}
+	GetSubscribedDataTracksStub        func() []types.DataDownTrack
+	getSubscribedDataTracksMutex       sync.RWMutex
+	getSubscribedDataTracksArgsForCall []struct {
+	}
+	getSubscribedDataTracksReturns struct {
+		result1 []types.DataDownTrack
+	}
+	getSubscribedDataTracksReturnsOnCall map[int]struct {
+		result1 []types.DataDownTrack
+	}
 	GetSubscribedParticipantsStub        func() []livekit.ParticipantID
 	getSubscribedParticipantsMutex       sync.RWMutex
 	getSubscribedParticipantsArgsForCall []struct {
@@ -4410,6 +4420,59 @@ func (fake *FakeLocalParticipant) GetResponseSinkReturnsOnCall(i int, result1 ro
 	}
 	fake.getResponseSinkReturnsOnCall[i] = struct {
 		result1 routing.MessageSink
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetSubscribedDataTracks() []types.DataDownTrack {
+	fake.getSubscribedDataTracksMutex.Lock()
+	ret, specificReturn := fake.getSubscribedDataTracksReturnsOnCall[len(fake.getSubscribedDataTracksArgsForCall)]
+	fake.getSubscribedDataTracksArgsForCall = append(fake.getSubscribedDataTracksArgsForCall, struct {
+	}{})
+	stub := fake.GetSubscribedDataTracksStub
+	fakeReturns := fake.getSubscribedDataTracksReturns
+	fake.recordInvocation("GetSubscribedDataTracks", []interface{}{})
+	fake.getSubscribedDataTracksMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetSubscribedDataTracksCallCount() int {
+	fake.getSubscribedDataTracksMutex.RLock()
+	defer fake.getSubscribedDataTracksMutex.RUnlock()
+	return len(fake.getSubscribedDataTracksArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetSubscribedDataTracksCalls(stub func() []types.DataDownTrack) {
+	fake.getSubscribedDataTracksMutex.Lock()
+	defer fake.getSubscribedDataTracksMutex.Unlock()
+	fake.GetSubscribedDataTracksStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetSubscribedDataTracksReturns(result1 []types.DataDownTrack) {
+	fake.getSubscribedDataTracksMutex.Lock()
+	defer fake.getSubscribedDataTracksMutex.Unlock()
+	fake.GetSubscribedDataTracksStub = nil
+	fake.getSubscribedDataTracksReturns = struct {
+		result1 []types.DataDownTrack
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetSubscribedDataTracksReturnsOnCall(i int, result1 []types.DataDownTrack) {
+	fake.getSubscribedDataTracksMutex.Lock()
+	defer fake.getSubscribedDataTracksMutex.Unlock()
+	fake.GetSubscribedDataTracksStub = nil
+	if fake.getSubscribedDataTracksReturnsOnCall == nil {
+		fake.getSubscribedDataTracksReturnsOnCall = make(map[int]struct {
+			result1 []types.DataDownTrack
+		})
+	}
+	fake.getSubscribedDataTracksReturnsOnCall[i] = struct {
+		result1 []types.DataDownTrack
 	}{result1}
 }
 
