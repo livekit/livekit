@@ -34,6 +34,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 const (
@@ -159,6 +160,8 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 		SupportsCodecChange:            params.Subscriber.SupportsCodecChange(),
 		EnableStartAtDesiredQuality:    params.EnableStartAtDesiredQuality,
 		RTXBudget:                      params.SubscriberConfig.RTXBudget,
+		EnableFlexFEC:                  params.SubscriberConfig.FlexFEC.Enabled,
+		OnFECSent:                      prometheus.RecordFECDownstream,
 		Listener:                       s,
 	})
 	if err != nil {
@@ -213,6 +216,7 @@ func (t *SubscribedTrack) Bound(err error) {
 		if t.settings != nil {
 			if t.params.AdaptiveStream {
 				// remove `disabled` flag to force a visibility update
+				t.settings = utils.CloneProto(t.settings)
 				t.settings.Disabled = false
 				t.logger.Debugw("enabling subscriber track settings on bind", "settings", logger.Proto(t.settings))
 			}
@@ -318,6 +322,7 @@ func (t *SubscribedTrack) SetPublisherMuted(muted bool) {
 
 func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings, isImmediate bool) {
 	t.settingsLock.Lock()
+	settings = mergeSubscriberSettings(t.settings, settings)
 	if proto.Equal(t.settings, settings) {
 		t.logger.Debugw("skipping subscriber track settings", "settings", logger.Proto(t.settings))
 		t.settingsLock.Unlock()
@@ -325,7 +330,8 @@ func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrack
 	}
 
 	isImmediate = isImmediate || (!settings.Disabled && settings.Disabled != t.isMutedLocked())
-	t.settings = proto.CloneOf(settings)
+	// mergeSubscriberSettings returns a fresh copy, so it can be stored as is
+	t.settings = settings
 	t.logger.Debugw("saving subscriber track settings", "settings", logger.Proto(t.settings))
 	t.settingsLock.Unlock()
 
@@ -372,14 +378,17 @@ func (t *SubscribedTrack) applySettings() {
 	}
 
 	t.settingsLock.Lock()
-	if settingsVersion != t.settingsVersion {
+	if settingsVersion != t.settingsVersion || settings != t.settings {
 		// a newer settings has superseded this one
 		t.settingsLock.Unlock()
 		return
 	}
 
-	t.logger.Debugw("applying subscriber track settings", "settings", logger.Proto(t.settings))
-	if t.settings.Disabled {
+	t.logger.Debugw("applying subscriber track settings", "settings", logger.Proto(settings))
+	if settings.Fec != nil {
+		dt.SetFECProtection(*settings.Fec)
+	}
+	if settings.Disabled {
 		dt.Mute(true)
 		t.settingsLock.Unlock()
 		return
