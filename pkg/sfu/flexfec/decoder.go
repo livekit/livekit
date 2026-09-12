@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package flexfec implements a FlexFEC-03 decoder used to recover RTP packets
-// lost on the publisher leg before they are forwarded downstream.
+// Package flexfec recovers lost upstream RTP packets and generates downstream
+// repair packets using FlexFEC-03.
 // https://datatracker.ietf.org/doc/html/draft-ietf-payload-flexible-fec-scheme-03
 //
-// The recovery logic is ported from pion/interceptor pkg/flexfec
+// The decoder's recovery logic is ported from pion/interceptor pkg/flexfec
 // (https://github.com/pion/interceptor, MIT License, Copyright The Pion
 // community), which is itself modeled on libwebrtc's ForwardErrorCorrection
 // receiver. Deviations from the pion implementation:

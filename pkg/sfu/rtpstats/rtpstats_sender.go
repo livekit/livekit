@@ -394,8 +394,15 @@ func NewRTPStatsSender(params RTPStatsParams, cacheSize int) *RTPStatsSender {
 }
 
 func (r *RTPStatsSender) Seed(from *RTPStatsSender) {
+	if from == nil || from == r {
+		return
+	}
 	r.lock.Lock()
 	defer r.lock.Unlock()
+	// The previous sender's final stats callback can still update snapshots
+	// after Stop. Serialize the state copy with those updates.
+	from.lock.RLock()
+	defer from.lock.RUnlock()
 
 	if !r.seed(from.rtpStatsBase) {
 		return
