@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
+	"github.com/livekit/livekit-server/pkg/sfu/flexfec"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
 )
@@ -54,6 +55,8 @@ type Packet struct {
 	WriteStream        webrtc.TrackLocalWriter
 	Pool               *sync.Pool
 	PoolEntity         *[]byte
+	// FEC is set only on original video media, never padding, RTX or probes.
+	FEC *flexfec.Encoder
 }
 
 type Pacer interface {

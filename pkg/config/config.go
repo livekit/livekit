@@ -222,10 +222,12 @@ type CongestionControlConfig struct {
 	SendSideBWE      sendsidebwe.SendSideBWEConfig `yaml:"send_side_bwe,omitempty"`
 }
 
-// FlexFECConfig controls FlexFEC-03 recovery on the publisher -> SFU leg.
+// FlexFECConfig controls FlexFEC-03 independently on each media leg.
 type FlexFECConfig struct {
 	// negotiate flexfec-03 with publishers and use it to recover lost upstream packets
 	UpstreamEnabled bool `yaml:"upstream_enabled,omitempty"`
+	// allow repair packets for subscribers that negotiate flexfec-03 and select a per-track FEC preset
+	DownstreamEnabled bool `yaml:"downstream_enabled,omitempty"`
 }
 
 type PlayoutDelayConfig struct {
