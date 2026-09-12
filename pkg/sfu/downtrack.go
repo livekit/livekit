@@ -273,6 +273,7 @@ type DownTrack struct {
 	fecLock              sync.Mutex
 	fecEncoder           atomic.Pointer[flexfec.Encoder]
 	fecProtectionPercent atomic.Uint32
+	fecNotifiedOverhead  atomic.Uint32
 	fecState             flexfec.EncoderState
 
 	receiverLock sync.RWMutex

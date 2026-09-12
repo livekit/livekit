@@ -72,9 +72,9 @@ func TestPacerFECFinalHeadersAndAccounting(t *testing.T) {
 	encoder := flexfec.NewEncoder(115, 456, func(n int, bytes int) { sent += n; payloadBytes += bytes })
 	encoder.SetProtectionPercent(20)
 	total := 0
-	for i := range flexfec.MediaPacketsPerGroup {
+	for i := range 5 {
 		p := PacketFactory.Get().(*Packet)
-		h := &rtp.Header{Version: 2, SSRC: 123, PayloadType: 96, SequenceNumber: uint16(i), Timestamp: uint32(i * 3000)}
+		h := &rtp.Header{Version: 2, SSRC: 123, PayloadType: 96, SequenceNumber: uint16(i), Timestamp: 3000, Marker: i == 4}
 		_ = h.SetExtension(3, []byte{0, 0, 0})
 		_ = h.SetExtension(5, []byte{0, 0})
 		_ = h.SetExtension(7, []byte{0, 0})
@@ -122,7 +122,7 @@ func TestPacerFECSkipsRTXProbesAndFailedWrites(t *testing.T) {
 			e.SetProtectionPercent(20)
 			for i := range 10 {
 				p := PacketFactory.Get().(*Packet)
-				*p = Packet{Header: &rtp.Header{Version: 2, SSRC: 123, SequenceNumber: uint16(i)}, HeaderSize: 12, Payload: []byte{1}, FEC: e, WriteStream: w, IsRTX: mode == "rtx", IsProbe: mode == "probe"}
+				*p = Packet{Header: &rtp.Header{Version: 2, SSRC: 123, SequenceNumber: uint16(i), Marker: true}, HeaderSize: 12, Payload: []byte{1}, FEC: e, WriteStream: w, IsRTX: mode == "rtx", IsProbe: mode == "probe"}
 				n, err := b.SendPacket(p)
 				if w.failMedia {
 					require.ErrorIs(t, err, io.ErrClosedPipe)

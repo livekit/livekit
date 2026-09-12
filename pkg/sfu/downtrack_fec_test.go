@@ -57,10 +57,11 @@ func TestDownTrackFECNegotiationAndLifecycle(t *testing.T) {
 			require.NotNil(t, old)
 			p := rtp.Header{Version: 2, SSRC: 123, PayloadType: 96}
 			var lastSequenceNumber uint16
-			for i := range flexfec.MediaPacketsPerGroup {
+			for i := range 5 {
 				p.SequenceNumber++
+				p.Marker = i == 4
 				repair := old.Encode(&p, []byte{1, 2, 3})
-				if i == flexfec.MediaPacketsPerGroup-1 {
+				if i == 4 {
 					require.Len(t, repair, 1)
 					require.EqualValues(t, 456, repair[0].SSRC)
 					require.EqualValues(t, 118, repair[0].PayloadType, "use negotiated PT")
@@ -69,8 +70,9 @@ func TestDownTrackFECNegotiationAndLifecycle(t *testing.T) {
 			}
 			d.bindFEC(c)
 			require.NotSame(t, old, d.fecEncoder.Load())
-			for range flexfec.MediaPacketsPerGroup {
+			for i := range 5 {
 				p.SequenceNumber++
+				p.Marker = i == 4
 				require.Empty(t, old.Encode(&p, []byte{1, 2, 3}), "old queued writes cannot generate repair")
 				for _, repair := range d.fecEncoder.Load().Encode(&p, []byte{1, 2, 3}) {
 					require.Equal(t, lastSequenceNumber+1, repair.SequenceNumber, "reusing an SSRC must preserve repair sequencing")
@@ -89,7 +91,9 @@ func TestDownTrackFECBandwidthReservation(t *testing.T) {
 	_, got := d.getLayeredBitrateWithFEC()
 	require.Equal(t, rates, got)
 	d.SetFECProtection(livekit.FECProtection_FEC_MEDIUM)
-	d.fecEncoder.Store(flexfec.NewEncoder(115, 456, nil))
+	encoder := flexfec.NewEncoder(115, 456, nil)
+	encoder.SetProtectionPercent(25)
+	d.fecEncoder.Store(encoder)
 	layers, got := d.getLayeredBitrateWithFEC()
 	require.Equal(t, []int32{0, 1}, layers)
 	require.EqualValues(t, 125_000, got[0][0])
@@ -104,6 +108,41 @@ type fecTrackReceiver struct {
 }
 
 func (r *fecTrackReceiver) GetLayeredBitrate() ([]int32, Bitrates) { return []int32{0, 1}, r.rates }
+
+type fecAllocatorListener struct {
+	DownTrackStreamAllocatorListener
+	changes int
+}
+
+func (l *fecAllocatorListener) OnSubscriptionChanged(*DownTrack) { l.changes++ }
+
+func TestDownTrackFECMeasuredBandwidthReservation(t *testing.T) {
+	listener := &fecAllocatorListener{}
+	d := &DownTrack{
+		params: DownTrackParams{EnableFlexFEC: true}, kind: webrtc.RTPCodecTypeVideo,
+		receiver:                  &fecTrackReceiver{rates: Bitrates{{100_000}}},
+		negotiatedCodecParameters: []webrtc.RTPCodecParameters{{RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeFlexFEC03}, PayloadType: 115}},
+		streamAllocatorListener:   listener,
+	}
+	d.SetFECProtection(livekit.FECProtection_FEC_LOW)
+	d.bindFEC(fecTrackContext{ssrcFEC: 456})
+	e := d.fecEncoder.Load()
+	p := rtp.Header{Version: 2, SSRC: 123, PayloadType: 96, Marker: true}
+	for range 2 {
+		p.SequenceNumber++
+		repairs := e.Encode(&p, make([]byte, 100))
+		require.Len(t, repairs, 1)
+		e.RecordSent(1, len(repairs[0].Payload), repairs[0].MarshalSize())
+	}
+	_, rates := d.getLayeredBitrateWithFEC()
+	require.EqualValues(t, 218_000, rates[0][0], "reserve actual small-frame overhead, including RTP/FEC headers")
+	require.Equal(t, 1, listener.changes, "reallocate on an overhead change, not on every repair")
+	d.SetFECProtection(livekit.FECProtection_FEC_NONE)
+	_, rates = d.getLayeredBitrateWithFEC()
+	require.EqualValues(t, 100_000, rates[0][0])
+	require.Equal(t, 2, listener.changes)
+	d.closeFEC()
+}
 
 func TestDownTrackFECProtectionChanges(t *testing.T) {
 	d := &DownTrack{
@@ -121,8 +160,9 @@ func TestDownTrackFECProtectionChanges(t *testing.T) {
 	p := rtp.Header{Version: 2, SSRC: 123, PayloadType: 96}
 	send := func() int {
 		count := 0
-		for range 20 {
+		for i := range 20 {
 			p.SequenceNumber++
+			p.Marker = i == 19
 			count += len(d.fecEncoder.Load().Encode(&p, []byte{1, 2, 3}))
 		}
 		return count

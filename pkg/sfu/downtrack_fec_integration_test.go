@@ -62,16 +62,20 @@ func TestDownTrackFlexFECOnWire(t *testing.T) {
 		pacing                         string
 		level                          *livekit.FECProtection
 		protectionPercent              uint32
+		framePackets, frameRepairs     int
 	}{
-		{"pass through", true, true, false, "pass", livekit.FECProtection_FEC_MEDIUM.Enum(), 25},
-		{"queued", true, true, false, "queue", livekit.FECProtection_FEC_MEDIUM.Enum(), 25},
-		{"low", true, true, false, "queue", livekit.FECProtection_FEC_LOW.Enum(), 15},
-		{"high", true, true, false, "leaky", livekit.FECProtection_FEC_HIGH.Enum(), 35},
-		{"none", true, true, false, "pass", livekit.FECProtection_FEC_NONE.Enum(), 0},
-		{"default none", true, true, false, "pass", nil, 0},
-		{"paced encrypted", true, true, true, "leaky", livekit.FECProtection_FEC_MEDIUM.Enum(), 25},
-		{"subscriber declines", true, false, false, "pass", livekit.FECProtection_FEC_HIGH.Enum(), 35},
-		{"disabled", false, true, false, "pass", livekit.FECProtection_FEC_HIGH.Enum(), 35},
+		{"pass through", true, true, false, "pass", livekit.FECProtection_FEC_MEDIUM.Enum(), 25, 20, 5},
+		{"queued", true, true, false, "queue", livekit.FECProtection_FEC_MEDIUM.Enum(), 25, 20, 5},
+		{"low", true, true, false, "queue", livekit.FECProtection_FEC_LOW.Enum(), 15, 20, 3},
+		{"high", true, true, false, "leaky", livekit.FECProtection_FEC_HIGH.Enum(), 35, 20, 7},
+		{"none", true, true, false, "pass", livekit.FECProtection_FEC_NONE.Enum(), 0, 20, 0},
+		{"default none", true, true, false, "pass", nil, 0, 20, 0},
+		{"paced encrypted", true, true, true, "leaky", livekit.FECProtection_FEC_MEDIUM.Enum(), 25, 20, 5},
+		{"subscriber declines", true, false, false, "pass", livekit.FECProtection_FEC_HIGH.Enum(), 35, 20, 0},
+		{"disabled", false, true, false, "pass", livekit.FECProtection_FEC_HIGH.Enum(), 35, 20, 0},
+		{"single packet frames", true, true, false, "pass", livekit.FECProtection_FEC_LOW.Enum(), 15, 1, 1},
+		{"small frames", true, true, false, "queue", livekit.FECProtection_FEC_LOW.Enum(), 15, 2, 1},
+		{"large frames", true, true, false, "leaky", livekit.FECProtection_FEC_HIGH.Enum(), 35, 99, 35},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := vnettest.NewHosts(t)
@@ -150,13 +154,15 @@ func TestDownTrackFlexFECOnWire(t *testing.T) {
 				require.Zero(t, fecSSRC)
 			}
 
-			const mediaCount = 20
+			const frameCount = 2
+			mediaCount := frameCount * tc.framePackets
 			sendMedia := func(start, count int) {
 				for i := start; i < start+count; i++ {
+					frameIndex := i / tc.framePackets
 					ep, err := testutils.GetTestExtPacketVP8(&testutils.TestExtPacketParams{
-						SequenceNumber: uint16(6000 + i), Timestamp: uint32(270000 + i*3000), SSRC: 0x44444444,
-						PayloadType: 96, PayloadSize: 100 + i, IsKeyFrame: true, Marker: true,
-					}, &codec.VP8{FirstByte: 0x10, S: true, PictureID: uint16(i + 1), IsKeyFrame: true})
+						SequenceNumber: uint16(6000 + i), Timestamp: uint32(270000 + frameIndex*3000), SSRC: 0x44444444,
+						PayloadType: 96, PayloadSize: 100 + i, IsKeyFrame: true, Marker: i%tc.framePackets == tc.framePackets-1,
+					}, &codec.VP8{FirstByte: 0x10, S: i%tc.framePackets == 0, PictureID: uint16(frameIndex + 1), IsKeyFrame: true})
 					require.NoError(t, err)
 					ep.Packet.Payload = distinctivePayload(byte(i), 100+i)
 					require.EqualValues(t, 1, dt.WriteRTP(ep, 0))
@@ -166,7 +172,7 @@ func TestDownTrackFlexFECOnWire(t *testing.T) {
 			sendMedia(0, mediaCount)
 			expected := mediaCount
 			if negotiated {
-				expected += mediaCount * int(tc.protectionPercent) / 100
+				expected += frameCount * tc.frameRepairs
 			}
 			require.Eventually(t, func() bool { return capture.count() >= expected }, 10*time.Second, 10*time.Millisecond)
 			require.Equal(t, expected, capture.count())
@@ -187,16 +193,15 @@ func TestDownTrackFlexFECOnWire(t *testing.T) {
 				require.Empty(t, repair)
 				return
 			}
-			require.Len(t, repair, mediaCount*int(tc.protectionPercent)/100)
+			require.Len(t, repair, frameCount*tc.frameRepairs)
 			for i := 1; i < len(repair); i++ {
 				require.Equal(t, repair[i-1].SequenceNumber+1, repair[i].SequenceNumber)
 			}
-			// Drop media in the second and third groups (protected by every enabled
-			// preset) and recover from the actual wire
+			// Drop media from the first and last frames and recover from the actual wire
 			// representation, including translated SSRC/PT/sequence and payload.
 			stored := map[uint16][]byte{}
 			for i, packet := range media {
-				if i != 7 && i != 12 {
+				if i != 0 && i != mediaCount-1 {
 					stored[packet.SequenceNumber], _ = packet.Marshal()
 				}
 			}
@@ -217,7 +222,7 @@ func TestDownTrackFlexFECOnWire(t *testing.T) {
 				}
 			}
 			require.Len(t, recoveredPackets, 2)
-			for _, lost := range []*rtp.Packet{media[7], media[12]} {
+			for _, lost := range []*rtp.Packet{media[0], media[mediaCount-1]} {
 				want, _ := lost.Marshal()
 				require.Equal(t, want, recoveredPackets[lost.SequenceNumber])
 			}
@@ -226,18 +231,18 @@ func TestDownTrackFlexFECOnWire(t *testing.T) {
 				sequence := repair[len(repair)-1].SequenceNumber
 				start := mediaCount
 				for _, update := range []struct {
-					level   livekit.FECProtection
-					percent int
+					level           livekit.FECProtection
+					repairsPerFrame int
 				}{
-					{livekit.FECProtection_FEC_HIGH, 35},
+					{livekit.FECProtection_FEC_HIGH, 7},
 					{livekit.FECProtection_FEC_NONE, 0},
-					{livekit.FECProtection_FEC_LOW, 15},
+					{livekit.FECProtection_FEC_LOW, 3},
 				} {
 					before := capture.count()
 					dt.SetFECProtection(update.level)
 					sendMedia(start, mediaCount)
 					start += mediaCount
-					numRepair := mediaCount * update.percent / 100
+					numRepair := frameCount * update.repairsPerFrame
 					require.Eventually(t, func() bool { return capture.count() >= before+mediaCount+numRepair }, 5*time.Second, 10*time.Millisecond)
 					require.Equal(t, before+mediaCount+numRepair, capture.count())
 					for _, packet := range capture.all()[before:] {
@@ -281,7 +286,7 @@ func TestDownTrackFlexFECOnWire(t *testing.T) {
 				dt.ForceForwardLayerForTest(buffer.VideoLayer{Spatial: 0, Temporal: 0})
 				before := capture.count()
 				sendMedia(start, mediaCount)
-				require.Eventually(t, func() bool { return capture.count() >= before+25 }, 5*time.Second, 10*time.Millisecond)
+				require.Eventually(t, func() bool { return capture.count() >= before+mediaCount+frameCount*5 }, 5*time.Second, 10*time.Millisecond)
 				repairs := 0
 				for _, packet := range capture.all()[before:] {
 					if packet.SSRC == fecSSRC {
@@ -290,7 +295,7 @@ func TestDownTrackFlexFECOnWire(t *testing.T) {
 						repairs++
 					}
 				}
-				require.Equal(t, 5, repairs)
+				require.Equal(t, frameCount*5, repairs)
 			}
 		})
 	}

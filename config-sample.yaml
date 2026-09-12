@@ -125,7 +125,10 @@ rtc:
   #   # Allow repairs for subscribers that negotiate FlexFEC. Clients select fec
   #   # per track in UpdateTrackSettings: FEC_NONE (default), FEC_LOW (15%),
   #   # FEC_MEDIUM (25%), or FEC_HIGH (35%) repair packet overhead, matching publish
-  #   # track presets. Media is sent immediately; incomplete groups
+  #   # track presets. These are approximate: each protected frame/block gets at
+  #   # least one repair, so small frames can exceed the nominal percentage.
+  #   # Media is sent immediately; repairs follow the end of each frame, with
+  #   # large frames split into blocks of at most 48 packets. Stale partial frames
   #   # spanning more than 200ms and packets without room for repair headers are skipped.
   #   downstream_enabled: false
   # # allows automatic connection fallback to TCP and TURN/TLS (if configured) when UDP has been unstable, default true

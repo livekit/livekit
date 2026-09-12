@@ -87,7 +87,7 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 
 	if p.FEC != nil && written > 0 && !p.IsRTX && !p.IsProbe {
 		repair := p.FEC.Encode(p.Header, p.Payload)
-		sent, payloadBytes := 0, 0
+		sent, payloadBytes, rtpBytes := 0, 0, 0
 		for i := range repair {
 			packet := &repair[i]
 			fec := PacketFactory.Get().(*Packet)
@@ -114,9 +114,10 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 			if fecErr == nil && n > 0 {
 				sent++
 				payloadBytes += len(packet.Payload)
+				rtpBytes += packet.MarshalSize()
 			}
 		}
-		p.FEC.RecordSent(sent, payloadBytes)
+		p.FEC.RecordSent(sent, payloadBytes, rtpBytes)
 	}
 	return written, nil
 }

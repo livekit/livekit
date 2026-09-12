@@ -21,6 +21,7 @@ import (
 
 	pionflexfec "github.com/pion/interceptor/pkg/flexfec"
 	"github.com/pion/rtp"
+	"go.uber.org/atomic"
 	"go.uber.org/zap/zapcore"
 
 	"github.com/livekit/protocol/utils/mono"
@@ -30,12 +31,14 @@ const (
 	// DefaultProtectionPercent is the repair-to-media packet ratio when unspecified.
 	DefaultProtectionPercent uint32 = 0
 	MaxProtectionPercent     uint32 = 100
-	// MediaPacketsPerGroup bounds both retained packet memory and encoding work.
-	MediaPacketsPerGroup = 5
-	maxEncoderGroupAge   = 200 * time.Millisecond
-	// Reserve the FEC header and up to 16 bytes of outer RTP extensions (AST/TWCC).
-	// Groups of at most 15 packets use only the first FlexFEC packet mask.
-	maxEncoderMediaPacketSize = maxMediaPacketSize - pionflexfec.BaseFec03HeaderSize - 16
+	// MaxMediaPacketsPerGroup bounds memory and work for large frames. Like
+	// libwebrtc, use at most 48 media packets in a protection block.
+	MaxMediaPacketsPerGroup = 48
+	maxEncoderGroupAge      = 200 * time.Millisecond
+	overheadUpdateInterval  = time.Second
+	// Reserve all three FEC masks and up to 16 bytes of outer RTP extensions
+	// (AST/TWCC). A 48-packet group can require the third mask.
+	maxEncoderMediaPacketSize = maxMediaPacketSize - pionflexfec.BaseFec03HeaderSize - 12 - 16
 )
 
 // EncoderState preserves the repair sequence when a sender SSRC is reused.
@@ -52,8 +55,8 @@ func (s EncoderState) MarshalLogObject(e zapcore.ObjectEncoder) error {
 }
 
 type encoderMediaGroup struct {
-	packets [MediaPacketsPerGroup]rtp.Packet
-	storage [MediaPacketsPerGroup][maxEncoderMediaPacketSize]byte
+	packets [MaxMediaPacketsPerGroup]rtp.Packet
+	storage [MaxMediaPacketsPerGroup]*[maxEncoderMediaPacketSize]byte
 }
 
 // Encoder batches final, outgoing video packets for Pion's FlexFEC-03 encoder.
@@ -71,7 +74,12 @@ type Encoder struct {
 	closed            bool
 	onSent            func(packets int, bytes int)
 	protectionPercent uint32
-	repairCredit      uint32
+	protectionFactor  uint32
+
+	overheadPercent   atomic.Uint32
+	overheadUpdatedAt int64
+	sentMediaBytes    uint64
+	sentRepairBytes   uint64
 }
 
 func NewEncoder(payloadType uint8, ssrc uint32, onSent func(packets int, bytes int)) *Encoder {
@@ -100,12 +108,13 @@ func (e *Encoder) SeedState(state EncoderState) {
 	}
 	e.sequenceNumber = state.NextSequenceNumber
 	e.count = 0
-	e.repairCredit = 0
 }
 
-// Encode returns independently owned repair packets for complete groups only.
-// Gaps (including skipped padding), codec switches and stale groups start a new
-// group, since Pion requires consecutive sequence numbers. RTP wrap is valid.
+// Encode returns independently owned repairs at the end of a video frame (the
+// RTP marker), splitting large frames at MaxMediaPacketsPerGroup. Timestamp
+// changes discard an incomplete previous frame. Gaps, codec switches and stale
+// groups also reset the block; Pion requires consecutive sequence numbers.
+// Media is never delayed. No timer or worker is needed for sparse frames.
 // Call after the media write, including any interceptor header modifications.
 func (e *Encoder) Encode(header *rtp.Header, payload []byte) []rtp.Packet {
 	e.mu.Lock()
@@ -116,6 +125,7 @@ func (e *Encoder) Encode(header *rtp.Header, payload []byte) []rtp.Packet {
 
 	now := mono.UnixNano()
 	size := header.MarshalSize() + len(payload)
+	e.sentMediaBytes += uint64(size)
 	if header.Padding || len(payload) == 0 || size > maxEncoderMediaPacketSize {
 		e.count = 0
 		return nil
@@ -129,6 +139,7 @@ func (e *Encoder) Encode(header *rtp.Header, payload []byte) []rtp.Packet {
 		previous := &e.media.packets[e.count-1]
 		if header.SequenceNumber != previous.SequenceNumber+1 ||
 			header.SSRC != previous.SSRC || header.PayloadType != previous.PayloadType ||
+			header.Timestamp != previous.Timestamp ||
 			now-e.startedAt > int64(maxEncoderGroupAge) {
 			e.count = 0
 		}
@@ -137,6 +148,10 @@ func (e *Encoder) Encode(header *rtp.Header, payload []byte) []rtp.Packet {
 		e.startedAt = now
 	}
 
+	if e.media.storage[e.count] == nil {
+		// Retain only the packet buffers this stream has actually needed.
+		e.media.storage[e.count] = new([maxEncoderMediaPacketSize]byte)
+	}
 	raw := e.media.storage[e.count][:size]
 	n, err := header.MarshalTo(raw)
 	if err != nil {
@@ -149,21 +164,17 @@ func (e *Encoder) Encode(header *rtp.Header, payload []byte) []rtp.Packet {
 		return nil
 	}
 	e.count++
-	if e.count < MediaPacketsPerGroup {
+	if !header.Marker && e.count < MaxMediaPacketsPerGroup {
 		return nil
 	}
 
+	count := e.count
 	e.count = 0
-	// Carry fractional packets between groups rather than rounding each group
-	// up (which would turn e.g. 30% into 40%). Storage and latency stay bounded
-	// at five media packets, independent of the configured percentage.
-	e.repairCredit += e.protectionPercent * MediaPacketsPerGroup
-	numRepair := e.repairCredit / 100
-	e.repairCredit %= 100
-	if numRepair == 0 {
-		return nil
-	}
-	repair := e.encoder.EncodeFec(e.media.packets[:], numRepair)
+	// Match libwebrtc's ForwardErrorCorrection::NumFecPackets: round the Q8
+	// protection factor, with at least one repair for every protected block.
+	// In particular, a one-packet frame is protected immediately at every preset.
+	numRepair := max(uint32(1), (uint32(count)*e.protectionFactor+128)>>8)
+	repair := e.encoder.EncodeFec(e.media.packets[:count], numRepair)
 	for i := range repair {
 		// Pion's encoder uses a constant timestamp and a fixed initial sequence number.
 		// Use this stream's media clock and a randomized, continuous repair sequence.
@@ -175,24 +186,54 @@ func (e *Encoder) Encode(header *rtp.Header, payload []byte) []rtp.Packet {
 }
 
 // SetProtectionPercent updates the packet ratio without changing the repair
-// SSRC or sequence number. A new value discards partial groups and old credit.
+// SSRC or sequence number. A new value discards partial groups and measurements.
 // Values above 100 are capped; zero disables encoding before any packet copies.
 func (e *Encoder) SetProtectionPercent(percent uint32) {
 	percent = min(percent, MaxProtectionPercent)
 	e.mu.Lock()
 	if e.protectionPercent != percent {
 		e.protectionPercent = percent
+		// Publish-track presets use the same conversion to libwebrtc's Q8 rate.
+		e.protectionFactor = percent * 255 / 100
 		e.count = 0
-		e.repairCredit = 0
+		e.overheadPercent.Store(percent)
+		e.overheadUpdatedAt = 0
+		e.sentMediaBytes = 0
+		e.sentRepairBytes = 0
 	}
 	e.mu.Unlock()
 }
 
-// RecordSent reports successful repair writes, with RTP payload bytes like the
-// upstream counters. Callbacks run outside the encoder lock.
-func (e *Encoder) RecordSent(packets int, bytes int) {
-	if e.onSent != nil && packets != 0 {
-		e.onSent(packets, bytes)
+// OverheadPercent reserves at least the configured rate, using measured RTP
+// bytes when frame rounding or repair headers increase the actual overhead.
+// Reads by the allocator do not contend with encoding.
+func (e *Encoder) OverheadPercent() uint32 {
+	return e.overheadPercent.Load()
+}
+
+// RecordSent accounts successful repairs, including headers for the allocator
+// and payload bytes for the upstream-compatible telemetry callback. Refresh the
+// estimate on the first repair and at most once per second thereafter.
+// Callbacks run outside the encoder lock.
+func (e *Encoder) RecordSent(packets int, payloadBytes int, rtpBytes int) {
+	if packets == 0 {
+		return
+	}
+	e.mu.Lock()
+	if !e.closed && e.protectionPercent != 0 {
+		e.sentRepairBytes += uint64(rtpBytes)
+		now := mono.UnixNano()
+		if e.sentMediaBytes != 0 && (e.overheadUpdatedAt == 0 || now-e.overheadUpdatedAt >= int64(overheadUpdateInterval)) {
+			percent := uint32((e.sentRepairBytes*100 + e.sentMediaBytes - 1) / e.sentMediaBytes)
+			e.overheadPercent.Store(max(e.protectionPercent, percent))
+			e.overheadUpdatedAt = now
+			e.sentMediaBytes = 0
+			e.sentRepairBytes = 0
+		}
+	}
+	e.mu.Unlock()
+	if e.onSent != nil {
+		e.onSent(packets, payloadBytes)
 	}
 }
 

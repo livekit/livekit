@@ -35,9 +35,10 @@ func (d *DownTrack) bindFEC(t webrtc.TrackLocalContext) {
 	}
 	for _, codec := range d.negotiatedCodecParameters {
 		if strings.EqualFold(codec.MimeType, webrtc.MimeTypeFlexFEC03) {
-			encoder := flexfec.NewEncoder(uint8(codec.PayloadType), uint32(t.SSRCForwardErrorCorrection()), d.params.OnFECSent)
+			encoder := flexfec.NewEncoder(uint8(codec.PayloadType), uint32(t.SSRCForwardErrorCorrection()), d.onFECSent)
 			encoder.SeedState(d.fecState)
 			encoder.SetProtectionPercent(d.fecProtectionPercent.Load())
+			d.fecNotifiedOverhead.Store(encoder.OverheadPercent())
 			d.fecEncoder.Store(encoder)
 			return
 		}
@@ -79,12 +80,27 @@ func (d *DownTrack) seedFECState(state flexfec.EncoderState) {
 	}
 }
 
-// Include the nominal repair overhead in every allocator input, so layer
-// selection leaves room for repair traffic. The pacer/BWE account actual bytes.
+func (d *DownTrack) onFECSent(packets int, bytes int) {
+	if d.params.OnFECSent != nil {
+		d.params.OnFECSent(packets, bytes)
+	}
+	if encoder := d.fecEncoder.Load(); encoder != nil {
+		percent := encoder.OverheadPercent()
+		if d.fecNotifiedOverhead.Swap(percent) != percent {
+			if listener := d.getStreamAllocatorListener(); listener != nil {
+				listener.OnSubscriptionChanged(d)
+			}
+		}
+	}
+}
+
+// Reserve the greater of configured and measured repair overhead in every
+// allocator input. Small frames can require much more than the nominal preset.
+// The pacer/BWE account actual bytes, including all repair headers.
 func (d *DownTrack) getLayeredBitrateWithFEC() ([]int32, Bitrates) {
 	layers, bitrates := d.Receiver().GetLayeredBitrate()
-	if d.fecEncoder.Load() != nil {
-		percent := int64(d.fecProtectionPercent.Load())
+	if encoder := d.fecEncoder.Load(); encoder != nil {
+		percent := int64(encoder.OverheadPercent())
 		if percent == 0 {
 			return layers, bitrates
 		}
@@ -120,6 +136,7 @@ func (d *DownTrack) SetFECProtection(level livekit.FECProtection) {
 	encoder := d.fecEncoder.Load()
 	if encoder != nil {
 		encoder.SetProtectionPercent(percent)
+		d.fecNotifiedOverhead.Store(percent)
 	}
 	d.fecLock.Unlock()
 	if encoder != nil {
