@@ -1022,6 +1022,12 @@ func (t *PCTransport) queueOrConfigureSender(
 	enableAudioStereo bool,
 	enableAudioNACK bool,
 ) {
+	keepFlexFEC := t.params.Config.Subscriber.FlexFEC.Enabled
+	if transceiver.Direction() == webrtc.RTPTransceiverDirectionSendrecv && t.params.DirectionConfig.FlexFEC.Enabled {
+		// A shared codec list must retain upstream repair support even when
+		// this subscription does not permit downstream FEC generation.
+		keepFlexFEC = true
+	}
 	params := configureSenderParams{
 		transceiver:              transceiver,
 		enabledCodecs:            enabledCodecs,
@@ -1029,7 +1035,7 @@ func (t *PCTransport) queueOrConfigureSender(
 		filterOutH264HighProfile: !t.params.IsOfferer,
 		enableAudioStereo:        enableAudioStereo,
 		enableAudioNACK:          enableAudioNACK,
-		keepFlexFEC:              t.params.Config.Subscriber.FlexFEC.Enabled,
+		keepFlexFEC:              keepFlexFEC,
 	}
 	if !t.params.IsOfferer {
 		t.sendersPendingConfigMu.Lock()

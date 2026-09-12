@@ -19,9 +19,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/livekit/protocol/logger"
 	"github.com/pion/rtp"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/protocol/logger"
 )
 
 func TestEncoderDefaultsToNoProtection(t *testing.T) {
@@ -32,6 +33,32 @@ func TestEncoderDefaultsToNoProtection(t *testing.T) {
 		require.Empty(t, encoder.Encode(&p, []byte{1, 2, 3}))
 	}
 	require.Zero(t, encoder.count, "disabled protection must not retain media")
+	require.Nil(t, encoder.media, "negotiation alone must not allocate packet storage")
+}
+
+func TestEncoderState(t *testing.T) {
+	e := NewEncoder(testFECPT, testFECSSRC, nil)
+	e.SetProtectionPercent(20)
+	e.SeedState(EncoderState{SSRC: testFECSSRC, NextSequenceNumber: 65535})
+	for _, sn := range []uint16{65535, 0} {
+		media := makeMediaPackets(t, 100, MediaPacketsPerGroup)
+		for i := range media {
+			repair := e.Encode(&media[i].Header, media[i].Payload)
+			if i == MediaPacketsPerGroup-1 {
+				require.Len(t, repair, 1)
+				require.Equal(t, sn, repair[0].SequenceNumber)
+			}
+		}
+		e.Close()
+		state := e.GetState()
+		require.Equal(t, sn+1, state.NextSequenceNumber)
+		e = NewEncoder(testFECPT, testFECSSRC, nil)
+		e.SeedState(state)
+		e.SetProtectionPercent(20)
+	}
+	state := e.GetState()
+	e.SeedState(EncoderState{SSRC: testFECSSRC + 1, NextSequenceNumber: state.NextSequenceNumber + 100})
+	require.Equal(t, state, e.GetState(), "do not seed a different repair SSRC")
 }
 
 func TestEncoderRecoveryWithReusedMemory(t *testing.T) {

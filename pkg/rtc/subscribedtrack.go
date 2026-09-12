@@ -137,8 +137,6 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 	// Strip packet trailer if track has packet trailer but subscriber does not have cap
 	stripPacketTrailer := params.MediaTrack.HasPacketTrailer() && !subSupportsPacketTrailer
 	downTrack, err := sfu.NewDownTrack(sfu.DownTrackParams{
-		EnableFlexFEC:      params.SubscriberConfig.FlexFEC.Enabled,
-		OnFECSent:          prometheus.RecordFECDownstream,
 		Codecs:             codecs,
 		IsEncrypted:        isEncrypted,
 		Source:             params.MediaTrack.Source(),
@@ -160,6 +158,8 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 		DisableSenderReportPassThrough: params.Subscriber.GetDisableSenderReportPassThrough(),
 		SupportsCodecChange:            params.Subscriber.SupportsCodecChange(),
 		EnableStartAtDesiredQuality:    params.EnableStartAtDesiredQuality,
+		EnableFlexFEC:                  params.SubscriberConfig.FlexFEC.Enabled,
+		OnFECSent:                      prometheus.RecordFECDownstream,
 		Listener:                       s,
 	})
 	if err != nil {
@@ -214,6 +214,7 @@ func (t *SubscribedTrack) Bound(err error) {
 		if t.settings != nil {
 			if t.params.AdaptiveStream {
 				// remove `disabled` flag to force a visibility update
+				t.settings = utils.CloneProto(t.settings)
 				t.settings.Disabled = false
 				t.logger.Debugw("enabling subscriber track settings on bind", "settings", logger.Proto(t.settings))
 			}
@@ -352,6 +353,7 @@ func (t *SubscribedTrack) applySettings() {
 
 	t.settingsVersion = t.versionGenerator.Next()
 	settingsVersion := t.settingsVersion
+	settings := t.settings
 	t.settingsLock.Unlock()
 
 	dt := t.DownTrack()
@@ -359,30 +361,30 @@ func (t *SubscribedTrack) applySettings() {
 	temporal := buffer.InvalidLayerTemporal
 	if dt.Kind() == webrtc.RTPCodecTypeVideo {
 		mt := t.MediaTrack()
-		quality := t.settings.Quality
+		quality := settings.Quality
 		mimeType := dt.Mime()
-		if t.settings.Width > 0 {
-			quality = mt.GetQualityForDimension(mimeType, t.settings.Width, t.settings.Height)
+		if settings.Width > 0 {
+			quality = mt.GetQualityForDimension(mimeType, settings.Width, settings.Height)
 		}
 
 		spatial = buffer.GetSpatialLayerForVideoQuality(mimeType, quality, mt.ToProto())
-		if t.settings.Fps > 0 {
-			temporal = mt.GetTemporalLayerForSpatialFps(mimeType, spatial, t.settings.Fps)
+		if settings.Fps > 0 {
+			temporal = mt.GetTemporalLayerForSpatialFps(mimeType, spatial, settings.Fps)
 		}
 	}
 
 	t.settingsLock.Lock()
-	if settingsVersion != t.settingsVersion {
+	if settingsVersion != t.settingsVersion || settings != t.settings {
 		// a newer settings has superseded this one
 		t.settingsLock.Unlock()
 		return
 	}
 
-	t.logger.Debugw("applying subscriber track settings", "settings", logger.Proto(t.settings))
-	if t.settings.Fec != nil {
-		dt.SetFECProtection(*t.settings.Fec)
+	t.logger.Debugw("applying subscriber track settings", "settings", logger.Proto(settings))
+	if settings.Fec != nil {
+		dt.SetFECProtection(*settings.Fec)
 	}
-	if t.settings.Disabled {
+	if settings.Disabled {
 		dt.Mute(true)
 		t.settingsLock.Unlock()
 		return

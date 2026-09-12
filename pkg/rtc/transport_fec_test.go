@@ -255,3 +255,24 @@ func TestSinglePCDownstreamFlexFEC(t *testing.T) {
 		})
 	}
 }
+
+func TestSinglePCUpstreamFlexFECWithSubscription(t *testing.T) {
+	codecs := []*livekit.Codec{{Mime: "video/VP8"}, {Mime: "video/rtx"}}
+	conf := &WebRTCConfig{Publisher: DirectionConfig{FlexFEC: FlexFECDirectionConfig{Enabled: true}}}
+	server, err := NewPCTransport(TransportParams{
+		Config: conf, DirectionConfig: conf.Publisher, IsSendSide: true,
+		Handler:              &transportfakes.FakeHandler{},
+		EnabledPublishCodecs: codecs, EnabledSubscribeCodecs: codecs,
+	})
+	require.NoError(t, err)
+	defer server.Close()
+	tr, err := server.pc.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendrecv})
+	require.NoError(t, err)
+	server.queueOrConfigureSender(tr, codecs, RTCPFeedbackConfig{}, false, true)
+	require.Len(t, server.sendersPendingConfig, 1)
+	configureSender(server.sendersPendingConfig[0], nil)
+	server.restrictReceiverCodecsToPublishList()
+	offer, err := server.pc.CreateOffer(nil)
+	require.NoError(t, err)
+	require.Contains(t, offer.SDP, "flexfec-03/90000", "subscribing on a shared m-section must retain upstream FEC when downstream FEC is disabled")
+}

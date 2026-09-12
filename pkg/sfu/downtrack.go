@@ -184,6 +184,7 @@ type DownTrackState struct {
 	DeltaStatsRTXSenderSnapshotId uint32
 	ForwarderState                *livekit.RTPForwarderState
 	PlayoutDelayControllerState   PlayoutDelayControllerState
+	FECState                      flexfec.EncoderState
 }
 
 func (d DownTrackState) MarshalLogObject(e zapcore.ObjectEncoder) error {
@@ -193,6 +194,7 @@ func (d DownTrackState) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddUint32("DeltaStatsRTXSenderSnapshotId", d.DeltaStatsRTXSenderSnapshotId)
 	e.AddObject("ForwarderState", logger.Proto(d.ForwarderState))
 	e.AddObject("PlayoutDelayControllerState", d.PlayoutDelayControllerState)
+	e.AddObject("FECState", d.FECState)
 	return nil
 }
 
@@ -227,8 +229,6 @@ var _ TrackSender = (*DownTrack)(nil)
 type ReceiverReportListener func(dt *DownTrack, report *rtcp.ReceiverReport)
 
 type DownTrackParams struct {
-	EnableFlexFEC                  bool
-	OnFECSent                      func(packets int, bytes int)
 	Codecs                         []webrtc.RTPCodecParameters
 	IsEncrypted                    bool
 	Source                         livekit.TrackSource
@@ -246,6 +246,8 @@ type DownTrackParams struct {
 	SupportsCodecChange            bool
 	StripPacketTrailer             bool
 	EnableStartAtDesiredQuality    bool
+	EnableFlexFEC                  bool
+	OnFECSent                      func(packets int, bytes int)
 	Listener                       DownTrackListener
 }
 
@@ -258,18 +260,20 @@ type DownTrackParams struct {
 // - closed
 // once closed, a DownTrack cannot be re-used.
 type DownTrack struct {
+	params            DownTrackParams
+	id                livekit.TrackID
+	kind              webrtc.RTPCodecType
+	ssrc              uint32
+	ssrcRTX           uint32
+	payloadType       atomic.Uint32
+	payloadTypeRTX    atomic.Uint32
+	sequencer         *sequencer
+	rtxSequenceNumber atomic.Uint64
+
+	fecLock              sync.Mutex
 	fecEncoder           atomic.Pointer[flexfec.Encoder]
 	fecProtectionPercent atomic.Uint32
-	fecLock              sync.Mutex
-	params               DownTrackParams
-	id                   livekit.TrackID
-	kind                 webrtc.RTPCodecType
-	ssrc                 uint32
-	ssrcRTX              uint32
-	payloadType          atomic.Uint32
-	payloadTypeRTX       atomic.Uint32
-	sequencer            *sequencer
-	rtxSequenceNumber    atomic.Uint64
+	fecState             flexfec.EncoderState
 
 	receiverLock sync.RWMutex
 	receiver     TrackReceiver
@@ -1459,6 +1463,7 @@ func (d *DownTrack) CloseWithFlush(flush bool, isEnding bool) {
 
 	d.setBindStateLocked(bindStateUnbound)
 	d.Receiver().DeleteDownTrack(d.SubscriberID())
+	d.closeFEC()
 
 	if d.rtcpReader != nil && isEnding {
 		d.params.Logger.Debugw("downtrack close rtcp reader")
@@ -1476,7 +1481,6 @@ func (d *DownTrack) CloseWithFlush(flush bool, isEnding bool) {
 
 	d.rtpStats.Stop()
 	d.rtpStatsRTX.Stop()
-	d.closeFEC()
 	d.params.Logger.Debugw(
 		"rtp stats",
 		"direction", "downstream",
@@ -1540,6 +1544,7 @@ func (d *DownTrack) GetState() DownTrackState {
 		RTPStatsRTX:                   d.rtpStatsRTX,
 		DeltaStatsRTXSenderSnapshotId: d.deltaStatsRTXSenderSnapshotId,
 		ForwarderState:                d.forwarder.GetState(),
+		FECState:                      d.getFECState(),
 	}
 
 	if d.playoutDelay != nil {
@@ -1570,6 +1575,7 @@ func (d *DownTrack) SeedState(state DownTrackState) {
 		d.rtxSequenceNumber.Store(d.rtpStatsRTX.ExtHighestSequenceNumber())
 	}
 	d.forwarder.SeedState(state.ForwarderState)
+	d.seedFECState(state.FECState)
 }
 
 func (d *DownTrack) StopWriteAndGetState() DownTrackState {
@@ -1577,6 +1583,7 @@ func (d *DownTrack) StopWriteAndGetState() DownTrackState {
 	d.bindLock.Lock()
 	d.writable.Store(false)
 	d.writeStopped.Store(true)
+	d.closeFEC()
 	d.bindLock.Unlock()
 
 	return d.GetState()

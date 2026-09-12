@@ -247,6 +247,50 @@ func TestDownTrackFlexFECOnWire(t *testing.T) {
 						}
 					}
 				}
+
+				// Resume a subscription on its cached transceiver, including the
+				// repair sequence. The receiver's existing SRTP replay window must
+				// accept every packet without another negotiation.
+				dt.CloseWithFlush(false, false)
+				state := dt.GetState()
+				require.Equal(t, sequence+1, state.FECState.NextSequenceNumber)
+				next, err := sfu.NewDownTrack(sfu.DownTrackParams{
+					Codecs:        []webrtc.RTPCodecParameters{vp8CodecParams},
+					Receiver:      newFakeTrackReceiver(vp8CodecParams),
+					BufferFactory: factory,
+					Pacer:         p,
+					Logger:        logger.GetLogger(),
+					Listener:      &sfufakes.FakeDownTrackListener{},
+					StreamID:      "fec-stream",
+					SubID:         "fec-sub",
+					MaxTrack:      500,
+					EnableFlexFEC: true,
+				})
+				require.NoError(t, err)
+				next.OnBinding(func(err error) {
+					if err == nil {
+						next.SeedState(state)
+					}
+				})
+				next.SetTransceiver(tr)
+				next.SetFECProtection(livekit.FECProtection_FEC_MEDIUM)
+				require.NoError(t, tr.Sender().ReplaceTrack(next))
+				dt = next
+				dt.SetConnected()
+				require.Eventually(t, dt.IsWritableForTest, 5*time.Second, 10*time.Millisecond)
+				dt.ForceForwardLayerForTest(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+				before := capture.count()
+				sendMedia(start, mediaCount)
+				require.Eventually(t, func() bool { return capture.count() >= before+25 }, 5*time.Second, 10*time.Millisecond)
+				repairs := 0
+				for _, packet := range capture.all()[before:] {
+					if packet.SSRC == fecSSRC {
+						require.Equal(t, sequence+1, packet.SequenceNumber)
+						sequence = packet.SequenceNumber
+						repairs++
+					}
+				}
+				require.Equal(t, 5, repairs)
 			}
 		})
 	}

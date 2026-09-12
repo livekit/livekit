@@ -15,17 +15,21 @@
 package rtc
 
 import (
+	"sync"
 	"testing"
+
+	"github.com/pion/webrtc/v4"
+	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/protocol/codecs/mime"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/sfufakes"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
-	"github.com/pion/webrtc/v4"
-	"github.com/stretchr/testify/require"
 )
 
 func TestSubscriberFECSettings(t *testing.T) {
@@ -80,6 +84,71 @@ func TestSubscriberFECPersistsAcrossResubscription(t *testing.T) {
 }
 
 func TestSubscriberFECAppliesToDownTrack(t *testing.T) {
+	sub, _ := newSubscriberFECTestTrack(t)
+	dt := sub.DownTrack()
+	for _, tc := range []struct {
+		level *livekit.FECProtection
+		want  int64
+	}{
+		{nil, 100_000},
+		{livekit.FECProtection_FEC_MEDIUM.Enum(), 125_000},
+		{nil, 125_000},
+		{livekit.FECProtection_FEC_NONE.Enum(), 100_000},
+		{nil, 100_000},
+		{livekit.FECProtection_FEC_LOW.Enum(), 115_000},
+		{livekit.FECProtection_FEC_HIGH.Enum(), 135_000},
+		{livekit.FECProtection(99).Enum(), 100_000},
+	} {
+		sub.UpdateSubscriberSettings(&livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_HIGH, Fec: tc.level}, true)
+		dt.AllocateOptimal(false, false)
+		require.Equal(t, tc.want, dt.BandwidthRequested(), "client settings must reach the negotiated encoder and allocator")
+	}
+}
+
+func TestSubscriberFECSettingsSupersededDuringApply(t *testing.T) {
+	sub, mediaTrack := newSubscriberFECTestTrack(t)
+	sub.UpdateSubscriberSettings(&livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_HIGH}, true)
+	var pending func()
+	sub.debouncer = func(f func()) { pending = f }
+	mediaTrack.GetQualityForDimensionCalls(func(mime.MimeType, uint32, uint32) livekit.VideoQuality {
+		// A settings update can arrive while layer selection runs without settingsLock.
+		sub.UpdateSubscriberSettings(&livekit.UpdateTrackSettings{
+			Quality: livekit.VideoQuality_HIGH,
+			Fec:     livekit.FECProtection_FEC_HIGH.Enum(),
+		}, false)
+		return livekit.VideoQuality_HIGH
+	})
+	sub.UpdateSubscriberSettings(&livekit.UpdateTrackSettings{
+		Width: 640,
+		Fec:   livekit.FECProtection_FEC_MEDIUM.Enum(),
+	}, true)
+	dt := sub.DownTrack()
+	dt.AllocateOptimal(false, false)
+	require.EqualValues(t, 100_000, dt.BandwidthRequested(), "superseded settings must not apply part of a newer update")
+	require.NotNil(t, pending)
+	pending()
+	dt.AllocateOptimal(false, false)
+	require.EqualValues(t, 135_000, dt.BandwidthRequested())
+}
+
+func TestSubscriberFECConcurrentSettings(t *testing.T) {
+	sub, _ := newSubscriberFECTestTrack(t)
+	var wg sync.WaitGroup
+	for level := range 4 {
+		wg.Go(func() {
+			for range 100 {
+				sub.UpdateSubscriberSettings(&livekit.UpdateTrackSettings{
+					Width: 640,
+					Fec:   livekit.FECProtection(level).Enum(),
+				}, true)
+			}
+		})
+	}
+	wg.Wait()
+}
+
+func newSubscriberFECTestTrack(t *testing.T) (*SubscribedTrack, *typesfakes.FakeMediaTrack) {
+	t.Helper()
 	codec := webrtc.RTPCodecParameters{
 		RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000},
 		PayloadType:        96,
@@ -115,23 +184,7 @@ func TestSubscriberFECAppliesToDownTrack(t *testing.T) {
 		logger:           logger.GetLogger(),
 		versionGenerator: utils.NewDefaultTimedVersionGenerator(),
 	}
-	for _, tc := range []struct {
-		level *livekit.FECProtection
-		want  int64
-	}{
-		{nil, 100_000},
-		{livekit.FECProtection_FEC_MEDIUM.Enum(), 125_000},
-		{nil, 125_000},
-		{livekit.FECProtection_FEC_NONE.Enum(), 100_000},
-		{nil, 100_000},
-		{livekit.FECProtection_FEC_LOW.Enum(), 115_000},
-		{livekit.FECProtection_FEC_HIGH.Enum(), 135_000},
-		{livekit.FECProtection(99).Enum(), 100_000},
-	} {
-		sub.UpdateSubscriberSettings(&livekit.UpdateTrackSettings{Quality: livekit.VideoQuality_HIGH, Fec: tc.level}, true)
-		dt.AllocateOptimal(false, false)
-		require.Equal(t, tc.want, dt.BandwidthRequested(), "client settings must reach the negotiated encoder and allocator")
-	}
+	return sub, mediaTrack
 }
 
 type subscriberFECTrackContext struct {

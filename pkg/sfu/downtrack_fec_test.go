@@ -17,11 +17,13 @@ package sfu
 import (
 	"testing"
 
-	"github.com/livekit/livekit-server/pkg/sfu/flexfec"
-	"github.com/livekit/protocol/livekit"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/protocol/livekit"
+
+	"github.com/livekit/livekit-server/pkg/sfu/flexfec"
 )
 
 type fecTrackContext struct {
@@ -54,6 +56,7 @@ func TestDownTrackFECNegotiationAndLifecycle(t *testing.T) {
 			old := d.fecEncoder.Load()
 			require.NotNil(t, old)
 			p := rtp.Header{Version: 2, SSRC: 123, PayloadType: 96}
+			var lastSequenceNumber uint16
 			for i := range flexfec.MediaPacketsPerGroup {
 				p.SequenceNumber++
 				repair := old.Encode(&p, []byte{1, 2, 3})
@@ -61,6 +64,7 @@ func TestDownTrackFECNegotiationAndLifecycle(t *testing.T) {
 					require.Len(t, repair, 1)
 					require.EqualValues(t, 456, repair[0].SSRC)
 					require.EqualValues(t, 118, repair[0].PayloadType, "use negotiated PT")
+					lastSequenceNumber = repair[0].SequenceNumber
 				}
 			}
 			d.bindFEC(c)
@@ -68,6 +72,9 @@ func TestDownTrackFECNegotiationAndLifecycle(t *testing.T) {
 			for range flexfec.MediaPacketsPerGroup {
 				p.SequenceNumber++
 				require.Empty(t, old.Encode(&p, []byte{1, 2, 3}), "old queued writes cannot generate repair")
+				for _, repair := range d.fecEncoder.Load().Encode(&p, []byte{1, 2, 3}) {
+					require.Equal(t, lastSequenceNumber+1, repair.SequenceNumber, "reusing an SSRC must preserve repair sequencing")
+				}
 			}
 			d.closeFEC()
 			require.Nil(t, d.fecEncoder.Load())

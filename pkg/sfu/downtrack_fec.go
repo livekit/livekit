@@ -17,8 +17,9 @@ package sfu
 import (
 	"strings"
 
-	"github.com/livekit/protocol/livekit"
 	"github.com/pion/webrtc/v4"
+
+	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/sfu/flexfec"
 )
@@ -26,15 +27,16 @@ import (
 // bindFEC runs under bindLock, using the complete negotiated codec list saved
 // before Pion narrows the TrackLocalContext to the selected media codec.
 func (d *DownTrack) bindFEC(t webrtc.TrackLocalContext) {
-	d.closeFEC()
 	d.fecLock.Lock()
 	defer d.fecLock.Unlock()
+	d.closeFECLocked()
 	if !d.params.EnableFlexFEC || d.kind != webrtc.RTPCodecTypeVideo || t.SSRCForwardErrorCorrection() == 0 {
 		return
 	}
 	for _, codec := range d.negotiatedCodecParameters {
 		if strings.EqualFold(codec.MimeType, webrtc.MimeTypeFlexFEC03) {
 			encoder := flexfec.NewEncoder(uint8(codec.PayloadType), uint32(t.SSRCForwardErrorCorrection()), d.params.OnFECSent)
+			encoder.SeedState(d.fecState)
 			encoder.SetProtectionPercent(d.fecProtectionPercent.Load())
 			d.fecEncoder.Store(encoder)
 			return
@@ -45,8 +47,35 @@ func (d *DownTrack) bindFEC(t webrtc.TrackLocalContext) {
 func (d *DownTrack) closeFEC() {
 	d.fecLock.Lock()
 	defer d.fecLock.Unlock()
+	d.closeFECLocked()
+}
+
+func (d *DownTrack) closeFECLocked() {
 	if encoder := d.fecEncoder.Swap(nil); encoder != nil {
 		encoder.Close()
+		// Close first so queued media cannot advance the sequence after it is saved.
+		d.fecState = encoder.GetState()
+	}
+}
+
+func (d *DownTrack) getFECState() flexfec.EncoderState {
+	d.fecLock.Lock()
+	defer d.fecLock.Unlock()
+	if encoder := d.fecEncoder.Load(); encoder != nil {
+		return encoder.GetState()
+	}
+	return d.fecState
+}
+
+func (d *DownTrack) seedFECState(state flexfec.EncoderState) {
+	if state.SSRC == 0 {
+		return
+	}
+	d.fecLock.Lock()
+	defer d.fecLock.Unlock()
+	d.fecState = state
+	if encoder := d.fecEncoder.Load(); encoder != nil {
+		encoder.SeedState(state)
 	}
 }
 

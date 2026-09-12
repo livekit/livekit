@@ -21,6 +21,7 @@ import (
 
 	pionflexfec "github.com/pion/interceptor/pkg/flexfec"
 	"github.com/pion/rtp"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/livekit/protocol/utils/mono"
 )
@@ -37,6 +38,24 @@ const (
 	maxEncoderMediaPacketSize = maxMediaPacketSize - pionflexfec.BaseFec03HeaderSize - 16
 )
 
+// EncoderState preserves the repair sequence when a sender SSRC is reused.
+// Partial media groups are never carried over to a new binding.
+type EncoderState struct {
+	SSRC               uint32
+	NextSequenceNumber uint16
+}
+
+func (s EncoderState) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddUint32("SSRC", s.SSRC)
+	e.AddUint16("NextSequenceNumber", s.NextSequenceNumber)
+	return nil
+}
+
+type encoderMediaGroup struct {
+	packets [MediaPacketsPerGroup]rtp.Packet
+	storage [MediaPacketsPerGroup][maxEncoderMediaPacketSize]byte
+}
+
 // Encoder batches final, outgoing video packets for Pion's FlexFEC-03 encoder.
 // It owns reusable wire storage: the caller may recycle headers, extensions and
 // payloads as soon as Encode returns. It does not delay media or start workers.
@@ -44,11 +63,11 @@ const (
 type Encoder struct {
 	mu                sync.Mutex
 	encoder           *pionflexfec.FlexEncoder03
-	packets           [MediaPacketsPerGroup]rtp.Packet
-	storage           [MediaPacketsPerGroup][maxEncoderMediaPacketSize]byte
+	media             *encoderMediaGroup
 	count             int
 	startedAt         int64
 	sequenceNumber    uint16
+	ssrc              uint32
 	closed            bool
 	onSent            func(packets int, bytes int)
 	protectionPercent uint32
@@ -59,9 +78,29 @@ func NewEncoder(payloadType uint8, ssrc uint32, onSent func(packets int, bytes i
 	return &Encoder{
 		encoder:           pionflexfec.NewFlexEncoder03(payloadType, ssrc),
 		sequenceNumber:    uint16(rand.Uint32()),
+		ssrc:              ssrc,
 		onSent:            onSent,
 		protectionPercent: DefaultProtectionPercent,
 	}
+}
+
+func (e *Encoder) GetState() EncoderState {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return EncoderState{SSRC: e.ssrc, NextSequenceNumber: e.sequenceNumber}
+}
+
+// SeedState must be called before forwarding starts. Only reuse sequencing for
+// the same repair SSRC; a new SSRC keeps its randomized initial sequence number.
+func (e *Encoder) SeedState(state EncoderState) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.closed || state.SSRC == 0 || state.SSRC != e.ssrc {
+		return
+	}
+	e.sequenceNumber = state.NextSequenceNumber
+	e.count = 0
+	e.repairCredit = 0
 }
 
 // Encode returns independently owned repair packets for complete groups only.
@@ -81,8 +120,13 @@ func (e *Encoder) Encode(header *rtp.Header, payload []byte) []rtp.Packet {
 		e.count = 0
 		return nil
 	}
+	if e.media == nil {
+		// Like the upstream recovery buffer, allocate packet storage only once
+		// it is needed. Negotiated tracks with the default "none" stay small.
+		e.media = &encoderMediaGroup{}
+	}
 	if e.count != 0 {
-		previous := &e.packets[e.count-1]
+		previous := &e.media.packets[e.count-1]
 		if header.SequenceNumber != previous.SequenceNumber+1 ||
 			header.SSRC != previous.SSRC || header.PayloadType != previous.PayloadType ||
 			now-e.startedAt > int64(maxEncoderGroupAge) {
@@ -93,14 +137,14 @@ func (e *Encoder) Encode(header *rtp.Header, payload []byte) []rtp.Packet {
 		e.startedAt = now
 	}
 
-	raw := e.storage[e.count][:size]
+	raw := e.media.storage[e.count][:size]
 	n, err := header.MarshalTo(raw)
 	if err != nil {
 		e.count = 0
 		return nil
 	}
 	copy(raw[n:], payload)
-	if err = e.packets[e.count].Unmarshal(raw); err != nil {
+	if err = e.media.packets[e.count].Unmarshal(raw); err != nil {
 		e.count = 0
 		return nil
 	}
@@ -119,9 +163,9 @@ func (e *Encoder) Encode(header *rtp.Header, payload []byte) []rtp.Packet {
 	if numRepair == 0 {
 		return nil
 	}
-	repair := e.encoder.EncodeFec(e.packets[:], numRepair)
+	repair := e.encoder.EncodeFec(e.media.packets[:], numRepair)
 	for i := range repair {
-		// Pion's encoder uses a constant timestamp and initial sequence number.
+		// Pion's encoder uses a constant timestamp and a fixed initial sequence number.
 		// Use this stream's media clock and a randomized, continuous repair sequence.
 		repair[i].Timestamp = header.Timestamp
 		repair[i].SequenceNumber = e.sequenceNumber
@@ -157,5 +201,7 @@ func (e *Encoder) Close() {
 	e.mu.Lock()
 	e.closed = true
 	e.count = 0
+	e.media = nil
+	e.encoder = nil
 	e.mu.Unlock()
 }

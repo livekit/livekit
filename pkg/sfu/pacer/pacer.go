@@ -43,8 +43,6 @@ const (
 )
 
 type Packet struct {
-	// FEC is set only on original video media, never padding, RTX or probes.
-	FEC                *flexfec.Encoder
 	Header             *rtp.Header
 	HeaderPool         *sync.Pool
 	HeaderSize         int
@@ -57,6 +55,8 @@ type Packet struct {
 	WriteStream        webrtc.TrackLocalWriter
 	Pool               *sync.Pool
 	PoolEntity         *[]byte
+	// FEC is set only on original video media, never padding, RTX or probes.
+	FEC *flexfec.Encoder
 }
 
 type Pacer interface {
