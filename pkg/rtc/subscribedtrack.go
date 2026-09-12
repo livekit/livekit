@@ -34,6 +34,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 const (
@@ -136,6 +137,8 @@ func NewSubscribedTrack(params SubscribedTrackParams) (*SubscribedTrack, error) 
 	// Strip packet trailer if track has packet trailer but subscriber does not have cap
 	stripPacketTrailer := params.MediaTrack.HasPacketTrailer() && !subSupportsPacketTrailer
 	downTrack, err := sfu.NewDownTrack(sfu.DownTrackParams{
+		EnableFlexFEC:      params.SubscriberConfig.FlexFEC.Enabled,
+		OnFECSent:          prometheus.RecordFECDownstream,
 		Codecs:             codecs,
 		IsEncrypted:        isEncrypted,
 		Source:             params.MediaTrack.Source(),
@@ -316,6 +319,7 @@ func (t *SubscribedTrack) SetPublisherMuted(muted bool) {
 
 func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrackSettings, isImmediate bool) {
 	t.settingsLock.Lock()
+	settings = mergeSubscriberSettings(t.settings, settings)
 	if proto.Equal(t.settings, settings) {
 		t.logger.Debugw("skipping subscriber track settings", "settings", logger.Proto(t.settings))
 		t.settingsLock.Unlock()
@@ -323,7 +327,7 @@ func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrack
 	}
 
 	isImmediate = isImmediate || (!settings.Disabled && settings.Disabled != t.isMutedLocked())
-	t.settings = utils.CloneProto(settings)
+	t.settings = settings
 	t.logger.Debugw("saving subscriber track settings", "settings", logger.Proto(t.settings))
 	t.settingsLock.Unlock()
 
@@ -375,6 +379,9 @@ func (t *SubscribedTrack) applySettings() {
 	}
 
 	t.logger.Debugw("applying subscriber track settings", "settings", logger.Proto(t.settings))
+	if t.settings.Fec != nil {
+		dt.SetFECProtection(*t.settings.Fec)
+	}
 	if t.settings.Disabled {
 		dt.Mute(true)
 		t.settingsLock.Unlock()

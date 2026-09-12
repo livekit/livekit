@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
+	"github.com/livekit/livekit-server/pkg/sfu/flexfec"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
 )
@@ -42,6 +43,8 @@ const (
 )
 
 type Packet struct {
+	// FEC is set only on original video media, never padding, RTX or probes.
+	FEC                *flexfec.Encoder
 	Header             *rtp.Header
 	HeaderPool         *sync.Pool
 	HeaderSize         int

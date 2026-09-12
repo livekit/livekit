@@ -1479,6 +1479,7 @@ func (s *mediaTrackSubscription) getKind() (livekit.TrackType, bool) {
 
 func (s *mediaTrackSubscription) setSettings(settings *livekit.UpdateTrackSettings) {
 	s.lock.Lock()
+	settings = mergeSubscriberSettings(s.settings, settings)
 	s.settings = settings
 	subTrack := s.subscribedTrack
 	s.lock.Unlock()

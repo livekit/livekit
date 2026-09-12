@@ -122,6 +122,12 @@ rtc:
   # # forwarding.
   # flexfec:
   #   upstream_enabled: false
+  #   # Allow repairs for subscribers that negotiate FlexFEC. Clients select fec
+  #   # per track in UpdateTrackSettings: FEC_NONE (default), FEC_LOW (15%),
+  #   # FEC_MEDIUM (25%), or FEC_HIGH (35%) repair packet overhead, matching publish
+  #   # track presets. Media is sent immediately; incomplete groups
+  #   # spanning more than 200ms and packets without room for repair headers are skipped.
+  #   downstream_enabled: false
   # # allows automatic connection fallback to TCP and TURN/TLS (if configured) when UDP has been unstable, default true
   # allow_tcp_fallback: true
   # # signaling RTT (in milliseconds) below which ICE/TCP is attempted on a UDP failure; at or above it,

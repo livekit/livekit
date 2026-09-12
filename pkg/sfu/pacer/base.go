@@ -85,6 +85,39 @@ func (b *Base) SendPacket(p *Packet) (int, error) {
 		return 0, err
 	}
 
+	if p.FEC != nil && written > 0 && !p.IsRTX && !p.IsProbe {
+		repair := p.FEC.Encode(p.Header, p.Payload)
+		sent, payloadBytes := 0, 0
+		for i := range repair {
+			packet := &repair[i]
+			fec := PacketFactory.Get().(*Packet)
+			*fec = Packet{
+				Header:             &packet.Header,
+				Payload:            packet.Payload,
+				AbsSendTimeExtID:   p.AbsSendTimeExtID,
+				TransportWideExtID: p.TransportWideExtID,
+				WriteStream:        p.WriteStream,
+				ProbeClusterId:     p.ProbeClusterId,
+			}
+			// Include extension space in BWE/probe accounting before patching.
+			if fec.AbsSendTimeExtID != 0 {
+				_ = fec.Header.SetExtension(fec.AbsSendTimeExtID, []byte{0, 0, 0})
+			}
+			if fec.TransportWideExtID != 0 {
+				_ = fec.Header.SetExtension(fec.TransportWideExtID, []byte{0, 0})
+			}
+			fec.HeaderSize = fec.Header.MarshalSize()
+			// Charge repair bytes to this send's pacer budget. Repairs immediately
+			// follow their media group even when there is a long media queue.
+			n, fecErr := b.SendPacket(fec)
+			written += n
+			if fecErr == nil && n > 0 {
+				sent++
+				payloadBytes += len(packet.Payload)
+			}
+		}
+		p.FEC.RecordSent(sent, payloadBytes)
+	}
 	return written, nil
 }
 

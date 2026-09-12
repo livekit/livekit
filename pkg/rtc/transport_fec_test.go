@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/rtc/transport/transportfakes"
 	protoCodecs "github.com/livekit/protocol/codecs"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -202,4 +203,55 @@ func TestWebRTCConfigFlexFEC(t *testing.T) {
 		webRTCConfig.UpdatePublisherConfig(true)
 		assert.True(t, webRTCConfig.Publisher.FlexFEC.Enabled)
 	})
+}
+
+func TestWebRTCConfigDownstreamFlexFEC(t *testing.T) {
+	for _, upstream := range []bool{false, true} {
+		for _, downstream := range []bool{false, true} {
+			conf, err := config.NewConfig("", true, nil, nil)
+			require.NoError(t, err)
+			conf.RTC.TCPPort = 0
+			conf.RTC.FlexFEC = config.FlexFECConfig{UpstreamEnabled: upstream, DownstreamEnabled: downstream}
+			c, err := NewWebRTCConfig(conf)
+			require.NoError(t, err)
+			for _, twcc := range []bool{false, true} {
+				c.UpdateSubscriberConfig(config.CongestionControlConfig{UseSendSideBWE: twcc})
+				c.UpdatePublisherConfig(true)
+				require.Equal(t, upstream, c.Publisher.FlexFEC.Enabled)
+				require.Equal(t, downstream, c.Subscriber.FlexFEC.Enabled)
+			}
+		}
+	}
+}
+
+func TestSinglePCDownstreamFlexFEC(t *testing.T) {
+	codecs := []*livekit.Codec{{Mime: "video/VP8"}, {Mime: "video/rtx"}}
+	for _, direction := range []webrtc.RTPTransceiverDirection{webrtc.RTPTransceiverDirectionSendonly, webrtc.RTPTransceiverDirectionSendrecv, webrtc.RTPTransceiverDirectionRecvonly} {
+		t.Run(direction.String(), func(t *testing.T) {
+			conf := &WebRTCConfig{Subscriber: DirectionConfig{FlexFEC: FlexFECDirectionConfig{Enabled: true}}}
+			server, err := NewPCTransport(TransportParams{
+				Config: conf, IsSendSide: true, Handler: &transportfakes.FakeHandler{},
+				EnabledPublishCodecs: codecs, EnabledSubscribeCodecs: codecs,
+			})
+			require.NoError(t, err)
+			defer server.Close()
+			tr, err := server.pc.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{Direction: direction})
+			require.NoError(t, err)
+			if direction != webrtc.RTPTransceiverDirectionRecvonly {
+				server.queueOrConfigureSender(tr, codecs, RTCPFeedbackConfig{}, false, true)
+				require.Len(t, server.sendersPendingConfig, 1)
+				require.True(t, server.sendersPendingConfig[0].keepFlexFEC)
+				configureSender(server.sendersPendingConfig[0], nil)
+			}
+			server.restrictReceiverCodecsToPublishList()
+			offer, err := server.pc.CreateOffer(nil)
+			require.NoError(t, err)
+			if direction == webrtc.RTPTransceiverDirectionRecvonly {
+				require.NotContains(t, offer.SDP, "flexfec-03")
+			} else {
+				require.Contains(t, offer.SDP, "flexfec-03/90000")
+				require.Contains(t, offer.SDP, "ssrc-group:FEC-FR")
+			}
+		})
+	}
 }

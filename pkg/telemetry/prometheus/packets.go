@@ -243,6 +243,12 @@ func RecordFECUpstream(received int, recovered int, discarded int, bytesReceived
 	}
 }
 
+// RecordFECDownstream tracks successfully sent repair packets and RTP payload bytes.
+func RecordFECDownstream(packets int, bytes int) {
+	promFECPacketTotal.WithLabelValues(string(Outgoing), "sent").Add(float64(packets))
+	promFECPacketBytes.WithLabelValues(string(Outgoing), "sent").Add(float64(bytes))
+}
+
 func IncrementPackets(country string, direction Direction, count uint64, retransmit bool) {
 	var transmission TransmissionType
 	if retransmit {
