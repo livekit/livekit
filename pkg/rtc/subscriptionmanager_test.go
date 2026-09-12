@@ -25,6 +25,7 @@ import (
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/rtc/types/typesfakes"
@@ -510,7 +511,8 @@ func TestConcurrentFirstSubscribe(t *testing.T) {
 				return false
 			}
 			applied, _ := st.UpdateSubscriberSettingsArgsForCall(n - 1)
-			return applied == settings
+			// settings are stored as merged snapshots, so compare by value
+			return proto.Equal(applied, settings)
 		}, subSettleTimeout, subCheckInterval, "the down track should get the settings")
 
 		sm.Close(false)
@@ -543,7 +545,8 @@ func TestSettingsKeptForSubscribe(t *testing.T) {
 				return false
 			}
 			applied, _ := st.UpdateSubscriberSettingsArgsForCall(n - 1)
-			return applied == settings
+			// settings are stored as merged snapshots, so compare by value
+			return proto.Equal(applied, settings)
 		}, subSettleTimeout, subCheckInterval, "the down track should get the settings")
 
 		// settings for a track that is never subscribed are cleaned up after notFoundTimeout
