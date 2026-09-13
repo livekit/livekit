@@ -61,6 +61,27 @@ func TestConfig_SignalMessageSizeLimitOverride(t *testing.T) {
 	require.Equal(t, int64(0), conf.Limit.AgentSignalMessageSizeLimit)
 }
 
+func TestConfig_PSRPCCompressionDefaults(t *testing.T) {
+	conf, err := NewConfig("", true, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, 0, conf.PSRPC.Compression.Quality)
+	require.Equal(t, 1024, conf.PSRPC.Compression.Threshold)
+	require.Equal(t, 0, conf.PSRPC.Compression.MaxDecompressedSize)
+}
+
+func TestConfig_PSRPCCompressionOverride(t *testing.T) {
+	const content = `psrpc:
+  compression:
+    quality: 6
+    max_decompressed_size: 4096`
+	conf, err := NewConfig(content, true, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, 6, conf.PSRPC.Compression.Quality)
+	require.Equal(t, 4096, conf.PSRPC.Compression.MaxDecompressedSize)
+	require.Equal(t, 1024, conf.PSRPC.Compression.Threshold)
+	require.Equal(t, 3, conf.PSRPC.MaxAttempts)
+}
+
 func TestConfig_UnknownKeys(t *testing.T) {
 	const content = `unknown: 10
 room:

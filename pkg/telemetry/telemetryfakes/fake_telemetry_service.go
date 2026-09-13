@@ -129,11 +129,19 @@ type FakeTelemetryService struct {
 		arg1 context.Context
 		arg2 *livekit.ReportInfo
 	}
-	RoomEndedStub        func(context.Context, *livekit.Room)
+	RoomEndedStub        func(context.Context, *livekit.Room, livekit.RoomEndReason)
 	roomEndedMutex       sync.RWMutex
 	roomEndedArgsForCall []struct {
 		arg1 context.Context
 		arg2 *livekit.Room
+		arg3 livekit.RoomEndReason
+	}
+	RoomIDChangedStub        func(context.Context, livekit.RoomID, *livekit.Room)
+	roomIDChangedMutex       sync.RWMutex
+	roomIDChangedArgsForCall []struct {
+		arg1 context.Context
+		arg2 livekit.RoomID
+		arg3 *livekit.Room
 	}
 	RoomProjectReporterStub        func(context.Context) roomobs.ProjectReporter
 	roomProjectReporterMutex       sync.RWMutex
@@ -880,17 +888,18 @@ func (fake *FakeTelemetryService) ReportArgsForCall(i int) (context.Context, *li
 	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakeTelemetryService) RoomEnded(arg1 context.Context, arg2 *livekit.Room) {
+func (fake *FakeTelemetryService) RoomEnded(arg1 context.Context, arg2 *livekit.Room, arg3 livekit.RoomEndReason) {
 	fake.roomEndedMutex.Lock()
 	fake.roomEndedArgsForCall = append(fake.roomEndedArgsForCall, struct {
 		arg1 context.Context
 		arg2 *livekit.Room
-	}{arg1, arg2})
+		arg3 livekit.RoomEndReason
+	}{arg1, arg2, arg3})
 	stub := fake.RoomEndedStub
-	fake.recordInvocation("RoomEnded", []interface{}{arg1, arg2})
+	fake.recordInvocation("RoomEnded", []interface{}{arg1, arg2, arg3})
 	fake.roomEndedMutex.Unlock()
 	if stub != nil {
-		fake.RoomEndedStub(arg1, arg2)
+		fake.RoomEndedStub(arg1, arg2, arg3)
 	}
 }
 
@@ -900,17 +909,51 @@ func (fake *FakeTelemetryService) RoomEndedCallCount() int {
 	return len(fake.roomEndedArgsForCall)
 }
 
-func (fake *FakeTelemetryService) RoomEndedCalls(stub func(context.Context, *livekit.Room)) {
+func (fake *FakeTelemetryService) RoomEndedCalls(stub func(context.Context, *livekit.Room, livekit.RoomEndReason)) {
 	fake.roomEndedMutex.Lock()
 	defer fake.roomEndedMutex.Unlock()
 	fake.RoomEndedStub = stub
 }
 
-func (fake *FakeTelemetryService) RoomEndedArgsForCall(i int) (context.Context, *livekit.Room) {
+func (fake *FakeTelemetryService) RoomEndedArgsForCall(i int) (context.Context, *livekit.Room, livekit.RoomEndReason) {
 	fake.roomEndedMutex.RLock()
 	defer fake.roomEndedMutex.RUnlock()
 	argsForCall := fake.roomEndedArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeTelemetryService) RoomIDChanged(arg1 context.Context, arg2 livekit.RoomID, arg3 *livekit.Room) {
+	fake.roomIDChangedMutex.Lock()
+	fake.roomIDChangedArgsForCall = append(fake.roomIDChangedArgsForCall, struct {
+		arg1 context.Context
+		arg2 livekit.RoomID
+		arg3 *livekit.Room
+	}{arg1, arg2, arg3})
+	stub := fake.RoomIDChangedStub
+	fake.recordInvocation("RoomIDChanged", []interface{}{arg1, arg2, arg3})
+	fake.roomIDChangedMutex.Unlock()
+	if stub != nil {
+		fake.RoomIDChangedStub(arg1, arg2, arg3)
+	}
+}
+
+func (fake *FakeTelemetryService) RoomIDChangedCallCount() int {
+	fake.roomIDChangedMutex.RLock()
+	defer fake.roomIDChangedMutex.RUnlock()
+	return len(fake.roomIDChangedArgsForCall)
+}
+
+func (fake *FakeTelemetryService) RoomIDChangedCalls(stub func(context.Context, livekit.RoomID, *livekit.Room)) {
+	fake.roomIDChangedMutex.Lock()
+	defer fake.roomIDChangedMutex.Unlock()
+	fake.RoomIDChangedStub = stub
+}
+
+func (fake *FakeTelemetryService) RoomIDChangedArgsForCall(i int) (context.Context, livekit.RoomID, *livekit.Room) {
+	fake.roomIDChangedMutex.RLock()
+	defer fake.roomIDChangedMutex.RUnlock()
+	argsForCall := fake.roomIDChangedArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeTelemetryService) RoomProjectReporter(arg1 context.Context) roomobs.ProjectReporter {

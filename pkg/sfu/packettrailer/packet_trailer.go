@@ -25,9 +25,11 @@ const (
 // StripTrailer returns the number of bytes to strip from the end of an RTP
 // payload if it contains an LKTS trailer. The trailer is located by checking
 // for the "LKTS" magic suffix and then reading the XORed trailer_len byte
-// immediately before it. Returns 0 if absent or ineligible.
-func StripTrailer(payload []byte, marker bool) int {
-	if !marker || len(payload) < envelopeSize {
+// immediately before it. isEndOfFrame must be set only for packets ending an
+// encoded frame, i. e. where a trailer could have been appended. Returns 0 if
+// absent or ineligible.
+func StripTrailer(payload []byte, isEndOfFrame bool) int {
+	if !isEndOfFrame || len(payload) < envelopeSize {
 		return 0
 	}
 

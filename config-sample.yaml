@@ -67,7 +67,8 @@ rtc:
   use_external_ip: true
   # # when set to true, advertises both mapped external and internal IPs to clients as server candidates.
   # # useful when clients connect from both private and public networks.
-  # # works only when `use_external_ip` is set to true.
+  # # works when `use_external_ip` is set to true, and also when `node_ip` is set explicitly below.
+  # # in both cases the node's local candidate is kept alongside the mapped one instead of being replaced by it.
   # # when both this and `external_ip_only` are set, SFU advertises all private IPs with their mapped external IPs and skips
   # # private IPs that do not have a mapped external IP.
   # advertise_internal_ip: true
@@ -267,6 +268,15 @@ keys:
 #   backoff: 500ms
 #   # number of messages to buffer before dropping
 #   buffer_size: 1000
+#   # optional gzip compression of bus payloads
+#   compression:
+#     # gzip level 1-9; 0 disables. every node on the bus must support
+#     # compression before enabling it
+#     quality: 0
+#     # payload bytes below which compression is skipped
+#     threshold: 1024
+#     # cap on an inbound payload after decompression, 0 for unlimited
+#     max_decompressed_size: 0
 
 # customize audio level sensitivity
 # audio:
@@ -307,6 +317,19 @@ keys:
 #   # set external_tls to true if using a L4 load balancer to terminate TLS. when enabled,
 #   # LiveKit expects unencrypted traffic on tls_port, and still advertise tls_port as a TURN/TLS candidate.
 #   external_tls: true
+#   # set proxy_protocol to true if the proxy or load balancer in front of tls_port does not preserve
+#   # the client address (it terminates TLS, or dials LiveKit from its own IP) and can send a
+#   # PROXY protocol v1/v2 header instead. Without it TURN reports the proxy's address to the
+#   # client as XOR-MAPPED-ADDRESS, which Firefox rejects when it is loopback or wildcard.
+#   # every connection on tls_port must then carry the header; connections without it are rejected.
+#   # prefer PROXY protocol v2 on the proxy side: the v1 text header must arrive in a single read.
+#   proxy_protocol: false
+#   # proxies whose PROXY header is trusted. connections from any other address are closed, so a
+#   # client that reaches tls_port directly cannot claim an arbitrary source address.
+#   # defaults to loopback, for a proxy running on the same host.
+#   proxy_protocol_trusted_cidrs:
+#     - 127.0.0.0/8
+#     - ::1/128
 #   # needs to match tls cert domain
 #   domain: turn.myhost.com
 #   # optional (set only if not using external TLS termination)
@@ -336,6 +359,15 @@ keys:
 #   rtmp_base_url: "rtmp://my.domain.com/live"
 #   # Prefix used to generate WHIP URLs for WHIP ingress.
 #   whip_base_url: "http://my.domain.com/whip"
+#   # Allow URL pull ingress from udp:// source URLs. Disabled by default.
+#   # Only enable this if you trust both the callers allowed to create ingresses and the network the
+#   # ingress handlers run on. Unlike an http or srt source url, a udp source url doesn't make the
+#   # handler connect out to the url host: the handler binds a local socket on the address and port
+#   # taken from the url, and joins the multicast group if one is given. This lets the caller choose
+#   # which local port the handler binds, feed the session unauthenticated and easily spoofed traffic,
+#   # and make the handler join arbitrary multicast groups and republish whatever it receives into a
+#   # room, using the ingress as a relay for streams on the handler's local network.
+#   enable_udp_url_pull: false
 
 # Region of the current node. Required if using regionaware node selector
 # region: us-west-2

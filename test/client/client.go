@@ -46,10 +46,10 @@ import (
 	"github.com/livekit/protocol/signalling"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
-	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/transport/transportfakes"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/protocol/datatrack"
 )
 
 type SignalRequestHandler func(msg *livekit.SignalRequest) error
@@ -867,9 +867,9 @@ func (c *RTCClient) SetAttributes(attrs map[string]string) error {
 
 func (c *RTCClient) hasPrimaryEverConnected() bool {
 	if c.subscriberAsPrimary.Load() {
-		return c.subscriber.HasEverConnected()
+		return c.subscriber.PeerConnectionHasEverConnected()
 	} else {
-		return c.publisher.HasEverConnected()
+		return c.publisher.PeerConnectionHasEverConnected()
 	}
 }
 
@@ -1113,7 +1113,7 @@ func (c *RTCClient) ensurePublisherConnected() error {
 		return c.ctx.Err()
 	}
 
-	if c.publisher.HasEverConnected() {
+	if c.publisher.PeerConnectionHasEverConnected() {
 		return nil
 	}
 

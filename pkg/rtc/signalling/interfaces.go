@@ -32,6 +32,13 @@ type ParticipantSignaller interface {
 	GetResponseSink() routing.MessageSink
 	CloseSignalConnection(reason types.SignallingCloseReason)
 
+	// HandshakePending reports whether a resumed connection is still waiting for the
+	// ReconnectResponse it has to open with
+	HandshakePending() bool
+	// OpenHandshake lets messages flow on a resumed connection that does not open with
+	// a ReconnectResponse
+	OpenHandshake()
+
 	WriteMessage(msg proto.Message) error
 }
 

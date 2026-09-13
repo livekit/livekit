@@ -246,7 +246,7 @@ func (r *RoomManager) Stop() {
 	r.lock.RUnlock()
 
 	for _, room := range rooms {
-		room.Close(types.ParticipantCloseReasonRoomManagerStop)
+		room.Close(types.RoomCloseReasonServerShutdown)
 	}
 
 	r.roomManagerServer.Kill()
@@ -692,12 +692,12 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 		return nil, err
 	}
 
-	newRoom.OnClose(func() {
+	newRoom.OnClose(func(reason types.RoomCloseReason) {
 		killRoomServer()
 		killDispServer()
 
 		roomInfo := newRoom.ToProto()
-		r.telemetry.RoomEnded(ctx, roomInfo)
+		r.telemetry.RoomEnded(ctx, roomInfo, reason.ToProto())
 		prometheus.RoomEnded(time.Unix(roomInfo.CreationTime, 0))
 		if err := r.deleteRoom(ctx, roomName); err != nil {
 			newRoom.Logger().Errorw("could not delete room", err)
@@ -943,7 +943,7 @@ func (r *RoomManager) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		}
 	} else {
 		room.Logger().Infow("deleting room")
-		room.Close(types.ParticipantCloseReasonServiceRequestDeleteRoom)
+		room.Close(types.RoomCloseReasonAPIDelete)
 	}
 	return &livekit.DeleteRoomResponse{}, nil
 }

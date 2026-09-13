@@ -279,6 +279,19 @@ type TURNConfig struct {
 	RelayPortRangeEnd   uint16   `yaml:"relay_range_end,omitempty"`
 	ExternalTLS         bool     `yaml:"external_tls,omitempty"`
 	BindAddresses       []string `yaml:"bind_addresses,omitempty"`
+	// ProxyProtocol makes the TURN TCP listener require a PROXY protocol (v1 or v2)
+	// header on every connection and use the client address it carries. Needed when
+	// a proxy in front of TURN dials from its own address (a TLS-terminating L4
+	// proxy, a TCP reverse proxy): TURN echoes the address it sees back to the
+	// client as XOR-MAPPED-ADDRESS, and browsers such as Firefox reject a loopback
+	// or wildcard address there and abandon the allocation. Connections without
+	// the header are rejected.
+	ProxyProtocol bool `yaml:"proxy_protocol,omitempty"`
+	// ProxyProtocolTrustedCIDRs lists the proxies whose PROXY header is believed.
+	// Connections from any other address are closed, so a client that reaches
+	// tls_port directly cannot claim an arbitrary source address. Defaults to
+	// loopback only, for a proxy on the same host.
+	ProxyProtocolTrustedCIDRs []string `yaml:"proxy_protocol_trusted_cidrs,omitempty"`
 	// PerUserRelayAllocationLimit caps the number of concurrent relay allocations
 	// a single participant credential may hold, keyed by the participant ID. This
 	// stops one authenticated participant from consuming the shared relay-port
@@ -439,6 +452,19 @@ func (l LimitConfig) CanAddDataBlob(dataBlobs []*livekit.DataBlob, toAdd *liveki
 type IngressConfig struct {
 	RTMPBaseURL string `yaml:"rtmp_base_url,omitempty"`
 	WHIPBaseURL string `yaml:"whip_base_url,omitempty"`
+	// Allow URL pull ingresses with a udp:// source URL. Disabled by default, and should only be
+	// enabled if both the callers allowed to create ingresses and the network the ingress handlers
+	// run on are trusted. Unlike an http or srt source url, a udp source url doesn't make the ingress
+	// handler connect out to the url host: the handler binds a local socket on the address and port
+	// taken from the url, and joins the multicast group if one is given. This lets the caller:
+	//   - Choose which local port the handler binds, potentially colliding with other services on
+	//     the host.
+	//   - Feed the session unauthenticated traffic. UDP is connectionless, so any host able to reach
+	//     that port can inject media, or spoof the sender address to disrupt a legitimate feed.
+	//   - Make the handler join arbitrary multicast groups and republish whatever it receives into a
+	//     room, using the ingress as a relay for streams on the handler's local network the caller has
+	//     no direct access to.
+	EnableUDPURLPull bool `yaml:"enable_udp_url_pull,omitempty"`
 }
 
 type SIPConfig struct{}
@@ -572,6 +598,7 @@ var DefaultConfig = Config{
 	TURN: TURNConfig{
 		Enabled:                     false,
 		BindAddresses:               []string{"0.0.0.0"},
+		ProxyProtocolTrustedCIDRs:   []string{"127.0.0.0/8", "::1/128"},
 		TTLSeconds:                  DefaultTURNTTLSeconds,
 		PerUserRelayAllocationLimit: DefaultTURNPerUserRelayAllocationLimit,
 	},

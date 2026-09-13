@@ -6,13 +6,13 @@ import (
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
 	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/datatrack"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/observability/roomobs"
@@ -557,6 +557,16 @@ type FakeLocalParticipant struct {
 	getResponseSinkReturnsOnCall map[int]struct {
 		result1 routing.MessageSink
 	}
+	GetSubscribedDataTracksStub        func() []types.DataDownTrack
+	getSubscribedDataTracksMutex       sync.RWMutex
+	getSubscribedDataTracksArgsForCall []struct {
+	}
+	getSubscribedDataTracksReturns struct {
+		result1 []types.DataDownTrack
+	}
+	getSubscribedDataTracksReturnsOnCall map[int]struct {
+		result1 []types.DataDownTrack
+	}
 	GetSubscribedParticipantsStub        func() []livekit.ParticipantID
 	getSubscribedParticipantsMutex       sync.RWMutex
 	getSubscribedParticipantsArgsForCall []struct {
@@ -772,6 +782,16 @@ type FakeLocalParticipant struct {
 		result1 bool
 	}
 	hasConnectedReturnsOnCall map[int]struct {
+		result1 bool
+	}
+	HasICEConnectedStub        func() bool
+	hasICEConnectedMutex       sync.RWMutex
+	hasICEConnectedArgsForCall []struct {
+	}
+	hasICEConnectedReturns struct {
+		result1 bool
+	}
+	hasICEConnectedReturnsOnCall map[int]struct {
 		result1 bool
 	}
 	HasPermissionStub        func(livekit.TrackID, livekit.ParticipantIdentity) bool
@@ -4403,6 +4423,59 @@ func (fake *FakeLocalParticipant) GetResponseSinkReturnsOnCall(i int, result1 ro
 	}{result1}
 }
 
+func (fake *FakeLocalParticipant) GetSubscribedDataTracks() []types.DataDownTrack {
+	fake.getSubscribedDataTracksMutex.Lock()
+	ret, specificReturn := fake.getSubscribedDataTracksReturnsOnCall[len(fake.getSubscribedDataTracksArgsForCall)]
+	fake.getSubscribedDataTracksArgsForCall = append(fake.getSubscribedDataTracksArgsForCall, struct {
+	}{})
+	stub := fake.GetSubscribedDataTracksStub
+	fakeReturns := fake.getSubscribedDataTracksReturns
+	fake.recordInvocation("GetSubscribedDataTracks", []interface{}{})
+	fake.getSubscribedDataTracksMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) GetSubscribedDataTracksCallCount() int {
+	fake.getSubscribedDataTracksMutex.RLock()
+	defer fake.getSubscribedDataTracksMutex.RUnlock()
+	return len(fake.getSubscribedDataTracksArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) GetSubscribedDataTracksCalls(stub func() []types.DataDownTrack) {
+	fake.getSubscribedDataTracksMutex.Lock()
+	defer fake.getSubscribedDataTracksMutex.Unlock()
+	fake.GetSubscribedDataTracksStub = stub
+}
+
+func (fake *FakeLocalParticipant) GetSubscribedDataTracksReturns(result1 []types.DataDownTrack) {
+	fake.getSubscribedDataTracksMutex.Lock()
+	defer fake.getSubscribedDataTracksMutex.Unlock()
+	fake.GetSubscribedDataTracksStub = nil
+	fake.getSubscribedDataTracksReturns = struct {
+		result1 []types.DataDownTrack
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) GetSubscribedDataTracksReturnsOnCall(i int, result1 []types.DataDownTrack) {
+	fake.getSubscribedDataTracksMutex.Lock()
+	defer fake.getSubscribedDataTracksMutex.Unlock()
+	fake.GetSubscribedDataTracksStub = nil
+	if fake.getSubscribedDataTracksReturnsOnCall == nil {
+		fake.getSubscribedDataTracksReturnsOnCall = make(map[int]struct {
+			result1 []types.DataDownTrack
+		})
+	}
+	fake.getSubscribedDataTracksReturnsOnCall[i] = struct {
+		result1 []types.DataDownTrack
+	}{result1}
+}
+
 func (fake *FakeLocalParticipant) GetSubscribedParticipants() []livekit.ParticipantID {
 	fake.getSubscribedParticipantsMutex.Lock()
 	ret, specificReturn := fake.getSubscribedParticipantsReturnsOnCall[len(fake.getSubscribedParticipantsArgsForCall)]
@@ -5614,6 +5687,59 @@ func (fake *FakeLocalParticipant) HasConnectedReturnsOnCall(i int, result1 bool)
 		})
 	}
 	fake.hasConnectedReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) HasICEConnected() bool {
+	fake.hasICEConnectedMutex.Lock()
+	ret, specificReturn := fake.hasICEConnectedReturnsOnCall[len(fake.hasICEConnectedArgsForCall)]
+	fake.hasICEConnectedArgsForCall = append(fake.hasICEConnectedArgsForCall, struct {
+	}{})
+	stub := fake.HasICEConnectedStub
+	fakeReturns := fake.hasICEConnectedReturns
+	fake.recordInvocation("HasICEConnected", []interface{}{})
+	fake.hasICEConnectedMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeLocalParticipant) HasICEConnectedCallCount() int {
+	fake.hasICEConnectedMutex.RLock()
+	defer fake.hasICEConnectedMutex.RUnlock()
+	return len(fake.hasICEConnectedArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) HasICEConnectedCalls(stub func() bool) {
+	fake.hasICEConnectedMutex.Lock()
+	defer fake.hasICEConnectedMutex.Unlock()
+	fake.HasICEConnectedStub = stub
+}
+
+func (fake *FakeLocalParticipant) HasICEConnectedReturns(result1 bool) {
+	fake.hasICEConnectedMutex.Lock()
+	defer fake.hasICEConnectedMutex.Unlock()
+	fake.HasICEConnectedStub = nil
+	fake.hasICEConnectedReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeLocalParticipant) HasICEConnectedReturnsOnCall(i int, result1 bool) {
+	fake.hasICEConnectedMutex.Lock()
+	defer fake.hasICEConnectedMutex.Unlock()
+	fake.HasICEConnectedStub = nil
+	if fake.hasICEConnectedReturnsOnCall == nil {
+		fake.hasICEConnectedReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.hasICEConnectedReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
 }

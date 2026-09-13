@@ -948,7 +948,7 @@ func (r *ReceiverBase) forwardRTP(
 		}
 
 		spatialLayer := layer
-		if extPkt.Spatial >= 0 {
+		if extPkt.Spatial >= 0 && !sfuutils.IsSimulcastMode(r.videoLayerMode) {
 			// svc packet, take spatial layer info from packet
 			spatialLayer = extPkt.Spatial
 		}

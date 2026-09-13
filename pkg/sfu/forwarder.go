@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/pion/rtp"
+	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/zap/zapcore"
 
@@ -202,6 +203,8 @@ type TranslationParams struct {
 	incomingHeaderSize int
 	codecBytes         []byte
 	marker             bool
+	// end of the svc spatial layer frame
+	isEndOfLayerFrame bool
 }
 
 // -------------------------------------------------------------------
@@ -2126,6 +2129,20 @@ func (f *Forwarder) getTranslationParamsAudio(extPkt *buffer.ExtPacket, layer in
 }
 
 // should be called with lock held
+func (f *Forwarder) isEndOfLayerFrame(extPkt *buffer.ExtPacket) bool {
+	if extPkt.DependencyDescriptor != nil {
+		return extPkt.DependencyDescriptor.Descriptor != nil && extPkt.DependencyDescriptor.Descriptor.LastPacketInFrame
+	}
+
+	if f.mime == mime.MimeTypeVP9 {
+		vp9, ok := extPkt.Payload.(codecs.VP9Packet)
+		return ok && vp9.E
+	}
+
+	return false
+}
+
+// should be called with lock held
 func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer int32) (TranslationParams, error) {
 	tp := TranslationParams{}
 	if !f.vls.GetTarget().IsValid() {
@@ -2169,6 +2186,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	tp.isSwitching = result.IsSwitching
 	tp.ddBytes = result.DependencyDescriptorExtension
 	tp.marker = result.RTPMarker
+	tp.isEndOfLayerFrame = f.isEndOfLayerFrame(extPkt)
 
 	starting, err := f.getTranslationParamsCommon(extPkt, layer, &tp)
 	tp.isStarting = starting

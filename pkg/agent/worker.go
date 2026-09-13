@@ -160,6 +160,13 @@ type WorkerRegistration struct {
 	Endpoints        []*livekit.AgentHttp_AgentEndpoint
 	InstanceID       string
 	EndpointSettings *livekit.AgentHttp_AgentEndpointSettings
+
+	// KindDetails, when set by the server, are stamped onto the participant
+	// join token minted for every job assigned to this worker (e.g. marking
+	// hosted/cloud agents so they can be distinguished from self-hosted ones in
+	// observability). This is server-controlled and never populated from the
+	// worker's register request.
+	KindDetails []livekit.ParticipantInfo_KindDetail
 }
 
 func MakeWorkerRegistration() WorkerRegistration {
@@ -441,6 +448,7 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook Assignmen
 			res.ParticipantMetadata,
 			attributes,
 			w.Permissions,
+			w.KindDetails...,
 		)
 		if err != nil {
 			w.logger.Errorw("failed to build agent token", err)

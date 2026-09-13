@@ -36,11 +36,12 @@
       "groupName": "pion deps"
     },
     {
-      "description": "First-party deps, no need to quarantine new releases",
+      "description": "First-party deps, no need to quarantine new releases; they are co-released and depend on each other, so they are grouped into a single PR",
       "matchManagers": ["gomod"],
       "matchPackageNames": [
         "github.com/livekit{/,}**"
       ],
+      "groupName": "livekit deps",
       "minimumReleaseAge": null
     },
     {

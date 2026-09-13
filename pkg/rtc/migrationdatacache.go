@@ -14,9 +14,14 @@ const (
 	MigrationDataCacheStateDone
 )
 
+const (
+	migrationDataCacheMaxSize = 4 << 20 // 4 MiB
+)
+
 type MigrationDataCache struct {
 	lastSeq   uint32
 	pkts      []*livekit.DataPacket
+	size      int
 	state     MigrationDataCacheState
 	expiredAt time.Time
 }
@@ -30,10 +35,10 @@ func NewMigrationDataCache(lastSeq uint32, expiredAt time.Time) *MigrationDataCa
 
 // Add adds a message to the cache if there is a gap between the last sequence number and cached messages then return the cache State:
 //   - MigrationDataCacheStateWaiting: waiting for the next packet (lastSeq + 1) of last sequence from old node
-//   - MigrationDataCacheStateTimeout: the next packet is not received before the expiredAt, participant will
-//     continue to process the reliable messages, subscribers will see the gap after the publisher migration
+//   - MigrationDataCacheStateTimeout: the next packet is not received before the expiredAt or the cache is full, participant
+//     will continue to process the reliable messages, subscribers will see the gap after the publisher migration
 //   - MigrationDataCacheStateDone: the next packet is received, participant can continue to process the reliable messages
-func (c *MigrationDataCache) Add(pkt *livekit.DataPacket) MigrationDataCacheState {
+func (c *MigrationDataCache) Add(pkt *livekit.DataPacket, size int) MigrationDataCacheState {
 	if c.state == MigrationDataCacheStateDone || c.state == MigrationDataCacheStateTimeout {
 		return c.state
 	}
@@ -48,7 +53,8 @@ func (c *MigrationDataCache) Add(pkt *livekit.DataPacket) MigrationDataCacheStat
 	}
 
 	c.pkts = append(c.pkts, pkt)
-	if time.Now().After(c.expiredAt) {
+	c.size += size
+	if c.size >= migrationDataCacheMaxSize || time.Now().After(c.expiredAt) {
 		c.state = MigrationDataCacheStateTimeout
 	}
 	return c.state
@@ -56,4 +62,8 @@ func (c *MigrationDataCache) Add(pkt *livekit.DataPacket) MigrationDataCacheStat
 
 func (c *MigrationDataCache) Get() []*livekit.DataPacket {
 	return c.pkts
+}
+
+func (c *MigrationDataCache) Size() int {
+	return c.size
 }

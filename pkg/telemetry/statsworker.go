@@ -18,6 +18,7 @@ import (
 	"context"
 	"sync"
 	"time"
+	"unsafe"
 
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -31,6 +32,17 @@ import (
 type ReferenceGuard struct {
 	activated, released bool
 }
+
+func (r *ReferenceGuard) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if r != nil {
+		e.AddUintptr("self", uintptr(unsafe.Pointer(r)))
+		e.AddBool("activated", r.activated)
+		e.AddBool("released", r.released)
+	}
+	return nil
+}
+
+// ----------------------------------------
 
 type ReferenceCount struct {
 	count int
@@ -52,9 +64,35 @@ func (s *ReferenceCount) Release(guard *ReferenceGuard) bool {
 	return s.count == 0
 }
 
+// Take hands over every reference held, leaving none behind.
+func (s *ReferenceCount) Take() int {
+	count := s.count
+	s.count = 0
+	return count
+}
+
+// Absorb takes on references handed over from elsewhere.
+func (s *ReferenceCount) Absorb(count int) {
+	s.count += count
+}
+
 func (s ReferenceCount) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddInt("count", s.count)
 	return nil
+}
+
+// ----------------------------------------
+
+// statsBatch is stats collected while the worker was in one room
+type statsBatch struct {
+	roomID           livekit.RoomID
+	roomName         livekit.RoomName
+	incomingPerTrack map[livekit.TrackID][]*livekit.AnalyticsStat
+	outgoingPerTrack map[livekit.TrackID][]*livekit.AnalyticsStat
+}
+
+func (b statsBatch) isEmpty() bool {
+	return len(b.incomingPerTrack) == 0 && len(b.outgoingPerTrack) == 0
 }
 
 // ----------------------------------------
@@ -65,13 +103,19 @@ type StatsWorker struct {
 
 	ctx                 context.Context
 	t                   TelemetryService
-	roomID              livekit.RoomID
-	roomName            livekit.RoomName
 	participantID       livekit.ParticipantID
 	participantIdentity livekit.ParticipantIdentity
-	isConnected         bool
 
-	lock             sync.RWMutex
+	lock sync.RWMutex
+	// the room a worker belongs to can change mid-session, so it is mutable state
+	// guarded by `lock`. it is kept in sync with the key the worker is filed under in
+	// telemetryService.workers, see telemetryService.reKeyRoom.
+	roomID   livekit.RoomID
+	roomName livekit.RoomName
+	// batches sealed off by a room change, they carry the room they were collected
+	// in and go out on the next flush
+	sealed           []statsBatch
+	isConnected      bool
 	outgoingPerTrack map[livekit.TrackID][]*livekit.AnalyticsStat
 	incomingPerTrack map[livekit.TrackID][]*livekit.AnalyticsStat
 	refCount         ReferenceCount
@@ -115,7 +159,56 @@ func (s *StatsWorker) ParticipantID() livekit.ParticipantID {
 	return s.participantID
 }
 
+func (s *StatsWorker) RoomID() livekit.RoomID {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	return s.roomID
+}
+
+// SetRoom re-points the worker at a room.
+//
+// Stats collected so far are sealed off rather than re-stamped - a room id changes
+// because the previous session ended, so what was collected under it belongs to it.
+// Sealing keeps the re-key free of any sending, the sealed stats go out on the next
+// flush like every other stat.
+func (s *StatsWorker) SetRoom(roomID livekit.RoomID, roomName livekit.RoomName) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if s.roomID == roomID && s.roomName == roomName {
+		return
+	}
+
+	if batch := s.sealStatsLocked(); !batch.isEmpty() {
+		s.sealed = append(s.sealed, batch)
+	}
+
+	s.roomID = roomID
+	s.roomName = roomName
+}
+
+// sealStatsLocked hands over everything collected since the last seal, stamped
+// with the room it was collected in
+func (s *StatsWorker) sealStatsLocked() statsBatch {
+	batch := statsBatch{
+		roomID:           s.roomID,
+		roomName:         s.roomName,
+		incomingPerTrack: s.incomingPerTrack,
+		outgoingPerTrack: s.outgoingPerTrack,
+	}
+
+	s.incomingPerTrack = make(map[livekit.TrackID][]*livekit.AnalyticsStat)
+	s.outgoingPerTrack = make(map[livekit.TrackID][]*livekit.AnalyticsStat)
+
+	return batch
+}
+
 func (s *StatsWorker) SetConnected() {
+	if s == nil {
+		return
+	}
+
 	s.lock.Lock()
 	s.isConnected = true
 	s.lock.Unlock()
@@ -132,19 +225,24 @@ func (s *StatsWorker) Flush(now time.Time, closeWait time.Duration) bool {
 	ts := timestamppb.New(now)
 
 	s.lock.Lock()
-	stats := make([]*livekit.AnalyticsStat, 0, len(s.incomingPerTrack)+len(s.outgoingPerTrack))
-
-	incomingPerTrack := s.incomingPerTrack
-	s.incomingPerTrack = make(map[livekit.TrackID][]*livekit.AnalyticsStat)
-
-	outgoingPerTrack := s.outgoingPerTrack
-	s.outgoingPerTrack = make(map[livekit.TrackID][]*livekit.AnalyticsStat)
+	// anything sealed off by a room change goes out along with the current batch,
+	// each stamped with the room it was collected in
+	batches := append(s.sealed, s.sealStatsLocked())
+	s.sealed = nil
 
 	closed := !s.closedAt.IsZero() && now.Sub(s.closedAt) > closeWait
 	s.lock.Unlock()
 
-	stats = s.collectStats(ts, livekit.StreamType_UPSTREAM, incomingPerTrack, stats)
-	stats = s.collectStats(ts, livekit.StreamType_DOWNSTREAM, outgoingPerTrack, stats)
+	numTracks := 0
+	for _, batch := range batches {
+		numTracks += len(batch.incomingPerTrack) + len(batch.outgoingPerTrack)
+	}
+
+	stats := make([]*livekit.AnalyticsStat, 0, numTracks)
+	for _, batch := range batches {
+		stats = s.collectStats(ts, batch, livekit.StreamType_UPSTREAM, stats)
+		stats = s.collectStats(ts, batch, livekit.StreamType_DOWNSTREAM, stats)
+	}
 	if len(stats) > 0 {
 		s.t.SendStats(s.ctx, stats)
 	}
@@ -167,6 +265,34 @@ func (s *StatsWorker) Close(guard *ReferenceGuard) bool {
 	return ok
 }
 
+// ForceClose closes the worker irrespective of outstanding references. Used when a
+// worker can no longer be reached through the worker map, so that it drains and is
+// reaped instead of lingering in the flush list forever.
+//
+// Its references are handed over to `successor`, the worker that can be reached in its
+// place, so that whoever holds one still has a live worker to close. A ReferenceGuard
+// records that it activated some worker, not which one, so leaving them behind would
+// strand the successor with references it can never see released.
+func (s *StatsWorker) ForceClose(successor *StatsWorker) bool {
+	s.lock.Lock()
+	if !s.closedAt.IsZero() {
+		s.lock.Unlock()
+		return false
+	}
+
+	s.closedAt = time.Now()
+	count := s.refCount.Take()
+	s.lock.Unlock()
+
+	if successor != nil && count != 0 {
+		successor.lock.Lock()
+		successor.refCount.Absorb(count)
+		successor.lock.Unlock()
+	}
+
+	return true
+}
+
 func (s *StatsWorker) Closed(guard *ReferenceGuard) bool {
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -179,10 +305,15 @@ func (s *StatsWorker) Closed(guard *ReferenceGuard) bool {
 
 func (s *StatsWorker) collectStats(
 	ts *timestamppb.Timestamp,
+	batch statsBatch,
 	streamType livekit.StreamType,
-	perTrack map[livekit.TrackID][]*livekit.AnalyticsStat,
 	stats []*livekit.AnalyticsStat,
 ) []*livekit.AnalyticsStat {
+	perTrack := batch.incomingPerTrack
+	if streamType == livekit.StreamType_DOWNSTREAM {
+		perTrack = batch.outgoingPerTrack
+	}
+
 	for trackID, analyticsStats := range perTrack {
 		coalesced := coalesce(analyticsStats)
 		if coalesced == nil {
@@ -192,15 +323,19 @@ func (s *StatsWorker) collectStats(
 		coalesced.TimeStamp = ts
 		coalesced.TrackId = string(trackID)
 		coalesced.Kind = streamType
-		coalesced.RoomId = string(s.roomID)
+		coalesced.RoomId = string(batch.roomID)
 		coalesced.ParticipantId = string(s.participantID)
-		coalesced.RoomName = string(s.roomName)
+		coalesced.RoomName = string(batch.roomName)
 		stats = append(stats, coalesced)
 	}
 	return stats
 }
 
 func (s *StatsWorker) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if s == nil {
+		return nil
+	}
+
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 

@@ -30,11 +30,11 @@ import (
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/protocol/datatrack"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -227,6 +227,8 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 	}
 }
 
+// ---------------------------------------------
+
 // IsIntentionalDisconnect reports whether a disconnect reason represents an
 // intentional/expected closure (client leaving, admin action, room teardown,
 // migration, etc.) as opposed to a connection failure.
@@ -292,10 +294,75 @@ func (s SignallingCloseReason) String() string {
 }
 
 // ---------------------------------------------
+
 const (
 	ParticipantCloseKeyNormal = "normal"
 	ParticipantCloseKeyWHIP   = "whip"
 )
+
+// ---------------------------------------------
+
+type RoomCloseReason int
+
+const (
+	RoomCloseReasonUnknown RoomCloseReason = iota
+	RoomCloseReasonAPIDelete
+	RoomCloseReasonIdleTimeout
+	RoomCloseReasonServerShutdown
+	RoomCloseReasonSuperseded
+	RoomCloseReasonOpenFailed
+)
+
+func (r RoomCloseReason) String() string {
+	switch r {
+	case RoomCloseReasonUnknown:
+		return "UNKNOWN"
+	case RoomCloseReasonAPIDelete:
+		return "API_DELETE"
+	case RoomCloseReasonIdleTimeout:
+		return "IDLE_TIMEOUT"
+	case RoomCloseReasonServerShutdown:
+		return "SERVER_SHUTDOWN"
+	case RoomCloseReasonSuperseded:
+		return "SUPERSEDED"
+	case RoomCloseReasonOpenFailed:
+		return "OPEN_FAILED"
+	default:
+		return fmt.Sprintf("%d", int(r))
+	}
+}
+
+func (r RoomCloseReason) ToProto() livekit.RoomEndReason {
+	switch r {
+	case RoomCloseReasonAPIDelete:
+		return livekit.RoomEndReason_ROOM_END_API_DELETE
+	case RoomCloseReasonIdleTimeout:
+		return livekit.RoomEndReason_ROOM_END_IDLE_TIMEOUT
+	case RoomCloseReasonServerShutdown:
+		return livekit.RoomEndReason_ROOM_END_SERVER_SHUTDOWN
+	case RoomCloseReasonSuperseded:
+		return livekit.RoomEndReason_ROOM_END_SUPERSEDED
+	case RoomCloseReasonOpenFailed:
+		return livekit.RoomEndReason_ROOM_END_OPEN_FAILED
+	default:
+		return livekit.RoomEndReason_ROOM_END_UNKNOWN
+	}
+}
+
+// ToParticipantCloseReason gives the reason participants are closed with when the
+// room closes for this reason, so the two can never disagree.
+func (r RoomCloseReason) ToParticipantCloseReason() ParticipantCloseReason {
+	switch r {
+	case RoomCloseReasonAPIDelete:
+		return ParticipantCloseReasonServiceRequestDeleteRoom
+	case RoomCloseReasonIdleTimeout, RoomCloseReasonSuperseded:
+		return ParticipantCloseReasonRoomClosed
+	case RoomCloseReasonServerShutdown:
+		return ParticipantCloseReasonRoomManagerStop
+	default:
+		return ParticipantCloseReasonNone
+	}
+}
 
 // ---------------------------------------------
 
@@ -370,10 +437,11 @@ type AddTrackParams struct {
 }
 
 type MoveToRoomParams struct {
-	RoomName      livekit.RoomName
-	ParticipantID livekit.ParticipantID
-	Listener      LocalParticipantListener
-	Helper        LocalParticipantHelper
+	RoomName          livekit.RoomName
+	ParticipantID     livekit.ParticipantID
+	Listener          LocalParticipantListener
+	TelemetryListener ParticipantTelemetryListener
+	Helper            LocalParticipantHelper
 }
 
 type DataMessageCache struct {
@@ -425,6 +493,7 @@ type LocalParticipant interface {
 	GetPlayoutDelayConfig() *livekit.PlayoutDelay
 	GetPendingTrack(trackID livekit.TrackID) *livekit.TrackInfo
 	GetICEConnectionInfo() []*ICEConnectionInfo
+	HasICEConnected() bool
 	HasConnected() bool
 	GetEnabledPublishCodecs() []*livekit.Codec
 	GetPublisherICESessionUfrag() (string, error)
@@ -479,6 +548,7 @@ type LocalParticipant interface {
 	UnsubscribeFromTrack(trackID livekit.TrackID)
 	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings)
 	GetSubscribedTracks() []SubscribedTrack
+	GetSubscribedDataTracks() []DataDownTrack
 	IsTrackNameSubscribed(publisherIdentity livekit.ParticipantIdentity, trackName string) bool
 	SubscribeToDataTrack(trackID livekit.TrackID)
 	UnsubscribeFromDataTrack(trackID livekit.TrackID)

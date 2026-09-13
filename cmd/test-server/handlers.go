@@ -24,7 +24,6 @@ import (
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
-	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils/protojson"
@@ -107,7 +106,7 @@ func init() {
 	reg[livekit.ListSIPDispatchRuleRequest, livekit.ListSIPDispatchRuleResponse]("livekit.SIP/ListSIPDispatchRule")
 	reg[livekit.DeleteSIPDispatchRuleRequest, livekit.SIPDispatchRuleInfo]("livekit.SIP/DeleteSIPDispatchRule")
 	reg[livekit.CreateSIPParticipantRequest, livekit.SIPParticipantInfo]("livekit.SIP/CreateSIPParticipant")
-	reg[livekit.TransferSIPParticipantRequest, emptypb.Empty]("livekit.SIP/TransferSIPParticipant")
+	reg[livekit.TransferSIPParticipantRequest, livekit.TransferSIPParticipantResponse]("livekit.SIP/TransferSIPParticipant")
 
 	// Connector
 	reg[livekit.DialWhatsAppCallRequest, livekit.DialWhatsAppCallResponse]("livekit.Connector/DialWhatsAppCall")

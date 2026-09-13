@@ -243,3 +243,18 @@ func Test_OnTrackSubscribed_EventIsSent(t *testing.T) {
 	require.Equal(t, publisherInfo.Identity, eventTrackSubscribed.Publisher.Identity)
 
 }
+
+func Test_OnRoomEnded_ReasonIsSent(t *testing.T) {
+	fixture := createFixture()
+
+	room := &livekit.Room{Sid: "RoomSid", Name: "RoomName"}
+	fixture.sut.RoomEnded(context.Background(), room, livekit.RoomEndReason_ROOM_END_API_DELETE)
+
+	fixture.flush()
+
+	require.Equal(t, 1, fixture.analytics.SendEventCallCount())
+	_, event := fixture.analytics.SendEventArgsForCall(0)
+	require.Equal(t, livekit.AnalyticsEventType_ROOM_ENDED, event.Type)
+	require.Equal(t, room.Sid, event.RoomId)
+	require.Equal(t, livekit.RoomEndReason_ROOM_END_API_DELETE, event.RoomEndReason)
+}

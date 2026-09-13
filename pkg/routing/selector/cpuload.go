@@ -27,21 +27,13 @@ type CPULoadSelector struct {
 }
 
 func (s *CPULoadSelector) filterNodes(nodes []*livekit.Node) ([]*livekit.Node, error) {
-	nodes = GetAvailableNodes(nodes)
-	if len(nodes) == 0 {
-		return nil, ErrNoAvailableNodes
+	nodes, err := FilterNodesByCriteria(nodes, s.CPULoadLimit, func(node *livekit.Node) float32 {
+		return node.Stats.CpuLoad
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	nodesLowLoad := make([]*livekit.Node, 0)
-	for _, node := range nodes {
-		stats := node.Stats
-		if stats.CpuLoad < s.CPULoadLimit {
-			nodesLowLoad = append(nodesLowLoad, node)
-		}
-	}
-	if len(nodesLowLoad) > 0 {
-		nodes = nodesLowLoad
-	}
 	return nodes, nil
 }
 
