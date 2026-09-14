@@ -155,7 +155,9 @@ func (r *RedPrimaryReceiver) AddDownTrack(track TrackSender) error {
 		r.logger.Infow("subscriberID already exists, replacing downtrack", "subscriberID", track.SubscriberID())
 	}
 
-	r.downTrackSpreader.Store(track)
+	if !r.downTrackSpreader.TryStore(track) {
+		return ErrReceiverClosed
+	}
 	r.logger.Debugw("red primary receiver downtrack added", "subscriberID", track.SubscriberID())
 	return nil
 }
@@ -195,7 +197,7 @@ func (r *RedPrimaryReceiver) CanClose() bool {
 
 func (r *RedPrimaryReceiver) Close() {
 	r.closed.Store(true)
-	closeTrackSenders(r.downTrackSpreader.ResetAndGetDownTracks())
+	closeTrackSenders(r.downTrackSpreader.CloseAndGetDownTracks())
 }
 
 func (r *RedPrimaryReceiver) ReadRTP(buf []byte, layer uint8, esn uint64) (int, error) {
