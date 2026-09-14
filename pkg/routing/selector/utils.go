@@ -29,6 +29,23 @@ import (
 
 const AvailableSeconds = 5
 
+// how long a registration has to stand still before it is deleted rather than
+// merely passed over, which is a much longer wait: a node refreshes its own
+// entry when its keepalive comes back to it, so a stale one is as much a report
+// on the message bus as on the node behind it. It takes stats_update_interval
+// to be well under this, a healthy entry being that old between keepalives.
+const DeadNodeTimeout = time.Minute
+
+// checks if a node's registration is worth keeping at all
+func IsDead(node *livekit.Node) bool {
+	if node.Stats == nil {
+		// nothing to have gone stale, so nothing to go on
+		return false
+	}
+
+	return time.Since(time.Unix(node.Stats.UpdatedAt, 0)) > DeadNodeTimeout
+}
+
 // checks if a node has been updated recently to be considered for selection
 func IsAvailable(node *livekit.Node) bool {
 	if node.Stats == nil {
