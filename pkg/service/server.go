@@ -40,7 +40,6 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/xtwirp"
 
-	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/version"
@@ -98,28 +97,6 @@ func NewLivekitServer(conf *config.Config,
 		closedChan:  make(chan struct{}),
 	}
 
-	middlewares := []negroni.Handler{
-		// always first
-		negroni.NewRecovery(),
-		// CORS is allowed, we rely on token authentication to prevent improper use
-		cors.New(cors.Options{
-			AllowOriginFunc: func(origin string) bool {
-				return true
-			},
-			AllowedMethods: []string{"OPTIONS", "HEAD", "GET", "POST", "PATCH", "DELETE"},
-			AllowedHeaders: []string{"*"},
-			ExposedHeaders: []string{"*"},
-			// allow preflight to be cached for a day
-			MaxAge: 86400,
-		}),
-		negroni.HandlerFunc(RemoveDoubleSlashes),
-		// limit request body size so large messages cannot exhaust memory
-		NewRequestBodyLimiter(conf.Limit.MaxAPIRequestBodySize),
-	}
-	if keyProvider != nil {
-		middlewares = append(middlewares, NewAPIKeyAuthMiddleware(keyProvider))
-	}
-
 	serverOptions := []any{
 		twirp.WithServerHooks(twirp.ChainHooks(
 			TwirpLogger(),
@@ -152,11 +129,15 @@ func NewLivekitServer(conf *config.Config,
 	rtcService.SetupRoutes(mux)
 	whipService.SetupRoutes(mux)
 	mux.Handle("/agent", agentService)
-	mux.Handle(endpoint.PathPrefix, agentService.EndpointFront())
 	mux.HandleFunc("/", s.defaultHandler)
 
+	var agentFront http.Handler
+	if !conf.Agents.Endpoints.Disabled {
+		agentFront = agentService.EndpointFront()
+	}
+
 	s.httpServer = &http.Server{
-		Handler: configureMiddlewares(mux, middlewares...),
+		Handler: NewHTTPHandler(conf, keyProvider, mux, agentFront),
 	}
 
 	if conf.PrometheusPort > 0 {
@@ -451,6 +432,58 @@ func (s *LivekitServer) backgroundWorker() {
 		case <-roomTicker.C:
 			s.roomManager.CloseIdleRooms()
 		}
+	}
+}
+
+// NewHTTPHandler builds the node's public HTTP handler: the agent endpoint prefix
+// on its own middleware chain, everything else on the API chain. A nil agentFront
+// leaves the prefix unserved, and those paths fall through to apiHandler.
+func NewHTTPHandler(conf *config.Config, keyProvider auth.KeyProvider, apiHandler, agentFront http.Handler) http.Handler {
+	apiMiddlewares := []negroni.Handler{
+		// always first
+		negroni.NewRecovery(),
+		// CORS is allowed, we rely on token authentication to prevent improper use
+		cors.New(corsOptions([]string{"OPTIONS", "HEAD", "GET", "POST", "PATCH", "DELETE"})),
+		// limit request body size so large messages cannot exhaust memory
+		NewRequestBodyLimiter(conf.Limit.MaxAPIRequestBodySize),
+	}
+	// this chain must not swallow http.ErrAbortHandler or bound the request body
+	agentMiddlewares := []negroni.Handler{
+		negroni.HandlerFunc(AgentRecovery),
+		// the methods a manifest may declare, less TRACE, which browsers forbid in CORS
+		cors.New(corsOptions([]string{"OPTIONS", "HEAD", "GET", "POST", "PUT", "PATCH", "DELETE"})),
+	}
+	if keyProvider != nil {
+		authMiddleware := NewAPIKeyAuthMiddleware(keyProvider)
+		apiMiddlewares = append(apiMiddlewares, authMiddleware)
+		agentMiddlewares = append(agentMiddlewares, authMiddleware)
+	}
+
+	api := configureMiddlewares(apiHandler, apiMiddlewares...)
+	var dispatch http.Handler = api
+	if agentFront != nil {
+		agents := configureMiddlewares(agentFront, agentMiddlewares...)
+		dispatch = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if IsAgentEndpointPath(r.URL.EscapedPath()) {
+				agents.ServeHTTP(w, r)
+				return
+			}
+			api.ServeHTTP(w, r)
+		})
+	}
+	return WithPathNormalization(dispatch)
+}
+
+func corsOptions(methods []string) cors.Options {
+	return cors.Options{
+		AllowOriginFunc: func(origin string) bool {
+			return true
+		},
+		AllowedMethods: methods,
+		AllowedHeaders: []string{"*"},
+		ExposedHeaders: []string{"*"},
+		// allow preflight to be cached for a day
+		MaxAge: 86400,
 	}
 }
 

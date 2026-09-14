@@ -112,6 +112,14 @@ func RemoveDoubleSlashes(w http.ResponseWriter, r *http.Request, next http.Handl
 	next(w, r)
 }
 
+// WithPathNormalization applies RemoveDoubleSlashes ahead of h, so routing and every
+// middleware below it see one path form.
+func WithPathNormalization(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		RemoveDoubleSlashes(w, r, h.ServeHTTP)
+	})
+}
+
 // RequestBodyLimiter bounds the size of an incoming HTTP request body so that
 // large messages cannot exhaust memory. The Twirp handlers decode the whole
 // body before any grant check runs, so the limit is applied here, up front.

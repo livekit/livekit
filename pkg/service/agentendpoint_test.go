@@ -41,7 +41,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/agent"
-	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/agent/endpoint/conformance"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -55,6 +54,9 @@ const (
 	testKey    = "test"
 	testSecret = "verysecretsecret"
 )
+
+// small enough that a test body can exceed it
+const testMaxAPIBodySize = 64 << 10
 
 type endpointStack struct {
 	t     *testing.T
@@ -88,25 +90,29 @@ func newEndpointStack(t *testing.T, endpointsCfg agent.EndpointsConfig) *endpoin
 	require.NoError(t, err)
 	keyProvider := auth.NewSimpleKeyProvider(testKey, testSecret)
 
-	svc, err := service.NewAgentService(
-		&config.Config{
-			Region: "test",
-			Keys:   map[string]string{testKey: testSecret},
-			Agents: agent.Config{TargetLoad: agent.DefaultTargetLoad, Endpoints: endpointsCfg},
-		},
-		localNode,
-		psrpc.NewLocalMessageBus(),
-		keyProvider,
-	)
+	conf := &config.Config{
+		Region: "test",
+		Keys:   map[string]string{testKey: testSecret},
+		Agents: agent.Config{TargetLoad: agent.DefaultTargetLoad, Endpoints: endpointsCfg},
+	}
+	conf.Limit.MaxAPIRequestBodySize = testMaxAPIBodySize
+
+	svc, err := service.NewAgentService(conf, localNode, psrpc.NewLocalMessageBus(), keyProvider)
 	require.NoError(t, err)
 
-	// public front (client-facing HTTP/1.1), unchanged
-	mux := http.NewServeMux()
-	mux.Handle(endpoint.PathPrefix, svc.EndpointFront())
-	authMW := service.NewAPIKeyAuthMiddleware(keyProvider)
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authMW.ServeHTTP(w, r, mux.ServeHTTP)
-	}))
+	// the production handler, so these tests run on the node's real middleware chain
+	apiMux := http.NewServeMux()
+	apiMux.HandleFunc("POST /api-sink", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusNoContent)
+	})
+	apiMux.HandleFunc("/", http.NotFound)
+
+	var agentFront http.Handler
+	if !endpointsCfg.Disabled {
+		agentFront = svc.EndpointFront()
+	}
+	ts := httptest.NewServer(service.NewHTTPHandler(conf, keyProvider, apiMux, agentFront))
 	t.Cleanup(ts.Close)
 	t.Cleanup(func() { svc.DrainConnections(time.Millisecond, true) })
 
