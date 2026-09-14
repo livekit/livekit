@@ -37,6 +37,8 @@ type WebRTCConfig struct {
 	Receiver      ReceiverConfig
 	Publisher     DirectionConfig
 	Subscriber    DirectionConfig
+
+	flexFEC config.FlexFECConfig
 }
 
 type ReceiverConfig struct {
@@ -57,6 +59,18 @@ type RTCPFeedbackConfig struct {
 type DirectionConfig struct {
 	RTPHeaderExtension RTPHeaderExtensionConfig
 	RTCPFeedback       RTCPFeedbackConfig
+	FlexFEC            FlexFECDirectionConfig
+}
+
+// FlexFECDirectionConfig enables flexfec-03 for the leg this DirectionConfig
+// governs: recovery of publisher FEC on the publisher (upstream) side,
+// generation of FEC toward subscribers on the subscriber (downstream) side.
+type FlexFECDirectionConfig struct {
+	Enabled     bool
+	PayloadType uint8
+	// downstream generation parameters, unused on the upstream leg
+	NumMediaPackets uint32
+	NumFECPackets   uint32
 }
 
 func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
@@ -80,23 +94,30 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 		rtcConf.PacketBufferSizeAudio = rtcConf.PacketBufferSize
 	}
 
+	flexFEC := rtcConf.FlexFEC.WithDefaults()
+	if flexFEC.UpstreamEnabled || flexFEC.DownstreamEnabled {
+		if err := validateFlexFECPayloadType(flexFEC.PayloadType); err != nil {
+			return nil, err
+		}
+	}
 	return &WebRTCConfig{
 		WebRTCConfig: *webRTCConfig,
 		Receiver: ReceiverConfig{
 			PacketBufferSizeVideo: rtcConf.PacketBufferSizeVideo,
 			PacketBufferSizeAudio: rtcConf.PacketBufferSizeAudio,
 		},
-		Publisher:  getPublisherConfig(false),
-		Subscriber: getSubscriberConfig(rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE),
+		Publisher:  getPublisherConfig(false, flexFEC),
+		Subscriber: getSubscriberConfig(rtcConf.CongestionControl.UseSendSideBWEInterceptor || rtcConf.CongestionControl.UseSendSideBWE, flexFEC),
+		flexFEC:    flexFEC,
 	}, nil
 }
 
 func (c *WebRTCConfig) UpdatePublisherConfig(consolidated bool) {
-	c.Publisher = getPublisherConfig(consolidated)
+	c.Publisher = getPublisherConfig(consolidated, c.flexFEC)
 }
 
 func (c *WebRTCConfig) UpdateSubscriberConfig(ccConf config.CongestionControlConfig) {
-	c.Subscriber = getSubscriberConfig(ccConf.UseSendSideBWEInterceptor || ccConf.UseSendSideBWE)
+	c.Subscriber = getSubscriberConfig(ccConf.UseSendSideBWEInterceptor || ccConf.UseSendSideBWE, c.flexFEC)
 }
 
 func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
@@ -104,9 +125,14 @@ func (c *WebRTCConfig) SetBufferFactory(factory *buffer.Factory) {
 	c.SettingEngine.BufferFactory = factory.GetOrNew
 }
 
-func getPublisherConfig(consolidated bool) DirectionConfig {
+func getPublisherConfig(consolidated bool, flexFEC config.FlexFECConfig) DirectionConfig {
+	publisherFlexFEC := FlexFECDirectionConfig{
+		Enabled:     flexFEC.UpstreamEnabled,
+		PayloadType: flexFEC.PayloadType,
+	}
 	if consolidated {
 		return DirectionConfig{
+			FlexFEC: publisherFlexFEC,
 			RTPHeaderExtension: RTPHeaderExtensionConfig{
 				Audio: []string{
 					sdp.SDESMidURI,
@@ -141,6 +167,7 @@ func getPublisherConfig(consolidated bool) DirectionConfig {
 	}
 
 	return DirectionConfig{
+		FlexFEC: publisherFlexFEC,
 		RTPHeaderExtension: RTPHeaderExtensionConfig{
 			Audio: []string{
 				sdp.SDESMidURI,
@@ -172,8 +199,14 @@ func getPublisherConfig(consolidated bool) DirectionConfig {
 	}
 }
 
-func getSubscriberConfig(enableTWCC bool) DirectionConfig {
+func getSubscriberConfig(enableTWCC bool, flexFEC config.FlexFECConfig) DirectionConfig {
 	subscriberConfig := DirectionConfig{
+		FlexFEC: FlexFECDirectionConfig{
+			Enabled:         flexFEC.DownstreamEnabled,
+			PayloadType:     flexFEC.PayloadType,
+			NumMediaPackets: flexFEC.NumMediaPackets,
+			NumFECPackets:   flexFEC.NumFECPackets,
+		},
 		RTPHeaderExtension: RTPHeaderExtensionConfig{
 			Video: []string{
 				dd.ExtensionURI,
