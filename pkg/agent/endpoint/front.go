@@ -96,6 +96,18 @@ type Front struct {
 	fallback Fallback
 	// see WithSingleKeyFallback
 	singleKeyFallback bool
+	// see WithIdentity
+	identity Identity
+}
+
+// Identity resolves the agent and deployment a request addresses. Reporting
+// false leaves them to the URL.
+type Identity func(r *http.Request) (agentName, deployment string, ok bool)
+
+// WithIdentity resolves the agent and deployment from the request itself.
+func (f *Front) WithIdentity(fn Identity) *Front {
+	f.identity = fn
+	return f
 }
 
 func NewFront(registry *Registry, resolveAccess AccessResolver, log logger.Logger) *Front {
@@ -154,6 +166,12 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	agentName, deployment, path, escPath := ep.agentName, ep.deployment, ep.path, ep.escPath
+	if f.identity != nil {
+		// must precede resolveAccess, which may consume its source headers
+		if name, dep, ok := f.identity(r); ok {
+			agentName, deployment = name, dep
+		}
+	}
 
 	reqID, ok := requestID(r)
 	if !ok {
@@ -209,19 +227,9 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// the registered form. When the request must be relayed, the serving node
 	// runs this same normalization, so no redirect is ever emitted.
 	if route == nil && !partial && !denied {
-		for _, reg := range candidates {
-			if alt, ok := reg.Manifest.slashAlternate(path, r.Method); ok {
-				// a trailing slash is encoding-neutral, so the escaped form
-				// tracks the alternate directly
-				if strings.HasSuffix(alt, "/") {
-					escPath += "/"
-				} else {
-					escPath = strings.TrimSuffix(escPath, "/")
-				}
-				path = alt
-				matched, route, partial, denied = matchAll(path)
-				break
-			}
+		if alt, altEsc, ok := slashAlternatePaths(candidates, path, escPath, r.Method); ok {
+			path, escPath = alt, altEsc
+			matched, route, partial, denied = matchAll(path)
 		}
 	}
 	if route == nil && f.fallback != nil {
@@ -261,7 +269,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var bodyConsumed atomic.Int64
 	a := &attempt{
 		req:       r,
-		path:      path,
+		escPath:   escPath,
 		target:    requestTarget(escPath, r.URL.RawQuery),
 		route:     route,
 		requestID: reqID,
@@ -314,6 +322,26 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.writeUnavailable(w, "no worker could serve the request")
 }
 
+// slashAlternatePaths looks for a candidate that serves the trailing-slash
+// alternate of path, returning the decoded and escaped forms to retry.
+func slashAlternatePaths(candidates []*Registration, path, escPath, method string) (string, string, bool) {
+	for _, reg := range candidates {
+		alt, ok := reg.Manifest.slashAlternate(path, method)
+		if !ok {
+			continue
+		}
+		// %2F decodes to a slash without being a separator, so the alternate
+		// applies only while the slash is literal in escPath too
+		switch {
+		case strings.HasSuffix(alt, "/"):
+			return alt, escPath + "/", true
+		case strings.HasSuffix(escPath, "/"):
+			return alt, strings.TrimSuffix(escPath, "/"), true
+		}
+	}
+	return path, escPath, false
+}
+
 // endpointPath is a request split into its routing components.
 type endpointPath struct {
 	agentName  string
@@ -351,6 +379,11 @@ func splitEndpointPath(u *url.URL) (endpointPath, error) {
 	path, err3 := url.PathUnescape(escPath)
 	if err1 != nil || err2 != nil || err3 != nil {
 		return endpointPath{}, errMalformedPath
+	}
+	// "_" and "%5F" both land here; neither is a registrable name
+	// (IsReservedAgentName)
+	if agentName == UnnamedAgentSegment {
+		agentName = ""
 	}
 	return endpointPath{agentName: agentName, deployment: deployment, path: path, escPath: escPath}, nil
 }
@@ -435,7 +468,7 @@ func (f *Front) bridge(w http.ResponseWriter, a *attempt, reg *Registration) (do
 		retryable = a.retryable(err)
 		if !retryable {
 			f.logger.Warnw("agent endpoint request failed", err,
-				"workerID", reg.WorkerID, "path", a.path, "requestID", a.requestID)
+				"workerID", reg.WorkerID, "path", a.escPath, "requestID", a.requestID)
 			writeGatewayError(w, err)
 			return true, false
 		}
@@ -498,12 +531,12 @@ func (f *Front) logAborted(err error, reg *Registration, a *attempt) {
 	var ce *wire.CompletionError
 	if errors.As(err, &ce) {
 		f.logger.Infow("agent endpoint response aborted",
-			"workerID", reg.WorkerID, "path", a.path, "requestID", a.requestID,
+			"workerID", reg.WorkerID, "path", a.escPath, "requestID", a.requestID,
 			"completion", string(ce.Completion), "reason", ce.Reason)
 		return
 	}
 	f.logger.Infow("agent endpoint response aborted",
-		"workerID", reg.WorkerID, "path", a.path, "requestID", a.requestID, "error", err)
+		"workerID", reg.WorkerID, "path", a.escPath, "requestID", a.requestID, "error", err)
 }
 
 // completionError normalizes a failure into the protocol's outcome vocabulary.

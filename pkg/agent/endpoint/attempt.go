@@ -32,8 +32,9 @@ import (
 
 // attempt is the per-request state shared across worker attempts.
 type attempt struct {
-	req  *http.Request
-	path string
+	req *http.Request
+	// escPath is the percent-encoded path; a decoded %0A would forge a log line
+	escPath string
 	// target is the origin-form request target, still percent-encoded
 	target    string
 	route     *Route

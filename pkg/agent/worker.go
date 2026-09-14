@@ -25,6 +25,7 @@ import (
 	"go.uber.org/multierr"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	protoagent "github.com/livekit/protocol/agent"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -254,13 +255,13 @@ func (h *WorkerRegisterer) HandleRegister(req *livekit.RegisterWorkerRequest) er
 		if h.endpointSettings == nil {
 			return errors.New("agent HTTP endpoints are not supported by this server")
 		}
-		// endpoints are addressed at /agents/{agent_name}/{deployment}/...; a
-		// worker serving them needs a non-empty, URL-safe agent name
+		// endpoints are addressed at /agents/{agent_name}/{deployment}/..., with
+		// the name percent-encoded into that segment
 		if req.GetAgentName() == "" {
 			return errors.New("agent HTTP endpoints require an agent name")
 		}
-		if err := protoagent.ValidateAgentName(req.GetAgentName()); err != nil {
-			return err
+		if endpoint.IsReservedAgentName(req.GetAgentName()) {
+			return fmt.Errorf("agent name %q is reserved and cannot serve HTTP endpoints", req.GetAgentName())
 		}
 		settings, err := h.endpointSettings(req)
 		if err != nil {

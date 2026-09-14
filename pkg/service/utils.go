@@ -101,8 +101,13 @@ func boolValue(s string) bool {
 }
 
 func RemoveDoubleSlashes(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-	if strings.HasPrefix(r.URL.Path, "//") {
+	// Path and RawPath must move together: once they disagree, EscapedPath()
+	// re-encodes from Path and every escape in the request is lost.
+	if strings.HasPrefix(r.URL.EscapedPath(), "//") {
 		r.URL.Path = r.URL.Path[1:]
+		if r.URL.RawPath != "" {
+			r.URL.RawPath = r.URL.RawPath[1:]
+		}
 	}
 	next(w, r)
 }

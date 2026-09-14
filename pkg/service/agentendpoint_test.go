@@ -31,6 +31,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -121,11 +122,15 @@ func newEndpointStack(t *testing.T, endpointsCfg agent.EndpointsConfig) *endpoin
 }
 
 func (s *endpointStack) startWorker(target string, deployment string, endpoints []*livekit.AgentHttp_AgentEndpoint) *conformance.Worker {
+	return s.startNamedWorker("test-agent", target, deployment, endpoints)
+}
+
+func (s *endpointStack) startNamedWorker(agentName, target, deployment string, endpoints []*livekit.AgentHttp_AgentEndpoint) *conformance.Worker {
 	w := conformance.New(conformance.Config{
 		ServerURL:  s.wtURL,
 		APIKey:     testKey,
 		APISecret:  testSecret,
-		AgentName:  "test-agent",
+		AgentName:  agentName,
 		Deployment: deployment,
 		Endpoints:  endpoints,
 		TargetAddr: strings.TrimPrefix(target, "http://"),
@@ -591,4 +596,57 @@ func TestAgentEndpointsNonUTF8HeaderSurvives(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "data", string(body))
 	require.Equal(t, disposition, resp.Header.Get("Content-Disposition"))
+}
+
+// the agent name and the request tail are percent-encoded path segments, and
+// the worker's request line carries the client's bytes.
+func TestAgentEndpointsEncodedNameAndPath(t *testing.T) {
+	const agentName = "LODHA Vayam/Agent"
+
+	targets := make(chan string, 4)
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /echo/{rest...}", func(w http.ResponseWriter, r *http.Request) {
+		targets <- r.RequestURI
+		_, _ = w.Write([]byte("ok"))
+	})
+	app := newTargetApp(t, mux)
+
+	stack := newEndpointStack(t, agent.EndpointsConfig{})
+	stack.startNamedWorker(agentName, app.URL, "production", []*livekit.AgentHttp_AgentEndpoint{
+		httpEP("/echo/{rest:path}", []string{"GET"}, true),
+	})
+
+	base := stack.ts.URL + "/agents/" + url.PathEscape(agentName) + "/production"
+
+	get := func(t *testing.T, path string) (int, string) {
+		t.Helper()
+		resp, err := http.Get(base + path)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		_, _ = io.Copy(io.Discard, resp.Body)
+		select {
+		case target := <-targets:
+			return resp.StatusCode, target
+		case <-time.After(5 * time.Second):
+			return resp.StatusCode, ""
+		}
+	}
+
+	t.Run("a name with a space and a slash addresses its worker", func(t *testing.T) {
+		code, target := get(t, "/echo/plain")
+		require.Equal(t, 200, code)
+		require.Equal(t, "/echo/plain", target)
+	})
+
+	t.Run("an encoded slash in the tail stays encoded", func(t *testing.T) {
+		code, target := get(t, "/echo/a%2Fb")
+		require.Equal(t, 200, code)
+		require.Equal(t, "/echo/a%2Fb", target, "a decoded %2F would re-emit as a separator and change the resource")
+	})
+
+	t.Run("the query is passed through verbatim", func(t *testing.T) {
+		code, target := get(t, "/echo/q?a=1&b=%2F%20x")
+		require.Equal(t, 200, code)
+		require.Equal(t, "/echo/q?a=1&b=%2F%20x", target)
+	})
 }

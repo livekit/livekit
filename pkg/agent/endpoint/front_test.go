@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -239,4 +240,81 @@ func TestFrontDeniedStillRelays(t *testing.T) {
 	require.NotNil(t, got)
 	require.True(t, got.Credentialed)
 	require.False(t, got.Granted)
+}
+
+// the split runs before decoding, so a name or route param may carry any byte
+// a percent-encoded segment can hold.
+func TestSplitEndpointPath(t *testing.T) {
+	cases := []struct {
+		name       string
+		target     string
+		agentName  string
+		deployment string
+		path       string
+		escPath    string
+		err        error
+	}{
+		{name: "plain", target: "/agents/a/d/x", agentName: "a", deployment: "d", path: "/x", escPath: "/x"},
+		{name: "no tail", target: "/agents/a/d", agentName: "a", deployment: "d", path: "/", escPath: "/"},
+		{name: "spaces", target: "/agents/LODHA%20Vayam%20Agent/d/x", agentName: "LODHA Vayam Agent", deployment: "d", path: "/x", escPath: "/x"},
+		{name: "colon and star", target: "/agents/prod%3A%2A/d/x", agentName: "prod:*", deployment: "d", path: "/x", escPath: "/x"},
+		{name: "at sign", target: "/agents/charlie%40v1.42.0/d/x", agentName: "charlie@v1.42.0", deployment: "d", path: "/x", escPath: "/x"},
+		{name: "brackets", target: "/agents/Nathan%20%5BElara%5D/d/x", agentName: "Nathan [Elara]", deployment: "d", path: "/x", escPath: "/x"},
+		{name: "slash in name", target: "/agents/a%2Fb/d/x", agentName: "a/b", deployment: "d", path: "/x", escPath: "/x"},
+		{name: "non ascii raw", target: "/agents/agent-ü/d/x", agentName: "agent-ü", deployment: "d", path: "/x", escPath: "/x"},
+		{name: "non ascii encoded", target: "/agents/agent-%C3%BC/d/x", agentName: "agent-ü", deployment: "d", path: "/x", escPath: "/x"},
+		{name: "past the old 64 byte cap", target: "/agents/" + strings.Repeat("n", 77) + "/d/x", agentName: strings.Repeat("n", 77), deployment: "d", path: "/x", escPath: "/x"},
+		{name: "deployment encoded", target: "/agents/a/prod%20us/x", agentName: "a", deployment: "prod us", path: "/x", escPath: "/x"},
+
+		// escPath keeps the client's encoding; path is what the manifest matches
+		{name: "encoded tail", target: "/agents/a/d/files/a%2Fb", agentName: "a", deployment: "d", path: "/files/a/b", escPath: "/files/a%2Fb"},
+		{name: "escaped percent in tail", target: "/agents/a/d/%2541", agentName: "a", deployment: "d", path: "/%41", escPath: "/%2541"},
+
+		// "_" addresses the unnamed agent in either form
+		{name: "bare underscore is unnamed", target: "/agents/_/d/x", agentName: "", deployment: "d", path: "/x", escPath: "/x"},
+		{name: "encoded underscore is unnamed", target: "/agents/%5F/d/x", agentName: "", deployment: "d", path: "/x", escPath: "/x"},
+		{name: "double encoded underscore is a name", target: "/agents/%255F/d/x", agentName: "%5F", deployment: "d", path: "/x", escPath: "/x"},
+
+		{name: "not an endpoint path", target: "/other/x", err: errNotEndpointPath},
+		{name: "no deployment segment", target: "/agents/a", err: errNotEndpointPath},
+		{name: "empty name", target: "/agents//d/x", err: errNotEndpointPath},
+		{name: "empty deployment", target: "/agents/a//x", err: errNotEndpointPath},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			u, err := url.ParseRequestURI(c.target)
+			require.NoError(t, err)
+
+			ep, err := splitEndpointPath(u)
+			if c.err != nil {
+				require.ErrorIs(t, err, c.err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, c.agentName, ep.agentName)
+			require.Equal(t, c.deployment, ep.deployment)
+			require.Equal(t, c.path, ep.path)
+			require.Equal(t, c.escPath, ep.escPath)
+		})
+	}
+}
+
+// a trailing %2F decodes to a slash without being a separator, so the
+// trailing-slash alternate does not apply to it.
+func TestFrontSlashAlternateIgnoresEncodedSlash(t *testing.T) {
+	f := fallbackFront(t, nil, true)
+
+	// 503 is dispatch reached: the fake session opens no stream
+	require.Equal(t, http.StatusServiceUnavailable, serveFront(f, "/known/").Code)
+	require.Equal(t, http.StatusNotFound, serveFront(f, "/known%2F").Code)
+}
+
+func TestIsReservedAgentName(t *testing.T) {
+	for _, n := range []string{"_", ".", ".."} {
+		require.True(t, IsReservedAgentName(n), n)
+	}
+	for _, n := range []string{"", "a", "_x", "x_", "...", "LODHA Vayam Agent", "%5F"} {
+		require.False(t, IsReservedAgentName(n), n)
+	}
 }
