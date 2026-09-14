@@ -300,6 +300,11 @@ func (s *StreamAllocator) Stop() {
 	s.maybeStopProbe()
 }
 
+// IsStopped reports whether Stop has been called on the StreamAllocator.
+func (s *StreamAllocator) IsStopped() bool {
+	return s.isStopped.Load()
+}
+
 func (s *StreamAllocator) OnStreamStateChange(f func(update *StreamStateUpdate) error) {
 	s.onStreamStateChange = f
 }
