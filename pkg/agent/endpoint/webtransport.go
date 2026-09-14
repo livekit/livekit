@@ -19,25 +19,13 @@ import (
 	"errors"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/quic-go/webtransport-go"
-)
 
-// Stream reset codes on the wire, shared by the server and the Go conformance
-// worker so the two never drift. QUIC carries the numeric code on
-// RESET_STREAM/STOP_SENDING; a worker uses Refused to mark a request it never
-// dispatched (the front then treats it as safe to retry elsewhere).
-const (
-	StreamCodeCancel  webtransport.StreamErrorCode = 0
-	StreamCodeRefused webtransport.StreamErrorCode = 2
+	"github.com/livekit/livekit-server/pkg/agent/endpoint/wire"
+	"github.com/livekit/protocol/livekit"
 )
-
-func resetToWTCode(c ResetCode) webtransport.StreamErrorCode {
-	if c == ResetRefused {
-		return StreamCodeRefused
-	}
-	return StreamCodeCancel
-}
 
 // wtSession adapts a WebTransport session to Session: the node opens one stream
 // per HTTP exchange and QUIC multiplexes them.
@@ -65,7 +53,7 @@ func (s *wtSession) OpenStream(ctx context.Context) (Stream, error) {
 
 func (s *wtSession) OpenStreams() int    { return int(s.open.Load()) }
 func (s *wtSession) MaxStreams() int     { return s.maxStreams }
-func (s *wtSession) Close(reason string) { _ = s.sess.CloseWithError(SessionCloseOK, reason) }
+func (s *wtSession) Close(reason string) { _ = s.sess.CloseWithError(wire.SessionCloseOK, reason) }
 
 // wtStream is one HTTP exchange over a WebTransport bidi stream.
 type wtStream struct {
@@ -73,33 +61,23 @@ type wtStream struct {
 	qs   *webtransport.Stream
 
 	mu         sync.Mutex
-	bytesRead  int64
-	refused    bool
 	done       bool
-	sendClosed bool // request side FIN'd (CloseWrite) or reset
+	sendClosed bool // send side FIN'd (CloseWrite) or reset
 }
 
 func (s *wtStream) Read(p []byte) (int, error) {
 	n, err := s.qs.Read(p)
-	if n > 0 {
-		s.mu.Lock()
-		s.bytesRead += int64(n)
-		s.mu.Unlock()
-	}
-	if err != nil {
-		var se *webtransport.StreamError
-		if errors.As(err, &se) && se.ErrorCode == StreamCodeRefused {
-			s.mu.Lock()
-			s.refused = true
-			s.mu.Unlock()
-		}
-	}
-	return n, err
+	return n, translateStreamError(err)
 }
 
-func (s *wtStream) Write(p []byte) (int, error) { return s.qs.Write(p) }
+func (s *wtStream) SetReadDeadline(t time.Time) error { return s.qs.SetReadDeadline(t) }
 
-// CloseWrite sends STREAM FIN on the request side; the worker then reads EOF.
+func (s *wtStream) Write(p []byte) (int, error) {
+	n, err := s.qs.Write(p)
+	return n, translateStreamError(err)
+}
+
+// CloseWrite sends STREAM FIN on the send side.
 func (s *wtStream) CloseWrite() error {
 	s.mu.Lock()
 	s.sendClosed = true
@@ -107,30 +85,31 @@ func (s *wtStream) CloseWrite() error {
 	return s.qs.Close()
 }
 
-func (s *wtStream) Reset(code ResetCode, _ string) {
-	c := resetToWTCode(code)
+func (s *wtStream) Reset(code livekit.AgentHttp_HttpStreamResetCode, _ string) {
 	s.mu.Lock()
 	s.sendClosed = true
 	s.mu.Unlock()
+	c := streamCode(code)
 	s.qs.CancelWrite(c)
 	s.qs.CancelRead(c)
 	s.release()
 }
 
 func (s *wtStream) Close() error {
-	// If the request side was never cleanly FIN'd (CloseWrite) or reset, a writer
-	// goroutine may still be blocked in Write because the worker stopped reading:
+	// If the send side was never cleanly FIN'd (CloseWrite) or reset, a writer
+	// goroutine may still be blocked in Write because the peer stopped reading:
 	// cancel the send side to unblock it (else the goroutine and QUIC stream leak).
-	// After a clean FIN we must NOT reset - that would turn a completed request
-	// into an abort on the wire.
+	// After a clean FIN we must NOT reset: the body's own terminator followed by
+	// FIN is the completion signal, and a reset destroys it.
 	s.mu.Lock()
 	cancelWrite := !s.sendClosed
 	s.sendClosed = true
 	s.mu.Unlock()
+	abort := streamCode(livekit.AgentHttp_HSR_ABORT)
 	if cancelWrite {
-		s.qs.CancelWrite(StreamCodeCancel)
+		s.qs.CancelWrite(abort)
 	}
-	s.qs.CancelRead(StreamCodeCancel)
+	s.qs.CancelRead(abort)
 	s.release()
 	return nil
 }
@@ -147,14 +126,20 @@ func (s *wtStream) release() {
 	s.sess.open.Add(-1)
 }
 
-func (s *wtStream) BytesRead() int64 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.bytesRead
+// streamCode converts a protocol reset code to the WebTransport code that
+// carries it. HSR_ABORT is zero, so a teardown with nothing to say sends the
+// plain cancel code.
+func streamCode(c livekit.AgentHttp_HttpStreamResetCode) webtransport.StreamErrorCode {
+	return webtransport.StreamErrorCode(c)
 }
 
-func (s *wtStream) Refused() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.refused
+// translateStreamError turns a peer reset into the protocol's own error. Only a
+// remote reset carries meaning: cancelling this side says nothing about what the
+// worker did with the request.
+func translateStreamError(err error) error {
+	var se *webtransport.StreamError
+	if errors.As(err, &se) && se.Remote {
+		return &StreamResetError{Code: livekit.AgentHttp_HttpStreamResetCode(se.ErrorCode)}
+	}
+	return err
 }

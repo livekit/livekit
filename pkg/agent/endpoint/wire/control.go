@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package endpoint
+package wire
 
 import (
 	"encoding/binary"
@@ -27,11 +27,22 @@ import (
 const MaxControlMessageSize = 1 << 20
 
 // WriteControlMessage writes a length-delimited protobuf on the control stream:
-// a 4-byte big-endian length followed by the marshaled message. The control
-// stream carries the same WorkerMessage/ServerMessage exchange the WebSocket
-// control connection used; only the framing (QUIC stream instead of WS message)
-// differs.
+// a 4-byte big-endian length followed by the marshaled message. The stream
+// carries the WorkerMessage/ServerMessage exchange.
 func WriteControlMessage(w io.Writer, m proto.Message) error {
+	return writeLenPrefixed(w, m)
+}
+
+// ReadControlMessage reads one length-delimited protobuf written by
+// WriteControlMessage into m.
+func ReadControlMessage(r io.Reader, m proto.Message) error {
+	return readLenPrefixed(r, m, MaxControlMessageSize)
+}
+
+// writeLenPrefixed is the package's one length-delimited protobuf encoding:
+// 4-byte big-endian length, then the marshaled message. The control stream and
+// the per-exchange preamble share it.
+func writeLenPrefixed(w io.Writer, m proto.Message) error {
 	b, err := proto.Marshal(m)
 	if err != nil {
 		return err
@@ -45,16 +56,14 @@ func WriteControlMessage(w io.Writer, m proto.Message) error {
 	return err
 }
 
-// ReadControlMessage reads one length-delimited protobuf written by
-// WriteControlMessage into m.
-func ReadControlMessage(r io.Reader, m proto.Message) error {
+func readLenPrefixed(r io.Reader, m proto.Message, max uint32) error {
 	var hdr [4]byte
 	if _, err := io.ReadFull(r, hdr[:]); err != nil {
 		return err
 	}
 	n := binary.BigEndian.Uint32(hdr[:])
-	if n > MaxControlMessageSize {
-		return fmt.Errorf("control message too large: %d bytes", n)
+	if n > max {
+		return fmt.Errorf("message too large: %d bytes", n)
 	}
 	b := make([]byte, n)
 	if _, err := io.ReadFull(r, b); err != nil {

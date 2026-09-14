@@ -28,7 +28,12 @@ import (
 // router then refuses.
 type Template struct {
 	re *regexp.Regexp
+	// the declared template, retained so a matched route can be reported
+	raw string
 }
+
+// String returns the template as the worker declared it.
+func (t *Template) String() string { return t.raw }
 
 // convertor patterns copied verbatim from starlette's convertors.py. The uuid
 // pattern deliberately makes every hyphen optional, so 32 bare hex characters
@@ -85,7 +90,7 @@ func ParseTemplate(path string) (*Template, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid path template %q: %w", path, err)
 	}
-	return &Template{re: re}, nil
+	return &Template{re: re, raw: path}, nil
 }
 
 func (t *Template) Match(path string) bool {

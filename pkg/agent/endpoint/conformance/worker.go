@@ -27,7 +27,7 @@ import (
 	"github.com/quic-go/quic-go/http3"
 	"github.com/quic-go/webtransport-go"
 
-	"github.com/livekit/livekit-server/pkg/agent/endpoint"
+	"github.com/livekit/livekit-server/pkg/agent/endpoint/wire"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -62,6 +62,7 @@ type Worker struct {
 	mu         sync.Mutex
 	sess       *webtransport.Session
 	workerID   string
+	protocol   uint32
 	closed     bool
 	registered chan struct{}
 }
@@ -106,7 +107,7 @@ func (w *Worker) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("open control stream: %w", err)
 	}
-	if err := endpoint.WriteControlMessage(control, &livekit.WorkerMessage{
+	if err := wire.WriteControlMessage(control, &livekit.WorkerMessage{
 		Message: &livekit.WorkerMessage_Register{
 			Register: &livekit.RegisterWorkerRequest{
 				Type:             livekit.JobType_JT_ROOM,
@@ -116,7 +117,7 @@ func (w *Worker) Start(ctx context.Context) error {
 				Deployment:       w.cfg.Deployment,
 				Endpoints:        w.cfg.Endpoints,
 				InstanceId:       w.instanceID,
-				EndpointProtocol: endpoint.CurrentProtocol,
+				EndpointProtocol: wire.CurrentProtocol,
 			},
 		},
 	}); err != nil {
@@ -124,15 +125,25 @@ func (w *Worker) Start(ctx context.Context) error {
 	}
 
 	var resp livekit.ServerMessage
-	if err := endpoint.ReadControlMessage(control, &resp); err != nil {
+	if err := wire.ReadControlMessage(control, &resp); err != nil {
 		return fmt.Errorf("read register response: %w", err)
 	}
 	reg := resp.GetRegister()
 	if reg == nil {
 		return fmt.Errorf("expected register response, got %T", resp.GetMessage())
 	}
+	settings := reg.GetEndpointSettings()
+	if settings == nil {
+		return fmt.Errorf("server accepted the registration without endpoint settings")
+	}
+	if p := settings.GetProtocol(); p < wire.MinProtocol || p > wire.CurrentProtocol {
+		return fmt.Errorf("server negotiated endpoint protocol %d, this worker speaks %d..%d",
+			p, wire.MinProtocol, wire.CurrentProtocol)
+	}
+
 	w.mu.Lock()
 	w.workerID = reg.GetWorkerId()
+	w.protocol = settings.GetProtocol()
 	close(w.registered)
 	w.mu.Unlock()
 
@@ -141,73 +152,6 @@ func (w *Worker) Start(ctx context.Context) error {
 	// the caller may cancel as soon as Start returns)
 	go w.serveLoop(sess)
 	return nil
-}
-
-// controlLoop drains further control messages (availability requests are
-// declined; the conformance worker takes no jobs).
-func (w *Worker) controlLoop(control *webtransport.Stream) {
-	for {
-		var msg livekit.ServerMessage
-		if err := endpoint.ReadControlMessage(control, &msg); err != nil {
-			return
-		}
-		if a := msg.GetAvailability(); a != nil {
-			_ = endpoint.WriteControlMessage(control, &livekit.WorkerMessage{
-				Message: &livekit.WorkerMessage_Availability{
-					Availability: &livekit.AvailabilityResponse{
-						JobId:     a.GetJob().GetId(),
-						Available: false,
-					},
-				},
-			})
-		}
-	}
-}
-
-// serveLoop accepts node-opened streams (one HTTP exchange each) and bridges
-// them to the local target. It runs until the session ends.
-func (w *Worker) serveLoop(sess *webtransport.Session) {
-	ctx := sess.Context()
-	for {
-		stream, err := sess.AcceptStream(ctx)
-		if err != nil {
-			return
-		}
-		go w.serve(stream)
-	}
-}
-
-// serve bridges one HTTP exchange: the opaque request bytes on the stream are
-// piped to a fresh TCP connection to the target, and the target's response
-// bytes are piped back. Half-closes are propagated in both directions so
-// streaming responses (SSE) flush incrementally.
-func (w *Worker) serve(stream *webtransport.Stream) {
-	tcp, err := net.Dial("tcp", w.cfg.TargetAddr)
-	if err != nil {
-		// the request was never dispatched: refuse so the front may retry
-		stream.CancelWrite(endpoint.StreamCodeRefused)
-		stream.CancelRead(endpoint.StreamCodeRefused)
-		return
-	}
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-	// request: stream -> target, then half-close the target's write side
-	go func() {
-		defer wg.Done()
-		_, _ = io.Copy(tcp, stream)
-		if c, ok := tcp.(*net.TCPConn); ok {
-			_ = c.CloseWrite()
-		}
-	}()
-	// response: target -> stream, then FIN the stream's response side
-	go func() {
-		defer wg.Done()
-		_, _ = io.Copy(stream, tcp)
-		_ = stream.Close()
-	}()
-	wg.Wait()
-	_ = tcp.Close()
 }
 
 // WaitRegistered blocks until registration completes or ctx is done.
@@ -240,7 +184,7 @@ func (w *Worker) Close() {
 	sess := w.sess
 	w.mu.Unlock()
 	if sess != nil {
-		_ = sess.CloseWithError(endpoint.SessionCloseOK, "worker closed")
+		_ = sess.CloseWithError(wire.SessionCloseOK, "worker closed")
 	}
 }
 
@@ -249,4 +193,114 @@ func (w *Worker) mintToken() (string, error) {
 		SetVideoGrant(&auth.VideoGrant{Agent: true}).
 		SetValidFor(24 * time.Hour)
 	return at.ToJWT()
+}
+
+// controlLoop drains further control messages (availability requests are
+// declined; the conformance worker takes no jobs).
+func (w *Worker) controlLoop(control *webtransport.Stream) {
+	for {
+		var msg livekit.ServerMessage
+		if err := wire.ReadControlMessage(control, &msg); err != nil {
+			return
+		}
+		if a := msg.GetAvailability(); a != nil {
+			_ = wire.WriteControlMessage(control, &livekit.WorkerMessage{
+				Message: &livekit.WorkerMessage_Availability{
+					Availability: &livekit.AvailabilityResponse{
+						JobId:     a.GetJob().GetId(),
+						Available: false,
+					},
+				},
+			})
+		}
+	}
+}
+
+// serveLoop accepts node-opened streams (one HTTP exchange each) and bridges
+// them to the local target. It runs until the session ends.
+func (w *Worker) serveLoop(sess *webtransport.Session) {
+	ctx := sess.Context()
+	for {
+		stream, err := sess.AcceptStream(ctx)
+		if err != nil {
+			return
+		}
+		go w.serve(ctx, stream)
+	}
+}
+
+// serve bridges one HTTP exchange to the local target. After the preamble the
+// stream is opaque HTTP/1.1 in both directions.
+func (w *Worker) serve(ctx context.Context, stream *webtransport.Stream) {
+	defer stream.Close()
+
+	pre, err := wire.ReadPreamble(stream)
+	if err != nil {
+		resetStream(stream, livekit.AgentHttp_HSR_PROTOCOL)
+		return
+	}
+	if pre.GetKind() != livekit.AgentHttp_AEK_HTTP {
+		w.cfg.Logger.Infow("agent endpoint stream kind not served",
+			"kind", pre.GetKind().String(), "requestID", pre.GetRequestId())
+		resetStream(stream, livekit.AgentHttp_HSR_PROTOCOL)
+		return
+	}
+
+	if ms := pre.GetTimeoutMs(); ms > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(ms)*time.Millisecond)
+		defer cancel()
+	}
+
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", w.cfg.TargetAddr)
+	if err != nil {
+		// the application never observed the request, so refused is sound here.
+		// The code carries no detail, so the reason is logged against the
+		// request ID instead.
+		w.cfg.Logger.Infow("agent endpoint target dial failed",
+			"error", err, "target", w.cfg.TargetAddr, "requestID", pre.GetRequestId())
+		resetStream(stream, livekit.AgentHttp_HSR_REFUSED)
+		return
+	}
+	defer conn.Close()
+
+	// the deadline and the session ending both have to reach a blocked copy
+	stop := context.AfterFunc(ctx, func() {
+		_ = conn.Close()
+		stream.CancelRead(streamCode(livekit.AgentHttp_HSR_ABORT))
+	})
+	defer stop()
+
+	pipe(stream, conn)
+}
+
+// pipe copies the exchange in both directions until the target has finished
+// answering. Neither direction is parsed.
+func pipe(stream *webtransport.Stream, conn net.Conn) {
+	reqDone := make(chan struct{})
+	go func() {
+		defer close(reqDone)
+		_, _ = io.Copy(conn, stream)
+		// the request ended; the target needs the EOF to answer a body it read
+		// to completion
+		if tc, ok := conn.(*net.TCPConn); ok {
+			_ = tc.CloseWrite()
+		}
+	}()
+
+	_, _ = io.Copy(stream, conn)
+	// the target is done answering, so nothing more of the request is wanted
+	stream.CancelRead(streamCode(livekit.AgentHttp_HSR_ABORT))
+	<-reqDone
+}
+
+func streamCode(c livekit.AgentHttp_HttpStreamResetCode) webtransport.StreamErrorCode {
+	return webtransport.StreamErrorCode(c)
+}
+
+// resetStream reports an outcome that happened before any HTTP bytes flowed,
+// the only point at which a reset can carry one without racing them.
+func resetStream(stream *webtransport.Stream, c livekit.AgentHttp_HttpStreamResetCode) {
+	stream.CancelWrite(streamCode(c))
+	stream.CancelRead(streamCode(c))
 }

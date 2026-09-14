@@ -250,7 +250,7 @@ func (h *WorkerRegisterer) HandleRegister(req *livekit.RegisterWorkerRequest) er
 	h.registration.Endpoints = req.GetEndpoints()
 	h.registration.InstanceID = req.GetInstanceId()
 
-	if len(req.GetEndpoints()) > 0 && req.GetEndpointProtocol() > 0 {
+	if len(req.GetEndpoints()) > 0 {
 		if h.endpointSettings == nil {
 			return errors.New("agent HTTP endpoints are not supported by this server")
 		}

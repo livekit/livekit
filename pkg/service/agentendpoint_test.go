@@ -527,3 +527,31 @@ func TestAgentEndpointsNoLocalListenerContract(t *testing.T) {
 		require.Equal(t, 404, resp.StatusCode, path)
 	}
 }
+
+func TestAgentEndpointsNonUTF8HeaderSurvives(t *testing.T) {
+	// header values are octets: a latin-1 filename must reach the client
+	// byte-for-byte
+	const disposition = "attachment; filename=\"caf\xe9.txt\""
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /download", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Disposition", disposition)
+		_, _ = w.Write([]byte("data"))
+	})
+	app := newTargetApp(t, mux)
+
+	stack := newEndpointStack(t, agent.EndpointsConfig{})
+	stack.startWorker(app.URL, "production", []*livekit.AgentHttp_AgentEndpoint{
+		httpEP("/download", []string{"GET"}, true),
+	})
+
+	resp, err := http.Get(stack.ts.URL + "/agents/test-agent/production/download")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, 200, resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, "data", string(body))
+	require.Equal(t, disposition, resp.Header.Get("Content-Disposition"))
+}

@@ -16,27 +16,11 @@ package endpoint
 
 import (
 	"context"
+	"fmt"
 	"io"
-)
+	"time"
 
-// CurrentProtocol is the data-plane protocol version this server implements,
-// negotiated in RegisterWorkerResponse.
-const CurrentProtocol uint32 = 1
-
-// SessionCloseOK is the WebTransport application close code for a normal session
-// teardown; the human-readable reason travels in the close message.
-const SessionCloseOK = 0
-
-// ResetCode is why a stream was aborted.
-type ResetCode int
-
-const (
-	// ResetCancel: the node/client abandoned the exchange (client disconnect,
-	// timeout, retry elsewhere).
-	ResetCancel ResetCode = iota
-	// ResetRefused: the worker aborted before dispatching the request to the
-	// application, so the request was never applied and is safe to retry.
-	ResetRefused
+	"github.com/livekit/protocol/livekit"
 )
 
 // Session is the node's handle to one worker's data plane: a single
@@ -58,25 +42,31 @@ type Session interface {
 	Close(reason string)
 }
 
-// Stream is one HTTP exchange over a Session: opaque HTTP/1.1 request bytes are
-// written toward the worker and opaque response bytes are read back. CloseWrite
-// half-closes the request side (the worker then sees EOF); Reset aborts both
-// directions.
+// Stream is one HTTP exchange over a Session: a preamble, then opaque HTTP/1.1
+// bytes in each direction.
 type Stream interface {
 	io.Reader
 	io.Writer
-	// CloseWrite half-closes the send side once the request is fully written
-	// (QUIC stream FIN).
+	// CloseWrite half-closes the send side (QUIC stream FIN). A FIN arriving
+	// before the body framing says the body is complete is truncation.
 	CloseWrite() error
 	// Reset aborts the stream in both directions (QUIC RESET_STREAM /
-	// STOP_SENDING) with the given code.
-	Reset(code ResetCode, reason string)
+	// STOP_SENDING). The code reaches the peer and is the only outcome signal
+	// available once no bytes can flow; the reason is local only.
+	Reset(code livekit.AgentHttp_HttpStreamResetCode, reason string)
 	// Close releases the stream after a completed exchange.
 	Close() error
-	// BytesRead reports response bytes consumed so far; the retry boundary is
-	// "no response byte arrived".
-	BytesRead() int64
-	// Refused reports whether the worker aborted the stream with ResetRefused,
-	// i.e. the request was never dispatched and is safe to retry elsewhere.
-	Refused() bool
+	// SetReadDeadline bounds the wait for more bytes.
+	SetReadDeadline(t time.Time) error
+}
+
+// StreamResetError reports that the peer reset the stream, carrying the code it
+// sent. Transports translate their own reset errors into this at the Stream
+// boundary.
+type StreamResetError struct {
+	Code livekit.AgentHttp_HttpStreamResetCode
+}
+
+func (e *StreamResetError) Error() string {
+	return fmt.Sprintf("endpoint: stream reset by peer (%s)", e.Code)
 }

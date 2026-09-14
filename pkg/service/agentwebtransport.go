@@ -35,6 +35,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/agent/endpoint"
+	"github.com/livekit/livekit-server/pkg/agent/endpoint/wire"
 	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
@@ -179,7 +180,7 @@ func (s *AgentService) serveWebTransportSession(ctx context.Context, sess *webtr
 	defer cancel()
 	control, err := sess.AcceptStream(acceptCtx)
 	if err != nil {
-		_ = sess.CloseWithError(endpoint.SessionCloseOK, "no control stream")
+		_ = sess.CloseWithError(wire.SessionCloseOK, "no control stream")
 		return
 	}
 	sigConn := NewWTSignalConn(sess, control)
@@ -210,12 +211,12 @@ func NewWTSignalConn(sess *webtransport.Session, control *webtransport.Stream) a
 func (c *wtSignalConn) WriteServerMessage(msg *livekit.ServerMessage) (int, error) {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
-	return 0, endpoint.WriteControlMessage(c.control, msg)
+	return 0, wire.WriteControlMessage(c.control, msg)
 }
 
 func (c *wtSignalConn) ReadWorkerMessage() (*livekit.WorkerMessage, int, error) {
 	var msg livekit.WorkerMessage
-	if err := endpoint.ReadControlMessage(c.control, &msg); err != nil {
+	if err := wire.ReadControlMessage(c.control, &msg); err != nil {
 		return nil, 0, err
 	}
 	return &msg, 0, nil
@@ -226,9 +227,9 @@ func (c *wtSignalConn) SetReadDeadline(t time.Time) error {
 }
 
 func (c *wtSignalConn) Close() error {
-	return c.sess.CloseWithError(endpoint.SessionCloseOK, "")
+	return c.sess.CloseWithError(wire.SessionCloseOK, "")
 }
 
 func (c *wtSignalConn) CloseWithReason(reason string) error {
-	return c.sess.CloseWithError(endpoint.SessionCloseOK, reason)
+	return c.sess.CloseWithError(wire.SessionCloseOK, reason)
 }

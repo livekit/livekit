@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/rand"
 	"net/http"
 	"slices"
@@ -30,6 +31,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/agent/endpoint"
+	"github.com/livekit/livekit-server/pkg/agent/endpoint/wire"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/rtc"
@@ -290,9 +292,17 @@ func (h *AgentHandler) endpointSettings(req *livekit.RegisterWorkerRequest) (*li
 	if req.GetInstanceId() == "" {
 		return nil, errors.New("registrations with endpoints require an instance_id")
 	}
-	// the data plane is a WebTransport session (no attach token, no fixed conn
-	// pool); only the protocol version is negotiated here.
-	return &livekit.AgentHttp_AgentEndpointSettings{Protocol: endpoint.CurrentProtocol}, nil
+	if req.GetEndpointProtocol() == 0 {
+		return nil, errors.New("worker declared endpoints but no endpoint protocol; upgrade the agent SDK to one that speaks the endpoint data plane")
+	}
+	// the worker frames to the version returned here, so it must be the
+	// negotiated one and not the server's own constant
+	negotiated := min(req.GetEndpointProtocol(), wire.CurrentProtocol)
+	if negotiated < wire.MinProtocol {
+		return nil, fmt.Errorf("unsupported agent endpoint protocol %d (this server serves %d..%d)",
+			req.GetEndpointProtocol(), wire.MinProtocol, wire.CurrentProtocol)
+	}
+	return &livekit.AgentHttp_AgentEndpointSettings{Protocol: negotiated}, nil
 }
 
 // HandleConnection serves a worker's control connection with no data-plane

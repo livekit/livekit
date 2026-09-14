@@ -25,6 +25,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/agent/endpoint/conformance"
+	"github.com/livekit/livekit-server/pkg/agent/endpoint/wire"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -74,7 +75,7 @@ func handleSession(reg *endpoint.Registry, sess *webtransport.Session) {
 		return
 	}
 	var msg livekit.WorkerMessage
-	if err := endpoint.ReadControlMessage(control, &msg); err != nil {
+	if err := wire.ReadControlMessage(control, &msg); err != nil {
 		return
 	}
 	rw := msg.GetRegister()
@@ -94,15 +95,20 @@ func handleSession(reg *endpoint.Registry, sess *webtransport.Session) {
 	}
 	registration.SetSession(endpoint.NewWebTransportSession(sess, endpoint.DefaultMaxStreams))
 	_ = reg.Register(registration)
-	_ = endpoint.WriteControlMessage(control, &livekit.ServerMessage{
+	_ = wire.WriteControlMessage(control, &livekit.ServerMessage{
 		Message: &livekit.ServerMessage_Register{
-			Register: &livekit.RegisterWorkerResponse{WorkerId: registration.WorkerID},
+			Register: &livekit.RegisterWorkerResponse{
+				WorkerId: registration.WorkerID,
+				EndpointSettings: &livekit.AgentHttp_AgentEndpointSettings{
+					Protocol: wire.CurrentProtocol,
+				},
+			},
 		},
 	})
 	// keep the session alive; drain further control messages until it dies
 	for {
 		var m livekit.WorkerMessage
-		if err := endpoint.ReadControlMessage(control, &m); err != nil {
+		if err := wire.ReadControlMessage(control, &m); err != nil {
 			return
 		}
 	}

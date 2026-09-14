@@ -17,16 +17,19 @@ package endpoint
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"math/rand/v2"
-	"net"
 	"net/http"
 	"net/url"
-	"strconv"
+	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/agent/endpoint/wire"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -41,14 +44,27 @@ const (
 
 	// maxAttempts bounds worker retries per request
 	maxAttempts = 3
+
+	// maxRequestIDLen bounds the client's idempotence token: it reaches this
+	// node's logs and the worker's, so it cannot be unbounded.
+	maxRequestIDLen = 128
+
+	// maxInformationalHeads bounds 1xx responses before the final head, so a
+	// worker cannot hold a client open by trickling them forever.
+	maxInformationalHeads = 8
+
+	maxResponseHeadSize = 1 << 20
+	responseBufSize     = 8 << 10
 )
 
-// Per-request scratch is pooled: a served request would otherwise allocate a
-// 32KiB response-copy buffer and a response-head reader every time, and at high
-// request rates that dominates the front's garbage.
 var (
-	copyBufferPool   = sync.Pool{New: func() any { b := make([]byte, 32<<10); return &b }}
-	responseReadPool = sync.Pool{New: func() any { return bufio.NewReaderSize(nil, 4<<10) }}
+	errNotEndpointPath      = errors.New("endpoint: not an agent endpoint path")
+	errMalformedPath        = errors.New("endpoint: malformed agent endpoint path")
+	errRequestHeadTooLarge  = errors.New("endpoint: request head too large")
+	errProtocolSwitch       = errors.New("endpoint: worker switched protocols on an HTTP exchange")
+	errTooManyInformational = errors.New("endpoint: too many informational responses")
+	errBadStatus            = errors.New("endpoint: response status out of range")
+	errHeadTooLarge         = errors.New("endpoint: response head too large")
 )
 
 // APIKeyResolver maps an inbound request to the api key it is authorized for
@@ -60,6 +76,7 @@ type Front struct {
 	registry      *Registry
 	resolveAPIKey APIKeyResolver
 	logger        logger.Logger
+	pools         *bridgePools
 
 	// fallback is consulted when nothing local can serve the request (no
 	// candidates, no route match, or every match without capacity); a
@@ -75,6 +92,7 @@ func NewFront(registry *Registry, resolveAPIKey APIKeyResolver, log logger.Logge
 		registry:      registry,
 		resolveAPIKey: resolveAPIKey,
 		logger:        log.WithComponent("agents.endpoint"),
+		pools:         newBridgePools(),
 	}
 }
 
@@ -101,13 +119,6 @@ func (f *Front) WithFallback(fb Fallback) *Front {
 	return f
 }
 
-// writeUnavailable writes a 503 with a Retry-After hint: no local worker can
-// serve the request and no fallback placed it elsewhere.
-func (f *Front) writeUnavailable(w http.ResponseWriter, msg string) {
-	w.Header().Set("Retry-After", "1")
-	http.Error(w, msg, http.StatusServiceUnavailable)
-}
-
 // WithSingleKeyFallback resolves unauthenticated requests to the registry's
 // single api key when the resolver yields none. Self-hosted convenience only: a
 // multi-tenant front must never guess an api key from what happens to be
@@ -117,24 +128,28 @@ func (f *Front) WithSingleKeyFallback() *Front {
 	return f
 }
 
+// writeUnavailable writes a 503 with a Retry-After hint: no local worker can
+// serve the request and no fallback placed it elsewhere.
+func (f *Front) writeUnavailable(w http.ResponseWriter, msg string) {
+	w.Header().Set("Retry-After", "1")
+	http.Error(w, msg, http.StatusServiceUnavailable)
+}
+
 func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	rest, ok := strings.CutPrefix(r.URL.Path, PathPrefix)
+	ep, err := splitEndpointPath(r.URL)
+	if err != nil {
+		if errors.Is(err, errMalformedPath) {
+			http.Error(w, "bad request path", http.StatusBadRequest)
+			return
+		}
+		http.NotFound(w, r)
+		return
+	}
+	agentName, deployment, path, escPath := ep.agentName, ep.deployment, ep.path, ep.escPath
+
+	reqID, ok := requestID(r)
 	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-	agentName, rest, found := strings.Cut(rest, "/")
-	if !found || agentName == "" {
-		http.NotFound(w, r)
-		return
-	}
-	deployment, path, found := strings.Cut(rest, "/")
-	if !found {
-		path = ""
-	}
-	path = "/" + path
-	if deployment == "" {
-		http.NotFound(w, r)
+		http.Error(w, "invalid X-Request-Id", http.StatusBadRequest)
 		return
 	}
 
@@ -188,6 +203,13 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if route == nil && !partial && !restricted {
 		for _, reg := range candidates {
 			if alt, ok := reg.Manifest.slashAlternate(path, r.Method); ok {
+				// a trailing slash is encoding-neutral, so the escaped form
+				// tracks the alternate directly
+				if strings.HasSuffix(alt, "/") {
+					escPath += "/"
+				} else {
+					escPath = strings.TrimSuffix(escPath, "/")
+				}
 				path = alt
 				matched, route, partial, restricted = matchAll(path)
 				break
@@ -223,18 +245,40 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bodyConsumed := int64(0)
-	countingBody := &countingReader{r: r.Body, n: &bodyConsumed}
+	var bodyConsumed atomic.Int64
+	a := &attempt{
+		req:           r,
+		path:          path,
+		target:        requestTarget(escPath, r.URL.RawQuery),
+		route:         route,
+		requestID:     reqID,
+		authenticated: authenticated,
+		pools:         f.pools,
+	}
+	a.body = &countingReader{r: r.Body, n: &bodyConsumed}
+	a.preamble = a.newPreamble()
+	a.refreshTimeout()
+	if err := a.buildHead(); err != nil {
+		if errors.Is(err, errRequestHeadTooLarge) {
+			http.Error(w, "request header fields too large", http.StatusRequestHeaderFieldsTooLarge)
+			return
+		}
+		f.logger.Debugw("agent endpoint rejected a request head", "error", err, "requestID", reqID)
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
 
 	attempted := make(map[*Registration]bool)
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+	for i := 0; i < maxAttempts; i++ {
 		reg := pickWorker(matched, attempted)
 		if reg == nil {
 			break
 		}
 		attempted[reg] = true
 
-		done, retryable := f.bridge(w, r, reg, path, countingBody, bodyConsumed)
+		a.before = bodyConsumed.Load()
+		a.refreshTimeout()
+		done, retryable := f.bridge(w, a, reg)
 		if done || !retryable {
 			return
 		}
@@ -245,7 +289,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// capacity elsewhere. Safe exactly while no request bytes were consumed -
 	// reaching this point implies it, since consuming attempts are never
 	// retryable.
-	if bodyConsumed == 0 && f.fallback != nil {
+	if bodyConsumed.Load() == 0 && f.fallback != nil {
 		if f.fallback(w, r, &FallbackRequest{
 			APIKey: apiKey, Authenticated: authenticated,
 			AgentName: agentName, Deployment: deployment,
@@ -255,6 +299,47 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	f.writeUnavailable(w, "no worker could serve the request")
+}
+
+// endpointPath is a request split into its routing components.
+type endpointPath struct {
+	agentName  string
+	deployment string
+	// path is decoded, for manifest matching
+	path string
+	// escPath keeps the client's encoding, for the request line the worker gets
+	escPath string
+}
+
+// splitEndpointPath splits /agents/{agent_name}/{deployment}/{path...} from the
+// ESCAPED path. The worker is handed a re-serialized request line, so the target
+// must keep the client's encoding: a decoded %3F or %2F re-emits as a real '?'
+// or '/' and changes which resource the worker routes to.
+func splitEndpointPath(u *url.URL) (endpointPath, error) {
+	rest, ok := strings.CutPrefix(u.EscapedPath(), PathPrefix)
+	if !ok {
+		return endpointPath{}, errNotEndpointPath
+	}
+	rawAgentName, rest, found := strings.Cut(rest, "/")
+	if !found || rawAgentName == "" {
+		return endpointPath{}, errNotEndpointPath
+	}
+	rawDeployment, escPath, found := strings.Cut(rest, "/")
+	if !found {
+		escPath = ""
+	}
+	if rawDeployment == "" {
+		return endpointPath{}, errNotEndpointPath
+	}
+	escPath = "/" + escPath
+
+	agentName, err1 := url.PathUnescape(rawAgentName)
+	deployment, err2 := url.PathUnescape(rawDeployment)
+	path, err3 := url.PathUnescape(escPath)
+	if err1 != nil || err2 != nil || err3 != nil {
+		return endpointPath{}, errMalformedPath
+	}
+	return endpointPath{agentName: agentName, deployment: deployment, path: path, escPath: escPath}, nil
 }
 
 // pickWorker chooses a worker by the power of two choices: sample two eligible
@@ -299,18 +384,9 @@ func p2c(n int, load func(int) int) int {
 }
 
 // bridge runs one attempt against one worker. done means a response (or abort)
-// reached the client; retryable reports whether another attempt is safe per the
-// retry table: idempotent/bodyless until any response byte arrived,
-// anything on HSR_REFUSED, nothing once bytes were consumed otherwise.
-func (f *Front) bridge(
-	w http.ResponseWriter,
-	r *http.Request,
-	reg *Registration,
-	path string,
-	body io.Reader,
-	bodyConsumedBefore int64,
-) (done bool, retryable bool) {
-	ctx := r.Context()
+// reached the client; retryable reports whether another attempt is safe.
+func (f *Front) bridge(w http.ResponseWriter, a *attempt, reg *Registration) (done bool, retryable bool) {
+	ctx := a.req.Context()
 	stream, err := reg.OpenStream(ctx)
 	if err != nil {
 		return false, true // no session/capacity here; try another worker
@@ -318,62 +394,62 @@ func (f *Front) bridge(
 	defer stream.Close()
 
 	stop := context.AfterFunc(ctx, func() {
-		stream.Reset(ResetCancel, "client disconnected")
+		stream.Reset(livekit.AgentHttp_HSR_ABORT, "client disconnected")
 	})
 	defer stop()
 
 	// serialize the request into the stream concurrently with response reading:
 	// directions are independent (full duplex within the stream)
-	outReq := f.outboundRequest(r, path, body)
 	writeErrCh := make(chan error, 1)
 	go func() {
-		err := outReq.Write(stream)
+		err := a.writeRequest(stream)
 		if err == nil {
 			err = stream.CloseWrite()
 		} else {
 			// fail fast: the worker is waiting for bytes that will never come
-			stream.Reset(ResetCancel, "request write failed")
+			stream.Reset(livekit.AgentHttp_HSR_ABORT, "request write failed")
 		}
 		writeErrCh <- err
 	}()
 
-	counted := &countingReader{r: stream, n: new(int64)}
-	br := responseReadPool.Get().(*bufio.Reader)
-	br.Reset(counted)
-	// bridge returns only after the response is fully drained, so the reader is
-	// free to recycle here; Reset(nil) drops the stream reference so the pool
-	// never pins a dead conn.
-	defer func() { br.Reset(nil); responseReadPool.Put(br) }()
+	lim := &headLimiter{r: stream, n: maxResponseHeadSize}
+	br := f.pools.getReader(lim)
+	defer f.pools.putReader(br)
 
-	resp, err := f.readResponseHead(w, br, outReq, stream)
+	resp, err := a.readResponse(w, br, lim, stream)
 	if err != nil {
-		retryable = f.classifyRetry(r, stream, *counted.n, bodyConsumedBefore, err)
+		err = completionError(err)
+		retryable = a.retryable(err)
 		if !retryable {
 			f.logger.Warnw("agent endpoint request failed", err,
-				"workerID", reg.WorkerID, "path", path)
-			http.Error(w, "bad gateway", http.StatusBadGateway)
+				"workerID", reg.WorkerID, "path", a.path, "requestID", a.requestID)
+			writeGatewayError(w, err)
 			return true, false
 		}
 		// join the request writer before another attempt touches the shared
 		// body reader (retries are bodyless per the table, so this is prompt)
-		stream.Reset(ResetCancel, "retrying elsewhere")
+		stream.Reset(livekit.AgentHttp_HSR_ABORT, "retrying elsewhere")
 		<-writeErrCh
 		return false, true
 	}
+	// resp.Body must not be Closed: net/http's Close drains whatever the head
+	// declared and the body has not delivered, blocking on a stream that is
+	// about to be reset. stream.Close owns the underlying resource.
 
-	// a response byte arrived: from here every failure is surfaced, never retried
-	copyResponseHeaders(w.Header(), resp)
+	// a response head arrived: from here every failure is surfaced
+	copyResponseHeaders(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
+	a.committed = true
 
 	rc := http.NewResponseController(w)
-	bufp := copyBufferPool.Get().(*[]byte)
+	bufp := f.pools.getBuf()
 	buf := *bufp
-	defer copyBufferPool.Put(bufp)
+	defer f.pools.putBuf(bufp)
 	for {
 		n, rerr := resp.Body.Read(buf)
 		if n > 0 {
 			if _, werr := w.Write(buf[:n]); werr != nil {
-				stream.Reset(ResetCancel, "client write failed")
+				stream.Reset(livekit.AgentHttp_HSR_ABORT, "client write failed")
 				return true, false
 			}
 			_ = rc.Flush()
@@ -383,136 +459,113 @@ func (f *Front) bridge(
 		}
 		if rerr != nil {
 			// never expose a clean-looking short body
-			select {
-			case werr := <-writeErrCh:
-				f.logger.Debugw("request write result after response failure", "error", werr)
-			default:
-			}
-			panic(http.ErrAbortHandler)
+			f.abort(rerr, reg, a, writeErrCh)
 		}
+	}
+	// framing complete; the sender may still report a short body in trailers
+	if ce := wire.CompletionFromTrailers(resp.Trailer); ce != nil {
+		f.abort(ce, reg, a, writeErrCh)
 	}
 	return true, false
 }
 
-// readResponseHead reads the worker's response head, relaying 1xx informational
-// responses to the client and returning the final head. A 101 is not treated as
-// informational (there is no protocol upgrade over an opaque request stream): it
-// is returned as-is as the final response rather than looped past.
-func (f *Front) readResponseHead(w http.ResponseWriter, br *bufio.Reader, outReq *http.Request, stream Stream) (*http.Response, error) {
-	deadline := time.NewTimer(responseHeadTimeout)
-	defer deadline.Stop()
-	headCh := make(chan struct{})
-	go func() {
-		select {
-		case <-deadline.C:
-			stream.Reset(ResetCancel, "response head timeout")
-		case <-headCh:
-		}
-	}()
-	defer close(headCh)
+// abort tears the client connection down so an incomplete body cannot look
+// whole. It does not return.
+func (f *Front) abort(err error, reg *Registration, a *attempt, writeErrCh <-chan error) {
+	f.logAborted(err, reg, a)
+	select {
+	case werr := <-writeErrCh:
+		f.logger.Debugw("request write result after response failure", "error", werr)
+	default:
+	}
+	panic(http.ErrAbortHandler)
+}
 
-	for {
-		resp, err := http.ReadResponse(br, outReq)
-		if err != nil {
-			return nil, err
-		}
-		if resp.StatusCode >= 100 && resp.StatusCode < 200 && resp.StatusCode != http.StatusSwitchingProtocols {
-			// informational: relay and keep reading
-			addHeaders(w.Header(), resp.Header)
-			w.WriteHeader(resp.StatusCode)
-			clear(w.Header())
-			continue
-		}
-		return resp, nil
+func (f *Front) logAborted(err error, reg *Registration, a *attempt) {
+	var ce *wire.CompletionError
+	if errors.As(err, &ce) {
+		f.logger.Infow("agent endpoint response aborted",
+			"workerID", reg.WorkerID, "path", a.path, "requestID", a.requestID,
+			"completion", string(ce.Completion), "reason", ce.Reason)
+		return
+	}
+	f.logger.Infow("agent endpoint response aborted",
+		"workerID", reg.WorkerID, "path", a.path, "requestID", a.requestID, "error", err)
+}
+
+// completionError normalizes a failure into the protocol's outcome vocabulary.
+// A peer reset code becomes the outcome; anything else leaves dispatch unknown.
+func completionError(err error) error {
+	var sre *StreamResetError
+	if errors.As(err, &sre) {
+		return &wire.CompletionError{Completion: wire.CompletionFromResetCode(sre.Code)}
+	}
+	return err
+}
+
+// writeGatewayError maps a terminal state to a status for a request whose
+// response never reached the client.
+func writeGatewayError(w http.ResponseWriter, err error) {
+	var ce *wire.CompletionError
+	if errors.As(err, &ce) && ce.Completion == wire.CompletionTimeout {
+		http.Error(w, "gateway timeout", http.StatusGatewayTimeout)
+		return
+	}
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		http.Error(w, "gateway timeout", http.StatusGatewayTimeout)
+		return
+	}
+	http.Error(w, "bad gateway", http.StatusBadGateway)
+}
+
+// bridgePools holds the per-request scratch one Front reuses: a body buffer and
+// the buffered reader http.ReadResponse parses through.
+type bridgePools struct {
+	bodyBuf sync.Pool
+	readers sync.Pool
+}
+
+func newBridgePools() *bridgePools {
+	return &bridgePools{
+		bodyBuf: sync.Pool{New: func() any { b := make([]byte, wire.BodyChunkSize); return &b }},
+		readers: sync.Pool{New: func() any { return bufio.NewReaderSize(nil, responseBufSize) }},
 	}
 }
 
-// classifyRetry implements the retry table.
-func (f *Front) classifyRetry(r *http.Request, stream Stream, responseBytes, bodyConsumedBefore int64, err error) bool {
-	if responseBytes > 0 || stream.BytesRead() > 0 {
-		return false
-	}
-	if stream.Refused() {
-		// the worker proved non-dispatch; safe for any method, but only when the
-		// request body can be replayed (nothing consumed yet)
-		return bodyConsumedBefore == 0 && r.ContentLength == 0
-	}
-	switch r.Method {
-	case http.MethodGet, http.MethodHead, http.MethodOptions:
-		return r.ContentLength == 0
-	}
-	return false
+func (p *bridgePools) getBuf() *[]byte  { return p.bodyBuf.Get().(*[]byte) }
+func (p *bridgePools) putBuf(b *[]byte) { p.bodyBuf.Put(b) }
+
+func (p *bridgePools) getReader(r io.Reader) *bufio.Reader {
+	br := p.readers.Get().(*bufio.Reader)
+	br.Reset(r)
+	return br
 }
 
-// outboundRequest builds the request serialized into the stream: the path the
-// worker's router sees (deployment prefix stripped), hop-by-hop headers removed,
-// forwarding headers appended.
-func (f *Front) outboundRequest(r *http.Request, path string, body io.Reader) *http.Request {
-	out := r.Clone(r.Context())
-	out.RequestURI = ""
-	out.URL = &url.URL{Path: path, RawQuery: r.URL.RawQuery}
-	out.Host = r.Host
-	out.Body = io.NopCloser(body)
-	// one exchange per stream: closing the worker-local app connection after the
-	// response is what lets the opaque pump observe the end of the exchange and
-	// free the stream slot
-	out.Close = true
-
-	removeHopByHopHeaders(out.Header)
-	out.Header.Del("Expect") // the front owns 100-continue semantics client-side
-
-	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		prior := out.Header.Get("X-Forwarded-For")
-		if prior != "" {
-			out.Header.Set("X-Forwarded-For", prior+", "+host)
-		} else {
-			out.Header.Set("X-Forwarded-For", host)
-		}
-	}
-	return out
+// putReader drops the stream reference so a pooled reader never pins a dead one.
+func (p *bridgePools) putReader(br *bufio.Reader) {
+	br.Reset(nil)
+	p.readers.Put(br)
 }
 
-// hop-by-hop headers per RFC 9110; Connection-nominated headers are dropped too.
-func removeHopByHopHeaders(h http.Header) {
-	for _, f := range h.Values("Connection") {
-		for _, sf := range strings.Split(f, ",") {
-			if sf = strings.TrimSpace(sf); sf != "" {
-				h.Del(sf)
-			}
-		}
-	}
-	for _, k := range []string{
-		"Connection", "Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization",
-		"Te", "Trailer", "Transfer-Encoding", "Upgrade",
-	} {
-		h.Del(k)
-	}
-}
-
-// addHeaders copies every value of every header from src into dst.
-func addHeaders(dst, src http.Header) {
-	for k, vv := range src {
-		for _, v := range vv {
-			dst.Add(k, v)
-		}
-	}
-}
-
-func copyResponseHeaders(dst http.Header, resp *http.Response) {
-	addHeaders(dst, resp.Header)
-	removeHopByHopHeaders(dst)
-	if resp.ContentLength >= 0 && dst.Get("Content-Length") == "" {
-		dst.Set("Content-Length", strconv.FormatInt(resp.ContentLength, 10))
-	}
-}
-
-type countingReader struct {
+// headLimiter caps the bytes a response head may make this node buffer. release
+// lifts the cap once the head is parsed; the body behind it is unbounded.
+type headLimiter struct {
 	r io.Reader
-	n *int64
+	n int64 // remaining head budget; negative once the head has been parsed
 }
 
-func (c *countingReader) Read(p []byte) (int, error) {
-	n, err := c.r.Read(p)
-	*c.n += int64(n)
+func (h *headLimiter) Read(p []byte) (int, error) {
+	if h.n == 0 {
+		return 0, errHeadTooLarge
+	}
+	if h.n > 0 && int64(len(p)) > h.n {
+		p = p[:h.n]
+	}
+	n, err := h.r.Read(p)
+	if h.n > 0 {
+		h.n -= int64(n)
+	}
 	return n, err
 }
+
+func (h *headLimiter) release() { h.n = -1 }
