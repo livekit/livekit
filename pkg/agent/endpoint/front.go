@@ -299,9 +299,14 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		a.before = bodyConsumed.Load()
 		a.refreshTimeout()
-		done, retryable := f.bridge(w, a, reg)
-		if done || !retryable {
+		switch f.bridge(w, a, reg) {
+		case bridgeDone:
 			return
+		case bridgeAbort:
+			// the head is on the wire already, so nothing can report the failure in
+			// band. This must reach net/http to abort the response; anything that
+			// recovers it completes the body.
+			panic(http.ErrAbortHandler)
 		}
 	}
 
@@ -429,13 +434,24 @@ func p2c(n int, load func(int) int) int {
 	return j
 }
 
-// bridge runs one attempt against one worker. done means a response (or abort)
-// reached the client; retryable reports whether another attempt is safe.
-func (f *Front) bridge(w http.ResponseWriter, a *attempt, reg *Registration) (done bool, retryable bool) {
+// bridgeOutcome is what one attempt against one worker concluded.
+type bridgeOutcome int
+
+const (
+	// nothing reached the client; another worker may still serve it
+	bridgeRetry bridgeOutcome = iota
+	// a response, or an error standing in for one, reached the client
+	bridgeDone
+	// the response was committed and cannot be completed
+	bridgeAbort
+)
+
+// bridge runs one attempt against one worker.
+func (f *Front) bridge(w http.ResponseWriter, a *attempt, reg *Registration) bridgeOutcome {
 	ctx := a.req.Context()
 	stream, err := reg.OpenStream(ctx)
 	if err != nil {
-		return false, true // no session/capacity here; try another worker
+		return bridgeRetry // no session/capacity here; try another worker
 	}
 	defer stream.Close()
 
@@ -465,18 +481,17 @@ func (f *Front) bridge(w http.ResponseWriter, a *attempt, reg *Registration) (do
 	resp, err := a.readResponse(w, br, lim, stream)
 	if err != nil {
 		err = completionError(err)
-		retryable = a.retryable(err)
-		if !retryable {
+		if !a.retryable(err) {
 			f.logger.Warnw("agent endpoint request failed", err,
 				"workerID", reg.WorkerID, "path", a.escPath, "requestID", a.requestID)
 			writeGatewayError(w, err)
-			return true, false
+			return bridgeDone
 		}
 		// join the request writer before another attempt touches the shared
 		// body reader (retries are bodyless per the table, so this is prompt)
 		stream.Reset(livekit.AgentHttp_HSR_ABORT, "retrying elsewhere")
 		<-writeErrCh
-		return false, true
+		return bridgeRetry
 	}
 	// resp.Body must not be Closed: net/http's Close drains whatever the head
 	// declared and the body has not delivered, blocking on a stream that is
@@ -496,7 +511,7 @@ func (f *Front) bridge(w http.ResponseWriter, a *attempt, reg *Registration) (do
 		if n > 0 {
 			if _, werr := w.Write(buf[:n]); werr != nil {
 				stream.Reset(livekit.AgentHttp_HSR_ABORT, "client write failed")
-				return true, false
+				return bridgeDone
 			}
 			_ = rc.Flush()
 		}
@@ -505,26 +520,25 @@ func (f *Front) bridge(w http.ResponseWriter, a *attempt, reg *Registration) (do
 		}
 		if rerr != nil {
 			// never expose a clean-looking short body
-			f.abort(rerr, reg, a, writeErrCh)
+			return f.aborted(rerr, reg, a, writeErrCh)
 		}
 	}
 	// framing complete; the sender may still report a short body in trailers
 	if ce := wire.CompletionFromTrailers(resp.Trailer); ce != nil {
-		f.abort(ce, reg, a, writeErrCh)
+		return f.aborted(ce, reg, a, writeErrCh)
 	}
-	return true, false
+	return bridgeDone
 }
 
-// abort tears the client connection down so an incomplete body cannot look
-// whole. It does not return.
-func (f *Front) abort(err error, reg *Registration, a *attempt, writeErrCh <-chan error) {
+// aborted logs why a committed response cannot be completed.
+func (f *Front) aborted(err error, reg *Registration, a *attempt, writeErrCh <-chan error) bridgeOutcome {
 	f.logAborted(err, reg, a)
 	select {
 	case werr := <-writeErrCh:
 		f.logger.Debugw("request write result after response failure", "error", werr)
 	default:
 	}
-	panic(http.ErrAbortHandler)
+	return bridgeAbort
 }
 
 func (f *Front) logAborted(err error, reg *Registration, a *attempt) {
