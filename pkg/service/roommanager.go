@@ -955,11 +955,13 @@ func (r *RoomManager) UpdateSubscriptions(ctx context.Context, req *livekit.Upda
 	}
 
 	participant.GetLogger().Debugw("updating participant subscriptions")
+	const adminInitiated = true
 	room.UpdateSubscriptions(
 		participant,
 		livekit.StringsAsIDs[livekit.TrackID](req.TrackSids),
 		req.ParticipantTracks,
 		req.Subscribe,
+		adminInitiated,
 	)
 	return &livekit.UpdateSubscriptionsResponse{}, nil
 }
