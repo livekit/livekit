@@ -72,7 +72,9 @@ func startFramedWorker(t *testing.T, targetAddr string, eps []*livekit.AgentHttp
 	reg := endpoint.NewRegistry()
 	base := startWTServer(t, reg)
 
-	front := endpoint.NewFront(reg, func(*http.Request) (string, bool) { return "", false }, logger.GetLogger()).
+	front := endpoint.NewFront(reg, func(*http.Request, string, string) endpoint.Access {
+		return endpoint.Access{}
+	}, logger.GetLogger()).
 		WithSingleKeyFallback()
 	ts := httptest.NewUnstartedServer(front)
 	// raised past net/http's 1 MiB default so the front's own head bound is what

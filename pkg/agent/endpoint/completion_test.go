@@ -134,7 +134,7 @@ func rawScriptedFront(t *testing.T, script func(r io.Reader, w *workerSide)) *ht
 	r.SetSession(&scriptedSession{script: script})
 	require.NoError(t, reg.Register(r))
 
-	ts := httptest.NewServer(NewFront(reg, func(*http.Request) (string, bool) { return "proj", true }, logger.GetLogger()))
+	ts := httptest.NewServer(NewFront(reg, grantedTo("proj"), logger.GetLogger()))
 	t.Cleanup(ts.Close)
 	return ts
 }

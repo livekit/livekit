@@ -121,6 +121,9 @@ func TestWebTransportEndpointRoundTrip(t *testing.T) {
 		case "/hello":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = io.WriteString(w, `{"ok":true}`)
+		case "/hello-private":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"private":true}`)
 		case "/echo":
 			body, _ := io.ReadAll(r.Body)
 			_, _ = w.Write(body)
@@ -133,7 +136,9 @@ func TestWebTransportEndpointRoundTrip(t *testing.T) {
 	reg := endpoint.NewRegistry()
 	base := startWTServer(t, reg)
 
-	front := endpoint.NewFront(reg, func(*http.Request) (string, bool) { return "", false }, logger.GetLogger()).
+	front := endpoint.NewFront(reg, func(*http.Request, string, string) endpoint.Access {
+		return endpoint.Access{}
+	}, logger.GetLogger()).
 		WithSingleKeyFallback()
 	ts := httptest.NewServer(front)
 	defer ts.Close()
@@ -152,6 +157,7 @@ func TestWebTransportEndpointRoundTrip(t *testing.T) {
 		Endpoints: []*livekit.AgentHttp_AgentEndpoint{
 			{Path: "/hello", Methods: []string{"GET"}, Public: true},
 			{Path: "/echo", Methods: []string{"POST"}, Public: true},
+			{Path: "/hello-private", Methods: []string{"GET"}, Public: false},
 		},
 	})
 	require.NoError(t, w.Start(ctx))
@@ -185,4 +191,58 @@ func TestWebTransportEndpointRoundTrip(t *testing.T) {
 		defer resp.Body.Close()
 		require.Equal(t, http.StatusNotFound, resp.StatusCode)
 	})
+}
+
+// the grant is enforced across a real WebTransport session.
+func TestWebTransportPrivateEndpointRequiresGrant(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"private":true}`)
+	}))
+	defer target.Close()
+
+	reg := endpoint.NewRegistry()
+	base := startWTServer(t, reg)
+
+	anonymous := httptest.NewServer(endpoint.NewFront(reg, func(*http.Request, string, string) endpoint.Access {
+		return endpoint.Access{}
+	}, logger.GetLogger()).WithSingleKeyFallback())
+	defer anonymous.Close()
+
+	granted := httptest.NewServer(endpoint.NewFront(reg, func(*http.Request, string, string) endpoint.Access {
+		return endpoint.Access{APIKey: "test", Credentialed: true, Granted: true}
+	}, logger.GetLogger()))
+	defer granted.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	w := conformance.New(conformance.Config{
+		ServerURL:  base,
+		APIKey:     "APIkey",
+		APISecret:  "secret-that-is-long-enough-to-sign",
+		AgentName:  "myagent",
+		Deployment: "production",
+		TargetAddr: strings.TrimPrefix(target.URL, "http://"),
+		Insecure:   true,
+		Endpoints: []*livekit.AgentHttp_AgentEndpoint{
+			{Path: "/secret", Methods: []string{"GET"}, Public: false},
+		},
+	})
+	require.NoError(t, w.Start(ctx))
+	t.Cleanup(w.Close)
+	require.NoError(t, w.WaitRegistered(ctx))
+
+	const path = "/agents/myagent/production/secret"
+
+	resp, err := http.Get(anonymous.URL + path)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+
+	resp2, err := http.Get(granted.URL + path)
+	require.NoError(t, err)
+	defer resp2.Body.Close()
+	require.Equal(t, http.StatusOK, resp2.StatusCode)
+	body, _ := io.ReadAll(resp2.Body)
+	require.JSONEq(t, `{"private":true}`, string(body))
 }

@@ -16,6 +16,13 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
+// grantedTo resolves every request to apiKey with full access.
+func grantedTo(apiKey string) AccessResolver {
+	return func(*http.Request, string, string) Access {
+		return Access{APIKey: apiKey, Credentialed: true, Granted: true}
+	}
+}
+
 func fallbackFront(t *testing.T, fb Fallback, withWorker bool) *Front {
 	reg := NewRegistry()
 	if withWorker {
@@ -27,7 +34,7 @@ func fallbackFront(t *testing.T, fb Fallback, withWorker bool) *Front {
 		r.SetSession(&fakeSession{})
 		require.NoError(t, reg.Register(r))
 	}
-	f := NewFront(reg, func(*http.Request) (string, bool) { return "proj", true }, logger.GetLogger())
+	f := NewFront(reg, grantedTo("proj"), logger.GetLogger())
 	if fb != nil {
 		f = f.WithFallback(fb)
 	}
@@ -54,7 +61,8 @@ func TestFrontFallbackFires(t *testing.T) {
 	require.Equal(t, http.StatusTeapot, w.Code)
 	require.NotNil(t, got)
 	require.Equal(t, "proj", got.APIKey)
-	require.True(t, got.Authenticated)
+	require.True(t, got.Granted)
+	require.True(t, got.Credentialed)
 	require.Equal(t, "a", got.AgentName)
 	require.Equal(t, "d", got.Deployment)
 }
@@ -163,4 +171,72 @@ func TestRefreshTimeoutTracksRemainingBudget(t *testing.T) {
 	spent := newAttempt(expired)
 	spent.refreshTimeout()
 	require.EqualValues(t, 1, spent.preamble.GetTimeoutMs())
+}
+
+// accessFront registers one worker serving a public and a non-public route, and
+// resolves every request to the given access.
+func accessFront(t *testing.T, a Access, fb Fallback) *Front {
+	reg := NewRegistry()
+	m, err := ParseManifest([]*livekit.AgentHttp_AgentEndpoint{
+		{Path: "/pub", Methods: []string{"GET"}, Public: true},
+		{Path: "/private", Methods: []string{"GET"}, Public: false},
+	})
+	require.NoError(t, err)
+	r := &Registration{WorkerID: "w1", APIKey: "proj", AgentName: "a", Deployment: "d", Manifest: m}
+	r.SetSession(&fakeSession{})
+	require.NoError(t, reg.Register(r))
+
+	f := NewFront(reg, func(*http.Request, string, string) Access { return a }, logger.GetLogger())
+	if fb != nil {
+		f = f.WithFallback(fb)
+	}
+	return f
+}
+
+// fakeSession opens no stream, so a request that clears authorization reaches 503.
+func TestFrontPrivateRouteAccessMapping(t *testing.T) {
+	anonymous := Access{APIKey: "proj"}
+	credentialed := Access{APIKey: "proj", Credentialed: true}
+	granted := Access{APIKey: "proj", Credentialed: true, Granted: true}
+
+	t.Run("anonymous is challenged", func(t *testing.T) {
+		w := serveFront(accessFront(t, anonymous, nil), "/private")
+		require.Equal(t, http.StatusUnauthorized, w.Code)
+		require.Equal(t, "Bearer", w.Header().Get("WWW-Authenticate"))
+	})
+	t.Run("credential without the grant is refused, not challenged", func(t *testing.T) {
+		w := serveFront(accessFront(t, credentialed, nil), "/private")
+		require.Equal(t, http.StatusForbidden, w.Code)
+		require.Empty(t, w.Header().Get("WWW-Authenticate"))
+	})
+	t.Run("granted passes authorization", func(t *testing.T) {
+		require.Equal(t, http.StatusServiceUnavailable, serveFront(accessFront(t, granted, nil), "/private").Code)
+	})
+	t.Run("a credential without the grant keeps public access", func(t *testing.T) {
+		require.Equal(t, http.StatusServiceUnavailable, serveFront(accessFront(t, credentialed, nil), "/pub").Code)
+	})
+	t.Run("anonymous keeps public access", func(t *testing.T) {
+		require.Equal(t, http.StatusServiceUnavailable, serveFront(accessFront(t, anonymous, nil), "/pub").Code)
+	})
+}
+
+// the slash-normalized form of a private route is still private.
+func TestFrontDeniedAppliesToNormalizedPath(t *testing.T) {
+	f := accessFront(t, Access{APIKey: "proj", Credentialed: true}, nil)
+	require.Equal(t, http.StatusForbidden, serveFront(f, "/private/").Code)
+}
+
+// another node's worker may declare the same path public.
+func TestFrontDeniedStillRelays(t *testing.T) {
+	var got *FallbackRequest
+	f := accessFront(t, Access{APIKey: "proj", Credentialed: true}, func(w http.ResponseWriter, _ *http.Request, fr *FallbackRequest) bool {
+		got = fr
+		w.WriteHeader(http.StatusTeapot)
+		return true
+	})
+
+	require.Equal(t, http.StatusTeapot, serveFront(f, "/private").Code)
+	require.NotNil(t, got)
+	require.True(t, got.Credentialed)
+	require.False(t, got.Granted)
 }

@@ -67,14 +67,25 @@ var (
 	errHeadTooLarge         = errors.New("endpoint: response head too large")
 )
 
-// APIKeyResolver maps an inbound request to the api key it is authorized for
-// (empty when unauthenticated) - the service layer implements it from validated
-// grants.
-type APIKeyResolver func(r *http.Request) (apiKey string, authenticated bool)
+// Access is what the front knows about a request's caller, for the agent and
+// deployment its URL addresses. Granted implies Credentialed.
+type Access struct {
+	// APIKey is the registry scope the request is served from; empty means the
+	// request cannot be placed.
+	APIKey string
+	// Credentialed selects 401 over 403 for a denied request.
+	Credentialed bool
+	// Granted opens non-public routes.
+	Granted bool
+}
+
+// AccessResolver maps an inbound request, plus the agent and deployment its URL
+// addresses, to the caller's access.
+type AccessResolver func(r *http.Request, agentName, deployment string) Access
 
 type Front struct {
 	registry      *Registry
-	resolveAPIKey APIKeyResolver
+	resolveAccess AccessResolver
 	logger        logger.Logger
 	pools         *bridgePools
 
@@ -87,10 +98,10 @@ type Front struct {
 	singleKeyFallback bool
 }
 
-func NewFront(registry *Registry, resolveAPIKey APIKeyResolver, log logger.Logger) *Front {
+func NewFront(registry *Registry, resolveAccess AccessResolver, log logger.Logger) *Front {
 	return &Front{
 		registry:      registry,
-		resolveAPIKey: resolveAPIKey,
+		resolveAccess: resolveAccess,
 		logger:        log.WithComponent("agents.endpoint"),
 		pools:         newBridgePools(),
 	}
@@ -99,12 +110,9 @@ func NewFront(registry *Registry, resolveAPIKey APIKeyResolver, log logger.Logge
 // FallbackRequest describes a request nothing local could serve. The request
 // body is untouched when the fallback runs.
 type FallbackRequest struct {
-	// APIKey is the identity the front resolved the request to (empty when
-	// unauthenticated)
-	APIKey        string
-	Authenticated bool
-	AgentName     string
-	Deployment    string
+	Access
+	AgentName  string
+	Deployment string
 }
 
 // Fallback serves a request elsewhere (e.g. a multi-node relay); it reports
@@ -153,19 +161,19 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	apiKey, authenticated := f.resolveAPIKey(r)
-	if apiKey == "" && f.singleKeyFallback {
+	access := f.resolveAccess(r, agentName, deployment)
+	if access.APIKey == "" && f.singleKeyFallback {
 		// unauthenticated: OSS serves public routes when the worker fleet
-		// belongs to a single key
-		apiKey, _ = f.registry.SingleAPIKey()
+		// belongs to a single key. A guessed api key confers no access.
+		access.APIKey, _ = f.registry.SingleAPIKey()
 	}
-	if apiKey == "" {
+	if access.APIKey == "" {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		http.Error(w, "authentication required", http.StatusUnauthorized)
 		return
 	}
 
-	candidates := f.registry.Candidates(apiKey, agentName, deployment)
+	candidates := f.registry.Candidates(access.APIKey, agentName, deployment)
 	if len(candidates) == 0 && f.fallback == nil {
 		f.writeUnavailable(w, "no workers available for deployment")
 		return
@@ -173,13 +181,13 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// manifest match across the deployment's workers: FULL wins; PARTIAL only
 	// yields 405 when nothing matches fully.
-	matchAll := func(p string) (matched []*Registration, route *Route, partial, restricted bool) {
+	matchAll := func(p string) (matched []*Registration, route *Route, partial, denied bool) {
 		for _, reg := range candidates {
 			rt, res := reg.Manifest.Match(p, r.Method)
 			switch res {
 			case MatchFull:
-				if !authenticated && !rt.Public {
-					restricted = true
+				if !access.Granted && !rt.Public {
+					denied = true
 					continue
 				}
 				if route == nil {
@@ -193,14 +201,14 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	matched, route, partial, restricted := matchAll(path)
+	matched, route, partial, denied := matchAll(path)
 	// no exact match: if only the trailing-slash alternate matches a registered
 	// route, normalize the path to that form and serve it directly (no client
 	// redirect). The exact form is tried first, so a route registered with a
 	// trailing slash is served as-is; this only rewrites a slash mismatch toward
 	// the registered form. When the request must be relayed, the serving node
 	// runs this same normalization, so no redirect is ever emitted.
-	if route == nil && !partial && !restricted {
+	if route == nil && !partial && !denied {
 		for _, reg := range candidates {
 			if alt, ok := reg.Manifest.slashAlternate(path, r.Method); ok {
 				// a trailing slash is encoding-neutral, so the escaped form
@@ -211,7 +219,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					escPath = strings.TrimSuffix(escPath, "/")
 				}
 				path = alt
-				matched, route, partial, restricted = matchAll(path)
+				matched, route, partial, denied = matchAll(path)
 				break
 			}
 		}
@@ -222,21 +230,26 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// serving node's relay listener installs no fallback of its own, so a
 		// relayed request is served or errored there and never re-relays.
 		if f.fallback(w, r, &FallbackRequest{
-			APIKey: apiKey, Authenticated: authenticated,
+			Access:    access,
 			AgentName: agentName, Deployment: deployment,
 		}) {
 			return
 		}
-		if len(candidates) == 0 && !restricted && !partial {
+		if len(candidates) == 0 && !denied && !partial {
 			f.writeUnavailable(w, "no workers available for deployment")
 			return
 		}
 	}
 	if route == nil {
 		switch {
-		case restricted:
-			w.Header().Set("WWW-Authenticate", "Bearer")
-			http.Error(w, "authentication required", http.StatusUnauthorized)
+		case denied:
+			// access does not vary across candidates, so one verdict covers them all
+			if access.Credentialed {
+				http.Error(w, "forbidden", http.StatusForbidden)
+			} else {
+				w.Header().Set("WWW-Authenticate", "Bearer")
+				http.Error(w, "authentication required", http.StatusUnauthorized)
+			}
 		case partial:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		default:
@@ -247,13 +260,13 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var bodyConsumed atomic.Int64
 	a := &attempt{
-		req:           r,
-		path:          path,
-		target:        requestTarget(escPath, r.URL.RawQuery),
-		route:         route,
-		requestID:     reqID,
-		authenticated: authenticated,
-		pools:         f.pools,
+		req:       r,
+		path:      path,
+		target:    requestTarget(escPath, r.URL.RawQuery),
+		route:     route,
+		requestID: reqID,
+		granted:   access.Granted,
+		pools:     f.pools,
 	}
 	a.body = &countingReader{r: r.Body, n: &bodyConsumed}
 	a.preamble = a.newPreamble()
@@ -291,7 +304,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// retryable.
 	if bodyConsumed.Load() == 0 && f.fallback != nil {
 		if f.fallback(w, r, &FallbackRequest{
-			APIKey: apiKey, Authenticated: authenticated,
+			Access:    access,
 			AgentName: agentName, Deployment: deployment,
 		}) {
 			return

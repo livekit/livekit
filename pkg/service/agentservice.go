@@ -222,17 +222,22 @@ func NewAgentService(
 	return s, nil
 }
 
-// EndpointFront is the /agents/{deployment}/{path...} handler backed by this
-// node's attached workers. The api key comes from validated grants when a
-// token is present; unauthenticated requests reach public endpoints only.
+// EndpointFront is the /agents/{agent_name}/{deployment}/{path...} handler backed
+// by this node's attached workers. The api key comes from validated grants when a
+// token is present; a non-public route additionally requires an agent-endpoint
+// grant scoped to this agent and deployment.
 func (s *AgentService) EndpointFront() http.Handler {
-	front := endpoint.NewFront(s.endpointRegistry, func(r *http.Request) (string, bool) {
+	front := endpoint.NewFront(s.endpointRegistry, func(r *http.Request, agentName, deployment string) endpoint.Access {
 		if claims := GetGrants(r.Context()); claims != nil {
-			return GetAPIKey(r.Context()), true
+			return endpoint.Access{
+				APIKey:       GetAPIKey(r.Context()),
+				Credentialed: true,
+				Granted:      claims.AgentEndpoint.Allows(agentName, deployment),
+			}
 		}
 		// unauthenticated: with a single configured key the api key is
 		// unambiguous even when this node holds no registrations (multi-node)
-		return s.singleAPIKey, false
+		return endpoint.Access{APIKey: s.singleAPIKey}
 	}, s.logger)
 	front.WithSingleKeyFallback()
 	return front

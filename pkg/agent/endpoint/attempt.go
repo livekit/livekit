@@ -35,13 +35,13 @@ type attempt struct {
 	req  *http.Request
 	path string
 	// target is the origin-form request target, still percent-encoded
-	target        string
-	route         *Route
-	requestID     string
-	authenticated bool
-	body          io.Reader
-	pools         *bridgePools
-	preamble      *livekit.AgentHttp_StreamPreamble
+	target    string
+	route     *Route
+	requestID string
+	granted   bool
+	body      io.Reader
+	pools     *bridgePools
+	preamble  *livekit.AgentHttp_StreamPreamble
 	// the serialized canonical request head, built once and replayed verbatim
 	head []byte
 	// client body bytes consumed when this attempt began
@@ -89,11 +89,11 @@ func (a *attempt) newPreamble() *livekit.AgentHttp_StreamPreamble {
 	clientAddr, _, _ := net.SplitHostPort(a.req.RemoteAddr)
 
 	p := &livekit.AgentHttp_StreamPreamble{
-		Kind:          livekit.AgentHttp_AEK_HTTP,
-		RequestId:     a.requestID,
-		Authenticated: a.authenticated,
-		ClientAddr:    clientAddr,
-		Scheme:        scheme,
+		Kind:       livekit.AgentHttp_AEK_HTTP,
+		RequestId:  a.requestID,
+		Authorized: a.granted,
+		ClientAddr: clientAddr,
+		Scheme:     scheme,
 	}
 	if a.route != nil && a.route.Template != nil {
 		p.Route = a.route.Template.String()

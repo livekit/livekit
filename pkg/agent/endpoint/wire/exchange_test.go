@@ -30,13 +30,13 @@ import (
 func TestPreambleRoundTrip(t *testing.T) {
 	var buf bytes.Buffer
 	in := &livekit.AgentHttp_StreamPreamble{
-		Kind:          livekit.AgentHttp_AEK_HTTP,
-		RequestId:     "AER_abc",
-		Authenticated: true,
-		Route:         "/items/{id}",
-		TimeoutMs:     1500,
-		ClientAddr:    "203.0.113.7",
-		Scheme:        "https",
+		Kind:       livekit.AgentHttp_AEK_HTTP,
+		RequestId:  "AER_abc",
+		Authorized: true,
+		Route:      "/items/{id}",
+		TimeoutMs:  1500,
+		ClientAddr: "203.0.113.7",
+		Scheme:     "https",
 	}
 	require.NoError(t, WritePreamble(&buf, in))
 
@@ -46,7 +46,7 @@ func TestPreambleRoundTrip(t *testing.T) {
 	out, err := ReadPreamble(&buf)
 	require.NoError(t, err)
 	require.Equal(t, in.RequestId, out.RequestId)
-	require.True(t, out.Authenticated)
+	require.True(t, out.Authorized)
 	require.Equal(t, "/items/{id}", out.Route)
 	require.EqualValues(t, 1500, out.TimeoutMs)
 	require.Equal(t, "https", out.Scheme)

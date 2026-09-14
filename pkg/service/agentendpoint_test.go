@@ -146,6 +146,13 @@ func (s *endpointStack) clientToken(t *testing.T) string {
 	return tok
 }
 
+func (s *endpointStack) endpointToken(t *testing.T, g *auth.AgentEndpointGrant) string {
+	at := auth.NewAccessToken(testKey, testSecret).SetAgentEndpointGrant(g)
+	tok, err := at.ToJWT()
+	require.NoError(t, err)
+	return tok
+}
+
 func httpEP(path string, methods []string, public bool) *livekit.AgentHttp_AgentEndpoint {
 	return &livekit.AgentHttp_AgentEndpoint{Path: path, Methods: methods, Public: public}
 }
@@ -300,10 +307,40 @@ func TestAgentEndpointsStatusMapping(t *testing.T) {
 		resp, _ := http.Get(base + "/private")
 		resp.Body.Close()
 		require.Equal(t, 401, resp.StatusCode)
+		require.Equal(t, "Bearer", resp.Header.Get("WWW-Authenticate"))
 	})
-	t.Run("200 non-public with token", func(t *testing.T) {
+	t.Run("403 non-public with token lacking the grant", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", base+"/private", nil)
 		req.Header.Set("Authorization", "Bearer "+stack.clientToken(t))
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+		require.Equal(t, 403, resp.StatusCode)
+		// no challenge: the caller already presented a credential
+		require.Empty(t, resp.Header.Get("WWW-Authenticate"))
+	})
+	t.Run("200 non-public with agent-endpoint grant", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", base+"/private", nil)
+		req.Header.Set("Authorization", "Bearer "+stack.endpointToken(t, &auth.AgentEndpointGrant{Call: true}))
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+		require.Equal(t, 200, resp.StatusCode)
+	})
+	t.Run("403 grant scoped to another deployment", func(t *testing.T) {
+		// candidates exist for this deployment; the grant scope is what denies it
+		g := &auth.AgentEndpointGrant{Call: true, Deployment: "staging"}
+		req, _ := http.NewRequest("GET", base+"/private", nil)
+		req.Header.Set("Authorization", "Bearer "+stack.endpointToken(t, g))
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+		require.Equal(t, 403, resp.StatusCode)
+	})
+	t.Run("200 non-public with grant scoped to this agent and deployment", func(t *testing.T) {
+		g := &auth.AgentEndpointGrant{Call: true, AgentName: "test-agent", Deployment: "production"}
+		req, _ := http.NewRequest("GET", base+"/private", nil)
+		req.Header.Set("Authorization", "Bearer "+stack.endpointToken(t, g))
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		resp.Body.Close()
