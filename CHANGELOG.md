@@ -2,6 +2,48 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.7] - 2026-09-14
+
+### Added
+
+- Participant kind agent details (#4809)
+- report a reason on room-ended telemetry (#4815)
+- telemetry: support roomID change for a participant (#4816)
+- log telemetry guard details (#4817)
+- ingress: add opt-in support for udp:// URL pull ingress (#4810)
+- Support VP9/AV1 simulcast (#4830)
+- add test-server support for compressed join requests (#4834)
+- wire psrpc bus compression into the message bus constructor (#4844)
+- turn: accept PROXY protocol on the TCP listener (#4852)
+- telemetry: add visibility into stats worker reference underflow (#4856)
+- rtc: add GetSubscribedDataTracks to LocalParticipant (#4862)
+
+### Changed
+
+- Skip the docker-backed service tests when there is no docker (#4799)
+- Wait for the callbacks these tests assert on. (#4803)
+- utils: make Median generic, overflow-safe, and add tests (#4553)
+- warp log (#4811)
+- Remove duplication within cpuload and sysload (#4818)
+- Update github.com/livekit/protocol digest to a469dd4 (#4820)
+- update ice fork for warp (#4824)
+- Move data track packet serialization to protocol (#4829)
+- Update README to include snippet about Agents (#4808)
+- protocol update for SDP unmarshal hardening (#4836)
+- Update golang Docker tag to v1.26.7 (#4846)
+- README rewrite (#4837)
+
+### Fixed
+
+- Set up track info properly for dummy receiver. (#4807)
+- Do not escape the ICE server URI in the WHIP Link header (#4795)
+- fix: hold signal messages until the ReconnectResponse goes out (#4827)
+- Fix/reconcile data track subscription deadlock (#4843)
+- telemetry: drop unused getCPUStats, unblocking darwin builds without cgo (#4841)
+- update psrpc for subscription close goroutine leak fix (#4859)
+- telemetry: do not recreate a stats worker for a released guard (#4860)
+- Get participant by authed identity in WHIP participant service. (#4861)
+
 ## [1.13.6] - 2026-08-26
 
 ### Added
