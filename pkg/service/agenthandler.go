@@ -228,7 +228,12 @@ func (h *AgentHandler) registerEndpoints(w *agent.Worker, sess endpoint.Session)
 	})
 	h.endpointRegistry.Register(reg)
 	w.Logger().Infow("endpoints registered",
-		"deployment", w.Deployment, "routes", len(w.Endpoints))
+		"namespace", w.Namespace,
+		"agentName", w.AgentName,
+		"deployment", w.Deployment,
+		"workerID", w.ID,
+		"manifest", manifest,
+	)
 	return reg
 }
 
