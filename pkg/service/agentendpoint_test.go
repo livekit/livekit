@@ -32,6 +32,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -60,10 +61,11 @@ const (
 const testMaxAPIBodySize = 64 << 10
 
 type endpointStack struct {
-	t       *testing.T
-	ts      *httptest.Server
-	handler *service.AgentHandler
-	wtURL   string // https://host:port/agent (WebTransport control+data)
+	t        *testing.T
+	ts       *httptest.Server
+	handler  *service.AgentHandler
+	registry *endpoint.Registry
+	wtURL    string // https://host:port/agent (WebTransport control+data)
 }
 
 // selfSignedTLS mints an in-memory cert for 127.0.0.1 with the h3 ALPN, for the
@@ -128,7 +130,7 @@ func newEndpointStack(t *testing.T, endpointsCfg agent.EndpointsConfig) *endpoin
 	t.Cleanup(stopWT)
 	wtURL := "https://" + bound[0].String() + "/agent"
 
-	return &endpointStack{t: t, ts: ts, handler: h, wtURL: wtURL}
+	return &endpointStack{t: t, ts: ts, handler: h, registry: registry, wtURL: wtURL}
 }
 
 func (s *endpointStack) startWorker(target string, deployment string, endpoints []*livekit.AgentHttp_AgentEndpoint) *conformance.Worker {
@@ -151,7 +153,21 @@ func (s *endpointStack) startNamedWorker(agentName, target, deployment string, e
 	require.NoError(s.t, w.Start(ctx))
 	require.NoError(s.t, w.WaitRegistered(ctx))
 	s.t.Cleanup(w.Close)
+	s.waitRoutable(w, agentName, deployment)
 	return w
+}
+
+// waitRoutable blocks until the node has installed the worker's routes. The
+// register response the worker waits on is written before that, so a request
+// sent the instant a worker calls itself registered can still miss it.
+func (s *endpointStack) waitRoutable(w *conformance.Worker, agentName, deployment string) {
+	s.t.Helper()
+	require.Eventually(s.t, func() bool {
+		return slices.ContainsFunc(
+			s.registry.Candidates(testKey, agentName, deployment),
+			func(r *endpoint.Registration) bool { return r.WorkerID == w.WorkerID() },
+		)
+	}, 10*time.Second, time.Millisecond, "worker %s never reached the endpoint registry", w.WorkerID())
 }
 
 func (s *endpointStack) clientToken(t *testing.T) string {
@@ -465,6 +481,7 @@ func TestAgentEndpointsHOL(t *testing.T) {
 	resp, err := http.Get(base + "/drip")
 	require.NoError(t, err)
 	defer resp.Body.Close()
+	require.Equal(t, 200, resp.StatusCode)
 	small := make([]byte, 1024)
 	_, err = io.ReadFull(resp.Body, small)
 	require.NoError(t, err)
@@ -509,6 +526,7 @@ func TestAgentEndpointsRetrySafety(t *testing.T) {
 	require.NoError(t, broken.Start(ctx))
 	require.NoError(t, broken.WaitRegistered(ctx))
 	t.Cleanup(broken.Close)
+	stack.waitRoutable(broken, "test-agent", "production")
 
 	stack.startWorker(app.URL, "production", eps)
 
