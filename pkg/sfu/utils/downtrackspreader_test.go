@@ -70,8 +70,10 @@ func TestBroadcastRTP(t *testing.T) {
 				require.EqualValues(t, 1, s.writes.Load())
 			}
 
-			allocs := testing.AllocsPerRun(1000, func() { BroadcastRTP(d, pkt, 2) })
-			require.LessOrEqual(t, allocs, tc.maxAllocs)
+			if !RaceEnabled {
+				allocs := testing.AllocsPerRun(1000, func() { BroadcastRTP(d, pkt, 2) })
+				require.LessOrEqual(t, allocs, tc.maxAllocs)
+			}
 		})
 	}
 }
