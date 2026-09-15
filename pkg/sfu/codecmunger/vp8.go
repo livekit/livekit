@@ -153,10 +153,11 @@ func (v *VP8) UpdateOffsets(extPkt *buffer.ExtPacket) {
 	v.exemptedPictureIds = orderedmap.NewOrderedMap[int32, bool]()
 }
 
-func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap bool, maxTemporalLayer int32) (int, []byte, error) {
+func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap bool, maxTemporalLayer int32) (int, [MaxHeaderSize]byte, int, error) {
+	var hdr [MaxHeaderSize]byte
 	vp8, ok := extPkt.Payload.(codec.VP8)
 	if !ok {
-		return 0, nil, ErrNotVP8
+		return 0, hdr, 0, ErrNotVP8
 	}
 
 	extPictureId := v.pictureIdWrapHandler.Unwrap(vp8.PictureID, vp8.M)
@@ -165,7 +166,7 @@ func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap
 	if snOutOfOrder {
 		pictureIdOffset, ok := v.missingPictureIds.Get(extPictureId)
 		if !ok {
-			return 0, nil, ErrOutOfOrderVP8PictureIdCacheMiss
+			return 0, hdr, 0, ErrOutOfOrderVP8PictureIdCacheMiss
 		}
 
 		// the out-of-order picture id cannot be deleted from the cache
@@ -190,11 +191,11 @@ func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap
 			IsKeyFrame: vp8.IsKeyFrame,
 			HeaderSize: vp8.HeaderSize + codec.VPxPictureIdSizeDiff(mungedPictureId > 127, vp8.M),
 		}
-		vp8HeaderBytes, err := vp8Packet.Marshal()
+		n, err := vp8Packet.MarshalTo(hdr[:])
 		if err != nil {
-			return 0, nil, err
+			return 0, hdr, 0, err
 		}
-		return vp8.HeaderSize, vp8HeaderBytes, nil
+		return vp8.HeaderSize, hdr, n, nil
 	}
 
 	prevMaxPictureId := v.pictureIdWrapHandler.MaxPictureId()
@@ -262,7 +263,7 @@ func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap
 
 					v.pictureIdOffset += 1
 				}
-				return 0, nil, ErrFilteredVP8TemporalLayer
+				return 0, hdr, 0, ErrFilteredVP8TemporalLayer
 			}
 		}
 	}
@@ -297,11 +298,11 @@ func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap
 		IsKeyFrame: vp8.IsKeyFrame,
 		HeaderSize: vp8.HeaderSize + codec.VPxPictureIdSizeDiff(mungedPictureId > 127, vp8.M),
 	}
-	vp8HeaderBytes, err := vp8Packet.Marshal()
+	n, err := vp8Packet.MarshalTo(hdr[:])
 	if err != nil {
-		return 0, nil, err
+		return 0, hdr, 0, err
 	}
-	return vp8.HeaderSize, vp8HeaderBytes, nil
+	return vp8.HeaderSize, hdr, n, nil
 }
 
 func (v *VP8) UpdateAndGetPadding(newPicture bool) ([]byte, error) {

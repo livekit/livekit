@@ -27,6 +27,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/codecmunger"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
 )
@@ -1598,7 +1599,8 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extTimestamp:      0xabcdef,
 		},
 		incomingHeaderSize: 6,
-		codecBytes:         marshalledVP8,
+		codecBytes:         codecHeaderOf(marshalledVP8),
+		codecBytesLen:      len(marshalledVP8),
 		marker:             true,
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
@@ -1677,7 +1679,8 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extTimestamp:      0xabcdef,
 		},
 		incomingHeaderSize: 6,
-		codecBytes:         marshalledVP8,
+		codecBytes:         codecHeaderOf(marshalledVP8),
+		codecBytesLen:      len(marshalledVP8),
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
@@ -1731,7 +1734,8 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extTimestamp:      0xabcdef,
 		},
 		incomingHeaderSize: 6,
-		codecBytes:         marshalledVP8,
+		codecBytes:         codecHeaderOf(marshalledVP8),
+		codecBytesLen:      len(marshalledVP8),
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
@@ -1819,7 +1823,8 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extTimestamp:      0xabcdef,
 		},
 		incomingHeaderSize: 6,
-		codecBytes:         marshalledVP8,
+		codecBytes:         codecHeaderOf(marshalledVP8),
+		codecBytesLen:      len(marshalledVP8),
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 0)
 	require.NoError(t, err)
@@ -1918,7 +1923,8 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 			extTimestamp:      0xabcdf0,
 		},
 		incomingHeaderSize: 5,
-		codecBytes:         marshalledVP8,
+		codecBytes:         codecHeaderOf(marshalledVP8),
+		codecBytesLen:      len(marshalledVP8),
 	}
 	actualTP, err = f.GetTranslationParams(extPkt, 1)
 	require.NoError(t, err)
@@ -2248,4 +2254,10 @@ func TestForwarderIsEndOfLayerFrame(t *testing.T) {
 	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{
 		DependencyDescriptor: &buffer.ExtDependencyDescriptor{},
 	}))
+}
+
+func codecHeaderOf(b []byte) [codecmunger.MaxHeaderSize]byte {
+	var hdr [codecmunger.MaxHeaderSize]byte
+	copy(hdr[:], b)
+	return hdr
 }

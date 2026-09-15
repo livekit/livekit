@@ -26,6 +26,9 @@ var (
 	ErrFilteredVP8TemporalLayer        = errors.New("filtered VP8 temporal layer")
 )
 
+// MaxHeaderSize is the largest codec header the mungers produce (VP8: 6 bytes).
+const MaxHeaderSize = 8
+
 type CodecMunger interface {
 	GetState() any
 	SeedState(state any)
@@ -33,7 +36,9 @@ type CodecMunger interface {
 	SetLast(extPkt *buffer.ExtPacket)
 	UpdateOffsets(extPkt *buffer.ExtPacket)
 
-	UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap bool, maxTemporal int32) (int, []byte, error)
+	// UpdateAndGet returns the incoming codec header size and the munged
+	// header by value, so the per-packet path does not allocate.
+	UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap bool, maxTemporal int32) (int, [MaxHeaderSize]byte, int, error)
 
 	UpdateAndGetPadding(newPicture bool) ([]byte, error)
 }
