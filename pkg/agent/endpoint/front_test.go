@@ -316,3 +316,58 @@ func TestIsReservedAgentName(t *testing.T) {
 		require.False(t, IsReservedAgentName(n), n)
 	}
 }
+
+// matching runs before anything sizes the request head, so the split is where
+// an over-long path is refused.
+func TestSplitEndpointPathLength(t *testing.T) {
+	long := PathPrefix + "a/d/" + strings.Repeat("x", MaxPathLength)
+	_, err := splitEndpointPath(&url.URL{Path: long, RawPath: long})
+	require.ErrorIs(t, err, errPathTooLong)
+
+	f := fallbackFront(t, nil, true)
+	require.Equal(t, http.StatusRequestURITooLong, serveFront(f, "/"+strings.Repeat("x", MaxPathLength)).Code)
+
+	ok := PathPrefix + "a/d/" + strings.Repeat("x", MaxPathLength-4)
+	_, err = splitEndpointPath(&url.URL{Path: ok, RawPath: ok})
+	require.NoError(t, err)
+}
+
+// budgetFront registers a worker whose routes are ambiguous enough that the
+// matcher gives up deciding.
+func budgetFront(t *testing.T, a Access) *Front {
+	reg := NewRegistry()
+	m, err := ParseManifest([]*livekit.AgentHttp_AgentEndpoint{
+		{Path: "/{a}{b}{c}{d}x", Methods: []string{"GET"}, Public: true},
+	})
+	require.NoError(t, err)
+	require.Len(t, m.Ambiguous(), 1)
+	reg.Register(NewRegistration(RegistrationParams{
+		WorkerID: "w1", APIKey: "proj", AgentName: "a", Deployment: "d",
+		Manifest: m, Session: &fakeSession{},
+	}))
+	return NewFront(FrontParams{
+		Registry:      reg,
+		ResolveAccess: func(*http.Request, string, string) Access { return a },
+		Logger:        logger.GetLogger(),
+	})
+}
+
+// A table too ambiguous to decide forwards to the worker. No route is decided,
+// so its Public flag is unknown and only a grant clears the request.
+func TestFrontOverBudgetForwardsWithAGrant(t *testing.T) {
+	long := "/" + strings.Repeat("a", 512)
+
+	f := budgetFront(t, Access{APIKey: "proj", Level: AccessGranted})
+	// 503 is dispatch reached: the fake session opens no stream
+	require.Equal(t, http.StatusServiceUnavailable, serveFront(f, long).Code)
+
+	f = budgetFront(t, Access{APIKey: "proj", Level: AccessCredentialed})
+	require.Equal(t, http.StatusForbidden, serveFront(f, long).Code)
+
+	f = budgetFront(t, Access{APIKey: "proj", Level: AccessNone})
+	require.Equal(t, http.StatusUnauthorized, serveFront(f, long).Code)
+
+	// a path the same table decides normally is unaffected
+	f = budgetFront(t, Access{APIKey: "proj", Level: AccessNone})
+	require.Equal(t, http.StatusNotFound, serveFront(f, "/ab").Code)
+}

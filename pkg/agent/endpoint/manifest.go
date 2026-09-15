@@ -18,55 +18,49 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 	"strings"
 
 	"github.com/livekit/protocol/livekit"
 
+	"github.com/livekit/livekit-server/pkg/agent/endpoint/router"
 	"github.com/livekit/livekit-server/pkg/agent/endpoint/wire"
 )
 
 const MaxManifestRoutes = 256
 
-// allowedMethods is the set of HTTP methods a route may declare: exactly the
-// verbs FastAPI (starlette) can route. Registration rejects anything else, so a
-// typo ("GTE") or a garbage token can't sit in a manifest silently never
-// matching. Widen this only if the worker side ever routes beyond FastAPI.
-var allowedMethods = map[string]struct{}{
-	http.MethodGet:     {},
-	http.MethodHead:    {},
-	http.MethodPost:    {},
-	http.MethodPut:     {},
-	http.MethodPatch:   {},
-	http.MethodDelete:  {},
-	http.MethodOptions: {},
-	http.MethodTrace:   {},
-}
+// Manifest is a worker's route table, in declaration order.
+type Manifest = router.Router[*Route]
 
 // Route is one validated manifest entry.
 type Route struct {
-	Template *Template
-	Methods  []string // uppercase
+	Template *router.Template
 	Public   bool
 }
 
-// Manifest is a worker's ordered route table.
-type Manifest struct {
-	routes []Route
+// methodMask tags a route with the methods it serves. The set is exactly the
+// verbs FastAPI can route; anything else masks to 0 and matches nothing.
+func methodMask(method string) router.Mask {
+	switch method {
+	case http.MethodGet:
+		return 1 << 0
+	case http.MethodHead:
+		return 1 << 1
+	case http.MethodPost:
+		return 1 << 2
+	case http.MethodPut:
+		return 1 << 3
+	case http.MethodPatch:
+		return 1 << 4
+	case http.MethodDelete:
+		return 1 << 5
+	case http.MethodOptions:
+		return 1 << 6
+	case http.MethodTrace:
+		return 1 << 7
+	}
+	return 0
 }
 
-// MatchResult mirrors starlette's Match enum: a FULL match selects the route, a
-// PARTIAL match (path matched, method didn't) yields 405 only after the whole
-// table has been scanned, so a later route with the right method still wins.
-type MatchResult int
-
-const (
-	MatchNone MatchResult = iota
-	MatchPartial
-	MatchFull
-)
-
-// ParseManifest validates a registration's endpoint list.
 // NegotiateSettings validates a registration's endpoint manifest and negotiates
 // the data-plane protocol version. The data plane is a WebTransport session (no
 // attach token, no fixed connection pool), so the version is all there is to
@@ -91,13 +85,15 @@ func NegotiateSettings(req *livekit.RegisterWorkerRequest) (*livekit.AgentHttp_A
 	return &livekit.AgentHttp_AgentEndpointSettings{Protocol: negotiated}, nil
 }
 
+// ParseManifest validates a registration's endpoint list and compiles it into
+// a router.
 func ParseManifest(endpoints []*livekit.AgentHttp_AgentEndpoint) (*Manifest, error) {
 	if len(endpoints) > MaxManifestRoutes {
 		return nil, fmt.Errorf("manifest exceeds %d routes", MaxManifestRoutes)
 	}
-	m := &Manifest{routes: make([]Route, 0, len(endpoints))}
+	b := router.NewBuilder[*Route]()
 	for _, ep := range endpoints {
-		tpl, err := ParseTemplate(ep.GetPath())
+		tpl, err := router.ParseTemplate(ep.GetPath())
 		if err != nil {
 			return nil, err
 		}
@@ -107,65 +103,21 @@ func ParseManifest(endpoints []*livekit.AgentHttp_AgentEndpoint) (*Manifest, err
 		if len(ep.GetMethods()) == 0 {
 			return nil, fmt.Errorf("endpoint %q declares no methods", ep.GetPath())
 		}
-		var methods []string
+		var mask router.Mask
 		for _, method := range ep.GetMethods() {
 			u := strings.ToUpper(method)
 			if u != method {
 				return nil, fmt.Errorf("endpoint %q method %q must be uppercase", ep.GetPath(), method)
 			}
-			if _, ok := allowedMethods[u]; !ok {
+			m := methodMask(u)
+			if m == 0 {
 				return nil, fmt.Errorf("endpoint %q declares unsupported method %q", ep.GetPath(), method)
 			}
-			methods = append(methods, u)
+			mask |= m
 		}
-		m.routes = append(m.routes, Route{
-			Template: tpl,
-			Methods:  methods,
-			Public:   ep.GetPublic(),
-		})
-	}
-	return m, nil
-}
-
-// Match resolves a request path+method against the table: a FULL match on both,
-// else PARTIAL if the path matched but no route had the method (405).
-func (m *Manifest) Match(path, method string) (*Route, MatchResult) {
-	partial := false
-	for i := range m.routes {
-		r := &m.routes[i]
-		if !r.Template.Match(path) {
-			continue
+		if err := b.Add(tpl, mask, &Route{Template: tpl, Public: ep.GetPublic()}); err != nil {
+			return nil, err
 		}
-		if slices.Contains(r.Methods, method) {
-			return r, MatchFull
-		}
-		partial = true
 	}
-	if partial {
-		return nil, MatchPartial
-	}
-	return nil, MatchNone
-}
-
-// slashAlternate returns the trailing-slash-normalized form of path when only
-// that alternate form fully matches a registered route. The front tries the
-// exact form first and uses this to rewrite a slash-mismatched request to the
-// registered form and serve it directly, rather than redirecting the client
-// (webhook clients often don't follow redirects, and a redirect from the final
-// routing hop would pay the whole routing path twice). A route registered with
-// a trailing slash is matched exactly and left untouched.
-func (m *Manifest) slashAlternate(path, method string) (string, bool) {
-	if path == "/" {
-		return "", false
-	}
-	var alt string
-	if strings.HasSuffix(path, "/") {
-		alt = strings.TrimSuffix(path, "/")
-	} else {
-		alt = path + "/"
-	}
-	if _, res := m.Match(alt, method); res == MatchFull {
-		return alt, true
-	}
-	return "", false
+	return b.Build(), nil
 }

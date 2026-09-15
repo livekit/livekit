@@ -29,6 +29,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/livekit/livekit-server/pkg/agent/endpoint/router"
 	"github.com/livekit/livekit-server/pkg/agent/endpoint/wire"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -37,6 +38,10 @@ import (
 const (
 	// PathPrefix is the public route namespace: /agents/{agent_name}/{deployment}/{path...}
 	PathPrefix = "/agents/"
+
+	// MaxPathLength caps the escaped route path. Matching runs before the
+	// request head is sized, so this is the only bound on it.
+	MaxPathLength = 8 << 10
 
 	// responseHeadTimeout bounds the wait for the worker's response head. Bodies
 	// (SSE, long streams) are unbounded; the head never legitimately takes this
@@ -61,6 +66,7 @@ const (
 var (
 	errNotEndpointPath      = errors.New("endpoint: not an agent endpoint path")
 	errMalformedPath        = errors.New("endpoint: malformed agent endpoint path")
+	errPathTooLong          = errors.New("endpoint: agent endpoint path too long")
 	errRequestHeadTooLarge  = errors.New("endpoint: request head too large")
 	errProtocolSwitch       = errors.New("endpoint: worker switched protocols on an HTTP exchange")
 	errTooManyInformational = errors.New("endpoint: too many informational responses")
@@ -169,6 +175,10 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad request path", http.StatusBadRequest)
 			return
 		}
+		if errors.Is(err, errPathTooLong) {
+			http.Error(w, "uri too long", http.StatusRequestURITooLong)
+			return
+		}
 		http.NotFound(w, r)
 		return
 	}
@@ -204,42 +214,22 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// manifest match across the deployment's workers: FULL wins; PARTIAL only
-	// yields 405 when nothing matches fully.
-	matchAll := func(p string) (matched []*Registration, route *Route, partial, denied bool) {
-		for _, reg := range candidates {
-			rt, res := reg.Manifest.Match(p, r.Method)
-			switch res {
-			case MatchFull:
-				if access.Level < AccessGranted && !rt.Public {
-					denied = true
-					continue
-				}
-				if route == nil {
-					route = rt
-				}
-				matched = append(matched, reg)
-			case MatchPartial:
-				partial = true
-			}
-		}
-		return
-	}
-
-	matched, route, partial, denied := matchAll(path)
+	mask := methodMask(r.Method)
+	granted := access.Level >= AccessGranted
+	matched, route, partial, denied := matchDeployment(candidates, path, mask, granted)
 	// no exact match: if only the trailing-slash alternate matches a registered
 	// route, normalize the path to that form and serve it directly (no client
 	// redirect). The exact form is tried first, so a route registered with a
 	// trailing slash is served as-is; this only rewrites a slash mismatch toward
 	// the registered form. When the request must be relayed, the serving node
 	// runs this same normalization, so no redirect is ever emitted.
-	if route == nil && !partial && !denied {
-		if alt, altEsc, ok := slashAlternatePaths(candidates, path, escPath, r.Method); ok {
+	if len(matched) == 0 && !partial && !denied {
+		if alt, altEsc, ok := slashAlternatePaths(candidates, path, escPath, mask); ok {
 			path, escPath = alt, altEsc
-			matched, route, partial, denied = matchAll(path)
+			matched, route, partial, denied = matchDeployment(candidates, path, mask, granted)
 		}
 	}
-	if route == nil && f.params.Fallback != nil {
+	if len(matched) == 0 && f.params.Fallback != nil {
 		// nothing local matched: hand off to the multi-node fallback (relay to a
 		// node holding the deployment) before the local status mapping. The
 		// serving node's relay listener installs no fallback of its own, so a
@@ -255,7 +245,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if route == nil {
+	if len(matched) == 0 {
 		switch {
 		case denied:
 			// access does not vary across candidates, so one verdict covers them all
@@ -280,7 +270,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		target:    requestTarget(escPath, r.URL.RawQuery),
 		route:     route,
 		requestID: reqID,
-		granted:   access.Level >= AccessGranted,
+		granted:   granted,
 		pools:     f.pools,
 	}
 	a.body = &countingReader{r: r.Body, n: &bodyConsumed}
@@ -334,21 +324,58 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.writeUnavailable(w, "no worker could serve the request")
 }
 
-// slashAlternatePaths looks for a candidate that serves the trailing-slash
-// alternate of path, returning the decoded and escaped forms to retry.
-func slashAlternatePaths(candidates []*Registration, path, escPath, method string) (string, string, bool) {
+// matchDeployment resolves a path against every candidate worker's manifest.
+// A candidate joins matched when it can serve it; route stays nil when a table
+// was too ambiguous to decide, so matched is the dispatch test.
+func matchDeployment(candidates []*Registration, path string, mask router.Mask, granted bool) (matched []*Registration, route *Route, partial, denied bool) {
 	for _, reg := range candidates {
-		alt, ok := reg.Manifest.slashAlternate(path, method)
-		if !ok {
-			continue
+		rt, res := reg.Manifest.Match(path, mask)
+		switch res {
+		case router.ResultFull:
+			if !granted && !rt.Public {
+				denied = true
+				continue
+			}
+			if route == nil {
+				route = rt
+			}
+			matched = append(matched, reg)
+		case router.ResultPartial:
+			partial = true
+		case router.ResultOverBudget:
+			// no route was decided, so its Public flag is unknown and only a grant
+			// can clear the request
+			if !granted {
+				denied = true
+				continue
+			}
+			matched = append(matched, reg)
 		}
+	}
+	return
+}
+
+// slashAlternatePaths looks for a candidate that serves the trailing-slash
+// alternate of path, returning the decoded and escaped forms to retry. Both
+// forms come out of the same transform.
+func slashAlternatePaths(candidates []*Registration, path, escPath string, mask router.Mask) (string, string, bool) {
+	if path == "/" {
+		return path, escPath, false
+	}
+	var alt, altEsc string
+	if strings.HasSuffix(path, "/") {
 		// %2F decodes to a slash without being a separator, so the alternate
 		// applies only while the slash is literal in escPath too
-		switch {
-		case strings.HasSuffix(alt, "/"):
-			return alt, escPath + "/", true
-		case strings.HasSuffix(escPath, "/"):
-			return alt, strings.TrimSuffix(escPath, "/"), true
+		if !strings.HasSuffix(escPath, "/") {
+			return path, escPath, false
+		}
+		alt, altEsc = strings.TrimSuffix(path, "/"), strings.TrimSuffix(escPath, "/")
+	} else {
+		alt, altEsc = path+"/", escPath+"/"
+	}
+	for _, reg := range candidates {
+		if _, res := reg.Manifest.Match(alt, mask); res == router.ResultFull {
+			return alt, altEsc, true
 		}
 	}
 	return path, escPath, false
@@ -385,6 +412,10 @@ func splitEndpointPath(u *url.URL) (endpointPath, error) {
 		return endpointPath{}, errNotEndpointPath
 	}
 	escPath = "/" + escPath
+
+	if len(escPath) > MaxPathLength {
+		return endpointPath{}, errPathTooLong
+	}
 
 	agentName, err1 := url.PathUnescape(rawAgentName)
 	deployment, err2 := url.PathUnescape(rawDeployment)
