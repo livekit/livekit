@@ -15,12 +15,15 @@
 package endpoint
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
 	"strings"
 
 	"github.com/livekit/protocol/livekit"
+
+	"github.com/livekit/livekit-server/pkg/agent/endpoint/wire"
 )
 
 const MaxManifestRoutes = 256
@@ -64,6 +67,30 @@ const (
 )
 
 // ParseManifest validates a registration's endpoint list.
+// NegotiateSettings validates a registration's endpoint manifest and negotiates
+// the data-plane protocol version. The data plane is a WebTransport session (no
+// attach token, no fixed connection pool), so the version is all there is to
+// agree on.
+func NegotiateSettings(req *livekit.RegisterWorkerRequest) (*livekit.AgentHttp_AgentEndpointSettings, error) {
+	if _, err := ParseManifest(req.GetEndpoints()); err != nil {
+		return nil, err
+	}
+	if req.GetInstanceId() == "" {
+		return nil, errors.New("registrations with endpoints require an instance_id")
+	}
+	if req.GetEndpointProtocol() == 0 {
+		return nil, errors.New("worker declared endpoints but no endpoint protocol; upgrade the agent SDK to one that speaks the endpoint data plane")
+	}
+	// the worker frames to the version returned here, so it must be the
+	// negotiated one and not the server's own constant
+	negotiated := min(req.GetEndpointProtocol(), wire.CurrentProtocol)
+	if negotiated < wire.MinProtocol {
+		return nil, fmt.Errorf("unsupported agent endpoint protocol %d (this server serves %d..%d)",
+			req.GetEndpointProtocol(), wire.MinProtocol, wire.CurrentProtocol)
+	}
+	return &livekit.AgentHttp_AgentEndpointSettings{Protocol: negotiated}, nil
+}
+
 func ParseManifest(endpoints []*livekit.AgentHttp_AgentEndpoint) (*Manifest, error) {
 	if len(endpoints) > MaxManifestRoutes {
 		return nil, fmt.Errorf("manifest exceeds %d routes", MaxManifestRoutes)

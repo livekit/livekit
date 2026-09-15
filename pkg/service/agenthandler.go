@@ -17,84 +17,28 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math/rand"
-	"net/http"
 	"slices"
 	"sort"
-	"strconv"
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/livekit/livekit-server/pkg/agent"
-	"github.com/livekit/livekit-server/pkg/agent/endpoint"
-	"github.com/livekit/livekit-server/pkg/agent/endpoint/wire"
-	"github.com/livekit/livekit-server/pkg/config"
-	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/rtc"
-	"github.com/livekit/livekit-server/pkg/rtc/types"
-	"github.com/livekit/livekit-server/version"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/psrpc"
+
+	"github.com/livekit/livekit-server/pkg/agent"
+	"github.com/livekit/livekit-server/pkg/agent/endpoint"
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
+	"github.com/livekit/livekit-server/version"
 )
-
-type AgentSocketUpgrader struct {
-	websocket.Upgrader
-}
-
-func (u AgentSocketUpgrader) Upgrade(
-	w http.ResponseWriter,
-	r *http.Request,
-	responseHeader http.Header,
-) (
-	conn *websocket.Conn,
-	registration agent.WorkerRegistration,
-	ok bool,
-) {
-	if u.CheckOrigin == nil {
-		// allow connections from any origin, since script may be hosted anywhere
-		// security is enforced by access tokens
-		u.CheckOrigin = func(r *http.Request) bool {
-			return true
-		}
-	}
-
-	// reject non websocket requests
-	if !websocket.IsWebSocketUpgrade(r) {
-		w.WriteHeader(404)
-		return
-	}
-
-	// require a claim
-	claims := GetGrants(r.Context())
-	if claims == nil || claims.Video == nil || !claims.Video.Agent {
-		HandleError(w, r, http.StatusUnauthorized, rtc.ErrPermissionDenied)
-		return
-	}
-
-	registration = agent.MakeWorkerRegistration()
-	registration.ClientIP = GetClientIP(r)
-
-	// upgrade
-	conn, err := u.Upgrader.Upgrade(w, r, responseHeader)
-	if err != nil {
-		HandleError(w, r, http.StatusInternalServerError, err)
-		return
-	}
-
-	if pv, err := strconv.Atoi(r.FormValue("protocol")); err == nil {
-		registration.Protocol = agent.WorkerProtocolVersion(pv)
-	}
-
-	return conn, registration, true
-}
 
 func DispatchAgentWorkerSignal(c agent.SignalConn, h agent.WorkerSignalHandler, l logger.Logger) bool {
 	req, _, err := c.ReadWorkerMessage()
@@ -115,8 +59,8 @@ func DispatchAgentWorkerSignal(c agent.SignalConn, h agent.WorkerSignalHandler, 
 	return true
 }
 
-func HandshakeAgentWorker(c agent.SignalConn, serverInfo *livekit.ServerInfo, registration agent.WorkerRegistration, l logger.Logger, endpointSettings agent.EndpointSettingsFunc) (r agent.WorkerRegistration, ok bool) {
-	wr := agent.NewWorkerRegisterer(c, serverInfo, registration, endpointSettings)
+func HandshakeAgentWorker(c agent.SignalConn, serverInfo *livekit.ServerInfo, registration agent.WorkerRegistration, l logger.Logger, handlers ...agent.WorkerRegisterHandler) (r agent.WorkerRegistration, ok bool) {
+	wr := agent.NewWorkerRegisterer(c, serverInfo, registration, handlers...)
 	if err := c.SetReadDeadline(wr.Deadline()); err != nil {
 		return
 	}
@@ -129,17 +73,6 @@ func HandshakeAgentWorker(c agent.SignalConn, serverInfo *livekit.ServerInfo, re
 		return
 	}
 	return wr.Registration(), true
-}
-
-type AgentService struct {
-	upgrader AgentSocketUpgrader
-
-	signalMessageSizeLimit int64
-	// developmentMode allows the WebTransport listener to run without a
-	// configured certificate.
-	developmentMode bool
-
-	*AgentHandler
 }
 
 type AgentHandler struct {
@@ -179,138 +112,58 @@ type workerKey struct {
 	deployment string
 }
 
-func NewAgentService(
+// NewAgentHandler builds the node's agent worker handler, shared by the
+// transport services.
+func NewAgentHandler(
 	conf *config.Config,
 	currentNode routing.LocalNode,
 	bus psrpc.MessageBus,
 	keyProvider auth.KeyProvider,
-) (*AgentService, error) {
-	s := &AgentService{
-		signalMessageSizeLimit: conf.Limit.AgentSignalMessageSizeLimit,
-		developmentMode:        conf.Development,
-	}
-
-	serverInfo := &livekit.ServerInfo{
-		Edition:       livekit.ServerInfo_Standard,
-		Version:       version.Version,
-		Protocol:      types.CurrentProtocol,
-		AgentProtocol: agent.CurrentProtocol,
-		Region:        conf.Region,
-		NodeId:        string(currentNode.NodeID()),
-	}
-
-	agentServer, err := rpc.NewAgentInternalServer(s, bus)
-	if err != nil {
-		return nil, err
-	}
-	s.AgentHandler = NewAgentHandler(
-		agentServer,
-		keyProvider,
-		logger.GetLogger(),
-		serverInfo,
-		conf.Agents.TargetLoad,
-		agent.RoomAgentTopic,
-		agent.PublisherAgentTopic,
-		agent.ParticipantAgentTopic,
-	)
-	s.AgentHandler.endpointsConfig = conf.Agents.Endpoints
-	if len(conf.Keys) == 1 {
-		for key := range conf.Keys {
-			s.AgentHandler.singleAPIKey = key
-		}
-	}
-
-	return s, nil
-}
-
-// EndpointFront is the /agents/{agent_name}/{deployment}/{path...} handler backed
-// by this node's attached workers. The api key comes from validated grants when a
-// token is present; a non-public route additionally requires an agent-endpoint
-// grant scoped to this agent and deployment.
-func (s *AgentService) EndpointFront() http.Handler {
-	return endpoint.NewFront(endpoint.FrontParams{
-		Registry: s.endpointRegistry,
-		ResolveAccess: func(r *http.Request, agentName, deployment string) endpoint.Access {
-			if claims := GetGrants(r.Context()); claims != nil {
-				level := endpoint.AccessCredentialed
-				if claims.AgentEndpoint.Allows(agentName, deployment) {
-					level = endpoint.AccessGranted
-				}
-				return endpoint.Access{APIKey: GetAPIKey(r.Context()), Level: level}
-			}
-			// unauthenticated: one configured key makes the api key unambiguous
-			return endpoint.Access{APIKey: s.singleAPIKey}
-		},
-		Logger:            s.logger,
-		SingleKeyFallback: true,
-	})
-}
-
-func (s *AgentService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if conn, registration, ok := s.upgrader.Upgrade(w, r, nil); ok {
-		// control/signal conn: bound a single signalling frame (0 = operator
-		// disabled) before it is buffered; decompressed size is bounded in
-		// WSSignalConnection. HTTP endpoints are served over a worker's
-		// WebTransport session (see the WebTransport listener), not this
-		// WebSocket, which now carries control/job-dispatch traffic only.
-		if s.signalMessageSizeLimit > 0 {
-			conn.SetReadLimit(s.signalMessageSizeLimit)
-		}
-		sigConn := NewWSSignalConnection(conn, s.signalMessageSizeLimit)
-		defer sigConn.Close()
-		s.HandleConnection(r.Context(), sigConn, registration)
-	}
-}
-
-func NewAgentHandler(
-	agentServer rpc.AgentInternalServer,
-	keyProvider auth.KeyProvider,
-	logger logger.Logger,
-	serverInfo *livekit.ServerInfo,
-	targetLoad float32,
-	roomTopic string,
-	publisherTopic string,
-	participantTopic string,
-) *AgentHandler {
-	return &AgentHandler{
-		agentServer:      agentServer,
-		logger:           logger.WithComponent("agents"),
+	registry *endpoint.Registry,
+) (*AgentHandler, error) {
+	h := &AgentHandler{
+		logger:           logger.GetLogger().WithComponent("agents"),
 		workers:          make(map[string]*agent.Worker),
 		jobToWorker:      make(map[livekit.JobID]*agent.Worker),
 		namespaceWorkers: make(map[workerKey][]*agent.Worker),
-		serverInfo:       serverInfo,
+		serverInfo: &livekit.ServerInfo{
+			Edition:       livekit.ServerInfo_Standard,
+			Version:       version.Version,
+			Protocol:      types.CurrentProtocol,
+			AgentProtocol: agent.CurrentProtocol,
+			Region:        conf.Region,
+			NodeId:        string(currentNode.NodeID()),
+		},
 		keyProvider:      keyProvider,
-		targetLoad:       targetLoad,
-		roomTopic:        roomTopic,
-		publisherTopic:   publisherTopic,
-		participantTopic: participantTopic,
-		endpointRegistry: endpoint.NewRegistry(),
+		targetLoad:       conf.Agents.TargetLoad,
+		roomTopic:        agent.RoomAgentTopic,
+		publisherTopic:   agent.PublisherAgentTopic,
+		participantTopic: agent.ParticipantAgentTopic,
+		endpointRegistry: registry,
+		endpointsConfig:  conf.Agents.Endpoints,
 	}
-}
+	if len(conf.Keys) == 1 {
+		for key := range conf.Keys {
+			h.singleAPIKey = key
+		}
+	}
 
-// endpointSettings validates a registration's manifest and negotiates the
-// data-plane protocol version.
-func (h *AgentHandler) endpointSettings(req *livekit.RegisterWorkerRequest) (*livekit.AgentHttp_AgentEndpointSettings, error) {
-	if h.endpointsConfig.Disabled {
-		return nil, errors.New("agent HTTP endpoints are disabled on this server")
-	}
-	if _, err := endpoint.ParseManifest(req.GetEndpoints()); err != nil {
+	agentServer, err := rpc.NewAgentInternalServer(h, bus)
+	if err != nil {
 		return nil, err
 	}
-	if req.GetInstanceId() == "" {
-		return nil, errors.New("registrations with endpoints require an instance_id")
+	h.agentServer = agentServer
+
+	return h, nil
+}
+
+// endpointRegisterHandler negotiates a worker's endpoint settings, refusing any
+// declaration when endpoints are turned off.
+func (h *AgentHandler) endpointRegisterHandler(req *livekit.RegisterWorkerRequest, res *livekit.RegisterWorkerResponse, reg *agent.WorkerRegistration) error {
+	if len(req.GetEndpoints()) > 0 && h.endpointsConfig.Disabled {
+		return errors.New("agent HTTP endpoints are disabled on this server")
 	}
-	if req.GetEndpointProtocol() == 0 {
-		return nil, errors.New("worker declared endpoints but no endpoint protocol; upgrade the agent SDK to one that speaks the endpoint data plane")
-	}
-	// the worker frames to the version returned here, so it must be the
-	// negotiated one and not the server's own constant
-	negotiated := min(req.GetEndpointProtocol(), wire.CurrentProtocol)
-	if negotiated < wire.MinProtocol {
-		return nil, fmt.Errorf("unsupported agent endpoint protocol %d (this server serves %d..%d)",
-			req.GetEndpointProtocol(), wire.MinProtocol, wire.CurrentProtocol)
-	}
-	return &livekit.AgentHttp_AgentEndpointSettings{Protocol: negotiated}, nil
+	return agent.EndpointRegisterHandler(req, res, reg)
 }
 
 // HandleConnection serves a worker's control connection with no data-plane
@@ -324,7 +177,7 @@ func (h *AgentHandler) HandleConnection(ctx context.Context, conn agent.SignalCo
 // exchanges share it); nil for a WebSocket control connection, which serves no
 // endpoints.
 func (h *AgentHandler) handleConnection(ctx context.Context, conn agent.SignalConn, registration agent.WorkerRegistration, sess endpoint.Session) {
-	registration, ok := HandshakeAgentWorker(conn, h.serverInfo, registration, h.logger, h.endpointSettings)
+	registration, ok := HandshakeAgentWorker(conn, h.serverInfo, registration, h.logger, h.endpointRegisterHandler)
 	if !ok {
 		return
 	}
@@ -513,6 +366,7 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 		"jobID", job.Id,
 		"namespace", job.Namespace,
 		"agentName", job.AgentName,
+		"deployment", job.Deployment,
 		"jobType", job.Type.String(),
 	)
 	if job.Room != nil {

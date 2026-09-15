@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/pion/turn/v5"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/quic-go/webtransport-go"
 	"github.com/rs/cors"
 	"github.com/twitchtv/twirp"
 	"github.com/urfave/negroni/v3"
@@ -46,23 +48,22 @@ import (
 )
 
 type LivekitServer struct {
-	config       *config.Config
-	ioService    *IOInfoService
-	rtcService   *RTCService
-	whipService  *WHIPService
-	agentService *AgentService
-	httpServer   *http.Server
-	promServer   *http.Server
-	debugServer  *http.Server
-	router       routing.Router
-	roomManager  *RoomManager
-	signalServer *SignalServer
-	turnServer   *turn.Server
-	currentNode  routing.LocalNode
-	agentWTStop  func()
-	running      atomic.Bool
-	doneChan     chan struct{}
-	closedChan   chan struct{}
+	config             *config.Config
+	ioService          *IOInfoService
+	rtcService         *RTCService
+	whipService        *WHIPService
+	httpServer         *http.Server
+	promServer         *http.Server
+	debugServer        *http.Server
+	webtransportServer *webtransport.Server
+	router             routing.Router
+	roomManager        *RoomManager
+	signalServer       *SignalServer
+	turnServer         *turn.Server
+	currentNode        routing.LocalNode
+	running            atomic.Bool
+	doneChan           chan struct{}
+	closedChan         chan struct{}
 }
 
 func NewLivekitServer(conf *config.Config,
@@ -74,7 +75,9 @@ func NewLivekitServer(conf *config.Config,
 	ioService *IOInfoService,
 	rtcService *RTCService,
 	whipService *WHIPService,
-	agentService *AgentService,
+	agentWSService *AgentWSService,
+	agentWTService *AgentWTService,
+	agentEndpointService *AgentEndpointService,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
 	roomManager *RoomManager,
@@ -87,7 +90,6 @@ func NewLivekitServer(conf *config.Config,
 		ioService:    ioService,
 		rtcService:   rtcService,
 		whipService:  whipService,
-		agentService: agentService,
 		router:       router,
 		roomManager:  roomManager,
 		signalServer: signalServer,
@@ -128,12 +130,13 @@ func NewLivekitServer(conf *config.Config,
 	xtwirp.RegisterServer(mux, sipServer)
 	rtcService.SetupRoutes(mux)
 	whipService.SetupRoutes(mux)
-	mux.Handle("/agent", agentService)
+	mux.Handle("/agent", agentWSService)
 	mux.HandleFunc("/", s.defaultHandler)
 
+	// NewHTTPHandler branches on a nil handler, which a typed-nil would defeat
 	var agentFront http.Handler
 	if !conf.Agents.Endpoints.Disabled {
-		agentFront = agentService.EndpointFront()
+		agentFront = agentEndpointService
 	}
 
 	s.httpServer = &http.Server{
@@ -174,6 +177,19 @@ func NewLivekitServer(conf *config.Config,
 		s.debugServer = &http.Server{
 			Handler: http.Handler(debugMux),
 		}
+	}
+
+	if conf.WebTransport.Port > 0 {
+		var tlsConf *tls.Config
+		tlsConf, err = WebTransportTLS(conf.WebTransport.TLSCertFile, conf.WebTransport.TLSKeyFile, conf.Development)
+		if err != nil {
+			return
+		}
+		wtMux := http.NewServeMux()
+		wtMux.Handle("/agent", agentWTService)
+
+		s.webtransportServer = NewWebTransportServer(tlsConf)
+		s.webtransportServer.H3.Handler = NewWebTransportHandler(keyProvider, s.webtransportServer, wtMux)
 	}
 
 	if err = router.RemoveDeadNodes(); err != nil {
@@ -218,14 +234,6 @@ func (s *LivekitServer) Start() error {
 		return err
 	}
 
-	if s.agentService != nil {
-		stop, err := s.agentService.StartWebTransport()
-		if err != nil {
-			return err
-		}
-		s.agentWTStop = stop
-	}
-
 	addresses := s.config.BindAddresses
 	if addresses == nil {
 		addresses = []string{""}
@@ -259,6 +267,15 @@ func (s *LivekitServer) Start() error {
 		}
 	}
 
+	stopWebTransport := func() {}
+	if s.webtransportServer != nil {
+		_, stop, err := ListenWebTransport(s.webtransportServer, s.config.BindAddresses, s.config.WebTransport.Port)
+		if err != nil {
+			return err
+		}
+		stopWebTransport = stop
+	}
+
 	values := []any{
 		"portHttp", s.config.Port,
 		"nodeID", s.currentNode.NodeID(),
@@ -283,6 +300,9 @@ func (s *LivekitServer) Start() error {
 	}
 	if s.config.DebugHandler.Port != 0 {
 		values = append(values, "portDebugHandler", s.config.DebugHandler.Port)
+	}
+	if s.config.WebTransport.Port != 0 {
+		values = append(values, "portWebTransport", s.config.WebTransport.Port)
 	}
 	if s.config.Region != "" {
 		values = append(values, "region", s.config.Region)
@@ -334,6 +354,7 @@ func (s *LivekitServer) Start() error {
 	if s.debugServer != nil {
 		_ = s.debugServer.Shutdown(ctx)
 	}
+	stopWebTransport()
 
 	if s.turnServer != nil {
 		_ = s.turnServer.Close()
@@ -364,9 +385,6 @@ func (s *LivekitServer) Stop(force bool) {
 	}
 
 	s.router.Stop()
-	if s.agentWTStop != nil {
-		s.agentWTStop()
-	}
 	close(s.doneChan)
 
 	// wait for fully closed

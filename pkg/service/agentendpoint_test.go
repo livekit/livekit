@@ -41,6 +41,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/agent"
+	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/agent/endpoint/conformance"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -59,10 +60,10 @@ const (
 const testMaxAPIBodySize = 64 << 10
 
 type endpointStack struct {
-	t     *testing.T
-	ts    *httptest.Server
-	svc   *service.AgentService
-	wtURL string // https://host:port/agent (WebTransport control+data)
+	t       *testing.T
+	ts      *httptest.Server
+	handler *service.AgentHandler
+	wtURL   string // https://host:port/agent (WebTransport control+data)
 }
 
 // selfSignedTLS mints an in-memory cert for 127.0.0.1 with the h3 ALPN, for the
@@ -97,7 +98,8 @@ func newEndpointStack(t *testing.T, endpointsCfg agent.EndpointsConfig) *endpoin
 	}
 	conf.Limit.MaxAPIRequestBodySize = testMaxAPIBodySize
 
-	svc, err := service.NewAgentService(conf, localNode, psrpc.NewLocalMessageBus(), keyProvider)
+	registry := endpoint.NewRegistry()
+	h, err := service.NewAgentHandler(conf, localNode, psrpc.NewLocalMessageBus(), keyProvider, registry)
 	require.NoError(t, err)
 
 	// the production handler, so these tests run on the node's real middleware chain
@@ -110,21 +112,23 @@ func newEndpointStack(t *testing.T, endpointsCfg agent.EndpointsConfig) *endpoin
 
 	var agentFront http.Handler
 	if !endpointsCfg.Disabled {
-		agentFront = svc.EndpointFront()
+		agentFront = service.NewAgentEndpointService(h, registry)
 	}
 	ts := httptest.NewServer(service.NewHTTPHandler(conf, keyProvider, apiMux, agentFront))
 	t.Cleanup(ts.Close)
-	t.Cleanup(func() { svc.DrainConnections(time.Millisecond, true) })
+	t.Cleanup(func() { h.DrainConnections(time.Millisecond, true) })
 
 	// workers connect over WebTransport (control + data on one session)
-	udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+	wtMux := http.NewServeMux()
+	wtMux.Handle("/agent", service.NewAgentWTService(h))
+	wt := service.NewWebTransportServer(selfSignedTLS(t))
+	wt.H3.Handler = service.NewWebTransportHandler(keyProvider, wt, wtMux)
+	bound, stopWT, err := service.ListenWebTransport(wt, []string{"127.0.0.1"}, 0)
 	require.NoError(t, err)
-	wt := service.NewAgentWebTransportServer(svc, keyProvider, selfSignedTLS(t))
-	go func() { _ = wt.Serve(udp) }()
-	t.Cleanup(func() { _ = wt.Close(); _ = udp.Close() })
-	wtURL := "https://" + udp.LocalAddr().String() + "/agent"
+	t.Cleanup(stopWT)
+	wtURL := "https://" + bound[0].String() + "/agent"
 
-	return &endpointStack{t: t, ts: ts, svc: svc, wtURL: wtURL}
+	return &endpointStack{t: t, ts: ts, handler: h, wtURL: wtURL}
 }
 
 func (s *endpointStack) startWorker(target string, deployment string, endpoints []*livekit.AgentHttp_AgentEndpoint) *conformance.Worker {

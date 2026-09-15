@@ -35,29 +35,46 @@ func TestEndpointSettingsNegotiation(t *testing.T) {
 		}
 	}
 	h := &AgentHandler{}
+	negotiate := func(h *AgentHandler, r *livekit.RegisterWorkerRequest) (*livekit.AgentHttp_AgentEndpointSettings, error) {
+		res := &livekit.RegisterWorkerResponse{}
+		reg := &agent.WorkerRegistration{}
+		if err := h.endpointRegisterHandler(r, res, reg); err != nil {
+			return nil, err
+		}
+		require.Equal(t, res.GetEndpointSettings(), reg.EndpointSettings,
+			"the registration must carry what the worker was told")
+		return res.GetEndpointSettings(), nil
+	}
 
 	// a worker predating the data plane declares endpoints with protocol 0: it
 	// cannot frame at all, and the error must name that rather than read as a
 	// version out of range
-	_, err := h.endpointSettings(req(0))
+	_, err := negotiate(h, req(0))
 	require.ErrorContains(t, err, "no endpoint protocol")
 
-	settings, err := h.endpointSettings(req(wire.CurrentProtocol))
+	settings, err := negotiate(h, req(wire.CurrentProtocol))
 	require.NoError(t, err)
 	require.Equal(t, wire.CurrentProtocol, settings.GetProtocol())
 
 	// a worker speaking a newer version is negotiated down to what this server
 	// serves; the worker frames to the version returned here
-	settings, err = h.endpointSettings(req(wire.CurrentProtocol + 42))
+	settings, err = negotiate(h, req(wire.CurrentProtocol+42))
 	require.NoError(t, err)
 	require.Equal(t, wire.CurrentProtocol, settings.GetProtocol())
 
 	noInstance := req(wire.CurrentProtocol)
 	noInstance.InstanceId = ""
-	_, err = h.endpointSettings(noInstance)
+	_, err = negotiate(h, noInstance)
 	require.ErrorContains(t, err, "instance_id")
 
 	disabled := &AgentHandler{endpointsConfig: agent.EndpointsConfig{Disabled: true}}
-	_, err = disabled.endpointSettings(req(wire.CurrentProtocol))
+	_, err = negotiate(disabled, req(wire.CurrentProtocol))
 	require.ErrorContains(t, err, "disabled")
+
+	// a registration declaring no endpoints is left alone, even with endpoints off
+	bare := req(wire.CurrentProtocol)
+	bare.Endpoints = nil
+	settings, err = negotiate(disabled, bare)
+	require.NoError(t, err)
+	require.Nil(t, settings)
 }

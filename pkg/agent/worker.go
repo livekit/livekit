@@ -179,29 +179,52 @@ func MakeWorkerRegistration() WorkerRegistration {
 
 var _ WorkerSignalHandler = (*WorkerRegisterer)(nil)
 
-// EndpointSettingsFunc validates a registration's endpoint manifest and returns the
-// negotiated data-plane settings (including the attach token). Returning an error
-// fails the registration. It runs only when the registration declares endpoints AND
-// a data-plane protocol version; a nil func rejects such registrations.
-type EndpointSettingsFunc func(req *livekit.RegisterWorkerRequest) (*livekit.AgentHttp_AgentEndpointSettings, error)
+// WorkerRegisterHandler takes a turn during a worker's registration: it reads the
+// request, validates the part it owns, and fills in its part of the response and
+// the registration. Returning an error fails the registration.
+type WorkerRegisterHandler func(req *livekit.RegisterWorkerRequest, res *livekit.RegisterWorkerResponse, reg *WorkerRegistration) error
+
+// EndpointRegisterHandler owns a worker's endpoint declaration: it validates the
+// declaration and negotiates the data-plane settings. A registration declaring no
+// endpoints passes through untouched.
+func EndpointRegisterHandler(req *livekit.RegisterWorkerRequest, res *livekit.RegisterWorkerResponse, reg *WorkerRegistration) error {
+	if len(req.GetEndpoints()) == 0 {
+		return nil
+	}
+	// endpoints are addressed at /agents/{agent_name}/{deployment}/..., with the
+	// name percent-encoded into that segment
+	if req.GetAgentName() == "" {
+		return errors.New("agent HTTP endpoints require an agent name")
+	}
+	if endpoint.IsReservedAgentName(req.GetAgentName()) {
+		return fmt.Errorf("agent name %q is reserved and cannot serve HTTP endpoints", req.GetAgentName())
+	}
+	settings, err := endpoint.NegotiateSettings(req)
+	if err != nil {
+		return err
+	}
+	res.EndpointSettings = settings
+	reg.EndpointSettings = settings
+	return nil
+}
 
 type WorkerRegisterer struct {
 	WorkerPingHandler
-	serverInfo       *livekit.ServerInfo
-	deadline         time.Time
-	endpointSettings EndpointSettingsFunc
+	serverInfo *livekit.ServerInfo
+	deadline   time.Time
+	handlers   []WorkerRegisterHandler
 
 	registration WorkerRegistration
 	registered   bool
 }
 
-func NewWorkerRegisterer(conn SignalConn, serverInfo *livekit.ServerInfo, base WorkerRegistration, endpointSettings EndpointSettingsFunc) *WorkerRegisterer {
+func NewWorkerRegisterer(conn SignalConn, serverInfo *livekit.ServerInfo, base WorkerRegistration, handlers ...WorkerRegisterHandler) *WorkerRegisterer {
 	return &WorkerRegisterer{
 		WorkerPingHandler: WorkerPingHandler{conn: conn},
 		serverInfo:        serverInfo,
 		registration:      base,
 		deadline:          time.Now().Add(RegisterTimeout),
-		endpointSettings:  endpointSettings,
+		handlers:          handlers,
 	}
 }
 
@@ -245,34 +268,19 @@ func (h *WorkerRegisterer) HandleRegister(req *livekit.RegisterWorkerRequest) er
 	h.registration.Endpoints = req.GetEndpoints()
 	h.registration.InstanceID = req.GetInstanceId()
 
-	if len(req.GetEndpoints()) > 0 {
-		if h.endpointSettings == nil {
-			return errors.New("agent HTTP endpoints are not supported by this server")
-		}
-		// endpoints are addressed at /agents/{agent_name}/{deployment}/..., with
-		// the name percent-encoded into that segment
-		if req.GetAgentName() == "" {
-			return errors.New("agent HTTP endpoints require an agent name")
-		}
-		if endpoint.IsReservedAgentName(req.GetAgentName()) {
-			return fmt.Errorf("agent name %q is reserved and cannot serve HTTP endpoints", req.GetAgentName())
-		}
-		settings, err := h.endpointSettings(req)
-		if err != nil {
+	res := &livekit.RegisterWorkerResponse{
+		WorkerId:   h.registration.ID,
+		ServerInfo: h.serverInfo,
+	}
+	for _, handle := range h.handlers {
+		if err := handle(req, res, &h.registration); err != nil {
 			return err
 		}
-		h.registration.EndpointSettings = settings
 	}
 	h.registered = true
 
 	_, err := h.conn.WriteServerMessage(&livekit.ServerMessage{
-		Message: &livekit.ServerMessage_Register{
-			Register: &livekit.RegisterWorkerResponse{
-				WorkerId:         h.registration.ID,
-				ServerInfo:       h.serverInfo,
-				EndpointSettings: h.registration.EndpointSettings,
-			},
-		},
+		Message: &livekit.ServerMessage_Register{Register: res},
 	})
 	return err
 }

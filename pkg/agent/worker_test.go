@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/agent"
+	"github.com/livekit/livekit-server/pkg/agent/endpoint/wire"
 	"github.com/livekit/protocol/livekit"
 )
 
@@ -47,14 +48,14 @@ func TestHandleRegisterEndpointAgentNames(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			h := agent.NewWorkerRegisterer(nopSignalConn{}, &livekit.ServerInfo{}, agent.WorkerRegistration{},
-				func(*livekit.RegisterWorkerRequest) (*livekit.AgentHttp_AgentEndpointSettings, error) {
-					return &livekit.AgentHttp_AgentEndpointSettings{}, nil
-				})
+				agent.EndpointRegisterHandler)
 
 			err := h.HandleRegister(&livekit.RegisterWorkerRequest{
-				Type:      livekit.JobType_JT_ROOM,
-				AgentName: c.agentName,
-				Endpoints: []*livekit.AgentHttp_AgentEndpoint{{Path: "/hook", Methods: []string{"GET"}}},
+				Type:             livekit.JobType_JT_ROOM,
+				AgentName:        c.agentName,
+				Endpoints:        []*livekit.AgentHttp_AgentEndpoint{{Path: "/hook", Methods: []string{"GET"}}},
+				InstanceId:       "AEI_test",
+				EndpointProtocol: wire.CurrentProtocol,
 			})
 			if c.ok {
 				require.NoError(t, err)
@@ -68,7 +69,7 @@ func TestHandleRegisterEndpointAgentNames(t *testing.T) {
 // the reserved names constrain only workers that declare endpoints.
 func TestHandleRegisterWithoutEndpointsIgnoresReservedNames(t *testing.T) {
 	for _, name := range []string{"", "_", ".", ".."} {
-		h := agent.NewWorkerRegisterer(nopSignalConn{}, &livekit.ServerInfo{}, agent.WorkerRegistration{}, nil)
+		h := agent.NewWorkerRegisterer(nopSignalConn{}, &livekit.ServerInfo{}, agent.WorkerRegistration{}, agent.EndpointRegisterHandler)
 		require.NoError(t, h.HandleRegister(&livekit.RegisterWorkerRequest{
 			Type:      livekit.JobType_JT_ROOM,
 			AgentName: name,
