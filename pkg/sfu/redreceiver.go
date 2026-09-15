@@ -51,6 +51,10 @@ type RedReceiver struct {
 	closed            atomic.Bool
 	pktBuff           [maxRedCount]*rtp.Packet
 	redPayloadBuf     [mtuSize]byte
+	// forwarded packet, reused like redPayloadBuf since ForwardRTP runs on one goroutine
+	// and down tracks do not keep the packet past WriteRTP
+	redExtPkt buffer.ExtPacket
+	redRtpPkt rtp.Packet
 }
 
 func NewRedReceiver(receiver TrackReceiver, dsp utils.DownTrackSpreaderParams) REDTransformer {
@@ -82,15 +86,17 @@ func (r *RedReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int32) int3
 		return 0
 	}
 
-	pPkt := *pkt
-	redRtpPacket := *pkt.Packet
+	redRtpPacket := &r.redRtpPkt
+	*redRtpPacket = *pkt.Packet
 	redRtpPacket.PayloadType = opusRedPT
 	redRtpPacket.Payload = r.redPayloadBuf[:redLen]
-	pPkt.Packet = &redRtpPacket
+	pPkt := &r.redExtPkt
+	*pPkt = *pkt
+	pPkt.Packet = redRtpPacket
 
 	// not modify the ExtPacket.RawPacket here for performance since it is not used by the DownTrack,
 	// otherwise it should be set to the correct value (marshal the primary rtp packet)
-	return utils.BroadcastRTP(r.downTrackSpreader, &pPkt, spatialLayer)
+	return utils.BroadcastRTP(r.downTrackSpreader, pPkt, spatialLayer)
 }
 
 func (r *RedReceiver) ForwardRTCPSenderReport(
