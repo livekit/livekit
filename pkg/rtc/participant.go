@@ -240,6 +240,7 @@ type ParticipantParams struct {
 	EnableStartAtDesiredQuality       bool
 	MigrationWaitDuration             time.Duration
 	ExcludeIPv6LocalCandidates        bool
+	ShrinkInactiveMediaSections       config.ShrinkInactiveMediaSectionsConfig
 	EnableWarp                        bool
 }
 
@@ -2129,6 +2130,7 @@ func (p *ParticipantImpl) setupTransportManager() error {
 		FireOnTrackBySdp:                  p.params.FireOnTrackBySdp,
 		EnableDataTracks:                  p.params.EnableDataTracks,
 		ExcludeIPv6LocalCandidates:        p.params.ExcludeIPv6LocalCandidates,
+		ShrinkInactiveMediaSections:       p.params.ShrinkInactiveMediaSections,
 		EnableWarp:                        p.params.EnableWarp,
 	}
 	if p.params.SyncStreams && p.params.PlayoutDelay.GetEnabled() && p.params.ClientInfo.isFirefox() {

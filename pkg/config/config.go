@@ -186,6 +186,18 @@ type RTCConfig struct {
 
 	// enable rtp stream restart detection for published tracks
 	EnableRTPStreamRestartDetection bool `yaml:"enable_rtp_stream_restart_detection,omitempty"`
+
+	// strip codec/extension/ssrc attributes from inactive media sections in client offers
+	// before they reach pion, bounds memory retained for clients that add a media section per publish
+	ShrinkInactiveMediaSections ShrinkInactiveMediaSectionsConfig `yaml:"shrink_inactive_media_sections,omitempty"`
+}
+
+type ShrinkInactiveMediaSectionsConfig struct {
+	Enabled bool `yaml:"enabled,omitempty"`
+	// offers smaller than this are left untouched
+	MinSDPSize int `yaml:"min_sdp_size,omitempty"`
+	// video sections are always eligible, audio only when set
+	IncludeAudio bool `yaml:"include_audio,omitempty"`
 }
 
 type TURNServer struct {
@@ -539,6 +551,7 @@ var DefaultConfig = Config{
 		PacketBufferSize:                  500,
 		PacketBufferSizeVideo:             500,
 		PacketBufferSizeAudio:             200,
+		ShrinkInactiveMediaSections:       ShrinkInactiveMediaSectionsConfig{MinSDPSize: 20_000},
 		PLIThrottle:                       sfu.DefaultPLIThrottleConfig,
 		DatachannelDataTrackTargetLatency: 100 * time.Millisecond,
 		CongestionControl: CongestionControlConfig{

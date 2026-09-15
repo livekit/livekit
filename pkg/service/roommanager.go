@@ -542,6 +542,7 @@ func (r *RoomManager) StartSession(
 		EnableDataTracks:                  r.config.EnableDataTracks,
 		EnableParticipantDataBlob:         r.config.EnableParticipantDataBlob,
 		EnableRTPStreamRestartDetection:   r.config.RTC.EnableRTPStreamRestartDetection,
+		ShrinkInactiveMediaSections:       r.config.RTC.ShrinkInactiveMediaSections,
 		EnableWarp:                        enableWarp,
 	})
 	if err != nil {

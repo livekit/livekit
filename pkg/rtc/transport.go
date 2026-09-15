@@ -320,6 +320,7 @@ type TransportParams struct {
 	AllowPlayoutDelay                 bool
 	UseOneShotSignallingMode          bool
 	ExcludeIPv6LocalCandidates        bool
+	ShrinkInactiveMediaSections       config.ShrinkInactiveMediaSectionsConfig
 	FireOnTrackBySdp                  bool
 	DataChannelMaxBufferedAmount      uint64
 	DatachannelSlowThreshold          int
@@ -2534,6 +2535,23 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP, 
 		m.Attributes = filterAttributes(m.Attributes)
 	}
 
+	shrinkConfig := t.params.ShrinkInactiveMediaSections
+	if !isLocal && sd.Type == webrtc.SDPTypeOffer && shrinkConfig.Enabled && len(sd.SDP) >= shrinkConfig.MinSDPSize {
+		knownMids := make(map[string]bool)
+		for _, tr := range t.pc.GetTransceivers() {
+			if mid := tr.Mid(); mid != "" {
+				knownMids[mid] = true
+			}
+		}
+		if shrunk := shrinkInactiveMediaSections(parsed, knownMids, shrinkConfig.IncludeAudio); shrunk > 0 {
+			t.params.Logger.Debugw(
+				"shrunk inactive media sections in remote offer",
+				"count", shrunk,
+				"sdpSize", len(sd.SDP),
+			)
+		}
+	}
+
 	bytes, err := parsed.Marshal()
 	if err != nil {
 		t.params.Logger.Warnw("could not marshal SDP to filter candidates", err)
@@ -2541,6 +2559,75 @@ func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP, 
 	}
 	sd.SDP = string(bytes)
 	return sd
+}
+
+// attributes pion still needs from an inactive media section it already has a transceiver for
+var inactiveMediaSectionAttributes = map[string]bool{
+	sdp.AttrKeyMID:      true,
+	sdp.AttrKeyInactive: true,
+	sdp.AttrKeyRTCPMux:  true,
+	"ice-ufrag":         true,
+	"ice-pwd":           true,
+	"ice-options":       true,
+	"fingerprint":       true,
+	"setup":             true,
+	"bundle-only":       true,
+}
+
+// shrinkInactiveMediaSections drops codec, header extension, msid and ssrc
+// attributes from inactive video (and optionally audio) sections whose mid
+// already maps to a transceiver, keeping one payload type with its rtpmap so
+// pion's codec lookup still succeeds. pion keeps substrings of every remote offer it parses for as
+// long as the transceivers created from it live, so a client that adds a media
+// section per publish and leaves the old ones inactive makes the retained text
+// grow with the square of its publish count. Shrinking the sections pion no
+// longer needs keeps the retained text small. Returns the number of sections
+// shrunk.
+func shrinkInactiveMediaSections(parsed *sdp.SessionDescription, knownMids map[string]bool, includeAudio bool) int {
+	shrunk := 0
+	for _, m := range parsed.MediaDescriptions {
+		if m.MediaName.Media != "video" && !(includeAudio && m.MediaName.Media == "audio") {
+			continue
+		}
+		if _, inactive := m.Attribute(sdp.AttrKeyInactive); !inactive {
+			continue
+		}
+		if mid, ok := m.Attribute(sdp.AttrKeyMID); !ok || !knownMids[mid] {
+			continue
+		}
+
+		// first payload type that has an rtpmap
+		var rtpmap *sdp.Attribute
+		keepFormat := ""
+		for _, f := range m.MediaName.Formats {
+			for i := range m.Attributes {
+				a := &m.Attributes[i]
+				if a.Key == "rtpmap" && strings.HasPrefix(a.Value, f+" ") {
+					rtpmap = a
+					keepFormat = f
+					break
+				}
+			}
+			if rtpmap != nil {
+				break
+			}
+		}
+		if rtpmap == nil {
+			continue
+		}
+
+		kept := make([]sdp.Attribute, 0, len(inactiveMediaSectionAttributes)+1)
+		for _, a := range m.Attributes {
+			if inactiveMediaSectionAttributes[a.Key] {
+				kept = append(kept, a)
+			}
+		}
+		kept = append(kept, *rtpmap)
+		m.Attributes = kept
+		m.MediaName.Formats = []string{keepFormat}
+		shrunk++
+	}
+	return shrunk
 }
 
 func (t *PCTransport) clearSignalStateCheckTimer() {

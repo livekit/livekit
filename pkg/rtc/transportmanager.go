@@ -100,6 +100,7 @@ type TransportManagerParams struct {
 	FireOnTrackBySdp                  bool
 	EnableDataTracks                  bool
 	ExcludeIPv6LocalCandidates        bool
+	ShrinkInactiveMediaSections       config.ShrinkInactiveMediaSectionsConfig
 	EnableWarp                        bool
 }
 
@@ -173,6 +174,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		FireOnTrackBySdp:                  params.FireOnTrackBySdp,
 		EnableDataTracks:                  params.EnableDataTracks,
 		ExcludeIPv6LocalCandidates:        params.ExcludeIPv6LocalCandidates,
+		ShrinkInactiveMediaSections:       params.ShrinkInactiveMediaSections,
 		EnableWarp:                        params.EnableWarp,
 	})
 	if err != nil {
