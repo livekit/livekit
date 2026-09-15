@@ -156,10 +156,15 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 		// ended is a successful delete, not a 404. Without this, a retry of a
 		// delete that actually succeeded (the room store no longer has a live
 		// room) fails with ErrRoomNotFound. Only positive proof that the room
-		// ended counts; absence alone does not, since it can also mean a
-		// transient store failure.
+		// ended returns success; a definite "no such room" returns
+		// ErrRoomNotFound, and a failed check returns the store error so the
+		// caller can retry a transient failure rather than see a false 404.
 		if c, ok := s.roomStore.(RoomDeletionConfirmer); ok {
-			if ended, cerr := c.RoomEnded(ctx, livekit.RoomName(req.Room)); cerr == nil && ended {
+			ended, cerr := c.RoomEnded(ctx, livekit.RoomName(req.Room))
+			if cerr != nil {
+				return nil, cerr
+			}
+			if ended {
 				return &livekit.DeleteRoomResponse{}, nil
 			}
 		}
