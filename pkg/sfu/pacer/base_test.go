@@ -24,6 +24,7 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 )
 
 // bwe.NullBWE is meant to be embedded and lacks Type
@@ -80,5 +81,7 @@ func TestSendPacketHeaderExtensionsNoAlloc(t *testing.T) {
 	require.Equal(t, 1002, w.writes)
 	require.Equal(t, 3*w.writes, w.absSendTimeLen)
 	require.Equal(t, 2*w.writes, w.transportWideLen)
-	require.Equal(t, 0.0, allocs, "allocations per SendPacket")
+	if !utils.RaceEnabled {
+		require.Equal(t, 0.0, allocs, "allocations per SendPacket")
+	}
 }
