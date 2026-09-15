@@ -25,6 +25,35 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
+// flexFECPayloadType is reserved alongside the codec and RTX payload types.
+const flexFECPayloadType webrtc.PayloadType = 115
+
+// flexFECRepairWindow is the flexfec-03 "repair-window" fmtp value in
+// microseconds (10 s), matching libwebrtc and pion's fixed advertised value.
+// A different value prevents those publishers from negotiating FlexFEC.
+const flexFECRepairWindow = 10_000_000
+
+// flexFECCodecParameters returns the flexfec-03 codec registered/offered when
+// FlexFEC is enabled for a direction. Mirrors pion's ConfigureFlexFEC03 codec
+// minus its generator interceptor (the SFU runs its own encode/decode paths).
+func flexFECCodecParameters() webrtc.RTPCodecParameters {
+	return webrtc.RTPCodecParameters{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:    webrtc.MimeTypeFlexFEC03,
+			ClockRate:   90000,
+			SDPFmtpLine: fmt.Sprintf("repair-window=%d", flexFECRepairWindow),
+			RTCPFeedback: []webrtc.RTCPFeedback{
+				{Type: webrtc.TypeRTCPFBTransportCC},
+			},
+		},
+		PayloadType: flexFECPayloadType,
+	}
+}
+
+func isFlexFEC03MimeType(mimeType string) bool {
+	return strings.EqualFold(mimeType, webrtc.MimeTypeFlexFEC03)
+}
+
 type codecToRegister struct {
 	webrtc.RTPCodecParameters
 	strictFmtp bool
@@ -137,6 +166,15 @@ func createMediaEngine(codecs []*livekit.Codec, config DirectionConfig, filterOu
 		return nil, err
 	}
 
+	if config.FlexFEC.Enabled {
+		// registering a flexfec codec makes pion allocate FEC SSRCs for video
+		// senders and emit a=ssrc-group:FEC-FR in offers, and lets answers
+		// accept flexfec offered by publishers
+		if err := me.RegisterCodec(flexFECCodecParameters(), webrtc.RTPCodecTypeVideo); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := registerHeaderExtensions(me, config.RTPHeaderExtension); err != nil {
 		return nil, err
 	}
@@ -204,10 +242,20 @@ func filterCodecs(
 	enabledCodecs []*livekit.Codec,
 	rtcpFeedbackConfig RTCPFeedbackConfig,
 	filterOutH264HighProfile bool,
+	keepFlexFEC bool,
 ) []webrtc.RTPCodecParameters {
 	filteredCodecs := make([]webrtc.RTPCodecParameters, 0, len(codecs))
 	for _, c := range codecs {
 		if filterOutH264HighProfile && isH264HighProfile(c.RTPCodecCapability.SDPFmtpLine) {
+			continue
+		}
+
+		// flexfec-03 is not part of the enabled codec lists, retain it when
+		// the transport direction has FlexFEC enabled
+		if isFlexFEC03MimeType(c.RTPCodecCapability.MimeType) {
+			if keepFlexFEC {
+				filteredCodecs = append(filteredCodecs, c)
+			}
 			continue
 		}
 
