@@ -27,8 +27,10 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
+	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"github.com/quic-go/webtransport-go"
 	"github.com/urfave/negroni/v3"
@@ -139,9 +141,26 @@ func ListenWebTransport(wt *webtransport.Server, addrs []string, port uint32) ([
 		addrs = []string{""}
 	}
 
-	conns := make([]*net.UDPConn, 0, len(addrs))
-	bound := make([]net.Addr, 0, len(addrs))
+	// webtransport.Server.Serve takes a reference on a WaitGroup that
+	// Server.Close waits on, so running the two concurrently is a race by the
+	// WaitGroup's own rules. Accepting here instead leaves that counter at zero:
+	// Server.ServeQUICConn never touches it.
+	quicConf := &quic.Config{}
+	if wt.H3.QUICConfig != nil {
+		quicConf = wt.H3.QUICConfig.Clone()
+	}
+	quicConf.EnableDatagrams = true
+	quicConf.EnableStreamResetPartialDelivery = true
+
+	var (
+		conns []*net.UDPConn
+		lns   []*quic.EarlyListener
+		bound []net.Addr
+	)
 	closeAll := func() {
+		for _, ln := range lns {
+			_ = ln.Close()
+		}
 		for _, c := range conns {
 			_ = c.Close()
 		}
@@ -159,19 +178,43 @@ func ListenWebTransport(wt *webtransport.Server, addrs []string, port uint32) ([
 		}
 		conns = append(conns, udp)
 		bound = append(bound, udp.LocalAddr())
+
+		ln, err := quic.ListenEarly(udp, wt.H3.TLSConfig, quicConf)
+		if err != nil {
+			closeAll()
+			return nil, nil, err
+		}
+		lns = append(lns, ln)
 	}
 
-	for _, udp := range conns {
-		go func() {
-			if err := wt.Serve(udp); err != nil {
-				logger.Infow("webtransport listener stopped", "error", err)
-			}
-		}()
+	ctx, cancel := context.WithCancel(context.Background())
+	var serving sync.WaitGroup
+	for _, ln := range lns {
+		serving.Go(func() { acceptWebTransport(ctx, wt, ln, &serving) })
 	}
 	logger.Infow("webtransport listener started", "addresses", bound)
 
 	return bound, func() {
+		// the sockets stay open until everything has drained, so every
+		// CONNECTION_CLOSE frame still reaches its peer
 		_ = wt.Close()
+		cancel()
+		serving.Wait()
 		closeAll()
 	}, nil
+}
+
+func acceptWebTransport(ctx context.Context, wt *webtransport.Server, ln *quic.EarlyListener, serving *sync.WaitGroup) {
+	for {
+		conn, err := ln.Accept(ctx)
+		if err != nil {
+			logger.Infow("webtransport listener stopped", "error", err)
+			return
+		}
+		serving.Go(func() {
+			if err := wt.ServeQUICConn(conn); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				logger.Infow("webtransport connection stopped", "error", err)
+			}
+		})
+	}
 }
