@@ -17,6 +17,7 @@ package wire
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -233,9 +234,8 @@ func TestCopyBodySplitReads(t *testing.T) {
 	src := bytes.Repeat([]byte("abcdefgh"), 1024)
 	var buf bytes.Buffer
 	bw := NewIdentityBody(&buf)
-	n, srcErr, dstErr := CopyBody(bw, oneByteReader{bytes.NewReader(src)}, make([]byte, 512))
-	require.NoError(t, srcErr)
-	require.NoError(t, dstErr)
+	n, err := CopyBody(bw, oneByteReader{bytes.NewReader(src)}, make([]byte, 512))
+	require.NoError(t, err)
 	require.EqualValues(t, len(src), n)
 	require.Equal(t, src, buf.Bytes())
 }
@@ -244,16 +244,17 @@ type failingWriter struct{}
 
 func (failingWriter) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
 
-// A stream failure and a source failure are different outcomes: one can still be
-// reported to the peer, the other cannot.
+// Only a source failure leaves the stream able to report the outcome.
 func TestCopyBodySeparatesSourceAndSinkFailures(t *testing.T) {
-	_, srcErr, dstErr := CopyBody(NewIdentityBody(failingWriter{}), strings.NewReader("xxxx"), make([]byte, 2))
-	require.NoError(t, srcErr)
-	require.Error(t, dstErr)
+	// a destination failure is returned unwrapped
+	_, err := CopyBody(NewIdentityBody(failingWriter{}), strings.NewReader("xxxx"), make([]byte, 2))
+	require.Error(t, err)
+	var srcErr *SourceError
+	require.False(t, errors.As(err, &srcErr))
 
-	_, srcErr, dstErr = CopyBody(NewIdentityBody(io.Discard), iotestErrReader{}, make([]byte, 2))
-	require.Error(t, srcErr)
-	require.NoError(t, dstErr)
+	// a source failure is wrapped, so the caller can still close the body
+	_, err = CopyBody(NewIdentityBody(io.Discard), iotestErrReader{}, make([]byte, 2))
+	require.ErrorAs(t, err, &srcErr)
 }
 
 type iotestErrReader struct{}

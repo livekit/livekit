@@ -89,7 +89,7 @@ func (s *wtStream) Reset(code livekit.AgentHttp_HttpStreamResetCode, _ string) {
 	s.mu.Lock()
 	s.sendClosed = true
 	s.mu.Unlock()
-	c := streamCode(code)
+	c := wire.StreamCode(code)
 	s.qs.CancelWrite(c)
 	s.qs.CancelRead(c)
 	s.release()
@@ -105,7 +105,7 @@ func (s *wtStream) Close() error {
 	cancelWrite := !s.sendClosed
 	s.sendClosed = true
 	s.mu.Unlock()
-	abort := streamCode(livekit.AgentHttp_HSR_ABORT)
+	abort := wire.StreamCode(livekit.AgentHttp_HSR_ABORT)
 	if cancelWrite {
 		s.qs.CancelWrite(abort)
 	}
@@ -124,13 +124,6 @@ func (s *wtStream) release() {
 	s.done = true
 	s.mu.Unlock()
 	s.sess.open.Add(-1)
-}
-
-// streamCode converts a protocol reset code to the WebTransport code that
-// carries it. HSR_ABORT is zero, so a teardown with nothing to say sends the
-// plain cancel code.
-func streamCode(c livekit.AgentHttp_HttpStreamResetCode) webtransport.StreamErrorCode {
-	return webtransport.StreamErrorCode(c)
 }
 
 // translateStreamError turns a peer reset into the protocol's own error. Only a

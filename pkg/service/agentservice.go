@@ -115,11 +115,8 @@ func DispatchAgentWorkerSignal(c agent.SignalConn, h agent.WorkerSignalHandler, 
 	return true
 }
 
-func HandshakeAgentWorker(c agent.SignalConn, serverInfo *livekit.ServerInfo, registration agent.WorkerRegistration, l logger.Logger, opts ...func(*agent.WorkerRegisterer)) (r agent.WorkerRegistration, ok bool) {
-	wr := agent.NewWorkerRegisterer(c, serverInfo, registration)
-	for _, opt := range opts {
-		opt(wr)
-	}
+func HandshakeAgentWorker(c agent.SignalConn, serverInfo *livekit.ServerInfo, registration agent.WorkerRegistration, l logger.Logger, endpointSettings agent.EndpointSettingsFunc) (r agent.WorkerRegistration, ok bool) {
+	wr := agent.NewWorkerRegisterer(c, serverInfo, registration, endpointSettings)
 	if err := c.SetReadDeadline(wr.Deadline()); err != nil {
 		return
 	}
@@ -138,6 +135,9 @@ type AgentService struct {
 	upgrader AgentSocketUpgrader
 
 	signalMessageSizeLimit int64
+	// developmentMode allows the WebTransport listener to run without a
+	// configured certificate.
+	developmentMode bool
 
 	*AgentHandler
 }
@@ -187,6 +187,7 @@ func NewAgentService(
 ) (*AgentService, error) {
 	s := &AgentService{
 		signalMessageSizeLimit: conf.Limit.AgentSignalMessageSizeLimit,
+		developmentMode:        conf.Development,
 	}
 
 	serverInfo := &livekit.ServerInfo{
@@ -227,20 +228,22 @@ func NewAgentService(
 // token is present; a non-public route additionally requires an agent-endpoint
 // grant scoped to this agent and deployment.
 func (s *AgentService) EndpointFront() http.Handler {
-	front := endpoint.NewFront(s.endpointRegistry, func(r *http.Request, agentName, deployment string) endpoint.Access {
-		if claims := GetGrants(r.Context()); claims != nil {
-			return endpoint.Access{
-				APIKey:       GetAPIKey(r.Context()),
-				Credentialed: true,
-				Granted:      claims.AgentEndpoint.Allows(agentName, deployment),
+	return endpoint.NewFront(endpoint.FrontParams{
+		Registry: s.endpointRegistry,
+		ResolveAccess: func(r *http.Request, agentName, deployment string) endpoint.Access {
+			if claims := GetGrants(r.Context()); claims != nil {
+				level := endpoint.AccessCredentialed
+				if claims.AgentEndpoint.Allows(agentName, deployment) {
+					level = endpoint.AccessGranted
+				}
+				return endpoint.Access{APIKey: GetAPIKey(r.Context()), Level: level}
 			}
-		}
-		// unauthenticated: with a single configured key the api key is
-		// unambiguous even when this node holds no registrations (multi-node)
-		return endpoint.Access{APIKey: s.singleAPIKey}
-	}, s.logger)
-	front.WithSingleKeyFallback()
-	return front
+			// unauthenticated: one configured key makes the api key unambiguous
+			return endpoint.Access{APIKey: s.singleAPIKey}
+		},
+		Logger:            s.logger,
+		SingleKeyFallback: true,
+	})
 }
 
 func (s *AgentService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -321,9 +324,7 @@ func (h *AgentHandler) HandleConnection(ctx context.Context, conn agent.SignalCo
 // exchanges share it); nil for a WebSocket control connection, which serves no
 // endpoints.
 func (h *AgentHandler) handleConnection(ctx context.Context, conn agent.SignalConn, registration agent.WorkerRegistration, sess endpoint.Session) {
-	registration, ok := HandshakeAgentWorker(conn, h.serverInfo, registration, h.logger, func(wr *agent.WorkerRegisterer) {
-		wr.WithEndpointSettings(h.endpointSettings)
-	})
+	registration, ok := HandshakeAgentWorker(conn, h.serverInfo, registration, h.logger, h.endpointSettings)
 	if !ok {
 		return
 	}
@@ -363,19 +364,16 @@ func (h *AgentHandler) registerEndpoints(w *agent.Worker, sess endpoint.Session)
 		w.Logger().Errorw("endpoint manifest failed to re-parse", err)
 		return nil
 	}
-	reg := &endpoint.Registration{
+	reg := endpoint.NewRegistration(endpoint.RegistrationParams{
 		WorkerID:   w.ID,
 		APIKey:     w.APIKey(),
 		AgentName:  w.AgentName,
 		Deployment: w.Deployment,
 		Manifest:   manifest,
+		Session:    sess,
 		Draining:   w.Draining,
-	}
-	reg.SetSession(sess)
-	if err := h.endpointRegistry.Register(reg); err != nil {
-		w.Logger().Errorw("failed to register endpoints", err)
-		return nil
-	}
+	})
+	h.endpointRegistry.Register(reg)
 	w.Logger().Infow("endpoints registered",
 		"deployment", w.Deployment, "routes", len(w.Endpoints))
 	return reg

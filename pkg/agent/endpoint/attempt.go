@@ -180,13 +180,13 @@ func (a *attempt) writeRequest(w io.Writer) error {
 	bufp := a.pools.getBuf()
 	defer a.pools.putBuf(bufp)
 
-	n, srcErr, dstErr := wire.CopyBody(bw, a.body, *bufp)
-	if dstErr != nil {
-		return dstErr
-	}
+	n, err := wire.CopyBody(bw, a.body, *bufp)
+	var srcErr *wire.SourceError
 	switch {
-	case srcErr != nil:
-		return bw.Close(wire.CompletionPeerGone, srcErr.Error())
+	case errors.As(err, &srcErr):
+		return bw.Close(wire.CompletionPeerGone, srcErr.Err.Error())
+	case err != nil:
+		return err
 	case cl > 0 && n < cl:
 		return bw.Close(wire.CompletionTruncated, fmt.Sprintf("declared %d bytes, read %d", cl, n))
 	}

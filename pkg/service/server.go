@@ -219,7 +219,7 @@ func (s *LivekitServer) Start() error {
 	}
 
 	if s.agentService != nil {
-		stop, err := s.agentService.StartWebTransport(s.config.Development)
+		stop, err := s.agentService.StartWebTransport()
 		if err != nil {
 			return err
 		}

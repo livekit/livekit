@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -198,7 +198,7 @@ func BuildRequestHead(method, target, host string, h http.Header, contentLength 
 		}
 		keys = append(keys, k)
 	}
-	sort.Strings(keys) // deterministic across attempts and across nodes
+	slices.Sort(keys) // deterministic across attempts and across nodes
 	for _, k := range keys {
 		if !httpguts.ValidHeaderFieldName(k) {
 			return nil, fmt.Errorf("endpoint: invalid header name %q", k)
@@ -309,23 +309,34 @@ func sanitizeReason(s string) string {
 	return s
 }
 
+// SourceError reports that the body's source failed mid-copy. The stream is
+// still intact, so the caller can close the body with a completion.
+type SourceError struct{ Err error }
+
+func (e *SourceError) Error() string {
+	return fmt.Sprintf("endpoint: body source failed: %s", e.Err)
+}
+
+func (e *SourceError) Unwrap() error { return e.Err }
+
 // CopyBody pumps src into dst one write per read, so a streaming body stays
-// incremental. srcErr and dstErr are separate because only a source failure
-// leaves a stream to report the outcome on.
-func CopyBody(dst BodyWriter, src io.Reader, buf []byte) (n int64, srcErr, dstErr error) {
+// incremental. A src failure is wrapped in *SourceError; any other error is
+// from dst.
+func CopyBody(dst BodyWriter, src io.Reader, buf []byte) (int64, error) {
+	var n int64
 	for {
 		nr, rerr := src.Read(buf)
 		if nr > 0 {
 			if _, werr := dst.Write(buf[:nr]); werr != nil {
-				return n, nil, werr
+				return n, werr
 			}
 			n += int64(nr)
 		}
 		if rerr == io.EOF {
-			return n, nil, nil
+			return n, nil
 		}
 		if rerr != nil {
-			return n, rerr, nil
+			return n, &SourceError{Err: rerr}
 		}
 	}
 }

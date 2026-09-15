@@ -46,8 +46,8 @@ func TestHandleRegisterEndpointAgentNames(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			h := agent.NewWorkerRegisterer(nopSignalConn{}, &livekit.ServerInfo{}, agent.WorkerRegistration{}).
-				WithEndpointSettings(func(*livekit.RegisterWorkerRequest) (*livekit.AgentHttp_AgentEndpointSettings, error) {
+			h := agent.NewWorkerRegisterer(nopSignalConn{}, &livekit.ServerInfo{}, agent.WorkerRegistration{},
+				func(*livekit.RegisterWorkerRequest) (*livekit.AgentHttp_AgentEndpointSettings, error) {
 					return &livekit.AgentHttp_AgentEndpointSettings{}, nil
 				})
 
@@ -68,7 +68,7 @@ func TestHandleRegisterEndpointAgentNames(t *testing.T) {
 // the reserved names constrain only workers that declare endpoints.
 func TestHandleRegisterWithoutEndpointsIgnoresReservedNames(t *testing.T) {
 	for _, name := range []string{"", "_", ".", ".."} {
-		h := agent.NewWorkerRegisterer(nopSignalConn{}, &livekit.ServerInfo{}, agent.WorkerRegistration{})
+		h := agent.NewWorkerRegisterer(nopSignalConn{}, &livekit.ServerInfo{}, agent.WorkerRegistration{}, nil)
 		require.NoError(t, h.HandleRegister(&livekit.RegisterWorkerRequest{
 			Type:      livekit.JobType_JT_ROOM,
 			AgentName: name,

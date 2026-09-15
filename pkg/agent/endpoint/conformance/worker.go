@@ -267,7 +267,7 @@ func (w *Worker) serve(ctx context.Context, stream *webtransport.Stream) {
 	// the deadline and the session ending both have to reach a blocked copy
 	stop := context.AfterFunc(ctx, func() {
 		_ = conn.Close()
-		stream.CancelRead(streamCode(livekit.AgentHttp_HSR_ABORT))
+		stream.CancelRead(wire.StreamCode(livekit.AgentHttp_HSR_ABORT))
 	})
 	defer stop()
 
@@ -290,17 +290,13 @@ func pipe(stream *webtransport.Stream, conn net.Conn) {
 
 	_, _ = io.Copy(stream, conn)
 	// the target is done answering, so nothing more of the request is wanted
-	stream.CancelRead(streamCode(livekit.AgentHttp_HSR_ABORT))
+	stream.CancelRead(wire.StreamCode(livekit.AgentHttp_HSR_ABORT))
 	<-reqDone
-}
-
-func streamCode(c livekit.AgentHttp_HttpStreamResetCode) webtransport.StreamErrorCode {
-	return webtransport.StreamErrorCode(c)
 }
 
 // resetStream reports an outcome that happened before any HTTP bytes flowed,
 // the only point at which a reset can carry one without racing them.
 func resetStream(stream *webtransport.Stream, c livekit.AgentHttp_HttpStreamResetCode) {
-	stream.CancelWrite(streamCode(c))
-	stream.CancelRead(streamCode(c))
+	stream.CancelWrite(wire.StreamCode(c))
+	stream.CancelRead(wire.StreamCode(c))
 }

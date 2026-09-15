@@ -44,22 +44,21 @@ import (
 
 // StartWebTransport starts the worker WebTransport listener (control + data) on
 // the configured UDP port, if endpoints are enabled and a port is set. It
-// returns a stop function (always non-nil). QUIC has no plaintext mode, so a
-// TLS certificate is required: from tls_cert_file/tls_key_file, or a generated
-// self-signed cert in dev mode.
-func (s *AgentService) StartWebTransport(dev bool) (func(), error) {
-	noop := func() {}
+// returns the stop function, nil when no listener was started. QUIC has no
+// plaintext mode, so a TLS certificate is required: from
+// tls_cert_file/tls_key_file, or a generated self-signed cert in dev mode.
+func (s *AgentService) StartWebTransport() (func(), error) {
 	cfg := s.endpointsConfig
 	if cfg.Disabled || cfg.WebTransportPort == 0 {
-		return noop, nil
+		return nil, nil
 	}
-	tlsConf, err := WebTransportTLS(cfg.TLSCertFile, cfg.TLSKeyFile, dev)
+	tlsConf, err := WebTransportTLS(cfg.TLSCertFile, cfg.TLSKeyFile, s.developmentMode)
 	if err != nil {
-		return noop, err
+		return nil, err
 	}
 	udp, err := net.ListenUDP("udp", &net.UDPAddr{Port: int(cfg.WebTransportPort)})
 	if err != nil {
-		return noop, err
+		return nil, err
 	}
 	wt := NewAgentWebTransportServer(s, s.keyProvider, tlsConf)
 	go func() {
@@ -72,7 +71,7 @@ func (s *AgentService) StartWebTransport(dev bool) (func(), error) {
 }
 
 // WebTransportTLS builds the listener's TLS config from cert files, or a
-// generated self-signed cert in dev mode. Shared by the OSS and cloud servers.
+// generated self-signed cert in dev mode.
 func WebTransportTLS(certFile, keyFile string, dev bool) (*tls.Config, error) {
 	if certFile != "" && keyFile != "" {
 		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
@@ -107,19 +106,15 @@ func WebTransportTLS(certFile, keyFile string, dev bool) (*tls.Config, error) {
 	}, nil
 }
 
-// NewWebTransportServer wraps an HTTP/3 WebTransport server around a handler.
-// register is called with the constructed server so the caller can mount routes
-// that Upgrade on it (Upgrade needs the *webtransport.Server); it returns the
-// HTTP/3 handler. tlsConf must be usable for HTTP/3 (the h3 ALPN is set here if
-// absent). Shared by the OSS and cloud agent servers.
-func NewWebTransportServer(tlsConf *tls.Config, register func(*webtransport.Server) http.Handler) *webtransport.Server {
+// NewWebTransportServer wraps an HTTP/3 WebTransport server around tlsConf (the
+// h3 ALPN is set here if absent). The caller must assign wt.H3.Handler: routes
+// that Upgrade need the *webtransport.Server itself.
+func NewWebTransportServer(tlsConf *tls.Config) *webtransport.Server {
 	tlsConf = tlsConf.Clone()
 	if len(tlsConf.NextProtos) == 0 {
 		tlsConf.NextProtos = []string{http3.NextProtoH3}
 	}
-	wt := &webtransport.Server{H3: &http3.Server{TLSConfig: tlsConf}}
-	wt.H3.Handler = register(wt)
-	return wt
+	return &webtransport.Server{H3: &http3.Server{TLSConfig: tlsConf}}
 }
 
 // NewAgentWebTransportServer builds the WebTransport server that terminates a
@@ -129,16 +124,16 @@ func NewWebTransportServer(tlsConf *tls.Config, register func(*webtransport.Serv
 // handler runs behind the same api-key auth middleware as the rest of the
 // agent surface, so the agent grant is enforced identically.
 func NewAgentWebTransportServer(svc *AgentService, keyProvider auth.KeyProvider, tlsConf *tls.Config) *webtransport.Server {
-	return NewWebTransportServer(tlsConf, func(wt *webtransport.Server) http.Handler {
-		authMW := NewAPIKeyAuthMiddleware(keyProvider)
-		mux := http.NewServeMux()
-		mux.HandleFunc("/agent", func(w http.ResponseWriter, r *http.Request) {
-			svc.ServeWebTransport(wt, w, r)
-		})
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authMW.ServeHTTP(w, r, mux.ServeHTTP)
-		})
+	wt := NewWebTransportServer(tlsConf)
+	authMW := NewAPIKeyAuthMiddleware(keyProvider)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/agent", func(w http.ResponseWriter, r *http.Request) {
+		svc.ServeWebTransport(wt, w, r)
 	})
+	wt.H3.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authMW.ServeHTTP(w, r, mux.ServeHTTP)
+	})
+	return wt
 }
 
 // ServeWebTransport verifies the agent grant, upgrades the request to a
@@ -203,7 +198,7 @@ type wtSignalConn struct {
 }
 
 // NewWTSignalConn adapts a WebTransport session's control stream to
-// agent.SignalConn. Shared by the OSS and cloud agent servers.
+// agent.SignalConn.
 func NewWTSignalConn(sess *webtransport.Session, control *webtransport.Stream) agent.SignalConn {
 	return &wtSignalConn{sess: sess, control: control}
 }

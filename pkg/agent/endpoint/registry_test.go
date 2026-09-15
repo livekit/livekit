@@ -33,19 +33,18 @@ func TestRegistrySupersede(t *testing.T) {
 	require.NoError(t, err)
 
 	mk := func() (*Registration, *fakeSession) {
-		r := &Registration{
+		s := &fakeSession{}
+		return NewRegistration(RegistrationParams{
 			WorkerID: "AW_1", APIKey: "key",
 			AgentName: "agent", Deployment: "production", Manifest: manifest,
-		}
-		s := &fakeSession{}
-		r.SetSession(s)
-		return r, s
+			Session: s,
+		}), s
 	}
 
 	oldReg, oldSess := mk()
-	require.NoError(t, g.Register(oldReg))
+	g.Register(oldReg)
 	newReg, newSess := mk()
-	require.NoError(t, g.Register(newReg))
+	g.Register(newReg)
 
 	require.Equal(t, []*Registration{newReg}, g.Candidates("key", "agent", "production"))
 	require.True(t, oldSess.closed, "superseded epoch's session must be closed")
@@ -71,19 +70,18 @@ func TestRegistryAgentScoping(t *testing.T) {
 	require.NoError(t, err)
 
 	mk := func(workerID, agentName, deployment string) *Registration {
-		r := &Registration{
+		return NewRegistration(RegistrationParams{
 			WorkerID: workerID, APIKey: "key",
 			AgentName: agentName, Deployment: deployment, Manifest: manifest,
-		}
-		r.SetSession(&fakeSession{})
-		return r
+			Session: &fakeSession{},
+		})
 	}
 	a := mk("AW_a", "alpha", "production")
 	b := mk("AW_b", "beta", "production")
 	staging := mk("AW_c", "alpha", "staging")
-	require.NoError(t, g.Register(a))
-	require.NoError(t, g.Register(b))
-	require.NoError(t, g.Register(staging))
+	g.Register(a)
+	g.Register(b)
+	g.Register(staging)
 
 	require.Equal(t, []*Registration{a}, g.Candidates("key", "alpha", "production"))
 	require.Equal(t, []*Registration{b}, g.Candidates("key", "beta", "production"))

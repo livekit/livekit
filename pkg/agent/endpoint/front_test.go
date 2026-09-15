@@ -20,7 +20,7 @@ import (
 // grantedTo resolves every request to apiKey with full access.
 func grantedTo(apiKey string) AccessResolver {
 	return func(*http.Request, string, string) Access {
-		return Access{APIKey: apiKey, Credentialed: true, Granted: true}
+		return Access{APIKey: apiKey, Level: AccessGranted}
 	}
 }
 
@@ -31,15 +31,15 @@ func fallbackFront(t *testing.T, fb Fallback, withWorker bool) *Front {
 			{Path: "/known", Methods: []string{"GET"}, Public: true},
 		})
 		require.NoError(t, err)
-		r := &Registration{WorkerID: "w1", APIKey: "proj", AgentName: "a", Deployment: "d", Manifest: m}
-		r.SetSession(&fakeSession{})
-		require.NoError(t, reg.Register(r))
+		r := NewRegistration(RegistrationParams{WorkerID: "w1", APIKey: "proj", AgentName: "a", Deployment: "d", Manifest: m, Session: &fakeSession{}})
+		reg.Register(r)
 	}
-	f := NewFront(reg, grantedTo("proj"), logger.GetLogger())
-	if fb != nil {
-		f = f.WithFallback(fb)
-	}
-	return f
+	return NewFront(FrontParams{
+		Registry:      reg,
+		ResolveAccess: grantedTo("proj"),
+		Logger:        logger.GetLogger(),
+		Fallback:      fb,
+	})
 }
 
 func serveFront(f *Front, path string) *httptest.ResponseRecorder {
@@ -62,8 +62,7 @@ func TestFrontFallbackFires(t *testing.T) {
 	require.Equal(t, http.StatusTeapot, w.Code)
 	require.NotNil(t, got)
 	require.Equal(t, "proj", got.APIKey)
-	require.True(t, got.Granted)
-	require.True(t, got.Credentialed)
+	require.Equal(t, AccessGranted, got.Level)
 	require.Equal(t, "a", got.AgentName)
 	require.Equal(t, "d", got.Deployment)
 }
@@ -183,22 +182,22 @@ func accessFront(t *testing.T, a Access, fb Fallback) *Front {
 		{Path: "/private", Methods: []string{"GET"}, Public: false},
 	})
 	require.NoError(t, err)
-	r := &Registration{WorkerID: "w1", APIKey: "proj", AgentName: "a", Deployment: "d", Manifest: m}
-	r.SetSession(&fakeSession{})
-	require.NoError(t, reg.Register(r))
+	r := NewRegistration(RegistrationParams{WorkerID: "w1", APIKey: "proj", AgentName: "a", Deployment: "d", Manifest: m, Session: &fakeSession{}})
+	reg.Register(r)
 
-	f := NewFront(reg, func(*http.Request, string, string) Access { return a }, logger.GetLogger())
-	if fb != nil {
-		f = f.WithFallback(fb)
-	}
-	return f
+	return NewFront(FrontParams{
+		Registry:      reg,
+		ResolveAccess: func(*http.Request, string, string) Access { return a },
+		Logger:        logger.GetLogger(),
+		Fallback:      fb,
+	})
 }
 
 // fakeSession opens no stream, so a request that clears authorization reaches 503.
 func TestFrontPrivateRouteAccessMapping(t *testing.T) {
-	anonymous := Access{APIKey: "proj"}
-	credentialed := Access{APIKey: "proj", Credentialed: true}
-	granted := Access{APIKey: "proj", Credentialed: true, Granted: true}
+	anonymous := Access{APIKey: "proj", Level: AccessNone}
+	credentialed := Access{APIKey: "proj", Level: AccessCredentialed}
+	granted := Access{APIKey: "proj", Level: AccessGranted}
 
 	t.Run("anonymous is challenged", func(t *testing.T) {
 		w := serveFront(accessFront(t, anonymous, nil), "/private")
@@ -223,14 +222,14 @@ func TestFrontPrivateRouteAccessMapping(t *testing.T) {
 
 // the slash-normalized form of a private route is still private.
 func TestFrontDeniedAppliesToNormalizedPath(t *testing.T) {
-	f := accessFront(t, Access{APIKey: "proj", Credentialed: true}, nil)
+	f := accessFront(t, Access{APIKey: "proj", Level: AccessCredentialed}, nil)
 	require.Equal(t, http.StatusForbidden, serveFront(f, "/private/").Code)
 }
 
 // another node's worker may declare the same path public.
 func TestFrontDeniedStillRelays(t *testing.T) {
 	var got *FallbackRequest
-	f := accessFront(t, Access{APIKey: "proj", Credentialed: true}, func(w http.ResponseWriter, _ *http.Request, fr *FallbackRequest) bool {
+	f := accessFront(t, Access{APIKey: "proj", Level: AccessCredentialed}, func(w http.ResponseWriter, _ *http.Request, fr *FallbackRequest) bool {
 		got = fr
 		w.WriteHeader(http.StatusTeapot)
 		return true
@@ -238,8 +237,7 @@ func TestFrontDeniedStillRelays(t *testing.T) {
 
 	require.Equal(t, http.StatusTeapot, serveFront(f, "/private").Code)
 	require.NotNil(t, got)
-	require.True(t, got.Credentialed)
-	require.False(t, got.Granted)
+	require.Equal(t, AccessCredentialed, got.Level)
 }
 
 // the split runs before decoding, so a name or route param may carry any byte

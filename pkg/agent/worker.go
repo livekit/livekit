@@ -195,20 +195,14 @@ type WorkerRegisterer struct {
 	registered   bool
 }
 
-func NewWorkerRegisterer(conn SignalConn, serverInfo *livekit.ServerInfo, base WorkerRegistration) *WorkerRegisterer {
+func NewWorkerRegisterer(conn SignalConn, serverInfo *livekit.ServerInfo, base WorkerRegistration, endpointSettings EndpointSettingsFunc) *WorkerRegisterer {
 	return &WorkerRegisterer{
 		WorkerPingHandler: WorkerPingHandler{conn: conn},
 		serverInfo:        serverInfo,
 		registration:      base,
 		deadline:          time.Now().Add(RegisterTimeout),
+		endpointSettings:  endpointSettings,
 	}
-}
-
-// WithEndpointSettings enables the HTTP endpoints data plane for registrations that
-// declare endpoints.
-func (h *WorkerRegisterer) WithEndpointSettings(f EndpointSettingsFunc) *WorkerRegisterer {
-	h.endpointSettings = f
-	return h
 }
 
 func (h *WorkerRegisterer) Deadline() time.Time {

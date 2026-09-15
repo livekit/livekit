@@ -86,15 +86,15 @@ func handleSession(reg *endpoint.Registry, sess *webtransport.Session) {
 	if err != nil {
 		return
 	}
-	registration := &endpoint.Registration{
+	registration := endpoint.NewRegistration(endpoint.RegistrationParams{
 		WorkerID:   rw.GetInstanceId(),
 		APIKey:     "test",
 		AgentName:  rw.GetAgentName(),
 		Deployment: rw.GetDeployment(),
 		Manifest:   manifest,
-	}
-	registration.SetSession(endpoint.NewWebTransportSession(sess, endpoint.DefaultMaxStreams))
-	_ = reg.Register(registration)
+		Session:    endpoint.NewWebTransportSession(sess, endpoint.DefaultMaxStreams),
+	})
+	reg.Register(registration)
 	_ = wire.WriteControlMessage(control, &livekit.ServerMessage{
 		Message: &livekit.ServerMessage_Register{
 			Register: &livekit.RegisterWorkerResponse{
@@ -136,10 +136,14 @@ func TestWebTransportEndpointRoundTrip(t *testing.T) {
 	reg := endpoint.NewRegistry()
 	base := startWTServer(t, reg)
 
-	front := endpoint.NewFront(reg, func(*http.Request, string, string) endpoint.Access {
-		return endpoint.Access{}
-	}, logger.GetLogger()).
-		WithSingleKeyFallback()
+	front := endpoint.NewFront(endpoint.FrontParams{
+		Registry: reg,
+		ResolveAccess: func(*http.Request, string, string) endpoint.Access {
+			return endpoint.Access{}
+		},
+		Logger:            logger.GetLogger(),
+		SingleKeyFallback: true,
+	})
 	ts := httptest.NewServer(front)
 	defer ts.Close()
 
@@ -203,14 +207,23 @@ func TestWebTransportPrivateEndpointRequiresGrant(t *testing.T) {
 	reg := endpoint.NewRegistry()
 	base := startWTServer(t, reg)
 
-	anonymous := httptest.NewServer(endpoint.NewFront(reg, func(*http.Request, string, string) endpoint.Access {
-		return endpoint.Access{}
-	}, logger.GetLogger()).WithSingleKeyFallback())
+	anonymous := httptest.NewServer(endpoint.NewFront(endpoint.FrontParams{
+		Registry: reg,
+		ResolveAccess: func(*http.Request, string, string) endpoint.Access {
+			return endpoint.Access{}
+		},
+		Logger:            logger.GetLogger(),
+		SingleKeyFallback: true,
+	}))
 	defer anonymous.Close()
 
-	granted := httptest.NewServer(endpoint.NewFront(reg, func(*http.Request, string, string) endpoint.Access {
-		return endpoint.Access{APIKey: "test", Credentialed: true, Granted: true}
-	}, logger.GetLogger()))
+	granted := httptest.NewServer(endpoint.NewFront(endpoint.FrontParams{
+		Registry: reg,
+		ResolveAccess: func(*http.Request, string, string) endpoint.Access {
+			return endpoint.Access{APIKey: "test", Level: endpoint.AccessGranted}
+		},
+		Logger: logger.GetLogger(),
+	}))
 	defer granted.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

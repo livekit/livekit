@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math/rand/v2"
 	"net/http"
@@ -67,16 +68,41 @@ var (
 	errHeadTooLarge         = errors.New("endpoint: response head too large")
 )
 
+// AccessLevel is how far a request's caller is trusted. Callers compare against
+// it, so a new level must be inserted at its correct rank.
+type AccessLevel int
+
+const (
+	// AccessNone presented no credential.
+	AccessNone AccessLevel = iota
+	// AccessCredentialed presented a valid token carrying no agent-endpoint
+	// grant for the addressed agent and deployment.
+	AccessCredentialed
+	// AccessGranted presented a token whose agent-endpoint grant covers the
+	// addressed agent and deployment.
+	AccessGranted
+)
+
+func (a AccessLevel) String() string {
+	switch a {
+	case AccessNone:
+		return "none"
+	case AccessCredentialed:
+		return "credentialed"
+	case AccessGranted:
+		return "granted"
+	default:
+		return fmt.Sprintf("%d", int(a))
+	}
+}
+
 // Access is what the front knows about a request's caller, for the agent and
-// deployment its URL addresses. Granted implies Credentialed.
+// deployment its URL addresses.
 type Access struct {
 	// APIKey is the registry scope the request is served from; empty means the
 	// request cannot be placed.
 	APIKey string
-	// Credentialed selects 401 over 403 for a denied request.
-	Credentialed bool
-	// Granted opens non-public routes.
-	Granted bool
+	Level  AccessLevel
 }
 
 // AccessResolver maps an inbound request, plus the agent and deployment its URL
@@ -84,39 +110,36 @@ type Access struct {
 type AccessResolver func(r *http.Request, agentName, deployment string) Access
 
 type Front struct {
-	registry      *Registry
-	resolveAccess AccessResolver
-	logger        logger.Logger
-	pools         *bridgePools
-
-	// fallback is consulted when nothing local can serve the request (no
-	// candidates, no route match, or every match without capacity); a
-	// multi-node deployment plugs its resolve-and-relay here. nil means local
-	// misses are final.
-	fallback Fallback
-	// see WithSingleKeyFallback
-	singleKeyFallback bool
-	// see WithIdentity
-	identity Identity
+	params FrontParams
+	pools  *bridgePools
 }
 
 // Identity resolves the agent and deployment a request addresses. Reporting
 // false leaves them to the URL.
 type Identity func(r *http.Request) (agentName, deployment string, ok bool)
 
-// WithIdentity resolves the agent and deployment from the request itself.
-func (f *Front) WithIdentity(fn Identity) *Front {
-	f.identity = fn
-	return f
+// FrontParams configures a Front. Fields are read on every request once the
+// Front is serving, so none may change after construction.
+type FrontParams struct {
+	Registry      *Registry
+	ResolveAccess AccessResolver
+	Logger        logger.Logger
+
+	// Fallback is consulted when nothing local can serve the request: no
+	// candidates, no route match, or every match without capacity. nil means
+	// local misses are final.
+	Fallback Fallback
+	Identity Identity
+	// SingleKeyFallback resolves unauthenticated requests to the registry's
+	// single api key when the resolver yields none. The key comes from the
+	// registry, so this is sound only where every registration belongs to one
+	// tenant.
+	SingleKeyFallback bool
 }
 
-func NewFront(registry *Registry, resolveAccess AccessResolver, log logger.Logger) *Front {
-	return &Front{
-		registry:      registry,
-		resolveAccess: resolveAccess,
-		logger:        log.WithComponent("agents.endpoint"),
-		pools:         newBridgePools(),
-	}
+func NewFront(params FrontParams) *Front {
+	params.Logger = params.Logger.WithComponent("agents.endpoint")
+	return &Front{params: params, pools: newBridgePools()}
 }
 
 // FallbackRequest describes a request nothing local could serve. The request
@@ -131,22 +154,6 @@ type FallbackRequest struct {
 // whether a response was written. Returning false falls back to the local
 // status mapping.
 type Fallback func(w http.ResponseWriter, r *http.Request, req *FallbackRequest) bool
-
-// WithFallback installs the miss handler consulted when nothing local can
-// serve a request.
-func (f *Front) WithFallback(fb Fallback) *Front {
-	f.fallback = fb
-	return f
-}
-
-// WithSingleKeyFallback resolves unauthenticated requests to the registry's
-// single api key when the resolver yields none. Self-hosted convenience only: a
-// multi-tenant front must never guess an api key from what happens to be
-// registered.
-func (f *Front) WithSingleKeyFallback() *Front {
-	f.singleKeyFallback = true
-	return f
-}
 
 // writeUnavailable writes a 503 with a Retry-After hint: no local worker can
 // serve the request and no fallback placed it elsewhere.
@@ -166,9 +173,9 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	agentName, deployment, path, escPath := ep.agentName, ep.deployment, ep.path, ep.escPath
-	if f.identity != nil {
+	if f.params.Identity != nil {
 		// must precede resolveAccess, which may consume its source headers
-		if name, dep, ok := f.identity(r); ok {
+		if name, dep, ok := f.params.Identity(r); ok {
 			agentName, deployment = name, dep
 		}
 	}
@@ -179,11 +186,11 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	access := f.resolveAccess(r, agentName, deployment)
-	if access.APIKey == "" && f.singleKeyFallback {
+	access := f.params.ResolveAccess(r, agentName, deployment)
+	if access.APIKey == "" && f.params.SingleKeyFallback {
 		// unauthenticated: OSS serves public routes when the worker fleet
 		// belongs to a single key. A guessed api key confers no access.
-		access.APIKey, _ = f.registry.SingleAPIKey()
+		access.APIKey, _ = f.params.Registry.SingleAPIKey()
 	}
 	if access.APIKey == "" {
 		w.Header().Set("WWW-Authenticate", "Bearer")
@@ -191,8 +198,8 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	candidates := f.registry.Candidates(access.APIKey, agentName, deployment)
-	if len(candidates) == 0 && f.fallback == nil {
+	candidates := f.params.Registry.Candidates(access.APIKey, agentName, deployment)
+	if len(candidates) == 0 && f.params.Fallback == nil {
 		f.writeUnavailable(w, "no workers available for deployment")
 		return
 	}
@@ -204,7 +211,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			rt, res := reg.Manifest.Match(p, r.Method)
 			switch res {
 			case MatchFull:
-				if !access.Granted && !rt.Public {
+				if access.Level < AccessGranted && !rt.Public {
 					denied = true
 					continue
 				}
@@ -232,12 +239,12 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			matched, route, partial, denied = matchAll(path)
 		}
 	}
-	if route == nil && f.fallback != nil {
+	if route == nil && f.params.Fallback != nil {
 		// nothing local matched: hand off to the multi-node fallback (relay to a
 		// node holding the deployment) before the local status mapping. The
 		// serving node's relay listener installs no fallback of its own, so a
 		// relayed request is served or errored there and never re-relays.
-		if f.fallback(w, r, &FallbackRequest{
+		if f.params.Fallback(w, r, &FallbackRequest{
 			Access:    access,
 			AgentName: agentName, Deployment: deployment,
 		}) {
@@ -252,7 +259,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case denied:
 			// access does not vary across candidates, so one verdict covers them all
-			if access.Credentialed {
+			if access.Level >= AccessCredentialed {
 				http.Error(w, "forbidden", http.StatusForbidden)
 			} else {
 				w.Header().Set("WWW-Authenticate", "Bearer")
@@ -273,7 +280,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		target:    requestTarget(escPath, r.URL.RawQuery),
 		route:     route,
 		requestID: reqID,
-		granted:   access.Granted,
+		granted:   access.Level >= AccessGranted,
 		pools:     f.pools,
 	}
 	a.body = &countingReader{r: r.Body, n: &bodyConsumed}
@@ -284,13 +291,13 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "request header fields too large", http.StatusRequestHeaderFieldsTooLarge)
 			return
 		}
-		f.logger.Debugw("agent endpoint rejected a request head", "error", err, "requestID", reqID)
+		f.params.Logger.Debugw("agent endpoint rejected a request head", "error", err, "requestID", reqID)
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 
 	attempted := make(map[*Registration]bool)
-	for i := 0; i < maxAttempts; i++ {
+	for range maxAttempts {
 		reg := pickWorker(matched, attempted)
 		if reg == nil {
 			break
@@ -315,8 +322,8 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// capacity elsewhere. Safe exactly while no request bytes were consumed -
 	// reaching this point implies it, since consuming attempts are never
 	// retryable.
-	if bodyConsumed.Load() == 0 && f.fallback != nil {
-		if f.fallback(w, r, &FallbackRequest{
+	if bodyConsumed.Load() == 0 && f.params.Fallback != nil {
+		if f.params.Fallback(w, r, &FallbackRequest{
 			Access:    access,
 			AgentName: agentName, Deployment: deployment,
 		}) {
@@ -394,18 +401,12 @@ func splitEndpointPath(u *url.URL) (endpointPath, error) {
 }
 
 // pickWorker chooses a worker by the power of two choices: sample two eligible
-// registrations at random and take the one with fewer in-flight streams (least
-// outstanding requests). This approximates optimal load spreading without global
-// coordination or the herding of exact least-loaded, and - unlike a
-// self-reported load - the in-flight count is observed here from the worker's
-// own session. Eligible = not already attempted, has a live session, not draining.
+// registrations at random and take the one with fewer in-flight streams.
+// Eligible = not already attempted, has a live session, not draining.
 func pickWorker(regs []*Registration, ignore map[*Registration]bool) *Registration {
-	eligible := regs[:0:0]
+	var eligible []*Registration
 	for _, reg := range regs {
-		if ignore[reg] || !reg.HasSession() {
-			continue
-		}
-		if reg.Draining != nil && reg.Draining() {
+		if ignore[reg] || !reg.HasSession() || reg.IsDraining() {
 			continue
 		}
 		eligible = append(eligible, reg)
@@ -413,13 +414,13 @@ func pickWorker(regs []*Registration, ignore map[*Registration]bool) *Registrati
 	if len(eligible) == 0 {
 		return nil
 	}
-	return eligible[p2c(len(eligible), func(i int) int { return eligible[i].InflightStreams() })]
+	return eligible[p2c(eligible, (*Registration).InflightStreams)]
 }
 
 // p2c returns the index of the less-loaded of two distinct random draws from
-// [0,n) (n >= 1). With n == 2 both are always sampled, so it is exact; larger n
-// trades a little optimality for O(1) work and no herding.
-func p2c(n int, load func(int) int) int {
+// items, which must be non-empty.
+func p2c[T any](items []T, load func(T) int) int {
+	n := len(items)
 	if n == 1 {
 		return 0
 	}
@@ -428,7 +429,7 @@ func p2c(n int, load func(int) int) int {
 	if j >= i { // fold to a distinct second draw
 		j++
 	}
-	if load(i) <= load(j) {
+	if load(items[i]) <= load(items[j]) {
 		return i
 	}
 	return j
@@ -482,7 +483,7 @@ func (f *Front) bridge(w http.ResponseWriter, a *attempt, reg *Registration) bri
 	if err != nil {
 		err = completionError(err)
 		if !a.retryable(err) {
-			f.logger.Warnw("agent endpoint request failed", err,
+			f.params.Logger.Warnw("agent endpoint request failed", err,
 				"workerID", reg.WorkerID, "path", a.escPath, "requestID", a.requestID)
 			writeGatewayError(w, err)
 			return bridgeDone
@@ -535,7 +536,7 @@ func (f *Front) aborted(err error, reg *Registration, a *attempt, writeErrCh <-c
 	f.logAborted(err, reg, a)
 	select {
 	case werr := <-writeErrCh:
-		f.logger.Debugw("request write result after response failure", "error", werr)
+		f.params.Logger.Debugw("request write result after response failure", "error", werr)
 	default:
 	}
 	return bridgeAbort
@@ -544,12 +545,12 @@ func (f *Front) aborted(err error, reg *Registration, a *attempt, writeErrCh <-c
 func (f *Front) logAborted(err error, reg *Registration, a *attempt) {
 	var ce *wire.CompletionError
 	if errors.As(err, &ce) {
-		f.logger.Infow("agent endpoint response aborted",
+		f.params.Logger.Infow("agent endpoint response aborted",
 			"workerID", reg.WorkerID, "path", a.escPath, "requestID", a.requestID,
 			"completion", string(ce.Completion), "reason", ce.Reason)
 		return
 	}
-	f.logger.Infow("agent endpoint response aborted",
+	f.params.Logger.Infow("agent endpoint response aborted",
 		"workerID", reg.WorkerID, "path", a.escPath, "requestID", a.requestID, "error", err)
 }
 

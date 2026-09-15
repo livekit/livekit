@@ -63,27 +63,50 @@ type Registration struct {
 	Deployment string
 	Manifest   *Manifest
 
-	// Draining is provided by the control-plane layer that owns the worker; a
-	// draining worker takes no new streams. Worker selection uses live in-flight
-	// streams, not a reported load.
-	Draining func() bool
+	draining func() bool
 
-	mu      sync.Mutex
+	lock    sync.RWMutex
 	session Session
 	closed  bool
 }
 
-// SetSession attaches the worker's live data-plane session. One session per
-// worker: the WebTransport session that also carries its control stream.
-func (r *Registration) SetSession(s Session) {
-	r.mu.Lock()
-	r.session = s
-	r.mu.Unlock()
+// RegistrationParams is fixed for the life of the registration, which lasts
+// exactly as long as the session.
+type RegistrationParams struct {
+	WorkerID   string
+	APIKey     string
+	AgentName  string
+	Deployment string
+	Manifest   *Manifest
+
+	// Session is the worker's live data-plane session: the WebTransport session
+	// that also carries its control stream. One session per worker.
+	Session Session
+	// Draining reports that the worker is shedding; a shedding worker takes no
+	// new streams.
+	Draining func() bool
+}
+
+func NewRegistration(params RegistrationParams) *Registration {
+	return &Registration{
+		WorkerID:   params.WorkerID,
+		APIKey:     params.APIKey,
+		AgentName:  params.AgentName,
+		Deployment: params.Deployment,
+		Manifest:   params.Manifest,
+		draining:   params.Draining,
+		session:    params.Session,
+	}
+}
+
+// IsDraining is false when no drain signal was supplied.
+func (r *Registration) IsDraining() bool {
+	return r.draining != nil && r.draining()
 }
 
 func (r *Registration) getSession() Session {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 	if r.closed {
 		return nil
 	}
@@ -129,15 +152,15 @@ func (r *Registration) SpareStreams() int {
 }
 
 func (r *Registration) close() {
-	r.mu.Lock()
+	r.lock.Lock()
 	if r.closed {
-		r.mu.Unlock()
+		r.lock.Unlock()
 		return
 	}
 	r.closed = true
 	s := r.session
 	r.session = nil
-	r.mu.Unlock()
+	r.lock.Unlock()
 	if s != nil {
 		s.Close("registration closed")
 	}
@@ -146,7 +169,7 @@ func (r *Registration) close() {
 // Registry tracks data-plane registrations on this node, keyed by
 // (api key, agent name, deployment). The api key is the project identity in OSS.
 type Registry struct {
-	mu    sync.Mutex
+	lock  sync.RWMutex
 	regs  map[string]*Registration // by worker id
 	byKey map[regKey][]*Registration
 }
@@ -168,23 +191,22 @@ func NewRegistry() *Registry {
 // worker ids are stable across reconnects, and the retiring session must not be
 // able to strand the new epoch (its own Deregister is a no-op once replaced).
 // The superseded epoch's session is closed.
-func (g *Registry) Register(r *Registration) error {
+func (g *Registry) Register(r *Registration) {
 	key := regKey{r.APIKey, r.AgentName, normalizeDeployment(r.Deployment)}
-	g.mu.Lock()
+	g.lock.Lock()
 	old := g.regs[r.WorkerID]
 	if old != nil {
 		g.removeLocked(old)
 	}
 	g.regs[r.WorkerID] = r
 	g.byKey[key] = append(g.byKey[key], r)
-	g.mu.Unlock()
+	g.lock.Unlock()
 	if old != nil {
 		old.close()
 	}
-	return nil
 }
 
-// removeLocked unlinks a registration from all indexes. Callers hold g.mu.
+// removeLocked unlinks a registration from all indexes. Callers hold g.lock.
 func (g *Registry) removeLocked(r *Registration) {
 	delete(g.regs, r.WorkerID)
 	key := regKey{r.APIKey, r.AgentName, normalizeDeployment(r.Deployment)}
@@ -203,20 +225,20 @@ func (g *Registry) removeLocked(r *Registration) {
 // Deregister removes exactly this registration; it is a no-op when a newer
 // epoch has already superseded it.
 func (g *Registry) Deregister(r *Registration) {
-	g.mu.Lock()
+	g.lock.Lock()
 	if g.regs[r.WorkerID] != r {
-		g.mu.Unlock()
+		g.lock.Unlock()
 		return
 	}
 	g.removeLocked(r)
-	g.mu.Unlock()
+	g.lock.Unlock()
 	r.close()
 }
 
 // Candidates returns the registrations for (api key, agent name, deployment segment).
 func (g *Registry) Candidates(apiKey, agentName, deployment string) []*Registration {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+	g.lock.RLock()
+	defer g.lock.RUnlock()
 	return slices.Clone(g.byKey[regKey{apiKey, agentName, normalizeDeployment(deployment)}])
 }
 
@@ -224,8 +246,8 @@ func (g *Registry) Candidates(apiKey, agentName, deployment string) []*Registrat
 // resolution for unauthenticated requests to public endpoints. ok is false when
 // zero or multiple keys are present.
 func (g *Registry) SingleAPIKey() (string, bool) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+	g.lock.RLock()
+	defer g.lock.RUnlock()
 	var key string
 	for _, r := range g.regs {
 		if key == "" {

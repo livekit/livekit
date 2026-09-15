@@ -10,18 +10,18 @@ import (
 
 func TestP2CChoice(t *testing.T) {
 	// a single candidate is always chosen
-	require.Equal(t, 0, p2c(1, func(int) int { return 42 }))
+	require.Equal(t, 0, p2c([]int{42}, func(int) int { return 42 }))
 
 	// with two candidates both are always drawn, so the lower-load one wins
 	// deterministically regardless of the random draw
 	for i := 0; i < 100; i++ {
-		require.Equal(t, 1, p2c(2, func(i int) int { return []int{5, 2}[i] }))
-		require.Equal(t, 0, p2c(2, func(i int) int { return []int{2, 5}[i] }))
+		require.Equal(t, 1, p2c([]int{5, 2}, func(v int) int { return v }))
+		require.Equal(t, 0, p2c([]int{2, 5}, func(v int) int { return v }))
 	}
 
 	// larger n: the pick is always in range
 	for i := 0; i < 500; i++ {
-		idx := p2c(5, func(int) int { return 0 })
+		idx := p2c(make([]int, 5), func(int) int { return 0 })
 		require.GreaterOrEqual(t, idx, 0)
 		require.Less(t, idx, 5)
 	}
@@ -32,7 +32,7 @@ func TestP2CChoice(t *testing.T) {
 	loads := []int{0, 100, 100, 100, 100}
 	low := 0
 	for i := 0; i < 4000; i++ {
-		if p2c(len(loads), func(i int) int { return loads[i] }) == 0 {
+		if p2c(loads, func(v int) int { return v }) == 0 {
 			low++
 		}
 	}

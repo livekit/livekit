@@ -130,11 +130,10 @@ func rawScriptedFront(t *testing.T, script func(r io.Reader, w *workerSide)) *ht
 	require.NoError(t, err)
 
 	reg := NewRegistry()
-	r := &Registration{WorkerID: "w1", APIKey: "proj", AgentName: "a", Deployment: "d", Manifest: m}
-	r.SetSession(&scriptedSession{script: script})
-	require.NoError(t, reg.Register(r))
+	r := NewRegistration(RegistrationParams{WorkerID: "w1", APIKey: "proj", AgentName: "a", Deployment: "d", Manifest: m, Session: &scriptedSession{script: script}})
+	reg.Register(r)
 
-	ts := httptest.NewServer(NewFront(reg, grantedTo("proj"), logger.GetLogger()))
+	ts := httptest.NewServer(NewFront(FrontParams{Registry: reg, ResolveAccess: grantedTo("proj"), Logger: logger.GetLogger()}))
 	t.Cleanup(ts.Close)
 	return ts
 }
