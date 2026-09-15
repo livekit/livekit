@@ -50,6 +50,10 @@ type RedPrimaryReceiver struct {
 
 	// bitset for upstream packet receive history [lastSeq-8, lastSeq-1], bit 1 represents packet received
 	pktHistory byte
+
+	// forwarded packet, reused since ForwardRTP runs on one goroutine and
+	// down tracks do not keep the packet past WriteRTP
+	sendExtPkt buffer.ExtPacket
 }
 
 func NewRedPrimaryReceiver(receiver TrackReceiver, dsp utils.DownTrackSpreaderParams) REDTransformer {
@@ -84,7 +88,8 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 
 	var writeCount int32
 	for i, sendPkt := range pkts {
-		pPkt := *pkt
+		pPkt := &r.sendExtPkt
+		*pPkt = *pkt
 		if i != len(pkts)-1 {
 			// patch extended sequence number and time stamp for all but the last packet,
 			// last packet is the primary payload
@@ -125,7 +130,7 @@ func (r *RedPrimaryReceiver) ForwardRTP(pkt *buffer.ExtPacket, spatialLayer int3
 
 		// not modify the ExtPacket.RawPacket here for performance since it is not used by the DownTrack,
 		// otherwise it should be set to the correct value (marshal the primary rtp packet)
-		writeCount += utils.BroadcastRTP(r.downTrackSpreader, &pPkt, spatialLayer)
+		writeCount += utils.BroadcastRTP(r.downTrackSpreader, pPkt, spatialLayer)
 	}
 	return writeCount
 }
