@@ -58,7 +58,11 @@ func (b *Base) TimeSinceLastSentPacket() time.Duration {
 func (b *Base) SendPacket(p *Packet) (int, error) {
 	defer func() {
 		if p.HeaderPool != nil && p.Header != nil {
+			// keep Extensions capacity so the next user does not allocate on SetExtension
+			exts := p.Header.Extensions
+			clear(exts)
 			*p.Header = rtp.Header{}
+			p.Header.Extensions = exts[:0]
 			p.HeaderPool.Put(p.Header)
 		}
 
@@ -95,12 +99,11 @@ func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 		absSendTimeExt := rtp.AbsSendTimeExtension{
 			Timestamp: uint64(mediatransportutil.ToNtpTime(sendingAt) >> 14),
 		}
-		absSendTimeBytes, err := absSendTimeExt.Marshal()
-		if err != nil {
+		if _, err := absSendTimeExt.MarshalTo(p.absSendTimeBuf[:]); err != nil {
 			return err
 		}
 
-		if err = p.Header.SetExtension(p.AbsSendTimeExtID, absSendTimeBytes); err != nil {
+		if err := p.Header.SetExtension(p.AbsSendTimeExtID, p.absSendTimeBuf[:]); err != nil {
 			return err
 		}
 
@@ -119,12 +122,11 @@ func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 		twccExt := rtp.TransportCCExtension{
 			TransportSequence: twccSN,
 		}
-		twccExtBytes, err := twccExt.Marshal()
-		if err != nil {
+		if _, err := twccExt.MarshalTo(p.twccBuf[:]); err != nil {
 			return err
 		}
 
-		if err = p.Header.SetExtension(p.TransportWideExtID, twccExtBytes); err != nil {
+		if err := p.Header.SetExtension(p.TransportWideExtID, p.twccBuf[:]); err != nil {
 			return err
 		}
 

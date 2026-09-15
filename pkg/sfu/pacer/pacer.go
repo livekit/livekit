@@ -54,6 +54,11 @@ type Packet struct {
 	WriteStream        webrtc.TrackLocalWriter
 	Pool               *sync.Pool
 	PoolEntity         *[]byte
+
+	// per-packet scratch for header extensions patched at send time,
+	// the Packet is owned by one send until SendPacket returns
+	absSendTimeBuf [3]byte
+	twccBuf        [2]byte
 }
 
 type Pacer interface {
