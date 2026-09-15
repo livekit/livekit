@@ -8,7 +8,15 @@ package service
 
 import (
 	"fmt"
+	"os"
+
+	"github.com/pion/turn/v5"
+	"github.com/pkg/errors"
+	"github.com/redis/go-redis/v9"
+	"gopkg.in/yaml.v3"
+
 	"github.com/livekit/livekit-server/pkg/agent"
+	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -22,11 +30,6 @@ import (
 	"github.com/livekit/protocol/webhook"
 	"github.com/livekit/psrpc"
 	"github.com/livekit/psrpc/pkg/middleware/otelpsrpc"
-	"github.com/pion/turn/v5"
-	"github.com/pkg/errors"
-	"github.com/redis/go-redis/v9"
-	"gopkg.in/yaml.v3"
-	"os"
 )
 
 // Injectors from wire.go:
@@ -125,10 +128,14 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	agentService, err := NewAgentService(conf, currentNode, v, keyProvider)
+	registry := endpoint.NewRegistry()
+	agentHandler, err := NewAgentHandler(conf, currentNode, v, keyProvider, registry)
 	if err != nil {
 		return nil, err
 	}
+	agentWSService := NewAgentWSService(conf, agentHandler)
+	agentWTService := NewAgentWTService(agentHandler)
+	agentEndpointService := NewAgentEndpointService(agentHandler, registry)
 	agentConfig := getAgentConfig(conf)
 	client, err := agent.NewAgentClient(v, agentConfig)
 	if err != nil {
@@ -151,7 +158,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, serviceWHIPService, agentService, keyProvider, router, roomManager, signalServer, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, serviceWHIPService, agentWSService, agentWTService, agentEndpointService, keyProvider, router, roomManager, signalServer, server, currentNode)
 	if err != nil {
 		return nil, err
 	}

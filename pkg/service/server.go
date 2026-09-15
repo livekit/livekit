@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/pion/turn/v5"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/quic-go/webtransport-go"
 	"github.com/rs/cors"
 	"github.com/twitchtv/twirp"
 	"github.com/urfave/negroni/v3"
@@ -46,22 +48,22 @@ import (
 )
 
 type LivekitServer struct {
-	config       *config.Config
-	ioService    *IOInfoService
-	rtcService   *RTCService
-	whipService  *WHIPService
-	agentService *AgentService
-	httpServer   *http.Server
-	promServer   *http.Server
-	debugServer  *http.Server
-	router       routing.Router
-	roomManager  *RoomManager
-	signalServer *SignalServer
-	turnServer   *turn.Server
-	currentNode  routing.LocalNode
-	running      atomic.Bool
-	doneChan     chan struct{}
-	closedChan   chan struct{}
+	config             *config.Config
+	ioService          *IOInfoService
+	rtcService         *RTCService
+	whipService        *WHIPService
+	httpServer         *http.Server
+	promServer         *http.Server
+	debugServer        *http.Server
+	webtransportServer *webtransport.Server
+	router             routing.Router
+	roomManager        *RoomManager
+	signalServer       *SignalServer
+	turnServer         *turn.Server
+	currentNode        routing.LocalNode
+	running            atomic.Bool
+	doneChan           chan struct{}
+	closedChan         chan struct{}
 }
 
 func NewLivekitServer(conf *config.Config,
@@ -73,7 +75,9 @@ func NewLivekitServer(conf *config.Config,
 	ioService *IOInfoService,
 	rtcService *RTCService,
 	whipService *WHIPService,
-	agentService *AgentService,
+	agentWSService *AgentWSService,
+	agentWTService *AgentWTService,
+	agentEndpointService *AgentEndpointService,
 	keyProvider auth.KeyProvider,
 	router routing.Router,
 	roomManager *RoomManager,
@@ -86,7 +90,6 @@ func NewLivekitServer(conf *config.Config,
 		ioService:    ioService,
 		rtcService:   rtcService,
 		whipService:  whipService,
-		agentService: agentService,
 		router:       router,
 		roomManager:  roomManager,
 		signalServer: signalServer,
@@ -94,28 +97,6 @@ func NewLivekitServer(conf *config.Config,
 		turnServer:  turnServer,
 		currentNode: currentNode,
 		closedChan:  make(chan struct{}),
-	}
-
-	middlewares := []negroni.Handler{
-		// always first
-		negroni.NewRecovery(),
-		// CORS is allowed, we rely on token authentication to prevent improper use
-		cors.New(cors.Options{
-			AllowOriginFunc: func(origin string) bool {
-				return true
-			},
-			AllowedMethods: []string{"OPTIONS", "HEAD", "GET", "POST", "PATCH", "DELETE"},
-			AllowedHeaders: []string{"*"},
-			ExposedHeaders: []string{"*"},
-			// allow preflight to be cached for a day
-			MaxAge: 86400,
-		}),
-		negroni.HandlerFunc(RemoveDoubleSlashes),
-		// limit request body size so large messages cannot exhaust memory
-		NewRequestBodyLimiter(conf.Limit.MaxAPIRequestBodySize),
-	}
-	if keyProvider != nil {
-		middlewares = append(middlewares, NewAPIKeyAuthMiddleware(keyProvider))
 	}
 
 	serverOptions := []any{
@@ -149,11 +130,17 @@ func NewLivekitServer(conf *config.Config,
 	xtwirp.RegisterServer(mux, sipServer)
 	rtcService.SetupRoutes(mux)
 	whipService.SetupRoutes(mux)
-	mux.Handle("/agent", agentService)
+	mux.Handle("/agent", agentWSService)
 	mux.HandleFunc("/", s.defaultHandler)
 
+	// NewHTTPHandler branches on a nil handler, which a typed-nil would defeat
+	var agentFront http.Handler
+	if !conf.Agents.Endpoints.Disabled {
+		agentFront = agentEndpointService
+	}
+
 	s.httpServer = &http.Server{
-		Handler: configureMiddlewares(mux, middlewares...),
+		Handler: NewHTTPHandler(conf, keyProvider, mux, agentFront),
 	}
 
 	if conf.PrometheusPort > 0 {
@@ -190,6 +177,19 @@ func NewLivekitServer(conf *config.Config,
 		s.debugServer = &http.Server{
 			Handler: http.Handler(debugMux),
 		}
+	}
+
+	if conf.WebTransport.Port > 0 {
+		var tlsConf *tls.Config
+		tlsConf, err = WebTransportTLS(conf.WebTransport.TLSCertFile, conf.WebTransport.TLSKeyFile, conf.Development)
+		if err != nil {
+			return
+		}
+		wtMux := http.NewServeMux()
+		wtMux.Handle("/agent", agentWTService)
+
+		s.webtransportServer = NewWebTransportServer(tlsConf)
+		s.webtransportServer.H3.Handler = NewWebTransportHandler(keyProvider, s.webtransportServer, wtMux)
 	}
 
 	if err = router.RemoveDeadNodes(); err != nil {
@@ -267,6 +267,15 @@ func (s *LivekitServer) Start() error {
 		}
 	}
 
+	stopWebTransport := func() {}
+	if s.webtransportServer != nil {
+		_, stop, err := ListenWebTransport(s.webtransportServer, s.config.BindAddresses, s.config.WebTransport.Port)
+		if err != nil {
+			return err
+		}
+		stopWebTransport = stop
+	}
+
 	values := []any{
 		"portHttp", s.config.Port,
 		"nodeID", s.currentNode.NodeID(),
@@ -291,6 +300,9 @@ func (s *LivekitServer) Start() error {
 	}
 	if s.config.DebugHandler.Port != 0 {
 		values = append(values, "portDebugHandler", s.config.DebugHandler.Port)
+	}
+	if s.config.WebTransport.Port != 0 {
+		values = append(values, "portWebTransport", s.config.WebTransport.Port)
 	}
 	if s.config.Region != "" {
 		values = append(values, "region", s.config.Region)
@@ -342,6 +354,7 @@ func (s *LivekitServer) Start() error {
 	if s.debugServer != nil {
 		_ = s.debugServer.Shutdown(ctx)
 	}
+	stopWebTransport()
 
 	if s.turnServer != nil {
 		_ = s.turnServer.Close()
@@ -437,6 +450,58 @@ func (s *LivekitServer) backgroundWorker() {
 		case <-roomTicker.C:
 			s.roomManager.CloseIdleRooms()
 		}
+	}
+}
+
+// NewHTTPHandler builds the node's public HTTP handler: the agent endpoint prefix
+// on its own middleware chain, everything else on the API chain. A nil agentFront
+// leaves the prefix unserved, and those paths fall through to apiHandler.
+func NewHTTPHandler(conf *config.Config, keyProvider auth.KeyProvider, apiHandler, agentFront http.Handler) http.Handler {
+	apiMiddlewares := []negroni.Handler{
+		// always first
+		negroni.NewRecovery(),
+		// CORS is allowed, we rely on token authentication to prevent improper use
+		cors.New(corsOptions([]string{"OPTIONS", "HEAD", "GET", "POST", "PATCH", "DELETE"})),
+		// limit request body size so large messages cannot exhaust memory
+		NewRequestBodyLimiter(conf.Limit.MaxAPIRequestBodySize),
+	}
+	// this chain must not swallow http.ErrAbortHandler or bound the request body
+	agentMiddlewares := []negroni.Handler{
+		negroni.HandlerFunc(AgentRecovery),
+		// the methods a manifest may declare, less TRACE, which browsers forbid in CORS
+		cors.New(corsOptions([]string{"OPTIONS", "HEAD", "GET", "POST", "PUT", "PATCH", "DELETE"})),
+	}
+	if keyProvider != nil {
+		authMiddleware := NewAPIKeyAuthMiddleware(keyProvider)
+		apiMiddlewares = append(apiMiddlewares, authMiddleware)
+		agentMiddlewares = append(agentMiddlewares, authMiddleware)
+	}
+
+	api := configureMiddlewares(apiHandler, apiMiddlewares...)
+	var dispatch http.Handler = api
+	if agentFront != nil {
+		agents := configureMiddlewares(agentFront, agentMiddlewares...)
+		dispatch = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if IsAgentEndpointPath(r.URL.EscapedPath()) {
+				agents.ServeHTTP(w, r)
+				return
+			}
+			api.ServeHTTP(w, r)
+		})
+	}
+	return WithPathNormalization(dispatch)
+}
+
+func corsOptions(methods []string) cors.Options {
+	return cors.Options{
+		AllowOriginFunc: func(origin string) bool {
+			return true
+		},
+		AllowedMethods: methods,
+		AllowedHeaders: []string{"*"},
+		ExposedHeaders: []string{"*"},
+		// allow preflight to be cached for a day
+		MaxAge: 86400,
 	}
 }
 

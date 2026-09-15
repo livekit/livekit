@@ -101,10 +101,23 @@ func boolValue(s string) bool {
 }
 
 func RemoveDoubleSlashes(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-	if strings.HasPrefix(r.URL.Path, "//") {
+	// Path and RawPath must move together: once they disagree, EscapedPath()
+	// re-encodes from Path and every escape in the request is lost.
+	if strings.HasPrefix(r.URL.EscapedPath(), "//") {
 		r.URL.Path = r.URL.Path[1:]
+		if r.URL.RawPath != "" {
+			r.URL.RawPath = r.URL.RawPath[1:]
+		}
 	}
 	next(w, r)
+}
+
+// WithPathNormalization applies RemoveDoubleSlashes ahead of h, so routing and every
+// middleware below it see one path form.
+func WithPathNormalization(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		RemoveDoubleSlashes(w, r, h.ServeHTTP)
+	})
 }
 
 // RequestBodyLimiter bounds the size of an incoming HTTP request body so that
