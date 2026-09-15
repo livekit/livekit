@@ -195,6 +195,12 @@ Read our [deployment docs](https://docs.livekit.io/transport/self-hosting/) for 
 [Docker images](https://hub.docker.com/r/livekit/livekit-server) and [Helm charts](https://github.com/livekit/livekit-helm)
 are available.
 
+> [!NOTE]
+> [`whatsapp-connector`](https://github.com/mab3321/whatsapp-connector) is a community-maintained, self-hosted
+> implementation of LiveKit's Connector Twirp API for inbound Meta WhatsApp calls. It bridges ICE/DTLS-SRTP Opus
+> audio directly into LiveKit rooms, supports agent dispatch and call lifecycle handling, and does not transcode.
+> It is not maintained or supported by LiveKit, and outbound calling is not currently implemented.
+
 ## Building from source
 
 Pre-requisites:
