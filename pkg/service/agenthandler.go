@@ -285,6 +285,7 @@ func (h *AgentHandler) registerWorker(w *agent.Worker) {
 		"namespace", w.Namespace,
 		"jobType", w.JobType,
 		"agentName", w.AgentName,
+		"deployment", w.Deployment,
 		"workerID", w.ID,
 	)
 	if created {
@@ -320,6 +321,7 @@ func (h *AgentHandler) deregisterWorker(w *agent.Worker) {
 			"namespace", w.Namespace,
 			"jobType", w.JobType,
 			"agentName", w.AgentName,
+			"deployment", w.Deployment,
 			"workerID", w.ID,
 		)
 		delete(h.namespaceWorkers, key)
