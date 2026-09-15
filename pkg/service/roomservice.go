@@ -133,6 +133,13 @@ func (s *RoomService) ListRooms(ctx context.Context, req *livekit.ListRoomsReque
 	return res, nil
 }
 
+// RoomDeletionConfirmer is optionally implemented by a room store to confirm
+// that a room was already deleted (torn down and marked ended), so DeleteRoom
+// can stay idempotent instead of returning a 404 for a delete that succeeded.
+type RoomDeletionConfirmer interface {
+	RoomEnded(ctx context.Context, name livekit.RoomName) (bool, error)
+}
+
 func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomRequest) (*livekit.DeleteRoomResponse, error) {
 	RecordRequest(ctx, req)
 
@@ -145,6 +152,17 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	if err != nil {
 		return nil, err
 	} else if !exists {
+		// DeleteRoom is idempotent: a room that was already torn down and marked
+		// ended is a successful delete, not a 404. Without this, a retry of a
+		// delete that actually succeeded (the room store no longer has a live
+		// room) fails with ErrRoomNotFound. Only positive proof that the room
+		// ended counts; absence alone does not, since it can also mean a
+		// transient store failure.
+		if c, ok := s.roomStore.(RoomDeletionConfirmer); ok {
+			if ended, cerr := c.RoomEnded(ctx, livekit.RoomName(req.Room)); cerr == nil && ended {
+				return &livekit.DeleteRoomResponse{}, nil
+			}
+		}
 		return nil, ErrRoomNotFound
 	}
 
