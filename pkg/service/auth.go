@@ -76,9 +76,8 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 
 		authToken = authHeader[len(bearerPrefix):]
 	} else {
-		// the body must survive for requests proxied further (agent HTTP
-		// endpoints), so the token comes from the query string alone. URL is nil
-		// on hand-built requests.
+		// fall back to the query string rather than a form body, which must
+		// survive intact for requests proxied further (agent HTTP endpoints).
 		if r.URL != nil {
 			authToken = r.URL.Query().Get(accessTokenParam)
 		}
