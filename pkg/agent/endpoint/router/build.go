@@ -54,7 +54,7 @@ func (b *Builder[T]) Add(t *Template, m Mask, v T) error {
 	idx := b.n
 	b.n++
 
-	if ambiguousTemplate(t) {
+	if t.Ambiguous() {
 		b.ambiguous = append(b.ambiguous, t.raw)
 	}
 
@@ -123,24 +123,6 @@ func singleRun[T any](e *buildEdge[T]) bool {
 		}
 	}
 	return true
-}
-
-// ambiguousTemplate reports whether a template's own shape can force a search,
-// independent of what other templates put in the tree.
-func ambiguousTemplate(t *Template) bool {
-	for i, e := range t.elements {
-		if e.kind == kindLiteral || e.kind == kindUUID {
-			continue
-		}
-		if i == len(t.elements)-1 {
-			continue // terminal: only the greedy run can reach the end
-		}
-		next := t.elements[i+1]
-		if next.kind != kindLiteral || e.kind.charset(next.lit[0]) {
-			return true
-		}
-	}
-	return false
 }
 
 func insertLiteral[T any](n *buildNode[T], lit string, idx uint32) *buildNode[T] {

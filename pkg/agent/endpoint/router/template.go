@@ -16,6 +16,7 @@ package router
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -66,6 +67,46 @@ type Template struct {
 
 // String returns the template as declared.
 func (t *Template) String() string { return t.raw }
+
+// Canonical returns a key identifying what the template matches: two templates
+// with the same canonical form accept exactly the same paths and differ only in
+// param names. Literals are length-prefixed so that a literal brace cannot forge
+// a convertor - "/x/{:str}" is literal text, and must not collide with "/x/{a}".
+func (t *Template) Canonical() string {
+	var b strings.Builder
+	for _, e := range t.elements {
+		if e.kind == kindLiteral {
+			b.WriteByte('L')
+			b.WriteString(strconv.Itoa(len(e.lit)))
+			b.WriteByte(':')
+			b.WriteString(e.lit)
+			continue
+		}
+		b.WriteByte('K')
+		b.WriteString(strconv.Itoa(int(e.kind)))
+	}
+	return b.String()
+}
+
+// Ambiguous reports whether the template's own shape can force the matcher to
+// backtrack - a param a following literal can extend, adjacent params, or a
+// non-final path convertor - independent of what other templates put in the
+// tree.
+func (t *Template) Ambiguous() bool {
+	for i, e := range t.elements {
+		if e.kind == kindLiteral || e.kind == kindUUID {
+			continue
+		}
+		if i == len(t.elements)-1 {
+			continue // terminal: only the greedy run can reach the end
+		}
+		next := t.elements[i+1]
+		if next.kind != kindLiteral || e.kind.charset(next.lit[0]) {
+			return true
+		}
+	}
+	return false
+}
 
 // ParseTemplate parses a starlette path template. Custom convertors are
 // rejected: only the five built-ins may travel over the wire.
