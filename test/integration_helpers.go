@@ -63,7 +63,11 @@ const (
 var roomClient livekit.RoomService
 
 func init() {
-	config.InitLoggerFromConfig(&config.DefaultConfig.Logging)
+	// the logger keeps this pointer, so it needs storage of its own: NewConfig
+	// yaml-marshals DefaultConfig, which reflectively copies the leveler's mutex
+	// while pion goroutines are locking it.
+	logging := config.LoggingConfig{PionLevel: config.DefaultConfig.Logging.PionLevel}
+	config.InitLoggerFromConfig(&logging)
 
 	prometheus.Init("test", livekit.NodeType_SERVER)
 }
