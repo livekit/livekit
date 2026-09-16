@@ -192,10 +192,6 @@ func NewLivekitServer(conf *config.Config,
 		}
 	}
 
-	if err = router.RemoveDeadNodes(); err != nil {
-		return
-	}
-
 	return
 }
 
