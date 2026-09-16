@@ -20,40 +20,37 @@ func ep(path string, methods []string, public bool) *livekit.AgentHttp_AgentEndp
 func TestManifestFullPartialSemantics(t *testing.T) {
 	// POST /x registered after GET /x must still serve POSTs (starlette scans
 	// for a FULL match before settling for the PARTIAL 405)
-	m, err := ParseManifest([]*livekit.AgentHttp_AgentEndpoint{
+	tbl := tableOf(t, mustManifest(t,
 		ep("/x", []string{"GET"}, true),
 		ep("/x", []string{"POST"}, true),
-	})
-	require.NoError(t, err)
+	))
 
-	r, res := m.Match("/x", methodMask(http.MethodPost))
+	_, r, res, _ := tbl.match("/x", methodMask(http.MethodPost), true)
 	require.Equal(t, router.ResultFull, res)
 	require.Equal(t, "/x", r.Template.String())
 
 	// the manifest carries the app's methods verbatim: FastAPI does not imply
 	// HEAD from GET, so neither does the matcher
-	_, res = m.Match("/x", methodMask(http.MethodHead))
+	_, _, res, _ = tbl.match("/x", methodMask(http.MethodHead), true)
 	require.Equal(t, router.ResultPartial, res)
 
 	// PARTIAL only when no route serves the method
-	_, res = m.Match("/x", methodMask(http.MethodDelete))
+	_, _, res, _ = tbl.match("/x", methodMask(http.MethodDelete), true)
 	require.Equal(t, router.ResultPartial, res)
 
 	// an unroutable method masks to 0
-	_, res = m.Match("/x", methodMask("BREW"))
+	_, _, res, _ = tbl.match("/x", methodMask("BREW"), true)
 	require.Equal(t, router.ResultPartial, res)
 
-	_, res = m.Match("/nope", methodMask(http.MethodGet))
+	_, _, res, _ = tbl.match("/nope", methodMask(http.MethodGet), true)
 	require.Equal(t, router.ResultNone, res)
 }
 
 func TestSlashAlternatePaths(t *testing.T) {
-	m, err := ParseManifest([]*livekit.AgentHttp_AgentEndpoint{
+	tbl := tableOf(t, mustManifest(t,
 		ep("/hook", []string{"POST"}, true),
 		ep("/", []string{"POST"}, true),
-	})
-	require.NoError(t, err)
-	candidates := []*Registration{{Manifest: m}}
+	))
 
 	cases := []struct {
 		path, escPath string
@@ -72,7 +69,7 @@ func TestSlashAlternatePaths(t *testing.T) {
 		{"/", "/", "/", "/", false},
 	}
 	for _, c := range cases {
-		alt, altEsc, ok := slashAlternatePaths(candidates, c.path, c.escPath, methodMask(http.MethodPost))
+		alt, altEsc, ok := slashAlternatePaths(tbl, c.path, c.escPath, methodMask(http.MethodPost))
 		require.Equal(t, c.ok, ok, "%q %q", c.path, c.escPath)
 		require.Equal(t, c.alt, alt, "%q %q", c.path, c.escPath)
 		require.Equal(t, c.altEsc, altEsc, "%q %q", c.path, c.escPath)
@@ -82,16 +79,16 @@ func TestSlashAlternatePaths(t *testing.T) {
 // Templates anchor as `\n?$`: path refuses '\n' where str accepts it, so a
 // decoded %0A would otherwise change which route wins.
 func TestManifestTrailingNewlineRouteIdentity(t *testing.T) {
-	m, err := ParseManifest([]*livekit.AgentHttp_AgentEndpoint{
+	tbl := tableOf(t, mustManifest(t,
 		ep("/files/{p:path}", []string{"GET"}, false),
 		ep("/files/{p}", []string{"GET"}, true),
-	})
-	require.NoError(t, err)
+	))
 
-	r, res := m.Match("/files/x\n", methodMask(http.MethodGet))
+	matched, r, res, denied := tbl.match("/files/x\n", methodMask(http.MethodGet), false)
 	require.Equal(t, router.ResultFull, res)
 	require.Equal(t, "/files/{p:path}", r.Template.String())
-	require.False(t, r.Public, "the private route must win, as it does on the worker")
+	require.Empty(t, matched)
+	require.True(t, denied, "the private route must win, as it does on the worker")
 }
 
 func TestManifestValidation(t *testing.T) {

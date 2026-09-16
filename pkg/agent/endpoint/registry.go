@@ -19,6 +19,8 @@ import (
 	"errors"
 	"slices"
 	"sync"
+
+	"github.com/livekit/protocol/logger"
 )
 
 // DefaultDeployment is the URL segment that addresses workers registered with an
@@ -99,6 +101,10 @@ func NewRegistration(params RegistrationParams) *Registration {
 	}
 }
 
+func (r *Registration) key() regKey {
+	return regKey{r.APIKey, r.AgentName, normalizeDeployment(r.Deployment)}
+}
+
 // IsDraining is false when no drain signal was supplied.
 func (r *Registration) IsDraining() bool {
 	return r.draining != nil && r.draining()
@@ -168,10 +174,17 @@ func (r *Registration) close() {
 
 // Registry tracks data-plane registrations on this node, keyed by
 // (api key, agent name, deployment). The api key is the project identity in OSS.
+//
+// Each key also owns a merged route table. Registrations and routes move
+// together under g.lock, so a worker present in byKey always has its routes
+// installed.
 type Registry struct {
-	lock  sync.RWMutex
-	regs  map[string]*Registration // by worker id
-	byKey map[regKey][]*Registration
+	logger logger.Logger
+
+	lock   sync.RWMutex
+	regs   map[string]*Registration // by worker id
+	byKey  map[regKey][]*Registration
+	tables map[regKey]*routeTable
 }
 
 type regKey struct {
@@ -182,8 +195,10 @@ type regKey struct {
 
 func NewRegistry() *Registry {
 	return &Registry{
-		regs:  make(map[string]*Registration),
-		byKey: make(map[regKey][]*Registration),
+		logger: logger.GetLogger().WithComponent("agents.endpoint"),
+		regs:   make(map[string]*Registration),
+		byKey:  make(map[regKey][]*Registration),
+		tables: make(map[regKey]*routeTable),
 	}
 }
 
@@ -192,24 +207,58 @@ func NewRegistry() *Registry {
 // able to strand the new epoch (its own Deregister is a no-op once replaced).
 // The superseded epoch's session is closed.
 func (g *Registry) Register(r *Registration) {
-	key := regKey{r.APIKey, r.AgentName, normalizeDeployment(r.Deployment)}
+	key := r.key()
 	g.lock.Lock()
-	old := g.regs[r.WorkerID]
+	superseded := g.regs[r.WorkerID]
+	old := superseded
 	if old != nil {
-		g.removeLocked(old)
+		g.unlinkLocked(old)
+		if old.key() != key {
+			// nothing pins agent name or deployment across epochs, so the
+			// retiring epoch's routes may live in another table
+			g.retractLocked(old)
+			old = nil
+		}
 	}
+	// one transaction, so an unchanged manifest keeps its Route pointers
+	g.tableLocked(key).mutate(old, r)
 	g.regs[r.WorkerID] = r
 	g.byKey[key] = append(g.byKey[key], r)
 	g.lock.Unlock()
-	if old != nil {
-		old.close()
+	if superseded != nil {
+		superseded.close()
 	}
+}
+
+// tableLocked returns the key's route table, creating it on first use. Callers
+// hold g.lock.
+func (g *Registry) tableLocked(key regKey) *routeTable {
+	tbl := g.tables[key]
+	if tbl == nil {
+		tbl = newRouteTable(key, g.logger)
+		g.tables[key] = tbl
+	}
+	return tbl
+}
+
+// table returns a deployment's merged route table, or nil when no worker holds
+// the key.
+func (g *Registry) table(apiKey, agentName, deployment string) *routeTable {
+	g.lock.RLock()
+	defer g.lock.RUnlock()
+	return g.tables[regKey{apiKey, agentName, normalizeDeployment(deployment)}]
 }
 
 // removeLocked unlinks a registration from all indexes. Callers hold g.lock.
 func (g *Registry) removeLocked(r *Registration) {
+	g.unlinkLocked(r)
+	g.retractLocked(r)
+}
+
+// unlinkLocked drops a registration from the worker-id and key indexes.
+func (g *Registry) unlinkLocked(r *Registration) {
 	delete(g.regs, r.WorkerID)
-	key := regKey{r.APIKey, r.AgentName, normalizeDeployment(r.Deployment)}
+	key := r.key()
 	if regs := g.byKey[key]; len(regs) > 0 {
 		if i := slices.Index(regs, r); i != -1 {
 			regs = slices.Delete(regs, i, i+1)
@@ -219,6 +268,20 @@ func (g *Registry) removeLocked(r *Registration) {
 		} else {
 			g.byKey[key] = regs
 		}
+	}
+}
+
+// retractLocked drops a registration's routes. A table exists only while it
+// holds routes.
+func (g *Registry) retractLocked(r *Registration) {
+	key := r.key()
+	tbl := g.tables[key]
+	if tbl == nil {
+		return
+	}
+	tbl.mutate(r, nil)
+	if tbl.empty() {
+		delete(g.tables, key)
 	}
 }
 

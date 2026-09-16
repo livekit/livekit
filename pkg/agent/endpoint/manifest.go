@@ -20,6 +20,8 @@ import (
 	"net/http"
 	"strings"
 
+	"go.uber.org/zap/zapcore"
+
 	"github.com/livekit/protocol/livekit"
 
 	"github.com/livekit/livekit-server/pkg/agent/endpoint/router"
@@ -28,13 +30,44 @@ import (
 
 const MaxManifestRoutes = 256
 
-// Manifest is a worker's route table, in declaration order.
-type Manifest = router.Router[*Route]
+// Manifest is one worker's validated route table, in declaration order.
+type Manifest struct {
+	Endpoints []Endpoint
+	ambiguous []string
+}
 
-// Route is one validated manifest entry.
-type Route struct {
+// Endpoint is one validated manifest entry. Mask carries the methods exactly as
+// declared, so it may name several.
+type Endpoint struct {
 	Template *router.Template
+	Mask     router.Mask
 	Public   bool
+}
+
+// Ambiguous returns the declared templates whose shape forces the matcher to
+// backtrack. The result is read-only.
+func (m *Manifest) Ambiguous() []string {
+	if m == nil {
+		return nil
+	}
+	return m.ambiguous
+}
+
+// MarshalLogObject describes the manifest's shape.
+func (m *Manifest) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if m == nil {
+		return nil
+	}
+	e.AddInt("routes", len(m.Endpoints))
+	if len(m.ambiguous) == 0 {
+		return nil
+	}
+	return e.AddArray("ambiguous", zapcore.ArrayMarshalerFunc(func(a zapcore.ArrayEncoder) error {
+		for _, t := range m.ambiguous {
+			a.AppendString(t)
+		}
+		return nil
+	}))
 }
 
 // methodMask tags a route with the methods it serves. The set is exactly the
@@ -85,13 +118,12 @@ func NegotiateSettings(req *livekit.RegisterWorkerRequest) (*livekit.AgentHttp_A
 	return &livekit.AgentHttp_AgentEndpointSettings{Protocol: negotiated}, nil
 }
 
-// ParseManifest validates a registration's endpoint list and compiles it into
-// a router.
+// ParseManifest validates a registration's endpoint list.
 func ParseManifest(endpoints []*livekit.AgentHttp_AgentEndpoint) (*Manifest, error) {
 	if len(endpoints) > MaxManifestRoutes {
 		return nil, fmt.Errorf("manifest exceeds %d routes", MaxManifestRoutes)
 	}
-	b := router.NewBuilder[*Route]()
+	m := &Manifest{Endpoints: make([]Endpoint, 0, len(endpoints))}
 	for _, ep := range endpoints {
 		tpl, err := router.ParseTemplate(ep.GetPath())
 		if err != nil {
@@ -109,15 +141,16 @@ func ParseManifest(endpoints []*livekit.AgentHttp_AgentEndpoint) (*Manifest, err
 			if u != method {
 				return nil, fmt.Errorf("endpoint %q method %q must be uppercase", ep.GetPath(), method)
 			}
-			m := methodMask(u)
-			if m == 0 {
+			b := methodMask(u)
+			if b == 0 {
 				return nil, fmt.Errorf("endpoint %q declares unsupported method %q", ep.GetPath(), method)
 			}
-			mask |= m
+			mask |= b
 		}
-		if err := b.Add(tpl, mask, &Route{Template: tpl, Public: ep.GetPublic()}); err != nil {
-			return nil, err
+		if tpl.Ambiguous() {
+			m.ambiguous = append(m.ambiguous, tpl.String())
 		}
+		m.Endpoints = append(m.Endpoints, Endpoint{Template: tpl, Mask: mask, Public: ep.GetPublic()})
 	}
-	return b.Build(), nil
+	return m, nil
 }

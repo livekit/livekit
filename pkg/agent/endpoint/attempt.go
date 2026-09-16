@@ -37,7 +37,6 @@ type attempt struct {
 	escPath string
 	// target is the origin-form request target, still percent-encoded
 	target    string
-	route     *Route
 	requestID string
 	granted   bool
 	body      io.Reader
@@ -95,9 +94,6 @@ func (a *attempt) newPreamble() *livekit.AgentHttp_StreamPreamble {
 		Authorized: a.granted,
 		ClientAddr: clientAddr,
 		Scheme:     scheme,
-	}
-	if a.route != nil && a.route.Template != nil {
-		p.Route = a.route.Template.String()
 	}
 	return p
 }

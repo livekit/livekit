@@ -208,15 +208,15 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	candidates := f.params.Registry.Candidates(access.APIKey, agentName, deployment)
-	if len(candidates) == 0 && f.params.Fallback == nil {
+	tbl := f.params.Registry.table(access.APIKey, agentName, deployment)
+	if tbl == nil && f.params.Fallback == nil {
 		f.writeUnavailable(w, "no workers available for deployment")
 		return
 	}
 
 	mask := methodMask(r.Method)
 	granted := access.Level >= AccessGranted
-	matched, route, partial, denied := matchDeployment(candidates, path, mask, granted)
+	matched, partial, denied := f.matchDeployment(tbl, path, mask, granted)
 	// no exact match: if only the trailing-slash alternate matches a registered
 	// route, normalize the path to that form and serve it directly (no client
 	// redirect). The exact form is tried first, so a route registered with a
@@ -224,9 +224,9 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// the registered form. When the request must be relayed, the serving node
 	// runs this same normalization, so no redirect is ever emitted.
 	if len(matched) == 0 && !partial && !denied {
-		if alt, altEsc, ok := slashAlternatePaths(candidates, path, escPath, mask); ok {
+		if alt, altEsc, ok := slashAlternatePaths(tbl, path, escPath, mask); ok {
 			path, escPath = alt, altEsc
-			matched, route, partial, denied = matchDeployment(candidates, path, mask, granted)
+			matched, partial, denied = f.matchDeployment(tbl, path, mask, granted)
 		}
 	}
 	if len(matched) == 0 && f.params.Fallback != nil {
@@ -240,7 +240,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}) {
 			return
 		}
-		if len(candidates) == 0 && !denied && !partial {
+		if tbl == nil && !denied && !partial {
 			f.writeUnavailable(w, "no workers available for deployment")
 			return
 		}
@@ -268,7 +268,6 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		req:       r,
 		escPath:   escPath,
 		target:    requestTarget(escPath, r.URL.RawQuery),
-		route:     route,
 		requestID: reqID,
 		granted:   granted,
 		pools:     f.pools,
@@ -288,15 +287,18 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	attempted := make(map[*Registration]bool)
 	for range maxAttempts {
-		reg := pickWorker(matched, attempted)
-		if reg == nil {
+		picked := pickWorker(matched, attempted)
+		if picked == nil {
 			break
 		}
-		attempted[reg] = true
+		attempted[picked.reg] = true
 
 		a.before = bodyConsumed.Load()
 		a.refreshTimeout()
-		switch f.bridge(w, a, reg) {
+		// the preamble is re-serialized per attempt, so this reaches only the
+		// worker it was set for
+		a.preamble.Route = picked.raw
+		switch f.bridge(w, a, picked.reg) {
 		case bridgeDone:
 			return
 		case bridgeAbort:
@@ -324,42 +326,37 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.writeUnavailable(w, "no worker could serve the request")
 }
 
-// matchDeployment resolves a path against every candidate worker's manifest.
-// A candidate joins matched when it can serve it; route stays nil when a table
-// was too ambiguous to decide, so matched is the dispatch test.
-func matchDeployment(candidates []*Registration, path string, mask router.Mask, granted bool) (matched []*Registration, route *Route, partial, denied bool) {
-	for _, reg := range candidates {
-		rt, res := reg.Manifest.Match(path, mask)
-		switch res {
-		case router.ResultFull:
-			if !granted && !rt.Public {
-				denied = true
-				continue
-			}
-			if route == nil {
-				route = rt
-			}
-			matched = append(matched, reg)
-		case router.ResultPartial:
-			partial = true
-		case router.ResultOverBudget:
-			// no route was decided, so its Public flag is unknown and only a grant
-			// can clear the request
-			if !granted {
-				denied = true
-				continue
-			}
-			matched = append(matched, reg)
+// matchDeployment resolves a path against the deployment's merged route table.
+// matched is the dispatch test: a route can be decided while nothing is left to
+// serve it, and an undecidable table dispatches with no route at all.
+func (f *Front) matchDeployment(tbl *routeTable, path string, mask router.Mask, granted bool) (matched []routeWorker, partial, denied bool) {
+	if tbl == nil {
+		return nil, false, false
+	}
+	var res router.Result
+	matched, _, res, denied = tbl.match(path, mask, granted)
+	switch res {
+	case router.ResultPartial:
+		partial = true
+	case router.ResultOverBudget:
+		// no route was decided, so its Public flag is unknown and only a grant
+		// can clear the request
+		if !granted {
+			denied = true
+			break
+		}
+		for _, reg := range f.params.Registry.Candidates(tbl.key.apiKey, tbl.key.agentName, tbl.key.deployment) {
+			matched = append(matched, routeWorker{reg: reg})
 		}
 	}
 	return
 }
 
-// slashAlternatePaths looks for a candidate that serves the trailing-slash
-// alternate of path, returning the decoded and escaped forms to retry. Both
+// slashAlternatePaths looks for the trailing-slash alternate of path in the
+// deployment's table, returning the decoded and escaped forms to retry. Both
 // forms come out of the same transform.
-func slashAlternatePaths(candidates []*Registration, path, escPath string, mask router.Mask) (string, string, bool) {
-	if path == "/" {
+func slashAlternatePaths(tbl *routeTable, path, escPath string, mask router.Mask) (string, string, bool) {
+	if tbl == nil || path == "/" {
 		return path, escPath, false
 	}
 	var alt, altEsc string
@@ -373,12 +370,10 @@ func slashAlternatePaths(candidates []*Registration, path, escPath string, mask 
 	} else {
 		alt, altEsc = path+"/", escPath+"/"
 	}
-	for _, reg := range candidates {
-		if _, res := reg.Manifest.Match(alt, mask); res == router.ResultFull {
-			return alt, altEsc, true
-		}
+	if !tbl.serves(alt, mask) {
+		return path, escPath, false
 	}
-	return path, escPath, false
+	return alt, altEsc, true
 }
 
 // endpointPath is a request split into its routing components.
@@ -432,20 +427,20 @@ func splitEndpointPath(u *url.URL) (endpointPath, error) {
 }
 
 // pickWorker chooses a worker by the power of two choices: sample two eligible
-// registrations at random and take the one with fewer in-flight streams.
+// declarations at random and take the one with fewer in-flight streams.
 // Eligible = not already attempted, has a live session, not draining.
-func pickWorker(regs []*Registration, ignore map[*Registration]bool) *Registration {
-	var eligible []*Registration
-	for _, reg := range regs {
-		if ignore[reg] || !reg.HasSession() || reg.IsDraining() {
+func pickWorker(workers []routeWorker, ignore map[*Registration]bool) *routeWorker {
+	var eligible []routeWorker
+	for _, w := range workers {
+		if ignore[w.reg] || !w.reg.HasSession() || w.reg.IsDraining() {
 			continue
 		}
-		eligible = append(eligible, reg)
+		eligible = append(eligible, w)
 	}
 	if len(eligible) == 0 {
 		return nil
 	}
-	return eligible[p2c(eligible, (*Registration).InflightStreams)]
+	return &eligible[p2c(eligible, func(w routeWorker) int { return w.reg.InflightStreams() })]
 }
 
 // p2c returns the index of the less-loaded of two distinct random draws from
