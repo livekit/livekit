@@ -24,14 +24,6 @@ import (
 	"github.com/livekit/protocol/utils"
 )
 
-type sender interface {
-	SubscriberID() livekit.ParticipantID
-}
-
-type rtpWriter[P any] interface {
-	WriteRTP(pkt P, layer int32) int32
-}
-
 // 100µs is enough to amortize the overhead and provide sufficient load balancing.
 // WriteRTP takes about 50µs on average, so we write to 2 down tracks per loop.
 const broadcastStep = 2
@@ -122,6 +114,35 @@ func (d *DownTrackSpreader[T]) Broadcast(writer func(T)) {
 	utils.ParallelExec(downTracks, uint64(threshold), broadcastStep, writer)
 }
 
+func (d *DownTrackSpreader[T]) DownTrackCount() int {
+	d.downTrackMu.RLock()
+	defer d.downTrackMu.RUnlock()
+	return len(d.downTracksShadow)
+}
+
+func (d *DownTrackSpreader[T]) shadowDownTracks() {
+	d.downTracksShadow = make([]T, 0, len(d.downTracks))
+	for _, dt := range d.downTracks {
+		d.downTracksShadow = append(d.downTracksShadow, dt)
+	}
+}
+
+func (d *DownTrackSpreader[T]) SetThreshold(threshold int) {
+	d.downTrackMu.Lock()
+	d.params.Threshold = threshold
+	d.downTrackMu.Unlock()
+}
+
+// ------------------------------------------------
+
+type sender interface {
+	SubscriberID() livekit.ParticipantID
+}
+
+type rtpWriter[P any] interface {
+	WriteRTP(pkt P, layer int32) int32
+}
+
 // rtpBroadcast is the shared state of one parallel BroadcastRTP, it carries the
 // packet and layer so that no closure has to be allocated per packet
 type rtpBroadcast[T rtpWriter[P], P any] struct {
@@ -176,23 +197,4 @@ func BroadcastRTP[T interface {
 	b.wg.Wait()
 
 	return b.written.Load()
-}
-
-func (d *DownTrackSpreader[T]) DownTrackCount() int {
-	d.downTrackMu.RLock()
-	defer d.downTrackMu.RUnlock()
-	return len(d.downTracksShadow)
-}
-
-func (d *DownTrackSpreader[T]) shadowDownTracks() {
-	d.downTracksShadow = make([]T, 0, len(d.downTracks))
-	for _, dt := range d.downTracks {
-		d.downTracksShadow = append(d.downTracksShadow, dt)
-	}
-}
-
-func (d *DownTrackSpreader[T]) SetThreshold(threshold int) {
-	d.downTrackMu.Lock()
-	d.params.Threshold = threshold
-	d.downTrackMu.Unlock()
 }
