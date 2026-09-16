@@ -63,9 +63,6 @@ const (
 var roomClient livekit.RoomService
 
 func init() {
-	// the logger keeps this pointer, so it needs storage of its own: NewConfig
-	// yaml-marshals DefaultConfig, which reflectively copies the leveler's mutex
-	// while pion goroutines are locking it.
 	logging := config.LoggingConfig{PionLevel: config.DefaultConfig.Logging.PionLevel}
 	config.InitLoggerFromConfig(&logging)
 
