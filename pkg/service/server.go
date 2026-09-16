@@ -30,7 +30,6 @@ import (
 
 	"github.com/pion/turn/v5"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/quic-go/webtransport-go"
 	"github.com/rs/cors"
 	"github.com/twitchtv/twirp"
 	"github.com/urfave/negroni/v3"
@@ -55,7 +54,7 @@ type LivekitServer struct {
 	httpServer         *http.Server
 	promServer         *http.Server
 	debugServer        *http.Server
-	webtransportServer *webtransport.Server
+	webtransportServer *WebTransportServer
 	router             routing.Router
 	roomManager        *RoomManager
 	signalServer       *SignalServer
@@ -267,13 +266,10 @@ func (s *LivekitServer) Start() error {
 		}
 	}
 
-	stopWebTransport := func() {}
 	if s.webtransportServer != nil {
-		_, stop, err := ListenWebTransport(s.webtransportServer, s.config.BindAddresses, s.config.WebTransport.Port)
-		if err != nil {
+		if _, err := s.webtransportServer.Listen(s.config.BindAddresses, s.config.WebTransport.Port); err != nil {
 			return err
 		}
-		stopWebTransport = stop
 	}
 
 	values := []any{
@@ -354,7 +350,9 @@ func (s *LivekitServer) Start() error {
 	if s.debugServer != nil {
 		_ = s.debugServer.Shutdown(ctx)
 	}
-	stopWebTransport()
+	if s.webtransportServer != nil {
+		_ = s.webtransportServer.Shutdown(ctx)
+	}
 
 	if s.turnServer != nil {
 		_ = s.turnServer.Close()

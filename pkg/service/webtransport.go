@@ -75,19 +75,31 @@ func WebTransportTLS(certFile, keyFile string, dev bool) (*tls.Config, error) {
 	}, nil
 }
 
+// WebTransportServer's embedded Close releases sessions but not the sockets;
+// Shutdown is the teardown path.
+type WebTransportServer struct {
+	*webtransport.Server
+
+	mu      sync.Mutex
+	conns   []*net.UDPConn
+	lns     []*quic.EarlyListener
+	cancel  context.CancelFunc
+	serving sync.WaitGroup
+}
+
 // NewWebTransportServer wraps an HTTP/3 WebTransport server around tlsConf (the
 // h3 ALPN is set here if absent). The caller must assign wt.H3.Handler.
-func NewWebTransportServer(tlsConf *tls.Config) *webtransport.Server {
+func NewWebTransportServer(tlsConf *tls.Config) *WebTransportServer {
 	tlsConf = tlsConf.Clone()
 	if len(tlsConf.NextProtos) == 0 {
 		tlsConf.NextProtos = []string{http3.NextProtoH3}
 	}
-	return &webtransport.Server{H3: &http3.Server{TLSConfig: tlsConf}}
+	return &WebTransportServer{Server: &webtransport.Server{H3: &http3.Server{TLSConfig: tlsConf}}}
 }
 
 // NewWebTransportHandler builds the listener's handler: mux behind api-key auth,
 // with wt in each request's context.
-func NewWebTransportHandler(keyProvider auth.KeyProvider, wt *webtransport.Server, mux http.Handler) http.Handler {
+func NewWebTransportHandler(keyProvider auth.KeyProvider, wt *WebTransportServer, mux http.Handler) http.Handler {
 	middlewares := []negroni.Handler{negroni.NewRecovery()}
 	if keyProvider != nil {
 		middlewares = append(middlewares, NewAPIKeyAuthMiddleware(keyProvider))
@@ -99,7 +111,7 @@ type webTransportServerKey struct{}
 
 // WithWebTransportServer puts wt in each request's context, where a route that
 // upgrades reads it. Apply it outermost, ahead of the listener's middleware chain.
-func WithWebTransportServer(wt *webtransport.Server, next http.Handler) http.Handler {
+func WithWebTransportServer(wt *WebTransportServer, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), webTransportServerKey{}, wt)))
 	})
@@ -107,8 +119,8 @@ func WithWebTransportServer(wt *webtransport.Server, next http.Handler) http.Han
 
 // GetWebTransportServer returns the server serving this request, or nil when the
 // request did not arrive over a WebTransport listener.
-func GetWebTransportServer(ctx context.Context) *webtransport.Server {
-	wt, _ := ctx.Value(webTransportServerKey{}).(*webtransport.Server)
+func GetWebTransportServer(ctx context.Context) *WebTransportServer {
+	wt, _ := ctx.Value(webTransportServerKey{}).(*WebTransportServer)
 	return wt
 }
 
@@ -134,20 +146,17 @@ func unwrapResponseWriter(w http.ResponseWriter) http.ResponseWriter {
 	}
 }
 
-// ListenWebTransport binds a UDP socket per address and serves wt on each,
-// returning the bound addresses and a stop func. Empty addrs binds all interfaces.
-func ListenWebTransport(wt *webtransport.Server, addrs []string, port uint32) ([]net.Addr, func(), error) {
+// Listen binds one UDP socket per address. Empty addrs binds all interfaces.
+func (s *WebTransportServer) Listen(addrs []string, port uint32) ([]net.Addr, error) {
 	if len(addrs) == 0 {
 		addrs = []string{""}
 	}
 
-	// webtransport.Server.Serve takes a reference on a WaitGroup that
-	// Server.Close waits on, so running the two concurrently is a race by the
-	// WaitGroup's own rules. Accepting here instead leaves that counter at zero:
-	// Server.ServeQUICConn never touches it.
+	// Server.Serve takes a reference on the WaitGroup Server.Close waits on;
+	// Server.ServeQUICConn does not.
 	quicConf := &quic.Config{}
-	if wt.H3.QUICConfig != nil {
-		quicConf = wt.H3.QUICConfig.Clone()
+	if s.H3.QUICConfig != nil {
+		quicConf = s.H3.QUICConfig.Clone()
 	}
 	quicConf.EnableDatagrams = true
 	quicConf.EnableStreamResetPartialDelivery = true
@@ -169,50 +178,72 @@ func ListenWebTransport(wt *webtransport.Server, addrs []string, port uint32) ([
 		udpAddr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(addr, strconv.Itoa(int(port))))
 		if err != nil {
 			closeAll()
-			return nil, nil, err
+			return nil, err
 		}
 		udp, err := net.ListenUDP("udp", udpAddr)
 		if err != nil {
 			closeAll()
-			return nil, nil, err
+			return nil, err
 		}
 		conns = append(conns, udp)
 		bound = append(bound, udp.LocalAddr())
 
-		ln, err := quic.ListenEarly(udp, wt.H3.TLSConfig, quicConf)
+		ln, err := quic.ListenEarly(udp, s.H3.TLSConfig, quicConf)
 		if err != nil {
 			closeAll()
-			return nil, nil, err
+			return nil, err
 		}
 		lns = append(lns, ln)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	var serving sync.WaitGroup
+	s.mu.Lock()
+	s.conns, s.lns, s.cancel = conns, lns, cancel
+	s.mu.Unlock()
+
 	for _, ln := range lns {
-		serving.Go(func() { acceptWebTransport(ctx, wt, ln, &serving) })
+		s.serving.Go(func() { s.accept(ctx, ln) })
 	}
 	logger.Infow("webtransport listener started", "addresses", bound)
 
-	return bound, func() {
-		// the sockets stay open until everything has drained, so every
-		// CONNECTION_CLOSE frame still reaches its peer
-		_ = wt.Close()
-		cancel()
-		serving.Wait()
-		closeAll()
-	}, nil
+	return bound, nil
 }
 
-func acceptWebTransport(ctx context.Context, wt *webtransport.Server, ln *quic.EarlyListener, serving *sync.WaitGroup) {
+// Shutdown is safe on a server that never listened, and safe to call more than
+// once. Peers get a GOAWAY, then whatever has not drained by the ctx deadline is
+// closed under it.
+func (s *WebTransportServer) Shutdown(ctx context.Context) error {
+	s.mu.Lock()
+	cancel, conns, lns := s.cancel, s.conns, s.lns
+	s.cancel, s.conns, s.lns = nil, nil, nil
+	s.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	err := s.H3.Shutdown(ctx)
+	_ = s.Server.Close()
+	s.serving.Wait()
+
+	// the sockets close last, so every CONNECTION_CLOSE frame still reaches its peer
+	for _, ln := range lns {
+		_ = ln.Close()
+	}
+	for _, c := range conns {
+		_ = c.Close()
+	}
+	return err
+}
+
+func (s *WebTransportServer) accept(ctx context.Context, ln *quic.EarlyListener) {
 	for {
 		conn, err := ln.Accept(ctx)
 		if err != nil {
 			logger.Infow("webtransport listener stopped", "error", err)
 			return
 		}
-		serving.Go(func() {
-			if err := wt.ServeQUICConn(conn); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		s.serving.Go(func() {
+			if err := s.ServeQUICConn(conn); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				logger.Infow("webtransport connection stopped", "error", err)
 			}
 		})

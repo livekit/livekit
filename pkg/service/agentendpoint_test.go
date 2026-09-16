@@ -125,9 +125,14 @@ func newEndpointStack(t *testing.T, endpointsCfg agent.EndpointsConfig) *endpoin
 	wtMux.Handle("/agent", service.NewAgentWTService(h))
 	wt := service.NewWebTransportServer(selfSignedTLS(t))
 	wt.H3.Handler = service.NewWebTransportHandler(keyProvider, wt, wtMux)
-	bound, stopWT, err := service.ListenWebTransport(wt, []string{"127.0.0.1"}, 0)
+	bound, err := wt.Listen([]string{"127.0.0.1"}, 0)
 	require.NoError(t, err)
-	t.Cleanup(stopWT)
+	t.Cleanup(func() {
+		// t.Context() is already cancelled by the time cleanups run
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = wt.Shutdown(ctx)
+	})
 	wtURL := "https://" + bound[0].String() + "/agent"
 
 	return &endpointStack{t: t, ts: ts, handler: h, scopes: scopes, wtURL: wtURL}

@@ -15,6 +15,7 @@
 package service_test
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
@@ -30,8 +31,8 @@ func TestWebTransportStopBeforeFirstConnection(t *testing.T) {
 	for range 20 {
 		wt := service.NewWebTransportServer(selfSignedTLS(t))
 		wt.H3.Handler = service.NewWebTransportHandler(nil, wt, http.NewServeMux())
-		_, stop, err := service.ListenWebTransport(wt, []string{"127.0.0.1"}, 0)
+		_, err := wt.Listen([]string{"127.0.0.1"}, 0)
 		require.NoError(t, err)
-		stop()
+		require.NoError(t, wt.Shutdown(context.Background()))
 	}
 }
