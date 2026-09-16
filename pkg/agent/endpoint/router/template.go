@@ -182,18 +182,19 @@ func scanParam(s string, i int) (name, convertor string, end int, ok bool) {
 }
 
 func scanIdent(s string, i int) int {
-	if i >= len(s) || !(isAlpha(s[i]) || s[i] == '_') {
+	if i >= len(s) || !isIdentStart(s[i]) {
 		return i
 	}
 	j := i + 1
-	for j < len(s) && (isAlpha(s[j]) || isDigit(s[j]) || s[j] == '_') {
+	for j < len(s) && (isIdentStart(s[j]) || isDigit(s[j])) {
 		j++
 	}
 	return j
 }
 
-func isAlpha(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }
-func isDigit(c byte) bool { return c >= '0' && c <= '9' }
+func isAlpha(c byte) bool      { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }
+func isDigit(c byte) bool      { return c >= '0' && c <= '9' }
+func isIdentStart(c byte) bool { return isAlpha(c) || c == '_' }
 
 func isHex(c byte) bool {
 	return isDigit(c) || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
