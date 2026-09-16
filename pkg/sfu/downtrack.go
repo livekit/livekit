@@ -1044,10 +1044,11 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		return 0
 	}
 
+	codecBytes := tp.codecHeader()
 	poolEntity := PacketFactory.Get().(*[]byte)
 	payload := *poolEntity
-	copy(payload, tp.codecBytes)
-	n := copy(payload[len(tp.codecBytes):], extPkt.Packet.Payload[tp.incomingHeaderSize:])
+	copy(payload, codecBytes)
+	n := copy(payload[len(codecBytes):], extPkt.Packet.Payload[tp.incomingHeaderSize:])
 	if n != len(extPkt.Packet.Payload[tp.incomingHeaderSize:]) {
 		d.params.Logger.Errorw(
 			"payload overflow", errPayloadOverflow,
@@ -1057,7 +1058,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		PacketFactory.Put(poolEntity)
 		return 0
 	}
-	payload = payload[:len(tp.codecBytes)+n]
+	payload = payload[:len(codecBytes)+n]
 
 	trailerStripped := 0
 	if d.params.StripPacketTrailer {
@@ -1068,7 +1069,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 
 	// translate RTP header
 	hdr := RTPHeaderFactory.Get().(*rtp.Header)
-	*hdr = rtp.Header{
+	initPooledRTPHeader(hdr, rtp.Header{
 		Version:        extPkt.Packet.Version,
 		Padding:        false,
 		Marker:         tp.marker,
@@ -1076,7 +1077,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		SequenceNumber: uint16(tp.rtp.extSequenceNumber),
 		Timestamp:      uint32(tp.rtp.extTimestamp),
 		SSRC:           d.ssrc,
-	}
+	})
 
 	// add extensions
 	if d.dependencyDescriptorExtID != 0 && tp.ddBytes != nil {
@@ -1129,7 +1130,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 			tp.rtp.extTimestamp,
 			hdr.Marker,
 			int8(layer),
-			payload[:len(tp.codecBytes)],
+			payload[:len(codecBytes)],
 			tp.incomingHeaderSize,
 			tp.ddBytes,
 			actBytes,
@@ -1280,7 +1281,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 	payloads := make([]byte, RTPPaddingMaxPayloadSize*len(snts))
 	for i := range snts {
 		hdr := RTPHeaderFactory.Get().(*rtp.Header)
-		*hdr = rtp.Header{
+		initPooledRTPHeader(hdr, rtp.Header{
 			Version:        2,
 			Padding:        true,
 			PaddingSize:    byte(RTPPaddingMaxPayloadSize),
@@ -1289,7 +1290,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 			SequenceNumber: uint16(snts[i].extSequenceNumber),
 			Timestamp:      uint32(snts[i].extTimestamp),
 			SSRC:           d.ssrc,
-		}
+		})
 		d.addDummyExtensions(hdr)
 
 		payload := payloads[i*RTPPaddingMaxPayloadSize : (i+1)*RTPPaddingMaxPayloadSize : (i+1)*RTPPaddingMaxPayloadSize]
@@ -2193,7 +2194,7 @@ func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isPro
 		return 0, errPayloadOverflow
 	}
 	hdr := RTPHeaderFactory.Get().(*rtp.Header)
-	*hdr = rtp.Header{
+	initPooledRTPHeader(hdr, rtp.Header{
 		Version:        pkt.Header.Version,
 		Padding:        false,
 		Marker:         epm.marker,
@@ -2201,7 +2202,7 @@ func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isPro
 		SequenceNumber: epm.targetSeqNo,
 		Timestamp:      epm.timestamp,
 		SSRC:           d.ssrc,
-	}
+	})
 	rtxOffset := 0
 	var rtxExtSequenceNumber uint64
 	if rtxPT := d.payloadTypeRTX.Load(); rtxPT != 0 && d.ssrcRTX != 0 {
@@ -2433,7 +2434,7 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 		for i := range num {
 			rtxExtSequenceNumber := d.rtxSequenceNumber.Inc()
 			hdr := RTPHeaderFactory.Get().(*rtp.Header)
-			*hdr = rtp.Header{
+			initPooledRTPHeader(hdr, rtp.Header{
 				Version:        2,
 				Padding:        true,
 				PaddingSize:    byte(RTPPaddingMaxPayloadSize),
@@ -2442,7 +2443,7 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 				SequenceNumber: uint16(rtxExtSequenceNumber),
 				Timestamp:      0,
 				SSRC:           d.ssrcRTX,
-			}
+			})
 			d.addDummyExtensions(hdr)
 
 			payload := payloads[i*RTPPaddingMaxPayloadSize : (i+1)*RTPPaddingMaxPayloadSize : (i+1)*RTPPaddingMaxPayloadSize]

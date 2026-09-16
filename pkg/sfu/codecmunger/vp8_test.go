@@ -195,11 +195,11 @@ func TestOutOfOrderPictureId(t *testing.T) {
 	vp8.PictureID = 13466
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 
-	nIn, buf, err := v.UpdateAndGet(extPkt, true, false, 2)
+	nIn, hdr, nOut, err := v.UpdateAndGet(extPkt, true, false, 2)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrOutOfOrderVP8PictureIdCacheMiss)
 	require.Equal(t, 0, nIn)
-	require.Nil(t, buf)
+	require.Equal(t, 0, nOut)
 
 	// create a hole in picture id
 	vp8.PictureID = 13469
@@ -222,10 +222,10 @@ func TestOutOfOrderPictureId(t *testing.T) {
 	}
 	marshalledVP8, err := expectedVP8.Marshal()
 	require.NoError(t, err)
-	nIn, buf, err = v.UpdateAndGet(extPkt, false, true, 2)
+	nIn, hdr, nOut, err = v.UpdateAndGet(extPkt, false, true, 2)
 	require.NoError(t, err)
 	require.Equal(t, 6, nIn)
-	require.Equal(t, marshalledVP8, buf)
+	require.Equal(t, marshalledVP8, hdr[:nOut])
 
 	// all three, the last, the current and the in-between should have been added to missing picture id cache
 	value, ok := v.PictureIdOffset(13467)
@@ -261,10 +261,10 @@ func TestOutOfOrderPictureId(t *testing.T) {
 	}
 	marshalledVP8, err = expectedVP8.Marshal()
 	require.NoError(t, err)
-	nIn, buf, err = v.UpdateAndGet(extPkt, true, false, 2)
+	nIn, hdr, nOut, err = v.UpdateAndGet(extPkt, true, false, 2)
 	require.NoError(t, err)
 	require.Equal(t, 6, nIn)
-	require.Equal(t, marshalledVP8, buf)
+	require.Equal(t, marshalledVP8, hdr[:nOut])
 }
 
 func TestTemporalLayerFiltering(t *testing.T) {
@@ -294,11 +294,11 @@ func TestTemporalLayerFiltering(t *testing.T) {
 	v.SetLast(extPkt)
 
 	// translate
-	nIn, buf, err := v.UpdateAndGet(extPkt, false, false, 0)
+	nIn, _, nOut, err := v.UpdateAndGet(extPkt, false, false, 0)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
 	require.Equal(t, 0, nIn)
-	require.Nil(t, buf)
+	require.Equal(t, 0, nOut)
 	dropped, _ := v.droppedPictureIds.Get(13467)
 	require.True(t, dropped)
 	require.EqualValues(t, 1, v.pictureIdOffset)
@@ -308,11 +308,11 @@ func TestTemporalLayerFiltering(t *testing.T) {
 	params.SequenceNumber = 23334
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 
-	nIn, buf, err = v.UpdateAndGet(extPkt, false, false, 0)
+	nIn, _, nOut, err = v.UpdateAndGet(extPkt, false, false, 0)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
 	require.Equal(t, 0, nIn)
-	require.Nil(t, buf)
+	require.Equal(t, 0, nOut)
 	dropped, _ = v.droppedPictureIds.Get(13467)
 	require.True(t, dropped)
 	require.EqualValues(t, 1, v.pictureIdOffset)
@@ -322,11 +322,11 @@ func TestTemporalLayerFiltering(t *testing.T) {
 	params.SequenceNumber = 23337
 	extPkt, _ = testutils.GetTestExtPacketVP8(params, vp8)
 
-	nIn, buf, err = v.UpdateAndGet(extPkt, false, false, 0)
+	nIn, _, nOut, err = v.UpdateAndGet(extPkt, false, false, 0)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
 	require.Equal(t, 0, nIn)
-	require.Nil(t, buf)
+	require.Equal(t, 0, nOut)
 	dropped, _ = v.droppedPictureIds.Get(13467)
 	require.True(t, dropped)
 	require.EqualValues(t, 1, v.pictureIdOffset)
@@ -376,10 +376,10 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 	}
 	marshalledVP8, err := expectedVP8.Marshal()
 	require.NoError(t, err)
-	nIn, buf, err := v.UpdateAndGet(extPkt, false, false, 2)
+	nIn, hdr, nOut, err := v.UpdateAndGet(extPkt, false, false, 2)
 	require.NoError(t, err)
 	require.Equal(t, 6, nIn)
-	require.Equal(t, marshalledVP8, buf)
+	require.Equal(t, marshalledVP8, hdr[:nOut])
 
 	// telling there is a gap in sequence number will add pictures to missing picture cache
 	expectedVP8 = &codec.VP8{
@@ -399,10 +399,10 @@ func TestGapInSequenceNumberSamePicture(t *testing.T) {
 	}
 	marshalledVP8, err = expectedVP8.Marshal()
 	require.NoError(t, err)
-	nIn, buf, err = v.UpdateAndGet(extPkt, false, true, 2)
+	nIn, hdr, nOut, err = v.UpdateAndGet(extPkt, false, true, 2)
 	require.NoError(t, err)
 	require.Equal(t, 6, nIn)
-	require.Equal(t, marshalledVP8, buf)
+	require.Equal(t, marshalledVP8, hdr[:nOut])
 
 	value, ok := v.PictureIdOffset(13467)
 	require.True(t, ok)

@@ -36,7 +36,7 @@ require (
 	github.com/pion/rtcp v1.2.17
 	github.com/pion/rtp v1.10.5
 	github.com/pion/sctp v1.11.1
-	github.com/pion/sdp/v3 v3.0.19
+	github.com/pion/sdp/v3 v3.0.20
 	github.com/pion/transport/v4 v4.1.0
 	github.com/pion/turn/v5 v5.0.13
 	github.com/pion/webrtc/v4 v4.2.18
@@ -77,7 +77,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
-	github.com/gotesttools/gotestfmt/v2 v2.4.1 // indirect
+	github.com/gotesttools/gotestfmt/v2 v2.5.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
@@ -147,7 +147,7 @@ require (
 	github.com/prometheus/client_model v0.6.3 // indirect
 	github.com/prometheus/common v0.71.0 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
-	github.com/urfave/cli/v3 v3.10.1
+	github.com/urfave/cli/v3 v3.11.0
 	github.com/wlynxg/anet v0.0.5 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.uber.org/zap/exp v0.3.0 // indirect

@@ -201,10 +201,16 @@ type TranslationParams struct {
 	rtp                TranslationParamsRTP
 	ddBytes            []byte
 	incomingHeaderSize int
-	codecBytes         []byte
+	codecBytes         [codecmunger.MaxHeaderSize]byte
+	codecBytesLen      int
 	marker             bool
 	// end of the svc spatial layer frame
 	isEndOfLayerFrame bool
+}
+
+// codecHeader returns the munged codec header to prepend to the payload.
+func (tp *TranslationParams) codecHeader() []byte {
+	return tp.codecBytes[:tp.codecBytesLen]
 }
 
 // -------------------------------------------------------------------
@@ -2223,7 +2229,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tp *TranslationParams) error {
 	// codec specific forwarding check and any needed packet munging
 	tl := f.vls.SelectTemporal(extPkt)
-	inputSize, codecBytes, err := f.codecMunger.UpdateAndGet(
+	inputSize, codecBytes, codecBytesLen, err := f.codecMunger.UpdateAndGet(
 		extPkt,
 		tp.rtp.snOrdering == SequenceNumberOrderingOutOfOrder,
 		tp.rtp.snOrdering == SequenceNumberOrderingGap,
@@ -2243,6 +2249,7 @@ func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tp *Translati
 	}
 	tp.incomingHeaderSize = inputSize
 	tp.codecBytes = codecBytes
+	tp.codecBytesLen = codecBytesLen
 	return nil
 }
 
