@@ -962,12 +962,9 @@ func (r *ReceiverBase) forwardRTP(
 			continue
 		}
 
-		var writeCount atomic.Int32
-		r.downTrackSpreader.Broadcast(func(dt TrackSender) {
-			writeCount.Add(dt.WriteRTP(extPkt, spatialLayer))
-		})
+		writeCount := sfuutils.BroadcastRTP(r.downTrackSpreader, extPkt, spatialLayer)
 		if rt := r.loadREDTransformer(); rt != nil {
-			writeCount.Add(rt.ForwardRTP(extPkt, spatialLayer))
+			writeCount += rt.ForwardRTP(extPkt, spatialLayer)
 		}
 
 		// track delay/jitter
@@ -977,13 +974,13 @@ func (r *ReceiverBase) forwardRTP(
 		// delivered back-to-back) which the single forwarder goroutine drains
 		// serially, inflating the measured transit for the tail of the burst. That
 		// reflects loss recovery rather than steady-state forwarding health.
-		if writeCount.Load() > 0 && r.forwardStats != nil && !extPkt.IsBuffered && !extPkt.IsOutOfOrder {
+		if writeCount > 0 && r.forwardStats != nil && !extPkt.IsBuffered && !extPkt.IsOutOfOrder {
 			if latency, isHigh := r.forwardStats.Update(extPkt.Arrival, mono.UnixNano()); isHigh {
 				r.params.Logger.Debugw(
 					"high forwarding latency",
 					"latency", time.Duration(latency),
 					"queuingLatency", time.Duration(dequeuedAt-extPkt.Arrival),
-					"writeCount", writeCount.Load(),
+					"writeCount", writeCount,
 					"isOutOfOrder", extPkt.IsOutOfOrder,
 					"layer", layer,
 				)
