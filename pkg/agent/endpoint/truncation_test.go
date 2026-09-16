@@ -69,16 +69,14 @@ func rawTarget(t *testing.T, respond func(net.Conn)) string {
 
 func startFramedWorker(t *testing.T, targetAddr string, eps []*livekit.AgentHttp_AgentEndpoint) string {
 	t.Helper()
-	reg := endpoint.NewRegistry()
-	base := startWTServer(t, reg)
+	reg, scope := endpoint.NewRegistry(), endpoint.NewScope(logger.GetLogger())
+	base := startWTServer(t, reg, scope)
 
 	front := endpoint.NewFront(endpoint.FrontParams{
-		Registry: reg,
-		ResolveAccess: func(*http.Request, string, string) endpoint.Access {
-			return endpoint.Access{}
+		ResolveAccess: func(*http.Request, string, string) (endpoint.Access, bool) {
+			return endpoint.Access{Scope: scope}, true
 		},
-		Logger:            logger.GetLogger(),
-		SingleKeyFallback: true,
+		Logger: logger.GetLogger(),
 	})
 	ts := httptest.NewUnstartedServer(front)
 	// raised past net/http's 1 MiB default so the front's own head bound is what

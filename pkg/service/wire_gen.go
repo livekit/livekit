@@ -129,13 +129,14 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	registry := endpoint.NewRegistry()
-	agentHandler, err := NewAgentHandler(conf, currentNode, v, keyProvider, registry)
+	endpointScopes := NewEndpointScopes()
+	agentHandler, err := NewAgentHandler(conf, currentNode, v, keyProvider, registry, endpointScopes)
 	if err != nil {
 		return nil, err
 	}
 	agentWSService := NewAgentWSService(conf, agentHandler)
 	agentWTService := NewAgentWTService(agentHandler)
-	agentEndpointService := NewAgentEndpointService(agentHandler, registry)
+	agentEndpointService := NewAgentEndpointService(agentHandler, endpointScopes)
 	agentConfig := getAgentConfig(conf)
 	client, err := agent.NewAgentClient(v, agentConfig)
 	if err != nil {

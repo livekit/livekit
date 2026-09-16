@@ -61,11 +61,11 @@ const (
 const testMaxAPIBodySize = 64 << 10
 
 type endpointStack struct {
-	t        *testing.T
-	ts       *httptest.Server
-	handler  *service.AgentHandler
-	registry *endpoint.Registry
-	wtURL    string // https://host:port/agent (WebTransport control+data)
+	t       *testing.T
+	ts      *httptest.Server
+	handler *service.AgentHandler
+	scopes  *service.EndpointScopes
+	wtURL   string // https://host:port/agent (WebTransport control+data)
 }
 
 // selfSignedTLS mints an in-memory cert for 127.0.0.1 with the h3 ALPN, for the
@@ -100,8 +100,8 @@ func newEndpointStack(t *testing.T, endpointsCfg agent.EndpointsConfig) *endpoin
 	}
 	conf.Limit.MaxAPIRequestBodySize = testMaxAPIBodySize
 
-	registry := endpoint.NewRegistry()
-	h, err := service.NewAgentHandler(conf, localNode, psrpc.NewLocalMessageBus(), keyProvider, registry)
+	scopes := service.NewEndpointScopes()
+	h, err := service.NewAgentHandler(conf, localNode, psrpc.NewLocalMessageBus(), keyProvider, endpoint.NewRegistry(), scopes)
 	require.NoError(t, err)
 
 	// the production handler, so these tests run on the node's real middleware chain
@@ -114,7 +114,7 @@ func newEndpointStack(t *testing.T, endpointsCfg agent.EndpointsConfig) *endpoin
 
 	var agentFront http.Handler
 	if !endpointsCfg.Disabled {
-		agentFront = service.NewAgentEndpointService(h, registry)
+		agentFront = service.NewAgentEndpointService(h, scopes)
 	}
 	ts := httptest.NewServer(service.NewHTTPHandler(conf, keyProvider, apiMux, agentFront))
 	t.Cleanup(ts.Close)
@@ -130,7 +130,7 @@ func newEndpointStack(t *testing.T, endpointsCfg agent.EndpointsConfig) *endpoin
 	t.Cleanup(stopWT)
 	wtURL := "https://" + bound[0].String() + "/agent"
 
-	return &endpointStack{t: t, ts: ts, handler: h, registry: registry, wtURL: wtURL}
+	return &endpointStack{t: t, ts: ts, handler: h, scopes: scopes, wtURL: wtURL}
 }
 
 func (s *endpointStack) startWorker(target string, deployment string, endpoints []*livekit.AgentHttp_AgentEndpoint) *conformance.Worker {
@@ -164,7 +164,7 @@ func (s *endpointStack) waitRoutable(w *conformance.Worker, agentName, deploymen
 	s.t.Helper()
 	require.Eventually(s.t, func() bool {
 		return slices.ContainsFunc(
-			s.registry.Candidates(testKey, agentName, deployment),
+			s.scopes.Scope(testKey, agentName, deployment).Candidates(),
 			func(r *endpoint.Registration) bool { return r.WorkerID == w.WorkerID() },
 		)
 	}, 10*time.Second, time.Millisecond, "worker %s never reached the endpoint registry", w.WorkerID())

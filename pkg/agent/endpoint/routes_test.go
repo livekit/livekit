@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/agent/endpoint/router"
 )
@@ -26,20 +27,21 @@ func mustManifest(t *testing.T, eps ...*livekit.AgentHttp_AgentEndpoint) *Manife
 
 func regOf(workerID string, m *Manifest) *Registration {
 	return NewRegistration(RegistrationParams{
-		WorkerID: workerID, APIKey: "proj", AgentName: "a", Deployment: "d",
-		Manifest: m, Session: &fakeSession{},
+		WorkerID: workerID, Manifest: m, Session: &fakeSession{},
 	})
 }
 
-// tableOf registers one worker per manifest under a single key and returns the
+func testScope() *Scope { return NewScope(logger.GetLogger()) }
+
+// tableOf registers one worker per manifest into a single scope and returns the
 // deployment's merged table.
 func tableOf(t *testing.T, manifests ...*Manifest) *routeTable {
 	t.Helper()
-	g := NewRegistry()
+	g, s := NewRegistry(), testScope()
 	for i, m := range manifests {
-		g.Register(regOf(fmt.Sprintf("w%d", i), m))
+		g.Register(s, regOf(fmt.Sprintf("w%d", i), m))
 	}
-	tbl := g.table("proj", "a", "d")
+	tbl := s.routeTable()
 	require.NotNil(t, tbl)
 	return tbl
 }
@@ -71,11 +73,11 @@ func TestRouteTableUnion(t *testing.T) {
 
 // A worker leaving takes only the routes nothing else declares.
 func TestRouteTableDeparture(t *testing.T) {
-	g := NewRegistry()
+	g, s := NewRegistry(), testScope()
 	old := regOf("w0", mustManifest(t, ep("/health", []string{"GET"}, true), ep("/v1", []string{"GET"}, true)))
-	g.Register(old)
-	g.Register(regOf("w1", mustManifest(t, ep("/health", []string{"GET"}, true), ep("/v2", []string{"GET"}, true))))
-	tbl := g.table("proj", "a", "d")
+	g.Register(s, old)
+	g.Register(s, regOf("w1", mustManifest(t, ep("/health", []string{"GET"}, true), ep("/v2", []string{"GET"}, true))))
+	tbl := s.routeTable()
 
 	g.Deregister(old)
 
@@ -84,8 +86,9 @@ func TestRouteTableDeparture(t *testing.T) {
 	require.Equal(t, []string{"w1"}, serving(tbl, "/v2", http.MethodGet, true))
 
 	// the last worker out drops the table with it
-	g.Deregister(g.Candidates("proj", "a", "d")[0])
-	require.Nil(t, g.table("proj", "a", "d"))
+	g.Deregister(s.Candidates()[0])
+	require.Nil(t, s.routeTable(), "the last worker out drops the table, so the front reports 503 not 404")
+	require.True(t, s.Empty())
 }
 
 // Declaration order is the whole priority rule, and a homogeneous fleet keeps
@@ -190,64 +193,72 @@ func TestRouteTableDuplicateDeclaration(t *testing.T) {
 // The published tree holds routes by pointer, so a reconnect that rebuilds the
 // same route set keeps those pointers and stays routable.
 func TestRouteTableSupersedeStaysRoutable(t *testing.T) {
-	g := NewRegistry()
+	g, s := NewRegistry(), testScope()
 	m := mustManifest(t, ep("/x", []string{"GET"}, true))
-	g.Register(regOf("w0", m))
-	tbl := g.table("proj", "a", "d")
+	g.Register(s, regOf("w0", m))
+	tbl := s.routeTable()
 	before := tbl.tree.Load()
 
-	g.Register(regOf("w0", m))
+	g.Register(s, regOf("w0", m))
 
 	require.Equal(t, []string{"w0"}, serving(tbl, "/x", http.MethodGet, true),
 		"a reconnect with an unchanged manifest stays routable")
 	require.Same(t, before, tbl.tree.Load(), "an unchanged route set needs no rebuild")
 }
 
-// A reconnect may land on a different agent name or deployment. The retiring
-// epoch's routes live in the old table and must be retracted there.
-func TestRouteTableSupersedeAcrossKeys(t *testing.T) {
+// A reconnect may land on a different agent name or deployment, i.e. a different
+// scope. The retiring epoch's routes live in the old scope and must be retracted
+// there.
+func TestRouteTableSupersedeAcrossScopes(t *testing.T) {
 	g := NewRegistry()
+	from, to := testScope(), testScope()
 	m := mustManifest(t, ep("/x", []string{"GET"}, true))
-	g.Register(regOf("w0", m))
+	firstSess := &fakeSession{}
+	first := NewRegistration(RegistrationParams{WorkerID: "w0", Manifest: m, Session: firstSess})
+	g.Register(from, first)
 
-	g.Register(NewRegistration(RegistrationParams{
-		WorkerID: "w0", APIKey: "proj", AgentName: "a", Deployment: "other",
-		Manifest: m, Session: &fakeSession{},
-	}))
+	g.Register(to, regOf("w0", m))
 
-	require.Nil(t, g.table("proj", "a", "d"), "the old deployment's table is gone")
-	require.Equal(t, []string{"w0"}, serving(g.table("proj", "a", "other"), "/x", http.MethodGet, true))
+	require.Nil(t, from.routeTable(), "the old scope's table is gone")
+	require.True(t, from.Empty())
+	require.Equal(t, []string{"w0"}, serving(to.routeTable(), "/x", http.MethodGet, true))
+	require.True(t, firstSess.closed, "the superseded epoch's session is closed")
+
+	// the retiring control connection tears down afterwards and must not strand
+	// the new epoch
+	g.Deregister(first)
+	require.Equal(t, []string{"w0"}, serving(to.routeTable(), "/x", http.MethodGet, true))
 }
 
 // The tree is rebuilt exactly when the merged route set or its order moves.
 func TestRouteTableRebuildTrigger(t *testing.T) {
-	g := NewRegistry()
+	g, s := NewRegistry(), testScope()
 	m := mustManifest(t, ep("/x", []string{"GET"}, true))
-	g.Register(regOf("w0", m))
-	tbl := g.table("proj", "a", "d")
+	g.Register(s, regOf("w0", m))
+	tbl := s.routeTable()
 
 	before := tbl.tree.Load()
-	g.Register(regOf("w1", m))
+	g.Register(s, regOf("w1", m))
 	require.Same(t, before, tbl.tree.Load(), "a worker joining an existing route changes no route")
 
-	g.Register(regOf("w2", mustManifest(t, ep("/x", []string{"GET"}, true), ep("/y", []string{"GET"}, true))))
+	g.Register(s, regOf("w2", mustManifest(t, ep("/x", []string{"GET"}, true), ep("/y", []string{"GET"}, true))))
 	require.NotSame(t, before, tbl.tree.Load(), "a new route rebuilds")
 }
 
 // A departure can raise a route's merge position and an arrival lower it;
 // either reorders the table.
 func TestRouteTableOrderFollowsDeparture(t *testing.T) {
-	g := NewRegistry()
+	g, s := NewRegistry(), testScope()
 	first := regOf("w0", mustManifest(t,
 		ep("/a/{x}", []string{"GET"}, true),
 		ep("/a/b", []string{"GET"}, true),
 	))
-	g.Register(first)
-	g.Register(regOf("w1", mustManifest(t,
+	g.Register(s, first)
+	g.Register(s, regOf("w1", mustManifest(t,
 		ep("/a/b", []string{"GET"}, true),
 		ep("/a/{x}", []string{"GET"}, true),
 	)))
-	tbl := g.table("proj", "a", "d")
+	tbl := s.routeTable()
 
 	// both routes hold position 0 - w0 declares the param first, w1 the literal
 	// - so the tie-break decides, and the param shadows the literal
@@ -302,9 +313,9 @@ func TestRouteTableMergeOrderInversion(t *testing.T) {
 
 // Registrations churn while requests resolve; run under -race.
 func TestRouteTableConcurrentChurn(t *testing.T) {
-	g := NewRegistry()
+	g, sc := NewRegistry(), testScope()
 	stable := regOf("stable", mustManifest(t, ep("/x", []string{"GET"}, true)))
-	g.Register(stable)
+	g.Register(sc, stable)
 
 	var wg sync.WaitGroup
 	stop := make(chan struct{})
@@ -320,7 +331,7 @@ func TestRouteTableConcurrentChurn(t *testing.T) {
 				default:
 				}
 				r := regOf(fmt.Sprintf("w%d", i), m)
-				g.Register(r)
+				g.Register(sc, r)
 				g.Deregister(r)
 			}
 		}()
@@ -335,7 +346,7 @@ func TestRouteTableConcurrentChurn(t *testing.T) {
 					return
 				default:
 				}
-				if tbl := g.table("proj", "a", "d"); tbl != nil {
+				if tbl := sc.routeTable(); tbl != nil {
 					tbl.match("/x", methodMask(http.MethodGet), true)
 					tbl.serves("/x/", methodMask(http.MethodGet))
 				}
@@ -343,12 +354,12 @@ func TestRouteTableConcurrentChurn(t *testing.T) {
 		}()
 	}
 	for range 2000 {
-		if tbl := g.table("proj", "a", "d"); tbl != nil {
+		if tbl := sc.routeTable(); tbl != nil {
 			tbl.match("/x", methodMask(http.MethodGet), false)
 		}
 	}
 	close(stop)
 	wg.Wait()
 
-	require.Contains(t, serving(g.table("proj", "a", "d"), "/x", http.MethodGet, true), "stable")
+	require.Contains(t, serving(sc.routeTable(), "/x", http.MethodGet, true), "stable")
 }

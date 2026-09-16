@@ -28,23 +28,36 @@ type AgentEndpointService struct {
 	*endpoint.Front
 }
 
-func NewAgentEndpointService(h *AgentHandler, registry *endpoint.Registry) *AgentEndpointService {
+func NewAgentEndpointService(h *AgentHandler, scopes *EndpointScopes) *AgentEndpointService {
 	return &AgentEndpointService{
 		Front: endpoint.NewFront(endpoint.FrontParams{
-			Registry: registry,
-			ResolveAccess: func(r *http.Request, agentName, deployment string) endpoint.Access {
+			ResolveAccess: func(r *http.Request, agentName, deployment string) (endpoint.Access, bool) {
 				if claims := GetGrants(r.Context()); claims != nil {
 					level := endpoint.AccessCredentialed
 					if claims.AgentEndpoint.Allows(agentName, deployment) {
 						level = endpoint.AccessGranted
 					}
-					return endpoint.Access{APIKey: GetAPIKey(r.Context()), Level: level}
+					return endpoint.Access{
+						Scope: scopes.Scope(GetAPIKey(r.Context()), agentName, deployment),
+						Level: level,
+					}, true
 				}
-				// unauthenticated: one configured key makes the api key unambiguous
-				return endpoint.Access{APIKey: h.singleAPIKey}
+				// unauthenticated: one configured key makes the api key
+				// unambiguous, and failing that a single attached tenant does.
+				// A guessed api key confers no access, so such a request still
+				// reaches only routes marked public.
+				apiKey := h.singleAPIKey
+				if apiKey == "" {
+					var ok bool
+					if apiKey, ok = scopes.SingleKey(); !ok {
+						return endpoint.Access{}, false
+					}
+				}
+				return endpoint.Access{
+					Scope: scopes.Scope(apiKey, agentName, deployment),
+				}, true
 			},
-			Logger:            h.logger,
-			SingleKeyFallback: true,
+			Logger: h.logger,
 		}),
 	}
 }

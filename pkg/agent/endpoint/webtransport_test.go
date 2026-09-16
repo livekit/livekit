@@ -50,7 +50,7 @@ func selfSignedTLS(t *testing.T) *tls.Config {
 
 // startWTServer runs a WebTransport /agent server that registers each session's
 // worker (read off the control stream) into reg and keeps the session alive.
-func startWTServer(t *testing.T, reg *endpoint.Registry) string {
+func startWTServer(t *testing.T, reg *endpoint.Registry, scope *endpoint.Scope) string {
 	udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
 	require.NoError(t, err)
 
@@ -61,14 +61,14 @@ func startWTServer(t *testing.T, reg *endpoint.Registry) string {
 		if err != nil {
 			return
 		}
-		go handleSession(reg, sess)
+		go handleSession(reg, scope, sess)
 	})
 	go func() { _ = srv.Serve(udp) }()
 	t.Cleanup(func() { _ = srv.Close(); _ = udp.Close() })
 	return "https://" + udp.LocalAddr().String() + "/agent"
 }
 
-func handleSession(reg *endpoint.Registry, sess *webtransport.Session) {
+func handleSession(reg *endpoint.Registry, scope *endpoint.Scope, sess *webtransport.Session) {
 	ctx := sess.Context()
 	control, err := sess.AcceptStream(ctx)
 	if err != nil {
@@ -87,14 +87,11 @@ func handleSession(reg *endpoint.Registry, sess *webtransport.Session) {
 		return
 	}
 	registration := endpoint.NewRegistration(endpoint.RegistrationParams{
-		WorkerID:   rw.GetInstanceId(),
-		APIKey:     "test",
-		AgentName:  rw.GetAgentName(),
-		Deployment: rw.GetDeployment(),
-		Manifest:   manifest,
-		Session:    endpoint.NewWebTransportSession(sess, endpoint.DefaultMaxStreams),
+		WorkerID: rw.GetInstanceId(),
+		Manifest: manifest,
+		Session:  endpoint.NewWebTransportSession(sess, endpoint.DefaultMaxStreams),
 	})
-	reg.Register(registration)
+	reg.Register(scope, registration)
 	_ = wire.WriteControlMessage(control, &livekit.ServerMessage{
 		Message: &livekit.ServerMessage_Register{
 			Register: &livekit.RegisterWorkerResponse{
@@ -133,16 +130,15 @@ func TestWebTransportEndpointRoundTrip(t *testing.T) {
 	}))
 	defer target.Close()
 
-	reg := endpoint.NewRegistry()
-	base := startWTServer(t, reg)
+	reg, scope := endpoint.NewRegistry(), endpoint.NewScope(logger.GetLogger())
+	base := startWTServer(t, reg, scope)
 
 	front := endpoint.NewFront(endpoint.FrontParams{
-		Registry: reg,
-		ResolveAccess: func(*http.Request, string, string) endpoint.Access {
-			return endpoint.Access{}
+		// anonymous: the scope resolves, but no grant, so only public routes serve
+		ResolveAccess: func(*http.Request, string, string) (endpoint.Access, bool) {
+			return endpoint.Access{Scope: scope}, true
 		},
-		Logger:            logger.GetLogger(),
-		SingleKeyFallback: true,
+		Logger: logger.GetLogger(),
 	})
 	ts := httptest.NewServer(front)
 	defer ts.Close()
@@ -204,23 +200,20 @@ func TestWebTransportPrivateEndpointRequiresGrant(t *testing.T) {
 	}))
 	defer target.Close()
 
-	reg := endpoint.NewRegistry()
-	base := startWTServer(t, reg)
+	reg, scope := endpoint.NewRegistry(), endpoint.NewScope(logger.GetLogger())
+	base := startWTServer(t, reg, scope)
 
 	anonymous := httptest.NewServer(endpoint.NewFront(endpoint.FrontParams{
-		Registry: reg,
-		ResolveAccess: func(*http.Request, string, string) endpoint.Access {
-			return endpoint.Access{}
+		ResolveAccess: func(*http.Request, string, string) (endpoint.Access, bool) {
+			return endpoint.Access{Scope: scope}, true
 		},
-		Logger:            logger.GetLogger(),
-		SingleKeyFallback: true,
+		Logger: logger.GetLogger(),
 	}))
 	defer anonymous.Close()
 
 	granted := httptest.NewServer(endpoint.NewFront(endpoint.FrontParams{
-		Registry: reg,
-		ResolveAccess: func(*http.Request, string, string) endpoint.Access {
-			return endpoint.Access{APIKey: "test", Level: endpoint.AccessGranted}
+		ResolveAccess: func(*http.Request, string, string) (endpoint.Access, bool) {
+			return endpoint.Access{Scope: scope, Level: endpoint.AccessGranted}, true
 		},
 		Logger: logger.GetLogger(),
 	}))

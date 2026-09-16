@@ -17,28 +17,30 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-// grantedTo resolves every request to apiKey with full access.
-func grantedTo(apiKey string) AccessResolver {
-	return func(*http.Request, string, string) Access {
-		return Access{APIKey: apiKey, Level: AccessGranted}
+// grantedTo resolves every request to scope with full access.
+func grantedTo(scope *Scope) AccessResolver {
+	return func(*http.Request, string, string) (Access, bool) {
+		return Access{Scope: scope, Level: AccessGranted}, true
 	}
 }
 
+// resolveTo resolves every request to a fixed access.
+func resolveTo(a Access) AccessResolver {
+	return func(*http.Request, string, string) (Access, bool) { return a, true }
+}
+
 func fallbackFront(t *testing.T, fb Fallback, withWorker bool) *Front {
-	reg := NewRegistry()
+	g, s := NewRegistry(), NewScope(logger.GetLogger())
 	if withWorker {
 		m, err := ParseManifest([]*livekit.AgentHttp_AgentEndpoint{
 			{Path: "/known", Methods: []string{"GET"}, Public: true},
 		})
 		require.NoError(t, err)
-		r := NewRegistration(RegistrationParams{WorkerID: "w1", APIKey: "proj", AgentName: "a", Deployment: "d", Manifest: m, Session: &fakeSession{}})
-		reg.Register(r)
+		g.Register(s, NewRegistration(RegistrationParams{WorkerID: "w1", Manifest: m, Session: &fakeSession{}}))
 	}
 	return NewFront(FrontParams{
-		Registry:      reg,
-		ResolveAccess: grantedTo("proj"),
+		ResolveAccess: resolveTo(Access{Scope: s, Fallback: fb, Level: AccessGranted}),
 		Logger:        logger.GetLogger(),
-		Fallback:      fb,
 	})
 }
 
@@ -48,37 +50,56 @@ func serveFront(f *Front, path string) *httptest.ResponseRecorder {
 	return w
 }
 
-// a path no local worker matches hands off to the fallback, which is given the
-// resolved identity; when the fallback serves, the front writes nothing itself.
+// a path no local worker matches hands off to the fallback the resolver curried,
+// which is given the caller's access level; when the fallback serves, the front
+// writes nothing itself.
 func TestFrontFallbackFires(t *testing.T) {
-	var got *FallbackRequest
-	f := fallbackFront(t, func(w http.ResponseWriter, _ *http.Request, fr *FallbackRequest) bool {
-		got = fr
+	got := AccessLevel(-1)
+	f := fallbackFront(t, func(w http.ResponseWriter, _ *http.Request, level AccessLevel) bool {
+		got = level
 		w.WriteHeader(http.StatusTeapot) // stands in for a relayed response
 		return true
 	}, true)
 
 	w := serveFront(f, "/unknown")
 	require.Equal(t, http.StatusTeapot, w.Code)
-	require.NotNil(t, got)
-	require.Equal(t, "proj", got.APIKey)
-	require.Equal(t, AccessGranted, got.Level)
-	require.Equal(t, "a", got.AgentName)
-	require.Equal(t, "d", got.Deployment)
+	require.Equal(t, AccessGranted, got)
 }
 
 // a declined fallback with a local worker present falls through to the front's
 // own 404 for the unmatched path.
 func TestFrontFallbackDeclinedMapsStatus(t *testing.T) {
-	f := fallbackFront(t, func(http.ResponseWriter, *http.Request, *FallbackRequest) bool { return false }, true)
+	f := fallbackFront(t, func(http.ResponseWriter, *http.Request, AccessLevel) bool { return false }, true)
 	require.Equal(t, http.StatusNotFound, serveFront(f, "/unknown").Code)
 }
 
 // a declined fallback with no local worker for the deployment falls through to
 // 503.
 func TestFrontFallbackDeclinedNoCandidates(t *testing.T) {
-	f := fallbackFront(t, func(http.ResponseWriter, *http.Request, *FallbackRequest) bool { return false }, false)
+	f := fallbackFront(t, func(http.ResponseWriter, *http.Request, AccessLevel) bool { return false }, false)
 	require.Equal(t, http.StatusServiceUnavailable, serveFront(f, "/unknown").Code)
+}
+
+// a resolver that cannot place the request at all challenges, and never reaches
+// a scope. This is the path that used to ride an empty api key.
+func TestFrontUnresolvedAccessIsChallenged(t *testing.T) {
+	f := NewFront(FrontParams{
+		ResolveAccess: func(*http.Request, string, string) (Access, bool) { return Access{}, false },
+		Logger:        logger.GetLogger(),
+	})
+	w := serveFront(f, "/anything")
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	require.Equal(t, "Bearer", w.Header().Get("WWW-Authenticate"))
+}
+
+// a resolved caller whose deployment no worker holds here, with no fallback, is
+// 503 - distinct from the 401 above, and no longer distinguished by a string.
+func TestFrontResolvedButNoScopeIsUnavailable(t *testing.T) {
+	f := NewFront(FrontParams{
+		ResolveAccess: resolveTo(Access{Level: AccessGranted}),
+		Logger:        logger.GetLogger(),
+	})
+	require.Equal(t, http.StatusServiceUnavailable, serveFront(f, "/anything").Code)
 }
 
 func TestRequestIDAcceptsOrRefuses(t *testing.T) {
@@ -175,29 +196,24 @@ func TestRefreshTimeoutTracksRemainingBudget(t *testing.T) {
 
 // accessFront registers one worker serving a public and a non-public route, and
 // resolves every request to the given access.
-func accessFront(t *testing.T, a Access, fb Fallback) *Front {
-	reg := NewRegistry()
+func accessFront(t *testing.T, level AccessLevel, fb Fallback) *Front {
+	g, s := NewRegistry(), NewScope(logger.GetLogger())
 	m, err := ParseManifest([]*livekit.AgentHttp_AgentEndpoint{
 		{Path: "/pub", Methods: []string{"GET"}, Public: true},
 		{Path: "/private", Methods: []string{"GET"}, Public: false},
 	})
 	require.NoError(t, err)
-	r := NewRegistration(RegistrationParams{WorkerID: "w1", APIKey: "proj", AgentName: "a", Deployment: "d", Manifest: m, Session: &fakeSession{}})
-	reg.Register(r)
+	g.Register(s, NewRegistration(RegistrationParams{WorkerID: "w1", Manifest: m, Session: &fakeSession{}}))
 
 	return NewFront(FrontParams{
-		Registry:      reg,
-		ResolveAccess: func(*http.Request, string, string) Access { return a },
+		ResolveAccess: resolveTo(Access{Scope: s, Fallback: fb, Level: level}),
 		Logger:        logger.GetLogger(),
-		Fallback:      fb,
 	})
 }
 
 // fakeSession opens no stream, so a request that clears authorization reaches 503.
 func TestFrontPrivateRouteAccessMapping(t *testing.T) {
-	anonymous := Access{APIKey: "proj", Level: AccessNone}
-	credentialed := Access{APIKey: "proj", Level: AccessCredentialed}
-	granted := Access{APIKey: "proj", Level: AccessGranted}
+	anonymous, credentialed, granted := AccessNone, AccessCredentialed, AccessGranted
 
 	t.Run("anonymous is challenged", func(t *testing.T) {
 		w := serveFront(accessFront(t, anonymous, nil), "/private")
@@ -222,22 +238,21 @@ func TestFrontPrivateRouteAccessMapping(t *testing.T) {
 
 // the slash-normalized form of a private route is still private.
 func TestFrontDeniedAppliesToNormalizedPath(t *testing.T) {
-	f := accessFront(t, Access{APIKey: "proj", Level: AccessCredentialed}, nil)
+	f := accessFront(t, AccessCredentialed, nil)
 	require.Equal(t, http.StatusForbidden, serveFront(f, "/private/").Code)
 }
 
 // another node's worker may declare the same path public.
 func TestFrontDeniedStillRelays(t *testing.T) {
-	var got *FallbackRequest
-	f := accessFront(t, Access{APIKey: "proj", Level: AccessCredentialed}, func(w http.ResponseWriter, _ *http.Request, fr *FallbackRequest) bool {
-		got = fr
+	got := AccessLevel(-1)
+	f := accessFront(t, AccessCredentialed, func(w http.ResponseWriter, _ *http.Request, level AccessLevel) bool {
+		got = level
 		w.WriteHeader(http.StatusTeapot)
 		return true
 	})
 
 	require.Equal(t, http.StatusTeapot, serveFront(f, "/private").Code)
-	require.NotNil(t, got)
-	require.Equal(t, AccessCredentialed, got.Level)
+	require.Equal(t, AccessCredentialed, got)
 }
 
 // the split runs before decoding, so a name or route param may carry any byte
@@ -334,20 +349,18 @@ func TestSplitEndpointPathLength(t *testing.T) {
 
 // budgetFront registers a worker whose routes are ambiguous enough that the
 // matcher gives up deciding.
-func budgetFront(t *testing.T, a Access) *Front {
-	reg := NewRegistry()
+func budgetFront(t *testing.T, level AccessLevel) *Front {
+	g, s := NewRegistry(), NewScope(logger.GetLogger())
 	m, err := ParseManifest([]*livekit.AgentHttp_AgentEndpoint{
 		{Path: "/{a}{b}{c}{d}x", Methods: []string{"GET"}, Public: true},
 	})
 	require.NoError(t, err)
 	require.Len(t, m.Ambiguous(), 1)
-	reg.Register(NewRegistration(RegistrationParams{
-		WorkerID: "w1", APIKey: "proj", AgentName: "a", Deployment: "d",
-		Manifest: m, Session: &fakeSession{},
+	g.Register(s, NewRegistration(RegistrationParams{
+		WorkerID: "w1", Manifest: m, Session: &fakeSession{},
 	}))
 	return NewFront(FrontParams{
-		Registry:      reg,
-		ResolveAccess: func(*http.Request, string, string) Access { return a },
+		ResolveAccess: resolveTo(Access{Scope: s, Level: level}),
 		Logger:        logger.GetLogger(),
 	})
 }
@@ -357,17 +370,17 @@ func budgetFront(t *testing.T, a Access) *Front {
 func TestFrontOverBudgetForwardsWithAGrant(t *testing.T) {
 	long := "/" + strings.Repeat("a", 512)
 
-	f := budgetFront(t, Access{APIKey: "proj", Level: AccessGranted})
+	f := budgetFront(t, AccessGranted)
 	// 503 is dispatch reached: the fake session opens no stream
 	require.Equal(t, http.StatusServiceUnavailable, serveFront(f, long).Code)
 
-	f = budgetFront(t, Access{APIKey: "proj", Level: AccessCredentialed})
+	f = budgetFront(t, AccessCredentialed)
 	require.Equal(t, http.StatusForbidden, serveFront(f, long).Code)
 
-	f = budgetFront(t, Access{APIKey: "proj", Level: AccessNone})
+	f = budgetFront(t, AccessNone)
 	require.Equal(t, http.StatusUnauthorized, serveFront(f, long).Code)
 
 	// a path the same table decides normally is unaffected
-	f = budgetFront(t, Access{APIKey: "proj", Level: AccessNone})
+	f = budgetFront(t, AccessNone)
 	require.Equal(t, http.StatusNotFound, serveFront(f, "/ab").Code)
 }

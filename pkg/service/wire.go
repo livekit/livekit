@@ -82,6 +82,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewRTCService,
 		NewWHIPService,
 		endpoint.NewRegistry,
+		NewEndpointScopes,
 		NewAgentHandler,
 		NewAgentWSService,
 		NewAgentWTService,

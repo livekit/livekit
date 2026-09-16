@@ -17,10 +17,7 @@ package endpoint
 import (
 	"context"
 	"errors"
-	"slices"
 	"sync"
-
-	"github.com/livekit/protocol/logger"
 )
 
 // DefaultDeployment is the URL segment that addresses workers registered with an
@@ -38,6 +35,16 @@ func IsReservedAgentName(agentName string) bool {
 	return agentName == UnnamedAgentSegment || agentName == "." || agentName == ".."
 }
 
+// NormalizeDeployment maps an empty deployment to the segment that addresses it
+// in a URL. Every embedder must key its scopes through this, or a worker that
+// registered without a deployment is unreachable from any node but its own.
+func NormalizeDeployment(d string) string {
+	if d == "" {
+		return DefaultDeployment
+	}
+	return d
+}
+
 // DefaultMaxStreams is the soft per-session concurrency cap used only for
 // capacity weighting; QUIC's own stream limit is the hard bound.
 const DefaultMaxStreams = 256
@@ -46,24 +53,17 @@ const DefaultMaxStreams = 256
 // stream can be opened toward the worker.
 var ErrNoSession = errors.New("registration has no data-plane session")
 
-func normalizeDeployment(d string) string {
-	if d == "" {
-		return DefaultDeployment
-	}
-	return d
-}
-
 // Registration is one worker's data-plane state: its manifest and the single
 // WebTransport session that carries both its control stream and the HTTP
 // exchanges the node opens toward it. It lives exactly as long as that session
 // (epoch fencing: a reconnecting worker forms a new registration, and the old
 // session dies with it).
+//
+// It carries no agent name, deployment or tenant identity: those name the Scope
+// it was registered into, which is the embedder's to key.
 type Registration struct {
-	WorkerID   string
-	APIKey     string
-	AgentName  string
-	Deployment string
-	Manifest   *Manifest
+	WorkerID string
+	Manifest *Manifest
 
 	draining func() bool
 
@@ -75,11 +75,8 @@ type Registration struct {
 // RegistrationParams is fixed for the life of the registration, which lasts
 // exactly as long as the session.
 type RegistrationParams struct {
-	WorkerID   string
-	APIKey     string
-	AgentName  string
-	Deployment string
-	Manifest   *Manifest
+	WorkerID string
+	Manifest *Manifest
 
 	// Session is the worker's live data-plane session: the WebTransport session
 	// that also carries its control stream. One session per worker.
@@ -91,18 +88,11 @@ type RegistrationParams struct {
 
 func NewRegistration(params RegistrationParams) *Registration {
 	return &Registration{
-		WorkerID:   params.WorkerID,
-		APIKey:     params.APIKey,
-		AgentName:  params.AgentName,
-		Deployment: params.Deployment,
-		Manifest:   params.Manifest,
-		draining:   params.Draining,
-		session:    params.Session,
+		WorkerID: params.WorkerID,
+		Manifest: params.Manifest,
+		draining: params.Draining,
+		session:  params.Session,
 	}
-}
-
-func (r *Registration) key() regKey {
-	return regKey{r.APIKey, r.AgentName, normalizeDeployment(r.Deployment)}
 }
 
 // IsDraining is false when no drain signal was supplied.
@@ -172,152 +162,68 @@ func (r *Registration) close() {
 	}
 }
 
-// Registry tracks data-plane registrations on this node, keyed by
-// (api key, agent name, deployment). The api key is the project identity in OSS.
+// Registry fences worker epochs on this node. Worker ids are server-issued and
+// unique across the node, so this index is tenancy-blind: it exists only so a
+// reconnecting worker supersedes its own stale epoch, wherever that epoch was
+// scoped.
 //
-// Each key also owns a merged route table. Registrations and routes move
-// together under g.lock, so a worker present in byKey always has its routes
-// installed.
+// It holds the outermost lock in this package: a Scope's lock may be taken while
+// holding it, never the reverse.
 type Registry struct {
-	logger logger.Logger
-
-	lock   sync.RWMutex
-	regs   map[string]*Registration // by worker id
-	byKey  map[regKey][]*Registration
-	tables map[regKey]*routeTable
+	lock sync.RWMutex
+	regs map[string]*regEntry // by worker id
 }
 
-type regKey struct {
-	apiKey     string
-	agentName  string
-	deployment string
+// regEntry remembers which scope an epoch was registered into, so a supersede
+// can retract it from there even when the worker came back under a different
+// agent name or deployment.
+type regEntry struct {
+	reg   *Registration
+	scope *Scope
 }
 
 func NewRegistry() *Registry {
-	return &Registry{
-		logger: logger.GetLogger().WithComponent("agents.endpoint"),
-		regs:   make(map[string]*Registration),
-		byKey:  make(map[regKey][]*Registration),
-		tables: make(map[regKey]*routeTable),
-	}
+	return &Registry{regs: make(map[string]*regEntry)}
 }
 
-// Register records a registration. A worker id already present is superseded:
-// worker ids are stable across reconnects, and the retiring session must not be
-// able to strand the new epoch (its own Deregister is a no-op once replaced).
-// The superseded epoch's session is closed.
-func (g *Registry) Register(r *Registration) {
-	key := r.key()
+// Register records a registration in a scope. A worker id already present is
+// superseded: worker ids are stable across reconnects, and the retiring session
+// must not be able to strand the new epoch (its own Deregister is a no-op once
+// replaced). The superseded epoch's session is closed.
+func (g *Registry) Register(scope *Scope, r *Registration) {
 	g.lock.Lock()
-	superseded := g.regs[r.WorkerID]
-	old := superseded
-	if old != nil {
-		g.unlinkLocked(old)
-		if old.key() != key {
+	e := g.regs[r.WorkerID]
+	var superseded, old *Registration
+	if e != nil {
+		superseded = e.reg
+		if e.scope == scope {
+			old = e.reg
+		} else {
 			// nothing pins agent name or deployment across epochs, so the
-			// retiring epoch's routes may live in another table
-			g.retractLocked(old)
-			old = nil
+			// retiring epoch's routes may live in another scope
+			e.scope.remove(e.reg)
 		}
 	}
 	// one transaction, so an unchanged manifest keeps its Route pointers
-	g.tableLocked(key).mutate(old, r)
-	g.regs[r.WorkerID] = r
-	g.byKey[key] = append(g.byKey[key], r)
+	scope.replace(old, r)
+	g.regs[r.WorkerID] = &regEntry{reg: r, scope: scope}
 	g.lock.Unlock()
 	if superseded != nil {
 		superseded.close()
 	}
 }
 
-// tableLocked returns the key's route table, creating it on first use. Callers
-// hold g.lock.
-func (g *Registry) tableLocked(key regKey) *routeTable {
-	tbl := g.tables[key]
-	if tbl == nil {
-		tbl = newRouteTable(key, g.logger)
-		g.tables[key] = tbl
-	}
-	return tbl
-}
-
-// table returns a deployment's merged route table, or nil when no worker holds
-// the key.
-func (g *Registry) table(apiKey, agentName, deployment string) *routeTable {
-	g.lock.RLock()
-	defer g.lock.RUnlock()
-	return g.tables[regKey{apiKey, agentName, normalizeDeployment(deployment)}]
-}
-
-// removeLocked unlinks a registration from all indexes. Callers hold g.lock.
-func (g *Registry) removeLocked(r *Registration) {
-	g.unlinkLocked(r)
-	g.retractLocked(r)
-}
-
-// unlinkLocked drops a registration from the worker-id and key indexes.
-func (g *Registry) unlinkLocked(r *Registration) {
-	delete(g.regs, r.WorkerID)
-	key := r.key()
-	if regs := g.byKey[key]; len(regs) > 0 {
-		if i := slices.Index(regs, r); i != -1 {
-			regs = slices.Delete(regs, i, i+1)
-		}
-		if len(regs) == 0 {
-			delete(g.byKey, key)
-		} else {
-			g.byKey[key] = regs
-		}
-	}
-}
-
-// retractLocked drops a registration's routes. A table exists only while it
-// holds routes.
-func (g *Registry) retractLocked(r *Registration) {
-	key := r.key()
-	tbl := g.tables[key]
-	if tbl == nil {
-		return
-	}
-	tbl.mutate(r, nil)
-	if tbl.empty() {
-		delete(g.tables, key)
-	}
-}
-
-// Deregister removes exactly this registration; it is a no-op when a newer
-// epoch has already superseded it.
+// Deregister removes exactly this registration; it is a no-op when a newer epoch
+// has already superseded it.
 func (g *Registry) Deregister(r *Registration) {
 	g.lock.Lock()
-	if g.regs[r.WorkerID] != r {
+	e := g.regs[r.WorkerID]
+	if e == nil || e.reg != r {
 		g.lock.Unlock()
 		return
 	}
-	g.removeLocked(r)
+	delete(g.regs, r.WorkerID)
+	e.scope.remove(r)
 	g.lock.Unlock()
 	r.close()
-}
-
-// Candidates returns the registrations for (api key, agent name, deployment segment).
-func (g *Registry) Candidates(apiKey, agentName, deployment string) []*Registration {
-	g.lock.RLock()
-	defer g.lock.RUnlock()
-	return slices.Clone(g.byKey[regKey{apiKey, agentName, normalizeDeployment(deployment)}])
-}
-
-// SingleAPIKey returns the api key when every registration shares one - the OSS
-// resolution for unauthenticated requests to public endpoints. ok is false when
-// zero or multiple keys are present.
-func (g *Registry) SingleAPIKey() (string, bool) {
-	g.lock.RLock()
-	defer g.lock.RUnlock()
-	var key string
-	for _, r := range g.regs {
-		if key == "" {
-			key = r.APIKey
-		} else if key != r.APIKey {
-			return "", false
-		}
-	}
-	return key, key != ""
 }

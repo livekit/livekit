@@ -26,66 +26,70 @@ func (s *fakeSession) Close(string)                               { s.closed = t
 // old epoch and close its session, and the retiring session's Deregister must
 // not strand the new one.
 func TestRegistrySupersede(t *testing.T) {
-	g := NewRegistry()
+	g, s := NewRegistry(), testScope()
 	manifest, err := ParseManifest([]*livekit.AgentHttp_AgentEndpoint{{
 		Path: "/x", Methods: []string{"GET"}, Public: true,
 	}})
 	require.NoError(t, err)
 
 	mk := func() (*Registration, *fakeSession) {
-		s := &fakeSession{}
+		sess := &fakeSession{}
 		return NewRegistration(RegistrationParams{
-			WorkerID: "AW_1", APIKey: "key",
-			AgentName: "agent", Deployment: "production", Manifest: manifest,
-			Session: s,
-		}), s
+			WorkerID: "AW_1", Manifest: manifest, Session: sess,
+		}), sess
 	}
 
 	oldReg, oldSess := mk()
-	g.Register(oldReg)
+	g.Register(s, oldReg)
 	newReg, newSess := mk()
-	g.Register(newReg)
+	g.Register(s, newReg)
 
-	require.Equal(t, []*Registration{newReg}, g.Candidates("key", "agent", "production"))
+	require.Equal(t, []*Registration{newReg}, s.Candidates())
 	require.True(t, oldSess.closed, "superseded epoch's session must be closed")
 	require.False(t, newSess.closed)
 
 	// the old control connection tears down after the new one registered
 	g.Deregister(oldReg)
-	require.Equal(t, []*Registration{newReg}, g.Candidates("key", "agent", "production"),
+	require.Equal(t, []*Registration{newReg}, s.Candidates(),
 		"the retiring epoch must not deregister its successor")
 
 	g.Deregister(newReg)
-	require.Empty(t, g.Candidates("key", "agent", "production"))
+	require.Empty(t, s.Candidates())
+	require.True(t, s.Empty())
 	require.True(t, newSess.closed, "deregistered session must be closed")
 }
 
-// Candidates keys on (apiKey, agentName, deployment): a request must not see
-// another agent's workers, nor another deployment's, in the same project.
-func TestRegistryAgentScoping(t *testing.T) {
+// The fence is node-wide and scope-blind: worker ids are server-issued, so an
+// epoch is superseded wherever it was scoped, and scopes are otherwise
+// independent.
+func TestRegistryScopesAreIndependent(t *testing.T) {
 	g := NewRegistry()
-	manifest, err := ParseManifest([]*livekit.AgentHttp_AgentEndpoint{{
+	alpha, beta := testScope(), testScope()
+	m, err := ParseManifest([]*livekit.AgentHttp_AgentEndpoint{{
 		Path: "/x", Methods: []string{"GET"}, Public: true,
 	}})
 	require.NoError(t, err)
 
-	mk := func(workerID, agentName, deployment string) *Registration {
-		return NewRegistration(RegistrationParams{
-			WorkerID: workerID, APIKey: "key",
-			AgentName: agentName, Deployment: deployment, Manifest: manifest,
-			Session: &fakeSession{},
-		})
-	}
-	a := mk("AW_a", "alpha", "production")
-	b := mk("AW_b", "beta", "production")
-	staging := mk("AW_c", "alpha", "staging")
-	g.Register(a)
-	g.Register(b)
-	g.Register(staging)
+	a := NewRegistration(RegistrationParams{WorkerID: "AW_a", Manifest: m, Session: &fakeSession{}})
+	b := NewRegistration(RegistrationParams{WorkerID: "AW_b", Manifest: m, Session: &fakeSession{}})
+	g.Register(alpha, a)
+	g.Register(beta, b)
 
-	require.Equal(t, []*Registration{a}, g.Candidates("key", "alpha", "production"))
-	require.Equal(t, []*Registration{b}, g.Candidates("key", "beta", "production"))
-	require.Empty(t, g.Candidates("key", "gamma", "production"))
-	// a different deployment of the same agent is a separate candidate set
-	require.Equal(t, []*Registration{staging}, g.Candidates("key", "alpha", "staging"))
+	require.Equal(t, []*Registration{a}, alpha.Candidates())
+	require.Equal(t, []*Registration{b}, beta.Candidates())
+
+	// a scope nothing holds is empty, and holds no route table at all
+	g.Deregister(a)
+	require.True(t, alpha.Empty())
+	require.Nil(t, alpha.routeTable())
+	require.Equal(t, []*Registration{b}, beta.Candidates(), "one scope draining leaves the other")
+}
+
+// A nil scope is the "no worker here holds this deployment" answer, and must be
+// safe for the front to interrogate without a separate test.
+func TestNilScopeIsEmpty(t *testing.T) {
+	var s *Scope
+	require.Nil(t, s.Candidates())
+	require.Nil(t, s.routeTable())
+	require.True(t, s.Empty())
 }

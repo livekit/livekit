@@ -102,18 +102,25 @@ func (a AccessLevel) String() string {
 	}
 }
 
-// Access is what the front knows about a request's caller, for the agent and
-// deployment its URL addresses.
+// Access is what the front knows about a request's caller, together with the
+// serving state it resolved to. The front never keys anything itself: whatever
+// scopes a request - a tenant, an api key, a project - is resolved by the
+// embedder and arrives here already looked up.
 type Access struct {
-	// APIKey is the registry scope the request is served from; empty means the
-	// request cannot be placed.
-	APIKey string
-	Level  AccessLevel
+	// Scope is the deployment's serving state this request is placed against.
+	// nil means no worker here holds it; Fallback may still place it elsewhere.
+	Scope *Scope
+	// Fallback serves the request elsewhere (e.g. a multi-node relay), already
+	// curried on the deployment it resolved. nil means local misses are final.
+	Fallback Fallback
+	Level    AccessLevel
 }
 
 // AccessResolver maps an inbound request, plus the agent and deployment its URL
-// addresses, to the caller's access.
-type AccessResolver func(r *http.Request, agentName, deployment string) Access
+// addresses, to the caller's access. ok is false when the request cannot be
+// placed at all - no credential, or an unknown tenant - and the front
+// challenges.
+type AccessResolver func(r *http.Request, agentName, deployment string) (access Access, ok bool)
 
 type Front struct {
 	params FrontParams
@@ -127,20 +134,9 @@ type Identity func(r *http.Request) (agentName, deployment string, ok bool)
 // FrontParams configures a Front. Fields are read on every request once the
 // Front is serving, so none may change after construction.
 type FrontParams struct {
-	Registry      *Registry
 	ResolveAccess AccessResolver
 	Logger        logger.Logger
-
-	// Fallback is consulted when nothing local can serve the request: no
-	// candidates, no route match, or every match without capacity. nil means
-	// local misses are final.
-	Fallback Fallback
-	Identity Identity
-	// SingleKeyFallback resolves unauthenticated requests to the registry's
-	// single api key when the resolver yields none. The key comes from the
-	// registry, so this is sound only where every registration belongs to one
-	// tenant.
-	SingleKeyFallback bool
+	Identity      Identity
 }
 
 func NewFront(params FrontParams) *Front {
@@ -148,18 +144,11 @@ func NewFront(params FrontParams) *Front {
 	return &Front{params: params, pools: newBridgePools()}
 }
 
-// FallbackRequest describes a request nothing local could serve. The request
-// body is untouched when the fallback runs.
-type FallbackRequest struct {
-	Access
-	AgentName  string
-	Deployment string
-}
-
 // Fallback serves a request elsewhere (e.g. a multi-node relay); it reports
 // whether a response was written. Returning false falls back to the local
-// status mapping.
-type Fallback func(w http.ResponseWriter, r *http.Request, req *FallbackRequest) bool
+// status mapping. It is curried on the deployment it was resolved for, so it
+// carries no scope arguments.
+type Fallback func(w http.ResponseWriter, r *http.Request, level AccessLevel) bool
 
 // writeUnavailable writes a 503 with a Retry-After hint: no local worker can
 // serve the request and no fallback placed it elsewhere.
@@ -196,27 +185,22 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	access := f.params.ResolveAccess(r, agentName, deployment)
-	if access.APIKey == "" && f.params.SingleKeyFallback {
-		// unauthenticated: OSS serves public routes when the worker fleet
-		// belongs to a single key. A guessed api key confers no access.
-		access.APIKey, _ = f.params.Registry.SingleAPIKey()
-	}
-	if access.APIKey == "" {
+	access, ok := f.params.ResolveAccess(r, agentName, deployment)
+	if !ok {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		http.Error(w, "authentication required", http.StatusUnauthorized)
 		return
 	}
 
-	tbl := f.params.Registry.table(access.APIKey, agentName, deployment)
-	if tbl == nil && f.params.Fallback == nil {
+	tbl := access.Scope.routeTable()
+	if tbl == nil && access.Fallback == nil {
 		f.writeUnavailable(w, "no workers available for deployment")
 		return
 	}
 
 	mask := methodMask(r.Method)
 	granted := access.Level >= AccessGranted
-	matched, partial, denied := f.matchDeployment(tbl, path, mask, granted)
+	matched, partial, denied := f.matchDeployment(access.Scope, tbl, path, mask, granted)
 	// no exact match: if only the trailing-slash alternate matches a registered
 	// route, normalize the path to that form and serve it directly (no client
 	// redirect). The exact form is tried first, so a route registered with a
@@ -226,18 +210,15 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if len(matched) == 0 && !partial && !denied {
 		if alt, altEsc, ok := slashAlternatePaths(tbl, path, escPath, mask); ok {
 			path, escPath = alt, altEsc
-			matched, partial, denied = f.matchDeployment(tbl, path, mask, granted)
+			matched, partial, denied = f.matchDeployment(access.Scope, tbl, path, mask, granted)
 		}
 	}
-	if len(matched) == 0 && f.params.Fallback != nil {
+	if len(matched) == 0 && access.Fallback != nil {
 		// nothing local matched: hand off to the multi-node fallback (relay to a
 		// node holding the deployment) before the local status mapping. The
 		// serving node's relay listener installs no fallback of its own, so a
 		// relayed request is served or errored there and never re-relays.
-		if f.params.Fallback(w, r, &FallbackRequest{
-			Access:    access,
-			AgentName: agentName, Deployment: deployment,
-		}) {
+		if access.Fallback(w, r, access.Level) {
 			return
 		}
 		if tbl == nil && !denied && !partial {
@@ -314,11 +295,8 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// capacity elsewhere. Safe exactly while no request bytes were consumed -
 	// reaching this point implies it, since consuming attempts are never
 	// retryable.
-	if bodyConsumed.Load() == 0 && f.params.Fallback != nil {
-		if f.params.Fallback(w, r, &FallbackRequest{
-			Access:    access,
-			AgentName: agentName, Deployment: deployment,
-		}) {
+	if bodyConsumed.Load() == 0 && access.Fallback != nil {
+		if access.Fallback(w, r, access.Level) {
 			return
 		}
 	}
@@ -329,7 +307,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // matchDeployment resolves a path against the deployment's merged route table.
 // matched is the dispatch test: a route can be decided while nothing is left to
 // serve it, and an undecidable table dispatches with no route at all.
-func (f *Front) matchDeployment(tbl *routeTable, path string, mask router.Mask, granted bool) (matched []routeWorker, partial, denied bool) {
+func (f *Front) matchDeployment(scope *Scope, tbl *routeTable, path string, mask router.Mask, granted bool) (matched []routeWorker, partial, denied bool) {
 	if tbl == nil {
 		return nil, false, false
 	}
@@ -345,7 +323,7 @@ func (f *Front) matchDeployment(tbl *routeTable, path string, mask router.Mask, 
 			denied = true
 			break
 		}
-		for _, reg := range f.params.Registry.Candidates(tbl.key.apiKey, tbl.key.agentName, tbl.key.deployment) {
+		for _, reg := range scope.Candidates() {
 			matched = append(matched, routeWorker{reg: reg})
 		}
 	}

@@ -52,6 +52,7 @@ func NewTestServer(bus psrpc.MessageBus) *TestServer {
 		bus,
 		auth.NewSimpleKeyProvider("test", "verysecretsecret"),
 		endpoint.NewRegistry(),
+		service.NewEndpointScopes(),
 	)))
 }
 

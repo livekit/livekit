@@ -112,7 +112,6 @@ func (r *Route) eligible(granted bool) (workers []routeWorker, denied bool) {
 // the route set or its order changes, and is published by a single atomic store
 // under lock.
 type routeTable struct {
-	key    regKey
 	logger logger.Logger
 
 	lock   sync.Mutex
@@ -120,10 +119,11 @@ type routeTable struct {
 	tree   atomic.Pointer[router.Router[*Route]]
 }
 
-func newRouteTable(key regKey, l logger.Logger) *routeTable {
+// newRouteTable takes the scope's logger as-is: whatever identifies the scope is
+// curried in by the embedder, so the table holds no key of its own.
+func newRouteTable(l logger.Logger) *routeTable {
 	return &routeTable{
-		key:    key,
-		logger: l.WithValues("apiKey", key.apiKey, "agentName", key.agentName, "deployment", key.deployment),
+		logger: l,
 		routes: make(map[routeKey]*Route),
 	}
 }

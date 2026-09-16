@@ -91,6 +91,7 @@ type AgentHandler struct {
 	targetLoad  float32
 
 	endpointRegistry *endpoint.Registry
+	endpointScopes   *EndpointScopes
 	endpointsConfig  agent.EndpointsConfig
 
 	namespaceWorkers    map[workerKey][]*agent.Worker
@@ -120,6 +121,7 @@ func NewAgentHandler(
 	bus psrpc.MessageBus,
 	keyProvider auth.KeyProvider,
 	registry *endpoint.Registry,
+	scopes *EndpointScopes,
 ) (*AgentHandler, error) {
 	h := &AgentHandler{
 		logger:           logger.GetLogger().WithComponent("agents"),
@@ -140,6 +142,7 @@ func NewAgentHandler(
 		publisherTopic:   agent.PublisherAgentTopic,
 		participantTopic: agent.ParticipantAgentTopic,
 		endpointRegistry: registry,
+		endpointScopes:   scopes,
 		endpointsConfig:  conf.Agents.Endpoints,
 	}
 	if len(conf.Keys) == 1 {
@@ -188,26 +191,28 @@ func (h *AgentHandler) handleConnection(ctx context.Context, conn agent.SignalCo
 	worker := agent.NewWorker(registration, apiKey, apiSecret, conn, h.logger)
 	h.registerWorker(worker)
 
-	endpointReg := h.registerEndpoints(worker, sess)
+	endpointTeardown := h.registerEndpoints(worker, sess)
 
 	handlerWorker := &agentHandlerWorker{h, worker}
 	for ok := true; ok; {
 		ok = DispatchAgentWorkerSignal(conn, handlerWorker, worker.Logger())
 	}
 
-	if endpointReg != nil {
-		h.endpointRegistry.Deregister(endpointReg)
+	if endpointTeardown != nil {
+		endpointTeardown()
 	}
 	h.deregisterWorker(worker)
 	worker.Close()
 }
 
-// registerEndpoints registers a worker's endpoint manifest into the data-plane
-// registry, binding it to the worker's data-plane session. The registration
-// lives exactly as long as the control connection. A nil session (WebSocket
-// control path) registers nothing, since HTTP endpoints require a WebTransport
-// session to serve them.
-func (h *AgentHandler) registerEndpoints(w *agent.Worker, sess endpoint.Session) *endpoint.Registration {
+// registerEndpoints registers a worker's endpoint manifest into the scope its
+// api key, agent name and deployment address, binding it to the worker's
+// data-plane session. The registration lives exactly as long as the control
+// connection, so the returned teardown must run when that connection ends; it
+// is nil when the worker serves no endpoints. A nil session (WebSocket control
+// path) registers nothing, since HTTP endpoints require a WebTransport session
+// to serve them.
+func (h *AgentHandler) registerEndpoints(w *agent.Worker, sess endpoint.Session) func() {
 	if sess == nil || w.EndpointSettings == nil {
 		return nil
 	}
@@ -218,15 +223,13 @@ func (h *AgentHandler) registerEndpoints(w *agent.Worker, sess endpoint.Session)
 		return nil
 	}
 	reg := endpoint.NewRegistration(endpoint.RegistrationParams{
-		WorkerID:   w.ID,
-		APIKey:     w.APIKey(),
-		AgentName:  w.AgentName,
-		Deployment: w.Deployment,
-		Manifest:   manifest,
-		Session:    sess,
-		Draining:   w.Draining,
+		WorkerID: w.ID,
+		Manifest: manifest,
+		Session:  sess,
+		Draining: w.Draining,
 	})
-	h.endpointRegistry.Register(reg)
+	key := newEndpointScopeKey(w.APIKey(), w.AgentName, w.Deployment)
+	h.endpointRegistry.Register(h.endpointScopes.acquire(key), reg)
 	w.Logger().Infow("endpoints registered",
 		"namespace", w.Namespace,
 		"agentName", w.AgentName,
@@ -234,7 +237,10 @@ func (h *AgentHandler) registerEndpoints(w *agent.Worker, sess endpoint.Session)
 		"workerID", w.ID,
 		"manifest", manifest,
 	)
-	return reg
+	return func() {
+		h.endpointRegistry.Deregister(reg)
+		h.endpointScopes.release(key)
+	}
 }
 
 func (h *AgentHandler) registerWorker(w *agent.Worker) {
