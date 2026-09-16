@@ -51,7 +51,8 @@ const (
 )
 
 func init() {
-	config.InitLoggerFromConfig(&config.DefaultConfig.Logging)
+	logging := config.LoggingConfig{PionLevel: config.DefaultConfig.Logging.PionLevel}
+	config.InitLoggerFromConfig(&logging)
 	roomUpdateInterval = defaultDelay
 }
 
