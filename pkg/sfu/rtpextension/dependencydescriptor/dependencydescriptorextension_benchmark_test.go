@@ -15,9 +15,10 @@
 package dependencydescriptor
 
 import (
-	"bytes"
 	"encoding/hex"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // dependencyDescriptorMarshalFixture is a dependency descriptor captured from
@@ -29,18 +30,13 @@ func newDependencyDescriptorMarshalFixture(tb testing.TB) *DependencyDescriptorE
 	tb.Helper()
 
 	buf, err := hex.DecodeString(dependencyDescriptorMarshalFixture)
-	if err != nil {
-		tb.Fatal(err)
-	}
+	require.NoError(tb, err)
 
 	descriptor := DependencyDescriptor{}
 	parser := DependencyDescriptorExtension{Descriptor: &descriptor}
-	if _, err = parser.Unmarshal(buf); err != nil {
-		tb.Fatal(err)
-	}
-	if descriptor.AttachedStructure == nil {
-		tb.Fatal("fixture did not contain a dependency structure")
-	}
+	_, err = parser.Unmarshal(buf)
+	require.NoError(tb, err)
+	require.NotNil(tb, descriptor.AttachedStructure, "fixture did not contain a dependency structure")
 
 	structure := descriptor.AttachedStructure
 	descriptor.AttachedStructure = nil
@@ -55,46 +51,33 @@ func newDependencyDescriptorMarshalFixture(tb testing.TB) *DependencyDescriptorE
 func checkDependencyDescriptorMarshal(tb testing.TB, buf []byte, structure *FrameDependencyStructure, frameNumber uint16) {
 	tb.Helper()
 
-	if len(buf) == 0 {
-		tb.Fatal("marshal returned an empty dependency descriptor")
-	}
+	require.NotEmpty(tb, buf, "marshal returned an empty dependency descriptor")
 
 	decoded := DependencyDescriptor{}
 	parser := DependencyDescriptorExtension{
 		Descriptor: &decoded,
 		Structure:  structure,
 	}
-	if _, err := parser.Unmarshal(buf); err != nil {
-		tb.Fatal(err)
-	}
-	if decoded.FrameNumber != frameNumber {
-		tb.Fatalf("frame number = %d, want %d", decoded.FrameNumber, frameNumber)
-	}
+	_, err := parser.Unmarshal(buf)
+	require.NoError(tb, err)
+	require.Equal(tb, frameNumber, decoded.FrameNumber)
 }
 
 func TestDependencyDescriptorMarshalRoundTrip(t *testing.T) {
 	extension := newDependencyDescriptorMarshalFixture(t)
 
 	first, err := extension.Marshal()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	firstCopy := append([]byte(nil), first...)
 	checkDependencyDescriptorMarshal(t, first, extension.Structure, extension.Descriptor.FrameNumber)
 
 	extension.Descriptor.FrameNumber++
 	second, err := extension.Marshal()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	checkDependencyDescriptorMarshal(t, second, extension.Structure, extension.Descriptor.FrameNumber)
 
-	if !bytes.Equal(first, firstCopy) {
-		t.Fatal("a later marshal modified a previously returned buffer")
-	}
-	if bytes.Equal(first, second) {
-		t.Fatal("different frame numbers produced identical descriptors")
-	}
+	require.Equal(t, firstCopy, first, "a later marshal modified a previously returned buffer")
+	require.NotEqual(t, first, second, "different frame numbers produced identical descriptors")
 }
 
 func BenchmarkDependencyDescriptorMarshal(b *testing.B) {
@@ -109,9 +92,7 @@ func BenchmarkDependencyDescriptorMarshal(b *testing.B) {
 
 		var err error
 		buf, err = extension.Marshal()
-		if err != nil {
-			b.Fatal(err)
-		}
+		require.NoError(b, err)
 	}
 
 	checkDependencyDescriptorMarshal(b, buf, extension.Structure, frameNumber-1)
