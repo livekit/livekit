@@ -23,6 +23,9 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
+// maxInlineExtensionSize is the payload cap of pion's one byte header extension profile
+const maxInlineExtensionSize = 16
+
 var (
 	PacketFactory = &sync.Pool{
 		New: func() any {
@@ -59,6 +62,15 @@ type Packet struct {
 	// the Packet is owned by one send until SendPacket returns
 	absSendTimeBuf [3]byte
 	twccBuf        [2]byte
+	extBuf         [maxInlineExtensionSize]byte
+}
+
+// HoldExtension copies ext into scratch the header can point at until SendPacket returns, nil if it does not fit
+func (p *Packet) HoldExtension(ext []byte) []byte {
+	if len(ext) > len(p.extBuf) {
+		return nil
+	}
+	return p.extBuf[:copy(p.extBuf[:], ext)]
 }
 
 type Pacer interface {

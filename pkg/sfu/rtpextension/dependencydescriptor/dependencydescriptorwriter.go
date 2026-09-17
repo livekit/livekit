@@ -51,8 +51,10 @@ func NewDependencyDescriptorWriter(buf []byte, structure *FrameDependencyStructu
 	return &w, w.findBestTemplate()
 }
 
-func (w *DependencyDescriptorWriter) ResetBuf(buf []byte) {
+// withBuf returns a copy of the writer that writes into buf, value receiver so a caller owned buffer does not escape
+func (w DependencyDescriptorWriter) withBuf(buf []byte) DependencyDescriptorWriter {
 	w.writer = BitStreamWriter{buf: buf}
+	return w
 }
 
 func (w *DependencyDescriptorWriter) Write() error {

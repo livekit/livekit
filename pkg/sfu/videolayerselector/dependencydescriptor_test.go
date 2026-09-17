@@ -15,6 +15,7 @@
 package videolayerselector
 
 import (
+	"encoding/hex"
 	"slices"
 	"testing"
 
@@ -408,4 +409,44 @@ func createDDFrames(maxLayer buffer.VideoLayer, startFrameNumber uint16) []*buff
 	}
 
 	return frames
+}
+
+// same capture as the dependency descriptor package's marshal fixture, an L3T3
+// key frame descriptor with the full dependency structure attached
+const dependencyDescriptorFixture = "c1017280081485214eafffaaaa863cf0430c10c302afc0aaa0063c00430010c002a000a80006000040001d954926e082b04a0941b820ac1282503157f974000ca864330e222222eca8655304224230eca877530077004200ef008601df010d"
+
+func TestVideoLayerSelectorResultDependencyDescriptor(t *testing.T) {
+	raw, err := hex.DecodeString(dependencyDescriptorFixture)
+	require.NoError(t, err)
+
+	descriptor := dd.DependencyDescriptor{}
+	_, err = (&dd.DependencyDescriptorExtension{Descriptor: &descriptor}).Unmarshal(raw)
+	require.NoError(t, err)
+	require.NotNil(t, descriptor.AttachedStructure)
+	structure := descriptor.AttachedStructure
+
+	// a key frame descriptor carries the full structure and spills to the heap
+	keyFrame := VideoLayerSelectorResult{}
+	require.NoError(t, keyFrame.marshalDependencyDescriptorExtension(&dd.DependencyDescriptorExtension{
+		Descriptor: &descriptor,
+		Structure:  structure,
+	}))
+	require.Zero(t, keyFrame.DDBytesLen)
+	require.Greater(t, len(keyFrame.DDBytesSpill), dd.MaxInlineExtensionSize)
+
+	// a per-packet descriptor is held inline, byte for byte what Marshal returns
+	perPacket := descriptor
+	perPacket.AttachedStructure = nil
+	perPacket.ActiveDecodeTargetsBitmask = nil
+	ddExtension := &dd.DependencyDescriptorExtension{Descriptor: &perPacket, Structure: structure}
+
+	result := VideoLayerSelectorResult{}
+	require.NoError(t, result.marshalDependencyDescriptorExtension(ddExtension))
+	require.Nil(t, result.DDBytesSpill)
+	require.NotZero(t, result.DDBytesLen)
+	require.LessOrEqual(t, result.DDBytesLen, dd.MaxInlineExtensionSize)
+
+	want, err := ddExtension.Marshal()
+	require.NoError(t, err)
+	require.Equal(t, want, result.DDBytes[:result.DDBytesLen])
 }

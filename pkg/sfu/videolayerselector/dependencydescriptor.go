@@ -355,11 +355,9 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 					"stack", string(debug.Stack()))
 			}
 		}()
-		bytes, err := ddExtension.Marshal()
-		if err != nil {
+		if err := result.marshalDependencyDescriptorExtension(ddExtension); err != nil {
 			d.logger.Warnw("error marshalling dependency descriptor extension", err)
 		} else {
-			result.DependencyDescriptorExtension = bytes
 			ddMarshaled = true
 		}
 	}()
