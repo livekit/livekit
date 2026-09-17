@@ -157,11 +157,11 @@ func scenarioDataPublish(t *testing.T) {
 			payload := "test bytes"
 
 			received := atomic.NewBool(false)
-			c2.OnDataReceived = func(data []byte, sid string) {
+			c2.SetOnDataReceived(func(data []byte, sid string) {
 				if string(data) == payload && livekit.ParticipantID(sid) == c1.ID() {
 					received.Store(true)
 				}
-			}
+			})
 
 			require.NoError(t, c1.PublishData([]byte(payload), livekit.DataPacket_RELIABLE))
 
@@ -187,11 +187,11 @@ func scenarioDataUnlabeledPublish(t *testing.T) {
 			payload := "test unlabeled bytes"
 
 			received := atomic.NewBool(false)
-			c2.OnDataReceived = func(data []byte, _sid string) {
+			c2.SetOnDataReceived(func(data []byte, _sid string) {
 				if string(data) == payload {
 					received.Store(true)
 				}
-			}
+			})
 
 			require.NoError(t, c1.PublishDataUnlabeled([]byte(payload)))
 
