@@ -24,6 +24,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -449,4 +450,32 @@ func TestVideoLayerSelectorResultDependencyDescriptor(t *testing.T) {
 	want, err := ddExtension.Marshal()
 	require.NoError(t, err)
 	require.Equal(t, want, result.DDBytes[:result.DDBytesLen])
+}
+
+func TestDependencyDescriptorSelectAllocations(t *testing.T) {
+	for _, rewriteFrameNumber := range []bool{false, true} {
+		selector := NewDependencyDescriptor(logger.GetLogger())
+		selector.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+		selector.SetRequestSpatial(0)
+		frames := createDDFrames(buffer.VideoLayer{Spatial: 0, Temporal: 0}, 100)
+		require.True(t, selector.Select(frames[0], 0).IsSelected)
+		require.NotNil(t, selector.activeDecodeTargetsBitmask)
+		if rewriteFrameNumber {
+			selector.fnWrapper.offset = 6000
+		}
+		packet := frames[1]
+		packet.DependencyDescriptor.ExtFrameNum--
+		packet.DependencyDescriptor.Descriptor.FrameNumber--
+
+		selected := true
+		allocs := testing.AllocsPerRun(1000, func() {
+			packet.DependencyDescriptor.ExtFrameNum++
+			packet.DependencyDescriptor.Descriptor.FrameNumber++
+			selected = selected && selector.Select(packet, 0).IsSelected
+		})
+		require.True(t, selected)
+		if !utils.RaceEnabled {
+			require.Equal(t, 0.0, allocs, "allocations per selected packet, rewriteFrameNumber=%v", rewriteFrameNumber)
+		}
+	}
 }

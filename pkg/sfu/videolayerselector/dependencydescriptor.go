@@ -46,6 +46,10 @@ type DependencyDescriptor struct {
 	decodeTargets     []*DecodeTarget
 	fnWrapper         FrameNumberWrapper
 
+	// per packet copy of the descriptor when the frame number or the active
+	// decode targets are rewritten, owned here so it does not allocate
+	ddClone dede.DependencyDescriptor
+
 	restartGeneration int
 }
 
@@ -322,8 +326,8 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 	unWrapFn := uint16(d.fnWrapper.UpdateAndGet(extFrameNum, ddwdt.StructureUpdated))
 	var ddClone *dede.DependencyDescriptor
 	if unWrapFn != dd.FrameNumber {
-		clone := *dd
-		ddClone = &clone
+		d.ddClone = *dd
+		ddClone = &d.ddClone
 		ddClone.FrameNumber = unWrapFn
 		ddExtension.Descriptor = ddClone
 	}
@@ -333,8 +337,8 @@ func (d *DependencyDescriptor) Select(extPkt *buffer.ExtPacket, _layer int32) (r
 			if ddClone == nil {
 				// clone and override activebitmask
 				// DD-TODO: if the packet that contains the bitmask is acknowledged by RR, then we don't need it until it changed.
-				clone := *dd
-				ddClone = &clone
+				d.ddClone = *dd
+				ddClone = &d.ddClone
 				ddExtension.Descriptor = ddClone
 			}
 			ddClone.ActiveDecodeTargetsBitmask = d.activeDecodeTargetsBitmask
