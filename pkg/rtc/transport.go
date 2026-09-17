@@ -3343,7 +3343,7 @@ func configureReceiverCodecs(
 			// flexfec applies to whichever video codec is negotiated, retain
 			// it even when trimming to the preferred codec
 			for _, c := range leftCodecs {
-				if isFlexFEC03MimeType(c.RTPCodecCapability.MimeType) {
+				if mime.IsMimeTypeStringFlexFEC03(c.RTPCodecCapability.MimeType) {
 					reorderedCodecs = append(reorderedCodecs, c)
 				}
 			}

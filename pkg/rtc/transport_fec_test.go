@@ -110,6 +110,7 @@ func TestFECPairsFromSDPHandlesWhitespace(t *testing.T) {
 }
 
 func TestFlexFECPayloadTypeDoesNotCollide(t *testing.T) {
+	flexFECPayloadType := protoCodecs.FlexFEC03CodecParameters.PayloadType
 	assert.LessOrEqual(t, flexFECPayloadType, webrtc.PayloadType(127))
 	for _, codec := range protoCodecs.VideoCodecsParameters {
 		assert.NotEqual(t, codec.PayloadType, flexFECPayloadType, codec.MimeType)
@@ -157,8 +158,8 @@ func TestMediaEngineRegistersFlexFEC(t *testing.T) {
 			offer, err := pc.CreateOffer(nil)
 			require.NoError(t, err)
 
-			flexFECParams := flexFECCodecParameters()
-			assert.Equal(t, "repair-window=10000000", flexFECParams.SDPFmtpLine)
+			flexFECParams := protoCodecs.FlexFEC03CodecParameters
+			assert.Equal(t, protoCodecs.FlexFEC03Fmtp, flexFECParams.SDPFmtpLine)
 			filtered := filterCodecs(
 				[]webrtc.RTPCodecParameters{flexFECParams},
 				enabledCodecs,
