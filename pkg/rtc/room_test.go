@@ -51,7 +51,11 @@ const (
 )
 
 func init() {
-	config.InitLoggerFromConfig(&config.DefaultConfig.Logging)
+	// The logger retains this config and locks it on every component level
+	// resolution, so it must not be DefaultConfig: NewConfig marshals that
+	// global from the goroutines these tests spin up.
+	loggingConf := config.LoggingConfig{PionLevel: config.DefaultConfig.Logging.PionLevel}
+	config.InitLoggerFromConfig(&loggingConf)
 	roomUpdateInterval = defaultDelay
 }
 
