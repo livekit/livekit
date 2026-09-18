@@ -209,7 +209,14 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		}
 		t.subscriber = subscriber
 	}
-	if !t.params.Migration && t.params.SubscriberAsPrimary {
+	// Create subscriber data channels for both subscriber-primary and publisher-primary clients.
+	// Publisher-primary clients (protocol <= 2) need this so the server's subscriber offer
+	// includes m=application, allowing Pion to start SCTP on that transport. Without this,
+	// clients that initiate SCTP on the subscriber PC (e.g. esp_peer on ESP32) see their
+	// INIT packets dropped because the server never creates an SCTP association.
+	//
+	// See: https://github.com/livekit/livekit/issues/4825
+	if !t.params.Migration && t.subscriber != nil {
 		if err := t.createDataChannelsForSubscriber(nil); err != nil {
 			return nil, err
 		}
