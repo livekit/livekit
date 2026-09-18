@@ -23,8 +23,13 @@ import (
 	"testing"
 
 	"github.com/gammazero/workerpool"
+	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 )
 
 func TestWebRTCReceiver_OnCloseHandler(t *testing.T) {
@@ -50,6 +55,77 @@ func TestWebRTCReceiver_OnCloseHandler(t *testing.T) {
 			assert.NotNil(t, w.onCloseHandler)
 		})
 	}
+}
+
+type receiverCloseTestSender struct {
+	TrackSender
+	subscriberID                   livekit.ParticipantID
+	upTrackMaxPublishedLayerChange func(int32)
+}
+
+func (s *receiverCloseTestSender) SubscriberID() livekit.ParticipantID {
+	return s.subscriberID
+}
+
+func (s *receiverCloseTestSender) UpTrackMaxPublishedLayerChange(layer int32) {
+	if s.upTrackMaxPublishedLayerChange != nil {
+		s.upTrackMaxPublishedLayerChange(layer)
+	}
+}
+
+func (s *receiverCloseTestSender) UpTrackMaxTemporalLayerSeenChange(int32) {}
+
+func TestReceiverBaseAddDownTrackReturnsClosedWhenCloseWinsRace(t *testing.T) {
+	receiver := NewReceiverBase(
+		ReceiverBaseParams{
+			TrackID:  "track",
+			StreamID: "stream",
+			Kind:     webrtc.RTPCodecTypeAudio,
+			Codec: webrtc.RTPCodecParameters{
+				RTPCodecCapability: webrtc.RTPCodecCapability{
+					MimeType:  webrtc.MimeTypeOpus,
+					ClockRate: 48000,
+					Channels:  2,
+				},
+				PayloadType: 111,
+			},
+			Logger: logger.GetLogger(),
+		},
+		&livekit.TrackInfo{
+			Sid:    "track",
+			Type:   livekit.TrackType_AUDIO,
+			Source: livekit.TrackSource_MICROPHONE,
+		},
+		ReceiverCodecStateNormal,
+	)
+
+	enteredAdd := make(chan struct{})
+	resumeAdd := make(chan struct{})
+	track := &receiverCloseTestSender{
+		subscriberID: "subscriber",
+		upTrackMaxPublishedLayerChange: func(int32) {
+			close(enteredAdd)
+			<-resumeAdd
+		},
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- receiver.AddDownTrack(track)
+	}()
+
+	// AddDownTrack has passed its initial IsClosed check and is paused
+	// before reaching the final TryStore.
+	<-enteredAdd
+
+	// Close terminally drains/closes the spreader before AddDownTrack resumes.
+	receiver.Close("test", false)
+	close(resumeAdd)
+
+	err := <-errCh
+	require.ErrorIs(t, err, ErrReceiverClosed)
+	require.True(t, receiver.IsClosed())
+	require.Empty(t, receiver.GetDownTracks())
 }
 
 func BenchmarkWriteRTP(b *testing.B) {
