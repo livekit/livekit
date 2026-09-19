@@ -70,6 +70,13 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 	// we don't want to use active TCP on a server, clients should be dialing
 	webRTCConfig.SettingEngine.DisableActiveTCP(true)
 
+	// explicit candidate advertisement list overrides discovery-derived rules
+	if len(rtcConf.AdvertisedIPs) > 0 {
+		if err := applyAdvertisedIPs(&webRTCConfig.SettingEngine, &rtcConf); err != nil {
+			return nil, err
+		}
+	}
+
 	if rtcConf.PacketBufferSize == 0 {
 		rtcConf.PacketBufferSize = 500
 	}
