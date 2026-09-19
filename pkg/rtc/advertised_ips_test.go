@@ -111,14 +111,16 @@ func TestBuildAdvertisedIPRules(t *testing.T) {
 		rules, err := buildAdvertisedIPRules([]string{"203.0.113.1"}, localIPs)
 		require.NoError(t, err)
 		last := rules[len(rules)-1]
-		require.Empty(t, last.External)
+		// pion rejects empty External lists, so the drop rule carries a borrowed
+		// non-empty External that its Networks family scope filters out
+		require.NotEmpty(t, last.External)
 		require.Equal(t, webrtc.ICEAddressRewriteReplace, last.Mode)
 		require.Equal(t, []webrtc.NetworkType{webrtc.NetworkTypeUDP6, webrtc.NetworkTypeTCP6}, last.Networks)
 
 		rules, err = buildAdvertisedIPRules([]string{"203.0.113.1", "2001:db8::1"}, localIPs)
 		require.NoError(t, err)
 		for _, r := range rules {
-			require.NotEmpty(t, r.External)
+			require.Empty(t, r.Networks) // no drop rules on dual-stack lists
 		}
 	})
 
@@ -128,5 +130,29 @@ func TestBuildAdvertisedIPRules(t *testing.T) {
 		require.NoError(t, err)
 		se := webrtc.SettingEngine{}
 		require.NoError(t, se.SetICEAddressRewriteRules(rules...))
+	})
+
+	// regression: rule sets must survive pion's agent-construction validation,
+	// which is stricter than SetICEAddressRewriteRules (e.g. it rejects empty
+	// External lists). Building a real PeerConnection and offer exercises it.
+	t.Run("rules pass pion agent validation end to end", func(t *testing.T) {
+		for _, entries := range [][]string{
+			{"203.0.113.1"}, // v4-only: exercises the IPv6 drop rule
+			{"2001:db8::1"}, // v6-only: exercises the IPv4 drop rule
+			{"203.0.113.1", "10.0.0.5", "198.51.100.7/192.168.1.10"},
+		} {
+			rules, err := buildAdvertisedIPRules(entries, localIPs)
+			require.NoError(t, err)
+			se := webrtc.SettingEngine{}
+			require.NoError(t, se.SetICEAddressRewriteRules(rules...))
+			api := webrtc.NewAPI(webrtc.WithSettingEngine(se))
+			pc, err := api.NewPeerConnection(webrtc.Configuration{})
+			require.NoError(t, err)
+			_, err = pc.CreateDataChannel("probe", nil)
+			require.NoError(t, err)
+			_, err = pc.CreateOffer(nil)
+			require.NoError(t, err, "entries %v", entries)
+			require.NoError(t, pc.Close())
+		}
 	})
 }

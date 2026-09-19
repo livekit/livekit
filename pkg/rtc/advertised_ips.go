@@ -129,8 +129,15 @@ func buildAdvertisedIPRules(entries []string, localIPs []string) ([]webrtc.ICEAd
 
 	// pion partitions rewrite mappings by address family, so a family with no
 	// advertised addresses would leave that family's local candidates unmatched
-	// and therefore advertised as-is. Add an empty replace-mode drop rule per
-	// absent family so the list stays authoritative on dual-stack hosts.
+	// and therefore advertised as-is. Add a replace-mode drop rule per absent
+	// family so the list stays authoritative on dual-stack hosts.
+	//
+	// pion rejects rules whose External list is literally empty, so the drop
+	// rule borrows an advertised address of the *other* family and scopes the
+	// rule to the absent family via Networks: the family filter strips the
+	// borrowed external, leaving a valid empty catch-all mapping that drops
+	// every candidate of that family (a matched replace rule with no usable
+	// externals suppresses the candidate).
 	hasV4, hasV6 := false, false
 	for _, ip := range advertised {
 		if net.ParseIP(ip).To4() != nil {
@@ -141,6 +148,7 @@ func buildAdvertisedIPRules(entries []string, localIPs []string) ([]webrtc.ICEAd
 	}
 	if !hasV4 {
 		rules = append(rules, webrtc.ICEAddressRewriteRule{
+			External:        []string{advertised[0]}, // v6; filtered out by Networks below
 			AsCandidateType: webrtc.ICECandidateTypeHost,
 			Mode:            webrtc.ICEAddressRewriteReplace,
 			Networks:        []webrtc.NetworkType{webrtc.NetworkTypeUDP4, webrtc.NetworkTypeTCP4},
@@ -148,6 +156,7 @@ func buildAdvertisedIPRules(entries []string, localIPs []string) ([]webrtc.ICEAd
 	}
 	if !hasV6 {
 		rules = append(rules, webrtc.ICEAddressRewriteRule{
+			External:        []string{advertised[0]}, // v4; filtered out by Networks below
 			AsCandidateType: webrtc.ICECandidateTypeHost,
 			Mode:            webrtc.ICEAddressRewriteReplace,
 			Networks:        []webrtc.NetworkType{webrtc.NetworkTypeUDP6, webrtc.NetworkTypeTCP6},
