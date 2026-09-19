@@ -79,6 +79,19 @@ rtc:
   # # in such cases, use this setting to set the public IP of the node
   # # use_external_ip takes precedence, for this to take effect, set use_external_ip to false
   # node_ip: <external-ip-of-node>
+  # # explicit list of addresses to advertise to clients as host ICE candidates.
+  # # when set, this list is authoritative: it overrides node_ip / use_external_ip
+  # # derived advertisement, and local addresses not in the list are never advertised.
+  # # each entry is a bare IP, or an "external/local" pair mapping an externally
+  # # reachable address to the local address its traffic arrives on (list the local
+  # # IP as its own entry as well to advertise both).
+  # # useful when the node is reachable on multiple addresses that discovery cannot
+  # # determine (e.g. LAN + public IP behind DNAT without hairpin, split-horizon
+  # # networks, multiple same-family addresses).
+  # # node_ip is still used for non-advertisement purposes (e.g. TURN relay address).
+  # advertised_ips:
+  #   - <public-ip>
+  #   - <lan-ip>
   # # when set, LiveKit will attempt to use a UDP mux so all UDP traffic goes through
   # # listed port(s). To maximize system performance, we recommend using a range of ports
   # # greater or equal to the number of vCPUs on the machine.
