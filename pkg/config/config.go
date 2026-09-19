@@ -120,6 +120,20 @@ type Config struct {
 type RTCConfig struct {
 	rtcconfig.RTCConfig `yaml:",inline"`
 
+	// AdvertisedIPs, when non-empty, is the authoritative list of addresses advertised
+	// to clients as host ICE candidates, replacing automatic discovery (node_ip,
+	// use_external_ip, STUN) for candidate advertisement purposes.
+	// Each entry is either:
+	//   - a bare IP ("203.0.113.1"): advertised as a host candidate. If present on
+	//     a local interface it is advertised as itself; otherwise it is advertised
+	//     in place of unlisted local addresses.
+	//   - an "external/local" pair ("203.0.113.1/10.0.0.5"): the external IP is
+	//     advertised for the socket bound on the given local IP (list the local IP
+	//     separately as a bare entry to advertise both).
+	// Local IPs not in the list are never advertised.
+	// node_ip is still used for non-advertisement purposes (e.g. TURN relay address).
+	AdvertisedIPs []string `yaml:"advertised_ips,omitempty"`
+
 	TURNServers []TURNServer `yaml:"turn_servers,omitempty"`
 
 	// EnableWarp turns on WARP = SPED (DTLS-in-STUN, saves DTLS round-trip) +
