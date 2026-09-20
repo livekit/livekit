@@ -16,19 +16,20 @@ package service_test
 
 import (
 	"context"
-	"github.com/dennwc/iters"
-	"github.com/livekit/livekit-server/pkg/service"
-	"github.com/livekit/psrpc"
 	"slices"
 	"testing"
 
-	"github.com/livekit/protocol/livekit"
+	"github.com/dennwc/iters"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/livekit-server/pkg/service"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/psrpc/pkg/bus/redisbus"
 )
 
 func ioStoreDocker(t testing.TB) (*service.IOInfoService, *service.RedisStore) {
 	r := redisClientDocker(t)
-	bus := psrpc.NewRedisMessageBus(r)
+	bus := redisbus.New(r)
 	rs := service.NewRedisStore(r)
 	io, err := service.NewIOInfoService(bus, rs, rs, rs, nil)
 	require.NoError(t, err)
