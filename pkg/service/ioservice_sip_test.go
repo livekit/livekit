@@ -20,13 +20,11 @@ import (
 	"testing"
 
 	"github.com/dennwc/iters"
-
-	"github.com/livekit/livekit-server/pkg/service"
-	"github.com/livekit/psrpc/pkg/bus/redisbus"
-
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/psrpc/pkg/bus/redisbus"
 )
 
 func ioStoreDocker(t testing.TB) (*service.IOInfoService, *service.RedisStore) {
