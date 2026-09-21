@@ -237,7 +237,6 @@ type DownTrackParams struct {
 	Trailer                        []byte
 	RTCPWriter                     func([]rtcp.Packet) error
 	DisableSenderReportPassThrough bool
-	ForwardAbsCaptureTimeVerbatim  bool
 	SupportsCodecChange            bool
 	StripPacketTrailer             bool
 	EnableStartAtDesiredQuality    bool
@@ -1071,10 +1070,9 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	}
 	var actBytes []byte
 	if extPkt.AbsCaptureTimeExt != nil && d.absCaptureTimeExtID != 0 {
-		if d.params.ForwardAbsCaptureTimeVerbatim {
-			// Skip the sender-report gate and clock rewrite below so subscribers get
-			// the original publisher capture time (needed for accurate end-to-end
-			// latency measurement).
+		if !d.params.DisableSenderReportPassThrough {
+			// pass through the original publisher capture time verbatim, consistent
+			// with sender reports also being passed through unchanged.
 			actBytes, err = extPkt.AbsCaptureTimeExt.Marshal()
 			if err == nil {
 				hdr.SetExtension(uint8(d.absCaptureTimeExtID), actBytes)
@@ -1090,10 +1088,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 			if refSenderReport != nil {
 				actExtCopy := *extPkt.AbsCaptureTimeExt
 				if err = actExtCopy.Rewrite(
-					rtpstats.RTCPSenderReportPropagationDelay(
-						refSenderReport,
-						!d.params.DisableSenderReportPassThrough,
-					),
+					rtpstats.RTCPSenderReportPropagationDelay(refSenderReport),
 				); err == nil {
 					actBytes, err = actExtCopy.Marshal()
 					if err == nil {

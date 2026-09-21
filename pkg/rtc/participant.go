@@ -209,7 +209,6 @@ type ParticipantParams struct {
 	SyncStreams                       bool
 	ForwardStats                      *sfu.ForwardStats
 	DisableSenderReportPassThrough    bool
-	ForwardAbsCaptureTimeVerbatim     bool
 	MetricConfig                      metric.MetricConfig
 	UseOneShotSignallingMode          bool
 	EnableMetrics                     bool
@@ -526,10 +525,6 @@ func (p *ParticipantImpl) GetPacer() pacer.Pacer {
 
 func (p *ParticipantImpl) GetDisableSenderReportPassThrough() bool {
 	return p.params.DisableSenderReportPassThrough
-}
-
-func (p *ParticipantImpl) GetForwardAbsCaptureTimeVerbatim() bool {
-	return p.params.ForwardAbsCaptureTimeVerbatim
 }
 
 func (p *ParticipantImpl) ID() livekit.ParticipantID {
