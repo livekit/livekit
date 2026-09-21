@@ -38,6 +38,7 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 
+	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
@@ -1046,4 +1047,21 @@ func TestResumedParticipantWaitsForReconnectResponse(t *testing.T) {
 		require.NoError(t, p.SendRoomUpdate(&livekit.Room{Name: "test"}))
 		require.Equal(t, 1, sink.WriteMessageCallCount())
 	})
+}
+
+func TestAgentJobBindingCannotBeUpdated(t *testing.T) {
+	for _, initial := range []string{"", "AJ_original"} {
+		t.Run(initial, func(t *testing.T) {
+			p := newParticipantForTest("agent")
+			t.Cleanup(func() { _ = p.Close(false, types.ParticipantCloseReasonClientRequestLeave, false) })
+			grants := p.ClaimGrants().Clone()
+			grants.Attributes = map[string]string{agent.AgentJobIDAttributeKey: initial}
+			p.grants.Store(grants)
+			for _, value := range []string{"AJ_other", ""} {
+				p.SetAttributes(map[string]string{agent.AgentJobIDAttributeKey: value, "custom": "updated"})
+				require.Equal(t, initial, p.ClaimGrants().Attributes[agent.AgentJobIDAttributeKey])
+				require.Equal(t, "updated", p.ClaimGrants().Attributes["custom"])
+			}
+		})
+	}
 }
