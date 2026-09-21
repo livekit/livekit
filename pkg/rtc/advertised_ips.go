@@ -218,6 +218,36 @@ func parseAdvertisedIPs(entries []string) (bareIPs []string, pairExternals map[s
 	return bareIPs, pairExternals, pairLocals, nil
 }
 
+// disableDiscoveryForAdvertisedIPs turns off STUN-based external-IP discovery
+// when rtc.advertised_ips is set, and reports whether it changed anything.
+//
+// The list is authoritative for candidate advertisement, so discovery could at
+// most produce state that applyAdvertisedIPs then has to undo (rewrite rules,
+// NAT1To1IPs, STUN servers). But one piece of discovery state cannot be undone
+// after the fact: with external_ip_only, getNAT1to1IPsForConf replaces the ICE
+// IP filter with "only the IPv4 addresses discovery mapped", and
+// rtcconfig.NewWebRTCConfig applies that filter to the UDP mux when it binds
+// its sockets. Any local address discovery did not map — such as the local side
+// of an explicit external/local pair — then has no socket at all, and no
+// rewrite rule can conjure a candidate for it. Skipping discovery keeps the mux
+// bound under the operator's rtc.ips filter only, and saves the 1-5 s STUN
+// round trip at startup.
+//
+// Must run on the RTCConfig BEFORE rtcconfig.NewWebRTCConfig. node_ip and its
+// auto-generation are independent of these flags.
+func disableDiscoveryForAdvertisedIPs(rtcConf *config.RTCConfig) bool {
+	if len(rtcConf.AdvertisedIPs) == 0 || !(rtcConf.UseExternalIP || rtcConf.ExternalIPOnly) {
+		return false
+	}
+	logger.Infow("rtc.advertised_ips is set; skipping external IP discovery",
+		"use_external_ip", rtcConf.UseExternalIP,
+		"external_ip_only", rtcConf.ExternalIPOnly,
+	)
+	rtcConf.UseExternalIP = false
+	rtcConf.ExternalIPOnly = false
+	return true
+}
+
 // validateAdvertisedIPs reports whether rtc.advertised_ips is well-formed. It is
 // meant to run BEFORE rtcconfig.NewWebRTCConfig opens the UDP mux and TCP
 // listener, so a config error never leaves bound sockets behind.
@@ -322,9 +352,6 @@ func applyAdvertisedIPs(webRTCConfig *rtcconfig.WebRTCConfig, rtcConf *config.RT
 		return err
 	}
 
-	if rtcConf.UseExternalIP {
-		logger.Warnw("rtc.advertised_ips overrides use_external_ip-derived candidate advertisement", nil)
-	}
 	if len(webRTCConfig.Configuration.ICEServers) > 0 {
 		logger.Infow("rtc.advertised_ips: disabling automatic STUN servers", "iceServers", webRTCConfig.Configuration.ICEServers)
 	}

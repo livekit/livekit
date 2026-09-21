@@ -408,6 +408,29 @@ func TestApplyAdvertisedIPsClearsDiscoveryState(t *testing.T) {
 	require.Nil(t, webRTCConfig.Configuration.ICEServers, "automatic STUN must not add discovery-derived srflx candidates")
 }
 
+func TestDisableDiscoveryForAdvertisedIPs(t *testing.T) {
+	t.Run("no list: discovery flags untouched", func(t *testing.T) {
+		var c config.RTCConfig
+		c.UseExternalIP, c.ExternalIPOnly = true, true
+		require.False(t, disableDiscoveryForAdvertisedIPs(&c))
+		require.True(t, c.UseExternalIP)
+		require.True(t, c.ExternalIPOnly)
+	})
+	t.Run("list with discovery on: both flags cleared before the mux is built", func(t *testing.T) {
+		var c config.RTCConfig
+		c.AdvertisedIPs = []string{"203.0.113.8/192.168.1.10"}
+		c.UseExternalIP, c.ExternalIPOnly = true, true
+		require.True(t, disableDiscoveryForAdvertisedIPs(&c))
+		require.False(t, c.UseExternalIP)
+		require.False(t, c.ExternalIPOnly)
+	})
+	t.Run("list with discovery already off: no-op", func(t *testing.T) {
+		var c config.RTCConfig
+		c.AdvertisedIPs = []string{"203.0.113.8"}
+		require.False(t, disableDiscoveryForAdvertisedIPs(&c))
+	})
+}
+
 func TestUsesSharedPortGathering(t *testing.T) {
 	var c config.RTCConfig
 	require.True(t, usesSharedPortGathering(&c), "udp_port / mux is the default")

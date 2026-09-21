@@ -67,6 +67,13 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 	if err := validateAdvertisedIPs(rtcConf.AdvertisedIPs); err != nil {
 		return nil, err
 	}
+	// With an authoritative list, STUN-based external-IP discovery has nothing
+	// left to decide — and it must not run: with external_ip_only it replaces the
+	// IP filter BEFORE the UDP mux binds its sockets, silently excluding every
+	// local address discovery did not map (including the local side of an
+	// explicit external/local pair). rtcConf is a copy, so this only affects the
+	// WebRTC config built here; node_ip and its auto-generation are unaffected.
+	disableDiscoveryForAdvertisedIPs(&rtcConf)
 
 	webRTCConfig, err := rtcconfig.NewWebRTCConfig(&rtcConf.RTCConfig, conf.Development)
 	if err != nil {

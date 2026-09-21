@@ -91,8 +91,9 @@ rtc:
   # # useful when the node is reachable on multiple addresses that discovery cannot
   # # determine (e.g. LAN + public IP behind DNAT without hairpin, split-horizon
   # # networks, multiple same-family addresses).
-  # # setting this also disables the automatic STUN servers (their server-reflexive
-  # # candidates would advertise discovery-derived addresses outside the list).
+  # # setting this also skips STUN-based external IP discovery (use_external_ip and
+  # # external_ip_only are ignored) and disables the automatic STUN servers, since
+  # # both would advertise or filter by discovery-derived addresses outside the list.
   # # node_ip is still used for non-advertisement purposes (e.g. TURN relay address).
   # advertised_ips:
   #   - <public-ip>
