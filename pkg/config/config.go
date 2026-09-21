@@ -124,9 +124,10 @@ type RTCConfig struct {
 	// to clients as host ICE candidates, replacing automatic discovery (node_ip,
 	// use_external_ip, STUN) for candidate advertisement purposes.
 	// Each entry is either:
-	//   - a bare IP ("203.0.113.1"): advertised as a host candidate. If present on
-	//     a local interface it is advertised as itself (for that socket only);
-	//     otherwise it is advertised in place of every unlisted local address.
+	//   - a bare IP ("203.0.113.1"): advertised as a host candidate for every
+	//     gathering socket. With port-range gathering (port_range_start/end) a bare
+	//     IP that is present on a local interface is instead scoped to that
+	//     interface's socket, since other sockets use other ports.
 	//   - an "external/local" pair ("203.0.113.1/10.0.0.5"): the external IP is
 	//     advertised for the socket bound on the given local IP only (list the
 	//     local IP separately as a bare entry to advertise both).

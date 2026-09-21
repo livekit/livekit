@@ -84,9 +84,10 @@ rtc:
   # # derived advertisement, and local addresses not in the list are never advertised.
   # # each entry is a bare IP, or an "external/local" pair mapping an externally
   # # reachable address to the local address its traffic arrives on (list the local
-  # # IP as its own entry as well to advertise both). a bare IP that is not local
-  # # is advertised for every unlisted local socket; a bare local IP and a pair's
-  # # external are advertised only for their own socket.
+  # # IP as its own entry as well to advertise both). with udp_port (mux) gathering
+  # # every bare IP is advertised for every socket; with port_range gathering a bare
+  # # IP that is present on a local interface is advertised only for that interface's
+  # # socket (other sockets use other ports), and a pair's external always is.
   # # useful when the node is reachable on multiple addresses that discovery cannot
   # # determine (e.g. LAN + public IP behind DNAT without hairpin, split-horizon
   # # networks, multiple same-family addresses).

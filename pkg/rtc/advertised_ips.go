@@ -49,53 +49,59 @@ var (
 //   - a bare entry that is NOT a local IP is a NAT-side address that reaches this
 //     host whichever socket answers: it is advertised for every socket of its
 //     family (explicit rules and catch-all alike);
-//   - a bare entry that matches a local IP gets an identity rule, so that local
-//     socket is advertised as itself (plus the NAT-side addresses);
+//   - a bare entry that matches a local IP depends on how candidates are gathered
+//     (sharedPort):
+//   - UDP-mux / TCP-mux gathering (sharedPort=true, the production default):
+//     every socket shares the same port, so any listed address reaches every
+//     socket. Bare local entries are advertised for every socket exactly like
+//     NAT-side ones. This also covers a local address that has no gathering
+//     socket of its own — e.g. a public IP aliased onto `lo` so the host can
+//     reach itself — which an identity rule bound to "its" socket would never
+//     advertise;
+//   - port-range gathering (sharedPort=false): each interface's socket has a
+//     different port, and pion preserves the socket's port when rewriting, so
+//     advertising an address for a socket it does not reach yields a candidate
+//     with no listener behind it. A bare local entry therefore gets an identity
+//     rule scoped to its own socket (plus the NAT-side addresses);
 //   - an "external/local" pair maps the local socket to the external address
-//     (both are advertised if the local is also listed bare). Pair externals and
-//     bare local entries are interface-scoped and deliberately kept OUT of the
-//     catch-all: pion preserves the original socket's port when rewriting, and
-//     with port-range gathering a different interface's socket has a different
-//     port, so advertising an interface-scoped address for it would produce a
-//     candidate with no listener behind it;
+//     (both are advertised if the local is also listed bare); the external is
+//     always socket-scoped and never enters the catch-all;
 //   - every other local socket is caught by a per-family catch-all advertising
-//     the NAT-side addresses, or by a drop rule when there are none of that
-//     family, so unlisted locals never reach the SDP (dual-stack hosts included).
+//     the everywhere-valid addresses, or by a drop rule when there are none of
+//     that family, so unlisted locals never reach the SDP (dual-stack included).
 //
 // All rules use replace mode: each rule's External list IS the complete set of
 // addresses to advertise for the local sockets it matches. Explicit Local-keyed
 // rules take precedence over catch-alls in pion's evaluation.
-func buildAdvertisedIPRules(entries []string, localIPs []string) ([]webrtc.ICEAddressRewriteRule, error) {
+func buildAdvertisedIPRules(entries []string, localIPs []string, sharedPort bool) ([]webrtc.ICEAddressRewriteRule, error) {
 	bareIPs, pairExternals, pairLocals, err := parseAdvertisedIPs(entries)
 	if err != nil {
 		return nil, err
 	}
 
-	// Bare entries that are NOT local addresses are the NAT-side addresses that
-	// reach this host regardless of which socket answers, so they are advertised
-	// for EVERY socket: appended to each explicit rule below and forming the
-	// per-family catch-all for unlisted sockets. (Under a UDP mux every socket
-	// shares one port, so pion's (address, port) dedup collapses them to one
-	// candidate; under port-range gathering an operator who needs a NAT-side
-	// address tied to one socket should use the "external/local" pair form.)
-	// Split by family: an explicit Local-keyed rule takes the local's family, so
-	// an other-family external there would yield a mismatched-family candidate.
-	var bareNonLocalV4, bareNonLocalV6 []string
+	// The per-family "everywhere" set: bare entries valid for EVERY socket —
+	// NAT-side (non-local) addresses always, and local ones too when all sockets
+	// share a port. Appended to each explicit rule below and forming the catch-all
+	// for unlisted sockets. Split by family: an explicit Local-keyed rule takes the
+	// local's family, so an other-family external there would yield a
+	// mismatched-family candidate. (pion dedups candidates by (address, port), so
+	// the same address reached from several sockets collapses to one.)
+	var everywhereV4, everywhereV6 []string
 	for _, ip := range bareIPs {
-		if slices.Contains(localIPs, ip) {
-			continue
+		if !sharedPort && slices.Contains(localIPs, ip) {
+			continue // socket-scoped; handled by its identity rule below
 		}
 		if net.ParseIP(ip).To4() != nil {
-			bareNonLocalV4 = append(bareNonLocalV4, ip)
+			everywhereV4 = append(everywhereV4, ip)
 		} else {
-			bareNonLocalV6 = append(bareNonLocalV6, ip)
+			everywhereV6 = append(everywhereV6, ip)
 		}
 	}
-	bareNonLocalFor := func(local string) []string {
+	everywhereFor := func(local string) []string {
 		if net.ParseIP(local).To4() != nil {
-			return bareNonLocalV4
+			return everywhereV4
 		}
-		return bareNonLocalV6
+		return everywhereV6
 	}
 
 	var rules []webrtc.ICEAddressRewriteRule
@@ -108,7 +114,7 @@ func buildAdvertisedIPRules(entries []string, localIPs []string) ([]webrtc.ICEAd
 			// listed bare as well: advertise the local itself too
 			externals = append(externals, local)
 		}
-		externals = appendUnique(externals, bareNonLocalFor(local)...)
+		externals = appendUnique(externals, everywhereFor(local)...)
 		rules = append(rules, webrtc.ICEAddressRewriteRule{
 			External:        externals,
 			Local:           local,
@@ -117,27 +123,37 @@ func buildAdvertisedIPRules(entries []string, localIPs []string) ([]webrtc.ICEAd
 		})
 		handledLocals = append(handledLocals, local)
 	}
-	for _, ip := range bareIPs {
-		if !slices.Contains(localIPs, ip) || slices.Contains(handledLocals, ip) {
-			continue
+	if !sharedPort {
+		for _, ip := range bareIPs {
+			if !slices.Contains(localIPs, ip) || slices.Contains(handledLocals, ip) {
+				continue
+			}
+			// identity rule: advertise this local address as itself (plus the
+			// everywhere-valid addresses), shielding it from the catch-all below
+			rules = append(rules, webrtc.ICEAddressRewriteRule{
+				External:        appendUnique([]string{ip}, everywhereFor(ip)...),
+				Local:           ip,
+				AsCandidateType: webrtc.ICECandidateTypeHost,
+				Mode:            webrtc.ICEAddressRewriteReplace,
+			})
+			handledLocals = append(handledLocals, ip)
 		}
-		// identity rule: advertise this local address as itself (plus the
-		// NAT-side addresses), shielding it from the catch-all below
-		rules = append(rules, webrtc.ICEAddressRewriteRule{
-			External:        appendUnique([]string{ip}, bareNonLocalFor(ip)...),
-			Local:           ip,
-			AsCandidateType: webrtc.ICECandidateTypeHost,
-			Mode:            webrtc.ICEAddressRewriteReplace,
-		})
-		handledLocals = append(handledLocals, ip)
 	}
 
-	// per-family catch-all for unlisted local sockets, or a drop rule when
-	// there is nothing NAT-side of that family to advertise for them
-	rules = append(rules, catchAllOrDropRule(bareNonLocalV4, ipv4Networks, dropSentinelForIPv4Rule))
-	rules = append(rules, catchAllOrDropRule(bareNonLocalV6, ipv6Networks, dropSentinelForIPv6Rule))
+	// per-family catch-all for every other local socket, or a drop rule when
+	// there is nothing of that family valid for them
+	rules = append(rules, catchAllOrDropRule(everywhereV4, ipv4Networks, dropSentinelForIPv4Rule))
+	rules = append(rules, catchAllOrDropRule(everywhereV6, ipv6Networks, dropSentinelForIPv6Rule))
 
 	return rules, nil
+}
+
+// usesSharedPortGathering reports whether host candidates are gathered through
+// the UDP/TCP muxes (one port shared by every socket) rather than a per-socket
+// ephemeral port range. Mirrors the branch order in rtcconfig.NewWebRTCConfig:
+// a configured port range takes precedence over udp_port.
+func usesSharedPortGathering(rtcConf *config.RTCConfig) bool {
+	return rtcConf.ICEPortRangeStart == 0 || rtcConf.ICEPortRangeEnd == 0
 }
 
 // parseAdvertisedIPs validates rtc.advertised_ips and splits it into bare entries
@@ -287,7 +303,8 @@ func applyAdvertisedIPs(webRTCConfig *rtcconfig.WebRTCConfig, rtcConf *config.RT
 		return fmt.Errorf("rtc.advertised_ips: could not enumerate local IPs: %w", err)
 	}
 
-	rules, err := buildAdvertisedIPRules(rtcConf.AdvertisedIPs, localIPs)
+	sharedPort := usesSharedPortGathering(rtcConf)
+	rules, err := buildAdvertisedIPRules(rtcConf.AdvertisedIPs, localIPs, sharedPort)
 	if err != nil {
 		return err
 	}
@@ -305,6 +322,7 @@ func applyAdvertisedIPs(webRTCConfig *rtcconfig.WebRTCConfig, rtcConf *config.RT
 		"entries", rtcConf.AdvertisedIPs,
 		"advertised", advertisedAddressSet(rtcConf.AdvertisedIPs),
 		"localIPs", localIPs,
+		"gathering", map[bool]string{true: "shared-port (mux)", false: "port-range"}[sharedPort],
 	)
 
 	if err := webRTCConfig.SettingEngine.SetICEAddressRewriteRules(rules...); err != nil {
