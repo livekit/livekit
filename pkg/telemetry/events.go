@@ -94,7 +94,7 @@ func (t *telemetryService) ParticipantJoined(
 			guard,
 		)
 		if !found {
-			prometheus.IncrementParticipantRtcConnected(1)
+			prometheus.IncrementParticipantRtcConnected(1, clientInfo.GetSdk())
 			prometheus.AddParticipant()
 		}
 

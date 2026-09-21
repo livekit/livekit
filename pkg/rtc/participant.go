@@ -1480,9 +1480,9 @@ func (p *ParticipantImpl) recordRTCState(closeReason types.ParticipantCloseReaso
 	}
 
 	if p.IsConnectionCanceled(closeReason) {
-		prometheus.IncrementParticipantRtcCanceled(1, p.params.EnableWarp)
+		prometheus.IncrementParticipantRtcCanceled(1, p.params.EnableWarp, p.GetClientInfo().GetSdk())
 	} else {
-		prometheus.IncrementParticipantRtcFailure(1, p.params.EnableWarp)
+		prometheus.IncrementParticipantRtcFailure(1, p.params.EnableWarp, p.GetClientInfo().GetSdk())
 	}
 }
 
@@ -2718,8 +2718,8 @@ func (p *ParticipantImpl) onPrimaryTransportInitialConnected() {
 	}
 
 	if !p.sessionStartRecorded.Swap(true) {
-		prometheus.RecordSessionStartTime(int(p.ProtocolVersion()), p.params.EnableWarp, time.Since(p.params.SessionStartTime))
-		prometheus.IncrementParticipantRtcSuccess(1, p.params.EnableWarp)
+		prometheus.RecordSessionStartTime(int(p.ProtocolVersion()), p.params.EnableWarp, p.GetClientInfo().GetSdk(), time.Since(p.params.SessionStartTime))
+		prometheus.IncrementParticipantRtcSuccess(1, p.params.EnableWarp, p.GetClientInfo().GetSdk())
 	}
 	p.updateState(livekit.ParticipantInfo_ACTIVE)
 }
