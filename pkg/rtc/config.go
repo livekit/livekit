@@ -78,7 +78,18 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 
 	// explicit candidate advertisement list overrides discovery-derived rules,
 	// and clears the discovery state (NAT1To1IPs, automatic STUN servers) that
-	// would otherwise reintroduce discovery-derived addresses per client
+	// would otherwise reintroduce discovery-derived addresses per client.
+	//
+	// mDNS: no interaction, by construction. pion refuses host address-rewrite
+	// rules only in MulticastDNSModeQueryAndGather (ice: ErrMulticastDNSWithAddressRewrite,
+	// checked when the ICE agent is built). Nothing here selects that mode:
+	// rtcconfig.NewWebRTCConfig sets MulticastDNSModeDisabled when use_mdns is
+	// false and leaves the mode unset otherwise, and pion-webrtc's
+	// ICEGatherer.sanitizedMDNSMode maps unset to MulticastDNSModeQueryOnly, which
+	// accepts rewrite rules. The node_ip / use_external_ip rules installed above
+	// run under exactly that combination with use_mdns, and advertised_ips goes
+	// through the same SetICEAddressRewriteRules path. A guard rejecting use_mdns
+	// here would forbid a configuration that works.
 	if len(rtcConf.AdvertisedIPs) > 0 {
 		if err := applyAdvertisedIPs(webRTCConfig, &rtcConf); err != nil {
 			// the listeners are already bound; release them so a retrying caller

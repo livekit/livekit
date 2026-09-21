@@ -152,6 +152,19 @@ func buildAdvertisedIPRules(entries []string, localIPs []string, sharedPort bool
 // the UDP/TCP muxes (one port shared by every socket) rather than a per-socket
 // ephemeral port range. Mirrors the branch order in rtcconfig.NewWebRTCConfig:
 // a configured port range takes precedence over udp_port.
+//
+// Why the gathering mode decides how bare LOCAL entries are treated: pion
+// rewrites a candidate's address but keeps its socket's port. With port-range
+// gathering each interface socket has its own port, so advertising interface A's
+// address for interface B's socket yields address(A):port(B), where nothing
+// listens — hence scoping a bare local entry to its own socket. With mux
+// gathering every socket has the same port, so that failure cannot happen, and
+// scoping is not merely unnecessary but harmful: "local" comes from interface
+// enumeration (GetLocalIPAddresses), which includes addresses the mux never
+// binds a socket for — a public IP aliased onto `lo` so the SFU can reach its
+// own TURN relay is the motivating case. An identity rule bound to that
+// non-existent socket never fires and the address silently disappears from the
+// SDP. Advertising every bare entry from every socket is what keeps it there.
 func usesSharedPortGathering(rtcConf *config.RTCConfig) bool {
 	return rtcConf.ICEPortRangeStart == 0 || rtcConf.ICEPortRangeEnd == 0
 }
