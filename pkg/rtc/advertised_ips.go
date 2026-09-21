@@ -66,35 +66,9 @@ var (
 // addresses to advertise for the local sockets it matches. Explicit Local-keyed
 // rules take precedence over catch-alls in pion's evaluation.
 func buildAdvertisedIPRules(entries []string, localIPs []string) ([]webrtc.ICEAddressRewriteRule, error) {
-	var bareIPs []string
-	pairExternals := map[string][]string{} // local -> externals from pair entries
-	var pairLocals []string                // iteration order for determinism
-
-	for _, entry := range entries {
-		parts := strings.Split(strings.TrimSpace(entry), "/")
-		switch len(parts) {
-		case 1:
-			ip := parts[0]
-			if net.ParseIP(ip) == nil {
-				return nil, fmt.Errorf("rtc.advertised_ips: invalid IP %q", entry)
-			}
-			if !slices.Contains(bareIPs, ip) {
-				bareIPs = append(bareIPs, ip)
-			}
-		case 2:
-			external, local := parts[0], parts[1]
-			if net.ParseIP(external) == nil || net.ParseIP(local) == nil {
-				return nil, fmt.Errorf("rtc.advertised_ips: invalid external/local pair %q", entry)
-			}
-			if !slices.Contains(pairExternals[local], external) {
-				pairExternals[local] = append(pairExternals[local], external)
-			}
-			if !slices.Contains(pairLocals, local) {
-				pairLocals = append(pairLocals, local)
-			}
-		default:
-			return nil, fmt.Errorf("rtc.advertised_ips: invalid entry %q, expected \"ip\" or \"external/local\"", entry)
-		}
+	bareIPs, pairExternals, pairLocals, err := parseAdvertisedIPs(entries)
+	if err != nil {
+		return nil, err
 	}
 
 	// Bare entries that are NOT local addresses are the NAT-side addresses that
@@ -164,6 +138,82 @@ func buildAdvertisedIPRules(entries []string, localIPs []string) ([]webrtc.ICEAd
 	rules = append(rules, catchAllOrDropRule(bareNonLocalV6, ipv6Networks, dropSentinelForIPv6Rule))
 
 	return rules, nil
+}
+
+// parseAdvertisedIPs validates rtc.advertised_ips and splits it into bare entries
+// and external/local pairs. Every address is canonicalized through
+// net.IP.String() so that the textual form an operator used (e.g.
+// "2001:0db8:0:0:0:0:0:1") compares equal to the normalized form the interface
+// enumeration returns ("2001:db8::1") — otherwise a local address spelled
+// differently would be misclassified as NAT-side and attached to every socket.
+// It has no side effects and needs no network state, so callers can run it
+// before opening any listener to reject bad config early.
+func parseAdvertisedIPs(entries []string) (bareIPs []string, pairExternals map[string][]string, pairLocals []string, err error) {
+	pairExternals = map[string][]string{} // local -> externals from pair entries; pairLocals keeps iteration order
+
+	canonical := func(s string) (string, bool) {
+		ip := net.ParseIP(strings.TrimSpace(s))
+		if ip == nil {
+			return "", false
+		}
+		return ip.String(), true
+	}
+
+	for _, entry := range entries {
+		parts := strings.Split(strings.TrimSpace(entry), "/")
+		switch len(parts) {
+		case 1:
+			ip, ok := canonical(parts[0])
+			if !ok {
+				return nil, nil, nil, fmt.Errorf("rtc.advertised_ips: invalid IP %q", entry)
+			}
+			if !slices.Contains(bareIPs, ip) {
+				bareIPs = append(bareIPs, ip)
+			}
+		case 2:
+			external, okE := canonical(parts[0])
+			local, okL := canonical(parts[1])
+			if !okE || !okL {
+				return nil, nil, nil, fmt.Errorf("rtc.advertised_ips: invalid external/local pair %q", entry)
+			}
+			if !slices.Contains(pairExternals[local], external) {
+				pairExternals[local] = append(pairExternals[local], external)
+			}
+			if !slices.Contains(pairLocals, local) {
+				pairLocals = append(pairLocals, local)
+			}
+		default:
+			return nil, nil, nil, fmt.Errorf("rtc.advertised_ips: invalid entry %q, expected \"ip\" or \"external/local\"", entry)
+		}
+	}
+	return bareIPs, pairExternals, pairLocals, nil
+}
+
+// validateAdvertisedIPs reports whether rtc.advertised_ips is well-formed. It is
+// meant to run BEFORE rtcconfig.NewWebRTCConfig opens the UDP mux and TCP
+// listener, so a config error never leaves bound sockets behind.
+func validateAdvertisedIPs(entries []string) error {
+	_, _, _, err := parseAdvertisedIPs(entries)
+	return err
+}
+
+// closeRTCListeners releases the sockets rtcconfig.NewWebRTCConfig bound (UDP
+// mux, TCP mux listener) when configuration fails after construction, so a
+// caller that fixes its config and retries does not hit address-in-use.
+func closeRTCListeners(c *rtcconfig.WebRTCConfig) {
+	if c == nil {
+		return
+	}
+	if c.UDPMux != nil {
+		if err := c.UDPMux.Close(); err != nil {
+			logger.Warnw("could not close UDP mux after config error", err)
+		}
+	}
+	if c.TCPMuxListener != nil {
+		if err := c.TCPMuxListener.Close(); err != nil {
+			logger.Warnw("could not close TCP mux listener after config error", err)
+		}
+	}
 }
 
 func appendUnique(dst []string, more ...string) []string {

@@ -62,6 +62,12 @@ type DirectionConfig struct {
 func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 	rtcConf := conf.RTC
 
+	// validate before rtcconfig.NewWebRTCConfig binds the UDP mux / TCP listener,
+	// so a malformed list fails without leaving sockets open
+	if err := validateAdvertisedIPs(rtcConf.AdvertisedIPs); err != nil {
+		return nil, err
+	}
+
 	webRTCConfig, err := rtcconfig.NewWebRTCConfig(&rtcConf.RTCConfig, conf.Development)
 	if err != nil {
 		return nil, err
@@ -75,6 +81,9 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 	// would otherwise reintroduce discovery-derived addresses per client
 	if len(rtcConf.AdvertisedIPs) > 0 {
 		if err := applyAdvertisedIPs(webRTCConfig, &rtcConf); err != nil {
+			// the listeners are already bound; release them so a retrying caller
+			// does not hit address-in-use
+			closeRTCListeners(webRTCConfig)
 			return nil, err
 		}
 	}

@@ -176,6 +176,38 @@ func TestBuildAdvertisedIPRules(t *testing.T) {
 		require.Equal(t, []string{"2001:db8::1"}, v6.External)
 	})
 
+	t.Run("IPv6 spellings are canonicalized before local matching", func(t *testing.T) {
+		v6Locals := []string{"2001:db8::1", "fd00::5"}
+		// the long form of a LOCAL address must be recognised as local (identity
+		// rule), not treated as NAT-side and attached to fd00::5's socket
+		rules, err := buildAdvertisedIPRules([]string{"2001:0db8:0:0:0:0:0:1"}, v6Locals)
+		require.NoError(t, err)
+		require.Len(t, rules, 3) // identity + v4 drop + v6 drop
+		require.Equal(t, "2001:db8::1", rules[0].Local)
+		require.Equal(t, []string{"2001:db8::1"}, rules[0].External)
+		_, v6 := catchAlls(t, rules)
+		require.Equal(t, []string{dropSentinelForIPv6Rule}, v6.External)
+
+		// pair components and duplicates in different spellings collapse too
+		rules, err = buildAdvertisedIPRules([]string{
+			"2001:0db8::10/2001:0db8:0:0:0:0:0:1",
+			"2001:db8::10/2001:db8::1",
+			"2001:DB8::1",
+		}, v6Locals)
+		require.NoError(t, err)
+		require.Len(t, rules, 3)
+		require.Equal(t, "2001:db8::1", rules[0].Local)
+		require.ElementsMatch(t, []string{"2001:db8::10", "2001:db8::1"}, rules[0].External)
+	})
+
+	t.Run("validateAdvertisedIPs runs without network state", func(t *testing.T) {
+		require.NoError(t, validateAdvertisedIPs(nil))
+		require.NoError(t, validateAdvertisedIPs([]string{"203.0.113.1", "203.0.113.2/10.0.0.5", "2001:db8::1"}))
+		require.Error(t, validateAdvertisedIPs([]string{"203.0.113.1", "bad"}))
+		require.Error(t, validateAdvertisedIPs([]string{"203.0.113.1/nope"}))
+		require.Error(t, validateAdvertisedIPs([]string{"a/b/c"}))
+	})
+
 	t.Run("rules are accepted by the pion setting engine", func(t *testing.T) {
 		for _, entries := range [][]string{
 			{"203.0.113.1", "203.0.113.2"},
