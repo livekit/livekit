@@ -120,6 +120,7 @@ const (
 	ParticipantCloseReasonUserRejected
 	ParticipantCloseReasonMoveFailed
 	ParticipantCloseReasonAgentError
+	ParticipantCloseReasonSIPTrunkFailure
 )
 
 func (p ParticipantCloseReason) String() string {
@@ -182,6 +183,8 @@ func (p ParticipantCloseReason) String() string {
 		return "MOVE_FAILED"
 	case ParticipantCloseReasonAgentError:
 		return "AGENT_ERROR"
+	case ParticipantCloseReasonSIPTrunkFailure:
+		return "SIP_TRUNK_FAILURE"
 	default:
 		return fmt.Sprintf("%d", int(p))
 	}
@@ -221,6 +224,8 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		return livekit.DisconnectReason_USER_REJECTED
 	case ParticipantCloseReasonAgentError:
 		return livekit.DisconnectReason_AGENT_ERROR
+	case ParticipantCloseReasonSIPTrunkFailure:
+		return livekit.DisconnectReason_SIP_TRUNK_FAILURE
 	default:
 		// the other types will map to unknown reason
 		return livekit.DisconnectReason_UNKNOWN_REASON
@@ -240,7 +245,8 @@ func IsIntentionalDisconnect(reason livekit.DisconnectReason) bool {
 		livekit.DisconnectReason_MIGRATION,
 		livekit.DisconnectReason_PARTICIPANT_REMOVED,
 		livekit.DisconnectReason_ROOM_DELETED,
-		livekit.DisconnectReason_ROOM_CLOSED:
+		livekit.DisconnectReason_ROOM_CLOSED,
+		livekit.DisconnectReason_SIP_TRUNK_FAILURE:
 		return true
 	}
 	return false
