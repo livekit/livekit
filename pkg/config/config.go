@@ -125,12 +125,14 @@ type RTCConfig struct {
 	// use_external_ip, STUN) for candidate advertisement purposes.
 	// Each entry is either:
 	//   - a bare IP ("203.0.113.1"): advertised as a host candidate. If present on
-	//     a local interface it is advertised as itself; otherwise it is advertised
-	//     in place of unlisted local addresses.
+	//     a local interface it is advertised as itself (for that socket only);
+	//     otherwise it is advertised in place of every unlisted local address.
 	//   - an "external/local" pair ("203.0.113.1/10.0.0.5"): the external IP is
-	//     advertised for the socket bound on the given local IP (list the local IP
-	//     separately as a bare entry to advertise both).
-	// Local IPs not in the list are never advertised.
+	//     advertised for the socket bound on the given local IP only (list the
+	//     local IP separately as a bare entry to advertise both).
+	// Local IPs not in the list are never advertised. Setting this also disables
+	// the automatic STUN servers and the legacy per-client NAT1To1 rewrite, both
+	// of which would otherwise reintroduce discovery-derived addresses.
 	// node_ip is still used for non-advertisement purposes (e.g. TURN relay address).
 	AdvertisedIPs []string `yaml:"advertised_ips,omitempty"`
 

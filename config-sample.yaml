@@ -84,10 +84,14 @@ rtc:
   # # derived advertisement, and local addresses not in the list are never advertised.
   # # each entry is a bare IP, or an "external/local" pair mapping an externally
   # # reachable address to the local address its traffic arrives on (list the local
-  # # IP as its own entry as well to advertise both).
+  # # IP as its own entry as well to advertise both). a bare IP that is not local
+  # # is advertised for every unlisted local socket; a bare local IP and a pair's
+  # # external are advertised only for their own socket.
   # # useful when the node is reachable on multiple addresses that discovery cannot
   # # determine (e.g. LAN + public IP behind DNAT without hairpin, split-horizon
   # # networks, multiple same-family addresses).
+  # # setting this also disables the automatic STUN servers (their server-reflexive
+  # # candidates would advertise discovery-derived addresses outside the list).
   # # node_ip is still used for non-advertisement purposes (e.g. TURN relay address).
   # advertised_ips:
   #   - <public-ip>

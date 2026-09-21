@@ -70,9 +70,11 @@ func NewWebRTCConfig(conf *config.Config) (*WebRTCConfig, error) {
 	// we don't want to use active TCP on a server, clients should be dialing
 	webRTCConfig.SettingEngine.DisableActiveTCP(true)
 
-	// explicit candidate advertisement list overrides discovery-derived rules
+	// explicit candidate advertisement list overrides discovery-derived rules,
+	// and clears the discovery state (NAT1To1IPs, automatic STUN servers) that
+	// would otherwise reintroduce discovery-derived addresses per client
 	if len(rtcConf.AdvertisedIPs) > 0 {
-		if err := applyAdvertisedIPs(&webRTCConfig.SettingEngine, &rtcConf); err != nil {
+		if err := applyAdvertisedIPs(webRTCConfig, &rtcConf); err != nil {
 			return nil, err
 		}
 	}

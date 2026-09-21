@@ -15,84 +15,136 @@
 package rtc
 
 import (
+	"net"
+	"slices"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/pion/ice/v4"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/livekit-server/pkg/config"
+	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 )
+
+// catchAlls returns the two family-scoped trailing rules (v4, v6).
+func catchAlls(t *testing.T, rules []webrtc.ICEAddressRewriteRule) (v4, v6 webrtc.ICEAddressRewriteRule) {
+	t.Helper()
+	require.GreaterOrEqual(t, len(rules), 2)
+	v4, v6 = rules[len(rules)-2], rules[len(rules)-1]
+	require.Empty(t, v4.Local)
+	require.Empty(t, v6.Local)
+	require.Equal(t, ipv4Networks, v4.Networks)
+	require.Equal(t, ipv6Networks, v6.Networks)
+	require.Equal(t, webrtc.ICEAddressRewriteReplace, v4.Mode)
+	require.Equal(t, webrtc.ICEAddressRewriteReplace, v6.Mode)
+	return v4, v6
+}
 
 func TestBuildAdvertisedIPRules(t *testing.T) {
 	localIPs := []string{"10.0.0.5", "192.168.1.10"}
 
-	t.Run("pure external list produces a single replace catch-all", func(t *testing.T) {
+	t.Run("pure external list produces a v4 catch-all and a v6 drop", func(t *testing.T) {
 		rules, err := buildAdvertisedIPRules([]string{"203.0.113.1", "203.0.113.2"}, localIPs)
 		require.NoError(t, err)
-		require.Len(t, rules, 2) // catch-all + IPv6 drop rule
-		require.Equal(t, []string{"203.0.113.1", "203.0.113.2"}, rules[0].External)
-		require.Empty(t, rules[0].Local)
-		require.Equal(t, webrtc.ICECandidateTypeHost, rules[0].AsCandidateType)
-		require.Equal(t, webrtc.ICEAddressRewriteReplace, rules[0].Mode)
+		require.Len(t, rules, 2)
+		v4, v6 := catchAlls(t, rules)
+		require.Equal(t, []string{"203.0.113.1", "203.0.113.2"}, v4.External)
+		require.Equal(t, webrtc.ICECandidateTypeHost, v4.AsCandidateType)
+		require.Equal(t, []string{dropSentinelForIPv6Rule}, v6.External)
 	})
 
 	t.Run("local and external mix advertises both, suppresses unlisted locals", func(t *testing.T) {
 		rules, err := buildAdvertisedIPRules([]string{"203.0.113.1", "10.0.0.5"}, localIPs)
 		require.NoError(t, err)
-		require.Len(t, rules, 3) // identity + catch-all + IPv6 drop rule
+		require.Len(t, rules, 3) // identity + v4 catch-all + v6 drop
 
-		// identity rule shields the listed local from the catch-all
-		require.Equal(t, []string{"10.0.0.5"}, rules[0].External)
+		// identity rule shields the listed local from the catch-all and also
+		// carries the NAT-side address, so it is advertised even when this is the
+		// only socket on the host
+		require.Equal(t, []string{"10.0.0.5", "203.0.113.1"}, rules[0].External)
 		require.Equal(t, "10.0.0.5", rules[0].Local)
 		require.Equal(t, webrtc.ICEAddressRewriteReplace, rules[0].Mode)
 
-		// catch-all rewrites every other local (e.g. 192.168.1.10) to the advertised set
-		require.Equal(t, []string{"203.0.113.1", "10.0.0.5"}, rules[1].External)
-		require.Empty(t, rules[1].Local)
-		require.Equal(t, webrtc.ICEAddressRewriteReplace, rules[1].Mode)
+		// the catch-all rewrites every other local (e.g. 192.168.1.10) to the
+		// NAT-side address ONLY — never to the interface-scoped 10.0.0.5, whose
+		// port may differ under port-range gathering
+		v4, _ := catchAlls(t, rules)
+		require.Equal(t, []string{"203.0.113.1"}, v4.External)
 	})
 
-	t.Run("two local IPs advertise themselves only", func(t *testing.T) {
-		rules, err := buildAdvertisedIPRules([]string{"10.0.0.5", "192.168.1.10"}, localIPs)
+	t.Run("two local IPs advertise themselves only; unlisted locals are dropped", func(t *testing.T) {
+		rules, err := buildAdvertisedIPRules([]string{"10.0.0.5", "192.168.1.10"}, []string{"10.0.0.5", "192.168.1.10", "172.17.0.1"})
 		require.NoError(t, err)
-		require.Len(t, rules, 4) // 2 identity + catch-all + IPv6 drop rule
+		require.Len(t, rules, 4) // 2 identity + v4 drop + v6 drop
 		require.Equal(t, "10.0.0.5", rules[0].Local)
 		require.Equal(t, []string{"10.0.0.5"}, rules[0].External)
 		require.Equal(t, "192.168.1.10", rules[1].Local)
 		require.Equal(t, []string{"192.168.1.10"}, rules[1].External)
-		// catch-all still present for any other local interface
-		require.Empty(t, rules[2].Local)
-		require.Equal(t, []string{"10.0.0.5", "192.168.1.10"}, rules[2].External)
+		// nothing NAT-side to advertise for 172.17.0.1: drop rule, not a catch-all
+		v4, v6 := catchAlls(t, rules)
+		require.Equal(t, []string{dropSentinelForIPv4Rule}, v4.External)
+		require.Equal(t, []string{dropSentinelForIPv6Rule}, v6.External)
 	})
 
-	t.Run("external/local pair replaces the local", func(t *testing.T) {
+	t.Run("external/local pair replaces the local and stays out of the catch-all", func(t *testing.T) {
 		rules, err := buildAdvertisedIPRules([]string{"203.0.113.1/10.0.0.5"}, localIPs)
 		require.NoError(t, err)
-		require.Len(t, rules, 3) // pair + catch-all + IPv6 drop rule
-		require.Equal(t, []string{"203.0.113.1"}, rules[0].External)
+		require.Len(t, rules, 3) // pair + v4 drop + v6 drop
 		require.Equal(t, "10.0.0.5", rules[0].Local)
+		require.Equal(t, []string{"203.0.113.1"}, rules[0].External)
 		require.Equal(t, webrtc.ICEAddressRewriteReplace, rules[0].Mode)
+		// 203.0.113.1 DNATs to 10.0.0.5's socket only; 192.168.1.10's socket must
+		// not be advertised as 203.0.113.1 (its port has no listener there)
+		v4, _ := catchAlls(t, rules)
+		require.Equal(t, []string{dropSentinelForIPv4Rule}, v4.External)
 	})
 
 	t.Run("pair local also listed bare advertises both", func(t *testing.T) {
 		rules, err := buildAdvertisedIPRules([]string{"203.0.113.1/10.0.0.5", "10.0.0.5"}, localIPs)
 		require.NoError(t, err)
 		require.Len(t, rules, 3)
-		require.Equal(t, []string{"203.0.113.1", "10.0.0.5"}, rules[0].External)
 		require.Equal(t, "10.0.0.5", rules[0].Local)
+		require.ElementsMatch(t, []string{"203.0.113.1", "10.0.0.5"}, rules[0].External)
 	})
 
 	t.Run("multiple pairs for the same local merge into one rule", func(t *testing.T) {
 		rules, err := buildAdvertisedIPRules([]string{"203.0.113.1/10.0.0.5", "203.0.113.2/10.0.0.5"}, localIPs)
 		require.NoError(t, err)
 		require.Len(t, rules, 3)
-		require.Equal(t, []string{"203.0.113.1", "203.0.113.2"}, rules[0].External)
 		require.Equal(t, "10.0.0.5", rules[0].Local)
+		require.Equal(t, []string{"203.0.113.1", "203.0.113.2"}, rules[0].External)
+	})
+
+	t.Run("bare non-local plus pair: pair rule gains the NAT-side address, catch-all carries only it", func(t *testing.T) {
+		rules, err := buildAdvertisedIPRules([]string{"198.51.100.7", "203.0.113.1/10.0.0.5"}, localIPs)
+		require.NoError(t, err)
+		require.Len(t, rules, 3)
+		require.Equal(t, "10.0.0.5", rules[0].Local)
+		require.Equal(t, []string{"203.0.113.1", "198.51.100.7"}, rules[0].External)
+		v4, _ := catchAlls(t, rules)
+		require.Equal(t, []string{"198.51.100.7"}, v4.External)
+	})
+
+	t.Run("other-family bare non-local is not attached to a local-keyed rule", func(t *testing.T) {
+		rules, err := buildAdvertisedIPRules([]string{"2001:db8::1", "10.0.0.5"}, localIPs)
+		require.NoError(t, err)
+		require.Len(t, rules, 3) // identity + v4 drop + v6 catch-all
+		require.Equal(t, "10.0.0.5", rules[0].Local)
+		require.Equal(t, []string{"10.0.0.5"}, rules[0].External)
+		v4, v6 := catchAlls(t, rules)
+		require.Equal(t, []string{dropSentinelForIPv4Rule}, v4.External)
+		require.Equal(t, []string{"2001:db8::1"}, v6.External)
 	})
 
 	t.Run("duplicate entries are deduplicated", func(t *testing.T) {
-		rules, err := buildAdvertisedIPRules([]string{"203.0.113.1", "203.0.113.1"}, localIPs)
+		rules, err := buildAdvertisedIPRules([]string{"203.0.113.1", "203.0.113.1", "10.0.0.5", "10.0.0.5"}, localIPs)
 		require.NoError(t, err)
-		require.Len(t, rules, 2)
-		require.Equal(t, []string{"203.0.113.1"}, rules[0].External)
+		require.Len(t, rules, 3)
+		v4, _ := catchAlls(t, rules)
+		require.Equal(t, []string{"203.0.113.1"}, v4.External)
 	})
 
 	t.Run("invalid IP errors", func(t *testing.T) {
@@ -103,56 +155,190 @@ func TestBuildAdvertisedIPRules(t *testing.T) {
 	t.Run("invalid pair errors", func(t *testing.T) {
 		_, err := buildAdvertisedIPRules([]string{"203.0.113.1/nope"}, localIPs)
 		require.Error(t, err)
-		_, err = buildAdvertisedIPRules([]string{"1.2.3.4/5.6.7.8/9.10.11.12"}, localIPs)
+		_, err = buildAdvertisedIPRules([]string{"a/b/c"}, localIPs)
 		require.Error(t, err)
 	})
 
-	t.Run("v4-only list appends an IPv6 drop rule; dual-stack list appends none", func(t *testing.T) {
-		rules, err := buildAdvertisedIPRules([]string{"203.0.113.1"}, localIPs)
+	t.Run("dual-stack list gets a real catch-all per family", func(t *testing.T) {
+		rules, err := buildAdvertisedIPRules([]string{"203.0.113.1", "2001:db8::1"}, localIPs)
 		require.NoError(t, err)
-		last := rules[len(rules)-1]
-		// pion rejects empty External lists, so the drop rule carries a borrowed
-		// non-empty External that its Networks family scope filters out
-		require.NotEmpty(t, last.External)
-		require.Equal(t, webrtc.ICEAddressRewriteReplace, last.Mode)
-		require.Equal(t, []webrtc.NetworkType{webrtc.NetworkTypeUDP6, webrtc.NetworkTypeTCP6}, last.Networks)
+		require.Len(t, rules, 2)
+		v4, v6 := catchAlls(t, rules)
+		require.Equal(t, []string{"203.0.113.1"}, v4.External)
+		require.Equal(t, []string{"2001:db8::1"}, v6.External)
+	})
 
-		rules, err = buildAdvertisedIPRules([]string{"203.0.113.1", "2001:db8::1"}, localIPs)
+	t.Run("v6-only list drops v4 with the sentinel", func(t *testing.T) {
+		rules, err := buildAdvertisedIPRules([]string{"2001:db8::1"}, localIPs)
 		require.NoError(t, err)
-		for _, r := range rules {
-			require.Empty(t, r.Networks) // no drop rules on dual-stack lists
-		}
+		v4, v6 := catchAlls(t, rules)
+		require.Equal(t, []string{dropSentinelForIPv4Rule}, v4.External)
+		require.Equal(t, []string{"2001:db8::1"}, v6.External)
 	})
 
 	t.Run("rules are accepted by the pion setting engine", func(t *testing.T) {
-		rules, err := buildAdvertisedIPRules(
-			[]string{"203.0.113.1", "10.0.0.5", "198.51.100.7/192.168.1.10"}, localIPs)
-		require.NoError(t, err)
-		se := webrtc.SettingEngine{}
-		require.NoError(t, se.SetICEAddressRewriteRules(rules...))
-	})
-
-	// regression: rule sets must survive pion's agent-construction validation,
-	// which is stricter than SetICEAddressRewriteRules (e.g. it rejects empty
-	// External lists). Building a real PeerConnection and offer exercises it.
-	t.Run("rules pass pion agent validation end to end", func(t *testing.T) {
 		for _, entries := range [][]string{
-			{"203.0.113.1"}, // v4-only: exercises the IPv6 drop rule
-			{"2001:db8::1"}, // v6-only: exercises the IPv4 drop rule
-			{"203.0.113.1", "10.0.0.5", "198.51.100.7/192.168.1.10"},
+			{"203.0.113.1", "203.0.113.2"},
+			{"203.0.113.1", "10.0.0.5"},
+			{"10.0.0.5", "192.168.1.10"},
+			{"203.0.113.1/10.0.0.5"},
+			{"2001:db8::1"},
+			{"203.0.113.1", "2001:db8::1"},
 		} {
 			rules, err := buildAdvertisedIPRules(entries, localIPs)
 			require.NoError(t, err)
-			se := webrtc.SettingEngine{}
-			require.NoError(t, se.SetICEAddressRewriteRules(rules...))
-			api := webrtc.NewAPI(webrtc.WithSettingEngine(se))
-			pc, err := api.NewPeerConnection(webrtc.Configuration{})
-			require.NoError(t, err)
-			_, err = pc.CreateDataChannel("probe", nil)
-			require.NoError(t, err)
-			_, err = pc.CreateOffer(nil)
-			require.NoError(t, err, "entries %v", entries)
-			require.NoError(t, pc.Close())
+			var se webrtc.SettingEngine
+			require.NoError(t, se.SetICEAddressRewriteRules(rules...), "entries %v", entries)
 		}
 	})
+
+	t.Run("rules pass pion agent validation end to end", func(t *testing.T) {
+		// SetICEAddressRewriteRules only stores the rules; pion sanitizes them when
+		// the ICE agent is built (which is where an empty External list used to fail
+		// with "invalid address rewrite mapping"). Build a real agent for every shape,
+		// including the drop-only shapes that rely on the sentinels.
+		for _, entries := range [][]string{
+			{"203.0.113.1", "203.0.113.2"},
+			{"203.0.113.1", "10.0.0.5"},
+			{"10.0.0.5", "192.168.1.10"},
+			{"203.0.113.1/10.0.0.5"},
+			{"2001:db8::1"},
+			{"203.0.113.1", "2001:db8::1"},
+		} {
+			rules, err := buildAdvertisedIPRules(entries, localIPs)
+			require.NoError(t, err)
+			iceRules := make([]ice.AddressRewriteRule, 0, len(rules))
+			for _, r := range rules {
+				iceRules = append(iceRules, ice.AddressRewriteRule{
+					External:        r.External,
+					Local:           r.Local,
+					AsCandidateType: ice.CandidateType(r.AsCandidateType),
+					Mode:            ice.AddressRewriteMode(r.Mode),
+					Networks:        toICENetworkTypes(r.Networks),
+				})
+			}
+			agent, err := ice.NewAgentWithOptions(ice.WithAddressRewriteRules(iceRules...))
+			require.NoError(t, err, "entries %v", entries)
+			require.NoError(t, agent.Close())
+		}
+	})
+}
+
+func toICENetworkTypes(nts []webrtc.NetworkType) []ice.NetworkType {
+	out := make([]ice.NetworkType, 0, len(nts))
+	for _, nt := range nts {
+		out = append(out, ice.NetworkType(nt))
+	}
+	return out
+}
+
+// gatherHostAddresses builds a real ICE agent with the rules for `entries`
+// against this machine's actual interfaces, gathers IPv4 host candidates, and
+// returns the distinct advertised addresses.
+func gatherHostAddresses(t *testing.T, entries, localIPs []string) []string {
+	t.Helper()
+	rules, err := buildAdvertisedIPRules(entries, localIPs)
+	require.NoError(t, err)
+	iceRules := make([]ice.AddressRewriteRule, 0, len(rules))
+	for _, r := range rules {
+		iceRules = append(iceRules, ice.AddressRewriteRule{
+			External:        r.External,
+			Local:           r.Local,
+			AsCandidateType: ice.CandidateType(r.AsCandidateType),
+			Mode:            ice.AddressRewriteMode(r.Mode),
+			Networks:        toICENetworkTypes(r.Networks),
+		})
+	}
+	agent, err := ice.NewAgentWithOptions(
+		ice.WithNetworkTypes([]ice.NetworkType{ice.NetworkTypeUDP4}),
+		ice.WithCandidateTypes([]ice.CandidateType{ice.CandidateTypeHost}),
+		ice.WithAddressRewriteRules(iceRules...),
+	)
+	require.NoError(t, err)
+	defer agent.Close()
+
+	var (
+		mu   sync.Mutex
+		seen []string
+		done = make(chan struct{})
+	)
+	require.NoError(t, agent.OnCandidate(func(c ice.Candidate) {
+		if c == nil {
+			close(done)
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if !slices.Contains(seen, c.Address()) {
+			seen = append(seen, c.Address())
+		}
+	}))
+	require.NoError(t, agent.GatherCandidates())
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("candidate gathering did not complete")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	return slices.Clone(seen)
+}
+
+// TestAdvertisedIPRulesGatherExactlyTheList is the end-to-end contract: what a
+// real pion agent advertises after gathering is exactly the configured list —
+// in particular the sentinel drop rules really do suppress unlisted locals on
+// both gather paths, which the setting-engine and agent-construction tests
+// above cannot show.
+func TestAdvertisedIPRulesGatherExactlyTheList(t *testing.T) {
+	localIPs, err := rtcconfig.GetLocalIPAddresses(false, true, nil, nil)
+	require.NoError(t, err)
+	var localV4 []string
+	for _, ip := range localIPs {
+		if net.ParseIP(ip).To4() != nil {
+			localV4 = append(localV4, ip)
+		}
+	}
+	if len(localV4) == 0 {
+		t.Skip("no non-loopback IPv4 interface available")
+	}
+	chosen := localV4[0]
+
+	t.Run("bare non-local replaces every local", func(t *testing.T) {
+		got := gatherHostAddresses(t, []string{"203.0.113.1"}, localIPs)
+		require.Equal(t, []string{"203.0.113.1"}, got)
+	})
+
+	t.Run("bare local advertises itself and drops the other locals", func(t *testing.T) {
+		got := gatherHostAddresses(t, []string{chosen}, localIPs)
+		require.Equal(t, []string{chosen}, got, "unlisted locals %v must be dropped", localV4)
+	})
+
+	t.Run("pair advertises its external for that socket only", func(t *testing.T) {
+		got := gatherHostAddresses(t, []string{"203.0.113.1/" + chosen}, localIPs)
+		require.Equal(t, []string{"203.0.113.1"}, got)
+	})
+
+	t.Run("local plus non-local advertises both and nothing else", func(t *testing.T) {
+		got := gatherHostAddresses(t, []string{"203.0.113.1", chosen}, localIPs)
+		require.ElementsMatch(t, []string{"203.0.113.1", chosen}, got)
+	})
+}
+
+func TestApplyAdvertisedIPsClearsDiscoveryState(t *testing.T) {
+	// Simulate what rtcconfig.NewWebRTCConfig leaves behind when use_external_ip
+	// discovered a mapping (NAT1To1IPs, consumed by the Firefox path in
+	// newPeerConnection) and when the node IP was auto-generated (automatic STUN
+	// servers). Both must be cleared once the explicit list is authoritative.
+	webRTCConfig := &rtcconfig.WebRTCConfig{
+		Configuration: webrtc.Configuration{
+			ICEServers: []webrtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302"}}},
+		},
+		NAT1To1IPs: []string{"198.51.100.20/10.0.0.5"},
+	}
+	rtcConf := &config.RTCConfig{}
+	rtcConf.AdvertisedIPs = []string{"203.0.113.10"}
+
+	require.NoError(t, applyAdvertisedIPs(webRTCConfig, rtcConf))
+	require.Nil(t, webRTCConfig.NAT1To1IPs, "legacy NAT1To1IPs must not override the explicit list for Firefox")
+	require.Nil(t, webRTCConfig.Configuration.ICEServers, "automatic STUN must not add discovery-derived srflx candidates")
 }
