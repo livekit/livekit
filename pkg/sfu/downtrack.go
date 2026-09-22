@@ -82,7 +82,6 @@ var (
 	errDuplicatePacket                   = errors.New("duplicate packet")
 	errPaddingNotOnFrameBoundary         = errors.New("padding cannot send on non-frame boundary")
 	errDownTrackAlreadyBound             = errors.New("already bound")
-	errDownTrackClosed                   = errors.New("downtrack closed")
 	errPayloadOverflow                   = errors.New("payload overflow")
 )
 
@@ -447,12 +446,6 @@ func NewDownTrack(params DownTrackParams) (*DownTrack, error) {
 // If so it sets up all the state (SSRC and PayloadType) to have a call
 func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters, error) {
 	d.bindLock.Lock()
-	// a closed downtrack is left in bindStateUnbound, so guard on isClosed
-	// before the state check to avoid re-binding one that is torn down.
-	if d.isClosed.Load() {
-		d.bindLock.Unlock()
-		return webrtc.RTPCodecParameters{}, errDownTrackClosed
-	}
 	if d.bindState.Load() != bindStateUnbound {
 		d.bindLock.Unlock()
 		return webrtc.RTPCodecParameters{}, errDownTrackAlreadyBound
