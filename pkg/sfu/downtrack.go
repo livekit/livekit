@@ -82,6 +82,7 @@ var (
 	errDuplicatePacket                   = errors.New("duplicate packet")
 	errPaddingNotOnFrameBoundary         = errors.New("padding cannot send on non-frame boundary")
 	errDownTrackAlreadyBound             = errors.New("already bound")
+	errDownTrackClosed                   = errors.New("downtrack closed")
 	errPayloadOverflow                   = errors.New("payload overflow")
 )
 
@@ -446,6 +447,12 @@ func NewDownTrack(params DownTrackParams) (*DownTrack, error) {
 // If so it sets up all the state (SSRC and PayloadType) to have a call
 func (d *DownTrack) Bind(t webrtc.TrackLocalContext) (webrtc.RTPCodecParameters, error) {
 	d.bindLock.Lock()
+	// a closed downtrack is left in bindStateUnbound, so guard on isClosed
+	// before the state check to avoid re-binding one that is torn down.
+	if d.isClosed.Load() {
+		d.bindLock.Unlock()
+		return webrtc.RTPCodecParameters{}, errDownTrackClosed
+	}
 	if d.bindState.Load() != bindStateUnbound {
 		d.bindLock.Unlock()
 		return webrtc.RTPCodecParameters{}, errDownTrackAlreadyBound
@@ -1440,15 +1447,24 @@ func (d *DownTrack) CloseWithFlush(flush bool, isEnding bool) {
 		if flush {
 			doneFlushing := d.writeBlankFrameRTP(RTPBlankFramesCloseSeconds, d.blankFramesGeneration.Inc())
 
+			// The flush runs in its own goroutine (writeBlankFrameRTP) and is
+			// cancelled via blankFramesGeneration, so bindLock guards nothing
+			// during the wait. Release it: bindLock is a control-plane lock
+			// (Bind/SetConnected/ReceiverRestart), and holding it across the
+			// up-to-flushTimeout wait serializes all of those behind every
+			// close. isClosed is already set, so no other close can enter.
+			d.bindLock.Unlock()
+
 			// wait a limited time to flush
 			timer := time.NewTimer(flushTimeout)
-			defer timer.Stop()
-
 			select {
 			case <-doneFlushing:
 			case <-timer.C:
 				d.blankFramesGeneration.Inc() // in case flush is still running
 			}
+			timer.Stop()
+
+			d.bindLock.Lock()
 		}
 
 		d.params.Logger.Debugw("closing sender", "kind", d.kind)
@@ -1755,6 +1771,10 @@ func (d *DownTrack) ReceiverRestart(rcvr TrackReceiver) {
 	}
 
 	d.bindLock.Lock()
+	if d.isClosed.Load() {
+		d.bindLock.Unlock()
+		return
+	}
 	codec := d.codec.Load().(webrtc.RTPCodecCapability)
 	d.bindLock.Unlock()
 
@@ -2167,6 +2187,10 @@ func (d *DownTrack) handleRTCPRTX(bytes []byte) {
 
 func (d *DownTrack) SetConnected() {
 	d.bindLock.Lock()
+	if d.isClosed.Load() {
+		d.bindLock.Unlock()
+		return
+	}
 	if !d.connected.Swap(true) {
 		d.onBindAndConnectedChange()
 	}
