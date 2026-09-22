@@ -236,7 +236,8 @@ func parseAdvertisedIPs(entries []string) (bareIPs []string, pairExternals map[s
 // Must run on the RTCConfig BEFORE rtcconfig.NewWebRTCConfig. node_ip and its
 // auto-generation are independent of these flags.
 func disableDiscoveryForAdvertisedIPs(rtcConf *config.RTCConfig) bool {
-	if len(rtcConf.AdvertisedIPs) == 0 || !(rtcConf.UseExternalIP || rtcConf.ExternalIPOnly) {
+	if len(rtcConf.AdvertisedIPs) == 0 ||
+		(!rtcConf.UseExternalIP && !rtcConf.ExternalIPOnly) {
 		return false
 	}
 	logger.Infow("rtc.advertised_ips is set; skipping external IP discovery",
