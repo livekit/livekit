@@ -93,6 +93,7 @@ func newMediaSectionsHarness(t *testing.T) *mediaSectionsHarness {
 	})
 	return h
 }
+
 func (h *mediaSectionsHarness) negotiate(options *webrtc.OfferOptions) {
 	h.mu.Lock()
 	for i := uint32(0); i < h.pendingAudios; i++ {
@@ -129,6 +130,7 @@ func (h *mediaSectionsHarness) negotiate(options *webrtc.OfferOptions) {
 	h.mu.Unlock()
 	require.NoError(h.t, h.client.SetRemoteDescription(answer))
 }
+
 func (h *mediaSectionsHarness) addVideoTrack(id string) (*webrtc.RTPSender, *webrtc.RTPTransceiver) {
 	track, err := webrtc.NewTrackLocalStaticRTP(
 		webrtc.RTPCodecCapability{MimeType: mime.MimeTypeVP8.String(), ClockRate: 90000},
@@ -161,6 +163,7 @@ func (h *mediaSectionsHarness) clientVideoTransceivers() int {
 	}
 	return n
 }
+
 func TestMediaSectionsRequirementNotRepeatedForUnmatchableTransceiver(t *testing.T) {
 	h := newMediaSectionsHarness(t)
 	_, err := h.client.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{
@@ -183,6 +186,7 @@ func TestMediaSectionsRequirementNotRepeatedForUnmatchableTransceiver(t *testing
 		"unmatchable transceiver re-requested on every answer: %d video sections requested over %d rounds", requestedVideos, rounds)
 	require.LessOrEqual(t, h.clientVideoTransceivers(), 1)
 }
+
 func TestMediaSectionsRequirementAfterTransceiverReuse(t *testing.T) {
 	h := newMediaSectionsHarness(t)
 
@@ -192,11 +196,14 @@ func TestMediaSectionsRequirementAfterTransceiverReuse(t *testing.T) {
 	require.NoError(t, err)
 	h.negotiate(nil)
 
-	sender, _ := h.addVideoTrack("v1")
+	sender, released := h.addVideoTrack("v1")
 	require.NoError(t, h.server.RemoveTrack(sender))
 	h.negotiate(nil)
 	h.negotiate(nil)
+	require.Empty(t, released.Mid())
+
 	_, transceiver := h.addVideoTrack("v2")
+	require.Same(t, released, transceiver, "released transceiver should be reused")
 	require.Empty(t, transceiver.Mid())
 	h.negotiate(nil)
 	h.server.Negotiate(true)
@@ -205,6 +212,7 @@ func TestMediaSectionsRequirementAfterTransceiverReuse(t *testing.T) {
 
 	require.NotEmpty(t, transceiver.Mid(), "subscribed track never got a media section")
 }
+
 func TestMediaSectionsRequirementReissuedWhenLost(t *testing.T) {
 	h := newMediaSectionsHarness(t)
 
