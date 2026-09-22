@@ -51,7 +51,11 @@ const (
 )
 
 func init() {
-	config.InitLoggerFromConfig(&config.DefaultConfig.Logging)
+	conf, err := config.NewConfig("", true, nil, nil)
+	if err != nil {
+		panic(err)
+	}
+	config.InitLoggerFromConfig(&conf.Logging)
 	roomUpdateInterval = defaultDelay
 }
 
