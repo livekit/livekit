@@ -159,7 +159,7 @@ func TestMediaEngineRegistersFlexFEC(t *testing.T) {
 			require.NoError(t, err)
 
 			flexFECParams := protoCodecs.FlexFEC03CodecParameters
-			assert.Equal(t, protoCodecs.FlexFEC03Fmtp, flexFECParams.SDPFmtpLine)
+			assert.Equal(t, "repair-window=10000000", flexFECParams.SDPFmtpLine)
 			filtered := filterCodecs(
 				[]webrtc.RTPCodecParameters{flexFECParams},
 				enabledCodecs,
