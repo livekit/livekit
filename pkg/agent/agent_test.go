@@ -189,6 +189,59 @@ func TestAgentLoadBalancing(t *testing.T) {
 	})
 }
 
+func TestJobTerminateReleasesJob(t *testing.T) {
+	// workers are not required to report job status after a termination
+	// (agents-js never sends UpdateJobStatus), so the server must release
+	// the job's JobTerminate handler itself
+	bus := psrpc.NewLocalMessageBus()
+	client := must.Get(rpc.NewAgentInternalClient(bus))
+	server := testutils.NewTestServer(bus)
+	t.Cleanup(server.Close)
+
+	worker := server.SimulateAgentWorker()
+	responses := worker.RegisterWorkerResponses.Observe()
+	worker.Register("test_agent", livekit.JobType_JT_ROOM)
+	select {
+	case <-responses.Events():
+	case <-time.After(time.Second):
+		require.Fail(t, "registration timeout")
+	}
+	responses.Stop()
+
+	jobAssignments := worker.JobAssignments.Observe()
+	t.Cleanup(jobAssignments.Stop)
+
+	job := &livekit.Job{
+		Id:         guid.New(guid.AgentJobPrefix),
+		DispatchId: guid.New(guid.AgentDispatchPrefix),
+		Type:       livekit.JobType_JT_ROOM,
+		Room:       &livekit.Room{},
+		AgentName:  "test_agent",
+	}
+	_, err := client.JobRequest(context.Background(), "test_agent", agent.RoomAgentTopic, job)
+	require.NoError(t, err)
+
+	select {
+	case <-jobAssignments.Events():
+	case <-time.After(time.Second):
+		require.Fail(t, "job assignment timeout")
+	}
+
+	// what Room.RemoveParticipant does when the agent participant leaves
+	res, err := client.JobTerminate(context.Background(), job.Id, &rpc.JobTerminateRequest{
+		JobId:  job.Id,
+		Reason: rpc.JobTerminateReason_AGENT_LEFT_ROOM,
+	})
+	require.NoError(t, err)
+	require.Equal(t, livekit.JobStatus_JS_FAILED, res.State.Status)
+
+	require.NoError(t, worker.Close())
+
+	// no server should still be handling JobTerminate for the ended job
+	_, err = client.JobTerminate(context.Background(), job.Id, &rpc.JobTerminateRequest{JobId: job.Id}, psrpc.WithRequestTimeout(500*time.Millisecond))
+	require.ErrorIs(t, err, psrpc.ErrNoResponse)
+}
+
 func TestConnectionClosedOnDispatchError(t *testing.T) {
 	t.Run("connection closed when unknown message type received", func(t *testing.T) {
 		bus := psrpc.NewLocalMessageBus()

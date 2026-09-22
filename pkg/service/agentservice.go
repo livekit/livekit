@@ -474,6 +474,13 @@ func (h *AgentHandler) JobTerminate(ctx context.Context, req *rpc.JobTerminateRe
 	}
 
 	state, err := w.TerminateJob(livekit.JobID(req.JobId), req.Reason)
+
+	// the job is no longer running on the worker, and the worker may never send
+	// an ended status update for it, so deregister it here
+	h.mu.Lock()
+	h.deregisterJob(livekit.JobID(req.JobId))
+	h.mu.Unlock()
+
 	if err != nil {
 		return nil, err
 	}
