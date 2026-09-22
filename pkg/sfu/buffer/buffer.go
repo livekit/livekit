@@ -453,7 +453,7 @@ func (b *Buffer) SetPrimaryBufferForFEC(primaryBuffer *Buffer) {
 	}
 }
 
-func (b *Buffer) markAsFECRepair() {
+func (b *Buffer) setFECRepairBufferLimit() {
 	b.Lock()
 	defer b.Unlock()
 
