@@ -565,6 +565,7 @@ func (b *Buffer) writeFEC(fecPkt *rtp.Packet, arrivalTime int64) {
 		b.fecSSRC = fecPkt.SSRC
 		b.maybeCreateFECDecoderLocked()
 		if b.fecDecoder == nil {
+			b.logger.Infow("flexfec decoder unavailable after creation attempt", "fecSSRC", b.fecSSRC, "mediaSSRC", b.BufferBase.SSRC(), "payloadType", b.fecPayloadType)
 			b.Unlock()
 			return
 		}
