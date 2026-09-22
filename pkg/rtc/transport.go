@@ -1233,6 +1233,12 @@ func (t *PCTransport) getNumUnmatchedTransceivers() (uint32, uint32) {
 			continue
 		}
 
+		switch tr.Direction() {
+		case webrtc.RTPTransceiverDirectionSendonly, webrtc.RTPTransceiverDirectionSendrecv:
+		default:
+			continue
+		}
+
 		switch tr.Kind() {
 		case webrtc.RTPCodecTypeAudio:
 			numAudios++
