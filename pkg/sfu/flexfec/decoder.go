@@ -273,7 +273,8 @@ func (d *Decoder) attemptRecovery() []*rtp.Packet {
 			recovered, err := d.recoverPacket(fecPkt, recoveredPackets)
 			if err != nil {
 				d.logger.Debugw("flexfec: failed to recover packet", "error", err)
-				i++
+				d.stats.FECPacketsDiscarded++
+				d.removeFECPacketAt(i)
 				continue
 			}
 
