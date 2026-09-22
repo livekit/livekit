@@ -1098,24 +1098,30 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	}
 	var actBytes []byte
 	if extPkt.AbsCaptureTimeExt != nil && d.absCaptureTimeExtID != 0 {
-		// normalize capture time to SFU clock.
-		// NOTE: even if there is estimated offset populated, just re-map the
-		// absolute capture time stamp as it should be the same RTCP sender report
-		// clock domain of publisher. SFU is normalising sender reports of publisher
-		// to SFU clock before sending to subscribers. So, capture time should be
-		// normalized to the same clock. Clear out any offset.
-		_, _, _, refSenderReport := d.forwarder.GetSenderReportParams()
-		if refSenderReport != nil {
-			actExtCopy := *extPkt.AbsCaptureTimeExt
-			if err = actExtCopy.Rewrite(
-				rtpstats.RTCPSenderReportPropagationDelay(
-					refSenderReport,
-					!d.params.DisableSenderReportPassThrough,
-				),
-			); err == nil {
-				actBytes, err = actExtCopy.Marshal()
-				if err == nil {
-					hdr.SetExtension(uint8(d.absCaptureTimeExtID), actBytes)
+		if !d.params.DisableSenderReportPassThrough {
+			// pass through the original publisher capture time verbatim, consistent
+			// with sender reports also being passed through unchanged.
+			actBytes, err = extPkt.AbsCaptureTimeExt.Marshal()
+			if err == nil {
+				hdr.SetExtension(uint8(d.absCaptureTimeExtID), actBytes)
+			}
+		} else {
+			// normalize capture time to SFU clock.
+			// NOTE: even if there is estimated offset populated, just re-map the
+			// absolute capture time stamp as it should be the same RTCP sender report
+			// clock domain of publisher. SFU is normalising sender reports of publisher
+			// to SFU clock before sending to subscribers. So, capture time should be
+			// normalized to the same clock. Clear out any offset.
+			_, _, _, refSenderReport := d.forwarder.GetSenderReportParams()
+			if refSenderReport != nil {
+				actExtCopy := *extPkt.AbsCaptureTimeExt
+				if err = actExtCopy.Rewrite(
+					rtpstats.RTCPSenderReportPropagationDelay(refSenderReport),
+				); err == nil {
+					actBytes, err = actExtCopy.Marshal()
+					if err == nil {
+						hdr.SetExtension(uint8(d.absCaptureTimeExtID), actBytes)
+					}
 				}
 			}
 		}

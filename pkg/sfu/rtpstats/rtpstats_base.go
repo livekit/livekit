@@ -193,11 +193,7 @@ func (w WrappedRTCPSenderReportStateLogger) MarshalLogObject(e zapcore.ObjectEnc
 
 // ------------------------------------------------------------------
 
-func RTCPSenderReportPropagationDelay(rsrs *livekit.RTCPSenderReportState, passThrough bool) time.Duration {
-	if passThrough {
-		return 0
-	}
-
+func RTCPSenderReportPropagationDelay(rsrs *livekit.RTCPSenderReportState) time.Duration {
 	return time.Unix(0, rsrs.AtAdjusted).Sub(mediatransportutil.NtpTime(rsrs.NtpTimestamp).Time())
 }
 
