@@ -155,6 +155,7 @@ func (d *Decoder) DecodeFEC(receivedPacket *rtp.Packet) []*rtp.Packet {
 
 func (d *Decoder) observeMediaPacket(sequenceNumber uint16) {
 	if d.hasNewestMediaSeq && d.mediaPacketsSeen >= mediaPacketsBeforeGapCheck &&
+		isNewerSeq(d.newestMediaSeq, sequenceNumber) &&
 		seqDiff(sequenceNumber, d.newestMediaSeq) > uint16(mediaPacketsBeforeGapCheck) {
 		d.logger.Infow("flexfec: big gap in media sequence numbers - resetting buffers")
 		d.receivedFECPackets = nil
