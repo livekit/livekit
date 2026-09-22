@@ -216,6 +216,17 @@ func TestBufferFECRecoversDroppedPacket(t *testing.T) {
 	assert.Equal(t, 1, recoveredDelta)
 	assert.Equal(t, len(fecPackets), receivedDelta)
 
+	fecPayloadBytes := 0
+	for i := range fecPackets {
+		fecPayloadBytes += len(fecPackets[i].Payload)
+	}
+	rtpStats := primary.GetStats()
+	require.NotNil(t, rtpStats)
+	assert.EqualValues(t, len(fecPackets), rtpStats.FecPacketsReceived)
+	assert.EqualValues(t, fecPayloadBytes, rtpStats.FecBytesReceived)
+	assert.EqualValues(t, 0, rtpStats.FecPacketsDiscarded)
+	assert.EqualValues(t, 1, rtpStats.PacketsRecovered)
+
 	// the 9 received packets flow through the ext packet pipeline, the
 	// recovered one fills the bucket like an RTX repair
 	extSNBySN := readExtSequenceNumbers(t, primary, len(media)-1)
