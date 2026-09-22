@@ -142,6 +142,8 @@ type RTCConfig struct {
 
 	CongestionControl CongestionControlConfig `yaml:"congestion_control,omitempty"`
 
+	FlexFEC FlexFECConfig `yaml:"flexfec,omitempty"`
+
 	// allow TCP and TURN/TLS fallback
 	AllowTCPFallback *bool `yaml:"allow_tcp_fallback,omitempty"`
 
@@ -218,6 +220,12 @@ type CongestionControlConfig struct {
 	UseSendSideBWE   bool                          `yaml:"use_send_side_bwe,omitempty"`
 	SendSideBWEPacer string                        `yaml:"send_side_bwe_pacer,omitempty"`
 	SendSideBWE      sendsidebwe.SendSideBWEConfig `yaml:"send_side_bwe,omitempty"`
+}
+
+// FlexFECConfig controls FlexFEC-03 recovery on the publisher -> SFU leg.
+type FlexFECConfig struct {
+	// negotiate flexfec-03 with publishers and use it to recover lost upstream packets
+	UpstreamEnabled bool `yaml:"upstream_enabled,omitempty"`
 }
 
 type PlayoutDelayConfig struct {
