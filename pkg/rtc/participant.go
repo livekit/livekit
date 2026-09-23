@@ -241,6 +241,7 @@ type ParticipantParams struct {
 	MigrationWaitDuration             time.Duration
 	ExcludeIPv6LocalCandidates        bool
 	EnableWarp                        bool
+	MediaBatchIOEnabled               bool
 }
 
 type ParticipantImpl struct {
@@ -3573,6 +3574,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 		EnableRTPStreamRestartDetection:  p.params.EnableRTPStreamRestartDetection,
 		UpdateTrackInfoByVideoSizeChange: p.params.UseOneShotSignallingMode,
 		ForceBackupCodecPolicySimulcast:  p.params.ForceBackupCodecPolicySimulcast,
+		MediaBatchIOEnabled:              p.params.MediaBatchIOEnabled,
 		OnSubscribedMaxQualityChange:     p.onSubscribedMaxQualityChange,
 		OnSubscribedAudioCodecChange:     p.onSubscribedAudioCodecChange,
 	}, ti)

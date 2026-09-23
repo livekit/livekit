@@ -543,6 +543,9 @@ func (r *RoomManager) StartSession(
 		EnableParticipantDataBlob:         r.config.EnableParticipantDataBlob,
 		EnableRTPStreamRestartDetection:   r.config.RTC.EnableRTPStreamRestartDetection,
 		EnableWarp:                        enableWarp,
+		MediaBatchIOEnabled: r.config.RTC.BatchIO.BatchSize > 0 &&
+			(r.config.RTC.ICEPortRangeStart == 0 || r.config.RTC.ICEPortRangeEnd == 0) &&
+			r.config.RTC.UDPPort.Valid(),
 	})
 	if err != nil {
 		prometheus.IncrementParticipantRtcCanceled(1, enableWarp, pi.Client.GetSdk())
