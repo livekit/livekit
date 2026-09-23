@@ -1692,6 +1692,43 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remo
 			return err
 		}
 
+		// Diagnostic logging for SCTP state after SetRemoteDescription.
+		// Helps diagnose issues like https://github.com/livekit/livekit/issues/4825 where
+		// SCTP association fails to establish despite m=application being present in SDP.
+		if t.pc.SCTP() != nil {
+			sctpState := t.pc.SCTP().State()
+			hasDataChannelInRemote := false
+			dataChannelPort := 0
+
+			if parsed != nil {
+				for _, m := range parsed.MediaDescriptions {
+					if m.MediaName.Media == "application" {
+						hasDataChannelInRemote = true
+						dataChannelPort = m.MediaName.Port.Value
+						break
+					}
+				}
+			}
+
+			t.params.Logger.Debugw("SCTP state after SetRemoteDescription",
+				"sctpState", sctpState.String(),
+				"hasDataChannelInRemote", hasDataChannelInRemote,
+				"dataChannelPort", dataChannelPort,
+				"sdpType", sd.Type.String(),
+				"transport", t.params.Transport.String(),
+			)
+
+			// Log warning if data channel exists in SDP but SCTP is not connecting/connected.
+			// This indicates a potential SCTP initiation issue (e.g., role conflict, port=0 without bundle-only).
+			if hasDataChannelInRemote && sctpState != webrtc.SCTPTransportStateConnecting && sctpState != webrtc.SCTPTransportStateConnected {
+				t.params.Logger.Warnw("data channel in remote SDP but SCTP not starting", nil,
+					"sctpState", sctpState.String(),
+					"dataChannelPort", dataChannelPort,
+					"transport", t.params.Transport.String(),
+				)
+			}
+		}
+
 		rtxRepairs := nonSimulcastRTXRepairsFromSDP(parsed, t.params.Logger)
 		if len(rtxRepairs) > 0 {
 			t.params.Logger.Debugw("rtx pairs found from sdp", "ssrcs", rtxRepairs)
