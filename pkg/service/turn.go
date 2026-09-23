@@ -76,7 +76,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 
 	for _, addr := range turnConf.BindAddresses {
 		var nodeIP string
-		if net.ParseIP(addr).To4() != nil {
+		if net.ParseIP(addr).To4() != nil && len(conf.RTC.NodeIP.V4) > 0 {
 			nodeIP = conf.RTC.NodeIP.V4
 		} else {
 			nodeIP = conf.RTC.NodeIP.V6
