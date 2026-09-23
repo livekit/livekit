@@ -95,6 +95,7 @@ type MediaTrackParams struct {
 	EnableRTPStreamRestartDetection  bool
 	UpdateTrackInfoByVideoSizeChange bool
 	ForceBackupCodecPolicySimulcast  bool
+	MediaBatchIOEnabled              bool
 	OnSubscribedMaxQualityChange     func(
 		trackID livekit.TrackID,
 		trackInfo *livekit.TrackInfo,
@@ -272,6 +273,18 @@ func (t *MediaTrack) ToProto() *livekit.TrackInfo {
 	return t.MediaTrackReceiver.TrackInfoClone()
 }
 
+func (t *MediaTrack) getReceiverLBThreshold() int {
+	// With batch IO the send syscall moves to the BatchConn flush goroutine, so WriteRTP only
+	// translates the packet and enqueues it: ~3.3us per downtrack, against ~26us when the send runs
+	// inline. The last subscriber of 300 subscribers at a serial forwarder is enqueued ~1ms
+	// after the first.
+	if t.params.MediaBatchIOEnabled {
+		return 300
+	}
+
+	return 20
+}
+
 // AddReceiver adds a new RTP receiver to the track, returns true when receiver represents a new codec
 // and if a receiver was added successfully
 func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRemote, mid string) (bool, bool) {
@@ -401,7 +414,7 @@ func (t *MediaTrack) AddReceiver(receiver *webrtc.RTPReceiver, track sfu.TrackRe
 			t.params.VideoConfig.StreamTrackerManager,
 			sfu.WithPliThrottleConfig(t.params.PLIThrottleConfig),
 			sfu.WithAudioConfig(t.params.AudioConfig),
-			sfu.WithLoadBalanceThreshold(20),
+			sfu.WithLoadBalanceThreshold(t.getReceiverLBThreshold()),
 			sfu.WithForwardStats(t.params.ForwardStats),
 			sfu.WithEnableRTPStreamRestartDetection(t.params.EnableRTPStreamRestartDetection),
 		)
