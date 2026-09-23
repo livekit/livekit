@@ -103,14 +103,6 @@ type Buffer struct {
 	warnedPendingOverflow bool
 }
 
-func (b *Buffer) unlockAndInvokeFECRecovery(
-	delta fecRecoveryDelta,
-	callback func(received int, recovered int, discarded int, bytesReceived int),
-) {
-	b.Unlock()
-	delta.invoke(callback)
-}
-
 // StreamInfoProbe identifies a stream from the mid/rid/rsid header extensions of its
 // packets. It runs on the write path, i. e. as SRTP pushes into this buffer, because
 // nothing reads remote streams through pion's interceptor chain.
@@ -295,7 +287,8 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		// previously unrecoverable FEC window
 		fecDelta, onFECRecovery = b.feedFECLocked(&rtpPacket, now)
 	}
-	b.unlockAndInvokeFECRecovery(fecDelta, onFECRecovery)
+	b.Unlock()
+	fecDelta.invoke(onFECRecovery)
 
 	if len(rtcpPackets) != 0 {
 		if cb := b.getOnRtcpFeedback(); cb != nil {
@@ -425,7 +418,8 @@ func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime int64) {
 	if b.fecDecoder != nil {
 		fecDelta, onFECRecovery = b.feedFECLocked(&repairedPkt, arrivalTime)
 	}
-	b.unlockAndInvokeFECRecovery(fecDelta, onFECRecovery)
+	b.Unlock()
+	fecDelta.invoke(onFECRecovery)
 }
 
 func (b *Buffer) SetPrimaryBufferForFEC(primaryBuffer *Buffer) {
@@ -572,7 +566,8 @@ func (b *Buffer) writeFEC(fecPkt *rtp.Packet, arrivalTime int64) {
 	}
 
 	fecDelta, onFECRecovery := b.feedFECLocked(fecPkt, arrivalTime)
-	b.unlockAndInvokeFECRecovery(fecDelta, onFECRecovery)
+	b.Unlock()
+	fecDelta.invoke(onFECRecovery)
 }
 
 // feedFECLocked runs a media or FEC packet through the FEC decoder and
