@@ -431,6 +431,16 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 			if err != nil {
 				logger.Errorw("failed to register JobTerminate handler", err)
 			}
+
+			// the job may have ended, or the worker disconnected, before the
+			// handler was registered, in which case the job was not deregistered
+			// with it. the worker is compared by identity because a reconnecting
+			// worker registers as a new one.
+			h.mu.Lock()
+			if _, err := selected.GetJobState(livekit.JobID(job.Id)); err != nil || h.workers[selected.ID] != selected {
+				h.deregisterJob(livekit.JobID(job.Id))
+			}
+			h.mu.Unlock()
 			fallthrough
 		case livekit.JobStatus_JS_SUCCESS:
 			return &rpc.JobRequestResponse{

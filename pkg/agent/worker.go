@@ -420,15 +420,25 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook Assignmen
 		if hook != nil {
 			send = hook(send)
 		}
-		if err := send(&livekit.JobAssignment{Job: job, Token: token}); err != nil {
-			return nil, err
-		}
 
 		state := utils.CloneProto(job.State)
 
+		// track the job before sending the assignment: the worker knows the job
+		// ID from the availability request and can report the job ended before
+		// the write returns. the tracked job is a copy, so a status update does
+		// not race with marshalling the assignment.
 		w.mu.Lock()
-		w.runningJobs[jobID] = job
+		w.runningJobs[jobID] = utils.CloneProto(job)
 		w.mu.Unlock()
+
+		if err := send(&livekit.JobAssignment{Job: job, Token: token}); err != nil {
+			// a failed assignment leaves no running job (#4516)
+			w.mu.Lock()
+			delete(w.runningJobs, jobID)
+			w.mu.Unlock()
+
+			return nil, err
+		}
 
 		// TODO sweep jobs that are never started. We can't do this until all SDKs actually update the the JOB state
 
