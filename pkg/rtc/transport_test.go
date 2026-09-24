@@ -32,6 +32,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/testutils"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
+	lksdp "github.com/livekit/protocol/sdp"
 )
 
 func TestMissingAnswerDuringICERestart(t *testing.T) {
@@ -885,4 +886,64 @@ func TestRemoteOfferParsedTracksOffers(t *testing.T) {
 		return handler.OnNegotiationFailedCallCount() > failures
 	}, 5*time.Second, 10*time.Millisecond)
 	require.Same(t, before, tr.RemoteOfferParsed())
+}
+
+// in one-shot signalling mode an ICE restart arrives as an SDP fragment that is patched into
+// the remote offer and set on pion directly, the stored parse must follow it
+func TestRemoteOfferParsedFollowsICERestartFragment(t *testing.T) {
+	codecs := []*livekit.Codec{{Mime: mime.MimeTypeVP8.String()}}
+	handler := &transportfakes.FakeHandler{}
+	tr, err := NewPCTransport(TransportParams{
+		Config: &WebRTCConfig{
+			BufferFactory: buffer.NewFactoryOfBufferFactory(500, 200).CreateBufferFactory(),
+		},
+		EnabledPublishCodecs:     codecs,
+		IsOfferer:                false,
+		UseOneShotSignallingMode: true,
+		Handler:                  handler,
+	})
+	require.NoError(t, err)
+	defer tr.Close()
+
+	var clientME webrtc.MediaEngine
+	require.NoError(t, registerCodecs(&clientME, codecs, RTCPFeedbackConfig{}, false))
+	client, err := webrtc.NewAPI(webrtc.WithMediaEngine(&clientME)).NewPeerConnection(webrtc.Configuration{})
+	require.NoError(t, err)
+	defer client.Close()
+
+	_, err = client.AddTransceiverFromKind(
+		webrtc.RTPCodecTypeVideo,
+		webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly},
+	)
+	require.NoError(t, err)
+	offer, err := client.CreateOffer(nil)
+	require.NoError(t, err)
+	require.NoError(t, client.SetLocalDescription(offer))
+
+	require.NoError(t, tr.HandleRemoteDescription(offer, 1))
+	before := tr.RemoteOfferParsed()
+	require.NotNil(t, before)
+	ufrag, _, err := lksdp.ExtractICECredential(before)
+	require.NoError(t, err)
+	require.NotEqual(t, "restartUfrag", ufrag)
+
+	_, _, err = tr.GetAnswer()
+	require.NoError(t, err)
+
+	mid := client.GetTransceivers()[0].Mid()
+	fragment := "m=video 9 UDP/TLS/RTP/SAVPF 96\r\n" +
+		"a=mid:" + mid + "\r\n" +
+		"a=ice-ufrag:restartUfrag\r\n" +
+		"a=ice-pwd:restartPwd0123456789abcdef\r\n" +
+		"a=candidate:1 1 udp 2122260223 192.0.2.1 61764 typ host generation 0\r\n"
+	answer, err := tr.HandleICERestartSDPFragment(fragment)
+	require.NoError(t, err)
+	require.NotEmpty(t, answer)
+
+	after := tr.RemoteOfferParsed()
+	require.NotSame(t, before, after)
+	ufrag, pwd, err := lksdp.ExtractICECredential(after)
+	require.NoError(t, err)
+	require.Equal(t, "restartUfrag", ufrag)
+	require.Equal(t, "restartPwd0123456789abcdef", pwd)
 }
