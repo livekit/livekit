@@ -104,6 +104,17 @@ func (d *dynacastManagerVideo) ForceQuality(quality livekit.VideoQuality) {
 	d.enqueueSubscribedQualityChange()
 }
 
+// ResendCommittedQuality notifies the listener again of the last committed subscribed qualities,
+// for a publisher that may have lost them. Nothing new is committed: a debounced downgrade stays pending.
+func (d *dynacastManagerVideo) ResendCommittedQuality() {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+
+	if len(d.committedMaxSubscribedQuality) != 0 {
+		d.enqueueSubscribedQualityChange()
+	}
+}
+
 func (d *dynacastManagerVideo) NotifySubscriberMaxQuality(
 	subscriberID livekit.ParticipantID,
 	mime mime.MimeType,

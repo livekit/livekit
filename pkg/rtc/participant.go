@@ -74,6 +74,8 @@ const (
 	sdBatchSize       = 30
 	rttUpdateInterval = 5 * time.Second
 
+	publisherAnswerDynacastResendDelay = time.Second
+
 	disconnectCleanupDuration          = 5 * time.Second
 	migrationWaitDuration              = 3 * time.Second
 	migrationWaitContinuousMsgDuration = 2 * time.Second
@@ -1274,7 +1276,24 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription, an
 		"midToTrackID", midToTrackID,
 	)
 
-	return p.sendSdpAnswer(answer, answerId, midToTrackID)
+	if err := p.sendSdpAnswer(answer, answerId, midToTrackID); err != nil {
+		return err
+	}
+
+	// The answer does not carry the pause state of the simulcast layers (SetIgnoreRidPauseForRecv),
+	// so applying it re-enables in the publisher the layers paused by dynacast. Send the subscribed
+	// qualities again with a delay to ensure the answer has been applied
+	time.AfterFunc(publisherAnswerDynacastResendDelay, func() {
+		if p.IsClosed() || p.IsDisconnected() {
+			return
+		}
+		for _, track := range p.GetPublishedTracks() {
+			if mt, ok := track.(*MediaTrack); ok {
+				mt.ResendSubscribedQuality()
+			}
+		}
+	})
+	return nil
 }
 
 func (p *ParticipantImpl) GetAnswer() (webrtc.SessionDescription, uint32, error) {
