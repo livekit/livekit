@@ -523,12 +523,9 @@ func (t *TransportManager) GetUnmatchMediaForOffer(parsedOffer *sdp.SessionDescr
 	return
 }
 
-func (t *TransportManager) LastPublisherOffer() *webrtc.SessionDescription {
-	return t.publisher.CurrentRemoteDescription()
-}
-
-func (t *TransportManager) LastPublisherOfferPending() *webrtc.SessionDescription {
-	return t.publisher.PendingRemoteDescription()
+// LastPublisherOfferParsed returns the parsed form of the last offer set on the publisher peer connection
+func (t *TransportManager) LastPublisherOfferParsed() *sdp.SessionDescription {
+	return t.publisher.RemoteOfferParsed()
 }
 
 func (t *TransportManager) HandleOffer(offer webrtc.SessionDescription, offerId uint32, shouldPend bool) error {
