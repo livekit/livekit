@@ -414,3 +414,99 @@ func TestNewTURNTCPListener_ProxyProtocolRequiresTrustedCIDRs(t *testing.T) {
 	_, err = newTURNTCPListener(proxyProtocolTURNConfig("not-a-cidr"), "127.0.0.1:0")
 	require.Error(t, err)
 }
+
+func turnRelayTestConfig(nodeIPv4, nodeIPv6 string) *config.Config {
+	conf := &config.Config{}
+	conf.RTC.NodeIP.V4 = nodeIPv4
+	conf.RTC.NodeIP.V6 = nodeIPv6
+	conf.TURN.RelayPortRangeStart = 30000
+	conf.TURN.RelayPortRangeEnd = 40000
+	return conf
+}
+
+func TestNewTURNRelayAddressGenerator_NodeIPFamilies(t *testing.T) {
+	const (
+		v4 = "203.0.113.10"
+		v6 = "2001:db8::10"
+	)
+	for _, tc := range []struct {
+		name     string
+		bindAddr string
+		nodeIPv4 string
+		nodeIPv6 string
+		wantErr  bool
+		wantV4   bool
+		wantV6   bool
+	}{
+		{name: "ipv4 wildcard, dual-stack node", bindAddr: "0.0.0.0", nodeIPv4: v4, nodeIPv6: v6, wantV4: true, wantV6: true},
+		{name: "ipv4 wildcard, ipv4 node", bindAddr: "0.0.0.0", nodeIPv4: v4, wantV4: true},
+		{name: "ipv4 wildcard, ipv6 only node", bindAddr: "0.0.0.0", nodeIPv6: v6, wantErr: true},
+		{name: "ipv6 wildcard, dual-stack node", bindAddr: "::", nodeIPv4: v4, nodeIPv6: v6, wantV4: true, wantV6: true},
+		{name: "ipv6 wildcard, ipv4 only node", bindAddr: "::", nodeIPv4: v4, wantV4: true},
+		{name: "ipv6 wildcard, ipv6 only node", bindAddr: "::", nodeIPv6: v6, wantV6: true},
+		{name: "specific ipv4, dual-stack node", bindAddr: "192.0.2.1", nodeIPv4: v4, nodeIPv6: v6, wantV4: true},
+		{name: "specific ipv4, ipv6 only node", bindAddr: "192.0.2.1", nodeIPv6: v6, wantErr: true},
+		{name: "specific ipv6, dual-stack node", bindAddr: "2001:db8::1", nodeIPv4: v4, nodeIPv6: v6, wantV6: true},
+		{name: "specific ipv6, ipv4 only node", bindAddr: "2001:db8::1", nodeIPv4: v4, wantErr: true},
+		{name: "hostname", bindAddr: "localhost", nodeIPv4: v4, nodeIPv6: v6, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gen, err := newTURNRelayAddressGenerator(turnRelayTestConfig(tc.nodeIPv4, tc.nodeIPv6), tc.bindAddr)
+			if tc.wantErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.bindAddr)
+				return
+			}
+			require.NoError(t, err)
+			require.NoError(t, gen.Validate())
+
+			familyGen, ok := gen.(*familyRelayAddressGenerator)
+			require.True(t, ok)
+			if tc.wantV4 {
+				require.NotNil(t, familyGen.v4)
+				require.Equal(t, v4, familyGen.v4.(*turn.RelayAddressGeneratorPortRange).RelayAddress.String())
+			} else {
+				require.Nil(t, familyGen.v4)
+			}
+			if tc.wantV6 {
+				require.NotNil(t, familyGen.v6)
+				require.Equal(t, v6, familyGen.v6.(*turn.RelayAddressGeneratorPortRange).RelayAddress.String())
+			} else {
+				require.Nil(t, familyGen.v6)
+			}
+		})
+	}
+}
+
+func TestFamilyRelayAddressGenerator_AllocatesRequestedFamily(t *testing.T) {
+	const (
+		v4 = "203.0.113.10"
+		v6 = "2001:db8::10"
+	)
+
+	gen, err := newTURNRelayAddressGenerator(turnRelayTestConfig(v4, v6), "::")
+	require.NoError(t, err)
+	require.NoError(t, gen.Validate())
+
+	conn, relayAddr, err := gen.AllocatePacketConn(turn.AllocateListenerConfig{Network: "udp4"})
+	require.NoError(t, err)
+	defer conn.Close()
+	require.Equal(t, v4, relayAddr.(*net.UDPAddr).IP.String())
+	require.NotNil(t, conn.LocalAddr().(*net.UDPAddr).IP.To4(), "IPv4 relay must listen on an IPv4 socket")
+
+	if probe, err := net.ListenPacket("udp6", "[::1]:0"); err != nil {
+		t.Log("IPv6 not available, skipping IPv6 relay allocation")
+	} else {
+		probe.Close()
+		conn6, relayAddr6, err := gen.AllocatePacketConn(turn.AllocateListenerConfig{Network: "udp6"})
+		require.NoError(t, err)
+		defer conn6.Close()
+		require.Equal(t, v6, relayAddr6.(*net.UDPAddr).IP.String())
+	}
+
+	v4Only, err := newTURNRelayAddressGenerator(turnRelayTestConfig(v4, ""), "::")
+	require.NoError(t, err)
+	require.NoError(t, v4Only.Validate())
+	_, _, err = v4Only.AllocatePacketConn(turn.AllocateListenerConfig{Network: "udp6"})
+	require.ErrorIs(t, err, errTURNRelayFamilyUnavailable)
+}
