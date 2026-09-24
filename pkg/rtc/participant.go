@@ -1215,20 +1215,19 @@ func (p *ParticipantImpl) HandleOffer(sd *livekit.SessionDescription) error {
 
 	lgr.Debugw("received offer")
 
-	parsedOffer, err := offer.Unmarshal()
-	if err != nil {
-		lgr.Warnw("could not parse offer", err)
-		return err
-	}
-
 	if p.params.UseOneShotSignallingMode {
+		parsedOffer, err := offer.Unmarshal()
+		if err != nil {
+			lgr.Warnw("could not parse offer", err)
+			return err
+		}
 		if err := p.synthesizeAddTrackRequests(parsedOffer); err != nil {
 			lgr.Warnw("could not synthesize add track requests", err)
 			return err
 		}
 	}
 
-	err = p.TransportManager.HandleOffer(offer, offerId, p.MigrateState() == types.MigrateStateInit)
+	err := p.TransportManager.HandleOffer(offer, offerId, p.MigrateState() == types.MigrateStateInit)
 	if err != nil {
 		lgr.Warnw("could not handle offer", err, "mungedOffer", offer)
 		return err
@@ -1243,13 +1242,8 @@ func (p *ParticipantImpl) HandleOffer(sd *livekit.SessionDescription) error {
 }
 
 func (p *ParticipantImpl) onPublisherSetRemoteDescription() {
-	offer := p.TransportManager.LastPublisherOfferPending()
-	if offer == nil {
-		return
-	}
-	parsedOffer, err := offer.Unmarshal()
-	if err != nil {
-		p.pubLogger.Warnw("could not parse offer", err)
+	parsedOffer := p.TransportManager.LastPublisherOfferParsed()
+	if parsedOffer == nil {
 		return
 	}
 

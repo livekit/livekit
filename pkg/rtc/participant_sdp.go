@@ -319,9 +319,8 @@ func (p *ParticipantImpl) setCodecPreferencesOpusRedForPublisher(
 
 // configure publisher answer for audio track's dtx and stereo settings
 func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescription) webrtc.SessionDescription {
-	offer := p.TransportManager.LastPublisherOffer()
-	parsedOffer, err := offer.Unmarshal()
-	if err != nil {
+	parsedOffer := p.TransportManager.LastPublisherOfferParsed()
+	if parsedOffer == nil {
 		return answer
 	}
 
@@ -330,6 +329,9 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 		return answer
 	}
 
+	// payload type lookup scans the whole answer, resolve it once
+	opusPT, opusPTErr := parsedAnswer.GetPayloadTypeForCodec(sdp.Codec{Name: mime.MimeTypeCodecOpus.String()})
+	changed := false
 	for _, m := range parsedAnswer.MediaDescriptions {
 		switch m.MediaName.Media {
 		case "audio":
@@ -371,9 +373,8 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 				continue
 			}
 
-			opusPT, err := parsedAnswer.GetPayloadTypeForCodec(sdp.Codec{Name: mime.MimeTypeCodecOpus.String()})
-			if err != nil {
-				p.pubLogger.Infow("failed to get opus payload type", "error", err, "trackID", ti.Sid)
+			if opusPTErr != nil {
+				p.pubLogger.Infow("failed to get opus payload type", "error", opusPTErr, "trackID", ti.Sid)
 				continue
 			}
 
@@ -390,12 +391,17 @@ func (p *ParticipantImpl) configurePublisherAnswer(answer webrtc.SessionDescript
 						attr.Value = strings.ReplaceAll(attr.Value, ";stereo=1", "")
 					}
 					m.Attributes[i] = attr
+					changed = true
 				}
 			}
 
 		default:
 			continue
 		}
+	}
+
+	if !changed {
+		return answer
 	}
 
 	bytes, err := parsedAnswer.Marshal()
