@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -255,4 +256,103 @@ func TestDrainConnectionsDoesNotDeadlock(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestJobTerminateHandlerReleased(t *testing.T) {
+	const jobCount = 50
+
+	requestJobs := func(t *testing.T, client rpc.AgentInternalClient, agentName func(i int) string) []string {
+		jobIDs := make([]string, jobCount)
+		var wg sync.WaitGroup
+		for i := range jobCount {
+			job := &livekit.Job{
+				Id:         guid.New(guid.AgentJobPrefix),
+				DispatchId: guid.New(guid.AgentDispatchPrefix),
+				Type:       livekit.JobType_JT_ROOM,
+				Room:       &livekit.Room{},
+				AgentName:  agentName(i),
+			}
+			jobIDs[i] = job.Id
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, err := client.JobRequest(context.Background(), job.AgentName, agent.RoomAgentTopic, job)
+				require.NoError(t, err)
+			}()
+		}
+		wg.Wait()
+		return jobIDs
+	}
+
+	waitRegistered := func(t *testing.T, w *testutils.AgentWorker, agentName string) {
+		responses := w.RegisterWorkerResponses.Observe()
+		defer responses.Stop()
+		w.Register(agentName, livekit.JobType_JT_ROOM)
+		select {
+		case <-responses.Events():
+		case <-time.After(time.Second):
+			require.Fail(t, "registration timeout")
+		}
+	}
+
+	// any response means a JobTerminate handler is still registered.
+	requireHandlersReleased := func(t *testing.T, client rpc.AgentInternalClient, jobIDs []string) {
+		var answered atomic.Int32
+		var wg sync.WaitGroup
+		for _, id := range jobIDs {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, err := client.JobTerminate(context.Background(), id, &rpc.JobTerminateRequest{JobId: id}, psrpc.WithRequestTimeout(200*time.Millisecond))
+				if !errors.Is(err, psrpc.ErrRequestTimedOut) && !errors.Is(err, psrpc.ErrNoResponse) {
+					answered.Inc()
+				}
+			}()
+		}
+		wg.Wait()
+		require.Zero(t, answered.Load(), "jobs with leaked JobTerminate handlers")
+	}
+
+	t.Run("job fails on assignment", func(t *testing.T) {
+		bus := psrpc.NewLocalMessageBus()
+		client := must.Get(rpc.NewAgentInternalClient(bus))
+		server := testutils.NewTestServer(bus)
+		t.Cleanup(server.Close)
+
+		var worker *testutils.AgentWorker
+		worker = server.SimulateAgentWorker(testutils.WithJobAssignmentHandler(func(j *livekit.Job) testutils.JobLoad {
+			worker.SendUpdateJob(&livekit.UpdateJobStatus{JobId: j.Id, Status: livekit.JobStatus_JS_FAILED})
+			return testutils.NewStableJobLoad(0)
+		}))
+		waitRegistered(t, worker, "fail_agent")
+		time.Sleep(100 * time.Millisecond)
+
+		jobIDs := requestJobs(t, client, func(int) string { return "fail_agent" })
+		time.Sleep(100 * time.Millisecond)
+
+		requireHandlersReleased(t, client, jobIDs)
+	})
+
+	t.Run("worker disconnects on assignment", func(t *testing.T) {
+		bus := psrpc.NewLocalMessageBus()
+		client := must.Get(rpc.NewAgentInternalClient(bus))
+		server := testutils.NewTestServer(bus)
+		t.Cleanup(server.Close)
+
+		agentName := func(i int) string { return fmt.Sprintf("disconnect_agent_%d", i) }
+		for i := range jobCount {
+			var worker *testutils.AgentWorker
+			worker = server.SimulateAgentWorker(testutils.WithJobAssignmentHandler(func(j *livekit.Job) testutils.JobLoad {
+				worker.Close()
+				return nil
+			}))
+			waitRegistered(t, worker, agentName(i))
+		}
+		time.Sleep(100 * time.Millisecond)
+
+		jobIDs := requestJobs(t, client, agentName)
+		time.Sleep(100 * time.Millisecond)
+
+		requireHandlersReleased(t, client, jobIDs)
+	})
 }
