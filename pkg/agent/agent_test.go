@@ -263,6 +263,7 @@ func TestJobTerminateHandlerReleased(t *testing.T) {
 
 	requestJobs := func(t *testing.T, client rpc.AgentInternalClient, agentName func(i int) string) []string {
 		jobIDs := make([]string, jobCount)
+		errs := make([]error, jobCount)
 		var wg sync.WaitGroup
 		for i := range jobCount {
 			job := &livekit.Job{
@@ -276,27 +277,31 @@ func TestJobTerminateHandlerReleased(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				_, err := client.JobRequest(context.Background(), job.AgentName, agent.RoomAgentTopic, job)
-				require.NoError(t, err)
+				_, errs[i] = client.JobRequest(context.Background(), job.AgentName, agent.RoomAgentTopic, job)
 			}()
 		}
 		wg.Wait()
+		for _, err := range errs {
+			require.NoError(t, err)
+		}
 		return jobIDs
 	}
 
+	// the server reads the ping only after registering the worker's job request topic.
 	waitRegistered := func(t *testing.T, w *testutils.AgentWorker, agentName string) {
-		responses := w.RegisterWorkerResponses.Observe()
-		defer responses.Stop()
+		pongs := w.WorkerPongs.Observe()
+		defer pongs.Stop()
 		w.Register(agentName, livekit.JobType_JT_ROOM)
+		w.SendPing(&livekit.WorkerPing{Timestamp: time.Now().UnixMilli()})
 		select {
-		case <-responses.Events():
-		case <-time.After(time.Second):
+		case <-pongs.Events():
+		case <-time.After(5 * time.Second):
 			require.Fail(t, "registration timeout")
 		}
 	}
 
 	// any response means a JobTerminate handler is still registered.
-	requireHandlersReleased := func(t *testing.T, client rpc.AgentInternalClient, jobIDs []string) {
+	countAnswered := func(client rpc.AgentInternalClient, jobIDs []string) int32 {
 		var answered atomic.Int32
 		var wg sync.WaitGroup
 		for _, id := range jobIDs {
@@ -310,7 +315,16 @@ func TestJobTerminateHandlerReleased(t *testing.T) {
 			}()
 		}
 		wg.Wait()
-		require.Zero(t, answered.Load(), "jobs with leaked JobTerminate handlers")
+		return answered.Load()
+	}
+
+	// handlers are released as the server processes the worker's messages; a leaked one never is.
+	requireHandlersReleased := func(t *testing.T, client rpc.AgentInternalClient, jobIDs []string) {
+		var answered int32
+		require.Eventually(t, func() bool {
+			answered = countAnswered(client, jobIDs)
+			return answered == 0
+		}, 10*time.Second, 100*time.Millisecond, "jobs with leaked JobTerminate handlers: %d", answered)
 	}
 
 	t.Run("job fails on assignment", func(t *testing.T) {
@@ -325,10 +339,8 @@ func TestJobTerminateHandlerReleased(t *testing.T) {
 			return testutils.NewStableJobLoad(0)
 		}))
 		waitRegistered(t, worker, "fail_agent")
-		time.Sleep(100 * time.Millisecond)
 
 		jobIDs := requestJobs(t, client, func(int) string { return "fail_agent" })
-		time.Sleep(100 * time.Millisecond)
 
 		requireHandlersReleased(t, client, jobIDs)
 	})
@@ -348,10 +360,8 @@ func TestJobTerminateHandlerReleased(t *testing.T) {
 			}))
 			waitRegistered(t, worker, agentName(i))
 		}
-		time.Sleep(100 * time.Millisecond)
 
 		jobIDs := requestJobs(t, client, agentName)
-		time.Sleep(100 * time.Millisecond)
 
 		requireHandlersReleased(t, client, jobIDs)
 	})
