@@ -550,7 +550,7 @@ type LocalParticipant interface {
 	WriteSubscriberRTCP(pkts []rtcp.Packet) error
 
 	// subscriptions
-	SubscribeToTrack(trackID livekit.TrackID, isSync bool)
+	SubscribeToTrack(trackID livekit.TrackID, isSync bool, admin bool)
 	UnsubscribeFromTrack(trackID livekit.TrackID)
 	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings)
 	GetSubscribedTracks() []SubscribedTrack
@@ -827,6 +827,7 @@ type Room interface {
 		trackIDs []livekit.TrackID,
 		participantTracks []*livekit.ParticipantTracks,
 		subscribe bool,
+		adminInitiated bool,
 	)
 	ResolveMediaTrackForSubscriber(sub LocalParticipant, trackID livekit.TrackID) MediaResolverResult
 	ResolveDataTrackForSubscriber(sub LocalParticipant, trackID livekit.TrackID) DataResolverResult
