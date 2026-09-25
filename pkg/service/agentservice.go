@@ -479,6 +479,15 @@ func (h *AgentHandler) JobTerminate(ctx context.Context, req *rpc.JobTerminateRe
 	}
 
 	state, err := w.TerminateJob(livekit.JobID(req.JobId), req.Reason)
+
+	// the job is no longer tracked as running, and the worker may never send an
+	// ended status update for it, so deregister it here. deregistering from
+	// inside this handler is safe because psrpc force closes the handler
+	// without waiting for in-flight requests.
+	h.mu.Lock()
+	h.deregisterJob(livekit.JobID(req.JobId))
+	h.mu.Unlock()
+
 	if err != nil {
 		return nil, err
 	}
