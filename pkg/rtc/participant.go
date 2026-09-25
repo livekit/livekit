@@ -74,7 +74,8 @@ const (
 	sdBatchSize       = 30
 	rttUpdateInterval = 5 * time.Second
 
-	publisherAnswerDynacastResendDelay = time.Second
+	publisherAnswerDynacastResendDelay    = 2 * time.Second
+	publisherAnswerDynacastResendMaxDelay = 8 * time.Second
 
 	disconnectCleanupDuration          = 5 * time.Second
 	migrationWaitDuration              = 3 * time.Second
@@ -279,6 +280,9 @@ type ParticipantImpl struct {
 	// timer that's set when disconnect is detected on primary PC
 	disconnectTimer *time.Timer
 	migrationTimer  *time.Timer
+	// re-send of the subscribed qualities pending after publisher answers
+	dynacastResendTimer    *time.Timer
+	dynacastResendDeadline time.Time
 
 	migratedInAt atomic.Pointer[time.Time]
 
@@ -1282,18 +1286,32 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription, an
 
 	// The answer does not carry the pause state of the simulcast layers (SetIgnoreRidPauseForRecv),
 	// so applying it re-enables in the publisher the layers paused by dynacast. Send the subscribed
-	// qualities again with a delay to ensure the answer has been applied
-	time.AfterFunc(publisherAnswerDynacastResendDelay, func() {
-		if p.IsClosed() || p.IsDisconnected() {
-			return
-		}
-		for _, track := range p.GetPublishedTracks() {
-			if mt, ok := track.(*MediaTrack); ok {
-				mt.ResendSubscribedQuality()
-			}
-		}
-	})
+	// qualities again with a delay to ensure the answer has been applied, once for a burst of answers:
+	// the delay restarts with each answer, up to a maximum from the first one
+	p.lock.Lock()
+	if p.dynacastResendTimer == nil {
+		p.dynacastResendDeadline = time.Now().Add(publisherAnswerDynacastResendMaxDelay)
+		p.dynacastResendTimer = time.AfterFunc(publisherAnswerDynacastResendDelay, p.resendSubscribedQualities)
+	} else {
+		p.dynacastResendTimer.Reset(min(publisherAnswerDynacastResendDelay, time.Until(p.dynacastResendDeadline)))
+	}
+	p.lock.Unlock()
 	return nil
+}
+
+func (p *ParticipantImpl) resendSubscribedQualities() {
+	p.lock.Lock()
+	p.dynacastResendTimer = nil
+	p.lock.Unlock()
+
+	if p.IsClosed() || p.IsDisconnected() {
+		return
+	}
+	for _, track := range p.GetPublishedTracks() {
+		if mt, ok := track.(*MediaTrack); ok {
+			mt.ResendSubscribedQuality()
+		}
+	}
 }
 
 func (p *ParticipantImpl) GetAnswer() (webrtc.SessionDescription, uint32, error) {

@@ -524,18 +524,25 @@ func TestResendCommittedQuality(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	require.Empty(t, notifications())
 
-	dm.NotifySubscriberMaxQuality("s1", mime.MimeTypeVP8, livekit.VideoQuality_HIGH)
+	dm.NotifySubscriberMaxQuality("s1", mime.MimeTypeVP8, livekit.VideoQuality_LOW)
 	require.Eventually(t, func() bool { return len(notifications()) == 1 }, 5*time.Second, 10*time.Millisecond)
 
-	// the downgrade waits for the debounce, HIGH is still the committed quality
-	dm.NotifySubscriberMaxQuality("s1", mime.MimeTypeVP8, livekit.VideoQuality_LOW)
+	// the downgrade waits for the debounce, LOW is still the committed quality
+	dm.NotifySubscriberMaxQuality("s1", mime.MimeTypeVP8, livekit.VideoQuality_OFF)
 	time.Sleep(100 * time.Millisecond)
 	require.Len(t, notifications(), 1)
 
-	// the resend notifies HIGH again, without committing the pending LOW
+	// the resend notifies LOW again, without committing the pending OFF
 	dm.ResendCommittedQuality()
 	require.Eventually(t, func() bool { return len(notifications()) == 2 }, 5*time.Second, 10*time.Millisecond)
 	require.Equal(t, notifications()[0], notifications()[1])
+
+	// no layer paused, nothing to resend
+	dm.NotifySubscriberMaxQuality("s1", mime.MimeTypeVP8, livekit.VideoQuality_HIGH)
+	require.Eventually(t, func() bool { return len(notifications()) == 3 }, 5*time.Second, 10*time.Millisecond)
+	dm.ResendCommittedQuality()
+	time.Sleep(100 * time.Millisecond)
+	require.Len(t, notifications(), 3)
 }
 
 func subscribedCodecsAsString(c1 []*livekit.SubscribedCodec) string {
