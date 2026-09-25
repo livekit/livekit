@@ -18,7 +18,7 @@ import (
 	"context"
 	"github.com/dennwc/iters"
 	"github.com/livekit/livekit-server/pkg/service"
-	"github.com/livekit/psrpc"
+	"github.com/livekit/psrpc/pkg/bus/redisbus"
 	"slices"
 	"testing"
 
@@ -28,7 +28,7 @@ import (
 
 func ioStoreDocker(t testing.TB) (*service.IOInfoService, *service.RedisStore) {
 	r := redisClientDocker(t)
-	bus := psrpc.NewRedisMessageBus(r)
+	bus := redisbus.New(r)
 	rs := service.NewRedisStore(r)
 	io, err := service.NewIOInfoService(bus, rs, rs, rs, nil)
 	require.NoError(t, err)

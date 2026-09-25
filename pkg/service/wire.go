@@ -35,6 +35,7 @@ import (
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 	"github.com/livekit/psrpc"
+	"github.com/livekit/psrpc/pkg/bus/redisbus"
 	"github.com/livekit/psrpc/pkg/middleware/otelpsrpc"
 
 	"github.com/livekit/livekit-server/pkg/agent"
@@ -197,7 +198,7 @@ func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
 	if rc == nil {
 		return psrpc.NewLocalMessageBus()
 	}
-	return psrpc.NewRedisMessageBus(rc)
+	return redisbus.New(rc)
 }
 
 func getEgressStore(s ObjectStore) EgressStore {

@@ -447,7 +447,7 @@ func (b *Buffer) SetPrimaryBufferForFEC(primaryBuffer *Buffer) {
 	}
 }
 
-func (b *Buffer) markAsFECRepair() {
+func (b *Buffer) setFECRepairBufferLimit() {
 	b.Lock()
 	defer b.Unlock()
 
@@ -559,6 +559,7 @@ func (b *Buffer) writeFEC(fecPkt *rtp.Packet, arrivalTime int64) {
 		b.fecSSRC = fecPkt.SSRC
 		b.maybeCreateFECDecoderLocked()
 		if b.fecDecoder == nil {
+			b.logger.Infow("flexfec decoder unavailable after creation attempt", "fecSSRC", b.fecSSRC, "mediaSSRC", b.BufferBase.SSRC(), "payloadType", b.fecPayloadType)
 			b.Unlock()
 			return
 		}
@@ -578,6 +579,20 @@ func (b *Buffer) feedFECLocked(
 ) (fecRecoveryDelta, func(received int, recovered int, discarded int, bytesReceived int)) {
 	statsBefore := b.fecDecoder.Stats()
 	recovered := b.fecDecoder.DecodeFEC(pkt)
+	statsAfter := b.fecDecoder.Stats()
+
+	fecPackets := statsAfter.FECPacketsReceived - statsBefore.FECPacketsReceived
+	fecBytes := statsAfter.FECBytesReceived - statsBefore.FECBytesReceived
+	fecPacketsDiscarded := statsAfter.FECPacketsDiscarded - statsBefore.FECPacketsDiscarded
+	fecPacketsRecovered := statsAfter.PacketsRecovered - statsBefore.PacketsRecovered
+	if b.rtpStats != nil {
+		b.rtpStats.UpdateFEC(
+			fecPackets,
+			fecBytes,
+			fecPacketsDiscarded,
+			fecPacketsRecovered,
+		)
+	}
 
 	if len(recovered) > 0 && b.fecPktBuf == nil {
 		b.fecPktBuf = make([]byte, bucket.RTPMaxPktSize)
@@ -597,12 +612,11 @@ func (b *Buffer) feedFECLocked(
 	}
 
 	if cb := b.onFECRecovery; cb != nil {
-		statsAfter := b.fecDecoder.Stats()
 		return fecRecoveryDelta{
-			received:      int(statsAfter.FECPacketsReceived - statsBefore.FECPacketsReceived),
-			recovered:     len(recovered),
-			discarded:     int(statsAfter.FECPacketsDiscarded - statsBefore.FECPacketsDiscarded),
-			bytesReceived: int(statsAfter.FECBytesReceived - statsBefore.FECBytesReceived),
+			received:      int(fecPackets),
+			recovered:     int(fecPacketsRecovered),
+			discarded:     int(fecPacketsDiscarded),
+			bytesReceived: int(fecBytes),
 		}, cb
 	}
 
