@@ -110,22 +110,9 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 	logValues = append(logValues, "turn.per_user_relay_allocation_limit", turnConf.PerUserRelayAllocationLimit)
 
 	for _, addr := range turnConf.BindAddresses {
-		var nodeIP string
-		if net.ParseIP(addr).To4() != nil {
-			nodeIP = conf.RTC.NodeIP.V4
-		} else {
-			nodeIP = conf.RTC.NodeIP.V6
-		}
-		if nodeIP == "" {
-			return nil, errors.New("no matching node IP for relay")
-		}
-
-		var relayAddrGen turn.RelayAddressGenerator = &turn.RelayAddressGeneratorPortRange{
-			RelayAddress: net.ParseIP(nodeIP),
-			Address:      addr,
-			MinPort:      turnConf.RelayPortRangeStart,
-			MaxPort:      turnConf.RelayPortRangeEnd,
-			MaxRetries:   allocateRetries,
+		relayAddrGen, err := newTURNRelayAddressGenerator(conf, addr)
+		if err != nil {
+			return nil, err
 		}
 		if standalone {
 			relayAddrGen = telemetry.NewRelayAddressGenerator(relayAddrGen)
@@ -203,6 +190,123 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 
 	logger.Infow("Starting TURN server", logValues...)
 	return turn.NewServer(serverConfig)
+}
+
+var errTURNRelayFamilyUnavailable = errors.New("no node IP for requested TURN relay address family")
+
+// newTURNRelayAddressGenerator creates the relay address generator for a TURN
+// bind address. Relays are allocated in the address family requested by the
+// client (RFC 6156, defaulting to the family the client connected with), so
+// each family needs its own relay socket address and advertised node IP.
+// Wildcard bind addresses relay on the wildcard of every family the node has
+// an IP for; specific bind addresses relay on that address only.
+func newTURNRelayAddressGenerator(conf *config.Config, bindAddr string) (turn.RelayAddressGenerator, error) {
+	ip := net.ParseIP(bindAddr)
+	if ip == nil {
+		return nil, fmt.Errorf("invalid TURN bind address %q, must be an IP address", bindAddr)
+	}
+
+	nodeIP := conf.RTC.NodeIP
+	newGen := func(relayIP string, listenAddr string) turn.RelayAddressGenerator {
+		return &turn.RelayAddressGeneratorPortRange{
+			RelayAddress: net.ParseIP(relayIP),
+			Address:      listenAddr,
+			MinPort:      conf.TURN.RelayPortRangeStart,
+			MaxPort:      conf.TURN.RelayPortRangeEnd,
+			MaxRetries:   allocateRetries,
+		}
+	}
+
+	gen := &familyRelayAddressGenerator{}
+	isV4 := ip.To4() != nil
+	switch {
+	case ip.IsUnspecified():
+		if nodeIP.V4 != "" {
+			gen.v4 = newGen(nodeIP.V4, net.IPv4zero.String())
+		}
+		if nodeIP.V6 != "" {
+			gen.v6 = newGen(nodeIP.V6, net.IPv6unspecified.String())
+		}
+	case isV4:
+		if nodeIP.V4 != "" {
+			gen.v4 = newGen(nodeIP.V4, bindAddr)
+		}
+	default:
+		if nodeIP.V6 != "" {
+			gen.v6 = newGen(nodeIP.V6, bindAddr)
+		}
+	}
+
+	// clients of an IPv4 bind address get IPv4 relays by default, while an IPv6
+	// wildcard bind address accepts clients of both families
+	if (isV4 && gen.v4 == nil) || (gen.v4 == nil && gen.v6 == nil) {
+		return nil, fmt.Errorf(
+			"no matching node IP for TURN relay on bind address %s (rtc.node_ip: ipv4=%q, ipv6=%q), set rtc.node_ip or turn.bind_addresses accordingly",
+			bindAddr, nodeIP.V4, nodeIP.V6,
+		)
+	}
+	if gen.v4 == nil {
+		logger.Warnw("TURN relay has no IPv4 node IP, IPv4 relay allocations will be rejected", nil, "bindAddress", bindAddr)
+	}
+	return gen, nil
+}
+
+// familyRelayAddressGenerator dispatches relay allocations to the generator of
+// the requested address family, so the advertised relay address always matches
+// the family of the relay socket.
+type familyRelayAddressGenerator struct {
+	v4 turn.RelayAddressGenerator
+	v6 turn.RelayAddressGenerator
+}
+
+func (g *familyRelayAddressGenerator) forNetwork(network string) (turn.RelayAddressGenerator, error) {
+	gen := g.v4
+	if strings.HasSuffix(network, "6") {
+		gen = g.v6
+	}
+	if gen == nil {
+		return nil, fmt.Errorf("%w: %s", errTURNRelayFamilyUnavailable, network)
+	}
+	return gen, nil
+}
+
+func (g *familyRelayAddressGenerator) Validate() error {
+	if g.v4 == nil && g.v6 == nil {
+		return errTURNRelayFamilyUnavailable
+	}
+	for _, gen := range []turn.RelayAddressGenerator{g.v4, g.v6} {
+		if gen == nil {
+			continue
+		}
+		if err := gen.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (g *familyRelayAddressGenerator) AllocatePacketConn(c turn.AllocateListenerConfig) (net.PacketConn, net.Addr, error) {
+	gen, err := g.forNetwork(c.Network)
+	if err != nil {
+		return nil, nil, err
+	}
+	return gen.AllocatePacketConn(c)
+}
+
+func (g *familyRelayAddressGenerator) AllocateListener(c turn.AllocateListenerConfig) (net.Listener, net.Addr, error) {
+	gen, err := g.forNetwork(c.Network)
+	if err != nil {
+		return nil, nil, err
+	}
+	return gen.AllocateListener(c)
+}
+
+func (g *familyRelayAddressGenerator) AllocateConn(c turn.AllocateConnConfig) (net.Conn, error) {
+	gen, err := g.forNetwork(c.Network)
+	if err != nil {
+		return nil, err
+	}
+	return gen.AllocateConn(c)
 }
 
 // newTURNTCPListener returns the TCP listener for TURN/TLS. The PROXY protocol

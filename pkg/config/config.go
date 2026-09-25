@@ -15,6 +15,7 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"reflect"
@@ -658,6 +659,7 @@ func NewConfig(confString string, strictMode bool, c *cli.Command, baseFlags []c
 	if err := conf.RTC.Validate(conf.Development); err != nil {
 		return nil, fmt.Errorf("could not validate RTC config: %v", err)
 	}
+	conf.resolveMissingExternalIPv4()
 
 	conf.NormalizeTURNTTLs()
 
@@ -706,6 +708,28 @@ func NewConfig(confString string, strictMode bool, c *cli.Command, baseFlags []c
 	}
 
 	return &conf, nil
+}
+
+// resolveMissingExternalIPv4 fills in the IPv4 node IP when external IP discovery
+// only found an IPv6 address. On dual-stack hosts the STUN request can go out over
+// IPv6, and the embedded TURN server then has no IPv4 relay address for IPv4
+// clients (or for its default 0.0.0.0 bind address).
+func (conf *Config) resolveMissingExternalIPv4() {
+	if !conf.TURN.Enabled || !conf.RTC.UseExternalIP || conf.RTC.NodeIP.V4 != "" || conf.RTC.NodeIP.V6 == "" {
+		return
+	}
+
+	stunServers := conf.RTC.STUNServers
+	if len(stunServers) == 0 {
+		stunServers = rtcconfig.DefaultStunServers
+	}
+	ip, err := rtcconfig.GetExternalIPv4(context.Background(), stunServers, nil)
+	if err != nil {
+		logger.Warnw("could not resolve external IPv4 address, node IP is IPv6 only", err, "nodeIPv6", conf.RTC.NodeIP.V6)
+		return
+	}
+	logger.Infow("resolved external IPv4 address in addition to IPv6", "nodeIPv4", ip, "nodeIPv6", conf.RTC.NodeIP.V6)
+	conf.RTC.NodeIP.V4 = ip
 }
 
 func (conf *Config) IsTURNSEnabled() bool {
