@@ -52,6 +52,7 @@ func TestAgent(t *testing.T) {
 			_, claims, err := v.Verify(server.TestAPISecret)
 			require.NoError(t, err)
 			require.Equal(t, testAgentName, claims.Attributes[agent.AgentNameAttributeKey])
+			require.Equal(t, job.Id, claims.Attributes[agent.AgentJobIDAttributeKey])
 		case <-time.After(time.Second):
 			require.Fail(t, "job assignment timeout")
 		}

@@ -44,7 +44,11 @@ var (
 	ErrDuplicateJobAssignment     = errors.New("duplicate job assignment")
 )
 
-const AgentNameAttributeKey = "lk.agent_name"
+const (
+	AgentNameAttributeKey = "lk.agent_name"
+	// AgentJobIDAttributeKey binds an RTC connection to its server-assigned job.
+	AgentJobIDAttributeKey = "lk.agent_job_id"
+)
 
 type WorkerProtocolVersion int
 
@@ -388,11 +392,12 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook Assignmen
 		}
 
 		job.State.ParticipantIdentity = res.ParticipantIdentity
-		attributes := res.ParticipantAttributes
+		attributes := maps.Clone(res.ParticipantAttributes)
 		if attributes == nil {
 			attributes = make(map[string]string)
 		}
 		attributes[AgentNameAttributeKey] = w.AgentName
+		attributes[AgentJobIDAttributeKey] = job.Id
 
 		token, err := protoagent.BuildAgentToken(
 			w.apiKey,

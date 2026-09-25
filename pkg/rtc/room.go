@@ -54,6 +54,7 @@ const (
 	AudioLevelQuantization    = 8 // ideally power of 2 to minimize float decimal
 	invAudioLevelQuantization = 1.0 / AudioLevelQuantization
 	subscriberUpdateInterval  = 3 * time.Second
+	participantJoinTimeout    = time.Minute
 
 	dataForwardLoadBalanceThreshold = 4
 
@@ -169,6 +170,9 @@ type agentJob struct {
 	*livekit.Job
 	lock sync.Mutex
 	done chan struct{}
+
+	// Protected by Room.lock, including the timer callback.
+	connectRetry *agentConnectRetry
 }
 
 // This provides utilities attached the agent dispatch to ensure that all pending jobs are created
@@ -471,6 +475,12 @@ func (r *Room) Join(
 		r.joinedAt.Store(time.Now().Unix())
 	}
 
+	// A different job (or a non-agent) must not inherit a pending agent's job.
+	if job := r.agentParticpants[participant.Identity()]; job != nil && job.connectRetry != nil && !job.matchesParticipant(participant) {
+		r.deleteAgentJobLocked(participant.Identity(), job)
+		r.terminateAgentJob(participant.Identity(), job)
+	}
+
 	r.launchTargetAgents(slices.Collect(maps.Values(r.agentDispatches)), participant, livekit.JobType_JT_PARTICIPANT)
 
 	r.logger.Debugw(
@@ -497,7 +507,7 @@ func (r *Room) Join(
 		r.onParticipantChanged(participant)
 	}
 
-	time.AfterFunc(time.Minute, func() {
+	time.AfterFunc(participantJoinTimeout, func() {
 		if !participant.Verify() {
 			r.RemoveParticipant(participant.Identity(), participant.ID(), types.ParticipantCloseReasonJoinTimeout)
 		}
@@ -817,6 +827,12 @@ func (r *Room) Close(reason types.RoomCloseReason) {
 		// fall through
 	}
 	close(r.closed)
+	for identity, job := range r.agentParticpants {
+		if job.connectRetry != nil {
+			r.deleteAgentJobLocked(identity, job)
+			r.terminateAgentJob(identity, job)
+		}
+	}
 	r.lock.Unlock()
 
 	r.logger.Infow("closing room", "reason", reason)
@@ -911,6 +927,18 @@ func (r *Room) DeleteAgentDispatch(dispatchID string) (*livekit.AgentDispatch, e
 	}
 
 	delete(r.agentDispatches, dispatchID)
+	// Retries end with their dispatch. A pending replacement keeps its mapping,
+	// like an ACTIVE agent, until the termination below removes it. Any earlier
+	// departure terminates the job because retries require a live dispatch.
+	for identity, job := range r.agentParticpants {
+		if job.DispatchId == dispatchID && job.connectRetry != nil {
+			job.stopConnectRetry()
+			if r.participants[identity] == nil {
+				delete(r.agentParticpants, identity)
+				job.participantLeft()
+			}
+		}
+	}
 	r.lock.Unlock()
 
 	// Should Delete be synchronous instead?
@@ -1245,6 +1273,14 @@ func (r *Room) onStateChange(p types.LocalParticipant) {
 
 	switch p.State() {
 	case livekit.ParticipantInfo_ACTIVE:
+		r.lock.Lock()
+		if current := r.participants[p.Identity()]; current != nil && current.ID() == p.ID() {
+			if job := r.agentParticpants[p.Identity()]; job != nil && job.matchesParticipant(p) {
+				job.stopConnectRetry()
+			}
+		}
+		r.lock.Unlock()
+
 		// subscribe participant to existing published tracks
 		r.subscribeToExistingTracks(p, false)
 
@@ -1424,13 +1460,24 @@ func (r *Room) RemoveParticipant(
 	}
 
 	agentJob := r.agentParticpants[identity]
+	if grants := p.ClaimGrants(); agentJob != nil && grants != nil {
+		if jobID := grants.Attributes[agent.AgentJobIDAttributeKey]; jobID != "" && jobID != agentJob.Id {
+			// A new assignment may already own this identity while the old RTC
+			// participant is still leaving. Do not terminate the new job.
+			agentJob = nil
+		}
+	}
+	if r.deferAgentJobTerminationLocked(p, agentJob, reason) {
+		agentJob = nil
+	} else if agentJob != nil {
+		r.deleteAgentJobLocked(identity, agentJob)
+	}
 
 	delete(r.participants, identity)
 	delete(r.participantOpts, identity)
 	delete(r.participantRequestSources, identity)
 	delete(r.hasPublished, identity)
 	delete(r.launchedTrackEgresses, identity)
-	delete(r.agentParticpants, identity)
 	if !p.Hidden() {
 		r.protoRoom.NumParticipants--
 	}
@@ -1476,14 +1523,7 @@ func (r *Room) RemoveParticipant(
 	}
 
 	if agentJob != nil {
-		agentJob.participantLeft()
-
-		go func() {
-			_, err := r.agentClient.TerminateJob(context.Background(), agentJob.Id, rpc.JobTerminateReason_AGENT_LEFT_ROOM)
-			if err != nil {
-				r.logger.Infow("failed sending TerminateJob RPC", "error", err, "jobID", agentJob.Id, "participant", identity)
-			}
-		}()
+		r.terminateAgentJob(identity, agentJob)
 	}
 
 	p.ClearParticipantListener()
@@ -1836,7 +1876,12 @@ func (r *Room) handleNewJobs(ad *livekit.AgentDispatch, inc *sutils.IncrementalD
 		r.lock.Lock()
 		ad.State.Jobs = append(ad.State.Jobs, job)
 		if job.State != nil && job.State.ParticipantIdentity != "" {
-			r.agentParticpants[livekit.ParticipantIdentity(job.State.ParticipantIdentity)] = newAgentJob(job)
+			identity := livekit.ParticipantIdentity(job.State.ParticipantIdentity)
+			if previous := r.agentParticpants[identity]; previous != nil && previous.connectRetry != nil {
+				r.deleteAgentJobLocked(identity, previous)
+				r.terminateAgentJob(identity, previous)
+			}
+			r.agentParticpants[identity] = newAgentJob(job)
 		}
 		r.lock.Unlock()
 	})
