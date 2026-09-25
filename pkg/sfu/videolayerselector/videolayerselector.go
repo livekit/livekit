@@ -15,18 +15,43 @@
 package videolayerselector
 
 import (
+	"errors"
+
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector/temporallayerselector"
 	"github.com/livekit/protocol/logger"
 )
 
 type VideoLayerSelectorResult struct {
-	IsSelected                    bool
-	IsRelevant                    bool
-	IsSwitching                   bool
-	IsResuming                    bool
-	RTPMarker                     bool
-	DependencyDescriptorExtension []byte
+	IsSelected  bool
+	IsRelevant  bool
+	IsSwitching bool
+	IsResuming  bool
+	RTPMarker   bool
+
+	// marshaled dependency descriptor extension, held inline when it fits and
+	// spilled to the heap when it does not, the way the sequencer keeps its copy
+	DDBytes      [dd.MaxInlineExtensionSize]byte
+	DDBytesLen   int
+	DDBytesSpill []byte
+}
+
+// marshalDependencyDescriptorExtension marshals ddExtension into the result,
+// inline if it fits and on the heap otherwise.
+func (v *VideoLayerSelectorResult) marshalDependencyDescriptorExtension(ddExtension *dd.DependencyDescriptorExtension) error {
+	ddBytesLen, err := ddExtension.MarshalTo(v.DDBytes[:])
+	if err == nil {
+		v.DDBytesLen = ddBytesLen
+		return nil
+	}
+	if !errors.Is(err, dd.ErrBufferTooSmall) {
+		return err
+	}
+
+	// descriptors carrying the full dependency structure do not fit inline
+	v.DDBytesSpill, err = ddExtension.Marshal()
+	return err
 }
 
 type VideoLayerSelector interface {
