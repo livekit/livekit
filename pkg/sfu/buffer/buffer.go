@@ -581,16 +581,16 @@ func (b *Buffer) feedFECLocked(
 	recovered := b.fecDecoder.DecodeFEC(pkt)
 	statsAfter := b.fecDecoder.Stats()
 
-	fecPacketsReceived := statsAfter.FECPacketsReceived - statsBefore.FECPacketsReceived
-	fecBytesReceived := statsAfter.FECBytesReceived - statsBefore.FECBytesReceived
+	fecPackets := statsAfter.FECPacketsReceived - statsBefore.FECPacketsReceived
+	fecBytes := statsAfter.FECBytesReceived - statsBefore.FECBytesReceived
 	fecPacketsDiscarded := statsAfter.FECPacketsDiscarded - statsBefore.FECPacketsDiscarded
-	packetsRecovered := statsAfter.PacketsRecovered - statsBefore.PacketsRecovered
+	fecPacketsRecovered := statsAfter.PacketsRecovered - statsBefore.PacketsRecovered
 	if b.rtpStats != nil {
 		b.rtpStats.UpdateFEC(
-			fecPacketsReceived,
-			fecBytesReceived,
+			fecPackets,
+			fecBytes,
 			fecPacketsDiscarded,
-			packetsRecovered,
+			fecPacketsRecovered,
 		)
 	}
 
@@ -613,10 +613,10 @@ func (b *Buffer) feedFECLocked(
 
 	if cb := b.onFECRecovery; cb != nil {
 		return fecRecoveryDelta{
-			received:      int(fecPacketsReceived),
-			recovered:     int(packetsRecovered),
+			received:      int(fecPackets),
+			recovered:     int(fecPacketsRecovered),
 			discarded:     int(fecPacketsDiscarded),
-			bytesReceived: int(fecBytesReceived),
+			bytesReceived: int(fecBytes),
 		}, cb
 	}
 

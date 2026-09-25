@@ -241,32 +241,32 @@ func Test_RTPStatsReceiver_UpdateFEC(t *testing.T) {
 	r.UpdateFEC(3, 900, 1, 2)
 
 	stats := r.ToProto()
-	require.EqualValues(t, 3, stats.FecPacketsReceived)
-	require.EqualValues(t, 900, stats.FecBytesReceived)
+	require.EqualValues(t, 3, stats.FecPackets)
+	require.EqualValues(t, 900, stats.FecBytes)
 	require.EqualValues(t, 1, stats.FecPacketsDiscarded)
-	require.EqualValues(t, 2, stats.PacketsRecovered)
+	require.EqualValues(t, 2, stats.FecPacketsRecovered)
 
 	delta := r.DeltaInfo(snapshotID)
-	require.EqualValues(t, 3, delta.FecPacketsReceived)
-	require.EqualValues(t, 900, delta.FecBytesReceived)
+	require.EqualValues(t, 3, delta.FecPackets)
+	require.EqualValues(t, 900, delta.FecBytes)
 	require.EqualValues(t, 1, delta.FecPacketsDiscarded)
-	require.EqualValues(t, 2, delta.PacketsRecovered)
+	require.EqualValues(t, 2, delta.FecPacketsRecovered)
 
 	// FEC-only intervals are reported even if no primary packet arrived.
 	r.UpdateFEC(2, 500, 1, 1)
 	delta = r.DeltaInfo(snapshotID)
-	require.EqualValues(t, 2, delta.FecPacketsReceived)
-	require.EqualValues(t, 500, delta.FecBytesReceived)
+	require.EqualValues(t, 2, delta.FecPackets)
+	require.EqualValues(t, 500, delta.FecBytes)
 	require.EqualValues(t, 1, delta.FecPacketsDiscarded)
-	require.EqualValues(t, 1, delta.PacketsRecovered)
+	require.EqualValues(t, 1, delta.FecPacketsRecovered)
 
 	r.Stop()
 	r.UpdateFEC(1, 100, 1, 1)
 	stats = r.ToProto()
-	require.EqualValues(t, 5, stats.FecPacketsReceived)
-	require.EqualValues(t, 1400, stats.FecBytesReceived)
+	require.EqualValues(t, 5, stats.FecPackets)
+	require.EqualValues(t, 1400, stats.FecBytes)
 	require.EqualValues(t, 2, stats.FecPacketsDiscarded)
-	require.EqualValues(t, 3, stats.PacketsRecovered)
+	require.EqualValues(t, 3, stats.FecPacketsRecovered)
 }
 
 func Test_RTPStatsReceiver_Restart(t *testing.T) {
