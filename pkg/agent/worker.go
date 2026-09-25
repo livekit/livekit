@@ -29,7 +29,6 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
 )
@@ -333,12 +332,12 @@ func (w *Worker) GetJobState(jobID livekit.JobID) (*livekit.JobState, error) {
 	if !ok {
 		return nil, ErrJobNotFound
 	}
-	return utils.CloneProto(j.State), nil
+	return proto.CloneOf(j.State), nil
 }
 
 func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook AssignmentHook) (*livekit.JobState, error) {
 	availCh := make(chan *livekit.AvailabilityResponse, 1)
-	job = utils.CloneProto(job)
+	job = proto.CloneOf(job)
 	jobID := livekit.JobID(job.Id)
 
 	w.mu.Lock()
@@ -420,11 +419,11 @@ func (w *Worker) AssignJob(ctx context.Context, job *livekit.Job, hook Assignmen
 		if hook != nil {
 			send = hook(send)
 		}
-		state := utils.CloneProto(job.State)
+		state := proto.CloneOf(job.State)
 
 		// must be in runningJobs before the assignment is sent; stored as a copy because send reads job without w.mu.
 		w.mu.Lock()
-		w.runningJobs[jobID] = utils.CloneProto(job)
+		w.runningJobs[jobID] = proto.CloneOf(job)
 		w.mu.Unlock()
 
 		if err := send(&livekit.JobAssignment{Job: job, Token: token}); err != nil {

@@ -19,6 +19,8 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
@@ -76,14 +78,14 @@ func NewLocalNode(conf *config.Config) (*LocalNodeImpl, error) {
 }
 
 func NewLocalNodeFromNodeProto(node *livekit.Node) (*LocalNodeImpl, error) {
-	return &LocalNodeImpl{node: utils.CloneProto(node)}, nil
+	return &LocalNodeImpl{node: proto.CloneOf(node)}, nil
 }
 
 func (l *LocalNodeImpl) Clone() *livekit.Node {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 
-	return utils.CloneProto(l.node)
+	return proto.CloneOf(l.node)
 }
 
 // for testing only
@@ -134,7 +136,7 @@ func (l *LocalNodeImpl) SetStats(stats *livekit.NodeStats) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
-	l.node.Stats = utils.CloneProto(stats)
+	l.node.Stats = proto.CloneOf(stats)
 }
 
 func (l *LocalNodeImpl) UpdateNodeStats() bool {

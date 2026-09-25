@@ -667,7 +667,7 @@ func (p *ParticipantImpl) GetClientInfo() *livekit.ClientInfo {
 func (p *ParticipantImpl) GetClientConfiguration() *livekit.ClientConfiguration {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-	return utils.CloneProto(p.params.ClientConf)
+	return proto.CloneOf(p.params.ClientConf)
 }
 
 func (p *ParticipantImpl) GetBufferFactory() *buffer.Factory {
@@ -709,7 +709,7 @@ func (p *ParticipantImpl) UpdateMetadata(update *livekit.UpdateParticipantMetada
 	sendRequestResponse := func() error {
 		if !fromAdmin || (update.RequestId != 0 || err != nil) {
 			requestResponse.Request = &livekit.RequestResponse_UpdateMetadata{
-				UpdateMetadata: utils.CloneProto(update),
+				UpdateMetadata: proto.CloneOf(update),
 			}
 			p.sendRequestResponse(requestResponse)
 		}
@@ -985,7 +985,7 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 		}
 
 		if !found {
-			pi.Tracks = append(pi.Tracks, utils.CloneProto(pti.trackInfos[0]))
+			pi.Tracks = append(pi.Tracks, proto.CloneOf(pti.trackInfos[0]))
 		}
 	}
 
@@ -1195,7 +1195,7 @@ func (p *ParticipantImpl) HandleICETrickle(trickleRequest *livekit.TrickleReques
 			Reason:  livekit.RequestResponse_UNCLASSIFIED_ERROR,
 			Message: err.Error(),
 			Request: &livekit.RequestResponse_Trickle{
-				Trickle: utils.CloneProto(trickleRequest),
+				Trickle: proto.CloneOf(trickleRequest),
 			},
 		})
 		return
@@ -1361,7 +1361,7 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 		p.sendRequestResponse(&livekit.RequestResponse{
 			Reason: livekit.RequestResponse_NOT_ALLOWED,
 			Request: &livekit.RequestResponse_AddTrack{
-				AddTrack: utils.CloneProto(req),
+				AddTrack: proto.CloneOf(req),
 			},
 		})
 		return
@@ -1372,7 +1372,7 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 		p.sendRequestResponse(&livekit.RequestResponse{
 			Reason: livekit.RequestResponse_UNSUPPORTED_TYPE,
 			Request: &livekit.RequestResponse_AddTrack{
-				AddTrack: utils.CloneProto(req),
+				AddTrack: proto.CloneOf(req),
 			},
 		})
 		return
@@ -2948,7 +2948,7 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 			p.sendRequestResponse(&livekit.RequestResponse{
 				Reason: livekit.RequestResponse_NOT_FOUND,
 				Request: &livekit.RequestResponse_AddTrack{
-					AddTrack: utils.CloneProto(req),
+					AddTrack: proto.CloneOf(req),
 				},
 			})
 			p.pendingTracksLock.Unlock()
@@ -2967,7 +2967,7 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 			Reason:  livekit.RequestResponse_LIMIT_EXCEEDED,
 			Message: fmt.Sprintf("too many pending tracks, rejecting new track, numPendingTracks: %d", len(p.pendingTracks)),
 			Request: &livekit.RequestResponse_AddTrack{
-				AddTrack: utils.CloneProto(req),
+				AddTrack: proto.CloneOf(req),
 			},
 		})
 		p.pendingTracksLock.Unlock()
@@ -2989,7 +2989,7 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 
 		clonedLayers := make([]*livekit.VideoLayer, 0, len(layers))
 		for _, l := range layers {
-			clonedLayers = append(clonedLayers, utils.CloneProto(l))
+			clonedLayers = append(clonedLayers, proto.CloneOf(l))
 		}
 		slices.SortFunc(clonedLayers, func(i, j *livekit.VideoLayer) int {
 			return int(i.Quality) - int(j.Quality)
@@ -3157,7 +3157,7 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 					Reason:  livekit.RequestResponse_LIMIT_EXCEEDED,
 					Message: fmt.Sprintf("too many pending queued tracks, rejecting new track, numPendingTracksQueued: %d", len(p.pendingTracks[req.Cid].trackInfos)),
 					Request: &livekit.RequestResponse_AddTrack{
-						AddTrack: utils.CloneProto(req),
+						AddTrack: proto.CloneOf(req),
 					},
 				})
 				p.pendingTracksLock.Unlock()
@@ -3175,7 +3175,7 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		p.sendRequestResponse(&livekit.RequestResponse{
 			Reason: livekit.RequestResponse_QUEUED,
 			Request: &livekit.RequestResponse_AddTrack{
-				AddTrack: utils.CloneProto(req),
+				AddTrack: proto.CloneOf(req),
 			},
 		})
 
@@ -3185,7 +3185,7 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		}
 		p.pendingTracksLock.Unlock()
 
-		p.GetTelemetryListener().OnTrackPublishRequested(p.ID(), p.Identity(), utils.CloneProto(ti), true)
+		p.GetTelemetryListener().OnTrackPublishRequested(p.ID(), p.Identity(), proto.CloneOf(ti), true)
 		return nil
 	}
 
@@ -3210,7 +3210,7 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 	}
 	p.pendingTracksLock.Unlock()
 
-	p.GetTelemetryListener().OnTrackPublishRequested(p.ID(), p.Identity(), utils.CloneProto(ti), true)
+	p.GetTelemetryListener().OnTrackPublishRequested(p.ID(), p.Identity(), proto.CloneOf(ti), true)
 	return ti
 }
 
@@ -3262,7 +3262,7 @@ func (p *ParticipantImpl) setTrackMuted(mute *livekit.MuteTrackRequest, fromAdmi
 	for _, pti := range p.pendingTracks {
 		for i, ti := range pti.trackInfos {
 			if livekit.TrackID(ti.Sid) == trackID {
-				ti = utils.CloneProto(ti)
+				ti = proto.CloneOf(ti)
 				changed = changed || ti.Muted != mute.Muted
 				ti.Muted = mute.Muted
 				pti.trackInfos[i] = ti
@@ -3286,7 +3286,7 @@ func (p *ParticipantImpl) setTrackMuted(mute *livekit.MuteTrackRequest, fromAdmi
 		p.sendRequestResponse(&livekit.RequestResponse{
 			Reason: livekit.RequestResponse_NOT_FOUND,
 			Request: &livekit.RequestResponse_Mute{
-				Mute: utils.CloneProto(mute),
+				Mute: proto.CloneOf(mute),
 			},
 		})
 	}
@@ -3714,7 +3714,7 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 		return signalCid, nil, buffer.VideoLayersRid{}, false, time.Time{}
 	}
 
-	return signalCid, utils.CloneProto(pendingInfo.trackInfos[0]), pendingInfo.sdpRids, pendingInfo.migrated, pendingInfo.createdAt
+	return signalCid, proto.CloneOf(pendingInfo.trackInfos[0]), pendingInfo.sdpRids, pendingInfo.migrated, pendingInfo.createdAt
 }
 
 func (p *ParticipantImpl) getPendingTrackPrimaryBySdpCid(sdpCid string) *pendingTrackInfo {
@@ -4231,7 +4231,7 @@ func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack
 	p.sendRequestResponse(&livekit.RequestResponse{
 		Reason: livekit.RequestResponse_NOT_FOUND,
 		Request: &livekit.RequestResponse_UpdateAudioTrack{
-			UpdateAudioTrack: utils.CloneProto(update),
+			UpdateAudioTrack: proto.CloneOf(update),
 		},
 	})
 	return errors.New("could not find track")
@@ -4263,7 +4263,7 @@ func (p *ParticipantImpl) UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack
 	p.sendRequestResponse(&livekit.RequestResponse{
 		Reason: livekit.RequestResponse_NOT_FOUND,
 		Request: &livekit.RequestResponse_UpdateVideoTrack{
-			UpdateVideoTrack: utils.CloneProto(update),
+			UpdateVideoTrack: proto.CloneOf(update),
 		},
 	})
 	return errors.New("could not find track")

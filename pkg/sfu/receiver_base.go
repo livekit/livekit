@@ -25,6 +25,7 @@ import (
 
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/mediatransportutil/pkg/bucket"
 	"github.com/livekit/mediatransportutil/pkg/codec"
@@ -164,7 +165,7 @@ func NewReceiverBase(params ReceiverBaseParams, trackInfo *livekit.TrackInfo, co
 		params:         params,
 		codecState:     codecState,
 		isRED:          mime.IsMimeTypeStringRED(params.Codec.MimeType),
-		trackInfo:      utils.CloneProto(trackInfo),
+		trackInfo:      proto.CloneOf(trackInfo),
 		videoLayerMode: buffer.GetVideoLayerModeForMimeType(mime.NormalizeMimeType(params.Codec.MimeType), trackInfo),
 	}
 
@@ -256,7 +257,7 @@ func (r *ReceiverBase) TrackInfo() *livekit.TrackInfo {
 	r.bufferMu.RLock()
 	defer r.bufferMu.RUnlock()
 
-	return utils.CloneProto(r.trackInfo)
+	return proto.CloneOf(r.trackInfo)
 }
 
 func (r *ReceiverBase) UpdateTrackInfo(ti *livekit.TrackInfo) {
@@ -282,7 +283,7 @@ func (r *ReceiverBase) UpdateTrackInfo(ti *livekit.TrackInfo) {
 			"shouldResync", shouldResync,
 		)
 	}
-	r.trackInfo = utils.CloneProto(ti)
+	r.trackInfo = proto.CloneOf(ti)
 
 	paused := r.trackInfo.GetMuted()
 	for _, buff := range r.buffers {
@@ -665,7 +666,7 @@ func (r *ReceiverBase) GetOrCreateBuffer(layer int32) buffer.BufferProvider {
 	}
 	r.bufferPromises[layer] = bp
 
-	ti := utils.CloneProto(r.trackInfo)
+	ti := proto.CloneOf(r.trackInfo)
 	r.bufferMu.Unlock()
 
 	defer close(bp.ready)

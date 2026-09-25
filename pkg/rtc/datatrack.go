@@ -20,13 +20,13 @@ import (
 	"sync"
 
 	"github.com/frostbyte73/core"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	sfuutils "github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/protocol/datatrack"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 )
 
 var (
@@ -98,7 +98,7 @@ func (d *DataTrack) PublisherIdentity() livekit.ParticipantIdentity {
 }
 
 func (d *DataTrack) ToProto() *livekit.DataTrackInfo {
-	return utils.CloneProto(d.dti)
+	return proto.CloneOf(d.dti)
 }
 
 func (d *DataTrack) PubHandle() uint16 {

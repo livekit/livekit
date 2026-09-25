@@ -560,7 +560,7 @@ func TestPreferMediaCodecForPublisher(t *testing.T) {
 			for i := 0; i < 2; i++ {
 				// publish preferred track without client using setCodecPreferences()
 				trackCid := fmt.Sprintf("%s-%d", tc.trackBaseCid, i)
-				req := utils.CloneProto(tc.addTrack)
+				req := proto.CloneOf(tc.addTrack)
 				req.SimulcastCodecs = []*livekit.SimulcastCodec{
 					{
 						Codec: tc.preferredCodec,

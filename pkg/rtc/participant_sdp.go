@@ -22,13 +22,13 @@ import (
 
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	lksdp "github.com/livekit/protocol/sdp"
-	"github.com/livekit/protocol/utils"
 )
 
 func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([]*sdp.MediaDescription, []*sdp.MediaDescription) {
@@ -143,7 +143,7 @@ func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([
 			}
 
 			if updated {
-				p.pendingTracks[signalCid].trackInfos[0] = utils.CloneProto(info)
+				p.pendingTracks[signalCid].trackInfos[0] = proto.CloneOf(info)
 				p.pubLogger.Debugw(
 					"pending track SDP cid updated",
 					"signalCid", signalCid,

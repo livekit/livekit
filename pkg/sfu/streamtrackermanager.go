@@ -20,11 +20,11 @@ import (
 	"time"
 
 	"github.com/frostbyte73/core"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/streamtracker"
@@ -144,7 +144,7 @@ func NewStreamTrackerManager(
 		logger:               logger,
 		mimeType:             mimeType,
 		videoLayerMode:       buffer.GetVideoLayerModeForMimeType(mimeType, trackInfo),
-		trackInfo:            utils.CloneProto(trackInfo),
+		trackInfo:            proto.CloneOf(trackInfo),
 		maxPublishedLayer:    buffer.InvalidLayerSpatial,
 		maxTemporalLayerSeen: buffer.InvalidLayerTemporal,
 		clockRate:            clockRate,
@@ -374,7 +374,7 @@ func (s *StreamTrackerManager) setPaused(paused bool) {
 
 func (s *StreamTrackerManager) UpdateTrackInfo(ti *livekit.TrackInfo) {
 	s.lock.Lock()
-	s.trackInfo = utils.CloneProto(ti)
+	s.trackInfo = proto.CloneOf(ti)
 	s.maxExpectedLayerFromTrackInfoLocked(false)
 
 	paused := s.trackInfo.GetMuted()

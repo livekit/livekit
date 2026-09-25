@@ -675,7 +675,7 @@ func (t *TransportManager) GetICEConfig() *livekit.ICEConfig {
 	if t.iceConfig == nil {
 		return nil
 	}
-	return utils.CloneProto(t.iceConfig)
+	return proto.CloneOf(t.iceConfig)
 }
 
 func (t *TransportManager) resetTransportConfigureLocked(reconfigured bool) {
