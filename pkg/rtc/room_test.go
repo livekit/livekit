@@ -24,7 +24,6 @@ import (
 
 	"github.com/livekit/protocol/auth/authfakes"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 
 	"github.com/livekit/livekit-server/version"
@@ -291,7 +290,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		{
 			name:     "last version is enqueued",
 			pi:       subscriber1v2,
-			existing: &ParticipantUpdate{ParticipantInfo: utils.CloneProto(subscriber1v1)}, // clone the existing value since it can be modified when setting to disconnected
+			existing: &ParticipantUpdate{ParticipantInfo: proto.CloneOf(subscriber1v1)}, // clone the existing value since it can be modified when setting to disconnected
 			validate: func(t *testing.T, rm *Room, _ []*ParticipantUpdate) {
 				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
 				require.NotNil(t, queued)
@@ -301,7 +300,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		{
 			name:      "latest version when immediate",
 			pi:        subscriber1v2,
-			existing:  &ParticipantUpdate{ParticipantInfo: utils.CloneProto(subscriber1v1)},
+			existing:  &ParticipantUpdate{ParticipantInfo: proto.CloneOf(subscriber1v1)},
 			immediate: true,
 			expected:  []*ParticipantUpdate{{ParticipantInfo: subscriber1v2}},
 			validate: func(t *testing.T, rm *Room, _ []*ParticipantUpdate) {
@@ -312,7 +311,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		{
 			name:     "out of order updates are rejected",
 			pi:       subscriber1v1,
-			existing: &ParticipantUpdate{ParticipantInfo: utils.CloneProto(subscriber1v2)},
+			existing: &ParticipantUpdate{ParticipantInfo: proto.CloneOf(subscriber1v2)},
 			validate: func(t *testing.T, rm *Room, updates []*ParticipantUpdate) {
 				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
 				requirePIEquals(t, subscriber1v2, queued.ParticipantInfo)
@@ -322,7 +321,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 			name:        "sid change is broadcasted immediately with synthsized disconnect",
 			pi:          publisher2,
 			closeReason: types.ParticipantCloseReasonServiceRequestRemoveParticipant, // just to test if update contain the close reason
-			existing:    &ParticipantUpdate{ParticipantInfo: utils.CloneProto(subscriber1v2), CloseReason: types.ParticipantCloseReasonStale},
+			existing:    &ParticipantUpdate{ParticipantInfo: proto.CloneOf(subscriber1v2), CloseReason: types.ParticipantCloseReasonStale},
 			expected: []*ParticipantUpdate{
 				{
 					ParticipantInfo: &livekit.ParticipantInfo{
@@ -340,7 +339,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		{
 			name:     "when switching to publisher, queue is cleared",
 			pi:       publisher1v2,
-			existing: &ParticipantUpdate{ParticipantInfo: utils.CloneProto(subscriber1v1)},
+			existing: &ParticipantUpdate{ParticipantInfo: proto.CloneOf(subscriber1v1)},
 			expected: []*ParticipantUpdate{{ParticipantInfo: publisher1v2}},
 			validate: func(t *testing.T, rm *Room, updates []*ParticipantUpdate) {
 				require.Empty(t, rm.batchedUpdates)
@@ -651,7 +650,7 @@ func TestDataChannel(t *testing.T) {
 				}
 				setSource(mode, packet, p)
 
-				packetExp := utils.CloneProto(packet)
+				packetExp := proto.CloneOf(packet)
 				if mode != legacySID {
 					packetExp.ParticipantIdentity = string(p.Identity())
 					packetExp.GetUser().ParticipantIdentity = string(p.Identity())
@@ -699,7 +698,7 @@ func TestDataChannel(t *testing.T) {
 				setSource(mode, packet, p)
 				setDest(mode, packet, p1)
 
-				packetExp := utils.CloneProto(packet)
+				packetExp := proto.CloneOf(packet)
 				if mode != legacySID {
 					packetExp.ParticipantIdentity = string(p.Identity())
 					packetExp.GetUser().ParticipantIdentity = string(p.Identity())

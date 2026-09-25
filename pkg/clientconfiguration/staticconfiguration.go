@@ -20,7 +20,6 @@ import (
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	protoutils "github.com/livekit/protocol/utils"
 )
 
 type ConfigurationItem struct {
@@ -59,7 +58,7 @@ func (s *StaticClientConfigurationManager) GetConfiguration(clientInfo *livekit.
 	var conf *livekit.ClientConfiguration
 	for k, v := range matchedConf {
 		if k == 0 {
-			conf = protoutils.CloneProto(matchedConf[0])
+			conf = proto.CloneOf(matchedConf[0])
 		} else {
 			// TODO : there is a problem use protobuf merge, we don't have flag to indicate 'no value',
 			// don't override default behavior or other configuration's field. So a bool value = false or

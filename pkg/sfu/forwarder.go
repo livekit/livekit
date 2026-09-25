@@ -26,12 +26,12 @@ import (
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/zap/zapcore"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/mono"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -491,7 +491,7 @@ func (f *Forwarder) GetState() *livekit.RTPForwarderState {
 
 	state.SenderReportState = make([]*livekit.RTCPSenderReportState, len(f.refInfos))
 	for layer, refInfo := range f.refInfos {
-		state.SenderReportState[layer] = utils.CloneProto(refInfo.senderReport)
+		state.SenderReportState[layer] = proto.CloneOf(refInfo.senderReport)
 	}
 	return state
 }
@@ -506,7 +506,7 @@ func (f *Forwarder) SeedState(state *livekit.RTPForwarderState) {
 
 	for layer, rtcpSenderReportState := range state.SenderReportState {
 		f.refInfos[layer] = refInfo{}
-		if senderReport := utils.CloneProto(rtcpSenderReportState); senderReport != nil && senderReport.NtpTimestamp != 0 {
+		if senderReport := proto.CloneOf(rtcpSenderReportState); senderReport != nil && senderReport.NtpTimestamp != 0 {
 			f.refInfos[layer].senderReport = senderReport
 		}
 	}

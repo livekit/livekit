@@ -18,9 +18,10 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
@@ -87,5 +88,5 @@ func (n *NodeStats) GetLatestNodeStats() *livekit.NodeStats {
 	defer n.lock.RUnlock()
 
 	latestPtr := (n.statsHistoryWritePtr - 1 + len(n.statsHistory)) % len(n.statsHistory)
-	return utils.CloneProto(n.statsHistory[latestPtr])
+	return proto.CloneOf(n.statsHistory[latestPtr])
 }
