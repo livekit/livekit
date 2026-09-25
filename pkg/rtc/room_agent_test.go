@@ -286,6 +286,34 @@ func TestAgentRetryRoomAndDispatchDeletion(t *testing.T) {
 		require.Nil(t, r.agentParticpants[p.Identity()])
 		r.lock.RUnlock()
 	})
+	t.Run("dispatch with pending replacement", func(t *testing.T) {
+		r, old, job, calls := newAgentRetryTest(t)
+		done := job.done
+		r.RemoveParticipant(old.Identity(), old.ID(), types.ParticipantCloseReasonPeerConnectionDisconnected)
+		p := newRetryParticipant(r, job.Id)
+		require.NoError(t, r.Join(p, nil, &ParticipantOptions{}, nil))
+		_, err := r.DeleteAgentDispatch(job.DispatchId)
+		require.NoError(t, err)
+		requireJobTerminated(t, calls, rpc.JobTerminateReason_TERMINATION_REQUESTED)
+		// The replacement keeps the mapping so dispatch termination can wait for it to leave.
+		requireJobRunning(t, r, job, done)
+		r.lock.RLock()
+		require.Nil(t, job.connectRetry)
+		r.lock.RUnlock()
+
+		// With the dispatch gone, a pre-ACTIVE failure must terminate instead of re-arming a retry.
+		r.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonPeerConnectionDisconnected)
+		requireJobTerminated(t, calls, rpc.JobTerminateReason_AGENT_LEFT_ROOM)
+		select {
+		case <-done:
+		default:
+			t.Fatal("deleted job notification still open")
+		}
+		r.lock.RLock()
+		require.Nil(t, job.connectRetry)
+		require.Nil(t, r.agentParticpants[p.Identity()])
+		r.lock.RUnlock()
+	})
 }
 
 func TestOldAgentDepartureDoesNotTerminateNewAssignment(t *testing.T) {

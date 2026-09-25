@@ -927,6 +927,9 @@ func (r *Room) DeleteAgentDispatch(dispatchID string) (*livekit.AgentDispatch, e
 	}
 
 	delete(r.agentDispatches, dispatchID)
+	// Retries end with their dispatch. A pending replacement keeps its mapping,
+	// like an ACTIVE agent, until the termination below removes it. Any earlier
+	// departure terminates the job because retries require a live dispatch.
 	for identity, job := range r.agentParticpants {
 		if job.DispatchId == dispatchID && job.connectRetry != nil {
 			job.stopConnectRetry()
