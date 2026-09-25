@@ -644,6 +644,13 @@ func (t *MediaTrack) SetMuted(muted bool) {
 	t.MediaTrackReceiver.SetMuted(muted)
 }
 
+// ResendSubscribedQuality sends the publisher the subscribed qualities of the track again.
+func (t *MediaTrack) ResendSubscribedQuality() {
+	if t.dynacastManager != nil {
+		t.dynacastManager.ResendCommittedQuality()
+	}
+}
+
 // OnTrackSubscribed is called when the track is subscribed by a non-hidden subscriber
 // this allows the publisher to know when they should start sending data
 func (t *MediaTrack) OnTrackSubscribed() {
