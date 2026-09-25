@@ -243,15 +243,20 @@ func (p *ParticipantImpl) flushQueuedUpdates() {
 }
 
 func (p *ParticipantImpl) sendDisconnectUpdatesForReconnect() error {
-	lastSignalAt := p.TransportManager.LastSeenSignalAt()
+	// look back a little more than last signal receive time as WebSocket close
+	// on client side might have flushed messages and client application may have
+	// lost connectivity earlier.
+	lastSignalAt := p.TransportManager.LastSeenSignalAt().Add(-3 * time.Second)
 	var disconnectedParticipants []*livekit.ParticipantInfo
 	p.updateLock.Lock()
 	keys := p.updateCache.Keys()
 	for i := len(keys) - 1; i >= 0; i-- {
 		if info, ok := p.updateCache.Get(keys[i]); ok {
 			if info.updatedAt.Before(lastSignalAt) {
-				break
-			} else if info.state == livekit.ParticipantInfo_DISCONNECTED {
+				continue
+			}
+
+			if info.state == livekit.ParticipantInfo_DISCONNECTED {
 				disconnectedParticipants = append(disconnectedParticipants, &livekit.ParticipantInfo{
 					Sid:      string(keys[i]),
 					Identity: string(info.identity),
