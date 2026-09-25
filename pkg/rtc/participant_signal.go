@@ -175,7 +175,11 @@ func (p *ParticipantImpl) SendRoomMovedResponse(roomMovedResponse *livekit.RoomM
 	return p.signaller.WriteMessage(p.signalling.SignalRoomMovedResponse(roomMovedResponse))
 }
 
-func (p *ParticipantImpl) HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse) error {
+func (p *ParticipantImpl) HandleReconnectAndSendResponse(
+	reconnectReason livekit.ReconnectReason,
+	reconnectResponse *livekit.ReconnectResponse,
+	recentlyDisconnectedParticipants []*livekit.ParticipantInfo, // when migrating in, these are the participants disconnected received from migrate out node
+) error {
 	p.TransportManager.HandleClientReconnect(reconnectReason)
 
 	if !p.params.ClientInfo.CanHandleReconnectResponse() {
@@ -198,6 +202,11 @@ func (p *ParticipantImpl) HandleReconnectAndSendResponse(reconnectReason livekit
 	}
 
 	if p.params.ProtocolVersion.SupportsDisconnectedUpdate() {
+		if len(recentlyDisconnectedParticipants) != 0 {
+			if err := p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(recentlyDisconnectedParticipants)); err != nil {
+				return err
+			}
+		}
 		return p.sendDisconnectUpdatesForReconnect()
 	}
 
@@ -243,11 +252,19 @@ func (p *ParticipantImpl) flushQueuedUpdates() {
 }
 
 func (p *ParticipantImpl) sendDisconnectUpdatesForReconnect() error {
+	recentlyDisconnectedParticipants := p.GetRecentlyDisconnectedParticipants()
+	if len(recentlyDisconnectedParticipants) != 0 {
+		return p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(recentlyDisconnectedParticipants))
+	}
+	return nil
+}
+
+func (p *ParticipantImpl) GetRecentlyDisconnectedParticipants() []*livekit.ParticipantInfo {
 	// look back a little more than last signal receive time as WebSocket close
 	// on client side might have flushed messages and client application may have
 	// lost connectivity earlier.
 	lastSignalAt := p.TransportManager.LastSeenSignalAt().Add(-3 * time.Second)
-	var disconnectedParticipants []*livekit.ParticipantInfo
+	var recentlyDisconnectedParticipants []*livekit.ParticipantInfo
 	p.updateLock.Lock()
 	keys := p.updateCache.Keys()
 	for i := len(keys) - 1; i >= 0; i-- {
@@ -257,7 +274,7 @@ func (p *ParticipantImpl) sendDisconnectUpdatesForReconnect() error {
 			}
 
 			if info.state == livekit.ParticipantInfo_DISCONNECTED {
-				disconnectedParticipants = append(disconnectedParticipants, &livekit.ParticipantInfo{
+				recentlyDisconnectedParticipants = append(recentlyDisconnectedParticipants, &livekit.ParticipantInfo{
 					Sid:      string(keys[i]),
 					Identity: string(info.identity),
 					Version:  info.version,
@@ -268,7 +285,7 @@ func (p *ParticipantImpl) sendDisconnectUpdatesForReconnect() error {
 	}
 	p.updateLock.Unlock()
 
-	return p.signaller.WriteMessage(p.signalling.SignalParticipantUpdate(disconnectedParticipants))
+	return recentlyDisconnectedParticipants
 }
 
 func (p *ParticipantImpl) sendICECandidate(ic *webrtc.ICECandidate, target livekit.SignalTarget) error {

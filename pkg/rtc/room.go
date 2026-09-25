@@ -586,7 +586,7 @@ func (r *Room) ResumeParticipant(
 		ClientConfiguration: p.GetClientConfiguration(),
 		ServerInfo:          r.serverInfo,
 		LastMessageSeq:      p.GetLastReliableSequence(false),
-	}); err != nil {
+	}, nil); err != nil {
 		return err
 	}
 
