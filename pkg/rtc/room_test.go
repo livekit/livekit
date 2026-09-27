@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/auth/authfakes"
@@ -400,6 +401,60 @@ func TestRoomClosure(t *testing.T) {
 		require.Equal(t, types.RoomCloseReasonIdleTimeout, closeReason)
 
 		require.Equal(t, ErrRoomClosed, rm.Join(p, nil, nil, iceServersForRoom))
+	})
+
+	// the idle check runs every second and can land while the last participant
+	// is still closing, when the room is empty but its departure has not been
+	// recorded yet
+	closeDuringRemove := func(t *testing.T, priorDeparture bool) bool {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
+		var isClosed atomic.Bool
+		rm.OnClose(func(types.RoomCloseReason) {
+			isClosed.Store(true)
+		})
+
+		rm.lock.Lock()
+		rm.protoRoom.DepartureTimeout = 20
+		if priorDeparture {
+			// someone left earlier in the session, so a departure is recorded
+			rm.protoRoom.CreationTime = time.Now().Unix()
+			rm.leftAt.Store(time.Now().Add(-time.Minute).Unix())
+		} else {
+			// older than the empty timeout, as a room in a call for a while is
+			rm.protoRoom.CreationTime = time.Now().Add(-10 * time.Minute).Unix()
+		}
+		rm.lock.Unlock()
+
+		p := rm.GetParticipants()[0].(*typesfakes.FakeLocalParticipant)
+		closing := make(chan struct{})
+		release := make(chan struct{})
+		p.CloseStub = func(bool, types.ParticipantCloseReason, bool) error {
+			close(closing)
+			<-release
+			return nil
+		}
+
+		removed := make(chan struct{})
+		go func() {
+			defer close(removed)
+			rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonClientRequestLeave)
+		}()
+
+		<-closing
+		require.Empty(t, rm.GetParticipants())
+		rm.CloseIfEmpty()
+		close(release)
+		<-removed
+
+		return isClosed.Load()
+	}
+
+	t.Run("room does not close while the last participant is closing", func(t *testing.T) {
+		require.False(t, closeDuringRemove(t, false))
+	})
+
+	t.Run("room does not close while the last participant is closing, after an earlier departure", func(t *testing.T) {
+		require.False(t, closeDuringRemove(t, true))
 	})
 
 	t.Run("room does not close before empty timeout", func(t *testing.T) {
