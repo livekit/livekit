@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"go.uber.org/zap/zapcore"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/livekit/mediatransportutil"
@@ -298,8 +299,8 @@ func (r *rtpStatsBase) seed(from *rtpStatsBase) bool {
 	r.rtt = from.rtt
 	r.maxRtt = from.maxRtt
 
-	r.srFirst = utils.CloneProto(from.srFirst)
-	r.srNewest = utils.CloneProto(from.srNewest)
+	r.srFirst = proto.CloneOf(from.srFirst)
+	r.srNewest = proto.CloneOf(from.srNewest)
 
 	r.nextSnapshotID = from.nextSnapshotID
 	r.snapshots = make([]snapshot, cap(from.snapshots))

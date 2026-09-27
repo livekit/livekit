@@ -21,7 +21,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/mediatransportutil v0.0.0-20260821083140-f234b534b095
-	github.com/livekit/protocol v1.52.1-0.20260920231100-26af364d0319
+	github.com/livekit/protocol v1.52.2-0.20260925171938-8c8c356c106d
 	github.com/livekit/psrpc v0.8.0
 	github.com/mackerelio/go-osstat v0.2.8
 	github.com/magefile/mage v1.17.2
@@ -161,7 +161,7 @@ tool (
 	golang.org/x/tools/cmd/goimports
 )
 
-replace github.com/pion/webrtc/v4 => github.com/livekit/webrtc-pion/v4 v4.2.18-warp.1
+replace github.com/pion/webrtc/v4 => github.com/livekit/webrtc-pion/v4 v4.2.18-warp.2
 
 replace github.com/pion/dtls/v3 => github.com/livekit/dtls/v3 v3.1.5-warp.1
 

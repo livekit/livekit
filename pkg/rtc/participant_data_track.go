@@ -15,6 +15,8 @@
 package rtc
 
 import (
+	"google.golang.org/protobuf/proto"
+
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/datatrack"
 	"github.com/livekit/protocol/livekit"
@@ -30,7 +32,7 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 			Reason:  livekit.RequestResponse_NOT_ALLOWED,
 			Message: "does not have permission to publish data",
 			Request: &livekit.RequestResponse_PublishDataTrack{
-				PublishDataTrack: utils.CloneProto(req),
+				PublishDataTrack: proto.CloneOf(req),
 			},
 		})
 		return
@@ -42,7 +44,7 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 			Reason:  livekit.RequestResponse_INVALID_HANDLE,
 			Message: "handle should be > 0 AND < 65536",
 			Request: &livekit.RequestResponse_PublishDataTrack{
-				PublishDataTrack: utils.CloneProto(req),
+				PublishDataTrack: proto.CloneOf(req),
 			},
 		})
 		return
@@ -54,7 +56,7 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 			Reason:  livekit.RequestResponse_INVALID_NAME,
 			Message: "name should not be empty and should not exceed 256 characters",
 			Request: &livekit.RequestResponse_PublishDataTrack{
-				PublishDataTrack: utils.CloneProto(req),
+				PublishDataTrack: proto.CloneOf(req),
 			},
 		})
 		return
@@ -67,7 +69,7 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 			Reason:  livekit.RequestResponse_INVALID_REQUEST,
 			Message: "encoding identifier is empty or exceeds the maximum length",
 			Request: &livekit.RequestResponse_PublishDataTrack{
-				PublishDataTrack: utils.CloneProto(req),
+				PublishDataTrack: proto.CloneOf(req),
 			},
 		})
 		return
@@ -95,7 +97,7 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 				Reason:  reason,
 				Message: message,
 				Request: &livekit.RequestResponse_PublishDataTrack{
-					PublishDataTrack: utils.CloneProto(req),
+					PublishDataTrack: proto.CloneOf(req),
 				},
 			})
 			return
@@ -108,8 +110,8 @@ func (p *ParticipantImpl) HandlePublishDataTrackRequest(req *livekit.PublishData
 		Name:       req.Name,
 		Encryption: req.Encryption,
 	}
-	dti.FrameEncoding = utils.CloneProto(req.GetFrameEncoding())
-	dti.Schema = utils.CloneProto(req.GetSchema())
+	dti.FrameEncoding = proto.CloneOf(req.GetFrameEncoding())
+	dti.Schema = proto.CloneOf(req.GetSchema())
 	dt := NewDataTrack(
 		DataTrackParams{
 			Logger:              p.params.Logger.WithValues("trackID", dti.Sid),
@@ -143,7 +145,7 @@ func (p *ParticipantImpl) HandleUnpublishDataTrackRequest(req *livekit.Unpublish
 		p.sendRequestResponse(&livekit.RequestResponse{
 			Reason: livekit.RequestResponse_NOT_FOUND,
 			Request: &livekit.RequestResponse_UnpublishDataTrack{
-				UnpublishDataTrack: utils.CloneProto(req),
+				UnpublishDataTrack: proto.CloneOf(req),
 			},
 		})
 		return

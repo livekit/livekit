@@ -19,6 +19,8 @@ import (
 	"errors"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
@@ -211,7 +213,7 @@ func (r *StandardRoomAllocator) applyNamedRoomConfiguration(req *livekit.CreateR
 		return req, psrpc.NewErrorf(psrpc.InvalidArgument, "unknown room configuration in create room request")
 	}
 
-	clone := utils.CloneProto(req)
+	clone := proto.CloneOf(req)
 
 	if clone.EmptyTimeout == 0 {
 		clone.EmptyTimeout = conf.EmptyTimeout
@@ -223,12 +225,12 @@ func (r *StandardRoomAllocator) applyNamedRoomConfiguration(req *livekit.CreateR
 		clone.MaxParticipants = conf.MaxParticipants
 	}
 	if clone.Egress == nil {
-		clone.Egress = utils.CloneProto(conf.Egress)
+		clone.Egress = proto.CloneOf(conf.Egress)
 	}
 	if clone.Agents == nil {
 		clone.Agents = make([]*livekit.RoomAgentDispatch, 0, len(conf.Agents))
 		for _, agent := range conf.Agents {
-			clone.Agents = append(clone.Agents, utils.CloneProto(agent))
+			clone.Agents = append(clone.Agents, proto.CloneOf(agent))
 		}
 	}
 	if clone.MinPlayoutDelay == 0 {
