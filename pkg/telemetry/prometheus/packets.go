@@ -51,7 +51,6 @@ var (
 	participantRTCCanceled     atomic.Uint64
 	participantRTCActive       atomic.Uint64
 	forwardLatency             atomic.Uint32
-	forwardJitter              atomic.Uint32
 
 	promPacketLabels          = []string{"direction", "transmission", "country"}
 	promPacketTotal           *prometheus.CounterVec
@@ -70,7 +69,6 @@ var (
 	promParticipantJoin       *prometheus.CounterVec
 	promConnections           *prometheus.GaugeVec
 	promForwardLatency        prometheus.Gauge
-	promForwardJitter         prometheus.Gauge
 	promForwardLatencyHist    prometheus.Histogram
 )
 
@@ -164,12 +162,6 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "latency",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	})
-	promForwardJitter = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace:   livekitNamespace,
-		Subsystem:   "forward",
-		Name:        "jitter",
-		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
-	})
 	promForwardLatencyHist = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "forward_latency",
@@ -204,7 +196,6 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promParticipantJoin)
 	prometheus.MustRegister(promConnections)
 	prometheus.MustRegister(promForwardLatency)
-	prometheus.MustRegister(promForwardJitter)
 	prometheus.MustRegister(promForwardLatencyHist)
 }
 
@@ -380,12 +371,7 @@ func RecordForwardLatencySample(forwardLatency int64) {
 	promForwardLatencyHist.Observe(float64(forwardLatency))
 }
 
-func RecordForwardLatency(longTermLatencyAvg uint32) {
-	forwardLatency.Store(longTermLatencyAvg)
-	promForwardLatency.Set(float64(longTermLatencyAvg))
-}
-
-func RecordForwardJitter(longTermJitterAvg uint32) {
-	forwardJitter.Store(longTermJitterAvg)
-	promForwardJitter.Set(float64(longTermJitterAvg))
+func RecordForwardLatency(p90 uint32) {
+	forwardLatency.Store(p90)
+	promForwardLatency.Set(float64(p90))
 }
