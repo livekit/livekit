@@ -60,8 +60,8 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 	handleICEExchange(t, transportA, transportB, handlerA, handlerB)
 
 	connectTransports(t, transportA, transportB, handlerA, handlerB, false, 1, 1)
-	require.Equal(t, webrtc.ICEConnectionStateConnected, transportA.pc.ICEConnectionState())
-	require.Equal(t, webrtc.ICEConnectionStateConnected, transportB.pc.ICEConnectionState())
+	require.True(t, iceConnected(transportA.pc))
+	require.True(t, iceConnected(transportB.pc))
 
 	var negotiationState atomic.Value
 	transportA.OnNegotiationStateChanged(func(state transport.NegotiationState) {
@@ -82,8 +82,8 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 	}, 10*time.Second, time.Millisecond*10, "transportA offer not received")
 
 	connectTransports(t, transportA, transportB, handlerA, handlerB, true, 1, 1)
-	require.Equal(t, webrtc.ICEConnectionStateConnected, transportA.pc.ICEConnectionState())
-	require.Equal(t, webrtc.ICEConnectionStateConnected, transportB.pc.ICEConnectionState())
+	require.True(t, iceConnected(transportA.pc))
+	require.True(t, iceConnected(transportB.pc))
 
 	transportA.Close()
 	transportB.Close()
