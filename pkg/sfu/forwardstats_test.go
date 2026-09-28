@@ -64,8 +64,9 @@ func TestForwardSummary_Percentile(t *testing.T) {
 	// empty -> zero
 	require.Zero(t, forwardSummary{}.percentile(0.5))
 
-	// half the samples fast (1us), half a slow tail (100us). The median tracks
-	// the fast bulk and ignores the tail -- the reason p50 replaces the mean.
+	// half the samples fast (1us), half a slow tail (100us). A percentile is not
+	// dragged toward the tail the way the mean is -- why the reported metric is
+	// p90, not the mean.
 	var s forwardSummary
 	for i := 0; i < 5; i++ {
 		s = s.addSample(1000) // 1us -> bucket [1,2)us
