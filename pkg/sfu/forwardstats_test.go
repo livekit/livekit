@@ -40,9 +40,9 @@ func TestForwardSummary_AddSample(t *testing.T) {
 	// empty summary
 	require.Equal(t, int64(0), s.count)
 
-	s = s.addSample(3000) // 3us
-	s = s.addSample(1000) // 1us
-	s = s.addSample(2000) // 2us
+	s.addSample(3000) // 3us
+	s.addSample(1000) // 1us
+	s.addSample(2000) // 2us
 
 	require.Equal(t, int64(3), s.count)
 	require.Equal(t, int64(1000), s.minNs)
@@ -52,8 +52,11 @@ func TestForwardSummary_AddSample(t *testing.T) {
 
 func TestForwardSummary_Merge(t *testing.T) {
 	var empty forwardSummary
-	a := forwardSummary{}.addSample(1000).addSample(2000)
-	b := forwardSummary{}.addSample(5000).addSample(3000)
+	var a, b forwardSummary
+	a.addSample(1000)
+	a.addSample(2000)
+	b.addSample(5000)
+	b.addSample(3000)
 
 	// merging with empty is identity, in both directions
 	require.Equal(t, a, a.merge(empty))
@@ -77,10 +80,10 @@ func TestForwardSummary_Percentile(t *testing.T) {
 	// p90, not the mean.
 	var s forwardSummary
 	for i := 0; i < 5; i++ {
-		s = s.addSample(1000) // 1us -> bucket [1,2)us
+		s.addSample(1000) // 1us -> bucket [1,2)us
 	}
 	for i := 0; i < 5; i++ {
-		s = s.addSample(100_000) // 100us -> bucket [64,128)us
+		s.addSample(100_000) // 100us -> bucket [64,128)us
 	}
 	require.Equal(t, int64(10), s.count)
 
@@ -91,12 +94,14 @@ func TestForwardSummary_Percentile(t *testing.T) {
 
 	// a single sample reports exactly its latency, not its bucket's upper reach
 	// (20ms falls in [16.4ms, 32.8ms); interpolation alone would report ~31ms).
-	require.Equal(t, 20*time.Millisecond, forwardSummary{}.addSample(int64(20*time.Millisecond)).percentile(0.9))
+	var single forwardSummary
+	single.addSample(int64(20 * time.Millisecond))
+	require.Equal(t, 20*time.Millisecond, single.percentile(0.9))
 
 	// identical samples share a bucket but must not invent intra-bucket spread.
 	var u forwardSummary
 	for i := 0; i < 8; i++ {
-		u = u.addSample(int64(2 * time.Millisecond))
+		u.addSample(int64(2 * time.Millisecond))
 	}
 	require.Equal(t, 2*time.Millisecond, u.percentile(0.5))
 	require.Equal(t, 2*time.Millisecond, u.percentile(0.99))
@@ -110,10 +115,10 @@ func TestForwardSummary_ThresholdResolution(t *testing.T) {
 	build := func(tailUs int64) forwardSummary {
 		var s forwardSummary
 		for i := 0; i < 850; i++ {
-			s = s.addSample(50 * int64(time.Microsecond))
+			s.addSample(50 * int64(time.Microsecond))
 		}
 		for i := 0; i < 150; i++ {
-			s = s.addSample(tailUs * int64(time.Microsecond))
+			s.addSample(tailUs * int64(time.Microsecond))
 		}
 		return s
 	}

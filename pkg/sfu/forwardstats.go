@@ -163,7 +163,7 @@ func forwardBucket(transitNs int64) int {
 	return forwardHistBuckets - 1
 }
 
-func (s forwardSummary) addSample(transitNs int64) forwardSummary {
+func (s *forwardSummary) addSample(transitNs int64) {
 	if s.count == 0 {
 		s.minNs, s.maxNs = transitNs, transitNs
 	} else {
@@ -172,7 +172,6 @@ func (s forwardSummary) addSample(transitNs int64) forwardSummary {
 	}
 	s.count++
 	s.buckets[forwardBucket(transitNs)].add(transitNs)
-	return s
 }
 
 func (s forwardSummary) merge(o forwardSummary) forwardSummary {
@@ -290,7 +289,7 @@ func (s *ForwardStats) flush() {
 	var summ forwardSummary
 	s.samples.drain(func(transitNs int64) {
 		prometheus.RecordForwardLatencySample(transitNs)
-		summ = summ.addSample(transitNs)
+		summ.addSample(transitNs)
 	})
 
 	s.lock.Lock()
