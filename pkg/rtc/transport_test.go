@@ -270,8 +270,8 @@ func TestFirstOfferMissedDuringICERestart(t *testing.T) {
 
 	// ensure we are connected
 	require.Eventually(t, func() bool {
-		return transportA.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
-			transportB.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
+		return iceConnected(transportA.pc) &&
+			iceConnected(transportB.pc) &&
 			offerCount.Load() == 2
 	}, testutils.ConnectTimeout, 10*time.Millisecond, "transport did not connect")
 
@@ -347,8 +347,8 @@ func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 
 	// ensure we are connected
 	require.Eventually(t, func() bool {
-		return transportA.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
-			transportB.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
+		return iceConnected(transportA.pc) &&
+			iceConnected(transportB.pc) &&
 			offerCount.Load() == 2
 	}, testutils.ConnectTimeout, 10*time.Millisecond, "transport did not connect")
 
@@ -518,6 +518,15 @@ func TestFilteringCandidates(t *testing.T) {
 	transport.Close()
 }
 
+// iceConnected reports whether a peer connection's ICE has established. The
+// controlling agent (the offerer) advances Connected -> Completed once its
+// connectivity checks finish, so asserting exactly Connected races the poll
+// against that transition; both states mean the transport is up.
+func iceConnected(pc *webrtc.PeerConnection) bool {
+	s := pc.ICEConnectionState()
+	return s == webrtc.ICEConnectionStateConnected || s == webrtc.ICEConnectionStateCompleted
+}
+
 func handleICEExchange(t *testing.T, a, b *PCTransport, ah, bh *transportfakes.FakeHandler) {
 	ah.OnICECandidateCalls(func(candidate *webrtc.ICECandidate, target livekit.SignalTarget) error {
 		if candidate == nil {
@@ -563,7 +572,7 @@ func connectTransports(t *testing.T, offerer, answerer *PCTransport, offererHand
 	}, 10*time.Second, time.Millisecond*10, fmt.Sprintf("offer count mismatch, expected: %d, actual: %d", expectedOfferCount, offerCount.Load()))
 
 	require.Eventually(t, func() bool {
-		return offerer.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected
+		return iceConnected(offerer.pc)
 	}, 10*time.Second, time.Millisecond*10, "offerer did not become connected")
 
 	require.Eventually(t, func() bool {
@@ -571,7 +580,7 @@ func connectTransports(t *testing.T, offerer, answerer *PCTransport, offererHand
 	}, 10*time.Second, time.Millisecond*10, fmt.Sprintf("answer count mismatch, expected: %d, actual: %d", expectedAnswerCount, answerCount.Load()))
 
 	require.Eventually(t, func() bool {
-		return answerer.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected
+		return iceConnected(answerer.pc)
 	}, 10*time.Second, time.Millisecond*10, "answerer did not become connected")
 
 	transportsConnected := untilTransportsConnected(offererHandler, answererHandler)
