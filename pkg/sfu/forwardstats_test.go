@@ -122,9 +122,11 @@ func TestForwardSummary_ThresholdResolution(t *testing.T) {
 	require.Greater(t, build(310).percentile(0.9), 300*time.Microsecond) // just above -> trips
 	require.Greater(t, build(500).percentile(0.9), 300*time.Microsecond) // well above -> trips
 
-	// a tight tail is reported exactly, regardless of where it sits in the bucket
+	// a tight tail is reported exactly, regardless of where it sits in the bucket:
+	// octave-nominal interpolation reported ~341us for all of these.
 	require.Equal(t, 265*time.Microsecond, build(265).percentile(0.9))
 	require.Equal(t, 310*time.Microsecond, build(310).percentile(0.9))
+	require.Equal(t, 500*time.Microsecond, build(500).percentile(0.9))
 }
 
 // ---------------------------------------------------------------------------
