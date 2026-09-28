@@ -19,7 +19,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
@@ -46,9 +45,6 @@ type TelemetryService interface {
 	ParticipantResumed(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, nodeID livekit.NodeID, reason livekit.ReconnectReason)
 	// ParticipantLeft - the participant leaves the room, only sent if ParticipantActive has been called before
 	ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, shouldSendEvent bool, guard *ReferenceGuard)
-	// RoomIDChanged - the room kept its session, but got a different id (a provisional room id
-	// replaced by the resolved one), re-keys the stats workers of every participant in the room
-	RoomIDChanged(ctx context.Context, prevRoomID livekit.RoomID, room *livekit.Room)
 	// TrackPublishRequested - a publication attempt has been received
 	TrackPublishRequested(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool)
 	// TrackPublished - a publication attempt has been successful
@@ -119,8 +115,6 @@ func (n NullTelemetryService) ParticipantResumed(ctx context.Context, room *live
 }
 func (n NullTelemetryService) ParticipantLeft(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, shouldSendEvent bool, guard *ReferenceGuard) {
 }
-func (n NullTelemetryService) RoomIDChanged(ctx context.Context, prevRoomID livekit.RoomID, room *livekit.Room) {
-}
 func (n NullTelemetryService) TrackPublishRequested(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool) {
 }
 func (n NullTelemetryService) TrackPublished(ctx context.Context, room *livekit.Room, participantID livekit.ParticipantID, identity livekit.ParticipantIdentity, track *livekit.TrackInfo, shouldSendEvent bool) {
@@ -172,6 +166,11 @@ const (
 	telemetryStatsUpdateInterval = time.Second * 30
 )
 
+type statsWorkerKey struct {
+	roomID        livekit.RoomID
+	participantID livekit.ParticipantID
+}
+
 type telemetryService struct {
 	AnalyticsService
 
@@ -179,7 +178,7 @@ type telemetryService struct {
 	jobsQueue *utils.OpsQueue
 
 	workersMu  sync.RWMutex
-	workers    map[livekit.RoomID]map[livekit.ParticipantID]*StatsWorker
+	workers    map[statsWorkerKey]*StatsWorker
 	workerList *StatsWorker
 
 	flushMu sync.Mutex
@@ -195,7 +194,7 @@ func NewTelemetryService(notifier webhook.QueuedNotifier, analytics AnalyticsSer
 			FlushOnStop: true,
 			Logger:      logger.GetLogger(),
 		}),
-		workers: make(map[livekit.RoomID]map[livekit.ParticipantID]*StatsWorker),
+		workers: make(map[statsWorkerKey]*StatsWorker),
 	}
 
 	t.jobsQueue.Start()
@@ -244,12 +243,9 @@ func (t *telemetryService) FlushStats() {
 	if reap != nil {
 		t.workersMu.Lock()
 		for reap != nil {
-			roomID := reap.RoomID()
-			if roomWorkers := t.workers[roomID]; reap == roomWorkers[reap.participantID] {
-				delete(roomWorkers, reap.participantID)
-				if len(roomWorkers) == 0 {
-					delete(t.workers, roomID)
-				}
+			key := statsWorkerKey{reap.roomID, reap.participantID}
+			if reap == t.workers[key] {
+				delete(t.workers, key)
 			}
 			reap = reap.next
 		}
@@ -271,7 +267,7 @@ func (t *telemetryService) getWorker(roomID livekit.RoomID, participantID liveki
 	t.workersMu.RLock()
 	defer t.workersMu.RUnlock()
 
-	worker, ok = t.workers[roomID][participantID]
+	worker, ok = t.workers[statsWorkerKey{roomID, participantID}]
 	return
 }
 
@@ -296,8 +292,8 @@ func (t *telemetryService) getOrCreateWorker(
 		)
 	}
 
-	roomWorkers := t.workers[roomID]
-	worker, ok := roomWorkers[participantID]
+	key := statsWorkerKey{roomID, participantID}
+	worker, ok := t.workers[key]
 	if ok && !worker.Closed(guard) {
 		return worker, true
 	}
@@ -343,90 +339,12 @@ func (t *telemetryService) getOrCreateWorker(
 		worker.SetConnected()
 	}
 
-	if roomWorkers == nil {
-		roomWorkers = make(map[livekit.ParticipantID]*StatsWorker)
-		t.workers[roomID] = roomWorkers
-	}
-	roomWorkers[participantID] = worker
+	t.workers[key] = worker
 
 	worker.next = t.workerList
 	t.workerList = worker
 
 	return worker, false
-}
-
-// reKeyRoom files every one of a room's stats workers under `roomID` instead of
-// `prevRoomID`.
-//
-// A room can be restarted while participants are connected and reporting stats, which
-// gives it a new id. As every worker of the room moves at once, the move is a single map
-// splice - the workers themselves are untouched and keep their place in the flush list.
-// Each worker then seals off what it collected under `prevRoomID` so those stats stay
-// attributed to the session that ended (see StatsWorker.SetRoom).
-func (t *telemetryService) reKeyRoom(prevRoomID livekit.RoomID, roomID livekit.RoomID, roomName livekit.RoomName) {
-	if prevRoomID == roomID {
-		return
-	}
-
-	t.workersMu.Lock()
-	defer t.workersMu.Unlock()
-
-	roomWorkers := t.workers[prevRoomID]
-	if len(roomWorkers) == 0 {
-		delete(t.workers, prevRoomID)
-		return
-	}
-	delete(t.workers, prevRoomID)
-
-	existing := t.workers[roomID]
-	if existing == nil {
-		t.workers[roomID] = roomWorkers
-	} else {
-		// should not happen as a room id is only ever replaced by a freshly minted one
-		logger.Warnw(
-			"telemetry re-keying room into an existing entry", nil,
-			"prevRoomID", prevRoomID,
-			"room", roomName,
-			"roomID", roomID,
-			"numWorkers", len(roomWorkers),
-			"numExistingWorkers", len(existing),
-		)
-	}
-
-	for participantID, worker := range roomWorkers {
-		if existing != nil {
-			if survivor, ok := existing[participantID]; ok {
-				// only one worker can be keyed at (room, participant) and the one already
-				// filed there wins, close the superseded one so that it drains and is
-				// reaped instead of lingering in the flush list unreachable
-				forceClosed := worker.ForceClose(survivor)
-				logger.Infow(
-					"telemetry force closing superseded stats worker",
-					"prevRoomID", prevRoomID,
-					"roomID", roomID,
-					"participantID", participantID,
-					"forceClosed", forceClosed,
-					"superseded", worker,
-					"survivor", survivor,
-				)
-				if forceClosed {
-					prometheus.SubParticipant()
-				}
-				continue
-			}
-			existing[participantID] = worker
-		}
-
-		worker.SetRoom(roomID, roomName)
-	}
-
-	logger.Infow(
-		"telemetry re-keyed room",
-		"prevRoomID", prevRoomID,
-		"room", roomName,
-		"roomID", roomID,
-		"numWorkers", len(roomWorkers),
-	)
 }
 
 func (t *telemetryService) LocalRoomState(ctx context.Context, info *livekit.AnalyticsNodeRooms) {
