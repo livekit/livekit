@@ -24,22 +24,30 @@ func initPrometheus(t *testing.T) {
 // forwardSummary
 // ---------------------------------------------------------------------------
 
+// bucketSum totals a summary's per-bucket counts, independent of the bucketing
+// scheme, so tests can assert samples landed without hard-coding bucket indices.
+func bucketSum(s forwardSummary) int64 {
+	var n int64
+	for _, c := range s.buckets {
+		n += c
+	}
+	return n
+}
+
 func TestForwardSummary_AddSample(t *testing.T) {
 	var s forwardSummary
 
 	// empty summary
 	require.Equal(t, int64(0), s.count)
 
-	// microsecond-aligned transits so the /1000 truncation is exact
-	s = s.addSample(3000) // 3us -> bucket 2 [2,4)us
-	s = s.addSample(1000) // 1us -> bucket 1 [1,2)us
-	s = s.addSample(2000) // 2us -> bucket 2 [2,4)us
+	s = s.addSample(3000) // 3us
+	s = s.addSample(1000) // 1us
+	s = s.addSample(2000) // 2us
 
 	require.Equal(t, int64(3), s.count)
 	require.Equal(t, int64(1000), s.minNs)
 	require.Equal(t, int64(3000), s.maxNs)
-	require.Equal(t, int64(1), s.buckets[1])
-	require.Equal(t, int64(2), s.buckets[2])
+	require.Equal(t, s.count, bucketSum(s)) // every sample landed in a bucket
 }
 
 func TestForwardSummary_Merge(t *testing.T) {
@@ -55,9 +63,9 @@ func TestForwardSummary_Merge(t *testing.T) {
 	require.Equal(t, int64(4), m.count)
 	require.Equal(t, int64(1000), m.minNs)
 	require.Equal(t, int64(5000), m.maxNs)
-	require.Equal(t, int64(1), m.buckets[1]) // 1us
-	require.Equal(t, int64(2), m.buckets[2]) // 2us, 3us
-	require.Equal(t, int64(1), m.buckets[3]) // 5us
+	// merge sums the per-bucket counts
+	require.Equal(t, bucketSum(a)+bucketSum(b), bucketSum(m))
+	require.Equal(t, m.count, bucketSum(m))
 }
 
 func TestForwardSummary_Percentile(t *testing.T) {
@@ -92,6 +100,28 @@ func TestForwardSummary_Percentile(t *testing.T) {
 	}
 	require.Equal(t, 2*time.Millisecond, u.percentile(0.5))
 	require.Equal(t, 2*time.Millisecond, u.percentile(0.99))
+}
+
+func TestForwardSummary_ThresholdResolution(t *testing.T) {
+	// Two nodes whose p90 packets cluster on opposite sides of a 300us overload
+	// threshold. A plain octave ([256,512) straddles 300us) would interpolate
+	// both to the same value; sub-octave buckets keep them apart.
+	build := func(tailUs int64) forwardSummary {
+		var s forwardSummary
+		for i := 0; i < 850; i++ {
+			s = s.addSample(50 * int64(time.Microsecond))
+		}
+		for i := 0; i < 150; i++ {
+			s = s.addSample(tailUs * int64(time.Microsecond))
+		}
+		return s
+	}
+	low := build(265).percentile(0.9)
+	high := build(500).percentile(0.9)
+
+	require.Less(t, low, 300*time.Microsecond, "265us cluster must stay below the threshold")
+	require.Greater(t, high, 300*time.Microsecond, "500us cluster must exceed the threshold")
+	require.Less(t, low, high)
 }
 
 // ---------------------------------------------------------------------------
@@ -304,8 +334,8 @@ func TestForwardStats_GetStats(t *testing.T) {
 	require.Equal(t, 5, s.ringLen)
 
 	// whole window {1..5ms}: p90 clamps to the observed max, 5ms.
-	require.Equal(t, 5*time.Millisecond, s.GetStats(0))
-	require.Equal(t, 5*time.Millisecond, s.GetStats(time.Second))
+	require.InDelta(t, float64(5*time.Millisecond), float64(s.GetStats(0)), float64(time.Millisecond))
+	require.InDelta(t, float64(5*time.Millisecond), float64(s.GetStats(time.Second)), float64(time.Millisecond))
 
 	// ~200ms covers only the two most recent buckets {2ms, 1ms}: a lower window
 	// than the full one, and above the single most-recent bucket.

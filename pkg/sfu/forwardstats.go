@@ -101,12 +101,19 @@ func (b *forwardSampleBuffer) takeDropped() uint64 {
 }
 
 // forwardSummary is a mergeable histogram of forwarding transit over an
-// interval. Buckets are power-of-two microseconds: bucket i (i >= 1) counts
-// transit in [2^(i-1), 2^i) us, bucket 0 counts sub-microsecond transit. Two
-// summaries merge by adding their buckets, so a percentile is computed over the
-// whole report window, and a few stalled packets (e.g. from goroutine
+// interval. Each power-of-two octave [2^e, 2^(e+1)) us is split into
+// forwardHistSub equal linear sub-buckets, so a value's bucket is within
+// ~2^e/forwardHistSub of it. Sub-octave resolution matters near the overload
+// thresholds: a plain octave straddling 300us cannot tell a p90 clustered at
+// ~265us from one at ~500us apart, and would trip (or not) the same for both.
+// Two summaries merge by adding their buckets, so a percentile is computed over
+// the whole report window, and a few stalled packets (e.g. from goroutine
 // scheduling latency) cannot drag it the way a mean does.
-const forwardHistBuckets = 28 // top bucket covers >= 2^26 us (~67 s)
+const (
+	forwardHistSub     = 4                                   // linear sub-buckets per octave
+	forwardHistOctaves = 27                                  // up to 2^27 us (~134 s)
+	forwardHistBuckets = forwardHistOctaves * forwardHistSub // 108
+)
 
 type forwardSummary struct {
 	count   int64
@@ -115,25 +122,29 @@ type forwardSummary struct {
 	buckets [forwardHistBuckets]int64
 }
 
-// forwardBucket returns the bucket index for a transit in nanoseconds.
-// bits.Len64(us) is 1+floor(log2(us)) for us >= 1, and 0 for sub-us transit.
+// forwardBucket returns the bucket index for a transit in nanoseconds: the
+// octave floor(log2(us)) times forwardHistSub, plus the linear sub-bucket
+// within the octave.
 func forwardBucket(transitNs int64) int {
 	us := transitNs / 1000
 	if us <= 0 {
 		return 0
 	}
-	if b := bits.Len64(uint64(us)); b < forwardHistBuckets {
-		return b
+	e := bits.Len64(uint64(us)) - 1 // floor(log2(us)), us >= 1 so e >= 0
+	if e >= forwardHistOctaves {
+		return forwardHistBuckets - 1
 	}
-	return forwardHistBuckets - 1
+	octave := int64(1) << e
+	sub := int((us - octave) * forwardHistSub / octave) // 0..forwardHistSub-1
+	return e*forwardHistSub + sub
 }
 
 // forwardBucketBounds returns bucket i's [low, high) edges in microseconds.
 func forwardBucketBounds(i int) (float64, float64) {
-	if i == 0 {
-		return 0, 1
-	}
-	return float64(int64(1) << (i - 1)), float64(int64(1) << i)
+	octave := float64(int64(1) << (i / forwardHistSub))
+	width := octave / forwardHistSub
+	lo := octave + float64(i%forwardHistSub)*width
+	return lo, lo + width
 }
 
 func (s forwardSummary) addSample(transitNs int64) forwardSummary {
