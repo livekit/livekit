@@ -211,6 +211,11 @@ type FakeLocalParticipant struct {
 	disconnectedReturnsOnCall map[int]struct {
 		result1 <-chan struct{}
 	}
+	EndSessionStub        func(func())
+	endSessionMutex       sync.RWMutex
+	endSessionArgsForCall []struct {
+		arg1 func()
+	}
 	GetAdaptiveStreamStub        func() bool
 	getAdaptiveStreamMutex       sync.RWMutex
 	getAdaptiveStreamArgsForCall []struct {
@@ -2620,6 +2625,38 @@ func (fake *FakeLocalParticipant) DisconnectedReturnsOnCall(i int, result1 <-cha
 	fake.disconnectedReturnsOnCall[i] = struct {
 		result1 <-chan struct{}
 	}{result1}
+}
+
+func (fake *FakeLocalParticipant) EndSession(arg1 func()) {
+	fake.endSessionMutex.Lock()
+	fake.endSessionArgsForCall = append(fake.endSessionArgsForCall, struct {
+		arg1 func()
+	}{arg1})
+	stub := fake.EndSessionStub
+	fake.recordInvocation("EndSession", []interface{}{arg1})
+	fake.endSessionMutex.Unlock()
+	if stub != nil {
+		fake.EndSessionStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) EndSessionCallCount() int {
+	fake.endSessionMutex.RLock()
+	defer fake.endSessionMutex.RUnlock()
+	return len(fake.endSessionArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) EndSessionCalls(stub func(func())) {
+	fake.endSessionMutex.Lock()
+	defer fake.endSessionMutex.Unlock()
+	fake.EndSessionStub = stub
+}
+
+func (fake *FakeLocalParticipant) EndSessionArgsForCall(i int) func() {
+	fake.endSessionMutex.RLock()
+	defer fake.endSessionMutex.RUnlock()
+	argsForCall := fake.endSessionArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeLocalParticipant) GetAdaptiveStream() bool {

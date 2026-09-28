@@ -32,6 +32,7 @@ import (
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/logger/zaputil"
 	"github.com/livekit/protocol/observability/roomobs"
 	lksdp "github.com/livekit/protocol/sdp"
 	"github.com/livekit/protocol/signalling"
@@ -1051,4 +1052,24 @@ func TestResumedParticipantWaitsForReconnectResponse(t *testing.T) {
 		require.NoError(t, p.SendRoomUpdate(&livekit.Room{Name: "test"}))
 		require.Equal(t, 1, sink.WriteMessageCallCount())
 	})
+}
+
+func TestEndSession(t *testing.T) {
+	p := newParticipantForTest("end-session")
+	p.params.LoggerResolver = zaputil.NoOpDeferrer{}
+	_, p.params.ReporterResolver = roomobs.DeferredParticipantReporter(roomobs.NewNoopProjectReporter())
+
+	// the leave runs under the ending session's guard, the next session gets a fresh one
+	prevGuard := p.TelemetryGuard()
+	require.NotNil(t, prevGuard)
+	left := false
+	p.EndSession(func() {
+		left = true
+		require.Same(t, prevGuard, p.TelemetryGuard())
+	})
+	require.True(t, left)
+	require.NotSame(t, prevGuard, p.TelemetryGuard())
+
+	// nil leave is fine
+	p.EndSession(nil)
 }

@@ -608,6 +608,7 @@ type LocalParticipant interface {
 	)
 	IsReconnect() bool
 	IsMigration() bool
+	EndSession(leave func())
 	MoveToRoom(params MoveToRoomParams)
 
 	UpdateMediaRTT(rtt uint32)
