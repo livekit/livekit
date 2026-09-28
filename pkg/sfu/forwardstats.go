@@ -101,19 +101,24 @@ func (b *forwardSampleBuffer) takeDropped() uint64 {
 }
 
 // forwardSummary is a mergeable histogram of forwarding transit over an
-// interval. Transit is bucketed by octave (bucket i counts [2^(i-1), 2^i) us),
-// and each bucket keeps the observed [min, max] of the samples in it. A
-// percentile interpolates within the crossing bucket's observed range rather
-// than its nominal edges, so the estimate never leaves the samples and is exact
-// when a bucket's samples cluster -- which keeps it accurate near an overload
-// threshold that falls mid-bucket, without needing threshold-aware boundaries.
-// Two summaries merge by adding their buckets, so the percentile covers the
-// whole report window, and a few stalled packets (e.g. from goroutine
-// scheduling latency) cannot drag it the way a mean does.
-const forwardHistBuckets = 28 // top bucket covers >= 2^26 us (~67 s)
+// interval. Each power-of-two octave [2^e, 2^(e+1)) us is split into
+// forwardHistSub linear sub-buckets, and each bucket keeps the observed
+// [min, max] of the samples in it. A percentile interpolates within the
+// crossing bucket's observed range rather than its nominal edges, so the
+// estimate never leaves the samples and is exact when a bucket's samples
+// cluster -- which keeps it accurate near an overload threshold that falls
+// mid-bucket, without needing threshold-aware boundaries. Two summaries merge
+// by adding their buckets, so the percentile covers the whole report window,
+// and a few stalled packets (e.g. from goroutine scheduling latency) cannot
+// drag it the way a mean does.
+const (
+	forwardHistSub     = 8                                   // linear sub-buckets per octave
+	forwardHistOctaves = 27                                  // up to 2^27 us (~134 s)
+	forwardHistBuckets = forwardHistOctaves * forwardHistSub // 216
+)
 
-// bucketStat is one octave bucket: how many samples fell in it and their
-// observed transit range in nanoseconds.
+// bucketStat is one bucket: how many samples fell in it and their observed
+// transit range in nanoseconds.
 type bucketStat struct {
 	count int64
 	minNs int64
@@ -150,17 +155,20 @@ type forwardSummary struct {
 	buckets [forwardHistBuckets]bucketStat
 }
 
-// forwardBucket returns the octave bucket index for a transit in nanoseconds.
-// bits.Len64(us) is 1+floor(log2(us)) for us >= 1, and 0 for sub-us transit.
+// forwardBucket returns the bucket index for a transit in nanoseconds: the
+// octave floor(log2(us)) times forwardHistSub, plus the linear sub-bucket
+// within the octave.
 func forwardBucket(transitNs int64) int {
 	us := transitNs / 1000
 	if us <= 0 {
 		return 0
 	}
-	if b := bits.Len64(uint64(us)); b < forwardHistBuckets {
-		return b
+	e := bits.Len64(uint64(us)) - 1 // floor(log2(us)), us >= 1 so e >= 0
+	if e >= forwardHistOctaves {
+		return forwardHistBuckets - 1
 	}
-	return forwardHistBuckets - 1
+	octave := int64(1) << e
+	return e*forwardHistSub + int((us-octave)*forwardHistSub/octave)
 }
 
 func (s *forwardSummary) addSample(transitNs int64) {

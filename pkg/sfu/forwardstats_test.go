@@ -80,10 +80,10 @@ func TestForwardSummary_Percentile(t *testing.T) {
 	// p90, not the mean.
 	var s forwardSummary
 	for i := 0; i < 5; i++ {
-		s.addSample(1000) // 1us -> bucket [1,2)us
+		s.addSample(1000) // 1us
 	}
 	for i := 0; i < 5; i++ {
-		s.addSample(100_000) // 100us -> bucket [64,128)us
+		s.addSample(100_000) // 100us
 	}
 	require.Equal(t, int64(10), s.count)
 
@@ -92,8 +92,8 @@ func TestForwardSummary_Percentile(t *testing.T) {
 	// p90 crosses into the slow cluster.
 	require.Equal(t, 100*time.Microsecond, s.percentile(0.9))
 
-	// a single sample reports exactly its latency, not its bucket's upper reach
-	// (20ms falls in [16.4ms, 32.8ms); interpolation alone would report ~31ms).
+	// a single sample reports exactly its latency, not the top edge of its bucket
+	// (nominal-edge interpolation would report the bucket's upper reach instead).
 	var single forwardSummary
 	single.addSample(int64(20 * time.Millisecond))
 	require.Equal(t, 20*time.Millisecond, single.percentile(0.9))
@@ -108,10 +108,9 @@ func TestForwardSummary_Percentile(t *testing.T) {
 }
 
 func TestForwardSummary_ThresholdResolution(t *testing.T) {
-	// Nodes whose p90 packets cluster near a 300us overload threshold. All three
-	// tails share the octave bucket [256,512), so nominal-edge interpolation
-	// reports the same value for each; interpolating within the bucket's observed
-	// range keeps them on the correct side of 300us (and exact for a tight tail).
+	// Nodes whose p90 packets cluster near a 300us overload threshold.
+	// Interpolating within each bucket's observed range reports a tight tail
+	// exactly, so each cluster lands on the correct side of 300us.
 	build := func(tailUs int64) forwardSummary {
 		var s forwardSummary
 		for i := 0; i < 850; i++ {
@@ -127,8 +126,7 @@ func TestForwardSummary_ThresholdResolution(t *testing.T) {
 	require.Greater(t, build(310).percentile(0.9), 300*time.Microsecond) // just above -> trips
 	require.Greater(t, build(500).percentile(0.9), 300*time.Microsecond) // well above -> trips
 
-	// a tight tail is reported exactly, regardless of where it sits in the bucket:
-	// octave-nominal interpolation reported ~341us for all of these.
+	// a tight tail is reported exactly, regardless of where it sits in the bucket.
 	require.Equal(t, 265*time.Microsecond, build(265).percentile(0.9))
 	require.Equal(t, 310*time.Microsecond, build(310).percentile(0.9))
 	require.Equal(t, 500*time.Microsecond, build(500).percentile(0.9))
