@@ -434,17 +434,12 @@ func TestRoomClosure(t *testing.T) {
 			return nil
 		}
 
-		removed := make(chan struct{})
-		go func() {
-			defer close(removed)
-			rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonClientRequestLeave)
-		}()
+		go rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonClientRequestLeave)
 
 		<-closing
 		require.Empty(t, rm.GetParticipants())
 		rm.CloseIfEmpty()
 		close(release)
-		<-removed
 
 		return isClosed.Load()
 	}
