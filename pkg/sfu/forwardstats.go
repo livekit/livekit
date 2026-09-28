@@ -165,7 +165,7 @@ func (s forwardSummary) merge(o forwardSummary) forwardSummary {
 }
 
 // percentile returns the p-quantile (0..1) of transit, interpolated within the
-// containing power-of-two bucket and bounded by the observed max.
+// containing power-of-two bucket and clamped to the observed [min, max].
 func (s forwardSummary) percentile(p float64) time.Duration {
 	if s.count == 0 {
 		return 0
@@ -179,8 +179,12 @@ func (s forwardSummary) percentile(p float64) time.Duration {
 		}
 		if cum+c >= target {
 			lo, hi := forwardBucketBounds(i)
-			us := lo + (hi-lo)*(target-cum)/c
-			return time.Duration(us * float64(time.Microsecond))
+			ns := int64((lo + (hi-lo)*(target-cum)/c) * float64(time.Microsecond))
+			// buckets are octave-wide and interpolation assumes a uniform fill, so
+			// clamp to the observed range: a quantile can never fall outside the
+			// samples. Without this a single 20ms packet reports ~31ms (its bucket's
+			// upper reach) and uniform traffic reads above every packet.
+			return time.Duration(min(max(ns, s.minNs), s.maxNs))
 		}
 		cum += c
 	}

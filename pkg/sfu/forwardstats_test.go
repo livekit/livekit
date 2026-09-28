@@ -79,6 +79,18 @@ func TestForwardSummary_Percentile(t *testing.T) {
 	require.InDelta(t, float64(2*time.Microsecond), float64(s.percentile(0.5)), float64(time.Microsecond))
 	// p90 crosses into the slow bucket.
 	require.Greater(t, s.percentile(0.9), 50*time.Microsecond)
+
+	// a single sample reports exactly its latency, not its bucket's upper reach
+	// (20ms falls in [16.4ms, 32.8ms); interpolation alone would report ~31ms).
+	require.Equal(t, 20*time.Millisecond, forwardSummary{}.addSample(int64(20*time.Millisecond)).percentile(0.9))
+
+	// identical samples share a bucket but must not invent intra-bucket spread.
+	var u forwardSummary
+	for i := 0; i < 8; i++ {
+		u = u.addSample(int64(2 * time.Millisecond))
+	}
+	require.Equal(t, 2*time.Millisecond, u.percentile(0.5))
+	require.Equal(t, 2*time.Millisecond, u.percentile(0.99))
 }
 
 // ---------------------------------------------------------------------------
@@ -282,24 +294,25 @@ func TestForwardStats_GetStats(t *testing.T) {
 	// 5 buckets, each covering one 100ms summary interval.
 	s := &ForwardStats{ring: make([]forwardSummary, 5), summaryInterval: 100 * time.Millisecond}
 
-	// fold five 100ms buckets, one sample each: 1ms, 2ms, 3ms, 4ms, 5ms.
-	for i := 1; i <= 5; i++ {
+	// fold five 100ms buckets, one sample each, descending 5ms..1ms so trailing
+	// windows have distinct maxima.
+	for i := 5; i >= 1; i-- {
 		s.Update(0, int64(i)*int64(time.Millisecond))
 		s.flush()
 	}
 	require.Equal(t, 5, s.ringLen)
 
-	// GetStats reports p90; over the whole window {1..5ms} it sits in the upper
-	// tail, above the 4ms sample.
-	require.GreaterOrEqual(t, s.GetStats(0), 4*time.Millisecond)
-	require.GreaterOrEqual(t, s.GetStats(time.Second), 4*time.Millisecond)
+	// whole window {1..5ms}: p90 clamps to the observed max, 5ms.
+	require.Equal(t, 5*time.Millisecond, s.GetStats(0))
+	require.Equal(t, 5*time.Millisecond, s.GetStats(time.Second))
 
-	// ~200ms rounds up to the two most recent buckets {4ms, 5ms}, a strictly
-	// higher window than the full one.
-	require.Greater(t, s.GetStats(200*time.Millisecond), s.GetStats(0))
+	// ~200ms covers only the two most recent buckets {2ms, 1ms}: a lower window
+	// than the full one, and above the single most-recent bucket.
+	require.Less(t, s.GetStats(200*time.Millisecond), 3*time.Millisecond)
+	require.Greater(t, s.GetStats(200*time.Millisecond), s.GetStats(time.Nanosecond))
 
-	// a sub-interval duration still yields the most recent bucket (5ms range).
-	require.GreaterOrEqual(t, s.GetStats(time.Nanosecond), 4*time.Millisecond)
+	// a sub-interval yields only the most recent bucket, ~1ms.
+	require.Equal(t, 1*time.Millisecond, s.GetStats(time.Nanosecond))
 }
 
 func TestForwardStats_Lifecycle(t *testing.T) {
