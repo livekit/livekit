@@ -28,8 +28,8 @@ func initPrometheus(t *testing.T) {
 // scheme, so tests can assert samples landed without hard-coding bucket indices.
 func bucketSum(s forwardSummary) int64 {
 	var n int64
-	for _, c := range s.buckets {
-		n += c
+	for _, b := range s.buckets {
+		n += b.count
 	}
 	return n
 }
@@ -84,10 +84,10 @@ func TestForwardSummary_Percentile(t *testing.T) {
 	}
 	require.Equal(t, int64(10), s.count)
 
-	// p50 sits at the top of the fast bucket, unmoved by the 100us tail.
-	require.InDelta(t, float64(2*time.Microsecond), float64(s.percentile(0.5)), float64(time.Microsecond))
-	// p90 crosses into the slow bucket.
-	require.Greater(t, s.percentile(0.9), 50*time.Microsecond)
+	// p50 lands in the fast cluster, unmoved by the 100us tail.
+	require.Equal(t, 1*time.Microsecond, s.percentile(0.5))
+	// p90 crosses into the slow cluster.
+	require.Equal(t, 100*time.Microsecond, s.percentile(0.9))
 
 	// a single sample reports exactly its latency, not its bucket's upper reach
 	// (20ms falls in [16.4ms, 32.8ms); interpolation alone would report ~31ms).
@@ -103,9 +103,10 @@ func TestForwardSummary_Percentile(t *testing.T) {
 }
 
 func TestForwardSummary_ThresholdResolution(t *testing.T) {
-	// Two nodes whose p90 packets cluster on opposite sides of a 300us overload
-	// threshold. A plain octave ([256,512) straddles 300us) would interpolate
-	// both to the same value; sub-octave buckets keep them apart.
+	// Nodes whose p90 packets cluster near a 300us overload threshold. All three
+	// tails share the octave bucket [256,512), so nominal-edge interpolation
+	// reports the same value for each; interpolating within the bucket's observed
+	// range keeps them on the correct side of 300us (and exact for a tight tail).
 	build := func(tailUs int64) forwardSummary {
 		var s forwardSummary
 		for i := 0; i < 850; i++ {
@@ -116,12 +117,14 @@ func TestForwardSummary_ThresholdResolution(t *testing.T) {
 		}
 		return s
 	}
-	low := build(265).percentile(0.9)
-	high := build(500).percentile(0.9)
 
-	require.Less(t, low, 300*time.Microsecond, "265us cluster must stay below the threshold")
-	require.Greater(t, high, 300*time.Microsecond, "500us cluster must exceed the threshold")
-	require.Less(t, low, high)
+	require.Less(t, build(265).percentile(0.9), 300*time.Microsecond)    // below -> no trip
+	require.Greater(t, build(310).percentile(0.9), 300*time.Microsecond) // just above -> trips
+	require.Greater(t, build(500).percentile(0.9), 300*time.Microsecond) // well above -> trips
+
+	// a tight tail is reported exactly, regardless of where it sits in the bucket
+	require.Equal(t, 265*time.Microsecond, build(265).percentile(0.9))
+	require.Equal(t, 310*time.Microsecond, build(310).percentile(0.9))
 }
 
 // ---------------------------------------------------------------------------
@@ -334,8 +337,8 @@ func TestForwardStats_GetStats(t *testing.T) {
 	require.Equal(t, 5, s.ringLen)
 
 	// whole window {1..5ms}: p90 clamps to the observed max, 5ms.
-	require.InDelta(t, float64(5*time.Millisecond), float64(s.GetStats(0)), float64(time.Millisecond))
-	require.InDelta(t, float64(5*time.Millisecond), float64(s.GetStats(time.Second)), float64(time.Millisecond))
+	require.Equal(t, 5*time.Millisecond, s.GetStats(0))
+	require.Equal(t, 5*time.Millisecond, s.GetStats(time.Second))
 
 	// ~200ms covers only the two most recent buckets {2ms, 1ms}: a lower window
 	// than the full one, and above the single most-recent bucket.

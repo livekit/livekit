@@ -101,50 +101,66 @@ func (b *forwardSampleBuffer) takeDropped() uint64 {
 }
 
 // forwardSummary is a mergeable histogram of forwarding transit over an
-// interval. Each power-of-two octave [2^e, 2^(e+1)) us is split into
-// forwardHistSub equal linear sub-buckets, so a value's bucket is within
-// ~2^e/forwardHistSub of it. Sub-octave resolution matters near the overload
-// thresholds: a plain octave straddling 300us cannot tell a p90 clustered at
-// ~265us from one at ~500us apart, and would trip (or not) the same for both.
-// Two summaries merge by adding their buckets, so a percentile is computed over
-// the whole report window, and a few stalled packets (e.g. from goroutine
+// interval. Transit is bucketed by octave (bucket i counts [2^(i-1), 2^i) us),
+// and each bucket keeps the observed [min, max] of the samples in it. A
+// percentile interpolates within the crossing bucket's observed range rather
+// than its nominal edges, so the estimate never leaves the samples and is exact
+// when a bucket's samples cluster -- which keeps it accurate near an overload
+// threshold that falls mid-bucket, without needing threshold-aware boundaries.
+// Two summaries merge by adding their buckets, so the percentile covers the
+// whole report window, and a few stalled packets (e.g. from goroutine
 // scheduling latency) cannot drag it the way a mean does.
-const (
-	forwardHistSub     = 4                                   // linear sub-buckets per octave
-	forwardHistOctaves = 27                                  // up to 2^27 us (~134 s)
-	forwardHistBuckets = forwardHistOctaves * forwardHistSub // 108
-)
+const forwardHistBuckets = 28 // top bucket covers >= 2^26 us (~67 s)
+
+// bucketStat is one octave bucket: how many samples fell in it and their
+// observed transit range in nanoseconds.
+type bucketStat struct {
+	count int64
+	minNs int64
+	maxNs int64
+}
+
+func (b *bucketStat) add(transitNs int64) {
+	if b.count == 0 {
+		b.minNs, b.maxNs = transitNs, transitNs
+	} else {
+		b.minNs = min(b.minNs, transitNs)
+		b.maxNs = max(b.maxNs, transitNs)
+	}
+	b.count++
+}
+
+func (b *bucketStat) mergeIn(o bucketStat) {
+	if o.count == 0 {
+		return
+	}
+	if b.count == 0 {
+		*b = o
+		return
+	}
+	b.count += o.count
+	b.minNs = min(b.minNs, o.minNs)
+	b.maxNs = max(b.maxNs, o.maxNs)
+}
 
 type forwardSummary struct {
 	count   int64
 	minNs   int64
 	maxNs   int64
-	buckets [forwardHistBuckets]int64
+	buckets [forwardHistBuckets]bucketStat
 }
 
-// forwardBucket returns the bucket index for a transit in nanoseconds: the
-// octave floor(log2(us)) times forwardHistSub, plus the linear sub-bucket
-// within the octave.
+// forwardBucket returns the octave bucket index for a transit in nanoseconds.
+// bits.Len64(us) is 1+floor(log2(us)) for us >= 1, and 0 for sub-us transit.
 func forwardBucket(transitNs int64) int {
 	us := transitNs / 1000
 	if us <= 0 {
 		return 0
 	}
-	e := bits.Len64(uint64(us)) - 1 // floor(log2(us)), us >= 1 so e >= 0
-	if e >= forwardHistOctaves {
-		return forwardHistBuckets - 1
+	if b := bits.Len64(uint64(us)); b < forwardHistBuckets {
+		return b
 	}
-	octave := int64(1) << e
-	sub := int((us - octave) * forwardHistSub / octave) // 0..forwardHistSub-1
-	return e*forwardHistSub + sub
-}
-
-// forwardBucketBounds returns bucket i's [low, high) edges in microseconds.
-func forwardBucketBounds(i int) (float64, float64) {
-	octave := float64(int64(1) << (i / forwardHistSub))
-	width := octave / forwardHistSub
-	lo := octave + float64(i%forwardHistSub)*width
-	return lo, lo + width
+	return forwardHistBuckets - 1
 }
 
 func (s forwardSummary) addSample(transitNs int64) forwardSummary {
@@ -155,7 +171,7 @@ func (s forwardSummary) addSample(transitNs int64) forwardSummary {
 		s.maxNs = max(s.maxNs, transitNs)
 	}
 	s.count++
-	s.buckets[forwardBucket(transitNs)]++
+	s.buckets[forwardBucket(transitNs)].add(transitNs)
 	return s
 }
 
@@ -170,13 +186,13 @@ func (s forwardSummary) merge(o forwardSummary) forwardSummary {
 	s.minNs = min(s.minNs, o.minNs)
 	s.maxNs = max(s.maxNs, o.maxNs)
 	for i := range s.buckets {
-		s.buckets[i] += o.buckets[i]
+		s.buckets[i].mergeIn(o.buckets[i])
 	}
 	return s
 }
 
 // percentile returns the p-quantile (0..1) of transit, interpolated within the
-// containing power-of-two bucket and clamped to the observed [min, max].
+// observed [min, max] of the bucket the quantile falls in.
 func (s forwardSummary) percentile(p float64) time.Duration {
 	if s.count == 0 {
 		return 0
@@ -184,18 +200,14 @@ func (s forwardSummary) percentile(p float64) time.Duration {
 	target := p * float64(s.count)
 	var cum float64
 	for i := range s.buckets {
-		c := float64(s.buckets[i])
+		b := s.buckets[i]
+		c := float64(b.count)
 		if c == 0 {
 			continue
 		}
 		if cum+c >= target {
-			lo, hi := forwardBucketBounds(i)
-			ns := int64((lo + (hi-lo)*(target-cum)/c) * float64(time.Microsecond))
-			// buckets are octave-wide and interpolation assumes a uniform fill, so
-			// clamp to the observed range: a quantile can never fall outside the
-			// samples. Without this a single 20ms packet reports ~31ms (its bucket's
-			// upper reach) and uniform traffic reads above every packet.
-			return time.Duration(min(max(ns, s.minNs), s.maxNs))
+			lo, hi := float64(b.minNs), float64(b.maxNs)
+			return time.Duration(lo + (hi-lo)*(target-cum)/c)
 		}
 		cum += c
 	}
