@@ -61,6 +61,10 @@ const (
 	// RoomLockPrefix is a simple key containing a provided lock uid
 	RoomLockPrefix = "room_lock:"
 
+	// TokenCutoffPrefix is a simple key per room/identity containing a unix
+	// timestamp; tokens issued before it are rejected
+	TokenCutoffPrefix = "token_cutoff:"
+
 	// Agents
 	AgentDispatchPrefix = "agent_dispatch:"
 	AgentJobPrefix      = "agent_job:"
@@ -73,6 +77,7 @@ var _ OSSServiceStore = (*RedisStore)(nil)
 type RedisStore struct {
 	rc           redis.UniversalClient
 	unlockScript *redis.Script
+	revokeScript *redis.Script
 	ctx          context.Context
 	done         chan struct{}
 }
@@ -83,10 +88,22 @@ func NewRedisStore(rc redis.UniversalClient) *RedisStore {
 					 else return 0
 					 end`
 
+	// cutoff and ttl only ever move forward, no matter the order concurrent
+	// writers (possibly with skewed clocks) arrive in: keep max(cutoff) and
+	// max(remaining ttl)
+	revokeScript := `local nv = tonumber(ARGV[1])
+					 local v = tonumber(redis.call("get", KEYS[1]) or 0)
+					 if v > nv then nv = v end
+					 local nttl = tonumber(ARGV[2])
+					 local pttl = redis.call("pttl", KEYS[1])
+					 if pttl > nttl then nttl = pttl end
+					 return redis.call("set", KEYS[1], nv, "px", nttl)`
+
 	return &RedisStore{
 		ctx:          context.Background(),
 		rc:           rc,
 		unlockScript: redis.NewScript(unlockScript),
+		revokeScript: redis.NewScript(revokeScript),
 	}
 }
 
@@ -355,6 +372,30 @@ func (s *RedisStore) DeleteParticipant(_ context.Context, roomName livekit.RoomN
 	key := RoomParticipantsPrefix + string(roomName)
 
 	return s.rc.HDel(s.ctx, key, string(identity)).Err()
+}
+
+func tokenCutoffKey(roomName livekit.RoomName, identity livekit.ParticipantIdentity) string {
+	// the room name is length-prefixed so distinct (room, identity) pairs
+	// cannot collide on one key, whatever characters they contain
+	return TokenCutoffPrefix + strconv.Itoa(len(roomName)) + ":" + string(roomName) + ":" + string(identity)
+}
+
+func (s *RedisStore) RevokeTokensBefore(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, cutoff time.Time, ttl time.Duration) error {
+	return s.revokeScript.Run(
+		s.ctx, s.rc,
+		[]string{tokenCutoffKey(roomName, identity)},
+		cutoff.Unix(), ttl.Milliseconds(),
+	).Err()
+}
+
+func (s *RedisStore) GetRevocationCutoff(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) (time.Time, error) {
+	v, err := s.rc.Get(s.ctx, tokenCutoffKey(roomName, identity)).Int64()
+	if err == redis.Nil {
+		return time.Time{}, nil
+	} else if err != nil {
+		return time.Time{}, err
+	}
+	return time.Unix(v, 0), nil
 }
 
 func (s *RedisStore) StoreEgress(_ context.Context, info *livekit.EgressInfo) error {

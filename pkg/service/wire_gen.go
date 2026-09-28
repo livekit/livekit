@@ -117,12 +117,16 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	sipService := NewSIPService(sipConfig, nodeID, v, sipClient, sipStore, roomService, telemetryService)
-	rtcService := NewRTCService(conf, roomAllocator, router, telemetryService)
+	tokenRevocationStore, err := getTokenRevocationStore(objectStore, conf)
+	if err != nil {
+		return nil, err
+	}
+	rtcService := NewRTCService(conf, roomAllocator, router, telemetryService, tokenRevocationStore)
 	v5, err := rpc.NewTypedWHIPParticipantClient(clientParams)
 	if err != nil {
 		return nil, err
 	}
-	serviceWHIPService, err := NewWHIPService(conf, router, roomAllocator, clientParams, topicFormatter, v5)
+	serviceWHIPService, err := NewWHIPService(conf, router, roomAllocator, clientParams, topicFormatter, v5, tokenRevocationStore)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +143,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	timedVersionGenerator := utils.NewDefaultTimedVersionGenerator()
 	turnAuthHandler := NewTURNAuthHandler(keyProvider)
 	forwardStats := createForwardStats(conf)
-	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, roomAllocator, telemetryService, client, agentStore, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, v, forwardStats)
+	roomManager, err := NewLocalRoomManager(conf, objectStore, currentNode, router, roomAllocator, telemetryService, client, agentStore, rtcEgressLauncher, timedVersionGenerator, turnAuthHandler, v, forwardStats, tokenRevocationStore)
 	if err != nil {
 		return nil, err
 	}

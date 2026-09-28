@@ -51,6 +51,7 @@ type WHIPService struct {
 	client            rpc.WHIPClient[livekit.NodeID]
 	topicFormatter    rpc.TopicFormatter
 	participantClient rpc.TypedWHIPParticipantClient
+	tokenRevocation   TokenRevocationStore
 }
 
 func NewWHIPService(
@@ -60,6 +61,7 @@ func NewWHIPService(
 	clientParams rpc.ClientParams,
 	topicFormatter rpc.TopicFormatter,
 	participantClient rpc.TypedWHIPParticipantClient,
+	tokenRevocation TokenRevocationStore,
 ) (*WHIPService, error) {
 	client, err := rpc.NewWHIPClient[livekit.NodeID](clientParams.Args())
 	if err != nil {
@@ -73,6 +75,9 @@ func NewWHIPService(
 		client:            client,
 		topicFormatter:    topicFormatter,
 		participantClient: participantClient,
+
+		// nil when token revocation is disabled
+		tokenRevocation: tokenRevocation,
 	}, nil
 }
 
@@ -140,6 +145,13 @@ func (s *WHIPService) validateCreate(w http.ResponseWriter, r *http.Request) (*c
 	}
 	if !s.config.Limit.CheckParticipantIdentityLength(claims.Identity) {
 		return nil, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrParticipantIdentityExceedsLimits, s.config.Limit.MaxParticipantIdentityLength)
+	}
+
+	if err := EnsureTokenNotRevoked(r.Context(), s.tokenRevocation, roomName, livekit.ParticipantIdentity(claims.Identity)); err != nil {
+		if errors.Is(err, ErrTokenRevoked) {
+			return nil, http.StatusUnauthorized, err
+		}
+		return nil, http.StatusInternalServerError, err
 	}
 
 	var clientInfo struct {

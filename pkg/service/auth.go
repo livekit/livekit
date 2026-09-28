@@ -40,10 +40,12 @@ type grantsValue struct {
 	claims    *auth.ClaimGrants
 	apiKey    string
 	expiresAt time.Time
+	notBefore time.Time
 }
 
 var (
 	ErrPermissionDenied          = errors.New("permissions denied")
+	ErrTokenRevoked              = errors.New("token has been revoked")
 	ErrMissingAuthorization      = errors.New("invalid authorization header. Must start with " + bearerPrefix)
 	ErrInvalidAuthorizationToken = errors.New("invalid authorization token")
 	ErrInvalidAPIKey             = errors.New("invalid API key")
@@ -99,9 +101,16 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 			return
 		}
 
-		var expiresAt time.Time
-		if claims != nil && claims.ExpiresAt != nil {
-			expiresAt = claims.ExpiresAt.Time
+		var expiresAt, notBefore time.Time
+		if claims != nil {
+			if claims.ExpiresAt != nil {
+				expiresAt = claims.ExpiresAt.Time
+			}
+			if claims.NotBefore != nil {
+				notBefore = claims.NotBefore.Time
+			} else if claims.IssuedAt != nil {
+				notBefore = claims.IssuedAt.Time
+			}
 		}
 
 		// set grants in context
@@ -110,6 +119,7 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 			claims:    grants,
 			apiKey:    v.APIKey(),
 			expiresAt: expiresAt,
+			notBefore: notBefore,
 		}))
 	}
 
@@ -139,6 +149,15 @@ func GetTokenExpiresAt(ctx context.Context) time.Time {
 		return time.Time{}
 	}
 	return v.expiresAt
+}
+
+func GetTokenNotBefore(ctx context.Context) time.Time {
+	val := ctx.Value(grantsKey{})
+	v, ok := val.(*grantsValue)
+	if !ok {
+		return time.Time{}
+	}
+	return v.notBefore
 }
 
 func GetAPIKey(ctx context.Context) string {
@@ -179,6 +198,25 @@ func EnsureJoinPermission(ctx context.Context) (name livekit.RoomName, err error
 		err = ErrPermissionDenied
 	}
 	return
+}
+
+func EnsureTokenNotRevoked(ctx context.Context, store TokenRevocationStore, roomName livekit.RoomName, identity livekit.ParticipantIdentity) error {
+	if store == nil {
+		return nil
+	}
+	cutoff, err := store.GetRevocationCutoff(ctx, roomName, identity)
+	if err != nil {
+		// fail closed: joins already depend on the room store being reachable
+		return err
+	}
+	if cutoff.IsZero() {
+		return nil
+	}
+	notBefore := GetTokenNotBefore(ctx)
+	if notBefore.IsZero() || notBefore.Before(cutoff) {
+		return ErrTokenRevoked
+	}
+	return nil
 }
 
 func EnsureAdminPermission(ctx context.Context, room livekit.RoomName) error {

@@ -51,6 +51,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		createRedisClient,
 		createStore,
 		wire.Bind(new(ServiceStore), new(ObjectStore)),
+		getTokenRevocationStore,
 		createKeyProvider,
 		createWebhookNotifier,
 		createForwardStats,

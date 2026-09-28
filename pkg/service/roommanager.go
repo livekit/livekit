@@ -61,6 +61,14 @@ import (
 const (
 	tokenRefreshInterval = 5 * time.Minute
 	tokenDefaultTTL      = 10 * time.Minute
+
+	// revocation cutoffs are kept until every token issued before them has
+	// expired: server-refreshed tokens live up to tokenDefaultTTL past the
+	// original expiry, and the verifier accepts a leeway past that
+	tokenRevocationTTLLeeway = time.Minute
+	tokenRevocationMinTTL    = 15 * time.Minute
+	// fallback when room.token_revocation_retention is unset
+	tokenRevocationDefaultRetention = 24 * time.Hour
 )
 
 type iceConfigCacheKey struct {
@@ -90,6 +98,7 @@ type RoomManager struct {
 	versionGenerator  utils.TimedVersionGenerator
 	turnAuthHandler   *TURNAuthHandler
 	bus               psrpc.MessageBus
+	tokenRevocation   TokenRevocationStore
 
 	rooms map[livekit.RoomName]*rtc.Room
 
@@ -122,6 +131,7 @@ func NewLocalRoomManager(
 	turnAuthHandler *TURNAuthHandler,
 	bus psrpc.MessageBus,
 	forwardStats *sfu.ForwardStats,
+	tokenRevocation TokenRevocationStore,
 ) (*RoomManager, error) {
 	rtcConf, err := rtc.NewWebRTCConfig(conf)
 	if err != nil {
@@ -144,6 +154,7 @@ func NewLocalRoomManager(
 		turnAuthHandler:   turnAuthHandler,
 		bus:               bus,
 		forwardStats:      forwardStats,
+		tokenRevocation:   tokenRevocation,
 
 		rooms: make(map[livekit.RoomName]*rtc.Room),
 
@@ -853,6 +864,14 @@ func (r *RoomManager) RemoveParticipant(ctx context.Context, req *livekit.RoomPa
 	}
 
 	participant.GetLogger().Infow("removing participant")
+	// record the cutoff before closing the participant so a racing rejoin
+	// cannot land between the two. no refresh token is issued afterwards, so
+	// the cutoff can cover the current second as well.
+	// abort on failure: removing the participant without the cutoff would
+	// report a removal that their tokens can immediately undo
+	if err := r.revokeParticipantTokens(ctx, room.Name(), participant, true); err != nil {
+		return nil, err
+	}
 	room.RemoveParticipant(livekit.ParticipantIdentity(req.Identity), "", types.ParticipantCloseReasonServiceRequestRemoveParticipant)
 	return &livekit.RemoveParticipantResponse{}, nil
 }
@@ -877,7 +896,7 @@ func (r *RoomManager) MutePublishedTrack(ctx context.Context, req *livekit.MuteR
 }
 
 func (r *RoomManager) UpdateParticipant(ctx context.Context, req *livekit.UpdateParticipantRequest) (*livekit.ParticipantInfo, error) {
-	_, participant, err := r.roomAndParticipantForReq(ctx, req)
+	room, participant, err := r.roomAndParticipantForReq(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -896,6 +915,16 @@ func (r *RoomManager) UpdateParticipant(ctx context.Context, req *livekit.Update
 			"permission", req.Permission,
 		)
 
+		// invalidate tokens carrying the previous permissions before applying
+		// the change: SetPermission triggers a token refresh, and the cutoff
+		// is floored to the current second so that refreshed token (nbf >=
+		// cutoff) stays valid. nbf has second granularity, so tokens minted
+		// earlier in the same second remain usable - an inherent limit.
+		// abort on failure: applying the change without the cutoff would let
+		// older tokens roll the permissions back on the next reconnect
+		if err := r.revokeParticipantTokens(ctx, room.Name(), participant, false); err != nil {
+			return nil, err
+		}
 		participant.SetPermission(req.Permission)
 	}
 
@@ -1144,6 +1173,53 @@ func (r *RoomManager) iceServersForParticipant(apiKey string, participant types.
 		iceServers = append(iceServers, iceServerForStunServers(rtcconfig.DefaultStunServers))
 	}
 	return iceServers
+}
+
+// revokeParticipantTokens records a token revocation cutoff for the participant.
+// tokens issued before the cutoff are rejected on join and reconnect.
+// includeCurrent extends the cutoff past the current second so tokens minted
+// within it (nbf has second granularity) are covered too; only safe when no
+// legitimate token is issued right after, i.e. on removal.
+// a returned error means no cutoff was recorded; callers must abort the
+// operation that requires it (fail closed)
+func (r *RoomManager) revokeParticipantTokens(ctx context.Context, roomName livekit.RoomName, participant types.LocalParticipant, includeCurrent bool) error {
+	if r.tokenRevocation == nil {
+		return nil
+	}
+
+	cutoff := time.Now().Truncate(time.Second)
+	if includeCurrent {
+		cutoff = cutoff.Add(time.Second)
+	}
+
+	// keep the cutoff around until every token issued before it has expired.
+	// the tokens the server knows about expire no later than
+	// max(original expiry, now + tokenDefaultTTL), plus verifier leeway; the
+	// configured retention additionally covers tokens minted out-of-band that
+	// were never used to connect, whose expiry the server cannot see
+	ttl := tokenDefaultTTL
+	if expiresAt := participant.TokenExpiresAt(); !expiresAt.IsZero() {
+		if remaining := time.Until(expiresAt); remaining > ttl {
+			ttl = remaining
+		}
+	}
+	ttl += tokenRevocationTTLLeeway
+	retention := r.config.Room.TokenRevocationRetention
+	if retention <= 0 {
+		retention = tokenRevocationDefaultRetention
+	}
+	if ttl < retention {
+		ttl = retention
+	}
+	if ttl < tokenRevocationMinTTL {
+		ttl = tokenRevocationMinTTL
+	}
+
+	if err := r.tokenRevocation.RevokeTokensBefore(ctx, roomName, participant.Identity(), cutoff, ttl); err != nil {
+		participant.GetLogger().Errorw("could not record token revocation", err)
+		return err
+	}
+	return nil
 }
 
 func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {

@@ -336,6 +336,7 @@ func ValidateConnectRequest(
 	params ValidateConnectRequestParams,
 	router routing.MessageRouter,
 	roomAllocator RoomAllocator,
+	revocationStore TokenRevocationStore,
 ) (ValidateConnectRequestResult, int, error) {
 	var res ValidateConnectRequestResult
 
@@ -375,6 +376,13 @@ func ValidateConnectRequest(
 		return res, http.StatusBadRequest, fmt.Errorf("%w: max length %d", ErrRoomNameExceedsLimits, limitConfig.MaxRoomNameLength)
 	}
 
+	if err := EnsureTokenNotRevoked(r.Context(), revocationStore, res.roomName, livekit.ParticipantIdentity(claims.Identity)); err != nil {
+		if errors.Is(err, ErrTokenRevoked) {
+			return res, http.StatusUnauthorized, err
+		}
+		return res, http.StatusInternalServerError, err
+	}
+
 	// this is new connection for existing participant -  with publish only permissions
 	if params.publish != "" {
 		// Make sure grant has GetCanPublish set,
@@ -384,6 +392,16 @@ func ValidateConnectRequest(
 		// Make sure by default subscribe is off
 		claims.Video.SetCanSubscribe(false)
 		claims.Identity += "#" + params.publish
+
+		// the suffixed identity joins the room as its own participant, so
+		// revocations recorded against it (e.g. a RemoveParticipant of
+		// "identity#publish") must block this connection as well
+		if err := EnsureTokenNotRevoked(r.Context(), revocationStore, res.roomName, livekit.ParticipantIdentity(claims.Identity)); err != nil {
+			if errors.Is(err, ErrTokenRevoked) {
+				return res, http.StatusUnauthorized, err
+			}
+			return res, http.StatusInternalServerError, err
+		}
 	}
 
 	// room allocator validations

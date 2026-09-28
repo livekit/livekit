@@ -39,8 +39,24 @@ type LocalStore struct {
 	agentDispatches map[livekit.RoomName]map[string]*livekit.AgentDispatch
 	agentJobs       map[livekit.RoomName]map[string]*livekit.Job
 
+	// map of room/identity => token revocation cutoff
+	tokenCutoffs map[tokenCutoffLocalKey]tokenCutoffEntry
+
 	lock       sync.RWMutex
 	globalLock sync.Mutex
+
+	// for tests
+	now func() time.Time
+}
+
+type tokenCutoffLocalKey struct {
+	room     livekit.RoomName
+	identity livekit.ParticipantIdentity
+}
+
+type tokenCutoffEntry struct {
+	cutoff    time.Time
+	expiresAt time.Time
 }
 
 func NewLocalStore() *LocalStore {
@@ -50,8 +66,49 @@ func NewLocalStore() *LocalStore {
 		participants:    make(map[livekit.RoomName]map[livekit.ParticipantIdentity]*livekit.ParticipantInfo),
 		agentDispatches: make(map[livekit.RoomName]map[string]*livekit.AgentDispatch),
 		agentJobs:       make(map[livekit.RoomName]map[string]*livekit.Job),
+		tokenCutoffs:    make(map[tokenCutoffLocalKey]tokenCutoffEntry),
 		lock:            sync.RWMutex{},
+		now:             time.Now,
 	}
+}
+
+func (s *LocalStore) RevokeTokensBefore(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, cutoff time.Time, ttl time.Duration) error {
+	now := s.now()
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	// revocations are rare, pruning on every write keeps the map bounded
+	for k, e := range s.tokenCutoffs {
+		if e.expiresAt.Before(now) {
+			delete(s.tokenCutoffs, k)
+		}
+	}
+
+	key := tokenCutoffLocalKey{room: roomName, identity: identity}
+	entry := tokenCutoffEntry{cutoff: cutoff, expiresAt: now.Add(ttl)}
+	if prev, ok := s.tokenCutoffs[key]; ok {
+		// cutoffs only move forward
+		if prev.cutoff.After(entry.cutoff) {
+			entry.cutoff = prev.cutoff
+		}
+		if prev.expiresAt.After(entry.expiresAt) {
+			entry.expiresAt = prev.expiresAt
+		}
+	}
+	s.tokenCutoffs[key] = entry
+	return nil
+}
+
+func (s *LocalStore) GetRevocationCutoff(_ context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) (time.Time, error) {
+	s.lock.RLock()
+	entry, ok := s.tokenCutoffs[tokenCutoffLocalKey{room: roomName, identity: identity}]
+	s.lock.RUnlock()
+
+	if !ok || entry.expiresAt.Before(s.now()) {
+		return time.Time{}, nil
+	}
+	return entry.cutoff, nil
 }
 
 func (s *LocalStore) StoreRoom(_ context.Context, room *livekit.Room, internal *livekit.RoomInternal) error {

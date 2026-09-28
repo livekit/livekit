@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -71,4 +72,36 @@ func TestAuthMiddleware(t *testing.T) {
 	m.ServeHTTP(w, r, handler)
 	require.Nil(t, grants)
 	require.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestAuthMiddlewareCapturesNotBefore(t *testing.T) {
+	api := "APIabcdefg"
+	secret := "somesecretencodedinbase62extendto32bytes"
+	provider := &authfakes.FakeKeyProvider{}
+	provider.GetSecretReturns(secret)
+
+	m := service.NewAPIKeyAuthMiddleware(provider)
+	var notBefore time.Time
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		notBefore = service.GetTokenNotBefore(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+
+	before := time.Now()
+	token, err := auth.NewAccessToken(api, secret).
+		AddGrant(&auth.VideoGrant{Room: "room", RoomJoin: true}).
+		ToJWT()
+	require.NoError(t, err)
+	after := time.Now()
+
+	r := &http.Request{Header: http.Header{}}
+	w := httptest.NewRecorder()
+	service.SetAuthorizationToken(r, token)
+	m.ServeHTTP(w, r, handler)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	// nbf is set to issuance time, truncated to seconds by the JWT encoding
+	require.False(t, notBefore.IsZero())
+	require.False(t, notBefore.Before(before.Truncate(time.Second)))
+	require.False(t, notBefore.After(after))
 }

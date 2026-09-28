@@ -389,3 +389,58 @@ func compareIngressInfo(t *testing.T, expected, v *livekit.IngressInfo) {
 	require.Equal(t, expected.StreamKey, v.StreamKey)
 	require.Equal(t, expected.RoomName, v.RoomName)
 }
+
+func TestRedisTokenRevocation(t *testing.T) {
+	ctx := context.Background()
+	rs := redisStore(t)
+
+	room := livekit.RoomName("revocation-room-" + guid.New("RM_"))
+	identity := livekit.ParticipantIdentity("revocation-user")
+
+	// absent identity returns zero cutoff
+	cutoff, err := rs.GetRevocationCutoff(ctx, room, identity)
+	require.NoError(t, err)
+	require.True(t, cutoff.IsZero())
+
+	// roundtrip, second granularity
+	want := time.Now().Truncate(time.Second)
+	require.NoError(t, rs.RevokeTokensBefore(ctx, room, identity, want, time.Minute))
+	cutoff, err = rs.GetRevocationCutoff(ctx, room, identity)
+	require.NoError(t, err)
+	require.True(t, cutoff.Equal(want))
+
+	// other identity unaffected
+	cutoff, err = rs.GetRevocationCutoff(ctx, room, "other-user")
+	require.NoError(t, err)
+	require.True(t, cutoff.IsZero())
+
+	// distinct (room, identity) pairs must not collide on one key, even when
+	// the concatenations match: (room+":b", "x") vs (room, "b:x")
+	require.NoError(t, rs.RevokeTokensBefore(ctx, room+":b", "x", want, time.Minute))
+	cutoff, err = rs.GetRevocationCutoff(ctx, room, "b:x")
+	require.NoError(t, err)
+	require.True(t, cutoff.IsZero())
+
+	// a later write with an earlier cutoff and a shorter ttl must neither
+	// lower the cutoff nor truncate the entry's lifetime
+	require.NoError(t, rs.RevokeTokensBefore(ctx, room, identity, want.Add(-10*time.Second), time.Second))
+	cutoff, err = rs.GetRevocationCutoff(ctx, room, identity)
+	require.NoError(t, err)
+	require.True(t, cutoff.Equal(want))
+	time.Sleep(1200 * time.Millisecond)
+	cutoff, err = rs.GetRevocationCutoff(ctx, room, identity)
+	require.NoError(t, err)
+	require.True(t, cutoff.Equal(want), "short-ttl write must not truncate the entry's lifetime")
+
+	// a later cutoff moves the entry forward, and entries expire after ttl
+	expiring := livekit.ParticipantIdentity("expiring-user")
+	require.NoError(t, rs.RevokeTokensBefore(ctx, room, expiring, want, time.Second))
+	require.NoError(t, rs.RevokeTokensBefore(ctx, room, expiring, want.Add(10*time.Second), time.Second))
+	cutoff, err = rs.GetRevocationCutoff(ctx, room, expiring)
+	require.NoError(t, err)
+	require.True(t, cutoff.Equal(want.Add(10*time.Second)))
+	time.Sleep(1200 * time.Millisecond)
+	cutoff, err = rs.GetRevocationCutoff(ctx, room, expiring)
+	require.NoError(t, err)
+	require.True(t, cutoff.IsZero())
+}

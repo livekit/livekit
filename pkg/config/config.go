@@ -247,6 +247,13 @@ type RoomConfig struct {
 	CreateRoomAttempts int                `yaml:"create_room_attempts,omitempty"`
 	// include room metadata in track webhook events instead of just room SID and name
 	EnableFullRoomInWebhooks bool `yaml:"enable_full_room_in_webhooks,omitempty"`
+	// reject join/reconnect attempts using tokens issued before a participant was
+	// removed from the room or had their permissions updated
+	TokenRevocation bool `yaml:"token_revocation,omitempty"`
+	// how long revocation records are retained. must be at least as long as the
+	// longest-lived token minted for participants, or a revoked token can come
+	// back to life when the record expires before the token. defaults to 24h
+	TokenRevocationRetention time.Duration `yaml:"token_revocation_retention,omitempty"`
 	// target room participant update batch chunk size in bytes
 	UpdateBatchTargetSize int `yaml:"update_batch_target_size,omitempty"`
 	// deprecated, moved to limits
@@ -560,7 +567,8 @@ var DefaultConfig = Config{
 	},
 	Redis: redisLiveKit.RedisConfig{},
 	Room: RoomConfig{
-		AutoCreate: true,
+		AutoCreate:               true,
+		TokenRevocationRetention: 24 * time.Hour,
 		EnabledCodecs: []CodecSpec{
 			{Mime: mime.MimeTypePCMU.String()},
 			{Mime: mime.MimeTypePCMA.String()},

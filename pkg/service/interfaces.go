@@ -58,6 +58,12 @@ type OSSServiceStore interface {
 	ListParticipants(ctx context.Context, roomName livekit.RoomName) ([]*livekit.ParticipantInfo, error)
 }
 
+//counterfeiter:generate . TokenRevocationStore
+type TokenRevocationStore interface {
+	RevokeTokensBefore(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity, cutoff time.Time, ttl time.Duration) error
+	GetRevocationCutoff(ctx context.Context, roomName livekit.RoomName, identity livekit.ParticipantIdentity) (time.Time, error)
+}
+
 //counterfeiter:generate . EgressStore
 type EgressStore interface {
 	StoreEgress(ctx context.Context, info *livekit.EgressInfo) error

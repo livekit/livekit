@@ -223,6 +223,19 @@ keys:
 #   # allow tracks to be unmuted remotely, defaults to false
 #   # tracks can always be muted from the Room Service APIs
 #   enable_remote_unmute: true
+#   # reject join/reconnect attempts that use tokens issued before the participant
+#   # was removed from the room (RemoveParticipant) or had permissions changed
+#   # (UpdateParticipant), defaults to false.
+#   # notes:
+#   # - only connected participants can be revoked; a participant who already left
+#   #   keeps using their token until it expires
+#   # - nbf has second granularity; on permission updates, tokens minted within
+#   #   the same second as the change remain usable
+#   token_revocation: true
+#   # how long revocation records are retained, defaults to 24h.
+#   # set this to at least the longest token lifetime you mint: a token that
+#   # outlives the record is accepted again once the record expires
+#   token_revocation_retention: 24h
 #   # control playout delay in ms of video track (and associated audio track)
 #   playout_delay:
 #     enabled: true

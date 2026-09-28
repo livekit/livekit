@@ -64,6 +64,8 @@ type RTCService struct {
 	limits        config.LimitConfig
 	telemetry     telemetry.TelemetryService
 
+	tokenRevocation TokenRevocationStore
+
 	mu          sync.Mutex
 	connections map[*websocket.Conn]struct{}
 }
@@ -73,6 +75,7 @@ func NewRTCService(
 	ra RoomAllocator,
 	router routing.MessageRouter,
 	telemetry telemetry.TelemetryService,
+	tokenRevocation TokenRevocationStore,
 ) *RTCService {
 	s := &RTCService{
 		router:        router,
@@ -82,6 +85,9 @@ func NewRTCService(
 		limits:        conf.Limit,
 		telemetry:     telemetry,
 		connections:   map[*websocket.Conn]struct{}{},
+
+		// nil when token revocation is disabled
+		tokenRevocation: tokenRevocation,
 	}
 
 	s.upgrader = websocket.Upgrader{
@@ -220,6 +226,7 @@ func (s *RTCService) validateInternal(
 		params,
 		s.router,
 		s.roomAllocator,
+		s.tokenRevocation,
 	)
 	if err != nil {
 		return res.roomName, routing.ParticipantInit{}, code, err
