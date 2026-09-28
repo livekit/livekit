@@ -31,15 +31,15 @@ func TestForwardSummary_AddSample(t *testing.T) {
 	require.Equal(t, int64(0), s.count)
 
 	// microsecond-aligned transits so the /1000 truncation is exact
-	s = s.addSample(3000) // 3us
-	s = s.addSample(1000) // 1us
-	s = s.addSample(2000) // 2us
+	s = s.addSample(3000) // 3us -> bucket 2 [2,4)us
+	s = s.addSample(1000) // 1us -> bucket 1 [1,2)us
+	s = s.addSample(2000) // 2us -> bucket 2 [2,4)us
 
 	require.Equal(t, int64(3), s.count)
-	require.Equal(t, int64(1+2+3), s.sumUs)
-	require.Equal(t, int64(1+4+9), s.sumSqUs)
 	require.Equal(t, int64(1000), s.minNs)
 	require.Equal(t, int64(3000), s.maxNs)
+	require.Equal(t, int64(1), s.buckets[1])
+	require.Equal(t, int64(2), s.buckets[2])
 }
 
 func TestForwardSummary_Merge(t *testing.T) {
@@ -53,34 +53,32 @@ func TestForwardSummary_Merge(t *testing.T) {
 
 	m := a.merge(b)
 	require.Equal(t, int64(4), m.count)
-	require.Equal(t, a.sumUs+b.sumUs, m.sumUs)
-	require.Equal(t, a.sumSqUs+b.sumSqUs, m.sumSqUs)
 	require.Equal(t, int64(1000), m.minNs)
 	require.Equal(t, int64(5000), m.maxNs)
+	require.Equal(t, int64(1), m.buckets[1]) // 1us
+	require.Equal(t, int64(2), m.buckets[2]) // 2us, 3us
+	require.Equal(t, int64(1), m.buckets[3]) // 5us
 }
 
-func TestForwardSummary_MeanStdDev(t *testing.T) {
+func TestForwardSummary_Percentile(t *testing.T) {
 	// empty -> zero
-	mean, stdDev := forwardSummary{}.meanStdDev()
-	require.Zero(t, mean)
-	require.Zero(t, stdDev)
+	require.Zero(t, forwardSummary{}.percentile(0.5))
 
-	// single sample -> mean set, stddev zero (needs >= 2 for variance)
-	mean, stdDev = forwardSummary{}.addSample(4000).meanStdDev()
-	require.Equal(t, 4*time.Microsecond, mean)
-	require.Zero(t, stdDev)
+	// half the samples fast (1us), half a slow tail (100us). The median tracks
+	// the fast bulk and ignores the tail -- the reason p50 replaces the mean.
+	var s forwardSummary
+	for i := 0; i < 5; i++ {
+		s = s.addSample(1000) // 1us -> bucket [1,2)us
+	}
+	for i := 0; i < 5; i++ {
+		s = s.addSample(100_000) // 100us -> bucket [64,128)us
+	}
+	require.Equal(t, int64(10), s.count)
 
-	// identical samples -> zero variance
-	s := forwardSummary{}.addSample(2000).addSample(2000).addSample(2000)
-	mean, stdDev = s.meanStdDev()
-	require.Equal(t, 2*time.Microsecond, mean)
-	require.Zero(t, stdDev)
-
-	// known dataset [1us, 2us, 3us]: mean 2us, sample variance 1us^2 -> stddev 1us
-	s = forwardSummary{}.addSample(1000).addSample(2000).addSample(3000)
-	mean, stdDev = s.meanStdDev()
-	require.Equal(t, 2*time.Microsecond, mean)
-	require.InDelta(t, float64(time.Microsecond), float64(stdDev), float64(50*time.Nanosecond))
+	// p50 sits at the top of the fast bucket, unmoved by the 100us tail.
+	require.InDelta(t, float64(2*time.Microsecond), float64(s.percentile(0.5)), float64(time.Microsecond))
+	// p90 crosses into the slow bucket.
+	require.Greater(t, s.percentile(0.9), 50*time.Microsecond)
 }
 
 // ---------------------------------------------------------------------------
@@ -291,22 +289,17 @@ func TestForwardStats_GetStats(t *testing.T) {
 	}
 	require.Equal(t, 5, s.ringLen)
 
-	// a duration <= 0 covers the whole window: mean of 1..5ms == 3ms.
-	latency, jitter := s.GetStats(0)
-	require.InDelta(t, float64(3*time.Millisecond), float64(latency), float64(50*time.Microsecond))
-	require.Greater(t, jitter, time.Duration(0))
+	// GetStats reports p90; over the whole window {1..5ms} it sits in the upper
+	// tail, above the 4ms sample.
+	require.GreaterOrEqual(t, s.GetStats(0), 4*time.Millisecond)
+	require.GreaterOrEqual(t, s.GetStats(time.Second), 4*time.Millisecond)
 
-	// a duration meeting/exceeding the window also covers it.
-	fullLatency, _ := s.GetStats(time.Second)
-	require.InDelta(t, float64(3*time.Millisecond), float64(fullLatency), float64(50*time.Microsecond))
+	// ~200ms rounds up to the two most recent buckets {4ms, 5ms}, a strictly
+	// higher window than the full one.
+	require.Greater(t, s.GetStats(200*time.Millisecond), s.GetStats(0))
 
-	// ~200ms rounds up to the two most recent buckets (4ms, 5ms): mean == 4.5ms.
-	shortLatency, _ := s.GetStats(200 * time.Millisecond)
-	require.InDelta(t, float64(4500*time.Microsecond), float64(shortLatency), float64(50*time.Microsecond))
-
-	// a sub-interval duration still yields at least the most recent bucket (5ms).
-	lastLatency, _ := s.GetStats(time.Nanosecond)
-	require.InDelta(t, float64(5*time.Millisecond), float64(lastLatency), float64(50*time.Microsecond))
+	// a sub-interval duration still yields the most recent bucket (5ms range).
+	require.GreaterOrEqual(t, s.GetStats(time.Nanosecond), 4*time.Millisecond)
 }
 
 func TestForwardStats_Lifecycle(t *testing.T) {

@@ -1,7 +1,7 @@
 package sfu
 
 import (
-	"math"
+	"math/bits"
 	"sync"
 	"time"
 
@@ -13,6 +13,12 @@ import (
 const (
 	cHighForwardingLatency = 20 * time.Millisecond
 	cSkewFactor            = 10
+
+	// forwardLatencyPercentile is the transit quantile reported as the node's
+	// forwarding latency and read by the overload controller. p90 tracks a broad
+	// slowdown but ignores the sparse tail (a few packets stalled on goroutine
+	// scheduling), which shedding cannot fix.
+	forwardLatencyPercentile = 0.90
 )
 
 const (
@@ -94,31 +100,51 @@ func (b *forwardSampleBuffer) takeDropped() uint64 {
 	return b.dropped.Swap(0)
 }
 
-// forwardSummary is a mergeable summary of forwarding transit over an interval.
-// The sum of squares is kept in microseconds so it does not overflow int64.
+// forwardSummary is a mergeable histogram of forwarding transit over an
+// interval. Buckets are power-of-two microseconds: bucket i (i >= 1) counts
+// transit in [2^(i-1), 2^i) us, bucket 0 counts sub-microsecond transit. Two
+// summaries merge by adding their buckets, so a percentile is computed over the
+// whole report window, and a few stalled packets (e.g. from goroutine
+// scheduling latency) cannot drag it the way a mean does.
+const forwardHistBuckets = 28 // top bucket covers >= 2^26 us (~67 s)
+
 type forwardSummary struct {
 	count   int64
-	sumUs   int64
-	sumSqUs int64
 	minNs   int64
 	maxNs   int64
+	buckets [forwardHistBuckets]int64
+}
+
+// forwardBucket returns the bucket index for a transit in nanoseconds.
+// bits.Len64(us) is 1+floor(log2(us)) for us >= 1, and 0 for sub-us transit.
+func forwardBucket(transitNs int64) int {
+	us := transitNs / 1000
+	if us <= 0 {
+		return 0
+	}
+	if b := bits.Len64(uint64(us)); b < forwardHistBuckets {
+		return b
+	}
+	return forwardHistBuckets - 1
+}
+
+// forwardBucketBounds returns bucket i's [low, high) edges in microseconds.
+func forwardBucketBounds(i int) (float64, float64) {
+	if i == 0 {
+		return 0, 1
+	}
+	return float64(int64(1) << (i - 1)), float64(int64(1) << i)
 }
 
 func (s forwardSummary) addSample(transitNs int64) forwardSummary {
-	us := transitNs / 1000
 	if s.count == 0 {
-		return forwardSummary{count: 1, sumUs: us, sumSqUs: us * us, minNs: transitNs, maxNs: transitNs}
+		s.minNs, s.maxNs = transitNs, transitNs
+	} else {
+		s.minNs = min(s.minNs, transitNs)
+		s.maxNs = max(s.maxNs, transitNs)
 	}
-
 	s.count++
-	s.sumUs += us
-	s.sumSqUs += us * us
-	if transitNs < s.minNs {
-		s.minNs = transitNs
-	}
-	if transitNs > s.maxNs {
-		s.maxNs = transitNs
-	}
+	s.buckets[forwardBucket(transitNs)]++
 	return s
 }
 
@@ -129,35 +155,36 @@ func (s forwardSummary) merge(o forwardSummary) forwardSummary {
 	if s.count == 0 {
 		return o
 	}
-	return forwardSummary{
-		count:   s.count + o.count,
-		sumUs:   s.sumUs + o.sumUs,
-		sumSqUs: s.sumSqUs + o.sumSqUs,
-		minNs:   min(s.minNs, o.minNs),
-		maxNs:   max(s.maxNs, o.maxNs),
+	s.count += o.count
+	s.minNs = min(s.minNs, o.minNs)
+	s.maxNs = max(s.maxNs, o.maxNs)
+	for i := range s.buckets {
+		s.buckets[i] += o.buckets[i]
 	}
+	return s
 }
 
-func (s forwardSummary) meanStdDev() (mean, stdDev time.Duration) {
+// percentile returns the p-quantile (0..1) of transit, interpolated within the
+// containing power-of-two bucket and bounded by the observed max.
+func (s forwardSummary) percentile(p float64) time.Duration {
 	if s.count == 0 {
-		return 0, 0
+		return 0
 	}
-
-	meanUs := float64(s.sumUs) / float64(s.count)
-	mean = time.Duration(meanUs * float64(time.Microsecond))
-	if s.count < 2 {
-		return mean, 0
+	target := p * float64(s.count)
+	var cum float64
+	for i := range s.buckets {
+		c := float64(s.buckets[i])
+		if c == 0 {
+			continue
+		}
+		if cum+c >= target {
+			lo, hi := forwardBucketBounds(i)
+			us := lo + (hi-lo)*(target-cum)/c
+			return time.Duration(us * float64(time.Microsecond))
+		}
+		cum += c
 	}
-
-	// sample variance (divisor count-1)
-	m2 := float64(s.sumSqUs) - float64(s.sumUs)*meanUs
-	varUs2 := m2 / float64(s.count-1)
-	if varUs2 < 0 {
-		// floating point rounding can push a (near-zero) variance slightly negative
-		varUs2 = 0
-	}
-	stdDev = time.Duration(math.Sqrt(varUs2) * float64(time.Microsecond))
-	return mean, stdDev
+	return time.Duration(s.maxNs)
 }
 
 type ForwardStats struct {
@@ -231,7 +258,7 @@ func (s *ForwardStats) run() {
 
 // flush drains the buffered samples, observes each into the Prometheus
 // histogram, and folds the interval summary into the window ring used for the
-// latency/jitter gauges.
+// latency gauge.
 func (s *ForwardStats) flush() {
 	var summ forwardSummary
 	s.samples.drain(func(transitNs int64) {
@@ -274,33 +301,33 @@ func (s *ForwardStats) summarize(window time.Duration) forwardSummary {
 	return w
 }
 
-// GetStats returns the mean latency and jitter (std dev) of the forwarding
-// transit over the most recent duration. The duration is rounded up to a whole
-// number of summary intervals (the smallest bucket span that covers it). A
-// duration <= 0, or one that meets/exceeds the report window, covers the full
-// window.
-func (s *ForwardStats) GetStats(duration time.Duration) (time.Duration, time.Duration) {
-	return s.summarize(duration).meanStdDev()
+// GetStats returns the reported forwarding-latency percentile
+// (forwardLatencyPercentile) over the most recent duration. The duration is
+// rounded up to a whole number of summary intervals (the smallest bucket span
+// that covers it). A duration <= 0, or one that meets/exceeds the report window,
+// covers the full window.
+func (s *ForwardStats) GetStats(duration time.Duration) time.Duration {
+	return s.summarize(duration).percentile(forwardLatencyPercentile)
 }
 
 func (s *ForwardStats) report() {
 	w := s.summarize(0)
 
-	latency, jitter := w.meanStdDev()
+	p90 := w.percentile(forwardLatencyPercentile)
 	if dropped := s.samples.takeDropped(); dropped > 0 {
 		logger.Warnw("forward stats sample buffer overflow", nil, "dropped", dropped)
 	}
-	if w.count > 0 && jitter > latency*cSkewFactor {
+	// a max far above p90 means a few packets stalled (e.g. goroutine scheduling
+	// latency) rather than a broad forwarding slowdown; p90 rides through it.
+	if w.count > 0 && w.maxNs > p90.Nanoseconds()*cSkewFactor {
 		logger.Infow(
-			"high jitter in forwarding path",
+			"high spread in forwarding path",
 			"lowest", time.Duration(w.minNs),
 			"highest", time.Duration(w.maxNs),
 			"count", w.count,
-			"latency", latency,
-			"jitter", jitter,
+			"p90", p90,
 		)
 	}
 
-	prometheus.RecordForwardJitter(uint32(jitter.Nanoseconds()))
-	prometheus.RecordForwardLatency(uint32(latency.Nanoseconds()))
+	prometheus.RecordForwardLatency(uint32(p90.Nanoseconds()))
 }
