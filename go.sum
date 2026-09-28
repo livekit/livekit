@@ -156,10 +156,10 @@ github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/lithammer/shortuuid/v4 v4.3.0 h1:XRr80OYPOlqxgnCv2/iuElkl/ZtXtPtLKk2AvpXGdWA=
 github.com/lithammer/shortuuid/v4 v4.3.0/go.mod h1:D5noHZ2oFw/YaKCfGy0YxyE7M0wMbezmMjPdhyEFe6Y=
-github.com/livekit/dtls/v3 v3.1.5-warp.1 h1:5jo2qQreDnUrgw6Al1F+9xVyXHvWQ2IaQkjF53FHEyU=
-github.com/livekit/dtls/v3 v3.1.5-warp.1/go.mod h1:gz1K4jg6c+fq86oQMH4pilpCEOEPwmEr2jY+VcF/mkU=
-github.com/livekit/ice/v4 v4.4.0-warp.2 h1:AYfwxksKNs2LGgLIifsrB/K4ixaQDuURxBgrA5dJBo4=
-github.com/livekit/ice/v4 v4.4.0-warp.2/go.mod h1:obAyD+J+Hzs7QA7Y8YXHp5uIn6gb7z87pKedXZkrcFU=
+github.com/livekit/dtls/v3 v3.1.5-warp.3 h1:oDUvjCb2ky8KXggOv4k4zTQKlAX7YwlGjBAva2zfgmk=
+github.com/livekit/dtls/v3 v3.1.5-warp.3/go.mod h1:gz1K4jg6c+fq86oQMH4pilpCEOEPwmEr2jY+VcF/mkU=
+github.com/livekit/ice/v4 v4.4.0-warp.3 h1:iSAtEiLeCi/ZKEKOsRrDlBg/BRcyUKpV/NuAXX+dS3o=
+github.com/livekit/ice/v4 v4.4.0-warp.3/go.mod h1:obAyD+J+Hzs7QA7Y8YXHp5uIn6gb7z87pKedXZkrcFU=
 github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731 h1:9x+U2HGLrSw5ATTo469PQPkqzdoU7be46ryiCDO3boc=
 github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731/go.mod h1:Rs3MhFwutWhGwmY1VQsygw28z5bWcnEYmS1OG9OxjOQ=
 github.com/livekit/mediatransportutil v0.0.0-20260821083140-f234b534b095 h1:BcliKAXoMhl/nWmzQweQ5kmh4Qqagxl4s3Z5pvM/7AY=
@@ -168,8 +168,8 @@ github.com/livekit/protocol v1.52.2-0.20260925171938-8c8c356c106d h1:zE0V9Qt210T
 github.com/livekit/protocol v1.52.2-0.20260925171938-8c8c356c106d/go.mod h1:t5CV/LCsWbI9zsSTHTJKDyLtByqvvVkioSP7jgqpIGA=
 github.com/livekit/psrpc v0.8.0 h1:uo3x+DL8pK2OIaCxg/s9sLUO2cIocS5HwdPhhI+m+fQ=
 github.com/livekit/psrpc v0.8.0/go.mod h1:6KnU8vULoizX0Er9NNfeKJDV8ug87j3fuo19M0bhj6Q=
-github.com/livekit/webrtc-pion/v4 v4.2.18-warp.2 h1:EKmLnuIs/2wRJmfQKv8JbZIGjHt7PQZYf94TAGyZGSI=
-github.com/livekit/webrtc-pion/v4 v4.2.18-warp.2/go.mod h1:Ps5ynXt7Heejsbg8fclYIDCBsUC0nCHNoWRUwFqyA2k=
+github.com/livekit/webrtc-pion/v4 v4.2.18-warp.4 h1:9vmK8uymfZs2dFc6Wib+52X0TedlCEqCaBi6Kve1Nr0=
+github.com/livekit/webrtc-pion/v4 v4.2.18-warp.4/go.mod h1:Kxgo6xwFzVK38XVlQTBT1zj2JU5G7R0R0pa5w5d9d/Q=
 github.com/mackerelio/go-osstat v0.2.8 h1:I2duicTaCGWoM53XwAwA9OIe1inu0xnVs8/pqOWWVr4=
 github.com/mackerelio/go-osstat v0.2.8/go.mod h1:SyS3XxKdoSKJnTGTkN5Yrh6VUQVuAURACfE6y+2DN4k=
 github.com/magefile/mage v1.17.2 h1:fyXVu1eadI8Ap1HCCNgEhJ5McIWiYhLR8uol64ZZc40=
