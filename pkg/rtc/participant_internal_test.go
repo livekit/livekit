@@ -1054,22 +1054,48 @@ func TestResumedParticipantWaitsForReconnectResponse(t *testing.T) {
 	})
 }
 
-func TestEndSession(t *testing.T) {
-	p := newParticipantForTest("end-session")
+func TestLeaveJoinSession(t *testing.T) {
+	p := newParticipantForTest("leave-join-session")
 	p.params.LoggerResolver = zaputil.NoOpDeferrer{}
 	_, p.params.ReporterResolver = roomobs.DeferredParticipantReporter(roomobs.NewNoopProjectReporter())
+	tl := p.GetTelemetryListener().(*typesfakes.FakeParticipantTelemetryListener)
 
-	// the leave runs under the ending session's guard, the next session gets a fresh one
+	track := &typesfakes.FakeLocalMediaTrack{}
+	track.IDReturns("TR_test")
+	track.PublishedReturns(true)
+	p.UpTrackManager.AddPublishedTrack(track)
+
+	// leaving reports the track unpublished, then runs the leave under the left session's
+	// guard, and the next session gets a fresh one
 	prevGuard := p.TelemetryGuard()
 	require.NotNil(t, prevGuard)
 	left := false
-	p.EndSession(func() {
+	p.LeaveSession(func() {
 		left = true
 		require.Same(t, prevGuard, p.TelemetryGuard())
+		require.Equal(t, 1, tl.OnTrackUnpublishedCallCount())
 	})
 	require.True(t, left)
 	require.NotSame(t, prevGuard, p.TelemetryGuard())
+	require.Equal(t, 1, tl.OnTrackUnpublishedCallCount())
+	_, _, _, wasPublished, shouldSend := tl.OnTrackUnpublishedArgsForCall(0)
+	require.True(t, wasPublished)
+	require.True(t, shouldSend)
 
-	// nil leave is fine
-	p.EndSession(nil)
+	// joining runs the join first, then reports the track published again
+	joined := false
+	p.JoinSession(func() {
+		joined = true
+		require.Zero(t, tl.OnTrackPublishedCallCount())
+	})
+	require.True(t, joined)
+	require.Equal(t, 1, tl.OnTrackPublishedCallCount())
+	_, _, _, shouldSend = tl.OnTrackPublishedArgsForCall(0)
+	require.True(t, shouldSend)
+
+	// nil callbacks are fine
+	p.LeaveSession(nil)
+	p.JoinSession(nil)
+	require.Equal(t, 2, tl.OnTrackUnpublishedCallCount())
+	require.Equal(t, 2, tl.OnTrackPublishedCallCount())
 }

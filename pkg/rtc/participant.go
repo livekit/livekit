@@ -4344,12 +4344,13 @@ func (p *ParticipantImpl) SupportsMoving() error {
 	return nil
 }
 
-// EndSession closes out the participant's session in its current room without closing
-// the participant, for it to be re-opened in another session: its published tracks are
-// reported unpublished, the session end is reported, and the telemetry guard and deferred
-// resolvers are reset for the next session. `leave` runs in between, while the ending
-// session's guard is still in place, for the caller to report the leave.
-func (p *ParticipantImpl) EndSession(leave func()) {
+// LeaveSession takes the participant out of its session in its current room without
+// closing the participant, for it to join another session (see JoinSession): its
+// published tracks are reported unpublished, the session end is reported, and the
+// telemetry guard and deferred resolvers are reset for the next session. `leave` runs in
+// between, while the left session's guard is still in place, for the caller to report the
+// leave.
+func (p *ParticipantImpl) LeaveSession(leave func()) {
 	for _, track := range p.GetPublishedTracks() {
 		p.GetTelemetryListener().OnTrackUnpublished(
 			p.ID(),
@@ -4374,6 +4375,24 @@ func (p *ParticipantImpl) EndSession(leave func()) {
 	p.params.ReporterResolver.Reset()
 }
 
+// JoinSession takes the participant, after LeaveSession, into the session its current
+// room now serves: `join` runs first, for the caller to report the join, then the
+// published tracks are reported published again, in that order as on a fresh join.
+func (p *ParticipantImpl) JoinSession(join func()) {
+	if join != nil {
+		join()
+	}
+
+	for _, track := range p.GetPublishedTracks() {
+		p.GetTelemetryListener().OnTrackPublished(
+			p.ID(),
+			p.Identity(),
+			track.ToProto(),
+			true,
+		)
+	}
+}
+
 func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 	for _, track := range p.GetPublishedTracks() {
 		for _, sub := range track.GetAllSubscribers() {
@@ -4385,7 +4404,7 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 		track.(types.LocalMediaTrack).ClearSubscriberNodes()
 	}
 
-	p.EndSession(func() {
+	p.LeaveSession(func() {
 		p.SubscriptionManager.ClearAllSubscriptions()
 
 		// fire onClose callback for original room

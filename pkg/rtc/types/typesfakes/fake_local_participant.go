@@ -211,11 +211,6 @@ type FakeLocalParticipant struct {
 	disconnectedReturnsOnCall map[int]struct {
 		result1 <-chan struct{}
 	}
-	EndSessionStub        func(func())
-	endSessionMutex       sync.RWMutex
-	endSessionArgsForCall []struct {
-		arg1 func()
-	}
 	GetAdaptiveStreamStub        func() bool
 	getAdaptiveStreamMutex       sync.RWMutex
 	getAdaptiveStreamArgsForCall []struct {
@@ -1016,6 +1011,11 @@ type FakeLocalParticipant struct {
 	issueFullReconnectArgsForCall []struct {
 		arg1 types.ParticipantCloseReason
 	}
+	JoinSessionStub        func(func())
+	joinSessionMutex       sync.RWMutex
+	joinSessionArgsForCall []struct {
+		arg1 func()
+	}
 	KindStub        func() livekit.ParticipantInfo_Kind
 	kindMutex       sync.RWMutex
 	kindArgsForCall []struct {
@@ -1035,6 +1035,11 @@ type FakeLocalParticipant struct {
 	}
 	kindDetailsReturnsOnCall map[int]struct {
 		result1 []livekit.ParticipantInfo_KindDetail
+	}
+	LeaveSessionStub        func(func())
+	leaveSessionMutex       sync.RWMutex
+	leaveSessionArgsForCall []struct {
+		arg1 func()
 	}
 	MaybeStartMigrationStub        func(bool, func()) bool
 	maybeStartMigrationMutex       sync.RWMutex
@@ -2625,38 +2630,6 @@ func (fake *FakeLocalParticipant) DisconnectedReturnsOnCall(i int, result1 <-cha
 	fake.disconnectedReturnsOnCall[i] = struct {
 		result1 <-chan struct{}
 	}{result1}
-}
-
-func (fake *FakeLocalParticipant) EndSession(arg1 func()) {
-	fake.endSessionMutex.Lock()
-	fake.endSessionArgsForCall = append(fake.endSessionArgsForCall, struct {
-		arg1 func()
-	}{arg1})
-	stub := fake.EndSessionStub
-	fake.recordInvocation("EndSession", []interface{}{arg1})
-	fake.endSessionMutex.Unlock()
-	if stub != nil {
-		fake.EndSessionStub(arg1)
-	}
-}
-
-func (fake *FakeLocalParticipant) EndSessionCallCount() int {
-	fake.endSessionMutex.RLock()
-	defer fake.endSessionMutex.RUnlock()
-	return len(fake.endSessionArgsForCall)
-}
-
-func (fake *FakeLocalParticipant) EndSessionCalls(stub func(func())) {
-	fake.endSessionMutex.Lock()
-	defer fake.endSessionMutex.Unlock()
-	fake.EndSessionStub = stub
-}
-
-func (fake *FakeLocalParticipant) EndSessionArgsForCall(i int) func() {
-	fake.endSessionMutex.RLock()
-	defer fake.endSessionMutex.RUnlock()
-	argsForCall := fake.endSessionArgsForCall[i]
-	return argsForCall.arg1
 }
 
 func (fake *FakeLocalParticipant) GetAdaptiveStream() bool {
@@ -6956,6 +6929,38 @@ func (fake *FakeLocalParticipant) IssueFullReconnectArgsForCall(i int) types.Par
 	return argsForCall.arg1
 }
 
+func (fake *FakeLocalParticipant) JoinSession(arg1 func()) {
+	fake.joinSessionMutex.Lock()
+	fake.joinSessionArgsForCall = append(fake.joinSessionArgsForCall, struct {
+		arg1 func()
+	}{arg1})
+	stub := fake.JoinSessionStub
+	fake.recordInvocation("JoinSession", []interface{}{arg1})
+	fake.joinSessionMutex.Unlock()
+	if stub != nil {
+		fake.JoinSessionStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) JoinSessionCallCount() int {
+	fake.joinSessionMutex.RLock()
+	defer fake.joinSessionMutex.RUnlock()
+	return len(fake.joinSessionArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) JoinSessionCalls(stub func(func())) {
+	fake.joinSessionMutex.Lock()
+	defer fake.joinSessionMutex.Unlock()
+	fake.JoinSessionStub = stub
+}
+
+func (fake *FakeLocalParticipant) JoinSessionArgsForCall(i int) func() {
+	fake.joinSessionMutex.RLock()
+	defer fake.joinSessionMutex.RUnlock()
+	argsForCall := fake.joinSessionArgsForCall[i]
+	return argsForCall.arg1
+}
+
 func (fake *FakeLocalParticipant) Kind() livekit.ParticipantInfo_Kind {
 	fake.kindMutex.Lock()
 	ret, specificReturn := fake.kindReturnsOnCall[len(fake.kindArgsForCall)]
@@ -7060,6 +7065,38 @@ func (fake *FakeLocalParticipant) KindDetailsReturnsOnCall(i int, result1 []live
 	fake.kindDetailsReturnsOnCall[i] = struct {
 		result1 []livekit.ParticipantInfo_KindDetail
 	}{result1}
+}
+
+func (fake *FakeLocalParticipant) LeaveSession(arg1 func()) {
+	fake.leaveSessionMutex.Lock()
+	fake.leaveSessionArgsForCall = append(fake.leaveSessionArgsForCall, struct {
+		arg1 func()
+	}{arg1})
+	stub := fake.LeaveSessionStub
+	fake.recordInvocation("LeaveSession", []interface{}{arg1})
+	fake.leaveSessionMutex.Unlock()
+	if stub != nil {
+		fake.LeaveSessionStub(arg1)
+	}
+}
+
+func (fake *FakeLocalParticipant) LeaveSessionCallCount() int {
+	fake.leaveSessionMutex.RLock()
+	defer fake.leaveSessionMutex.RUnlock()
+	return len(fake.leaveSessionArgsForCall)
+}
+
+func (fake *FakeLocalParticipant) LeaveSessionCalls(stub func(func())) {
+	fake.leaveSessionMutex.Lock()
+	defer fake.leaveSessionMutex.Unlock()
+	fake.LeaveSessionStub = stub
+}
+
+func (fake *FakeLocalParticipant) LeaveSessionArgsForCall(i int) func() {
+	fake.leaveSessionMutex.RLock()
+	defer fake.leaveSessionMutex.RUnlock()
+	argsForCall := fake.leaveSessionArgsForCall[i]
+	return argsForCall.arg1
 }
 
 func (fake *FakeLocalParticipant) MaybeStartMigration(arg1 bool, arg2 func()) bool {
