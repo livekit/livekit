@@ -161,8 +161,8 @@ tool (
 	golang.org/x/tools/cmd/goimports
 )
 
-replace github.com/pion/webrtc/v4 => github.com/livekit/webrtc-pion/v4 v4.2.18-warp.3
+replace github.com/pion/webrtc/v4 => github.com/livekit/webrtc-pion/v4 v4.2.18-warp.4
 
-replace github.com/pion/dtls/v3 => github.com/livekit/dtls/v3 v3.1.5-warp.2
+replace github.com/pion/dtls/v3 => github.com/livekit/dtls/v3 v3.1.5-warp.3
 
 replace github.com/pion/ice/v4 => github.com/livekit/ice/v4 v4.4.0-warp.3
