@@ -15,6 +15,7 @@
 package rtc
 
 import (
+	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -31,7 +32,7 @@ func (p *ParticipantImpl) HandleStoreDataBlobRequest(req *livekit.StoreDataBlobR
 		return
 	}
 
-	if req.Blob == nil || req.Blob.Key == nil || len(req.Blob.Key.String()) == 0 || !p.params.LimitConfig.CheckDataBlobKeyLength(req.Blob.Key.String()) {
+	if req.Blob == nil || req.Blob.Key == nil || config.DataBlobKeyLength(req.Blob.Key) == 0 || !p.params.LimitConfig.CheckDataBlobKeyLength(req.Blob.Key) {
 		p.pubLogger.Warnw("data blob is invalid", nil, "req", logger.Proto(req))
 		p.sendRequestResponse(&livekit.RequestResponse{
 			RequestId: req.RequestId,
