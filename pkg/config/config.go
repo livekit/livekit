@@ -399,8 +399,20 @@ func (l LimitConfig) CheckAttributesSize(attributes map[string]string) bool {
 	return uint32(total) <= l.MaxAttributesSize
 }
 
-func (l LimitConfig) CheckDataBlobKeyLength(key string) bool {
-	return l.MaxDataBlobKeyLength == 0 || len(key) <= l.MaxDataBlobKeyLength
+// DataBlobKeyLength returns the length of the identifying content of a data blob key.
+// The text form of the key message is not used, as it adds field names and quotes.
+func DataBlobKeyLength(key *livekit.DataBlobKey) int {
+	switch k := key.GetKey().(type) {
+	case *livekit.DataBlobKey_Generic:
+		return len(k.Generic)
+	case *livekit.DataBlobKey_SchemaId:
+		return len(k.SchemaId.GetName()) + len(k.SchemaId.GetEncoding().GetCustom())
+	}
+	return 0
+}
+
+func (l LimitConfig) CheckDataBlobKeyLength(key *livekit.DataBlobKey) bool {
+	return l.MaxDataBlobKeyLength == 0 || DataBlobKeyLength(key) <= l.MaxDataBlobKeyLength
 }
 
 func (l LimitConfig) CheckDataTrackCustomEncodingLength(identifier string) bool {
@@ -430,7 +442,7 @@ func (l LimitConfig) CheckDataBlobsSize(dataBlobs []*livekit.DataBlob) bool {
 
 	total := 0
 	for _, dataBlob := range dataBlobs {
-		total += len(dataBlob.GetKey().String()) + len(dataBlob.Contents)
+		total += DataBlobKeyLength(dataBlob.GetKey()) + len(dataBlob.Contents)
 	}
 	return uint32(total) <= l.MaxDataBlobSize
 }
@@ -442,9 +454,9 @@ func (l LimitConfig) CanAddDataBlob(dataBlobs []*livekit.DataBlob, toAdd *liveki
 
 	total := 0
 	for _, dataBlob := range dataBlobs {
-		total += len(dataBlob.Key.String()) + len(dataBlob.Contents)
+		total += DataBlobKeyLength(dataBlob.GetKey()) + len(dataBlob.Contents)
 	}
-	return uint32(total+len(toAdd.GetKey().String())+len(toAdd.Contents)) <= l.MaxDataBlobSize
+	return uint32(total+DataBlobKeyLength(toAdd.GetKey())+len(toAdd.Contents)) <= l.MaxDataBlobSize
 }
 
 // ---------------------------------
