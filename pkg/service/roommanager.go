@@ -656,7 +656,9 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 	}
 
 	// create new room, get details first
-	ri, internal, created, err := r.roomAllocator.CreateRoom(ctx, createRoom, true)
+	// createRoom is reassigned to the request with the room preset applied, so that a room
+	// composite egress from the preset, which RoomInternal has no field for, is started
+	ri, internal, createRoom, created, err := r.roomAllocator.CreateRoom(ctx, createRoom, true)
 	if err != nil {
 		return nil, err
 	}
