@@ -30,6 +30,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
+	"github.com/livekit/livekit-server/pkg/rtc"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
 )
@@ -64,7 +65,7 @@ func (f *fakeEgressLauncher) roomCompositeRoomNames() []string {
 	return names
 }
 
-func newTestRoomManager(t *testing.T, conf *config.Config, egressLauncher *fakeEgressLauncher) *service.RoomManager {
+func newTestRoomManager(t *testing.T, conf *config.Config, egressLauncher rtc.EgressLauncher) *service.RoomManager {
 	// no fixed RTC ports, so that the test does not bind the defaults
 	conf.RTC.TCPPort = 0
 	conf.RTC.UDPPort = rtcconfig.PortRange{}
@@ -153,6 +154,18 @@ func TestRoomCompositeEgressOnCreateRoom(t *testing.T) {
 		}, nil, nil, false)
 		require.NoError(t, err)
 		require.Equal(t, []string{"room-a"}, launcher.roomCompositeRoomNames())
+	})
+
+	t.Run("from room preset without an egress launcher", func(t *testing.T) {
+		conf, err := config.NewConfig(roomPresetConfig, true, nil, nil)
+		require.NoError(t, err)
+		rm := newTestRoomManager(t, conf, nil)
+
+		_, err = rm.CreateRoom(context.Background(), &livekit.CreateRoomRequest{
+			Name:       "room-a",
+			RoomPreset: "record",
+		})
+		require.ErrorIs(t, err, service.ErrEgressNotConnected)
 	})
 }
 

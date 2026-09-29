@@ -735,6 +735,11 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 	prometheus.RoomStarted()
 
 	if created && createRoom.GetEgress().GetRoom() != nil {
+		if r.egressLauncher == nil {
+			newRoom.Release()
+			return nil, ErrEgressNotConnected
+		}
+
 		// ensure room name matches
 		createRoom.Egress.Room.RoomName = createRoom.Name
 		_, err = r.egressLauncher.StartEgress(ctx, &rpc.StartEgressRequest{
