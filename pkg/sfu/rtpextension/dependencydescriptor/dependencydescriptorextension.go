@@ -102,7 +102,7 @@ const (
 	MaxDecodeTargets = 32
 	MaxTemplates     = 64
 
-	// MaxInlineExtensionSize is the inline storage the forwarding path reserves for a marshaled extension, pion's one byte profile cap
+	// MaxInlineExtensionSize is the inline storage the forwarding path and the pacer reserve for a marshaled extension, pion's one byte profile cap
 	MaxInlineExtensionSize = 16
 
 	AllChainsAreActive = uint32(0)

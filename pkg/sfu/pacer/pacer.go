@@ -19,12 +19,10 @@ import (
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
+	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
 )
-
-// maxInlineExtensionSize is the payload cap of pion's one byte header extension profile
-const maxInlineExtensionSize = 16
 
 var (
 	PacketFactory = &sync.Pool{
@@ -62,7 +60,7 @@ type Packet struct {
 	// the Packet is owned by one send until SendPacket returns
 	absSendTimeBuf [3]byte
 	twccBuf        [2]byte
-	extBuf         [maxInlineExtensionSize]byte
+	extBuf         [dd.MaxInlineExtensionSize]byte
 }
 
 // HoldExtension copies ext into scratch the header can point at until SendPacket returns, nil if it does not fit
