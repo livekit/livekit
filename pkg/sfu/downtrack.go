@@ -1079,9 +1079,28 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		SSRC:           d.ssrc,
 	})
 
+	pacerPacket := pacer.PacketFactory.Get().(*pacer.Packet)
+	*pacerPacket = pacer.Packet{
+		Header:             hdr,
+		HeaderPool:         RTPHeaderFactory,
+		Payload:            payload,
+		ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
+		AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
+		TransportWideExtID: uint8(d.transportWideExtID),
+		WriteStream:        d.writeStream,
+		Pool:               PacketFactory,
+		PoolEntity:         poolEntity,
+	}
+
 	// add extensions
-	if d.dependencyDescriptorExtID != 0 && tp.ddBytes != nil {
-		hdr.SetExtension(uint8(d.dependencyDescriptorExtID), tp.ddBytes)
+	//
+	// the header refers to the descriptor until the pacer marshals it, so hold it in the pacer packet, which one send owns
+	ddBytes := tp.ddBytesSpill
+	if inline := tp.ddInline(); ddBytes == nil && len(inline) != 0 {
+		ddBytes = pacerPacket.HoldExtension(inline)
+	}
+	if d.dependencyDescriptorExtID != 0 && len(ddBytes) != 0 {
+		hdr.SetExtension(uint8(d.dependencyDescriptorExtID), ddBytes)
 	}
 	if d.playoutDelayExtID != 0 && d.playoutDelay != nil {
 		if val := d.playoutDelay.GetDelayExtension(hdr.SequenceNumber); val != nil {
@@ -1128,6 +1147,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	}
 	d.addDummyExtensions(hdr)
 
+	// the sequencer copies the descriptor, which has to happen before Enqueue frees the scratch
 	if d.sequencer != nil {
 		d.sequencer.push(
 			extPkt.Arrival,
@@ -1138,13 +1158,14 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 			int8(layer),
 			payload[:len(codecBytes)],
 			tp.incomingHeaderSize,
-			tp.ddBytes,
+			ddBytes,
 			actBytes,
 			trailerStripped,
 		)
 	}
 
 	headerSize := hdr.MarshalSize()
+	pacerPacket.HeaderSize = headerSize
 	d.rtpStats.Update(
 		extPkt.Arrival,
 		tp.rtp.extSequenceNumber,
@@ -1155,19 +1176,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		0,
 		extPkt.IsOutOfOrder,
 	)
-	pacerPacket := pacer.PacketFactory.Get().(*pacer.Packet)
-	*pacerPacket = pacer.Packet{
-		Header:             hdr,
-		HeaderPool:         RTPHeaderFactory,
-		HeaderSize:         headerSize,
-		Payload:            payload,
-		ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
-		AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
-		TransportWideExtID: uint8(d.transportWideExtID),
-		WriteStream:        d.writeStream,
-		Pool:               PacketFactory,
-		PoolEntity:         poolEntity,
-	}
 	d.pacer.Enqueue(pacerPacket)
 
 	if extPkt.IsKeyFrame {

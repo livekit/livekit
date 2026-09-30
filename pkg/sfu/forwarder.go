@@ -199,7 +199,9 @@ type TranslationParams struct {
 	isResuming         bool
 	isSwitching        bool
 	rtp                TranslationParamsRTP
-	ddBytes            []byte
+	ddBytes            [dd.MaxInlineExtensionSize]byte
+	ddBytesLen         int
+	ddBytesSpill       []byte
 	incomingHeaderSize int
 	codecBytes         [codecmunger.MaxHeaderSize]byte
 	codecBytesLen      int
@@ -211,6 +213,13 @@ type TranslationParams struct {
 // codecHeader returns the munged codec header to prepend to the payload.
 func (tp *TranslationParams) codecHeader() []byte {
 	return tp.codecBytes[:tp.codecBytesLen]
+}
+
+// ddInline returns the dependency descriptor extension held inline. It points
+// into tp, so it has to be copied before it is attached to anything that
+// outlives the write.
+func (tp *TranslationParams) ddInline() []byte {
+	return tp.ddBytes[:tp.ddBytesLen]
 }
 
 // -------------------------------------------------------------------
@@ -2190,7 +2199,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	}
 	tp.isResuming = result.IsResuming
 	tp.isSwitching = result.IsSwitching
-	tp.ddBytes = result.DependencyDescriptorExtension
+	tp.ddBytes, tp.ddBytesLen, tp.ddBytesSpill = result.DDBytes, result.DDBytesLen, result.DDBytesSpill
 	tp.marker = result.RTPMarker
 	tp.isEndOfLayerFrame = f.isEndOfLayerFrame(extPkt)
 

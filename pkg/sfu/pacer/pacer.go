@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
+	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
 )
@@ -59,6 +60,15 @@ type Packet struct {
 	// the Packet is owned by one send until SendPacket returns
 	absSendTimeBuf [3]byte
 	twccBuf        [2]byte
+	extBuf         [dd.MaxInlineExtensionSize]byte
+}
+
+// HoldExtension copies ext into scratch the header can point at until SendPacket returns, nil if it does not fit
+func (p *Packet) HoldExtension(ext []byte) []byte {
+	if len(ext) > len(p.extBuf) {
+		return nil
+	}
+	return p.extBuf[:copy(p.extBuf[:], ext)]
 }
 
 type Pacer interface {
