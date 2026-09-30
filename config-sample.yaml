@@ -117,6 +117,16 @@ rtc:
   #   # in the unlikely event of highly congested networks, SFU may choose to pause some tracks
   #   # in order to allow others to stream smoothly. You can disable this behavior here
   #   allow_pause: true
+  #   # use send-side bandwidth estimation instead of relying on receiver reports, default false
+  #   use_send_side_bwe: false
+  #   # how egress is paced when use_send_side_bwe is enabled. one of:
+  #   #   no-queue     - hand packets to a send worker that drains them without rate
+  #   #                  limiting, so the sender never blocks on a write (default)
+  #   #   pass-through - send each packet inline on the calling goroutine
+  #   #   leaky-bucket - accepted, but not currently wired to the bandwidth estimate; it
+  #   #                  logs a warning and falls back to no-queue. see livekit/livekit#4724
+  #   # an unrecognized value is rejected at startup.
+  #   send_side_bwe_pacer: no-queue
   # # allows automatic connection fallback to TCP and TURN/TLS (if configured) when UDP has been unstable, default true
   # allow_tcp_fallback: true
   # # signaling RTT (in milliseconds) below which ICE/TCP is attempted on a UDP failure; at or above it,
