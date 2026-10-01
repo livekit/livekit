@@ -113,7 +113,7 @@ func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.E
 		if e := (*sip.ErrNoDispatchMatched)(nil); errors.As(err, &e) {
 			return &rpc.EvaluateSIPDispatchRulesResponse{
 				SipTrunkId: trunkID,
-				Result:     rpc.SIPDispatchResult_DROP,
+				Result:     rpc.SIPDispatchResult_REJECT,
 			}, nil
 		}
 		return nil, err
