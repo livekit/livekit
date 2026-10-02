@@ -16,8 +16,10 @@ package buffer
 
 import (
 	"testing"
+	"time"
 
 	"github.com/pion/rtp"
+	"github.com/pion/rtp/codecs"
 	"github.com/stretchr/testify/require"
 
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
@@ -63,6 +65,16 @@ func (f *testFrameInfo) toH26x() *ExtPacket {
 	return &ExtPacket{
 		Packet:     &rtp.Packet{Header: f.header},
 		VideoLayer: VideoLayer{Spatial: InvalidLayerSpatial, Temporal: int32(f.temporal)},
+	}
+}
+
+func (f *testFrameInfo) toVP9() *ExtPacket {
+	return &ExtPacket{
+		Packet: &rtp.Packet{Header: f.header},
+		Payload: codecs.VP9Packet{
+			PictureID: f.framenumber,
+		},
+		VideoLayer: VideoLayer{Spatial: int32(f.spatial), Temporal: int32(f.temporal)},
 	}
 }
 
@@ -436,4 +448,136 @@ func TestFpsH26x(t *testing.T) {
 			verifyFps(t, fpsExpected, fpsGot[:len(fpsExpected)])
 		}
 	})
+}
+
+func TestFpsVP9CompletesWithFewerThanThreeSpatialLayers(t *testing.T) {
+	t.Run("single spatial layer", func(t *testing.T) {
+		fps := [][]float32{{7.5, 15, 30}}
+		frames := createFrames(100, 12345678, 10, 500, fps, false)
+		vp9calc := NewFrameRateCalculatorVP9(90000, logger.GetLogger())
+
+		var frameratesGot bool
+		for _, f := range frames[0] {
+			if vp9calc.RecvPacket(f.toVP9()) && vp9calc.Completed() {
+				frameratesGot = true
+				break
+			}
+		}
+		require.True(t, frameratesGot, "VP9 FPS should complete with a single spatial layer")
+		fpsGot := vp9calc.GetFrameRateForSpatial(0)
+		verifyFps(t, fps[0], fpsGot[:len(fps[0])])
+	})
+
+	t.Run("observed higher spatial expands requirement", func(t *testing.T) {
+		// Build independent picture-ID sequences per spatial layer (simulcast-style).
+		fps := [][]float32{{15, 30}}
+		frames0 := createFrames(100, 12345678, 10, 500, fps, false)
+		frames1 := createFrames(100, 12345678, 10, 500, fps, false)
+		for _, f := range frames1[0] {
+			f.spatial = 1
+		}
+
+		vp9calc := NewFrameRateCalculatorVP9(90000, logger.GetLogger())
+		var frameratesGot bool
+		n := len(frames0[0])
+		for i := 0; i < n; i++ {
+			vp9calc.RecvPacket(frames0[0][i].toVP9())
+			vp9calc.RecvPacket(frames1[0][i].toVP9())
+			if vp9calc.Completed() {
+				frameratesGot = true
+				break
+			}
+		}
+		require.True(t, frameratesGot, "VP9 FPS should complete after both observed spatial layers finish")
+		require.EqualValues(t, 1, vp9calc.maxSpatial)
+	})
+
+	t.Run("late higher spatial reopens after completion", func(t *testing.T) {
+		fps := [][]float32{{15, 30}}
+		frames0 := createFrames(100, 12345678, 10, 500, fps, false)
+		frames1 := createFrames(100, 12345678, 10, 500, fps, false)
+		for _, f := range frames1[0] {
+			f.spatial = 1
+		}
+
+		vp9calc := NewFrameRateCalculatorVP9(90000, logger.GetLogger())
+		for _, f := range frames0[0] {
+			vp9calc.RecvPacket(f.toVP9())
+			if vp9calc.Completed() {
+				break
+			}
+		}
+		require.True(t, vp9calc.Completed(), "should complete on spatial 0 alone")
+
+		var recompleted bool
+		for _, f := range frames1[0] {
+			vp9calc.RecvPacket(f.toVP9())
+			if !vp9calc.Completed() {
+				// re-opened while measuring the late spatial layer
+			} else if vp9calc.maxSpatial >= 1 {
+				recompleted = true
+				break
+			}
+		}
+		require.True(t, recompleted, "should re-complete after late spatial 1 is measured")
+		require.EqualValues(t, 1, vp9calc.maxSpatial)
+		fpsGot := vp9calc.GetFrameRateForSpatial(1)
+		require.NotNil(t, fpsGot)
+		verifyFps(t, fps[0], fpsGot[:len(fps[0])])
+	})
+}
+
+func TestDoFpsCalcNotifiesOnLateHigherSpatial(t *testing.T) {
+	fps := [][]float32{{15, 30}}
+	frames0 := createFrames(100, 12345678, 10, 500, fps, false)
+	frames1 := createFrames(100, 12345678, 10, 500, fps, false)
+	for _, f := range frames1[0] {
+		f.spatial = 1
+	}
+
+	vp9calc := NewFrameRateCalculatorVP9(90000, logger.GetLogger())
+	b := &BufferBase{logger: logger.GetLogger()}
+	for i := range b.frameRateCalculator {
+		b.frameRateCalculator[i] = vp9calc.GetFrameRateCalculatorForSpatial(int32(i))
+	}
+
+	notifications := make(chan struct{}, 8)
+	b.onFpsChanged = func() {
+		notifications <- struct{}{}
+	}
+
+	withPayload := func(ep *ExtPacket) *ExtPacket {
+		// doFpsCalc ignores packets with empty RTP payload
+		ep.Packet.Payload = []byte{0x01}
+		return ep
+	}
+
+	waitNotify := func(msg string) {
+		t.Helper()
+		select {
+		case <-notifications:
+		case <-time.After(2 * time.Second):
+			t.Fatal(msg)
+		}
+	}
+
+	for _, f := range frames0[0] {
+		b.doFpsCalc(withPayload(f.toVP9()))
+		if b.frameRateCalculated {
+			break
+		}
+	}
+	require.True(t, b.frameRateCalculated)
+	waitNotify("expected onFpsChanged after spatial 0 completion")
+
+	// Feed only the late higher layer. RecvPacket returns false until that layer is
+	// measured; completion must still clear/re-set frameRateCalculated and notify.
+	for _, f := range frames1[0] {
+		b.doFpsCalc(withPayload(f.toVP9()))
+		if b.frameRateCalculated && vp9calc.maxSpatial >= 1 && vp9calc.Completed() {
+			break
+		}
+	}
+	require.True(t, b.frameRateCalculated)
+	waitNotify("onFpsChanged should fire again after late spatial completes")
 }
