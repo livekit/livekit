@@ -50,8 +50,10 @@ var StaticConfigurations = []ConfigurationItem{
 		Merge: true,
 	},
 	{
+		// H.264 publishing is unreliable on these Android clients. Firefox for Android parses as
+		// os "android", so this does not need to match desktop Linux Firefox, which can publish H.264.
 		Match: must.Get(NewScriptMatch(`(c.device_model == "xiaomi 2201117ti" && c.os == "android") ||
-		  ((c.browser == "firefox" || c.browser == "firefox mobile") && (c.os == "linux" || c.os == "android"))`)),
+		  ((c.browser == "firefox" || c.browser == "firefox mobile") && c.os == "android")`)),
 		Configuration: &livekit.ClientConfiguration{
 			DisabledCodecs: &livekit.DisabledCodecs{
 				Publish: []*livekit.Codec{

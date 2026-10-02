@@ -162,12 +162,26 @@ func isCodecEnabledWithFmtp(codecs []*livekit.Codec, cap webrtc.RTPCodecCapabili
 
 func selectAlternativeVideoCodec(enabledCodecs []*livekit.Codec) string {
 	for _, c := range enabledCodecs {
-		if mime.IsMimeTypeStringVideo(c.Mime) {
+		if isMediaVideoCodec(c.Mime) {
 			return c.Mime
 		}
 	}
 	// no viable codec in the list of enabled codecs, fall back to the most widely supported codec
 	return mime.MimeTypeVP8.String()
+}
+
+// isMediaVideoCodec reports whether mimeType is a video codec that can carry a track on its own,
+// as opposed to a retransmission or FEC format (video/rtx, video/ulpfec, video/flexfec*) which
+// shares the video/ prefix but cannot be published as a track's codec.
+func isMediaVideoCodec(mimeType string) bool {
+	if !mime.IsMimeTypeStringVideo(mimeType) {
+		return false
+	}
+	switch mime.NormalizeMimeType(mimeType) {
+	case mime.MimeTypeRTX, mime.MimeTypeULPFEC, mime.MimeTypeFlexFEC, mime.MimeTypeFlexFEC03:
+		return false
+	}
+	return true
 }
 
 func selectAlternativeAudioCodec(enabledCodecs []*livekit.Codec) string {

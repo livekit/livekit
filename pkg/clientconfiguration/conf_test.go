@@ -19,6 +19,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils/must"
 )
@@ -131,4 +132,23 @@ func TestScriptMatch(t *testing.T) {
 		})
 
 	}
+}
+
+func TestStaticConfigurationFirefoxH264Publish(t *testing.T) {
+	cm := NewStaticClientConfigurationManager(StaticConfigurations)
+
+	h264PublishDisabled := func(ci *livekit.ClientInfo) bool {
+		for _, c := range cm.GetConfiguration(ci).GetDisabledCodecs().GetPublish() {
+			if mime.IsMimeTypeStringH264(c.Mime) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// browser and os as the server's user agent parser reports them
+	require.False(t, h264PublishDisabled(&livekit.ClientInfo{Browser: "Firefox", Os: "Linux"}), "desktop Linux Firefox")
+	require.True(t, h264PublishDisabled(&livekit.ClientInfo{Browser: "Firefox Mobile", Os: "Android"}), "Firefox for Android")
+	require.True(t, h264PublishDisabled(&livekit.ClientInfo{Browser: "Firefox", Os: "Android"}), "Firefox on Android")
+	require.False(t, h264PublishDisabled(&livekit.ClientInfo{Browser: "Chrome", Os: "Linux"}), "desktop Linux Chrome")
 }

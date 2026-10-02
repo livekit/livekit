@@ -222,3 +222,20 @@ func TestRegisterCodecsPayloadTypesAreUnique(t *testing.T) {
 		}
 	}
 }
+
+func TestSelectAlternativeVideoCodec(t *testing.T) {
+	codecs := func(mimes ...string) []*livekit.Codec {
+		var out []*livekit.Codec
+		for _, m := range mimes {
+			out = append(out, &livekit.Codec{Mime: m})
+		}
+		return out
+	}
+
+	// RTX/FEC share the video/ prefix but can never be a track's codec
+	require.Equal(t, mime.MimeTypeVP8.String(), selectAlternativeVideoCodec(codecs("video/rtx", "audio/opus", "audio/red")))
+	require.Equal(t, "video/h264", selectAlternativeVideoCodec(codecs("video/rtx", "video/h264")))
+	require.Equal(t, "video/h264", selectAlternativeVideoCodec(codecs("video/h264", "video/rtx")))
+	require.Equal(t, "video/av1", selectAlternativeVideoCodec(codecs("video/ulpfec", "video/flexfec-03", "video/av1")))
+	require.Equal(t, mime.MimeTypeVP8.String(), selectAlternativeVideoCodec(codecs("audio/opus")))
+}
