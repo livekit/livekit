@@ -50,6 +50,12 @@ redis:
   # And it will use the password key above as cluster password
   # And the db key will not be used due to cluster mode not support it.
 
+# api:
+#   # RemoveParticipant revokes the tokens of the removed participant issued before revoke_token_ts
+#   # (default: now + 1min leeway). This is how long the revocation is kept, default 11min.
+#   # Set it above the validity of the tokens handed out to participants to keep removed participants out for good.
+#   token_revocation_ttl: 11m
+
 # WebRTC configuration
 rtc:
   # UDP ports to use for client traffic.

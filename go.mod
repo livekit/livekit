@@ -12,6 +12,7 @@ require (
 	github.com/frostbyte73/core v0.1.1
 	github.com/gammazero/deque v1.2.1
 	github.com/gammazero/workerpool v1.2.1
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/google/wire v0.7.0
 	github.com/gorilla/websocket v1.5.3
@@ -73,7 +74,6 @@ require (
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
-	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/gotesttools/gotestfmt/v2 v2.5.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect

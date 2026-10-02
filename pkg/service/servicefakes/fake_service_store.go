@@ -4,6 +4,7 @@ package servicefakes
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/protocol/livekit"
@@ -55,8 +56,10 @@ type FakeServiceStore struct {
 		result1 bool
 		result2 error
 	}
-	invocations      map[string][][]interface{}
-	invocationsMutex sync.RWMutex
+	roomParticipantRevocationMap map[string]time.Time
+	revocationMutex              sync.RWMutex
+	invocations                  map[string][][]interface{}
+	invocationsMutex             sync.RWMutex
 }
 
 func (fake *FakeServiceStore) ListRooms(arg1 context.Context, arg2 []livekit.RoomName) ([]*livekit.Room, error) {
@@ -271,6 +274,33 @@ func (fake *FakeServiceStore) Invocations() map[string][][]interface{} {
 		copiedInvocations[key] = value
 	}
 	return copiedInvocations
+}
+
+func (s *FakeServiceStore) RevokeRoomParticipant(ctx context.Context, identity *livekit.RoomParticipantIdentity, ttl time.Duration) error {
+	s.revocationMutex.Lock()
+	defer s.revocationMutex.Unlock()
+
+	if s.roomParticipantRevocationMap == nil {
+		s.roomParticipantRevocationMap = make(map[string]time.Time)
+	}
+	key := service.GenRoomParticipantRevocationIdentifier(livekit.ParticipantIdentity(identity.Identity), livekit.RoomName(identity.Room))
+	s.roomParticipantRevocationMap[key] = time.Unix(identity.RevokeTokenTs, 0)
+
+	return nil
+}
+
+func (s *FakeServiceStore) IsRoomParticipantRevoked(ctx context.Context, identity livekit.ParticipantIdentity, room livekit.RoomName) (bool, *time.Time, error) {
+	s.revocationMutex.RLock()
+	defer s.revocationMutex.RUnlock()
+
+	revocationTime, exists := s.roomParticipantRevocationMap[service.GenRoomParticipantRevocationIdentifier(identity, room)]
+	if !exists {
+		return false, nil, nil
+	}
+	return true, &revocationTime, nil
+}
+
+func (s *FakeServiceStore) CleanupRevokedTokens() {
 }
 
 func (fake *FakeServiceStore) recordInvocation(key string, args []interface{}) {

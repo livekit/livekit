@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/twitchtv/twirp"
 
 	"github.com/livekit/protocol/auth"
@@ -51,12 +52,14 @@ var (
 
 // authentication middleware
 type APIKeyAuthMiddleware struct {
-	provider auth.KeyProvider
+	provider             auth.KeyProvider
+	tokenRevocationStore TokenRevocationStore
 }
 
-func NewAPIKeyAuthMiddleware(provider auth.KeyProvider) *APIKeyAuthMiddleware {
+func NewAPIKeyAuthMiddleware(provider auth.KeyProvider, tokenRevocationStore TokenRevocationStore) *APIKeyAuthMiddleware {
 	return &APIKeyAuthMiddleware{
-		provider: provider,
+		provider:             provider,
+		tokenRevocationStore: tokenRevocationStore,
 	}
 }
 
@@ -106,6 +109,19 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 
 		// set grants in context
 		ctx := r.Context()
+		if m.tokenRevocationStore != nil && r.URL != nil && len(grants.Identity) > 0 && grants.Video != nil && len(grants.Video.Room) > 0 {
+			revoked, revokedAt, err := m.tokenRevocationStore.IsRoomParticipantRevoked(ctx, livekit.ParticipantIdentity(grants.Identity), livekit.RoomName(grants.Video.Room))
+			if err != nil {
+				HandleError(w, r, http.StatusServiceUnavailable, fmt.Errorf("could not check token revocation: %w", err))
+				return
+			}
+			if revoked && isTokenRevoked(claims, *revokedAt) {
+				HandleError(w, r, http.StatusUnauthorized, errors.New("invalid token: revoked"))
+				return
+			}
+		}
+
+		// set grants in context
 		r = r.WithContext(context.WithValue(ctx, grantsKey{}, &grantsValue{
 			claims:    grants,
 			apiKey:    v.APIKey(),
@@ -114,6 +130,22 @@ func (m *APIKeyAuthMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request,
 	}
 
 	next.ServeHTTP(w, r)
+}
+
+// isTokenRevoked reports whether a token was issued before revokedAt. Without nbf, iat is used.
+// A token without either cannot be placed in time and counts as revoked.
+func isTokenRevoked(claims *jwt.RegisteredClaims, revokedAt time.Time) bool {
+	if claims == nil {
+		return true
+	}
+	issuedAt := claims.NotBefore
+	if issuedAt == nil {
+		issuedAt = claims.IssuedAt
+	}
+	if issuedAt == nil {
+		return true
+	}
+	return issuedAt.Unix() < revokedAt.Unix()
 }
 
 func WithAPIKey(ctx context.Context, grants *auth.ClaimGrants, apiKey string) context.Context {

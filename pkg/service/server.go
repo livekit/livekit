@@ -79,6 +79,7 @@ func NewLivekitServer(conf *config.Config,
 	roomManager *RoomManager,
 	signalServer *SignalServer,
 	turnServer *turn.Server,
+	tokenRevocationStore TokenRevocationStore,
 	currentNode routing.LocalNode,
 ) (s *LivekitServer, err error) {
 	s = &LivekitServer{
@@ -115,7 +116,7 @@ func NewLivekitServer(conf *config.Config,
 		NewRequestBodyLimiter(conf.Limit.MaxAPIRequestBodySize),
 	}
 	if keyProvider != nil {
-		middlewares = append(middlewares, NewAPIKeyAuthMiddleware(keyProvider))
+		middlewares = append(middlewares, NewAPIKeyAuthMiddleware(keyProvider, tokenRevocationStore))
 	}
 
 	serverOptions := []any{
