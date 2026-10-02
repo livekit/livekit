@@ -188,7 +188,7 @@ rtc:
 
 # when enabled, LiveKit will expose prometheus metrics on :6789/metrics
 # prometheus :
-#    port: 6789
+#   port: 6789
 
 # expose /debug/pprof (and /debug/goroutine, /debug/rooms) on a dedicated port,
 # separate from the public signalling port. only enabled when port is set.
