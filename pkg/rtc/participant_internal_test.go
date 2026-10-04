@@ -79,6 +79,38 @@ func TestIsReady(t *testing.T) {
 	}
 }
 
+// Disabling a codec can leave the publish list with only RTX and FEC. The
+// fallback must still pick a real codec, or the track registers as RTX and
+// subscribers see a blank tile.
+func TestPublishCodecFallbackSkipsRTX(t *testing.T) {
+	h264 := &livekit.Codec{Mime: mime.MimeTypeH264.String()}
+	rtx := &livekit.Codec{Mime: mime.MimeTypeRTX.String()}
+
+	newParticipant := func() *ParticipantImpl {
+		return &ParticipantImpl{params: ParticipantParams{Logger: logger.GetLogger()}}
+	}
+
+	t.Run("h264 enabled, rtx is last and not chosen", func(t *testing.T) {
+		p := newParticipant()
+		p.setupEnabledCodecs([]*livekit.Codec{h264, rtx}, nil, nil)
+
+		require.Equal(t, mime.MimeTypeH264.String(), selectAlternativeVideoCodec(p.enabledPublishCodecs))
+	})
+
+	t.Run("h264 disabled leaves rtx only, fallback avoids rtx", func(t *testing.T) {
+		p := newParticipant()
+		disabled := &livekit.DisabledCodecs{Publish: []*livekit.Codec{{Mime: mime.MimeTypeH264.String()}}}
+		p.setupEnabledCodecs([]*livekit.Codec{h264, rtx}, nil, disabled)
+
+		require.Len(t, p.enabledPublishCodecs, 1)
+		require.True(t, mime.IsMimeTypeStringRTX(p.enabledPublishCodecs[0].Mime))
+
+		alt := selectAlternativeVideoCodec(p.enabledPublishCodecs)
+		require.False(t, mime.IsMimeTypeStringRTX(alt), "fallback must not be rtx, got %q", alt)
+		require.Equal(t, mime.MimeTypeVP8.String(), alt)
+	})
+}
+
 func TestSupportsMoving(t *testing.T) {
 	t.Run("current protocol version", func(t *testing.T) {
 		p := newParticipantForTestWithOpts("test", &participantOpts{protocolVersion: types.CurrentProtocol})
