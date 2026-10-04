@@ -110,6 +110,15 @@ rtc:
   #     # Insecure username/password authentication
   #     username: ""
   #     credential: ""
+  #     # Paths for files containing the static username/password, so credentials can
+  #     # be mounted separately (systemd LoadCredential, Kubernetes secrets, NixOS)
+  #     # instead of being inlined here. When both the inline value and its file are
+  #     # set, the inline value takes precedence. File contents are trimmed, and an
+  #     # empty/whitespace-only file fails startup. credential_file must not be
+  #     # readable by others; username_file has no permission requirement because the
+  #     # username is not a secret.
+  #     username_file: "/run/credentials/livekit/turn-username"
+  #     credential_file: "/run/credentials/livekit/turn-credential"
   # # allows LiveKit to monitor congestion when sending streams and automatically
   # # manage bandwidth utilization to avoid congestion/loss. Enabled by default
   # congestion_control:
