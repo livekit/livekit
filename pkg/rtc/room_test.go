@@ -906,6 +906,7 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 		telemetry.NewTelemetryService(n, &telemetryfakes.FakeAnalyticsService{}),
 		nil, nil, nil,
 	)
+	t.Cleanup(func() { rm.Close(types.RoomCloseReasonUnknown) })
 	for i := 0; i < opts.num+opts.numHidden; i++ {
 		identity := livekit.ParticipantIdentity(fmt.Sprintf("p%d", i))
 		participant := NewMockParticipant(identity, opts.protocol, i >= opts.num, true, rm.LocalParticipantListener())
