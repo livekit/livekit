@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pion/dtls/v3/pkg/protocol/handshake"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
@@ -249,6 +250,78 @@ func TestFirstNegotiationUsesFastDebounce(t *testing.T) {
 			t.Fatalf("no offer from %s", want)
 		}
 	}
+}
+
+func TestDTLSHandshakeSkipsHelloVerify(t *testing.T) {
+	// the SFU offers as on the subscriber connection, and a plain pion peer answers active like a browser,
+	// so the SFU is the DTLS server and only the peer sends ClientHello
+	handler := &transportfakes.FakeHandler{}
+	sfu, err := NewPCTransport(TransportParams{Config: &WebRTCConfig{}, IsOfferer: true, Handler: handler})
+	require.NoError(t, err)
+	defer sfu.Close()
+	_, err = sfu.pc.CreateDataChannel(ReliableDataChannel, nil)
+	require.NoError(t, err)
+
+	var clientHellos atomic.Int32
+	se := webrtc.SettingEngine{}
+	require.NoError(t, se.SetAnsweringDTLSRole(webrtc.DTLSRoleClient))
+	se.SetDTLSClientHelloMessageHook(func(m handshake.MessageClientHello) handshake.Message {
+		clientHellos.Inc()
+		return &m
+	})
+	client, err := webrtc.NewAPI(webrtc.WithSettingEngine(se)).NewPeerConnection(webrtc.Configuration{})
+	require.NoError(t, err)
+	defer client.Close()
+
+	var lock sync.Mutex
+	var pending []webrtc.ICECandidateInit
+	hasOffer := false
+	handler.OnICECandidateCalls(func(c *webrtc.ICECandidate, _ livekit.SignalTarget) error {
+		if c == nil {
+			return nil
+		}
+		lock.Lock()
+		defer lock.Unlock()
+		if !hasOffer {
+			pending = append(pending, c.ToJSON())
+			return nil
+		}
+		return client.AddICECandidate(c.ToJSON())
+	})
+	client.OnICECandidate(func(c *webrtc.ICECandidate) {
+		if c != nil {
+			sfu.AddICECandidate(c.ToJSON())
+		}
+	})
+	handler.OnOfferCalls(func(offer webrtc.SessionDescription, offerId uint32, _ map[string]string) error {
+		lock.Lock()
+		if err := client.SetRemoteDescription(offer); err != nil {
+			lock.Unlock()
+			return err
+		}
+		hasOffer = true
+		for _, c := range pending {
+			_ = client.AddICECandidate(c)
+		}
+		lock.Unlock()
+
+		answer, err := client.CreateAnswer(nil)
+		if err != nil {
+			return err
+		}
+		if err := client.SetLocalDescription(answer); err != nil {
+			return err
+		}
+		return sfu.HandleRemoteDescription(answer, offerId)
+	})
+	sfu.Negotiate(true)
+
+	require.Eventually(t, func() bool {
+		return sfu.IsEstablished() && client.ConnectionState() == webrtc.PeerConnectionStateConnected
+	}, 10*time.Second, 10*time.Millisecond, "transports did not connect")
+
+	// a HelloVerifyRequest from the SFU makes the peer send its ClientHello a second time, with the cookie
+	require.Equal(t, int32(1), clientHellos.Load())
 }
 
 func TestFirstOfferMissedDuringICERestart(t *testing.T) {
