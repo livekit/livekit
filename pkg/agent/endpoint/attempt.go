@@ -21,11 +21,13 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/agent/endpoint/wire"
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils/guid"
 )
@@ -48,6 +50,8 @@ type attempt struct {
 	before int64
 	// a status line reached the client, so nothing may be retried past here
 	committed bool
+	// on a 101 the stream becomes a tunnel
+	webSocket bool
 }
 
 // replayable reports whether the request body can be sent again from the start.
@@ -106,6 +110,15 @@ func (a *attempt) requestHeader() http.Header {
 		h = http.Header{}
 	}
 	removeHopByHopHeaders(h)
+	if a.webSocket {
+		h.Set("Connection", "Upgrade")
+		h.Set("Upgrade", "websocket")
+	}
+	// identity travels as preamble.authorized; the token must never reach the
+	// worker
+	if isLiveKitBearer(h.Get("Authorization")) {
+		h.Del("Authorization")
+	}
 	// the signalling namespace is the node's to write: a client able to set
 	// x-lk-completion could tell the worker a body it cut short was whole
 	wire.StripReservedHeaders(h)
@@ -215,10 +228,11 @@ func (a *attempt) readResponse(
 			return nil, errBadStatus
 		}
 		if resp.StatusCode == http.StatusSwitchingProtocols {
-			// no endpoint kind performs a protocol switch yet
-			return nil, errProtocolSwitch
+			if !a.webSocket || !strings.EqualFold(resp.Header.Get("Upgrade"), "websocket") {
+				return nil, errProtocolSwitch
+			}
 		}
-		if resp.StatusCode >= 200 {
+		if resp.StatusCode >= 200 || resp.StatusCode == http.StatusSwitchingProtocols {
 			lim.release()
 			// bodies (SSE, long streams) are unbounded; only the head is deadlined
 			_ = stream.SetReadDeadline(time.Time{})
@@ -283,10 +297,57 @@ func bodyLength(r *http.Request) int64 {
 }
 
 func requestTarget(escPath, rawQuery string) string {
+	rawQuery = stripAccessToken(rawQuery)
 	if rawQuery == "" {
 		return escPath
 	}
 	return escPath + "?" + rawQuery
+}
+
+func stripAccessToken(rawQuery string) string {
+	if rawQuery == "" {
+		return ""
+	}
+	// the kept pairs must keep the client's encoding byte for byte, so the query
+	// is never decoded and re-encoded
+	pairs := strings.Split(rawQuery, "&")
+	kept := pairs[:0]
+	for _, p := range pairs {
+		k, _, _ := strings.Cut(p, "=")
+		if uk, err := url.QueryUnescape(k); err == nil && uk == "access_token" {
+			continue
+		}
+		kept = append(kept, p)
+	}
+	return strings.Join(kept, "&")
+}
+
+// isWebSocketUpgrade admits only an HTTP/1.x websocket handshake; every other
+// protocol switch, h2c included, must stay blocked.
+func isWebSocketUpgrade(r *http.Request) bool {
+	return r.ProtoMajor == 1 && r.Method == http.MethodGet && bodyLength(r) == 0 &&
+		connectionHasToken(r.Header, "upgrade") &&
+		strings.EqualFold(strings.TrimSpace(r.Header.Get("Upgrade")), "websocket")
+}
+
+func connectionHasToken(h http.Header, token string) bool {
+	for _, v := range h.Values("Connection") {
+		for _, t := range strings.Split(v, ",") {
+			if strings.EqualFold(strings.TrimSpace(t), token) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isLiveKitBearer(v string) bool {
+	tok, ok := strings.CutPrefix(v, "Bearer ")
+	if !ok || tok == "" {
+		return false
+	}
+	t, err := auth.ParseAPIToken(tok)
+	return err == nil && t.APIKey() != ""
 }
 
 // hop-by-hop headers per RFC 9110; Connection-nominated headers are dropped too.

@@ -41,6 +41,7 @@ import (
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils/xtwirp"
 
+	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/version"
@@ -55,6 +56,7 @@ type LivekitServer struct {
 	promServer         *http.Server
 	debugServer        *http.Server
 	webtransportServer *WebTransportServer
+	agentEndpoint      *AgentEndpointService
 	router             routing.Router
 	roomManager        *RoomManager
 	signalServer       *SignalServer
@@ -136,6 +138,7 @@ func NewLivekitServer(conf *config.Config,
 	var agentFront http.Handler
 	if !conf.Agents.Endpoints.Disabled {
 		agentFront = agentEndpointService
+		s.agentEndpoint = agentEndpointService
 	}
 
 	s.httpServer = &http.Server{
@@ -343,6 +346,9 @@ func (s *LivekitServer) Start() error {
 
 	<-s.doneChan
 
+	// hijacked tunnels need their own drain before Shutdown
+	s.drainAgentTunnels(false)
+
 	// wait for shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
@@ -367,6 +373,9 @@ func (s *LivekitServer) Start() error {
 }
 
 func (s *LivekitServer) Stop(force bool) {
+	// the tunnels' grace runs alongside the participant wait
+	go s.drainAgentTunnels(force)
+
 	// wait for all participants to exit
 	s.router.Drain()
 	partTicker := time.NewTicker(5 * time.Second)
@@ -387,6 +396,23 @@ func (s *LivekitServer) Stop(force bool) {
 
 	// wait for fully closed
 	<-s.closedChan
+}
+
+// drainAgentTunnels returns once no agent endpoint WebSocket tunnel remains.
+func (s *LivekitServer) drainAgentTunnels(force bool) {
+	if s.agentEndpoint == nil {
+		return
+	}
+	grace := s.config.Agents.Endpoints.TunnelDrainTimeout
+	if grace <= 0 {
+		grace = endpoint.DefaultTunnelDrainTimeout
+	}
+	if force {
+		grace = 0
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), grace)
+	defer cancel()
+	s.agentEndpoint.Drain(ctx)
 }
 
 func (s *LivekitServer) RoomManager() *RoomManager {

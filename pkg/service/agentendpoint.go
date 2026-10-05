@@ -57,7 +57,9 @@ func NewAgentEndpointService(h *AgentHandler, scopes *EndpointScopes) *AgentEndp
 					Scope: scopes.Scope(apiKey, agentName, deployment),
 				}, true
 			},
-			Logger: h.logger,
+			Logger:              h.logger,
+			MaxTunnelsPerWorker: int(h.endpointsConfig.MaxTunnels),
+			TunnelDrainTimeout:  h.endpointsConfig.TunnelDrainTimeout,
 		}),
 	}
 }

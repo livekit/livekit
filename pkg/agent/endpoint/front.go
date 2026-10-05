@@ -123,8 +123,9 @@ type Access struct {
 type AccessResolver func(r *http.Request, agentName, deployment string) (access Access, ok bool)
 
 type Front struct {
-	params FrontParams
-	pools  *bridgePools
+	params  FrontParams
+	pools   *bridgePools
+	tunnels *Tunnels
 }
 
 // Identity resolves the agent and deployment a request addresses. Reporting
@@ -137,11 +138,18 @@ type FrontParams struct {
 	ResolveAccess AccessResolver
 	Logger        logger.Logger
 	Identity      Identity
+
+	// MaxTunnelsPerWorker caps one worker's concurrent WebSocket tunnels. 0
+	// means half its session's MaxStreams.
+	MaxTunnelsPerWorker int
+	// TunnelDrainTimeout is how long a tunnel outlives its worker starting to
+	// drain. 0 means DefaultTunnelDrainTimeout.
+	TunnelDrainTimeout time.Duration
 }
 
 func NewFront(params FrontParams) *Front {
 	params.Logger = params.Logger.WithComponent("agents.endpoint")
-	return &Front{params: params, pools: newBridgePools()}
+	return &Front{params: params, pools: newBridgePools(), tunnels: NewTunnels()}
 }
 
 // Fallback serves a request elsewhere (e.g. a multi-node relay); it reports
@@ -251,6 +259,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		target:    requestTarget(escPath, r.URL.RawQuery),
 		requestID: reqID,
 		granted:   granted,
+		webSocket: isWebSocketUpgrade(r),
 		pools:     f.pools,
 	}
 	a.body = &countingReader{r: r.Body, n: &bodyConsumed}
@@ -266,7 +275,16 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// must precede the first write, so the request body keeps streaming once the
+	// response has started
+	if err := http.NewResponseController(w).EnableFullDuplex(); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		f.params.Logger.Debugw("agent endpoint cannot enable full duplex", "error", err)
+	}
+
 	attempted := make(map[*Registration]bool)
+	if a.webSocket {
+		f.excludeTunnelsAtLimit(matched, attempted)
+	}
 	for range maxAttempts {
 		picked := pickWorker(matched, attempted)
 		if picked == nil {
@@ -453,6 +471,13 @@ const (
 
 // bridge runs one attempt against one worker.
 func (f *Front) bridge(w http.ResponseWriter, a *attempt, reg *Registration) bridgeOutcome {
+	if a.webSocket {
+		if !reg.tryAcquireTunnel(f.tunnelLimit(reg)) {
+			return bridgeRetry
+		}
+		defer reg.releaseTunnel()
+	}
+
 	ctx := a.req.Context()
 	stream, err := reg.OpenStream(ctx)
 	if err != nil {
@@ -470,9 +495,12 @@ func (f *Front) bridge(w http.ResponseWriter, a *attempt, reg *Registration) bri
 	writeErrCh := make(chan error, 1)
 	go func() {
 		err := a.writeRequest(stream)
-		if err == nil {
+		switch {
+		case err == nil && a.webSocket:
+			// the send side stays open: on a 101 it carries the client's frames
+		case err == nil:
 			err = stream.CloseWrite()
-		} else {
+		default:
 			// fail fast: the worker is waiting for bytes that will never come
 			stream.Reset(livekit.AgentHttp_HSR_ABORT, "request write failed")
 		}
@@ -501,6 +529,11 @@ func (f *Front) bridge(w http.ResponseWriter, a *attempt, reg *Registration) bri
 	// resp.Body must not be Closed: net/http's Close drains whatever the head
 	// declared and the body has not delivered, blocking on a stream that is
 	// about to be reset. stream.Close owns the underlying resource.
+
+	if resp.StatusCode == http.StatusSwitchingProtocols {
+		f.spliceWebSocket(w, a, reg, stream, br, resp, writeErrCh)
+		return bridgeDone
+	}
 
 	// a response head arrived: from here every failure is surfaced
 	copyResponseHeaders(w.Header(), resp.Header)
@@ -531,6 +564,13 @@ func (f *Front) bridge(w http.ResponseWriter, a *attempt, reg *Registration) bri
 	// framing complete; the sender may still report a short body in trailers
 	if ce := wire.CompletionFromTrailers(resp.Trailer); ce != nil {
 		return f.aborted(ce, reg, a, writeErrCh)
+	}
+	if a.webSocket {
+		// the request writer left the send side open; a declined upgrade ends
+		// with a FIN
+		if err := <-writeErrCh; err == nil {
+			_ = stream.CloseWrite()
+		}
 	}
 	return bridgeDone
 }

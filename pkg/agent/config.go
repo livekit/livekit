@@ -1,5 +1,7 @@
 package agent
 
+import "time"
+
 const DefaultTargetLoad = 0.7
 
 type Config struct {
@@ -20,4 +22,12 @@ type EndpointsConfig struct {
 	// MaxStreams is the soft per-session concurrent-stream cap used for capacity
 	// weighting; 0 takes the endpoint package default.
 	MaxStreams uint32 `yaml:"max_streams,omitempty"`
+
+	// MaxTunnels caps one worker's concurrent WebSocket tunnels, reserving the
+	// rest of its streams for HTTP routes; 0 takes half of MaxStreams.
+	MaxTunnels uint32 `yaml:"max_tunnels,omitempty"`
+
+	// TunnelDrainTimeout is how long a WebSocket tunnel outlives its worker or
+	// this node starting to drain; 0 takes the endpoint package default.
+	TunnelDrainTimeout time.Duration `yaml:"tunnel_drain_timeout,omitempty"`
 }

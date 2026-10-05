@@ -21,8 +21,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 
+	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/agent"
@@ -206,4 +208,51 @@ func TestAgentChainStillResolvesGrants(t *testing.T) {
 	require.NoError(t, err)
 	defer granted.Body.Close()
 	require.Equal(t, http.StatusOK, granted.StatusCode, "a scoped grant must reach the application")
+}
+
+// A private WebSocket route takes its grant as access_token; the tunnel must
+// survive every wrapper in the chain, and the token must not reach the
+// application.
+func TestAgentChainWebSocketWithQueryToken(t *testing.T) {
+	seenQuery := make(chan string, 1)
+	up := websocket.Upgrader{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /ws", func(w http.ResponseWriter, r *http.Request) {
+		seenQuery <- r.URL.RawQuery
+		c, err := up.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		mt, msg, err := c.ReadMessage()
+		if err != nil {
+			return
+		}
+		_ = c.WriteMessage(mt, msg)
+	})
+	app := newTargetApp(t, mux)
+
+	stack := newEndpointStack(t, agent.EndpointsConfig{})
+	stack.startWorker(app.URL, "production", []*livekit.AgentHttp_AgentEndpoint{
+		httpEP("/ws", []string{"GET"}, false),
+	})
+	url := "ws" + strings.TrimPrefix(stack.ts.URL, "http") + "/agents/test-agent/production/ws"
+
+	_, resp, err := websocket.DefaultDialer.Dial(url, nil)
+	require.Error(t, err)
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode, "a non-public route needs a grant")
+
+	token := stack.endpointToken(t, &auth.AgentEndpointGrant{
+		Call: true, AgentName: "test-agent", Deployment: "production",
+	})
+	c, resp, err := websocket.DefaultDialer.Dial(url+"?room=r1&access_token="+token, nil)
+	require.NoError(t, err)
+	defer c.Close()
+	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+	require.Equal(t, "room=r1", <-seenQuery)
+
+	require.NoError(t, c.WriteMessage(websocket.TextMessage, []byte("ping")))
+	_, msg, err := c.ReadMessage()
+	require.NoError(t, err)
+	require.Equal(t, "ping", string(msg))
 }

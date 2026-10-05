@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 )
 
 // DefaultDeployment is the URL segment that addresses workers registered with an
@@ -66,6 +67,8 @@ type Registration struct {
 	Manifest *Manifest
 
 	draining func() bool
+	// tunnels counts WebSocket handshakes and tunnels holding a stream here
+	tunnels atomic.Int32
 
 	lock    sync.RWMutex
 	session Session
@@ -145,6 +148,37 @@ func (r *Registration) SpareStreams() int {
 		return spare
 	}
 	return 0
+}
+
+// maxStreams is the session's soft concurrency cap, or 0 without a session.
+func (r *Registration) maxStreams() int {
+	s := r.getSession()
+	if s == nil {
+		return 0
+	}
+	return s.MaxStreams()
+}
+
+// Tunnels reports the WebSocket tunnels (and handshakes) holding a stream on
+// this worker.
+func (r *Registration) Tunnels() int {
+	return int(r.tunnels.Load())
+}
+
+func (r *Registration) tryAcquireTunnel(limit int) bool {
+	for {
+		n := r.tunnels.Load()
+		if int(n) >= limit {
+			return false
+		}
+		if r.tunnels.CompareAndSwap(n, n+1) {
+			return true
+		}
+	}
+}
+
+func (r *Registration) releaseTunnel() {
+	r.tunnels.Add(-1)
 }
 
 func (r *Registration) close() {
