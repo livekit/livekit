@@ -689,13 +689,17 @@ func (c *congestionDetector) HandleTWCCFeedback(report *rtcp.TransportLayerCC) {
 	processSymbol := func(symbol uint16) {
 		recvTime := int64(0)
 		isLost := false
-		if symbol != rtcp.TypeTCCPacketNotReceived {
+		if symbol == rtcp.TypeTCCPacketNotReceived {
+			isLost = true
+		} else if (symbol == rtcp.TypeTCCPacketReceivedSmallDelta || symbol == rtcp.TypeTCCPacketReceivedLargeDelta) && deltaIdx < len(report.RecvDeltas) {
 			recvRefTime += report.RecvDeltas[deltaIdx].Delta
 			deltaIdx++
 
 			recvTime = recvRefTime
 		} else {
-			isLost = true
+			// the reserved symbol carries no receive delta, nothing to record
+			sequenceNumber++
+			return
 		}
 		pi, sendDelta, recvDelta := c.packetTracker.RecordPacketIndicationFromRemote(sequenceNumber, recvTime)
 		if pi.sendTime != 0 {
