@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pion/dtls/v3/pkg/protocol/handshake"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
@@ -249,6 +250,37 @@ func TestFirstNegotiationUsesFastDebounce(t *testing.T) {
 			t.Fatalf("no offer from %s", want)
 		}
 	}
+}
+
+func TestDTLSHandshakeSkipsHelloVerify(t *testing.T) {
+	// the hook is on both sides, as pion picks the DTLS client when DTLS starts
+	var clientHellos atomic.Int32
+	newConfig := func() *WebRTCConfig {
+		c := &WebRTCConfig{}
+		c.SettingEngine.SetDTLSClientHelloMessageHook(func(m handshake.MessageClientHello) handshake.Message {
+			clientHellos.Inc()
+			return &m
+		})
+		return c
+	}
+
+	handlerA := &transportfakes.FakeHandler{}
+	transportA, err := NewPCTransport(TransportParams{Config: newConfig(), IsOfferer: true, Handler: handlerA})
+	require.NoError(t, err)
+	defer transportA.Close()
+	_, err = transportA.pc.CreateDataChannel(ReliableDataChannel, nil)
+	require.NoError(t, err)
+
+	handlerB := &transportfakes.FakeHandler{}
+	transportB, err := NewPCTransport(TransportParams{Config: newConfig(), Handler: handlerB})
+	require.NoError(t, err)
+	defer transportB.Close()
+
+	handleICEExchange(t, transportA, transportB, handlerA, handlerB)
+	connectTransports(t, transportA, transportB, handlerA, handlerB, false, 1, 1)
+
+	// a HelloVerifyRequest makes the client send its ClientHello a second time, with the cookie
+	require.Equal(t, int32(1), clientHellos.Load())
 }
 
 func TestFirstOfferMissedDuringICERestart(t *testing.T) {

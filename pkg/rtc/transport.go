@@ -421,6 +421,9 @@ func newPeerConnection(
 		// As Firefox does not support migration, ICE Lite can be disabled.
 		se.SetLite(false)
 	}
+	// ICE checks already prove the remote address, so the HelloVerifyRequest cookie only adds a round trip.
+	// pion applies this only when this side ends up as the DTLS server.
+	se.SetDTLSInsecureSkipHelloVerify(true)
 	se.SetDTLSRetransmissionInterval(dtlsRetransmissionInterval)
 	se.SetDTLSConnectContextMaker(func() (context.Context, func()) {
 		return context.WithTimeout(context.Background(), dtlsHandshakeTimeout)
