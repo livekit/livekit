@@ -1949,6 +1949,7 @@ func TestForwarderVP8TemporalUpSwitchAtLayerSync(t *testing.T) {
 		{name: "TL2 without Y", tid: 2, expectedThis: 0, expectedCurrent: 0},
 		{name: "TL1 without Y", tid: 1, expectedThis: 0, expectedCurrent: 0},
 		{name: "TL0", tid: 0, expectedThis: 0, expectedCurrent: 0},
+		{name: "TL2 with Y before TL1 sync", tid: 2, y: true, expectedThis: 0, expectedCurrent: 0},
 		{name: "TL1 with Y", tid: 1, y: true, expectedThis: 1, expectedCurrent: 1},
 		{name: "TL2 without Y after TL1 switch", tid: 2, expectedThis: 1, expectedCurrent: 1},
 		{name: "TL2 with Y", tid: 2, y: true, expectedThis: 2, expectedCurrent: 2},

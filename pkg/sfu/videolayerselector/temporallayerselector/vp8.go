@@ -47,11 +47,13 @@ func (v *VP8) Select(extPkt *buffer.ExtPacket, current int32, target int32) (thi
 		// Up-switch only where nothing dropped can be referenced: a layer sync
 		// (Y) frame depends only on TL0 (RFC 7741), a key frame refreshes all
 		// reference buffers. Key frames also cover encoders that never set Y.
+		// A sync frame raises one layer at a time, the layers in between would
+		// otherwise forward frames that reference their dropped frames.
 		switch {
 		case vp8.IsKeyFrame && tid <= target:
 			this = target
 			next = target
-		case tid > current && tid <= target && vp8.S && vp8.Y:
+		case tid == current+1 && tid <= target && vp8.S && vp8.Y:
 			this = tid
 			next = tid
 		}
