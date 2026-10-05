@@ -509,6 +509,10 @@ type APIConfig struct {
 
 	// Backwards compatibility for room service api calls, will enable by default and remove in a future release
 	EnablePsrpcForGetListParticpants bool `yaml:"enable_psrpc_for_get_list_participants,omitempty"`
+
+	// how long the tokens of a participant stay revoked after RemoveParticipant, default 11min.
+	// Set it above the validity of the tokens handed out to participants to keep removed participants out for good.
+	TokenRevocationTTL time.Duration `yaml:"token_revocation_ttl,omitempty"`
 }
 
 type PrometheusConfig struct {
