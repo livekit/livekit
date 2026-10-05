@@ -964,3 +964,46 @@ func TestPacketRateMode(t *testing.T) {
 		})
 	}
 }
+
+func TestUpstreamLossAfterRTXRepair(t *testing.T) {
+	// 1000 video packets, 100 lost, RTX repairs 70 in the same window, 30 (3%) never arrive
+	r := rtpstats.NewRTPStatsReceiver(rtpstats.RTPStatsParams{})
+	r.SetClockRate(90000)
+	snapshotID := r.NewSnapshotId()
+
+	packetTime := time.Now().UnixNano()
+	send := func(sn uint16) {
+		packetTime += int64(5 * time.Millisecond)
+		r.Update(packetTime, sn, uint32(sn)*450, false, 12, 1000, 0)
+	}
+	for sn := uint16(0); sn < 1000; sn++ {
+		if sn == 300 {
+			for repaired := uint16(100); repaired < 170; repaired++ {
+				send(repaired)
+			}
+		}
+		if sn < 100 || sn >= 200 {
+			send(sn)
+		}
+	}
+
+	delta := r.DeltaInfo(snapshotID)
+	require.Equal(t, uint32(1000), delta.Packets)
+	require.Equal(t, uint32(30), delta.PacketsLost)
+	require.Equal(t, uint32(70), delta.PacketsOutOfOrder)
+
+	trp := newTestReceiverProvider()
+	trp.setStreams(map[uint32]*buffer.StreamStatsWithLayers{1: {RTPStats: delta}})
+	cs := NewConnectionStats(ConnectionStatsParams{
+		ReceiverProvider: trp,
+		Logger:           logger.GetLogger(),
+	})
+	now := time.Now()
+	cs.StartAt(mime.MimeTypeVP8, false, now)
+	cs.updateScoreAt(now.Add(5 * time.Second))
+
+	// packet score 100 - 3% * 10 = 70, smoothed 0.8 * 70 + 0.2 * 100 = 76
+	score, quality := cs.scorer.GetScoreAndQuality()
+	require.InDelta(t, 76.0, score, 0.01)
+	require.Equal(t, livekit.ConnectionQuality_GOOD, quality)
+}
