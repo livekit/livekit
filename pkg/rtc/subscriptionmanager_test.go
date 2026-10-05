@@ -423,6 +423,71 @@ func TestConcurrentFirstSubscribe(t *testing.T) {
 	}
 }
 
+func TestSettingsKeptForSubscribe(t *testing.T) {
+	t.Run("media", func(t *testing.T) {
+		sm := newTestSubscriptionManager()
+		defer sm.Close(false)
+		resolver := newTestResolver(true, true, "pub", "pubID")
+		sm.params.TrackResolver = resolver.Resolve
+
+		settings := &livekit.UpdateTrackSettings{Disabled: true}
+		sm.UpdateSubscribedTrackSettings("track", settings)
+		// a cleanup pass between the settings and the subscribe must not drop the settings
+		sm.reconcileSubscriptions()
+		sm.SubscribeToTrack("track", false)
+
+		sm.lock.RLock()
+		s := sm.subscriptions["track"]
+		sm.lock.RUnlock()
+		require.Eventually(t, func() bool {
+			return !s.needsSubscribe()
+		}, subSettleTimeout, subCheckInterval, "track should be subscribed")
+		st := s.getSubscribedTrack().(*typesfakes.FakeSubscribedTrack)
+		require.Eventually(t, func() bool {
+			n := st.UpdateSubscriberSettingsCallCount()
+			if n == 0 {
+				return false
+			}
+			applied, _ := st.UpdateSubscriberSettingsArgsForCall(n - 1)
+			return applied == settings
+		}, subSettleTimeout, subCheckInterval, "the down track should get the settings")
+
+		// settings for a track that is never subscribed are cleaned up after notFoundTimeout
+		sm.UpdateSubscribedTrackSettings("other", settings)
+		require.Eventually(t, func() bool {
+			sm.lock.RLock()
+			defer sm.lock.RUnlock()
+			_, ok := sm.subscriptions["other"]
+			return !ok
+		}, subSettleTimeout, subCheckInterval, "unused settings should be cleaned up")
+	})
+
+	t.Run("data", func(t *testing.T) {
+		sm := newTestSubscriptionManager()
+		defer sm.Close(false)
+		resolver := newTestDataTrackResolver(true, true, "pub", "pubID")
+		sm.params.DataTrackResolver = resolver.Resolve
+
+		fps := uint32(5)
+		options := &livekit.DataTrackSubscriptionOptions{TargetFps: &fps}
+		sm.UpdateDataTrackSubscriptionOptions("track", options)
+		// a cleanup pass between the options and the subscribe must not drop the options
+		sm.reconcileDataTrackSubscriptions()
+		sm.SubscribeToDataTrack("track")
+
+		sm.lock.RLock()
+		s := sm.dataTrackSubscriptions["track"]
+		sm.lock.RUnlock()
+		require.Eventually(t, func() bool {
+			return s.getDataDownTrack() != nil
+		}, subSettleTimeout, subCheckInterval, "data track should be subscribed")
+		ddt := s.getDataDownTrack().(*typesfakes.FakeDataDownTrack)
+		n := ddt.UpdateSubscriptionOptionsCallCount()
+		require.NotZero(t, n)
+		require.Equal(t, options, ddt.UpdateSubscriptionOptionsArgsForCall(n-1))
+	})
+}
+
 func TestSubscriptionLimits(t *testing.T) {
 	sm := newTestSubscriptionManagerWithParams(testSubscriptionParams{
 		SubscriptionLimitAudio: 1,
@@ -595,6 +660,37 @@ func TestSubscribeDataTrack(t *testing.T) {
 			return !s.needsSubscribe() && s.getDataDownTrack() != nil
 		}, subSettleTimeout, subCheckInterval, "should be resubscribed")
 		require.Equal(t, 2, resolver.dataTrack.AddSubscriberCallCount())
+	})
+
+	t.Run("subscribe again during unsubscribe", func(t *testing.T) {
+		sm := newTestSubscriptionManager()
+		defer sm.Close(false)
+		resolver := newTestDataTrackResolver(true, true, "pub", "pubID")
+		sm.params.DataTrackResolver = resolver.Resolve
+
+		sm.SubscribeToDataTrack("track")
+		sm.lock.RLock()
+		s := sm.dataTrackSubscriptions["track"]
+		sm.lock.RUnlock()
+		require.Eventually(t, func() bool {
+			return !s.needsSubscribe()
+		}, subSettleTimeout, subCheckInterval, "should be subscribed")
+
+		// the client subscribes again while the removal runs,
+		// then the down track closes, as DataTrack.RemoveSubscriber does
+		ddt := s.getDataDownTrack().(*typesfakes.FakeDataDownTrack)
+		resolver.dataTrack.RemoveSubscriberCalls(func(livekit.ParticipantID) {
+			sm.SubscribeToDataTrack("track")
+			ddt.OnCloseArgsForCall(0)()
+		})
+		sm.UnsubscribeFromDataTrack("track")
+
+		require.Eventually(t, func() bool {
+			return resolver.dataTrack.AddSubscriberCallCount() == 2 && s.getDataDownTrack() != nil
+		}, subSettleTimeout, subCheckInterval, "should be subscribed again")
+		sm.lock.RLock()
+		require.Same(t, s, sm.dataTrackSubscriptions["track"])
+		sm.lock.RUnlock()
 	})
 
 	t.Run("unsubscribe before data track resolves", func(t *testing.T) {
