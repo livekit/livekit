@@ -1933,6 +1933,47 @@ func TestForwarderGetTranslationParamsVideo(t *testing.T) {
 	require.Equal(t, f.lastSSRC, params.SSRC)
 }
 
+func TestForwarderVP8TemporalUpSwitchAtLayerSync(t *testing.T) {
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 2})
+
+	// a frame without Y may reference a dropped frame of its layer
+	steps := []struct {
+		name            string
+		tid             uint8
+		y               bool
+		expectedThis    int32
+		expectedCurrent int32
+	}{
+		{name: "TL2 without Y", tid: 2, expectedThis: 0, expectedCurrent: 0},
+		{name: "TL1 without Y", tid: 1, expectedThis: 0, expectedCurrent: 0},
+		{name: "TL0", tid: 0, expectedThis: 0, expectedCurrent: 0},
+		{name: "TL1 with Y", tid: 1, y: true, expectedThis: 1, expectedCurrent: 1},
+		{name: "TL2 without Y after TL1 switch", tid: 2, expectedThis: 1, expectedCurrent: 1},
+		{name: "TL2 with Y", tid: 2, y: true, expectedThis: 2, expectedCurrent: 2},
+	}
+	for i, step := range steps {
+		extPkt, err := testutils.GetTestExtPacketVP8(
+			&testutils.TestExtPacketParams{SequenceNumber: uint16(i), PayloadSize: 20},
+			&codec.VP8{S: true, I: true, PictureID: uint16(i), T: true, TID: step.tid, Y: step.y},
+		)
+		require.NoError(t, err)
+		require.Equal(t, step.expectedThis, f.vls.SelectTemporal(extPkt), step.name)
+		require.Equal(t, step.expectedCurrent, f.vls.GetCurrent().Temporal, step.name)
+	}
+
+	// key frame refreshes all buffers, up-switch at it even without Y
+	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+	extPkt, err := testutils.GetTestExtPacketVP8(
+		&testutils.TestExtPacketParams{SequenceNumber: 10, PayloadSize: 20},
+		&codec.VP8{S: true, I: true, PictureID: 10, T: true, TID: 0, IsKeyFrame: true},
+	)
+	require.NoError(t, err)
+	require.Equal(t, int32(2), f.vls.SelectTemporal(extPkt))
+	require.Equal(t, int32(2), f.vls.GetCurrent().Temporal)
+}
+
 func TestForwarderGetSnTsForPadding(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
