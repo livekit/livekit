@@ -187,7 +187,8 @@ rtc:
   # datachannel_data_track_target_latency: 100ms
 
 # when enabled, LiveKit will expose prometheus metrics on :6789/metrics
-# prometheus_port: 6789
+# prometheus:
+#   port: 6789
 
 # expose /debug/pprof (and /debug/goroutine, /debug/rooms) on a dedicated port,
 # separate from the public signalling port. only enabled when port is set.
