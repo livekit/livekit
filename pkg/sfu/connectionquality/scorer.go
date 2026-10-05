@@ -236,13 +236,13 @@ func newQualityScorer(params qualityScorerParams) *qualityScorer {
 		layerDistance: utils.NewTimedAggregator[float64](utils.TimedAggregatorParams{
 			CapNegativeValues: true,
 		}),
-		modeCalculatedAt: time.Now().Add(-cModeCalculationInterval),
 	}
 }
 
 func (q *qualityScorer) startAtLocked(packetLossWeight float64, at time.Time) {
 	q.packetLossWeight = packetLossWeight
 	q.lastUpdateAt = at
+	q.modeCalculatedAt = at.Add(-cModeCalculationInterval)
 }
 
 func (q *qualityScorer) StartAt(packetLossWeight float64, at time.Time) {

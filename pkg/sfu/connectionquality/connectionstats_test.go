@@ -942,7 +942,8 @@ func TestPacketRateMode(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			q := newQualityScorer(qualityScorerParams{Logger: logger.GetLogger()})
-			at := time.Now()
+			// a timeline in the past, the mode must follow update times, not the wall clock
+			at := time.Now().Add(-time.Hour)
 			q.StartAt(tc.weight, at)
 			for bin, count := range tc.histogram {
 				q.ppsHistogram[bin] = count
