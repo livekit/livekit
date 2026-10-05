@@ -189,19 +189,19 @@ func (m *SubscriptionManager) SubscribeToTrack(trackID livekit.TrackID, isSync b
 		return
 	}
 
-	sub, desireChanged := m.setDesired(trackID, true)
-	if sub == nil {
+	// find or create and set desired under one lock, so that a concurrent subscribe,
+	// settings update or cleanup cannot replace or remove the subscription in between
+	m.lock.Lock()
+	sub, ok := m.subscriptions[trackID]
+	if !ok {
 		sLogger := m.params.Logger.WithValues(
 			"trackID", trackID,
 		)
 		sub = newMediaTrackSubscription(m.params.Participant.ID(), trackID, sLogger)
-
-		m.lock.Lock()
 		m.subscriptions[trackID] = sub
-		m.lock.Unlock()
-
-		sub, desireChanged = m.setDesired(trackID, true)
 	}
+	desireChanged := sub.setDesired(true)
+	m.lock.Unlock()
 	if desireChanged {
 		sub.logger.Debugw("subscribing to track")
 	}
@@ -234,19 +234,18 @@ func (m *SubscriptionManager) SubscribeToDataTrack(trackID livekit.TrackID) {
 		return
 	}
 
-	sub, desireChanged := m.setDataTrackDesired(trackID, true)
-	if sub == nil {
+	// same as SubscribeToTrack, find or create and set desired under one lock
+	m.lock.Lock()
+	sub, ok := m.dataTrackSubscriptions[trackID]
+	if !ok {
 		sLogger := m.params.Logger.WithValues(
 			"trackID", trackID,
 		)
 		sub = newDataTrackSubscription(m.params.Participant.ID(), trackID, sLogger)
-
-		m.lock.Lock()
 		m.dataTrackSubscriptions[trackID] = sub
-		m.lock.Unlock()
-
-		sub, desireChanged = m.setDataTrackDesired(trackID, true)
 	}
+	desireChanged := sub.setDesired(true)
+	m.lock.Unlock()
 	if desireChanged {
 		sub.logger.Debugw("subscribing to data track")
 	}

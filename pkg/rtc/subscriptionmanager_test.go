@@ -353,6 +353,76 @@ func TestUpdateSettingsBeforeSubscription(t *testing.T) {
 	require.Equal(t, settings.Height, applied.Height)
 }
 
+func TestConcurrentFirstSubscribe(t *testing.T) {
+	settings := &livekit.UpdateTrackSettings{Width: 100, Height: 100}
+	for range 200 {
+		sm := newTestSubscriptionManager()
+
+		var lock sync.Mutex
+		var subscribed bool
+		mt := &typesfakes.FakeMediaTrack{}
+		mt.IDReturns("track")
+		mt.AddSubscriberCalls(func(types.LocalParticipant) (types.SubscribedTrack, error) {
+			lock.Lock()
+			defer lock.Unlock()
+			if subscribed {
+				return nil, errAlreadySubscribed
+			}
+			subscribed = true
+			st := &typesfakes.FakeSubscribedTrack{}
+			st.IDReturns("track")
+			st.MediaTrackReturns(mt)
+			return st, nil
+		})
+		sm.params.TrackResolver = func(types.LocalParticipant, livekit.TrackID) types.MediaResolverResult {
+			return types.MediaResolverResult{
+				Track:                mt,
+				HasPermission:        true,
+				PublisherID:          "pubID",
+				PublisherIdentity:    "pub",
+				TrackChangedNotifier: utils.NewChangeNotifier(),
+				TrackRemovedNotifier: utils.NewChangeNotifier(),
+			}
+		}
+
+		// two first subscribes and a settings update race to create the subscription
+		var start, done sync.WaitGroup
+		start.Add(1)
+		for _, f := range []func(){
+			func() { sm.SubscribeToTrack("track", false) },
+			func() { sm.SubscribeToTrack("track", false) },
+			func() { sm.UpdateSubscribedTrackSettings("track", settings) },
+		} {
+			done.Add(1)
+			go func() {
+				defer done.Done()
+				start.Wait()
+				f()
+			}()
+		}
+		start.Done()
+		done.Wait()
+
+		sm.lock.RLock()
+		s := sm.subscriptions["track"]
+		sm.lock.RUnlock()
+		require.Eventually(t, func() bool {
+			return !s.needsSubscribe()
+		}, subSettleTimeout, subCheckInterval, "the subscription that is kept should own the down track")
+		st := s.getSubscribedTrack().(*typesfakes.FakeSubscribedTrack)
+		require.Eventually(t, func() bool {
+			n := st.UpdateSubscriberSettingsCallCount()
+			if n == 0 {
+				return false
+			}
+			applied, _ := st.UpdateSubscriberSettingsArgsForCall(n - 1)
+			return applied == settings
+		}, subSettleTimeout, subCheckInterval, "the down track should get the settings")
+
+		sm.Close(false)
+	}
+}
+
 func TestSubscriptionLimits(t *testing.T) {
 	sm := newTestSubscriptionManagerWithParams(testSubscriptionParams{
 		SubscriptionLimitAudio: 1,
