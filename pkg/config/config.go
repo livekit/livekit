@@ -934,10 +934,11 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 	defaultConfig := &DefaultConfig
 	flags := make([]cli.Flag, 0)
 	for name, value := range (defaultConfig).ToCLIFlagNames(existingFlags) {
-		kind := value.Kind()
-		if kind == reflect.Ptr {
-			kind = value.Type().Elem().Kind()
+		valueType := value.Type()
+		if valueType.Kind() == reflect.Ptr {
+			valueType = valueType.Elem()
 		}
+		kind := valueType.Kind()
 
 		var flag cli.Flag
 		envVar := fmt.Sprintf("LIVEKIT_%s", strings.ToUpper(strings.ReplaceAll(name, ".", "_")))
@@ -969,12 +970,23 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 				Hidden:      hidden,
 			}
 		case reflect.Int64:
-			flag = &cli.Int64Flag{
-				Name:        name,
-				Sources:     cli.EnvVars(envVar),
-				Usage:       generatedCLIFlagUsage,
-				DefaultText: defaultText,
-				Hidden:      hidden,
+			if valueType == reflect.TypeOf(time.Duration(0)) {
+				// parse values like "30s", as the YAML config does
+				flag = &cli.DurationFlag{
+					Name:        name,
+					Sources:     cli.EnvVars(envVar),
+					Usage:       generatedCLIFlagUsage,
+					DefaultText: defaultText,
+					Hidden:      hidden,
+				}
+			} else {
+				flag = &cli.Int64Flag{
+					Name:        name,
+					Sources:     cli.EnvVars(envVar),
+					Usage:       generatedCLIFlagUsage,
+					DefaultText: defaultText,
+					Hidden:      hidden,
+				}
 			}
 		case reflect.Uint8, reflect.Uint16, reflect.Uint32:
 			flag = &cli.UintFlag{

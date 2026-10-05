@@ -15,9 +15,11 @@
 package config
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
@@ -121,6 +123,47 @@ func TestGeneratedFlags(t *testing.T) {
 
 	require.NotNil(t, conf.RTC.ReconnectOnSubscriptionError)
 	require.False(t, *conf.RTC.ReconnectOnSubscriptionError)
+}
+
+func TestGeneratedDurationFlags(t *testing.T) {
+	// run a command with the generated flags, as cmd/server does, so that flag and env var values are parsed
+	run := func(t *testing.T, args ...string) (*Config, error) {
+		generatedFlags, err := GenerateCLIFlags(nil, true)
+		require.NoError(t, err)
+
+		var conf *Config
+		c := &cli.Command{
+			Name:  "test",
+			Flags: generatedFlags,
+			Action: func(_ context.Context, c *cli.Command) error {
+				var err error
+				conf, err = NewConfig("", true, c, nil)
+				return err
+			},
+		}
+		err = c.Run(context.Background(), append([]string{"test"}, args...))
+		return conf, err
+	}
+
+	t.Run("flag", func(t *testing.T) {
+		conf, err := run(t, "--api.execution_timeout=5s")
+		require.NoError(t, err)
+		require.Equal(t, 5*time.Second, conf.API.ExecutionTimeout)
+	})
+
+	t.Run("env var", func(t *testing.T) {
+		t.Setenv("LIVEKIT_ROOM_CREATE_ROOM_TIMEOUT", "30s")
+		conf, err := run(t)
+		require.NoError(t, err)
+		require.Equal(t, 30*time.Second, conf.Room.CreateRoomTimeout)
+	})
+
+	t.Run("value without a unit", func(t *testing.T) {
+		// rejected, as in the YAML config, instead of being read as nanoseconds
+		t.Setenv("LIVEKIT_ROOM_CREATE_ROOM_TIMEOUT", "30")
+		_, err := run(t)
+		require.ErrorContains(t, err, "LIVEKIT_ROOM_CREATE_ROOM_TIMEOUT")
+	})
 }
 
 func TestYAMLTag(t *testing.T) {
