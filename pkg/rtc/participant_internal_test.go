@@ -32,6 +32,7 @@ import (
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/logger/zaputil"
 	"github.com/livekit/protocol/observability/roomobs"
 	lksdp "github.com/livekit/protocol/sdp"
 	"github.com/livekit/protocol/signalling"
@@ -76,6 +77,38 @@ func TestIsReady(t *testing.T) {
 			require.Equal(t, test.ready, p.IsReady())
 		})
 	}
+}
+
+// Disabling a codec can leave the publish list with only RTX and FEC. The
+// fallback must still pick a real codec, or the track registers as RTX and
+// subscribers see a blank tile.
+func TestPublishCodecFallbackSkipsRTX(t *testing.T) {
+	h264 := &livekit.Codec{Mime: mime.MimeTypeH264.String()}
+	rtx := &livekit.Codec{Mime: mime.MimeTypeRTX.String()}
+
+	newParticipant := func() *ParticipantImpl {
+		return &ParticipantImpl{params: ParticipantParams{Logger: logger.GetLogger()}}
+	}
+
+	t.Run("h264 enabled, rtx is last and not chosen", func(t *testing.T) {
+		p := newParticipant()
+		p.setupEnabledCodecs([]*livekit.Codec{h264, rtx}, nil, nil)
+
+		require.Equal(t, mime.MimeTypeH264.String(), selectAlternativeVideoCodec(p.enabledPublishCodecs))
+	})
+
+	t.Run("h264 disabled leaves rtx only, fallback avoids rtx", func(t *testing.T) {
+		p := newParticipant()
+		disabled := &livekit.DisabledCodecs{Publish: []*livekit.Codec{{Mime: mime.MimeTypeH264.String()}}}
+		p.setupEnabledCodecs([]*livekit.Codec{h264, rtx}, nil, disabled)
+
+		require.Len(t, p.enabledPublishCodecs, 1)
+		require.True(t, mime.IsMimeTypeStringRTX(p.enabledPublishCodecs[0].Mime))
+
+		alt := selectAlternativeVideoCodec(p.enabledPublishCodecs)
+		require.False(t, mime.IsMimeTypeStringRTX(alt), "fallback must not be rtx, got %q", alt)
+		require.Equal(t, mime.MimeTypeVP8.String(), alt)
+	})
 }
 
 func TestSupportsMoving(t *testing.T) {
@@ -560,7 +593,7 @@ func TestPreferMediaCodecForPublisher(t *testing.T) {
 			for i := 0; i < 2; i++ {
 				// publish preferred track without client using setCodecPreferences()
 				trackCid := fmt.Sprintf("%s-%d", tc.trackBaseCid, i)
-				req := utils.CloneProto(tc.addTrack)
+				req := proto.CloneOf(tc.addTrack)
 				req.SimulcastCodecs = []*livekit.SimulcastCodec{
 					{
 						Codec: tc.preferredCodec,
@@ -917,6 +950,7 @@ func TestMigratingInParticipantWaitsForReconnectResponse(t *testing.T) {
 		require.NoError(t, p.HandleReconnectAndSendResponse(
 			livekit.ReconnectReason_RR_UNKNOWN,
 			&livekit.ReconnectResponse{LastMessageSeq: 21},
+			nil,
 		))
 		require.True(t, p.IsReady())
 
@@ -942,6 +976,7 @@ func TestMigratingInParticipantWaitsForReconnectResponse(t *testing.T) {
 		require.NoError(t, p.HandleReconnectAndSendResponse(
 			livekit.ReconnectReason_RR_UNKNOWN,
 			&livekit.ReconnectResponse{},
+			nil,
 		))
 
 		require.Equal(t, 2, sink.WriteMessageCallCount())
@@ -964,6 +999,7 @@ func TestMigratingInParticipantWaitsForReconnectResponse(t *testing.T) {
 		require.NoError(t, p.HandleReconnectAndSendResponse(
 			livekit.ReconnectReason_RR_UNKNOWN,
 			&livekit.ReconnectResponse{},
+			nil,
 		))
 		require.True(t, p.IsReady())
 		require.Zero(t, sink.WriteMessageCallCount())
@@ -1004,6 +1040,7 @@ func TestResumedParticipantWaitsForReconnectResponse(t *testing.T) {
 		require.NoError(t, p.HandleReconnectAndSendResponse(
 			livekit.ReconnectReason_RR_SIGNAL_DISCONNECTED,
 			&livekit.ReconnectResponse{LastMessageSeq: 7},
+			nil,
 		))
 
 		require.Equal(t, 2, sink.WriteMessageCallCount())
@@ -1040,10 +1077,57 @@ func TestResumedParticipantWaitsForReconnectResponse(t *testing.T) {
 		require.NoError(t, p.HandleReconnectAndSendResponse(
 			livekit.ReconnectReason_RR_SIGNAL_DISCONNECTED,
 			&livekit.ReconnectResponse{},
+			nil,
 		))
 		require.Zero(t, sink.WriteMessageCallCount())
 
 		require.NoError(t, p.SendRoomUpdate(&livekit.Room{Name: "test"}))
 		require.Equal(t, 1, sink.WriteMessageCallCount())
 	})
+}
+
+func TestLeaveJoinSession(t *testing.T) {
+	p := newParticipantForTest("leave-join-session")
+	p.params.LoggerResolver = zaputil.NoOpDeferrer{}
+	_, p.params.ReporterResolver = roomobs.DeferredParticipantReporter(roomobs.NewNoopProjectReporter())
+	tl := p.GetTelemetryListener().(*typesfakes.FakeParticipantTelemetryListener)
+
+	track := &typesfakes.FakeLocalMediaTrack{}
+	track.IDReturns("TR_test")
+	track.PublishedReturns(true)
+	p.UpTrackManager.AddPublishedTrack(track)
+
+	// leaving reports the track unpublished, then runs the leave under the left session's
+	// guard, and the next session gets a fresh one
+	prevGuard := p.TelemetryGuard()
+	require.NotNil(t, prevGuard)
+	left := false
+	p.LeaveSession(func() {
+		left = true
+		require.Same(t, prevGuard, p.TelemetryGuard())
+		require.Equal(t, 1, tl.OnTrackUnpublishedCallCount())
+	})
+	require.True(t, left)
+	require.NotSame(t, prevGuard, p.TelemetryGuard())
+	require.Equal(t, 1, tl.OnTrackUnpublishedCallCount())
+	_, _, _, wasPublished, shouldSend := tl.OnTrackUnpublishedArgsForCall(0)
+	require.True(t, wasPublished)
+	require.True(t, shouldSend)
+
+	// joining runs the join first, then reports the track published again
+	joined := false
+	p.JoinSession(func() {
+		joined = true
+		require.Zero(t, tl.OnTrackPublishedCallCount())
+	})
+	require.True(t, joined)
+	require.Equal(t, 1, tl.OnTrackPublishedCallCount())
+	_, _, _, shouldSend = tl.OnTrackPublishedArgsForCall(0)
+	require.True(t, shouldSend)
+
+	// nil callbacks are fine
+	p.LeaveSession(nil)
+	p.JoinSession(nil)
+	require.Equal(t, 2, tl.OnTrackUnpublishedCallCount())
+	require.Equal(t, 2, tl.OnTrackPublishedCallCount())
 }

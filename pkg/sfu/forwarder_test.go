@@ -28,6 +28,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/codecmunger"
+	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
 )
@@ -2260,4 +2261,14 @@ func codecHeaderOf(b []byte) [codecmunger.MaxHeaderSize]byte {
 	var hdr [codecmunger.MaxHeaderSize]byte
 	copy(hdr[:], b)
 	return hdr
+}
+
+// WriteRTP holds the dependency descriptor in pacer scratch sized to pion's one
+// byte extension profile payload cap, which has to be the inline size
+// TranslationParams carries, or descriptors would take the heap copy fallback
+func TestPacerScratchFitsInlineDependencyDescriptor(t *testing.T) {
+	p := &pacer.Packet{}
+
+	require.Len(t, p.HoldExtension(make([]byte, dd.MaxInlineExtensionSize)), dd.MaxInlineExtensionSize)
+	require.Nil(t, p.HoldExtension(make([]byte, dd.MaxInlineExtensionSize+1)))
 }

@@ -306,7 +306,7 @@ func (r *RoomManager) StartSession(
 	room, err := r.getOrCreateRoom(ctx, createRoom)
 	if err != nil {
 		if pi.Identity != "" {
-			prometheus.IncrementParticipantRtcCanceled(1, false)
+			prometheus.IncrementParticipantRtcCanceled(1, false, pi.Client.GetSdk())
 		}
 		return err
 	}
@@ -359,7 +359,7 @@ func (r *RoomManager) StartSession(
 						Leave: leave,
 					},
 				})
-				prometheus.IncrementParticipantRtcCanceled(1, participant.IsWarpEnabled())
+				prometheus.IncrementParticipantRtcCanceled(1, participant.IsWarpEnabled(), participant.GetClientInfo().GetSdk())
 				return errors.New("could not restart closed participant")
 			}
 
@@ -383,7 +383,7 @@ func (r *RoomManager) StartSession(
 				pi.ReconnectReason,
 			); err != nil {
 				participant.GetLogger().Warnw("could not resume participant", err)
-				prometheus.IncrementParticipantRtcCanceled(1, participant.IsWarpEnabled())
+				prometheus.IncrementParticipantRtcCanceled(1, participant.IsWarpEnabled(), participant.GetClientInfo().GetSdk())
 				return err
 			}
 			r.telemetry.ParticipantResumed(ctx, room.ToProto(), participant.ToProto(), r.currentNode.NodeID(), pi.ReconnectReason)
@@ -419,7 +419,7 @@ func (r *RoomManager) StartSession(
 				Leave: leave,
 			},
 		})
-		prometheus.IncrementParticipantRtcCanceled(1, false)
+		prometheus.IncrementParticipantRtcCanceled(1, false, pi.Client.GetSdk())
 		return errors.New("could not restart participant")
 	}
 
@@ -543,9 +543,12 @@ func (r *RoomManager) StartSession(
 		EnableParticipantDataBlob:         r.config.EnableParticipantDataBlob,
 		EnableRTPStreamRestartDetection:   r.config.RTC.EnableRTPStreamRestartDetection,
 		EnableWarp:                        enableWarp,
+		MediaBatchIOEnabled: r.config.RTC.BatchIO.BatchSize > 0 &&
+			(r.config.RTC.ICEPortRangeStart == 0 || r.config.RTC.ICEPortRangeEnd == 0) &&
+			r.config.RTC.UDPPort.Valid(),
 	})
 	if err != nil {
-		prometheus.IncrementParticipantRtcCanceled(1, enableWarp)
+		prometheus.IncrementParticipantRtcCanceled(1, enableWarp, pi.Client.GetSdk())
 		return err
 	}
 	iceConfig := r.setIceConfig(room.Name(), participant)
@@ -561,7 +564,7 @@ func (r *RoomManager) StartSession(
 	if err = room.Join(participant, requestSource, &opts, iceServers); err != nil {
 		pLogger.Errorw("could not join room", err)
 		_ = participant.Close(true, types.ParticipantCloseReasonJoinFailed, false)
-		prometheus.IncrementParticipantRtcCanceled(1, enableWarp)
+		prometheus.IncrementParticipantRtcCanceled(1, enableWarp, pi.Client.GetSdk())
 		return err
 	}
 
@@ -573,7 +576,7 @@ func (r *RoomManager) StartSession(
 		participantServerClosers.Close()
 		pLogger.Errorw("could not join register participant topic", err)
 		_ = participant.Close(true, types.ParticipantCloseReasonMessageBusFailed, false)
-		prometheus.IncrementParticipantRtcCanceled(1, enableWarp)
+		prometheus.IncrementParticipantRtcCanceled(1, enableWarp, pi.Client.GetSdk())
 		return err
 	}
 
@@ -584,7 +587,7 @@ func (r *RoomManager) StartSession(
 			participantServerClosers.Close()
 			pLogger.Errorw("could not join register participant topic for rtc rest participant server", err)
 			_ = participant.Close(true, types.ParticipantCloseReasonMessageBusFailed, false)
-			prometheus.IncrementParticipantRtcCanceled(1, enableWarp)
+			prometheus.IncrementParticipantRtcCanceled(1, enableWarp, pi.Client.GetSdk())
 			return err
 		}
 	}
@@ -653,7 +656,9 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 	}
 
 	// create new room, get details first
-	ri, internal, created, err := r.roomAllocator.CreateRoom(ctx, createRoom, true)
+	// createRoom is reassigned to the request with the room preset applied, so that a room
+	// composite egress from the preset, which RoomInternal has no field for, is started
+	ri, internal, createRoom, created, err := r.roomAllocator.CreateRoom(ctx, createRoom, true)
 	if err != nil {
 		return nil, err
 	}
@@ -730,6 +735,11 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 	prometheus.RoomStarted()
 
 	if created && createRoom.GetEgress().GetRoom() != nil {
+		if r.egressLauncher == nil {
+			newRoom.Release()
+			return nil, ErrEgressNotConnected
+		}
+
 		// ensure room name matches
 		createRoom.Egress.Room.RoomName = createRoom.Name
 		_, err = r.egressLauncher.StartEgress(ctx, &rpc.StartEgressRequest{

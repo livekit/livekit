@@ -53,6 +53,7 @@ type DynacastManager interface {
 	Restart()
 	Close()
 	ForceUpdate()
+	ResendCommittedQuality()
 	ForceQuality(quality livekit.VideoQuality)
 	ForceEnable(enabled bool)
 
@@ -88,6 +89,7 @@ func (d *dynacastManagerNull) HandleCodecRegression(fromMime, toMime mime.MimeTy
 func (d *dynacastManagerNull) Restart()                                             {}
 func (d *dynacastManagerNull) Close()                                               {}
 func (d *dynacastManagerNull) ForceUpdate()                                         {}
+func (d *dynacastManagerNull) ResendCommittedQuality()                              {}
 func (d *dynacastManagerNull) ForceQuality(quality livekit.VideoQuality)            {}
 func (d *dynacastManagerNull) ForceEnable(enabled bool)                             {}
 func (d *dynacastManagerNull) NotifySubscriberMaxQuality(

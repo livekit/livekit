@@ -15,14 +15,17 @@
 package config
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 
 	"github.com/livekit/livekit-server/pkg/config/configtest"
+	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 )
 
 func TestConfig_UnmarshalKeys(t *testing.T) {
@@ -122,6 +125,47 @@ func TestGeneratedFlags(t *testing.T) {
 	require.False(t, *conf.RTC.ReconnectOnSubscriptionError)
 }
 
+func TestGeneratedDurationFlags(t *testing.T) {
+	// run a command with the generated flags, as cmd/server does, so that flag and env var values are parsed
+	run := func(t *testing.T, args ...string) (*Config, error) {
+		generatedFlags, err := GenerateCLIFlags(nil, true)
+		require.NoError(t, err)
+
+		var conf *Config
+		c := &cli.Command{
+			Name:  "test",
+			Flags: generatedFlags,
+			Action: func(_ context.Context, c *cli.Command) error {
+				var err error
+				conf, err = NewConfig("", true, c, nil)
+				return err
+			},
+		}
+		err = c.Run(context.Background(), append([]string{"test"}, args...))
+		return conf, err
+	}
+
+	t.Run("flag", func(t *testing.T) {
+		conf, err := run(t, "--api.execution_timeout=5s")
+		require.NoError(t, err)
+		require.Equal(t, 5*time.Second, conf.API.ExecutionTimeout)
+	})
+
+	t.Run("env var", func(t *testing.T) {
+		t.Setenv("LIVEKIT_ROOM_CREATE_ROOM_TIMEOUT", "30s")
+		conf, err := run(t)
+		require.NoError(t, err)
+		require.Equal(t, 30*time.Second, conf.Room.CreateRoomTimeout)
+	})
+
+	t.Run("value without a unit", func(t *testing.T) {
+		// rejected, as in the YAML config, instead of being read as nanoseconds
+		t.Setenv("LIVEKIT_ROOM_CREATE_ROOM_TIMEOUT", "30")
+		_, err := run(t)
+		require.ErrorContains(t, err, "LIVEKIT_ROOM_CREATE_ROOM_TIMEOUT")
+	})
+}
+
 func TestYAMLTag(t *testing.T) {
 	require.NoError(t, configtest.CheckYAMLTags(Config{}))
 }
@@ -180,6 +224,40 @@ func TestNewConfigNormalizesTURNTTL(t *testing.T) {
 	conf, err := NewConfig(content, true, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, DefaultTURNTTLSeconds, conf.TURN.TTLSeconds)
+}
+
+func TestNewConfigValidatesSendSideBWEPacer(t *testing.T) {
+	cases := []struct {
+		name    string
+		pacer   string
+		wantErr bool
+	}{
+		{name: "unset keeps the default", pacer: "", wantErr: false},
+		{name: "pass-through", pacer: string(pacer.PacerBehaviorPassThrough), wantErr: false},
+		{name: "no-queue", pacer: string(pacer.PacerBehaviorNoQueue), wantErr: false},
+		{name: "leaky-bucket", pacer: string(pacer.PacerBehaviorLeakybucket), wantErr: false},
+		{name: "typo is rejected", pacer: "leakybucket", wantErr: true},
+		{name: "unknown value is rejected", pacer: "not-a-pacer", wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			content := "rtc:\n  congestion_control:\n    send_side_bwe_pacer: " + tc.pacer
+			conf, err := NewConfig(content, true, nil, nil)
+			if tc.wantErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.pacer)
+				return
+			}
+
+			require.NoError(t, err)
+			if tc.pacer == "" {
+				require.Equal(t, string(pacer.PacerBehaviorNoQueue), conf.RTC.CongestionControl.SendSideBWEPacer)
+				return
+			}
+			require.Equal(t, tc.pacer, conf.RTC.CongestionControl.SendSideBWEPacer)
+		})
+	}
 }
 
 func writeSecretFile(t *testing.T, content string) string {

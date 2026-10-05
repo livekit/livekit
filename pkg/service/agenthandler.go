@@ -405,14 +405,19 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 		switch state.GetStatus() {
 		case livekit.JobStatus_JS_RUNNING:
 			logger.Infow("assigned job to worker", "apiKey", selected.APIKey())
-			h.mu.Lock()
-			h.jobToWorker[livekit.JobID(job.Id)] = selected
-			h.mu.Unlock()
-
-			err = h.agentServer.RegisterJobTerminateTopic(job.Id)
-			if err != nil {
+			jobID := livekit.JobID(job.Id)
+			if err := h.agentServer.RegisterJobTerminateTopic(job.Id); err != nil {
 				logger.Errorw("failed to register JobTerminate handler", err)
 			}
+
+			// checked under h.mu after registering so that either this or the job/worker cleanup, whichever runs second, releases the handler.
+			h.mu.Lock()
+			if _, err := selected.GetJobState(jobID); err == nil && h.workers[selected.ID] == selected {
+				h.jobToWorker[jobID] = selected
+			} else {
+				h.deregisterJob(jobID)
+			}
+			h.mu.Unlock()
 			fallthrough
 		case livekit.JobStatus_JS_SUCCESS:
 			return &rpc.JobRequestResponse{
@@ -456,6 +461,15 @@ func (h *AgentHandler) JobTerminate(ctx context.Context, req *rpc.JobTerminateRe
 	}
 
 	state, err := w.TerminateJob(livekit.JobID(req.JobId), req.Reason)
+
+	// the job is no longer tracked as running, and the worker may never send an
+	// ended status update for it, so deregister it here. deregistering from
+	// inside this handler is safe because psrpc force closes the handler
+	// without waiting for in-flight requests.
+	h.mu.Lock()
+	h.deregisterJob(livekit.JobID(req.JobId))
+	h.mu.Unlock()
+
 	if err != nil {
 		return nil, err
 	}

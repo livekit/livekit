@@ -82,3 +82,29 @@ func TestBroadcastRTPEmpty(t *testing.T) {
 	d := NewDownTrackSpreader[*testSender](DownTrackSpreaderParams{Threshold: 20})
 	require.EqualValues(t, 0, BroadcastRTP(d, &testPacket{}, 0))
 }
+
+func TestDownTrackSpreaderResetRemainsReusable(t *testing.T) {
+	spreader := NewDownTrackSpreader[*testSender](DownTrackSpreaderParams{})
+	first := &testSender{id: "first"}
+	second := &testSender{id: "second"}
+
+	spreader.Store(first)
+	require.Equal(t, []*testSender{first}, spreader.ResetAndGetDownTracks())
+	require.Zero(t, spreader.DownTrackCount())
+
+	spreader.Store(second)
+	require.Equal(t, []*testSender{second}, spreader.GetDownTracks())
+}
+
+func TestDownTrackSpreaderRejectsStoreAfterClose(t *testing.T) {
+	spreader := NewDownTrackSpreader[*testSender](DownTrackSpreaderParams{})
+	first := &testSender{id: "first"}
+	late := &testSender{id: "late"}
+
+	spreader.Store(first)
+	require.Equal(t, []*testSender{first}, spreader.CloseAndGetDownTracks())
+	require.Zero(t, spreader.DownTrackCount())
+
+	require.False(t, spreader.TryStore(late))
+	require.Zero(t, spreader.DownTrackCount())
+}

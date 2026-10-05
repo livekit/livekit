@@ -124,6 +124,61 @@ func TestHandleStoreDataBlobRequest(t *testing.T) {
 		require.Equal(t, livekit.RequestResponse_INVALID_REQUEST, rr.Reason)
 	})
 
+	t.Run("returns INVALID_REQUEST when generic key is empty", func(t *testing.T) {
+		p := newParticipantWithDataBlob(t, true, 0, 0)
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+
+		p.HandleStoreDataBlobRequest(&livekit.StoreDataBlobRequest{
+			Blob: &livekit.DataBlob{
+				Key:      genericKey(""),
+				Contents: []byte("def"),
+			},
+		})
+
+		require.Equal(t, 1, sink.WriteMessageCallCount())
+		rr := lastRequestResponse(t, sink, 0)
+		require.Equal(t, livekit.RequestResponse_INVALID_REQUEST, rr.Reason)
+		require.Empty(t, p.dataBlob.GetAll())
+	})
+
+	t.Run("accepts a key exactly at the length limit", func(t *testing.T) {
+		p := newParticipantWithDataBlob(t, true, 5, 0)
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+
+		key := genericKey("abcde")
+		p.HandleStoreDataBlobRequest(&livekit.StoreDataBlobRequest{
+			Blob: &livekit.DataBlob{
+				Key:      key,
+				Contents: []byte("def"),
+			},
+		})
+
+		require.Equal(t, 1, sink.WriteMessageCallCount())
+		msg := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
+		_, ok := msg.Message.(*livekit.SignalResponse_StoreDataBlobResponse)
+		require.True(t, ok, "expected SignalResponse_StoreDataBlobResponse, got %T", msg.Message)
+		require.NotNil(t, p.dataBlob.Get(key))
+	})
+
+	t.Run("counts only key and contents bytes against the size limit", func(t *testing.T) {
+		p := newParticipantWithDataBlob(t, true, 0, 9)
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+
+		key := genericKey("abc")
+		p.HandleStoreDataBlobRequest(&livekit.StoreDataBlobRequest{
+			Blob: &livekit.DataBlob{
+				Key:      key,
+				Contents: []byte("defghi"),
+			},
+		})
+
+		require.Equal(t, 1, sink.WriteMessageCallCount())
+		msg := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
+		_, ok := msg.Message.(*livekit.SignalResponse_StoreDataBlobResponse)
+		require.True(t, ok, "expected SignalResponse_StoreDataBlobResponse, got %T", msg.Message)
+		require.NotNil(t, p.dataBlob.Get(key))
+	})
+
 	t.Run("returns INVALID_REQUEST when contents is empty", func(t *testing.T) {
 		p := newParticipantWithDataBlob(t, true, 0, 0)
 		sink := p.params.Sink.(*routingfakes.FakeMessageSink)

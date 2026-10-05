@@ -51,7 +51,6 @@ var (
 	participantRTCCanceled     atomic.Uint64
 	participantRTCActive       atomic.Uint64
 	forwardLatency             atomic.Uint32
-	forwardJitter              atomic.Uint32
 
 	promPacketLabels          = []string{"direction", "transmission", "country"}
 	promPacketTotal           *prometheus.CounterVec
@@ -70,7 +69,6 @@ var (
 	promParticipantJoin       *prometheus.CounterVec
 	promConnections           *prometheus.GaugeVec
 	promForwardLatency        prometheus.Gauge
-	promForwardJitter         prometheus.Gauge
 	promForwardLatencyHist    prometheus.Histogram
 )
 
@@ -151,7 +149,7 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Subsystem:   "participant_join",
 		Name:        "total",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
-	}, []string{"state", "warp"})
+	}, []string{"state", "warp", "sdk"})
 	promConnections = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "connection",
@@ -162,12 +160,6 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 		Namespace:   livekitNamespace,
 		Subsystem:   "forward",
 		Name:        "latency",
-		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
-	})
-	promForwardJitter = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace:   livekitNamespace,
-		Subsystem:   "forward",
-		Name:        "jitter",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 	})
 	promForwardLatencyHist = prometheus.NewHistogram(prometheus.HistogramOpts{
@@ -204,7 +196,6 @@ func initPacketStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promParticipantJoin)
 	prometheus.MustRegister(promConnections)
 	prometheus.MustRegister(promForwardLatency)
-	prometheus.MustRegister(promForwardJitter)
 	prometheus.MustRegister(promForwardLatencyHist)
 }
 
@@ -299,72 +290,72 @@ func RecordRTT(country string, direction Direction, trackSource livekit.TrackSou
 func IncrementParticipantJoin(join uint32) {
 	if join > 0 {
 		participantSignalConnected.Add(uint64(join))
-		promParticipantJoin.WithLabelValues("signal_connected", "").Add(float64(join))
+		promParticipantJoin.WithLabelValues("signal_connected", "", "").Add(float64(join))
 	}
 }
 
 func IncrementParticipantJoinFail(fail uint32) {
 	if fail > 0 {
-		promParticipantJoin.WithLabelValues("signal_failed", "").Add(float64(fail))
+		promParticipantJoin.WithLabelValues("signal_failed", "", "").Add(float64(fail))
 	}
 }
 
 func IncrementParticipantJoinValidationFail(validationFail uint32) {
 	if validationFail > 0 {
-		promParticipantJoin.WithLabelValues("signal_validation_failed", "").Add(float64(validationFail))
+		promParticipantJoin.WithLabelValues("signal_validation_failed", "", "").Add(float64(validationFail))
 	}
 }
 
 func IncrementParticipantJoinUpgradeFail(upgradeFail uint32) {
 	if upgradeFail > 0 {
-		promParticipantJoin.WithLabelValues("signal_upgrade_failed", "").Add(float64(upgradeFail))
+		promParticipantJoin.WithLabelValues("signal_upgrade_failed", "", "").Add(float64(upgradeFail))
 	}
 }
 
 func IncrementParticipantJoinWriteInitialResponseFail(writeInitialResponseFail uint32) {
 	if writeInitialResponseFail > 0 {
-		promParticipantJoin.WithLabelValues("signal_write_initial_response_failed", "").Add(float64(writeInitialResponseFail))
+		promParticipantJoin.WithLabelValues("signal_write_initial_response_failed", "", "").Add(float64(writeInitialResponseFail))
 	}
 }
 
 func IncrementParticipantRtcInit(init uint32) {
 	if init > 0 {
 		participantRTCInit.Add(uint64(init))
-		promParticipantJoin.WithLabelValues("rtc_init", "").Add(float64(init))
+		promParticipantJoin.WithLabelValues("rtc_init", "", "").Add(float64(init))
 	}
 }
 
-func IncrementParticipantRtcConnected(connected uint32) {
+func IncrementParticipantRtcConnected(connected uint32, sdk livekit.ClientInfo_SDK) {
 	if connected > 0 {
 		participantRTCConnected.Add(uint64(connected))
-		promParticipantJoin.WithLabelValues("rtc_connected", "").Add(float64(connected))
+		promParticipantJoin.WithLabelValues("rtc_connected", "", sdk.String()).Add(float64(connected))
 	}
 }
 
 func IncrementParticipantRtcActive(active uint32, warp bool) {
 	if active > 0 {
 		participantRTCActive.Add(uint64(active))
-		promParticipantJoin.WithLabelValues("rtc_active", strconv.FormatBool(warp)).Add(float64(active))
+		promParticipantJoin.WithLabelValues("rtc_active", strconv.FormatBool(warp), "").Add(float64(active))
 	}
 }
 
-func IncrementParticipantRtcCanceled(canceled uint64, warp bool) {
+func IncrementParticipantRtcCanceled(canceled uint64, warp bool, sdk livekit.ClientInfo_SDK) {
 	if canceled > 0 {
 		participantRTCCanceled.Add(canceled)
-		promParticipantJoin.WithLabelValues("rtc_canceled", strconv.FormatBool(warp)).Add(float64(canceled))
+		promParticipantJoin.WithLabelValues("rtc_canceled", strconv.FormatBool(warp), sdk.String()).Add(float64(canceled))
 	}
 }
 
 // todo: check if need to record warp to rtcSucc/Failure
-func IncrementParticipantRtcSuccess(success uint64, warp bool) {
+func IncrementParticipantRtcSuccess(success uint64, warp bool, sdk livekit.ClientInfo_SDK) {
 	if success > 0 {
-		promParticipantJoin.WithLabelValues("rtc_success", strconv.FormatBool(warp)).Add(float64(success))
+		promParticipantJoin.WithLabelValues("rtc_success", strconv.FormatBool(warp), sdk.String()).Add(float64(success))
 	}
 }
 
-func IncrementParticipantRtcFailure(failure uint64, warp bool) {
+func IncrementParticipantRtcFailure(failure uint64, warp bool, sdk livekit.ClientInfo_SDK) {
 	if failure > 0 {
-		promParticipantJoin.WithLabelValues("rtc_failure", strconv.FormatBool(warp)).Add(float64(failure))
+		promParticipantJoin.WithLabelValues("rtc_failure", strconv.FormatBool(warp), sdk.String()).Add(float64(failure))
 	}
 }
 
@@ -380,12 +371,7 @@ func RecordForwardLatencySample(forwardLatency int64) {
 	promForwardLatencyHist.Observe(float64(forwardLatency))
 }
 
-func RecordForwardLatency(longTermLatencyAvg uint32) {
-	forwardLatency.Store(longTermLatencyAvg)
-	promForwardLatency.Set(float64(longTermLatencyAvg))
-}
-
-func RecordForwardJitter(longTermJitterAvg uint32) {
-	forwardJitter.Store(longTermJitterAvg)
-	promForwardJitter.Set(float64(longTermJitterAvg))
+func RecordForwardLatency(p90 uint32) {
+	forwardLatency.Store(p90)
+	promForwardLatency.Set(float64(p90))
 }

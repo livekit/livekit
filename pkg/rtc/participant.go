@@ -74,6 +74,9 @@ const (
 	sdBatchSize       = 30
 	rttUpdateInterval = 5 * time.Second
 
+	publisherAnswerDynacastResendDelay    = 2 * time.Second
+	publisherAnswerDynacastResendMaxDelay = 8 * time.Second
+
 	disconnectCleanupDuration          = 5 * time.Second
 	migrationWaitDuration              = 3 * time.Second
 	migrationWaitContinuousMsgDuration = 2 * time.Second
@@ -241,6 +244,7 @@ type ParticipantParams struct {
 	MigrationWaitDuration             time.Duration
 	ExcludeIPv6LocalCandidates        bool
 	EnableWarp                        bool
+	MediaBatchIOEnabled               bool
 }
 
 type ParticipantImpl struct {
@@ -276,6 +280,9 @@ type ParticipantImpl struct {
 	// timer that's set when disconnect is detected on primary PC
 	disconnectTimer *time.Timer
 	migrationTimer  *time.Timer
+	// re-send of the subscribed qualities pending after publisher answers
+	dynacastResendTimer    *time.Timer
+	dynacastResendDeadline time.Time
 
 	migratedInAt atomic.Pointer[time.Time]
 
@@ -666,7 +673,7 @@ func (p *ParticipantImpl) GetClientInfo() *livekit.ClientInfo {
 func (p *ParticipantImpl) GetClientConfiguration() *livekit.ClientConfiguration {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-	return utils.CloneProto(p.params.ClientConf)
+	return proto.CloneOf(p.params.ClientConf)
 }
 
 func (p *ParticipantImpl) GetBufferFactory() *buffer.Factory {
@@ -708,7 +715,7 @@ func (p *ParticipantImpl) UpdateMetadata(update *livekit.UpdateParticipantMetada
 	sendRequestResponse := func() error {
 		if !fromAdmin || (update.RequestId != 0 || err != nil) {
 			requestResponse.Request = &livekit.RequestResponse_UpdateMetadata{
-				UpdateMetadata: utils.CloneProto(update),
+				UpdateMetadata: proto.CloneOf(update),
 			}
 			p.sendRequestResponse(requestResponse)
 		}
@@ -984,7 +991,7 @@ func (p *ParticipantImpl) ToProtoWithVersion() (*livekit.ParticipantInfo, utils.
 		}
 
 		if !found {
-			pi.Tracks = append(pi.Tracks, utils.CloneProto(pti.trackInfos[0]))
+			pi.Tracks = append(pi.Tracks, proto.CloneOf(pti.trackInfos[0]))
 		}
 	}
 
@@ -1194,7 +1201,7 @@ func (p *ParticipantImpl) HandleICETrickle(trickleRequest *livekit.TrickleReques
 			Reason:  livekit.RequestResponse_UNCLASSIFIED_ERROR,
 			Message: err.Error(),
 			Request: &livekit.RequestResponse_Trickle{
-				Trickle: utils.CloneProto(trickleRequest),
+				Trickle: proto.CloneOf(trickleRequest),
 			},
 		})
 		return
@@ -1214,20 +1221,19 @@ func (p *ParticipantImpl) HandleOffer(sd *livekit.SessionDescription) error {
 
 	lgr.Debugw("received offer")
 
-	parsedOffer, err := offer.Unmarshal()
-	if err != nil {
-		lgr.Warnw("could not parse offer", err)
-		return err
-	}
-
 	if p.params.UseOneShotSignallingMode {
+		parsedOffer, err := offer.Unmarshal()
+		if err != nil {
+			lgr.Warnw("could not parse offer", err)
+			return err
+		}
 		if err := p.synthesizeAddTrackRequests(parsedOffer); err != nil {
 			lgr.Warnw("could not synthesize add track requests", err)
 			return err
 		}
 	}
 
-	err = p.TransportManager.HandleOffer(offer, offerId, p.MigrateState() == types.MigrateStateInit)
+	err := p.TransportManager.HandleOffer(offer, offerId, p.MigrateState() == types.MigrateStateInit)
 	if err != nil {
 		lgr.Warnw("could not handle offer", err, "mungedOffer", offer)
 		return err
@@ -1242,13 +1248,8 @@ func (p *ParticipantImpl) HandleOffer(sd *livekit.SessionDescription) error {
 }
 
 func (p *ParticipantImpl) onPublisherSetRemoteDescription() {
-	offer := p.TransportManager.LastPublisherOfferPending()
-	if offer == nil {
-		return
-	}
-	parsedOffer, err := offer.Unmarshal()
-	if err != nil {
-		p.pubLogger.Warnw("could not parse offer", err)
+	parsedOffer := p.TransportManager.LastPublisherOfferParsed()
+	if parsedOffer == nil {
 		return
 	}
 
@@ -1273,7 +1274,38 @@ func (p *ParticipantImpl) onPublisherAnswer(answer webrtc.SessionDescription, an
 		"midToTrackID", midToTrackID,
 	)
 
-	return p.sendSdpAnswer(answer, answerId, midToTrackID)
+	if err := p.sendSdpAnswer(answer, answerId, midToTrackID); err != nil {
+		return err
+	}
+
+	// The answer does not carry the pause state of the simulcast layers (SetIgnoreRidPauseForRecv),
+	// so applying it re-enables in the publisher the layers paused by dynacast. Send the subscribed
+	// qualities again with a delay to ensure the answer has been applied, once for a burst of answers:
+	// the delay restarts with each answer, up to a maximum from the first one
+	p.lock.Lock()
+	if p.dynacastResendTimer == nil {
+		p.dynacastResendDeadline = time.Now().Add(publisherAnswerDynacastResendMaxDelay)
+		p.dynacastResendTimer = time.AfterFunc(publisherAnswerDynacastResendDelay, p.resendSubscribedQualities)
+	} else {
+		p.dynacastResendTimer.Reset(min(publisherAnswerDynacastResendDelay, time.Until(p.dynacastResendDeadline)))
+	}
+	p.lock.Unlock()
+	return nil
+}
+
+func (p *ParticipantImpl) resendSubscribedQualities() {
+	p.lock.Lock()
+	p.dynacastResendTimer = nil
+	p.lock.Unlock()
+
+	if p.IsClosed() || p.IsDisconnected() {
+		return
+	}
+	for _, track := range p.GetPublishedTracks() {
+		if mt, ok := track.(*MediaTrack); ok {
+			mt.ResendSubscribedQuality()
+		}
+	}
 }
 
 func (p *ParticipantImpl) GetAnswer() (webrtc.SessionDescription, uint32, error) {
@@ -1366,7 +1398,7 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 		p.sendRequestResponse(&livekit.RequestResponse{
 			Reason: livekit.RequestResponse_NOT_ALLOWED,
 			Request: &livekit.RequestResponse_AddTrack{
-				AddTrack: utils.CloneProto(req),
+				AddTrack: proto.CloneOf(req),
 			},
 		})
 		return
@@ -1377,7 +1409,7 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 		p.sendRequestResponse(&livekit.RequestResponse{
 			Reason: livekit.RequestResponse_UNSUPPORTED_TYPE,
 			Request: &livekit.RequestResponse_AddTrack{
-				AddTrack: utils.CloneProto(req),
+				AddTrack: proto.CloneOf(req),
 			},
 		})
 		return
@@ -1480,9 +1512,9 @@ func (p *ParticipantImpl) recordRTCState(closeReason types.ParticipantCloseReaso
 	}
 
 	if p.IsConnectionCanceled(closeReason) {
-		prometheus.IncrementParticipantRtcCanceled(1, p.params.EnableWarp)
+		prometheus.IncrementParticipantRtcCanceled(1, p.params.EnableWarp, p.GetClientInfo().GetSdk())
 	} else {
-		prometheus.IncrementParticipantRtcFailure(1, p.params.EnableWarp)
+		prometheus.IncrementParticipantRtcFailure(1, p.params.EnableWarp, p.GetClientInfo().GetSdk())
 	}
 }
 
@@ -2718,8 +2750,8 @@ func (p *ParticipantImpl) onPrimaryTransportInitialConnected() {
 	}
 
 	if !p.sessionStartRecorded.Swap(true) {
-		prometheus.RecordSessionStartTime(int(p.ProtocolVersion()), p.params.EnableWarp, time.Since(p.params.SessionStartTime))
-		prometheus.IncrementParticipantRtcSuccess(1, p.params.EnableWarp)
+		prometheus.RecordSessionStartTime(int(p.ProtocolVersion()), p.params.EnableWarp, p.GetClientInfo().GetSdk(), time.Since(p.params.SessionStartTime))
+		prometheus.IncrementParticipantRtcSuccess(1, p.params.EnableWarp, p.GetClientInfo().GetSdk())
 	}
 	p.updateState(livekit.ParticipantInfo_ACTIVE)
 }
@@ -2953,7 +2985,7 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 			p.sendRequestResponse(&livekit.RequestResponse{
 				Reason: livekit.RequestResponse_NOT_FOUND,
 				Request: &livekit.RequestResponse_AddTrack{
-					AddTrack: utils.CloneProto(req),
+					AddTrack: proto.CloneOf(req),
 				},
 			})
 			p.pendingTracksLock.Unlock()
@@ -2972,7 +3004,7 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 			Reason:  livekit.RequestResponse_LIMIT_EXCEEDED,
 			Message: fmt.Sprintf("too many pending tracks, rejecting new track, numPendingTracks: %d", len(p.pendingTracks)),
 			Request: &livekit.RequestResponse_AddTrack{
-				AddTrack: utils.CloneProto(req),
+				AddTrack: proto.CloneOf(req),
 			},
 		})
 		p.pendingTracksLock.Unlock()
@@ -2994,7 +3026,7 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 
 		clonedLayers := make([]*livekit.VideoLayer, 0, len(layers))
 		for _, l := range layers {
-			clonedLayers = append(clonedLayers, utils.CloneProto(l))
+			clonedLayers = append(clonedLayers, proto.CloneOf(l))
 		}
 		slices.SortFunc(clonedLayers, func(i, j *livekit.VideoLayer) int {
 			return int(i.Quality) - int(j.Quality)
@@ -3162,7 +3194,7 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 					Reason:  livekit.RequestResponse_LIMIT_EXCEEDED,
 					Message: fmt.Sprintf("too many pending queued tracks, rejecting new track, numPendingTracksQueued: %d", len(p.pendingTracks[req.Cid].trackInfos)),
 					Request: &livekit.RequestResponse_AddTrack{
-						AddTrack: utils.CloneProto(req),
+						AddTrack: proto.CloneOf(req),
 					},
 				})
 				p.pendingTracksLock.Unlock()
@@ -3180,7 +3212,7 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		p.sendRequestResponse(&livekit.RequestResponse{
 			Reason: livekit.RequestResponse_QUEUED,
 			Request: &livekit.RequestResponse_AddTrack{
-				AddTrack: utils.CloneProto(req),
+				AddTrack: proto.CloneOf(req),
 			},
 		})
 
@@ -3190,7 +3222,7 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		}
 		p.pendingTracksLock.Unlock()
 
-		p.GetTelemetryListener().OnTrackPublishRequested(p.ID(), p.Identity(), utils.CloneProto(ti), true)
+		p.GetTelemetryListener().OnTrackPublishRequested(p.ID(), p.Identity(), proto.CloneOf(ti), true)
 		return nil
 	}
 
@@ -3215,7 +3247,7 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 	}
 	p.pendingTracksLock.Unlock()
 
-	p.GetTelemetryListener().OnTrackPublishRequested(p.ID(), p.Identity(), utils.CloneProto(ti), true)
+	p.GetTelemetryListener().OnTrackPublishRequested(p.ID(), p.Identity(), proto.CloneOf(ti), true)
 	return ti
 }
 
@@ -3267,7 +3299,7 @@ func (p *ParticipantImpl) setTrackMuted(mute *livekit.MuteTrackRequest, fromAdmi
 	for _, pti := range p.pendingTracks {
 		for i, ti := range pti.trackInfos {
 			if livekit.TrackID(ti.Sid) == trackID {
-				ti = utils.CloneProto(ti)
+				ti = proto.CloneOf(ti)
 				changed = changed || ti.Muted != mute.Muted
 				ti.Muted = mute.Muted
 				pti.trackInfos[i] = ti
@@ -3291,7 +3323,7 @@ func (p *ParticipantImpl) setTrackMuted(mute *livekit.MuteTrackRequest, fromAdmi
 		p.sendRequestResponse(&livekit.RequestResponse{
 			Reason: livekit.RequestResponse_NOT_FOUND,
 			Request: &livekit.RequestResponse_Mute{
-				Mute: utils.CloneProto(mute),
+				Mute: proto.CloneOf(mute),
 			},
 		})
 	}
@@ -3573,6 +3605,7 @@ func (p *ParticipantImpl) addMediaTrack(signalCid string, ti *livekit.TrackInfo)
 		EnableRTPStreamRestartDetection:  p.params.EnableRTPStreamRestartDetection,
 		UpdateTrackInfoByVideoSizeChange: p.params.UseOneShotSignallingMode,
 		ForceBackupCodecPolicySimulcast:  p.params.ForceBackupCodecPolicySimulcast,
+		MediaBatchIOEnabled:              p.params.MediaBatchIOEnabled,
 		OnSubscribedMaxQualityChange:     p.onSubscribedMaxQualityChange,
 		OnSubscribedAudioCodecChange:     p.onSubscribedAudioCodecChange,
 	}, ti)
@@ -3718,7 +3751,7 @@ func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackTyp
 		return signalCid, nil, buffer.VideoLayersRid{}, false, time.Time{}
 	}
 
-	return signalCid, utils.CloneProto(pendingInfo.trackInfos[0]), pendingInfo.sdpRids, pendingInfo.migrated, pendingInfo.createdAt
+	return signalCid, proto.CloneOf(pendingInfo.trackInfos[0]), pendingInfo.sdpRids, pendingInfo.migrated, pendingInfo.createdAt
 }
 
 func (p *ParticipantImpl) getPendingTrackPrimaryBySdpCid(sdpCid string) *pendingTrackInfo {
@@ -4235,7 +4268,7 @@ func (p *ParticipantImpl) UpdateAudioTrack(update *livekit.UpdateLocalAudioTrack
 	p.sendRequestResponse(&livekit.RequestResponse{
 		Reason: livekit.RequestResponse_NOT_FOUND,
 		Request: &livekit.RequestResponse_UpdateAudioTrack{
-			UpdateAudioTrack: utils.CloneProto(update),
+			UpdateAudioTrack: proto.CloneOf(update),
 		},
 	})
 	return errors.New("could not find track")
@@ -4267,7 +4300,7 @@ func (p *ParticipantImpl) UpdateVideoTrack(update *livekit.UpdateLocalVideoTrack
 	p.sendRequestResponse(&livekit.RequestResponse{
 		Reason: livekit.RequestResponse_NOT_FOUND,
 		Request: &livekit.RequestResponse_UpdateVideoTrack{
-			UpdateVideoTrack: utils.CloneProto(update),
+			UpdateVideoTrack: proto.CloneOf(update),
 		},
 	})
 	return errors.New("could not find track")
@@ -4311,6 +4344,55 @@ func (p *ParticipantImpl) SupportsMoving() error {
 	return nil
 }
 
+// LeaveSession takes the participant out of its session in its current room without
+// closing the participant, for it to join another session (see JoinSession): its
+// published tracks are reported unpublished, the session end is reported, and the
+// telemetry guard and deferred resolvers are reset for the next session. `leave` runs in
+// between, while the left session's guard is still in place, for the caller to report the
+// leave.
+func (p *ParticipantImpl) LeaveSession(leave func()) {
+	for _, track := range p.GetPublishedTracks() {
+		p.GetTelemetryListener().OnTrackUnpublished(
+			p.ID(),
+			p.Identity(),
+			track.ToProto(),
+			track.(types.LocalMediaTrack).Published(),
+			true,
+		)
+	}
+
+	p.params.Reporter.ReportEndTime(time.Now())
+
+	if leave != nil {
+		leave()
+	}
+
+	p.lock.Lock()
+	p.telemetryGuard = &telemetry.ReferenceGuard{}
+	p.lock.Unlock()
+
+	p.params.LoggerResolver.Reset()
+	p.params.ReporterResolver.Reset()
+}
+
+// JoinSession takes the participant, after LeaveSession, into the session its current
+// room now serves: `join` runs first, for the caller to report the join, then the
+// published tracks are reported published again, in that order as on a fresh join.
+func (p *ParticipantImpl) JoinSession(join func()) {
+	if join != nil {
+		join()
+	}
+
+	for _, track := range p.GetPublishedTracks() {
+		p.GetTelemetryListener().OnTrackPublished(
+			p.ID(),
+			p.Identity(),
+			track.ToProto(),
+			true,
+		)
+	}
+}
+
 func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 	for _, track := range p.GetPublishedTracks() {
 		for _, sub := range track.GetAllSubscribers() {
@@ -4320,37 +4402,22 @@ func (p *ParticipantImpl) MoveToRoom(params types.MoveToRoomParams) {
 		// clear the subscriber node max quality/audio codecs as the remote quality notify
 		// from source room would not reach the moving out participant.
 		track.(types.LocalMediaTrack).ClearSubscriberNodes()
-
-		trackInfo := track.ToProto()
-		p.GetTelemetryListener().OnTrackUnpublished(
-			p.ID(),
-			p.Identity(),
-			trackInfo,
-			track.(types.LocalMediaTrack).Published(),
-			true,
-		)
 	}
 
-	p.params.Reporter.ReportEndTime(time.Now())
-	p.SubscriptionManager.ClearAllSubscriptions()
+	p.LeaveSession(func() {
+		p.SubscriptionManager.ClearAllSubscriptions()
 
-	// fire onClose callback for original room
-	p.lock.Lock()
-	onClose := p.onClose
-	p.onClose = make(map[string]func(types.LocalParticipant))
-	p.lock.Unlock()
-	for _, cb := range onClose {
-		cb(p)
-	}
+		// fire onClose callback for original room
+		p.lock.Lock()
+		onClose := p.onClose
+		p.onClose = make(map[string]func(types.LocalParticipant))
+		p.lock.Unlock()
+		for _, cb := range onClose {
+			cb(p)
+		}
+	})
 
 	p.params.Logger.Infow("move participant to new room", "newRoomName", params.RoomName, "newID", params.ParticipantID)
-
-	p.lock.Lock()
-	p.telemetryGuard = &telemetry.ReferenceGuard{}
-	p.lock.Unlock()
-
-	p.params.LoggerResolver.Reset()
-	p.params.ReporterResolver.Reset()
 
 	p.setListener(params.Listener)
 	p.setTelemetryListener(params.TelemetryListener)

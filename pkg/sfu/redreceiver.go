@@ -17,6 +17,7 @@ package sfu
 import (
 	"encoding/binary"
 	"fmt"
+	"slices"
 
 	"go.uber.org/atomic"
 
@@ -50,7 +51,11 @@ type RedReceiver struct {
 	logger            logger.Logger
 	closed            atomic.Bool
 	pktBuff           [maxRedCount]*rtp.Packet
-	redPayloadBuf     [mtuSize]byte
+	// copies that pktBuff points at, as a forwarded packet's payload is in a read buffer reused for the next packet,
+	// one more slot than pktBuff so that a new copy never overwrites a redundant block of the packet being encoded
+	histPkts      [maxRedCount + 1]rtp.Packet
+	histPayloads  [maxRedCount + 1][maxRedPayload]byte
+	redPayloadBuf [mtuSize]byte
 	// forwarded packet, reused like redPayloadBuf since ForwardRTP runs on one goroutine
 	// and down tracks do not keep the packet past WriteRTP
 	redExtPkt buffer.ExtPacket
@@ -118,7 +123,9 @@ func (r *RedReceiver) AddDownTrack(track TrackSender) error {
 		r.logger.Infow("subscriberID already exists, replacing downtrack", "subscriberID", track.SubscriberID())
 	}
 
-	r.downTrackSpreader.Store(track)
+	if !r.downTrackSpreader.TryStore(track) {
+		return ErrReceiverClosed
+	}
 	r.logger.Debugw("red receiver downtrack added", "subscriberID", track.SubscriberID())
 	return nil
 }
@@ -158,7 +165,7 @@ func (r *RedReceiver) IsClosed() bool {
 
 func (r *RedReceiver) Close() {
 	r.closed.Store(true)
-	closeTrackSenders(r.downTrackSpreader.ResetAndGetDownTracks())
+	closeTrackSenders(r.downTrackSpreader.CloseAndGetDownTracks())
 }
 
 func (r *RedReceiver) ReadRTP(buf []byte, layer uint8, esn uint64) (int, error) {
@@ -187,22 +194,37 @@ func (r *RedReceiver) encodeRedForPrimary(pkt *rtp.Packet, redPayload []byte) (i
 		redPkts = append(redPkts, prev)
 	}
 
-	// insert primary packet in history buffer
-	// NOTE: packet is copied from retransmission buffer and used in forwarding path. So, not making another
-	// copy here and just maintaining pointer to the packet as the forwarding path should not alter the packet.
+	// insert a copy of the primary packet in history buffer
 	for i := redLength - 1; i >= 0; i-- {
 		if r.pktBuff[i] == nil || // history is empty
 			pkt.SequenceNumber-r.pktBuff[i].SequenceNumber < (1<<15) { // received packet has more recent sequence number
+			// pick the slot before aging out, as the aged out packet can be a redundant block of this packet
+			slot := r.freeHistSlot()
 			// age out older ones
 			for j := 0; j < i; j++ {
 				r.pktBuff[j] = r.pktBuff[j+1]
 			}
-			r.pktBuff[i] = pkt
+			n := copy(r.histPayloads[slot][:], pkt.Payload)
+			r.histPkts[slot] = rtp.Packet{
+				Header:  rtp.Header{SequenceNumber: pkt.SequenceNumber, Timestamp: pkt.Timestamp},
+				Payload: r.histPayloads[slot][:n],
+			}
+			r.pktBuff[i] = &r.histPkts[slot]
 			break
 		}
 	}
 
 	return encodeRedForPrimary(redPkts, pkt, redPayload)
+}
+
+// freeHistSlot returns a history slot that pktBuff does not point at, there is always one as there is a spare slot
+func (r *RedReceiver) freeHistSlot() int {
+	for slot := range r.histPkts {
+		if !slices.Contains(r.pktBuff[:], &r.histPkts[slot]) {
+			return slot
+		}
+	}
+	return 0
 }
 
 func encodeRedForPrimary(redPkts []*rtp.Packet, primary *rtp.Packet, redPayload []byte) (int, error) {
