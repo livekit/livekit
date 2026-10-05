@@ -207,6 +207,36 @@ func TestNegotiationTiming(t *testing.T) {
 	transportB.Close()
 }
 
+func TestFirstNegotiationUsesFastDebounce(t *testing.T) {
+	handler := &transportfakes.FakeHandler{}
+	transportA, err := NewPCTransport(TransportParams{
+		Config:    &WebRTCConfig{},
+		IsOfferer: true,
+		Handler:   handler,
+	})
+	require.NoError(t, err)
+	defer transportA.Close()
+	_, err = transportA.pc.CreateDataChannel(ReliableDataChannel, nil)
+	require.NoError(t, err)
+
+	offered := make(chan struct{}, 1)
+	handler.OnOfferCalls(func(webrtc.SessionDescription, uint32, map[string]string) error {
+		select {
+		case offered <- struct{}{}:
+		default:
+		}
+		return nil
+	})
+
+	// nothing was negotiated yet, so the first offer must not wait for the full debounce
+	transportA.Negotiate(false)
+	select {
+	case <-offered:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("first offer waited for the full negotiation debounce")
+	}
+}
+
 func TestFirstOfferMissedDuringICERestart(t *testing.T) {
 	params := TransportParams{
 		Config:    &WebRTCConfig{},

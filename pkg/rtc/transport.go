@@ -566,7 +566,6 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		previousTrackDescription: make(map[string]*trackDescription),
 		canReuseTransceiver:      true,
 		connectionDetails:        types.NewICEConnectionDetails(params.Transport, params.Logger),
-		lastNegotiate:            time.Now(),
 	}
 	t.localOfferId.Store(uint32(rand.Intn(1<<8) + 1))
 
