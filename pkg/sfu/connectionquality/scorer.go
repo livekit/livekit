@@ -42,6 +42,7 @@ const (
 
 	cPPSQuantization         = float64(2)
 	cPPSMinReadings          = 10
+	cPPSModeMinBin           = 5 // 10 pps
 	cModeCalculationInterval = 2 * time.Minute
 )
 
@@ -235,13 +236,13 @@ func newQualityScorer(params qualityScorerParams) *qualityScorer {
 		layerDistance: utils.NewTimedAggregator[float64](utils.TimedAggregatorParams{
 			CapNegativeValues: true,
 		}),
-		modeCalculatedAt: time.Now().Add(-cModeCalculationInterval),
 	}
 }
 
 func (q *qualityScorer) startAtLocked(packetLossWeight float64, at time.Time) {
 	q.packetLossWeight = packetLossWeight
 	q.lastUpdateAt = at
+	q.modeCalculatedAt = at.Add(-cModeCalculationInterval)
 }
 
 func (q *qualityScorer) StartAt(packetLossWeight float64, at time.Time) {
@@ -410,7 +411,7 @@ func (q *qualityScorer) updateAtLocked(stat *windowStat, at time.Time) {
 		return
 	}
 
-	aplw := q.getAdjustedPacketLossWeight(stat)
+	aplw := q.getAdjustedPacketLossWeight(stat, at)
 	reason := "none"
 	var score, packetScore, bitrateScore, layerScore float64
 	if stat.packets+stat.packetsPadding == 0 {
@@ -544,7 +545,7 @@ func (q *qualityScorer) isPaused() bool {
 	return !q.pausedAt.IsZero() && (q.resumedAt.IsZero() || q.pausedAt.After(q.resumedAt))
 }
 
-func (q *qualityScorer) getAdjustedPacketLossWeight(stat *windowStat) float64 {
+func (q *qualityScorer) getAdjustedPacketLossWeight(stat *windowStat, at time.Time) float64 {
 	if stat == nil || stat.duration <= 0 {
 		return q.packetLossWeight
 	}
@@ -566,14 +567,24 @@ func (q *qualityScorer) getAdjustedPacketLossWeight(stat *windowStat) float64 {
 	// calculate mode sparingly, do it under the following conditions
 	//  1. minimum number of readings available (AND)
 	//  2. enough time has elapsed since last calculation
-	if q.numPPSReadings > cPPSMinReadings && time.Since(q.modeCalculatedAt) > cModeCalculationInterval {
-		q.ppsMode = 0
-		for i := range len(q.ppsHistogram) {
-			if q.ppsHistogram[i] > q.ppsMode {
-				q.ppsMode = i
+	if q.numPPSReadings > cPPSMinReadings && at.Sub(q.modeCalculatedAt) > cModeCalculationInterval {
+		// the most common rate, ignoring rates as low as DTX or static content so they do not become the reference,
+		// keep the previous mode through a long stretch of only low rates, for example a long silence
+		mode, maxCount := 0, 0
+		for i := cPPSModeMinBin; i < len(q.ppsHistogram); i++ {
+			if q.ppsHistogram[i] > maxCount {
+				mode, maxCount = i, q.ppsHistogram[i]
 			}
 		}
-		q.modeCalculatedAt = time.Now()
+		if maxCount > 0 {
+			q.ppsMode = mode
+		}
+
+		// halve the counts so that the mode follows a lasting change of rate, for example a layer switch
+		for i := range q.ppsHistogram {
+			q.ppsHistogram[i] >>= 1
+		}
+		q.modeCalculatedAt = at
 		q.params.Logger.Debugw("updating pps mode", "expected", stat.packets, "duration", stat.duration.Seconds(), "pps", pps, "ppsMode", q.ppsMode)
 	}
 

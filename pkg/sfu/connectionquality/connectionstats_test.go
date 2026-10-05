@@ -901,3 +901,66 @@ func TestConnectionQuality(t *testing.T) {
 		}
 	})
 }
+
+func TestPacketRateMode(t *testing.T) {
+	type phase struct {
+		minutes float64
+		pps     float64
+	}
+	for name, tc := range map[string]struct {
+		weight    float64
+		histogram map[int]int // bin -> count
+		phases    []phase
+		last      *windowStat
+		mode      int // pps
+		quality   livekit.ConnectionQuality
+	}{
+		// 120 windows on the 250 pps layer, 600 windows on the 40 pps layer
+		"most common bin": {
+			weight:    10.0,
+			histogram: map[int]int{125: 120, 20: 600},
+			last:      &windowStat{packets: 200, packetsLost: 8, duration: 5 * time.Second},
+			mode:      40,
+			quality:   livekit.ConnectionQuality_GOOD,
+		},
+		// 4% loss on the layer now watched is not EXCELLENT
+		"follows a layer switch": {
+			weight:  10.0,
+			phases:  []phase{{10, 250}, {5, 40}},
+			last:    &windowStat{packets: 200, packetsLost: 8, duration: 5 * time.Second},
+			mode:    40,
+			quality: livekit.ConnectionQuality_GOOD,
+		},
+		// idle and DTX rates do not become the reference, so a lost DTX packet counts less
+		"keeps the speech rate through a long silence": {
+			weight:  8.0,
+			phases:  []phase{{5, 50}, {10, 0}, {30, 2.5}},
+			last:    &windowStat{packets: 12, packetsLost: 1, duration: 5 * time.Second},
+			mode:    50,
+			quality: livekit.ConnectionQuality_EXCELLENT,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			q := newQualityScorer(qualityScorerParams{Logger: logger.GetLogger()})
+			// a timeline in the past, the mode must follow update times, not the wall clock
+			at := time.Now().Add(-time.Hour)
+			q.StartAt(tc.weight, at)
+			for bin, count := range tc.histogram {
+				q.ppsHistogram[bin] = count
+				q.numPPSReadings += count
+			}
+			for _, p := range tc.phases {
+				for range int(p.minutes * 12) {
+					at = at.Add(5 * time.Second)
+					q.UpdateAt(&windowStat{packets: uint32(p.pps * 5), duration: 5 * time.Second}, at)
+				}
+			}
+			at = at.Add(tc.last.duration)
+			q.UpdateAt(tc.last, at)
+
+			require.Equal(t, tc.mode, int(float64(q.ppsMode)*cPPSQuantization))
+			_, quality := q.GetScoreAndQuality()
+			require.Equal(t, tc.quality, quality)
+		})
+	}
+}
