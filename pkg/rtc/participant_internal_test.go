@@ -284,6 +284,19 @@ func TestTrackPublishing(t *testing.T) {
 	})
 }
 
+func TestJoinFailureSendsLeave(t *testing.T) {
+	p := newParticipantForTestWithOpts("test", &participantOpts{joining: true})
+	sink := p.GetResponseSink().(*routingfakes.FakeMessageSink)
+
+	// the join response never went out, the leave still tells the client why the join failed
+	require.NoError(t, p.Close(true, types.ParticipantCloseReasonJoinFailed, false))
+
+	require.Equal(t, 1, sink.WriteMessageCallCount())
+	leave := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse).GetLeave()
+	require.NotNil(t, leave)
+	require.Equal(t, livekit.DisconnectReason_JOIN_FAILURE, leave.Reason)
+}
+
 func TestOutOfOrderUpdates(t *testing.T) {
 	p := newParticipantForTest("test")
 	p.updateState(livekit.ParticipantInfo_JOINED)
@@ -817,6 +830,7 @@ type participantOpts struct {
 	clientConf      *livekit.ClientConfiguration
 	clientInfo      *livekit.ClientInfo
 	migration       bool
+	joining         bool
 }
 
 func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *participantOpts) *ParticipantImpl {
@@ -874,7 +888,9 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 		Migration:              opts.migration,
 	})
 	p.isPublisher.Store(opts.publisher)
-	p.updateState(livekit.ParticipantInfo_ACTIVE)
+	if !opts.joining {
+		p.updateState(livekit.ParticipantInfo_ACTIVE)
+	}
 
 	return p
 }

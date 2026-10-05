@@ -75,9 +75,11 @@ func (s *signallerAsync) WriteMessage(msg proto.Message) error {
 
 	// a signal connection opens with a join response, or with a reconnect response when
 	// it is resumed or migrated in. The client reads that first message as the handshake,
-	// so nothing may go out ahead of it.
+	// so nothing may go out ahead of it, except a leave, which ends the connection and
+	// tells the client why, for example when the join fails.
 	isHandshake := false
 	isSdp := false
+	isLeave := false
 	if typed, ok := msg.(*livekit.SignalResponse); !ok {
 		s.params.Logger.Warnw(
 			"unknown message type", nil,
@@ -86,9 +88,10 @@ func (s *signallerAsync) WriteMessage(msg proto.Message) error {
 	} else {
 		isHandshake = typed.GetJoin() != nil || typed.GetReconnect() != nil
 		isSdp = typed.GetOffer() != nil || typed.GetAnswer() != nil
+		isLeave = typed.GetLeave() != nil
 	}
 
-	if !isHandshake && (!s.params.Participant.IsReady() || s.HandshakePending()) {
+	if !isHandshake && !isLeave && (!s.params.Participant.IsReady() || s.HandshakePending()) {
 		logFunc := s.params.Logger.Debugw
 		if isSdp {
 			// a dropped SDP leaves the negotiation waiting for the peer until the
