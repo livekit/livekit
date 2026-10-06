@@ -51,7 +51,7 @@ var StaticConfigurations = []ConfigurationItem{
 	},
 	{
 		Match: must.Get(NewScriptMatch(`(c.device_model == "xiaomi 2201117ti" && c.os == "android") ||
-		  ((c.browser == "firefox" || c.browser == "firefox mobile") && (c.os == "linux" || c.os == "android"))`)),
+		  ((c.browser == "firefox" || c.browser == "firefox mobile") && c.os == "android")`)),
 		Configuration: &livekit.ClientConfiguration{
 			DisabledCodecs: &livekit.DisabledCodecs{
 				Publish: []*livekit.Codec{
