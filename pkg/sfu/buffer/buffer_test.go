@@ -465,8 +465,8 @@ func TestCodecChange(t *testing.T) {
 	}
 }
 
-// Write unmarshals into reused scratch, so each ExtPacket must keep its own header,
-// and Write plus ReadExtended must not allocate per packet
+// Write unmarshals into reused scratch and callers reuse the input buffer, so each ExtPacket
+// must keep its own header and extensions, and Write plus ReadExtended must not allocate per packet
 func TestIngestNoAlloc(t *testing.T) {
 	testCases := []struct {
 		name      string
@@ -508,11 +508,17 @@ func TestIngestNoAlloc(t *testing.T) {
 				return raw
 			}
 
+			// one input buffer for all writes, like the transport read loop
+			input := make([]byte, 1500)
+			write := func(sn uint16, level byte) {
+				n := copy(input, marshal(sn, level))
+				_, err := buff.Write(input[:n])
+				require.NoError(t, err)
+			}
+
 			readBuf := make([]byte, 1500)
-			_, err := buff.Write(marshal(1, 10))
-			require.NoError(t, err)
-			_, err = buff.Write(marshal(2, 20))
-			require.NoError(t, err)
+			write(1, 10)
+			write(2, 20)
 			for _, want := range []struct {
 				sn    uint16
 				level byte

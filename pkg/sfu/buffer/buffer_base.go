@@ -88,7 +88,7 @@ type ExtPacket struct {
 	IsBuffered           bool
 
 	// backing storage for Packet when the buffer creates the ext packet,
-	// extension payloads point into the raw packet given to the buffer and are not valid after that write returns
+	// extension and CSRC slices point into the write input until ReadExtended re-points them into RawPacket
 	pkt        rtp.Packet
 	extensions [8]rtp.Extension
 }
@@ -1222,8 +1222,13 @@ func (b *BufferBase) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
 	}
 	ep.RawPacket = buf[:n]
 
-	// patch RTP packet to point payload to new buffer, ep owns its rtp.Packet
-	payloadStart := ep.Packet.Header.MarshalSize()
+	// parse the header again from the new buffer so extension and CSRC slices point into it,
+	// then point the payload there too, ep owns its rtp.Packet
+	payloadStart, err := ep.Packet.Header.Unmarshal(buf[:n])
+	if err != nil {
+		b.logger.Warnw("could not unmarshal header", err, "sn", ep.Packet.SequenceNumber)
+		return nil
+	}
 	payloadEnd := payloadStart + len(ep.Packet.Payload)
 	if payloadEnd > n {
 		b.logger.Warnw("unexpected marshal size", nil, "max", n, "need", payloadEnd)
