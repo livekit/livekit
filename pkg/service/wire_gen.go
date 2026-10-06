@@ -8,13 +8,6 @@ package service
 
 import (
 	"fmt"
-	"os"
-
-	"github.com/pion/turn/v5"
-	"github.com/pkg/errors"
-	"github.com/redis/go-redis/v9"
-	"gopkg.in/yaml.v3"
-
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/config"
@@ -31,6 +24,11 @@ import (
 	"github.com/livekit/psrpc"
 	"github.com/livekit/psrpc/pkg/bus/redisbus"
 	"github.com/livekit/psrpc/pkg/middleware/otelpsrpc"
+	"github.com/pion/turn/v5"
+	"github.com/pkg/errors"
+	"github.com/redis/go-redis/v9"
+	"gopkg.in/yaml.v3"
+	"os"
 )
 
 // Injectors from wire.go:
