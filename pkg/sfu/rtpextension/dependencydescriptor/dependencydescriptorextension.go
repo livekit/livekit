@@ -113,9 +113,10 @@ const (
 // ------------------------------------------------------------------------------
 
 type DependencyDescriptor struct {
-	FirstPacketInFrame         bool
-	LastPacketInFrame          bool
-	FrameNumber                uint16
+	FirstPacketInFrame bool
+	LastPacketInFrame  bool
+	FrameNumber        uint16
+	// Unmarshal writes into FrameDependencies and Resolution when they are set, else it allocates them
 	FrameDependencies          *FrameDependencyTemplate
 	Resolution                 *RenderResolution
 	ActiveDecodeTargetsBitmask *uint32
@@ -199,6 +200,15 @@ func (t *FrameDependencyTemplate) Clone() *FrameDependencyTemplate {
 	copy(t2.ChainDiffs, t.ChainDiffs)
 
 	return t2
+}
+
+// CopyInto copies t into dst and reuses the slices of dst
+func (t *FrameDependencyTemplate) CopyInto(dst *FrameDependencyTemplate) {
+	dst.SpatialId = t.SpatialId
+	dst.TemporalId = t.TemporalId
+	dst.DecodeTargetIndications = append(dst.DecodeTargetIndications[:0], t.DecodeTargetIndications...)
+	dst.FrameDiffs = append(dst.FrameDiffs[:0], t.FrameDiffs...)
+	dst.ChainDiffs = append(dst.ChainDiffs[:0], t.ChainDiffs...)
 }
 
 // ------------------------------------------------------------------------------

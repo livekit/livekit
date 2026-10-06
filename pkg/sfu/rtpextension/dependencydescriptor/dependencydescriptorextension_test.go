@@ -17,6 +17,8 @@ package dependencydescriptor
 import (
 	"encoding/hex"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestDependencyDescriptorUnmarshal(t *testing.T) {
@@ -61,5 +63,49 @@ func TestDependencyDescriptorUnmarshal(t *testing.T) {
 		}
 
 		t.Log(ddVal.String())
+	}
+}
+
+// Unmarshal into a descriptor whose FrameDependencies and Resolution are set writes into that
+// storage, gives the same result as a fresh descriptor, and leaves the structure's templates intact
+func TestDependencyDescriptorUnmarshalIntoStorage(t *testing.T) {
+	hexes := []string{
+		"c1017280081485214eafffaaaa863cf0430c10c302afc0aaa0063c00430010c002a000a80006000040001d954926e082b04a0941b820ac1282503157f974000ca864330e222222eca8655304224230eca877530077004200ef008601df010d",
+		"86017340fc",
+		"46017340fc",
+		"c3017540fc",
+		"88017640fc",
+		"48017640fc",
+		"c2017840fc",
+	}
+
+	var structure *FrameDependencyStructure
+	var fd FrameDependencyTemplate
+	var res RenderResolution
+	for _, h := range hexes {
+		buf, err := hex.DecodeString(h)
+		require.NoError(t, err)
+
+		var fresh DependencyDescriptor
+		_, err = (&DependencyDescriptorExtension{Structure: structure, Descriptor: &fresh}).Unmarshal(buf)
+		require.NoError(t, err)
+
+		reused := DependencyDescriptor{FrameDependencies: &fd, Resolution: &res}
+		_, err = (&DependencyDescriptorExtension{Structure: structure, Descriptor: &reused}).Unmarshal(buf)
+		require.NoError(t, err)
+
+		require.Same(t, &fd, reused.FrameDependencies)
+		require.Equal(t, fresh.FrameDependencies, reused.FrameDependencies)
+		require.Equal(t, fresh.Resolution, reused.Resolution)
+		require.Equal(t, fresh.String(), reused.String())
+
+		if fresh.AttachedStructure != nil {
+			structure = fresh.AttachedStructure
+		}
+	}
+
+	// the templates are copied out, not shared
+	for _, template := range structure.Templates {
+		require.NotSame(t, template, &fd)
 	}
 }

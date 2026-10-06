@@ -357,7 +357,10 @@ func (r *DependencyDescriptorReader) readFrameDependencyDefinition() error {
 	}
 
 	// Copy all the fields from the matching template
-	r.descriptor.FrameDependencies = r.structure.Templates[templateIndex].Clone()
+	if r.descriptor.FrameDependencies == nil {
+		r.descriptor.FrameDependencies = &FrameDependencyTemplate{}
+	}
+	r.structure.Templates[templateIndex].CopyInto(r.descriptor.FrameDependencies)
 
 	if r.customDtisFlag {
 		err := r.readFrameDtis()
@@ -389,8 +392,10 @@ func (r *DependencyDescriptorReader) readFrameDependencyDefinition() error {
 			r.buffer.Invalidate()
 			return ErrDDReaderInvalidSpatialLayer
 		}
-		res := r.structure.Resolutions[r.descriptor.FrameDependencies.SpatialId]
-		r.descriptor.Resolution = &res
+		if r.descriptor.Resolution == nil {
+			r.descriptor.Resolution = &RenderResolution{}
+		}
+		*r.descriptor.Resolution = r.structure.Resolutions[r.descriptor.FrameDependencies.SpatialId]
 	}
 
 	return nil
