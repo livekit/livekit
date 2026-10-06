@@ -157,7 +157,8 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 
 // Write adds an RTP Packet, ordering is not guaranteed, newer packets may arrive later
 func (b *Buffer) Write(pkt []byte) (n int, err error) {
-	var rtpPacket rtp.Packet
+	rtpPacket := rtpPacketFactory.Get().(*rtp.Packet)
+	defer rtpPacketFactory.Put(rtpPacket)
 	err = rtpPacket.Unmarshal(pkt)
 	if err != nil {
 		return
@@ -185,7 +186,7 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 	}
 
 	if b.streamInfoProbe != nil {
-		b.probeStreamInfoLocked(&rtpPacket)
+		b.probeStreamInfoLocked(rtpPacket)
 	}
 
 	// handle RTX packet
@@ -197,7 +198,7 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 			return
 		}
 
-		pb.writeRTX(&rtpPacket, now)
+		pb.writeRTX(rtpPacket, now)
 		return
 	}
 
@@ -235,7 +236,7 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		return
 	}
 
-	rtcpPackets := b.calc(pkt, &rtpPacket, now, false, false)
+	rtcpPackets := b.calc(pkt, rtpPacket, now, false, false)
 	b.Unlock()
 
 	if len(rtcpPackets) != 0 {
