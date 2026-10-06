@@ -26,13 +26,12 @@ import (
 var minFramesForCalculation = [...]int{8, 15, 40, 60}
 
 type frameInfo struct {
-	startSeq  uint16
-	endSeq    uint16
-	ts        uint32
-	fn        uint16
-	spatial   int32
-	temporal  int32
-	frameDiff []int
+	startSeq uint16
+	endSeq   uint16
+	ts       uint32
+	fn       uint16
+	spatial  int32
+	temporal int32
 }
 
 type FrameRateCalculator interface {
@@ -425,11 +424,10 @@ func (f *FrameRateCalculatorDD) RecvPacket(ep *ExtPacket) bool {
 	}
 
 	fi := &frameInfo{
-		ts:        ep.Packet.Timestamp,
-		fn:        fn,
-		temporal:  temporal,
-		spatial:   spatial,
-		frameDiff: ep.DependencyDescriptor.Descriptor.FrameDependencies.FrameDiffs,
+		ts:       ep.Packet.Timestamp,
+		fn:       fn,
+		temporal: temporal,
+		spatial:  spatial,
 	}
 	f.fnReceived[baseDiff] = fi
 

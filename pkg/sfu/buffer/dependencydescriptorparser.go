@@ -107,6 +107,15 @@ type ExtDependencyDescriptor struct {
 	// increase when the stream restarts, clear and reinitialize all dd state includes
 	// attached structure, frame chain, decode target.
 	RestartGeneration int
+
+	// storage for Descriptor, zeroed with the rest of the struct on release,
+	// a frame with more than 8 frame diffs spills to the heap
+	descriptor        dd.DependencyDescriptor
+	frameDependencies dd.FrameDependencyTemplate
+	resolution        dd.RenderResolution
+	dtis              [dd.MaxDecodeTargets]dd.DecodeTargetIndication
+	chainDiffs        [dd.MaxDecodeTargets]int
+	frameDiffs        [8]int
 }
 
 func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescriptor, VideoLayer, error) {
@@ -120,9 +129,19 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 		return nil, videoLayer, ErrDDExtentionNotFound
 	}
 
-	var ddVal dd.DependencyDescriptor
+	extDD := ExtDependencyDescriptorFactory.Get().(*ExtDependencyDescriptor)
+	extDD.frameDependencies = dd.FrameDependencyTemplate{
+		DecodeTargetIndications: extDD.dtis[:0],
+		FrameDiffs:              extDD.frameDiffs[:0],
+		ChainDiffs:              extDD.chainDiffs[:0],
+	}
+	ddVal := &extDD.descriptor
+	*ddVal = dd.DependencyDescriptor{
+		FrameDependencies: &extDD.frameDependencies,
+		Resolution:        &extDD.resolution,
+	}
 	ext := &dd.DependencyDescriptorExtension{
-		Descriptor: &ddVal,
+		Descriptor: ddVal,
 		Structure:  r.structure,
 	}
 	_, err := ext.Unmarshal(ddBuf)
@@ -130,6 +149,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 		if err != dd.ErrDDReaderNoStructure && err != dd.ErrDDReaderInvalidTemplateIndex {
 			r.logger.Infow("failed to parse generic dependency descriptor", err, "payload", pkt.PayloadType, "ddbufLen", len(ddBuf))
 		}
+		ReleaseExtDependencyDescriptor(extDD)
 		return nil, videoLayer, err
 	}
 
@@ -168,18 +188,16 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 			"unwrappedFN", unwrapped,
 			"frameWrapAround", r.frameWrapAround,
 		)
+		ReleaseExtDependencyDescriptor(extDD)
 		return nil, videoLayer, ErrFrameEarlierThanKeyFrame
 	}
 
-	r.frameChecker.AddPacket(extSeq, extFN, &ddVal)
+	r.frameChecker.AddPacket(extSeq, extFN, ddVal)
 
-	extDD := ExtDependencyDescriptorFactory.Get().(*ExtDependencyDescriptor)
-	*extDD = ExtDependencyDescriptor{
-		Descriptor:        &ddVal,
-		ExtFrameNum:       extFN,
-		Integrity:         r.frameChecker.FrameIntegrity(extFN),
-		RestartGeneration: r.restartGeneration,
-	}
+	extDD.Descriptor = ddVal
+	extDD.ExtFrameNum = extFN
+	extDD.Integrity = r.frameChecker.FrameIntegrity(extFN)
+	extDD.RestartGeneration = r.restartGeneration
 
 	if ddVal.AttachedStructure != nil {
 		if !ddVal.FirstPacketInFrame {
