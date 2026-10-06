@@ -39,6 +39,7 @@ import (
 	"github.com/livekit/psrpc/pkg/middleware/otelpsrpc"
 
 	"github.com/livekit/livekit-server/pkg/agent"
+	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -81,7 +82,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewRoomService,
 		NewRTCService,
 		NewWHIPService,
-		NewAgentService,
+		endpoint.NewRegistry,
+		NewEndpointScopes,
+		NewAgentHandler,
+		NewAgentWSService,
+		NewAgentWTService,
+		NewAgentEndpointService,
 		NewAgentDispatchService,
 		getAgentConfig,
 		agent.NewAgentClient,
