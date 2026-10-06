@@ -80,6 +80,10 @@ type SubscriptionManager struct {
 	closeCh              chan struct{}
 	doneCh               chan struct{}
 
+	// set when a queued reconcile is dropped, the worker then reconciles everything
+	reconcileOverflow          atomic.Bool
+	reconcileDataTrackOverflow atomic.Bool
+
 	onSubscribeStatusChanged func(publisherID livekit.ParticipantID, subscribed bool)
 
 	dataTrackSubscriptions map[livekit.TrackID]*dataTrackSubscription
@@ -706,7 +710,8 @@ func (m *SubscriptionManager) queueReconcile(trackID livekit.TrackID) {
 	select {
 	case m.reconcileCh <- trackID:
 	default:
-		// queue is full, will reconcile based on timer
+		// queue is full, the worker reconciles everything after its next queued item
+		m.reconcileOverflow.Store(true)
 	}
 }
 
@@ -714,7 +719,7 @@ func (m *SubscriptionManager) queueReconcileDataTrack(trackID livekit.TrackID) {
 	select {
 	case m.reconcileDataTrackCh <- trackID:
 	default:
-		// queue is full, will reconcile based on timer
+		m.reconcileDataTrackOverflow.Store(true)
 	}
 }
 
@@ -742,6 +747,9 @@ func (m *SubscriptionManager) reconcileWorker() {
 			} else {
 				m.reconcileSubscriptions()
 			}
+			if m.reconcileOverflow.Swap(false) {
+				m.reconcileSubscriptions()
+			}
 
 		case trackID := <-m.reconcileDataTrackCh:
 			m.lock.Lock()
@@ -750,6 +758,9 @@ func (m *SubscriptionManager) reconcileWorker() {
 			if s != nil {
 				m.reconcileDataTrackSubscription(s)
 			} else {
+				m.reconcileDataTrackSubscriptions()
+			}
+			if m.reconcileDataTrackOverflow.Swap(false) {
 				m.reconcileDataTrackSubscriptions()
 			}
 		}
