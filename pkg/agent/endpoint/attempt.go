@@ -43,6 +43,9 @@ type attempt struct {
 	target    string
 	requestID string
 	granted   bool
+	// sessionID is the agent session the front placed the request in; empty
+	// when it placed none. Only a text-kind declaration is told.
+	sessionID string
 	body      io.Reader
 	pools     *bridgePools
 	preamble  *livekit.AgentHttp_StreamPreamble
@@ -111,6 +114,10 @@ func (a *attempt) newPreamble() *livekit.AgentHttp_StreamPreamble {
 func (a *attempt) setRoute(w routeWorker) {
 	a.preamble.Route = w.raw
 	a.preamble.Kind = w.kind
+	a.preamble.SessionId = ""
+	if w.kind == livekit.AgentHttp_AEK_TEXT {
+		a.preamble.SessionId = a.sessionID
+	}
 }
 
 // requestHeader builds the header set the worker sees.

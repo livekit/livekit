@@ -16,6 +16,7 @@ package endpoint
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -58,6 +59,9 @@ const (
 	// maxInformationalHeads bounds 1xx responses before the final head, so a
 	// worker cannot hold a client open by trickling them forever.
 	maxInformationalHeads = 8
+
+	// DefaultSessionPeek bounds the request body prefix a SessionResolver sees.
+	DefaultSessionPeek = 4 << 10
 
 	maxResponseHeadSize = 1 << 20
 	responseBufSize     = 8 << 10
@@ -132,12 +136,29 @@ type Front struct {
 // false leaves them to the URL.
 type Identity func(r *http.Request) (agentName, deployment string, ok bool)
 
+// SessionResolver places a request on an AEK_TEXT route in an agent session.
+// It runs once per request, after access is resolved and before a worker is
+// picked, and only when a matched declaration is of the text kind: that kind is
+// the worker's consent to the front reading its body. body is the first bytes
+// of the request body, at most SessionPeek; the worker receives the whole body
+// regardless. Reporting false leaves the session to the worker, which resolves
+// it from the body itself. Cloud installs one backed by the session registry;
+// OSS leaves it nil, and a text route is then forwarded unchanged.
+type SessionResolver func(r *http.Request, agentName, deployment string, body []byte) (sessionID string, ok bool)
+
 // FrontParams configures a Front. Fields are read on every request once the
 // Front is serving, so none may change after construction.
 type FrontParams struct {
 	ResolveAccess AccessResolver
 	Logger        logger.Logger
 	Identity      Identity
+
+	// ResolveSession places text-kind requests in an agent session. nil
+	// forwards them unchanged.
+	ResolveSession SessionResolver
+	// SessionPeek bounds the body prefix ResolveSession sees. 0 means
+	// DefaultSessionPeek.
+	SessionPeek int
 
 	// MaxTunnelsPerWorker caps one worker's concurrent WebSocket tunnels. 0
 	// means half its session's MaxStreams.
@@ -252,6 +273,21 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var sessionID string
+	if f.params.ResolveSession != nil && declaresText(matched) {
+		peek, err := peekBody(r, f.sessionPeek())
+		if err != nil {
+			// the client's body failed before any worker saw the request, so
+			// there is nothing to place and nothing to retry
+			f.params.Logger.Debugw("agent endpoint request body failed before dispatch", "error", err, "requestID", reqID)
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		if id, ok := f.params.ResolveSession(r, agentName, deployment, peek); ok {
+			sessionID = id
+		}
+	}
+
 	var bodyConsumed atomic.Int64
 	a := &attempt{
 		req:       r,
@@ -259,6 +295,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		target:    requestTarget(escPath, r.URL.RawQuery),
 		requestID: reqID,
 		granted:   granted,
+		sessionID: sessionID,
 		webSocket: isWebSocketUpgrade(r),
 		pools:     f.pools,
 	}
@@ -318,6 +355,49 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	f.writeUnavailable(w, "no worker could serve the request")
+}
+
+func (f *Front) sessionPeek() int {
+	if f.params.SessionPeek > 0 {
+		return f.params.SessionPeek
+	}
+	return DefaultSessionPeek
+}
+
+// declaresText reports whether any declaration the request matched is of the
+// text kind. Declarers of one route may disagree, so the session is resolved
+// once and handed only to the workers that asked for it (setRoute).
+func declaresText(matched []routeWorker) bool {
+	for _, w := range matched {
+		if w.kind == livekit.AgentHttp_AEK_TEXT {
+			return true
+		}
+	}
+	return false
+}
+
+// peekBody reads the first n bytes of the request body, waiting for them or
+// for the body to end, and splices them back in front of the rest, so r.Body
+// still reads whole for the worker or a fallback. A body shorter than declared
+// is not an error here; the framing reports it to the worker as usual.
+func peekBody(r *http.Request, n int) ([]byte, error) {
+	cl := bodyLength(r)
+	if cl == 0 {
+		return nil, nil
+	}
+	if cl > 0 && cl < int64(n) {
+		n = int(cl)
+	}
+	buf := make([]byte, n)
+	read, err := io.ReadFull(r.Body, buf)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return nil, err
+	}
+	r.Body = struct {
+		io.Reader
+		io.Closer
+	}{io.MultiReader(bytes.NewReader(buf[:read]), r.Body), r.Body}
+	return buf[:read], nil
 }
 
 // matchDeployment resolves a path against the deployment's merged route table.
