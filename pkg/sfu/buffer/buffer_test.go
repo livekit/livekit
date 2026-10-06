@@ -552,6 +552,51 @@ func TestIngestNoAlloc(t *testing.T) {
 	}
 }
 
+// a dropped padding only packet shifts later sequence numbers, ReadExtended must keep the shifted number
+// in the header and in RawPacket
+func TestIngestDroppedPaddingKeepsAdjustedSequenceNumber(t *testing.T) {
+	buff := NewBuffer(123, 100, 100)
+	require.NoError(t, buff.Bind(webrtc.RTPParameters{
+		Codecs: []webrtc.RTPCodecParameters{opusCodec},
+	}, opusCodec.RTPCodecCapability, 0))
+	defer buff.Close()
+
+	write := func(sn uint16, paddingOnly bool) {
+		p := rtp.Packet{
+			Header: rtp.Header{
+				Version:        2,
+				PayloadType:    uint8(opusCodec.PayloadType),
+				SequenceNumber: sn,
+				Timestamp:      uint32(sn) * 960,
+				SSRC:           123,
+			},
+		}
+		if paddingOnly {
+			p.Header.Padding = true
+			p.Header.PaddingSize = 20
+		} else {
+			p.Payload = make([]byte, 100)
+		}
+		raw, err := p.Marshal()
+		require.NoError(t, err)
+		_, err = buff.Write(raw)
+		require.NoError(t, err)
+	}
+
+	write(40, false)
+	write(41, true)
+	write(42, false)
+
+	readBuf := make([]byte, 1500)
+	for _, wantSN := range []uint16{40, 41} {
+		ep, err := buff.ReadExtended(readBuf)
+		require.NoError(t, err)
+		require.Equal(t, wantSN, ep.Packet.SequenceNumber)
+		require.Equal(t, wantSN, binary.BigEndian.Uint16(ep.RawPacket[2:]))
+		ReleaseExtPacket(ep)
+	}
+}
+
 func BenchmarkMemcpu(b *testing.B) {
 	buf := make([]byte, 1500*1500*10)
 	buf2 := make([]byte, 1500*1500*20)
