@@ -758,6 +758,7 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 			if probeSignal != ccutils.ProbeSignalCongesting {
 				if channelCapacity > s.committedChannelCapacity {
 					s.committedChannelCapacity = channelCapacity
+					s.updatePacerBitrate()
 				}
 
 				s.maybeBoostDeficientTracks()
@@ -851,6 +852,7 @@ func (s *StreamAllocator) handleSignalSetChannelCapacity(event Event) {
 	} else {
 		s.params.Logger.Infow("clearing override channel capacity")
 	}
+	s.updatePacerBitrate()
 }
 
 func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
@@ -894,6 +896,8 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 			s.allocateAllTracks()
 		}
 	}
+
+	s.updatePacerBitrate()
 }
 
 func (s *StreamAllocator) setState(state streamAllocatorState) {
@@ -915,6 +919,10 @@ func (s *StreamAllocator) setState(state streamAllocatorState) {
 	} else {
 		go s.ping(s.pingGeneration.Inc(), cPingShort)
 	}
+
+	// the allocator's constraint on egress changed, so re-evaluate the
+	// pacer's rate
+	s.updatePacerBitrate()
 }
 
 func (s *StreamAllocator) adjustState() {
@@ -1274,6 +1282,24 @@ func (s *StreamAllocator) getAvailableChannelCapacity(allowOverride bool) int64 
 	}
 
 	return availableChannelCapacity
+}
+
+// updatePacerBitrate applies the channel capacity the allocator is currently
+// working with to the pacer, so a rate based pacer follows the bandwidth
+// estimate instead of pacing at a fixed rate. the capacity only applies while
+// the allocator is constraining egress; in the stable state allocation is a
+// free pass, so capping the pacer there would hold back media the allocator
+// would otherwise send. no-op for pacers that do not rate limit
+func (s *StreamAllocator) updatePacerBitrate() {
+	bitrate := int64(0)
+	if s.overriddenChannelCapacity > 0 || s.state == streamAllocatorStateDeficient || s.params.BWE.CongestionState() != bwe.CongestionStateNone {
+		bitrate = s.getAvailableChannelCapacity(true)
+	}
+	if bitrate <= 0 {
+		bitrate = pacer.InitialBitrate
+	}
+
+	s.params.Pacer.SetBitrate(int(bitrate))
 }
 
 func (s *StreamAllocator) getExpectedBandwidthUsage() int64 {

@@ -42,6 +42,12 @@ const (
 	PacerBehaviorLeakybucket PacerBehavior = "leaky-bucket"
 )
 
+// InitialBitrate is the pacing rate used until a channel capacity is known
+// (or while none is being enforced). It matches the allocator's unconstrained
+// capacity, so healthy egress is not capped below what the allocator would
+// schedule anyway.
+const InitialBitrate = 100_000_000
+
 type Packet struct {
 	Header             *rtp.Header
 	HeaderPool         *sync.Pool
@@ -69,6 +75,11 @@ func (p *Packet) HoldExtension(ext []byte) []byte {
 		return nil
 	}
 	return p.extBuf[:copy(p.extBuf[:], ext)]
+}
+
+// size is the packet's contribution to the wire, used for pacing and queue accounting
+func (p *Packet) size() int {
+	return p.HeaderSize + len(p.Payload)
 }
 
 type Pacer interface {
