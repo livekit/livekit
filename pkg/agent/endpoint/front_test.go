@@ -3,7 +3,9 @@
 package endpoint
 
 import (
+	"bufio"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,6 +17,8 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+
+	"github.com/livekit/livekit-server/pkg/agent/endpoint/wire"
 )
 
 // grantedTo resolves every request to scope with full access.
@@ -406,4 +410,147 @@ func TestMergeWorkerHeaders(t *testing.T) {
 	require.Equal(t, []string{"a=1", "b=2"}, dst.Values("Set-Cookie"))
 	require.Equal(t, []string{"</a>; rel=preload", "</b>; rel=preload"}, dst.Values("Link"))
 	require.Equal(t, []string{"Origin"}, sharedVary, "a slice the middleware shares must not be written through")
+}
+
+// textExchange is what the scripted worker saw of one request.
+type textExchange struct {
+	pre  *livekit.AgentHttp_StreamPreamble
+	body string
+}
+
+// textFront serves one scripted worker declaring a text-kind route next to a
+// plain one, and reports each exchange it served.
+func textFront(t *testing.T, params FrontParams) (*httptest.Server, <-chan textExchange) {
+	t.Helper()
+	m, err := ParseManifest([]*livekit.AgentHttp_AgentEndpoint{
+		{Path: "/a2a", Kind: livekit.AgentHttp_AEK_TEXT, Methods: []string{"POST"}, Public: true},
+		{Path: "/plain", Methods: []string{"POST"}, Public: true},
+	})
+	require.NoError(t, err)
+
+	seen := make(chan textExchange, 1)
+	g, s := NewRegistry(), NewScope(logger.GetLogger())
+	g.Register(s, NewRegistration(RegistrationParams{WorkerID: "w1", Manifest: m, Session: &scriptedSession{
+		script: func(r io.Reader, w *workerSide) {
+			defer w.Close()
+			pre, err := wire.ReadPreamble(r)
+			if err != nil {
+				return
+			}
+			req, err := http.ReadRequest(bufio.NewReader(r))
+			if err != nil {
+				return
+			}
+			body, _ := io.ReadAll(req.Body)
+			seen <- textExchange{pre: pre, body: string(body)}
+			w.WriteString("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
+		},
+	}}))
+	params.ResolveAccess = grantedTo(s)
+	params.Logger = logger.GetLogger()
+	ts := httptest.NewServer(NewFront(params))
+	t.Cleanup(ts.Close)
+	return ts, seen
+}
+
+func postText(t *testing.T, ts *httptest.Server, path, body string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, ts.URL+PathPrefix+"a/d"+path, strings.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("X-Channel", "sms")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+}
+
+// the preamble carries the kind the picked worker declared the route with, and
+// with no resolver installed a text route is forwarded unchanged: no session,
+// whole body.
+func TestFrontTextRouteWithoutResolverPassesThrough(t *testing.T) {
+	ts, seen := textFront(t, FrontParams{})
+	body := strings.Repeat("x", 3*DefaultSessionPeek)
+
+	postText(t, ts, "/a2a", body)
+	got := <-seen
+	require.Equal(t, livekit.AgentHttp_AEK_TEXT, got.pre.GetKind())
+	require.Empty(t, got.pre.GetSessionId())
+	require.Equal(t, body, got.body)
+
+	postText(t, ts, "/plain", body)
+	got = <-seen
+	require.Equal(t, livekit.AgentHttp_AEK_HTTP, got.pre.GetKind())
+	require.Equal(t, body, got.body)
+}
+
+// a resolver sees the request head and a bounded prefix of the body; its id
+// reaches the text-kind worker in the preamble, and the worker still gets the
+// whole body.
+func TestFrontSessionResolverPlacesTextRoute(t *testing.T) {
+	type call struct {
+		method, path, channel, agent, deployment string
+		peek                                     string
+	}
+	calls := make(chan call, 1)
+	ts, seen := textFront(t, FrontParams{
+		SessionPeek: 8,
+		ResolveSession: func(r *http.Request, agentName, deployment string, body []byte) (string, bool) {
+			calls <- call{r.Method, r.URL.Path, r.Header.Get("X-Channel"), agentName, deployment, string(body)}
+			return "AT_1", true
+		},
+	})
+	body := `{"jsonrpc":"2.0","params":` + strings.Repeat("x", 2*DefaultSessionPeek) + `}`
+
+	postText(t, ts, "/a2a", body)
+	got := <-seen
+	require.Equal(t, livekit.AgentHttp_AEK_TEXT, got.pre.GetKind())
+	require.Equal(t, "AT_1", got.pre.GetSessionId())
+	require.Equal(t, body, got.body, "the peek must not take bytes from the worker")
+
+	c := <-calls
+	require.Equal(t, call{http.MethodPost, PathPrefix + "a/d/a2a", "sms", "a", "d", body[:8]}, c)
+
+	// a plain route is not the front's to read: the resolver never runs
+	postText(t, ts, "/plain", body)
+	got = <-seen
+	require.Equal(t, livekit.AgentHttp_AEK_HTTP, got.pre.GetKind())
+	require.Empty(t, got.pre.GetSessionId())
+	require.Equal(t, body, got.body)
+	require.Empty(t, calls)
+}
+
+// a resolver that places nothing leaves the session to the worker.
+func TestFrontSessionResolverDeclines(t *testing.T) {
+	ts, seen := textFront(t, FrontParams{
+		ResolveSession: func(*http.Request, string, string, []byte) (string, bool) { return "", false },
+	})
+	postText(t, ts, "/a2a", "hello")
+	got := <-seen
+	require.Equal(t, livekit.AgentHttp_AEK_TEXT, got.pre.GetKind())
+	require.Empty(t, got.pre.GetSessionId())
+	require.Equal(t, "hello", got.body)
+}
+
+// a body shorter than the peek bound is handed over whole, with nothing lost to
+// the read-ahead; an absent body peeks nothing.
+func TestFrontSessionPeekShortBody(t *testing.T) {
+	peeks := make(chan string, 1)
+	ts, seen := textFront(t, FrontParams{
+		ResolveSession: func(_ *http.Request, _, _ string, body []byte) (string, bool) {
+			peeks <- string(body)
+			return "AT_2", true
+		},
+	})
+
+	postText(t, ts, "/a2a", "short")
+	require.Equal(t, "short", <-peeks)
+	got := <-seen
+	require.Equal(t, "AT_2", got.pre.GetSessionId())
+	require.Equal(t, "short", got.body)
+
+	postText(t, ts, "/a2a", "")
+	require.Empty(t, <-peeks)
+	got = <-seen
+	require.Equal(t, "AT_2", got.pre.GetSessionId())
+	require.Empty(t, got.body)
 }
