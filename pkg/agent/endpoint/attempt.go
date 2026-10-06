@@ -19,9 +19,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -216,6 +218,8 @@ func (a *attempt) readResponse(
 	// error here as soon as the stream is closed, which a worker that answered
 	// in full and hung up has done.
 	_ = stream.SetReadDeadline(time.Now().Add(responseHeadTimeout))
+	// headers middleware set before the front ran; no 1xx head may consume them
+	var base http.Header
 	for i := 0; ; i++ {
 		if i > maxInformationalHeads {
 			return nil, errTooManyInformational
@@ -239,9 +243,13 @@ func (a *attempt) readResponse(
 			return resp, nil
 		}
 		h := w.Header()
+		if base == nil {
+			base = h.Clone()
+		}
 		copyResponseHeaders(h, resp.Header)
 		w.WriteHeader(resp.StatusCode)
 		clear(h)
+		maps.Copy(h, base)
 		a.committed = true
 	}
 }
@@ -371,13 +379,26 @@ func removeHopByHopHeaders(h http.Header) {
 // forwarded Transfer-Encoding makes the client de-chunk an already-decoded body)
 // and minus the reserved namespace, which is not the client's to see.
 func copyResponseHeaders(dst, src http.Header) {
-	for k, vs := range src {
+	MergeWorkerHeaders(dst, src)
+	removeHopByHopHeaders(dst)
+	wire.StripReservedHeaders(dst)
+}
+
+// MergeWorkerHeaders adds a worker's response head to dst, which may hold
+// headers set by serving middleware. A worker's Access-Control-* and Vary
+// values replace the middleware's. Preflights never reach the worker: they
+// carry no credential to admit them to a private route.
+func MergeWorkerHeaders(dst, worker http.Header) {
+	for k, vs := range worker {
+		if k == "Vary" || strings.HasPrefix(k, "Access-Control-") {
+			// dst's slices may be shared by middleware and must not be written through
+			dst[k] = slices.Clone(vs)
+			continue
+		}
 		for _, v := range vs {
 			dst.Add(k, v)
 		}
 	}
-	removeHopByHopHeaders(dst)
-	wire.StripReservedHeaders(dst)
 }
 
 // countingReader tracks how much of the client body has been consumed. The

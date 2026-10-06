@@ -492,8 +492,7 @@ func NewHTTPHandler(conf *config.Config, keyProvider auth.KeyProvider, apiHandle
 	// this chain must not swallow http.ErrAbortHandler or bound the request body
 	agentMiddlewares := []negroni.Handler{
 		negroni.HandlerFunc(AgentRecovery),
-		// the methods a manifest may declare, less TRACE, which browsers forbid in CORS
-		cors.New(corsOptions([]string{"OPTIONS", "HEAD", "GET", "POST", "PUT", "PATCH", "DELETE"})),
+		NewAgentEndpointCORS(),
 	}
 	if keyProvider != nil {
 		authMiddleware := NewAPIKeyAuthMiddleware(keyProvider)
@@ -514,6 +513,13 @@ func NewHTTPHandler(conf *config.Config, keyProvider auth.KeyProvider, apiHandle
 		})
 	}
 	return WithPathNormalization(dispatch)
+}
+
+// NewAgentEndpointCORS is the agent endpoint chain's CORS middleware and answers
+// every preflight. Worker headers override it per endpoint.MergeWorkerHeaders.
+func NewAgentEndpointCORS() *cors.Cors {
+	// the methods a manifest may declare, less TRACE, which browsers forbid in CORS
+	return cors.New(corsOptions([]string{"OPTIONS", "HEAD", "GET", "POST", "PUT", "PATCH", "DELETE"}))
 }
 
 func corsOptions(methods []string) cors.Options {

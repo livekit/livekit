@@ -384,3 +384,26 @@ func TestFrontOverBudgetForwardsWithAGrant(t *testing.T) {
 	f = budgetFront(t, AccessNone)
 	require.Equal(t, http.StatusNotFound, serveFront(f, "/ab").Code)
 }
+
+func TestMergeWorkerHeaders(t *testing.T) {
+	sharedVary := []string{"Origin"}
+	dst := http.Header{
+		"Access-Control-Allow-Origin":   {"https://server.example"},
+		"Access-Control-Expose-Headers": {"*"},
+		"Vary":                          sharedVary,
+		"Set-Cookie":                    {"a=1"},
+	}
+	MergeWorkerHeaders(dst, http.Header{
+		"Access-Control-Allow-Origin": {"https://app.example"},
+		"Vary":                        {"Accept-Encoding"},
+		"Set-Cookie":                  {"b=2"},
+		"Link":                        {"</a>; rel=preload", "</b>; rel=preload"},
+	})
+
+	require.Equal(t, []string{"https://app.example"}, dst.Values("Access-Control-Allow-Origin"))
+	require.Equal(t, []string{"*"}, dst.Values("Access-Control-Expose-Headers"), "a key the worker left alone keeps the server's value")
+	require.Equal(t, []string{"Accept-Encoding"}, dst.Values("Vary"))
+	require.Equal(t, []string{"a=1", "b=2"}, dst.Values("Set-Cookie"))
+	require.Equal(t, []string{"</a>; rel=preload", "</b>; rel=preload"}, dst.Values("Link"))
+	require.Equal(t, []string{"Origin"}, sharedVary, "a slice the middleware shares must not be written through")
+}

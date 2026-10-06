@@ -21,7 +21,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
+	"net/textproto"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gorilla/websocket"
@@ -145,6 +148,103 @@ func TestAgentChainCORSAllowsPUT(t *testing.T) {
 
 	require.Contains(t, preflight(t, "/agents/test-agent/production/thing"), http.MethodPut)
 	require.NotContains(t, preflight(t, "/api-sink"), http.MethodPut)
+}
+
+// A worker's CORS headers replace the chain's.
+func TestAgentChainWorkerCORSReplacesServer(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /cors", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "https://app.example")
+		w.Header().Set("Vary", "Accept-Encoding")
+		_, _ = w.Write([]byte("ok"))
+	})
+	app := newTargetApp(t, mux)
+
+	stack := newEndpointStack(t, agent.EndpointsConfig{})
+	stack.startWorker(app.URL, "production", []*livekit.AgentHttp_AgentEndpoint{
+		httpEP("/cors", []string{"GET"}, true),
+	})
+
+	req, err := http.NewRequest(http.MethodGet, stack.ts.URL+"/agents/test-agent/production/cors", nil)
+	require.NoError(t, err)
+	req.Header.Set("Origin", "https://example.com")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, []string{"https://app.example"}, resp.Header.Values("Access-Control-Allow-Origin"))
+	require.Equal(t, []string{"Accept-Encoding"}, resp.Header.Values("Vary"))
+}
+
+// The chain's CORS headers survive an informational head.
+func TestAgentChainKeepsCORSAfterEarlyHints(t *testing.T) {
+	addr := rawHTTPTarget(t, func(c net.Conn) {
+		_, _ = io.WriteString(c, "HTTP/1.1 103 Early Hints\r\nLink: </a.js>; rel=preload\r\n\r\n")
+		_, _ = io.WriteString(c, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+	})
+
+	stack := newEndpointStack(t, agent.EndpointsConfig{})
+	stack.startWorker(addr, "production", []*livekit.AgentHttp_AgentEndpoint{
+		httpEP("/hints", []string{"GET"}, true),
+	})
+
+	var hints atomic.Int32
+	trace := &httptrace.ClientTrace{
+		Got1xxResponse: func(code int, _ textproto.MIMEHeader) error {
+			if code == http.StatusEarlyHints {
+				hints.Add(1)
+			}
+			return nil
+		},
+	}
+	req, err := http.NewRequest(http.MethodGet, stack.ts.URL+"/agents/test-agent/production/hints", nil)
+	require.NoError(t, err)
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+	req.Header.Set("Origin", "https://example.com")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.EqualValues(t, 1, hints.Load())
+	require.Equal(t, []string{"https://example.com"}, resp.Header.Values("Access-Control-Allow-Origin"))
+	require.Equal(t, []string{"Origin"}, resp.Header.Values("Vary"))
+}
+
+// The chain answers preflights; a plain OPTIONS reaches a declared route.
+func TestAgentChainAnswersPreflights(t *testing.T) {
+	var hits atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("OPTIONS /opts", func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	})
+	app := newTargetApp(t, mux)
+
+	stack := newEndpointStack(t, agent.EndpointsConfig{})
+	stack.startWorker(app.URL, "production", []*livekit.AgentHttp_AgentEndpoint{
+		httpEP("/opts", []string{"OPTIONS"}, true),
+	})
+	url := stack.ts.URL + "/agents/test-agent/production/opts"
+
+	req, err := http.NewRequest(http.MethodOptions, url, nil)
+	require.NoError(t, err)
+	req.Header.Set("Origin", "https://example.com")
+	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	preflight, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer preflight.Body.Close()
+	require.Equal(t, http.StatusNoContent, preflight.StatusCode)
+	require.Equal(t, "https://example.com", preflight.Header.Get("Access-Control-Allow-Origin"))
+	require.Contains(t, preflight.Header.Get("Access-Control-Allow-Methods"), http.MethodPost)
+	require.Zero(t, hits.Load(), "a preflight must not reach the worker")
+
+	req, err = http.NewRequest(http.MethodOptions, url, nil)
+	require.NoError(t, err)
+	plain, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer plain.Body.Close()
+	require.Equal(t, http.StatusOK, plain.StatusCode)
+	require.EqualValues(t, 1, hits.Load())
 }
 
 // Disabled leaves the prefix unserved.
