@@ -32,6 +32,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/agent/endpoint/router"
 	"github.com/livekit/livekit-server/pkg/agent/endpoint/wire"
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
@@ -118,6 +119,10 @@ type Access struct {
 	// curried on the deployment it resolved. nil means local misses are final.
 	Fallback Fallback
 	Level    AccessLevel
+	// SessionGrant is the verified token's agentSession claim, nil when the
+	// token carried none or there was no token. It reaches the worker in the
+	// preamble; the token itself never does.
+	SessionGrant *auth.AgentSessionGrant
 }
 
 // AccessResolver maps an inbound request, plus the agent and deployment its URL
@@ -295,6 +300,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		target:    requestTarget(escPath, r.URL.RawQuery),
 		requestID: reqID,
 		granted:   granted,
+		grant:     access.SessionGrant.ToProto(),
 		sessionID: sessionID,
 		webSocket: isWebSocketUpgrade(r),
 		pools:     f.pools,

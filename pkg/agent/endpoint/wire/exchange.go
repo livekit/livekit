@@ -142,7 +142,9 @@ func ReadPreamble(r io.Reader) (*livekit.AgentHttp_StreamPreamble, error) {
 // StripReservedHeaders removes the in-band signalling fields. Every header set
 // crossing between client and worker must pass through here: a client-set
 // x-lk-completion would otherwise forge an outcome, and a worker-set one would
-// reach the end client.
+// reach the end client. Identity headers (the LiveKit bearer, the
+// X-LiveKit-Session-Grant a node-less worker accepts) are the front's to strip
+// on the request side, next to where it asserts them in the preamble.
 func StripReservedHeaders(h http.Header) {
 	for k := range h {
 		if strings.HasPrefix(strings.ToLower(k), ReservedHeaderPrefix) {

@@ -38,8 +38,9 @@ func NewAgentEndpointService(h *AgentHandler, scopes *EndpointScopes) *AgentEndp
 						level = endpoint.AccessGranted
 					}
 					return endpoint.Access{
-						Scope: scopes.Scope(GetAPIKey(r.Context()), agentName, deployment),
-						Level: level,
+						Scope:        scopes.Scope(GetAPIKey(r.Context()), agentName, deployment),
+						Level:        level,
+						SessionGrant: claims.AgentSession,
 					}, true
 				}
 				// unauthenticated: one configured key makes the api key

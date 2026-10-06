@@ -34,6 +34,11 @@ import (
 	"github.com/livekit/protocol/utils/guid"
 )
 
+// sessionGrantHeader is the header a worker reached without a node accepts the
+// grant on. Through a node the grant travels in the preamble, so this header is
+// reserved to the node and stripped from every forwarded request.
+const sessionGrantHeader = "X-LiveKit-Session-Grant"
+
 // attempt is the per-request state shared across worker attempts.
 type attempt struct {
 	req *http.Request
@@ -43,6 +48,9 @@ type attempt struct {
 	target    string
 	requestID string
 	granted   bool
+	// grant is the caller's verified agent session grant, nil when the token
+	// carried none. Every kind of route is told: the worker enforces it.
+	grant *livekit.AgentHttp_AgentSessionGrant
 	// sessionID is the agent session the front placed the request in; empty
 	// when it placed none. Only a text-kind declaration is told.
 	sessionID string
@@ -99,10 +107,11 @@ func (a *attempt) newPreamble() *livekit.AgentHttp_StreamPreamble {
 	clientAddr, _, _ := net.SplitHostPort(a.req.RemoteAddr)
 
 	p := &livekit.AgentHttp_StreamPreamble{
-		RequestId:  a.requestID,
-		Authorized: a.granted,
-		ClientAddr: clientAddr,
-		Scheme:     scheme,
+		RequestId:    a.requestID,
+		Authorized:   a.granted,
+		SessionGrant: a.grant,
+		ClientAddr:   clientAddr,
+		Scheme:       scheme,
 	}
 	return p
 }
@@ -132,11 +141,15 @@ func (a *attempt) requestHeader() http.Header {
 		h.Set("Connection", "Upgrade")
 		h.Set("Upgrade", "websocket")
 	}
-	// identity travels as preamble.authorized; the token must never reach the
-	// worker
+	// identity travels as preamble.authorized and preamble.session_grant; the
+	// token must never reach the worker
 	if isLiveKitBearer(h.Get("Authorization")) {
 		h.Del("Authorization")
 	}
+	// the session grant is the node's to assert, from the verified token. A
+	// worker reached directly, with no node in front, may still read this
+	// header, so a client must not be able to plant one here.
+	h.Del(sessionGrantHeader)
 	// the signalling namespace is the node's to write: a client able to set
 	// x-lk-completion could tell the worker a body it cut short was whole
 	wire.StripReservedHeaders(h)

@@ -15,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
@@ -414,12 +415,15 @@ func TestMergeWorkerHeaders(t *testing.T) {
 
 // textExchange is what the scripted worker saw of one request.
 type textExchange struct {
-	pre  *livekit.AgentHttp_StreamPreamble
-	body string
+	pre    *livekit.AgentHttp_StreamPreamble
+	target string
+	header http.Header
+	body   string
 }
 
 // textFront serves one scripted worker declaring a text-kind route next to a
-// plain one, and reports each exchange it served.
+// plain one, and reports each exchange it served. A nil ResolveAccess grants
+// every request.
 func textFront(t *testing.T, params FrontParams) (*httptest.Server, <-chan textExchange) {
 	t.Helper()
 	m, err := ParseManifest([]*livekit.AgentHttp_AgentEndpoint{
@@ -442,11 +446,15 @@ func textFront(t *testing.T, params FrontParams) (*httptest.Server, <-chan textE
 				return
 			}
 			body, _ := io.ReadAll(req.Body)
-			seen <- textExchange{pre: pre, body: string(body)}
+			seen <- textExchange{pre: pre, target: req.RequestURI, header: req.Header, body: string(body)}
 			w.WriteString("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
 		},
 	}}))
-	params.ResolveAccess = grantedTo(s)
+	if params.ResolveAccess == nil {
+		params.ResolveAccess = grantedTo(s)
+	} else {
+		params.ResolveAccess = withScope(params.ResolveAccess, s)
+	}
 	params.Logger = logger.GetLogger()
 	ts := httptest.NewServer(NewFront(params))
 	t.Cleanup(ts.Close)
@@ -553,4 +561,134 @@ func TestFrontSessionPeekShortBody(t *testing.T) {
 	got = <-seen
 	require.Equal(t, "AT_2", got.pre.GetSessionId())
 	require.Empty(t, got.body)
+}
+
+const testAPIKey, testAPISecret = "APIfront", "front-secret-front-secret-front-secret"
+
+// verifiedAccess resolves access the way the server's middleware and resolver
+// do together: a LiveKit token from the bearer, or from access_token on the
+// query when there is no bearer, is verified and its claims decide the level
+// and the session grant. No token is anonymous.
+func verifiedAccess(agentName, deployment string) AccessResolver {
+	return func(r *http.Request, _, _ string) (Access, bool) {
+		raw := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if r.Header.Get("Authorization") == "" {
+			raw = r.URL.Query().Get("access_token")
+		}
+		if raw == "" {
+			return Access{}, true
+		}
+		v, err := auth.ParseAPIToken(raw)
+		if err != nil {
+			return Access{}, false
+		}
+		_, claims, err := v.Verify(testAPISecret)
+		if err != nil {
+			return Access{}, false
+		}
+		level := AccessCredentialed
+		if claims.AgentEndpoint.Allows(agentName, deployment) {
+			level = AccessGranted
+		}
+		return Access{Level: level, SessionGrant: claims.AgentSession}, true
+	}
+}
+
+// withScope places whatever resolve decides in scope.
+func withScope(resolve AccessResolver, scope *Scope) AccessResolver {
+	return func(r *http.Request, agentName, deployment string) (Access, bool) {
+		a, ok := resolve(r, agentName, deployment)
+		a.Scope = scope
+		return a, ok
+	}
+}
+
+func mintToken(t *testing.T, grant *auth.AgentSessionGrant) string {
+	t.Helper()
+	tok, err := auth.NewAccessToken(testAPIKey, testAPISecret).
+		SetIdentity("caller").
+		SetAgentEndpointGrant(&auth.AgentEndpointGrant{Call: true}).
+		SetAgentSessionGrant(grant).
+		ToJWT()
+	require.NoError(t, err)
+	return tok
+}
+
+// the verified token's agentSession claim reaches the worker in the preamble, on
+// a text route and a plain one alike, while the token itself does not.
+func TestFrontSessionGrantTravelsInPreamble(t *testing.T) {
+	ts, seen := textFront(t, FrontParams{ResolveAccess: verifiedAccess("a", "d")})
+	grant := &auth.AgentSessionGrant{
+		AgentName: "a", Sub: "demo-user", SessionIDs: []string{"AT_1", "AT_2"},
+		List: true, Create: true, Send: true, Read: true,
+	}
+	tok := mintToken(t, grant)
+
+	for _, path := range []string{"/a2a", "/plain"} {
+		req, err := http.NewRequest(http.MethodPost, ts.URL+PathPrefix+"a/d"+path, strings.NewReader("hello"))
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+		require.Equal(t, http.StatusNoContent, resp.StatusCode)
+
+		got := <-seen
+		require.True(t, got.pre.GetAuthorized())
+		require.Empty(t, got.header.Get("Authorization"), "the token must never reach the worker")
+		require.Equal(t, "a", got.pre.GetSessionGrant().GetAgentName())
+		require.Equal(t, "demo-user", got.pre.GetSessionGrant().GetSub())
+		require.Equal(t, []string{"AT_1", "AT_2"}, got.pre.GetSessionGrant().GetSessionIds())
+		require.True(t, got.pre.GetSessionGrant().GetList())
+		require.True(t, got.pre.GetSessionGrant().GetCreate())
+		require.True(t, got.pre.GetSessionGrant().GetSend())
+		require.True(t, got.pre.GetSessionGrant().GetRead())
+		require.False(t, got.pre.GetSessionGrant().GetDelete())
+	}
+}
+
+// a browser WebSocket cannot set headers, so the token may ride the query as
+// access_token: it is verified the same way, the grant travels in the preamble,
+// and the query the worker sees no longer carries it.
+func TestFrontSessionGrantFromQueryToken(t *testing.T) {
+	ts, seen := textFront(t, FrontParams{ResolveAccess: verifiedAccess("a", "d")})
+	tok := mintToken(t, &auth.AgentSessionGrant{AgentName: "a", Sub: "demo-user", Send: true})
+
+	req, err := http.NewRequest(http.MethodPost, ts.URL+PathPrefix+"a/d/a2a?access_token="+tok+"&keep=1", strings.NewReader("hello"))
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+
+	got := <-seen
+	require.Equal(t, "demo-user", got.pre.GetSessionGrant().GetSub())
+	require.Equal(t, "a", got.pre.GetSessionGrant().GetAgentName())
+	require.True(t, got.pre.GetSessionGrant().GetSend())
+	require.Empty(t, got.header.Get("Authorization"))
+	require.Equal(t, "/a2a?keep=1", got.target, "the query token is stripped like the bearer")
+}
+
+// the grant is the node's to assert: a client-set X-LiveKit-Session-Grant is
+// dropped, and a token with no agentSession claim leaves the field unset.
+func TestFrontDropsForgedSessionGrantHeader(t *testing.T) {
+	ts, seen := textFront(t, FrontParams{ResolveAccess: verifiedAccess("a", "d")})
+	tok := mintToken(t, nil)
+
+	req, err := http.NewRequest(http.MethodPost, ts.URL+PathPrefix+"a/d/a2a", strings.NewReader("hello"))
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set(sessionGrantHeader, `{"agentName":"a","sub":"someone-else","send":true}`)
+	req.Header.Set("X-Keep", "1")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+
+	got := <-seen
+	require.True(t, got.pre.GetAuthorized())
+	require.Nil(t, got.pre.GetSessionGrant(), "a project token with no agentSession claim grants no session")
+	require.Empty(t, got.header.Values(sessionGrantHeader), "a client cannot forge the grant")
+	require.Equal(t, "1", got.header.Get("X-Keep"), "other headers still pass")
+	require.Empty(t, got.header.Get("Authorization"))
 }
