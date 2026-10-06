@@ -44,6 +44,8 @@ import (
 	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/agent/endpoint/conformance"
+	"github.com/livekit/livekit-server/pkg/agent/endpoint/wire"
+	"github.com/livekit/livekit-server/pkg/agent/testutils"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
@@ -682,4 +684,28 @@ func TestAgentEndpointsEncodedNameAndPath(t *testing.T) {
 		require.Equal(t, 200, code)
 		require.Equal(t, "/echo/q?a=1&b=%2F%20x", target)
 	})
+}
+
+func TestAgentEndpointsWithheldOverWebSocket(t *testing.T) {
+	server := testutils.NewTestServer(psrpc.NewLocalMessageBus())
+	t.Cleanup(server.Close)
+
+	worker := server.SimulateAgentWorker()
+	responses := worker.RegisterWorkerResponses.Observe()
+	defer responses.Stop()
+	worker.SendRegister(&livekit.RegisterWorkerRequest{
+		Type:             livekit.JobType_JT_ROOM,
+		AgentName:        "ws-agent",
+		Endpoints:        []*livekit.AgentHttp_AgentEndpoint{{Path: "/json", Methods: []string{"GET"}}},
+		InstanceId:       "ws-instance",
+		EndpointProtocol: wire.CurrentProtocol,
+	})
+
+	select {
+	case res := <-responses.Events():
+		require.NotEmpty(t, res.GetWorkerId())
+		require.Nil(t, res.GetEndpointSettings())
+	case <-time.After(time.Second):
+		require.Fail(t, "registration timeout")
+	}
 }

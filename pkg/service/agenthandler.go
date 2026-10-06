@@ -180,7 +180,13 @@ func (h *AgentHandler) HandleConnection(ctx context.Context, conn agent.SignalCo
 // exchanges share it); nil for a WebSocket control connection, which serves no
 // endpoints.
 func (h *AgentHandler) handleConnection(ctx context.Context, conn agent.SignalConn, registration agent.WorkerRegistration, sess endpoint.Session) {
-	registration, ok := HandshakeAgentWorker(conn, h.serverInfo, registration, h.logger, h.endpointRegisterHandler)
+	// without a session there is no data plane, so endpoint settings are withheld
+	// rather than promising routes nothing will serve
+	var handlers []agent.WorkerRegisterHandler
+	if sess != nil {
+		handlers = append(handlers, h.endpointRegisterHandler)
+	}
+	registration, ok := HandshakeAgentWorker(conn, h.serverInfo, registration, h.logger, handlers...)
 	if !ok {
 		return
 	}
@@ -190,6 +196,13 @@ func (h *AgentHandler) handleConnection(ctx context.Context, conn agent.SignalCo
 
 	worker := agent.NewWorker(registration, apiKey, apiSecret, conn, h.logger)
 	h.registerWorker(worker)
+
+	if sess == nil && len(registration.Endpoints) > 0 {
+		worker.Logger().Infow("endpoints ignored, connection has no data plane",
+			"agentName", registration.AgentName,
+			"deployment", registration.Deployment,
+		)
+	}
 
 	endpointTeardown := h.registerEndpoints(worker, sess)
 
