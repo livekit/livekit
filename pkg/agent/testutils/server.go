@@ -15,6 +15,7 @@ import (
 	"github.com/gammazero/deque"
 
 	"github.com/livekit/livekit-server/pkg/agent"
+	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/service"
@@ -40,7 +41,7 @@ type TestServer struct {
 
 func NewTestServer(bus psrpc.MessageBus) *TestServer {
 	localNode, _ := routing.NewLocalNode(nil)
-	return NewTestServerWithService(must.Get(service.NewAgentService(
+	return NewTestServerWithService(must.Get(service.NewAgentHandler(
 		&config.Config{
 			Region: "test",
 			Agents: agent.Config{
@@ -50,6 +51,8 @@ func NewTestServer(bus psrpc.MessageBus) *TestServer {
 		localNode,
 		bus,
 		auth.NewSimpleKeyProvider("test", "verysecretsecret"),
+		endpoint.NewRegistry(),
+		service.NewEndpointScopes(),
 	)))
 }
 
