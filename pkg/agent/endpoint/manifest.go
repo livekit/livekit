@@ -42,6 +42,10 @@ type Endpoint struct {
 	Template *router.Template
 	Mask     router.Mask
 	Public   bool
+	// Kind is the route's declared kind. A text route is HTTP on the wire like
+	// any other; the kind tells the front it may read the body to place the
+	// request in an agent session.
+	Kind livekit.AgentHttp_AgentEndpointKind
 }
 
 // Ambiguous returns the declared templates whose shape forces the matcher to
@@ -129,7 +133,9 @@ func ParseManifest(endpoints []*livekit.AgentHttp_AgentEndpoint) (*Manifest, err
 		if err != nil {
 			return nil, err
 		}
-		if ep.GetKind() != livekit.AgentHttp_AEK_HTTP {
+		switch ep.GetKind() {
+		case livekit.AgentHttp_AEK_HTTP, livekit.AgentHttp_AEK_TEXT:
+		default:
 			return nil, fmt.Errorf("endpoint %q has unsupported kind %s", ep.GetPath(), ep.GetKind())
 		}
 		if len(ep.GetMethods()) == 0 {
@@ -150,7 +156,7 @@ func ParseManifest(endpoints []*livekit.AgentHttp_AgentEndpoint) (*Manifest, err
 		if tpl.Ambiguous() {
 			m.ambiguous = append(m.ambiguous, tpl.String())
 		}
-		m.Endpoints = append(m.Endpoints, Endpoint{Template: tpl, Mask: mask, Public: ep.GetPublic()})
+		m.Endpoints = append(m.Endpoints, Endpoint{Template: tpl, Mask: mask, Public: ep.GetPublic(), Kind: ep.GetKind()})
 	}
 	return m, nil
 }

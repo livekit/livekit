@@ -113,8 +113,17 @@ func TestManifestValidation(t *testing.T) {
 	})
 	require.NoError(t, err, "all FastAPI verbs accepted")
 
-	_, err = ParseManifest([]*livekit.AgentHttp_AgentEndpoint{
-		{Path: "/ws", Kind: livekit.AgentHttp_AEK_TEXT, Methods: []string{"GET"}},
+	// a text route is HTTP on the wire; the kind is kept for the front
+	m, err := ParseManifest([]*livekit.AgentHttp_AgentEndpoint{
+		{Path: "/a2a", Kind: livekit.AgentHttp_AEK_TEXT, Methods: []string{"POST"}},
+		{Path: "/x", Methods: []string{"GET"}},
 	})
-	require.Error(t, err, "unsupported endpoint kind")
+	require.NoError(t, err, "text endpoint kind accepted")
+	require.Equal(t, livekit.AgentHttp_AEK_TEXT, m.Endpoints[0].Kind)
+	require.Equal(t, livekit.AgentHttp_AEK_HTTP, m.Endpoints[1].Kind)
+
+	_, err = ParseManifest([]*livekit.AgentHttp_AgentEndpoint{
+		{Path: "/x", Kind: livekit.AgentHttp_AgentEndpointKind(99), Methods: []string{"GET"}},
+	})
+	require.Error(t, err, "unknown endpoint kind")
 }

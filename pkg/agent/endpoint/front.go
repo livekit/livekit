@@ -294,9 +294,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		a.before = bodyConsumed.Load()
 		a.refreshTimeout()
-		// the preamble is re-serialized per attempt, so this reaches only the
-		// worker it was set for
-		a.preamble.Route = picked.raw
+		a.setRoute(*picked)
 		switch f.bridge(w, a, picked.reg) {
 		case bridgeDone:
 			return

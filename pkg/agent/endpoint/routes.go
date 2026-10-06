@@ -20,6 +20,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/agent/endpoint/router"
@@ -54,6 +55,7 @@ type routeWorker struct {
 	reg    *Registration
 	raw    string // the template as this worker declared it
 	public bool
+	kind   livekit.AgentHttp_AgentEndpointKind
 	idx    uint32 // its position in this worker's manifest
 }
 
@@ -175,7 +177,7 @@ func (t *routeTable) declareLocked(reg *Registration, touched map[*Route]struct{
 				r = &Route{Template: ep.Template, Mask: key.method, key: key, ord: noOrder}
 				t.routes[key] = r
 			}
-			r.declare(routeWorker{reg: reg, raw: ep.Template.String(), public: ep.Public, idx: uint32(i)})
+			r.declare(routeWorker{reg: reg, raw: ep.Template.String(), public: ep.Public, kind: ep.Kind, idx: uint32(i)})
 			touched[r] = struct{}{}
 		}
 	}

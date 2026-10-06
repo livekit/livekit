@@ -86,7 +86,8 @@ func (a *attempt) retryable(err error) bool {
 }
 
 // newPreamble carries what the worker cannot derive from the HTTP bytes and
-// must not infer from them - authenticated above all.
+// must not infer from them - authenticated above all. What depends on the
+// worker picked, the route and its kind, is set per attempt by setRoute.
 func (a *attempt) newPreamble() *livekit.AgentHttp_StreamPreamble {
 	scheme := "http"
 	if a.req.TLS != nil {
@@ -95,13 +96,21 @@ func (a *attempt) newPreamble() *livekit.AgentHttp_StreamPreamble {
 	clientAddr, _, _ := net.SplitHostPort(a.req.RemoteAddr)
 
 	p := &livekit.AgentHttp_StreamPreamble{
-		Kind:       livekit.AgentHttp_AEK_HTTP,
 		RequestId:  a.requestID,
 		Authorized: a.granted,
 		ClientAddr: clientAddr,
 		Scheme:     scheme,
 	}
 	return p
+}
+
+// setRoute restates the declaration this attempt is placed against. Declarers
+// of one route may spell it, and kind it, differently, so the worker is told
+// its own. The preamble is re-serialized per attempt, so this reaches only the
+// worker it was set for.
+func (a *attempt) setRoute(w routeWorker) {
+	a.preamble.Route = w.raw
+	a.preamble.Kind = w.kind
 }
 
 // requestHeader builds the header set the worker sees.
