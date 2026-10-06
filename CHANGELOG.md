@@ -2,6 +2,77 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.8] - 2026-10-06
+
+### Added
+
+- agent: HTTP endpoints data plane (#4779)
+- use sender report pass through setting to forward abs-capture-time verbatim (#4812)
+- Add sdk lable to session start time and participant join (#4885)
+- Add a local participant method to get recently disconnected (#4911)
+- service: start room composite egress configured in a room preset (#4926)
+
+### Changed
+
+- Update github workflows (#4446)
+- Reduce descriptor marshal allocations on Go 1.26.4/linux-amd64 (#4681)
+- config: reject unknown send_side_bwe_pacer, warn on unwired fallback (#4804)
+- Update github.com/livekit/protocol digest to a879e94 (#4864)
+- Update module github.com/gotesttools/gotestfmt/v2 to v2.5.0 (#4865)
+- Update module github.com/urfave/cli/v3 to v3.11.0 (#4867)
+- Update module golang.org/x/mod to v0.41.0 (#4868)
+- sfu: return VP8 munged header by value to avoid per-packet allocation (#4871)
+- sfu: patch pacer header extensions without per-packet allocation (#4872)
+- Update pion/sdp to get lesser SDP retention (#4873)
+- sfu: skip pacer allocation assertion under the race detector (#4874)
+- sfu: broadcast RTP to down tracks without per-packet allocations (#4875)
+- Track action versions and stop quarantining our own actions (#4877)
+- test: fix two data races in the test suites (#4878)
+- Bump go.opentelemetry.io/otel/sdk (#4879)
+- deps: update psrpc to v0.8.0 (#4882)
+- Update module github.com/moby/moby/client to v0.6.0 (#4883)
+- Update module golang.org/x/sync to v0.23.0 (#4884)
+- Propagate SIP_TRUNK_FAILURE (#4890)
+- ccutils: use millisecond resolution for probe interval backoff (#4891)
+- Increase receiver loadbalance threshold when batch io enabled (#4899)
+- rtc: parse each remote offer once per negotiation (#4904)
+- Bump protocol (#4909)
+- rtc: split EndSession out of MoveToRoom (#4917)
+- telemetry: drop the stats worker re-key path (#4918)
+- sfu: report forwarding latency as p90 instead of the mean (#4920)
+- rtc: accept ICE Completed in ICE-restart connect assertions (#4921)
+- rtc: measure data blob keys by their content, not their text form (#4923)
+- Remove deprecatred way of setting prometheus from the config file (#4928)
+- test: give mock participants a connection quality, close test rooms (#4933)
+- update warp dep (#4943)
+
+### Fixed
+
+- Do not add down tracks after receiver close (#4857)
+- Do not request media sections for transceivers that cannot send (#4892)
+- Deregister agent job when the server terminates it (#4893)
+- sfu: don't hold bindLock across the blank-frame flush in CloseWithFlush (#4895)
+- dynacast: re-send subscribed qualities after every publisher answer (#4907)
+- agent: release JobTerminate handler when job ends before registration (#4908)
+- Report disconnected for older disconnected participants. (#4910)
+- rtc: record a room's departure when the participant leaves it (#4913)
+- update deps to fix warp issue (#4916)
+- sfu: fix data stats active window bitrate and duration units (#4922)
+- fix: reject instead of drop for no dispatch rule (#4927)
+- fix: skip RTX/FEC when picking a fallback video codec (#4930)
+- fix: do not read invalid delta (#4935)
+- fix: use the fast debounce for the first negotiation (#4936)
+- fix: skip DTLS HelloVerifyRequest (#4937)
+- config: parse generated duration flags as durations (#4939)
+- fix: use the most common recent packet rate in connection quality (#4940)
+- fix: copy RED history packets instead of keeping pointers (#4941)
+- fix: keep one subscription when first subscribes race (#4944)
+- bump protocol to get unlock on no key fix (#4945)
+- fix: count leftover upstream loss after RTX repairs (#4946)
+- fix: switch VP8 temporal layer up only at a layer sync frame (#4947)
+- fix: reconcile everything when the reconcile queue overflows (#4948)
+- fix: enable H.264 publish for desktop Linux Firefox (#4949)
+
 ## [1.13.7] - 2026-09-14
 
 ### Added
