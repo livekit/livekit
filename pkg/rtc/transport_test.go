@@ -30,9 +30,11 @@ import (
 	"github.com/livekit/livekit-server/pkg/rtc/transport"
 	"github.com/livekit/livekit-server/pkg/rtc/transport/transportfakes"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/testutils"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/logger"
 	lksdp "github.com/livekit/protocol/sdp"
 )
 
@@ -1072,4 +1074,25 @@ func TestRemoteOfferParsedFollowsICERestartFragment(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "restartUfrag", ufrag)
 	require.Equal(t, "restartPwd0123456789abcdef", pwd)
+}
+
+func TestSendSidePacerSelection(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		behavior pacer.PacerBehavior
+		expected any
+	}{
+		{"pass-through", pacer.PacerBehaviorPassThrough, &pacer.PassThrough{}},
+		{"no-queue", pacer.PacerBehaviorNoQueue, &pacer.NoQueue{}},
+		{"leaky-bucket", pacer.PacerBehaviorLeakybucket, &pacer.LeakyBucket{}},
+		{"unknown falls back to no-queue", pacer.PacerBehavior("bogus"), &pacer.NoQueue{}},
+		{"empty falls back to no-queue", pacer.PacerBehavior(""), &pacer.NoQueue{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newSendSidePacer(tc.behavior, logger.GetLogger(), nil)
+			defer p.Stop()
+
+			require.IsType(t, tc.expected, p)
+		})
+	}
 }
