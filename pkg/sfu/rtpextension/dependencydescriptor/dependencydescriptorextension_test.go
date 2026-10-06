@@ -109,3 +109,36 @@ func TestDependencyDescriptorUnmarshalIntoStorage(t *testing.T) {
 		require.NotSame(t, template, &fd)
 	}
 }
+
+// a caller may hand Unmarshal a descriptor that still points at one of the structure's templates,
+// custom fields of the packet must not change that template
+func TestDependencyDescriptorUnmarshalDoesNotWriteIntoTemplate(t *testing.T) {
+	fixture := newDependencyDescriptorMarshalFixture(t)
+	structure := fixture.Structure
+
+	// a per-packet descriptor using a template with frame diffs, with one custom diff
+	var template *FrameDependencyTemplate
+	for _, tmpl := range structure.Templates {
+		if len(tmpl.FrameDiffs) > 0 {
+			template = tmpl
+			break
+		}
+	}
+	require.NotNil(t, template)
+	want := append([]int(nil), template.FrameDiffs...)
+
+	custom := template.Clone()
+	custom.FrameDiffs[0] += 2
+	buf, err := (&DependencyDescriptorExtension{
+		Descriptor: &DependencyDescriptor{FrameNumber: 7, FrameDependencies: custom},
+		Structure:  structure,
+	}).Marshal()
+	require.NoError(t, err)
+
+	parsed := DependencyDescriptor{FrameDependencies: template}
+	_, err = (&DependencyDescriptorExtension{Structure: structure, Descriptor: &parsed}).Unmarshal(buf)
+	require.NoError(t, err)
+	require.Equal(t, custom.FrameDiffs, parsed.FrameDependencies.FrameDiffs)
+	require.NotSame(t, template, parsed.FrameDependencies)
+	require.Equal(t, want, template.FrameDiffs)
+}

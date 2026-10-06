@@ -16,6 +16,7 @@ package dependencydescriptor
 
 import (
 	"errors"
+	"slices"
 )
 
 var (
@@ -356,11 +357,14 @@ func (r *DependencyDescriptorReader) readFrameDependencyDefinition() error {
 		return ErrDDReaderInvalidTemplateIndex
 	}
 
-	// Copy all the fields from the matching template
-	if r.descriptor.FrameDependencies == nil {
-		r.descriptor.FrameDependencies = &FrameDependencyTemplate{}
+	// Copy all the fields from the matching template into caller storage,
+	// never into one of the structure's templates, custom fields would change the template
+	dst := r.descriptor.FrameDependencies
+	if dst == nil || slices.Contains(r.structure.Templates, dst) {
+		dst = &FrameDependencyTemplate{}
+		r.descriptor.FrameDependencies = dst
 	}
-	r.structure.Templates[templateIndex].CopyInto(r.descriptor.FrameDependencies)
+	r.structure.Templates[templateIndex].CopyInto(dst)
 
 	if r.customDtisFlag {
 		err := r.readFrameDtis()
