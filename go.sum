@@ -168,8 +168,8 @@ github.com/livekit/protocol v1.52.2-0.20261005192906-75f0d2eaa73c h1:pIVFhk7RfAJ
 github.com/livekit/protocol v1.52.2-0.20261005192906-75f0d2eaa73c/go.mod h1:t5CV/LCsWbI9zsSTHTJKDyLtByqvvVkioSP7jgqpIGA=
 github.com/livekit/psrpc v0.8.0 h1:uo3x+DL8pK2OIaCxg/s9sLUO2cIocS5HwdPhhI+m+fQ=
 github.com/livekit/psrpc v0.8.0/go.mod h1:6KnU8vULoizX0Er9NNfeKJDV8ug87j3fuo19M0bhj6Q=
-github.com/livekit/webrtc-pion/v4 v4.2.18-warp.5 h1:3na5DnAUJtXsrBHWdcUY0tGh9JYu5ppeVPOV4ll/AWA=
-github.com/livekit/webrtc-pion/v4 v4.2.18-warp.5/go.mod h1:Kxgo6xwFzVK38XVlQTBT1zj2JU5G7R0R0pa5w5d9d/Q=
+github.com/livekit/webrtc-pion/v4 v4.2.18-warp.6 h1:UaGYlQ/Ma73LN12xPDlH3OBYNfOEDTVOtHdRZbHg2dY=
+github.com/livekit/webrtc-pion/v4 v4.2.18-warp.6/go.mod h1:Kxgo6xwFzVK38XVlQTBT1zj2JU5G7R0R0pa5w5d9d/Q=
 github.com/mackerelio/go-osstat v0.2.8 h1:I2duicTaCGWoM53XwAwA9OIe1inu0xnVs8/pqOWWVr4=
 github.com/mackerelio/go-osstat v0.2.8/go.mod h1:SyS3XxKdoSKJnTGTkN5Yrh6VUQVuAURACfE6y+2DN4k=
 github.com/magefile/mage v1.17.2 h1:fyXVu1eadI8Ap1HCCNgEhJ5McIWiYhLR8uol64ZZc40=
