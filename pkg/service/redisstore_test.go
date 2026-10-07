@@ -347,7 +347,7 @@ func TestAgentStore(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, len(rd))
 
-	expected := utils.CloneProto(ad)
+	expected := proto.CloneOf(ad)
 	expected.State.Jobs = nil
 	require.True(t, proto.Equal(expected, rd[0]))
 
@@ -358,7 +358,7 @@ func TestAgentStore(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, len(rd))
 
-	expected = utils.CloneProto(ad)
+	expected = proto.CloneOf(ad)
 	expected.State.Jobs[0].Room = nil
 	expected.State.Jobs[0].Participant = &livekit.ParticipantInfo{
 		Identity: "identity",
@@ -372,7 +372,7 @@ func TestAgentStore(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, len(rd))
 
-	expected = utils.CloneProto(ad)
+	expected = proto.CloneOf(ad)
 	expected.State.Jobs = nil
 	require.True(t, proto.Equal(expected, rd[0]))
 

@@ -20,11 +20,11 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/auth/authfakes"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 
 	"github.com/livekit/livekit-server/version"
@@ -291,7 +291,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		{
 			name:     "last version is enqueued",
 			pi:       subscriber1v2,
-			existing: &ParticipantUpdate{ParticipantInfo: utils.CloneProto(subscriber1v1)}, // clone the existing value since it can be modified when setting to disconnected
+			existing: &ParticipantUpdate{ParticipantInfo: proto.CloneOf(subscriber1v1)}, // clone the existing value since it can be modified when setting to disconnected
 			validate: func(t *testing.T, rm *Room, _ []*ParticipantUpdate) {
 				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
 				require.NotNil(t, queued)
@@ -301,7 +301,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		{
 			name:      "latest version when immediate",
 			pi:        subscriber1v2,
-			existing:  &ParticipantUpdate{ParticipantInfo: utils.CloneProto(subscriber1v1)},
+			existing:  &ParticipantUpdate{ParticipantInfo: proto.CloneOf(subscriber1v1)},
 			immediate: true,
 			expected:  []*ParticipantUpdate{{ParticipantInfo: subscriber1v2}},
 			validate: func(t *testing.T, rm *Room, _ []*ParticipantUpdate) {
@@ -312,7 +312,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		{
 			name:     "out of order updates are rejected",
 			pi:       subscriber1v1,
-			existing: &ParticipantUpdate{ParticipantInfo: utils.CloneProto(subscriber1v2)},
+			existing: &ParticipantUpdate{ParticipantInfo: proto.CloneOf(subscriber1v2)},
 			validate: func(t *testing.T, rm *Room, updates []*ParticipantUpdate) {
 				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
 				requirePIEquals(t, subscriber1v2, queued.ParticipantInfo)
@@ -322,7 +322,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 			name:        "sid change is broadcasted immediately with synthsized disconnect",
 			pi:          publisher2,
 			closeReason: types.ParticipantCloseReasonServiceRequestRemoveParticipant, // just to test if update contain the close reason
-			existing:    &ParticipantUpdate{ParticipantInfo: utils.CloneProto(subscriber1v2), CloseReason: types.ParticipantCloseReasonStale},
+			existing:    &ParticipantUpdate{ParticipantInfo: proto.CloneOf(subscriber1v2), CloseReason: types.ParticipantCloseReasonStale},
 			expected: []*ParticipantUpdate{
 				{
 					ParticipantInfo: &livekit.ParticipantInfo{
@@ -340,7 +340,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		{
 			name:     "when switching to publisher, queue is cleared",
 			pi:       publisher1v2,
-			existing: &ParticipantUpdate{ParticipantInfo: utils.CloneProto(subscriber1v1)},
+			existing: &ParticipantUpdate{ParticipantInfo: proto.CloneOf(subscriber1v1)},
 			expected: []*ParticipantUpdate{{ParticipantInfo: publisher1v2}},
 			validate: func(t *testing.T, rm *Room, updates []*ParticipantUpdate) {
 				require.Empty(t, rm.batchedUpdates)
@@ -401,6 +401,55 @@ func TestRoomClosure(t *testing.T) {
 		require.Equal(t, types.RoomCloseReasonIdleTimeout, closeReason)
 
 		require.Equal(t, ErrRoomClosed, rm.Join(p, nil, nil, iceServersForRoom))
+	})
+
+	// the idle check runs every second and can land while the last participant
+	// is still closing, when the room is empty but its departure has not been
+	// recorded yet
+	closeDuringRemove := func(t *testing.T, priorDeparture bool) bool {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
+		var isClosed atomic.Bool
+		rm.OnClose(func(types.RoomCloseReason) {
+			isClosed.Store(true)
+		})
+
+		rm.lock.Lock()
+		rm.protoRoom.DepartureTimeout = 20
+		if priorDeparture {
+			// someone left earlier in the session, so a departure is recorded
+			rm.protoRoom.CreationTime = time.Now().Unix()
+			rm.leftAt.Store(time.Now().Add(-time.Minute).Unix())
+		} else {
+			// older than the empty timeout, as a room in a call for a while is
+			rm.protoRoom.CreationTime = time.Now().Add(-10 * time.Minute).Unix()
+		}
+		rm.lock.Unlock()
+
+		p := rm.GetParticipants()[0].(*typesfakes.FakeLocalParticipant)
+		closing := make(chan struct{})
+		release := make(chan struct{})
+		p.CloseStub = func(bool, types.ParticipantCloseReason, bool) error {
+			close(closing)
+			<-release
+			return nil
+		}
+
+		go rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonClientRequestLeave)
+
+		<-closing
+		require.Empty(t, rm.GetParticipants())
+		rm.CloseIfEmpty()
+		close(release)
+
+		return isClosed.Load()
+	}
+
+	t.Run("room does not close while the last participant is closing", func(t *testing.T) {
+		require.False(t, closeDuringRemove(t, false))
+	})
+
+	t.Run("room does not close while the last participant is closing, after an earlier departure", func(t *testing.T) {
+		require.False(t, closeDuringRemove(t, true))
 	})
 
 	t.Run("room does not close before empty timeout", func(t *testing.T) {
@@ -651,7 +700,7 @@ func TestDataChannel(t *testing.T) {
 				}
 				setSource(mode, packet, p)
 
-				packetExp := utils.CloneProto(packet)
+				packetExp := proto.CloneOf(packet)
 				if mode != legacySID {
 					packetExp.ParticipantIdentity = string(p.Identity())
 					packetExp.GetUser().ParticipantIdentity = string(p.Identity())
@@ -699,7 +748,7 @@ func TestDataChannel(t *testing.T) {
 				setSource(mode, packet, p)
 				setDest(mode, packet, p1)
 
-				packetExp := utils.CloneProto(packet)
+				packetExp := proto.CloneOf(packet)
 				if mode != legacySID {
 					packetExp.ParticipantIdentity = string(p.Identity())
 					packetExp.GetUser().ParticipantIdentity = string(p.Identity())
@@ -857,6 +906,7 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 		telemetry.NewTelemetryService(n, &telemetryfakes.FakeAnalyticsService{}),
 		nil, nil, nil,
 	)
+	t.Cleanup(func() { rm.Close(types.RoomCloseReasonUnknown) })
 	for i := 0; i < opts.num+opts.numHidden; i++ {
 		identity := livekit.ParticipantIdentity(fmt.Sprintf("p%d", i))
 		participant := NewMockParticipant(identity, opts.protocol, i >= opts.num, true, rm.LocalParticipantListener())

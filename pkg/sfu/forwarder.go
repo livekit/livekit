@@ -26,12 +26,12 @@ import (
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/zap/zapcore"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/mono"
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
@@ -199,7 +199,9 @@ type TranslationParams struct {
 	isResuming         bool
 	isSwitching        bool
 	rtp                TranslationParamsRTP
-	ddBytes            []byte
+	ddBytes            [dd.MaxInlineExtensionSize]byte
+	ddBytesLen         int
+	ddBytesSpill       []byte
 	incomingHeaderSize int
 	codecBytes         [codecmunger.MaxHeaderSize]byte
 	codecBytesLen      int
@@ -211,6 +213,13 @@ type TranslationParams struct {
 // codecHeader returns the munged codec header to prepend to the payload.
 func (tp *TranslationParams) codecHeader() []byte {
 	return tp.codecBytes[:tp.codecBytesLen]
+}
+
+// ddInline returns the dependency descriptor extension held inline. It points
+// into tp, so it has to be copied before it is attached to anything that
+// outlives the write.
+func (tp *TranslationParams) ddInline() []byte {
+	return tp.ddBytes[:tp.ddBytesLen]
 }
 
 // -------------------------------------------------------------------
@@ -491,7 +500,7 @@ func (f *Forwarder) GetState() *livekit.RTPForwarderState {
 
 	state.SenderReportState = make([]*livekit.RTCPSenderReportState, len(f.refInfos))
 	for layer, refInfo := range f.refInfos {
-		state.SenderReportState[layer] = utils.CloneProto(refInfo.senderReport)
+		state.SenderReportState[layer] = proto.CloneOf(refInfo.senderReport)
 	}
 	return state
 }
@@ -506,7 +515,7 @@ func (f *Forwarder) SeedState(state *livekit.RTPForwarderState) {
 
 	for layer, rtcpSenderReportState := range state.SenderReportState {
 		f.refInfos[layer] = refInfo{}
-		if senderReport := utils.CloneProto(rtcpSenderReportState); senderReport != nil && senderReport.NtpTimestamp != 0 {
+		if senderReport := proto.CloneOf(rtcpSenderReportState); senderReport != nil && senderReport.NtpTimestamp != 0 {
 			f.refInfos[layer].senderReport = senderReport
 		}
 	}
@@ -2190,7 +2199,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	}
 	tp.isResuming = result.IsResuming
 	tp.isSwitching = result.IsSwitching
-	tp.ddBytes = result.DependencyDescriptorExtension
+	tp.ddBytes, tp.ddBytesLen, tp.ddBytesSpill = result.DDBytes, result.DDBytesLen, result.DDBytesSpill
 	tp.marker = result.RTPMarker
 	tp.isEndOfLayerFrame = f.isEndOfLayerFrame(extPkt)
 

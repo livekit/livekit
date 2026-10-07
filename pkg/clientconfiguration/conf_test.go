@@ -19,9 +19,32 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils/must"
 )
+
+func TestStaticConfigurationH264(t *testing.T) {
+	cm := NewStaticClientConfigurationManager(StaticConfigurations)
+
+	h264Disabled := func(info *livekit.ClientInfo) bool {
+		conf := cm.GetConfiguration(info)
+		if conf == nil || conf.DisabledCodecs == nil {
+			return false
+		}
+		for _, c := range conf.DisabledCodecs.Publish {
+			if mime.IsMimeTypeStringH264(c.Mime) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// desktop Linux Firefox publishes H.264 through OpenH264, so it must not be disabled
+	require.False(t, h264Disabled(&livekit.ClientInfo{Browser: "firefox", Os: "linux"}))
+	// Firefox for Android is still worked around
+	require.True(t, h264Disabled(&livekit.ClientInfo{Browser: "firefox mobile", Os: "android"}))
+}
 
 func TestScriptMatchConfiguration(t *testing.T) {
 	t.Run("no merge", func(t *testing.T) {

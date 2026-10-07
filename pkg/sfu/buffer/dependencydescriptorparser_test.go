@@ -186,3 +186,51 @@ func TestDependencyDescriptorParserExtKeyFrameNum(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 4, extDD.ExtKeyFrameNum)
 }
+
+// a pooled ExtDependencyDescriptor carries the storage for its descriptor, so parsing a delta
+// frame must not allocate and a reused descriptor must not show the previous packet's values
+func TestDependencyDescriptorParserNoAlloc(t *testing.T) {
+	f := newDDTestFeeder(t)
+	structure := newL1T1Structure(0)
+	structure.Resolutions = []dd.RenderResolution{{Width: 640, Height: 360}}
+	extDD, err := f.keyFrame(0, structure)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(extDD.Descriptor.FrameDependencies.FrameDiffs))
+	require.Equal(t, dd.RenderResolution{Width: 640, Height: 360}, *extDD.Descriptor.Resolution)
+	ReleaseExtDependencyDescriptor(extDD)
+
+	extDD, err = f.deltaFrame(1)
+	require.NoError(t, err)
+	require.Equal(t, []int{1}, extDD.Descriptor.FrameDependencies.FrameDiffs)
+	require.Equal(t, []int{1}, extDD.Descriptor.FrameDependencies.ChainDiffs)
+	require.Nil(t, extDD.Descriptor.AttachedStructure)
+	ReleaseExtDependencyDescriptor(extDD)
+
+	// the parsed template is a copy, the structure's template is untouched
+	require.Equal(t, []int{1}, structure.Templates[1].FrameDiffs)
+
+	// marshal the packets first, only Parse runs under the allocation count
+	bufs := make([][]byte, 128)
+	for i := range bufs {
+		ddVal := &dd.DependencyDescriptor{
+			FirstPacketInFrame: true,
+			LastPacketInFrame:  true,
+			FrameNumber:        uint16(i + 2),
+			FrameDependencies:  structure.Templates[1],
+		}
+		bufs[i], err = (&dd.DependencyDescriptorExtension{Descriptor: ddVal, Structure: structure}).Marshal()
+		require.NoError(t, err)
+	}
+	pkt := &rtp.Packet{Header: rtp.Header{SequenceNumber: f.seq}}
+	require.NoError(t, pkt.SetExtension(ddTestExtID, bufs[0]))
+	i := 0
+	allocs := testing.AllocsPerRun(100, func() {
+		pkt.SequenceNumber++
+		require.NoError(t, pkt.SetExtension(ddTestExtID, bufs[i]))
+		i++
+		extDD, _, err := f.parser.Parse(pkt)
+		require.NoError(t, err)
+		ReleaseExtDependencyDescriptor(extDD)
+	})
+	require.Zero(t, allocs)
+}

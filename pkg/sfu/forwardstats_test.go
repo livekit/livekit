@@ -24,28 +24,39 @@ func initPrometheus(t *testing.T) {
 // forwardSummary
 // ---------------------------------------------------------------------------
 
+// bucketSum totals a summary's per-bucket counts, independent of the bucketing
+// scheme, so tests can assert samples landed without hard-coding bucket indices.
+func bucketSum(s forwardSummary) int64 {
+	var n int64
+	for _, b := range s.buckets {
+		n += b.count
+	}
+	return n
+}
+
 func TestForwardSummary_AddSample(t *testing.T) {
 	var s forwardSummary
 
 	// empty summary
 	require.Equal(t, int64(0), s.count)
 
-	// microsecond-aligned transits so the /1000 truncation is exact
-	s = s.addSample(3000) // 3us
-	s = s.addSample(1000) // 1us
-	s = s.addSample(2000) // 2us
+	s.addSample(3000) // 3us
+	s.addSample(1000) // 1us
+	s.addSample(2000) // 2us
 
 	require.Equal(t, int64(3), s.count)
-	require.Equal(t, int64(1+2+3), s.sumUs)
-	require.Equal(t, int64(1+4+9), s.sumSqUs)
 	require.Equal(t, int64(1000), s.minNs)
 	require.Equal(t, int64(3000), s.maxNs)
+	require.Equal(t, s.count, bucketSum(s)) // every sample landed in a bucket
 }
 
 func TestForwardSummary_Merge(t *testing.T) {
 	var empty forwardSummary
-	a := forwardSummary{}.addSample(1000).addSample(2000)
-	b := forwardSummary{}.addSample(5000).addSample(3000)
+	var a, b forwardSummary
+	a.addSample(1000)
+	a.addSample(2000)
+	b.addSample(5000)
+	b.addSample(3000)
 
 	// merging with empty is identity, in both directions
 	require.Equal(t, a, a.merge(empty))
@@ -53,34 +64,72 @@ func TestForwardSummary_Merge(t *testing.T) {
 
 	m := a.merge(b)
 	require.Equal(t, int64(4), m.count)
-	require.Equal(t, a.sumUs+b.sumUs, m.sumUs)
-	require.Equal(t, a.sumSqUs+b.sumSqUs, m.sumSqUs)
 	require.Equal(t, int64(1000), m.minNs)
 	require.Equal(t, int64(5000), m.maxNs)
+	// merge sums the per-bucket counts
+	require.Equal(t, bucketSum(a)+bucketSum(b), bucketSum(m))
+	require.Equal(t, m.count, bucketSum(m))
 }
 
-func TestForwardSummary_MeanStdDev(t *testing.T) {
+func TestForwardSummary_Percentile(t *testing.T) {
 	// empty -> zero
-	mean, stdDev := forwardSummary{}.meanStdDev()
-	require.Zero(t, mean)
-	require.Zero(t, stdDev)
+	require.Zero(t, forwardSummary{}.percentile(0.5))
 
-	// single sample -> mean set, stddev zero (needs >= 2 for variance)
-	mean, stdDev = forwardSummary{}.addSample(4000).meanStdDev()
-	require.Equal(t, 4*time.Microsecond, mean)
-	require.Zero(t, stdDev)
+	// half the samples fast (1us), half a slow tail (100us). A percentile is not
+	// dragged toward the tail the way the mean is -- why the reported metric is
+	// p90, not the mean.
+	var s forwardSummary
+	for i := 0; i < 5; i++ {
+		s.addSample(1000) // 1us
+	}
+	for i := 0; i < 5; i++ {
+		s.addSample(100_000) // 100us
+	}
+	require.Equal(t, int64(10), s.count)
 
-	// identical samples -> zero variance
-	s := forwardSummary{}.addSample(2000).addSample(2000).addSample(2000)
-	mean, stdDev = s.meanStdDev()
-	require.Equal(t, 2*time.Microsecond, mean)
-	require.Zero(t, stdDev)
+	// p50 lands in the fast cluster, unmoved by the 100us tail.
+	require.Equal(t, 1*time.Microsecond, s.percentile(0.5))
+	// p90 crosses into the slow cluster.
+	require.Equal(t, 100*time.Microsecond, s.percentile(0.9))
 
-	// known dataset [1us, 2us, 3us]: mean 2us, sample variance 1us^2 -> stddev 1us
-	s = forwardSummary{}.addSample(1000).addSample(2000).addSample(3000)
-	mean, stdDev = s.meanStdDev()
-	require.Equal(t, 2*time.Microsecond, mean)
-	require.InDelta(t, float64(time.Microsecond), float64(stdDev), float64(50*time.Nanosecond))
+	// a single sample reports exactly its latency, not the top edge of its bucket
+	// (nominal-edge interpolation would report the bucket's upper reach instead).
+	var single forwardSummary
+	single.addSample(int64(20 * time.Millisecond))
+	require.Equal(t, 20*time.Millisecond, single.percentile(0.9))
+
+	// identical samples share a bucket but must not invent intra-bucket spread.
+	var u forwardSummary
+	for i := 0; i < 8; i++ {
+		u.addSample(int64(2 * time.Millisecond))
+	}
+	require.Equal(t, 2*time.Millisecond, u.percentile(0.5))
+	require.Equal(t, 2*time.Millisecond, u.percentile(0.99))
+}
+
+func TestForwardSummary_ThresholdResolution(t *testing.T) {
+	// Nodes whose p90 packets cluster near a 300us overload threshold.
+	// Interpolating within each bucket's observed range reports a tight tail
+	// exactly, so each cluster lands on the correct side of 300us.
+	build := func(tailUs int64) forwardSummary {
+		var s forwardSummary
+		for i := 0; i < 850; i++ {
+			s.addSample(50 * int64(time.Microsecond))
+		}
+		for i := 0; i < 150; i++ {
+			s.addSample(tailUs * int64(time.Microsecond))
+		}
+		return s
+	}
+
+	require.Less(t, build(265).percentile(0.9), 300*time.Microsecond)    // below -> no trip
+	require.Greater(t, build(310).percentile(0.9), 300*time.Microsecond) // just above -> trips
+	require.Greater(t, build(500).percentile(0.9), 300*time.Microsecond) // well above -> trips
+
+	// a tight tail is reported exactly, regardless of where it sits in the bucket.
+	require.Equal(t, 265*time.Microsecond, build(265).percentile(0.9))
+	require.Equal(t, 310*time.Microsecond, build(310).percentile(0.9))
+	require.Equal(t, 500*time.Microsecond, build(500).percentile(0.9))
 }
 
 // ---------------------------------------------------------------------------
@@ -284,29 +333,25 @@ func TestForwardStats_GetStats(t *testing.T) {
 	// 5 buckets, each covering one 100ms summary interval.
 	s := &ForwardStats{ring: make([]forwardSummary, 5), summaryInterval: 100 * time.Millisecond}
 
-	// fold five 100ms buckets, one sample each: 1ms, 2ms, 3ms, 4ms, 5ms.
-	for i := 1; i <= 5; i++ {
+	// fold five 100ms buckets, one sample each, descending 5ms..1ms so trailing
+	// windows have distinct maxima.
+	for i := 5; i >= 1; i-- {
 		s.Update(0, int64(i)*int64(time.Millisecond))
 		s.flush()
 	}
 	require.Equal(t, 5, s.ringLen)
 
-	// a duration <= 0 covers the whole window: mean of 1..5ms == 3ms.
-	latency, jitter := s.GetStats(0)
-	require.InDelta(t, float64(3*time.Millisecond), float64(latency), float64(50*time.Microsecond))
-	require.Greater(t, jitter, time.Duration(0))
+	// whole window {1..5ms}: p90 clamps to the observed max, 5ms.
+	require.Equal(t, 5*time.Millisecond, s.GetStats(0))
+	require.Equal(t, 5*time.Millisecond, s.GetStats(time.Second))
 
-	// a duration meeting/exceeding the window also covers it.
-	fullLatency, _ := s.GetStats(time.Second)
-	require.InDelta(t, float64(3*time.Millisecond), float64(fullLatency), float64(50*time.Microsecond))
+	// ~200ms covers only the two most recent buckets {2ms, 1ms}: a lower window
+	// than the full one, and above the single most-recent bucket.
+	require.Less(t, s.GetStats(200*time.Millisecond), 3*time.Millisecond)
+	require.Greater(t, s.GetStats(200*time.Millisecond), s.GetStats(time.Nanosecond))
 
-	// ~200ms rounds up to the two most recent buckets (4ms, 5ms): mean == 4.5ms.
-	shortLatency, _ := s.GetStats(200 * time.Millisecond)
-	require.InDelta(t, float64(4500*time.Microsecond), float64(shortLatency), float64(50*time.Microsecond))
-
-	// a sub-interval duration still yields at least the most recent bucket (5ms).
-	lastLatency, _ := s.GetStats(time.Nanosecond)
-	require.InDelta(t, float64(5*time.Millisecond), float64(lastLatency), float64(50*time.Microsecond))
+	// a sub-interval yields only the most recent bucket, ~1ms.
+	require.Equal(t, 1*time.Millisecond, s.GetStats(time.Nanosecond))
 }
 
 func TestForwardStats_Lifecycle(t *testing.T) {

@@ -1,0 +1,358 @@
+// Copyright 2026 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package service_test
+
+import (
+	"bufio"
+	"bytes"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptrace"
+	"net/textproto"
+	"strings"
+	"sync/atomic"
+	"testing"
+
+	"github.com/gorilla/websocket"
+	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/livekit-server/pkg/agent"
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/livekit"
+)
+
+// rawHTTPTarget speaks HTTP/1.1 by hand, so it can end a response in ways
+// net/http will not produce.
+func rawHTTPTarget(t *testing.T, respond func(net.Conn)) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				br := bufio.NewReader(c)
+				for {
+					line, err := br.ReadString('\n')
+					if err != nil {
+						return
+					}
+					if line == "\r\n" {
+						break
+					}
+				}
+				respond(c)
+			}()
+		}
+	}()
+	return ln.Addr().String()
+}
+
+// A chunked body cut short must not reach the client as complete, and nothing in
+// the serving chain may recover the abort that prevents it.
+func TestAgentChainDeliversTruncatedChunkedResponse(t *testing.T) {
+	addr := rawHTTPTarget(t, func(c net.Conn) {
+		_, _ = io.WriteString(c, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n\r\n")
+		_, _ = fmt.Fprintf(c, "%x\r\n", 1000)
+		_, _ = c.Write(bytes.Repeat([]byte("y"), 1000))
+		_, _ = io.WriteString(c, "\r\n")
+		// closes without the terminating 0-length chunk
+	})
+
+	stack := newEndpointStack(t, agent.EndpointsConfig{})
+	stack.startWorker(addr, "production", []*livekit.AgentHttp_AgentEndpoint{
+		httpEP("/partial", []string{"GET"}, true),
+	})
+
+	resp, err := http.Get(stack.ts.URL + "/agents/test-agent/production/partial")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	require.Error(t, err, "a truncated chunked body must not read as a clean EOF through the serving chain")
+	require.NotContains(t, string(body), "PANIC:", "recovery must not write panic text into a committed body")
+	require.NotContains(t, string(body), "goroutine ", "a stack trace must never reach the client")
+}
+
+// The front streams request bodies, so its chain does not bound them.
+func TestAgentChainExemptsAPIBodyLimiter(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /upload", func(w http.ResponseWriter, r *http.Request) {
+		n, err := io.Copy(io.Discard, r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		fmt.Fprintf(w, "%d", n)
+	})
+	app := newTargetApp(t, mux)
+
+	stack := newEndpointStack(t, agent.EndpointsConfig{})
+	stack.startWorker(app.URL, "production", []*livekit.AgentHttp_AgentEndpoint{
+		httpEP("/upload", []string{"POST"}, true),
+	})
+
+	big := bytes.Repeat([]byte("z"), testMaxAPIBodySize*2)
+
+	resp, err := http.Post(stack.ts.URL+"/agents/test-agent/production/upload", "application/octet-stream", bytes.NewReader(big))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	got, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, fmt.Sprintf("%d", len(big)), string(got), "the whole body must reach the application")
+
+	// the same body on an API route is still rejected
+	apiResp, err := http.Post(stack.ts.URL+"/api-sink", "application/octet-stream", bytes.NewReader(big))
+	require.NoError(t, err)
+	defer apiResp.Body.Close()
+	require.Equal(t, http.StatusRequestEntityTooLarge, apiResp.StatusCode)
+}
+
+// A manifest may declare PUT, so the agent chain's preflight must allow it.
+func TestAgentChainCORSAllowsPUT(t *testing.T) {
+	stack := newEndpointStack(t, agent.EndpointsConfig{})
+
+	preflight := func(t *testing.T, path string) string {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodOptions, stack.ts.URL+path, nil)
+		require.NoError(t, err)
+		req.Header.Set("Origin", "https://example.com")
+		req.Header.Set("Access-Control-Request-Method", http.MethodPut)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		return resp.Header.Get("Access-Control-Allow-Methods")
+	}
+
+	require.Contains(t, preflight(t, "/agents/test-agent/production/thing"), http.MethodPut)
+	require.NotContains(t, preflight(t, "/api-sink"), http.MethodPut)
+}
+
+// A worker's CORS headers replace the chain's.
+func TestAgentChainWorkerCORSReplacesServer(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /cors", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "https://app.example")
+		w.Header().Set("Vary", "Accept-Encoding")
+		_, _ = w.Write([]byte("ok"))
+	})
+	app := newTargetApp(t, mux)
+
+	stack := newEndpointStack(t, agent.EndpointsConfig{})
+	stack.startWorker(app.URL, "production", []*livekit.AgentHttp_AgentEndpoint{
+		httpEP("/cors", []string{"GET"}, true),
+	})
+
+	req, err := http.NewRequest(http.MethodGet, stack.ts.URL+"/agents/test-agent/production/cors", nil)
+	require.NoError(t, err)
+	req.Header.Set("Origin", "https://example.com")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, []string{"https://app.example"}, resp.Header.Values("Access-Control-Allow-Origin"))
+	require.Equal(t, []string{"Accept-Encoding"}, resp.Header.Values("Vary"))
+}
+
+// The chain's CORS headers survive an informational head.
+func TestAgentChainKeepsCORSAfterEarlyHints(t *testing.T) {
+	addr := rawHTTPTarget(t, func(c net.Conn) {
+		_, _ = io.WriteString(c, "HTTP/1.1 103 Early Hints\r\nLink: </a.js>; rel=preload\r\n\r\n")
+		_, _ = io.WriteString(c, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+	})
+
+	stack := newEndpointStack(t, agent.EndpointsConfig{})
+	stack.startWorker(addr, "production", []*livekit.AgentHttp_AgentEndpoint{
+		httpEP("/hints", []string{"GET"}, true),
+	})
+
+	var hints atomic.Int32
+	trace := &httptrace.ClientTrace{
+		Got1xxResponse: func(code int, _ textproto.MIMEHeader) error {
+			if code == http.StatusEarlyHints {
+				hints.Add(1)
+			}
+			return nil
+		},
+	}
+	req, err := http.NewRequest(http.MethodGet, stack.ts.URL+"/agents/test-agent/production/hints", nil)
+	require.NoError(t, err)
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+	req.Header.Set("Origin", "https://example.com")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.EqualValues(t, 1, hints.Load())
+	require.Equal(t, []string{"https://example.com"}, resp.Header.Values("Access-Control-Allow-Origin"))
+	require.Equal(t, []string{"Origin"}, resp.Header.Values("Vary"))
+}
+
+// The chain answers preflights; a plain OPTIONS reaches a declared route.
+func TestAgentChainAnswersPreflights(t *testing.T) {
+	var hits atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("OPTIONS /opts", func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	})
+	app := newTargetApp(t, mux)
+
+	stack := newEndpointStack(t, agent.EndpointsConfig{})
+	stack.startWorker(app.URL, "production", []*livekit.AgentHttp_AgentEndpoint{
+		httpEP("/opts", []string{"OPTIONS"}, true),
+	})
+	url := stack.ts.URL + "/agents/test-agent/production/opts"
+
+	req, err := http.NewRequest(http.MethodOptions, url, nil)
+	require.NoError(t, err)
+	req.Header.Set("Origin", "https://example.com")
+	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	preflight, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer preflight.Body.Close()
+	require.Equal(t, http.StatusNoContent, preflight.StatusCode)
+	require.Equal(t, "https://example.com", preflight.Header.Get("Access-Control-Allow-Origin"))
+	require.Contains(t, preflight.Header.Get("Access-Control-Allow-Methods"), http.MethodPost)
+	require.Zero(t, hits.Load(), "a preflight must not reach the worker")
+
+	req, err = http.NewRequest(http.MethodOptions, url, nil)
+	require.NoError(t, err)
+	plain, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer plain.Body.Close()
+	require.Equal(t, http.StatusOK, plain.StatusCode)
+	require.EqualValues(t, 1, hits.Load())
+}
+
+// Disabled leaves the prefix unserved.
+func TestAgentEndpointsDisabledIsNotServed(t *testing.T) {
+	stack := newEndpointStack(t, agent.EndpointsConfig{Disabled: true})
+
+	resp, err := http.Get(stack.ts.URL + "/agents/test-agent/production/json")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+}
+
+// A leading "//" is folded above the split, so it still routes to the agent chain.
+func TestAgentChainRoutesDoubleSlashedPath(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /json", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	})
+	app := newTargetApp(t, mux)
+
+	stack := newEndpointStack(t, agent.EndpointsConfig{})
+	stack.startWorker(app.URL, "production", []*livekit.AgentHttp_AgentEndpoint{
+		httpEP("/json", []string{"GET"}, true),
+	})
+
+	resp, err := http.Get(stack.ts.URL + "//agents/test-agent/production/json")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, "ok", string(body))
+}
+
+// The front resolves access from the grants the api-key auth middleware installs,
+// so the agent chain has to carry it.
+func TestAgentChainStillResolvesGrants(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /private", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	})
+	app := newTargetApp(t, mux)
+
+	stack := newEndpointStack(t, agent.EndpointsConfig{})
+	stack.startWorker(app.URL, "production", []*livekit.AgentHttp_AgentEndpoint{
+		httpEP("/private", []string{"GET"}, false),
+	})
+	url := stack.ts.URL + "/agents/test-agent/production/private"
+
+	resp, err := http.Get(url)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode, "a non-public route needs a grant")
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+stack.endpointToken(t, &auth.AgentEndpointGrant{
+		Call: true, AgentName: "test-agent", Deployment: "production",
+	}))
+	granted, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer granted.Body.Close()
+	require.Equal(t, http.StatusOK, granted.StatusCode, "a scoped grant must reach the application")
+}
+
+// A private WebSocket route takes its grant as access_token; the tunnel must
+// survive every wrapper in the chain, and the token must not reach the
+// application.
+func TestAgentChainWebSocketWithQueryToken(t *testing.T) {
+	seenQuery := make(chan string, 1)
+	up := websocket.Upgrader{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /ws", func(w http.ResponseWriter, r *http.Request) {
+		seenQuery <- r.URL.RawQuery
+		c, err := up.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		mt, msg, err := c.ReadMessage()
+		if err != nil {
+			return
+		}
+		_ = c.WriteMessage(mt, msg)
+	})
+	app := newTargetApp(t, mux)
+
+	stack := newEndpointStack(t, agent.EndpointsConfig{})
+	stack.startWorker(app.URL, "production", []*livekit.AgentHttp_AgentEndpoint{
+		httpEP("/ws", []string{"GET"}, false),
+	})
+	url := "ws" + strings.TrimPrefix(stack.ts.URL, "http") + "/agents/test-agent/production/ws"
+
+	_, resp, err := websocket.DefaultDialer.Dial(url, nil)
+	require.Error(t, err)
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode, "a non-public route needs a grant")
+
+	token := stack.endpointToken(t, &auth.AgentEndpointGrant{
+		Call: true, AgentName: "test-agent", Deployment: "production",
+	})
+	c, resp, err := websocket.DefaultDialer.Dial(url+"?room=r1&access_token="+token, nil)
+	require.NoError(t, err)
+	defer c.Close()
+	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+	require.Equal(t, "room=r1", <-seenQuery)
+
+	require.NoError(t, c.WriteMessage(websocket.TextMessage, []byte("ping")))
+	_, msg, err := c.ReadMessage()
+	require.NoError(t, err)
+	require.Equal(t, "ping", string(msg))
+}

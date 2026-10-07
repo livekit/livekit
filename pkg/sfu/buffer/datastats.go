@@ -68,13 +68,14 @@ func (s *DataStats) ToProtoActive() *livekit.RTPStats {
 	if duration > s.params.WindowDuration.Nanoseconds() {
 		return &livekit.RTPStats{}
 	}
+	seconds := float64(duration) / 1e9
 
 	return &livekit.RTPStats{
 		StartTime: timestamppb.New(time.Unix(s.windowStart/1e9, s.windowStart%1e9)),
 		EndTime:   timestamppb.New(time.Unix(0, now)),
-		Duration:  float64(duration / 1e9),
+		Duration:  seconds,
 		Bytes:     uint64(s.windowBytes),
-		Bitrate:   float64(s.windowBytes) * 8 / float64(duration) / 1e9,
+		Bitrate:   float64(s.windowBytes) * 8 / seconds,
 	}
 }
 

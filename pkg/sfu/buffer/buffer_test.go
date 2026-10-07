@@ -15,6 +15,7 @@
 package buffer
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math"
 	"sync"
@@ -23,10 +24,14 @@ import (
 
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
+	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/mediatransportutil/pkg/nack"
+
+	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 )
 
 var h265Codec = webrtc.RTPCodecParameters{
@@ -457,6 +462,138 @@ func TestCodecChange(t *testing.T) {
 		require.Equal(t, h265Codec, c)
 	case <-time.After(1 * time.Second):
 		t.Fatalf("expected codec change")
+	}
+}
+
+// Write unmarshals into reused scratch and callers reuse the input buffer, so each ExtPacket
+// must keep its own header and extensions, and Write plus ReadExtended must not allocate per packet
+func TestIngestNoAlloc(t *testing.T) {
+	testCases := []struct {
+		name      string
+		codec     webrtc.RTPCodecParameters
+		payload   []byte
+		maxAllocs float64
+	}{
+		{"opus", opusCodec, make([]byte, 100), 0},
+		// VP8 boxes the parsed descriptor into ExtPacket.Payload
+		{"vp8", vp8Codec, []byte{0x90, 0xe0, 0x80, 0x01, 0x05, 0x00, 0x01}, 1},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			buff := NewBuffer(123, 100, 100)
+			require.NoError(t, buff.Bind(webrtc.RTPParameters{
+				HeaderExtensions: []webrtc.RTPHeaderExtensionParameter{
+					{URI: sdp.AudioLevelURI, ID: 1},
+					{URI: act.AbsCaptureTimeURI, ID: 2},
+				},
+				Codecs: []webrtc.RTPCodecParameters{tc.codec},
+			}, tc.codec.RTPCodecCapability, 0))
+			defer buff.Close()
+
+			marshal := func(sn uint16, level byte) []byte {
+				p := rtp.Packet{
+					Header: rtp.Header{
+						Version:        2,
+						PayloadType:    uint8(tc.codec.PayloadType),
+						SequenceNumber: sn,
+						Timestamp:      uint32(sn) * 960,
+						SSRC:           123,
+					},
+					Payload: tc.payload,
+				}
+				require.NoError(t, p.SetExtension(1, []byte{level}))
+				require.NoError(t, p.SetExtension(3, []byte{0, 0}))
+				raw, err := p.Marshal()
+				require.NoError(t, err)
+				return raw
+			}
+
+			// one input buffer for all writes, like the transport read loop
+			input := make([]byte, 1500)
+			write := func(sn uint16, level byte) {
+				n := copy(input, marshal(sn, level))
+				_, err := buff.Write(input[:n])
+				require.NoError(t, err)
+			}
+
+			readBuf := make([]byte, 1500)
+			write(1, 10)
+			write(2, 20)
+			for _, want := range []struct {
+				sn    uint16
+				level byte
+			}{{1, 10}, {2, 20}} {
+				ep, err := buff.ReadExtended(readBuf)
+				require.NoError(t, err)
+				require.Equal(t, want.sn, ep.Packet.SequenceNumber)
+				require.Equal(t, []byte{want.level}, ep.Packet.GetExtension(1))
+				require.Equal(t, tc.payload, ep.Packet.Payload)
+				require.Nil(t, ep.AbsCaptureTimeExt)
+				ReleaseExtPacket(ep)
+			}
+
+			raw := marshal(3, 30)
+			sn := uint16(3)
+			ingest := func() {
+				binary.BigEndian.PutUint16(raw[2:], sn)
+				binary.BigEndian.PutUint32(raw[4:], uint32(sn)*960)
+				sn++
+				_, err := buff.Write(raw)
+				require.NoError(t, err)
+				ep, err := buff.ReadExtended(readBuf)
+				require.NoError(t, err)
+				ReleaseExtPacket(ep)
+			}
+			allocs := testing.AllocsPerRun(1000, ingest)
+			if !utils.RaceEnabled {
+				require.LessOrEqual(t, allocs, tc.maxAllocs, "allocations per Write plus ReadExtended")
+			}
+		})
+	}
+}
+
+// a dropped padding only packet shifts later sequence numbers, ReadExtended must keep the shifted number
+// in the header and in RawPacket
+func TestIngestDroppedPaddingKeepsAdjustedSequenceNumber(t *testing.T) {
+	buff := NewBuffer(123, 100, 100)
+	require.NoError(t, buff.Bind(webrtc.RTPParameters{
+		Codecs: []webrtc.RTPCodecParameters{opusCodec},
+	}, opusCodec.RTPCodecCapability, 0))
+	defer buff.Close()
+
+	write := func(sn uint16, paddingOnly bool) {
+		p := rtp.Packet{
+			Header: rtp.Header{
+				Version:        2,
+				PayloadType:    uint8(opusCodec.PayloadType),
+				SequenceNumber: sn,
+				Timestamp:      uint32(sn) * 960,
+				SSRC:           123,
+			},
+		}
+		if paddingOnly {
+			p.Header.Padding = true
+			p.Header.PaddingSize = 20
+		} else {
+			p.Payload = make([]byte, 100)
+		}
+		raw, err := p.Marshal()
+		require.NoError(t, err)
+		_, err = buff.Write(raw)
+		require.NoError(t, err)
+	}
+
+	write(40, false)
+	write(41, true)
+	write(42, false)
+
+	readBuf := make([]byte, 1500)
+	for _, wantSN := range []uint16{40, 41} {
+		ep, err := buff.ReadExtended(readBuf)
+		require.NoError(t, err)
+		require.Equal(t, wantSN, ep.Packet.SequenceNumber)
+		require.Equal(t, wantSN, binary.BigEndian.Uint16(ep.RawPacket[2:]))
+		ReleaseExtPacket(ep)
 	}
 }
 

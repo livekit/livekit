@@ -19,6 +19,7 @@ import (
 	"compress/gzip"
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -126,4 +127,31 @@ func TestDecompressGzip(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "cannot read decompressed")
 	})
+}
+
+// URL.Path and URL.RawPath must stay in step: once they disagree,
+// EscapedPath() re-encodes from Path and every escape is lost.
+func TestRemoveDoubleSlashes(t *testing.T) {
+	cases := []struct {
+		name   string
+		target string
+		want   string
+	}{
+		{"doubled slash is trimmed", "//agents/a/d/x", "/agents/a/d/x"},
+		{"single slash untouched", "/agents/a/d/x", "/agents/a/d/x"},
+		{"doubled slash keeps the encoded tail", "//agents/a/d/f%2Fg", "/agents/a/d/f%2Fg"},
+		{"encoded name survives", "//agents/LODHA%20Vayam/d/x", "/agents/LODHA%20Vayam/d/x"},
+		{"leading encoded slash is not doubled", "/%2Fagents/a/d/x", "/%2Fagents/a/d/x"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, c.target, nil)
+			var got string
+			service.RemoveDoubleSlashes(httptest.NewRecorder(), r, func(_ http.ResponseWriter, r *http.Request) {
+				got = r.URL.EscapedPath()
+			})
+			require.Equal(t, c.want, got)
+		})
+	}
 }

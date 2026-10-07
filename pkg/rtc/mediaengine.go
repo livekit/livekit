@@ -162,6 +162,10 @@ func isCodecEnabledWithFmtp(codecs []*livekit.Codec, cap webrtc.RTPCodecCapabili
 
 func selectAlternativeVideoCodec(enabledCodecs []*livekit.Codec) string {
 	for _, c := range enabledCodecs {
+		// RTX and FEC are not real codecs, skip them
+		if mime.IsMimeTypeStringRTX(c.Mime) || mime.IsMimeTypeStringFlexFEC03(c.Mime) {
+			continue
+		}
 		if mime.IsMimeTypeStringVideo(c.Mime) {
 			return c.Mime
 		}

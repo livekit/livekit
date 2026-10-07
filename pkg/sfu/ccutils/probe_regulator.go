@@ -80,7 +80,7 @@ func (p *ProbeRegulator) ProbeDuration() time.Duration {
 func (p *ProbeRegulator) ProbeSignal(probeSignal ProbeSignal, baseTime time.Time) {
 	if probeSignal == ProbeSignalCongesting {
 		// wait longer till next probe
-		p.probeInterval = time.Duration(p.probeInterval.Seconds()*p.params.Config.BackoffFactor) * time.Second
+		p.probeInterval = time.Duration(float64(p.probeInterval.Milliseconds())*p.params.Config.BackoffFactor) * time.Millisecond
 		if p.probeInterval > p.params.Config.MaxInterval {
 			p.probeInterval = p.params.Config.MaxInterval
 		}

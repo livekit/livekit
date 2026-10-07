@@ -1079,9 +1079,28 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		SSRC:           d.ssrc,
 	})
 
+	pacerPacket := pacer.PacketFactory.Get().(*pacer.Packet)
+	*pacerPacket = pacer.Packet{
+		Header:             hdr,
+		HeaderPool:         RTPHeaderFactory,
+		Payload:            payload,
+		ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
+		AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
+		TransportWideExtID: uint8(d.transportWideExtID),
+		WriteStream:        d.writeStream,
+		Pool:               PacketFactory,
+		PoolEntity:         poolEntity,
+	}
+
 	// add extensions
-	if d.dependencyDescriptorExtID != 0 && tp.ddBytes != nil {
-		hdr.SetExtension(uint8(d.dependencyDescriptorExtID), tp.ddBytes)
+	//
+	// the header refers to the descriptor until the pacer marshals it, so hold it in the pacer packet, which one send owns
+	ddBytes := tp.ddBytesSpill
+	if inline := tp.ddInline(); ddBytes == nil && len(inline) != 0 {
+		ddBytes = pacerPacket.HoldExtension(inline)
+	}
+	if d.dependencyDescriptorExtID != 0 && len(ddBytes) != 0 {
+		hdr.SetExtension(uint8(d.dependencyDescriptorExtID), ddBytes)
 	}
 	if d.playoutDelayExtID != 0 && d.playoutDelay != nil {
 		if val := d.playoutDelay.GetDelayExtension(hdr.SequenceNumber); val != nil {
@@ -1098,30 +1117,37 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	}
 	var actBytes []byte
 	if extPkt.AbsCaptureTimeExt != nil && d.absCaptureTimeExtID != 0 {
-		// normalize capture time to SFU clock.
-		// NOTE: even if there is estimated offset populated, just re-map the
-		// absolute capture time stamp as it should be the same RTCP sender report
-		// clock domain of publisher. SFU is normalising sender reports of publisher
-		// to SFU clock before sending to subscribers. So, capture time should be
-		// normalized to the same clock. Clear out any offset.
-		_, _, _, refSenderReport := d.forwarder.GetSenderReportParams()
-		if refSenderReport != nil {
-			actExtCopy := *extPkt.AbsCaptureTimeExt
-			if err = actExtCopy.Rewrite(
-				rtpstats.RTCPSenderReportPropagationDelay(
-					refSenderReport,
-					!d.params.DisableSenderReportPassThrough,
-				),
-			); err == nil {
-				actBytes, err = actExtCopy.Marshal()
-				if err == nil {
-					hdr.SetExtension(uint8(d.absCaptureTimeExtID), actBytes)
+		if !d.params.DisableSenderReportPassThrough {
+			// pass through the original publisher capture time verbatim, consistent
+			// with sender reports also being passed through unchanged.
+			actBytes, err = extPkt.AbsCaptureTimeExt.Marshal()
+			if err == nil {
+				hdr.SetExtension(uint8(d.absCaptureTimeExtID), actBytes)
+			}
+		} else {
+			// normalize capture time to SFU clock.
+			// NOTE: even if there is estimated offset populated, just re-map the
+			// absolute capture time stamp as it should be the same RTCP sender report
+			// clock domain of publisher. SFU is normalising sender reports of publisher
+			// to SFU clock before sending to subscribers. So, capture time should be
+			// normalized to the same clock. Clear out any offset.
+			_, _, _, refSenderReport := d.forwarder.GetSenderReportParams()
+			if refSenderReport != nil {
+				actExtCopy := *extPkt.AbsCaptureTimeExt
+				if err = actExtCopy.Rewrite(
+					rtpstats.RTCPSenderReportPropagationDelay(refSenderReport),
+				); err == nil {
+					actBytes, err = actExtCopy.Marshal()
+					if err == nil {
+						hdr.SetExtension(uint8(d.absCaptureTimeExtID), actBytes)
+					}
 				}
 			}
 		}
 	}
 	d.addDummyExtensions(hdr)
 
+	// the sequencer copies the descriptor, which has to happen before Enqueue frees the scratch
 	if d.sequencer != nil {
 		d.sequencer.push(
 			extPkt.Arrival,
@@ -1132,13 +1158,14 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 			int8(layer),
 			payload[:len(codecBytes)],
 			tp.incomingHeaderSize,
-			tp.ddBytes,
+			ddBytes,
 			actBytes,
 			trailerStripped,
 		)
 	}
 
 	headerSize := hdr.MarshalSize()
+	pacerPacket.HeaderSize = headerSize
 	d.rtpStats.Update(
 		extPkt.Arrival,
 		tp.rtp.extSequenceNumber,
@@ -1149,19 +1176,6 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		0,
 		extPkt.IsOutOfOrder,
 	)
-	pacerPacket := pacer.PacketFactory.Get().(*pacer.Packet)
-	*pacerPacket = pacer.Packet{
-		Header:             hdr,
-		HeaderPool:         RTPHeaderFactory,
-		HeaderSize:         headerSize,
-		Payload:            payload,
-		ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
-		AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
-		TransportWideExtID: uint8(d.transportWideExtID),
-		WriteStream:        d.writeStream,
-		Pool:               PacketFactory,
-		PoolEntity:         poolEntity,
-	}
 	d.pacer.Enqueue(pacerPacket)
 
 	if extPkt.IsKeyFrame {
@@ -1434,15 +1448,24 @@ func (d *DownTrack) CloseWithFlush(flush bool, isEnding bool) {
 		if flush {
 			doneFlushing := d.writeBlankFrameRTP(RTPBlankFramesCloseSeconds, d.blankFramesGeneration.Inc())
 
+			// The flush runs in its own goroutine (writeBlankFrameRTP) and is
+			// cancelled via blankFramesGeneration, so bindLock guards nothing
+			// during the wait. Release it: bindLock is a control-plane lock
+			// (Bind/SetConnected/ReceiverRestart), and holding it across the
+			// up-to-flushTimeout wait serializes all of those behind every
+			// close. isClosed is already set, so no other close can enter.
+			d.bindLock.Unlock()
+
 			// wait a limited time to flush
 			timer := time.NewTimer(flushTimeout)
-			defer timer.Stop()
-
 			select {
 			case <-doneFlushing:
 			case <-timer.C:
 				d.blankFramesGeneration.Inc() // in case flush is still running
 			}
+			timer.Stop()
+
+			d.bindLock.Lock()
 		}
 
 		d.params.Logger.Debugw("closing sender", "kind", d.kind)
@@ -1749,6 +1772,10 @@ func (d *DownTrack) ReceiverRestart(rcvr TrackReceiver) {
 	}
 
 	d.bindLock.Lock()
+	if d.isClosed.Load() {
+		d.bindLock.Unlock()
+		return
+	}
 	codec := d.codec.Load().(webrtc.RTPCodecCapability)
 	d.bindLock.Unlock()
 
@@ -2161,6 +2188,10 @@ func (d *DownTrack) handleRTCPRTX(bytes []byte) {
 
 func (d *DownTrack) SetConnected() {
 	d.bindLock.Lock()
+	if d.isClosed.Load() {
+		d.bindLock.Unlock()
+		return
+	}
 	if !d.connected.Swap(true) {
 		d.onBindAndConnectedChange()
 	}
