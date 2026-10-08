@@ -30,4 +30,12 @@ type EndpointsConfig struct {
 	// TunnelDrainTimeout is how long a WebSocket tunnel outlives its worker or
 	// this node starting to drain; 0 takes the endpoint package default.
 	TunnelDrainTimeout time.Duration `yaml:"tunnel_drain_timeout,omitempty"`
+
+	// ThreadsAddress is the AgentThreads gRPC service (host:port) the front
+	// resolves a text route's thread with, so the request is placed before a
+	// worker sees it; empty leaves every thread to the worker.
+	ThreadsAddress string `yaml:"threads_address,omitempty"`
+	// ThreadLookupTimeout bounds one lookup; 0 takes the endpoint package
+	// default.
+	ThreadLookupTimeout time.Duration `yaml:"thread_lookup_timeout,omitempty"`
 }
