@@ -190,6 +190,91 @@ func TestAgentLoadBalancing(t *testing.T) {
 	})
 }
 
+func TestJobTerminateReleasesJob(t *testing.T) {
+	const agentName = "test_agent"
+
+	// starts a server with a worker whose job request topic is registered
+	newWorker := func(t *testing.T) (rpc.AgentInternalClient, *testutils.AgentWorker) {
+		bus := psrpc.NewLocalMessageBus()
+		client := must.Get(rpc.NewAgentInternalClient(bus))
+		server := testutils.NewTestServer(bus)
+		t.Cleanup(server.Close)
+
+		registered := must.Get(client.SubscribeWorkerRegistered(context.Background(), agent.DefaultHandlerNamespace))
+		defer registered.Close()
+
+		worker := server.SimulateAgentWorker()
+		worker.Register(agentName, livekit.JobType_JT_ROOM)
+		select {
+		case <-registered.Channel():
+		case <-time.After(time.Second):
+			require.Fail(t, "registration timeout")
+		}
+		return client, worker
+	}
+
+	// assigns a job, then terminates it as Room.RemoveParticipant does when
+	// the agent participant leaves
+	runJob := func(t *testing.T, client rpc.AgentInternalClient) *livekit.Job {
+		job := &livekit.Job{
+			Id:         guid.New(guid.AgentJobPrefix),
+			DispatchId: guid.New(guid.AgentDispatchPrefix),
+			Type:       livekit.JobType_JT_ROOM,
+			Room:       &livekit.Room{},
+			AgentName:  agentName,
+		}
+		_, err := client.JobRequest(context.Background(), agentName, agent.RoomAgentTopic, job)
+		require.NoError(t, err)
+
+		res, err := client.JobTerminate(context.Background(), job.Id, &rpc.JobTerminateRequest{
+			JobId:  job.Id,
+			Reason: rpc.JobTerminateReason_AGENT_LEFT_ROOM,
+		})
+		require.NoError(t, err)
+		require.Equal(t, livekit.JobStatus_JS_FAILED, res.State.Status)
+		return job
+	}
+
+	// no server should still be handling JobTerminate for the job
+	requireReleased := func(t *testing.T, client rpc.AgentInternalClient, job *livekit.Job) {
+		_, err := client.JobTerminate(context.Background(), job.Id, &rpc.JobTerminateRequest{JobId: job.Id}, psrpc.WithRequestTimeout(500*time.Millisecond))
+		require.ErrorIs(t, err, psrpc.ErrNoResponse)
+	}
+
+	t.Run("worker does not report job status", func(t *testing.T) {
+		// workers are not required to report job status after a termination
+		// (e.g. agents-js does not currently send UpdateJobStatus), and a
+		// worker disconnect does not release jobs that are no longer running
+		client, worker := newWorker(t)
+		job := runJob(t, client)
+		require.NoError(t, worker.Close())
+		requireReleased(t, client, job)
+	})
+
+	t.Run("worker reports ended status after termination", func(t *testing.T) {
+		client, worker := newWorker(t)
+		job := runJob(t, client)
+		worker.SendUpdateJob(&livekit.UpdateJobStatus{
+			JobId:  job.Id,
+			Status: livekit.JobStatus_JS_SUCCESS,
+		})
+
+		// worker messages are handled in order, so the pong confirms the
+		// update was handled
+		pongs := worker.WorkerPongs.Observe()
+		defer pongs.Stop()
+		worker.SendPing(&livekit.WorkerPing{})
+		select {
+		case <-pongs.Events():
+		case <-time.After(time.Second):
+			require.Fail(t, "pong timeout")
+		}
+
+		require.NoError(t, worker.Close())
+		requireReleased(t, client, job)
+	})
+}
+
 func TestConnectionClosedOnDispatchError(t *testing.T) {
 	t.Run("connection closed when unknown message type received", func(t *testing.T) {
 		bus := psrpc.NewLocalMessageBus()

@@ -1431,6 +1431,9 @@ func (r *Room) RemoveParticipant(
 	delete(r.hasPublished, identity)
 	delete(r.launchedTrackEgresses, identity)
 	delete(r.agentParticpants, identity)
+	// recorded while the participant is being removed, not after it is closed:
+	// the room is already empty to CloseIfEmpty, which runs every second
+	r.leftAt.Store(time.Now().Unix())
 	if !p.Hidden() {
 		r.protoRoom.NumParticipants--
 	}
@@ -1490,8 +1493,6 @@ func (r *Room) RemoveParticipant(
 
 	// close participant as well
 	_ = p.Close(true, reason, false)
-
-	r.leftAt.Store(time.Now().Unix())
 
 	if sendUpdates {
 		if r.onParticipantChanged != nil {

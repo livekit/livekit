@@ -15,6 +15,7 @@
 package videolayerselector
 
 import (
+	"encoding/hex"
 	"slices"
 	"testing"
 
@@ -23,6 +24,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -408,4 +410,72 @@ func createDDFrames(maxLayer buffer.VideoLayer, startFrameNumber uint16) []*buff
 	}
 
 	return frames
+}
+
+// same capture as the dependency descriptor package's marshal fixture, an L3T3
+// key frame descriptor with the full dependency structure attached
+const dependencyDescriptorFixture = "c1017280081485214eafffaaaa863cf0430c10c302afc0aaa0063c00430010c002a000a80006000040001d954926e082b04a0941b820ac1282503157f974000ca864330e222222eca8655304224230eca877530077004200ef008601df010d"
+
+func TestVideoLayerSelectorResultDependencyDescriptor(t *testing.T) {
+	raw, err := hex.DecodeString(dependencyDescriptorFixture)
+	require.NoError(t, err)
+
+	descriptor := dd.DependencyDescriptor{}
+	_, err = (&dd.DependencyDescriptorExtension{Descriptor: &descriptor}).Unmarshal(raw)
+	require.NoError(t, err)
+	require.NotNil(t, descriptor.AttachedStructure)
+	structure := descriptor.AttachedStructure
+
+	// a key frame descriptor carries the full structure and spills to the heap
+	keyFrame := VideoLayerSelectorResult{}
+	require.NoError(t, keyFrame.marshalDependencyDescriptorExtension(&dd.DependencyDescriptorExtension{
+		Descriptor: &descriptor,
+		Structure:  structure,
+	}))
+	require.Zero(t, keyFrame.DDBytesLen)
+	require.Greater(t, len(keyFrame.DDBytesSpill), dd.MaxInlineExtensionSize)
+
+	// a per-packet descriptor is held inline, byte for byte what Marshal returns
+	perPacket := descriptor
+	perPacket.AttachedStructure = nil
+	perPacket.ActiveDecodeTargetsBitmask = nil
+	ddExtension := &dd.DependencyDescriptorExtension{Descriptor: &perPacket, Structure: structure}
+
+	result := VideoLayerSelectorResult{}
+	require.NoError(t, result.marshalDependencyDescriptorExtension(ddExtension))
+	require.Nil(t, result.DDBytesSpill)
+	require.NotZero(t, result.DDBytesLen)
+	require.LessOrEqual(t, result.DDBytesLen, dd.MaxInlineExtensionSize)
+
+	want, err := ddExtension.Marshal()
+	require.NoError(t, err)
+	require.Equal(t, want, result.DDBytes[:result.DDBytesLen])
+}
+
+func TestDependencyDescriptorSelectAllocations(t *testing.T) {
+	for _, rewriteFrameNumber := range []bool{false, true} {
+		selector := NewDependencyDescriptor(logger.GetLogger())
+		selector.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+		selector.SetRequestSpatial(0)
+		frames := createDDFrames(buffer.VideoLayer{Spatial: 0, Temporal: 0}, 100)
+		require.True(t, selector.Select(frames[0], 0).IsSelected)
+		require.NotNil(t, selector.activeDecodeTargetsBitmask)
+		if rewriteFrameNumber {
+			selector.fnWrapper.offset = 6000
+		}
+		packet := frames[1]
+		packet.DependencyDescriptor.ExtFrameNum--
+		packet.DependencyDescriptor.Descriptor.FrameNumber--
+
+		selected := true
+		allocs := testing.AllocsPerRun(1000, func() {
+			packet.DependencyDescriptor.ExtFrameNum++
+			packet.DependencyDescriptor.Descriptor.FrameNumber++
+			selected = selected && selector.Select(packet, 0).IsSelected
+		})
+		require.True(t, selected)
+		if !utils.RaceEnabled {
+			require.Equal(t, 0.0, allocs, "allocations per selected packet, rewriteFrameNumber=%v", rewriteFrameNumber)
+		}
+	}
 }

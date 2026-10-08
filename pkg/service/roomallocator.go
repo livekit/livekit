@@ -59,10 +59,10 @@ func (r *StandardRoomAllocator) AutoCreateEnabled(context.Context) bool {
 
 // CreateRoom creates a new room from a request and allocates it to a node to handle
 // it'll also monitor its state, and cleans it up when appropriate
-func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest, isExplicit bool) (*livekit.Room, *livekit.RoomInternal, bool, error) {
+func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest, isExplicit bool) (*livekit.Room, *livekit.RoomInternal, *livekit.CreateRoomRequest, bool, error) {
 	token, err := r.roomStore.LockRoom(ctx, livekit.RoomName(req.Name), 5*time.Second)
 	if err != nil {
-		return nil, nil, false, err
+		return nil, nil, nil, false, err
 	}
 	defer func() {
 		_ = r.roomStore.UnlockRoom(ctx, livekit.RoomName(req.Name), token)
@@ -84,12 +84,12 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 		internal = &livekit.RoomInternal{}
 		applyDefaultRoomConfig(rm, internal, &r.config.Room)
 	} else if err != nil {
-		return nil, nil, false, err
+		return nil, nil, nil, false, err
 	}
 
 	req, err = r.applyNamedRoomConfiguration(req)
 	if err != nil {
-		return nil, nil, false, err
+		return nil, nil, nil, false, err
 	}
 
 	if req.EmptyTimeout > 0 {
@@ -127,10 +127,10 @@ func (r *StandardRoomAllocator) CreateRoom(ctx context.Context, req *livekit.Cre
 	}
 
 	if err = r.roomStore.StoreRoom(ctx, rm, internal); err != nil {
-		return nil, nil, false, err
+		return nil, nil, nil, false, err
 	}
 
-	return rm, internal, created, nil
+	return rm, internal, req, created, nil
 }
 
 func (r *StandardRoomAllocator) SelectRoomNode(ctx context.Context, roomName livekit.RoomName, nodeID livekit.NodeID) error {

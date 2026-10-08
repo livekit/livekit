@@ -17,6 +17,7 @@
 package rtc
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -353,6 +354,226 @@ func TestUpdateSettingsBeforeSubscription(t *testing.T) {
 	require.Equal(t, settings.Height, applied.Height)
 }
 
+func TestConcurrentFirstSubscribe(t *testing.T) {
+	settings := &livekit.UpdateTrackSettings{Width: 100, Height: 100}
+	for range 200 {
+		sm := newTestSubscriptionManager()
+
+		var lock sync.Mutex
+		var subscribed bool
+		mt := &typesfakes.FakeMediaTrack{}
+		mt.IDReturns("track")
+		mt.AddSubscriberCalls(func(types.LocalParticipant) (types.SubscribedTrack, error) {
+			lock.Lock()
+			defer lock.Unlock()
+			if subscribed {
+				return nil, errAlreadySubscribed
+			}
+			subscribed = true
+			st := &typesfakes.FakeSubscribedTrack{}
+			st.IDReturns("track")
+			st.MediaTrackReturns(mt)
+			return st, nil
+		})
+		sm.params.TrackResolver = func(types.LocalParticipant, livekit.TrackID) types.MediaResolverResult {
+			return types.MediaResolverResult{
+				Track:                mt,
+				HasPermission:        true,
+				PublisherID:          "pubID",
+				PublisherIdentity:    "pub",
+				TrackChangedNotifier: utils.NewChangeNotifier(),
+				TrackRemovedNotifier: utils.NewChangeNotifier(),
+			}
+		}
+
+		// two first subscribes and a settings update race to create the subscription
+		var start, done sync.WaitGroup
+		start.Add(1)
+		for _, f := range []func(){
+			func() { sm.SubscribeToTrack("track", false) },
+			func() { sm.SubscribeToTrack("track", false) },
+			func() { sm.UpdateSubscribedTrackSettings("track", settings) },
+		} {
+			done.Add(1)
+			go func() {
+				defer done.Done()
+				start.Wait()
+				f()
+			}()
+		}
+		start.Done()
+		done.Wait()
+
+		sm.lock.RLock()
+		s := sm.subscriptions["track"]
+		sm.lock.RUnlock()
+		require.Eventually(t, func() bool {
+			return !s.needsSubscribe()
+		}, subSettleTimeout, subCheckInterval, "the subscription that is kept should own the down track")
+		st := s.getSubscribedTrack().(*typesfakes.FakeSubscribedTrack)
+		require.Eventually(t, func() bool {
+			n := st.UpdateSubscriberSettingsCallCount()
+			if n == 0 {
+				return false
+			}
+			applied, _ := st.UpdateSubscriberSettingsArgsForCall(n - 1)
+			return applied == settings
+		}, subSettleTimeout, subCheckInterval, "the down track should get the settings")
+
+		sm.Close(false)
+	}
+}
+
+func TestSettingsKeptForSubscribe(t *testing.T) {
+	t.Run("media", func(t *testing.T) {
+		sm := newTestSubscriptionManager()
+		defer sm.Close(false)
+		resolver := newTestResolver(true, true, "pub", "pubID")
+		sm.params.TrackResolver = resolver.Resolve
+
+		settings := &livekit.UpdateTrackSettings{Disabled: true}
+		sm.UpdateSubscribedTrackSettings("track", settings)
+		// a cleanup pass between the settings and the subscribe must not drop the settings
+		sm.reconcileSubscriptions()
+		sm.SubscribeToTrack("track", false)
+
+		sm.lock.RLock()
+		s := sm.subscriptions["track"]
+		sm.lock.RUnlock()
+		require.Eventually(t, func() bool {
+			return !s.needsSubscribe()
+		}, subSettleTimeout, subCheckInterval, "track should be subscribed")
+		st := s.getSubscribedTrack().(*typesfakes.FakeSubscribedTrack)
+		require.Eventually(t, func() bool {
+			n := st.UpdateSubscriberSettingsCallCount()
+			if n == 0 {
+				return false
+			}
+			applied, _ := st.UpdateSubscriberSettingsArgsForCall(n - 1)
+			return applied == settings
+		}, subSettleTimeout, subCheckInterval, "the down track should get the settings")
+
+		// settings for a track that is never subscribed are cleaned up after notFoundTimeout
+		sm.UpdateSubscribedTrackSettings("other", settings)
+		require.Eventually(t, func() bool {
+			sm.lock.RLock()
+			defer sm.lock.RUnlock()
+			_, ok := sm.subscriptions["other"]
+			return !ok
+		}, subSettleTimeout, subCheckInterval, "unused settings should be cleaned up")
+	})
+
+	t.Run("data", func(t *testing.T) {
+		sm := newTestSubscriptionManager()
+		defer sm.Close(false)
+		resolver := newTestDataTrackResolver(true, true, "pub", "pubID")
+		sm.params.DataTrackResolver = resolver.Resolve
+
+		fps := uint32(5)
+		options := &livekit.DataTrackSubscriptionOptions{TargetFps: &fps}
+		sm.UpdateDataTrackSubscriptionOptions("track", options)
+		// a cleanup pass between the options and the subscribe must not drop the options
+		sm.reconcileDataTrackSubscriptions()
+		sm.SubscribeToDataTrack("track")
+
+		sm.lock.RLock()
+		s := sm.dataTrackSubscriptions["track"]
+		sm.lock.RUnlock()
+		require.Eventually(t, func() bool {
+			return s.getDataDownTrack() != nil
+		}, subSettleTimeout, subCheckInterval, "data track should be subscribed")
+		ddt := s.getDataDownTrack().(*typesfakes.FakeDataDownTrack)
+		n := ddt.UpdateSubscriptionOptionsCallCount()
+		require.NotZero(t, n)
+		require.Equal(t, options, ddt.UpdateSubscriptionOptionsArgsForCall(n-1))
+	})
+}
+
+func TestSubscribeBurstOverflowsQueue(t *testing.T) {
+	// a dropped reconcile must not wait for the ticker
+	saved := reconcileInterval
+	reconcileInterval = time.Hour
+	defer func() { reconcileInterval = saved }()
+
+	t.Run("media", func(t *testing.T) {
+		sm := newTestSubscriptionManager()
+		defer sm.Close(false)
+
+		// the first subscribe holds the worker until all are queued, so the queue overflows
+		release := make(chan struct{})
+		var holdOnce sync.Once
+		sm.params.TrackResolver = func(_ types.LocalParticipant, trackID livekit.TrackID) types.MediaResolverResult {
+			mt := &typesfakes.FakeMediaTrack{}
+			mt.IDReturns(trackID)
+			mt.AddSubscriberCalls(func(types.LocalParticipant) (types.SubscribedTrack, error) {
+				holdOnce.Do(func() { <-release })
+				st := &typesfakes.FakeSubscribedTrack{}
+				st.IDReturns(trackID)
+				st.MediaTrackReturns(mt)
+				return st, nil
+			})
+			return types.MediaResolverResult{
+				Track:                mt,
+				HasPermission:        true,
+				PublisherID:          "pubID",
+				PublisherIdentity:    "pub",
+				TrackChangedNotifier: utils.NewChangeNotifier(),
+				TrackRemovedNotifier: utils.NewChangeNotifier(),
+			}
+		}
+
+		numTracks := cap(sm.reconcileCh) + 10
+		for i := range numTracks {
+			sm.SubscribeToTrack(livekit.TrackID(fmt.Sprintf("TR_%d", i)), false)
+		}
+		close(release)
+
+		require.Eventually(t, func() bool {
+			sm.lock.RLock()
+			defer sm.lock.RUnlock()
+			for _, s := range sm.subscriptions {
+				if s.needsSubscribe() {
+					return false
+				}
+			}
+			return len(sm.subscriptions) == numTracks
+		}, subSettleTimeout, subCheckInterval, "every track should be subscribed")
+	})
+
+	t.Run("data", func(t *testing.T) {
+		sm := newTestSubscriptionManager()
+		defer sm.Close(false)
+		resolver := newTestDataTrackResolver(true, true, "pub", "pubID")
+		sm.params.DataTrackResolver = resolver.Resolve
+
+		release := make(chan struct{})
+		var holdOnce sync.Once
+		resolver.dataTrack.AddSubscriberCalls(func(types.LocalParticipant) (types.DataDownTrack, error) {
+			holdOnce.Do(func() { <-release })
+			ddt := &typesfakes.FakeDataDownTrack{}
+			ddt.PublishDataTrackReturns(resolver.dataTrack)
+			return ddt, nil
+		})
+
+		numTracks := cap(sm.reconcileDataTrackCh) + 10
+		for i := range numTracks {
+			sm.SubscribeToDataTrack(livekit.TrackID(fmt.Sprintf("DTR_%d", i)))
+		}
+		close(release)
+
+		require.Eventually(t, func() bool {
+			sm.lock.RLock()
+			defer sm.lock.RUnlock()
+			for _, s := range sm.dataTrackSubscriptions {
+				if s.needsSubscribe() {
+					return false
+				}
+			}
+			return len(sm.dataTrackSubscriptions) == numTracks
+		}, subSettleTimeout, subCheckInterval, "every data track should be subscribed")
+	})
+}
+
 func TestSubscriptionLimits(t *testing.T) {
 	sm := newTestSubscriptionManagerWithParams(testSubscriptionParams{
 		SubscriptionLimitAudio: 1,
@@ -525,6 +746,37 @@ func TestSubscribeDataTrack(t *testing.T) {
 			return !s.needsSubscribe() && s.getDataDownTrack() != nil
 		}, subSettleTimeout, subCheckInterval, "should be resubscribed")
 		require.Equal(t, 2, resolver.dataTrack.AddSubscriberCallCount())
+	})
+
+	t.Run("subscribe again during unsubscribe", func(t *testing.T) {
+		sm := newTestSubscriptionManager()
+		defer sm.Close(false)
+		resolver := newTestDataTrackResolver(true, true, "pub", "pubID")
+		sm.params.DataTrackResolver = resolver.Resolve
+
+		sm.SubscribeToDataTrack("track")
+		sm.lock.RLock()
+		s := sm.dataTrackSubscriptions["track"]
+		sm.lock.RUnlock()
+		require.Eventually(t, func() bool {
+			return !s.needsSubscribe()
+		}, subSettleTimeout, subCheckInterval, "should be subscribed")
+
+		// the client subscribes again while the removal runs,
+		// then the down track closes, as DataTrack.RemoveSubscriber does
+		ddt := s.getDataDownTrack().(*typesfakes.FakeDataDownTrack)
+		resolver.dataTrack.RemoveSubscriberCalls(func(livekit.ParticipantID) {
+			sm.SubscribeToDataTrack("track")
+			ddt.OnCloseArgsForCall(0)()
+		})
+		sm.UnsubscribeFromDataTrack("track")
+
+		require.Eventually(t, func() bool {
+			return resolver.dataTrack.AddSubscriberCallCount() == 2 && s.getDataDownTrack() != nil
+		}, subSettleTimeout, subCheckInterval, "should be subscribed again")
+		sm.lock.RLock()
+		require.Same(t, s, sm.dataTrackSubscriptions["track"])
+		sm.lock.RUnlock()
 	})
 
 	t.Run("unsubscribe before data track resolves", func(t *testing.T) {

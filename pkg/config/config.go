@@ -82,6 +82,7 @@ type Config struct {
 	PrometheusPort uint32                   `yaml:"prometheus_port,omitempty"`
 	Prometheus     PrometheusConfig         `yaml:"prometheus,omitempty"`
 	DebugHandler   DebugHandlerConfig       `yaml:"debug_handler,omitempty"`
+	WebTransport   WebTransportConfig       `yaml:"webtransport,omitempty"`
 	RTC            RTCConfig                `yaml:"rtc,omitempty"`
 	Redis          redisLiveKit.RedisConfig `yaml:"redis,omitempty"`
 	Audio          sfu.AudioConfig          `yaml:"audio,omitempty"`
@@ -115,6 +116,15 @@ type Config struct {
 	EnableParticipantDataBlob bool `yaml:"enable_participant_data_blob,omitempty"`
 
 	API APIConfig `yaml:"api,omitempty"`
+}
+
+// WebTransportConfig is the node's HTTP/3 listener. QUIC has no plaintext mode,
+// so a certificate is required; development mode generates a self-signed one.
+type WebTransportConfig struct {
+	// Port is the UDP port to listen on. 0 starts no listener.
+	Port        uint32 `yaml:"port,omitempty"`
+	TLSCertFile string `yaml:"tls_cert_file,omitempty"`
+	TLSKeyFile  string `yaml:"tls_key_file,omitempty"`
 }
 
 type RTCConfig struct {
@@ -218,6 +228,22 @@ type CongestionControlConfig struct {
 	UseSendSideBWE   bool                          `yaml:"use_send_side_bwe,omitempty"`
 	SendSideBWEPacer string                        `yaml:"send_side_bwe_pacer,omitempty"`
 	SendSideBWE      sendsidebwe.SendSideBWEConfig `yaml:"send_side_bwe,omitempty"`
+}
+
+// Validate reports configuration that would otherwise be ignored at runtime.
+func (c CongestionControlConfig) Validate() error {
+	switch pacer.PacerBehavior(c.SendSideBWEPacer) {
+	case "", pacer.PacerBehaviorPassThrough, pacer.PacerBehaviorNoQueue, pacer.PacerBehaviorLeakybucket:
+		return nil
+	default:
+		return fmt.Errorf(
+			"invalid send_side_bwe_pacer %q, must be one of %q, %q, %q",
+			c.SendSideBWEPacer,
+			pacer.PacerBehaviorPassThrough,
+			pacer.PacerBehaviorNoQueue,
+			pacer.PacerBehaviorLeakybucket,
+		)
+	}
 }
 
 type PlayoutDelayConfig struct {
@@ -399,8 +425,20 @@ func (l LimitConfig) CheckAttributesSize(attributes map[string]string) bool {
 	return uint32(total) <= l.MaxAttributesSize
 }
 
-func (l LimitConfig) CheckDataBlobKeyLength(key string) bool {
-	return l.MaxDataBlobKeyLength == 0 || len(key) <= l.MaxDataBlobKeyLength
+// DataBlobKeyLength returns the length of the identifying content of a data blob key.
+// The text form of the key message is not used, as it adds field names and quotes.
+func DataBlobKeyLength(key *livekit.DataBlobKey) int {
+	switch k := key.GetKey().(type) {
+	case *livekit.DataBlobKey_Generic:
+		return len(k.Generic)
+	case *livekit.DataBlobKey_SchemaId:
+		return len(k.SchemaId.GetName()) + len(k.SchemaId.GetEncoding().GetCustom())
+	}
+	return 0
+}
+
+func (l LimitConfig) CheckDataBlobKeyLength(key *livekit.DataBlobKey) bool {
+	return l.MaxDataBlobKeyLength == 0 || DataBlobKeyLength(key) <= l.MaxDataBlobKeyLength
 }
 
 func (l LimitConfig) CheckDataTrackCustomEncodingLength(identifier string) bool {
@@ -430,7 +468,7 @@ func (l LimitConfig) CheckDataBlobsSize(dataBlobs []*livekit.DataBlob) bool {
 
 	total := 0
 	for _, dataBlob := range dataBlobs {
-		total += len(dataBlob.GetKey().String()) + len(dataBlob.Contents)
+		total += DataBlobKeyLength(dataBlob.GetKey()) + len(dataBlob.Contents)
 	}
 	return uint32(total) <= l.MaxDataBlobSize
 }
@@ -442,9 +480,9 @@ func (l LimitConfig) CanAddDataBlob(dataBlobs []*livekit.DataBlob, toAdd *liveki
 
 	total := 0
 	for _, dataBlob := range dataBlobs {
-		total += len(dataBlob.Key.String()) + len(dataBlob.Contents)
+		total += DataBlobKeyLength(dataBlob.GetKey()) + len(dataBlob.Contents)
 	}
-	return uint32(total+len(toAdd.GetKey().String())+len(toAdd.Contents)) <= l.MaxDataBlobSize
+	return uint32(total+DataBlobKeyLength(toAdd.GetKey())+len(toAdd.Contents)) <= l.MaxDataBlobSize
 }
 
 // ---------------------------------
@@ -657,6 +695,10 @@ func NewConfig(confString string, strictMode bool, c *cli.Command, baseFlags []c
 
 	if err := conf.RTC.Validate(conf.Development); err != nil {
 		return nil, fmt.Errorf("could not validate RTC config: %v", err)
+	}
+
+	if err := conf.RTC.CongestionControl.Validate(); err != nil {
+		return nil, fmt.Errorf("could not validate congestion control config: %v", err)
 	}
 
 	conf.NormalizeTURNTTLs()
@@ -902,10 +944,11 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 	defaultConfig := &DefaultConfig
 	flags := make([]cli.Flag, 0)
 	for name, value := range (defaultConfig).ToCLIFlagNames(existingFlags) {
-		kind := value.Kind()
-		if kind == reflect.Ptr {
-			kind = value.Type().Elem().Kind()
+		valueType := value.Type()
+		if valueType.Kind() == reflect.Ptr {
+			valueType = valueType.Elem()
 		}
+		kind := valueType.Kind()
 
 		var flag cli.Flag
 		envVar := fmt.Sprintf("LIVEKIT_%s", strings.ToUpper(strings.ReplaceAll(name, ".", "_")))
@@ -937,12 +980,23 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 				Hidden:      hidden,
 			}
 		case reflect.Int64:
-			flag = &cli.Int64Flag{
-				Name:        name,
-				Sources:     cli.EnvVars(envVar),
-				Usage:       generatedCLIFlagUsage,
-				DefaultText: defaultText,
-				Hidden:      hidden,
+			if valueType == reflect.TypeOf(time.Duration(0)) {
+				// parse values like "30s", as the YAML config does
+				flag = &cli.DurationFlag{
+					Name:        name,
+					Sources:     cli.EnvVars(envVar),
+					Usage:       generatedCLIFlagUsage,
+					DefaultText: defaultText,
+					Hidden:      hidden,
+				}
+			} else {
+				flag = &cli.Int64Flag{
+					Name:        name,
+					Sources:     cli.EnvVars(envVar),
+					Usage:       generatedCLIFlagUsage,
+					DefaultText: defaultText,
+					Hidden:      hidden,
+				}
 			}
 		case reflect.Uint8, reflect.Uint16, reflect.Uint32:
 			flag = &cli.UintFlag{

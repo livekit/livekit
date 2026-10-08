@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pion/dtls/v3/pkg/protocol/handshake"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
@@ -60,8 +61,8 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 	handleICEExchange(t, transportA, transportB, handlerA, handlerB)
 
 	connectTransports(t, transportA, transportB, handlerA, handlerB, false, 1, 1)
-	require.Equal(t, webrtc.ICEConnectionStateConnected, transportA.pc.ICEConnectionState())
-	require.Equal(t, webrtc.ICEConnectionStateConnected, transportB.pc.ICEConnectionState())
+	require.True(t, iceConnected(transportA.pc))
+	require.True(t, iceConnected(transportB.pc))
 
 	var negotiationState atomic.Value
 	transportA.OnNegotiationStateChanged(func(state transport.NegotiationState) {
@@ -82,8 +83,8 @@ func TestMissingAnswerDuringICERestart(t *testing.T) {
 	}, 10*time.Second, time.Millisecond*10, "transportA offer not received")
 
 	connectTransports(t, transportA, transportB, handlerA, handlerB, true, 1, 1)
-	require.Equal(t, webrtc.ICEConnectionStateConnected, transportA.pc.ICEConnectionState())
-	require.Equal(t, webrtc.ICEConnectionStateConnected, transportB.pc.ICEConnectionState())
+	require.True(t, iceConnected(transportA.pc))
+	require.True(t, iceConnected(transportB.pc))
 
 	transportA.Close()
 	transportB.Close()
@@ -207,6 +208,122 @@ func TestNegotiationTiming(t *testing.T) {
 	transportB.Close()
 }
 
+func TestFirstNegotiationUsesFastDebounce(t *testing.T) {
+	offered := make(chan string, 2)
+	newOfferer := func(name string) *PCTransport {
+		handler := &transportfakes.FakeHandler{}
+		handler.OnOfferCalls(func(webrtc.SessionDescription, uint32, map[string]string) error {
+			select {
+			case offered <- name:
+			default:
+			}
+			return nil
+		})
+		transport, err := NewPCTransport(TransportParams{
+			Config:    &WebRTCConfig{},
+			IsOfferer: true,
+			Handler:   handler,
+		})
+		require.NoError(t, err)
+		t.Cleanup(transport.Close)
+		_, err = transport.pc.CreateDataChannel(ReliableDataChannel, nil)
+		require.NoError(t, err)
+		return transport
+	}
+
+	// a transport that negotiated just now waits for the full debounce
+	recent := newOfferer("recent")
+	recent.lock.Lock()
+	recent.updateLastNegotiateLocked()
+	recent.lock.Unlock()
+	recent.Negotiate(false)
+
+	// a new transport starts later, but its first offer uses the fast debounce and goes out first
+	time.Sleep(20 * time.Millisecond)
+	newOfferer("fresh").Negotiate(false)
+
+	for _, want := range []string{"fresh", "recent"} {
+		select {
+		case got := <-offered:
+			require.Equal(t, want, got)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("no offer from %s", want)
+		}
+	}
+}
+
+func TestDTLSHandshakeSkipsHelloVerify(t *testing.T) {
+	// the SFU offers as on the subscriber connection, and a plain pion peer answers active like a browser,
+	// so the SFU is the DTLS server and only the peer sends ClientHello
+	handler := &transportfakes.FakeHandler{}
+	sfu, err := NewPCTransport(TransportParams{Config: &WebRTCConfig{}, IsOfferer: true, Handler: handler})
+	require.NoError(t, err)
+	defer sfu.Close()
+	_, err = sfu.pc.CreateDataChannel(ReliableDataChannel, nil)
+	require.NoError(t, err)
+
+	var clientHellos atomic.Int32
+	se := webrtc.SettingEngine{}
+	require.NoError(t, se.SetAnsweringDTLSRole(webrtc.DTLSRoleClient))
+	se.SetDTLSClientHelloMessageHook(func(m handshake.MessageClientHello) handshake.Message {
+		clientHellos.Inc()
+		return &m
+	})
+	client, err := webrtc.NewAPI(webrtc.WithSettingEngine(se)).NewPeerConnection(webrtc.Configuration{})
+	require.NoError(t, err)
+	defer client.Close()
+
+	var lock sync.Mutex
+	var pending []webrtc.ICECandidateInit
+	hasOffer := false
+	handler.OnICECandidateCalls(func(c *webrtc.ICECandidate, _ livekit.SignalTarget) error {
+		if c == nil {
+			return nil
+		}
+		lock.Lock()
+		defer lock.Unlock()
+		if !hasOffer {
+			pending = append(pending, c.ToJSON())
+			return nil
+		}
+		return client.AddICECandidate(c.ToJSON())
+	})
+	client.OnICECandidate(func(c *webrtc.ICECandidate) {
+		if c != nil {
+			sfu.AddICECandidate(c.ToJSON())
+		}
+	})
+	handler.OnOfferCalls(func(offer webrtc.SessionDescription, offerId uint32, _ map[string]string) error {
+		lock.Lock()
+		if err := client.SetRemoteDescription(offer); err != nil {
+			lock.Unlock()
+			return err
+		}
+		hasOffer = true
+		for _, c := range pending {
+			_ = client.AddICECandidate(c)
+		}
+		lock.Unlock()
+
+		answer, err := client.CreateAnswer(nil)
+		if err != nil {
+			return err
+		}
+		if err := client.SetLocalDescription(answer); err != nil {
+			return err
+		}
+		return sfu.HandleRemoteDescription(answer, offerId)
+	})
+	sfu.Negotiate(true)
+
+	require.Eventually(t, func() bool {
+		return sfu.IsEstablished() && client.ConnectionState() == webrtc.PeerConnectionStateConnected
+	}, 10*time.Second, 10*time.Millisecond, "transports did not connect")
+
+	// a HelloVerifyRequest from the SFU makes the peer send its ClientHello a second time, with the cookie
+	require.Equal(t, int32(1), clientHellos.Load())
+}
+
 func TestFirstOfferMissedDuringICERestart(t *testing.T) {
 	params := TransportParams{
 		Config:    &WebRTCConfig{},
@@ -270,8 +387,8 @@ func TestFirstOfferMissedDuringICERestart(t *testing.T) {
 
 	// ensure we are connected
 	require.Eventually(t, func() bool {
-		return transportA.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
-			transportB.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
+		return iceConnected(transportA.pc) &&
+			iceConnected(transportB.pc) &&
 			offerCount.Load() == 2
 	}, testutils.ConnectTimeout, 10*time.Millisecond, "transport did not connect")
 
@@ -347,8 +464,8 @@ func TestFirstAnswerMissedDuringICERestart(t *testing.T) {
 
 	// ensure we are connected
 	require.Eventually(t, func() bool {
-		return transportA.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
-			transportB.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected &&
+		return iceConnected(transportA.pc) &&
+			iceConnected(transportB.pc) &&
 			offerCount.Load() == 2
 	}, testutils.ConnectTimeout, 10*time.Millisecond, "transport did not connect")
 
@@ -518,6 +635,15 @@ func TestFilteringCandidates(t *testing.T) {
 	transport.Close()
 }
 
+// iceConnected reports whether a peer connection's ICE has established. The
+// controlling agent (the offerer) advances Connected -> Completed once its
+// connectivity checks finish, so asserting exactly Connected races the poll
+// against that transition; both states mean the transport is up.
+func iceConnected(pc *webrtc.PeerConnection) bool {
+	s := pc.ICEConnectionState()
+	return s == webrtc.ICEConnectionStateConnected || s == webrtc.ICEConnectionStateCompleted
+}
+
 func handleICEExchange(t *testing.T, a, b *PCTransport, ah, bh *transportfakes.FakeHandler) {
 	ah.OnICECandidateCalls(func(candidate *webrtc.ICECandidate, target livekit.SignalTarget) error {
 		if candidate == nil {
@@ -563,7 +689,7 @@ func connectTransports(t *testing.T, offerer, answerer *PCTransport, offererHand
 	}, 10*time.Second, time.Millisecond*10, fmt.Sprintf("offer count mismatch, expected: %d, actual: %d", expectedOfferCount, offerCount.Load()))
 
 	require.Eventually(t, func() bool {
-		return offerer.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected
+		return iceConnected(offerer.pc)
 	}, 10*time.Second, time.Millisecond*10, "offerer did not become connected")
 
 	require.Eventually(t, func() bool {
@@ -571,7 +697,7 @@ func connectTransports(t *testing.T, offerer, answerer *PCTransport, offererHand
 	}, 10*time.Second, time.Millisecond*10, fmt.Sprintf("answer count mismatch, expected: %d, actual: %d", expectedAnswerCount, answerCount.Load()))
 
 	require.Eventually(t, func() bool {
-		return answerer.pc.ICEConnectionState() == webrtc.ICEConnectionStateConnected
+		return iceConnected(answerer.pc)
 	}, 10*time.Second, time.Millisecond*10, "answerer did not become connected")
 
 	transportsConnected := untilTransportsConnected(offererHandler, answererHandler)

@@ -656,7 +656,9 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 	}
 
 	// create new room, get details first
-	ri, internal, created, err := r.roomAllocator.CreateRoom(ctx, createRoom, true)
+	// createRoom is reassigned to the request with the room preset applied, so that a room
+	// composite egress from the preset, which RoomInternal has no field for, is started
+	ri, internal, createRoom, created, err := r.roomAllocator.CreateRoom(ctx, createRoom, true)
 	if err != nil {
 		return nil, err
 	}
@@ -733,6 +735,11 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 	prometheus.RoomStarted()
 
 	if created && createRoom.GetEgress().GetRoom() != nil {
+		if r.egressLauncher == nil {
+			newRoom.Release()
+			return nil, ErrEgressNotConnected
+		}
+
 		// ensure room name matches
 		createRoom.Egress.Room.RoomName = createRoom.Name
 		_, err = r.egressLauncher.StartEgress(ctx, &rpc.StartEgressRequest{

@@ -421,6 +421,9 @@ func newPeerConnection(
 		// As Firefox does not support migration, ICE Lite can be disabled.
 		se.SetLite(false)
 	}
+	// ICE checks already prove the remote address, so the HelloVerifyRequest cookie only adds a round trip.
+	// pion applies this only when this side ends up as the DTLS server.
+	se.SetDTLSInsecureSkipHelloVerify(true)
 	se.SetDTLSRetransmissionInterval(dtlsRetransmissionInterval)
 	se.SetDTLSConnectContextMaker(func() (context.Context, func()) {
 		return context.WithTimeout(context.Background(), dtlsHandshakeTimeout)
@@ -566,7 +569,6 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		previousTrackDescription: make(map[string]*trackDescription),
 		canReuseTransceiver:      true,
 		connectionDetails:        types.NewICEConnectionDetails(params.Transport, params.Logger),
-		lastNegotiate:            time.Now(),
 	}
 	t.localOfferId.Store(uint32(rand.Intn(1<<8) + 1))
 
@@ -582,12 +584,25 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 				Config: params.CongestionControlConfig.SendSideBWE,
 				Logger: params.Logger,
 			})
-			switch pacer.PacerBehavior(params.CongestionControlConfig.SendSideBWEPacer) {
+			switch behavior := pacer.PacerBehavior(params.CongestionControlConfig.SendSideBWEPacer); behavior {
 			case pacer.PacerBehaviorPassThrough:
 				t.pacer = pacer.NewPassThrough(params.Logger, t.bwe)
 			case pacer.PacerBehaviorNoQueue:
 				t.pacer = pacer.NewNoQueue(params.Logger, t.bwe)
 			default:
+				// leaky-bucket lands here: it is a recognized value, but LeakyBucket paces
+				// to a bitrate set through Pacer.SetBitrate and nothing drives that from
+				// the bandwidth estimate, so it would pace at a fixed rate and ignore
+				// congestion. Unknown values are rejected by CongestionControlConfig.
+				// Validate, so they only reach here from callers building TransportParams
+				// directly.
+				if behavior != "" {
+					params.Logger.Warnw(
+						"send side BWE pacer unavailable, falling back", nil,
+						"pacerBehavior", behavior,
+						"fallback", pacer.PacerBehaviorNoQueue,
+					)
+				}
 				t.pacer = pacer.NewNoQueue(params.Logger, t.bwe)
 			}
 		} else {
