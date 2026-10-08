@@ -48,7 +48,8 @@ redis:
   # - livekit-redis-node-0.livekit-redis-headless:6379
   # - livekit-redis-node-1.livekit-redis-headless:6380
   # And it will use the password key above as cluster password
-  # And the db key will not be used due to cluster mode not support it.
+  # Note: Redis Cluster only supports database 0; a non-zero db is ignored,
+  # and the server warns about it at startup.
 
 # WebRTC configuration
 rtc:

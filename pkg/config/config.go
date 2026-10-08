@@ -246,6 +246,22 @@ func (c CongestionControlConfig) Validate() error {
 	}
 }
 
+// RedisConfigWarning reports Redis configuration that would otherwise be
+// silently ignored. Redis Cluster only serves database 0 and rejects SELECT,
+// so a non-zero db with cluster_addresses cannot take effect: the client
+// connects to database 0 regardless. Returns an empty string when the
+// configuration is consistent. Emit the result after the logger is
+// initialized; log output from inside NewConfig is discarded.
+func (conf *Config) RedisConfigWarning() string {
+	if len(conf.Redis.ClusterAddresses) > 0 && conf.Redis.DB != 0 {
+		return fmt.Sprintf(
+			"redis.db is set to %d together with redis.cluster_addresses, but Redis Cluster only supports database 0; the setting is ignored",
+			conf.Redis.DB,
+		)
+	}
+	return ""
+}
+
 type PlayoutDelayConfig struct {
 	Enabled bool `yaml:"enabled,omitempty"`
 	Min     int  `yaml:"min,omitempty"`

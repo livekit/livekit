@@ -28,6 +28,33 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 )
 
+func TestRedisConfigWarning(t *testing.T) {
+	cases := []struct {
+		name    string
+		cluster []string
+		db      int
+		warned  bool
+	}{
+		{name: "single node with db", db: 3},
+		{name: "cluster with db 0", cluster: []string{"127.0.0.1:7001"}},
+		{name: "cluster with non-zero db", cluster: []string{"127.0.0.1:7001"}, db: 3, warned: true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			conf := &Config{}
+			conf.Redis.ClusterAddresses = c.cluster
+			conf.Redis.DB = c.db
+
+			warning := conf.RedisConfigWarning()
+			if c.warned {
+				require.Contains(t, warning, "database 0")
+			} else {
+				require.Empty(t, warning)
+			}
+		})
+	}
+}
+
 func TestConfig_UnmarshalKeys(t *testing.T) {
 	conf, err := NewConfig("", true, nil, nil)
 	require.NoError(t, err)

@@ -206,6 +206,12 @@ func getConfig(c *cli.Command) (*config.Config, error) {
 	}
 	config.InitLoggerFromConfig(&conf.Logging)
 
+	// warn about silently ignored redis settings now that the logger is live;
+	// log output from inside NewConfig is discarded
+	if warning := conf.RedisConfigWarning(); warning != "" {
+		logger.Warnw("redis configuration would be ignored", nil, "reason", warning)
+	}
+
 	if conf.Development {
 		logger.Infow("starting in development mode")
 
