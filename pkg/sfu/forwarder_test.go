@@ -2331,6 +2331,7 @@ func TestForwarderSimulcastTemporalLayerAfterSwitch(t *testing.T) {
 
 	testCases := []struct {
 		name            string
+		previousCodec   *webrtc.RTPCodecCapability
 		codec           webrtc.RTPCodecCapability
 		target          buffer.VideoLayer
 		expectedCurrent buffer.VideoLayer
@@ -2366,6 +2367,21 @@ func TestForwarderSimulcastTemporalLayerAfterSwitch(t *testing.T) {
 			target:          buffer.VideoLayer{Spatial: 1, Temporal: 2},
 			expectedCurrent: buffer.VideoLayer{Spatial: 1, Temporal: 2},
 		},
+		{
+			// the VP8 temporal layer selector must not be carried over on codec change
+			name:            "VP8 to VP9 simulcast, three temporal layers",
+			previousCodec:   &testutils.TestVP8Codec,
+			codec:           webrtc.RTPCodecCapability{MimeType: mime.MimeTypeVP9.String(), ClockRate: 90000},
+			target:          buffer.VideoLayer{Spatial: 1, Temporal: 2},
+			expectedCurrent: buffer.VideoLayer{Spatial: 1, Temporal: 2},
+		},
+		{
+			name:            "VP8 to AV1 simulcast, three temporal layers",
+			previousCodec:   &testutils.TestVP8Codec,
+			codec:           webrtc.RTPCodecCapability{MimeType: mime.MimeTypeAV1.String(), ClockRate: 90000},
+			target:          buffer.VideoLayer{Spatial: 1, Temporal: 2},
+			expectedCurrent: buffer.VideoLayer{Spatial: 1, Temporal: 2},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -2378,6 +2394,9 @@ func TestForwarderSimulcastTemporalLayerAfterSwitch(t *testing.T) {
 				false, // enableStartAtDesiredQuality
 				nil,
 			)
+			if tc.previousCodec != nil {
+				f.DetermineCodec(*tc.previousCodec, nil, livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM)
+			}
 			f.DetermineCodec(tc.codec, nil, livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM)
 			f.SetMaxSpatialLayer(buffer.DefaultMaxLayerSpatial)
 			f.SetMaxTemporalLayer(buffer.DefaultMaxLayerTemporal)
