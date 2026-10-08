@@ -473,16 +473,16 @@ func postText(t *testing.T, ts *httptest.Server, path, body string) {
 }
 
 // the preamble carries the kind the picked worker declared the route with, and
-// with no resolver installed a text route is forwarded unchanged: no session,
+// with no resolver installed a text route is forwarded unchanged: no thread,
 // whole body.
 func TestFrontTextRouteWithoutResolverPassesThrough(t *testing.T) {
 	ts, seen := textFront(t, FrontParams{})
-	body := strings.Repeat("x", 3*DefaultSessionPeek)
+	body := strings.Repeat("x", 3*DefaultThreadPeek)
 
 	postText(t, ts, "/a2a", body)
 	got := <-seen
 	require.Equal(t, livekit.AgentHttp_AEK_TEXT, got.pre.GetKind())
-	require.Empty(t, got.pre.GetSessionId())
+	require.Empty(t, got.pre.GetThreadId())
 	require.Equal(t, body, got.body)
 
 	postText(t, ts, "/plain", body)
@@ -494,25 +494,25 @@ func TestFrontTextRouteWithoutResolverPassesThrough(t *testing.T) {
 // a resolver sees the request head and a bounded prefix of the body; its id
 // reaches the text-kind worker in the preamble, and the worker still gets the
 // whole body.
-func TestFrontSessionResolverPlacesTextRoute(t *testing.T) {
+func TestFrontThreadResolverPlacesTextRoute(t *testing.T) {
 	type call struct {
 		method, path, channel, agent, deployment string
 		peek                                     string
 	}
 	calls := make(chan call, 1)
 	ts, seen := textFront(t, FrontParams{
-		SessionPeek: 8,
-		ResolveSession: func(r *http.Request, agentName, deployment string, body []byte) (string, bool) {
+		ThreadPeek: 8,
+		ResolveThread: func(r *http.Request, agentName, deployment string, body []byte) (string, bool) {
 			calls <- call{r.Method, r.URL.Path, r.Header.Get("X-Channel"), agentName, deployment, string(body)}
 			return "AT_1", true
 		},
 	})
-	body := `{"jsonrpc":"2.0","params":` + strings.Repeat("x", 2*DefaultSessionPeek) + `}`
+	body := `{"jsonrpc":"2.0","params":` + strings.Repeat("x", 2*DefaultThreadPeek) + `}`
 
 	postText(t, ts, "/a2a", body)
 	got := <-seen
 	require.Equal(t, livekit.AgentHttp_AEK_TEXT, got.pre.GetKind())
-	require.Equal(t, "AT_1", got.pre.GetSessionId())
+	require.Equal(t, "AT_1", got.pre.GetThreadId())
 	require.Equal(t, body, got.body, "the peek must not take bytes from the worker")
 
 	c := <-calls
@@ -522,29 +522,29 @@ func TestFrontSessionResolverPlacesTextRoute(t *testing.T) {
 	postText(t, ts, "/plain", body)
 	got = <-seen
 	require.Equal(t, livekit.AgentHttp_AEK_HTTP, got.pre.GetKind())
-	require.Empty(t, got.pre.GetSessionId())
+	require.Empty(t, got.pre.GetThreadId())
 	require.Equal(t, body, got.body)
 	require.Empty(t, calls)
 }
 
-// a resolver that places nothing leaves the session to the worker.
-func TestFrontSessionResolverDeclines(t *testing.T) {
+// a resolver that places nothing leaves the thread to the worker.
+func TestFrontThreadResolverDeclines(t *testing.T) {
 	ts, seen := textFront(t, FrontParams{
-		ResolveSession: func(*http.Request, string, string, []byte) (string, bool) { return "", false },
+		ResolveThread: func(*http.Request, string, string, []byte) (string, bool) { return "", false },
 	})
 	postText(t, ts, "/a2a", "hello")
 	got := <-seen
 	require.Equal(t, livekit.AgentHttp_AEK_TEXT, got.pre.GetKind())
-	require.Empty(t, got.pre.GetSessionId())
+	require.Empty(t, got.pre.GetThreadId())
 	require.Equal(t, "hello", got.body)
 }
 
 // a body shorter than the peek bound is handed over whole, with nothing lost to
 // the read-ahead; an absent body peeks nothing.
-func TestFrontSessionPeekShortBody(t *testing.T) {
+func TestFrontThreadPeekShortBody(t *testing.T) {
 	peeks := make(chan string, 1)
 	ts, seen := textFront(t, FrontParams{
-		ResolveSession: func(_ *http.Request, _, _ string, body []byte) (string, bool) {
+		ResolveThread: func(_ *http.Request, _, _ string, body []byte) (string, bool) {
 			peeks <- string(body)
 			return "AT_2", true
 		},
@@ -553,13 +553,13 @@ func TestFrontSessionPeekShortBody(t *testing.T) {
 	postText(t, ts, "/a2a", "short")
 	require.Equal(t, "short", <-peeks)
 	got := <-seen
-	require.Equal(t, "AT_2", got.pre.GetSessionId())
+	require.Equal(t, "AT_2", got.pre.GetThreadId())
 	require.Equal(t, "short", got.body)
 
 	postText(t, ts, "/a2a", "")
 	require.Empty(t, <-peeks)
 	got = <-seen
-	require.Equal(t, "AT_2", got.pre.GetSessionId())
+	require.Equal(t, "AT_2", got.pre.GetThreadId())
 	require.Empty(t, got.body)
 }
 
@@ -568,7 +568,7 @@ const testAPIKey, testAPISecret = "APIfront", "front-secret-front-secret-front-s
 // verifiedAccess resolves access the way the server's middleware and resolver
 // do together: a LiveKit token from the bearer, or from access_token on the
 // query when there is no bearer, is verified and its claims decide the level
-// and the session grant. No token is anonymous.
+// and the thread grant. No token is anonymous.
 func verifiedAccess(agentName, deployment string) AccessResolver {
 	return func(r *http.Request, _, _ string) (Access, bool) {
 		raw := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -590,7 +590,7 @@ func verifiedAccess(agentName, deployment string) AccessResolver {
 		if claims.AgentEndpoint.Allows(agentName, deployment) {
 			level = AccessGranted
 		}
-		return Access{Level: level, SessionGrant: claims.AgentSession}, true
+		return Access{Level: level, ThreadGrant: claims.AgentThread}, true
 	}
 }
 
@@ -603,23 +603,23 @@ func withScope(resolve AccessResolver, scope *Scope) AccessResolver {
 	}
 }
 
-func mintToken(t *testing.T, grant *auth.AgentSessionGrant) string {
+func mintToken(t *testing.T, grant *auth.AgentThreadGrant) string {
 	t.Helper()
 	tok, err := auth.NewAccessToken(testAPIKey, testAPISecret).
 		SetIdentity("caller").
 		SetAgentEndpointGrant(&auth.AgentEndpointGrant{Call: true}).
-		SetAgentSessionGrant(grant).
+		SetAgentThreadGrant(grant).
 		ToJWT()
 	require.NoError(t, err)
 	return tok
 }
 
-// the verified token's agentSession claim reaches the worker in the preamble, on
+// the verified token's agentThread claim reaches the worker in the preamble, on
 // a text route and a plain one alike, while the token itself does not.
-func TestFrontSessionGrantTravelsInPreamble(t *testing.T) {
+func TestFrontThreadGrantTravelsInPreamble(t *testing.T) {
 	ts, seen := textFront(t, FrontParams{ResolveAccess: verifiedAccess("a", "d")})
-	grant := &auth.AgentSessionGrant{
-		AgentName: "a", Sub: "demo-user", SessionIDs: []string{"AT_1", "AT_2"},
+	grant := &auth.AgentThreadGrant{
+		AgentName: "a", Sub: "demo-user", ThreadIDs: []string{"AT_1", "AT_2"},
 		List: true, Create: true, Send: true, Read: true,
 	}
 	tok := mintToken(t, grant)
@@ -636,23 +636,23 @@ func TestFrontSessionGrantTravelsInPreamble(t *testing.T) {
 		got := <-seen
 		require.True(t, got.pre.GetAuthorized())
 		require.Empty(t, got.header.Get("Authorization"), "the token must never reach the worker")
-		require.Equal(t, "a", got.pre.GetSessionGrant().GetAgentName())
-		require.Equal(t, "demo-user", got.pre.GetSessionGrant().GetSub())
-		require.Equal(t, []string{"AT_1", "AT_2"}, got.pre.GetSessionGrant().GetSessionIds())
-		require.True(t, got.pre.GetSessionGrant().GetList())
-		require.True(t, got.pre.GetSessionGrant().GetCreate())
-		require.True(t, got.pre.GetSessionGrant().GetSend())
-		require.True(t, got.pre.GetSessionGrant().GetRead())
-		require.False(t, got.pre.GetSessionGrant().GetDelete())
+		require.Equal(t, "a", got.pre.GetThreadGrant().GetAgentName())
+		require.Equal(t, "demo-user", got.pre.GetThreadGrant().GetSub())
+		require.Equal(t, []string{"AT_1", "AT_2"}, got.pre.GetThreadGrant().GetThreadIds())
+		require.True(t, got.pre.GetThreadGrant().GetList())
+		require.True(t, got.pre.GetThreadGrant().GetCreate())
+		require.True(t, got.pre.GetThreadGrant().GetSend())
+		require.True(t, got.pre.GetThreadGrant().GetRead())
+		require.False(t, got.pre.GetThreadGrant().GetDelete())
 	}
 }
 
 // a browser WebSocket cannot set headers, so the token may ride the query as
 // access_token: it is verified the same way, the grant travels in the preamble,
 // and the query the worker sees no longer carries it.
-func TestFrontSessionGrantFromQueryToken(t *testing.T) {
+func TestFrontThreadGrantFromQueryToken(t *testing.T) {
 	ts, seen := textFront(t, FrontParams{ResolveAccess: verifiedAccess("a", "d")})
-	tok := mintToken(t, &auth.AgentSessionGrant{AgentName: "a", Sub: "demo-user", Send: true})
+	tok := mintToken(t, &auth.AgentThreadGrant{AgentName: "a", Sub: "demo-user", Send: true})
 
 	req, err := http.NewRequest(http.MethodPost, ts.URL+PathPrefix+"a/d/a2a?access_token="+tok+"&keep=1", strings.NewReader("hello"))
 	require.NoError(t, err)
@@ -662,23 +662,23 @@ func TestFrontSessionGrantFromQueryToken(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
 	got := <-seen
-	require.Equal(t, "demo-user", got.pre.GetSessionGrant().GetSub())
-	require.Equal(t, "a", got.pre.GetSessionGrant().GetAgentName())
-	require.True(t, got.pre.GetSessionGrant().GetSend())
+	require.Equal(t, "demo-user", got.pre.GetThreadGrant().GetSub())
+	require.Equal(t, "a", got.pre.GetThreadGrant().GetAgentName())
+	require.True(t, got.pre.GetThreadGrant().GetSend())
 	require.Empty(t, got.header.Get("Authorization"))
 	require.Equal(t, "/a2a?keep=1", got.target, "the query token is stripped like the bearer")
 }
 
-// the grant is the node's to assert: a client-set X-LiveKit-Session-Grant is
-// dropped, and a token with no agentSession claim leaves the field unset.
-func TestFrontDropsForgedSessionGrantHeader(t *testing.T) {
+// the grant is the node's to assert: a client-set X-LiveKit-Thread-Grant is
+// dropped, and a token with no agentThread claim leaves the field unset.
+func TestFrontDropsForgedThreadGrantHeader(t *testing.T) {
 	ts, seen := textFront(t, FrontParams{ResolveAccess: verifiedAccess("a", "d")})
 	tok := mintToken(t, nil)
 
 	req, err := http.NewRequest(http.MethodPost, ts.URL+PathPrefix+"a/d/a2a", strings.NewReader("hello"))
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+tok)
-	req.Header.Set(sessionGrantHeader, `{"agentName":"a","sub":"someone-else","send":true}`)
+	req.Header.Set(threadGrantHeader, `{"agentName":"a","sub":"someone-else","send":true}`)
 	req.Header.Set("X-Keep", "1")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
@@ -687,8 +687,31 @@ func TestFrontDropsForgedSessionGrantHeader(t *testing.T) {
 
 	got := <-seen
 	require.True(t, got.pre.GetAuthorized())
-	require.Nil(t, got.pre.GetSessionGrant(), "a project token with no agentSession claim grants no session")
-	require.Empty(t, got.header.Values(sessionGrantHeader), "a client cannot forge the grant")
+	require.Nil(t, got.pre.GetThreadGrant(), "a project token with no agentThread claim grants no thread")
+	require.Empty(t, got.header.Values(threadGrantHeader), "a client cannot forge the grant")
 	require.Equal(t, "1", got.header.Get("X-Keep"), "other headers still pass")
 	require.Empty(t, got.header.Get("Authorization"))
+}
+
+// a grant that lists endpoints opens only those: the first path segment under
+// the deployment is the endpoint, and one outside the list is forbidden before
+// any worker sees the request. A grant with no endpoints opens every one.
+func TestFrontThreadGrantEndpointsScopeTheRoute(t *testing.T) {
+	ts, seen := textFront(t, FrontParams{ResolveAccess: verifiedAccess("a", "d")})
+	scoped := mintToken(t, &auth.AgentThreadGrant{AgentName: "a", Sub: "demo-user", Send: true, Endpoints: []string{"front-desk"}})
+	open := mintToken(t, &auth.AgentThreadGrant{AgentName: "a", Sub: "demo-user", Send: true})
+
+	post := func(tok string) int {
+		req, err := http.NewRequest(http.MethodPost, ts.URL+PathPrefix+"a/d/a2a", strings.NewReader("hello"))
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	require.Equal(t, http.StatusForbidden, post(scoped), "a2a is not among the grant's endpoints")
+	require.Equal(t, http.StatusNoContent, post(open))
+	got := <-seen
+	require.Empty(t, got.pre.GetThreadGrant().GetEndpoints())
 }

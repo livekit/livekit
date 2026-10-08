@@ -61,8 +61,8 @@ const (
 	// worker cannot hold a client open by trickling them forever.
 	maxInformationalHeads = 8
 
-	// DefaultSessionPeek bounds the request body prefix a SessionResolver sees.
-	DefaultSessionPeek = 4 << 10
+	// DefaultThreadPeek bounds the request body prefix a ThreadResolver sees.
+	DefaultThreadPeek = 4 << 10
 
 	maxResponseHeadSize = 1 << 20
 	responseBufSize     = 8 << 10
@@ -119,10 +119,11 @@ type Access struct {
 	// curried on the deployment it resolved. nil means local misses are final.
 	Fallback Fallback
 	Level    AccessLevel
-	// SessionGrant is the verified token's agentSession claim, nil when the
+	// ThreadGrant is the verified token's agentThread claim, nil when the
 	// token carried none or there was no token. It reaches the worker in the
-	// preamble; the token itself never does.
-	SessionGrant *auth.AgentSessionGrant
+	// preamble; the token itself never does. Its endpoints, when it lists any,
+	// are checked here: a route outside them is forbidden.
+	ThreadGrant *auth.AgentThreadGrant
 }
 
 // AccessResolver maps an inbound request, plus the agent and deployment its URL
@@ -141,15 +142,15 @@ type Front struct {
 // false leaves them to the URL.
 type Identity func(r *http.Request) (agentName, deployment string, ok bool)
 
-// SessionResolver places a request on an AEK_TEXT route in an agent session.
-// It runs once per request, after access is resolved and before a worker is
-// picked, and only when a matched declaration is of the text kind: that kind is
-// the worker's consent to the front reading its body. body is the first bytes
-// of the request body, at most SessionPeek; the worker receives the whole body
-// regardless. Reporting false leaves the session to the worker, which resolves
-// it from the body itself. Cloud installs one backed by the session registry;
+// ThreadResolver places a request on an AEK_TEXT route in a thread. It runs
+// once per request, after access is resolved and before a worker is picked,
+// and only when a matched declaration is of the text kind: that kind is the
+// worker's consent to the front reading its body. body is the first bytes of
+// the request body, at most ThreadPeek; the worker receives the whole body
+// regardless. Reporting false leaves the thread to the worker, which resolves
+// it from the body itself. Cloud installs one backed by the threads service;
 // OSS leaves it nil, and a text route is then forwarded unchanged.
-type SessionResolver func(r *http.Request, agentName, deployment string, body []byte) (sessionID string, ok bool)
+type ThreadResolver func(r *http.Request, agentName, deployment string, body []byte) (threadID string, ok bool)
 
 // FrontParams configures a Front. Fields are read on every request once the
 // Front is serving, so none may change after construction.
@@ -158,12 +159,12 @@ type FrontParams struct {
 	Logger        logger.Logger
 	Identity      Identity
 
-	// ResolveSession places text-kind requests in an agent session. nil
-	// forwards them unchanged.
-	ResolveSession SessionResolver
-	// SessionPeek bounds the body prefix ResolveSession sees. 0 means
-	// DefaultSessionPeek.
-	SessionPeek int
+	// ResolveThread places text-kind requests in a thread. nil forwards them
+	// unchanged.
+	ResolveThread ThreadResolver
+	// ThreadPeek bounds the body prefix ResolveThread sees. 0 means
+	// DefaultThreadPeek.
+	ThreadPeek int
 
 	// MaxTunnelsPerWorker caps one worker's concurrent WebSocket tunnels. 0
 	// means half its session's MaxStreams.
@@ -278,9 +279,16 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var sessionID string
-	if f.params.ResolveSession != nil && declaresText(matched) {
-		peek, err := peekBody(r, f.sessionPeek())
+	// a grant that lists endpoints covers this one or none: the endpoint is the
+	// first segment of the path under the deployment
+	if access.ThreadGrant != nil && !access.ThreadGrant.AllowsEndpoint(endpointOf(path)) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	var threadID string
+	if f.params.ResolveThread != nil && declaresText(matched) {
+		peek, err := peekBody(r, f.threadPeek())
 		if err != nil {
 			// the client's body failed before any worker saw the request, so
 			// there is nothing to place and nothing to retry
@@ -288,8 +296,8 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
-		if id, ok := f.params.ResolveSession(r, agentName, deployment, peek); ok {
-			sessionID = id
+		if id, ok := f.params.ResolveThread(r, agentName, deployment, peek); ok {
+			threadID = id
 		}
 	}
 
@@ -300,8 +308,8 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		target:    requestTarget(escPath, r.URL.RawQuery),
 		requestID: reqID,
 		granted:   granted,
-		grant:     access.SessionGrant.ToProto(),
-		sessionID: sessionID,
+		grant:     access.ThreadGrant.ToProto(),
+		threadID:  threadID,
 		webSocket: isWebSocketUpgrade(r),
 		pools:     f.pools,
 	}
@@ -363,15 +371,22 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.writeUnavailable(w, "no worker could serve the request")
 }
 
-func (f *Front) sessionPeek() int {
-	if f.params.SessionPeek > 0 {
-		return f.params.SessionPeek
+func (f *Front) threadPeek() int {
+	if f.params.ThreadPeek > 0 {
+		return f.params.ThreadPeek
 	}
-	return DefaultSessionPeek
+	return DefaultThreadPeek
+}
+
+// endpointOf is the endpoint a decoded path addresses, its first segment: the
+// name every door of the agent is reached under, {agent_name}/{endpoint}.
+func endpointOf(path string) string {
+	endpoint, _, _ := strings.Cut(strings.TrimPrefix(path, "/"), "/")
+	return endpoint
 }
 
 // declaresText reports whether any declaration the request matched is of the
-// text kind. Declarers of one route may disagree, so the session is resolved
+// text kind. Declarers of one route may disagree, so the thread is resolved
 // once and handed only to the workers that asked for it (setRoute).
 func declaresText(matched []routeWorker) bool {
 	for _, w := range matched {

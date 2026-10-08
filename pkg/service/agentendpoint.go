@@ -17,6 +17,9 @@ package service
 import (
 	"net/http"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
 	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 )
 
@@ -38,9 +41,9 @@ func NewAgentEndpointService(h *AgentHandler, scopes *EndpointScopes) *AgentEndp
 						level = endpoint.AccessGranted
 					}
 					return endpoint.Access{
-						Scope:        scopes.Scope(GetAPIKey(r.Context()), agentName, deployment),
-						Level:        level,
-						SessionGrant: claims.AgentSession,
+						Scope:       scopes.Scope(GetAPIKey(r.Context()), agentName, deployment),
+						Level:       level,
+						ThreadGrant: claims.AgentThread,
 					}, true
 				}
 				// unauthenticated: one configured key makes the api key
@@ -61,6 +64,23 @@ func NewAgentEndpointService(h *AgentHandler, scopes *EndpointScopes) *AgentEndp
 			Logger:              h.logger,
 			MaxTunnelsPerWorker: int(h.endpointsConfig.MaxTunnels),
 			TunnelDrainTimeout:  h.endpointsConfig.TunnelDrainTimeout,
+			ResolveThread:       threadResolver(h),
 		}),
 	}
+}
+
+// threadResolver is the front's thread lookup when the server is configured
+// with an AgentThreads address; nil otherwise, and a text route is forwarded
+// unchanged.
+func threadResolver(h *AgentHandler) endpoint.ThreadResolver {
+	address := h.endpointsConfig.ThreadsAddress
+	if address == "" {
+		return nil
+	}
+	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		h.logger.Warnw("agent threads address is not dialable; threads are left to the workers", err, "address", address)
+		return nil
+	}
+	return endpoint.NewThreadResolver(conn, h.endpointsConfig.ThreadLookupTimeout, h.logger)
 }

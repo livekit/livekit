@@ -34,10 +34,10 @@ import (
 	"github.com/livekit/protocol/utils/guid"
 )
 
-// sessionGrantHeader is the header a worker reached without a node accepts the
+// threadGrantHeader is the header a worker reached without a node accepts the
 // grant on. Through a node the grant travels in the preamble, so this header is
 // reserved to the node and stripped from every forwarded request.
-const sessionGrantHeader = "X-LiveKit-Session-Grant"
+const threadGrantHeader = "X-LiveKit-Thread-Grant"
 
 // attempt is the per-request state shared across worker attempts.
 type attempt struct {
@@ -48,15 +48,15 @@ type attempt struct {
 	target    string
 	requestID string
 	granted   bool
-	// grant is the caller's verified agent session grant, nil when the token
+	// grant is the caller's verified agent thread grant, nil when the token
 	// carried none. Every kind of route is told: the worker enforces it.
-	grant *livekit.AgentHttp_AgentSessionGrant
-	// sessionID is the agent session the front placed the request in; empty
-	// when it placed none. Only a text-kind declaration is told.
-	sessionID string
-	body      io.Reader
-	pools     *bridgePools
-	preamble  *livekit.AgentHttp_StreamPreamble
+	grant *livekit.AgentHttp_AgentThreadGrant
+	// threadID is the thread the front placed the request in; empty when it
+	// placed none. Only a text-kind declaration is told.
+	threadID string
+	body     io.Reader
+	pools    *bridgePools
+	preamble *livekit.AgentHttp_StreamPreamble
 	// the serialized canonical request head, built once and replayed verbatim
 	head []byte
 	// client body bytes consumed when this attempt began
@@ -107,11 +107,11 @@ func (a *attempt) newPreamble() *livekit.AgentHttp_StreamPreamble {
 	clientAddr, _, _ := net.SplitHostPort(a.req.RemoteAddr)
 
 	p := &livekit.AgentHttp_StreamPreamble{
-		RequestId:    a.requestID,
-		Authorized:   a.granted,
-		SessionGrant: a.grant,
-		ClientAddr:   clientAddr,
-		Scheme:       scheme,
+		RequestId:   a.requestID,
+		Authorized:  a.granted,
+		ThreadGrant: a.grant,
+		ClientAddr:  clientAddr,
+		Scheme:      scheme,
 	}
 	return p
 }
@@ -123,9 +123,9 @@ func (a *attempt) newPreamble() *livekit.AgentHttp_StreamPreamble {
 func (a *attempt) setRoute(w routeWorker) {
 	a.preamble.Route = w.raw
 	a.preamble.Kind = w.kind
-	a.preamble.SessionId = ""
+	a.preamble.ThreadId = ""
 	if w.kind == livekit.AgentHttp_AEK_TEXT {
-		a.preamble.SessionId = a.sessionID
+		a.preamble.ThreadId = a.threadID
 	}
 }
 
@@ -141,15 +141,15 @@ func (a *attempt) requestHeader() http.Header {
 		h.Set("Connection", "Upgrade")
 		h.Set("Upgrade", "websocket")
 	}
-	// identity travels as preamble.authorized and preamble.session_grant; the
+	// identity travels as preamble.authorized and preamble.thread_grant; the
 	// token must never reach the worker
 	if isLiveKitBearer(h.Get("Authorization")) {
 		h.Del("Authorization")
 	}
-	// the session grant is the node's to assert, from the verified token. A
+	// the thread grant is the node's to assert, from the verified token. A
 	// worker reached directly, with no node in front, may still read this
 	// header, so a client must not be able to plant one here.
-	h.Del(sessionGrantHeader)
+	h.Del(threadGrantHeader)
 	// the signalling namespace is the node's to write: a client able to set
 	// x-lk-completion could tell the worker a body it cut short was whole
 	wire.StripReservedHeaders(h)

@@ -21,8 +21,8 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/mediatransportutil v0.0.0-20260821083140-f234b534b095
-	github.com/livekit/protocol v1.52.2-0.20261006063934-0761f135e913
-	github.com/livekit/psrpc v0.8.1
+	github.com/livekit/protocol v1.52.2-0.20261008023442-60589e83886b
+	github.com/livekit/psrpc v0.8.2
 	github.com/mackerelio/go-osstat v0.2.8
 	github.com/magefile/mage v1.17.2
 	github.com/mitchellh/go-homedir v1.1.0
@@ -156,7 +156,7 @@ require (
 	golang.org/x/tools v0.51.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261005182115-fad411399dd8 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261005182115-fad411399dd8 // indirect
-	google.golang.org/grpc v1.84.0 // indirect
+	google.golang.org/grpc v1.84.0
 )
 
 tool (
