@@ -256,6 +256,52 @@ func TestTrackPublishing(t *testing.T) {
 		require.Equal(t, p.pendingTracks["cid"].trackInfos[0].Sid, p.pendingTracks["cid"].trackInfos[1].Sid)
 	})
 
+	t.Run("should release pending track that never received media on publication error", func(t *testing.T) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{protocolVersion: 7})
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+
+		var sids []livekit.TrackID
+		for i := 0; i < cMaxPendingTracks; i++ {
+			ti := p.addPendingTrack(&livekit.AddTrackRequest{
+				Cid:  fmt.Sprintf("cid%d", i),
+				Name: fmt.Sprintf("track%d", i),
+				Type: livekit.TrackType_VIDEO,
+			})
+			require.NotNil(t, ti)
+			sids = append(sids, livekit.TrackID(ti.Sid))
+		}
+
+		// limit reached
+		require.Nil(t, p.addPendingTrack(&livekit.AddTrackRequest{
+			Cid:  "over",
+			Name: "over",
+			Type: livekit.TrackType_VIDEO,
+		}))
+		require.Len(t, p.pendingTracks, cMaxPendingTracks)
+
+		numMessages := sink.WriteMessageCallCount()
+		p.onPublicationError(sids[0])
+		require.Len(t, p.pendingTracks, cMaxPendingTracks-1)
+		require.Nil(t, p.GetPendingTrack(sids[0]))
+
+		require.Equal(t, numMessages+1, sink.WriteMessageCallCount())
+		res := sink.WriteMessageArgsForCall(numMessages).(*livekit.SignalResponse)
+		require.IsType(t, &livekit.SignalResponse_TrackUnpublished{}, res.Message)
+		require.Equal(t, string(sids[0]), res.Message.(*livekit.SignalResponse_TrackUnpublished).TrackUnpublished.TrackSid)
+
+		// unknown / already released track is a no-op
+		p.onPublicationError(sids[0])
+		require.Equal(t, numMessages+1, sink.WriteMessageCallCount())
+
+		// freed slot can be reused
+		require.NotNil(t, p.addPendingTrack(&livekit.AddTrackRequest{
+			Cid:  "over",
+			Name: "over",
+			Type: livekit.TrackType_VIDEO,
+		}))
+		require.Len(t, p.pendingTracks, cMaxPendingTracks)
+	})
+
 	t.Run("should not allow adding disallowed sources", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		p.SetPermission(&livekit.ParticipantPermission{

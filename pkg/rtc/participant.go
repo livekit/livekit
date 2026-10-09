@@ -3975,6 +3975,53 @@ func (p *ParticipantImpl) onPublicationError(trackID livekit.TrackID) {
 	if p.params.ReconnectOnPublicationError {
 		p.pubLogger.Infow("issuing full reconnect on publication error", "trackID", trackID)
 		p.IssueFullReconnect(types.ParticipantCloseReasonPublicationError)
+		return
+	}
+
+	p.releasePendingTrack(trackID)
+}
+
+// releasePendingTrack drops a pending track whose media never arrived so that it
+// stops counting against cMaxPendingTracks. Clients can abandon a publish (e.g.
+// remove the transceiver) without any signal the server can act on, so without
+// this the slot would be held until the participant leaves.
+func (p *ParticipantImpl) releasePendingTrack(trackID livekit.TrackID) {
+	p.pendingTracksLock.Lock()
+	var released *livekit.TrackInfo
+	for cid, pti := range p.pendingTracks {
+		remaining := pti.trackInfos[:0]
+		for _, ti := range pti.trackInfos {
+			if livekit.TrackID(ti.Sid) == trackID {
+				released = ti
+				continue
+			}
+			remaining = append(remaining, ti)
+		}
+		pti.trackInfos = remaining
+		if len(pti.trackInfos) == 0 {
+			delete(p.pendingTracks, cid)
+		}
+	}
+	numPendingTracks := len(p.pendingTracks)
+	p.pendingTracksLock.Unlock()
+
+	if released == nil {
+		return
+	}
+
+	p.pubLogger.Infow(
+		"releasing pending track that never received media",
+		"trackID", trackID,
+		"trackInfo", logger.Proto(released),
+		"numPendingTracks", numPendingTracks,
+	)
+	if p.supervisor != nil {
+		p.supervisor.RemovePublication(trackID)
+	}
+	if p.ProtocolVersion().SupportsUnpublish() {
+		p.sendTrackUnpublished(trackID)
+	} else {
+		p.sendTrackMuted(trackID, true)
 	}
 }
 
