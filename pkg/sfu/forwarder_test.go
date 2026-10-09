@@ -2314,3 +2314,145 @@ func TestPacerScratchFitsInlineDependencyDescriptor(t *testing.T) {
 	require.Len(t, p.HoldExtension(make([]byte, dd.MaxInlineExtensionSize)), dd.MaxInlineExtensionSize)
 	require.Nil(t, p.HoldExtension(make([]byte, dd.MaxInlineExtensionSize+1)))
 }
+
+// TestForwarderSimulcastTemporalLayerAfterSwitch checks that, after a spatial layer switch on a
+// key frame (which is always on temporal layer 0), the forwarder reaches its target layer so that
+// GetNextHigherTransition (and hence stream allocator probing) is not blocked forever.
+//
+// Codecs without a temporal layer selector in simulcast mode (VP9, AV1) forward every temporal
+// layer of the selected spatial layer, so the current temporal layer has to follow the target.
+// VP8 has a temporal layer selector and must keep stepping up through it.
+func TestForwarderSimulcastTemporalLayerAfterSwitch(t *testing.T) {
+	bitrates := Bitrates{
+		{100, 150, 200, 0},
+		{300, 450, 600, 0},
+		{900, 1350, 1800, 0},
+	}
+
+	testCases := []struct {
+		name            string
+		previousCodec   *webrtc.RTPCodecCapability
+		codec           webrtc.RTPCodecCapability
+		target          buffer.VideoLayer
+		expectedCurrent buffer.VideoLayer
+	}{
+		{
+			name:            "VP9 simulcast, three temporal layers",
+			codec:           webrtc.RTPCodecCapability{MimeType: mime.MimeTypeVP9.String(), ClockRate: 90000},
+			target:          buffer.VideoLayer{Spatial: 1, Temporal: 2},
+			expectedCurrent: buffer.VideoLayer{Spatial: 1, Temporal: 2},
+		},
+		{
+			name:            "AV1 simulcast, three temporal layers",
+			codec:           webrtc.RTPCodecCapability{MimeType: mime.MimeTypeAV1.String(), ClockRate: 90000},
+			target:          buffer.VideoLayer{Spatial: 1, Temporal: 2},
+			expectedCurrent: buffer.VideoLayer{Spatial: 1, Temporal: 2},
+		},
+		{
+			name:            "VP9 simulcast, one temporal layer",
+			codec:           webrtc.RTPCodecCapability{MimeType: mime.MimeTypeVP9.String(), ClockRate: 90000},
+			target:          buffer.VideoLayer{Spatial: 1, Temporal: 0},
+			expectedCurrent: buffer.VideoLayer{Spatial: 1, Temporal: 0},
+		},
+		{
+			name:            "H.264 simulcast",
+			codec:           webrtc.RTPCodecCapability{MimeType: mime.MimeTypeH264.String(), ClockRate: 90000},
+			target:          buffer.VideoLayer{Spatial: 1, Temporal: 0},
+			expectedCurrent: buffer.VideoLayer{Spatial: 1, Temporal: 0},
+		},
+		{
+			// the VP8 temporal layer selector moves to the target on a key frame
+			name:            "VP8 simulcast, three temporal layers",
+			codec:           testutils.TestVP8Codec,
+			target:          buffer.VideoLayer{Spatial: 1, Temporal: 2},
+			expectedCurrent: buffer.VideoLayer{Spatial: 1, Temporal: 2},
+		},
+		{
+			// the VP8 temporal layer selector must not be carried over on codec change
+			name:            "VP8 to VP9 simulcast, three temporal layers",
+			previousCodec:   &testutils.TestVP8Codec,
+			codec:           webrtc.RTPCodecCapability{MimeType: mime.MimeTypeVP9.String(), ClockRate: 90000},
+			target:          buffer.VideoLayer{Spatial: 1, Temporal: 2},
+			expectedCurrent: buffer.VideoLayer{Spatial: 1, Temporal: 2},
+		},
+		{
+			name:            "VP8 to AV1 simulcast, three temporal layers",
+			previousCodec:   &testutils.TestVP8Codec,
+			codec:           webrtc.RTPCodecCapability{MimeType: mime.MimeTypeAV1.String(), ClockRate: 90000},
+			target:          buffer.VideoLayer{Spatial: 1, Temporal: 2},
+			expectedCurrent: buffer.VideoLayer{Spatial: 1, Temporal: 2},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := NewForwarder(
+				webrtc.RTPCodecTypeVideo,
+				logger.GetLogger(),
+				true,  // skipReferenceTS
+				true,  // disableOpportunisticAllocation
+				false, // enableStartAtDesiredQuality
+				nil,
+			)
+			if tc.previousCodec != nil {
+				f.DetermineCodec(*tc.previousCodec, nil, livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM)
+			}
+			f.DetermineCodec(tc.codec, nil, livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM)
+			f.SetMaxSpatialLayer(buffer.DefaultMaxLayerSpatial)
+			f.SetMaxTemporalLayer(buffer.DefaultMaxLayerTemporal)
+			f.SetMaxPublishedLayer(buffer.DefaultMaxLayerSpatial)
+			f.SetMaxTemporalLayerSeen(buffer.DefaultMaxLayerTemporal)
+
+			// down-switched for bandwidth: was on the top layer, target is now lower
+			f.lastAllocation.IsDeficient = true
+			f.vls.SetCurrent(buffer.VideoLayer{Spatial: 2, Temporal: tc.target.Temporal})
+			f.vls.SetTarget(tc.target)
+
+			// target pending (spatial switch not done yet): no higher transition
+			_, available := f.GetNextHigherTransition(bitrates, false)
+			require.False(t, available)
+
+			// key frame of the target spatial layer, temporal layer 0
+			params := &testutils.TestExtPacketParams{
+				SequenceNumber: 23333,
+				Timestamp:      0xabcdef,
+				SSRC:           0x12345678,
+				PayloadSize:    20,
+				IsKeyFrame:     true,
+				VideoLayer:     buffer.VideoLayer{Spatial: tc.target.Spatial, Temporal: 0},
+			}
+			var extPkt *buffer.ExtPacket
+			var err error
+			if tc.codec.MimeType == testutils.TestVP8Codec.MimeType {
+				extPkt, err = testutils.GetTestExtPacketVP8(params, &codec.VP8{
+					FirstByte:  25,
+					I:          true,
+					M:          true,
+					PictureID:  13467,
+					L:          true,
+					TL0PICIDX:  233,
+					T:          true,
+					TID:        0,
+					Y:          true,
+					K:          true,
+					KEYIDX:     23,
+					HeaderSize: 6,
+					IsKeyFrame: true,
+				})
+			} else {
+				extPkt, err = testutils.GetTestExtPacket(params)
+			}
+			require.NoError(t, err)
+
+			tp, err := f.GetTranslationParams(extPkt, tc.target.Spatial)
+			require.NoError(t, err)
+			require.False(t, tp.shouldDrop)
+			require.True(t, tp.isSwitching)
+
+			require.Equal(t, tc.expectedCurrent, f.vls.GetCurrent())
+			// target reached: the next higher transition (and hence probing) is available
+			_, available = f.GetNextHigherTransition(bitrates, false)
+			require.True(t, available)
+		})
+	}
+}

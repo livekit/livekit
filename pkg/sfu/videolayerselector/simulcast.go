@@ -154,6 +154,16 @@ func (s *Simulcast) Select(extPkt *buffer.ExtPacket, layer int32) (result VideoL
 		populateSwitches(true, "adjusting overshoot")
 	}
 
+	// Without a temporal layer selector (e.g. VP9/AV1/H.265 simulcast), nothing filters temporal
+	// layers: all temporal layers of the selected spatial layer, up to the highest seen, are
+	// forwarded. So the current temporal layer is reported as the target (bandwidth accounting
+	// stays approximate when the target is below the highest temporal layer seen). Otherwise it
+	// would stay at the temporal layer of the switch key frame (always 0) and a target that can
+	// never be reached would block any further allocation (and stream allocator probing).
+	if s.tls == nil && s.currentLayer.IsValid() && s.targetLayer.IsValid() {
+		s.currentLayer.Temporal = s.targetLayer.Temporal
+	}
+
 	result.RTPMarker = extPkt.Packet.Marker
 	result.IsSelected = layer == s.currentLayer.Spatial
 	result.IsRelevant = false

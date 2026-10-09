@@ -394,6 +394,11 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		return false
 	}
 
+	// only VP8 uses a temporal layer selector (set below), do not carry one over on codec change
+	if f.vls != nil {
+		f.vls.SetTemporalLayerSelector(nil)
+	}
+
 	switch f.mime {
 	case mime.MimeTypeVP8:
 		f.codecMunger = codecmunger.NewVP8FromOther(f.codecMunger, f.logger)
