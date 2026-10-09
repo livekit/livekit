@@ -73,6 +73,13 @@ func (s *IOInfoService) UpdateIngressState(ctx context.Context, req *rpc.UpdateI
 	if err != nil {
 		return nil, err
 	}
+	if info.State == nil {
+		// LoadIngress reads the ingress info and its state non-atomically: a concurrent
+		// DeleteIngress can remove the state key between the two reads, in which case
+		// LoadIngress returns the info with a nil State and no error. Treat it as an
+		// empty state instead of panicking on the status comparison below.
+		info.State = &livekit.IngressState{}
+	}
 
 	if err = s.is.UpdateIngressState(ctx, req.IngressId, req.State); err != nil {
 		logger.Errorw("could not update ingress", err)
