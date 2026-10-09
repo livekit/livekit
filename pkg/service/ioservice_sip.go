@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 	"errors"
+	"io"
 	"net/netip"
 
 	"github.com/dennwc/iters"
@@ -79,6 +80,28 @@ func (s *IOInfoService) SelectSIPDispatchRule(ctx context.Context, trunkID strin
 		TrunkIds: trunkIDs,
 	})
 	return iters.PagesAsIter(ctx, it)
+}
+
+// hasWildcardSIPDispatchRule reports whether a dispatch rule bound to no trunk exists. Such a rule
+// is the only one that can take a call matching no inbound trunk.
+func (s *IOInfoService) hasWildcardSIPDispatchRule(ctx context.Context) (bool, error) {
+	if s.ss == nil {
+		return false, ErrSIPNotConnected
+	}
+	it := s.SelectSIPDispatchRule(ctx, "")
+	defer it.Close()
+	for {
+		rule, err := it.Next()
+		if errors.Is(err, io.EOF) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if len(rule.TrunkIds) == 0 {
+			return true, nil
+		}
+	}
 }
 
 func (s *IOInfoService) EvaluateSIPDispatchRules(ctx context.Context, req *rpc.EvaluateSIPDispatchRulesRequest) (*rpc.EvaluateSIPDispatchRulesResponse, error) {
@@ -146,8 +169,20 @@ func (s *IOInfoService) GetSIPTrunkAuthentication(ctx context.Context, req *rpc.
 		return nil, err
 	}
 	if trunk == nil {
-		log.Debugw("No SIP trunk matched for auth", "sipTrunk", "")
-		return &rpc.GetSIPTrunkAuthenticationResponse{}, nil
+		wildcard, err := s.hasWildcardSIPDispatchRule(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if wildcard {
+			log.Debugw("No SIP trunk matched for auth, leaving the call to a wildcard dispatch rule", "sipTrunk", "")
+			return &rpc.GetSIPTrunkAuthenticationResponse{}, nil
+		}
+		// An empty response reads as "accept, no credentials" on the SIP side, which would ring a
+		// number no trunk or dispatch rule can take before dispatch rejects it.
+		log.Debugw("No SIP trunk or wildcard dispatch rule matched for auth", "sipTrunk", "")
+		return &rpc.GetSIPTrunkAuthenticationResponse{
+			ErrorCode: rpc.SIPTrunkAuthenticationError_SIP_TRUNK_AUTH_ERROR_NO_TRUNK_FOUND,
+		}, nil
 	}
 	log.Debugw("SIP trunk matched for auth", "sipTrunk", trunk.SipTrunkId)
 	return sip.InboundTrunkAuthPrompt(trunk)
