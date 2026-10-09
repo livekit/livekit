@@ -40,15 +40,19 @@ func CreateNodeSelector(conf *config.Config) (NodeSelector, error) {
 		return &AnySelector{conf.NodeSelector.SortBy, conf.NodeSelector.Algorithm}, nil
 	case "cpuload":
 		return &CPULoadSelector{
-			CPULoadLimit: conf.NodeSelector.CPULoadLimit,
-			SortBy:       conf.NodeSelector.SortBy,
-			Algorithm:    conf.NodeSelector.Algorithm,
+			CPULoadLimit:     conf.NodeSelector.CPULoadLimit,
+			SysloadLimit:     conf.NodeSelector.SysloadLimit,
+			BytesPerSecLimit: conf.NodeSelector.BytesPerSecLimit,
+			SortBy:           conf.NodeSelector.SortBy,
+			Algorithm:        conf.NodeSelector.Algorithm,
 		}, nil
 	case "sysload":
 		return &SystemLoadSelector{
-			SysloadLimit: conf.NodeSelector.SysloadLimit,
-			SortBy:       conf.NodeSelector.SortBy,
-			Algorithm:    conf.NodeSelector.Algorithm,
+			SysloadLimit:     conf.NodeSelector.SysloadLimit,
+			CPULoadLimit:     conf.NodeSelector.CPULoadLimit,
+			BytesPerSecLimit: conf.NodeSelector.BytesPerSecLimit,
+			SortBy:           conf.NodeSelector.SortBy,
+			Algorithm:        conf.NodeSelector.Algorithm,
 		}, nil
 	case "regionaware":
 		s, err := NewRegionAwareSelector(conf.Region, conf.NodeSelector.Regions, conf.NodeSelector.SortBy, conf.NodeSelector.Algorithm)
@@ -56,7 +60,19 @@ func CreateNodeSelector(conf *config.Config) (NodeSelector, error) {
 			return nil, err
 		}
 		s.SysloadLimit = conf.NodeSelector.SysloadLimit
+		s.CPULoadLimit = conf.NodeSelector.CPULoadLimit
+		s.BytesPerSecLimit = conf.NodeSelector.BytesPerSecLimit
 		return s, nil
+	case "multi", "limits":
+		return &LimitsSelector{
+			LimitsFilter: LimitsFilter{
+				SysloadLimit:     conf.NodeSelector.SysloadLimit,
+				CPULoadLimit:     conf.NodeSelector.CPULoadLimit,
+				BytesPerSecLimit: conf.NodeSelector.BytesPerSecLimit,
+			},
+			SortBy:    conf.NodeSelector.SortBy,
+			Algorithm: conf.NodeSelector.Algorithm,
+		}, nil
 	case "random":
 		logger.Warnw("random node selector is deprecated, please switch to \"any\" or another selector", nil)
 		return &AnySelector{conf.NodeSelector.SortBy, conf.NodeSelector.Algorithm}, nil
