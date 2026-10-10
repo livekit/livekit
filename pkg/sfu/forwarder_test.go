@@ -2084,6 +2084,35 @@ func TestForwarderVP8DDTemporalFilterAfterGap(t *testing.T) {
 	}
 }
 
+func TestForwarderVP8DDWithPictureID(t *testing.T) {
+	f := NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
+	f.DetermineCodec(testutils.TestVP8Codec, []webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}}, livekit.VideoLayer_MODE_UNUSED)
+	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 2})
+	require.IsType(t, &codecmunger.VP8DD{}, f.codecMunger)
+
+	// the one byte descriptor keeps the dependency descriptor munger
+	extPkt, err := testutils.GetTestExtPacketVP8DD(
+		&testutils.TestExtPacketParams{SequenceNumber: 1, Timestamp: 3000, SSRC: 0x12345678, PayloadSize: 20, Marker: true, IsKeyFrame: true},
+		&testutils.TestDDParams{FirstPacketInFrame: true, ExtFrameNum: 1, DTIs: "SSS", DecodeTargets: testutils.TestVP8DecodeTargets},
+	)
+	require.NoError(t, err)
+	_, _ = f.GetTranslationParams(extPkt, 0)
+	require.IsType(t, &codecmunger.VP8DD{}, f.codecMunger)
+	require.True(t, f.started)
+
+	// a picture ID next to the dependency descriptor needs the VP8 munger
+	extPkt, err = testutils.GetTestExtPacketVP8DD(
+		&testutils.TestExtPacketParams{SequenceNumber: 2, Timestamp: 6000, SSRC: 0x12345678, PayloadSize: 20, Marker: true},
+		&testutils.TestDDParams{FirstPacketInFrame: true, ExtFrameNum: 2, TemporalID: 1, DTIs: "-SS", FrameDiffs: []int{1}, DecodeTargets: testutils.TestVP8DecodeTargets},
+	)
+	require.NoError(t, err)
+	extPkt.Payload = codec.VP8{S: true, I: true, PictureID: 2}
+	_, _ = f.GetTranslationParams(extPkt, 0)
+	require.IsType(t, &codecmunger.VP8{}, f.codecMunger)
+	require.True(t, f.codecMunger.GetState().(*livekit.VP8MungerState).PictureIdUsed, "seeded from the packet")
+	require.True(t, f.isDDAvailable, "temporal layers still switch with the dependency descriptor")
+}
+
 func TestForwarderGetSnTsForPadding(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 

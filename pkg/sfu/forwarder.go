@@ -29,6 +29,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/mediatransportutil"
+	"github.com/livekit/mediatransportutil/pkg/codec"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -2181,6 +2182,18 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 			f.codecMunger.SetLast(extPkt)
 		}
 		f.vls.SetTemporalLayerSelector(temporallayerselector.NewVP8(f.logger))
+	}
+	if _, ok := f.codecMunger.(*codecmunger.VP8DD); ok && extPkt.DependencyDescriptor != nil {
+		if vp8, ok := extPkt.Payload.(codec.VP8); ok && vp8.I {
+			// The publisher sends picture IDs with the dependency descriptor, so they need
+			// rewriting. The VP8 munger does that, the temporal layers still switch with the
+			// dependency descriptor.
+			f.logger.Infow("VP8 picture ID with dependency descriptor, munging picture IDs", "layer", layer)
+			f.codecMunger = codecmunger.NewVP8FromOther(f.codecMunger, f.logger)
+			if f.started {
+				f.codecMunger.SetLast(extPkt)
+			}
+		}
 	}
 
 	if !f.vls.GetTarget().IsValid() {

@@ -27,7 +27,8 @@ const vp8DDFrameWindow = 64
 // one byte VP8 payload descriptor with the dependency descriptor, so there is no picture
 // ID, TL0PICIDX or key index to munge, and the header goes out unchanged. Every packet
 // names its frame and temporal layer, so the munger decides once per frame and applies
-// that decision to all packets of the frame, a late one included.
+// that decision to all packets of the frame, a late one included. It needs the one byte
+// descriptor: the forwarder uses the VP8 munger for a stream that keeps picture IDs.
 type VP8DD struct {
 	logger logger.Logger
 
