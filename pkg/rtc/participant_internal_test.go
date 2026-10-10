@@ -305,6 +305,42 @@ func TestOutOfOrderUpdates(t *testing.T) {
 	require.Equal(t, "second update", sent.GetUpdate().Participants[0].Metadata)
 }
 
+func TestRecentlyDisconnectedKeepsUpdateOrder(t *testing.T) {
+	p := newParticipantForTest("test")
+
+	// fill the update cache (128 entries), the last update is a disconnect
+	const cacheSize = 128
+	for i := range cacheSize {
+		state := livekit.ParticipantInfo_ACTIVE
+		if i == cacheSize-1 {
+			state = livekit.ParticipantInfo_DISCONNECTED
+		}
+		require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{{
+			Sid:      fmt.Sprintf("PA_%d", i),
+			Identity: fmt.Sprintf("p%d", i),
+			Version:  1,
+			State:    state,
+		}}))
+	}
+
+	disconnected := p.GetRecentlyDisconnectedParticipants()
+	require.Len(t, disconnected, 1)
+	require.Equal(t, "PA_127", disconnected[0].Sid)
+
+	// an update for a new participant evicts the least recently updated entry,
+	// not the disconnect that was just reported
+	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{{
+		Sid:      "PA_new",
+		Identity: "new",
+		Version:  1,
+		State:    livekit.ParticipantInfo_ACTIVE,
+	}}))
+
+	disconnected = p.GetRecentlyDisconnectedParticipants()
+	require.Len(t, disconnected, 1)
+	require.Equal(t, "PA_127", disconnected[0].Sid)
+}
+
 // after disconnection, things should continue to function and not panic
 func TestDisconnectTiming(t *testing.T) {
 	t.Run("Negotiate doesn't panic after channel closed", func(t *testing.T) {
