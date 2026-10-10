@@ -2372,3 +2372,22 @@ func TestPacerScratchFitsInlineDependencyDescriptor(t *testing.T) {
 	require.Len(t, p.HoldExtension(make([]byte, dd.MaxInlineExtensionSize)), dd.MaxInlineExtensionSize)
 	require.Nil(t, p.HoldExtension(make([]byte, dd.MaxInlineExtensionSize+1)))
 }
+
+func TestForwarderNeedsPeriodicSyncCheck(t *testing.T) {
+	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	require.False(t, f.NeedsPeriodicSyncCheck())
+
+	// VP8 with the dependency descriptor uses it only for temporal layers
+	f.DetermineCodec(testutils.TestVP8Codec, []webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}}, livekit.VideoLayer_MODE_UNUSED)
+	require.False(t, f.NeedsPeriodicSyncCheck())
+
+	// a new max published layer before any layer is forwarded arms the acquisition grace
+	require.True(t, f.SetMaxPublishedLayer(1))
+	require.True(t, f.NeedsPeriodicSyncCheck())
+
+	// spatial layers selected with the dependency descriptor
+	f = newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
+	av1 := webrtc.RTPCodecCapability{MimeType: mime.MimeTypeAV1.String(), ClockRate: 90000}
+	f.DetermineCodec(av1, []webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}}, livekit.VideoLayer_MODE_UNUSED)
+	require.True(t, f.NeedsPeriodicSyncCheck())
+}
