@@ -123,8 +123,10 @@ rtc:
   #   #   no-queue     - hand packets to a send worker that drains them without rate
   #   #                  limiting, so the sender never blocks on a write (default)
   #   #   pass-through - send each packet inline on the calling goroutine
-  #   #   leaky-bucket - accepted, but not currently wired to the bandwidth estimate; it
-  #   #                  logs a warning and falls back to no-queue. see livekit/livekit#4724
+  #   #   leaky-bucket - pace egress while the allocator is enforcing a send side
+  #   #                  estimate (congestion, probing, or an override), spreading
+  #   #                  the bursts that shallow queues punish. egress is
+  #   #                  unrestricted otherwise
   #   # an unrecognized value is rejected at startup.
   #   send_side_bwe_pacer: no-queue
   # # allows automatic connection fallback to TCP and TURN/TLS (if configured) when UDP has been unstable, default true

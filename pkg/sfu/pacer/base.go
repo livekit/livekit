@@ -56,23 +56,7 @@ func (b *Base) TimeSinceLastSentPacket() time.Duration {
 }
 
 func (b *Base) SendPacket(p *Packet) (int, error) {
-	defer func() {
-		if p.HeaderPool != nil && p.Header != nil {
-			// keep Extensions capacity so the next user does not allocate on SetExtension
-			exts := p.Header.Extensions
-			clear(exts)
-			*p.Header = rtp.Header{}
-			p.Header.Extensions = exts[:0]
-			p.HeaderPool.Put(p.Header)
-		}
-
-		if p.Pool != nil && p.PoolEntity != nil {
-			p.Pool.Put(p.PoolEntity)
-		}
-
-		*p = Packet{}
-		PacketFactory.Put(p)
-	}()
+	defer releasePacket(p)
 
 	err := b.patchRTPHeaderExtensions(p)
 	if err != nil {
@@ -110,7 +94,7 @@ func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 		b.lastPacketSentAt.Store(sendingAt.UnixNano())
 	}
 
-	packetSize := p.HeaderSize + len(p.Payload)
+	packetSize := p.size()
 	if p.TransportWideExtID != 0 && b.bwe != nil {
 		twccSN := b.bwe.RecordPacketSendAndGetSequenceNumber(
 			sendingAt.UnixMicro(),
@@ -135,6 +119,26 @@ func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 
 	b.ProbeObserver.RecordPacket(packetSize, p.IsRTX, p.ProbeClusterId, p.IsProbe)
 	return nil
+}
+
+// releasePacket returns a packet's pooled resources and the packet itself.
+// used after a send and when a queued packet is dropped
+func releasePacket(p *Packet) {
+	if p.HeaderPool != nil && p.Header != nil {
+		// keep Extensions capacity so the next user does not allocate on SetExtension
+		exts := p.Header.Extensions
+		clear(exts)
+		*p.Header = rtp.Header{}
+		p.Header.Extensions = exts[:0]
+		p.HeaderPool.Put(p.Header)
+	}
+
+	if p.Pool != nil && p.PoolEntity != nil {
+		p.Pool.Put(p.PoolEntity)
+	}
+
+	*p = Packet{}
+	PacketFactory.Put(p)
 }
 
 // ------------------------------------------------
