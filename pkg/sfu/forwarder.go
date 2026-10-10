@@ -354,6 +354,21 @@ func (f *Forwarder) MaybeExpireAcquireGrace() bool {
 	return !f.vls.GetCurrent().IsValid()
 }
 
+// NeedsPeriodicSyncCheck reports whether the layer lock state can change without an event, so the
+// key frame requester has to keep polling it: an initial-acquisition grace deadline is armed
+// (MaybeExpireAcquireGrace may still fire), or layers are selected with the dependency descriptor,
+// which can lose the lock on the packet path (key frame mismatch, broken frame chain).
+func (f *Forwarder) NeedsPeriodicSyncCheck() bool {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	if f.acquireDeadline != 0 {
+		return true
+	}
+	_, isDD := f.vls.(*videolayerselector.DependencyDescriptor)
+	return isDD
+}
+
 func (f *Forwarder) SetMaxTemporalLayerSeen(maxTemporalLayerSeen int32) bool {
 	f.lock.Lock()
 	defer f.lock.Unlock()
