@@ -209,6 +209,11 @@ type TranslationParams struct {
 	marker             bool
 	// end of the svc spatial layer frame
 	isEndOfLayerFrame bool
+	// The packet is dropped, but the RTP munger gave its outgoing sequence number
+	// away when it saw the gap, so the downtrack sends padding in that slot. Without
+	// it the subscriber NACKs a sequence number nothing can answer, and a VP8
+	// receiver without picture IDs stalls on the hole until a key frame.
+	padDroppedSlot bool
 }
 
 // codecHeader returns the munged codec header to prepend to the payload.
@@ -2226,8 +2231,12 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		if f.started && result.IsRelevant {
 			// call to update highest incoming sequence number and other internal structures
 			if tpRTP, err := f.rtpMunger.UpdateAndGetSnTs(extPkt, result.RTPMarker); err == nil {
-				if tpRTP.snOrdering == SequenceNumberOrderingContiguous {
+				switch tpRTP.snOrdering {
+				case SequenceNumberOrderingContiguous:
 					f.rtpMunger.PacketDropped(extPkt)
+				case SequenceNumberOrderingOutOfOrder:
+					tp.rtp = tpRTP
+					tp.padDroppedSlot = true
 				}
 			}
 		}
@@ -2286,6 +2295,9 @@ func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tp *Translati
 			if err == codecmunger.ErrFilteredVP8TemporalLayer {
 				// filtered temporal layer, update sequence number offset to prevent holes
 				f.rtpMunger.PacketDropped(extPkt)
+			}
+			if tp.rtp.snOrdering == SequenceNumberOrderingOutOfOrder {
+				tp.padDroppedSlot = true
 			}
 			return nil
 		}

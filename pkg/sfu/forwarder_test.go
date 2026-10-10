@@ -2113,6 +2113,56 @@ func TestForwarderVP8DDWithPictureID(t *testing.T) {
 	require.True(t, f.isDDAvailable, "temporal layers still switch with the dependency descriptor")
 }
 
+func TestForwarderPadDroppedSlot(t *testing.T) {
+	f := NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
+	f.DetermineCodec(testutils.TestVP8Codec, []webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}}, livekit.VideoLayer_MODE_UNUSED)
+	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+
+	packet := func(sn uint16, frameNum uint64, tid int, isOutOfOrder bool) *buffer.ExtPacket {
+		extPkt, err := testutils.GetTestExtPacketVP8DD(
+			&testutils.TestExtPacketParams{SequenceNumber: sn, Timestamp: 0xabcdef, SSRC: 0x12345678, PayloadSize: 20, Marker: true, IsOutOfOrder: isOutOfOrder},
+			&testutils.TestDDParams{
+				FirstPacketInFrame: true,
+				ExtFrameNum:        frameNum,
+				TemporalID:         tid,
+				DTIs:               "SSS",
+				DecodeTargets:      testutils.TestVP8DecodeTargets,
+			},
+		)
+		require.NoError(t, err)
+		return extPkt
+	}
+
+	tp, err := f.GetTranslationParams(packet(10, 0, 0, false), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+
+	// a gap, the munger hands out a slot for sequence number 11
+	tp, err = f.GetTranslationParams(packet(12, 2, 0, false), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	require.Equal(t, uint64(12), tp.rtp.extSequenceNumber)
+
+	// the late packet is on a filtered layer, its slot gets padding
+	tp, err = f.GetTranslationParams(packet(11, 1, 2, true), 0)
+	require.NoError(t, err)
+	require.True(t, tp.shouldDrop)
+	require.True(t, tp.padDroppedSlot)
+	require.Equal(t, uint64(11), tp.rtp.extSequenceNumber)
+	require.Equal(t, uint64(0xabcdef), tp.rtp.extTimestamp)
+
+	// an in-order drop rolls the slot back instead
+	tp, err = f.GetTranslationParams(packet(13, 3, 2, false), 0)
+	require.NoError(t, err)
+	require.True(t, tp.shouldDrop)
+	require.False(t, tp.padDroppedSlot)
+	tp, err = f.GetTranslationParams(packet(14, 4, 0, false), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	require.Equal(t, uint64(13), tp.rtp.extSequenceNumber)
+}
+
 func TestForwarderGetSnTsForPadding(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
