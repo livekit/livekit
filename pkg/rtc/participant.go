@@ -50,6 +50,7 @@ import (
 	"github.com/livekit/protocol/utils/pointer"
 	"github.com/livekit/psrpc"
 
+	"github.com/livekit/livekit-server/pkg/agent"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/metric"
 	"github.com/livekit/livekit-server/pkg/routing"
@@ -821,6 +822,10 @@ func (p *ParticipantImpl) SetAttributes(attrs map[string]string) {
 	}
 	var keysToDelete []string
 	for k, v := range attrs {
+		// Preserve the job binding from the signed join token, including on token refresh.
+		if k == agent.AgentJobIDAttributeKey {
+			continue
+		}
 		if v == "" {
 			keysToDelete = append(keysToDelete, k)
 		} else {
