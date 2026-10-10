@@ -81,7 +81,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
-	github.com/maxbrunsfeld/counterfeiter/v6 v6.12.2 // indirect
+	github.com/maxbrunsfeld/counterfeiter/v6 v6.13.0 // indirect
 	github.com/moby/moby/api v1.56.0 // indirect
 	github.com/nyaruka/phonenumbers v1.8.1 // indirect
 	github.com/olekukonko/cat v0.0.0-20250911104152-50322a0618f6 // indirect
