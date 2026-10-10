@@ -1978,6 +1978,7 @@ func TestForwarderVP8TemporalUpSwitchAtLayerSync(t *testing.T) {
 func TestForwarderVP8TemporalUpSwitchWithDependencyDescriptor(t *testing.T) {
 	f := NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
 	f.DetermineCodec(testutils.TestVP8Codec, []webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}}, livekit.VideoLayer_MODE_UNUSED)
+	require.IsType(t, &codecmunger.VP8DD{}, f.codecMunger)
 	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 0})
 	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 2})
 
@@ -2023,6 +2024,7 @@ func TestForwarderVP8TemporalUpSwitchWithDependencyDescriptor(t *testing.T) {
 	require.NoError(t, err)
 	_, _ = f.getTranslationParamsVideo(extPkt, 0)
 	require.False(t, f.isDDAvailable)
+	require.IsType(t, &codecmunger.VP8{}, f.codecMunger)
 
 	extPkt, err = testutils.GetTestExtPacketVP8(
 		&testutils.TestExtPacketParams{SequenceNumber: 5, PayloadSize: 20},
@@ -2031,6 +2033,55 @@ func TestForwarderVP8TemporalUpSwitchWithDependencyDescriptor(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int32(1), f.vls.SelectTemporal(extPkt))
 	require.Equal(t, int32(1), f.vls.GetCurrent().Temporal)
+}
+
+func TestForwarderVP8DDTemporalFilterAfterGap(t *testing.T) {
+	f := NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
+	f.DetermineCodec(testutils.TestVP8Codec, []webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}}, livekit.VideoLayer_MODE_UNUSED)
+	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+
+	// one packet per frame, the minimized VP8 payload descriptor has no picture ID
+	packet := func(sn uint16, frameNum uint64, tid int, isKeyFrame bool) *buffer.ExtPacket {
+		extPkt, err := testutils.GetTestExtPacketVP8DD(
+			&testutils.TestExtPacketParams{
+				SequenceNumber: sn,
+				Timestamp:      uint32(frameNum) * 3000,
+				SSRC:           0x12345678,
+				PayloadSize:    20,
+				Marker:         true,
+				IsKeyFrame:     isKeyFrame,
+			},
+			&testutils.TestDDParams{
+				FirstPacketInFrame: true,
+				ExtFrameNum:        frameNum,
+				TemporalID:         tid,
+				DTIs:               "SSS",
+				DecodeTargets:      testutils.TestVP8DecodeTargets,
+			},
+		)
+		require.NoError(t, err)
+		return extPkt
+	}
+
+	steps := []struct {
+		name       string
+		sn         uint16
+		frameNum   uint64
+		tid        int
+		isKeyFrame bool
+		shouldDrop bool
+	}{
+		{name: "key frame", sn: 100, frameNum: 0, tid: 0, isKeyFrame: true},
+		{name: "TL2 after a gap", sn: 102, frameNum: 2, tid: 2, shouldDrop: true},
+		{name: "TL2", sn: 103, frameNum: 3, tid: 2, shouldDrop: true},
+		{name: "TL0", sn: 104, frameNum: 4, tid: 0},
+		{name: "TL2 after TL0", sn: 105, frameNum: 5, tid: 2, shouldDrop: true},
+	}
+	for _, step := range steps {
+		tp, err := f.GetTranslationParams(packet(step.sn, step.frameNum, step.tid, step.isKeyFrame), 0)
+		require.NoError(t, err, step.name)
+		require.Equal(t, step.shouldDrop, tp.shouldDrop, step.name)
+	}
 }
 
 func TestForwarderGetSnTsForPadding(t *testing.T) {
