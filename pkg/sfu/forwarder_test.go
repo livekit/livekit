@@ -1975,6 +1975,64 @@ func TestForwarderVP8TemporalUpSwitchAtLayerSync(t *testing.T) {
 	require.Equal(t, int32(2), f.vls.GetCurrent().Temporal)
 }
 
+func TestForwarderVP8TemporalUpSwitchWithDependencyDescriptor(t *testing.T) {
+	f := NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
+	f.DetermineCodec(testutils.TestVP8Codec, []webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}}, livekit.VideoLayer_MODE_UNUSED)
+	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 2})
+
+	// libwebrtc strips the VP8 payload descriptor when it sends the dependency
+	// descriptor: no TID and no layer sync bit
+	packet := func(frameNum uint64, tid int, dtis string, frameDiffs []int, isKeyFrame bool) *buffer.ExtPacket {
+		extPkt, err := testutils.GetTestExtPacketVP8DD(
+			&testutils.TestExtPacketParams{SequenceNumber: uint16(frameNum), PayloadSize: 20, Marker: true, IsKeyFrame: isKeyFrame},
+			&testutils.TestDDParams{
+				FirstPacketInFrame: true,
+				ExtFrameNum:        frameNum,
+				TemporalID:         tid,
+				DTIs:               dtis,
+				FrameDiffs:         frameDiffs,
+				DecodeTargets:      testutils.TestVP8DecodeTargets,
+			},
+		)
+		require.NoError(t, err)
+		return extPkt
+	}
+
+	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+	require.Equal(t, int32(0), f.vls.SelectTemporal(packet(0, 0, "SSS", nil, true)))
+	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 2})
+	require.Equal(t, int32(0), f.vls.SelectTemporal(packet(1, 2, "--D", []int{1}, false)))
+	require.Equal(t, int32(0), f.vls.GetCurrent().Temporal)
+	require.Equal(t, int32(2), f.vls.SelectTemporal(packet(2, 1, "-SS", []int{2}, false)))
+	require.Equal(t, int32(2), f.vls.GetCurrent().Temporal)
+
+	// padding never carries the descriptor and leaves it on
+	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+	padding, err := testutils.GetTestExtPacket(&testutils.TestExtPacketParams{SequenceNumber: 3, PaddingSize: 20})
+	require.NoError(t, err)
+	_, _ = f.getTranslationParamsVideo(padding, 0)
+	require.True(t, f.isDDAvailable)
+
+	// a packet with a payload and without the descriptor means the buffer stopped
+	// parsing it, the Y bit then raises the layer
+	extPkt, err := testutils.GetTestExtPacketVP8(
+		&testutils.TestExtPacketParams{SequenceNumber: 4, PayloadSize: 20},
+		&codec.VP8{S: true, I: true, PictureID: 4, T: true, TID: 0},
+	)
+	require.NoError(t, err)
+	_, _ = f.getTranslationParamsVideo(extPkt, 0)
+	require.False(t, f.isDDAvailable)
+
+	extPkt, err = testutils.GetTestExtPacketVP8(
+		&testutils.TestExtPacketParams{SequenceNumber: 5, PayloadSize: 20},
+		&codec.VP8{S: true, I: true, PictureID: 5, T: true, TID: 1, Y: true},
+	)
+	require.NoError(t, err)
+	require.Equal(t, int32(1), f.vls.SelectTemporal(extPkt))
+	require.Equal(t, int32(1), f.vls.GetCurrent().Temporal)
+}
+
 func TestForwarderGetSnTsForPadding(t *testing.T) {
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
 
