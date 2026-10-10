@@ -108,6 +108,12 @@ func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID) {
 	p.lock.Unlock()
 }
 
+func (p *ParticipantSupervisor) RemovePublication(trackID livekit.TrackID) {
+	p.lock.Lock()
+	delete(p.publications, trackID)
+	p.lock.Unlock()
+}
+
 func (p *ParticipantSupervisor) SetPublicationMute(trackID livekit.TrackID, isMuted bool) {
 	p.lock.Lock()
 	pm, ok := p.publications[trackID]
