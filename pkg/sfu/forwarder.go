@@ -406,7 +406,12 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		} else {
 			f.vls = videolayerselector.NewSimulcast(f.logger)
 		}
-		f.vls.SetTemporalLayerSelector(temporallayerselector.NewVP8(f.logger))
+		f.isDDAvailable = ddAvailable(extensions)
+		if f.isDDAvailable {
+			f.vls.SetTemporalLayerSelector(temporallayerselector.NewDependencyDescriptor(f.logger))
+		} else {
+			f.vls.SetTemporalLayerSelector(temporallayerselector.NewVP8(f.logger))
+		}
 
 	case mime.MimeTypeH264, mime.MimeTypeH265:
 		f.codecMunger = codecmunger.NewNull(f.logger)
@@ -2160,6 +2165,15 @@ func (f *Forwarder) isEndOfLayerFrame(extPkt *buffer.ExtPacket) bool {
 // should be called with lock held
 func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer int32) (TranslationParams, error) {
 	tp := TranslationParams{}
+	if f.isDDAvailable && f.mime == mime.MimeTypeVP8 && extPkt.DependencyDescriptor == nil && len(extPkt.Packet.Payload) != 0 {
+		// The buffer stopped parsing the dependency descriptor because the publisher does
+		// not send it, so switch temporal layers with the VP8 payload descriptor. Padding
+		// never carries the descriptor, so it does not count.
+		f.logger.Infow("turning off dependency descriptor for VP8 temporal layers", "layer", layer)
+		f.isDDAvailable = false
+		f.vls.SetTemporalLayerSelector(temporallayerselector.NewVP8(f.logger))
+	}
+
 	if !f.vls.GetTarget().IsValid() {
 		// stream is paused by streamallocator
 		tp.shouldDrop = true
@@ -2168,7 +2182,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 
 	result := f.vls.Select(extPkt, layer)
 	if !result.IsSelected {
-		if f.isDDAvailable && extPkt.DependencyDescriptor == nil {
+		if f.isDDAvailable && f.mime != mime.MimeTypeVP8 && extPkt.DependencyDescriptor == nil {
 			f.logger.Infow(
 				"turning off dependency descriptor",
 				"layer", layer,
