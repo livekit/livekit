@@ -44,6 +44,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
+	"github.com/livekit/livekit-server/pkg/routing/selector"
 	"github.com/livekit/livekit-server/version"
 )
 
@@ -441,9 +442,12 @@ func (s *LivekitServer) debugInfo(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *LivekitServer) defaultHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/" {
+	switch r.URL.Path {
+	case "/":
 		s.healthCheck(w, r)
-	} else {
+	case "/availability":
+		s.availabilityCheck(w, r)
+	default:
 		http.NotFound(w, r)
 	}
 }
@@ -461,6 +465,53 @@ func (s *LivekitServer) healthCheck(w http.ResponseWriter, _ *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("OK"))
+}
+
+// availabilityCheck reports whether the node can accept new participants,
+// for load balancers that route joins but should leave a draining or
+// overloaded node in place for the sessions it already runs. Unlike the root
+// health check, which only looks at stats freshness, this applies the same
+// state and limit conditions a join does.
+func (s *LivekitServer) availabilityCheck(w http.ResponseWriter, _ *http.Request) {
+	if reason := s.unavailableReason(); reason != "" {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = fmt.Fprintf(w, "No availability: %s\n", reason)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("Available"))
+}
+
+// unavailableReason returns why the node should not take new participants,
+// or an empty string when it can.
+func (s *LivekitServer) unavailableReason() string {
+	node := s.Node()
+
+	// the state check comes first: a shutting-down or suspended node is
+	// unavailable even before stats exist, and both selector helpers below
+	// handle nil stats on their own
+	switch node.State {
+	case livekit.NodeState_SERVING:
+	case livekit.NodeState_STARTING_UP:
+		return "node is starting up"
+	case livekit.NodeState_SHUTTING_DOWN:
+		return "node is shutting down"
+	case livekit.NodeState_SUSPENDED:
+		return "node is suspended"
+	default:
+		return fmt.Sprintf("node state is %s", node.State)
+	}
+
+	if !selector.IsAvailable(node) {
+		return "node stats are stale"
+	}
+
+	if selector.LimitsReached(s.config.Limit, node.Stats) {
+		return "node has reached its configured limit"
+	}
+
+	return ""
 }
 
 // worker to perform periodic tasks per node
