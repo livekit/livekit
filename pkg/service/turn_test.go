@@ -251,6 +251,11 @@ func TestNewTurnServer_InvalidPeerCIDRFailsStartup(t *testing.T) {
 			mutID: func(c *config.Config) { c.TURN.AllowRestrictedPeerCIDRs = []string{"not-a-cidr"} },
 			field: "turn.allow_restricted_peer_cidrs",
 		},
+		{
+			name:  "invalid allow peer cidr",
+			mutID: func(c *config.Config) { c.TURN.AllowPeerCIDRs = []string{"10.0.0.5"} },
+			field: "turn.allow_peer_cidrs",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			conf := &config.Config{}
@@ -261,6 +266,89 @@ func TestNewTurnServer_InvalidPeerCIDRFailsStartup(t *testing.T) {
 			_, err := NewTurnServer(conf, nil, false)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), tc.field)
+		})
+	}
+}
+
+func TestPeerPermissionHandler(t *testing.T) {
+	mustParse := func(cidrs ...string) []*net.IPNet {
+		nets, err := parsePeerCIDRs("test", cidrs)
+		require.NoError(t, err)
+		return nets
+	}
+
+	for _, tc := range []struct {
+		name            string
+		allowPeer       []*net.IPNet
+		allowRestricted []*net.IPNet
+		deny            []*net.IPNet
+		peer            string
+		expected        bool
+	}{
+		{name: "public peer allowed by default", peer: "203.0.113.5", expected: true},
+		{name: "restricted peer denied by default", peer: "10.0.0.5", expected: false},
+		{name: "loopback peer denied by default", peer: "127.0.0.1", expected: false},
+		{
+			name:            "restricted peer allowed by allow_restricted",
+			allowRestricted: mustParse("10.0.0.5/32"),
+			peer:            "10.0.0.5",
+			expected:        true,
+		},
+		{
+			name:      "public peer outside allow_peer is denied",
+			allowPeer: mustParse("10.0.0.5/32"),
+			peer:      "203.0.113.5",
+			expected:  false,
+		},
+		{
+			name:      "public peer inside allow_peer is allowed",
+			allowPeer: mustParse("203.0.113.0/24"),
+			peer:      "203.0.113.5",
+			expected:  true,
+		},
+		{
+			name:            "restricted peer in both allow lists is allowed",
+			allowPeer:       mustParse("10.0.0.5/32"),
+			allowRestricted: mustParse("10.0.0.5/32"),
+			peer:            "10.0.0.5",
+			expected:        true,
+		},
+		{
+			name:      "allow_peer does not lift restricted peer default",
+			allowPeer: mustParse("10.0.0.5/32"),
+			peer:      "10.0.0.5",
+			expected:  false,
+		},
+		{
+			name:            "restricted peer outside allow_peer is denied",
+			allowPeer:       mustParse("203.0.113.0/24"),
+			allowRestricted: mustParse("10.0.0.0/8"),
+			peer:            "10.0.0.5",
+			expected:        false,
+		},
+		{
+			name:      "deny takes precedence over allow_peer",
+			allowPeer: mustParse("203.0.113.0/24"),
+			deny:      mustParse("203.0.113.5/32"),
+			peer:      "203.0.113.5",
+			expected:  false,
+		},
+		{
+			name:     "deny applies to public peer",
+			deny:     mustParse("203.0.113.0/24"),
+			peer:     "203.0.113.5",
+			expected: false,
+		},
+		{
+			name:      "ipv6 peer outside ipv4 allow_peer is denied",
+			allowPeer: mustParse("10.0.0.5/32"),
+			peer:      "2001:db8::1",
+			expected:  false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := newPeerPermissionHandler(tc.allowPeer, tc.allowRestricted, tc.deny)
+			require.Equal(t, tc.expected, handler(nil, net.ParseIP(tc.peer)))
 		})
 	}
 }

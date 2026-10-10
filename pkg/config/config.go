@@ -332,6 +332,11 @@ type TURNConfig struct {
 	// When not empty, only the specified CIDRs are allowed access.
 	// Note that this check is applied to restricted peer CIDRs only.
 	AllowRestrictedPeerCIDRs []string `yaml:"allow_restricted_peer_cidrs,omitempty"`
+	// list of peer CIDRs to allow access to, applied to all peers, including non-restricted ones.
+	// By default (i. e. empty list), no additional restriction is applied.
+	// When not empty, peers outside the specified CIDRs are denied access.
+	// Restricted peers must still match allow_restricted_peer_cidrs, and deny list takes precedence.
+	AllowPeerCIDRs []string `yaml:"allow_peer_cidrs,omitempty"`
 	// list of peer CIDRs to deny access to
 	// This applies to all peer CIDRs, including restricted ones.
 	// Deny list takes precedence over allow list.
