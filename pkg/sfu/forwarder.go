@@ -281,6 +281,8 @@ type Forwarder struct {
 	rtpMunger *RTPMunger
 
 	vls videolayerselector.VideoLayerSelector
+	// set for VP8 with the dependency descriptor, forwards the descriptor to the subscriber
+	ddForwarder *videolayerselector.DDForwarder
 
 	codecMunger codecmunger.CodecMunger
 }
@@ -413,11 +415,13 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		return false
 	}
 
+	f.ddForwarder = nil
 	switch f.mime {
 	case mime.MimeTypeVP8:
 		f.isDDAvailable = ddAvailable(extensions)
 		if f.isDDAvailable {
 			f.codecMunger = codecmunger.NewVP8DD(f.logger)
+			f.ddForwarder = videolayerselector.NewDDForwarder(f.logger)
 		} else {
 			f.codecMunger = codecmunger.NewVP8FromOther(f.codecMunger, f.logger)
 		}
@@ -2193,6 +2197,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		// never carries the descriptor, so it does not count.
 		f.logger.Infow("turning off dependency descriptor for VP8 temporal layers", "layer", layer)
 		f.isDDAvailable = false
+		f.ddForwarder = nil
 		f.codecMunger = codecmunger.NewVP8FromOther(f.codecMunger, f.logger)
 		if f.started {
 			// the munger takes its picture ID and TL0PICIDX from the first packet it sees
@@ -2289,6 +2294,14 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		//
 		tp.shouldDrop = true
 		return tp, nil
+	}
+
+	if f.ddForwarder != nil {
+		// after translateCodecHeader, which picks the temporal layer
+		var ddResult videolayerselector.VideoLayerSelectorResult
+		if f.ddForwarder.Forward(extPkt, f.vls.GetCurrent().Temporal, &ddResult) {
+			tp.ddBytes, tp.ddBytesLen, tp.ddBytesSpill = ddResult.DDBytes, ddResult.DDBytesLen, ddResult.DDBytesSpill
+		}
 	}
 
 	return tp, nil

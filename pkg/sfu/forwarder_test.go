@@ -15,6 +15,7 @@
 package sfu
 
 import (
+	"encoding/hex"
 	"testing"
 
 	"github.com/pion/rtp/codecs"
@@ -2112,6 +2113,54 @@ func TestForwarderVP8DDWithPictureID(t *testing.T) {
 	require.IsType(t, &codecmunger.VP8{}, f.codecMunger)
 	require.True(t, f.codecMunger.GetState().(*livekit.VP8MungerState).PictureIdUsed, "seeded from the packet")
 	require.True(t, f.isDDAvailable, "temporal layers still switch with the dependency descriptor")
+}
+
+func TestForwarderVP8ForwardsDependencyDescriptor(t *testing.T) {
+	// an L3T3 key frame descriptor with its dependency structure, the capture the
+	// dependency descriptor package tests with
+	raw, err := hex.DecodeString("c1017280081485214eafffaaaa863cf0430c10c302afc0aaa0063c00430010c002a000a80006000040001d954926e082b04a0941b820ac1282503157f974000ca864330e222222eca8655304224230eca877530077004200ef008601df010d")
+	require.NoError(t, err)
+	keyFrameDescriptor := dd.DependencyDescriptor{}
+	_, err = (&dd.DependencyDescriptorExtension{Descriptor: &keyFrameDescriptor}).Unmarshal(raw)
+	require.NoError(t, err)
+	require.NotNil(t, keyFrameDescriptor.AttachedStructure)
+
+	packet := func(sn uint16, frameNum uint64, isKeyFrame bool) *buffer.ExtPacket {
+		extPkt, err := testutils.GetTestExtPacketVP8DD(
+			&testutils.TestExtPacketParams{SequenceNumber: sn, Timestamp: 0xabcdef + uint32(frameNum)*3000, SSRC: 0x12345678, PayloadSize: 20, Marker: true, IsKeyFrame: isKeyFrame},
+			&testutils.TestDDParams{FirstPacketInFrame: true, ExtFrameNum: frameNum, DTIs: "SSS", DecodeTargets: testutils.TestVP8DecodeTargets},
+		)
+		require.NoError(t, err)
+		descriptor := keyFrameDescriptor
+		descriptor.FrameNumber = uint16(frameNum)
+		if !isKeyFrame {
+			descriptor.AttachedStructure = nil
+			descriptor.ActiveDecodeTargetsBitmask = nil
+		}
+		extPkt.DependencyDescriptor.Descriptor = &descriptor
+		return extPkt
+	}
+
+	f := NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
+	f.DetermineCodec(testutils.TestVP8Codec, []webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}}, livekit.VideoLayer_MODE_UNUSED)
+	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+
+	// the key frame carries the structure, too big to hold inline
+	tp, err := f.GetTranslationParams(packet(10, 100, true), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	require.NotEmpty(t, tp.ddBytesSpill)
+
+	tp, err = f.GetTranslationParams(packet(11, 101, false), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	require.NotEmpty(t, tp.ddInline())
+
+	// without the extension the forwarder writes no descriptor
+	f = NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
+	f.DetermineCodec(testutils.TestVP8Codec, nil, livekit.VideoLayer_MODE_UNUSED)
+	require.Nil(t, f.ddForwarder)
 }
 
 func TestForwarderPadDroppedSlot(t *testing.T) {
