@@ -2246,7 +2246,9 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 				switch tpRTP.snOrdering {
 				case SequenceNumberOrderingContiguous:
 					f.rtpMunger.PacketDropped(extPkt)
-				case SequenceNumberOrderingOutOfOrder:
+				case SequenceNumberOrderingGap, SequenceNumberOrderingOutOfOrder:
+					// a rollback after a gap moves the last outgoing number below the missing
+					// packets' slots and their late copies are rejected, so pad the slot instead
 					tp.rtp = tpRTP
 					tp.padDroppedSlot = true
 				}
@@ -2304,11 +2306,14 @@ func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tp *Translati
 	if err != nil {
 		tp.shouldDrop = true
 		if err == codecmunger.ErrFilteredVP8TemporalLayer || err == codecmunger.ErrOutOfOrderVP8PictureIdCacheMiss || err == codecmunger.ErrFilteredVP8OutOfOrder {
-			if err == codecmunger.ErrFilteredVP8TemporalLayer {
-				// filtered temporal layer, update sequence number offset to prevent holes
-				f.rtpMunger.PacketDropped(extPkt)
-			}
-			if tp.rtp.snOrdering == SequenceNumberOrderingOutOfOrder {
+			switch tp.rtp.snOrdering {
+			case SequenceNumberOrderingContiguous:
+				if err == codecmunger.ErrFilteredVP8TemporalLayer {
+					// filtered temporal layer, update sequence number offset to prevent holes
+					f.rtpMunger.PacketDropped(extPkt)
+				}
+			case SequenceNumberOrderingGap, SequenceNumberOrderingOutOfOrder:
+				// no rollback after a gap, see getTranslationParamsVideo
 				tp.padDroppedSlot = true
 			}
 			return nil
