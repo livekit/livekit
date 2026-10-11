@@ -29,6 +29,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/mediatransportutil"
+	"github.com/livekit/mediatransportutil/pkg/codec"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -396,7 +397,12 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 
 	switch f.mime {
 	case mime.MimeTypeVP8:
-		f.codecMunger = codecmunger.NewVP8FromOther(f.codecMunger, f.logger)
+		f.isDDAvailable = ddAvailable(extensions)
+		if f.isDDAvailable {
+			f.codecMunger = codecmunger.NewVP8DD(f.logger)
+		} else {
+			f.codecMunger = codecmunger.NewVP8FromOther(f.codecMunger, f.logger)
+		}
 		if f.vls != nil {
 			if vls := videolayerselector.NewSimulcastFromOther(f.vls); vls != nil {
 				f.vls = vls
@@ -406,7 +412,6 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		} else {
 			f.vls = videolayerselector.NewSimulcast(f.logger)
 		}
-		f.isDDAvailable = ddAvailable(extensions)
 		if f.isDDAvailable {
 			f.vls.SetTemporalLayerSelector(temporallayerselector.NewDependencyDescriptor(f.logger))
 		} else {
@@ -2171,7 +2176,24 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		// never carries the descriptor, so it does not count.
 		f.logger.Infow("turning off dependency descriptor for VP8 temporal layers", "layer", layer)
 		f.isDDAvailable = false
+		f.codecMunger = codecmunger.NewVP8FromOther(f.codecMunger, f.logger)
+		if f.started {
+			// the munger takes its picture ID and TL0PICIDX from the first packet it sees
+			f.codecMunger.SetLast(extPkt)
+		}
 		f.vls.SetTemporalLayerSelector(temporallayerselector.NewVP8(f.logger))
+	}
+	if _, ok := f.codecMunger.(*codecmunger.VP8DD); ok && extPkt.DependencyDescriptor != nil {
+		if vp8, ok := extPkt.Payload.(codec.VP8); ok && vp8.I {
+			// The publisher sends picture IDs with the dependency descriptor, so they need
+			// rewriting. The VP8 munger does that, the temporal layers still switch with the
+			// dependency descriptor.
+			f.logger.Infow("VP8 picture ID with dependency descriptor, munging picture IDs", "layer", layer)
+			f.codecMunger = codecmunger.NewVP8FromOther(f.codecMunger, f.logger)
+			if f.started {
+				f.codecMunger.SetLast(extPkt)
+			}
+		}
 	}
 
 	if !f.vls.GetTarget().IsValid() {
@@ -2260,7 +2282,7 @@ func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tp *Translati
 	)
 	if err != nil {
 		tp.shouldDrop = true
-		if err == codecmunger.ErrFilteredVP8TemporalLayer || err == codecmunger.ErrOutOfOrderVP8PictureIdCacheMiss {
+		if err == codecmunger.ErrFilteredVP8TemporalLayer || err == codecmunger.ErrOutOfOrderVP8PictureIdCacheMiss || err == codecmunger.ErrFilteredVP8OutOfOrder {
 			if err == codecmunger.ErrFilteredVP8TemporalLayer {
 				// filtered temporal layer, update sequence number offset to prevent holes
 				f.rtpMunger.PacketDropped(extPkt)
