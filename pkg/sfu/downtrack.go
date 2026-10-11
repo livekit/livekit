@@ -85,6 +85,9 @@ var (
 	errPayloadOverflow                   = errors.New("payload overflow")
 )
 
+// padding of a dropped packet's slot, one byte: the count byte itself
+var droppedSlotPadding = []byte{1}
+
 var (
 	VP8KeyFrame8x8 = []byte{
 		0x10, 0x02, 0x00, 0x9d, 0x01, 0x2a, 0x08, 0x00,
@@ -1032,6 +1035,9 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		if err != nil {
 			d.params.Logger.Errorw("could not get translation params", err)
 		}
+		if tp.padDroppedSlot {
+			d.writeDroppedSlotPadding(tp.rtp.extSequenceNumber, tp.rtp.extTimestamp)
+		}
 		return 0
 	}
 
@@ -1224,6 +1230,50 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		}
 	}
 	return 1
+}
+
+// writeDroppedSlotPadding sends a padding only packet in the outgoing slot of a dropped
+// out-of-order packet. The receiver takes it as padding for that sequence number and
+// does not NACK it. The sequencer has no entry for the slot, so a NACK that still comes
+// finds nothing to retransmit.
+func (d *DownTrack) writeDroppedSlotPadding(extSequenceNumber uint64, extTimestamp uint64) {
+	hdr := RTPHeaderFactory.Get().(*rtp.Header)
+	initPooledRTPHeader(hdr, rtp.Header{
+		Version:        2,
+		Padding:        true,
+		PaddingSize:    byte(len(droppedSlotPadding)),
+		Marker:         false,
+		PayloadType:    uint8(d.payloadType.Load()),
+		SequenceNumber: uint16(extSequenceNumber),
+		Timestamp:      uint32(extTimestamp),
+		SSRC:           d.ssrc,
+	})
+	d.addDummyExtensions(hdr)
+
+	hdrSize := hdr.MarshalSize()
+	d.rtpStats.Update(
+		mono.UnixNano(),
+		extSequenceNumber,
+		extTimestamp,
+		hdr.Marker,
+		hdrSize,
+		0,
+		len(droppedSlotPadding),
+		true,
+	)
+
+	pacerPacket := pacer.PacketFactory.Get().(*pacer.Packet)
+	*pacerPacket = pacer.Packet{
+		Header:             hdr,
+		HeaderPool:         RTPHeaderFactory,
+		HeaderSize:         hdrSize,
+		Payload:            droppedSlotPadding,
+		ProbeClusterId:     ccutils.ProbeClusterIdInvalid, // not probe traffic
+		AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
+		TransportWideExtID: uint8(d.transportWideExtID),
+		WriteStream:        d.writeStream,
+	}
+	d.pacer.Enqueue(pacerPacket)
 }
 
 // WritePaddingRTP tries to write as many padding only RTP packets as necessary
