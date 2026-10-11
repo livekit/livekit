@@ -1046,7 +1046,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 			d.params.Logger.Errorw("could not get translation params", err)
 		}
 		if tp.padDroppedSlot {
-			d.writeDroppedSlotPadding(tp.rtp.extSequenceNumber, tp.rtp.extTimestamp)
+			d.writeDroppedSlotPadding(tp.rtp.extSequenceNumber, tp.rtp.extTimestamp, tp.rtp.snOrdering == SequenceNumberOrderingOutOfOrder)
 		}
 		return 0
 	}
@@ -1245,10 +1245,10 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 }
 
 // writeDroppedSlotPadding sends a padding only packet in the outgoing slot of a dropped
-// out-of-order packet. The receiver takes it as padding for that sequence number and
+// packet that is out of order or follows a gap. The receiver takes it as padding for that sequence number and
 // does not NACK it. The sequencer has no entry for the slot, so a NACK that still comes
 // finds nothing to retransmit.
-func (d *DownTrack) writeDroppedSlotPadding(extSequenceNumber uint64, extTimestamp uint64) {
+func (d *DownTrack) writeDroppedSlotPadding(extSequenceNumber uint64, extTimestamp uint64, isOutOfOrder bool) {
 	hdr := RTPHeaderFactory.Get().(*rtp.Header)
 	initPooledRTPHeader(hdr, rtp.Header{
 		Version:        2,
@@ -1271,7 +1271,7 @@ func (d *DownTrack) writeDroppedSlotPadding(extSequenceNumber uint64, extTimesta
 		hdrSize,
 		0,
 		len(droppedSlotPadding),
-		true,
+		isOutOfOrder,
 	)
 
 	pacerPacket := pacer.PacketFactory.Get().(*pacer.Packet)
