@@ -2106,7 +2106,7 @@ func TestForwarderVP8DDWithPictureID(t *testing.T) {
 		&testutils.TestDDParams{FirstPacketInFrame: true, ExtFrameNum: 2, TemporalID: 1, DTIs: "-SS", FrameDiffs: []int{1}, DecodeTargets: testutils.TestVP8DecodeTargets},
 	)
 	require.NoError(t, err)
-	extPkt.Payload = codec.VP8{S: true, I: true, PictureID: 2}
+	extPkt.VP8 = &codec.VP8{S: true, I: true, PictureID: 2}
 	_, _ = f.GetTranslationParams(extPkt, 0)
 	require.IsType(t, &codecmunger.VP8{}, f.codecMunger)
 	require.True(t, f.codecMunger.GetState().(*livekit.VP8MungerState).PictureIdUsed, "seeded from the packet")
@@ -2463,24 +2463,24 @@ func TestForwarderIsEndOfLayerFrame(t *testing.T) {
 	vp9Codec := webrtc.RTPCodecCapability{MimeType: mime.MimeTypeVP9.String(), ClockRate: 90000}
 
 	f := newForwarder(testutils.TestVP8Codec, webrtc.RTPCodecTypeVideo)
-	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{Payload: codecs.VP9Packet{E: true}}))
+	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{VP9: &codecs.VP9Packet{E: true}}))
 
 	f = newForwarder(vp9Codec, webrtc.RTPCodecTypeVideo)
-	require.True(t, f.isEndOfLayerFrame(&buffer.ExtPacket{Payload: codecs.VP9Packet{E: true}}))
-	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{Payload: codecs.VP9Packet{E: false}}))
+	require.True(t, f.isEndOfLayerFrame(&buffer.ExtPacket{VP9: &codecs.VP9Packet{E: true}}))
+	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{VP9: &codecs.VP9Packet{E: false}}))
 	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{}))
 
 	require.True(t, f.isEndOfLayerFrame(&buffer.ExtPacket{
 		DependencyDescriptor: &buffer.ExtDependencyDescriptor{
 			Descriptor: &dd.DependencyDescriptor{LastPacketInFrame: true},
 		},
-		Payload: codecs.VP9Packet{E: false},
+		VP9: &codecs.VP9Packet{E: false},
 	}))
 	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{
 		DependencyDescriptor: &buffer.ExtDependencyDescriptor{
 			Descriptor: &dd.DependencyDescriptor{LastPacketInFrame: false},
 		},
-		Payload: codecs.VP9Packet{E: true},
+		VP9: &codecs.VP9Packet{E: true},
 	}))
 	require.False(t, f.isEndOfLayerFrame(&buffer.ExtPacket{
 		DependencyDescriptor: &buffer.ExtDependencyDescriptor{},

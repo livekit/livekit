@@ -23,13 +23,11 @@ import (
 	"time"
 
 	"github.com/pion/rtp"
-	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/mediatransportutil"
-	"github.com/livekit/mediatransportutil/pkg/codec"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
@@ -2180,8 +2178,7 @@ func (f *Forwarder) isEndOfLayerFrame(extPkt *buffer.ExtPacket) bool {
 	}
 
 	if f.mime == mime.MimeTypeVP9 {
-		vp9, ok := extPkt.Payload.(codecs.VP9Packet)
-		return ok && vp9.E
+		return extPkt.VP9 != nil && extPkt.VP9.E
 	}
 
 	return false
@@ -2204,7 +2201,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 		f.vls.SetTemporalLayerSelector(temporallayerselector.NewVP8(f.logger))
 	}
 	if _, ok := f.codecMunger.(*codecmunger.VP8DD); ok && extPkt.DependencyDescriptor != nil {
-		if vp8, ok := extPkt.Payload.(codec.VP8); ok && vp8.I {
+		if extPkt.VP8 != nil && extPkt.VP8.I {
 			// The publisher sends picture IDs with the dependency descriptor, so they need
 			// rewriting. The VP8 munger does that, the temporal layers still switch with the
 			// dependency descriptor.
