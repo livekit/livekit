@@ -341,6 +341,7 @@ type DownTrack struct {
 	keyFrameRequesterChMu     sync.RWMutex
 	keyFrameRequesterCh       chan struct{}
 	keyFrameRequesterChClosed bool
+	keyFrameRequesterWakeups  atomic.Uint32
 
 	retransmitChMu     sync.RWMutex
 	retransmitCh       chan struct{}
@@ -956,18 +957,20 @@ func (d *DownTrack) keyFrameRequester() {
 	defer timer.Stop()
 
 	for !d.IsClosed() {
-		timer.Reset(getInterval())
-
 		select {
 		case _, more := <-d.keyFrameRequesterCh:
 			if !more {
 				return
 			}
 			if !timer.Stop() {
-				<-timer.C
+				select {
+				case <-timer.C:
+				default:
+				}
 			}
 		case <-timer.C:
 		}
+		d.keyFrameRequesterWakeups.Inc()
 
 		locked, layer := d.forwarder.CheckSync()
 		if !locked && layer != buffer.InvalidLayerSpatial && d.writable.Load() {
@@ -983,6 +986,13 @@ func (d *DownTrack) keyFrameRequester() {
 			if sal := d.getStreamAllocatorListener(); sal != nil {
 				sal.OnAvailableLayersChanged(d)
 			}
+		}
+
+		// Re-arm only while there is something to wait for: a requested layer that is not locked yet,
+		// or a lock state that can change without an event. Once locked, sleep until the
+		// next event so a locked track does not wake up every interval.
+		if (!locked && layer != buffer.InvalidLayerSpatial) || d.forwarder.NeedsPeriodicSyncCheck() {
+			timer.Reset(getInterval())
 		}
 	}
 }
@@ -1197,6 +1207,8 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 
 	if tp.isSwitching {
 		d.postMaxLayerNotifierEvent("switching")
+		// the current layer moved on the packet path, so the layer lock may have changed
+		d.postKeyFrameRequestEvent()
 	}
 
 	if tp.isResuming {
@@ -1443,6 +1455,8 @@ func (d *DownTrack) handleMute(muted bool, changed bool) {
 	// and that could turn on/off layers on publisher side.
 	//
 	d.postMaxLayerNotifierEvent("mute")
+	// mute resyncs the forwarder, so the layer lock has to be re-acquired on unmute
+	d.postKeyFrameRequestEvent()
 
 	if sal := d.getStreamAllocatorListener(); sal != nil {
 		sal.OnSubscriptionChanged(d)
@@ -1659,6 +1673,8 @@ func (d *DownTrack) UpTrackBitrateAvailabilityChange() {
 
 func (d *DownTrack) UpTrackMaxPublishedLayerChange(maxPublishedLayer int32) {
 	if d.forwarder.SetMaxPublishedLayer(maxPublishedLayer) {
+		// may arm the acquisition grace, which the key frame requester has to expire
+		d.postKeyFrameRequestEvent()
 		if sal := d.getStreamAllocatorListener(); sal != nil {
 			sal.OnMaxPublishedSpatialChanged(d)
 		}
@@ -1804,6 +1820,7 @@ func (d *DownTrack) Pause() VideoAllocation {
 func (d *DownTrack) Resync() {
 	d.forwarder.Resync()
 	d.flushSequencer()
+	d.postKeyFrameRequestEvent()
 }
 
 // flushSequencer discards recorded packet metadata on a stream restart so that NACK

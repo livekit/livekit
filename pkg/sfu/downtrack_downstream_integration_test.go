@@ -919,3 +919,67 @@ func TestDownTrackSendsProbePackets(t *testing.T) {
 		})
 	}
 }
+
+// -----------------------------------------------------------------------------
+// keyFrameRequester: PLI only while a layer lock is pending
+// -----------------------------------------------------------------------------
+
+// TestDownTrackKeyFrameRequesterArmsOnlyWhilePending verifies that the key frame
+// requester keeps sending PLIs while the target layer is not locked, and goes quiet
+// once a key frame on the target layer locks it (no periodic wake-ups while locked).
+func TestDownTrackKeyFrameRequesterArmsOnlyWhilePending(t *testing.T) {
+	h := vnettest.NewHosts(t)
+	factory := buffer.NewFactoryOfBufferFactory(500, 500).CreateBufferFactory()
+	p := pacer.NewPassThrough(logger.GetLogger(), newNullBWE())
+	t.Cleanup(p.Stop)
+
+	dh := newBoundDownTrack(t, h, factory, vp8CodecParams, p, vnettest.MediaEngineConfig{Video: true})
+
+	// allocate a target layer (spatial 0) without any media, so the lock is pending
+	var brs Bitrates
+	brs[0][0] = 100_000
+	dh.receiver.GetLayeredBitrateReturns([]int32{0}, brs)
+	dh.dt.UpTrackMaxPublishedLayerChange(0)
+	dh.dt.SetMaxSpatialLayer(0)
+	alloc := dh.dt.AllocateOptimal(false, false)
+	require.Equal(t, int32(0), alloc.TargetLayer.Spatial, "expected target layer to be allocated")
+
+	// unlocked: PLIs must keep coming at the key frame interval
+	require.Eventually(t, func() bool {
+		return dh.receiver.SendPLICallCount() >= 3
+	}, 5*time.Second, 20*time.Millisecond, "expected repeated PLIs while layer lock is pending")
+
+	// a key frame on the target layer locks it
+	vp8 := &codec.VP8{
+		FirstByte:  0x10,
+		S:          true,
+		PictureID:  1,
+		IsKeyFrame: true,
+	}
+	ep, err := testutils.GetTestExtPacketVP8(&testutils.TestExtPacketParams{
+		SequenceNumber: 5000,
+		Timestamp:      180000,
+		SSRC:           0x33333333,
+		PayloadType:    96,
+		PayloadSize:    50,
+		IsKeyFrame:     true,
+		Marker:         true,
+	}, vp8)
+	require.NoError(t, err)
+	ep.Packet.Payload = distinctivePayload(0x40, 50)
+	require.Equal(t, int32(1), dh.dt.WriteRTP(ep, 0), "keyframe should forward")
+
+	// let an already armed interval fire, then the requester must stay asleep
+	time.Sleep(2 * KeyFrameIntervalMaxForTest)
+	before := dh.receiver.SendPLICallCount()
+	wakeups := dh.dt.KeyFrameRequesterWakeupsForTest()
+	time.Sleep(2 * KeyFrameIntervalMaxForTest)
+	require.Equal(t, wakeups, dh.dt.KeyFrameRequesterWakeupsForTest(), "key frame requester must not wake up once the layer is locked")
+	require.Equal(t, before, dh.receiver.SendPLICallCount(), "no PLI expected once the layer is locked")
+
+	// a resync drops the lock and must wake the requester again
+	dh.dt.Resync()
+	require.Eventually(t, func() bool {
+		return dh.receiver.SendPLICallCount() > before
+	}, 5*time.Second, 20*time.Millisecond, "expected PLI after resync")
+}

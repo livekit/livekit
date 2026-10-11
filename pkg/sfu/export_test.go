@@ -14,7 +14,11 @@
 
 package sfu
 
-import "github.com/livekit/livekit-server/pkg/sfu/buffer"
+import (
+	"time"
+
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+)
 
 // Test-only seams that expose DownTrack internals to the external sfu_test package.
 // This file is only compiled into the test binary (its name ends in _test.go), so it
@@ -70,4 +74,10 @@ func (d *DownTrack) RetransmitForTest(
 		extTimestamp:      extTimestamp,
 	}
 	return d.retransmitPacket(&epm, sourcePkt, false)
+}
+
+const KeyFrameIntervalMaxForTest = keyFrameIntervalMax * time.Millisecond
+
+func (d *DownTrack) KeyFrameRequesterWakeupsForTest() uint32 {
+	return d.keyFrameRequesterWakeups.Load()
 }
