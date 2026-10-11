@@ -88,7 +88,7 @@ func GetTestExtPacketVP8(params *TestExtPacketParams, vp8 *codec.VP8) (*buffer.E
 	}
 
 	ep.IsKeyFrame = vp8.IsKeyFrame
-	ep.Payload = *vp8
+	ep.VP8 = vp8
 	if ep.DependencyDescriptor == nil {
 		ep.Temporal = int32(vp8.TID)
 	}
