@@ -97,10 +97,12 @@ func TestDDForwarder(t *testing.T) {
 	// nothing before the first key frame, there is no structure to write it with
 	require.Nil(t, d.forward(f, d.packet(1, 999, false, 0), 0))
 
-	// the first key frame keeps the publisher's frame number and carries the structure
+	// the first key frame keeps the publisher's frame number and carries the structure,
+	// with the decode targets the subscriber gets, not all of them
 	out := d.forward(f, d.packet(1, 1000, true, 0), 0)
 	require.Equal(t, uint16(1000), out.FrameNumber)
 	require.NotNil(t, out.AttachedStructure)
+	require.Equal(t, uint32(1<<0), *out.ActiveDecodeTargetsBitmask)
 
 	// delta frames name the active decode targets, frames dropped in between leave gaps
 	out = d.forward(f, d.packet(1, 1001, false, 0), 0)
@@ -176,6 +178,22 @@ func TestDDForwarderRestartOnDeltaFrame(t *testing.T) {
 	require.Nil(t, d.forward(f, d.packet(1, 3, false, 1), 0))
 	require.Equal(t, uint16(1003), d.forward(f, d.packet(1, 4, true, 1), 0).FrameNumber)
 	require.Equal(t, uint16(1004), d.forward(f, d.packet(1, 5, false, 1), 0).FrameNumber)
+}
+
+func TestDDForwarderPublisherActiveDecodeTargets(t *testing.T) {
+	d := newDDForwarderTest(t)
+	f := NewDDForwarder(logger.GetLogger())
+	require.Equal(t, uint32(1<<0|1<<1|1<<2), *d.forward(f, d.packet(1, 100, true, 0), 2).ActiveDecodeTargetsBitmask)
+
+	// the publisher turns off its upper decode targets, the subscriber does not expect them
+	delta := d.packet(1, 101, false, 0)
+	publisherMask := uint32(1 << 0)
+	delta.DependencyDescriptor.Descriptor.ActiveDecodeTargetsBitmask = &publisherMask
+	require.Equal(t, uint32(1<<0), *d.forward(f, delta, 2).ActiveDecodeTargetsBitmask)
+	require.Equal(t, uint32(1<<0), *d.forward(f, d.packet(1, 102, false, 0), 2).ActiveDecodeTargetsBitmask)
+
+	// a structure without a mask makes all of them active again
+	require.Equal(t, uint32(1<<0|1<<1|1<<2), *d.forward(f, d.packet(1, 103, true, 0), 2).ActiveDecodeTargetsBitmask)
 }
 
 func TestDDForwarderAllocations(t *testing.T) {

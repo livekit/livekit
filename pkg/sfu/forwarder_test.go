@@ -2168,6 +2168,21 @@ func TestForwarderVP8ForwardsDependencyDescriptor(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint16(102), out.FrameNumber)
 
+	// the last packet of a TL2 frame that starts a down switch to TL0 is forwarded at TL2,
+	// its descriptor names the TL2 decode target
+	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 2})
+	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+	tl2 := packet(13, 51, false)
+	tl2.Temporal = 2
+	tp, err = f.GetTranslationParams(tl2, 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	require.Equal(t, int32(0), f.vls.GetCurrent().Temporal, "the switch takes effect after this packet")
+	out = dd.DependencyDescriptor{}
+	_, err = (&dd.DependencyDescriptorExtension{Descriptor: &out, Structure: keyFrameDescriptor.AttachedStructure}).Unmarshal(tp.ddInline())
+	require.NoError(t, err)
+	require.Equal(t, uint32(1<<0|1<<1|1<<2), *out.ActiveDecodeTargetsBitmask)
+
 	// without the extension the forwarder writes no descriptor
 	f = NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
 	f.DetermineCodec(testutils.TestVP8Codec, nil, livekit.VideoLayer_MODE_UNUSED)

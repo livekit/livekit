@@ -283,6 +283,9 @@ type Forwarder struct {
 	vls videolayerselector.VideoLayerSelector
 	// set for VP8 with the dependency descriptor, forwards the descriptor to the subscriber
 	ddForwarder *videolayerselector.DDForwarder
+	// temporal layer of the packet being translated, the selector's current layer is
+	// already the next one on the last packet before a down switch
+	packetTemporal int32
 
 	codecMunger codecmunger.CodecMunger
 }
@@ -2268,6 +2271,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	tp.ddBytes, tp.ddBytesLen, tp.ddBytesSpill = result.DDBytes, result.DDBytesLen, result.DDBytesSpill
 	tp.marker = result.RTPMarker
 	tp.isEndOfLayerFrame = f.isEndOfLayerFrame(extPkt)
+	f.packetTemporal = f.vls.GetCurrent().Temporal
 
 	starting, err := f.getTranslationParamsCommon(extPkt, layer, &tp)
 	tp.isStarting = starting
@@ -2299,9 +2303,9 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 	}
 
 	if f.ddForwarder != nil {
-		// after translateCodecHeader, which picks the temporal layer
+		// after translateCodecHeader, which picks the packet's temporal layer
 		var ddResult videolayerselector.VideoLayerSelectorResult
-		if f.ddForwarder.Forward(extPkt, f.vls.GetCurrent().Temporal, &ddResult) {
+		if f.ddForwarder.Forward(extPkt, f.packetTemporal, &ddResult) {
 			tp.ddBytes, tp.ddBytesLen, tp.ddBytesSpill = ddResult.DDBytes, ddResult.DDBytesLen, ddResult.DDBytesSpill
 		}
 	}
@@ -2312,6 +2316,7 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tp *TranslationParams) error {
 	// codec specific forwarding check and any needed packet munging
 	tl := f.vls.SelectTemporal(extPkt)
+	f.packetTemporal = tl
 	inputSize, codecBytes, codecBytesLen, err := f.codecMunger.UpdateAndGet(
 		extPkt,
 		tp.rtp.snOrdering == SequenceNumberOrderingOutOfOrder,
