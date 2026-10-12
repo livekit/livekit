@@ -282,6 +282,36 @@ func TestTrackPublishing(t *testing.T) {
 		// an error response for disallowed source should send a `RequestResponse`.
 		require.Equal(t, 2, sink.WriteMessageCallCount())
 	})
+	t.Run("should expose leak when pending tracks are silently abandoned without publication error", func(t *testing.T) {
+		p := newParticipantForTestWithOpts("zombie-test", &participantOpts{protocolVersion: 7})
+
+		var sids []livekit.TrackID
+		for i := 0; i < cMaxPendingTracks; i++ {
+			ti := p.addPendingTrack(&livekit.AddTrackRequest{
+				Cid:  fmt.Sprintf("silent_cid_%d", i),
+				Name: fmt.Sprintf("silent_track_%d", i),
+				Type: livekit.TrackType_VIDEO,
+			})
+			require.NotNil(t, ti)
+			sids = append(sids, livekit.TrackID(ti.Sid))
+		}
+
+		require.Len(t, p.pendingTracks, cMaxPendingTracks)
+		require.Nil(t, p.addPendingTrack(&livekit.AddTrackRequest{
+			Cid:  "overflow_track",
+			Name: "overflow_track",
+			Type: livekit.TrackType_VIDEO,
+		}))
+
+		require.Len(t, p.pendingTracks, cMaxPendingTracks)
+		require.NotNil(t, p.GetPendingTrack(sids[0]))
+
+		require.Nil(t, p.addPendingTrack(&livekit.AddTrackRequest{
+			Cid:  "valid_subsequent_track",
+			Name: "valid_subsequent_track",
+			Type: livekit.TrackType_VIDEO,
+		}), "Vulnerability Confirmed: Stale allocations permanently block subsequent legitimate tracks.")
+	})
 }
 
 func TestOutOfOrderUpdates(t *testing.T) {
