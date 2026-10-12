@@ -415,13 +415,15 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 		return false
 	}
 
+	prevDDForwarder := f.ddForwarder
 	f.ddForwarder = nil
 	switch f.mime {
 	case mime.MimeTypeVP8:
 		f.isDDAvailable = ddAvailable(extensions)
 		if f.isDDAvailable {
 			f.codecMunger = codecmunger.NewVP8DD(f.logger)
-			f.ddForwarder = videolayerselector.NewDDForwarder(f.logger)
+			// the downtrack keeps its SSRC, so the frame numbers continue
+			f.ddForwarder = videolayerselector.NewDDForwarderFromOther(prevDDForwarder, f.logger)
 		} else {
 			f.codecMunger = codecmunger.NewVP8FromOther(f.codecMunger, f.logger)
 		}

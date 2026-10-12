@@ -2157,6 +2157,17 @@ func TestForwarderVP8ForwardsDependencyDescriptor(t *testing.T) {
 	require.False(t, tp.shouldDrop)
 	require.NotEmpty(t, tp.ddInline())
 
+	// a restarted upstream receiver sets the codec again, the frame numbers continue on
+	// the same downtrack
+	f.DetermineCodec(testutils.TestVP8Codec, []webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}}, livekit.VideoLayer_MODE_UNUSED)
+	tp, err = f.GetTranslationParams(packet(12, 50, true), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	out := dd.DependencyDescriptor{}
+	_, err = (&dd.DependencyDescriptorExtension{Descriptor: &out, Structure: keyFrameDescriptor.AttachedStructure}).Unmarshal(tp.ddBytesSpill)
+	require.NoError(t, err)
+	require.Equal(t, uint16(102), out.FrameNumber)
+
 	// without the extension the forwarder writes no descriptor
 	f = NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
 	f.DetermineCodec(testutils.TestVP8Codec, nil, livekit.VideoLayer_MODE_UNUSED)

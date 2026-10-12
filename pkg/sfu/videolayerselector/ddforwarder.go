@@ -20,21 +20,30 @@ import (
 	"github.com/livekit/protocol/logger"
 )
 
-// DDForwarder forwards the dependency descriptor of a simulcast stream. Every simulcast
-// layer has its own dependency structure and frame numbers, so at a layer switch the frame
-// numbers continue from the last forwarded frame, and the structure of the new layer goes
-// out with its key frame. Without the descriptor, a subscriber of a stream without picture
-// IDs, VP8 from libwebrtc for example, finds frame references by sequence number alone and
-// stalls on every sequence number it cannot account for.
+// DDForwarder forwards the dependency descriptor of a simulcast stream. Without it, a
+// subscriber of a stream without picture IDs, VP8 from libwebrtc for example, finds frame
+// references by sequence number alone and stalls on every sequence number it cannot account
+// for.
+//
+// libwebrtc numbers frames with one counter for all simulcast layers of a sender, so the
+// frame numbers of a new layer are close to those of the old one. The numbers sent to the
+// subscriber must still never go back: a key frame older than the last structure the
+// subscriber received is dropped. So whenever the stream changes, a layer switch, a stream
+// restart or a new forwarder, the numbers are moved up past the last one sent if needed.
+// Otherwise they pass through with the current offset, so frame diffs and chain diffs stay
+// valid. A migrated subscriber starts with the publisher's numbers, which continue its old
+// ones in most cases but not all, as the last number sent is not part of the migrated state.
 type DDForwarder struct {
 	logger logger.Logger
 
-	initialized       bool
+	initialized       bool // a key frame with a structure set the stream
 	ssrc              uint32
 	restartGeneration int
 	structure         *dd.FrameDependencyStructure
-	frameNumOffset    uint64 // added to the incoming extended frame number
-	extLastFrameNum   uint64 // highest outgoing extended frame number
+
+	frameNumOffset  uint64 // added to the incoming extended frame number
+	hasLast         bool
+	extLastFrameNum uint64 // highest outgoing extended frame number
 
 	descriptor                 dd.DependencyDescriptor
 	activeDecodeTargetsBitmask uint32
@@ -44,6 +53,17 @@ func NewDDForwarder(logger logger.Logger) *DDForwarder {
 	return &DDForwarder{
 		logger: logger,
 	}
+}
+
+// NewDDForwarderFromOther continues the frame numbers of a forwarder it replaces on the
+// same downtrack, a restarted upstream receiver for example.
+func NewDDForwarderFromOther(other *DDForwarder, logger logger.Logger) *DDForwarder {
+	d := NewDDForwarder(logger)
+	if other != nil && other.hasLast {
+		d.hasLast = true
+		d.extLastFrameNum = other.extLastFrameNum
+	}
+	return d
 }
 
 // Forward marshals the descriptor of a forwarded packet into result. temporal is the
@@ -57,29 +77,35 @@ func (d *DDForwarder) Forward(extPkt *buffer.ExtPacket, temporal int32, result *
 	descriptor := ddwdt.Descriptor
 
 	extFrameNum := ddwdt.ExtFrameNum
-	if extPkt.IsKeyFrame && descriptor.AttachedStructure != nil {
-		switch {
-		case !d.initialized:
-			// keep the publisher's frame numbers, a migrated subscriber continues with them
-			d.initialized = true
-			d.frameNumOffset = 0
-			d.extLastFrameNum = extFrameNum
-
-		case extPkt.Packet.SSRC != d.ssrc || ddwdt.RestartGeneration != d.restartGeneration:
-			// a new layer or a restarted stream has its own frame numbers, a late packet of
-			// a forwarded key frame keeps its number
-			d.frameNumOffset = d.extLastFrameNum + 1 - extFrameNum
+	hasStructure := extPkt.IsKeyFrame && descriptor.AttachedStructure != nil
+	switch {
+	case !d.initialized || extPkt.Packet.SSRC != d.ssrc:
+		// a stream starts on a key frame, a late packet of the old layer is not described
+		if !hasStructure {
+			return false
 		}
+		d.rebase(extFrameNum)
+		d.initialized = true
 		d.ssrc = extPkt.Packet.SSRC
 		d.restartGeneration = ddwdt.RestartGeneration
+
+	case ddwdt.RestartGeneration != d.restartGeneration:
+		// the restarted stream numbers its frames from a new start and has its own structure,
+		// the first packet can be a delta frame
+		d.rebase(extFrameNum)
+		d.restartGeneration = ddwdt.RestartGeneration
+		d.structure = nil
+	}
+	if hasStructure {
 		d.structure = descriptor.AttachedStructure
 	}
-	if !d.initialized || d.structure == nil || extPkt.Packet.SSRC != d.ssrc {
+	if d.structure == nil {
 		return false
 	}
 
 	extOutFrameNum := extFrameNum + d.frameNumOffset
-	if extOutFrameNum > d.extLastFrameNum {
+	if !d.hasLast || extOutFrameNum > d.extLastFrameNum {
+		d.hasLast = true
 		d.extLastFrameNum = extOutFrameNum
 	}
 
@@ -106,4 +132,11 @@ func (d *DDForwarder) Forward(extPkt *buffer.ExtPacket, temporal int32, result *
 		return false
 	}
 	return true
+}
+
+// rebase moves the frame numbers up when a new stream would go back past the last one sent
+func (d *DDForwarder) rebase(extFrameNum uint64) {
+	if d.hasLast && extFrameNum+d.frameNumOffset <= d.extLastFrameNum {
+		d.frameNumOffset = d.extLastFrameNum + 1 - extFrameNum
+	}
 }
