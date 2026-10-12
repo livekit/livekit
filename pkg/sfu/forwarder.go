@@ -283,6 +283,8 @@ type Forwarder struct {
 	vls videolayerselector.VideoLayerSelector
 	// set for VP8 with the dependency descriptor, forwards the descriptor to the subscriber
 	ddForwarder *videolayerselector.DDForwarder
+	// migrated descriptor state that arrived before the codec was known
+	ddForwarderSeed *livekit.DependencyDescriptorForwarderState
 	// temporal layer of the packet being translated, the selector's current layer is
 	// already the next one on the last packet before a down switch
 	packetTemporal int32
@@ -427,6 +429,8 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 			f.codecMunger = codecmunger.NewVP8DD(f.logger)
 			// the downtrack keeps its SSRC, so the frame numbers continue
 			f.ddForwarder = videolayerselector.NewDDForwarderFromOther(prevDDForwarder, f.logger)
+			f.ddForwarder.SeedState(f.ddForwarderSeed)
+			f.ddForwarderSeed = nil
 		} else {
 			f.codecMunger = codecmunger.NewVP8FromOther(f.codecMunger, f.logger)
 		}
@@ -539,6 +543,12 @@ func (f *Forwarder) GetState() *livekit.RTPForwarderState {
 	for layer, refInfo := range f.refInfos {
 		state.SenderReportState[layer] = proto.CloneOf(refInfo.senderReport)
 	}
+	if f.ddForwarder != nil {
+		state.DependencyDescriptorForwarder = f.ddForwarder.GetState()
+	} else {
+		// seeded, but migrating on before the codec was known
+		state.DependencyDescriptorForwarder = proto.CloneOf(f.ddForwarderSeed)
+	}
 	return state
 }
 
@@ -559,6 +569,11 @@ func (f *Forwarder) SeedState(state *livekit.RTPForwarderState) {
 
 	f.rtpMunger.SeedState(state.RtpMunger)
 	f.codecMunger.SeedState(state.CodecMunger)
+	if f.ddForwarder != nil {
+		f.ddForwarder.SeedState(state.DependencyDescriptorForwarder)
+	} else {
+		f.ddForwarderSeed = state.DependencyDescriptorForwarder
+	}
 
 	f.started = true
 	f.referenceLayerSpatial = state.ReferenceLayerSpatial

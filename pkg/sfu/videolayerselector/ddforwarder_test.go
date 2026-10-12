@@ -23,6 +23,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -195,6 +196,29 @@ func TestDDForwarderPublisherActiveDecodeTargets(t *testing.T) {
 
 	// and turned them on again
 	require.Equal(t, uint32(1<<0|1<<1|1<<2), *d.forward(f, d.packet(1, 103, true, 0), 2).ActiveDecodeTargetsBitmask)
+}
+
+func TestDDForwarderState(t *testing.T) {
+	d := newDDForwarderTest(t)
+	f := NewDDForwarder(logger.GetLogger())
+	require.Nil(t, f.GetState())
+	require.Equal(t, uint16(1000), d.forward(f, d.packet(1, 1000, true, 0), 0).FrameNumber)
+	require.Equal(t, uint16(1003), d.forward(f, d.packet(1, 1003, false, 0), 0).FrameNumber)
+	state := f.GetState()
+	require.Equal(t, uint64(1003), state.ExtLastFrameNumber)
+
+	// a migrated subscriber whose new node's key frame is behind continues after the last
+	// number sent
+	f = NewDDForwarder(logger.GetLogger())
+	f.SeedState(state)
+	require.Nil(t, d.forward(f, d.packet(1, 999, false, 0), 0))
+	require.Equal(t, uint16(1004), d.forward(f, d.packet(1, 1001, true, 0), 0).FrameNumber)
+
+	// the old node had wrapped its extended numbers, the new node starts from the 16 bit
+	// value: the 16 bit numbers still continue
+	f = NewDDForwarder(logger.GetLogger())
+	f.SeedState(&livekit.DependencyDescriptorForwarderState{ExtLastFrameNumber: 1<<16 + 1003})
+	require.Equal(t, uint16(1004), d.forward(f, d.packet(1, 1001, true, 0), 0).FrameNumber)
 }
 
 func TestDDForwarderAllocations(t *testing.T) {

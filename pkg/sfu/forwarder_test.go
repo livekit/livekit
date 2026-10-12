@@ -2183,6 +2183,29 @@ func TestForwarderVP8ForwardsDependencyDescriptor(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint32(1<<0|1<<1|1<<2), *out.ActiveDecodeTargetsBitmask)
 
+	// a migrated subscriber: the state is seeded before the codec is known, and the new
+	// node's first key frame continues after the last number sent
+	state := f.GetState()
+	require.Equal(t, uint64(103), state.DependencyDescriptorForwarder.ExtLastFrameNumber)
+	f = NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
+	f.SeedState(state)
+
+	// it migrates on before its codec is known, the next node still gets the number
+	state = f.GetState()
+	require.Equal(t, uint64(103), state.DependencyDescriptorForwarder.ExtLastFrameNumber)
+	f = NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
+	f.SeedState(state)
+	f.DetermineCodec(testutils.TestVP8Codec, []webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}}, livekit.VideoLayer_MODE_UNUSED)
+	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 0})
+	tp, err = f.GetTranslationParams(packet(20, 60, true), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	out = dd.DependencyDescriptor{}
+	_, err = (&dd.DependencyDescriptorExtension{Descriptor: &out, Structure: keyFrameDescriptor.AttachedStructure}).Unmarshal(tp.ddBytesSpill)
+	require.NoError(t, err)
+	require.Equal(t, uint16(104), out.FrameNumber)
+
 	// without the extension the forwarder writes no descriptor
 	f = NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
 	f.DetermineCodec(testutils.TestVP8Codec, nil, livekit.VideoLayer_MODE_UNUSED)
