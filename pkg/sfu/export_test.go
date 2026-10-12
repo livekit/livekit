@@ -32,6 +32,12 @@ func (d *DownTrack) PayloadTypeRTXForTest() uint32 { return d.payloadTypeRTX.Loa
 
 func (d *DownTrack) RTPStatsActiveForTest() bool { return d.rtpStats.IsActive() }
 
+const DroppedSlotPaddingSizeForTest = droppedSlotPaddingSize
+
+func (d *DownTrack) WriteDroppedSlotPaddingForTest(extSequenceNumber uint64, extTimestamp uint64) {
+	d.writeDroppedSlotPadding(extSequenceNumber, extTimestamp, false)
+}
+
 func (d *DownTrack) LastReceiverReportTimeForTest() int64 {
 	return d.rtpStats.LastReceiverReportTime()
 }

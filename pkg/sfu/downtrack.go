@@ -86,7 +86,7 @@ var (
 )
 
 // padding of a dropped packet's slot, one byte: the count byte itself
-var droppedSlotPadding = []byte{1}
+const droppedSlotPaddingSize = 1
 
 var (
 	VP8KeyFrame8x8 = []byte{
@@ -1253,7 +1253,7 @@ func (d *DownTrack) writeDroppedSlotPadding(extSequenceNumber uint64, extTimesta
 	initPooledRTPHeader(hdr, rtp.Header{
 		Version:        2,
 		Padding:        true,
-		PaddingSize:    byte(len(droppedSlotPadding)),
+		PaddingSize:    droppedSlotPaddingSize,
 		Marker:         false,
 		PayloadType:    uint8(d.payloadType.Load()),
 		SequenceNumber: uint16(extSequenceNumber),
@@ -1270,7 +1270,7 @@ func (d *DownTrack) writeDroppedSlotPadding(extSequenceNumber uint64, extTimesta
 		hdr.Marker,
 		hdrSize,
 		0,
-		len(droppedSlotPadding),
+		droppedSlotPaddingSize,
 		isOutOfOrder,
 	)
 
@@ -1279,7 +1279,6 @@ func (d *DownTrack) writeDroppedSlotPadding(extSequenceNumber uint64, extTimesta
 		Header:             hdr,
 		HeaderPool:         RTPHeaderFactory,
 		HeaderSize:         hdrSize,
-		Payload:            droppedSlotPadding,
 		ProbeClusterId:     ccutils.ProbeClusterIdInvalid, // not probe traffic
 		AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
 		TransportWideExtID: uint8(d.transportWideExtID),
@@ -1354,7 +1353,6 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 	}
 
 	bytesSent := 0
-	payloads := make([]byte, RTPPaddingMaxPayloadSize*len(snts))
 	for i := range snts {
 		hdr := RTPHeaderFactory.Get().(*rtp.Header)
 		initPooledRTPHeader(hdr, rtp.Header{
@@ -1369,12 +1367,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 		})
 		d.addDummyExtensions(hdr)
 
-		payload := payloads[i*RTPPaddingMaxPayloadSize : (i+1)*RTPPaddingMaxPayloadSize : (i+1)*RTPPaddingMaxPayloadSize]
-		// last byte of padding has padding size including that byte
-		payload[RTPPaddingMaxPayloadSize-1] = byte(RTPPaddingMaxPayloadSize)
-
 		hdrSize := hdr.MarshalSize()
-		payloadSize := len(payload)
 		d.rtpStats.Update(
 			mono.UnixNano(),
 			snts[i].extSequenceNumber,
@@ -1382,7 +1375,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 			hdr.Marker,
 			hdrSize,
 			0,
-			payloadSize,
+			RTPPaddingMaxPayloadSize,
 			false,
 		)
 
@@ -1391,7 +1384,6 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 			Header:             hdr,
 			HeaderPool:         RTPHeaderFactory,
 			HeaderSize:         hdrSize,
-			Payload:            payload,
 			ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
 			IsProbe:            true,
 			AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
@@ -1400,7 +1392,7 @@ func (d *DownTrack) WritePaddingRTP(bytesToSend int, paddingOnMute bool, forceMa
 		}
 		d.pacer.Enqueue(pacerPacket)
 
-		bytesSent += hdrSize + payloadSize
+		bytesSent += hdrSize + RTPPaddingMaxPayloadSize
 	}
 
 	return bytesSent
@@ -2528,8 +2520,7 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 			return 0
 		}
 
-		payloads := make([]byte, RTPPaddingMaxPayloadSize*num)
-		for i := range num {
+		for range num {
 			rtxExtSequenceNumber := d.rtxSequenceNumber.Inc()
 			hdr := RTPHeaderFactory.Get().(*rtp.Header)
 			initPooledRTPHeader(hdr, rtp.Header{
@@ -2544,12 +2535,7 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 			})
 			d.addDummyExtensions(hdr)
 
-			payload := payloads[i*RTPPaddingMaxPayloadSize : (i+1)*RTPPaddingMaxPayloadSize : (i+1)*RTPPaddingMaxPayloadSize]
-			// last byte of padding has padding size including that byte
-			payload[RTPPaddingMaxPayloadSize-1] = byte(RTPPaddingMaxPayloadSize)
-
 			hdrSize := hdr.MarshalSize()
-			payloadSize := len(payload)
 			d.rtpStatsRTX.Update(
 				mono.UnixNano(),
 				rtxExtSequenceNumber,
@@ -2557,7 +2543,7 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 				hdr.Marker,
 				hdrSize,
 				0,
-				payloadSize,
+				RTPPaddingMaxPayloadSize,
 				false,
 			)
 			pacerPacket := pacer.PacketFactory.Get().(*pacer.Packet)
@@ -2565,7 +2551,6 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 				Header:             hdr,
 				HeaderPool:         RTPHeaderFactory,
 				HeaderSize:         hdrSize,
-				Payload:            payload,
 				ProbeClusterId:     ccutils.ProbeClusterId(d.probeClusterId.Load()),
 				IsProbe:            true,
 				AbsSendTimeExtID:   uint8(d.absSendTimeExtID),
@@ -2574,7 +2559,7 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 			}
 			d.pacer.Enqueue(pacerPacket)
 
-			bytesSent += hdrSize + payloadSize
+			bytesSent += hdrSize + RTPPaddingMaxPayloadSize
 		}
 	} else {
 		src := PacketFactory.Get().(*[]byte)

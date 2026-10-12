@@ -110,7 +110,7 @@ func (b *Base) patchRTPHeaderExtensions(p *Packet) error {
 		b.lastPacketSentAt.Store(sendingAt.UnixNano())
 	}
 
-	packetSize := p.HeaderSize + len(p.Payload)
+	packetSize := p.HeaderSize + len(p.Payload) + int(p.Header.PaddingSize)
 	if p.TransportWideExtID != 0 && b.bwe != nil {
 		twccSN := b.bwe.RecordPacketSendAndGetSequenceNumber(
 			sendingAt.UnixMicro(),
