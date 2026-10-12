@@ -85,10 +85,15 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 	if err != nil {
 		return nil, err
 	}
+	allowPeerCIDRs, err := parsePeerCIDRs("turn.allow_peer_cidrs", turnConf.AllowPeerCIDRs)
+	if err != nil {
+		return nil, err
+	}
 	denyPeerCIDRs, err := parsePeerCIDRs("turn.deny_peer_cidrs", turnConf.DenyPeerCIDRs)
 	if err != nil {
 		return nil, err
 	}
+	permissionHandler := newPeerPermissionHandler(allowPeerCIDRs, allowRestrictedPeerCIDRs, denyPeerCIDRs)
 
 	serverConfig := turn.ServerConfig{
 		Realm:         LivekitRealm,
@@ -129,37 +134,6 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 		}
 		if standalone {
 			relayAddrGen = telemetry.NewRelayAddressGenerator(relayAddrGen)
-		}
-
-		permissionHandler := func(_clientAddr net.Addr, peerIP net.IP) bool {
-			// restricted peer IP is denied by default, unless allowed by the allow list,
-			if peerIP.IsLoopback() ||
-				peerIP.IsLinkLocalUnicast() ||
-				peerIP.IsLinkLocalMulticast() ||
-				peerIP.IsMulticast() ||
-				peerIP.IsPrivate() ||
-				peerIP.IsUnspecified() {
-				allowed := false
-				for _, ipnet := range allowRestrictedPeerCIDRs {
-					if ipnet.Contains(peerIP) {
-						allowed = true
-						break
-					}
-				}
-				if !allowed {
-					return false
-				}
-
-				// if allowed, check deny list for overrides
-			}
-
-			for _, ipnet := range denyPeerCIDRs {
-				if ipnet.Contains(peerIP) {
-					return false
-				}
-			}
-
-			return true
 		}
 
 		if turnConf.TLSPort > 0 {
@@ -203,6 +177,40 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 
 	logger.Infow("Starting TURN server", logValues...)
 	return turn.NewServer(serverConfig)
+}
+
+// newPeerPermissionHandler decides whether a TURN client may relay to peerIP.
+// When allowPeer is set, peers outside it are denied. Restricted peers (loopback,
+// link-local, multicast, private, unspecified) must also match allowRestricted.
+// denyPeer takes precedence over both allow lists.
+func newPeerPermissionHandler(allowPeer, allowRestricted, denyPeer []*net.IPNet) turn.PermissionHandler {
+	return func(_ net.Addr, peerIP net.IP) bool {
+		if len(allowPeer) > 0 && !containsIP(allowPeer, peerIP) {
+			return false
+		}
+		if isRestrictedPeerIP(peerIP) && !containsIP(allowRestricted, peerIP) {
+			return false
+		}
+		return !containsIP(denyPeer, peerIP)
+	}
+}
+
+func isRestrictedPeerIP(ip net.IP) bool {
+	return ip.IsLoopback() ||
+		ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() ||
+		ip.IsPrivate() ||
+		ip.IsUnspecified()
+}
+
+func containsIP(cidrs []*net.IPNet, ip net.IP) bool {
+	for _, ipnet := range cidrs {
+		if ipnet.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 // newTURNTCPListener returns the TCP listener for TURN/TLS. The PROXY protocol

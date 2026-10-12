@@ -356,6 +356,13 @@ keys:
 #   allow_restricted_peer_cidrs:
 #     - 10.0.0.0/8
 #     - 192.168.0.0/16
+#   # list of peer CIDRs to allow access to, applied to all peers, including non-restricted ones.
+#   # By default (i. e. empty list), no additional restriction is applied.
+#   # When not empty, peers outside the specified CIDRs are denied access.
+#   # Restricted peers must still match allow_restricted_peer_cidrs, and deny list takes precedence.
+#   # Useful to limit relaying to the SFU itself, e.g. the node's own address.
+#   allow_peer_cidrs:
+#     - 10.0.0.5/32
 #   # list of peer CIDRs to deny access to.
 #   # This applies to all peer CIDRs, including restricted ones.
 #   # Deny list takes precedence over allow list.
