@@ -2189,6 +2189,12 @@ func TestForwarderVP8ForwardsDependencyDescriptor(t *testing.T) {
 	require.Equal(t, uint64(103), state.DependencyDescriptorForwarder.ExtLastFrameNumber)
 	f = NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
 	f.SeedState(state)
+
+	// it migrates on before its codec is known, the next node still gets the number
+	state = f.GetState()
+	require.Equal(t, uint64(103), state.DependencyDescriptorForwarder.ExtLastFrameNumber)
+	f = NewForwarder(webrtc.RTPCodecTypeVideo, logger.GetLogger(), true, true, true, nil)
+	f.SeedState(state)
 	f.DetermineCodec(testutils.TestVP8Codec, []webrtc.RTPHeaderExtensionParameter{{URI: dd.ExtensionURI}}, livekit.VideoLayer_MODE_UNUSED)
 	f.vls.SetCurrent(buffer.VideoLayer{Spatial: 0, Temporal: 0})
 	f.vls.SetTarget(buffer.VideoLayer{Spatial: 0, Temporal: 0})

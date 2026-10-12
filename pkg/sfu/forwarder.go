@@ -545,6 +545,9 @@ func (f *Forwarder) GetState() *livekit.RTPForwarderState {
 	}
 	if f.ddForwarder != nil {
 		state.DependencyDescriptorForwarder = f.ddForwarder.GetState()
+	} else {
+		// seeded, but migrating on before the codec was known
+		state.DependencyDescriptorForwarder = proto.CloneOf(f.ddForwarderSeed)
 	}
 	return state
 }
