@@ -415,9 +415,12 @@ func splitEndpointPath(u *url.URL) (endpointPath, error) {
 		return endpointPath{}, errMalformedPath
 	}
 	// "_" and "%5F" both land here; neither is a registrable name
-	// (IsReservedAgentName)
-	if agentName == UnnamedAgentSegment {
+	// (IsReservedAgentName, ValidateDeployment)
+	if agentName == UnnamedSegment {
 		agentName = ""
+	}
+	if deployment == UnnamedSegment {
+		deployment = ""
 	}
 	return endpointPath{agentName: agentName, deployment: deployment, path: path, escPath: escPath}, nil
 }

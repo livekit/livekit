@@ -287,6 +287,10 @@ func TestSplitEndpointPath(t *testing.T) {
 		{name: "bare underscore is unnamed", target: "/agents/_/d/x", agentName: "", deployment: "d", path: "/x", escPath: "/x"},
 		{name: "encoded underscore is unnamed", target: "/agents/%5F/d/x", agentName: "", deployment: "d", path: "/x", escPath: "/x"},
 		{name: "double encoded underscore is a name", target: "/agents/%255F/d/x", agentName: "%5F", deployment: "d", path: "/x", escPath: "/x"},
+		{name: "bare underscore deployment is unnamed", target: "/agents/a/_/x", agentName: "a", deployment: "", path: "/x", escPath: "/x"},
+		{name: "encoded underscore deployment is unnamed", target: "/agents/a/%5F/x", agentName: "a", deployment: "", path: "/x", escPath: "/x"},
+		{name: "unnamed agent and deployment", target: "/agents/_/_/x", agentName: "", deployment: "", path: "/x", escPath: "/x"},
+		{name: "default is a deployment name", target: "/agents/a/default/x", agentName: "a", deployment: "default", path: "/x", escPath: "/x"},
 
 		{name: "not an endpoint path", target: "/other/x", err: errNotEndpointPath},
 		{name: "no deployment segment", target: "/agents/a", err: errNotEndpointPath},
