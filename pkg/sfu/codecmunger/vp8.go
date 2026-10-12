@@ -263,7 +263,7 @@ func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap
 
 					v.pictureIdOffset += 1
 				}
-				return 0, hdr, 0, ErrFilteredVP8TemporalLayer
+				return 0, hdr, 0, ErrFilteredTemporalLayer
 			}
 		}
 	}
