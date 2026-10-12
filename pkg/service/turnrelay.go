@@ -102,6 +102,45 @@ func newTURNRelayPolicy(g turn.RelayAddressGenerator, localIPs map[netip.Addr]st
 	}
 }
 
+func (g *turnRelayPolicy) allows(addr net.Addr) bool {
+	udpAddr, ok := addr.(*net.UDPAddr)
+	if !ok {
+		return false
+	}
+	ap := udpAddr.AddrPort()
+	if _, ok := g.localIPs[ap.Addr().Unmap().WithZone("")]; !ok {
+		return true
+	}
+	for _, r := range g.mediaPorts {
+		if ap.Port() >= r.start && ap.Port() <= r.end {
+			return true
+		}
+	}
+	return false
+}
+
+func (g *turnRelayPolicy) AllocatePacketConn(c turn.AllocateListenerConfig) (net.PacketConn, net.Addr, error) {
+	conn, addr, err := g.RelayAddressGenerator.AllocatePacketConn(c)
+	if err != nil {
+		return conn, addr, err
+	}
+	return &turnRelayPacketConn{PacketConn: conn, policy: g}, addr, nil
+}
+
+// turnRelayPacketConn silently drops relayed packets to peers the policy does
+// not allow.
+type turnRelayPacketConn struct {
+	net.PacketConn
+	policy *turnRelayPolicy
+}
+
+func (c *turnRelayPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
+	if !c.policy.allows(addr) {
+		return len(p), nil
+	}
+	return c.PacketConn.WriteTo(p, addr)
+}
+
 // getTURNLocalIPs returns the addresses that are delivered to this host: its
 // interface addresses and the node IPs, which may be 1:1 NAT addresses.
 func getTURNLocalIPs(rtcConf *config.RTCConfig) (map[netip.Addr]struct{}, error) {
@@ -147,43 +186,4 @@ func getTURNMediaPorts(rtcConf *config.RTCConfig) []portRange {
 		}
 	}
 	return ports
-}
-
-func (g *turnRelayPolicy) allows(addr net.Addr) bool {
-	udpAddr, ok := addr.(*net.UDPAddr)
-	if !ok {
-		return false
-	}
-	ap := udpAddr.AddrPort()
-	if _, ok := g.localIPs[ap.Addr().Unmap().WithZone("")]; !ok {
-		return true
-	}
-	for _, r := range g.mediaPorts {
-		if ap.Port() >= r.start && ap.Port() <= r.end {
-			return true
-		}
-	}
-	return false
-}
-
-func (g *turnRelayPolicy) AllocatePacketConn(c turn.AllocateListenerConfig) (net.PacketConn, net.Addr, error) {
-	conn, addr, err := g.RelayAddressGenerator.AllocatePacketConn(c)
-	if err != nil {
-		return conn, addr, err
-	}
-	return &turnRelayPacketConn{PacketConn: conn, policy: g}, addr, nil
-}
-
-// turnRelayPacketConn silently drops relayed packets to peers the policy does
-// not allow.
-type turnRelayPacketConn struct {
-	net.PacketConn
-	policy *turnRelayPolicy
-}
-
-func (c *turnRelayPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
-	if !c.policy.allows(addr) {
-		return len(p), nil
-	}
-	return c.PacketConn.WriteTo(p, addr)
 }
