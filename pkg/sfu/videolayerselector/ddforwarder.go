@@ -17,6 +17,7 @@ package videolayerselector
 import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
+	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -31,8 +32,8 @@ import (
 // subscriber received is dropped. So whenever the stream changes, a layer switch, a stream
 // restart or a new forwarder, the numbers are moved up past the last one sent if needed.
 // Otherwise they pass through with the current offset, so frame diffs and chain diffs stay
-// valid. A migrated subscriber starts with the publisher's numbers, which continue its old
-// ones in most cases but not all, as the last number sent is not part of the migrated state.
+// valid. A migrated subscriber continues with the last number sent, which is part of the
+// migrated forwarder state.
 type DDForwarder struct {
 	logger logger.Logger
 
@@ -64,6 +65,29 @@ func NewDDForwarderFromOther(other *DDForwarder, logger logger.Logger) *DDForwar
 		d.extLastFrameNum = other.extLastFrameNum
 	}
 	return d
+}
+
+// GetState returns the last frame number sent, nil before the first one.
+func (d *DDForwarder) GetState() *livekit.DependencyDescriptorForwarderState {
+	if !d.hasLast {
+		return nil
+	}
+	return &livekit.DependencyDescriptorForwarderState{
+		ExtLastFrameNumber: d.extLastFrameNum,
+	}
+}
+
+// SeedState continues after the last frame number a forwarder on another node sent to the
+// subscriber. Extended numbers there started from a lower or equal base, so the first key
+// frame here moves past it, and the 16 bit numbers continue.
+func (d *DDForwarder) SeedState(state *livekit.DependencyDescriptorForwarderState) {
+	if state == nil {
+		return
+	}
+	if !d.hasLast || state.ExtLastFrameNumber > d.extLastFrameNum {
+		d.hasLast = true
+		d.extLastFrameNum = state.ExtLastFrameNumber
+	}
 }
 
 // Forward marshals the descriptor of a forwarded packet into result. temporal is the
