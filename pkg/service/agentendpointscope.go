@@ -32,7 +32,7 @@ type endpointScopeKey struct {
 }
 
 func newEndpointScopeKey(apiKey, agentName, deployment string) endpointScopeKey {
-	return endpointScopeKey{apiKey, agentName, endpoint.NormalizeDeployment(deployment)}
+	return endpointScopeKey{apiKey, agentName, deployment}
 }
 
 // EndpointScopes maps that tenancy onto the endpoint package's scopes, one per
