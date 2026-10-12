@@ -225,6 +225,22 @@ func TestDependencyDescriptorParserActiveDecodeTargetsMask(t *testing.T) {
 	require.EqualValues(t, 1, extDD.ActiveDecodeTargetsMask)
 }
 
+// a first key frame at RTP sequence number 0 still makes its structure's decode targets
+// active
+func TestDependencyDescriptorParserActiveDecodeTargetsMaskAtSequenceZero(t *testing.T) {
+	f := newDDTestFeeder(t)
+	f.seq = 0xffff // the first packet goes out with sequence number 0
+	structure := newL1T1Structure(0)
+
+	extDD, err := f.keyFrame(0, structure)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, extDD.ActiveDecodeTargetsMask)
+
+	extDD, err = f.deltaFrame(1)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, extDD.ActiveDecodeTargetsMask)
+}
+
 // a pooled ExtDependencyDescriptor carries the storage for its descriptor, so parsing a delta
 // frame must not allocate and a reused descriptor must not show the previous packet's values
 func TestDependencyDescriptorParserNoAlloc(t *testing.T) {
