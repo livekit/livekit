@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -109,6 +110,17 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 	logValues = append(logValues, "turn.relay_range_end", turnConf.RelayPortRangeEnd)
 	logValues = append(logValues, "turn.per_user_relay_allocation_limit", turnConf.PerUserRelayAllocationLimit)
 
+	// embedded TURN shares the host with the SFU, limit relays to this host to its media ports
+	var localIPs map[netip.Addr]struct{}
+	var mediaPorts []portRange
+	if !standalone {
+		localIPs, err = getTURNLocalIPs(&conf.RTC)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not get local IPs for TURN relay policy")
+		}
+		mediaPorts = getTURNMediaPorts(&conf.RTC)
+	}
+
 	for _, addr := range turnConf.BindAddresses {
 		var nodeIP string
 		if net.ParseIP(addr).To4() != nil {
@@ -127,18 +139,10 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 			MaxPort:      turnConf.RelayPortRangeEnd,
 			MaxRetries:   allocateRetries,
 		}
-		if standalone {
-			relayAddrGen = telemetry.NewRelayAddressGenerator(relayAddrGen)
-		}
 
 		permissionHandler := func(_clientAddr net.Addr, peerIP net.IP) bool {
 			// restricted peer IP is denied by default, unless allowed by the allow list,
-			if peerIP.IsLoopback() ||
-				peerIP.IsLinkLocalUnicast() ||
-				peerIP.IsLinkLocalMulticast() ||
-				peerIP.IsMulticast() ||
-				peerIP.IsPrivate() ||
-				peerIP.IsUnspecified() {
+			if isRestrictedPeerIP(peerIP) {
 				allowed := false
 				for _, ipnet := range allowRestrictedPeerCIDRs {
 					if ipnet.Contains(peerIP) {
@@ -160,6 +164,13 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 			}
 
 			return true
+		}
+
+		relayAddrGen = newRejectTCPRelayAddressGenerator(relayAddrGen)
+		if standalone {
+			relayAddrGen = telemetry.NewRelayAddressGenerator(relayAddrGen)
+		} else {
+			relayAddrGen = newTURNRelayPolicy(relayAddrGen, localIPs, mediaPorts)
 		}
 
 		if turnConf.TLSPort > 0 {
