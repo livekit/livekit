@@ -101,7 +101,8 @@ func (d *DDForwarder) Forward(extPkt *buffer.ExtPacket, temporal int32, result *
 	descriptor := ddwdt.Descriptor
 
 	extFrameNum := ddwdt.ExtFrameNum
-	hasStructure := extPkt.IsKeyFrame && descriptor.AttachedStructure != nil
+	// the parser accepts a structure only on the first packet of a frame
+	hasStructure := descriptor.AttachedStructure != nil
 	switch {
 	case !d.initialized || extPkt.Packet.SSRC != d.ssrc:
 		// a stream starts on a key frame, a late packet of the old layer is not described
