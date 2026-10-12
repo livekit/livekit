@@ -274,7 +274,7 @@ func (r *RoomManager) Stop() {
 }
 
 func (r *RoomManager) CreateRoom(ctx context.Context, req *livekit.CreateRoomRequest) (*livekit.Room, error) {
-	room, err := r.getOrCreateRoom(ctx, req)
+	room, err := r.getOrCreateRoom(ctx, req, true)
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +303,12 @@ func (r *RoomManager) StartSession(
 	}
 
 	createRoom := pi.CreateRoom
-	room, err := r.getOrCreateRoom(ctx, createRoom)
+	// a session start may only bring a room into existence when auto create is
+	// enabled or the token carries the roomCreate grant; otherwise a join that
+	// raced a delete (or targets a room that is already gone) would silently
+	// resurrect the room
+	createIfMissing := r.config.Room.AutoCreate || (pi.Grants != nil && pi.Grants.Video != nil && pi.Grants.Video.RoomCreate)
+	room, err := r.getOrCreateRoom(ctx, createRoom, createIfMissing)
 	if err != nil {
 		if pi.Identity != "" {
 			prometheus.IncrementParticipantRtcCanceled(1, false, pi.Client.GetSdk())
@@ -644,7 +649,7 @@ func (r *RoomManager) StartSession(
 }
 
 // create the actual room object, to be used on RTC node
-func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.CreateRoomRequest) (*rtc.Room, error) {
+func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.CreateRoomRequest, createIfMissing bool) (*rtc.Room, error) {
 	roomName := livekit.RoomName(createRoom.Name)
 
 	r.lock.RLock()
@@ -653,6 +658,12 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, createRoom *livekit.C
 
 	if lastSeenRoom != nil && lastSeenRoom.Hold() {
 		return lastSeenRoom, nil
+	}
+
+	if !createIfMissing {
+		// the room is gone (deleted, closed, or never existed): refuse instead
+		// of resurrecting it, a closing room counts as not existing
+		return nil, ErrRoomNotFound
 	}
 
 	// create new room, get details first
