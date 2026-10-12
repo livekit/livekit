@@ -17,6 +17,7 @@ package codecmunger
 import (
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/mediatransportutil/pkg/codec"
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -31,6 +32,7 @@ const ddTemporalFrameWindow = 64
 // forwarder uses the VP8 munger for a stream that keeps picture IDs.
 type DDTemporal struct {
 	logger logger.Logger
+	isVP8  bool // padding needs a VP8 payload descriptor
 
 	initialized   bool
 	highestFrame  uint64
@@ -38,9 +40,10 @@ type DDTemporal struct {
 	forwardedMask uint64 // bit i: frame highestFrame - i is forwarded
 }
 
-func NewDDTemporal(logger logger.Logger) *DDTemporal {
+func NewDDTemporal(mimeType mime.MimeType, logger logger.Logger) *DDTemporal {
 	return &DDTemporal{
 		logger: logger,
+		isVP8:  mimeType == mime.MimeTypeVP8,
 	}
 }
 
@@ -88,7 +91,11 @@ func (v *DDTemporal) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, _
 }
 
 func (v *DDTemporal) UpdateAndGetPadding(_newPicture bool) ([]byte, error) {
-	// the one byte payload descriptor of a key frame that starts a partition
+	if !v.isVP8 {
+		return nil, nil
+	}
+
+	// the one byte VP8 payload descriptor of a key frame that starts a partition
 	vp8Packet := &codec.VP8{
 		FirstByte:  0x10,
 		IsKeyFrame: true,

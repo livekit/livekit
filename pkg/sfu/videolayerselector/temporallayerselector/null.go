@@ -21,7 +21,8 @@ import (
 // Null is for a stream whose temporal layers cannot be filtered, simulcast without the
 // dependency descriptor for example: every temporal layer is forwarded. It reports the
 // target as the current layer, so a target below the highest layer does not stay pending
-// and block further allocation.
+// and block further allocation. The forwarder pairs it with the null codec munger, which
+// ignores the temporal layer it returns for the packet.
 type Null struct{}
 
 func NewNull() *Null {

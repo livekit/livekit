@@ -21,6 +21,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -40,7 +41,7 @@ func vp8DDPacket(t *testing.T, frameNum uint64, tid int) *buffer.ExtPacket {
 
 func TestDDTemporalUpdateAndGet(t *testing.T) {
 	t.Run("filters by temporal layer, header unchanged", func(t *testing.T) {
-		v := NewDDTemporal(logger.GetLogger())
+		v := NewDDTemporal(mime.MimeTypeVP8, logger.GetLogger())
 		inputSize, _, n, err := v.UpdateAndGet(vp8DDPacket(t, 0, 0), false, false, 0)
 		require.NoError(t, err)
 		require.Zero(t, inputSize)
@@ -51,7 +52,7 @@ func TestDDTemporalUpdateAndGet(t *testing.T) {
 	})
 
 	t.Run("a gap does not exempt a filtered layer", func(t *testing.T) {
-		v := NewDDTemporal(logger.GetLogger())
+		v := NewDDTemporal(mime.MimeTypeVP8, logger.GetLogger())
 		_, _, _, err := v.UpdateAndGet(vp8DDPacket(t, 0, 0), false, false, 0)
 		require.NoError(t, err)
 		for frameNum := uint64(2); frameNum < 6; frameNum++ {
@@ -61,7 +62,7 @@ func TestDDTemporalUpdateAndGet(t *testing.T) {
 	})
 
 	t.Run("every packet of a frame gets the decision of its first packet", func(t *testing.T) {
-		v := NewDDTemporal(logger.GetLogger())
+		v := NewDDTemporal(mime.MimeTypeVP8, logger.GetLogger())
 		_, _, _, err := v.UpdateAndGet(vp8DDPacket(t, 1, 2), false, false, 0)
 		require.ErrorIs(t, err, ErrFilteredTemporalLayer)
 		_, _, _, err = v.UpdateAndGet(vp8DDPacket(t, 2, 1), false, false, 1)
@@ -75,7 +76,7 @@ func TestDDTemporalUpdateAndGet(t *testing.T) {
 	})
 
 	t.Run("late packet of a frame older than the window", func(t *testing.T) {
-		v := NewDDTemporal(logger.GetLogger())
+		v := NewDDTemporal(mime.MimeTypeVP8, logger.GetLogger())
 		_, _, _, err := v.UpdateAndGet(vp8DDPacket(t, 100, 0), false, false, 2)
 		require.NoError(t, err)
 		_, _, _, err = v.UpdateAndGet(vp8DDPacket(t, 100-ddTemporalFrameWindow, 0), true, false, 2)
@@ -83,7 +84,7 @@ func TestDDTemporalUpdateAndGet(t *testing.T) {
 	})
 
 	t.Run("layer switch forgets decisions", func(t *testing.T) {
-		v := NewDDTemporal(logger.GetLogger())
+		v := NewDDTemporal(mime.MimeTypeVP8, logger.GetLogger())
 		_, _, _, err := v.UpdateAndGet(vp8DDPacket(t, 1, 2), false, false, 0)
 		require.ErrorIs(t, err, ErrFilteredTemporalLayer)
 		v.UpdateOffsets(vp8DDPacket(t, 1, 0))
@@ -92,9 +93,16 @@ func TestDDTemporalUpdateAndGet(t *testing.T) {
 	})
 
 	t.Run("padding", func(t *testing.T) {
-		v := NewDDTemporal(logger.GetLogger())
+		v := NewDDTemporal(mime.MimeTypeVP8, logger.GetLogger())
 		hdr, err := v.UpdateAndGetPadding(true)
 		require.NoError(t, err)
 		require.Equal(t, []byte{0x10}, hdr)
+
+		// other codecs have no payload descriptor to prepend
+		for _, mimeType := range []mime.MimeType{mime.MimeTypeVP9, mime.MimeTypeAV1} {
+			hdr, err = NewDDTemporal(mimeType, logger.GetLogger()).UpdateAndGetPadding(true)
+			require.NoError(t, err)
+			require.Nil(t, hdr)
+		}
 	})
 }

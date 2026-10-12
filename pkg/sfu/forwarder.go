@@ -512,7 +512,7 @@ func (f *Forwarder) setSimulcastSelector() {
 // dependency descriptor, and forwards the descriptor to the subscriber
 func (f *Forwarder) setDDTemporalFilter(prevDDForwarder *videolayerselector.DDForwarder) {
 	f.isDDAvailable = true
-	f.codecMunger = codecmunger.NewDDTemporal(f.logger)
+	f.codecMunger = codecmunger.NewDDTemporal(f.mime, f.logger)
 	f.vls.SetTemporalLayerSelector(temporallayerselector.NewDependencyDescriptor(f.logger))
 	// the downtrack keeps its SSRC, so the frame numbers continue
 	f.ddForwarder = videolayerselector.NewDDForwarderFromOther(prevDDForwarder, f.logger)
