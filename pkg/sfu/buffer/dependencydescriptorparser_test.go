@@ -75,19 +75,34 @@ func (f *ddTestFeeder) deltaFrame(frameNumber uint16) (*ExtDependencyDescriptor,
 	return f.feed(frameNumber, f.structure.Templates[1], nil)
 }
 
+// deltaFrameWithMask sends a delta frame that changes the active decode targets
+func (f *ddTestFeeder) deltaFrameWithMask(frameNumber uint16, activeDecodeTargets uint32) (*ExtDependencyDescriptor, error) {
+	return f.feedWithMask(frameNumber, f.structure.Templates[1], nil, &activeDecodeTargets)
+}
+
 func (f *ddTestFeeder) feed(
 	frameNumber uint16,
 	template *dd.FrameDependencyTemplate,
 	attachedStructure *dd.FrameDependencyStructure,
 ) (*ExtDependencyDescriptor, error) {
+	return f.feedWithMask(frameNumber, template, attachedStructure, nil)
+}
+
+func (f *ddTestFeeder) feedWithMask(
+	frameNumber uint16,
+	template *dd.FrameDependencyTemplate,
+	attachedStructure *dd.FrameDependencyStructure,
+	activeDecodeTargets *uint32,
+) (*ExtDependencyDescriptor, error) {
 	f.t.Helper()
 
 	ddVal := &dd.DependencyDescriptor{
-		FirstPacketInFrame: true,
-		LastPacketInFrame:  true,
-		FrameNumber:        frameNumber,
-		FrameDependencies:  template,
-		AttachedStructure:  attachedStructure,
+		FirstPacketInFrame:         true,
+		LastPacketInFrame:          true,
+		FrameNumber:                frameNumber,
+		FrameDependencies:          template,
+		AttachedStructure:          attachedStructure,
+		ActiveDecodeTargetsBitmask: activeDecodeTargets,
 	}
 	buf, err := (&dd.DependencyDescriptorExtension{Descriptor: ddVal, Structure: f.structure}).Marshal()
 	require.NoError(f.t, err)
@@ -185,6 +200,29 @@ func TestDependencyDescriptorParserExtKeyFrameNum(t *testing.T) {
 	extDD, err = f.deltaFrame(5)
 	require.NoError(t, err)
 	require.EqualValues(t, 4, extDD.ExtKeyFrameNum)
+}
+
+// every packet carries the stream's current active decode targets, also after the mask
+// changed on a packet the forwarder dropped
+func TestDependencyDescriptorParserActiveDecodeTargetsMask(t *testing.T) {
+	f := newDDTestFeeder(t)
+	structure := newL1T1Structure(0)
+
+	extDD, err := f.keyFrame(0, structure)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, extDD.ActiveDecodeTargetsMask)
+
+	extDD, err = f.deltaFrameWithMask(1, 0)
+	require.NoError(t, err)
+	require.EqualValues(t, 0, extDD.ActiveDecodeTargetsMask)
+
+	extDD, err = f.deltaFrame(2)
+	require.NoError(t, err)
+	require.EqualValues(t, 0, extDD.ActiveDecodeTargetsMask)
+
+	extDD, err = f.keyFrame(3, structure)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, extDD.ActiveDecodeTargetsMask)
 }
 
 // a pooled ExtDependencyDescriptor carries the storage for its descriptor, so parsing a delta

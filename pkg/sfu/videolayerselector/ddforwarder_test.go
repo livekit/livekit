@@ -70,6 +70,8 @@ func (d *ddForwarderTest) packet(ssrc uint32, extFrameNum uint64, isKeyFrame boo
 			DecodeTargets:     d.decodeTargets,
 			ExtFrameNum:       extFrameNum,
 			RestartGeneration: restartGeneration,
+			// all decode targets active, as the parser reports after a structure
+			ActiveDecodeTargetsMask: 1<<len(d.decodeTargets) - 1,
 		},
 	}
 }
@@ -185,14 +187,13 @@ func TestDDForwarderPublisherActiveDecodeTargets(t *testing.T) {
 	f := NewDDForwarder(logger.GetLogger())
 	require.Equal(t, uint32(1<<0|1<<1|1<<2), *d.forward(f, d.packet(1, 100, true, 0), 2).ActiveDecodeTargetsBitmask)
 
-	// the publisher turns off its upper decode targets, the subscriber does not expect them
-	delta := d.packet(1, 101, false, 0)
-	publisherMask := uint32(1 << 0)
-	delta.DependencyDescriptor.Descriptor.ActiveDecodeTargetsBitmask = &publisherMask
+	// the publisher turned off its upper decode targets on a packet that was not forwarded,
+	// the next forwarded packet still reports it
+	delta := d.packet(1, 102, false, 0)
+	delta.DependencyDescriptor.ActiveDecodeTargetsMask = 1 << 0
 	require.Equal(t, uint32(1<<0), *d.forward(f, delta, 2).ActiveDecodeTargetsBitmask)
-	require.Equal(t, uint32(1<<0), *d.forward(f, d.packet(1, 102, false, 0), 2).ActiveDecodeTargetsBitmask)
 
-	// a structure without a mask makes all of them active again
+	// and turned them on again
 	require.Equal(t, uint32(1<<0|1<<1|1<<2), *d.forward(f, d.packet(1, 103, true, 0), 2).ActiveDecodeTargetsBitmask)
 }
 
@@ -207,14 +208,14 @@ func TestDDForwarderAllocations(t *testing.T) {
 	keyFrame := &buffer.ExtPacket{
 		Packet:               &rtp.Packet{Header: rtp.Header{SSRC: 1}},
 		IsKeyFrame:           true,
-		DependencyDescriptor: &buffer.ExtDependencyDescriptor{Descriptor: &keyFrameDescriptor, DecodeTargets: decodeTargets, ExtFrameNum: 100},
+		DependencyDescriptor: &buffer.ExtDependencyDescriptor{Descriptor: &keyFrameDescriptor, DecodeTargets: decodeTargets, ExtFrameNum: 100, ActiveDecodeTargetsMask: 1},
 	}
 	deltaDescriptor := keyFrameDescriptor
 	deltaDescriptor.AttachedStructure = nil
 	deltaDescriptor.ActiveDecodeTargetsBitmask = nil
 	delta := &buffer.ExtPacket{
 		Packet:               &rtp.Packet{Header: rtp.Header{SSRC: 1}},
-		DependencyDescriptor: &buffer.ExtDependencyDescriptor{Descriptor: &deltaDescriptor, DecodeTargets: decodeTargets, ExtFrameNum: 101},
+		DependencyDescriptor: &buffer.ExtDependencyDescriptor{Descriptor: &deltaDescriptor, DecodeTargets: decodeTargets, ExtFrameNum: 101, ActiveDecodeTargetsMask: 1},
 	}
 
 	f := NewDDForwarder(logger.GetLogger())

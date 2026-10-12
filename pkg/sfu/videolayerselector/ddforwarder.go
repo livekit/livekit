@@ -45,10 +45,6 @@ type DDForwarder struct {
 	hasLast         bool
 	extLastFrameNum uint64 // highest outgoing extended frame number
 
-	// the publisher's own active decode targets, all of them unless it sends a mask
-	hasPublisherActiveDecodeTargets bool
-	publisherActiveDecodeTargets    uint32
-
 	descriptor                 dd.DependencyDescriptor
 	activeDecodeTargetsBitmask uint32
 }
@@ -102,12 +98,6 @@ func (d *DDForwarder) Forward(extPkt *buffer.ExtPacket, temporal int32, result *
 	}
 	if hasStructure {
 		d.structure = descriptor.AttachedStructure
-		// a structure makes every decode target active again unless the mask comes with it
-		d.hasPublisherActiveDecodeTargets = false
-	}
-	if descriptor.ActiveDecodeTargetsBitmask != nil {
-		d.hasPublisherActiveDecodeTargets = true
-		d.publisherActiveDecodeTargets = *descriptor.ActiveDecodeTargetsBitmask
 	}
 	if d.structure == nil {
 		return false
@@ -119,17 +109,16 @@ func (d *DDForwarder) Forward(extPkt *buffer.ExtPacket, temporal int32, result *
 		d.extLastFrameNum = extOutFrameNum
 	}
 
-	// tell the subscriber which decode targets to expect, the dropped temporal layers are
-	// not coming, on a key frame too, where the structure alone would make all of them active
+	// tell the subscriber which decode targets to expect: the publisher's active ones up to
+	// the forwarded temporal layer. On a key frame too, where the structure alone would make
+	// all of them active.
 	d.activeDecodeTargetsBitmask = 0
 	for _, dt := range ddwdt.DecodeTargets {
 		if dt.Layer.Temporal <= temporal {
 			d.activeDecodeTargetsBitmask |= 1 << dt.Target
 		}
 	}
-	if d.hasPublisherActiveDecodeTargets {
-		d.activeDecodeTargetsBitmask &= d.publisherActiveDecodeTargets
-	}
+	d.activeDecodeTargetsBitmask &= ddwdt.ActiveDecodeTargetsMask
 	d.descriptor = *descriptor
 	d.descriptor.FrameNumber = uint16(extOutFrameNum)
 	d.descriptor.ActiveDecodeTargetsBitmask = &d.activeDecodeTargetsBitmask

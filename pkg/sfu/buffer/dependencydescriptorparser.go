@@ -99,8 +99,11 @@ type ExtDependencyDescriptor struct {
 	DecodeTargets              []DependencyDescriptorDecodeTarget
 	StructureUpdated           bool
 	ActiveDecodeTargetsUpdated bool
-	Integrity                  bool
-	ExtFrameNum                uint64
+	// the stream's current active decode targets, on every packet, also when the mask
+	// changed on a packet the subscriber does not get
+	ActiveDecodeTargetsMask uint32
+	Integrity               bool
+	ExtFrameNum             uint64
 	// the frame number of the keyframe which the current frame depends on
 	ExtKeyFrameNum uint64
 
@@ -285,6 +288,7 @@ func (r *DependencyDescriptorParser) Parse(pkt *rtp.Packet) (*ExtDependencyDescr
 
 	extDD.DecodeTargets = r.decodeTargets
 	extDD.ExtKeyFrameNum = r.structureExtFrameNum
+	extDD.ActiveDecodeTargetsMask = r.activeDecodeTargetsMask
 
 	return extDD, videoLayer, nil
 }

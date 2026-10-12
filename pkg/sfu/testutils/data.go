@@ -143,6 +143,8 @@ func GetTestExtPacketVP8DD(params *TestExtPacketParams, ddParams *TestDDParams) 
 		},
 		DecodeTargets: ddParams.DecodeTargets,
 		ExtFrameNum:   ddParams.ExtFrameNum,
+		// all decode targets active, as the parser reports after a structure
+		ActiveDecodeTargetsMask: 1<<len(ddParams.DecodeTargets) - 1,
 	}
 	return ep, nil
 }
