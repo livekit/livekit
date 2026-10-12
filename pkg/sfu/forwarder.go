@@ -424,93 +424,108 @@ func (f *Forwarder) DetermineCodec(codec webrtc.RTPCodecCapability, extensions [
 	f.ddForwarder = nil
 	switch f.mime {
 	case mime.MimeTypeVP8:
-		f.isDDAvailable = ddAvailable(extensions)
-		if f.isDDAvailable {
-			f.codecMunger = codecmunger.NewVP8DD(f.logger)
-			// the downtrack keeps its SSRC, so the frame numbers continue
-			f.ddForwarder = videolayerselector.NewDDForwarderFromOther(prevDDForwarder, f.logger)
-			f.ddForwarder.SeedState(f.ddForwarderSeed)
-			f.ddForwarderSeed = nil
+		f.setSimulcastSelector()
+		if ddAvailable(extensions) {
+			f.setDDTemporalFilter(prevDDForwarder)
 		} else {
+			f.isDDAvailable = false
 			f.codecMunger = codecmunger.NewVP8FromOther(f.codecMunger, f.logger)
-		}
-		if f.vls != nil {
-			if vls := videolayerselector.NewSimulcastFromOther(f.vls); vls != nil {
-				f.vls = vls
-			} else {
-				f.logger.Errorw("failed to create simulcast on codec change", nil)
-			}
-		} else {
-			f.vls = videolayerselector.NewSimulcast(f.logger)
-		}
-		if f.isDDAvailable {
-			f.vls.SetTemporalLayerSelector(temporallayerselector.NewDependencyDescriptor(f.logger))
-		} else {
 			f.vls.SetTemporalLayerSelector(temporallayerselector.NewVP8(f.logger))
 		}
 
 	case mime.MimeTypeH264, mime.MimeTypeH265:
-		f.codecMunger = codecmunger.NewNull(f.logger)
-		if f.vls != nil {
-			if vls := videolayerselector.NewSimulcastFromOther(f.vls); vls != nil {
-				f.vls = vls
-			} else {
-				f.logger.Errorw("failed to create simulcast on codec change", nil)
-			}
-		} else {
-			f.vls = videolayerselector.NewSimulcast(f.logger)
-		}
+		f.setSimulcastSelector()
+		f.setUnfilteredTemporal()
 
 	case mime.MimeTypeVP9:
-		f.codecMunger = codecmunger.NewNull(f.logger)
 		if sfuutils.IsSimulcastMode(videoLayerMode) {
-			if f.vls != nil {
-				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
+			f.setSimulcastSelector()
+			if ddAvailable(extensions) {
+				f.setDDTemporalFilter(prevDDForwarder)
 			} else {
-				f.vls = videolayerselector.NewSimulcast(f.logger)
+				f.setUnfilteredTemporal()
 			}
-		} else {
-			f.isDDAvailable = ddAvailable(extensions)
-			if f.isDDAvailable {
-				if f.vls != nil {
-					f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
-				} else {
-					f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
-				}
-			} else {
-				if f.vls != nil {
-					f.vls = videolayerselector.NewVP9FromOther(f.vls)
-				} else {
-					f.vls = videolayerselector.NewVP9(f.logger)
-				}
-			}
+			break
 		}
 
-	case mime.MimeTypeAV1:
 		f.codecMunger = codecmunger.NewNull(f.logger)
-		if sfuutils.IsSimulcastMode(videoLayerMode) {
+		f.isDDAvailable = ddAvailable(extensions)
+		if f.isDDAvailable {
 			if f.vls != nil {
-				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
+				f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
 			} else {
-				f.vls = videolayerselector.NewSimulcast(f.logger)
+				f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
 			}
 		} else {
-			f.isDDAvailable = ddAvailable(extensions)
-			if f.isDDAvailable {
-				if f.vls != nil {
-					f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
-				} else {
-					f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
-				}
+			if f.vls != nil {
+				f.vls = videolayerselector.NewVP9FromOther(f.vls)
 			} else {
-				if f.vls != nil {
-					f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
-				} else {
-					f.vls = videolayerselector.NewSimulcast(f.logger)
-				}
+				f.vls = videolayerselector.NewVP9(f.logger)
 			}
 		}
+		// the svc selectors pick temporal layers themselves
+		f.vls.SetTemporalLayerSelector(nil)
+
+	case mime.MimeTypeAV1:
+		if sfuutils.IsSimulcastMode(videoLayerMode) {
+			f.setSimulcastSelector()
+			if ddAvailable(extensions) {
+				f.setDDTemporalFilter(prevDDForwarder)
+			} else {
+				f.setUnfilteredTemporal()
+			}
+			break
+		}
+
+		f.codecMunger = codecmunger.NewNull(f.logger)
+		f.isDDAvailable = ddAvailable(extensions)
+		if f.isDDAvailable {
+			if f.vls != nil {
+				f.vls = videolayerselector.NewDependencyDescriptorFromOther(f.vls)
+			} else {
+				f.vls = videolayerselector.NewDependencyDescriptor(f.logger)
+			}
+			f.vls.SetTemporalLayerSelector(nil)
+		} else {
+			// without the dependency descriptor nothing tells the temporal layers apart
+			f.setSimulcastSelector()
+			f.setUnfilteredTemporal()
+		}
 	}
+}
+
+// setSimulcastSelector switches to the simulcast selector, keeping the selector state
+// across a codec change
+func (f *Forwarder) setSimulcastSelector() {
+	if f.vls == nil {
+		f.vls = videolayerselector.NewSimulcast(f.logger)
+		return
+	}
+	if vls := videolayerselector.NewSimulcastFromOther(f.vls); vls != nil {
+		f.vls = vls
+	} else {
+		f.logger.Errorw("failed to create simulcast on codec change", nil)
+	}
+}
+
+// setDDTemporalFilter filters the temporal layers of a simulcast stream by frame with the
+// dependency descriptor, and forwards the descriptor to the subscriber
+func (f *Forwarder) setDDTemporalFilter(prevDDForwarder *videolayerselector.DDForwarder) {
+	f.isDDAvailable = true
+	f.codecMunger = codecmunger.NewDDTemporal(f.logger)
+	f.vls.SetTemporalLayerSelector(temporallayerselector.NewDependencyDescriptor(f.logger))
+	// the downtrack keeps its SSRC, so the frame numbers continue
+	f.ddForwarder = videolayerselector.NewDDForwarderFromOther(prevDDForwarder, f.logger)
+	f.ddForwarder.SeedState(f.ddForwarderSeed)
+	f.ddForwarderSeed = nil
+}
+
+// setUnfilteredTemporal forwards every temporal layer of a simulcast stream that has
+// nothing to filter them with
+func (f *Forwarder) setUnfilteredTemporal() {
+	f.isDDAvailable = false
+	f.codecMunger = codecmunger.NewNull(f.logger)
+	f.vls.SetTemporalLayerSelector(temporallayerselector.NewNull())
 }
 
 func (f *Forwarder) GetState() *livekit.RTPForwarderState {
@@ -2211,21 +2226,26 @@ func (f *Forwarder) isEndOfLayerFrame(extPkt *buffer.ExtPacket) bool {
 // should be called with lock held
 func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer int32) (TranslationParams, error) {
 	tp := TranslationParams{}
-	if f.isDDAvailable && f.mime == mime.MimeTypeVP8 && extPkt.DependencyDescriptor == nil && len(extPkt.Packet.Payload) != 0 {
+	if f.ddForwarder != nil && extPkt.DependencyDescriptor == nil && len(extPkt.Packet.Payload) != 0 {
 		// The buffer stopped parsing the dependency descriptor because the publisher does
-		// not send it, so switch temporal layers with the VP8 payload descriptor. Padding
-		// never carries the descriptor, so it does not count.
-		f.logger.Infow("turning off dependency descriptor for VP8 temporal layers", "layer", layer)
-		f.isDDAvailable = false
+		// not send it. VP8 switches temporal layers with its payload descriptor, other
+		// codecs forward every temporal layer. Padding never carries the descriptor, so it
+		// does not count.
+		f.logger.Infow("turning off dependency descriptor for simulcast temporal layers", "layer", layer)
 		f.ddForwarder = nil
-		f.codecMunger = codecmunger.NewVP8FromOther(f.codecMunger, f.logger)
-		if f.started {
-			// the munger takes its picture ID and TL0PICIDX from the first packet it sees
-			f.codecMunger.SetLast(extPkt)
+		if f.mime == mime.MimeTypeVP8 {
+			f.isDDAvailable = false
+			f.codecMunger = codecmunger.NewVP8FromOther(f.codecMunger, f.logger)
+			if f.started {
+				// the munger takes its picture ID and TL0PICIDX from the first packet it sees
+				f.codecMunger.SetLast(extPkt)
+			}
+			f.vls.SetTemporalLayerSelector(temporallayerselector.NewVP8(f.logger))
+		} else {
+			f.setUnfilteredTemporal()
 		}
-		f.vls.SetTemporalLayerSelector(temporallayerselector.NewVP8(f.logger))
 	}
-	if _, ok := f.codecMunger.(*codecmunger.VP8DD); ok && extPkt.DependencyDescriptor != nil {
+	if _, ok := f.codecMunger.(*codecmunger.DDTemporal); ok && f.mime == mime.MimeTypeVP8 && extPkt.DependencyDescriptor != nil {
 		if extPkt.VP8 != nil && extPkt.VP8.I {
 			// The publisher sends picture IDs with the dependency descriptor, so they need
 			// rewriting. The VP8 munger does that, the temporal layers still switch with the
@@ -2246,7 +2266,8 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 
 	result := f.vls.Select(extPkt, layer)
 	if !result.IsSelected {
-		if f.isDDAvailable && f.mime != mime.MimeTypeVP8 && extPkt.DependencyDescriptor == nil {
+		// the svc selector, simulcast with the dependency descriptor turns it off above
+		if f.isDDAvailable && f.ddForwarder == nil && extPkt.DependencyDescriptor == nil {
 			f.logger.Infow(
 				"turning off dependency descriptor",
 				"layer", layer,
@@ -2261,7 +2282,8 @@ func (f *Forwarder) getTranslationParamsVideo(extPkt *buffer.ExtPacket, layer in
 			case mime.MimeTypeVP9:
 				f.vls = videolayerselector.NewVP9FromOther(f.vls)
 			case mime.MimeTypeAV1:
-				f.vls = videolayerselector.NewSimulcastFromOther(f.vls)
+				f.setSimulcastSelector()
+				f.setUnfilteredTemporal()
 			}
 		}
 		tp.shouldDrop = true
@@ -2340,10 +2362,10 @@ func (f *Forwarder) translateCodecHeader(extPkt *buffer.ExtPacket, tp *Translati
 	)
 	if err != nil {
 		tp.shouldDrop = true
-		if err == codecmunger.ErrFilteredVP8TemporalLayer || err == codecmunger.ErrOutOfOrderVP8PictureIdCacheMiss || err == codecmunger.ErrFilteredVP8OutOfOrder {
+		if err == codecmunger.ErrFilteredTemporalLayer || err == codecmunger.ErrOutOfOrderVP8PictureIdCacheMiss || err == codecmunger.ErrFilteredOutOfOrder {
 			switch tp.rtp.snOrdering {
 			case SequenceNumberOrderingContiguous:
-				if err == codecmunger.ErrFilteredVP8TemporalLayer {
+				if err == codecmunger.ErrFilteredTemporalLayer {
 					// filtered temporal layer, update sequence number offset to prevent holes
 					f.rtpMunger.PacketDropped(extPkt)
 				}

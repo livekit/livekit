@@ -38,61 +38,61 @@ func vp8DDPacket(t *testing.T, frameNum uint64, tid int) *buffer.ExtPacket {
 	return extPkt
 }
 
-func TestVP8DDUpdateAndGet(t *testing.T) {
+func TestDDTemporalUpdateAndGet(t *testing.T) {
 	t.Run("filters by temporal layer, header unchanged", func(t *testing.T) {
-		v := NewVP8DD(logger.GetLogger())
+		v := NewDDTemporal(logger.GetLogger())
 		inputSize, _, n, err := v.UpdateAndGet(vp8DDPacket(t, 0, 0), false, false, 0)
 		require.NoError(t, err)
 		require.Zero(t, inputSize)
 		require.Zero(t, n)
 
 		_, _, _, err = v.UpdateAndGet(vp8DDPacket(t, 1, 2), false, false, 0)
-		require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
+		require.ErrorIs(t, err, ErrFilteredTemporalLayer)
 	})
 
 	t.Run("a gap does not exempt a filtered layer", func(t *testing.T) {
-		v := NewVP8DD(logger.GetLogger())
+		v := NewDDTemporal(logger.GetLogger())
 		_, _, _, err := v.UpdateAndGet(vp8DDPacket(t, 0, 0), false, false, 0)
 		require.NoError(t, err)
 		for frameNum := uint64(2); frameNum < 6; frameNum++ {
 			_, _, _, err = v.UpdateAndGet(vp8DDPacket(t, frameNum, 1), false, true, 0)
-			require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
+			require.ErrorIs(t, err, ErrFilteredTemporalLayer)
 		}
 	})
 
 	t.Run("every packet of a frame gets the decision of its first packet", func(t *testing.T) {
-		v := NewVP8DD(logger.GetLogger())
+		v := NewDDTemporal(logger.GetLogger())
 		_, _, _, err := v.UpdateAndGet(vp8DDPacket(t, 1, 2), false, false, 0)
-		require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
+		require.ErrorIs(t, err, ErrFilteredTemporalLayer)
 		_, _, _, err = v.UpdateAndGet(vp8DDPacket(t, 2, 1), false, false, 1)
 		require.NoError(t, err)
 
 		// the layer changed in between, late packets keep the decision of their frame
 		_, _, _, err = v.UpdateAndGet(vp8DDPacket(t, 1, 2), true, false, 2)
-		require.ErrorIs(t, err, ErrFilteredVP8OutOfOrder)
+		require.ErrorIs(t, err, ErrFilteredOutOfOrder)
 		_, _, _, err = v.UpdateAndGet(vp8DDPacket(t, 2, 1), true, false, 0)
 		require.NoError(t, err)
 	})
 
 	t.Run("late packet of a frame older than the window", func(t *testing.T) {
-		v := NewVP8DD(logger.GetLogger())
+		v := NewDDTemporal(logger.GetLogger())
 		_, _, _, err := v.UpdateAndGet(vp8DDPacket(t, 100, 0), false, false, 2)
 		require.NoError(t, err)
-		_, _, _, err = v.UpdateAndGet(vp8DDPacket(t, 100-vp8DDFrameWindow, 0), true, false, 2)
-		require.ErrorIs(t, err, ErrFilteredVP8OutOfOrder)
+		_, _, _, err = v.UpdateAndGet(vp8DDPacket(t, 100-ddTemporalFrameWindow, 0), true, false, 2)
+		require.ErrorIs(t, err, ErrFilteredOutOfOrder)
 	})
 
 	t.Run("layer switch forgets decisions", func(t *testing.T) {
-		v := NewVP8DD(logger.GetLogger())
+		v := NewDDTemporal(logger.GetLogger())
 		_, _, _, err := v.UpdateAndGet(vp8DDPacket(t, 1, 2), false, false, 0)
-		require.ErrorIs(t, err, ErrFilteredVP8TemporalLayer)
+		require.ErrorIs(t, err, ErrFilteredTemporalLayer)
 		v.UpdateOffsets(vp8DDPacket(t, 1, 0))
 		_, _, _, err = v.UpdateAndGet(vp8DDPacket(t, 1, 2), false, false, 2)
 		require.NoError(t, err)
 	})
 
 	t.Run("padding", func(t *testing.T) {
-		v := NewVP8DD(logger.GetLogger())
+		v := NewDDTemporal(logger.GetLogger())
 		hdr, err := v.UpdateAndGetPadding(true)
 		require.NoError(t, err)
 		require.Equal(t, []byte{0x10}, hdr)
