@@ -79,7 +79,8 @@ type ExtPacket struct {
 	ExtSequenceNumber    uint64
 	ExtTimestamp         uint64
 	Packet               *rtp.Packet
-	Payload              any
+	VP8                  *codec.VP8        // nil when not parsed
+	VP9                  *codecs.VP9Packet // nil when not parsed
 	IsKeyFrame           bool
 	RawPacket            []byte
 	DependencyDescriptor *ExtDependencyDescriptor
@@ -91,6 +92,10 @@ type ExtPacket struct {
 	// extension and CSRC slices point into the write input until ReadExtended re-points them into RawPacket
 	pkt        rtp.Packet
 	extensions [8]rtp.Extension
+
+	// backing storage for VP8 and VP9, so parsing does not allocate
+	vp8 codec.VP8
+	vp9 codecs.VP9Packet
 }
 
 type BufferProvider interface {
@@ -1106,7 +1111,7 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 
 	switch b.mime {
 	case mime.MimeTypeVP8:
-		vp8Packet := codec.VP8{}
+		vp8Packet := &ep.vp8
 		if err := vp8Packet.Unmarshal(ep.Packet.Payload); err != nil {
 			b.logger.Warnw("could not unmarshal VP8 packet", err)
 			return err
@@ -1116,7 +1121,7 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 			ep.Temporal = int32(vp8Packet.TID)
 
 			if ep.IsKeyFrame {
-				if sz := codec.ExtractVP8VideoSize(&vp8Packet, ep.Packet.Payload); sz.Width > 0 && sz.Height > 0 {
+				if sz := codec.ExtractVP8VideoSize(vp8Packet, ep.Packet.Payload); sz.Width > 0 && sz.Height > 0 {
 					videoSize = append(videoSize, sz)
 				}
 			}
@@ -1124,12 +1129,12 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 			// vp8 with DependencyDescriptor enabled, use the TID from the descriptor
 			vp8Packet.TID = uint8(ep.Temporal)
 		}
-		ep.Payload = vp8Packet
+		ep.VP8 = vp8Packet
 		ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to invalid
 
 	case mime.MimeTypeVP9:
 		if ep.DependencyDescriptor == nil {
-			var vp9Packet codecs.VP9Packet
+			vp9Packet := &ep.vp9
 			_, err := vp9Packet.Unmarshal(ep.Packet.Payload)
 			if err != nil {
 				b.logger.Warnw("could not unmarshal VP9 packet", err)
@@ -1139,8 +1144,8 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 				Spatial:  int32(vp9Packet.SID),
 				Temporal: int32(vp9Packet.TID),
 			}
-			ep.Payload = vp9Packet
-			ep.IsKeyFrame = codec.IsVP9KeyFrame(&vp9Packet, ep.Packet.Payload)
+			ep.VP9 = vp9Packet
+			ep.IsKeyFrame = codec.IsVP9KeyFrame(vp9Packet, ep.Packet.Payload)
 
 			if ep.IsKeyFrame {
 				for i := 0; i < len(vp9Packet.Width); i++ {

@@ -268,7 +268,8 @@ func (p *ParticipantImpl) GetRecentlyDisconnectedParticipants() []*livekit.Parti
 	p.updateLock.Lock()
 	keys := p.updateCache.Keys()
 	for i := len(keys) - 1; i >= 0; i-- {
-		if info, ok := p.updateCache.Get(keys[i]); ok {
+		// Peek, as Get would move each entry to the front and reverse the eviction order
+		if info, ok := p.updateCache.Peek(keys[i]); ok {
 			if info.updatedAt.Before(lastSignalAt) {
 				continue
 			}

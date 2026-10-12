@@ -2,6 +2,19 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.9] - 2026-10-07
+
+### Changed
+
+- bump protocol and psrpc deps (#4958)
+- sfu/buffer: parse the dependency descriptor without allocating (#4953)
+- sfu/buffer: stop allocating per ingested packet (#4951)
+
+### Fixed
+
+- v1 path: check for subscriber_allow_pause presence before using it (#4957)
+- Cap forward-jump loops in SelectorDecisionCache (#4952)
+
 ## [1.13.8] - 2026-10-06
 
 ### Added

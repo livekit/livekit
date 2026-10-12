@@ -15,8 +15,6 @@
 package videolayerselector
 
 import (
-	"github.com/pion/rtp/codecs"
-
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/protocol/logger"
 )
@@ -40,8 +38,8 @@ func (v *VP9) IsOvershootOkay() bool {
 }
 
 func (v *VP9) Select(extPkt *buffer.ExtPacket, _layer int32) (result VideoLayerSelectorResult) {
-	vp9, ok := extPkt.Payload.(codecs.VP9Packet)
-	if !ok {
+	vp9 := extPkt.VP9
+	if vp9 == nil {
 		return
 	}
 

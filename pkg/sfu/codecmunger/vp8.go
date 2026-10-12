@@ -104,8 +104,8 @@ func (v *VP8) SeedState(seed any) {
 }
 
 func (v *VP8) SetLast(extPkt *buffer.ExtPacket) {
-	vp8, ok := extPkt.Payload.(codec.VP8)
-	if !ok {
+	vp8 := extPkt.VP8
+	if vp8 == nil {
 		return
 	}
 
@@ -129,8 +129,8 @@ func (v *VP8) SetLast(extPkt *buffer.ExtPacket) {
 }
 
 func (v *VP8) UpdateOffsets(extPkt *buffer.ExtPacket) {
-	vp8, ok := extPkt.Payload.(codec.VP8)
-	if !ok {
+	vp8 := extPkt.VP8
+	if vp8 == nil {
 		return
 	}
 
@@ -155,8 +155,8 @@ func (v *VP8) UpdateOffsets(extPkt *buffer.ExtPacket) {
 
 func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap bool, maxTemporalLayer int32) (int, [MaxHeaderSize]byte, int, error) {
 	var hdr [MaxHeaderSize]byte
-	vp8, ok := extPkt.Payload.(codec.VP8)
-	if !ok {
+	vp8 := extPkt.VP8
+	if vp8 == nil {
 		return 0, hdr, 0, ErrNotVP8
 	}
 
@@ -263,7 +263,7 @@ func (v *VP8) UpdateAndGet(extPkt *buffer.ExtPacket, snOutOfOrder bool, snHasGap
 
 					v.pictureIdOffset += 1
 				}
-				return 0, hdr, 0, ErrFilteredVP8TemporalLayer
+				return 0, hdr, 0, ErrFilteredTemporalLayer
 			}
 		}
 	}

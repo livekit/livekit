@@ -584,10 +584,10 @@ func lktsTrailer() []byte {
 // the primary SSRC/payload type, carries the padding bit, and declares a full
 // padding block.
 //
-// A padding-only packet is entirely padding; pion/srtp serializes the padding block
-// from header.PaddingSize (via rtp.MarshalPacketTo), and the pion receiver strips it
-// and reports both the padding bit and the padding size, so the received payload
-// length equals the declared padding size (RTPPaddingMaxPayloadSize).
+// A padding-only packet is entirely padding: pion/srtp serializes the padding block
+// from header.PaddingSize (via rtp.MarshalPacketTo) after the payload, so the packet
+// has no payload. A receiver takes a packet with any payload left after the padding
+// as media.
 func TestDownTrackSendsPaddingOnlyPackets(t *testing.T) {
 	h := vnettest.NewHosts(t)
 	factory := buffer.NewFactoryOfBufferFactory(500, 500).CreateBufferFactory()
@@ -665,12 +665,27 @@ func TestDownTrackSendsPaddingOnlyPackets(t *testing.T) {
 		// a padding-only packet: it must declare a full padding block.
 		require.EqualValues(t, RTPPaddingMaxPayloadSize, pkt.Header.PaddingSize,
 			"padding-only packet must declare full padding size (sn=%d)", pkt.SequenceNumber)
-		require.Equal(t, RTPPaddingMaxPayloadSize, len(pkt.Payload),
-			"padding-only packet must serialize a full padding block (sn=%d)", pkt.SequenceNumber)
+		require.Empty(t, pkt.Payload, "padding-only packet must have no payload (sn=%d)", pkt.SequenceNumber)
 		sawPadding++
 	}
 	require.Equal(t, 1, sawKeyframe, "expected exactly one forwarded media keyframe")
 	require.GreaterOrEqual(t, sawPadding, numPadding, "expected the padding-only packets to be observed")
+
+	// the padding in the slot of a dropped packet has no payload either
+	dh.dt.WriteDroppedSlotPaddingForTest(6000, 190000)
+	var pkt *rtp.Packet
+	require.Eventually(t, func() bool {
+		for _, p := range dh.capture.all() {
+			if p.SequenceNumber == 6000 {
+				pkt = p
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 20*time.Millisecond, "expected the dropped slot padding to arrive on the far side")
+	require.True(t, pkt.Header.Padding)
+	require.EqualValues(t, DroppedSlotPaddingSizeForTest, pkt.Header.PaddingSize)
+	require.Empty(t, pkt.Payload)
 }
 
 // -----------------------------------------------------------------------------
@@ -681,7 +696,6 @@ func TestDownTrackSendsPaddingOnlyPackets(t *testing.T) {
 type capturingProbe struct {
 	hdr        rtp.Header
 	payloadLen int
-	lastByte   byte
 }
 
 // capturedRTX records what the DownTrack handed the pacer for an RTX packet.
@@ -706,9 +720,6 @@ func (c *capturingPacer) Enqueue(p *pacer.Packet) {
 		switch {
 		case p.IsProbe:
 			cp := capturingProbe{hdr: *p.Header, payloadLen: len(p.Payload)}
-			if len(p.Payload) > 0 {
-				cp.lastByte = p.Payload[len(p.Payload)-1]
-			}
 			c.lock.Lock()
 			c.probes = append(c.probes, cp)
 			c.lock.Unlock()
@@ -900,16 +911,15 @@ func TestDownTrackSendsProbePackets(t *testing.T) {
 			}, 5*time.Second, 20*time.Millisecond, "expected WriteProbePackets to emit RTX probe packets")
 
 			// every probe packet must be on the RTX stream, carry the padding bit, declare
-			// the full padding size, and serialize a full padding block ending in the
-			// padding count byte.
+			// the full padding size, and have no payload: pion serializes the padding from
+			// the header.
 			for _, pr := range cp.probePackets() {
 				require.EqualValues(t, 2, pr.hdr.Version, "probe packet version")
 				require.EqualValues(t, dh.dt.SSRCRTX(), pr.hdr.SSRC, "probe packet must be on the RTX stream")
 				require.EqualValues(t, dh.dt.PayloadTypeRTXForTest(), pr.hdr.PayloadType, "probe packet must use the RTX payload type")
 				require.True(t, pr.hdr.Padding, "probe packet must carry padding bit")
 				require.EqualValues(t, RTPPaddingMaxPayloadSize, pr.hdr.PaddingSize, "probe packet must set header.PaddingSize")
-				require.Equal(t, RTPPaddingMaxPayloadSize, pr.payloadLen, "probe packet must carry a full padding block")
-				require.EqualValues(t, RTPPaddingMaxPayloadSize, pr.lastByte, "probe packet trailing byte must be the padding count")
+				require.Zero(t, pr.payloadLen, "probe packet must have no payload")
 			}
 
 			// the BWE is wired and exercised (the pacer records every send into it);
@@ -918,4 +928,68 @@ func TestDownTrackSendsProbePackets(t *testing.T) {
 			require.NotPanics(t, func() { _ = b.CongestionState() })
 		})
 	}
+}
+
+// -----------------------------------------------------------------------------
+// keyFrameRequester: PLI only while a layer lock is pending
+// -----------------------------------------------------------------------------
+
+// TestDownTrackKeyFrameRequesterArmsOnlyWhilePending verifies that the key frame
+// requester keeps sending PLIs while the target layer is not locked, and goes quiet
+// once a key frame on the target layer locks it (no periodic wake-ups while locked).
+func TestDownTrackKeyFrameRequesterArmsOnlyWhilePending(t *testing.T) {
+	h := vnettest.NewHosts(t)
+	factory := buffer.NewFactoryOfBufferFactory(500, 500).CreateBufferFactory()
+	p := pacer.NewPassThrough(logger.GetLogger(), newNullBWE())
+	t.Cleanup(p.Stop)
+
+	dh := newBoundDownTrack(t, h, factory, vp8CodecParams, p, vnettest.MediaEngineConfig{Video: true})
+
+	// allocate a target layer (spatial 0) without any media, so the lock is pending
+	var brs Bitrates
+	brs[0][0] = 100_000
+	dh.receiver.GetLayeredBitrateReturns([]int32{0}, brs)
+	dh.dt.UpTrackMaxPublishedLayerChange(0)
+	dh.dt.SetMaxSpatialLayer(0)
+	alloc := dh.dt.AllocateOptimal(false, false)
+	require.Equal(t, int32(0), alloc.TargetLayer.Spatial, "expected target layer to be allocated")
+
+	// unlocked: PLIs must keep coming at the key frame interval
+	require.Eventually(t, func() bool {
+		return dh.receiver.SendPLICallCount() >= 3
+	}, 5*time.Second, 20*time.Millisecond, "expected repeated PLIs while layer lock is pending")
+
+	// a key frame on the target layer locks it
+	vp8 := &codec.VP8{
+		FirstByte:  0x10,
+		S:          true,
+		PictureID:  1,
+		IsKeyFrame: true,
+	}
+	ep, err := testutils.GetTestExtPacketVP8(&testutils.TestExtPacketParams{
+		SequenceNumber: 5000,
+		Timestamp:      180000,
+		SSRC:           0x33333333,
+		PayloadType:    96,
+		PayloadSize:    50,
+		IsKeyFrame:     true,
+		Marker:         true,
+	}, vp8)
+	require.NoError(t, err)
+	ep.Packet.Payload = distinctivePayload(0x40, 50)
+	require.Equal(t, int32(1), dh.dt.WriteRTP(ep, 0), "keyframe should forward")
+
+	// let an already armed interval fire, then the requester must stay asleep
+	time.Sleep(2 * KeyFrameIntervalMaxForTest)
+	before := dh.receiver.SendPLICallCount()
+	wakeups := dh.dt.KeyFrameRequesterWakeupsForTest()
+	time.Sleep(2 * KeyFrameIntervalMaxForTest)
+	require.Equal(t, wakeups, dh.dt.KeyFrameRequesterWakeupsForTest(), "key frame requester must not wake up once the layer is locked")
+	require.Equal(t, before, dh.receiver.SendPLICallCount(), "no PLI expected once the layer is locked")
+
+	// a resync drops the lock and must wake the requester again
+	dh.dt.Resync()
+	require.Eventually(t, func() bool {
+		return dh.receiver.SendPLICallCount() > before
+	}, 5*time.Second, 20*time.Millisecond, "expected PLI after resync")
 }
