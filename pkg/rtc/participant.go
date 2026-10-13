@@ -83,6 +83,7 @@ const (
 
 	cMaxPendingTracks       = 20
 	cMaxPendingQueuedTracks = 3
+	cMaxReleasedTrackCids   = 32
 
 	// unsequenced reliable data (server API sends) cannot be recovered from the
 	// data message cache, so it is held here until the reliable data channel is writable
@@ -296,6 +297,10 @@ type ParticipantImpl struct {
 	pendingTracks           map[string]*pendingTrackInfo
 	pendingPublishingTracks map[livekit.TrackID]*pendingTrackInfo
 	pendingRemoteTracks     []*pendingRemoteTrack
+	// signal and SDP client ids of pending tracks released without media, so that media or
+	// an offer for them is dropped instead of being matched by type to another pending track,
+	// bounded to cMaxReleasedTrackCids, oldest out first
+	releasedTrackCids []string
 
 	// supported codecs
 	enabledPublishCodecs   []*livekit.Codec
@@ -2985,6 +2990,11 @@ func (p *ParticipantImpl) releasePendingTrackLocked(trackID livekit.TrackID) {
 		for _, ti := range pti.trackInfos {
 			if livekit.TrackID(ti.Sid) == trackID {
 				released = ti
+				p.addReleasedTrackCidLocked(cid)
+				for _, c := range ti.Codecs {
+					p.addReleasedTrackCidLocked(c.Cid)
+					p.addReleasedTrackCidLocked(c.SdpCid)
+				}
 				continue
 			}
 			remaining = append(remaining, ti)
@@ -3012,6 +3022,22 @@ func (p *ParticipantImpl) releasePendingTrackLocked(trackID livekit.TrackID) {
 	} else {
 		p.sendTrackMuted(trackID, true)
 	}
+}
+
+// must be called with pendingTracksLock held
+func (p *ParticipantImpl) addReleasedTrackCidLocked(cid string) {
+	if cid == "" || slices.Contains(p.releasedTrackCids, cid) {
+		return
+	}
+	p.releasedTrackCids = append(p.releasedTrackCids, cid)
+	if len(p.releasedTrackCids) > cMaxReleasedTrackCids {
+		p.releasedTrackCids = p.releasedTrackCids[1:]
+	}
+}
+
+// must be called with pendingTracksLock held
+func (p *ParticipantImpl) isReleasedTrackCidLocked(cid string) bool {
+	return slices.Contains(p.releasedTrackCids, cid)
 }
 
 func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit.TrackInfo {
@@ -3056,6 +3082,9 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		p.pendingTracksLock.Unlock()
 		return nil
 	}
+
+	// a client reusing a released client id intends to publish on it again
+	p.releasedTrackCids = slices.DeleteFunc(p.releasedTrackCids, func(cid string) bool { return cid == req.Cid })
 
 	backupCodecPolicy := req.BackupCodecPolicy
 
@@ -3414,6 +3443,16 @@ func (p *ParticipantImpl) mediaTrackReceived(
 	)
 	mt, ok := p.getPublishedTrackBySdpCid(track.ID()).(*MediaTrack)
 	if !ok {
+		if p.isReleasedTrackCidLocked(track.ID()) {
+			p.pendingTracksLock.Unlock()
+			p.pubLogger.Infow(
+				"dropping media for a released pending track",
+				"trackID", track.ID(),
+				"mid", mid,
+			)
+			return nil, false, false, buffer.VideoLayersRid{}
+		}
+
 		var (
 			signalCid string
 			ti        *livekit.TrackInfo
@@ -3761,6 +3800,11 @@ func (p *ParticipantImpl) onUpTrackManagerClose() {
 
 func (p *ParticipantImpl) getPendingTrack(clientId string, kind livekit.TrackType, skipQueued bool) (string, *livekit.TrackInfo, buffer.VideoLayersRid, bool, time.Time) {
 	signalCid := clientId
+	if p.isReleasedTrackCidLocked(clientId) {
+		// do not fall back to matching by type, it would hand this to another pending track
+		return signalCid, nil, buffer.VideoLayersRid{}, false, time.Time{}
+	}
+
 	pendingInfo := p.pendingTracks[clientId]
 	if pendingInfo == nil {
 	track_loop:

@@ -303,6 +303,52 @@ func TestTrackPublishing(t *testing.T) {
 		require.Len(t, p.pendingTracks, cMaxPendingTracks)
 	})
 
+	t.Run("should not match late media of a released pending track to another pending track", func(t *testing.T) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{protocolVersion: 7})
+
+		released := p.addPendingTrack(&livekit.AddTrackRequest{Cid: "cidA", Name: "a", Type: livekit.TrackType_VIDEO})
+		require.NotNil(t, released)
+		// SDP client id that an offer would set, as Firefox does
+		p.pendingTracks["cidA"].trackInfos[0].Codecs[0].SdpCid = "sdpA"
+
+		p.pendingTracksLock.Lock()
+		p.releasePendingTrackLocked(livekit.TrackID(released.Sid))
+		p.pendingTracksLock.Unlock()
+
+		other := p.addPendingTrack(&livekit.AddTrackRequest{Cid: "cidB", Name: "b", Type: livekit.TrackType_VIDEO})
+		require.NotNil(t, other)
+
+		// media for the released track, by signal or SDP client id, does not fall back to the other track by type
+		for _, cid := range []string{"cidA", "sdpA"} {
+			_, ti, _, _, _ := p.getPendingTrack(cid, livekit.TrackType_VIDEO, true)
+			require.Nil(t, ti, cid)
+		}
+		// an unknown client id still falls back by type, as before
+		_, ti, _, _, _ := p.getPendingTrack("unknown", livekit.TrackType_VIDEO, true)
+		require.NotNil(t, ti)
+		require.Equal(t, other.Sid, ti.Sid)
+
+		// reusing the released client id publishes on it again
+		reused := p.addPendingTrack(&livekit.AddTrackRequest{Cid: "cidA", Name: "a2", Type: livekit.TrackType_VIDEO})
+		require.NotNil(t, reused)
+		_, ti, _, _, _ = p.getPendingTrack("cidA", livekit.TrackType_VIDEO, true)
+		require.NotNil(t, ti)
+		require.Equal(t, reused.Sid, ti.Sid)
+	})
+
+	t.Run("should bound released track client ids", func(t *testing.T) {
+		p := newParticipantForTest("test")
+
+		p.pendingTracksLock.Lock()
+		for i := 0; i <= cMaxReleasedTrackCids; i++ {
+			p.addReleasedTrackCidLocked(fmt.Sprintf("cid%d", i))
+		}
+		require.Len(t, p.releasedTrackCids, cMaxReleasedTrackCids)
+		require.False(t, p.isReleasedTrackCidLocked("cid0"))
+		require.True(t, p.isReleasedTrackCidLocked(fmt.Sprintf("cid%d", cMaxReleasedTrackCids)))
+		p.pendingTracksLock.Unlock()
+	})
+
 	t.Run("should not allow adding disallowed sources", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		p.SetPermission(&livekit.ParticipantPermission{
