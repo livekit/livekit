@@ -3004,7 +3004,9 @@ func (p *ParticipantImpl) releasePendingTrackLocked(trackID livekit.TrackID) {
 		"trackInfo", logger.Proto(released),
 		"numPendingTracks", len(p.pendingTracks),
 	)
-	p.supervisor.RemovePublication(trackID)
+	if p.supervisor != nil {
+		p.supervisor.RemovePublication(trackID)
+	}
 	if p.ProtocolVersion().SupportsUnpublish() {
 		p.sendTrackUnpublished(trackID)
 	} else {

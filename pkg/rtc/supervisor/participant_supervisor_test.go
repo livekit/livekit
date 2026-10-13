@@ -76,6 +76,29 @@ func TestTimedOutPublications(t *testing.T) {
 		require.Empty(t, s.TimedOutPublications())
 	})
 
+	t.Run("stale timeout is not reported once the track publishes", func(t *testing.T) {
+		s := newSupervisorForTest()
+		addUnmutedPublication(s, trackID)
+		addUnmutedPublication(s, trackID)
+
+		agePublication(s, trackID)
+		s.checkPublications()
+		require.Equal(t, []livekit.TrackID{trackID}, s.TimedOutPublications())
+
+		// media arrives late, before the next tick clears the cached error
+		s.SetPublishedTrack(trackID, &typesfakes.FakeLocalMediaTrack{})
+		require.Empty(t, s.TimedOutPublications())
+	})
+
+	t.Run("publication with a published track is not removed", func(t *testing.T) {
+		s := newSupervisorForTest()
+		addUnmutedPublication(s, trackID)
+		s.SetPublishedTrack(trackID, &typesfakes.FakeLocalMediaTrack{})
+
+		s.RemovePublication(trackID)
+		require.Contains(t, s.publications, trackID)
+	})
+
 	t.Run("live publication with a queued successor is not reported", func(t *testing.T) {
 		s := newSupervisorForTest()
 		addUnmutedPublication(s, trackID)

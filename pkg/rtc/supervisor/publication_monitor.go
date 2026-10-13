@@ -163,6 +163,13 @@ func (p *PublicationMonitor) Check() error {
 	return nil
 }
 
+func (p *PublicationMonitor) hasPublishedTrack() bool {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	return p.publishedTrack != nil
+}
+
 func (p *PublicationMonitor) IsIdle() bool {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
