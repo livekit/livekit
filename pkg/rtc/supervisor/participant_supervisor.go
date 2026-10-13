@@ -30,8 +30,7 @@ const (
 )
 
 type ParticipantSupervisorParams struct {
-	Logger         logger.Logger
-	PublishTimeout time.Duration
+	Logger logger.Logger
 }
 
 type trackMonitor struct {
@@ -99,7 +98,6 @@ func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID) {
 				PublicationMonitorParams{
 					TrackID:                   trackID,
 					IsPeerConnectionConnected: p.isPublisherConnected,
-					PublishTimeout:            p.params.PublishTimeout,
 					Logger:                    p.params.Logger,
 				},
 			),
@@ -110,20 +108,32 @@ func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID) {
 	p.lock.Unlock()
 }
 
-// RemovePublication retires one pending publish for trackID (e.g. it timed out and
-// was reclaimed). Because queued publications on the same client id share a trackID,
-// the monitor may still hold a successor, so the monitor is dropped only once no
-// desired publish remains. A surviving monitor is re-armed so the promoted successor
-// can be detected in turn.
 func (p *ParticipantSupervisor) RemovePublication(trackID livekit.TrackID) {
 	p.lock.Lock()
-	if pm, ok := p.publications[trackID]; ok {
-		pm.opMon.PostEvent(types.OperationMonitorEventRetirePendingPublication, nil)
-		if pm.opMon.IsIdle() {
-			delete(p.publications, trackID)
-		} else {
-			pm.err = nil
+	delete(p.publications, trackID)
+	p.lock.Unlock()
+}
+
+// TimedOutPublications returns the track IDs whose pending publish timed out.
+func (p *ParticipantSupervisor) TimedOutPublications() []livekit.TrackID {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	var trackIDs []livekit.TrackID
+	for trackID, pm := range p.publications {
+		if pm.err != nil {
+			trackIDs = append(trackIDs, trackID)
 		}
+	}
+	return trackIDs
+}
+
+// SetPublicationTimedOutForTest marks a publication as timed out, as checkPublications
+// does once the publish wait passes. Only for tests outside this package.
+func (p *ParticipantSupervisor) SetPublicationTimedOutForTest(trackID livekit.TrackID) {
+	p.lock.Lock()
+	if pm, ok := p.publications[trackID]; ok {
+		pm.err = errPublishTimeout
 	}
 	p.lock.Unlock()
 }
@@ -169,7 +179,8 @@ func (p *ParticipantSupervisor) checkState() {
 func (p *ParticipantSupervisor) checkPublications() {
 	var erroredPublications []livekit.TrackID
 	var removablePublications []livekit.TrackID
-	p.lock.RLock()
+	// write lock as pm.err is read by TimedOutPublications
+	p.lock.Lock()
 	for trackID, pm := range p.publications {
 		if err := pm.opMon.Check(); err != nil {
 			if pm.err == nil {
@@ -187,9 +198,6 @@ func (p *ParticipantSupervisor) checkPublications() {
 			}
 		}
 	}
-	p.lock.RUnlock()
-
-	p.lock.Lock()
 	for _, trackID := range removablePublications {
 		delete(p.publications, trackID)
 	}

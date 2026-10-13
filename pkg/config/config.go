@@ -56,10 +56,6 @@ const (
 	// fallback used when a configured TTL is <= 0.
 	DefaultTURNTTLSeconds = 300
 
-	// PublishTimeoutDefault is the fallback publish timeout used when RTC.PublishTimeout
-	// is left unset (<= 0).
-	PublishTimeoutDefault = 30 * time.Second
-
 	// DefaultExternalTURNTTLSeconds is the default TTL applied to external TURN
 	// (static-auth-secret) credentials when the configured TTL is left at 0.
 	DefaultExternalTURNTTLSeconds = 14400
@@ -173,12 +169,6 @@ type RTCConfig struct {
 
 	// force a reconnect on a publication error
 	ReconnectOnPublicationError *bool `yaml:"reconnect_on_publication_error,omitempty"`
-
-	// how long a pending publication may wait for its first media before the server
-	// treats it as abandoned. A connected, unmuted publication that produces no media
-	// within this window is reported as a publication timeout, and its pending-track
-	// slot becomes eligible for reclaim. Values <= 0 fall back to an internal default.
-	PublishTimeout time.Duration `yaml:"publish_timeout,omitempty"`
 
 	// force a reconnect on a subscription error
 	ReconnectOnSubscriptionError *bool `yaml:"reconnect_on_subscription_error,omitempty"`

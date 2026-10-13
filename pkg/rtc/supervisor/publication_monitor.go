@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	defaultPublishWaitDuration = 30 * time.Second
+	publishWaitDuration = 30 * time.Second
 )
 
 var (
@@ -41,7 +41,6 @@ type publish struct {
 type PublicationMonitorParams struct {
 	TrackID                   livekit.TrackID
 	IsPeerConnectionConnected bool
-	PublishTimeout            time.Duration
 	Logger                    logger.Logger
 }
 
@@ -59,9 +58,6 @@ type PublicationMonitor struct {
 }
 
 func NewPublicationMonitor(params PublicationMonitorParams) *PublicationMonitor {
-	if params.PublishTimeout <= 0 {
-		params.PublishTimeout = defaultPublishWaitDuration
-	}
 	p := &PublicationMonitor{
 		params:      params,
 		isConnected: params.IsPeerConnectionConnected,
@@ -82,24 +78,7 @@ func (p *PublicationMonitor) PostEvent(ome types.OperationMonitorEvent, omd type
 		p.setPublishedTrack(omd.(types.LocalMediaTrack))
 	case types.OperationMonitorEventClearPublishedTrack:
 		p.clearPublishedTrack(omd.(types.LocalMediaTrack))
-	case types.OperationMonitorEventRetirePendingPublication:
-		p.retirePending()
 	}
-}
-
-// retirePending drops the leading pending publish (its start and the synthesized
-// end) that was reclaimed after timing out, and re-arms the timer so the next
-// pending publish, now at the front of the queue, gets a full publish window.
-func (p *PublicationMonitor) retirePending() {
-	p.lock.Lock()
-	if p.desiredPublishes.Len() > 0 && p.desiredPublishes.Front().isStart {
-		p.desiredPublishes.PopFront()
-		if p.desiredPublishes.Len() > 0 && !p.desiredPublishes.Front().isStart {
-			p.desiredPublishes.PopFront()
-		}
-	}
-	p.maybeStartMonitor()
-	p.lock.Unlock()
 }
 
 func (p *PublicationMonitor) addPending() {
@@ -174,7 +153,7 @@ func (p *PublicationMonitor) Check() error {
 		return nil
 	}
 
-	if pub.isStart && !isMuted && !unmutedAt.IsZero() && time.Since(unmutedAt) > p.params.PublishTimeout {
+	if pub.isStart && !isMuted && !unmutedAt.IsZero() && time.Since(unmutedAt) > publishWaitDuration {
 		// timed out waiting for publish
 		return errPublishTimeout
 	}
@@ -191,7 +170,10 @@ func (p *PublicationMonitor) IsIdle() bool {
 	return p.desiredPublishes.Len() == 0 && p.publishedTrack == nil
 }
 
+// update is the only place the front of desiredPublishes moves.
+// Any other pop must also re-arm the publish timer.
 func (p *PublicationMonitor) update() {
+	popped := false
 	for {
 		var pub *publish
 		if p.desiredPublishes.Len() > 0 {
@@ -205,7 +187,14 @@ func (p *PublicationMonitor) update() {
 		if (pub.isStart && p.publishedTrack == nil) || (!pub.isStart && p.publishedTrack != nil) {
 			// put it back as the condition is not satisfied
 			p.desiredPublishes.PushFront(pub)
+
+			// a queued publish reached the front, start its publish window from now
+			if popped && pub.isStart {
+				p.unmutedAt = time.Time{}
+				p.maybeStartMonitor()
+			}
 			return
 		}
+		popped = true
 	}
 }
