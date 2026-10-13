@@ -1030,6 +1030,7 @@ const (
 	OperationMonitorEventSetPublicationMute
 	OperationMonitorEventSetPublishedTrack
 	OperationMonitorEventClearPublishedTrack
+	OperationMonitorEventRetirePendingPublication
 )
 
 func (o OperationMonitorEvent) String() string {
@@ -1044,6 +1045,8 @@ func (o OperationMonitorEvent) String() string {
 		return "SET_PUBLISHED_TRACK"
 	case OperationMonitorEventClearPublishedTrack:
 		return "CLEAR_PUBLISHED_TRACK"
+	case OperationMonitorEventRetirePendingPublication:
+		return "RETIRE_PENDING_PUBLICATION"
 	default:
 		return fmt.Sprintf("%d", int(o))
 	}

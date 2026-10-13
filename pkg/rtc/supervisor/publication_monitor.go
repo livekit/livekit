@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	publishWaitDuration = 30 * time.Second
+	defaultPublishWaitDuration = 30 * time.Second
 )
 
 var (
@@ -41,6 +41,7 @@ type publish struct {
 type PublicationMonitorParams struct {
 	TrackID                   livekit.TrackID
 	IsPeerConnectionConnected bool
+	PublishTimeout            time.Duration
 	Logger                    logger.Logger
 }
 
@@ -58,6 +59,9 @@ type PublicationMonitor struct {
 }
 
 func NewPublicationMonitor(params PublicationMonitorParams) *PublicationMonitor {
+	if params.PublishTimeout <= 0 {
+		params.PublishTimeout = defaultPublishWaitDuration
+	}
 	p := &PublicationMonitor{
 		params:      params,
 		isConnected: params.IsPeerConnectionConnected,
@@ -78,7 +82,24 @@ func (p *PublicationMonitor) PostEvent(ome types.OperationMonitorEvent, omd type
 		p.setPublishedTrack(omd.(types.LocalMediaTrack))
 	case types.OperationMonitorEventClearPublishedTrack:
 		p.clearPublishedTrack(omd.(types.LocalMediaTrack))
+	case types.OperationMonitorEventRetirePendingPublication:
+		p.retirePending()
 	}
+}
+
+// retirePending drops the leading pending publish (its start and the synthesized
+// end) that was reclaimed after timing out, and re-arms the timer so the next
+// pending publish, now at the front of the queue, gets a full publish window.
+func (p *PublicationMonitor) retirePending() {
+	p.lock.Lock()
+	if p.desiredPublishes.Len() > 0 && p.desiredPublishes.Front().isStart {
+		p.desiredPublishes.PopFront()
+		if p.desiredPublishes.Len() > 0 && !p.desiredPublishes.Front().isStart {
+			p.desiredPublishes.PopFront()
+		}
+	}
+	p.maybeStartMonitor()
+	p.lock.Unlock()
 }
 
 func (p *PublicationMonitor) addPending() {
@@ -153,7 +174,7 @@ func (p *PublicationMonitor) Check() error {
 		return nil
 	}
 
-	if pub.isStart && !isMuted && !unmutedAt.IsZero() && time.Since(unmutedAt) > publishWaitDuration {
+	if pub.isStart && !isMuted && !unmutedAt.IsZero() && time.Since(unmutedAt) > p.params.PublishTimeout {
 		// timed out waiting for publish
 		return errPublishTimeout
 	}

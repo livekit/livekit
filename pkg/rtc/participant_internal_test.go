@@ -256,6 +256,56 @@ func TestTrackPublishing(t *testing.T) {
 		require.Equal(t, p.pendingTracks["cid"].trackInfos[0].Sid, p.pendingTracks["cid"].trackInfos[1].Sid)
 	})
 
+	t.Run("should reclaim abandoned pending tracks that never received media", func(t *testing.T) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{protocolVersion: 7})
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+
+		// one slot is a client id with a queued successor that shares the same track id.
+		// create it first: queuing a successor at the cap would be rejected like any new add.
+		require.NotNil(t, p.addPendingTrack(&livekit.AddTrackRequest{Cid: "cidq", Name: "q0", Type: livekit.TrackType_VIDEO}))
+		p.addPendingTrack(&livekit.AddTrackRequest{Cid: "cidq", Name: "q1", Type: livekit.TrackType_VIDEO}) // queued, returns nil
+		require.Len(t, p.pendingTracks["cidq"].trackInfos, 2)
+
+		// fill the remaining slots with lone pending tracks (distinct client ids)
+		var sids []livekit.TrackID
+		for i := 0; i < cMaxPendingTracks-1; i++ {
+			ti := p.addPendingTrack(&livekit.AddTrackRequest{
+				Cid:  fmt.Sprintf("cid%d", i),
+				Name: fmt.Sprintf("track%d", i),
+				Type: livekit.TrackType_VIDEO,
+			})
+			require.NotNil(t, ti)
+			sids = append(sids, livekit.TrackID(ti.Sid))
+		}
+		require.Len(t, p.pendingTracks, cMaxPendingTracks)
+
+		// while every slot is held and nothing has aged out, a new publish is rejected
+		require.Nil(t, p.addPendingTrack(&livekit.AddTrackRequest{Cid: "fresh", Name: "fresh", Type: livekit.TrackType_VIDEO}))
+
+		// age one lone track and the queued client id past the publish timeout
+		p.pendingTracksLock.Lock()
+		p.pendingTracks["cid0"].createdAt = time.Now().Add(-2 * config.PublishTimeoutDefault)
+		p.pendingTracks["cidq"].createdAt = time.Now().Add(-2 * config.PublishTimeoutDefault)
+		p.pendingTracksLock.Unlock()
+
+		numMessages := sink.WriteMessageCallCount()
+
+		// a fresh publish now reclaims the abandoned slots and succeeds
+		require.NotNil(t, p.addPendingTrack(&livekit.AddTrackRequest{Cid: "fresh", Name: "fresh", Type: livekit.TrackType_VIDEO}))
+
+		// the lone abandoned track is gone, freeing its slot for the new track
+		require.Nil(t, p.pendingTracks["cid0"])
+		require.Nil(t, p.GetPendingTrack(sids[0]))
+		require.NotNil(t, p.pendingTracks["fresh"])
+		// the queued client id keeps its slot, but its abandoned front is dropped and the successor promoted
+		require.NotNil(t, p.pendingTracks["cidq"])
+		require.Len(t, p.pendingTracks["cidq"].trackInfos, 1)
+		require.Len(t, p.pendingTracks, cMaxPendingTracks)
+
+		// each reclaimed front told the client its track was unpublished
+		require.Equal(t, numMessages+2, sink.WriteMessageCallCount())
+	})
+
 	t.Run("should not allow adding disallowed sources", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		p.SetPermission(&livekit.ParticipantPermission{

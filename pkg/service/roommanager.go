@@ -460,6 +460,11 @@ func (r *RoomManager) StartSession(
 		reconnectOnPublicationError = *r.config.RTC.ReconnectOnPublicationError
 	}
 
+	publishTimeout := config.PublishTimeoutDefault
+	if r.config.RTC.PublishTimeout > 0 {
+		publishTimeout = r.config.RTC.PublishTimeout
+	}
+
 	// default do not force full reconnect on a subscription error
 	reconnectOnSubscriptionError := false
 	if r.config.RTC.ReconnectOnSubscriptionError != nil {
@@ -522,6 +527,7 @@ func (r *RoomManager) StartSession(
 			codecRegressionThreshold: r.config.Video.CodecRegressionThreshold,
 		},
 		ReconnectOnPublicationError:       reconnectOnPublicationError,
+		PublishTimeout:                    publishTimeout,
 		ReconnectOnSubscriptionError:      reconnectOnSubscriptionError,
 		ReconnectOnDataChannelError:       reconnectOnDataChannelError,
 		VersionGenerator:                  r.versionGenerator,

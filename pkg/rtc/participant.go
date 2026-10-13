@@ -213,6 +213,7 @@ type ParticipantParams struct {
 	ReconnectOnPublicationError       bool
 	ReconnectOnSubscriptionError      bool
 	ReconnectOnDataChannelError       bool
+	PublishTimeout                    time.Duration
 	VersionGenerator                  utils.TimedVersionGenerator
 	DisableDynacast                   bool
 	SubscriberAllowPause              bool
@@ -414,7 +415,10 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	p.setTelemetryListener(params.TelemetryListener)
 	p.participantHelper.Store(params.ParticipantHelper)
 	if !params.DisableSupervisor {
-		p.supervisor = supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{Logger: params.Logger})
+		p.supervisor = supervisor.NewParticipantSupervisor(supervisor.ParticipantSupervisorParams{
+			Logger:         params.Logger,
+			PublishTimeout: params.PublishTimeout,
+		})
 	}
 	p.closeReason.Store(types.ParticipantCloseReasonNone)
 	p.version.Store(params.InitialVersion)
@@ -2976,6 +2980,60 @@ func (p *ParticipantImpl) onSubscribedAudioCodecChange(
 	return p.sendSubscribedAudioCodecUpdate(subscribedAudioCodecUpdate)
 }
 
+// reclaimAbandonedPendingTracksLocked drops pending tracks whose first media never
+// arrived within the publish timeout, freeing their slots against cMaxPendingTracks.
+// A queued successor on the same client id is promoted (and keeps its own slot).
+// Must be called with pendingTracksLock held.
+func (p *ParticipantImpl) reclaimAbandonedPendingTracksLocked() {
+	timeout := p.params.PublishTimeout
+	if timeout <= 0 {
+		timeout = config.PublishTimeoutDefault
+	}
+
+	now := time.Now()
+	var reclaimed []livekit.TrackID
+	for cid, pti := range p.pendingTracks {
+		if len(pti.trackInfos) == 0 {
+			continue
+		}
+		front := pti.trackInfos[0]
+		trackID := livekit.TrackID(front.Sid)
+		// media already flowing (or being set up) for this track, not abandoned
+		if p.pendingPublishingTracks[trackID] != nil {
+			continue
+		}
+		if now.Sub(pti.createdAt) <= timeout {
+			continue
+		}
+
+		pti.trackInfos = pti.trackInfos[1:]
+		if len(pti.trackInfos) == 0 {
+			delete(p.pendingTracks, cid)
+		} else {
+			// promote the queued successor and give it a fresh publish window
+			pti.queued = true
+			pti.createdAt = now
+		}
+		reclaimed = append(reclaimed, trackID)
+	}
+
+	for _, trackID := range reclaimed {
+		p.pubLogger.Infow(
+			"reclaiming abandoned pending track that never received media",
+			"trackID", trackID,
+			"numPendingTracks", len(p.pendingTracks),
+		)
+		if p.supervisor != nil {
+			p.supervisor.RemovePublication(trackID)
+		}
+		if p.ProtocolVersion().SupportsUnpublish() {
+			p.sendTrackUnpublished(trackID)
+		} else {
+			p.sendTrackMuted(trackID, true)
+		}
+	}
+}
+
 func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit.TrackInfo {
 	p.pendingTracksLock.Lock()
 	if req.Sid != "" {
@@ -2996,6 +3054,13 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		ti := track.ToProto()
 		p.pendingTracksLock.Unlock()
 		return ti
+	}
+
+	if len(p.pendingTracks) >= cMaxPendingTracks {
+		// a client can abandon a publish (e.g. remove the transceiver) without any
+		// signal the server acts on, so the pending slot is otherwise held until the
+		// participant leaves. Before rejecting, reclaim slots whose media never arrived.
+		p.reclaimAbandonedPendingTracksLocked()
 	}
 
 	if len(p.pendingTracks) >= cMaxPendingTracks {

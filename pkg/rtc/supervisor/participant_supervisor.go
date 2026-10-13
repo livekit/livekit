@@ -30,7 +30,8 @@ const (
 )
 
 type ParticipantSupervisorParams struct {
-	Logger logger.Logger
+	Logger         logger.Logger
+	PublishTimeout time.Duration
 }
 
 type trackMonitor struct {
@@ -98,6 +99,7 @@ func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID) {
 				PublicationMonitorParams{
 					TrackID:                   trackID,
 					IsPeerConnectionConnected: p.isPublisherConnected,
+					PublishTimeout:            p.params.PublishTimeout,
 					Logger:                    p.params.Logger,
 				},
 			),
@@ -105,6 +107,24 @@ func (p *ParticipantSupervisor) AddPublication(trackID livekit.TrackID) {
 		p.publications[trackID] = pm
 	}
 	pm.opMon.PostEvent(types.OperationMonitorEventAddPendingPublication, nil)
+	p.lock.Unlock()
+}
+
+// RemovePublication retires one pending publish for trackID (e.g. it timed out and
+// was reclaimed). Because queued publications on the same client id share a trackID,
+// the monitor may still hold a successor, so the monitor is dropped only once no
+// desired publish remains. A surviving monitor is re-armed so the promoted successor
+// can be detected in turn.
+func (p *ParticipantSupervisor) RemovePublication(trackID livekit.TrackID) {
+	p.lock.Lock()
+	if pm, ok := p.publications[trackID]; ok {
+		pm.opMon.PostEvent(types.OperationMonitorEventRetirePendingPublication, nil)
+		if pm.opMon.IsIdle() {
+			delete(p.publications, trackID)
+		} else {
+			pm.err = nil
+		}
+	}
 	p.lock.Unlock()
 }
 
