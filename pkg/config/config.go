@@ -177,7 +177,7 @@ type RTCConfig struct {
 	// how long a pending publication may wait for its first media before the server
 	// treats it as abandoned. A connected, unmuted publication that produces no media
 	// within this window is reported as a publication timeout, and its pending-track
-	// slot becomes eligible for reclaim. Values <= 0 fall back to publishTimeoutDefault.
+	// slot becomes eligible for reclaim. Values <= 0 fall back to an internal default.
 	PublishTimeout time.Duration `yaml:"publish_timeout,omitempty"`
 
 	// force a reconnect on a subscription error
