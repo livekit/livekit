@@ -256,6 +256,122 @@ func TestTrackPublishing(t *testing.T) {
 		require.Equal(t, p.pendingTracks["cid"].trackInfos[0].Sid, p.pendingTracks["cid"].trackInfos[1].Sid)
 	})
 
+	t.Run("should release timed out pending tracks when at the pending track limit", func(t *testing.T) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{protocolVersion: 7})
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+
+		// one slot holds two queued entries that share a track id, both before any media
+		queued := p.addPendingTrack(&livekit.AddTrackRequest{Cid: "cidq", Name: "q0", Type: livekit.TrackType_VIDEO})
+		require.NotNil(t, queued)
+		p.addPendingTrack(&livekit.AddTrackRequest{Cid: "cidq", Name: "q1", Type: livekit.TrackType_VIDEO}) // queued, returns nil
+		require.Len(t, p.pendingTracks["cidq"].trackInfos, 2)
+
+		var sids []livekit.TrackID
+		for i := 0; i < cMaxPendingTracks-1; i++ {
+			ti := p.addPendingTrack(&livekit.AddTrackRequest{
+				Cid:  fmt.Sprintf("cid%d", i),
+				Name: fmt.Sprintf("track%d", i),
+				Type: livekit.TrackType_VIDEO,
+			})
+			require.NotNil(t, ti)
+			sids = append(sids, livekit.TrackID(ti.Sid))
+		}
+		require.Len(t, p.pendingTracks, cMaxPendingTracks)
+
+		// nothing timed out, so a new publish is rejected
+		require.Nil(t, p.addPendingTrack(&livekit.AddTrackRequest{Cid: "fresh", Name: "fresh", Type: livekit.TrackType_VIDEO}))
+
+		// one lone track times out, a new publish takes its slot
+		p.supervisor.SetPublicationTimedOutForTest(sids[0])
+		numMessages := sink.WriteMessageCallCount()
+		require.NotNil(t, p.addPendingTrack(&livekit.AddTrackRequest{Cid: "fresh", Name: "fresh", Type: livekit.TrackType_VIDEO}))
+		require.Nil(t, p.pendingTracks["cid0"])
+		require.NotNil(t, p.pendingTracks["fresh"])
+		require.Len(t, p.pendingTracks, cMaxPendingTracks)
+		require.Empty(t, p.supervisor.TimedOutPublications())
+
+		require.Equal(t, numMessages+1, sink.WriteMessageCallCount())
+		res := sink.WriteMessageArgsForCall(numMessages).(*livekit.SignalResponse)
+		require.IsType(t, &livekit.SignalResponse_TrackUnpublished{}, res.Message)
+		require.Equal(t, string(sids[0]), res.Message.(*livekit.SignalResponse_TrackUnpublished).TrackUnpublished.TrackSid)
+
+		// the queued track id times out, both entries are released together
+		p.supervisor.SetPublicationTimedOutForTest(livekit.TrackID(queued.Sid))
+		require.NotNil(t, p.addPendingTrack(&livekit.AddTrackRequest{Cid: "fresh2", Name: "fresh2", Type: livekit.TrackType_VIDEO}))
+		require.Nil(t, p.pendingTracks["cidq"])
+		require.NotNil(t, p.pendingTracks["fresh2"])
+		require.Len(t, p.pendingTracks, cMaxPendingTracks)
+	})
+
+	t.Run("should not match late media of a released pending track to another pending track", func(t *testing.T) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{protocolVersion: 7})
+
+		released := p.addPendingTrack(&livekit.AddTrackRequest{Cid: "cidA", Name: "a", Type: livekit.TrackType_VIDEO})
+		require.NotNil(t, released)
+		// SDP client id that an offer would set, as Firefox does
+		p.pendingTracks["cidA"].trackInfos[0].Codecs[0].SdpCid = "sdpA"
+
+		p.pendingTracksLock.Lock()
+		p.releasePendingTrackLocked(livekit.TrackID(released.Sid))
+		p.pendingTracksLock.Unlock()
+
+		other := p.addPendingTrack(&livekit.AddTrackRequest{Cid: "cidB", Name: "b", Type: livekit.TrackType_VIDEO})
+		require.NotNil(t, other)
+
+		// media for the released track, by signal or SDP client id, does not fall back to the other track by type
+		for _, cid := range []string{"cidA", "sdpA"} {
+			_, ti, _, _, _ := p.getPendingTrack(cid, livekit.TrackType_VIDEO, true)
+			require.Nil(t, ti, cid)
+		}
+		// an unknown client id still falls back by type, as before
+		_, ti, _, _, _ := p.getPendingTrack("unknown", livekit.TrackType_VIDEO, true)
+		require.NotNil(t, ti)
+		require.Equal(t, other.Sid, ti.Sid)
+
+		// reusing the released client id publishes on it again
+		reused := p.addPendingTrack(&livekit.AddTrackRequest{Cid: "cidA", Name: "a2", Type: livekit.TrackType_VIDEO})
+		require.NotNil(t, reused)
+		_, ti, _, _, _ = p.getPendingTrack("cidA", livekit.TrackType_VIDEO, true)
+		require.NotNil(t, ti)
+		require.Equal(t, reused.Sid, ti.Sid)
+		// the old SDP id is cleared too, a reused transceiver keeps it
+		p.pendingTracksLock.Lock()
+		require.False(t, p.isReleasedTrackCidLocked("sdpA"))
+		p.pendingTracksLock.Unlock()
+	})
+
+	t.Run("should clear a released track when a new request reuses one of its codec client ids", func(t *testing.T) {
+		p := newParticipantForTest("test")
+
+		p.pendingTracksLock.Lock()
+		p.addReleasedTrackCidsLocked([]string{"cidA", "codecA", "sdpA"})
+		p.addReleasedTrackCidsLocked([]string{"cidB"})
+		p.clearReleasedTrackCidsLocked(&livekit.AddTrackRequest{
+			Cid:             "cidC",
+			SimulcastCodecs: []*livekit.SimulcastCodec{{Codec: "vp8", Cid: "codecA"}},
+		})
+		for _, cid := range []string{"cidA", "codecA", "sdpA"} {
+			require.False(t, p.isReleasedTrackCidLocked(cid), cid)
+		}
+		require.True(t, p.isReleasedTrackCidLocked("cidB"))
+		p.pendingTracksLock.Unlock()
+	})
+
+	t.Run("should bound released track client ids", func(t *testing.T) {
+		p := newParticipantForTest("test")
+
+		p.pendingTracksLock.Lock()
+		for i := 0; i <= cMaxReleasedTracks; i++ {
+			p.addReleasedTrackCidsLocked([]string{fmt.Sprintf("cid%d", i), fmt.Sprintf("sdp%d", i)})
+		}
+		require.Len(t, p.releasedTrackCids, cMaxReleasedTracks)
+		// the oldest track ages out with all of its ids
+		require.False(t, p.isReleasedTrackCidLocked("cid0"))
+		require.False(t, p.isReleasedTrackCidLocked("sdp0"))
+		require.True(t, p.isReleasedTrackCidLocked(fmt.Sprintf("sdp%d", cMaxReleasedTracks)))
+		p.pendingTracksLock.Unlock()
+	})
+
 	t.Run("should not allow adding disallowed sources", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		p.SetPermission(&livekit.ParticipantPermission{

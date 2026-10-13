@@ -50,6 +50,11 @@ func (p *ParticipantImpl) populateSdpCid(parsedOffer *sdp.SessionDescription) ([
 			}
 
 			p.pendingTracksLock.Lock()
+			if p.isReleasedTrackCidLocked(streamID) {
+				p.pendingTracksLock.Unlock()
+				continue
+			}
+
 			signalCid, info, _, migrated, _ := p.getPendingTrack(streamID, trackType, false)
 			if migrated {
 				p.pendingTracksLock.Unlock()
