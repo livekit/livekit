@@ -83,7 +83,7 @@ const (
 
 	cMaxPendingTracks       = 20
 	cMaxPendingQueuedTracks = 3
-	cMaxReleasedTrackCids   = 32
+	cMaxReleasedTracks      = 32
 
 	// unsequenced reliable data (server API sends) cannot be recovered from the
 	// data message cache, so it is held here until the reliable data channel is writable
@@ -297,10 +297,10 @@ type ParticipantImpl struct {
 	pendingTracks           map[string]*pendingTrackInfo
 	pendingPublishingTracks map[livekit.TrackID]*pendingTrackInfo
 	pendingRemoteTracks     []*pendingRemoteTrack
-	// signal and SDP client ids of pending tracks released without media, so that media or
-	// an offer for them is dropped instead of being matched by type to another pending track,
-	// bounded to cMaxReleasedTrackCids, oldest out first
-	releasedTrackCids []string
+	// client ids (signal, codec and SDP) of each pending track released without media, so that
+	// media or an offer for them is dropped instead of being matched by type to another pending
+	// track, bounded to cMaxReleasedTracks, oldest out first
+	releasedTrackCids [][]string
 
 	// supported codecs
 	enabledPublishCodecs   []*livekit.Codec
@@ -2984,16 +2984,18 @@ func (p *ParticipantImpl) onSubscribedAudioCodecChange(
 // releasePendingTrackLocked drops every pending entry of a track whose media never arrived,
 // so it stops counting against cMaxPendingTracks. Must be called with pendingTracksLock held.
 func (p *ParticipantImpl) releasePendingTrackLocked(trackID livekit.TrackID) {
-	var released *livekit.TrackInfo
+	var (
+		released     *livekit.TrackInfo
+		releasedCids []string
+	)
 	for cid, pti := range p.pendingTracks {
 		remaining := pti.trackInfos[:0]
 		for _, ti := range pti.trackInfos {
 			if livekit.TrackID(ti.Sid) == trackID {
 				released = ti
-				p.addReleasedTrackCidLocked(cid)
+				releasedCids = append(releasedCids, cid)
 				for _, c := range ti.Codecs {
-					p.addReleasedTrackCidLocked(c.Cid)
-					p.addReleasedTrackCidLocked(c.SdpCid)
+					releasedCids = append(releasedCids, c.Cid, c.SdpCid)
 				}
 				continue
 			}
@@ -3007,6 +3009,7 @@ func (p *ParticipantImpl) releasePendingTrackLocked(trackID livekit.TrackID) {
 	if released == nil {
 		return
 	}
+	p.addReleasedTrackCidsLocked(releasedCids)
 
 	p.pubLogger.Infow(
 		"releasing pending track that never received media",
@@ -3025,19 +3028,45 @@ func (p *ParticipantImpl) releasePendingTrackLocked(trackID livekit.TrackID) {
 }
 
 // must be called with pendingTracksLock held
-func (p *ParticipantImpl) addReleasedTrackCidLocked(cid string) {
-	if cid == "" || slices.Contains(p.releasedTrackCids, cid) {
+func (p *ParticipantImpl) addReleasedTrackCidsLocked(cids []string) {
+	cids = slices.DeleteFunc(cids, func(cid string) bool { return cid == "" })
+	slices.Sort(cids)
+	cids = slices.Compact(cids)
+	if len(cids) == 0 {
 		return
 	}
-	p.releasedTrackCids = append(p.releasedTrackCids, cid)
-	if len(p.releasedTrackCids) > cMaxReleasedTrackCids {
+	p.releasedTrackCids = append(p.releasedTrackCids, cids)
+	if len(p.releasedTrackCids) > cMaxReleasedTracks {
 		p.releasedTrackCids = p.releasedTrackCids[1:]
 	}
 }
 
 // must be called with pendingTracksLock held
 func (p *ParticipantImpl) isReleasedTrackCidLocked(cid string) bool {
-	return slices.Contains(p.releasedTrackCids, cid)
+	for _, cids := range p.releasedTrackCids {
+		if slices.Contains(cids, cid) {
+			return true
+		}
+	}
+	return false
+}
+
+// clearReleasedTrackCidsLocked drops every released track that shares a client id with
+// this request. A client re-adding a released track intends to publish on it again, so all
+// of its ids are cleared, including an SDP id a reused transceiver keeps.
+// Must be called with pendingTracksLock held.
+func (p *ParticipantImpl) clearReleasedTrackCidsLocked(req *livekit.AddTrackRequest) {
+	p.releasedTrackCids = slices.DeleteFunc(p.releasedTrackCids, func(cids []string) bool {
+		if slices.Contains(cids, req.Cid) {
+			return true
+		}
+		for _, sc := range req.SimulcastCodecs {
+			if sc.Cid != "" && slices.Contains(cids, sc.Cid) {
+				return true
+			}
+		}
+		return false
+	})
 }
 
 func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit.TrackInfo {
@@ -3083,8 +3112,7 @@ func (p *ParticipantImpl) addPendingTrack(req *livekit.AddTrackRequest) *livekit
 		return nil
 	}
 
-	// a client reusing a released client id intends to publish on it again
-	p.releasedTrackCids = slices.DeleteFunc(p.releasedTrackCids, func(cid string) bool { return cid == req.Cid })
+	p.clearReleasedTrackCidsLocked(req)
 
 	backupCodecPolicy := req.BackupCodecPolicy
 

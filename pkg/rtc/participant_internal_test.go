@@ -334,18 +334,41 @@ func TestTrackPublishing(t *testing.T) {
 		_, ti, _, _, _ = p.getPendingTrack("cidA", livekit.TrackType_VIDEO, true)
 		require.NotNil(t, ti)
 		require.Equal(t, reused.Sid, ti.Sid)
+		// the old SDP id is cleared too, a reused transceiver keeps it
+		p.pendingTracksLock.Lock()
+		require.False(t, p.isReleasedTrackCidLocked("sdpA"))
+		p.pendingTracksLock.Unlock()
+	})
+
+	t.Run("should clear a released track when a new request reuses one of its codec client ids", func(t *testing.T) {
+		p := newParticipantForTest("test")
+
+		p.pendingTracksLock.Lock()
+		p.addReleasedTrackCidsLocked([]string{"cidA", "codecA", "sdpA"})
+		p.addReleasedTrackCidsLocked([]string{"cidB"})
+		p.clearReleasedTrackCidsLocked(&livekit.AddTrackRequest{
+			Cid:             "cidC",
+			SimulcastCodecs: []*livekit.SimulcastCodec{{Codec: "vp8", Cid: "codecA"}},
+		})
+		for _, cid := range []string{"cidA", "codecA", "sdpA"} {
+			require.False(t, p.isReleasedTrackCidLocked(cid), cid)
+		}
+		require.True(t, p.isReleasedTrackCidLocked("cidB"))
+		p.pendingTracksLock.Unlock()
 	})
 
 	t.Run("should bound released track client ids", func(t *testing.T) {
 		p := newParticipantForTest("test")
 
 		p.pendingTracksLock.Lock()
-		for i := 0; i <= cMaxReleasedTrackCids; i++ {
-			p.addReleasedTrackCidLocked(fmt.Sprintf("cid%d", i))
+		for i := 0; i <= cMaxReleasedTracks; i++ {
+			p.addReleasedTrackCidsLocked([]string{fmt.Sprintf("cid%d", i), fmt.Sprintf("sdp%d", i)})
 		}
-		require.Len(t, p.releasedTrackCids, cMaxReleasedTrackCids)
+		require.Len(t, p.releasedTrackCids, cMaxReleasedTracks)
+		// the oldest track ages out with all of its ids
 		require.False(t, p.isReleasedTrackCidLocked("cid0"))
-		require.True(t, p.isReleasedTrackCidLocked(fmt.Sprintf("cid%d", cMaxReleasedTrackCids)))
+		require.False(t, p.isReleasedTrackCidLocked("sdp0"))
+		require.True(t, p.isReleasedTrackCidLocked(fmt.Sprintf("sdp%d", cMaxReleasedTracks)))
 		p.pendingTracksLock.Unlock()
 	})
 
