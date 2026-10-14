@@ -836,18 +836,18 @@ func TestOneShotSimulcastOfferAppliesRids(t *testing.T) {
 	defer pc.Close()
 
 	codec := webrtc.RTPCodecCapability{MimeType: mime.MimeTypeVP8.String()}
-	high, err := webrtc.NewTrackLocalStaticRTP(codec, "video", "stream", webrtc.WithRTPStreamID("f"))
+	medium, err := webrtc.NewTrackLocalStaticRTP(codec, "video", "stream", webrtc.WithRTPStreamID("h"))
 	require.NoError(t, err)
-	low, err := webrtc.NewTrackLocalStaticRTP(codec, "video", "stream", webrtc.WithRTPStreamID("h"))
+	low, err := webrtc.NewTrackLocalStaticRTP(codec, "video", "stream", webrtc.WithRTPStreamID("q"))
 	require.NoError(t, err)
-	sender, err := pc.AddTrack(high)
+	sender, err := pc.AddTrack(medium)
 	require.NoError(t, err)
 	require.NoError(t, sender.AddEncoding(low))
 
 	offer, err := pc.CreateOffer(nil)
 	require.NoError(t, err)
 	require.NoError(t, pc.SetLocalDescription(offer))
-	require.Contains(t, offer.SDP, "a=simulcast:send f;h")
+	require.Contains(t, offer.SDP, "a=simulcast:send h;q")
 
 	require.NoError(t, participant.HandleOffer(&livekit.SessionDescription{
 		Type: webrtc.SDPTypeOffer.String(),
@@ -862,11 +862,49 @@ func TestOneShotSimulcastOfferAppliesRids(t *testing.T) {
 	layers := pti.trackInfos[0].Codecs[0].Layers
 	require.Len(t, layers, 2)
 	require.Equal(t, livekit.VideoQuality_LOW, layers[0].Quality)
-	require.Equal(t, "h", layers[0].Rid)
+	require.Equal(t, "q", layers[0].Rid)
 	require.EqualValues(t, 0, layers[0].SpatialLayer)
 	require.Equal(t, livekit.VideoQuality_MEDIUM, layers[1].Quality)
-	require.Equal(t, "f", layers[1].Rid)
+	require.Equal(t, "h", layers[1].Rid)
 	require.EqualValues(t, 1, layers[1].SpatialLayer)
+}
+
+func TestOneShotSingleLayerOfferUnchanged(t *testing.T) {
+	participant := newParticipantForTestWithOpts("whip", &participantOpts{
+		publisher: true,
+		oneShot:   true,
+	})
+	participant.SetMigrateState(types.MigrateStateComplete)
+
+	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	require.NoError(t, err)
+	defer pc.Close()
+
+	track, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: mime.MimeTypeVP8.String()}, "video", "stream")
+	require.NoError(t, err)
+	_, err = pc.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly})
+	require.NoError(t, err)
+
+	offer, err := pc.CreateOffer(nil)
+	require.NoError(t, err)
+	require.NoError(t, pc.SetLocalDescription(offer))
+	require.NotContains(t, offer.SDP, "a=simulcast")
+	require.NotContains(t, offer.SDP, "a=rid")
+
+	require.NoError(t, participant.HandleOffer(&livekit.SessionDescription{
+		Type: webrtc.SDPTypeOffer.String(),
+		Sdp:  offer.SDP,
+	}))
+
+	participant.pendingTracksLock.RLock()
+	pti := participant.pendingTracks["video"]
+	participant.pendingTracksLock.RUnlock()
+	require.NotNil(t, pti)
+
+	layers := pti.trackInfos[0].Codecs[0].Layers
+	require.Len(t, layers, 1)
+	require.Equal(t, "", layers[0].Rid)
+	require.EqualValues(t, 0, layers[0].SpatialLayer)
 }
 
 func TestPreferAudioCodecForRed(t *testing.T) {
