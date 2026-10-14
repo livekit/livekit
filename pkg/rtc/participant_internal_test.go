@@ -400,6 +400,50 @@ func TestTrackPublishing(t *testing.T) {
 	})
 }
 
+func TestSetPermissionDataTrackSubscriptions(t *testing.T) {
+	p := newParticipantForTestWithOpts("sub", &participantOpts{
+		permissions: &livekit.ParticipantPermission{
+			CanSubscribe: true,
+		},
+	})
+	defer p.Close(false, types.ParticipantCloseReasonNone, false)
+
+	pubID := livekit.ParticipantID("PA_pub")
+	dt := NewDataTrack(
+		DataTrackParams{
+			Logger:              logger.GetLogger(),
+			ParticipantID:       func() livekit.ParticipantID { return pubID },
+			ParticipantIdentity: "pub",
+		},
+		&livekit.DataTrackInfo{PubHandle: 1, Sid: "DTR_test", Name: "test"},
+	)
+	defer dt.Close()
+
+	helper := p.params.ParticipantHelper.(*typesfakes.FakeLocalParticipantHelper)
+	helper.ResolveDataTrackReturns(types.DataResolverResult{
+		DataTrack:         dt,
+		HasPermission:     true,
+		PublisherID:       pubID,
+		PublisherIdentity: "pub",
+	})
+
+	p.SubscribeToDataTrack(dt.ID())
+	require.Eventually(t, func() bool {
+		return dt.IsSubscriber(p.ID())
+	}, 5*time.Second, 10*time.Millisecond, "data track subscription should be established")
+
+	// revoking canSubscribe should drop data track subscriptions, like media track subscriptions
+	require.True(t, p.SetPermission(&livekit.ParticipantPermission{CanSubscribe: false}))
+	require.False(t, dt.IsSubscriber(p.ID()))
+	require.Empty(t, p.GetSubscribedDataTracks())
+
+	// granting canSubscribe again should restore the subscription
+	require.True(t, p.SetPermission(&livekit.ParticipantPermission{CanSubscribe: true}))
+	require.Eventually(t, func() bool {
+		return dt.IsSubscriber(p.ID())
+	}, 5*time.Second, 10*time.Millisecond, "data track subscription should be restored")
+}
+
 func TestOutOfOrderUpdates(t *testing.T) {
 	p := newParticipantForTest("test")
 	p.updateState(livekit.ParticipantInfo_JOINED)
