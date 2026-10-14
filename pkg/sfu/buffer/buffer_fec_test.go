@@ -19,10 +19,12 @@ import (
 	"crypto/cipher"
 	"encoding/binary"
 	"math/rand"
+	"sync"
 	"testing"
 	"time"
 
 	pionflexfec "github.com/pion/interceptor/pkg/flexfec"
+	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/transport/v4/packetio"
 	"github.com/pion/webrtc/v4"
@@ -597,4 +599,76 @@ func TestBufferFECNACKSuppression(t *testing.T) {
 	require.EqualValues(t, 1, primary.FECDecoderStats().PacketsRecovered)
 
 	require.Empty(t, primary.nacker.Nacks(), "NACK for recovered packet not suppressed")
+}
+
+func TestBufferFECNACKNotSentForRecoveredPacket(t *testing.T) {
+	// A late media arrival can complete a retained FEC window. RTCP feedback
+	// must be generated after FEC recovery so the sequence number repaired by
+	// FEC is not NACKed, while an unrelated unrecoverable gap is still NACKed.
+	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+
+	primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
+	fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
+	factory.SetFECPair(fecTestFECSSRC, fecTestMediaSSRC)
+	bindFECTestBuffer(t, primary)
+
+	var mu sync.Mutex
+	nackedSNs := make(map[uint16]bool)
+	primary.OnRtcpFeedback(func(fb []rtcp.Packet) {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, pkt := range fb {
+			if nack, ok := pkt.(*rtcp.TransportLayerNack); ok {
+				for _, pair := range nack.Nacks {
+					pair.Range(func(sn uint16) bool {
+						nackedSNs[sn] = true
+						return true
+					})
+				}
+			}
+		}
+	})
+
+	// single FEC packet protecting the whole window; dropping two of the
+	// protected packets keeps the window unrecoverable until one arrives
+	media := fecTestMediaPackets(t, 100, 5) // 100..104
+	fecPackets := pionflexfec.NewFlexEncoder03(fecTestFECPT, fecTestFECSSRC).EncodeFec(media, 1)
+	require.Len(t, fecPackets, 1)
+
+	writePacket(t, primary, &media[0]) // 100
+	writePacket(t, primary, &media[1]) // 101
+	writePacket(t, primary, &media[4]) // 104 -> gap 102, 103
+
+	// an unrelated gap outside the FEC-protected window that FEC cannot recover
+	extra := fecTestMediaPackets(t, 105, 3) // 105..107
+	writePacket(t, primary, &extra[0])      // 105
+	writePacket(t, primary, &extra[2])      // 107 -> gap 106
+	const unrecoverableSN = uint16(106)
+
+	// FEC packet retained: two protected packets (102, 103) still missing
+	writePacket(t, fecBuff, &fecPackets[0])
+	require.EqualValues(t, 0, primary.FECDecoderStats().PacketsRecovered)
+	require.Len(t, primary.nacker.Nacks(), 3, "expected queued NACKs for 102, 103, 106")
+
+	// let the queued NACKs age past the minimum NACK interval so they would be
+	// sent on the next RTCP generation, and ignore any feedback emitted during
+	// setup
+	time.Sleep(30 * time.Millisecond)
+	mu.Lock()
+	nackedSNs = make(map[uint16]bool)
+	mu.Unlock()
+
+	// late arrival of 102 leaves only 103 missing, recovered in the same write
+	writePacket(t, primary, &media[2]) // 102
+	require.EqualValues(t, 1, primary.FECDecoderStats().PacketsRecovered)
+
+	// only the unrecoverable gap should remain queued; 102 arrived and 103 was
+	// recovered, both cleared from the NACK queue
+	require.Len(t, primary.nacker.Nacks(), 1)
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.True(t, nackedSNs[unrecoverableSN], "expected NACK for unrecoverable gap %d", unrecoverableSN)
+	assert.False(t, nackedSNs[media[2].SequenceNumber], "arrived packet %d must not be NACKed", media[2].SequenceNumber)
+	assert.False(t, nackedSNs[media[3].SequenceNumber], "FEC-recovered packet %d must not be NACKed", media[3].SequenceNumber)
 }
