@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
@@ -41,8 +42,11 @@ func TestAgent(t *testing.T) {
 			Room:       &livekit.Room{},
 			AgentName:  testAgentName,
 		}
-		_, err := client.JobRequest(context.Background(), testAgentName, agent.RoomAgentTopic, job)
-		require.NoError(t, err)
+		// registration is async and the job topic is subscribed after the register response, so retry until a worker is there
+		require.EventuallyWithT(t, func(c *assert.CollectT) {
+			_, err := client.JobRequest(context.Background(), testAgentName, agent.RoomAgentTopic, job)
+			assert.NoError(c, err)
+		}, 5*time.Second, 50*time.Millisecond)
 
 		select {
 		case a := <-jobAssignments.Events():
