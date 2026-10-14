@@ -901,6 +901,9 @@ func (p *ParticipantImpl) SetPermission(permission *livekit.ParticipantPermissio
 		for _, st := range p.SubscriptionManager.GetSubscribedTracks() {
 			st.MediaTrack().RemoveSubscriber(p.ID(), false)
 		}
+		for _, ddt := range p.SubscriptionManager.GetSubscribedDataTracks() {
+			ddt.PublishDataTrack().RemoveSubscriber(p.ID())
+		}
 	}
 
 	if !grants.Video.GetCanPublishData() {
