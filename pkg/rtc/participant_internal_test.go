@@ -824,6 +824,51 @@ func TestPreferMediaCodecForPublisher(t *testing.T) {
 	}
 }
 
+func TestOneShotSimulcastOfferAppliesRids(t *testing.T) {
+	participant := newParticipantForTestWithOpts("whip", &participantOpts{
+		publisher: true,
+		oneShot:   true,
+	})
+	participant.SetMigrateState(types.MigrateStateComplete)
+
+	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	require.NoError(t, err)
+	defer pc.Close()
+
+	codec := webrtc.RTPCodecCapability{MimeType: mime.MimeTypeVP8.String()}
+	high, err := webrtc.NewTrackLocalStaticRTP(codec, "video", "stream", webrtc.WithRTPStreamID("f"))
+	require.NoError(t, err)
+	low, err := webrtc.NewTrackLocalStaticRTP(codec, "video", "stream", webrtc.WithRTPStreamID("h"))
+	require.NoError(t, err)
+	sender, err := pc.AddTrack(high)
+	require.NoError(t, err)
+	require.NoError(t, sender.AddEncoding(low))
+
+	offer, err := pc.CreateOffer(nil)
+	require.NoError(t, err)
+	require.NoError(t, pc.SetLocalDescription(offer))
+	require.Contains(t, offer.SDP, "a=simulcast:send f;h")
+
+	require.NoError(t, participant.HandleOffer(&livekit.SessionDescription{
+		Type: webrtc.SDPTypeOffer.String(),
+		Sdp:  offer.SDP,
+	}))
+
+	participant.pendingTracksLock.RLock()
+	pti := participant.pendingTracks["video"]
+	participant.pendingTracksLock.RUnlock()
+	require.NotNil(t, pti)
+
+	layers := pti.trackInfos[0].Codecs[0].Layers
+	require.Len(t, layers, 2)
+	require.Equal(t, livekit.VideoQuality_LOW, layers[0].Quality)
+	require.Equal(t, "h", layers[0].Rid)
+	require.EqualValues(t, 0, layers[0].SpatialLayer)
+	require.Equal(t, livekit.VideoQuality_MEDIUM, layers[1].Quality)
+	require.Equal(t, "f", layers[1].Rid)
+	require.EqualValues(t, 1, layers[1].SpatialLayer)
+}
+
 func TestPreferAudioCodecForRed(t *testing.T) {
 	participant := newParticipantForTestWithOpts("123", &participantOpts{
 		publisher: true,
@@ -969,6 +1014,7 @@ type participantOpts struct {
 	clientConf      *livekit.ClientConfiguration
 	clientInfo      *livekit.ClientInfo
 	migration       bool
+	oneShot         bool
 }
 
 func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *participantOpts) *ParticipantImpl {
@@ -1005,25 +1051,26 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 	}
 	sid := livekit.ParticipantID(guid.New(utils.ParticipantPrefix))
 	p, _ := NewParticipant(ParticipantParams{
-		SID:                    sid,
-		Identity:               identity,
-		Config:                 rtcConf,
-		Sink:                   &routingfakes.FakeMessageSink{},
-		ProtocolVersion:        opts.protocolVersion,
-		SessionStartTime:       time.Now(),
-		PLIThrottleConfig:      conf.RTC.PLIThrottle,
-		Grants:                 grants,
-		PublishEnabledCodecs:   enabledCodecs,
-		SubscribeEnabledCodecs: enabledCodecs,
-		ClientConf:             opts.clientConf,
-		ClientInfo:             ClientInfo{ClientInfo: opts.clientInfo},
-		Logger:                 LoggerWithParticipant(logger.GetLogger(), identity, sid, false),
-		Reporter:               roomobs.NewNoopParticipantSessionReporter(),
-		TelemetryListener:      &typesfakes.FakeParticipantTelemetryListener{},
-		VersionGenerator:       utils.NewDefaultTimedVersionGenerator(),
-		ParticipantListener:    &typesfakes.FakeLocalParticipantListener{},
-		ParticipantHelper:      &typesfakes.FakeLocalParticipantHelper{},
-		Migration:              opts.migration,
+		SID:                      sid,
+		Identity:                 identity,
+		Config:                   rtcConf,
+		Sink:                     &routingfakes.FakeMessageSink{},
+		ProtocolVersion:          opts.protocolVersion,
+		SessionStartTime:         time.Now(),
+		PLIThrottleConfig:        conf.RTC.PLIThrottle,
+		Grants:                   grants,
+		PublishEnabledCodecs:     enabledCodecs,
+		SubscribeEnabledCodecs:   enabledCodecs,
+		ClientConf:               opts.clientConf,
+		ClientInfo:               ClientInfo{ClientInfo: opts.clientInfo},
+		Logger:                   LoggerWithParticipant(logger.GetLogger(), identity, sid, false),
+		Reporter:                 roomobs.NewNoopParticipantSessionReporter(),
+		TelemetryListener:        &typesfakes.FakeParticipantTelemetryListener{},
+		VersionGenerator:         utils.NewDefaultTimedVersionGenerator(),
+		ParticipantListener:      &typesfakes.FakeLocalParticipantListener{},
+		ParticipantHelper:        &typesfakes.FakeLocalParticipantHelper{},
+		Migration:                opts.migration,
+		UseOneShotSignallingMode: opts.oneShot,
 	})
 	p.isPublisher.Store(opts.publisher)
 	p.updateState(livekit.ParticipantInfo_ACTIVE)
