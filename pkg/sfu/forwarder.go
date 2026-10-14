@@ -2014,7 +2014,7 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 	}
 
 	if f.rtpStats != nil {
-		tsExt, err := f.rtpStats.GetExpectedRTPTimestamp(switchingAt)
+		tsExt, err := f.rtpStats.GetExpectedRTPTimestamp(switchingAt.UnixNano())
 		if err == nil {
 			extExpectedTS = tsExt
 			if f.lastReferencePayloadType == -1 {
@@ -2453,7 +2453,7 @@ func (f *Forwarder) GetSnTsForBlankFrames(frameRate uint32, numPackets int) ([]S
 	extLastTS := f.rtpMunger.GetExtLastTimestamp()
 	extExpectedTS := extLastTS
 	if f.rtpStats != nil {
-		tsExt, err := f.rtpStats.GetExpectedRTPTimestamp(mono.Now())
+		tsExt, err := f.rtpStats.GetExpectedRTPTimestamp(mono.UnixNano())
 		if err == nil {
 			extExpectedTS = tsExt
 		}
