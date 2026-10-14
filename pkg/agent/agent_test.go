@@ -41,8 +41,11 @@ func TestAgent(t *testing.T) {
 			Room:       &livekit.Room{},
 			AgentName:  testAgentName,
 		}
-		_, err := client.JobRequest(context.Background(), testAgentName, agent.RoomAgentTopic, job)
-		require.NoError(t, err)
+		// registration is async and the job topic is subscribed after the register response, so retry until a worker is there
+		require.Eventually(t, func() bool {
+			_, err := client.JobRequest(context.Background(), testAgentName, agent.RoomAgentTopic, job)
+			return err == nil
+		}, 5*time.Second, 50*time.Millisecond)
 
 		select {
 		case a := <-jobAssignments.Events():
