@@ -2590,6 +2590,12 @@ func (d *DownTrack) WriteProbePackets(bytesToSend int, usePadding bool) int {
 				break
 			}
 		}
+
+		// recent packets may be gone from the publisher buffer, for example while
+		// paused, so probe with padding to keep the probe cluster progressing
+		if bytesSent == 0 {
+			return d.WriteProbePackets(bytesToSend, true)
+		}
 	}
 
 	return bytesSent
