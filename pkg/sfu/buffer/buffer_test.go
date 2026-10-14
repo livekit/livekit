@@ -182,6 +182,59 @@ func TestNack(t *testing.T) {
 	})
 }
 
+func TestNackOnRTX(t *testing.T) {
+	buff := NewBuffer(123, 1, 1)
+	buff.codecType = webrtc.RTPCodecTypeVideo
+	var mu sync.Mutex
+	var nacked []uint16
+	buff.OnRtcpFeedback(func(fb []rtcp.Packet) {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, pkt := range fb {
+			if p, ok := pkt.(*rtcp.TransportLayerNack); ok && p.MediaSSRC == 123 {
+				for _, pair := range p.Nacks {
+					nacked = append(nacked, pair.PacketList()...)
+				}
+			}
+		}
+	})
+	require.NoError(t, buff.Bind(webrtc.RTPParameters{
+		Codecs: []webrtc.RTPCodecParameters{vp8Codec},
+	}, vp8Codec.RTPCodecCapability, 0))
+	buff.rtxPayloadType = 97
+	rtt := uint32(20)
+	buff.nacker.SetRTT(rtt)
+
+	payload := []byte{0xff, 0xff, 0xff, 0xfd, 0xb4, 0x9f, 0x94, 0x1}
+	// sequence numbers 1 and 2 are lost
+	for _, sn := range []uint16{0, 3} {
+		pkt := rtp.Packet{
+			Header:  rtp.Header{Version: 2, PayloadType: 96, SequenceNumber: sn, Timestamp: uint32(sn), SSRC: 123},
+			Payload: payload,
+		}
+		b, err := pkt.Marshal()
+		require.NoError(t, err)
+		_, err = buff.Write(b)
+		require.NoError(t, err)
+	}
+
+	time.Sleep(time.Duration(2*rtt) * time.Millisecond)
+	mu.Lock()
+	nacked = nil
+	mu.Unlock()
+
+	// RTX repairs sequence number 2, the NACK for 1 is due and must be sent
+	rtxPkt := rtp.Packet{
+		Header:  rtp.Header{Version: 2, PayloadType: 97, SequenceNumber: 500, Timestamp: 2, SSRC: 456},
+		Payload: append([]byte{0x00, 0x02}, payload...),
+	}
+	buff.writeRTX(&rtxPkt, time.Now().UnixNano())
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, []uint16{1}, nacked)
+}
+
 func TestNewBuffer(t *testing.T) {
 	tests := []struct {
 		name string
