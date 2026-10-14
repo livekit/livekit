@@ -2,6 +2,36 @@
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.10] - 2026-10-14
+
+### Changed
+
+- sfu: forward the dependency descriptor for VP8 simulcast (#4987)
+- sfu: keep VP8 descriptor frame numbers across migration (#4989)
+- sfu: filter VP9 and AV1 simulcast temporal layers with the dependency descriptor (#4991)
+- sfu: filter VP8 temporal layers by frame when the dependency descriptor is sent (#4976)
+- sfu: switch VP8 temporal layers up with the dependency descriptor (#4974)
+- sfu: pad the slot of a filtered packet that follows a sequence number gap (#4983)
+- sfu: send padding in the slot of a dropped out-of-order packet (#4979)
+- sfu: parse VP8 and VP9 payload descriptors without an allocation (#4981)
+- DownTrack: arm key frame requester timer only while a layer lock is pending (#4980)
+- turn: refuse TCP relays and limit relays to this host to media ports (#4992)
+- agent endpoints: address an unnamed deployment as "_" (#4997)
+- Add OSS Scanner build image and threat model (#4995)
+- Update golang Docker tag to v1.27.1 (#4985)
+- Update alpine Docker tag to v3.24.2 (#4984)
+- Update module github.com/maxbrunsfeld/counterfeiter/v6 to v6.13.0 (#4915)
+
+### Fixed
+
+- Send NACKs when processing RTX packets (#5000)
+- sfu: send padding-only packets with no payload (#4993)
+- rtc: release timed out pending tracks at the pending track limit (#4998)
+- Fix nil pointer dereference in IOInfoService.UpdateIngressState (#4806)
+- rtc: keep update cache eviction order when listing recent disconnects (#4975)
+- fix(cli): return non-zero exit status on command errors (#4888)
+- Disable AV1 for Firefox clients before 157 (#4962)
+
 ## [1.13.9] - 2026-10-07
 
 ### Changed
