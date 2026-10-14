@@ -25,6 +25,7 @@ import (
 
 	"github.com/pion/webrtc/v4"
 	"go.uber.org/atomic"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/mediatransportutil/pkg/bucket"
 	"github.com/livekit/mediatransportutil/pkg/codec"
@@ -164,7 +165,7 @@ func NewReceiverBase(params ReceiverBaseParams, trackInfo *livekit.TrackInfo, co
 		params:         params,
 		codecState:     codecState,
 		isRED:          mime.IsMimeTypeStringRED(params.Codec.MimeType),
-		trackInfo:      utils.CloneProto(trackInfo),
+		trackInfo:      proto.CloneOf(trackInfo),
 		videoLayerMode: buffer.GetVideoLayerModeForMimeType(mime.NormalizeMimeType(params.Codec.MimeType), trackInfo),
 	}
 
@@ -197,7 +198,7 @@ func (r *ReceiverBase) Close(reason string, clearBuffers bool) {
 	}
 	r.streamTrackerManager.Close()
 
-	closeTrackSenders(r.downTrackSpreader.ResetAndGetDownTracks())
+	closeTrackSenders(r.downTrackSpreader.CloseAndGetDownTracks())
 
 	if rt := r.loadREDTransformer(); rt != nil {
 		rt.Close()
@@ -256,7 +257,7 @@ func (r *ReceiverBase) TrackInfo() *livekit.TrackInfo {
 	r.bufferMu.RLock()
 	defer r.bufferMu.RUnlock()
 
-	return utils.CloneProto(r.trackInfo)
+	return proto.CloneOf(r.trackInfo)
 }
 
 func (r *ReceiverBase) UpdateTrackInfo(ti *livekit.TrackInfo) {
@@ -282,7 +283,7 @@ func (r *ReceiverBase) UpdateTrackInfo(ti *livekit.TrackInfo) {
 			"shouldResync", shouldResync,
 		)
 	}
-	r.trackInfo = utils.CloneProto(ti)
+	r.trackInfo = proto.CloneOf(ti)
 
 	paused := r.trackInfo.GetMuted()
 	for _, buff := range r.buffers {
@@ -491,7 +492,9 @@ func (r *ReceiverBase) AddDownTrack(track TrackSender) error {
 	track.UpTrackMaxPublishedLayerChange(r.streamTrackerManager.GetMaxPublishedLayer())
 	track.UpTrackMaxTemporalLayerSeenChange(r.streamTrackerManager.GetMaxTemporalLayerSeen())
 
-	r.downTrackSpreader.Store(track)
+	if !r.downTrackSpreader.TryStore(track) {
+		return ErrReceiverClosed
+	}
 	r.params.Logger.Debugw("downtrack added", "subscriberID", track.SubscriberID())
 	return nil
 }
@@ -663,7 +666,7 @@ func (r *ReceiverBase) GetOrCreateBuffer(layer int32) buffer.BufferProvider {
 	}
 	r.bufferPromises[layer] = bp
 
-	ti := utils.CloneProto(r.trackInfo)
+	ti := proto.CloneOf(r.trackInfo)
 	r.bufferMu.Unlock()
 
 	defer close(bp.ready)
@@ -948,7 +951,7 @@ func (r *ReceiverBase) forwardRTP(
 		}
 
 		spatialLayer := layer
-		if extPkt.Spatial >= 0 {
+		if extPkt.Spatial >= 0 && !sfuutils.IsSimulcastMode(r.videoLayerMode) {
 			// svc packet, take spatial layer info from packet
 			spatialLayer = extPkt.Spatial
 		}
@@ -962,12 +965,9 @@ func (r *ReceiverBase) forwardRTP(
 			continue
 		}
 
-		var writeCount atomic.Int32
-		r.downTrackSpreader.Broadcast(func(dt TrackSender) {
-			writeCount.Add(dt.WriteRTP(extPkt, spatialLayer))
-		})
+		writeCount := sfuutils.BroadcastRTP(r.downTrackSpreader, extPkt, spatialLayer)
 		if rt := r.loadREDTransformer(); rt != nil {
-			writeCount.Add(rt.ForwardRTP(extPkt, spatialLayer))
+			writeCount += rt.ForwardRTP(extPkt, spatialLayer)
 		}
 
 		// track delay/jitter
@@ -977,13 +977,13 @@ func (r *ReceiverBase) forwardRTP(
 		// delivered back-to-back) which the single forwarder goroutine drains
 		// serially, inflating the measured transit for the tail of the burst. That
 		// reflects loss recovery rather than steady-state forwarding health.
-		if writeCount.Load() > 0 && r.forwardStats != nil && !extPkt.IsBuffered && !extPkt.IsOutOfOrder {
+		if writeCount > 0 && r.forwardStats != nil && !extPkt.IsBuffered && !extPkt.IsOutOfOrder {
 			if latency, isHigh := r.forwardStats.Update(extPkt.Arrival, mono.UnixNano()); isHigh {
 				r.params.Logger.Debugw(
 					"high forwarding latency",
 					"latency", time.Duration(latency),
 					"queuingLatency", time.Duration(dequeuedAt-extPkt.Arrival),
-					"writeCount", writeCount.Load(),
+					"writeCount", writeCount,
 					"isOutOfOrder", extPkt.IsOutOfOrder,
 					"layer", layer,
 				)

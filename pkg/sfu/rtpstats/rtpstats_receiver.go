@@ -22,6 +22,7 @@ import (
 	"github.com/pion/rtcp"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/mediatransportutil/pkg/latency"
@@ -654,7 +655,7 @@ func (r *RTPStatsReceiver) getExtendedSenderReport(srData *livekit.RTCPSenderRep
 		}
 	}
 
-	srDataExt := protoutils.CloneProto(srData)
+	srDataExt := proto.CloneOf(srData)
 	srDataExt.RtpTimestampExt = uint64(srDataExt.RtpTimestamp) + tsCycles
 	return srDataExt
 }
@@ -816,15 +817,16 @@ func (r *RTPStatsReceiver) GetRtcpSenderReportData() *livekit.RTCPSenderReportSt
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	return protoutils.CloneProto(r.srNewest)
+	return proto.CloneOf(r.srNewest)
 }
 
 func (r *RTPStatsReceiver) LastSenderReportTime() time.Time {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	if r.srNewest != nil {
-		return time.Unix(0, r.srNewest.At)
+	if r.srNewest != nil && r.srNewest.At != 0 {
+		// srNewest.At is a mono timestamp, convert to wall time for comparison with time.Now()
+		return time.Now().Add(-time.Duration(mono.UnixNano() - r.srNewest.At))
 	}
 
 	return time.Time{}
@@ -867,7 +869,7 @@ func (r *RTPStatsReceiver) GetRtcpReceptionReport(ssrc uint32, proxyFracLost uin
 	if r.srNewest != nil {
 		lastSR = uint32(r.srNewest.NtpTimestamp >> 16)
 		if r.srNewest.At != 0 {
-			delayUS := time.Since(time.Unix(0, r.srNewest.At)).Microseconds()
+			delayUS := (mono.UnixNano() - r.srNewest.At) / 1e3
 			dlsr = uint32(delayUS * 65536 / 1e6)
 		}
 	}

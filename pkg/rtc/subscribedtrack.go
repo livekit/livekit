@@ -323,7 +323,7 @@ func (t *SubscribedTrack) UpdateSubscriberSettings(settings *livekit.UpdateTrack
 	}
 
 	isImmediate = isImmediate || (!settings.Disabled && settings.Disabled != t.isMutedLocked())
-	t.settings = utils.CloneProto(settings)
+	t.settings = proto.CloneOf(settings)
 	t.logger.Debugw("saving subscriber track settings", "settings", logger.Proto(t.settings))
 	t.settingsLock.Unlock()
 

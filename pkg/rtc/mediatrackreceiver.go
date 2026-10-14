@@ -30,7 +30,6 @@ import (
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
-	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -154,7 +153,7 @@ func NewMediaTrackReceiver(params MediaTrackReceiverParams, ti *livekit.TrackInf
 		params: params,
 		state:  mediaTrackReceiverStateOpen,
 	}
-	t.trackInfo.Store(utils.CloneProto(ti))
+	t.trackInfo.Store(proto.CloneOf(ti))
 
 	t.MediaTrackSubscriptions = NewMediaTrackSubscriptions(MediaTrackSubscriptionsParams{
 		MediaTrack:       params.MediaTrack,
@@ -812,7 +811,7 @@ func (t *MediaTrackReceiver) UpdateCodecInfo(codecs []*livekit.SimulcastCodec) {
 				if len(c.Layers) != 0 {
 					clonedLayers := make([]*livekit.VideoLayer, 0, len(c.Layers))
 					for _, l := range c.Layers {
-						clonedLayers = append(clonedLayers, utils.CloneProto(l))
+						clonedLayers = append(clonedLayers, proto.CloneOf(l))
 					}
 					origin.Layers = clonedLayers
 
@@ -871,7 +870,7 @@ func (t *MediaTrackReceiver) UpdateCodecRids(mimeType mime.MimeType, rids buffer
 }
 
 func (t *MediaTrackReceiver) UpdateTrackInfo(ti *livekit.TrackInfo) {
-	clonedInfo := utils.CloneProto(ti)
+	clonedInfo := proto.CloneOf(ti)
 
 	t.lock.Lock()
 	trackInfo := t.TrackInfo()
@@ -924,7 +923,7 @@ func (t *MediaTrackReceiver) UpdateAudioTrack(update *livekit.UpdateLocalAudioTr
 
 	t.lock.Lock()
 	trackInfo := t.TrackInfo()
-	clonedInfo := utils.CloneProto(trackInfo)
+	clonedInfo := proto.CloneOf(trackInfo)
 
 	clonedInfo.AudioFeatures = sutils.DedupeSlice(update.Features)
 
@@ -960,7 +959,7 @@ func (t *MediaTrackReceiver) UpdateVideoTrack(update *livekit.UpdateLocalVideoTr
 
 	t.lock.Lock()
 	trackInfo := t.TrackInfo()
-	clonedInfo := utils.CloneProto(trackInfo)
+	clonedInfo := proto.CloneOf(trackInfo)
 	clonedInfo.Width = update.Width
 	clonedInfo.Height = update.Height
 	if proto.Equal(trackInfo, clonedInfo) {
@@ -981,7 +980,7 @@ func (t *MediaTrackReceiver) UpdateVideoSize(mimeType mime.MimeType, sizes []cod
 	var changed bool
 	t.lock.Lock()
 	trackInfo := t.TrackInfo()
-	clonedInfo := utils.CloneProto(trackInfo)
+	clonedInfo := proto.CloneOf(trackInfo)
 	var maxWidth, maxHeight uint32
 	for _, size := range sizes {
 		if size.Width > maxWidth {
@@ -1028,7 +1027,7 @@ func (t *MediaTrackReceiver) TrackInfo() *livekit.TrackInfo {
 }
 
 func (t *MediaTrackReceiver) TrackInfoClone() *livekit.TrackInfo {
-	return utils.CloneProto(t.TrackInfo())
+	return proto.CloneOf(t.TrackInfo())
 }
 
 func (t *MediaTrackReceiver) NotifyMaxLayerChange(mimeType mime.MimeType, maxLayer int32) {

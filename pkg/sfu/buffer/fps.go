@@ -17,22 +17,18 @@ package buffer
 import (
 	"container/list"
 
-	"github.com/pion/rtp/codecs"
-
-	"github.com/livekit/mediatransportutil/pkg/codec"
 	"github.com/livekit/protocol/logger"
 )
 
 var minFramesForCalculation = [...]int{8, 15, 40, 60}
 
 type frameInfo struct {
-	startSeq  uint16
-	endSeq    uint16
-	ts        uint32
-	fn        uint16
-	spatial   int32
-	temporal  int32
-	frameDiff []int
+	startSeq uint16
+	endSeq   uint16
+	ts       uint32
+	fn       uint16
+	spatial  int32
+	temporal int32
 }
 
 type FrameRateCalculator interface {
@@ -210,8 +206,8 @@ func (f *FrameRateCalculatorVP8) RecvPacket(ep *ExtPacket) bool {
 		return true
 	}
 
-	vp8, ok := ep.Payload.(codec.VP8)
-	if !ok {
+	vp8 := ep.VP8
+	if vp8 == nil {
 		f.logger.Debugw("no vp8 payload", "sn", ep.Packet.SequenceNumber)
 		return false
 	}
@@ -261,8 +257,8 @@ func (f *FrameRateCalculatorVP9) RecvPacket(ep *ExtPacket) bool {
 		return true
 	}
 
-	vp9, ok := ep.Payload.(codecs.VP9Packet)
-	if !ok {
+	vp9 := ep.VP9
+	if vp9 == nil {
 		f.logger.Debugw("no vp9 payload", "sn", ep.Packet.SequenceNumber)
 		return false
 	}
@@ -425,11 +421,10 @@ func (f *FrameRateCalculatorDD) RecvPacket(ep *ExtPacket) bool {
 	}
 
 	fi := &frameInfo{
-		ts:        ep.Packet.Timestamp,
-		fn:        fn,
-		temporal:  temporal,
-		spatial:   spatial,
-		frameDiff: ep.DependencyDescriptor.Descriptor.FrameDependencies.FrameDiffs,
+		ts:       ep.Packet.Timestamp,
+		fn:       fn,
+		temporal: temporal,
+		spatial:  spatial,
 	}
 	f.fnReceived[baseDiff] = fi
 

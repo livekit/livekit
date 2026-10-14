@@ -63,11 +63,11 @@ const (
 var roomClient livekit.RoomService
 
 func init() {
-	conf, err := config.NewConfig("", true, nil, nil)
-	if err != nil {
-		panic(err)
-	}
-	config.InitLoggerFromConfig(&conf.Logging)
+	// The logger retains this config and locks it on every component level
+	// resolution, so it must not be DefaultConfig: NewConfig marshals that
+	// global from the goroutines these tests spin up.
+	loggingConf := config.LoggingConfig{PionLevel: config.DefaultConfig.Logging.PionLevel}
+	config.InitLoggerFromConfig(&loggingConf)
 
 	prometheus.Init("test", livekit.NodeType_SERVER)
 }

@@ -46,10 +46,10 @@ import (
 	"github.com/livekit/protocol/signalling"
 
 	"github.com/livekit/livekit-server/pkg/rtc"
-	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/rtc/transport/transportfakes"
 	"github.com/livekit/livekit-server/pkg/rtc/types"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+	"github.com/livekit/protocol/datatrack"
 )
 
 type SignalRequestHandler func(msg *livekit.SignalRequest) error
@@ -95,10 +95,12 @@ type RTCClient struct {
 	// remote tracks waiting to be processed
 	pendingRemoteTracks []*webrtc.TrackRemote
 
-	pendingTrackWriters     []TrackWriter
-	OnConnected             func()
-	OnDataReceived          func(data []byte, sid string)
-	OnDataUnlabeledReceived func(data []byte)
+	pendingTrackWriters []TrackWriter
+	// callbacks are set by tests while the client is already running, and read
+	// from the signal and data channel goroutines
+	onConnected             atomic.Pointer[func()]
+	onDataReceived          atomic.Pointer[func(data []byte, sid string)]
+	onDataUnlabeledReceived atomic.Pointer[func(data []byte)]
 	refreshToken            string
 
 	// map of livekit.ParticipantID and last packet
@@ -357,8 +359,8 @@ func (c *RTCClient) createTransport(rtcconf webrtc.Configuration) error {
 		}
 		c.pendingDataTrackWriters = nil
 
-		if c.OnConnected != nil {
-			go c.OnConnected()
+		if f := c.onConnected.Load(); f != nil {
+			go (*f)()
 		}
 	})
 	publisherHandler.OnOfferCalls(c.onOffer)
@@ -451,8 +453,8 @@ func (c *RTCClient) createTransport(rtcconf webrtc.Configuration) error {
 			}
 			c.pendingDataTrackWriters = nil
 
-			if c.OnConnected != nil {
-				go c.OnConnected()
+			if f := c.onConnected.Load(); f != nil {
+				go (*f)()
 			}
 		})
 		subscriberHandler.OnFullyEstablishedCalls(func() {
@@ -481,6 +483,21 @@ func (c *RTCClient) createTransport(rtcconf webrtc.Configuration) error {
 
 func (c *RTCClient) ID() livekit.ParticipantID {
 	return c.id
+}
+
+// SetOnConnected is safe to call after the client is running.
+func (c *RTCClient) SetOnConnected(f func()) {
+	c.onConnected.Store(&f)
+}
+
+// SetOnDataReceived is safe to call after the client is running.
+func (c *RTCClient) SetOnDataReceived(f func(data []byte, sid string)) {
+	c.onDataReceived.Store(&f)
+}
+
+// SetOnDataUnlabeledReceived is safe to call after the client is running.
+func (c *RTCClient) SetOnDataUnlabeledReceived(f func(data []byte)) {
+	c.onDataUnlabeledReceived.Store(&f)
 }
 
 // create an offer for the server
@@ -1154,15 +1171,15 @@ func (c *RTCClient) handleDataMessage(kind livekit.DataPacket_Kind, data []byte)
 	}
 	dp.Kind = kind
 	if val, ok := dp.Value.(*livekit.DataPacket_User); ok {
-		if c.OnDataReceived != nil {
-			c.OnDataReceived(val.User.Payload, val.User.ParticipantSid)
+		if f := c.onDataReceived.Load(); f != nil {
+			(*f)(val.User.Payload, val.User.ParticipantSid)
 		}
 	}
 }
 
 func (c *RTCClient) handleDataMessageUnlabeled(data []byte) {
-	if c.OnDataUnlabeledReceived != nil {
-		c.OnDataUnlabeledReceived(data)
+	if f := c.onDataUnlabeledReceived.Load(); f != nil {
+		(*f)(data)
 	}
 }
 

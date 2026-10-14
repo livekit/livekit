@@ -73,6 +73,23 @@ func TestIsCodecEnabled(t *testing.T) {
 	})
 }
 
+func TestSelectAlternativeVideoCodec(t *testing.T) {
+	// RTX and FEC have the video/ prefix but are not real codecs. The fallback must skip them.
+	t.Run("skips rtx and fec, picks real codec", func(t *testing.T) {
+		enabled := []*livekit.Codec{
+			{Mime: mime.MimeTypeRTX.String()},
+			{Mime: mime.MimeTypeFlexFEC03.String()},
+			{Mime: mime.MimeTypeH264.String()},
+		}
+		require.Equal(t, mime.MimeTypeH264.String(), selectAlternativeVideoCodec(enabled))
+	})
+
+	t.Run("falls back to vp8 when only rtx is enabled", func(t *testing.T) {
+		enabled := []*livekit.Codec{{Mime: mime.MimeTypeRTX.String()}}
+		require.Equal(t, mime.MimeTypeVP8.String(), selectAlternativeVideoCodec(enabled))
+	})
+}
+
 type offeredCodec struct {
 	payloadType webrtc.PayloadType
 	name        string

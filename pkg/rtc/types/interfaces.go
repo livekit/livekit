@@ -30,11 +30,11 @@ import (
 	"github.com/livekit/protocol/utils"
 
 	"github.com/livekit/livekit-server/pkg/routing"
-	"github.com/livekit/livekit-server/pkg/rtc/datatrack"
 	"github.com/livekit/livekit-server/pkg/sfu"
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/telemetry"
+	"github.com/livekit/protocol/datatrack"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -120,6 +120,7 @@ const (
 	ParticipantCloseReasonUserRejected
 	ParticipantCloseReasonMoveFailed
 	ParticipantCloseReasonAgentError
+	ParticipantCloseReasonSIPTrunkFailure
 )
 
 func (p ParticipantCloseReason) String() string {
@@ -182,6 +183,8 @@ func (p ParticipantCloseReason) String() string {
 		return "MOVE_FAILED"
 	case ParticipantCloseReasonAgentError:
 		return "AGENT_ERROR"
+	case ParticipantCloseReasonSIPTrunkFailure:
+		return "SIP_TRUNK_FAILURE"
 	default:
 		return fmt.Sprintf("%d", int(p))
 	}
@@ -221,11 +224,15 @@ func (p ParticipantCloseReason) ToDisconnectReason() livekit.DisconnectReason {
 		return livekit.DisconnectReason_USER_REJECTED
 	case ParticipantCloseReasonAgentError:
 		return livekit.DisconnectReason_AGENT_ERROR
+	case ParticipantCloseReasonSIPTrunkFailure:
+		return livekit.DisconnectReason_SIP_TRUNK_FAILURE
 	default:
 		// the other types will map to unknown reason
 		return livekit.DisconnectReason_UNKNOWN_REASON
 	}
 }
+
+// ---------------------------------------------
 
 // IsIntentionalDisconnect reports whether a disconnect reason represents an
 // intentional/expected closure (client leaving, admin action, room teardown,
@@ -238,7 +245,8 @@ func IsIntentionalDisconnect(reason livekit.DisconnectReason) bool {
 		livekit.DisconnectReason_MIGRATION,
 		livekit.DisconnectReason_PARTICIPANT_REMOVED,
 		livekit.DisconnectReason_ROOM_DELETED,
-		livekit.DisconnectReason_ROOM_CLOSED:
+		livekit.DisconnectReason_ROOM_CLOSED,
+		livekit.DisconnectReason_SIP_TRUNK_FAILURE:
 		return true
 	}
 	return false
@@ -292,10 +300,75 @@ func (s SignallingCloseReason) String() string {
 }
 
 // ---------------------------------------------
+
 const (
 	ParticipantCloseKeyNormal = "normal"
 	ParticipantCloseKeyWHIP   = "whip"
 )
+
+// ---------------------------------------------
+
+type RoomCloseReason int
+
+const (
+	RoomCloseReasonUnknown RoomCloseReason = iota
+	RoomCloseReasonAPIDelete
+	RoomCloseReasonIdleTimeout
+	RoomCloseReasonServerShutdown
+	RoomCloseReasonSuperseded
+	RoomCloseReasonOpenFailed
+)
+
+func (r RoomCloseReason) String() string {
+	switch r {
+	case RoomCloseReasonUnknown:
+		return "UNKNOWN"
+	case RoomCloseReasonAPIDelete:
+		return "API_DELETE"
+	case RoomCloseReasonIdleTimeout:
+		return "IDLE_TIMEOUT"
+	case RoomCloseReasonServerShutdown:
+		return "SERVER_SHUTDOWN"
+	case RoomCloseReasonSuperseded:
+		return "SUPERSEDED"
+	case RoomCloseReasonOpenFailed:
+		return "OPEN_FAILED"
+	default:
+		return fmt.Sprintf("%d", int(r))
+	}
+}
+
+func (r RoomCloseReason) ToProto() livekit.RoomEndReason {
+	switch r {
+	case RoomCloseReasonAPIDelete:
+		return livekit.RoomEndReason_ROOM_END_API_DELETE
+	case RoomCloseReasonIdleTimeout:
+		return livekit.RoomEndReason_ROOM_END_IDLE_TIMEOUT
+	case RoomCloseReasonServerShutdown:
+		return livekit.RoomEndReason_ROOM_END_SERVER_SHUTDOWN
+	case RoomCloseReasonSuperseded:
+		return livekit.RoomEndReason_ROOM_END_SUPERSEDED
+	case RoomCloseReasonOpenFailed:
+		return livekit.RoomEndReason_ROOM_END_OPEN_FAILED
+	default:
+		return livekit.RoomEndReason_ROOM_END_UNKNOWN
+	}
+}
+
+// ToParticipantCloseReason gives the reason participants are closed with when the
+// room closes for this reason, so the two can never disagree.
+func (r RoomCloseReason) ToParticipantCloseReason() ParticipantCloseReason {
+	switch r {
+	case RoomCloseReasonAPIDelete:
+		return ParticipantCloseReasonServiceRequestDeleteRoom
+	case RoomCloseReasonIdleTimeout, RoomCloseReasonSuperseded:
+		return ParticipantCloseReasonRoomClosed
+	case RoomCloseReasonServerShutdown:
+		return ParticipantCloseReasonRoomManagerStop
+	default:
+		return ParticipantCloseReasonNone
+	}
+}
 
 // ---------------------------------------------
 
@@ -481,6 +554,7 @@ type LocalParticipant interface {
 	UnsubscribeFromTrack(trackID livekit.TrackID)
 	UpdateSubscribedTrackSettings(trackID livekit.TrackID, settings *livekit.UpdateTrackSettings)
 	GetSubscribedTracks() []SubscribedTrack
+	GetSubscribedDataTracks() []DataDownTrack
 	IsTrackNameSubscribed(publisherIdentity livekit.ParticipantIdentity, trackName string) bool
 	SubscribeToDataTrack(trackID livekit.TrackID)
 	UnsubscribeFromDataTrack(trackID livekit.TrackID)
@@ -509,10 +583,11 @@ type LocalParticipant interface {
 	SendConnectionQualityUpdate(update *livekit.ConnectionQualityUpdate) error
 	SendSubscriptionPermissionUpdate(publisherID livekit.ParticipantID, trackID livekit.TrackID, allowed bool) error
 	SendRefreshToken(token string) error
-	HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse) error
+	HandleReconnectAndSendResponse(reconnectReason livekit.ReconnectReason, reconnectResponse *livekit.ReconnectResponse, recentlyDisconnectedParticipants []*livekit.ParticipantInfo) error
 	IssueFullReconnect(reason ParticipantCloseReason)
 	SendRoomMovedResponse(moved *livekit.RoomMovedResponse) error
 	SendDataTrackSubscriberHandles(handles map[uint32]*livekit.DataTrackSubscriberHandles_PublishedDataTrack) error
+	GetRecentlyDisconnectedParticipants() []*livekit.ParticipantInfo
 
 	AddOnClose(key string, callback func(LocalParticipant))
 	OnClaimsChanged(callback func(LocalParticipant))
@@ -533,6 +608,8 @@ type LocalParticipant interface {
 	)
 	IsReconnect() bool
 	IsMigration() bool
+	LeaveSession(leave func())
+	JoinSession(join func())
 	MoveToRoom(params MoveToRoomParams)
 
 	UpdateMediaRTT(rtt uint32)
