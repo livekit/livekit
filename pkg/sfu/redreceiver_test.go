@@ -24,6 +24,7 @@ import (
 
 	"github.com/livekit/livekit-server/pkg/sfu/buffer"
 	"github.com/livekit/mediatransportutil/pkg/bucket"
+	"github.com/livekit/mediatransportutil/pkg/red"
 	"github.com/livekit/protocol/logger"
 )
 
@@ -253,9 +254,9 @@ func TestRedReceiverReusedReadBuffer(t *testing.T) {
 			},
 		},
 	}
-	red := w.GetRedReceiver().(*RedReceiver)
+	rr := w.GetRedReceiver().(*RedReceiver)
 	dt := &dummyDowntrack{TrackSender: &DownTrack{}}
-	require.NoError(t, red.AddDownTrack(dt))
+	require.NoError(t, rr.AddDownTrack(dt))
 
 	var payloads [][]byte
 	pktBuf := make([]byte, bucket.RTPMaxPktSize)
@@ -272,12 +273,12 @@ func TestRedReceiverReusedReadBuffer(t *testing.T) {
 		require.NoError(t, err)
 		extPkt, err := buff.ReadExtended(pktBuf)
 		require.NoError(t, err)
-		red.ForwardRTP(extPkt, 0)
+		rr.ForwardRTP(extPkt, 0)
 		buffer.ReleaseExtPacket(extPkt)
 	}
 
 	// the last RED packet carries the two packets before it as redundant blocks
-	blocks, err := extractPktsFromRed(dt.lastReceivedPkt, 0xFF)
+	blocks, err := red.ExtractPackets(dt.lastReceivedPkt, 0xFF)
 	require.NoError(t, err)
 	require.Len(t, blocks, 3)
 	for i, block := range blocks {
@@ -285,14 +286,14 @@ func TestRedReceiverReusedReadBuffer(t *testing.T) {
 	}
 }
 
-func verifyRedEncodings(t *testing.T, red *rtp.Packet, redPkts []*rtp.Packet) {
+func verifyRedEncodings(t *testing.T, redPkt *rtp.Packet, redPkts []*rtp.Packet) {
 	solidPkts := make([]*rtp.Packet, 0, len(redPkts))
 	for _, pkt := range redPkts {
 		if pkt != nil {
 			solidPkts = append(solidPkts, pkt)
 		}
 	}
-	pktsFromRed, err := extractPktsFromRed(red, 0xFF)
+	pktsFromRed, err := red.ExtractPackets(redPkt, 0xFF)
 	require.NoError(t, err)
 	require.Len(t, pktsFromRed, len(solidPkts))
 	for i, pkt := range pktsFromRed {
@@ -493,7 +494,7 @@ func TestExtractPrimaryEncodingForRED(t *testing.T) {
 	primaryPkts := make([]*rtp.Packet, 0, len(redPkts))
 
 	for _, redPkt := range redPkts {
-		payload, err := extractPrimaryEncodingForRED(redPkt.Payload)
+		payload, err := red.ExtractPrimaryEncoding(redPkt.Payload)
 		require.NoError(t, err)
 		primaryHeader := redPkt.Header
 		primaryHeader.PayloadType = 111
