@@ -397,6 +397,8 @@ func (s *sequencer) getExtPacketMetas(seqNo []uint16) []extPacketMeta {
 				extSequenceNumber: extSN,
 				extTimestamp:      extTS,
 			}
+			epm.codecBytesSlice = append([]byte{}, meta.codecBytesSlice...)
+			epm.ddBytesSlice = append([]byte{}, meta.ddBytesSlice...)
 			extPacketMetas = append(extPacketMetas, epm)
 		}
 	}
@@ -444,6 +446,8 @@ func (s *sequencer) lookupExtPacketMeta(extSN uint64) *extPacketMeta {
 		extSequenceNumber: extSN,
 		extTimestamp:      extTS,
 	}
+	epm.codecBytesSlice = append([]byte{}, meta.codecBytesSlice...)
+	epm.ddBytesSlice = append([]byte{}, meta.ddBytesSlice...)
 	return &epm
 }
 

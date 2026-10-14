@@ -1158,7 +1158,9 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		}
 		if n != 0 {
 			actBytes = actBuf[:n]
-			hdr.SetExtension(uint8(d.absCaptureTimeExtID), pacerPacket.HoldExtension(actBytes))
+			if actExt := pacerPacket.HoldExtension(actBytes); actExt != nil {
+				hdr.SetExtension(uint8(d.absCaptureTimeExtID), actExt)
+			}
 		}
 	}
 	d.addDummyExtensions(hdr)

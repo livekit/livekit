@@ -25,7 +25,6 @@ import (
 	"github.com/livekit/protocol/logger"
 
 	"github.com/livekit/livekit-server/pkg/sfu/bwe"
-	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 )
 
@@ -99,11 +98,11 @@ func TestHoldExtension(t *testing.T) {
 	ext[0] = 9
 	require.EqualValues(t, 1, held[0], "the held copy has to be independent of the caller's slice")
 
-	// exactly the one byte extension profile payload cap
-	exact := bytes.Repeat([]byte{7}, dd.MaxInlineExtensionSize)
+	// exactly the largest extension the scratch holds
+	exact := bytes.Repeat([]byte{7}, maxHeldExtensionSize)
 	held = p.HoldExtension(exact)
 	require.Equal(t, exact, held)
 
 	// one byte more does not fit
-	require.Nil(t, (&Packet{}).HoldExtension(bytes.Repeat([]byte{7}, dd.MaxInlineExtensionSize+1)))
+	require.Nil(t, (&Packet{}).HoldExtension(bytes.Repeat([]byte{7}, maxHeldExtensionSize+1)))
 }

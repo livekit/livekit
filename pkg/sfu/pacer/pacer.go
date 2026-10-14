@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
+	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
@@ -42,6 +43,9 @@ const (
 	PacerBehaviorLeakybucket PacerBehavior = "leaky-bucket"
 )
 
+// largest extension HoldExtension copies, an inline dependency descriptor or an abs-capture-time
+const maxHeldExtensionSize = max(dd.MaxInlineExtensionSize, act.MaxSize)
+
 type Packet struct {
 	Header             *rtp.Header
 	HeaderPool         *sync.Pool
@@ -60,7 +64,7 @@ type Packet struct {
 	// the Packet is owned by one send until SendPacket returns
 	absSendTimeBuf [3]byte
 	twccBuf        [2]byte
-	extBufs        [2][dd.MaxInlineExtensionSize]byte
+	extBufs        [2][maxHeldExtensionSize]byte
 	numExtHeld     int
 }
 
