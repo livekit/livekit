@@ -15,7 +15,11 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
+	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -216,7 +220,7 @@ func (h *mockHandler) handleSignal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reconnect := r.URL.Query().Get("reconnect") == "1"
+	reconnect := r.URL.Query().Get("reconnect") == "1" || joinRequestSaysReconnect(r.URL.Query().Get("join_request"))
 
 	conn, err := signalUpgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -414,6 +418,45 @@ func reconnectResponse(regionIndex int) *livekit.SignalResponse {
 			},
 		},
 	}
+}
+
+// joinRequestSaysReconnect unpacks the v1 `join_request` param and reports its
+// Reconnect flag. Any decode error is ignored (treated as non-reconnect); this
+// is a test mock, not a validator.
+func joinRequestSaysReconnect(param string) bool {
+	if param == "" {
+		return false
+	}
+	wrappedBytes, err := base64.URLEncoding.DecodeString(param)
+	if err != nil {
+		return false
+	}
+	wrapped := &livekit.WrappedJoinRequest{}
+	if err := proto.Unmarshal(wrappedBytes, wrapped); err != nil {
+		return false
+	}
+	var joinBytes []byte
+	switch wrapped.Compression {
+	case livekit.WrappedJoinRequest_NONE:
+		joinBytes = wrapped.JoinRequest
+	case livekit.WrappedJoinRequest_GZIP:
+		gz, err := gzip.NewReader(bytes.NewReader(wrapped.JoinRequest))
+		if err != nil {
+			return false
+		}
+		defer func() { _ = gz.Close() }()
+		joinBytes, err = io.ReadAll(gz)
+		if err != nil {
+			return false
+		}
+	default:
+		return false
+	}
+	join := &livekit.JoinRequest{}
+	if err := proto.Unmarshal(joinBytes, join); err != nil {
+		return false
+	}
+	return join.Reconnect
 }
 
 func leaveResponse(action livekit.LeaveRequest_Action) *livekit.SignalResponse {

@@ -32,6 +32,7 @@ import (
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/protocol/logger/zaputil"
 	"github.com/livekit/protocol/observability/roomobs"
 	lksdp "github.com/livekit/protocol/sdp"
 	"github.com/livekit/protocol/signalling"
@@ -76,6 +77,38 @@ func TestIsReady(t *testing.T) {
 			require.Equal(t, test.ready, p.IsReady())
 		})
 	}
+}
+
+// Disabling a codec can leave the publish list with only RTX and FEC. The
+// fallback must still pick a real codec, or the track registers as RTX and
+// subscribers see a blank tile.
+func TestPublishCodecFallbackSkipsRTX(t *testing.T) {
+	h264 := &livekit.Codec{Mime: mime.MimeTypeH264.String()}
+	rtx := &livekit.Codec{Mime: mime.MimeTypeRTX.String()}
+
+	newParticipant := func() *ParticipantImpl {
+		return &ParticipantImpl{params: ParticipantParams{Logger: logger.GetLogger()}}
+	}
+
+	t.Run("h264 enabled, rtx is last and not chosen", func(t *testing.T) {
+		p := newParticipant()
+		p.setupEnabledCodecs([]*livekit.Codec{h264, rtx}, nil, nil)
+
+		require.Equal(t, mime.MimeTypeH264.String(), selectAlternativeVideoCodec(p.enabledPublishCodecs))
+	})
+
+	t.Run("h264 disabled leaves rtx only, fallback avoids rtx", func(t *testing.T) {
+		p := newParticipant()
+		disabled := &livekit.DisabledCodecs{Publish: []*livekit.Codec{{Mime: mime.MimeTypeH264.String()}}}
+		p.setupEnabledCodecs([]*livekit.Codec{h264, rtx}, nil, disabled)
+
+		require.Len(t, p.enabledPublishCodecs, 1)
+		require.True(t, mime.IsMimeTypeStringRTX(p.enabledPublishCodecs[0].Mime))
+
+		alt := selectAlternativeVideoCodec(p.enabledPublishCodecs)
+		require.False(t, mime.IsMimeTypeStringRTX(alt), "fallback must not be rtx, got %q", alt)
+		require.Equal(t, mime.MimeTypeVP8.String(), alt)
+	})
 }
 
 func TestSupportsMoving(t *testing.T) {
@@ -223,6 +256,122 @@ func TestTrackPublishing(t *testing.T) {
 		require.Equal(t, p.pendingTracks["cid"].trackInfos[0].Sid, p.pendingTracks["cid"].trackInfos[1].Sid)
 	})
 
+	t.Run("should release timed out pending tracks when at the pending track limit", func(t *testing.T) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{protocolVersion: 7})
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+
+		// one slot holds two queued entries that share a track id, both before any media
+		queued := p.addPendingTrack(&livekit.AddTrackRequest{Cid: "cidq", Name: "q0", Type: livekit.TrackType_VIDEO})
+		require.NotNil(t, queued)
+		p.addPendingTrack(&livekit.AddTrackRequest{Cid: "cidq", Name: "q1", Type: livekit.TrackType_VIDEO}) // queued, returns nil
+		require.Len(t, p.pendingTracks["cidq"].trackInfos, 2)
+
+		var sids []livekit.TrackID
+		for i := 0; i < cMaxPendingTracks-1; i++ {
+			ti := p.addPendingTrack(&livekit.AddTrackRequest{
+				Cid:  fmt.Sprintf("cid%d", i),
+				Name: fmt.Sprintf("track%d", i),
+				Type: livekit.TrackType_VIDEO,
+			})
+			require.NotNil(t, ti)
+			sids = append(sids, livekit.TrackID(ti.Sid))
+		}
+		require.Len(t, p.pendingTracks, cMaxPendingTracks)
+
+		// nothing timed out, so a new publish is rejected
+		require.Nil(t, p.addPendingTrack(&livekit.AddTrackRequest{Cid: "fresh", Name: "fresh", Type: livekit.TrackType_VIDEO}))
+
+		// one lone track times out, a new publish takes its slot
+		p.supervisor.SetPublicationTimedOutForTest(sids[0])
+		numMessages := sink.WriteMessageCallCount()
+		require.NotNil(t, p.addPendingTrack(&livekit.AddTrackRequest{Cid: "fresh", Name: "fresh", Type: livekit.TrackType_VIDEO}))
+		require.Nil(t, p.pendingTracks["cid0"])
+		require.NotNil(t, p.pendingTracks["fresh"])
+		require.Len(t, p.pendingTracks, cMaxPendingTracks)
+		require.Empty(t, p.supervisor.TimedOutPublications())
+
+		require.Equal(t, numMessages+1, sink.WriteMessageCallCount())
+		res := sink.WriteMessageArgsForCall(numMessages).(*livekit.SignalResponse)
+		require.IsType(t, &livekit.SignalResponse_TrackUnpublished{}, res.Message)
+		require.Equal(t, string(sids[0]), res.Message.(*livekit.SignalResponse_TrackUnpublished).TrackUnpublished.TrackSid)
+
+		// the queued track id times out, both entries are released together
+		p.supervisor.SetPublicationTimedOutForTest(livekit.TrackID(queued.Sid))
+		require.NotNil(t, p.addPendingTrack(&livekit.AddTrackRequest{Cid: "fresh2", Name: "fresh2", Type: livekit.TrackType_VIDEO}))
+		require.Nil(t, p.pendingTracks["cidq"])
+		require.NotNil(t, p.pendingTracks["fresh2"])
+		require.Len(t, p.pendingTracks, cMaxPendingTracks)
+	})
+
+	t.Run("should not match late media of a released pending track to another pending track", func(t *testing.T) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{protocolVersion: 7})
+
+		released := p.addPendingTrack(&livekit.AddTrackRequest{Cid: "cidA", Name: "a", Type: livekit.TrackType_VIDEO})
+		require.NotNil(t, released)
+		// SDP client id that an offer would set, as Firefox does
+		p.pendingTracks["cidA"].trackInfos[0].Codecs[0].SdpCid = "sdpA"
+
+		p.pendingTracksLock.Lock()
+		p.releasePendingTrackLocked(livekit.TrackID(released.Sid))
+		p.pendingTracksLock.Unlock()
+
+		other := p.addPendingTrack(&livekit.AddTrackRequest{Cid: "cidB", Name: "b", Type: livekit.TrackType_VIDEO})
+		require.NotNil(t, other)
+
+		// media for the released track, by signal or SDP client id, does not fall back to the other track by type
+		for _, cid := range []string{"cidA", "sdpA"} {
+			_, ti, _, _, _ := p.getPendingTrack(cid, livekit.TrackType_VIDEO, true)
+			require.Nil(t, ti, cid)
+		}
+		// an unknown client id still falls back by type, as before
+		_, ti, _, _, _ := p.getPendingTrack("unknown", livekit.TrackType_VIDEO, true)
+		require.NotNil(t, ti)
+		require.Equal(t, other.Sid, ti.Sid)
+
+		// reusing the released client id publishes on it again
+		reused := p.addPendingTrack(&livekit.AddTrackRequest{Cid: "cidA", Name: "a2", Type: livekit.TrackType_VIDEO})
+		require.NotNil(t, reused)
+		_, ti, _, _, _ = p.getPendingTrack("cidA", livekit.TrackType_VIDEO, true)
+		require.NotNil(t, ti)
+		require.Equal(t, reused.Sid, ti.Sid)
+		// the old SDP id is cleared too, a reused transceiver keeps it
+		p.pendingTracksLock.Lock()
+		require.False(t, p.isReleasedTrackCidLocked("sdpA"))
+		p.pendingTracksLock.Unlock()
+	})
+
+	t.Run("should clear a released track when a new request reuses one of its codec client ids", func(t *testing.T) {
+		p := newParticipantForTest("test")
+
+		p.pendingTracksLock.Lock()
+		p.addReleasedTrackCidsLocked([]string{"cidA", "codecA", "sdpA"})
+		p.addReleasedTrackCidsLocked([]string{"cidB"})
+		p.clearReleasedTrackCidsLocked(&livekit.AddTrackRequest{
+			Cid:             "cidC",
+			SimulcastCodecs: []*livekit.SimulcastCodec{{Codec: "vp8", Cid: "codecA"}},
+		})
+		for _, cid := range []string{"cidA", "codecA", "sdpA"} {
+			require.False(t, p.isReleasedTrackCidLocked(cid), cid)
+		}
+		require.True(t, p.isReleasedTrackCidLocked("cidB"))
+		p.pendingTracksLock.Unlock()
+	})
+
+	t.Run("should bound released track client ids", func(t *testing.T) {
+		p := newParticipantForTest("test")
+
+		p.pendingTracksLock.Lock()
+		for i := 0; i <= cMaxReleasedTracks; i++ {
+			p.addReleasedTrackCidsLocked([]string{fmt.Sprintf("cid%d", i), fmt.Sprintf("sdp%d", i)})
+		}
+		require.Len(t, p.releasedTrackCids, cMaxReleasedTracks)
+		// the oldest track ages out with all of its ids
+		require.False(t, p.isReleasedTrackCidLocked("cid0"))
+		require.False(t, p.isReleasedTrackCidLocked("sdp0"))
+		require.True(t, p.isReleasedTrackCidLocked(fmt.Sprintf("sdp%d", cMaxReleasedTracks)))
+		p.pendingTracksLock.Unlock()
+	})
+
 	t.Run("should not allow adding disallowed sources", func(t *testing.T) {
 		p := newParticipantForTest("test")
 		p.SetPermission(&livekit.ParticipantPermission{
@@ -251,6 +400,50 @@ func TestTrackPublishing(t *testing.T) {
 	})
 }
 
+func TestSetPermissionDataTrackSubscriptions(t *testing.T) {
+	p := newParticipantForTestWithOpts("sub", &participantOpts{
+		permissions: &livekit.ParticipantPermission{
+			CanSubscribe: true,
+		},
+	})
+	defer p.Close(false, types.ParticipantCloseReasonNone, false)
+
+	pubID := livekit.ParticipantID("PA_pub")
+	dt := NewDataTrack(
+		DataTrackParams{
+			Logger:              logger.GetLogger(),
+			ParticipantID:       func() livekit.ParticipantID { return pubID },
+			ParticipantIdentity: "pub",
+		},
+		&livekit.DataTrackInfo{PubHandle: 1, Sid: "DTR_test", Name: "test"},
+	)
+	defer dt.Close()
+
+	helper := p.params.ParticipantHelper.(*typesfakes.FakeLocalParticipantHelper)
+	helper.ResolveDataTrackReturns(types.DataResolverResult{
+		DataTrack:         dt,
+		HasPermission:     true,
+		PublisherID:       pubID,
+		PublisherIdentity: "pub",
+	})
+
+	p.SubscribeToDataTrack(dt.ID())
+	require.Eventually(t, func() bool {
+		return dt.IsSubscriber(p.ID())
+	}, 5*time.Second, 10*time.Millisecond, "data track subscription should be established")
+
+	// revoking canSubscribe should drop data track subscriptions, like media track subscriptions
+	require.True(t, p.SetPermission(&livekit.ParticipantPermission{CanSubscribe: false}))
+	require.False(t, dt.IsSubscriber(p.ID()))
+	require.Empty(t, p.GetSubscribedDataTracks())
+
+	// granting canSubscribe again should restore the subscription
+	require.True(t, p.SetPermission(&livekit.ParticipantPermission{CanSubscribe: true}))
+	require.Eventually(t, func() bool {
+		return dt.IsSubscriber(p.ID())
+	}, 5*time.Second, 10*time.Millisecond, "data track subscription should be restored")
+}
+
 func TestOutOfOrderUpdates(t *testing.T) {
 	p := newParticipantForTest("test")
 	p.updateState(livekit.ParticipantInfo_JOINED)
@@ -270,6 +463,42 @@ func TestOutOfOrderUpdates(t *testing.T) {
 	require.Equal(t, 1, sink.WriteMessageCallCount())
 	sent := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
 	require.Equal(t, "second update", sent.GetUpdate().Participants[0].Metadata)
+}
+
+func TestRecentlyDisconnectedKeepsUpdateOrder(t *testing.T) {
+	p := newParticipantForTest("test")
+
+	// fill the update cache (128 entries), the last update is a disconnect
+	const cacheSize = 128
+	for i := range cacheSize {
+		state := livekit.ParticipantInfo_ACTIVE
+		if i == cacheSize-1 {
+			state = livekit.ParticipantInfo_DISCONNECTED
+		}
+		require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{{
+			Sid:      fmt.Sprintf("PA_%d", i),
+			Identity: fmt.Sprintf("p%d", i),
+			Version:  1,
+			State:    state,
+		}}))
+	}
+
+	disconnected := p.GetRecentlyDisconnectedParticipants()
+	require.Len(t, disconnected, 1)
+	require.Equal(t, "PA_127", disconnected[0].Sid)
+
+	// an update for a new participant evicts the least recently updated entry,
+	// not the disconnect that was just reported
+	require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{{
+		Sid:      "PA_new",
+		Identity: "new",
+		Version:  1,
+		State:    livekit.ParticipantInfo_ACTIVE,
+	}}))
+
+	disconnected = p.GetRecentlyDisconnectedParticipants()
+	require.Len(t, disconnected, 1)
+	require.Equal(t, "PA_127", disconnected[0].Sid)
 }
 
 // after disconnection, things should continue to function and not panic
@@ -560,7 +789,7 @@ func TestPreferMediaCodecForPublisher(t *testing.T) {
 			for i := 0; i < 2; i++ {
 				// publish preferred track without client using setCodecPreferences()
 				trackCid := fmt.Sprintf("%s-%d", tc.trackBaseCid, i)
-				req := utils.CloneProto(tc.addTrack)
+				req := proto.CloneOf(tc.addTrack)
 				req.SimulcastCodecs = []*livekit.SimulcastCodec{
 					{
 						Codec: tc.preferredCodec,
@@ -637,6 +866,89 @@ func TestPreferMediaCodecForPublisher(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOneShotSimulcastOfferAppliesRids(t *testing.T) {
+	participant := newParticipantForTestWithOpts("whip", &participantOpts{
+		publisher: true,
+		oneShot:   true,
+	})
+	participant.SetMigrateState(types.MigrateStateComplete)
+
+	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	require.NoError(t, err)
+	defer pc.Close()
+
+	codec := webrtc.RTPCodecCapability{MimeType: mime.MimeTypeVP8.String()}
+	medium, err := webrtc.NewTrackLocalStaticRTP(codec, "video", "stream", webrtc.WithRTPStreamID("h"))
+	require.NoError(t, err)
+	low, err := webrtc.NewTrackLocalStaticRTP(codec, "video", "stream", webrtc.WithRTPStreamID("q"))
+	require.NoError(t, err)
+	sender, err := pc.AddTrack(medium)
+	require.NoError(t, err)
+	require.NoError(t, sender.AddEncoding(low))
+
+	offer, err := pc.CreateOffer(nil)
+	require.NoError(t, err)
+	require.NoError(t, pc.SetLocalDescription(offer))
+	require.Contains(t, offer.SDP, "a=simulcast:send h;q")
+
+	require.NoError(t, participant.HandleOffer(&livekit.SessionDescription{
+		Type: webrtc.SDPTypeOffer.String(),
+		Sdp:  offer.SDP,
+	}))
+
+	participant.pendingTracksLock.RLock()
+	pti := participant.pendingTracks["video"]
+	participant.pendingTracksLock.RUnlock()
+	require.NotNil(t, pti)
+
+	layers := pti.trackInfos[0].Codecs[0].Layers
+	require.Len(t, layers, 2)
+	require.Equal(t, livekit.VideoQuality_LOW, layers[0].Quality)
+	require.Equal(t, "q", layers[0].Rid)
+	require.EqualValues(t, 0, layers[0].SpatialLayer)
+	require.Equal(t, livekit.VideoQuality_MEDIUM, layers[1].Quality)
+	require.Equal(t, "h", layers[1].Rid)
+	require.EqualValues(t, 1, layers[1].SpatialLayer)
+}
+
+func TestOneShotSingleLayerOfferUnchanged(t *testing.T) {
+	participant := newParticipantForTestWithOpts("whip", &participantOpts{
+		publisher: true,
+		oneShot:   true,
+	})
+	participant.SetMigrateState(types.MigrateStateComplete)
+
+	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	require.NoError(t, err)
+	defer pc.Close()
+
+	track, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: mime.MimeTypeVP8.String()}, "video", "stream")
+	require.NoError(t, err)
+	_, err = pc.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly})
+	require.NoError(t, err)
+
+	offer, err := pc.CreateOffer(nil)
+	require.NoError(t, err)
+	require.NoError(t, pc.SetLocalDescription(offer))
+	require.NotContains(t, offer.SDP, "a=simulcast")
+	require.NotContains(t, offer.SDP, "a=rid")
+
+	require.NoError(t, participant.HandleOffer(&livekit.SessionDescription{
+		Type: webrtc.SDPTypeOffer.String(),
+		Sdp:  offer.SDP,
+	}))
+
+	participant.pendingTracksLock.RLock()
+	pti := participant.pendingTracks["video"]
+	participant.pendingTracksLock.RUnlock()
+	require.NotNil(t, pti)
+
+	layers := pti.trackInfos[0].Codecs[0].Layers
+	require.Len(t, layers, 1)
+	require.Equal(t, "", layers[0].Rid)
+	require.EqualValues(t, 0, layers[0].SpatialLayer)
 }
 
 func TestPreferAudioCodecForRed(t *testing.T) {
@@ -783,6 +1095,8 @@ type participantOpts struct {
 	publisher       bool
 	clientConf      *livekit.ClientConfiguration
 	clientInfo      *livekit.ClientInfo
+	migration       bool
+	oneShot         bool
 }
 
 func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *participantOpts) *ParticipantImpl {
@@ -819,24 +1133,26 @@ func newParticipantForTestWithOpts(identity livekit.ParticipantIdentity, opts *p
 	}
 	sid := livekit.ParticipantID(guid.New(utils.ParticipantPrefix))
 	p, _ := NewParticipant(ParticipantParams{
-		SID:                    sid,
-		Identity:               identity,
-		Config:                 rtcConf,
-		Sink:                   &routingfakes.FakeMessageSink{},
-		ProtocolVersion:        opts.protocolVersion,
-		SessionStartTime:       time.Now(),
-		PLIThrottleConfig:      conf.RTC.PLIThrottle,
-		Grants:                 grants,
-		PublishEnabledCodecs:   enabledCodecs,
-		SubscribeEnabledCodecs: enabledCodecs,
-		ClientConf:             opts.clientConf,
-		ClientInfo:             ClientInfo{ClientInfo: opts.clientInfo},
-		Logger:                 LoggerWithParticipant(logger.GetLogger(), identity, sid, false),
-		Reporter:               roomobs.NewNoopParticipantSessionReporter(),
-		TelemetryListener:      &typesfakes.FakeParticipantTelemetryListener{},
-		VersionGenerator:       utils.NewDefaultTimedVersionGenerator(),
-		ParticipantListener:    &typesfakes.FakeLocalParticipantListener{},
-		ParticipantHelper:      &typesfakes.FakeLocalParticipantHelper{},
+		SID:                      sid,
+		Identity:                 identity,
+		Config:                   rtcConf,
+		Sink:                     &routingfakes.FakeMessageSink{},
+		ProtocolVersion:          opts.protocolVersion,
+		SessionStartTime:         time.Now(),
+		PLIThrottleConfig:        conf.RTC.PLIThrottle,
+		Grants:                   grants,
+		PublishEnabledCodecs:     enabledCodecs,
+		SubscribeEnabledCodecs:   enabledCodecs,
+		ClientConf:               opts.clientConf,
+		ClientInfo:               ClientInfo{ClientInfo: opts.clientInfo},
+		Logger:                   LoggerWithParticipant(logger.GetLogger(), identity, sid, false),
+		Reporter:                 roomobs.NewNoopParticipantSessionReporter(),
+		TelemetryListener:        &typesfakes.FakeParticipantTelemetryListener{},
+		VersionGenerator:         utils.NewDefaultTimedVersionGenerator(),
+		ParticipantListener:      &typesfakes.FakeLocalParticipantListener{},
+		ParticipantHelper:        &typesfakes.FakeLocalParticipantHelper{},
+		Migration:                opts.migration,
+		UseOneShotSignallingMode: opts.oneShot,
 	})
 	p.isPublisher.Store(opts.publisher)
 	p.updateState(livekit.ParticipantInfo_ACTIVE)
@@ -894,4 +1210,205 @@ func TestUnsequencedReliableDataBufferedWhileJoining(t *testing.T) {
 		require.Error(t, p.SendDataMessage(livekit.DataPacket_LOSSY, []byte("one"), "", 0))
 		require.Empty(t, p.reliableDataInfo.joiningUnsequencedMessages)
 	})
+}
+
+func TestMigratingInParticipantWaitsForReconnectResponse(t *testing.T) {
+	// a migrating in participant resumes on a ReconnectResponse, the client takes it only
+	// as the first message on the resumed signal connection, so everything else waits
+	newMigratingParticipant := func() (*ParticipantImpl, *routingfakes.FakeMessageSink) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{
+			migration:       true,
+			protocolVersion: 17,
+			clientInfo:      &livekit.ClientInfo{Sdk: livekit.ClientInfo_JS, Version: "2.15.2"},
+		})
+		return p, p.params.Sink.(*routingfakes.FakeMessageSink)
+	}
+
+	t.Run("not ready until the response is sent", func(t *testing.T) {
+		p, sink := newMigratingParticipant()
+		require.False(t, p.IsReady())
+
+		require.NoError(t, p.HandleReconnectAndSendResponse(
+			livekit.ReconnectReason_RR_UNKNOWN,
+			&livekit.ReconnectResponse{LastMessageSeq: 21},
+			nil,
+		))
+		require.True(t, p.IsReady())
+
+		require.Equal(t, 1, sink.WriteMessageCallCount())
+		res := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
+		require.NotNil(t, res.GetReconnect())
+		require.EqualValues(t, 21, res.GetReconnect().LastMessageSeq)
+	})
+
+	t.Run("the response goes out first", func(t *testing.T) {
+		p, sink := newMigratingParticipant()
+
+		// a room update while waiting is dropped, it is re-sent after the migration
+		require.NoError(t, p.SendRoomUpdate(&livekit.Room{Name: "test"}))
+		// participant updates while waiting are queued
+		require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{{
+			Sid:      "PA_other",
+			Identity: "other",
+			Version:  1,
+		}}))
+		require.Zero(t, sink.WriteMessageCallCount())
+
+		require.NoError(t, p.HandleReconnectAndSendResponse(
+			livekit.ReconnectReason_RR_UNKNOWN,
+			&livekit.ReconnectResponse{},
+			nil,
+		))
+
+		require.Equal(t, 2, sink.WriteMessageCallCount())
+		first := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
+		require.NotNil(t, first.GetReconnect())
+		second := sink.WriteMessageArgsForCall(1).(*livekit.SignalResponse)
+		require.NotNil(t, second.GetUpdate())
+		require.Len(t, second.GetUpdate().Participants, 1)
+		require.EqualValues(t, "PA_other", second.GetUpdate().Participants[0].Sid)
+	})
+
+	t.Run("a client that cannot handle the response is ready right away", func(t *testing.T) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{
+			migration:       true,
+			protocolVersion: 17,
+			clientInfo:      &livekit.ClientInfo{Sdk: livekit.ClientInfo_JS, Version: "1.6.2"},
+		})
+		sink := p.params.Sink.(*routingfakes.FakeMessageSink)
+
+		require.NoError(t, p.HandleReconnectAndSendResponse(
+			livekit.ReconnectReason_RR_UNKNOWN,
+			&livekit.ReconnectResponse{},
+			nil,
+		))
+		require.True(t, p.IsReady())
+		require.Zero(t, sink.WriteMessageCallCount())
+
+		require.NoError(t, p.SendRoomUpdate(&livekit.Room{Name: "test"}))
+		require.Equal(t, 1, sink.WriteMessageCallCount())
+	})
+}
+
+func TestResumedParticipantWaitsForReconnectResponse(t *testing.T) {
+	// a resumed connection has to open with the ReconnectResponse too, and the
+	// participant is ready throughout, so the signaller holds messages back
+	newResumedParticipant := func(version string) (*ParticipantImpl, *routingfakes.FakeMessageSink) {
+		p := newParticipantForTestWithOpts("test", &participantOpts{
+			protocolVersion: 17,
+			clientInfo:      &livekit.ClientInfo{Sdk: livekit.ClientInfo_JS, Version: version},
+		})
+		require.True(t, p.IsReady())
+
+		sink := &routingfakes.FakeMessageSink{}
+		p.SwapResponseSink(sink, types.SignallingCloseReasonResume)
+		return p, sink
+	}
+
+	t.Run("the response goes out first", func(t *testing.T) {
+		p, sink := newResumedParticipant("2.15.2")
+
+		// a room update in this window is dropped, the resume path re-sends room state
+		require.NoError(t, p.SendRoomUpdate(&livekit.Room{Name: "test"}))
+		// participant updates are queued
+		require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{{
+			Sid:      "PA_other",
+			Identity: "other",
+			Version:  1,
+		}}))
+		require.Zero(t, sink.WriteMessageCallCount())
+
+		require.NoError(t, p.HandleReconnectAndSendResponse(
+			livekit.ReconnectReason_RR_SIGNAL_DISCONNECTED,
+			&livekit.ReconnectResponse{LastMessageSeq: 7},
+			nil,
+		))
+
+		require.Equal(t, 2, sink.WriteMessageCallCount())
+		first := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
+		require.NotNil(t, first.GetReconnect())
+		require.EqualValues(t, 7, first.GetReconnect().LastMessageSeq)
+		second := sink.WriteMessageArgsForCall(1).(*livekit.SignalResponse)
+		require.NotNil(t, second.GetUpdate())
+		require.EqualValues(t, "PA_other", second.GetUpdate().Participants[0].Sid)
+	})
+
+	t.Run("a connection that opens without a response still delivers the queue", func(t *testing.T) {
+		p, sink := newResumedParticipant("2.15.2")
+
+		require.NoError(t, p.SendParticipantUpdate([]*livekit.ParticipantInfo{{
+			Sid:      "PA_other",
+			Identity: "other",
+			Version:  1,
+		}}))
+		require.Zero(t, sink.WriteMessageCallCount())
+
+		// no ReconnectResponse written, this is what the handshake window does on expiry
+		p.signaller.OpenHandshake()
+
+		require.Equal(t, 1, sink.WriteMessageCallCount())
+		res := sink.WriteMessageArgsForCall(0).(*livekit.SignalResponse)
+		require.NotNil(t, res.GetUpdate())
+		require.EqualValues(t, "PA_other", res.GetUpdate().Participants[0].Sid)
+	})
+
+	t.Run("a client that cannot handle the response is not held back", func(t *testing.T) {
+		p, sink := newResumedParticipant("1.6.2")
+
+		require.NoError(t, p.HandleReconnectAndSendResponse(
+			livekit.ReconnectReason_RR_SIGNAL_DISCONNECTED,
+			&livekit.ReconnectResponse{},
+			nil,
+		))
+		require.Zero(t, sink.WriteMessageCallCount())
+
+		require.NoError(t, p.SendRoomUpdate(&livekit.Room{Name: "test"}))
+		require.Equal(t, 1, sink.WriteMessageCallCount())
+	})
+}
+
+func TestLeaveJoinSession(t *testing.T) {
+	p := newParticipantForTest("leave-join-session")
+	p.params.LoggerResolver = zaputil.NoOpDeferrer{}
+	_, p.params.ReporterResolver = roomobs.DeferredParticipantReporter(roomobs.NewNoopProjectReporter())
+	tl := p.GetTelemetryListener().(*typesfakes.FakeParticipantTelemetryListener)
+
+	track := &typesfakes.FakeLocalMediaTrack{}
+	track.IDReturns("TR_test")
+	track.PublishedReturns(true)
+	p.UpTrackManager.AddPublishedTrack(track)
+
+	// leaving reports the track unpublished, then runs the leave under the left session's
+	// guard, and the next session gets a fresh one
+	prevGuard := p.TelemetryGuard()
+	require.NotNil(t, prevGuard)
+	left := false
+	p.LeaveSession(func() {
+		left = true
+		require.Same(t, prevGuard, p.TelemetryGuard())
+		require.Equal(t, 1, tl.OnTrackUnpublishedCallCount())
+	})
+	require.True(t, left)
+	require.NotSame(t, prevGuard, p.TelemetryGuard())
+	require.Equal(t, 1, tl.OnTrackUnpublishedCallCount())
+	_, _, _, wasPublished, shouldSend := tl.OnTrackUnpublishedArgsForCall(0)
+	require.True(t, wasPublished)
+	require.True(t, shouldSend)
+
+	// joining runs the join first, then reports the track published again
+	joined := false
+	p.JoinSession(func() {
+		joined = true
+		require.Zero(t, tl.OnTrackPublishedCallCount())
+	})
+	require.True(t, joined)
+	require.Equal(t, 1, tl.OnTrackPublishedCallCount())
+	_, _, _, shouldSend = tl.OnTrackPublishedArgsForCall(0)
+	require.True(t, shouldSend)
+
+	// nil callbacks are fine
+	p.LeaveSession(nil)
+	p.JoinSession(nil)
+	require.Equal(t, 2, tl.OnTrackUnpublishedCallCount())
+	require.Equal(t, 2, tl.OnTrackPublishedCallCount())
 }

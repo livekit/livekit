@@ -39,6 +39,7 @@ import (
 	"github.com/livekit/psrpc/pkg/middleware/otelpsrpc"
 
 	"github.com/livekit/livekit-server/pkg/agent"
+	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -81,7 +82,12 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		NewRoomService,
 		NewRTCService,
 		NewWHIPService,
-		NewAgentService,
+		endpoint.NewRegistry,
+		NewEndpointScopes,
+		NewAgentHandler,
+		NewAgentWSService,
+		NewAgentWTService,
+		NewAgentEndpointService,
 		NewAgentDispatchService,
 		getAgentConfig,
 		agent.NewAgentClient,
@@ -194,11 +200,12 @@ func createStore(rc redis.UniversalClient) ObjectStore {
 	return NewLocalStore()
 }
 
-func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
+func getMessageBus(rc redis.UniversalClient, psrpcConf rpc.PSRPCConfig) psrpc.MessageBus {
+	opts := psrpcConf.BusOptions()
 	if rc == nil {
-		return psrpc.NewLocalMessageBus()
+		return psrpc.NewLocalMessageBus(opts...)
 	}
-	return redisbus.New(rc)
+	return redisbus.New(rc, opts...)
 }
 
 func getEgressStore(s ObjectStore) EgressStore {

@@ -20,11 +20,11 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/protocol/auth/authfakes"
 	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/webhook"
 
 	"github.com/livekit/livekit-server/version"
@@ -51,7 +51,11 @@ const (
 )
 
 func init() {
-	config.InitLoggerFromConfig(&config.DefaultConfig.Logging)
+	// The logger retains this config and locks it on every component level
+	// resolution, so it must not be DefaultConfig: NewConfig marshals that
+	// global from the goroutines these tests spin up.
+	loggingConf := config.LoggingConfig{PionLevel: config.DefaultConfig.Logging.PionLevel}
+	config.InitLoggerFromConfig(&loggingConf)
 	roomUpdateInterval = defaultDelay
 }
 
@@ -287,7 +291,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		{
 			name:     "last version is enqueued",
 			pi:       subscriber1v2,
-			existing: &ParticipantUpdate{ParticipantInfo: utils.CloneProto(subscriber1v1)}, // clone the existing value since it can be modified when setting to disconnected
+			existing: &ParticipantUpdate{ParticipantInfo: proto.CloneOf(subscriber1v1)}, // clone the existing value since it can be modified when setting to disconnected
 			validate: func(t *testing.T, rm *Room, _ []*ParticipantUpdate) {
 				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
 				require.NotNil(t, queued)
@@ -297,7 +301,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		{
 			name:      "latest version when immediate",
 			pi:        subscriber1v2,
-			existing:  &ParticipantUpdate{ParticipantInfo: utils.CloneProto(subscriber1v1)},
+			existing:  &ParticipantUpdate{ParticipantInfo: proto.CloneOf(subscriber1v1)},
 			immediate: true,
 			expected:  []*ParticipantUpdate{{ParticipantInfo: subscriber1v2}},
 			validate: func(t *testing.T, rm *Room, _ []*ParticipantUpdate) {
@@ -308,7 +312,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		{
 			name:     "out of order updates are rejected",
 			pi:       subscriber1v1,
-			existing: &ParticipantUpdate{ParticipantInfo: utils.CloneProto(subscriber1v2)},
+			existing: &ParticipantUpdate{ParticipantInfo: proto.CloneOf(subscriber1v2)},
 			validate: func(t *testing.T, rm *Room, updates []*ParticipantUpdate) {
 				queued := rm.batchedUpdates[livekit.ParticipantIdentity(identity)]
 				requirePIEquals(t, subscriber1v2, queued.ParticipantInfo)
@@ -318,7 +322,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 			name:        "sid change is broadcasted immediately with synthsized disconnect",
 			pi:          publisher2,
 			closeReason: types.ParticipantCloseReasonServiceRequestRemoveParticipant, // just to test if update contain the close reason
-			existing:    &ParticipantUpdate{ParticipantInfo: utils.CloneProto(subscriber1v2), CloseReason: types.ParticipantCloseReasonStale},
+			existing:    &ParticipantUpdate{ParticipantInfo: proto.CloneOf(subscriber1v2), CloseReason: types.ParticipantCloseReasonStale},
 			expected: []*ParticipantUpdate{
 				{
 					ParticipantInfo: &livekit.ParticipantInfo{
@@ -336,7 +340,7 @@ func TestPushAndDequeueUpdates(t *testing.T) {
 		{
 			name:     "when switching to publisher, queue is cleared",
 			pi:       publisher1v2,
-			existing: &ParticipantUpdate{ParticipantInfo: utils.CloneProto(subscriber1v1)},
+			existing: &ParticipantUpdate{ParticipantInfo: proto.CloneOf(subscriber1v1)},
 			expected: []*ParticipantUpdate{{ParticipantInfo: publisher1v2}},
 			validate: func(t *testing.T, rm *Room, updates []*ParticipantUpdate) {
 				require.Empty(t, rm.batchedUpdates)
@@ -377,8 +381,10 @@ func TestRoomClosure(t *testing.T) {
 	t.Run("room closes after participant leaves", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
 		isClosed := false
-		rm.OnClose(func() {
+		var closeReason types.RoomCloseReason
+		rm.OnClose(func(reason types.RoomCloseReason) {
 			isClosed = true
+			closeReason = reason
 		})
 		p := rm.GetParticipants()[0]
 		rm.lock.Lock()
@@ -392,26 +398,81 @@ func TestRoomClosure(t *testing.T) {
 		rm.CloseIfEmpty()
 		require.Len(t, rm.GetParticipants(), 0)
 		require.True(t, isClosed)
+		require.Equal(t, types.RoomCloseReasonIdleTimeout, closeReason)
 
 		require.Equal(t, ErrRoomClosed, rm.Join(p, nil, nil, iceServersForRoom))
+	})
+
+	// the idle check runs every second and can land while the last participant
+	// is still closing, when the room is empty but its departure has not been
+	// recorded yet
+	closeDuringRemove := func(t *testing.T, priorDeparture bool) bool {
+		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
+		var isClosed atomic.Bool
+		rm.OnClose(func(types.RoomCloseReason) {
+			isClosed.Store(true)
+		})
+
+		rm.lock.Lock()
+		rm.protoRoom.DepartureTimeout = 20
+		if priorDeparture {
+			// someone left earlier in the session, so a departure is recorded
+			rm.protoRoom.CreationTime = time.Now().Unix()
+			rm.leftAt.Store(time.Now().Add(-time.Minute).Unix())
+		} else {
+			// older than the empty timeout, as a room in a call for a while is
+			rm.protoRoom.CreationTime = time.Now().Add(-10 * time.Minute).Unix()
+		}
+		rm.lock.Unlock()
+
+		p := rm.GetParticipants()[0].(*typesfakes.FakeLocalParticipant)
+		closing := make(chan struct{})
+		release := make(chan struct{})
+		p.CloseStub = func(bool, types.ParticipantCloseReason, bool) error {
+			close(closing)
+			<-release
+			return nil
+		}
+
+		go rm.RemoveParticipant(p.Identity(), p.ID(), types.ParticipantCloseReasonClientRequestLeave)
+
+		<-closing
+		require.Empty(t, rm.GetParticipants())
+		rm.CloseIfEmpty()
+		close(release)
+
+		return isClosed.Load()
+	}
+
+	t.Run("room does not close while the last participant is closing", func(t *testing.T) {
+		require.False(t, closeDuringRemove(t, false))
+	})
+
+	t.Run("room does not close while the last participant is closing, after an earlier departure", func(t *testing.T) {
+		require.False(t, closeDuringRemove(t, true))
 	})
 
 	t.Run("room does not close before empty timeout", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 0})
 		isClosed := false
-		rm.OnClose(func() {
+		var closeReason types.RoomCloseReason
+		rm.OnClose(func(reason types.RoomCloseReason) {
 			isClosed = true
+			closeReason = reason
 		})
 		require.NotZero(t, rm.protoRoom.EmptyTimeout)
 		rm.CloseIfEmpty()
 		require.False(t, isClosed)
+		require.Equal(t, types.RoomCloseReasonUnknown, closeReason)
 	})
 
 	t.Run("room closes after empty timeout", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 0})
 		isClosed := false
-		rm.OnClose(func() {
+		var closeReason types.RoomCloseReason
+		rm.OnClose(func(reason types.RoomCloseReason) {
 			isClosed = true
+			closeReason = reason
 		})
 		rm.lock.Lock()
 		rm.protoRoom.EmptyTimeout = 1
@@ -420,6 +481,7 @@ func TestRoomClosure(t *testing.T) {
 		time.Sleep(1010 * time.Millisecond)
 		rm.CloseIfEmpty()
 		require.True(t, isClosed)
+		require.Equal(t, types.RoomCloseReasonIdleTimeout, closeReason)
 	})
 }
 
@@ -461,7 +523,7 @@ func TestActiveSpeakers(t *testing.T) {
 	audioUpdateDuration := (audioUpdateInterval + 10) * time.Millisecond
 	t.Run("participant should not be getting audio updates (protocol 2)", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 1, protocol: 2})
-		defer rm.Close(types.ParticipantCloseReasonNone)
+		defer rm.Close(types.RoomCloseReasonUnknown)
 		p := rm.GetParticipants()[0].(*typesfakes.FakeLocalParticipant)
 		require.Empty(t, rm.GetActiveSpeakers())
 
@@ -473,7 +535,7 @@ func TestActiveSpeakers(t *testing.T) {
 
 	t.Run("speakers should be sorted by loudness", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
-		defer rm.Close(types.ParticipantCloseReasonNone)
+		defer rm.Close(types.RoomCloseReasonUnknown)
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
 		p2 := participants[1].(*typesfakes.FakeLocalParticipant)
@@ -488,7 +550,7 @@ func TestActiveSpeakers(t *testing.T) {
 
 	t.Run("participants are getting audio updates (protocol 3+)", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, protocol: 3})
-		defer rm.Close(types.ParticipantCloseReasonNone)
+		defer rm.Close(types.RoomCloseReasonUnknown)
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
 		time.Sleep(time.Millisecond) // let the first update cycle run
@@ -527,7 +589,7 @@ func TestActiveSpeakers(t *testing.T) {
 
 	t.Run("audio level is smoothed", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, protocol: 3, audioSmoothIntervals: 3})
-		defer rm.Close(types.ParticipantCloseReasonNone)
+		defer rm.Close(types.RoomCloseReasonUnknown)
 
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
@@ -621,7 +683,7 @@ func TestDataChannel(t *testing.T) {
 			mode := mode
 			t.Run(modeNames[mode], func(t *testing.T) {
 				rm := newRoomWithParticipants(t, testRoomOpts{num: 3})
-				defer rm.Close(types.ParticipantCloseReasonNone)
+				defer rm.Close(types.RoomCloseReasonUnknown)
 
 				lpl := rm.LocalParticipantListener()
 
@@ -638,7 +700,7 @@ func TestDataChannel(t *testing.T) {
 				}
 				setSource(mode, packet, p)
 
-				packetExp := utils.CloneProto(packet)
+				packetExp := proto.CloneOf(packet)
 				if mode != legacySID {
 					packetExp.ParticipantIdentity = string(p.Identity())
 					packetExp.GetUser().ParticipantIdentity = string(p.Identity())
@@ -667,7 +729,7 @@ func TestDataChannel(t *testing.T) {
 			mode := mode
 			t.Run(modeNames[mode], func(t *testing.T) {
 				rm := newRoomWithParticipants(t, testRoomOpts{num: 4})
-				defer rm.Close(types.ParticipantCloseReasonNone)
+				defer rm.Close(types.RoomCloseReasonUnknown)
 
 				lpl := rm.LocalParticipantListener()
 
@@ -686,7 +748,7 @@ func TestDataChannel(t *testing.T) {
 				setSource(mode, packet, p)
 				setDest(mode, packet, p1)
 
-				packetExp := utils.CloneProto(packet)
+				packetExp := proto.CloneOf(packet)
 				if mode != legacySID {
 					packetExp.ParticipantIdentity = string(p.Identity())
 					packetExp.GetUser().ParticipantIdentity = string(p.Identity())
@@ -713,7 +775,7 @@ func TestDataChannel(t *testing.T) {
 
 	t.Run("publishing disallowed", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
-		defer rm.Close(types.ParticipantCloseReasonNone)
+		defer rm.Close(types.RoomCloseReasonUnknown)
 
 		participants := rm.GetParticipants()
 		p := participants[0].(*typesfakes.FakeLocalParticipant)
@@ -743,7 +805,7 @@ func TestDataChannel(t *testing.T) {
 func TestHiddenParticipants(t *testing.T) {
 	t.Run("other participants don't receive hidden updates", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2, numHidden: 1})
-		defer rm.Close(types.ParticipantCloseReasonNone)
+		defer rm.Close(types.RoomCloseReasonUnknown)
 
 		pNew := NewMockParticipant("new", types.CurrentProtocol, false, false, rm.LocalParticipantListener())
 		rm.Join(pNew, nil, nil, iceServersForRoom)
@@ -775,7 +837,7 @@ func TestHiddenParticipants(t *testing.T) {
 func TestRoomUpdate(t *testing.T) {
 	t.Run("updates are sent when participant joined", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 1})
-		defer rm.Close(types.ParticipantCloseReasonNone)
+		defer rm.Close(types.RoomCloseReasonUnknown)
 
 		p1 := rm.GetParticipants()[0].(*typesfakes.FakeLocalParticipant)
 		require.Equal(t, 0, p1.SendRoomUpdateCallCount())
@@ -791,7 +853,7 @@ func TestRoomUpdate(t *testing.T) {
 
 	t.Run("participants should receive metadata update", func(t *testing.T) {
 		rm := newRoomWithParticipants(t, testRoomOpts{num: 2})
-		defer rm.Close(types.ParticipantCloseReasonNone)
+		defer rm.Close(types.RoomCloseReasonUnknown)
 
 		rm.SetMetadata("test metadata...")
 
@@ -844,6 +906,7 @@ func newRoomWithParticipants(t *testing.T, opts testRoomOpts) *Room {
 		telemetry.NewTelemetryService(n, &telemetryfakes.FakeAnalyticsService{}),
 		nil, nil, nil,
 	)
+	t.Cleanup(func() { rm.Close(types.RoomCloseReasonUnknown) })
 	for i := 0; i < opts.num+opts.numHidden; i++ {
 		identity := livekit.ParticipantIdentity(fmt.Sprintf("p%d", i))
 		participant := NewMockParticipant(identity, opts.protocol, i >= opts.num, true, rm.LocalParticipantListener())

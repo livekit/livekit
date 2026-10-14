@@ -548,7 +548,7 @@ func (s *RedisStore) storeIngress(_ context.Context, info *livekit.IngressInfo) 
 	}
 
 	// ignore state
-	infoCopy := utils.CloneProto(info)
+	infoCopy := proto.CloneOf(info)
 	infoCopy.State = nil
 
 	data, err := proto.Marshal(infoCopy)
@@ -851,7 +851,7 @@ func (s *RedisStore) DeleteIngress(_ context.Context, info *livekit.IngressInfo)
 }
 
 func (s *RedisStore) StoreAgentDispatch(_ context.Context, dispatch *livekit.AgentDispatch) error {
-	di := utils.CloneProto(dispatch)
+	di := proto.CloneOf(dispatch)
 
 	// Do not store jobs with the dispatch
 	if di.State != nil {
@@ -914,7 +914,7 @@ func (s *RedisStore) StoreAgentJob(_ context.Context, job *livekit.Job) error {
 
 	key := AgentJobPrefix + string(job.Room.Name)
 
-	jb := utils.CloneProto(job)
+	jb := proto.CloneOf(job)
 
 	// Do not store room with the job
 	jb.Room = nil

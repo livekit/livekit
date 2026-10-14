@@ -9,6 +9,7 @@ package service
 import (
 	"fmt"
 	"github.com/livekit/livekit-server/pkg/agent"
+	"github.com/livekit/livekit-server/pkg/agent/endpoint"
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/livekit-server/pkg/sfu"
@@ -40,13 +41,13 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 		return nil, err
 	}
 	nodeID := getNodeID(currentNode)
-	v := getMessageBus(universalClient)
+	psrpcConfig := getPSRPCConfig(conf)
+	v := getMessageBus(universalClient, psrpcConfig)
 	signalRelayConfig := getSignalRelayConfig(conf)
 	signalClient, err := routing.NewSignalClient(nodeID, v, signalRelayConfig)
 	if err != nil {
 		return nil, err
 	}
-	psrpcConfig := getPSRPCConfig(conf)
 	clientParams := getPSRPCClientParams(psrpcConfig, v)
 	roomConfig := getRoomConfig(conf)
 	roomManagerClient, err := routing.NewRoomManagerClient(clientParams, roomConfig)
@@ -126,10 +127,15 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	agentService, err := NewAgentService(conf, currentNode, v, keyProvider)
+	registry := endpoint.NewRegistry()
+	endpointScopes := NewEndpointScopes()
+	agentHandler, err := NewAgentHandler(conf, currentNode, v, keyProvider, registry, endpointScopes)
 	if err != nil {
 		return nil, err
 	}
+	agentWSService := NewAgentWSService(conf, agentHandler)
+	agentWTService := NewAgentWTService(agentHandler)
+	agentEndpointService := NewAgentEndpointService(agentHandler, endpointScopes)
 	agentConfig := getAgentConfig(conf)
 	client, err := agent.NewAgentClient(v, agentConfig)
 	if err != nil {
@@ -152,7 +158,7 @@ func InitializeServer(conf *config.Config, currentNode routing.LocalNode) (*Live
 	if err != nil {
 		return nil, err
 	}
-	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, serviceWHIPService, agentService, keyProvider, router, roomManager, signalServer, server, currentNode)
+	livekitServer, err := NewLivekitServer(conf, roomService, agentDispatchService, egressService, ingressService, sipService, ioInfoService, rtcService, serviceWHIPService, agentWSService, agentWTService, agentEndpointService, keyProvider, router, roomManager, signalServer, server, currentNode)
 	if err != nil {
 		return nil, err
 	}
@@ -165,13 +171,13 @@ func InitializeRouter(conf *config.Config, currentNode routing.LocalNode) (routi
 		return nil, err
 	}
 	nodeID := getNodeID(currentNode)
-	v := getMessageBus(universalClient)
+	psrpcConfig := getPSRPCConfig(conf)
+	v := getMessageBus(universalClient, psrpcConfig)
 	signalRelayConfig := getSignalRelayConfig(conf)
 	signalClient, err := routing.NewSignalClient(nodeID, v, signalRelayConfig)
 	if err != nil {
 		return nil, err
 	}
-	psrpcConfig := getPSRPCConfig(conf)
 	clientParams := getPSRPCClientParams(psrpcConfig, v)
 	roomConfig := getRoomConfig(conf)
 	roomManagerClient, err := routing.NewRoomManagerClient(clientParams, roomConfig)
@@ -255,11 +261,12 @@ func createStore(rc redis.UniversalClient) ObjectStore {
 	return NewLocalStore()
 }
 
-func getMessageBus(rc redis.UniversalClient) psrpc.MessageBus {
+func getMessageBus(rc redis.UniversalClient, psrpcConf rpc.PSRPCConfig) psrpc.MessageBus {
+	opts := psrpcConf.BusOptions()
 	if rc == nil {
-		return psrpc.NewLocalMessageBus()
+		return psrpc.NewLocalMessageBus(opts...)
 	}
-	return redisbus.New(rc)
+	return redisbus.New(rc, opts...)
 }
 
 func getEgressStore(s ObjectStore) EgressStore {

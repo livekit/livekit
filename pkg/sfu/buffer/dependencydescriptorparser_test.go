@@ -1,0 +1,290 @@
+// Copyright 2026 LiveKit, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package buffer
+
+import (
+	"testing"
+
+	"github.com/pion/rtp"
+	"github.com/stretchr/testify/require"
+
+	"github.com/livekit/protocol/logger"
+
+	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
+)
+
+const ddTestExtID = uint8(1)
+
+// single spatial layer, single temporal layer, one decode target, one chain
+func newL1T1Structure(structureID int) *dd.FrameDependencyStructure {
+	return &dd.FrameDependencyStructure{
+		StructureId:                  structureID,
+		NumDecodeTargets:             1,
+		NumChains:                    1,
+		DecodeTargetProtectedByChain: []int{0},
+		Templates: []*dd.FrameDependencyTemplate{
+			{ // key frame
+				DecodeTargetIndications: []dd.DecodeTargetIndication{dd.DecodeTargetSwitch},
+				ChainDiffs:              []int{0},
+			},
+			{ // delta frame
+				DecodeTargetIndications: []dd.DecodeTargetIndication{dd.DecodeTargetRequired},
+				FrameDiffs:              []int{1},
+				ChainDiffs:              []int{1},
+			},
+		},
+	}
+}
+
+type ddTestFeeder struct {
+	t      *testing.T
+	parser *DependencyDescriptorParser
+	// structure the writer marshals against, i. e. what the publisher last sent
+	structure *dd.FrameDependencyStructure
+	seq       uint16
+}
+
+func newDDTestFeeder(t *testing.T) *ddTestFeeder {
+	return &ddTestFeeder{
+		t:      t,
+		parser: NewDependencyDescriptorParser(ddTestExtID, logger.GetLogger(), func(int32, int32) {}, false),
+	}
+}
+
+// keyFrame sends a key frame carrying `structure`. Passing the same structure id as
+// the previous key frame models a publisher that repeats an unchanged structure,
+// which is what screen content with frequent key frames does.
+func (f *ddTestFeeder) keyFrame(frameNumber uint16, structure *dd.FrameDependencyStructure) (*ExtDependencyDescriptor, error) {
+	f.structure = structure
+	return f.feed(frameNumber, structure.Templates[0], structure)
+}
+
+func (f *ddTestFeeder) deltaFrame(frameNumber uint16) (*ExtDependencyDescriptor, error) {
+	return f.feed(frameNumber, f.structure.Templates[1], nil)
+}
+
+// deltaFrameWithMask sends a delta frame that changes the active decode targets
+func (f *ddTestFeeder) deltaFrameWithMask(frameNumber uint16, activeDecodeTargets uint32) (*ExtDependencyDescriptor, error) {
+	return f.feedWithMask(frameNumber, f.structure.Templates[1], nil, &activeDecodeTargets)
+}
+
+func (f *ddTestFeeder) feed(
+	frameNumber uint16,
+	template *dd.FrameDependencyTemplate,
+	attachedStructure *dd.FrameDependencyStructure,
+) (*ExtDependencyDescriptor, error) {
+	return f.feedWithMask(frameNumber, template, attachedStructure, nil)
+}
+
+func (f *ddTestFeeder) feedWithMask(
+	frameNumber uint16,
+	template *dd.FrameDependencyTemplate,
+	attachedStructure *dd.FrameDependencyStructure,
+	activeDecodeTargets *uint32,
+) (*ExtDependencyDescriptor, error) {
+	f.t.Helper()
+
+	ddVal := &dd.DependencyDescriptor{
+		FirstPacketInFrame:         true,
+		LastPacketInFrame:          true,
+		FrameNumber:                frameNumber,
+		FrameDependencies:          template,
+		AttachedStructure:          attachedStructure,
+		ActiveDecodeTargetsBitmask: activeDecodeTargets,
+	}
+	buf, err := (&dd.DependencyDescriptorExtension{Descriptor: ddVal, Structure: f.structure}).Marshal()
+	require.NoError(f.t, err)
+
+	f.seq++
+	pkt := &rtp.Packet{Header: rtp.Header{SequenceNumber: f.seq}}
+	require.NoError(f.t, pkt.SetExtension(ddTestExtID, buf))
+
+	extDD, _, err := f.parser.Parse(pkt)
+	return extDD, err
+}
+
+// A key frame that repeats the current structure must not start dropping frames that
+// precede it. Upstream advanced the drop threshold on every structure bearing key
+// frame, so with frequent key frames (screen content) a late or retransmitted frame
+// arriving after one was discarded as "earlier than current structure".
+func TestDependencyDescriptorParserLateFrameAfterRepeatedStructure(t *testing.T) {
+	f := newDDTestFeeder(t)
+	structure := newL1T1Structure(0)
+
+	_, err := f.keyFrame(0, structure)
+	require.NoError(t, err)
+	_, err = f.deltaFrame(1)
+	require.NoError(t, err)
+	_, err = f.deltaFrame(3)
+	require.NoError(t, err)
+
+	// key frame repeating the same structure id
+	_, err = f.keyFrame(4, structure)
+	require.NoError(t, err)
+
+	// frame 2 finally shows up (reordered or retransmitted). The structure has not
+	// changed, so it is still decodable and must be forwarded.
+	extDD, err := f.deltaFrame(2)
+	require.NoError(t, err)
+	require.NotNil(t, extDD)
+	require.EqualValues(t, 2, extDD.ExtFrameNum)
+}
+
+// A key frame carrying a *different* structure does invalidate everything before it:
+// earlier frames reference templates that no longer exist.
+func TestDependencyDescriptorParserLateFrameAfterStructureChange(t *testing.T) {
+	f := newDDTestFeeder(t)
+
+	_, err := f.keyFrame(0, newL1T1Structure(0))
+	require.NoError(t, err)
+	_, err = f.deltaFrame(1)
+	require.NoError(t, err)
+	_, err = f.deltaFrame(3)
+	require.NoError(t, err)
+
+	_, err = f.keyFrame(4, newL1T1Structure(1))
+	require.NoError(t, err)
+
+	_, err = f.deltaFrame(2)
+	require.ErrorIs(t, err, ErrFrameEarlierThanKeyFrame)
+}
+
+// An out-of-order key frame must still be dropped: accepting it would regress
+// structureExtFrameNum (ExtKeyFrameNum) and replay a stale structure update.
+func TestDependencyDescriptorParserOutOfOrderKeyFrame(t *testing.T) {
+	f := newDDTestFeeder(t)
+	structure := newL1T1Structure(0)
+
+	_, err := f.keyFrame(0, structure)
+	require.NoError(t, err)
+	_, err = f.deltaFrame(1)
+	require.NoError(t, err)
+	_, err = f.keyFrame(4, structure)
+	require.NoError(t, err)
+
+	_, err = f.keyFrame(2, structure)
+	require.ErrorIs(t, err, ErrFrameEarlierThanKeyFrame)
+}
+
+// ExtKeyFrameNum keeps tracking every structure bearing key frame, unchanged by the
+// split of the drop threshold into its own field.
+func TestDependencyDescriptorParserExtKeyFrameNum(t *testing.T) {
+	f := newDDTestFeeder(t)
+	structure := newL1T1Structure(0)
+
+	extDD, err := f.keyFrame(0, structure)
+	require.NoError(t, err)
+	require.EqualValues(t, 0, extDD.ExtKeyFrameNum)
+
+	extDD, err = f.deltaFrame(1)
+	require.NoError(t, err)
+	require.EqualValues(t, 0, extDD.ExtKeyFrameNum)
+
+	// repeated structure still advances ExtKeyFrameNum
+	extDD, err = f.keyFrame(4, structure)
+	require.NoError(t, err)
+	require.EqualValues(t, 4, extDD.ExtKeyFrameNum)
+
+	extDD, err = f.deltaFrame(5)
+	require.NoError(t, err)
+	require.EqualValues(t, 4, extDD.ExtKeyFrameNum)
+}
+
+// every packet carries the stream's current active decode targets, also after the mask
+// changed on a packet the forwarder dropped
+func TestDependencyDescriptorParserActiveDecodeTargetsMask(t *testing.T) {
+	f := newDDTestFeeder(t)
+	structure := newL1T1Structure(0)
+
+	extDD, err := f.keyFrame(0, structure)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, extDD.ActiveDecodeTargetsMask)
+
+	extDD, err = f.deltaFrameWithMask(1, 0)
+	require.NoError(t, err)
+	require.EqualValues(t, 0, extDD.ActiveDecodeTargetsMask)
+
+	extDD, err = f.deltaFrame(2)
+	require.NoError(t, err)
+	require.EqualValues(t, 0, extDD.ActiveDecodeTargetsMask)
+
+	extDD, err = f.keyFrame(3, structure)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, extDD.ActiveDecodeTargetsMask)
+}
+
+// a first key frame at RTP sequence number 0 still makes its structure's decode targets
+// active
+func TestDependencyDescriptorParserActiveDecodeTargetsMaskAtSequenceZero(t *testing.T) {
+	f := newDDTestFeeder(t)
+	f.seq = 0xffff // the first packet goes out with sequence number 0
+	structure := newL1T1Structure(0)
+
+	extDD, err := f.keyFrame(0, structure)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, extDD.ActiveDecodeTargetsMask)
+
+	extDD, err = f.deltaFrame(1)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, extDD.ActiveDecodeTargetsMask)
+}
+
+// a pooled ExtDependencyDescriptor carries the storage for its descriptor, so parsing a delta
+// frame must not allocate and a reused descriptor must not show the previous packet's values
+func TestDependencyDescriptorParserNoAlloc(t *testing.T) {
+	f := newDDTestFeeder(t)
+	structure := newL1T1Structure(0)
+	structure.Resolutions = []dd.RenderResolution{{Width: 640, Height: 360}}
+	extDD, err := f.keyFrame(0, structure)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(extDD.Descriptor.FrameDependencies.FrameDiffs))
+	require.Equal(t, dd.RenderResolution{Width: 640, Height: 360}, *extDD.Descriptor.Resolution)
+	ReleaseExtDependencyDescriptor(extDD)
+
+	extDD, err = f.deltaFrame(1)
+	require.NoError(t, err)
+	require.Equal(t, []int{1}, extDD.Descriptor.FrameDependencies.FrameDiffs)
+	require.Equal(t, []int{1}, extDD.Descriptor.FrameDependencies.ChainDiffs)
+	require.Nil(t, extDD.Descriptor.AttachedStructure)
+	ReleaseExtDependencyDescriptor(extDD)
+
+	// the parsed template is a copy, the structure's template is untouched
+	require.Equal(t, []int{1}, structure.Templates[1].FrameDiffs)
+
+	// marshal the packets first, only Parse runs under the allocation count
+	bufs := make([][]byte, 128)
+	for i := range bufs {
+		ddVal := &dd.DependencyDescriptor{
+			FirstPacketInFrame: true,
+			LastPacketInFrame:  true,
+			FrameNumber:        uint16(i + 2),
+			FrameDependencies:  structure.Templates[1],
+		}
+		bufs[i], err = (&dd.DependencyDescriptorExtension{Descriptor: ddVal, Structure: structure}).Marshal()
+		require.NoError(t, err)
+	}
+	pkt := &rtp.Packet{Header: rtp.Header{SequenceNumber: f.seq}}
+	require.NoError(t, pkt.SetExtension(ddTestExtID, bufs[0]))
+	i := 0
+	allocs := testing.AllocsPerRun(100, func() {
+		pkt.SequenceNumber++
+		require.NoError(t, pkt.SetExtension(ddTestExtID, bufs[i]))
+		i++
+		extDD, _, err := f.parser.Parse(pkt)
+		require.NoError(t, err)
+		ReleaseExtDependencyDescriptor(extDD)
+	})
+	require.Zero(t, allocs)
+}
