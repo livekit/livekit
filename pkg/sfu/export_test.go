@@ -50,6 +50,8 @@ func (d *DownTrack) HandleRTCPForTest(pkt []byte) { d.handleRTCP(pkt) }
 
 func (d *DownTrack) SetRTPHeaderExtensionsForTest() { d.setRTPHeaderExtensions() }
 
+func (d *DownTrack) SetAbsCaptureTimeExtIDForTest(id int) { d.absCaptureTimeExtID = id }
+
 // ForceForwardLayerForTest forces the forwarder onto a valid current/target layer so a
 // (non-simulcast) video packet will be forwarded without driving full allocation.
 func (d *DownTrack) ForceForwardLayerForTest(layer buffer.VideoLayer) {

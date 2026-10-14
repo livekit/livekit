@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
+	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
@@ -42,6 +43,9 @@ const (
 	PacerBehaviorLeakybucket PacerBehavior = "leaky-bucket"
 )
 
+// largest extension HoldExtension copies, an inline dependency descriptor or an abs-capture-time
+const maxHeldExtensionSize = max(dd.MaxInlineExtensionSize, act.MaxSize)
+
 type Packet struct {
 	Header             *rtp.Header
 	HeaderPool         *sync.Pool
@@ -56,19 +60,23 @@ type Packet struct {
 	Pool               *sync.Pool
 	PoolEntity         *[]byte
 
-	// per-packet scratch for header extensions patched at send time,
+	// per-packet scratch for header extensions held before Enqueue or patched at send time,
 	// the Packet is owned by one send until SendPacket returns
 	absSendTimeBuf [3]byte
 	twccBuf        [2]byte
-	extBuf         [dd.MaxInlineExtensionSize]byte
+	extBufs        [2][maxHeldExtensionSize]byte
+	numExtHeld     int
 }
 
-// HoldExtension copies ext into scratch the header can point at until SendPacket returns, nil if it does not fit
+// HoldExtension copies ext into the next free scratch slot, which the header can point at until SendPacket returns.
+// It returns nil when ext does not fit or every slot is held.
 func (p *Packet) HoldExtension(ext []byte) []byte {
-	if len(ext) > len(p.extBuf) {
+	if p.numExtHeld == len(p.extBufs) || len(ext) > len(p.extBufs[p.numExtHeld]) {
 		return nil
 	}
-	return p.extBuf[:copy(p.extBuf[:], ext)]
+	buf := &p.extBufs[p.numExtHeld]
+	p.numExtHeld++
+	return buf[:copy(buf[:], ext)]
 }
 
 type Pacer interface {

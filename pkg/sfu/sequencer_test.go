@@ -247,7 +247,7 @@ func Test_sequencer_getNACKSeqNo_exclusion(t *testing.T) {
 					require.Equal(t, uint8(len(tt.fields.codecBytesOversized)), sn.numCodecBytesIn)
 					require.Equal(t, tt.fields.ddBytesOversized, sn.ddBytesSlice)
 					require.Equal(t, uint8(len(tt.fields.codecBytesOversized)), sn.ddBytesSize)
-					require.Equal(t, tt.fields.actBytesOdd, sn.actBytes)
+					require.Equal(t, tt.fields.actBytesOdd, sn.actBytes[:sn.actBytesSize])
 				} else {
 					if sn.sourceSeqNo%2 == 0 {
 						require.Equal(t, tt.fields.markerEven, sn.marker)
@@ -255,14 +255,14 @@ func Test_sequencer_getNACKSeqNo_exclusion(t *testing.T) {
 						require.Equal(t, uint8(tt.fields.numCodecBytesInEven), sn.numCodecBytesIn)
 						require.Equal(t, tt.fields.ddBytesEven, sn.ddBytes[:sn.ddBytesSize])
 						require.Equal(t, uint8(len(tt.fields.ddBytesEven)), sn.ddBytesSize)
-						require.Equal(t, tt.fields.actBytesEven, sn.actBytes)
+						require.Equal(t, tt.fields.actBytesEven, sn.actBytes[:sn.actBytesSize])
 					} else {
 						require.Equal(t, tt.fields.markerOdd, sn.marker)
 						require.Equal(t, tt.fields.codecBytesOdd, sn.codecBytes[:sn.numCodecBytesOut])
 						require.Equal(t, uint8(tt.fields.numCodecBytesInOdd), sn.numCodecBytesIn)
 						require.Equal(t, tt.fields.ddBytesOdd, sn.ddBytes[:sn.ddBytesSize])
 						require.Equal(t, uint8(len(tt.fields.ddBytesOdd)), sn.ddBytesSize)
-						require.Equal(t, tt.fields.actBytesOdd, sn.actBytes)
+						require.Equal(t, tt.fields.actBytesOdd, sn.actBytes[:sn.actBytesSize])
 					}
 				}
 			}
@@ -388,14 +388,14 @@ func Test_sequencer_getNACKSeqNo_no_exclusion(t *testing.T) {
 					require.Equal(t, uint8(tt.fields.numCodecBytesInEven), sn.numCodecBytesIn)
 					require.Equal(t, tt.fields.ddBytesEven, sn.ddBytes[:sn.ddBytesSize])
 					require.Equal(t, uint8(len(tt.fields.ddBytesEven)), sn.ddBytesSize)
-					require.Equal(t, tt.fields.actBytesEven, sn.actBytes)
+					require.Equal(t, tt.fields.actBytesEven, sn.actBytes[:sn.actBytesSize])
 				} else {
 					require.Equal(t, tt.fields.markerOdd, sn.marker)
 					require.Equal(t, tt.fields.codecBytesOdd, sn.codecBytes[:sn.numCodecBytesOut])
 					require.Equal(t, uint8(tt.fields.numCodecBytesInOdd), sn.numCodecBytesIn)
 					require.Equal(t, tt.fields.ddBytesOdd, sn.ddBytes[:sn.ddBytesSize])
 					require.Equal(t, uint8(len(tt.fields.ddBytesOdd)), sn.ddBytesSize)
-					require.Equal(t, tt.fields.actBytesOdd, sn.actBytes)
+					require.Equal(t, tt.fields.actBytesOdd, sn.actBytes[:sn.actBytesSize])
 				}
 			}
 			if !reflect.DeepEqual(got, tt.want) {
