@@ -63,9 +63,11 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/ccutils"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	"github.com/livekit/livekit-server/pkg/sfu/packettrailer"
+	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
 	"github.com/livekit/livekit-server/pkg/sfu/sfufakes"
 	"github.com/livekit/livekit-server/pkg/sfu/streamallocator"
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
+	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/livekit-server/pkg/testutils/vnettest"
 )
 
@@ -344,6 +346,54 @@ func TestDownTrackForwardsMedia(t *testing.T) {
 	// numbers must be contiguous.
 	for want := uint16(23333); want < 23333+numPackets; want++ {
 		require.True(t, seen[want], "sequence number %d was not forwarded", want)
+	}
+}
+
+type discardWriteStream struct{}
+
+func (discardWriteStream) WriteRTP(*rtp.Header, []byte) (int, error) { return 0, nil }
+func (discardWriteStream) Write([]byte) (int, error)                 { return 0, nil }
+
+type discardPacer struct {
+	*pacer.PassThrough
+}
+
+func (d discardPacer) Enqueue(p *pacer.Packet) {
+	p.WriteStream = discardWriteStream{}
+	d.PassThrough.Enqueue(p)
+}
+
+func TestDownTrackWriteRTPNoAlloc(t *testing.T) {
+	h := vnettest.NewHosts(t)
+	factory := buffer.NewFactoryOfBufferFactory(500, 500).CreateBufferFactory()
+	p := discardPacer{pacer.NewPassThrough(logger.GetLogger(), newNullBWE())}
+	t.Cleanup(p.Stop)
+
+	dh := newBoundDownTrack(t, h, factory, opusCodecParams, p, vnettest.MediaEngineConfig{})
+	dh.dt.SetAbsCaptureTimeExtIDForTest(5)
+
+	ep, err := testutils.GetTestExtPacket(&testutils.TestExtPacketParams{
+		SequenceNumber: 1000,
+		Timestamp:      5000,
+		SSRC:           0x12345678,
+		PayloadType:    111,
+		PayloadSize:    40,
+	})
+	require.NoError(t, err)
+	ep.AbsCaptureTimeExt = act.AbsCaptureTimeFromValue(0x0102030405060708, 9)
+
+	const runs = 1000
+	forwarded := int32(0)
+	allocs := testing.AllocsPerRun(runs, func() {
+		ep.Packet.SequenceNumber++
+		ep.ExtSequenceNumber++
+		ep.Packet.Timestamp += 960
+		ep.ExtTimestamp += 960
+		forwarded += dh.dt.WriteRTP(ep, 0)
+	})
+	require.EqualValues(t, runs+1, forwarded, "every write, including the AllocsPerRun warm up, should forward")
+	if !utils.RaceEnabled {
+		require.Zero(t, allocs, "allocations per WriteRTP")
 	}
 }
 

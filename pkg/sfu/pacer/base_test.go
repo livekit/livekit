@@ -94,7 +94,7 @@ func TestHoldExtension(t *testing.T) {
 	ext := []byte{1, 2, 3}
 	held := p.HoldExtension(ext)
 	require.Equal(t, ext, held)
-	require.Same(t, &p.extBuf[0], &held[0], "the extension has to be held in the packet's scratch")
+	require.Same(t, &p.extBufs[0][0], &held[0], "the extension has to be held in the packet's scratch")
 
 	ext[0] = 9
 	require.EqualValues(t, 1, held[0], "the held copy has to be independent of the caller's slice")
@@ -105,5 +105,5 @@ func TestHoldExtension(t *testing.T) {
 	require.Equal(t, exact, held)
 
 	// one byte more does not fit
-	require.Nil(t, p.HoldExtension(bytes.Repeat([]byte{7}, dd.MaxInlineExtensionSize+1)))
+	require.Nil(t, (&Packet{}).HoldExtension(bytes.Repeat([]byte{7}, dd.MaxInlineExtensionSize+1)))
 }

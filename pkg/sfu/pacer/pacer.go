@@ -56,19 +56,23 @@ type Packet struct {
 	Pool               *sync.Pool
 	PoolEntity         *[]byte
 
-	// per-packet scratch for header extensions patched at send time,
+	// per-packet scratch for header extensions held before Enqueue or patched at send time,
 	// the Packet is owned by one send until SendPacket returns
 	absSendTimeBuf [3]byte
 	twccBuf        [2]byte
-	extBuf         [dd.MaxInlineExtensionSize]byte
+	extBufs        [2][dd.MaxInlineExtensionSize]byte
+	numExtHeld     int
 }
 
-// HoldExtension copies ext into scratch the header can point at until SendPacket returns, nil if it does not fit
+// HoldExtension copies ext into the next free scratch slot, which the header can point at until SendPacket returns.
+// It returns nil when ext does not fit or every slot is held.
 func (p *Packet) HoldExtension(ext []byte) []byte {
-	if len(ext) > len(p.extBuf) {
+	if p.numExtHeld == len(p.extBufs) || len(ext) > len(p.extBufs[p.numExtHeld]) {
 		return nil
 	}
-	return p.extBuf[:copy(p.extBuf[:], ext)]
+	buf := &p.extBufs[p.numExtHeld]
+	p.numExtHeld++
+	return buf[:copy(buf[:], ext)]
 }
 
 type Pacer interface {

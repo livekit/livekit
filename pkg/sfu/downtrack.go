@@ -1110,13 +1110,13 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 
 	// add extensions
 	//
-	// the header refers to the descriptor until the pacer marshals it, so hold it in the pacer packet, which one send owns
-	ddBytes := tp.ddBytesSpill
+	// the header refers to extensions until the pacer marshals them, so hold the ones on the stack in the pacer packet, which one send owns
+	ddBytes, ddExt := tp.ddBytesSpill, tp.ddBytesSpill
 	if inline := tp.ddInline(); ddBytes == nil && len(inline) != 0 {
-		ddBytes = pacerPacket.HoldExtension(inline)
+		ddBytes, ddExt = inline, pacerPacket.HoldExtension(inline)
 	}
-	if d.dependencyDescriptorExtID != 0 && len(ddBytes) != 0 {
-		hdr.SetExtension(uint8(d.dependencyDescriptorExtID), ddBytes)
+	if d.dependencyDescriptorExtID != 0 && len(ddExt) != 0 {
+		hdr.SetExtension(uint8(d.dependencyDescriptorExtID), ddExt)
 	}
 	if d.playoutDelayExtID != 0 && d.playoutDelay != nil {
 		if val := d.playoutDelay.GetDelayExtension(hdr.SequenceNumber); val != nil {
@@ -1133,13 +1133,12 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 	}
 	var actBytes []byte
 	if extPkt.AbsCaptureTimeExt != nil && d.absCaptureTimeExtID != 0 {
+		var actBuf [act.MaxSize]byte
+		n := 0
 		if !d.params.DisableSenderReportPassThrough {
 			// pass through the original publisher capture time verbatim, consistent
 			// with sender reports also being passed through unchanged.
-			actBytes, err = extPkt.AbsCaptureTimeExt.Marshal()
-			if err == nil {
-				hdr.SetExtension(uint8(d.absCaptureTimeExtID), actBytes)
-			}
+			n, err = extPkt.AbsCaptureTimeExt.MarshalTo(actBuf[:])
 		} else {
 			// normalize capture time to SFU clock.
 			// NOTE: even if there is estimated offset populated, just re-map the
@@ -1153,26 +1152,27 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 				if err = actExtCopy.Rewrite(
 					rtpstats.RTCPSenderReportPropagationDelay(refSenderReport),
 				); err == nil {
-					actBytes, err = actExtCopy.Marshal()
-					if err == nil {
-						hdr.SetExtension(uint8(d.absCaptureTimeExtID), actBytes)
-					}
+					n, err = actExtCopy.MarshalTo(actBuf[:])
 				}
 			}
+		}
+		if n != 0 {
+			actBytes = actBuf[:n]
+			hdr.SetExtension(uint8(d.absCaptureTimeExtID), pacerPacket.HoldExtension(actBytes))
 		}
 	}
 	d.addDummyExtensions(hdr)
 
-	// the sequencer copies the descriptor, which has to happen before Enqueue frees the scratch
+	// the sequencer copies from the translation params and the incoming packet, not from the pacer packet that Enqueue frees
 	if d.sequencer != nil {
 		d.sequencer.push(
 			extPkt.Arrival,
 			extPkt.ExtSequenceNumber,
 			tp.rtp.extSequenceNumber,
 			tp.rtp.extTimestamp,
-			hdr.Marker,
+			tp.marker,
 			int8(layer),
-			payload[:len(codecBytes)],
+			codecBytes,
 			tp.incomingHeaderSize,
 			ddBytes,
 			actBytes,
@@ -2315,8 +2315,8 @@ func (d *DownTrack) retransmitPacket(epm *extPacketMeta, sourcePkt []byte, isPro
 			hdr.SetExtension(uint8(d.dependencyDescriptorExtID), ddBytes)
 		}
 	}
-	if d.absCaptureTimeExtID != 0 && len(epm.actBytes) != 0 {
-		hdr.SetExtension(uint8(d.absCaptureTimeExtID), epm.actBytes)
+	if d.absCaptureTimeExtID != 0 && epm.actBytesSize != 0 {
+		hdr.SetExtension(uint8(d.absCaptureTimeExtID), epm.actBytes[:epm.actBytesSize])
 	}
 	d.addDummyExtensions(hdr)
 
@@ -2469,7 +2469,9 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	nackAcks := uint32(0)
 	nackMisses := uint32(0)
 	numRepeatedNACKs := uint32(0)
-	for _, epm := range d.sequencer.getExtPacketMetas(filtered) {
+	epms := d.sequencer.getExtPacketMetas(filtered)
+	for i := range epms {
+		epm := &epms[i]
 		if disallowedLayers[epm.layer] {
 			continue
 		}
@@ -2490,7 +2492,7 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 			numRepeatedNACKs++
 		}
 
-		d.retransmitPacket(&epm, pktBuff[:n], false)
+		d.retransmitPacket(epm, pktBuff[:n], false)
 	}
 
 	d.totalRepeatedNACKs.Add(numRepeatedNACKs)
