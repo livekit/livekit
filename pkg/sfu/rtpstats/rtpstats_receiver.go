@@ -156,7 +156,7 @@ func (rulf *receiverUpdateLoggingFields) MarshalLogObject(e zapcore.ObjectEncode
 		e.AddInt("snRolloverCount", rulf.snRolloverCount)
 		e.AddInt64("expectedTSJump", rulf.expectedTSJump)
 		e.AddInt("tsRolloverCount", rulf.tsRolloverCount)
-		e.AddTime("packetTime", time.Unix(0, rulf.packetTime))
+		e.AddTime("packetTime", monoToWall(rulf.packetTime))
 		e.AddDuration("timeSinceHighest", time.Duration(rulf.timeSinceHighest))
 		e.AddUint16("sequenceNumber", rulf.sequenceNumber)
 		e.AddUint32("timestamp", rulf.timestamp)
@@ -825,8 +825,7 @@ func (r *RTPStatsReceiver) LastSenderReportTime() time.Time {
 	defer r.lock.RUnlock()
 
 	if r.srNewest != nil && r.srNewest.At != 0 {
-		// srNewest.At is a mono timestamp, convert to wall time for comparison with time.Now()
-		return time.Now().Add(-time.Duration(mono.UnixNano() - r.srNewest.At))
+		return monoToWall(r.srNewest.At)
 	}
 
 	return time.Time{}

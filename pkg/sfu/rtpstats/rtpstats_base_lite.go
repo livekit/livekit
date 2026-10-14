@@ -34,6 +34,14 @@ const (
 	cFirstSnapshotID     = 1
 )
 
+// monoToWall converts a mono timestamp to wall time, 0 stays the Unix epoch
+func monoToWall(monoNano int64) time.Time {
+	if monoNano == 0 {
+		return time.Unix(0, 0)
+	}
+	return time.Now().Add(-time.Duration(mono.UnixNano() - monoNano))
+}
+
 // -------------------------------------------------------
 
 type RTPDeltaInfoLite struct {
@@ -84,7 +92,7 @@ func (s *snapshotLite) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	}
 
 	e.AddBool("isValid", s.isValid)
-	e.AddTime("startTime", time.Unix(0, s.startTime))
+	e.AddTime("startTime", monoToWall(s.startTime))
 	e.AddUint64("extStartSN", s.extStartSN)
 	e.AddUint64("bytes", s.bytes)
 	e.AddUint64("packetsOutOfOrder", s.packetsOutOfOrder)
@@ -345,8 +353,8 @@ func (r *rtpStatsBaseLite) deltaInfoLite(
 	}
 	if packetsExpected == 0 {
 		deltaInfoLite = &RTPDeltaInfoLite{
-			StartTime: time.Unix(0, startTime),
-			EndTime:   time.Unix(0, endTime),
+			StartTime: monoToWall(startTime),
+			EndTime:   monoToWall(endTime),
 		}
 		return
 	}
@@ -368,8 +376,8 @@ func (r *rtpStatsBaseLite) deltaInfoLite(
 	}
 
 	deltaInfoLite = &RTPDeltaInfoLite{
-		StartTime:         time.Unix(0, startTime),
-		EndTime:           time.Unix(0, endTime),
+		StartTime:         monoToWall(startTime),
+		EndTime:           monoToWall(endTime),
 		Packets:           packetsExpected,
 		Bytes:             now.bytes - then.bytes,
 		PacketsLost:       packetsLost,
@@ -394,8 +402,8 @@ func (r *rtpStatsBaseLite) marshalLogObject(e zapcore.ObjectEncoder, packetsExpe
 	}
 	elapsedSeconds := elapsed.Seconds()
 
-	e.AddTime("startTime", time.Unix(0, r.startTime))
-	e.AddTime("endTime", time.Unix(0, r.endTime))
+	e.AddTime("startTime", monoToWall(r.startTime))
+	e.AddTime("endTime", monoToWall(r.endTime))
 	e.AddDuration("elapsed", elapsed)
 
 	e.AddUint64("packetsExpected", packetsExpected)
@@ -433,7 +441,7 @@ func (r *rtpStatsBaseLite) marshalLogObject(e zapcore.ObjectEncoder, packetsExpe
 	e.AddUint32("nackRepeated", r.nackRepeated)
 
 	e.AddUint32("plis", r.plis)
-	e.AddTime("lastPli", time.Unix(0, r.lastPli))
+	e.AddTime("lastPli", monoToWall(r.lastPli))
 	return elapsedSeconds, nil
 }
 
@@ -461,8 +469,8 @@ func (r *rtpStatsBaseLite) toProto(packetsExpected, packetsSeenMinusPadding, pac
 	}
 
 	p := &livekit.RTPStats{
-		StartTime:            timestamppb.New(time.Unix(0, r.startTime)),
-		EndTime:              timestamppb.New(time.Unix(0, endTime)),
+		StartTime:            timestamppb.New(monoToWall(r.startTime)),
+		EndTime:              timestamppb.New(monoToWall(endTime)),
 		Duration:             elapsed,
 		Packets:              uint32(packetsSeenMinusPadding),
 		PacketRate:           packetRate,
@@ -477,7 +485,7 @@ func (r *rtpStatsBaseLite) toProto(packetsExpected, packetsSeenMinusPadding, pac
 		NackMisses:           r.nackMisses,
 		NackRepeated:         r.nackRepeated,
 		Plis:                 r.plis,
-		LastPli:              timestamppb.New(time.Unix(0, r.lastPli)),
+		LastPli:              timestamppb.New(monoToWall(r.lastPli)),
 	}
 
 	for i := range len(r.gapHistogram) {

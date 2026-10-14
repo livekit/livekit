@@ -153,7 +153,7 @@ func (s *senderSnapshotWindow) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	}
 
 	e.AddBool("isValid", s.isValid)
-	e.AddTime("startTime", time.Unix(0, s.startTime))
+	e.AddTime("startTime", monoToWall(s.startTime))
 	e.AddUint64("extStartSN", s.extStartSN)
 	e.AddUint64("bytes", s.bytes)
 	e.AddUint64("headerBytes", s.headerBytes)
@@ -300,7 +300,7 @@ func (sulf *senderUpdateLoggingFields) MarshalLogObject(e zapcore.ObjectEncoder)
 		e.AddInt64("gapSN", sulf.gapSN)
 		e.AddUint64("currTS", sulf.extTimestamp)
 		e.AddInt64("gapTS", sulf.gapTS)
-		e.AddTime("packetTime", time.Unix(0, sulf.packetTime))
+		e.AddTime("packetTime", monoToWall(sulf.packetTime))
 		e.AddDuration("timeSinceHighest", time.Duration(sulf.timeSinceHighest))
 		e.AddBool("marker", sulf.marker)
 		e.AddInt("hdrSize", sulf.hdrSize)
@@ -1091,8 +1091,8 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) (*RTPDeltaInfo
 			maxJitterTime := thenSenderView.maxJitterFeed / float64(r.clockRate) * 1e6
 
 			deltaStatsSenderView = &RTPDeltaInfo{
-				StartTime:            time.Unix(0, startTime),
-				EndTime:              time.Unix(0, endTime),
+				StartTime:            monoToWall(startTime),
+				EndTime:              monoToWall(endTime),
 				Packets:              packetsExpected - uint32(nowSenderView.packetsPadding-thenSenderView.packetsPadding),
 				Bytes:                nowSenderView.bytes - thenSenderView.bytes,
 				HeaderBytes:          nowSenderView.headerBytes - thenSenderView.headerBytes,
@@ -1160,8 +1160,8 @@ func (r *RTPStatsSender) DeltaInfoSender(senderSnapshotID uint32) (*RTPDeltaInfo
 				maxJitterTime := thenReceiverView.maxJitter / float64(r.clockRate) * 1e6
 
 				deltaStatsReceiverView = &RTPDeltaInfo{
-					StartTime:            time.Unix(0, startTime),
-					EndTime:              time.Unix(0, endTime),
+					StartTime:            monoToWall(startTime),
+					EndTime:              monoToWall(endTime),
 					Packets:              packetsExpected - uint32(nowReceiverView.packetsPadding-thenReceiverView.packetsPadding),
 					Bytes:                nowReceiverView.bytes - thenReceiverView.bytes,
 					HeaderBytes:          nowReceiverView.headerBytes - thenReceiverView.headerBytes,
@@ -1452,7 +1452,7 @@ func (r lockedRTPStatsSenderLogEncoder) MarshalLogObject(e zapcore.ObjectEncoder
 	e.AddUint64("extStartTS", r.extStartTS)
 	e.AddUint64("extHighestTS", r.extHighestTS)
 
-	e.AddTime("lastRRTime", time.Unix(0, r.lastRRTime))
+	e.AddTime("lastRRTime", monoToWall(r.lastRRTime))
 	e.AddReflected("lastRR", r.lastRR)
 	e.AddUint64("extHighestSNFromRR", r.extHighestSNFromRR)
 	e.AddUint64("extHighestSNFromRRMisalignment", r.extHighestSNFromRRMisalignment)

@@ -185,7 +185,7 @@ func (w WrappedRTCPSenderReportStateLogger) MarshalLogObject(e zapcore.ObjectEnc
 	e.AddUint32("RtpTimestamp", rsrs.RtpTimestamp)
 	e.AddUint64("RtpTimestampExt", rsrs.RtpTimestampExt)
 	e.AddTime("NtpTimestamp", mediatransportutil.NtpTime(rsrs.NtpTimestamp).Time())
-	e.AddTime("At", time.Unix(0, rsrs.At))
+	e.AddTime("At", monoToWall(rsrs.At))
 	e.AddTime("AtAdjusted", time.Unix(0, rsrs.AtAdjusted))
 	e.AddUint32("Packets", rsrs.Packets)
 	e.AddUint64("Octets", rsrs.Octets)
@@ -439,10 +439,10 @@ func (r *rtpStatsBase) maybeAdjustFirstPacketTime(
 
 func (r *rtpStatsBase) firstPacketTimeAdjustLogFields(now, firstTime int64, adjustment int64, extNowTS, extStartTS uint64, srData *livekit.RTCPSenderReportState, tsOffset uint64, timeSinceReceive, timeSinceFirst, samplesDuration time.Duration, samplesDiff int64) []any {
 	return []any{
-		"startTime", time.Unix(0, r.startTime),
-		"nowTime", time.Unix(0, now),
-		"before", time.Unix(0, r.firstTime),
-		"after", time.Unix(0, firstTime),
+		"startTime", monoToWall(r.startTime),
+		"nowTime", monoToWall(now),
+		"before", monoToWall(r.firstTime),
+		"after", monoToWall(firstTime),
 		"adjustment", time.Duration(adjustment),
 		"firstTimeAdjustment", r.firstTimeAdjustment,
 		"extNowTS", extNowTS,
@@ -503,8 +503,8 @@ func (r *rtpStatsBase) deltaInfo(
 	}
 	if packetsExpected == 0 {
 		deltaInfo = &RTPDeltaInfo{
-			StartTime: time.Unix(0, startTime),
-			EndTime:   time.Unix(0, endTime),
+			StartTime: monoToWall(startTime),
+			EndTime:   monoToWall(endTime),
 		}
 		return
 	}
@@ -533,8 +533,8 @@ func (r *rtpStatsBase) deltaInfo(
 	}
 
 	deltaInfo = &RTPDeltaInfo{
-		StartTime:            time.Unix(0, startTime),
-		EndTime:              time.Unix(0, endTime),
+		StartTime:            monoToWall(startTime),
+		EndTime:              monoToWall(endTime),
 		Packets:              uint32(packetsExpected),
 		Bytes:                now.bytes - then.bytes,
 		HeaderBytes:          now.headerBytes - then.headerBytes,
@@ -570,9 +570,9 @@ func (r *rtpStatsBase) marshalLogObject(
 		return 0, err
 	}
 
-	e.AddTime("firstTime", time.Unix(0, r.firstTime))
+	e.AddTime("firstTime", monoToWall(r.firstTime))
 	e.AddDuration("firstTimeAdjustment", r.firstTimeAdjustment)
-	e.AddTime("highestTime", time.Unix(0, r.highestTime))
+	e.AddTime("highestTime", monoToWall(r.highestTime))
 
 	e.AddUint64("headerBytes", r.headerBytes)
 
@@ -721,8 +721,8 @@ func (r *rtpStatsBase) getDrift(extStartTS, extHighestTS uint64) (
 		driftSamples := int64(rtpClockTicks - r.rtpConverter.ToRTPExt(elapsed))
 		if elapsed > 0 {
 			packetDrift = &livekit.RTPDrift{
-				StartTime:      timestamppb.New(time.Unix(0, r.firstTime)),
-				EndTime:        timestamppb.New(time.Unix(0, r.highestTime)),
+				StartTime:      timestamppb.New(monoToWall(r.firstTime)),
+				EndTime:        timestamppb.New(monoToWall(r.highestTime)),
 				Duration:       elapsed.Seconds(),
 				StartTimestamp: extStartTS,
 				EndTimestamp:   extHighestTS,
@@ -759,8 +759,8 @@ func (r *rtpStatsBase) getDrift(extStartTS, extHighestTS uint64) (
 		if elapsed.Seconds() > 0.0 {
 			driftSamples := int64(rtpClockTicks - r.rtpConverter.ToRTPExt(elapsed))
 			receivedReportDrift = &livekit.RTPDrift{
-				StartTime:      timestamppb.New(time.Unix(0, r.srFirst.At)),
-				EndTime:        timestamppb.New(time.Unix(0, r.srNewest.At)),
+				StartTime:      timestamppb.New(monoToWall(r.srFirst.At)),
+				EndTime:        timestamppb.New(monoToWall(r.srNewest.At)),
 				Duration:       elapsed.Seconds(),
 				StartTimestamp: r.srFirst.RtpTimestampExt,
 				EndTimestamp:   r.srNewest.RtpTimestampExt,
