@@ -30,9 +30,21 @@ func TestAgent(t *testing.T) {
 		server := testutils.NewTestServer(bus)
 		t.Cleanup(server.Close)
 
+		// the worker's job request topic is registered asynchronously; the
+		// registration event is published after it, so wait for that before
+		// requesting a job below
+		registered := must.Get(client.SubscribeWorkerRegistered(context.Background(), agent.DefaultHandlerNamespace))
+		defer registered.Close()
+
 		worker := server.SimulateAgentWorker()
 		worker.Register(testAgentName, livekit.JobType_JT_ROOM)
 		jobAssignments := worker.JobAssignments.Observe()
+
+		select {
+		case <-registered.Channel():
+		case <-time.After(time.Second):
+			require.Fail(t, "registration timeout")
+		}
 
 		job := &livekit.Job{
 			Id:         guid.New(guid.AgentJobPrefix),

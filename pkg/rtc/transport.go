@@ -584,27 +584,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 				Config: params.CongestionControlConfig.SendSideBWE,
 				Logger: params.Logger,
 			})
-			switch behavior := pacer.PacerBehavior(params.CongestionControlConfig.SendSideBWEPacer); behavior {
-			case pacer.PacerBehaviorPassThrough:
-				t.pacer = pacer.NewPassThrough(params.Logger, t.bwe)
-			case pacer.PacerBehaviorNoQueue:
-				t.pacer = pacer.NewNoQueue(params.Logger, t.bwe)
-			default:
-				// leaky-bucket lands here: it is a recognized value, but LeakyBucket paces
-				// to a bitrate set through Pacer.SetBitrate and nothing drives that from
-				// the bandwidth estimate, so it would pace at a fixed rate and ignore
-				// congestion. Unknown values are rejected by CongestionControlConfig.
-				// Validate, so they only reach here from callers building TransportParams
-				// directly.
-				if behavior != "" {
-					params.Logger.Warnw(
-						"send side BWE pacer unavailable, falling back", nil,
-						"pacerBehavior", behavior,
-						"fallback", pacer.PacerBehaviorNoQueue,
-					)
-				}
-				t.pacer = pacer.NewNoQueue(params.Logger, t.bwe)
-			}
+			t.pacer = newSendSidePacer(pacer.PacerBehavior(params.CongestionControlConfig.SendSideBWEPacer), params.Logger, t.bwe)
 		} else {
 			t.bwe = remotebwe.NewRemoteBWE(remotebwe.RemoteBWEParams{
 				Config: params.CongestionControlConfig.RemoteBWE,
@@ -675,6 +655,34 @@ func (t *PCTransport) createPeerConnection() (cc.BandwidthEstimator, error) {
 
 	t.rtxInfoExtractorFactory = rtxInfoExtractorFactory
 	return bwe, nil
+}
+
+const (
+	// interval at which the leaky bucket pacer releases a window of bytes
+	leakyBucketPacerInterval = 10 * time.Millisecond
+)
+
+// newSendSidePacer builds the pacer for the configured behavior. unknown
+// values are rejected by CongestionControlConfig validation, only callers
+// building TransportParams directly reach the fallback
+func newSendSidePacer(behavior pacer.PacerBehavior, logger logger.Logger, bwe bwe.BWE) pacer.Pacer {
+	switch behavior {
+	case pacer.PacerBehaviorPassThrough:
+		return pacer.NewPassThrough(logger, bwe)
+	case pacer.PacerBehaviorNoQueue:
+		return pacer.NewNoQueue(logger, bwe)
+	case pacer.PacerBehaviorLeakybucket:
+		return pacer.NewLeakyBucket(logger, bwe, leakyBucketPacerInterval, pacer.InitialBitrate)
+	default:
+		if behavior != "" {
+			logger.Warnw(
+				"send side BWE pacer unavailable, falling back", nil,
+				"pacerBehavior", behavior,
+				"fallback", pacer.PacerBehaviorNoQueue,
+			)
+		}
+		return pacer.NewNoQueue(logger, bwe)
+	}
 }
 
 func (t *PCTransport) RTPStreamPublished(ssrc uint32, mid, rid string) {
