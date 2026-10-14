@@ -129,11 +129,12 @@ type FakeTelemetryService struct {
 		arg1 context.Context
 		arg2 *livekit.ReportInfo
 	}
-	RoomEndedStub        func(context.Context, *livekit.Room)
+	RoomEndedStub        func(context.Context, *livekit.Room, livekit.RoomEndReason)
 	roomEndedMutex       sync.RWMutex
 	roomEndedArgsForCall []struct {
 		arg1 context.Context
 		arg2 *livekit.Room
+		arg3 livekit.RoomEndReason
 	}
 	RoomProjectReporterStub        func(context.Context) roomobs.ProjectReporter
 	roomProjectReporterMutex       sync.RWMutex
@@ -880,17 +881,18 @@ func (fake *FakeTelemetryService) ReportArgsForCall(i int) (context.Context, *li
 	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakeTelemetryService) RoomEnded(arg1 context.Context, arg2 *livekit.Room) {
+func (fake *FakeTelemetryService) RoomEnded(arg1 context.Context, arg2 *livekit.Room, arg3 livekit.RoomEndReason) {
 	fake.roomEndedMutex.Lock()
 	fake.roomEndedArgsForCall = append(fake.roomEndedArgsForCall, struct {
 		arg1 context.Context
 		arg2 *livekit.Room
-	}{arg1, arg2})
+		arg3 livekit.RoomEndReason
+	}{arg1, arg2, arg3})
 	stub := fake.RoomEndedStub
-	fake.recordInvocation("RoomEnded", []interface{}{arg1, arg2})
+	fake.recordInvocation("RoomEnded", []interface{}{arg1, arg2, arg3})
 	fake.roomEndedMutex.Unlock()
 	if stub != nil {
-		fake.RoomEndedStub(arg1, arg2)
+		fake.RoomEndedStub(arg1, arg2, arg3)
 	}
 }
 
@@ -900,17 +902,17 @@ func (fake *FakeTelemetryService) RoomEndedCallCount() int {
 	return len(fake.roomEndedArgsForCall)
 }
 
-func (fake *FakeTelemetryService) RoomEndedCalls(stub func(context.Context, *livekit.Room)) {
+func (fake *FakeTelemetryService) RoomEndedCalls(stub func(context.Context, *livekit.Room, livekit.RoomEndReason)) {
 	fake.roomEndedMutex.Lock()
 	defer fake.roomEndedMutex.Unlock()
 	fake.RoomEndedStub = stub
 }
 
-func (fake *FakeTelemetryService) RoomEndedArgsForCall(i int) (context.Context, *livekit.Room) {
+func (fake *FakeTelemetryService) RoomEndedArgsForCall(i int) (context.Context, *livekit.Room, livekit.RoomEndReason) {
 	fake.roomEndedMutex.RLock()
 	defer fake.roomEndedMutex.RUnlock()
 	argsForCall := fake.roomEndedArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeTelemetryService) RoomProjectReporter(arg1 context.Context) roomobs.ProjectReporter {

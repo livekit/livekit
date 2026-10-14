@@ -280,8 +280,10 @@ func (s *RTCService) validateInternal(
 		pi.AdaptiveStream = joinRequest.GetConnectionSettings().GetAdaptiveStream()
 		pi.DisableICELite = joinRequest.GetConnectionSettings().GetDisableIceLite()
 
-		subscriberAllowPause := joinRequest.GetConnectionSettings().GetSubscriberAllowPause()
-		pi.SubscriberAllowPause = &subscriberAllowPause
+		if cs := joinRequest.GetConnectionSettings(); cs != nil && cs.SubscriberAllowPause != nil {
+			v := cs.GetSubscriberAllowPause()
+			pi.SubscriberAllowPause = &v
+		}
 
 		pi.AddTrackRequests = joinRequest.AddTrackRequests
 		pi.PublisherOffer = joinRequest.PublisherOffer

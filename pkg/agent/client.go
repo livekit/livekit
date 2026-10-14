@@ -62,9 +62,9 @@ type JobRequest struct {
 	// only set for participant jobs
 	Participant *livekit.ParticipantInfo
 	Metadata    string
-	AgentName  string
-	Deployment string
-	Attributes map[string]string
+	AgentName   string
+	Deployment  string
+	Attributes  map[string]string
 }
 
 type agentClient struct {

@@ -19,9 +19,66 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/utils/must"
 )
+
+func TestStaticConfigurationH264(t *testing.T) {
+	cm := NewStaticClientConfigurationManager(StaticConfigurations)
+
+	h264Disabled := func(info *livekit.ClientInfo) bool {
+		conf := cm.GetConfiguration(info)
+		if conf == nil || conf.DisabledCodecs == nil {
+			return false
+		}
+		for _, c := range conf.DisabledCodecs.Publish {
+			if mime.IsMimeTypeStringH264(c.Mime) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// desktop Linux Firefox publishes H.264 through OpenH264, so it must not be disabled
+	require.False(t, h264Disabled(&livekit.ClientInfo{Browser: "firefox", Os: "linux"}))
+	// Firefox for Android is still worked around
+	require.True(t, h264Disabled(&livekit.ClientInfo{Browser: "firefox mobile", Os: "android"}))
+}
+
+func TestStaticConfigurationAV1(t *testing.T) {
+	cm := NewStaticClientConfigurationManager(StaticConfigurations)
+
+	av1Disabled := func(info *livekit.ClientInfo) bool {
+		conf := cm.GetConfiguration(info)
+		if conf == nil || conf.DisabledCodecs == nil {
+			return false
+		}
+		for _, c := range conf.DisabledCodecs.Codecs {
+			if mime.IsMimeTypeStringEqual(c.Mime, mime.MimeTypeAV1.String()) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Firefox 155/156 decode only the base spatial layer of AV1 SVC
+	require.True(t, av1Disabled(&livekit.ClientInfo{Browser: "Firefox", BrowserVersion: "155.0", Os: "macOS"}))
+	require.True(t, av1Disabled(&livekit.ClientInfo{Browser: "firefox", BrowserVersion: "156.0.1", Os: "windows"}))
+	// an unknown version is treated as affected
+	require.True(t, av1Disabled(&livekit.ClientInfo{Browser: "firefox", Os: "linux"}))
+	// Firefox 157 decodes every layer, so it keeps AV1
+	require.False(t, av1Disabled(&livekit.ClientInfo{Browser: "firefox", BrowserVersion: "157.0", Os: "windows"}))
+	require.False(t, av1Disabled(&livekit.ClientInfo{Browser: "firefox", BrowserVersion: "158.0.2", Os: "windows"}))
+	require.False(t, av1Disabled(&livekit.ClientInfo{Browser: "chrome", Os: "linux"}))
+
+	// Firefox for Android keeps the AV1 rule alongside its H.264 publish rule
+	android := &livekit.ClientInfo{Browser: "firefox mobile", BrowserVersion: "156.0", Os: "android"}
+	require.True(t, av1Disabled(android))
+	conf := cm.GetConfiguration(android)
+	require.Len(t, conf.DisabledCodecs.Publish, 1)
+	require.True(t, mime.IsMimeTypeStringH264(conf.DisabledCodecs.Publish[0].Mime))
+}
 
 func TestScriptMatchConfiguration(t *testing.T) {
 	t.Run("no merge", func(t *testing.T) {

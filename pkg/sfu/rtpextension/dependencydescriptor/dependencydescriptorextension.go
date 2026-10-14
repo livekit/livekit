@@ -15,6 +15,7 @@
 package dependencydescriptor
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -22,6 +23,10 @@ import (
 
 // DependencyDescriptorExtension is a extension payload format in
 // https://aomediacodec.github.io/av1-rtp-spec/#dependency-descriptor-rtp-header-extension
+
+// ErrBufferTooSmall is returned by MarshalTo when the caller's storage cannot
+// hold the marshaled extension.
+var ErrBufferTooSmall = errors.New("dependency descriptor buffer too small")
 
 func formatBitmask(b *uint32) string {
 	if b == nil {
@@ -42,16 +47,46 @@ func (d *DependencyDescriptorExtension) Marshal() ([]byte, error) {
 }
 
 func (d *DependencyDescriptorExtension) MarshalWithActiveChains(activeChains uint32) ([]byte, error) {
-	writer, err := NewDependencyDescriptorWriter(nil, d.Structure, activeChains, d.Descriptor)
+	writer, size, err := d.newWriter(activeChains)
 	if err != nil {
 		return nil, err
 	}
-	buf := make([]byte, int(math.Ceil(float64(writer.ValueSizeBits())/8)))
-	writer.ResetBuf(buf)
-	if err = writer.Write(); err != nil {
+
+	buf := make([]byte, size)
+	writer = writer.withBuf(buf)
+	if err := writer.Write(); err != nil {
 		return nil, err
 	}
 	return buf, nil
+}
+
+// MarshalTo marshals into caller owned storage and returns the number of bytes
+// written, or ErrBufferTooSmall, leaving buf untouched, if the extension does not fit.
+func (d *DependencyDescriptorExtension) MarshalTo(buf []byte) (int, error) {
+	writer, size, err := d.newWriter(^uint32(0))
+	if err != nil {
+		return 0, err
+	}
+	if len(buf) < size {
+		// bare sentinel, key frames take this path and formatting an error there would allocate
+		return 0, ErrBufferTooSmall
+	}
+
+	writer = writer.withBuf(buf[:size])
+	if err := writer.Write(); err != nil {
+		return 0, err
+	}
+	return size, nil
+}
+
+// newWriter returns a writer for the extension, by value so that it stays on the
+// caller's stack, along with the number of bytes the marshaled extension needs.
+func (d *DependencyDescriptorExtension) newWriter(activeChains uint32) (DependencyDescriptorWriter, int, error) {
+	writer := newDependencyDescriptorWriter(nil, d.Structure, activeChains, d.Descriptor)
+	if err := writer.findBestTemplate(); err != nil {
+		return writer, 0, err
+	}
+	return writer, int(math.Ceil(float64(writer.ValueSizeBits()) / 8)), nil
 }
 
 func (d *DependencyDescriptorExtension) Unmarshal(buf []byte) (int, error) {
@@ -67,6 +102,9 @@ const (
 	MaxDecodeTargets = 32
 	MaxTemplates     = 64
 
+	// MaxInlineExtensionSize is the inline storage the forwarding path and the pacer reserve for a marshaled extension, pion's one byte profile cap
+	MaxInlineExtensionSize = 16
+
 	AllChainsAreActive = uint32(0)
 
 	ExtensionURI = "https://aomediacodec.github.io/av1-rtp-spec/#dependency-descriptor-rtp-header-extension"
@@ -75,9 +113,10 @@ const (
 // ------------------------------------------------------------------------------
 
 type DependencyDescriptor struct {
-	FirstPacketInFrame         bool
-	LastPacketInFrame          bool
-	FrameNumber                uint16
+	FirstPacketInFrame bool
+	LastPacketInFrame  bool
+	FrameNumber        uint16
+	// Unmarshal writes into FrameDependencies and Resolution when they are set, else it allocates them
 	FrameDependencies          *FrameDependencyTemplate
 	Resolution                 *RenderResolution
 	ActiveDecodeTargetsBitmask *uint32
@@ -161,6 +200,15 @@ func (t *FrameDependencyTemplate) Clone() *FrameDependencyTemplate {
 	copy(t2.ChainDiffs, t.ChainDiffs)
 
 	return t2
+}
+
+// CopyInto copies t into dst and reuses the slices of dst
+func (t *FrameDependencyTemplate) CopyInto(dst *FrameDependencyTemplate) {
+	dst.SpatialId = t.SpatialId
+	dst.TemporalId = t.TemporalId
+	dst.DecodeTargetIndications = append(dst.DecodeTargetIndications[:0], t.DecodeTargetIndications...)
+	dst.FrameDiffs = append(dst.FrameDiffs[:0], t.FrameDiffs...)
+	dst.ChainDiffs = append(dst.ChainDiffs[:0], t.ChainDiffs...)
 }
 
 // ------------------------------------------------------------------------------

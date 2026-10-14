@@ -34,3 +34,10 @@ var (
 		},
 	}
 )
+
+// initPooledRTPHeader sets hdr to h while keeping the pooled header's
+// Extensions capacity, so SetExtension does not allocate per packet.
+func initPooledRTPHeader(hdr *rtp.Header, h rtp.Header) {
+	h.Extensions = hdr.Extensions[:0]
+	*hdr = h
+}
