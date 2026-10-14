@@ -18,7 +18,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/binary"
-	"math/rand"
 	"sync"
 	"testing"
 	"time"
@@ -615,7 +614,7 @@ func TestBufferFECNACKNotSentForRecoveredPacket(t *testing.T) {
 
 	// single FEC packet protecting the whole window; dropping two of the
 	// protected packets keeps the window unrecoverable until one arrives
-	media := fecTestMediaPackets(t, 100, 5) // 100..104
+	media := rtptest.GenerateVP8Packets(100, 5, uint8(vp8Codec.PayloadType), fecTestMediaSSRC) // 100..104
 	fecPackets := pionflexfec.NewFlexEncoder03(fecTestFECPT, fecTestFECSSRC).EncodeFec(media, 1)
 	require.Len(t, fecPackets, 1)
 
@@ -624,9 +623,9 @@ func TestBufferFECNACKNotSentForRecoveredPacket(t *testing.T) {
 	writePacket(t, primary, &media[4]) // 104 -> gap 102, 103
 
 	// an unrelated gap outside the FEC-protected window that FEC cannot recover
-	extra := fecTestMediaPackets(t, 105, 3) // 105..107
-	writePacket(t, primary, &extra[0])      // 105
-	writePacket(t, primary, &extra[2])      // 107 -> gap 106
+	extra := rtptest.GenerateVP8Packets(105, 3, uint8(vp8Codec.PayloadType), fecTestMediaSSRC) // 105..107
+	writePacket(t, primary, &extra[0])                                                         // 105
+	writePacket(t, primary, &extra[2])                                                         // 107 -> gap 106
 	const unrecoverableSN = uint16(106)
 
 	// FEC packet retained: two protected packets (102, 103) still missing
