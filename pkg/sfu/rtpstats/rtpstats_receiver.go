@@ -824,8 +824,9 @@ func (r *RTPStatsReceiver) LastSenderReportTime() time.Time {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
-	if r.srNewest != nil {
-		return time.Unix(0, r.srNewest.At)
+	if r.srNewest != nil && r.srNewest.At != 0 {
+		// srNewest.At is a mono timestamp, convert to wall time for comparison with time.Now()
+		return time.Now().Add(-time.Duration(mono.UnixNano() - r.srNewest.At))
 	}
 
 	return time.Time{}
