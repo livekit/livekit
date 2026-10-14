@@ -1709,6 +1709,9 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remo
 			return err
 		}
 		t.setRemoteOfferParsed(sd.Type, parsed)
+		if sd.Type == webrtc.SDPTypeOffer {
+			t.params.Handler.OnSetRemoteDescriptionOffer()
+		}
 
 		rtxRepairs := nonSimulcastRTXRepairsFromSDP(parsed, t.params.Logger)
 		if len(rtxRepairs) > 0 {
