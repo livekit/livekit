@@ -1138,7 +1138,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 		if !d.params.DisableSenderReportPassThrough {
 			// pass through the original publisher capture time verbatim, consistent
 			// with sender reports also being passed through unchanged.
-			n, err = extPkt.AbsCaptureTimeExt.MarshalTo(actBuf[:])
+			n, _ = extPkt.AbsCaptureTimeExt.MarshalTo(actBuf[:])
 		} else {
 			// normalize capture time to SFU clock.
 			// NOTE: even if there is estimated offset populated, just re-map the
@@ -1152,7 +1152,7 @@ func (d *DownTrack) WriteRTP(extPkt *buffer.ExtPacket, layer int32) int32 {
 				if err = actExtCopy.Rewrite(
 					rtpstats.RTCPSenderReportPropagationDelay(refSenderReport),
 				); err == nil {
-					n, err = actExtCopy.MarshalTo(actBuf[:])
+					n, _ = actExtCopy.MarshalTo(actBuf[:])
 				}
 			}
 		}
