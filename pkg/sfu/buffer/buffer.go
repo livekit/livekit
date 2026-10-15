@@ -571,7 +571,6 @@ func (b *Buffer) writeFEC(fecPkt *rtp.Packet, arrivalTime int64) {
 
 	fecDelta, onFECRecovery := b.feedFECLocked(fecPkt, arrivalTime)
 	b.finishWriteLocked(arrivalTime, fecDelta, onFECRecovery)
-	return
 }
 
 // feedFECLocked runs a media or FEC packet through the FEC decoder and
