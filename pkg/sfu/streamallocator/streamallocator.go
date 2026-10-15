@@ -214,11 +214,17 @@ var (
 // ---------------------------------------------------------------------------
 
 type StreamAllocatorParams struct {
-	Config    StreamAllocatorConfig
-	BWE       bwe.BWE
-	Pacer     pacer.Pacer
-	RTTGetter func() (float64, bool)
-	Logger    logger.Logger
+	// AdditionalProbeDemand returns the additional media bitrate a local encoder
+	// could produce beyond current allocation. Zero means no unmet demand.
+	// This does not change measured layer bitrates or the channel capacity.
+	// Used only in padding mode. Called on the allocator event loop; it must not
+	// block or re-enter the allocator. Inactive/retired encoders must return zero.
+	AdditionalProbeDemand func() int64
+	Config                StreamAllocatorConfig
+	BWE                   bwe.BWE
+	Pacer                 pacer.Pacer
+	RTTGetter             func() (float64, bool)
+	Logger                logger.Logger
 }
 
 type StreamAllocator struct {
@@ -723,6 +729,10 @@ func (s *StreamAllocator) handleSignalFeedback(event Event) {
 }
 
 func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
+	// Local encoder demand can change without a spatial subscription change.
+	if s.params.AdditionalProbeDemand != nil {
+		s.adjustState()
+	}
 	// if pause is allowed, there may be no packets sent and BWE could be in congested state,
 	// reset BWE if that persists for a while
 	if s.allowPause && s.state == streamAllocatorStateDeficient && s.params.BWE.CongestionState() != bwe.CongestionStateNone && s.params.Pacer.TimeSinceLastSentPacket() > s.params.Config.PausedMinWait {
@@ -918,6 +928,10 @@ func (s *StreamAllocator) setState(state streamAllocatorState) {
 }
 
 func (s *StreamAllocator) adjustState() {
+	if s.additionalProbeDemand() > 0 {
+		s.setState(streamAllocatorStateDeficient)
+		return
+	}
 	for _, track := range s.getVideoTracks() {
 		if track.IsDeficient() {
 			s.setState(streamAllocatorStateDeficient)
@@ -1377,8 +1391,25 @@ func (s *StreamAllocator) maybeProbeWithPadding() {
 			"stream allocator: adding probe",
 			"probeClusterInfo", pci,
 		)
-		break
+		return
 	}
+	delta := s.additionalProbeDemand()
+	if delta <= 0 {
+		return
+	}
+	usage := s.getExpectedBandwidthUsage()
+	s.prober.AddCluster(ccutils.ProbeClusterModeUniform, ccutils.ProbeClusterGoal{
+		AvailableBandwidthBps: int(s.committedChannelCapacity), ExpectedUsageBps: int(usage),
+		DesiredBps: int(usage + max(delta*s.params.Config.ProbeOveragePct/100, s.params.Config.ProbeMinBps)),
+		Duration:   s.params.BWE.ProbeDuration(),
+	})
+}
+
+func (s *StreamAllocator) additionalProbeDemand() int64 {
+	if !s.enabled || s.params.Config.ProbeMode != ProbeModePadding || s.params.AdditionalProbeDemand == nil {
+		return 0
+	}
+	return max(s.params.AdditionalProbeDemand(), 0)
 }
 
 func (s *StreamAllocator) getVideoTracks() []*Track {
