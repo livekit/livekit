@@ -735,7 +735,7 @@ func (s *StreamAllocator) handleSignalFeedback(event Event) {
 func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 	// if pause is allowed, there may be no packets sent and BWE could be in congested state,
 	// reset BWE if that persists for a while
-	if s.allowPause && s.state == streamAllocatorStateDeficient && s.params.BWE.CongestionState() != bwe.CongestionStateNone && s.params.Pacer.TimeSinceLastSentPacket() > s.params.Config.PausedMinWait {
+	if s.allowPause && (s.state == streamAllocatorStateDeficient || s.additionalProbeDemand() > 0) && s.params.BWE.CongestionState() != bwe.CongestionStateNone && s.params.Pacer.TimeSinceLastSentPacket() > s.params.Config.PausedMinWait {
 		s.params.Logger.Infow("stream allocator: resetting bwe to enable probing")
 		s.maybeStopProbe()
 		s.params.BWE.Reset()
@@ -778,6 +778,9 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 	// probe if necessary and timing is right
 	if s.state == streamAllocatorStateDeficient || s.additionalProbeDemand() > 0 {
 		s.maybeProbe()
+	} else if s.params.AdditionalProbeDemand != nil && s.prober.IsRunning() {
+		// The callback can withdraw demand without a track allocation event.
+		s.maybeStopProbe()
 	}
 
 	if time.Since(s.lastRTTTime) > cRTTPullInterval {
