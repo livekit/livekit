@@ -18,7 +18,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/binary"
-	"math/rand"
 	"sync"
 	"testing"
 	"time"
@@ -31,6 +30,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/livekit-server/pkg/sfu/testutils/rtptest"
 	"github.com/livekit/mediatransportutil/pkg/twcc"
 )
 
@@ -47,34 +47,6 @@ var flexFECCodec = webrtc.RTPCodecParameters{
 		SDPFmtpLine: "repair-window=10000000",
 	},
 	PayloadType: webrtc.PayloadType(fecTestFECPT),
-}
-
-func fecTestMediaPackets(t *testing.T, baseSN uint16, count int) []rtp.Packet {
-	t.Helper()
-	rng := rand.New(rand.NewSource(int64(baseSN)))
-	pkts := make([]rtp.Packet, 0, count)
-	for i := 0; i < count; i++ {
-		payload := make([]byte, 50+rng.Intn(200))
-		rng.Read(payload)
-		// valid VP8 payload descriptor (S=1, no extensions) so the video
-		// packet processing in the buffer accepts the packet
-		payload[0] = 0x10
-		sn := baseSN + uint16(i)
-		pkts = append(pkts, rtp.Packet{
-			Header: rtp.Header{
-				Version:        2,
-				PayloadType:    uint8(vp8Codec.PayloadType),
-				SequenceNumber: sn,
-				// derive timestamp from the sequence number so windows
-				// generated separately stay monotonic
-				Timestamp: 90000 + 3000*uint32(sn),
-				SSRC:      fecTestMediaSSRC,
-				Marker:    i == count-1,
-			},
-			Payload: payload,
-		})
-	}
-	return pkts
 }
 
 func bindFECTestBuffer(t *testing.T, buff *Buffer) {
@@ -195,7 +167,7 @@ func TestBufferFECRecoversDroppedPacket(t *testing.T) {
 		receivedDelta += received
 	})
 
-	media := fecTestMediaPackets(t, 100, 10)
+	media := rtptest.GenerateVP8Packets(100, 10, uint8(vp8Codec.PayloadType), fecTestMediaSSRC)
 	encoder := pionflexfec.NewFlexEncoder03(fecTestFECPT, fecTestFECSSRC)
 	fecPackets := encoder.EncodeFec(media, 2)
 	require.NotEmpty(t, fecPackets)
@@ -218,6 +190,17 @@ func TestBufferFECRecoversDroppedPacket(t *testing.T) {
 	assert.Equal(t, 1, recoveredDelta)
 	assert.Equal(t, len(fecPackets), receivedDelta)
 
+	fecPayloadBytes := 0
+	for i := range fecPackets {
+		fecPayloadBytes += len(fecPackets[i].Payload)
+	}
+	rtpStats := primary.GetStats()
+	require.NotNil(t, rtpStats)
+	assert.EqualValues(t, len(fecPackets), rtpStats.FecPackets)
+	assert.EqualValues(t, fecPayloadBytes, rtpStats.FecBytes)
+	assert.EqualValues(t, 0, rtpStats.FecPacketsDiscarded)
+	assert.EqualValues(t, 1, rtpStats.FecPacketsRecovered)
+
 	// the 9 received packets flow through the ext packet pipeline, the
 	// recovered one fills the bucket like an RTX repair
 	extSNBySN := readExtSequenceNumbers(t, primary, len(media)-1)
@@ -237,7 +220,7 @@ func TestBufferFECRecoversEncryptedPayload(t *testing.T) {
 	aead, err := cipher.NewGCM(block)
 	require.NoError(t, err)
 
-	media := fecTestMediaPackets(t, 120, 5)
+	media := rtptest.GenerateVP8Packets(120, 5, uint8(vp8Codec.PayloadType), fecTestMediaSSRC)
 	plaintexts := make([][]byte, len(media))
 	for i := range media {
 		plaintexts[i] = append([]byte("encrypted-video-frame-"), byte(i))
@@ -293,7 +276,7 @@ func TestBufferFECRecoveryCallbackCanReenterBuffer(t *testing.T) {
 		callbackDone <- struct{}{}
 	})
 
-	media := fecTestMediaPackets(t, 150, 5)
+	media := rtptest.GenerateVP8Packets(150, 5, uint8(vp8Codec.PayloadType), fecTestMediaSSRC)
 	for i := range media {
 		writePacket(t, primary, &media[i])
 	}
@@ -332,7 +315,7 @@ func TestBufferFECPairAfterPackets(t *testing.T) {
 	bindFECTestBuffer(t, primary)
 
 	encoder := pionflexfec.NewFlexEncoder03(fecTestFECPT, fecTestFECSSRC)
-	media := fecTestMediaPackets(t, 200, 10)
+	media := rtptest.GenerateVP8Packets(200, 10, uint8(vp8Codec.PayloadType), fecTestMediaSSRC)
 	fecPackets := encoder.EncodeFec(media, 2)
 	require.NotEmpty(t, fecPackets)
 
@@ -361,7 +344,7 @@ func TestBufferFECPairAfterPackets(t *testing.T) {
 	assert.EqualValues(t, 1, stats.PacketsRecovered)
 
 	// the next window recovers normally
-	media2 := fecTestMediaPackets(t, 210, 10)
+	media2 := rtptest.GenerateVP8Packets(210, 10, uint8(vp8Codec.PayloadType), fecTestMediaSSRC)
 	fecPackets2 := encoder.EncodeFec(media2, 2)
 	require.NotEmpty(t, fecPackets2)
 
@@ -393,7 +376,7 @@ func TestBufferFECCoupledBeforeBuffersExist(t *testing.T) {
 	fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
 	bindFECTestBuffer(t, primary)
 
-	media := fecTestMediaPackets(t, 300, 5)
+	media := rtptest.GenerateVP8Packets(300, 5, uint8(vp8Codec.PayloadType), fecTestMediaSSRC)
 	encoder := pionflexfec.NewFlexEncoder03(fecTestFECPT, fecTestFECSSRC)
 	fecPackets := encoder.EncodeFec(media, 1)
 	require.NotEmpty(t, fecPackets)
@@ -424,7 +407,7 @@ func TestBufferFECSequenceNumberWrap(t *testing.T) {
 	fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
 	bindFECTestBuffer(t, primary)
 
-	media := fecTestMediaPackets(t, 65533, 5)
+	media := rtptest.GenerateVP8Packets(65533, 5, uint8(vp8Codec.PayloadType), fecTestMediaSSRC)
 	for i := range media {
 		media[i].Timestamp = 90000 + 3000*uint32(i)
 	}
@@ -454,7 +437,7 @@ func TestBufferFECRecoveryAfterPaddingRemoval(t *testing.T) {
 	fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
 	bindFECTestBuffer(t, primary)
 
-	media := fecTestMediaPackets(t, 800, 5)
+	media := rtptest.GenerateVP8Packets(800, 5, uint8(vp8Codec.PayloadType), fecTestMediaSSRC)
 	fecPackets := pionflexfec.NewFlexEncoder03(fecTestFECPT, fecTestFECSSRC).EncodeFec(media, 1)
 	require.Len(t, fecPackets, 1)
 
@@ -523,7 +506,7 @@ func TestBufferFECIgnoresUnexpectedPayloadType(t *testing.T) {
 		Codecs: []webrtc.RTPCodecParameters{vp8Codec},
 	}, vp8Codec.RTPCodecCapability, 0))
 
-	media := fecTestMediaPackets(t, 400, 5)
+	media := rtptest.GenerateVP8Packets(400, 5, uint8(vp8Codec.PayloadType), fecTestMediaSSRC)
 	encoder := pionflexfec.NewFlexEncoder03(fecTestFECPT, fecTestFECSSRC)
 	fecPackets := encoder.EncodeFec(media, 1)
 	require.NotEmpty(t, fecPackets)
@@ -576,7 +559,7 @@ func TestBufferFECNACKSuppression(t *testing.T) {
 	factory.SetFECPair(fecTestFECSSRC, fecTestMediaSSRC)
 	bindFECTestBuffer(t, primary)
 
-	media := fecTestMediaPackets(t, 700, 10)
+	media := rtptest.GenerateVP8Packets(700, 10, uint8(vp8Codec.PayloadType), fecTestMediaSSRC)
 	encoder := pionflexfec.NewFlexEncoder03(fecTestFECPT, fecTestFECSSRC)
 	fecPackets := encoder.EncodeFec(media, 2)
 	require.NotEmpty(t, fecPackets)
@@ -631,7 +614,7 @@ func TestBufferFECNACKNotSentForRecoveredPacket(t *testing.T) {
 
 	// single FEC packet protecting the whole window; dropping two of the
 	// protected packets keeps the window unrecoverable until one arrives
-	media := fecTestMediaPackets(t, 100, 5) // 100..104
+	media := rtptest.GenerateVP8Packets(100, 5, uint8(vp8Codec.PayloadType), fecTestMediaSSRC) // 100..104
 	fecPackets := pionflexfec.NewFlexEncoder03(fecTestFECPT, fecTestFECSSRC).EncodeFec(media, 1)
 	require.Len(t, fecPackets, 1)
 
@@ -640,9 +623,9 @@ func TestBufferFECNACKNotSentForRecoveredPacket(t *testing.T) {
 	writePacket(t, primary, &media[4]) // 104 -> gap 102, 103
 
 	// an unrelated gap outside the FEC-protected window that FEC cannot recover
-	extra := fecTestMediaPackets(t, 105, 3) // 105..107
-	writePacket(t, primary, &extra[0])      // 105
-	writePacket(t, primary, &extra[2])      // 107 -> gap 106
+	extra := rtptest.GenerateVP8Packets(105, 3, uint8(vp8Codec.PayloadType), fecTestMediaSSRC) // 105..107
+	writePacket(t, primary, &extra[0])                                                         // 105
+	writePacket(t, primary, &extra[2])                                                         // 107 -> gap 106
 	const unrecoverableSN = uint16(106)
 
 	// FEC packet retained: two protected packets (102, 103) still missing
