@@ -1178,7 +1178,9 @@ func (r *RoomManager) refreshToken(participant types.LocalParticipant) error {
 		SetAttributes(grants.Attributes).
 		SetVideoGrant(grants.Video).
 		SetRoomConfig(grants.GetRoomConfiguration()).
-		SetRoomPreset(grants.RoomPreset)
+		SetRoomPreset(grants.RoomPreset).
+		// keep the join token's grant; self-hosted never adds one, as there is no Cloud ingest behind it
+		SetObservabilityGrant(grants.Observability)
 	jwt, err := token.ToJWT()
 	if err == nil {
 		err = participant.SendRefreshToken(jwt)
