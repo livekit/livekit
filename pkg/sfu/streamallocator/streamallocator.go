@@ -216,7 +216,7 @@ var (
 type StreamAllocatorParams struct {
 	// AdditionalProbeDemand returns the additional media bitrate a local encoder
 	// could produce beyond current allocation. Zero means no unmet demand.
-	// This does not change measured layer bitrates or the channel capacity.
+	// This does not change track deficiency, measured layer bitrates or capacity.
 	// Used only in padding mode. Called on the allocator event loop; it must not
 	// block or re-enter the allocator. Inactive/retired encoders must return zero.
 	AdditionalProbeDemand func() int64
@@ -631,6 +631,10 @@ func (s *StreamAllocator) maybePostEventAllocateTrack(downTrack *sfu.DownTrack) 
 }
 
 func (s *StreamAllocator) ping(pingGeneration uint32, interval time.Duration) {
+	// A local encoder can change demand without a track allocation event.
+	if s.params.AdditionalProbeDemand != nil {
+		interval = cPingShort
+	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -729,10 +733,6 @@ func (s *StreamAllocator) handleSignalFeedback(event Event) {
 }
 
 func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
-	// Local encoder demand can change without a spatial subscription change.
-	if s.params.AdditionalProbeDemand != nil {
-		s.adjustState()
-	}
 	// if pause is allowed, there may be no packets sent and BWE could be in congested state,
 	// reset BWE if that persists for a while
 	if s.allowPause && s.state == streamAllocatorStateDeficient && s.params.BWE.CongestionState() != bwe.CongestionStateNone && s.params.Pacer.TimeSinceLastSentPacket() > s.params.Config.PausedMinWait {
@@ -776,7 +776,7 @@ func (s *StreamAllocator) handleSignalPeriodicPing(Event) {
 	}
 
 	// probe if necessary and timing is right
-	if s.state == streamAllocatorStateDeficient {
+	if s.state == streamAllocatorStateDeficient || s.additionalProbeDemand() > 0 {
 		s.maybeProbe()
 	}
 
@@ -928,10 +928,6 @@ func (s *StreamAllocator) setState(state streamAllocatorState) {
 }
 
 func (s *StreamAllocator) adjustState() {
-	if s.additionalProbeDemand() > 0 {
-		s.setState(streamAllocatorStateDeficient)
-		return
-	}
 	for _, track := range s.getVideoTracks() {
 		if track.IsDeficient() {
 			s.setState(streamAllocatorStateDeficient)
