@@ -237,6 +237,18 @@ keys:
 #   urls:
 #     - https://your-host.com/handler
 
+# Analytics stats forwarding (disha self-host packet-loss timeline POC)
+# When stats_url is set, per-participant audio stats are POSTed to that endpoint on
+# every telemetry flush (~30s), signed the same way as webhooks (JWT carrying the
+# body sha256). Leave stats_url empty to disable (stock no-op behavior).
+# analytics:
+#   # disha endpoint that ingests per-flush participant audio stats
+#   stats_url: https://your-host.com/internal/livekit/stats
+#   # key used to sign the request; defaults to the webhook api_key
+#   api_key: <api_key>
+#   # per-request timeout
+#   timeout: 5s
+
 # Signal Relay
 # since v1.4.0, a more reliable, psrpc based signal relay is available
 # this gives us the ability to reliably proxy messages between a signal server and RTC node
