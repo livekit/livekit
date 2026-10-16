@@ -106,6 +106,7 @@ type extPacketMeta struct {
 func (epm extPacketMeta) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddObject("packetMeta", epm.packetMeta)
 	e.AddUint64("extSequenceNumber", epm.extSequenceNumber)
+	e.AddUint64("extTimestamp", epm.extTimestamp)
 	return nil
 }
 

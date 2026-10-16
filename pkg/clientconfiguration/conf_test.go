@@ -67,6 +67,8 @@ func TestStaticConfigurationAV1(t *testing.T) {
 	require.True(t, av1Disabled(&livekit.ClientInfo{Browser: "firefox", BrowserVersion: "158.0.2", Os: "windows"}))
 	// an unknown version is treated as affected
 	require.True(t, av1Disabled(&livekit.ClientInfo{Browser: "firefox", Os: "linux"}))
+	// should not be disabled for Chrome
+	require.False(t, av1Disabled(&livekit.ClientInfo{Browser: "chrome", Os: "linux"}))
 
 	// Firefox for Android keeps the AV1 rule alongside its H.264 publish rule
 	android := &livekit.ClientInfo{Browser: "firefox mobile", BrowserVersion: "156.0", Os: "android"}
