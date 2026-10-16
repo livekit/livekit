@@ -2004,17 +2004,19 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 			)
 			return starting, err
 		}
-	}
 
-	// adjust extRefTS to current packet's timestamp mapped to that of reference layer's
-	//
-	// The dummy start offset is applied modulo 2^32, before the cycles are restored from
-	// extLastTS. Adding it in 64 bits lets a borrow (negative offset) or a carry (positive offset)
-	// reach the upper half of extRefTS, and the wrap correction below only compares the lower 32
-	// bits, so it cannot undo it: extRefTS would end up 2^32 below (or above) the right value.
-	// With a negative offset that rejects every switch point as too far behind until the
-	// reference layer's 32-bit timestamp climbs past |dummyStartTSOffset|, which can take hours.
-	refTS = uint32(uint64(refTS) + f.dummyStartTSOffset)
+		// adjust refTS to current packet's timestamp mapped to that of reference layer's.
+		// Without a reference layer (skipReferenceTS), refTS is the last outgoing timestamp,
+		// which is already on the downtrack's timeline and needs no offset.
+		//
+		// The dummy start offset is applied modulo 2^32, before the cycles are restored from
+		// extLastTS. Adding it in 64 bits lets a borrow (negative offset) or a carry (positive offset)
+		// reach the upper half of extRefTS, and the wrap correction below only compares the lower 32
+		// bits, so it cannot undo it: extRefTS would end up 2^32 below (or above) the right value.
+		// With a negative offset that rejects every switch point as too far behind until the
+		// reference layer's 32-bit timestamp climbs past |dummyStartTSOffset|, which can take hours.
+		refTS = uint32(uint64(refTS) + f.dummyStartTSOffset)
+	}
 	extRefTS = (extRefTS & 0xFFFF_FFFF_0000_0000) + uint64(refTS)
 	lastTS := uint32(extLastTS)
 	if (refTS-lastTS) < 1<<31 && refTS < lastTS {
@@ -2029,7 +2031,9 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 		if err == nil {
 			extExpectedTS = tsExt
 			if f.lastReferencePayloadType == -1 {
-				f.dummyStartTSOffset = extExpectedTS - uint64(refTS)
+				if !f.skipReferenceTS {
+					f.dummyStartTSOffset = extExpectedTS - uint64(refTS)
+				}
 				extRefTS = extExpectedTS
 			}
 		} else {
@@ -2038,7 +2042,9 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 				rtpDiff := uint64(timeSinceFirst.Nanoseconds() * int64(f.clockRate) / 1e9)
 				extExpectedTS = f.extFirstTS + rtpDiff
 				if f.dummyStartTSOffset == 0 {
-					f.dummyStartTSOffset = extExpectedTS - uint64(refTS)
+					if !f.skipReferenceTS {
+						f.dummyStartTSOffset = extExpectedTS - uint64(refTS)
+					}
 					extRefTS = extExpectedTS
 					f.logger.Infow(
 						"calculating dummyStartTSOffset",
