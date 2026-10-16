@@ -2003,9 +2003,16 @@ func (f *Forwarder) processSourceSwitch(extPkt *buffer.ExtPacket, layer int32) (
 	}
 
 	// adjust extRefTS to current packet's timestamp mapped to that of reference layer's
-	extRefTS = (extRefTS & 0xFFFF_FFFF_0000_0000) + uint64(refTS) + f.dummyStartTSOffset
+	//
+	// The dummy start offset is applied modulo 2^32, before the cycles are restored from
+	// extLastTS. Adding it in 64 bits lets a borrow (negative offset) or a carry (positive offset)
+	// reach the upper half of extRefTS, and the wrap correction below only compares the lower 32
+	// bits, so it cannot undo it: extRefTS would end up 2^32 below (or above) the right value.
+	// With a negative offset that rejects every switch point as too far behind until the
+	// reference layer's 32-bit timestamp climbs past |dummyStartTSOffset|, which can take hours.
+	refTS = uint32(uint64(refTS) + f.dummyStartTSOffset)
+	extRefTS = (extRefTS & 0xFFFF_FFFF_0000_0000) + uint64(refTS)
 	lastTS := uint32(extLastTS)
-	refTS = uint32(extRefTS)
 	if (refTS-lastTS) < 1<<31 && refTS < lastTS {
 		extRefTS += (1 << 32)
 	}

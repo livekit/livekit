@@ -16,12 +16,15 @@ package sfu
 
 import (
 	"encoding/hex"
+	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 
+	"github.com/livekit/mediatransportutil"
 	"github.com/livekit/mediatransportutil/pkg/codec"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
@@ -31,6 +34,7 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/codecmunger"
 	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
+	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/testutils"
 	"github.com/livekit/livekit-server/pkg/sfu/videolayerselector"
 )
@@ -2890,4 +2894,154 @@ func TestForwarderSimulcastDependencyDescriptor(t *testing.T) {
 			require.Empty(t, tp.ddInline())
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Switching back to a layer after the reference layer's RTP timestamp wrapped,
+// on a downtrack that started with dummy forwarding (dummyStartTSOffset != 0).
+
+const (
+	wrapTestSSRCLow  = uint32(0x0a0a0a0a)
+	wrapTestSSRCHigh = uint32(0x0c0c0c0c)
+	wrapTestFrame    = uint32(3000) // 30 fps at 90 kHz
+	wrapTestHighTS   = uint32(0x10000000)
+)
+
+func newWrapTestForwarder(t *testing.T) *Forwarder {
+	t.Helper()
+	f := NewForwarder(
+		webrtc.RTPCodecTypeVideo,
+		logger.GetLogger(),
+		false, // skipReferenceTS
+		false, // disableOpportunisticAllocation
+		false, // enableStartAtDesiredQuality
+		rtpstats.NewRTPStatsSender(rtpstats.RTPStatsParams{}, 1024),
+	)
+	f.DetermineCodec(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264, ClockRate: 90000}, nil, livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM)
+	f.SetMaxSpatialLayer(2)
+	f.SetMaxTemporalLayer(0)
+	f.SetMaxPublishedLayer(2)
+	return f
+}
+
+func wrapTestBitrates(layer int32) Bitrates {
+	var brs Bitrates
+	brs[layer][0] = 1_000_000
+	return brs
+}
+
+func wrapTestKeyFrame(t *testing.T, ssrc uint32, sn uint16, ts uint32, tsCycles int, layer int32) *buffer.ExtPacket {
+	t.Helper()
+	extPkt, err := testutils.GetTestExtPacket(&testutils.TestExtPacketParams{
+		SequenceNumber: sn,
+		Timestamp:      ts,
+		TSCycles:       tsCycles,
+		SSRC:           ssrc,
+		PayloadSize:    20,
+		Marker:         true,
+		IsKeyFrame:     true,
+		VideoLayer:     buffer.VideoLayer{Spatial: layer, Temporal: 0},
+	})
+	require.NoError(t, err)
+	return extPkt
+}
+
+func wrapTestSenderReport(at time.Time, rtpTS uint32) *livekit.RTCPSenderReportState {
+	return &livekit.RTCPSenderReportState{
+		RtpTimestamp:    rtpTS,
+		RtpTimestampExt: uint64(rtpTS),
+		NtpTimestamp:    uint64(mediatransportutil.ToNtpTime(at)),
+		At:              at.UnixNano(),
+		AtAdjusted:      at.UnixNano(),
+	}
+}
+
+// runToHighLayer starts the forwarder with dummy forwarding, locks it onto layer 0 (whose first
+// timestamp is lowStart), switches it to layer 2 when layer 0 stops, forwards layer 2 for
+// `elapsed`, and then has the allocator target layer 0 again. It returns layer 0's timestamp and
+// timestamp cycles at that point, for the keyframe that switches back.
+func runToHighLayer(t *testing.T, f *Forwarder, lowStart uint32, elapsed time.Duration) (uint32, int) {
+	t.Helper()
+
+	// dummy start, then lock onto layer 0: layer 0 becomes the reference layer
+	f.maybeStart()
+	f.AllocateOptimal([]int32{0}, wrapTestBitrates(0), true, false)
+	tp, err := f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCLow, 1000, lowStart, 0, 0), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	require.Equal(t, int32(0), f.referenceLayerSpatial)
+	require.Equal(t, int32(0), f.CurrentLayer().Spatial)
+
+	now := time.Now()
+	f.SetRefSenderReport(0, wrapTestSenderReport(now, lowStart+wrapTestFrame))
+	f.SetRefSenderReport(2, wrapTestSenderReport(now, wrapTestHighTS+wrapTestFrame))
+
+	// layer 0 stops, layer 2 is available: switch to layer 2
+	alloc := f.AllocateOptimal([]int32{2}, wrapTestBitrates(2), true, false)
+	require.Equal(t, int32(2), alloc.TargetLayer.Spatial)
+	tp, err = f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCHigh, 5000, wrapTestHighTS+2*wrapTestFrame, 0, 2), 2)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	require.Equal(t, int32(2), f.CurrentLayer().Spatial)
+
+	// forward layer 2 for `elapsed`
+	ticks := uint64(elapsed.Seconds() * 90000)
+	highTS := uint64(wrapTestHighTS) + ticks
+	tp, err = f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCHigh, 5001, uint32(highTS), int(highTS>>32), 2), 2)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+
+	// layer 2 stops, layer 0 is back: the allocator targets layer 0
+	alloc = f.AllocateOptimal([]int32{0}, wrapTestBitrates(0), true, false)
+	require.Equal(t, int32(0), alloc.TargetLayer.Spatial)
+
+	lowTS := uint64(lowStart) + ticks + uint64(wrapTestFrame)
+	return uint32(lowTS), int(lowTS >> 32)
+}
+
+func TestForwarderSwitchBackAfterReferenceTimestampWrap(t *testing.T) {
+	// maybeStart draws the dummy first timestamp in [2^31, 2^31 + 2^30), so a reference layer
+	// starting above 2^31 + 2^30 always yields a negative dummyStartTSOffset
+	const lowStart = uint32(0xf0000000)
+
+	t.Run("after the wrap", func(t *testing.T) {
+		f := newWrapTestForwarder(t)
+		lowTS, cycles := runToHighLayer(t, f, lowStart, time.Hour)
+
+		// preconditions: negative offset, layer 0 wrapped and its 32-bit timestamp is below |offset|
+		offset := int64(f.dummyStartTSOffset)
+		require.Less(t, offset, int64(0))
+		require.Equal(t, 1, cycles)
+		require.Less(t, int64(lowTS), -offset)
+
+		tp, err := f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCLow, 1001, lowTS, cycles, 0), 0)
+		require.NoError(t, err)
+		require.False(t, tp.shouldDrop, "switch point rejected")
+		require.Equal(t, int32(0), f.CurrentLayer().Spatial)
+	})
+
+	t.Run("before the wrap", func(t *testing.T) {
+		f := newWrapTestForwarder(t)
+		lowTS, cycles := runToHighLayer(t, f, lowStart, 30*time.Minute)
+		require.Equal(t, 0, cycles)
+
+		tp, err := f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCLow, 1001, lowTS, cycles, 0), 0)
+		require.NoError(t, err)
+		require.False(t, tp.shouldDrop, "switch point rejected")
+		require.Equal(t, int32(0), f.CurrentLayer().Spatial)
+	})
+
+	t.Run("random start and duration", func(t *testing.T) {
+		rng := rand.New(rand.NewSource(1))
+		for i := 0; i < 400; i++ {
+			f := newWrapTestForwarder(t)
+			start := rng.Uint32()
+			elapsed := time.Duration(60+rng.Int63n(26*3600)) * time.Second
+			lowTS, cycles := runToHighLayer(t, f, start, elapsed)
+
+			tp, err := f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCLow, 1001, lowTS, cycles, 0), 0)
+			require.NoError(t, err)
+			require.False(t, tp.shouldDrop, "switch point rejected, start %d, elapsed %s", start, elapsed)
+		}
+	})
 }
