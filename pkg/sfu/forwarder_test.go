@@ -3045,3 +3045,45 @@ func TestForwarderSwitchBackAfterReferenceTimestampWrap(t *testing.T) {
 		}
 	})
 }
+
+// Receiver restart on a downtrack that started with dummy forwarding: the new reference layer's
+// timestamps must keep mapping onto the downtrack's existing timeline on every switch after
+// the restart, not only on the first one.
+func TestForwarderRestartKeepsTimestampContinuity(t *testing.T) {
+	f := newWrapTestForwarder(t)
+	f.rtpStats.SetClockRate(90000)
+
+	// dummy start, lock onto layer 0 with a reference timestamp that yields a negative offset
+	f.maybeStart()
+	f.AllocateOptimal([]int32{0}, wrapTestBitrates(0), true, false)
+	tp, err := f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCLow, 1000, 0xf0000000, 0, 0), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	require.Less(t, int64(f.dummyStartTSOffset), int64(0))
+
+	// the downtrack has been sending: rtpStats is initialized on the first forwarded packet
+	f.rtpStats.Update(time.Now().UnixNano(), tp.rtp.extSequenceNumber, tp.rtp.extTimestamp, true, 12, 20, 0, false)
+
+	// upstream receiver restart: new stream, new timestamp base for every layer
+	f.Restart()
+	f.DetermineCodec(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264, ClockRate: 90000}, nil, livekit.VideoLayer_ONE_SPATIAL_LAYER_PER_STREAM)
+	const newLowStart = uint32(0x20000000)
+	now := time.Now()
+	f.SetRefSenderReport(0, wrapTestSenderReport(now, newLowStart))
+	f.SetRefSenderReport(2, wrapTestSenderReport(now, wrapTestHighTS))
+
+	f.AllocateOptimal([]int32{0}, wrapTestBitrates(0), true, false)
+	tp, err = f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCLow, 1, newLowStart, 0, 0), 0)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	lastTS := tp.rtp.extTimestamp
+
+	// one frame later, switch to layer 2: the timestamp must advance by about one frame
+	f.AllocateOptimal([]int32{2}, wrapTestBitrates(2), true, false)
+	tp, err = f.GetTranslationParams(wrapTestKeyFrame(t, wrapTestSSRCHigh, 1, wrapTestHighTS+wrapTestFrame, 0, 2), 2)
+	require.NoError(t, err)
+	require.False(t, tp.shouldDrop)
+	advance := int64(tp.rtp.extTimestamp - lastTS)
+	require.Greater(t, advance, int64(0))
+	require.Less(t, advance, int64(90000), "timestamp jumped %d ticks (%.1f s) across the switch after restart", advance, float64(advance)/90000)
+}

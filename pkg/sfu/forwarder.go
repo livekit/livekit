@@ -1807,6 +1807,10 @@ func (f *Forwarder) Restart() {
 	f.setTargetLayer(buffer.InvalidLayer, buffer.InvalidLayerSpatial)
 	f.referenceLayerSpatial = buffer.InvalidLayerSpatial
 	f.lastReferencePayloadType = -1
+	// The next source switch re-derives the offset from the new reference layer's raw timestamp,
+	// so that it maps onto the downtrack's existing timeline (extExpectedTS). Keeping the old
+	// offset would fold it into the new one and shift every later switch by the old value.
+	f.dummyStartTSOffset = 0
 
 	for layer := range len(f.refInfos) {
 		f.refInfos[layer] = refInfo{}
