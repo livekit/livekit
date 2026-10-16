@@ -293,6 +293,19 @@ func (s *RTCService) validateInternal(
 		pi.ID = livekit.ParticipantID(joinRequest.ParticipantSid)
 	}
 
+	// reject outdated clients with a clear upgrade error, covering both the
+	// join and validate endpoints since both run through here. the floor
+	// applies to every connection attempt: the reconnect flag is asserted by
+	// the client, so exempting it would let an outdated client skip the
+	// minimum by setting it. 403 so existing client SDKs surface the message
+	// instead of a generic error
+	if !s.limits.CheckClientProtocol(pi.Client.Protocol) {
+		return res.roomName, routing.ParticipantInit{}, http.StatusForbidden, fmt.Errorf(
+			"%w: client protocol %d is below the configured minimum %d, upgrade the client SDK to connect",
+			ErrClientProtocolUnsupported, pi.Client.Protocol, s.limits.MinClientProtocol,
+		)
+	}
+
 	return res.roomName, pi, code, err
 }
 

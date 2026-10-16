@@ -377,6 +377,10 @@ type LimitConfig struct {
 	MaxParticipantIdentityLength int    `yaml:"max_participant_identity_length,omitempty"`
 	MaxParticipantNameLength     int    `yaml:"max_participant_name_length,omitempty"`
 
+	// reject clients whose reported protocol version is lower than this with a
+	// clear upgrade error at join time. 0 (default) accepts any version.
+	MinClientProtocol int `yaml:"min_client_protocol,omitempty"`
+
 	MaxDataBlobKeyLength int    `yaml:"max_data_blob_key_length,omitempty"`
 	MaxDataBlobSize      uint32 `yaml:"max_data_blobs_size,omitempty"`
 
@@ -407,6 +411,13 @@ func (l LimitConfig) CheckParticipantIdentityLength(identity string) bool {
 
 func (l LimitConfig) CheckParticipantNameLength(name string) bool {
 	return l.MaxParticipantNameLength == 0 || len(name) <= l.MaxParticipantNameLength
+}
+
+// CheckClientProtocol reports whether a client reporting the given protocol
+// version is allowed to connect. A minimum of 0 disables the check; an
+// unreported protocol (0) counts as below any positive minimum.
+func (l LimitConfig) CheckClientProtocol(protocol int32) bool {
+	return l.MinClientProtocol == 0 || int(protocol) >= l.MinClientProtocol
 }
 
 func (l LimitConfig) CheckMetadataSize(metadata string) bool {

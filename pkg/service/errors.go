@@ -32,6 +32,7 @@ var (
 	ErrNoRoomName                       = psrpc.NewErrorf(psrpc.InvalidArgument, "no room name")
 	ErrRoomNameExceedsLimits            = psrpc.NewErrorf(psrpc.InvalidArgument, "room name length exceeds limits")
 	ErrParticipantIdentityExceedsLimits = psrpc.NewErrorf(psrpc.InvalidArgument, "participant identity length exceeds limits")
+	ErrClientProtocolUnsupported        = psrpc.NewErrorf(psrpc.FailedPrecondition, "outdated client protocol")
 	ErrDestinationSameAsSourceRoom      = psrpc.NewErrorf(psrpc.InvalidArgument, "destination room cannot be the same as source room")
 	ErrOperationFailed                  = psrpc.NewErrorf(psrpc.Internal, "operation cannot be completed")
 	ErrParticipantNotFound              = psrpc.NewErrorf(psrpc.NotFound, "participant does not exist")
