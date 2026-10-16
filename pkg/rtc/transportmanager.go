@@ -966,6 +966,10 @@ func (t *TransportManager) ProcessPendingPublisherDataChannels() {
 	t.pendingDataChannelsPublisher = nil
 	t.lock.Unlock()
 
+	if t.useNegotiatedDataChannels() {
+		return
+	}
+
 	ordered := true
 	negotiated := true
 
