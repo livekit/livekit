@@ -152,6 +152,8 @@ type RTCConfig struct {
 
 	CongestionControl CongestionControlConfig `yaml:"congestion_control,omitempty"`
 
+	FlexFEC FlexFECConfig `yaml:"flexfec,omitempty"`
+
 	// allow TCP and TURN/TLS fallback
 	AllowTCPFallback *bool `yaml:"allow_tcp_fallback,omitempty"`
 
@@ -244,6 +246,12 @@ func (c CongestionControlConfig) Validate() error {
 			pacer.PacerBehaviorLeakybucket,
 		)
 	}
+}
+
+// FlexFECConfig controls FlexFEC-03 recovery on the publisher -> SFU leg.
+type FlexFECConfig struct {
+	// negotiate flexfec-03 with publishers and use it to recover lost upstream packets
+	UpstreamEnabled bool `yaml:"upstream_enabled,omitempty"`
 }
 
 type PlayoutDelayConfig struct {
