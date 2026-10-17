@@ -177,12 +177,7 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 	b.maybeCreateFECDecoderLocked()
 	b.Unlock()
 
-	if len(rtcpPackets) != 0 {
-		if cb := b.getOnRtcpFeedback(); cb != nil {
-			cb(rtcpPackets)
-		}
-	}
-
+	b.packetPostProcess(rtcpPackets, fecRecoveryDelta{}, nil)
 	return nil
 }
 
