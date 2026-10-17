@@ -383,25 +383,16 @@ func (b *Buffer) NotifyRTX(ssrc uint32, repairSSRC uint32, rsid string) {
 }
 
 func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime int64) {
-	rtcpPackets := b.processRTX(rtxPkt, arrivalTime)
-	if len(rtcpPackets) != 0 {
-		if cb := b.getOnRtcpFeedback(); cb != nil {
-			cb(rtcpPackets)
-		}
-	}
-}
-
-func (b *Buffer) processRTX(rtxPkt *rtp.Packet, arrivalTime int64) []rtcp.Packet {
 	b.Lock()
 	if !b.isBound {
 		b.Unlock()
-		return nil
+		return
 	}
 
 	if rtxPkt.PayloadType != b.rtxPayloadType {
 		b.logger.Debugw("unexpected rtx payload type", "expected", b.rtxPayloadType, "actual", rtxPkt.PayloadType)
 		b.Unlock()
-		return nil
+		return
 	}
 
 	if b.rtxPktBuf == nil {
@@ -411,7 +402,7 @@ func (b *Buffer) processRTX(rtxPkt *rtp.Packet, arrivalTime int64) []rtcp.Packet
 	if len(rtxPkt.Payload) < 2 {
 		b.logger.Warnw("rtx payload too short", nil, "size", len(rtxPkt.Payload))
 		b.Unlock()
-		return nil
+		return
 	}
 
 	repairedPkt := *rtxPkt
@@ -423,7 +414,7 @@ func (b *Buffer) processRTX(rtxPkt *rtp.Packet, arrivalTime int64) []rtcp.Packet
 	if err != nil {
 		b.logger.Errorw("could not marshal repaired packet", err, "ssrc", b.BufferBase.SSRC(), "sn", repairedPkt.SequenceNumber)
 		b.Unlock()
-		return nil
+		return
 	}
 
 	b.ingestLocked(b.rtxPktBuf[:n], &repairedPkt, arrivalTime, false, true)
@@ -438,7 +429,6 @@ func (b *Buffer) processRTX(rtxPkt *rtp.Packet, arrivalTime int64) []rtcp.Packet
 	b.Unlock()
 
 	b.packetPostProcess(rtcpPackets, fecDelta, onFECRecovery)
-	return nil
 }
 
 func (b *Buffer) SetPrimaryBufferForFEC(primaryBuffer *Buffer) {
