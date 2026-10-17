@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -151,6 +152,13 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	// ensure at least one node is available to handle the request
 	room, err := s.router.CreateRoom(ctx, &livekit.CreateRoomRequest{Name: req.Room})
 	if err != nil {
+		// The room is in the store, but routing cannot resolve a live node for it: either
+		// there is no room -> node mapping, or the mapping points at a node that has since
+		// left the cluster. There is no RTC room left to close, so delete the persisted
+		// state directly rather than failing every future attempt.
+		if errors.Is(err, routing.ErrNotFound) {
+			return s.deleteOrphanedRoom(ctx, livekit.RoomName(req.Room), err)
+		}
 		return nil, err
 	}
 
@@ -165,6 +173,44 @@ func (s *RoomService) DeleteRoom(ctx context.Context, req *livekit.DeleteRoomReq
 	res := &livekit.DeleteRoomResponse{}
 	RecordResponse(ctx, room)
 	return res, err
+}
+
+// deleteOrphanedRoom removes the persisted state of a room that is no longer hosted by any
+// live node, so that it stops being returned by ListRooms.
+//
+// A room becomes orphaned when the node it was mapped to leaves the cluster (pod rotation,
+// crash, scale-in) while the room record itself lives on in the store with no TTL. Routing
+// then resolves the room to a node that is gone, and the regular delete path fails at that
+// lookup before it ever reaches the store, so the room can never be removed through the API.
+func (s *RoomService) deleteOrphanedRoom(
+	ctx context.Context,
+	roomName livekit.RoomName,
+	routingErr error,
+) (*livekit.DeleteRoomResponse, error) {
+	// On the regular path the room is deleted by the node handling the request. Here there
+	// is no such node, so this store is the only thing that can remove the room. If it
+	// cannot, report the original routing failure rather than a delete that did not happen.
+	os, ok := s.roomStore.(OSSServiceStore)
+	if !ok {
+		return nil, routingErr
+	}
+
+	logger.Infow("deleting orphaned room, no live node hosts it", "room", roomName)
+
+	// best effort: drop the stale room -> node mapping so it does not leak
+	if router, ok := s.router.(routing.Router); ok {
+		if err := router.ClearRoomState(ctx, roomName); err != nil {
+			logger.Warnw("could not clear routing state for orphaned room", err, "room", roomName)
+		}
+	}
+
+	if err := os.DeleteRoom(ctx, roomName); err != nil {
+		return nil, err
+	}
+
+	res := &livekit.DeleteRoomResponse{}
+	RecordResponse(ctx, res)
+	return res, nil
 }
 
 func (s *RoomService) ListParticipants(ctx context.Context, req *livekit.ListParticipantsRequest) (res *livekit.ListParticipantsResponse, err error) {
