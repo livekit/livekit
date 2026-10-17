@@ -69,6 +69,12 @@ const (
 	finalizeDelay = telemetryStatsUpdateInterval + 15*time.Second
 
 	defaultForwardTimeout = 5 * time.Second
+
+	// bufferIdleTTL reaps a room's buffer when it has received no stats for this long.
+	// A live call refreshes its buffer every telemetryStatsUpdateInterval, so this only
+	// drops buffers for rooms that stopped producing stats without a ROOM_ENDED (e.g. a
+	// never-closing room), rather than leaking them for the process lifetime.
+	bufferIdleTTL = 10 * time.Minute
 )
 
 // statForwardPoint is one coalesced audio stat window for one participant/direction.
@@ -106,9 +112,10 @@ type statForwardPayload struct {
 
 // roomBuffer accumulates a single call's user-audio points until the room ends.
 type roomBuffer struct {
-	roomName string
-	roomID   string
-	points   []statForwardPoint
+	roomName  string
+	roomID    string
+	points    []statForwardPoint
+	lastTouch time.Time
 }
 
 type statsForwarder struct {
@@ -132,6 +139,10 @@ type statsForwarder struct {
 type participantMeta struct {
 	identity livekit.ParticipantIdentity
 	kind     livekit.ParticipantInfo_Kind
+	// joinedAt marks when the entry was (re)added. A resume reuses the SID and re-adds
+	// the entry before the departed-participant retention timer fires, so the timer
+	// only deletes when the entry has not been refreshed within identityRetention.
+	joinedAt time.Time
 }
 
 // newStatsForwarder returns a forwarder, or nil when forwarding is not configured
@@ -162,7 +173,7 @@ func newStatsForwarder(acfg config.AnalyticsConfig, webhookAPIKey, nodeID string
 	}
 
 	logger.Infow("stats forwarding enabled", "url", acfg.StatsURL)
-	return &statsForwarder{
+	f := &statsForwarder{
 		url:        acfg.StatsURL,
 		apiKey:     apiKey,
 		apiSecret:  secret,
@@ -172,6 +183,8 @@ func newStatsForwarder(acfg config.AnalyticsConfig, webhookAPIKey, nodeID string
 		identities: make(map[livekit.ParticipantID]participantMeta),
 		buffers:    make(map[string]*roomBuffer),
 	}
+	go f.sweepBuffers()
+	return f
 }
 
 // recordEvent maintains the participant SID -> identity map and triggers the
@@ -201,14 +214,19 @@ func (f *statsForwarder) recordEvent(event *livekit.AnalyticsEvent) {
 		livekit.AnalyticsEventType_PARTICIPANT_ACTIVE,
 		livekit.AnalyticsEventType_PARTICIPANT_RESUMED:
 		f.identityMu.Lock()
-		f.identities[sid] = participantMeta{identity: identity, kind: event.Participant.Kind}
+		f.identities[sid] = participantMeta{identity: identity, kind: event.Participant.Kind, joinedAt: time.Now()}
 		f.identityMu.Unlock()
 	case livekit.AnalyticsEventType_PARTICIPANT_LEFT,
 		livekit.AnalyticsEventType_PARTICIPANT_CONNECTION_ABORTED:
-		// Defer removal so the post-close flush can still resolve identity.
+		// Defer removal so the post-close flush can still resolve identity. A resume
+		// emits PARTICIPANT_LEFT then PARTICIPANT_RESUMED with the same SID, so only
+		// delete if the entry has not been (re)joined within identityRetention; a
+		// resume refreshes joinedAt and is thus preserved.
 		time.AfterFunc(identityRetention, func() {
 			f.identityMu.Lock()
-			delete(f.identities, sid)
+			if meta, ok := f.identities[sid]; ok && time.Since(meta.joinedAt) >= identityRetention {
+				delete(f.identities, sid)
+			}
 			f.identityMu.Unlock()
 		})
 	}
@@ -266,6 +284,23 @@ func (f *statsForwarder) bufferPoint(stat *livekit.AnalyticsStat, identity livek
 		f.buffers[key] = buf
 	}
 	buf.points = append(buf.points, point)
+	buf.lastTouch = time.Now()
+}
+
+// sweepBuffers reaps buffers for rooms that stopped producing stats without ever
+// firing ROOM_ENDED, so an abnormally-closed or never-closing room cannot keep its
+// buffer resident for the process lifetime.
+func (f *statsForwarder) sweepBuffers() {
+	for range time.Tick(bufferIdleTTL) {
+		cutoff := time.Now().Add(-bufferIdleTTL)
+		f.buffersMu.Lock()
+		for key, buf := range f.buffers {
+			if buf.lastTouch.Before(cutoff) {
+				delete(f.buffers, key)
+			}
+		}
+		f.buffersMu.Unlock()
+	}
 }
 
 // scheduleFinalize posts the buffered timeline once, a short delay after the room
@@ -347,10 +382,22 @@ func buildStatPoint(stat *livekit.AnalyticsStat, identity livekit.ParticipantIde
 		}
 	}
 
-	// Same formula as Daily remoteInbound-packetLossPct: lost / (received + lost).
+	// Packet loss is lost/expected. The expected (denominator) differs by direction
+	// because primaryPackets means different things in toAnalyticsStream:
+	//   - UPSTREAM: the SFU is the receiver, so primaryPackets is what it received and
+	//     lost is additional, so expected = primaryPackets + lost.
+	//   - DOWNSTREAM: primaryPackets is what the SFU *sent* (what the remote should
+	//     receive); the subscriber-reported lost is already a subset of it, so
+	//     expected = primaryPackets.
+	// Using received+lost for both understates downstream loss, most in the worst
+	// windows (50 lost of 100 sent is 50%, not 50/150=33%).
 	pct := 0.0
-	if denom := primaryPackets + packetsLost; denom > 0 {
-		pct = 100 * float64(packetsLost) / float64(denom)
+	expected := primaryPackets
+	if stat.Kind == livekit.StreamType_UPSTREAM {
+		expected = primaryPackets + packetsLost
+	}
+	if expected > 0 {
+		pct = 100 * float64(packetsLost) / float64(expected)
 	}
 
 	bitrateBps := 0.0
