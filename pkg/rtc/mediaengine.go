@@ -217,7 +217,7 @@ func filterCodecs(
 	enabledCodecs []*livekit.Codec,
 	rtcpFeedbackConfig RTCPFeedbackConfig,
 	filterOutH264HighProfile bool,
-	keepFlexFEC bool,
+	enableFlexFEC bool,
 ) []webrtc.RTPCodecParameters {
 	filteredCodecs := make([]webrtc.RTPCodecParameters, 0, len(codecs))
 	for _, c := range codecs {
@@ -228,7 +228,7 @@ func filterCodecs(
 		// flexfec-03 is not part of the enabled codec lists, retain it when
 		// the transport direction has FlexFEC enabled
 		if mime.IsMimeTypeStringFlexFEC03(c.RTPCodecCapability.MimeType) {
-			if keepFlexFEC {
+			if enableFlexFEC {
 				filteredCodecs = append(filteredCodecs, c)
 			}
 			continue

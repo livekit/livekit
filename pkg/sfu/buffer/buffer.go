@@ -67,6 +67,8 @@ func (d fecRecoveryDelta) invoke(callback func(received int, recovered int, disc
 	}
 }
 
+type cbFECRecovery func(received int, recovered int, discarded int, bytesReceived int)
+
 // Buffer contains all packets
 type Buffer struct {
 	*BufferBase
@@ -97,7 +99,7 @@ type Buffer struct {
 	fecSSRC             uint32
 	fecDecoder          *flexfec.Decoder
 	fecPktBuf           []byte
-	onFECRecovery       func(received int, recovered int, discarded int, bytesReceived int)
+	onFECRecovery       cbFECRecovery
 
 	streamInfoProbe       *StreamInfoProbe
 	warnedPendingOverflow bool
@@ -158,16 +160,18 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		return err
 	}
 
-	b.lastReportAt = mono.UnixNano()
+	now := mono.UnixNano()
+	b.lastReportAt = now
 
 	if len(b.pPackets) != 0 {
 		b.logger.Debugw("releasing queued packets on bind", "count", len(b.pPackets))
 	}
-	var rtcpPackets []rtcp.Packet
 	for _, pp := range b.pPackets {
-		rtcpPackets = append(rtcpPackets, b.calc(pp.packet, nil, pp.arrivalTime, true, false)...)
+		b.ingestLocked(pp.packet, nil, pp.arrivalTime, true, false)
 	}
 	b.pPackets = nil
+
+	rtcpPackets := b.getRTCPPackets(now)
 
 	b.isBound = true
 	b.maybeCreateFECDecoderLocked()
@@ -281,8 +285,9 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 	}
 
 	b.ingestLocked(pkt, rtpPacket, now, false, false)
+
 	var fecDelta fecRecoveryDelta
-	var onFECRecovery func(received int, recovered int, discarded int, bytesReceived int)
+	var onFECRecovery cbFECRecovery
 	if b.fecDecoder != nil {
 		// feed media into the FEC decoder, a media arrival can complete a
 		// previously unrecoverable FEC window. Recovered packets update NACK
@@ -290,7 +295,11 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		// FEC is not needlessly NACKed.
 		fecDelta, onFECRecovery = b.feedFECLocked(rtpPacket, now)
 	}
-	b.finishWriteLocked(now, fecDelta, onFECRecovery)
+
+	rtcpPackets := b.getRTCPPackets(now)
+	b.Unlock()
+
+	b.packetPostProcess(rtcpPackets, fecDelta, onFECRecovery)
 	return
 }
 
@@ -374,7 +383,7 @@ func (b *Buffer) NotifyRTX(ssrc uint32, repairSSRC uint32, rsid string) {
 }
 
 func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime int64) {
-	rtcpPackets := b.writeRTXLocked(rtxPkt, arrivalTime)
+	rtcpPackets := b.processRTX(rtxPkt, arrivalTime)
 	if len(rtcpPackets) != 0 {
 		if cb := b.getOnRtcpFeedback(); cb != nil {
 			cb(rtcpPackets)
@@ -382,7 +391,7 @@ func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime int64) {
 	}
 }
 
-func (b *Buffer) writeRTXLocked(rtxPkt *rtp.Packet, arrivalTime int64) []rtcp.Packet {
+func (b *Buffer) processRTX(rtxPkt *rtp.Packet, arrivalTime int64) []rtcp.Packet {
 	b.Lock()
 	if !b.isBound {
 		b.Unlock()
@@ -418,12 +427,17 @@ func (b *Buffer) writeRTXLocked(rtxPkt *rtp.Packet, arrivalTime int64) []rtcp.Pa
 	}
 
 	b.ingestLocked(b.rtxPktBuf[:n], &repairedPkt, arrivalTime, false, true)
+
 	var fecDelta fecRecoveryDelta
-	var onFECRecovery func(received int, recovered int, discarded int, bytesReceived int)
+	var onFECRecovery cbFECRecovery
 	if b.fecDecoder != nil {
 		fecDelta, onFECRecovery = b.feedFECLocked(&repairedPkt, arrivalTime)
 	}
-	b.finishWriteLocked(arrivalTime, fecDelta, onFECRecovery)
+
+	rtcpPackets := b.getRTCPPackets(arrivalTime)
+	b.Unlock()
+
+	b.packetPostProcess(rtcpPackets, fecDelta, onFECRecovery)
 	return nil
 }
 
@@ -517,7 +531,7 @@ func (b *Buffer) getFECMediaPacketLocked(sequenceNumber uint16, dst []byte) (int
 // OnFECRecovery is called with counter deltas whenever FEC packets are
 // processed since the previous callback: FEC packets received, media packets
 // recovered, FEC packets discarded and FEC bytes received.
-func (b *Buffer) OnFECRecovery(fn func(received int, recovered int, discarded int, bytesReceived int)) {
+func (b *Buffer) OnFECRecovery(fn cbFECRecovery) {
 	b.Lock()
 	b.onFECRecovery = fn
 	b.Unlock()
@@ -571,7 +585,10 @@ func (b *Buffer) writeFEC(fecPkt *rtp.Packet, arrivalTime int64) {
 	}
 
 	fecDelta, onFECRecovery := b.feedFECLocked(fecPkt, arrivalTime)
-	b.finishWriteLocked(arrivalTime, fecDelta, onFECRecovery)
+	rtcpPackets := b.getRTCPPackets(arrivalTime)
+	b.Unlock()
+
+	b.packetPostProcess(rtcpPackets, fecDelta, onFECRecovery)
 }
 
 // feedFECLocked runs a media or FEC packet through the FEC decoder and
@@ -580,7 +597,7 @@ func (b *Buffer) writeFEC(fecPkt *rtp.Packet, arrivalTime int64) {
 func (b *Buffer) feedFECLocked(
 	pkt *rtp.Packet,
 	arrivalTime int64,
-) (fecRecoveryDelta, func(received int, recovered int, discarded int, bytesReceived int)) {
+) (fecRecoveryDelta, cbFECRecovery) {
 	statsBefore := b.fecDecoder.Stats()
 	recovered := b.fecDecoder.DecodeFEC(pkt)
 	statsAfter := b.fecDecoder.Stats()
@@ -718,25 +735,15 @@ func (b *Buffer) ingestLocked(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime 
 	)
 }
 
-func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, isBuffered bool, isRTX bool) []rtcp.Packet {
-	b.ingestLocked(rawPkt, rtpPacket, arrivalTime, isBuffered, isRTX)
-	return b.getRTCPPackets(arrivalTime)
-}
-
-// finishWriteLocked generates RTCP feedback from the current NACK state, which
-// already reflects any FEC recovery performed during this write, releases the
-// buffer lock, then invokes the FEC recovery callback and delivers RTCP
-// feedback. Generating RTCP after recovery ensures sequence numbers repaired by
-// FEC are not needlessly NACKed. Must be called with the buffer lock held; it
-// releases the lock before returning.
-func (b *Buffer) finishWriteLocked(
-	arrivalTime int64,
+// packetPostProcess runs processing after a packet is handled.
+// `rtcpPackets` should be RTCP feedback from the current NACK state, which
+// already reflects any FEC recovery performed during this write.
+// This is to ensure that packets recovered via FEC is not NACKed.
+func (b *Buffer) packetPostProcess(
+	rtcpPackets []rtcp.Packet,
 	fecDelta fecRecoveryDelta,
-	onFECRecovery func(received int, recovered int, discarded int, bytesReceived int),
+	onFECRecovery cbFECRecovery,
 ) {
-	rtcpPackets := b.getRTCPPackets(arrivalTime)
-	b.Unlock()
-
 	fecDelta.invoke(onFECRecovery)
 
 	if len(rtcpPackets) != 0 {

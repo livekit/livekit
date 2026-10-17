@@ -1042,7 +1042,7 @@ func (t *PCTransport) queueOrConfigureSender(
 		filterOutH264HighProfile: !t.params.IsOfferer,
 		enableAudioStereo:        enableAudioStereo,
 		enableAudioNACK:          enableAudioNACK,
-		keepFlexFEC:              t.params.DirectionConfig.FlexFEC.Enabled,
+		enableFlexFEC:            t.params.DirectionConfig.FlexFEC.Enabled,
 	}
 	if !t.params.IsOfferer {
 		t.sendersPendingConfigMu.Lock()
@@ -3191,7 +3191,7 @@ type configureSenderParams struct {
 	filterOutH264HighProfile bool
 	enableAudioStereo        bool
 	enableAudioNACK          bool
-	keepFlexFEC              bool
+	enableFlexFEC            bool
 }
 
 func configureSender(params configureSenderParams, offerAudioPT map[mime.MimeType]webrtc.PayloadType) {
@@ -3200,7 +3200,7 @@ func configureSender(params configureSenderParams, offerAudioPT map[mime.MimeTyp
 		params.enabledCodecs,
 		params.rtcpFeedbackConfig,
 		params.filterOutH264HighProfile,
-		params.keepFlexFEC,
+		params.enableFlexFEC,
 	)
 
 	if params.transceiver.Kind() == webrtc.RTPCodecTypeAudio {
@@ -3306,7 +3306,7 @@ func configureSenderCodecs(
 	enabledCodecs []*livekit.Codec,
 	rtcpFeedbackConfig RTCPFeedbackConfig,
 	filterOutH264HighProfile bool,
-	keepFlexFEC bool,
+	enableFlexFEC bool,
 ) {
 	if len(enabledCodecs) == 0 {
 		return
@@ -3322,7 +3322,7 @@ func configureSenderCodecs(
 		enabledCodecs,
 		rtcpFeedbackConfig,
 		filterOutH264HighProfile,
-		keepFlexFEC,
+		enableFlexFEC,
 	)
 	tr.SetCodecPreferences(filteredCodecs)
 }
