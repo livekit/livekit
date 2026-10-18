@@ -93,9 +93,10 @@ type ExtPacket struct {
 	pkt        rtp.Packet
 	extensions [8]rtp.Extension
 
-	// backing storage for VP8 and VP9, so parsing does not allocate
-	vp8 codec.VP8
-	vp9 codecs.VP9Packet
+	// backing storage for VP8, VP9 and abs-capture-time, so parsing does not allocate
+	vp8            codec.VP8
+	vp9            codecs.VP9Packet
+	absCaptureTime act.AbsCaptureTime
 }
 
 type BufferProvider interface {
@@ -1072,9 +1073,8 @@ func (b *BufferBase) getExtPacket(
 
 	if b.absCaptureTimeExtID != 0 {
 		if extData := rtpPacket.GetExtension(b.absCaptureTimeExtID); len(extData) != 0 {
-			actExt := &act.AbsCaptureTime{}
-			if err := actExt.Unmarshal(extData); err == nil {
-				ep.AbsCaptureTimeExt = actExt
+			if err := ep.absCaptureTime.Unmarshal(extData); err == nil {
+				ep.AbsCaptureTimeExt = &ep.absCaptureTime
 			}
 		}
 	}

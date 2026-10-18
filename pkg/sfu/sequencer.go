@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/protocol/logger"
 	"go.uber.org/zap/zapcore"
@@ -65,7 +66,8 @@ type packetMeta struct {
 	ddBytesSize  uint8
 	ddBytesSlice []byte
 	// abs-capture-time of packet
-	actBytes []byte
+	actBytes     [act.MaxSize]byte
+	actBytesSize uint8
 	// number of packet trailer bytes stripped when the packet was forwarded
 	trailerStripped uint8
 }
@@ -86,8 +88,8 @@ func (pm packetMeta) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	} else {
 		e.AddUint8("ddBytesSize", pm.ddBytesSize)
 	}
-	if len(pm.actBytes) != 0 {
-		e.AddInt("actBytes", len(pm.actBytes))
+	if pm.actBytesSize != 0 {
+		e.AddUint8("actBytes", pm.actBytesSize)
 	}
 	if pm.trailerStripped != 0 {
 		e.AddUint8("trailerStripped", pm.trailerStripped)
@@ -104,6 +106,7 @@ type extPacketMeta struct {
 func (epm extPacketMeta) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddObject("packetMeta", epm.packetMeta)
 	e.AddUint64("extSequenceNumber", epm.extSequenceNumber)
+	e.AddUint64("extTimestamp", epm.extTimestamp)
 	return nil
 }
 
@@ -271,7 +274,7 @@ func (s *sequencer) push(
 		copy(pm.ddBytes[:pm.ddBytesSize], ddBytes)
 	}
 
-	pm.actBytes = append([]byte{}, actBytes...)
+	pm.actBytesSize = uint8(copy(pm.actBytes[:], actBytes))
 
 	if extModifiedSN > s.extHighestSN {
 		s.extHighestSN = extModifiedSN
@@ -397,7 +400,6 @@ func (s *sequencer) getExtPacketMetas(seqNo []uint16) []extPacketMeta {
 			}
 			epm.codecBytesSlice = append([]byte{}, meta.codecBytesSlice...)
 			epm.ddBytesSlice = append([]byte{}, meta.ddBytesSlice...)
-			epm.actBytes = append([]byte{}, meta.actBytes...)
 			extPacketMetas = append(extPacketMetas, epm)
 		}
 	}
@@ -447,7 +449,6 @@ func (s *sequencer) lookupExtPacketMeta(extSN uint64) *extPacketMeta {
 	}
 	epm.codecBytesSlice = append([]byte{}, meta.codecBytesSlice...)
 	epm.ddBytesSlice = append([]byte{}, meta.ddBytesSlice...)
-	epm.actBytes = append([]byte{}, meta.actBytes...)
 	return &epm
 }
 
