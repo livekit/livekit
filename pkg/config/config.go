@@ -971,8 +971,18 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 				DefaultText: defaultText,
 				Hidden:      hidden,
 			}
-		case reflect.Int, reflect.Int32:
+		// flags below match the width of the config field, so a value that does not fit
+		// is rejected, as in the YAML config, instead of wrapping around
+		case reflect.Int:
 			flag = &cli.IntFlag{
+				Name:        name,
+				Sources:     cli.EnvVars(envVar),
+				Usage:       generatedCLIFlagUsage,
+				DefaultText: defaultText,
+				Hidden:      hidden,
+			}
+		case reflect.Int32:
+			flag = &cli.Int32Flag{
 				Name:        name,
 				Sources:     cli.EnvVars(envVar),
 				Usage:       generatedCLIFlagUsage,
@@ -998,8 +1008,24 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 					Hidden:      hidden,
 				}
 			}
-		case reflect.Uint8, reflect.Uint16, reflect.Uint32:
-			flag = &cli.UintFlag{
+		case reflect.Uint8:
+			flag = &cli.Uint8Flag{
+				Name:        name,
+				Sources:     cli.EnvVars(envVar),
+				Usage:       generatedCLIFlagUsage,
+				DefaultText: defaultText,
+				Hidden:      hidden,
+			}
+		case reflect.Uint16:
+			flag = &cli.Uint16Flag{
+				Name:        name,
+				Sources:     cli.EnvVars(envVar),
+				Usage:       generatedCLIFlagUsage,
+				DefaultText: defaultText,
+				Hidden:      hidden,
+			}
+		case reflect.Uint32:
+			flag = &cli.Uint32Flag{
 				Name:        name,
 				Sources:     cli.EnvVars(envVar),
 				Usage:       generatedCLIFlagUsage,
@@ -1015,7 +1041,7 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 				Hidden:      hidden,
 			}
 		case reflect.Float32:
-			flag = &cli.Float64Flag{
+			flag = &cli.Float32Flag{
 				Name:        name,
 				Sources:     cli.EnvVars(envVar),
 				Usage:       generatedCLIFlagUsage,
