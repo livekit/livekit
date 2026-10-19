@@ -3313,6 +3313,12 @@ func (t *PCTransport) restrictReceiverCodecsToPublishList() {
 			tr.Direction() != webrtc.RTPTransceiverDirectionSendrecv {
 			continue
 		}
+		// A local sender waiting for its media section has no mid yet and is not
+		// negotiated, so its receiver reports local payload types. Pinning those
+		// would make the later answer ignore the payload types the client offers.
+		if tr.Mid() == "" {
+			continue
+		}
 		receiver := tr.Receiver()
 		if receiver == nil {
 			continue
