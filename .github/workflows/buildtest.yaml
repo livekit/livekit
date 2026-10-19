@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: shogo82148/actions-setup-redis@88a1fb308aae95aa485bf3da667c9d6e61be4c53 # v1.58.0
+      - uses: shogo82148/actions-setup-redis@ffaf3c39499b2917543d84f6acc818277580b531 # v1.58.1
         with:
           redis-version: "6.x"
           auto-start: true
@@ -67,7 +67,7 @@ jobs:
       - name: Lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: v2.13.2
+          version: v2.14.0
 
       - name: Test
         run: |
