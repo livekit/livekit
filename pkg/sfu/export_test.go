@@ -14,7 +14,11 @@
 
 package sfu
 
-import "github.com/livekit/livekit-server/pkg/sfu/buffer"
+import (
+	"time"
+
+	"github.com/livekit/livekit-server/pkg/sfu/buffer"
+)
 
 // Test-only seams that expose DownTrack internals to the external sfu_test package.
 // This file is only compiled into the test binary (its name ends in _test.go), so it
@@ -28,6 +32,12 @@ func (d *DownTrack) PayloadTypeRTXForTest() uint32 { return d.payloadTypeRTX.Loa
 
 func (d *DownTrack) RTPStatsActiveForTest() bool { return d.rtpStats.IsActive() }
 
+const DroppedSlotPaddingSizeForTest = droppedSlotPaddingSize
+
+func (d *DownTrack) WriteDroppedSlotPaddingForTest(extSequenceNumber uint64, extTimestamp uint64) {
+	d.writeDroppedSlotPadding(extSequenceNumber, extTimestamp, false)
+}
+
 func (d *DownTrack) LastReceiverReportTimeForTest() int64 {
 	return d.rtpStats.LastReceiverReportTime()
 }
@@ -39,6 +49,8 @@ func (d *DownTrack) ExtIDsForTest() (absSendTime int, transportWide int) {
 func (d *DownTrack) HandleRTCPForTest(pkt []byte) { d.handleRTCP(pkt) }
 
 func (d *DownTrack) SetRTPHeaderExtensionsForTest() { d.setRTPHeaderExtensions() }
+
+func (d *DownTrack) SetAbsCaptureTimeExtIDForTest(id int) { d.absCaptureTimeExtID = id }
 
 // ForceForwardLayerForTest forces the forwarder onto a valid current/target layer so a
 // (non-simulcast) video packet will be forwarded without driving full allocation.
@@ -56,16 +68,24 @@ func (d *DownTrack) RetransmitForTest(
 	extTimestamp uint64,
 	layer int8,
 	sourcePkt []byte,
+	trailerStripped uint8,
 ) (int, error) {
 	epm := extPacketMeta{
 		packetMeta: packetMeta{
-			sourceSeqNo: sourceSeqNo,
-			targetSeqNo: targetSeqNo,
-			timestamp:   timestamp,
-			layer:       layer,
+			sourceSeqNo:     sourceSeqNo,
+			targetSeqNo:     targetSeqNo,
+			timestamp:       timestamp,
+			layer:           layer,
+			trailerStripped: trailerStripped,
 		},
 		extSequenceNumber: uint64(targetSeqNo),
 		extTimestamp:      extTimestamp,
 	}
 	return d.retransmitPacket(&epm, sourcePkt, false)
+}
+
+const KeyFrameIntervalMaxForTest = keyFrameIntervalMax * time.Millisecond
+
+func (d *DownTrack) KeyFrameRequesterWakeupsForTest() uint32 {
+	return d.keyFrameRequesterWakeups.Load()
 }

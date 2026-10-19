@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -50,6 +51,13 @@ var (
 			return &ExtPacket{}
 		},
 	}
+
+	// unmarshal scratch, a reused packet keeps its Extensions capacity
+	rtpPacketFactory = &sync.Pool{
+		New: func() any {
+			return &rtp.Packet{}
+		},
+	}
 )
 
 func ReleaseExtPacket(extPkt *ExtPacket) {
@@ -71,13 +79,24 @@ type ExtPacket struct {
 	ExtSequenceNumber    uint64
 	ExtTimestamp         uint64
 	Packet               *rtp.Packet
-	Payload              any
+	VP8                  *codec.VP8        // nil when not parsed
+	VP9                  *codecs.VP9Packet // nil when not parsed
 	IsKeyFrame           bool
 	RawPacket            []byte
 	DependencyDescriptor *ExtDependencyDescriptor
 	AbsCaptureTimeExt    *act.AbsCaptureTime
 	IsOutOfOrder         bool
 	IsBuffered           bool
+
+	// backing storage for Packet when the buffer creates the ext packet,
+	// extension and CSRC slices point into the write input until ReadExtended re-points them into RawPacket
+	pkt        rtp.Packet
+	extensions [8]rtp.Extension
+
+	// backing storage for VP8, VP9 and abs-capture-time, so parsing does not allocate
+	vp8            codec.VP8
+	vp9            codecs.VP9Packet
+	absCaptureTime act.AbsCaptureTime
 }
 
 type BufferProvider interface {
@@ -733,7 +752,8 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 	oobSequenceNumber uint16,
 ) (uint64, error) {
 	if rtpPacket == nil {
-		rtpPacket = &rtp.Packet{}
+		rtpPacket = rtpPacketFactory.Get().(*rtp.Packet)
+		defer rtpPacketFactory.Put(rtpPacket)
 		if err := rtpPacket.Unmarshal(rawPkt); err != nil {
 			b.logger.Errorw("could not unmarshal RTP packet", err)
 			return 0, err
@@ -877,10 +897,12 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 			if errors.Is(err, bucket.ErrPacketTooOld) {
 				packetTooOldCount := b.packetTooOldCount.Inc()
 				if (packetTooOldCount-1)%100 == 0 {
+					// log a copy so flowState stays on the stack
+					fs := flowState
 					b.logger.Warnw(
 						"could not add packet to bucket", err,
 						"count", packetTooOldCount,
-						"flowState", &flowState,
+						"flowState", &fs,
 						"snAdjustment", snAdjustment,
 						"incomingSequenceNumber", flowState.ExtSequenceNumber+snAdjustment,
 						"rtpStats", b.rtpStats,
@@ -890,9 +912,10 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 					)
 				}
 			} else if err != bucket.ErrRTXPacket {
+				fs := flowState
 				b.logger.Warnw(
 					"could not add packet to bucket", err,
-					"flowState", &flowState,
+					"flowState", &fs,
 					"snAdjustment", snAdjustment,
 					"incomingSequenceNumber", flowState.ExtSequenceNumber+snAdjustment,
 					"rtpStats", b.rtpStats,
@@ -1025,7 +1048,7 @@ func (b *BufferBase) getExtPacket(
 		Arrival:           arrivalTime,
 		ExtSequenceNumber: flowState.ExtSequenceNumber,
 		ExtTimestamp:      flowState.ExtTimestamp,
-		Packet:            rtpPacket,
+		pkt:               *rtpPacket,
 		VideoLayer: VideoLayer{
 			Spatial:  InvalidLayerSpatial,
 			Temporal: InvalidLayerTemporal,
@@ -1033,6 +1056,10 @@ func (b *BufferBase) getExtPacket(
 		IsOutOfOrder: flowState.IsOutOfOrder,
 		IsBuffered:   isBuffered,
 	}
+	// rtpPacket may be reused scratch, copy what it backs
+	ep.pkt.Extensions = append(ep.extensions[:0], rtpPacket.Extensions...)
+	ep.pkt.CSRC = slices.Clone(rtpPacket.CSRC)
+	ep.Packet = &ep.pkt
 
 	if len(ep.Packet.Payload) == 0 {
 		// padding only packet, nothing else to do
@@ -1045,11 +1072,10 @@ func (b *BufferBase) getExtPacket(
 	}
 
 	if b.absCaptureTimeExtID != 0 {
-		extData := rtpPacket.GetExtension(b.absCaptureTimeExtID)
-
-		var actExt act.AbsCaptureTime
-		if err := actExt.Unmarshal(extData); err == nil {
-			ep.AbsCaptureTimeExt = &actExt
+		if extData := rtpPacket.GetExtension(b.absCaptureTimeExtID); len(extData) != 0 {
+			if err := ep.absCaptureTime.Unmarshal(extData); err == nil {
+				ep.AbsCaptureTimeExt = &ep.absCaptureTime
+			}
 		}
 	}
 
@@ -1085,7 +1111,7 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 
 	switch b.mime {
 	case mime.MimeTypeVP8:
-		vp8Packet := codec.VP8{}
+		vp8Packet := &ep.vp8
 		if err := vp8Packet.Unmarshal(ep.Packet.Payload); err != nil {
 			b.logger.Warnw("could not unmarshal VP8 packet", err)
 			return err
@@ -1095,7 +1121,7 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 			ep.Temporal = int32(vp8Packet.TID)
 
 			if ep.IsKeyFrame {
-				if sz := codec.ExtractVP8VideoSize(&vp8Packet, ep.Packet.Payload); sz.Width > 0 && sz.Height > 0 {
+				if sz := codec.ExtractVP8VideoSize(vp8Packet, ep.Packet.Payload); sz.Width > 0 && sz.Height > 0 {
 					videoSize = append(videoSize, sz)
 				}
 			}
@@ -1103,12 +1129,12 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 			// vp8 with DependencyDescriptor enabled, use the TID from the descriptor
 			vp8Packet.TID = uint8(ep.Temporal)
 		}
-		ep.Payload = vp8Packet
+		ep.VP8 = vp8Packet
 		ep.Spatial = InvalidLayerSpatial // vp8 don't have spatial scalability, reset to invalid
 
 	case mime.MimeTypeVP9:
 		if ep.DependencyDescriptor == nil {
-			var vp9Packet codecs.VP9Packet
+			vp9Packet := &ep.vp9
 			_, err := vp9Packet.Unmarshal(ep.Packet.Payload)
 			if err != nil {
 				b.logger.Warnw("could not unmarshal VP9 packet", err)
@@ -1118,8 +1144,8 @@ func (b *BufferBase) processVideoPacket(ep *ExtPacket) error {
 				Spatial:  int32(vp9Packet.SID),
 				Temporal: int32(vp9Packet.TID),
 			}
-			ep.Payload = vp9Packet
-			ep.IsKeyFrame = codec.IsVP9KeyFrame(&vp9Packet, ep.Packet.Payload)
+			ep.VP9 = vp9Packet
+			ep.IsKeyFrame = codec.IsVP9KeyFrame(vp9Packet, ep.Packet.Payload)
 
 			if ep.IsKeyFrame {
 				for i := 0; i < len(vp9Packet.Width); i++ {
@@ -1201,16 +1227,19 @@ func (b *BufferBase) patchExtPacket(ep *ExtPacket, buf []byte) *ExtPacket {
 	}
 	ep.RawPacket = buf[:n]
 
-	// patch RTP packet to point payload to new buffer
-	pkt := *ep.Packet
-	payloadStart := ep.Packet.Header.MarshalSize()
+	// parse the header again from the new buffer so extension and CSRC slices point into it,
+	// then point the payload there too, ep owns its rtp.Packet
+	payloadStart, err := ep.Packet.Header.Unmarshal(buf[:n])
+	if err != nil {
+		b.logger.Warnw("could not unmarshal header", err, "sn", ep.Packet.SequenceNumber)
+		return nil
+	}
 	payloadEnd := payloadStart + len(ep.Packet.Payload)
 	if payloadEnd > n {
 		b.logger.Warnw("unexpected marshal size", nil, "max", n, "need", payloadEnd)
 		return nil
 	}
-	pkt.Payload = buf[payloadStart:payloadEnd]
-	ep.Packet = &pkt
+	ep.Packet.Payload = buf[payloadStart:payloadEnd]
 
 	return ep
 }

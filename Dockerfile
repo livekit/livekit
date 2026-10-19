@@ -17,7 +17,7 @@
 # This image is also the single source of truth for the Go toolchain: CI reads the
 # version out of this line (see .github/scripts/go-version.sh) so tests and images
 # always run the same runtime.
-FROM golang:1.26.6-alpine3.24@sha256:af8d6740070b8906d12eae1c3e3ea0957fb63f492051ea05e354c38ef9fe88df AS builder
+FROM golang:1.27.1-alpine3.24@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS builder
 
 ARG TARGETPLATFORM
 ARG TARGETARCH
@@ -44,7 +44,7 @@ COPY version/ version/
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH GO111MODULE=on go build -a -o livekit-server ./cmd/server
 
-FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 
 # Pull the latest security patches for base packages within the pinned Alpine
 # release. The digest above is only refreshed by a Renovate PR, so without this

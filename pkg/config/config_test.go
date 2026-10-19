@@ -15,15 +15,18 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 
 	"github.com/livekit/livekit-server/pkg/config/configtest"
+	"github.com/livekit/livekit-server/pkg/sfu/pacer"
 )
 
 func TestConfig_UnmarshalKeys(t *testing.T) {
@@ -60,6 +63,27 @@ func TestConfig_SignalMessageSizeLimitOverride(t *testing.T) {
 	require.Equal(t, int64(1024), conf.Limit.SignalMessageSizeLimit)
 	// 0 explicitly disables the limit
 	require.Equal(t, int64(0), conf.Limit.AgentSignalMessageSizeLimit)
+}
+
+func TestConfig_PSRPCCompressionDefaults(t *testing.T) {
+	conf, err := NewConfig("", true, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, 0, conf.PSRPC.Compression.Quality)
+	require.Equal(t, 1024, conf.PSRPC.Compression.Threshold)
+	require.Equal(t, 0, conf.PSRPC.Compression.MaxDecompressedSize)
+}
+
+func TestConfig_PSRPCCompressionOverride(t *testing.T) {
+	const content = `psrpc:
+  compression:
+    quality: 6
+    max_decompressed_size: 4096`
+	conf, err := NewConfig(content, true, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, 6, conf.PSRPC.Compression.Quality)
+	require.Equal(t, 4096, conf.PSRPC.Compression.MaxDecompressedSize)
+	require.Equal(t, 1024, conf.PSRPC.Compression.Threshold)
+	require.Equal(t, 3, conf.PSRPC.MaxAttempts)
 }
 
 func TestConfig_UnknownKeys(t *testing.T) {
@@ -100,6 +124,47 @@ func TestGeneratedFlags(t *testing.T) {
 
 	require.NotNil(t, conf.RTC.ReconnectOnSubscriptionError)
 	require.False(t, *conf.RTC.ReconnectOnSubscriptionError)
+}
+
+func TestGeneratedDurationFlags(t *testing.T) {
+	// run a command with the generated flags, as cmd/server does, so that flag and env var values are parsed
+	run := func(t *testing.T, args ...string) (*Config, error) {
+		generatedFlags, err := GenerateCLIFlags(nil, true)
+		require.NoError(t, err)
+
+		var conf *Config
+		c := &cli.Command{
+			Name:  "test",
+			Flags: generatedFlags,
+			Action: func(_ context.Context, c *cli.Command) error {
+				var err error
+				conf, err = NewConfig("", true, c, nil)
+				return err
+			},
+		}
+		err = c.Run(context.Background(), append([]string{"test"}, args...))
+		return conf, err
+	}
+
+	t.Run("flag", func(t *testing.T) {
+		conf, err := run(t, "--api.execution_timeout=5s")
+		require.NoError(t, err)
+		require.Equal(t, 5*time.Second, conf.API.ExecutionTimeout)
+	})
+
+	t.Run("env var", func(t *testing.T) {
+		t.Setenv("LIVEKIT_ROOM_CREATE_ROOM_TIMEOUT", "30s")
+		conf, err := run(t)
+		require.NoError(t, err)
+		require.Equal(t, 30*time.Second, conf.Room.CreateRoomTimeout)
+	})
+
+	t.Run("value without a unit", func(t *testing.T) {
+		// rejected, as in the YAML config, instead of being read as nanoseconds
+		t.Setenv("LIVEKIT_ROOM_CREATE_ROOM_TIMEOUT", "30")
+		_, err := run(t)
+		require.ErrorContains(t, err, "LIVEKIT_ROOM_CREATE_ROOM_TIMEOUT")
+	})
 }
 
 func TestYAMLTag(t *testing.T) {
@@ -160,6 +225,40 @@ func TestNewConfigNormalizesTURNTTL(t *testing.T) {
 	conf, err := NewConfig(content, true, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, DefaultTURNTTLSeconds, conf.TURN.TTLSeconds)
+}
+
+func TestNewConfigValidatesSendSideBWEPacer(t *testing.T) {
+	cases := []struct {
+		name    string
+		pacer   string
+		wantErr bool
+	}{
+		{name: "unset keeps the default", pacer: "", wantErr: false},
+		{name: "pass-through", pacer: string(pacer.PacerBehaviorPassThrough), wantErr: false},
+		{name: "no-queue", pacer: string(pacer.PacerBehaviorNoQueue), wantErr: false},
+		{name: "leaky-bucket", pacer: string(pacer.PacerBehaviorLeakybucket), wantErr: false},
+		{name: "typo is rejected", pacer: "leakybucket", wantErr: true},
+		{name: "unknown value is rejected", pacer: "not-a-pacer", wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			content := "rtc:\n  congestion_control:\n    send_side_bwe_pacer: " + tc.pacer
+			conf, err := NewConfig(content, true, nil, nil)
+			if tc.wantErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.pacer)
+				return
+			}
+
+			require.NoError(t, err)
+			if tc.pacer == "" {
+				require.Equal(t, string(pacer.PacerBehaviorNoQueue), conf.RTC.CongestionControl.SendSideBWEPacer)
+				return
+			}
+			require.Equal(t, tc.pacer, conf.RTC.CongestionControl.SendSideBWEPacer)
+		})
+	}
 }
 
 func writeSecretFile(t *testing.T, content string) string {
@@ -226,146 +325,68 @@ func TestLoadTURNSecrets(t *testing.T) {
 		require.NoError(t, conf.LoadTURNSecrets())
 		require.Equal(t, "fromfile", conf.RTC.TURNServers[0].Secret)
 	})
-
-	t.Run("static credentials are loaded from files and trimmed", func(t *testing.T) {
-		dir := t.TempDir()
-		conf := &Config{}
-		conf.RTC.TURNServers = []TURNServer{{
-			Host:           "h",
-			UsernameFile:   writeTURNFile(t, dir, "username", " turn-user\n", 0o644),
-			CredentialFile: writeTURNFile(t, dir, "credential", "  turn-pass \n", 0o600),
-		}}
-		require.NoError(t, conf.LoadTURNSecrets())
-		require.Equal(t, "turn-user", conf.RTC.TURNServers[0].Username)
-		require.Equal(t, "turn-pass", conf.RTC.TURNServers[0].Credential)
-	})
-
-	t.Run("world-readable credential file is rejected", func(t *testing.T) {
-		dir := t.TempDir()
-		conf := &Config{}
-		conf.RTC.TURNServers = []TURNServer{{
-			Host:           "h",
-			Username:       "u",
-			CredentialFile: writeTURNFile(t, dir, "credential", "turn-pass", 0o644),
-		}}
-		require.ErrorIs(t, conf.LoadTURNSecrets(), ErrTURNCredentialFileIncorrectPermission)
-	})
-
-	t.Run("world-readable username file is accepted", func(t *testing.T) {
-		dir := t.TempDir()
-		conf := &Config{}
-		conf.RTC.TURNServers = []TURNServer{{
-			Host:         "h",
-			UsernameFile: writeTURNFile(t, dir, "username", "turn-user", 0o644),
-			Credential:   "c",
-		}}
-		require.NoError(t, conf.LoadTURNSecrets())
-		require.Equal(t, "turn-user", conf.RTC.TURNServers[0].Username)
-	})
-
-	t.Run("whitespace-only credential file is rejected", func(t *testing.T) {
-		dir := t.TempDir()
-		conf := &Config{}
-		conf.RTC.TURNServers = []TURNServer{{
-			Host:           "h",
-			Username:       "u",
-			CredentialFile: writeTURNFile(t, dir, "credential", " \n\t ", 0o600),
-		}}
-		require.ErrorIs(t, conf.LoadTURNSecrets(), ErrTURNCredentialFileEmpty)
-	})
-
-	t.Run("empty username file is rejected", func(t *testing.T) {
-		dir := t.TempDir()
-		conf := &Config{}
-		conf.RTC.TURNServers = []TURNServer{{
-			Host:         "h",
-			UsernameFile: writeTURNFile(t, dir, "username", "", 0o644),
-			Credential:   "c",
-		}}
-		require.ErrorIs(t, conf.LoadTURNSecrets(), ErrTURNCredentialFileEmpty)
-	})
-
-	t.Run("missing credential file surfaces the stat error", func(t *testing.T) {
-		conf := &Config{}
-		conf.RTC.TURNServers = []TURNServer{{
-			Host:           "h",
-			Username:       "u",
-			CredentialFile: filepath.Join(t.TempDir(), "does-not-exist"),
-		}}
-		require.ErrorIs(t, conf.LoadTURNSecrets(), os.ErrNotExist)
-	})
-
-	t.Run("unreadable username file surfaces the read error", func(t *testing.T) {
-		conf := &Config{}
-		conf.RTC.TURNServers = []TURNServer{{
-			Host:         "h",
-			UsernameFile: filepath.Join(t.TempDir(), "does-not-exist"),
-			Credential:   "c",
-		}}
-		require.ErrorIs(t, conf.LoadTURNSecrets(), os.ErrNotExist)
-	})
-
-	t.Run("inline static credentials take precedence over their files", func(t *testing.T) {
-		dir := t.TempDir()
-		conf := &Config{}
-		conf.RTC.TURNServers = []TURNServer{{
-			Host:           "h",
-			Username:       "inline-user",
-			UsernameFile:   writeTURNFile(t, dir, "username", "file-user", 0o644),
-			Credential:     "inline-pass",
-			CredentialFile: writeTURNFile(t, dir, "credential", "file-pass", 0o600),
-		}}
-		require.NoError(t, conf.LoadTURNSecrets())
-		require.Equal(t, "inline-user", conf.RTC.TURNServers[0].Username)
-		require.Equal(t, "inline-pass", conf.RTC.TURNServers[0].Credential)
-	})
-
-	// unlike secret, a static username/credential is sent to the TURN server as-is,
-	// so surrounding whitespace must survive exactly as it was configured
-	t.Run("inline static credentials keep surrounding whitespace", func(t *testing.T) {
-		conf := &Config{}
-		conf.RTC.TURNServers = []TURNServer{{Host: "h", Username: " u ", Credential: " c "}}
-		require.NoError(t, conf.LoadTURNSecrets())
-		require.Equal(t, " u ", conf.RTC.TURNServers[0].Username)
-		require.Equal(t, " c ", conf.RTC.TURNServers[0].Credential)
-	})
-
-	t.Run("credential file without a username is rejected", func(t *testing.T) {
-		dir := t.TempDir()
-		conf := &Config{}
-		conf.RTC.TURNServers = []TURNServer{{
-			Host:           "h",
-			CredentialFile: writeTURNFile(t, dir, "credential", "turn-pass", 0o600),
-		}}
-		require.ErrorIs(t, conf.LoadTURNSecrets(), ErrTURNServerNoCredentials)
-	})
 }
 
-func writeTURNFile(t *testing.T, dir, name, content string, perm os.FileMode) string {
-	t.Helper()
-	path := filepath.Join(dir, name)
-	require.NoError(t, os.WriteFile(path, []byte(content), perm))
-	return path
-}
-
-// TestNewConfigParsesTURNCredentialFiles covers the end-to-end path an operator
-// actually uses: YAML keys straight from the config file through to the resolved
-// credentials.
-func TestNewConfigParsesTURNCredentialFiles(t *testing.T) {
-	dir := t.TempDir()
-	usernameFile := writeTURNFile(t, dir, "username", "turn-user\n", 0o644)
-	credentialFile := writeTURNFile(t, dir, "credential", "  turn-pass \n", 0o600)
-
-	content := fmt.Sprintf(`rtc:
-  turn_servers:
-    - host: turn.example.com
-      username_file: %s
-      credential_file: %s
-`, usernameFile, credentialFile)
-
-	conf, err := NewConfig(content, true, nil, nil)
-	require.NoError(t, err)
-	require.NoError(t, conf.LoadTURNSecrets())
-	require.Equal(t, "turn-user", conf.RTC.TURNServers[0].Username)
-	require.Equal(t, "turn-pass", conf.RTC.TURNServers[0].Credential)
+// Exercise the operator-facing YAML path so this test also runs on the upstream
+// branch, where credentials_file is not recognized yet.
+func TestTURNCredentialsFile(t *testing.T) {
+	const (
+		fileName          = "turn-credentials.yaml"
+		username          = "turn-user"
+		credential        = " turn-password "
+		validCredentials  = "username: turn-user\ncredential: ' turn-password '\n"
+		privateValue      = "do-not-log-my-password"
+		redactedPrefix    = "do-not-"
+		configFormat      = "rtc:\n  turn_servers:\n    - host: turn.example.com\n      credentials_file: %q\n%s"
+		inlineCredentials = "      username: inline-user\n      credential: inline-password\n"
+	)
+	cases := []struct {
+		name           string
+		data           string
+		mode           os.FileMode
+		inline         string
+		missing        bool
+		directory      bool
+		wantError      bool
+		wantUser       string
+		wantCredential string
+	}{
+		{name: "pair loaded from one file", data: validCredentials, mode: 0o600, wantUser: username, wantCredential: credential},
+		{name: "group-readable file accepted", data: validCredentials, mode: 0o640, wantUser: username, wantCredential: credential},
+		{name: "inline pair wins without reading missing file", missing: true, inline: inlineCredentials, wantUser: "inline-user", wantCredential: "inline-password"},
+		{name: "inline whitespace preserved", missing: true, inline: "      username: ' u '\n      credential: ' c '\n", wantUser: " u ", wantCredential: " c "},
+		{name: "partial inline username is not mixed with file", data: validCredentials, mode: 0o600, inline: "      username: inline-user\n", wantError: true},
+		{name: "partial inline password is not mixed with file", data: validCredentials, mode: 0o600, inline: "      credential: inline-password\n", wantError: true},
+		{name: "missing file", missing: true, wantError: true},
+		{name: "directory cannot be read", directory: true, wantError: true},
+		{name: "others permissions rejected", data: validCredentials, mode: 0o604, wantError: true},
+		{name: "scalar credentials do not leak in errors", data: privateValue, mode: 0o600, wantError: true},
+		{name: "invalid YAML", data: "username: [", mode: 0o600, wantError: true},
+		{name: "empty file", mode: 0o600, wantError: true},
+		{name: "whitespace file", data: " \n\t", mode: 0o600, wantError: true},
+		{name: "missing username", data: "credential: password\n", mode: 0o600, wantError: true},
+		{name: "missing password", data: "username: user\n", mode: 0o600, wantError: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), fileName)
+			switch {
+			case tc.directory:
+				require.NoError(t, os.Mkdir(path, 0o700))
+			case !tc.missing:
+				require.NoError(t, os.WriteFile(path, []byte(tc.data), tc.mode))
+			}
+			conf, err := NewConfig(fmt.Sprintf(configFormat, path, tc.inline), true, nil, nil)
+			require.NoError(t, err)
+			err = conf.LoadTURNSecrets()
+			if tc.wantError {
+				require.Error(t, err)
+				require.NotContains(t, err.Error(), redactedPrefix)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.wantUser, conf.RTC.TURNServers[0].Username)
+			require.Equal(t, tc.wantCredential, conf.RTC.TURNServers[0].Credential)
+		})
+	}
 }

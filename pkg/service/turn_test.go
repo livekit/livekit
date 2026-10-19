@@ -278,3 +278,139 @@ func TestTURNAuthHandler_CreateUsername_TTLClamped(t *testing.T) {
 	_, negativeExpiry := h.CreateUsername(turnTestAPIKey, pID, -1<<40)
 	require.InDelta(t, time.Now().Unix()+int64(config.DefaultTURNTTLSeconds), negativeExpiry, 2)
 }
+
+func proxyProtocolTURNConfig(trustedCIDRs ...string) config.TURNConfig {
+	return config.TURNConfig{ExternalTLS: true, ProxyProtocol: true, ProxyProtocolTrustedCIDRs: trustedCIDRs}
+}
+
+func TestNewTURNTCPListener_ProxyProtocol(t *testing.T) {
+	listener, err := newTURNTCPListener(proxyProtocolTURNConfig("127.0.0.0/8"), "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+
+	accepted := make(chan net.Addr, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			accepted <- nil
+			return
+		}
+		defer conn.Close()
+		// the PROXY header is consumed lazily, on the first read
+		buf := make([]byte, 1)
+		_, _ = conn.Read(buf)
+		accepted <- conn.RemoteAddr()
+	}()
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	require.NoError(t, err)
+	defer conn.Close()
+	_, err = conn.Write([]byte("PROXY TCP4 203.0.113.9 127.0.0.1 40123 443\r\nx"))
+	require.NoError(t, err)
+
+	select {
+	case addr := <-accepted:
+		require.NotNil(t, addr)
+		require.Equal(t, "203.0.113.9:40123", addr.String())
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the accepted connection")
+	}
+}
+
+func TestNewTURNTCPListener_ProxyProtocolRejectsBareConnection(t *testing.T) {
+	listener, err := newTURNTCPListener(proxyProtocolTURNConfig("127.0.0.0/8"), "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+
+	result := make(chan error, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			result <- err
+			return
+		}
+		defer conn.Close()
+		buf := make([]byte, 1)
+		_, err = conn.Read(buf)
+		result <- err
+	}()
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	require.NoError(t, err)
+	defer conn.Close()
+	_, err = conn.Write([]byte("not a proxy header\r\n"))
+	require.NoError(t, err)
+
+	select {
+	case err := <-result:
+		require.Error(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the rejected connection")
+	}
+}
+
+func TestNewTURNTCPListener_WithoutProxyProtocol(t *testing.T) {
+	listener, err := newTURNTCPListener(config.TURNConfig{ExternalTLS: true}, "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+
+	accepted := make(chan net.Addr, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			accepted <- nil
+			return
+		}
+		defer conn.Close()
+		accepted <- conn.RemoteAddr()
+	}()
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	require.NoError(t, err)
+	defer conn.Close()
+
+	select {
+	case addr := <-accepted:
+		require.NotNil(t, addr)
+		require.Equal(t, conn.LocalAddr().String(), addr.String())
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the accepted connection")
+	}
+}
+
+func TestNewTURNTCPListener_ProxyProtocolClosesUntrustedProxy(t *testing.T) {
+	listener, err := newTURNTCPListener(proxyProtocolTURNConfig("203.0.113.0/24"), "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+
+	accepted := make(chan struct{}, 1)
+	go func() {
+		if conn, err := listener.Accept(); err == nil {
+			conn.Close()
+			accepted <- struct{}{}
+		}
+	}()
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	require.NoError(t, err)
+	defer conn.Close()
+	_, _ = conn.Write([]byte("PROXY TCP4 203.0.113.9 127.0.0.1 40123 443\r\nx"))
+
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+	_, err = conn.Read(make([]byte, 1))
+	require.Error(t, err, "the listener should have closed the connection")
+
+	select {
+	case <-accepted:
+		t.Fatal("connection from an untrusted proxy must not be accepted")
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestNewTURNTCPListener_ProxyProtocolRequiresTrustedCIDRs(t *testing.T) {
+	_, err := newTURNTCPListener(proxyProtocolTURNConfig(), "127.0.0.1:0")
+	require.Error(t, err)
+
+	_, err = newTURNTCPListener(proxyProtocolTURNConfig("not-a-cidr"), "127.0.0.1:0")
+	require.Error(t, err)
+}

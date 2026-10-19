@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ import (
 	"github.com/jxskiss/base62"
 	"github.com/pion/stun/v3"
 	"github.com/pion/turn/v5"
+	"github.com/pires/go-proxyproto"
 	"github.com/pkg/errors"
 
 	"github.com/livekit/protocol/auth"
@@ -108,6 +110,17 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 	logValues = append(logValues, "turn.relay_range_end", turnConf.RelayPortRangeEnd)
 	logValues = append(logValues, "turn.per_user_relay_allocation_limit", turnConf.PerUserRelayAllocationLimit)
 
+	// embedded TURN shares the host with the SFU, limit relays to this host to its media ports
+	var localIPs map[netip.Addr]struct{}
+	var mediaPorts []portRange
+	if !standalone {
+		localIPs, err = getTURNLocalIPs(&conf.RTC)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not get local IPs for TURN relay policy")
+		}
+		mediaPorts = getTURNMediaPorts(&conf.RTC)
+	}
+
 	for _, addr := range turnConf.BindAddresses {
 		var nodeIP string
 		if net.ParseIP(addr).To4() != nil {
@@ -126,18 +139,10 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 			MaxPort:      turnConf.RelayPortRangeEnd,
 			MaxRetries:   allocateRetries,
 		}
-		if standalone {
-			relayAddrGen = telemetry.NewRelayAddressGenerator(relayAddrGen)
-		}
 
 		permissionHandler := func(_clientAddr net.Addr, peerIP net.IP) bool {
 			// restricted peer IP is denied by default, unless allowed by the allow list,
-			if peerIP.IsLoopback() ||
-				peerIP.IsLinkLocalUnicast() ||
-				peerIP.IsLinkLocalMulticast() ||
-				peerIP.IsMulticast() ||
-				peerIP.IsPrivate() ||
-				peerIP.IsUnspecified() {
+			if isRestrictedPeerIP(peerIP) {
 				allowed := false
 				for _, ipnet := range allowRestrictedPeerCIDRs {
 					if ipnet.Contains(peerIP) {
@@ -161,27 +166,17 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 			return true
 		}
 
+		relayAddrGen = newRejectTCPRelayAddressGenerator(relayAddrGen)
+		if standalone {
+			relayAddrGen = telemetry.NewRelayAddressGenerator(relayAddrGen)
+		} else {
+			relayAddrGen = newTURNRelayPolicy(relayAddrGen, localIPs, mediaPorts)
+		}
+
 		if turnConf.TLSPort > 0 {
-			var listener net.Listener
-			var listenerErr error
-
-			if turnConf.ExternalTLS {
-				listener, listenerErr = net.Listen("tcp", net.JoinHostPort(addr, strconv.Itoa(turnConf.TLSPort)))
-			} else {
-				cert, err := tls.LoadX509KeyPair(turnConf.CertFile, turnConf.KeyFile)
-				if err != nil {
-					return nil, errors.Wrap(err, "TURN tls cert required")
-				}
-
-				listener, listenerErr = tls.Listen("tcp", net.JoinHostPort(addr, strconv.Itoa(turnConf.TLSPort)),
-					&tls.Config{
-						MinVersion:   tls.VersionTLS12,
-						Certificates: []tls.Certificate{cert},
-					})
-			}
-
-			if listenerErr != nil {
-				return nil, errors.Wrap(listenerErr, "could not listen on TURN TCP port")
+			listener, err := newTURNTCPListener(turnConf, net.JoinHostPort(addr, strconv.Itoa(turnConf.TLSPort)))
+			if err != nil {
+				return nil, err
 			}
 			if standalone {
 				listener = telemetry.NewListener(listener)
@@ -194,7 +189,7 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 			}
 			serverConfig.ListenerConfigs = append(serverConfig.ListenerConfigs, listenerConfig)
 
-			logValues = append(logValues, "turn.portTLS", turnConf.TLSPort, "turn.externalTLS", turnConf.ExternalTLS)
+			logValues = append(logValues, "turn.portTLS", turnConf.TLSPort, "turn.externalTLS", turnConf.ExternalTLS, "turn.proxyProtocol", turnConf.ProxyProtocol)
 		}
 
 		if turnConf.UDPPort > 0 {
@@ -219,6 +214,65 @@ func NewTurnServer(conf *config.Config, authHandler turn.AuthHandler, standalone
 
 	logger.Infow("Starting TURN server", logValues...)
 	return turn.NewServer(serverConfig)
+}
+
+// newTURNTCPListener returns the TCP listener for TURN/TLS. The PROXY protocol
+// header, when enabled, is read before TLS so the client address is known to
+// the TLS layer and to TURN regardless of who terminates TLS.
+func newTURNTCPListener(turnConf config.TURNConfig, address string) (net.Listener, error) {
+	var tlsConfig *tls.Config
+	if !turnConf.ExternalTLS {
+		cert, err := tls.LoadX509KeyPair(turnConf.CertFile, turnConf.KeyFile)
+		if err != nil {
+			return nil, errors.Wrap(err, "TURN tls cert required")
+		}
+		tlsConfig = &tls.Config{
+			MinVersion:   tls.VersionTLS12,
+			Certificates: []tls.Certificate{cert},
+		}
+	}
+
+	var proxyPolicy proxyproto.ConnPolicyFunc
+	if turnConf.ProxyProtocol {
+		trusted, err := parsePeerCIDRs("turn.proxy_protocol_trusted_cidrs", turnConf.ProxyProtocolTrustedCIDRs)
+		if err != nil {
+			return nil, err
+		}
+		if len(trusted) == 0 {
+			return nil, errors.New("turn.proxy_protocol requires at least one entry in turn.proxy_protocol_trusted_cidrs")
+		}
+		proxyPolicy = proxyProtocolPolicy(trusted)
+	}
+
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not listen on TURN TCP port")
+	}
+	if proxyPolicy != nil {
+		listener = &proxyproto.Listener{Listener: listener, ConnPolicy: proxyPolicy}
+	}
+	if tlsConfig != nil {
+		listener = tls.NewListener(listener, tlsConfig)
+	}
+	return listener, nil
+}
+
+// proxyProtocolPolicy requires the PROXY header from trusted proxies and closes
+// every other connection, so the header cannot be forged by a direct client.
+func proxyProtocolPolicy(trusted []*net.IPNet) proxyproto.ConnPolicyFunc {
+	return func(opts proxyproto.ConnPolicyOptions) (proxyproto.Policy, error) {
+		tcpAddr, ok := opts.Upstream.(*net.TCPAddr)
+		if !ok {
+			return proxyproto.REJECT, fmt.Errorf("%w: unexpected address %v", proxyproto.ErrInvalidUpstream, opts.Upstream)
+		}
+		for _, ipnet := range trusted {
+			if ipnet.Contains(tcpAddr.IP) {
+				return proxyproto.REQUIRE, nil
+			}
+		}
+		// wrapping ErrInvalidUpstream closes this connection and keeps the listener accepting
+		return proxyproto.REJECT, fmt.Errorf("%w: %s is not a trusted proxy", proxyproto.ErrInvalidUpstream, tcpAddr.IP)
+	}
 }
 
 func getTURNAuthHandlerFunc(handler *TURNAuthHandler) turn.AuthHandler {

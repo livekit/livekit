@@ -45,6 +45,10 @@ import (
 )
 
 const (
+	turnCredentialsFileReadError  = "reading turn credentials file %q: %w"
+	turnCredentialsFileParseError = "invalid YAML in turn credentials file %q"
+	turnCredentialsInlineWarning  = "both static credentials and credentials_file are set for TURN server, the inline values will be used"
+
 	generatedCLIFlagUsage = "generated"
 
 	// TURNMaxTTLSeconds is the operational maximum for TURN credential TTLs (24 hours).
@@ -68,20 +72,13 @@ const (
 )
 
 var (
-	ErrKeyFileIncorrectPermission        = errors.New("key file others permissions must be set to 0")
-	ErrTURNSecretFileIncorrectPermission = errors.New("turn secret file others permissions must be set to 0")
-	ErrKeysNotSet                        = errors.New("one of key-file or keys must be provided")
-	ErrTURNSecretEmpty                   = errors.New("turn secret is empty")
-	ErrTURNServerNoCredentials           = errors.New("turn server has no usable credentials: set a non-empty secret/secret_file for dynamic auth, or username/username_file and credential/credential_file for static auth")
-
-	ErrTURNCredentialFileIncorrectPermission = errors.New("turn credential file others permissions must be set to 0")
-	ErrTURNCredentialFileEmpty               = errors.New("turn credential file is empty")
+	ErrKeyFileIncorrectPermission            = errors.New("key file others permissions must be set to 0")
+	ErrTURNCredentialFileIncorrectPermission = errors.New("turn credentials file others permissions must be set to 0")
+	ErrTURNSecretFileIncorrectPermission     = errors.New("turn secret file others permissions must be set to 0")
+	ErrKeysNotSet                            = errors.New("one of key-file or keys must be provided")
+	ErrTURNSecretEmpty                       = errors.New("turn secret is empty")
+	ErrTURNServerNoCredentials               = errors.New("turn server has no usable credentials: set a non-empty secret/secret_file for dynamic auth, or username and credential for static auth")
 )
-
-// turnSecretFileOtherPerms masks the "other" permission bits a file holding a TURN
-// secret must not have set, so a world-readable secret fails startup instead of
-// leaking silently.
-const turnSecretFileOtherPerms os.FileMode = 0o007
 
 type Config struct {
 	Port          uint32   `yaml:"port,omitempty"`
@@ -90,6 +87,7 @@ type Config struct {
 	PrometheusPort uint32                   `yaml:"prometheus_port,omitempty"`
 	Prometheus     PrometheusConfig         `yaml:"prometheus,omitempty"`
 	DebugHandler   DebugHandlerConfig       `yaml:"debug_handler,omitempty"`
+	WebTransport   WebTransportConfig       `yaml:"webtransport,omitempty"`
 	RTC            RTCConfig                `yaml:"rtc,omitempty"`
 	Redis          redisLiveKit.RedisConfig `yaml:"redis,omitempty"`
 	Audio          sfu.AudioConfig          `yaml:"audio,omitempty"`
@@ -123,6 +121,15 @@ type Config struct {
 	EnableParticipantDataBlob bool `yaml:"enable_participant_data_blob,omitempty"`
 
 	API APIConfig `yaml:"api,omitempty"`
+}
+
+// WebTransportConfig is the node's HTTP/3 listener. QUIC has no plaintext mode,
+// so a certificate is required; development mode generates a self-signed one.
+type WebTransportConfig struct {
+	// Port is the UDP port to listen on. 0 starts no listener.
+	Port        uint32 `yaml:"port,omitempty"`
+	TLSCertFile string `yaml:"tls_cert_file,omitempty"`
+	TLSKeyFile  string `yaml:"tls_key_file,omitempty"`
 }
 
 type RTCConfig struct {
@@ -197,19 +204,13 @@ type RTCConfig struct {
 }
 
 type TURNServer struct {
-	Host     string `yaml:"host,omitempty"`
-	Port     int    `yaml:"port,omitempty"`
-	Protocol string `yaml:"protocol,omitempty"`
-	Username string `yaml:"username,omitempty"`
-	// File containing the static-auth username. Lets deployments that mount
-	// credentials as files (systemd LoadCredential, Kubernetes secrets, NixOS)
-	// keep them out of the config. Username takes precedence when both are set.
-	// The username is not a secret, so no permission restriction is applied.
-	UsernameFile string `yaml:"username_file,omitempty"`
-	Credential   string `yaml:"credential,omitempty"`
-	// File containing the static-auth credential. Credential takes precedence when
-	// both are set. The file must not be readable by others.
-	CredentialFile string `yaml:"credential_file,omitempty"`
+	Host       string `yaml:"host,omitempty"`
+	Port       int    `yaml:"port,omitempty"`
+	Protocol   string `yaml:"protocol,omitempty"`
+	Username   string `yaml:"username,omitempty"`
+	Credential string `yaml:"credential,omitempty"`
+	// YAML file containing username and credential. Inline static credentials take precedence.
+	CredentialsFile string `yaml:"credentials_file,omitempty"`
 	// Secret is used for TURN static auth secrets mechanism. When provided,
 	// dynamic credentials are generated using HMAC-SHA1 instead of static Username/Credential
 	Secret string `yaml:"secret,omitempty"`
@@ -234,6 +235,22 @@ type CongestionControlConfig struct {
 	UseSendSideBWE   bool                          `yaml:"use_send_side_bwe,omitempty"`
 	SendSideBWEPacer string                        `yaml:"send_side_bwe_pacer,omitempty"`
 	SendSideBWE      sendsidebwe.SendSideBWEConfig `yaml:"send_side_bwe,omitempty"`
+}
+
+// Validate reports configuration that would otherwise be ignored at runtime.
+func (c CongestionControlConfig) Validate() error {
+	switch pacer.PacerBehavior(c.SendSideBWEPacer) {
+	case "", pacer.PacerBehaviorPassThrough, pacer.PacerBehaviorNoQueue, pacer.PacerBehaviorLeakybucket:
+		return nil
+	default:
+		return fmt.Errorf(
+			"invalid send_side_bwe_pacer %q, must be one of %q, %q, %q",
+			c.SendSideBWEPacer,
+			pacer.PacerBehaviorPassThrough,
+			pacer.PacerBehaviorNoQueue,
+			pacer.PacerBehaviorLeakybucket,
+		)
+	}
 }
 
 type PlayoutDelayConfig struct {
@@ -295,6 +312,19 @@ type TURNConfig struct {
 	RelayPortRangeEnd   uint16   `yaml:"relay_range_end,omitempty"`
 	ExternalTLS         bool     `yaml:"external_tls,omitempty"`
 	BindAddresses       []string `yaml:"bind_addresses,omitempty"`
+	// ProxyProtocol makes the TURN TCP listener require a PROXY protocol (v1 or v2)
+	// header on every connection and use the client address it carries. Needed when
+	// a proxy in front of TURN dials from its own address (a TLS-terminating L4
+	// proxy, a TCP reverse proxy): TURN echoes the address it sees back to the
+	// client as XOR-MAPPED-ADDRESS, and browsers such as Firefox reject a loopback
+	// or wildcard address there and abandon the allocation. Connections without
+	// the header are rejected.
+	ProxyProtocol bool `yaml:"proxy_protocol,omitempty"`
+	// ProxyProtocolTrustedCIDRs lists the proxies whose PROXY header is believed.
+	// Connections from any other address are closed, so a client that reaches
+	// tls_port directly cannot claim an arbitrary source address. Defaults to
+	// loopback only, for a proxy on the same host.
+	ProxyProtocolTrustedCIDRs []string `yaml:"proxy_protocol_trusted_cidrs,omitempty"`
 	// PerUserRelayAllocationLimit caps the number of concurrent relay allocations
 	// a single participant credential may hold, keyed by the participant ID. This
 	// stops one authenticated participant from consuming the shared relay-port
@@ -402,8 +432,20 @@ func (l LimitConfig) CheckAttributesSize(attributes map[string]string) bool {
 	return uint32(total) <= l.MaxAttributesSize
 }
 
-func (l LimitConfig) CheckDataBlobKeyLength(key string) bool {
-	return l.MaxDataBlobKeyLength == 0 || len(key) <= l.MaxDataBlobKeyLength
+// DataBlobKeyLength returns the length of the identifying content of a data blob key.
+// The text form of the key message is not used, as it adds field names and quotes.
+func DataBlobKeyLength(key *livekit.DataBlobKey) int {
+	switch k := key.GetKey().(type) {
+	case *livekit.DataBlobKey_Generic:
+		return len(k.Generic)
+	case *livekit.DataBlobKey_SchemaId:
+		return len(k.SchemaId.GetName()) + len(k.SchemaId.GetEncoding().GetCustom())
+	}
+	return 0
+}
+
+func (l LimitConfig) CheckDataBlobKeyLength(key *livekit.DataBlobKey) bool {
+	return l.MaxDataBlobKeyLength == 0 || DataBlobKeyLength(key) <= l.MaxDataBlobKeyLength
 }
 
 func (l LimitConfig) CheckDataTrackCustomEncodingLength(identifier string) bool {
@@ -433,7 +475,7 @@ func (l LimitConfig) CheckDataBlobsSize(dataBlobs []*livekit.DataBlob) bool {
 
 	total := 0
 	for _, dataBlob := range dataBlobs {
-		total += len(dataBlob.GetKey().String()) + len(dataBlob.Contents)
+		total += DataBlobKeyLength(dataBlob.GetKey()) + len(dataBlob.Contents)
 	}
 	return uint32(total) <= l.MaxDataBlobSize
 }
@@ -445,9 +487,9 @@ func (l LimitConfig) CanAddDataBlob(dataBlobs []*livekit.DataBlob, toAdd *liveki
 
 	total := 0
 	for _, dataBlob := range dataBlobs {
-		total += len(dataBlob.Key.String()) + len(dataBlob.Contents)
+		total += DataBlobKeyLength(dataBlob.GetKey()) + len(dataBlob.Contents)
 	}
-	return uint32(total+len(toAdd.GetKey().String())+len(toAdd.Contents)) <= l.MaxDataBlobSize
+	return uint32(total+DataBlobKeyLength(toAdd.GetKey())+len(toAdd.Contents)) <= l.MaxDataBlobSize
 }
 
 // ---------------------------------
@@ -455,6 +497,19 @@ func (l LimitConfig) CanAddDataBlob(dataBlobs []*livekit.DataBlob, toAdd *liveki
 type IngressConfig struct {
 	RTMPBaseURL string `yaml:"rtmp_base_url,omitempty"`
 	WHIPBaseURL string `yaml:"whip_base_url,omitempty"`
+	// Allow URL pull ingresses with a udp:// source URL. Disabled by default, and should only be
+	// enabled if both the callers allowed to create ingresses and the network the ingress handlers
+	// run on are trusted. Unlike an http or srt source url, a udp source url doesn't make the ingress
+	// handler connect out to the url host: the handler binds a local socket on the address and port
+	// taken from the url, and joins the multicast group if one is given. This lets the caller:
+	//   - Choose which local port the handler binds, potentially colliding with other services on
+	//     the host.
+	//   - Feed the session unauthenticated traffic. UDP is connectionless, so any host able to reach
+	//     that port can inject media, or spoof the sender address to disrupt a legitimate feed.
+	//   - Make the handler join arbitrary multicast groups and republish whatever it receives into a
+	//     room, using the ingress as a relay for streams on the handler's local network the caller has
+	//     no direct access to.
+	EnableUDPURLPull bool `yaml:"enable_udp_url_pull,omitempty"`
 }
 
 type SIPConfig struct{}
@@ -588,6 +643,7 @@ var DefaultConfig = Config{
 	TURN: TURNConfig{
 		Enabled:                     false,
 		BindAddresses:               []string{"0.0.0.0"},
+		ProxyProtocolTrustedCIDRs:   []string{"127.0.0.0/8", "::1/128"},
 		TTLSeconds:                  DefaultTURNTTLSeconds,
 		PerUserRelayAllocationLimit: DefaultTURNPerUserRelayAllocationLimit,
 	},
@@ -646,6 +702,10 @@ func NewConfig(confString string, strictMode bool, c *cli.Command, baseFlags []c
 
 	if err := conf.RTC.Validate(conf.Development); err != nil {
 		return nil, fmt.Errorf("could not validate RTC config: %v", err)
+	}
+
+	if err := conf.RTC.CongestionControl.Validate(); err != nil {
+		return nil, fmt.Errorf("could not validate congestion control config: %v", err)
 	}
 
 	conf.NormalizeTURNTTLs()
@@ -801,108 +861,71 @@ func (conf *Config) ValidateKeys() error {
 	return nil
 }
 
-// turnCredentialSource describes one TURN credential that may be supplied either
-// inline in the config or through a file, so secret, username, and credential all
-// resolve through a single code path.
-type turnCredentialSource struct {
-	// field is the inline YAML key; the file counterpart is always "<field>_file".
-	field  string
-	inline string
-	file   string
-	// permErr is returned when the file is readable by others. It is nil for values
-	// that are not secrets, which skips the permission check entirely.
-	permErr error
-	// emptyErr is returned when the file holds nothing but whitespace.
-	emptyErr error
-	// trimInline trims the inline value before deciding whether it is set. Only
-	// `secret` does this, preserving its pre-existing behaviour; a static
-	// username/credential is passed to the TURN server verbatim, so trimming one
-	// would silently change what an existing deployment authenticates with.
-	trimInline bool
-}
-
-// loadTURNCredential resolves one credential from its inline value and its optional
-// file counterpart. The inline value always wins, so an explicit config entry is
-// never silently overridden by a leftover credential file. File contents are always
-// trimmed so a mounted secret written with a trailing newline works as expected.
-func loadTURNCredential(host string, port int, src turnCredentialSource) (string, error) {
-	inline := src.inline
-	if src.trimInline {
-		inline = strings.TrimSpace(inline)
-	}
-	if src.file == "" {
-		return inline, nil
-	}
-	if inline != "" {
-		logger.Warnw("both inline and file TURN credential are set, the inline value will be used", nil,
-			"host", host, "port", port, "field", src.field)
-		return inline, nil
-	}
-
-	if src.permErr != nil {
-		st, err := os.Stat(src.file)
-		if err != nil {
-			return "", err
-		}
-		if st.Mode().Perm()&turnSecretFileOtherPerms != 0o000 {
-			return "", src.permErr
-		}
-	}
-
-	data, err := os.ReadFile(src.file)
-	if err != nil {
-		return "", fmt.Errorf("reading turn %s_file %q: %w", src.field, src.file, err)
-	}
-	value := strings.TrimSpace(string(data))
-	if value == "" {
-		return "", fmt.Errorf("turn server %q %s_file %q: %w", host, src.field, src.file, src.emptyErr)
-	}
-	return value, nil
-}
-
 func (conf *Config) LoadTURNSecrets() error {
-	for i := range conf.RTC.TURNServers {
-		s := &conf.RTC.TURNServers[i]
-
-		secret, err := loadTURNCredential(s.Host, s.Port, turnCredentialSource{
-			field:      "secret",
-			inline:     s.Secret,
-			file:       s.SecretFile,
-			permErr:    ErrTURNSecretFileIncorrectPermission,
-			emptyErr:   ErrTURNSecretEmpty,
-			trimInline: true,
-		})
-		if err != nil {
-			return err
+	var otherFilter os.FileMode = 0o007
+	for i, s := range conf.RTC.TURNServers {
+		// trim first so a blank inline secret falls back to secret_file rather than being treated as set
+		inlineSecret := strings.TrimSpace(s.Secret)
+		switch {
+		case s.SecretFile != "" && inlineSecret != "":
+			logger.Warnw("both secret and secret_file are set for TURN server, the hardcoded secret will be used", nil,
+				"host", s.Host, "port", s.Port)
+			conf.RTC.TURNServers[i].Secret = inlineSecret
+		case s.SecretFile != "":
+			st, err := os.Stat(s.SecretFile)
+			if err != nil {
+				return err
+			}
+			if st.Mode().Perm()&otherFilter != 0o000 {
+				return ErrTURNSecretFileIncorrectPermission
+			}
+			data, err := os.ReadFile(s.SecretFile)
+			if err != nil {
+				return fmt.Errorf("reading turn secret file %q: %w", s.SecretFile, err)
+			}
+			secret := strings.TrimSpace(string(data))
+			if secret == "" {
+				return fmt.Errorf("turn server %q secret file %q: %w", s.Host, s.SecretFile, ErrTURNSecretEmpty)
+			}
+			conf.RTC.TURNServers[i].Secret = secret
+		default:
+			conf.RTC.TURNServers[i].Secret = inlineSecret
 		}
 
-		// the username is not a secret, so permErr is left nil and its file may be
-		// world-readable
-		username, err := loadTURNCredential(s.Host, s.Port, turnCredentialSource{
-			field:    "username",
-			inline:   s.Username,
-			file:     s.UsernameFile,
-			emptyErr: ErrTURNCredentialFileEmpty,
-		})
-		if err != nil {
-			return err
+		// Keep the static pair together; never combine one inline value with a
+		// credential from a different source.
+		if s.CredentialsFile != "" {
+			if s.Username != "" || s.Credential != "" {
+				logger.Warnw(turnCredentialsInlineWarning, nil,
+					"host", s.Host, "port", s.Port)
+			} else {
+				st, err := os.Stat(s.CredentialsFile)
+				if err != nil {
+					return err
+				}
+				if st.Mode().Perm()&otherFilter != 0o000 {
+					return ErrTURNCredentialFileIncorrectPermission
+				}
+				data, err := os.ReadFile(s.CredentialsFile)
+				if err != nil {
+					return fmt.Errorf(turnCredentialsFileReadError, s.CredentialsFile, err)
+				}
+				var credentials struct {
+					Username   string `yaml:"username"`
+					Credential string `yaml:"credential"`
+				}
+				if err := yaml.Unmarshal(data, &credentials); err != nil {
+					// YAML type errors may contain scalar values from the secret file.
+					return fmt.Errorf(turnCredentialsFileParseError, s.CredentialsFile)
+				}
+				conf.RTC.TURNServers[i].Username = credentials.Username
+				conf.RTC.TURNServers[i].Credential = credentials.Credential
+			}
 		}
-
-		credential, err := loadTURNCredential(s.Host, s.Port, turnCredentialSource{
-			field:    "credential",
-			inline:   s.Credential,
-			file:     s.CredentialFile,
-			permErr:  ErrTURNCredentialFileIncorrectPermission,
-			emptyErr: ErrTURNCredentialFileEmpty,
-		})
-		if err != nil {
-			return err
-		}
-
-		s.Secret, s.Username, s.Credential = secret, username, credential
 
 		// validate credential mode as an explicit union rather than inferring it from a
 		// post-load empty secret (which would silently fall back to static credentials)
+		s := conf.RTC.TURNServers[i]
 		hasDynamic := s.Secret != ""
 		hasStatic := s.Username != "" && s.Credential != ""
 		if !hasDynamic && !hasStatic {
@@ -959,10 +982,11 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 	defaultConfig := &DefaultConfig
 	flags := make([]cli.Flag, 0)
 	for name, value := range (defaultConfig).ToCLIFlagNames(existingFlags) {
-		kind := value.Kind()
-		if kind == reflect.Ptr {
-			kind = value.Type().Elem().Kind()
+		valueType := value.Type()
+		if valueType.Kind() == reflect.Ptr {
+			valueType = valueType.Elem()
 		}
+		kind := valueType.Kind()
 
 		var flag cli.Flag
 		envVar := fmt.Sprintf("LIVEKIT_%s", strings.ToUpper(strings.ReplaceAll(name, ".", "_")))
@@ -994,12 +1018,23 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 				Hidden:      hidden,
 			}
 		case reflect.Int64:
-			flag = &cli.Int64Flag{
-				Name:        name,
-				Sources:     cli.EnvVars(envVar),
-				Usage:       generatedCLIFlagUsage,
-				DefaultText: defaultText,
-				Hidden:      hidden,
+			if valueType == reflect.TypeOf(time.Duration(0)) {
+				// parse values like "30s", as the YAML config does
+				flag = &cli.DurationFlag{
+					Name:        name,
+					Sources:     cli.EnvVars(envVar),
+					Usage:       generatedCLIFlagUsage,
+					DefaultText: defaultText,
+					Hidden:      hidden,
+				}
+			} else {
+				flag = &cli.Int64Flag{
+					Name:        name,
+					Sources:     cli.EnvVars(envVar),
+					Usage:       generatedCLIFlagUsage,
+					DefaultText: defaultText,
+					Hidden:      hidden,
+				}
 			}
 		case reflect.Uint8, reflect.Uint16, reflect.Uint32:
 			flag = &cli.UintFlag{

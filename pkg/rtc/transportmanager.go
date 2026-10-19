@@ -209,6 +209,11 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		}
 		t.subscriber = subscriber
 	}
+	if t.useNegotiatedDataChannels() {
+		if err := t.createNegotiatedDataChannelsForPublisher(); err != nil {
+			return nil, err
+		}
+	}
 	if !t.params.Migration && t.params.SubscriberAsPrimary {
 		if err := t.createDataChannelsForSubscriber(nil); err != nil {
 			return nil, err
@@ -427,6 +432,46 @@ func (t *TransportManager) handleSendDataResult(err error, kind string, size int
 	return err
 }
 
+func (t *TransportManager) useNegotiatedDataChannels() bool {
+	return t.params.ProtocolVersion.SupportsNegotiatedDataChannels() &&
+		t.params.UseSinglePeerConnection &&
+		!t.params.UseOneShotSignallingMode
+}
+
+func (t *TransportManager) createNegotiatedDataChannelsForPublisher() error {
+	negotiated := true
+
+	reliableID := NegotiatedReliableDataChannelID
+	ordered := true
+	if err := t.publisher.CreateDataChannel(ReliableDataChannel, &webrtc.DataChannelInit{
+		Ordered:    &ordered,
+		ID:         &reliableID,
+		Negotiated: &negotiated,
+	}); err != nil {
+		return err
+	}
+
+	ordered = false
+	retransmits := uint16(0)
+	lossyID := NegotiatedLossyDataChannelID
+	if err := t.publisher.CreateDataChannel(LossyDataChannel, &webrtc.DataChannelInit{
+		Ordered:        &ordered,
+		MaxRetransmits: &retransmits,
+		ID:             &lossyID,
+		Negotiated:     &negotiated,
+	}); err != nil {
+		return err
+	}
+
+	dataTrackID := NegotiatedDataTrackDataChannelID
+	return t.publisher.CreateDataChannel(DataTrackDataChannel, &webrtc.DataChannelInit{
+		Ordered:        &ordered,
+		MaxRetransmits: &retransmits,
+		ID:             &dataTrackID,
+		Negotiated:     &negotiated,
+	})
+}
+
 func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels []*livekit.DataChannelInfo) error {
 	var (
 		reliableID, lossyID, dataTrackID          uint16
@@ -523,12 +568,9 @@ func (t *TransportManager) GetUnmatchMediaForOffer(parsedOffer *sdp.SessionDescr
 	return
 }
 
-func (t *TransportManager) LastPublisherOffer() *webrtc.SessionDescription {
-	return t.publisher.CurrentRemoteDescription()
-}
-
-func (t *TransportManager) LastPublisherOfferPending() *webrtc.SessionDescription {
-	return t.publisher.PendingRemoteDescription()
+// LastPublisherOfferParsed returns the parsed form of the last offer set on the publisher peer connection
+func (t *TransportManager) LastPublisherOfferParsed() *sdp.SessionDescription {
+	return t.publisher.RemoteOfferParsed()
 }
 
 func (t *TransportManager) HandleOffer(offer webrtc.SessionDescription, offerId uint32, shouldPend bool) error {
@@ -678,7 +720,7 @@ func (t *TransportManager) GetICEConfig() *livekit.ICEConfig {
 	if t.iceConfig == nil {
 		return nil
 	}
-	return utils.CloneProto(t.iceConfig)
+	return proto.CloneOf(t.iceConfig)
 }
 
 func (t *TransportManager) resetTransportConfigureLocked(reconfigured bool) {
@@ -923,6 +965,10 @@ func (t *TransportManager) ProcessPendingPublisherDataChannels() {
 	pendingDataChannels := t.pendingDataChannelsPublisher
 	t.pendingDataChannelsPublisher = nil
 	t.lock.Unlock()
+
+	if t.useNegotiatedDataChannels() {
+		return
+	}
 
 	ordered := true
 	negotiated := true

@@ -35,7 +35,7 @@ type TelemetryService interface {
 
 	// events
 	RoomStarted(ctx context.Context, room *livekit.Room)
-	RoomEnded(ctx context.Context, room *livekit.Room)
+	RoomEnded(ctx context.Context, room *livekit.Room, reason livekit.RoomEndReason)
 
 	// ParticipantJoined - a participant establishes signal connection to a room
 	ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo, clientMeta *livekit.AnalyticsClientMeta, shouldSendEvent bool, guard *ReferenceGuard)
@@ -105,7 +105,8 @@ type NullTelemetryService struct {
 func (n NullTelemetryService) TrackStats(roomID livekit.RoomID, roomName livekit.RoomName, key StatsKey, stat *livekit.AnalyticsStat) {
 }
 func (n NullTelemetryService) RoomStarted(ctx context.Context, room *livekit.Room) {}
-func (n NullTelemetryService) RoomEnded(ctx context.Context, room *livekit.Room)   {}
+func (n NullTelemetryService) RoomEnded(ctx context.Context, room *livekit.Room, reason livekit.RoomEndReason) {
+}
 func (n NullTelemetryService) ParticipantJoined(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientInfo *livekit.ClientInfo, clientMeta *livekit.AnalyticsClientMeta, shouldSendEvent bool, guard *ReferenceGuard) {
 }
 func (n NullTelemetryService) ParticipantActive(ctx context.Context, room *livekit.Room, participant *livekit.ParticipantInfo, clientMeta *livekit.AnalyticsClientMeta, isMigration bool, isWarp bool, guard *ReferenceGuard) {
@@ -281,15 +282,48 @@ func (t *telemetryService) getOrCreateWorker(
 	t.workersMu.Lock()
 	defer t.workersMu.Unlock()
 
+	if roomID == "" {
+		logger.Warnw(
+			"telemetry stats worker keyed under an empty room id", nil,
+			"room", roomName,
+			"participant", participantIdentity,
+			"participantID", participantID,
+			"guard", guard,
+		)
+	}
+
 	key := statsWorkerKey{roomID, participantID}
 	worker, ok := t.workers[key]
 	if ok && !worker.Closed(guard) {
 		return worker, true
 	}
 
+	// only ParticipantLeft releases a guard, so a released guard is a call landing after
+	// the participant left, e.g. ParticipantActive overtaken by the close. Do not create
+	// a worker nothing can ever release. The closed worker, if not yet reaped, is returned
+	// as found, otherwise nil is
+	if guard != nil && guard.released {
+		return worker, true
+	}
+
 	existingIsConnected := false
 	if ok {
 		existingIsConnected = worker.IsConnected()
+	}
+
+	// a guard references at most once, so a nil or already activated guard leaves the
+	// new worker with no references and its owner's release drives it negative
+	if guard == nil || guard.activated {
+		logger.Infow(
+			"telemetry stats worker created without a reference",
+			"room", roomName,
+			"roomID", roomID,
+			"participant", participantIdentity,
+			"participantID", participantID,
+			"guard", guard,
+			"replacedClosed", ok,
+			"existing", worker,
+		)
 	}
 
 	worker = newStatsWorker(

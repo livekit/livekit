@@ -27,20 +27,11 @@ type SystemLoadSelector struct {
 }
 
 func (s *SystemLoadSelector) filterNodes(nodes []*livekit.Node) ([]*livekit.Node, error) {
-	nodes = GetAvailableNodes(nodes)
-	if len(nodes) == 0 {
-		return nil, ErrNoAvailableNodes
+	nodes, err := FilterNodesByCriteria(nodes, s.SysloadLimit, GetNodeSysload)
+	if err != nil {
+		return nil, err
 	}
 
-	nodesLowLoad := make([]*livekit.Node, 0)
-	for _, node := range nodes {
-		if GetNodeSysload(node) < s.SysloadLimit {
-			nodesLowLoad = append(nodesLowLoad, node)
-		}
-	}
-	if len(nodesLowLoad) > 0 {
-		nodes = nodesLowLoad
-	}
 	return nodes, nil
 }
 
