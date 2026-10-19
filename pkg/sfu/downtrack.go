@@ -1752,12 +1752,12 @@ func (d *DownTrack) ProvisionalAllocateReset() {
 	d.forwarder.ProvisionalAllocateReset()
 }
 
-func (d *DownTrack) ProvisionalAllocate(availableChannelCapacity int64, layers buffer.VideoLayer, allowPause bool, allowOvershoot bool) (bool, int64) {
-	return d.forwarder.ProvisionalAllocate(availableChannelCapacity, layers, allowPause, allowOvershoot)
+func (d *DownTrack) ProvisionalAllocate(availableChannelCapacity int64, layers buffer.VideoLayer, allowPause bool, allowOvershoot bool, minTemporalLayer int32) (bool, int64) {
+	return d.forwarder.ProvisionalAllocate(availableChannelCapacity, layers, allowPause, allowOvershoot, minTemporalLayer)
 }
 
-func (d *DownTrack) ProvisionalAllocateGetCooperativeTransition(allowOvershoot bool) VideoTransition {
-	transition, availableLayers, brs := d.forwarder.ProvisionalAllocateGetCooperativeTransition(allowOvershoot)
+func (d *DownTrack) ProvisionalAllocateGetCooperativeTransition(allowOvershoot bool, minTemporalLayer int32) VideoTransition {
+	transition, availableLayers, brs := d.forwarder.ProvisionalAllocateGetCooperativeTransition(allowOvershoot, minTemporalLayer)
 	d.params.Logger.Debugw(
 		"stream: cooperative transition",
 		"transition", &transition,
@@ -1767,8 +1767,8 @@ func (d *DownTrack) ProvisionalAllocateGetCooperativeTransition(allowOvershoot b
 	return transition
 }
 
-func (d *DownTrack) ProvisionalAllocateGetBestWeightedTransition() VideoTransition {
-	transition, availableLayers, brs := d.forwarder.ProvisionalAllocateGetBestWeightedTransition()
+func (d *DownTrack) ProvisionalAllocateGetBestWeightedTransition(minTemporalLayer int32) VideoTransition {
+	transition, availableLayers, brs := d.forwarder.ProvisionalAllocateGetBestWeightedTransition(minTemporalLayer)
 	d.params.Logger.Debugw(
 		"stream: best weighted transition",
 		"transition", &transition,
@@ -1785,17 +1785,17 @@ func (d *DownTrack) ProvisionalAllocateCommit() VideoAllocation {
 	return allocation
 }
 
-func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64, allowOvershoot bool) (VideoAllocation, bool) {
+func (d *DownTrack) AllocateNextHigher(availableChannelCapacity int64, allowOvershoot bool, minTemporalLayer int32) (VideoAllocation, bool) {
 	al, brs := d.Receiver().GetLayeredBitrate()
-	allocation, available := d.forwarder.AllocateNextHigher(availableChannelCapacity, al, brs, allowOvershoot)
+	allocation, available := d.forwarder.AllocateNextHigher(availableChannelCapacity, al, brs, allowOvershoot, minTemporalLayer)
 	d.postKeyFrameRequestEvent()
 	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired, allocation.PauseReason)
 	return allocation, available
 }
 
-func (d *DownTrack) GetNextHigherTransition(allowOvershoot bool) (VideoTransition, bool) {
+func (d *DownTrack) GetNextHigherTransition(allowOvershoot bool, minTemporalLayer int32) (VideoTransition, bool) {
 	availableLayers, brs := d.Receiver().GetLayeredBitrate()
-	transition, available := d.forwarder.GetNextHigherTransition(brs, allowOvershoot)
+	transition, available := d.forwarder.GetNextHigherTransition(brs, allowOvershoot, minTemporalLayer)
 	d.params.Logger.Debugw(
 		"stream: get next higher layer",
 		"transition", transition,
