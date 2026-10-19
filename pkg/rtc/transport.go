@@ -72,12 +72,6 @@ const (
 	ReliableDataChannel  = "_reliable"
 	DataTrackDataChannel = "_data_track"
 
-	// Fixed SCTP stream IDs of the publisher data channels which create the data channels as negotiated.
-	// Kept away from low IDs that in-band channels auto-allocate.
-	NegotiatedReliableDataChannelID  uint16 = 100
-	NegotiatedLossyDataChannelID     uint16 = 101
-	NegotiatedDataTrackDataChannelID uint16 = 102
-
 	fastNegotiationFrequency   = 10 * time.Millisecond
 	negotiationFrequency       = 150 * time.Millisecond
 	negotiationFailedTimeout   = 15 * time.Second
