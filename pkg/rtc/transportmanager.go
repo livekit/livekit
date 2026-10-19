@@ -439,9 +439,15 @@ func (t *TransportManager) useNegotiatedDataChannels() bool {
 }
 
 func (t *TransportManager) createNegotiatedDataChannelsForPublisher() error {
+	// Migration recreates the publisher data channels as negotiated with the IDs the client reports
+	// in ProcessPendingPublisherDataChannels instead.
+	if t.params.Migration {
+		return nil
+	}
+
 	negotiated := true
 
-	reliableID := NegotiatedReliableDataChannelID
+	reliableID := uint16(livekit.NegotiatedDataChannelID_NDCI_RELIABLE)
 	ordered := true
 	if err := t.publisher.CreateDataChannel(ReliableDataChannel, &webrtc.DataChannelInit{
 		Ordered:    &ordered,
@@ -453,7 +459,7 @@ func (t *TransportManager) createNegotiatedDataChannelsForPublisher() error {
 
 	ordered = false
 	retransmits := uint16(0)
-	lossyID := NegotiatedLossyDataChannelID
+	lossyID := uint16(livekit.NegotiatedDataChannelID_NDCI_LOSSY)
 	if err := t.publisher.CreateDataChannel(LossyDataChannel, &webrtc.DataChannelInit{
 		Ordered:        &ordered,
 		MaxRetransmits: &retransmits,
@@ -463,7 +469,7 @@ func (t *TransportManager) createNegotiatedDataChannelsForPublisher() error {
 		return err
 	}
 
-	dataTrackID := NegotiatedDataTrackDataChannelID
+	dataTrackID := uint16(livekit.NegotiatedDataChannelID_NDCI_DATA_TRACK)
 	return t.publisher.CreateDataChannel(DataTrackDataChannel, &webrtc.DataChannelInit{
 		Ordered:        &ordered,
 		MaxRetransmits: &retransmits,
@@ -965,10 +971,6 @@ func (t *TransportManager) ProcessPendingPublisherDataChannels() {
 	pendingDataChannels := t.pendingDataChannelsPublisher
 	t.pendingDataChannelsPublisher = nil
 	t.lock.Unlock()
-
-	if t.useNegotiatedDataChannels() {
-		return
-	}
 
 	ordered := true
 	negotiated := true

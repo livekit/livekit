@@ -1415,7 +1415,7 @@ func encodeQueryParam(key, value string) string {
 func createNegotiatedDataChannels(t *rtc.PCTransport) error {
 	negotiated := true
 	ordered := true
-	reliableID := rtc.NegotiatedReliableDataChannelID
+	reliableID := uint16(livekit.NegotiatedDataChannelID_NDCI_RELIABLE)
 	if err := t.CreateDataChannel(rtc.ReliableDataChannel, &webrtc.DataChannelInit{
 		Ordered:    &ordered,
 		Negotiated: &negotiated,
@@ -1426,7 +1426,7 @@ func createNegotiatedDataChannels(t *rtc.PCTransport) error {
 
 	ordered = false
 	maxRetransmits := uint16(0)
-	lossyID := rtc.NegotiatedLossyDataChannelID
+	lossyID := uint16(livekit.NegotiatedDataChannelID_NDCI_LOSSY)
 	if err := t.CreateDataChannel(rtc.LossyDataChannel, &webrtc.DataChannelInit{
 		Ordered:        &ordered,
 		MaxRetransmits: &maxRetransmits,
@@ -1436,7 +1436,7 @@ func createNegotiatedDataChannels(t *rtc.PCTransport) error {
 		return err
 	}
 
-	dataTrackID := rtc.NegotiatedDataTrackDataChannelID
+	dataTrackID := uint16(livekit.NegotiatedDataChannelID_NDCI_DATA_TRACK)
 	return t.CreateDataChannel(rtc.DataTrackDataChannel, &webrtc.DataChannelInit{
 		Ordered:        &ordered,
 		MaxRetransmits: &maxRetransmits,
