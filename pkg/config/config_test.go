@@ -16,6 +16,7 @@ package config
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -324,4 +325,68 @@ func TestLoadTURNSecrets(t *testing.T) {
 		require.NoError(t, conf.LoadTURNSecrets())
 		require.Equal(t, "fromfile", conf.RTC.TURNServers[0].Secret)
 	})
+}
+
+// Exercise the operator-facing YAML path so this test also runs on the upstream
+// branch, where credentials_file is not recognized yet.
+func TestTURNCredentialsFile(t *testing.T) {
+	const (
+		fileName          = "turn-credentials.yaml"
+		username          = "turn-user"
+		credential        = " turn-password "
+		validCredentials  = "username: turn-user\ncredential: ' turn-password '\n"
+		privateValue      = "do-not-log-my-password"
+		redactedPrefix    = "do-not-"
+		configFormat      = "rtc:\n  turn_servers:\n    - host: turn.example.com\n      credentials_file: %q\n%s"
+		inlineCredentials = "      username: inline-user\n      credential: inline-password\n"
+	)
+	cases := []struct {
+		name           string
+		data           string
+		mode           os.FileMode
+		inline         string
+		missing        bool
+		directory      bool
+		wantError      bool
+		wantUser       string
+		wantCredential string
+	}{
+		{name: "pair loaded from one file", data: validCredentials, mode: 0o600, wantUser: username, wantCredential: credential},
+		{name: "group-readable file accepted", data: validCredentials, mode: 0o640, wantUser: username, wantCredential: credential},
+		{name: "inline pair wins without reading missing file", missing: true, inline: inlineCredentials, wantUser: "inline-user", wantCredential: "inline-password"},
+		{name: "inline whitespace preserved", missing: true, inline: "      username: ' u '\n      credential: ' c '\n", wantUser: " u ", wantCredential: " c "},
+		{name: "partial inline username is not mixed with file", data: validCredentials, mode: 0o600, inline: "      username: inline-user\n", wantError: true},
+		{name: "partial inline password is not mixed with file", data: validCredentials, mode: 0o600, inline: "      credential: inline-password\n", wantError: true},
+		{name: "missing file", missing: true, wantError: true},
+		{name: "directory cannot be read", directory: true, wantError: true},
+		{name: "others permissions rejected", data: validCredentials, mode: 0o604, wantError: true},
+		{name: "scalar credentials do not leak in errors", data: privateValue, mode: 0o600, wantError: true},
+		{name: "invalid YAML", data: "username: [", mode: 0o600, wantError: true},
+		{name: "empty file", mode: 0o600, wantError: true},
+		{name: "whitespace file", data: " \n\t", mode: 0o600, wantError: true},
+		{name: "missing username", data: "credential: password\n", mode: 0o600, wantError: true},
+		{name: "missing password", data: "username: user\n", mode: 0o600, wantError: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), fileName)
+			switch {
+			case tc.directory:
+				require.NoError(t, os.Mkdir(path, 0o700))
+			case !tc.missing:
+				require.NoError(t, os.WriteFile(path, []byte(tc.data), tc.mode))
+			}
+			conf, err := NewConfig(fmt.Sprintf(configFormat, path, tc.inline), true, nil, nil)
+			require.NoError(t, err)
+			err = conf.LoadTURNSecrets()
+			if tc.wantError {
+				require.Error(t, err)
+				require.NotContains(t, err.Error(), redactedPrefix)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.wantUser, conf.RTC.TURNServers[0].Username)
+			require.Equal(t, tc.wantCredential, conf.RTC.TURNServers[0].Credential)
+		})
+	}
 }

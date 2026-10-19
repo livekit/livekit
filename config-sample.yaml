@@ -110,6 +110,13 @@ rtc:
   #     # Insecure username/password authentication
   #     username: ""
   #     credential: ""
+  #     # Alternatively, load the static username/credential pair from one YAML file:
+  #     #   username: myuser
+  #     #   credential: mycredential
+  #     # The file must have no permissions for others (for example, chmod 640).
+  #     # Inline username/credential take precedence; the pair is never mixed with
+  #     # file values. Quoted YAML preserves whitespace in passwords.
+  #     credentials_file: "/run/credentials/livekit/turn.yaml"
   # # allows LiveKit to monitor congestion when sending streams and automatically
   # # manage bandwidth utilization to avoid congestion/loss. Enabled by default
   # congestion_control:
