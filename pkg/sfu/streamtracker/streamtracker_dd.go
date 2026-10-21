@@ -210,12 +210,14 @@ func (s *StreamTrackerDependencyDescriptor) Observe(temporalLayer int32, pktSize
 			s.params.Logger.Errorw("len(dtis) less than target", nil, "target", dt.Target, "dtis", dtis)
 			continue
 		}
-		// we are not dropping discardable frames now, so only ingore not present frames
+		// we are not dropping discardable frames now, so only ignore not present frames
 		if dtis[dt.Target] == dd.DecodeTargetNotPresent {
 			continue
 		}
 
-		s.bytesForBitrate[dt.Layer.Spatial][dt.Layer.Temporal] += int64(pktSize)
+		if int(dt.Layer.Spatial) < len(s.bytesForBitrate) && int(dt.Layer.Temporal) < len(s.bytesForBitrate[dt.Layer.Spatial]) {
+			s.bytesForBitrate[dt.Layer.Spatial][dt.Layer.Temporal] += int64(pktSize)
+		}
 	}
 
 	s.lock.Unlock()

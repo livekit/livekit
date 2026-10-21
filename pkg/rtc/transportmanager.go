@@ -100,6 +100,7 @@ type TransportManagerParams struct {
 	FireOnTrackBySdp                  bool
 	EnableDataTracks                  bool
 	ExcludeIPv6LocalCandidates        bool
+	EnableWarp                        bool
 }
 
 type TransportManager struct {
@@ -172,6 +173,7 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 		FireOnTrackBySdp:                  params.FireOnTrackBySdp,
 		EnableDataTracks:                  params.EnableDataTracks,
 		ExcludeIPv6LocalCandidates:        params.ExcludeIPv6LocalCandidates,
+		EnableWarp:                        params.EnableWarp,
 	})
 	if err != nil {
 		return nil, err
@@ -200,11 +202,17 @@ func NewTransportManager(params TransportManagerParams) (*TransportManager, erro
 			FireOnTrackBySdp:                  params.FireOnTrackBySdp,
 			EnableDataTracks:                  params.EnableDataTracks,
 			ExcludeIPv6LocalCandidates:        params.ExcludeIPv6LocalCandidates,
+			EnableWarp:                        params.EnableWarp,
 		})
 		if err != nil {
 			return nil, err
 		}
 		t.subscriber = subscriber
+	}
+	if t.useNegotiatedDataChannels() {
+		if err := t.createNegotiatedDataChannelsForPublisher(); err != nil {
+			return nil, err
+		}
 	}
 	if !t.params.Migration && t.params.SubscriberAsPrimary {
 		if err := t.createDataChannelsForSubscriber(nil); err != nil {
@@ -229,12 +237,16 @@ func (t *TransportManager) SubscriberClose() {
 	t.subscriber.Close()
 }
 
+func (t *TransportManager) HasPublisherICEEverConnected() bool {
+	return t.publisher.ICEHasEverConnected()
+}
+
 func (t *TransportManager) HasPublisherEverConnected() bool {
-	return t.publisher.HasEverConnected()
+	return t.publisher.PeerConnectionHasEverConnected()
 }
 
 func (t *TransportManager) PublisherFirstConnectedAt() time.Time {
-	return t.publisher.FirstConnectedAt()
+	return t.publisher.PeerConnectionFirstConnectedAt()
 }
 
 func (t *TransportManager) IsPublisherEstablished() bool {
@@ -269,19 +281,27 @@ func (t *TransportManager) GetSubscriberRTT() (float64, bool) {
 	}
 }
 
+func (t *TransportManager) HasSubscriberICEEverConnected() bool {
+	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
+		return t.publisher.ICEHasEverConnected()
+	} else {
+		return t.subscriber.ICEHasEverConnected()
+	}
+}
+
 func (t *TransportManager) HasSubscriberEverConnected() bool {
 	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
-		return t.publisher.HasEverConnected()
+		return t.publisher.PeerConnectionHasEverConnected()
 	} else {
-		return t.subscriber.HasEverConnected()
+		return t.subscriber.PeerConnectionHasEverConnected()
 	}
 }
 
 func (t *TransportManager) SubscriberFirstConnectedAt() time.Time {
 	if t.params.UseOneShotSignallingMode || t.params.UseSinglePeerConnection {
-		return t.publisher.FirstConnectedAt()
+		return t.publisher.PeerConnectionFirstConnectedAt()
 	} else {
-		return t.subscriber.FirstConnectedAt()
+		return t.subscriber.PeerConnectionFirstConnectedAt()
 	}
 }
 
@@ -412,6 +432,52 @@ func (t *TransportManager) handleSendDataResult(err error, kind string, size int
 	return err
 }
 
+func (t *TransportManager) useNegotiatedDataChannels() bool {
+	return t.params.ProtocolVersion.SupportsNegotiatedDataChannels() &&
+		t.params.UseSinglePeerConnection &&
+		!t.params.UseOneShotSignallingMode
+}
+
+func (t *TransportManager) createNegotiatedDataChannelsForPublisher() error {
+	// Migration recreates the publisher data channels as negotiated with the IDs the client reports
+	// in ProcessPendingPublisherDataChannels instead.
+	if t.params.Migration {
+		return nil
+	}
+
+	negotiated := true
+
+	reliableID := uint16(livekit.NegotiatedDataChannelID_NDCI_RELIABLE)
+	ordered := true
+	if err := t.publisher.CreateDataChannel(ReliableDataChannel, &webrtc.DataChannelInit{
+		Ordered:    &ordered,
+		ID:         &reliableID,
+		Negotiated: &negotiated,
+	}); err != nil {
+		return err
+	}
+
+	ordered = false
+	retransmits := uint16(0)
+	lossyID := uint16(livekit.NegotiatedDataChannelID_NDCI_LOSSY)
+	if err := t.publisher.CreateDataChannel(LossyDataChannel, &webrtc.DataChannelInit{
+		Ordered:        &ordered,
+		MaxRetransmits: &retransmits,
+		ID:             &lossyID,
+		Negotiated:     &negotiated,
+	}); err != nil {
+		return err
+	}
+
+	dataTrackID := uint16(livekit.NegotiatedDataChannelID_NDCI_DATA_TRACK)
+	return t.publisher.CreateDataChannel(DataTrackDataChannel, &webrtc.DataChannelInit{
+		Ordered:        &ordered,
+		MaxRetransmits: &retransmits,
+		ID:             &dataTrackID,
+		Negotiated:     &negotiated,
+	})
+}
+
 func (t *TransportManager) createDataChannelsForSubscriber(pendingDataChannels []*livekit.DataChannelInfo) error {
 	var (
 		reliableID, lossyID, dataTrackID          uint16
@@ -508,12 +574,9 @@ func (t *TransportManager) GetUnmatchMediaForOffer(parsedOffer *sdp.SessionDescr
 	return
 }
 
-func (t *TransportManager) LastPublisherOffer() *webrtc.SessionDescription {
-	return t.publisher.CurrentRemoteDescription()
-}
-
-func (t *TransportManager) LastPublisherOfferPending() *webrtc.SessionDescription {
-	return t.publisher.PendingRemoteDescription()
+// LastPublisherOfferParsed returns the parsed form of the last offer set on the publisher peer connection
+func (t *TransportManager) LastPublisherOfferParsed() *sdp.SessionDescription {
+	return t.publisher.RemoteOfferParsed()
 }
 
 func (t *TransportManager) HandleOffer(offer webrtc.SessionDescription, offerId uint32, shouldPend bool) error {
@@ -560,6 +623,11 @@ func (t *TransportManager) ProcessPendingPublisherOffer() {
 }
 
 func (t *TransportManager) HandleAnswer(answer webrtc.SessionDescription, answerId uint32) {
+	if t.subscriber == nil {
+		// no subscriber transport in single-PC / one-shot signalling mode
+		t.params.Logger.Warnw("answer received, but no subscriber peer connection", nil)
+		return
+	}
 	t.subscriber.HandleRemoteDescription(answer, answerId)
 }
 
@@ -658,7 +726,7 @@ func (t *TransportManager) GetICEConfig() *livekit.ICEConfig {
 	if t.iceConfig == nil {
 		return nil
 	}
-	return utils.CloneProto(t.iceConfig)
+	return proto.CloneOf(t.iceConfig)
 }
 
 func (t *TransportManager) resetTransportConfigureLocked(reconfigured bool) {
@@ -770,14 +838,13 @@ func (t *TransportManager) handleConnectionFailed(isShortLived bool) {
 		return
 	}
 
-	lastSignalSince := time.Since(t.lastSignalAt)
 	signalValid := t.signalSourceValid.Load()
 	if !t.hasRecentSignalLocked() || !signalValid {
 		// the failed might cause by network interrupt because signal closed or we have not seen any signal in the time window,
 		// so don't switch to next candidate type
 		t.params.Logger.Debugw(
 			"ignoring prefer candidate check by ICE failure because signal connection interrupted",
-			"lastSignalSince", lastSignalSince,
+			"sinceLastSignal", time.Since(t.lastSignalAt),
 			"signalValid", signalValid,
 		)
 		t.failureCount = 0
@@ -972,6 +1039,11 @@ func (t *TransportManager) onMediaLossUpdate(loss uint8) {
 				t.lock.Unlock()
 
 				t.params.Logger.Infow("udp connection unstable, switch to tcp", "signalingRTT", t.signalingRTT)
+				// switch ICE preference to TCP before asking the client to resume,
+				// the raw params handler only sends a leave request and does not
+				// reconfigure the transport, so the client would reconnect over UDP
+				// again and this path would keep firing
+				t.handleConnectionFailed(true)
 				if t.params.UseSinglePeerConnection {
 					t.params.PublisherHandler.OnFailed(true, t.publisher.GetICEConnectionInfo())
 				} else {

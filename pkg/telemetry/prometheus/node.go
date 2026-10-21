@@ -90,7 +90,7 @@ func Init(nodeID string, nodeType livekit.NodeType) error {
 			ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 			Buckets:     []float64{5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000},
 		},
-		[]string{"service", "method"},
+		[]string{"service", "method", "status"},
 	)
 
 	promSysPacketGauge = prometheus.NewGaugeVec(
@@ -174,7 +174,6 @@ func GetNodeStats(nodeStartedAt int64, prevStats []*livekit.NodeStats, rateInter
 		ParticipantRtcCanceled:     participantRTCCanceled.Load(),
 		ParticipantRtcActive:       participantRTCActive.Load(),
 		ForwardLatency:             forwardLatency.Load(),
-		ForwardJitter:              forwardJitter.Load(),
 		NumCpus:                    uint32(cpuStats.NumCPU()), // this will round down to the nearest integer
 		CpuLoad:                    float32(cpuStats.GetCPULoad()),
 		MemoryTotal:                memTotal,
@@ -305,6 +304,6 @@ func RecordTwirpRequestStatus(service string, method string, statusFamily string
 	promTwirpRequestStatusCounter.WithLabelValues(service, method, statusFamily, string(code)).Add(1)
 }
 
-func RecordTwirpRequestLatency(service, method string, duration time.Duration) {
-	promTwirpRequestLatency.WithLabelValues(service, method).Observe(float64(duration.Milliseconds()))
+func RecordTwirpRequestLatency(service, method string, duration time.Duration, statusFamily string) {
+	promTwirpRequestLatency.WithLabelValues(service, method, statusFamily).Observe(float64(duration.Milliseconds()))
 }

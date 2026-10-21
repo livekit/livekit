@@ -45,13 +45,39 @@ import (
 )
 
 const (
+	turnCredentialsFileReadError  = "reading turn credentials file %q: %w"
+	turnCredentialsFileParseError = "invalid YAML in turn credentials file %q"
+	turnCredentialsInlineWarning  = "both static credentials and credentials_file are set for TURN server, the inline values will be used"
+
 	generatedCLIFlagUsage = "generated"
+
+	// TURNMaxTTLSeconds is the operational maximum for TURN credential TTLs (24 hours).
+	// It bounds credential lifetime and prevents time.Duration overflow when multiplying
+	// by time.Second (values above ~9.2e9 seconds wrap on 64-bit builds).
+	TURNMaxTTLSeconds = 24 * 60 * 60
+
+	// DefaultTURNTTLSeconds is the default TTL for embedded TURN credentials, and the
+	// fallback used when a configured TTL is <= 0.
+	DefaultTURNTTLSeconds = 300
+
+	// DefaultExternalTURNTTLSeconds is the default TTL applied to external TURN
+	// (static-auth-secret) credentials when the configured TTL is left at 0.
+	DefaultExternalTURNTTLSeconds = 14400
+
+	// DefaultTURNPerUserRelayAllocationLimit bounds how many concurrent relay
+	// allocations a single participant credential may hold on the embedded TURN
+	// server. It prevents one authenticated participant from exhausting the
+	// shared relay-port range for everyone else. A value <= 0 disables the quota.
+	DefaultTURNPerUserRelayAllocationLimit = 12
 )
 
 var (
-	ErrKeyFileIncorrectPermission        = errors.New("key file others permissions must be set to 0")
-	ErrTURNSecretFileIncorrectPermission = errors.New("turn secret file others permissions must be set to 0")
-	ErrKeysNotSet                        = errors.New("one of key-file or keys must be provided")
+	ErrKeyFileIncorrectPermission            = errors.New("key file others permissions must be set to 0")
+	ErrTURNCredentialFileIncorrectPermission = errors.New("turn credentials file others permissions must be set to 0")
+	ErrTURNSecretFileIncorrectPermission     = errors.New("turn secret file others permissions must be set to 0")
+	ErrKeysNotSet                            = errors.New("one of key-file or keys must be provided")
+	ErrTURNSecretEmpty                       = errors.New("turn secret is empty")
+	ErrTURNServerNoCredentials               = errors.New("turn server has no usable credentials: set a non-empty secret/secret_file for dynamic auth, or username and credential for static auth")
 )
 
 type Config struct {
@@ -61,6 +87,7 @@ type Config struct {
 	PrometheusPort uint32                   `yaml:"prometheus_port,omitempty"`
 	Prometheus     PrometheusConfig         `yaml:"prometheus,omitempty"`
 	DebugHandler   DebugHandlerConfig       `yaml:"debug_handler,omitempty"`
+	WebTransport   WebTransportConfig       `yaml:"webtransport,omitempty"`
 	RTC            RTCConfig                `yaml:"rtc,omitempty"`
 	Redis          redisLiveKit.RedisConfig `yaml:"redis,omitempty"`
 	Audio          sfu.AudioConfig          `yaml:"audio,omitempty"`
@@ -96,10 +123,24 @@ type Config struct {
 	API APIConfig `yaml:"api,omitempty"`
 }
 
+// WebTransportConfig is the node's HTTP/3 listener. QUIC has no plaintext mode,
+// so a certificate is required; development mode generates a self-signed one.
+type WebTransportConfig struct {
+	// Port is the UDP port to listen on. 0 starts no listener.
+	Port        uint32 `yaml:"port,omitempty"`
+	TLSCertFile string `yaml:"tls_cert_file,omitempty"`
+	TLSKeyFile  string `yaml:"tls_key_file,omitempty"`
+}
+
 type RTCConfig struct {
 	rtcconfig.RTCConfig `yaml:",inline"`
 
 	TURNServers []TURNServer `yaml:"turn_servers,omitempty"`
+
+	// EnableWarp turns on WARP = SPED (DTLS-in-STUN, saves DTLS round-trip) +
+	// SNAP (SCTP INIT in SDP, saves SCTP/data-channel init round-trip).
+	// Off by default; experimental.
+	EnableWarp bool `yaml:"enable_warp,omitempty"`
 
 	// Deprecated
 	StrictACKs bool `yaml:"strict_acks,omitempty"`
@@ -168,13 +209,16 @@ type TURNServer struct {
 	Protocol   string `yaml:"protocol,omitempty"`
 	Username   string `yaml:"username,omitempty"`
 	Credential string `yaml:"credential,omitempty"`
+	// YAML file containing username and credential. Inline static credentials take precedence.
+	CredentialsFile string `yaml:"credentials_file,omitempty"`
 	// Secret is used for TURN static auth secrets mechanism. When provided,
 	// dynamic credentials are generated using HMAC-SHA1 instead of static Username/Credential
 	Secret string `yaml:"secret,omitempty"`
 	// File containing the secret
 	SecretFile string `yaml:"secret_file,omitempty"`
 	// TTL is the time-to-live in seconds for generated credentials when using Secret.
-	// Defaults to 14400 seconds (4 hours) if not specified
+	// Defaults to 14400 seconds (4 hours) when 0. Negative values fall back to the 5m
+	// default and large values are capped at TURNMaxTTLSeconds.
 	TTL int `yaml:"ttl,omitempty"`
 }
 
@@ -191,6 +235,22 @@ type CongestionControlConfig struct {
 	UseSendSideBWE   bool                          `yaml:"use_send_side_bwe,omitempty"`
 	SendSideBWEPacer string                        `yaml:"send_side_bwe_pacer,omitempty"`
 	SendSideBWE      sendsidebwe.SendSideBWEConfig `yaml:"send_side_bwe,omitempty"`
+}
+
+// Validate reports configuration that would otherwise be ignored at runtime.
+func (c CongestionControlConfig) Validate() error {
+	switch pacer.PacerBehavior(c.SendSideBWEPacer) {
+	case "", pacer.PacerBehaviorPassThrough, pacer.PacerBehaviorNoQueue, pacer.PacerBehaviorLeakybucket:
+		return nil
+	default:
+		return fmt.Errorf(
+			"invalid send_side_bwe_pacer %q, must be one of %q, %q, %q",
+			c.SendSideBWEPacer,
+			pacer.PacerBehaviorPassThrough,
+			pacer.PacerBehaviorNoQueue,
+			pacer.PacerBehaviorLeakybucket,
+		)
+	}
 }
 
 type PlayoutDelayConfig struct {
@@ -218,6 +278,8 @@ type RoomConfig struct {
 	SyncStreams        bool               `yaml:"sync_streams,omitempty"`
 	CreateRoomTimeout  time.Duration      `yaml:"create_room_timeout,omitempty"`
 	CreateRoomAttempts int                `yaml:"create_room_attempts,omitempty"`
+	// include room metadata in track webhook events instead of just room SID and name
+	EnableFullRoomInWebhooks bool `yaml:"enable_full_room_in_webhooks,omitempty"`
 	// target room participant update batch chunk size in bytes
 	UpdateBatchTargetSize int `yaml:"update_batch_target_size,omitempty"`
 	// deprecated, moved to limits
@@ -250,7 +312,27 @@ type TURNConfig struct {
 	RelayPortRangeEnd   uint16   `yaml:"relay_range_end,omitempty"`
 	ExternalTLS         bool     `yaml:"external_tls,omitempty"`
 	BindAddresses       []string `yaml:"bind_addresses,omitempty"`
-	// TTL of the TURN credentials in seconds - defaults to 300
+	// ProxyProtocol makes the TURN TCP listener require a PROXY protocol (v1 or v2)
+	// header on every connection and use the client address it carries. Needed when
+	// a proxy in front of TURN dials from its own address (a TLS-terminating L4
+	// proxy, a TCP reverse proxy): TURN echoes the address it sees back to the
+	// client as XOR-MAPPED-ADDRESS, and browsers such as Firefox reject a loopback
+	// or wildcard address there and abandon the allocation. Connections without
+	// the header are rejected.
+	ProxyProtocol bool `yaml:"proxy_protocol,omitempty"`
+	// ProxyProtocolTrustedCIDRs lists the proxies whose PROXY header is believed.
+	// Connections from any other address are closed, so a client that reaches
+	// tls_port directly cannot claim an arbitrary source address. Defaults to
+	// loopback only, for a proxy on the same host.
+	ProxyProtocolTrustedCIDRs []string `yaml:"proxy_protocol_trusted_cidrs,omitempty"`
+	// PerUserRelayAllocationLimit caps the number of concurrent relay allocations
+	// a single participant credential may hold, keyed by the participant ID. This
+	// stops one authenticated participant from consuming the shared relay-port
+	// range and denying TURN relays to others. Defaults to
+	// DefaultTURNPerUserRelayAllocationLimit; a value <= 0 disables the quota.
+	PerUserRelayAllocationLimit int `yaml:"per_user_relay_allocation_limit,omitempty"`
+	// TTL of the TURN credentials in seconds - defaults to 300. Values <= 0 fall back to the
+	// 300s (5m) default and large values are capped at TURNMaxTTLSeconds.
 	TTLSeconds int `yaml:"ttl_seconds,omitempty"`
 	// list of restricted peer CIDRs (loopback, link-local (unicast, multicast), multicast, private, unspecified) to allow access to.
 	// By default (i. e. empty list), all restricted peer CIDRs are denied access.
@@ -306,6 +388,20 @@ type LimitConfig struct {
 	MaxDataBlobSize      uint32 `yaml:"max_data_blobs_size,omitempty"`
 
 	MaxDataTrackCustomEncodingLength int `yaml:"max_data_track_custom_encoding_length,omitempty"`
+
+	// maximum size (in bytes) of a single message read off a client-facing
+	// signalling WebSocket connection. Frames larger than this are rejected by the
+	// transport before being buffered, guarding against single-frame memory
+	// exhaustion. A value of 0 disables the limit (unbounded).
+	SignalMessageSizeLimit int64 `yaml:"signal_message_size_limit,omitempty"`
+	// same as SignalMessageSizeLimit, but for agent worker WebSocket connections.
+	AgentSignalMessageSizeLimit int64 `yaml:"agent_signal_message_size_limit,omitempty"`
+
+	// maximum size (in bytes) of an HTTP request body accepted on the main API
+	// listener (Twirp room/egress/ingress/SIP routes, etc). Requests larger than
+	// this are rejected before their body is decoded, so large messages cannot
+	// exhaust memory. A value of 0 disables the limit (unbounded).
+	MaxAPIRequestBodySize int64 `yaml:"max_api_request_body_size,omitempty"`
 }
 
 func (l LimitConfig) CheckRoomNameLength(name string) bool {
@@ -336,8 +432,20 @@ func (l LimitConfig) CheckAttributesSize(attributes map[string]string) bool {
 	return uint32(total) <= l.MaxAttributesSize
 }
 
-func (l LimitConfig) CheckDataBlobKeyLength(key string) bool {
-	return l.MaxDataBlobKeyLength == 0 || len(key) <= l.MaxDataBlobKeyLength
+// DataBlobKeyLength returns the length of the identifying content of a data blob key.
+// The text form of the key message is not used, as it adds field names and quotes.
+func DataBlobKeyLength(key *livekit.DataBlobKey) int {
+	switch k := key.GetKey().(type) {
+	case *livekit.DataBlobKey_Generic:
+		return len(k.Generic)
+	case *livekit.DataBlobKey_SchemaId:
+		return len(k.SchemaId.GetName()) + len(k.SchemaId.GetEncoding().GetCustom())
+	}
+	return 0
+}
+
+func (l LimitConfig) CheckDataBlobKeyLength(key *livekit.DataBlobKey) bool {
+	return l.MaxDataBlobKeyLength == 0 || DataBlobKeyLength(key) <= l.MaxDataBlobKeyLength
 }
 
 func (l LimitConfig) CheckDataTrackCustomEncodingLength(identifier string) bool {
@@ -367,7 +475,7 @@ func (l LimitConfig) CheckDataBlobsSize(dataBlobs []*livekit.DataBlob) bool {
 
 	total := 0
 	for _, dataBlob := range dataBlobs {
-		total += len(dataBlob.GetKey().String()) + len(dataBlob.Contents)
+		total += DataBlobKeyLength(dataBlob.GetKey()) + len(dataBlob.Contents)
 	}
 	return uint32(total) <= l.MaxDataBlobSize
 }
@@ -379,9 +487,9 @@ func (l LimitConfig) CanAddDataBlob(dataBlobs []*livekit.DataBlob, toAdd *liveki
 
 	total := 0
 	for _, dataBlob := range dataBlobs {
-		total += len(dataBlob.Key.String()) + len(dataBlob.Contents)
+		total += DataBlobKeyLength(dataBlob.GetKey()) + len(dataBlob.Contents)
 	}
-	return uint32(total+len(toAdd.GetKey().String())+len(toAdd.Contents)) <= l.MaxDataBlobSize
+	return uint32(total+DataBlobKeyLength(toAdd.GetKey())+len(toAdd.Contents)) <= l.MaxDataBlobSize
 }
 
 // ---------------------------------
@@ -389,6 +497,19 @@ func (l LimitConfig) CanAddDataBlob(dataBlobs []*livekit.DataBlob, toAdd *liveki
 type IngressConfig struct {
 	RTMPBaseURL string `yaml:"rtmp_base_url,omitempty"`
 	WHIPBaseURL string `yaml:"whip_base_url,omitempty"`
+	// Allow URL pull ingresses with a udp:// source URL. Disabled by default, and should only be
+	// enabled if both the callers allowed to create ingresses and the network the ingress handlers
+	// run on are trusted. Unlike an http or srt source url, a udp source url doesn't make the ingress
+	// handler connect out to the url host: the handler binds a local socket on the address and port
+	// taken from the url, and joins the multicast group if one is given. This lets the caller:
+	//   - Choose which local port the handler binds, potentially colliding with other services on
+	//     the host.
+	//   - Feed the session unauthenticated traffic. UDP is connectionless, so any host able to reach
+	//     that port can inject media, or spoof the sender address to disrupt a legitimate feed.
+	//   - Make the handler join arbitrary multicast groups and republish whatever it receives into a
+	//     room, using the ingress as a relay for streams on the handler's local network the caller has
+	//     no direct access to.
+	EnableUDPURLPull bool `yaml:"enable_udp_url_pull,omitempty"`
 }
 
 type SIPConfig struct{}
@@ -512,14 +633,19 @@ var DefaultConfig = Config{
 		MaxDataBlobKeyLength:             256,
 		MaxDataBlobSize:                  64000,
 		MaxDataTrackCustomEncodingLength: 32,
+		SignalMessageSizeLimit:           2 << 20,  // 2 MiB
+		AgentSignalMessageSizeLimit:      2 << 20,  // 2 MiB
+		MaxAPIRequestBodySize:            10 << 20, // 10 MiB
 	},
 	Logging: LoggingConfig{
 		PionLevel: "error",
 	},
 	TURN: TURNConfig{
-		Enabled:       false,
-		BindAddresses: []string{"0.0.0.0"},
-		TTLSeconds:    300,
+		Enabled:                     false,
+		BindAddresses:               []string{"0.0.0.0"},
+		ProxyProtocolTrustedCIDRs:   []string{"127.0.0.0/8", "::1/128"},
+		TTLSeconds:                  DefaultTURNTTLSeconds,
+		PerUserRelayAllocationLimit: DefaultTURNPerUserRelayAllocationLimit,
 	},
 	NodeSelector: NodeSelectorConfig{
 		Kind:         "any",
@@ -577,6 +703,12 @@ func NewConfig(confString string, strictMode bool, c *cli.Command, baseFlags []c
 	if err := conf.RTC.Validate(conf.Development); err != nil {
 		return nil, fmt.Errorf("could not validate RTC config: %v", err)
 	}
+
+	if err := conf.RTC.CongestionControl.Validate(); err != nil {
+		return nil, fmt.Errorf("could not validate congestion control config: %v", err)
+	}
+
+	conf.NormalizeTURNTTLs()
 
 	// expand env vars in filenames
 	file, err := homedir.Expand(os.ExpandEnv(conf.KeyFile))
@@ -732,38 +864,129 @@ func (conf *Config) ValidateKeys() error {
 func (conf *Config) LoadTURNSecrets() error {
 	var otherFilter os.FileMode = 0o007
 	for i, s := range conf.RTC.TURNServers {
-		if s.SecretFile == "" {
-			continue
-		}
-		if s.Secret != "" {
+		// trim first so a blank inline secret falls back to secret_file rather than being treated as set
+		inlineSecret := strings.TrimSpace(s.Secret)
+		switch {
+		case s.SecretFile != "" && inlineSecret != "":
 			logger.Warnw("both secret and secret_file are set for TURN server, the hardcoded secret will be used", nil,
 				"host", s.Host, "port", s.Port)
-			continue
+			conf.RTC.TURNServers[i].Secret = inlineSecret
+		case s.SecretFile != "":
+			st, err := os.Stat(s.SecretFile)
+			if err != nil {
+				return err
+			}
+			if st.Mode().Perm()&otherFilter != 0o000 {
+				return ErrTURNSecretFileIncorrectPermission
+			}
+			data, err := os.ReadFile(s.SecretFile)
+			if err != nil {
+				return fmt.Errorf("reading turn secret file %q: %w", s.SecretFile, err)
+			}
+			secret := strings.TrimSpace(string(data))
+			if secret == "" {
+				return fmt.Errorf("turn server %q secret file %q: %w", s.Host, s.SecretFile, ErrTURNSecretEmpty)
+			}
+			conf.RTC.TURNServers[i].Secret = secret
+		default:
+			conf.RTC.TURNServers[i].Secret = inlineSecret
 		}
-		st, err := os.Stat(s.SecretFile)
-		if err != nil {
-			return err
+
+		// Keep the static pair together; never combine one inline value with a
+		// credential from a different source.
+		if s.CredentialsFile != "" {
+			if s.Username != "" || s.Credential != "" {
+				logger.Warnw(turnCredentialsInlineWarning, nil,
+					"host", s.Host, "port", s.Port)
+			} else {
+				st, err := os.Stat(s.CredentialsFile)
+				if err != nil {
+					return err
+				}
+				if st.Mode().Perm()&otherFilter != 0o000 {
+					return ErrTURNCredentialFileIncorrectPermission
+				}
+				data, err := os.ReadFile(s.CredentialsFile)
+				if err != nil {
+					return fmt.Errorf(turnCredentialsFileReadError, s.CredentialsFile, err)
+				}
+				var credentials struct {
+					Username   string `yaml:"username"`
+					Credential string `yaml:"credential"`
+				}
+				if err := yaml.Unmarshal(data, &credentials); err != nil {
+					// YAML type errors may contain scalar values from the secret file.
+					return fmt.Errorf(turnCredentialsFileParseError, s.CredentialsFile)
+				}
+				conf.RTC.TURNServers[i].Username = credentials.Username
+				conf.RTC.TURNServers[i].Credential = credentials.Credential
+			}
 		}
-		if st.Mode().Perm()&otherFilter != 0o000 {
-			return ErrTURNSecretFileIncorrectPermission
+
+		// validate credential mode as an explicit union rather than inferring it from a
+		// post-load empty secret (which would silently fall back to static credentials)
+		s := conf.RTC.TURNServers[i]
+		hasDynamic := s.Secret != ""
+		hasStatic := s.Username != "" && s.Credential != ""
+		if !hasDynamic && !hasStatic {
+			return fmt.Errorf("turn server %q: %w", s.Host, ErrTURNServerNoCredentials)
 		}
-		data, err := os.ReadFile(s.SecretFile)
-		if err != nil {
-			return fmt.Errorf("reading turn secret file %q: %w", s.SecretFile, err)
-		}
-		conf.RTC.TURNServers[i].Secret = strings.TrimSpace(string(data))
 	}
 	return nil
+}
+
+// ClampTURNTTLSeconds bounds a TURN credential TTL to [DefaultTURNTTLSeconds, TURNMaxTTLSeconds]:
+// non-positive values (which would otherwise produce already-expired credentials) fall back to
+// the 5m default and overflowing values clamp to the max. The second return value reports whether
+// the input was out of range.
+func ClampTURNTTLSeconds(ttlSeconds int) (int, bool) {
+	switch {
+	case ttlSeconds <= 0:
+		return DefaultTURNTTLSeconds, true
+	case ttlSeconds > TURNMaxTTLSeconds:
+		return TURNMaxTTLSeconds, true
+	default:
+		return ttlSeconds, false
+	}
+}
+
+// NormalizeTURNTTLs clamps configured TURN TTLs to the safe range, warning on any
+// adjustment. Safe to call more than once.
+func (conf *Config) NormalizeTURNTTLs() {
+	if clamped, changed := ClampTURNTTLSeconds(conf.TURN.TTLSeconds); changed {
+		logger.Warnw(
+			"turn.ttl_seconds out of range, using safe value", nil,
+			"configured", conf.TURN.TTLSeconds,
+			"clamped", clamped,
+			"max", TURNMaxTTLSeconds,
+		)
+		conf.TURN.TTLSeconds = clamped
+	}
+	for i := range conf.RTC.TURNServers {
+		// external TTL of 0 means "use the default", so only cap the upper bound here;
+		// non-positive values fall back to the default when credentials are generated
+		if ttl := conf.RTC.TURNServers[i].TTL; ttl > TURNMaxTTLSeconds {
+			logger.Warnw(
+				"turn_servers ttl out of range, using safe value", nil,
+				"host", conf.RTC.TURNServers[i].Host,
+				"configured", ttl,
+				"clamped", TURNMaxTTLSeconds,
+				"max", TURNMaxTTLSeconds,
+			)
+			conf.RTC.TURNServers[i].TTL = TURNMaxTTLSeconds
+		}
+	}
 }
 
 func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error) {
 	defaultConfig := &DefaultConfig
 	flags := make([]cli.Flag, 0)
 	for name, value := range (defaultConfig).ToCLIFlagNames(existingFlags) {
-		kind := value.Kind()
-		if kind == reflect.Ptr {
-			kind = value.Type().Elem().Kind()
+		valueType := value.Type()
+		if valueType.Kind() == reflect.Ptr {
+			valueType = valueType.Elem()
 		}
+		kind := valueType.Kind()
 
 		var flag cli.Flag
 		envVar := fmt.Sprintf("LIVEKIT_%s", strings.ToUpper(strings.ReplaceAll(name, ".", "_")))
@@ -795,12 +1018,23 @@ func GenerateCLIFlags(existingFlags []cli.Flag, hidden bool) ([]cli.Flag, error)
 				Hidden:      hidden,
 			}
 		case reflect.Int64:
-			flag = &cli.Int64Flag{
-				Name:        name,
-				Sources:     cli.EnvVars(envVar),
-				Usage:       generatedCLIFlagUsage,
-				DefaultText: defaultText,
-				Hidden:      hidden,
+			if valueType == reflect.TypeOf(time.Duration(0)) {
+				// parse values like "30s", as the YAML config does
+				flag = &cli.DurationFlag{
+					Name:        name,
+					Sources:     cli.EnvVars(envVar),
+					Usage:       generatedCLIFlagUsage,
+					DefaultText: defaultText,
+					Hidden:      hidden,
+				}
+			} else {
+				flag = &cli.Int64Flag{
+					Name:        name,
+					Sources:     cli.EnvVars(envVar),
+					Usage:       generatedCLIFlagUsage,
+					DefaultText: defaultText,
+					Hidden:      hidden,
+				}
 			}
 		case reflect.Uint8, reflect.Uint16, reflect.Uint32:
 			flag = &cli.UintFlag{

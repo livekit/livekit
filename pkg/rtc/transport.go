@@ -223,14 +223,14 @@ type PCTransport struct {
 	dataTrackDC             *datachannel.DataChannelWriter[*webrtc.DataChannel]
 	unlabeledDataChannels   []*datachannel.DataChannelWriter[*webrtc.DataChannel]
 
-	iceStartedAt               time.Time
-	iceConnectedAt             time.Time
-	firstConnectedAt           time.Time
-	connectedAt                time.Time
-	tcpICETimer                *time.Timer
-	connectAfterICETimer       *time.Timer // timer to wait for pc to connect after ice connected
-	resetShortConnOnICERestart atomic.Bool
-	signalingRTT               atomic.Uint32 // milliseconds
+	iceFirstStartedAt              time.Time
+	iceFirstConnectedAt            time.Time
+	peerConnectionFirstConnectedAt time.Time
+	peerConnectionLastconnectedAt  time.Time
+	tcpICETimer                    *time.Timer
+	connectAfterICETimer           *time.Timer // timer to wait for pc to connect after ice connected
+	resetShortConnOnICERestart     atomic.Bool
+	signalingRTT                   atomic.Uint32 // milliseconds
 
 	hasFullyEstablishedRecorded bool
 
@@ -300,6 +300,9 @@ type PCTransport struct {
 	signalStateCheckTimer     *time.Timer
 	currentOfferIceCredential string // ice user:pwd, for publish side ice restart checking
 	pendingRestartIceOffer    *webrtc.SessionDescription
+	// parsed forms kept so that a remote description is parsed once per negotiation
+	pendingRestartIceOfferParsed *sdp.SessionDescription
+	remoteOfferParsed            *sdp.SessionDescription
 }
 
 type TransportParams struct {
@@ -330,6 +333,7 @@ type TransportParams struct {
 	DatachannelMaxReceiverBufferSize int
 
 	EnableDataTracks bool
+	EnableWarp       bool
 }
 
 func newPeerConnection(
@@ -382,6 +386,12 @@ func newPeerConnection(
 		se.EnableSCTPZeroChecksum(true)
 	}
 
+	if params.EnableWarp {
+		params.Logger.Debugw("enable warp")
+		se.EnableSped(true)
+		se.EnableSctpSnap(true)
+	}
+
 	//
 	// Disable SRTP replay protection (https://datatracker.ietf.org/doc/html/rfc3711#page-15).
 	// Needed due to lack of RTX stream support in Pion.
@@ -411,6 +421,9 @@ func newPeerConnection(
 		// As Firefox does not support migration, ICE Lite can be disabled.
 		se.SetLite(false)
 	}
+	// ICE checks already prove the remote address, so the HelloVerifyRequest cookie only adds a round trip.
+	// pion applies this only when this side ends up as the DTLS server.
+	se.SetDTLSInsecureSkipHelloVerify(true)
 	se.SetDTLSRetransmissionInterval(dtlsRetransmissionInterval)
 	se.SetDTLSConnectContextMaker(func() (context.Context, func()) {
 		return context.WithTimeout(context.Background(), dtlsHandshakeTimeout)
@@ -524,6 +537,8 @@ func newPeerConnection(
 			params.Logger.Debugw("rtx pair found from extension", "repair", repair, "base", base, "rsid", rsid)
 			params.Config.BufferFactory.SetRTXPair(repair, base, rsid)
 		},
+		params.Config.BufferFactory,
+		params.SimTracks,
 		params.Logger,
 	)
 	// put rtx interceptor behind unhandle simulcast interceptor so it can get the correct mid & rid
@@ -554,7 +569,6 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 		previousTrackDescription: make(map[string]*trackDescription),
 		canReuseTransceiver:      true,
 		connectionDetails:        types.NewICEConnectionDetails(params.Transport, params.Logger),
-		lastNegotiate:            time.Now(),
 	}
 	t.localOfferId.Store(uint32(rand.Intn(1<<8) + 1))
 
@@ -570,12 +584,25 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 				Config: params.CongestionControlConfig.SendSideBWE,
 				Logger: params.Logger,
 			})
-			switch pacer.PacerBehavior(params.CongestionControlConfig.SendSideBWEPacer) {
+			switch behavior := pacer.PacerBehavior(params.CongestionControlConfig.SendSideBWEPacer); behavior {
 			case pacer.PacerBehaviorPassThrough:
 				t.pacer = pacer.NewPassThrough(params.Logger, t.bwe)
 			case pacer.PacerBehaviorNoQueue:
 				t.pacer = pacer.NewNoQueue(params.Logger, t.bwe)
 			default:
+				// leaky-bucket lands here: it is a recognized value, but LeakyBucket paces
+				// to a bitrate set through Pacer.SetBitrate and nothing drives that from
+				// the bandwidth estimate, so it would pace at a fixed rate and ignore
+				// congestion. Unknown values are rejected by CongestionControlConfig.
+				// Validate, so they only reach here from callers building TransportParams
+				// directly.
+				if behavior != "" {
+					params.Logger.Warnw(
+						"send side BWE pacer unavailable, falling back", nil,
+						"pacerBehavior", behavior,
+						"fallback", pacer.PacerBehaviorNoQueue,
+					)
+				}
 				t.pacer = pacer.NewNoQueue(params.Logger, t.bwe)
 			}
 		} else {
@@ -664,8 +691,8 @@ func (t *PCTransport) SetSignalingRTT(rtt uint32) {
 
 func (t *PCTransport) setICEStartedAt(at time.Time) {
 	t.lock.Lock()
-	if t.iceStartedAt.IsZero() {
-		t.iceStartedAt = at
+	if t.iceFirstStartedAt.IsZero() {
+		t.iceFirstStartedAt = at
 
 		// checklist of ice agent will be cleared on ice failed, get stats before that
 		t.mayFailedICEStatsTimer = time.AfterFunc(iceFailedTimeoutTotal-time.Second, t.logMayFailedICEStats)
@@ -696,15 +723,15 @@ func (t *PCTransport) setICEStartedAt(at time.Time) {
 
 func (t *PCTransport) setICEConnectedAt(at time.Time) {
 	t.lock.Lock()
-	if t.iceConnectedAt.IsZero() {
+	if t.iceFirstConnectedAt.IsZero() {
 		//
 		// Record initial connection time.
-		// This prevents reset of connected at time if ICE goes `Connected` -> `Disconnected` -> `Connected`.
+		// This prevents reset of iceFirstConnectedAt if ICE goes `Connected` -> `Disconnected` -> `Connected`.
 		//
-		t.iceConnectedAt = at
+		t.iceFirstConnectedAt = at
 
 		// set failure timer for dtls handshake
-		iceDuration := at.Sub(t.iceStartedAt)
+		iceDuration := at.Sub(t.iceFirstStartedAt)
 		connTimeoutAfterICE := min(max(minConnectTimeoutAfterICE, 3*iceDuration), maxConnectTimeoutAfterICE)
 		t.params.Logger.Debugw("setting connection timer after ICE connected", "timeout", connTimeoutAfterICE, "iceDuration", iceDuration)
 		t.connectAfterICETimer = time.AfterFunc(connTimeoutAfterICE, func() {
@@ -771,9 +798,9 @@ func (t *PCTransport) logMayFailedICEStats() {
 func (t *PCTransport) resetShortConn() {
 	t.params.Logger.Infow("resetting short connection on ICE restart")
 	t.lock.Lock()
-	t.iceStartedAt = time.Time{}
-	t.iceConnectedAt = time.Time{}
-	t.connectedAt = time.Time{}
+	t.iceFirstStartedAt = time.Time{}
+	t.iceFirstConnectedAt = time.Time{}
+	t.peerConnectionLastconnectedAt = time.Time{}
 	if t.connectAfterICETimer != nil {
 		t.connectAfterICETimer.Stop()
 		t.connectAfterICETimer = nil
@@ -789,23 +816,23 @@ func (t *PCTransport) IsShortConnection(at time.Time) (bool, time.Duration) {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	if t.iceConnectedAt.IsZero() {
+	if t.iceFirstConnectedAt.IsZero() {
 		return false, 0
 	}
 
-	duration := at.Sub(t.iceConnectedAt)
+	duration := at.Sub(t.iceFirstConnectedAt)
 	return duration < shortConnectionThreshold, duration
 }
 
-func (t *PCTransport) setConnectedAt(at time.Time) bool {
+func (t *PCTransport) setPeerConnectionConnectedAt(at time.Time) bool {
 	t.lock.Lock()
-	t.connectedAt = at
-	if !t.firstConnectedAt.IsZero() {
+	t.peerConnectionLastconnectedAt = at
+	if !t.peerConnectionFirstConnectedAt.IsZero() {
 		t.lock.Unlock()
 		return false
 	}
 
-	t.firstConnectedAt = at
+	t.peerConnectionFirstConnectedAt = at
 	prometheus.RecordServiceOperationSuccess("peer_connection")
 	prometheus.RecordPeerConnectionState(t.params.Transport, "connected")
 	t.lock.Unlock()
@@ -859,7 +886,7 @@ func (t *PCTransport) onPeerConnectionStateChange(state webrtc.PeerConnectionSta
 	switch state {
 	case webrtc.PeerConnectionStateConnected:
 		t.clearConnTimer()
-		isInitialConnection := t.setConnectedAt(time.Now())
+		isInitialConnection := t.setPeerConnectionConnectedAt(time.Now())
 		if isInitialConnection {
 			t.params.Handler.OnInitialConnected()
 
@@ -987,7 +1014,7 @@ func (t *PCTransport) isFullyEstablished() bool {
 
 	dataChannelReady := t.params.UseOneShotSignallingMode || t.firstOfferNoDataChannel || (t.reliableDCOpened && t.lossyDCOpened)
 
-	return dataChannelReady && !t.connectedAt.IsZero()
+	return dataChannelReady && !t.peerConnectionLastconnectedAt.IsZero()
 }
 
 func (t *PCTransport) SetPreferTCP(preferTCP bool) {
@@ -1224,6 +1251,12 @@ func (t *PCTransport) getNumUnmatchedTransceivers() (uint32, uint32) {
 			continue
 		}
 
+		switch tr.Direction() {
+		case webrtc.RTPTransceiverDirectionSendonly, webrtc.RTPTransceiverDirectionSendrecv:
+		default:
+			continue
+		}
+
 		switch tr.Kind() {
 		case webrtc.RTPCodecTypeAudio:
 			numAudios++
@@ -1434,18 +1467,25 @@ func (t *PCTransport) IsEstablished() bool {
 	return t.pc.ConnectionState() != webrtc.PeerConnectionStateNew
 }
 
-func (t *PCTransport) HasEverConnected() bool {
+func (t *PCTransport) ICEHasEverConnected() bool {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	return !t.firstConnectedAt.IsZero()
+	return !t.iceFirstConnectedAt.IsZero()
 }
 
-func (t *PCTransport) FirstConnectedAt() time.Time {
+func (t *PCTransport) PeerConnectionHasEverConnected() bool {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
-	return t.firstConnectedAt
+	return !t.peerConnectionFirstConnectedAt.IsZero()
+}
+
+func (t *PCTransport) PeerConnectionFirstConnectedAt() time.Time {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.peerConnectionFirstConnectedAt
 }
 
 func (t *PCTransport) GetICEConnectionInfo() *types.ICEConnectionInfo {
@@ -1624,6 +1664,7 @@ func (t *PCTransport) clearConnTimer() {
 }
 
 func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remoteId uint32) error {
+	parsed, parseErr := sd.Unmarshal()
 	if t.params.UseOneShotSignallingMode {
 		if sd.Type == webrtc.SDPTypeOffer {
 			remoteOfferId := t.remoteOfferId.Load()
@@ -1644,8 +1685,7 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remo
 		}
 
 		// add remote candidates to ICE connection details
-		parsed, err := sd.Unmarshal()
-		if err == nil {
+		if parseErr == nil {
 			addRemoteICECandidates := func(attrs []sdp.Attribute) {
 				for _, a := range attrs {
 					if a.IsICECandidate() {
@@ -1664,10 +1704,13 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remo
 			}
 		}
 
-		err = t.pc.SetRemoteDescription(sd)
-		if err != nil {
+		if err := t.pc.SetRemoteDescription(sd); err != nil {
 			t.params.Logger.Errorw("could not set remote description on synchronous mode peer connection", err)
 			return err
+		}
+		t.setRemoteOfferParsed(sd.Type, parsed)
+		if sd.Type == webrtc.SDPTypeOffer {
+			t.params.Handler.OnSetRemoteDescriptionOffer()
 		}
 
 		rtxRepairs := nonSimulcastRTXRepairsFromSDP(parsed, t.params.Logger)
@@ -1684,6 +1727,8 @@ func (t *PCTransport) HandleRemoteDescription(sd webrtc.SessionDescription, remo
 		signal: signalRemoteDescriptionReceived,
 		data: remoteDescriptionData{
 			sessionDescription: &sd,
+			parsed:             parsed,
+			parseErr:           parseErr,
 			remoteId:           remoteId,
 		},
 	})
@@ -1793,14 +1838,14 @@ func (t *PCTransport) HandleICETrickleSDPFragment(sdpFragment string) error {
 	fragmentICEUfrag, fragmentICEPwd, err := parsedFragment.ExtractICECredential()
 	if err != nil {
 		t.params.Logger.Warnw(
-			"could not get ICE crendential from fragment", err,
+			"could not get ICE credential from fragment", err,
 			"sdpFragment", sdpFragment,
 		)
 		return ErrInvalidSDPFragment
 	}
 	remoteICEUfrag, remoteICEPwd, err := lksdp.ExtractICECredential(parsedRemote)
 	if err != nil {
-		t.params.Logger.Warnw("could not get ICE crendential from remote description", err, "sdpFragment", sdpFragment, "remoteDescription", crd)
+		t.params.Logger.Warnw("could not get ICE credential from remote description", err, "sdpFragment", sdpFragment, "remoteDescription", crd)
 		return err
 	}
 	if fragmentICEUfrag != "" && fragmentICEUfrag != remoteICEUfrag {
@@ -1885,6 +1930,7 @@ func (t *PCTransport) HandleICERestartSDPFragment(sdpFragment string) (string, e
 		t.params.Logger.Warnw("could not set remote description", err)
 		return "", err
 	}
+	t.setRemoteOfferParsed(sd.Type, parsedRemote)
 
 	// clear out connection details on ICE restart and re-populate
 	t.connectionDetails.Clear()
@@ -2267,6 +2313,23 @@ func (t *PCTransport) SetPreviousSdp(localDescription, remoteDescription *webrtc
 	t.lock.Unlock()
 }
 
+func (t *PCTransport) setRemoteOfferParsed(sdType webrtc.SDPType, parsed *sdp.SessionDescription) {
+	if sdType != webrtc.SDPTypeOffer {
+		return
+	}
+	t.lock.Lock()
+	t.remoteOfferParsed = parsed
+	t.lock.Unlock()
+}
+
+// RemoteOfferParsed returns the parsed form of the last remote offer set on the peer connection,
+// candidates filtered the same way pion saw them
+func (t *PCTransport) RemoteOfferParsed() *sdp.SessionDescription {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	return t.remoteOfferParsed
+}
+
 func (t *PCTransport) parseTrackMid(sd webrtc.SessionDescription, senders map[string]*webrtc.RTPSender) error {
 	parsed, err := sd.Unmarshal()
 	if err != nil {
@@ -2347,22 +2410,17 @@ func (t *PCTransport) handleICEGatheringCompleteAnswerer() error {
 	}
 
 	offer := *t.pendingRestartIceOffer
+	parsed := t.pendingRestartIceOfferParsed
 	t.pendingRestartIceOffer = nil
+	t.pendingRestartIceOfferParsed = nil
 
 	t.params.Logger.Debugw("accept remote restart ice offer after ICE gathering")
 
-	// Parse the offer payload types before SetRemoteDescription so this does not
-	// race with pion's use of the same description.
-	var offerAudioPT map[mime.MimeType]webrtc.PayloadType
-	if parsed, err := offer.Unmarshal(); err == nil {
-		offerAudioPT = offerAudioPayloadTypes(parsed)
-	}
-
-	if err := t.setRemoteDescription(offer); err != nil {
+	if err := t.setRemoteDescription(offer, parsed); err != nil {
 		return err
 	}
 	t.params.Handler.OnSetRemoteDescriptionOffer()
-	t.processSendersPendingConfig(offerAudioPT)
+	t.processSendersPendingConfig(offerAudioPayloadTypes(parsed))
 
 	return t.createAndSendAnswer()
 }
@@ -2398,7 +2456,7 @@ func (t *PCTransport) handleLocalICECandidate(e event) error {
 	filtered := false
 	if c != nil {
 		if t.preferTCP.Load() && c.Protocol != webrtc.ICEProtocolTCP {
-			t.params.Logger.Debugw("filtering out local candidate, TCP prefered", "candidate", c.String())
+			t.params.Logger.Debugw("filtering out local candidate, TCP preferred", "candidate", c.String())
 			filtered = true
 		}
 		if !filtered && t.params.ExcludeIPv6LocalCandidates {
@@ -2476,10 +2534,23 @@ func (t *PCTransport) isCandidateFilterActive(preferTCP bool) bool {
 }
 
 func (t *PCTransport) filterCandidates(sd webrtc.SessionDescription, preferTCP, isLocal bool) webrtc.SessionDescription {
-	parsed, err := sd.Unmarshal()
-	if err != nil {
-		t.params.Logger.Warnw("could not unmarshal SDP to filter candidates", err)
-		return sd
+	return t.filterCandidatesParsed(sd, nil, preferTCP, isLocal)
+}
+
+// filterCandidatesParsed filters using an already parsed description when available,
+// the parsed description is modified in place to match the returned SDP
+func (t *PCTransport) filterCandidatesParsed(
+	sd webrtc.SessionDescription,
+	parsed *sdp.SessionDescription,
+	preferTCP, isLocal bool,
+) webrtc.SessionDescription {
+	if parsed == nil {
+		var err error
+		parsed, err = sd.Unmarshal()
+		if err != nil {
+			t.params.Logger.Warnw("could not unmarshal SDP to filter candidates", err)
+			return sd
+		}
 	}
 
 	filterAttributes := func(attrs []sdp.Attribute) []sdp.Attribute {
@@ -2705,15 +2776,20 @@ func (t *PCTransport) handleSendOffer(_ event) error {
 
 type remoteDescriptionData struct {
 	sessionDescription *webrtc.SessionDescription
+	parsed             *sdp.SessionDescription
+	parseErr           error // set when parsed is nil
 	remoteId           uint32
 }
 
 func (t *PCTransport) handleRemoteDescriptionReceived(e event) error {
 	rdd := e.data.(remoteDescriptionData)
+	if rdd.parsed == nil {
+		return rdd.parseErr
+	}
 	if rdd.sessionDescription.Type == webrtc.SDPTypeOffer {
-		return t.handleRemoteOfferReceived(rdd.sessionDescription, rdd.remoteId)
+		return t.handleRemoteOfferReceived(rdd.sessionDescription, rdd.parsed, rdd.remoteId)
 	} else {
-		return t.handleRemoteAnswerReceived(rdd.sessionDescription, rdd.remoteId)
+		return t.handleRemoteAnswerReceived(rdd.sessionDescription, rdd.parsed, rdd.remoteId)
 	}
 }
 
@@ -2729,13 +2805,13 @@ func (t *PCTransport) isRemoteOfferRestartICE(parsed *sdp.SessionDescription) (s
 	return credential, restartICE, nil
 }
 
-func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
+func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription, parsed *sdp.SessionDescription) error {
 	// filter before setting remote description so that pion does not see filtered remote candidates
 	preferTCP := t.preferTCP.Load()
 	if t.isCandidateFilterActive(preferTCP) {
 		t.params.Logger.Debugw("remote description (unfiltered)", "type", sd.Type, "sdp", sd.SDP)
 	}
-	sd = t.filterCandidates(sd, preferTCP, false)
+	sd = t.filterCandidatesParsed(sd, parsed, preferTCP, false)
 	if t.isCandidateFilterActive(preferTCP) {
 		t.params.Logger.Debugw("remote description (filtered)", "type", sd.Type, "sdp", sd.SDP)
 	}
@@ -2752,7 +2828,9 @@ func (t *PCTransport) setRemoteDescription(sd webrtc.SessionDescription) error {
 		}
 		prometheus.RecordServiceOperationError(sdpType, "remote_description")
 		return errors.Wrap(err, "setting remote description failed")
-	} else if sd.Type == webrtc.SDPTypeAnswer {
+	}
+	t.setRemoteOfferParsed(sd.Type, parsed)
+	if sd.Type == webrtc.SDPTypeAnswer {
 		t.lock.Lock()
 		if !t.canReuseTransceiver {
 			t.canReuseTransceiver = true
@@ -2849,7 +2927,7 @@ func (t *PCTransport) createAndSendAnswer() error {
 	return t.localDescriptionSent()
 }
 
-func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, offerId uint32) error {
+func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, parsed *sdp.SessionDescription, offerId uint32) error {
 	t.params.Logger.Debugw("processing offer", "offerId", offerId)
 	remoteOfferId := t.remoteOfferId.Load()
 	if remoteOfferId != 0 && remoteOfferId != t.localAnswerId.Load() {
@@ -2861,11 +2939,6 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, o
 		)
 	}
 	t.remoteOfferId.Store(offerId)
-
-	parsed, err := sd.Unmarshal()
-	if err != nil {
-		return err
-	}
 
 	t.lock.Lock()
 	if !t.firstOfferReceived {
@@ -2893,6 +2966,7 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, o
 	if offerRestartICE && t.pc.ICEGatheringState() == webrtc.ICEGatheringStateGathering {
 		t.params.Logger.Debugw("remote offer restart ice while ice gathering")
 		t.pendingRestartIceOffer = sd
+		t.pendingRestartIceOfferParsed = parsed
 		return nil
 	}
 
@@ -2906,7 +2980,7 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, o
 
 	isStartOfConnectionSequence := t.pc.RemoteDescription() == nil
 
-	if err := t.setRemoteDescription(*sd); err != nil {
+	if err := t.setRemoteDescription(*sd, parsed); err != nil {
 		return err
 	}
 
@@ -2932,7 +3006,7 @@ func (t *PCTransport) handleRemoteOfferReceived(sd *webrtc.SessionDescription, o
 	return t.createAndSendAnswer()
 }
 
-func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription, answerId uint32) error {
+func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription, parsed *sdp.SessionDescription, answerId uint32) error {
 	t.params.Logger.Debugw("processing answer", "answerId", answerId)
 	if answerId != 0 && answerId != t.localOfferId.Load() {
 		t.params.Logger.Warnw(
@@ -2945,9 +3019,9 @@ func (t *PCTransport) handleRemoteAnswerReceived(sd *webrtc.SessionDescription, 
 
 	t.clearSignalStateCheckTimer()
 
-	if err := t.setRemoteDescription(*sd); err != nil {
+	if err := t.setRemoteDescription(*sd, parsed); err != nil {
 		// Pion will call RTPSender.Send method for each new added Downtrack, and return error if the DownTrack.Bind
-		// returns error. In case of Downtrack.Bind returns ErrUnsupportedCodec, the signal state will be stable as negotiation is aleady compelted
+		// returns error. In case of Downtrack.Bind returns ErrUnsupportedCodec, the signal state will be stable as negotiation is already completed
 		// before startRTPSenders, and the peerconnection state can be recovered by next negotiation which will be triggered
 		// by the SubscriptionManager unsubscribe the failure DownTrack. So don't treat this error as negotiation failure.
 		if !errors.Is(err, webrtc.ErrUnsupportedCodec) {
@@ -3178,7 +3252,7 @@ func offerAudioPayloadTypes(parsed *sdp.SessionDescription) map[mime.MimeType]we
 			if len(fields) < 2 {
 				continue
 			}
-			pt, err := strconv.Atoi(fields[0])
+			pt, err := strconv.ParseUint(fields[0], 10, 8)
 			if err != nil {
 				continue
 			}
@@ -3199,7 +3273,7 @@ func offerAudioPayloadTypes(parsed *sdp.SessionDescription) map[mime.MimeType]we
 	return out
 }
 
-// In single peer connection mode, set up enebled codecs for sender.
+// In single peer connection mode, set up enabled codecs for sender.
 // The config provides config of direction.
 // For publisher peer connection those are publish enabled codecs
 // and for subscriber peer connection those are subscribe enabled codecs.
@@ -3237,6 +3311,10 @@ func (t *PCTransport) restrictReceiverCodecsToPublishList() {
 	for _, tr := range t.pc.GetTransceivers() {
 		if tr.Direction() != webrtc.RTPTransceiverDirectionRecvonly &&
 			tr.Direction() != webrtc.RTPTransceiverDirectionSendrecv {
+			continue
+		}
+		// a mid-less sender is not negotiated yet, see sendersPendingConfig
+		if tr.Mid() == "" {
 			continue
 		}
 		receiver := tr.Receiver()

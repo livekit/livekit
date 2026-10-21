@@ -299,6 +299,9 @@ func (cs *ConnectionStats) updateScoreAt(at time.Time) (float32, map[uint32]*buf
 		mos, _ := cs.scorer.GetMOSAndQuality()
 		return mos, streams, false
 	}
+	// upstream PacketsLost is already net of late arrivals (including RTX repairs),
+	// so the scorer must not discount out-of-order packets again
+	agg.PacketsOutOfOrder = 0
 	return cs.updateScoreWithAggregate(agg, cs.params.ReceiverProvider.GetLastSenderReportTime(), at), streams, false
 }
 

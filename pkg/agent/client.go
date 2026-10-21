@@ -62,9 +62,9 @@ type JobRequest struct {
 	// only set for participant jobs
 	Participant *livekit.ParticipantInfo
 	Metadata    string
-	AgentName  string
-	Deployment string
-	Attributes map[string]string
+	AgentName   string
+	Deployment  string
+	Attributes  map[string]string
 }
 
 type agentClient struct {
@@ -172,6 +172,7 @@ func (c *agentClient) LaunchJob(ctx context.Context, desc *JobRequest) *serverut
 				AgentName:       desc.AgentName,
 				Metadata:        desc.Metadata,
 				EnableRecording: c.config.EnableUserDataRecording,
+				EnableRedaction: c.config.EnableUserDataRedaction,
 				Deployment:      desc.Deployment,
 				Attributes:      desc.Attributes,
 			}

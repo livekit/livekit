@@ -19,9 +19,9 @@ import (
 )
 
 type FrameEntity struct {
-	startSeq  *uint64
-	endSeq    *uint64
-	integrity bool
+	startSeq, endSeq       uint64
+	hasStartSeq, hasEndSeq bool
+	integrity              bool
 
 	pktHistory *PacketHistory
 }
@@ -32,15 +32,15 @@ func (fe *FrameEntity) AddPacket(extSeq uint64, ddVal *dd.DependencyDescriptor) 
 		return
 	}
 
-	if fe.startSeq == nil && ddVal.FirstPacketInFrame {
-		fe.startSeq = &extSeq
+	if !fe.hasStartSeq && ddVal.FirstPacketInFrame {
+		fe.startSeq, fe.hasStartSeq = extSeq, true
 	}
-	if fe.endSeq == nil && ddVal.LastPacketInFrame {
-		fe.endSeq = &extSeq
+	if !fe.hasEndSeq && ddVal.LastPacketInFrame {
+		fe.endSeq, fe.hasEndSeq = extSeq, true
 	}
 
-	if fe.startSeq != nil && fe.endSeq != nil {
-		if fe.pktHistory.PacketsConsecutive(*fe.startSeq, *fe.endSeq) {
+	if fe.hasStartSeq && fe.hasEndSeq {
+		if fe.pktHistory.PacketsConsecutive(fe.startSeq, fe.endSeq) {
 			fe.integrity = true
 		}
 	}
@@ -48,7 +48,7 @@ func (fe *FrameEntity) AddPacket(extSeq uint64, ddVal *dd.DependencyDescriptor) 
 
 func (fe *FrameEntity) Reset() {
 	fe.integrity = false
-	fe.startSeq, fe.endSeq = nil, nil
+	fe.hasStartSeq, fe.hasEndSeq = false, false
 }
 
 func (fe *FrameEntity) Integrity() bool {
@@ -100,7 +100,15 @@ func (ph *PacketHistory) AddPacket(extSeq uint64) {
 		return
 	}
 
-	for i := ph.last + 1; i < extSeq; i++ {
+	// A forward jump only needs at most packetCount slots cleared; anything older aliases
+	// into the same ring and would be overwritten anyway. Cap the loop so a single crafted
+	// sequence number jump (up to ~32k by the extension wrap-around heuristic) cannot force
+	// a large per-packet iteration count.
+	start := ph.last + 1
+	if extSeq-start > uint64(ph.packetCount) {
+		start = extSeq - uint64(ph.packetCount)
+	}
+	for i := start; i < extSeq; i++ {
 		ph.set(i, false)
 	}
 
@@ -208,8 +216,13 @@ func (fc *FrameIntegrityChecker) AddPacket(extSeq uint64, extFrameNum uint64, dd
 		return
 	}
 
-	// reset missing frames
-	for i := fc.last + 1; i <= extFrameNum; i++ {
+	// reset missing frames; cap to frameCount so a crafted frame-number jump cannot force a
+	// large loop (older frames alias into the same ring and get overwritten anyway).
+	start := fc.last + 1
+	if extFrameNum-fc.last > uint64(fc.frameCount) {
+		start = extFrameNum - uint64(fc.frameCount) + 1
+	}
+	for i := start; i <= extFrameNum; i++ {
 		fc.frames[int(i-fc.base)%fc.frameCount].Reset()
 	}
 	fc.frames[int(extFrameNum-fc.base)%fc.frameCount].AddPacket(extSeq, ddVal)

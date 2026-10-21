@@ -18,13 +18,14 @@ import (
 	"context"
 	"errors"
 
+	"google.golang.org/protobuf/types/known/emptypb"
+
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-func (s *IOInfoService) CreateIngress(ctx context.Context, info *livekit.IngressInfo) (*emptypb.Empty, error) {
+func (s *IOInfoService) CreateIngress(ctx context.Context, info *livekit.IngressInfo) (*rpc.CreateIngressResponse, error) {
 	if s.is == nil {
 		return nil, ErrIngressNotConnected
 	}
@@ -36,7 +37,7 @@ func (s *IOInfoService) CreateIngress(ctx context.Context, info *livekit.Ingress
 
 	s.telemetry.IngressCreated(ctx, info)
 
-	return &emptypb.Empty{}, nil
+	return &rpc.CreateIngressResponse{Info: info}, nil
 }
 
 func (s *IOInfoService) GetIngressInfo(ctx context.Context, req *rpc.GetIngressInfoRequest) (*rpc.GetIngressInfoResponse, error) {
@@ -71,6 +72,13 @@ func (s *IOInfoService) UpdateIngressState(ctx context.Context, req *rpc.UpdateI
 	info, err := s.is.LoadIngress(ctx, req.IngressId)
 	if err != nil {
 		return nil, err
+	}
+	if info.State == nil {
+		// LoadIngress reads the ingress info and its state non-atomically: a concurrent
+		// DeleteIngress can remove the state key between the two reads, in which case
+		// LoadIngress returns the info with a nil State and no error. Treat it as an
+		// empty state instead of panicking on the status comparison below.
+		info.State = &livekit.IngressState{}
 	}
 
 	if err = s.is.UpdateIngressState(ctx, req.IngressId, req.State); err != nil {

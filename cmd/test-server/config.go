@@ -30,6 +30,16 @@ const (
 	headerRegion = "X-Lk-Mock-Region"
 )
 
+const (
+	// regionPinStatus is the HTTP status cloud middleware returns for a region-pin
+	// violation — an API call reaching a region the project is not pinned to. It is
+	// 451 (Unavailable For Legal Reasons); clients key off it to rediscover regions
+	// and retry against an allowed one.
+	regionPinStatus = http.StatusUnavailableForLegalReasons
+	// regionPinMessage is the plain-text body the middleware writes with the 451.
+	regionPinMessage = "project not allowed in this region."
+)
+
 // Deprecated: the individual X-Lk-Mock-* control headers predate the unified
 // X-Lk-Mock JSON header. They are still honored for existing clients; new
 // clients should send X-Lk-Mock instead. When X-Lk-Mock is present its fields
@@ -86,6 +96,18 @@ type mockConfig struct {
 	// derived from it exactly as the real server does, so the SDK sees an
 	// identical error. Composes with DelayMs to simulate "ring, then fail".
 	SIPStatus *sipStatusConfig `json:"sipStatus,omitempty"`
+	// PinnedRegions lists the region names a project is pinned to (its allowed
+	// regions), mirroring cloud's per-project PinnedRegions — which are region names,
+	// not indices. When non-empty a pin is in effect: any region whose name is NOT
+	// listed rejects the request with HTTP 451 (see regionPinStatus), exactly as
+	// cloud middleware turns away an API call reaching a region the project is not
+	// pinned to, and GET /settings/regions returns only the listed regions. The
+	// client is expected to see the 451, re-fetch /settings/regions, and retry
+	// against an allowed region — the 451 carries no region hint. An empty/absent
+	// value means "not pinned": every region serves and discovery returns all
+	// regions. Names are this mock's region names (e.g. "region-0"); contrast
+	// FailRegions, which addresses listeners by index.
+	PinnedRegions []string `json:"pinnedRegions,omitempty"`
 
 	// legacyDelayMs is the sleep used by the deprecated "delay" fail mode. It is
 	// populated only from the legacy X-Lk-Mock-Delay-Ms header, never from JSON.

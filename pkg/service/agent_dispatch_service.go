@@ -18,13 +18,14 @@ import (
 	"context"
 	"fmt"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing"
 	"github.com/livekit/protocol/agent"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/rpc"
-	"github.com/livekit/protocol/utils"
 	"github.com/livekit/protocol/utils/guid"
 	"github.com/livekit/psrpc"
 )
@@ -84,7 +85,7 @@ func (ag *AgentDispatchService) CreateDispatch(ctx context.Context, req *livekit
 	}
 
 	dispatch := &livekit.AgentDispatch{
-		Id:            guid.New(guid.AgentDispatchPrefix),
+		Id:            DeterministicID(guid.AgentDispatchPrefix, RequestID(ctx)),
 		AgentName:     req.AgentName,
 		Room:          req.Room,
 		Metadata:      req.Metadata,
@@ -120,7 +121,7 @@ func redactCreateAgentDispatchRequest(req *livekit.CreateAgentDispatchRequest) *
 		return req
 	}
 
-	clone := utils.CloneProto(req)
+	clone := proto.CloneOf(req)
 
 	// replace with size of metadata to provide visibility on request size
 	if clone.Metadata != "" {
