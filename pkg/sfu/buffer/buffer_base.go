@@ -152,14 +152,15 @@ const (
 )
 
 type BufferBaseParams struct {
-	SSRC                uint32
-	MaxVideoPkts        int
-	MaxAudioPkts        int
-	LoggerComponents    []string
-	SendPLI             func()
-	IsReportingEnabled  bool
-	IsOOBSequenceNumber bool
-	IsDDRestartEnabled  bool
+	SSRC                  uint32
+	MaxVideoPkts          int
+	MaxAudioPkts          int
+	LoggerComponents      []string
+	SendPLI               func()
+	OnStreamRestartLocked func()
+	IsReportingEnabled    bool
+	IsOOBSequenceNumber   bool
+	IsDDRestartEnabled    bool
 }
 
 type BufferBase struct {
@@ -598,6 +599,10 @@ func (b *BufferBase) restartStreamLocked(reason string, isDetected bool) {
 	}
 
 	b.StartKeyFrameSeeder()
+
+	if f := b.params.OnStreamRestartLocked; f != nil {
+		f()
+	}
 
 	if isDetected {
 		b.isRestartPending = true

@@ -655,3 +655,62 @@ func TestBufferFECNACKNotSentForRecoveredPacket(t *testing.T) {
 	assert.False(t, nackedSNs[media[2].SequenceNumber], "arrived packet %d must not be NACKed", media[2].SequenceNumber)
 	assert.False(t, nackedSNs[media[3].SequenceNumber], "FEC-recovered packet %d must not be NACKed", media[3].SequenceNumber)
 }
+
+func TestBufferFECDecoderRecreatedOnStreamRestart(t *testing.T) {
+	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+
+	primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
+	fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
+	factory.SetFECPair(fecTestFECSSRC, fecTestMediaSSRC)
+	bindFECTestBuffer(t, primary)
+
+	media := rtptest.GenerateVP8Packets(100, 5, uint8(vp8Codec.PayloadType), fecTestMediaSSRC)
+	fecPackets := pionflexfec.NewFlexEncoder03(fecTestFECPT, fecTestFECSSRC).EncodeFec(media, 1)
+	require.Len(t, fecPackets, 1)
+
+	const droppedIdx = 2
+	for i := range media {
+		if i != droppedIdx {
+			writePacket(t, primary, &media[i])
+		}
+	}
+	writePacket(t, fecBuff, &fecPackets[0])
+	require.EqualValues(t, 1, primary.FECDecoderStats().PacketsRecovered)
+
+	decoderBefore := primary.fecDecoder
+	require.NotNil(t, decoderBefore)
+
+	// Receiver restart and detected discontinuity both land here.
+	primary.RestartStream("test")
+
+	decoderAfter := primary.fecDecoder
+	require.NotNil(t, decoderAfter)
+	require.NotSame(t, decoderBefore, decoderAfter)
+	stats := primary.FECDecoderStats()
+	assert.Zero(t, stats.FECPacketsReceived)
+	assert.Zero(t, stats.PacketsRecovered)
+	assert.Zero(t, stats.FECPacketsDiscarded)
+
+	// A new encoder reuses the repair sequence number of the pre-restart FEC
+	// packet. The old decoder would discard it as a duplicate.
+	media2 := rtptest.GenerateVP8Packets(500, 5, uint8(vp8Codec.PayloadType), fecTestMediaSSRC)
+	fecPackets2 := pionflexfec.NewFlexEncoder03(fecTestFECPT, fecTestFECSSRC).EncodeFec(media2, 1)
+	require.Len(t, fecPackets2, 1)
+	require.Equal(t, fecPackets[0].SequenceNumber, fecPackets2[0].SequenceNumber)
+
+	const droppedIdx2 = 1
+	for i := range media2 {
+		if i != droppedIdx2 {
+			writePacket(t, primary, &media2[i])
+		}
+	}
+	writePacket(t, fecBuff, &fecPackets2[0])
+
+	stats = primary.FECDecoderStats()
+	assert.EqualValues(t, 1, stats.FECPacketsReceived)
+	assert.EqualValues(t, 1, stats.PacketsRecovered)
+	assert.EqualValues(t, 0, stats.FECPacketsDiscarded)
+
+	extSNBySN := readExtSequenceNumbers(t, primary, len(media2)-1)
+	requireRecoveredInBucket(t, primary, &media2[droppedIdx2], extSNBySN, media2[0].SequenceNumber)
+}

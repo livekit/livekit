@@ -123,12 +123,13 @@ type StreamInfoProbe struct {
 func NewBuffer(ssrc uint32, maxVideoPkts, maxAudioPkts int) *Buffer {
 	b := &Buffer{}
 	b.BufferBase = NewBufferBase(BufferBaseParams{
-		SSRC:               ssrc,
-		MaxVideoPkts:       maxVideoPkts,
-		MaxAudioPkts:       maxAudioPkts,
-		LoggerComponents:   []string{sutils.ComponentPub, sutils.ComponentSFU},
-		SendPLI:            b.sendPLI,
-		IsReportingEnabled: true,
+		SSRC:                  ssrc,
+		MaxVideoPkts:          maxVideoPkts,
+		MaxAudioPkts:          maxAudioPkts,
+		LoggerComponents:      []string{sutils.ComponentPub, sutils.ComponentSFU},
+		SendPLI:               b.sendPLI,
+		OnStreamRestartLocked: b.recreateFECDecoderLocked,
+		IsReportingEnabled:    true,
 	})
 	return b
 }
@@ -487,6 +488,19 @@ func (b *Buffer) maybeCreateFECDecoderLocked() {
 
 	b.fecDecoder = flexfec.NewDecoder(b.fecSSRC, b.BufferBase.SSRC(), b.getFECMediaPacketLocked, b.logger)
 	b.logger.Debugw("flexfec decoder created", "fecSSRC", b.fecSSRC, "mediaSSRC", b.BufferBase.SSRC())
+}
+
+// recreateFECDecoderLocked drops FlexFEC state from the previous sequence
+// space. Stream restart resyncs the packet bucket and sequence map, so repair
+// packets retained by the old decoder would recover against the wrong media
+// or be treated as duplicates of the new repair stream.
+func (b *Buffer) recreateFECDecoderLocked() {
+	if b.fecDecoder == nil {
+		return
+	}
+
+	b.fecDecoder = nil
+	b.maybeCreateFECDecoderLocked()
 }
 
 func (b *Buffer) getFECMediaPacketLocked(sequenceNumber uint16, dst []byte) (int, error) {
