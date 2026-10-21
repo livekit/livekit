@@ -17,6 +17,7 @@ package service_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/twitchtv/twirp"
@@ -25,6 +26,8 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/rpc"
 	"github.com/livekit/protocol/rpc/rpcfakes"
+	"github.com/livekit/protocol/utils"
+	"github.com/livekit/psrpc"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/routing/routingfakes"
@@ -179,6 +182,7 @@ func newTestRoomService(limitConf config.LimitConfig) *TestRoomService {
 	router := &routingfakes.FakeRouter{}
 	allocator := &servicefakes.FakeRoomAllocator{}
 	store := &servicefakes.FakeServiceStore{}
+	participantClient := &rpcfakes.FakeTypedParticipantClient{}
 	svc, err := service.NewRoomService(
 		limitConf,
 		config.APIConfig{ExecutionTimeout: 2},
@@ -188,22 +192,55 @@ func newTestRoomService(limitConf config.LimitConfig) *TestRoomService {
 		nil,
 		rpc.NewTopicFormatter(),
 		&rpcfakes.FakeTypedRoomClient{},
-		&rpcfakes.FakeTypedParticipantClient{},
+		participantClient,
 	)
 	if err != nil {
 		panic(err)
 	}
 	return &TestRoomService{
-		RoomService: *svc,
-		router:      router,
-		allocator:   allocator,
-		store:       store,
+		RoomService:       *svc,
+		router:            router,
+		allocator:         allocator,
+		store:             store,
+		participantClient: participantClient,
 	}
+}
+
+func TestPerformRpcRequestTimeout(t *testing.T) {
+	grant := &auth.ClaimGrants{
+		Video: &auth.VideoGrant{RoomAdmin: true, Room: "testroom"},
+	}
+	ctx := service.WithGrants(context.Background(), grant, "")
+
+	requestTimeout := func(t *testing.T, svc *TestRoomService, call int) time.Duration {
+		t.Helper()
+		_, _, _, opts := svc.participantClient.PerformRpcArgsForCall(call)
+		var ro psrpc.RequestOpts
+		for _, o := range opts {
+			o(&ro)
+		}
+		return ro.Timeout
+	}
+
+	t.Run("default response timeout", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{})
+		_, err := svc.PerformRpc(ctx, &livekit.PerformRpcRequest{Room: "testroom", DestinationIdentity: "p", Method: "m"})
+		require.NoError(t, err)
+		require.Equal(t, utils.DataChannelRpcDefaultResponseTimeout+utils.DataChannelRpcMaxRoundTripLatency, requestTimeout(t, svc, 0))
+	})
+
+	t.Run("requested response timeout", func(t *testing.T) {
+		svc := newTestRoomService(config.LimitConfig{})
+		_, err := svc.PerformRpc(ctx, &livekit.PerformRpcRequest{Room: "testroom", DestinationIdentity: "p", Method: "m", ResponseTimeoutMs: 500})
+		require.NoError(t, err)
+		require.Equal(t, 500*time.Millisecond+utils.DataChannelRpcMaxRoundTripLatency, requestTimeout(t, svc, 0))
+	})
 }
 
 type TestRoomService struct {
 	service.RoomService
-	router    *routingfakes.FakeRouter
-	allocator *servicefakes.FakeRoomAllocator
-	store     *servicefakes.FakeServiceStore
+	router            *routingfakes.FakeRouter
+	allocator         *servicefakes.FakeRoomAllocator
+	store             *servicefakes.FakeServiceStore
+	participantClient *rpcfakes.FakeTypedParticipantClient
 }
