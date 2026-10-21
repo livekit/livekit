@@ -45,6 +45,7 @@ import (
 	"encoding/binary"
 	"io"
 	"math"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -76,6 +77,15 @@ import (
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
 	"github.com/livekit/livekit-server/pkg/testutils/vnettest"
 )
+
+// TestMain sets the global logger once, before any test starts a background
+// goroutine that reads it (prometheus.Init starts an hwstats CPU monitor that
+// logs via the global logger). Calling logger.SetLogger from inside a test while
+// that goroutine runs is a data race on the logger package globals.
+func TestMain(m *testing.M) {
+	logger.InitFromConfig(&logger.Config{Level: "debug"}, "sfu-test")
+	os.Exit(m.Run())
+}
 
 // -----------------------------------------------------------------------------
 // packet capture on the far side
@@ -1135,7 +1145,6 @@ func TestDownTrackResumesAfterBandwidthPause(t *testing.T) {
 }
 
 func testResumeAfterBandwidthPause(t *testing.T, allowPause bool) {
-	logger.InitFromConfig(&logger.Config{Level: "debug"}, t.Name())
 	const (
 		layer0Bps = 80_000
 		layer1Bps = 170_000
