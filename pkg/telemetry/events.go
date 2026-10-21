@@ -521,7 +521,7 @@ func (t *telemetryService) IngressStarted(ctx context.Context, info *livekit.Ing
 	t.enqueue(func() {
 		t.NotifyEvent(ctx, &livekit.WebhookEvent{
 			Event:       webhook.EventIngressStarted,
-			Room:        toMinimalRoomProto("", livekit.RoomName(info.RoomName)),
+			Room:        ingressWebhookRoom(info),
 			IngressInfo: info,
 		})
 
@@ -539,7 +539,7 @@ func (t *telemetryService) IngressEnded(ctx context.Context, info *livekit.Ingre
 	t.enqueue(func() {
 		t.NotifyEvent(ctx, &livekit.WebhookEvent{
 			Event:       webhook.EventIngressEnded,
-			Room:        toMinimalRoomProto("", livekit.RoomName(info.RoomName)),
+			Room:        ingressWebhookRoom(info),
 			IngressInfo: info,
 		})
 
@@ -644,4 +644,12 @@ func toMinimalRoomProto(roomID livekit.RoomID, roomName livekit.RoomName) *livek
 		Sid:  string(roomID),
 		Name: string(roomName),
 	}
+}
+
+// ingressWebhookRoom builds the room object for ingress webhooks. The ingress
+// state carries the room ID once it is publishing, so include it when known;
+// consumers no longer need a separate lookup to correlate the event with a
+// specific room (the name alone is ambiguous across room re-creations).
+func ingressWebhookRoom(info *livekit.IngressInfo) *livekit.Room {
+	return toMinimalRoomProto(livekit.RoomID(info.GetState().GetRoomId()), livekit.RoomName(info.RoomName))
 }
