@@ -123,14 +123,14 @@ type StreamInfoProbe struct {
 func NewBuffer(ssrc uint32, maxVideoPkts, maxAudioPkts int) *Buffer {
 	b := &Buffer{}
 	b.BufferBase = NewBufferBase(BufferBaseParams{
-		SSRC:               ssrc,
-		MaxVideoPkts:       maxVideoPkts,
-		MaxAudioPkts:       maxAudioPkts,
-		LoggerComponents:   []string{sutils.ComponentPub, sutils.ComponentSFU},
-		SendPLI:            b.sendPLI,
-		IsReportingEnabled: true,
+		SSRC:                  ssrc,
+		MaxVideoPkts:          maxVideoPkts,
+		MaxAudioPkts:          maxAudioPkts,
+		LoggerComponents:      []string{sutils.ComponentPub, sutils.ComponentSFU},
+		SendPLI:               b.sendPLI,
+		OnStreamRestartLocked: b.recreateFECDecoderLocked,
+		IsReportingEnabled:    true,
 	})
-	b.onStreamRestartLocked = b.recreateFECDecoderLocked
 	return b
 }
 

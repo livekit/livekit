@@ -152,14 +152,15 @@ const (
 )
 
 type BufferBaseParams struct {
-	SSRC                uint32
-	MaxVideoPkts        int
-	MaxAudioPkts        int
-	LoggerComponents    []string
-	SendPLI             func()
-	IsReportingEnabled  bool
-	IsOOBSequenceNumber bool
-	IsDDRestartEnabled  bool
+	SSRC                  uint32
+	MaxVideoPkts          int
+	MaxAudioPkts          int
+	LoggerComponents      []string
+	SendPLI               func()
+	OnStreamRestartLocked func()
+	IsReportingEnabled    bool
+	IsOOBSequenceNumber   bool
+	IsDDRestartEnabled    bool
 }
 
 type BufferBase struct {
@@ -209,10 +210,6 @@ type BufferBase struct {
 	onVideoSizeChanged func([]codec.VideoSize)
 	onCodecChange      func(webrtc.RTPCodecParameters)
 	onStreamRestart    func(string)
-	// onStreamRestartLocked runs synchronously with the buffer lock held,
-	// after stream state has been reset. External RestartStream and detected
-	// discontinuity both come through restartStreamLocked.
-	onStreamRestartLocked func()
 
 	// video size tracking for multiple spatial layers
 	currentVideoSize [DefaultMaxLayerSpatial + 1]codec.VideoSize
@@ -603,7 +600,7 @@ func (b *BufferBase) restartStreamLocked(reason string, isDetected bool) {
 
 	b.StartKeyFrameSeeder()
 
-	if f := b.onStreamRestartLocked; f != nil {
+	if f := b.params.OnStreamRestartLocked; f != nil {
 		f()
 	}
 
