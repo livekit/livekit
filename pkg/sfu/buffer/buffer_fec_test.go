@@ -27,11 +27,15 @@ import (
 	"github.com/pion/rtp"
 	"github.com/pion/transport/v4/packetio"
 	"github.com/pion/webrtc/v4"
+	promclient "github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/livekit-server/pkg/sfu/testutils/rtptest"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/mediatransportutil/pkg/twcc"
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/utils/mono"
 )
 
 const (
@@ -49,12 +53,41 @@ var flexFECCodec = webrtc.RTPCodecParameters{
 	PayloadType: webrtc.PayloadType(fecTestFECPT),
 }
 
-func bindFECTestBuffer(t *testing.T, buff *Buffer) {
+func bindFECTestBuffer(t *testing.T, buff interface {
+	Bind(webrtc.RTPParameters, webrtc.RTPCodecCapability, int) error
+}) {
 	t.Helper()
-	buff.codecType = webrtc.RTPCodecTypeVideo
+	require.NoError(t, prometheus.Init("test", livekit.NodeType_SERVER))
 	require.NoError(t, buff.Bind(webrtc.RTPParameters{
 		Codecs: []webrtc.RTPCodecParameters{vp8Codec, flexFECCodec},
 	}, vp8Codec.RTPCodecCapability, 0))
+}
+
+func fecUpstreamCounters(t *testing.T) map[string]float64 {
+	t.Helper()
+	families, err := promclient.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	counters := make(map[string]float64)
+	for _, family := range families {
+		if family.GetName() != "livekit_fec_total" && family.GetName() != "livekit_fec_bytes" {
+			continue
+		}
+		for _, metric := range family.Metric {
+			var direction, kind string
+			for _, label := range metric.Label {
+				switch label.GetName() {
+				case "direction":
+					direction = label.GetValue()
+				case "type":
+					kind = label.GetValue()
+				}
+			}
+			if direction == "incoming" {
+				counters[family.GetName()+"/"+kind] += metric.GetCounter().GetValue()
+			}
+		}
+	}
+	return counters
 }
 
 func writePacket(t *testing.T, buff *Buffer, pkt *rtp.Packet) {
@@ -160,12 +193,7 @@ func TestBufferFECRecoversDroppedPacket(t *testing.T) {
 	factory.SetFECPair(fecTestFECSSRC, fecTestMediaSSRC)
 
 	bindFECTestBuffer(t, primary)
-
-	var recoveredDelta, receivedDelta int
-	primary.OnFECRecovery(func(received int, recovered int, discarded int, bytesReceived int) {
-		recoveredDelta += recovered
-		receivedDelta += received
-	})
+	metricsBefore := fecUpstreamCounters(t)
 
 	media := rtptest.GenerateVP8Packets(100, 10, uint8(vp8Codec.PayloadType), fecTestMediaSSRC)
 	encoder := pionflexfec.NewFlexEncoder03(fecTestFECPT, fecTestFECSSRC)
@@ -187,8 +215,6 @@ func TestBufferFECRecoversDroppedPacket(t *testing.T) {
 	assert.EqualValues(t, len(fecPackets), stats.FECPacketsReceived)
 	assert.EqualValues(t, 1, stats.PacketsRecovered)
 	assert.EqualValues(t, 0, stats.FECPacketsDiscarded)
-	assert.Equal(t, 1, recoveredDelta)
-	assert.Equal(t, len(fecPackets), receivedDelta)
 
 	fecPayloadBytes := 0
 	for i := range fecPackets {
@@ -200,6 +226,10 @@ func TestBufferFECRecoversDroppedPacket(t *testing.T) {
 	assert.EqualValues(t, fecPayloadBytes, rtpStats.FecBytes)
 	assert.EqualValues(t, 0, rtpStats.FecPacketsDiscarded)
 	assert.EqualValues(t, 1, rtpStats.FecPacketsRecovered)
+	metricsAfter := fecUpstreamCounters(t)
+	assert.EqualValues(t, len(fecPackets), metricsAfter["livekit_fec_total/received"]-metricsBefore["livekit_fec_total/received"])
+	assert.EqualValues(t, 1, metricsAfter["livekit_fec_total/recovered"]-metricsBefore["livekit_fec_total/recovered"])
+	assert.EqualValues(t, fecPayloadBytes, metricsAfter["livekit_fec_bytes/received"]-metricsBefore["livekit_fec_bytes/received"])
 
 	// the 9 received packets flow through the ext packet pipeline, the
 	// recovered one fills the bucket like an RTX repair
@@ -262,46 +292,77 @@ func TestBufferFECRecoversEncryptedPayload(t *testing.T) {
 	assert.Equal(t, plaintexts[droppedIdx], decrypted)
 }
 
-func TestBufferFECRecoveryCallbackCanReenterBuffer(t *testing.T) {
-	factory := NewFactoryOfBufferFactory(500, 200).CreateBufferFactory()
+func TestBufferBaseFECRecovery(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		pairOnBind  bool
+		lateMedia   bool
+		lateRTX     bool
+		parsePacket bool
+	}{
+		{name: "paired before bind", pairOnBind: true},
+		{name: "paired after bind"},
+		{name: "late media", lateMedia: true, parsePacket: true},
+		{name: "late RTX", lateMedia: true, lateRTX: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			base := NewBufferBase(BufferBaseParams{
+				SSRC:         fecTestMediaSSRC,
+				MaxVideoPkts: 500,
+				MaxAudioPkts: 200,
+			})
+			t.Cleanup(func() { base.CloseWithReason("test") })
+			if test.pairOnBind {
+				base.SetFECSSRC(fecTestFECSSRC)
+				require.Nil(t, base.fecDecoder)
+			}
+			bindFECTestBuffer(t, base)
+			if !test.pairOnBind {
+				base.SetFECSSRC(fecTestFECSSRC)
+			}
+			require.NotNil(t, base.fecDecoder)
 
-	primary := factory.GetOrNew(packetio.RTPBufferPacket, fecTestMediaSSRC).(*Buffer)
-	fecBuff := factory.GetOrNew(packetio.RTPBufferPacket, fecTestFECSSRC).(*Buffer)
-	factory.SetFECPair(fecTestFECSSRC, fecTestMediaSSRC)
-	bindFECTestBuffer(t, primary)
+			media := rtptest.GenerateVP8Packets(150, 5, uint8(vp8Codec.PayloadType), fecTestMediaSSRC)
+			fecPackets := pionflexfec.NewFlexEncoder03(fecTestFECPT, fecTestFECSSRC).EncodeFec(media, 1)
+			require.Len(t, fecPackets, 1)
 
-	callbackDone := make(chan struct{}, 1)
-	primary.OnFECRecovery(func(received int, recovered int, discarded int, bytesReceived int) {
-		primary.FECDecoderStats()
-		callbackDone <- struct{}{}
-	})
+			ingest := func(pkt *rtp.Packet, isRTX bool) {
+				raw, err := pkt.Marshal()
+				require.NoError(t, err)
+				parsed := pkt
+				if test.parsePacket {
+					parsed = nil
+				}
+				_, err = base.HandleIncomingPacket(raw, parsed, mono.UnixNano(), false, isRTX, nil, 0)
+				require.NoError(t, err)
+			}
+			for i := range media {
+				if i != 2 && (i != 3 || !test.lateMedia) {
+					ingest(&media[i], false)
+				}
+			}
+			base.HandleFECPacket(&fecPackets[0], mono.UnixNano())
+			if test.lateMedia {
+				require.Zero(t, base.FECDecoderStats().PacketsRecovered)
+				ingest(&media[3], test.lateRTX)
+			}
 
-	media := rtptest.GenerateVP8Packets(150, 5, uint8(vp8Codec.PayloadType), fecTestMediaSSRC)
-	for i := range media {
-		writePacket(t, primary, &media[i])
-	}
-	fecPackets := pionflexfec.NewFlexEncoder03(fecTestFECPT, fecTestFECSSRC).EncodeFec(media, 1)
-	require.NotEmpty(t, fecPackets)
+			stats := base.GetStats()
+			require.EqualValues(t, 1, stats.FecPackets)
+			require.EqualValues(t, len(fecPackets[0].Payload), stats.FecBytes)
+			require.EqualValues(t, 1, stats.FecPacketsRecovered)
+			require.EqualValues(t, 1, base.FECDecoderStats().PacketsRecovered)
+			require.Empty(t, base.GetNACKPairs())
 
-	rawFEC, err := fecPackets[0].Marshal()
-	require.NoError(t, err)
-	writeDone := make(chan error, 1)
-	go func() {
-		_, err := fecBuff.Write(rawFEC)
-		writeDone <- err
-	}()
-
-	select {
-	case <-callbackDone:
-	case <-time.After(time.Second):
-		t.Fatal("FEC recovery callback deadlocked while re-entering the buffer")
-	}
-
-	select {
-	case err := <-writeDone:
-		require.NoError(t, err)
-	case <-time.After(time.Second):
-		t.Fatal("FEC packet write did not return after callback")
+			var raw [1500]byte
+			n, err := base.GetPacket(raw[:], uint64(media[2].SequenceNumber))
+			require.NoError(t, err)
+			var recovered rtp.Packet
+			require.NoError(t, recovered.Unmarshal(raw[:n]))
+			assert.Equal(t, media[2].Header, recovered.Header)
+			assert.Equal(t, media[2].Payload, recovered.Payload)
+			assert.Equal(t, len(media), base.extPackets.Len())
+		})
 	}
 }
 

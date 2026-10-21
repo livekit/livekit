@@ -32,10 +32,12 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/livekit/livekit-server/pkg/sfu/audio"
+	"github.com/livekit/livekit-server/pkg/sfu/flexfec"
 	act "github.com/livekit/livekit-server/pkg/sfu/rtpextension/abscapturetime"
 	dd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/dependencydescriptor"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	"github.com/livekit/mediatransportutil/pkg/bucket"
 	"github.com/livekit/mediatransportutil/pkg/codec"
 	"github.com/livekit/mediatransportutil/pkg/nack"
@@ -46,6 +48,8 @@ import (
 )
 
 var (
+	errFECMediaPacketNotFound = errors.New("fec media packet not found")
+
 	ExtPacketFactory = &sync.Pool{
 		New: func() any {
 			return &ExtPacket{}
@@ -152,15 +156,14 @@ const (
 )
 
 type BufferBaseParams struct {
-	SSRC                  uint32
-	MaxVideoPkts          int
-	MaxAudioPkts          int
-	LoggerComponents      []string
-	SendPLI               func()
-	OnStreamRestartLocked func()
-	IsReportingEnabled    bool
-	IsOOBSequenceNumber   bool
-	IsDDRestartEnabled    bool
+	SSRC                uint32
+	MaxVideoPkts        int
+	MaxAudioPkts        int
+	LoggerComponents    []string
+	SendPLI             func()
+	IsReportingEnabled  bool
+	IsOOBSequenceNumber bool
+	IsDDRestartEnabled  bool
 }
 
 type BufferBase struct {
@@ -188,6 +191,9 @@ type BufferBase struct {
 	payloadType    uint8
 	rtxPayloadType uint8
 	fecPayloadType uint8
+	fecSSRC        uint32
+	fecDecoder     *flexfec.Decoder
+	fecPktBuf      []byte
 
 	snRangeMap *utils.RangeMap[uint64, uint64]
 
@@ -427,6 +433,7 @@ func (b *BufferBase) BindLocked(rtpParameters webrtc.RTPParameters, codec webrtc
 	}
 
 	b.StartKeyFrameSeeder()
+	b.maybeCreateFECDecoderLocked()
 
 	return nil
 }
@@ -600,9 +607,7 @@ func (b *BufferBase) restartStreamLocked(reason string, isDetected bool) {
 
 	b.StartKeyFrameSeeder()
 
-	if f := b.params.OnStreamRestartLocked; f != nil {
-		f()
-	}
+	b.recreateFECDecoderLocked()
 
 	if isDetected {
 		b.isRestartPending = true
@@ -773,6 +778,32 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 		}
 	}
 
+	sequenceNumber := rtpPacket.SequenceNumber
+	extSequenceNumber, err := b.handleIncomingPacketLocked(
+		rawPkt, rtpPacket, arrivalTime, isBuffered, isRTX, skippedSeqs, oobSequenceNumber,
+	)
+	if b.fecDecoder != nil {
+		// Media can complete a retained FEC window. Recover before callers
+		// generate feedback, using the publisher's sequence number because
+		// ingestion adjusts it when padding has been removed.
+		mediaPacket := *rtpPacket
+		mediaPacket.SequenceNumber = sequenceNumber
+		b.feedFECLocked(&mediaPacket, arrivalTime)
+	}
+	return extSequenceNumber, err
+}
+
+// handleIncomingPacketLocked ingests media without re-entering the decoder.
+// Recovered packets use this path because DecodeFEC already chains recovery.
+func (b *BufferBase) handleIncomingPacketLocked(
+	rawPkt []byte,
+	rtpPacket *rtp.Packet,
+	arrivalTime int64,
+	isBuffered bool,
+	isRTX bool,
+	skippedSeqs []uint16,
+	oobSequenceNumber uint16,
+) (uint64, error) {
 	b.processAudioSsrcLevelHeaderExtension(rtpPacket, arrivalTime)
 
 	if len(skippedSeqs) > 0 {
@@ -957,6 +988,154 @@ func (b *BufferBase) HandleIncomingPacketLocked(
 	b.maybeGrowBucket(arrivalTime)
 
 	return ep.ExtSequenceNumber, nil
+}
+
+// SetFECSSRC identifies the repair stream protecting this buffer. It can be
+// called before or after Bind; decoding starts once FlexFEC is negotiated.
+func (b *BufferBase) SetFECSSRC(ssrc uint32) {
+	b.Lock()
+	b.fecSSRC = ssrc
+	b.maybeCreateFECDecoderLocked()
+	b.Unlock()
+}
+
+// maybeCreateFECDecoderLocked creates the FEC decoder as soon as the repair
+// stream SSRC is known and the buffer is bound with a negotiated flexfec
+// payload type. Protected media is read from the primary RTP packet bucket.
+func (b *BufferBase) maybeCreateFECDecoderLocked() {
+	if b.fecDecoder != nil || b.fecSSRC == 0 || b.bucket == nil || b.fecPayloadType == 0 {
+		return
+	}
+
+	b.fecDecoder = flexfec.NewDecoder(b.fecSSRC, b.SSRC(), b.getFECMediaPacketLocked, b.logger)
+	b.logger.Debugw("flexfec decoder created", "fecSSRC", b.fecSSRC, "mediaSSRC", b.SSRC())
+}
+
+// recreateFECDecoderLocked drops FlexFEC state from the previous sequence
+// space. Stream restart resyncs the packet bucket and sequence map, so repair
+// packets retained by the old decoder would recover against the wrong media
+// or be treated as duplicates of the new repair stream.
+func (b *BufferBase) recreateFECDecoderLocked() {
+	if b.fecDecoder == nil {
+		return
+	}
+
+	b.fecDecoder = nil
+	b.maybeCreateFECDecoderLocked()
+}
+
+func (b *BufferBase) getFECMediaPacketLocked(sequenceNumber uint16, dst []byte) (int, error) {
+	if b.bucket == nil || b.rtpStats == nil {
+		return 0, errFECMediaPacketNotFound
+	}
+
+	// FlexFEC masks use the publisher's sequence-number space. BufferBase
+	// removes padding-only packets from the downstream space, so resolve the
+	// original extended sequence number and apply the same adjustment used
+	// when the packet was inserted into the bucket.
+	highestSequenceNumber := b.rtpStats.ExtendedHighestSequenceNumber()
+	extendedSequenceNumber := int64(highestSequenceNumber) + int64(int16(sequenceNumber-uint16(highestSequenceNumber)))
+	if extendedSequenceNumber < 0 {
+		return 0, errFECMediaPacketNotFound
+	}
+
+	extendedSN := uint64(extendedSequenceNumber)
+	sequenceNumberAdjustment, err := b.snRangeMap.GetValue(extendedSN)
+	if err != nil || sequenceNumberAdjustment > extendedSN {
+		return 0, errFECMediaPacketNotFound
+	}
+
+	return b.bucket.GetPacket(dst, extendedSN-sequenceNumberAdjustment)
+}
+
+// FECDecoderStats returns cumulative FlexFEC decode counters of the buffer.
+func (b *BufferBase) FECDecoderStats() flexfec.DecoderStats {
+	b.RLock()
+	defer b.RUnlock()
+
+	if b.fecDecoder == nil {
+		return flexfec.DecoderStats{}
+	}
+	return b.fecDecoder.Stats()
+}
+
+// HandleFECPacket decodes a packet from the coupled FlexFEC repair stream
+// and injects recovered media into the regular packet pipeline. It reports
+// whether the packet was passed to the decoder.
+func (b *BufferBase) HandleFECPacket(fecPkt *rtp.Packet, arrivalTime int64) bool {
+	b.Lock()
+	defer b.Unlock()
+
+	return b.HandleFECPacketLocked(fecPkt, arrivalTime)
+}
+
+// HandleFECPacketLocked requires the buffer lock to be held. Recovery updates
+// NACK state before callers generate feedback.
+func (b *BufferBase) HandleFECPacketLocked(fecPkt *rtp.Packet, arrivalTime int64) bool {
+	if b.isClosed.Load() || b.bucket == nil {
+		return false
+	}
+
+	if b.fecPayloadType == 0 || fecPkt.PayloadType != b.fecPayloadType {
+		b.logger.Debugw("unexpected fec payload type", "expected", b.fecPayloadType, "actual", fecPkt.PayloadType)
+		return false
+	}
+
+	if b.fecDecoder == nil {
+		// normally created when the pair is declared, fall back to the
+		// observed repair stream SSRC
+		b.fecSSRC = fecPkt.SSRC
+		b.maybeCreateFECDecoderLocked()
+		if b.fecDecoder == nil {
+			b.logger.Infow("flexfec decoder unavailable after creation attempt", "fecSSRC", b.fecSSRC, "mediaSSRC", b.SSRC(), "payloadType", b.fecPayloadType)
+			return false
+		}
+	}
+
+	b.feedFECLocked(fecPkt, arrivalTime)
+	return true
+}
+
+// feedFECLocked runs a media or FEC packet through the FEC decoder and
+// injects recovered packets into the packet pipeline. Must be called with the
+// buffer lock held and a non-nil decoder.
+func (b *BufferBase) feedFECLocked(pkt *rtp.Packet, arrivalTime int64) {
+	statsBefore := b.fecDecoder.Stats()
+	recovered := b.fecDecoder.DecodeFEC(pkt)
+	statsAfter := b.fecDecoder.Stats()
+
+	fecPackets := statsAfter.FECPacketsReceived - statsBefore.FECPacketsReceived
+	fecBytes := statsAfter.FECBytesReceived - statsBefore.FECBytesReceived
+	fecPacketsDiscarded := statsAfter.FECPacketsDiscarded - statsBefore.FECPacketsDiscarded
+	fecPacketsRecovered := statsAfter.PacketsRecovered - statsBefore.PacketsRecovered
+	if b.rtpStats != nil {
+		b.rtpStats.UpdateFEC(
+			fecPackets,
+			fecBytes,
+			fecPacketsDiscarded,
+			fecPacketsRecovered,
+		)
+	}
+
+	prometheus.RecordFECUpstream(int(fecPackets), int(fecPacketsRecovered), int(fecPacketsDiscarded), fecBytes)
+
+	if len(recovered) > 0 && b.fecPktBuf == nil {
+		b.fecPktBuf = make([]byte, bucket.RTPMaxPktSize)
+	}
+	for _, rp := range recovered {
+		n, err := rp.MarshalTo(b.fecPktBuf)
+		if err != nil {
+			b.logger.Warnw("could not marshal fec recovered packet", err, "ssrc", b.SSRC(), "sn", rp.SequenceNumber)
+			continue
+		}
+
+		// recovered packets flow through the regular pipeline: they are
+		// forwarded downstream and stop NACKs for the lost sequence numbers.
+		// They do not re-enter the decoder because chained recovery already
+		// completed within DecodeFEC. RTCP is generated once by the caller
+		// after all recovered packets have updated NACK state.
+		b.handleIncomingPacketLocked(b.fecPktBuf[:n], rp, arrivalTime, false, true, nil, 0)
+	}
 }
 
 func (b *BufferBase) updateNACKState(sequenceNumber uint16, flowState rtpstats.RTPFlowState) {
