@@ -153,14 +153,15 @@ const (
 )
 
 type BufferBaseParams struct {
-	SSRC                uint32
-	MaxVideoPkts        int
-	MaxAudioPkts        int
-	LoggerComponents    []string
-	SendPLI             func()
-	IsReportingEnabled  bool
-	IsOOBSequenceNumber bool
-	IsDDRestartEnabled  bool
+	SSRC                  uint32
+	MaxVideoPkts          int
+	MaxAudioPkts          int
+	LoggerComponents      []string
+	SendPLI               func()
+	OnStreamRestartLocked func()
+	IsReportingEnabled    bool
+	IsOOBSequenceNumber   bool
+	IsDDRestartEnabled    bool
 }
 
 type BufferBase struct {
@@ -187,6 +188,7 @@ type BufferBase struct {
 	rtpParameters  webrtc.RTPParameters
 	payloadType    uint8
 	rtxPayloadType uint8
+	fecPayloadType uint8
 
 	snRangeMap *utils.RangeMap[uint64, uint64]
 
@@ -328,6 +330,14 @@ func (b *BufferBase) BindLocked(rtpParameters webrtc.RTPParameters, codec webrtc
 	for _, codec := range rtpParameters.Codecs {
 		if mime.IsMimeTypeStringRTX(codec.MimeType) && strings.Contains(codec.SDPFmtpLine, fmt.Sprintf("apt=%d", b.payloadType)) {
 			b.rtxPayloadType = uint8(codec.PayloadType)
+			break
+		}
+	}
+
+	// find FlexFEC payload type, the repair stream is codec agnostic (no apt)
+	for _, codec := range rtpParameters.Codecs {
+		if strings.EqualFold(codec.MimeType, webrtc.MimeTypeFlexFEC03) {
+			b.fecPayloadType = uint8(codec.PayloadType)
 			break
 		}
 	}
@@ -590,6 +600,10 @@ func (b *BufferBase) restartStreamLocked(reason string, isDetected bool) {
 	}
 
 	b.StartKeyFrameSeeder()
+
+	if f := b.params.OnStreamRestartLocked; f != nil {
+		f()
+	}
 
 	if isDetected {
 		b.isRestartPending = true

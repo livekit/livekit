@@ -23,6 +23,7 @@ import (
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
 
+	"github.com/livekit/livekit-server/pkg/sfu/flexfec"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/mediatransportutil/pkg/bucket"
 	"github.com/livekit/mediatransportutil/pkg/twcc"
@@ -35,10 +36,15 @@ const (
 
 	InitPacketBufferSizeVideo = 300
 	InitPacketBufferSizeAudio = 70
+
+	// An unpaired FEC repair stream only needs a short bridge until its primary
+	// stream appears. The decoder itself retains at most this many FEC states.
+	maxPendingFECRepairPackets = 100
 )
 
 var (
-	errInvalidCodec = errors.New("invalid codec")
+	errInvalidCodec           = errors.New("invalid codec")
+	errFECMediaPacketNotFound = errors.New("fec media packet not found")
 )
 
 var _ BufferProvider = (*Buffer)(nil)
@@ -47,6 +53,21 @@ type pendingPacket struct {
 	arrivalTime int64
 	packet      []byte
 }
+
+type fecRecoveryDelta struct {
+	received      int
+	recovered     int
+	discarded     int
+	bytesReceived int
+}
+
+func (d fecRecoveryDelta) invoke(callback func(received int, recovered int, discarded int, bytesReceived int)) {
+	if callback != nil && (d.recovered > 0 || d.received > 0 || d.discarded > 0) {
+		callback(d.received, d.recovered, d.discarded, d.bytesReceived)
+	}
+}
+
+type cbFECRecovery func(received int, recovered int, discarded int, bytesReceived int)
 
 // Buffer contains all packets
 type Buffer struct {
@@ -73,6 +94,13 @@ type Buffer struct {
 	primaryBufferForRTX *Buffer
 	rtxPktBuf           []byte
 
+	primaryBufferForFEC *Buffer
+	isFECRepair         bool
+	fecSSRC             uint32
+	fecDecoder          *flexfec.Decoder
+	fecPktBuf           []byte
+	onFECRecovery       cbFECRecovery
+
 	streamInfoProbe       *StreamInfoProbe
 	warnedPendingOverflow bool
 }
@@ -95,12 +123,13 @@ type StreamInfoProbe struct {
 func NewBuffer(ssrc uint32, maxVideoPkts, maxAudioPkts int) *Buffer {
 	b := &Buffer{}
 	b.BufferBase = NewBufferBase(BufferBaseParams{
-		SSRC:               ssrc,
-		MaxVideoPkts:       maxVideoPkts,
-		MaxAudioPkts:       maxAudioPkts,
-		LoggerComponents:   []string{sutils.ComponentPub, sutils.ComponentSFU},
-		SendPLI:            b.sendPLI,
-		IsReportingEnabled: true,
+		SSRC:                  ssrc,
+		MaxVideoPkts:          maxVideoPkts,
+		MaxAudioPkts:          maxAudioPkts,
+		LoggerComponents:      []string{sutils.ComponentPub, sutils.ComponentSFU},
+		SendPLI:               b.sendPLI,
+		OnStreamRestartLocked: b.recreateFECDecoderLocked,
+		IsReportingEnabled:    true,
 	})
 	return b
 }
@@ -132,26 +161,24 @@ func (b *Buffer) Bind(params webrtc.RTPParameters, codec webrtc.RTPCodecCapabili
 		return err
 	}
 
-	b.lastReportAt = mono.UnixNano()
+	now := mono.UnixNano()
+	b.lastReportAt = now
 
 	if len(b.pPackets) != 0 {
 		b.logger.Debugw("releasing queued packets on bind", "count", len(b.pPackets))
 	}
-	var rtcpPackets []rtcp.Packet
 	for _, pp := range b.pPackets {
-		rtcpPackets = append(rtcpPackets, b.calc(pp.packet, nil, pp.arrivalTime, true, false)...)
+		b.ingestLocked(pp.packet, nil, pp.arrivalTime, true, false)
 	}
 	b.pPackets = nil
 
+	rtcpPackets := b.getRTCPPackets(now)
+
 	b.isBound = true
+	b.maybeCreateFECDecoderLocked()
 	b.Unlock()
 
-	if len(rtcpPackets) != 0 {
-		if cb := b.getOnRtcpFeedback(); cb != nil {
-			cb(rtcpPackets)
-		}
-	}
-
+	b.packetPostProcess(rtcpPackets, fecRecoveryDelta{}, nil)
 	return nil
 }
 
@@ -202,18 +229,32 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		return
 	}
 
-	if !b.isBound {
-		packet := make([]byte, len(pkt))
-		copy(packet, pkt)
+	// handle FlexFEC packet
+	if pb := b.primaryBufferForFEC; pb != nil {
+		b.Unlock()
 
+		// skip padding only packets
+		if rtpPacket.Padding && len(rtpPacket.Payload) == 0 {
+			return
+		}
+
+		pb.writeFEC(rtpPacket, now)
+		return
+	}
+
+	if !b.isBound {
 		if len(b.pPackets) == 0 {
 			b.logger.Debugw("received first packet")
 		}
 
-		startIdx := 0
-		overflow := len(b.pPackets) - max(b.BufferBase.MaxVideoPkts(), b.BufferBase.MaxAudioPkts())
-		if overflow > 0 {
-			startIdx = overflow
+		pendingLimit := max(b.BufferBase.MaxVideoPkts(), b.BufferBase.MaxAudioPkts())
+		if b.isFECRepair {
+			pendingLimit = min(pendingLimit, maxPendingFECRepairPackets)
+		}
+		pendingLimit = max(pendingLimit, 1)
+		if overflow := len(b.pPackets) - pendingLimit + 1; overflow > 0 {
+			clear(b.pPackets[:overflow])
+			b.pPackets = b.pPackets[overflow:]
 
 			// a stream that keeps arriving but never binds drops every packet from here
 			// on; for an RTX stream it means the pairing was never established
@@ -226,7 +267,10 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 				)
 			}
 		}
-		b.pPackets = append(b.pPackets[startIdx:], pendingPacket{
+
+		packet := make([]byte, len(pkt))
+		copy(packet, pkt)
+		b.pPackets = append(b.pPackets, pendingPacket{
 			packet:      packet,
 			arrivalTime: now,
 		})
@@ -236,14 +280,22 @@ func (b *Buffer) Write(pkt []byte) (n int, err error) {
 		return
 	}
 
-	rtcpPackets := b.calc(pkt, rtpPacket, now, false, false)
+	b.ingestLocked(pkt, rtpPacket, now, false, false)
+
+	var fecDelta fecRecoveryDelta
+	var onFECRecovery cbFECRecovery
+	if b.fecDecoder != nil {
+		// feed media into the FEC decoder, a media arrival can complete a
+		// previously unrecoverable FEC window. Recovered packets update NACK
+		// state before feedback is generated below, so a packet repaired by
+		// FEC is not needlessly NACKed.
+		fecDelta, onFECRecovery = b.feedFECLocked(rtpPacket, now)
+	}
+
+	rtcpPackets := b.getRTCPPackets(now)
 	b.Unlock()
 
-	if len(rtcpPackets) != 0 {
-		if cb := b.getOnRtcpFeedback(); cb != nil {
-			cb(rtcpPackets)
-		}
-	}
+	b.packetPostProcess(rtcpPackets, fecDelta, onFECRecovery)
 	return
 }
 
@@ -327,24 +379,16 @@ func (b *Buffer) NotifyRTX(ssrc uint32, repairSSRC uint32, rsid string) {
 }
 
 func (b *Buffer) writeRTX(rtxPkt *rtp.Packet, arrivalTime int64) {
-	rtcpPackets := b.writeRTXLocked(rtxPkt, arrivalTime)
-	if len(rtcpPackets) != 0 {
-		if cb := b.getOnRtcpFeedback(); cb != nil {
-			cb(rtcpPackets)
-		}
-	}
-}
-
-func (b *Buffer) writeRTXLocked(rtxPkt *rtp.Packet, arrivalTime int64) []rtcp.Packet {
 	b.Lock()
-	defer b.Unlock()
 	if !b.isBound {
-		return nil
+		b.Unlock()
+		return
 	}
 
 	if rtxPkt.PayloadType != b.rtxPayloadType {
 		b.logger.Debugw("unexpected rtx payload type", "expected", b.rtxPayloadType, "actual", rtxPkt.PayloadType)
-		return nil
+		b.Unlock()
+		return
 	}
 
 	if b.rtxPktBuf == nil {
@@ -353,7 +397,8 @@ func (b *Buffer) writeRTXLocked(rtxPkt *rtp.Packet, arrivalTime int64) []rtcp.Pa
 
 	if len(rtxPkt.Payload) < 2 {
 		b.logger.Warnw("rtx payload too short", nil, "size", len(rtxPkt.Payload))
-		return nil
+		b.Unlock()
+		return
 	}
 
 	repairedPkt := *rtxPkt
@@ -364,10 +409,239 @@ func (b *Buffer) writeRTXLocked(rtxPkt *rtp.Packet, arrivalTime int64) []rtcp.Pa
 	n, err := repairedPkt.MarshalTo(b.rtxPktBuf)
 	if err != nil {
 		b.logger.Errorw("could not marshal repaired packet", err, "ssrc", b.BufferBase.SSRC(), "sn", repairedPkt.SequenceNumber)
-		return nil
+		b.Unlock()
+		return
 	}
 
-	return b.calc(b.rtxPktBuf[:n], &repairedPkt, arrivalTime, false, true)
+	b.ingestLocked(b.rtxPktBuf[:n], &repairedPkt, arrivalTime, false, true)
+
+	var fecDelta fecRecoveryDelta
+	var onFECRecovery cbFECRecovery
+	if b.fecDecoder != nil {
+		fecDelta, onFECRecovery = b.feedFECLocked(&repairedPkt, arrivalTime)
+	}
+
+	rtcpPackets := b.getRTCPPackets(arrivalTime)
+	b.Unlock()
+
+	b.packetPostProcess(rtcpPackets, fecDelta, onFECRecovery)
+}
+
+func (b *Buffer) SetPrimaryBufferForFEC(primaryBuffer *Buffer) {
+	b.Lock()
+	b.primaryBufferForFEC = primaryBuffer
+	pkts := b.pPackets
+	b.pPackets = nil
+	ssrc := b.BufferBase.SSRC()
+	b.Unlock()
+
+	// Let the primary know the repair stream SSRC so its decoder is ready
+	// before the first FEC packet arrives.
+	primaryBuffer.setFECSSRC(ssrc)
+
+	for _, pp := range pkts {
+		var rtpPacket rtp.Packet
+		err := rtpPacket.Unmarshal(pp.packet)
+		if err != nil {
+			continue
+		}
+		if rtpPacket.Padding && len(rtpPacket.Payload) == 0 {
+			continue
+		}
+		primaryBuffer.writeFEC(&rtpPacket, pp.arrivalTime)
+	}
+}
+
+func (b *Buffer) setFECRepairBufferLimit() {
+	b.Lock()
+	defer b.Unlock()
+
+	b.isFECRepair = true
+	if len(b.pPackets) <= maxPendingFECRepairPackets {
+		return
+	}
+
+	// Pairing can be announced after repair packets start arriving. Compact the
+	// retained tail so both the dropped packet bytes and oversized slice backing
+	// array become collectible.
+	start := len(b.pPackets) - maxPendingFECRepairPackets
+	retained := make([]pendingPacket, maxPendingFECRepairPackets)
+	copy(retained, b.pPackets[start:])
+	clear(b.pPackets)
+	b.pPackets = retained
+}
+
+func (b *Buffer) setFECSSRC(ssrc uint32) {
+	b.Lock()
+	b.fecSSRC = ssrc
+	b.maybeCreateFECDecoderLocked()
+	b.Unlock()
+}
+
+// maybeCreateFECDecoderLocked creates the FEC decoder as soon as the repair
+// stream SSRC is known and the buffer is bound with a negotiated flexfec
+// payload type. Protected media is read from the primary RTP packet bucket.
+func (b *Buffer) maybeCreateFECDecoderLocked() {
+	if b.fecDecoder != nil || b.fecSSRC == 0 || !b.isBound || b.fecPayloadType == 0 {
+		return
+	}
+
+	b.fecDecoder = flexfec.NewDecoder(b.fecSSRC, b.BufferBase.SSRC(), b.getFECMediaPacketLocked, b.logger)
+	b.logger.Debugw("flexfec decoder created", "fecSSRC", b.fecSSRC, "mediaSSRC", b.BufferBase.SSRC())
+}
+
+// recreateFECDecoderLocked drops FlexFEC state from the previous sequence
+// space. Stream restart resyncs the packet bucket and sequence map, so repair
+// packets retained by the old decoder would recover against the wrong media
+// or be treated as duplicates of the new repair stream.
+func (b *Buffer) recreateFECDecoderLocked() {
+	if b.fecDecoder == nil {
+		return
+	}
+
+	b.fecDecoder = nil
+	b.maybeCreateFECDecoderLocked()
+}
+
+func (b *Buffer) getFECMediaPacketLocked(sequenceNumber uint16, dst []byte) (int, error) {
+	if b.bucket == nil || b.rtpStats == nil {
+		return 0, errFECMediaPacketNotFound
+	}
+
+	// FlexFEC masks use the publisher's sequence-number space. BufferBase
+	// removes padding-only packets from the downstream space, so resolve the
+	// original extended sequence number and apply the same adjustment used
+	// when the packet was inserted into the bucket.
+	highestSequenceNumber := b.rtpStats.ExtendedHighestSequenceNumber()
+	extendedSequenceNumber := int64(highestSequenceNumber) + int64(int16(sequenceNumber-uint16(highestSequenceNumber)))
+	if extendedSequenceNumber < 0 {
+		return 0, errFECMediaPacketNotFound
+	}
+
+	extendedSN := uint64(extendedSequenceNumber)
+	sequenceNumberAdjustment, err := b.snRangeMap.GetValue(extendedSN)
+	if err != nil || sequenceNumberAdjustment > extendedSN {
+		return 0, errFECMediaPacketNotFound
+	}
+
+	return b.bucket.GetPacket(dst, extendedSN-sequenceNumberAdjustment)
+}
+
+// OnFECRecovery is called with counter deltas whenever FEC packets are
+// processed since the previous callback: FEC packets received, media packets
+// recovered, FEC packets discarded and FEC bytes received.
+func (b *Buffer) OnFECRecovery(fn cbFECRecovery) {
+	b.Lock()
+	b.onFECRecovery = fn
+	b.Unlock()
+}
+
+// FECDecoderStats returns cumulative FlexFEC decode counters of the buffer.
+func (b *Buffer) FECDecoderStats() flexfec.DecoderStats {
+	b.RLock()
+	defer b.RUnlock()
+
+	if b.fecDecoder == nil {
+		return flexfec.DecoderStats{}
+	}
+	return b.fecDecoder.Stats()
+}
+
+// writeFEC handles a packet of the coupled FlexFEC repair stream, recovered
+// media packets are injected into the regular packet pipeline.
+func (b *Buffer) writeFEC(fecPkt *rtp.Packet, arrivalTime int64) {
+	b.Lock()
+	if !b.isBound {
+		b.Unlock()
+		return
+	}
+
+	// the FEC stream is never bound in pion, run its TWCC accounting here so
+	// publisher send side BWE sees the FEC packets acked. The repair stream
+	// shares the media m-line, extension ids match the primary stream.
+	if b.twcc != nil && b.twccExtID != 0 {
+		if ext := fecPkt.GetExtension(b.twccExtID); len(ext) >= 2 {
+			b.twcc.Push(fecPkt.SSRC, binary.BigEndian.Uint16(ext[0:2]), arrivalTime, fecPkt.Marker)
+		}
+	}
+
+	if b.fecPayloadType == 0 || fecPkt.PayloadType != b.fecPayloadType {
+		b.logger.Debugw("unexpected fec payload type", "expected", b.fecPayloadType, "actual", fecPkt.PayloadType)
+		b.Unlock()
+		return
+	}
+
+	if b.fecDecoder == nil {
+		// normally created when the pair is declared, fall back to the
+		// observed repair stream SSRC
+		b.fecSSRC = fecPkt.SSRC
+		b.maybeCreateFECDecoderLocked()
+		if b.fecDecoder == nil {
+			b.logger.Infow("flexfec decoder unavailable after creation attempt", "fecSSRC", b.fecSSRC, "mediaSSRC", b.BufferBase.SSRC(), "payloadType", b.fecPayloadType)
+			b.Unlock()
+			return
+		}
+	}
+
+	fecDelta, onFECRecovery := b.feedFECLocked(fecPkt, arrivalTime)
+	rtcpPackets := b.getRTCPPackets(arrivalTime)
+	b.Unlock()
+
+	b.packetPostProcess(rtcpPackets, fecDelta, onFECRecovery)
+}
+
+// feedFECLocked runs a media or FEC packet through the FEC decoder and
+// injects recovered packets into the packet pipeline. Must be called with the
+// buffer lock held and a non-nil decoder.
+func (b *Buffer) feedFECLocked(
+	pkt *rtp.Packet,
+	arrivalTime int64,
+) (fecRecoveryDelta, cbFECRecovery) {
+	statsBefore := b.fecDecoder.Stats()
+	recovered := b.fecDecoder.DecodeFEC(pkt)
+	statsAfter := b.fecDecoder.Stats()
+
+	fecPackets := statsAfter.FECPacketsReceived - statsBefore.FECPacketsReceived
+	fecBytes := statsAfter.FECBytesReceived - statsBefore.FECBytesReceived
+	fecPacketsDiscarded := statsAfter.FECPacketsDiscarded - statsBefore.FECPacketsDiscarded
+	fecPacketsRecovered := statsAfter.PacketsRecovered - statsBefore.PacketsRecovered
+	if b.rtpStats != nil {
+		b.rtpStats.UpdateFEC(
+			fecPackets,
+			fecBytes,
+			fecPacketsDiscarded,
+			fecPacketsRecovered,
+		)
+	}
+
+	if len(recovered) > 0 && b.fecPktBuf == nil {
+		b.fecPktBuf = make([]byte, bucket.RTPMaxPktSize)
+	}
+	for _, rp := range recovered {
+		n, err := rp.MarshalTo(b.fecPktBuf)
+		if err != nil {
+			b.logger.Warnw("could not marshal fec recovered packet", err, "ssrc", b.BufferBase.SSRC(), "sn", rp.SequenceNumber)
+			continue
+		}
+
+		// recovered packets flow through the regular pipeline: they are
+		// forwarded downstream and stop NACKs for the lost sequence numbers.
+		// They do not re-enter the decoder because chained recovery already
+		// completed within DecodeFEC. RTCP is generated once by the caller
+		// after all recovered packets have updated NACK state.
+		b.ingestLocked(b.fecPktBuf[:n], rp, arrivalTime, false, true)
+	}
+
+	if cb := b.onFECRecovery; cb != nil {
+		return fecRecoveryDelta{
+			received:      int(fecPackets),
+			recovered:     int(fecPacketsRecovered),
+			discarded:     int(fecPacketsDiscarded),
+			bytesReceived: int(fecBytes),
+		}, cb
+	}
+
+	return fecRecoveryDelta{}, nil
 }
 
 func (b *Buffer) Read(buff []byte) (n int, err error) {
@@ -444,7 +718,11 @@ func (b *Buffer) sendPLI() {
 	}
 }
 
-func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, isBuffered bool, isRTX bool) []rtcp.Packet {
+// ingestLocked runs a packet through the incoming packet pipeline, updating RTP
+// stats, NACK state and the packet bucket. It intentionally does not generate
+// RTCP so that FEC recovery can update NACK state before feedback is generated
+// once. Must be called with the buffer lock held.
+func (b *Buffer) ingestLocked(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, isBuffered bool, isRTX bool) {
 	b.BufferBase.HandleIncomingPacketLocked(
 		rawPkt,
 		rtpPacket,
@@ -454,8 +732,24 @@ func (b *Buffer) calc(rawPkt []byte, rtpPacket *rtp.Packet, arrivalTime int64, i
 		nil,
 		0,
 	)
+}
 
-	return b.getRTCPPackets(arrivalTime)
+// packetPostProcess runs processing after a packet is handled.
+// `rtcpPackets` should be RTCP feedback from the current NACK state, which
+// already reflects any FEC recovery performed during this write.
+// This is to ensure that packets recovered via FEC is not NACKed.
+func (b *Buffer) packetPostProcess(
+	rtcpPackets []rtcp.Packet,
+	fecDelta fecRecoveryDelta,
+	onFECRecovery cbFECRecovery,
+) {
+	fecDelta.invoke(onFECRecovery)
+
+	if len(rtcpPackets) != 0 {
+		if cb := b.getOnRtcpFeedback(); cb != nil {
+			cb(rtcpPackets)
+		}
+	}
 }
 
 func (b *Buffer) getRTCPPackets(arrivalTime int64) []rtcp.Packet {

@@ -134,6 +134,11 @@ rtc:
   #   #                  logs a warning and falls back to no-queue. see livekit/livekit#4724
   #   # an unrecognized value is rejected at startup.
   #   send_side_bwe_pacer: no-queue
+  # # FlexFEC-03 forward error correction, disabled by default.
+  # # Accepts FEC from publishers and uses it to repair lost packets before
+  # # forwarding.
+  # flexfec:
+  #   upstream_enabled: false
   # # allows automatic connection fallback to TCP and TURN/TLS (if configured) when UDP has been unstable, default true
   # allow_tcp_fallback: true
   # # signaling RTT (in milliseconds) below which ICE/TCP is attempted on a UDP failure; at or above it,
