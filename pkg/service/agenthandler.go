@@ -379,6 +379,20 @@ func (h *AgentHandler) deregisterWorker(w *agent.Worker) {
 	}
 }
 
+func (h *AgentHandler) registerJob(w *agent.Worker, jobID livekit.JobID) error {
+	err := h.agentServer.RegisterJobTerminateTopic(string(jobID))
+
+	// checked under h.mu after registering so that either this or the job/worker cleanup, whichever runs second, releases the handler.
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, err := w.GetJobState(jobID); err == nil && h.workers[w.ID] == w {
+		h.jobToWorker[jobID] = w
+	} else {
+		h.deregisterJob(jobID)
+	}
+	return err
+}
+
 func (h *AgentHandler) deregisterJob(jobID livekit.JobID) {
 	h.agentServer.DeregisterJobTerminateTopic(string(jobID))
 
@@ -418,19 +432,9 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 		switch state.GetStatus() {
 		case livekit.JobStatus_JS_RUNNING:
 			logger.Infow("assigned job to worker", "apiKey", selected.APIKey())
-			jobID := livekit.JobID(job.Id)
-			if err := h.agentServer.RegisterJobTerminateTopic(job.Id); err != nil {
+			if err := h.registerJob(selected, livekit.JobID(job.Id)); err != nil {
 				logger.Errorw("failed to register JobTerminate handler", err)
 			}
-
-			// checked under h.mu after registering so that either this or the job/worker cleanup, whichever runs second, releases the handler.
-			h.mu.Lock()
-			if _, err := selected.GetJobState(jobID); err == nil && h.workers[selected.ID] == selected {
-				h.jobToWorker[jobID] = selected
-			} else {
-				h.deregisterJob(jobID)
-			}
-			h.mu.Unlock()
 			fallthrough
 		case livekit.JobStatus_JS_SUCCESS:
 			return &rpc.JobRequestResponse{
