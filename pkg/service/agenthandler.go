@@ -375,7 +375,10 @@ func (h *AgentHandler) deregisterWorker(w *agent.Worker) {
 
 	jobs := w.RunningJobs()
 	for jobID := range jobs {
-		h.deregisterJob(jobID)
+		// a job migrated to another connection is routed there.
+		if h.jobToWorker[jobID] == w {
+			h.deregisterJob(jobID)
+		}
 	}
 }
 
@@ -577,6 +580,19 @@ var _ agent.WorkerSignalHandler = (*agentHandlerWorker)(nil)
 type agentHandlerWorker struct {
 	h *AgentHandler
 	*agent.Worker
+}
+
+func (w *agentHandlerWorker) HandleMigrateJob(req *livekit.MigrateJobRequest) error {
+	if err := w.Worker.HandleMigrateJob(req); err != nil {
+		return err
+	}
+
+	for _, id := range req.JobIds {
+		if err := w.h.registerJob(w.Worker, livekit.JobID(id)); err != nil {
+			w.Logger().Errorw("failed to register JobTerminate handler", err, "jobID", id)
+		}
+	}
+	return nil
 }
 
 func (w *agentHandlerWorker) HandleUpdateJob(update *livekit.UpdateJobStatus) error {
