@@ -17,7 +17,7 @@
 # This image is also the single source of truth for the Go toolchain: CI reads the
 # version out of this line (see .github/scripts/go-version.sh) so tests and images
 # always run the same runtime.
-FROM golang:1.27.1-alpine3.24@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS builder
+FROM golang:1.27.3-alpine3.24@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS builder
 
 ARG TARGETPLATFORM
 ARG TARGETARCH

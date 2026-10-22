@@ -6,7 +6,7 @@ require (
 	github.com/bep/debounce v1.2.1
 	github.com/d5/tengo/v2 v2.17.0
 	github.com/dennwc/iters v1.2.2
-	github.com/dustin/go-humanize v1.0.1
+	github.com/dustin/go-humanize v1.1.0
 	github.com/elliotchance/orderedmap/v3 v3.1.1
 	github.com/florianl/go-tc v0.4.8
 	github.com/frostbyte73/core v0.1.1
@@ -21,12 +21,12 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/mediatransportutil v0.0.0-20261014192331-dd8e31a0adc0
-	github.com/livekit/protocol v1.52.2-0.20261012065025-9bb708cdb819
+	github.com/livekit/protocol v1.53.1-0.20261021070436-f09f87aab29b
 	github.com/livekit/psrpc v0.8.2
 	github.com/mackerelio/go-osstat v0.2.8
 	github.com/magefile/mage v1.17.2
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/moby/moby/client v0.6.0
+	github.com/moby/moby/client v0.6.1
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/ory/dockertest/v4 v4.0.0
 	github.com/pion/datachannel v1.6.3
@@ -43,7 +43,7 @@ require (
 	github.com/pires/go-proxyproto v0.15.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.24.1
-	github.com/quic-go/quic-go v0.61.0
+	github.com/quic-go/quic-go v0.63.0
 	github.com/quic-go/webtransport-go v0.12.0
 	github.com/redis/go-redis/v9 v9.22.0
 	github.com/rs/cors v1.11.1
@@ -81,8 +81,8 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
-	github.com/maxbrunsfeld/counterfeiter/v6 v6.13.0 // indirect
-	github.com/moby/moby/api v1.56.0 // indirect
+	github.com/maxbrunsfeld/counterfeiter/v6 v6.14.0 // indirect
+	github.com/moby/moby/api v1.56.1 // indirect
 	github.com/nyaruka/phonenumbers v1.8.1 // indirect
 	github.com/olekukonko/cat v0.0.0-20250911104152-50322a0618f6 // indirect
 	github.com/olekukonko/errors v1.3.0 // indirect
@@ -117,7 +117,7 @@ require (
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/docker/go-connections v0.7.0 // indirect
+	github.com/docker/go-connections v0.8.1 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
@@ -167,7 +167,7 @@ tool (
 	golang.org/x/tools/cmd/goimports
 )
 
-replace github.com/pion/webrtc/v4 => github.com/livekit/webrtc-pion/v4 v4.2.18-warp.6
+replace github.com/pion/webrtc/v4 => github.com/livekit/webrtc-pion/v4 v4.2.18-warp.7
 
 replace github.com/pion/dtls/v3 => github.com/livekit/dtls/v3 v3.1.5-warp.3
 

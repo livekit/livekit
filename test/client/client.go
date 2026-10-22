@@ -370,35 +370,39 @@ func (c *RTCClient) createTransport(rtcconf webrtc.Configuration) error {
 	})
 
 	ordered := true
-	if err := c.publisher.CreateDataChannel(rtc.ReliableDataChannel, &webrtc.DataChannelInit{
-		Ordered: &ordered,
-	}); err != nil {
-		return err
+	if c.useSinglePeerConnection {
+		if err := createNegotiatedDataChannels(c.publisher); err != nil {
+			return err
+		}
+	} else {
+		if err := c.publisher.CreateDataChannel(rtc.ReliableDataChannel, &webrtc.DataChannelInit{
+			Ordered: &ordered,
+		}); err != nil {
+			return err
+		}
 	}
-
 	if err := c.publisher.CreateDataChannel("pubraw", &webrtc.DataChannelInit{
 		Ordered: &ordered,
 	}); err != nil {
 		return err
 	}
 
-	ordered = false
-	maxRetransmits := uint16(0)
-	if err := c.publisher.CreateDataChannel(rtc.LossyDataChannel, &webrtc.DataChannelInit{
-		Ordered:        &ordered,
-		MaxRetransmits: &maxRetransmits,
-	}); err != nil {
-		return err
-	}
-
-	if err := c.publisher.CreateDataChannel(rtc.DataTrackDataChannel, &webrtc.DataChannelInit{
-		Ordered:        &ordered,
-		MaxRetransmits: &maxRetransmits,
-	}); err != nil {
-		return err
-	}
-
 	if !c.useSinglePeerConnection {
+		maxRetransmits := uint16(0)
+		ordered = false
+		if err := c.publisher.CreateDataChannel(rtc.LossyDataChannel, &webrtc.DataChannelInit{
+			Ordered:        &ordered,
+			MaxRetransmits: &maxRetransmits,
+		}); err != nil {
+			return err
+		}
+		if err := c.publisher.CreateDataChannel(rtc.DataTrackDataChannel, &webrtc.DataChannelInit{
+			Ordered:        &ordered,
+			MaxRetransmits: &maxRetransmits,
+		}); err != nil {
+			return err
+		}
+
 		subscriberHandler := &transportfakes.FakeHandler{}
 		c.subscriber, err = rtc.NewPCTransport(rtc.TransportParams{
 			Config:                           &conf,
@@ -1415,4 +1419,39 @@ func (c *RTCClient) SendNacks(count int) {
 
 func encodeQueryParam(key, value string) string {
 	return fmt.Sprintf("&%s=%s", url.QueryEscape(key), url.QueryEscape(value))
+}
+
+// createNegotiatedDataChannels creates the well-known data channels the way protocol >= 18 clients do:
+// out-of-band with fixed IDs, matching what the server creates in single peer connection mode.
+func createNegotiatedDataChannels(t *rtc.PCTransport) error {
+	negotiated := true
+	ordered := true
+	reliableID := uint16(livekit.NegotiatedDataChannelID_NDCI_RELIABLE)
+	if err := t.CreateDataChannel(rtc.ReliableDataChannel, &webrtc.DataChannelInit{
+		Ordered:    &ordered,
+		Negotiated: &negotiated,
+		ID:         &reliableID,
+	}); err != nil {
+		return err
+	}
+
+	ordered = false
+	maxRetransmits := uint16(0)
+	lossyID := uint16(livekit.NegotiatedDataChannelID_NDCI_LOSSY)
+	if err := t.CreateDataChannel(rtc.LossyDataChannel, &webrtc.DataChannelInit{
+		Ordered:        &ordered,
+		MaxRetransmits: &maxRetransmits,
+		Negotiated:     &negotiated,
+		ID:             &lossyID,
+	}); err != nil {
+		return err
+	}
+
+	dataTrackID := uint16(livekit.NegotiatedDataChannelID_NDCI_DATA_TRACK)
+	return t.CreateDataChannel(rtc.DataTrackDataChannel, &webrtc.DataChannelInit{
+		Ordered:        &ordered,
+		MaxRetransmits: &maxRetransmits,
+		Negotiated:     &negotiated,
+		ID:             &dataTrackID,
+	})
 }

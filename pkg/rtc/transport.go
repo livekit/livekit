@@ -3336,6 +3336,10 @@ func (t *PCTransport) restrictReceiverCodecsToPublishList() {
 			tr.Direction() != webrtc.RTPTransceiverDirectionSendrecv {
 			continue
 		}
+		// a mid-less sender is not negotiated yet, see sendersPendingConfig
+		if tr.Mid() == "" {
+			continue
+		}
 		receiver := tr.Receiver()
 		if receiver == nil {
 			continue

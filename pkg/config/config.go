@@ -45,6 +45,10 @@ import (
 )
 
 const (
+	turnCredentialsFileReadError  = "reading turn credentials file %q: %w"
+	turnCredentialsFileParseError = "invalid YAML in turn credentials file %q"
+	turnCredentialsInlineWarning  = "both static credentials and credentials_file are set for TURN server, the inline values will be used"
+
 	generatedCLIFlagUsage = "generated"
 
 	// TURNMaxTTLSeconds is the operational maximum for TURN credential TTLs (24 hours).
@@ -68,11 +72,12 @@ const (
 )
 
 var (
-	ErrKeyFileIncorrectPermission        = errors.New("key file others permissions must be set to 0")
-	ErrTURNSecretFileIncorrectPermission = errors.New("turn secret file others permissions must be set to 0")
-	ErrKeysNotSet                        = errors.New("one of key-file or keys must be provided")
-	ErrTURNSecretEmpty                   = errors.New("turn secret is empty")
-	ErrTURNServerNoCredentials           = errors.New("turn server has no usable credentials: set a non-empty secret/secret_file for dynamic auth, or username and credential for static auth")
+	ErrKeyFileIncorrectPermission            = errors.New("key file others permissions must be set to 0")
+	ErrTURNCredentialFileIncorrectPermission = errors.New("turn credentials file others permissions must be set to 0")
+	ErrTURNSecretFileIncorrectPermission     = errors.New("turn secret file others permissions must be set to 0")
+	ErrKeysNotSet                            = errors.New("one of key-file or keys must be provided")
+	ErrTURNSecretEmpty                       = errors.New("turn secret is empty")
+	ErrTURNServerNoCredentials               = errors.New("turn server has no usable credentials: set a non-empty secret/secret_file for dynamic auth, or username and credential for static auth")
 )
 
 type Config struct {
@@ -206,6 +211,8 @@ type TURNServer struct {
 	Protocol   string `yaml:"protocol,omitempty"`
 	Username   string `yaml:"username,omitempty"`
 	Credential string `yaml:"credential,omitempty"`
+	// YAML file containing username and credential. Inline static credentials take precedence.
+	CredentialsFile string `yaml:"credentials_file,omitempty"`
 	// Secret is used for TURN static auth secrets mechanism. When provided,
 	// dynamic credentials are generated using HMAC-SHA1 instead of static Username/Credential
 	Secret string `yaml:"secret,omitempty"`
@@ -891,6 +898,37 @@ func (conf *Config) LoadTURNSecrets() error {
 			conf.RTC.TURNServers[i].Secret = secret
 		default:
 			conf.RTC.TURNServers[i].Secret = inlineSecret
+		}
+
+		// Keep the static pair together; never combine one inline value with a
+		// credential from a different source.
+		if s.CredentialsFile != "" {
+			if s.Username != "" || s.Credential != "" {
+				logger.Warnw(turnCredentialsInlineWarning, nil,
+					"host", s.Host, "port", s.Port)
+			} else {
+				st, err := os.Stat(s.CredentialsFile)
+				if err != nil {
+					return err
+				}
+				if st.Mode().Perm()&otherFilter != 0o000 {
+					return ErrTURNCredentialFileIncorrectPermission
+				}
+				data, err := os.ReadFile(s.CredentialsFile)
+				if err != nil {
+					return fmt.Errorf(turnCredentialsFileReadError, s.CredentialsFile, err)
+				}
+				var credentials struct {
+					Username   string `yaml:"username"`
+					Credential string `yaml:"credential"`
+				}
+				if err := yaml.Unmarshal(data, &credentials); err != nil {
+					// YAML type errors may contain scalar values from the secret file.
+					return fmt.Errorf(turnCredentialsFileParseError, s.CredentialsFile)
+				}
+				conf.RTC.TURNServers[i].Username = credentials.Username
+				conf.RTC.TURNServers[i].Credential = credentials.Credential
+			}
 		}
 
 		// validate credential mode as an explicit union rather than inferring it from a
