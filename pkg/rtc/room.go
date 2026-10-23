@@ -59,7 +59,7 @@ const (
 
 	simulateDisconnectSignalTimeout = 5 * time.Second
 
-	dataMessageCacheTTL  = 2 * time.Second
+	dataMessageCacheTTL  = 10 * time.Second
 	dataMessageCacheSize = 100_000
 )
 
