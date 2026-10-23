@@ -103,6 +103,8 @@ type RoomManager struct {
 
 	forwardStats *sfu.ForwardStats
 
+	subscribePacer *rtc.SubscribePacer
+
 	rpc.UnimplementedParticipantServer
 	rpc.UnimplementedRoomServer
 	rpc.UnimplementedRoomManagerServer
@@ -144,6 +146,7 @@ func NewLocalRoomManager(
 		turnAuthHandler:   turnAuthHandler,
 		bus:               bus,
 		forwardStats:      forwardStats,
+		subscribePacer:    rtc.NewSubscribePacer(conf.Limit.SubscribePaceShadowRates),
 
 		rooms: make(map[livekit.RoomName]*rtc.Room),
 
@@ -528,7 +531,7 @@ func (r *RoomManager) StartSession(
 		SubscriberAllowPause:              subscriberAllowPause,
 		SubscriptionLimitAudio:            r.config.Limit.SubscriptionLimitAudio,
 		SubscriptionLimitVideo:            r.config.Limit.SubscriptionLimitVideo,
-		SubscribePacer:                    room.SubscribePacer(),
+		SubscribePacer:                    r.subscribePacer,
 		PlayoutDelay:                      roomInternal.GetPlayoutDelay(),
 		SyncStreams:                       roomInternal.GetSyncStreams(),
 		ForwardStats:                      r.forwardStats,

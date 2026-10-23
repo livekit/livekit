@@ -152,10 +152,10 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 	promSubscribePaceShadow = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "subscribe_pace",
-		Name:        "shadow_ms",
-		Help:        "Video subscribe time, as measured (rate=none) and with the wait shadow pacing at each rate would have added.",
+		Name:        "shadow_delay_ms",
+		Help:        "Wait that pacing video subscribes at each rate would add, per video subscribe.",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
-		Buckets:     prometheus.ExponentialBucketsRange(20, 120000, 16),
+		Buckets:     []float64{0, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 30000, 60000, 120000},
 	}, []string{"rate"})
 	promPeerConnection = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
@@ -326,12 +326,10 @@ func recordPubSubStreamStartTime(
 	).Observe(float64(d.Milliseconds()))
 }
 
-// RecordSubscribePaceShadow records a video subscribe that took d, once as measured and once
-// per shadow pacing rate with the wait that rate would have added.
-func RecordSubscribePaceShadow(d time.Duration, delays map[string]time.Duration) {
-	promSubscribePaceShadow.WithLabelValues("none").Observe(float64(d.Milliseconds()))
+// RecordSubscribePaceShadow records, per shadow pacing rate, the wait one video subscribe would have had.
+func RecordSubscribePaceShadow(delays map[string]time.Duration) {
 	for rate, delay := range delays {
-		promSubscribePaceShadow.WithLabelValues(rate).Observe(float64((d + delay).Milliseconds()))
+		promSubscribePaceShadow.WithLabelValues(rate).Observe(float64(delay.Milliseconds()))
 	}
 }
 

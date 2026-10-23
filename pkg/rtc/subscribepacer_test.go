@@ -53,6 +53,19 @@ func TestSubscribePacer(t *testing.T) {
 		require.Equal(t, 2*time.Second, last)
 	})
 
+	t.Run("a rate below one per second does not delay the first subscribe", func(t *testing.T) {
+		p := NewSubscribePacer([]float64{0.5})
+		now := time.Now()
+
+		require.Equal(t, time.Duration(0), p.Delays(now)["0.5"])
+		require.Equal(t, 2*time.Second, p.Delays(now)["0.5"])
+	})
+
+	t.Run("duplicate rates make one bucket", func(t *testing.T) {
+		p := NewSubscribePacer([]float64{50, 10, 50})
+		require.Len(t, p.buckets, 2)
+	})
+
 	t.Run("refills while idle", func(t *testing.T) {
 		p := NewSubscribePacer([]float64{10})
 		now := time.Now()
@@ -60,6 +73,6 @@ func TestSubscribePacer(t *testing.T) {
 		for i := 0; i < 12; i++ {
 			p.Delays(now)
 		}
-		require.Equal(t, time.Duration(0), p.Delays(now.Add(2*time.Second))["10"])
+		require.Equal(t, time.Duration(0), p.Delays(now.Add(2 * time.Second))["10"])
 	})
 }

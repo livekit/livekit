@@ -15,13 +15,16 @@
 package rtc
 
 import (
+	"slices"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/livekit/protocol/logger"
 )
 
-// SubscribePacer measures, in shadow, how long video subscribes in one room on this node
-// would wait if they were paced at each of a set of rates. It never delays a subscribe.
+// SubscribePacer measures, in shadow, how long video subscribes on this node would wait
+// if they were paced at each of a set of rates. It never delays a subscribe.
 //
 // Each rate is a token bucket that refills at that many subscribes per second and holds
 // one second of tokens, so a single joiner subscribes at once and only a burst waits.
@@ -39,21 +42,23 @@ type subscribePaceBucket struct {
 
 // NewSubscribePacer returns nil when no rates are given, which turns the shadow off.
 func NewSubscribePacer(rates []float64) *SubscribePacer {
-	var buckets []subscribePaceBucket
+	rates = slices.DeleteFunc(slices.Clone(rates), func(rate float64) bool { return rate <= 0 })
+	slices.Sort(rates)
+	rates = slices.Compact(rates)
+	if len(rates) == 0 {
+		return nil
+	}
+
+	buckets := make([]subscribePaceBucket, 0, len(rates))
 	for _, rate := range rates {
-		if rate <= 0 {
-			continue
-		}
 		interval := time.Duration(float64(time.Second) / rate)
 		buckets = append(buckets, subscribePaceBucket{
 			rateLabel: strconv.FormatFloat(rate, 'f', -1, 64),
 			interval:  interval,
-			burst:     time.Second - interval,
+			burst:     max(time.Second-interval, 0),
 		})
 	}
-	if len(buckets) == 0 {
-		return nil
-	}
+	logger.Infow("subscribe pacing shadow enabled", "rates", rates)
 	return &SubscribePacer{buckets: buckets}
 }
 

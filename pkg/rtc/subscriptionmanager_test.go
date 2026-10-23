@@ -807,6 +807,39 @@ func TestSubscribeDataTrack(t *testing.T) {
 	})
 }
 
+func TestSubscribePacerTakesVideoTokensOnly(t *testing.T) {
+	for _, tc := range []struct {
+		kind        livekit.TrackType
+		tokenIsUsed bool
+	}{
+		{livekit.TrackType_VIDEO, true},
+		{livekit.TrackType_AUDIO, false},
+	} {
+		t.Run(tc.kind.String(), func(t *testing.T) {
+			// rate 1 holds a single token, so after one take the next subscribe waits
+			pacer := NewSubscribePacer([]float64{1})
+			sm := newTestSubscriptionManager()
+			defer sm.Close(false)
+			sm.params.SubscribePacer = pacer
+			resolver := newTestResolver(true, true, "pub", "pubID")
+			sm.params.TrackResolver = func(sub types.LocalParticipant, trackID livekit.TrackID) types.MediaResolverResult {
+				res := resolver.Resolve(sub, trackID)
+				res.Track.(*typesfakes.FakeMediaTrack).KindReturns(tc.kind)
+				return res
+			}
+			subscribed := atomic.Bool{}
+			sm.params.OnTrackSubscribed = func(subTrack types.SubscribedTrack) {
+				subscribed.Store(true)
+			}
+
+			sm.SubscribeToTrack("track", false)
+			require.Eventually(t, subscribed.Load, subSettleTimeout, subCheckInterval, "track was not subscribed")
+
+			require.Equal(t, tc.tokenIsUsed, pacer.Delays(time.Now())["1"] > 0)
+		})
+	}
+}
+
 type testSubscriptionParams struct {
 	SubscriptionLimitAudio int32
 	SubscriptionLimitVideo int32

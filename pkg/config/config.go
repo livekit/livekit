@@ -297,9 +297,6 @@ type RoomConfig struct {
 	// deprecated, moved to limits
 	MaxParticipantIdentityLength int                                   `yaml:"max_participant_identity_length,omitempty"`
 	RoomConfigurations           map[string]*livekit.RoomConfiguration `yaml:"room_configurations,omitempty"`
-	// video subscribes per second per room on a node at which to measure, in shadow, how long
-	// pacing would delay subscribes; empty turns the measurement off
-	SubscribePaceShadowRates []float64 `yaml:"subscribe_pace_shadow_rates,omitempty"`
 }
 
 type CodecSpec struct {
@@ -399,6 +396,10 @@ type LimitConfig struct {
 	MaxDataBlobSize      uint32 `yaml:"max_data_blobs_size,omitempty"`
 
 	MaxDataTrackCustomEncodingLength int `yaml:"max_data_track_custom_encoding_length,omitempty"`
+
+	// video subscribes per second on this node at which to measure, in shadow, how long
+	// pacing would delay subscribes; empty turns the measurement off
+	SubscribePaceShadowRates []float64 `yaml:"subscribe_pace_shadow_rates,omitempty"`
 
 	// maximum size (in bytes) of a single message read off a client-facing
 	// signalling WebSocket connection. Frames larger than this are rejected by the
