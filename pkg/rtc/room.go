@@ -137,6 +137,8 @@ type Room struct {
 
 	trailer []byte
 
+	subscribePacer *SubscribePacer
+
 	onParticipantChanged func(p types.Participant)
 	onRoomUpdated        func()
 	onClose              func(types.RoomCloseReason)
@@ -263,6 +265,7 @@ func NewRoom(
 		),
 		config:                               config,
 		roomConfig:                           roomConfig,
+		subscribePacer:                       NewSubscribePacer(roomConfig.SubscribePaceShadowRates),
 		audioConfig:                          audioConfig,
 		telemetry:                            telemetry,
 		egressLauncher:                       egressLauncher,
@@ -331,6 +334,10 @@ func (r *Room) Name() livekit.RoomName {
 
 func (r *Room) ID() livekit.RoomID {
 	return livekit.RoomID(r.protoRoom.Sid)
+}
+
+func (r *Room) SubscribePacer() *SubscribePacer {
+	return r.subscribePacer
 }
 
 func (r *Room) Trailer() []byte {

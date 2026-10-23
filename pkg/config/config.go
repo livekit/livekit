@@ -297,6 +297,9 @@ type RoomConfig struct {
 	// deprecated, moved to limits
 	MaxParticipantIdentityLength int                                   `yaml:"max_participant_identity_length,omitempty"`
 	RoomConfigurations           map[string]*livekit.RoomConfiguration `yaml:"room_configurations,omitempty"`
+	// video subscribes per second per room on a node at which to measure, in shadow, how long
+	// pacing would delay subscribes; empty turns the measurement off
+	SubscribePaceShadowRates []float64 `yaml:"subscribe_pace_shadow_rates,omitempty"`
 }
 
 type CodecSpec struct {

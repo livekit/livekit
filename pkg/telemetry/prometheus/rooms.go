@@ -52,6 +52,7 @@ var (
 	promSessionStartTime                   *prometheus.HistogramVec
 	promSessionDuration                    *prometheus.HistogramVec
 	promPubSubTime                         *prometheus.HistogramVec
+	promSubscribePaceShadow                *prometheus.HistogramVec
 
 	promPeerConnection *prometheus.CounterVec
 )
@@ -148,6 +149,14 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		Buckets:     []float64{100, 200, 500, 700, 1000, 5000, 10000},
 	}, append(promStreamLabels, "sdk", "kind", "count"))
+	promSubscribePaceShadow = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "subscribe_pace",
+		Name:        "shadow_ms",
+		Help:        "Video subscribe time, as measured (rate=none) and with the wait shadow pacing at each rate would have added.",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+		Buckets:     prometheus.ExponentialBucketsRange(20, 30000, 14),
+	}, []string{"rate"})
 	promPeerConnection = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "peer_connection",
@@ -169,6 +178,7 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promSessionDuration)
 	prometheus.MustRegister(promPubSubTime)
 	prometheus.MustRegister(promPeerConnection)
+	prometheus.MustRegister(promSubscribePaceShadow)
 }
 
 func RoomStarted() {
@@ -314,6 +324,15 @@ func recordPubSubStreamStartTime(
 		kind.String(),
 		strconv.Itoa(count),
 	).Observe(float64(d.Milliseconds()))
+}
+
+// RecordSubscribePaceShadow records a video subscribe that took d, once as measured and once
+// per shadow pacing rate with the wait that rate would have added.
+func RecordSubscribePaceShadow(d time.Duration, delays map[string]time.Duration) {
+	promSubscribePaceShadow.WithLabelValues("none").Observe(float64(d.Milliseconds()))
+	for rate, delay := range delays {
+		promSubscribePaceShadow.WithLabelValues(rate).Observe(float64((d + delay).Milliseconds()))
+	}
 }
 
 func RecordTrackSubscribeSuccess(kind string) {

@@ -219,6 +219,7 @@ type ParticipantParams struct {
 	SubscriberAllowPause              bool
 	SubscriptionLimitAudio            int32
 	SubscriptionLimitVideo            int32
+	SubscribePacer                    *SubscribePacer
 	PlayoutDelay                      *livekit.PlayoutDelay
 	SyncStreams                       bool
 	ForwardStats                      *sfu.ForwardStats
@@ -2242,6 +2243,7 @@ func (p *ParticipantImpl) setupSubscriptionManager() {
 		OnSubscriptionError:      p.onSubscriptionError,
 		SubscriptionLimitVideo:   p.params.SubscriptionLimitVideo,
 		SubscriptionLimitAudio:   p.params.SubscriptionLimitAudio,
+		SubscribePacer:           p.params.SubscribePacer,
 		UseOneShotSignallingMode: p.params.UseOneShotSignallingMode,
 	})
 	p.SubscriptionManager.OnSubscribeStatusChanged(func(publisherID livekit.ParticipantID, subscribed bool) {

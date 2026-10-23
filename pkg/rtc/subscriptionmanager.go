@@ -60,6 +60,8 @@ type SubscriptionManagerParams struct {
 
 	SubscriptionLimitVideo, SubscriptionLimitAudio int32
 
+	SubscribePacer *SubscribePacer
+
 	DataTrackResolver types.DataTrackResolver
 
 	UseOneShotSignallingMode bool
@@ -895,6 +897,11 @@ func (m *SubscriptionManager) addSubscriber(sub *mediaTrackSubscription, track t
 		)
 	}
 	if err == nil && subTrack != nil { // subTrack could be nil if already subscribed
+		if track.Kind() == livekit.TrackType_VIDEO {
+			if delays := m.params.SubscribePacer.Delays(time.Now()); delays != nil {
+				sub.paceShadowDelays.Store(&delays)
+			}
+		}
 		subTrack.OnSubscribeStreamStarted(sub.recordStreamStartLatency)
 		subTrack.OnClose(func(isExpectedToResume bool) {
 			m.handleSubscribedTrackClose(sub, isExpectedToResume)
@@ -1480,6 +1487,9 @@ type mediaTrackSubscription struct {
 	kind            atomic.Pointer[livekit.TrackType]
 
 	succRecordCounter atomic.Int32
+
+	// per shadow pacing rate, how long this subscribe would have waited for a token
+	paceShadowDelays atomic.Pointer[map[string]time.Duration]
 }
 
 func newMediaTrackSubscription(subscriberID livekit.ParticipantID, trackID livekit.TrackID, l logger.Logger) *mediaTrackSubscription {
@@ -1583,6 +1593,9 @@ func (s *mediaTrackSubscription) maybeRecordSuccess(tl types.ParticipantTelemetr
 		subscriber.Kind(),
 		int(s.succRecordCounter.Inc()),
 	)
+	if delays := s.paceShadowDelays.Swap(nil); delays != nil {
+		prometheus.RecordSubscribePaceShadow(d, *delays)
+	}
 
 	eventSent := s.eventSent.Swap(true)
 
