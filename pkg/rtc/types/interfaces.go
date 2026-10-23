@@ -48,6 +48,7 @@ type WebsocketClient interface {
 	WriteMessage(messageType int, data []byte) error
 	WriteControl(messageType int, data []byte, deadline time.Time) error
 	SetReadDeadline(deadline time.Time) error
+	SetPongHandler(h func(appData string) error)
 	Close() error
 }
 

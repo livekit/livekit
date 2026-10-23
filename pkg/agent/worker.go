@@ -54,6 +54,9 @@ const CurrentProtocol = 1
 const (
 	RegisterTimeout  = 10 * time.Second
 	AssignJobTimeout = 10 * time.Second
+	// IdleTimeout is how long a registered worker may go without sending a
+	// message or answering a ping before its connection is closed
+	IdleTimeout = 30 * time.Second
 )
 
 type SignalConn interface {

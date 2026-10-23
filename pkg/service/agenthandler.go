@@ -69,10 +69,21 @@ func HandshakeAgentWorker(c agent.SignalConn, serverInfo *livekit.ServerInfo, re
 			return
 		}
 	}
-	if err := c.SetReadDeadline(time.Time{}); err != nil {
+	if err := clearHandshakeDeadline(c); err != nil {
 		return
 	}
 	return wr.Registration(), true
+}
+
+// clearHandshakeDeadline swaps the registration deadline for an idle timeout
+// on WebSocket connections, so a worker whose host freezes is dropped from the
+// pool instead of being sent jobs it can never accept. WebTransport relies on
+// the QUIC idle timeout instead.
+func clearHandshakeDeadline(c agent.SignalConn) error {
+	if ic, ok := c.(interface{ SetIdleTimeout(time.Duration) error }); ok {
+		return ic.SetIdleTimeout(agent.IdleTimeout)
+	}
+	return c.SetReadDeadline(time.Time{})
 }
 
 type AgentHandler struct {
