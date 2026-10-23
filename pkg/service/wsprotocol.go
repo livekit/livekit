@@ -47,6 +47,9 @@ type WSSignalConnection struct {
 	// maximum size (in bytes) of a single decompressed message; 0 disables the limit
 	messageSizeLimit int64
 
+	// read deadline extension on each message or pong; 0 leaves the deadline alone
+	idleTimeout time.Duration
+
 	closed core.Fuse
 }
 
@@ -57,8 +60,30 @@ func NewWSSignalConnection(conn types.WebsocketClient, messageSizeLimit int64) *
 		useJSON:          false,
 		messageSizeLimit: messageSizeLimit,
 	}
+	conn.SetPongHandler(wsc.handlePong)
 	go wsc.pingWorker()
 	return wsc
+}
+
+// SetIdleTimeout closes the connection, by failing the pending read, when the
+// peer neither sends a message nor answers a ping for d. Without it, a peer
+// whose host dies without closing the TCP connection stays readable for as
+// long as the kernel keeps the socket open. Must be called from the reading
+// goroutine, since pongs are handled there.
+func (c *WSSignalConnection) SetIdleTimeout(d time.Duration) error {
+	c.idleTimeout = d
+	return c.extendReadDeadline()
+}
+
+func (c *WSSignalConnection) extendReadDeadline() error {
+	if c.idleTimeout <= 0 {
+		return nil
+	}
+	return c.conn.SetReadDeadline(time.Now().Add(c.idleTimeout))
+}
+
+func (c *WSSignalConnection) handlePong(string) error {
+	return c.extendReadDeadline()
 }
 
 // readMessage reads a single websocket message, bounding the size of the
@@ -67,6 +92,9 @@ func NewWSSignalConnection(conn types.WebsocketClient, messageSizeLimit int64) *
 // frame can still expand into a much larger buffer once inflated. Reading through
 // an io.LimitReader caps the decompressed size at the same limit.
 func (c *WSSignalConnection) readMessage() (int, []byte, error) {
+	if err := c.extendReadDeadline(); err != nil {
+		return 0, nil, err
+	}
 	messageType, r, err := c.conn.NextReader()
 	if err != nil {
 		return messageType, nil, err
