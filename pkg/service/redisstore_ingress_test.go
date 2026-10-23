@@ -129,3 +129,36 @@ func TestIngressStoreReportsLostOptimisticLock(t *testing.T) {
 		require.ErrorIs(t, err, redis.TxFailedErr, "UpdateIngressState returned nil although the state was never written")
 	})
 }
+
+// RedisStore.UpdateIngress must not recreate an ingress that was deleted after the
+// caller loaded it. The existence check runs inside the WATCH on the ingress hash,
+// so a delete landing after the check fails the transaction instead.
+func TestUpdateIngressDoesNotRecreateDeletedIngress(t *testing.T) {
+	ctx := context.Background()
+	rc := redisClient(t)
+	rs := service.NewRedisStore(rc)
+
+	info := &livekit.IngressInfo{
+		IngressId: "IN_deleted",
+		StreamKey: "sk_deleted",
+		RoomName:  "room_deleted",
+	}
+	require.NoError(t, rs.StoreIngress(ctx, info))
+	t.Cleanup(func() { _ = rs.DeleteIngress(ctx, info) })
+
+	// what an API handler holds when a concurrent DeleteIngress lands
+	loaded, err := rs.LoadIngress(ctx, info.IngressId)
+	require.NoError(t, err)
+	require.NoError(t, rs.DeleteIngress(ctx, info))
+
+	loaded.Name = "renamed"
+	require.ErrorIs(t, rs.UpdateIngress(ctx, loaded), service.ErrIngressNotFound)
+
+	_, err = rs.LoadIngress(ctx, info.IngressId)
+	require.ErrorIs(t, err, service.ErrIngressNotFound, "the deleted ingress must not reappear")
+	_, err = rs.LoadIngressFromStreamKey(ctx, info.StreamKey)
+	require.ErrorIs(t, err, service.ErrIngressNotFound, "nor its stream key")
+	members, err := rc.SMembers(ctx, service.RoomIngressPrefix+info.RoomName).Result()
+	require.NoError(t, err)
+	require.Empty(t, members, "nor its room membership")
+}
