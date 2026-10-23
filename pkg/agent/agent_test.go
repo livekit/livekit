@@ -314,6 +314,87 @@ func TestJobTerminateReleasesJob(t *testing.T) {
 	})
 }
 
+// a reconnected worker reports its running jobs on its new connection, which must then receive their terminations.
+func TestMigratedJobTerminate(t *testing.T) {
+	const agentName = "test_agent"
+
+	// the server reads the ping only after handling the messages sent before it.
+	waitHandled := func(t *testing.T, w *testutils.AgentWorker) {
+		pongs := w.WorkerPongs.Observe()
+		defer pongs.Stop()
+		w.SendPing(&livekit.WorkerPing{Timestamp: time.Now().UnixMilli()})
+		select {
+		case <-pongs.Events():
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "pong timeout")
+		}
+	}
+
+	for _, tc := range []struct {
+		name               string
+		closeBeforeMigrate bool
+	}{
+		{"old connection closes before migration", true},
+		{"old connection closes after migration", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bus := psrpc.NewLocalMessageBus()
+			client := must.Get(rpc.NewAgentInternalClient(bus))
+			server := testutils.NewTestServer(bus)
+			t.Cleanup(server.Close)
+
+			old := server.SimulateAgentWorker()
+			old.Register(agentName, livekit.JobType_JT_ROOM)
+			waitHandled(t, old)
+
+			job := &livekit.Job{
+				Id:         guid.New(guid.AgentJobPrefix),
+				DispatchId: guid.New(guid.AgentDispatchPrefix),
+				Type:       livekit.JobType_JT_ROOM,
+				Room:       &livekit.Room{},
+				AgentName:  agentName,
+			}
+			_, err := client.JobRequest(context.Background(), agentName, agent.RoomAgentTopic, job)
+			require.NoError(t, err)
+
+			closeOld := func() {
+				require.NoError(t, old.Close())
+				select {
+				case <-old.ConnectionDone():
+				case <-time.After(5 * time.Second):
+					require.Fail(t, "old connection teardown timeout")
+				}
+			}
+
+			if tc.closeBeforeMigrate {
+				closeOld()
+			}
+			reconnected := server.SimulateAgentWorker()
+			reconnected.Register(agentName, livekit.JobType_JT_ROOM)
+			reconnected.SendMigrateJob(&livekit.MigrateJobRequest{JobIds: []string{job.Id}})
+			waitHandled(t, reconnected)
+			if !tc.closeBeforeMigrate {
+				closeOld()
+			}
+
+			terminations := reconnected.JobTerminations.Observe()
+			defer terminations.Stop()
+			res, err := client.JobTerminate(context.Background(), job.Id, &rpc.JobTerminateRequest{
+				JobId:  job.Id,
+				Reason: rpc.JobTerminateReason_TERMINATION_REQUESTED,
+			}, psrpc.WithRequestTimeout(time.Second))
+			require.NoError(t, err)
+			require.Equal(t, livekit.JobStatus_JS_SUCCESS, res.State.Status)
+			select {
+			case m := <-terminations.Events():
+				require.Equal(t, job.Id, m.JobId)
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "job termination timeout")
+			}
+		})
+	}
+}
+
 func TestConnectionClosedOnDispatchError(t *testing.T) {
 	t.Run("connection closed when unknown message type received", func(t *testing.T) {
 		bus := psrpc.NewLocalMessageBus()

@@ -662,8 +662,26 @@ func (w *Worker) Draining() bool {
 	return w.draining
 }
 
+// MigrateJobRequest carries only job IDs, so a migrated job is tracked without its room or dispatch details.
 func (w *Worker) HandleMigrateJob(req *livekit.MigrateJobRequest) error {
-	// TODO(theomonnom): On OSS this is not implemented
-	// We could maybe just move a specific job to another worker
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	now := time.Now().UnixNano()
+	for _, id := range req.JobIds {
+		jobID := livekit.JobID(id)
+		if _, ok := w.runningJobs[jobID]; ok {
+			continue
+		}
+		w.runningJobs[jobID] = &livekit.Job{
+			Id: id,
+			State: &livekit.JobState{
+				Status:    livekit.JobStatus_JS_RUNNING,
+				UpdatedAt: now,
+				WorkerId:  w.ID,
+				AgentId:   w.AgentID,
+			},
+		}
+	}
 	return nil
 }

@@ -129,6 +129,7 @@ func (h *TestServer) SimulateAgentWorker(opts ...SimulatedWorkerOption) *AgentWo
 		JobAssignments:          events.NewObserverList[*livekit.JobAssignment](),
 		JobTerminations:         events.NewObserverList[*livekit.JobTermination](),
 		WorkerPongs:             events.NewObserverList[*livekit.WorkerPong](),
+		connectionDone:          make(chan struct{}),
 	}
 	w.ctx, w.cancel = context.WithCancel(context.Background())
 
@@ -137,7 +138,10 @@ func (h *TestServer) SimulateAgentWorker(opts ...SimulatedWorkerOption) *AgentWo
 	}
 
 	ctx := service.WithAPIKey(o.Context, &auth.ClaimGrants{}, "test")
-	go h.HandleConnection(ctx, w, agent.MakeWorkerRegistration())
+	go func() {
+		h.HandleConnection(ctx, w, agent.MakeWorkerRegistration())
+		close(w.connectionDone)
+	}()
 
 	return w
 }
@@ -190,6 +194,7 @@ type AgentWorker struct {
 	workerMessages chan *livekit.WorkerMessage
 	serverMessages deque.Deque[*livekit.ServerMessage]
 	jobs           map[string]*AgentJob
+	connectionDone chan struct{}
 
 	RegisterWorkerResponses *events.ObserverList[*livekit.RegisterWorkerResponse]
 	AvailabilityRequests    *events.ObserverList[*livekit.AvailabilityRequest]
@@ -222,6 +227,11 @@ func (w *AgentWorker) CloseWithReason(_ string) error {
 // Closed returns a channel that is closed when the connection is closed by the server
 func (w *AgentWorker) Closed() <-chan struct{} {
 	return w.fuse.Watch()
+}
+
+// ConnectionDone returns a channel that is closed when the server has finished handling the connection
+func (w *AgentWorker) ConnectionDone() <-chan struct{} {
+	return w.connectionDone
 }
 
 func (w *AgentWorker) SetReadDeadline(t time.Time) error {

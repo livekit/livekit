@@ -375,8 +375,25 @@ func (h *AgentHandler) deregisterWorker(w *agent.Worker) {
 
 	jobs := w.RunningJobs()
 	for jobID := range jobs {
+		// a job migrated to another connection is routed there.
+		if h.jobToWorker[jobID] == w {
+			h.deregisterJob(jobID)
+		}
+	}
+}
+
+func (h *AgentHandler) registerJob(w *agent.Worker, jobID livekit.JobID) error {
+	err := h.agentServer.RegisterJobTerminateTopic(string(jobID))
+
+	// checked under h.mu after registering so that either this or the job/worker cleanup, whichever runs second, releases the handler.
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, err := w.GetJobState(jobID); err == nil && h.workers[w.ID] == w {
+		h.jobToWorker[jobID] = w
+	} else {
 		h.deregisterJob(jobID)
 	}
+	return err
 }
 
 func (h *AgentHandler) deregisterJob(jobID livekit.JobID) {
@@ -418,19 +435,9 @@ func (h *AgentHandler) JobRequest(ctx context.Context, job *livekit.Job) (*rpc.J
 		switch state.GetStatus() {
 		case livekit.JobStatus_JS_RUNNING:
 			logger.Infow("assigned job to worker", "apiKey", selected.APIKey())
-			jobID := livekit.JobID(job.Id)
-			if err := h.agentServer.RegisterJobTerminateTopic(job.Id); err != nil {
+			if err := h.registerJob(selected, livekit.JobID(job.Id)); err != nil {
 				logger.Errorw("failed to register JobTerminate handler", err)
 			}
-
-			// checked under h.mu after registering so that either this or the job/worker cleanup, whichever runs second, releases the handler.
-			h.mu.Lock()
-			if _, err := selected.GetJobState(jobID); err == nil && h.workers[selected.ID] == selected {
-				h.jobToWorker[jobID] = selected
-			} else {
-				h.deregisterJob(jobID)
-			}
-			h.mu.Unlock()
 			fallthrough
 		case livekit.JobStatus_JS_SUCCESS:
 			return &rpc.JobRequestResponse{
@@ -573,6 +580,19 @@ var _ agent.WorkerSignalHandler = (*agentHandlerWorker)(nil)
 type agentHandlerWorker struct {
 	h *AgentHandler
 	*agent.Worker
+}
+
+func (w *agentHandlerWorker) HandleMigrateJob(req *livekit.MigrateJobRequest) error {
+	if err := w.Worker.HandleMigrateJob(req); err != nil {
+		return err
+	}
+
+	for _, id := range req.JobIds {
+		if err := w.h.registerJob(w.Worker, livekit.JobID(id)); err != nil {
+			w.Logger().Errorw("failed to register JobTerminate handler", err, "jobID", id)
+		}
+	}
+	return nil
 }
 
 func (w *agentHandlerWorker) HandleUpdateJob(update *livekit.UpdateJobStatus) error {
