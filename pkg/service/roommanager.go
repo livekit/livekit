@@ -439,6 +439,7 @@ func (r *RoomManager) StartSession(
 		"nodeID", r.currentNode.NodeID(),
 		"numParticipants", room.GetParticipantCount(),
 		"participantInit", &pi,
+		"apiKey", pi.APIKey,
 	)
 
 	clientConf := r.clientConfManager.GetConfiguration(pi.Client)

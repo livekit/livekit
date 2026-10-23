@@ -104,6 +104,10 @@ func loggerRequestReceived(ctx context.Context, twirpLoggerPool *sync.Pool) (con
 		r.fields = append(r.fields, "service", svc)
 	}
 
+	if apiKey := GetAPIKey(ctx); apiKey != "" {
+		r.fields = append(r.fields, "apiKey", apiKey)
+	}
+
 	return context.WithValue(ctx, twirpLoggerKey{}, r), nil
 }
 
