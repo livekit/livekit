@@ -242,3 +242,41 @@ func TestCameraFloorConfiguredLog(t *testing.T) {
 		require.Equal(t, c.want, got, "floor %d", c.floor)
 	}
 }
+
+// floorEarlyWarningBWE reports EARLY_WARNING, so a STABLE allocator allocates a track with AllocateOptimal(hold=true).
+type floorEarlyWarningBWE struct {
+	floorNullBWE
+}
+
+func (floorEarlyWarningBWE) CongestionState() bwe.CongestionState {
+	return bwe.CongestionStateEarlyWarning
+}
+
+// Under the EARLY_WARNING hold a not-yet-forwarding track starts at {lowest, floor}; the floor follows the key and
+// only CAMERA tracks get it (Track.temporalFloor). Stock mutant: forwarder.go:1076-1079 (hold => temporal 0); gating
+// mutant: Track.AllocateOptimal passing cameraMinTemporalLayer without t.temporalFloor.
+func TestCameraFloorEarlyWarningHold(t *testing.T) {
+	q := func(tl int32) buffer.VideoLayer { return buffer.VideoLayer{Spatial: 0, Temporal: tl} }
+	cases := []struct {
+		name   string
+		source livekit.TrackSource
+		floor  int32
+		want   buffer.VideoLayer
+	}{
+		{"camera floor 1", livekit.TrackSource_CAMERA, 1, q(1)},
+		{"camera key absent", livekit.TrackSource_CAMERA, 0, q(0)},
+		{"screen share floor 1 same as key absent", livekit.TrackSource_SCREEN_SHARE, 1, q(0)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fx := newFloorFixture(t, c.floor, nil)
+			fx.s.params.BWE = floorEarlyWarningBWE{floorNullBWE{NullBWE: &bwe.NullBWE{}}}
+			track := fx.addTrack("t1", c.source, floorBrsCheapF)
+			require.Equal(t, streamAllocatorStateStable, fx.s.state, "precondition: stable")
+			require.Zero(t, track.BandwidthRequested(), "precondition: not allocated")
+
+			fx.s.allocateTrack(track)
+			require.Equal(t, c.want, floorTarget(t, track, floorBrsCheapF))
+		})
+	}
+}
