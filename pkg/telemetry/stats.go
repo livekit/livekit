@@ -62,6 +62,10 @@ func StatsKeyForData(
 	}
 }
 
+func (s StatsKey) StreamType() livekit.StreamType {
+	return s.streamType
+}
+
 func (t *telemetryService) TrackStats(roomID livekit.RoomID, _roomName livekit.RoomName, key StatsKey, stat *livekit.AnalyticsStat) {
 	t.enqueue(func() {
 		direction := prometheus.Incoming
