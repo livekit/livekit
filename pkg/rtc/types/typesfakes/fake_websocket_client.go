@@ -12,9 +12,8 @@ import (
 type FakeWebsocketClient struct {
 	CloseStub        func() error
 	closeMutex       sync.RWMutex
-	closeArgsForCall []struct {
-	}
-	closeReturns struct {
+	closeArgsForCall []struct{}
+	closeReturns     struct {
 		result1 error
 	}
 	closeReturnsOnCall map[int]struct {
@@ -22,9 +21,8 @@ type FakeWebsocketClient struct {
 	}
 	NextReaderStub        func() (int, io.Reader, error)
 	nextReaderMutex       sync.RWMutex
-	nextReaderArgsForCall []struct {
-	}
-	nextReaderReturns struct {
+	nextReaderArgsForCall []struct{}
+	nextReaderReturns     struct {
 		result1 int
 		result2 io.Reader
 		result3 error
@@ -36,9 +34,8 @@ type FakeWebsocketClient struct {
 	}
 	ReadMessageStub        func() (int, []byte, error)
 	readMessageMutex       sync.RWMutex
-	readMessageArgsForCall []struct {
-	}
-	readMessageReturns struct {
+	readMessageArgsForCall []struct{}
+	readMessageReturns     struct {
 		result1 int
 		result2 []byte
 		result3 error
@@ -48,12 +45,13 @@ type FakeWebsocketClient struct {
 		result2 []byte
 		result3 error
 	}
+	SetPongHandlerStub         func(func(appData string) error)
+	setPongHandlerMutex        sync.RWMutex
+	setPongHandlerArgsForCall  []FakeWebsocketClientSetPongHandlerArgs
 	SetReadDeadlineStub        func(time.Time) error
 	setReadDeadlineMutex       sync.RWMutex
-	setReadDeadlineArgsForCall []struct {
-		arg1 time.Time
-	}
-	setReadDeadlineReturns struct {
+	setReadDeadlineArgsForCall []FakeWebsocketClientSetReadDeadlineArgs
+	setReadDeadlineReturns     struct {
 		result1 error
 	}
 	setReadDeadlineReturnsOnCall map[int]struct {
@@ -61,12 +59,8 @@ type FakeWebsocketClient struct {
 	}
 	WriteControlStub        func(int, []byte, time.Time) error
 	writeControlMutex       sync.RWMutex
-	writeControlArgsForCall []struct {
-		arg1 int
-		arg2 []byte
-		arg3 time.Time
-	}
-	writeControlReturns struct {
+	writeControlArgsForCall []FakeWebsocketClientWriteControlArgs
+	writeControlReturns     struct {
 		result1 error
 	}
 	writeControlReturnsOnCall map[int]struct {
@@ -74,25 +68,45 @@ type FakeWebsocketClient struct {
 	}
 	WriteMessageStub        func(int, []byte) error
 	writeMessageMutex       sync.RWMutex
-	writeMessageArgsForCall []struct {
-		arg1 int
-		arg2 []byte
-	}
-	writeMessageReturns struct {
+	writeMessageArgsForCall []FakeWebsocketClientWriteMessageArgs
+	writeMessageReturns     struct {
 		result1 error
 	}
 	writeMessageReturnsOnCall map[int]struct {
 		result1 error
 	}
 	invocations      map[string][][]interface{}
+	callOrder        []string
 	invocationsMutex sync.RWMutex
+}
+
+// FakeWebsocketClientSetPongHandlerArgs holds the arguments of one call to SetPongHandler.
+type FakeWebsocketClientSetPongHandlerArgs struct {
+	Arg1 func(appData string) error
+}
+
+// FakeWebsocketClientSetReadDeadlineArgs holds the arguments of one call to SetReadDeadline.
+type FakeWebsocketClientSetReadDeadlineArgs struct {
+	Arg1 time.Time
+}
+
+// FakeWebsocketClientWriteControlArgs holds the arguments of one call to WriteControl.
+type FakeWebsocketClientWriteControlArgs struct {
+	Arg1 int
+	Arg2 []byte
+	Arg3 time.Time
+}
+
+// FakeWebsocketClientWriteMessageArgs holds the arguments of one call to WriteMessage.
+type FakeWebsocketClientWriteMessageArgs struct {
+	Arg1 int
+	Arg2 []byte
 }
 
 func (fake *FakeWebsocketClient) Close() error {
 	fake.closeMutex.Lock()
 	ret, specificReturn := fake.closeReturnsOnCall[len(fake.closeArgsForCall)]
-	fake.closeArgsForCall = append(fake.closeArgsForCall, struct {
-	}{})
+	fake.closeArgsForCall = append(fake.closeArgsForCall, struct{}{})
 	stub := fake.CloseStub
 	fakeReturns := fake.closeReturns
 	fake.recordInvocation("Close", []interface{}{})
@@ -144,8 +158,7 @@ func (fake *FakeWebsocketClient) CloseReturnsOnCall(i int, result1 error) {
 func (fake *FakeWebsocketClient) NextReader() (int, io.Reader, error) {
 	fake.nextReaderMutex.Lock()
 	ret, specificReturn := fake.nextReaderReturnsOnCall[len(fake.nextReaderArgsForCall)]
-	fake.nextReaderArgsForCall = append(fake.nextReaderArgsForCall, struct {
-	}{})
+	fake.nextReaderArgsForCall = append(fake.nextReaderArgsForCall, struct{}{})
 	stub := fake.NextReaderStub
 	fakeReturns := fake.nextReaderReturns
 	fake.recordInvocation("NextReader", []interface{}{})
@@ -203,8 +216,7 @@ func (fake *FakeWebsocketClient) NextReaderReturnsOnCall(i int, result1 int, res
 func (fake *FakeWebsocketClient) ReadMessage() (int, []byte, error) {
 	fake.readMessageMutex.Lock()
 	ret, specificReturn := fake.readMessageReturnsOnCall[len(fake.readMessageArgsForCall)]
-	fake.readMessageArgsForCall = append(fake.readMessageArgsForCall, struct {
-	}{})
+	fake.readMessageArgsForCall = append(fake.readMessageArgsForCall, struct{}{})
 	stub := fake.ReadMessageStub
 	fakeReturns := fake.readMessageReturns
 	fake.recordInvocation("ReadMessage", []interface{}{})
@@ -259,12 +271,48 @@ func (fake *FakeWebsocketClient) ReadMessageReturnsOnCall(i int, result1 int, re
 	}{result1, result2, result3}
 }
 
+func (fake *FakeWebsocketClient) SetPongHandler(arg1 func(appData string) error) {
+	fake.setPongHandlerMutex.Lock()
+	fake.setPongHandlerArgsForCall = append(fake.setPongHandlerArgsForCall, FakeWebsocketClientSetPongHandlerArgs{arg1})
+	stub := fake.SetPongHandlerStub
+	fake.recordInvocation("SetPongHandler", []interface{}{arg1})
+	fake.setPongHandlerMutex.Unlock()
+	if stub != nil {
+		stub(arg1)
+	}
+}
+
+func (fake *FakeWebsocketClient) SetPongHandlerCallCount() int {
+	fake.setPongHandlerMutex.RLock()
+	defer fake.setPongHandlerMutex.RUnlock()
+	return len(fake.setPongHandlerArgsForCall)
+}
+
+func (fake *FakeWebsocketClient) SetPongHandlerCalls(stub func(func(appData string) error)) {
+	fake.setPongHandlerMutex.Lock()
+	defer fake.setPongHandlerMutex.Unlock()
+	fake.SetPongHandlerStub = stub
+}
+
+func (fake *FakeWebsocketClient) SetPongHandlerArgsForCall(i int) func(appData string) error {
+	fake.setPongHandlerMutex.RLock()
+	defer fake.setPongHandlerMutex.RUnlock()
+	argsForCall := fake.setPongHandlerArgsForCall[i]
+	return argsForCall.Arg1
+}
+
+func (fake *FakeWebsocketClient) SetPongHandlerArgs() []FakeWebsocketClientSetPongHandlerArgs {
+	fake.setPongHandlerMutex.RLock()
+	defer fake.setPongHandlerMutex.RUnlock()
+	args := make([]FakeWebsocketClientSetPongHandlerArgs, len(fake.setPongHandlerArgsForCall))
+	copy(args, fake.setPongHandlerArgsForCall)
+	return args
+}
+
 func (fake *FakeWebsocketClient) SetReadDeadline(arg1 time.Time) error {
 	fake.setReadDeadlineMutex.Lock()
 	ret, specificReturn := fake.setReadDeadlineReturnsOnCall[len(fake.setReadDeadlineArgsForCall)]
-	fake.setReadDeadlineArgsForCall = append(fake.setReadDeadlineArgsForCall, struct {
-		arg1 time.Time
-	}{arg1})
+	fake.setReadDeadlineArgsForCall = append(fake.setReadDeadlineArgsForCall, FakeWebsocketClientSetReadDeadlineArgs{arg1})
 	stub := fake.SetReadDeadlineStub
 	fakeReturns := fake.setReadDeadlineReturns
 	fake.recordInvocation("SetReadDeadline", []interface{}{arg1})
@@ -294,7 +342,15 @@ func (fake *FakeWebsocketClient) SetReadDeadlineArgsForCall(i int) time.Time {
 	fake.setReadDeadlineMutex.RLock()
 	defer fake.setReadDeadlineMutex.RUnlock()
 	argsForCall := fake.setReadDeadlineArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.Arg1
+}
+
+func (fake *FakeWebsocketClient) SetReadDeadlineArgs() []FakeWebsocketClientSetReadDeadlineArgs {
+	fake.setReadDeadlineMutex.RLock()
+	defer fake.setReadDeadlineMutex.RUnlock()
+	args := make([]FakeWebsocketClientSetReadDeadlineArgs, len(fake.setReadDeadlineArgsForCall))
+	copy(args, fake.setReadDeadlineArgsForCall)
+	return args
 }
 
 func (fake *FakeWebsocketClient) SetReadDeadlineReturns(result1 error) {
@@ -328,11 +384,7 @@ func (fake *FakeWebsocketClient) WriteControl(arg1 int, arg2 []byte, arg3 time.T
 	}
 	fake.writeControlMutex.Lock()
 	ret, specificReturn := fake.writeControlReturnsOnCall[len(fake.writeControlArgsForCall)]
-	fake.writeControlArgsForCall = append(fake.writeControlArgsForCall, struct {
-		arg1 int
-		arg2 []byte
-		arg3 time.Time
-	}{arg1, arg2Copy, arg3})
+	fake.writeControlArgsForCall = append(fake.writeControlArgsForCall, FakeWebsocketClientWriteControlArgs{arg1, arg2Copy, arg3})
 	stub := fake.WriteControlStub
 	fakeReturns := fake.writeControlReturns
 	fake.recordInvocation("WriteControl", []interface{}{arg1, arg2Copy, arg3})
@@ -362,7 +414,15 @@ func (fake *FakeWebsocketClient) WriteControlArgsForCall(i int) (int, []byte, ti
 	fake.writeControlMutex.RLock()
 	defer fake.writeControlMutex.RUnlock()
 	argsForCall := fake.writeControlArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.Arg1, argsForCall.Arg2, argsForCall.Arg3
+}
+
+func (fake *FakeWebsocketClient) WriteControlArgs() []FakeWebsocketClientWriteControlArgs {
+	fake.writeControlMutex.RLock()
+	defer fake.writeControlMutex.RUnlock()
+	args := make([]FakeWebsocketClientWriteControlArgs, len(fake.writeControlArgsForCall))
+	copy(args, fake.writeControlArgsForCall)
+	return args
 }
 
 func (fake *FakeWebsocketClient) WriteControlReturns(result1 error) {
@@ -396,10 +456,7 @@ func (fake *FakeWebsocketClient) WriteMessage(arg1 int, arg2 []byte) error {
 	}
 	fake.writeMessageMutex.Lock()
 	ret, specificReturn := fake.writeMessageReturnsOnCall[len(fake.writeMessageArgsForCall)]
-	fake.writeMessageArgsForCall = append(fake.writeMessageArgsForCall, struct {
-		arg1 int
-		arg2 []byte
-	}{arg1, arg2Copy})
+	fake.writeMessageArgsForCall = append(fake.writeMessageArgsForCall, FakeWebsocketClientWriteMessageArgs{arg1, arg2Copy})
 	stub := fake.WriteMessageStub
 	fakeReturns := fake.writeMessageReturns
 	fake.recordInvocation("WriteMessage", []interface{}{arg1, arg2Copy})
@@ -429,7 +486,15 @@ func (fake *FakeWebsocketClient) WriteMessageArgsForCall(i int) (int, []byte) {
 	fake.writeMessageMutex.RLock()
 	defer fake.writeMessageMutex.RUnlock()
 	argsForCall := fake.writeMessageArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.Arg1, argsForCall.Arg2
+}
+
+func (fake *FakeWebsocketClient) WriteMessageArgs() []FakeWebsocketClientWriteMessageArgs {
+	fake.writeMessageMutex.RLock()
+	defer fake.writeMessageMutex.RUnlock()
+	args := make([]FakeWebsocketClientWriteMessageArgs, len(fake.writeMessageArgsForCall))
+	copy(args, fake.writeMessageArgsForCall)
+	return args
 }
 
 func (fake *FakeWebsocketClient) WriteMessageReturns(result1 error) {
@@ -465,9 +530,18 @@ func (fake *FakeWebsocketClient) Invocations() map[string][][]interface{} {
 	return copiedInvocations
 }
 
+func (fake *FakeWebsocketClient) CallOrder() []string {
+	fake.invocationsMutex.RLock()
+	defer fake.invocationsMutex.RUnlock()
+	order := make([]string, len(fake.callOrder))
+	copy(order, fake.callOrder)
+	return order
+}
+
 func (fake *FakeWebsocketClient) recordInvocation(key string, args []interface{}) {
 	fake.invocationsMutex.Lock()
 	defer fake.invocationsMutex.Unlock()
+	fake.callOrder = append(fake.callOrder, key)
 	if fake.invocations == nil {
 		fake.invocations = map[string][][]interface{}{}
 	}
