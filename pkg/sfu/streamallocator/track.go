@@ -138,8 +138,8 @@ func (t *Track) WriteProbePackets(bytesToSend int) int {
 	return t.downTrack.WriteProbePackets(bytesToSend, false)
 }
 
-func (t *Track) AllocateOptimal(allowOvershoot bool, hold bool) sfu.VideoAllocation {
-	return t.downTrack.AllocateOptimal(allowOvershoot, hold)
+func (t *Track) AllocateOptimal(allowOvershoot bool, hold bool, cameraMinTemporalLayer int32) sfu.VideoAllocation {
+	return t.downTrack.AllocateOptimal(allowOvershoot, hold, t.temporalFloor(cameraMinTemporalLayer))
 }
 
 func (t *Track) ProvisionalAllocatePrepare() {

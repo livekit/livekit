@@ -872,7 +872,7 @@ func (s *StreamAllocator) handleSignalCongestionStateChange(event Event) {
 	if isHoldableCongestionState(cscd.fromState) && cscd.toState == bwe.CongestionStateNone && s.state == streamAllocatorStateStable {
 		update := NewStreamStateUpdate()
 		for _, track := range s.getVideoTracks() {
-			allocation := track.AllocateOptimal(cFlagAllowOvershootWhileOptimal, false)
+			allocation := track.AllocateOptimal(cFlagAllowOvershootWhileOptimal, false, s.params.Config.CameraMinTemporalLayer)
 			updateStreamStateChange(track, allocation, update)
 		}
 		s.maybeSendUpdate(update)
@@ -943,7 +943,7 @@ func (s *StreamAllocator) allocateTrack(track *Track) {
 	bweCongestionState := s.params.BWE.CongestionState()
 	if !s.enabled || (s.state == streamAllocatorStateStable && !isDeficientCongestionState(bweCongestionState)) || !track.IsManaged() {
 		update := NewStreamStateUpdate()
-		allocation := track.AllocateOptimal(cFlagAllowOvershootWhileOptimal, isHoldableCongestionState(bweCongestionState))
+		allocation := track.AllocateOptimal(cFlagAllowOvershootWhileOptimal, isHoldableCongestionState(bweCongestionState), s.params.Config.CameraMinTemporalLayer)
 		updateStreamStateChange(track, allocation, update)
 		s.maybeSendUpdate(update)
 		return
@@ -1186,7 +1186,7 @@ func (s *StreamAllocator) allocateAllTracks() {
 			continue
 		}
 
-		allocation := track.AllocateOptimal(cFlagAllowOvershootExemptTrackWhileDeficient, false)
+		allocation := track.AllocateOptimal(cFlagAllowOvershootExemptTrackWhileDeficient, false, s.params.Config.CameraMinTemporalLayer)
 		updateStreamStateChange(track, allocation, update)
 
 		// STREAM-ALLOCATOR-TODO: optimistic allocation before bitrate is available will return 0. How to account for that?

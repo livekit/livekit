@@ -934,7 +934,7 @@ func (f *Forwarder) GetOptimalBandwidthNeeded(brs Bitrates) int64 {
 	return getOptimalBandwidthNeeded(f.muted, f.pubMuted, f.vls.GetMaxSeen().Spatial, brs, f.vls.GetMax())
 }
 
-func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allowOvershoot bool, hold bool) VideoAllocation {
+func (f *Forwarder) AllocateOptimal(availableLayers []int32, brs Bitrates, allowOvershoot bool, hold bool, minTemporalLayer int32) VideoAllocation {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 

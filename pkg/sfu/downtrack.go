@@ -1735,9 +1735,9 @@ func (d *DownTrack) DistanceToDesired() float64 {
 	return d.forwarder.DistanceToDesired(al, brs)
 }
 
-func (d *DownTrack) AllocateOptimal(allowOvershoot bool, hold bool) VideoAllocation {
+func (d *DownTrack) AllocateOptimal(allowOvershoot bool, hold bool, minTemporalLayer int32) VideoAllocation {
 	al, brs := d.Receiver().GetLayeredBitrate()
-	allocation := d.forwarder.AllocateOptimal(al, brs, allowOvershoot, hold)
+	allocation := d.forwarder.AllocateOptimal(al, brs, allowOvershoot, hold, minTemporalLayer)
 	d.postKeyFrameRequestEvent()
 	d.maybeAddTransition(allocation.BandwidthNeeded, allocation.DistanceToDesired, allocation.PauseReason)
 	return allocation
