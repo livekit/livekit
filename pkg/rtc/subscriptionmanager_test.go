@@ -809,13 +809,16 @@ func TestSubscribeDataTrack(t *testing.T) {
 
 func TestSubscribePacerTakesVideoTokensOnly(t *testing.T) {
 	for _, tc := range []struct {
+		name        string
 		kind        livekit.TrackType
+		isSync      bool
 		tokenIsUsed bool
 	}{
-		{livekit.TrackType_VIDEO, true},
-		{livekit.TrackType_AUDIO, false},
+		{"video", livekit.TrackType_VIDEO, false, true},
+		{"audio", livekit.TrackType_AUDIO, false, false},
+		{"video one-shot", livekit.TrackType_VIDEO, true, false},
 	} {
-		t.Run(tc.kind.String(), func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			// a rate this low holds one token and takes 1000 s to refill it, so after one
 			// take the next subscribe waits however slow the test runs
 			pacer := NewSubscribePacer([]float64{0.001})
@@ -833,7 +836,7 @@ func TestSubscribePacerTakesVideoTokensOnly(t *testing.T) {
 				subscribed.Store(true)
 			}
 
-			sm.SubscribeToTrack("track", false)
+			sm.SubscribeToTrack("track", tc.isSync)
 			require.Eventually(t, subscribed.Load, subSettleTimeout, subCheckInterval, "track was not subscribed")
 
 			require.Equal(t, tc.tokenIsUsed, pacer.Delays(time.Now())["0.001"] > 0)

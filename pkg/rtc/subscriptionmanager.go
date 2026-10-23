@@ -880,6 +880,8 @@ func (m *SubscriptionManager) subscribeSynchronous(trackID livekit.TrackID) erro
 
 func (m *SubscriptionManager) addSubscriber(sub *mediaTrackSubscription, track types.MediaTrack, isSync bool) error {
 	trackID := track.ID()
+	// shadow pacing samples arrival, before the setup time of this subscribe
+	arrivedAt := time.Now()
 	subTrack, err := track.AddSubscriber(m.params.Participant)
 	if err != nil && !errors.Is(err, errAlreadySubscribed) {
 		// ignore error(s): already subscribed
@@ -897,8 +899,8 @@ func (m *SubscriptionManager) addSubscriber(sub *mediaTrackSubscription, track t
 		)
 	}
 	if err == nil && subTrack != nil { // subTrack could be nil if already subscribed
-		if track.Kind() == livekit.TrackType_VIDEO {
-			if delays := m.params.SubscribePacer.Delays(time.Now()); delays != nil {
+		if track.Kind() == livekit.TrackType_VIDEO && !isSync {
+			if delays := m.params.SubscribePacer.Delays(arrivedAt); delays != nil {
 				prometheus.RecordSubscribePaceShadow(delays)
 			}
 		}

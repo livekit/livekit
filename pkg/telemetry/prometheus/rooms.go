@@ -329,7 +329,7 @@ func recordPubSubStreamStartTime(
 // RecordSubscribePaceShadow records, per shadow pacing rate, the wait one video subscribe would have had.
 func RecordSubscribePaceShadow(delays map[string]time.Duration) {
 	for rate, delay := range delays {
-		promSubscribePaceShadow.WithLabelValues(rate).Observe(float64(delay.Milliseconds()))
+		promSubscribePaceShadow.WithLabelValues(rate).Observe(float64(delay) / float64(time.Millisecond))
 	}
 }
 

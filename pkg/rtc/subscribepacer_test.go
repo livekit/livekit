@@ -61,6 +61,17 @@ func TestSubscribePacer(t *testing.T) {
 		require.Equal(t, 2*time.Second, p.Delays(now)["0.5"])
 	})
 
+	t.Run("a sample taken earlier than the last one waits from its own time", func(t *testing.T) {
+		p := NewSubscribePacer([]float64{10})
+		now := time.Now()
+
+		for i := 0; i < 10; i++ {
+			p.Delays(now)
+		}
+		// the next token is free at now + 1 s, and the burst covers 900 ms of it
+		require.Equal(t, 600*time.Millisecond, p.Delays(now.Add(-500 * time.Millisecond))["10"])
+	})
+
 	t.Run("duplicate rates make one bucket", func(t *testing.T) {
 		p := NewSubscribePacer([]float64{50, 10, 50})
 		require.Len(t, p.buckets, 2)
