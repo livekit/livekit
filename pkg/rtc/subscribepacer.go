@@ -43,23 +43,30 @@ type subscribePaceBucket struct {
 
 // NewSubscribePacer returns nil when no rates are given, which turns the shadow off.
 func NewSubscribePacer(rates []float64) *SubscribePacer {
-	rates = slices.DeleteFunc(slices.Clone(rates), func(rate float64) bool { return rate <= 0 })
+	rates = slices.Clone(rates)
 	slices.Sort(rates)
-	rates = slices.Compact(rates)
-	if len(rates) == 0 {
-		return nil
-	}
 
-	buckets := make([]subscribePaceBucket, 0, len(rates))
-	for _, rate := range rates {
+	var buckets []subscribePaceBucket
+	var labels []string
+	for i, rate := range rates {
+		if rate <= 0 || (i > 0 && rate == rates[i-1]) {
+			continue
+		}
+
 		interval := time.Duration(float64(time.Second) / rate)
+		label := strconv.FormatFloat(rate, 'f', -1, 64)
 		buckets = append(buckets, subscribePaceBucket{
-			rateLabel: strconv.FormatFloat(rate, 'f', -1, 64),
+			rateLabel: label,
 			interval:  interval,
 			burst:     max(time.Second-interval, 0),
 		})
+		labels = append(labels, label)
 	}
-	logger.Infow("subscribe pacing shadow enabled", "rates", rates)
+	if len(buckets) == 0 {
+		return nil
+	}
+
+	logger.Infow("subscribe pacing shadow enabled", "rates", labels)
 	return &SubscribePacer{buckets: buckets}
 }
 
