@@ -816,8 +816,9 @@ func TestSubscribePacerTakesVideoTokensOnly(t *testing.T) {
 		{livekit.TrackType_AUDIO, false},
 	} {
 		t.Run(tc.kind.String(), func(t *testing.T) {
-			// rate 1 holds a single token, so after one take the next subscribe waits
-			pacer := NewSubscribePacer([]float64{1})
+			// a rate this low holds one token and takes 1000 s to refill it, so after one
+			// take the next subscribe waits however slow the test runs
+			pacer := NewSubscribePacer([]float64{0.001})
 			sm := newTestSubscriptionManager()
 			defer sm.Close(false)
 			sm.params.SubscribePacer = pacer
@@ -835,7 +836,7 @@ func TestSubscribePacerTakesVideoTokensOnly(t *testing.T) {
 			sm.SubscribeToTrack("track", false)
 			require.Eventually(t, subscribed.Load, subSettleTimeout, subCheckInterval, "track was not subscribed")
 
-			require.Equal(t, tc.tokenIsUsed, pacer.Delays(time.Now())["1"] > 0)
+			require.Equal(t, tc.tokenIsUsed, pacer.Delays(time.Now())["0.001"] > 0)
 		})
 	}
 }

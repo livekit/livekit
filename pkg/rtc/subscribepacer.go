@@ -27,7 +27,8 @@ import (
 // if they were paced at each of a set of rates. It never delays a subscribe.
 //
 // Each rate is a token bucket that refills at that many subscribes per second and holds
-// one second of tokens, so a single joiner subscribes at once and only a burst waits.
+// one second of tokens, so a burst of up to one second's worth goes at once and the rest
+// waits in line.
 type SubscribePacer struct {
 	lock    sync.Mutex
 	buckets []subscribePaceBucket
