@@ -188,6 +188,7 @@ func (s *WHIPService) validateCreate(w http.ResponseWriter, r *http.Request) (*c
 		AutoSubscribe: true,
 		Client:        ci,
 		Grants:        claims,
+		APIKey:        GetAPIKey(r.Context()),
 		CreateRoom: &livekit.CreateRoomRequest{
 			Name:       string(roomName),
 			RoomPreset: claims.RoomPreset,

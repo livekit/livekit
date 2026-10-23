@@ -21,7 +21,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731
 	github.com/livekit/mediatransportutil v0.0.0-20261014192331-dd8e31a0adc0
-	github.com/livekit/protocol v1.53.1-0.20261021070436-f09f87aab29b
+	github.com/livekit/protocol v1.53.1-0.20261023175527-46332a036e25
 	github.com/livekit/psrpc v0.8.2
 	github.com/mackerelio/go-osstat v0.2.8
 	github.com/magefile/mage v1.17.2
@@ -143,7 +143,7 @@ require (
 	github.com/pion/srtp/v3 v3.0.13 // indirect
 	github.com/pion/stun/v3 v3.1.7
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/prometheus/client_model v0.6.3 // indirect
+	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.72.0 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/urfave/cli/v3 v3.11.0

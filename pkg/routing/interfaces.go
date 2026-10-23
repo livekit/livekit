@@ -193,6 +193,7 @@ type ParticipantInit struct {
 	AutoSubscribeDataTrack  *bool
 	Client                  *livekit.ClientInfo
 	Grants                  *auth.ClaimGrants
+	APIKey                  string
 	TokenExpiresAt          time.Time
 	Region                  string
 	AdaptiveStream          bool
@@ -263,6 +264,7 @@ func (pi *ParticipantInit) ToStartSession(roomName livekit.RoomName, connectionI
 		AutoSubscribe:           pi.AutoSubscribe,
 		Client:                  pi.Client,
 		GrantsJson:              string(claims),
+		ApiKey:                  pi.APIKey,
 		TokenExpiresAt:          tokenExpiresAt,
 		AdaptiveStream:          pi.AdaptiveStream,
 		ParticipantId:           string(pi.ID),
@@ -303,6 +305,7 @@ func ParticipantInitFromStartSession(ss *livekit.StartSession, region string) (*
 		Client:                  ss.Client,
 		AutoSubscribe:           ss.AutoSubscribe,
 		Grants:                  claims,
+		APIKey:                  ss.ApiKey,
 		TokenExpiresAt:          tokenExpiresAt,
 		Region:                  region,
 		AdaptiveStream:          ss.AdaptiveStream,

@@ -229,6 +229,7 @@ func (s *RTCService) validateInternal(
 		Identity:                livekit.ParticipantIdentity(res.grants.Identity),
 		Name:                    livekit.ParticipantName(res.grants.Name),
 		Grants:                  res.grants,
+		APIKey:                  GetAPIKey(r.Context()),
 		TokenExpiresAt:          res.tokenExpiresAt,
 		Region:                  res.region,
 		CreateRoom:              res.createRoomRequest,
