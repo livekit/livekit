@@ -309,6 +309,12 @@ func (s *IngressService) UpdateIngress(ctx context.Context, req *livekit.UpdateI
 		logger.Errorw("could not load ingress info", err)
 		return nil, err
 	}
+	if info.State == nil {
+		// LoadIngress reads the info and the state from separate keys, so the state
+		// can be missing: a concurrent DeleteIngress, or a create whose state write
+		// failed. Treat it as an empty state, as IOInfoService.UpdateIngressState does.
+		info.State = &livekit.IngressState{}
+	}
 
 	if !info.Reusable {
 		logger.Infow("ingress update attempted on non reusable ingress", "ingressID", info.IngressId)
@@ -396,6 +402,10 @@ func (s *IngressService) DeleteIngress(ctx context.Context, req *livekit.DeleteI
 	info, err := s.store.LoadIngress(ctx, req.IngressId)
 	if err != nil {
 		return nil, err
+	}
+	if info.State == nil {
+		// The state key can be missing, see UpdateIngress.
+		info.State = &livekit.IngressState{}
 	}
 
 	switch info.State.Status {
