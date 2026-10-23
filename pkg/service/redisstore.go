@@ -613,7 +613,7 @@ func (s *RedisStore) storeIngress(_ context.Context, info *livekit.IngressInfo) 
 		}
 	}
 
-	return nil
+	return errors.Wrapf(redis.TxFailedErr, "could not store ingress %s after %d attempts", info.IngressId, maxRetries)
 }
 
 func (s *RedisStore) storeIngressState(_ context.Context, ingressId string, state *livekit.IngressState) error {
@@ -688,7 +688,7 @@ func (s *RedisStore) storeIngressState(_ context.Context, ingressId string, stat
 		}
 	}
 
-	return nil
+	return errors.Wrapf(redis.TxFailedErr, "could not store ingress state %s after %d attempts", ingressId, maxRetries)
 }
 
 func (s *RedisStore) loadIngress(c redis.Cmdable, ingressId string) (*livekit.IngressInfo, error) {
