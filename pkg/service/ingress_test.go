@@ -22,10 +22,12 @@ import (
 
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/rpc"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/service"
 	"github.com/livekit/livekit-server/pkg/service/servicefakes"
+	"github.com/livekit/livekit-server/pkg/telemetry/telemetryfakes"
 )
 
 func TestCreateURLPullIngressScheme(t *testing.T) {
@@ -92,5 +94,64 @@ func TestCreateURLPullIngressScheme(t *testing.T) {
 		_, err := svc.CreateIngress(adminCtx(), createReq("rtsp://1.2.3.4/live"))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid url scheme rtsp")
+	})
+}
+
+// unusedIngressClient is a non-nil rpc.IngressClient for handlers that must not
+// reach the ingress service: any call on it panics on the nil embedded interfaces.
+type unusedIngressClient struct {
+	rpc.IngressInternalClient
+	rpc.IngressHandlerClient
+}
+
+func (unusedIngressClient) Close() {}
+
+// LoadIngress reads the ingress info and its state from separate keys and
+// returns the info with a nil State when the state key is missing (a concurrent
+// DeleteIngress, or a create whose state write failed). The API handlers must
+// treat that as an empty state instead of panicking, like
+// IOInfoService.UpdateIngressState does.
+func TestIngressAPIWithNilState(t *testing.T) {
+	newService := func() (*service.IngressService, *servicefakes.FakeIngressStore) {
+		store := &servicefakes.FakeIngressStore{}
+		store.LoadIngressReturns(&livekit.IngressInfo{
+			IngressId:           "IN_test",
+			StreamKey:           "sk",
+			RoomName:            "testroom",
+			ParticipantIdentity: "ingress",
+			Reusable:            true,
+		}, nil)
+
+		svc := service.NewIngressServiceWithIngressLauncher(
+			&config.IngressConfig{},
+			"nodeID",
+			nil,
+			unusedIngressClient{},
+			store,
+			&servicefakes.FakeIOClient{},
+			&telemetryfakes.FakeTelemetryService{},
+			&servicefakes.FakeIngressLauncher{},
+		)
+		return svc, store
+	}
+
+	adminCtx := service.WithGrants(context.Background(), &auth.ClaimGrants{Video: &auth.VideoGrant{IngressAdmin: true}}, "")
+
+	t.Run("UpdateIngress", func(t *testing.T) {
+		svc, store := newService()
+
+		info, err := svc.UpdateIngress(adminCtx, &livekit.UpdateIngressRequest{IngressId: "IN_test", Name: "renamed"})
+		require.NoError(t, err)
+		require.Equal(t, "renamed", info.Name)
+		require.Equal(t, 1, store.UpdateIngressCallCount())
+	})
+
+	t.Run("DeleteIngress", func(t *testing.T) {
+		svc, store := newService()
+
+		info, err := svc.DeleteIngress(adminCtx, &livekit.DeleteIngressRequest{IngressId: "IN_test"})
+		require.NoError(t, err)
+		require.Equal(t, livekit.IngressState_ENDPOINT_INACTIVE, info.State.Status)
+		require.Equal(t, 1, store.DeleteIngressCallCount())
 	})
 }
