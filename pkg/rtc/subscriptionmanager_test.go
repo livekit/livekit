@@ -807,6 +807,53 @@ func TestSubscribeDataTrack(t *testing.T) {
 	})
 }
 
+func TestSubscribePacerTakesVideoTokensOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		kind        livekit.TrackType
+		isSync      bool
+		setupFails  bool
+		tokenIsUsed bool
+	}{
+		{"video", livekit.TrackType_VIDEO, false, false, true},
+		{"audio", livekit.TrackType_AUDIO, false, false, false},
+		{"video one-shot", livekit.TrackType_VIDEO, true, false, false},
+		// a failed setup spends its token, like a real pacer that gates before setup
+		{"video setup fails", livekit.TrackType_VIDEO, false, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// a rate this low holds one token and takes 1000 s to refill it, so after one
+			// take the next subscribe waits however slow the test runs
+			pacer := NewSubscribePacer([]float64{0.001})
+			sm := newTestSubscriptionManager()
+			defer sm.Close(false)
+			sm.params.SubscribePacer = pacer
+			attempted := atomic.Bool{}
+			resolver := newTestResolver(true, true, "pub", "pubID")
+			sm.params.TrackResolver = func(sub types.LocalParticipant, trackID livekit.TrackID) types.MediaResolverResult {
+				res := resolver.Resolve(sub, trackID)
+				mt := res.Track.(*typesfakes.FakeMediaTrack)
+				mt.KindReturns(tc.kind)
+				if tc.setupFails {
+					mt.AddSubscriberCalls(func(types.LocalParticipant) (types.SubscribedTrack, error) {
+						attempted.Store(true)
+						return nil, ErrNoReceiver
+					})
+				}
+				return res
+			}
+			sm.params.OnTrackSubscribed = func(subTrack types.SubscribedTrack) {
+				attempted.Store(true)
+			}
+
+			sm.SubscribeToTrack("track", tc.isSync)
+			require.Eventually(t, attempted.Load, subSettleTimeout, subCheckInterval, "subscribe was not attempted")
+
+			require.Equal(t, tc.tokenIsUsed, pacer.Delays(time.Now())["0.001"] > 0)
+		})
+	}
+}
+
 type testSubscriptionParams struct {
 	SubscriptionLimitAudio int32
 	SubscriptionLimitVideo int32

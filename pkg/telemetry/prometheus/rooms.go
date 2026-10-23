@@ -52,6 +52,7 @@ var (
 	promSessionStartTime                   *prometheus.HistogramVec
 	promSessionDuration                    *prometheus.HistogramVec
 	promPubSubTime                         *prometheus.HistogramVec
+	promSubscribePaceShadow                *prometheus.HistogramVec
 
 	promPeerConnection *prometheus.CounterVec
 )
@@ -148,6 +149,14 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
 		Buckets:     []float64{100, 200, 500, 700, 1000, 5000, 10000},
 	}, append(promStreamLabels, "sdk", "kind", "count"))
+	promSubscribePaceShadow = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace:   livekitNamespace,
+		Subsystem:   "subscribe_pace",
+		Name:        "shadow_delay_ms",
+		Help:        "Wait that pacing video subscribes at each rate would add, per video subscribe.",
+		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
+		Buckets:     []float64{0, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 30000, 60000, 120000},
+	}, []string{"rate"})
 	promPeerConnection = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
 		Subsystem:   "peer_connection",
@@ -169,6 +178,7 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 	prometheus.MustRegister(promSessionDuration)
 	prometheus.MustRegister(promPubSubTime)
 	prometheus.MustRegister(promPeerConnection)
+	prometheus.MustRegister(promSubscribePaceShadow)
 }
 
 func RoomStarted() {
@@ -314,6 +324,13 @@ func recordPubSubStreamStartTime(
 		kind.String(),
 		strconv.Itoa(count),
 	).Observe(float64(d.Milliseconds()))
+}
+
+// RecordSubscribePaceShadow records, per shadow pacing rate, the wait one video subscribe would have had.
+func RecordSubscribePaceShadow(delays map[string]time.Duration) {
+	for rate, delay := range delays {
+		promSubscribePaceShadow.WithLabelValues(rate).Observe(float64(delay) / float64(time.Millisecond))
+	}
 }
 
 func RecordTrackSubscribeSuccess(kind string) {
