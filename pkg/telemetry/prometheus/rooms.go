@@ -155,7 +155,7 @@ func initRoomStats(nodeID string, nodeType livekit.NodeType) {
 		Name:        "shadow_ms",
 		Help:        "Video subscribe time, as measured (rate=none) and with the wait shadow pacing at each rate would have added.",
 		ConstLabels: prometheus.Labels{"node_id": nodeID, "node_type": nodeType.String()},
-		Buckets:     prometheus.ExponentialBucketsRange(20, 30000, 14),
+		Buckets:     prometheus.ExponentialBucketsRange(20, 120000, 16),
 	}, []string{"rate"})
 	promPeerConnection = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   livekitNamespace,
