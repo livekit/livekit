@@ -74,6 +74,17 @@ jobs:
           set -euo pipefail
           MallocNanoZone=0 go test -race -json -v ./... 2>&1 | tee /tmp/gotest.log | go tool gotestfmt
 
+      # gotestfmt folds every test into a collapsed group, which hides a failure in a long log.
+      # List the failed tests in the log and on the run summary page.
+      - name: Failed tests
+        if: failure()
+        run: |
+          [ -f /tmp/gotest.log ] || exit 0
+          {
+            echo "### Failed tests"
+            jq -rR 'fromjson? | select(.Action == "fail") | if .Test then "- `\(.Package)` \(.Test)" else "- `\(.Package)` (package)" end' /tmp/gotest.log | sort -u
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
       # Upload the original go test log as an artifact for later review.
       - name: Upload test log
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -81,4 +92,5 @@ jobs:
         with:
           name: test-log
           path: /tmp/gotest.log
-          if-no-files-found: error
+          # no log when an earlier step such as Lint fails; that failure is already reported
+          if-no-files-found: warn
