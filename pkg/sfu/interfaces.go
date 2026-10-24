@@ -184,7 +184,6 @@ type DownTrackListener interface {
 	OnCodecNegotiated(webrtc.RTPCodecCapability)
 	OnDownTrackClose(isExpectedToResume bool)
 	OnStreamStarted(elapsed time.Duration)
-	OnRetransmissionsCapped(numPackets uint32)
 }
 
 // -------------------------------------------------------------------

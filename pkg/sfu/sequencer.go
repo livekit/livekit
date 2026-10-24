@@ -102,7 +102,6 @@ type extPacketMeta struct {
 	extSequenceNumber uint64
 	extTimestamp      uint64
 	slot              int
-	prevLastNack      uint32
 }
 
 func (epm extPacketMeta) MarshalLogObject(e zapcore.ObjectEncoder) error {
@@ -388,7 +387,6 @@ func (s *sequencer) getExtPacketMetas(seqNo []uint16) []extPacketMeta {
 		}
 
 		if meta.nacked < maxAck && refTime-meta.lastNack > uint32(math.Min(float64(ignoreRetransmission), float64(2*s.rtt))) {
-			prevLastNack := meta.lastNack
 			meta.nacked++
 			meta.lastNack = refTime
 
@@ -401,7 +399,6 @@ func (s *sequencer) getExtPacketMetas(seqNo []uint16) []extPacketMeta {
 				extSequenceNumber: extSN,
 				extTimestamp:      extTS,
 				slot:              int(slot),
-				prevLastNack:      prevLastNack,
 			}
 			epm.codecBytesSlice = append([]byte{}, meta.codecBytesSlice...)
 			epm.ddBytesSlice = append([]byte{}, meta.ddBytesSlice...)
@@ -412,8 +409,9 @@ func (s *sequencer) getExtPacketMetas(seqNo []uint16) []extPacketMeta {
 	return extPacketMetas
 }
 
-// unmarkNacked reverts the NACK bookkeeping getExtPacketMetas did for packets that were not
-// retransmitted, so a later NACK for them is served as a first request.
+// unmarkNacked reverts the NACK count getExtPacketMetas added for packets that were not
+// retransmitted, so they do not run into maxAck. lastNack stays, so a repeat NACK inside the
+// duplicate window is still ignored.
 func (s *sequencer) unmarkNacked(epms []extPacketMeta) {
 	s.Lock()
 	defer s.Unlock()
@@ -425,7 +423,6 @@ func (s *sequencer) unmarkNacked(epms []extPacketMeta) {
 			continue
 		}
 		meta.nacked--
-		meta.lastNack = epms[i].prevLastNack
 	}
 }
 

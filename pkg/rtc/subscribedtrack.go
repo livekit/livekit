@@ -24,7 +24,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/livekit/livekit-server/pkg/telemetry"
-	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 	sutils "github.com/livekit/livekit-server/pkg/utils"
 	"github.com/livekit/protocol/codecs/mime"
 	"github.com/livekit/protocol/livekit"
@@ -449,10 +448,6 @@ func (t *SubscribedTrack) OnMaxSubscribedLayerChanged(layer int32) {
 	if t.params.OnSubscriberMaxQualityChange != nil {
 		t.params.OnSubscriberMaxQualityChange(t.downTrack.SubscriberID(), t.downTrack.Mime(), layer)
 	}
-}
-
-func (t *SubscribedTrack) OnRetransmissionsCapped(numPackets uint32) {
-	prometheus.RecordRTXCapped(t.params.MediaTrack.Kind().String(), numPackets)
 }
 
 func (t *SubscribedTrack) OnRttUpdate(rtt uint32) {

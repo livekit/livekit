@@ -185,7 +185,6 @@ var (
 
 type downTrackHarness struct {
 	dt       *DownTrack
-	listener *sfufakes.FakeDownTrackListener
 	receiver *sfufakes.FakeTrackReceiver
 	pacer    pacer.Pacer
 	capture  *packetCapture
@@ -203,7 +202,6 @@ func newBoundDownTrack(t *testing.T, h *vnettest.Hosts, factory *buffer.Factory,
 	capture := captureTrack(sub)
 
 	rcv := newFakeTrackReceiver(codecParams)
-	listener := &sfufakes.FakeDownTrackListener{}
 	for _, opt := range rcvOpts {
 		opt(rcv)
 	}
@@ -213,7 +211,7 @@ func newBoundDownTrack(t *testing.T, h *vnettest.Hosts, factory *buffer.Factory,
 		BufferFactory: factory,
 		Pacer:         p,
 		Logger:        logger.GetLogger(),
-		Listener:      listener,
+		Listener:      &sfufakes.FakeDownTrackListener{},
 		StreamID:      "fake-stream",
 		SubID:         "fake-sub",
 		MaxTrack:      500,
@@ -233,7 +231,6 @@ func newBoundDownTrack(t *testing.T, h *vnettest.Hosts, factory *buffer.Factory,
 
 	return &downTrackHarness{
 		dt:       dt,
-		listener: listener,
 		receiver: rcv,
 		pacer:    p,
 		capture:  capture,
@@ -501,8 +498,9 @@ func TestDownTrackRetransmitsPacketsAsIs(t *testing.T) {
 // TestDownTrackCapsRetransmissions forwards media, NACKs all of it, and checks that an
 // uncapped down track retransmits everything while a capped one retransmits only what its
 // budget allows, newest first, without reading the capped packets from the buffer. Capped
-// packets NACKed again keep failing while the budget is empty and are retransmitted once
-// media refills it.
+// packets NACKed again keep failing while the budget is empty, past maxAck, and are
+// retransmitted once media refills it. Repeat NACKs are spaced past the sequencer's
+// duplicate window.
 func TestDownTrackCapsRetransmissions(t *testing.T) {
 	const numPackets = 20
 
@@ -569,7 +567,7 @@ func TestDownTrackCapsRetransmissions(t *testing.T) {
 		require.Eventually(t, func() bool {
 			return len(cp.rtxPackets()) == numPackets
 		}, 5*time.Second, 20*time.Millisecond, "expected every packet to be retransmitted")
-		require.Zero(t, dh.listener.OnRetransmissionsCappedCallCount())
+		require.Equal(t, sns, rtxSeqs(cp), "without a budget the order is unchanged")
 	})
 
 	t.Run("capped", func(t *testing.T) {
@@ -580,27 +578,27 @@ func TestDownTrackCapsRetransmissions(t *testing.T) {
 		sns := writeMedia(t, dh, 40)
 		sendNACK(t, dh, sns)
 
-		// the capped callback comes after the batch, so the retransmissions are all enqueued by then
+		// the capped count is added after the batch, so the retransmissions are all enqueued by then
 		require.Eventually(t, func() bool {
-			return dh.listener.OnRetransmissionsCappedCallCount() == 1
+			return dh.dt.RTXCappedForTest() == numPackets-3
 		}, 5*time.Second, 20*time.Millisecond, "expected the batch to be capped")
-		require.EqualValues(t, numPackets-3, dh.listener.OnRetransmissionsCappedArgsForCall(0))
 		require.ElementsMatch(t, sns[numPackets-3:], rtxSeqs(cp), "the newest packets go first")
 		require.Equal(t, 3, dh.receiver.ReadRTPCallCount(), "a capped retransmission must not read the publisher's buffer")
 
-		// with the budget empty, the capped packets fail again on every NACK, past maxAck,
-		// with no wait between NACKs
+		// with the budget empty, the capped packets fail again on every NACK, past maxAck
 		capped := sns[:numPackets-3]
 		for i := 0; i < 4; i++ {
+			time.Sleep(NACKIgnoreWindowForTest + 20*time.Millisecond)
 			sendNACK(t, dh, capped)
+			want := uint64((i + 2) * len(capped))
 			require.Eventually(t, func() bool {
-				return dh.listener.OnRetransmissionsCappedCallCount() == i+2
+				return dh.dt.RTXCappedForTest() == want
 			}, 5*time.Second, 20*time.Millisecond, "expected NACK %d to be capped", i+2)
-			require.EqualValues(t, len(capped), dh.listener.OnRetransmissionsCappedArgsForCall(i+1))
 		}
 
 		// media refills the budget, and the earlier capped packets are retransmitted
 		writeMedia(t, dh, 600)
+		time.Sleep(NACKIgnoreWindowForTest + 20*time.Millisecond)
 		sendNACK(t, dh, capped)
 		require.Eventually(t, func() bool {
 			return len(cp.rtxPackets()) == 6

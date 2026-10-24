@@ -49,6 +49,7 @@ import (
 	pd "github.com/livekit/livekit-server/pkg/sfu/rtpextension/playoutdelay"
 	"github.com/livekit/livekit-server/pkg/sfu/rtpstats"
 	"github.com/livekit/livekit-server/pkg/sfu/utils"
+	"github.com/livekit/livekit-server/pkg/telemetry/prometheus"
 )
 
 // -------------------------------------------------------------------
@@ -2477,9 +2478,13 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 	numRepeatedNACKs := uint32(0)
 	var capped []extPacketMeta
 	epms := d.sequencer.getExtPacketMetas(filtered)
-	// newest first: when the budget runs short, the oldest packets are the least likely
-	// to still arrive in time for the receiver's jitter buffer
-	for i := len(epms) - 1; i >= 0; i-- {
+	for k := range epms {
+		i := k
+		if d.rtxBudget != nil {
+			// newest first: when the budget runs short, the oldest packets are the least
+			// likely to still arrive in time for the receiver's jitter buffer
+			i = len(epms) - 1 - k
+		}
 		epm := &epms[i]
 		if disallowedLayers[epm.layer] {
 			continue
@@ -2512,9 +2517,10 @@ func (d *DownTrack) retransmitPackets(nacks []uint16) {
 		}
 	}
 	if len(capped) != 0 {
-		// a capped packet was not sent, so a later NACK for it is served as a first request
+		// a capped packet was not sent, so it does not count toward the sequencer's NACK limit
 		d.sequencer.unmarkNacked(capped)
-		d.params.Listener.OnRetransmissionsCapped(uint32(len(capped)))
+		d.rtxBudget.numCapped.Add(uint64(len(capped)))
+		prometheus.RecordRTXCapped(d.kind.String(), uint32(len(capped)))
 	}
 
 	d.totalRepeatedNACKs.Add(numRepeatedNACKs)

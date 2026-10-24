@@ -88,12 +88,15 @@ func Test_sequencer_unmarkNacked(t *testing.T) {
 		return seq
 	}
 
-	t.Run("an unmarked packet is served again at once, past maxAck", func(t *testing.T) {
+	t.Run("an unmarked packet is served again past maxAck, but not inside the duplicate window", func(t *testing.T) {
 		seq := newPushed(50)
 		for i := 0; i < maxAck+2; i++ {
 			res := seq.getExtPacketMetas([]uint16{40})
 			require.Len(t, res, 1, "NACK %d", i)
 			seq.unmarkNacked(res)
+
+			require.Empty(t, seq.getExtPacketMetas([]uint16{40}), "a repeat NACK inside the window is ignored")
+			time.Sleep((ignoreRetransmission + 10) * time.Millisecond)
 		}
 	})
 

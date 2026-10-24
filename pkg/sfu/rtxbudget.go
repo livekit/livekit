@@ -63,6 +63,9 @@ type rtxBudget struct {
 	lock           sync.Mutex
 	tokens         float64
 	mediaBytesSeen uint64
+
+	// NACKed packets not retransmitted because the budget was empty
+	numCapped atomic.Uint64
 }
 
 func newRTXBudget(config RTXBudgetLimit) *rtxBudget {
