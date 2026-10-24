@@ -26,6 +26,7 @@ import (
 	"github.com/pion/rtp"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livekit/mediatransportutil/pkg/nack"
@@ -675,7 +676,8 @@ func TestGetPacketConcurrentWithWrite(t *testing.T) {
 		require.NoError(t, buff.Bind(webrtc.RTPParameters{Codecs: []webrtc.RTPCodecParameters{opusCodec}}, opusCodec.RTPCodecCapability, 0))
 		return buff
 	}
-	// the payload carries the sequence number, so a read can check it got the packet it asked for
+	// the payload carries the sequence number, so a read can check it got the packet it asked for;
+	// assert, not require, as this also runs off the test goroutine
 	write := func(t *testing.T, buff *Buffer, sn uint16) {
 		payload := make([]byte, 100)
 		binary.BigEndian.PutUint16(payload, sn)
@@ -684,9 +686,10 @@ func TestGetPacketConcurrentWithWrite(t *testing.T) {
 			Payload: payload,
 		}
 		b, err := pkt.Marshal()
-		require.NoError(t, err)
-		_, err = buff.Write(b)
-		require.NoError(t, err)
+		if assert.NoError(t, err) {
+			_, err = buff.Write(b)
+			assert.NoError(t, err)
+		}
 	}
 
 	t.Run("a read runs while another read holds the lock, a write waits", func(t *testing.T) {
@@ -697,13 +700,16 @@ func TestGetPacketConcurrentWithWrite(t *testing.T) {
 		esn := buff.rtpStats.ExtendedHighestSequenceNumber()
 
 		buff.RLock() // a read in progress
+		var unlockOnce sync.Once
+		unlock := func() { unlockOnce.Do(buff.RUnlock) }
+		t.Cleanup(unlock) // so a failure below does not leave the lock held
 
 		readDone := make(chan struct{})
 		go func() {
 			defer close(readDone)
 			n, err := buff.GetPacket(make([]byte, 1500), esn)
-			require.NoError(t, err)
-			require.Positive(t, n)
+			assert.NoError(t, err)
+			assert.Positive(t, n)
 		}()
 		require.Eventually(t, func() bool {
 			select {
@@ -725,7 +731,7 @@ func TestGetPacketConcurrentWithWrite(t *testing.T) {
 		case <-time.After(50 * time.Millisecond):
 		}
 
-		buff.RUnlock()
+		unlock()
 		select {
 		case <-writeDone:
 		case <-time.After(time.Second):
@@ -758,9 +764,10 @@ func TestGetPacketConcurrentWithWrite(t *testing.T) {
 					if err != nil {
 						continue // the ring may have moved on
 					}
-					require.NoError(t, pkt.Unmarshal(buf[:n]))
-					require.Equal(t, uint16(esn-base), pkt.SequenceNumber)
-					require.Equal(t, pkt.SequenceNumber, binary.BigEndian.Uint16(pkt.Payload))
+					if assert.NoError(t, pkt.Unmarshal(buf[:n])) {
+						assert.Equal(t, uint16(esn-base), pkt.SequenceNumber)
+						assert.Equal(t, pkt.SequenceNumber, binary.BigEndian.Uint16(pkt.Payload))
+					}
 				}
 			}()
 		}
