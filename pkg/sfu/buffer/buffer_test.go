@@ -667,3 +667,108 @@ func BenchmarkExtPacketFactory(b *testing.B) {
 		ExtPacketFactory.Put(extPkt)
 	}
 }
+
+func TestGetPacketConcurrentWithWrite(t *testing.T) {
+	newBound := func(t *testing.T) *Buffer {
+		buff := NewBuffer(123, 1, 1)
+		buff.OnRtcpFeedback(func(_ []rtcp.Packet) {})
+		require.NoError(t, buff.Bind(webrtc.RTPParameters{Codecs: []webrtc.RTPCodecParameters{opusCodec}}, opusCodec.RTPCodecCapability, 0))
+		return buff
+	}
+	// the payload carries the sequence number, so a read can check it got the packet it asked for
+	write := func(t *testing.T, buff *Buffer, sn uint16) {
+		payload := make([]byte, 100)
+		binary.BigEndian.PutUint16(payload, sn)
+		pkt := &rtp.Packet{
+			Header:  rtp.Header{Version: 2, PayloadType: 111, SequenceNumber: sn, Timestamp: uint32(sn) * 960, SSRC: 123},
+			Payload: payload,
+		}
+		b, err := pkt.Marshal()
+		require.NoError(t, err)
+		_, err = buff.Write(b)
+		require.NoError(t, err)
+	}
+
+	t.Run("a read runs while another read holds the lock, a write waits", func(t *testing.T) {
+		buff := newBound(t)
+		for sn := uint16(1000); sn < 1010; sn++ {
+			write(t, buff, sn)
+		}
+		esn := buff.rtpStats.ExtendedHighestSequenceNumber()
+
+		buff.RLock() // a read in progress
+
+		readDone := make(chan struct{})
+		go func() {
+			defer close(readDone)
+			n, err := buff.GetPacket(make([]byte, 1500), esn)
+			require.NoError(t, err)
+			require.Positive(t, n)
+		}()
+		require.Eventually(t, func() bool {
+			select {
+			case <-readDone:
+				return true
+			default:
+				return false
+			}
+		}, time.Second, 5*time.Millisecond, "a read must not wait for another read")
+
+		writeDone := make(chan struct{})
+		go func() {
+			defer close(writeDone)
+			write(t, buff, 1010)
+		}()
+		select {
+		case <-writeDone:
+			t.Fatal("a write must wait for the read to finish")
+		case <-time.After(50 * time.Millisecond):
+		}
+
+		buff.RUnlock()
+		select {
+		case <-writeDone:
+		case <-time.After(time.Second):
+			t.Fatal("the write must go through once the read is done")
+		}
+	})
+
+	t.Run("concurrent reads get the packet they ask for while writes continue", func(t *testing.T) {
+		buff := newBound(t)
+		const first, numPackets = uint16(2000), 2000
+		write(t, buff, first)
+		base := buff.rtpStats.ExtendedHighestSequenceNumber() - uint64(first)
+
+		var wg sync.WaitGroup
+		stop := make(chan struct{})
+		for r := 0; r < 4; r++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				buf := make([]byte, 1500)
+				var pkt rtp.Packet
+				for {
+					select {
+					case <-stop:
+						return
+					default:
+					}
+					esn := buff.rtpStats.ExtendedHighestSequenceNumber()
+					n, err := buff.GetPacket(buf, esn)
+					if err != nil {
+						continue // the ring may have moved on
+					}
+					require.NoError(t, pkt.Unmarshal(buf[:n]))
+					require.Equal(t, uint16(esn-base), pkt.SequenceNumber)
+					require.Equal(t, pkt.SequenceNumber, binary.BigEndian.Uint16(pkt.Payload))
+				}
+			}()
+		}
+
+		for sn := first + 1; sn < first+numPackets; sn++ {
+			write(t, buff, sn)
+		}
+		close(stop)
+		wg.Wait()
+	})
+}
