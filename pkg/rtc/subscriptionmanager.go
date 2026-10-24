@@ -935,6 +935,13 @@ func (m *SubscriptionManager) addSubscriber(sub *mediaTrackSubscription, track t
 			m.subscribedAudioCount.Inc()
 		}
 
+		// a canSubscribe revoke only removes recorded subscriptions, so one that landed while
+		// this subscribe was in flight missed it; now that it is recorded, check again
+		if !m.params.Participant.CanSubscribe() {
+			track.RemoveSubscriber(m.params.Participant.ID(), false)
+			return ErrNoSubscribePermission
+		}
+
 		if !isSync && subTrack.NeedsNegotiation() {
 			m.params.Participant.Negotiate(false)
 		}
@@ -1160,6 +1167,13 @@ func (m *SubscriptionManager) subscribeDataTrack(sub *dataTrackSubscription) err
 			m.handleDataDownTrackClose(sub)
 		})
 		sub.setDataDownTrack(dataDownTrack)
+
+		// a canSubscribe revoke only removes recorded subscriptions, so one that landed while
+		// this subscribe was in flight missed it; now that it is recorded, check again
+		if !m.params.Participant.CanSubscribe() {
+			dataTrack.RemoveSubscriber(m.params.Participant.ID())
+			return ErrNoSubscribePermission
+		}
 		sub.logger.Debugw("subscribed to data track")
 	}
 

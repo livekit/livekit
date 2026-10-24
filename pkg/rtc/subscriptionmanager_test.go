@@ -854,6 +854,70 @@ func TestSubscribePacerTakesVideoTokensOnly(t *testing.T) {
 	}
 }
 
+// A canSubscribe revoke that lands while a subscribe is in flight cannot see the subscription
+// yet. The participant here allows the subscribe at its start and is revoked by the time the
+// subscription is recorded, so the subscribe must undo itself.
+func TestSubscribeRevokedInFlight(t *testing.T) {
+	revokeAfterFirstCheck := func(sm *SubscriptionManager) {
+		p := sm.params.Participant.(*typesfakes.FakeLocalParticipant)
+		p.CanSubscribeReturnsOnCall(0, true)
+		p.CanSubscribeReturns(false)
+	}
+
+	t.Run("media", func(t *testing.T) {
+		sm := newTestSubscriptionManager()
+		defer sm.Close(false)
+		revokeAfterFirstCheck(sm)
+
+		resolver := newTestResolver(true, true, "pub", "pubID")
+		var lock sync.Mutex
+		var tracks []*typesfakes.FakeMediaTrack
+		sm.params.TrackResolver = func(sub types.LocalParticipant, trackID livekit.TrackID) types.MediaResolverResult {
+			res := resolver.Resolve(sub, trackID)
+			lock.Lock()
+			tracks = append(tracks, res.Track.(*typesfakes.FakeMediaTrack))
+			lock.Unlock()
+			return res
+		}
+		subscribed := atomic.Bool{}
+		sm.params.OnTrackSubscribed = func(subTrack types.SubscribedTrack) {
+			subscribed.Store(true)
+		}
+
+		sm.SubscribeToTrack("track", false)
+		require.Eventually(t, func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+			return len(tracks) != 0 && tracks[0].RemoveSubscriberCallCount() == 1
+		}, subSettleTimeout, subCheckInterval, "the subscriber should be removed")
+
+		lock.Lock()
+		subID, isExpectedToResume := tracks[0].RemoveSubscriberArgsForCall(0)
+		lock.Unlock()
+		require.Equal(t, sm.params.Participant.ID(), subID)
+		require.False(t, isExpectedToResume)
+		require.Empty(t, sm.GetSubscribedParticipants())
+		require.False(t, subscribed.Load())
+	})
+
+	t.Run("data", func(t *testing.T) {
+		sm := newTestSubscriptionManager()
+		defer sm.Close(false)
+		revokeAfterFirstCheck(sm)
+
+		resolver := newTestDataTrackResolver(true, true, "pub", "pubID")
+		sm.params.DataTrackResolver = resolver.Resolve
+
+		sm.SubscribeToDataTrack("track")
+		require.Eventually(t, func() bool {
+			return resolver.dataTrack.RemoveSubscriberCallCount() == 1
+		}, subSettleTimeout, subCheckInterval, "the subscriber should be removed")
+
+		require.Equal(t, sm.params.Participant.ID(), resolver.dataTrack.RemoveSubscriberArgsForCall(0))
+		require.Empty(t, sm.GetSubscribedParticipants())
+	})
+}
+
 type testSubscriptionParams struct {
 	SubscriptionLimitAudio int32
 	SubscriptionLimitVideo int32
